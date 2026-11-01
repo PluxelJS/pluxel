@@ -1,4 +1,4 @@
-import { type HostConfigState, type HostConfigVersion } from '@pluxel/host'
+import type { HostConfigState, HostConfigVersion } from '@pluxel/host'
 import { type RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
 import { type PluginDefinitionAddress, type PluginNodeAddress } from '@pluxel/core'
 import { type RpcTarget } from 'capnweb'
@@ -29,7 +29,7 @@ import {
 	type RuntimeMeta,
 	type VaultKeyPair,
 } from './protocol'
-import { type VaultAdminState } from '../../vault'
+import type { VaultAdminState } from '../../vault'
 
 export type RuntimeLogStreamsIndex = Readonly<{ streams: readonly LogStreamMeta[] }>
 

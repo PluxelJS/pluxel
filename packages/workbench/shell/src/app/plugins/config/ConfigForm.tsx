@@ -1,4 +1,4 @@
-import { type HostConfigVersion } from '@pluxel/host'
+import type { HostConfigVersion } from '@pluxel/host'
 import { makePathArray } from '@tanstack/react-form'
 import { Box, ScrollArea, Text } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'

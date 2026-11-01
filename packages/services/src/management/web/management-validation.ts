@@ -1,4 +1,4 @@
-import { type HostConfigState, type HostConfigVersion } from '@pluxel/host'
+import type { HostConfigState, HostConfigVersion } from '@pluxel/host'
 import {
 	comparePluginDefinitionAddress,
 	comparePluginNodeAddress,

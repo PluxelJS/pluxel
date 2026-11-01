@@ -27,7 +27,19 @@ vi.mock('@pluxel/plugin-typst/source/browser', async () => {
 	}
 })
 
-vi.mock('@worksplit/react', () => ({ useWorkbenchContentLifecycle: () => {} }))
+vi.mock('@worksplit/react', () => {
+	// Editor recovery is isolated here; panes-lifecycle tests use real Worksplit ownership.
+	const content = {
+		effect(setup: (effect: { defer(cleanup: () => void): void }) => void) {
+			const cleanups: (() => void)[] = []
+			setup({ defer: (release) => cleanups.push(release) })
+			return () => {
+				for (const release of cleanups.toReversed()) release()
+			}
+		},
+	}
+	return { useWorkbenchContent: () => content }
+})
 vi.mock('../src/renderer/code-editor', () => ({
 	CodeEditor: () => <textarea aria-label="Code editor keyboard target" />,
 }))

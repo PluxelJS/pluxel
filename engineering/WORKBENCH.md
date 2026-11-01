@@ -42,7 +42,7 @@ Workbench 是可选 Host 服务，投影已有业务能力。关闭时不安装 
 
 `workbenchService()` 拥有后端；`workbenchHttp()` 只挂 Shell fallback；`managementHttp()` 唯一拥有认证、管理 session 与受保护制品。组合层通过 bindings 接入 Workbench handler，并显式声明服务准备依赖。关闭 Workbench 仍可保留 Management。
 
-`@pluxel/workbench/dev` 的 `workbenchSourceShell({ entry })` 将源码 HTML 接入现有 Vite 图。应用拥有入口和 React/CSS 配置；附件不创建第二个 server/watcher。Shell 服务首次静态请求才加载 packaged manifest；直接创建 packaged handler 仍立即校验资源。组合用法见 [standalone host](../docs/workbench/standalone-host.md)。
+`@pluxel/workbench/dev` 的 `workbenchSourceShell({ entry })` 将源码 HTML 接入现有 Vite 图。应用拥有入口和 React/CSS 配置；附件不创建第二个 server/watcher。Shell 服务首次静态请求才加载 packaged manifest；直接创建 packaged handler 仍立即校验资源。每次后续 HTML 导航重新校验同一目录的当前 manifest，避免重建后继续返回已删除的 chunk 名；无效的新 manifest 明确失败，不回退旧 HTML。组合用法见 [standalone host](../docs/workbench/standalone-host.md)。
 
 ## Session 与打开流程
 
@@ -109,6 +109,8 @@ Query result 在 cache 前完成 portable-data 校验、去 transport metadata�
 Watch 先订阅后读，single-flight 并合并读取中的通知。Mutation 每 Hook single-flight；其 typed invalidation 在调用前校验，在 owner active 的 settle 后执行，包括 reject/consume failure。权威 watch 已覆盖写入时不重复声明 invalidation。具体 options/defaults/error codes 只在[作者指南](../docs/workbench/renderer-resources.md)维护。
 
 Owner withdrawal 关闭 invocation admission、abort open signal，等待已接纳 calls 后 drain。Bridge teardown 同时停用 Hook controls、QueryClient 与 subscription；不可取消 RPC 的晚到 DTO 仍 consume/dispose，但不得更新 React。领域错误保持原样，框架 portable/scope/key/limit/closed 等错误使用稳定 code。
+
+Shell 的 Worksplit content effect 拥有每次 activation 的使用期限，SDK 继续拥有 Bridge → host facade → opened handle 的协议释放顺序。页面共享 session、草稿和业务任务仍由应用 owner 持有；页面结束只释放其使用权。关闭等待固定的已知 cleanup 集合，不等待普通 setup Promise，也不把 RPC stub 的本地 dispose 当作服务端完成确认。编辑 owner、React 重放、standalone 与错误报告归属见 [Frontend 动作与关闭](FRONTEND.md#动作与关闭)。
 
 Host facade 只提供 appearance、feedback、受限 relative navigation、document 状态及 Shell 显式借用的 unary Management 操作。Detached/cached management methods 同样绑定 View lifetime；它们不获得 session/socket/subscription ownership。Bridge payload 不传布局 renderer 或 Shell 私有 Provider；内容使用普通 CSS/Mantine，工作区布局与菜单由 [FRONTEND](FRONTEND.md#原生工作区与文档路由)拥有。
 

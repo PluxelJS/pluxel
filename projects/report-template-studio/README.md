@@ -339,7 +339,7 @@ Studio 最多保留四个活跃文档会话。仅修改表单输入时复用模�
 
 ## Renderer 所有权
 
-[workbench-session.tsx](src/renderer/workbench-session.tsx) 的 `StudioSession` 持有一个项目的 Worksplit 与 `WorkspaceController`，协调保存、批量关闭和文件操作回执；[app.tsx](src/renderer/app.tsx) 负责外壳交互。[workbench-routes.tsx](src/renderer/workbench-routes.tsx) 拥有路由定义和业务路径投影，[workbench-layout.ts](src/renderer/workbench-layout.ts) 只维护原生布局初值与业务放置策略。[editor-lifecycle.ts](src/renderer/editor-lifecycle.ts) 将共享资源的 dirty/revision/save 接入 Worksplit，不在视图释放时丢弃草稿。
+[workbench-session.tsx](src/renderer/workbench-session.tsx) 的 `StudioSession` 持有一个项目的 Worksplit 与 `WorkspaceController`，协调保存、批量关闭和文件操作回执；[app.tsx](src/renderer/app.tsx) 负责外壳交互。[workbench-routes.tsx](src/renderer/workbench-routes.tsx) 拥有路由定义和业务路径投影，[workbench-layout.ts](src/renderer/workbench-layout.ts) 只维护原生布局初值与业务放置策略。[editor-lifecycle.ts](src/renderer/editor-lifecycle.ts) 将共享资源的 dirty/revision/save 交给 `useWorkbenchContent(lifecycle)`；关闭修订包含项目、路径、编辑类型和现有草稿修订，防止另一编辑器复用旧批准。[panes.tsx](src/renderer/panes.tsx) 通过原生 `useEffect` 启动 `content.effect(({ defer }) => defer(workspace.retainDocument(entry)))`，在关闭时释放此视图的使用权。共享草稿仍由 workspace 持有，视图释放不会丢弃未保存修改。
 
 会话从打开项目的用户操作创建；启动和释放各结算一次。关闭顺序为内容资源、项目资源，React effect 重放保留原实例。工具激活使用 Worksplit `activate`，移动和重新插入直接提交原生 Actions。业务文件状态与布局树分别只有一个所有者，不维护第二份可写标签状态。
 

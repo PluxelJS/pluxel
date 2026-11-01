@@ -138,13 +138,17 @@ afterEach(async () => {
 })
 
 describe('Workbench Content activation', () => {
-	it('opens once across StrictMode replay without creating a View host or MF Bridge', async () => {
+	it('reopens after StrictMode cleanup and releases the first late result without rendering it', async () => {
+		const replayed = deferred<ReturnType<typeof contentOpenResult>>()
 		const request = deferred<ReturnType<typeof contentOpenResult>>()
-		mocks.openWorkbenchEntry.mockReturnValue(request.promise)
+		mocks.openWorkbenchEntry
+			.mockReturnValueOnce(replayed.promise)
+			.mockReturnValueOnce(request.promise)
+		const abandoned = openedContentHandle()
 		const { handle, dispose } = openedContentHandle()
 		const { container, root } = await renderContent()
 
-		expect(mocks.openWorkbenchEntry).toHaveBeenCalledOnce()
+		expect(mocks.openWorkbenchEntry).toHaveBeenCalledTimes(2)
 		expect(mocks.openWorkbenchEntry).toHaveBeenCalledWith(session, entry, {
 			layoutRevision: 7,
 			location: '/guide',
@@ -152,6 +156,9 @@ describe('Workbench Content activation', () => {
 		expect(mocks.createWorkbenchViewHost).not.toHaveBeenCalled()
 		expect(mocks.openFederatedWorkbenchView).not.toHaveBeenCalled()
 		expect(container.textContent).toContain('正在打开')
+		await act(async () => replayed.resolve(contentOpenResult(abandoned.handle)))
+		expect(abandoned.dispose).toHaveBeenCalledOnce()
+		expect(container.querySelector('h1')).toBeNull()
 
 		await act(async () => request.resolve(contentOpenResult(handle)))
 		expect(container.querySelector('h1')?.textContent).toBe('Content guide')
@@ -165,15 +172,18 @@ describe('Workbench Content activation', () => {
 		const firstConfirm = vi.fn(async () => true)
 		const latestConfirm = vi.fn(async () => false)
 		const run = vi.fn(async () => ({ action: { ok: true as const }, data: null }))
-		const { handle } = actionOpenedContentHandle(run)
-		mocks.openWorkbenchEntry.mockResolvedValue(contentOpenResult(handle))
+		let handle!: WorkbenchOpenedContentHandle
+		mocks.openWorkbenchEntry.mockImplementation(async () => {
+			handle = actionOpenedContentHandle(run).handle
+			return contentOpenResult(handle)
+		})
 		const { container, root } = await renderContent({
 			...host,
 			confirm: firstConfirm,
 			notify: vi.fn(),
 		})
 
-		expect(mocks.openWorkbenchEntry).toHaveBeenCalledOnce()
+		expect(mocks.openWorkbenchEntry).toHaveBeenCalledTimes(2)
 
 		await renderContentRoot(root, {
 			...host,
@@ -181,7 +191,7 @@ describe('Workbench Content activation', () => {
 			notify: vi.fn(),
 		})
 
-		expect(mocks.openWorkbenchEntry).toHaveBeenCalledOnce()
+		expect(mocks.openWorkbenchEntry).toHaveBeenCalledTimes(2)
 		expect(handle.active).toBe(true)
 		await act(async () => {
 			button(container, 'Restart').click()
@@ -192,15 +202,22 @@ describe('Workbench Content activation', () => {
 	})
 
 	it('disposes a successful open that settles after the Content has closed', async () => {
-		const request = deferred<ReturnType<typeof contentOpenResult>>()
-		mocks.openWorkbenchEntry.mockReturnValue(request.promise)
-		const { handle, dispose } = openedContentHandle()
+		const requests = [0, 1].map(() =>
+			Object.assign(
+				{ request: deferred<ReturnType<typeof contentOpenResult>>() },
+				openedContentHandle(),
+			),
+		)
+		for (const { request } of requests)
+			mocks.openWorkbenchEntry.mockReturnValueOnce(request.promise)
 		const { container, root } = await renderContent()
 
 		await unmount(root)
-		await act(async () => request.resolve(contentOpenResult(handle)))
+		await act(async () => {
+			for (const { request, handle } of requests) request.resolve(contentOpenResult(handle))
+		})
 
-		expect(dispose).toHaveBeenCalledOnce()
+		for (const { dispose } of requests) expect(dispose).toHaveBeenCalledOnce()
 		expect(container.querySelector('h1')).toBeNull()
 	})
 
@@ -217,21 +234,26 @@ describe('Workbench Content activation', () => {
 		expect(mocks.openFederatedWorkbenchView).not.toHaveBeenCalled()
 	})
 
-	it('starts one interactive subscription across StrictMode replay and closes it with the handle', async () => {
+	it('subscribes only the active replay result and closes the subscription with its handle', async () => {
 		let observer!: RpcStub<WorkbenchContentObserver>
 		const subscribe = vi.fn(async (next: RpcStub<WorkbenchContentObserver>) => {
 			observer = next.dup()
 			return { sequence: 1, ok: true as const, data: { status: 'connected' } }
 		})
-		const { handle, dispose } = interactiveOpenedContentHandle(subscribe)
-		mocks.openWorkbenchEntry.mockResolvedValue(contentOpenResult(handle))
+		const handles: ReturnType<typeof interactiveOpenedContentHandle>[] = []
+		mocks.openWorkbenchEntry.mockImplementation(async () => {
+			const opened = interactiveOpenedContentHandle(subscribe)
+			handles.push(opened)
+			return contentOpenResult(opened.handle)
+		})
 		const { container, root } = await renderContent()
 
 		expect(subscribe).toHaveBeenCalledOnce()
 		expect(container.textContent).toContain('Status: connected')
 
 		await unmount(root)
-		expect(dispose).toHaveBeenCalledOnce()
+		expect(handles).toHaveLength(2)
+		for (const { dispose } of handles) expect(dispose).toHaveBeenCalledOnce()
 		await act(async () => {
 			await observer({ sequence: 2, ok: true, data: { status: 'late' } })
 		})

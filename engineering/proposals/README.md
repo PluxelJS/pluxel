@@ -15,7 +15,7 @@
 
 - [`TINYBASE_PLUGIN_STATE.md`](TINYBASE_PLUGIN_STATE.md)：已实施状态重构的必要决策与剩余验收边界；当前契约见 [TinyBase](../TINYBASE.md) 与 [Database](../DATABASE.md)，逐包结论及实际验证见[迁移记录](../TINYBASE_MIGRATION.md)。
 
-- [Worksplit API 与资源生命周期精进提案](https://github.com/PluxelJS/split-like-vscode/blob/bd6ddfa3e5a9c866a412597e9001b530526e4250/refactor/API_REFINEMENT_PROPOSAL.md)：统一内容 hook 与资源 effect，直接迁移并移除旧入口；提案维护在独立子模块，尚未实现。
+- [Worksplit API 精进决策](../../vendor/split-like-vscode/refactor/API_REFINEMENT_PROPOSAL.md)：2026-11-01 复核契约已实施，统一内容 hook 与资源 effect 并迁移全部已知消费者；当前边界见 [Frontend](../FRONTEND.md)，新验证及实际范围见[实施验收](../../vendor/split-like-vscode/refactor/API_REFINEMENT_VALIDATION.md)。
 
 - [`ZENFS_FS_REFACTOR.md`](ZENFS_FS_REFACTOR.md)：ZenFS FS 重构的实施决策与验收记录；当前用法和资源契约见正式 FS 文档。
 

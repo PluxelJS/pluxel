@@ -1,4 +1,4 @@
-import { type HostConfigVersion } from '@pluxel/host'
+import type { HostConfigVersion } from '@pluxel/host'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { type PluginNodeAddress } from '@pluxel/core'
 import { type ConfigValidationErrors } from '@pluxel/services/management/client'

@@ -23,7 +23,16 @@ delete env.ELECTRON_RUN_AS_NODE
 const errors = [],
 	logs = []
 const exportReceipts = []
-let instance, processClosed, page, project, documentConfig, connection, studio, portEvidence
+let instance,
+	electronProcess,
+	processClosed,
+	page,
+	project,
+	documentConfig,
+	connection,
+	studio,
+	portEvidence
+let primaryFailure, cleanupFailure
 const executablePath = process.env.STUDIO_EXECUTABLE ?? electronExecutable
 const ozonePlatform =
 	process.env.STUDIO_OZONE_PLATFORM ?? (process.env.WAYLAND_DISPLAY ? 'wayland' : undefined)
@@ -51,9 +60,10 @@ assert.ok(probeBundle)
 
 async function start() {
 	instance = await electron.launch({ executablePath, args, env, timeout: 90_000 })
-	processClosed = once(instance.process(), 'close')
-	instance.process().stderr?.on('data', (bytes) => logs.push(bytes.toString()))
-	instance.process().stdout?.on('data', (bytes) => logs.push(bytes.toString()))
+	electronProcess = instance.process()
+	processClosed = once(electronProcess, 'close')
+	electronProcess.stderr?.on('data', (bytes) => logs.push(bytes.toString()))
+	electronProcess.stdout?.on('data', (bytes) => logs.push(bytes.toString()))
 	page = await instance.firstWindow({ timeout: 90_000 })
 	await instance.evaluate(({ BrowserWindow }) => {
 		const window = BrowserWindow.getAllWindows()[0]
@@ -104,6 +114,12 @@ async function start() {
 }
 async function closeInstance(destroyWindows = false) {
 	if (!instance) return
+	if (!destroyWindows && !page.isClosed()) {
+		// An ordinary quit is correctly vetoed while any shared draft remains unsaved.
+		const status = page.locator('.status-bar')
+		if (await status.count())
+			await status.getByText('修改自动保存在本机', { exact: true }).waitFor({ timeout: 60_000 })
+	}
 	if (destroyWindows)
 		await instance
 			.evaluate(({ BrowserWindow }) => {
@@ -311,11 +327,17 @@ async function completeFile(path, verify) {
 async function selectDocument(wait = true) {
 	await revealFile(documentConfig.entry)
 	await treeItem(documentConfig.entry).click()
+	await page.getByRole('tab', { name: documentConfig.name, exact: true, selected: true }).waitFor()
 	await page
 		.locator('[aria-label="报表编辑模式"]:visible')
 		.getByText('表单', { exact: true })
 		.click()
-	if (wait) await ready()
+	if (wait) {
+		await page
+			.getByRole('tab', { name: `预览 · ${documentConfig.name}`, exact: true, selected: true })
+			.waitFor()
+		await ready()
+	}
 }
 
 async function portError(methodName, inputValue) {
@@ -1824,68 +1846,94 @@ try {
 	)
 	console.log(`Workspace desktop smoke passed: ${output}`)
 } catch (error) {
-	if (studio && project) {
-		try {
-			const saved = await studio.getInput({
-				projectId: project.id,
-				entry: '报表/客户服务报告/客户服务报告.ts',
-			})
-			await writeFile(
-				join(output, 'failure-source.json'),
-				JSON.stringify(
-					{
-						storageVersion: saved.storageVersion,
-						data: saved.data,
-						summary: saved.editor?.files['报表/客户服务报告/summary.typ'],
-						recommendations: saved.editor?.files['报表/客户服务报告/recommendations.typ'],
-					},
-					null,
-					2,
-				),
-			)
-		} catch {}
-	}
-	if (page && !page.isClosed()) {
-		try {
-			const editors = await page.locator('.tiptap').evaluateAll((elements) =>
-				elements.flatMap((element) => {
-					if (!element.editor) return []
-					return [
+	primaryFailure = error
+	console.error('Desktop smoke failed', error)
+	try {
+		await writeFile(
+			join(output, 'failure.json'),
+			JSON.stringify(
+				{
+					error: String(error),
+					stack: error?.stack,
+					errors,
+					workspaceStatus:
+						page && !page.isClosed()
+							? await page
+									.evaluate(() => document.querySelector('.status-bar')?.innerText ?? null)
+									.catch(() => null)
+							: null,
+					pid: electronProcess?.pid,
+					exitCode: electronProcess?.exitCode,
+					signal: electronProcess?.signalCode,
+				},
+				null,
+				2,
+			),
+		)
+		if (studio && project) {
+			try {
+				const saved = await studio.getInput({
+					projectId: project.id,
+					entry: '报表/客户服务报告/客户服务报告.ts',
+				})
+				await writeFile(
+					join(output, 'failure-source.json'),
+					JSON.stringify(
 						{
-							path: element.getAttribute('aria-label'),
-							document: element.editor.getJSON(),
-							selection: element.editor.state.selection.toJSON(),
+							storageVersion: saved.storageVersion,
+							data: saved.data,
+							summary: saved.editor?.files['报表/客户服务报告/summary.typ'],
+							recommendations: saved.editor?.files['报表/客户服务报告/recommendations.typ'],
 						},
-					]
-				}),
-			)
-			await writeFile(join(output, 'failure-editor.json'), JSON.stringify(editors, null, 2))
-		} catch {}
+						null,
+						2,
+					),
+				)
+			} catch {}
+		}
+		if (page && !page.isClosed()) {
+			try {
+				const editors = await page.locator('.tiptap').evaluateAll((elements) =>
+					elements.flatMap((element) => {
+						if (!element.editor) return []
+						return [
+							{
+								path: element.getAttribute('aria-label'),
+								document: element.editor.getJSON(),
+								selection: element.editor.state.selection.toJSON(),
+							},
+						]
+					}),
+				)
+				await writeFile(join(output, 'failure-editor.json'), JSON.stringify(editors, null, 2))
+			} catch {}
+		}
+		if (page && !page.isClosed()) await screenshot('failure').catch(() => {})
+		if (page && !page.isClosed())
+			await writeFile(join(output, 'failure.html'), await page.content()).catch(() => {})
+	} catch (diagnosticError) {
+		console.error('Desktop failure diagnostics failed', diagnosticError)
 	}
-	await writeFile(
-		join(output, 'failure.json'),
-		JSON.stringify(
-			{
-				error: String(error),
-				stack: error?.stack,
-				errors,
-				exitCode: instance?.process().exitCode,
-				signal: instance?.process().signalCode,
-			},
-			null,
-			2,
-		),
-	)
-	if (page && !page.isClosed()) await screenshot('failure').catch(() => {})
-	if (page && !page.isClosed())
-		await writeFile(join(output, 'failure.html'), await page.content()).catch(() => {})
 	throw error
 } finally {
 	try {
 		connection?.disconnect()
 		await closeInstance(true)
+	} catch (cleanupError) {
+		cleanupFailure = cleanupError
+		console.error(
+			primaryFailure
+				? 'Desktop cleanup failed after the primary failure'
+				: 'Desktop cleanup failed',
+			cleanupError,
+		)
+		await writeFile(
+			join(output, 'cleanup-failure.json'),
+			JSON.stringify({ error: String(cleanupError), stack: cleanupError?.stack }, null, 2),
+		).catch(() => {})
 	} finally {
 		await writeFile(join(output, 'electron-stderr.log'), logs.join(''))
 		if (process.env.STUDIO_KEEP_PROFILE !== '1') await rm(profile, { recursive: true, force: true })
 	}
 }
+if (cleanupFailure) throw cleanupFailure

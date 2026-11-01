@@ -97,6 +97,20 @@ afterEach(() => {
 	vi.resetAllMocks()
 })
 describe('workspace explicit form input and preview ownership', () => {
+	it('distinguishes workspace, resource path and editor kind at the same draft revision', () => {
+		const workspace = createWorkspace()
+		const other = new WorkspaceController({ id: 'other', name: 'Other', root: '/other' })
+		const revisions = [
+			editorLifecycle(workspace, 'first.typ', 'file'),
+			editorLifecycle(workspace, 'second.typ', 'file'),
+			editorLifecycle(workspace, 'first.typ', 'form'),
+			editorLifecycle(other, 'first.typ', 'file'),
+		].map((lifecycle) => lifecycle.getCloseRevision!())
+		expect(new Set(revisions).size).toBe(revisions.length)
+		expect(editorLifecycle(workspace, 'first.typ', 'file').getCloseRevision!()).toBe(revisions[0])
+		workspace.dispose()
+		other.dispose()
+	})
 	it.each(
 		['main/body.typ', 'main/data.json'].flatMap((path) =>
 			(['dirty', 'failed', 'inflight', 'external'] as const).map((phase) => ({ path, phase })),
@@ -1257,7 +1271,6 @@ describe('workspace explicit form input and preview ownership', () => {
 		expect(await form.beforeLeave!('close', { id: 'form', from: '/form' })).toBe(false)
 		expect(file.isDirty!()).toBe(true)
 		expect(workspace.files.get(target.entry)?.content).toBe('draft')
-		expect(form.dispose).toBeUndefined()
 		const revision = file.getCloseRevision!()
 		await workspace.discard(target.entry)
 		expect(file.getCloseRevision!()).not.toBe(revision)
@@ -1452,6 +1465,117 @@ describe('workspace explicit form input and preview ownership', () => {
 		expect(workspace.documents.get(target.entry)).toMatchObject({
 			inputDirty: false,
 			data: { title: 'latest' },
+		})
+		workspace.dispose()
+	})
+	it.each([false, true])(
+		'settles the latest draft when its template revision changes during an input save (body lease: %s)',
+		async (locked) => {
+			vi.useFakeTimers()
+			const workspace = createWorkspace()
+			vi.mocked(api.getInput).mockResolvedValue({
+				data: { title: 'default' },
+				editor: { files: { 'main/body.typ': 'Original', 'main/data.json': '{"title":"default"}' } },
+				storageVersion: null,
+			})
+			vi.mocked(api.describeDocument).mockResolvedValue({
+				...description,
+				editor: { sources: [{ path: 'main/body.typ' }] },
+			})
+			workspace.retainDocument(target.entry)
+			await workspace.compile(target.entry)
+			await workspace.writeData(target.entry, { title: 'latest' })
+			let finishSave!: (value: Awaited<ReturnType<typeof api.getInput>>) => void
+			vi.mocked(api.setInput).mockImplementationOnce(
+				() =>
+					new Promise((resolve) => {
+						finishSave = resolve
+					}),
+			)
+			await vi.advanceTimersByTimeAsync(400)
+			expect(api.setInput).toHaveBeenCalledOnce()
+			vi.mocked(api.describeDocument).mockResolvedValue({
+				...description,
+				editor: { sources: [{ path: 'main/body.typ' }] },
+				sourceRevision: 'changed-template',
+			})
+			vi.mocked(api.compile).mockImplementation(async ({ data, clientRevision }) => ({
+				...result(String(data.title), clientRevision),
+				sourceRevision: 'changed-template',
+			}))
+			await workspace.compile(target.entry)
+			expect(workspace.documents.get(target.entry)?.inputToken).toBe(2)
+			const capturing = locked ? workspace.captureBody({ entry: target.entry }) : undefined
+			const first = vi.mocked(api.setInput).mock.calls[0]![0]
+			finishSave({ data: first.data, editor: first.editor, storageVersion: 'first-save' })
+			await settle()
+			expect(workspace.documents.get(target.entry)).toMatchObject({
+				inputDirty: true,
+				storageVersion: 'first-save',
+			})
+			const captured = await capturing
+			if (capturing && !captured)
+				throw new Error('The body lease did not capture the retained report')
+			await vi.advanceTimersByTimeAsync(1000)
+			expect(api.setInput).toHaveBeenCalledTimes(locked ? 1 : 2)
+			expect(Boolean(workspace.documents.get(target.entry)?.bodyLocked)).toBe(locked)
+			if (captured) await workspace.finishBody({ entry: target.entry, lease: captured.lease })
+			await vi.advanceTimersByTimeAsync(1000)
+			expect(api.setInput).toHaveBeenCalledTimes(2)
+			expect(api.setInput).toHaveBeenLastCalledWith({
+				...target,
+				data: { title: 'latest' },
+				editor: first.editor,
+				expectedVersion: 'first-save',
+			})
+			expect(workspace.documents.get(target.entry)).toMatchObject({
+				data: { title: 'latest' },
+				inputDirty: false,
+				inputSaving: false,
+			})
+			expect(workspace.isDirty()).toBe(false)
+			workspace.dispose()
+		},
+	)
+	it('does not schedule an automatic retry over a newer save that fails', async () => {
+		vi.useFakeTimers()
+		const workspace = createWorkspace()
+		workspace.retainDocument(target.entry)
+		await workspace.compile(target.entry)
+		await workspace.writeData(target.entry, { title: 'latest' })
+		let finishSave!: (value: Awaited<ReturnType<typeof api.getInput>>) => void
+		vi.mocked(api.setInput)
+			.mockImplementationOnce(
+				() =>
+					new Promise((resolve) => {
+						finishSave = resolve
+					}),
+			)
+			.mockRejectedValueOnce(new Error('later save failed'))
+		vi.mocked(api.getInput).mockRejectedValueOnce(new Error('read-back unavailable'))
+		await vi.advanceTimersByTimeAsync(400)
+		const queued = workspace.saveInput(target.entry)
+		vi.mocked(api.describeDocument).mockResolvedValue({
+			...description,
+			sourceRevision: 'changed-template',
+		})
+		vi.mocked(api.compile).mockImplementation(async ({ data, clientRevision }) => ({
+			...result(String(data.title), clientRevision),
+			sourceRevision: 'changed-template',
+		}))
+		await workspace.compile(target.entry)
+		finishSave({ data: { title: 'latest' }, storageVersion: 'first-save' })
+		await queued
+		await settle()
+		expect(api.setInput).toHaveBeenCalledTimes(2)
+		await vi.advanceTimersByTimeAsync(1000)
+		expect(api.setInput).toHaveBeenCalledTimes(2)
+		expect(workspace.documents.get(target.entry)).toMatchObject({
+			data: { title: 'latest' },
+			inputDirty: true,
+			inputSaving: false,
+			inputError: expect.stringContaining('later save failed'),
+			storageVersion: 'first-save',
 		})
 		workspace.dispose()
 	})

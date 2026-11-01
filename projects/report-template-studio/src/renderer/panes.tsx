@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
 	ActionIcon,
 	Alert,
@@ -10,7 +10,7 @@ import {
 	Tooltip,
 } from '@mantine/core'
 import { IconDots, IconDownload, IconRefresh, IconDeviceFloppy } from '@tabler/icons-react'
-import { useWorkbenchContentLifecycle } from '@worksplit/react'
+import { useWorkbenchContent } from '@worksplit/react'
 import { CodeEditor } from './code-editor'
 import { DataForm } from './data-form'
 import { Preview } from './preview'
@@ -193,12 +193,13 @@ export function FilePane({ path }: { path: string }) {
 	const file = workspace.files.get(path)
 	const owner = workspace.inputOwner(path)
 	const ownerEntry = owner?.entry
+	const content = useWorkbenchContent(editorLifecycle(workspace, path, 'file'))
 	useEffect(
-		() => (ownerEntry ? workspace.retainDocument(ownerEntry) : undefined),
-		[workspace, ownerEntry],
-	)
-	useWorkbenchContentLifecycle(
-		useMemo(() => editorLifecycle(workspace, path, 'file'), [workspace, path]),
+		() =>
+			content.effect(({ defer }) => {
+				if (ownerEntry) defer(workspace.retainDocument(ownerEntry))
+			}),
+		[content, workspace, ownerEntry],
 	)
 	return (
 		<section
@@ -241,7 +242,11 @@ export function FormPane({ entry }: { entry: string }) {
 	const [mode, setMode] = useState('form')
 	const [codeOpened, setCodeOpened] = useState(false)
 	const [bodyOpened, setBodyOpened] = useState(false)
-	useEffect(() => workspace.retainDocument(entry), [workspace, entry])
+	const content = useWorkbenchContent(editorLifecycle(workspace, entry, 'form'))
+	useEffect(
+		() => content.effect(({ defer }) => defer(workspace.retainDocument(entry))),
+		[content, workspace, entry],
+	)
 	const document = workspace.documents.get(entry)
 	const file = workspace.files.get(entry)
 	useEffect(() => {
@@ -250,9 +255,6 @@ export function FormPane({ entry }: { entry: string }) {
 			setMode('body')
 		}
 	}, [entry, workspace.bodyLocation])
-	useWorkbenchContentLifecycle(
-		useMemo(() => editorLifecycle(workspace, entry, 'form'), [workspace, entry]),
-	)
 	return (
 		<section
 			className="workspace-pane"
@@ -382,7 +384,11 @@ export function FormPane({ entry }: { entry: string }) {
 
 export function PreviewPane({ entry }: { entry: string }) {
 	const workspace = useWorkspace()
-	useEffect(() => workspace.retainDocument(entry), [workspace, entry])
+	const content = useWorkbenchContent()
+	useEffect(
+		() => content.effect(({ defer }) => defer(workspace.retainDocument(entry))),
+		[content, workspace, entry],
+	)
 	const document = workspace.documents.get(entry)
 	const name =
 		document?.result?.name ??

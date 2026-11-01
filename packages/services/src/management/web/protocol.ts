@@ -1,6 +1,6 @@
-import {
-	type HostConfigVersion,
-	type PluginApplyReportSnapshot as PluginApplyReport,
+import type {
+	HostConfigVersion,
+	PluginApplyReportSnapshot as PluginApplyReport,
 } from '@pluxel/host'
 /** Versioned, framework-neutral management protocol types shared by clients and servers. */
 import { type PluginDefinitionAddress, type PluginNodeAddress } from '@pluxel/core'

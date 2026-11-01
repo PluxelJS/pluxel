@@ -11,7 +11,7 @@ import {
 import { type PluginNodeAddress } from '@pluxel/core'
 import {
 	useWorkbenchContent,
-	useWorkbenchContentLifecycle,
+	type WorkbenchContent,
 	type WorkbenchContentLifecycle,
 } from '@worksplit/react'
 import { openConfirmModal } from '@mantine/modals'
@@ -35,26 +35,7 @@ export class WorkbenchDocumentState {
 		const revision = this.editor?.getCloseRevision?.()
 		return `${this.ownerRevision}:${typeof revision}:${revision}`
 	}
-	private readonly resources = new Set<() => void | Promise<void>>()
 	isDirty = () => this.remoteDirty || Boolean(this.editor?.isDirty?.())
-	registerResource(dispose: () => void | Promise<void>) {
-		this.resources.add(dispose)
-		return () => {
-			this.resources.delete(dispose)
-		}
-	}
-	async dispose() {
-		const results = await Promise.allSettled(
-			[...this.resources].map(async (dispose) => {
-				await dispose()
-			}),
-		)
-		this.resources.clear()
-		const failures = results.flatMap((result) =>
-			result.status === 'rejected' ? [result.reason] : [],
-		)
-		if (failures.length > 0) throw new AggregateError(failures, '文档资源释放失败')
-	}
 
 	async beforeLeave(): Promise<boolean> {
 		if (!this.isDirty()) return true
@@ -84,44 +65,42 @@ export class WorkbenchDocumentState {
 	}
 }
 
-const DocumentContext = createContext<{ id: string; state: WorkbenchDocumentState } | null>(null)
+const DocumentContext = createContext<{
+	id: string
+	state: WorkbenchDocumentState
+	content: WorkbenchContent
+} | null>(null)
 export function useOptionalWorkbenchDocument() {
 	return useContext(DocumentContext)
 }
 
 export function WorkbenchDocumentRoot({ children }: { children: ReactNode }) {
-	const content = useWorkbenchContent()
 	const session = useWorkspaceSession()
 	const [state] = useState(() => new WorkbenchDocumentState())
-	const lifecycle = useMemo<WorkbenchContentLifecycle>(
-		() => ({
-			isDirty: state.isDirty,
-			get getCloseRevision() {
-				return state.remoteDirty || !state.editor?.getCloseRevision
-					? undefined
-					: state.readCloseRevision
-			},
-			beforeLeave: async (reason, context) => {
-				// Search/hash changes preserve this content's editable resource.
-				if (reason === 'navigate' && context.from && context.to) {
-					const from = new URL(context.from, 'http://workbench.local')
-					const to = new URL(context.to, from)
-					if (
-						from.pathname === to.pathname &&
-						from.searchParams.get('entry') === to.searchParams.get('entry')
-					)
-						return true
-				}
-				return state.beforeLeave()
-			},
-			save: async () => {
-				await state.editor?.save?.()
-			},
-			dispose: () => state.dispose(),
-		}),
-		[state],
-	)
-	useWorkbenchContentLifecycle(lifecycle)
+	const content = useWorkbenchContent({
+		isDirty: state.isDirty,
+		get getCloseRevision() {
+			return state.remoteDirty || !state.editor?.getCloseRevision
+				? undefined
+				: state.readCloseRevision
+		},
+		beforeLeave: async (reason, context) => {
+			// Search/hash changes preserve this content's editable resource.
+			if (reason === 'navigate' && context.from && context.to) {
+				const from = new URL(context.from, 'http://workbench.local')
+				const to = new URL(context.to, from)
+				if (
+					from.pathname === to.pathname &&
+					from.searchParams.get('entry') === to.searchParams.get('entry')
+				)
+					return true
+			}
+			return state.beforeLeave()
+		},
+		save: async () => {
+			await state.editor?.save?.()
+		},
+	})
 	useEffect(() => {
 		session.documents.set(content.id, state)
 		session.notifyContentState()
@@ -130,7 +109,7 @@ export function WorkbenchDocumentRoot({ children }: { children: ReactNode }) {
 			session.notifyContentState()
 		}
 	}, [content.id, session, state])
-	const value = useMemo(() => ({ id: content.id, state }), [content.id, state])
+	const value = useMemo(() => ({ id: content.id, state, content }), [content, state])
 	return <DocumentContext.Provider value={value}>{children}</DocumentContext.Provider>
 }
 

@@ -97,6 +97,7 @@
 		"workbenchCapnweb": "0.12.0",
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,
-		"workbenchArtifacts": true
+		"workbenchArtifacts": true,
+		"tinybase": "10.0.1"
 	}
 }

@@ -5,7 +5,7 @@ import { type FieldNode } from 'valibot-form'
 import { useRuntimeManagementClient, type RuntimeManagementClient } from '../../../runtime'
 import { managementQueryKeys, refetchManagementQuery } from '../../managementQuery'
 import { adaptConfigPresentationFields, applyConfigSources } from './presentationAdapter'
-import { type HostConfigSource, type HostConfigState } from '@pluxel/host'
+import type { HostConfigSource, HostConfigState } from '@pluxel/host'
 
 export type PluginConfigData = HostConfigState & {
 	fieldName: string

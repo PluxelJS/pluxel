@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
-import { act, useEffect, useMemo } from 'react'
+import { Activity, act, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Root } from 'react-dom/client'
 import { useRouter, type AnyRouter } from '@tanstack/react-router'
 import { Actions } from 'flexlayout-react'
+import { useWorkbenchContent } from '@worksplit/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceSession } from '../src/app/workbench/session'
 import { useOptionalWorkbenchDocument } from '../src/app/workbench/document'
@@ -19,6 +20,7 @@ type EditingModel = {
 	save?: () => Promise<void>
 	dispose: ReturnType<typeof vi.fn<() => void>>
 	router: AnyRouter
+	setHidden?: (hidden: boolean) => void
 }
 const fixtures = vi.hoisted(() => ({
 	models: new Map<string, EditingModel>(),
@@ -38,11 +40,13 @@ vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({ WorkspaceNavigation
 function Editor() {
 	const document = useOptionalWorkbenchDocument()!
 	const router = useRouter()
+	const [hidden, setHidden] = useState(false)
 	const model = useMemo<EditingModel>(
 		() => ({ dirty: false, revision: 0, router, dispose: vi.fn() }),
 		[document.id, router],
 	)
 	useEffect(() => {
+		model.setHidden = setHidden
 		fixtures.models.set(document.id, model)
 		const editor = {
 			isDirty: () => model.dirty,
@@ -52,22 +56,36 @@ function Editor() {
 			},
 		}
 		document.state.editor = editor
-		const unregister = document.state.registerResource(model.dispose)
 		return () => {
-			unregister()
 			if (document.state.editor === editor) document.state.editor = undefined
 		}
 	}, [document.state, document.id, model])
 	return (
-		<input
-			aria-label={`draft ${document.id}`}
-			defaultValue="draft"
-			onInput={() => {
-				model.dirty = true
-				model.revision++
-			}}
-		/>
+		<Activity mode={hidden ? 'hidden' : 'visible'}>
+			<EditorResources model={model}>
+				<input
+					aria-label={`draft ${document.id}`}
+					defaultValue="draft"
+					onInput={() => {
+						model.dirty = true
+						model.revision++
+					}}
+				/>
+			</EditorResources>
+		</Activity>
 	)
+}
+
+function EditorResources({ model, children }: { model: EditingModel; children: ReactNode }) {
+	const content = useWorkbenchContent()
+	useEffect(
+		() =>
+			content.effect(({ defer }) => {
+				defer(model.dispose)
+			}),
+		[content, model],
+	)
+	return children
 }
 
 const mounted: Root[] = []
@@ -104,6 +122,32 @@ async function decide(index: number, confirm: boolean) {
 }
 
 describe('native document close and save decisions', () => {
+	it('keeps the document editing owner while Activity hides and rebuilds a child resource', async () => {
+		const { session, first } = await fixture()
+		const model = fixtures.models.get(first)!
+		model.dirty = true
+		await act(async () => model.setHidden!(true))
+		expect(model.dispose).toHaveBeenCalledOnce()
+		let closing!: ReturnType<typeof session.workbench.close>
+		await act(async () => {
+			closing = session.workbench.close(first)
+		})
+		await decide(0, false)
+		await act(async () =>
+			expect(await closing).toMatchObject({ status: 'rejected', reason: 'decision' }),
+		)
+		expect(session.workbench.getDocument(first)).not.toBeNull()
+		expect(model.dispose).toHaveBeenCalledOnce()
+		await act(async () => model.setHidden!(false))
+		model.dirty = false
+		await act(async () =>
+			expect(await session.workbench.close(first)).toMatchObject({
+				status: 'closed',
+				cleanupErrors: [],
+			}),
+		)
+		expect(model.dispose).toHaveBeenCalledTimes(2)
+	})
 	it('keeps the whole deletion batch when a later dirty document refuses, even after an earlier save', async () => {
 		const { session, first, second, container } = await fixture()
 		const firstModel = fixtures.models.get(first)!

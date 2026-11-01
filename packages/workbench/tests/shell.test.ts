@@ -175,6 +175,39 @@ describe('Workbench UI HTML rendering', () => {
 })
 
 describe('packaged shell HTTP boundary', () => {
+	it('reads rebuilt assets for each navigation and rejects an invalid replacement', async () => {
+		const { createWorkbenchShellHandler } = await import('../src/shell')
+		await using fixture = await createDiskFixture({
+			'.vite/manifest.json': JSON.stringify({
+				'shell/src/client.tsx': { isEntry: true, file: 'assets/client-before.js' },
+			}),
+			'assets/client-before.js': 'before',
+		})
+		const shell = await createWorkbenchShellHandler({ publicDir: fixture.getPath() })
+		const navigation = () => new Request('http://host.test/', { headers: { accept: 'text/html' } })
+		expect(await (await shell(navigation()))!.text()).toContain('assets/client-before.js')
+
+		await writeFile(fixture.getPath('assets/client-after.js'), 'after')
+		await writeFile(
+			fixture.getPath('.vite/manifest.json'),
+			JSON.stringify({
+				'shell/src/client.tsx': { isEntry: true, file: 'assets/client-after.js' },
+			}),
+		)
+		await rm(fixture.getPath('assets/client-before.js'))
+		const updated = await (await shell(navigation()))!.text()
+		expect(updated).toContain('assets/client-after.js')
+		expect(updated).not.toContain('assets/client-before.js')
+		expect(
+			await (await shell(
+				new Request('http://host.test/__pluxel/workbench/assets/client-after.js'),
+			))!.text(),
+		).toBe('after')
+
+		await writeFile(fixture.getPath('.vite/manifest.json'), '{invalid')
+		await expect(shell(navigation())).rejects.toThrow('invalid JSON')
+	})
+
 	it('serves navigation and immutable assets while allowing business/API fallthrough', async () => {
 		const { createWorkbenchShellHandler } = await import('../src/shell')
 		const publicDir = await mkdtemp(join(tmpdir(), 'workbench-shell-'))

@@ -6,7 +6,7 @@ import {
 	pluginNodeIndexKey,
 } from '@pluxel/core'
 import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
-import { useWorkbenchState } from '@worksplit/react'
+import { useWorkbenchContent, useWorkbenchState } from '@worksplit/react'
 import { useSyncExternalStore } from 'react'
 import type { IJsonTabNode } from 'flexlayout-react'
 import {
@@ -71,6 +71,7 @@ export function resolvePanelTool(tab: IJsonTabNode) {
 }
 const EMPTY_PARAMS = Object.freeze({})
 function PluginPanel({ identity, id }: { identity: PanelIdentity; id: string }) {
+	const content = useWorkbenchContent()
 	const session = useWorkspaceSession()
 	useSyncExternalStore(session.subscribeContentState, session.getContentRevision)
 	const activeId = useWorkbenchState(session.workbench, (state) => state.activeDocumentId)
@@ -111,6 +112,7 @@ function PluginPanel({ identity, id }: { identity: PanelIdentity; id: string }) 
 			style={{ height: '100%', minHeight: 0, overflow: 'auto' }}
 		>
 			<WorkbenchEntryView
+				content={content}
 				entry={entry}
 				frame="shell"
 				layoutRevision={snapshot.layout?.revision ?? 0}

@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
-import { Workbench, useWorkbenchContentLifecycle } from '@worksplit/react'
+import { Workbench, useWorkbenchContent } from '@worksplit/react'
 import { Actions, Model, type BorderNode } from 'flexlayout-react'
-import { useMemo } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../src/renderer/api'
 import { editorLifecycle } from '../src/renderer/editor-lifecycle'
@@ -19,14 +18,12 @@ vi.mock('../src/renderer/api', () => ({
 vi.mock('../src/renderer/assistant', () => ({ AssistantPanel: () => <div>Assistant</div> }))
 vi.mock('../src/renderer/panes', () => ({
 	FilePane: ({ path }: { path: string }) => <Editor path={path} />,
-	FormPane: ({ entry }: { entry: string }) => <Editor path={entry} />,
+	FormPane: ({ entry }: { entry: string }) => <Editor path={entry} kind="form" />,
 	PreviewPane: () => <div>Preview</div>,
 }))
-function Editor({ path }: { path: string }) {
+function Editor({ path, kind = 'file' }: { path: string; kind?: 'file' | 'form' }) {
 	const workspace = useWorkspace()
-	useWorkbenchContentLifecycle(
-		useMemo(() => editorLifecycle(workspace, path, 'file'), [workspace, path]),
-	)
+	useWorkbenchContent(editorLifecycle(workspace, path, kind))
 	return <div data-testid={`editor-${path}`}>{path}</div>
 }
 const sessions: StudioSession[] = []
@@ -152,6 +149,49 @@ describe('Studio project operations through the public Worksplit API', () => {
 		expect(session.workbench.getDocuments()).toEqual([])
 		expect(session.workspace.tree).toBeUndefined()
 	})
+	it.each([false, true])(
+		'keeps an explicit report selection while the startup refresh is still finishing (navigation pending: %s)',
+		async (pending) => {
+			const session = setup()
+			const tree = {
+				project: session.project,
+				revision: 'r1',
+				entries: [],
+				documents: [
+					{ name: 'Chart report', entry: 'charts/charts.ts' },
+					{ name: 'Bank report', entry: 'bank/bank.ts' },
+				],
+				config: { name: 'Project', fonts: [] },
+			}
+			let finishRefresh!: (value: typeof tree) => void
+			vi.mocked(api.getTree)
+				.mockResolvedValueOnce(tree)
+				.mockImplementationOnce(
+					() =>
+						new Promise((resolve) => {
+							finishRefresh = resolve
+						}),
+				)
+				.mockResolvedValue(tree)
+			const starting = session.start()
+			await vi.waitFor(() => expect(api.getTree).toHaveBeenCalledTimes(2))
+			expect(session.workspace.tree).toEqual(tree)
+			const opening = session.openReport('bank/bank.ts')
+			if (!pending) await opening
+			finishRefresh(tree)
+			await Promise.all([starting, opening])
+			expect(studioDocument(session.workbench.getActiveDocument()!.href)).toEqual({
+				kind: 'form',
+				path: 'bank/bank.ts',
+			})
+			expect(
+				session.workbench.getDocuments().map((document) => studioDocument(document.href)),
+			).toEqual([
+				{ kind: 'form', path: 'bank/bank.ts' },
+				{ kind: 'preview', path: 'bank/bank.ts' },
+			])
+		},
+	)
 	it('keeps every tab when a later shared draft refuses a batch close', async () => {
 		const session = setup()
 		await session.workbench.start('/')

@@ -19,7 +19,17 @@ export function editorLifecycle(
 	return {
 		isDirty,
 		getCloseRevision: () =>
-			`${workspace.files.get(path)?.token ?? 0}:${input()?.inputToken ?? 0}:${input()?.inputEpoch ?? 0}:${!!input()?.bodyLocked}:${!!input()?.inputSaving}`,
+			JSON.stringify([
+				workspace.project.id,
+				workspace.project.root,
+				path,
+				kind,
+				workspace.files.get(path)?.token ?? 0,
+				input()?.inputToken ?? 0,
+				input()?.inputEpoch ?? 0,
+				!!input()?.bodyLocked,
+				!!input()?.inputSaving,
+			]),
 		beforeLeave: async () => {
 			await save()
 			return !isDirty() && !input()?.bodyLocked && !input()?.inputSaving

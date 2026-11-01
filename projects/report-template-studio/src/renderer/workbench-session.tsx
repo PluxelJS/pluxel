@@ -14,6 +14,7 @@ export class StudioSession {
 	private starting?: Promise<void>
 	private disposing?: Promise<void>
 	private closed = false
+	private documentRequested = false
 	private disconnectSource: () => void
 
 	constructor(readonly project: ProjectSummary) {
@@ -50,7 +51,13 @@ export class StudioSession {
 			this.workspace.start()
 			if (!(await this.workspace.refresh())) return
 			const first = this.workspace.tree?.documents[0]
-			if (!this.closed && first) await this.openReport(first.entry)
+			if (
+				!this.closed &&
+				!this.documentRequested &&
+				first &&
+				this.workbench.getDocuments().length === 0
+			)
+				await this.openReport(first.entry)
 		})())
 	}
 
@@ -74,6 +81,8 @@ export class StudioSession {
 		path: string,
 		options: { newInstance?: boolean; background?: boolean } = {},
 	): Promise<NavigationResult> {
+		// Startup's default report cannot replace an explicit request that is still loading.
+		this.documentRequested = true
 		const { workbench, workspace } = this
 		const target = documentTarget(
 			kind,

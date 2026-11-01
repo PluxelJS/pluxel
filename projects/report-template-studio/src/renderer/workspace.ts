@@ -1204,7 +1204,19 @@ export class WorkspaceController {
 		}
 		const current = this.documents.get(entry)
 		if (!current?.inputDirty || !current.inputLoaded || current.inputConflict) return
-		return this.persistInput(entry, current.storageVersion ?? null)
+		await this.persistInput(entry, current.storageVersion ?? null)
+		const latest = this.documents.get(entry)
+		// Compilation can advance the shared draft revision after its save timer fired.
+		// Schedule its newer snapshot through the existing autosave queue without retrying failures.
+		if (
+			!this.closed &&
+			!this.inputSaves.has(entry) &&
+			!this.bodyLocks.has(entry) &&
+			latest?.inputDirty &&
+			!latest.inputError &&
+			!latest.inputConflict
+		)
+			this.changedInput(entry)
 	}
 
 	async resolveInputConflict(entry: string, choice: 'local' | 'saved'): Promise<void> {

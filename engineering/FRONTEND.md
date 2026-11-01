@@ -130,13 +130,17 @@ Plugin route 的 pathname 由该 match 的 `beforeLoad` 保存到 route context�
 - Publication 文档身份使用 canonical descriptor key，publication group 仅组织业务入口，与原生 TabGroup 无关。标题来源是 committed publication、相同 canonical owner 的 displayName 或 compiled route title；不得借用其他 fork 或未发布 owner 的名称。插件配置页完成详情读取后更新为实际插件名。
 - 原生 Model 拥有已提交的名称，复用和恢复不重新投影默认名称。Host/F2 标题更新检查 Action 回执，撤销遵守 [Host facade](#host-facade) 的借用边界。
 
-中央文档移动、拆分、pin、分组、折叠和最大化保留内容实例；真正关闭或替换路由才清理原 activation。单文档 Router 错误只影响该文档，允许重试，不卸载全局 Shell。
+中央文档移动、拆分、pin、分组、折叠和最大化保留内容实例。activation 由原生 React effect 接入 `content.effect()`；路由替换、React cleanup 或内容正式关闭结束本次使用期限。Activity 隐藏或 Suspense 的实际 effect 清理遵守 React 边界，不承诺组件状态保留时连接也保留。单文档 Router 错误只影响该文档，允许重试，不卸载全局 Shell。
 
 根 `pnpm-workspace.yaml` 接入 Worksplit 维护的 FlexLayout 0.11.1 patch，保证移出组内最后一个标签时不提前清理其容器；补丁正文只有 `vendor/split-like-vscode/patches/` 一份，由 vendor 的 `native-singleton-group.test.ts` 验证。嵌套 workspace 的补丁声明不会自动应用到根安装。
 
 ### 动作与关闭
 
 Shell 呈现原生 `onContextMenu` / `onShowOverflowMenu`，保留 React Provider ancestry，通过 `workbench.dispatch()` 提交 Actions 并检查实际回执。可见标签的批量操作不包含折叠组隐藏成员，文案必须准确表达范围。完整容器关闭与纯删除 Action group 由 Worksplit 一次预检全部内容守卫；拒绝时不逐个删除。已成功的业务保存不因后续拒绝而回滚。
+
+`WorkbenchDocumentRoot` 通过 `useWorkbenchContent(lifecycle)` 持续拥有 dirty、保存、确认和业务修订；子 renderer 只持有 `content.effect(({ signal, defer }) => …)` 中的资源。`WorkbenchDocumentState` 不汇总资源，不为 React 重放维护资源 Set、detach 或延迟注销。每次获取成功立即 defer SDK 释放；await 后检查 signal，晚到结果只释放、不发布。普通组件局部行为继续使用普通 effect。
+
+关闭批准前不停止资源。原生移除确认后，Worksplit 固定已知清理集合、停止内容接纳并等待该集合；未完成的 setup 与截取后的资源不延长回执，晚到失败由 `onIssue` 报告。程序 close/dispatch/dispose 的错误归返回值，Shell 的 `WorkspaceSession.check()` 处理；原生 UI 的同一操作由 Worksplit 消费回执并上报一次。standalone surface 没有 Worksplit handle，沿用原生 React/AbortController 使用期限与同一 SDK 释放顺序。完整资源契约由 [Worksplit 资源指南](../vendor/split-like-vscode/docs/resource-lifetimes.md)维护。
 
 工具区域的位置和可达性由 `session.tsx` 约束，见下一节；文档不得移动到工具 Border，菜单和分组操作也不能绕过限制。
 
@@ -213,8 +217,8 @@ Remote 不 import Worksplit、Shell router、布局 store 或宿主私有 Provid
 - module-scoped session 和 bootstrap promise 保证 StrictMode 不重复连接；
 - Shell 与共享 session providers 在工作区导航时保留；每个文档独立 Router/error boundary，不能用活动 pathname key 重建整棵应用；
 - Plugin detail 表单与视图属于具体文档和 canonical node，相同插件的并行文档不共享 draft；
-- WorkspaceSession 在已认证入口创建，Shell effect replay 不新建实例；最终 teardown dispose Worksplit，再释放其中的内容 owner；
-- Content/View activation 和 handle/Bridge cleanup 用 mount count + microtask cleanup 吸收 effect replay；
+- WorkspaceSession 在已认证入口创建，Shell effect replay 不新建实例；最终 teardown dispose Worksplit，结算其中已知内容清理，再释放会话；
+- Content/View activation 的每次 React setup 获得独立使用期限；StrictMode 允许重新获取，旧 setup 的晚到结果通过 defer 清理，不再保留同一次连接；
 - `useRemoteValue` render 只构造本地 store，commit 才订阅/读取；依赖切换隔离 owner，effect replay 复用资源，晚到订阅仍需释放；
 - 跨组件共享事实使用 `subscribe/getSnapshot` store；
 - 空 array/object 和 Context value 保持稳定 identity；

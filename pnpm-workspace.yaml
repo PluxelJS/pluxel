@@ -6,6 +6,7 @@ packages:
   - vendor/pncat
   - vendor/split-like-vscode/packages/core
   - vendor/split-like-vscode/packages/react
+  - vendor/split-like-vscode/packages/demo
   - projects/*
   - projects/embedded-launcher/sdk
 
@@ -153,6 +154,11 @@ trustPolicyExclude:
   - 'elysia@2.0.0-rc.0'
 trustPolicyIgnoreAfter: 43200
 catalogs:
+  # The vendored demo uses the same toolchain as Pluxel when run in this workspace.
+  tooling:
+    '@vitejs/plugin-react': ^6.1.2
+    typescript: ^7.0.2
+    vite: npm:@voidzero-dev/vite-plus-core@1.4.0
   backend:
     drizzle-kit: ^0.31.11
     drizzle-orm: ^0.45.4

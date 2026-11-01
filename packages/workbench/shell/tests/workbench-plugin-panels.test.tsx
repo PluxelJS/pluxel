@@ -4,6 +4,7 @@ import { act, useEffect } from 'react'
 import type { Root } from 'react-dom/client'
 import { formatPluginNodeRoute, pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
+import { Workbench } from '@worksplit/react'
 import { Actions, BorderNode, DockLocation, Model } from 'flexlayout-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { panelTab, panelTabId, panelIdentity } from '../src/app/workbench/panelTabs'
@@ -171,6 +172,45 @@ async function close(session: WorkspaceSession, entry: WorkbenchLayoutEntry) {
 }
 
 describe('independent native plugin panel tabs', () => {
+	it('preflights allowed and refused panel additions without saving or changing the live model', async () => {
+		const session = new WorkspaceSession()
+		sessions.push(session)
+		const id = await openDocument(session, '/logs')
+		let live: Model | undefined
+		const rendered = await renderWorkspace(
+			session,
+			<Workbench
+				workbench={session.workbench}
+				native={{
+					onRenderTab: (node) => {
+						live = node.getModel()
+					},
+				}}
+			/>,
+		)
+		roots.push(rendered.root)
+		await setOwner(session, id, east)
+		expect(live).toBeDefined()
+		const model = live!
+		const save = vi.fn()
+		const change = vi.fn()
+		model.getNodeById(id)!.setEventListener('save', save)
+		model.addChangeListener(change)
+		const entry = panel('one', 'bottom')
+		const tab = panelTab(entry)
+		expect(
+			session.workbench.canDispatch(Actions.addTab(tab, 'border_bottom', DockLocation.CENTER, -1)),
+		).toBe(true)
+		expect(
+			session.workbench.canDispatch(Actions.addTab(tab, 'border_right', DockLocation.CENTER, -1)),
+		).toBe(false)
+		expect(save).not.toHaveBeenCalled()
+		expect(change).not.toHaveBeenCalled()
+		expect(model.getNodeById(tab.id!)).toBeUndefined()
+		session.workbench.snapshot()
+		expect(save).toHaveBeenCalledOnce()
+		model.removeChangeListener(change)
+	})
 	it.each(regions)(
 		'opens %s extensions explicitly, deduplicates and closes without navigating',
 		async (region) => {

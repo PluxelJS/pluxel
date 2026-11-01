@@ -13,6 +13,7 @@ import {
 	type StartResult,
 	type NavigationResult,
 	type CloseResult,
+	type DispatchResult,
 } from '@worksplit/react'
 import {
 	Actions,
@@ -145,7 +146,20 @@ const panelLayoutPolicy = {
 	allows: validPanelLayout,
 	allowsAction(model: Model, action: Action) {
 		try {
-			const candidate = Model.fromJson(model.toJson())
+			const root = model.getRootRow()
+			if (!root) return false
+			// This policy reads panel identities, parent regions and Border archives only.
+			// Native node JSON preserves those facts without Model.toJson()'s save events.
+			const candidate = Model.fromJson(
+				structuredClone({
+					global: {
+						rootOrientationVertical: model.isRootOrientationVertical(),
+						tabGroupType: model.getTabGroupType(),
+					},
+					layout: root.toJson(),
+					borders: model.getBorderSet().toJson(),
+				}),
+			)
 			candidate.doAction(action)
 			return validPanelLayout(candidate)
 		} catch {
@@ -533,7 +547,7 @@ export class WorkspaceSession {
 			return result
 		})())
 	}
-	check(result: NavigationResult | CloseResult | { status: 'empty' | 'applied' | 'rejected' }) {
+	check(result: StartResult | NavigationResult | CloseResult | DispatchResult) {
 		if (result.status === 'failed') this.report(result.error)
 		else if (result.status === 'rejected')
 			this.report(

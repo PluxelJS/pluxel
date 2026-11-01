@@ -1,6 +1,7 @@
 import { useRuntimeManagementClient } from '../runtime'
 import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type { RpcStub } from 'capnweb'
+import type { WorkbenchContent } from '@worksplit/react'
 import {
 	openWorkbenchEntry,
 	type WorkbenchFederatedLayoutEntry,
@@ -19,7 +20,6 @@ import {
 	type WorkbenchViewHostHandle,
 	type WorkbenchConfirmInput,
 	type WorkbenchNotificationInput,
-	type WorkbenchNavigation,
 } from '@pluxel/workbench/federation'
 import {
 	createContext,
@@ -37,10 +37,7 @@ import { WorkbenchContentRenderer } from '../app/workbench/WorkbenchContentRende
 import { WorkbenchContentController } from '../app/workbench/WorkbenchContentController'
 import type { WorkbenchContentInteraction } from '../app/workbench/WorkbenchContentSlots'
 import { useOptionalWorkspaceNavigation } from '../app/workbench/context'
-import {
-	useOptionalWorkbenchDocument,
-	type WorkbenchDocumentState,
-} from '../app/workbench/document'
+import { useOptionalWorkbenchDocument } from '../app/workbench/document'
 import { useOptionalWorkspaceSession } from '../app/workbench/workspaceContext'
 import { Actions } from 'flexlayout-react'
 import { useRouter } from '@tanstack/react-router'
@@ -71,45 +68,15 @@ type WorkbenchRuntimeContextValue = WorkbenchBrowserHost & {
 }
 
 type WorkbenchFederatedEntryActivation = {
-	readonly input: Readonly<{
-		activeTabId: string | null
-		entry: WorkbenchReadyFederatedLayoutEntry
-		frame: 'shell' | 'standalone'
-		hostNavigation: WorkbenchNavigation | undefined
-		layoutRevision: number
-		location: string | undefined
-		params: Readonly<Record<string, string>>
-		session: RpcStub<WorkbenchSessionApi>
-		document: WorkbenchDocumentState | undefined
-		workspace: ReturnType<typeof useOptionalWorkspaceSession>
-	}>
-	mounts: number
-	started: boolean
-	active: boolean
+	signal?: AbortSignal
 	appearanceDirty: boolean
 	host?: WorkbenchViewHostHandle
 	opened?: FederatedWorkbenchView
-	opening?: Promise<void>
-	disposing?: Promise<void>
-	unregisterResource?: () => void
 }
 
 type WorkbenchContentEntryActivation = {
-	readonly input: Readonly<{
-		entry: WorkbenchContentLayoutEntry
-		layoutRevision: number
-		location: string | undefined
-		session: RpcStub<WorkbenchSessionApi>
-		document: WorkbenchDocumentState | undefined
-	}>
-	mounts: number
-	started: boolean
-	active: boolean
 	opened?: WorkbenchOpenedContentHandle
 	controller?: WorkbenchContentController
-	opening?: Promise<void>
-	disposing?: Promise<void>
-	unregisterResource?: () => void
 }
 
 const WorkbenchSessionContext = createContext<RpcStub<WorkbenchSessionApi> | null>(null)
@@ -215,6 +182,7 @@ export function WorkbenchRoute({
 }
 
 type WorkbenchEntryViewProps = Readonly<{
+	content?: WorkbenchContent
 	entry: WorkbenchLayoutEntry
 	frame: 'shell' | 'standalone'
 	layoutRevision: number
@@ -228,6 +196,7 @@ export function WorkbenchEntryView(props: WorkbenchEntryViewProps) {
 		return (
 			<WorkbenchContentEntryView
 				key={`${workbenchEntryKey(entry)}:${layoutRevision}:${location ?? ''}`}
+				content={props.content}
 				entry={entry}
 				layoutRevision={layoutRevision}
 				location={location}
@@ -243,6 +212,7 @@ function FederatedWorkbenchEntryView({
 	layoutRevision,
 	location,
 	params,
+	content,
 }: Omit<WorkbenchEntryViewProps, 'entry'> & { entry: WorkbenchFederatedLayoutEntry }) {
 	if (isUnavailableFederatedLayoutEntry(entry)) {
 		return <UnavailableFederatedWorkbenchEntryView entry={entry} />
@@ -257,6 +227,7 @@ function FederatedWorkbenchEntryView({
 			layoutRevision={layoutRevision}
 			location={location}
 			params={params}
+			content={content}
 		/>
 	)
 }
@@ -292,6 +263,7 @@ function ReadyFederatedWorkbenchEntryView({
 	layoutRevision,
 	location,
 	params,
+	content: suppliedContent,
 }: Omit<WorkbenchEntryViewProps, 'entry'> & { entry: WorkbenchReadyFederatedLayoutEntry }) {
 	const management = useRuntimeManagementClient()
 	const { session, locale, colorScheme, notify, confirm } = useWorkbenchRuntime()
@@ -300,6 +272,8 @@ function ReadyFederatedWorkbenchEntryView({
 	const workspace = useOptionalWorkspaceSession()
 	const router = useRouter({ warn: false })
 	const document = useOptionalWorkbenchDocument()
+	const contentOwner = suppliedContent ?? document?.content
+	const activationRef = useRef<WorkbenchFederatedEntryActivation | null>(null)
 	const activeTabId = document?.id ?? null
 	const domRef = useRef<HTMLDivElement | null>(null)
 	const [error, setError] = useState<Error | null>(null)
@@ -354,20 +328,19 @@ function ReadyFederatedWorkbenchEntryView({
 				: undefined,
 		[directory, entry.target.node, frame, navigation, resolveShellPath, router, workspace],
 	)
-	const activation = useMemo(
-		() =>
-			createFederatedEntryActivation({
-				activeTabId,
-				entry,
-				frame,
-				hostNavigation,
-				layoutRevision,
-				location,
-				document: document?.state,
-				params,
-				session,
-				workspace,
-			}),
+	const activationInput = useMemo(
+		() => ({
+			activeTabId,
+			entry,
+			frame,
+			hostNavigation,
+			layoutRevision,
+			location,
+			document: document?.state,
+			params,
+			session,
+			workspace,
+		}),
 		[
 			activeTabId,
 			entry,
@@ -385,6 +358,8 @@ function ReadyFederatedWorkbenchEntryView({
 	useEffect(() => {
 		const dom = domRef.current
 		if (!dom) return undefined
+		const activation: WorkbenchFederatedEntryActivation = { appearanceDirty: false }
+		activationRef.current = activation
 		const {
 			activeTabId: openingTabId,
 			entry: openingEntry,
@@ -396,89 +371,59 @@ function ReadyFederatedWorkbenchEntryView({
 			params: openingParams,
 			session: openingSession,
 			workspace: openingWorkspace,
-		} = activation.input
-		activation.mounts += 1
-		if (activation.started) {
-			return () => releaseFederatedActivation(activation)
+		} = activationInput
+		const release = () => {
+			if (activationRef.current === activation) activationRef.current = null
+			disposeFederatedActivation(activation)
 		}
-		activation.started = true
-		activation.unregisterResource = openingDocument?.registerResource(() =>
-			disposeFederatedActivation(activation),
-		)
-		setOpening(true)
-		setError(null)
-		const originalTab = openingTabId
-			? openingWorkspace?.workbench.getDocument(openingTabId)
-			: undefined
-		let originalPresentation: { title: string; helpText?: string } | undefined
-		const host = createWorkbenchViewHost({
-			management,
-			locale: localeRef.current,
-			colorScheme: colorSchemeRef.current,
-			notify: (input) => notifyRef.current(input),
-			confirm: (input) => confirmRef.current(input),
-			...(openingNavigation ? { navigation: openingNavigation } : {}),
-			...(openingFrame === 'shell' && openingTabId && openingWorkspace
-				? {
-						document: {
-							params: openingParams,
-							setDirty: (dirty: boolean) => {
-								if (openingDocument) openingDocument.remoteDirty = dirty
-								openingWorkspace.notifyContentState()
-							},
-							setTitle: (input: { title: string; meta?: string }) => {
-								// The caller's openDocument presentation can commit after this View
-								// starts opening. Capture the native rollback value at the first override.
-								const currentTab = openingWorkspace.workbench.getDocument(openingTabId)
-								if (currentTab && !originalPresentation) {
-									const layout = openingWorkspace.workbench.getLayout()
-									let helpText: string | undefined
-									const visit = (node: {
-										id?: string
-										helpText?: string
-										children?: unknown[]
-									}) => {
-										if (node.id === openingTabId) helpText = node.helpText
-										for (const child of node.children ?? [])
-											visit(child as Parameters<typeof visit>[0])
+		const open = async (signal: AbortSignal, releaseLate: () => void) => {
+			activation.signal = signal
+			setOpening(true)
+			setError(null)
+			const originalTab = openingTabId
+				? openingWorkspace?.workbench.getDocument(openingTabId)
+				: undefined
+			let originalPresentation: { title: string; helpText?: string } | undefined
+			const host = createWorkbenchViewHost({
+				management,
+				locale: localeRef.current,
+				colorScheme: colorSchemeRef.current,
+				notify: (input) => notifyRef.current(input),
+				confirm: (input) => confirmRef.current(input),
+				...(openingNavigation ? { navigation: openingNavigation } : {}),
+				...(openingFrame === 'shell' && openingTabId && openingWorkspace
+					? {
+							document: {
+								params: openingParams,
+								setDirty: (dirty: boolean) => {
+									if (openingDocument) openingDocument.remoteDirty = dirty
+									openingWorkspace.notifyContentState()
+								},
+								setTitle: (input: { title: string; meta?: string }) => {
+									// The caller's openDocument presentation can commit after this View
+									// starts opening. Capture the native rollback value at the first override.
+									const currentTab = openingWorkspace.workbench.getDocument(openingTabId)
+									if (currentTab && !originalPresentation) {
+										const layout = openingWorkspace.workbench.getLayout()
+										let helpText: string | undefined
+										const visit = (node: {
+											id?: string
+											helpText?: string
+											children?: unknown[]
+										}) => {
+											if (node.id === openingTabId) helpText = node.helpText
+											for (const child of node.children ?? [])
+												visit(child as Parameters<typeof visit>[0])
+										}
+										visit(layout.layout)
+										for (const border of layout.borders ?? []) visit(border)
+										originalPresentation = { title: currentTab.title, helpText }
 									}
-									visit(layout.layout)
-									for (const border of layout.borders ?? []) visit(border)
-									originalPresentation = { title: currentTab.title, helpText }
-								}
-								void openingWorkspace.workbench
-									.dispatch(
-										Actions.updateNodeAttributes(openingTabId, {
-											name: input.title,
-											helpText: input.meta,
-										}),
-									)
-									.then((result) => {
-										openingWorkspace.check(result)
-										return result
-									})
-									.catch((cause: unknown) => openingWorkspace.report(cause))
-							},
-							reset: () => {
-								const currentTab = openingWorkspace.workbench.getDocument(openingTabId)
-								const previous = originalTab
-									? new URL(originalTab.href, window.location.origin)
-									: undefined
-								const current = currentTab
-									? new URL(currentTab.href, window.location.origin)
-									: undefined
-								if (
-									originalPresentation &&
-									previous &&
-									current &&
-									previous.pathname === current.pathname &&
-									previous.searchParams.get('entry') === current.searchParams.get('entry')
-								) {
 									void openingWorkspace.workbench
 										.dispatch(
 											Actions.updateNodeAttributes(openingTabId, {
-												name: originalPresentation.title,
-												helpText: originalPresentation.helpText,
+												name: input.title,
+												helpText: input.meta,
 											}),
 										)
 										.then((result) => {
@@ -486,26 +431,54 @@ function ReadyFederatedWorkbenchEntryView({
 											return result
 										})
 										.catch((cause: unknown) => openingWorkspace.report(cause))
-								}
-								if (openingDocument) openingDocument.remoteDirty = false
-								openingWorkspace.notifyContentState()
+								},
+								reset: () => {
+									const currentTab = openingWorkspace.workbench.getDocument(openingTabId)
+									const previous = originalTab
+										? new URL(originalTab.href, window.location.origin)
+										: undefined
+									const current = currentTab
+										? new URL(currentTab.href, window.location.origin)
+										: undefined
+									if (
+										originalPresentation &&
+										previous &&
+										current &&
+										previous.pathname === current.pathname &&
+										previous.searchParams.get('entry') === current.searchParams.get('entry')
+									) {
+										void openingWorkspace.workbench
+											.dispatch(
+												Actions.updateNodeAttributes(openingTabId, {
+													name: originalPresentation.title,
+													helpText: originalPresentation.helpText,
+												}),
+											)
+											.then((result) => {
+												openingWorkspace.check(result)
+												return result
+											})
+											.catch((cause: unknown) => openingWorkspace.report(cause))
+									}
+									if (openingDocument) openingDocument.remoteDirty = false
+									openingWorkspace.notifyContentState()
+								},
 							},
-						},
-					}
-				: {}),
-		})
-		activation.host = host
-		activation.opening = openFederatedWorkbenchView({
-			session: openingSession,
-			entry: openingEntry,
-			layoutRevision: openingRevision,
-			...(openingLocation === undefined ? {} : { location: openingLocation }),
-			dom,
-			host,
-		}).then(
-			(result): undefined => {
+						}
+					: {}),
+			})
+			activation.host = host
+			try {
+				const result = await openFederatedWorkbenchView({
+					session: openingSession,
+					entry: openingEntry,
+					layoutRevision: openingRevision,
+					...(openingLocation === undefined ? {} : { location: openingLocation }),
+					dom,
+					host,
+				})
 				if (result.ok === false) {
-					if (activation.active) {
+					if (!signal.aborted) {
 						setOpening(false)
 						setError(
 							new Error(
@@ -513,44 +486,51 @@ function ReadyFederatedWorkbenchEntryView({
 							),
 						)
 					}
-					return undefined
+					return
 				}
 				activation.opened = result.view
-				if (!activation.active) {
-					activation.opened[Symbol.dispose]()
-					return undefined
+				if (signal.aborted) {
+					releaseLate()
+					return
 				}
 				if (activation.appearanceDirty) {
 					activation.appearanceDirty = false
-					void activation.opened.update().catch((cause: unknown) => {
-						if (!activation.active) return
-						setError(toWorkbenchError(cause, 'Workbench View could not be updated'))
-					})
+					await activation.opened.update()
+				}
+				if (!signal.aborted) setOpening(false)
+			} catch (cause) {
+				if (signal.aborted) {
+					// The SDK closes an in-flight View when this effect releases its host.
+					if (cause instanceof WorkbenchRendererError && cause.code === 'WORKBENCH_RENDERER_CLOSED')
+						return
+					throw cause
 				}
 				setOpening(false)
-				return undefined
-			},
-			(openError: unknown): undefined => {
-				if (!activation.active) {
-					if (
-						openError instanceof WorkbenchRendererError &&
-						openError.code === 'WORKBENCH_RENDERER_CLOSED'
-					)
-						return undefined
-					throw openError
-				}
-				setOpening(false)
-				setError(toWorkbenchError(openError, 'Workbench View could not be opened'))
-				return undefined
-			},
-		)
-		void activation.opening.catch((cause: unknown) => {
-			if (!activation.disposing) reportActivationCleanup(cause)
-		})
-		return () => releaseFederatedActivation(activation)
-	}, [activation, management])
+				setError(toWorkbenchError(cause, 'Workbench View could not be opened'))
+			}
+		}
+		if (contentOwner) {
+			return contentOwner.effect(({ signal, defer }) => {
+				defer(release)
+				return open(signal, () => defer(release))
+			})
+		}
+		// Standalone routes have no Worksplit content; React owns this SDK activation.
+		const lifetime = new AbortController()
+		void open(lifetime.signal, release).catch(reportActivationCleanup)
+		return () => {
+			lifetime.abort()
+			try {
+				release()
+			} catch (cause) {
+				reportActivationCleanup(cause)
+			}
+		}
+	}, [activationInput, contentOwner, management])
 
 	useEffect(() => {
+		const activation = activationRef.current
+		if (!activation || activation.signal?.aborted) return
 		const host = activation.host
 		if (!host?.active) return
 		if (host.facade.locale === locale && host.facade.colorScheme === colorScheme) return
@@ -561,10 +541,15 @@ function ReadyFederatedWorkbenchEntryView({
 			return
 		}
 		void opened.update().catch((cause: unknown) => {
-			if (!activation.active) return
+			if (activation.signal?.aborted) {
+				if (cause instanceof WorkbenchRendererError && cause.code === 'WORKBENCH_RENDERER_CLOSED')
+					return
+				reportActivationCleanup(cause)
+				return
+			}
 			setError(toWorkbenchError(cause, 'Workbench View could not be updated'))
 		})
-	}, [activation, colorScheme, locale])
+	}, [colorScheme, locale])
 
 	return (
 		<WorkbenchErrorBoundary
@@ -595,13 +580,16 @@ export function WorkbenchContentEntryView({
 	entry,
 	layoutRevision,
 	location,
+	content: suppliedContent,
 }: {
 	entry: WorkbenchContentLayoutEntry
 	layoutRevision: number
 	location?: string
+	content?: WorkbenchContent
 }) {
 	const { confirm, notify, session } = useWorkbenchRuntime()
 	const document = useOptionalWorkbenchDocument()
+	const contentOwner = suppliedContent ?? document?.content
 	const confirmRef = useRef(confirm)
 	const notifyRef = useRef(notify)
 	confirmRef.current = confirm
@@ -612,41 +600,21 @@ export function WorkbenchContentEntryView({
 	}> | null>(null)
 	const [error, setError] = useState<Error | null>(null)
 	const [opening, setOpening] = useState(true)
-	const activation = useMemo(
-		() =>
-			createContentEntryActivation({
-				entry,
-				layoutRevision,
-				location,
-				session,
-				document: document?.state,
-			}),
-		[entry, layoutRevision, location, session, document],
-	)
 
 	useEffect(() => {
-		const {
-			entry: openingEntry,
-			layoutRevision: openingRevision,
-			location: openingLocation,
-			session: openingSession,
-		} = activation.input
-		activation.mounts += 1
-		if (activation.started) return () => releaseContentActivation(activation)
-		activation.started = true
-		activation.unregisterResource = activation.input.document?.registerResource(() =>
-			disposeContentActivation(activation),
-		)
-		setOpening(true)
-		setError(null)
-		setContent(null)
-		activation.opening = openWorkbenchEntry(openingSession, openingEntry, {
-			layoutRevision: openingRevision,
-			...(openingLocation === undefined ? {} : { location: openingLocation }),
-		}).then(
-			(result): undefined => {
+		const activation: WorkbenchContentEntryActivation = {}
+		const release = () => disposeContentActivation(activation)
+		const open = async (signal: AbortSignal, releaseLate: () => void) => {
+			setOpening(true)
+			setError(null)
+			setContent(null)
+			try {
+				const result = await openWorkbenchEntry(session, entry, {
+					layoutRevision,
+					...(location === undefined ? {} : { location }),
+				})
 				if (result.ok === false) {
-					if (activation.active) {
+					if (!signal.aborted) {
 						setOpening(false)
 						setError(
 							new Error(
@@ -654,14 +622,14 @@ export function WorkbenchContentEntryView({
 							),
 						)
 					}
-					return undefined
+					return
 				}
 				activation.opened = result.handle
-				if (!activation.active) {
-					activation.opened[Symbol.dispose]()
-					return undefined
+				if (signal.aborted) {
+					releaseLate()
+					return
 				}
-				const opened = activation.opened
+				const opened = result.handle
 				if (opened.mode === 'interactive' && opened.presentation) {
 					const controller = new WorkbenchContentController(opened)
 					activation.controller = controller
@@ -679,20 +647,30 @@ export function WorkbenchContentEntryView({
 					setContent({ plan: opened.plan, interaction: null })
 				}
 				setOpening(false)
-				return undefined
-			},
-			(openError: unknown): undefined => {
-				if (!activation.active) return undefined
+			} catch (cause) {
+				if (signal.aborted) throw cause
 				setOpening(false)
-				setError(toWorkbenchError(openError, 'Workbench Content could not be opened'))
-				return undefined
-			},
-		)
-		void activation.opening.catch((cause: unknown) => {
-			if (!activation.disposing) reportActivationCleanup(cause)
-		})
-		return () => releaseContentActivation(activation)
-	}, [activation])
+				setError(toWorkbenchError(cause, 'Workbench Content could not be opened'))
+			}
+		}
+		if (contentOwner) {
+			return contentOwner.effect(({ signal, defer }) => {
+				defer(release)
+				return open(signal, () => defer(release))
+			})
+		}
+		// Standalone routes have no Worksplit content; React owns this SDK activation.
+		const lifetime = new AbortController()
+		void open(lifetime.signal, release).catch(reportActivationCleanup)
+		return () => {
+			lifetime.abort()
+			try {
+				release()
+			} catch (cause) {
+				reportActivationCleanup(cause)
+			}
+		}
+	}, [contentOwner, entry, layoutRevision, location, session])
 
 	return (
 		<WorkbenchErrorBoundary
@@ -711,40 +689,6 @@ export function WorkbenchContentEntryView({
 	)
 }
 
-function createFederatedEntryActivation(
-	input: WorkbenchFederatedEntryActivation['input'],
-): WorkbenchFederatedEntryActivation {
-	return {
-		input,
-		mounts: 0,
-		started: false,
-		active: true,
-		appearanceDirty: false,
-	}
-}
-
-function releaseFederatedActivation(activation: WorkbenchFederatedEntryActivation): void {
-	activation.mounts -= 1
-	queueMicrotask(() => {
-		if (activation.mounts !== 0 || !activation.active) return
-		void disposeFederatedActivation(activation).catch(reportActivationCleanup)
-	})
-}
-
-function createContentEntryActivation(
-	input: WorkbenchContentEntryActivation['input'],
-): WorkbenchContentEntryActivation {
-	return { input, mounts: 0, started: false, active: true }
-}
-
-function releaseContentActivation(activation: WorkbenchContentEntryActivation): void {
-	activation.mounts -= 1
-	queueMicrotask(() => {
-		if (activation.mounts !== 0 || !activation.active) return
-		void disposeContentActivation(activation).catch(reportActivationCleanup)
-	})
-}
-
 function reportActivationCleanup(cause: unknown) {
 	notifyAndRecord({
 		title: '文档资源释放失败',
@@ -753,50 +697,33 @@ function reportActivationCleanup(cause: unknown) {
 	})
 }
 
-function disposeFederatedActivation(activation: WorkbenchFederatedEntryActivation): Promise<void> {
-	if (activation.disposing) return activation.disposing
-	activation.active = false
-	return (activation.disposing = (async () => {
-		const errors: unknown[] = []
-		try {
-			if (activation.opened) activation.opened[Symbol.dispose]()
-			else activation.host?.[Symbol.dispose]()
-		} catch (cause) {
-			errors.push(cause)
-		}
-		try {
-			await activation.opening
-		} catch (cause) {
-			errors.push(cause)
-		}
-		activation.unregisterResource?.()
-		if (errors.length > 0) throw new AggregateError(errors, 'Workbench View 释放失败')
-	})())
+function disposeFederatedActivation(activation: WorkbenchFederatedEntryActivation): void {
+	const opened = activation.opened
+	const host = activation.host
+	activation.opened = undefined
+	activation.host = undefined
+	// The SDK maintains Bridge → host facade → RPC handle ordering, including failures.
+	if (opened) opened[Symbol.dispose]()
+	else host?.[Symbol.dispose]()
 }
 
-function disposeContentActivation(activation: WorkbenchContentEntryActivation): Promise<void> {
-	if (activation.disposing) return activation.disposing
-	activation.active = false
-	return (activation.disposing = (async () => {
-		const errors: unknown[] = []
-		try {
-			activation.controller?.[Symbol.dispose]()
-		} catch (cause) {
-			errors.push(cause)
-		}
-		try {
-			activation.opened?.[Symbol.dispose]()
-		} catch (cause) {
-			errors.push(cause)
-		}
-		try {
-			await activation.opening
-		} catch (cause) {
-			errors.push(cause)
-		}
-		activation.unregisterResource?.()
-		if (errors.length > 0) throw new AggregateError(errors, 'Workbench Content 释放失败')
-	})())
+function disposeContentActivation(activation: WorkbenchContentEntryActivation): void {
+	const controller = activation.controller
+	const opened = activation.opened
+	activation.controller = undefined
+	activation.opened = undefined
+	const errors: unknown[] = []
+	try {
+		controller?.[Symbol.dispose]()
+	} catch (cause) {
+		errors.push(cause)
+	}
+	try {
+		opened?.[Symbol.dispose]()
+	} catch (cause) {
+		errors.push(cause)
+	}
+	if (errors.length > 0) throw new AggregateError(errors, 'Workbench Content 释放失败')
 }
 
 function workbenchEntryKey(entry: WorkbenchLayoutEntry): string {
