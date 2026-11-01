@@ -7,7 +7,7 @@
 	min-height: 0;
 	min-width: 0;
 	overflow: hidden;
-	padding: 10px;
+	padding: var(--plx-page-padding);
 }
 
 .plx-pluginGraphState {
@@ -278,7 +278,7 @@
 }
 
 .plx-pluginGraphComponent {
-	background: color-mix(in srgb, var(--mantine-color-gray-0) 22%, transparent);
+	background: color-mix(in srgb, var(--plx-text) 4%, transparent);
 	border: 1px dashed color-mix(in srgb, var(--mantine-color-default-border) 68%, transparent);
 	border-radius: var(--mantine-radius-sm);
 	box-sizing: border-box;
@@ -431,15 +431,14 @@
 	width: 220px;
 }
 
-.plx-pluginGraphNode::before {
-	background: var(--mantine-color-gray-5);
-	border-radius: var(--mantine-radius-sm);
-	bottom: 10px;
-	content: '';
-	left: 5px;
-	position: absolute;
-	top: 10px;
-	width: 3px;
+/* State is carried by the status dot and label; abnormal states also tint the node border.
+   No inner edge bar against the rounded node. */
+.plx-pluginGraphNode[data-state='attention'] {
+	border-color: color-mix(in srgb, var(--mantine-color-yellow-6) 60%, var(--plx-border-strong));
+}
+.plx-pluginGraphNode[data-state='unavailable'],
+.plx-pluginGraphNode[data-state='missing'] {
+	border-color: color-mix(in srgb, var(--mantine-color-red-6) 60%, var(--plx-border-strong));
 }
 
 .plx-pluginGraphNode:hover {
@@ -545,29 +544,12 @@
 	background: var(--mantine-color-green-6);
 }
 
-.plx-pluginGraphNode[data-state='running']::before {
-	background: var(--mantine-color-green-6);
-}
-
 .plx-pluginGraphNode[data-state='attention'] .plx-pluginGraphNode__state i {
 	background: var(--mantine-color-yellow-6);
 }
 
-.plx-pluginGraphNode[data-state='attention']::before {
-	background: var(--mantine-color-yellow-6);
-}
-
-.plx-pluginGraphNode[data-state='stopped']::before {
-	background: var(--mantine-color-gray-5);
-}
-
 .plx-pluginGraphNode[data-state='unavailable'] .plx-pluginGraphNode__state i,
 .plx-pluginGraphNode[data-state='missing'] .plx-pluginGraphNode__state i {
-	background: var(--mantine-color-red-6);
-}
-
-.plx-pluginGraphNode[data-state='unavailable']::before,
-.plx-pluginGraphNode[data-state='missing']::before {
 	background: var(--mantine-color-red-6);
 }
 

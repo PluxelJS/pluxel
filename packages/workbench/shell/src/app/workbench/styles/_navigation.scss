@@ -164,11 +164,10 @@
 	}
 }
 
-/* Active entry: neutral selected surface plus an accent edge, per color-design.md. */
+/* Active entry: neutral selected surface and accent icon; no edge bar against rounded corners. */
 .plx-workspace-navigation__link[data-variant='light'] {
 	background: var(--plx-selected-bg);
 	color: var(--mantine-color-text);
-	box-shadow: inset 2px 0 0 var(--plx-accent);
 }
 .plx-workspace-navigation__link[data-variant='light'] .mantine-Button-section {
 	color: var(--plx-accent);

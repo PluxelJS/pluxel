@@ -64,7 +64,7 @@ export function SecurityAuditScreen() {
 	const failures = events.filter((event) => event.status === 'failure').length
 
 	return (
-		<Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>
+		<Stack gap="md" p="var(--plx-page-padding)" style={{ flex: 1, minHeight: 0 }}>
 			<Paper withBorder p="sm" radius="sm">
 				<Group justify="space-between" align="center" wrap="wrap" gap="xs">
 					<Group gap={6} wrap="wrap">

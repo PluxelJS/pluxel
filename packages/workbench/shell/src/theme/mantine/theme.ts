@@ -1,6 +1,11 @@
 import { DEFAULT_THEME, createTheme, mergeMantineTheme, type MantineTheme } from '@mantine/core'
 import { getAccentPreset } from '../accent/accentPresets'
-import { PLX_FONT_SIZES, PLX_MANTINE_COLORS, PLX_RADIUS } from '../core/themeTokens'
+import {
+	PLX_FONT_SIZES,
+	PLX_HUE_PALETTES,
+	PLX_MANTINE_COLORS,
+	PLX_RADIUS,
+} from '../core/themeTokens'
 import {
 	createMantinePaletteFromTonalPalette,
 	createMaterialThemeSource,
@@ -49,10 +54,10 @@ export function createMantineTheme(accentKey: string): MantineTheme {
 				},
 			},
 			colors: {
+				...PLX_HUE_PALETTES,
 				brand: preset.palette,
 				gray: createMantinePaletteFromTonalPalette(material.core.n2),
 				dark: PLX_MANTINE_COLORS.dark,
-				teal: PLX_MANTINE_COLORS.teal,
 			},
 			other: {
 				plxAccentHex: preset.color,
@@ -65,7 +70,7 @@ export function createMantineTheme(accentKey: string): MantineTheme {
 					},
 				},
 				Badge: {
-					defaultProps: { radius: 'sm' },
+					defaultProps: { radius: 'sm', variant: 'light' },
 					styles: {
 						label: CJK_SAFE_TEXT_BOX_STYLES,
 					},

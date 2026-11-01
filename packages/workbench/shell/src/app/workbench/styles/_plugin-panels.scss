@@ -399,8 +399,8 @@
 }
 
 .plx-pluginWorkbench__outlineNode[data-active='true'] {
-	background: color-mix(in srgb, var(--plx-accent-soft) 62%, var(--plx-surface) 38%);
-	box-shadow: inset 2px 0 0 var(--plx-accent);
+	background: var(--plx-selected-bg);
+	color: var(--mantine-color-text);
 }
 
 .plx-pluginWorkbench__outlineRow,

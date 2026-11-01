@@ -112,7 +112,7 @@ export function HomeIntro() {
 					</Text>
 				</div>
 
-				<SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
+				<SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
 					{WORKSPACE_LINKS.map((item) => (
 						<WorkspaceCard key={item.to} {...item} />
 					))}

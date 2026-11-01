@@ -16,7 +16,7 @@ import {
 	PLX_NEUTRAL_FOUNDATIONS,
 	type PlxThemeMode,
 } from './themeTokens'
-import { alpha, createMaterialThemeSource, mix, toneHex } from './tonalPalette'
+import { alpha, createMaterialThemeSource, mix, mutedTonalPalette, toneHex } from './tonalPalette'
 
 export type PlxLogTheme = {
 	panelBg: string
@@ -141,8 +141,7 @@ function createLogTheme(tokens: PlxThemeModel, seedHex: string): PlxLogTheme {
 }
 
 function buildThemeModel(seedHex: string, mode: PlxThemeMode): PlxThemeModel {
-	const source = createMaterialThemeSource(seedHex)
-	const { a1 } = source.core
+	const a1 = mutedTonalPalette(seedHex)
 	const isDark = mode === 'dark'
 	const neutral = PLX_NEUTRAL_FOUNDATIONS[mode]
 

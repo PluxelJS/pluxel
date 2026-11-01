@@ -3,7 +3,7 @@
 	flex: 1;
 	min-height: 0;
 	min-width: 0;
-	padding: 3px;
+	padding: var(--plx-panel-padding);
 }
 
 .plx-pluginCatalog {
@@ -18,6 +18,8 @@
 
 .plx-pluginCatalog__header {
 	align-items: center;
+	margin-inline: calc(var(--plx-panel-padding) * -1);
+	margin-top: calc(var(--plx-panel-padding) * -1);
 	border-bottom: 1px solid var(--plx-border);
 	display: flex;
 	gap: 8px;

@@ -11,6 +11,9 @@ body,
 }
 
 body {
+	/* One inset for every Workbench page and side panel; content never touches the pane edge. */
+	--plx-page-padding: 20px;
+	--plx-panel-padding: 12px;
 	background: theme.token(app-bg-alt);
 	color: theme.token(text);
 	margin: 0;

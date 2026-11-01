@@ -75,7 +75,6 @@ const SortableRowComponent = ({
 	const theme = useMantineTheme()
 	const scheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const isDark = scheme === 'dark'
-	const brand = theme.colors.brand ?? theme.colors.indigo
 	const rowGap = dh.rowH <= 26 ? 4 : 6
 	const handleSize = dh.rowH <= 26 ? 16 : 20
 	const handleIconSize = dh.rowH <= 26 ? 14 : 16
@@ -86,7 +85,6 @@ const SortableRowComponent = ({
 			? 'var(--plx-selected-inactive-bg)'
 			: undefined
 	const rowColorValue = 'var(--plx-text)'
-	const separatorColor = 'color-mix(in srgb, var(--plx-panel-border) 84%, transparent)'
 	const statusLabel =
 		meta?.failureLabel ??
 		(available === false ? '不可用' : running ? '运行中' : desiredRunning ? '等待运行' : '已停止')
@@ -151,7 +149,6 @@ const SortableRowComponent = ({
 				userSelect: 'none',
 				background: rowBackground,
 				color: rowColorValue,
-				borderBottom: `1px solid ${separatorColor}`,
 				boxSizing: 'border-box',
 			}}
 			className="plx-pluginCatalog__row"
@@ -163,19 +160,6 @@ const SortableRowComponent = ({
 			role="listitem"
 			aria-roledescription="draggable plugin row"
 		>
-			{active && (
-				<Box
-					aria-hidden
-					style={{
-						width: 2,
-						alignSelf: 'stretch',
-						background: isDark ? rgba(brand[3], 0.8) : brand[5],
-						borderTopLeftRadius: 6,
-						borderBottomLeftRadius: 6,
-					}}
-				/>
-			)}
-
 			<ActionIcon
 				variant="subtle"
 				title="拖拽排序"

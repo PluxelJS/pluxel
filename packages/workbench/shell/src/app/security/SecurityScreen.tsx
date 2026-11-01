@@ -28,7 +28,7 @@ export function SecurityScreen() {
 		)
 	const access = overview.data.adminAccess
 	return (
-		<Stack gap="sm">
+		<Stack gap="md" p="var(--plx-page-padding)">
 			<Group justify="space-between">
 				<Badge color={access.provider?.ready ? 'green' : 'orange'}>
 					{access.provider

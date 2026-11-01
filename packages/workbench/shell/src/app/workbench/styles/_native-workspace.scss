@@ -446,8 +446,7 @@
 }
 .plx-activity__item[aria-current='page'] {
 	background: var(--plx-selected-bg);
-	color: var(--mantine-primary-color-filled);
-	box-shadow: inset 3px 0 var(--mantine-primary-color-filled);
+	color: var(--plx-accent);
 }
 .plx-activity__item:focus-visible {
 	outline: 2px solid var(--mantine-primary-color-filled);

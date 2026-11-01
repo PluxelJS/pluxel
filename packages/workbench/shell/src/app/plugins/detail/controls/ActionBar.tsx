@@ -165,7 +165,7 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 		)
 
 	return (
-		<Group gap={6} justify="flex-end" wrap="nowrap" className="plx-pluginWorkbench__actionBar">
+		<Group gap="md" justify="flex-end" wrap="nowrap" className="plx-pluginWorkbench__actionBar">
 			<Tooltip label={presentation.statusDescription}>
 				<Badge variant="light" color={presentation.statusTone} radius="sm" size="sm">
 					{presentation.statusLabel}
@@ -177,7 +177,6 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 				<Switch
 					className="plx-pluginWorkbench__actionPolicy"
 					size="sm"
-					color="green"
 					label="自动启动"
 					labelPosition="left"
 					checked={status.autoStart}
@@ -195,11 +194,9 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 				{presentation.showStop ? (
 					<Button
 						className="plx-pluginWorkbench__actionButton"
-						variant="light"
-						color="red"
-						radius="md"
+						variant="default"
 						size="compact-sm"
-						leftSection={<IconPlayerStop size={15} />}
+						leftSection={<IconPlayerStop size={15} color="var(--mantine-color-red-4)" />}
 						disabled={!presentation.canStop}
 						onClick={() => handleLifecycleCommand('stop')}
 					>
@@ -216,9 +213,8 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 				>
 					<Button
 						className="plx-pluginWorkbench__actionButton"
-						variant={presentation.running ? 'light' : 'filled'}
-						color={presentation.primaryTone}
-						radius="md"
+						variant={presentation.running ? 'default' : 'filled'}
+						color={presentation.running ? undefined : presentation.primaryTone}
 						size="compact-sm"
 						leftSection={primaryIcon}
 						disabled={!presentation.canStartOrRestart}

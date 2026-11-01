@@ -1,4 +1,5 @@
 import type { MantineColorsTuple } from '@mantine/core'
+import { createMantinePaletteFromSeed } from './tonalPalette'
 
 export type PlxThemeMode = 'light' | 'dark'
 
@@ -67,19 +68,31 @@ export const PLX_MANTINE_COLORS = {
 		'#1b1b1b',
 		'#141414',
 	] as MantineColorsTuple,
-	teal: [
-		'#edf9f4',
-		'#d7f1e6',
-		'#b0e0cb',
-		'#84cfad',
-		'#5bbd90',
-		'#3aa775',
-		'#2d845d',
-		'#23684a',
-		'#1c523b',
-		'#173f2f',
-	] as MantineColorsTuple,
 }
+
+/**
+ * Status and decorative hues (FantasticFrame graphite seeds). Every Mantine colour the Shell or a
+ * plugin renderer names resolves to the same low-chroma family, so badges, switches and alerts
+ * stay in one register instead of Mantine's saturated defaults.
+ */
+const PLX_HUE_SEEDS = {
+	red: '#e0645c',
+	pink: '#d98aa8',
+	grape: '#c58fcf',
+	violet: '#b393d6',
+	indigo: '#7f8fe0',
+	blue: '#5aa2ee',
+	cyan: '#6cb6c9',
+	teal: '#6fb8a8',
+	green: '#7cc08a',
+	lime: '#a8c26a',
+	yellow: '#d9bb62',
+	orange: '#e08a4f',
+} as const
+
+export const PLX_HUE_PALETTES = Object.fromEntries(
+	Object.entries(PLX_HUE_SEEDS).map(([name, seed]) => [name, createMantinePaletteFromSeed(seed)]),
+) as Record<keyof typeof PLX_HUE_SEEDS, MantineColorsTuple>
 
 export const PLX_NEUTRAL_FOUNDATIONS: Record<PlxThemeMode, PlxNeutralFoundation> = {
 	dark: {
