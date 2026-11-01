@@ -19,10 +19,14 @@ const startup: HostStartupContext = {
 	bindings: {},
 }
 
-test('deployment root supplies Node artifacts and the default Workbench shell', async () => {
+test('standalone deployment root supplies Node artifacts and the default Workbench shell', async () => {
 	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-services-'))
 	let host: Awaited<ReturnType<typeof createHost>> | undefined
 	try {
+		await writeFile(
+			resolve(root, 'pluxel-deployment.json'),
+			JSON.stringify({ version: 1, kind: 'pluxel-static-application' }),
+		)
 		await mkdir(resolve(root, 'workbench/public/.vite'), { recursive: true })
 		await mkdir(resolve(root, 'workbench/public/assets'), { recursive: true })
 		await mkdir(resolve(root, 'artifacts/node'), { recursive: true })
@@ -71,6 +75,28 @@ test('deployment root supplies Node artifacts and the default Workbench shell', 
 		host = undefined
 	} finally {
 		await host?.close()
+		await rm(root, { recursive: true, force: true })
+	}
+})
+
+test.each([
+	null,
+	[],
+	{ version: 2, kind: 'pluxel-static-application' },
+	{ version: 1, kind: 'unknown-application' },
+])('rejects an invalid deployment manifest: %j', async (manifest) => {
+	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-services-invalid-deployment-'))
+	try {
+		await writeFile(resolve(root, 'pluxel-deployment.json'), JSON.stringify(manifest))
+		await expect(
+			servicesPreset(
+				{ ...startup, deployment: { root, target: 'node', variant: 'headless' } },
+				{ workbench: false },
+			),
+		).rejects.toThrow(
+			`Invalid application deployment manifest: ${resolve(root, 'pluxel-deployment.json')}`,
+		)
+	} finally {
 		await rm(root, { recursive: true, force: true })
 	}
 })

@@ -31,7 +31,7 @@ description: 使用官方默认组合运行应用，或按需选择 Host 服务�
 
 开发控制台归 `@pluxel/host-vite`，基础 `host({ entry, devConsole: true })` 即可启用；官方 `vitePreset()` 接受同样的开关。它不要求安装服务。脚本显式 import 服务 API，通过借用的 `dev.ctx` 访问已安装能力；见[开发控制台](../development/dev-console.md)。Core 始终提供 `ctx.logger`，Logging 配置负责输出与存储，不是插件使用 logger 的前提。
 
-standalone Node/Workbench 制品目录由 `servicesPreset()` 根据 `startup.deployment.root` 定位；modules 从已加载模块所属输出的 inventory 定位，搬移发行目录不需要改写应用中的制品路径。业务数据仍由应用选择，部署时使用发行目录外的绝对数据路径。
+部署时，`servicesPreset()` 读取 `startup.deployment.root` 下的 `pluxel-deployment.json`，按交付种类选择 Node 制品来源：standalone 使用应用的 `artifacts/node`，modules 使用各已加载模块所属输出的已校验 inventory。清单缺失、无效或种类未知时启动失败。Workbench 制品仍从应用的 `workbench` 目录加载，搬移发行目录不需要改写应用中的制品路径。业务数据仍由应用选择，部署时使用发行目录外的绝对数据路径。
 
 Host 的配置和启动策略默认通过 Core 私有文档保存，沿用 `config.storage`；普通应用无需额外接线。嵌入应用可继续提供[借用文档适配](./configuration.md#保存配置和运行策略)。已有配置或状态文件若解析或结构校验失败，Host 准备失败且保留原文件；人工修复或从备份恢复后再重启。环境变量由应用的配置工厂显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
 

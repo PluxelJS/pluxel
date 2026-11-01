@@ -20,6 +20,7 @@ Host 从协调队列末尾取得已应用 provider-default bindings，在同一 
 
 `@pluxel/services` 的 `standardServices()` 安装 HTTP、Commands、Node artifacts、Workers。同包的 `@pluxel/services/preset` 入口的 `servicesPreset(startup, options)` 增加 Vault、Management、管理命令及可选 Workbench。Core 日志通过 `config.logger: logtape(...)` 选择，FS 通过 `config.storage: zenfs(...)` 选择后端，所有 Host 文档与 Plugin 状态共用；显式安装的 Database 单独选择原生 backend；Database 不加入默认组合，查询使用原生 Drizzle，见 [Database](DATABASE.md)。
 未选择服务不创建对应 backend、watcher、编译器、route 或状态。关闭 Workbench 不关闭业务服务或管理 HTTP/WebSocket 接入；preset 始终显式安装 `managementHttp()`。
+部署清单决定 Node 制品归属。Services preset 只为 standalone 安装应用级固定目录；modules 保留 Host 已加载模块的 owner，让 Node 服务校验并消费各 owner 的 inventory，不能用应用目录覆盖外部包的 worker。路径与失败契约见[官方服务组合](../docs/host/services.md#官方默认组合)。
 
 ## 应用、开发和部署
 

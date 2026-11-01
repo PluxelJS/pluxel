@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { HostService, HostStartupContext } from '@pluxel/host'
 import type { ProductDescriptor } from './management/product-contract'
@@ -26,6 +27,27 @@ export async function servicesPreset(
 		throw new TypeError('[services/preset] options.workbench must be a boolean')
 	const withWorkbench = options.workbench ?? true
 	const deployment = startup.deployment
+	let nodeModules: { root: string } | undefined
+	if (deployment) {
+		const manifestPath = resolve(deployment.root, 'pluxel-deployment.json')
+		const manifest: unknown = JSON.parse(await readFile(manifestPath, 'utf8'))
+		if (
+			!manifest ||
+			typeof manifest !== 'object' ||
+			Array.isArray(manifest) ||
+			!('version' in manifest) ||
+			manifest.version !== 1 ||
+			!('kind' in manifest) ||
+			(manifest.kind !== 'pluxel-static-application' &&
+				manifest.kind !== 'pluxel-modules-application')
+		) {
+			throw new TypeError(
+				`[services/preset] Invalid application deployment manifest: ${manifestPath}`,
+			)
+		}
+		if (manifest.kind === 'pluxel-static-application')
+			nodeModules = { root: resolve(deployment.root, 'artifacts/node') }
+	}
 	const [{ managementAccess }, { management }, { managementCommands }, { managementHttp }] =
 		await Promise.all([
 			import('./management/access'),
@@ -64,9 +86,7 @@ export async function servicesPreset(
 			: {},
 	)
 	return [
-		...standardServices({
-			nodeModules: deployment ? { root: resolve(deployment.root, 'artifacts/node') } : undefined,
-		}),
+		...standardServices({ nodeModules }),
 		vault({ deployIdentity: startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY, ...options.vault }),
 		managementAccess(),
 		managementCommands(),

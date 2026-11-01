@@ -275,6 +275,145 @@ export class Owner extends BasePlugin {
 	}
 }, 90_000)
 
+it('uses package-owned workers through servicesPreset after modules deployment relocation', async () => {
+	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-modules-worker-owners-'))
+	const owner = resolve(root, 'worker-owner')
+	const application = resolve(root, 'application')
+	const deployed = resolve(root, 'relocated')
+	try {
+		await mkdir(resolve(root, 'node_modules/@pluxel'), { recursive: true })
+		for (const name of ['core', 'host', 'services', 'commands'])
+			await symlink(
+				fileURLToPath(new URL(`../../${name}`, import.meta.url)),
+				resolve(root, 'node_modules/@pluxel', name),
+			)
+		await mkdir(resolve(owner, 'src'), { recursive: true })
+		await mkdir(resolve(application, 'src'), { recursive: true })
+		await symlink(owner, resolve(root, 'node_modules/fixture-worker-owner'))
+		await writeFile(
+			resolve(owner, 'package.json'),
+			JSON.stringify({
+				name: 'fixture-worker-owner',
+				version: '1.0.0',
+				type: 'module',
+				exports: { '.': { '@pluxel/hmr': './src/external.ts', default: './dist/index.mjs' } },
+				peerDependencies: { '@pluxel/core': hostRange, '@pluxel/services': hostRange },
+				pluxel: { artifactRoot: 'dist', nodeArtifacts: true },
+			}),
+		)
+		await writeFile(
+			resolve(application, 'package.json'),
+			JSON.stringify({
+				name: '@fixture/worker-application',
+				version: '1.0.0',
+				type: 'module',
+				dependencies: {
+					'@pluxel/core': hostRange,
+					'@pluxel/host': hostRange,
+					'@pluxel/services': hostRange,
+					'fixture-worker-owner': '1.0.0',
+				},
+			}),
+		)
+		for (const [directory, name, plugin] of [
+			[owner, 'external', 'External'],
+			[application, 'local', 'Local'],
+		] as const) {
+			await writeFile(
+				resolve(directory, `src/${name}-task.ts`),
+				'export default (value: number) => ({value: value * 2, url: import.meta.url})',
+			)
+			await writeFile(
+				resolve(directory, `src/${name}.ts`),
+				`import {BasePlugin,Plugin} from '@pluxel/core';
+import {Workers,defineWorkerTask} from '@pluxel/services/workers';
+const task=defineWorkerTask<number,{value:number,url:string}>(import.meta.url,'./${name}-task.ts');
+@Plugin() export class ${plugin} extends BasePlugin {
+ async init(){const result=await this.ctx.require(Workers).run(task,21);process.stdout.write('WORKER_RESULT '+JSON.stringify({owner:'${name}',...result})+'\\n')}
+}`,
+			)
+		}
+		await writeFile(
+			resolve(application, 'src/app.ts'),
+			`import {defineHostApplication} from '@pluxel/host';
+import {pluginNodeAddressOf} from '@pluxel/core';
+import {servicesPreset} from '@pluxel/services/preset';
+import {External} from 'fixture-worker-owner';
+import {Local} from './local';
+export default defineHostApplication(async startup=>({
+ plugins:[External,Local],
+ services:await servicesPreset(startup,{workbench:false,vault:{backend:'bindings'}}),
+ state:{mode:'memory',initial:{autoStart:[pluginNodeAddressOf(External),pluginNodeAddressOf(Local)]}},
+}))`,
+		)
+		await writeFile(
+			resolve(root, 'build.mts'),
+			`import {build} from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))};
+import {createPluginBuildPipeline} from ${JSON.stringify(new URL('../src/cli/plugin-build.ts', import.meta.url).href)};
+import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)};
+const pipeline=createPluginBuildPipeline({root:${JSON.stringify(owner)},lint:false,workbench:false});
+await build({cwd:${JSON.stringify(owner)},entry:{index:'src/external.ts'},format:'esm',fixedExtension:true,dts:false,deps:{neverBundle:[/^@pluxel\\//]},plugins:pipeline.plugins,inputOptions:pipeline.inputOptions,config:false});
+await build({cwd:${JSON.stringify(application)},entry:'src/app.ts',plugins:[pluxel({delivery:'modules',variant:'headless',lint:false})],config:false});`,
+		)
+		await promisify(execFile)(
+			process.execPath,
+			['--import', import.meta.resolve('tsx'), resolve(root, 'build.mts')],
+			{ timeout: 45_000, maxBuffer: 4 * 1024 * 1024 },
+		)
+		await rename(resolve(application, 'dist'), deployed)
+		await rm(resolve(application, 'src'), { recursive: true })
+		await rm(resolve(owner, 'src'), { recursive: true })
+		const ownerInventory = JSON.parse(
+			await readFile(resolve(owner, 'dist/artifacts/node/pluxel-node-artifacts.json'), 'utf8'),
+		) as { artifacts: Array<{ key: string; file: string }> }
+		const localInventory = JSON.parse(
+			await readFile(resolve(deployed, 'artifacts/node/pluxel-node-artifacts.json'), 'utf8'),
+		) as { artifacts: Array<{ key: string; file: string }> }
+		expect(ownerInventory.artifacts).toHaveLength(1)
+		expect(localInventory.artifacts).toHaveLength(1)
+		const external = ownerInventory.artifacts[0]!
+		const local = localInventory.artifacts[0]!
+		expect(external.key).not.toBe(local.key)
+		await expect(
+			readFile(resolve(deployed, 'artifacts/node', external.file)),
+		).rejects.toMatchObject({
+			code: 'ENOENT',
+		})
+		const native = await promisify(execFile)(
+			process.execPath,
+			[
+				'--input-type=module',
+				'-e',
+				`import {runHostApplication} from '@pluxel/host';
+const host=await runHostApplication(${JSON.stringify(resolve(deployed, 'app.mjs'))},{startup:{root:${JSON.stringify(root)},mode:'production',env:{},bindings:{}},sharedPackages:['@pluxel/services','@pluxel/commands']});
+await host.close();`,
+			],
+			{ cwd: root, timeout: 20_000, maxBuffer: 4 * 1024 * 1024 },
+		)
+		const results = native.stdout
+			.split('\n')
+			.filter((line) => line.startsWith('WORKER_RESULT '))
+			.map((line) => JSON.parse(line.slice('WORKER_RESULT '.length)))
+		expect(results).toHaveLength(2)
+		expect(results).toEqual(
+			expect.arrayContaining([
+				{
+					owner: 'external',
+					value: 42,
+					url: pathToFileURL(resolve(owner, 'dist/artifacts/node', external.file)).href,
+				},
+				{
+					owner: 'local',
+					value: 42,
+					url: pathToFileURL(resolve(deployed, 'artifacts/node', local.file)).href,
+				},
+			]),
+		)
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+}, 75_000)
+
 it('preserves public and private identities, named product, minified artifacts and signed relocation for native and production Vite', async () => {
 	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-modules-contract-'))
 	const deployed = resolve(root, 'relocated')
