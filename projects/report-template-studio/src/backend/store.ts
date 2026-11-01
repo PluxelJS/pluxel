@@ -24,7 +24,6 @@ import {
 	safePath,
 	workspaceConfig,
 } from './storage-validation.js'
-import { workspaceSeed } from './seeds.js'
 const MAX_CACHE_BYTES = 128 * 1024 * 1024
 const MAX_CACHE_PROJECTS = 4
 const statVersion = (stat: BigIntStats) =>
@@ -388,13 +387,14 @@ export class WorkspaceStore {
 	}
 	async create(input: { name: string }) {
 		if (!input.name?.trim() || input.name.length > 160) throw new Error('Invalid workspace name')
-		return this.serial(async () =>
-			this.install(
+		return this.serial(async () => {
+			const { workspaceSeed } = await import('./seeds.js')
+			return this.install(
 				new Map(
 					Object.entries(await workspaceSeed(this.assetsRoot, input.name, this.seedInstructions)),
 				),
-			),
-		)
+			)
+		})
 	}
 	async readFile(id: string, path: string) {
 		return this.serial(async () => {

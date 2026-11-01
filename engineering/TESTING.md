@@ -76,7 +76,7 @@ SSR 条件会进入 Vitest worker 的 Node `--conditions`。不能把 `import` �
 
 CI 直接执行 `workspace:ci` 的明确任务图，由 Vite Task 根据真实输入复用结果，不维护另一套按变更路径选择包的规则；native/Electron 本地任务与 CI 短测试的范围见[GitHub Actions](../docs/development/workspace-toolchain.md#github-actions)。`workspace:verify` 保留本地完整门禁。在双核 runner 上并行两个 package task。所选包保留真实 Redis、Vite 和子进程集成覆盖；每次运行上传
 任务执行日志和缓存结果，分别观察缓存命中、任务耗时和冷构建成本。小改动应复用无关任务的结果，首次运行和公共运行时变更仍可能需要广泛验证。
-Studio 的 `inputs.test.ts` 直接验证 InputStore 的 CAS 与写入保护，可进入普通 Vitest 短测试；`inputs-native.test.ts` 启动真实 Host 并编译 PNG，必须由 Studio 的 Pluxel preset、完整构建与原生 Typst 前置运行，随 `workspace:verify` 验证。
+Studio 的 `inputs.test.ts` 直接验证 InputStore 的 CAS 与写入保护，可进入普通 Vitest 短测试；WorkspaceStore 仅在创建项目时加载种子，打开和读写已有项目不加载 Typst 模板库。`inputs-native.test.ts` 启动真实 Host 并编译 PNG，必须由 Studio 的 Pluxel preset、完整构建与原生 Typst 前置运行，随 `workspace:verify` 验证。
 Core benchmark 跟踪 core、Context、基准场景与构建依赖变化；仅修改测试或 Markdown 文档不触发完整的同 runner 对比。
 比较脚本使用 Node 24 原生 TypeScript 入口，只比较相同 workload 标识与 scenario 的 base/head 实测报告。workload 变化后重新选取基线；不兼容的报告明确失败，不换算历史数据。
 两个 revision 都从指定提交创建独立 worktree、安装依赖，再按依赖顺序用包内 Pack 配置构建 Eventure、Context 与 Core，不读取当前 checkout 的未提交修改或改写其制品。历史 revision 的任务入口可能在加载无关配置时依赖未构建插件，因此比较脚本直接使用这些制品所有者的 Pack 配置，不改写历史源码或加载整仓历史任务图。
