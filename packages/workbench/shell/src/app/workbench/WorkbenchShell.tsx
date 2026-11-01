@@ -342,6 +342,7 @@ export function WorkbenchShell() {
 							<ActionIcon
 								size="sm"
 								variant={borderVisible(side) ? 'light' : 'subtle'}
+								color={borderVisible(side) ? 'brand' : 'gray'}
 								aria-label={label}
 								aria-pressed={borderVisible(side)}
 								disabled={!session.panelAvailable(side)}

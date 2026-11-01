@@ -64,6 +64,10 @@ export function createMantineTheme(accentKey: string): MantineTheme {
 				plxAccentKey: preset.key,
 			} satisfies PlxMantineThemeMetadata,
 			components: {
+				// Icon buttons are chrome: neutral by default, accent only where a caller asks for it.
+				ActionIcon: {
+					defaultProps: { color: 'gray' },
+				},
 				Button: {
 					styles: {
 						label: CJK_SAFE_TEXT_BOX_STYLES,

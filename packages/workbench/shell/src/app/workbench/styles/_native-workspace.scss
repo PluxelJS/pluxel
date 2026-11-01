@@ -138,19 +138,27 @@
 .plx-workspace .flexlayout__tab_button {
 	border-radius: var(--mantine-radius-sm) var(--mantine-radius-sm) 0 0;
 	padding-block: 7px;
+	padding-inline: 12px 8px;
+	margin-inline-end: 2px;
 }
-/* Reserve space after the active tab, outside its background and close control. */
+/*
+ * The duplicate-tab control sits after the active tab in reserved space:
+ * 8px gap + 24px control + 8px gap. It never overlaps the tab's background or close button.
+ */
 .plx-workspace .flexlayout__tab_button:has(.plx-workspace__after-tab) {
 	position: relative;
-	margin-inline-end: 28px;
+	margin-inline-end: 40px;
 	overflow: visible;
 }
 .plx-workspace .plx-workspace__after-tab {
 	position: absolute;
-	inset-inline-end: -26px;
-	top: calc(50% - 12px);
-	width: 30px;
-	height: 30px;
+	inset-inline-end: -32px;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 24px;
+	min-width: 24px;
+	height: 24px;
+	min-height: 24px;
 }
 .plx-workspace .flexlayout__tab_button--selected {
 	box-shadow: inset 0 -2px 0 var(--plx-border-strong);
