@@ -44,11 +44,11 @@ export const PLX_RADIUS = {
 
 /** Font-size scale; Shell SCSS references these through `--mantine-font-size-*`. */
 export const PLX_FONT_SIZES = {
-	xs: '12px',
-	sm: '13px',
-	md: '14px',
-	lg: '16px',
-	xl: '20px',
+	xs: '13px',
+	sm: '14px',
+	md: '15px',
+	lg: '17px',
+	xl: '22px',
 } as const
 
 export const PLX_MANTINE_COLORS = {

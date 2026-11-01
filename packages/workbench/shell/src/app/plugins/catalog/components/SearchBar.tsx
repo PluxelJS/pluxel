@@ -11,7 +11,7 @@ import type React from 'react'
 import type { StatusCounts } from '../catalogOverview'
 import type { StatusFilterState } from '../filterModel'
 
-const ACTION_SIZE = 22
+const ACTION_SIZE = 28
 const ACTION_GAP = 2
 const STATUS_ACTION_COUNT = 3
 const RIGHT_SECTION_BREATHING_ROOM = 4

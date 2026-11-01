@@ -31,3 +31,42 @@ a {
 .plx-theme-panel--muted {
 	@include theme.panel-surface(panel-bg-muted, panel-border, false);
 }
+
+/*
+ * Control scale: one step above Mantine defaults so xs/sm controls stay legible and
+ * tappable on large displays. `body` outranks Mantine's per-component defaults, and
+ * plugin renderers in the same document inherit the same scale.
+ */
+body {
+	.mantine-ActionIcon-root {
+		--ai-size-xs: 26px;
+		--ai-size-sm: 30px;
+		--ai-size-md: 34px;
+	}
+	.mantine-Button-root {
+		--button-height-xs: 32px;
+		--button-height-sm: 36px;
+		--button-height-compact-xs: 28px;
+		--button-height-compact-sm: 32px;
+		--button-padding-x-compact-xs: 10px;
+		--button-padding-x-compact-sm: 12px;
+	}
+	.mantine-Input-wrapper,
+	.mantine-InputWrapper-root {
+		--input-height-xs: 32px;
+		--input-height-sm: 36px;
+	}
+	.mantine-ThemeIcon-root {
+		--ti-size-xs: 22px;
+		--ti-size-sm: 28px;
+	}
+	.mantine-Badge-root {
+		--badge-height-xs: 18px;
+		--badge-height-sm: 22px;
+		--badge-height-md: 24px;
+	}
+	.mantine-Checkbox-root {
+		--checkbox-size-xs: 16px;
+		--checkbox-size-sm: 18px;
+	}
+}

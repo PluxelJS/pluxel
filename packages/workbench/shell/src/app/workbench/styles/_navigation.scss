@@ -1,7 +1,7 @@
 .plx-workspace-navigation__search {
 	display: flex;
 	align-items: center;
-	gap: 4px;
+	gap: 6px;
 	min-width: 0;
 }
 .plx-workspace-navigation__search > .mantine-TextInput-root {
@@ -19,10 +19,10 @@
 .plx-workspace-navigation__group-heading {
 	display: flex;
 	align-items: center;
-	gap: 5px;
+	gap: 6px;
 	width: 100%;
-	height: 24px;
-	padding: 0 4px;
+	height: 30px;
+	padding: 0 6px;
 	border: 0;
 	border-radius: var(--mantine-radius-sm);
 	background: transparent;
@@ -56,20 +56,20 @@
 }
 .plx-workspace-navigation[data-compact] {
 	padding: 8px;
-	gap: 6px;
+	gap: 8px;
 }
 .plx-workspace-navigation[data-compact] .plx-workspace-navigation__item {
-	height: 26px;
-	gap: 2px;
+	height: 34px;
+	gap: 4px;
 }
 .plx-workspace-navigation[data-compact] .plx-workspace-navigation__link {
-	height: 26px;
-	padding: 0 5px;
+	height: 34px;
+	padding: 0 8px;
 	border-radius: var(--mantine-radius-sm);
 }
 .plx-workspace-navigation[data-compact] .plx-workspace-navigation__link .mantine-Text-root {
 	font-size: var(--mantine-font-size-xs);
-	line-height: 24px;
+	line-height: 32px;
 }
 .plx-workspace-navigation[data-compact] .mantine-Button-section[data-position='left'] {
 	margin-inline-end: 6px;
@@ -116,7 +116,7 @@
 }
 .plx-plugin-region__tabs .mantine-Tabs-tab {
 	flex: 1 0 auto;
-	padding: 8px 10px;
+	padding: 10px 12px;
 	font-size: var(--mantine-font-size-xs);
 }
 .plx-plugin-region > .plx-plugin-region__content {
@@ -160,7 +160,7 @@
 @container (max-width: 400px) {
 	.plx-plugin-region__extension .plx-workbenchContent__dataGrid > div {
 		grid-template-columns: minmax(0, 1fr);
-		gap: 2px;
+		gap: 4px;
 	}
 }
 

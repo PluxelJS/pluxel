@@ -262,14 +262,14 @@ export function WorkbenchShell() {
 			onKeyDownCapture={menu.onKeyDown}
 		>
 			<header className="plx-workspace__toolbar">
-				<Group gap={4} wrap="nowrap" className="plx-workspace__primary">
+				<Group gap="sm" wrap="nowrap" className="plx-workspace__primary">
 					<Text fw={650} size="sm" className="plx-workspace__brand" truncate="end">
 						{product?.displayName ?? 'Pluxel'}
 					</Text>
 					<Button
 						variant="subtle"
-						size="compact-xs"
-						leftSection={<IconSearch size={14} />}
+						size="compact-sm"
+						leftSection={<IconSearch size={16} />}
 						onClick={showSearch}
 						aria-label="查找所有工作区入口"
 						className="plx-workspace__search-button"
@@ -281,9 +281,9 @@ export function WorkbenchShell() {
 					<Menu position="bottom-start" shadow="md" width={265}>
 						<Menu.Target>
 							<Button
-								size="compact-xs"
+								size="compact-sm"
 								variant="subtle"
-								rightSection={<IconDots size={14} />}
+								rightSection={<IconDots size={16} />}
 								disabled={pending}
 							>
 								工作区
@@ -326,7 +326,7 @@ export function WorkbenchShell() {
 					</Menu>
 				</Group>
 				<Group
-					gap={4}
+					gap="xs"
 					wrap="nowrap"
 					className="plx-workspace__layout-controls"
 					aria-label="布局控制"
@@ -352,7 +352,7 @@ export function WorkbenchShell() {
 						</Tooltip>
 					))}
 				</Group>
-				<Group gap={4} wrap="nowrap" ml="auto" className="plx-workspace__utilities">
+				<Group gap="xs" wrap="nowrap" ml="auto" className="plx-workspace__utilities">
 					<WorkbenchUpdateStatus />
 					<NotificationHistory />
 					<Tooltip label="认证与安全">

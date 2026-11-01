@@ -513,7 +513,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 				filterQuery={filterQuery}
 				statusFilter={statusFilter}
 				LinkComponent={RouterLinkAdapter}
-				density="ultra"
+				density="compact"
 				locked={syncing || bulkBusy || layoutSaving}
 			/>
 		)

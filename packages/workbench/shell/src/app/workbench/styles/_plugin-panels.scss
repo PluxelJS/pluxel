@@ -3,7 +3,7 @@
 .plx-pluginWorkbench__summaryRow {
 	align-items: flex-start;
 	display: grid;
-	gap: 6px;
+	gap: 8px;
 	grid-template-columns: 52px minmax(0, 1fr);
 }
 
@@ -19,7 +19,7 @@
 	align-items: center;
 	display: flex;
 	flex-wrap: wrap;
-	gap: 6px;
+	gap: 8px;
 	min-width: 0;
 }
 
@@ -56,13 +56,13 @@
 	background: color-mix(in srgb, var(--mantine-color-yellow-1) 44%, transparent);
 	border: 1px solid color-mix(in srgb, var(--mantine-color-yellow-6) 34%, var(--plx-border));
 	border-radius: var(--mantine-radius-sm);
-	padding: 7px;
+	padding: 8px;
 }
 
 .plx-pluginDependencyDetail {
 	display: flex;
 	flex-direction: column;
-	gap: 9px;
+	gap: 12px;
 	min-width: 0;
 }
 
@@ -89,7 +89,7 @@
 	display: flex;
 	font-size: var(--mantine-font-size-xs);
 	font-weight: 650;
-	gap: 5px;
+	gap: 6px;
 	line-height: 1.35;
 	margin: 0;
 	min-width: 0;
@@ -121,9 +121,9 @@
 .plx-pluginDependencyDetail__relation {
 	align-items: center;
 	display: grid;
-	gap: 7px;
+	gap: 8px;
 	grid-template-columns: minmax(0, 1fr) auto;
-	min-height: 34px;
+	min-height: 40px;
 	min-width: 0;
 	padding: 4px 4px 4px 8px;
 }
@@ -167,7 +167,7 @@
 	align-items: center;
 	display: flex;
 	flex: 0 0 auto;
-	gap: 4px;
+	gap: 6px;
 	justify-content: flex-end;
 	min-width: 0;
 }
@@ -191,10 +191,10 @@
 	color: var(--plx-text-muted);
 	display: inline-flex;
 	flex: 0 0 auto;
-	height: 24px;
+	height: 30px;
 	justify-content: center;
 	text-decoration: none;
-	width: 24px;
+	width: 30px;
 }
 
 .plx-pluginDependencyDetail__graphLink:hover {
@@ -237,7 +237,7 @@
 .plx-pluginPanel__heading {
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
+	gap: 4px;
 	min-width: 0;
 }
 
@@ -309,7 +309,7 @@
 	display: flex;
 	flex: 1 1 300px;
 	flex-wrap: wrap;
-	gap: 6px;
+	gap: 8px;
 	min-width: 0;
 }
 
@@ -382,7 +382,7 @@
 	color: inherit;
 	cursor: pointer;
 	display: flex;
-	padding: 6px 8px;
+	padding: 8px 12px;
 	text-align: left;
 	transition:
 		background-color 140ms ease,
@@ -436,12 +436,12 @@
 .plx-pluginWorkbench__actionBar {
 	align-items: center;
 	display: flex;
-	gap: 6px;
+	gap: 8px;
 	min-width: 0;
 }
 
 .plx-pluginWorkbench__actionButton {
-	min-height: 28px;
+	min-height: 32px;
 	padding-inline: 8px;
 }
 

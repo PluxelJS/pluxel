@@ -40,12 +40,12 @@ export function createMantineTheme(accentKey: string): MantineTheme {
 			headings: {
 				fontWeight: '600',
 				sizes: {
-					h1: { fontSize: '24px', lineHeight: '1.3' },
-					h2: { fontSize: '20px', lineHeight: '1.35' },
-					h3: { fontSize: '16px', lineHeight: '1.4' },
-					h4: { fontSize: '14px', lineHeight: '1.45' },
-					h5: { fontSize: '13px', lineHeight: '1.5' },
-					h6: { fontSize: '12px', lineHeight: '1.5' },
+					h1: { fontSize: '26px', lineHeight: '1.3' },
+					h2: { fontSize: '22px', lineHeight: '1.35' },
+					h3: { fontSize: '17px', lineHeight: '1.4' },
+					h4: { fontSize: '15px', lineHeight: '1.45' },
+					h5: { fontSize: '14px', lineHeight: '1.5' },
+					h6: { fontSize: '13px', lineHeight: '1.5' },
 				},
 			},
 			colors: {
