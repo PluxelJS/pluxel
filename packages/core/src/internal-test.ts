@@ -6,7 +6,6 @@ import {
 	BasePlugin,
 	pluginDefinitionAddressEqual,
 	pluginNodeAddressEqual,
-	pluginDefinitionAddressOf,
 	type CommitSummary,
 	type PluginConstructor,
 	type PluginDefinitionAddress,
@@ -52,7 +51,6 @@ export {
 	isPluginLifecycleBlockedIssue,
 	isPluginLifecycleDrainErrorIssue,
 	isPluginLifecycleNotStartedIssue,
-	pluginDefinitionAddressOf,
 } from './index'
 export { checkPluginDecorator }
 export type {
@@ -365,7 +363,7 @@ export function createCoreInternalTestHost(
 		override: (consumer, requirement, provider) => {
 			currentUpdate().setDependencyOverride(
 				targetAddress(consumer),
-				typeof requirement === 'function' ? pluginDefinitionAddressOf(requirement) : requirement,
+				typeof requirement === 'function' ? requirement.definitionAddress() : requirement,
 				provider,
 			)
 			return host

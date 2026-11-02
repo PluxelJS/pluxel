@@ -1,5 +1,4 @@
 import {
-	pluginDefinitionAddressOf,
 	pluginDefinitionIndexKey,
 	type BasePlugin,
 	type CommitSummary,
@@ -162,7 +161,7 @@ export async function createServiceInternalTestHarness(
 		return candidate
 	}
 	const definitionAddress = (plugin: PluginConstructor): PluginDefinitionAddress =>
-		addressByImplementation.get(plugin) ?? pluginDefinitionAddressOf(plugin)
+		addressByImplementation.get(plugin) ?? plugin.definitionAddress()
 	const targetAddress = (target: ServiceInternalTestTarget): PluginNodeAddress =>
 		typeof target === 'function'
 			? { definition: definitionAddress(target), variant: 'default' }

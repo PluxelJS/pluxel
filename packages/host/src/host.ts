@@ -24,6 +24,7 @@ import type {
 	PluginContext,
 	PluginConstructor,
 	PluginNodeAddress,
+	PluginForkNodeAddress,
 	PluginDefinitionAddress,
 	RootContext,
 } from '@pluxel/core'
@@ -100,7 +101,9 @@ export type HostApplication = Omit<HostBaseOptions, 'vaultBindings'> &
 export type HostOptions<TServices extends readonly HostService[] = readonly HostService[]> =
 	HostBaseOptions<TServices>
 
-export interface PluginHost<TServices extends readonly HostService[] = readonly HostService[]> {
+export interface PluginHost<
+	TServices extends readonly HostService[] = readonly HostService[],
+> extends AsyncDisposable {
 	readonly ctx: RootContext & RootContextProjection<ServiceCapabilities<TServices>>
 	readonly config: HostPluginConfig
 	/** A snapshot of availability, running intent and lifecycle outcomes from one committed graph. */
@@ -118,15 +121,10 @@ export interface PluginHost<TServices extends readonly HostService[] = readonly 
 	): Promise<PluginApplyReport>
 	readonly forks: {
 		ensure(
-			base: PluginNodeAddress,
-			forkId: string,
-			options?: Parameters<typeof ensureFork>[3],
+			fork: PluginForkNodeAddress,
+			options?: Parameters<typeof ensureFork>[2],
 		): Promise<ForkEnsureResult>
-		remove(
-			base: PluginNodeAddress,
-			forkId: string,
-			options?: HostOperationOptions,
-		): Promise<ForkRemoveResult>
+		remove(fork: PluginForkNodeAddress, options?: HostOperationOptions): Promise<ForkRemoveResult>
 	}
 	/** Idempotently publishes the initial catalog and reconciles startup policy. */
 	start(): Promise<PluginApplyReport>
@@ -284,6 +282,67 @@ function createPreparedHost(
 	}
 	hostCatalogUpdaters.set(ctx, updateCatalog)
 
+	const close = (): Promise<void> => {
+		return (closing ??= (async () => {
+			const rootDrain = closeOwnerInvocations(ctx)
+			const failures: unknown[] = []
+			try {
+				;(requireConfigService(ctx) as HostConfigStore).stopObserving()
+			} catch (error) {
+				failures.push(error)
+			}
+			try {
+				await start
+			} catch {
+				/* Startup is reported to its original caller. */
+			}
+			try {
+				await catalogTail
+			} catch (error) {
+				failures.push(error)
+			}
+			try {
+				await rootDrain
+			} catch (error) {
+				failures.push(error)
+			}
+			let providerDefaults: readonly PluginDefinitionAddress[] = []
+			try {
+				// Pin the final applied policy after queued updates, then close admission immediately.
+				const [defaults] = await Promise.all([
+					coordinator.readCommitted(({ applied }) =>
+						[...applied.providerDefaults.values()].map(({ token }) => token),
+					),
+					coordinator.dispose(),
+				])
+				providerDefaults = defaults
+			} catch (error) {
+				failures.push(error)
+			}
+			try {
+				const registry = requirePluginService(ctx)
+				const nodes = registry.readCommittedDependencyAdjacency().nodes
+				if (nodes.length > 0) {
+					const update = registry.beginUpdate({ reason: 'host-close' })
+					for (const token of providerDefaults) update.setProviderDefault(token, null)
+					for (const node of nodes) update.dematerializeNode(node, { cascadeDependents: true })
+					const result = await update.commit()
+					if (result.ok === false) failures.push(result.err)
+					for (const issue of registry.lastCommit?.lifecycleReport.issues ?? [])
+						failures.push(issue.error ?? new Error(issue.message))
+				}
+			} catch (error) {
+				failures.push(error)
+			}
+			try {
+				await ctx.effects.dispose()
+			} catch (error) {
+				failures.push(error)
+			}
+			if (failures.length > 0) throw new AggregateError(failures, '[host] shutdown failed')
+		})())
+	}
+
 	return Object.freeze({
 		ctx,
 		start: startHost,
@@ -321,19 +380,15 @@ function createPreparedHost(
 			)
 		},
 		forks: Object.freeze({
-			async ensure(
-				base: PluginNodeAddress,
-				forkId: string,
-				forkOptions?: Parameters<typeof ensureFork>[3],
-			) {
+			async ensure(fork: PluginForkNodeAddress, forkOptions?: Parameters<typeof ensureFork>[2]) {
 				await startHost()
 				assertOpen()
-				return ensureFork(ctx, base, forkId, forkOptions)
+				return ensureFork(ctx, fork, forkOptions)
 			},
-			async remove(base: PluginNodeAddress, forkId: string, mutation?: HostOperationOptions) {
+			async remove(fork: PluginForkNodeAddress, mutation?: HostOperationOptions) {
 				await startHost()
 				assertOpen()
-				return removeFork(ctx, base, forkId, mutation)
+				return removeFork(ctx, fork, mutation)
 			},
 		}),
 		config: Object.freeze({
@@ -387,66 +442,8 @@ function createPreparedHost(
 			assertOpen()
 			return coordinator.restartNode(address)
 		},
-		close(): Promise<void> {
-			return (closing ??= (async () => {
-				const rootDrain = closeOwnerInvocations(ctx)
-				const failures: unknown[] = []
-				try {
-					;(requireConfigService(ctx) as HostConfigStore).stopObserving()
-				} catch (error) {
-					failures.push(error)
-				}
-				try {
-					await start
-				} catch {
-					/* Startup is reported to its original caller. */
-				}
-				try {
-					await catalogTail
-				} catch (error) {
-					failures.push(error)
-				}
-				try {
-					await rootDrain
-				} catch (error) {
-					failures.push(error)
-				}
-				let providerDefaults: readonly PluginDefinitionAddress[] = []
-				try {
-					// Pin the final applied policy after queued updates, then close admission immediately.
-					const [defaults] = await Promise.all([
-						coordinator.readCommitted(({ applied }) =>
-							[...applied.providerDefaults.values()].map(({ token }) => token),
-						),
-						coordinator.dispose(),
-					])
-					providerDefaults = defaults
-				} catch (error) {
-					failures.push(error)
-				}
-				try {
-					const registry = requirePluginService(ctx)
-					const nodes = registry.readCommittedDependencyAdjacency().nodes
-					if (nodes.length > 0) {
-						const update = registry.beginUpdate({ reason: 'host-close' })
-						for (const token of providerDefaults) update.setProviderDefault(token, null)
-						for (const node of nodes) update.dematerializeNode(node, { cascadeDependents: true })
-						const result = await update.commit()
-						if (result.ok === false) failures.push(result.err)
-						for (const issue of registry.lastCommit?.lifecycleReport.issues ?? [])
-							failures.push(issue.error ?? new Error(issue.message))
-					}
-				} catch (error) {
-					failures.push(error)
-				}
-				try {
-					await ctx.effects.dispose()
-				} catch (error) {
-					failures.push(error)
-				}
-				if (failures.length > 0) throw new AggregateError(failures, '[host] shutdown failed')
-			})())
-		},
+		close,
+		[Symbol.asyncDispose]: close,
 	})
 }
 

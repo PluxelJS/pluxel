@@ -127,11 +127,10 @@ it('binds the Core identity and retries durable fork policy cleanup through the 
 		await expect(
 			createHost({ plugins: [], runtime: { logtape: logtape(plan) }, services: [] }),
 		).rejects.toThrow('Another RuntimeLogging instance')
-		const base = LoggedOwner.nodeAddress()
-		const ensured = await host.forks.ensure(base, 'policy', { autoStart: true })
+		const fork = LoggedOwner.nodeAddress('policy')
+		const ensured = await host.forks.ensure(fork, { autoStart: true })
 		expect(ensured.ok).toBe(true)
 		if (!ensured.ok) throw new Error('fork creation failed')
-		const fork = { ...base, variant: 'fork' as const, forkId: 'policy' }
 		await host.startNode(fork)
 		expect(
 			manager.stores
@@ -142,10 +141,10 @@ it('binds the Core identity and retries durable fork policy cleanup through the 
 		manager.policy.setPluginLevel(fork, 'debug')
 		await manager.policy.flush()
 		failWrite = true
-		await expect(host.forks.remove(base, 'policy')).resolves.toMatchObject({ ok: false })
+		await expect(host.forks.remove(fork)).resolves.toMatchObject({ ok: false })
 		expect(manager.policy.persistence).toBe('failed')
 		failWrite = false
-		await expect(host.forks.remove(base, 'policy')).resolves.toMatchObject({ ok: true })
+		await expect(host.forks.remove(fork)).resolves.toMatchObject({ ok: true })
 		expect(writes.at(-1)?.overrides).toEqual([])
 	} finally {
 		failWrite = false

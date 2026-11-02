@@ -156,7 +156,7 @@ it('borrows an existing typed fork and preserves it after the run closes', async
 	const scope = createDevConsoleScope({ id: 'test', ctx: host.ctx })
 	const fork = { plugin: Forkable, forkId: 'east' }
 	try {
-		expect(await host.forks.ensure(Forkable.nodeAddress(), fork.forkId)).toMatchObject({
+		expect(await host.forks.ensure(Forkable.nodeAddress(fork.forkId))).toMatchObject({
 			ok: true,
 		})
 		await scope.dev.plugins.start(fork)

@@ -184,8 +184,7 @@ export function usePluginDependencyControls() {
 				async () => {
 					try {
 						const result = await management.forks.ensure({
-							base,
-							forkId,
+							fork: { definition: base.definition, variant: 'fork', forkId },
 							autoStart: false,
 							selectFor: { consumer: owner, requirement },
 						})
@@ -211,10 +210,7 @@ export function usePluginDependencyControls() {
 						!canWritePluginState(statePolicy, 'forks', 'autoStart', 'dependencyOverrides')
 					)
 						throw new Error('当前宿主的 Fork 策略或配置只读或尚未加载')
-					const result = await management.forks.remove({
-						base: { definition: fork.definition, variant: 'default' },
-						forkId: fork.forkId,
-					})
+					const result = await management.forks.remove(fork)
 					if (result.ok || ('code' in result && result.code === 'persistence_failed')) {
 						await refreshAll()
 					}

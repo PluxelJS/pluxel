@@ -1,6 +1,5 @@
 import {
 	BasePlugin,
-	pluginDefinitionAddressOf,
 	Plugin,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
@@ -69,7 +68,7 @@ function definePlugin(name: string, deps?: readonly PluginFixture[]): PluginFixt
 function pluginFixture(ctor: PluginCtor): PluginFixture {
 	return Object.freeze({
 		ctor,
-		definitionAddress: pluginDefinitionAddressOf(ctor),
+		definitionAddress: ctor.definitionAddress(),
 		nodeAddress: ctor.nodeAddress(),
 		candidate: consumePluginDefinitionCandidate(ctor),
 	})

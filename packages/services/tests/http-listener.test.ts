@@ -1,6 +1,6 @@
 import { createHost } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
-import { BasePlugin, Plugin, pluginDefinitionAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { websocket } from 'elysia/websocket'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
@@ -40,7 +40,7 @@ it.each([false, true])(
 			})
 		}
 		await host.startNode({
-			definition: pluginDefinitionAddressOf(ListenerSocketProbe),
+			definition: ListenerSocketProbe.definitionAddress(),
 			variant: 'default',
 		})
 		const listener = await listenElysia(host, {

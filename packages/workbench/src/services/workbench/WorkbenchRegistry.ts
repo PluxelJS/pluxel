@@ -324,7 +324,6 @@ export class WorkbenchRegistry {
 					principal,
 					params: candidate.params,
 					signal: lease.signal,
-					...(candidate.entry.contract.data.size === 0 ? {} : { dataChanged: root.dataChanged }),
 				})
 				const factory = candidate.entry.factory
 				const pending = Promise.resolve().then(() => factory(context as never))

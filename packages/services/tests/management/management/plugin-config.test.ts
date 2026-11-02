@@ -310,11 +310,7 @@ describe('Plugin config application scope', () => {
 			await originalFlush(options)
 		}
 
-		const removal = removeFork(
-			host.ctx,
-			{ definition: fork.definition, variant: 'default' },
-			'exclusive-remove',
-		)
+		const removal = removeFork(host.ctx, ConfigFork.nodeAddress('exclusive-remove'))
 		await entered.promise
 		const patch = pluginConfigPatch(host.ctx, fork, { value: 'too-late' })
 		release.resolve()

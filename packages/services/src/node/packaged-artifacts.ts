@@ -1,11 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFile, realpath } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
-import {
-	pluginDefinitionAddressOf,
-	pluginDefinitionIndexKey,
-	type PluginConstructor,
-} from '@pluxel/core'
+import { pluginDefinitionIndexKey, type PluginConstructor } from '@pluxel/core'
 import { readLoadedPluginModule } from '@pluxel/host/internal'
 
 /** Read and validate the declared loaded owners' Node inventories before any Plugin activates. */
@@ -66,7 +62,7 @@ export async function readLoadedNodeArtifacts(
 			artifacts = files
 			inventories.set(directory, files)
 		}
-		owners.set(pluginDefinitionIndexKey(pluginDefinitionAddressOf(plugin)), artifacts)
+		owners.set(pluginDefinitionIndexKey(plugin.definitionAddress()), artifacts)
 	}
 	return owners
 }

@@ -2,12 +2,13 @@ import {
 	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
+	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 
 export type HostStateSnapshot = Readonly<{
 	autoStart: readonly PluginNodeAddress[]
-	forks: readonly PluginNodeAddress[]
+	forks: readonly PluginForkNodeAddress[]
 	providerDefaults: readonly HostProviderDefaultState[]
 	dependencyOverrides: readonly HostDependencyOverrideState[]
 }>
@@ -31,12 +32,12 @@ export class HostStateRevisionConflictError extends Error {
 
 export type HostStateDraft = {
 	autoStart: PluginNodeAddress[]
-	forks: PluginNodeAddress[]
+	forks: PluginForkNodeAddress[]
 	providerDefaults: HostProviderDefaultState[]
 	dependencyOverrides: HostDependencyOverrideState[]
 }
 
-export type HostForkState = Extract<PluginNodeAddress, { variant: 'fork' }>
+export type HostForkState = PluginForkNodeAddress
 
 export type HostProviderDefaultState = {
 	token: PluginDefinitionAddress
@@ -55,7 +56,12 @@ export function freezeTrustedHostStateSnapshot(
 ): HostStateSnapshot {
 	const snapshot: HostStateSnapshot = Object.freeze({
 		autoStart: Object.freeze(sortByKey(draft.autoStart.map(freezeNodeAddress), pluginNodeIndexKey)),
-		forks: Object.freeze(sortByKey(draft.forks.map(freezeNodeAddress), pluginNodeIndexKey)),
+		forks: Object.freeze(
+			sortByKey(
+				draft.forks.map((node) => freezeNodeAddress(node)),
+				pluginNodeIndexKey,
+			),
+		),
 		providerDefaults: Object.freeze(
 			sortByKey(
 				draft.providerDefaults.map((entry) =>
@@ -106,6 +112,8 @@ function freezeDefinitionAddress(definition: PluginDefinitionAddress): PluginDef
 	}) as PluginDefinitionAddress
 }
 
+function freezeNodeAddress(node: PluginForkNodeAddress): PluginForkNodeAddress
+function freezeNodeAddress(node: PluginNodeAddress): PluginNodeAddress
 function freezeNodeAddress(node: PluginNodeAddress): PluginNodeAddress {
 	return Object.freeze(
 		node.variant === 'default'

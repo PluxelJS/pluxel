@@ -27,8 +27,6 @@ type Bindings = import('@pluxel/workbench').WorkbenchBindings
 type ContentBinding = import('@pluxel/workbench').WorkbenchContentBinding
 // @ts-expect-error Content factories are supplied contextually by ctx.workbench.publish().
 type ContentFactory = import('@pluxel/workbench').WorkbenchContentFactory
-// @ts-expect-error Open contexts are supplied contextually by ctx.workbench.publish().
-type ContentOpenContext = import('@pluxel/workbench').WorkbenchContentOpenContext
 // @ts-expect-error Schema constraints are inferred by workbench.data()/action().
 type ContentSchema = import('@pluxel/workbench').WorkbenchContentSchema
 // @ts-expect-error Content slots are inferred by workbench.markdown().
@@ -75,7 +73,6 @@ void (null as unknown as ContentAction)
 void (null as unknown as ContentBinding)
 void (null as unknown as ContentData)
 void (null as unknown as ContentFactory)
-void (null as unknown as ContentOpenContext)
 void (null as unknown as ContentSchema)
 void (null as unknown as ContentSlot)
 void (null as unknown as ContentSlotMap)

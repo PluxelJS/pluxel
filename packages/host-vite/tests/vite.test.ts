@@ -551,10 +551,9 @@ describe('host-vite Vite plugin stack', () => {
 			},
 			[
 				"import { addresses } from './state.js'",
-				'export class BasePlugin {}',
+				'export class BasePlugin { static definitionAddress() { const value = addresses.get(this); if (!value) throw new Error("missing address"); return value } }',
 				'export class PluginPart {}',
 				'export function Plugin() { return (target) => target }',
-				'export function pluginDefinitionAddressOf(target) { const value = addresses.get(target); if (!value) throw new Error("missing address"); return value }',
 			].join('\n'),
 		)
 		await Promise.all([
@@ -589,7 +588,7 @@ describe('host-vite Vite plugin stack', () => {
 		await writeFile(
 			modulePath,
 			[
-				"import { BasePlugin, pluginDefinitionAddressOf, Plugin, PluginPart } from '@pluxel/core'",
+				"import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'",
 				"import { consumePluginDefinitionCandidate } from '@pluxel/core/internal'",
 				'@Plugin()',
 				'export class Provider extends BasePlugin {}',
@@ -598,7 +597,7 @@ describe('host-vite Vite plugin stack', () => {
 				'class ProviderPart extends PluginPart<PartConsumer> { constructor(readonly provider: Provider) { super() } }',
 				'@Plugin()',
 				'export class PartConsumer extends BasePlugin { readonly first = this.parts.use(ProviderPart); readonly second = this.parts.use(ProviderPart) }',
-				'export function providerDefinition() { return pluginDefinitionAddressOf(Provider) }',
+				'export function providerDefinition() { return Provider.definitionAddress() }',
 				'export function consumerRequires() { return consumePluginDefinitionCandidate(Consumer).declaration.requires }',
 				'export function partConsumerFacts() { return consumePluginDefinitionCandidate(PartConsumer).declaration }',
 				'',

@@ -85,7 +85,7 @@ signal 分开记录；不会记录 endpoint、headers、payload、response 或�
 
 可选 Workbench Content 由 concrete Plugin 在自己的 `init()` 中发布；abstract `Otel` 提供受保护的 `workbenchOperations()`，
 默认和自定义实现可复用公开 `OtelWorkbench` descriptor。Content 复用同一份 export state，只保留每个 signal 的 latest outcome。每个 opened Content 注册一个
-`dataChanged()` callback，并严格由其 lifetime signal 移除；状态变化只通知 Framework 重新执行完整 `load()`。手动 flush action
+binding `subscribe(changed)` callback，并由 Framework 随每次打开释放返回的 `Disposable`；状态变化只通知 Framework 重新执行完整 `load()`。手动 flush action
 调用 generation-local provider 的 `forceFlush()`，部分失败记录 bounded error type 并返回可展示的 expected failure。Content 不拥有
 provider 生命周期，不增加 exporter、timer、listener 或 transport，Workbench disabled 时也不会改变 telemetry 行为。
 

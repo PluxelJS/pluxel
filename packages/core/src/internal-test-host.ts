@@ -6,10 +6,7 @@ import { closeOwnerInvocations } from './internal/owner-invocations'
 import { requireConfigService } from './internal/config-service'
 import { requirePluginService } from './internal/plugin-service'
 import { immutableConfigRecord } from './services/config/immutable'
-import {
-	consumePluginDefinitionCandidate,
-	pluginDefinitionAddressOf,
-} from './plugins/runtime/definition'
+import { consumePluginDefinitionCandidate } from './plugins/runtime/definition'
 import {
 	pluginDefinitionAddressEqual,
 	pluginDefinitionIndexKey,
@@ -41,7 +38,7 @@ import {
 	type RawPluginConfig,
 } from './testing/test-primitives'
 
-export { BasePlugin, Plugin, PluginPart, definePluginRef, pluginDefinitionAddressOf } from './index'
+export { BasePlugin, Plugin, PluginPart, definePluginRef } from './index'
 export type {
 	PluginConstructor,
 	PluginDefinitionAddress,
@@ -335,7 +332,7 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 
 		const setDefault = (input: ProviderDefaultInput): undefined => {
 			authority.recordCommand('change.dependencies.setDefault()')
-			const key = pluginDefinitionIndexKey(pluginDefinitionAddressOf(input.requirement))
+			const key = pluginDefinitionIndexKey(input.requirement.definitionAddress())
 			const previous = plan.defaults.get(key)
 			if (
 				previous &&
@@ -351,7 +348,7 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 
 		const clearDefault = (requirement: PluginToken): undefined => {
 			authority.recordCommand('change.dependencies.clearDefault()')
-			const key = pluginDefinitionIndexKey(pluginDefinitionAddressOf(requirement))
+			const key = pluginDefinitionIndexKey(requirement.definitionAddress())
 			const previous = plan.defaults.get(key)
 			if (previous && previous.kind !== 'clear') {
 				throw conflictError('dependencies.setDefault/clearDefault', requirement)
@@ -362,7 +359,7 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 
 		const overrideKey = (input: DependencyOverrideTarget) => {
 			const consumer = resolvePluginTestTarget(input.consumer).address
-			return `${pluginNodeIndexKey(consumer)}\0${pluginDefinitionIndexKey(pluginDefinitionAddressOf(input.requirement))}`
+			return `${pluginNodeIndexKey(consumer)}\0${pluginDefinitionIndexKey(input.requirement.definitionAddress())}`
 		}
 
 		const setOverride = (input: DependencyOverrideInput): undefined => {
@@ -443,7 +440,7 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 			if (!committed) throw new Error('[pluxel/test] Core commit completed without a summary')
 			for (const key of plan.adds.keys()) enteredLifecycle.add(key)
 			for (const command of plan.defaults.values()) {
-				const requirement = pluginDefinitionAddressOf(command.requirement)
+				const requirement = command.requirement.definitionAddress()
 				const key = pluginDefinitionIndexKey(requirement)
 				if (command.kind === 'set') explicitProviderDefaults.set(key, requirement)
 				else explicitProviderDefaults.delete(key)
@@ -728,14 +725,14 @@ function applyGraphPlan(
 	}
 	for (const command of plan.defaults.values()) {
 		update.setProviderDefault(
-			pluginDefinitionAddressOf(command.requirement),
+			command.requirement.definitionAddress(),
 			command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
 		)
 	}
 	for (const command of plan.overrides.values()) {
 		update.setDependencyOverride(
 			resolvePluginTestTarget(command.consumer).address,
-			pluginDefinitionAddressOf(command.requirement),
+			command.requirement.definitionAddress(),
 			command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
 		)
 	}
@@ -894,7 +891,7 @@ function conflictError(
 ): Error {
 	if (typeof target === 'function') {
 		return new Error(
-			`[pluxel/test] Conflicting ${operation} commands for ${pluginDefinitionAddressOf(target).exportName}${detail ? `: ${detail}` : ''}`,
+			`[pluxel/test] Conflicting ${operation} commands for ${target.definitionAddress().exportName}${detail ? `: ${detail}` : ''}`,
 		)
 	}
 	const resolved = resolvePluginTestTarget(target)

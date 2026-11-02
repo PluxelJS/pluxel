@@ -44,22 +44,20 @@ export class BotWorkspacePlugin extends BasePlugin {
 				this.detail(identity)
 				return new DetailTarget(this, signal, identity)
 			},
-			sources: ({ signal, dataChanged }) => {
-				this.bindSubscription(signal, dataChanged)
-				return {
-					load: () => ({
-						sources: this.snapshot().sources.map(({ label, available, count }) => ({
-							label,
-							available,
-							count,
-						})),
-					}),
-				}
-			},
-			events: ({ signal, dataChanged }) => {
-				this.bindSubscription(signal, dataChanged)
-				return { load: () => ({ events: this.snapshot().events }) }
-			},
+			sources: () => ({
+				subscribe: (changed) => this.subscribe(changed),
+				load: () => ({
+					sources: this.snapshot().sources.map(({ label, available, count }) => ({
+						label,
+						available,
+						count,
+					})),
+				}),
+			}),
+			events: () => ({
+				subscribe: (changed) => this.subscribe(changed),
+				load: () => ({ events: this.snapshot().events }),
+			}),
 		})
 	}
 
@@ -196,13 +194,6 @@ export class BotWorkspacePlugin extends BasePlugin {
 				this.listeners.delete(listener)
 			},
 		}
-	}
-
-	private bindSubscription(signal: AbortSignal, listener: (revision: number) => void): void {
-		const subscription = this.subscribe(listener)
-		const release = () => subscription[Symbol.dispose]()
-		signal.addEventListener('abort', release, { once: true })
-		if (signal.aborted) release()
 	}
 
 	private record(source: BotSourceId, bot: string, message: string): void {

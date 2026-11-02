@@ -1,6 +1,5 @@
 import {
 	pluginDefinitionAddressEqual,
-	pluginDefinitionAddressOf,
 	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
 	type CommitSummary,
@@ -421,7 +420,7 @@ function createChange(
 
 	const setDefault = (input: ProviderDefaultInput): undefined => {
 		authority.recordCommand('change.dependencies.setDefault()')
-		const key = pluginDefinitionIndexKey(pluginDefinitionAddressOf(input.requirement))
+		const key = pluginDefinitionIndexKey(input.requirement.definitionAddress())
 		const previous = plan.defaults.get(key)
 		if (previous && (previous.kind !== 'set' || previous.provider !== input.provider)) {
 			throw conflictError('dependencies.setDefault', input.requirement)
@@ -434,7 +433,7 @@ function createChange(
 
 	const clearDefault = (requirement: PluginToken): undefined => {
 		authority.recordCommand('change.dependencies.clearDefault()')
-		const key = pluginDefinitionIndexKey(pluginDefinitionAddressOf(requirement))
+		const key = pluginDefinitionIndexKey(requirement.definitionAddress())
 		const previous = plan.defaults.get(key)
 		if (previous && previous.kind !== 'clear') {
 			throw conflictError('dependencies.setDefault/clearDefault', requirement)
@@ -445,7 +444,7 @@ function createChange(
 
 	const overrideKey = (input: DependencyOverrideTarget): string => {
 		const consumer = resolvePluginTestTarget(input.consumer).address
-		return `${pluginNodeIndexKey(consumer)}\0${pluginDefinitionIndexKey(pluginDefinitionAddressOf(input.requirement))}`
+		return `${pluginNodeIndexKey(consumer)}\0${pluginDefinitionIndexKey(input.requirement.definitionAddress())}`
 	}
 
 	const setOverride = (input: DependencyOverrideInput): undefined => {
@@ -544,11 +543,7 @@ async function createServiceHostWorld(
 		const command = [...plan.forkRemoves.values()][0]!
 		const address = command.address
 		if (address.variant !== 'fork') throw new TypeError('[pluxel/test] invalid fork removal target')
-		const result = await removeFork(
-			ctx,
-			Object.freeze({ definition: address.definition, variant: 'default' }),
-			address.forkId,
-		)
+		const result = await removeFork(ctx, address)
 		if (result.ok === false) {
 			throw Object.assign(
 				new Error(`[pluxel/test] forks.remove() failed: ${result.message}`),
@@ -1069,7 +1064,7 @@ function statePatchOperations(plan: ServiceDraftPlan): HostStatePatchOperation[]
 	for (const command of plan.defaults.values()) {
 		operations.push({
 			type: 'set-provider-default',
-			token: pluginDefinitionAddressOf(command.requirement),
+			token: command.requirement.definitionAddress(),
 			provider: command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
 		})
 	}
@@ -1077,7 +1072,7 @@ function statePatchOperations(plan: ServiceDraftPlan): HostStatePatchOperation[]
 		operations.push({
 			type: 'set-dependency-override',
 			consumer: resolvePluginTestTarget(command.consumer).address,
-			requirement: pluginDefinitionAddressOf(command.requirement),
+			requirement: command.requirement.definitionAddress(),
 			provider: command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
 		})
 	}

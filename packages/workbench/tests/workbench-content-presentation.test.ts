@@ -145,6 +145,24 @@ describe('Workbench Content presentation boundary', () => {
 				actions: { refresh },
 			}),
 		).toMatchObject({ load, actions: expect.any(Map) })
+		const subscribe = vi.fn(() => ({ [Symbol.dispose]: vi.fn() }))
+		expect(
+			validateWorkbenchContentBinding(contract, { load, subscribe, actions: { refresh } }),
+		).toMatchObject({ subscribe })
+		expect(subscribe).not.toHaveBeenCalled()
+		expect(() =>
+			validateWorkbenchContentBinding(contract, {
+				load,
+				subscribe: undefined,
+				actions: { refresh },
+			}),
+		).toThrow('subscribe must be a function')
+		expect(() =>
+			validateWorkbenchContentBinding(
+				{ ...contract, data: new Map() },
+				{ subscribe, actions: { refresh } },
+			),
+		).toThrow('must contain exactly actions')
 		expect(() =>
 			validateWorkbenchContentBinding(contract, {
 				load,

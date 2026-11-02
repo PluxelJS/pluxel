@@ -74,7 +74,7 @@ Publication 将真实 Valibot schema 投影为 portable presentation，验证 ar
 
 `load()` 可返回 detached readonly snapshot；服务再次校验并投影 portable value。Action input 是 parse 后的 fresh mutable `InferOutput`。确认框只防误触；handler 仍按 principal 与当前业务状态授权。
 
-Interactive Content 的数据流固定为 subscribe-before-initial-load。`dataChanged()` 只置 dirty，框架串行 load、合并通知，推送递增 sequence 的完整最新状态；load/action 共用有界 lane。Handler 开始后总做 post-load；action-only 返回 `data: null` 且不订阅。后续 load 失败保留最近值并标 stale。Observer failure 关闭本 entry lease、abort signal、归还 quota，不影响其他 entry。
+Interactive Content binding 可声明同步 `subscribe(changed): Disposable`，由 per-open Content root 在 factory 结果通过校验后注册一次，先订阅再首次 load；root 关闭时释放，失败或取消的 factory 不注册。`changed()` 只置 dirty，框架串行 load、合并通知，推送递增 sequence 的完整最新状态；load/action 共用有界 lane。Handler 开始后总做 post-load；action-only 返回 `data: null` 且不订阅。首次 load 失败允许同一 lease 重试，后续 load 失败保留最近值并标 stale；两者均保留原订阅。Observer failure 关闭本 entry lease、abort signal、归还 quota，不影响其他 entry。
 
 纯 Markdown 没有 binding、RPC root、retained lease、MF 或 Bridge，但仍要求 owning Plugin running。
 

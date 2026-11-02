@@ -327,14 +327,14 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 	async ensurePluginForkDto(input: unknown): Promise<EnsureForkResult> {
 		this.signal?.throwIfAborted()
 		const record = readRpcRecord(input)
-		const base = parseRpcNode(record?.base)
+		const fork = parseRpcNode(record?.fork)
+		const autoStart = record?.autoStart
 		const selectFor = parseRpcForkSelection(record?.selectFor)
 		if (
 			!record ||
-			!hasOnlyKeys(record, ['base', 'forkId', 'autoStart', 'selectFor']) ||
-			!base ||
-			typeof record.forkId !== 'string' ||
-			(record.autoStart !== undefined && typeof record.autoStart !== 'boolean') ||
+			!hasOnlyKeys(record, ['fork', 'autoStart', 'selectFor']) ||
+			fork?.variant !== 'fork' ||
+			(autoStart !== undefined && typeof autoStart !== 'boolean') ||
 			!selectFor.ok
 		) {
 			return checkedDto({
@@ -344,8 +344,8 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 				error: 'Invalid fork input',
 			})
 		}
-		const result = await ensureFork(this.ctx, base, record.forkId, {
-			autoStart: record.autoStart === true,
+		const result = await ensureFork(this.ctx, fork, {
+			autoStart: autoStart as boolean | undefined,
 			...this.#admission,
 			...(selectFor.value === undefined ? {} : { selectFor: selectFor.value }),
 		})
@@ -353,7 +353,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 			return checkedDto({
 				ok: true,
 				status: result.status,
-				fork: parsePluginNodeAddress(result.node),
+				fork: result.node,
 				report: projectPluginApplyReport(this.ctx, result.report),
 			})
 		}
@@ -375,14 +375,8 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 
 	async removePluginForkDto(input: unknown): Promise<RemoveForkResult> {
 		this.signal?.throwIfAborted()
-		const record = readRpcRecord(input)
-		const base = parseRpcNode(record?.base)
-		if (
-			!record ||
-			!hasExactKeys(record, ['base', 'forkId']) ||
-			!base ||
-			typeof record.forkId !== 'string'
-		) {
+		const fork = parseRpcNode(input)
+		if (fork?.variant !== 'fork') {
 			return checkedDto({
 				ok: false,
 				code: 'invalid_input',
@@ -390,19 +384,19 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 				error: 'Invalid fork removal input',
 			})
 		}
-		const result = await removeFork(this.ctx, base, record.forkId, this.#admission)
+		const result = await removeFork(this.ctx, fork, this.#admission)
 		if (result.ok === true) {
 			if (result.status === 'already-absent') {
 				return checkedDto({
 					ok: true,
 					status: result.status,
-					fork: parsePluginNodeAddress(result.node),
+					fork: result.node,
 				})
 			}
 			return checkedDto({
 				ok: true,
 				status: result.status,
-				fork: parsePluginNodeAddress(result.node),
+				fork: result.node,
 				report: projectPluginApplyReport(this.ctx, result.report),
 			})
 		}
@@ -427,7 +421,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 				ok: false,
 				code: result.code,
 				state: result.state,
-				fork: parsePluginNodeAddress(result.node),
+				fork: result.node,
 				...(result.report ? { report: projectPluginApplyReport(this.ctx, result.report) } : {}),
 				error: result.message,
 			})

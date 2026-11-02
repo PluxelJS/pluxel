@@ -5,6 +5,7 @@ import {
 	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
+	type PluginForkNodeAddress,
 } from '@pluxel/core'
 import {
 	freezeTrustedHostStateSnapshot,
@@ -107,7 +108,7 @@ function admitHostStateMutation(
 
 type AdmissionState = {
 	autoStart: Map<string, PluginNodeAddress>
-	forks: Map<string, PluginNodeAddress>
+	forks: Map<string, PluginForkNodeAddress>
 	providerDefaults: Map<string, HostProviderDefaultState>
 	dependencyOverrides: Map<string, HostDependencyOverrideState>
 	overridesByProvider: Map<string, Set<string>>

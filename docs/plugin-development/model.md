@@ -253,7 +253,7 @@ Orders 和 Audit 无需为这项集成互相声明依赖。由应用显式装配
 
 具体 Plugin 必须由显式公开的包根或子路径的唯一 named export 暴露；host-local Plugin 则来自 canonical source entry 的唯一 root export。
 
-配置、日志和跨进程调用使用稳定地址：`PluginDefinitionAddress` 标识实现，`PluginNodeAddress` 标识默认实例或某个 fork。具体 Plugin 用 `MyPlugin.nodeAddress()` 或 `MyPlugin.nodeAddress('east')` 取得 lowered 身份的地址引用，不创建或启动实例；abstract token 与未 lowering 的 class 明确拒绝。
+配置、日志和跨进程调用使用稳定地址：`PluginDefinitionAddress` 标识声明，`PluginNodeAddress` 标识默认实例或某个 fork。`MyPlugin.definitionAddress()` 返回 lowered 声明身份，abstract capability token 也可以使用；具体 Plugin 用 `MyPlugin.nodeAddress()` 或 `MyPlugin.nodeAddress('east')` 返回 `PluginDefaultNodeAddress` 或 `PluginForkNodeAddress`。这些调用不创建或启动实例。abstract token 不能产生节点地址，未 lowering 的 class 不能产生任何地址。
 不要把类名或展示名称当作持久化 ID。
 
 fork 是同一个插件实现的另一个运行实例：共享实现、schema 和源码更新，各自持有配置、生命周期与资源。只有确实能安全运行多个实例的 concrete Plugin 才声明

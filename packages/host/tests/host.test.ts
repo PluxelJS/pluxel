@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, pluginDefinitionAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { describe, expect, it } from 'vitest'
 import {
@@ -81,12 +81,12 @@ describe('Core-only Host', () => {
 				entry: { kind: 'package-root', packageName: '@test/host' },
 				exportName: 'LifecyclePlugin',
 			},
-			provides: pluginDefinitionAddressOf(LifecycleBackend),
+			provides: LifecycleBackend.definitionAddress(),
 		})
 		const host = await createHost({ plugins: [LifecyclePlugin] })
 		const state = requireHostStateStore(host.ctx)
 		const address = {
-			definition: pluginDefinitionAddressOf(LifecyclePlugin),
+			definition: LifecyclePlugin.definitionAddress(),
 			variant: 'default' as const,
 		}
 		try {
@@ -154,7 +154,7 @@ describe('Core-only Host', () => {
 			plugins: [Original],
 			runtime: {
 				state: {
-					autoStart: [{ definition: pluginDefinitionAddressOf(Original), variant: 'default' }],
+					autoStart: [{ definition: Original.definitionAddress(), variant: 'default' }],
 				},
 			},
 		})

@@ -15,12 +15,7 @@ export * from './composition/BasePlugin'
 export * from './types'
 export * from './decorators/PluginDecorator'
 export * from './decorators/decoratorRuntime'
-export {
-	definePluginRef,
-	isPluginRef,
-	pluginDefinitionAddressOf,
-	type PluginRef,
-} from './runtime/definition'
+export { definePluginRef, isPluginRef, type PluginRef } from './runtime/definition'
 export * from './runtime/identity'
 export {
 	collectPluginLifecycleBlocked,

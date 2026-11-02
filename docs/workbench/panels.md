@@ -81,7 +81,7 @@ workbench.panel('bottom', { label: '最近产物', order: 20 })
 关闭面板、同一区域切换面板、收起区域或布局隐藏内容时，也会释放当前面板的 opened handle、renderer 与订阅。
 再次显示重新打开并读取最新数据，未提交表单和临时组件状态不保证保留。
 
-含 data 的 Content 使用现有 `load()` 与 `dataChanged()`；领域 listener 必须随打开时的 `signal` 清理，
+含 data 的 Content 使用 `load()` 与可选的 `subscribe(changed)`；框架随本次打开释放返回的订阅，
 具体完整模式见 [Content 的 live refresh](./content.md#只在状态会自行变化时加入-live-refresh)。
 View 使用相同的 per-open `signal` 与资源清理规则，不缓存旧面板的 API root 供下一次打开复用。
 Plugin 停止、替换或撤回 publication 时，面板仍遵守原有 owner admission 与会话失效契约。

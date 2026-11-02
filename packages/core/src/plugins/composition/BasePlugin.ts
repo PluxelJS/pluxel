@@ -6,8 +6,13 @@ import {
 	type DisposableLike,
 } from '../../services/effects/EffectsService'
 import type { PluginConstructor } from '../types'
-import type { PluginDefinitionAddress, PluginNodeAddress } from '../runtime/identity'
-import { pluginNodeAddressOf } from '../runtime/definition'
+import type {
+	PluginDefinitionAddress,
+	PluginDefaultNodeAddress,
+	PluginForkNodeAddress,
+	PluginNodeAddress,
+} from '../runtime/identity'
+import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '../runtime/definition'
 import type { PluginPartDefinitionTree } from '../runtime/part-definition'
 import { createPluginConfigs, type PluginConfigs } from './PluginConfigs'
 import {
@@ -139,7 +144,15 @@ async function adoptCleanup(ctx: Context, resource: PluginCleanup): Promise<void
  * construction stack; constructors, nodes and generations are deliberately different concepts.
  */
 export abstract class BasePlugin<C extends PluginContext = PluginContext> {
+	/** Reference a lowered Plugin declaration, including abstract capability tokens. */
+	static definitionAddress(): PluginDefinitionAddress {
+		return pluginDefinitionAddressOf(this)
+	}
+
 	/** Reference a lowered concrete Plugin node without constructing or starting it. */
+	static nodeAddress(): PluginDefaultNodeAddress
+	static nodeAddress(forkId: string): PluginForkNodeAddress
+	static nodeAddress(forkId: string | undefined): PluginNodeAddress
 	static nodeAddress(forkId?: string): PluginNodeAddress {
 		return pluginNodeAddressOf(this, forkId)
 	}

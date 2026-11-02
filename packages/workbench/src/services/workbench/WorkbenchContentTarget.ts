@@ -30,15 +30,16 @@ type PendingBrowserRequest = {
 	resolve(value: unknown): void
 }
 
-/** Framework-owned per-open Content root; Plugin authors only receive its stable dataChanged(). */
+/** Framework-owned per-open Content root and domain subscription. */
 export class WorkbenchContentTarget extends RpcTarget implements WorkbenchContentRoot {
-	readonly dataChanged = (): void => {
+	readonly #changed = (): void => {
 		if (!this.active || this.contract.data.size === 0) return
 		this.dirty = true
 		this.#advance()
 	}
 
 	private binding?: WorkbenchContentRuntimeBinding
+	private subscription?: Disposable
 	private observer?: RpcStub<WorkbenchContentObserver>
 	private sequence = 0
 	private running: 'browser' | 'background' | null = null
@@ -62,6 +63,15 @@ export class WorkbenchContentTarget extends RpcTarget implements WorkbenchConten
 			throw new Error('[workbench] Content root cannot attach its binding')
 		}
 		this.binding = binding
+		if (binding.subscribe) {
+			const subscription = binding.subscribe(this.#changed)
+			if (!subscription || typeof subscription[Symbol.dispose] !== 'function') {
+				throw new TypeError('[workbench] Content subscribe must return a Disposable')
+			}
+			// A subscription can synchronously withdraw its publication during registration.
+			if (!this.active) subscription[Symbol.dispose]()
+			else this.subscription = subscription
+		}
 	}
 
 	async subscribeDto(
@@ -113,6 +123,13 @@ export class WorkbenchContentTarget extends RpcTarget implements WorkbenchConten
 		this.dirty = false
 		this.backgroundScheduled = false
 		this.binding = undefined
+		const subscription = this.subscription
+		this.subscription = undefined
+		try {
+			subscription?.[Symbol.dispose]()
+		} catch (error) {
+			this.logger.error('Workbench Content subscription cleanup failed', { error })
+		}
 		this.observer?.[Symbol.dispose]()
 		this.observer = undefined
 		const running = this.runningBrowser

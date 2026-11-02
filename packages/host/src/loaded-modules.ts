@@ -1,7 +1,6 @@
 import {
 	parsePluginDefinitionAddress,
 	pluginDefinitionIndexKey,
-	pluginDefinitionAddressOf,
 	type PluginConstructor,
 } from '@pluxel/core'
 import { createHash } from 'node:crypto'
@@ -98,7 +97,7 @@ export function recordLoadedApplicationPlugins(
 	if (!files.has(realpathSync(module)))
 		throw new TypeError('[host] loaded application entry is absent from its modules inventory')
 	for (const plugin of plugins) {
-		const definition = pluginDefinitionAddressOf(plugin)
+		const definition = plugin.definitionAddress()
 		if (definitions.has(pluginDefinitionIndexKey(definition)))
 			recordLoadedPluginModule(plugin, module, owner)
 	}

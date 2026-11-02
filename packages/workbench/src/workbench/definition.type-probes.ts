@@ -80,9 +80,13 @@ const detachedHistory = { entries: [{ labels: ['ready'] }] } as const
 pluginWorkbench.publish(ContentWorkbench)
 pluginWorkbench.publish(MixedWorkbench, { local: () => new LocalTarget() })
 pluginWorkbench.publish(InteractiveContentWorkbench, {
-	status: ({ dataChanged }) => {
-		dataChanged()
+	status: ({ signal }) => {
+		signal.throwIfAborted()
 		return {
+			subscribe: (changed) => {
+				changed()
+				return { [Symbol.dispose]() {} }
+			},
 			load: () => ({ state: { ready: true }, history: detachedHistory }),
 			actions: {
 				refresh: () => undefined,
@@ -110,6 +114,14 @@ pluginWorkbench.publish(InteractiveContentWorkbench, {
 			refresh: () => undefined,
 			probe: () => undefined,
 		},
+	}),
+})
+pluginWorkbench.publish(InteractiveContentWorkbench, {
+	status: () => ({
+		load: () => ({ state: { ready: true }, history: detachedHistory }),
+		// @ts-expect-error Subscription registration returns a synchronous Disposable.
+		subscribe: async () => ({ [Symbol.dispose]() {} }),
+		actions: { refresh: () => undefined, probe: () => undefined },
 	}),
 })
 

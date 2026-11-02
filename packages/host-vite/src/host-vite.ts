@@ -3,11 +3,7 @@ import { installHostViteShutdown } from './internal/host-session'
 import { createHostDependencyWatch } from './dependency-watch'
 import { createHostModuleBytes } from './module-bytes'
 import { checkDevelopmentWorkspace } from './workspace-setup'
-import {
-	pluginDefinitionAddressOf,
-	pluginDefinitionIndexKey,
-	type PluginConstructor,
-} from '@pluxel/core'
+import { pluginDefinitionIndexKey, type PluginConstructor } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { randomUUID } from 'node:crypto'
 import type { DevConsoleAttachment } from './console/attachment'
@@ -320,7 +316,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 					applicationModule: readLoadedHostApplicationModule(nextFactory),
 					modules: sourceCandidate.files,
 					plugins: Object.freeze([...next.plugins]),
-					definitions: Object.freeze(next.plugins.map(pluginDefinitionAddressOf)),
+					definitions: Object.freeze(next.plugins.map((plugin) => plugin.definitionAddress())),
 				})
 				for (const [module, definitions] of pipeline.semantics.builtDefinitionModules(
 					sourceCandidate.files,
@@ -328,20 +324,20 @@ export function host(options: HostViteOptions): PluginOption[] {
 					const owner = installedPackageFacts(module)
 					if (!owner) continue
 					for (const plugin of next.plugins)
-						if (definitions.has(pluginDefinitionIndexKey(pluginDefinitionAddressOf(plugin))))
+						if (definitions.has(pluginDefinitionIndexKey(plugin.definitionAddress())))
 							recordLoadedPluginModule(plugin, module, owner)
 				}
 				const fixed = new Set(declared.plugins)
 				for (const plugin of declared.plugins) {
 					if (
 						pipeline.semantics.classifyDefinitionArtifact(
-							pluginDefinitionAddressOf(plugin),
+							plugin.definitionAddress(),
 							sourceCandidate.files,
 						) !== 'unreported' ||
 						readLoadedPluginModule(plugin)
 					)
 						continue
-					const definition = pluginDefinitionAddressOf(plugin)
+					const definition = plugin.definitionAddress()
 					if (definition.entry.kind === 'source-entry') continue
 					const specifier =
 						definition.entry.packageName +
@@ -358,7 +354,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 
 				nextProvenance = new Map(
 					next.plugins.map((plugin) => {
-						const definition = pluginDefinitionAddressOf(plugin)
+						const definition = plugin.definitionAddress()
 						let artifactKind = pipeline.semantics.classifyDefinitionArtifact(
 							definition,
 							sourceCandidate!.files,

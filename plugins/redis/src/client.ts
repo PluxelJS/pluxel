@@ -296,20 +296,20 @@ export class RedisPlugin extends Redis {
 		if (!workbench) return
 		this.workbenchDataListeners = new Set()
 		workbench.publish(RedisWorkbench, {
-			connections: ({ signal, dataChanged }) => {
-				const release = (): void => {
-					this.workbenchDataListeners?.delete(dataChanged)
-				}
-				this.workbenchDataListeners.add(dataChanged)
-				signal.addEventListener('abort', release, { once: true })
-				if (signal.aborted) release()
-				return {
-					load: () => ({ status: this.workbenchStatus(signal) }),
-					actions: {
-						ping: ({ connectionId, payload }) => this.pingRedis(signal, connectionId, payload),
-					},
-				}
-			},
+			connections: ({ signal }) => ({
+				subscribe: (changed) => {
+					this.workbenchDataListeners!.add(changed)
+					return {
+						[Symbol.dispose]: () => {
+							this.workbenchDataListeners?.delete(changed)
+						},
+					}
+				},
+				load: () => ({ status: this.workbenchStatus(signal) }),
+				actions: {
+					ping: ({ connectionId, payload }) => this.pingRedis(signal, connectionId, payload),
+				},
+			}),
 		})
 	}
 

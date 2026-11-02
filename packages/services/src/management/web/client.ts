@@ -3,7 +3,11 @@ import {
 	cloneRuntimeUpdateSnapshot,
 	type RuntimeUpdateSnapshot,
 } from '@pluxel/host/internal/protocol'
-import { type PluginDefinitionAddress, type PluginNodeAddress } from '@pluxel/core'
+import {
+	type PluginDefinitionAddress,
+	type PluginForkNodeAddress,
+	type PluginNodeAddress,
+} from '@pluxel/core'
 import { type RpcStub } from 'capnweb'
 import {
 	type ConfigFieldMutation,
@@ -124,15 +128,14 @@ export type RuntimeManagementClient = Readonly<{
 	}>
 	forks: Readonly<{
 		ensure(input: {
-			base: PluginNodeAddress
-			forkId: string
+			fork: PluginForkNodeAddress
 			autoStart?: boolean
 			selectFor?: {
 				consumer: PluginNodeAddress
 				requirement: PluginDefinitionAddress
 			}
 		}): Promise<EnsureForkResult>
-		remove(input: { base: PluginNodeAddress; forkId: string }): Promise<RemoveForkResult>
+		remove(fork: PluginForkNodeAddress): Promise<RemoveForkResult>
 	}>
 	logging: Readonly<LoggingHandleApi>
 	logs: RuntimeLogClient

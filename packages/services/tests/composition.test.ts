@@ -6,7 +6,7 @@ import { ElysiaRuntime } from '@pluxel/services/internal'
 import { defineCommand, Result } from '@pluxel/commands'
 import { obj } from '@pluxel/commands/typebox'
 import { Commands, commands } from '../src/commands'
-import { BasePlugin, Plugin, pluginDefinitionAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import {
 	defineContextCapability,
 	installOwnerViewCapability,
@@ -48,7 +48,7 @@ class SearchConsumer extends BasePlugin {
 	}
 }
 const node = (plugin: typeof Credentials | typeof SearchConsumer) => ({
-	definition: pluginDefinitionAddressOf(plugin),
+	definition: plugin.definitionAddress(),
 	variant: 'default' as const,
 })
 
@@ -167,7 +167,7 @@ it('installs an empty command catalog and withdraws Plugin-owned registrations o
 		const catalog = host.ctx.require(Commands)
 		expect(catalog.list()).toEqual([])
 		const address = {
-			definition: pluginDefinitionAddressOf(CommandPublisher),
+			definition: CommandPublisher.definitionAddress(),
 			variant: 'default' as const,
 		}
 		await host.startNode(address)

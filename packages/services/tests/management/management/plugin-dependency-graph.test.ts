@@ -4,11 +4,11 @@ import {
 	requireHostStateStore,
 } from '@pluxel/host/internal'
 import {
-	pluginDefinitionAddressOf,
 	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
+	type PluginForkNodeAddress,
 } from '@pluxel/core'
 import { requirePluginService, type ConcretePluginDefinitionCandidate } from '@pluxel/core/internal'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
@@ -60,7 +60,7 @@ describe('Plugin dependency graph read model', () => {
 	it('projects direct, inactive-fork, effective, and zero-intern facts', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
-		const DirectProviderDefinition = pluginDefinitionAddressOf(DirectProvider)
+		const DirectProviderDefinition = DirectProvider.definitionAddress()
 		host.add([DirectProvider, DirectConsumer])
 		const inactiveFork = host.fork(DirectConsumer, 'inactive')
 		host.cfg(DirectProvider).setAutoStart(true)
@@ -280,7 +280,7 @@ describe('Plugin dependency graph read model', () => {
 	it('returns graph_rejected with unchanged policy and graph for a cycle mutation', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
-		const CycleTokenDefinition = pluginDefinitionAddressOf(CycleToken)
+		const CycleTokenDefinition = CycleToken.definitionAddress()
 		host.add([CycleConsumer, CycleProvider, SafeProvider])
 		host.cfg(CycleConsumer).setAutoStart(true)
 		host.start(CycleConsumer)
@@ -318,6 +318,8 @@ function graphDefinition(name: string): PluginDefinitionAddress {
 	})
 }
 
+function graphNode(definition: PluginDefinitionAddress, forkId: string): PluginForkNodeAddress
+function graphNode(definition: PluginDefinitionAddress): PluginNodeAddress
 function graphNode(definition: PluginDefinitionAddress, forkId?: string): PluginNodeAddress {
 	return forkId
 		? Object.freeze({ definition, variant: 'fork' as const, forkId })

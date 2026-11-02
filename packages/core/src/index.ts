@@ -39,7 +39,7 @@ export type {
 export { Plugin, pluginMethodDecorator } from './plugins'
 export type { PluginOptions } from './plugins'
 
-export { definePluginRef, pluginDefinitionAddressOf } from './plugins'
+export { definePluginRef } from './plugins'
 export type { PluginRef } from './plugins'
 
 export {
@@ -65,7 +65,9 @@ export type {
 	ParsedPluginNodeRoute,
 	PluginDefinitionAddress,
 	PluginDefinitionSlot,
+	PluginDefaultNodeAddress,
 	PluginEntryAddress,
+	PluginForkNodeAddress,
 	PluginNodeAddress,
 	PluginNodeInfo,
 	PluginNodeSlot,

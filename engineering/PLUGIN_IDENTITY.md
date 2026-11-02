@@ -22,6 +22,10 @@ Pluxel 只有两个 Plugin 身份作用域：
 `Address` 用于配置、持久化、RPC 和 URL codec；`Slot` 只在进程内用于 graph、DI、lifecycle 和 owner map。
 同一 address 在同一 registry 内只产生一个 slot。generation 是 node 当前的一次运行，不进入 address。
 
+作者通过 lowered class 的 `Plugin.definitionAddress()` 取得声明身份，abstract token 同样支持；`Plugin.nodeAddress()` 和
+`Plugin.nodeAddress(forkId)` 只适用于 concrete Plugin，分别返回 `PluginDefaultNodeAddress` 和 `PluginForkNodeAddress`。
+这些静态投影不创建或启动实例，不通过继承查找另一个 class 的 lowering facts；Core 内部直接读取同一 canonical identity owner。
+
 fork 是同一 definition 的运行时多态，不是源码副本：default 和所有 fork 共享 constructor implementation、schema、metadata、
 artifact input 与 HMR invalidation，各自隔离 auto-start/session/running 状态、config value/revision、dependency override、Context、effects 和资源 lease。
 
@@ -57,13 +61,18 @@ type PluginDefinitionAddress = Readonly<{
 	exportName: string
 }>
 
-type PluginNodeAddress =
-	| Readonly<{ definition: PluginDefinitionAddress; variant: 'default' }>
-	| Readonly<{
-			definition: PluginDefinitionAddress
-			variant: 'fork'
-			forkId: string
-	  }>
+type PluginDefaultNodeAddress = Readonly<{
+	definition: PluginDefinitionAddress
+	variant: 'default'
+}>
+
+type PluginForkNodeAddress = Readonly<{
+	definition: PluginDefinitionAddress
+	variant: 'fork'
+	forkId: string
+}>
+
+type PluginNodeAddress = PluginDefaultNodeAddress | PluginForkNodeAddress
 ```
 
 discriminated union 不允许 default node 携带 `forkId`，也不允许 fork 缺少 `forkId`。外部 `unknown` 必须在 trust boundary

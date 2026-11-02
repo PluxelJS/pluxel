@@ -68,7 +68,7 @@ export default defineConfig({
 import { createHost } from '@pluxel/host/browser'
 import { DemoPlugin, ProviderPlugin } from './plugins'
 
-const host = await createHost({
+await using host = await createHost({
 	plugins: [DemoPlugin, ProviderPlugin],
 	runtime: {
 		state: {
@@ -76,19 +76,15 @@ const host = await createHost({
 		},
 	},
 })
-try {
-	const report = await host.start()
-	if (
-		report.reconciliation.length > 0 ||
-		(report.core.status === 'committed' && !report.core.summary.lifecycleReport.ok)
-	) {
-		throw new Error('Plugin 启动失败', { cause: report })
-	}
-	console.log(await host.status())
-	// 在 Host 存续期间执行应用操作。
-} finally {
-	await host.close()
+const report = await host.start()
+if (
+	report.reconciliation.length > 0 ||
+	(report.core.status === 'committed' && !report.core.summary.lifecycleReport.ok)
+) {
+	throw new Error('Plugin 启动失败', { cause: report })
 }
+console.log(await host.status())
+// 在 Host 存续期间执行应用操作。
 ```
 
 FS 与 TinyBase 始终内建；配置和运行策略使用同一个 Core 文件后端，默认 InMemory 仅在内存中保留。业务 consumer 通过 constructor 注入 provider，在 `init()` 中注册页面或 Worker 的消息处理，并用 `ctx.effects` 释放监听器；界面可以消费 `host.status()` 展示真实节点状态。停止页面或 Worker 前由创建者 `await host.close()`，然后终止 Worker；直接 `terminate()` 不会等待插件清理。
@@ -371,7 +367,7 @@ import { Passthrough } from '@pluxel/core/fs'
 
 const prefix = resolve('./data/fs')
 await nativeFs.promises.mkdir(prefix, { recursive: true })
-const host = await createHost({
+await using host = await createHost({
 	plugins: [],
 	runtime: {
 		zenfs: zenfs({
@@ -380,11 +376,7 @@ const host = await createHost({
 		}),
 	},
 })
-try {
-	await host.start()
-} finally {
-	await host.close()
-}
+await host.start()
 ```
 
 可以再挂载 `'/tmp': InMemory`、应用的自定义 Backend 或借用的 FileSystem；backend 的 options、嵌套组合和错误沿用 ZenFS。浏览器的 `storeName` 使用稳定部署 profile，页面或 Worker 结束前等待 `host.close()`。
@@ -419,7 +411,7 @@ const owner = MyPlugin.nodeAddress()
 const prefix = resolve('./data/fs')
 await nativeFs.promises.mkdir(prefix, { recursive: true })
 
-const host = await createHost({
+await using host = await createHost({
 	plugins: [MyPlugin],
 	runtime: {
 		zenfs: zenfs({
@@ -434,11 +426,7 @@ const host = await createHost({
 		},
 	},
 })
-try {
-	await host.start()
-} finally {
-	await host.close()
-}
+await host.start()
 ```
 
 `override` 默认 `false`。已有文档是原始保存输入的权威；只有文档缺失时，才用本次声明初始化。配置文档使用 v4，运行策略文档使用 v6；其他版本明确拒绝，不做启动迁移或兼容读取。
@@ -587,7 +575,7 @@ const nativeConfig = {
 	],
 } satisfies Config<'console', string>
 
-const host = await createHost({
+await using host = await createHost({
 	plugins: [],
 	runtime: {
 		logtape: {
@@ -596,11 +584,7 @@ const host = await createHost({
 		},
 	},
 })
-try {
-	host.ctx.logger.info('Host ready')
-} finally {
-	await host.close()
-}
+host.ctx.logger.info('Host ready')
 ```
 
 `options` 只描述 Pluxel 自己拥有的 policy 命名空间、`initialPluginPolicy`、`debugTopics`、`policyLoadFailure` 与借用的 `policyStore`；rootId 由 Core 固定，不由日志属性或 native category 配置改写。普通应用 category 也可直接加入 `loggers`。插件 category 使用可逆 node address，框架会在原生 filter 之前检查 active root、插件动态 policy 和 debug topic。
@@ -621,7 +605,7 @@ import { getConsoleSink, withContext } from '@logtape/logtape'
 import { logtape } from '@pluxel/core/config'
 import { createHost } from '@pluxel/host'
 
-const host = await createHost({
+await using host = await createHost({
 	plugins: [],
 	runtime: {
 		logtape: logtape({
@@ -631,14 +615,10 @@ const host = await createHost({
 		}),
 	},
 })
-try {
-	await withContext({ requestId: 'request-42' }, async () => {
-		await Promise.resolve()
-		host.ctx.logger.info('request completed')
-	})
-} finally {
-	await host.close()
-}
+await withContext({ requestId: 'request-42' }, async () => {
+	await Promise.resolve()
+	host.ctx.logger.info('request completed')
+})
 ```
 
 传入的 sink、filter、formatter 和 context storage 保持原对象。LogTape 处理 `Symbol.dispose`/`Symbol.asyncDispose`；Core 在插件停止并输出关闭日志后等待它们释放。配置了 logtape 的 root 可通过 `ctx.require(Logging)`（`@pluxel/core/logging`）读取 manager；`await logging.flush()` 刷新 store/policy，并等待提供原生 `drain()` 的 sink。它不把任何后端的接纳改成远端送达确认，自定义 sink 的投递、重试与资源语义仍由该 sink 决定。
@@ -679,7 +659,7 @@ const provider = new LoggerProvider({
 	processors: [new BatchLogRecordProcessor({ exporter: new OTLPLogExporter({ url: endpoint }) })],
 })
 const sink = getOpenTelemetrySink({ loggerProvider: provider, diagnostics: true })
-const host = await createHost({
+await using host = await createHost({
 	plugins: [],
 	runtime: {
 		logtape: logtape(
@@ -712,11 +692,7 @@ const host = await createHost({
 	}
 	throw error
 })
-try {
-	host.ctx.logger.info('Host ready')
-} finally {
-	await host.close()
-}
+host.ctx.logger.info('Host ready')
 ```
 
 `memory` 保留 Workbench/开发控制台的有界查询；`diagnostics: true` 把进程级 OTel SDK diagnostics 接入 LogTape。meta logger 独立输出到本地，避免回送远程 sink。
@@ -737,7 +713,7 @@ import { logtape } from '@pluxel/core/config'
 import { Logging } from '@pluxel/core/logging'
 import { createHost } from '@pluxel/host'
 
-const host = await createHost({
+await using host = await createHost({
 	plugins: [],
 	runtime: {
 		logtape: logtape(
@@ -752,14 +728,10 @@ const host = await createHost({
 		),
 	},
 })
-try {
-	host.ctx.logger.info('Host ready')
-	const logging = host.ctx.require(Logging)
-	logging.flushStores()
-	const recent = logging.stores.getOrCreate('default').tailWindow(100)
-} finally {
-	await host.close()
-}
+host.ctx.logger.info('Host ready')
+const logging = host.ctx.require(Logging)
+logging.flushStores()
+const recent = logging.stores.getOrCreate('default').tailWindow(100)
 ```
 
 日志查询和 policy 属于所选 Core root 的 manager，不依赖 Services 或 Management。policy 默认通过 Core 私有文档保存，沿用 `runtime.zenfs` 后端。省略后端时使用 InMemory；持久后端会恢复同一 profile 的 policy。`logtape(nativeConfig, { policyStore })` 可提供同步 root factory，返回借用的 `PluginLogPolicyStore`，不转交后端所有权。
@@ -811,21 +783,17 @@ import { createHost } from '@pluxel/host'
 import { createElysiaHandler, elysia } from '@pluxel/services/elysia'
 import { serve } from 'srvx/node'
 
-const host = await createHost({ plugins: [], services: [elysia()] })
+await using host = await createHost({ plugins: [], services: [elysia()] })
+const server = serve({
+	fetch: createElysiaHandler(host),
+	port: 0,
+	gracefulShutdown: false,
+})
 try {
-	const server = serve({
-		fetch: createElysiaHandler(host),
-		port: 0,
-		gracefulShutdown: false,
-	})
-	try {
-		await server.ready()
-		// 运行应用；连接选项直接使用 srvx 原生配置。
-	} finally {
-		await server.close(true)
-	}
+	await server.ready()
+	// 运行应用；连接选项直接使用 srvx 原生配置。
 } finally {
-	await host.close()
+	await server.close(true)
 }
 ```
 
@@ -963,7 +931,7 @@ import { createHost } from '@pluxel/host'
 import { database } from '@pluxel/services/database'
 import { postgres } from '@pluxel/services/database/postgres'
 
-const host = await createHost({
+await using host = await createHost({
 	plugins: [],
 	services: [
 		database({
@@ -978,11 +946,7 @@ const host = await createHost({
 		}),
 	],
 })
-try {
-	// 启动使用托管 SQL 的 Plugin。
-} finally {
-	await host.close()
-}
+// 启动使用托管 SQL 的 Plugin。
 ```
 
 传入配置时，所选 driver 仍在第一次 Plugin 使用 Database 时才加载并创建资源；Host 在已接纳操作排空后关闭自己创建的资源。也可以传入已有的原生 `Pool` 或 `PGlite` 实例：`postgres(pool)` / `pglite(client)` 借用该实例，Host 排空后只撤下自己的 listener，不调用它的 `end()` / `close()`。应用负责让借用资源在 Host 生命周期内保持可用，并在所有使用者关闭后释放；不要在运行中改变借用 pool 的并发上限。PostgreSQL 调度并发读取原生 pool 的 `options.max`，PGlite 始终串行调度。

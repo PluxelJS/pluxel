@@ -58,7 +58,7 @@ export default async ({env,bindings}) => {
 				[
 					'--input-type=module',
 					'-e',
-					`import assert from 'node:assert/strict'; const {runHostApplication}=await import(${JSON.stringify(new URL('../dist/index.mjs', import.meta.url).href)}); const events=[];const startup={root:${JSON.stringify(root)},mode:'test',env:{VALUE:'one'},bindings:{events}};const host=await runHostApplication(${JSON.stringify(entry)},{startup});await host.close();await assert.rejects(runHostApplication(${JSON.stringify(entry)},{startup:{...startup,env:{VALUE:'fail'}}}),/application prerequisite failed/);console.log(JSON.stringify(events))`,
+					`import assert from 'node:assert/strict'; const {runHostApplication}=await import(${JSON.stringify(new URL('../dist/index.mjs', import.meta.url).href)}); const events=[];const startup={root:${JSON.stringify(root)},mode:'test',env:{VALUE:'one'},bindings:{events}};{await using host=await runHostApplication(${JSON.stringify(entry)},{startup});}await assert.rejects(runHostApplication(${JSON.stringify(entry)},{startup:{...startup,env:{VALUE:'fail'}}}),/application prerequisite failed/);console.log(JSON.stringify(events))`,
 				],
 				{ timeout: 10000 },
 			)

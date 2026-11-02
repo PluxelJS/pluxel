@@ -36,6 +36,7 @@ const address = {
 } as const
 
 const definition = address.definition
+const fork = { definition, variant: 'fork', forkId: 'east' } as const
 
 const report = {
 	catalogRevision: 3,
@@ -179,23 +180,23 @@ describe('management protocol validation', () => {
 			}),
 		).toMatchObject({ ok: false, code: 'provider_policy_unavailable', state: 'unchanged' })
 
-		expect(parseEnsureForkResult({ ok: true, status: 'deferred', fork: address, report })).toEqual({
+		expect(parseEnsureForkResult({ ok: true, status: 'deferred', fork, report })).toEqual({
 			ok: true,
 			status: 'deferred',
-			fork: address,
+			fork,
 			report,
 		})
-		expect(parseRemoveForkResult({ ok: true, status: 'already-absent', fork: address })).toEqual({
+		expect(parseRemoveForkResult({ ok: true, status: 'already-absent', fork })).toEqual({
 			ok: true,
 			status: 'already-absent',
-			fork: address,
+			fork,
 		})
 		expect(
 			parseRemoveForkResult({
 				ok: false,
 				code: 'persistence_failed',
 				state: 'stopped-retained',
-				fork: address,
+				fork,
 				error: 'metadata cleanup failed',
 			}),
 		).toMatchObject({ ok: false, code: 'persistence_failed', state: 'stopped-retained' })
@@ -487,7 +488,7 @@ describe('management protocol validation', () => {
 			parseEnsureForkResult({
 				ok: true,
 				status: 'saved-not-applied',
-				fork: address,
+				fork,
 				report,
 			}),
 		).toThrow(/applied, deferred/)
@@ -497,7 +498,7 @@ describe('management protocol validation', () => {
 				ok: false,
 				code: 'persistence_failed',
 				state: 'disabled-retained',
-				fork: address,
+				fork,
 				error: 'legacy state',
 			}),
 		).toThrow(/stopped-retained/)

@@ -50,7 +50,7 @@ import { MyPlugin } from './plugin.js'
 
 const prefix = resolve('./data/fs')
 await nativeFs.promises.mkdir(prefix, { recursive: true })
-const host = await createHost({
+await using host = await createHost({
 	plugins: [MyPlugin],
 	services: [vault()],
 	runtime: {
@@ -60,14 +60,12 @@ const host = await createHost({
 		}),
 	},
 })
-try {
-	await host.start()
-} finally {
-	await host.close()
-}
+await host.start()
 ```
 
 `plugins` 是可用目录；需要自动启动时，在 `runtime.state.autoStart` 显式指定节点。`start()` 接纳目录并应用启动策略，服务准备在 `createHost()` 返回前完成。省略 `services` 不会创建附加服务的 backend、连接或清理任务。Vault 的默认加密后端借用 Core FS；`vault({ backend: 'bindings' })` 只提供部署绑定读取，不打开 Vault 加密目录。Host 不自动补装依赖。
+
+短作用域使用 `await using`：离开作用域时等待 Host 排空操作、停止插件并释放服务。`Symbol.asyncDispose` 与 `close()` 共用一次关闭结果，清理失败会向调用方传播。跨越函数作用域的长期运行 Host 由创建者显式 `await host.close()`。
 
 `createHost()` 只接受 Host 配置字段，未知字段在资源获取前拒绝；应用解析结果中的 `startup/sources/prepare` 属于执行入口，不能整对象传给它。服务选择和配置容器在异步准备前捕获；`updateCatalog()` 同样捕获调用时的插件数组。借用的 storage、callback 与服务 handle 保留原身份。
 
@@ -125,6 +123,13 @@ if (!result.ok) throw new Error(result.message)
 `setProviderDefault()` / `setDependencyOverride()` 修改 provider 选择，`forks.ensure()` / `forks.remove()`
 管理 fork。它们与 `startNode()`、配置操作共用同一协调队列；读写前会完成首次 `start()`。
 状态包含不可用节点与最近生命周期失败，不因启动失败就丢弃用户意图。
+
+Fork 操作直接接收完整地址：`const east = WorkerPlugin.nodeAddress('east')`，然后调用
+`host.forks.ensure(east, { autoStart: true })` 或 `host.forks.remove(east)`。取得地址本身不创建实例；
+`ensure` 省略 `autoStart` 时保留已有选择，新 fork 默认不自动启动。`selectFor: { consumer, requirement }`
+可与创建一起提交依赖选择。结果的 `ok: false` 分支保留失败原因与状态，调用方必须检查。
+Management 对应 `client.forks.ensure({ fork: east, autoStart: true })` 和 `client.forks.remove(east)`；
+这些入口只接受 fork 地址，不接受 default 节点或拆分的 `base` / `forkId`。
 
 服务若拥有 fork 的持久元数据，可声明 `removeNodeMetadata(ctx, node)`。Host 先停止 fork，再删除配置与服务元数据，
 最后提交 fork 删除；服务按依赖逆序清理，失败保留已停止的 fork，以便重试。普通 generation 停止不会删除持久元数据。
@@ -243,15 +248,11 @@ import { createHost } from '@pluxel/host'
 import { database } from '@pluxel/services/database'
 import { pglite } from '@pluxel/services/database/pglite'
 
-const host = await createHost({
+await using host = await createHost({
 	plugins: [],
 	services: [database({ backend: pglite({ dataDir: './data/database' }) })],
 })
-try {
-	// 添加并启动需要托管 SQL 的 Plugin。
-} finally {
-	await host.close()
-}
+// 添加并启动需要托管 SQL 的 Plugin。
 ```
 
 正式部署从 `@pluxel/services/database/postgres` 导入 `postgres`。两个 backend 工厂直接接收所选 driver 的原生配置或实例；配置创建的连接由 Host 排空后关闭，传入的实例由应用拥有。应用直接声明所选 driver：PGlite 使用 `@electric-sql/pglite`，PostgreSQL 使用 `pg`。服务工厂不打开数据库；第一次 Plugin 调用 `ctx.require(Database).use(definition)` 才加载 driver 并准备 owner migration。schema、迁移与生命周期见[数据库与数据归属](../plugin-development/database.md)，原生选项、资源借用及后端部署选择见[Host 配置](./configuration.md#选择-native-postgresql-或-pglite)。

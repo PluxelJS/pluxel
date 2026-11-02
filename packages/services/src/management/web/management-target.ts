@@ -1,6 +1,10 @@
 import type { HostConfigState } from '@pluxel/host'
 import { type RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
-import { type PluginDefinitionAddress, type PluginNodeAddress } from '@pluxel/core'
+import {
+	type PluginDefinitionAddress,
+	type PluginForkNodeAddress,
+	type PluginNodeAddress,
+} from '@pluxel/core'
 import { type RpcTarget } from 'capnweb'
 import { type SecurityAuditEvent, type SecurityOverview } from './security'
 import {
@@ -94,18 +98,14 @@ export interface RuntimeManagementTarget extends RpcTarget {
 		provider: PluginNodeAddress | null
 	}) => Promise<PluginDependencyMutationResult>
 	ensurePluginForkDto: (input: {
-		base: PluginNodeAddress
-		forkId: string
+		fork: PluginForkNodeAddress
 		autoStart?: boolean
 		selectFor?: {
 			consumer: PluginNodeAddress
 			requirement: PluginDefinitionAddress
 		}
 	}) => Promise<EnsureForkResult>
-	removePluginForkDto: (input: {
-		base: PluginNodeAddress
-		forkId: string
-	}) => Promise<RemoveForkResult>
+	removePluginForkDto: (fork: PluginForkNodeAddress) => Promise<RemoveForkResult>
 	setPluginAutoStartDto: (items: PluginAutoStartBatchItem[]) => Promise<PluginControlBatchResult>
 	applyPluginLifecycleCommandsDto: (
 		items: PluginLifecycleCommandBatchItem[],

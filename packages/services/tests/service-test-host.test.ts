@@ -1,11 +1,6 @@
 import { Commands } from '@pluxel/services/commands'
 import { ElysiaApp, elysia } from '@pluxel/services/elysia'
-import {
-	pluginDefinitionAddressOf,
-	pluginDefinitionIndexKey,
-	BasePlugin,
-	Plugin,
-} from '@pluxel/core'
+import { pluginDefinitionIndexKey, BasePlugin, Plugin } from '@pluxel/core'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { definePluginFork, createTestHost } from '@pluxel/test'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
@@ -138,7 +133,7 @@ describe('service test host', () => {
 		expect(
 			host.coordinator
 				.catalogSnapshot()
-				.byDefinition.has(pluginDefinitionIndexKey(pluginDefinitionAddressOf(SupportingFixture))),
+				.byDefinition.has(pluginDefinitionIndexKey(SupportingFixture.definitionAddress())),
 		).toBe(false)
 		expect(host.coordinator.catalogSnapshot().byDefinition.has(key)).toBe(true)
 		expect(host.coordinator.catalogSnapshot().entries).toHaveLength(1)

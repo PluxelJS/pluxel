@@ -97,11 +97,25 @@ function rpcObserver(handler: (outcome: unknown) => void | Promise<void>) {
 	return { callback, disposeObserver, disposeResults }
 }
 
+function bindSource(
+	root: WorkbenchContentTarget,
+	binding: Parameters<typeof attachWorkbenchContentTarget>[1],
+) {
+	let changed: () => void = () => undefined
+	const dispose = vi.fn()
+	const subscribe = vi.fn((notify: () => void): Disposable => {
+		changed = notify
+		return { [Symbol.dispose]: dispose }
+	})
+	attachWorkbenchContentTarget(root, { subscribe, ...binding })
+	return { changed: () => changed(), dispose, subscribe }
+}
+
 describe('WorkbenchContentTarget', () => {
 	it('keeps binding and lifecycle helpers outside the remotely callable surface', async () => {
 		const load = vi.fn(() => ({ status: { count: 1 } }))
 		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-		attachWorkbenchContentTarget(root, { load })
+		bindSource(root, { load })
 		using remote = new RpcStub(root)
 		const caller = remote as unknown as Record<string, () => Promise<unknown>>
 		for (const method of [
@@ -126,27 +140,91 @@ describe('WorkbenchContentTarget', () => {
 		let state = 1
 		const load = vi.fn(() => ({ status: { count: state } }))
 		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-		attachWorkbenchContentTarget(root, { load })
+		const source = bindSource(root, { load })
+		expect(source.subscribe).toHaveBeenCalledTimes(1)
+		expect(load).not.toHaveBeenCalled()
 		const updates: unknown[] = []
 		const observer = rpcObserver((outcome) => {
 			updates.push(outcome)
 		})
 
-		root.dataChanged()
+		source.changed()
 		const initial = await root.subscribeDto(observer.callback)
 		expect(initial).toMatchObject({ sequence: 1, ok: true, data: { status: { count: 1 } } })
 		expect(updates).toEqual([])
 
 		state = 2
-		root.dataChanged()
-		root.dataChanged()
+		source.changed()
+		source.changed()
 		await vi.waitFor(() => expect(updates).toHaveLength(1))
 		expect(updates[0]).toMatchObject({ sequence: 2, ok: true, data: { status: { count: 2 } } })
 		expect(load).toHaveBeenCalledTimes(2)
 		expect(observer.disposeResults.every((dispose) => dispose.mock.calls.length === 1)).toBe(true)
 
 		root[Symbol.dispose]()
+		root[Symbol.dispose]()
+		expect(source.subscribe).toHaveBeenCalledTimes(1)
+		expect(source.dispose).toHaveBeenCalledTimes(1)
 		expect(observer.disposeObserver).toHaveBeenCalledTimes(1)
+	})
+
+	it('keeps one subscription through an initial load failure and successful retry', async () => {
+		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
+		const load = vi
+			.fn()
+			.mockRejectedValueOnce(new Error('temporarily unavailable'))
+			.mockReturnValue({ status: { count: 2 } })
+		const source = bindSource(root, { load })
+		const observer = rpcObserver(() => undefined)
+		await expect(root.subscribeDto(observer.callback)).resolves.toMatchObject({
+			ok: false,
+			code: 'load_failed',
+		})
+		expect(source.dispose).not.toHaveBeenCalled()
+		await expect(root.loadDto()).resolves.toMatchObject({
+			ok: true,
+			data: { status: { count: 2 } },
+		})
+		expect(source.subscribe).toHaveBeenCalledTimes(1)
+		root[Symbol.dispose]()
+		expect(source.dispose).toHaveBeenCalledTimes(1)
+		expect(observer.disposeObserver).toHaveBeenCalledTimes(1)
+	})
+
+	it('releases a subscription returned after synchronous withdrawal during registration', () => {
+		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
+		const dispose = vi.fn()
+		attachWorkbenchContentTarget(root, {
+			load: () => ({ status: { count: 0 } }),
+			subscribe: () => {
+				root[Symbol.dispose]()
+				return { [Symbol.dispose]: dispose }
+			},
+		})
+		root[Symbol.dispose]()
+		expect(dispose).toHaveBeenCalledTimes(1)
+	})
+
+	it('releases the observer even when the domain subscription cleanup throws', async () => {
+		const log = logger()
+		const root = new WorkbenchContentTarget(contract({ data: true }), log)
+		const error = new Error('subscription cleanup failed')
+		const dispose = vi.fn(() => {
+			throw error
+		})
+		attachWorkbenchContentTarget(root, {
+			load: () => ({ status: { count: 0 } }),
+			subscribe: () => ({ [Symbol.dispose]: dispose }),
+		})
+		const observer = rpcObserver(() => undefined)
+		await root.subscribeDto(observer.callback)
+		root[Symbol.dispose]()
+		root[Symbol.dispose]()
+		expect(dispose).toHaveBeenCalledTimes(1)
+		expect(observer.disposeObserver).toHaveBeenCalledTimes(1)
+		expect(log.error).toHaveBeenCalledWith('Workbench Content subscription cleanup failed', {
+			error,
+		})
 	})
 
 	it('gives one waiting browser request priority over dirty refresh and bounds overlap', async () => {
@@ -154,7 +232,7 @@ describe('WorkbenchContentTarget', () => {
 		const gate = Promise.withResolvers<void>()
 		let call = 0
 		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-		attachWorkbenchContentTarget(root, {
+		const source = bindSource(root, {
 			load: async () => {
 				call += 1
 				if (call === 1) return { status: { count: 1 } }
@@ -170,12 +248,12 @@ describe('WorkbenchContentTarget', () => {
 		const observer = rpcObserver(() => undefined)
 		await root.subscribeDto(observer.callback)
 
-		root.dataChanged()
+		source.changed()
 		await Promise.resolve()
 		const waiting = root.loadDto()
 		await expect(root.loadDto()).resolves.toEqual({ ok: false, code: 'busy' })
-		root.dataChanged()
-		root.dataChanged()
+		source.changed()
+		source.changed()
 		gate.resolve()
 
 		await expect(waiting).resolves.toMatchObject({ sequence: 3, ok: true })
@@ -202,7 +280,7 @@ describe('WorkbenchContentTarget', () => {
 			contract({ data: true, actions: [{ key: 'probe', schema: probeSchema }] }),
 			logger(),
 		)
-		attachWorkbenchContentTarget(root, { load, actions: new Map([['probe', handler]]) })
+		bindSource(root, { load, actions: new Map([['probe', handler]]) })
 		await root.subscribeDto(rpcObserver(() => undefined).callback)
 
 		const invalid = await root.runDto('probe', { value: 1 })
@@ -232,7 +310,7 @@ describe('WorkbenchContentTarget', () => {
 			contract({ actions: [{ key: 'mutate' }], data: true }),
 			log,
 		)
-		attachWorkbenchContentTarget(root, { load, actions: new Map([['mutate', handler]]) })
+		bindSource(root, { load, actions: new Map([['mutate', handler]]) })
 		await root.subscribeDto(rpcObserver(() => undefined).callback)
 
 		await expect(root.runDto('mutate')).resolves.toMatchObject({
@@ -256,17 +334,17 @@ describe('WorkbenchContentTarget', () => {
 			await callbackGate.promise
 		})
 		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-		attachWorkbenchContentTarget(root, { load })
+		const source = bindSource(root, { load })
 		await root.subscribeDto(observer.callback)
 
 		state = 2
-		root.dataChanged()
+		source.changed()
 		await vi.waitFor(() => expect(observer.callback).toHaveBeenCalledTimes(1))
 		expect(load).toHaveBeenCalledTimes(2)
 
 		state = 3
-		root.dataChanged()
-		root.dataChanged()
+		source.changed()
+		source.changed()
 		await Promise.resolve()
 		expect(load).toHaveBeenCalledTimes(2)
 		expect(observer.callback).toHaveBeenCalledTimes(1)
@@ -292,10 +370,10 @@ describe('WorkbenchContentTarget', () => {
 		})
 		const observer = rpcObserver(() => undefined)
 		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-		attachWorkbenchContentTarget(root, { load })
+		const source = bindSource(root, { load })
 		await root.subscribeDto(observer.callback)
 
-		root.dataChanged()
+		source.changed()
 		await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2))
 		const pending = root.loadDto()
 		root[Symbol.dispose]()
@@ -314,7 +392,7 @@ describe('WorkbenchContentTarget', () => {
 		const loadFinished = Promise.withResolvers<void>()
 		const observer = rpcObserver(() => undefined)
 		const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-		attachWorkbenchContentTarget(root, {
+		bindSource(root, {
 			load: async () => {
 				loadStarted.resolve()
 				await loadGate.promise
@@ -342,11 +420,11 @@ describe('WorkbenchContentTarget', () => {
 		vi.useFakeTimers()
 		try {
 			const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-			attachWorkbenchContentTarget(root, { load: () => ({ status: { count: 1 } }) })
+			const source = bindSource(root, { load: () => ({ status: { count: 1 } }) })
 			const observer = rpcObserver(() => undefined)
 			await root.subscribeDto(observer.callback)
 
-			root.dataChanged()
+			source.changed()
 			await vi.advanceTimersByTimeAsync(0)
 			expect(observer.callback).toHaveBeenCalledTimes(1)
 			expect(vi.getTimerCount()).toBe(0)
@@ -359,11 +437,11 @@ describe('WorkbenchContentTarget', () => {
 	it('closes only this root when its retained observer rejects', async () => {
 		const log = logger()
 		const root = new WorkbenchContentTarget(contract({ data: true }), log)
-		attachWorkbenchContentTarget(root, { load: () => ({ status: { count: 1 } }) })
+		const source = bindSource(root, { load: () => ({ status: { count: 1 } }) })
 		const observer = rpcObserver(() => Promise.reject(new Error('browser gone')))
 		await root.subscribeDto(observer.callback)
 
-		root.dataChanged()
+		source.changed()
 		await vi.waitFor(() => expect(observer.disposeObserver).toHaveBeenCalledTimes(1))
 		expect(observer.disposeResults).toHaveLength(1)
 		expect(observer.disposeResults[0]).toHaveBeenCalledTimes(1)
@@ -376,11 +454,11 @@ describe('WorkbenchContentTarget', () => {
 		vi.useFakeTimers()
 		try {
 			const root = new WorkbenchContentTarget(contract({ data: true }), logger())
-			attachWorkbenchContentTarget(root, { load: () => ({ status: { count: 1 } }) })
+			const source = bindSource(root, { load: () => ({ status: { count: 1 } }) })
 			const observer = rpcObserver(() => new Promise<void>(() => {}))
 			await root.subscribeDto(observer.callback)
 
-			root.dataChanged()
+			source.changed()
 			await vi.advanceTimersByTimeAsync(0)
 			expect(observer.callback).toHaveBeenCalledTimes(1)
 			await vi.advanceTimersByTimeAsync(10_000)

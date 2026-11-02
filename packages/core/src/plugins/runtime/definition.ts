@@ -341,7 +341,7 @@ function validateProviderMarker(
 	}
 }
 
-/** Address-only author/host projection; it never materializes a node or reads candidate metadata. */
+/** Private canonical projection for author methods and Core graph lookups; no node is materialized. */
 export function pluginDefinitionAddressOf(ctor: PluginToken): PluginDefinitionAddress {
 	const facts = addressByConstructor.get(ctor)
 	if (!facts) {

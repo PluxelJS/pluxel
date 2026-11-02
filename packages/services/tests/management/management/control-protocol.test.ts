@@ -1,6 +1,5 @@
 import { requirePluginHostCoordinator, requireHostStateStore } from '@pluxel/host/internal'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
-import { pluginDefinitionAddressOf } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { serialize } from 'capnweb'
 import { describe, expect, it, vi } from 'vitest'
@@ -196,7 +195,7 @@ describe('runtime web control protocol', () => {
 		const policyOwner = ManagedProvider.nodeAddress()
 		const alternateProvider = ManagedAlternateProvider.nodeAddress()
 		const consumer = ManagedProviderConsumer.nodeAddress()
-		const token = pluginDefinitionAddressOf(ManagedProviderToken)
+		const token = ManagedProviderToken.definitionAddress()
 
 		await expect(rpc.inspectPluginProviderPolicyDto(consumer)).resolves.toEqual({
 			ok: true,
@@ -293,7 +292,7 @@ describe('runtime web control protocol', () => {
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
 		const consumer = ManagedProviderConsumer.nodeAddress()
-		const requirement = pluginDefinitionAddressOf(ManagedProviderToken)
+		const requirement = ManagedProviderToken.definitionAddress()
 
 		const inspection = await rpc.inspectPluginConsumerRequirementsDto(consumer)
 		expect(inspection).toMatchObject({ ok: true, items: [{ requirement }] })
@@ -328,7 +327,7 @@ describe('runtime web control protocol', () => {
 		await expect(
 			rpc.setPluginConsumerOverrideDto({
 				consumer,
-				requirement: pluginDefinitionAddressOf(ManagedPlugin),
+				requirement: ManagedPlugin.definitionAddress(),
 				provider: null,
 			}),
 		).resolves.toMatchObject({
@@ -480,8 +479,7 @@ describe('runtime web control protocol', () => {
 		})
 		await expect(
 			rpc.ensurePluginForkDto({
-				base: ManagedPlugin.nodeAddress(),
-				forkId: 'invalid-selection',
+				fork: ManagedPlugin.nodeAddress('invalid-selection'),
 				selectFor: { consumer: null },
 			}),
 		).resolves.toMatchObject({

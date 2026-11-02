@@ -391,7 +391,7 @@ export function parseEnsureForkResult(input: unknown): EnsureForkResult {
 		return Object.freeze({
 			ok: true as const,
 			status: literal(value.status, ['applied', 'deferred'], 'ensure fork result.status'),
-			fork: nodeAddress(value.fork, 'ensure fork result.fork'),
+			fork: forkNodeAddress(value.fork, 'ensure fork result.fork'),
 			report: pluginApplyReport(value.report, 'ensure fork result.report'),
 		})
 	}
@@ -402,7 +402,7 @@ export function parseEnsureForkResult(input: unknown): EnsureForkResult {
 		[
 			'state_overridden',
 			'invalid_input',
-			'invalid_fork_id',
+			'invalid_fork_address',
 			'definition_unavailable',
 			'not_forkable',
 			'consumer_unavailable',
@@ -1424,6 +1424,12 @@ function lifecycleError(input: unknown, label: string): PluginApplyLifecycleErro
 	})
 }
 
+function forkNodeAddress(input: unknown, label: string) {
+	const node = nodeAddress(input, label)
+	if (node.variant !== 'fork') fail(`${label} must be a fork node address`)
+	return node
+}
+
 function removeForkSuccess(value: Record<string, unknown>): RemoveForkResult {
 	const status = literal(
 		value.status,
@@ -1436,7 +1442,7 @@ function removeForkSuccess(value: Record<string, unknown>): RemoveForkResult {
 		[],
 		'remove fork result',
 	)
-	const fork = nodeAddress(value.fork, 'remove fork result.fork')
+	const fork = forkNodeAddress(value.fork, 'remove fork result.fork')
 	return status === 'already-absent'
 		? Object.freeze({ ok: true, status, fork })
 		: Object.freeze({
@@ -1453,7 +1459,7 @@ function removeForkFailure(value: Record<string, unknown>): RemoveForkResult {
 		[
 			'state_overridden',
 			'invalid_input',
-			'invalid_fork_id',
+			'invalid_fork_address',
 			'graph_rejected',
 			'fork_referenced',
 			'mutation_rejected',
@@ -1492,7 +1498,7 @@ function removeForkFailure(value: Record<string, unknown>): RemoveForkResult {
 				['retained', 'stopped-retained', 'unknown'],
 				'remove fork result.state',
 			),
-			fork: nodeAddress(value.fork, 'remove fork result.fork'),
+			fork: forkNodeAddress(value.fork, 'remove fork result.fork'),
 			...(value.report === undefined
 				? {}
 				: { report: pluginApplyReport(value.report, 'remove fork result.report') }),

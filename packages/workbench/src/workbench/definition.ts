@@ -271,23 +271,21 @@ type WorkbenchContentActionHandlers<Slots extends WorkbenchContentSlotMap> = Rea
 	[Key in WorkbenchContentActionKey<Slots>]: WorkbenchContentActionHandler<Slots[Key]>
 }>
 
-export type WorkbenchContentOpenContext<Slots extends WorkbenchContentSlotMap> =
-	WorkbenchViewOpenContext &
-		([WorkbenchContentDataKey<Slots>] extends [never] ? {} : Readonly<{ dataChanged(): void }>)
-
 export type WorkbenchContentBinding<Slots extends WorkbenchContentSlotMap> = ([
 	WorkbenchContentDataKey<Slots>,
 ] extends [never]
-	? Readonly<{ load?: never }>
+	? Readonly<{ load?: never; subscribe?: never }>
 	: Readonly<{
 			load(): WorkbenchContentDataValues<Slots> | Promise<WorkbenchContentDataValues<Slots>>
+			/** Subscribe before the first load; this open owns and releases the returned subscription. */
+			subscribe?(changed: () => void): Disposable
 		}>) &
 	([WorkbenchContentActionKey<Slots>] extends [never]
 		? Readonly<{ actions?: never }>
 		: Readonly<{ actions: WorkbenchContentActionHandlers<Slots> }>)
 
 export type WorkbenchContentFactory<Slots extends WorkbenchContentSlotMap> = (
-	context: WorkbenchContentOpenContext<Slots>,
+	context: WorkbenchViewOpenContext,
 ) => WorkbenchContentBinding<Slots> | Promise<WorkbenchContentBinding<Slots>>
 
 type BindingFor<Entry extends WorkbenchEntry> =

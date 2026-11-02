@@ -1,6 +1,10 @@
 import type { PluginApplyReportSnapshot as PluginApplyReport } from '@pluxel/host'
 /** Versioned, framework-neutral management protocol types shared by clients and servers. */
-import { type PluginDefinitionAddress, type PluginNodeAddress } from '@pluxel/core'
+import {
+	type PluginDefinitionAddress,
+	type PluginForkNodeAddress,
+	type PluginNodeAddress,
+} from '@pluxel/core'
 import { type HostApplicationMeta } from '../product-contract'
 import { type PluxelPlatformSnapshot } from '../platform'
 import {
@@ -16,7 +20,7 @@ export type {
 } from '@pluxel/host/internal/protocol'
 export type { VaultKeyPair } from '../../vault'
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 7 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 8 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',
@@ -578,7 +582,7 @@ export type EnsureForkResult =
 	| Readonly<{
 			ok: true
 			status: 'applied' | 'deferred'
-			fork: PluginNodeAddress
+			fork: PluginForkNodeAddress
 			report: PluginApplyReport
 	  }>
 	| Readonly<{
@@ -586,7 +590,7 @@ export type EnsureForkResult =
 			code:
 				| 'state_overridden'
 				| 'invalid_input'
-				| 'invalid_fork_id'
+				| 'invalid_fork_address'
 				| 'definition_unavailable'
 				| 'not_forkable'
 				| 'consumer_unavailable'
@@ -608,20 +612,20 @@ export type RemoveForkResult =
 	| Readonly<{
 			ok: true
 			status: 'removed' | 'removed-with-lifecycle-issues'
-			fork: PluginNodeAddress
+			fork: PluginForkNodeAddress
 			report: PluginApplyReport
 	  }>
 	| Readonly<{
 			ok: true
 			status: 'already-absent'
-			fork: PluginNodeAddress
+			fork: PluginForkNodeAddress
 	  }>
 	| Readonly<
 			| {
 					ok: false
 					code:
 						| 'invalid_input'
-						| 'invalid_fork_id'
+						| 'invalid_fork_address'
 						| 'graph_rejected'
 						| 'mutation_rejected'
 						| 'state_overridden'
@@ -643,7 +647,7 @@ export type RemoveForkResult =
 			ok: false
 			code: 'persistence_failed'
 			state: 'retained' | 'stopped-retained' | 'unknown'
-			fork: PluginNodeAddress
+			fork: PluginForkNodeAddress
 			report?: PluginApplyReport
 			error: string
 	  }>

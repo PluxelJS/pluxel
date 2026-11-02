@@ -128,9 +128,7 @@ export class ReportStudioPlugin extends BasePlugin {
 			limit: this.config.admission.limit,
 			windowMs: this.config.admission.windowMs,
 		})
-		const markdownRenderer = this.markdown.createRenderer({ theme: 'dark' })
-		this.markdownRenderer = markdownRenderer
-		this.ctx.effects.defer(() => markdownRenderer.close())
+		this.markdownRenderer = this.markdown.createRenderer({ theme: 'dark' })
 		await this.http.enableManagedSettings()
 		const meter = this.otel.meter
 		this.renderCounter = meter.createCounter('showcase.report.generated', { unit: '{report}' })
@@ -188,44 +186,34 @@ export class ReportStudioPlugin extends BasePlugin {
 
 		this.ctx.workbench?.publish(ReportStudioWorkbench, {
 			studio: ({ signal }) => new ReportStudioTarget(this, signal),
-			studioStatus: ({ signal, dataChanged }) => {
-				const subscription = this.subscribe(dataChanged)
-				const release = () => subscription[Symbol.dispose]()
-				signal.addEventListener('abort', release, { once: true })
-				if (signal.aborted) release()
-				return {
-					load: () => {
-						const snapshot = this.snapshot()
-						return {
-							status: {
-								renderer: snapshot.engines.join(' · '),
-								storage: snapshot.storageProvider,
-								cacheHits: snapshot.cache.localHits + snapshot.cache.backendHits,
-								cacheMisses: snapshot.cache.misses,
-								cacheEntries: snapshot.cache.entries,
-							},
-						}
-					},
-				}
-			},
-			studioArtifacts: ({ signal, dataChanged }) => {
-				const subscription = this.subscribe(dataChanged)
-				const release = () => subscription[Symbol.dispose]()
-				signal.addEventListener('abort', release, { once: true })
-				if (signal.aborted) release()
-				return {
-					load: () => ({
-						artifacts: this.snapshot()
-							.artifacts.toReversed()
-							.map((artifact) => ({
-								title: artifact.title,
-								engine: artifact.engine,
-								bytes: artifact.byteLength,
-								cacheHit: artifact.cacheHit,
-							})),
-					}),
-				}
-			},
+			studioStatus: () => ({
+				subscribe: (changed) => this.subscribe(changed),
+				load: () => {
+					const snapshot = this.snapshot()
+					return {
+						status: {
+							renderer: snapshot.engines.join(' · '),
+							storage: snapshot.storageProvider,
+							cacheHits: snapshot.cache.localHits + snapshot.cache.backendHits,
+							cacheMisses: snapshot.cache.misses,
+							cacheEntries: snapshot.cache.entries,
+						},
+					}
+				},
+			}),
+			studioArtifacts: () => ({
+				subscribe: (changed) => this.subscribe(changed),
+				load: () => ({
+					artifacts: this.snapshot()
+						.artifacts.toReversed()
+						.map((artifact) => ({
+							title: artifact.title,
+							engine: artifact.engine,
+							bytes: artifact.byteLength,
+							cacheHit: artifact.cacheHit,
+						})),
+				}),
+			}),
 			httpSettings: { provider: this.http },
 		})
 	}

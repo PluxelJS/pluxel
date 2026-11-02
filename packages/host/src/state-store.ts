@@ -5,6 +5,7 @@ import {
 	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
+	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { SuperJSON } from 'superjson'
@@ -29,7 +30,7 @@ import {
 export type HostStateFile = {
 	version: 6
 	autoStart: PluginNodeAddress[]
-	forks: PluginNodeAddress[]
+	forks: PluginForkNodeAddress[]
 	providerDefaults: HostProviderDefaultState[]
 	dependencyOverrides: HostDependencyOverrideState[]
 }
@@ -350,7 +351,7 @@ export function canonicalHostStateSnapshot(state: HostStateSnapshot): HostStateS
 
 function replaceDraft(target: HostStateDraft, source: HostStateDraft | HostStateSnapshot): void {
 	target.autoStart = source.autoStart.map(cloneNodeAddress)
-	target.forks = source.forks.map(cloneNodeAddress)
+	target.forks = source.forks.map((node) => cloneNodeAddress(node))
 	target.providerDefaults = source.providerDefaults.map(cloneProviderDefault)
 	target.dependencyOverrides = source.dependencyOverrides.map(cloneDependencyOverride)
 }
@@ -359,7 +360,7 @@ function toHostStateFile(draft: HostStateDraft | HostStateSnapshot): HostStateFi
 	return {
 		version: 6,
 		autoStart: draft.autoStart.map(cloneNodeAddress),
-		forks: draft.forks.map(cloneNodeAddress),
+		forks: draft.forks.map((node) => cloneNodeAddress(node)),
 		providerDefaults: draft.providerDefaults.map(cloneProviderDefault),
 		dependencyOverrides: draft.dependencyOverrides.map(cloneDependencyOverride),
 	}
@@ -411,12 +412,11 @@ function parseUniqueNodes(input: readonly unknown[], at: string): PluginNodeAddr
 	)
 }
 
-function parseForks(input: readonly unknown[], at: string): PluginNodeAddress[] {
-	const nodes = parseUniqueNodes(input, at)
-	for (const node of nodes) {
+function parseForks(input: readonly unknown[], at: string): PluginForkNodeAddress[] {
+	return parseUniqueNodes(input, at).map((node) => {
 		if (node.variant !== 'fork') throw invalidState(`${at} must contain only fork node addresses`)
-	}
-	return nodes
+		return node
+	})
 }
 
 function parseProviderDefaults(input: readonly unknown[], at: string): HostProviderDefaultState[] {
@@ -526,6 +526,8 @@ function cloneDefinitionAddress(definition: PluginDefinitionAddress): PluginDefi
 	}
 }
 
+function cloneNodeAddress(node: PluginForkNodeAddress): PluginForkNodeAddress
+function cloneNodeAddress(node: PluginNodeAddress): PluginNodeAddress
 function cloneNodeAddress(node: PluginNodeAddress): PluginNodeAddress {
 	return node.variant === 'default'
 		? { definition: cloneDefinitionAddress(node.definition), variant: 'default' }

@@ -83,18 +83,16 @@ export abstract class Otel extends BasePlugin {
 	}
 
 	/** Bind OtelWorkbench.operations in the concrete Plugin's own init() publication. */
-	protected workbenchOperations({
-		signal,
-		dataChanged,
-	}: {
-		signal: AbortSignal
-		dataChanged(): void
-	}) {
-		const release = () => this.workbenchDataListeners.delete(dataChanged)
-		this.workbenchDataListeners.add(dataChanged)
-		signal.addEventListener('abort', release, { once: true })
-		if (signal.aborted) release()
+	protected workbenchOperations() {
 		return {
+			subscribe: (changed: () => void): Disposable => {
+				this.workbenchDataListeners.add(changed)
+				return {
+					[Symbol.dispose]: () => {
+						this.workbenchDataListeners.delete(changed)
+					},
+				}
+			},
 			load: () => ({ status: this.workbenchStatus() }),
 			actions: {
 				flush: async () => {
@@ -255,7 +253,7 @@ export class OtelPlugin extends Otel {
 	protected override async init(): Promise<void> {
 		await super.init()
 		this.ctx.workbench?.publish(OtelWorkbench, {
-			operations: (context) => this.workbenchOperations(context),
+			operations: () => this.workbenchOperations(),
 		})
 	}
 

@@ -33,9 +33,18 @@ export type PluginDefinitionAddress = Readonly<{
 	exportName: string
 }>
 
-export type PluginNodeAddress =
-	| Readonly<{ definition: PluginDefinitionAddress; variant: 'default' }>
-	| Readonly<{ definition: PluginDefinitionAddress; variant: 'fork'; forkId: string }>
+export type PluginDefaultNodeAddress = Readonly<{
+	definition: PluginDefinitionAddress
+	variant: 'default'
+}>
+
+export type PluginForkNodeAddress = Readonly<{
+	definition: PluginDefinitionAddress
+	variant: 'fork'
+	forkId: string
+}>
+
+export type PluginNodeAddress = PluginDefaultNodeAddress | PluginForkNodeAddress
 
 type PluginEntrySlot = Readonly<{ address: PluginEntryAddress }>
 

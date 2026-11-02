@@ -1,6 +1,5 @@
 import { resolve } from 'node:path'
 import { createServer, type Plugin, type ViteDevServer } from 'vite'
-import { pluginDefinitionAddressOf } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { host, closeHostViteSession, type HostVitePluginApi } from '@pluxel/host-vite'
 import { serviceSingletons } from '@pluxel/services/vite'
@@ -25,7 +24,7 @@ export async function startDevBackend(
 					const attachment = {}
 					activeAttachment = attachment
 					const declaration = input.catalog.plugins.find((plugin) => {
-						const definition = pluginDefinitionAddressOf(plugin)
+						const definition = plugin.definitionAddress()
 						return (
 							definition.exportName === 'StudioPlugin' &&
 							definition.entry.kind === 'package-subpath' &&

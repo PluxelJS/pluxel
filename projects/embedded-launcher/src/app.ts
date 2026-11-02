@@ -5,11 +5,7 @@ import {
 	type HostDocumentStorage,
 	type HostStateStoreOptions,
 } from '@pluxel/host'
-import {
-	parsePluginNodeReference,
-	pluginDefinitionAddressOf,
-	type PluginConstructor,
-} from '@pluxel/core'
+import { parsePluginNodeReference, type PluginConstructor } from '@pluxel/core'
 import { pluginSource } from '@pluxel/host/sources'
 import { commands } from '@pluxel/services/commands'
 import {
@@ -40,7 +36,7 @@ export default defineHostApplication(({ bindings }): HostApplication => {
 	if (!execution.transport || typeof execution.transport.request !== 'function')
 		throw new TypeError('Launcher transport binding required')
 	const available = execution.plugins
-		? new Set(execution.plugins.map((plugin) => pluginDefinitionAddressOf(plugin).exportName))
+		? new Set(execution.plugins.map((plugin) => plugin.definitionAddress().exportName))
 		: undefined
 	const autoStart = defaultNames
 		.filter((name) => !available || available.has(name))

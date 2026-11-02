@@ -324,20 +324,20 @@ export class S3Plugin extends S3 {
 			this.credentialMutation = Promise.resolve()
 		}
 		this.ctx.workbench?.publish(S3Workbench, {
-			buckets: ({ principal, signal: contentSignal, dataChanged }) => {
-				const release = (): void => {
-					this.workbenchDataListeners?.delete(dataChanged)
-				}
-				this.workbenchDataListeners!.add(dataChanged)
-				contentSignal.addEventListener('abort', release, { once: true })
-				if (contentSignal.aborted) release()
-				return {
-					load: () => ({ status: this.workbenchStatus(contentSignal) }),
-					actions: {
-						rotate: (input) => this.rotateCredentials(principal, contentSignal, input),
-					},
-				}
-			},
+			buckets: ({ principal, signal: contentSignal }) => ({
+				subscribe: (changed) => {
+					this.workbenchDataListeners!.add(changed)
+					return {
+						[Symbol.dispose]: () => {
+							this.workbenchDataListeners?.delete(changed)
+						},
+					}
+				},
+				load: () => ({ status: this.workbenchStatus(contentSignal) }),
+				actions: {
+					rotate: (input) => this.rotateCredentials(principal, contentSignal, input),
+				},
+			}),
 		})
 	}
 
@@ -624,7 +624,7 @@ export class S3Plugin extends S3 {
 	}
 
 	private notifyWorkbenchDataChanged(): void {
-		for (const dataChanged of this.workbenchDataListeners ?? []) dataChanged()
+		for (const changed of this.workbenchDataListeners ?? []) changed()
 	}
 }
 

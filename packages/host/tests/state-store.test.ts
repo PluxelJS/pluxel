@@ -21,6 +21,7 @@ const ConsumerNode: PluginNodeAddress = { definition: Consumer, variant: 'defaul
 describe('Host state address persistence', () => {
 	it('preserves omitted declaration fields and rejects default nodes in forks', () => {
 		expect(resolveHostStateDeclaration({ autoStart: [] })).toEqual({ autoStart: [] })
+		// @ts-expect-error Default nodes cannot declare fork state.
 		expect(() => resolveHostStateDeclaration({ forks: [ProviderNode] })).toThrow(
 			/only fork node addresses/,
 		)

@@ -85,24 +85,27 @@ probe: workbench.action({ label: '测试连接', input: ProbeInput, form: 'embed
 
 ## 只在状态会自行变化时加入 live refresh
 
-`dataChanged()` 是 latest-state 提示，不携带事件 payload，也不保证逐事件交付。仅当领域状态在 action 之外变化时，才用 open
-signal 注册领域 listener：
+Content binding 可以提供同步 `subscribe(changed): Disposable`。框架为每次打开注册一次，在首次 `load()` 前建立观察，并在关闭、socket 断开、Plugin replacement 或 publication 撤回时释放返回的订阅。没有外部变化源时省略 `subscribe`。
 
 ```ts
-overview: ({ signal, dataChanged }) => {
-	this.serviceEvents.addEventListener('change', dataChanged, { signal })
-	return {
-		load: () => ({ status: this.inspectService() }),
-		actions: { refresh: async () => {
-			await this.refreshService()
-			return { ok: true, message: 'Refreshed' }
-		} },
-	}
-},
+overview: () => ({
+	load: () => ({ status: this.inspectService() }),
+	subscribe: (changed) => {
+		this.serviceEvents.addEventListener('change', changed)
+		return {
+			[Symbol.dispose]: () => this.serviceEvents.removeEventListener('change', changed),
+		}
+	},
+	actions: { refresh: async () => {
+		await this.refreshService()
+		return { ok: true, message: 'Refreshed' }
+	} },
+}),
 ```
 
-`signal` 会在 entry close、socket close、Plugin replacement 或 owner withdrawal 时 abort。listener 的清理属于领域对象；
-`dataChanged()`、load lane 与 Shell observer 由 Framework 拥有。
+`changed()` 只提示重新读取最新状态，不携带 payload，也不保证逐事件交付；框架合并提示并串行执行 `load()`。每次 `subscribe` 返回独立的标准 `Disposable`，注册失败抛错时由注册函数撤销已经创建的资源。工厂失败或打开已取消时不会开始订阅。
+
+首次或后续 `load()` 失败仍可在同一个打开页面中重试，不重复订阅；页面真正关闭时释放。工厂继续接收 `principal`、`params` 和 `signal`，可用于授权、路由参数与取消业务调用；领域订阅的释放交给 binding 契约。
 
 ## Markdown 与字段规则
 
@@ -127,7 +130,7 @@ undefined-producing wrapper 或 password；action input 必须是 host form 支�
 | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
 | data + action           | 打开时 initial load；action 在同一 `run()` 中 settle 后再 load                                                 |
 | 只有 action             | 不建立 data subscription，直接返回 action outcome                                                              |
-| action 之外也有状态变化 | 按上节注册 `dataChanged()`，提供最新状态提示                                                                   |
+| action 之外也有状态变化 | 按上节提供 `subscribe(changed)`，通知最新状态变化                                                              |
 | 纯 Markdown             | 省略 slots；`publish(ServiceWorkbench)` 即可，不创建 root 或占 opened-entry quota，也不生成 MF producer/Bridge |
 
 `subscribe()`、`load()`、`run()` 是本地 opened handle 的领域名称；底层 Content RPC root 使用

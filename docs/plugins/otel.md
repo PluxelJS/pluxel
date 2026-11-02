@@ -203,7 +203,7 @@ import { OtelWorkbench } from '@pluxel/plugin-otel'
 protected override async init(): Promise<void> {
 	await super.init()
 	this.ctx.workbench?.publish(OtelWorkbench, {
-		operations: (context) => this.workbenchOperations(context),
+		operations: () => this.workbenchOperations(),
 	})
 }
 ```

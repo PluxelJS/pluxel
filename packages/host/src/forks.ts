@@ -7,6 +7,7 @@ import {
 	parsePluginNodeAddress,
 	type Context,
 	type PluginDefinitionAddress,
+	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
@@ -34,13 +35,13 @@ export type ForkEnsureResult =
 	| {
 			ok: true
 			status: 'applied' | 'deferred'
-			node: PluginNodeAddress
+			node: PluginForkNodeAddress
 			report: PluginApplyReport
 	  }
 	| {
 			ok: false
 			code:
-				| 'invalid_fork_id'
+				| 'invalid_fork_address'
 				| 'state_overridden'
 				| 'definition_unavailable'
 				| 'not_forkable'
@@ -64,10 +65,10 @@ export type ForkRemoveResult =
 	| {
 			ok: true
 			status: 'removed' | 'removed-with-lifecycle-issues'
-			node: PluginNodeAddress
+			node: PluginForkNodeAddress
 			report: PluginApplyReport
 	  }
-	| { ok: true; status: 'already-absent'; node: PluginNodeAddress }
+	| { ok: true; status: 'already-absent'; node: PluginForkNodeAddress }
 	| {
 			ok: false
 			code: 'fork_referenced'
@@ -80,7 +81,7 @@ export type ForkRemoveResult =
 	  }
 	| {
 			ok: false
-			code: 'invalid_fork_id' | 'graph_rejected' | 'state_overridden'
+			code: 'invalid_fork_address' | 'graph_rejected' | 'state_overridden'
 			state: 'unchanged'
 			message: string
 	  }
@@ -88,15 +89,14 @@ export type ForkRemoveResult =
 			ok: false
 			code: 'persistence_failed'
 			state: 'retained' | 'stopped-retained' | 'unknown'
-			node: PluginNodeAddress
+			node: PluginForkNodeAddress
 			report?: PluginApplyReport
 			message: string
 	  }
 
 export async function ensureFork(
 	ctx: Context,
-	base: PluginNodeAddress,
-	forkId: string,
+	fork: PluginForkNodeAddress,
 	options: HostOperationOptions & {
 		/** Omitted preserves existing policy; a new fork remains disabled for auto-start. */
 		autoStart?: boolean
@@ -106,8 +106,8 @@ export async function ensureFork(
 		}>
 	} = {},
 ): Promise<ForkEnsureResult> {
-	const node = parseForkAddress(base, forkId)
-	if (!node) return invalidFork('Fork base or forkId is invalid')
+	const node = parseForkAddress(fork)
+	if (!node) return invalidFork('Invalid fork node address')
 	const coordinator = requirePluginHostCoordinator(ctx)
 	try {
 		const report = await coordinator.updateRuntimeState(
@@ -141,12 +141,11 @@ export async function ensureFork(
 
 export async function removeFork(
 	ctx: Context,
-	base: PluginNodeAddress,
-	forkId: string,
+	fork: PluginForkNodeAddress,
 	options?: HostOperationOptions,
 ): Promise<ForkRemoveResult> {
-	const node = parseForkAddress(base, forkId)
-	if (!node) return invalidFork('Fork base or forkId is invalid')
+	const node = parseForkAddress(fork)
+	if (!node) return invalidFork('Invalid fork node address')
 	const coordinator = requirePluginHostCoordinator(ctx)
 	let stopReport: PluginApplyReport | undefined
 	let phase: 'admission' | 'stop' | 'metadata' | 'remove' = 'admission'
@@ -211,17 +210,9 @@ export async function removeFork(
 	}
 }
 
-function parseForkAddress(
-	base: PluginNodeAddress,
-	forkId: string,
-): Extract<PluginNodeAddress, { variant: 'fork' }> | undefined {
-	if (base.variant !== 'default') return undefined
+function parseForkAddress(input: unknown): PluginForkNodeAddress | undefined {
 	try {
-		const parsed = parsePluginNodeAddress({
-			definition: base.definition,
-			variant: 'fork',
-			forkId,
-		})
+		const parsed = parsePluginNodeAddress(input)
 		return parsed.variant === 'fork' ? parsed : undefined
 	} catch {
 		return undefined
@@ -229,7 +220,7 @@ function parseForkAddress(
 }
 
 function invalidFork(message: string): ForkEnsureResult & ForkRemoveResult {
-	return { ok: false, code: 'invalid_fork_id', state: 'unchanged', message }
+	return { ok: false, code: 'invalid_fork_address', state: 'unchanged', message }
 }
 
 function forkMutationFailure(error: unknown): ForkEnsureResult {
@@ -271,7 +262,7 @@ function forkMutationFailure(error: unknown): ForkEnsureResult {
 
 function removeFailure(
 	error: unknown,
-	node: PluginNodeAddress,
+	node: PluginForkNodeAddress,
 	state: 'retained' | 'stopped-retained' | 'unknown',
 	report?: PluginApplyReport,
 ): ForkRemoveResult {

@@ -3,6 +3,7 @@ import {
 	pluginNodeAddressEqual,
 	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
+	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { type ConcretePluginDefinitionCandidate } from '@pluxel/core/internal'
@@ -29,10 +30,13 @@ const definition = (name: string): PluginDefinitionAddress => ({
 	exportName: `${name}Plugin`,
 })
 
-const node = (address: PluginDefinitionAddress, forkId?: string): PluginNodeAddress =>
-	forkId
+function node(address: PluginDefinitionAddress, forkId: string): PluginForkNodeAddress
+function node(address: PluginDefinitionAddress): PluginNodeAddress
+function node(address: PluginDefinitionAddress, forkId?: string): PluginNodeAddress {
+	return forkId
 		? { definition: address, variant: 'fork', forkId }
 		: { definition: address, variant: 'default' }
+}
 
 function candidate(
 	address: PluginDefinitionAddress,
