@@ -123,7 +123,6 @@ export async function resolveBuiltAssets(publicDirAbs: string): Promise<Assets> 
 		if (firstStaticVisit) {
 			staticVisited.add(key)
 			if (key !== SHELL_ENTRY) preloadFiles.add(node.file)
-			css.forEach((file) => cssFiles.add(file))
 		}
 		if (firstVisit) {
 			visited.add(key)
@@ -138,6 +137,8 @@ export async function resolveBuiltAssets(publicDirAbs: string): Promise<Assets> 
 			`${JSON.stringify(key)}.imports`,
 		))
 			visit(dependency, [...chain, dependency], staticImport)
+		// Imported chunks' styles precede the importer's, so a module overrides its dependencies.
+		if (firstStaticVisit) css.forEach((file) => cssFiles.add(file))
 		if (firstVisit)
 			for (const dependency of readStringList(
 				node.dynamicImports,

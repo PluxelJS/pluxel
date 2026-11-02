@@ -1,3 +1,6 @@
+// Mantine's base styles load first so Shell rules override components with equal specificity.
+import '@mantine/core/styles.css'
+import '@mantine/notifications/styles.css'
 import { Button, ColorSchemeScript, PasswordInput, PinInput, Stack, Text } from '@mantine/core'
 import type { ViteHotContext } from 'vite/types/hot.js'
 import type { ManagementAuthenticationProviderStep } from '@pluxel/services/management/access'
@@ -12,8 +15,6 @@ import {
 	type RuntimeClientBootstrap,
 	type RuntimeSessionEvent,
 } from './runtime'
-import '@mantine/core/styles.css'
-import '@mantine/notifications/styles.css'
 import { GatePanel, InvalidatedSession } from './sessionGate'
 import { installSessionEntryHmrBoundary } from './sessionReload'
 

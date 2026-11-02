@@ -294,6 +294,7 @@ describe('packaged Shell manifest contract', () => {
 				[entry]: {
 					isEntry: true,
 					file: 'assets/client.js',
+					css: ['assets/client.css'],
 					imports: ['shared'],
 					dynamicImports: ['lazy'],
 				},
@@ -302,6 +303,7 @@ describe('packaged Shell manifest contract', () => {
 			},
 			{
 				'assets/client.js': '',
+				'assets/client.css': '',
 				'assets/shared.js': '',
 				'assets/shared.css': '',
 				'assets/lazy.js': '',
@@ -313,7 +315,11 @@ describe('packaged Shell manifest contract', () => {
 			const builtAssets = await resolveBuiltAssets(publicDir)
 			expect(builtAssets.js).toBe('/__pluxel/workbench/assets/client.js')
 			expect(builtAssets.preload).toEqual(['/__pluxel/workbench/assets/shared.js'])
-			expect(builtAssets.css).toEqual(['/__pluxel/workbench/assets/shared.css'])
+			// Dependency styles come first so the Shell entry overrides the libraries it imports.
+			expect(builtAssets.css).toEqual([
+				'/__pluxel/workbench/assets/shared.css',
+				'/__pluxel/workbench/assets/client.css',
+			])
 		} finally {
 			await rm(publicDir, { recursive: true, force: true })
 		}
