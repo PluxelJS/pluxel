@@ -4,7 +4,6 @@ import {
 	Button,
 	Group,
 	Loader,
-	MantineProvider,
 	ScrollArea,
 	Select,
 	Stack,
@@ -12,6 +11,7 @@ import {
 	TextInput,
 	UnstyledButton,
 } from '@mantine/core'
+import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 import { useMemo, useState } from 'react'
 import { listScope, listSnapshot } from './list.scope'
 import './list.css'
@@ -46,8 +46,8 @@ function List() {
 		return [...result]
 	}, [query.data, search, source, groupBy])
 	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
-			<Stack className="bot-lab-list" gap={6} p={8} h="100%" mih={0}>
+		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
+			<Stack className="bot-lab-list" gap={6} p="sm" h="100%" mih={0}>
 				<TextInput
 					size="xs"
 					aria-label="搜索机器人"
@@ -168,7 +168,7 @@ function List() {
 					工作区概览
 				</Button>
 			</Stack>
-		</MantineProvider>
+		</WorkbenchMantineProvider>
 	)
 }
 export default listScope.render(List)

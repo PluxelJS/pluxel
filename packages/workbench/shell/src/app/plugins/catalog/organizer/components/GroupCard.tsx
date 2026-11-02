@@ -112,7 +112,7 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 									whiteSpace: 'nowrap',
 									overflow: 'hidden',
 									textOverflow: 'ellipsis',
-									color: 'var(--plx-text)',
+									color: 'var(--mantine-color-text)',
 								}}
 							>
 								{g.name || '未命名分组'}

@@ -95,7 +95,7 @@ function PluginToolContent({ pluginRoute }: { pluginRoute: string }) {
 						{detail.label}
 					</Text>
 				</Group>
-				<Stack gap="sm" p="xs" className="plx-plugin-tool__scroll">
+				<Stack gap="sm" p="var(--plx-panel-padding)" className="plx-plugin-tool__scroll">
 					<PluginRuntimeSummaryCard status={statusEntry} description={detail.desc} />
 					<PluginDependencyDetailCard />
 					<PluginPanelDirectory />
@@ -111,7 +111,11 @@ function PluginLogTool({ owner, pluginRoute }: { owner: PluginNodeAddress; plugi
 	const label = detail?.label ?? pluginRoute
 	return (
 		<section className="plx-plugin-tool" aria-label="插件最近日志面板">
-			<Stack gap="xs" p="xs" style={{ flexShrink: 0, borderBottom: '1px solid var(--plx-border)' }}>
+			<Stack
+				gap="xs"
+				p="var(--plx-panel-padding)"
+				style={{ flexShrink: 0, borderBottom: '1px solid var(--plx-border)' }}
+			>
 				<Group gap="xs" justify="space-between">
 					<Text size="xs" fw={600} truncate title={label} style={{ minWidth: 0, flex: 1 }}>
 						{label}

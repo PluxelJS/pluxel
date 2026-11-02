@@ -8,7 +8,7 @@
 }
 
 .plx-pluginWorkbench__summaryLabel {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	font-size: var(--mantine-font-size-xs);
 	font-weight: 600;
 	line-height: 1.7;
@@ -42,7 +42,7 @@
 }
 
 .plx-pluginWorkbench__diagnostics > summary {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	cursor: pointer;
 	font-weight: 600;
 }
@@ -96,14 +96,14 @@
 }
 
 .plx-pluginDependencyDetail__sectionCount {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	font-size: var(--mantine-font-size-xs);
 	font-variant-numeric: tabular-nums;
 	font-weight: 600;
 }
 
 .plx-pluginDependencyDetail__sectionSummary {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	font-size: var(--mantine-font-size-xs);
 	font-variant-numeric: tabular-nums;
 	line-height: 1.35;
@@ -111,9 +111,9 @@
 }
 
 .plx-pluginDependencyDetail__relations {
-	background: color-mix(in srgb, var(--plx-surface-muted) 72%, transparent);
+	background: color-mix(in srgb, var(--plx-raised) 72%, transparent);
 	border: 1px solid color-mix(in srgb, var(--plx-border) 84%, transparent);
-	border-radius: var(--mantine-radius-sm);
+	border-radius: var(--mantine-radius-md);
 	margin-top: 4px;
 	overflow: hidden;
 }
@@ -133,7 +133,7 @@
 }
 
 .plx-pluginDependencyDetail__relation:hover {
-	background: color-mix(in srgb, var(--plx-accent-soft) 28%, transparent);
+	background: color-mix(in srgb, var(--mantine-primary-color-light) 28%, transparent);
 }
 
 .plx-pluginDependencyDetail__endpointName,
@@ -150,11 +150,11 @@
 }
 
 .plx-pluginDependencyDetail__endpointName {
-	color: var(--plx-text);
+	color: var(--mantine-color-text);
 }
 
 .plx-pluginDependencyDetail__endpointLink {
-	color: var(--plx-accent-strong);
+	color: var(--mantine-primary-color-light-color);
 	text-decoration: none;
 }
 
@@ -188,7 +188,7 @@
 .plx-pluginDependencyDetail__graphLink {
 	align-items: center;
 	border-radius: var(--mantine-radius-sm);
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	display: inline-flex;
 	flex: 0 0 auto;
 	height: 30px;
@@ -198,19 +198,19 @@
 }
 
 .plx-pluginDependencyDetail__graphLink:hover {
-	background: var(--plx-accent-soft);
-	color: var(--plx-accent-strong);
+	background: var(--mantine-primary-color-light);
+	color: var(--mantine-primary-color-light-color);
 }
 
 .plx-pluginDependencyDetail__graphLink:focus-visible {
 	box-shadow: inset 0 0 0 1px var(--plx-selected-border);
-	color: var(--plx-accent-strong);
+	color: var(--mantine-primary-color-light-color);
 	outline: 2px solid transparent;
 }
 
 .plx-pluginPanel {
-	background: var(--plx-panel-bg);
-	border-radius: var(--mantine-radius-sm);
+	background: var(--plx-raised);
+	border-radius: var(--mantine-radius-md);
 	box-shadow: none;
 }
 
@@ -251,7 +251,7 @@
 }
 
 .plx-pluginPanel__description {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	font-size: var(--mantine-font-size-md);
 	line-height: 1.35;
 }
@@ -273,7 +273,7 @@
 
 .plx-pluginWorkbench__configToolbar {
 	align-items: center;
-	background: color-mix(in srgb, var(--plx-surface) 96%, transparent);
+	background: color-mix(in srgb, var(--mantine-color-body) 96%, transparent);
 	border-bottom: 1px solid color-mix(in srgb, var(--plx-border) 82%, transparent);
 	display: flex;
 	flex: 0 0 auto;
@@ -322,7 +322,7 @@
 }
 
 .plx-pluginWorkbench__configActionSelect .mantine-Select-section {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 }
 
 .plx-pluginWorkbench__configActionKey {
@@ -394,7 +394,11 @@
 
 .plx-pluginWorkbench__outlineNode:hover,
 .plx-pluginWorkbench__outlineNode:focus-visible {
-	background: color-mix(in srgb, var(--plx-accent-soft) 52%, var(--plx-surface) 48%);
+	background: color-mix(
+		in srgb,
+		var(--mantine-primary-color-light) 52%,
+		var(--mantine-color-body) 48%
+	);
 	outline: none;
 }
 
@@ -423,8 +427,8 @@
 }
 
 .plx-pluginWorkbench__outlineDot[data-active='true'] {
-	background: var(--plx-accent);
-	box-shadow: 0 0 0 2px color-mix(in srgb, var(--plx-accent-soft) 72%, transparent);
+	background: var(--mantine-primary-color-filled);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--mantine-primary-color-light) 72%, transparent);
 }
 
 .plx-pluginWorkbench__outlineBranch {
@@ -451,7 +455,7 @@
 }
 
 .plx-pluginWorkbench__actionPolicy .mantine-Switch-label {
-	color: var(--plx-text);
+	color: var(--mantine-color-text);
 	font-size: var(--mantine-font-size-xs);
 	font-weight: 600;
 	padding-inline-end: 7px;

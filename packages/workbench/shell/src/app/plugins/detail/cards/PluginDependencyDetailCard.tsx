@@ -393,7 +393,7 @@ export function PluginDependencyDetailCard() {
 	}
 	const loading = graph.isLoading || controls.isLoading || providerPolicy.loading
 	return (
-		<Paper withBorder radius="sm" p="sm" shadow="none" bg="var(--plx-surface-strong)">
+		<Paper withBorder p="sm" shadow="none" bg="var(--plx-raised)">
 			<Stack gap="sm">
 				<Group justify="space-between" align="center" wrap="nowrap">
 					<Group gap={6} wrap="wrap">

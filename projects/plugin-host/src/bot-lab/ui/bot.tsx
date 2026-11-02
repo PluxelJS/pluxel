@@ -5,13 +5,13 @@ import {
 	Card,
 	Group,
 	Loader,
-	MantineProvider,
 	SimpleGrid,
 	Stack,
 	Text,
 	Textarea,
 	Title,
 } from '@mantine/core'
+import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 import { useEffect, useState } from 'react'
 import { botScope, botSnapshot, saveBot, setBotRunning } from './bot.scope'
 
@@ -77,8 +77,8 @@ function Bot() {
 		}
 	}
 	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
-			<Stack p="md" gap="sm">
+		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
+			<Stack p="lg" gap="sm">
 				{query.isPending && <Loader size="sm" />}
 				{query.error && (
 					<Alert color="red" title="读取机器人失败">
@@ -212,7 +212,7 @@ function Bot() {
 					</>
 				)}
 			</Stack>
-		</MantineProvider>
+		</WorkbenchMantineProvider>
 	)
 }
 export default botScope.render(Bot)

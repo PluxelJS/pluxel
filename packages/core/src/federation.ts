@@ -39,6 +39,7 @@ export const WORKBENCH_FEDERATION_SHARED_MODULES = [
 	'@pluxel/workbench',
 	'@pluxel/workbench/client',
 	'@pluxel/workbench/react',
+	'@pluxel/workbench/mantine',
 	'@pluxel/workbench/internal/react',
 ] as const
 
@@ -179,6 +180,7 @@ export function createWorkbenchFederationCompatibilitySet(
 		'@pluxel/workbench': workbench,
 		'@pluxel/workbench/client': workbench,
 		'@pluxel/workbench/react': workbench,
+		'@pluxel/workbench/mantine': workbench,
 		'@pluxel/workbench/internal/react': workbench,
 	}) satisfies Readonly<Record<WorkbenchFederationSharedModule, string>>
 	return Object.freeze({

@@ -267,8 +267,8 @@ export function ConfigEditor() {
 }
 ```
 
-上例是独立 React 应用，因此自行导入 Mantine CSS。放进 Workbench View 时，仍需自己的 `MantineProvider`，
-但应删除 `@mantine/core/styles.css` 导入，基础 CSS 已由宿主加载；见[页面资源参考](./renderer-resources.md)。
+上例是独立 React 应用，因此自行导入 Mantine CSS。放进 Workbench View 时改用 `WorkbenchMantineProvider`，
+并删除 `@mantine/core/styles.css` 导入，基础 CSS 已由宿主加载；见[页面资源参考](./renderer-resources.md)。
 
 `AutoForm` 负责根据 schema metadata 规划和渲染字段；配置 authority 仍然是 runtime 的 `configs.use()` 校验流程。把表单值送回 host API 前，服务端必须再次用同一个 schema 校验，不能把浏览器表单当作信任边界。
 

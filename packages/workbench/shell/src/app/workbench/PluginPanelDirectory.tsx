@@ -1,4 +1,4 @@
-import { Alert, Button, Group, Stack, Text } from '@mantine/core'
+import { Alert, Button, Group, Paper, Stack, Text } from '@mantine/core'
 import { pluginNodeAddressEqual, pluginNodeIndexKey } from '@pluxel/core'
 import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
 import { useWorkbenchState } from '@worksplit/react'
@@ -53,53 +53,55 @@ function ConnectedDirectory({ session }: { session: WorkspaceSession }) {
 	const directory = usePluginPanelDirectory(session)
 	if (!directory.owner) return null
 	return (
-		<Stack gap="xs" component="section" aria-label="插件扩展">
-			<Text size="sm" fw={600}>
-				插件扩展
-			</Text>
-			{directory.snapshot.error ? (
-				<Alert color="red" title="扩展读取失败">
-					{directory.snapshot.error.message}
-				</Alert>
-			) : null}
-			{directory.snapshot.state === 'loading' ? (
-				<Text size="xs" c="dimmed" role="status">
-					正在读取扩展…
+		<Paper withBorder p="sm" shadow="none" bg="var(--plx-raised)">
+			<Stack gap="xs" component="section" aria-label="插件扩展">
+				<Text size="sm" fw={600}>
+					插件扩展
 				</Text>
-			) : null}
-			{directory.entries.length === 0 && directory.snapshot.state === 'ready' ? (
-				<Text size="xs" c="dimmed">
-					当前插件没有可用扩展
-				</Text>
-			) : null}
-			{directory.entries.map((entry) => {
-				const unavailable = panelUnavailable(entry, directory.running)
-				const opened = session.isPanelOpen(entry)
-				return (
-					<Group key={entry.descriptor.key} justify="space-between" gap="xs" wrap="nowrap">
-						<Stack gap={0} style={{ minWidth: 0 }}>
-							<Text size="sm" truncate="end" title={entry.placement.label}>
-								{entry.placement.label}
-							</Text>
-							<Text size="xs" c="dimmed">
-								{panelRegionLabels[entry.placement.region]}
-								{opened ? ' · 已打开' : ''}
-							</Text>
-						</Stack>
-						<Button
-							size="compact-xs"
-							variant="subtle"
-							disabled={!!unavailable}
-							aria-label={`${unavailable ?? (opened ? '显示' : '打开')} ${entry.placement.label}`}
-							onClick={() => {
-								void session.openPanel(entry).catch((error: unknown) => session.report(error))
-							}}
-						>
-							{unavailable ?? (opened ? '显示' : '打开')}
-						</Button>
-					</Group>
-				)
-			})}
-		</Stack>
+				{directory.snapshot.error ? (
+					<Alert color="red" title="扩展读取失败">
+						{directory.snapshot.error.message}
+					</Alert>
+				) : null}
+				{directory.snapshot.state === 'loading' ? (
+					<Text size="xs" c="dimmed" role="status">
+						正在读取扩展…
+					</Text>
+				) : null}
+				{directory.entries.length === 0 && directory.snapshot.state === 'ready' ? (
+					<Text size="xs" c="dimmed">
+						当前插件没有可用扩展
+					</Text>
+				) : null}
+				{directory.entries.map((entry) => {
+					const unavailable = panelUnavailable(entry, directory.running)
+					const opened = session.isPanelOpen(entry)
+					return (
+						<Group key={entry.descriptor.key} justify="space-between" gap="xs" wrap="nowrap">
+							<Stack gap={0} style={{ minWidth: 0 }}>
+								<Text size="sm" truncate="end" title={entry.placement.label}>
+									{entry.placement.label}
+								</Text>
+								<Text size="xs" c="dimmed">
+									{panelRegionLabels[entry.placement.region]}
+									{opened ? ' · 已打开' : ''}
+								</Text>
+							</Stack>
+							<Button
+								size="compact-xs"
+								variant="subtle"
+								disabled={!!unavailable}
+								aria-label={`${unavailable ?? (opened ? '显示' : '打开')} ${entry.placement.label}`}
+								onClick={() => {
+									void session.openPanel(entry).catch((error: unknown) => session.report(error))
+								}}
+							>
+								{unavailable ?? (opened ? '显示' : '打开')}
+							</Button>
+						</Group>
+					)
+				})}
+			</Stack>
+		</Paper>
 	)
 }

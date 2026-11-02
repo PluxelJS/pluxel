@@ -25,6 +25,7 @@ import { version as runtimeVersion } from '../../package.json'
 import * as Workbench from '../index.ts'
 import type { RpcStub } from 'capnweb'
 import * as WorkbenchClient from './client.ts'
+import * as WorkbenchMantine from '../mantine/index.ts'
 import {
 	openWorkbenchEntry,
 	type WorkbenchClientFederatedOpenResult,
@@ -76,6 +77,7 @@ const WORKBENCH_SHARED_IMPLEMENTATIONS = {
 	'@pluxel/workbench': Workbench,
 	'@pluxel/workbench/client': WorkbenchClient,
 	'@pluxel/workbench/react': WorkbenchReact,
+	'@pluxel/workbench/mantine': WorkbenchMantine,
 	'@pluxel/workbench/internal/react': WorkbenchReactInternal,
 } satisfies Readonly<Record<WorkbenchFederationSharedModule, unknown>>
 

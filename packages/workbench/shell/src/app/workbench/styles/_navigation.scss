@@ -55,7 +55,6 @@
 	transform: rotate(90deg);
 }
 .plx-workspace-navigation[data-compact] {
-	padding: 8px;
 	gap: 8px;
 }
 .plx-workspace-navigation[data-compact] .plx-workspace-navigation__item {
@@ -164,11 +163,20 @@
 	}
 }
 
+/* Rows align their text with the search field above and hover on the neutral state overlay. */
+.plx-workspace-navigation__link {
+	/* Entries are navigation rows, not accent actions: neutral text, accent only when active. */
+	color: var(--mantine-color-text);
+	padding-inline: 8px;
+}
+.plx-workspace-navigation__link:not([data-variant='light']):hover {
+	background: var(--plx-hover-bg);
+}
 /* Active entry: neutral selected surface and accent icon; no edge bar against rounded corners. */
 .plx-workspace-navigation__link[data-variant='light'] {
 	background: var(--plx-selected-bg);
 	color: var(--mantine-color-text);
 }
 .plx-workspace-navigation__link[data-variant='light'] .mantine-Button-section {
-	color: var(--plx-accent);
+	color: var(--mantine-primary-color-filled);
 }

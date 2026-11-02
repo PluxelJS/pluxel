@@ -18,7 +18,7 @@ import { openConfirmModal } from '@mantine/modals'
 import { useHotkeys } from '@tanstack/react-hotkeys'
 import {
 	IconBell,
-	IconPlus,
+	IconCopyPlus,
 	IconDots,
 	IconFile,
 	IconInfoCircle,
@@ -215,7 +215,7 @@ export function WorkbenchShell() {
 								})
 							}}
 						>
-							<IconPlus size={14} />
+							<IconCopyPlus size={14} />
 						</ActionIcon>,
 					)
 				const dirty = session.documents.get(node.getId())?.isDirty()
@@ -267,9 +267,9 @@ export function WorkbenchShell() {
 						{product?.displayName ?? 'Pluxel'}
 					</Text>
 					<Button
-						variant="subtle"
+						variant="default"
 						size="compact-sm"
-						leftSection={<IconSearch size={16} />}
+						leftSection={<IconSearch size={15} />}
 						onClick={showSearch}
 						aria-label="查找所有工作区入口"
 						className="plx-workspace__search-button"
@@ -283,8 +283,10 @@ export function WorkbenchShell() {
 							<Button
 								size="compact-sm"
 								variant="subtle"
+								color="gray"
 								rightSection={<IconDots size={16} />}
 								disabled={pending}
+								className="plx-workspace__workspace-menu"
 							>
 								工作区
 							</Button>

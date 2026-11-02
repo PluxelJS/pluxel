@@ -4,9 +4,9 @@
 
 ## 阅读层次
 
-结构背景使用 app background，阅读区域使用 surface，独立摘要使用 surfaceStrong。边框分隔真正区域与现有卡片；普通列表行、字段不层层包卡片，阴影留给菜单和对话框。先删除重复标题、包装和空区域，再调整密度，不靠缩小所有按钮或输入框掩盖布局问题。
+采用 Linear 式分层：工具栏、入口栏、标签栏和侧边 Border 面板放在 canvas 上；中央文档是 surface（`--mantine-color-body`）上的圆角浮起面板；文档内需要独立区分的摘要、代码和表头使用 raised。区域之间靠明暗与细线（`--plx-border`）分隔，控件和卡片外框用 `--mantine-color-default-border`。阴影只留给菜单、弹层和对话框。先删除重复标题、包装和空区域，再调整密度，不靠缩小所有按钮或输入框掩盖布局问题。
 
-优先 Mantine 默认尺寸与间距 props；局部样式使用语义变量。共享 SCSS 只承担 Shell 布局与跨领域中性表面，业务页面不定义另一套控件皮肤。
+正文 13px（`sm`），控件高度与字号由公开主题 `@pluxel/workbench/mantine` 的组件 `vars` 统一；页面直接使用 Mantine size props，不在全局 SCSS 重写控件尺寸。共享 SCSS 只承担 Shell 布局与跨领域中性表面，业务页面不定义另一套控件皮肤。
 
 ## 交互状态
 
@@ -24,6 +24,6 @@ hover 不覆盖选中背景；失焦也不清除选中事实。强调色表达�
 
 ## 所有者与验收
 
-颜色流为 accent presets → `theme/core/themeModel.ts` 语义 token 与 `--plx-*` 变量 → Mantine 和布局调用方。新增状态先扩展这一权威来源，再让相关消费者复用；不在组件中放原始色值、装饰专用 token 或全局重绘控件家族。
+主题结构（尺寸、字体、颜色名称、组件默认值）由 `packages/workbench/src/mantine/theme.ts` 拥有，Shell 与插件 renderer 共用。颜色流为 accent presets → `theme/core/themeModel.ts` 的中性层、状态色与 CSS 变量 → Mantine 和布局调用方。Mantine 已有的文字、表面、边框和强调色直接用 `--mantine-*` 变量；`--plx-*` 只保留 `canvas`、`raised`、`border` 和 hover/selected 状态。新增状态先扩展这一权威来源，再让相关消费者复用；不在组件中放原始色值、装饰专用 token 或全局重绘控件家族。
 
 状态变更检查浅/深主题中的普通、悬停、活跃选中、非活跃选中与键盘焦点组合。特别检查鼠标移入选中项后背景不退化、切换容器后原选择仍可辨认；同时检查长名称、窄窗口及插件真实 renderer，不能只验证静态 token 值。

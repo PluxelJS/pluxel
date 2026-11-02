@@ -50,6 +50,10 @@
 			"@pluxel/source": "./src/workbench/shared-transport.ts",
 			"default": "./dist/internal/transport.mjs"
 		},
+		"./mantine": {
+			"@pluxel/source": "./src/mantine/index.ts",
+			"default": "./dist/mantine.mjs"
+		},
 		"./react": {
 			"@pluxel/source": "./src/workbench/react.tsx",
 			"default": "./dist/react.mjs"
@@ -87,6 +91,7 @@
 			"./internal/react": "./dist/internal/react.mjs",
 			"./internal/test": "./dist/internal/test.mjs",
 			"./internal/transport": "./dist/internal/transport.mjs",
+			"./mantine": "./dist/mantine.mjs",
 			"./react": "./dist/react.mjs",
 			"./server": "./dist/server.mjs",
 			"./service": "./dist/service.mjs",

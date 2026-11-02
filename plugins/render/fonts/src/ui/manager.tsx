@@ -1,4 +1,4 @@
-import { MantineProvider } from '@mantine/core'
+import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 import { useEffect, useRef, useState } from 'react'
 import { FontManagerContent } from './index.tsx'
 import {
@@ -85,7 +85,7 @@ function FontsManagerPanel() {
 						: null)
 
 	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
+		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
 			<FontManagerContent
 				snapshot={snapshot.data}
 				loading={loading}
@@ -105,7 +105,7 @@ function FontsManagerPanel() {
 					removeFont.mutate(id)
 				}}
 			/>
-		</MantineProvider>
+		</WorkbenchMantineProvider>
 	)
 }
 

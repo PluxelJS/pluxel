@@ -31,7 +31,7 @@ export function GroupPlacementModal({
 	}, [initialValue, opened, options])
 
 	return (
-		<Modal opened={opened} onClose={onClose} title="移动到分组" centered size="sm" radius="sm">
+		<Modal opened={opened} onClose={onClose} title="移动到分组" centered size="sm">
 			<form
 				onSubmit={(event) => {
 					event.preventDefault()

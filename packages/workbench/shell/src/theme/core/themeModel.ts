@@ -9,59 +9,34 @@ import {
 import { useMemo } from 'react'
 import { DEFAULT_ACCENT_KEY, getAccentPreset } from '../accent/accentPresets'
 import {
-	PLX_APP_SHADOWS,
 	PLX_FIXED_LEVELS,
 	PLX_LOG_ANSI16,
-	PLX_LOG_SURFACES,
 	PLX_NEUTRAL_FOUNDATIONS,
+	PLX_STATE_INK,
+	type PlxNeutralFoundation,
 	type PlxThemeMode,
 } from './themeTokens'
-import { alpha, createMaterialThemeSource, mix, mutedTonalPalette, toneHex } from './tonalPalette'
+import { alpha, createMaterialThemeSource, mutedTonalPalette, toneHex } from './tonalPalette'
 
 export type PlxLogTheme = {
-	panelBg: string
-	panelHeaderBg: string
-	listBg: string
 	listStripe: string
-	border: string
-	borderColor: string
-	text: string
-	textMuted: string
-	category: string
-	buttonBg: string
-	buttonBgAccent: string
-	buttonText: string
-	inputBg: string
-	inputText: string
 	rowSelectedBg: string
-	errorText: string
 	levels: Record<string, string>
 	ansi16: readonly string[]
 }
 
+/** Interaction states shared by tabs, catalog rows and navigation entries. */
+export type PlxControlStates = {
+	hoverBg: string
+	inactiveSelectedBg: string
+	selectedBg: string
+	selectedBorder: string
+}
+
 export type PlxThemeModel = {
 	mode: PlxThemeMode
-	app: {
-		bg: string
-		bgAlt: string
-		surface: string
-		surfaceStrong: string
-		surfaceMuted: string
-		border: string
-		borderStrong: string
-		text: string
-		textMuted: string
-		accent: string
-		accentStrong: string
-		accentSoft: string
-		shadow: string
-	}
-	controls: {
-		hoverBg: string
-		inactiveSelectedBg: string
-		selectedBg: string
-		selectedBorder: string
-	}
+	neutral: PlxNeutralFoundation
+	controls: PlxControlStates
 	log: PlxLogTheme
 }
 
@@ -72,129 +47,38 @@ function themeSeed(theme?: MantineTheme) {
 	return theme?.other.plxAccentHex ?? DEFAULT_ACCENT_HEX
 }
 
-function createLogTheme(tokens: PlxThemeModel, seedHex: string): PlxLogTheme {
-	const source = createMaterialThemeSource(seedHex)
-	const { fatal, info, warning } = PLX_FIXED_LEVELS[tokens.mode]
-	const surfaces = PLX_LOG_SURFACES[tokens.mode]
-	const errorTone =
-		tokens.mode === 'dark' ? toneHex(source.core.error, 82) : toneHex(source.core.error, 42)
-
-	if (tokens.mode === 'dark') {
-		return {
-			panelBg: surfaces.panelBg,
-			panelHeaderBg: surfaces.panelHeaderBg,
-			listBg: surfaces.listBg,
-			listStripe: alpha(tokens.app.text, 0.026),
-			borderColor: tokens.app.borderStrong,
-			border: `1px solid ${tokens.app.borderStrong}`,
-			text: tokens.app.text,
-			textMuted: tokens.app.textMuted,
-			category: tokens.app.accentStrong,
-			buttonBg: surfaces.buttonBg,
-			buttonBgAccent: alpha(tokens.app.accent, 0.22),
-			buttonText: tokens.app.text,
-			inputBg: surfaces.inputBg,
-			inputText: tokens.app.text,
-			rowSelectedBg: tokens.controls.selectedBg,
-			errorText: errorTone,
-			levels: {
-				trace: surfaces.trace,
-				debug: tokens.app.accent,
-				info,
-				warning,
-				error: errorTone,
-				fatal,
-				default: tokens.app.text,
-			},
-			ansi16: PLX_LOG_ANSI16.dark,
-		}
-	}
-
-	return {
-		panelBg: surfaces.panelBg,
-		panelHeaderBg: surfaces.panelHeaderBg,
-		listBg: surfaces.listBg,
-		listStripe: alpha(tokens.app.text, 0.018),
-		borderColor: tokens.app.borderStrong,
-		border: `1px solid ${tokens.app.borderStrong}`,
-		text: tokens.app.text,
-		textMuted: tokens.app.textMuted,
-		category: tokens.app.accentStrong,
-		buttonBg: surfaces.buttonBg,
-		buttonBgAccent: alpha(tokens.app.accent, 0.14),
-		buttonText: tokens.app.text,
-		inputBg: surfaces.inputBg,
-		inputText: tokens.app.text,
-		rowSelectedBg: tokens.controls.selectedBg,
-		errorText: errorTone,
-		levels: {
-			trace: surfaces.trace,
-			debug: tokens.app.accent,
-			info,
-			warning,
-			error: errorTone,
-			fatal,
-			default: tokens.app.text,
-		},
-		ansi16: PLX_LOG_ANSI16.light,
-	}
-}
-
 function buildThemeModel(seedHex: string, mode: PlxThemeMode): PlxThemeModel {
-	const a1 = mutedTonalPalette(seedHex)
 	const isDark = mode === 'dark'
 	const neutral = PLX_NEUTRAL_FOUNDATIONS[mode]
-
-	const app = isDark
-		? {
-				bg: neutral.bg,
-				bgAlt: neutral.bgAlt,
-				surface: neutral.surface,
-				surfaceStrong: neutral.surfaceStrong,
-				surfaceMuted: neutral.surfaceMuted,
-				border: neutral.border,
-				borderStrong: neutral.borderStrong,
-				text: neutral.text,
-				textMuted: neutral.textMuted,
-				accent: mix(toneHex(a1, 68), '#a1a1a1', 0.08),
-				accentStrong: mix(toneHex(a1, 78), '#c4c4c4', 0.08),
-				accentSoft: alpha(mix(toneHex(a1, 58), '#7a7a7a', 0.15), 0.1),
-				shadow: PLX_APP_SHADOWS.dark,
-			}
-		: {
-				bg: neutral.bg,
-				bgAlt: neutral.bgAlt,
-				surface: neutral.surface,
-				surfaceStrong: neutral.surfaceStrong,
-				surfaceMuted: neutral.surfaceMuted,
-				border: neutral.border,
-				borderStrong: neutral.borderStrong,
-				text: neutral.text,
-				textMuted: neutral.textMuted,
-				accent: mix(toneHex(a1, 42), '#666666', 0.08),
-				accentStrong: mix(toneHex(a1, 32), '#4a4a4a', 0.06),
-				accentSoft: alpha(mix(toneHex(a1, 68), '#a1a1a1', 0.12), 0.09),
-				shadow: PLX_APP_SHADOWS.light,
-			}
-
-	const controls = {
-		hoverBg: mix(app.surface, app.text, isDark ? 0.07 : 0.05),
-		inactiveSelectedBg: mix(app.surfaceStrong, app.text, isDark ? 0.09 : 0.1),
-		selectedBg: isDark
-			? mix(neutral.surfaceStrong, toneHex(a1, 76), 0.18)
-			: mix(neutral.surfaceStrong, toneHex(a1, 86), 0.7),
-		selectedBorder: isDark ? alpha(app.accentStrong, 0.5) : alpha(app.accent, 0.4),
+	const ink = PLX_STATE_INK[mode]
+	const accent = mutedTonalPalette(seedHex)
+	const controls: PlxControlStates = {
+		hoverBg: alpha(ink, isDark ? 0.045 : 0.045),
+		inactiveSelectedBg: alpha(ink, isDark ? 0.075 : 0.07),
+		selectedBg: alpha(toneHex(accent, isDark ? 70 : 52), isDark ? 0.2 : 0.14),
+		selectedBorder: alpha(toneHex(accent, isDark ? 74 : 48), isDark ? 0.5 : 0.4),
 	}
-
-	const tokens: PlxThemeModel = {
+	const levels = PLX_FIXED_LEVELS[mode]
+	const error = toneHex(createMaterialThemeSource(seedHex).core.error, isDark ? 82 : 42)
+	return {
 		mode,
-		app,
+		neutral,
 		controls,
-		log: {} as PlxLogTheme,
+		log: {
+			listStripe: alpha(ink, isDark ? 0.024 : 0.018),
+			rowSelectedBg: controls.selectedBg,
+			levels: {
+				trace: levels.trace,
+				debug: toneHex(accent, isDark ? 70 : 44),
+				info: levels.info,
+				warning: levels.warning,
+				error,
+				fatal: levels.fatal,
+				default: neutral.text,
+			},
+			ansi16: PLX_LOG_ANSI16[mode],
+		},
 	}
-
-	tokens.log = createLogTheme(tokens, seedHex)
-	return tokens
 }
 
 export function resolveThemeMode(colorScheme?: MantineColorScheme): PlxThemeMode {
@@ -221,77 +105,81 @@ export function useThemeModel() {
 	return useMemo(() => getThemeModel(colorScheme, seedHex), [colorScheme, seedHex])
 }
 
-function toCssVariables(tokens: PlxThemeModel, theme: MantineTheme) {
-	const brand = theme.colors.brand ?? []
-	const isDark = tokens.mode === 'dark'
+/**
+ * Mantine variables carry text, surfaces, borders and accent. `--plx-*` only names what Mantine
+ * has no slot for: the chrome canvas, inset surfaces, hairlines and selection states.
+ */
+function schemeVariables({ mode, neutral, controls }: PlxThemeModel) {
+	const ink = PLX_STATE_INK[mode]
 	return {
-		'--plx-app-bg': tokens.app.bg,
-		'--plx-app-bg-alt': tokens.app.bgAlt,
-		'--plx-surface': tokens.app.surface,
-		'--plx-surface-strong': tokens.app.surfaceStrong,
-		'--plx-surface-muted': tokens.app.surfaceMuted,
-		'--plx-panel-bg': tokens.app.surfaceStrong,
-		'--plx-panel-bg-muted': tokens.app.surfaceMuted,
-		'--plx-panel-border': tokens.app.border,
-		'--plx-panel-border-strong': tokens.app.borderStrong,
-		'--plx-border': tokens.app.border,
-		'--plx-border-strong': tokens.app.borderStrong,
-		'--plx-text': tokens.app.text,
-		'--plx-text-muted': tokens.app.textMuted,
-		'--plx-accent': tokens.app.accent,
-		'--plx-accent-strong': tokens.app.accentStrong,
-		'--plx-accent-soft': tokens.app.accentSoft,
-		'--plx-hover-bg': tokens.controls.hoverBg,
-		'--plx-selected-inactive-bg': tokens.controls.inactiveSelectedBg,
-		'--plx-selected-bg': tokens.controls.selectedBg,
-		'--plx-selected-border': tokens.controls.selectedBorder,
-		'--plx-shadow': tokens.app.shadow,
-		'--plx-surface-canvas': tokens.app.surface,
-		'--plx-brand-1': brand[1] ?? tokens.app.surface,
-		'--plx-brand-2': brand[2] ?? tokens.app.surfaceStrong,
-		'--plx-brand-5': brand[5] ?? tokens.app.accent,
-		'--plx-brand-6': brand[6] ?? tokens.app.accentStrong,
-		'--plx-brand-7': brand[7] ?? tokens.app.accentStrong,
-		'--plx-accent-contrast': isDark
-			? toneHex(createMaterialThemeSource(themeSeed(theme)).core.n1, 6)
-			: tokens.app.surfaceStrong,
-		'--plx-dirty-dot': PLX_FIXED_LEVELS[tokens.mode].warning,
+		'--mantine-color-body': neutral.surface,
+		'--mantine-color-text': neutral.text,
+		'--mantine-color-default': neutral.raised,
+		'--mantine-color-default-hover': neutral.raisedHover,
+		'--mantine-color-default-color': neutral.text,
+		'--mantine-color-default-border': neutral.borderStrong,
+		'--mantine-color-dimmed': neutral.textMuted,
+		'--mantine-color-placeholder': alpha(neutral.textMuted, 0.88),
+		// Disabled controls fade out instead of turning into solid grey blocks.
+		'--mantine-color-disabled': alpha(ink, 0.04),
+		'--mantine-color-disabled-color': alpha(neutral.textMuted, 0.7),
+		'--mantine-color-disabled-border': alpha(ink, 0.06),
+		'--plx-canvas': neutral.canvas,
+		'--plx-raised': neutral.raised,
+		// Same surface Mantine gives Menu and Popover dropdowns (white / dark-6).
+		'--plx-overlay': mode === 'dark' ? neutral.raised : neutral.surface,
+		'--plx-border': neutral.border,
+		'--plx-hover-bg': controls.hoverBg,
+		'--plx-selected-bg': controls.selectedBg,
+		'--plx-selected-inactive-bg': controls.inactiveSelectedBg,
+		'--plx-selected-border': controls.selectedBorder,
 	}
+}
+
+/**
+ * `light` variants as a translucent tint of the hue with a readable label in the same hue.
+ * Mantine 9's defaults use the palette's extreme shades (near white on dark, near black on light),
+ * which drops the hue entirely with the low-chroma Workbench palettes.
+ */
+function lightVariantVariables(theme: MantineTheme, mode: PlxThemeMode) {
+	const variables: Record<string, string> = {}
+	for (const [name, shades] of Object.entries(theme.colors)) {
+		if (name === 'dark' || !shades) continue
+		const tint = mode === 'dark' ? shades[4] : shades[6]
+		variables[`--mantine-color-${name}-light`] = alpha(tint, mode === 'dark' ? 0.14 : 0.1)
+		variables[`--mantine-color-${name}-light-hover`] = alpha(tint, mode === 'dark' ? 0.2 : 0.15)
+		variables[`--mantine-color-${name}-light-color`] = mode === 'dark' ? shades[4] : shades[7]
+	}
+	return variables
+}
+
+/** Dark surfaces need deeper, denser shadows for floating layers to separate from the canvas. */
+const DARK_ELEVATION = {
+	'--mantine-shadow-xs': '0 1px 2px rgba(0, 0, 0, 0.32)',
+	'--mantine-shadow-sm': '0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.28)',
+	'--mantine-shadow-md': '0 10px 28px -6px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.36)',
+	'--mantine-shadow-lg': '0 18px 44px -8px rgba(0, 0, 0, 0.66), 0 4px 14px rgba(0, 0, 0, 0.4)',
+	'--mantine-shadow-xl': '0 28px 70px -12px rgba(0, 0, 0, 0.72), 0 8px 22px rgba(0, 0, 0, 0.44)',
+	// Tooltips read as a raised dark layer instead of Mantine's inverted light chip.
+	'--tooltip-bg': '#2a2c31',
+	'--tooltip-color': '#e4e5e9',
 }
 
 export const appCssVariablesResolver: CSSVariablesResolver = (theme) => {
 	const base = defaultCssVariablesResolver(theme)
 	const seedHex = themeSeed(theme)
-	const light = getThemeModel('light', seedHex)
-	const dark = getThemeModel('dark', seedHex)
-
 	return {
-		variables: {
-			...base.variables,
-		},
+		variables: base.variables,
 		light: {
 			...base.light,
-			'--mantine-color-body': light.app.bgAlt,
-			'--mantine-color-text': light.app.text,
-			'--mantine-color-default': light.app.surfaceStrong,
-			'--mantine-color-default-hover': light.app.surfaceMuted,
-			'--mantine-color-default-color': light.app.text,
-			'--mantine-color-default-border': light.app.borderStrong,
-			'--mantine-color-dimmed': light.app.textMuted,
-			'--mantine-color-placeholder': alpha(light.app.textMuted, 0.88),
-			...toCssVariables(light, theme),
+			...lightVariantVariables(theme, 'light'),
+			...schemeVariables(getThemeModel('light', seedHex)),
 		},
 		dark: {
 			...base.dark,
-			'--mantine-color-body': dark.app.bgAlt,
-			'--mantine-color-text': dark.app.text,
-			'--mantine-color-default': dark.app.surfaceStrong,
-			'--mantine-color-default-hover': dark.app.surfaceMuted,
-			'--mantine-color-default-color': dark.app.text,
-			'--mantine-color-default-border': dark.app.borderStrong,
-			'--mantine-color-dimmed': dark.app.textMuted,
-			'--mantine-color-placeholder': alpha(dark.app.textMuted, 0.9),
-			...toCssVariables(dark, theme),
+			...lightVariantVariables(theme, 'dark'),
+			...schemeVariables(getThemeModel('dark', seedHex)),
+			...DARK_ELEVATION,
 		},
 	}
 }

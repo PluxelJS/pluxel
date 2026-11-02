@@ -7,7 +7,6 @@ import {
 	Group,
 	Image,
 	Loader,
-	MantineProvider,
 	Paper,
 	Select,
 	SimpleGrid,
@@ -17,6 +16,7 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
+import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 import type { WorkbenchHostFacade } from '@pluxel/workbench/react'
 import { useMemo, useState } from 'react'
 import {
@@ -58,9 +58,9 @@ const SHOWCASE_ROUTES = Object.freeze([
 function ReportStudio() {
 	const { host } = studioScope.useWorkbench()
 	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
+		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
 			<ReportStudioContent host={host} />
-		</MantineProvider>
+		</WorkbenchMantineProvider>
 	)
 }
 
@@ -137,7 +137,7 @@ function ReportStudioContent({ host }: Readonly<{ host: WorkbenchHostFacade }>) 
 	if (snapshot === undefined) return <Alert color="red">{messageOf(snapshotQuery.error)}</Alert>
 
 	return (
-		<Stack gap="lg">
+		<Stack gap="lg" p="lg">
 			<div>
 				<Badge variant="light" color="teal">
 					LIVE COMPOSITION

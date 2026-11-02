@@ -188,23 +188,29 @@ capability 或已经释放的 proxy 放入 React state。
 `useRemoteValue()` 在 React commit 后才订阅和读取；未提交的 render 不产生远程工作，StrictMode effect replay 复用同一 owner。依赖变化创建隔离的读取身份，卸载释放订阅，晚到结果不会更新旧视图。`createRemoteValue()` 则立即开始订阅/读取，由调用方用 `Symbol.dispose` 释放。两者都先订阅成功再执行初始 read。
 
 每个 renderer 由 React Bridge 挂载为独立 React root。若 renderer 使用 Mantine、router、i18n 等依赖 Context 的 UI
-library，应在自己的 root 内安装 Provider，并由 producer import 所需样式；Shell 的私有 Provider 不会跨 root 继承，也不是
-Workbench API。例如 Mantine renderer 的入口可以直接写成：
+library，应在自己的 root 内安装 Provider，并由 producer import 所需样式；Shell 的私有 Provider 不会跨 root 继承。
+Mantine renderer 使用 `WorkbenchMantineProvider`，与 Shell 共享尺寸、字体、颜色名称和组件默认值：
 
 ```tsx
-import { MantineProvider } from '@mantine/core'
+import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 
 export function OrdersPage() {
 	const { host } = overviewScope.useWorkbench()
 	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
+		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
 			<OrdersContent />
-		</MantineProvider>
+		</WorkbenchMantineProvider>
 	)
 }
 ```
 
-这里的 Provider 属于 renderer root，不能从 Shell 继承；但 `@mantine/core` 与 `@mantine/hooks` 是 Workbench 固定的 MF2
-singleton shared，组件和 hooks 在一个 document 内只加载一份。Mantine 基础 CSS 也由 Shell 统一加载，renderer 不应再次导入
-`@mantine/core/styles.css`，producer build 会直接拒绝这种重复。`host.colorScheme` 只是可移植的宿主外观事实，不暴露 Shell
-私有 Provider 或 theme object。其他 UI library 仍由 producer 自己打包并管理 Provider/CSS。
+Shell 不给 renderer 容器加内边距，画布类页面可以铺满。普通页面与 Shell 页面对齐：路由文档的最外层用 `p="lg"`，
+左、右、底部 panel 用 `p="sm"`。
+
+`@mantine/core`、`@mantine/hooks` 与 `@pluxel/workbench/mantine` 是 Workbench 固定的 MF2 singleton shared，组件和
+hooks 在一个 document 内只加载一份。Mantine 基础 CSS 与 CSS 变量由 Shell 统一提供：强调色、表面和明暗跟随用户的
+外观设置。`WorkbenchMantineProvider` 因此不输出 CSS 变量和全局 class；直接使用默认 `MantineProvider` 会在
+`:root` 写入第二套变量，覆盖 Shell 外观。renderer 不应再次导入 `@mantine/core/styles.css`，producer build 会直接拒绝这种重复。
+
+隔离测试没有 Shell 提供变量时，用 `<MantineProvider theme={workbenchTheme}>` 渲染组件。`host.colorScheme` 是可移植的宿主
+外观事实，不暴露 Shell 私有 Provider。其他 UI library 仍由 producer 自己打包并管理 Provider/CSS。

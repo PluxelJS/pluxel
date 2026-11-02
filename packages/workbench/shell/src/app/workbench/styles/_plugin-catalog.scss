@@ -18,9 +18,6 @@
 
 .plx-pluginCatalog__header {
 	align-items: center;
-	margin-inline: calc(var(--plx-panel-padding) * -1);
-	margin-top: calc(var(--plx-panel-padding) * -1);
-	border-bottom: 1px solid var(--plx-border);
 	display: flex;
 	gap: 8px;
 	justify-content: space-between;
@@ -50,7 +47,7 @@
 }
 
 .plx-pluginCatalog__titleCount {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	flex: 0 0 auto;
 	font-size: var(--mantine-font-size-xs);
 	font-variant-numeric: tabular-nums;
@@ -67,10 +64,10 @@
 
 .plx-pluginCatalog__helpButton {
 	align-items: center;
-	background: color-mix(in srgb, var(--plx-surface-muted) 84%, transparent);
-	border: 1px solid color-mix(in srgb, var(--plx-border) 76%, transparent);
+	background: transparent;
+	border: 1px solid transparent;
 	border-radius: var(--mantine-radius-sm);
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	cursor: pointer;
 	display: inline-flex;
 	font-size: var(--mantine-font-size-xs);
@@ -84,9 +81,8 @@
 
 .plx-pluginCatalog__helpButton:hover,
 .plx-pluginCatalog__helpButton:focus-visible {
-	background: var(--plx-surface-strong);
-	border-color: var(--plx-border-strong);
-	color: var(--plx-text);
+	background: var(--plx-hover-bg);
+	color: var(--mantine-color-text);
 	outline: none;
 }
 
@@ -104,11 +100,9 @@
 	min-width: 0;
 }
 
+/* Sections sit directly on the canvas (`bg="transparent"`); grouping comes from headings and spacing. */
 .plx-pluginCatalog__sectionCard {
-	background: var(--plx-surface);
-	border: 1px solid color-mix(in srgb, var(--plx-border) 80%, transparent);
-	border-radius: var(--mantine-radius-sm);
-	box-shadow: none;
+	border: 0;
 }
 
 .plx-pluginCatalog__sectionHeader {
@@ -139,7 +133,7 @@
 }
 
 .plx-pluginCatalog__sectionTitle {
-	color: var(--plx-text);
+	color: var(--mantine-color-text);
 	font-size: var(--mantine-font-size-xs);
 	font-weight: 700;
 	letter-spacing: 0.04em;
@@ -148,7 +142,7 @@
 }
 
 .plx-pluginCatalog__sectionMetric {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	font-size: var(--mantine-font-size-xs);
 	font-weight: 600;
 	line-height: 1;
@@ -157,7 +151,11 @@
 
 .plx-pluginCatalog__bulkBar {
 	align-items: center;
-	background: color-mix(in srgb, var(--plx-accent-soft) 24%, var(--plx-surface) 76%);
+	background: color-mix(
+		in srgb,
+		var(--mantine-primary-color-light) 24%,
+		var(--mantine-color-body) 76%
+	);
 	border: 1px solid color-mix(in srgb, var(--plx-selected-border) 76%, var(--plx-border) 24%);
 	border-radius: var(--mantine-radius-sm);
 	box-shadow: none;
@@ -186,7 +184,8 @@
 }
 
 .plx-pluginCatalog__executionIndicator > span {
-	border-radius: var(--mantine-radius-sm);
+	/* A fixed 1px corner keeps the rotated square a diamond at any theme radius. */
+	border-radius: 1px;
 	transform: rotate(45deg);
 }
 
@@ -199,7 +198,7 @@
 	background: transparent;
 	border: 1px solid color-mix(in srgb, var(--plx-border) 84%, transparent);
 	border-radius: var(--mantine-radius-sm);
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	display: inline-flex;
 	height: 18px;
 	justify-content: center;
@@ -215,15 +214,15 @@
 .plx-pluginCatalog__rowSelector:hover,
 .plx-pluginCatalog__rowSelector:focus-visible {
 	border-color: var(--plx-selected-border);
-	color: var(--plx-text);
+	color: var(--mantine-color-text);
 	outline: none;
 	transform: scale(1.03);
 }
 
 .plx-pluginCatalog__rowSelector[data-selected='true'] {
-	background: var(--plx-accent);
-	border-color: var(--plx-accent);
-	color: var(--plx-accent-contrast);
+	background: var(--mantine-primary-color-filled);
+	border-color: var(--mantine-primary-color-filled);
+	color: var(--mantine-primary-color-contrast);
 }
 
 .plx-pluginCatalog__row[data-focused='true'] {

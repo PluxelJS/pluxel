@@ -6,13 +6,13 @@ import {
 	CopyButton,
 	Group,
 	Loader,
-	MantineProvider,
 	PasswordInput,
 	Stack,
 	Text,
 	TextInput,
 	Title,
 } from '@mantine/core'
+import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 import { IconCheck, IconCopy, IconKey, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useReducer, useRef, useState, type FormEvent } from 'react'
 import type {
@@ -261,8 +261,8 @@ function AuthSetup() {
 	}
 
 	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
-			<Stack gap="md" p="md" maw={760}>
+		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
+			<Stack gap="md" p="lg" maw={760}>
 				<Group justify="space-between" align="flex-start">
 					<Stack gap={2}>
 						<Title order={3}>Authentication setup</Title>
@@ -416,7 +416,7 @@ function AuthSetup() {
 					</Card>
 				) : null}
 			</Stack>
-		</MantineProvider>
+		</WorkbenchMantineProvider>
 	)
 }
 

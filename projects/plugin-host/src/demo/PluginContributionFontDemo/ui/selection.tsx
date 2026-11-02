@@ -1,4 +1,5 @@
-import { Alert, MantineProvider, Paper, Select, Stack, Text } from '@mantine/core'
+import { Alert, Paper, Select, Stack, Text } from '@mantine/core'
+import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 import { useMemo } from 'react'
 import {
 	FONT_KIND,
@@ -10,9 +11,9 @@ import { fontCatalog, fontSelection, selectionScope, setFontSelection } from './
 function FontSettings() {
 	const { host } = selectionScope.useWorkbench()
 	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
+		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
 			<FontSettingsContent />
-		</MantineProvider>
+		</WorkbenchMantineProvider>
 	)
 }
 

@@ -476,6 +476,7 @@ export function PluginOrganizer({
 				{/* 默认显示未分组；无分组时即为完整插件列表。 */}
 				<Card
 					className="plx-pluginCatalog__sectionCard"
+					bg="transparent"
 					shadow="none"
 					radius="sm"
 					p={6}
@@ -617,6 +618,7 @@ export function PluginOrganizer({
 				{groups.length > 0 && !showFlatResults ? (
 					<Card
 						className="plx-pluginCatalog__sectionCard"
+						bg="transparent"
 						shadow="none"
 						radius="sm"
 						p={6}

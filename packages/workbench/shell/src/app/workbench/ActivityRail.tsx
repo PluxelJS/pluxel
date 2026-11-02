@@ -43,7 +43,7 @@ export function ActivityRail({ onShowPlugins }: { onShowPlugins: () => void }) {
 					)
 				})}
 			</div>
-			<Tooltip label={expanded ? '仅显示图标' : '显示图标与文字'} position="right">
+			<Tooltip label="显示图标与文字" position="right" disabled={expanded}>
 				<button
 					type="button"
 					className="plx-activity__item plx-activity__mode"

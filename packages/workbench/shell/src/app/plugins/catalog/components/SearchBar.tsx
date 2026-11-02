@@ -11,7 +11,8 @@ import type React from 'react'
 import type { StatusCounts } from '../catalogOverview'
 import type { StatusFilterState } from '../filterModel'
 
-const ACTION_SIZE = 28
+/** Pixel width of the `xs` ActionIcon; it fits inside the 26px `xs` input with its border visible. */
+const ACTION_SIZE = 22
 const ACTION_GAP = 2
 const STATUS_ACTION_COUNT = 3
 const RIGHT_SECTION_BREATHING_ROOM = 4
@@ -44,7 +45,7 @@ export function SearchBar({
 }: Props) {
 	const clearBtn = value ? (
 		<ActionIcon
-			size={ACTION_SIZE}
+			size="xs"
 			variant="subtle"
 			onClick={() => onChange('')}
 			title="清空搜索"
@@ -59,7 +60,7 @@ export function SearchBar({
 			{clearBtn}
 			{hasActiveStatusFilter ? (
 				<ActionIcon
-					size={ACTION_SIZE}
+					size="xs"
 					variant="subtle"
 					onClick={onResetStatusFilter}
 					title="恢复全部状态筛选"
@@ -69,7 +70,7 @@ export function SearchBar({
 				</ActionIcon>
 			) : null}
 			<ActionIcon
-				size={ACTION_SIZE}
+				size="xs"
 				variant={statusFilter.running ? 'light' : 'subtle'}
 				color={statusFilter.running ? 'green' : undefined}
 				onClick={() => onToggleStatus('running')}
@@ -80,7 +81,7 @@ export function SearchBar({
 				<IconPlayerPlay size={12} />
 			</ActionIcon>
 			<ActionIcon
-				size={ACTION_SIZE}
+				size="xs"
 				variant={statusFilter.stopped ? 'light' : 'subtle'}
 				color={statusFilter.stopped ? 'gray' : undefined}
 				onClick={() => onToggleStatus('stopped')}
@@ -91,7 +92,7 @@ export function SearchBar({
 				<IconPlayerStop size={12} />
 			</ActionIcon>
 			<ActionIcon
-				size={ACTION_SIZE}
+				size="xs"
 				variant={statusFilter.unavailable ? 'light' : 'subtle'}
 				color={statusFilter.unavailable ? 'red' : undefined}
 				onClick={() => onToggleStatus('unavailable')}

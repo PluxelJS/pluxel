@@ -84,7 +84,7 @@ const SortableRowComponent = ({
 		: selected
 			? 'var(--plx-selected-inactive-bg)'
 			: undefined
-	const rowColorValue = 'var(--plx-text)'
+	const rowColorValue = 'var(--mantine-color-text)'
 	const statusLabel =
 		meta?.failureLabel ??
 		(available === false ? '不可用' : running ? '运行中' : desiredRunning ? '等待运行' : '已停止')
@@ -98,7 +98,7 @@ const SortableRowComponent = ({
 				? rgba(theme.colors.red[6], 0.8)
 				: desiredRunning
 					? rgba(theme.colors.yellow[6], 0.8)
-					: 'color-mix(in srgb, var(--plx-text-muted) 88%, transparent)'
+					: 'color-mix(in srgb, var(--mantine-color-dimmed) 88%, transparent)'
 
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
 		id: sortableId,
@@ -162,12 +162,11 @@ const SortableRowComponent = ({
 		>
 			<ActionIcon
 				variant="subtle"
+				size={handleSize}
 				title="拖拽排序"
 				aria-label="拖拽排序"
 				data-drag-handle
 				style={{
-					width: handleSize,
-					height: handleSize,
 					flex: `0 0 ${handleSize}px`,
 					touchAction: 'none',
 					cursor: dragDisabled ? 'default' : isDragging ? 'grabbing' : 'grab',
@@ -181,6 +180,7 @@ const SortableRowComponent = ({
 
 			<ActionIcon
 				variant="transparent"
+				size={18}
 				title={selected ? '取消选择' : '加入选择'}
 				aria-label={selected ? `取消选择 ${name}` : `选择 ${name}`}
 				className="plx-pluginCatalog__rowSelector"

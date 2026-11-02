@@ -13,6 +13,7 @@ export default defineConfig({
 		internal: 'src/internal.ts',
 		client: 'src/workbench/client.ts',
 		react: 'src/workbench/react.tsx',
+		mantine: 'src/mantine/index.ts',
 		federation: 'src/workbench/federation.ts',
 		'internal/transport': 'src/workbench/shared-transport.ts',
 		'internal/react': 'src/workbench/react-internal.tsx',

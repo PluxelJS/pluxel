@@ -1,5 +1,5 @@
 .plx-workbenchContent {
-	color: var(--plx-text);
+	color: var(--mantine-color-text);
 	display: flex;
 	flex: 1;
 	min-height: 0;
@@ -34,7 +34,7 @@
 .plx-workbenchContent__document h4,
 .plx-workbenchContent__document h5,
 .plx-workbenchContent__document h6 {
-	color: var(--plx-text);
+	color: var(--mantine-color-text);
 	font-weight: 650;
 	letter-spacing: -0.015em;
 	line-height: 1.25;
@@ -105,12 +105,12 @@
 
 .plx-workbenchContent__document blockquote {
 	border-inline-start: 3px solid var(--plx-selected-border);
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	padding: 0.25em 1em;
 }
 
 .plx-workbenchContent__document a {
-	color: var(--plx-accent-strong);
+	color: var(--mantine-primary-color-light-color);
 	text-decoration-thickness: 1px;
 	text-underline-offset: 0.18em;
 }
@@ -120,7 +120,7 @@
 }
 
 .plx-workbenchContent__document :not(pre) > code {
-	background: var(--plx-surface-muted);
+	background: var(--plx-raised);
 	border: 1px solid var(--plx-border);
 	border-radius: var(--mantine-radius-sm);
 	font-size: 0.88em;
@@ -128,7 +128,7 @@
 }
 
 .plx-workbenchContent__document pre {
-	background: var(--plx-surface-muted);
+	background: var(--plx-raised);
 	border: 1px solid var(--plx-border);
 	border-radius: var(--mantine-radius-sm);
 	overflow: auto;
@@ -168,7 +168,7 @@
 }
 
 .plx-workbenchContent__document th {
-	background: var(--plx-surface-muted);
+	background: var(--plx-raised);
 	font-weight: 650;
 }
 
@@ -188,13 +188,13 @@
 }
 
 .plx-workbenchContent__inlineStatus {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 }
 
 .plx-workbenchContent__inlineStatus button {
 	background: none;
 	border: 0;
-	color: var(--plx-accent-strong);
+	color: var(--mantine-primary-color-light-color);
 	cursor: pointer;
 	font: inherit;
 	padding: 0;
@@ -202,13 +202,13 @@
 }
 
 .plx-workbenchContent__inlineValue[data-stale='true'] {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 }
 
 .plx-workbenchContent__staleMark,
 .plx-workbenchContent__slotUnavailable,
 .plx-workbenchContent__empty {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 }
 
 .plx-workbenchContent__staleMark {
@@ -224,7 +224,7 @@
 
 .plx-workbenchContent__slotLoading {
 	align-items: center;
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	display: flex;
 	gap: 0.6rem;
 	min-height: 3rem;
@@ -232,9 +232,9 @@
 
 .plx-workbenchContent__dataCard,
 .plx-workbenchContent__actionForm {
-	background: var(--plx-surface);
+	background: var(--mantine-color-body);
 	border: 1px solid var(--plx-border);
-	border-radius: var(--mantine-radius-sm);
+	border-radius: var(--mantine-radius-md);
 	padding: 1rem;
 }
 
@@ -245,7 +245,7 @@
 }
 
 .plx-workbenchContent__dataHeader > span {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	font-size: var(--mantine-font-size-sm);
 }
 
@@ -272,7 +272,7 @@
 }
 
 .plx-workbenchContent__dataGrid dt {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	font-weight: 550;
 }
 

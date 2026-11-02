@@ -13,9 +13,9 @@
 
 .plx-home__hero {
 	align-items: stretch;
-	background: var(--plx-surface-strong);
+	background: var(--plx-raised);
 	border: 1px solid var(--plx-border);
-	border-radius: var(--mantine-radius-sm);
+	border-radius: var(--mantine-radius-md);
 	display: grid;
 	gap: clamp(20px, 3vw, 44px);
 	grid-template-columns: minmax(320px, 1fr) minmax(420px, 0.9fr);
@@ -29,7 +29,7 @@
 
 .plx-home__eyebrow,
 .plx-home__sectionKicker {
-	color: var(--plx-accent-strong);
+	color: var(--mantine-primary-color-light-color);
 	font-size: var(--mantine-font-size-xs);
 	font-weight: 800;
 	letter-spacing: 0.11em;
@@ -46,7 +46,7 @@
 }
 
 .plx-home__description {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	font-size: var(--mantine-font-size-md);
 	line-height: 1.55;
 	margin-top: 9px;
@@ -78,9 +78,9 @@
 }
 
 .plx-home__metric {
-	background: var(--plx-surface-muted);
+	background: var(--plx-raised);
 	border: 1px solid var(--plx-border);
-	border-radius: var(--mantine-radius-sm);
+	border-radius: var(--mantine-radius-md);
 	display: flex;
 	flex-direction: column;
 	justify-content: space-between;
@@ -97,7 +97,7 @@
 }
 
 .plx-home__metricLabel {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	font-size: var(--mantine-font-size-xs);
 	font-weight: 650;
 }
@@ -125,7 +125,7 @@
 
 .plx-home__workspaceCard {
 	align-items: start;
-	background: var(--plx-surface-strong);
+	background: var(--plx-raised);
 	color: inherit;
 	display: flex;
 	gap: 12px;
@@ -141,18 +141,17 @@
 
 .plx-home__workspaceCard:hover,
 .plx-home__workspaceCard:focus-visible {
-	background: color-mix(in srgb, var(--plx-surface-strong) 82%, var(--plx-accent-soft) 18%);
+	background: color-mix(in srgb, var(--plx-raised) 82%, var(--mantine-primary-color-light) 18%);
 	border-color: var(--plx-selected-border);
-	box-shadow: 0 10px 26px color-mix(in srgb, var(--plx-text) 6%, transparent);
 	outline: none;
 	transform: translateY(-2px);
 }
 
 .plx-home__workspaceIcon {
 	align-items: center;
-	background: var(--plx-accent-soft);
+	background: var(--mantine-primary-color-light);
 	border-radius: var(--mantine-radius-sm);
-	color: var(--plx-accent-strong);
+	color: var(--mantine-primary-color-light-color);
 	display: flex;
 	flex: 0 0 40px;
 	height: 40px;
@@ -184,7 +183,7 @@
 }
 
 .plx-home__workspaceMeta {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	font-size: var(--mantine-font-size-xs);
 	font-weight: 800;
 	letter-spacing: 0.08em;
@@ -196,7 +195,7 @@
 }
 
 .plx-home__allLink {
-	color: var(--plx-accent-strong);
+	color: var(--mantine-primary-color-light-color);
 	font-weight: 650;
 	text-decoration: none;
 }
@@ -207,9 +206,9 @@
 }
 
 .plx-home__queue {
-	background: var(--plx-surface-strong);
+	background: var(--plx-raised);
 	border: 1px solid var(--plx-border);
-	border-radius: var(--mantine-radius-sm);
+	border-radius: var(--mantine-radius-md);
 	display: flex;
 	flex-direction: column;
 	min-height: 176px;
@@ -248,12 +247,12 @@
 
 .plx-home__queueRow:hover,
 .plx-home__queueRow:focus-visible {
-	background: var(--plx-surface-muted);
+	background: var(--plx-raised);
 	outline: none;
 }
 
 .plx-home__statusDot {
-	background: var(--plx-text-muted);
+	background: var(--mantine-color-dimmed);
 	border-radius: var(--mantine-radius-sm);
 	height: 7px;
 	width: 7px;
@@ -279,12 +278,12 @@
 }
 
 .plx-home__queueStatus {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 }
 
 .plx-home__queueEmpty {
 	align-items: center;
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	display: flex;
 	flex: 1;
 	font-size: var(--mantine-font-size-xs);

@@ -1,4 +1,5 @@
-import { Alert, Loader, MantineProvider, Stack, Text } from '@mantine/core'
+import { Alert, Loader, Stack, Text } from '@mantine/core'
+import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 import type { WorkbenchHostFacade } from '@pluxel/workbench/react'
 import type { ReactNode } from 'react'
 import type { PluginWithUISnapshot } from '../../PluginWithUI.workbench'
@@ -36,7 +37,9 @@ export function DemoProvider({
 	host,
 	children,
 }: Readonly<{ host: WorkbenchHostFacade; children: ReactNode }>) {
-	return <MantineProvider forceColorScheme={host.colorScheme}>{children}</MantineProvider>
+	return (
+		<WorkbenchMantineProvider colorScheme={host.colorScheme}>{children}</WorkbenchMantineProvider>
+	)
 }
 
 function messageOf(error: unknown): string {

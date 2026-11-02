@@ -376,7 +376,7 @@ describe('Pluxel native workspace menus', () => {
 		await click(trigger)
 		const size = container.querySelector<HTMLInputElement>('.mantine-NumberInput-input')!
 		expect(size).not.toBeNull()
-		expect(size.value).toBe('280')
+		expect(size.value).toBe('340')
 		const left = await pressKey(size, 'ArrowLeft')
 		expect(left.defaultPrevented).toBe(false)
 		await click(menuItem('边栏悬浮显示'))

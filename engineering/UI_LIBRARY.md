@@ -7,10 +7,10 @@
 ## 修改约束
 
 - 优先普通组件、props、hooks；局部例外使用调用点的 `style`、`styles`、`className` 或 CSS variables。
-- 主题由 `packages/workbench/shell/src/theme/mantine/theme.ts` 拥有；产品 semantic color tokens 不形成第二套 skin system。
+- 主题结构由公开的 `@pluxel/workbench/mantine`（`packages/workbench/src/mantine/theme.ts`）拥有：尺寸、字体、颜色名称和组件默认值。Shell 只叠加用户强调色，并在 `theme/core/themeModel.ts` 输出 CSS 变量；`--plx-*` 只补 Mantine 没有的画布、内嵌表面、细线与选择状态，不形成第二套 skin system。
 - 普通页面不引入 `factory`、`useStyles`、`useProps`、`createVarsResolver`、`polymorphicFactory` 或自定义 `StylesApiProps`。
 - 只有至少两个无关调用方需要同一 Mantine-native component，且普通组合无法清楚表达时，才采用高级扩展 API；同时明确 slots、props、样式与可访问性归属。
-- 每个 federated renderer 创建自己的 `MantineProvider`；Shell 提供 singleton module 与唯一的 Core CSS。共享实现不跨 React root 传播 Context。
+- 每个 federated renderer 用 `WorkbenchMantineProvider` 创建自己的 Provider；Shell 提供 singleton module、唯一的 Core CSS 与文档级 CSS 变量。共享实现不跨 React root 传播 Context。
 
 更换库需要具体产品、可访问性或维护问题作为证据，并覆盖 Federation shared/CSS、全部 renderer roots 与 `valibot-form` Mantine peer 的影响。不能仅为缩短 JSX 或假设未来复用引入抽象；更换时必须同时移除旧系统。
 

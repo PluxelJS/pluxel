@@ -18,8 +18,8 @@
 	padding: 24px;
 }
 
+/* The toolbar sits directly on the page; only the graph canvas is framed. */
 .plx-pluginGraphToolbar {
-	background: color-mix(in srgb, var(--mantine-color-body) 97%, var(--mantine-color-blue-0));
 	flex: 0 0 auto;
 }
 
@@ -64,9 +64,9 @@
 }
 
 .plx-pluginGraphRelations {
-	background: var(--plx-surface-canvas, var(--mantine-color-body));
-	border: 1px solid var(--plx-border, var(--mantine-color-default-border));
-	border-radius: var(--mantine-radius-sm);
+	background: var(--mantine-color-body);
+	border: 1px solid var(--plx-border);
+	border-radius: var(--mantine-radius-md);
 	height: 100%;
 	min-width: 0;
 	display: flex;
@@ -77,8 +77,8 @@
 
 .plx-pluginGraphRelations__header {
 	align-items: center;
-	background: color-mix(in srgb, var(--mantine-color-body) 96%, var(--mantine-color-gray-1));
-	border-bottom: 1px solid var(--mantine-color-default-border);
+	background: var(--plx-raised);
+	border-bottom: 1px solid var(--plx-border);
 	display: flex;
 	gap: 12px;
 	justify-content: space-between;
@@ -241,7 +241,7 @@
 }
 
 .plx-pluginGraphViewport {
-	background-color: var(--plx-surface-canvas, var(--mantine-color-body));
+	background-color: var(--mantine-color-body);
 	background-image: radial-gradient(
 		circle,
 		color-mix(in srgb, var(--mantine-color-dimmed) 24%, transparent) 0.8px,
@@ -278,7 +278,7 @@
 }
 
 .plx-pluginGraphComponent {
-	background: color-mix(in srgb, var(--plx-text) 4%, transparent);
+	background: color-mix(in srgb, var(--mantine-color-text) 4%, transparent);
 	border: 1px dashed color-mix(in srgb, var(--mantine-color-default-border) 68%, transparent);
 	border-radius: var(--mantine-radius-sm);
 	box-sizing: border-box;
@@ -418,7 +418,8 @@
 	display: flex;
 	flex-direction: column;
 	font-family: inherit;
-	gap: 8px;
+	/* Three fixed rows fit the 84px layout height (PLUGIN_GRAPH_NODE_HEIGHT); none may shrink. */
+	gap: 4px;
 	height: 84px;
 	justify-content: center;
 	padding: 10px 12px 10px 15px;
@@ -434,11 +435,19 @@
 /* State is carried by the status dot and label; abnormal states also tint the node border.
    No inner edge bar against the rounded node. */
 .plx-pluginGraphNode[data-state='attention'] {
-	border-color: color-mix(in srgb, var(--mantine-color-yellow-6) 60%, var(--plx-border-strong));
+	border-color: color-mix(
+		in srgb,
+		var(--mantine-color-yellow-6) 60%,
+		var(--mantine-color-default-border)
+	);
 }
 .plx-pluginGraphNode[data-state='unavailable'],
 .plx-pluginGraphNode[data-state='missing'] {
-	border-color: color-mix(in srgb, var(--mantine-color-red-6) 60%, var(--plx-border-strong));
+	border-color: color-mix(
+		in srgb,
+		var(--mantine-color-red-6) 60%,
+		var(--mantine-color-default-border)
+	);
 }
 
 .plx-pluginGraphNode:hover {
@@ -490,6 +499,10 @@
 .plx-pluginGraphNode__state > span:first-child {
 	align-items: center;
 	display: flex;
+}
+
+.plx-pluginGraphNode > * {
+	flex-shrink: 0;
 }
 
 .plx-pluginGraphNode__heading,
