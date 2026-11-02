@@ -546,7 +546,6 @@ function RecordFieldEditor(props: RendererProps) {
 				<Group gap="xs" justify="flex-end">
 					<ActionIcon
 						variant="light"
-						color="blue"
 						onClick={handleInlineAdd}
 						disabled={!draftKeyValid || isLocked}
 						aria-label="添加"

@@ -539,8 +539,8 @@ function ArrayFieldMain(
 	const inlineAddRow = inlineAddEnabled ? (
 		<tr>
 			<td style={{ width: 56 }}>
-				<Text size="sm" c="dimmed">
-					+
+				<Text size="xs" c="dimmed">
+					新增
 				</Text>
 			</td>
 			<td>
@@ -626,7 +626,6 @@ function ArrayFieldMain(
 				<Group gap="xs" justify="flex-end">
 					<ActionIcon
 						variant="light"
-						color="blue"
 						onClick={handleInlineAdd}
 						disabled={isLocked}
 						aria-label="添加"
@@ -770,25 +769,19 @@ function ArrayFieldMain(
 	const itemsNode =
 		isCompactList && (items.length > 0 || inlineAddEnabled) ? (
 			<Table withTableBorder verticalSpacing="xs" horizontalSpacing="sm" highlightOnHover>
-				<thead>
-					<tr>
-						<th style={{ width: 56 }}>#</th>
-						<th>{itemLabel}</th>
-						<th>操作</th>
-					</tr>
-				</thead>
+				<Table.Thead>
+					<Table.Tr>
+						<Table.Th w={56}>#</Table.Th>
+						<Table.Th>{itemLabel}</Table.Th>
+						<Table.Th w={120} ta="end">
+							操作
+						</Table.Th>
+					</Table.Tr>
+				</Table.Thead>
+				{/* The inline add row is the empty-state affordance; no separate hint row. */}
 				<tbody>
 					{tableRows}
 					{inlineAddRow}
-					{items.length === 0 ? (
-						<tr>
-							<td colSpan={3}>
-								<Text size="sm" c="dimmed" py={6}>
-									{info.emptyHint ?? DEFAULT_TEXTS.array.emptyHint}
-								</Text>
-							</td>
-						</tr>
-					) : null}
 				</tbody>
 			</Table>
 		) : items.length === 0 ? (
