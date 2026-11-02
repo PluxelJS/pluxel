@@ -117,10 +117,8 @@ describe('Core-only Host', () => {
 		}
 		expect(LifecyclePlugin.stops).toBe(2)
 		expect(requirePluginService(host.ctx).readCommittedDependencyAdjacency().nodes).toEqual([])
-		// Shutdown withdraws only live bindings; next startup retains its desired provider policy.
-		expect(state.snapshot().providerDefaults).toEqual([
-			{ token: pluginDefinitionAddressOf(LifecycleBackend), provider: address },
-		])
+		// Inferred provider selection belongs to the effective graph, never durable state.
+		expect(state.snapshot().providerDefaults).toEqual([])
 		await expect(host.close()).resolves.toBeUndefined()
 		await expect(host.startNode(address)).rejects.toThrow('closed')
 	})
@@ -154,8 +152,8 @@ describe('Core-only Host', () => {
 		lowerTestReplacement(Original, Replacement)
 		const host = await createHost({
 			plugins: [Original],
-			state: {
-				initial: {
+			runtime: {
+				state: {
 					autoStart: [{ definition: pluginDefinitionAddressOf(Original), variant: 'default' }],
 				},
 			},

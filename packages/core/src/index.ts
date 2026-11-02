@@ -39,7 +39,7 @@ export type {
 export { Plugin, pluginMethodDecorator } from './plugins'
 export type { PluginOptions } from './plugins'
 
-export { definePluginRef, pluginDefinitionAddressOf, pluginNodeAddressOf } from './plugins'
+export { definePluginRef, pluginDefinitionAddressOf } from './plugins'
 export type { PluginRef } from './plugins'
 
 export {

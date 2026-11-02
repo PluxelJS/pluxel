@@ -62,7 +62,6 @@ export class Consumer extends BasePlugin {
 		await writeFile(
 			join(root, 'entry.ts'),
 			`
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { logtape, zenfs } from '@pluxel/core/config'
 import { createHost } from '@pluxel/host/browser'
 import { Provider } from './provider'
@@ -71,11 +70,11 @@ import { trace } from './trace'
 export async function run() {
   const records: { category: readonly string[]; message: string; storage?: unknown }[] = []
   const sinkLifecycle: string[] = []
-  const consumer = pluginNodeAddressOf(Consumer)
+  const consumer = Consumer.nodeAddress()
   const host = await createHost({
-    config: {
-      storage: zenfs(),
-      logger: logtape({
+    runtime: {
+      zenfs: zenfs(),
+      logtape: logtape({
         sinks: {
           capture: Object.assign(
             (record: {
@@ -102,9 +101,9 @@ export async function run() {
           { category: ['logtape', 'meta'], lowestLevel: 'fatal', sinks: [] },
         ],
       }),
+      state: { autoStart: [consumer] },
     },
     plugins: [Provider, Consumer],
-    state: { initial: { autoStart: [consumer] } },
   })
   const rootId = host.ctx.logging?.resolved.root.id
   const logging = { initial: host.ctx.logging?.state, final: host.ctx.logging?.state }
@@ -170,6 +169,8 @@ export async function run() {
 			AbortSignal,
 			setTimeout,
 			clearTimeout,
+			setInterval,
+			clearInterval,
 			queueMicrotask,
 			performance,
 			crypto,

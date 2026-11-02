@@ -151,13 +151,11 @@ export function host(options: HostViteOptions): PluginOption[] {
 		catalog: HostViteCatalog,
 	): Promise<PluginHost> => {
 		const instance = await createHost({
+			name: declaration.name,
 			plugins: declaration.plugins,
-			config: declaration.config,
-			state: declaration.state,
-			configRecords: declaration.configRecords,
-			configSync: declaration.configSync,
 			vaultBindings: declaration.vaultBindings,
 			services: declaration.services,
+			runtime: declaration.runtime,
 		})
 		try {
 			setHostCatalogProvenance(instance.ctx, facts)
@@ -169,7 +167,14 @@ export function host(options: HostViteOptions): PluginOption[] {
 			})
 			attachments.set(
 				instance,
-				await attachHostVitePlugins(instance, server, pipeline.semantics, catalog, profile),
+				await attachHostVitePlugins(
+					instance,
+					server,
+					pipeline.semantics,
+					catalog,
+					profile,
+					declaration.startup,
+				),
 			)
 			await prepareHostApplication(declaration, instance)
 			epochs.set(instance, randomUUID())

@@ -1,5 +1,5 @@
 import { InMemory, Passthrough, writeFileAtomic } from '@pluxel/core/fs'
-import { pluginNodeAddressOf, BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { standardServices } from '@pluxel/services'
 import * as nativeFs from 'node:fs'
@@ -104,8 +104,8 @@ describe('FontsPlugin', () => {
 			const backend = { mounts: { '/': { backend: InMemory } } }
 			{
 				await using host = await createTestHost({
-					config: { storage: backend },
 					services: standardServices(),
+					runtime: { zenfs: backend },
 				})
 
 				await host.start(FontsPlugin)
@@ -286,8 +286,8 @@ describe('FontsPlugin', () => {
 			{
 				await using host = await createTestHost({
 					workbench: true,
-					config: { storage: backend },
 					services: standardServices(),
+					runtime: { zenfs: backend },
 				})
 
 				await host.start([FontsPlugin, FontsTestConsumer])
@@ -326,8 +326,8 @@ describe('FontsPlugin', () => {
 			{
 				await using host = await createTestHost({
 					workbench: true,
-					config: { storage: backend },
 					services: standardServices(),
+					runtime: { zenfs: backend },
 				})
 				await host.start([FontsPlugin, FontsTestConsumer])
 				using reopenedManager = await openFontsManager(host)
@@ -464,7 +464,7 @@ describe('FontsPlugin', () => {
 				})
 				expect(failure.lifecycleReport.issues).toContainEqual(
 					expect.objectContaining({
-						plugin: pluginNodeAddressOf(FontsPlugin),
+						plugin: FontsPlugin.nodeAddress(),
 						kind: 'start-failed',
 						message: expect.stringContaining(message),
 					}),
@@ -488,7 +488,7 @@ describe('FontsPlugin', () => {
 		const failure = await host.commitExpectFail((change) => change.start(FontsPlugin))
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
-				plugin: pluginNodeAddressOf(FontsPlugin),
+				plugin: FontsPlugin.nodeAddress(),
 				kind: 'start-failed',
 				message: expect.stringContaining('Default font preference is corrupt'),
 			}),
@@ -538,13 +538,13 @@ describe('FontsPlugin', () => {
 			},
 		}
 		const host = await createTestHost({
-			config: {
-				storage: {
+			services: [],
+			runtime: {
+				zenfs: {
 					mounts: { '/': { backend: Passthrough, fs: native, prefix } },
 					durableMounts: ['/'],
 				},
 			},
-			services: [],
 		})
 		const fonts = await host.start(FontsPlugin)
 		await fonts.setPreferredFamily('serif')

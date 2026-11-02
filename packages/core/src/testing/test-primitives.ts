@@ -13,7 +13,6 @@ import {
 	pluginDefinitionAddressEqual,
 	type PluginNodeAddress,
 } from '../plugins/runtime/identity'
-import { pluginNodeAddressOf } from '../plugins/runtime/definition'
 
 const pluginForkRefBrand: unique symbol = Symbol('pluxel.plugin-test-fork-ref')
 
@@ -109,7 +108,7 @@ export function definePluginFork<TPlugin extends PluginConstructor>(
 	plugin: TPlugin,
 	forkId: string,
 ): PluginForkRef<TPlugin> {
-	const definition = pluginNodeAddressOf(plugin).definition
+	const definition = plugin.nodeAddress().definition
 	const address = parsePluginNodeAddress({ definition, variant: 'fork', forkId })
 	return Object.freeze({
 		plugin,
@@ -137,7 +136,7 @@ export function resolvePluginTestTarget<TTarget extends PluginTestTarget>(
 	if (typeof target === 'function') {
 		return Object.freeze({
 			implementation: target,
-			address: pluginNodeAddressOf(target),
+			address: target.nodeAddress(),
 		}) as never
 	}
 	if (!target || typeof target !== 'object' || !(pluginForkRefBrand in target)) {
@@ -149,7 +148,7 @@ export function resolvePluginTestTarget<TTarget extends PluginTestTarget>(
 	if (implementation !== target.plugin) {
 		throw new TypeError('[pluxel/test] Plugin fork reference has an invalid implementation brand')
 	}
-	const definition = pluginNodeAddressOf(implementation).definition
+	const definition = implementation.nodeAddress().definition
 	return Object.freeze({
 		implementation,
 		address: parsePluginNodeAddress({ definition, variant: 'fork', forkId: target.forkId }),

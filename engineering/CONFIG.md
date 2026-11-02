@@ -19,8 +19,8 @@ Plugin + owned PluginPart fields: configs.use(ObjectSchema)
 
 | 接入                | 配置权威与框架职责                                                                                                                                                                                                                                                                                   |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ZenFS               | `config.storage: zenfs(...)` 从 `@pluxel/core/config` 验证并快照原生挂载配置，保留 Backend、BackendConfiguration 和 FileSystem；Core 拥有独立 mount table、创建资源和文件能力撤回，借用实例仍归调用者。[FS](FS.md) 维护进程全局选项的隔离边界及持久挂载声明。                                        |
-| LogTape             | `config.logger: logtape(...)` 从 `@pluxel/core/config` 接收原生 Config 或绑定 root/store 的同步配置工厂；上游拥有 sink/filter/路由和原生资源，Core 负责安装、身份、动态 policy 和排空。[Logging](LOGGING.md)。                                                                                       |
+| ZenFS               | `runtime.zenfs: zenfs(...)` 从 `@pluxel/core/config` 验证并快照原生挂载配置，保留 Backend、BackendConfiguration 和 FileSystem；Core 拥有独立 mount table、创建资源和文件能力撤回，借用实例仍归调用者。[FS](FS.md) 维护进程全局选项的隔离边界及持久挂载声明。                                         |
+| LogTape             | `runtime.logtape: logtape(...)` 从 `@pluxel/core/config` 接收原生 Config 或绑定 root/store 的同步配置工厂；上游拥有 sink/filter/路由和原生资源，Core 负责安装、身份、动态 policy 和排空。[Logging](LOGGING.md)。                                                                                     |
 | PostgreSQL / PGlite | `postgres()` / `pglite()` 接收原生驱动配置或借用实例，不另造 TLS、pool、extensions 参数。[Database](DATABASE.md) 维护 owner schema、迁移、公平调度和关闭。                                                                                                                                           |
 | OpenTelemetry       | 抽象 `Otel` 接收原生 MeterProvider、TracerProvider 和 LoggerProvider，保留 sampler、views、processors 及 resource 配置；`OtelPlugin` 只提供可保存的 OTLP/Prometheus 预设。generation 拥有交付的 providers 与 flush/shutdown，观测状态区分预设管理的输出和外部输出。[OTel](../docs/plugins/otel.md)。 |
 | Playwright          | 抽象 `Playwright` 的原生连接 hook 保留完整 connect/connectOverCDP 配置；`PlaywrightPlugin` 是 endpoint/Vault 预设。generation 拥有返回的连接，caller 拥有其 BrowserContext，外部浏览器进程仍由部署者管理。[Browser](../docs/plugins/browser.md)。                                                    |
@@ -48,7 +48,7 @@ Management 配置 RPC 与 Host-vite 开发控制台委托 Host；Management 负�
 - config owner 始终是 canonical `PluginNodeAddress`，内存索引使用其稳定 binary-derived index key；ConfigService 不创建或保留 Core slot，
   也不使用 Plugin name/schema key。
 - core validation 不依赖文件系统或 Workbench Plane。
-- raw record、revision 与 validation cache 只有 core `ConfigService` 一份；HostConfigStore 子类只增加持久化策略，所有 Host 使用该同一实现。
+- 原始声明与保存记录由 HostConfigStore 拥有；Core `ConfigService` 唯一拥有已校验的运行记录、revision、validation cache 与 generation 注入。schema output 不能反写成原始保存输入。
 - `getRawConfig()` 对同一 revision 复用一个深冻结普通 snapshot；revision 改变后返回新 identity，旧引用不变，不使用 live `Proxy` view。
 - 任意 Part config patch 都重新验证 composite record，并通知当前 owning Plugin generation；没有 Part config revision 或独立
   persistence/application owner。
@@ -56,11 +56,11 @@ Management 配置 RPC 与 Host-vite 开发控制台委托 Host；Management 负�
 
 ## 存储与创建边界
 
-Host 的 `configRecords` 和 `state` 各自拥有 `initial`、可选 `storage` 与模式。`storage` 唯一形式是同步 `(root: RootContext) => HostDocumentStorage`，两项 factory 在 root 创建后、文档 IO 前各解析一次并校验，Core 的惰性 config factory 只消费已解析对象。factory 不执行 IO，也不能返回 Promise。
+Host 的顶层 `name` 标识当前宿主；`runtime` 集中 zenfs/logtape/tinybase/state/configRecords。`runtime.configRecords.records` 声明原始 Plugin 输入，`runtime.state` 平铺 autoStart/forks/providerDefaults/dependencyOverrides；两者各自支持 override、可选 storage 与 mode。`storage` 唯一形式是同步 `(root: RootContext) => HostDocumentStorage`，两项 factory 在 root 创建后、文档 IO 前各解析一次并校验，Core 的惰性 config factory 只消费已解析对象。factory 不执行 IO，也不能返回 Promise。
 
-`HostDocumentStorage` 是借用的目录文档接口，仅含 `getText(key)`、`put(key, text)`、`stat(key)`；put 无条件等待完整原子提交，不接收 atomic 选项。Host 不导入 Services、不创建 filesystem backend，也不关闭应用共享的 backend。默认使用 Core 内建私有文档，显式 memory 可选择临时状态，readonly 拒绝写入。普通应用只在 Core 的 `storage` 输入一次后端；[TinyBase](TINYBASE.md) 的 Host 私有 `documents()` 保存 saved records，首次 IO 等待 [FS](FS.md) 后端准备，公开接线见 [Host 配置](../docs/host/configuration.md#保存配置和运行策略)。
+`HostDocumentStorage` 是借用的目录文档接口，包含 `getText(key)`、`put(key, text)`、`stat(key)` 和可选的 namespace 变化订阅 `subscribe(listener)`；put 无条件等待完整原子提交，不接收 atomic 选项。Host 不导入 Services、不创建 filesystem backend，也不关闭应用共享的 backend。默认使用 Core 内建私有文档，显式 memory 可选择临时状态，readonly 拒绝写入。普通应用只在 `runtime.zenfs` 输入一次后端；`requireHostDocuments(root, namespace)` 借用 [FS](FS.md) 的 `services/host/<namespace>/<key>` 普通文件，首次 IO 等待后端准备，公开接线见 [Host 配置](../docs/host/configuration.md#保存配置和运行策略)。
 
-`HostConfigStore` 继承 CoreConfigService，复用唯一 records/revision/validation cache；`HostStateStore` 拥有 coordinator 需要的唯一 policy snapshot/revision。两者保留 SuperJSON v3/v5 格式与 readonly 失败语义。Config debounce、digest 去重、确认前禁止应用，以及 fork/coordinator 补偿边界保持不变；state 的发布仍发生在完整持久化之后。
+`HostConfigStore` 继承 CoreConfigService，复用唯一 records/revision/validation cache；`HostStateStore` 拥有 coordinator 需要的唯一 policy snapshot/revision。两者只接受 SuperJSON v4/v6 格式与 readonly 失败语义，没有兼容读取或启动迁移。Config debounce、digest 去重、确认前禁止应用，以及 fork/coordinator 补偿边界保持不变；state 的发布仍发生在完整持久化之后。
 
 Core 的 `createCoreContextHost({ createConfigService })` 只允许在固定 CONFIG_SERVICE descriptor 的严格惰性工厂位置创建 CoreConfigService；它不是任意 root factory，不暴露替换 Core token 的权限。Host 准备阶段等待两个 store.ready 后交付，关闭先排空已接纳操作，再等待 store 自己的写入并聚合 flush 错误。环境配置在 Host 应用启动阶段解析，存储 backend 由应用显式提供。
 
@@ -74,30 +74,30 @@ logging、profile 和 Workbench policy。
 
 Host 从本次不可变 `startup.env` 解析环境映射，fileBindings 的 JSON 路径相对 `startup.root`。Host 不隐式解析整个环境配置 snapshot。来源元数据只包含路径、kind/name 和 readonly，不包含值。具体 mapping 与 Vault 规则见[用户配置文档](../docs/plugin-development/configuration.md)。
 
-Config effective authority 为 `configRecords.initial < file base < saved < env`；plain object 递归合并、array 替换。HostConfigStore 只持久化 saved layer，reset 删除 saved path；env 缺失不产生 overlay。env 路径与其祖先/后代拒绝管理写入，Core low-level mutation 也不能绕过。validation 使用 effective record，默认值或 env normalization 不被反写为 saved。source facts 在同一 coordinator 查询中投影。
+声明由 `runtime.configRecords.records` 和 fileBindings config 合成，后者覆盖同路径。`override: false` 时，已有保存文档完整决定原始管理输入，仅文件缺失时初始化声明；`override: true` 仅把声明的显式路径覆盖到当前运行时，不改写保存文档。env 最后覆盖有效值。plain object 递归合并，array 替换；声明 override 与 env 控制路径及其祖先/后代拒绝管理写入，Core low-level mutation 也不能绕过。validation 使用完整有效输入，schema defaults/transform output 与 env 都不反写为原始保存记录。source facts 在同一 coordinator 查询中投影。
+
+`reset(owner)` 是显式恢复本次声明的持久修改；提供 keys 时只恢复指定顶层字段，声明缺失字段被删除，`keys: []` 为无操作查询。readonly 与受控路径约束照常检查。
+
+state 的 override 按明确给出的整列替换，省略列继承保存内容，空数组是有效的整列清空；受控列在任何图/元数据副作用前拒绝管理写入。forks 保存 canonical fork node addresses。目录推导的 provider defaults 只属于当前运行图，不能自动持久化为用户选择。
 
 Vault 绑定由 Host 在服务准备后、插件 admission 前通过 root-only `HostVaultBindings` 安装；缺失服务 fail-fast。config 与 Vault 绑定以稳定 node address 为目标。动态候选在 admission 前检查 config metadata 与已声明环境路径兼容性，失败保留原 catalog。Vault 根 schema 是本次 Host 固定的部署输入契约，在首次解析时校验记录 key 与原始值，不能因 Plugin 热替换重新执行 transform 或更改已安装记录。修改 Vault schema 或来源需要重新创建 Host；插件仍负责私有 KV 的业务校验。
 
-单实例持久配置使用 SuperJSON v3 文档文本，经 Core TinyBase Host namespace 完整提交；只保存 saved layer，malformed/version error fail-fast。config 和 state 的 initial 语义不同：config initial 是永久 base，state initial 仍是创建策略 seed。
+持久配置使用 SuperJSON v4 原始记录文档，state 使用 v6；通过 Core FS 原子提交，malformed/version error fail-fast。两者默认仅在缺失文档时使用声明初始化；应用重新打包不覆盖既有保存值。
 
-## Saved config replication
+## 外部保存配置
 
-`HostApplication.configSync` 与 `HostOptions.configSync` 显式选择 writer 或 replica，共享 scope、writer identity 和真实 application artifact `{ name, catalogHash }`。静态与 Node modules 启动将 manifest 的 application 事实传入 startup，resolver 核对配置的 artifact；嵌入 `createHost` 由部署者提供事实。credentials、endpoint 与角色来自部署，不接受同步正文改写。writer 的 `host.configSync.fetch(request)` 只提供已认证的完整 snapshot/版本 long poll，HTTP/TLS listener 仍由宿主所有；replica 连接与取消归 Host，不挂在业务 Plugin ingress 或 generation 上。
+保存配置使用 SuperJSON v4 普通文档，经 Core FS 直接提交；没有独立的配置复制协议、实例角色、网络连接或部署版本。多个 Host 是否看见同一份文件，由 `runtime.zenfs` 所选的实际后端决定。
 
-同步只替换 saved layer，base/env、Vault、Host policy 与 Plugin Stores 不复制。同步 config.json v4 把原 SuperJSON v3 saved body 与 history/seq 放在同一份原子文档；格式严格区分，旧 v3 需要显式转换，不启动自动迁移或默认空快照。writer 准备时初始化一次完整文档 history，seq 只在已确认内容变化时递增；失败候选不发布，未知结果的 writer 阻断后续保存，关闭不重试。
+Host 在准备完成后订阅文档变化并补读一次，追平服务准备期间的写入。Core FS 仅在有订阅时观察已访问 key；Host 在同一个 coordinator exclusive queue 内读取最新 v4 文档，使用内容摘要跳过重复更新。原始记录完整替换 saved layer；保存文档缺失时清空原始保存输入，仅应用显式 override 与 env，不重新初始化声明或写回默认文件。当前可用 owner 的完整 effective 配置通过 schema 后才发布 normalized output 并通知 generation；raw body 不经 schema output 反写。未知 owner 原文保留到真实 admission，不创建 Slot、fork 或 generation。
 
-成功 config result 与 `readHostConfigState(ctx)`/`host.config.status()` 包含顶层 version、readonly。单实例 version 为 null；writer mutation 使用 `HostConfigMutationOptions.expected`，要求匹配完整 `{ history, seq }`，不是单 owner revision。缺失或冲突在 mutation 前返回 `version_conflict / unchanged` 与当前版本。fork remove 同样先检查 policy/version，再停止 Plugin。replica 管理写只读，但本地 Core storage 必须可写以保存快照。
+外部文件已经由写入方保存，因此本次接纳不再写盘。运行中收到无效内容时保留当前有效配置并报告错误，修正后的新文件可重新接纳；启动时遇到无效文档仍拒绝启动。listener 失败沿 saved-not-applied 语义保留 desired。readonly 仅拒绝本实例管理写入，不禁止读取外部有效更新。关闭先取消订阅，再排空已接纳工作。
 
-replica 启动先校验缓存；有效缓存允许断线启动，没有缓存则获取、校验并原子保存首份 snapshot 后才允许首次 Plugin admission。接收新候选在 coordinator exclusive queue 内一次校验全部当前可用 owner 的完整 effective record，保留每个 normalized ticket，保存成功后再一次性替换 saved records、确认版本并通知 generation；raw body 不经 schema output 反写，删除语义为完整替换。未知 owner 原文保留、状态报告 unavailable，不创建 Slot/fork/generation；后续真正 admission 再核对当前 schema。监听失败沿 saved-not-applied 语义保留已确认 desired。
-
-status 分离 sourceVersion、savedVersion、connection、error、unavailable；连接不代表本地确认。Host 关闭取消 fetch、等待已接纳的候选与 IO 完整结算，再释放 writer、TinyBase 与 FS；已撤回任务不能晚到发布。协议、缓存与同步实现分别位于 `config-sync-protocol.ts`、`config-store.ts`、`config-sync.ts`，回归入口为 `packages/host/tests/config-sync.test.ts`。
-
-Management 的 `configStateDto`/`client.config.status()` 投影 HostConfigState，配置 patch/patchField 与 fork remove 透传原读 expected。Workbench 保存脏草稿的版本，后台 query 更新不能给旧草稿附上新版本；冲突不自动刷新版本重试，副本配置字段与 fork 删除禁用，后端仍独立拒绝。跨 RPC、版本冲突和停止前检查由 `packages/services/tests/management/management/config-version.test.ts` 与 Workbench shell config tests 覆盖。公开部署与恢复用法由 [Host 配置](../docs/host/configuration.md#跨实例同步保存配置)维护。
+完整文件替换只防止读取半份文件，不提供跨实例读改写原子性。并发保存可能丢失修改；Host 不维护跨实例 history、sequence、expected version、冲突合并或自动选主。需要这类保证的共享业务数据使用数据库。Host policy 属于当前实例，不因外部文件变更自动执行节点启停。公开使用边界由 [Host 配置](../docs/host/configuration.md#共享文件与外部修改)维护。
 
 ## 保存与应用
 
 control-plane patch/reset/field mutation 与 fork/catalog mutation 共用 host coordinator exclusive queue。顺序固定为 validate once -> stage
-normalized immutable snapshot -> flush -> confirm persisted revision -> notify addressed running generation。stage 不是已提交的内存
+normalized immutable snapshot 与原始候选 -> flush 原始记录 -> confirm persisted revision -> notify addressed running generation。stage 不是已提交的内存
 authority；flush 失败时未确认 revision 和 normalized snapshot 都不能被 Core generation 观察。第一次 schema validation 的 normalized output 是唯一
 pre-persistence authority；写入后不得再次执行可能非确定或 throw 的 schema 并把已经改变的内存状态误报为 `unchanged`。generation notification
 仍核对当前 definition facts，失败归入 `saved-not-applied`。validated snapshot 同时绑定 config record revision 与
@@ -136,7 +136,7 @@ RPC 输入先按 `unknown` 校验 owner address、patch object 与 field mutatio
 prototype mutation。unexpected schema/programming error 继续 reject，不能按 message 分类成 domain failure。
 
 内存 owner lookup 和 revision cache 为 O(1)。file backend 在 200 ms 内合并 mutation，随后原子重写 O(B) 的完整 snapshot，B 是
-serialized config bytes；TinyBase backing 另有完整 envelope 容量预算，当前契约不适合无界 fork/config 基数。写入故障后 Host 文档 adapter 阻断后续候选，须关闭检查实际 backing 后恢复，不能借 Config flush 重试绕过失败边界。
+serialized config bytes；FS 普通文档另有固定 8 MiB 单文件预算，与 TinyBase 预算独立。当前契约不适合无界 fork/config 基数。写入失败不发布候选，返回 persistence_failed/state unknown；检查实际 backing 后才能决定后续操作，不能声称失败自动回滚。
 
 ## Toolchain metadata
 

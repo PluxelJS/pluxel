@@ -46,8 +46,8 @@ export default defineHostApplication(({ bindings }): HostApplication => {
 		.filter((name) => !available || available.has(name))
 		.map((name) => parsePluginNodeReference(`package:@embedded-launcher/app/plugins::${name}`))
 	const { stateStorage, configStorage } = execution
-	let state: HostStateStoreOptions = { initial: { autoStart } }
-	if (stateStorage) state = { initial: { autoStart }, storage: () => stateStorage }
+	let state: HostStateStoreOptions = { autoStart }
+	if (stateStorage) state = { autoStart, storage: () => stateStorage }
 	return {
 		plugins: execution.plugins ?? [],
 		...(execution.plugins
@@ -62,8 +62,6 @@ export default defineHostApplication(({ bindings }): HostApplication => {
 			desktop(execution.transport, true),
 			cli(),
 		],
-		state,
-		...(configStorage ? { configRecords: { storage: () => configStorage } } : {}),
 		prepare({ host }: { host: PluginHost }) {
 			const control = createControl(host)
 			const lease = host.ctx.require(LauncherControl).lease
@@ -75,6 +73,10 @@ export default defineHostApplication(({ bindings }): HostApplication => {
 				},
 				{ tag: 'Execution Host binding' },
 			)
+		},
+		runtime: {
+			state,
+			...(configStorage ? { configRecords: { storage: () => configStorage } } : {}),
 		},
 	}
 })

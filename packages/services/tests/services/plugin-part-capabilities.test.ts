@@ -2,7 +2,7 @@ import { ElysiaApp } from '@pluxel/services/elysia'
 import { Commands } from '@pluxel/services/commands'
 import { defineCommand, Result } from '@pluxel/commands'
 import { obj } from '@pluxel/commands/typebox'
-import { pluginDefinitionIndexKey, pluginNodeAddressOf } from '@pluxel/core'
+import { pluginDefinitionIndexKey } from '@pluxel/core'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin, PluginPart } from '@pluxel/core/internal/test'
 import * as v from 'valibot'
@@ -99,7 +99,7 @@ describe('PluginPart runtime capabilities', () => {
 			await using host = await createServiceInternalTestHost({ workbench: false })
 
 			await host.start(ConfiguredOwner)
-			const address = pluginNodeAddressOf(ConfiguredOwner)
+			const address = ConfiguredOwner.nodeAddress()
 			const definition = requirePluginHostCoordinator(host.ctx)
 				.catalogSnapshot()
 				.byDefinition.get(pluginDefinitionIndexKey(address.definition))?.candidate

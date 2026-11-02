@@ -6,10 +6,11 @@ export type BulkAction = 'auto-start-on' | 'auto-start-off' | 'clear'
 type Props = {
 	count: number
 	busy: boolean
+	canChangeAutoStart: boolean
 	onAction: (action: BulkAction) => void
 }
 
-export function BulkActionsBar({ count, busy, onAction }: Props) {
+export function BulkActionsBar({ count, busy, canChangeAutoStart, onAction }: Props) {
 	return (
 		<Paper className="plx-pluginCatalog__bulkBar" withBorder radius="sm" p={0} shadow="none">
 			<Badge variant="light" color="gray" size="xs">
@@ -19,7 +20,7 @@ export function BulkActionsBar({ count, busy, onAction }: Props) {
 				<ActionIcon
 					size="sm"
 					variant="subtle"
-					disabled={busy}
+					disabled={busy || !canChangeAutoStart}
 					onClick={() => onAction('auto-start-off')}
 					title="关闭自动启动（不停止当前会话）"
 					aria-label="关闭自动启动"
@@ -29,7 +30,7 @@ export function BulkActionsBar({ count, busy, onAction }: Props) {
 				<ActionIcon
 					size="sm"
 					variant="subtle"
-					disabled={busy}
+					disabled={busy || !canChangeAutoStart}
 					onClick={() => onAction('auto-start-on')}
 					title="开启自动启动（不启动当前会话）"
 					aria-label="开启自动启动"

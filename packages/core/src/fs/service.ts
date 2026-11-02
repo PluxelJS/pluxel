@@ -2,7 +2,7 @@ import type { RootContext } from '../context/Context'
 import type { HostDocumentStorage } from '../storage/documents'
 import type { BoundContext } from '@zenfs/core'
 import { withErrno } from 'kerium'
-import { writeFileAtomic } from './atomic'
+import { FsDocuments } from './documents'
 import { FsMounts, type ResolvedFsConfig } from './config'
 
 export { snapshotFsConfig } from './config'
@@ -26,20 +26,19 @@ function validateDirectory(path: string): void {
 		throw new TypeError(`[core.fs] expected a canonical relative directory: ${path}`)
 }
 
-function missing(error: unknown): boolean {
-	return !!error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT'
-}
+const MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 
 /** One Host owns preparation, bound directories and final backend closure. */
 export class FsService {
 	private readyPromise?: Promise<BoundContext>
 	private mounts?: FsMounts
 	private readonly directories = new Map<string, Promise<BoundContext>>()
+	private readonly documentDirectories = new Map<string, FsDocuments>()
 	private closed = false
 	private disposal?: Promise<void>
 
 	constructor(
-		root: RootContext,
+		private readonly root: RootContext,
 		private readonly config: ResolvedFsConfig,
 	) {
 		root.effects.defer(() => this.dispose(), { tag: 'Fs', phase: 'final' })
@@ -70,34 +69,25 @@ export class FsService {
 	}
 
 	/** Pure, borrowed Host document adapter; its first async operation prepares the same backend. */
-	documents(path: string): HostDocumentStorage {
+	documents(path: string, maxBytes = MAX_DOCUMENT_BYTES): HostDocumentStorage {
 		validateDirectory(path)
-		return {
-			getText: async (key) => {
-				validateDirectory(key)
-				const fs = await this.directory(path)
-				try {
-					return await fs.readFile(key, 'utf8')
-				} catch (error) {
-					if (missing(error)) return undefined
-					throw error
-				}
-			},
-			put: async (key, text) => {
-				validateDirectory(key)
-				await writeFileAtomic(await this.directory(path, { writable: true }), key, text)
-			},
-			stat: async (key) => {
-				validateDirectory(key)
-				const fs = await this.directory(path)
-				try {
-					return await fs.stat(key)
-				} catch (error) {
-					if (missing(error)) return undefined
-					throw error
-				}
-			},
+		this.assertOpen()
+		if (this.disposal) throw withErrno('EBADF', 'Host filesystem is closed')
+		if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0)
+			throw new TypeError('[core.fs] document byte limit must be a positive safe integer')
+		let documents = this.documentDirectories.get(path)
+		if (!documents) {
+			documents = new FsDocuments(
+				(requirement) => this.directory(path, requirement),
+				maxBytes,
+				(error, key) =>
+					this.root.logger.error('Cannot observe Host document {path}/{key}', { path, key, error }),
+			)
+			this.documentDirectories.set(path, documents)
 		}
+		if (documents.maxBytes !== maxBytes)
+			throw new TypeError('[core.fs] a document directory has one fixed byte limit')
+		return documents
 	}
 
 	private assertOpen(requirement?: FsRequirement): void {
@@ -157,9 +147,13 @@ export class FsService {
 	}
 
 	private dispose(): Promise<void> {
-		this.closed = true
 		this.disposal ??= (async () => {
 			const errors: unknown[] = []
+			const documents = await Promise.allSettled(
+				[...this.documentDirectories.values()].map((value) => value.close()),
+			)
+			for (const result of documents) if (result.status === 'rejected') errors.push(result.reason)
+			this.closed = true
 			await this.readyPromise?.catch((): undefined => undefined)
 			// Directory preparation is owned here; arbitrary unawaited caller IO is not.
 			await Promise.allSettled(this.directories.values())
@@ -169,6 +163,7 @@ export class FsService {
 				errors.push(error)
 			}
 			this.directories.clear()
+			this.documentDirectories.clear()
 			if (errors.length > 0) throw new AggregateError(errors, 'Failed to close Host filesystem')
 		})()
 		return this.disposal

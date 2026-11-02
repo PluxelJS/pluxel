@@ -8,12 +8,13 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { SuperJSON } from 'superjson'
+import { HostStateMutationRejectedError } from './mutation'
+import type { HostStatePatch, HostStatePatchOperation } from './state'
 import {
 	type HostStateSnapshot,
 	type HostStateVersionedSnapshot,
 	HostStateRevisionConflictError,
 	type HostStateDraft,
-	type HostForkState,
 	type HostProviderDefaultState,
 	type HostDependencyOverrideState,
 	freezeTrustedHostStateSnapshot,
@@ -26,20 +27,33 @@ import {
 } from './document-storage'
 
 export type HostStateFile = {
-	version: 5
+	version: 6
 	autoStart: PluginNodeAddress[]
-	forks: HostForkState[]
+	forks: PluginNodeAddress[]
 	providerDefaults: HostProviderDefaultState[]
 	dependencyOverrides: HostDependencyOverrideState[]
 }
 
+export type HostStateDeclaration = Readonly<Partial<HostStateSnapshot>>
+
 export type HostStateStoreOptions = HostStoreStorageOptions &
+	HostStateDeclaration &
 	Readonly<{
-		/** Initial graph policy; an existing persisted document replaces it. Omitted lists are empty. */
-		initial?: Omit<Partial<HostStateSnapshot>, 'autoStart'> & {
-			autoStart?: Iterable<PluginNodeAddress>
-		}
+		/** Replace explicitly declared lists for this runtime; saved values remain unchanged. */
+		override?: boolean
 	}>
+
+export type HostStateConfigurationSnapshot = Readonly<{
+	mode: 'memory' | 'writable' | 'readonly'
+	override: boolean
+	declared: HostStateDeclaration
+	overriddenFields: readonly (keyof HostStateSnapshot)[]
+	saved: HostStateSnapshot
+	effective: HostStateSnapshot
+	revision: number
+}>
+
+const STATE_FIELDS = ['autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'] as const
 
 export class HostStateStore {
 	public readonly ready: Promise<void>
@@ -47,7 +61,11 @@ export class HostStateStore {
 
 	private readonly data: HostStateDraft = createDefaultDraft()
 	private revision = 0
+	private savedSnapshotCache!: HostStateSnapshot
 	private snapshotCache!: HostStateSnapshot
+	private readonly declared: HostStateDeclaration
+	private readonly override: boolean
+	private readonly overriddenFields: readonly (keyof HostStateSnapshot)[]
 	private versionedSnapshotCache!: HostStateVersionedSnapshot
 	private readonly file: string
 	private readonly mode: 'memory' | 'writable' | 'readonly'
@@ -62,14 +80,29 @@ export class HostStateStore {
 		public readonly ctx: PluxelContext,
 		options: Omit<HostStateStoreOptions, 'storage' | 'mode'> & ResolvedHostStoreStorageOptions = {},
 	) {
+		assertClosedRecord(options, [...STATE_FIELDS, 'mode', 'storage', 'override'], 'state', false)
+		if (options.override !== undefined && typeof options.override !== 'boolean') {
+			throw invalidState('state.override must be a boolean')
+		}
 		assertResolvedHostStoreStorage(options)
+		const { autoStart, forks, providerDefaults, dependencyOverrides } = options
+		this.declared = resolveHostStateDeclaration({
+			autoStart,
+			forks,
+			providerDefaults,
+			dependencyOverrides,
+		})
+		this.override = options.override ?? false
+		this.overriddenFields = Object.freeze(
+			this.override ? STATE_FIELDS.filter((field) => this.declared[field] !== undefined) : [],
+		)
 		this.mode = options.mode ?? (options.storage ? 'writable' : 'memory')
 		this.readonlyMode = this.mode === 'readonly'
 		this.storage = options.storage
 		if (this.mode !== 'memory' && !this.storage)
 			throw new TypeError('[host] persistent state requires document storage')
 		this.file = 'state.json'
-		if (options.initial) applySnapshot(this.data, options.initial)
+		Object.assign(this.data, this.declared)
 		this.refreshSnapshotCache()
 		if (this.mode !== 'memory') {
 			this.ready = this.loadFromDisk(this.file).then((): void => {
@@ -87,6 +120,41 @@ export class HostStateStore {
 		return this.snapshotCache
 	}
 
+	/** Original loaded/saved values, before runtime declarations are overlaid. */
+	savedSnapshot(): HostStateSnapshot {
+		return this.savedSnapshotCache
+	}
+
+	/** Projects a proposed saved snapshot without writing runtime declarations into it. */
+	effectiveSnapshot(saved: HostStateSnapshot): HostStateSnapshot {
+		return this.overriddenFields.length === 0
+			? saved
+			: freezeTrustedHostStateSnapshot({ ...saved, ...this.declared })
+	}
+
+	configurationSnapshot(): HostStateConfigurationSnapshot {
+		return Object.freeze({
+			mode: this.mode,
+			override: this.override,
+			declared: this.declared,
+			overriddenFields: this.overriddenFields,
+			saved: this.savedSnapshotCache,
+			effective: this.snapshotCache,
+			revision: this.revision,
+		})
+	}
+
+	/** Reject management writes before any graph or metadata side effect. */
+	assertPatchMutable(patch: HostStatePatch | undefined): void {
+		if (!patch || patch.operations.length === 0) return
+		this.assertMutable('update state')
+		for (const operation of patch.operations) {
+			for (const field of operationFields(operation)) {
+				if (this.overriddenFields.includes(field)) this.rejectOverridden(field)
+			}
+		}
+	}
+
 	versionedSnapshot(): HostStateVersionedSnapshot {
 		return this.versionedSnapshotCache
 	}
@@ -102,6 +170,14 @@ export class HostStateStore {
 		}
 		this.assertRevision(expectedRevision)
 		const normalized = canonicalHostStateSnapshot(next)
+		for (const field of this.overriddenFields) {
+			if (
+				SuperJSON.stringify(normalized[field]) !==
+				SuperJSON.stringify(this.savedSnapshotCache[field])
+			) {
+				this.rejectOverridden(field)
+			}
+		}
 		this.durableCommitInFlight = true
 		const task = (async () => {
 			try {
@@ -145,8 +221,19 @@ export class HostStateStore {
 		throw new HostStateRevisionConflictError(expectedRevision, this.revision)
 	}
 
-	private refreshSnapshotCache(snapshot = freezeTrustedHostStateSnapshot(this.data)): void {
-		this.snapshotCache = snapshot
+	private rejectOverridden(field: keyof HostStateSnapshot): never {
+		throw new HostStateMutationRejectedError(
+			Object.freeze({
+				code: 'state_overridden',
+				field,
+				message: `runtime.state.${field} is controlled by an override declaration; edit the declaration or disable override before saving this list`,
+			}),
+		)
+	}
+
+	private refreshSnapshotCache(saved = freezeTrustedHostStateSnapshot(this.data)): void {
+		this.savedSnapshotCache = saved
+		this.snapshotCache = this.effectiveSnapshot(saved)
 		this.versionedSnapshotCache = Object.freeze({
 			revision: this.revision,
 			state: this.snapshotCache,
@@ -188,12 +275,49 @@ export class HostStateStore {
 	}
 }
 
-export function resolveHostStateInitial(
-	initial: HostStateStoreOptions['initial'] = {},
-): HostStateSnapshot {
-	const draft = createDefaultDraft()
-	applySnapshot(draft, initial)
-	return freezeTrustedHostStateSnapshot(draft)
+/** Normalizes only supplied declaration lists, preserving omission for override inheritance. */
+export function resolveHostStateDeclaration(
+	declaration: HostStateDeclaration = {},
+): HostStateDeclaration {
+	assertClosedRecord(declaration, STATE_FIELDS, 'state', false)
+	for (const field of STATE_FIELDS) {
+		if (declaration[field] !== undefined && !Array.isArray(declaration[field])) {
+			throw invalidState(`state.${field} must be an array`)
+		}
+	}
+	const normalized = canonicalHostStateSnapshot({
+		...createDefaultDraft(),
+		...Object.fromEntries(
+			STATE_FIELDS.filter((field) => declaration[field] !== undefined).map((field) => [
+				field,
+				declaration[field],
+			]),
+		),
+	})
+	return Object.freeze(
+		Object.fromEntries(
+			STATE_FIELDS.filter((field) => declaration[field] !== undefined).map((field) => [
+				field,
+				normalized[field],
+			]),
+		),
+	)
+}
+
+function operationFields(operation: HostStatePatchOperation): readonly (keyof HostStateSnapshot)[] {
+	switch (operation.type) {
+		case 'set-auto-start':
+			return ['autoStart']
+		case 'ensure-fork':
+		case 'remove-fork':
+			return ['forks']
+		case 'set-provider-default':
+			return ['providerDefaults']
+		case 'set-dependency-override':
+			return ['dependencyOverrides']
+		case 'remove-node-policy':
+			return ['autoStart', 'dependencyOverrides']
+	}
 }
 
 function createDefaultDraft(): HostStateDraft {
@@ -205,16 +329,7 @@ function createDefaultDraft(): HostStateDraft {
 	}
 }
 
-function cloneSnapshot(snapshot: HostStateSnapshot): HostStateDraft {
-	return {
-		autoStart: snapshot.autoStart.map(cloneNodeAddress),
-		forks: snapshot.forks.map(cloneForkState),
-		providerDefaults: snapshot.providerDefaults.map(cloneProviderDefault),
-		dependencyOverrides: snapshot.dependencyOverrides.map(cloneDependencyOverride),
-	}
-}
-
-function normalizeDraft(draft: HostStateDraft): HostStateDraft {
+function normalizeDraft(draft: HostStateDraft | HostStateSnapshot): HostStateDraft {
 	return {
 		autoStart: parseUniqueNodes(draft.autoStart, 'autoStart'),
 		forks: parseForks(draft.forks, 'forks'),
@@ -228,51 +343,23 @@ const canonicalSnapshots = new WeakSet<HostStateSnapshot>()
 /** @internal Validates, sorts, clones, and deep-freezes one canonical revision snapshot. */
 export function canonicalHostStateSnapshot(state: HostStateSnapshot): HostStateSnapshot {
 	if (canonicalSnapshots.has(state)) return state
-	const snapshot = freezeTrustedHostStateSnapshot(normalizeDraft(cloneSnapshot(state)))
+	const snapshot = freezeTrustedHostStateSnapshot(normalizeDraft(state))
 	canonicalSnapshots.add(snapshot)
 	return snapshot
 }
 
 function replaceDraft(target: HostStateDraft, source: HostStateDraft | HostStateSnapshot): void {
 	target.autoStart = source.autoStart.map(cloneNodeAddress)
-	target.forks = source.forks.map(cloneForkState)
+	target.forks = source.forks.map(cloneNodeAddress)
 	target.providerDefaults = source.providerDefaults.map(cloneProviderDefault)
 	target.dependencyOverrides = source.dependencyOverrides.map(cloneDependencyOverride)
 }
 
-function applySnapshot(
-	draft: HostStateDraft,
-	snapshot: NonNullable<HostStateStoreOptions['initial']>,
-): void {
-	assertClosedRecord(
-		snapshot,
-		['autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'],
-		'state.initial',
-		false,
-	)
-	if (snapshot.autoStart) {
-		draft.autoStart = parseUniqueNodes([...snapshot.autoStart], 'state.initial.autoStart')
-	}
-	if (snapshot.forks) draft.forks = parseForks(snapshot.forks, 'state.initial.forks')
-	if (snapshot.providerDefaults) {
-		draft.providerDefaults = parseProviderDefaults(
-			snapshot.providerDefaults,
-			'state.initial.providerDefaults',
-		)
-	}
-	if (snapshot.dependencyOverrides) {
-		draft.dependencyOverrides = parseDependencyOverrides(
-			snapshot.dependencyOverrides,
-			'state.initial.dependencyOverrides',
-		)
-	}
-}
-
 function toHostStateFile(draft: HostStateDraft | HostStateSnapshot): HostStateFile {
 	return {
-		version: 5,
+		version: 6,
 		autoStart: draft.autoStart.map(cloneNodeAddress),
-		forks: draft.forks.map(cloneForkState),
+		forks: draft.forks.map(cloneNodeAddress),
 		providerDefaults: draft.providerDefaults.map(cloneProviderDefault),
 		dependencyOverrides: draft.dependencyOverrides.map(cloneDependencyOverride),
 	}
@@ -283,7 +370,7 @@ function coerceHostStateFile(input: unknown): HostStateDraft {
 		throw invalidState('persisted state must be an object')
 	}
 	const raw = input as Record<string, unknown>
-	if (raw.version !== 5) {
+	if (raw.version !== 6) {
 		throw invalidState(`unsupported persisted state version: ${String(raw.version)}`)
 	}
 	assertClosedRecord(
@@ -324,31 +411,12 @@ function parseUniqueNodes(input: readonly unknown[], at: string): PluginNodeAddr
 	)
 }
 
-function parseForks(input: readonly unknown[], at: string): HostForkState[] {
-	const out: HostForkState[] = []
-	const seen = new Set<string>()
-	for (let i = 0; i < input.length; i++) {
-		const raw = closedRecord(input[i], `${at}[${i}]`, ['definition', 'forkIds'])
-		const definition = parseDefinition(raw.definition, `${at}[${i}].definition`)
-		if (!Array.isArray(raw.forkIds)) throw invalidState(`${at}[${i}].forkIds must be an array`)
-		const forkIds = raw.forkIds.map((value, index) =>
-			parseForkId(value, definition, `${at}[${i}].forkIds[${index}]`),
-		)
-		if (new Set(forkIds).size !== forkIds.length) {
-			throw invalidState(`${at}[${i}].forkIds contains duplicates`)
-		}
-		const key = pluginDefinitionIndexKey(definition)
-		if (seen.has(key)) {
-			throw invalidState(`${at}[${i}] duplicates a definition`)
-		}
-		seen.add(key)
-		out.push({ definition, forkIds: forkIds.sort() })
+function parseForks(input: readonly unknown[], at: string): PluginNodeAddress[] {
+	const nodes = parseUniqueNodes(input, at)
+	for (const node of nodes) {
+		if (node.variant !== 'fork') throw invalidState(`${at} must contain only fork node addresses`)
 	}
-	return out.sort((left, right) =>
-		pluginDefinitionIndexKey(left.definition).localeCompare(
-			pluginDefinitionIndexKey(right.definition),
-		),
-	)
+	return nodes
 }
 
 function parseProviderDefaults(input: readonly unknown[], at: string): HostProviderDefaultState[] {
@@ -447,16 +515,6 @@ function assertClosedRecord(
 	}
 }
 
-function parseForkId(value: unknown, definition: PluginDefinitionAddress, at: string): string {
-	try {
-		const node = parsePluginNodeAddress({ definition, variant: 'fork', forkId: value })
-		if (node.variant !== 'fork') throw new TypeError('Plugin node must be a fork')
-		return node.forkId
-	} catch (error) {
-		throw invalidState(`${at}: ${error instanceof Error ? error.message : String(error)}`)
-	}
-}
-
 function invalidState(message: string): Error {
 	return new Error(`[HostStateStore] ${message}`)
 }
@@ -476,10 +534,6 @@ function cloneNodeAddress(node: PluginNodeAddress): PluginNodeAddress {
 				variant: 'fork',
 				forkId: node.forkId,
 			}
-}
-
-function cloneForkState(entry: HostForkState): HostForkState {
-	return { definition: cloneDefinitionAddress(entry.definition), forkIds: [...entry.forkIds] }
 }
 
 function cloneProviderDefault(entry: HostProviderDefaultState): HostProviderDefaultState {

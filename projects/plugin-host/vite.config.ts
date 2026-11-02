@@ -31,20 +31,21 @@ export default defineConfig({
 	appType: 'spa',
 	ssr: { noExternal: ['@opentelemetry/resources'] },
 	plugins: lazyPlugins(async () => {
-		const { hostEnv } = (await import(
+		const { resolveHostEnv } = (await import(
 			import.meta.resolve('@pluxel/host/environment')
 		)) as typeof import('@pluxel/host/environment')
 		const { vitePreset } = (await import(
 			import.meta.resolve('@pluxel/services/vite')
 		)) as typeof import('@pluxel/services/vite')
+		const environment = resolveHostEnv({ ...process.env })
 		return [
 			{
 				name: 'pluxel-plugin-host-listener',
 				config: () => ({
 					server: {
-						host: hostEnv.hostBind ?? '127.0.0.1',
-						port: hostEnv.hostPort ?? 3310,
-						strictPort: hostEnv.hostPort !== undefined,
+						host: environment.hostBind ?? '127.0.0.1',
+						port: environment.hostPort ?? 3310,
+						strictPort: environment.hostPort !== undefined,
 					},
 				}),
 			},

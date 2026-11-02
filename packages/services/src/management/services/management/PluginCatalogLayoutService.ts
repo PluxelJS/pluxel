@@ -1,6 +1,6 @@
 import { type HostOperationOptions } from '@pluxel/host/internal'
 import { type HostDocumentStorage } from '@pluxel/host'
-import { requireTinyBaseHost } from '@pluxel/core/internal'
+import { requireHostDocuments } from '@pluxel/core/internal'
 import {
 	formatPluginDefinitionReference,
 	parsePluginDefinitionReference,
@@ -59,7 +59,7 @@ export class PluginCatalogLayoutService {
 	private tail: Promise<unknown> = Promise.resolve()
 
 	constructor(root: Context) {
-		this.storage = requireTinyBaseHost(root.root).documents('management')
+		this.storage = requireHostDocuments(root.root, 'management')
 	}
 
 	listSections(

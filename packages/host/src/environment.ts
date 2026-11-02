@@ -42,7 +42,7 @@ export type PluxelHostEnvironment = Readonly<{
  * Invalid explicit values fail startup instead of silently selecting another behavior.
  */
 export function resolveHostEnv(
-	input: Readonly<Record<string, string | undefined>> = env,
+	input: Readonly<Record<string, string | undefined>>,
 ): PluxelHostEnvironment {
 	const dataRoot = optionalText(input.PLUXEL_DATA_ROOT, 'PLUXEL_DATA_ROOT') ?? '.pluxel'
 	const workbench = optionalBoolean(input.PLUXEL_WORKBENCH, 'PLUXEL_WORKBENCH')
@@ -61,9 +61,6 @@ export function resolveHostEnv(
 		...(publicOrigin === undefined ? {} : { publicOrigin }),
 	})
 }
-
-/** Effective Pluxel Host environment resolved from the universal {@link env}. */
-export const hostEnv = resolveHostEnv()
 
 function optionalText(value: string | undefined, name: string): string | undefined {
 	if (value === undefined) return undefined

@@ -6,7 +6,6 @@ import {
 import {
 	pluginDefinitionAddressOf,
 	pluginDefinitionIndexKey,
-	pluginNodeAddressOf,
 	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
@@ -81,14 +80,13 @@ describe('Plugin dependency graph read model', () => {
 		const effective = new Map(
 			graph.nodes.map((entry) => [pluginNodeIndexKey(entry.status.address), entry.effective]),
 		)
-		expect(effective.get(pluginNodeIndexKey(pluginNodeAddressOf(DirectProvider)))).toBe(true)
-		expect(effective.get(pluginNodeIndexKey(pluginNodeAddressOf(DirectConsumer)))).toBe(true)
+		expect(effective.get(pluginNodeIndexKey(DirectProvider.nodeAddress()))).toBe(true)
+		expect(effective.get(pluginNodeIndexKey(DirectConsumer.nodeAddress()))).toBe(true)
 		expect(effective.get(pluginNodeIndexKey(inactiveFork))).toBe(false)
 
 		const directDefault = graph.edges.find(
 			(edge) =>
-				pluginNodeIndexKey(edge.consumer) ===
-					pluginNodeIndexKey(pluginNodeAddressOf(DirectConsumer)) &&
+				pluginNodeIndexKey(edge.consumer) === pluginNodeIndexKey(DirectConsumer.nodeAddress()) &&
 				pluginDefinitionIndexKey(edge.requirement) ===
 					pluginDefinitionIndexKey(DirectProviderDefinition),
 		)
@@ -100,8 +98,7 @@ describe('Plugin dependency graph read model', () => {
 		expect(
 			graph.edges.filter(
 				(edge) =>
-					pluginNodeIndexKey(edge.consumer) ===
-						pluginNodeIndexKey(pluginNodeAddressOf(DirectConsumer)) &&
+					pluginNodeIndexKey(edge.consumer) === pluginNodeIndexKey(DirectConsumer.nodeAddress()) &&
 					pluginDefinitionIndexKey(edge.requirement) ===
 						pluginDefinitionIndexKey(DirectProviderDefinition),
 			),
@@ -130,7 +127,7 @@ describe('Plugin dependency graph read model', () => {
 		const provider = graph.nodes.find(
 			(node) =>
 				pluginNodeIndexKey(node.status.address) ===
-				pluginNodeIndexKey(pluginNodeAddressOf(FailingProvider)),
+				pluginNodeIndexKey(FailingProvider.nodeAddress()),
 		)
 		expect(provider).toMatchObject({
 			effective: true,
@@ -169,13 +166,7 @@ describe('Plugin dependency graph read model', () => {
 		const orphan = graphNode(Orphan)
 		const state = Object.freeze({
 			autoStart: Object.freeze([orphan]),
-			forks: Object.freeze([
-				Object.freeze({ definition: Consumer, forkIds: Object.freeze(['cold']) }),
-				Object.freeze({
-					definition: InvalidForkConsumer,
-					forkIds: Object.freeze(['invalid']),
-				}),
-			]),
+			forks: Object.freeze([consumerFork, invalidFork]),
 			providerDefaults: Object.freeze([Object.freeze({ token: AbstractDefault, provider })]),
 			dependencyOverrides: Object.freeze([
 				Object.freeze({
@@ -297,16 +288,16 @@ describe('Plugin dependency graph read model', () => {
 		host.start(CycleProvider)
 		host.cfg(SafeProvider).setAutoStart(true)
 		host.start(SafeProvider)
-		host.override(CycleConsumer, CycleTokenDefinition, pluginNodeAddressOf(SafeProvider))
+		host.override(CycleConsumer, CycleTokenDefinition, SafeProvider.nodeAddress())
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
 		const before = await rpc.pluginDependencyGraphDto()
 
 		await expect(
 			rpc.setPluginConsumerOverrideDto({
-				consumer: pluginNodeAddressOf(CycleConsumer),
+				consumer: CycleConsumer.nodeAddress(),
 				requirement: CycleTokenDefinition,
-				provider: pluginNodeAddressOf(CycleProvider),
+				provider: CycleProvider.nodeAddress(),
 			}),
 		).resolves.toMatchObject({
 			ok: false,
@@ -314,7 +305,7 @@ describe('Plugin dependency graph read model', () => {
 			state: 'unchanged',
 		})
 		expect(requireHostStateStore(host.ctx).snapshot().dependencyOverrides).toEqual([
-			expect.objectContaining({ providerAddress: pluginNodeAddressOf(SafeProvider) }),
+			expect.objectContaining({ providerAddress: SafeProvider.nodeAddress() }),
 		])
 		expect(await rpc.pluginDependencyGraphDto()).toEqual(before)
 	})

@@ -1,10 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { HostConfigVersion } from '@pluxel/host'
 import type { PluginStatusSnapshot } from '../../../src/management/web/protocol'
 import {
 	parseConfigResult,
 	parseConfigState,
-	parseConfigVersion,
 	parseEnsureForkResult,
 	parseLogRangeResult,
 	parseLogStreamMeta,
@@ -77,32 +75,20 @@ const section = {
 } as const
 
 describe('management protocol validation', () => {
-	it('validates config state and versions without invoking accessors', () => {
-		const version = { history: 'writer-history', seq: 7 }
-		const state = parseConfigState({ version, readonly: true })
-		expect(state).toEqual({ version, readonly: true })
-		expect(state.version).not.toBe(version)
-		expect(Object.isFrozen(state.version)).toBe(true)
-		const getter = vi.fn(() => version)
-		const borrowed = Object.defineProperty({ readonly: false }, 'version', {
-			enumerable: true,
-			get: getter,
-		})
+	it('validates config write policy without invoking accessors', () => {
+		expect(parseConfigState({ readonly: true })).toEqual({ readonly: true })
+		const getter = vi.fn(() => false)
+		const borrowed = Object.defineProperty({}, 'readonly', { enumerable: true, get: getter })
 		expect(() => parseConfigState(borrowed)).toThrow(/data property/)
 		expect(getter).not.toHaveBeenCalled()
-		for (const invalid of [
-			{ history: 'writer', seq: -1 },
-			{ history: '', seq: 0 },
-			{ history: 'writer', seq: 1, extra: true },
-		]) {
-			expect(() => parseConfigVersion(invalid)).toThrow(RuntimeProtocolValidationError)
-		}
+		expect(() => parseConfigState({ readonly: 'yes' })).toThrow(RuntimeProtocolValidationError)
 	})
 
 	it('validates and deep-freezes every Level 1 RPC result family', () => {
 		const catalog = parsePluginCatalogSnapshot({
 			plugins: [plugin],
 			sections: [section],
+			statePolicy: { mode: 'writable', overriddenFields: [] as const },
 			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
 		})
 		expect(catalog.plugins[0]).toEqual(plugin)
@@ -123,7 +109,6 @@ describe('management protocol validation', () => {
 		const config = parseConfigResult({
 			ok: true,
 			saved: true,
-			version: null as HostConfigVersion | null,
 			readonly: false,
 			application: 'applied',
 			desiredRevision: 4,
@@ -134,7 +119,6 @@ describe('management protocol validation', () => {
 		expect(config).toMatchObject({
 			ok: true,
 			saved: true,
-			version: null as HostConfigVersion | null,
 			readonly: false,
 			application: 'applied',
 		})
@@ -522,6 +506,7 @@ describe('management protocol validation', () => {
 			parsePluginCatalogSnapshot({
 				plugins: [plugin],
 				sections: [section],
+				statePolicy: { mode: 'writable', overriddenFields: [] as const },
 				summary: { total: 2, running: 0, stopped: 1, autoStart: 1 },
 			}),
 		).toThrow(/inconsistent/)
@@ -530,6 +515,7 @@ describe('management protocol validation', () => {
 			parsePluginCatalogSnapshot({
 				plugins: [plugin, plugin],
 				sections: [section],
+				statePolicy: { mode: 'writable', overriddenFields: [] as const },
 				summary: { total: 2, running: 0, stopped: 2, autoStart: 2 },
 			}),
 		).toThrow(/duplicate Plugin node/)
@@ -573,6 +559,23 @@ describe('management protocol validation', () => {
 		).toThrow(/successes and failures/)
 	})
 
+	it('requires a closed state write policy with distinct recognized override fields', () => {
+		const catalog = {
+			plugins: [plugin],
+			sections: [section],
+			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
+		}
+		expect(() => parsePluginCatalogSnapshot(catalog)).toThrow(/statePolicy/)
+		for (const statePolicy of [
+			{ mode: 'readwrite', overriddenFields: [] as const },
+			{ mode: 'writable', overriddenFields: ['unknown'] },
+			{ mode: 'writable', overriddenFields: ['forks', 'forks'] },
+			{ mode: 'writable', overriddenFields: [] as const, readonly: false },
+		]) {
+			expect(() => parsePluginCatalogSnapshot({ ...catalog, statePolicy })).toThrow(/statePolicy/)
+		}
+	})
+
 	it('rejects accessors, sparse arrays and nested capabilities without executing getters', () => {
 		const getter = vi.fn(() => plugin)
 		const items = [plugin]
@@ -580,6 +583,7 @@ describe('management protocol validation', () => {
 		const catalog = (plugins: unknown) => ({
 			plugins,
 			sections: [] as unknown[],
+			statePolicy: { mode: 'writable', overriddenFields: [] as const },
 			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
 		})
 		expect(() => parsePluginCatalogSnapshot(catalog(items))).toThrow(/data property/)
@@ -599,7 +603,6 @@ describe('management protocol validation', () => {
 		const input = {
 			ok: true,
 			saved: false,
-			version: null as HostConfigVersion | null,
 			readonly: false,
 			application: 'applied',
 			desiredRevision: 0,
@@ -629,7 +632,6 @@ describe('management protocol validation', () => {
 			parseConfigResult({
 				ok: true,
 				saved: false,
-				version: null as HostConfigVersion | null,
 				readonly: false,
 				application: 'applied',
 				desiredRevision: 0,

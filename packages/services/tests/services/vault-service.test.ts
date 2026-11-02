@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHost } from '@pluxel/host'
 import { HostVaultBindings } from '@pluxel/host/bindings'
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import {
 	vault,
 	Vault,
@@ -38,11 +38,7 @@ function setup(
 	config: FsConfig = { mounts: { '/': { backend: InMemory } } },
 	vaultConfig?: VaultServiceConfig,
 ) {
-	return createHost({
-		plugins: [],
-		config: { storage: config },
-		services: [vault(vaultConfig)],
-	})
+	return createHost({ plugins: [], services: [vault(vaultConfig)], runtime: { zenfs: config } })
 }
 const owners = new Map<string, VaultStorageApi>()
 @Plugin()
@@ -95,6 +91,99 @@ async function replaceSnapshot(backend: DiskConfig, snapshot: unknown) {
 }
 
 describe('Vault structured records', () => {
+	it('reloads shared encrypted files, including replaced revisions, without writing them back', async () => {
+		const backend = await diskConfig()
+		const writer = await setup(backend)
+		const reader = await setup(backend)
+		const directory = await requireFs(reader.ctx).directory('services/vault')
+		const writes = vi.spyOn(directory, 'rename')
+		const reads = vi.spyOn(directory, 'readFile')
+		const observed: unknown[] = []
+		try {
+			const source = writer.ctx.require(Vault).kv()
+			const target = reader.ctx.require(Vault).kv()
+			const subscription = await target.watch('token', (snapshot) => {
+				observed.push({ value: snapshot.value, revision: snapshot.revision })
+			})
+			expect(subscription.snapshot.exists).toBe(false)
+			await source.set('token', 'first')
+			await expect.poll(() => target.get('token')).toMatchObject({ value: 'first', revision: 1 })
+			await source.set('token', 'second')
+			await expect
+				.poll(() => observed)
+				.toEqual([
+					{ value: 'first', revision: 1 },
+					{ value: 'second', revision: 2 },
+				])
+
+			// An external editor/backup can replace content without advancing this instance's revision.
+			const { snapshot } = await decryptState(backend)
+			snapshot.namespaces.default.kv.token = 'external'
+			snapshot.namespaces.default.revisions.token = 1
+			await replaceSnapshot(backend, snapshot)
+			await expect.poll(() => target.get('token')).toMatchObject({ value: 'external', revision: 1 })
+			snapshot.namespaces.default.kv.token = 'same revision'
+			await replaceSnapshot(backend, snapshot)
+			await expect
+				.poll(() => target.get('token'))
+				.toMatchObject({ value: 'same revision', revision: 1 })
+			delete snapshot.namespaces.default
+			await replaceSnapshot(backend, snapshot)
+			await expect
+				.poll(() => observed)
+				.toEqual([
+					{ value: 'first', revision: 1 },
+					{ value: 'second', revision: 2 },
+					{ value: 'external', revision: 1 },
+					{ value: 'same revision', revision: 1 },
+					{ value: undefined, revision: 0 },
+				])
+			await reader.ctx.require(Vault).flush()
+			expect(writes).not.toHaveBeenCalled()
+			await reader.close()
+			const readsAfterClose = reads.mock.calls.length
+			await source.set('token', 'after close')
+			await new Promise((resolve) => setTimeout(resolve, 350))
+			expect(reads.mock.calls).toHaveLength(readsAfterClose)
+			expect(writes).not.toHaveBeenCalled()
+			expect(observed).toHaveLength(5)
+		} finally {
+			await reader.close()
+			await writer.close()
+		}
+	})
+
+	it('retains valid state on a damaged external snapshot and resumes after the file is repaired', async () => {
+		const backend = await diskConfig()
+		const host = await setup(backend)
+		try {
+			const kv = host.ctx.require(Vault).kv()
+			await kv.set('token', 'valid')
+			const path = vaultPath(backend, 'global/state.enc')
+			const valid = await readFile(path)
+			const damaged = new Uint8Array(valid)
+			damaged[damaged.length - 1] ^= 1
+			await writeFile(path, damaged)
+			await expect
+				.poll(() => host.ctx.require(VaultAdmin).describe())
+				.toMatchObject({
+					lastError: { code: 'DECRYPT_FAILED' },
+				})
+			expect(await kv.get('token')).toMatchObject({ value: 'valid' })
+			expect(new Uint8Array(await readFile(path))).toEqual(damaged)
+			await writeFile(path, valid)
+			await expect
+				.poll(async () => {
+					const state = await host.ctx.require(VaultAdmin).describe()
+					return state.lastError
+				})
+				.toBeUndefined()
+			expect(await readFile(path)).toEqual(valid)
+		} finally {
+			await host.close()
+		}
+	})
+
 	it('commits immutable snapshots before returning and preserves revision tombstones across restart', async () => {
 		const backend = await diskConfig()
 		const host = await setup(backend)
@@ -246,17 +335,17 @@ describe('Vault structured records', () => {
 		try {
 			host.ctx.require(HostVaultBindings).install([
 				{
-					owner: pluginNodeAddressOf(Owner),
+					owner: Owner.nodeAddress(),
 					key: 'primary',
 					value: { token: 'from-env' },
 					source: 'env',
 				},
-				{ owner: pluginNodeAddressOf(Owner), key: 'missing', value: undefined, source: 'env' },
+				{ owner: Owner.nodeAddress(), key: 'missing', value: undefined, source: 'env' },
 			])
-			await host.startNode(pluginNodeAddressOf(Owner))
-			await host.startNode(pluginNodeAddressOf(OtherOwner))
+			await host.startNode(Owner.nodeAddress())
+			await host.startNode(OtherOwner.nodeAddress())
 			const first = host.ctx.require(Vault).kv({
-				namespace: `plugin-${(await import('@pluxel/core/internal').then((result) => result.pluginNodePhysicalKey))(pluginNodeAddressOf(Owner))}`,
+				namespace: `plugin-${(await import('@pluxel/core/internal').then((result) => result.pluginNodePhysicalKey))(Owner.nodeAddress())}`,
 			})
 			expect(await first.get('primary')).toMatchObject({
 				source: 'env',
@@ -282,13 +371,13 @@ describe('Vault structured records', () => {
 	it('overlays whole records without mixing or persisting deployment values', async () => {
 		const backend = await diskConfig()
 		const host = await setup(backend)
-		const namespace = `plugin-${(await import('@pluxel/core/internal').then((result) => result.pluginNodePhysicalKey))(pluginNodeAddressOf(Owner))}`
+		const namespace = `plugin-${(await import('@pluxel/core/internal').then((result) => result.pluginNodePhysicalKey))(Owner.nodeAddress())}`
 		try {
 			const kv = host.ctx.require(Vault).kv({ namespace })
 			await kv.set('primary', { refreshToken: 'persisted' })
 			host.ctx.require(HostVaultBindings).install([
 				{
-					owner: pluginNodeAddressOf(Owner),
+					owner: Owner.nodeAddress(),
 					key: 'primary',
 					value: { token: 'deployment' },
 					source: 'file',
@@ -327,8 +416,8 @@ describe('Vault structured records', () => {
 			services: [vault()],
 		})
 		try {
-			await host.startNode(pluginNodeAddressOf(Owner))
-			await host.startNode(pluginNodeAddressOf(OtherOwner))
+			await host.startNode(Owner.nodeAddress())
+			await host.startNode(OtherOwner.nodeAddress())
 			const one = owners.get('one')!.namespace('accounts').kv()
 			const two = owners.get('two')!.namespace('accounts').kv()
 			await one.set('account/first', { token: 'one' })
@@ -347,7 +436,7 @@ describe('Vault structured records', () => {
 					['account/new', true],
 					['account/first', false],
 				])
-			await host.stopNode(pluginNodeAddressOf(Owner))
+			await host.stopNode(Owner.nodeAddress())
 			await expect(one.get('account/new')).rejects.toThrow('stopped')
 			sub.dispose()
 		} finally {

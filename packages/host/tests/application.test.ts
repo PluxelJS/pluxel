@@ -81,7 +81,12 @@ export default async ({env,bindings}) => {
 			...startup,
 			env: { VALUE: 'first' },
 			bindings: { handle },
-			deployment: { root: '/first', target: 'node' as const, variant: 'headless' as const },
+			deployment: {
+				root: '/first',
+				target: 'node' as const,
+				variant: 'headless' as const,
+				delivery: 'standalone' as const,
+			},
 		}
 		const seen: HostStartupContext[] = []
 		let release!: () => void
@@ -134,7 +139,7 @@ export default async ({env,bindings}) => {
 			plugins: [] as [],
 			services: [original],
 			sources: [{ kind: 'directory' as const, path: 'selected', include: ['*.mjs'] }],
-			state: { mode: 'memory' as const, initial: { autoStart: [] as [] } },
+			runtime: { state: { mode: 'memory' as const, autoStart: [] as [] } },
 		}
 		const application = defineHostApplication(() => {
 			// Mutate after the factory result is received, while input resolution yields.
@@ -142,7 +147,7 @@ export default async ({env,bindings}) => {
 				queueMicrotask(() => {
 					declaration.services[0] = changed
 					declaration.sources[0]!.path = 'changed'
-					Object.assign(declaration.state, { mode: 'readonly' })
+					Object.assign(declaration.runtime.state, { mode: 'readonly' })
 				}),
 			)
 			return declaration
@@ -150,7 +155,7 @@ export default async ({env,bindings}) => {
 		const resolved = await resolveHostApplication(application, startup)
 		expect(resolved.services?.[0]?.name).toBe('selected')
 		expect(resolved.sources?.[0]?.path).toBe('selected')
-		expect(resolved.state?.mode).toBe('memory')
+		expect(resolved.runtime?.state?.mode).toBe('memory')
 	})
 
 	it('propagates factory rejection before service preparation', async () => {
@@ -170,6 +175,18 @@ export default async ({env,bindings}) => {
 		[(): undefined => undefined, 'must be an object'],
 		[() => ({ plugins: [] as const, configure() {} }), 'unsupported "configure"'],
 		[() => ({ plugins: [] as const, services: {} }), 'services must be an array'],
+		[() => ({ plugins: [] as const, config: {} }), 'unsupported "config"'],
+		[() => ({ plugins: [] as const, state: {} }), 'unsupported "state"'],
+		[() => ({ plugins: [] as const, configRecords: {} }), 'unsupported "configRecords"'],
+		[() => ({ plugins: [] as const, runtime: { storage: {} } }), 'unsupported "storage"'],
+		[
+			() => ({ plugins: [] as const, runtime: { state: { initial: {} } } }),
+			'unsupported "initial"',
+		],
+		[
+			() => ({ plugins: [] as const, runtime: { configRecords: { base: [] as const } } }),
+			'unsupported "base"',
+		],
 	])('rejects invalid JavaScript declarations at the boundary', async (application, message) => {
 		await expect(
 			resolveHostApplication(application as unknown as HostApplicationFactory, startup),

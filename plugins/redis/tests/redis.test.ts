@@ -1,4 +1,4 @@
-import { formatPluginNodeReference, pluginNodeAddressOf, BasePlugin, Plugin } from '@pluxel/core'
+import { formatPluginNodeReference, BasePlugin, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
 import * as v from 'valibot'
@@ -315,7 +315,7 @@ describe('@pluxel/plugin-redis', () => {
 			expect(redisMock.client.destroy).toHaveBeenCalledOnce()
 			expect(failure.lifecycleReport.issues).toContainEqual(
 				expect.objectContaining({
-					plugin: pluginNodeAddressOf(RedisPlugin),
+					plugin: RedisPlugin.nodeAddress(),
 					kind: 'start-failed',
 				}),
 			)

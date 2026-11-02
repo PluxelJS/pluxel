@@ -3,6 +3,8 @@ import { getConfig, type Config, type LogRecord } from '@logtape/logtape'
 import { describe, expect, it } from 'vitest'
 import { logtape } from '@pluxel/core/config'
 import { resolveLogTapeConfig } from '../../src/config/logtape'
+import { createCoreTestHost, getCoreTestHostContext } from '../../src/internal-test'
+import { prepareCoreContext } from '@pluxel/core/host'
 import type {
 	LoggingOptions,
 	PluginLogPolicySnapshot,
@@ -10,6 +12,59 @@ import type {
 } from '@pluxel/core/logging'
 
 describe('Core native LogTape declarations', () => {
+	it('accepts native configs and structural factory declarations without a helper brand', async () => {
+		const records: LogRecord[] = []
+		const native: Config<string, string> = {
+			sinks: {
+				captured: (record) => {
+					records.push(record)
+				},
+			},
+			loggers: [{ category: ['pluxel', 'runtime'], sinks: ['captured'], lowestLevel: 'trace' }],
+		}
+		{
+			await using host = await createCoreTestHost({ logtape: native })
+			await prepareCoreContext(getCoreTestHostContext(host))
+			getCoreTestHostContext(host).logger.info('native input')
+			expect(records.map((record) => record.message.join(''))).toEqual(['native input'])
+		}
+		let calls = 0
+		{
+			await using host = await createCoreTestHost({
+				logtape: {
+					input: ({ createRuntimeLogSink }) => {
+						calls++
+						return {
+							sinks: { bounded: createRuntimeLogSink({ bufferSize: 1 }) },
+							loggers: [
+								{ category: ['pluxel', 'runtime'], sinks: ['bounded'], lowestLevel: 'trace' },
+							],
+						}
+					},
+					options: { profile: 'structural' },
+				},
+			})
+			const root = getCoreTestHostContext(host)
+			await prepareCoreContext(root)
+			root.logger.info('factory input')
+			expect(calls).toBe(1)
+			expect(root.logging!.stores.get('default')!.tailWindow(1)[0]?.msg).toBe('factory input')
+		}
+		expect(getConfig()).toBeNull()
+	})
+
+	it('accepts a direct native root factory', async () => {
+		let calls = 0
+		await using host = await createCoreTestHost({
+			logtape: ({ rootId }) => {
+				calls++
+				expect(rootId).toBeTypeOf('string')
+				return { sinks: {}, loggers: [] }
+			},
+		})
+		await prepareCoreContext(getCoreTestHostContext(host))
+		expect(calls).toBe(1)
+	})
 	it('does not evaluate factories, policy stores or native resources while declaring or resolving', () => {
 		let configFactories = 0
 		let policyFactories = 0
@@ -30,7 +85,7 @@ describe('Core native LogTape declarations', () => {
 				throw new Error('policy factory must wait for preparation')
 			},
 		})
-		expect(resolveLogTapeConfig(declaration)).toBe(declaration)
+		expect(resolveLogTapeConfig(declaration)).toEqual(declaration)
 		expect(declaration.input).toBe(input)
 		expect(declaration.options.profile).toBe('pluxel')
 		expect([configFactories, policyFactories, records, disposals]).toEqual([0, 0, 0, 0])
@@ -91,10 +146,10 @@ describe('Core native LogTape declarations', () => {
 		expect(getConfig()).toBeNull()
 	})
 
-	it('rejects undeclared logger objects, native takeover and malformed independent options', () => {
+	it('rejects malformed native objects, native takeover and malformed independent options', () => {
 		expect(resolveLogTapeConfig(undefined)).toBeUndefined()
 		expect(() => resolveLogTapeConfig({ rootId: 'old-input' } as never)).toThrow(
-			'declared with logtape()',
+			'[core.logtape] config.sinks must be an object',
 		)
 		expect(() => logtape({ sinks: {}, loggers: [], reset: true })).toThrow(
 			'reset:true is not allowed',

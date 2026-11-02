@@ -237,7 +237,7 @@ it('evaluates the bounded-store factory at preparation and prevents later sink c
 		}
 	})
 	expect(factories).toBe(0)
-	const host = await createHost({ plugins: [], config: { logger: descriptor }, services: [] })
+	const host = await createHost({ plugins: [], runtime: { logtape: descriptor }, services: [] })
 	try {
 		expect(factories).toBe(1)
 		expect(() => lateCreate!()).toThrow('during logging configuration')

@@ -1,7 +1,6 @@
 import {
 	BasePlugin,
 	pluginDefinitionAddressOf,
-	pluginNodeAddressOf,
 	Plugin,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
@@ -25,7 +24,7 @@ export type BenchHost = Readonly<{
 	plugins: Registry
 }>
 
-export type PluginCtor = new (...args: unknown[]) => BasePlugin
+export type PluginCtor = import('@pluxel/core').PluginConstructor
 
 export type PluginFixture = Readonly<{
 	ctor: PluginCtor
@@ -71,7 +70,7 @@ function pluginFixture(ctor: PluginCtor): PluginFixture {
 	return Object.freeze({
 		ctor,
 		definitionAddress: pluginDefinitionAddressOf(ctor),
-		nodeAddress: pluginNodeAddressOf(ctor),
+		nodeAddress: ctor.nodeAddress(),
 		candidate: consumePluginDefinitionCandidate(ctor),
 	})
 }

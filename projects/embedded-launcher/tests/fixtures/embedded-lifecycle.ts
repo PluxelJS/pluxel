@@ -1,5 +1,5 @@
 import { request } from 'launcher:bridge'
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
 import { Commands, commands } from '@pluxel/services/commands'
 import { defineCommand, Result, type CommandRegistration } from '@pluxel/commands'
@@ -51,12 +51,12 @@ export async function dispatch(_text: string): Promise<string> {
 			}),
 		],
 	})
-	await host.startNode(pluginNodeAddressOf(EmbeddedLifecycleProbe))
+	await host.startNode(EmbeddedLifecycleProbe.nodeAddress())
 	const old = captured!
 	const initial = await old.registration.execute({ text: 'before-stop' })
 	if (!initial.isOk()) throw new Error('Initial native roundtrip failed')
 	if (old.calculator.calculate('1+2').text !== '3') throw new Error('Dependency not injected')
-	await host.stopNode(pluginNodeAddressOf(EmbeddedLifecycleProbe))
+	await host.stopNode(EmbeddedLifecycleProbe.nodeAddress())
 	let nativeRejected = false,
 		facadeRejected = false
 	try {
@@ -71,7 +71,7 @@ export async function dispatch(_text: string): Promise<string> {
 	}
 	const stale = await old.registration.execute({ text: 'stale' })
 	const commandRejected = stale.isErr()
-	await host.startNode(pluginNodeAddressOf(EmbeddedLifecycleProbe))
+	await host.startNode(EmbeddedLifecycleProbe.nodeAddress())
 	const fresh = await captured!.registration.execute({ text: 'after-restart' })
 	const freshWorks = fresh.isOk()
 	const stillStale = await old.registration.execute({ text: 'same-name-stale' })

@@ -1,8 +1,8 @@
-import { pluginNodeAddressOf, pluginNodeIndexKey, type PluginConstructor } from '@pluxel/core'
+import { pluginNodeIndexKey, type PluginConstructor } from '@pluxel/core'
 import { consumePluginDefinitionCandidate } from '@pluxel/core/internal'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { projectRawInput, type Schema } from 'valibot-form'
-import type { HostRuntimeOptions } from './host'
+import type { HostOptions } from './host'
 
 export class InputBindingError extends Error {
 	constructor(
@@ -47,16 +47,16 @@ export function configSchema(plugin: PluginConstructor, selected?: StandardSchem
 /** Recheck config deployment paths against replacement metadata. Vault contracts belong to the Host binding. */
 export async function validateInputBindingCandidates(
 	plugins: readonly PluginConstructor[],
-	options: HostRuntimeOptions,
+	options: Pick<HostOptions, 'runtime'>,
 ): Promise<void> {
 	for (const plugin of plugins) {
-		const owner = pluginNodeIndexKey(pluginNodeAddressOf(plugin))
+		const owner = pluginNodeIndexKey(plugin.nodeAddress())
 		const overlays =
-			options.configRecords?.overlays?.filter(
+			options.runtime?.configRecords?.overlays?.filter(
 				(entry) => declaredConfigBindings.has(entry) && pluginNodeIndexKey(entry.owner) === owner,
 			) ?? []
 		const files =
-			options.configRecords?.baseSources?.filter(
+			options.runtime?.configRecords?.declarationSources?.filter(
 				(entry) => declaredConfigBindings.has(entry) && pluginNodeIndexKey(entry.owner) === owner,
 			) ?? []
 		if (overlays.length > 0 || files.length > 0) {

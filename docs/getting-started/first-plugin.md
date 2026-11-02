@@ -99,7 +99,7 @@ it('reads config and stops its sampler', async () => {
 
 `createTestHost()` 无需传入 services 即可验证 Core 插件。它使用真实配置校验、依赖图和 lifecycle；`initialConfig` 只建立首次启动配置，后续更新使用 `host.config.patch()`。`await using` 在作用域结束后关闭 host。
 
-测试先观察业务结果，再确认 stop 撤销了定时任务。logger 写法可用，可见输出由应用的 `config.logger` 决定；省略该配置也不影响 Plugin 使用 `ctx.logger`。
+测试先观察业务结果，再确认 stop 撤销了定时任务。logger 写法可用，可见输出由应用的 `runtime.logtape` 决定；省略该配置也不影响 Plugin 使用 `ctx.logger`。
 
 运行完整检查：
 

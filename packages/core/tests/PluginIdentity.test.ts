@@ -13,7 +13,7 @@ import {
 	pluginNodeIndexKey,
 	type PluginNodeAddress,
 } from '../src/plugins/runtime/identity'
-import { pluginNodeAddressOf } from '../src/plugins/runtime/definition'
+import { BasePlugin } from '@pluxel/core'
 import { __setPluginDefinition } from '../src/toolchain'
 
 const packageDefault = parsePluginNodeAddress({
@@ -190,15 +190,15 @@ describe('Plugin identity', () => {
 	})
 
 	it('keeps constructor and slot address projections referentially stable', () => {
-		class StableProjection {}
+		class StableProjection extends BasePlugin {}
 		__setPluginDefinition(StableProjection as never, {
 			abiVersion: 2,
 			kind: 'plugin',
 			definition: sourceFork.definition,
 		})
 
-		const projected = pluginNodeAddressOf(StableProjection as never)
-		expect(pluginNodeAddressOf(StableProjection as never)).toBe(projected)
+		const projected = StableProjection.nodeAddress()
+		expect(StableProjection.nodeAddress()).toBe(projected)
 		const slots = new PluginSlotRegistry()
 		const node = slots.internNode(projected)
 		expect(slots.definitionAddress(node.definition)).toBe(slots.definitionAddress(node.definition))

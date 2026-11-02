@@ -6,7 +6,6 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { createTestHost, type TestHost } from '@pluxel/test'
-import { hostEnv } from '@pluxel/host/environment'
 import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { TypstPlugin, TypstError, type TypstSession } from '@pluxel/plugin-typst'
 import { createTypstSourceProject, type TypstSourceFiles } from '@pluxel/plugin-typst/source'
@@ -75,7 +74,7 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 }
 
 /** Local consumer host; browser code only receives compiled previews and PDF bytes. */
-export function consumerCompiler(): Plugin {
+export function consumerCompiler(options: Readonly<{ publicOrigin?: string }> = {}): Plugin {
 	let host: TestHost | undefined
 	let typst: TypstPlugin
 	let directory: string | undefined
@@ -202,7 +201,7 @@ export function consumerCompiler(): Plugin {
 						const origins = [
 							`http://127.0.0.1:${port}`,
 							`http://localhost:${port}`,
-							...(hostEnv.publicOrigin ? [hostEnv.publicOrigin] : []),
+							...(options.publicOrigin ? [options.publicOrigin] : []),
 						]
 						if (
 							request.method !== 'POST' ||

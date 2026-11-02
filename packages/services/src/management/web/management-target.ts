@@ -1,4 +1,4 @@
-import type { HostConfigState, HostConfigVersion } from '@pluxel/host'
+import type { HostConfigState } from '@pluxel/host'
 import { type RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
 import { type PluginDefinitionAddress, type PluginNodeAddress } from '@pluxel/core'
 import { type RpcTarget } from 'capnweb'
@@ -72,12 +72,10 @@ export interface RuntimeManagementTarget extends RpcTarget {
 	patchPluginConfigDto: (
 		owner: PluginNodeAddress,
 		patch: Record<string, unknown>,
-		expected?: HostConfigVersion,
 	) => Promise<ConfigResult>
 	patchPluginConfigFieldDto: (
 		owner: PluginNodeAddress,
 		input: ConfigFieldMutation,
-		expected?: HostConfigVersion,
 	) => Promise<ConfigResult>
 	pluginDependencyGraphDto: () => Promise<PluginDependencyGraphSnapshot>
 	inspectPluginConsumerRequirementsDto: (
@@ -107,7 +105,6 @@ export interface RuntimeManagementTarget extends RpcTarget {
 	removePluginForkDto: (input: {
 		base: PluginNodeAddress
 		forkId: string
-		expected?: HostConfigVersion
 	}) => Promise<RemoveForkResult>
 	setPluginAutoStartDto: (items: PluginAutoStartBatchItem[]) => Promise<PluginControlBatchResult>
 	applyPluginLifecycleCommandsDto: (

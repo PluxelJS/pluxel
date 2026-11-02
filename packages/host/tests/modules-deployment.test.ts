@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { expect, it } from 'vitest'
 
-it('binds native synchronization to the compiled entry package manifest while preserving the application root', async () => {
+it('loads deployment facts from the compiled entry package while preserving the application root', async () => {
 	const root = await mkdtemp(fileURLToPath(new URL('./.modules-deployment-', import.meta.url)))
 	try {
 		await mkdir(join(root, 'dist'))
@@ -27,7 +27,7 @@ it('binds native synchronization to the compiled entry package manifest while pr
 			join(root, 'dist/app.mjs'),
 			`export default startup=>{
 startup.bindings.capture(startup);
-return {plugins:[],...(startup.bindings.synchronize?{configSync:{role:'writer',identity:'writer',replicas:[],scope:'modules',artifact:{name:startup.env.ARTIFACT_NAME,catalogHash:'a'.repeat(64)}}}:{})};
+return {plugins:[]};
 }`,
 		)
 		const script = `
@@ -37,19 +37,18 @@ import {runHostApplication} from ${JSON.stringify(new URL('../src/index.ts', imp
 const root=${JSON.stringify(root)},artifactRoot=root+'/dist',manifestFile=artifactRoot+'/pluxel-deployment.json';
 const artifact={name:'@fixture/deployed-application',catalogHash:'a'.repeat(64)};
 let captured,calls=0;
-const startup={root,mode:'production',env:{ARTIFACT_NAME:artifact.name},bindings:{synchronize:false,capture:value=>{captured=value;calls++}}};
+const startup={root,mode:'production',env:{ARTIFACT_NAME:artifact.name},bindings:{capture:value=>{captured=value;calls++}}};
 let host=await runHostApplication('./dist/app.mjs',{startup});await host.close();assert.equal(captured.deployment,undefined);
 const manifest={version:1,kind:'pluxel-modules-application',application:artifact,server:{target:'node',entry:'app.mjs'},capabilities:{workbench:{included:false}}};
-await writeFile(manifestFile,JSON.stringify(manifest));startup.bindings.synchronize=true;
+await writeFile(manifestFile,JSON.stringify(manifest));
 host=await runHostApplication('./dist/app.mjs',{startup});
-assert.equal(captured.root,root);assert.deepEqual(captured.deployment,{root:artifactRoot,target:'node',variant:'headless',application:artifact});
-assert(Object.isFrozen(captured.deployment.application));assert.deepEqual(host.configSync.status().artifact,artifact);await host.close();
-await assert.rejects(runHostApplication('./dist/app.mjs',{startup:{...startup,env:{ARTIFACT_NAME:'wrong-application'}}}),/must match the deployed application artifact/);
+assert.equal(captured.root,root);assert.deepEqual(captured.deployment,{root:artifactRoot,target:'node',variant:'headless',delivery:'modules',application:artifact});
+assert(Object.isFrozen(captured.deployment.application));await host.close();
 const before=calls;
 await writeFile(manifestFile,JSON.stringify({...manifest,server:{target:'node',entry:'other.mjs'}}));
 await assert.rejects(runHostApplication('./dist/app.mjs',{startup}),/entry does not match/);assert.equal(calls,before);
 await rm(manifestFile);
-await assert.rejects(runHostApplication('./dist/app.mjs',{startup}),/requires the deployed application manifest/);
+host=await runHostApplication('./dist/app.mjs',{startup});await host.close();assert.equal(captured.deployment,undefined);
 await writeFile(manifestFile,JSON.stringify({...manifest,kind:'pluxel-static-application'}));
 await assert.rejects(runHostApplication('./dist/app.mjs',{startup}),/requires a modules application deployment manifest/);
 console.log('MODULE_DEPLOYMENT_FACTS_OK');

@@ -37,10 +37,9 @@ export async function startBackend(config: BackendConfig): Promise<StudioBackend
 		host = await createHost({
 			plugins: resolved.plugins,
 			services: resolved.services,
-			config: resolved.config,
-			configRecords: resolved.configRecords,
-			state: resolved.state,
 			vaultBindings: resolved.vaultBindings,
+			name: resolved.name,
+			runtime: resolved.runtime,
 		})
 		await prepareHostApplication(resolved, host)
 		const report = await host.start()

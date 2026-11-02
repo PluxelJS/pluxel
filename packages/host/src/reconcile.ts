@@ -11,7 +11,6 @@ import {
 import type { ConcretePluginDefinitionCandidate } from '@pluxel/core/internal'
 import type { HostStateSnapshot } from './policy'
 import { pluginCatalogEntry, type PluginCatalogEntry, type PluginCatalogSnapshot } from './catalog'
-import { hostStatePatch, type HostStatePatch } from './state'
 
 export type PluginReconciliationIssue =
 	| Readonly<{
@@ -141,7 +140,6 @@ export type AppliedPluginGraphSnapshot = Readonly<{
 export type ReconciliationPlan = Readonly<{
 	catalogRevision: number
 	runtimeStateRevision: number
-	statePatch?: HostStatePatch
 	coreOperations: readonly CorePluginOperation[]
 	blocked: readonly PluginReconciliationIssue[]
 	desiredControl: ReadonlyMap<string, HostPluginDesiredControl>
@@ -204,16 +202,6 @@ export function reconcilePluginGraph(input: {
 		issues,
 		issueKeys,
 	})
-	const inferredPatch =
-		providerDefaults.inferred.length === 0
-			? undefined
-			: hostStatePatch(
-					...providerDefaults.inferred.map((entry) => ({
-						type: 'set-provider-default' as const,
-						token: entry.token,
-						provider: entry.provider,
-					})),
-				)
 
 	const validOverrides = new Map<string, ResolvedOverride>()
 	const unavailableOverrides = new Map<string, PluginNodeAddress>()
@@ -327,7 +315,6 @@ export function reconcilePluginGraph(input: {
 	return Object.freeze({
 		catalogRevision: input.catalog.revision,
 		runtimeStateRevision: input.runtimeStateRevision,
-		...(inferredPatch ? { statePatch: inferredPatch } : {}),
 		coreOperations: Object.freeze(operations),
 		blocked: Object.freeze(sortIssues(issues)),
 		desiredControl,
@@ -527,27 +514,20 @@ function candidateNodes(
 		const address: PluginNodeAddress = { definition: entry.address, variant: 'default' }
 		nodes.set(pluginNodeIndexKey(address), Object.freeze({ address, entry }))
 	}
-	for (const family of state.forks) {
-		const entry = pluginCatalogEntry(catalog, family.definition)
-		for (const forkId of family.forkIds) {
-			const address: PluginNodeAddress = {
-				definition: family.definition,
-				variant: 'fork',
-				forkId,
-			}
-			const key = pluginNodeIndexKey(address)
-			if (!entry) continue
-			if (!entry.candidate.declaration.forkable) {
-				addIssue(issues, issueKeys, {
-					kind: 'fork_not_allowed',
-					node: address,
-					message: `Plugin definition is not forkable: ${formatPluginNodeReference(address)}`,
-				})
-				blocked.add(key)
-				continue
-			}
-			nodes.set(key, Object.freeze({ address, entry }))
+	for (const address of state.forks) {
+		const entry = pluginCatalogEntry(catalog, address.definition)
+		const key = pluginNodeIndexKey(address)
+		if (!entry) continue
+		if (!entry.candidate.declaration.forkable) {
+			addIssue(issues, issueKeys, {
+				kind: 'fork_not_allowed',
+				node: address,
+				message: `Plugin definition is not forkable: ${formatPluginNodeReference(address)}`,
+			})
+			blocked.add(key)
+			continue
 		}
+		nodes.set(key, Object.freeze({ address, entry }))
 	}
 	return nodes
 }
@@ -562,7 +542,6 @@ function resolveProviderDefaults(input: {
 	selected: Map<string, { token: PluginDefinitionAddress; provider: PluginNodeAddress }>
 	effective: Map<string, { token: PluginDefinitionAddress; provider: PluginNodeAddress }>
 	invalid: Map<string, PluginReconciliationIssue>
-	inferred: Array<{ token: PluginDefinitionAddress; provider: PluginNodeAddress }>
 } {
 	const selectedBindings = new Map<
 		string,
@@ -573,7 +552,6 @@ function resolveProviderDefaults(input: {
 		{ token: PluginDefinitionAddress; provider: PluginNodeAddress }
 	>()
 	const invalid = new Map<string, PluginReconciliationIssue>()
-	const inferred: Array<{ token: PluginDefinitionAddress; provider: PluginNodeAddress }> = []
 	const explicit = new Set<string>()
 	for (const binding of input.state.providerDefaults) {
 		const key = pluginDefinitionIndexKey(binding.token)
@@ -614,9 +592,8 @@ function resolveProviderDefaults(input: {
 		if (!selected) continue
 		selectedBindings.set(key, selected)
 		effective.set(key, selected)
-		inferred.push(selected)
 	}
-	return { selected: selectedBindings, effective, invalid, inferred }
+	return { selected: selectedBindings, effective, invalid }
 }
 
 function validateProvider(input: {
@@ -723,13 +700,7 @@ function resolveImplicitProvider(
 }
 
 function durableForkIndex(state: HostStateSnapshot): Set<string> {
-	const out = new Set<string>()
-	for (const family of state.forks) {
-		for (const forkId of family.forkIds) {
-			out.add(pluginNodeIndexKey({ definition: family.definition, variant: 'fork', forkId }))
-		}
-	}
-	return out
+	return new Set(state.forks.map(pluginNodeIndexKey))
 }
 
 function diffAppliedGraph(

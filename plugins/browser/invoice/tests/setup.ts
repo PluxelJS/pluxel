@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { HostVaultBindings } from '@pluxel/host/bindings'
 import { defineHostService } from '@pluxel/host'
 import { PlaywrightPlugin } from '@pluxel/plugin-playwright'
@@ -86,7 +86,7 @@ export async function setup(
 		async prepare({ ctx }) {
 			await ctx.require(HostVaultBindings).install([
 				{
-					owner: pluginNodeAddressOf(InvoicePlugin),
+					owner: InvoicePlugin.nodeAddress(),
 					key: 'primary',
 					value: { apiKey },
 					source: 'env',

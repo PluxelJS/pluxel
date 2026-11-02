@@ -20,7 +20,7 @@ vp run governance:check
 
 已有、不使用 catalog 的应用可以在对应包目录执行 `npx nypm add @pluxel/plugin-wretch`。使用哪种包管理方式不改变下面的宿主装配。
 
-安装只让代码可导入。把 provider 和 consumer 加入应用的 `plugins` 清单，在 `state.initial.autoStart` 中选择业务 consumer；它的 required dependencies 会随图启动。应用入口与初始配置只按 [Host 配置教程](../host/configuration.md#应用入口)维护，不在每个插件指南重复装配宿主。
+安装只让代码可导入。把 provider 和 consumer 加入应用的 `plugins` 清单，在 `runtime.state.autoStart` 中选择业务 consumer；它的 required dependencies 会随图启动。应用入口与初始配置只按 [Host 配置教程](../host/configuration.md#应用入口)维护，不在每个插件指南重复装配宿主。
 
 业务代码通过 constructor dependency 使用 provider，见[插件模型](../plugin-development/model.md#required-dependency)。例如 Wretch 的 consumer 实现见[HTTP client](./wretch.md#第一个-http-consumer)。
 
@@ -33,14 +33,12 @@ vp run governance:check
 例如，以下是无 Workbench 的生产应用入口，出站 HTTP 策略全部由环境提供，基础 client 无需附加服务：
 
 ```ts no-twoslash
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication, envBinding } from '@pluxel/host'
 import { WretchPlugin, WretchConfig } from '@pluxel/plugin-wretch'
 
 export default defineHostApplication(() => ({
 	plugins: [WretchPlugin],
 	services: [],
-	state: { initial: { autoStart: [pluginNodeAddressOf(WretchPlugin)] } },
 	envBindings: [
 		envBinding(WretchPlugin, {
 			config: {
@@ -49,6 +47,11 @@ export default defineHostApplication(() => ({
 			},
 		}),
 	],
+	runtime: {
+		state: {
+			autoStart: [WretchPlugin.nodeAddress()],
+		},
+	},
 }))
 ```
 

@@ -16,6 +16,7 @@ import {
 	registerBindingTarget,
 	parseDirectMapping,
 	unwrapExpression,
+	directObjectProperties,
 } from '../rolldown/plugins/staticConfigEnvironment.ts'
 import type {
 	InspectionInputs,
@@ -257,7 +258,23 @@ export async function inspectApplicationInputs(options: {
 			a.declaration.start.column - b.declaration.start.column ||
 			JSON.stringify(a.configPath).localeCompare(JSON.stringify(b.configPath)),
 	)
-	const records = fields.get('configRecords')?.value
-	const value = { application, configRecords: records ? loc(records) : null, bindings }
+	let records: AstNode | undefined
+	const runtime = fields.get('runtime')?.value
+	if (runtime) {
+		try {
+			const object = unwrapExpression(runtime)
+			if (object.type !== 'ObjectExpression')
+				unsupported('Runtime configuration must be a direct object for source navigation.', {
+					code: 'unsupported_expression',
+					node: runtime,
+				})
+			records = directObjectProperties(object, 'runtime', id, unsupported).get(
+				'configRecords',
+			)?.value
+		} catch (failure) {
+			gaps.push(diagnostic(failure, runtime))
+		}
+	}
+	const value = { application, bindings, configRecords: records ? loc(records) : null }
 	return gaps.length > 0 ? { status: 'partial', value, gaps } : { status: 'complete', value }
 }

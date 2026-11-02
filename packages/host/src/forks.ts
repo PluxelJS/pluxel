@@ -19,11 +19,6 @@ import {
 import { listForkIds } from './state-helpers'
 import { ConfigMutationRejectedError } from './config'
 import type { HostConfigStore } from './config-store'
-import {
-	HostConfigVersionConflictError,
-	type HostConfigMutationOptions,
-	type HostConfigVersion,
-} from './config-sync-protocol'
 
 class ForkMetadataPersistenceError extends Error {
 	constructor(
@@ -46,6 +41,7 @@ export type ForkEnsureResult =
 			ok: false
 			code:
 				| 'invalid_fork_id'
+				| 'state_overridden'
 				| 'definition_unavailable'
 				| 'not_forkable'
 				| 'consumer_unavailable'
@@ -66,13 +62,6 @@ export type ForkEnsureResult =
 export type ForkRemoveResult =
 	| { ok: false; code: 'mutation_rejected'; state: 'unchanged'; message: string }
 	| {
-			ok: false
-			code: 'version_conflict'
-			state: 'unchanged'
-			message: string
-			version: HostConfigVersion | null
-	  }
-	| {
 			ok: true
 			status: 'removed' | 'removed-with-lifecycle-issues'
 			node: PluginNodeAddress
@@ -91,7 +80,7 @@ export type ForkRemoveResult =
 	  }
 	| {
 			ok: false
-			code: 'invalid_fork_id' | 'graph_rejected'
+			code: 'invalid_fork_id' | 'graph_rejected' | 'state_overridden'
 			state: 'unchanged'
 			message: string
 	  }
@@ -154,7 +143,7 @@ export async function removeFork(
 	ctx: Context,
 	base: PluginNodeAddress,
 	forkId: string,
-	options?: HostConfigMutationOptions,
+	options?: HostOperationOptions,
 ): Promise<ForkRemoveResult> {
 	const node = parseForkAddress(base, forkId)
 	if (!node) return invalidFork('Fork base or forkId is invalid')
@@ -165,17 +154,17 @@ export async function removeFork(
 		return await coordinator.runExclusive(
 			'fork-remove',
 			async (session) => {
-				const state = session.runtimeStateSnapshot()
-				if (!listForkIds(state, node.definition).includes(node.forkId)) {
-					return { ok: true, status: 'already-absent', node }
-				}
-				// Reject a replica/stale editor before stopping a generation or deleting metadata.
-				;(requireConfigService(ctx) as HostConfigStore).assertManagedMutation(options?.expected)
 				const removalPatch = hostStatePatch(
 					{ type: 'remove-node-policy', node },
 					{ type: 'remove-fork', definition: node.definition, forkId: node.forkId },
 				)
 				session.validateRuntimeStatePatch(removalPatch)
+				const state = session.runtimeStateSnapshot()
+				if (!listForkIds(state, node.definition).includes(node.forkId)) {
+					return { ok: true, status: 'already-absent', node }
+				}
+				// Reject readonly metadata before stopping a generation.
+				;(requireConfigService(ctx) as HostConfigStore).assertManagedMutation()
 				phase = 'stop'
 				stopReport = await session.update({
 					lifecycleCommands: [{ address: node, desiredState: 'stopped' }],
@@ -183,7 +172,7 @@ export async function removeFork(
 					mode: 'live',
 				})
 				phase = 'metadata'
-				await deleteForkConfig(ctx, node, options?.expected)
+				await deleteForkConfig(ctx, node)
 				try {
 					await removeHostNodeMetadata(ctx.root, node)
 				} catch (error) {
@@ -246,7 +235,8 @@ function invalidFork(message: string): ForkEnsureResult & ForkRemoveResult {
 function forkMutationFailure(error: unknown): ForkEnsureResult {
 	if (
 		error instanceof HostStateMutationRejectedError &&
-		(error.code === 'definition_unavailable' ||
+		(error.code === 'state_overridden' ||
+			error.code === 'definition_unavailable' ||
 			error.code === 'not_forkable' ||
 			error.code === 'consumer_unavailable' ||
 			error.code === 'provider_unavailable' ||
@@ -285,16 +275,11 @@ function removeFailure(
 	state: 'retained' | 'stopped-retained' | 'unknown',
 	report?: PluginApplyReport,
 ): ForkRemoveResult {
+	if (error instanceof HostStateMutationRejectedError && error.code === 'state_overridden') {
+		return { ok: false, code: error.code, state: 'unchanged', message: error.message }
+	}
 	if (error instanceof ConfigMutationRejectedError)
 		return { ok: false, code: 'mutation_rejected', state: 'unchanged', message: error.message }
-	if (error instanceof HostConfigVersionConflictError)
-		return {
-			ok: false,
-			code: 'version_conflict',
-			state: 'unchanged',
-			message: error.message,
-			version: error.version,
-		}
 	if (error instanceof HostStateMutationRejectedError && error.issue.code === 'fork_referenced') {
 		return {
 			ok: false,
@@ -341,14 +326,10 @@ function hasDrainIssues(report: PluginApplyReport | undefined): boolean {
 	return report.core.summary.lifecycleReport.issues.some((issue) => issue.phase === 'drain')
 }
 
-async function deleteForkConfig(
-	ctx: Context,
-	node: PluginNodeAddress,
-	expected?: HostConfigVersion,
-): Promise<void> {
+async function deleteForkConfig(ctx: Context, node: PluginNodeAddress): Promise<void> {
 	const configService = requireConfigService(ctx) as HostConfigStore
 	try {
-		await configService.deleteManagedConfig(node, expected)
+		await configService.deleteManagedConfig(node)
 	} catch (error) {
 		throw new ForkMetadataPersistenceError('config', error)
 	}

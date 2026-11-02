@@ -1,4 +1,5 @@
 import { createHost } from '@pluxel/host'
+import { resolveHostEnv } from '@pluxel/host/environment'
 import { BasePlugin, Plugin, pluginDefinitionAddressOf } from '@pluxel/core'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { websocket } from 'elysia/websocket'
@@ -157,15 +158,32 @@ it('propagates disconnect after a streaming response has started', async () => {
 	}
 }, 10000)
 
-it('rejects malformed listener environment before attaching a carrier', async () => {
+it('does not resolve global environment when the caller supplies listener options', async () => {
 	const host = await createHost({ plugins: [], services: [elysia()] })
+	vi.stubEnv('PLUXEL_HOST_PORT', 'invalid')
+	vi.stubEnv('PLUXEL_PUBLIC_ORIGIN', 'not-an-origin')
+	const listener = await listenElysia(host, { hostname: '127.0.0.1', port: 0 })
 	try {
-		vi.stubEnv('PLUXEL_HOST_PORT', '')
-		await expect(listenElysia(host, {})).rejects.toThrow('PLUXEL_HOST_PORT')
+		expect(listener.address.host).toBe('127.0.0.1')
+		expect(listener.address.port).toBeGreaterThan(0)
 	} finally {
-		await host.close()
+		await listener.close()
 	}
 })
+
+it.each(['https://app.test/path', 'https://user:pass@app.test', 'ftp://app.test', '', null])(
+	'rejects invalid explicit publicOrigin %s before attaching a carrier',
+	async (publicOrigin) => {
+		const host = await createHost({ plugins: [], services: [elysia()] })
+		try {
+			await expect(
+				Reflect.apply(listenElysia, undefined, [host, { publicOrigin }]),
+			).rejects.toThrow('publicOrigin must be an HTTP(S) origin')
+		} finally {
+			await host.close()
+		}
+	},
+)
 
 it('captures the public directory before requests and keeps reserved paths outside its SPA fallback', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-listener-options-'))
@@ -201,14 +219,18 @@ it('captures the public directory before requests and keeps reserved paths outsi
 	}
 })
 
-it('uses validated Pitchfork bind and port defaults', async () => {
-	vi.stubEnv('PLUXEL_HOST_BIND', undefined)
-	vi.stubEnv('PLUXEL_HOST_PORT', undefined)
-	vi.stubEnv('PITCHFORK_URL', 'http://pluxel.localhost:1355')
-	vi.stubEnv('HOST', '127.0.0.1')
-	vi.stubEnv('PORT', '0')
+it('uses the listener owner’s selected environment snapshot', async () => {
+	const environment = resolveHostEnv({
+		PITCHFORK_URL: 'http://pluxel.localhost:1355',
+		HOST: '127.0.0.1',
+		PORT: '0',
+	})
 	const host = await createHost({ plugins: [], services: [elysia()] })
-	const listener = await listenElysia(host, {})
+	const listener = await listenElysia(host, {
+		hostname: environment.hostBind,
+		port: environment.hostPort,
+		publicOrigin: environment.publicOrigin,
+	})
 	try {
 		expect(listener.address.host).toBe('127.0.0.1')
 		expect(listener.address.port).toBeGreaterThan(0)
@@ -218,7 +240,6 @@ it('uses validated Pitchfork bind and port defaults', async () => {
 })
 
 it('exposes the trusted public origin without replacing physical listener metadata', async () => {
-	vi.stubEnv('PLUXEL_PUBLIC_ORIGIN', 'https://app.example.test')
 	const host = await createHost({ plugins: [], services: [elysia()] })
 	resolveContextCapability(host.ctx, ElysiaRuntime).mountEndpoint({
 		prefix: '/metadata',
@@ -227,7 +248,11 @@ it('exposes the trusted public origin without replacing physical listener metada
 			return Response.json(carrier?.metadata)
 		},
 	})
-	const listener = await listenElysia(host, { hostname: '127.0.0.1', port: 0 })
+	const listener = await listenElysia(host, {
+		hostname: '127.0.0.1',
+		port: 0,
+		publicOrigin: 'https://app.example.test/',
+	})
 	try {
 		const origin = `http://127.0.0.1:${listener.address.port}`
 		const response = await fetch(`${origin}/metadata`, {

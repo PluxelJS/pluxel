@@ -115,7 +115,7 @@ it('feeds a captured native composition and borrowed mount into Core without cha
 		const storage = zenfs(input)
 		const unavailable = { ...InMemory, isAvailable: () => false }
 		composition.writable = unavailable
-		const host = createCoreTestHost({ storage })
+		const host = createCoreTestHost({ zenfs: storage })
 		try {
 			const fs = requireFs(getCoreTestHostContext(host))
 			const composed = await fs.directory('composed')

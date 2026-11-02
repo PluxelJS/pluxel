@@ -4,7 +4,6 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createMiTeXFiles } from '../src/tiptap/mitex.js'
@@ -105,17 +104,19 @@ it('renders the same LaTeX and cross-file references in WASM using only explicit
 		return new Response(await readFile(path))
 	})
 	await using host = await createTestHost({
-		configRecords: {
-			initial: [
-				{
-					owner: pluginNodeAddressOf(TypstPlugin),
-					config: {
-						compilerWasmUrl: 'https://example.test/compiler.wasm',
-						rendererWasmUrl: 'https://example.test/renderer.wasm',
-						fontUrls: ['https://example.test/math.ttf'],
+		runtime: {
+			configRecords: {
+				records: [
+					{
+						owner: TypstPlugin.nodeAddress(),
+						config: {
+							compilerWasmUrl: 'https://example.test/compiler.wasm',
+							rendererWasmUrl: 'https://example.test/renderer.wasm',
+							fontUrls: ['https://example.test/math.ttf'],
+						},
 					},
-				},
-			],
+				],
+			},
 		},
 	})
 	const typst = await host.start(TypstPlugin)

@@ -64,7 +64,7 @@ full-host replacement 先 abort 旧 run、drain 已跟踪 Host 操作，再释�
 
 ## 日志
 
-Core 始终提供 `ctx.logger`，不要求插件 import 日志包。宿主 logging 配置拥有输出、过滤与 store；开启控制台不会配置日志或自动增加 store。应用通过 `config.logger: logtape(...)` 选择输出；脚本从 `@pluxel/core/logging` 导入并解析当前 root 的 `Logging` 能力，调用既有 `RuntimeLogging`/store API，返回有界普通数据。`flushStores()` 只刷 store sink buffer，不依赖 policy persistence；正常 `flush()` 同时刷 store 和 policy。
+Core 始终提供 `ctx.logger`，不要求插件 import 日志包。宿主 logging 配置拥有输出、过滤与 store；开启控制台不会配置日志或自动增加 store。应用通过 `runtime.logtape: logtape(...)` 选择输出；脚本从 `@pluxel/core/logging` 导入并解析当前 root 的 `Logging` 能力，调用既有 `RuntimeLogging`/store API，返回有界普通数据。`flushStores()` 只刷 store sink buffer，不依赖 policy persistence；正常 `flush()` 同时刷 store 和 policy。
 
 日志读取保留真实 epoch、sequence、retention 和 gap 契约，游标只是时间窗口，不提供因果隔离。控制台不提供另一条 HTTP/log follow 路由，也不在 run envelope 自动附加日志边界。
 
@@ -103,3 +103,9 @@ queued 取消不执行；running 取消保持 cancelling，直到真实代码 se
 - Services Vite scenarios：真实 watcher 恢复、服务 replacement、HTTP/WebSocket 与 Workbench 制品。
 
 修改 public types、loader admission 或协议时，检查实际脚本调用边界，并运行直接 owner 的测试与类型检查。服务脚本遵循相应能力原有的回归覆盖。
+
+## 配置输入诊断
+
+`dev.config.inspect(target)` 投影 Host 的 mode/readonly/override/externalReload、原始 saved/declared、effective 和 sources；`dev.state.inspect()` 投影 mode/override/declared/overriddenFields/saved/effective/revision。诊断由现有 coordinator 查询当前 Host，不额外打开后端；普通 get/status 的契约不变。state 不观察外部文件，config 通过已订阅的文档接纳外部变化。
+
+config reset 省略 keys 时显式恢复全部声明及已保存顶层字段；指定 `[]` 为无操作查询。reset 不绕过 readonly、env 和 declaration override 的受控路径。

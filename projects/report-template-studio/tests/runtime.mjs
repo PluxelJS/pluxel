@@ -189,9 +189,6 @@ try {
 	const { createHost } = await load('@pluxel/host')
 	const coreManifest = applicationRequire.resolve('@pluxel/core/package.json')
 	const corePackage = JSON.parse(await readFile(coreManifest, 'utf8'))
-	const { pluginNodeAddressOf } = await import(
-		new URL(corePackage.exports['.'].import, pathToFileURL(coreManifest)).href
-	)
 	const { requirePluginService } = await import(
 		new URL(corePackage.exports['./internal'].import, pathToFileURL(coreManifest)).href
 	)
@@ -214,13 +211,13 @@ try {
 				),
 			}),
 		],
-		state: { initial: { autoStart: [pluginNodeAddressOf(TypstPlugin)] } },
+		runtime: { state: { autoStart: [TypstPlugin.nodeAddress()] } },
 	})
 	const report = await renderHost.start()
 	assert.equal(report.reconciliation.length, 0)
 	assert.equal(report.core.status, 'committed')
 	assert.equal(report.core.summary.lifecycleReport.ok, true)
-	const typst = requirePluginService(renderHost.ctx).getInstance(pluginNodeAddressOf(TypstPlugin))
+	const typst = requirePluginService(renderHost.ctx).getInstance(TypstPlugin.nodeAddress())
 	assert.ok(typst)
 	{
 		await using session = await typst.open({ root: probeRoot, entry: 'main.typ' })

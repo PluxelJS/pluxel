@@ -4,7 +4,7 @@ import { dispatchElysiaRequest } from '../elysia/dispatch'
 import { serve } from 'srvx/node'
 import type { Server as NodeHttpServer } from 'node:http'
 import { installPluxelViteUrlPrinter } from '@pluxel/host-vite/internal'
-import { hostEnv } from '@pluxel/host/environment'
+import { resolveHostEnv } from '@pluxel/host/environment'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { ElysiaRuntime, type ElysiaRuntimeApi } from '../elysia/runtime'
 import { NodeElysiaApplicationCarrier } from '../elysia/node'
@@ -29,7 +29,8 @@ export function elysiaDevelopment(): Plugin<HostVitePluginApi> {
 		apply: 'serve',
 		api: {
 			pluxelHost: {
-				async attach({ host, server, profile, catalog }) {
+				async attach({ host, server, profile, catalog, startup }) {
+					const environment = resolveHostEnv(startup.env)
 					if (active) throw new Error('[services/elysia/vite] HTTP attachment is already active')
 					const http = resolveContextCapability(host.ctx, ElysiaRuntime)
 					if (profile === 'production') {
@@ -41,7 +42,7 @@ export function elysiaDevelopment(): Plugin<HostVitePluginApi> {
 								const url = new URL(production.url)
 								return {
 									url,
-									publicOrigin: hostEnv.publicOrigin,
+									publicOrigin: environment.publicOrigin,
 									hostname: url.hostname,
 									port: Number(url.port || 80),
 									development: false,
@@ -61,8 +62,8 @@ export function elysiaDevelopment(): Plugin<HostVitePluginApi> {
 							if (!production) {
 								production = serve({
 									manual: true,
-									hostname: hostEnv.hostBind ?? '0.0.0.0',
-									port: hostEnv.hostPort ?? 3000,
+									hostname: environment.hostBind ?? '0.0.0.0',
+									port: environment.hostPort ?? 3000,
 									silent: true,
 									gracefulShutdown: false,
 									fetch: (request) => {
@@ -98,7 +99,7 @@ export function elysiaDevelopment(): Plugin<HostVitePluginApi> {
 						}
 					}
 					const carrier = createViteNodeElysiaApplicationCarrier(server, {
-						publicOrigin: hostEnv.publicOrigin,
+						publicOrigin: environment.publicOrigin,
 						fetch: http.fetch,
 						matches: http.matchesWebSocketRoute,
 					})
@@ -107,7 +108,7 @@ export function elysiaDevelopment(): Plugin<HostVitePluginApi> {
 						'workbench' in host.ctx
 							? undefined
 							: installPluxelViteUrlPrinter(server, {
-									publicOrigin: hostEnv.publicOrigin,
+									publicOrigin: environment.publicOrigin,
 									workbenchBasePath: () => undefined,
 								})
 					const current = { http, carrier }

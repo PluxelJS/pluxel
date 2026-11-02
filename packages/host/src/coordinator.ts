@@ -22,7 +22,7 @@ import {
 	type PluginCatalogSnapshot,
 } from './catalog'
 import { applyHostStatePatch, hostStateEqual, type HostStatePatch } from './state'
-import { applyHostStateMutation, validateHostStateMutation } from './mutation'
+import { validateHostStateMutation } from './mutation'
 import {
 	catalogTransitionRejections,
 	emptyAppliedPluginGraphSnapshot,
@@ -82,6 +82,9 @@ export type CorePluginDependencyAdjacency = Readonly<{
 export interface HostStateCoordinatorStore {
 	readonly ready: Promise<void>
 	versionedSnapshot(): HostStateVersionedSnapshot
+	savedSnapshot(): HostStateSnapshot
+	effectiveSnapshot(saved: HostStateSnapshot): HostStateSnapshot
+	assertPatchMutable(patch: HostStatePatch | undefined): void
 	commitVersioned(
 		expectedRevision: number,
 		next: HostStateSnapshot,
@@ -390,12 +393,14 @@ export class PluginHostCoordinator<TSummary = unknown> {
 			signal?.throwIfAborted()
 			const session: HostPluginGraphExclusiveSession<TSummary> = Object.freeze({
 				runtimeStateSnapshot: () => this.runtimeState.versionedSnapshot().state,
-				validateRuntimeStatePatch: (patch: HostStatePatch) =>
+				validateRuntimeStatePatch: (patch: HostStatePatch) => {
+					this.runtimeState.assertPatchMutable(patch)
 					validateHostStateMutation(
 						this.catalog,
 						this.runtimeState.versionedSnapshot().state,
 						patch,
-					),
+					)
+				},
 				report: () => this.currentReport(),
 				update: (update: HostPluginGraphUpdate) =>
 					this.applyUpdate(
@@ -484,11 +489,11 @@ export class PluginHostCoordinator<TSummary = unknown> {
 				? extendPluginDefinitionRoleHistory(this.definitionRoles, proposedCatalog)
 				: this.definitionRoles
 			const pinnedState = this.runtimeState.versionedSnapshot()
-			const prospectiveState = applyHostStateMutation(
-				proposedCatalog,
-				pinnedState.state,
-				update.statePatch,
-			)
+			this.runtimeState.assertPatchMutable(update.statePatch)
+			validateHostStateMutation(proposedCatalog, pinnedState.state, update.statePatch)
+			const pinnedSavedState = this.runtimeState.savedSnapshot()
+			const nextSavedState = applyHostStatePatch(pinnedSavedState, update.statePatch)
+			const prospectiveState = this.runtimeState.effectiveSnapshot(nextSavedState)
 			assertLifecycleCommandAdmission(proposedCatalog, prospectiveState, update.lifecycleCommands)
 			const baseSession =
 				update.mode === 'cold-boot'
@@ -512,24 +517,13 @@ export class PluginHostCoordinator<TSummary = unknown> {
 				update.lifecycleCommands,
 			)
 			const prospectiveSession = cleanupRemovedSessionIntents(commandedSession, update.statePatch)
-			const initialPlan = reconcilePluginGraph({
+			const plan = reconcilePluginGraph({
 				catalog: proposedCatalog,
 				runtimeState: prospectiveState,
 				runtimeStateRevision: pinnedState.revision,
 				sessionIntents: prospectiveSession,
 				applied: this.applied,
 			})
-			const nextState = applyHostStatePatch(prospectiveState, initialPlan.statePatch)
-			const plan = initialPlan.statePatch
-				? reconcilePluginGraph({
-						catalog: proposedCatalog,
-						runtimeState: nextState,
-						runtimeStateRevision: pinnedState.revision,
-						sessionIntents: prospectiveSession,
-						applied: this.applied,
-					})
-				: initialPlan
-
 			if (update.mode !== 'cold-boot' && update.catalog) {
 				const rejected = catalogTransitionRejections({
 					previous: committedCatalog,
@@ -573,9 +567,12 @@ export class PluginHostCoordinator<TSummary = unknown> {
 			}
 
 			let committedState = pinnedState
-			if (!hostStateEqual(pinnedState.state, nextState)) {
+			if (!hostStateEqual(pinnedSavedState, nextSavedState)) {
 				try {
-					committedState = await this.runtimeState.commitVersioned(pinnedState.revision, nextState)
+					committedState = await this.runtimeState.commitVersioned(
+						pinnedState.revision,
+						nextSavedState,
+					)
 				} catch (error) {
 					prepared?.rollback()
 					if (error instanceof HostStateRevisionConflictError) continue
@@ -718,14 +715,7 @@ function assertLifecycleCommandAdmission(
 		| undefined,
 ): void {
 	if (!commands || commands.length === 0) return
-	const forkNodeKeys = new Set<string>()
-	for (const family of state.forks) {
-		for (const forkId of family.forkIds) {
-			forkNodeKeys.add(
-				pluginNodeIndexKey({ definition: family.definition, variant: 'fork', forkId }),
-			)
-		}
-	}
+	const forkNodeKeys = new Set(state.forks.map(pluginNodeIndexKey))
 	for (const command of commands) {
 		if (command.desiredState === 'stopped') continue
 		if (isPluginNodeAvailable(catalog, forkNodeKeys, command.address)) continue

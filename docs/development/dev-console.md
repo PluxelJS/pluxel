@@ -188,7 +188,11 @@ export const increaseLimit = defineDevConsole(async (dev) => {
 
 `get/validate/patch/reset` 返回 `HostPluginConfigResult`，先检查 ok；get 含保存值、默认值和 desired/applied revision，mutation 的 report 已投影为稳定地址。**保存不等于应用**：检查 application/applyFailure，含义与重启决策见[运行中配置更新](../plugin-development/configuration.md#让运行中的-plugin-接收配置更新)。不要直接改 config 私有字段。
 
-patch 是浅合并，嵌套修改先读并保留其他字段；`reset(target, keys)` 删除指定顶层保存值，省略或空 keys 会重置全部。validate 不保存，与随后的 patch 不构成事务；patch 会重新验证。
+patch 保留未修改的原始输入，嵌套对象递归合并、数组整体替换。validate 不保存，与随后的 patch 不构成事务；patch 会重新验证。
+
+配置诊断使用 `dev.config.inspect(target)` 查看 `mode`、`readonly`、`override`、`externalReload`、`saved`、`declared`、`effective` 和 `sources`；普通 `get()` 保持面向插件配置的返回语义。`dev.state.inspect()` 返回 mode、override、declared、overriddenFields、saved、effective 与 revision，用于区分保存策略和本次运行覆盖。state 仅在启动时读盘，不自动跟随外部变化。
+
+`dev.config.reset(target)` 以本次声明恢复全部顶层字段，包括移除只在保存记录中存在的字段；提供 keys 只恢复指定字段，`keys: []` 明确无操作，不触发保存。受控路径与 readonly 仍拒绝写入。
 
 ## 访问已安装服务
 
@@ -200,7 +204,6 @@ patch 是浅合并，嵌套修改先读并保留其他字段；`reset(target, ke
 
 ```ts no-twoslash
 import { defineDevConsole } from '@pluxel/host-vite/console'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { openLocalWorkbenchEntry } from '@pluxel/workbench/server'
 import { consumeWorkbenchValue } from '@pluxel/workbench/client'
 import { ExamplePlugin, ExampleWorkbench } from './example-plugin'
@@ -208,7 +211,7 @@ import { developmentPrincipal } from './development-principal'
 
 export const inspectWorkbench = defineDevConsole(async (dev) => {
 	using opened = await openLocalWorkbenchEntry(dev.ctx, {
-		target: pluginNodeAddressOf(ExamplePlugin),
+		target: ExamplePlugin.nodeAddress(),
 		entry: ExampleWorkbench.overview,
 		principal: developmentPrincipal,
 		signal: dev.signal,
@@ -221,12 +224,11 @@ export const inspectWorkbench = defineDevConsole(async (dev) => {
 
 ## 有界操作日志与等待
 
-Core 的 `dev.ctx.logger` 可直接使用；输出、过滤和 store 由 [Host 日志配置](../host/configuration.md#host-logging)决定。控制台不创建 store、不修改路由、不在结果中自动附加日志。应用先通过 `config.logger: logtape()` 配置日志；在线读取使用这个 Core root 的 Logging 能力：
+Core 的 `dev.ctx.logger` 可直接使用；输出、过滤和 store 由 [Host 日志配置](../host/configuration.md#host-logging)决定。控制台不创建 store、不修改路由、不在结果中自动附加日志。应用先通过 `runtime.logtape: logtape()` 配置日志；在线读取使用这个 Core root 的 Logging 能力：
 
 ```ts no-twoslash
 import { defineDevConsole } from '@pluxel/host-vite/console'
 import { Logging, markLogs, readLogs } from '@pluxel/core/logging'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { TodoPlugin } from '@example/todo-plugin'
 
 export const restartWithLogs = defineDevConsole(async (dev) => {
@@ -237,7 +239,7 @@ export const restartWithLogs = defineDevConsole(async (dev) => {
 		report,
 		logs: readLogs(logging, cursor, {
 			limit: 100,
-			filter: { plugin: pluginNodeAddressOf(TodoPlugin) },
+			filter: { plugin: TodoPlugin.nodeAddress() },
 		}),
 	}
 })

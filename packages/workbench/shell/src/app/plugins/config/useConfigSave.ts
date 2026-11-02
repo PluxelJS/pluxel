@@ -1,4 +1,3 @@
-import type { HostConfigVersion } from '@pluxel/host'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { type PluginNodeAddress } from '@pluxel/core'
 import { type ConfigValidationErrors } from '@pluxel/services/management/client'
@@ -13,7 +12,7 @@ type ConfigSaveResult = Awaited<ReturnType<RuntimeManagementClient['config']['pa
 type ConfigSaveVariables = {
 	request: () => Promise<ConfigSaveResult>
 	onValidation: (errors: ConfigValidationErrors) => void
-	onSaved: (version: HostConfigVersion | null) => void
+	onSaved: () => void
 	sectionCount: number
 	all: boolean
 }
@@ -35,12 +34,7 @@ export function useConfigSave({ owner }: { owner: PluginNodeAddress }) {
 					])
 				}
 				notifyAndRecord({
-					title:
-						result.code === 'version_conflict'
-							? '配置已变化，请刷新并检查草稿'
-							: all
-								? '全部保存失败'
-								: '提交失败',
+					title: all ? '全部保存失败' : '提交失败',
 					message: result.message ?? result.code ?? '未知错误',
 					color: 'red',
 				})
@@ -48,10 +42,9 @@ export function useConfigSave({ owner }: { owner: PluginNodeAddress }) {
 			}
 
 			commitPluginConfig(queryClient, owner, result.config, result.sources, {
-				version: result.version,
 				readonly: result.readonly,
 			})
-			onSaved(result.version)
+			onSaved()
 			// A failed read-model refresh must not turn an acknowledged write into a save failure.
 			await Promise.allSettled([refreshPluginReadModels(queryClient)])
 			if (result.application === 'saved-not-applied') {

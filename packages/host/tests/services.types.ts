@@ -14,16 +14,25 @@ export function checkHostServiceTypes() {
 
 /** Compile-only contract: Host storage is a synchronous root binding and commits are always atomic. */
 export function checkHostDocumentStorageTypes(storage: HostDocumentStorage) {
-	void createHost({ plugins: [], state: { storage: () => storage, mode: 'readonly' } })
-	void createHost({ plugins: [], state: { mode: 'readonly' }, configRecords: { mode: 'readonly' } })
-	void createHost({ plugins: [], state: { mode: 'writable' }, configRecords: { mode: 'writable' } })
-	void createHost({ plugins: [], state: { mode: 'memory' }, configRecords: { mode: 'memory' } })
+	void createHost({ plugins: [], runtime: { state: { storage: () => storage, mode: 'readonly' } } })
+	void createHost({
+		plugins: [],
+		runtime: { state: { mode: 'readonly' }, configRecords: { mode: 'readonly' } },
+	})
+	void createHost({
+		plugins: [],
+		runtime: { state: { mode: 'writable' }, configRecords: { mode: 'writable' } },
+	})
+	void createHost({
+		plugins: [],
+		runtime: { state: { mode: 'memory' }, configRecords: { mode: 'memory' } },
+	})
 	// @ts-expect-error A borrowed storage object must be bound through the root factory.
-	void createHost({ plugins: [], state: { storage } })
+	void createHost({ plugins: [], runtime: { state: { storage } } })
 	// @ts-expect-error Document factories return a namespace synchronously.
-	void createHost({ plugins: [], configRecords: { storage: async () => storage } })
+	void createHost({ plugins: [], runtime: { configRecords: { storage: async () => storage } } })
 	// @ts-expect-error An explicitly borrowed namespace requires a persistent document mode.
-	void createHost({ plugins: [], state: { storage: () => storage, mode: 'memory' } })
+	void createHost({ plugins: [], runtime: { state: { storage: () => storage, mode: 'memory' } } })
 	// @ts-expect-error Document commits do not offer a non-atomic mode.
 	void storage.put('config.json', '{}', { atomic: false })
 }

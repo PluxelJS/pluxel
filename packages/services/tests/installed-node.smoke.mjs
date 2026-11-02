@@ -58,7 +58,7 @@ try {
  Plugin()(Consumer);
  __setPluginDefinition(Consumer, { abiVersion: ${PLUGIN_LOWERING_ABI_VERSION}, kind: 'plugin', definition: ${JSON.stringify(definition)} });
  export {Consumer};
- export default defineHostApplication(() => ({ plugins: [Consumer], services: [nodeModules()], state: { initial: { autoStart: [{ definition: ${JSON.stringify(definition)}, variant: 'default' }] } } }));
+ export default defineHostApplication(() => ({ plugins: [Consumer], services: [nodeModules()], runtime: { state: { autoStart: [{ definition: ${JSON.stringify(definition)}, variant: 'default' }] } } }));
  `,
 	)
 	server = await createServer({

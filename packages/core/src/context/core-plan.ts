@@ -2,7 +2,7 @@ import { ConfigService } from '../services/config/ConfigService'
 import { EffectsService } from '../services/effects/EffectsService'
 import { createEventsBackend, createEventsServiceView } from '../services/events/EventsService'
 import { LoggerService } from '../logger/LoggerService'
-import { resolveLogTapeConfig, type LogTapeConfig } from '../config/logtape'
+import { resolveLogTapeConfig, type ResolvedLogTapeConfig } from '../config/logtape'
 import { Logging } from '../logging/service'
 import { createCoreLoggingRuntime } from './core-logging'
 import { PluginService, type PluginServiceConfig } from '../plugins/runtime/PluginService'
@@ -43,19 +43,19 @@ export { CONFIG_SERVICE_CAPABILITY, EFFECTS_CAPABILITY, EVENTS_CAPABILITY, LOGGE
 
 export type CoreRootInputs = Readonly<{
 	name: string
-	logger?: LogTapeConfig
+	logtape?: ResolvedLogTapeConfig
 	events?: Readonly<import('../services/events/EventsService').EventsServiceConfig>
 	plugins?: Readonly<PluginServiceConfig>
-	storage: ReturnType<typeof snapshotFsConfig>
+	zenfs: ReturnType<typeof snapshotFsConfig>
 	tinybase: Required<TinyBaseOptions>
 }>
 
 export function resolveCoreRootInputs(config: CoreHostConfig = {}): CoreRootInputs {
 	return Object.freeze({
 		name: config.name ?? 'root',
-		storage: snapshotFsConfig(config.storage === undefined ? {} : config.storage),
+		zenfs: snapshotFsConfig(config.zenfs === undefined ? {} : config.zenfs),
 		tinybase: resolveTinyBaseOptions(config.tinybase),
-		logger: resolveLogTapeConfig(config.logger),
+		logtape: resolveLogTapeConfig(config.logtape),
 		...(config.events
 			? {
 					events: Object.freeze({
@@ -95,7 +95,7 @@ export function createCoreContextInstallations(
 			create: (ctx) => createConfigService(ctx as RootContext),
 		}),
 		installRootCapability(FS_CAPABILITY, {
-			create: (root) => new FsService(root as RootContext, inputs.storage),
+			create: (root) => new FsService(root as RootContext, inputs.zenfs),
 		}),
 		installOwnerViewCapability(PLUGIN_FS_CAPABILITY, {
 			property: 'fs',
@@ -115,11 +115,11 @@ export function createCoreContextInstallations(
 					inputs.tinybase.maxSnapshotBytes,
 				),
 		}),
-		...(inputs.logger
+		...(inputs.logtape
 			? [
 					installRootCapability(Logging, {
 						property: 'logging',
-						create: (root) => createCoreLoggingRuntime(root as RootContext, inputs.logger!),
+						create: (root) => createCoreLoggingRuntime(root as RootContext, inputs.logtape!),
 					}),
 				]
 			: []),
@@ -190,7 +190,7 @@ export function createCoreContextHost<
 	const inputs = resolveCoreRootInputs(config)
 	return createContextHost({
 		name: inputs.name,
-		reservedProperties: ['pluginInfo', 'caller', ...(!inputs.logger ? ['logging'] : [])],
+		reservedProperties: ['pluginInfo', 'caller', ...(!inputs.logtape ? ['logging'] : [])],
 		capabilities: [
 			...createCoreContextInstallations(
 				inputs,

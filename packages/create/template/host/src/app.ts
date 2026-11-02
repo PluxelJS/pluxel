@@ -20,13 +20,6 @@ export default defineHostApplication(async (startup) => {
 	await nativeFs.promises.mkdir(prefix, { recursive: true })
 	return {
 		name: 'pluxel-example',
-		config: {
-			logger: logtape(),
-			storage: zenfs({
-				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-				durableMounts: ['/'],
-			}),
-		},
 		plugins: examplePlugins,
 		sources: [
 			pluginSource({
@@ -39,11 +32,14 @@ export default defineHostApplication(async (startup) => {
 			product,
 			workbench: environment.workbench ?? true,
 		}),
-		configRecords: {
-			...exampleConfigRecords(env.EXAMPLE_TODO_MAX_ITEMS),
-		},
-		state: {
-			...exampleHostState(),
+		runtime: {
+			logtape: logtape(),
+			zenfs: zenfs({
+				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+				durableMounts: ['/'],
+			}),
+			configRecords: exampleConfigRecords(env.EXAMPLE_TODO_MAX_ITEMS),
+			state: exampleHostState(),
 		},
 	}
 })

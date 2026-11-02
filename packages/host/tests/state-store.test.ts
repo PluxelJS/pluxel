@@ -1,7 +1,9 @@
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 import { createDocumentStorage } from './helpers/document-storage'
 import { createCoreContextHost } from '@pluxel/core/host'
-import { HostStateStore } from '../src/state-store'
+import type { HostStateSnapshot } from '../src/policy'
+import { HostStateStore, resolveHostStateDeclaration, type HostStateFile } from '../src/state-store'
+import { hostStatePatch } from '../src/state'
 import { SuperJSON } from 'superjson'
 import { describe, expect, it } from 'vitest'
 
@@ -17,6 +19,164 @@ const ProviderNode: PluginNodeAddress = { definition: Provider, variant: 'defaul
 const ConsumerNode: PluginNodeAddress = { definition: Consumer, variant: 'default' }
 
 describe('Host state address persistence', () => {
+	it('preserves omitted declaration fields and rejects default nodes in forks', () => {
+		expect(resolveHostStateDeclaration({ autoStart: [] })).toEqual({ autoStart: [] })
+		expect(() => resolveHostStateDeclaration({ forks: [ProviderNode] })).toThrow(
+			/only fork node addresses/,
+		)
+		expect(() =>
+			resolveHostStateDeclaration({ autoStart: [{ ...ProviderNode, enabled: true }] } as never),
+		).toThrow(/unknown field enabled/)
+	})
+
+	it('initializes all declared lists without adding inferred policy', async () => {
+		const backend = createDocumentStorage()
+		const fork: PluginNodeAddress = { definition: Provider, variant: 'fork', forkId: 'tenant' }
+		const declared = {
+			autoStart: [ConsumerNode],
+			forks: [fork],
+			providerDefaults: [{ token: Consumer, provider: ProviderNode }],
+			dependencyOverrides: [
+				{ consumerAddress: ConsumerNode, requirementAddress: Provider, providerAddress: fork },
+			],
+		}
+		const runtime = new HostStateStore(createCoreContextHost().createRoot(), {
+			storage: backend,
+			override: true,
+			...declared,
+		})
+		try {
+			await runtime.ready
+			expect(runtime.savedSnapshot()).toEqual(declared)
+			expect(runtime.snapshot()).toEqual(declared)
+			expect(SuperJSON.parse((await backend.getText('state.json'))!)).toEqual({
+				version: 6,
+				...declared,
+			})
+		} finally {
+			await runtime.ctx.effects.dispose()
+		}
+	})
+
+	it('restores saved lists when override is false and never observes external edits', async () => {
+		const backend = createDocumentStorage()
+		const persisted: HostStateFile = {
+			version: 6,
+			autoStart: [ProviderNode],
+			forks: [],
+			providerDefaults: [],
+			dependencyOverrides: [],
+		}
+		await backend.put('state.json', SuperJSON.stringify(persisted))
+		const runtime = new HostStateStore(createCoreContextHost().createRoot(), {
+			storage: backend,
+			autoStart: [ConsumerNode],
+		})
+		try {
+			await runtime.ready
+			expect(runtime.snapshot().autoStart).toEqual([ProviderNode])
+			expect(runtime.configurationSnapshot()).toMatchObject({
+				override: false,
+				declared: { autoStart: [ConsumerNode] },
+				overriddenFields: [],
+			})
+			await backend.put('state.json', SuperJSON.stringify({ ...persisted, autoStart: [] }))
+			expect(runtime.snapshot().autoStart).toEqual([ProviderNode])
+		} finally {
+			await runtime.ctx.effects.dispose()
+		}
+	})
+
+	it('overrides whole declared lists without contaminating saved values through other writes or reopen', async () => {
+		const backend = createDocumentStorage()
+		const fork: PluginNodeAddress = { definition: Provider, variant: 'fork', forkId: 'tenant' }
+		const saved: HostStateSnapshot = {
+			autoStart: [ProviderNode],
+			forks: [fork],
+			providerDefaults: [],
+			dependencyOverrides: [],
+		}
+		await backend.put('state.json', SuperJSON.stringify({ version: 6, ...saved }))
+		const runtime = new HostStateStore(createCoreContextHost().createRoot(), {
+			storage: backend,
+			override: true,
+			autoStart: [ConsumerNode],
+			forks: [],
+		})
+		const defaults = [{ token: Consumer, provider: ProviderNode }]
+		try {
+			await runtime.ready
+			expect(runtime.snapshot()).toEqual({ ...saved, autoStart: [ConsumerNode], forks: [] })
+			expect(runtime.savedSnapshot()).toEqual(saved)
+			expect(runtime.configurationSnapshot().overriddenFields).toEqual(['autoStart', 'forks'])
+			expect(() =>
+				runtime.assertPatchMutable(
+					hostStatePatch({ type: 'set-auto-start', node: ConsumerNode, autoStart: true }),
+				),
+			).toThrow(expect.objectContaining({ code: 'state_overridden' }))
+			await expect(
+				runtime.commitVersioned(runtime.versionedSnapshot().revision, runtime.snapshot()),
+			).rejects.toMatchObject({ code: 'state_overridden' })
+			await runtime.commitVersioned(runtime.versionedSnapshot().revision, {
+				...runtime.savedSnapshot(),
+				providerDefaults: defaults,
+			})
+			expect(runtime.snapshot()).toEqual({
+				...saved,
+				autoStart: [ConsumerNode],
+				forks: [],
+				providerDefaults: defaults,
+			})
+			expect(SuperJSON.parse((await backend.getText('state.json'))!)).toEqual({
+				version: 6,
+				...saved,
+				providerDefaults: defaults,
+			})
+		} finally {
+			await runtime.ctx.effects.dispose()
+		}
+		const reopened = new HostStateStore(createCoreContextHost().createRoot(), { storage: backend })
+		try {
+			await reopened.ready
+			expect(reopened.snapshot()).toEqual({ ...saved, providerDefaults: defaults })
+		} finally {
+			await reopened.ctx.effects.dispose()
+		}
+	})
+
+	it('projects readonly overrides without writing and applies memory declarations without storage', async () => {
+		const backend = createDocumentStorage()
+		const content = SuperJSON.stringify({
+			version: 6,
+			autoStart: [ProviderNode],
+			forks: [],
+			providerDefaults: [],
+			dependencyOverrides: [],
+		})
+		await backend.put('state.json', content)
+		const runtime = new HostStateStore(createCoreContextHost().createRoot(), {
+			storage: backend,
+			mode: 'readonly',
+			override: true,
+			autoStart: [],
+		})
+		const memory = new HostStateStore(createCoreContextHost().createRoot(), {
+			mode: 'memory',
+			autoStart: [ConsumerNode],
+		})
+		try {
+			await runtime.ready
+			expect(runtime.snapshot().autoStart).toEqual([])
+			expect(runtime.savedSnapshot().autoStart).toEqual([ProviderNode])
+			expect(memory.snapshot().autoStart).toEqual([ConsumerNode])
+			expect(memory.configurationSnapshot().mode).toBe('memory')
+			expect(await backend.getText('state.json')).toBe(content)
+		} finally {
+			await runtime.ctx.effects.dispose()
+			await memory.ctx.effects.dispose()
+		}
+	})
+
 	it('persists and reloads a plugin from a package subpath', async () => {
 		const backend = createDocumentStorage()
 		const node: PluginNodeAddress = {
@@ -53,14 +213,14 @@ describe('Host state address persistence', () => {
 				new HostStateStore(createCoreContextHost().createRoot(), {
 					initial: { enabled: [ProviderNode] },
 				} as never),
-		).toThrow(/state\.initial has unknown field enabled/i)
+		).toThrow(/state has unknown field initial/i)
 	})
 
 	it.each([
 		[
 			'legacy root field',
 			{
-				version: 5,
+				version: 6,
 				autoStart: [],
 				enabled: [ProviderNode],
 				forks: [],
@@ -72,15 +232,15 @@ describe('Host state address persistence', () => {
 		[
 			'unknown nested field',
 			{
-				version: 5,
+				version: 6,
 				autoStart: [],
-				forks: [{ definition: Provider, forkIds: ['tenant'], enabled: true }],
+				forks: [{ definition: Provider, variant: 'fork', forkId: 'tenant', enabled: true }],
 				providerDefaults: [],
 				dependencyOverrides: [],
 			},
-			/forks\[0\] has unknown field enabled/i,
+			/unknown field enabled/i,
 		],
-	] as const)('rejects a v5 file with %s', async (_case, file, expected) => {
+	] as const)('rejects a v6 file with %s', async (_case, file, expected) => {
 		const backend = createDocumentStorage()
 		await backend.put('state.json', SuperJSON.stringify(file))
 		const runtime = new HostStateStore(createCoreContextHost().createRoot(), {
@@ -97,7 +257,7 @@ describe('Host state address persistence', () => {
 	it('loads existing state through a readonly backend and rejects mutation', async () => {
 		const backend = createDocumentStorage()
 		const persisted = SuperJSON.stringify({
-			version: 5,
+			version: 6,
 			autoStart: [ProviderNode],
 			forks: [],
 			providerDefaults: [],
@@ -127,7 +287,7 @@ describe('Host state address persistence', () => {
 		const runtime = new HostStateStore(createCoreContextHost().createRoot(), {
 			storage: backend,
 			mode: 'readonly',
-			initial: { autoStart: [ProviderNode] },
+			autoStart: [ProviderNode],
 		})
 		try {
 			const runtimeState = runtime
@@ -183,7 +343,7 @@ describe('Host state address persistence', () => {
 		[
 			'invalid field',
 			SuperJSON.stringify({
-				version: 5,
+				version: 6,
 				autoStart: {},
 				forks: [],
 				providerDefaults: [],
@@ -221,7 +381,7 @@ describe('Host state address persistence', () => {
 		try {
 			await runtime.ready
 			expect(SuperJSON.parse((await backend.getText('state.json'))!)).toEqual({
-				version: 5,
+				version: 6,
 				autoStart: [],
 				forks: [],
 				providerDefaults: [],
@@ -276,7 +436,7 @@ describe('Host state address persistence', () => {
 		}
 	})
 
-	it('keeps v5 structured addresses and requirement overrides stable', async () => {
+	it('keeps v6 structured addresses and requirement overrides stable', async () => {
 		const backend = createDocumentStorage()
 		const namespace = backend
 		const override = {
@@ -287,7 +447,7 @@ describe('Host state address persistence', () => {
 		await namespace.put(
 			'state.json',
 			SuperJSON.stringify({
-				version: 5,
+				version: 6,
 				autoStart: [],
 				forks: [],
 				providerDefaults: [],
@@ -310,7 +470,7 @@ describe('Host state address persistence', () => {
 		}
 	})
 
-	it.each([1, 2, 3, 4])('rejects unsupported persisted v%s state', async (version) => {
+	it.each([1, 2, 3, 4, 5])('rejects unsupported persisted v%s state', async (version) => {
 		const backend = createDocumentStorage()
 		await backend.put('state.json', SuperJSON.stringify({ version, autoStart: ['NameOnlyPlugin'] }))
 		const host = new HostStateStore(createCoreContextHost().createRoot(), { storage: backend })
@@ -323,12 +483,12 @@ describe('Host state address persistence', () => {
 		}
 	})
 
-	it('rejects duplicate v5 node and requirement records', async () => {
+	it('rejects duplicate v6 node and requirement records', async () => {
 		const backend = createDocumentStorage()
 		await backend.put(
 			'state.json',
 			SuperJSON.stringify({
-				version: 5,
+				version: 6,
 				autoStart: [ProviderNode, ProviderNode],
 				forks: [],
 				providerDefaults: [],
@@ -343,14 +503,14 @@ describe('Host state address persistence', () => {
 		}
 	})
 
-	it('rejects invalid v5 fork ids', async () => {
+	it('rejects invalid v6 fork ids', async () => {
 		const backend = createDocumentStorage()
 		await backend.put(
 			'state.json',
 			SuperJSON.stringify({
-				version: 5,
+				version: 6,
 				autoStart: [],
-				forks: [{ definition: Provider, forkIds: ['tenant/acme'] }],
+				forks: [{ definition: Provider, variant: 'fork', forkId: 'tenant/acme' }],
 				providerDefaults: [],
 				dependencyOverrides: [],
 			}),

@@ -1,13 +1,12 @@
 import {
 	parsePluginNodeAddress,
 	pluginDefinitionIndexKey,
-	pluginNodeAddressOf,
 	pluginNodeIndexKey,
 	type RootContext,
 	type PluginNodeAddress,
 	type PluginConstructor,
 } from '@pluxel/core'
-import { requirePluginService } from '@pluxel/core/internal'
+import { requirePluginService, requireConfigService } from '@pluxel/core/internal'
 import {
 	projectPluginApplyReport,
 	readHostRecentUpdates,
@@ -18,6 +17,8 @@ import {
 	readHostConfigState,
 	requirePluginHostCoordinator,
 	readHostPluginStatusOverview,
+	requireHostStateStore,
+	type HostConfigStore,
 } from '@pluxel/host/internal'
 import {
 	DevConsoleError,
@@ -27,11 +28,7 @@ import {
 	type DevPluginInstance,
 } from './contracts'
 import { DevScope } from './scope'
-import type {
-	HostPluginConfigResult,
-	PluginApplyReportSnapshot,
-	HostConfigMutationOptions,
-} from '@pluxel/host'
+import type { HostPluginConfigResult, PluginApplyReportSnapshot } from '@pluxel/host'
 
 export interface DevConsoleScope {
 	readonly dev: DevConsole
@@ -54,11 +51,11 @@ export function createDevConsoleScope(
 		let address: PluginNodeAddress
 		if (typeof target === 'function') {
 			implementation = target
-			address = pluginNodeAddressOf(target)
+			address = target.nodeAddress()
 		} else if (target && typeof target === 'object' && 'plugin' in target) {
 			implementation = target.plugin
 			address = parsePluginNodeAddress({
-				definition: pluginNodeAddressOf(implementation).definition,
+				definition: implementation.nodeAddress().definition,
 				variant: 'fork',
 				forkId: target.forkId,
 			})
@@ -136,7 +133,30 @@ export function createDevConsoleScope(
 				return instance as DevPluginInstance<T>
 			},
 		}),
+		state: Object.freeze({
+			inspect: () =>
+				scope.run(() =>
+					coordinator.readCommitted(() => requireHostStateStore(ctx).configurationSnapshot()),
+				),
+		}),
 		config: Object.freeze({
+			inspect: (target: DevPluginTarget) =>
+				scope.run(() => {
+					const owner = resolveTarget(target)
+					return coordinator.readCommitted(() => {
+						const store = requireConfigService(ctx) as HostConfigStore
+						return {
+							mode: store.storageMode,
+							readonly: store.isReadonly,
+							override: store.isDeclarationOverride,
+							externalReload: store.supportsExternalReload,
+							saved: store.getManagedConfig(owner),
+							declared: store.getDeclaredConfig(owner),
+							effective: store.getRawConfig(owner),
+							sources: store.getConfigSources(owner),
+						}
+					})
+				}),
 			status: () => {
 				scope.assertOpen()
 				return readHostConfigState(ctx)
@@ -149,31 +169,13 @@ export function createDevConsoleScope(
 				scope.run(async () =>
 					projectConfig(await pluginConfigValidate(ctx, resolveTarget(target), patch, admission)),
 				),
-			patch: (
-				target: DevPluginTarget,
-				patch: Readonly<Record<string, unknown>>,
-				mutation?: Pick<HostConfigMutationOptions, 'expected'>,
-			) =>
+			patch: (target: DevPluginTarget, patch: Readonly<Record<string, unknown>>) =>
 				scope.run(async () =>
-					projectConfig(
-						await pluginConfigPatch(ctx, resolveTarget(target), patch, {
-							...mutation,
-							...admission,
-						}),
-					),
+					projectConfig(await pluginConfigPatch(ctx, resolveTarget(target), patch, admission)),
 				),
-			reset: (
-				target: DevPluginTarget,
-				keys?: readonly string[],
-				mutation?: Pick<HostConfigMutationOptions, 'expected'>,
-			) =>
+			reset: (target: DevPluginTarget, keys?: readonly string[]) =>
 				scope.run(async () =>
-					projectConfig(
-						await pluginConfigReset(ctx, resolveTarget(target), keys, {
-							...mutation,
-							...admission,
-						}),
-					),
+					projectConfig(await pluginConfigReset(ctx, resolveTarget(target), keys, admission)),
 				),
 		}),
 	})

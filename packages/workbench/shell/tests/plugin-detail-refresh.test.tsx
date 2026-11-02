@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { PluginNodeAddress } from '@pluxel/core'
+import { MantineProvider } from '@mantine/core'
 import type {
 	PluginDependencyGraphSnapshot,
 	PluginCatalogSnapshot,
@@ -13,7 +14,11 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { RuntimeManagementClientProvider } from '../src/runtime'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { usePluginDetail } from '../src/app/plugins/detail/usePluginDetail'
-import { createManagementQueryClient } from '../src/app/managementQuery'
+import { createManagementQueryClient, managementQueryKeys } from '../src/app/managementQuery'
+import { PluginScopeProvider } from '../src/app/plugins/detail/context'
+import { ActionBar } from '../src/app/plugins/detail/controls/ActionBar'
+import { BulkActionsBar } from '../src/app/plugins/catalog/components/BulkActionsBar'
+import { buildPluginOverview } from '../src/app/plugins/pluginOverviewModel'
 
 const owner = node('OwnerPlugin')
 const ownerStatus = status(owner)
@@ -29,6 +34,12 @@ const mounted: Array<ReturnType<typeof createRoot>> = []
 
 beforeAll(() => {
 	vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+	window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+		matches: false,
+		media: query,
+		addEventListener() {},
+		removeEventListener() {},
+	}))
 })
 
 afterEach(async () => {
@@ -39,6 +50,74 @@ afterEach(async () => {
 })
 
 describe('plugin detail refresh', () => {
+	it('disables declared auto-start controls while keeping session controls and selection usable', async () => {
+		const snapshot: PluginCatalogSnapshot = {
+			...pluginCatalog(ownerStatus),
+			statePolicy: { mode: 'writable', overriddenFields: ['autoStart'] },
+		}
+		const client = {
+			catalog: { snapshot: vi.fn().mockResolvedValue(snapshot) },
+		} as unknown as RuntimeManagementClient
+		const queryClient = createManagementQueryClient()
+		queryClient.setQueryData(managementQueryKeys.pluginOverview(), buildPluginOverview(snapshot))
+		const onBulkAction = vi.fn()
+		const container = document.createElement('div')
+		document.body.appendChild(container)
+		const root = createRoot(container)
+		mounted.push(root)
+		await act(async () => {
+			root.render(
+				<RuntimeManagementClientProvider client={client}>
+					<QueryClientProvider client={queryClient}>
+						<MantineProvider>
+							<PluginScopeProvider
+								value={{
+									owner,
+									pluginRoute: ownerStatus.route,
+									pluginLabel: ownerStatus.displayName,
+									description: '',
+									dependencyGraph: { detail: null, isLoading: false, isStale: false },
+									status: buildPluginOverview(snapshot).status.statuses[0]!,
+									refetch: async () => {},
+								}}
+							>
+								<ActionBar />
+								<BulkActionsBar
+									count={1}
+									busy={false}
+									canChangeAutoStart={false}
+									onAction={onBulkAction}
+								/>
+							</PluginScopeProvider>
+						</MantineProvider>
+					</QueryClientProvider>
+				</RuntimeManagementClientProvider>,
+			)
+		})
+		expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBe(true)
+		const bulkOn = container.querySelector<HTMLButtonElement>('button[aria-label="开启自动启动"]')!
+		const bulkOff = container.querySelector<HTMLButtonElement>('button[aria-label="关闭自动启动"]')!
+		const clear = container.querySelector<HTMLButtonElement>('button[aria-label="清空选择"]')!
+		expect(bulkOn.disabled).toBe(true)
+		expect(bulkOff.disabled).toBe(true)
+		expect(clear.disabled).toBe(false)
+		const lifecycle = [
+			...container.querySelectorAll<HTMLButtonElement>(
+				'.plx-pluginWorkbench__lifecycleActions button',
+			),
+		]
+		expect(lifecycle.map((button) => [button.textContent, button.disabled])).toEqual([
+			['停止', false],
+			['重启', false],
+		])
+		await act(async () => {
+			bulkOn.click()
+			bulkOff.click()
+			clear.click()
+		})
+		expect(onBulkAction).toHaveBeenCalledExactlyOnceWith('clear')
+	})
+
 	it('crosses the invalidation fence when a mutation races an in-flight graph read', async () => {
 		let releaseOldGraph!: (value: PluginDependencyGraphSnapshot) => void
 		const oldRead = new Promise<PluginDependencyGraphSnapshot>((resolve) => {
@@ -140,6 +219,7 @@ function pluginCatalog(nodeStatus: PluginStatusSnapshot): PluginCatalogSnapshot 
 	return {
 		plugins: [nodeStatus],
 		sections: [],
+		statePolicy: { mode: 'writable', overriddenFields: [] },
 		summary: { total: 1, running: 1, stopped: 0, autoStart: 1 },
 	}
 }

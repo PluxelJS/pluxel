@@ -1,6 +1,6 @@
 import { requirePluginHostCoordinator, requireHostStateStore } from '@pluxel/host/internal'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
-import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
+import { pluginDefinitionAddressOf } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { serialize } from 'capnweb'
 import { describe, expect, it, vi } from 'vitest'
@@ -193,9 +193,9 @@ describe('runtime web control protocol', () => {
 		const providerFork = host.fork(ManagedProvider, 'policy-ineligible')
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const policyOwner = pluginNodeAddressOf(ManagedProvider)
-		const alternateProvider = pluginNodeAddressOf(ManagedAlternateProvider)
-		const consumer = pluginNodeAddressOf(ManagedProviderConsumer)
+		const policyOwner = ManagedProvider.nodeAddress()
+		const alternateProvider = ManagedAlternateProvider.nodeAddress()
+		const consumer = ManagedProviderConsumer.nodeAddress()
 		const token = pluginDefinitionAddressOf(ManagedProviderToken)
 
 		await expect(rpc.inspectPluginProviderPolicyDto(consumer)).resolves.toEqual({
@@ -292,7 +292,7 @@ describe('runtime web control protocol', () => {
 		host.add([ManagedPlugin, ManagedProvider, ManagedProviderConsumer, ManagedDirectConsumer])
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const consumer = pluginNodeAddressOf(ManagedProviderConsumer)
+		const consumer = ManagedProviderConsumer.nodeAddress()
 		const requirement = pluginDefinitionAddressOf(ManagedProviderToken)
 
 		const inspection = await rpc.inspectPluginConsumerRequirementsDto(consumer)
@@ -306,16 +306,16 @@ describe('runtime web control protocol', () => {
 		expect(inspection.items[0]).toHaveProperty('consumerOverride', null)
 
 		await expect(
-			rpc.inspectPluginConsumerRequirementsDto(pluginNodeAddressOf(ManagedDirectConsumer)),
+			rpc.inspectPluginConsumerRequirementsDto(ManagedDirectConsumer.nodeAddress()),
 		).resolves.toMatchObject({
 			ok: true,
 			items: [
 				{
 					kind: 'plugin',
-					inheritedProvider: pluginNodeAddressOf(ManagedPlugin),
+					inheritedProvider: ManagedPlugin.nodeAddress(),
 					options: [
 						expect.objectContaining({
-							address: pluginNodeAddressOf(ManagedPlugin),
+							address: ManagedPlugin.nodeAddress(),
 						}),
 					],
 				},
@@ -480,7 +480,7 @@ describe('runtime web control protocol', () => {
 		})
 		await expect(
 			rpc.ensurePluginForkDto({
-				base: pluginNodeAddressOf(ManagedPlugin),
+				base: ManagedPlugin.nodeAddress(),
 				forkId: 'invalid-selection',
 				selectFor: { consumer: null },
 			}),

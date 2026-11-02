@@ -352,8 +352,8 @@ export function pluginDefinitionAddressOf(ctor: PluginToken): PluginDefinitionAd
 	return facts.definition
 }
 
-/** Default-node projection from a lowered concrete implementation. */
-export function pluginNodeAddressOf(ctor: PluginConstructor): PluginNodeAddress {
+/** Resolve a lowered concrete implementation to its default or named fork node. */
+export function pluginNodeAddressOf(ctor: PluginToken, forkId?: string): PluginNodeAddress {
 	const facts = addressByConstructor.get(ctor)
 	if (!facts) {
 		missingPluginDeclaration(
@@ -363,7 +363,9 @@ export function pluginNodeAddressOf(ctor: PluginConstructor): PluginNodeAddress 
 	if (facts.kind !== 'plugin') {
 		invalidPluginDeclaration('[pluxel/core] Abstract Plugin tokens do not have node addresses')
 	}
-	return facts.defaultNode
+	return forkId === undefined
+		? facts.defaultNode
+		: parsePluginNodeAddress({ definition: facts.definition, variant: 'fork', forkId })
 }
 
 function mergeOptionalDefinitions(

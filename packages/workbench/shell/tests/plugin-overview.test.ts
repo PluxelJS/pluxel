@@ -1,6 +1,6 @@
 import type { PluginCatalogSnapshot } from '@pluxel/services/management/client'
 import { describe, expect, it } from 'vitest'
-import { buildPluginOverview } from '../src/app/plugins/pluginOverviewModel'
+import { buildPluginOverview, canWritePluginState } from '../src/app/plugins/pluginOverviewModel'
 
 const address = {
 	definition: {
@@ -43,6 +43,7 @@ const catalog = {
 			nodes: [address],
 		},
 	],
+	statePolicy: { mode: 'writable', overriddenFields: [] },
 	summary: { total: 1, running: 1, stopped: 0, autoStart: 1 },
 } satisfies PluginCatalogSnapshot
 
@@ -56,7 +57,25 @@ describe('plugin overview projection', () => {
 			address,
 		})
 		expect(overview.sections).toEqual(catalog.sections)
+		expect(overview.statePolicy).toEqual(catalog.statePolicy)
 		expect(Object.isFrozen(overview)).toBe(true)
 		expect(Object.isFrozen(overview.status.statuses)).toBe(true)
 	})
+})
+
+it('keeps unrelated state operations writable and locks every field used by composed fork operations', () => {
+	const policy = { mode: 'writable', overriddenFields: ['providerDefaults'] } as const
+	expect(canWritePluginState(policy, 'providerDefaults')).toBe(false)
+	expect(canWritePluginState(policy, 'autoStart')).toBe(true)
+	expect(canWritePluginState(policy, 'forks', 'autoStart', 'dependencyOverrides')).toBe(true)
+	expect(
+		canWritePluginState(
+			{ mode: 'memory', overriddenFields: ['dependencyOverrides'] },
+			'forks',
+			'autoStart',
+			'dependencyOverrides',
+		),
+	).toBe(false)
+	expect(canWritePluginState({ mode: 'readonly', overriddenFields: [] }, 'autoStart')).toBe(false)
+	expect(canWritePluginState(undefined, 'autoStart')).toBe(false)
 })

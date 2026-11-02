@@ -7,7 +7,6 @@ import {
 import {
 	freezeTrustedHostStateSnapshot,
 	type HostDependencyOverrideState,
-	type HostForkState,
 	type HostProviderDefaultState,
 	type HostStateSnapshot,
 } from './policy'
@@ -65,12 +64,7 @@ export function applyHostStatePatch(
 	if (!patch || patch.operations.length === 0) return state
 
 	const autoStart = new Map(state.autoStart.map((node) => [pluginNodeIndexKey(node), node]))
-	const forks = new Map(
-		state.forks.map((entry) => [
-			pluginDefinitionIndexKey(entry.definition),
-			{ definition: entry.definition, forkIds: new Set(entry.forkIds) },
-		]),
-	)
+	const forks = new Map(state.forks.map((node) => [pluginNodeIndexKey(node), node]))
 	const providerDefaults = new Map(
 		state.providerDefaults.map((entry) => [pluginDefinitionIndexKey(entry.token), entry]),
 	)
@@ -97,21 +91,22 @@ export function applyHostStatePatch(
 				break
 			}
 			case 'ensure-fork': {
-				const key = pluginDefinitionIndexKey(operation.definition)
-				const family = forks.get(key) ?? {
+				const node: PluginNodeAddress = {
 					definition: operation.definition,
-					forkIds: new Set<string>(),
+					variant: 'fork',
+					forkId: operation.forkId,
 				}
-				family.forkIds.add(operation.forkId)
-				forks.set(key, family)
+				forks.set(pluginNodeIndexKey(node), node)
 				break
 			}
 			case 'remove-fork': {
-				const key = pluginDefinitionIndexKey(operation.definition)
-				const family = forks.get(key)
-				if (!family) break
-				family.forkIds.delete(operation.forkId)
-				if (family.forkIds.size === 0) forks.delete(key)
+				forks.delete(
+					pluginNodeIndexKey({
+						definition: operation.definition,
+						variant: 'fork',
+						forkId: operation.forkId,
+					}),
+				)
 				break
 			}
 			case 'set-provider-default': {
@@ -157,10 +152,7 @@ export function applyHostStatePatch(
 
 	return freezeTrustedHostStateSnapshot({
 		autoStart: [...autoStart.values()],
-		forks: [...forks.values()].map(({ definition, forkIds }) => ({
-			definition,
-			forkIds: [...forkIds],
-		})),
+		forks: [...forks.values()],
 		providerDefaults: [...providerDefaults.values()],
 		dependencyOverrides: [...dependencyOverrides.values()],
 	})
@@ -172,7 +164,7 @@ export function hostStateEqual(left: HostStateSnapshot, right: HostStateSnapshot
 			left.autoStart.map(pluginNodeIndexKey),
 			right.autoStart.map(pluginNodeIndexKey),
 		) &&
-		orderedKeysEqual(left.forks.map(forkKey), right.forks.map(forkKey)) &&
+		orderedKeysEqual(left.forks.map(pluginNodeIndexKey), right.forks.map(pluginNodeIndexKey)) &&
 		orderedKeysEqual(
 			left.providerDefaults.map(providerKey),
 			right.providerDefaults.map(providerKey),
@@ -188,10 +180,6 @@ function overrideKey(
 	entry: Pick<HostDependencyOverrideState, 'consumerAddress' | 'requirementAddress'>,
 ): string {
 	return `${pluginNodeIndexKey(entry.consumerAddress)}:${pluginDefinitionIndexKey(entry.requirementAddress)}`
-}
-
-function forkKey(entry: HostForkState): string {
-	return `${pluginDefinitionIndexKey(entry.definition)}:${entry.forkIds.join('\0')}`
 }
 
 function providerKey(entry: HostProviderDefaultState): string {

@@ -336,14 +336,14 @@ const task=defineWorkerTask<number,{value:number,url:string}>(import.meta.url,'.
 		await writeFile(
 			resolve(application, 'src/app.ts'),
 			`import {defineHostApplication} from '@pluxel/host';
-import {pluginNodeAddressOf} from '@pluxel/core';
+
 import {servicesPreset} from '@pluxel/services/preset';
 import {External} from 'fixture-worker-owner';
 import {Local} from './local';
 export default defineHostApplication(async startup=>({
  plugins:[External,Local],
  services:await servicesPreset(startup,{workbench:false,vault:{backend:'bindings'}}),
- state:{mode:'memory',initial:{autoStart:[pluginNodeAddressOf(External),pluginNodeAddressOf(Local)]}},
+ runtime:{state:{mode:'memory',autoStart:[External.nodeAddress(),Local.nodeAddress()]}},
 }))`,
 		)
 		await writeFile(
@@ -454,7 +454,7 @@ it('preserves public and private identities, named product, minified artifacts a
 		)
 		await writeFile(
 			resolve(root, 'src/app.ts'),
-			`import {defineHostApplication} from '@pluxel/host'; import {pluginNodeAddressOf} from '@pluxel/core'; import {standardServices} from '@pluxel/services'; import {Public} from './public'; import {Feature} from './feature'; import {Private} from './private'; export const product={title:'Modules probe'}; export default defineHostApplication(()=>({plugins:[Public,Feature,Private],services:standardServices(),state:{mode:'memory',initial:{autoStart:[pluginNodeAddressOf(Private)]}},prepare({host,startup}){startup.bindings.capture?.(host)}}))`,
+			`import {defineHostApplication} from '@pluxel/host';  import {standardServices} from '@pluxel/services'; import {Public} from './public'; import {Feature} from './feature'; import {Private} from './private'; export const product={title:'Modules probe'}; export default defineHostApplication(()=>({plugins:[Public,Feature,Private],services:standardServices(),runtime:{state:{mode:'memory',autoStart:[Private.nodeAddress()]}},prepare({host,startup}){startup.bindings.capture?.(host)}}))`,
 		)
 		await writeFile(
 			resolve(root, 'build.mts'),

@@ -15,7 +15,6 @@ description: 为 Native 与 Vite 应用管理和发布 pnpm 插件包。
 import { zenfs } from '@pluxel/core/config'
 import { resolve } from 'node:path'
 import * as nativeFs from 'node:fs'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 import { Passthrough } from '@pluxel/core/fs'
@@ -23,7 +22,7 @@ import { resolveHostEnv } from '@pluxel/host/environment'
 import { PackageManagerPlugin } from '@pluxel/plugin-package-manager'
 import { pluginSource } from '@pluxel/host/sources'
 
-const packageManagerNode = pluginNodeAddressOf(PackageManagerPlugin)
+const packageManagerNode = PackageManagerPlugin.nodeAddress()
 
 export default defineHostApplication(async (startup) => {
 	const dataRoot = resolve(
@@ -43,27 +42,29 @@ export default defineHostApplication(async (startup) => {
 				include: ['*.mjs'],
 			}),
 		],
-		config: {
-			storage: zenfs({
+		services: await servicesPreset(startup, {}),
+		runtime: {
+			zenfs: zenfs({
 				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 				durableMounts: ['/'],
 			}),
-		},
-		services: await servicesPreset(startup, {}),
-		configRecords: {
-			initial: [
-				{
-					owner: packageManagerNode,
-					config: {
-						rootDir: managedPackagesRoot,
-						ignoreScripts: true,
-						allowBuilds: [],
-						minimumReleaseAgeMinutes: 1_440,
+			configRecords: {
+				records: [
+					{
+						owner: packageManagerNode,
+						config: {
+							rootDir: managedPackagesRoot,
+							ignoreScripts: true,
+							allowBuilds: [],
+							minimumReleaseAgeMinutes: 1_440,
+						},
 					},
-				},
-			],
+				],
+			},
+			state: {
+				autoStart: [packageManagerNode],
+			},
 		},
-		state: { initial: { autoStart: [packageManagerNode] } },
 	}
 })
 ```
@@ -71,8 +72,8 @@ export default defineHostApplication(async (startup) => {
 四处配置缺一不可：
 
 1. `plugins` 把 Package Manager 放进 fixed catalog；
-2. `configRecords` 为它提供 Plugin config；
-3. `state` 显式让它随宿主自动启动；
+2. `runtime.configRecords.records` 为它提供 Plugin config；
+3. `runtime.state.autoStart` 显式让它随宿主自动启动；
 4. `sources` 声明它被允许生产的 directory source。
 
 示例通过 `PLUXEL_DATA_ROOT` 统一定位存储和来源；默认是 cwd 下的 `.pluxel`。生产运行时设置 distribution root 外的绝对路径。

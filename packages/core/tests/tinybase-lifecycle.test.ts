@@ -2,7 +2,7 @@ import * as nativeFs from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { enterOwnerInvocation } from '@pluxel/core/host'
 import { createMergeableStore, createStore, type Store } from 'tinybase'
 import { createCustomPersister } from 'tinybase/persisters'
@@ -52,7 +52,7 @@ function nodeFile(prefix: string, owner: typeof HandleOwner | typeof LazyOwner):
 	return join(
 		prefix,
 		'services/tinybase/nodes',
-		`${pluginNodePhysicalKey(pluginNodeAddressOf(owner))}.json`,
+		`${pluginNodePhysicalKey(owner.nodeAddress())}.json`,
 	)
 }
 
@@ -75,7 +75,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 		'rejects an explicitly invalid Store input %j without selecting the default Store',
 		async (input) => {
 			await using host = await createCoreTestHost({
-				storage: { mounts: { '/': { backend: InMemory } } },
+				zenfs: { mounts: { '/': { backend: InMemory } } },
 			})
 			const owner = await host.add(HandleOwner)
 			// @ts-expect-error Deliberately exercise invalid JavaScript callers without widening the public contract.
@@ -91,7 +91,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 		'rejects an already attached %s before claiming the Store or restoring data',
 		async (attachment) => {
 			await using host = await createCoreTestHost({
-				storage: { mounts: { '/': { backend: InMemory } } },
+				zenfs: { mounts: { '/': { backend: InMemory } } },
 			})
 			const owner = await host.add(HandleOwner)
 			const store = attachment === 'mergeable' ? createMergeableStore() : createStore()
@@ -143,7 +143,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 
 	it("refuses a current or retired generation's Store even after its listeners are removed", async () => {
 		await using host = await createCoreTestHost({
-			storage: { mounts: { '/': { backend: InMemory } } },
+			zenfs: { mounts: { '/': { backend: InMemory } } },
 		})
 		const owner = await host.add(HandleOwner)
 		const store = createStore()
@@ -162,7 +162,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 	it('borrows TinyBase without creating a native Store or allocating a writer before open', async () => {
 		const prefix = await directory()
 		await using host = await createCoreTestHost({
-			storage: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
+			zenfs: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
 		})
 		const owner = await host.add(HandleOwner)
 		expect(owner.state).toBeDefined()
@@ -198,7 +198,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 				},
 			}
 			await using host = await createCoreTestHost({
-				storage: { mounts: { '/': { backend: Passthrough, fs: native, prefix } } },
+				zenfs: { mounts: { '/': { backend: Passthrough, fs: native, prefix } } },
 			})
 			const owner = await host.add(ownerClass)
 			expect(requireTinyBaseHost(getCoreTestHostContext(host)).status()).toEqual([])
@@ -224,7 +224,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 			const prefix = await directory()
 			const file = nodeFile(prefix, HandleOwner)
 			const text = encodeSnapshot(
-				{ kind: 'plugin', node: pluginNodeAddressOf(HandleOwner) },
+				{ kind: 'plugin', node: HandleOwner.nodeAddress() },
 				[{}, { value: 'confirmed' }],
 				10000,
 			)
@@ -248,7 +248,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 				},
 			}
 			await using host = await createCoreTestHost({
-				storage: { mounts: { '/': { backend: Passthrough, fs: native, prefix } } },
+				zenfs: { mounts: { '/': { backend: Passthrough, fs: native, prefix } } },
 			})
 			const owner = await host.add(HandleOwner)
 			const store: Store = createStore().setValue('seed', 'unpublished candidate')
@@ -290,7 +290,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 				expect(persisted).toBe(backing === 'existing' ? text : undefined)
 				await host.dispose()
 				await using reopened = await createCoreTestHost({
-					storage: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
+					zenfs: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
 				})
 				const replacement = await reopened.add(HandleOwner)
 				const restored = await replacement.state.open()

@@ -137,7 +137,7 @@ beforeEach(() => {
 		catalog: { snapshot: vi.fn(), updateLayout: vi.fn() },
 		plugins: { status: vi.fn(), setAutoStart: vi.fn(), applyLifecycleCommands: vi.fn() },
 		config: {
-			status: vi.fn(async () => ({ version: null, readonly: false })),
+			status: vi.fn(async () => ({ readonly: false })),
 			presentation: vi.fn(),
 			get: vi.fn(),
 			patch: vi.fn(),

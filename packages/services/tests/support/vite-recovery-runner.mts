@@ -65,7 +65,6 @@ export class Dependent extends BasePlugin {
 await writeFile(
 	resolve(root, 'pluxel.static.ts'),
 	`
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
 import { workbenchService } from '@pluxel/workbench/service'
@@ -74,7 +73,7 @@ import { Owner, Dependent } from './src/index'
 export default defineHostApplication((startup) => ({
   name: 'workbench-hmr', plugins: [Owner, Dependent],
     services: [...standardServices(), workbenchService()],
-    state: { initial: { autoStart: [Owner, Dependent].map(pluginNodeAddressOf) } },
+    runtime: { state: { autoStart: [Owner, Dependent].map((plugin) => plugin.nodeAddress()) } },
   prepare({ host }) { startup.bindings.capture(host) },
 }))
 `,

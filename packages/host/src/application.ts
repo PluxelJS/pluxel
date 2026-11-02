@@ -1,5 +1,5 @@
 import { recordLoadedApplicationPlugins } from './loaded-modules'
-import { resolveHostStateInitial } from './state-store'
+import { snapshotHostRuntime } from './runtime'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { readFile, realpath } from 'node:fs/promises'
 import { installedPackageFacts } from './shared-packages'
@@ -11,13 +11,7 @@ import { installPluginSources, pluginSource } from './source-contract'
 import { setHostCatalogProvenance } from './catalog-provenance'
 import type { PluginCatalogProvenance } from './catalog'
 import type { PluginConstructor } from '@pluxel/core'
-import { defineHostService } from './services'
-import { createHost, type HostApplication, type HostRuntimeOptions, type PluginHost } from './host'
-import {
-	assertConfigArtifact,
-	snapshotConfigSyncOptions,
-	type HostConfigArtifact,
-} from './config-sync-protocol'
+import { createHost, type HostApplication, type HostOptions, type PluginHost } from './host'
 
 export type HostStartupContext<
 	TBindings extends Readonly<Record<string, unknown>> = Readonly<Record<string, unknown>>,
@@ -29,8 +23,9 @@ export type HostStartupContext<
 	deployment?: Readonly<{
 		root: string
 		target: 'node'
+		delivery: 'standalone' | 'modules'
 		variant: 'headless' | 'workbench'
-		application?: HostConfigArtifact
+		application?: Readonly<{ name: string; catalogHash: string }>
 	}>
 }>
 /** Complete application configuration evaluated once for each fresh Host. */
@@ -51,7 +46,7 @@ export function defineHostApplication<const T extends HostApplicationFactory>(
 	return factory
 }
 
-export type ResolvedHostApplication = HostRuntimeOptions &
+export type ResolvedHostApplication = Omit<HostOptions, 'plugins'> &
 	Readonly<{
 		/** Immutable shallow snapshot shared by the factory and prepare callback. */
 		startup: HostStartupContext
@@ -65,10 +60,7 @@ const fields = new Set([
 	'plugins',
 	'sources',
 	'services',
-	'config',
-	'state',
-	'configRecords',
-	'configSync',
+	'runtime',
 	'envBindings',
 	'fileBindings',
 	'prepare',
@@ -82,7 +74,7 @@ function assertFields(input: Record<string, unknown>, allowed: Set<string>, labe
 	for (const key of Object.keys(input))
 		if (!allowed.has(key)) throw new TypeError(`${label} includes unsupported "${key}"`)
 }
-export function assertHostApplication(input: unknown): asserts input is HostApplication {
+function assertApplicationShape(input: unknown): asserts input is HostApplication {
 	const app = record(input, '[host] Application')
 	assertFields(app, fields, '[host] Application')
 	if (!Array.isArray(app.plugins))
@@ -90,13 +82,14 @@ export function assertHostApplication(input: unknown): asserts input is HostAppl
 	if (app.sources !== undefined) {
 		if (!Array.isArray(app.sources))
 			throw new TypeError('[host] Application sources must be an array')
-		app.sources.forEach(pluginSource)
 	}
 	if (app.services !== undefined && !Array.isArray(app.services))
 		throw new TypeError('[host] Application services must be an array')
 	for (const key of ['envBindings', 'fileBindings'])
 		if (app[key] !== undefined && !Array.isArray(app[key]))
 			throw new TypeError(`[host] Application ${key} must be an array`)
+	if (app.name !== undefined && (typeof app.name !== 'string' || !app.name.trim()))
+		throw new TypeError('[host] Application name must be a non-empty string')
 	if (app.prepare !== undefined && typeof app.prepare !== 'function')
 		throw new TypeError('[host] Application prepare must be a function')
 }
@@ -120,18 +113,19 @@ function snapshotStartup(input: HostStartupContext): HostStartupContext {
 		const deployment = record(startup.deployment, '[host] startup.deployment')
 		assertFields(
 			deployment,
-			new Set(['root', 'target', 'variant', 'application']),
+			new Set(['root', 'target', 'delivery', 'variant', 'application']),
 			'[host] startup.deployment',
 		)
-		if (deployment.application !== undefined) assertConfigArtifact(deployment.application)
+		if (deployment.application !== undefined) assertApplicationFacts(deployment.application)
 		if (typeof deployment.root !== 'string' || !isAbsolute(deployment.root))
 			throw new TypeError('[host] startup.deployment.root must be absolute')
 		if (
 			deployment.target !== 'node' ||
+			!['standalone', 'modules'].includes(deployment.delivery as string) ||
 			!['headless', 'workbench'].includes(deployment.variant as string)
 		)
 			throw new TypeError(
-				'[host] startup.deployment requires target node and variant headless or workbench',
+				'[host] startup.deployment requires target node, delivery standalone or modules, and variant headless or workbench',
 			)
 	}
 	return Object.freeze({
@@ -159,47 +153,17 @@ export async function resolveHostApplication(
 	if (typeof factory !== 'function') throw new TypeError('[host] Application must be a factory')
 	const startup = snapshotStartup(input)
 	const application = await factory(startup)
-	assertHostApplication(application)
-	const configSync =
-		application.configSync !== undefined
-			? snapshotConfigSyncOptions(application.configSync)
-			: undefined
-	if (configSync && startup.deployment) {
-		const artifact = startup.deployment.application
-		if (
-			!artifact ||
-			artifact.name !== configSync.artifact.name ||
-			artifact.catalogHash !== configSync.artifact.catalogHash
-		)
-			throw new Error(
-				'[host:config-sync] Synchronization must match the deployed application artifact facts',
-			)
-	}
+	assertApplicationShape(application)
 	recordLoadedApplicationPlugins(factory, application.plugins)
 	const { envBindings, fileBindings, ...declaration } = application
 	const resolved = {
 		...declaration,
-		...(configSync ? { configSync } : {}),
 		plugins: [...application.plugins],
 		...(application.sources
 			? { sources: Object.freeze(application.sources.map(pluginSource)) }
 			: {}),
-		...(application.services ? { services: application.services.map(defineHostService) } : {}),
-		config: { ...application.config },
-		...(application.state
-			? {
-					state: {
-						...application.state,
-						initial: resolveHostStateInitial(application.state.initial),
-					},
-				}
-			: {}),
-		configRecords: {
-			...application.configRecords,
-			initial: mergeConfigRecords(application.configRecords?.initial, []),
-			baseSources: [...(application.configRecords?.baseSources ?? [])],
-			overlays: [...(application.configRecords?.overlays ?? [])],
-		},
+		...(application.services ? { services: [...application.services] } : {}),
+		runtime: snapshotHostRuntime(application.runtime),
 	}
 	const inputs = await resolveInputBindings(
 		{
@@ -213,15 +177,17 @@ export async function resolveHostApplication(
 		...resolved,
 		startup,
 		vaultBindings: inputs.vaultBindings,
-		configRecords: {
-			...resolved.configRecords,
-			initial: mergeConfigRecords(resolved.configRecords?.initial, inputs.base),
-			baseSources: [...(resolved.configRecords?.baseSources ?? []), ...inputs.baseSources],
-			overlays: [...(resolved.configRecords?.overlays ?? []), ...inputs.overlays],
-		},
-		config: {
-			...resolved.config,
-			...(resolved.name && !resolved.config?.name ? { name: resolved.name } : {}),
+		runtime: {
+			...resolved.runtime,
+			configRecords: {
+				...resolved.runtime.configRecords,
+				records: mergeConfigRecords(resolved.runtime.configRecords?.records, inputs.records),
+				declarationSources: [
+					...(resolved.runtime.configRecords?.declarationSources ?? []),
+					...inputs.declarationSources,
+				],
+				overlays: [...(resolved.runtime.configRecords?.overlays ?? []), ...inputs.overlays],
+			},
 		},
 	}
 }
@@ -269,10 +235,6 @@ export async function runHostApplication(
 	try {
 		const application = await loader.loadApplication(applicationEntry)
 		const resolved = await resolveHostApplication(application, startup)
-		if (resolved.configSync && !deployment)
-			throw new Error(
-				'[host:config-sync] Native synchronization requires the deployed application manifest',
-			)
 		const paths = await discoverPluginSources({
 			root: resolved.startup.root,
 			sources: resolved.sources ?? [],
@@ -314,10 +276,8 @@ export async function runHostApplication(
 		}
 		host = await createHost({
 			plugins,
-			config: resolved.config,
-			state: resolved.state,
-			configRecords: resolved.configRecords,
-			configSync: resolved.configSync,
+			name: resolved.name,
+			runtime: resolved.runtime,
 			vaultBindings: resolved.vaultBindings,
 			services: resolved.services,
 		})
@@ -364,7 +324,7 @@ async function readModuleDeployment(entry: string): Promise<HostStartupContext['
 			'[host] Native module startup requires a modules application deployment manifest',
 		)
 	const application = record(manifest.application, '[host] module deployment.application')
-	assertConfigArtifact(application)
+	assertApplicationFacts(application)
 	const server = record(manifest.server, '[host] module deployment.server')
 	if (
 		server.target !== 'node' ||
@@ -382,7 +342,23 @@ async function readModuleDeployment(entry: string): Promise<HostStartupContext['
 	return {
 		root,
 		target: 'node',
+		delivery: 'modules',
 		variant: workbench.included ? 'workbench' : 'headless',
 		application,
 	}
+}
+
+function assertApplicationFacts(
+	input: unknown,
+): asserts input is { name: string; catalogHash: string } {
+	const value = record(input, '[host] deployment.application')
+	if (
+		Object.keys(value).some((key) => !['name', 'catalogHash'].includes(key)) ||
+		typeof value.name !== 'string' ||
+		!value.name ||
+		value.name.length > 256 ||
+		typeof value.catalogHash !== 'string' ||
+		!/^[0-9a-f]{64}$/.test(value.catalogHash)
+	)
+		throw new TypeError('[host] deployment.application requires a name and SHA-256 catalogHash')
 }

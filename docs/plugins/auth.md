@@ -20,7 +20,6 @@ vp exec pluxel pncat add @pluxel/plugin-auth
 ```ts no-twoslash
 import { zenfs } from '@pluxel/core/config'
 import { AuthPlugin } from '@pluxel/plugin-auth'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 import { Passthrough } from '@pluxel/core/fs'
@@ -33,16 +32,18 @@ export default defineHostApplication(async (startup) => {
 	return {
 		name: 'my-app',
 		plugins: [AuthPlugin],
-		config: {
-			storage: zenfs({
+		services: await servicesPreset(startup, {}),
+		runtime: {
+			zenfs: zenfs({
 				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 				durableMounts: ['/'],
 			}),
-		},
-		services: await servicesPreset(startup, {}),
-		state: { initial: { autoStart: [pluginNodeAddressOf(AuthPlugin)] } },
-		configRecords: {
-			initial: [{ owner: pluginNodeAddressOf(AuthPlugin), config: { mode: { type: 'password' } } }],
+			state: {
+				autoStart: [AuthPlugin.nodeAddress()],
+			},
+			configRecords: {
+				records: [{ owner: AuthPlugin.nodeAddress(), config: { mode: { type: 'password' } } }],
+			},
 		},
 	}
 })
@@ -80,7 +81,6 @@ OIDC challenge 返回固定 same-origin navigation path。Authorization redirect
 
 ```ts no-twoslash
 import { AuthPlugin, AuthConfig, AuthVaultSchema } from '@pluxel/plugin-auth'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication, envBinding } from '@pluxel/host'
 import { managementAccess } from '@pluxel/services/management/access'
 import { vault } from '@pluxel/services/vault'
@@ -88,7 +88,6 @@ import { vault } from '@pluxel/services/vault'
 export default defineHostApplication(() => ({
 	plugins: [AuthPlugin],
 	services: [managementAccess(), vault({ backend: 'bindings' })],
-	state: { initial: { autoStart: [pluginNodeAddressOf(AuthPlugin)] } },
 	envBindings: [
 		envBinding(AuthPlugin, {
 			config: { schema: AuthConfig, mapping: { mode: 'AUTH_MODE' } },
@@ -98,6 +97,11 @@ export default defineHostApplication(() => ({
 			},
 		}),
 	],
+	runtime: {
+		state: {
+			autoStart: [AuthPlugin.nodeAddress()],
+		},
+	},
 }))
 ```
 

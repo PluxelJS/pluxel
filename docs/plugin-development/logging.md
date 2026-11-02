@@ -7,9 +7,9 @@ Plugin 使用 Core 自带的 `ctx.logger` 记录事件；Host 管理输出、路
 
 Plugin 作者从[写法选择](#写法选择)和[延迟计算](#延迟计算)开始；宿主输出见[Host 日志配置](../host/configuration.md#host-logging)，在线读取见[开发控制台](../development/dev-console.md#有界操作日志与等待)。`ctx.logger` 是 Core 基础能力，输出和存储由宿主另外配置。
 
-Host 直接使用原生 LogTape `Config`：任意 sink、formatter、filter、logger 继承与 `contextLocalStorage` 都可由应用配置；Pluxel 只补充 Context 身份、插件 policy、有界诊断 store 和关闭所有权。`config.logger: logtape()`（`@pluxel/core/config`）提供可选的 console/store 预设，不要求把原生输出改写成 `kind`/route 描述。插件继续使用自己的 `ctx.logger`，无需安装日志服务。
+Host 直接使用原生 LogTape `Config`：任意 sink、formatter、filter、logger 继承与 `contextLocalStorage` 都可由应用配置；Pluxel 只补充 Context 身份、插件 policy、有界诊断 store 和关闭所有权。`runtime.logtape: logtape()`（`@pluxel/core/config`）提供可选的 console/store 预设，不要求把原生输出改写成 `kind`/route 描述。插件继续使用自己的 `ctx.logger`，无需安装日志服务。
 
-自定义输出若仍需 Pluxel 的插件身份与 Context 展示，可从可选的 pretty 叶入口取得 sink；把下面的声明放入应用 `config.logger`，资源由 Core 准备和关闭：
+自定义输出若仍需 Pluxel 的插件身份与 Context 展示，可从可选的 pretty 叶入口取得 sink；把下面的声明放入应用 `runtime.logtape`，资源由 Core 准备和关闭：
 
 ```ts
 import { logtape } from '@pluxel/core/config'

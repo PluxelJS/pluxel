@@ -50,7 +50,7 @@ description: 按依赖自动整理插件，并用界面或受信任的 Host 文�
 
 ## 让 coding agent 编辑布局
 
-分组保存在 Core 内建 TinyBase 的 Management 私有文档中，物理快照由 Host 管理。[后端选择](../host/configuration.md#选择文件后端)决定是否跨 Host 保留。
+分组作为普通文档保存在 Core FS 的 `services/host/management/plugin-groups.json`，由 Management 校验并在原子提交后发布。[后端选择](../host/configuration.md#选择文件后端)决定是否跨 Host 保留。
 
 通过已有的认证 Management client 读取 `client.catalog.snapshot()`，再提交 `client.catalog.updateLayout({ sections })`。每个 section 包含稳定的 `sectionId`、名称和完整的 `PluginNodeAddress` 数组；将 `sections` 设为 `null` 可恢复自动分组。等待操作成功后重新读取目录，核对实际结果，不直接修改 backing envelope。
 

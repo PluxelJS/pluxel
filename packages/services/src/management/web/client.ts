@@ -1,4 +1,4 @@
-import type { HostConfigState, HostConfigVersion } from '@pluxel/host'
+import type { HostConfigState } from '@pluxel/host'
 import {
 	cloneRuntimeUpdateSnapshot,
 	type RuntimeUpdateSnapshot,
@@ -101,16 +101,8 @@ export type RuntimeManagementClient = Readonly<{
 		status(): Promise<HostConfigState>
 		presentation(owner: PluginNodeAddress): Promise<ConfigPresentationResult>
 		get(owner: PluginNodeAddress): Promise<ConfigResult>
-		patch(
-			owner: PluginNodeAddress,
-			patch: Record<string, unknown>,
-			expected?: HostConfigVersion,
-		): Promise<ConfigResult>
-		patchField(
-			owner: PluginNodeAddress,
-			input: ConfigFieldMutation,
-			expected?: HostConfigVersion,
-		): Promise<ConfigResult>
+		patch(owner: PluginNodeAddress, patch: Record<string, unknown>): Promise<ConfigResult>
+		patchField(owner: PluginNodeAddress, input: ConfigFieldMutation): Promise<ConfigResult>
 	}>
 	dependencies: Readonly<{
 		graph(): Promise<PluginDependencyGraphSnapshot>
@@ -140,11 +132,7 @@ export type RuntimeManagementClient = Readonly<{
 				requirement: PluginDefinitionAddress
 			}
 		}): Promise<EnsureForkResult>
-		remove(input: {
-			base: PluginNodeAddress
-			forkId: string
-			expected?: HostConfigVersion
-		}): Promise<RemoveForkResult>
+		remove(input: { base: PluginNodeAddress; forkId: string }): Promise<RemoveForkResult>
 	}>
 	logging: Readonly<LoggingHandleApi>
 	logs: RuntimeLogClient
@@ -208,10 +196,10 @@ export function createRuntimeManagementClient(
 			presentation: (owner) =>
 				call((root) => root.pluginConfigPresentationDto(owner), parseConfigPresentationResult),
 			get: (owner) => call((root) => root.pluginConfigDto(owner), parseConfigResult),
-			patch: (owner, patch, expected) =>
-				call((root) => root.patchPluginConfigDto(owner, patch, expected), parseConfigResult),
-			patchField: (owner, input, expected) =>
-				call((root) => root.patchPluginConfigFieldDto(owner, input, expected), parseConfigResult),
+			patch: (owner, patch) =>
+				call((root) => root.patchPluginConfigDto(owner, patch), parseConfigResult),
+			patchField: (owner, input) =>
+				call((root) => root.patchPluginConfigFieldDto(owner, input), parseConfigResult),
 		}),
 		dependencies: Object.freeze({
 			graph: () =>

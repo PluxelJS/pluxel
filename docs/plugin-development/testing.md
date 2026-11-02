@@ -94,15 +94,16 @@ it('runs a plugin without optional services', async () => {
 })
 ```
 
-| 选项                      | 语义                                                                                                                        |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `services`                | 默认 `[]`；完整服务列表，不隐式合并、不自动安装 standardServices                                                            |
-| `workbench`               | 默认 `false`；`true` 安装 Workbench 测试后端、Management 与打开 entry 的 driver                                             |
-| `management`              | 省略时随 `workbench` 启用，否则为 `false`；可单独设为 `true` 测管理面；与 `workbench: true` 同时显式设为 `false` 时拒绝配置 |
-| `config`                  | 复用 Core 配置，省略时采用测试 root 的默认配置；不是服务或插件 catalog 的容器                                               |
-| `state` / `configRecords` | 复用 Host 存储选项，默认借用 Core 文档；省略 `config.storage` 时每个测试宿主独立使用内存                                    |
+| 选项                                      | 语义                                                                                                                        |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `services`                                | 默认 `[]`；完整服务列表，不隐式合并、不自动安装 standardServices                                                            |
+| `workbench`                               | 默认 `false`；`true` 安装 Workbench 测试后端、Management 与打开 entry 的 driver                                             |
+| `management`                              | 省略时随 `workbench` 启用，否则为 `false`；可单独设为 `true` 测管理面；与 `workbench: true` 同时显式设为 `false` 时拒绝配置 |
+| `name`                                    | 测试 Host 的顶层名称                                                                                                        |
+| `runtime`                                 | 复用生产 Host 的 zenfs/logtape/tinybase/state/configRecords 运行配置                                                        |
+| `runtime.state` / `runtime.configRecords` | 复用 Host 存储选项和声明覆盖规则；省略 `runtime.zenfs` 时每个测试宿主独立使用内存                                           |
 
-Host 自己的图策略、配置记录与 Plugin 业务文件是不同职责，但共用 Core 选择的文件后端。每个测试 Host 固定提供 `ctx.fs()` 与 `ctx.tinybase`，默认使用 InMemory；跨 Host 恢复测试在 `config.storage` 中选择持久[文件后端](./fs.md)。
+Host 自己的图策略、配置记录与 Plugin 业务文件是不同职责，但共用 Core 选择的文件后端。每个测试 Host 固定提供 `ctx.fs()` 与 `ctx.tinybase`，默认使用 InMemory；跨 Host 恢复测试在 `runtime.zenfs` 中选择持久[文件后端](./fs.md)。
 
 `createTestHost()` 返回 Promise，使用 `await using host = await createTestHost(...)` 管理关闭。
 
@@ -230,23 +231,21 @@ Core 内部 harness 的 desired config mutation 属于白盒图测试；普通�
 `summary.lifecycleReport`。预期 start、blocked 或 drain failure 时使用 `commitExpectFail()`：
 
 ```ts no-twoslash
-import { pluginNodeAddressOf } from '@pluxel/core'
-
 const failure = await host.commitExpectFail((change) => {
 	change.start(ConsumerPlugin, { catalog: [BrokenProviderPlugin] })
 })
 
 expect(failure.lifecycleReport.issues).toContainEqual(
 	expect.objectContaining({
-		plugin: pluginNodeAddressOf(BrokenProviderPlugin),
+		plugin: BrokenProviderPlugin.nodeAddress(),
 		kind: 'start-failed',
 	}),
 )
 expect(failure.lifecycleReport.issues).toContainEqual(
 	expect.objectContaining({
-		plugin: pluginNodeAddressOf(ConsumerPlugin),
+		plugin: ConsumerPlugin.nodeAddress(),
 		kind: 'dependency-blocked',
-		blockedBy: pluginNodeAddressOf(BrokenProviderPlugin),
+		blockedBy: BrokenProviderPlugin.nodeAddress(),
 	}),
 )
 ```

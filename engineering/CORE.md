@@ -18,7 +18,7 @@
 - Plugin/Part composite object config declaration、校验与 normalized aggregate snapshot；
 - init-time `PluginRef` optional resolution、slot-aware runtime reads 和明确的 internal commit subscription；
 - 运行时数据 FS、原子写入、TinyBase writer/codec、confirmed documents 与 generation 保存屏障，见 [FS](FS.md) 与 [TinyBase](TINYBASE.md)；
-- 通过 `config.logger: logtape(...)` 选择的原生日志运行时、policy、store 与 query，见 [Logging](LOGGING.md)。
+- 通过 `runtime.logtape: logtape(...)` 选择的原生日志运行时、policy、store 与 query，见 [Logging](LOGGING.md)。
 
 ## 不负责
 
@@ -59,7 +59,7 @@ plan-local prototype getter 直接调用预编译 resolver，再读取 dense arr
 稍后观察到的 mutable config object。caller-derived view 共享 provider root/generation backing，但拥有独立 owner-view cache 和
 readonly caller pin；它不是 containment parent，因此 caller A/B 并发冷访问不会互相污染 owner attribution。
 
-Core 不给 Context kernel 增加异步生命周期。固定 FS 与 TinyBase 由 Core 的 effects 和 commit hooks 管理：访问和文档操作才准备 IO，generation 发布后自动保存，最终先关闭 TinyBase 再关闭 FS。所选日志由 Core 准备并在 TinyBase/FS 前关闭。生产 Host 自动等待 `prepareCoreContext(root)`；Core-only 嵌入者在启动 Plugin 前显式等待该函数（`@pluxel/core/host`）。Host 配置/状态会在接纳 Plugin 前通过私有文档操作确认恢复；显式服务继续使用自己的 prepare 阶段。
+Core 不给 Context kernel 增加异步生命周期。固定 FS 与 TinyBase 由 Core 的 effects 和 commit hooks 管理：访问文件和文档操作才准备 IO，generation 发布后自动保存，最终先关闭 TinyBase 再关闭 FS。所选日志由 Core 准备并在 TinyBase/FS 前关闭。生产 Host 自动等待 `prepareCoreContext(root)`；Core-only 嵌入者在启动 Plugin 前显式等待该函数（`@pluxel/core/host`）。Host 配置/状态会在接纳 Plugin 前通过私有文档操作确认恢复；显式服务继续使用自己的 prepare 阶段。
 
 Core workspace 在源码层把 `@pluxel/context` 声明为 `devDependencies: workspace:*`，并由 tsdown 的 `alwaysBundle` 同时内联
 JavaScript 与 declarations。发布的 `@pluxel/core` 不要求消费者安装 `@pluxel/context`，也不留下对它的生产 import；需要直接

@@ -2,7 +2,7 @@ import type { FieldNode } from 'valibot-form'
 export { adaptConfigPresentationFields } from '../../workbench/presentationAdapter'
 
 /**
- * Build a patch containing only renderer-editable fields.
+ * Build a patch containing only renderer-editable fields changed from the displayed baseline.
  *
  * Object nodes are merged recursively so an unsupported child always keeps the
  * last server value. Collection and union nodes containing unsupported children
@@ -29,6 +29,9 @@ function editableValue(
 	current: unknown,
 ): { editable: true; value: unknown } | { editable: false } {
 	if (node.kind === 'unsupported' || node.meta.readOnly || node.meta.disabled) {
+		return { editable: false }
+	}
+	if (Object.is(candidate, current) || JSON.stringify(candidate) === JSON.stringify(current)) {
 		return { editable: false }
 	}
 	if (node.kind !== 'object') return { editable: true, value: candidate }
@@ -71,7 +74,13 @@ export function applyConfigSources(
 					readOnly: true,
 					description: [
 						field.meta.description,
-						source.kind === 'env' ? `由环境变量 ${source.name ?? ''} 控制，只读` : '此配置来源只读',
+						source.kind === 'env'
+							? `由环境变量 ${source.name ?? ''} 控制，只读`
+							: source.kind === 'file'
+								? `由文件 ${source.name ?? ''} 提供，只读`
+								: source.kind === 'declaration'
+									? '由应用声明提供，只读'
+									: '此配置来源只读',
 					]
 						.filter(Boolean)
 						.join('。'),

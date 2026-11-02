@@ -1,5 +1,4 @@
 import { FontsPlugin } from '@pluxel/plugin-fonts'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
 import { TakumiPlugin } from '@pluxel/plugin-takumi'
@@ -18,7 +17,9 @@ const plugins = [
 export default defineHostApplication(() => ({
 	name: 'render-fixture',
 	plugins,
-	configRecords: { mode: 'memory' },
-	state: { mode: 'memory', initial: { autoStart: plugins.map(pluginNodeAddressOf) } },
 	services: standardServices(),
+	runtime: {
+		configRecords: { mode: 'memory' },
+		state: { mode: 'memory', autoStart: plugins.map((plugin) => plugin.nodeAddress()) },
+	},
 }))

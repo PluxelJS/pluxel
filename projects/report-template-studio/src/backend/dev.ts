@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { createServer, type Plugin, type ViteDevServer } from 'vite'
-import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '@pluxel/core'
+import { pluginDefinitionAddressOf } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { host, closeHostViteSession, type HostVitePluginApi } from '@pluxel/host-vite'
 import { serviceSingletons } from '@pluxel/services/vite'
@@ -35,7 +35,7 @@ export async function startDevBackend(
 					})
 					if (!declaration)
 						throw new Error('StudioPlugin is missing from the current application catalog')
-					const address = pluginNodeAddressOf(declaration)
+					const address = declaration.nodeAddress()
 					const registry = requirePluginService(input.host.ctx)
 					const current = () => registry.getInstance(address) as NativeDesktopApi | undefined
 					// Attach precedes activation. The committed-instance watcher publishes readiness.

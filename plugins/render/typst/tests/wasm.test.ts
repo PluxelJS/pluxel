@@ -1,6 +1,5 @@
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { afterEach, expect, it, vi } from 'vitest'
 import { TypstPlugin } from '../src/wasm.ts'
@@ -28,17 +27,19 @@ it('runs WASM through Pluxel, recovers source errors, and restarts without nativ
 		return new Response(await readFile(path))
 	})
 	await using host = await createTestHost({
-		configRecords: {
-			initial: [
-				{
-					owner: pluginNodeAddressOf(TypstPlugin),
-					config: {
-						compilerWasmUrl: 'https://example.test/compiler.wasm',
-						rendererWasmUrl: 'https://example.test/renderer.wasm',
-						fontUrls: [],
+		runtime: {
+			configRecords: {
+				records: [
+					{
+						owner: TypstPlugin.nodeAddress(),
+						config: {
+							compilerWasmUrl: 'https://example.test/compiler.wasm',
+							rendererWasmUrl: 'https://example.test/renderer.wasm',
+							fontUrls: [],
+						},
 					},
-				},
-			],
+				],
+			},
 		},
 	})
 	const typst = await host.start(TypstPlugin)

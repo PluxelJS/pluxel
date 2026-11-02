@@ -7,12 +7,7 @@ import {
 	configSchema,
 	type InputSchema,
 } from './input-binding-contract'
-import {
-	pluginNodeAddressOf,
-	pluginNodeIndexKey,
-	type PluginConstructor,
-	type PluginNodeAddress,
-} from '@pluxel/core'
+import { pluginNodeIndexKey, type PluginConstructor, type PluginNodeAddress } from '@pluxel/core'
 import type { PluginConfigRecordSnapshot } from '@pluxel/core/services'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { projectRawInput, type Schema } from 'valibot-form'
@@ -22,8 +17,8 @@ import type { HostVaultBindingRecord } from './bindings'
 
 type Source = Readonly<{ path: readonly string[]; kind: 'env'; name: string }>
 export type ResolvedInputBindings = Readonly<{
-	base: readonly PluginConfigRecordSnapshot[]
-	baseSources: readonly {
+	records: readonly PluginConfigRecordSnapshot[]
+	declarationSources: readonly {
 		owner: PluginNodeAddress
 		path: readonly string[]
 		kind: 'file'
@@ -208,15 +203,15 @@ export async function resolveInputBindings(
 	application: HostApplication,
 	startup: HostStartupContext,
 ): Promise<ResolvedInputBindings> {
-	const base: PluginConfigRecordSnapshot[] = []
-	const baseSources: ResolvedInputBindings['baseSources'][number][] = []
+	const records: PluginConfigRecordSnapshot[] = []
+	const declarationSources: ResolvedInputBindings['declarationSources'][number][] = []
 	const overlays: ResolvedInputBindings['overlays'][number][] = []
 	const vaultBindings: HostVaultBindingRecord[] = []
 	const seen = new Set<string>()
 	const target = (plugin: PluginConstructor, kind: string, namespace = '', key = '') => {
 		if (typeof plugin !== 'function')
 			fail('[host] Input bindings require an explicit Plugin constructor')
-		const owner = pluginNodeAddressOf(plugin)
+		const owner = plugin.nodeAddress()
 		const identity = JSON.stringify([pluginNodeIndexKey(owner), kind, namespace, key])
 		if (seen.has(identity)) fail('[host] An input target cannot have multiple source bindings')
 		seen.add(identity)
@@ -298,15 +293,15 @@ export async function resolveInputBindings(
 			const value = await readJson(binding.config.path, startup.root)
 			if (!record(value))
 				throw new InputBindingError('INVALID_INPUT', '[host] A config file must contain an object')
-			base.push({ owner, config: value })
-			const fileSource: ResolvedInputBindings['baseSources'][number] = {
+			records.push({ owner, config: value })
+			const fileSource: ResolvedInputBindings['declarationSources'][number] = {
 				owner,
 				path: [],
 				kind: 'file',
 				name: binding.config.path,
 			}
 			declaredConfigBindings.add(fileSource)
-			baseSources.push(fileSource)
+			declarationSources.push(fileSource)
 		}
 		for (const [key, path] of binding.vault?.paths ?? []) {
 			const owner = target(binding.plugin, 'vault', binding.namespace, key)
@@ -357,7 +352,7 @@ export async function resolveInputBindings(
 			vaultBindings.push(entry)
 		}
 	}
-	return { base, baseSources, overlays, vaultBindings }
+	return { records, declarationSources, overlays, vaultBindings }
 }
 
 export { InputBindingError } from './input-binding-contract'

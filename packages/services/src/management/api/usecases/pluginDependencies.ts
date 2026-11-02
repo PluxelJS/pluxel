@@ -207,6 +207,7 @@ export async function setPluginProviderDefault(
 function dependencyMutationFailure(error: unknown): PluginDependencyMutationResult {
 	if (error instanceof HostStateMutationRejectedError) {
 		switch (error.code) {
+			case 'state_overridden':
 			case 'consumer_unavailable':
 			case 'provider_unavailable':
 			case 'not_forkable':

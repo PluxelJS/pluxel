@@ -656,7 +656,7 @@ export function parseDirectMapping(
 	})
 }
 
-function directObjectProperties(
+export function directObjectProperties(
 	node: AstNode,
 	label: string,
 	id: string,

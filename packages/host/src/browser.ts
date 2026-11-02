@@ -4,11 +4,3 @@ export { defineHostService, type HostService, type HostServiceDependencies } fro
 export type { PluginApplyReport } from './coordinator'
 export type { HostPluginStatusOverview, HostPluginStatusSnapshot } from './status'
 export type { HostConfigState, HostPluginConfigResult } from './config'
-export type {
-	HostConfigArtifact,
-	HostConfigVersion,
-	HostConfigMutationOptions,
-	HostConfigSyncOptions,
-	HostConfigSyncStatus,
-	HostConfigSync,
-} from './config-sync-protocol'

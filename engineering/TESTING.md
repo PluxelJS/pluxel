@@ -27,7 +27,7 @@ carrier、browser 和 deployment 行为仍要在各自真实边界验证。
 
 选择无显式制品来源的 Node 服务后，组合层接入正式按需源码编译器并拥有其关闭；显式制品来源保留制品消费路径。Vitest 插件只作用于 Vitest 模块图，不会隐式流入独立 Node 制品构建。领域 driver 与 compiler 仍由各自 package 维护，组合层负责接线和测试寿命。
 
-`@pluxel/test` 显式声明 Services 等安装依赖；生产 Host/Core 不反向依赖它。安装依赖与初始化可选服务分开，不用 optional peer 或动态 import 吞错伪造 API 可用性。`config`、`state`、`configRecords` 复用 Core/Host 契约，默认 Core FS 使用 InMemory，Plugin 不需安装存储服务；持久化测试通过 `config.storage` 选择后端。
+`@pluxel/test` 显式声明 Services 等安装依赖；生产 Host/Core 不反向依赖它。安装依赖与初始化可选服务分开，不用 optional peer 或动态 import 吞错伪造 API 可用性。`name` 与 `runtime` 复用生产 Host 契约；`runtime.state`、`runtime.configRecords` 使用相同声明与覆盖规则，默认 Core FS 使用 InMemory，Plugin 不需安装存储服务；持久化测试通过 `runtime.zenfs` 选择后端。
 
 事务 draft 只负责测试断言、目标校验与同步回调作用域；catalog、状态修改、配置应用与 graph commit 仍由 Host 唯一 authority 执行。
 测试 HTTP 与 Workbench driver 拥有本次测试打开的响应 body、RPC handle 和 lease；泄漏会在关闭时报告，所有清理仍然执行。

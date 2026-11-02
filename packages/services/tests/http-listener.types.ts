@@ -2,6 +2,7 @@ import type { ListenElysiaOptions } from '../src/elysia-node'
 
 const nativeOptions = {
 	port: '3000',
+	publicOrigin: 'https://app.example.test',
 	node: { keepAliveTimeout: 1000 },
 	trustProxy: 'loopback',
 	plugins: [(server) => server.options.middleware.push((_request, next) => next())],

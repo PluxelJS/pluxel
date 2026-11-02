@@ -4,7 +4,7 @@
 
 根入口的 `standardServices()` 组合 Elysia、Commands、Node artifacts 和 Workers，不加载 Management 或 Workbench 后端。官方完整应用组合使用 `@pluxel/services/preset`，Vite 附件组合使用 `@pluxel/services/vite`；应用构建统一使用 `@pluxel/rolldown` 的 `pluxel()`。自定义宿主逐项选择服务与 `/elysia/vite`、`/node/vite` 附件。开发控制台归 `@pluxel/host-vite/console`。
 
-FS 与 TinyBase 是 Core 固定能力，通过 `ctx.fs()` 与 `ctx.tinybase` 使用；后端在 Host 的 `config.storage` 中选择一次，TinyBase 预算在 `config.tinybase` 中设置。Core 安装其精确 TinyBase 版本；只有直接导入原生 Store、Queries 等参与托管互操作的插件声明同版 peer 与 devDependency，见[插件包](../../docs/development/plugin-package.md)。
+FS 与 TinyBase 是 Core 固定能力，通过 `ctx.fs()` 与 `ctx.tinybase` 使用；后端在 Host 的 `runtime.zenfs` 中选择一次，TinyBase 预算在 `runtime.tinybase` 中设置。Core 安装其精确 TinyBase 版本；只有直接导入原生 Store、Queries 等参与托管互操作的插件声明同版 peer 与 devDependency，见[插件包](../../docs/development/plugin-package.md)。
 
 ```ts
 import { zenfs } from '@pluxel/core/config'
@@ -18,13 +18,13 @@ const prefix = resolve('./data/fs')
 await nativeFs.promises.mkdir(prefix, { recursive: true })
 const host = await createHost({
 	plugins: [],
-	config: {
-		storage: zenfs({
+	services: [vault()],
+	runtime: {
+		zenfs: zenfs({
 			mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 			durableMounts: ['/'],
 		}),
 	},
-	services: [vault()],
 })
 try {
 	await host.start()
@@ -45,7 +45,7 @@ try {
 
 Plugin 基于 `@pluxel/core`，固定拥有[文件存储](../../docs/plugin-development/fs.md)与[状态 Store](../../docs/plugin-development/tinybase.md)能力；通过 `ctx.require(Vault)` 或 `ctx.require(Commands)` 读取必需能力；可选集成直接检查相应属性。服务目录类型不表示所有 Host 已安装该服务。
 
-`this.ctx.logger` 由 Core 始终提供，插件无需 import 日志包；应用通过 `config.logger: logtape(nativeConfig, options)`（`@pluxel/core/config`）配置输出、过滤和日志存储，宿主查询从 `@pluxel/core/logging` 读取；省略 `logger` 不安装进程日志配置。
+`this.ctx.logger` 由 Core 始终提供，插件无需 import 日志包；应用通过 `runtime.logtape: logtape(nativeConfig, options)`（`@pluxel/core/config`）配置输出、过滤和日志存储，宿主查询从 `@pluxel/core/logging` 读取；省略 `logger` 不安装进程日志配置。
 
 完整用法与生命周期约束见 [组合 Host 服务](https://github.com/PluxelJS/pluxel/blob/main/docs/host/services.md)。
 

@@ -25,15 +25,15 @@ description: 使用官方默认组合运行应用，或按需选择 Host 服务�
 | `@pluxel/services/vite` 的 `vitePreset()`       | 为已安装服务接入开发附件        |
 | `@pluxel/rolldown` 的 `pluxel()`                | 选择应用交付并编译 Shell 与制品 |
 
-`servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、Vault、Management，以及 `managementCommands()` 提供的基础插件命令，默认加入 Workbench，页面位于 `/__pluxel/workbench`。FS 与 TinyBase 属于每个 Core 的固定能力，[后端](./configuration.md#选择文件后端)只在 Host 的 `config.storage` 中选择。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`workbench: false` 关闭工作台，Management 仍可用。省略 `workbench` 时默认启用；显式传入非布尔值或未知顶层选项会在服务加载前拒绝并指出字段。日志由应用通过 `config.logger: logtape()`（`@pluxel/core/config`）配置，preset 不补装输出。数据库或自定义管理面组合使用下文的显式服务安装器。
+`servicesPreset()` 异步返回普通服务清单，按所选能力加载模块；资源仍由 Host 准备与关闭。它提供 HTTP、Commands、NodeModules、Workers、Vault、Management，以及 `managementCommands()` 提供的基础插件命令，默认加入 Workbench，页面位于 `/__pluxel/workbench`。FS 与 TinyBase 属于每个 Core 的固定能力，[后端](./configuration.md#选择文件后端)只在 Host 的 `runtime.zenfs` 中选择。它不加入业务 Plugin 或 Database；额外服务可以追加到等待得到的数组。可传 `product` 设置产品信息，`workbench: false` 关闭工作台，Management 仍可用。省略 `workbench` 时默认启用；显式传入非布尔值或未知顶层选项会在服务加载前拒绝并指出字段。日志由应用通过 `runtime.logtape: logtape()`（`@pluxel/core/config`）配置，preset 不补装输出。数据库或自定义管理面组合使用下文的显式服务安装器。
 
 `vitePreset()` 组合通用 Host 开发驱动与官方服务开发附件，只为应用实际安装的 HTTP、NodeModules、Workbench 接入支持；Workbench 制品模块按需加载。Services 的官方组合分别拥有运行时服务和 Vite 附件；应用交付与配套制品统一由 `@pluxel/rolldown` 的 `pluxel()` 构建。`@pluxel/services` 根入口只提供 `standardServices()`，不加载 Management 或 Workbench 后端。
 
 开发控制台归 `@pluxel/host-vite`，基础 `host({ entry, devConsole: true })` 即可启用；官方 `vitePreset()` 接受同样的开关。它不要求安装服务。脚本显式 import 服务 API，通过借用的 `dev.ctx` 访问已安装能力；见[开发控制台](../development/dev-console.md)。Core 始终提供 `ctx.logger`，Logging 配置负责输出与存储，不是插件使用 logger 的前提。
 
-部署时，`servicesPreset()` 读取 `startup.deployment.root` 下的 `pluxel-deployment.json`，按交付种类选择 Node 制品来源：standalone 使用应用的 `artifacts/node`，modules 使用各已加载模块所属输出的已校验 inventory。清单缺失、无效或种类未知时启动失败。Workbench 制品仍从应用的 `workbench` 目录加载，搬移发行目录不需要改写应用中的制品路径。业务数据仍由应用选择，部署时使用发行目录外的绝对数据路径。
+部署入口解析并验证交付清单，把已确认的 `startup.deployment.delivery` 交给 `servicesPreset()`。preset 不重复读取清单；standalone 使用应用的 `artifacts/node`，modules 使用各已加载模块所属输出的已校验 inventory。清单缺失、无效或种类未知时由部署入口拒绝启动。Workbench 制品仍从应用的 `workbench` 目录加载，搬移发行目录不需要改写应用中的制品路径。业务数据仍由应用选择，部署时使用发行目录外的绝对数据路径。
 
-Host 的配置和启动策略默认通过 Core 私有文档保存，沿用 `config.storage`；普通应用无需额外接线。嵌入应用可继续提供[借用文档适配](./configuration.md#保存配置和运行策略)。已有配置或状态文件若解析或结构校验失败，Host 准备失败且保留原文件；人工修复或从备份恢复后再重启。环境变量由应用的配置工厂显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
+Host 的配置和启动策略默认通过 Core 私有文档保存，沿用 `runtime.zenfs`；普通应用无需额外接线。嵌入应用可继续提供[借用文档适配](./configuration.md#保存配置和运行策略)。已有配置或状态文件若解析或结构校验失败，Host 准备失败且保留原文件；人工修复或从备份恢复后再重启。环境变量由应用的配置工厂显式读取，例如按 `startup.env.PLUXEL_WORKBENCH !== 'false'` 设置 `workbench`。
 
 应用构建默认携带 Workbench shell；原生来源的共享身份由 runtime sharedPackages 选择。后台应用可以同时选择 `servicesPreset(startup, { workbench: false })` 与 `pluxel({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。`workbench: false` 保留认证与管理 HTTP/WebSocket 接入，但不加载 Workbench 后端或 Shell。
 
@@ -52,13 +52,13 @@ const prefix = resolve('./data/fs')
 await nativeFs.promises.mkdir(prefix, { recursive: true })
 const host = await createHost({
 	plugins: [MyPlugin],
-	config: {
-		storage: zenfs({
+	services: [vault()],
+	runtime: {
+		zenfs: zenfs({
 			mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 			durableMounts: ['/'],
 		}),
 	},
-	services: [vault()],
 })
 try {
 	await host.start()
@@ -67,15 +67,15 @@ try {
 }
 ```
 
-`plugins` 是可用目录；需要自动启动时，在 `state.initial.autoStart` 显式指定节点。`start()` 接纳目录并应用启动策略，服务准备在 `createHost()` 返回前完成。省略 `services` 不会创建附加服务的 backend、连接或清理任务。Vault 的默认加密后端借用 Core FS；`vault({ backend: 'bindings' })` 只提供部署绑定读取，不打开 Vault 加密目录。Host 不自动补装依赖。
+`plugins` 是可用目录；需要自动启动时，在 `runtime.state.autoStart` 显式指定节点。`start()` 接纳目录并应用启动策略，服务准备在 `createHost()` 返回前完成。省略 `services` 不会创建附加服务的 backend、连接或清理任务。Vault 的默认加密后端借用 Core FS；`vault({ backend: 'bindings' })` 只提供部署绑定读取，不打开 Vault 加密目录。Host 不自动补装依赖。
 
-`createHost()` 只接受 Host 配置字段，未知字段在资源获取前拒绝；应用解析结果中的 `startup/sources/prepare/name` 属于执行入口，不能整对象传给它。服务选择和配置容器在异步准备前捕获；`updateCatalog()` 同样捕获调用时的插件数组。借用的 storage、callback 与服务 handle 保留原身份。
+`createHost()` 只接受 Host 配置字段，未知字段在资源获取前拒绝；应用解析结果中的 `startup/sources/prepare` 属于执行入口，不能整对象传给它。服务选择和配置容器在异步准备前捕获；`updateCatalog()` 同样捕获调用时的插件数组。借用的 storage、callback 与服务 handle 保留原身份。
 
 两个 Host 可以使用不同清单；同一份服务声明也可创建多个相互隔离的 Host。安装集合创建后固定，普通 Plugin 更新复用已准备的服务。修改安装清单需要创建新 Host。
 
 ## Plugin 读取能力
 
-`this.ctx.logger` 是 Core 始终提供的基础能力，插件无需 import 日志包，也无需 `ctx.require(Logging)`。应用通过 `config.logger: logtape(nativeConfig, options)`（`@pluxel/core/config`）配置输出 sink、过滤策略和日志存储；省略 `logger` 不安装进程日志配置。`Logging` token 从 `@pluxel/core/logging` 导入，用于宿主侧读取已配置的 manager，见[日志配置](./configuration.md#host-logging)。
+`this.ctx.logger` 是 Core 始终提供的基础能力，插件无需 import 日志包，也无需 `ctx.require(Logging)`。应用在 `runtime.logtape` 直接提供原生 LogTape Config 或 root factory；框架选项使用 `{ input, options }`，`logtape()`（`@pluxel/core/config`）是可选输出预设；省略 `runtime.logtape` 不安装进程日志配置。`Logging` token 从 `@pluxel/core/logging` 导入，用于宿主侧读取已配置的 manager，见[日志配置](./configuration.md#host-logging)。
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
@@ -106,11 +106,7 @@ if (!snapshot.ok) throw new Error(snapshot.message)
 if (snapshot.readonly) throw new Error('Configuration is read-only')
 const checked = await host.config.validate(owner, { endpoint: 'https://example.com' })
 if (!checked.ok) throw new Error(checked.message)
-const result = await host.config.patch(
-	owner,
-	{ endpoint: 'https://example.com' },
-	{ expected: snapshot.version ?? undefined },
-)
+const result = await host.config.patch(owner, { endpoint: 'https://example.com' })
 if (!result.ok) throw new Error(result.message)
 // result.application 区分 applied、deferred 和 saved-not-applied。
 ```
@@ -119,7 +115,7 @@ if (!result.ok) throw new Error(result.message)
 
 写入顺序为校验一次 → 暂存标准化快照 → 等待存储完成 → 确认 revision → 通知运行中的 generation。停止的节点返回 `deferred`，通知失败返回 `saved-not-applied`，不会把已经保存的值报告为未修改。默认文档使用 Core 的文件后端；Host 拥有唯一的配置存储实现，管理 RPC 和开发控制台也委托同一套用例。
 
-成功读取与写入同时返回 `version` 和 `readonly`。启用[跨实例同步](./configuration.md#跨实例同步保存配置)时，writer 要求 patch/reset 原样带回读取时的 `version`；过期或缺失返回 `version_conflict`，不自动重试覆盖其他编辑。单实例 `version` 为 `null`。Management 的 `client.config.patch(owner, patch, version)` 与 `patchField(owner, input, version)` 遵循同一规则；`client.config.status()` 可读取不依赖插件 schema 的版本与只读状态。删除 fork 也需要对应版本，并在停止插件前拒绝只读或冲突请求。
+成功读取与写入返回 `readonly`，`host.config.status()` 与 Management 的 `client.config.status()` 提供不依赖插件 schema 的只读状态。管理调用使用 `client.config.patch(owner, patch)` 与 `patchField(owner, input)`；不要求部署版本或 expected 参数。文件外部变化通过同一配置校验与通知路径接纳，见[共享文件](./configuration.md#共享文件与外部修改)。多个实例同时写入可能覆盖修改，需要并发保证时使用数据库。
 
 关闭后所有配置方法拒绝新请求。Host 配置入口是受信任宿主 API，网络端点仍须通过既有认证和授权；它不会自动开放 RPC 或监听器。
 
@@ -162,7 +158,7 @@ export default defineConfig({
 
 `defineHostApplication(factory)` 提供 startup 上下文类型并保留工厂返回类型；`HostApplicationFactory` 表示工厂，`HostApplication` 表示其返回的完整配置对象。
 Host 每次启动传入 `{ root, mode, env, bindings, deployment }`，等待同步或异步工厂返回
-`plugins`、`sources`、`services`、`config`、`state`、`configRecords` 与可选 `prepare`。
+`name`、`plugins`、`sources`、`services`、`runtime` 与可选 `prepare`。
 Host 为每次装配浅复制并冻结 startup、env、bindings 和 deployment，工厂与 `prepare` 共用这份快照。bindings 中的资源对象保留原身份与调用方所有权；冻结不会递归到这些资源。直接调用 `runHostApplication` 时，传入的 env 是完整输入，不会隐式合并进程环境。
 模块导入不执行工厂。普通静态片段可用 `satisfies` 检查，在工厂中组合；工厂只描述装配，资源应由服务 `prepare` 获取。服务准备完成、开发附件接好之后，Host 调用可选的
 `prepare({ host, startup })`，再启动 Plugin；失败由启动入口回滚整个 Host。
@@ -180,8 +176,14 @@ export default defineHostApplication(async ({ env, deployment }) => {
 	await nativeFs.promises.mkdir(prefix, { recursive: true })
 	return {
 		plugins: [],
-		config: {
-			storage: zenfs({
+		services: standardServices({
+			nodeModules:
+				deployment?.delivery === 'standalone'
+					? { root: resolve(deployment.root, 'artifacts/node') }
+					: undefined,
+		}),
+		runtime: {
+			zenfs: zenfs({
 				mounts: {
 					'/': {
 						backend: Passthrough,
@@ -192,17 +194,14 @@ export default defineHostApplication(async ({ env, deployment }) => {
 				durableMounts: ['/'],
 			}),
 		},
-		services: standardServices({
-			nodeModules: deployment ? { root: resolve(deployment.root, 'artifacts/node') } : undefined,
-		}),
 	}
 })
 ```
 
 `standardServices()` 明确提供 HTTP、Commands、NodeModules 和 Workers；FS 与 TinyBase 固定由 Core 提供。
-Vault、Database、Management、Workbench 另行加入服务数组；日志通过 `config.logger` 选择。该组合不加入任何 Plugin。
+Vault、Database、Management、Workbench 另行加入服务数组；日志通过 `runtime.logtape` 选择。该组合不加入任何 Plugin。
 `nodeModules` 直接接收 `nodeModules(options)` 的制品定位配置，供 NodeModules 与 Workers 共用。
-生产 freezer 输出的 `artifacts/node` 必须相对 `deployment.root` 选择，不能依赖启动目录；
+standalone 交付由 freezer 输出的 `artifacts/node` 必须相对 `deployment.root` 选择，不能依赖启动目录；modules 交付使用包内制品，不配置该目录。
 开发不配置该目录，使用 `vitePreset()` 接入已安装 NodeModules 的源码编译器，或在 `host()` 旁显式添加 `nodeArtifacts()`。自行组合服务时同样把生产制品配置传给 `nodeModules()`。
 
 显式配置 Node 制品的 `root` 或 `resolve` 时，Vite 保留该制品来源，不创建自动源码编译附件。显式再附加源码 compiler 会因来源冲突失败；清理时即使来源撤回失败，也会排空已接纳 setup 并清理活动 consumer，多个失败聚合报告。

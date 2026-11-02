@@ -51,6 +51,7 @@ export function mergeRecord(
 	const merged: Record<string, unknown> = Object.create(null)
 	for (const [key, value] of Object.entries(base ?? {})) merged[key] = clone(value)
 	for (const [key, value] of Object.entries(override ?? {})) {
+		if (isRecord(value) && Object.keys(value).length === 0 && Object.hasOwn(merged, key)) continue
 		merged[key] =
 			isRecord(merged[key]) && isRecord(value) ? mergeRecord(merged[key], value) : clone(value)
 	}

@@ -57,9 +57,17 @@ open 完成前不使用或公开该 Store；成功后创建原生 Queries/listen
 
 如果领域要求“保存前不可见”，在领域内部区分 candidate 与 applied view，并串行执行保存及发布；不能把同步 native Store 当作提交后才可见的事务。Wretch 的[管理设置](../plugins/wretch.md)使用这条契约。
 
+## 外部文件修改
+
+托管 Store 会定期读取保存的文件。其他进程或外部编辑器更新了实际共享后端中的快照后，Core 校验格式、owner 和 schema，再替换内存内容；现有 Queries 和 listeners 可观察到更新。外部加载不触发原样保存，也不需要另装 Persister 或 Synchronizer。
+
+无效文件保留原内容，当前 Store 保持最后一次有效状态并报告错误；修正后的新内容可继续加载。删除文件按空 Tables/Values 加载，仍需通过当前 schema 校验，不恢复调用方初始值，也不自动重建文件。保存与刷新都受后端的可见性和 IO 耗时影响，不保证即时看到每个中间版本。
+
+保存采用完整快照替换；多个实例同时修改同一文件可能覆盖彼此的变化。`flush()` 只确认本次写入，不保证它不会被其他实例覆盖，也不提供跨实例事务或冲突合并。需要共享并发修改不丢失的数据使用[数据库](./database.md)。共享后端由 [Host 配置](../host/configuration.md#共享文件与外部修改)统一选择。
+
 ## 失败、容量与依赖
 
-快照只接受 string、boolean 和有限 number；嵌套记录可由领域编码为 string，不能把任意对象直接作为 cell。Host 默认每份完整快照最多 8 MiB，可通过 Host 的 `config.tinybase.maxSnapshotBytes` 调整。超限或 IO 错误可从 `flush()`、启动和关闭报告观察，Host 内部诊断可查询 owner、revision 与失败状态。
+快照只接受 string、boolean 和有限 number；嵌套记录可由领域编码为 string，不能把任意对象直接作为 cell。Host 默认每份完整快照最多 8 MiB，可通过 Host 的 `runtime.tinybase.maxSnapshotBytes` 调整。超限或 IO 错误可从 `flush()`、启动和关闭报告观察，Host 内部诊断可查询 owner、revision 与失败状态。
 
 快照和 writer 失败使用公开的 `TinyBaseError`，例如 `SNAPSHOT_INVALID`、`BUDGET_EXCEEDED` 与 `SAVE_FAILED`；底层失败保留在 `cause`。插件的 Valibot 领域校验仍抛原生校验异常，不把无效数据改成默认值。
 
@@ -80,4 +88,4 @@ const preferences = await host.start(PreferencesPlugin)
 await preferences.setTheme({ theme: 'dark' })
 ```
 
-跨 Host 恢复测试使用同一临时 Passthrough 目录，关闭第一个 Host 后再创建第二个，分别检查内容、合法空状态和失败不覆盖。隔离 Host 不证明在线应用已接纳修改；在线操作使用[开发控制台](../development/dev-console.md)。
+跨 Host 恢复测试使用同一临时 Passthrough 目录，关闭第一个 Host 后再创建第二个，分别检查内容、合法空状态和失败不覆盖。外部修改测试让两个 Host 同时打开同一目录，检查另一实例保存后现有查询／监听器最终收到新内容，且读取方不会原样回写。隔离 Host 不证明在线应用已接纳修改；在线操作使用[开发控制台](../development/dev-console.md)。

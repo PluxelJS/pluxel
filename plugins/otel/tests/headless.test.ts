@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { createElysiaHandler, elysia } from '@pluxel/services/elysia'
 import { expect, it } from 'vitest'
@@ -20,7 +20,6 @@ it('uses the exported config schema for env-only Prometheus selection without Wo
 	const application = defineHostApplication(() => ({
 		plugins: [OtelPlugin, HeadlessMeter],
 		services: [elysia()],
-		state: { initial: { autoStart: [pluginNodeAddressOf(HeadlessMeter)] } },
 		envBindings: [
 			envBinding(OtelPlugin, {
 				config: {
@@ -29,6 +28,7 @@ it('uses the exported config schema for env-only Prometheus selection without Wo
 				},
 			}),
 		],
+		runtime: { state: { autoStart: [HeadlessMeter.nodeAddress()] } },
 	}))
 	const resolved = await resolveHostApplication(application, {
 		root: process.cwd(),
@@ -39,9 +39,8 @@ it('uses the exported config schema for env-only Prometheus selection without Wo
 	const host = await createHost({
 		plugins: resolved.plugins,
 		services: resolved.services,
-		state: resolved.state,
-		config: resolved.config,
-		configRecords: resolved.configRecords,
+		name: resolved.name,
+		runtime: resolved.runtime,
 	})
 	try {
 		await host.start()

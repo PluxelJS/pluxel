@@ -104,20 +104,13 @@ export function decodeSnapshot(
 		input.identity.kind !== identity.kind
 	)
 		throw new TinyBaseError('SNAPSHOT_INVALID', 'Unknown snapshot format or identity.', identity)
-	if (identity.kind === 'plugin') {
-		if (!pluginNodeAddressEqual(parsePluginNodeAddress(input.identity.node), identity.node))
-			throw new TinyBaseError(
-				'SNAPSHOT_INVALID',
-				'Snapshot belongs to another Plugin node.',
-				identity,
-			)
-	} else if (input.identity.namespace !== identity.namespace) {
+	if (!pluginNodeAddressEqual(parsePluginNodeAddress(input.identity.node), identity.node))
 		throw new TinyBaseError(
 			'SNAPSHOT_INVALID',
-			'Snapshot belongs to another Host document namespace.',
+			'Snapshot belongs to another Plugin node.',
 			identity,
 		)
-	}
+
 	assertContent(input.content, identity)
 	return input.content
 }

@@ -84,7 +84,7 @@ describe('Host root document factories', () => {
 		const events: string[] = []
 		const { service } = documentService(events)
 		await expect(
-			createHost({ plugins: [], services: [service], state: options as never }),
+			createHost({ plugins: [], services: [service], runtime: { state: options as never } }),
 		).rejects.toBeInstanceOf(TypeError)
 		expect(events).toEqual([])
 	})
@@ -107,18 +107,20 @@ describe('Host root document factories', () => {
 		const host = await createHost({
 			plugins: [],
 			services: [flushingService],
-			configRecords: {
-				storage(root) {
-					roots.push(root)
-					events.push('config factory')
-					return root.require(Documents).config
+			runtime: {
+				configRecords: {
+					storage(root) {
+						roots.push(root)
+						events.push('config factory')
+						return root.require(Documents).config
+					},
 				},
-			},
-			state: {
-				storage(root) {
-					roots.push(root)
-					events.push('state factory')
-					return root.require(Documents).state
+				state: {
+					storage(root) {
+						roots.push(root)
+						events.push('state factory')
+						return root.require(Documents).state
+					},
 				},
 			},
 		})
@@ -134,7 +136,7 @@ describe('Host root document factories', () => {
 			await host.close()
 		}
 		expect(SuperJSON.parse(config.documents.get('config.json')!)).toEqual({
-			version: 3,
+			version: 4,
 			plugins: [{ owner, config: { value: 'last config' } }],
 		})
 		expect(state.documents.has('state.json')).toBe(true)
@@ -156,8 +158,10 @@ describe('Host root document factories', () => {
 				createHost({
 					plugins: [],
 					services: [service],
-					configRecords: { storage: (root) => root.require(Documents).config },
-					state: { storage: result as never },
+					runtime: {
+						configRecords: { storage: (root) => root.require(Documents).config },
+						state: { storage: result as never },
+					},
 				}),
 			).rejects.toBeInstanceOf(TypeError)
 			expect(events).toEqual(['constructed', 'closed'])
@@ -172,10 +176,12 @@ describe('Host root document factories', () => {
 			createHost({
 				plugins: [],
 				services: [service],
-				configRecords: {
-					storage(root) {
-						root.require(Documents)
-						throw failure
+				runtime: {
+					configRecords: {
+						storage(root) {
+							root.require(Documents)
+							throw failure
+						},
 					},
 				},
 			}),
@@ -207,7 +213,7 @@ describe('Host root document factories', () => {
 				createHost({
 					plugins: [],
 					services: [hostService],
-					configRecords: { storage: (root) => root.require(Documents).config },
+					runtime: { configRecords: { storage: (root) => root.require(Documents).config } },
 				}),
 			).rejects.toBe(failure)
 			expect(events.at(-1)).toBe('closed')
@@ -228,11 +234,13 @@ describe('Host root document factories', () => {
 		const creation = createHost({
 			plugins: [],
 			services: [service],
-			configRecords: {
-				storage: (root) => root.require(Documents).config,
-				overlays: [{ owner, config: { value: 'overlay' }, sources: [] }],
+			runtime: {
+				configRecords: {
+					storage: (root) => root.require(Documents).config,
+					overlays: [{ owner, config: { value: 'overlay' }, sources: [] }],
+				},
+				state: { storage: (root) => root.require(Documents).state },
 			},
-			state: { storage: (root) => root.require(Documents).state },
 		})
 		const observed = creation.catch((error: unknown) => error)
 		await entered.promise
@@ -256,12 +264,14 @@ describe('Host root document factories', () => {
 			createHost({
 				plugins: [],
 				services: [service],
-				configRecords: {
-					storage(root) {
-						root.effects.defer(() => {
-							throw cleanupFailure
-						})
-						return root.require(Documents).config
+				runtime: {
+					configRecords: {
+						storage(root) {
+							root.effects.defer(() => {
+								throw cleanupFailure
+							})
+							return root.require(Documents).config
+						},
 					},
 				},
 			}),
@@ -279,11 +289,13 @@ describe('Host root document factories', () => {
 			createHost({
 				plugins: [],
 				services: [service],
-				configRecords: { storage: (root) => root.require(Documents).config },
-				state: {
-					storage(root) {
-						requireConfigService(root)
-						return root.require(Documents).state
+				runtime: {
+					configRecords: { storage: (root) => root.require(Documents).config },
+					state: {
+						storage(root) {
+							requireConfigService(root)
+							return root.require(Documents).state
+						},
 					},
 				},
 			}),

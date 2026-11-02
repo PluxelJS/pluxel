@@ -6,4 +6,8 @@ export interface HostDocumentStorage {
 	put(key: string, value: string): Promise<void>
 	/** Only existence is required; providers may return their existing file metadata. */
 	stat(key: string): Promise<object | undefined>
+	/** External changes to this namespace. Reread documents when notified; unsubscribe before closing the consumer.
+	 * Omitted by adapters that do not observe external writes. Local puts need not notify.
+	 */
+	subscribe?(listener: () => void): () => void
 }

@@ -585,12 +585,12 @@ import { createHost, resolveHostApplication, prepareHostApplication } from '@plu
 import { setHostCatalogProvenance } from '@pluxel/host/internal'
 import { readFile } from 'node:fs/promises'
 ${http ? "import { createElysiaHandler } from '@pluxel/services/elysia'" : ''}
-${launcher === 'node' ? "import { listenElysia } from '@pluxel/services/elysia/node'" : ''}
+${launcher === 'node' ? "import { listenElysia } from '@pluxel/services/elysia/node'\nimport { resolveHostEnv } from '@pluxel/host/environment'" : ''}
 const deployment = JSON.parse(await readFile(new URL('./pluxel-deployment.json', import.meta.url), 'utf8'))
-const resolved = await resolveHostApplication(application, {root:import.meta.dirname,mode:'production',env:process.env,bindings:{},deployment:{root:import.meta.dirname,target:'node',variant:${JSON.stringify(variant)},application:deployment.application}})
+const resolved = await resolveHostApplication(application, {root:import.meta.dirname,mode:'production',env:process.env,bindings:{},deployment:{root:import.meta.dirname,target:'node',delivery:'standalone',variant:${JSON.stringify(variant)},application:deployment.application}})
 const host = await createHost({
- plugins:resolved.plugins,config:resolved.config,state:resolved.state,
- configRecords:resolved.configRecords,configSync:resolved.configSync,vaultBindings:resolved.vaultBindings,services:resolved.services,
+ name:resolved.name,plugins:resolved.plugins,runtime:resolved.runtime,
+ vaultBindings:resolved.vaultBindings,services:resolved.services,
 })
 try {
  setHostCatalogProvenance(host.ctx, new Map(resolved.plugins.map(plugin => [plugin, {execution:{kind:'native',origin:'fixed',artifact:{kind:'application-bundle'},update:{kind:'next-start'}}}])))
@@ -614,7 +614,7 @@ try { handler = createElysiaHandler(host) } catch (error) {
 export const fetch = handler`
 		: ''
 }
-${launcher === 'node' ? 'const listener = await listenElysia(host, {publicDir:import.meta.dirname+"/public"}).catch(async (error) => { const [cleanup] = await Promise.allSettled([host.close()]); if (cleanup.status==="rejected") throw new AggregateError([error,cleanup.reason], "Application listener startup and cleanup failed", {cause:error}); throw error })\nexport const address = listener.address\nexport const stop = listener.close' : 'export const stop = () => host.close()'}
+${launcher === 'node' ? 'const environment = resolveHostEnv(resolved.startup.env)\nconst listener = await listenElysia(host, {hostname:environment.hostBind,port:environment.hostPort,publicOrigin:environment.publicOrigin,publicDir:import.meta.dirname+"/public"}).catch(async (error) => { const [cleanup] = await Promise.allSettled([host.close()]); if (cleanup.status==="rejected") throw new AggregateError([error,cleanup.reason], "Application listener startup and cleanup failed", {cause:error}); throw error })\nexport const address = listener.address\nexport const stop = listener.close' : 'export const stop = () => host.close()'}
 `
 }
 

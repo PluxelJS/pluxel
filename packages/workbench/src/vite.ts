@@ -1,6 +1,6 @@
 import { pluginDefinitionIndexKey } from '@pluxel/core'
 import { installPluxelViteUrlPrinter } from '@pluxel/host-vite/internal'
-import { hostEnv } from '@pluxel/host/environment'
+import { resolveHostEnv } from '@pluxel/host/environment'
 import { workbenchShellMount } from './shell/mount'
 import type { Plugin } from 'vite'
 import type { HostVitePluginApi, HostViteCatalog, HostViteCandidate } from '@pluxel/host-vite'
@@ -30,9 +30,10 @@ export function workbenchArtifacts(
 		apply: 'serve',
 		api: {
 			pluxelHost: {
-				async attach({ host, server, semantics, catalog: initialCatalog, profile }) {
+				async attach({ host, server, semantics, catalog: initialCatalog, profile, startup }) {
+					const environment = resolveHostEnv(startup.env)
 					const removeUrlPrinter = installPluxelViteUrlPrinter(server, {
-						publicOrigin: hostEnv.publicOrigin,
+						publicOrigin: environment.publicOrigin,
 						workbenchBasePath: () => workbenchShellMount(host.ctx),
 					})
 					const backend = requireWorkbench(host.ctx)

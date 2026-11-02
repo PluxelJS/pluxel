@@ -9,7 +9,6 @@ import {
 	resolveHostApplication,
 } from '@pluxel/host'
 import { createTestHost } from '@pluxel/test'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
 import { FontsConfig, FontsPlugin } from '../src/index.ts'
 
@@ -64,10 +63,7 @@ describe('Fonts deployment without Workbench', () => {
 					bindings: {},
 					env: { FONT_FILES: JSON.stringify([fontPath, fontPath]), FONT_FAMILY: 'serif' },
 				})
-				await using host = await createTestHost({
-					services: [],
-					configRecords: resolved.configRecords,
-				})
+				await using host = await createTestHost({ services: [], runtime: resolved.runtime })
 				await host.start(FontsPlugin)
 				let fonts = host.require(FontsPlugin)
 				expect(fonts.ctx.workbench).toBeUndefined()
@@ -100,7 +96,7 @@ describe('Fonts deployment without Workbench', () => {
 			})
 			expect(failure.lifecycleReport.issues).toContainEqual(
 				expect.objectContaining({
-					plugin: pluginNodeAddressOf(FontsPlugin),
+					plugin: FontsPlugin.nodeAddress(),
 					kind: 'start-failed',
 					message: expect.stringContaining('Cannot read configured font file'),
 				}),

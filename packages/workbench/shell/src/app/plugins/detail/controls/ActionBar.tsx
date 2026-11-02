@@ -13,11 +13,17 @@ import {
 	type PluginLifecycleCommand,
 } from '../../pluginStatusActions'
 import { usePluginScope } from '../context'
+import { usePluginOverview } from '../../pluginOverview'
+import { canWritePluginState } from '../../pluginOverviewModel'
 import { PLUGIN_DETAIL_HOTKEYS, PLUGIN_DETAIL_HOTKEY_LABELS } from '../../../workbench/shortcuts'
 import { describePluginControl, describePluginLifecycleOutcome } from './pluginControlModel'
 
 export function ActionBar({ active = true }: { active?: boolean }) {
 	const management = useRuntimeManagementClient()
+	const canWriteAutoStart = canWritePluginState(
+		usePluginOverview().overview?.statePolicy,
+		'autoStart',
+	)
 	const queryClient = useQueryClient()
 	const { owner, pluginLabel, dependencyGraph, status, refetch } = usePluginScope()
 	const autoStartPendingRef = useRef(false)
@@ -27,7 +33,7 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 	const presentation = describePluginControl(status, lifecyclePending)
 
 	const performAutoStart = async (autoStart: boolean) => {
-		if (autoStartPendingRef.current) return
+		if (autoStartPendingRef.current || !canWriteAutoStart) return
 		autoStartPendingRef.current = true
 		setAutoStartPending(true)
 		try {
@@ -172,7 +178,13 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 				</Badge>
 			</Tooltip>
 			<Tooltip
-				label={autoStartPending ? '正在保存自动启动策略…' : presentation.autoStartDescription}
+				label={
+					!canWriteAutoStart
+						? '自动启动策略由宿主声明控制或只读'
+						: autoStartPending
+							? '正在保存自动启动策略…'
+							: presentation.autoStartDescription
+				}
 			>
 				<Switch
 					className="plx-pluginWorkbench__actionPolicy"
@@ -181,7 +193,7 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 					label="自动启动"
 					labelPosition="left"
 					checked={status.autoStart}
-					disabled={autoStartPending || !presentation.canChangeAutoStart}
+					disabled={autoStartPending || !presentation.canChangeAutoStart || !canWriteAutoStart}
 					aria-label={presentation.autoStartActionLabel}
 					aria-busy={autoStartPending}
 					onChange={(event) => void performAutoStart(event.currentTarget.checked)}

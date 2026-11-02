@@ -27,6 +27,9 @@ describe('PluginHostCoordinator committed reads', () => {
 		const store: HostStateCoordinatorStore = {
 			ready: Promise.resolve(),
 			versionedSnapshot: () => versioned,
+			savedSnapshot: () => versioned.state,
+			effectiveSnapshot: (saved) => saved,
+			assertPatchMutable() {},
 			commitVersioned: async (expectedRevision, next) => {
 				expect(expectedRevision).toBe(versioned.revision)
 				persistenceEntered.resolve()

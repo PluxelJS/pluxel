@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { envBinding, defineHostApplication, resolveHostApplication, createHost } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
 import { expect, it } from 'vitest'
@@ -32,7 +32,6 @@ it('signs an S3 write without Workbench using env-backed configuration and Vault
 		const application = defineHostApplication(() => ({
 			plugins: [S3Plugin, DeploymentWriter],
 			services: [vault({ backend: 'bindings' })],
-			state: { initial: { autoStart: [pluginNodeAddressOf(DeploymentWriter)] } },
 			envBindings: [
 				envBinding(S3Plugin, {
 					config: { schema: S3Config, mapping: { buckets: 'S3_BUCKETS' } },
@@ -42,6 +41,7 @@ it('signs an S3 write without Workbench using env-backed configuration and Vault
 					},
 				}),
 			],
+			runtime: { state: { autoStart: [DeploymentWriter.nodeAddress()] } },
 		}))
 		const resolved = await resolveHostApplication(application, {
 			root: process.cwd(),
@@ -66,10 +66,9 @@ it('signs an S3 write without Workbench using env-backed configuration and Vault
 		const host = await createHost({
 			plugins: resolved.plugins,
 			services: resolved.services,
-			state: resolved.state,
-			config: resolved.config,
-			configRecords: resolved.configRecords,
 			vaultBindings: resolved.vaultBindings,
+			name: resolved.name,
+			runtime: resolved.runtime,
 		})
 		try {
 			await host.start()

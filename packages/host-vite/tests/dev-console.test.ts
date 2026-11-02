@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { expect, it } from 'vitest'
@@ -46,7 +46,7 @@ it('borrows a Host without official services, retains state, and exposes its bas
 		const first = dev.plugins.require(Counter)
 		first.count = 4
 		expect(await dev.plugins.status(Counter)).toMatchObject({ lifecycleState: 'running' })
-		expect(() => dev.plugins.require(pluginNodeAddressOf(Counter) as never)).toThrow(TypeError)
+		expect(() => dev.plugins.require(Counter.nodeAddress() as never)).toThrow(TypeError)
 		await scope.dispose()
 		await expect(dev.plugins.list()).rejects.toMatchObject({ code: 'scope_closed' })
 		expect(() => dev.ctx).toThrow(expect.objectContaining({ code: 'scope_closed' }))
@@ -100,35 +100,47 @@ it('validates and changes Host config without Management or persistence services
 	}
 })
 
-it('passes the observed complete-document version through console writes and preserves stale conflicts', async () => {
+it('inspects saved values and runtime declarations through the console without writing', async () => {
+	const owner = Counter.nodeAddress()
 	const host = await createHost({
 		plugins: [Counter],
-		configSync: {
-			role: 'writer',
-			scope: 'console',
-			identity: 'writer',
-			artifact: { name: 'console-fixture', catalogHash: 'e'.repeat(64) },
-			replicas: [],
+		runtime: {
+			state: { mode: 'memory', autoStart: [], override: true },
+			configRecords: {
+				mode: 'memory',
+				records: [{ owner, config: { label: 'declared' } }],
+				override: true,
+			},
 		},
 	})
 	await host.start()
-	const scope = createDevConsoleScope({ id: 'versioned-config', ctx: host.ctx })
+	const scope = createDevConsoleScope({ id: 'inspect', ctx: host.ctx })
 	try {
-		const initial = scope.dev.config.status()
-		expect(initial.readonly).toBe(false)
-		const first = await scope.dev.config.patch(
-			Counter,
-			{ label: 'first' },
-			{ expected: initial.version! },
-		)
-		expect(first).toMatchObject({ ok: true, version: { seq: 1 } })
-		expect(
-			await scope.dev.config.patch(Counter, { label: 'stale' }, { expected: initial.version! }),
-		).toMatchObject({ ok: false, code: 'version_conflict', version: { seq: 1 } })
-		const observed = scope.dev.config.status()
-		expect(
-			await scope.dev.config.reset(Counter, undefined, { expected: observed.version! }),
-		).toMatchObject({ ok: true, version: { seq: 2 } })
+		expect(snapshotJson(await scope.dev.config.inspect(Counter))).toMatchObject({
+			mode: 'memory',
+			readonly: false,
+			override: true,
+			externalReload: false,
+			saved: { label: 'declared' },
+			declared: { label: 'declared' },
+			effective: { label: 'declared' },
+			sources: [{ kind: 'declaration', path: ['label'], readonly: true }],
+		})
+		expect(snapshotJson(await scope.dev.state.inspect())).toMatchObject({
+			mode: 'memory',
+			override: true,
+			overriddenFields: ['autoStart'],
+			saved: { autoStart: [] },
+			effective: { autoStart: [] },
+			declared: { autoStart: [] },
+		})
+		expect(await scope.dev.config.patch(Counter, { label: 'blocked' })).toMatchObject({
+			ok: false,
+			code: 'mutation_rejected',
+		})
+		await scope.dispose()
+		await expect(scope.dev.config.inspect(Counter)).rejects.toMatchObject({ code: 'scope_closed' })
+		await expect(scope.dev.state.inspect()).rejects.toMatchObject({ code: 'scope_closed' })
 	} finally {
 		await scope.dispose()
 		await host.close()
@@ -144,7 +156,7 @@ it('borrows an existing typed fork and preserves it after the run closes', async
 	const scope = createDevConsoleScope({ id: 'test', ctx: host.ctx })
 	const fork = { plugin: Forkable, forkId: 'east' }
 	try {
-		expect(await host.forks.ensure(pluginNodeAddressOf(Forkable), fork.forkId)).toMatchObject({
+		expect(await host.forks.ensure(Forkable.nodeAddress(), fork.forkId)).toMatchObject({
 			ok: true,
 		})
 		await scope.dev.plugins.start(fork)
@@ -176,7 +188,7 @@ it('rejects a constructor superseded by the live Host catalog', async () => {
 		expect(() => scope.dev.plugins.require(Replaceable)).toThrow(
 			expect.objectContaining({ code: 'stale_target' }),
 		)
-		expect(await scope.dev.plugins.status(pluginNodeAddressOf(Replaceable))).toMatchObject({
+		expect(await scope.dev.plugins.status(Replaceable.nodeAddress())).toMatchObject({
 			lifecycleState: 'running',
 		})
 	} finally {
@@ -232,9 +244,7 @@ it('returns serializable lifecycle failures without mistaking a commit for succe
 				summary: {
 					lifecycleReport: {
 						ok: false,
-						issues: [
-							{ plugin: pluginNodeAddressOf(Broken), error: { message: 'console start failed' } },
-						],
+						issues: [{ plugin: Broken.nodeAddress(), error: { message: 'console start failed' } }],
 					},
 				},
 			},

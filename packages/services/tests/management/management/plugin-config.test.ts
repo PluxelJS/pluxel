@@ -5,7 +5,6 @@ import {
 	requirePluginService,
 } from '@pluxel/core/internal'
 import { standardServices } from '@pluxel/services'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
@@ -331,7 +330,7 @@ describe('Plugin config application scope', () => {
 		host.cfg(ConfigOwner).setAutoStart(true)
 		host.start(ConfigOwner)
 		await host.commit()
-		const owner = pluginNodeAddressOf(ConfigOwner)
+		const owner = ConfigOwner.nodeAddress()
 		const configService = requireConfigService(host.ctx)
 		const originalFlush = configService.flush.bind(configService)
 		const entered = deferred<void>()
@@ -364,7 +363,7 @@ describe('Plugin config application scope', () => {
 		host.start(ConfigOwner)
 		await host.commit()
 
-		const owner = pluginNodeAddressOf(ConfigOwner)
+		const owner = ConfigOwner.nodeAddress()
 		const generation = host.require(ConfigOwner)
 		const result = await pluginConfigPatch(host.ctx, owner, { value: 'changed' })
 		expect(result).toMatchObject({
@@ -418,7 +417,7 @@ describe('Plugin config application scope', () => {
 		host.add(StoppedConfigOwner)
 		await host.commit()
 
-		const owner = pluginNodeAddressOf(StoppedConfigOwner)
+		const owner = StoppedConfigOwner.nodeAddress()
 		await expect(pluginConfigPatch(host.ctx, owner, { value: 'later' })).resolves.toMatchObject({
 			ok: true,
 			saved: true,
@@ -437,7 +436,7 @@ describe('Plugin config application scope', () => {
 		host.start(FailingConfigOwner)
 		await host.commit()
 
-		const owner = pluginNodeAddressOf(FailingConfigOwner)
+		const owner = FailingConfigOwner.nodeAddress()
 		const appliedBefore = requireConfigService(host.ctx).getAppliedConfigRevision(owner)
 		await expect(pluginConfigPatch(host.ctx, owner, { value: 'desired' })).resolves.toMatchObject({
 			ok: true,
@@ -461,7 +460,7 @@ describe('Plugin config application scope', () => {
 		host.cfg(ConfigWithoutListener).setAutoStart(true)
 		host.start(ConfigWithoutListener)
 		await host.commit()
-		const owner = pluginNodeAddressOf(ConfigWithoutListener)
+		const owner = ConfigWithoutListener.nodeAddress()
 		const generation = host.require(ConfigWithoutListener)
 		const appliedBefore = requireConfigService(host.ctx).getAppliedConfigRevision(owner)
 
@@ -483,7 +482,7 @@ describe('Plugin config application scope', () => {
 		host.cfg(ConfigPartOwner).setAutoStart(true)
 		host.start(ConfigPartOwner)
 		await host.commit()
-		const owner = pluginNodeAddressOf(ConfigPartOwner)
+		const owner = ConfigPartOwner.nodeAddress()
 		const generation = host.require(ConfigPartOwner)
 
 		const result = await pluginConfigPatch(host.ctx, owner, {
@@ -507,7 +506,7 @@ describe('Plugin config application scope', () => {
 		host.cfg(IncompleteConfigOwner).setAutoStart(true)
 		host.start(IncompleteConfigOwner)
 		await host.commit()
-		const owner = pluginNodeAddressOf(IncompleteConfigOwner)
+		const owner = IncompleteConfigOwner.nodeAddress()
 		const generation = host.require(IncompleteConfigOwner)
 
 		await expect(
@@ -531,7 +530,7 @@ describe('Plugin config application scope', () => {
 		host.cfg(PartiallyAppliedOwner).setAutoStart(true)
 		host.start(PartiallyAppliedOwner)
 		await host.commit()
-		const owner = pluginNodeAddressOf(PartiallyAppliedOwner)
+		const owner = PartiallyAppliedOwner.nodeAddress()
 		const generation = host.require(PartiallyAppliedOwner)
 		const appliedBefore = requireConfigService(host.ctx).getAppliedConfigRevision(owner)
 
@@ -564,7 +563,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('rejects cross-owner registration while independent init windows overlap', async () => {
-		const host = await runtimeHost({ config: { plugins: { startConcurrency: 2 } } })
+		const host = await runtimeHost({ runtime: { plugins: { startConcurrency: 2 } } })
 		host.add([ConcurrentConfigOwner, ConcurrentConfigBorrower])
 		host.cfg(ConcurrentConfigOwner).setAutoStart(true)
 		host.start(ConcurrentConfigOwner)
@@ -577,7 +576,7 @@ describe('Plugin config application scope', () => {
 		expect(host.isRunning(ConcurrentConfigOwner)).toBe(true)
 		expect(host.isRunning(ConcurrentConfigBorrower)).toBe(true)
 		await expect(
-			pluginConfigPatch(host.ctx, pluginNodeAddressOf(ConcurrentConfigOwner), {
+			pluginConfigPatch(host.ctx, ConcurrentConfigOwner.nodeAddress(), {
 				value: 'owner-update',
 			}),
 		).resolves.toMatchObject({ ok: true, application: 'applied' })
@@ -589,7 +588,7 @@ describe('Plugin config application scope', () => {
 		host.cfg(WithdrawnConfigOwner).setAutoStart(true)
 		host.start(WithdrawnConfigOwner)
 		await host.commit()
-		const owner = pluginNodeAddressOf(WithdrawnConfigOwner)
+		const owner = WithdrawnConfigOwner.nodeAddress()
 		const generation = host.require(WithdrawnConfigOwner)
 		const configService = requireConfigService(host.ctx)
 
@@ -637,7 +636,7 @@ describe('Plugin config application scope', () => {
 		host.cfg(RetryConfigOwner).setAutoStart(true)
 		host.start(RetryConfigOwner)
 		await host.commit()
-		const owner = pluginNodeAddressOf(RetryConfigOwner)
+		const owner = RetryConfigOwner.nodeAddress()
 		const generation = host.require(RetryConfigOwner)
 
 		await expect(pluginConfigPatch(host.ctx, owner, { value: 'reject' })).resolves.toMatchObject({
@@ -662,7 +661,7 @@ describe('Plugin config application scope', () => {
 		host.cfg(ConfigOwner).setAutoStart(true)
 		host.start(ConfigOwner)
 		await host.commit()
-		const owner = pluginNodeAddressOf(ConfigOwner)
+		const owner = ConfigOwner.nodeAddress()
 
 		const result = await pluginConfigPatch(host.ctx, owner, { value: 'initial' })
 		expect(result).toMatchObject({ ok: true, application: 'applied' })
@@ -682,7 +681,7 @@ describe('Plugin config application scope', () => {
 		expect(singleValidationStarts).toEqual(['initial:validated'])
 		singleValidationRuns = 0
 
-		const owner = pluginNodeAddressOf(SingleValidationOwner)
+		const owner = SingleValidationOwner.nodeAddress()
 		await expect(pluginConfigPatch(host.ctx, owner, { value: 'desired' })).resolves.toMatchObject({
 			ok: true,
 			saved: true,
@@ -700,7 +699,7 @@ describe('Plugin config application scope', () => {
 		const host = await runtimeHost()
 		host.add(StoppedConfigOwner)
 		await host.commit()
-		const owner = pluginNodeAddressOf(StoppedConfigOwner)
+		const owner = StoppedConfigOwner.nodeAddress()
 		const pollutionKey = '__pluxelPolluted'
 
 		await expect(
@@ -723,17 +722,20 @@ describe('ConfigService persistence', () => {
 		let rejectConfigWrite = false
 		const host = await runtimeHost({
 			services: standardServices(),
-			configRecords: {
-				storage(root) {
-					const documents = requireFs(root).documents('host/config')
-					return {
-						...documents,
-						async put(key, value) {
-							if (rejectConfigWrite && key === 'config.json')
-								throw new Error('config persistence outcome unknown')
-							await documents.put(key, value)
-						},
-					}
+			runtime: {
+				configRecords: {
+					storage(root) {
+						const documents = requireFs(root).documents('host/config')
+						return {
+							getText: (key) => documents.getText(key),
+							stat: (key) => documents.stat(key),
+							async put(key, value) {
+								if (rejectConfigWrite && key === 'config.json')
+									throw new Error('config persistence outcome unknown')
+								await documents.put(key, value)
+							},
+						}
+					},
 				},
 			},
 		})
@@ -742,7 +744,7 @@ describe('ConfigService persistence', () => {
 		rejectConfigWrite = true
 
 		await expect(
-			pluginConfigPatch(host.ctx, pluginNodeAddressOf(ConfigOwner), { value: 'desired' }),
+			pluginConfigPatch(host.ctx, ConfigOwner.nodeAddress(), { value: 'desired' }),
 		).resolves.toMatchObject({
 			ok: false,
 			code: 'persistence_failed',
@@ -786,16 +788,18 @@ function deferred<T>() {
 }
 
 it('rejects same-value and parent field writes to an environment-controlled config', async () => {
-	const owner = pluginNodeAddressOf(ConfigOwner)
+	const owner = ConfigOwner.nodeAddress()
 	const host = await runtimeHost({
-		configRecords: {
-			overlays: [
-				{
-					owner,
-					config: { value: 'env' },
-					sources: [{ path: ['value'], kind: 'env', name: 'CONFIG_VALUE' }],
-				},
-			],
+		runtime: {
+			configRecords: {
+				overlays: [
+					{
+						owner,
+						config: { value: 'env' },
+						sources: [{ path: ['value'], kind: 'env', name: 'CONFIG_VALUE' }],
+					},
+				],
+			},
 		},
 	})
 	host.add(ConfigOwner)

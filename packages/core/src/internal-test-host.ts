@@ -41,14 +41,7 @@ import {
 	type RawPluginConfig,
 } from './testing/test-primitives'
 
-export {
-	BasePlugin,
-	Plugin,
-	PluginPart,
-	definePluginRef,
-	pluginDefinitionAddressOf,
-	pluginNodeAddressOf,
-} from './index'
+export { BasePlugin, Plugin, PluginPart, definePluginRef, pluginDefinitionAddressOf } from './index'
 export type {
 	PluginConstructor,
 	PluginDefinitionAddress,

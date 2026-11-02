@@ -1,7 +1,4 @@
-import type {
-	HostConfigVersion,
-	PluginApplyReportSnapshot as PluginApplyReport,
-} from '@pluxel/host'
+import type { PluginApplyReportSnapshot as PluginApplyReport } from '@pluxel/host'
 /** Versioned, framework-neutral management protocol types shared by clients and servers. */
 import { type PluginDefinitionAddress, type PluginNodeAddress } from '@pluxel/core'
 import { type HostApplicationMeta } from '../product-contract'
@@ -105,7 +102,13 @@ export type PluginCatalogSection = Readonly<{
 	nodes: readonly PluginNodeAddress[]
 }>
 
+export type PluginStatePolicy = Readonly<{
+	mode: 'memory' | 'writable' | 'readonly'
+	overriddenFields: readonly ('autoStart' | 'forks' | 'providerDefaults' | 'dependencyOverrides')[]
+}>
+
 export type PluginCatalogSnapshot = Readonly<{
+	statePolicy: PluginStatePolicy
 	plugins: readonly PluginStatusSnapshot[]
 	sections: readonly PluginCatalogSection[]
 	summary: Readonly<{ total: number; running: number; stopped: number; autoStart: number }>
@@ -394,6 +397,7 @@ export type PluginLifecycleCommandBatchItem = Readonly<{
 }>
 
 export type PluginControlMutationErrorCode =
+	| 'state_overridden'
 	| 'plugin_not_found'
 	| 'start_unavailable'
 	| 'restart_unavailable'
@@ -412,6 +416,7 @@ export type PluginControlMutationFailure =
 			address: PluginNodeAddress
 			ok: false
 			code:
+				| 'state_overridden'
 				| 'plugin_not_found'
 				| 'start_unavailable'
 				| 'restart_unavailable'
@@ -531,6 +536,7 @@ export type PluginConsumerRequirementState = Readonly<{
 }>
 
 export type PluginDependencyMutationErrorCode =
+	| 'state_overridden'
 	| 'invalid_input'
 	| 'consumer_unavailable'
 	| 'provider_unavailable'
@@ -578,6 +584,7 @@ export type EnsureForkResult =
 	| Readonly<{
 			ok: false
 			code:
+				| 'state_overridden'
 				| 'invalid_input'
 				| 'invalid_fork_id'
 				| 'definition_unavailable'
@@ -599,13 +606,6 @@ export type EnsureForkResult =
 
 export type RemoveForkResult =
 	| Readonly<{
-			ok: false
-			code: 'version_conflict'
-			state: 'unchanged'
-			error: string
-			version: HostConfigVersion | null
-	  }>
-	| Readonly<{
 			ok: true
 			status: 'removed' | 'removed-with-lifecycle-issues'
 			fork: PluginNodeAddress
@@ -619,7 +619,12 @@ export type RemoveForkResult =
 	| Readonly<
 			| {
 					ok: false
-					code: 'invalid_input' | 'invalid_fork_id' | 'graph_rejected' | 'mutation_rejected'
+					code:
+						| 'invalid_input'
+						| 'invalid_fork_id'
+						| 'graph_rejected'
+						| 'mutation_rejected'
+						| 'state_overridden'
 					state: 'unchanged'
 					error: string
 			  }

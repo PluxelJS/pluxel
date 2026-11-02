@@ -4,8 +4,9 @@ import type {
 	HostPluginConfigResult,
 	PluginApplyReportSnapshot,
 	RuntimeUpdateSnapshot,
-	HostConfigMutationOptions,
 	HostConfigState,
+	HostStateConfigurationSnapshot,
+	HostConfigSource,
 } from '@pluxel/host'
 
 /** Current concrete implementation; fork references do not create a fork. */
@@ -19,6 +20,17 @@ export type DevPluginInstance<T extends DevTypedPluginTarget> = T extends Plugin
 		? InstanceType<P>
 		: never
 export type DevScript = (dev: DevConsole) => unknown | Promise<unknown>
+
+export type DevConfigInspection = Readonly<{
+	mode: 'memory' | 'writable' | 'readonly'
+	readonly: boolean
+	override: boolean
+	externalReload: boolean
+	saved: Readonly<Record<string, unknown>>
+	declared: Readonly<Record<string, unknown>>
+	effective: Readonly<Record<string, unknown>>
+	sources: readonly HostConfigSource[]
+}>
 
 /** Infer the execution context and preserve the callback return type; does not execute it. */
 export function defineDevConsole<T extends DevScript>(script: T): T {
@@ -58,6 +70,8 @@ export interface DevConsole {
 		require<T extends DevTypedPluginTarget>(target: T): DevPluginInstance<T>
 	}
 	readonly config: {
+		/** Raw saved input and its effective runtime projection, without writing either. */
+		inspect(target: DevPluginTarget): Promise<DevConfigInspection>
 		status(): HostConfigState
 		get(target: DevPluginTarget): Promise<HostPluginConfigResult<PluginApplyReportSnapshot>>
 		validate(
@@ -67,13 +81,14 @@ export interface DevConsole {
 		patch(
 			target: DevPluginTarget,
 			patch: Readonly<Record<string, unknown>>,
-			options?: Pick<HostConfigMutationOptions, 'expected'>,
 		): Promise<HostPluginConfigResult<PluginApplyReportSnapshot>>
-		/** Omitted or empty keys resets every saved top-level field. */
+		/** Omitted keys resets all declared/saved fields; an empty list changes nothing. */
 		reset(
 			target: DevPluginTarget,
 			keys?: readonly string[],
-			options?: Pick<HostConfigMutationOptions, 'expected'>,
 		): Promise<HostPluginConfigResult<PluginApplyReportSnapshot>>
+	}
+	readonly state: {
+		inspect(): Promise<HostStateConfigurationSnapshot>
 	}
 }

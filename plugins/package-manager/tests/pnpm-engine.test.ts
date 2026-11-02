@@ -150,7 +150,7 @@ export { Dynamic }
 		const hostManifest = import.meta.resolve('@pluxel/host/package.json')
 		await writeFile(
 			resolve(root, 'app.mjs'),
-			`export default () => ({plugins:[],sources:[{kind:'directory',path:${JSON.stringify(store.entriesDir)},include:['*.mjs']}],state:{initial:{autoStart:${JSON.stringify(names.map(address))}}}})`,
+			`export default () => ({plugins:[],sources:[{kind:'directory',path:${JSON.stringify(store.entriesDir)},include:['*.mjs']}],runtime:{state:{autoStart:${JSON.stringify(names.map(address))}}}})`,
 		)
 		await writeFile(
 			script,

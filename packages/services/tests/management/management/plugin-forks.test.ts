@@ -2,11 +2,7 @@ import { requireFs, requireConfigService, pluginNodePhysicalKey } from '@pluxel/
 import { requireHostStateStore, isPluginAutoStartEnabled, listForkIds } from '@pluxel/host/internal'
 import { standardServices } from '@pluxel/services'
 import { logtape } from '@pluxel/core/config'
-import {
-	pluginDefinitionAddressOf,
-	pluginNodeAddressOf,
-	pluginNodeAddressEqual,
-} from '@pluxel/core'
+import { pluginDefinitionAddressOf, pluginNodeAddressEqual } from '@pluxel/core'
 import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
@@ -21,6 +17,12 @@ import {
 	type PluginLogPolicySnapshot,
 	type RuntimeLoggingInput,
 } from '@pluxel/core/logging'
+import {
+	parsePluginCatalogSnapshot,
+	parseEnsureForkResult,
+	parseRemoveForkResult,
+	parsePluginDependencyMutationResult,
+} from '../../../src/management/web/management-validation'
 import { type PluginApplyReport } from '../../../src/management/web/protocol.ts'
 
 @Plugin({ forkable: true })
@@ -49,6 +51,10 @@ class DrainFailureForkProvider extends BasePlugin {
 	}
 }
 
+abstract class PolicyToken extends BasePlugin {}
+@Plugin(PolicyToken)
+class PolicyProvider extends PolicyToken {}
+
 const hosts: ServiceInternalTestHarness[] = []
 
 afterEach(async () => {
@@ -56,13 +62,65 @@ afterEach(async () => {
 })
 
 describe('Plugin fork control plane', () => {
+	it('preserves state_overridden through management DTOs and receiver validation', async () => {
+		await using host = await createServiceInternalTestHarness({
+			workbench: false,
+			management: true,
+			runtime: {
+				state: {
+					override: true,
+					autoStart: [],
+					forks: [ForkProvider.nodeAddress('locked')],
+					providerDefaults: [],
+					dependencyOverrides: [],
+				},
+			},
+		})
+		host.add([ForkProvider, ForkConsumer, PolicyProvider])
+		await host.commit()
+		const rpc = new RuntimeManagementTargetImpl(host.ctx)
+		expect(parsePluginCatalogSnapshot(await rpc.pluginCatalogDto()).statePolicy).toEqual({
+			mode: 'writable',
+			overriddenFields: ['autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'],
+		})
+		const expected = { ok: false, code: 'state_overridden', state: 'unchanged' }
+		const base = ForkProvider.nodeAddress()
+		expect(
+			parseEnsureForkResult(await rpc.ensurePluginForkDto({ base, forkId: 'locked' })),
+		).toMatchObject(expected)
+		expect(
+			parseRemoveForkResult(await rpc.removePluginForkDto({ base, forkId: 'locked' })),
+		).toMatchObject(expected)
+		expect(await rpc.setPluginAutoStartDto([{ address: base, autoStart: true }])).toMatchObject({
+			ok: false,
+			results: [expected],
+		})
+		expect(
+			parsePluginDependencyMutationResult(
+				await rpc.setPluginConsumerOverrideDto({
+					consumer: ForkConsumer.nodeAddress(),
+					requirement: pluginDefinitionAddressOf(ForkProvider),
+					provider: base,
+				}),
+			),
+		).toMatchObject(expected)
+		expect(
+			parsePluginDependencyMutationResult(
+				await rpc.setPluginProviderPolicyDefaultDto({
+					policyOwner: PolicyProvider.nodeAddress(),
+					provider: PolicyProvider.nodeAddress(),
+				}),
+			),
+		).toMatchObject(expected)
+	})
+
 	it('atomically creates, marks for auto-start, and selects a fork without starting it live', async () => {
 		const host = await runtimeHost()
 		host.add([ForkProvider, ForkConsumer])
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const base = pluginNodeAddressOf(ForkProvider)
-		const consumer = pluginNodeAddressOf(ForkConsumer)
+		const base = ForkProvider.nodeAddress()
+		const consumer = ForkConsumer.nodeAddress()
 
 		const result = await rpc.ensurePluginForkDto({
 			base,
@@ -96,7 +154,7 @@ describe('Plugin fork control plane', () => {
 		host.add([ForkProvider, ForkConsumer])
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const base = pluginNodeAddressOf(ForkProvider)
+		const base = ForkProvider.nodeAddress()
 
 		await expect(
 			rpc.ensurePluginForkDto({
@@ -104,7 +162,7 @@ describe('Plugin fork control plane', () => {
 				forkId: 'must-not-survive',
 				autoStart: true,
 				selectFor: {
-					consumer: pluginNodeAddressOf(ForkConsumer),
+					consumer: ForkConsumer.nodeAddress(),
 					requirement: pluginDefinitionAddressOf(FailingForkProvider),
 				},
 			}),
@@ -125,10 +183,10 @@ describe('Plugin fork control plane', () => {
 		host.start(ForkConsumer)
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const consumer = pluginNodeAddressOf(ForkConsumer)
+		const consumer = ForkConsumer.nodeAddress()
 
 		const applied = await rpc.ensurePluginForkDto({
-			base: pluginNodeAddressOf(ForkProvider),
+			base: ForkProvider.nodeAddress(),
 			forkId: 'running',
 			autoStart: false,
 			selectFor: {
@@ -140,7 +198,7 @@ describe('Plugin fork control plane', () => {
 		if (applied.ok) expectBrowserSafeReport(applied.report)
 
 		const deferred = await rpc.ensurePluginForkDto({
-			base: pluginNodeAddressOf(ForkProvider),
+			base: ForkProvider.nodeAddress(),
 			forkId: 'dormant',
 			autoStart: false,
 		})
@@ -148,7 +206,7 @@ describe('Plugin fork control plane', () => {
 		if (deferred.ok) expectBrowserSafeReport(deferred.report)
 
 		const nextBoot = await rpc.ensurePluginForkDto({
-			base: pluginNodeAddressOf(FailingForkProvider),
+			base: FailingForkProvider.nodeAddress(),
 			forkId: 'failing',
 			autoStart: true,
 		})
@@ -165,8 +223,8 @@ describe('Plugin fork control plane', () => {
 		host.add([ForkProvider, ForkConsumer])
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const base = pluginNodeAddressOf(ForkProvider)
-		const consumer = pluginNodeAddressOf(ForkConsumer)
+		const base = ForkProvider.nodeAddress()
+		const consumer = ForkConsumer.nodeAddress()
 		const ensured = await rpc.ensurePluginForkDto({
 			base,
 			forkId: 'referenced',
@@ -226,7 +284,7 @@ describe('Plugin fork control plane', () => {
 		host.add(DrainFailureForkProvider)
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const base = pluginNodeAddressOf(DrainFailureForkProvider)
+		const base = DrainFailureForkProvider.nodeAddress()
 		const ensured = await rpc.ensurePluginForkDto({ base, forkId: 'drain', autoStart: true })
 		if (ensured.ok === false) throw new Error(ensured.error)
 		await expect(
@@ -257,15 +315,17 @@ describe('Plugin fork control plane', () => {
 
 	it('rejects readonly Config metadata removal before stopping the fork', async () => {
 		const host = await runtimeHost({
-			configRecords: {
-				mode: 'readonly',
-				storage: (root) => requireFs(root).documents('host/config'),
+			runtime: {
+				configRecords: {
+					mode: 'readonly',
+					storage: (root) => requireFs(root).documents('host/config'),
+				},
 			},
 		})
 		host.add(ForkProvider)
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const base = pluginNodeAddressOf(ForkProvider)
+		const base = ForkProvider.nodeAddress()
 		const ensured = await rpc.ensurePluginForkDto({ base, forkId: 'readonly', autoStart: true })
 		if (ensured.ok === false) throw new Error(ensured.error)
 		await rpc.applyPluginLifecycleCommandsDto([{ address: ensured.fork, command: 'start' }])
@@ -285,24 +345,27 @@ describe('Plugin fork control plane', () => {
 		let rejectConfigWrite = false
 		const host = await runtimeHost({
 			services: standardServices(),
-			configRecords: {
-				storage(root) {
-					const documents = requireFs(root).documents('host/config')
-					return {
-						...documents,
-						async put(key, value) {
-							if (rejectConfigWrite && key === 'config.json')
-								throw new Error('config cleanup unavailable')
-							await documents.put(key, value)
-						},
-					}
+			runtime: {
+				configRecords: {
+					storage(root) {
+						const documents = requireFs(root).documents('host/config')
+						return {
+							getText: (key) => documents.getText(key),
+							stat: (key) => documents.stat(key),
+							async put(key, value) {
+								if (rejectConfigWrite && key === 'config.json')
+									throw new Error('config cleanup unavailable')
+								await documents.put(key, value)
+							},
+						}
+					},
 				},
 			},
 		})
 		host.add(ForkProvider)
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const base = pluginNodeAddressOf(ForkProvider)
+		const base = ForkProvider.nodeAddress()
 		const ensured = await rpc.ensurePluginForkDto({ base, forkId: 'retry', autoStart: true })
 		if (ensured.ok === false) throw new Error(ensured.error)
 		const config = requireConfigService(host.ctx)
@@ -341,12 +404,12 @@ describe('Plugin fork control plane', () => {
 		const persisted: PluginLogPolicySnapshot[] = []
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			config: {
-				logger: logtape(loggingPlan(), {
+			runtime: {
+				logtape: logtape(loggingPlan(), {
 					policyStore(root) {
 						const documents = requireFs(root).documents('services/logging')
 						return createPluginLogPolicyStore({
-							...documents,
+							getText: (key) => documents.getText(key),
 							async put(key, value) {
 								if (rejectLoggingWrite) throw new Error('logging cleanup unavailable')
 								await documents.put(key, value)
@@ -364,7 +427,7 @@ describe('Plugin fork control plane', () => {
 		host.add(ForkProvider)
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const base = pluginNodeAddressOf(ForkProvider)
+		const base = ForkProvider.nodeAddress()
 		const ensured = await rpc.ensurePluginForkDto({
 			base,
 			forkId: 'logging-retry',

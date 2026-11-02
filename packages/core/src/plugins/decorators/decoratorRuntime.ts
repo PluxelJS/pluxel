@@ -1,6 +1,6 @@
 import type { BasePlugin } from '../composition/BasePlugin'
 import { createCallerGenerationView } from '../composition/caller-view'
-import type { Identifier } from '../types'
+import type { Identifier, PluginToken } from '../types'
 import { requirePluginService } from '../../internal/plugin-service'
 
 type AnyFn = (...args: unknown[]) => unknown
@@ -23,7 +23,7 @@ function getCallerCtx(self: unknown) {
  */
 export function resolvePluginDependency<T extends BasePlugin>(
 	self: unknown,
-	token: Identifier<T>,
+	token: Identifier<T> & PluginToken,
 ): T {
 	if (!self || (typeof self !== 'object' && typeof self !== 'function')) {
 		throw new Error('[pluxel/core] Decorator runtime requires a plugin instance')
@@ -60,7 +60,7 @@ export function resolvePluginDependency<T extends BasePlugin>(
  * ```
  */
 export function pluginMethodDecorator<T extends BasePlugin>(
-	depToken: Identifier<T>,
+	depToken: Identifier<T> & PluginToken,
 	fn: (this: unknown, original: AnyFn, dep: T, key: string | symbol, ...args: unknown[]) => unknown,
 ): MethodDecorator {
 	return (_target, key, desc) => {

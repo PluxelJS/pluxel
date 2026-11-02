@@ -179,7 +179,7 @@ describe('static config environment declaration lowering', () => {
 		`{ const plugins = []; plugins.push('local') }`,
 		`{ class plugins {}; configure(plugins) }`,
 		`for (const plugins of []) { configure(plugins) }`,
-		`const addresses = plugins.map(pluginNodeAddressOf)`,
+		`const addresses = plugins.map(plugin => plugin.nodeAddress())`,
 	])(
 		'preserves module catalog identity across independent scopes and reads: %s',
 		async (preparation) => {

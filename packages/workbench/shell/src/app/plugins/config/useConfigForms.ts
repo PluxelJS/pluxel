@@ -10,6 +10,7 @@ export type ConfigFormState = {
 
 export type ConfigSectionForm = {
 	form: ReturnType<typeof useAutoFormCtx>['form']
+	baseline: Record<string, unknown>
 	reset: (values?: Record<string, unknown>) => void
 	acceptSaved: (values: Record<string, unknown>) => void
 }

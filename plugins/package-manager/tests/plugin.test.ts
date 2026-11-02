@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { commands } from '@pluxel/services/commands'
 import { pluginSource } from '@pluxel/host/sources'
@@ -40,7 +40,6 @@ describe('PackageManagerPlugin', () => {
 		const application = defineHostApplication(() => ({
 			plugins: [PackageManagerPlugin, HeadlessPackageConsumer],
 			services: [commands()],
-			state: { initial: { autoStart: [pluginNodeAddressOf(HeadlessPackageConsumer)] } },
 			envBindings: [
 				envBinding(PackageManagerPlugin, {
 					config: {
@@ -49,6 +48,7 @@ describe('PackageManagerPlugin', () => {
 					},
 				}),
 			],
+			runtime: { state: { autoStart: [HeadlessPackageConsumer.nodeAddress()] } },
 		}))
 		const resolved = await resolveHostApplication(application, {
 			root,
@@ -59,9 +59,8 @@ describe('PackageManagerPlugin', () => {
 		const host = await createHost({
 			plugins: resolved.plugins,
 			services: resolved.services,
-			state: resolved.state,
-			config: resolved.config,
-			configRecords: resolved.configRecords,
+			name: resolved.name,
+			runtime: resolved.runtime,
 		})
 		try {
 			// This file tests Host source integration: native/Vite loaders install the same declaration.
@@ -118,7 +117,7 @@ describe('PackageManagerPlugin', () => {
 
 			expect(failure.lifecycleReport.issues).toContainEqual(
 				expect.objectContaining({
-					plugin: pluginNodeAddressOf(PackageManagerPlugin),
+					plugin: PackageManagerPlugin.nodeAddress(),
 					kind: 'start-failed',
 					message: expect.stringMatching(/Plugin source|Plugin sources/),
 				}),

@@ -17,7 +17,7 @@ Pluxel 的 Plugin 内核，拥有依赖图、Plugin/Part 组成、配置事实�
 - `/host`：独立 Core 宿主与 capability descriptor；配置日志后须先等待 `prepareCoreContext(root)`，生产 Host 自动执行此准备。
 - `/services`：effects、config helpers、`EventsService` 与 `EvtChannel`。
 - `/logger`：Context logger facade 与结构化 Plugin category。
-- `/config`：`logtape()` 与 `zenfs()`，分别用于应用的 `config.logger` 与 `config.storage`；helper 不获取资源。
+- `/config`：`logtape()` 与 `zenfs()`，分别用于应用的 `runtime.logtape` 与 `runtime.zenfs`；helper 不获取资源。
 - `/logging`：已配置 root 的 `Logging` token、日志 policy、store 与查询；`/logging/protocol` 提供浏览器安全的 DTO/filter，`/logging/internal` 仅供框架集成。
 - `/logging/pretty`：按需使用的 console sink，保留插件身份与 Context 展示；文件输出直接使用 `@logtape/file`。
 - `/fs`、`/fs/browser`：原生文件后端、借用类型与浏览器 IndexedDB 后端。

@@ -20,6 +20,7 @@ async function attach(attachments: HostViteAttachment[], cleanups: Array<() => u
 		{} as never,
 		{ plugins: [], modules: [], definitions: [] },
 		'development',
+		{ root: process.cwd(), mode: 'test', env: {}, bindings: {} },
 	)
 }
 
@@ -206,7 +207,7 @@ it.each([undefined, null, 0, 1, 'true', {}])(
 it('rejects asynchronous tracks and preserves its rejection through Host cleanup', async () => {
 	const failure = new Error('ASYNCHRONOUS_TRACKS_FAILED')
 	const release = Promise.withResolvers<void>()
-	const host = await createHost({ plugins: [], state: { mode: 'memory' } })
+	const host = await createHost({ plugins: [], runtime: { state: { mode: 'memory' } } })
 	try {
 		const controller = await attachHostVitePlugins(
 			host,
@@ -232,6 +233,7 @@ it('rejects asynchronous tracks and preserves its rejection through Host cleanup
 			{} as never,
 			{ plugins: [], modules: [], definitions: [] },
 			'development',
+			{ root: process.cwd(), mode: 'test', env: {}, bindings: {} },
 		)
 		expect(() => controller.tracks('/app/source.mjs')).toThrow(
 			'test:async-tracks: tracks(/app/source.mjs) must return a boolean synchronously',

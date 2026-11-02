@@ -35,7 +35,7 @@ export default defineHostApplication(() => ({
   plugins: [OrdersPlugin],
 }))`,
 		description:
-			'Plugin 清单随应用构建，开发期支持 HMR。目录表示代码可用，冷启动策略通过 state.initial.autoStart 显式选择。',
+			'Plugin 清单随应用构建，开发期支持 HMR。目录表示代码可用，冷启动策略通过 runtime.state.autoStart 显式选择。',
 		icon: ServerCog,
 		meta: 'Fixed catalog',
 		title: '固定插件目录',

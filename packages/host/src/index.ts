@@ -33,22 +33,14 @@ export {
 	type HostPluginConfigResultOk,
 	type HostPluginConfigResultErr,
 } from './config'
-export type {
-	HostConfigArtifact,
-	HostConfigVersion,
-	HostConfigMutationOptions,
-	HostConfigSyncOptions,
-	HostConfigSyncStatus,
-	HostConfigSync,
-} from './config-sync-protocol'
 export type { HostDocumentStorage, HostStoreStorageOptions } from './document-storage'
 export type {
 	HostConfigStoreOptions,
 	HostConfigOverlay,
-	HostConfigBaseSource,
+	HostConfigDeclarationSource,
 	HostConfigSource,
 } from './config-store'
-export type { HostStateStoreOptions } from './state-store'
+export type { HostStateStoreOptions, HostStateConfigurationSnapshot } from './state-store'
 
 export type {
 	HostPluginStatusSnapshot,
@@ -64,7 +56,6 @@ export {
 	defineHostApplication,
 	type HostApplicationFactory,
 	runHostApplication,
-	assertHostApplication,
 	resolveHostApplication,
 	prepareHostApplication,
 	type HostStartupContext,

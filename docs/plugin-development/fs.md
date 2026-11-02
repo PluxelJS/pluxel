@@ -5,7 +5,7 @@ description: 通过 ctx.fs() 访问插件目录，使用原生 promise 操作和
 
 每个 Core 与 Host 都内建 FS。Plugin 和 Part 通过固定的 `ctx.fs()` 取得所属插件的文件目录；[后端选择](../host/configuration.md#选择文件后端)由 Host 统一配置，省略时使用 InMemory。返回值是 ZenFS 的 Node 兼容 `fs.promises`；Pluxel 只负责目录归属、准备和关闭，不另建文件操作接口。
 
-应用通过 `config.storage: zenfs(nativeConfig)`（`@pluxel/core/config`）声明后端。helper 验证并快照原生配置、正规化挂载路径，省略根挂载时补 InMemory；它不创建或准备文件系统。Backend、已打开 FileSystem 与不透明 options 保留原身份，后端特有参数在准备时由 ZenFS 校验。Core 也接受原生 `FsConfig`。
+应用通过 `runtime.zenfs: zenfs(nativeConfig)`（`@pluxel/core/config`）声明后端。helper 验证并快照原生配置、正规化挂载路径，省略根挂载时补 InMemory；它不创建或准备文件系统。Backend、已打开 FileSystem 与不透明 options 保留原身份，后端特有参数在准备时由 ZenFS 校验。Core 也接受原生 `FsConfig`。
 
 装配支持原生自定义 Backend 和多个 mount。组合 backend 若校验 SDK 的 `FileSystem` 实例身份，子层应由同一份 SDK 创建，例如外部 `CopyOnWrite` 使用同一 `@zenfs/core` 的 `InMemory`；其他独立 mount 可以使用 Core 预设。
 

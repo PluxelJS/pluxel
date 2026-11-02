@@ -1,6 +1,5 @@
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { once } from 'node:events'
 import { createServer, type Server } from 'node:http'
 import { type AddressInfo } from 'node:net'
@@ -88,7 +87,7 @@ describe('official authentication vNext Runtime integration', () => {
 			// authority, but it must drain the provider without waiting on the session's lease.
 			const stopped = Promise.resolve(
 				ready.management.applyPluginLifecycleCommandsDto([
-					{ address: pluginNodeAddressOf(AuthPlugin), command: 'stop' },
+					{ address: AuthPlugin.nodeAddress(), command: 'stop' },
 				]),
 			).then(
 				(result): void => {

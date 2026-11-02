@@ -1,5 +1,4 @@
 import { createHost } from '@pluxel/host'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { elysia, createElysiaHandler } from '@pluxel/services/elysia'
 import { describe, expect, it } from 'vitest'
 import { HttpPlugin } from '@example/http-plugin'
@@ -10,17 +9,19 @@ describe('HttpPlugin', () => {
 		const host = await createHost({
 			plugins: [HttpPlugin, TodoPlugin],
 			services: [elysia()],
-			configRecords: {
-				initial: [
-					{
-						owner: pluginNodeAddressOf(TodoPlugin),
-						config: { maxItems: 2, seedTitle: 'First task' },
-					},
-				],
+			runtime: {
+				configRecords: {
+					records: [
+						{
+							owner: TodoPlugin.nodeAddress(),
+							config: { maxItems: 2, seedTitle: 'First task' },
+						},
+					],
+				},
 			},
 		})
 		try {
-			await host.startNode(pluginNodeAddressOf(HttpPlugin))
+			await host.startNode(HttpPlugin.nodeAddress())
 			const handler = createElysiaHandler(host)
 			const http = {
 				origin: 'http://test.local',
@@ -67,7 +68,7 @@ describe('HttpPlugin', () => {
 			const completedBody = await completed.json()
 			expect(completedBody.items[0].completed).toBe(true)
 
-			await host.stopNode(pluginNodeAddressOf(HttpPlugin))
+			await host.stopNode(HttpPlugin.nodeAddress())
 			const removed = await http.fetch(new URL('/api/example/todos', http.origin))
 			expect(removed.status).toBe(404)
 		} finally {

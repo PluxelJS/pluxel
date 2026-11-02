@@ -136,7 +136,6 @@ function ConfigContent({
 			displayName={displayName}
 			fields={config.data.fields}
 			savedConfig={config.data.savedConfig}
-			version={config.data.version}
 			readonly={config.data.readonly}
 			defaults={config.data.defaults}
 			sections={config.data.sections}

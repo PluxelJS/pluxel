@@ -16,6 +16,7 @@ import { pluginCatalogEntry, type PluginCatalogEntry, type PluginCatalogSnapshot
 import type { HostStatePatch, HostStatePatchOperation } from './state'
 
 export type HostStateMutationRejection =
+	| Readonly<{ code: 'state_overridden'; field: keyof HostStateSnapshot; message: string }>
 	| Readonly<{
 			code: 'definition_unavailable'
 			definition: PluginDefinitionAddress
@@ -106,7 +107,7 @@ function admitHostStateMutation(
 
 type AdmissionState = {
 	autoStart: Map<string, PluginNodeAddress>
-	forks: Map<string, { definition: PluginDefinitionAddress; forkIds: Set<string> }>
+	forks: Map<string, PluginNodeAddress>
 	providerDefaults: Map<string, HostProviderDefaultState>
 	dependencyOverrides: Map<string, HostDependencyOverrideState>
 	overridesByProvider: Map<string, Set<string>>
@@ -116,12 +117,7 @@ type AdmissionState = {
 function createAdmissionState(snapshot: HostStateSnapshot): AdmissionState {
 	const state: AdmissionState = {
 		autoStart: new Map(snapshot.autoStart.map((node) => [pluginNodeIndexKey(node), node])),
-		forks: new Map(
-			snapshot.forks.map((entry) => [
-				pluginDefinitionIndexKey(entry.definition),
-				{ definition: entry.definition, forkIds: new Set(entry.forkIds) },
-			]),
-		),
+		forks: new Map(snapshot.forks.map((node) => [pluginNodeIndexKey(node), node])),
 		providerDefaults: new Map(
 			snapshot.providerDefaults.map((entry) => [pluginDefinitionIndexKey(entry.token), entry]),
 		),
@@ -136,10 +132,7 @@ function createAdmissionState(snapshot: HostStateSnapshot): AdmissionState {
 function snapshotAdmissionState(state: AdmissionState): HostStateSnapshot {
 	return freezeTrustedHostStateSnapshot({
 		autoStart: [...state.autoStart.values()],
-		forks: [...state.forks.values()].map((entry) => ({
-			definition: entry.definition,
-			forkIds: [...entry.forkIds],
-		})),
+		forks: [...state.forks.values()],
 		providerDefaults: [...state.providerDefaults.values()],
 		dependencyOverrides: [...state.dependencyOverrides.values()],
 	})
@@ -189,13 +182,7 @@ function validateOperation(
 					message: 'Plugin definition does not allow fork nodes',
 				})
 			}
-			const key = pluginDefinitionIndexKey(operation.definition)
-			const family = state.forks.get(key) ?? {
-				definition: operation.definition,
-				forkIds: new Set<string>(),
-			}
-			family.forkIds.add(operation.forkId)
-			state.forks.set(key, family)
+			state.forks.set(pluginNodeIndexKey(node), node)
 			return
 		}
 		case 'remove-fork': {
@@ -222,10 +209,7 @@ function validateOperation(
 					message: 'Fork is referenced by dependency overrides',
 				})
 			}
-			const familyKey = pluginDefinitionIndexKey(operation.definition)
-			const family = state.forks.get(familyKey)!
-			family.forkIds.delete(operation.forkId)
-			if (family.forkIds.size === 0) state.forks.delete(familyKey)
+			state.forks.delete(pluginNodeIndexKey(node))
 			return
 		}
 		case 'set-provider-default': {
@@ -346,10 +330,7 @@ function isDurableFork(
 	state: AdmissionState,
 	node: PluginNodeAddress,
 ): node is Extract<PluginNodeAddress, { variant: 'fork' }> {
-	return (
-		node.variant === 'fork' &&
-		state.forks.get(pluginDefinitionIndexKey(node.definition))?.forkIds.has(node.forkId) === true
-	)
+	return node.variant === 'fork' && state.forks.has(pluginNodeIndexKey(node))
 }
 
 function overrideKey(consumer: PluginNodeAddress, requirement: PluginDefinitionAddress): string {

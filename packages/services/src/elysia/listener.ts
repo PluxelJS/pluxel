@@ -5,7 +5,6 @@ import { serve } from 'srvx/node'
 import type { ServerOptions } from 'srvx'
 import { dispatchElysiaRequest } from './dispatch'
 import type { PluginHost } from '@pluxel/host'
-import { resolveHostEnv } from '@pluxel/host/environment'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { ElysiaRuntime } from './runtime'
 import { NodeElysiaApplicationCarrier } from './node'
@@ -21,6 +20,8 @@ export type ListenElysiaOptions = Readonly<
 		}
 		/** Optional public directory, resolved against cwd and served after a non-reserved 404. */
 		publicDir?: string
+		/** Trusted public HTTP(S) origin supplied by the listener owner. */
+		publicOrigin?: string
 	}
 >
 
@@ -40,11 +41,11 @@ export async function listenElysia(host: PluginHost, options: ListenElysiaOption
 			throw new TypeError(
 				'[host] listenElysia requires TCP; use createElysiaHandler with srvx for IPC transports',
 			)
-	const { publicDir: inputPublicDir, ...serverOptions } = options
+	const { publicDir: inputPublicDir, publicOrigin: inputPublicOrigin, ...serverOptions } = options
 	const http = resolveContextCapability(host.ctx, ElysiaRuntime)
-	const environment = resolveHostEnv()
-	const hostname = serverOptions.hostname ?? environment.hostBind ?? '0.0.0.0'
-	const port = serverOptions.port ?? environment.hostPort ?? 3000
+	const hostname = serverOptions.hostname ?? '0.0.0.0'
+	const port = serverOptions.port ?? 3000
+	const publicOrigin = resolvePublicOrigin(inputPublicOrigin)
 	if (
 		inputPublicDir !== undefined &&
 		(typeof inputPublicDir !== 'string' || !inputPublicDir.trim() || inputPublicDir.includes('\0'))
@@ -62,7 +63,7 @@ export async function listenElysia(host: PluginHost, options: ListenElysiaOption
 			const url = new URL(server.url)
 			return {
 				url,
-				publicOrigin: environment.publicOrigin,
+				publicOrigin,
 				hostname: url.hostname,
 				port: address.port,
 				development: false,
@@ -138,4 +139,26 @@ export async function listenElysia(host: PluginHost, options: ListenElysiaOption
 			})
 		throw error
 	}
+}
+
+function resolvePublicOrigin(input: string | undefined): string | undefined {
+	if (input === undefined) return undefined
+	let url: URL
+	try {
+		if (typeof input !== 'string') throw new TypeError('expected a string')
+		url = new URL(input)
+	} catch (cause) {
+		throw new TypeError('[host] publicOrigin must be an HTTP(S) origin', { cause })
+	}
+	if (
+		!['http:', 'https:'].includes(url.protocol) ||
+		url.username ||
+		url.password ||
+		url.pathname !== '/' ||
+		url.search ||
+		url.hash
+	) {
+		throw new TypeError('[host] publicOrigin must be an HTTP(S) origin')
+	}
+	return url.origin
 }

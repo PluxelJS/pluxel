@@ -96,11 +96,12 @@ function RegisterForm({
 	registerForm: (key: string, form: ConfigSectionForm) => () => void
 	setBaseline: (values: Record<string, unknown>) => void
 }): null {
-	const { form, reset } = useAutoFormCtx()
+	const { form, reset, defaultValues } = useAutoFormCtx()
 
 	useEffect(() => {
 		return registerForm(tabKey, {
 			form,
+			baseline: defaultValues,
 			reset: (values) => {
 				if (values) setBaseline(values)
 				reset(values)
@@ -110,7 +111,7 @@ function RegisterForm({
 				if (form.state.values === values) reset(values)
 			},
 		})
-	}, [form, registerForm, reset, setBaseline, tabKey])
+	}, [defaultValues, form, registerForm, reset, setBaseline, tabKey])
 
 	return null
 }

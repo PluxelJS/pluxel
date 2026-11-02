@@ -2,6 +2,7 @@ import type {
 	PluginCatalogSection,
 	PluginCatalogSnapshot,
 	PluginStatusSnapshot,
+	PluginStatePolicy,
 } from '@pluxel/services/management/client'
 
 export type PluginStatusEntry = Readonly<
@@ -13,6 +14,7 @@ export type PluginStatusEntry = Readonly<
 >
 
 export type PluginOverview = Readonly<{
+	statePolicy: PluginStatePolicy
 	status: Readonly<{
 		statuses: readonly PluginStatusEntry[]
 		summary: PluginCatalogSnapshot['summary']
@@ -26,10 +28,23 @@ function projectStatus(entry: PluginStatusSnapshot): PluginStatusEntry {
 
 export function buildPluginOverview(catalog: PluginCatalogSnapshot): PluginOverview {
 	return Object.freeze({
+		statePolicy: catalog.statePolicy,
 		status: Object.freeze({
 			statuses: Object.freeze(catalog.plugins.map(projectStatus)),
 			summary: catalog.summary,
 		}),
 		sections: Object.freeze([...catalog.sections]),
 	})
+}
+
+/** Every field touched by the requested management patch must be writable. */
+export function canWritePluginState(
+	policy: PluginStatePolicy | undefined,
+	...fields: readonly PluginStatePolicy['overriddenFields'][number][]
+): boolean {
+	return (
+		!!policy &&
+		policy.mode !== 'readonly' &&
+		fields.every((field) => !policy.overriddenFields.includes(field))
+	)
 }

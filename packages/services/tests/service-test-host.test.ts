@@ -10,6 +10,8 @@ import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { definePluginFork, createTestHost } from '@pluxel/test'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { describe, expect, it, vi } from 'vitest'
+import * as v from 'valibot'
+import { requireHostDocuments } from '@pluxel/core/internal'
 
 @Plugin({ displayName: 'Public test host fixture' })
 class PublicFixture extends BasePlugin {}
@@ -52,7 +54,29 @@ class RollbackFixture extends BasePlugin {
 	}
 }
 
+const SeedConfig = v.object({
+	text: v.pipe(
+		v.string(),
+		v.transform((value) => value.trim()),
+	),
+	fallback: v.optional(v.string(), 'default'),
+})
+@Plugin()
+class SeedFixture extends BasePlugin {
+	readonly config = this.configs.use(SeedConfig)
+}
+
 describe('service test host', () => {
+	it('persists initialConfig as raw input while publishing normalized config and schema defaults', async () => {
+		await using host = await createServiceInternalTestHost({ services: [] })
+		const instance = await host.start(SeedFixture, { initialConfig: { text: ' seeded ' } })
+		expect(instance.config).toEqual({ text: 'seeded', fallback: 'default' })
+		const saved = await requireHostDocuments(host.ctx, 'config').getText('config.json')
+		expect(JSON.parse(saved!).json).toMatchObject({
+			plugins: [{ owner: SeedFixture.nodeAddress(), config: { text: ' seeded ' } }],
+		})
+	})
+
 	it('uses the explicit service list without adding default services', async () => {
 		await using bare = await createTestHost({ services: [] })
 		await bare.start(PublicFixture)

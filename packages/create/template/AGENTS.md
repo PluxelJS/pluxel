@@ -38,6 +38,6 @@
 
 ## 持久状态与原生依赖
 
-配置继续使用 `configs.use()`。配置之外的有界状态通过固定的 `ctx.tinybase.open()` 取得每个 Plugin node 唯一的托管 Store；原生 API 和类型直接从 `tinybase` 与上游子路径导入。持久位置、恢复和保存归 Host，不在插件管理 Persister 或另写 JSON 设置。密钥留在 Vault，大文件通过固定的 `ctx.fs()` 保存；后端在 Host 的 `config.storage: zenfs(...)` 中选择；日志输出在 `config.logger: logtape(...)` 中选择，两者都从 `@pluxel/core/config` 导入，不加入服务清单。
+配置继续使用 `configs.use()`。配置之外的有界状态通过固定的 `ctx.tinybase.open()` 取得每个 Plugin node 唯一的托管 Store；原生 API 和类型直接从 `tinybase` 与上游子路径导入。持久位置、恢复和保存归 Host，不在插件管理 Persister 或另写 JSON 设置。密钥留在 Vault，大文件通过固定的 `ctx.fs()` 保存；后端在 Host 的 `runtime.zenfs: zenfs(...)` 中选择；日志输出在 `runtime.logtape: logtape(...)` 中选择，两个可选 helper 都从 `@pluxel/core/config` 导入，原生配置可直接输入，不加入服务清单。
 
 共享托管 Store 的包使用 catalog 所选的精确 `tinybase` peer 与同版 dev dependency；Core 内建精确 TinyBase runtime；应用仅在直接使用原生 TinyBase 时声明自己的 dependency。`pluxel build` 生成 `pluxel.tinybase` 接纳事实，不手写标记或使用全局 override。仅使用配置的包不需要新增 TinyBase import。独立私有 Store 保留普通依赖与自身解析；开始交换宿主托管 Store 后再进入共享契约。完整用法见 `vp exec pluxel docs development/plugin-package.md`。

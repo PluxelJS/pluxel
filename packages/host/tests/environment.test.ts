@@ -1,6 +1,6 @@
 import { env as standardEnvironment } from 'std-env'
-import { describe, expect, expectTypeOf, it } from 'vitest'
-import { env, hostEnv, resolveHostEnv } from '../src/environment'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { env, resolveHostEnv } from '../src/environment'
 
 declare module '../src/environment' {
 	interface PluxelEnvironmentVariables {
@@ -18,10 +18,24 @@ describe('Pluxel environment', () => {
 		expectTypeOf(env.APPLICATION_REGION).toEqualTypeOf<string | undefined>()
 	})
 
-	it('publishes one validated Host environment with a stable data root default', () => {
-		expect(hostEnv).toEqual(resolveHostEnv(env))
-		expect(hostEnv.dataRoot).toBe(env.PLUXEL_DATA_ROOT?.trim() || '.pluxel')
-		expect(Object.isFrozen(hostEnv)).toBe(true)
+	it('resolves independent immutable snapshots only from the supplied environment', () => {
+		const input = { PLUXEL_DATA_ROOT: './first' }
+		const first = resolveHostEnv(input)
+		input.PLUXEL_DATA_ROOT = './second'
+		expect(first.dataRoot).toBe('./first')
+		expect(resolveHostEnv(input).dataRoot).toBe('./second')
+		expect(Object.isFrozen(first)).toBe(true)
+	})
+
+	it('imports the environment module without resolving malformed process inputs', async () => {
+		vi.stubEnv('PLUXEL_HOST_PORT', 'invalid')
+		try {
+			vi.resetModules()
+			const environment = await import('../src/environment')
+			expect(environment.resolveHostEnv({})).toEqual({ dataRoot: '.pluxel' })
+		} finally {
+			vi.unstubAllEnvs()
+		}
 	})
 
 	it('validates explicit host behavior and applies only the framework-wide data root default', () => {

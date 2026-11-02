@@ -354,7 +354,6 @@ it('borrows management operations only for the opened View lifetime', async () =
 		describe: vi.fn(),
 		catalog: unused,
 		plugins: unused,
-		config: unused,
 		dependencies: unused,
 		forks: unused,
 		logging: unused,
@@ -369,6 +368,7 @@ it('borrows management operations only for the opened View lifetime', async () =
 			},
 		},
 		[Symbol.dispose]: sessionDispose,
+		config: unused,
 	} as unknown as WorkbenchManagementOperations
 	const host = createWorkbenchViewHost({
 		locale: 'en',

@@ -26,15 +26,6 @@ export default defineHostApplication(async (startup) => {
 	return {
 		name: 'pluxel-architecture-lab',
 		plugins: hostPlugins,
-		// Development starts compile the official Node artifacts on the same lifecycle path.
-		config: {
-			logger: logtape(),
-			plugins: { startTimeoutMs: 30_000 },
-			storage: zenfs({
-				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-				durableMounts: ['/'],
-			}),
-		},
 		sources: [
 			pluginSource({
 				kind: 'directory',
@@ -46,14 +37,20 @@ export default defineHostApplication(async (startup) => {
 			product,
 			workbench: environment.workbench ?? true,
 		}),
-		configRecords: {
-			initial: [
-				...createHostConfigRecords(resolve(dataRoot, 'showcase/s3')),
-				{ owner: packageManagerNode, config: { rootDir: managedPackagesRoot } },
-			],
-		},
-		state: {
-			initial: createHostRuntimeState(),
+		runtime: {
+			logtape: logtape(),
+			plugins: { startTimeoutMs: 30_000 },
+			zenfs: zenfs({
+				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+				durableMounts: ['/'],
+			}),
+			configRecords: {
+				records: [
+					...createHostConfigRecords(resolve(dataRoot, 'showcase/s3')),
+					{ owner: packageManagerNode, config: { rootDir: managedPackagesRoot } },
+				],
+			},
+			state: createHostRuntimeState(),
 		},
 	}
 })

@@ -7,7 +7,14 @@ export function requireFs(root: RootContext) {
 	return resolveContextCapability(root, FS_CAPABILITY)
 }
 
-/** @internal Host-only confirmed documents, status and explicit writer recovery. */
+/** @internal Borrow ordinary Host documents from their readable, domain-owned directory. */
+export function requireHostDocuments(root: RootContext, namespace: string) {
+	if (!/^[a-z][a-z0-9-]*$/.test(namespace))
+		throw new TypeError('[core.fs] Host document namespace must be a lowercase identifier')
+	return requireFs(root).documents(`services/host/${namespace}`)
+}
+
+/** @internal Plugin Store status and explicit writer recovery. */
 export function requireTinyBaseHost(root: RootContext) {
 	return resolveContextCapability(root, TINYBASE_HOST_CAPABILITY)
 }

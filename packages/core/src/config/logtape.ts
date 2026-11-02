@@ -5,14 +5,19 @@ import { normalizePluginLogPolicySnapshot } from '../logging/policy'
 import { assertLoggingOptions, type LoggingOptions } from '../logging/service'
 import { assertRuntimeLoggingInput } from '../logging/validation'
 
-const LOGTAPE_CONFIG = Symbol.for('pluxel:core:logtape-config')
+/** Native configuration, or native input with independent framework policy options. */
+export type LogTapeConfig =
+	| RuntimeLoggingInput
+	| Readonly<{
+			input: RuntimeLoggingInput
+			options?: LoggingOptions
+	  }>
 
-/** A validated declaration. Native resources are borrowed until Core prepares this owner. */
-export interface LogTapeConfig {
-	readonly [LOGTAPE_CONFIG]: true
-	readonly input: RuntimeLoggingInput
-	readonly options: LoggingOptions
-}
+/** Captured native input; resources remain borrowed until Core prepares this owner. */
+export type ResolvedLogTapeConfig = Readonly<{
+	input: RuntimeLoggingInput
+	options: LoggingOptions
+}>
 
 function snapshotNativeConfig(config: Config<string, string>): Config<string, string> {
 	if (config.reset === true)
@@ -47,7 +52,7 @@ function snapshotNativeConfig(config: Config<string, string>): Config<string, st
 export function logtape(
 	input: RuntimeLoggingInput = defaultLoggingConfig,
 	options: LoggingOptions = {},
-): LogTapeConfig {
+): ResolvedLogTapeConfig {
 	assertRuntimeLoggingInput(input, '[core.logtape] config')
 	assertLoggingOptions(options)
 	const initialPluginPolicy = options.initialPluginPolicy
@@ -59,7 +64,6 @@ export function logtape(
 		Object.freeze(initialPluginPolicy)
 	}
 	return Object.freeze({
-		[LOGTAPE_CONFIG]: true as const,
 		input: typeof input === 'function' ? input : snapshotNativeConfig(input),
 		options: Object.freeze({
 			...options,
@@ -70,10 +74,16 @@ export function logtape(
 	})
 }
 
-/** @internal Reject the replaced rootId object and other undeclared configuration. */
-export function resolveLogTapeConfig(config: LogTapeConfig | undefined): LogTapeConfig | undefined {
+/** @internal Capture either public input shape without invoking its factories. */
+export function resolveLogTapeConfig(
+	config: LogTapeConfig | undefined,
+): ResolvedLogTapeConfig | undefined {
 	if (config === undefined) return undefined
-	if (!config || typeof config !== 'object' || config[LOGTAPE_CONFIG] !== true)
-		throw new TypeError('[core.logtape] logger must be declared with logtape()')
-	return config
+	if (config && typeof config === 'object' && 'input' in config) {
+		for (const key of Object.keys(config))
+			if (key !== 'input' && key !== 'options')
+				throw new TypeError(`[core.logtape] unknown declaration field: ${key}`)
+		return logtape(config.input, config.options)
+	}
+	return logtape(config as RuntimeLoggingInput)
 }

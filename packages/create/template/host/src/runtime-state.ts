@@ -1,5 +1,4 @@
 import { VaultAdminPlugin } from '@pluxel/services/plugins'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { AuditPlugin } from '@example/audit-plugin'
 import { HttpPlugin } from '@example/http-plugin'
 import { TodoPlugin } from '@example/todo-plugin'
@@ -9,15 +8,15 @@ const exampleAutoStartPlugins = [AuditPlugin, HttpPlugin, VaultAdminPlugin] as c
 
 export function exampleHostState() {
 	return {
-		initial: { autoStart: exampleAutoStartPlugins.map(pluginNodeAddressOf) },
+		autoStart: exampleAutoStartPlugins.map((plugin) => plugin.nodeAddress()),
 	}
 }
 
 export function exampleConfigRecords(rawMaxItems?: string) {
 	return {
-		initial: [
+		records: [
 			{
-				owner: pluginNodeAddressOf(TodoPlugin),
+				owner: TodoPlugin.nodeAddress(),
 				config: {
 					maxItems: rawMaxItems === undefined ? 12 : Number(rawMaxItems),
 					seedTitle: 'Trace a Todo from React to a Plugin',

@@ -1,5 +1,4 @@
 import type { PluginNodeAddress } from '../plugins/runtime/identity'
-import type { HostDocumentStorage } from '../storage/documents'
 import type { Store } from 'tinybase'
 import type { OptionalSchemas, Store as SchemaStore } from 'tinybase/with-schemas'
 
@@ -15,9 +14,7 @@ export interface TinyBaseService {
 	flush(): Promise<void>
 }
 
-export type TinyBaseIdentity =
-	| Readonly<{ kind: 'plugin'; node: PluginNodeAddress }>
-	| Readonly<{ kind: 'host'; namespace: string }>
+export type TinyBaseIdentity = Readonly<{ kind: 'plugin'; node: PluginNodeAddress }>
 
 export type TinyBaseStatus = Readonly<{
 	identity: TinyBaseIdentity
@@ -30,10 +27,8 @@ export type TinyBaseStatus = Readonly<{
 	error?: unknown
 }>
 
-/** Host-only document storage and diagnostics. It never exposes a Plugin's mutable Store. */
+/** Host-only diagnostics. It never exposes a Plugin's mutable Store. */
 export interface TinyBaseHostService {
-	/** Pure borrowed adapter. All documents in a namespace commit through one serial writer. */
-	documents(namespace: string): HostDocumentStorage
 	status(): readonly TinyBaseStatus[]
 	/** Stop the Plugin first. Retry the retained snapshot or discard it and inspect the actual backing. */
 	recover(node: PluginNodeAddress, action: 'retry' | 'discard'): Promise<void>
@@ -41,6 +36,6 @@ export interface TinyBaseHostService {
 
 /** Host policy; Plugin authors do not choose persistence paths or backends. */
 export type TinyBaseOptions = Readonly<{
-	/** Maximum UTF-8 bytes per complete envelope, including Host documents. @defaultValue 8388608 */
+	/** Maximum UTF-8 bytes per complete envelope, including identity. @defaultValue 8388608 */
 	maxSnapshotBytes?: number
 }>

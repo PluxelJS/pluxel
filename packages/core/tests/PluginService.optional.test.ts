@@ -3,7 +3,6 @@ import {
 	Plugin,
 	definePluginRef,
 	pluginDefinitionAddressOf,
-	pluginNodeAddressOf,
 	withCoreInternalTestHost,
 } from '@pluxel/core/internal/test'
 import { requirePluginService } from '@pluxel/core/internal'
@@ -120,7 +119,7 @@ describe('static optional Plugin integration', () => {
 			const update = registry.beginUpdate({ reason: 'core-test' })
 			update.setProviderDefault(
 				pluginDefinitionAddressOf(AbstractOptionalProvider),
-				pluginNodeAddressOf(ConcreteAbstractOptionalProvider),
+				ConcreteAbstractOptionalProvider.nodeAddress(),
 			)
 			const prepared = update.prepare()
 			const result = await prepared.commit()

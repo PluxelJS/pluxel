@@ -14,16 +14,6 @@ import { immutableConfigRecord } from '@pluxel/core/internal'
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import { ConfigMutationRejectedError } from './config'
-import {
-	configVersion,
-	createConfigSyncSnapshot,
-	decodeConfigSyncSnapshot,
-	HostConfigVersionConflictError,
-	sameConfigVersion,
-	type HostConfigVersion,
-	type HostConfigSyncOptions,
-	type HostConfigSyncSnapshot,
-} from './config-sync-protocol'
 import { coercePluginConfigRecords, mergeConfigRecords, mergeRecord } from './config-records'
 import {
 	configLeafPaths,
@@ -31,7 +21,6 @@ import {
 	configPathContains,
 	configHasPath,
 	changedConfigPaths,
-	copyConfigPath,
 } from './config-paths'
 import {
 	assertResolvedHostStoreStorage,
@@ -42,22 +31,24 @@ import {
 
 type HostStoreMode = 'memory' | 'writable' | 'readonly'
 export interface PluginConfigFile {
-	version: 3
+	version: 4
 	plugins: readonly PluginConfigRecordSnapshot[]
 }
 export type HostConfigStoreOptions = HostStoreStorageOptions &
 	Readonly<{
-		/** Base records below management saves and environment overlays. Never persisted by this store. */
-		initial?: readonly PluginConfigRecordSnapshot[]
+		/** Raw declaration records used when the saved document is absent. */
+		records?: readonly PluginConfigRecordSnapshot[]
+		/** Apply explicitly declared paths over saved records without changing the saved document. */
+		override?: boolean
 		overlays?: readonly HostConfigOverlay[]
-		baseSources?: readonly HostConfigBaseSource[]
+		declarationSources?: readonly HostConfigDeclarationSource[]
 	}>
 
 export type HostConfigOverlay = PluginConfigRecordSnapshot &
 	Readonly<{
 		sources: readonly Readonly<{ path: readonly string[]; kind: 'env'; name: string }>[]
 	}>
-export type HostConfigBaseSource = Readonly<{
+export type HostConfigDeclarationSource = Readonly<{
 	owner: PluginNodeAddress
 	path: readonly string[]
 	kind: 'file'
@@ -66,7 +57,7 @@ export type HostConfigBaseSource = Readonly<{
 export type HostConfigSource = Readonly<{
 	owner: PluginNodeAddress
 	path: readonly string[]
-	kind: 'base' | 'file' | 'saved' | 'env'
+	kind: 'declaration' | 'file' | 'saved' | 'memory' | 'env'
 	readonly: boolean
 	name?: string
 }>
@@ -87,41 +78,41 @@ export class HostConfigStore extends CoreConfigService {
 	private readonly mode: HostStoreMode
 	private readonly readonlyMode: boolean
 	private readonly storage: HostDocumentStorage | undefined
-	private readonly syncOptions: HostConfigSyncOptions | undefined
-	private savedSnapshot: HostConfigSyncSnapshot | null = null
-	private pendingSnapshot: HostConfigSyncSnapshot | null = null
-	private syncFault: unknown
-	private syncFaulted = false
 	private internalMutation = false
-	private readonly savedListeners = new Set<() => void>()
+	private unsubscribe?: () => void
 	private readonly deferredRecords = new Set<string>()
 
-	private readonly base: readonly PluginConfigRecordSnapshot[]
+	private readonly declarations: readonly PluginConfigRecordSnapshot[]
+	private readonly declarationOverride: boolean
 	private readonly overlays: readonly HostConfigOverlay[]
-	private readonly baseSources: readonly HostConfigBaseSource[]
+	private readonly declarationSources: readonly HostConfigDeclarationSource[]
 	private managed: readonly PluginConfigRecordSnapshot[] = []
+	private rawSource: 'declaration' | 'saved' | 'memory' = 'declaration'
 	private readonly pendingManaged = new Map<
 		string,
 		{ owner: PluginNodeAddress; config: Readonly<Record<string, unknown>> }
 	>()
 
-	get version(): HostConfigVersion | null {
-		return configVersion(this.savedSnapshot)
-	}
 	get isReadonly(): boolean {
-		return this.readonlyMode || this.syncOptions?.role === 'replica'
+		return this.readonlyMode
 	}
-	get synchronized(): boolean {
-		return this.syncOptions !== undefined
+	get storageMode(): HostStoreMode {
+		return this.mode
 	}
-	get snapshot(): HostConfigSyncSnapshot | null {
-		return this.savedSnapshot
+	get supportsExternalReload(): boolean {
+		return this.mode !== 'memory' && typeof this.storage?.subscribe === 'function'
 	}
-	get hasPersistenceFault(): boolean {
-		return this.syncFaulted
+	get isDeclarationOverride(): boolean {
+		return this.declarationOverride
+	}
+	getDeclaredConfig(owner: PluginNodeAddress): Record<string, unknown> {
+		return mergeRecord(
+			undefined,
+			this.declarations.find((record) => pluginNodeAddressEqual(record.owner, owner))?.config,
+		)
 	}
 	getManagedRecords(): readonly PluginConfigRecordSnapshot[] {
-		return coercePluginConfigRecords(this.managed)
+		return mergeConfigRecords(undefined, this.managed)
 	}
 
 	override getRawConfig<T extends object = Record<string, unknown>>(
@@ -164,53 +155,54 @@ export class HostConfigStore extends CoreConfigService {
 			this.internalMutation = false
 		}
 	}
-	subscribeSaved(listener: () => void): () => void {
-		this.savedListeners.add(listener)
-		return () => {
-			this.savedListeners.delete(listener)
+	/** Called after the Host coordinator is installed. External loads never write back. */
+	async observe(reload: () => Promise<void>): Promise<void> {
+		if (this.mode === 'memory' || !this.storage) return
+		const reloadAndReport = async () => {
+			if (this.disposed) return
+			try {
+				await reload()
+			} catch (error) {
+				if (!this.disposed) this.ctx.logger.error('ConfigService external reload failed', { error })
+			}
 		}
-	}
-	assertManagedMutation(expected?: HostConfigVersion): void {
-		if (!this.isReady || this.disposed)
-			throw new Error('[host:config] Config document is unavailable')
-		if (this.isReadonly) throw new ConfigMutationRejectedError('config mutation')
-		if (this.syncFaulted) throw this.syncFault
-		if (this.syncOptions && !sameConfigVersion(expected, this.version))
-			throw new HostConfigVersionConflictError(this.version)
+		this.unsubscribe = this.storage.subscribe?.(() => {
+			void reloadAndReport()
+		})
+		// A document can change while Host services prepare, before the subscription exists.
+		await reloadAndReport()
 	}
 
-	/** The only synchronized cleanup path; callers already hold the Host coordinator. */
-	async deleteManagedConfig(owner: PluginNodeAddress, expected?: HostConfigVersion): Promise<void> {
-		this.assertManagedMutation(expected)
-		if (!this.syncOptions) {
-			this.deleteConfig(owner)
-			await this.flush()
-			return
-		}
-		const records = mergeManagedRecord(this.managed, owner, {})
-		if (ohash(records) === ohash(this.managed)) return
-		const snapshot = this.nextSnapshot(records)
-		await this.persistSyncSnapshot(snapshot)
-		this.managed = records
-		this.internalMutation = true
-		try {
-			super.deleteConfig(owner)
-			this.deferredRecords.add(pluginNodeIndexKey(owner))
-		} finally {
-			this.internalMutation = false
-		}
-		this.publishSnapshot(snapshot)
+	stopObserving(): void {
+		this.unsubscribe?.()
+		this.unsubscribe = undefined
+	}
+
+	assertManagedMutation(): void {
+		this.assertConfigMutable('config mutation')
+	}
+
+	async deleteManagedConfig(owner: PluginNodeAddress): Promise<void> {
+		this.deleteConfig(owner)
+		await this.flush()
+	}
+
+	async readExternal(): Promise<
+		{ text: string | undefined; records: readonly PluginConfigRecordSnapshot[] } | undefined
+	> {
+		if (this.disposed || this.mode === 'memory' || !this.storage) return undefined
+		const text = await this.storage.getText(this.file)
+		if (ohash(text) === this.lastWrittenDigest) return undefined
+		return { text, records: text === undefined ? [] : this.parseDocument(text) }
 	}
 
 	/** Internal complete-document commit. Validation is pinned and completed by config.ts first. */
-	async acceptSyncSnapshot(
-		snapshot: HostConfigSyncSnapshot,
+	acceptExternal(
+		document: { text: string | undefined; records: readonly PluginConfigRecordSnapshot[] },
 		validated: readonly Parameters<CoreConfigService['stageValidatedConfig']>[0][],
-		options: Readonly<{ restored?: boolean; known?: readonly PluginNodeAddress[] }> = {},
-	): Promise<readonly ReturnType<CoreConfigService['stageValidatedConfig']>[]> {
-		if (this.syncOptions?.role !== 'replica') throw new Error('[host:config-sync] Not a replica')
-		if (this.syncFaulted) throw this.syncFault
-		const { records } = decodeConfigSyncSnapshot(snapshot, this.syncOptions)
+		knownOwners: readonly PluginNodeAddress[],
+	): readonly ReturnType<CoreConfigService['stageValidatedConfig']>[] {
+		const { records } = document
 		this.internalMutation = true
 		let tickets: ReturnType<CoreConfigService['stageValidatedConfig']>[]
 		try {
@@ -218,12 +210,10 @@ export class HostConfigStore extends CoreConfigService {
 		} finally {
 			this.internalMutation = false
 		}
-		if (!options.restored) await this.persistSyncSnapshot(snapshot)
 		const previous = this.managed
 		this.managed = records
-		const known = new Set(
-			(options.known ?? validated.map((input) => input.owner)).map(pluginNodeIndexKey),
-		)
+		this.rawSource = 'saved'
+		const known = new Set(knownOwners.map(pluginNodeIndexKey))
 		const changed = new Map(
 			[...previous, ...records].map((record) => [pluginNodeIndexKey(record.owner), record.owner]),
 		)
@@ -246,39 +236,8 @@ export class HostConfigStore extends CoreConfigService {
 		} finally {
 			this.internalMutation = false
 		}
-		this.publishSnapshot(snapshot)
+		this.lastWrittenDigest = ohash(document.text)
 		return tickets
-	}
-
-	private nextSnapshot(records: readonly PluginConfigRecordSnapshot[]): HostConfigSyncSnapshot {
-		if (!this.syncOptions || !this.savedSnapshot)
-			throw new Error('[host:config-sync] Writer is not initialized')
-		if (this.savedSnapshot.seq === Number.MAX_SAFE_INTEGER)
-			throw new Error('[host:config-sync] Sequence exhausted')
-		return createConfigSyncSnapshot(this.syncOptions, records, {
-			history: this.savedSnapshot.history,
-			seq: this.savedSnapshot.seq + 1,
-		})
-	}
-	private publishSnapshot(snapshot: HostConfigSyncSnapshot): void {
-		this.savedSnapshot = snapshot
-		this.pendingSnapshot = null
-		for (const listener of this.savedListeners) listener()
-	}
-	private async persistSyncSnapshot(snapshot: HostConfigSyncSnapshot): Promise<void> {
-		if (this.syncFaulted) throw this.syncFault
-		const text = SuperJSON.stringify(snapshot)
-		const task = Promise.resolve().then(() => this.storage!.put(this.file, text))
-		this.saveInFlight = task
-		try {
-			await task
-		} catch (error) {
-			this.syncFaulted = true
-			this.syncFault = error
-			throw error
-		} finally {
-			this.saveInFlight = null
-		}
 	}
 
 	getManagedConfig(owner: PluginNodeAddress): Record<string, unknown> {
@@ -292,34 +251,36 @@ export class HostConfigStore extends CoreConfigService {
 		owner: PluginNodeAddress,
 		managed = this.getManagedConfig(owner),
 	): Record<string, unknown> {
-		const base = this.base.find((record) => pluginNodeAddressEqual(record.owner, owner))?.config
+		const declared = this.declarationOverride ? this.getDeclaredConfig(owner) : undefined
 		const overlay = this.overlays.find((record) =>
 			pluginNodeAddressEqual(record.owner, owner),
 		)?.config
-		return mergeRecord(mergeRecord(base, managed), overlay)
+		return mergeRecord(mergeRecord(managed, declared), overlay)
 	}
 
 	getConfigSources(owner: PluginNodeAddress): readonly HostConfigSource[] {
-		const base =
-			this.base.find((record) => pluginNodeAddressEqual(record.owner, owner))?.config ?? {}
+		const declared = this.declarationOverride ? this.getDeclaredConfig(owner) : {}
+		const declarationPaths = configLeafPaths(declared)
 		const saved = this.getManagedConfig(owner)
 		const overlay = this.overlays.find((record) => pluginNodeAddressEqual(record.owner, owner))
-		const paths = configLeafPaths(mergeRecord(base, saved))
 		const result: HostConfigSource[] = []
-		for (const path of paths) {
+		for (const path of configLeafPaths(mergeRecord(saved, declared))) {
 			if (overlay?.sources.some((source) => configPathsOverlap(source.path, path))) continue
-			const fromSaved = configHasPath(saved, path)
-			const file = this.baseSources.find(
-				(source) =>
-					pluginNodeAddressEqual(source.owner, owner) && configPathContains(source.path, path),
-			)
+			const overridden = declarationPaths.some((source) => configPathContains(source, path))
+			const fromDeclaration = overridden || this.rawSource === 'declaration'
+			const file =
+				fromDeclaration &&
+				this.declarationSources.find(
+					(source) =>
+						pluginNodeAddressEqual(source.owner, owner) && configPathContains(source.path, path),
+				)
 			result.push(
 				Object.freeze({
 					owner,
 					path: Object.freeze(path),
-					kind: fromSaved ? 'saved' : file ? 'file' : 'base',
-					readonly: this.isReadonly,
-					...(!fromSaved && file ? { name: file.name } : {}),
+					kind: fromDeclaration ? (file ? 'file' : 'declaration') : this.rawSource,
+					readonly: this.isReadonly || overridden,
+					...(file ? { name: file.name } : {}),
 				}),
 			)
 		}
@@ -331,30 +292,25 @@ export class HostConfigStore extends CoreConfigService {
 	}
 
 	assertPathsMutable(owner: PluginNodeAddress, paths: readonly (readonly string[])[]): void {
-		if (this.syncOptions && !this.internalMutation)
-			this.assertManagedMutation(this.version ?? undefined)
-		else this.assertConfigMutable('config mutation')
-		for (const overlay of this.overlays) {
-			if (!pluginNodeAddressEqual(overlay.owner, owner)) continue
-			const blocked = overlay.sources.find((source) =>
-				paths.some((path) => configPathsOverlap(path, source.path)),
-			)
-			if (blocked)
-				throw new ConfigMutationRejectedError('config mutation', {
-					path: blocked.path,
-					source: blocked.name,
-				})
-		}
+		this.assertConfigMutable('config mutation')
+		const blocked = this.getConfigSources(owner).find(
+			(source) => source.readonly && paths.some((path) => configPathsOverlap(path, source.path)),
+		)
+		if (blocked)
+			throw new ConfigMutationRejectedError('config mutation', {
+				path: blocked.path,
+				source: blocked.name ?? 'declaration override',
+				kind: blocked.kind === 'env' ? 'environment' : 'declaration',
+			})
 	}
 
 	stageManagedConfig(
 		input: Parameters<CoreConfigService['stageValidatedConfig']>[0] & {
 			managed: Readonly<Record<string, unknown>>
 			paths: readonly (readonly string[])[]
-			expected?: HostConfigVersion
 		},
 	): ReturnType<CoreConfigService['stageValidatedConfig']> {
-		this.assertManagedMutation(input.expected)
+		this.assertManagedMutation()
 		this.internalMutation = true
 		let ticket: ReturnType<CoreConfigService['stageValidatedConfig']>
 		try {
@@ -371,18 +327,20 @@ export class HostConfigStore extends CoreConfigService {
 			owner: input.owner,
 			config: mergeRecord(undefined, input.managed),
 		})
+		this.requestSave()
 		return ticket
 	}
 
 	override stageValidatedConfig(
 		input: Parameters<CoreConfigService['stageValidatedConfig']>[0],
 	): ReturnType<CoreConfigService['stageValidatedConfig']> {
-		this.assertConfigMutable('stageValidatedConfig')
-		const current = this.getRawConfig(input.owner)
-		const paths = changedConfigPaths(current, input.value)
-		const managed = this.getManagedConfig(input.owner)
-		for (const path of paths) copyConfigPath(managed, input.value, path)
-		return this.stageManagedConfig({ ...input, managed, paths })
+		this.assertPathsMutable(
+			input.owner,
+			changedConfigPaths(this.getRawConfig(input.owner), input.value),
+		)
+		throw new TypeError(
+			'[HostConfigStore] Config staging requires explicit raw records; use host.config.patch/reset.',
+		)
 	}
 
 	override confirmValidatedConfig(
@@ -393,10 +351,10 @@ export class HostConfigStore extends CoreConfigService {
 		const pending = this.pendingManaged.get(key)
 		if (pending) {
 			this.managed = mergeManagedRecord(this.managed, pending.owner, pending.config)
+			if (this.mode === 'memory') this.rawSource = 'memory'
 			this.pendingManaged.delete(key)
 		}
 		this.deferredRecords.delete(key)
-		if (this.pendingSnapshot) this.publishSnapshot(this.pendingSnapshot)
 		return result
 	}
 
@@ -435,34 +393,38 @@ export class HostConfigStore extends CoreConfigService {
 		// Core validates and freezes the effective value before accepting the management layer.
 		this.replaceRecord(owner, this.composeConfig(owner, value))
 		this.managed = mergeManagedRecord(this.managed, owner, value)
+		if (this.mode === 'memory') this.rawSource = 'memory'
 		this.pendingManaged.delete(pluginNodeIndexKey(owner))
+		this.requestSave()
 	}
 
 	private replaceLayers(): void {
 		this.replaceConfigRecords(
-			mergeConfigRecords(mergeConfigRecords(this.base, this.managed), this.overlays),
+			mergeConfigRecords(
+				mergeConfigRecords(this.managed, this.declarationOverride ? this.declarations : undefined),
+				this.overlays,
+			),
 		)
 	}
 
 	constructor(
 		ctx: PluxelContext,
 		options: Omit<HostConfigStoreOptions, 'storage' | 'mode'> &
-			ResolvedHostStoreStorageOptions &
-			Readonly<{ sync?: HostConfigSyncOptions }> = {},
+			ResolvedHostStoreStorageOptions = {},
 	) {
 		super(ctx)
 		assertResolvedHostStoreStorage(options)
 		this.mode = options.mode ?? (options.storage ? 'writable' : 'memory')
 		this.readonlyMode = this.mode === 'readonly'
 		this.storage = options.storage
-		this.syncOptions = options.sync
-		if (this.syncOptions && this.mode !== 'writable')
-			throw new TypeError(
-				'[host:config-sync] Synchronization requires writable local document storage',
-			)
 		if (this.mode !== 'memory' && !this.storage)
 			throw new TypeError('[host] persistent config requires document storage')
-		this.base = mergeConfigRecords(undefined, coercePluginConfigRecords(options.initial ?? []))
+		this.declarations = mergeConfigRecords(
+			undefined,
+			coercePluginConfigRecords(options.records ?? []),
+		)
+		this.declarationOverride = options.override ?? false
+		this.managed = mergeConfigRecords(undefined, this.declarations)
 		const overlayRecords = coercePluginConfigRecords(options.overlays ?? [])
 		this.overlays = overlayRecords.map((record, index) => {
 			const config = mergeRecord(undefined, record.config)
@@ -486,7 +448,7 @@ export class HostConfigStore extends CoreConfigService {
 				throw new TypeError('[host] every environment overlay value requires source metadata')
 			return { owner: record.owner, config, sources }
 		})
-		this.baseSources = (options.baseSources ?? []).map((source) => {
+		this.declarationSources = (options.declarationSources ?? []).map((source) => {
 			assertSourcePath(source.path)
 			return {
 				owner: source.owner,
@@ -504,16 +466,9 @@ export class HostConfigStore extends CoreConfigService {
 		if (!this.isReady)
 			throw new Error(`[ConfigService] ${action} requires a successfully loaded config document.`)
 		if (this.disposed) throw new Error(`[ConfigService] ${action} is disabled after dispose.`)
-		if (this.syncOptions && !this.internalMutation)
-			throw new ConfigMutationRejectedError(
-				`${action}; synchronized saves require the Host coordinator`,
-			)
+		if (this.internalMutation) return
 		if (!this.readonlyMode) return
 		throw new ConfigMutationRejectedError(action)
-	}
-
-	protected override onConfigChanged(_owner: PluginNodeAddress): void {
-		this.requestSave()
 	}
 
 	override batch(run: () => void): void {
@@ -530,7 +485,7 @@ export class HostConfigStore extends CoreConfigService {
 	}
 
 	private requestSave(): void {
-		if (this.syncOptions) return
+		if (this.internalMutation) return
 		if (this.mode !== 'writable' || this.disposed) return
 		if (this.batching > 0) {
 			this.pendingSave = true
@@ -563,19 +518,6 @@ export class HostConfigStore extends CoreConfigService {
 
 	/** Flush pending disk writes. Use force while disposing inside a batch. */
 	override async flush(options: { force?: boolean } = {}): Promise<void> {
-		if (this.syncOptions) {
-			if (this.saveInFlight) await this.saveInFlight
-			if (this.syncFaulted) throw this.syncFault
-			if (this.pendingSnapshot || this.pendingManaged.size === 0) return
-			const records = [...this.pendingManaged.values()].reduce(
-				(current, record) => mergeManagedRecord(current, record.owner, record.config),
-				this.managed,
-			)
-			const snapshot = this.nextSnapshot(records)
-			await this.persistSyncSnapshot(snapshot)
-			this.pendingSnapshot = snapshot
-			return
-		}
 		if (this.mode !== 'writable') return
 		try {
 			const hadScheduled = this.saveScheduled || this.saveTimer !== null
@@ -592,52 +534,35 @@ export class HostConfigStore extends CoreConfigService {
 
 	private async loadFromDisk(): Promise<void> {
 		const text = await this.storage!.getText(this.file)
-		if (this.syncOptions) {
-			if (text === undefined) {
-				if (this.syncOptions.role === 'replica') return
-				const snapshot = createConfigSyncSnapshot(this.syncOptions, [], {
-					history: crypto.randomUUID(),
-					seq: 0,
-				})
-				await this.persistSyncSnapshot(snapshot)
-				this.savedSnapshot = snapshot
-				return
-			}
-			const decoded = decodeConfigSyncSnapshot(SuperJSON.parse(text), this.syncOptions)
-			this.savedSnapshot = decoded.snapshot
-			this.managed = decoded.records
-			for (const record of this.managed) this.deferredRecords.add(pluginNodeIndexKey(record.owner))
-			return
-		}
+		this.lastWrittenDigest = ohash(text)
 		if (text === undefined) {
 			if (!this.readonlyMode) await this.saveToDisk()
 			return
 		}
 
-		let records: PluginConfigRecordSnapshot[]
+		this.managed = this.parseDocument(text)
+		this.rawSource = 'saved'
+		this.replaceLayers()
+	}
+
+	private parseDocument(text: string): PluginConfigRecordSnapshot[] {
 		try {
 			const value = SuperJSON.parse(text) as unknown
-			if (!value || typeof value !== 'object' || Array.isArray(value)) {
+			if (!value || typeof value !== 'object' || Array.isArray(value))
 				throw new Error('persisted config must be an object')
-			}
 			const parsed = value as Record<string, unknown>
-			if (parsed.version !== 3) {
+			if (parsed.version !== 4)
 				throw new Error(
-					`unsupported persisted config version: ${String(parsed.version)}; expected 3`,
+					`unsupported persisted config version: ${String(parsed.version)}; expected 4`,
 				)
-			}
-			records = coercePluginConfigRecords(parsed.plugins)
-		} catch (error) {
-			const reason = error instanceof Error ? error.message : String(error)
+			return coercePluginConfigRecords(parsed.plugins)
+		} catch (cause) {
+			const reason = cause instanceof Error ? cause.message : String(cause)
 			throw new Error(
 				`[ConfigService] Cannot load ${this.file}: ${reason}. Existing document unchanged; repair or restore it before restarting.`,
-				{ cause: error },
+				{ cause },
 			)
 		}
-
-		this.lastWrittenDigest = ohash(text)
-		this.managed = records
-		this.replaceLayers()
 	}
 
 	private async saveToDisk(options: { force?: boolean } = {}): Promise<void> {
@@ -654,7 +579,7 @@ export class HostConfigStore extends CoreConfigService {
 		}
 
 		const content = SuperJSON.stringify({
-			version: 3,
+			version: 4,
 			plugins: [...this.pendingManaged.values()].reduce(
 				(records, record) => mergeManagedRecord(records, record.owner, record.config),
 				this.managed,
@@ -665,6 +590,7 @@ export class HostConfigStore extends CoreConfigService {
 
 		const task = this.storage!.put(this.file, content).then((): undefined => {
 			this.lastWrittenDigest = nextDigest
+			this.rawSource = 'saved'
 			return undefined
 		})
 		this.saveInFlight = task.finally(() => {
@@ -681,6 +607,7 @@ export class HostConfigStore extends CoreConfigService {
 	dispose(): Promise<void> {
 		return (this.closing ??= (async () => {
 			this.disposed = true
+			this.stopObserving()
 			try {
 				await this.ready
 			} catch {

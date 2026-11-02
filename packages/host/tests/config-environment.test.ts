@@ -1,6 +1,5 @@
 import { envBinding, fileBinding } from '../src/bindings'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import * as v from 'valibot'
 import { expect, it } from 'vitest'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
@@ -55,8 +54,8 @@ it('captures binding paths, namespaces and mappings before the first file read',
 		env.config.mapping.limit = 'CHANGED_LIMIT'
 		env.vault.mapping.credentials.token = 'CHANGED_TOKEN'
 		const result = await resolving
-		expect(result.baseSources[0]?.name).toBe('config.json')
-		expect(result.base[0]?.config).toEqual({ limit: 4 })
+		expect(result.declarationSources[0]?.name).toBe('config.json')
+		expect(result.records[0]?.config).toEqual({ limit: 4 })
 		expect(result.overlays[0]?.config).toEqual({ limit: 7 })
 		expect(result.vaultBindings).toMatchObject([
 			{ namespace: 'file-selected', value: { token: 'file-token', expires: 42 } },
@@ -68,18 +67,18 @@ it('captures binding paths, namespaces and mappings before the first file read',
 })
 
 it('decodes explicit config inputs as overlays without ambient PLUXEL_CONFIG or seed mutation', async () => {
-	const owner = pluginNodeAddressOf(Configured)
+	const owner = Configured.nodeAddress()
 	const application = defineHostApplication(() => ({
 		plugins: [Configured],
-		configRecords: { initial: [{ owner, config: { limit: 1 } }] },
 		envBindings: [binding],
+		runtime: { configRecords: { records: [{ owner, config: { limit: 1 } }] } },
 	}))
 	const resolved = await resolveHostApplication(application, {
 		...startup,
 		env: { APP_ENABLED: 'true', APP_LIMIT: '12', PLUXEL_CONFIG: 'invalid and ignored' },
 	})
-	expect(resolved.configRecords?.initial).toEqual([{ owner, config: { limit: 1 } }])
-	expect(resolved.configRecords?.overlays).toEqual([
+	expect(resolved.runtime?.configRecords?.records).toEqual([{ owner, config: { limit: 1 } }])
+	expect(resolved.runtime?.configRecords?.overlays).toEqual([
 		{
 			owner,
 			config: { enabled: true, limit: 12 },
@@ -101,15 +100,15 @@ it('decodes explicit config inputs as overlays without ambient PLUXEL_CONFIG or 
 	}).catch((failure: unknown) => failure)
 	expect(String(error)).not.toContain('private-invalid-value')
 	const absent = await resolveHostApplication(application, startup)
-	expect(absent.configRecords?.overlays).toEqual([])
+	expect(absent.runtime?.configRecords?.overlays).toEqual([])
 })
 
 it('passes resolved environment values and source provenance into Host', async () => {
-	const owner = pluginNodeAddressOf(Configured)
+	const owner = Configured.nodeAddress()
 	const application = defineHostApplication(() => ({
 		plugins: [Configured],
-		configRecords: { initial: [{ owner, config: { limit: 2 } }] },
 		envBindings: [binding],
+		runtime: { configRecords: { records: [{ owner, config: { limit: 2 } }] } },
 	}))
 	const resolved = await resolveHostApplication(application, {
 		...startup,
@@ -117,7 +116,7 @@ it('passes resolved environment values and source provenance into Host', async (
 	})
 	const host = await createHost({
 		plugins: resolved.plugins,
-		configRecords: resolved.configRecords,
+		runtime: resolved.runtime,
 	})
 	try {
 		await host.startNode(owner)
@@ -154,7 +153,7 @@ it('validates a complete Vault record, rejects partial deployment inputs, and re
 	})
 	expect(resolved.vaultBindings).toEqual([
 		{
-			owner: pluginNodeAddressOf(Configured),
+			owner: Configured.nodeAddress(),
 			key: 'credentials',
 			namespace: undefined,
 			source: 'env',
@@ -168,13 +167,18 @@ it('validates a complete Vault record, rejects partial deployment inputs, and re
 		resolveHostApplication(application, {
 			...startup,
 			env: { TOKEN: 'secret', EXPIRY: '12' },
-		}).then(({ plugins, services, configRecords, vaultBindings }) =>
-			createHost({ plugins, services, configRecords, vaultBindings }),
+		}).then(({ plugins, services, runtime, vaultBindings }) =>
+			createHost({
+				plugins,
+				services,
+				vaultBindings,
+				runtime,
+			}),
 		),
 	).rejects.toThrow(/host.vault-bindings/)
 })
 
-it('reads config base and whole Vault records from explicit JSON files', async () => {
+it('reads config declarations and whole Vault records from explicit JSON files', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-bindings-'))
 	try {
 		await writeFile(join(root, 'config.json'), JSON.stringify({ limit: 4 }))
@@ -192,8 +196,8 @@ it('reads config base and whole Vault records from explicit JSON files', async (
 			}),
 			{ ...startup, root, env: { APP_LIMIT: '7' } },
 		)
-		expect(result.configRecords?.initial?.[0]?.config).toEqual({ limit: 4 })
-		expect(result.configRecords?.overlays?.[0]?.config).toEqual({ limit: 7 })
+		expect(result.runtime?.configRecords?.records?.[0]?.config).toEqual({ limit: 4 })
+		expect(result.runtime?.configRecords?.overlays?.[0]?.config).toEqual({ limit: 7 })
 		expect(result.vaultBindings?.[0]).toMatchObject({
 			source: 'file',
 			value: { token: 'private', expires: 42 },
@@ -228,7 +232,7 @@ it('infers heterogeneous async binding arrays without const assertions', async (
 			CREDENTIALS: JSON.stringify({ token: 'test', expires: 12 }),
 		},
 	})
-	expect(resolved.configRecords?.overlays?.map((record) => record.config)).toEqual([
+	expect(resolved.runtime?.configRecords?.overlays?.map((record) => record.config)).toEqual([
 		{ enabled: true },
 		{ title: 'example' },
 	])
@@ -292,7 +296,7 @@ it('keeps the Host Vault contract across plugin replacement without repeating tr
 		plugins: resolved.plugins,
 		services: resolved.services,
 		vaultBindings: resolved.vaultBindings,
-		configRecords: resolved.configRecords,
+		runtime: resolved.runtime,
 	})
 	await host.start()
 	try {
@@ -397,7 +401,7 @@ it('checks environment paths against replacement config metadata without another
 	)
 	const host = await createHost({
 		plugins: resolved.plugins,
-		configRecords: resolved.configRecords,
+		runtime: resolved.runtime,
 	})
 	await host.start()
 	try {

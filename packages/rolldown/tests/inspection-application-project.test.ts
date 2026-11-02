@@ -31,7 +31,7 @@ throw new Error('ENTRY_MUST_NOT_EXECUTE')
 export default defineHostApplication(() => ({
   plugins: [MailPlugin],
   services: prepareServices(),
-  configRecords: makeRecords(),
+  runtime: { configRecords: makeRecords() },
   envBindings: [envBinding(MailPlugin, { config: { schema: Schema, mapping: ${mapping} } })],
   fileBindings: [fileBinding(MailPlugin, { config: { schema: Schema, path: './private/config.json' } })],
 }))

@@ -10,6 +10,7 @@ import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { ConfigForm } from '../../src/app/plugins/config/ConfigForm'
 import { ManagementQueryProvider } from '../../src/app/managementQuery'
+import { applyConfigSources } from '../../src/app/plugins/config/presentationAdapter'
 
 const OWNER: PluginNodeAddress = {
 	definition: {
@@ -50,10 +51,12 @@ function ConfigHarness({
 	client,
 	savedConfig = EMPTY_CONFIG,
 	defaults = EMPTY_CONFIG,
+	formFields = fields,
 }: {
 	client?: ReturnType<typeof createFakeManagementClient>
 	savedConfig?: Record<string, unknown>
 	defaults?: Record<string, unknown>
+	formFields?: readonly f.FieldNode[]
 }) {
 	const [dirty, setDirty] = useState(false)
 	const resolvedClient = useMemo(() => client ?? createFakeManagementClient(), [client])
@@ -63,11 +66,10 @@ function ConfigHarness({
 				<MantineProvider>
 					<div data-dirty={dirty ? 'true' : 'false'}>
 						<ConfigForm
-							version={null}
 							readonly={false}
 							owner={OWNER}
 							displayName="Config owner"
-							fields={fields}
+							fields={formFields}
 							savedConfig={savedConfig}
 							defaults={defaults}
 							onDirtyChange={setDirty}
@@ -129,6 +131,96 @@ afterEach(() => {
 })
 
 describe('single-schema ConfigForm safety', () => {
+	it('locks declaration, file and environment fields and submits only the edited unlocked field', async () => {
+		const sources = [
+			{ owner: OWNER, path: ['limit'], kind: 'declaration' as const, readonly: true },
+			{
+				owner: OWNER,
+				path: ['fileValue'],
+				kind: 'file' as const,
+				name: 'deployment.json',
+				readonly: true,
+			},
+			{ owner: OWNER, path: ['envValue'], kind: 'env' as const, name: 'APP_VALUE', readonly: true },
+			{ owner: OWNER, path: ['nested', 'locked'], kind: 'declaration' as const, readonly: true },
+		]
+		const controlledFields = applyConfigSources(
+			f.extractFormFields(
+				v.object({
+					name: v.string(),
+					limit: v.number(),
+					fileValue: v.string(),
+					envValue: v.string(),
+					untouched: v.optional(v.string(), 'schema default'),
+					nested: v.object({ locked: v.string(), editable: v.string() }),
+				}),
+			),
+			sources,
+		)
+		const patch = vi.fn(async () => ({
+			ok: true as const,
+			config: { name: 'changed', enabled: false },
+			sources,
+			readonly: false,
+			saved: true as const,
+			application: 'applied' as const,
+		}))
+		const { container, root } = await mount(
+			<ConfigHarness
+				client={createFakeManagementClient(patch)}
+				formFields={controlledFields}
+				savedConfig={{
+					name: 'saved',
+					limit: 100,
+					fileValue: 'file',
+					envValue: 'env',
+					nested: { locked: 'declared nested', editable: 'saved nested' },
+				}}
+				defaults={{
+					name: 'saved',
+					untouched: 'schema default',
+					nested: { locked: 'ignored default', editable: 'nested default' },
+				}}
+			/>,
+		)
+		try {
+			for (const key of ['limit', 'fileValue', 'envValue']) {
+				const input = container.querySelector<HTMLInputElement>(`input[name="${key}"]`)!
+				expect(input.readOnly || input.disabled).toBe(true)
+			}
+			expect(container.textContent).toContain('由应用声明提供，只读')
+			expect(container.textContent).toContain('deployment.json')
+			expect(container.textContent).toContain('APP_VALUE')
+			await typeIntoInput(
+				container.querySelector<HTMLInputElement>('input[name="name"]')!,
+				'changed',
+			)
+			const save = [...container.querySelectorAll('button')].find(
+				(button) => button.textContent?.trim() === '保存',
+			)!
+			await act(async () => {
+				save.click()
+				await Promise.resolve()
+			})
+			expect(patch).toHaveBeenCalledWith(OWNER, { name: 'changed' })
+			const reset = [...container.querySelectorAll('button')].find(
+				(button) => button.textContent?.trim() === '恢复默认',
+			)!
+			await act(async () => {
+				reset.click()
+				await Promise.resolve()
+			})
+			expect(container.querySelector<HTMLInputElement>('input[name="nested.locked"]')!.value).toBe(
+				'declared nested',
+			)
+			expect(
+				container.querySelector<HTMLInputElement>('input[name="nested.editable"]')!.value,
+			).toBe('nested default')
+		} finally {
+			await act(async () => root.unmount())
+		}
+	})
+
 	it('submits one schema against the structured owner address', async () => {
 		const patchPluginConfig = vi.fn(async () => ({
 			ok: true as const,

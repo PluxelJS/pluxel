@@ -14,10 +14,10 @@ const owner: PluginNodeAddress = {
 	variant: 'default',
 }
 
-it('loads existing readonly config ahead of initial values and rejects mutation', async () => {
+it('loads existing readonly config ahead of declaration records and rejects mutation', async () => {
 	const storage = createDocumentStorage()
 	const persisted = SuperJSON.stringify({
-		version: 3,
+		version: 4,
 		plugins: [{ owner, config: { value: 'persisted' } }],
 	})
 	await storage.put('config.json', persisted)
@@ -25,7 +25,7 @@ it('loads existing readonly config ahead of initial values and rejects mutation'
 	const store = new HostConfigStore(ctx, {
 		storage,
 		mode: 'readonly',
-		initial: [{ owner, config: { value: 'startup' } }],
+		records: [{ owner, config: { value: 'startup' } }],
 	})
 	try {
 		await store.ready
@@ -37,17 +37,20 @@ it('loads existing readonly config ahead of initial values and rejects mutation'
 	}
 })
 
-it('keeps initial values when readonly config is absent without creating a document', async () => {
+it('keeps declaration records when readonly config is absent without creating a document', async () => {
 	const storage = createDocumentStorage()
 	const ctx = createCoreContextHost().createRoot()
 	const store = new HostConfigStore(ctx, {
 		storage,
 		mode: 'readonly',
-		initial: [{ owner, config: { value: 'startup' } }],
+		records: [{ owner, config: { value: 'startup' } }],
 	})
 	try {
 		await store.ready
 		expect(store.getRawConfig(owner)).toEqual({ value: 'startup' })
+		expect(store.getConfigSources(owner)).toEqual([
+			{ owner, path: ['value'], kind: 'declaration', readonly: true },
+		])
 		expect(await storage.stat('config.json')).toBeUndefined()
 	} finally {
 		await ctx.effects.dispose()
@@ -56,7 +59,7 @@ it('keeps initial values when readonly config is absent without creating a docum
 
 it.each([
 	['malformed', '{'],
-	['unsupported version', SuperJSON.stringify({ version: 2, plugins: [] })],
+	['unsupported version', SuperJSON.stringify({ version: 3, plugins: [] })],
 ])('rejects %s readonly config without isolating or rewriting it', async (_case, text) => {
 	const storage = createDocumentStorage()
 	await storage.put('config.json', text)
@@ -75,13 +78,13 @@ it.each([
 	['malformed JSON', '{', /config\.json: .*position|config\.json: .*JSON/i],
 	['wrong root type', SuperJSON.stringify([]), /config\.json: persisted config must be an object/i],
 	[
-		'unknown version',
-		SuperJSON.stringify({ version: 2, plugins: [] }),
-		/config\.json: unsupported persisted config version: 2/i,
+		'obsolete sparse document version',
+		SuperJSON.stringify({ version: 3, plugins: [] }),
+		/config\.json: unsupported persisted config version: 3/i,
 	],
 	[
 		'invalid records',
-		SuperJSON.stringify({ version: 3, plugins: {} }),
+		SuperJSON.stringify({ version: 4, plugins: {} }),
 		/config\.json: .*plugins must be an array/i,
 	],
 ] as const)(
@@ -115,7 +118,7 @@ it('initializes an absent writable config document once', async () => {
 	try {
 		await store.ready
 		expect(SuperJSON.parse((await storage.getText('config.json'))!)).toEqual({
-			version: 3,
+			version: 4,
 			plugins: [],
 		})
 		expect([...storage.documents.keys()]).toEqual(['config.json'])

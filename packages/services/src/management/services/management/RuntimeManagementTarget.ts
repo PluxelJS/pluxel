@@ -1,4 +1,3 @@
-import { type HostConfigVersion } from '@pluxel/host'
 import { validateRuntimePortableData } from '../../web/validation'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { Management } from '../../token'
@@ -89,7 +88,6 @@ import {
 import {
 	parseConfigPresentationResult,
 	parseConfigResult,
-	parseConfigVersion,
 	parsePluginControlBatchResult,
 } from '../../web/management-validation'
 import { estimateRuntimeRpcPayloadBytes, prepareRuntimeLogRangeForRpc } from './log-transport'
@@ -220,37 +218,23 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		return parseConfigResult(await pluginConfigGet(this.ctx, address, this.#admission))
 	}
 
-	async patchPluginConfigDto(
-		owner: unknown,
-		patch: unknown,
-		expectedInput?: unknown,
-	): Promise<ConfigResult> {
+	async patchPluginConfigDto(owner: unknown, patch: unknown): Promise<ConfigResult> {
 		this.signal?.throwIfAborted()
-		const expected = readRpcConfigVersion(expectedInput)
-		if (expected === null) return checkedDto(invalidConfigInput('Invalid expected config version'))
 		const address = parseRpcNode(owner)
 		if (!address) return checkedDto(invalidConfigInput('Invalid Plugin node address'))
 		const record = readRpcRecord(patch)
 		if (!record) return checkedDto(invalidConfigInput('Config patch must be an object'))
-		return parseConfigResult(
-			await pluginConfigPatch(this.ctx, address, record, { ...this.#admission, expected }),
-		)
+		return parseConfigResult(await pluginConfigPatch(this.ctx, address, record, this.#admission))
 	}
 
-	async patchPluginConfigFieldDto(
-		owner: unknown,
-		input: unknown,
-		expectedInput?: unknown,
-	): Promise<ConfigResult> {
+	async patchPluginConfigFieldDto(owner: unknown, input: unknown): Promise<ConfigResult> {
 		this.signal?.throwIfAborted()
-		const expected = readRpcConfigVersion(expectedInput)
-		if (expected === null) return checkedDto(invalidConfigInput('Invalid expected config version'))
 		const address = parseRpcNode(owner)
 		if (!address) return checkedDto(invalidConfigInput('Invalid Plugin node address'))
 		if (!readRpcRecord(input))
 			return checkedDto(invalidConfigInput('Config field mutation must be an object'))
 		return parseConfigResult(
-			await pluginConfigPatchField(this.ctx, address, input, { ...this.#admission, expected }),
+			await pluginConfigPatchField(this.ctx, address, input, this.#admission),
 		)
 	}
 
@@ -395,11 +379,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		const base = parseRpcNode(record?.base)
 		if (
 			!record ||
-			!hasExactKeys(record, [
-				'base',
-				'forkId',
-				...(record.expected === undefined ? [] : ['expected']),
-			]) ||
+			!hasExactKeys(record, ['base', 'forkId']) ||
 			!base ||
 			typeof record.forkId !== 'string'
 		) {
@@ -410,16 +390,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 				error: 'Invalid fork removal input',
 			})
 		}
-		const expected = readRpcConfigVersion(record.expected)
-		if (expected === null) {
-			return checkedDto({
-				ok: false,
-				code: 'invalid_input',
-				state: 'unchanged',
-				error: 'Invalid expected config version',
-			})
-		}
-		const result = await removeFork(this.ctx, base, record.forkId, { ...this.#admission, expected })
+		const result = await removeFork(this.ctx, base, record.forkId, this.#admission)
 		if (result.ok === true) {
 			if (result.status === 'already-absent') {
 				return checkedDto({
@@ -433,15 +404,6 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 				status: result.status,
 				fork: parsePluginNodeAddress(result.node),
 				report: projectPluginApplyReport(this.ctx, result.report),
-			})
-		}
-		if (result.code === 'version_conflict') {
-			return checkedDto({
-				ok: false,
-				code: result.code,
-				state: result.state,
-				error: result.message,
-				version: result.version,
 			})
 		}
 		if (result.code === 'fork_referenced') {
@@ -1113,14 +1075,5 @@ class RuntimeUpdateSubscription extends RpcTarget {
 		} finally {
 			this.draining = false
 		}
-	}
-}
-
-function readRpcConfigVersion(input: unknown): HostConfigVersion | undefined | null {
-	if (input === undefined) return undefined
-	try {
-		return parseConfigVersion(input)
-	} catch {
-		return null
 	}
 }

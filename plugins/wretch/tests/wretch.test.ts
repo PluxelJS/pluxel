@@ -1,4 +1,4 @@
-import { pluginNodeAddressOf, type PluginConstructor } from '@pluxel/core'
+import { type PluginConstructor } from '@pluxel/core'
 import { createTestHost, type TestHost, type RawPluginConfig } from '@pluxel/test'
 import { standardServices } from '@pluxel/services'
 import * as v from 'valibot'
@@ -87,10 +87,9 @@ describe('WretchPlugin', () => {
 		for (const [id, row] of rows) {
 			expect(id).toMatch(/^[a-f0-9]{64}$/)
 			expect(row.version).toBe(1)
-			expect([
-				pluginNodeAddressOf(ConsumerA),
-				pluginNodeAddressOf(ConsumerLateSettings),
-			]).toContainEqual(JSON.parse(String(row.owner)))
+			expect([ConsumerA.nodeAddress(), ConsumerLateSettings.nodeAddress()]).toContainEqual(
+				JSON.parse(String(row.owner)),
+			)
 		}
 		// The provider owns this table; enabling it never opens either consumer's business Store.
 		const consumerStore = await host.require(ConsumerA).ctx.tinybase.open()
@@ -149,7 +148,7 @@ describe('WretchPlugin', () => {
 			'consumerSettings',
 			id,
 			'owner',
-			JSON.stringify(pluginNodeAddressOf(ConsumerLateSettings)),
+			JSON.stringify(ConsumerLateSettings.nodeAddress()),
 		)
 		await tinybase.flush()
 		await host.stop(WretchPlugin)
@@ -158,7 +157,7 @@ describe('WretchPlugin', () => {
 		})
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
-				plugin: pluginNodeAddressOf(ConsumerA),
+				plugin: ConsumerA.nodeAddress(),
 				kind: 'start-failed',
 				message: expect.stringContaining('owner does not match'),
 			}),

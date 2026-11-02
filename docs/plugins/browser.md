@@ -14,14 +14,12 @@ description: 连接外部浏览器，在独立会话中执行自动化。
 无凭据的连接直接使用 `PlaywrightConfig.endpoint`；带 token 的 URL、认证 headers 或其他私密连接信息使用 `connectionKey` 指向 Vault 记录。两者必须且只能配置一个。普通 endpoint 不允许 userinfo、query 或 hash；路径若包含秘密也必须放进 Vault。
 
 ```ts no-twoslash
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication, envBinding } from '@pluxel/host'
 import { PlaywrightConfig, PlaywrightPlugin } from '@pluxel/plugin-playwright'
 
 export default defineHostApplication(() => ({
 	plugins: [PlaywrightPlugin],
 	services: [],
-	state: { initial: { autoStart: [pluginNodeAddressOf(PlaywrightPlugin)] } },
 	envBindings: [
 		envBinding(PlaywrightPlugin, {
 			config: {
@@ -30,6 +28,11 @@ export default defineHostApplication(() => ({
 			},
 		}),
 	],
+	runtime: {
+		state: {
+			autoStart: [PlaywrightPlugin.nodeAddress()],
+		},
+	},
 }))
 ```
 
@@ -38,7 +41,6 @@ export default defineHostApplication(() => ({
 有凭据时改用下面的绑定；`BROWSER_CONNECTION_KEY=primary`，`BROWSER_ENDPOINT` 可以包含供应商提供的 token。环境变量由 Host 显式绑定，插件不自行读取进程环境。
 
 ```ts no-twoslash
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication, envBinding } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
 import {
@@ -50,7 +52,6 @@ import {
 export default defineHostApplication(() => ({
 	plugins: [PlaywrightPlugin],
 	services: [vault({ backend: 'bindings' })],
-	state: { initial: { autoStart: [pluginNodeAddressOf(PlaywrightPlugin)] } },
 	envBindings: [
 		envBinding(PlaywrightPlugin, {
 			config: {
@@ -63,6 +64,11 @@ export default defineHostApplication(() => ({
 			},
 		}),
 	],
+	runtime: {
+		state: {
+			autoStart: [PlaywrightPlugin.nodeAddress()],
+		},
+	},
 }))
 ```
 
@@ -75,7 +81,7 @@ Vault 记录形状为 `{ endpoint: string, headers?: Record<string, string> }`�
 需要 `exposeNetwork`、`slowMo` 或其他原生连接设置时，声明 `Playwright` provider 并实现 `connect(signal)`。参数使用上游的 [ConnectOptions](https://playwright.dev/docs/api/class-browsertype#browser-type-connect)，不经过可保存配置的参数副本；也可直接调用 `connectOverCDP` 并使用它的原生选项。
 
 ```ts no-twoslash
-import { Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { Plugin } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { Playwright } from '@pluxel/plugin-playwright'
 import { chromium, type Browser, type ConnectOptions } from 'playwright-core'
@@ -102,7 +108,11 @@ export class NativeBrowser extends Playwright {
 export default defineHostApplication(() => ({
 	plugins: [NativeBrowser],
 	services: [],
-	state: { initial: { autoStart: [pluginNodeAddressOf(NativeBrowser)] } },
+	runtime: {
+		state: {
+			autoStart: [NativeBrowser.nodeAddress()],
+		},
+	},
 }))
 ```
 

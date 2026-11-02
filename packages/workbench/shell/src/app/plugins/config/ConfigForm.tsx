@@ -1,4 +1,3 @@
-import type { HostConfigVersion } from '@pluxel/host'
 import { makePathArray } from '@tanstack/react-form'
 import { Box, ScrollArea, Text } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
@@ -29,7 +28,6 @@ type ConfigFormProps = {
 	owner: PluginNodeAddress
 	displayName: string
 	fields: readonly FieldNode[]
-	version: HostConfigVersion | null
 	readonly: boolean
 	savedConfig: Record<string, unknown>
 	defaults: Record<string, unknown>
@@ -64,7 +62,6 @@ function ConfigFormInstance({
 	displayName,
 	fields,
 	savedConfig,
-	version,
 	readonly: readOnly,
 	defaults,
 	active = true,
@@ -76,7 +73,6 @@ function ConfigFormInstance({
 	const workspace = useOptionalWorkspaceSession()
 	const { mutateAsync: saveConfig, isPending: saving, variables } = useConfigSave({ owner })
 	const savingRef = useRef(false)
-	const versionRef = useRef(version)
 	const visibleSections = useMemo<readonly PluginConfigSection[]>(
 		() => (sections.length > 0 ? sections : [{ path: [], fields, defaults, fieldName: '' }]),
 		[defaults, fields, sections],
@@ -106,10 +102,6 @@ function ConfigFormInstance({
 	}, [activeKey, sectionItems])
 
 	const dirtySections = sectionItems.filter((section) => formStates[section.key]?.dirty)
-	useEffect(() => {
-		// Background reads must not silently attach a newer version to an older draft.
-		if (dirtySections.length === 0 && !saving) versionRef.current = version
-	}, [dirtySections.length, saving, version])
 	const dirtyLabels = dirtySections.map((section) => section.label)
 	const activeSection = sectionItems.find((section) => section.key === activeKey) ?? sectionItems[0]
 	const resolvedActiveKey = activeSection?.key ?? ''
@@ -146,18 +138,18 @@ function ConfigFormInstance({
 		if (activeState.submitting || saving) return
 		const bridge = forms.get()[resolvedActiveKey]
 		if (!bridge || !activeSection) return
-		// Restoring defaults replaces the editable draft as a whole.
+		// Restore editable defaults while retaining controlled siblings in nested objects.
 		bridge.form.setErrorMap({ onServer: { fields: {} } } as never)
 		const editableDefaults = buildEditableConfigPatch(
 			activeSection.fields,
 			activeSection.defaultValue,
-			activeSection.initialValue,
+			bridge.form.state.values,
 		)
 		for (const [key, value] of Object.entries(editableDefaults)) {
 			// Defaults contain literal root keys, not TanStack path expressions.
 			const parsed = makePathArray(key)
 			if (!key || parsed.length !== 1 || parsed[0] !== key) continue
-			bridge.form.setFieldValue(key, value)
+			bridge.form.setFieldValue(key, mergeDraft(bridge.form.state.values[key], value))
 		}
 	}, [activeSection, activeState.submitting, forms, resolvedActiveKey, saving])
 
@@ -176,9 +168,9 @@ function ConfigFormInstance({
 				return
 			// Native submits compete for the synchronous guard; save-all waits for their validation.
 			if (key === undefined && submitted.some(({ state }) => state.isSubmitting)) return
-			const patches = dirty.map(({ section, state }) => ({
+			const patches = dirty.map(({ section, bridge, state }) => ({
 				section,
-				patch: buildEditableConfigPatch(section.fields, state.values, section.savedValue),
+				patch: buildEditableConfigPatch(section.fields, state.values, bridge.baseline),
 			}))
 			const patch = buildCombinedConfigPatch(patches)
 			if (Object.keys(patch).length === 0) return
@@ -188,11 +180,7 @@ function ConfigFormInstance({
 						forms.get()[section.key]?.form === bridge.form &&
 						bridge.form.state.values === state.values,
 				)
-			const expected = versionRef.current
-			const request = () =>
-				expected
-					? management.config.patch(owner, patch, expected)
-					: management.config.patch(owner, patch)
+			const request = () => management.config.patch(owner, patch)
 			savingRef.current = true
 			for (const { bridge } of targets)
 				bridge.form.setErrorMap({ onServer: { fields: {} } } as never)
@@ -212,8 +200,7 @@ function ConfigFormInstance({
 								),
 							} as never)
 					},
-					onSaved: (savedVersion) => {
-						versionRef.current = savedVersion
+					onSaved: () => {
 						for (const { section, bridge, state } of dirty) {
 							if (forms.get()[section.key]?.form === bridge.form) bridge.acceptSaved(state.values)
 						}
@@ -442,4 +429,11 @@ function ensureRecordAtPath(root: Record<string, unknown>, path: readonly string
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function mergeDraft(current: unknown, patch: unknown): unknown {
+	if (!isRecord(current) || !isRecord(patch)) return patch
+	const next = { ...current }
+	for (const [key, value] of Object.entries(patch)) next[key] = mergeDraft(current[key], value)
+	return next
 }

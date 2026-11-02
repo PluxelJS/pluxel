@@ -258,7 +258,7 @@ function mutationFailure(address: PluginNodeAddress, error: unknown): PluginCont
 		return { address, ok: false, code: error.code, state: error.state, error: text }
 	}
 	if (error instanceof HostStateMutationRejectedError) {
-		if (error.issue.code === 'node_unavailable') {
+		if (error.issue.code === 'node_unavailable' || error.issue.code === 'state_overridden') {
 			return { address, ok: false, code: error.issue.code, state: 'unchanged', error: text }
 		}
 	}

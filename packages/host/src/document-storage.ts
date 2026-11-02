@@ -1,5 +1,5 @@
 import type { RootContext, HostDocumentStorage } from '@pluxel/core'
-import { requireTinyBaseHost } from '@pluxel/core/internal'
+import { requireHostDocuments } from '@pluxel/core/internal'
 export type { HostDocumentStorage } from '@pluxel/core'
 
 export type HostStoreStorageOptions =
@@ -36,7 +36,7 @@ export function resolveHostStoreStorage(
 	if (options.storage === undefined) {
 		if (options.mode === 'memory') return { mode: 'memory' }
 		return {
-			storage: requireTinyBaseHost(root).documents(namespace),
+			storage: requireHostDocuments(root, namespace),
 			mode: options.mode ?? 'writable',
 		}
 	}

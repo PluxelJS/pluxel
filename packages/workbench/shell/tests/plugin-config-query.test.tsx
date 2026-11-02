@@ -87,7 +87,6 @@ describe('plugin config queries', () => {
 			ok: true,
 			config: { enabled: true },
 			sources: [],
-			version: null,
 			readonly: false,
 		})
 		const client = { config: { presentation, get } } as unknown as RuntimeManagementClient
@@ -120,7 +119,6 @@ describe('plugin config queries', () => {
 		expect(get).toHaveBeenCalledOnce()
 		await act(async () => {
 			commitPluginConfig(queryClient, firstOwner, { enabled: false }, [], {
-				version: null,
 				readonly: false,
 			})
 			await vi.waitFor(() => expect(states.at(-1)?.data?.savedConfig).toEqual({ enabled: false }))
@@ -144,7 +142,6 @@ describe('plugin config queries', () => {
 						ok: true,
 						config: { owner: 'first' },
 						sources: [],
-						version: null,
 						readonly: false,
 					})
 					.mockReturnValueOnce(secondConfig),

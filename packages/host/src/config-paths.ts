@@ -5,9 +5,7 @@ export function configLeafPaths(
 ): string[][] {
 	return Object.entries(value).flatMap(([key, child]) => {
 		const path = [...parent, key]
-		return isConfigObject(child) && Object.keys(child).length > 0
-			? configLeafPaths(child, path)
-			: [path]
+		return isConfigObject(child) ? configLeafPaths(child, path) : [path]
 	})
 }
 export function isConfigObject(value: unknown): value is Record<string, unknown> {
@@ -56,22 +54,4 @@ export function changedConfigPaths(
 			? []
 			: [path]
 	})
-}
-export function copyConfigPath(
-	target: Record<string, unknown>,
-	source: Readonly<Record<string, unknown>>,
-	path: readonly string[],
-): void {
-	let cursor = target
-	let sourceValue: unknown = source
-	for (const key of path.slice(0, -1)) {
-		if (!isConfigObject(cursor[key])) cursor[key] = Object.create(null)
-		cursor = cursor[key] as Record<string, unknown>
-		sourceValue = isConfigObject(sourceValue) ? sourceValue[key] : undefined
-	}
-	const last = path.at(-1)
-	if (last === undefined) return
-	if (isConfigObject(sourceValue) && Object.hasOwn(sourceValue, last))
-		cursor[last] = structuredClone(sourceValue[last])
-	else delete cursor[last]
 }

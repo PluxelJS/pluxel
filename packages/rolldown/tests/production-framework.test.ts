@@ -152,7 +152,7 @@ Plugin()(Dynamic); __setPluginDefinition(Dynamic,{abiVersion:2,kind:'plugin',def
 			`import {pluginSource} from '@pluxel/host/sources';
 import {Commands} from '@pluxel/services/commands';
 import {standardServices} from '@pluxel/services';
-import {BasePlugin,Plugin,pluginNodeAddressOf} from '@pluxel/core';
+import {BasePlugin,Plugin} from '@pluxel/core';
 import {Workers,defineWorkerTask} from '@pluxel/services/workers';
 import {resolve} from 'node:path';
 const task = defineWorkerTask<number,number>(import.meta.url, './task.ts');
@@ -165,7 +165,7 @@ class FrozenWorker extends BasePlugin {
  }
 }
 import {defineHostApplication} from '@pluxel/host';
-export default defineHostApplication(() => ({name:'production-bridge', plugins:[FrozenWorker],sources:[pluginSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkCommands=Commands},services:standardServices(),state:{initial:{autoStart:[pluginNodeAddressOf(FrozenWorker),${JSON.stringify(address)}]}}}))
+export default defineHostApplication(() => ({name:'production-bridge', plugins:[FrozenWorker],sources:[pluginSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkCommands=Commands},services:standardServices(),runtime:{state:{autoStart:[FrozenWorker.nodeAddress(),${JSON.stringify(address)}]}}}))
 `,
 		)
 		const buildScript = join(root, 'build.mts')

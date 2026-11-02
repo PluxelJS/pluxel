@@ -53,6 +53,7 @@ import {
 	type HostStatePatchOperation,
 	requireHostStateStore,
 	type HostStateStore,
+	type HostConfigStore,
 } from '@pluxel/host/internal'
 import { type ServiceInternalTestHostOptions } from './options'
 
@@ -194,6 +195,7 @@ type PreparedSeed = Readonly<{
 	address: PluginNodeAddress
 	authority: NonNullable<ConcretePluginDefinitionCandidate['declaration']['config']>
 	value: Readonly<Record<string, unknown>>
+	managed: Readonly<Record<string, unknown>>
 }>
 
 type RawCommit = Readonly<{
@@ -503,7 +505,7 @@ async function createServiceHostWorld(
 	const application = await createServiceTestApplication(config, rootOptions)
 	const ctx = application.ctx
 	const pluginService = requirePluginService(ctx)
-	const configService = requireConfigService(ctx)
+	const configService = requireConfigService(ctx) as HostConfigStore
 	const stateStore = requireHostStateStore(ctx)
 	const coordinator = requirePluginHostCoordinator(ctx)
 	const enteredLifecycle = new Set<string>()
@@ -588,18 +590,20 @@ async function createServiceHostWorld(
 		const tickets: Array<
 			Readonly<{
 				key: string
-				ticket: ReturnType<typeof configService.stageValidatedConfig>
+				ticket: ReturnType<typeof configService.stageManagedConfig>
 			}>
 		> = []
 		for (const seed of seeds) {
 			tickets.push(
 				Object.freeze({
 					key: seed.key,
-					ticket: configService.stageValidatedConfig({
+					ticket: configService.stageManagedConfig({
 						owner: seed.address,
 						authority: seed.authority,
 						expectedRevision: configService.getConfigRevision(seed.address),
 						value: seed.value,
+						managed: seed.managed,
+						paths: Object.keys(seed.managed).map((key) => [key]),
 					}),
 				}),
 			)
@@ -1000,7 +1004,7 @@ function validatePlan(
 async function prepareSeeds(
 	plan: ServiceDraftPlan,
 	entries: ReadonlyMap<string, PluginCatalogEntryInput>,
-	configService: ReturnType<typeof requireConfigService>,
+	configService: HostConfigStore,
 	enteredLifecycle: ReadonlySet<string>,
 	configuredTargets: ReadonlySet<string>,
 ): Promise<readonly PreparedSeed[]> {
@@ -1024,7 +1028,10 @@ async function prepareSeeds(
 		}
 		let normalized: Readonly<Record<string, unknown>> | undefined
 		for (const value of seed.values) {
-			const validation = await validateConfigRecord(authority.schema, value)
+			const validation = await validateConfigRecord(
+				authority.schema,
+				configService.composeConfig(resolved.address, value),
+			)
 			if (validation.ok === false) {
 				throw Object.assign(new Error('[pluxel/test] initial Plugin config validation failed'), {
 					code: 'validation_failed',
@@ -1042,6 +1049,7 @@ async function prepareSeeds(
 				address: resolved.address,
 				authority,
 				value: normalized!,
+				managed: seed.values.at(-1)!,
 			}),
 		)
 	}
@@ -1098,7 +1106,7 @@ function assertForkRemoveExclusive(plan: ServiceDraftPlan): void {
 
 async function rollbackSeeds(
 	seeds: readonly PreparedSeed[],
-	configService: ReturnType<typeof requireConfigService>,
+	configService: HostConfigStore,
 	configuredTargets: Set<string>,
 ): Promise<void> {
 	for (const seed of seeds) {
@@ -1122,12 +1130,14 @@ function forkExists(
 	address: Extract<PluginNodeAddress, { variant: 'fork' }>,
 ): boolean {
 	const key = pluginDefinitionIndexKey(address.definition)
-	return (
-		store
-			.snapshot()
-			.forks.find((entry) => pluginDefinitionIndexKey(entry.definition) === key)
-			?.forkIds.includes(address.forkId) === true
-	)
+	return store
+		.snapshot()
+		.forks.some(
+			(entry) =>
+				entry.variant === 'fork' &&
+				pluginDefinitionIndexKey(entry.definition) === key &&
+				entry.forkId === address.forkId,
+		)
 }
 
 function targetCommand(target: PluginTestTarget): TargetCommand {

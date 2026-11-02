@@ -1,6 +1,6 @@
 import type { RootContext } from './Context'
-import type { LogTapeConfig } from '../config/logtape'
-import { requireTinyBaseHost } from '../internal/storage'
+import type { ResolvedLogTapeConfig } from '../config/logtape'
+import { requireFs } from '../internal/storage'
 import { createContextRuntimeLogging, type RuntimeLogging } from '../logging/logging'
 import { disposeContextRuntimeLogging, prepareContextRuntimeLogging } from '../logging/service'
 
@@ -8,16 +8,19 @@ const preparations = new WeakMap<
 	RootContext,
 	{
 		readonly manager: RuntimeLogging
-		readonly config: LogTapeConfig
+		readonly config: ResolvedLogTapeConfig
 		ready?: Promise<void>
 	}
 >()
 
 /** Construct synchronously; all native installation and policy IO belongs to preparation. */
-export function createCoreLoggingRuntime(root: RootContext, config: LogTapeConfig): RuntimeLogging {
+export function createCoreLoggingRuntime(
+	root: RootContext,
+	config: ResolvedLogTapeConfig,
+): RuntimeLogging {
 	// Register storage finalizers first. Final effects run in reverse order, so
 	// logging drains while its policy documents and filesystem are still live.
-	requireTinyBaseHost(root)
+	requireFs(root)
 	const manager = createContextRuntimeLogging(root, config.input, config.options)
 	preparations.set(root, { manager, config })
 	root.effects.defer(() => disposeContextRuntimeLogging(root, manager), {
@@ -29,7 +32,7 @@ export function createCoreLoggingRuntime(root: RootContext, config: LogTapeConfi
 
 /**
  * Prepare declared Core facilities before admitting Plugins or preparing services.
- * Concurrent and repeated calls share one result. Hosts without logger configuration
+ * Concurrent and repeated calls share one result. Hosts without logtape configuration
  * leave the process-global LogTape installation untouched.
  */
 export async function prepareCoreContext(root: RootContext): Promise<void> {

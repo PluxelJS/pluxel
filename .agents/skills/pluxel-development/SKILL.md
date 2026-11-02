@@ -10,7 +10,7 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 ## 入口与职责
 
 - 在项目根调用 CLI：下游用 `vp exec pluxel …`，Pluxel 源码仓库用 `vp run pluxel …`。首次 checkout 或启动器报告 CLI 过期时，先运行 `vp run @pluxel/cli#compile`。
-- Plugin/Part 拥有业务与声明；Host 拥有装配、配置输入和服务安装；Vite 拥有开发期执行与 HMR。Core 自带 `events/logger/effects`、`ctx.fs()` 和 `ctx.tinybase`；应用通过 `config.storage: zenfs(...)` 选择数据后端、通过 `config.logger: logtape(...)` 选择日志输出，两个 helper 都从 `@pluxel/core/config` 导入；Host 默认接入私有配置/状态文档。Database、Vault、Workbench 等服务由应用安装；托管 SQL 从 Services 子入口接入并使用原生 Drizzle，应用也可自管连接。
+- Plugin/Part 拥有业务与声明；Host 拥有装配、配置输入和服务安装；Vite 拥有开发期执行与 HMR。Core 自带 `events/logger/effects`、`ctx.fs()` 和 `ctx.tinybase`；应用通过 `runtime.zenfs: zenfs(...)` 选择数据后端、通过 `runtime.logtape: logtape(...)` 选择日志输出，两个可选 helper 都从 `@pluxel/core/config` 导入，原生配置可直接输入；Host 默认接入私有配置/状态文档。Database、Vault、Workbench 等服务由应用安装；托管 SQL 从 Services 子入口接入并使用原生 Drizzle，应用也可自管连接。
 - 默认工作区由 mise 提供工具和环境，package scripts 提供操作入口，Vite+ 管任务与缓存，hk 管提交检查，Pitchfork 管托管进程；Pluxel 也支持前台命令和手动 Vite。
 
 正文优先读项目 `docs/pluxel/`，源码仓库则读 `docs/`；下表路径相对该目录。`pluxel docs <path>` 输出当前来源正文。入口缺失或源码来源不明时读 `development/source-workspaces.md`，按 Git/npm 接入方式修复，不复制另一版本文档。

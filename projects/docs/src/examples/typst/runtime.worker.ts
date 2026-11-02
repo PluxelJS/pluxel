@@ -1,4 +1,3 @@
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { createHost, type PluginHost } from '@pluxel/host/browser'
 import { TypstPlugin } from '@pluxel/plugin-typst/wasm'
 import compilerWasmUrl from '@myriaddreamin/typst-ts-web-compiler/wasm?url&no-inline'
@@ -20,18 +19,20 @@ function send(message: ExampleResponse) {
 async function start() {
 	host = await createHost({
 		plugins: [TypstPlugin, ThemePlugin, ReportPlugin],
-		state: { initial: { autoStart: [pluginNodeAddressOf(ReportPlugin)] } },
-		configRecords: {
-			initial: [
-				{
-					owner: pluginNodeAddressOf(TypstPlugin),
-					config: {
-						compilerWasmUrl: new URL(compilerWasmUrl, self.location.href).href,
-						rendererWasmUrl: new URL(rendererWasmUrl, self.location.href).href,
-						fontUrls: [new URL(fontUrl, self.location.href).href],
+		runtime: {
+			state: { autoStart: [ReportPlugin.nodeAddress()] },
+			configRecords: {
+				records: [
+					{
+						owner: TypstPlugin.nodeAddress(),
+						config: {
+							compilerWasmUrl: new URL(compilerWasmUrl, self.location.href).href,
+							rendererWasmUrl: new URL(rendererWasmUrl, self.location.href).href,
+							fontUrls: [new URL(fontUrl, self.location.href).href],
+						},
 					},
-				},
-			],
+				],
+			},
 		},
 	})
 	await host.start()

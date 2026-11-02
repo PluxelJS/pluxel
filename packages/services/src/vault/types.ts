@@ -48,10 +48,12 @@ export type VaultRecordSnapshot<T = unknown> = Readonly<{
 	key: string
 	exists: boolean
 	value: T | undefined
+	/** Stored record revision; external file replacement can repeat or decrease it. */
 	revision: number
 	source: 'kv' | 'env' | 'file'
 	writable: boolean
 }>
+/** Checks this instance's loaded snapshot only; it does not coordinate writers in other Hosts. */
 export type VaultWriteOptions = Readonly<{ expectedRevision?: number }>
 export type VaultListOptions = Readonly<{ prefix?: string; after?: string; limit?: number }>
 export type VaultSubscription<T = unknown> = Readonly<{

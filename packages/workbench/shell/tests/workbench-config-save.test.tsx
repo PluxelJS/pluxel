@@ -49,7 +49,6 @@ const fields = f.extractFormFields(
 function Configuration() {
 	return (
 		<ConfigForm
-			version={null}
 			readonly={false}
 			owner={owner}
 			displayName="Config owner"
@@ -121,7 +120,6 @@ describe('business configuration save in native documents', () => {
 			ok: true as const,
 			config,
 			sources: [],
-			version: null,
 			readonly: false,
 			saved: true as const,
 			desiredRevision: 1,
@@ -212,7 +210,6 @@ describe('business configuration save in native documents', () => {
 			ok: true as const,
 			config: values,
 			sources: [],
-			version: null,
 			readonly: false,
 			saved: true as const,
 			desiredRevision: 1,
@@ -279,7 +276,6 @@ describe('business configuration save in native documents', () => {
 				ok: true,
 				config: { name: 'saved draft' },
 				sources: [],
-				version: null,
 				readonly: false,
 				saved: true as const,
 				desiredRevision: 1,
@@ -321,7 +317,6 @@ describe('business configuration save in native documents', () => {
 				ok: true,
 				config: { name: 'submitted draft' },
 				sources: [],
-				version: null,
 				readonly: false,
 				saved: true as const,
 				desiredRevision: 1,
@@ -366,7 +361,6 @@ describe('business configuration save in native documents', () => {
 			ok: true as const,
 			config,
 			sources: [],
-			version: null,
 			readonly: false,
 			saved: true as const,
 			desiredRevision: 1,

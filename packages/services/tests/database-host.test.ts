@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { PGlite } from '@electric-sql/pglite'
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
 import {
 	Database,
@@ -69,7 +69,7 @@ it.each(['owned', 'borrowed'] as const)(
 		const release = Promise.withResolvers<void>()
 		try {
 			expect(opens).toBe(0)
-			const started = await host.startNode(pluginNodeAddressOf(Owner))
+			const started = await host.startNode(Owner.nodeAddress())
 			expect(started.core).toMatchObject({
 				status: 'committed',
 				summary: { lifecycleReport: { ok: true } },

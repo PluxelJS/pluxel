@@ -64,7 +64,7 @@ export function envBinding<P extends PluginConstructor, C extends Schema, V exte
 	return { plugin, ...inputs } as HostEnvironmentBinding<P>
 }
 
-/** JSON files provide config base values and complete Vault records. */
+/** JSON files provide config declaration values and complete Vault records. */
 export function fileBinding<P extends PluginConstructor, C extends Schema, V extends Schema>(
 	plugin: P,
 	inputs: Readonly<{

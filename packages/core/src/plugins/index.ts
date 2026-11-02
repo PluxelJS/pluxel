@@ -19,7 +19,6 @@ export {
 	definePluginRef,
 	isPluginRef,
 	pluginDefinitionAddressOf,
-	pluginNodeAddressOf,
 	type PluginRef,
 } from './runtime/definition'
 export * from './runtime/identity'

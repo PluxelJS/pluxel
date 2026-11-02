@@ -7,7 +7,7 @@ import {
 
 export type HostStateSnapshot = Readonly<{
 	autoStart: readonly PluginNodeAddress[]
-	forks: readonly HostForkState[]
+	forks: readonly PluginNodeAddress[]
 	providerDefaults: readonly HostProviderDefaultState[]
 	dependencyOverrides: readonly HostDependencyOverrideState[]
 }>
@@ -31,15 +31,12 @@ export class HostStateRevisionConflictError extends Error {
 
 export type HostStateDraft = {
 	autoStart: PluginNodeAddress[]
-	forks: HostForkState[]
+	forks: PluginNodeAddress[]
 	providerDefaults: HostProviderDefaultState[]
 	dependencyOverrides: HostDependencyOverrideState[]
 }
 
-export type HostForkState = {
-	definition: PluginDefinitionAddress
-	forkIds: readonly string[]
-}
+export type HostForkState = Extract<PluginNodeAddress, { variant: 'fork' }>
 
 export type HostProviderDefaultState = {
 	token: PluginDefinitionAddress
@@ -58,17 +55,7 @@ export function freezeTrustedHostStateSnapshot(
 ): HostStateSnapshot {
 	const snapshot: HostStateSnapshot = Object.freeze({
 		autoStart: Object.freeze(sortByKey(draft.autoStart.map(freezeNodeAddress), pluginNodeIndexKey)),
-		forks: Object.freeze(
-			sortByKey(
-				draft.forks.map((entry) =>
-					Object.freeze({
-						definition: freezeDefinitionAddress(entry.definition),
-						forkIds: Object.freeze([...entry.forkIds].sort()),
-					}),
-				),
-				(entry) => pluginDefinitionIndexKey(entry.definition),
-			),
-		),
+		forks: Object.freeze(sortByKey(draft.forks.map(freezeNodeAddress), pluginNodeIndexKey)),
 		providerDefaults: Object.freeze(
 			sortByKey(
 				draft.providerDefaults.map((entry) =>

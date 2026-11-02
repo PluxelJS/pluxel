@@ -1,7 +1,7 @@
 import { createHost } from '@pluxel/host/browser'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
-import { requireFs, requireTinyBaseHost } from '@pluxel/core/internal'
+import { requireFs, requireHostDocuments } from '@pluxel/core/internal'
 import { writeFileAtomic } from '@pluxel/core/fs'
 
 const views = new Map()
@@ -63,8 +63,8 @@ export async function persisted() {
 		for (let round = 0; round < 3; round++) {
 			host = await createHost({
 				plugins: [First, Second],
-				config: {
-					storage: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
+				runtime: {
+					zenfs: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
 				},
 			})
 			const [first, second] = await startOwners(host)
@@ -96,8 +96,8 @@ export async function persisted() {
 		}
 		host = await createHost({
 			plugins: [First, Second],
-			config: {
-				storage: {
+			runtime: {
+				zenfs: {
 					mounts: { '/': { backend: IndexedDB, storeName } },
 					readOnly: true,
 					durableMounts: ['/'],
@@ -133,12 +133,12 @@ export async function corruptConfig() {
 	try {
 		host = await createHost({
 			plugins: [],
-			config: {
-				storage: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
+			runtime: {
+				zenfs: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
 			},
 		})
 		const original = '{broken'
-		await requireTinyBaseHost(host.ctx).documents('config').put('config.json', original)
+		await requireHostDocuments(host.ctx, 'config').put('config.json', original)
 		await host.close()
 		host = undefined
 		let failure
@@ -146,11 +146,11 @@ export async function corruptConfig() {
 		try {
 			host = await createHost({
 				plugins: [],
-				config: {
-					storage: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
-				},
-				configRecords: {
-					storage: (root) => (documents = requireTinyBaseHost(root).documents('config')),
+				runtime: {
+					zenfs: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
+					configRecords: {
+						storage: (root) => (documents = requireHostDocuments(root, 'config')),
+					},
 				},
 			})
 		} catch (error) {
@@ -165,12 +165,12 @@ export async function corruptConfig() {
 		await host?.close()
 		host = await createHost({
 			plugins: [],
-			config: {
-				storage: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
+			runtime: {
+				zenfs: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
+				configRecords: { mode: 'memory' },
 			},
-			configRecords: { mode: 'memory' },
 		})
-		const text = await requireTinyBaseHost(host.ctx).documents('config').getText('config.json')
+		const text = await requireHostDocuments(host.ctx, 'config').getText('config.json')
 		return {
 			failure: failure?.message,
 			cause: failure?.cause?.name,

@@ -5,7 +5,6 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
-import { pluginNodeAddressOf } from '@pluxel/core'
 
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
@@ -34,7 +33,7 @@ describe('NodeModuleService', () => {
 		})
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
-				plugin: pluginNodeAddressOf(NodeModuleFailure),
+				plugin: NodeModuleFailure.nodeAddress(),
 				kind: 'start-failed',
 				message: expect.stringContaining('node build failed'),
 			}),

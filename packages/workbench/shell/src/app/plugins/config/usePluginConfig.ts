@@ -71,14 +71,12 @@ async function readSavedConfig(
 		// A Plugin without a config declaration has no persisted config to read. The
 		// presentation query reports that as an empty form, so keep both reads in
 		// agreement instead of turning the Config tab into a load failure.
-		if (result.code === 'config_not_found')
-			return { config: {}, sources: [], version: null, readonly: true }
+		if (result.code === 'config_not_found') return { config: {}, sources: [], readonly: true }
 		throw new Error(result.message ?? result.code ?? '配置加载失败')
 	}
 	return {
 		config: result.config,
 		sources: result.sources,
-		version: result.version,
 		readonly: result.readonly,
 	}
 }
@@ -130,7 +128,6 @@ export function usePluginConfig(owner: PluginNodeAddress | undefined): PluginCon
 					...presentation.data,
 					savedConfig: saved.data.config,
 					sources: saved.data.sources,
-					version: saved.data.version,
 					readonly: saved.data.readonly,
 					fields: applyConfigSources(presentation.data.fields, saved.data.sources),
 					sections: presentation.data.sections.map((section) => ({

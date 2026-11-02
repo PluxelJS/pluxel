@@ -75,12 +75,15 @@ test('stopped durable fork projection', async ({ bench }) => {
 	const projections = forkProjectionSizes.map((size) => {
 		const runtimeState: HostStateSnapshot = Object.freeze({
 			autoStart: Object.freeze([]),
-			forks: Object.freeze([
-				Object.freeze({
-					definition: forkProjectionDefinition,
-					forkIds: Object.freeze(Array.from({ length: size }, (_, index) => `stopped-${index}`)),
-				}),
-			]),
+			forks: Object.freeze(
+				Array.from({ length: size }, (_, index) =>
+					Object.freeze({
+						definition: forkProjectionDefinition,
+						variant: 'fork' as const,
+						forkId: `stopped-${index}`,
+					}),
+				),
+			),
 			providerDefaults: Object.freeze([]),
 			dependencyOverrides: Object.freeze([]),
 		})

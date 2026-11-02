@@ -3,7 +3,7 @@ import * as nativeFs from 'node:fs'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { Passthrough } from '@pluxel/core/fs'
 import { expect, it } from 'vitest'
@@ -45,12 +45,12 @@ it('runs native HTTP, env policy and managed settings with services: []', async 
 		const application = defineHostApplication(() => ({
 			plugins: [WretchPlugin, StatelessHttpConsumer],
 			services: [],
-			state: { initial: { autoStart: [pluginNodeAddressOf(StatelessHttpConsumer)] } },
 			envBindings: [
 				envBinding(WretchPlugin, {
 					config: { schema: WretchConfig, mapping: { allowedOrigins: 'HTTP_ORIGINS' } },
 				}),
 			],
+			runtime: { state: { autoStart: [StatelessHttpConsumer.nodeAddress()] } },
 		}))
 		const resolved = await resolveHostApplication(application, {
 			root: process.cwd(),
@@ -61,9 +61,8 @@ it('runs native HTTP, env policy and managed settings with services: []', async 
 		const host = await createHost({
 			plugins: resolved.plugins,
 			services: resolved.services,
-			state: resolved.state,
-			config: resolved.config,
-			configRecords: resolved.configRecords,
+			name: resolved.name,
+			runtime: resolved.runtime,
 		})
 		try {
 			await host.start()
@@ -144,24 +143,7 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 		origin = `http://127.0.0.1:${address.port}`
 		const application = defineHostApplication(() => ({
 			plugins: [WretchPlugin, HeadlessHttpConsumer, SecondManagedConsumer],
-			config: {
-				storage: {
-					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-					durableMounts: ['/'],
-				},
-			},
 			services: [],
-			state: {
-				initial: {
-					autoStart: [
-						pluginNodeAddressOf(HeadlessHttpConsumer),
-						pluginNodeAddressOf(SecondManagedConsumer),
-					],
-				},
-			},
-			configRecords: {
-				initial: [{ owner: pluginNodeAddressOf(WretchPlugin), config: { timeoutMs: 5_000 } }],
-			},
 			envBindings: [
 				envBinding(WretchPlugin, {
 					config: {
@@ -170,6 +152,18 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 					},
 				}),
 			],
+			runtime: {
+				zenfs: {
+					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+					durableMounts: ['/'],
+				},
+				state: {
+					autoStart: [HeadlessHttpConsumer.nodeAddress(), SecondManagedConsumer.nodeAddress()],
+				},
+				configRecords: {
+					records: [{ owner: WretchPlugin.nodeAddress(), config: { timeoutMs: 5_000 } }],
+				},
+			},
 		}))
 		for (round = 0; round < 2; round++) {
 			const resolved = await resolveHostApplication(application, {
@@ -181,9 +175,8 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 			const host = await createHost({
 				plugins: resolved.plugins,
 				services: resolved.services,
-				state: resolved.state,
-				config: resolved.config,
-				configRecords: resolved.configRecords,
+				name: resolved.name,
+				runtime: resolved.runtime,
 			})
 			try {
 				await host.start()

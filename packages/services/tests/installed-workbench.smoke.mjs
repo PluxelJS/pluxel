@@ -84,7 +84,6 @@ import { standardServices } from '@pluxel/services'
 import { vault } from '@pluxel/services/vault'
 import { VaultAdminPlugin } from '@pluxel/services/plugins'
 import { WorkbenchHost } from '@pluxel/workbench/server'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { newWebSocketRpcSession } from 'capnweb'
 import { WebSocketServer } from 'ws'
 import { once } from 'node:events'
@@ -105,7 +104,7 @@ server.on('connection', socket => {
 const socket = new WebSocket('ws://127.0.0.1:' + server.address().port)
 const remote = newWebSocketRpcSession(socket)
 try {
-  const target = pluginNodeAddressOf(VaultAdminPlugin)
+  const target = VaultAdminPlugin.nodeAddress()
   const layout = await remote.layoutDto({ target })
   assert.ok(layout.entries.length > 0)
   const result = await remote.openEntry({

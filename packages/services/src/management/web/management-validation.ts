@@ -1,4 +1,4 @@
-import type { HostConfigState, HostConfigVersion } from '@pluxel/host'
+import type { HostConfigState } from '@pluxel/host'
 import {
 	comparePluginDefinitionAddress,
 	comparePluginNodeAddress,
@@ -87,7 +87,7 @@ const RUNTIME_LOG_LEVELS = [...LOG_LEVELS, 'off'] as const
 /** Validate and deep-freeze the Plugin catalog returned by the management RPC boundary. */
 export function parsePluginCatalogSnapshot(input: unknown): PluginCatalogSnapshot {
 	const value = rootRecord(input, 'plugin catalog')
-	shape(value, ['plugins', 'sections', 'summary'], [], 'plugin catalog')
+	shape(value, ['plugins', 'sections', 'summary', 'statePolicy'], [], 'plugin catalog')
 	const plugins = array(value.plugins, 'plugin catalog.plugins').map((item, index) =>
 		pluginStatusSnapshot(item, `plugin catalog.plugins[${index}]`),
 	)
@@ -110,8 +110,28 @@ export function parsePluginCatalogSnapshot(input: unknown): PluginCatalogSnapsho
 	if (total !== plugins.length || running + stopped !== total || autoStart > total) {
 		fail('plugin catalog.summary is inconsistent with the catalog snapshot')
 	}
+	const policy = object(value.statePolicy, 'plugin catalog.statePolicy')
+	shape(policy, ['mode', 'overriddenFields'], [], 'plugin catalog.statePolicy')
+	const mode = literal(
+		policy.mode,
+		['memory', 'writable', 'readonly'],
+		'plugin catalog.statePolicy.mode',
+	)
+	const overriddenFields = array(
+		policy.overriddenFields,
+		'plugin catalog.statePolicy.overriddenFields',
+	).map((field) =>
+		literal(
+			field,
+			['autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'],
+			'plugin catalog.statePolicy.overriddenFields',
+		),
+	)
+	if (new Set(overriddenFields).size !== overriddenFields.length)
+		fail('plugin catalog.statePolicy.overriddenFields contains duplicates')
 	return Object.freeze({
 		plugins: Object.freeze(plugins),
+		statePolicy: Object.freeze({ mode, overriddenFields: Object.freeze(overriddenFields) }),
 		sections: Object.freeze(sections),
 		summary: Object.freeze({ total, running, stopped, autoStart }),
 	})
@@ -306,6 +326,7 @@ export function parsePluginDependencyMutationResult(
 	const code = literal(
 		value.code,
 		[
+			'state_overridden',
 			'invalid_input',
 			'consumer_unavailable',
 			'provider_unavailable',
@@ -379,6 +400,7 @@ export function parseEnsureForkResult(input: unknown): EnsureForkResult {
 	const code = literal(
 		value.code,
 		[
+			'state_overridden',
 			'invalid_input',
 			'invalid_fork_id',
 			'definition_unavailable',
@@ -893,7 +915,11 @@ function configSources(input: unknown): readonly import('@pluxel/host').HostConf
 			return Object.freeze({
 				owner: nodeAddress(source.owner, 'config source.owner'),
 				path: Object.freeze(path),
-				kind: literal(source.kind, ['base', 'file', 'saved', 'env'], 'config source.kind'),
+				kind: literal(
+					source.kind,
+					['declaration', 'file', 'saved', 'memory', 'env'],
+					'config source.kind',
+				),
 				readonly: boolean(source.readonly, 'config source.readonly'),
 				...(source.name === undefined ? {} : { name: text(source.name, 'config source.name') }),
 			})
@@ -903,25 +929,13 @@ function configSources(input: unknown): readonly import('@pluxel/host').HostConf
 
 export function parseConfigState(input: unknown): HostConfigState {
 	const value = rootRecord(input, 'config state')
-	shape(value, ['version', 'readonly'], [], 'config state')
+	shape(value, ['readonly'], [], 'config state')
 	return Object.freeze({
-		version: parseConfigVersion(value.version),
 		readonly: boolean(value.readonly, 'config state.readonly'),
 	})
 }
 
-/** A saved-layer version is opaque to editors and must be returned unchanged. */
-export function parseConfigVersion(input: unknown): HostConfigVersion | null {
-	if (input === null) return null
-	const value = rootRecord(input, 'config version')
-	shape(value, ['history', 'seq'], [], 'config version')
-	const history = text(value.history, 'config version.history')
-	if (!history) fail('config version.history must not be empty')
-	return Object.freeze({ history, seq: nonNegativeInteger(value.seq, 'config version.seq') })
-}
-
 function configSuccess(value: Record<string, unknown>): ConfigResult {
-	const version = parseConfigVersion(value.version)
 	const readonly = boolean(value.readonly, 'config result.readonly')
 	const saved = boolean(value.saved, 'config result.saved')
 	const application = literal(
@@ -941,7 +955,6 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 			value,
 			[
 				'ok',
-				'version',
 				'readonly',
 				'saved',
 				'application',
@@ -955,7 +968,6 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 		)
 		return Object.freeze({
 			ok: true,
-			version,
 			readonly,
 			saved: false,
 			application,
@@ -970,7 +982,6 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 		value,
 		[
 			'ok',
-			'version',
 			'readonly',
 			'saved',
 			'application',
@@ -989,7 +1000,6 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 		}
 		return Object.freeze({
 			ok: true,
-			version,
 			readonly,
 			saved: true,
 			application,
@@ -1012,7 +1022,6 @@ function configSuccess(value: Record<string, unknown>): ConfigResult {
 	)
 	return Object.freeze({
 		ok: true,
-		version,
 		readonly,
 		saved: true,
 		application: 'saved-not-applied',
@@ -1032,7 +1041,6 @@ function configFailure(value: Record<string, unknown>): ConfigResult {
 	const code = literal(
 		value.code,
 		[
-			'version_conflict',
 			'validation_failed',
 			'invalid_input',
 			'node_unavailable',
@@ -1042,17 +1050,6 @@ function configFailure(value: Record<string, unknown>): ConfigResult {
 		],
 		'config result.code',
 	)
-	if (code === 'version_conflict') {
-		shape(value, ['ok', 'code', 'state', 'message', 'version'], [], 'config result')
-		literal(value.state, ['unchanged'], 'config result.state')
-		return Object.freeze({
-			ok: false,
-			code,
-			state: 'unchanged',
-			message: text(value.message, 'config result.message'),
-			version: parseConfigVersion(value.version),
-		})
-	}
 	if (code === 'validation_failed') {
 		shape(value, ['ok', 'code', 'state', 'message', 'errors'], ['defaults'], 'config result')
 		literal(value.state, ['unchanged'], 'config result.state')
@@ -1070,7 +1067,7 @@ function configFailure(value: Record<string, unknown>): ConfigResult {
 	if (code === 'persistence_failed') {
 		shape(
 			value,
-			['ok', 'code', 'state', 'message', 'config', 'version', 'readonly'],
+			['ok', 'code', 'state', 'message', 'config', 'readonly'],
 			['sources'],
 			'config result',
 		)
@@ -1079,7 +1076,6 @@ function configFailure(value: Record<string, unknown>): ConfigResult {
 			ok: false,
 			code,
 			state: 'unknown',
-			version: parseConfigVersion(value.version),
 			readonly: boolean(value.readonly, 'config result.readonly'),
 			message: text(value.message, 'config result.message'),
 			config: portableRecord(value.config, 'config result.config'),
@@ -1455,27 +1451,16 @@ function removeForkFailure(value: Record<string, unknown>): RemoveForkResult {
 	const code = literal(
 		value.code,
 		[
+			'state_overridden',
 			'invalid_input',
 			'invalid_fork_id',
 			'graph_rejected',
 			'fork_referenced',
 			'mutation_rejected',
-			'version_conflict',
 			'persistence_failed',
 		],
 		'remove fork result.code',
 	)
-	if (code === 'version_conflict') {
-		shape(value, ['ok', 'code', 'state', 'error', 'version'], [], 'remove fork result')
-		literal(value.state, ['unchanged'], 'remove fork result.state')
-		return Object.freeze({
-			ok: false,
-			code,
-			state: 'unchanged',
-			error: text(value.error, 'remove fork result.error'),
-			version: parseConfigVersion(value.version),
-		})
-	}
 	if (code === 'fork_referenced') {
 		shape(value, ['ok', 'code', 'state', 'references', 'error'], [], 'remove fork result')
 		literal(value.state, ['unchanged'], 'remove fork result.state')
@@ -1559,6 +1544,7 @@ function controlMutationFailure(input: unknown, label: string): PluginControlMut
 	const code = literal(
 		value.code,
 		[
+			'state_overridden',
 			'plugin_not_found',
 			'start_unavailable',
 			'restart_unavailable',

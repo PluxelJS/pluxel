@@ -1,4 +1,3 @@
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { AdminAccess, managementAccess } from '@pluxel/services/management/access'
 import { vault } from '@pluxel/services/vault'
@@ -14,18 +13,18 @@ describe('Auth headless deployment', () => {
 			const application = defineHostApplication(() => ({
 				plugins: [AuthPlugin],
 				services: [managementAccess(), vault({ backend: 'bindings' })],
-				state: { initial: { autoStart: [pluginNodeAddressOf(AuthPlugin)] } },
-				configRecords: {
-					initial: [
-						{ owner: pluginNodeAddressOf(AuthPlugin), config: { mode: { type: 'password' } } },
-					],
-				},
 				envBindings: [
 					envBinding(AuthPlugin, {
 						config: { schema: AuthConfig, mapping: { mode: 'AUTH_MODE' } },
 						vault: { schema: AuthVaultSchema, mapping: { [recordKey]: 'AUTH_CREDENTIAL' } },
 					}),
 				],
+				runtime: {
+					state: { autoStart: [AuthPlugin.nodeAddress()] },
+					configRecords: {
+						records: [{ owner: AuthPlugin.nodeAddress(), config: { mode: { type: 'password' } } }],
+					},
+				},
 			}))
 			const credential =
 				mode === 'password'
@@ -56,15 +55,14 @@ describe('Auth headless deployment', () => {
 			const host = await createHost({
 				plugins: resolved.plugins,
 				services: resolved.services,
-				state: resolved.state,
-				config: resolved.config,
-				configRecords: resolved.configRecords,
 				vaultBindings: resolved.vaultBindings,
+				name: resolved.name,
+				runtime: resolved.runtime,
 			})
 			try {
 				await host.start()
 				expect(host.ctx.workbench).toBeUndefined()
-				const config = await host.config.get(pluginNodeAddressOf(AuthPlugin))
+				const config = await host.config.get(AuthPlugin.nodeAddress())
 				expect(config).toMatchObject({ ok: true, config: { mode: modeConfig } })
 				expect(JSON.stringify(config)).not.toContain('deployment-client-secret')
 				expect(JSON.stringify(config)).not.toContain('"password":')

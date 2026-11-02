@@ -45,7 +45,7 @@ function inspect(
 describe('application input declaration navigation', () => {
 	it('keeps two entry bindings separate and locates configRecords without evaluating application, schemas or reading inputs', async () => {
 		const code = (name: string) =>
-			application(`configRecords: makeRecords(), services: install(), sources: discover(),
+			application(`runtime: { configRecords: makeRecords() }, services: install(), sources: discover(),
    envBindings: [envBinding(P, {config: {schema: Schema, mapping: {endpoint: '${name}'}}})],
    fileBindings: [fileBinding(P, {config: {schema: Schema, path: './secret.json'}})]`)
 		const a = inspect(code('FIRST'), '/project/a.ts')
@@ -95,7 +95,8 @@ describe('application input declaration navigation', () => {
 		expect(report.gaps[0]!.code).toBe('unresolved_symbol')
 	})
 	it('does not report bindings as absent when application spread can override them or records', async () => {
-		const report = await inspect(application(`configRecords: records(), ...unknown`)).result
+		const report = await inspect(application(`runtime: { configRecords: records() }, ...unknown`))
+			.result
 		expect(report.status).toBe('unavailable')
 	})
 	it('rejects duplicate mapping keys instead of selecting one value', async () => {
@@ -113,7 +114,7 @@ describe('application input declaration navigation', () => {
 		const report = await inspect(application(`services: install()`)).result
 		expect(report).toMatchObject({
 			status: 'complete',
-			value: { configRecords: null, bindings: [] },
+			value: { bindings: [], configRecords: null },
 		})
 		const unsupported = await inspect(
 			`${prefix}\nexport default defineHostApplication(() => chooseApplication())`,

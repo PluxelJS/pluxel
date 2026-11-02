@@ -96,7 +96,7 @@ describe('TypstPlugin real host and worker', () => {
 			})
 			await using host = await createTestHost({
 				services: [nodeModules()],
-				configRecords: resolved.configRecords,
+				runtime: resolved.runtime,
 			})
 			await host.commit((change) => {
 				change.catalog.add([FontsPlugin, TypstPlugin, TypstConsumer])
