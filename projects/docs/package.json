@@ -40,7 +40,6 @@
 		"@myriaddreamin/typst-ts-renderer": "catalog:prod",
 		"@myriaddreamin/typst-ts-web-compiler": "catalog:prod",
 		"@opentelemetry/api": "catalog:dev",
-		"@opentelemetry/api-logs": "catalog:dev",
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",

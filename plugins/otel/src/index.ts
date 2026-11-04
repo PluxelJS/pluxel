@@ -1,6 +1,5 @@
 import { ElysiaApp } from '@pluxel/services/elysia'
-import type { Meter, Tracer } from '@opentelemetry/api'
-import type { Logger } from '@opentelemetry/api-logs'
+import type { Logger, Meter, Tracer } from '@opentelemetry/api'
 import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/core'
 import { OtelConfig, type OtelSignal } from './config.ts'
 import { safeErrorType } from './diagnostics.ts'

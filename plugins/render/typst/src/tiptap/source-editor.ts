@@ -6,9 +6,7 @@ import type { TypstSourceDiagnostic, TypstSourceProjection } from '../source/typ
 import { createTypstExtensions } from './extensions.js'
 import { validReferenceLabel } from './document-nodes.js'
 import { TypstTableStyle } from './table-style.js'
-
-/** Internal projection event; UI can distinguish normalization of its own edit from external edits. */
-export const sourceSync = new PluginKey<{ local: boolean }>('typstSourceSync')
+import { sourceSync, sourceAdmission, type SourceAdmissionReceipt } from './editor-transactions.js'
 const sourceHistory = 'typstSourceHistory'
 const sourceCopy = new PluginKey<unknown>('typstSourceCopy')
 type CopyInput = Parameters<TypstSourceProject['copy']>[0]
@@ -38,7 +36,8 @@ export function prepareTypstSourceCopy(
 	const projection = project.open(path)
 	if (!editor.schema.nodeFromJSON(projection.document).eq(editor.state.doc)) return undefined
 	const node = editor.state.doc.nodeAt(position)
-	if (!node || node.type.name === 'typstSource') return undefined
+	if (!node || node.type.name === 'typstSource' || node.type.name === 'typstImport')
+		return undefined
 	const mapping = projection.mapping.find(
 		(value) => value.kind === 'node' && value.nodePath.length === 1 && value.position === position,
 	)
@@ -115,7 +114,70 @@ export const TypstSourceBlock = Node.create({
 	],
 })
 
-/** Template arguments are literal source parameters; bound data stays in its JSON file. */
+/** Static import declarations stay in their authored scope and expose native source attributes. */
+export const TypstImport = Node.create({
+	name: 'typstImport',
+	group: 'block',
+	atom: true,
+	isolating: true,
+	addAttributes: () => ({
+		module: { default: '' },
+		alias: { default: null },
+		items: { default: null },
+		source: { default: '' },
+	}),
+	parseHTML: () => [
+		{
+			tag: 'div[data-typst-import]',
+			priority: 100,
+			getAttrs: (element) => {
+				const attrs = sourceHTMLAttributes(element)
+				return attrs &&
+					typeof attrs.module === 'string' &&
+					typeof attrs.source === 'string' &&
+					(attrs.alias == null || typeof attrs.alias === 'string') &&
+					(attrs.items == null || typeof attrs.items === 'string')
+					? attrs
+					: false
+			},
+		},
+	],
+	renderHTML: ({ node }) => [
+		'div',
+		{ 'data-typst-import': '', 'data-typst-attrs': JSON.stringify(node.attrs) },
+		node.attrs.source || `import ${node.attrs.module}`,
+	],
+	renderText: ({ node }) => node.attrs.source || `import ${node.attrs.module}`,
+})
+
+/** Includes remain ordinary content at their authored position; the editor never expands their body. */
+export const TypstInclude = Node.create({
+	name: 'typstInclude',
+	group: 'block',
+	atom: true,
+	isolating: true,
+	addAttributes: () => ({ module: { default: '' }, source: { default: '' } }),
+	parseHTML: () => [
+		{
+			tag: 'div[data-typst-include]',
+			priority: 100,
+			getAttrs: (element) => {
+				const attrs = sourceHTMLAttributes(element)
+				return attrs && typeof attrs.module === 'string' && typeof attrs.source === 'string'
+					? attrs
+					: false
+			},
+		},
+	],
+	renderHTML: ({ node }) => [
+		'div',
+		{ 'data-typst-include': '', 'data-typst-attrs': JSON.stringify(node.attrs) },
+		node.attrs.source || `include ${node.attrs.module}`,
+	],
+	renderText: ({ node }) => node.attrs.source || `include ${node.attrs.module}`,
+})
+
+/** Component arguments are literal source parameters; bound data stays in its JSON file. */
 export const TypstComponent = Node.create({
 	name: 'typstComponent',
 	group: 'block',
@@ -277,6 +339,8 @@ export function createTypstSourceEditor(options: TypstSourceEditorOptions): Edit
 				key: sourceSync,
 				filterTransaction(transaction, state) {
 					if (transaction === synchronization) return true
+					if (transaction.docChanged)
+						transaction.setMeta(sourceAdmission, { accepted: false, doc: state.doc })
 					if (
 						!transaction.docChanged &&
 						!transaction.getMeta(sourceHistory) &&
@@ -342,7 +406,15 @@ export function createTypstSourceEditor(options: TypstSourceEditorOptions): Edit
 	})
 	const replacements = new Map(options.extensions?.map((extension) => [extension.name, extension]))
 	const extensions = createTypstExtensions({
-		extensions: [TypstSourceBlock, TypstInlineSource, TypstComponent, TypstField, TypstTableStyle],
+		extensions: [
+			TypstSourceBlock,
+			TypstInlineSource,
+			TypstImport,
+			TypstInclude,
+			TypstComponent,
+			TypstField,
+			TypstTableStyle,
+		],
 	}).map((extension) => {
 		if (extension.name === 'starterKit') return extension.configure({ undoRedo: false })
 		return replacements.get(extension.name) ?? extension
@@ -420,7 +492,7 @@ export function createTypstSourceEditor(options: TypstSourceEditorOptions): Edit
 		},
 		extensions,
 		content: projection.document,
-		editable: options.editable ?? true,
+		editable: options.editable !== false && project.isWritable(path),
 		enableContentCheck: true,
 		...(options.onSelectionUpdate ? { onSelectionUpdate: options.onSelectionUpdate } : {}),
 		onTransaction({ transaction, appendedTransactions }) {
@@ -449,6 +521,10 @@ export function createTypstSourceEditor(options: TypstSourceEditorOptions): Edit
 			}
 			// Reproject accepted source. Rejected appended edits are visibly reported and restored.
 			refresh(accepted)
+			transaction.setMeta(sourceAdmission, {
+				accepted: accepted && !unavailable,
+				doc: editor.state.doc,
+			} satisfies SourceAdmissionReceipt)
 		},
 	})
 	// Tiptap installs extension plugins when mounted. Headless editing needs the same admission.

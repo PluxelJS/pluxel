@@ -433,6 +433,65 @@ export function projectTypstSource(input: TypstSourceProjectionInput): TypstPars
 	}
 	const contentArg = (call: AstFuncCall): AstContentBlock | undefined =>
 		positional(call).find((arg): arg is AstContentBlock => arg.kind === 'contentBlock')
+	const referenceMetadata = (expr: AstFuncCall, scope: Set<string>) => {
+		if (builtin(expr, scope) !== 'metadata' || expr.args.length !== 1) return
+		const value = positional(expr)[0]
+		if (
+			value?.kind !== 'dict' ||
+			value.items.length !== 3 ||
+			!value.items.every(
+				(item) =>
+					item.kind === 'named' &&
+					['__pluxel_reference', 'target', 'show-caption'].includes(item.name),
+			)
+		)
+			return
+		const field = (key: string) =>
+			value.items.find((item) => item.kind === 'named' && item.name === key)?.expr
+		const marker = field('__pluxel_reference'),
+			target = field('target'),
+			caption = field('show-caption')
+		if (
+			marker?.kind !== 'bool' ||
+			!marker.value ||
+			target?.kind !== 'label' ||
+			(caption?.kind !== 'auto' && caption?.kind !== 'bool')
+		)
+			return
+		return { target, caption }
+	}
+	const reference = (
+		expr: AstFuncCall,
+		target: AstExpr & { kind: 'label' },
+		caption: AstExpr | undefined,
+		callee?: string,
+	): Built => {
+		references.push({
+			...rangeOf(target, false),
+			path: input.path,
+			label: target.name,
+			syntax: 'label',
+		})
+		return make(
+			{
+				type: 'reference',
+				attrs: {
+					target: target.name,
+					showCaption: caption?.kind === 'bool' ? caption.value : null,
+				},
+			},
+			rangeOf(expr),
+			[],
+			{
+				preserve: true,
+				attributeRanges: {
+					target: rangeOf(target, false),
+					...(caption ? { showCaption: rangeOf(caption, false) } : {}),
+				},
+				...(callee ? { call: { callee, parameters: {}, ...callInsertion(expr) } } : {}),
+			},
+		)
+	}
 	const inline = (expressions: AstExpr[], scope: Set<string>, marks: Mark[] = []): Built[] =>
 		mergeText(
 			expressions
@@ -501,6 +560,8 @@ export function projectTypstSource(input: TypstSourceProjectionInput): TypstPars
 						case 'funcCall': {
 							const name = builtin(expr, scope),
 								body = contentArg(expr)
+							const metadata = referenceMetadata(expr, scope)
+							if (metadata) return [reference(expr, metadata.target, metadata.caption)]
 							const declaration = helper(expr, scope)
 							if (declaration?.library) {
 								const args = positional(expr),
@@ -556,39 +617,8 @@ export function projectTypstSource(input: TypstSourceProjectionInput): TypstPars
 								}
 								if (declaration.name === 'reference' && first?.kind === 'label') {
 									const caption = named(expr, 'caption')
-									if (!caption || caption.kind === 'auto' || caption.kind === 'bool') {
-										references.push({
-											...rangeOf(first, false),
-											path: input.path,
-											label: first.name,
-											syntax: 'label',
-										})
-										return [
-											make(
-												{
-													type: 'reference',
-													attrs: {
-														target: first.name,
-														showCaption: caption?.kind === 'bool' ? caption.value : null,
-													},
-												},
-												rangeOf(expr),
-												[],
-												{
-													preserve: true,
-													attributeRanges: {
-														target: rangeOf(first, false),
-														...(caption ? { showCaption: rangeOf(caption, false) } : {}),
-													},
-													call: {
-														callee: declaration.callee,
-														parameters: {},
-														...callInsertion(expr),
-													},
-												},
-											),
-										]
-									}
+									if (!caption || caption.kind === 'auto' || caption.kind === 'bool')
+										return [reference(expr, first, caption, declaration.callee)]
 								}
 							}
 
@@ -1020,6 +1050,7 @@ export function projectTypstSource(input: TypstSourceProjectionInput): TypstPars
 					call: {
 						callee: declaration!.callee,
 						module: component.module,
+						...callParameters(expr),
 						parameters: ranges,
 						...callInsertion(expr),
 					},
@@ -1283,6 +1314,76 @@ export function projectTypstSource(input: TypstSourceProjectionInput): TypstPars
 				} else paragraph.push(expr)
 				continue
 			}
+			if (expr.kind === 'moduleInclude' && expr.source.kind === 'str') {
+				if (!onOwnLine(expr)) {
+					paragraph.push(expr)
+					continue
+				}
+				flush()
+				const range = rangeOf(expr)
+				output.push(
+					make(
+						{
+							type: 'typstInclude',
+							attrs: { module: expr.source.value, source: slice(range) },
+						},
+						range,
+						[],
+						{ attributeRanges: { module: rangeOf(expr.source, false) } },
+					),
+				)
+				continue
+			}
+			if (expr.kind === 'moduleImport' && expr.source.kind === 'str') {
+				flush()
+				const range = rangeOf(expr)
+				const children =
+					cstNodes.get(`ModuleImport:${expr.range![0]}:${expr.range![1]}`)?.children ?? []
+				const binding = children.find((child) => child.kind === 'As' || child.kind === 'Colon')
+				const alias = expr.newName
+					? children.findLast((child) => child.kind === 'Ident')
+					: undefined
+				const items = children.find(
+					(child) => child.kind === 'ImportItems' || child.kind === 'Star',
+				)
+				const toRange = (node: typeof parsed.cst) => ({ from: node.range[0], to: node.range[1] })
+				output.push(
+					make(
+						{
+							type: 'typstImport',
+							attrs: {
+								module: expr.source.value,
+								alias: expr.newName ?? null,
+								items:
+									expr.imports?.kind === 'wildcard'
+										? '*'
+										: expr.imports?.kind === 'items'
+											? expr.imports.items
+													.map(
+														(item) =>
+															`${item.path.join('.')}${item.kind === 'renamed' ? ` as ${item.newName}` : ''}`,
+													)
+													.join(', ')
+											: null,
+								source: slice(range),
+							},
+						},
+						range,
+						[],
+						{
+							fixed: true,
+							attributeRanges: {
+								module: rangeOf(expr.source, false),
+								binding: { from: binding?.range[0] ?? range.to, to: range.to },
+								...(alias ? { alias: toRange(alias) } : {}),
+								...(items ? { items: toRange(items) } : {}),
+							},
+						},
+					),
+				)
+				shadowNames(expr, scope)
+				continue
+			}
 			if (environment.has(expr.kind)) {
 				flush()
 				output.push(sourceNode(expr, false, 'environment'))
@@ -1452,6 +1553,7 @@ export function projectTypstSource(input: TypstSourceProjectionInput): TypstPars
 					!['text', 'strong', 'emph', 'strike', 'underline', 'link', 'highlight', 'raw'].includes(
 						name ?? '',
 					) &&
+					!referenceMetadata(expr, scope) &&
 					!helper(expr, scope)?.library
 				) {
 					flush()

@@ -48,7 +48,7 @@ Studio 不决定核心契约，也不增加 Studio 产品功能；其已有调�
 先按相关性阅读，定位后停止扩展阅读范围：
 
 - `plugins/render/typst/DESIGN.md`：当前正文 JSON 权威、单向生成与源码定位的实际边界。
-- `docs/plugins/rendering/typst-editor.md`：现有功能、label/对象身份、`@` 补全、公式、模板组件、编辑与定位契约。
+- `docs/plugins/rendering/typst-editor.md`：现有功能、label/对象身份、`@` 补全、公式、内容组件、编辑与定位契约。
 - `plugins/render/typst/src/tiptap/`：`index.ts`、`types.ts`、`serialize.ts`、`document-nodes.ts`、`reference-targets.ts`、`blocks.ts`，以及对应 tests；按需查 React UI。
 - `plugins/render/typst/src/{contracts,session,resources}.ts`、`native/source_map.rs`：文件、快照、编译和位置单位。现有预览定位不等于双向源码编辑已经成立。
 - `projects/typst-agent-workspace/README.md`、`src/model.ts`、`tests/workflow.test.mjs`、`evidence/RESULTS.md`：独立消费者及已验证行为。
@@ -104,7 +104,7 @@ AST 用于识别支持的结构；CST、原始源码及其范围用于保真回�
 | 情况                                       | 期望行为                                                          |
 | ------------------------------------------ | ----------------------------------------------------------------- |
 | 已支持的段落、标题、列表、样式、手工表格等 | 原生 Tiptap 编辑，局部回写合法 Typst                              |
-| 已声明模板组件或可识别的数据绑定           | 显示参数/绑定控件，修改明确的参数或数据源                         |
+| 已声明内容组件或可识别的数据绑定           | 显示参数/绑定控件，修改明确的参数或数据源                         |
 | 未知内联表达式                             | 在原位置保留源码，使用内联源码节点/入口，不吞掉两侧文字或强制断段 |
 | 未知块、循环、复杂调用                     | 保留整段源码，显示可理解的源码卡片/入口；不把求值结果变成静态正文 |
 | `let/import/set/show` 等环境语句           | 保持其顺序和作用域；不简单伪装成可随意拖动的普通正文块            |
@@ -123,7 +123,7 @@ AST 用于识别支持的结构；CST、原始源码及其范围用于保真回�
 - 基础正文、常用 Mark、链接、字体字号颜色与段落对齐、列表、代码内容。
 - 手工表格、合并单元格、多段落单元格与已有表格样式；不能将整个已有表格都降为不可编辑源码后宣称能力保留。
 - 图片、figure、富文本题注及公式；题注与对象一起移动，编号由 Typst 模板计算。
-- 模板组件、业务字段与 JSON 数据驱动块；数据表与手工表具有不同的修改目标。
+- 内容组件、业务字段与 JSON 数据驱动块；数据表与手工表具有不同的修改目标。
 - `<fig:revenue>` / `@fig:revenue`、`@` 候选搜索、跨文件跳转、label 编辑、重复与缺失诊断、复制与移动。
 - 引用的“跟随模板 / 仅编号 / 编号与题注”现有行为须设计对应的源码表达。原生 `@label[supplement]` 不应未经核实就当成旧 `showCaption` 的等价物。
 - 当前公式是 LaTeX + MiTeX，原生 Typst 数学语法不同。保留现有 LaTeX 能力可以使用明确的源码调用；原生数学须保留。不要承诺任意 LaTeX ↔ Typst 无损互转。

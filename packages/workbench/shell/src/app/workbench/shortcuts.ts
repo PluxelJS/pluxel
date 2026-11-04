@@ -46,9 +46,9 @@ export const CATALOG_SHORTCUT_ITEMS = [
 ] as const
 
 export const PLUGIN_DETAIL_HOTKEYS = {
-	saveCurrentConfig: 'mod+S',
-	saveAllConfig: 'mod+Shift+S',
-	restartPlugin: 'mod+Alt+R',
+	saveCurrentConfig: 'Mod+S',
+	saveAllConfig: 'Mod+Shift+S',
+	restartPlugin: 'Mod+Alt+R',
 } as const
 
 export const PLUGIN_DETAIL_HOTKEY_LABELS = {

@@ -11,8 +11,12 @@ for (const file of [
 	'dist/source/browser.mjs',
 	'dist/source/library.mjs',
 	'dist/source/typst_ast_bg.wasm',
+	'dist/document.mjs',
+	'dist/document/react.mjs',
 	'dist/tiptap.mjs',
 	'dist/tiptap/react.mjs',
+	'dist/tiptap/document.mjs',
+	'dist/tiptap/document/react.mjs',
 	'dist/tiptap/style.css',
 	'native/compiler.node',
 ]) {

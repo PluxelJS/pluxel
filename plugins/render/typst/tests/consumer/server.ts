@@ -14,6 +14,9 @@ import { WorkerTaskError } from '@pluxel/services/workers'
 import type { ConsumerFailure } from './compile-contract'
 import type { Plugin } from 'vite'
 import { fontFamilies, sourceExample } from './source-example'
+import { exampleTitles, type ExampleId } from './examples'
+import { createDocumentService } from './document-private/server'
+import { DocumentInputError } from './document-private/project'
 
 const run = promisify(execFile)
 const maxClients = 8
@@ -79,6 +82,7 @@ export function consumerCompiler(options: Readonly<{ publicOrigin?: string }> = 
 	let typst: TypstPlugin
 	let directory: string | undefined
 	let closing: Promise<void> | undefined
+	let documents: ReturnType<typeof createDocumentService> | undefined
 	const clients = new Map<string, Promise<Client>>()
 
 	async function closeClient(id: string): Promise<void> {
@@ -99,6 +103,7 @@ export function consumerCompiler(options: Readonly<{ publicOrigin?: string }> = 
 		return (closing ??= (async () => {
 			try {
 				const results = await Promise.allSettled([...clients.keys()].map(closeClient))
+				results.push(...(await Promise.allSettled([documents?.close()])))
 				results.push(...(await Promise.allSettled([host?.dispose()])))
 				const failures = results.filter((result) => result.status === 'rejected')
 				if (failures.length > 0)
@@ -113,9 +118,10 @@ export function consumerCompiler(options: Readonly<{ publicOrigin?: string }> = 
 	}
 
 	function getClient(id: string): Promise<Client> {
+		if (documents?.has(id)) throw new Error('This page only accepts document operations')
 		const current = clients.get(id)
 		if (current) return current
-		if (clients.size >= maxClients)
+		if (clients.size + (documents?.size ?? 0) >= maxClients)
 			throw new Error(`At most ${maxClients} editor pages may be open`)
 		const pending = (async () => {
 			const root = join(directory!, id)
@@ -169,6 +175,15 @@ export function consumerCompiler(options: Readonly<{ publicOrigin?: string }> = 
 				// This is an isolated browser acceptance host, accessed only through public test APIs.
 				await host.start(FontsPlugin, { initialConfig: { files, maxFontBytes: 32 * 1024 * 1024 } })
 				typst = await host.start(TypstPlugin, { initialConfig: { maxSessions: maxClients } })
+				documents = createDocumentService({
+					typst,
+					directory: join(directory, 'documents'),
+					canOpen: () => clients.size + (documents?.size ?? 0) < maxClients,
+					onError: (error) =>
+						server.config.logger.error('Document rendering failed', {
+							error: error as Error,
+						}),
+				})
 			} catch (error) {
 				await close()
 				throw error
@@ -176,11 +191,119 @@ export function consumerCompiler(options: Readonly<{ publicOrigin?: string }> = 
 
 			server.middlewares.use((request, response, next) => {
 				const routePath = request.url?.split('?')[0]
-				if (routePath === '/example' && request.method === 'GET') {
-					void sourceExample()
-						.then((example) => {
+				let decodedPath = routePath ?? ''
+				try {
+					decodedPath = decodeURIComponent(decodeURIComponent(decodedPath))
+				} catch {
+					response.statusCode = 400
+					response.end('请求路径无效。')
+					return
+				}
+				if (
+					decodedPath.includes('/document-private/') ||
+					decodedPath.includes('/private-proposal/') ||
+					/\/(?:server|vite\.config)\.ts(?:$|\/)/.test(decodedPath)
+				) {
+					response.statusCode = 403
+					response.end('该资源不可访问。')
+					return
+				}
+				if (routePath?.startsWith('/document-api/')) {
+					void (async () => {
+						response.setHeader('Cache-Control', 'no-store')
+						try {
+							if (closing || !documents) throw new DocumentInputError('CLOSED', '文档服务已关闭。')
+							if (request.method === 'GET' && routePath === '/document-api/asset/architecture') {
+								response.setHeader('Content-Type', 'image/svg+xml')
+								response.end(documents.asset())
+								return
+							}
+							if (request.method === 'GET' && routePath === '/document-api/page') {
+								const query = new URL(request.url!, 'http://localhost').searchParams
+								const id = query.get('client')
+								if (!id || !clientIdPattern.test(id))
+									throw new DocumentInputError('INVALID_DOCUMENT', '文档标识无效。')
+								const image = await documents.image(
+									id,
+									Number(query.get('revision')),
+									Number(query.get('page')),
+								)
+								response.setHeader('Content-Type', 'image/png')
+								response.end(image)
+								return
+							}
+							const address = server.httpServer?.address()
+							const port =
+								address && typeof address === 'object' ? address.port : server.config.server.port
+							const origins = [
+								`http://127.0.0.1:${port}`,
+								`http://localhost:${port}`,
+								...(options.publicOrigin ? [options.publicOrigin] : []),
+							]
+							if (
+								routePath !== '/document-api/session' ||
+								request.method !== 'POST' ||
+								!origins.includes(request.headers.origin ?? '') ||
+								!origins.some((origin) => new URL(origin).host === request.headers.host) ||
+								request.headers['content-type']?.split(';')[0] !== 'application/json'
+							)
+								throw new DocumentInputError('FORBIDDEN', '仅接受当前页面的文档操作。')
+							const id = request.headers['x-document-client']
+							if (typeof id !== 'string' || !clientIdPattern.test(id) || clients.has(id))
+								throw new DocumentInputError('INVALID_DOCUMENT', '文档标识无效。')
+							const body = await readJson(request)
+							const value = await documents.execute(id, body)
+							response.setHeader(
+								'Content-Type',
+								body.action === 'pdf' ? 'application/pdf' : 'application/json',
+							)
+							if (value === undefined) response.statusCode = 204
+							response.end(
+								value instanceof Uint8Array
+									? value
+									: value === undefined
+										? undefined
+										: JSON.stringify(value),
+							)
+						} catch (error) {
+							const known = error instanceof DocumentInputError
+							if (!known)
+								server.config.logger.error('Document request failed', {
+									error: error as Error,
+								})
+							response.statusCode = known
+								? error.code === 'CONFLICT'
+									? 409
+									: error.code === 'FORBIDDEN'
+										? 403
+										: 400
+								: 500
 							response.setHeader('Content-Type', 'application/json')
-							return response.end(JSON.stringify(example))
+							response.end(
+								JSON.stringify(
+									known
+										? { code: error.code, message: error.message }
+										: {
+												code: 'DOCUMENT_FAILED',
+												message: '文档操作失败，当前输入仍保留在页面中。',
+											},
+								),
+							)
+						}
+					})()
+					return
+				}
+				if (routePath === '/workspace' && request.method === 'GET') {
+					void Promise.all(
+						(Object.keys(exampleTitles) as ExampleId[]).map(async (folder) => [
+							folder,
+							await sourceExample(folder),
+						]),
+					)
+						.then((folders) => {
+							response.setHeader('Content-Type', 'application/json')
+							response.setHeader('Cache-Control', 'no-store')
+							return response.end(JSON.stringify(Object.fromEntries(folders)))
 						})
 						.catch((error) => {
 							response.statusCode = 500
@@ -242,7 +365,7 @@ export function consumerCompiler(options: Readonly<{ publicOrigin?: string }> = 
 								Object.values(checked).some((value) => typeof value !== 'string')
 							)
 								throw new Error(
-									'The browser example accepts a complete text file map with main.typ',
+									'The browser workspace accepts a complete text file map with main.typ',
 								)
 							const key = JSON.stringify(
 								Object.fromEntries(Object.entries(checked).sort(([a], [b]) => a.localeCompare(b))),

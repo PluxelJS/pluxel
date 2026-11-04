@@ -3,15 +3,89 @@
 .typst-editor,
 .typst-floating-menu,
 .typst-table-trigger,
-.typst-block-current {
-	--typst-text: #27272a;
-	--typst-muted: #71717a;
-	--typst-border: #e4e4e7;
-	--typst-surface: #fff;
-	--typst-hover: #f4f4f5;
-	--typst-accent: #52525b;
-	--typst-active: #eaeaec;
-	--typst-shadow: 0 8px 24px #18181b14, 0 2px 6px #18181b0a;
+.typst-block-current,
+.typst-reference-suggestions,
+.typst-document-preview {
+	--typst-text: light-dark(#27272a, #e4e4e7);
+	--typst-muted: light-dark(#666670, #a1a1aa);
+	--typst-border: light-dark(#e4e4e7, #3f3f46);
+	--typst-surface: light-dark(#fff, #202023);
+	--typst-hover: light-dark(#f4f4f5, #2d2d32);
+	--typst-accent: light-dark(#52525b, #d4d4d8);
+	--typst-active: light-dark(#eaeaec, #3f3f46);
+	--typst-shadow: 0 8px 24px light-dark(#18181b14, #0004), 0 2px 6px light-dark(#18181b0a, #0002);
+	--typst-error: light-dark(#b33e3e, #ffabab);
+	--typst-error-surface: light-dark(#fff0f0, #4d282d);
+	--typst-field-text: light-dark(#285942, #a8dabc);
+	--typst-field-surface: light-dark(#edf5ef, #263d32);
+	--typst-field-border: light-dark(#6f9d80, #6d9d81);
+}
+
+.typst-document-preview {
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	overflow: auto;
+	padding: 20px;
+	background: light-dark(#e9e9e9, #141414);
+}
+.typst-document-preview figure {
+	margin: 0 auto 20px;
+	max-width: 794px;
+}
+.typst-document-preview img {
+	display: block;
+	width: 100%;
+	height: auto;
+	background: white;
+	box-shadow: 0 2px 10px #0002;
+}
+.typst-document-paper {
+	position: relative;
+}
+.typst-document-preview-surface {
+	display: block;
+	width: 100%;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: text;
+}
+.typst-document-preview-surface:disabled {
+	cursor: default;
+}
+.typst-document-preview-surface:focus-visible {
+	outline: 2px solid var(--typst-accent);
+	outline-offset: 3px;
+}
+.typst-document-preview-link,
+.typst-document-preview-highlight {
+	position: absolute;
+	border-radius: 2px;
+}
+.typst-document-preview-link {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: pointer;
+}
+.typst-document-preview-link:hover,
+.typst-document-preview-link:focus-visible {
+	background: #3182ce26;
+	outline: 1px solid #3182ce;
+	outline-offset: 1px;
+}
+.typst-document-preview-highlight {
+	pointer-events: none;
+	background: #3182ce30;
+	outline: 1px solid #3182ce;
+	outline-offset: 2px;
+}
+.typst-document-preview figcaption {
+	color: var(--typst-muted);
+	text-align: center;
+	font-size: 12px;
+	padding-top: 8px;
 }
 
 .typst-editor {
@@ -292,7 +366,7 @@
 	background: var(--typst-surface);
 }
 .typst-color-custom input[aria-invalid='true'] {
-	border-color: #dc2626;
+	border-color: var(--typst-error);
 }
 .typst-color-custom button,
 .typst-color-reset {
@@ -390,7 +464,8 @@
 }
 .typst-editor button:focus-visible,
 .typst-editor select:focus-visible,
-.typst-editor input:focus-visible {
+.typst-editor input:focus-visible,
+.typst-editor textarea:focus-visible {
 	outline: 2px solid var(--typst-accent);
 	outline-offset: 2px;
 }
@@ -635,7 +710,7 @@
 	cursor: default;
 }
 .typst-block-actions .typst-block-delete {
-	color: #dc2626;
+	color: var(--typst-error);
 }
 
 .typst-link-form {
@@ -661,12 +736,12 @@
 	background: var(--typst-surface);
 }
 .typst-link-form input[aria-invalid='true'] {
-	border-color: #dc2626;
+	border-color: var(--typst-error);
 }
 .typst-link-form [role='alert'] {
 	margin: 0;
 	font-size: 12px;
-	color: #dc2626;
+	color: var(--typst-error);
 }
 .typst-link-actions {
 	display: flex;
@@ -700,7 +775,7 @@
 }
 .typst-editor-content td,
 .typst-editor-content th {
-	border: 1px solid #d9dfe9;
+	border: 1px solid var(--typst-border);
 	min-width: 48px;
 	position: relative;
 	padding: 7px 10px;
@@ -909,8 +984,8 @@
 .typst-editor-error {
 	margin: 10px;
 	padding: 10px 12px;
-	background: #fff0f0;
-	color: #ad3434;
+	background: var(--typst-error-surface);
+	color: var(--typst-error);
 	border-radius: 6px;
 	font-size: 12px;
 	white-space: pre-wrap;
@@ -1095,7 +1170,7 @@
 	background: var(--typst-hover);
 }
 .typst-table-actions button:last-child {
-	color: #c44848;
+	color: var(--typst-error);
 }
 .typst-table-tools {
 	display: flex;
@@ -1298,35 +1373,6 @@
 	}
 }
 
-@media (prefers-color-scheme: dark) {
-	.typst-editor,
-	.typst-floating-menu,
-	.typst-table-trigger,
-	.typst-block-current {
-		--typst-text: #e4e4e7;
-		--typst-muted: #a1a1aa;
-		--typst-border: #3f3f46;
-		--typst-surface: #202023;
-		--typst-hover: #2d2d32;
-		--typst-accent: #d4d4d8;
-		--typst-active: #3f3f46;
-		--typst-shadow: 0 6px 28px #0004;
-		--typst-error: #ffabab;
-	}
-	.typst-editor-content td,
-	.typst-editor-content th {
-		border-color: #495366;
-	}
-	.typst-editor-content .tiptap blockquote {
-		color: #aab9d2;
-		border-left-color: #62789c;
-	}
-	.typst-editor-error {
-		background: #4d282d;
-		color: #ffc0c0;
-	}
-}
-
 /* Optional content blocks use the same controls as the ordinary text editor. */
 .typst-content-block {
 	margin: 1em 0;
@@ -1482,7 +1528,7 @@
 }
 .typst-block-error {
 	margin: 8px 0 0;
-	color: #c44848;
+	color: var(--typst-error);
 	font-size: 12px;
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
@@ -1736,17 +1782,17 @@
 .typst-reference {
 	padding: 1px 4px;
 	border-radius: 4px;
-	color: #286b51;
-	background: #edf4ef;
+	color: var(--typst-field-text);
+	background: var(--typst-field-surface);
 	font-size: 0.92em;
 	overflow-wrap: anywhere;
 }
 .typst-reference[data-missing] {
-	color: #a73232;
-	background: #fff0ed;
+	color: var(--typst-error);
+	background: var(--typst-error-surface);
 }
 .typst-reference[data-selected] {
-	outline: 2px solid #73aa8d;
+	outline: 2px solid var(--typst-field-border);
 }
 .typst-reference-trigger {
 	padding: 0;
@@ -1781,12 +1827,12 @@
 	max-height: 260px;
 	overflow-y: auto;
 	box-sizing: border-box;
-	border: 1px solid #cbd5cf;
+	border: 1px solid var(--typst-border);
 	border-radius: 8px;
 	padding: 5px;
-	background: #fff;
-	color: #234431;
-	box-shadow: 0 8px 24px #203b2926;
+	background: var(--typst-surface);
+	color: var(--typst-text);
+	box-shadow: var(--typst-shadow);
 	font:
 		13px/1.5 system-ui,
 		sans-serif;
@@ -1805,11 +1851,11 @@
 }
 .typst-reference-suggestions button[aria-selected='true'],
 .typst-reference-suggestions button:hover {
-	background: #eaf3ee;
+	background: var(--typst-hover);
 }
 .typst-reference-suggestions p {
 	margin: 6px;
-	color: #65716b;
+	color: var(--typst-muted);
 }
 .typst-caption-trigger {
 	width: auto;
@@ -1820,66 +1866,387 @@
 
 .typst-inline-source,
 .typst-source-card {
-	font-family: ui-monospace, monospace;
-	font-size: 0.85em;
-	color: #555;
+	color: var(--typst-text);
 }
-.typst-inline-source > button,
-.typst-source-card > button {
+.typst-source-trigger {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
 	color: inherit;
-	background: #f4f6f5;
-	border: 1px solid #d8dfda;
+	background: var(--typst-hover);
+	border: 1px solid var(--typst-border);
 	border-radius: 4px;
+	padding: 2px 5px;
 	text-align: left;
 	cursor: pointer;
 	max-width: 100%;
+	font: inherit;
 }
-.typst-source-card {
-	margin-block: 0.6em;
-	padding: 0.6em;
-	border: 1px solid #d8dfda;
-	border-radius: 5px;
-}
-.typst-source-card code {
-	white-space: pre-wrap;
+.typst-source-trigger code {
+	font:
+		11px/1.6 ui-monospace,
+		monospace;
 	overflow-wrap: anywhere;
 }
-.typst-inline-source textarea,
-.typst-source-card textarea {
-	display: block;
-	box-sizing: border-box;
+.typst-source-card {
+	margin-block: 0.75em;
+	padding: 10px 12px;
+	border: 1px solid var(--typst-border);
+	border-radius: 8px;
+	font:
+		13px/1.5 system-ui,
+		sans-serif;
+}
+.typst-preserved-source {
+	padding: 0;
+	background: var(--typst-hover);
+}
+.typst-preserved-source > .typst-source-trigger {
+	display: flex;
 	width: 100%;
-	min-height: 6em;
-	font: inherit;
+	padding: 9px 10px;
+	border: 0;
+	background: transparent;
 }
-
-.typst-component > strong {
-	margin-right: 0.5rem;
+.typst-preserved-source code {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	white-space: pre-wrap;
 }
-.typst-component > code {
-	color: var(--typst-muted, #666);
+.typst-source-trigger svg,
+.typst-file-reference > svg {
+	flex-shrink: 0;
+	color: var(--typst-muted);
 }
-.typst-component form {
+.typst-component {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 0.5rem;
-	padding: 0.5rem 0;
-}
-.typst-component form label {
-	display: flex;
-	gap: 0.4rem;
 	align-items: center;
+	gap: 8px;
 }
-.typst-binding-controls {
-	display: block;
-}
-.typst-binding-controls textarea {
-	display: block;
-	width: 100%;
-	min-height: 10rem;
-	font: inherit;
+.typst-component-kind {
+	display: inline-block;
+	padding: 2px 5px;
+	border-radius: 4px;
+	color: var(--typst-field-text);
+	background: var(--typst-field-surface);
+	font:
+		11px system-ui,
+		sans-serif;
 }
 .typst-source-field {
 	display: inline-block;
 	vertical-align: baseline;
+}
+.typst-field-readonly {
+	padding: 0 0.2em;
+	border-bottom: 1px dotted var(--typst-border);
+	overflow-wrap: anywhere;
+}
+.typst-json-binding > button {
+	max-width: 100%;
+	padding: 0.2em 0.4em;
+	border: 1px solid var(--typst-border);
+	border-radius: 4px;
+	color: inherit;
+	background: var(--typst-hover);
+	font: inherit;
+	cursor: pointer;
+	overflow-wrap: anywhere;
+}
+.typst-source-field > .typst-json-binding > button {
+	padding: 0 0.2em;
+	border: 0;
+	border-bottom: 1px dotted var(--typst-field-border);
+	color: var(--typst-field-text);
+	background: var(--typst-field-surface);
+}
+
+.typst-file-reference {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 36px;
+	padding: 4px 2px;
+	border-bottom: 1px solid var(--typst-border);
+	color: var(--typst-muted);
+	font:
+		12px/1.5 system-ui,
+		sans-serif;
+}
+.typst-import-kind {
+	font-size: 11px;
+	flex-shrink: 0;
+}
+.typst-import-module {
+	min-width: 0;
+	max-width: 60%;
+	padding: 0;
+	border: 0;
+	color: var(--typst-text);
+	background: transparent;
+	cursor: pointer;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.typst-editor-content .typst-import-module code {
+	display: flex;
+	min-width: 0;
+	padding: 0;
+	background: transparent;
+	font:
+		12px ui-monospace,
+		monospace;
+}
+.typst-import-directory {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.typst-import-module code > span:last-child {
+	flex-shrink: 0;
+}
+button.typst-import-module:hover {
+	text-decoration: underline;
+}
+.typst-import-binding {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+@media (max-width: 600px) {
+	.typst-file-reference {
+		display: grid;
+		grid-template-columns: 16px auto minmax(0, 1fr) 28px;
+		gap: 2px 8px;
+		padding-block: 6px;
+	}
+	.typst-import-module {
+		max-width: 100%;
+		text-align: start;
+	}
+	.typst-import-binding {
+		grid-column: 3;
+		font-size: 11px;
+	}
+	.typst-file-reference .typst-node-settings {
+		grid-column: 4;
+		grid-row: 1 / 3;
+	}
+}
+.typst-file-reference .typst-node-settings,
+.typst-component .typst-node-settings {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	min-width: 28px;
+	min-height: 28px;
+	margin-left: auto;
+	padding: 3px;
+	border: 0;
+	border-radius: 4px;
+	color: var(--typst-muted);
+	background: transparent;
+	cursor: pointer;
+}
+.typst-node-settings:hover:not(:disabled) {
+	background: var(--typst-hover);
+}
+.typst-component-title {
+	min-width: 0;
+	padding: 0;
+	border: 0;
+	color: inherit;
+	background: transparent;
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+}
+.typst-component-title:hover {
+	text-decoration: underline;
+}
+.typst-node-panel {
+	width: 360px;
+	max-height: calc(100dvh - 16px);
+	overflow: auto;
+	padding: 14px;
+	font:
+		13px/1.5 system-ui,
+		sans-serif;
+}
+.typst-node-panel-heading {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+.typst-node-panel-heading > button {
+	border: 0;
+	background: transparent;
+	color: var(--typst-muted);
+	cursor: pointer;
+	font:
+		20px/1 system-ui,
+		sans-serif;
+}
+.typst-node-panel-description {
+	margin: 4px 0 12px;
+	color: var(--typst-muted);
+	font-size: 11px;
+	overflow-wrap: anywhere;
+}
+.typst-node-panel form,
+.typst-source-file-form form {
+	display: grid;
+	gap: 12px;
+}
+.typst-node-panel :is(input, select, textarea),
+.typst-source-file-form :is(input, select) {
+	box-sizing: border-box;
+	width: 100%;
+	min-width: 0;
+	border: 1px solid var(--typst-border);
+	border-radius: 5px;
+	padding: 7px 8px;
+	background: var(--typst-surface);
+	color: var(--typst-text);
+	font: inherit;
+}
+.typst-node-panel textarea {
+	min-height: 160px;
+	max-height: 280px;
+	resize: vertical;
+	font:
+		12px/1.6 ui-monospace,
+		monospace;
+}
+.typst-node-control-label {
+	display: grid;
+	gap: 5px;
+}
+.typst-node-panel [role='alert'],
+.typst-source-file-form [role='alert'] {
+	color: var(--typst-error);
+	overflow-wrap: anywhere;
+}
+.typst-node-panel-actions {
+	display: flex;
+	gap: 6px;
+	justify-content: flex-end;
+	padding-top: 4px;
+}
+.typst-node-panel-actions > button {
+	border: 1px solid var(--typst-border);
+	border-radius: 5px;
+	padding: 6px 12px;
+	color: var(--typst-text);
+	background: var(--typst-surface);
+	font: inherit;
+	cursor: pointer;
+}
+.typst-node-panel-actions > button:first-child {
+	color: var(--typst-surface);
+	background: var(--typst-text);
+	border-color: transparent;
+}
+.typst-source-file-form {
+	padding: 14px;
+	color: var(--typst-text);
+	font:
+		13px/1.5 system-ui,
+		sans-serif;
+}
+.typst-source-path {
+	display: grid;
+	gap: 5px;
+	min-width: 0;
+}
+.typst-source-path input {
+	font:
+		12px/1.5 ui-monospace,
+		monospace;
+}
+.typst-path-completions {
+	max-height: min(180px, 30dvh);
+	overflow: auto;
+	border: 1px solid var(--typst-border);
+	border-radius: 5px;
+	background: var(--typst-surface);
+}
+.typst-path-completions button {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	min-width: 0;
+	padding: 7px 8px;
+	border: 0;
+	background: transparent;
+	color: var(--typst-text);
+	text-align: start;
+	font:
+		12px/1.5 ui-monospace,
+		monospace;
+	cursor: pointer;
+}
+.typst-path-completions button[aria-selected='true'] {
+	background: var(--typst-hover);
+}
+.typst-path-completions button > span:nth-child(2) {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.typst-path-completions kbd {
+	margin-left: auto;
+	white-space: nowrap;
+	font-size: 10px;
+	color: var(--typst-muted);
+}
+.typst-path-kind {
+	color: var(--typst-muted);
+	flex-shrink: 0;
+	width: 12px;
+	text-align: center;
+}
+.typst-source-path-help {
+	margin: 0;
+	color: var(--typst-muted);
+	font-size: 11px;
+	overflow-wrap: anywhere;
+}
+.typst-source-import-options > summary {
+	color: var(--typst-muted);
+	cursor: pointer;
+	font-size: 12px;
+}
+.typst-source-import-options .typst-node-control-label {
+	margin-top: 8px;
+}
+.typst-source-file-form button:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+.typst-component-parameter {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: end;
+	gap: 8px;
+}
+.typst-component-parameter > button {
+	border: 0;
+	padding: 8px 0;
+	background: transparent;
+	color: var(--typst-muted);
+	font: inherit;
+	font-size: 11px;
+	cursor: pointer;
+}
+.typst-component-parameter > button:disabled {
+	opacity: 0.45;
+	cursor: default;
 }

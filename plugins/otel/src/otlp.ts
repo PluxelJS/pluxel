@@ -8,7 +8,7 @@ import {
 	type InstrumentType,
 	type PushMetricExporter,
 } from '@opentelemetry/sdk-metrics'
-import type { SpanExporter } from '@opentelemetry/sdk-trace-base'
+import type { SpanExporter } from '@opentelemetry/sdk-trace'
 import type { OtelSignal } from './config.ts'
 import { safeErrorType } from './diagnostics.ts'
 import {

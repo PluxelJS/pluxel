@@ -109,7 +109,13 @@ async function fixture() {
 				format: 'vector' as const,
 				compilerVersion: '0.7.0' as const,
 				data: new Uint8Array(),
-				navigation: { pages: [{ page: 1, width: 595, height: 842 }], points: [], outline: [] },
+				navigation: {
+					pages: [{ page: 1, width: 595, height: 842 }],
+					points: [],
+					targets: [],
+					links: [],
+					outline: [],
+				},
 			},
 		})),
 		renderPage: vi.fn(async (input) => ({

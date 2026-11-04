@@ -1,7 +1,7 @@
 import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
-import { SeverityNumber } from '@opentelemetry/api-logs'
+import { SeverityNumber } from '@opentelemetry/api'
 import { resourceFromAttributes } from '@opentelemetry/resources'
 import {
 	BatchLogRecordProcessor,
@@ -18,12 +18,12 @@ import {
 	PeriodicExportingMetricReader,
 } from '@opentelemetry/sdk-metrics'
 import {
-	BasicTracerProvider,
+	TracerProvider,
 	BatchSpanProcessor,
 	InMemorySpanExporter,
 	SamplingDecision,
 	SimpleSpanProcessor,
-} from '@opentelemetry/sdk-trace-base'
+} from '@opentelemetry/sdk-trace'
 import { describe, expect, it, vi } from 'vitest'
 import { Otel, OtelPlugin, OtelWorkbench, type OtelProviders } from '../src/index.ts'
 
@@ -67,7 +67,7 @@ class NativeOtel extends Otel {
 					},
 				],
 			}),
-			tracerProvider: new BasicTracerProvider({
+			tracerProvider: new TracerProvider({
 				resource,
 				sampler: {
 					shouldSample: (_context, _traceId, name) => ({
@@ -80,14 +80,14 @@ class NativeOtel extends Otel {
 				},
 				spanLimits: { attributeCountLimit: 1 },
 				spanProcessors: [
-					new BatchSpanProcessor(this.spans, { scheduledDelayMillis: 300_000 }),
-					new SimpleSpanProcessor(this.extraSpans),
+					new BatchSpanProcessor({ exporter: this.spans, scheduledDelayMillis: 300_000 }),
+					new SimpleSpanProcessor({ exporter: this.extraSpans }),
 				],
 			}),
 			loggerProvider: new LoggerProvider({
 				resource,
 				loggerConfigurator: () => ({
-					disabled: false,
+					enabled: true,
 					minimumSeverity: SeverityNumber.WARN,
 					traceBased: false,
 				}),
@@ -110,7 +110,7 @@ class TracesOnly extends Otel {
 	}
 
 	protected override async createProviders(): Promise<OtelProviders> {
-		return { tracerProvider: new BasicTracerProvider() }
+		return { tracerProvider: new TracerProvider() }
 	}
 }
 

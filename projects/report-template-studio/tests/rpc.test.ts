@@ -104,7 +104,7 @@ describe('real Cap’n Web error and binary boundaries', () => {
 					compilerVersion: '0.7.0',
 					sessionId: 'native-session',
 					revision: 1,
-					navigation: { pages: [], points: [], outline: [] },
+					navigation: { pages: [], points: [], outline: [], targets: [], links: [] },
 				},
 			}),
 		})

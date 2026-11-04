@@ -265,9 +265,9 @@ View 管理根 SVG 的宽度和比例，宿主只负责滚动区域与居中，�
 
 这里 `viewport` 是 `.preview-scroll`，`container` 是 `.typst-pages`。不要再给 SVG 设置 `width: 100%`、`max-width: 100%` 或用 transform 另做缩放。`onStateChange` 仅在预览 packet、缩放、页码或当前标题变化时同步通知；同页滚动仍更新阅读位置，但不重复通知界面。宿主读取 `state.currentPage` / `currentHeading` 和 `onStateChange` 更新页码与目录；目录自身的滚动容器由宿主把当前项滚到可见，不能因此滚动文档视口。
 
-`packet.navigation` 与 Vector/PDF 属于同一次编译：`points` 包含工作区相对路径、以 1 开始的 UTF-16 源码行列（结束位置不包含在范围内）、页码，以及页面局部坐标的矩形；`outline` 包含标题、层级、页码和坐标；`pages` 包含每页的 `page`、`width`、`height`，页码以 1 开始，尺寸单位为 pt。坐标单位为 pt。生成的 `/inputs/` 和根目录外文件不作为源码跳转目标。
+`packet.navigation` 与 Vector/PDF 属于同一次编译：`points` 包含工作区相对路径、以 1 开始的 UTF-16 源码行列（结束位置不包含在范围内）、页码，以及页面局部坐标的矩形；`outline` 包含标题、层级、页码和坐标；`pages` 包含每页的 `page`、`width`、`height`，页码以 1 开始，尺寸单位为 pt。`targets` 包含每个真实 label 的页面位置（重复标签保留各次出现），`links` 包含原生链接的矩形及真实 Position/Location 目标或原始 URL，URL scheme 由宿主控制。坐标单位为 pt。生成的 `/inputs/` 和根目录外文件不作为源码跳转目标。
 
-View 统一管理 SVG CTM 坐标、普通点击/拖选过滤、页码/目录跟随和高亮；宿主通过普通位置回调连接编辑器，并维护文件/草稿版本与可见目标选择。保留旧预览时不能直接套用已修改源码的行列。Typst 的布局映射来自原生文档 span，TypeScript 的转换 sourcemap 由 Vite 管理，二者不互相替代。每修订最多 200,000 个有效定位点，超限明确失败。
+View 统一管理 SVG CTM 坐标、普通点击/拖选过滤、页码/目录跟随和高亮；宿主通过普通位置回调连接编辑器，并维护文件/草稿版本与可见目标选择。保留旧预览时不能直接套用已修改源码的行列。Typst 的布局映射来自原生文档 span，TypeScript 的转换 sourcemap 由 Vite 管理，二者不互相替代。每修订的 points、outline、targets、links 各最多 200,000 项，超限明确失败。
 
 可选 `/source`、`/source/browser`、`/tiptap` 与 `/tiptap/react` 提供源码项目事务和结构化视图，支持文字排版、手工表格、题注、LaTeX 公式、原生交叉引用、模板参数和 JSON 数据绑定。普通 `.typ` 是正文权威，固定 MiTeX/helper 作为明确的普通项目文件持久化。完整用法见 [Typst 源码编辑](./typst-editor.md)。根入口、`/template` 和 `/browser` 不要求安装 Tiptap/React。
 

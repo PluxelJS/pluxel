@@ -82,11 +82,13 @@ export function PreviewPageControl({
 }
 
 export function PreviewOutline({
+	id = 'preview-outline',
 	state,
 	view,
 	open,
 	onClose,
 }: {
+	id?: string
 	state: TypstPreviewState
 	view?: TypstPreviewView
 	open: boolean
@@ -109,13 +111,7 @@ export function PreviewOutline({
 		return () => observer.disconnect()
 	}, [])
 	return (
-		<nav
-			ref={root}
-			id="preview-outline"
-			className="preview-outline"
-			aria-label="目录"
-			hidden={!open}
-		>
+		<nav ref={root} id={id} className="preview-outline" aria-label="目录" hidden={!open}>
 			{state.preview?.navigation.outline.map((item, index) => (
 				<button
 					type="button"

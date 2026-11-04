@@ -134,8 +134,8 @@ const buildFixtures = {
 		'node_modules/react/index.d.ts': reactExportNames
 			.map((name) => `export declare const ${name}: string`)
 			.join('\n'),
-		...fixturePackage('@mantine/core', '9.7.3', ['.']),
-		...fixturePackage('@mantine/hooks', '9.7.3', ['.']),
+		...fixturePackage('@mantine/core', '9.7.4', ['.']),
+		...fixturePackage('@mantine/hooks', '9.7.4', ['.']),
 		...fixturePackage('@pluxel/workbench', '0.1.0', [
 			'.',
 			'./client',
@@ -180,8 +180,8 @@ export function createWorkbenchBridge(identity, Renderer) {
 				version: '1.0.0',
 				type: 'module',
 				dependencies: {
-					'@mantine/core': '9.7.3',
-					'@mantine/hooks': '9.7.3',
+					'@mantine/core': '9.7.4',
+					'@mantine/hooks': '9.7.4',
 					'@pluxel/core': '1.0.0',
 					'@pluxel/workbench': '0.1.0',
 					react: '19.3.1',

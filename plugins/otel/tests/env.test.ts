@@ -4,6 +4,7 @@ import {
 	resolveMetricReaderConfig,
 	resolveOtlpConfig,
 	resolveResourceAttributes,
+	resolveTraceSampler,
 } from '../src/env.ts'
 
 describe('OpenTelemetry environment', () => {
@@ -71,6 +72,20 @@ describe('OpenTelemetry environment', () => {
 			scheduledDelayMillis: 250,
 			exportTimeoutMillis: 2_000,
 		})
+	})
+
+	it('rejects unsupported samplers and invalid sampling probabilities', () => {
+		expect(() => resolveTraceSampler({ OTEL_TRACES_SAMPLER: 'unsupported' })).toThrow(
+			/OTEL_TRACES_SAMPLER/,
+		)
+		for (const ratio of ['-0.1', '1.1', 'NaN', 'Infinity']) {
+			expect(() =>
+				resolveTraceSampler({
+					OTEL_TRACES_SAMPLER: 'traceidratio',
+					OTEL_TRACES_SAMPLER_ARG: ratio,
+				}),
+			).toThrow(/OTEL_TRACES_SAMPLER_ARG/)
+		}
 	})
 
 	it('applies resource service identity precedence independently of exporters', () => {

@@ -19,7 +19,7 @@ import type {
 } from './types.js'
 
 type Files = Record<string, string | Uint8Array>
-type Change = { path: string; before: string | Uint8Array; after: string | Uint8Array }
+type Change = { path: string; before: string | Uint8Array | undefined; after: string | Uint8Array }
 const encoder = new TextEncoder()
 const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 const HISTORY_LIMIT = 100
@@ -58,7 +58,7 @@ function copyFiles(input: TypstSourceFiles): Files {
 					`${path}: text contains an unpaired surrogate`,
 				)
 			files[path] = value
-		} else if (value instanceof Uint8Array) files[path] = value.slice()
+		} else if (value instanceof Uint8Array) files[path] = Uint8Array.from(value)
 		else throw new TypstSourceProjectError('INVALID_SOURCE', `${path}: expected text or Uint8Array`)
 	}
 	for (const path of Object.keys(files)) {
@@ -260,6 +260,10 @@ export function createTypstSourceProjectState(
 		for (const [path, projection] of cache) {
 			if (changedPaths.has(path) || importsChanged(projection, changedPaths)) cache.delete(path)
 		}
+		for (const { path } of changes) {
+			if (!Object.hasOwn(next, path)) writable?.delete(path)
+			else if (!Object.hasOwn(files, path)) writable?.add(path)
+		}
 		files = next
 		revision++
 		if (history) {
@@ -273,8 +277,31 @@ export function createTypstSourceProjectState(
 	}
 	const candidate = (
 		patches: readonly TypstSourcePatch[],
+		createFiles?: TypstSourceFiles,
 	): TypstSourceResult<{ files: Files; changes: Change[] }> => {
 		if (!Array.isArray(patches)) return fail('INVALID_PATCH', 'patches must be an array')
+		let next: Files = Object.assign(Object.create(null), files)
+		const changes: Change[] = []
+		if (createFiles !== undefined) {
+			let created: Files
+			try {
+				created = copyFiles(createFiles)
+			} catch (error) {
+				if (error instanceof TypstSourceProjectError) return fail(error.code, error.message)
+				throw error
+			}
+			for (const path of Object.keys(created)) {
+				if (Object.hasOwn(files, path)) return fail('CONFLICT', 'File already exists', path)
+			}
+			try {
+				next = copyFiles({ ...next, ...created })
+			} catch (error) {
+				if (error instanceof TypstSourceProjectError) return fail(error.code, error.message)
+				throw error
+			}
+			for (const path of Object.keys(created))
+				changes.push({ path, before: undefined, after: next[path] })
+		}
 		const byPath = new Map<string, TypstSourcePatch[]>()
 		for (const patch of patches) {
 			if (!patch || !validPath(patch.path))
@@ -293,8 +320,6 @@ export function createTypstSourceProjectState(
 			list.push(patch)
 			byPath.set(patch.path, list)
 		}
-		const next = { ...files }
-		const changes: Change[] = []
 		for (const [path, edits] of byPath) {
 			let source: string
 			try {
@@ -340,10 +365,10 @@ export function createTypstSourceProjectState(
 		}
 		return { ok: true, value: { files: next, changes } }
 	}
-	const apply: TypstSourceProject['apply'] = ({ baseRevision, patches }) => {
+	const apply: TypstSourceProject['apply'] = ({ baseRevision, patches, createFiles }) => {
 		const conflict = checkRevision(baseRevision)
 		if (conflict) return { ok: false, issues: [conflict] }
-		const checked = candidate(patches)
+		const checked = candidate(patches, createFiles)
 		return checked.ok ? accept(checked.value.files, checked.value.changes, true) : checked
 	}
 	const renamePatches = (
@@ -503,17 +528,24 @@ export function createTypstSourceProjectState(
 			const visit = (node: JSONContent) => {
 				const attrs = node.attrs ?? {}
 				const identity =
-					node.type === 'typstField'
-						? [node.type, attrs.file, attrs.path]
-						: node.type === 'typstComponent'
-							? [
-									node.type,
-									attrs.module,
-									attrs.name,
-									Object.entries(attrs.props ?? {}).sort(([a], [b]) => a.localeCompare(b)),
-									attrs.binding?.file ?? null,
-								]
-							: undefined
+					node.type === 'typstImport'
+						? [
+								node.type,
+								attrs.module,
+								attrs.alias?.replaceAll(/\s/g, '') ?? null,
+								attrs.items?.replaceAll(/\s/g, '') ?? null,
+							]
+						: node.type === 'typstField'
+							? [node.type, attrs.file, attrs.path]
+							: node.type === 'typstComponent'
+								? [
+										node.type,
+										attrs.module,
+										attrs.name,
+										Object.entries(attrs.props ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+										attrs.binding?.file ?? null,
+									]
+								: undefined
 				if (identity) {
 					const key = JSON.stringify(identity)
 					counts.set(key, (counts.get(key) ?? 0) + 1)
@@ -527,7 +559,7 @@ export function createTypstSourceProjectState(
 		if ([...bindings(document)].some(([key, count]) => (actualBindings.get(key) ?? 0) < count))
 			return fail(
 				'UNSUPPORTED_EDIT',
-				'This edit changes a declared component or field binding through its source scope; edit the native source explicitly',
+				'This edit changes an import or declared component/field binding through its source scope; edit the native source explicitly',
 				current.path,
 				0,
 				encoder.encode(current.source).length,
@@ -647,6 +679,7 @@ export function createTypstSourceProjectState(
 				source.parsed.ast.some(
 					(expr) =>
 						environmentKinds.has(expr.kind) &&
+						!(expr.kind === 'moduleInclude' && expr.source.kind === 'str') &&
 						expr.range &&
 						expr.range[0] >= low &&
 						expr.range[0] < high,
@@ -781,6 +814,8 @@ export function createTypstSourceProjectState(
 		get canRedo() {
 			return future.length > 0
 		},
+		isWritable: (path) =>
+			Object.hasOwn(files, path) && (writable === undefined || writable.has(path)),
 		snapshot,
 		open: (path) => {
 			const {
@@ -825,6 +860,26 @@ export function createTypstSourceProjectState(
 			return prepared.ok ? apply(prepared.value) : prepared
 		},
 		apply,
+		createFile: ({ baseRevision, path, contents }) => {
+			const conflict = checkRevision(baseRevision)
+			if (conflict) return { ok: false, issues: [conflict] }
+			if (!validPath(path))
+				return fail(
+					'INVALID_PATH',
+					'File creation requires a canonical project-relative path',
+					path,
+				)
+			if (Object.hasOwn(files, path)) return fail('CONFLICT', 'File already exists', path)
+			const result = apply({ baseRevision, patches: [], createFiles: { [path]: contents } })
+			return result.ok
+				? result
+				: {
+						ok: false,
+						issues: result.issues.map((diagnostic) =>
+							Object.assign({}, diagnostic, { path: diagnostic.path || path }),
+						),
+					}
+		},
 		renameLabel: ({ baseRevision, from, to }) => {
 			const conflict = checkRevision(baseRevision)
 			if (conflict) return { ok: false, issues: [conflict] }
@@ -866,8 +921,11 @@ export function createTypstSourceProjectState(
 		undo: () => {
 			const changes = past.at(-1)
 			if (!changes) return fail('NO_HISTORY', 'No source transaction to undo')
-			const next = { ...files }
-			for (const change of changes) next[change.path] = change.before
+			const next: Files = Object.assign(Object.create(null), files)
+			for (const change of changes) {
+				if (change.before === undefined) delete next[change.path]
+				else next[change.path] = change.before
+			}
 			past.pop()
 			future.push(changes)
 			return accept(next, changes, false)
@@ -875,7 +933,7 @@ export function createTypstSourceProjectState(
 		redo: () => {
 			const changes = future.at(-1)
 			if (!changes) return fail('NO_HISTORY', 'No source transaction to redo')
-			const next = { ...files }
+			const next: Files = Object.assign(Object.create(null), files)
 			for (const change of changes) next[change.path] = change.after
 			future.pop()
 			past.push(changes)
@@ -1324,6 +1382,19 @@ function portableFragment(
 			return
 		}
 		const node = value as AstExpr
+		if (node.kind === 'moduleInclude') {
+			if (node.source.kind !== 'str' || !node.source.range)
+				throw new UnsafeSourceTransfer('Computed include paths require an explicit source move')
+			const replacement = relativeResource(node.source.value, from, to, files)
+			if (from !== to && replacement !== node.source.value)
+				patches.push({
+					path: from,
+					from: node.source.range[0],
+					to: node.source.range[1],
+					text: JSON.stringify(replacement),
+				})
+			return
+		}
 		if (node.kind === 'funcCall') {
 			const name =
 				node.callee.kind === 'ident'

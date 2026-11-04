@@ -15,6 +15,20 @@ export default defineConfig(() => {
 			port: environment.hostPort ?? 3410,
 			strictPort: true,
 			cors: false,
+			fs: {
+				deny: [
+					'.env',
+					'.env.*',
+					'*.{crt,pem,key,p12,pfx,cer,der}',
+					'.npmrc',
+					'.yarnrc.yml',
+					'**/.git/**',
+					'**/document-private/**',
+					'**/private-proposal/**',
+					'**/consumer/server.ts',
+					'**/consumer/vite.config.ts',
+				],
+			},
 			allowedHosts: environment.publicOrigin ? [new URL(environment.publicOrigin).hostname] : [],
 		},
 	}

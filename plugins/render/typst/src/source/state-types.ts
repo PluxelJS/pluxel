@@ -23,7 +23,7 @@ export interface TypstPreparedSourceEdit {
 
 export interface TypstSourceProjectOptions {
 	readonly files: TypstSourceFiles
-	/** Explicit parameter/data bindings for native template calls, owned by the template author. */
+	/** Explicit parameter/data bindings for reusable Typst component calls. */
 	readonly components?: readonly TypstSourceComponent[]
 	/** Omitted means every existing project file is writable. Explicit paths must exist. */
 	readonly writablePaths?: readonly string[]
@@ -36,6 +36,8 @@ export interface TypstSourceProject {
 	readonly revision: number
 	readonly canUndo: boolean
 	readonly canRedo: boolean
+	/** Whether this existing file accepts edits. The host owns permissions and external replace(). */
+	isWritable(path: string): boolean
 	snapshot(): TypstSourceSnapshot
 	/** Parse and project this text file. Non-text or missing paths throw TypstSourceProjectError. */
 	open(path: string): TypstSourceProjection
@@ -53,7 +55,16 @@ export interface TypstSourceProject {
 	/** UTF-8 byte ranges in the baseline. Every patch is checked before any source changes. */
 	apply(input: {
 		readonly baseRevision: number
+		/** Patches target files that already exist in the baseline. */
 		readonly patches: readonly TypstSourcePatch[]
+		/** Create writable files without overwriting, atomically with the patches. The host owns permission to expose creation. */
+		readonly createFiles?: TypstSourceFiles
+	}): TypstSourceResult<TypstSourceSnapshot>
+	/** Create a writable file without overwriting, as one undoable transaction. The host owns permission to expose creation. */
+	createFile(input: {
+		readonly baseRevision: number
+		readonly path: string
+		readonly contents: string | Uint8Array
 	}): TypstSourceResult<TypstSourceSnapshot>
 	/** Rename a unique static declaration and all static references in one transaction. */
 	renameLabel(input: {

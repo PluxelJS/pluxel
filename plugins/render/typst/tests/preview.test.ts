@@ -14,7 +14,7 @@ const packet = (revision: number, sessionId = 'session'): TypstPreview => ({
 	format: 'vector',
 	compilerVersion: '0.7.0',
 	data: new Uint8Array([revision]),
-	navigation: { points: [], outline: [], pages: [] },
+	navigation: { points: [], outline: [], pages: [], targets: [], links: [] },
 })
 
 function fixture(
@@ -258,6 +258,8 @@ describe('TypstPreviewView', () => {
 			navigation: {
 				pages: [],
 				points: [],
+				targets: [],
+				links: [],
 				outline: [
 					{ title: '正文', level: 1, page: 1, x: 50, y: 0 },
 					{ title: '附录', level: 1, page: 2, x: 50, y: 0 },
@@ -345,6 +347,8 @@ describe('TypstPreviewView', () => {
 			navigation: {
 				pages: [],
 				points: [],
+				targets: [],
+				links: [],
 				outline: [
 					{ title: 'First section', level: 1, page: 1, x: 50, y: 0 },
 					{ title: 'Middle section', level: 1, page: 2, x: 50, y: 0 },
@@ -482,7 +486,7 @@ describe('TypstPreviewView', () => {
 				const point = { ...text, page: 2, y: disposeAt === 2 ? 190 : 60 }
 				await view.show({
 					...packet(1),
-					navigation: { pages: [], outline: [], points: [point] },
+					navigation: { pages: [], outline: [], points: [point], targets: [], links: [] },
 				})
 				// Native scroll events arrive later; exercise synchronous snapshot notifications.
 				vi.spyOn(scroll, 'scrollTo').mockImplementation(({ top }) => {
@@ -517,7 +521,10 @@ describe('TypstPreviewView', () => {
 		const onNavigate = vi.fn()
 		let current = true
 		const { view, container } = fixture({ onNavigate, isNavigationCurrent: () => current }, [20])
-		const preview = { ...packet(1), navigation: { pages: [], outline: [], points: [text] } }
+		const preview = {
+			...packet(1),
+			navigation: { pages: [], outline: [], points: [text], targets: [], links: [] },
+		}
 		await view.show(preview)
 		pointer(container, 'pointerdown')
 		pointer(container, 'pointerup')
@@ -569,7 +576,10 @@ describe('TypstPreviewView', () => {
 			expect(event.defaultPrevented).toBe(true)
 		}
 		try {
-			await view.show({ ...packet(1), navigation: { pages: [], outline: [], points: [text] } })
+			await view.show({
+				...packet(1),
+				navigation: { pages: [], outline: [], points: [text], targets: [], links: [] },
+			})
 			expect(links[0]!.getAttribute('onclick')).toBeNull()
 			expect(links[0]!.getAttribute('tabindex')).toBe('0')
 			setLink(0)
@@ -598,7 +608,10 @@ describe('TypstPreviewView', () => {
 			expect(scroll.scrollTop).toBe(0)
 			current = true
 			pointer(container, 'pointerdown')
-			await view.show({ ...packet(2), navigation: { pages: [], outline: [], points: [text] } })
+			await view.show({
+				...packet(2),
+				navigation: { pages: [], outline: [], points: [text], targets: [], links: [] },
+			})
 			pointer(container, 'pointerup')
 			click()
 			expect(scroll.scrollTop).toBe(0)
@@ -623,7 +636,7 @@ describe('TypstPreviewView', () => {
 			const repeated = { ...text, page: 2 }
 			await view.show({
 				...packet(1),
-				navigation: { pages: [], outline: [], points: [text, repeated] },
+				navigation: { pages: [], outline: [], points: [text, repeated], targets: [], links: [] },
 			})
 			view.jumpToPage(2)
 			expect(view.revealSource({ path: text.path, line: 4, column: 5 })).toBe(true)

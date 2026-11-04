@@ -1,3 +1,10 @@
+import {
+	AlwaysOffSampler,
+	AlwaysOnSampler,
+	ParentBasedSampler,
+	TraceIdRatioBasedSampler,
+	type Sampler,
+} from '@opentelemetry/sdk-trace'
 import type { OtelSignal } from './config.ts'
 
 const DEFAULT_HTTP_ENDPOINT = 'http://localhost:4318'
@@ -291,6 +298,37 @@ export function resolveResourceAttributes(
 		throw invalid('OTLP resource attributes', 'expected at most 32768 UTF-8 bytes')
 	}
 	return Object.freeze(attributes)
+}
+
+/** Resolve the default preset's standard sampler settings into native SDK 3 samplers. */
+export function resolveTraceSampler(env: OtelEnvironment): Sampler {
+	const name = optionalValue(env.OTEL_TRACES_SAMPLER) ?? 'parentbased_always_on'
+	const ratioSampler = (): Sampler => {
+		const value = Number(optionalValue(env.OTEL_TRACES_SAMPLER_ARG) ?? '1')
+		if (!Number.isFinite(value) || value < 0 || value > 1) {
+			throw invalid('OTEL_TRACES_SAMPLER_ARG', 'expected a probability between 0 and 1')
+		}
+		return new TraceIdRatioBasedSampler(value)
+	}
+	switch (name) {
+		case 'always_on':
+			return new AlwaysOnSampler()
+		case 'always_off':
+			return new AlwaysOffSampler()
+		case 'traceidratio':
+			return ratioSampler()
+		case 'parentbased_always_on':
+			return new ParentBasedSampler({ root: new AlwaysOnSampler() })
+		case 'parentbased_always_off':
+			return new ParentBasedSampler({ root: new AlwaysOffSampler() })
+		case 'parentbased_traceidratio':
+			return new ParentBasedSampler({ root: ratioSampler() })
+		default:
+			throw invalid(
+				'OTEL_TRACES_SAMPLER',
+				'expected a standard always-on, always-off, or trace-id-ratio sampler',
+			)
+	}
 }
 
 export function resolveMetricReaderConfig(env: OtelEnvironment): ResolvedMetricReaderConfig {

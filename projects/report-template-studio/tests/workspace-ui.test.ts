@@ -69,7 +69,7 @@ const preview = (revision: string, clientRevision = 0): PreviewResult => ({
 		format: 'vector',
 		compilerVersion: '0.7.0',
 		data: new Uint8Array([1, 2, 3]),
-		navigation: { pages: [], points: [], outline: [] },
+		navigation: { pages: [], points: [], outline: [], targets: [], links: [] },
 	},
 })
 async function settle() {

@@ -17,7 +17,6 @@
 		"@heroui/react": "catalog:frontend",
 		"@heroui/styles": "catalog:frontend",
 		"@opentelemetry/api": "catalog:prod",
-		"@opentelemetry/api-logs": "catalog:prod",
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:^",
 		"@pluxel/host": "workspace:*",

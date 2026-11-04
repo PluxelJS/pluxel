@@ -80,6 +80,8 @@ CLI 扫描每个 checkout 自己的 workspace 和 manifest，按实际依赖闭�
 
 `singletons` 只用于具有 nominal/private identity 的 direct dependency，而且必须能从本次选中的 source package 中推导出唯一 owner。不要把 node_modules 绝对路径写进配置。
 
+Singleton 使用 owner checkout 安装的物理实例，其可选 peer 也由该 checkout 的开发依赖准备。当前 Services 的 Drizzle 开发实例同时准备 PGlite、PostgreSQL 与 libSQL peer，供源码消费方共用 ORM 类型与查询对象；业务连接和数据库生命周期仍由应用自己拥有。
+
 ## 与运行时来源的区别
 
 - `pluxel source`：CLI 拥有开发期 package resolution、构建和 live source。

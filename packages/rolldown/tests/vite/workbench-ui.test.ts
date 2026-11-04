@@ -84,8 +84,8 @@ function producerFixtureFiles(): Record<string, string> {
 				packageManager: { name: 'pnpm', version: '>=11 <12', onFail: 'error' },
 			},
 			devDependencies: {
-				'@mantine/core': '9.7.3',
-				'@mantine/hooks': '9.7.3',
+				'@mantine/core': '9.7.4',
+				'@mantine/hooks': '9.7.4',
 				'@pluxel/workbench': '0.1.0',
 				react: '19.3.0',
 				'react-dom': '19.3.0',
@@ -139,8 +139,8 @@ export default () => ({ marker, async render() {}, destroy() {} })
 		].join('\n'),
 		'node_modules/transitive-react-consumer/index.d.ts':
 			'export declare const iconMarker: string\n',
-		...packageFiles('@mantine/core', '9.7.3', ['.']),
-		...packageFiles('@mantine/hooks', '9.7.3', ['.']),
+		...packageFiles('@mantine/core', '9.7.4', ['.']),
+		...packageFiles('@mantine/hooks', '9.7.4', ['.']),
 		'node_modules/@mantine/core/index.js': "export const marker = 'must-not-bundle-mantine-core'\n",
 		'node_modules/@mantine/core/index.d.ts': 'export declare const marker: string\n',
 		'node_modules/@mantine/hooks/index.js':
@@ -226,20 +226,20 @@ describe('Workbench Profile 1 federation producer', () => {
 				}),
 				expect.objectContaining({
 					name: '@mantine/core',
-					version: '9.7.3',
-					requiredVersion: '9.7.3',
+					version: '9.7.4',
+					requiredVersion: '9.7.4',
 					singleton: true,
 				}),
 				expect.objectContaining({
 					name: '@mantine/hooks',
-					version: '9.7.3',
-					requiredVersion: '9.7.3',
+					version: '9.7.4',
+					requiredVersion: '9.7.4',
 					singleton: true,
 				}),
 				expect.objectContaining({
 					name: '@module-federation/bridge-react',
-					version: '2.9.2',
-					requiredVersion: '2.9.2',
+					version: '2.9.3',
+					requiredVersion: '2.9.3',
 					singleton: true,
 				}),
 				expect.objectContaining({
@@ -518,7 +518,7 @@ export default () => ({ async render() {}, destroy() {} })
 				outDir: join(root, 'artifact'),
 				minify: false,
 			}),
-		).rejects.toThrow('Profile 1 requires @mantine/core@9.7.3, resolved 9.5.0')
+		).rejects.toThrow('Profile 1 requires @mantine/core@9.7.4, resolved 9.5.0')
 	}, 60_000)
 
 	it('allows a producer without local Mantine when the application provides the winner', async () => {
@@ -649,7 +649,7 @@ export default () => ({ marker, async render() {}, destroy() {} })
 		await using fixture = await createFixture(files)
 
 		expect(() => resolveWorkbenchFederationShared(fixture.path)).toThrow(
-			'Profile 1 requires @mantine/core@9.7.3, resolved 9.5.0',
+			'Profile 1 requires @mantine/core@9.7.4, resolved 9.5.0',
 		)
 	})
 

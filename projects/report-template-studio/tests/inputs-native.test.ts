@@ -46,6 +46,6 @@ it('captures read-only PNG bytes with source, copies its figure, and saves only 
 	const compiled = await studio.compile({ ...target, ...saved, clientRevision: 1 })
 	expect(compiled.pageCount).toBeGreaterThan(0)
 	const reopened = createTypstSourceProject({ files: sourceFiles(await studio.getInput(target)) })
-	expect(reopened.snapshot().files[imagePath]).toEqual(png)
+	expect(reopened.snapshot().files[imagePath]).toEqual(new Uint8Array(png))
 	expect(reopened.open(path).labels).toHaveLength(2)
 }, 120000)

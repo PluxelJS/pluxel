@@ -1,14 +1,14 @@
-import type { Meter, Tracer } from '@opentelemetry/api'
-import type { Logger } from '@opentelemetry/api-logs'
+import type { Logger, Meter, Tracer } from '@opentelemetry/api'
 import { defaultResource, resourceFromAttributes } from '@opentelemetry/resources'
 import { BatchLogRecordProcessor, LoggerProvider } from '@opentelemetry/sdk-logs'
 import { MeterProvider, type MetricReader } from '@opentelemetry/sdk-metrics'
-import { BasicTracerProvider, BatchSpanProcessor } from '@opentelemetry/sdk-trace-base'
+import { TracerProvider, BatchSpanProcessor } from '@opentelemetry/sdk-trace'
 import type { OtelSignal } from './config.ts'
 import { ensureOtelProcessContext } from './context.ts'
 import {
 	resolveBatchProcessorConfig,
 	resolveResourceAttributes,
+	resolveTraceSampler,
 	type OtelEnvironment,
 } from './env.ts'
 import type { OtlpExporterFactories, OtlpExportState } from './otlp.ts'
@@ -19,7 +19,7 @@ const DEFAULT_PROVIDER_SHUTDOWN_TIMEOUT_MS = 30_000
 /** Native SDK providers transferred to one Otel generation. */
 export type OtelProviders = Readonly<{
 	meterProvider?: MeterProvider
-	tracerProvider?: BasicTracerProvider
+	tracerProvider?: TracerProvider
 	loggerProvider?: LoggerProvider
 }>
 
@@ -92,7 +92,7 @@ export async function createOtelProviders(
 	)
 	const metricsEnabled = input.prometheus || input.otlp.includes('metrics')
 	let metricProvider: MeterProvider | undefined
-	let tracerProvider: BasicTracerProvider | undefined
+	let tracerProvider: TracerProvider | undefined
 	let loggerProvider: LoggerProvider | undefined
 	let metricReaders: MetricReader[] = []
 	let traceProcessor: BatchSpanProcessor | undefined
@@ -123,17 +123,18 @@ export async function createOtelProviders(
 		if (input.otlp.includes('traces')) {
 			const { createOtlpSpanExporter } = await import('./otlp.ts')
 			const processorConfig = resolveBatchProcessorConfig(env, 'traces')
+			const sampler = resolveTraceSampler(env)
 			const exporter = await createOtlpSpanExporter({
 				env,
 				factory: options.exporterFactories?.traces,
 				onExportState: input.onOtlpExportState,
 			})
 			try {
-				traceProcessor = new BatchSpanProcessor(exporter, processorConfig)
+				traceProcessor = new BatchSpanProcessor({ exporter, ...processorConfig })
 			} catch (error) {
 				return await failAfterCleanup(error, () => exporter.shutdown())
 			}
-			tracerProvider = new BasicTracerProvider({ resource, spanProcessors: [traceProcessor] })
+			tracerProvider = new TracerProvider({ resource, sampler, spanProcessors: [traceProcessor] })
 		}
 
 		if (input.otlp.includes('logs')) {

@@ -24,6 +24,14 @@
 			"@pluxel/hmr": "./src/browser/preview.ts",
 			"default": "./dist/browser.mjs"
 		},
+		"./document": {
+			"@pluxel/hmr": "./src/document/project.ts",
+			"default": "./dist/document.mjs"
+		},
+		"./document/react": {
+			"@pluxel/hmr": "./src/document/react.tsx",
+			"default": "./dist/document/react.mjs"
+		},
 		"./source": {
 			"@pluxel/hmr": "./src/source/node.ts",
 			"default": "./dist/source.mjs"
@@ -43,6 +51,14 @@
 		"./tiptap": {
 			"@pluxel/hmr": "./src/tiptap/index.ts",
 			"default": "./dist/tiptap.mjs"
+		},
+		"./tiptap/document": {
+			"@pluxel/hmr": "./src/tiptap/document-editor.ts",
+			"default": "./dist/tiptap/document.mjs"
+		},
+		"./tiptap/document/react": {
+			"@pluxel/hmr": "./src/tiptap/document-editor-react.tsx",
+			"default": "./dist/tiptap/document/react.mjs"
 		},
 		"./tiptap/react": {
 			"@pluxel/hmr": "./src/tiptap/react.tsx",
@@ -66,11 +82,15 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./browser": "./dist/browser.mjs",
+			"./document": "./dist/document.mjs",
+			"./document/react": "./dist/document/react.mjs",
 			"./source": "./dist/source.mjs",
 			"./source/browser": "./dist/source/browser.mjs",
 			"./source/library": "./dist/source/library.mjs",
 			"./template": "./dist/template.mjs",
 			"./tiptap": "./dist/tiptap.mjs",
+			"./tiptap/document": "./dist/tiptap/document.mjs",
+			"./tiptap/document/react": "./dist/tiptap/document/react.mjs",
 			"./tiptap/react": "./dist/tiptap/react.mjs",
 			"./wasm": "./dist/wasm.mjs",
 			"./package.json": "./package.json",
@@ -105,6 +125,9 @@
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
+		"@tanstack/react-hotkeys": "catalog:frontend",
+		"@tanstack/react-router": "catalog:frontend",
+		"@tanstack/react-store": "catalog:frontend",
 		"@tiptap/core": "catalog:frontend",
 		"@tiptap/extension-collaboration": "catalog:frontend",
 		"@tiptap/extension-drag-handle": "catalog:frontend",
@@ -124,6 +147,8 @@
 		"@types/katex": "catalog:types",
 		"@types/react": "catalog:frontend",
 		"@types/react-dom": "catalog:frontend",
+		"@worksplit/react": "workspace:*",
+		"flexlayout-react": "catalog:frontend",
 		"katex": "catalog:frontend",
 		"playwright": "catalog:dev",
 		"react": "catalog:frontend",

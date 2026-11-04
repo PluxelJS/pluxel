@@ -182,7 +182,7 @@ beforeEach(async () => {
 			format: 'vector',
 			compilerVersion: '0.7.0',
 			data: new Uint8Array(),
-			navigation: { pages: [], points: [], outline: [] },
+			navigation: { pages: [], points: [], outline: [], targets: [], links: [] },
 		},
 	}))
 })

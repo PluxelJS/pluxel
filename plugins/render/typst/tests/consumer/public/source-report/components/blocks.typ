@@ -1,5 +1,5 @@
 // 数据只从调用方传入；正文不复制计算后的值。
-#let metrics(data: none, title: "核心指标") = block(fill: rgb("eef4fa"), inset: 10pt, width: 100%)[
+#let metrics(data: none, title: "核心指标", accent: "#eef4fa") = block(fill: rgb(accent), inset: 10pt, width: 100%)[
   *#title* #linebreak()
   营收：#data.revenue 万元；上期：#data.previousRevenue 万元；
   增长率：#calc.round((data.revenue / data.previousRevenue - 1) * 100, digits: 1)%；

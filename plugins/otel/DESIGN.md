@@ -5,17 +5,17 @@
 `@pluxel/plugin-otel` 是 OTel SDK 的 Pluxel 生命周期装配层。业务 constructor 依赖 abstract `Otel`，读取三个 caller-scoped getter；
 concrete `@Plugin(Otel)` 通过 `createProviders(): Promise<OtelProviders>` 交付原生 SDK providers。`OtelPlugin` 是可选的默认预设：
 
-| Contract | 原生类型                           | instrumentation scope                 |
-| -------- | ---------------------------------- | ------------------------------------- |
-| `meter`  | `@opentelemetry/api` `Meter`       | caller Plugin node address projection |
-| `tracer` | `@opentelemetry/api` `Tracer`      | caller Plugin node address projection |
-| `logger` | `@opentelemetry/api-logs` `Logger` | caller Plugin node address projection |
+| Contract | 原生类型                      | instrumentation scope                 |
+| -------- | ----------------------------- | ------------------------------------- |
+| `meter`  | `@opentelemetry/api` `Meter`  | caller Plugin node address projection |
+| `tracer` | `@opentelemetry/api` `Tracer` | caller Plugin node address projection |
+| `logger` | `@opentelemetry/api` `Logger` | caller Plugin node address projection |
 
 Plugin 不拥有 instrument/span/log 数据模型，不包装热路径，不猜测业务结果。events 使用原生
 OTel Logger 的 `eventName`，而不是增加第四套 event API。
 
-原生装配直接使用 `MeterProvider`、`BasicTracerProvider`、`LoggerProvider` 的完整构造参数和组合能力。`OtelProviders` 只接受对应
-provider 实例；不复制 sampler、views、readers、processors、limits、resource 或 exporter options。未交付的 signal 报 disabled，
+原生装配直接使用 `MeterProvider`、`TracerProvider`、`LoggerProvider` 的完整构造参数和组合能力。`OtelProviders` 只接受对应
+provider 实例；不为 sampler、views、readers、processors、limits、resource 或 exporter options 增加平行配置类型。未交付的 signal 报 disabled，
 空 record 明确拒绝。hook 在本 generation 的配置注入后调用一次，交付前失败由 hook 清理；交付后全部 providers 归 generation，
 不可借用进程全局 provider。
 
@@ -40,7 +40,7 @@ sampler、metric views 和多个 reader/processor/exporter：
 caller.meter  -> MeterProvider  -> PeriodicMetricReader -> signal OTLP exporter
                               `-> PrometheusPullReader -> Pluxel plugin HTTP route
 
-caller.tracer -> BasicTracerProvider -> BatchSpanProcessor -> signal OTLP exporter
+caller.tracer -> TracerProvider -> BatchSpanProcessor -> signal OTLP exporter
 
 caller.logger -> LoggerProvider -> BatchLogRecordProcessor -> signal OTLP exporter
 ```
@@ -93,7 +93,7 @@ provider 生命周期，不增加 exporter、timer、listener 或 transport，Wo
 
 `OtelConfig` 只属于默认 `OtelPlugin` 预设，导出值与其普通 field `configs.use()` 声明相同。Host 可用 env/file binding 选择 signal
 和 Prometheus；Workbench 不提供另一份配置 authority。自定义 `@Plugin(Otel)` 不继承该 schema，可自行声明应用配置或直接装配 native providers。
-OTel 标准 `OTEL_*` 继续使用 SDK 的进程环境契约，不声称它们由 Host `startup.env` 自动接管；二者不能混作同一个配置来源。
+默认预设通过现有 `env.ts` 显式解析已支持的 sampler、OTLP、resource 与 batch/reader `OTEL_*`，并直接构造原生 SDK 3 sampler；exporter 读取自己的标准 TLS 环境。来源都是进程环境，不由 Host `startup.env` 自动接管。SDK 3 的原生 `TracerProvider` 不读取环境变量；span limits 由自定义 provider 的 `spanLimits` 显式声明。
 
 signal-specific OTLP 设置覆盖 generic 设置。HTTP generic endpoint 追加标准 `/v1/{signal}`，specific endpoint 视为完整 URL；gRPC
 endpoint 永不追加 path。headers 先合并 generic，再由 signal-specific 覆盖。URL userinfo 被拒绝，认证必须走 headers/mTLS。
@@ -108,7 +108,7 @@ resource 是 `defaultResource()` 与显式环境 attributes 的 merge；`service
 
 - 不提供 `measure()`、decorator、RED wrapper、固定 instruments 或 attribute registry；
 - 不自动 instrument runtime、HTTP、database 或业务 Plugin；
-- 不把 `ctx.logger` 悄悄桥接到 logs signal；`RuntimeLogging` 仍由 Host 的 Logging 安装与配置拥有；
+- 不把 `ctx.logger` 悄悄桥接到 logs signal；Core 的 LogTape 输出仍由 `runtime.logtape` 配置拥有；
 - 默认预设不添加 durable queue、backend routing、dashboard 或 alerting；原生 hook 可组合多个 SDK readers/processors/exporters；
 - 不支持 OTLP Profiles：当前 SDK 依赖没有对应 profiles API、SDK/exporter package。
 

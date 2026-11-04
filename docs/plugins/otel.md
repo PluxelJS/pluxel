@@ -75,8 +75,7 @@ Prometheus 默认直接在 `OtelPlugin` generation 的 `ctx.require(ElysiaApp)` 
 ## 记录 metrics、trace 与 log
 
 ```ts twoslash
-import type { Counter } from '@opentelemetry/api'
-import { SeverityNumber } from '@opentelemetry/api-logs'
+import { SeverityNumber, type Counter } from '@opentelemetry/api'
 import { Otel } from '@pluxel/plugin-otel'
 import { BasePlugin, Plugin } from '@pluxel/core'
 
@@ -109,7 +108,7 @@ export class CatalogPlugin extends BasePlugin {
 }
 ```
 
-三个 getter 分别返回 `@opentelemetry/api` 的 `Meter`、`Tracer` 与 `@opentelemetry/api-logs` 的 `Logger`。instrumentation scope name 是 caller 的 Plugin node reference；同一 caller generation 重复读取同一个 getter 会返回同一实例。
+三个 getter 分别返回 `@opentelemetry/api` 的 `Meter`、`Tracer` 与 `Logger`。instrumentation scope name 是 caller 的 Plugin node reference；同一 caller generation 重复读取同一个 getter 会返回同一实例。
 
 span、event、link、status、baggage、log body、severity、`eventName` 和 attributes 都是原生 OTel contract。在 active span 内 emit 的 log 可获得 trace/span correlation。
 
@@ -125,19 +124,19 @@ span、event、link、status、baggage、log body、severity、`eventName` 和 a
 import { Plugin } from '@pluxel/core'
 import { Otel, type OtelProviders } from '@pluxel/plugin-otel'
 import {
-	BasicTracerProvider,
+	TracerProvider,
 	ConsoleSpanExporter,
 	SimpleSpanProcessor,
 	TraceIdRatioBasedSampler,
-} from '@opentelemetry/sdk-trace-base'
+} from '@opentelemetry/sdk-trace'
 
 @Plugin(Otel)
 export class ApplicationOtel extends Otel {
 	protected override async createProviders(): Promise<OtelProviders> {
-		const processor = new SimpleSpanProcessor(new ConsoleSpanExporter())
+		const processor = new SimpleSpanProcessor({ exporter: new ConsoleSpanExporter() })
 		try {
 			return {
-				tracerProvider: new BasicTracerProvider({
+				tracerProvider: new TracerProvider({
 					sampler: new TraceIdRatioBasedSampler(0.25),
 					spanProcessors: [processor],
 				}),
@@ -160,13 +159,15 @@ export class ApplicationOtel extends Otel {
 
 `createProviders()` 在本 generation 的配置注入后调用一次。缺失 provider 对应的 getter 报 signal disabled；空 record 会使启动失败。返回前发生失败时，hook 负责关闭已创建资源；返回后框架拥有所有 provider 的 flush/shutdown，不能交付借用的全局 provider。停止后旧调用方入口失效，SDK instruments 本身仍遵循上游停止契约。
 
-例如 metrics 原生 `MeterProvider({ readers, views })` 可控制 instrument 选择、名称、attributes、aggregation 和 histogram buckets；trace 的 `sampler`、`spanLimits`、`spanProcessors` 与 log 的 `processors`、`loggerConfigurator` 继续使用上游类型。参考 [原生 metric views](https://github.com/open-telemetry/opentelemetry-js/blob/main/doc/metrics.md#configuring-metric-views) 和 [原生 tracer 配置](https://open-telemetry.github.io/opentelemetry-js/modules/_opentelemetry_sdk-trace-base.html)。
+例如 metrics 原生 `MeterProvider({ readers, views })` 可控制 instrument 选择、名称、attributes、aggregation 和 histogram buckets；trace 的 `sampler`、`spanLimits`、`spanProcessors` 与 log 的 `processors`、`loggerConfigurator` 继续使用上游类型。参考 [原生 metric views](https://github.com/open-telemetry/opentelemetry-js/blob/main/doc/metrics.md#configuring-metric-views) 和 [原生 tracer 配置](https://open-telemetry.github.io/opentelemetry-js/modules/_opentelemetry_sdk-trace.html)。
+
+当前使用 OpenTelemetry SDK 3 与 API 1.10；原生 `Logger`、`SeverityNumber` 也从 `@opentelemetry/api` 导入。`TracerProvider`、`BatchSpanProcessor` 和 `SimpleSpanProcessor` 来自 `@opentelemetry/sdk-trace`，processor 通过 `{ exporter, ...options }` 对象构造。原生 logger 配置使用 `enabled`。SDK 3 的原生 `TracerProvider` 不读取环境变量；默认预设在现有环境配置入口显式解析 sampler、OTLP、resource 与 batch/reader 设置。span limits 在自定义 provider 中通过 `spanLimits` 显式声明。
 
 ## 配置 OTLP endpoint
 
 默认 `OtelPlugin` 的 exporter 配置来自标准 OTel 环境变量，而不是 Plugin config；自定义 hook 的配置由应用代码决定：
 
-这些 `OTEL_*` 由 SDK/插件从进程 `process.env` 读取；它们不是 Host `startup.env` 的自动映射。嵌入式宿主只传入自定义 `startup.env` 不会替换 SDK 的进程环境。部署应在启动 Node 前设置它们，认证仍使用标准 OTel headers/mTLS，不复制到普通 Plugin 配置或 Workbench。
+本页列出的 `OTEL_*` 由 exporter/插件从进程 `process.env` 读取；它们不是 Host `startup.env` 的自动映射。嵌入式宿主只传入自定义 `startup.env` 不会替换 SDK 的进程环境。部署应在启动 Node 前设置它们，认证仍使用标准 OTel headers/mTLS，不复制到普通 Plugin 配置或 Workbench。
 
 ```text
 OTEL_SERVICE_NAME=catalog
@@ -214,7 +215,7 @@ runtime 用 host root name 作为默认 service name，并合并标准 OTel reso
 
 endpoint、headers、resource attributes、queue size、batch size、delay 和 timeout 都有启动期边界校验。非法环境变量会使 `OtelPlugin` lifecycle 失败，而不是悄悄退回另一套配置。
 
-默认预设保留上游 trace sampler 等标准环境变量；更完整的 SDK 选项与多 reader/processor/exporter 组合使用原生 provider hook。跨进程的 durable queue、routing 与后端治理可交给 OpenTelemetry Collector。
+默认预设读取 `OTEL_TRACES_SAMPLER`：`always_on`、`always_off`、`traceidratio`、`parentbased_always_on`、`parentbased_always_off` 或 `parentbased_traceidratio`，默认 `parentbased_always_on`。ratio 模式从 `OTEL_TRACES_SAMPLER_ARG` 读取 0–1 的概率，省略时为 1；非法 sampler 或概率会使启动失败。更完整的 SDK 选项与多 reader/processor/exporter 组合使用原生 provider hook。跨进程的 durable queue、routing 与后端治理可交给 OpenTelemetry Collector。
 
 ## 数据建模
 

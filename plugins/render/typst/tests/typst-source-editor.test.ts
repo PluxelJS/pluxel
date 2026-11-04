@@ -3,6 +3,54 @@ import { createTypstSourceProject } from '../src/source/node.js'
 import { createTypstSourceEditor } from '../src/tiptap/source-editor.js'
 
 describe('native source editor', () => {
+	it('keeps template structure fixed while body and shared data remain writable', () => {
+		const files = {
+			'main.typ': '= 固定标题\n#include "body.typ"\n',
+			'body.typ': '可编辑正文。\n',
+			'data.json': '{"company":"原公司"}',
+		}
+		const project = createTypstSourceProject({ files, writablePaths: ['body.typ', 'data.json'] })
+		const issues: { code: string }[] = []
+		const template = createTypstSourceEditor({
+			project,
+			path: 'main.typ',
+			onIssues: (value) => issues.push(...value),
+		})
+		const body = createTypstSourceEditor({ project, path: 'body.typ' })
+		try {
+			expect(project.isWritable('main.typ')).toBe(false)
+			expect(project.isWritable('missing.typ')).toBe(false)
+			expect(project.isWritable('body.typ')).toBe(true)
+			expect(template.isEditable).toBe(false)
+			// A caller changing the native view flag cannot bypass project admission.
+			template.setEditable(true)
+			template.commands.insertContentAt(1, { type: 'text', text: '越权修改' })
+			expect(issues.at(-1)?.code).toBe('READ_ONLY')
+			body.commands.insertContentAt(1, { type: 'text', text: '更新：' })
+			expect(
+				project.apply({
+					baseRevision: project.revision,
+					patches: [
+						{
+							path: 'data.json',
+							from: 0,
+							to: new TextEncoder().encode(files['data.json']).length,
+							text: '{"company":"新公司"}',
+						},
+					],
+				}).ok,
+			).toBe(true)
+			expect(project.snapshot().files).toEqual({
+				...files,
+				'body.typ': '更新：可编辑正文。\n',
+				'data.json': '{"company":"新公司"}',
+			})
+		} finally {
+			body.destroy()
+			template.destroy()
+		}
+	})
+
 	it('accepts Chinese edits into source, preserves surrounding bytes, and owns undo/redo in the project', () => {
 		const source = '// 保留\r\n\r\n开始😀e\u0301 #unknown[原样] 结束\r\n'
 		const project = createTypstSourceProject({ files: { 'main.typ': source } })

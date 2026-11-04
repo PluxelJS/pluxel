@@ -107,7 +107,13 @@ async function fixture() {
 						format: 'vector',
 						compilerVersion: '0.7.0',
 						data: new Uint8Array([next]),
-						navigation: { pages: [{ page: 1, width: 100, height: 120 }], outline: [], points: [] },
+						navigation: {
+							pages: [{ page: 1, width: 100, height: 120 }],
+							outline: [],
+							points: [],
+							targets: [],
+							links: [],
+						},
 					},
 				}
 				await afterUpdate?.(session)

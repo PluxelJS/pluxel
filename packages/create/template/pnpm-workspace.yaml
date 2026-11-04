@@ -15,12 +15,12 @@ catalogs:
     typebox: ^1.4.3
     tinybase: 10.0.1
   frontend:
-    '@mantine/core': 9.7.3
-    '@mantine/hooks': 9.7.3
-    '@tabler/icons-react': ^3.49.0
+    '@mantine/core': 9.7.4
+    '@mantine/hooks': 9.7.4
+    '@tabler/icons-react': ^3.50.0
     '@types/react': ^19.3.0
     '@types/react-dom': ^19.3.0
-    '@vitejs/plugin-react': ^6.1.2
+    '@vitejs/plugin-react': ^6.2.1
     # Published Workbench producers require this exact shared React version.
     react: 19.3.1
     react-dom: 19.3.1
@@ -37,10 +37,10 @@ catalogs:
   validation:
     valibot: ^1.5.0
   test:
-    vitest: 5.0.5
+    vitest: 5.1.0
   tooling:
     vite-plus: 1.4.0
-    '@types/node': ^26.6.5
+    '@types/node': ^26.6.6
     typescript: ^7.0.2
     vite: npm:@voidzero-dev/vite-plus-core@1.4.0
 overrides:

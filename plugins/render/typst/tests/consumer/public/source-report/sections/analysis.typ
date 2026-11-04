@@ -1,7 +1,8 @@
 #import "../lib/pluxel.typ" as report
-#import "../template/blocks.typ": metrics, revenue-chart
-#let sales = json("../data/sales.json")
+#import "../components/blocks.typ": metrics, revenue-chart
 = 经营分析
+
+报告主体：#report.field(json("../data/sales.json"), ("company",))；报告期间：#report.field(json("../data/sales.json"), ("quarter",))。
 
 // 人和 Agent 修改本文件；保留未涉及的注释与参数。
 本季度营收增长，详细原因待补充。#text(fill: red)[*重要事项*]需结合合同验收节奏核实。

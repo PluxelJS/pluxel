@@ -56,6 +56,30 @@ it('exposes detached immutable component declarations from the one project owner
 	).not.toThrow()
 	expect(project.components[0]!.parameters.title!.type).toBe('string')
 })
+it('restores component defaults through source admission without losing neighboring arguments or comments', () => {
+	for (const comment of ['', ' /* keep with title */']) {
+		const source = `#import "../template/blocks.typ": metrics\n#metrics(data: json("../data/sales.json"),${comment} title: "覆盖标题")\n`
+		const { files, project, editor } = fixture(source)
+		try {
+			let position: number | undefined
+			editor.state.doc.descendants((node, at) => {
+				if (node.type.name === 'typstComponent') position = at
+			})
+			const node = editor.state.doc.nodeAt(position!)!
+			editor.view.dispatch(
+				editor.state.tr.setNodeMarkup(position!, undefined, { ...node.attrs, props: {} }),
+			)
+			expect(project.snapshot().files['sections/body.typ']).toBe(
+				comment ? source : source.replace(', title: "覆盖标题"', ''),
+			)
+			expect(project.snapshot().files['data/sales.json']).toBe(files['data/sales.json'])
+			expect(editor.commands.undo()).toBe(comment === '')
+			expect(project.snapshot().files).toEqual(files)
+		} finally {
+			editor.destroy()
+		}
+	}
+})
 it('inserts an explicitly selected JSON-bound component with its import in one native transaction', () => {
 	const { files, project, editor, catalog, ui } = fixture()
 	try {
@@ -63,7 +87,7 @@ it('inserts an explicitly selected JSON-bound component with its import in one n
 		const entry = insertEntries(editor, ui).find(
 			(candidate) => candidate.title === '指标卡 · data/sales.json',
 		)!
-		expect(entry.group).toBe('模板组件')
+		expect(entry.group).toBe('内容组件')
 		editor.commands.setTextSelection(editor.state.doc.content.size - 1)
 		const transaction = prepareInsertion(editor, ui, entry)
 		expect(transaction).toBeDefined()
@@ -128,18 +152,31 @@ it('inserts a real nested JSON field and chooses a noncolliding import alias wit
 		editor.destroy()
 	}
 })
+it('offers two path-input actions without enumerating modules or mutating the project', () => {
+	const { files, project, editor, ui } = fixture()
+	try {
+		const entries = insertEntries(editor, ui).filter((candidate) => 'input' in candidate)
+		expect(entries.map((entry) => entry.title)).toEqual(['导入模块…', '插入章节…'])
+		expect(entries.every((entry) => !('command' in entry))).toBe(true)
+		for (const entry of entries) expect(prepareInsertion(editor, ui, entry)).toBeUndefined()
+		expect(insertEntries(editor, ui).some((entry) => entry.id.startsWith('import:'))).toBe(false)
+		expect(project.snapshot().files).toEqual(files)
+	} finally {
+		editor.destroy()
+	}
+})
 it('keeps missing library, malformed JSON, stale choices and readonly admission explicit', () => {
 	const missing = createTypstSourceProject({
 		files: { 'main.typ': '文', 'data.json': '{"total":1}' },
 	})
 	const missingCatalog = sourceInsertEntries(missing, 'main.typ')
-	expect(missingCatalog.entries('')).toEqual([])
+	expect(missingCatalog.entries('').filter((entry) => entry.group !== '文件引用')).toEqual([])
 	expect(missingCatalog).toMatchObject({
 		problems: [expect.stringContaining('引用库')],
 	})
 	const invalid = createTypstSourceProject({ files: { 'main.typ': '文', 'data.json': '{broken' } })
 	const invalidCatalog = sourceInsertEntries(invalid, 'main.typ')
-	expect(invalidCatalog.entries('')).toEqual([])
+	expect(invalidCatalog.entries('').filter((entry) => entry.group !== '文件引用')).toEqual([])
 	expect(invalidCatalog).toMatchObject({
 		problems: [expect.stringContaining('修复 JSON')],
 	})
@@ -196,10 +233,12 @@ it('omits only the relocated reference library plugin payload from ordinary JSON
 	})
 	const catalog = sourceInsertEntries(project, 'main.typ')
 	expect(catalog.problems).toEqual([])
-	expect(catalog.entries('').map((entry) => entry.title)).toEqual([
-		'business.json · total',
-		'assets/other.wasm.json · description',
-	])
+	expect(
+		catalog
+			.entries('')
+			.filter((entry) => entry.group === '数据字段')
+			.map((entry) => entry.title),
+	).toEqual(['business.json · total', 'assets/other.wasm.json · description'])
 })
 
 it('limits matching choices while keeping fields near the end of a large JSON array searchable and insertable', () => {
