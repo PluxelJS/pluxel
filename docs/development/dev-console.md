@@ -181,18 +181,24 @@ vp exec pluxel dev run /absolute/vite-root/dev/inspect.ts --root /absolute/vite-
 export const increaseLimit = defineDevConsole(async (dev) => {
 	const current = await dev.config.get(TodoPlugin)
 	if (!current.ok) return current
-	const result = await dev.config.patch(TodoPlugin, { maxItems: 100 })
+	const result = await dev.config.patch(
+		TodoPlugin,
+		{ set: { maxItems: 100 } },
+		{
+			expectedManagedRevision: current.managedRevision,
+		},
+	)
 	return { result, current: await dev.config.get(TodoPlugin) }
 })
 ```
 
-`get/validate/patch/reset` 返回 `HostPluginConfigResult`，先检查 ok；get 含保存值、默认值和 desired/applied revision，mutation 的 report 已投影为稳定地址。**保存不等于应用**：检查 application/applyFailure，含义与重启决策见[运行中配置更新](../plugin-development/configuration.md#让运行中的-plugin-接收配置更新)。不要直接改 config 私有字段。
+`get/validate/patch/reset` 返回 `HostPluginConfigResult`，先检查 `ok`。`get()` 区分 `managedInput`（保存的原始输入）、`effectiveInput`（按 mode 合成的输入）与 `config`（schema 输出），并返回来源、被覆盖路径、`managedRevision` 和 desired/applied revision。不要把 `config` 输出重新保存为输入。校验失败仍返回可编辑的输入快照，不伪造成功输出。
 
-patch 保留未修改的原始输入，嵌套对象递归合并、数组整体替换。validate 不保存，与随后的 patch 不构成事务；patch 会重新验证。
+patch 使用 `{ set?, remove? }`：先删除显式路径，再递归合并对象；数组整体替换。`validate` 不保存，与随后的 patch 不构成事务；编辑时传 `expectedManagedRevision`，冲突后保留草稿并重新读取。`reset(target)` 删除该节点的全部保存输入；`reset(target, [['network', 'port']])` 只删除指定路径，空数组无操作。被声明覆盖的保存值仍可编辑，只有文档只读会拒绝写入。
 
-配置诊断使用 `dev.config.inspect(target)` 查看 `mode`、`readonly`、`override`、`externalReload`、`saved`、`declared`、`effective` 和 `sources`；普通 `get()` 保持面向插件配置的返回语义。`dev.state.inspect()` 返回 mode、override、declared、overriddenFields、saved、effective 与 revision，用于区分保存策略和本次运行覆盖。state 仅在启动时读盘，不自动跟随外部变化。
+**保存不等于应用**：检查 `persistence`、`application` 与 `applyFailure`，含义和重启决策见[运行中配置更新](../plugin-development/configuration.md#让运行中的-plugin-接收配置更新)。`runtime.documents.config: false` 的成功写入只保留在本次 Host 会话。
 
-`dev.config.reset(target)` 以本次声明恢复全部顶层字段，包括移除只在保存记录中存在的字段；提供 keys 只恢复指定字段，`keys: []` 明确无操作，不触发保存。受控路径与 readonly 仍拒绝写入。
+`dev.policy.get/validate/patch/reset` 通过同一事务入口管理八项 Host 策略；`get()` 返回独立 mode、保存输入、生效策略、来源和 `managedRevision`。执行预算的修改会列入 `pendingExecutionFields`，在新 Host 创建时采用。策略文档只在启动时读取，不自动跟随外部变化。完整语义见 [Host 配置](../host/configuration.md)。
 
 ## 访问已安装服务
 

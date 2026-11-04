@@ -27,6 +27,11 @@ it('relocates a traced native library in the Pluxel namespace without external f
 				join(root, 'node_modules/@pluxel', name),
 				'dir',
 			)
+		await symlink(
+			fileURLToPath(new URL('../node_modules/valibot/', import.meta.url)),
+			join(root, 'node_modules/valibot'),
+			'dir',
+		)
 		await mkdir(join(library, 'dist'), { recursive: true })
 		await symlink(library, join(root, 'node_modules/@pluxel/native-fixture'), 'dir')
 		await writeFile(
@@ -45,7 +50,26 @@ it('relocates a traced native library in the Pluxel namespace without external f
 		await writeFile(join(library, 'runtime.asset'), 'RESIDUAL_NATIVE_LAYOUT_OK')
 		await writeFile(
 			join(root, 'app.ts'),
-			"import native from '@pluxel/native-fixture'; import { defineHostApplication } from '@pluxel/host'; export default defineHostApplication(() => ({ plugins: [], prepare() { if(native !== 'RESIDUAL_NATIVE_LAYOUT_OK') throw new Error('Native library layout changed'); console.log(native) } }))",
+			`import native from '@pluxel/native-fixture';
+import {BasePlugin,Plugin} from '@pluxel/core';
+import {defineHostApplication} from '@pluxel/host';
+import * as v from 'valibot';
+@Plugin()
+class Probe extends BasePlugin {
+ private readonly config = this.configs.use(v.object({answer:v.number()}));
+ protected init(){if(this.config.answer!==42) throw new Error('Standalone config was lost'); console.log('STANDALONE_CONFIG_AND_AUTOSTART_OK')}
+}
+export default defineHostApplication(() => ({
+ plugins:[Probe],
+ policy:{autoStart:[Probe],startTimeoutMs:12345},
+ config:{records:[{owner:Probe,config:{answer:42}}]},
+ async prepare({host}) {
+  const policy=await host.policy.get();
+  if(!policy.ok || policy.effective.startTimeoutMs!==12345) throw new Error('Standalone execution policy was lost');
+  if(native!=='RESIDUAL_NATIVE_LAYOUT_OK') throw new Error('Native library layout changed');
+  console.log(native);
+ }
+}))`,
 		)
 		const buildScript = join(root, 'build.mts')
 		await writeFile(
@@ -72,6 +96,7 @@ it('relocates a traced native library in the Pluxel namespace without external f
 			{ cwd: deployed, timeout: 30000 },
 		)
 		expect(child.stdout).toContain('RESIDUAL_NATIVE_LAYOUT_OK')
+		expect(child.stdout).toContain('STANDALONE_CONFIG_AND_AUTOSTART_OK')
 		expect(child.stdout).toContain('STANDALONE_RESIDUAL_CLOSED')
 	} finally {
 		await rm(temporary, { recursive: true, force: true })
@@ -165,7 +190,7 @@ class FrozenWorker extends BasePlugin {
  }
 }
 import {defineHostApplication} from '@pluxel/host';
-export default defineHostApplication(() => ({name:'production-bridge', plugins:[FrozenWorker],sources:[pluginSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkCommands=Commands},services:standardServices(),runtime:{state:{autoStart:[FrozenWorker.nodeAddress(),${JSON.stringify(address)}]}}}))
+export default defineHostApplication(() => ({name:'production-bridge', plugins:[FrozenWorker],sources:[pluginSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkCommands=Commands},services:standardServices(),policy:{autoStart:[FrozenWorker,${JSON.stringify(address)}]}}))
 `,
 		)
 		const buildScript = join(root, 'build.mts')

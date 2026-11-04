@@ -380,3 +380,8 @@ function oneOf<const T extends string>(input: unknown, values: readonly T[], lab
 function invalid(message: string): never {
 	throw new TypeError(message)
 }
+export {
+	HOST_POLICY_FIELDS,
+	HOST_EXECUTION_POLICY_FIELDS,
+	HOST_GRAPH_POLICY_FIELDS,
+} from './policy'

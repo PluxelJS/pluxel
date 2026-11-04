@@ -141,6 +141,8 @@ export interface InspectionApplicationSelection {
 }
 
 export type InspectionConfigBinding = Readonly<{
+	/** Omitted for the default node; a literal fork target never inherits default-node bindings. */
+	forkId?: string
 	/** Declared schema input path; [] means the entire config input. */
 	configPath: readonly string[]
 	declaration: InspectionSourceLocation
@@ -157,7 +159,7 @@ export type InspectionInputs = Readonly<{
 		sourceSpaces: readonly Readonly<{ name: string; root: string }>[]
 	}>
 	/** Application-wide expression only; null means confirmed absent, never unknown. */
-	configRecords: InspectionSourceLocation | null
+	config: InspectionSourceLocation | null
 	/** Whole owning Plugin's config bindings, unaffected by partPath; excludes Vault. */
 	bindings: readonly InspectionConfigBinding[]
 }>

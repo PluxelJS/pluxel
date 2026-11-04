@@ -136,12 +136,15 @@ beforeEach(() => {
 		updates: { follow: vi.fn(async () => ({ [Symbol.dispose]: vi.fn() })) },
 		catalog: { snapshot: vi.fn(), updateLayout: vi.fn() },
 		plugins: { status: vi.fn(), setAutoStart: vi.fn(), applyLifecycleCommands: vi.fn() },
+		policy: { get: vi.fn(), validate: vi.fn(), patch: vi.fn(), reset: vi.fn() },
 		config: {
 			status: vi.fn(async () => ({ readonly: false })),
 			presentation: vi.fn(),
 			get: vi.fn(),
 			patch: vi.fn(),
 			patchField: vi.fn(),
+			validate: vi.fn(),
+			reset: vi.fn(),
 		},
 		dependencies: {
 			graph: vi.fn(),

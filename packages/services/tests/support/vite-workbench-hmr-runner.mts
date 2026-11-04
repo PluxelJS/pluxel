@@ -71,7 +71,7 @@ import { Owner, Dependent } from './src/index'
 export default defineHostApplication((startup) => ({
   name: 'workbench-hmr', plugins: [Owner, Dependent],
     services: [...standardServices(), workbenchService()],
-    runtime: { state: { autoStart: [Owner, Dependent].map((plugin) => plugin.nodeAddress()) } },
+    policy: { autoStart: [Owner, Dependent].map((plugin) => plugin.nodeAddress()) },
   prepare({ host }) { startup.bindings.capture(host) },
 }))
 `,

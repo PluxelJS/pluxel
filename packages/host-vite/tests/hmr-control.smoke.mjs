@@ -68,7 +68,7 @@ import { pluginSource } from '@pluxel/host/sources';
 export default defineHostApplication(() => ({
 	plugins: [],
 	sources: [pluginSource({kind:'directory',path:'./entries',include:['*.entry.mjs']})],
-	runtime: { state: { autoStart: ${JSON.stringify(Array.from({ length: count }, (_, index) => address(index)))} } },
+	policy: { autoStart: ${JSON.stringify(Array.from({ length: count }, (_, index) => address(index)))} },
 	prepare() { globalThis[${JSON.stringify(key)}].prepared.push(${version}); }
 }));
 `

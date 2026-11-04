@@ -2,11 +2,12 @@
 
 import type { PluginNodeAddress } from '@pluxel/core'
 import { QueryClientProvider } from '@tanstack/react-query'
-import type { RuntimeManagementClient } from '@pluxel/services/management/client'
+import type { RuntimeManagementClient, ConfigResultOk } from '@pluxel/services/management/client'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
+import { configSnapshot, savedConfig } from './helpers/config'
 import { createManagementQueryClient } from '../src/app/managementQuery'
 import {
 	commitPluginConfig,
@@ -68,7 +69,7 @@ describe('plugin config queries', () => {
 			await vi.waitFor(() =>
 				expect(latest?.data).toMatchObject({
 					fields: [],
-					savedConfig: {},
+					snapshot: null,
 				}),
 			)
 		})
@@ -81,14 +82,9 @@ describe('plugin config queries', () => {
 	it('shares reads by owner and lets authoritative mutation data update every consumer', async () => {
 		const presentation = vi.fn().mockResolvedValue({
 			ok: true,
-			plan: { fieldName: 'config', fields: [], defaults: {}, sections: [] },
+			plan: { version: 2, fieldName: 'config', fields: [], sections: [] },
 		})
-		const get = vi.fn().mockResolvedValue({
-			ok: true,
-			config: { enabled: true },
-			sources: [],
-			readonly: false,
-		})
+		const get = vi.fn().mockResolvedValue(configSnapshot({ enabled: true }))
 		const client = { config: { presentation, get } } as unknown as RuntimeManagementClient
 		const queryClient = createManagementQueryClient()
 		const states: PluginConfigState[] = []
@@ -118,32 +114,27 @@ describe('plugin config queries', () => {
 		expect(presentation).toHaveBeenCalledOnce()
 		expect(get).toHaveBeenCalledOnce()
 		await act(async () => {
-			commitPluginConfig(queryClient, firstOwner, { enabled: false }, [], {
-				readonly: false,
-			})
-			await vi.waitFor(() => expect(states.at(-1)?.data?.savedConfig).toEqual({ enabled: false }))
+			commitPluginConfig(queryClient, firstOwner, savedConfig({ enabled: false }))
+			await vi.waitFor(() =>
+				expect(states.at(-1)?.data?.snapshot?.managedInput).toEqual({ enabled: false }),
+			)
 		})
 	})
 
 	it('does not display the previous owner while a new owner is loading', async () => {
-		let releaseSecond!: (value: { ok: true; config: Record<string, unknown> }) => void
-		const secondConfig = new Promise<{ ok: true; config: Record<string, unknown> }>((resolve) => {
+		let releaseSecond!: (value: ConfigResultOk) => void
+		const secondConfig = new Promise<ConfigResultOk>((resolve) => {
 			releaseSecond = resolve
 		})
 		const client = {
 			config: {
 				presentation: vi.fn().mockResolvedValue({
 					ok: true,
-					plan: { fieldName: 'config', fields: [], defaults: {}, sections: [] },
+					plan: { version: 2, fieldName: 'config', fields: [], sections: [] },
 				}),
 				get: vi
 					.fn()
-					.mockResolvedValueOnce({
-						ok: true,
-						config: { owner: 'first' },
-						sources: [],
-						readonly: false,
-					})
+					.mockResolvedValueOnce(configSnapshot({ owner: 'first' }))
 					.mockReturnValueOnce(secondConfig),
 			},
 		} as unknown as RuntimeManagementClient
@@ -168,7 +159,9 @@ describe('plugin config queries', () => {
 			await Promise.resolve()
 		})
 		await act(async () => {
-			await vi.waitFor(() => expect(latest?.data?.savedConfig).toEqual({ owner: 'first' }))
+			await vi.waitFor(() =>
+				expect(latest?.data?.snapshot?.managedInput).toEqual({ owner: 'first' }),
+			)
 		})
 
 		await act(async () => {
@@ -185,8 +178,10 @@ describe('plugin config queries', () => {
 		expect(latest?.data).toBeUndefined()
 
 		await act(async () => {
-			releaseSecond({ ok: true, config: { owner: 'second' } })
-			await vi.waitFor(() => expect(latest?.data?.savedConfig).toEqual({ owner: 'second' }))
+			releaseSecond(configSnapshot({ owner: 'second' }))
+			await vi.waitFor(() =>
+				expect(latest?.data?.snapshot?.managedInput).toEqual({ owner: 'second' }),
+			)
 		})
 	})
 })

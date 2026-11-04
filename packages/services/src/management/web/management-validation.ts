@@ -1,4 +1,10 @@
-import type { HostConfigState } from '@pluxel/host'
+import type {
+	HostConfigState,
+	HostPolicyInput,
+	HostPolicyValues,
+	HostPolicyField,
+	HostStateConfigurationSnapshot,
+} from '@pluxel/host'
 import {
 	comparePluginDefinitionAddress,
 	comparePluginNodeAddress,
@@ -27,6 +33,7 @@ import {
 import {
 	type ConfigPresentationResult,
 	type ConfigResult,
+	type PolicyResult,
 	type ConfigValidationErrors,
 	type EnsureForkResult,
 	type PluginApplyCommitSummary,
@@ -63,11 +70,13 @@ import {
 	type VersionedPluginLogPolicySnapshot,
 } from './protocol'
 import {
+	HOST_POLICY_FIELDS,
+	HOST_EXECUTION_POLICY_FIELDS,
 	clonePluginExecutionSnapshot,
 	clonePluginRecentUpdateSnapshot,
 } from '@pluxel/host/internal/protocol'
 import {
-	parseConfigPresentationPlanV1,
+	parseConfigPresentationPlanV2,
 	parseRuntimePortableData,
 	validateRuntimePortableData,
 	RuntimeProtocolValidationError,
@@ -111,12 +120,13 @@ export function parsePluginCatalogSnapshot(input: unknown): PluginCatalogSnapsho
 		fail('plugin catalog.summary is inconsistent with the catalog snapshot')
 	}
 	const policy = object(value.statePolicy, 'plugin catalog.statePolicy')
-	shape(policy, ['mode', 'overriddenFields'], [], 'plugin catalog.statePolicy')
-	const mode = literal(
-		policy.mode,
-		['memory', 'writable', 'readonly'],
-		'plugin catalog.statePolicy.mode',
+	shape(
+		policy,
+		['readonly', 'managedRevision', 'overriddenFields'],
+		[],
+		'plugin catalog.statePolicy',
 	)
+	const readonly = boolean(policy.readonly, 'plugin catalog.statePolicy.readonly')
 	const overriddenFields = array(
 		policy.overriddenFields,
 		'plugin catalog.statePolicy.overriddenFields',
@@ -131,7 +141,14 @@ export function parsePluginCatalogSnapshot(input: unknown): PluginCatalogSnapsho
 		fail('plugin catalog.statePolicy.overriddenFields contains duplicates')
 	return Object.freeze({
 		plugins: Object.freeze(plugins),
-		statePolicy: Object.freeze({ mode, overriddenFields: Object.freeze(overriddenFields) }),
+		statePolicy: Object.freeze({
+			readonly,
+			managedRevision: revisionToken(
+				policy.managedRevision,
+				'plugin catalog.statePolicy.managedRevision',
+			),
+			overriddenFields: Object.freeze(overriddenFields),
+		}),
 		sections: Object.freeze(sections),
 		summary: Object.freeze({ total, running, stopped, autoStart }),
 	})
@@ -265,6 +282,229 @@ export function parseConfigResult(input: unknown): ConfigResult {
 	fail('config result.ok must be boolean')
 }
 
+/** Policy input and adopted execution values remain separate across the transport. */
+export function parsePolicyResult(input: unknown): PolicyResult {
+	const value = rootRecord(input, 'policy result')
+	if (value.ok === false) {
+		const code = literal(
+			value.code,
+			[
+				'invalid_input',
+				'validation_failed',
+				'mutation_rejected',
+				'revision_conflict',
+				'persistence_failed',
+			],
+			'policy result.code',
+		)
+		shape(
+			value,
+			[
+				'ok',
+				'code',
+				'state',
+				'message',
+				'persistence',
+				...(code === 'revision_conflict' ? ['managedRevision'] : []),
+			],
+			[],
+			'policy result',
+		)
+		const state = literal(
+			value.state,
+			code === 'persistence_failed' ? ['unknown'] : ['unchanged'],
+			'policy result.state',
+		)
+		const persistence = persistenceResult(value.persistence, 'policy result.persistence')
+		if (persistence.status !== (state === 'unknown' ? 'unknown' : 'unchanged'))
+			fail('Inconsistent policy failure persistence')
+		return Object.freeze({
+			ok: false,
+			code,
+			state,
+			persistence,
+			message: text(value.message, 'policy result.message'),
+			...(code === 'revision_conflict'
+				? { managedRevision: revisionToken(value.managedRevision, 'policy result.managedRevision') }
+				: {}),
+		})
+	}
+	if (value.ok !== true) fail('policy result.ok must be boolean')
+	shape(
+		value,
+		[
+			'ok',
+			'readonly',
+			'managedInput',
+			'effective',
+			'mode',
+			'sources',
+			'shadowedFields',
+			'managedRevision',
+			'appliedExecution',
+			'pendingExecutionFields',
+			'application',
+			'persistence',
+		],
+		['report'],
+		'policy result',
+	)
+	const mode = object(value.mode, 'policy result.mode')
+	const sources = object(value.sources, 'policy result.sources')
+	shape(mode, HOST_POLICY_FIELDS, [], 'policy result.mode')
+	shape(sources, HOST_POLICY_FIELDS, [], 'policy result.sources')
+	const parsedMode = Object.freeze(
+		Object.fromEntries(
+			HOST_POLICY_FIELDS.map((field) => [
+				field,
+				literal(mode[field], INPUT_MODES, `policy result.mode.${field}`),
+			]),
+		),
+	) as HostStateConfigurationSnapshot['mode']
+	const parsedSources = Object.freeze(
+		Object.fromEntries(
+			HOST_POLICY_FIELDS.map((field) => [
+				field,
+				literal(sources[field], ['declared', 'saved', 'default'], `policy result.sources.${field}`),
+			]),
+		),
+	) as HostStateConfigurationSnapshot['sources']
+	const effective = policyValues(value.effective, 'policy result.effective', true)
+	const applied = object(value.appliedExecution, 'policy result.appliedExecution')
+	shape(applied, HOST_EXECUTION_POLICY_FIELDS, [], 'policy result.appliedExecution')
+	const appliedExecution = Object.freeze(
+		Object.fromEntries(
+			HOST_EXECUTION_POLICY_FIELDS.map((field) => [
+				field,
+				policyNumber(applied[field], field, `policy result.appliedExecution.${field}`),
+			]),
+		),
+	) as HostStateConfigurationSnapshot['appliedExecution']
+	const pendingExecutionFields = policyFields(
+		value.pendingExecutionFields,
+		HOST_EXECUTION_POLICY_FIELDS,
+		'policy result.pendingExecutionFields',
+	)
+	const actualPending = HOST_EXECUTION_POLICY_FIELDS.filter(
+		(field) => effective[field] !== appliedExecution[field],
+	)
+	if (
+		actualPending.length !== pendingExecutionFields.length ||
+		actualPending.some((field) => !pendingExecutionFields.includes(field))
+	)
+		fail('policy pending fields do not match adopted execution values')
+	const application = literal(
+		value.application,
+		actualPending.length > 0 ? ['requires-host-recreation'] : ['applied'],
+		'policy result.application',
+	)
+	const persistence = persistenceResult(value.persistence, 'policy result.persistence')
+	if (persistence.status === 'unknown')
+		fail('Successful policy result cannot have unknown persistence')
+	return Object.freeze({
+		ok: true,
+		readonly: boolean(value.readonly, 'policy result.readonly'),
+		managedInput: policyValues(value.managedInput, 'policy result.managedInput', false),
+		effective,
+		mode: parsedMode,
+		sources: parsedSources,
+		shadowedFields: policyFields(
+			value.shadowedFields,
+			HOST_POLICY_FIELDS,
+			'policy result.shadowedFields',
+		),
+		managedRevision: revisionToken(value.managedRevision, 'policy result.managedRevision'),
+		appliedExecution,
+		pendingExecutionFields,
+		application,
+		persistence,
+		...(value.report === undefined
+			? {}
+			: { report: pluginApplyReport(value.report, 'policy result.report') }),
+	})
+}
+
+function revisionToken(input: unknown, label: string): string {
+	const token = text(input, label)
+	if (!token) fail(`${label} must not be empty`)
+	return token
+}
+function policyFields<const T extends HostPolicyField>(
+	input: unknown,
+	allowed: readonly T[],
+	label: string,
+): readonly T[] {
+	const fields = array(input, label).map((field) => literal(field, allowed, label))
+	if (new Set(fields).size !== fields.length) fail(`${label} contains duplicate fields`)
+	return Object.freeze(fields)
+}
+function policyNumber(input: unknown, field: string, label: string): number {
+	const value = nonNegativeInteger(input, label)
+	if (value < 1 || (field.endsWith('TimeoutMs') && value > 2_147_483_647))
+		fail(`${label} is outside its supported range`)
+	return value
+}
+function policyValues(input: unknown, label: string, complete: true): HostPolicyValues
+function policyValues(input: unknown, label: string, complete: false): HostPolicyInput
+function policyValues(input: unknown, label: string, complete: boolean): HostPolicyInput {
+	const value = object(input, label)
+	shape(value, complete ? HOST_POLICY_FIELDS : [], complete ? [] : HOST_POLICY_FIELDS, label)
+	const result: Record<string, unknown> = {}
+	for (const field of HOST_POLICY_FIELDS) {
+		if (!Object.hasOwn(value, field)) continue
+		const fieldLabel = `${label}.${field}`
+		if ((HOST_EXECUTION_POLICY_FIELDS as readonly string[]).includes(field)) {
+			result[field] = policyNumber(value[field], field, fieldLabel)
+			continue
+		}
+		const keys = new Set<string>()
+		result[field] = Object.freeze(
+			array(value[field], fieldLabel).map((raw, index) => {
+				const entryLabel = `${fieldLabel}[${index}]`
+				let parsed: unknown
+				let key: string
+				if (field === 'autoStart' || field === 'forks') {
+					const node = nodeAddress(raw, entryLabel)
+					if (field === 'forks' && node.variant !== 'fork')
+						fail(`${entryLabel} requires a fork node`)
+					parsed = node
+					key = pluginNodeIndexKey(node)
+				} else if (field === 'providerDefaults') {
+					const entry = object(raw, entryLabel)
+					shape(entry, ['token', 'provider'], [], entryLabel)
+					const token = definitionAddress(entry.token, `${entryLabel}.token`)
+					parsed = Object.freeze({
+						token,
+						provider: nodeAddress(entry.provider, `${entryLabel}.provider`),
+					})
+					key = pluginDefinitionIndexKey(token)
+				} else {
+					const entry = object(raw, entryLabel)
+					shape(entry, ['consumerAddress', 'requirementAddress', 'providerAddress'], [], entryLabel)
+					const consumerAddress = nodeAddress(
+						entry.consumerAddress,
+						`${entryLabel}.consumerAddress`,
+					)
+					const requirementAddress = definitionAddress(
+						entry.requirementAddress,
+						`${entryLabel}.requirementAddress`,
+					)
+					parsed = Object.freeze({
+						consumerAddress,
+						requirementAddress,
+						providerAddress: nodeAddress(entry.providerAddress, `${entryLabel}.providerAddress`),
+					})
+					key = `${pluginNodeIndexKey(consumerAddress)}:${pluginDefinitionIndexKey(requirementAddress)}`
+				}
+				if (keys.has(key)) fail(`${fieldLabel} contains a duplicate target`)
+				keys.add(key)
+				return parsed
+			}),
+		)
+	}
+	return Object.freeze(result) as HostPolicyInput
+}
+
 /** Validate and deep-freeze a config presentation query result. */
 export function parseConfigPresentationResult(input: unknown): ConfigPresentationResult {
 	const value = rootRecord(input, 'config presentation result')
@@ -272,7 +512,7 @@ export function parseConfigPresentationResult(input: unknown): ConfigPresentatio
 		shape(value, ['ok', 'plan'], [], 'config presentation result')
 		return Object.freeze({
 			ok: true,
-			plan: parseConfigPresentationPlanV1(value.plan),
+			plan: parseConfigPresentationPlanV2(value.plan),
 		})
 	}
 	if (value.ok !== false) fail('config presentation result.ok must be boolean')
@@ -326,7 +566,9 @@ export function parsePluginDependencyMutationResult(
 	const code = literal(
 		value.code,
 		[
-			'state_overridden',
+			'revision_conflict',
+			'mutation_rejected',
+			'policy_shadowed',
 			'invalid_input',
 			'consumer_unavailable',
 			'provider_unavailable',
@@ -400,7 +642,7 @@ export function parseEnsureForkResult(input: unknown): EnsureForkResult {
 	const code = literal(
 		value.code,
 		[
-			'state_overridden',
+			'policy_shadowed',
 			'invalid_input',
 			'invalid_fork_address',
 			'definition_unavailable',
@@ -410,6 +652,8 @@ export function parseEnsureForkResult(input: unknown): EnsureForkResult {
 			'requirement_not_found',
 			'provider_incompatible',
 			'graph_rejected',
+			'mutation_rejected',
+			'revision_conflict',
 			'persistence_failed',
 		],
 		'ensure fork result.code',
@@ -935,105 +1179,123 @@ export function parseConfigState(input: unknown): HostConfigState {
 	})
 }
 
+const CONFIG_VALUE_FIELDS = [
+	'readonly',
+	'mode',
+	'managedInput',
+	'effectiveInput',
+	'config',
+	'sources',
+	'shadowedPaths',
+	'managedRevision',
+] as const
+const INPUT_MODES = ['declared-only', 'declared-first', 'saved-first'] as const
+
+function persistenceResult(
+	input: unknown,
+	label: string,
+): import('@pluxel/host').HostPersistenceResult {
+	const value = object(input, label)
+	const status = literal(value.status, ['unchanged', 'confirmed', 'unknown'], `${label}.status`)
+	shape(value, status === 'confirmed' ? ['status', 'retention'] : ['status'], [], label)
+	return status === 'confirmed'
+		? Object.freeze({
+				status,
+				retention: literal(
+					value.retention,
+					['session', 'declared-durable', 'unknown'],
+					`${label}.retention`,
+				),
+			})
+		: Object.freeze({ status })
+}
+
+function configValue(value: Record<string, unknown>) {
+	return { ...configInput(value), config: portableRecord(value.config, 'config result.config') }
+}
+function configInput(value: Record<string, unknown>) {
+	const managedRevision = text(value.managedRevision, 'config result.managedRevision')
+	if (!managedRevision) fail('config result.managedRevision must not be empty')
+	return {
+		readonly: boolean(value.readonly, 'config result.readonly'),
+		mode: literal(value.mode, INPUT_MODES, 'config result.mode'),
+		managedInput:
+			value.managedInput === null
+				? null
+				: portableRecord(value.managedInput, 'config result.managedInput'),
+		effectiveInput: portableRecord(value.effectiveInput, 'config result.effectiveInput'),
+		sources: configSources(value.sources),
+		shadowedPaths: Object.freeze(
+			array(value.shadowedPaths, 'config result.shadowedPaths').map((path) =>
+				Object.freeze(
+					array(path, 'shadowed path').map((segment) => {
+						const key = text(segment, 'shadowed path segment')
+						if (
+							!key ||
+							key.includes('\0') ||
+							['__proto__', 'constructor', 'prototype'].includes(key)
+						)
+							fail('Invalid shadowed config path')
+						return key
+					}),
+				),
+			),
+		),
+		managedRevision,
+	}
+}
+
 function configSuccess(value: Record<string, unknown>): ConfigResult {
-	const readonly = boolean(value.readonly, 'config result.readonly')
-	const saved = boolean(value.saved, 'config result.saved')
+	shape(
+		value,
+		[
+			'ok',
+			...CONFIG_VALUE_FIELDS,
+			'persistence',
+			'application',
+			'desiredRevision',
+			'appliedRevision',
+		],
+		['report', 'applyFailure'],
+		'config result',
+	)
 	const application = literal(
 		value.application,
 		['applied', 'deferred', 'saved-not-applied'],
 		'config result.application',
 	)
-	const desiredRevision = nonNegativeInteger(value.desiredRevision, 'config result.desiredRevision')
-	const appliedRevision = nullableNonNegativeInteger(
-		value.appliedRevision,
-		'config result.appliedRevision',
-	)
-	const config = portableRecord(value.config, 'config result.config')
-	const sources = configSources(value.sources)
-	if (!saved) {
-		shape(
-			value,
-			[
-				'ok',
-				'readonly',
-				'saved',
-				'application',
-				'desiredRevision',
-				'appliedRevision',
-				'config',
-				'defaults',
-			],
-			['sources'],
-			'config result',
-		)
-		return Object.freeze({
-			ok: true,
-			readonly,
-			saved: false,
-			application,
-			desiredRevision,
-			appliedRevision,
-			config,
-			sources,
-			defaults: portableRecord(value.defaults, 'config result.defaults'),
+	let applyFailure: import('@pluxel/host').HostPluginConfigResultOk['applyFailure']
+	if (value.applyFailure !== undefined) {
+		if (application !== 'saved-not-applied')
+			fail('config result.applyFailure requires saved-not-applied')
+		const failure = object(value.applyFailure, 'config result.applyFailure')
+		shape(failure, ['code', 'message'], [], 'config result.applyFailure')
+		applyFailure = Object.freeze({
+			code: literal(
+				failure.code,
+				['listener_not_registered', 'listener_failed', 'generation_changed'],
+				'config result.applyFailure.code',
+			),
+			message: text(failure.message, 'config result.applyFailure.message'),
 		})
 	}
-	shape(
-		value,
-		[
-			'ok',
-			'readonly',
-			'saved',
-			'application',
-			'desiredRevision',
-			'appliedRevision',
-			'config',
-			'report',
-		],
-		application === 'saved-not-applied' ? ['applyFailure', 'sources'] : ['sources'],
-		'config result',
-	)
-	const report = pluginApplyReport(value.report, 'config result.report')
-	if (application !== 'saved-not-applied') {
-		if (value.applyFailure !== undefined) {
-			fail('config result.applyFailure is only valid for saved-not-applied')
-		}
-		return Object.freeze({
-			ok: true,
-			readonly,
-			saved: true,
-			application,
-			desiredRevision,
-			appliedRevision,
-			config,
-			sources,
-			report,
-		})
-	}
-	if (value.applyFailure === undefined) {
-		fail('config result.applyFailure is required for saved-not-applied')
-	}
-	const failure = object(value.applyFailure, 'config result.applyFailure')
-	shape(failure, ['code', 'message'], [], 'config result.applyFailure')
-	const failureCode = literal(
-		failure.code,
-		['listener_not_registered', 'listener_failed', 'generation_changed'],
-		'config result.applyFailure.code',
-	)
+	const persistence = persistenceResult(value.persistence, 'config result.persistence')
+	if (persistence.status === 'unknown')
+		fail('Successful config result cannot have unknown persistence')
 	return Object.freeze({
 		ok: true,
-		readonly,
-		saved: true,
-		application: 'saved-not-applied',
-		desiredRevision,
-		appliedRevision,
-		config,
-		sources,
-		report,
-		applyFailure: Object.freeze({
-			code: failureCode,
-			message: text(failure.message, 'config result.applyFailure.message'),
-		}),
+		...configValue(value),
+		persistence,
+		application,
+		desiredRevision: nonNegativeInteger(value.desiredRevision, 'config result.desiredRevision'),
+		appliedRevision: nullableNonNegativeInteger(
+			value.appliedRevision,
+			'config result.appliedRevision',
+		),
+		...(value.report === undefined
+			? {}
+			: { report: pluginApplyReport(value.report, 'config result.report') }),
+		...(applyFailure ? { applyFailure } : {}),
 	})
 }
 
@@ -1046,50 +1308,72 @@ function configFailure(value: Record<string, unknown>): ConfigResult {
 			'node_unavailable',
 			'config_not_found',
 			'mutation_rejected',
+			'revision_conflict',
 			'persistence_failed',
 		],
 		'config result.code',
 	)
+	const message = text(value.message, 'config result.message')
 	if (code === 'validation_failed') {
-		shape(value, ['ok', 'code', 'state', 'message', 'errors'], ['defaults'], 'config result')
+		shape(
+			value,
+			[
+				'ok',
+				'code',
+				'state',
+				'message',
+				'errors',
+				...CONFIG_VALUE_FIELDS.filter((field) => field !== 'config'),
+			],
+			[],
+			'config result',
+		)
 		literal(value.state, ['unchanged'], 'config result.state')
 		return Object.freeze({
 			ok: false,
 			code,
 			state: 'unchanged',
-			message: text(value.message, 'config result.message'),
+			message,
+			...configInput(value),
 			errors: configValidationErrors(value.errors, 'config result.errors'),
-			...(value.defaults === undefined
-				? {}
-				: { defaults: portableRecord(value.defaults, 'config result.defaults') }),
 		})
 	}
 	if (code === 'persistence_failed') {
 		shape(
 			value,
-			['ok', 'code', 'state', 'message', 'config', 'readonly'],
-			['sources'],
+			[
+				'ok',
+				'code',
+				'state',
+				'message',
+				...CONFIG_VALUE_FIELDS.filter((field) => field !== 'config'),
+				'persistence',
+			],
+			[],
 			'config result',
 		)
 		literal(value.state, ['unknown'], 'config result.state')
+		const persistence = persistenceResult(value.persistence, 'config result.persistence')
+		if (persistence.status !== 'unknown') fail('Failed config write requires unknown persistence')
 		return Object.freeze({
 			ok: false,
 			code,
 			state: 'unknown',
-			readonly: boolean(value.readonly, 'config result.readonly'),
-			message: text(value.message, 'config result.message'),
-			config: portableRecord(value.config, 'config result.config'),
-			sources: configSources(value.sources),
+			message,
+			...configInput(value),
+			persistence,
 		})
+	}
+	if (code === 'revision_conflict') {
+		shape(value, ['ok', 'code', 'state', 'message', 'managedRevision'], [], 'config result')
+		literal(value.state, ['unchanged'], 'config result.state')
+		const managedRevision = text(value.managedRevision, 'config result.managedRevision')
+		if (!managedRevision) fail('config result.managedRevision must not be empty')
+		return Object.freeze({ ok: false, code, state: 'unchanged', message, managedRevision })
 	}
 	shape(value, ['ok', 'code', 'state', 'message'], [], 'config result')
 	literal(value.state, ['unchanged'], 'config result.state')
-	return Object.freeze({
-		ok: false,
-		code,
-		state: 'unchanged',
-		message: text(value.message, 'config result.message'),
-	})
+	return Object.freeze({ ok: false, code, state: 'unchanged', message })
 }
 
 function configValidationErrors(input: unknown, label: string): ConfigValidationErrors {
@@ -1204,7 +1488,19 @@ function providerPolicyInfo(input: unknown, label: string): PluginProviderPolicy
 
 function pluginApplyReport(input: unknown, label: string): PluginApplyReport {
 	const value = object(input, label)
-	shape(value, ['catalogRevision', 'runtimeStateRevision', 'reconciliation', 'core'], [], label)
+	shape(
+		value,
+		[
+			'catalogRevision',
+			'runtimeStateRevision',
+			'reconciliation',
+			'core',
+			'persistence',
+			'writtenFields',
+		],
+		[],
+		label,
+	)
 	const core = object(value.core, `${label}.core`)
 	const status = literal(core.status, ['unchanged', 'committed'], `${label}.core.status`)
 	const parsedCore: PluginApplyReport['core'] =
@@ -1221,6 +1517,8 @@ function pluginApplyReport(input: unknown, label: string): PluginApplyReport {
 					})
 				})()
 	return Object.freeze({
+		persistence: persistenceResult(value.persistence, `${label}.persistence`),
+		writtenFields: policyFields(value.writtenFields, HOST_POLICY_FIELDS, `${label}.writtenFields`),
 		catalogRevision: nonNegativeInteger(value.catalogRevision, `${label}.catalogRevision`),
 		runtimeStateRevision: nonNegativeInteger(
 			value.runtimeStateRevision,
@@ -1457,12 +1755,13 @@ function removeForkFailure(value: Record<string, unknown>): RemoveForkResult {
 	const code = literal(
 		value.code,
 		[
-			'state_overridden',
+			'policy_shadowed',
 			'invalid_input',
 			'invalid_fork_address',
 			'graph_rejected',
 			'fork_referenced',
 			'mutation_rejected',
+			'revision_conflict',
 			'persistence_failed',
 		],
 		'remove fork result.code',
@@ -1550,7 +1849,9 @@ function controlMutationFailure(input: unknown, label: string): PluginControlMut
 	const code = literal(
 		value.code,
 		[
-			'state_overridden',
+			'revision_conflict',
+			'mutation_rejected',
+			'policy_shadowed',
 			'plugin_not_found',
 			'start_unavailable',
 			'restart_unavailable',

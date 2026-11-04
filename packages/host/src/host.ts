@@ -30,6 +30,7 @@ import type {
 } from '@pluxel/core'
 import {
 	closeOwnerInvocations,
+	createCorePluginExecutionBinding,
 	consumePluginDefinitionCandidate,
 	requireConfigService,
 	requirePluginService,
@@ -50,11 +51,14 @@ import {
 import { createPluginCatalogSnapshot, type PluginCatalogSnapshot } from './catalog'
 import type { PluginApplyReport, HostOperationOptions } from './coordinator'
 import { installPluginHostCoordinator, requirePluginHostCoordinator } from './install'
-import { HostStateStore } from './state-store'
+import { snapshotHostPolicy, HostStateStore } from './state-store'
 import { resolveHostStoreStorage } from './document-storage'
 import { HostConfigStore } from './config-store'
 import { snapshotHostRuntime, type HostRuntimeOptions } from './runtime'
 export type { HostRuntimeOptions } from './runtime'
+import { snapshotHostConfig, type HostConfigOptions } from './config-records'
+import type { HostPolicyOptions } from './policy'
+import { createHostPolicy, type HostPolicy } from './policy-management'
 import type { PluginSource } from './sources'
 
 type ServiceCapabilities<TServices extends readonly HostService[]> =
@@ -81,6 +85,8 @@ type HostBaseOptions<TServices extends readonly HostService[] = readonly HostSer
 	name?: string
 	/** Fixed facilities and persisted declarations for this Host. */
 	runtime?: HostRuntimeOptions
+	policy?: HostPolicyOptions
+	config?: HostConfigOptions
 	/** Resolved deployment records installed before Plugin admission. */
 	vaultBindings?: readonly HostVaultBindingRecord[]
 }>
@@ -106,18 +112,25 @@ export interface PluginHost<
 > extends AsyncDisposable {
 	readonly ctx: RootContext & RootContextProjection<ServiceCapabilities<TServices>>
 	readonly config: HostPluginConfig
+	readonly policy: HostPolicy
 	/** A snapshot of availability, running intent and lifecycle outcomes from one committed graph. */
 	status(): Promise<HostPluginStatusOverview>
 	/** Persist startup intent and reconcile the same committed graph. */
-	setAutoStart(address: PluginNodeAddress, autoStart: boolean): Promise<PluginApplyReport>
+	setAutoStart(
+		address: PluginNodeAddress,
+		autoStart: boolean,
+		options?: HostOperationOptions,
+	): Promise<PluginApplyReport>
 	setProviderDefault(
 		token: PluginDefinitionAddress,
 		provider: PluginNodeAddress | null,
+		options?: HostOperationOptions,
 	): Promise<PluginApplyReport>
 	setDependencyOverride(
 		consumer: PluginNodeAddress,
 		requirement: PluginDefinitionAddress,
 		provider: PluginNodeAddress | null,
+		options?: HostOperationOptions,
 	): Promise<PluginApplyReport>
 	readonly forks: {
 		ensure(
@@ -144,7 +157,15 @@ export async function createHost<const TServices extends readonly HostService[] 
 ): Promise<PluginHost<TServices>> {
 	if (!options || typeof options !== 'object' || Array.isArray(options))
 		throw new TypeError('[host] createHost options must be an object')
-	const fields = new Set(['plugins', 'services', 'name', 'runtime', 'vaultBindings'])
+	const fields = new Set([
+		'plugins',
+		'services',
+		'name',
+		'runtime',
+		'policy',
+		'config',
+		'vaultBindings',
+	])
 	for (const key of Object.keys(options))
 		if (!fields.has(key)) throw new TypeError(`[host] createHost includes unsupported "${key}"`)
 	if (!Array.isArray(options.plugins)) throw new TypeError('[host] plugins must be an array')
@@ -157,38 +178,36 @@ export async function createHost<const TServices extends readonly HostService[] 
 	options = {
 		...options,
 		runtime: snapshotHostRuntime(options.runtime),
+		policy: snapshotHostPolicy(options.policy),
+		config: snapshotHostConfig(options.config),
 		...(options.vaultBindings ? { vaultBindings: [...options.vaultBindings] } : {}),
 	}
-	const { state: stateOptions, configRecords: configOptions, ...coreOptions } = options.runtime!
+	const { documents, ...coreOptions } = options.runtime!
+	const configOptions = options.config!
+	const executionBinding = createCorePluginExecutionBinding()
 	const fixed = [...options.plugins]
 	catalog(1, fixed) // Admit explicit definitions before creating any root resources.
 	const services = planHostServices(options.services ?? [])
 	await validateInputBindingCandidates(fixed, options)
-	let configStoreOptions: ConstructorParameters<typeof HostConfigStore>[1] | undefined
+	let configStorageOptions: ConstructorParameters<typeof HostConfigStore>[2] | undefined
 	const shape = createCoreContextHost({
 		...coreOptions,
+		executionBinding,
 		name: options.name,
 		createLifecycleHooks: (ctx) => createHostServiceLifecycle(ctx, services),
 		capabilities: services.flatMap((service) => [...service.capabilities]),
 		createConfigService: (ctx) => {
-			if (!configStoreOptions)
+			if (!configStorageOptions)
 				throw new Error('[host] document storage factories must not read Host config')
-			return new HostConfigStore(ctx, configStoreOptions)
+			return new HostConfigStore(ctx, configOptions, configStorageOptions)
 		},
 	})
 	const ctx = shape.createRoot(options.name)
 	try {
-		const configStorage = resolveHostStoreStorage(configOptions ?? {}, ctx, 'config')
-		const stateStorage = resolveHostStoreStorage(stateOptions ?? {}, ctx, 'state')
-		configStoreOptions = {
-			...configStorage,
-			records: configOptions?.records,
-			override: configOptions?.override,
-			overlays: configOptions?.overlays,
-			declarationSources: configOptions?.declarationSources,
-		}
-		const { mode: _stateMode, storage: _stateFactory, ...stateDeclaration } = stateOptions ?? {}
-		const state = new HostStateStore(ctx, { ...stateDeclaration, ...stateStorage })
+		const configStorage = resolveHostStoreStorage(documents?.config, ctx, 'config')
+		const stateStorage = resolveHostStoreStorage(documents?.state, ctx, 'state')
+		configStorageOptions = configStorage
+		const state = new HostStateStore(ctx, options.policy, stateStorage)
 		hostStateStores.set(ctx, state)
 		ctx.effects.defer(
 			() => {
@@ -197,6 +216,7 @@ export async function createHost<const TServices extends readonly HostService[] 
 			{ phase: 'shutdown' },
 		)
 		await Promise.all([state.ready, requireConfigService(ctx).ready])
+		executionBinding.bind(state.executionSnapshot())
 		await prepareCoreContext(ctx)
 		installPluginHostCoordinator(ctx, { state })
 		await prepareHostServices(ctx, services, fixed)
@@ -235,6 +255,7 @@ function createPreparedHost(
 	ctx: RootContext,
 ): PluginHost {
 	const coordinator = requirePluginHostCoordinator(ctx)
+	const policy = createHostPolicy(ctx, requireHostStateStore(ctx))
 	let start: Promise<PluginApplyReport> | undefined
 	let closing: Promise<void> | undefined
 	let revision = 0
@@ -351,32 +372,44 @@ function createPreparedHost(
 			assertOpen()
 			return readHostPluginStatusOverview(ctx)
 		},
-		async setAutoStart(address: PluginNodeAddress, autoStart: boolean) {
+		async setAutoStart(
+			address: PluginNodeAddress,
+			autoStart: boolean,
+			mutation?: HostOperationOptions,
+		) {
 			await startHost()
 			assertOpen()
 			return coordinator.updateRuntimeState(
 				hostStatePatch({ type: 'set-auto-start', node: address, autoStart }),
 				'plugin-auto-start-set',
+				mutation,
 			)
 		},
-		async setProviderDefault(token: PluginDefinitionAddress, provider: PluginNodeAddress | null) {
+		async setProviderDefault(
+			token: PluginDefinitionAddress,
+			provider: PluginNodeAddress | null,
+			mutation?: HostOperationOptions,
+		) {
 			await startHost()
 			assertOpen()
 			return coordinator.updateRuntimeState(
 				hostStatePatch({ type: 'set-provider-default', token, provider }),
 				'plugin-provider-default-set',
+				mutation,
 			)
 		},
 		async setDependencyOverride(
 			consumer: PluginNodeAddress,
 			requirement: PluginDefinitionAddress,
 			provider: PluginNodeAddress | null,
+			mutation?: HostOperationOptions,
 		) {
 			await startHost()
 			assertOpen()
 			return coordinator.updateRuntimeState(
 				hostStatePatch({ type: 'set-dependency-override', consumer, requirement, provider }),
 				'plugin-dependency-override-set',
+				mutation,
 			)
 		},
 		forks: Object.freeze({
@@ -391,6 +424,28 @@ function createPreparedHost(
 				return removeFork(ctx, fork, mutation)
 			},
 		}),
+		policy: Object.freeze({
+			async get(mutation) {
+				await startHost()
+				assertOpen()
+				return policy.get(mutation)
+			},
+			async validate(values, mutation) {
+				await startHost()
+				assertOpen()
+				return policy.validate(values, mutation)
+			},
+			async patch(values, mutation) {
+				await startHost()
+				assertOpen()
+				return policy.patch(values, mutation)
+			},
+			async reset(keys, mutation) {
+				await startHost()
+				assertOpen()
+				return policy.reset(keys, mutation)
+			},
+		} satisfies HostPolicy),
 		config: Object.freeze({
 			status: () => readHostConfigState(ctx),
 			async get(owner: PluginNodeAddress) {
@@ -398,14 +453,14 @@ function createPreparedHost(
 				assertOpen()
 				return pluginConfigGet(ctx, owner)
 			},
-			async validate(owner: PluginNodeAddress, patch: Record<string, unknown>) {
+			async validate(owner: PluginNodeAddress, patch: Parameters<HostPluginConfig['patch']>[1]) {
 				await startHost()
 				assertOpen()
 				return pluginConfigValidate(ctx, owner, patch)
 			},
 			async patch(
 				owner: PluginNodeAddress,
-				patch: Record<string, unknown>,
+				patch: Parameters<HostPluginConfig['patch']>[1],
 				mutation?: HostOperationOptions,
 			) {
 				await startHost()
@@ -414,7 +469,7 @@ function createPreparedHost(
 			},
 			async reset(
 				owner: PluginNodeAddress,
-				keys?: readonly string[],
+				keys?: Parameters<HostPluginConfig['reset']>[1],
 				mutation?: HostOperationOptions,
 			) {
 				await startHost()

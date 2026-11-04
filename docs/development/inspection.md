@@ -7,13 +7,13 @@ description: 用 TypeScript 定位插件、Part、配置声明与应用输入，
 
 源码查询适合回答“在哪里改、影响哪些声明”。检查当前生效配置、调用业务方法和验证在线状态，使用[开发控制台](./dev-console.md)；验证隔离的行为回归，使用[插件测试](../plugin-development/testing.md)。
 
-| 已知线索                    | 最短查询                                                      |
-| --------------------------- | ------------------------------------------------------------- |
-| Plugin package              | `plugins({ packageName })` → 返回的 `definition` → `plugin()` |
-| Plugin identity             | `plugin(reference, { include })`，只请求需要的 sections       |
-| 待修改文件                  | `file(path)`，再读确认关联的 Plugin 声明                      |
-| 应用 env/file/configRecords | `plugin(..., { application, include: ['inputs', 'config'] })` |
-| 项目结构未知                | `overview()`；列表分页沿用原 `nextCursor`                     |
+| 已知线索             | 最短查询                                                      |
+| -------------------- | ------------------------------------------------------------- |
+| Plugin package       | `plugins({ packageName })` → 返回的 `definition` → `plugin()` |
+| Plugin identity      | `plugin(reference, { include })`，只请求需要的 sections       |
+| 待修改文件           | `file(path)`，再读确认关联的 Plugin 声明                      |
+| 应用 env/file/config | `plugin(..., { application, include: ['inputs', 'config'] })` |
+| 项目结构未知         | `overview()`；列表分页沿用原 `nextCursor`                     |
 
 先检查结果的 `complete / partial / unavailable`，再使用其中的事实；缺口不等于不存在。完整状态、错误和预算见[读取结果](#读取结果和处理变化)。
 
@@ -67,7 +67,7 @@ if (plugins.data.status !== 'unavailable') {
 | `dependencies` | 整个所属 Plugin 的 required/optional 依赖、provider requirement，以及各 occurrence 的依赖来源 |
 | `checks`       | 所属包在 `package.json` 声明的 scripts、执行目录和 manifest 位置；查询不运行命令              |
 
-`inputs` section 定位所选应用的 `configRecords` 表达式和目标 Plugin 的 config env/file bindings，需要显式 `application`。
+`inputs` section 定位所选应用的 `config` 表达式和目标 Plugin 的 config env/file bindings，需要显式 `application`。
 
 只改一个 Part 时，通过它的实际字段路径缩小范围：
 
@@ -86,7 +86,7 @@ Config 的 `configPath` 是所属 occurrence 的路径：Plugin 根为 `[]`，Pa
 
 ## 定位应用的配置输入
 
-同一个 Plugin 可以被不同应用使用。修改环境映射、文件输入或应用初始配置时，给 `plugin()` 指定应用，再请求 `inputs`：
+同一个 Plugin 可以被不同应用使用。修改环境映射、文件输入或应用声明配置时，给 `plugin()` 指定应用，再请求 `inputs`：
 
 ```ts no-twoslash
 const report = await project.plugin('package:@example/mail::MailPlugin', {
@@ -98,7 +98,7 @@ const inputs = report.data.sections.inputs
 if (inputs.status === 'unavailable') {
 	console.log(inputs.reason)
 } else {
-	console.log(inputs.value.configRecords, inputs.value.bindings)
+	console.log(inputs.value.config, inputs.value.bindings)
 	if (inputs.status === 'partial') console.log(inputs.gaps)
 }
 ```
@@ -110,8 +110,8 @@ if (inputs.status === 'unavailable') {
 `inputs.value` 包含：
 
 - `application`：规范化的 root、entry 与 sourceSpaces 绝对路径，方便核对结果属于哪个应用。
-- `configRecords`：应用对象中该字段的值表达式位置；确认没有字段时为 `null`。例如 `configRecords: makeRecords(startup.env)`
-  会定位 `makeRecords(...)`，供继续阅读，不执行工厂，也不声称其中一定包含所选 Plugin。
+- `config`：应用对象中该字段的值表达式位置；确认没有字段时为 `null`。例如 `config: makeConfig(startup.env)`
+  会定位 `makeConfig(...)`，供继续阅读，不执行工厂，也不声称其中一定包含所选 Plugin。
 - `bindings`：目标 Plugin 的 config env/file 声明。每个 env mapping 叶子有一条记录，file binding 有一条记录。
 
 每条 binding 的 `configPath` 是声明的 schema **输入**路径；整体 JSON/env 输入和 config file 输入为 `[]`。
@@ -120,12 +120,17 @@ if (inputs.status === 'unavailable') {
 不能把返回的 path 直接当成相对 entry 目录的部署路径。
 
 `inputs` 始终描述整个 owning Plugin；即使同时传入 `partPath` 缩小 config 查询，也会保留整体 JSON/file 输入。
-它只查询 config binding，不包含 Vault binding，也不发现 fork 的运行期配置。
-空 bindings 只表示没有找到该范围内的绑定；配置仍可能来自 `configRecords` 或运行时保存的记录。
+它只查询 config binding，不包含 Vault binding。constructor 和 `Plugin.nodeAddress()` 表示 default，
+`Plugin.nodeAddress('east')` 的绑定会返回 `forkId: 'east'`；default binding 不返回 forkId。
+查询同一 definition 时会包含可静态确认的 default 与 fork 绑定，不调用 nodeAddress，也不判断 fork 当前是否存在。
+空 bindings 只表示没有找到该范围内的绑定；配置仍可能来自 `config` 或运行时保存的记录。
 
-动态 mapping、未知 binding target 或无法定位的 schema 通过 gaps 给出源码位置；其他可独立确认的记录仍可使用。
+动态 mapping、非直接 Plugin/Plugin.nodeAddress 调用的 target（包括预先存入变量的 canonical address），
+或无法定位的 schema 通过 gaps 给出源码位置；其他可独立确认的记录仍可使用。
 若应用对象的 spread、重复字段等使配置入口无法确认，inputs 返回 unavailable，其他独立 sections 仍可用。
 `complete` 表示声明导航完整，不表示 schema 已验证、环境变量存在或绑定已经生效。
+同 owner 的互不重叠 env mapping 可组合；静态确认重叠路径时报告缺口。多个 file binding 均返回声明位置，
+文件内容的路径冲突由运行时读取后校验，离线查询不会据此读取部署文件。
 
 ## 查询应用中的源码插件
 

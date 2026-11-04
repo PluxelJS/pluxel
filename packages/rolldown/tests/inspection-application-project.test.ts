@@ -31,7 +31,7 @@ throw new Error('ENTRY_MUST_NOT_EXECUTE')
 export default defineHostApplication(() => ({
   plugins: [MailPlugin],
   services: prepareServices(),
-  runtime: { configRecords: makeRecords() },
+  config: makeRecords(),
   envBindings: [envBinding(MailPlugin, { config: { schema: Schema, mapping: ${mapping} } })],
   fileBindings: [fileBinding(MailPlugin, { config: { schema: Schema, path: './private/config.json' } })],
 }))
@@ -116,9 +116,7 @@ describe('application-aware public Plugin inspection', () => {
 			expect(inputs.bindings[0]!.schema.declaration?.file).toBe(
 				fixture.getPath('installed/mail/src/index.ts'),
 			)
-			expect(selectedText(application('@fixture/mail', name), inputs.configRecords!)).toBe(
-				'makeRecords()',
-			)
+			expect(selectedText(application('@fixture/mail', name), inputs.config!)).toBe('makeRecords()')
 			expect(available(result.data.sections.config).declarations).toHaveLength(2)
 		}
 		const part = await project.plugin(reference, {

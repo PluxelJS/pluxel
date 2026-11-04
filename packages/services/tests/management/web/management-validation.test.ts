@@ -43,6 +43,8 @@ const report = {
 	runtimeStateRevision: 5,
 	reconciliation: [],
 	core: { status: 'unchanged' },
+	persistence: { status: 'unchanged' },
+	writtenFields: [],
 } as const
 
 const plugin: PluginStatusSnapshot = {
@@ -89,7 +91,11 @@ describe('management protocol validation', () => {
 		const catalog = parsePluginCatalogSnapshot({
 			plugins: [plugin],
 			sections: [section],
-			statePolicy: { mode: 'writable', overriddenFields: [] as const },
+			statePolicy: {
+				readonly: false,
+				managedRevision: 'policy:test:0',
+				overriddenFields: [] as const,
+			},
 			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
 		})
 		expect(catalog.plugins[0]).toEqual(plugin)
@@ -109,8 +115,14 @@ describe('management protocol validation', () => {
 
 		const config = parseConfigResult({
 			ok: true,
-			saved: true,
+			persistence: { status: 'confirmed', retention: 'session' },
 			readonly: false,
+			mode: 'declared-first',
+			managedInput: null as null,
+			effectiveInput: {},
+			sources: [] as const,
+			shadowedPaths: [] as const,
+			managedRevision: 'test:config:0',
 			application: 'applied',
 			desiredRevision: 4,
 			appliedRevision: 4,
@@ -119,8 +131,14 @@ describe('management protocol validation', () => {
 		})
 		expect(config).toMatchObject({
 			ok: true,
-			saved: true,
+			persistence: { status: 'confirmed', retention: 'session' },
 			readonly: false,
+			mode: 'declared-first',
+			managedInput: null as null,
+			effectiveInput: {},
+			sources: [] as const,
+			shadowedPaths: [] as const,
+			managedRevision: 'test:config:0',
 			application: 'applied',
 		})
 		expect(Object.isFrozen((Reflect.get(config, 'config') as { nested: unknown }).nested)).toBe(
@@ -426,7 +444,6 @@ describe('management protocol validation', () => {
 		dangerous.desiredRevision = 0
 		dangerous.appliedRevision = 0
 		dangerous.config = Object.assign(Object.create(null), { constructor: 'poison' })
-		dangerous.defaults = {}
 		expect(() => parseConfigResult(dangerous)).toThrow(/reserved field constructor/)
 
 		expect(() =>
@@ -507,7 +524,11 @@ describe('management protocol validation', () => {
 			parsePluginCatalogSnapshot({
 				plugins: [plugin],
 				sections: [section],
-				statePolicy: { mode: 'writable', overriddenFields: [] as const },
+				statePolicy: {
+					readonly: false,
+					managedRevision: 'policy:test:0',
+					overriddenFields: [] as const,
+				},
 				summary: { total: 2, running: 0, stopped: 1, autoStart: 1 },
 			}),
 		).toThrow(/inconsistent/)
@@ -516,7 +537,11 @@ describe('management protocol validation', () => {
 			parsePluginCatalogSnapshot({
 				plugins: [plugin, plugin],
 				sections: [section],
-				statePolicy: { mode: 'writable', overriddenFields: [] as const },
+				statePolicy: {
+					readonly: false,
+					managedRevision: 'policy:test:0',
+					overriddenFields: [] as const,
+				},
 				summary: { total: 2, running: 0, stopped: 2, autoStart: 2 },
 			}),
 		).toThrow(/duplicate Plugin node/)
@@ -569,8 +594,8 @@ describe('management protocol validation', () => {
 		expect(() => parsePluginCatalogSnapshot(catalog)).toThrow(/statePolicy/)
 		for (const statePolicy of [
 			{ mode: 'readwrite', overriddenFields: [] as const },
-			{ mode: 'writable', overriddenFields: ['unknown'] },
-			{ mode: 'writable', overriddenFields: ['forks', 'forks'] },
+			{ readonly: false, managedRevision: 'policy:test:0', overriddenFields: ['unknown'] },
+			{ readonly: false, managedRevision: 'policy:test:0', overriddenFields: ['forks', 'forks'] },
 			{ mode: 'writable', overriddenFields: [] as const, readonly: false },
 		]) {
 			expect(() => parsePluginCatalogSnapshot({ ...catalog, statePolicy })).toThrow(/statePolicy/)
@@ -584,7 +609,11 @@ describe('management protocol validation', () => {
 		const catalog = (plugins: unknown) => ({
 			plugins,
 			sections: [] as unknown[],
-			statePolicy: { mode: 'writable', overriddenFields: [] as const },
+			statePolicy: {
+				readonly: false,
+				managedRevision: 'policy:test:0',
+				overriddenFields: [] as const,
+			},
 			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
 		})
 		expect(() => parsePluginCatalogSnapshot(catalog(items))).toThrow(/data property/)
@@ -603,25 +632,27 @@ describe('management protocol validation', () => {
 	it('detaches opaque configuration leaves without freezing or retaining the caller tree', () => {
 		const input = {
 			ok: true,
-			saved: false,
+			persistence: { status: 'unchanged' },
 			readonly: false,
+			mode: 'declared-first',
+			managedInput: null as null,
+			effectiveInput: {},
+			sources: [] as const,
+			shadowedPaths: [] as const,
+			managedRevision: 'test:config:0',
 			application: 'applied',
 			desiredRevision: 0,
 			appliedRevision: 0,
 			config: { nested: [{ value: 'before' }] },
-			defaults: { nested: { enabled: true } },
 		}
 		const parsed = parseConfigResult(input)
 		input.config.nested[0]!.value = 'after'
-		input.defaults.nested.enabled = false
 		expect(parsed).toMatchObject({
 			config: { nested: [{ value: 'before' }] },
-			defaults: { nested: { enabled: true } },
 		})
 		expect(Object.isFrozen(input.config)).toBe(false)
-		if (!parsed.ok || !('defaults' in parsed)) throw new Error('Expected a configuration read')
+		if (!parsed.ok) throw new Error('Expected a configuration read')
 		expect(Object.isFrozen(parsed.config.nested)).toBe(true)
-		expect(Object.isFrozen(parsed.defaults.nested)).toBe(true)
 	})
 
 	it('enforces portable-data budgets before interpreting a result', () => {
@@ -632,13 +663,18 @@ describe('management protocol validation', () => {
 		expect(() =>
 			parseConfigResult({
 				ok: true,
-				saved: false,
+				persistence: { status: 'unchanged' },
 				readonly: false,
+				mode: 'declared-first',
+				managedInput: null as null,
+				effectiveInput: {},
+				sources: [] as const,
+				shadowedPaths: [] as const,
+				managedRevision: 'test:config:0',
 				application: 'applied',
 				desiredRevision: 0,
 				appliedRevision: 0,
 				config: { items: Array.from({ length: 10_001 }, (): null => null) },
-				defaults: {},
 			}),
 		).toThrow(/10000 items/)
 	})

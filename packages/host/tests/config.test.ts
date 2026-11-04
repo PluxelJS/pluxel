@@ -1,72 +1,89 @@
 import { createDocumentStorage } from './helpers/document-storage'
 import { BasePlugin, Plugin } from '@pluxel/core'
+import { SuperJSON } from 'superjson'
+import * as v from 'valibot'
 import { expect, it } from 'vitest'
 import { createHost } from '../src/index'
+import { requireConfigService } from '@pluxel/core/internal'
 
-const schema = {
-	'~standard': {
-		version: 1 as const,
-		vendor: 'host-test',
-		types: undefined as { input: Record<string, unknown>; output: { value: string } } | undefined,
-		validate(input: unknown) {
-			const value = (input as { value?: unknown })?.value ?? 'initial'
-			return typeof value === 'string'
-				? { value: { value } }
-				: { issues: [{ message: 'value must be a string', path: ['value'] }] }
-		},
-	},
-}
 const updates: string[] = []
-@Plugin()
+const Config = v.object({
+	value: v.optional(v.string(), 'initial'),
+	nested: v.optional(v.object({ count: v.optional(v.number(), 0) }), {}),
+	extra: v.optional(v.string()),
+})
+@Plugin({ forkable: true })
 class ConfigOwner extends BasePlugin {
-	readonly config = this.configs.use(schema)
+	readonly config = this.configs.use(Config)
 	init() {
 		this.configs.onUpdate(this.config, ({ desired }) => {
 			updates.push(desired.value)
 		})
 	}
 }
-
-it('shares one config authority for validation, deferred writes, running notification, reset and closed admission', async () => {
-	const host = await createHost({ plugins: [ConfigOwner] })
+const branchSchema = v.variant('kind', [
+	v.strictObject({ kind: v.literal('socket'), socket: v.string() }),
+	v.strictObject({ kind: v.literal('http'), url: v.string() }),
+])
+@Plugin()
+class Branch extends BasePlugin {
+	readonly config = this.configs.use(
+		v.object({ transport: v.optional(branchSchema, { kind: 'socket', socket: '/tmp/example' }) }),
+	)
+}
+let transformations = 0
+const transformedSchema = v.object({
+	value: v.pipe(
+		v.optional(v.string(), 'default'),
+		v.transform((value) => {
+			transformations++
+			return `${value}!`
+		}),
+	),
+})
+@Plugin()
+class Transformed extends BasePlugin {
+	readonly config = this.configs.use(transformedSchema)
+}
+it('validates raw edits, confirms running notifications, resets inheritance and closes admission', async () => {
 	const owner = ConfigOwner.nodeAddress()
+	const host = await createHost({
+		plugins: [ConfigOwner],
+		runtime: { documents: { config: false, state: false } },
+	})
 	try {
-		await expect(host.config.validate(owner, { value: 42 })).resolves.toMatchObject({
+		await expect(host.config.validate(owner, { set: { value: 42 } })).resolves.toMatchObject({
 			ok: false,
 			code: 'validation_failed',
-			state: 'unchanged',
 		})
-		await expect(host.config.get(owner)).resolves.toMatchObject({
+		const before = await host.config.get(owner)
+		expect(before).toMatchObject({
 			ok: true,
-			saved: false,
-			application: 'deferred',
-			config: {},
-			defaults: {},
+			managedInput: null,
+			effectiveInput: {},
+			config: { value: 'initial' },
+			persistence: { status: 'unchanged' },
 		})
-		await expect(host.config.patch(owner, { value: 'saved' })).resolves.toMatchObject({
+		await expect(host.config.patch(owner, { set: { value: 'saved' } })).resolves.toMatchObject({
 			ok: true,
-			saved: true,
 			application: 'deferred',
-			config: { value: 'saved' },
+			persistence: { status: 'confirmed', retention: 'session' },
 		})
 		await host.startNode(owner)
-		const running = await host.config.get(owner)
-		expect(running).toMatchObject({ ok: true, application: 'applied' })
-		if (running.ok === false) throw new Error(running.message)
-		expect(running.appliedRevision).toBe(running.desiredRevision)
-		await expect(host.config.patch(owner, { value: 'updated' })).resolves.toMatchObject({
+		updates.length = 0
+		await expect(host.config.patch(owner, { set: { value: 'updated' } })).resolves.toMatchObject({
 			ok: true,
 			application: 'applied',
-			config: { value: 'updated' },
 		})
 		await expect(host.config.reset(owner)).resolves.toMatchObject({
 			ok: true,
-			application: 'applied',
+			managedInput: null,
 			config: { value: 'initial' },
+			application: 'applied',
 		})
 		expect(updates).toEqual(['updated', 'initial'])
 		await host.updateCatalog([])
-		await expect(host.config.patch(owner, { value: 'orphan' })).resolves.toMatchObject({
+		await expect(host.config.patch(owner, { set: { value: 'orphan' } })).resolves.toMatchObject({
 			ok: false,
 			code: 'node_unavailable',
 		})
@@ -75,90 +92,343 @@ it('shares one config authority for validation, deferred writes, running notific
 	}
 	await expect(host.config.get(owner)).rejects.toThrow('closed')
 })
-
-it('prepares explicit config and state documents, reopens stored values ahead of seeds, and borrows backends', async () => {
-	const configStorage = createDocumentStorage()
-	const stateStorage = createDocumentStorage()
-	let backendClosed = false
-	const borrowed = {
-		...configStorage,
-		close() {
-			backendClosed = true
-		},
-	}
+it('separates per-node modes, declared fallback and missing document input', async () => {
 	const owner = ConfigOwner.nodeAddress()
+	const storage = createDocumentStorage()
+	const east = ConfigOwner.nodeAddress('east')
+	const west = ConfigOwner.nodeAddress('west')
+	await storage.put(
+		'config.json',
+		SuperJSON.stringify({
+			version: 4,
+			plugins: [owner, east, west].map((node) => ({
+				owner: node,
+				config: { value: 'saved', extra: 'retained' },
+			})),
+		}),
+	)
 	const host = await createHost({
 		plugins: [ConfigOwner],
-		runtime: {
-			state: { storage: () => stateStorage, autoStart: [owner] },
-			configRecords: {
-				storage: () => borrowed,
-				records: [{ owner, config: { value: 'seed' } }],
-			},
+		policy: { forks: [east, west] },
+		config: {
+			mode: 'declared-only',
+			records: [
+				{ owner: ConfigOwner, config: { value: 'declared' } },
+				{ owner: east, mode: 'saved-first', config: { value: 'east' } },
+				{ owner: west, mode: 'declared-first', config: { value: 'west' } },
+			],
 		},
+		runtime: { documents: { config: { storage: () => storage }, state: false } },
 	})
 	try {
-		await expect(host.config.get(owner)).resolves.toMatchObject({
-			ok: true,
-			application: 'applied',
-			config: { value: 'seed' },
+		expect(await host.config.get(owner)).toMatchObject({
+			mode: 'declared-only',
+			config: { value: 'declared' },
+			shadowedPaths: [['value'], ['extra']],
 		})
-		await host.config.patch(owner, { value: 'persisted' })
+		expect(await host.config.get(east)).toMatchObject({
+			mode: 'saved-first',
+			config: { value: 'saved', extra: 'retained' },
+		})
+		expect(await host.config.get(west)).toMatchObject({
+			mode: 'declared-first',
+			config: { value: 'west', extra: 'retained' },
+		})
+	} finally {
+		await host.close()
+	}
+})
+it('does not seed documents and saves hidden raw values without changing desired revision', async () => {
+	const owner = ConfigOwner.nodeAddress()
+	const storage = createDocumentStorage()
+	let writes = 0
+	const borrowed = {
+		...storage,
+		async put(key: string, value: string) {
+			writes++
+			await storage.put(key, value)
+		},
+	}
+	const host = await createHost({
+		plugins: [ConfigOwner],
+		config: { records: [{ owner, config: { value: 'declaration' } }] },
+		runtime: { documents: { config: { storage: () => borrowed }, state: false } },
+	})
+	try {
+		const first = await host.config.get(owner)
+		if (first.ok === false) throw new Error(first.message)
+		expect(writes).toBe(0)
+		expect(first.managedInput).toBeNull()
+		const hidden = await host.config.patch(
+			owner,
+			{ set: { value: 200 } },
+			{ expectedManagedRevision: first.managedRevision },
+		)
+		expect(hidden).toMatchObject({
+			ok: true,
+			managedInput: { value: 200 },
+			config: { value: 'declaration' },
+			shadowedPaths: [['value']],
+			desiredRevision: first.desiredRevision,
+			persistence: { status: 'confirmed', retention: 'unknown' },
+		})
+		if (hidden.ok === false) throw new Error(hidden.message)
+		expect(hidden.managedRevision).not.toBe(first.managedRevision)
+		await expect(
+			host.config.patch(
+				owner,
+				{ set: { extra: 'stale' } },
+				{ expectedManagedRevision: first.managedRevision },
+			),
+		).resolves.toMatchObject({
+			ok: false,
+			code: 'revision_conflict',
+			managedRevision: hidden.managedRevision,
+		})
+		expect(writes).toBe(1)
+		expect(SuperJSON.parse((await storage.getText('config.json'))!)).toEqual({
+			version: 4,
+			plugins: [{ owner, config: { value: 200 } }],
+		})
+		expect(() => requireConfigService(host.ctx).patchConfig(owner, { value: 'bypass' })).toThrow(
+			'host.config',
+		)
 	} finally {
 		await host.close()
 	}
 	const reopened = await createHost({
 		plugins: [ConfigOwner],
-		runtime: {
-			state: { storage: () => stateStorage, autoStart: [] },
-			configRecords: {
-				storage: () => borrowed,
-				records: [{ owner, config: { value: 'ignored seed' } }],
-			},
-		},
+		config: { mode: 'saved-first', records: [{ owner, config: { value: 'fallback' } }] },
+		runtime: { documents: { config: { storage: () => storage }, state: false } },
 	})
 	try {
 		await expect(reopened.config.get(owner)).resolves.toMatchObject({
-			ok: true,
-			application: 'applied',
-			config: { value: 'persisted' },
+			ok: false,
+			code: 'validation_failed',
+			managedInput: { value: 200 },
+			effectiveInput: { value: 200 },
+			mode: 'saved-first',
 		})
 	} finally {
 		await reopened.close()
 	}
-	expect(backendClosed).toBe(false)
+})
+it('performs branch replacement atomically and prunes removed paths', async () => {
+	const node = Branch.nodeAddress()
+	const host = await createHost({
+		plugins: [Branch],
+		config: { mode: 'saved-first' },
+		runtime: { documents: { config: false, state: false } },
+	})
+	try {
+		await expect(
+			host.config.patch(node, { set: { transport: { kind: 'socket', socket: '/tmp/managed' } } }),
+		).resolves.toMatchObject({ ok: true })
+		const before = await host.config.get(node)
+		await expect(
+			host.config.patch(node, {
+				set: { transport: { kind: 'http', url: 'https://example.test' } },
+			}),
+		).resolves.toMatchObject({ ok: false, code: 'validation_failed', state: 'unchanged' })
+		expect(await host.config.get(node)).toEqual(before)
+		await expect(
+			host.config.patch(node, {
+				remove: [['transport']],
+				set: { transport: { kind: 'http', url: 'https://example.test' } },
+			}),
+		).resolves.toMatchObject({
+			ok: true,
+			managedInput: { transport: { kind: 'http', url: 'https://example.test' } },
+		})
+		await expect(host.config.reset(node, [['transport']])).resolves.toMatchObject({
+			ok: true,
+			managedInput: null,
+			config: { transport: { kind: 'socket', socket: '/tmp/example' } },
+		})
+		for (const remove of [[['transport'], ['transport', 'url']], [['__proto__']], [[]]])
+			await expect(host.config.patch(node, { remove })).resolves.toMatchObject({
+				ok: false,
+				code: 'invalid_input',
+			})
+	} finally {
+		await host.close()
+	}
+})
+it('retains the confirmed generation and raw revision when document completion is unknown', async () => {
+	const owner = ConfigOwner.nodeAddress()
+	const storage = createDocumentStorage()
+	let fail = false
+	const borrowed = {
+		...storage,
+		async put(key: string, value: string) {
+			if (fail) throw new Error('write unavailable')
+			await storage.put(key, value)
+		},
+	}
+	const host = await createHost({
+		plugins: [ConfigOwner],
+		policy: { autoStart: [ConfigOwner] },
+		runtime: { documents: { config: { storage: () => borrowed }, state: false } },
+	})
+	try {
+		await host.config.patch(owner, { set: { value: 'confirmed' } })
+		const before = await host.config.get(owner)
+		if (before.ok === false) throw new Error(before.message)
+		fail = true
+		await expect(host.config.patch(owner, { set: { value: 'uncertain' } })).resolves.toMatchObject({
+			ok: false,
+			code: 'persistence_failed',
+			state: 'unknown',
+			persistence: { status: 'unknown' },
+			managedInput: { value: 'confirmed' },
+			managedRevision: before.managedRevision,
+		})
+		expect(await host.config.get(owner)).toMatchObject({
+			config: { value: 'confirmed' },
+			desiredRevision: before.desiredRevision,
+			managedInput: { value: 'confirmed' },
+		})
+		fail = false
+		await expect(host.config.patch(owner, { set: { value: 'retry' } })).resolves.toMatchObject({
+			ok: true,
+			application: 'applied',
+			config: { value: 'retry' },
+		})
+	} finally {
+		await host.close()
+	}
+})
+it('reuses transformed output for reads and hidden saves', async () => {
+	transformations = 0
+	const node = Transformed.nodeAddress()
+	const host = await createHost({
+		plugins: [Transformed],
+		config: { records: [{ owner: Transformed, config: { value: 'raw' } }] },
+		runtime: { documents: { config: false, state: false } },
+	})
+	try {
+		expect(await host.config.get(node)).toMatchObject({ config: { value: 'raw!' } })
+		expect(transformations).toBe(1)
+		const count = transformations
+		await host.config.get(node)
+		await host.config.validate(node, {})
+		expect(await host.config.patch(node, { set: { value: 'hidden' } })).toMatchObject({
+			config: { value: 'raw!' },
+			managedInput: { value: 'hidden' },
+		})
+		expect(transformations).toBe(count)
+	} finally {
+		await host.close()
+	}
+})
+it('readOnly constrains management writes independently of mode', async () => {
+	const owner = ConfigOwner.nodeAddress()
+	const host = await createHost({
+		plugins: [ConfigOwner],
+		config: { mode: 'declared-only', records: [{ owner, config: { value: 'declared' } }] },
+		runtime: { documents: { config: { readOnly: true }, state: false } },
+	})
+	try {
+		expect(await host.config.get(owner)).toMatchObject({
+			readonly: true,
+			managedInput: null,
+			config: { value: 'declared' },
+		})
+		expect(await host.config.patch(owner, { set: { value: 'saved' } })).toMatchObject({
+			ok: false,
+			code: 'mutation_rejected',
+		})
+		expect(await host.config.validate(owner, { set: { value: 'candidate' } })).toMatchObject({
+			ok: true,
+			config: { value: 'declared' },
+		})
+	} finally {
+		await host.close()
+	}
+})
+it('checks competing editors inside the queue and preserves explicit empty input on a no-op reset', async () => {
+	const owner = ConfigOwner.nodeAddress()
+	const host = await createHost({
+		plugins: [ConfigOwner],
+		runtime: { documents: { config: false, state: false } },
+	})
+	try {
+		const initial = await host.config.patch(owner, { set: {} })
+		if (initial.ok === false) throw new Error(initial.message)
+		expect(initial.managedInput).toEqual({})
+		expect(await host.config.reset(owner, [['missing']])).toMatchObject({
+			managedInput: {},
+			managedRevision: initial.managedRevision,
+			persistence: { status: 'unchanged' },
+		})
+		const results = await Promise.all([
+			host.config.patch(
+				owner,
+				{ set: { value: 'first' } },
+				{ expectedManagedRevision: initial.managedRevision },
+			),
+			host.config.patch(
+				owner,
+				{ set: { value: 'second' } },
+				{ expectedManagedRevision: initial.managedRevision },
+			),
+		])
+		expect(results.map((result) => result.ok)).toEqual([true, false])
+		expect(results[1]).toMatchObject({ code: 'revision_conflict' })
+		const sparse = Array(1) as string[]
+		expect(await host.config.patch(owner, { remove: [sparse] })).toMatchObject({
+			ok: false,
+			code: 'invalid_input',
+		})
+	} finally {
+		await host.close()
+	}
 })
 
-it.each(['config', 'state'] as const)(
-	'rejects Host preparation when persisted %s is invalid and preserves both documents',
-	async (broken) => {
-		const configStorage = createDocumentStorage()
-		const stateStorage = createDocumentStorage()
-		const validConfig = JSON.stringify({ version: 4, plugins: [] })
-		const validState = JSON.stringify({
-			version: 6,
-			autoStart: [],
-			forks: [],
-			providerDefaults: [],
-			dependencyOverrides: [],
-		})
-		await configStorage.put('config.json', broken === 'config' ? '{' : validConfig)
-		await stateStorage.put('state.json', broken === 'state' ? '{' : validState)
-		await expect(
-			createHost({
-				plugins: [],
-				runtime: {
-					configRecords: { storage: () => configStorage },
-					state: { storage: () => stateStorage },
+it('reports only accepted raw facts when repairing invalid input fails to persist', async () => {
+	const owner = ConfigOwner.nodeAddress()
+	const storage = createDocumentStorage()
+	await storage.put(
+		'config.json',
+		SuperJSON.stringify({ version: 4, plugins: [{ owner, config: { value: 123 } }] }),
+	)
+	await using host = await createHost({
+		plugins: [ConfigOwner],
+		runtime: {
+			documents: {
+				state: false,
+				config: {
+					storage: () => ({
+						...storage,
+						put: async () => {
+							throw new Error('write unavailable')
+						},
+					}),
 				},
-			}),
-		).rejects.toThrow(/Cannot load (config|state)\.json/)
-		expect(await configStorage.getText('config.json')).toBe(broken === 'config' ? '{' : validConfig)
-		expect(await stateStorage.getText('state.json')).toBe(broken === 'state' ? '{' : validState)
-		expect([...configStorage.documents.keys()]).toEqual(['config.json'])
-		expect([...stateStorage.documents.keys()]).toEqual(['state.json'])
-	},
-)
+			},
+		},
+	})
+	const invalid = await host.config.get(owner)
+	expect(invalid).toMatchObject({
+		ok: false,
+		code: 'validation_failed',
+		managedInput: { value: 123 },
+	})
+	const result = await host.config.patch(owner, { set: { value: 'repaired' } })
+	expect(result).toMatchObject({
+		ok: false,
+		code: 'persistence_failed',
+		state: 'unknown',
+		managedInput: { value: 123 },
+		effectiveInput: { value: 123 },
+		persistence: { status: 'unknown' },
+	})
+	expect(result).not.toHaveProperty('config')
+	expect(result).not.toHaveProperty('application')
+	if (invalid.ok !== false || invalid.code !== 'validation_failed')
+		throw new Error('Expected invalid input')
+	expect(result).toHaveProperty('managedRevision', invalid.managedRevision)
+})
 
 it('rejects canceled queued writes while allowing an already admitted operation to settle', async () => {
 	const { requirePluginHostCoordinator } = await import('../src/internal')
@@ -184,7 +454,7 @@ it('rejects canceled queued writes while allowing an already admitted operation 
 		const queued = pluginConfigPatch(
 			host.ctx,
 			ConfigOwner.nodeAddress(),
-			{ value: 'canceled' },
+			{ set: { value: 'canceled' } },
 			{ signal: queuedSignal.signal },
 		)
 		queuedSignal.abort()
@@ -194,7 +464,8 @@ it('rejects canceled queued writes while allowing an already admitted operation 
 		await expect(queued).rejects.toMatchObject({ name: 'AbortError' })
 		expect(await host.config.get(ConfigOwner.nodeAddress())).toMatchObject({
 			ok: true,
-			config: {},
+			managedInput: null,
+			config: { value: 'initial' },
 		})
 	} finally {
 		release.resolve()
@@ -202,449 +473,10 @@ it('rejects canceled queued writes while allowing an already admitted operation 
 	}
 })
 
-const layeredUpdates: unknown[] = []
-const layeredSchema: import('@standard-schema/spec').StandardSchemaV1<
-	Record<string, unknown>,
-	Record<string, unknown>
-> = {
-	'~standard': {
-		version: 1 as const,
-		vendor: 'host-layers-test',
-		validate(input: unknown) {
-			return { value: input as Record<string, unknown> }
-		},
-	},
-}
-@Plugin()
-class LayeredOwner extends BasePlugin {
-	readonly config = this.configs.use(layeredSchema)
-	init() {
-		this.configs.onUpdate(this.config, ({ desired }) => {
-			layeredUpdates.push(desired)
-		})
-	}
-}
-
-it('loads whole saved records beneath env and restores declarations only on explicit reset', async () => {
-	const { SuperJSON } = await import('superjson')
-	const storage = createDocumentStorage()
-	const owner = LayeredOwner.nodeAddress()
-	await storage.put(
-		'config.json',
-		SuperJSON.stringify({
-			version: 4,
-			plugins: [
-				{ owner, config: { nested: { endpoint: 'saved-endpoint', count: 2 }, list: ['saved'] } },
-			],
-		}),
-	)
-	const records = [
-		{
-			owner,
-			config: {
-				nested: { endpoint: 'base-endpoint', count: 1, keep: true },
-				list: ['base'],
-			},
-		},
-	]
-	const host = await createHost({
-		plugins: [LayeredOwner],
-		runtime: {
-			configRecords: {
-				storage: () => storage,
-				records,
-				overlays: [
-					{
-						owner,
-						config: { nested: { endpoint: 'env-endpoint' }, list: ['env'] },
-						sources: [
-							{ path: ['nested', 'endpoint'], kind: 'env', name: 'APP_ENDPOINT' },
-							{ path: ['list'], kind: 'env', name: 'APP_LIST' },
-						],
-					},
-				],
-			},
-		},
-	})
-	try {
-		await host.startNode(owner)
-		const result = await host.config.get(owner)
-		expect(result).toMatchObject({
-			ok: true,
-			config: {
-				nested: { endpoint: 'env-endpoint', count: 2 },
-				list: ['env'],
-			},
-		})
-		if (result.ok === false) throw new Error(result.message)
-		expect(result.sources).toContainEqual({
-			owner,
-			path: ['nested', 'endpoint'],
-			kind: 'env',
-			name: 'APP_ENDPOINT',
-			readonly: true,
-		})
-		expect(JSON.stringify(result.sources)).not.toContain('env-endpoint')
-		await expect(host.config.patch(owner, { nested: { count: 3 } })).resolves.toMatchObject({
-			ok: true,
-			application: 'applied',
-			config: { nested: { endpoint: 'env-endpoint', count: 3 } },
-		})
-		const persisted = SuperJSON.parse(await storage.getText('config.json')!) as {
-			plugins: { config: unknown }[]
-		}
-		expect(persisted.plugins[0]?.config).toEqual({
-			nested: { endpoint: 'saved-endpoint', count: 3 },
-			list: ['saved'],
-		})
-	} finally {
-		await host.close()
-	}
-	const reopened = await createHost({
-		plugins: [LayeredOwner],
-		runtime: { configRecords: { storage: () => storage, records } },
-	})
-	try {
-		await expect(reopened.config.get(owner)).resolves.toMatchObject({
-			ok: true,
-			config: { nested: { endpoint: 'saved-endpoint', count: 3 }, list: ['saved'] },
-		})
-		await expect(reopened.config.reset(owner, ['nested'])).resolves.toMatchObject({
-			ok: true,
-			config: { nested: { endpoint: 'base-endpoint', count: 1, keep: true } },
-		})
-	} finally {
-		await reopened.close()
-	}
-})
-
-it('rejects env-controlled patch/reset parent and child paths, including same-value and low-level writes', async () => {
-	const { requireConfigService } = await import('@pluxel/core/internal')
-	const { mutatePluginConfig } = await import('../src/config')
-	const owner = LayeredOwner.nodeAddress()
-	const host = await createHost({
-		plugins: [LayeredOwner],
-		runtime: {
-			configRecords: {
-				overlays: [
-					{
-						owner,
-						config: { nested: { locked: { value: 'env' } } },
-						sources: [{ path: ['nested', 'locked'], kind: 'env', name: 'APP_LOCKED' }],
-					},
-				],
-			},
-		},
-	})
-	try {
-		for (const patch of [
-			{ nested: null },
-			{ nested: { locked: { value: 'changed' } } },
-			{ nested: { locked: { value: 'env' } } },
-		]) {
-			await expect(host.config.patch(owner, patch)).resolves.toMatchObject({
-				ok: false,
-				code: 'mutation_rejected',
-			})
-			await expect(host.config.validate(owner, patch)).resolves.toMatchObject({
-				ok: false,
-				code: 'mutation_rejected',
-			})
-		}
-		await expect(host.config.reset(owner)).resolves.toMatchObject({
-			ok: false,
-			code: 'mutation_rejected',
-		})
-		await expect(host.config.reset(owner, ['nested'])).resolves.toMatchObject({
-			ok: false,
-			code: 'mutation_rejected',
-		})
-		await expect(
-			mutatePluginConfig(host.ctx, owner, 'field-write', () => ({ nested: {} }), undefined, [
-				['nested'],
-			]),
-		).resolves.toMatchObject({ ok: false, code: 'mutation_rejected' })
-		const service = requireConfigService(host.ctx)
-		expect(() => service.patchConfig(owner, { nested: { locked: { value: 'env' } } })).toThrow(
-			/environment-controlled/,
-		)
-		expect(() => service.unsetConfigKeys(owner, ['nested'])).toThrow(/environment-controlled/)
-		expect(() => service.deleteConfig(owner)).toThrow(/environment-controlled/)
-		expect(() =>
-			service.stageValidatedConfig({
-				owner,
-				authority: { schema: layeredSchema },
-				expectedRevision: service.getConfigRevision(owner),
-				value: {},
-			}),
-		).toThrow(/environment-controlled/)
-		await expect(host.config.patch(owner, { nested: { editable: true } })).resolves.toMatchObject({
-			ok: true,
-		})
-	} finally {
-		await host.close()
-	}
-})
-
-it('keeps the confirmed revision and generation unchanged when layered persistence fails', async () => {
-	const { requireConfigService } = await import('@pluxel/core/internal')
-	const memory = createDocumentStorage()
-	let fail = false
-	const storage = {
-		...memory,
-		async put(...args: Parameters<typeof memory.put>) {
-			if (fail) throw new Error('write failed')
-			await memory.put(...args)
-		},
-	}
-	const owner = LayeredOwner.nodeAddress()
-	const host = await createHost({
-		plugins: [LayeredOwner],
-		runtime: {
-			configRecords: {
-				storage: () => storage,
-				records: [{ owner, config: { value: 'base' } }],
-			},
-		},
-	})
-	try {
-		await host.startNode(owner)
-		const service = requireConfigService(host.ctx)
-		const before = service.getRawConfig(owner)
-		const revision = service.getConfigRevision(owner)
-		const notifications = layeredUpdates.length
-		fail = true
-		await expect(host.config.patch(owner, { value: 'candidate' })).resolves.toMatchObject({
-			ok: false,
-			code: 'persistence_failed',
-			config: { value: 'base' },
-		})
-		expect(service.getRawConfig(owner)).toBe(before)
-		expect(service.getConfigRevision(owner)).toBe(revision)
-		expect(layeredUpdates.length).toBe(notifications)
-		fail = false
-		await expect(host.config.patch(owner, { value: 'retry' })).resolves.toMatchObject({
-			ok: true,
-			application: 'applied',
-		})
-	} finally {
-		fail = false
-		await host.close()
-	}
-})
-
-it('keeps saved raw 200 behind declaration override 100 when editing another field, and reveals 200 after reopening', async () => {
-	const { SuperJSON } = await import('superjson')
-	const storage = createDocumentStorage()
-	const owner = LayeredOwner.nodeAddress()
-	const raw = [
-		{
-			owner,
-			config: {
-				limit: 200,
-				nested: { locked: 2, editable: 3 },
-				list: [1, 2],
-				empty: 'retained',
-				other: 'before',
-			},
-		},
-	]
-	await storage.put('config.json', SuperJSON.stringify({ version: 4, plugins: raw }))
-	const records = [
-		{ owner, config: { limit: 100, nested: { locked: 1 }, list: [] as number[], empty: {} } },
-	]
-	const host = await createHost({
-		plugins: [LayeredOwner],
-		runtime: { configRecords: { records, override: true, storage: () => storage } },
-	})
-	try {
-		await host.startNode(owner)
-		await expect(host.config.get(owner)).resolves.toMatchObject({
-			config: { limit: 100, nested: { locked: 1, editable: 3 }, list: [], empty: 'retained' },
-		})
-		for (const patch of [
-			{ limit: 100 },
-			{ nested: null },
-			{ nested: { locked: 1 } },
-			{ list: [] as number[] },
-		]) {
-			await expect(host.config.patch(owner, patch)).resolves.toMatchObject({
-				ok: false,
-				code: 'mutation_rejected',
-			})
-		}
-		await expect(host.config.reset(owner, ['limit'])).resolves.toMatchObject({
-			ok: false,
-			code: 'mutation_rejected',
-		})
-		await expect(host.config.reset(owner)).resolves.toMatchObject({
-			ok: false,
-			code: 'mutation_rejected',
-		})
-		await expect(
-			host.config.patch(owner, { other: 'after', nested: { editable: 4 }, empty: 'editable' }),
-		).resolves.toMatchObject({ ok: true, application: 'applied' })
-		expect(SuperJSON.parse((await storage.getText('config.json'))!)).toEqual({
-			version: 4,
-			plugins: [
-				{
-					owner,
-					config: {
-						limit: 200,
-						nested: { locked: 2, editable: 4 },
-						list: [1, 2],
-						empty: 'editable',
-						other: 'after',
-					},
-				},
-			],
-		})
-	} finally {
-		await host.close()
-	}
-	const reopened = await createHost({
-		plugins: [LayeredOwner],
-		runtime: { configRecords: { records, storage: () => storage } },
-	})
-	try {
-		await expect(reopened.config.get(owner)).resolves.toMatchObject({
-			config: { limit: 200, nested: { locked: 2, editable: 4 }, list: [1, 2], other: 'after' },
-		})
-	} finally {
-		await reopened.close()
-	}
-})
-
-it('resets to current raw declarations, deletes undeclared saved keys, and treats empty reset keys as no work', async () => {
-	const { SuperJSON } = await import('superjson')
-	const storage = createDocumentStorage()
-	const owner = LayeredOwner.nodeAddress()
-	await storage.put(
-		'config.json',
-		SuperJSON.stringify({
-			version: 4,
-			plugins: [{ owner, config: { value: 200, removed: true, untouched: 'saved' } }],
-		}),
-	)
-	const host = await createHost({
-		plugins: [LayeredOwner],
-		runtime: {
-			configRecords: {
-				records: [{ owner, config: { value: 100, declaredOnly: true } }],
-				storage: () => storage,
-			},
-		},
-	})
-	try {
-		await host.startNode(owner)
-		const before = await host.config.get(owner)
-		const saved = await storage.getText('config.json')
-		const notifications = layeredUpdates.length
-		expect(await host.config.reset(owner, [])).toEqual(before)
-		expect(await storage.getText('config.json')).toBe(saved)
-		expect(layeredUpdates.length).toBe(notifications)
-		await expect(host.config.reset(owner, ['value', 'removed'])).resolves.toMatchObject({
-			config: { value: 100, untouched: 'saved' },
-		})
-		expect(SuperJSON.parse((await storage.getText('config.json'))!)).toEqual({
-			version: 4,
-			plugins: [{ owner, config: { value: 100, untouched: 'saved' } }],
-		})
-		await host.config.reset(owner)
-		expect(SuperJSON.parse((await storage.getText('config.json'))!)).toEqual({
-			version: 4,
-			plugins: [{ owner, config: { value: 100, declaredOnly: true } }],
-		})
-	} finally {
-		await host.close()
-	}
-})
-
-const normalizedSchema: import('@standard-schema/spec').StandardSchemaV1<
-	Record<string, unknown>,
-	Record<string, unknown>
-> = {
-	'~standard': {
-		version: 1 as const,
-		vendor: 'raw-record-test',
-		validate(input: unknown) {
-			const raw = input as { raw?: unknown; editable?: unknown }
-			if (typeof raw.raw !== 'string')
-				return { issues: [{ message: 'raw input must remain a string' }] }
-			return {
-				value: {
-					normalized: Number(raw.raw),
-					editable: raw.editable ?? false,
-					schemaDefault: 'output only',
-				},
-			}
-		},
-	},
-}
-@Plugin()
-class NormalizedOwner extends BasePlugin {
-	readonly config = this.configs.use(normalizedSchema)
-	init() {
-		this.configs.onUpdate(this.config, () => {})
-	}
-}
-
-it('initializes and saves raw declaration inputs without persisting schema output or environment values', async () => {
-	const { SuperJSON } = await import('superjson')
-	const memory = createDocumentStorage()
-	let writes = 0
-	const storage = {
-		...memory,
-		async put(key: string, value: string) {
-			writes++
-			await memory.put(key, value)
-		},
-	}
-	const owner = NormalizedOwner.nodeAddress()
-	const records = [{ owner, config: { raw: '200' } }]
-	const host = await createHost({
-		plugins: [NormalizedOwner],
-		runtime: {
-			configRecords: {
-				records,
-				storage: () => storage,
-				overlays: [
-					{
-						owner,
-						config: { raw: '100' },
-						sources: [{ path: ['raw'], kind: 'env', name: 'APP_RAW' }],
-					},
-				],
-			},
-		},
-	})
-	try {
-		expect(writes).toBe(1)
-		expect(SuperJSON.parse((await storage.getText('config.json'))!)).toEqual({
-			version: 4,
-			plugins: records,
-		})
-		await host.startNode(owner)
-		await expect(host.config.get(owner)).resolves.toMatchObject({
-			config: { normalized: 100, schemaDefault: 'output only' },
-		})
-		await new Promise((resolve) => setTimeout(resolve, 250))
-		expect(writes).toBe(1)
-		await host.config.patch(owner, { editable: true })
-		expect(SuperJSON.parse((await storage.getText('config.json'))!)).toEqual({
-			version: 4,
-			plugins: [{ owner, config: { raw: '200', editable: true } }],
-		})
-	} finally {
-		await host.close()
-	}
-})
-
 it('catches up external changes made during service preparation after subscribing', async () => {
-	const { SuperJSON } = await import('superjson')
 	const { defineHostService } = await import('../src/services')
 	const memory = createDocumentStorage()
-	const owner = LayeredOwner.nodeAddress()
+	const owner = ConfigOwner.nodeAddress()
 	let subscribed = false
 	const storage = {
 		...memory,
@@ -656,13 +488,9 @@ it('catches up external changes made during service preparation after subscribin
 		},
 	}
 	const host = await createHost({
-		plugins: [LayeredOwner],
-		runtime: {
-			configRecords: {
-				storage: () => storage,
-				records: [{ owner, config: { value: 'initial' } }],
-			},
-		},
+		plugins: [ConfigOwner],
+		config: { mode: 'saved-first', records: [{ owner, config: { value: 'initial' } }] },
+		runtime: { documents: { config: { storage: () => storage }, state: false } },
 		services: [
 			defineHostService({
 				name: 'external-change',
@@ -689,28 +517,4 @@ it('catches up external changes made during service preparation after subscribin
 		await host.close()
 	}
 	expect(subscribed).toBe(false)
-})
-
-it('retains declarations when readonly preparation finds no saved document', async () => {
-	const storage = createDocumentStorage()
-	const owner = LayeredOwner.nodeAddress()
-	const host = await createHost({
-		plugins: [LayeredOwner],
-		runtime: {
-			configRecords: {
-				mode: 'readonly',
-				storage: () => storage,
-				records: [{ owner, config: { value: 'declared' } }],
-			},
-		},
-	})
-	try {
-		await expect(host.config.get(owner)).resolves.toMatchObject({
-			readonly: true,
-			config: { value: 'declared' },
-		})
-		expect(await storage.stat('config.json')).toBeUndefined()
-	} finally {
-		await host.close()
-	}
 })

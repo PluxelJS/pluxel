@@ -5,8 +5,13 @@ import type {
 	PluginApplyReportSnapshot,
 	RuntimeUpdateSnapshot,
 	HostConfigState,
-	HostStateConfigurationSnapshot,
 	HostConfigSource,
+	HostConfigMutation,
+	HostInputMode,
+	HostOperationOptions,
+	HostPolicyInput,
+	HostPolicyField,
+	HostPolicyResult,
 } from '@pluxel/host'
 
 /** Current concrete implementation; fork references do not create a fork. */
@@ -22,13 +27,14 @@ export type DevPluginInstance<T extends DevTypedPluginTarget> = T extends Plugin
 export type DevScript = (dev: DevConsole) => unknown | Promise<unknown>
 
 export type DevConfigInspection = Readonly<{
-	mode: 'memory' | 'writable' | 'readonly'
+	mode: HostInputMode
 	readonly: boolean
-	override: boolean
 	externalReload: boolean
-	saved: Readonly<Record<string, unknown>>
+	managedInput: Readonly<Record<string, unknown>> | null
+	managedRevision: string
+	shadowedPaths: readonly (readonly string[])[]
 	declared: Readonly<Record<string, unknown>>
-	effective: Readonly<Record<string, unknown>>
+	effectiveInput: Readonly<Record<string, unknown>>
 	sources: readonly HostConfigSource[]
 }>
 
@@ -76,19 +82,30 @@ export interface DevConsole {
 		get(target: DevPluginTarget): Promise<HostPluginConfigResult<PluginApplyReportSnapshot>>
 		validate(
 			target: DevPluginTarget,
-			patch: Readonly<Record<string, unknown>>,
+			change: HostConfigMutation,
 		): Promise<HostPluginConfigResult<PluginApplyReportSnapshot>>
 		patch(
 			target: DevPluginTarget,
-			patch: Readonly<Record<string, unknown>>,
+			change: HostConfigMutation,
+			options?: HostOperationOptions,
 		): Promise<HostPluginConfigResult<PluginApplyReportSnapshot>>
-		/** Omitted keys resets all declared/saved fields; an empty list changes nothing. */
+		/** Clears saved paths to restore inheritance; an empty list changes nothing. */
 		reset(
 			target: DevPluginTarget,
-			keys?: readonly string[],
+			paths?: readonly (readonly string[])[],
+			options?: HostOperationOptions,
 		): Promise<HostPluginConfigResult<PluginApplyReportSnapshot>>
 	}
-	readonly state: {
-		inspect(): Promise<HostStateConfigurationSnapshot>
+	readonly policy: {
+		get(): Promise<HostPolicyResult<PluginApplyReportSnapshot>>
+		validate(values: HostPolicyInput): Promise<HostPolicyResult<PluginApplyReportSnapshot>>
+		patch(
+			values: HostPolicyInput,
+			options?: HostOperationOptions,
+		): Promise<HostPolicyResult<PluginApplyReportSnapshot>>
+		reset(
+			keys?: readonly HostPolicyField[],
+			options?: HostOperationOptions,
+		): Promise<HostPolicyResult<PluginApplyReportSnapshot>>
 	}
 }

@@ -23,7 +23,7 @@ export const configure = defineDevConsole(async (dev) => {
 	const plugins = await dev.plugins.list()
 	const calculator = plugins.find((plugin) => plugin.rootExportName === 'Calculator')
 	if (!calculator) throw new Error('Calculator is unavailable')
-	const result = await dev.config.patch(calculator.address, { precision })
+	const result = await dev.config.patch(calculator.address, { set: { precision } })
 	return { result, current: await dev.config.get(calculator.address) }
 })
 

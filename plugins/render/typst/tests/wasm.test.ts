@@ -27,19 +27,17 @@ it('runs WASM through Pluxel, recovers source errors, and restarts without nativ
 		return new Response(await readFile(path))
 	})
 	await using host = await createTestHost({
-		runtime: {
-			configRecords: {
-				records: [
-					{
-						owner: TypstPlugin.nodeAddress(),
-						config: {
-							compilerWasmUrl: 'https://example.test/compiler.wasm',
-							rendererWasmUrl: 'https://example.test/renderer.wasm',
-							fontUrls: [],
-						},
+		config: {
+			records: [
+				{
+					owner: TypstPlugin.nodeAddress(),
+					config: {
+						compilerWasmUrl: 'https://example.test/compiler.wasm',
+						rendererWasmUrl: 'https://example.test/renderer.wasm',
+						fontUrls: [],
 					},
-				],
-			},
+				},
+			],
 		},
 	})
 	const typst = await host.start(TypstPlugin)

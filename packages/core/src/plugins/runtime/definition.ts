@@ -547,8 +547,8 @@ async function validateConfigNode(
 		}
 		try {
 			const ownResult = await node.own.schema['~standard'].validate(ownInput)
-			if (!('value' in ownResult)) {
-				for (const issue of ownResult.issues) {
+			if (!('value' in ownResult) || ownResult.issues !== undefined) {
+				for (const issue of ownResult.issues ?? []) {
 					issues.push({ ...issue, path: [...node.path, ...(issue.path ?? [])] })
 				}
 			} else if (
@@ -576,7 +576,8 @@ async function validateConfigNode(
 			continue
 		}
 		const childResult = await validateConfigNode(child.node, record[child.key])
-		if (!('value' in childResult)) issues.push(...childResult.issues)
+		if (!('value' in childResult) || childResult.issues !== undefined)
+			issues.push(...(childResult.issues ?? []))
 		else output[child.key] = childResult.value
 	}
 	return issues.length > 0 ? { issues: Object.freeze(issues) } : { value: Object.freeze(output) }

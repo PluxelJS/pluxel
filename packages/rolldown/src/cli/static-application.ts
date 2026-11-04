@@ -589,7 +589,7 @@ ${launcher === 'node' ? "import { listenElysia } from '@pluxel/services/elysia/n
 const deployment = JSON.parse(await readFile(new URL('./pluxel-deployment.json', import.meta.url), 'utf8'))
 const resolved = await resolveHostApplication(application, {root:import.meta.dirname,mode:'production',env:process.env,bindings:{},deployment:{root:import.meta.dirname,target:'node',delivery:'standalone',variant:${JSON.stringify(variant)},application:deployment.application}})
 const host = await createHost({
- name:resolved.name,plugins:resolved.plugins,runtime:resolved.runtime,
+ name:resolved.name,plugins:resolved.plugins,runtime:resolved.runtime,config:resolved.config,policy:resolved.policy,
  vaultBindings:resolved.vaultBindings,services:resolved.services,
 })
 try {

@@ -260,18 +260,16 @@ export async function renderSnapshots(
 				),
 			}),
 		],
-		runtime: {
-			configRecords: {
-				records: [
-					{
-						owner: FontsPlugin.nodeAddress(),
-						config: { files: fonts, maxFontBytes: 64 * 1024 * 1024 },
-					},
-					{ owner: ReportRenderPlugin.nodeAddress(), config: { job, entry } },
-				],
-			},
-			state: { autoStart: [ReportRenderPlugin.nodeAddress()] },
+		config: {
+			records: [
+				{
+					owner: FontsPlugin.nodeAddress(),
+					config: { files: fonts, maxFontBytes: 64 * 1024 * 1024 },
+				},
+				{ owner: ReportRenderPlugin.nodeAddress(), config: { job, entry } },
+			],
 		},
+		policy: { autoStart: [ReportRenderPlugin.nodeAddress()] },
 	})
 	try {
 		const report = await host.start()

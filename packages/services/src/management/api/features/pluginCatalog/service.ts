@@ -60,11 +60,22 @@ async function readPinnedCatalog(ctx: Context, options?: HostOperationOptions) {
 				...(declaration?.provides === undefined ? {} : { provides: declaration.provides }),
 			})
 		})
-		const { mode, overriddenFields } = requireHostStateStore(ctx).configurationSnapshot()
+		const policy = requireHostStateStore(ctx).configurationSnapshot()
+		const overriddenFields = (
+			['autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'] as const
+		).filter(
+			(field) =>
+				policy.mode[field] === 'declared-only' ||
+				(policy.mode[field] === 'declared-first' && policy.sources[field] === 'declared'),
+		)
 		return Object.freeze({
 			projection,
 			layoutEntries: Object.freeze(layoutEntries),
-			statePolicy: Object.freeze({ mode, overriddenFields }),
+			statePolicy: Object.freeze({
+				readonly: policy.readonly,
+				managedRevision: policy.managedRevision,
+				overriddenFields: Object.freeze(overriddenFields),
+			}),
 		})
 	}, options)
 }

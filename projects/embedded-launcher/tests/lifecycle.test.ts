@@ -67,12 +67,12 @@ it('uses bounded numeric AST and updates precision through Host config', async (
 		expect(() => calculator.calculate(expression)).toThrow(
 			/Unsupported expression node|finite number/,
 		)
-	expect(await host.config.patch(Calculator, { precision: 3 })).toMatchObject({
+	expect(await host.config.patch(Calculator, { set: { precision: 3 } })).toMatchObject({
 		ok: true,
 		application: 'applied',
 	})
 	expect(calculator.calculate('1/3').text).toBe('0.333')
-	expect(await host.config.patch(Calculator, { precision: 10 })).toMatchObject({
+	expect(await host.config.patch(Calculator, { set: { precision: 10 } })).toMatchObject({
 		ok: true,
 		application: 'applied',
 	})

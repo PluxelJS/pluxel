@@ -1,3 +1,8 @@
+import {
+	createCorePluginExecutionBinding,
+	assertCorePluginExecutionBinding,
+	type CorePluginExecutionBinding,
+} from './plugin-execution'
 import { ConfigService } from '../services/config/ConfigService'
 import { EffectsService } from '../services/effects/EffectsService'
 import { createEventsBackend, createEventsServiceView } from '../services/events/EventsService'
@@ -72,7 +77,11 @@ export function createCoreContextInstallations(
 	inputs: CoreRootInputs,
 	lifecycleHooks: CorePluginLifecycleHooks | ((root: RootContext) => CorePluginLifecycleHooks) = {},
 	createConfigService: (root: RootContext) => ConfigService = (root) => new ConfigService(root),
+	executionBinding?: CorePluginExecutionBinding,
 ): readonly ContextCapabilityInstallation[] {
+	const execution = executionBinding ?? createCorePluginExecutionBinding()
+	assertCorePluginExecutionBinding(execution)
+	if (!executionBinding) execution.bind(inputs.plugins ?? {})
 	const fixedLifecycleHooks =
 		typeof lifecycleHooks === 'function'
 			? lifecycleHooks
@@ -129,12 +138,13 @@ export function createCoreContextInstallations(
 		}),
 		installRootCapability(PLUGIN_SERVICE_CAPABILITY, {
 			create: (ctx) => {
+				const executionConfig = execution.read()
 				const builtin = ctx.require(TINYBASE_HOST_CAPABILITY).lifecycle
 				const hooks =
 					typeof fixedLifecycleHooks === 'function'
 						? freezeCorePluginLifecycleHooks(fixedLifecycleHooks(ctx as RootContext))
 						: fixedLifecycleHooks
-				return new PluginService(ctx as RootContext, inputs.plugins, {
+				return new PluginService(ctx as RootContext, executionConfig, {
 					...hooks,
 					async prepareCommit(publication) {
 						await builtin.prepareCommit?.(publication)
@@ -164,6 +174,8 @@ export function createCoreContextHost<
 	const TCapabilities extends readonly ContextCapabilityInstallation[] = readonly [],
 >(
 	config: CoreHostConfig & {
+		/** @internal One-time Host preparation seam; not a mutable runtime setting. */
+		readonly executionBinding?: CorePluginExecutionBinding
 		/** Overrides only the fixed Core config service. The factory is lazy; resources belong to root effects. */
 		readonly createConfigService?: (root: RootContext) => ConfigService
 		/** Fixed host publication stages; evaluated once when the root Plugin service is constructed. */
@@ -187,6 +199,8 @@ export function createCoreContextHost<
 	) {
 		throw new TypeError('[pluxel/core] createConfigService must be a function')
 	}
+	if (config.executionBinding && config.plugins !== undefined)
+		throw new TypeError('[core] executionBinding and plugins cannot be supplied together')
 	const inputs = resolveCoreRootInputs(config)
 	return createContextHost({
 		name: inputs.name,
@@ -196,6 +210,7 @@ export function createCoreContextHost<
 				inputs,
 				config.createLifecycleHooks,
 				config.createConfigService,
+				config.executionBinding,
 			),
 			...(config.capabilities ?? []),
 		],

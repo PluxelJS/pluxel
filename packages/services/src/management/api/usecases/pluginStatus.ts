@@ -1,4 +1,9 @@
-import { parsePluginNodeAddress, type Context, type PluginNodeAddress } from '@pluxel/core'
+import {
+	parsePluginNodeAddress,
+	type CommitSummary,
+	type Context,
+	type PluginNodeAddress,
+} from '@pluxel/core'
 import {
 	type HostOperationOptions,
 	PluginGraphRejectedError,
@@ -6,6 +11,9 @@ import {
 	PluginStartUnavailableError,
 	HostStateMutationRejectedError,
 	HostStatePersistenceError,
+	HostPolicyRevisionConflictError,
+	HostPolicyMutationRejectedError,
+	type HostPluginGraphExclusiveSession,
 	requirePluginHostCoordinator,
 	hostStatePatch,
 	projectPluginApplyReport,
@@ -19,7 +27,7 @@ import type {
 	PluginLifecycleCommand,
 	PluginLifecycleCommandBatchItem,
 } from '../../web/protocol'
-import { pluginStatus } from './plugins'
+import { pluginStatus, pluginStatusFromView } from './plugins'
 
 const MAX_CONTROL_BATCH_ITEMS = 1_000
 const INHERITED_STOPPED_CONTROL: PluginControlSnapshot = Object.freeze({
@@ -51,27 +59,26 @@ async function setOneAutoStart(
 	ctx: Context,
 	address: PluginNodeAddress,
 	autoStart: boolean,
-	options?: HostOperationOptions,
+	session: HostPluginGraphExclusiveSession<CommitSummary>,
 ): Promise<PluginControlMutationResult> {
 	try {
 		// Enabling is admitted against the pinned catalog inside the coordinator so a stale or
 		// otherwise absent address receives the precise node_unavailable contract. Disabling an
 		// unknown address remains a query-level not-found instead of becoming a successful no-op.
-		if (!(await pluginStatus(ctx, address, options)) && !autoStart) return notFound(address)
-		const report = await requirePluginHostCoordinator(ctx).updateRuntimeState(
-			hostStatePatch({ type: 'set-auto-start', node: address, autoStart }),
-			'plugin-auto-start-set',
-			options,
-		)
+		const readStatus = () =>
+			session.readCommitted((view) => pluginStatusFromView(ctx, view, address))
+		if (!readStatus() && !autoStart) return notFound(address)
+		const report = await session.update({
+			statePatch: hostStatePatch({ type: 'set-auto-start', node: address, autoStart }),
+			reason: 'plugin-auto-start-set',
+			mode: 'live',
+		})
 		return {
 			address,
 			ok: true,
 			status: 'applied',
 			report: projectPluginApplyReport(ctx, report),
-			control: controlOf(
-				await pluginStatus(ctx, address),
-				autoStart ? undefined : INHERITED_STOPPED_CONTROL,
-			),
+			control: controlOf(readStatus(), autoStart ? undefined : INHERITED_STOPPED_CONTROL),
 		}
 	} catch (error) {
 		return mutationFailure(address, error)
@@ -115,8 +122,21 @@ export async function setAutoStart(
 ): Promise<PluginControlBatchResult> {
 	const parsed = parseAutoStartItems(input)
 	if (parsed.ok === false) return rejectedBatch(parsed.error)
-	return await runBatch(parsed.items, ({ address, autoStart }) =>
-		setOneAutoStart(ctx, address, autoStart, options),
+	return requirePluginHostCoordinator(ctx).runExclusive(
+		'plugin-auto-start-batch',
+		async (session) => {
+			try {
+				session.validateRuntimeStatePatch(hostStatePatch(), options?.expectedManagedRevision)
+			} catch (error) {
+				return runBatch(parsed.items, ({ address }) =>
+					Promise.resolve(mutationFailure(address, error)),
+				)
+			}
+			return runBatch(parsed.items, ({ address, autoStart }) =>
+				setOneAutoStart(ctx, address, autoStart, session),
+			)
+		},
+		options,
 	)
 }
 
@@ -245,6 +265,12 @@ function notFound(address: PluginNodeAddress): PluginControlMutationResult {
 
 function mutationFailure(address: PluginNodeAddress, error: unknown): PluginControlMutationResult {
 	const text = error instanceof Error ? error.message : String(error)
+	if (
+		error instanceof HostPolicyRevisionConflictError ||
+		error instanceof HostPolicyMutationRejectedError
+	) {
+		return { address, ok: false, code: error.code, state: 'unchanged', error: text }
+	}
 	if (error instanceof HostStatePersistenceError) {
 		return { address, ok: false, code: error.code, state: error.state, error: text }
 	}
@@ -258,7 +284,7 @@ function mutationFailure(address: PluginNodeAddress, error: unknown): PluginCont
 		return { address, ok: false, code: error.code, state: error.state, error: text }
 	}
 	if (error instanceof HostStateMutationRejectedError) {
-		if (error.issue.code === 'node_unavailable' || error.issue.code === 'state_overridden') {
+		if (error.issue.code === 'node_unavailable' || error.issue.code === 'policy_shadowed') {
 			return { address, ok: false, code: error.issue.code, state: 'unchanged', error: text }
 		}
 	}

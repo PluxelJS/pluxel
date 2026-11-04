@@ -98,3 +98,6 @@ export {
 	type WorkbenchContentTableRow,
 } from './internal/workbench-content-artifact'
 export { immutableConfigRecord } from './services/config/immutable'
+
+export { createCorePluginExecutionBinding } from './context/plugin-execution'
+export { DEFAULT_PLUGIN_EXECUTION } from './plugins/runtime/PluginService'

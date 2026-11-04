@@ -18,6 +18,7 @@ import {
 	requirePluginHostCoordinator,
 	readHostPluginStatusOverview,
 	requireHostStateStore,
+	createHostPolicy,
 	type HostConfigStore,
 } from '@pluxel/host/internal'
 import {
@@ -28,7 +29,15 @@ import {
 	type DevPluginInstance,
 } from './contracts'
 import { DevScope } from './scope'
-import type { HostPluginConfigResult, PluginApplyReportSnapshot } from '@pluxel/host'
+import type {
+	HostPluginConfigResult,
+	PluginApplyReportSnapshot,
+	HostConfigMutation,
+	HostOperationOptions,
+	HostPolicyInput,
+	HostPolicyField,
+	HostPolicyResult,
+} from '@pluxel/host'
 
 export interface DevConsoleScope {
 	readonly dev: DevConsole
@@ -39,10 +48,10 @@ export interface DevConsoleScope {
 
 /** Borrow a root for one run. Closing never disposes the root or rolls back application changes. */
 export function createDevConsoleScope(
-	options: Readonly<{ ctx: RootContext; id: string; input?: unknown; signal?: AbortSignal }>,
+	scopeOptions: Readonly<{ ctx: RootContext; id: string; input?: unknown; signal?: AbortSignal }>,
 ): DevConsoleScope {
-	const { ctx } = options
-	const scope = new DevScope(options.signal)
+	const { ctx } = scopeOptions
+	const scope = new DevScope(scopeOptions.signal)
 	const admission = { signal: scope.controller.signal }
 	const coordinator = requirePluginHostCoordinator(ctx)
 	const resolveTarget = (target: DevPluginTarget): PluginNodeAddress => {
@@ -89,13 +98,28 @@ export function createDevConsoleScope(
 	const projectConfig = (
 		result: HostPluginConfigResult,
 	): HostPluginConfigResult<PluginApplyReportSnapshot> => {
-		if (result.ok === false || result.saved === false) return result
+		if (result.ok === false) return result
+		if (!result.report) return { ...result, report: undefined }
 		return { ...result, report: projectPluginApplyReport(ctx, result.report) }
 	}
+	const policy = createHostPolicy(ctx, requireHostStateStore(ctx))
+	const projectPolicy = (result: HostPolicyResult): HostPolicyResult<PluginApplyReportSnapshot> => {
+		if (result.ok === false) return result
+		return {
+			...result,
+			report: result.report ? projectPluginApplyReport(ctx, result.report) : undefined,
+		}
+	}
+	const mutationOptions = (options?: HostOperationOptions) => ({
+		...options,
+		signal: options?.signal
+			? AbortSignal.any([scope.controller.signal, options.signal])
+			: scope.controller.signal,
+	})
 	const dev: DevConsole = Object.freeze({
-		id: options.id,
-		input: options.input,
-		signal: options.signal ?? scope.controller.signal,
+		id: scopeOptions.id,
+		input: scopeOptions.input,
+		signal: scopeOptions.signal ?? scope.controller.signal,
 		updates: Object.freeze({
 			latest: () => scope.run(() => readHostRecentUpdates(ctx)?.latestUpdate() ?? null),
 		}),
@@ -133,11 +157,14 @@ export function createDevConsoleScope(
 				return instance as DevPluginInstance<T>
 			},
 		}),
-		state: Object.freeze({
-			inspect: () =>
-				scope.run(() =>
-					coordinator.readCommitted(() => requireHostStateStore(ctx).configurationSnapshot()),
-				),
+		policy: Object.freeze({
+			get: () => scope.run(async () => projectPolicy(await policy.get())),
+			validate: (values: HostPolicyInput) =>
+				scope.run(async () => projectPolicy(await policy.validate(values))),
+			patch: (values: HostPolicyInput, options?: HostOperationOptions) =>
+				scope.run(async () => projectPolicy(await policy.patch(values, mutationOptions(options)))),
+			reset: (keys?: readonly HostPolicyField[], options?: HostOperationOptions) =>
+				scope.run(async () => projectPolicy(await policy.reset(keys, mutationOptions(options)))),
 		}),
 		config: Object.freeze({
 			inspect: (target: DevPluginTarget) =>
@@ -146,13 +173,14 @@ export function createDevConsoleScope(
 					return coordinator.readCommitted(() => {
 						const store = requireConfigService(ctx) as HostConfigStore
 						return {
-							mode: store.storageMode,
+							mode: store.getMode(owner),
 							readonly: store.isReadonly,
-							override: store.isDeclarationOverride,
 							externalReload: store.supportsExternalReload,
-							saved: store.getManagedConfig(owner),
+							managedInput: store.getManagedInput(owner),
+							managedRevision: store.managedRevision,
+							shadowedPaths: store.getShadowedPaths(owner),
 							declared: store.getDeclaredConfig(owner),
-							effective: store.getRawConfig(owner),
+							effectiveInput: store.getRawConfig(owner),
 							sources: store.getConfigSources(owner),
 						}
 					})
@@ -165,17 +193,25 @@ export function createDevConsoleScope(
 				scope.run(async () =>
 					projectConfig(await pluginConfigGet(ctx, resolveTarget(target), admission)),
 				),
-			validate: (target: DevPluginTarget, patch: Readonly<Record<string, unknown>>) =>
+			validate: (target: DevPluginTarget, patch: HostConfigMutation) =>
 				scope.run(async () =>
 					projectConfig(await pluginConfigValidate(ctx, resolveTarget(target), patch, admission)),
 				),
-			patch: (target: DevPluginTarget, patch: Readonly<Record<string, unknown>>) =>
+			patch: (target: DevPluginTarget, patch: HostConfigMutation, options?: HostOperationOptions) =>
 				scope.run(async () =>
-					projectConfig(await pluginConfigPatch(ctx, resolveTarget(target), patch, admission)),
+					projectConfig(
+						await pluginConfigPatch(ctx, resolveTarget(target), patch, mutationOptions(options)),
+					),
 				),
-			reset: (target: DevPluginTarget, keys?: readonly string[]) =>
+			reset: (
+				target: DevPluginTarget,
+				paths?: readonly (readonly string[])[],
+				options?: HostOperationOptions,
+			) =>
 				scope.run(async () =>
-					projectConfig(await pluginConfigReset(ctx, resolveTarget(target), keys, admission)),
+					projectConfig(
+						await pluginConfigReset(ctx, resolveTarget(target), paths, mutationOptions(options)),
+					),
 				),
 		}),
 	})

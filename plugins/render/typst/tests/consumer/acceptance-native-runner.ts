@@ -11,18 +11,16 @@ const packageRoot = dirname(fileURLToPath(import.meta.resolve('@pluxel/plugin-ty
 const host = await createHost({
 	plugins: [FontsPlugin, TypstPlugin, ArtifactConsumer],
 	services: [nodeModules({ root: join(packageRoot, 'dist/artifacts/node') })],
-	runtime: {
-		configRecords: {
-			records: [
-				{
-					owner: FontsPlugin.nodeAddress(),
-					config: { files: [job.font], maxFontBytes: 32 * 1024 * 1024 },
-				},
-				{ owner: TypstPlugin.nodeAddress(), config: { maxTemplateBytes: 128 * 1024 * 1024 } },
-			],
-		},
-		state: { autoStart: [ArtifactConsumer.nodeAddress()] },
+	config: {
+		records: [
+			{
+				owner: FontsPlugin.nodeAddress(),
+				config: { files: [job.font], maxFontBytes: 32 * 1024 * 1024 },
+			},
+			{ owner: TypstPlugin.nodeAddress(), config: { maxTemplateBytes: 128 * 1024 * 1024 } },
+		],
 	},
+	policy: { autoStart: [ArtifactConsumer.nodeAddress()] },
 })
 try {
 	await mkdir(job.evidence, { recursive: true })

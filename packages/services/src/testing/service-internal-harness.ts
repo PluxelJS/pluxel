@@ -1,5 +1,6 @@
 import {
 	pluginDefinitionIndexKey,
+	pluginNodeIndexKey,
 	type BasePlugin,
 	type CommitSummary,
 	type PluginDefinitionAddress,
@@ -34,6 +35,8 @@ import {
 	requireHostStateStore,
 	isPluginAutoStartEnabled,
 	type HostStateStore,
+	type HostConfigStore,
+	mergeConfigRecords,
 } from '@pluxel/host/internal'
 
 import { createServiceTestApplication, type ServiceInternalTestRootOptions } from './service-root'
@@ -137,7 +140,7 @@ export async function createServiceInternalTestHarness(
 	const application = await createServiceTestApplication(config, rootOptions)
 	const ctx = application.ctx
 	const pluginService = requirePluginService(ctx)
-	const configService = requireConfigService(ctx)
+	const configService = requireConfigService(ctx) as HostConfigStore
 	const stateStore = requireHostStateStore(ctx)
 	const coordinator = requirePluginHostCoordinator(ctx)
 
@@ -152,6 +155,10 @@ export async function createServiceInternalTestHarness(
 	}> = []
 	let retryStartNodes: PluginNodeAddress[] = []
 	let restartNodes: PluginNodeAddress[] = []
+	const pendingConfig = new Map<
+		string,
+		{ owner: PluginNodeAddress; input: Readonly<Record<string, unknown>> }
+	>()
 	let firstCommit = true
 	let disposal: Promise<void> | undefined
 
@@ -217,43 +224,75 @@ export async function createServiceInternalTestHarness(
 	}
 
 	const commit = async (allowFailure: boolean): Promise<CommitSummary> => {
-		const currentCatalog = coordinator.catalogSnapshot()
-		const catalog = catalogDirty
-			? createPluginCatalogSnapshot(currentCatalog.revision + 1, draftEntries.values())
-			: undefined
-		const coldBoot = firstCommit
-		const report = await coordinator.update({
-			...(catalog ? { catalog } : {}),
-			...(stateOperations.length > 0 ? { statePatch: hostStatePatch(...stateOperations) } : {}),
-			...(lifecycleCommands.length > 0 ? { lifecycleCommands } : {}),
-			...(retryStartNodes.length > 0 ? { retryStartNodes } : {}),
-			...(restartNodes.length > 0 ? { restartNodes } : {}),
-			reason: 'service-internal-test',
-			mode: coldBoot ? 'cold-boot' : 'live',
-		})
-		firstCommit = false
-		committedEntries = new Map(draftEntries)
-		draftEntries = new Map(committedEntries)
-		catalogDirty = false
-		stateOperations = []
-		lifecycleCommands = []
-		retryStartNodes = []
-		restartNodes = []
-		if (coldBoot && !allowFailure && report.reconciliation.length > 0) {
-			throw new PluginGraphRejectedError(report.reconciliation)
-		}
+		return coordinator.runExclusive('service-internal-test', async (session) => {
+			const currentCatalog = coordinator.catalogSnapshot()
+			const catalog = catalogDirty
+				? createPluginCatalogSnapshot(currentCatalog.revision + 1, draftEntries.values())
+				: undefined
+			const coldBoot = firstCommit
+			for (const { owner, input } of pendingConfig.values()) {
+				const authority = draftEntries.get(pluginDefinitionIndexKey(owner.definition))?.candidate
+					.declaration.config
+				if (!authority) throw new Error('[services/test] Config requires an admitted Plugin schema')
+				const validation = await configService.validateEffective(
+					owner,
+					authority,
+					configService.composeConfig(owner, input),
+				)
+				if (validation.ok === false)
+					throw Object.assign(new Error('[services/test] Config validation failed'), {
+						code: 'validation_failed',
+						errors: validation.errors,
+					})
+				const ticket = configService.stageManagedConfig({
+					owner,
+					authority,
+					expectedRevision: configService.getConfigRevision(owner),
+					value: validation.output,
+					managed: input,
+				})
+				try {
+					await configService.flush()
+					configService.confirmManagedConfig(ticket)
+				} catch (error) {
+					configService.discardManagedConfig(ticket)
+					throw error
+				}
+			}
+			pendingConfig.clear()
+			const report = await session.update({
+				...(catalog ? { catalog } : {}),
+				...(stateOperations.length > 0 ? { statePatch: hostStatePatch(...stateOperations) } : {}),
+				...(lifecycleCommands.length > 0 ? { lifecycleCommands } : {}),
+				...(retryStartNodes.length > 0 ? { retryStartNodes } : {}),
+				...(restartNodes.length > 0 ? { restartNodes } : {}),
+				reason: 'service-internal-test',
+				mode: coldBoot ? 'cold-boot' : 'live',
+			})
+			firstCommit = false
+			committedEntries = new Map(draftEntries)
+			draftEntries = new Map(committedEntries)
+			catalogDirty = false
+			stateOperations = []
+			lifecycleCommands = []
+			retryStartNodes = []
+			restartNodes = []
+			if (coldBoot && !allowFailure && report.reconciliation.length > 0) {
+				throw new PluginGraphRejectedError(report.reconciliation)
+			}
 
-		const summary =
-			report.core.status === 'committed'
-				? report.core.summary
-				: assertCoreCommit(
-						await pluginService
-							.beginUpdate({ reason: 'service-internal-test-lifecycle-retry' })
-							.commit(),
-						pluginService,
-					)
-		if (!allowFailure) assertCommitStarted(summary)
-		return summary
+			const summary =
+				report.core.status === 'committed'
+					? report.core.summary
+					: assertCoreCommit(
+							await pluginService
+								.beginUpdate({ reason: 'service-internal-test-lifecycle-retry' })
+								.commit(),
+							pluginService,
+						)
+			if (!allowFailure) assertCommitStarted(summary)
+			return summary
+		})
 	}
 
 	const get = (target: ServiceInternalTestTarget): BasePlugin | undefined =>
@@ -383,8 +422,27 @@ export async function createServiceInternalTestHarness(
 			const owner = targetAddress(target)
 			return {
 				owner,
-				set: (patch) => configService.patchConfig(owner, patch),
-				unset: (...keys) => configService.unsetConfigKeys(owner, keys),
+				set: (patch) => {
+					const previous =
+						pendingConfig.get(pluginNodeIndexKey(owner))?.input ??
+						configService.getManagedInput(owner) ??
+						{}
+					const input = mergeConfigRecords(
+						[{ owner, config: previous }],
+						[{ owner, config: patch }],
+					)[0]!.config
+					pendingConfig.set(pluginNodeIndexKey(owner), { owner, input })
+				},
+				unset: (...keys) => {
+					const previous =
+						pendingConfig.get(pluginNodeIndexKey(owner))?.input ??
+						configService.getManagedInput(owner) ??
+						{}
+					const input = Object.fromEntries(
+						Object.entries(previous).filter(([key]) => !keys.includes(key)),
+					)
+					pendingConfig.set(pluginNodeIndexKey(owner), { owner, input })
+				},
 				rev: () => configService.getConfigRevision(owner),
 				setAutoStart: (autoStart) => stageState({ type: 'set-auto-start', node: owner, autoStart }),
 				autoStart: () =>

@@ -10,7 +10,7 @@ import { resolve } from 'pathe'
 import { hostPlugins } from './showcase/catalog'
 import {
 	createHostConfigRecords,
-	createHostRuntimeState,
+	createHostPolicy,
 	packageManagerNode,
 	product,
 } from './showcase/policy'
@@ -37,20 +37,24 @@ export default defineHostApplication(async (startup) => {
 			product,
 			workbench: environment.workbench ?? true,
 		}),
+		config: {
+			mode: 'saved-first',
+			records: [
+				...createHostConfigRecords(resolve(dataRoot, 'showcase/s3')),
+				{ owner: packageManagerNode, config: { rootDir: managedPackagesRoot } },
+			],
+		},
+		policy: {
+			startTimeoutMs: 30_000,
+			mode: { autoStart: 'saved-first', providerDefaults: 'saved-first' },
+			...createHostPolicy(),
+		},
 		runtime: {
 			logtape: logtape(),
-			plugins: { startTimeoutMs: 30_000 },
 			zenfs: zenfs({
 				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 				durableMounts: ['/'],
 			}),
-			configRecords: {
-				records: [
-					...createHostConfigRecords(resolve(dataRoot, 'showcase/s3')),
-					{ owner: packageManagerNode, config: { rootDir: managedPackagesRoot } },
-				],
-			},
-			state: createHostRuntimeState(),
 		},
 	}
 })

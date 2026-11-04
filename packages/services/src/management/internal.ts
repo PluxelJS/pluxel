@@ -1,11 +1,11 @@
 /** @internal Shared portable presentation contract for the official Workbench integration. */
 export {
-	parseConfigPresentationPlanV1,
+	parseConfigPresentationPlanV2,
 	parseFormPresentationFields,
 	parseRuntimePortableData,
 } from './web/validation'
 export {
-	compileConfigPresentationPlanV1,
+	compileConfigPresentationPlanV2,
 	assertFormPresentationRoot,
 	containsUnsupportedFormField,
 	projectFormPresentationFields,

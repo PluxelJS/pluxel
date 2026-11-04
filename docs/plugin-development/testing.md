@@ -94,14 +94,14 @@ it('runs a plugin without optional services', async () => {
 })
 ```
 
-| 选项                                      | 语义                                                                                                                        |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `services`                                | 默认 `[]`；完整服务列表，不隐式合并、不自动安装 standardServices                                                            |
-| `workbench`                               | 默认 `false`；`true` 安装 Workbench 测试后端、Management 与打开 entry 的 driver                                             |
-| `management`                              | 省略时随 `workbench` 启用，否则为 `false`；可单独设为 `true` 测管理面；与 `workbench: true` 同时显式设为 `false` 时拒绝配置 |
-| `name`                                    | 测试 Host 的顶层名称                                                                                                        |
-| `runtime`                                 | 复用生产 Host 的 zenfs/logtape/tinybase/state/configRecords 运行配置                                                        |
-| `runtime.state` / `runtime.configRecords` | 复用 Host 存储选项和声明覆盖规则；省略 `runtime.zenfs` 时每个测试宿主独立使用内存                                           |
+| 选项                | 语义                                                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `services`          | 默认 `[]`；完整服务列表，不隐式合并、不自动安装 standardServices                                                            |
+| `workbench`         | 默认 `false`；`true` 安装 Workbench 测试后端、Management 与打开 entry 的 driver                                             |
+| `management`        | 省略时随 `workbench` 启用，否则为 `false`；可单独设为 `true` 测管理面；与 `workbench: true` 同时显式设为 `false` 时拒绝配置 |
+| `name`              | 测试 Host 的顶层名称                                                                                                        |
+| `runtime`           | 复用生产 Host 的 zenfs/logtape/tinybase/documents 运行配置                                                                  |
+| `policy` / `config` | 复用 Host 的独立策略 mode 与按节点配置；省略 `runtime.zenfs` 时每个测试宿主独立使用内存                                     |
 
 Host 自己的图策略、配置记录与 Plugin 业务文件是不同职责，但共用 Core 选择的文件后端。每个测试 Host 固定提供 `ctx.fs()` 与 `ctx.tinybase`，默认使用 InMemory；跨 Host 恢复测试在 `runtime.zenfs` 中选择持久[文件后端](./fs.md)。
 
@@ -157,15 +157,15 @@ expect(snapshot.openOrders).toBe(0)
 
 ## 一套生命周期词汇
 
-| 作者操作                                          | 唯一语义                                                                                                   |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `await host.start(Target, options?)`              | 确保目标实现可用，建立本次运行意图，提交并等待稳定；返回当前实例                                           |
-| `await host.start([A, B])`                        | 一次提交启动多个目标，返回有类型的实例 tuple                                                               |
-| `await host.stop(Target)`                         | 撤销目标的运行意图，按生产依赖规则收敛运行图；保留 catalog 和配置，不承诺停止仍被其他消费者需要的 provider |
-| `await host.restart(Target)`                      | 执行生产 restart 并返回新实例；依赖传播遵循生产规则                                                        |
-| `host.require(Target)` / `host.isRunning(Target)` | 读取当前运行事实，不启动、不注册                                                                           |
-| `await host.replaceDefinition(Current, Next)`     | 显式替换同一 definition 的实现，沿生产 replacement 路径收敛                                                |
-| `await host.config.patch(Target, patch)`          | 应用运行期配置变更，返回权威结果；不伪装成首次配置，也不隐式 restart                                       |
+| 作者操作                                                     | 唯一语义                                                                                                   |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `await host.start(Target, options?)`                         | 确保目标实现可用，建立本次运行意图，提交并等待稳定；返回当前实例                                           |
+| `await host.start([A, B])`                                   | 一次提交启动多个目标，返回有类型的实例 tuple                                                               |
+| `await host.stop(Target)`                                    | 撤销目标的运行意图，按生产依赖规则收敛运行图；保留 catalog 和配置，不承诺停止仍被其他消费者需要的 provider |
+| `await host.restart(Target)`                                 | 执行生产 restart 并返回新实例；依赖传播遵循生产规则                                                        |
+| `host.require(Target)` / `host.isRunning(Target)`            | 读取当前运行事实，不启动、不注册                                                                           |
+| `await host.replaceDefinition(Current, Next)`                | 显式替换同一 definition 的实现，沿生产 replacement 路径收敛                                                |
+| `await host.config.patch(Target, { set, remove }, options?)` | 应用运行期配置变更，返回权威结果；不伪装成首次配置，也不隐式 restart                                       |
 
 `change.catalog.add/remove` 只改变实现可用性；启动和停止使用 `start/stop`，两种操作不能互换。
 
@@ -212,8 +212,10 @@ node 已经拥有 committed config 或进入过 lifecycle 后，使用 productio
 
 ```ts no-twoslash
 const result = await host.config.patch(WorkerPlugin, {
-	endpoint: 'https://api.example.test',
-	concurrency: 8,
+	set: {
+		endpoint: 'https://api.example.test',
+		concurrency: 8,
+	},
 })
 
 expect(result).toMatchObject({ ok: true, application: 'applied' })

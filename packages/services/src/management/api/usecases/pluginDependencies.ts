@@ -9,6 +9,8 @@ import {
 	PluginGraphRejectedError,
 	HostStateMutationRejectedError,
 	HostStatePersistenceError,
+	HostPolicyRevisionConflictError,
+	HostPolicyMutationRejectedError,
 	pluginCatalogEntry,
 	requirePluginHostCoordinator,
 	hostStatePatch,
@@ -205,9 +207,15 @@ export async function setPluginProviderDefault(
 }
 
 function dependencyMutationFailure(error: unknown): PluginDependencyMutationResult {
+	if (
+		error instanceof HostPolicyRevisionConflictError ||
+		error instanceof HostPolicyMutationRejectedError
+	) {
+		return { ok: false, code: error.code, state: 'unchanged', error: error.message }
+	}
 	if (error instanceof HostStateMutationRejectedError) {
 		switch (error.code) {
-			case 'state_overridden':
+			case 'policy_shadowed':
 			case 'consumer_unavailable':
 			case 'provider_unavailable':
 			case 'not_forkable':

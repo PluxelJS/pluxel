@@ -20,10 +20,8 @@ import { describePluginControl, describePluginLifecycleOutcome } from './pluginC
 
 export function ActionBar({ active = true }: { active?: boolean }) {
 	const management = useRuntimeManagementClient()
-	const canWriteAutoStart = canWritePluginState(
-		usePluginOverview().overview?.statePolicy,
-		'autoStart',
-	)
+	const statePolicy = usePluginOverview().overview?.statePolicy
+	const canWriteAutoStart = canWritePluginState(statePolicy, 'autoStart')
 	const queryClient = useQueryClient()
 	const { owner, pluginLabel, dependencyGraph, status, refetch } = usePluginScope()
 	const autoStartPendingRef = useRef(false)
@@ -33,11 +31,17 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 	const presentation = describePluginControl(status, lifecyclePending)
 
 	const performAutoStart = async (autoStart: boolean) => {
-		if (autoStartPendingRef.current || !canWriteAutoStart) return
+		if (autoStartPendingRef.current || !canWriteAutoStart || !statePolicy) return
 		autoStartPendingRef.current = true
 		setAutoStartPending(true)
 		try {
-			const result = await setPluginAutoStart(management, queryClient, owner, autoStart)
+			const result = await setPluginAutoStart(
+				management,
+				queryClient,
+				owner,
+				autoStart,
+				statePolicy.managedRevision,
+			)
 			if (result.ok === false) {
 				notifyAndRecord({
 					title: '自动启动策略更新失败',

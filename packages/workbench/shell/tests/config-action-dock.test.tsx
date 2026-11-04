@@ -9,6 +9,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
+import { configSnapshot, savedConfig as savedSnapshot } from './helpers/config'
 
 vi.mock('../src/app/plugins/pluginReadModels', () => ({
 	refreshPluginReadModels: vi.fn(async () => undefined),
@@ -43,11 +44,9 @@ const nestedFields = f.extractFormFields(nestedSchema)
 const DEFAULT_SAVED_CONFIG = Object.freeze({ rootEnabled: false })
 
 function createFakeManagementClient(
-	patch = vi.fn(async (_owner: PluginNodeAddress, input: Record<string, unknown>) => ({
-		ok: true as const,
-		config: input,
-		application: 'applied' as const,
-	})),
+	patch = vi.fn(async (_owner: PluginNodeAddress, input: Record<string, unknown>) =>
+		savedSnapshot(input.set as Record<string, unknown>),
+	),
 ) {
 	return {
 		config: {
@@ -70,7 +69,6 @@ function ConfigHarness({
 		path: readonly string[]
 		fieldName: string
 		fields: typeof rootFields
-		defaults: Record<string, unknown>
 	}>
 }) {
 	const queryClient = createManagementQueryClient()
@@ -82,9 +80,7 @@ function ConfigHarness({
 						owner={OWNER}
 						displayName="Config owner"
 						fields={rootFields}
-						savedConfig={savedConfig}
-						readonly={readonly}
-						defaults={{ rootEnabled: false }}
+						snapshot={configSnapshot(savedConfig, { readonly })}
 						sections={sections}
 					/>
 				</MantineProvider>
@@ -172,14 +168,18 @@ describe('config action dock', () => {
 			expect(buttonWithText(container, '保存').disabled).toBe(true)
 			expect(buttonWithText(container, '撤销').disabled).toBe(true)
 			expect(notify).toHaveBeenCalledExactlyOnceWith({
-				title: '提交成功',
-				message: '配置已保存并应用',
+				title: '配置已保存',
+				message: '目标配置已被当前插件采用。',
 				color: 'green',
 			})
 			await act(async () =>
 				input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
 			)
-			expect(client.config.patch).toHaveBeenCalledExactlyOnceWith(OWNER, { rootEnabled: true })
+			expect(client.config.patch).toHaveBeenCalledExactlyOnceWith(
+				OWNER,
+				{ set: { rootEnabled: true }, remove: [['rootEnabled']] },
+				{ expectedManagedRevision: 'config:initial' },
+			)
 		} finally {
 			await act(async () => root.unmount())
 		}
@@ -191,22 +191,19 @@ describe('config action dock', () => {
 			rootEnabled: false,
 			cache: { enabled: false, child: { secret: 'preserved' } },
 		}
-		client.config.patch.mockResolvedValue({
-			ok: true,
-			config: { ...savedConfig, cache: { ...savedConfig.cache, enabled: true } },
-			application: 'applied',
-		})
+		client.config.patch.mockResolvedValue(
+			savedSnapshot({ ...savedConfig, cache: { ...savedConfig.cache, enabled: true } }),
+		)
 		const { container, root } = await mount(
 			<ConfigHarness
 				client={client}
 				savedConfig={savedConfig}
 				sections={[
-					{ path: [], fieldName: 'config', fields: rootFields, defaults: { rootEnabled: false } },
+					{ path: [], fieldName: 'config', fields: rootFields },
 					{
 						path: ['cache'],
 						fieldName: 'cache',
 						fields: nestedFields,
-						defaults: { enabled: false },
 					},
 				]}
 			/>,
@@ -221,9 +218,11 @@ describe('config action dock', () => {
 			await act(async () =>
 				nested.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
 			)
-			expect(client.config.patch).toHaveBeenCalledExactlyOnceWith(OWNER, {
-				cache: { enabled: true },
-			})
+			expect(client.config.patch).toHaveBeenCalledExactlyOnceWith(
+				OWNER,
+				{ set: { cache: { enabled: true } }, remove: [['cache', 'enabled']] },
+				{ expectedManagedRevision: 'config:initial' },
+			)
 			expect(client.config.patchField).not.toHaveBeenCalled()
 			expect(sibling.checked).toBe(true)
 			expect(nested.checked).toBe(true)
@@ -242,7 +241,7 @@ describe('config action dock', () => {
 		const patch = vi
 			.fn()
 			.mockRejectedValueOnce(new Error('Transport unavailable'))
-			.mockResolvedValueOnce({ ok: true, config: { rootEnabled: true }, application: 'applied' })
+			.mockResolvedValueOnce(savedSnapshot({ rootEnabled: true }))
 		const { container, root } = await mount(
 			<ConfigHarness client={createFakeManagementClient(patch)} />,
 		)
@@ -259,7 +258,12 @@ describe('config action dock', () => {
 				input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
 			)
 			expect(patch).toHaveBeenCalledTimes(2)
-			expect(patch).toHaveBeenNthCalledWith(2, OWNER, { rootEnabled: true })
+			expect(patch).toHaveBeenNthCalledWith(
+				2,
+				OWNER,
+				{ set: { rootEnabled: true }, remove: [['rootEnabled']] },
+				{ expectedManagedRevision: 'config:initial' },
+			)
 			expect(buttonWithText(container, '保存').disabled).toBe(true)
 		} finally {
 			await act(async () => root.unmount())
@@ -275,21 +279,18 @@ describe('config action dock', () => {
 				}),
 		)
 		const client = createFakeManagementClient(patch)
-		client.config.patch.mockResolvedValue({
-			ok: true,
-			config: { rootEnabled: true, cache: { enabled: true } },
-			application: 'applied',
-		})
+		client.config.patch.mockResolvedValue(
+			savedSnapshot({ rootEnabled: true, cache: { enabled: true } }),
+		)
 		const { container, root } = await mount(
 			<ConfigHarness
 				client={client}
 				sections={[
-					{ path: [], fieldName: 'config', fields: rootFields, defaults: { rootEnabled: false } },
+					{ path: [], fieldName: 'config', fields: rootFields },
 					{
 						path: ['cache'],
 						fieldName: 'cache',
 						fields: nestedFields,
-						defaults: { enabled: false },
 					},
 				]}
 			/>,
@@ -312,16 +313,17 @@ describe('config action dock', () => {
 			})
 			expect(client.config.patchField).not.toHaveBeenCalled()
 			expect(patch).toHaveBeenCalledOnce()
-			await act(async () =>
-				resolve({ ok: true, config: { rootEnabled: true }, application: 'applied' }),
-			)
+			await act(async () => resolve(savedSnapshot({ rootEnabled: true })))
 			expect(nested.checked).toBe(true)
 			await act(async () =>
 				nested.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
 			)
-			expect(client.config.patch).toHaveBeenNthCalledWith(2, OWNER, {
-				cache: { enabled: true },
-			})
+			expect(client.config.patch).toHaveBeenNthCalledWith(
+				2,
+				OWNER,
+				{ set: { cache: { enabled: true } }, remove: [['cache', 'enabled']] },
+				{ expectedManagedRevision: 'config:saved' },
+			)
 		} finally {
 			await act(async () => root.unmount())
 		}
@@ -329,21 +331,18 @@ describe('config action dock', () => {
 
 	it('keeps outer controls and sibling panes idle while typing and saves the latest draft', async () => {
 		const fields = f.extractFormFields(v.object({ title: v.string() }))
-		const patch = vi.fn(async (_owner: PluginNodeAddress, input: Record<string, unknown>) => ({
-			ok: true as const,
-			config: input,
-			application: 'applied' as const,
-		}))
+		const patch = vi.fn(async (_owner: PluginNodeAddress, input: Record<string, unknown>) =>
+			savedSnapshot(input.set as Record<string, unknown>),
+		)
 		const { container, root } = await mount(
 			<ConfigHarness
 				client={createFakeManagementClient(patch)}
 				sections={[
-					{ path: [], fieldName: 'config', fields, defaults: { title: '' } },
+					{ path: [], fieldName: 'config', fields },
 					{
 						path: ['cache'],
 						fieldName: 'cache',
 						fields: nestedFields,
-						defaults: { enabled: false },
 					},
 				]}
 			/>,
@@ -367,7 +366,11 @@ describe('config action dock', () => {
 			expect(vi.mocked(ConfigActionDock).mock.calls.length).toBe(dockCalls)
 			expect(vi.mocked(ConfigTabContent).mock.calls.length).toBe(paneCalls)
 			await act(async () => buttonWithText(container, '全部保存').click())
-			expect(patch).toHaveBeenCalledExactlyOnceWith(OWNER, { title: 'freshest draft' })
+			expect(patch).toHaveBeenCalledExactlyOnceWith(
+				OWNER,
+				{ set: { title: 'freshest draft' }, remove: [['title']] },
+				{ expectedManagedRevision: 'config:initial' },
+			)
 		} finally {
 			await act(async () => root.unmount())
 		}
@@ -395,7 +398,7 @@ describe('config action dock', () => {
 				await act(async () =>
 					resolve(
 						outcome === 'success'
-							? { ok: true, config: { rootEnabled: true }, application: 'applied' }
+							? savedSnapshot({ rootEnabled: true })
 							: {
 									ok: false,
 									code: 'validation_failed',
@@ -427,12 +430,11 @@ describe('config action dock', () => {
 				<ConfigHarness
 					client={createFakeManagementClient(patch)}
 					sections={[
-						{ path: [], fieldName: 'config', fields: rootFields, defaults: { rootEnabled: false } },
+						{ path: [], fieldName: 'config', fields: rootFields },
 						{
 							path: ['cache'],
 							fieldName: 'cache',
 							fields: nestedFields,
-							defaults: { enabled: false },
 						},
 					]}
 				/>,
@@ -450,11 +452,7 @@ describe('config action dock', () => {
 				await act(async () =>
 					resolve(
 						outcome === 'success'
-							? {
-									ok: true,
-									config: { rootEnabled: true, cache: { enabled: true } },
-									application: 'applied',
-								}
+							? savedSnapshot({ rootEnabled: true, cache: { enabled: true } })
 							: {
 									ok: false,
 									code: 'validation_failed',
@@ -489,9 +487,7 @@ describe('config action dock', () => {
 		const { container, root } = await mount(
 			<ConfigHarness
 				client={createFakeManagementClient(patch)}
-				sections={[
-					{ path: [], fieldName: 'config', fields, defaults: { rootEnabled: false, other: false } },
-				]}
+				sections={[{ path: [], fieldName: 'config', fields }]}
 			/>,
 		)
 		try {
@@ -517,7 +513,7 @@ describe('config action dock', () => {
 						resolve = done
 					}),
 			)
-			.mockResolvedValue({ ok: true, config: { rootEnabled: false }, application: 'applied' })
+			.mockResolvedValue(savedSnapshot({ rootEnabled: false }))
 		const client = createFakeManagementClient(patch)
 		const { container, root } = await mount(<ConfigHarness client={client} />)
 		try {
@@ -526,7 +522,7 @@ describe('config action dock', () => {
 			await act(async () => buttonWithText(container, '保存').click())
 			await act(async () => input.click())
 			await act(async () => {
-				resolve({ ok: true, config: { rootEnabled: true }, application: 'applied' })
+				resolve(savedSnapshot({ rootEnabled: true }))
 				root.render(<ConfigHarness client={client} savedConfig={{ rootEnabled: true }} />)
 			})
 			expect(container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!.checked).toBe(
@@ -534,7 +530,11 @@ describe('config action dock', () => {
 			)
 			expect(buttonWithText(container, '保存').disabled).toBe(false)
 			await act(async () => buttonWithText(container, '保存').click())
-			expect(patch).toHaveBeenLastCalledWith(OWNER, { rootEnabled: false })
+			expect(patch).toHaveBeenLastCalledWith(
+				OWNER,
+				{ set: { rootEnabled: false }, remove: [['rootEnabled']] },
+				{ expectedManagedRevision: 'config:saved' },
+			)
 		} finally {
 			await act(async () => root.unmount())
 		}
@@ -560,11 +560,7 @@ describe('config action dock', () => {
 	})
 
 	it('saves with Ctrl/Command+S even while a config input has focus', async () => {
-		const patch = vi.fn(async () => ({
-			ok: true as const,
-			config: { rootEnabled: true },
-			application: 'applied' as const,
-		}))
+		const patch = vi.fn(async () => savedSnapshot({ rootEnabled: true }))
 		const { container, root } = await mount(
 			<ConfigHarness client={createFakeManagementClient(patch)} />,
 		)
@@ -589,13 +585,17 @@ describe('config action dock', () => {
 				await Promise.resolve()
 			})
 
-			expect(patch).toHaveBeenCalledWith(OWNER, expect.objectContaining({ rootEnabled: true }))
+			expect(patch).toHaveBeenCalledWith(
+				OWNER,
+				{ set: { rootEnabled: true }, remove: [['rootEnabled']] },
+				{ expectedManagedRevision: 'config:initial' },
+			)
 		} finally {
 			await act(async () => root.unmount())
 		}
 	})
 
-	it('restores safe defaults while preserving literal root keys and their safe siblings', async () => {
+	it('restores inheritance by removing editable saved paths with CAS and keeps uneditable literal keys', async () => {
 		const fields = f.extractFormFields(
 			v.object({
 				literal: v.object({ key: v.string() }),
@@ -612,43 +612,35 @@ describe('config action dock', () => {
 			'': 'empty saved',
 			rootEnabled: true,
 		}
-		let persisted = savedConfig
-		const patch = vi.fn(async (_owner: PluginNodeAddress, input: Record<string, unknown>) => {
-			persisted = { ...persisted, ...input }
-			return { ok: true as const, config: persisted, application: 'applied' as const }
-		})
+		const inherited = {
+			'literal.key': savedConfig['literal.key'],
+			'0': savedConfig['0'],
+			'': savedConfig[''],
+		}
+		const client = createFakeManagementClient()
+		client.config.reset = vi.fn(async () => savedSnapshot(inherited))
 		const { container, root } = await mount(
 			<ConfigHarness
-				client={createFakeManagementClient(patch)}
+				client={client}
 				savedConfig={savedConfig}
-				sections={[
-					{
-						path: [],
-						fieldName: 'config',
-						fields,
-						defaults: {
-							literal: { key: 'nested saved' },
-							'literal.key': 'dotted default',
-							'0': 'numeric default',
-							'': 'empty default',
-							rootEnabled: false,
-						},
-					},
-				]}
+				sections={[{ path: [], fieldName: 'config', fields }]}
 			/>,
 		)
 		try {
-			await act(async () => buttonWithText(container, '恢复默认').click())
-			expect(container.querySelector<HTMLInputElement>('input[name="literal.key"]')?.value).toBe(
-				'nested saved',
+			await act(async () => buttonWithText(container, '恢复继承').click())
+			expect(client.config.reset).toHaveBeenCalledExactlyOnceWith(
+				OWNER,
+				[['literal', 'key'], ['rootEnabled']],
+				{
+					expectedManagedRevision: 'config:initial',
+				},
 			)
+			expect(client.config.patch).not.toHaveBeenCalled()
+			expect(container.querySelector<HTMLInputElement>('input[name="literal.key"]')?.value).toBe('')
 			expect(container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')?.checked).toBe(
 				false,
 			)
-			expect(buttonWithText(container, '保存').disabled).toBe(false)
-			await act(async () => buttonWithText(container, '保存').click())
-			expect(patch).toHaveBeenCalledOnce()
-			expect(persisted).toEqual({ ...savedConfig, rootEnabled: false })
+			expect(buttonWithText(container, '保存').disabled).toBe(true)
 		} finally {
 			await act(async () => root.unmount())
 		}
@@ -668,7 +660,7 @@ describe('config action dock', () => {
 					},
 				},
 			})
-			.mockResolvedValueOnce({ ok: true, config: { rootEnabled: false }, application: 'applied' })
+			.mockResolvedValueOnce(savedSnapshot({ rootEnabled: false }))
 		const { container, root } = await mount(
 			<ConfigHarness client={createFakeManagementClient(patch)} />,
 		)
@@ -693,15 +685,16 @@ describe('config action dock', () => {
 	})
 
 	it('saves editable fields in one merge patch without resubmitting unrendered values', async () => {
-		const patch = vi.fn(async (_owner: PluginNodeAddress, input: Record<string, unknown>) => ({
-			ok: true as const,
-			config: {
-				...input,
-				cache: { ...(input.cache as object), preserved: 'keep-me' },
+		const patch = vi.fn(async (_owner: PluginNodeAddress, input: Record<string, unknown>) =>
+			savedSnapshot({
+				...(input.set as Record<string, unknown>),
+				cache: {
+					...((input.set as Record<string, unknown>).cache as object),
+					preserved: 'keep-me',
+				},
 				untouched: 'keep-too',
-			},
-			application: 'applied' as const,
-		}))
+			}),
+		)
 		patch.mockResolvedValueOnce({
 			ok: false,
 			code: 'validation_failed',
@@ -713,13 +706,11 @@ describe('config action dock', () => {
 				path: [],
 				fieldName: 'config',
 				fields: rootFields,
-				defaults: { rootEnabled: false },
 			},
 			{
 				path: ['cache'],
 				fieldName: 'cache',
 				fields: nestedFields,
-				defaults: { enabled: false },
 			},
 		]
 		const { container, root } = await mount(
@@ -759,10 +750,14 @@ describe('config action dock', () => {
 			await act(async () => buttonWithText(container, '全部保存').click())
 			expect(container.textContent).not.toContain('Cache rejected')
 			expect(patch).toHaveBeenCalledTimes(2)
-			expect(patch).toHaveBeenCalledWith(OWNER, {
-				rootEnabled: true,
-				cache: { enabled: true },
-			})
+			expect(patch).toHaveBeenCalledWith(
+				OWNER,
+				{
+					set: { rootEnabled: true, cache: { enabled: true } },
+					remove: [['rootEnabled'], ['cache', 'enabled']],
+				},
+				{ expectedManagedRevision: 'config:initial' },
+			)
 		} finally {
 			await act(async () => root.unmount())
 		}

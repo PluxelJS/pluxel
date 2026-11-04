@@ -63,7 +63,12 @@ describe('Fonts deployment without Workbench', () => {
 					bindings: {},
 					env: { FONT_FILES: JSON.stringify([fontPath, fontPath]), FONT_FAMILY: 'serif' },
 				})
-				await using host = await createTestHost({ services: [], runtime: resolved.runtime })
+				await using host = await createTestHost({
+					services: [],
+					config: resolved.config,
+					policy: resolved.policy,
+					runtime: resolved.runtime,
+				})
 				await host.start(FontsPlugin)
 				let fonts = host.require(FontsPlugin)
 				expect(fonts.ctx.workbench).toBeUndefined()
@@ -102,7 +107,7 @@ describe('Fonts deployment without Workbench', () => {
 				}),
 			)
 			expect(host.isRunning(FontsPlugin)).toBe(false)
-			const result = await host.config.patch(FontsPlugin, { files: [] })
+			const result = await host.config.patch(FontsPlugin, { set: { files: [] } })
 			expect(result.ok).toBe(true)
 			await host.start(FontsPlugin)
 			expect(host.require(FontsPlugin).portableFonts.fonts).toEqual([])

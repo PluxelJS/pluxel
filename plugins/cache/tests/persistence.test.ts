@@ -51,21 +51,18 @@ async function withPersistentCache(
 	}
 	await using host = await createTestHost({
 		services: standardServices(),
-		runtime: {
-			zenfs: storage,
-			configRecords: {
-				mode: 'memory',
-				records: [
-					{
-						owner: MemoryCacheBackendPlugin.nodeAddress(),
-						config: {
-							...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }),
-							persistence,
-						},
+		config: {
+			records: [
+				{
+					owner: MemoryCacheBackendPlugin.nodeAddress(),
+					config: {
+						...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }),
+						persistence,
 					},
-				],
-			},
+				},
+			],
 		},
+		runtime: { zenfs: storage, documents: { config: false } },
 	})
 	await host.commit((change) => {
 		change.start(MemoryCacheBackendPlugin)
@@ -220,11 +217,7 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 		}
 		await using host = await createTestHost({
 			services: standardServices(),
-			runtime: {
-				zenfs: instrumented,
-				configRecords: { mode: 'memory' },
-				state: { mode: 'memory' },
-			},
+			runtime: { zenfs: instrumented, documents: { config: false, state: false } },
 		})
 		const failure = await host.commitExpectFail((change) => {
 			change.start(MemoryCacheBackendPlugin, {

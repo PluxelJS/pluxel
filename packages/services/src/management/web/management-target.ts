@@ -1,4 +1,4 @@
-import type { HostConfigState } from '@pluxel/host'
+import type { HostConfigState, HostPolicyInput, HostPolicyField } from '@pluxel/host'
 import { type RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
 import {
 	type PluginDefinitionAddress,
@@ -14,8 +14,11 @@ import {
 } from '@pluxel/core/logging/protocol'
 import {
 	type ConfigFieldMutation,
+	type ConfigPatch,
+	type ManagedInputMutationOptions,
 	type ConfigPresentationResult,
 	type ConfigResult,
+	type PolicyResult,
 	type EnsureForkResult,
 	type LoggingHandleApi,
 	type PluginDependencyGraphSnapshot,
@@ -72,41 +75,78 @@ export interface RuntimeManagementTarget extends RpcTarget {
 	pluginStatusDto: (owner: PluginNodeAddress) => Promise<PluginStatusQueryResult>
 	pluginConfigPresentationDto: (owner: PluginNodeAddress) => Promise<ConfigPresentationResult>
 	configStateDto: () => HostConfigState
+	hostPolicyDto: () => Promise<PolicyResult>
+	validateHostPolicyDto: (values: HostPolicyInput) => Promise<PolicyResult>
+	patchHostPolicyDto: (
+		values: HostPolicyInput,
+		options?: ManagedInputMutationOptions,
+	) => Promise<PolicyResult>
+	resetHostPolicyDto: (
+		keys?: readonly HostPolicyField[],
+		options?: ManagedInputMutationOptions,
+	) => Promise<PolicyResult>
 	pluginConfigDto: (owner: PluginNodeAddress) => Promise<ConfigResult>
 	patchPluginConfigDto: (
 		owner: PluginNodeAddress,
-		patch: Record<string, unknown>,
+		patch: ConfigPatch,
+		options?: ManagedInputMutationOptions,
+	) => Promise<ConfigResult>
+	validatePluginConfigDto: (
+		owner: PluginNodeAddress,
+		patch: ConfigPatch,
+		options?: ManagedInputMutationOptions,
+	) => Promise<ConfigResult>
+	resetPluginConfigDto: (
+		owner: PluginNodeAddress,
+		paths?: readonly (readonly string[])[],
+		options?: ManagedInputMutationOptions,
 	) => Promise<ConfigResult>
 	patchPluginConfigFieldDto: (
 		owner: PluginNodeAddress,
 		input: ConfigFieldMutation,
+		options?: ManagedInputMutationOptions,
 	) => Promise<ConfigResult>
 	pluginDependencyGraphDto: () => Promise<PluginDependencyGraphSnapshot>
 	inspectPluginConsumerRequirementsDto: (
 		consumer: PluginNodeAddress,
 	) => Promise<PluginConsumerRequirementsInspectionResult>
-	setPluginConsumerOverrideDto: (input: {
-		consumer: PluginNodeAddress
-		requirement: PluginDefinitionAddress
-		provider: PluginNodeAddress | null
-	}) => Promise<PluginDependencyMutationResult>
+	setPluginConsumerOverrideDto: (
+		input: {
+			consumer: PluginNodeAddress
+			requirement: PluginDefinitionAddress
+			provider: PluginNodeAddress | null
+		},
+		options?: ManagedInputMutationOptions,
+	) => Promise<PluginDependencyMutationResult>
 	inspectPluginProviderPolicyDto: (
 		policyOwner: PluginNodeAddress,
 	) => Promise<PluginProviderPolicyInspectionResult>
-	setPluginProviderPolicyDefaultDto: (input: {
-		policyOwner: PluginNodeAddress
-		provider: PluginNodeAddress | null
-	}) => Promise<PluginDependencyMutationResult>
-	ensurePluginForkDto: (input: {
-		fork: PluginForkNodeAddress
-		autoStart?: boolean
-		selectFor?: {
-			consumer: PluginNodeAddress
-			requirement: PluginDefinitionAddress
-		}
-	}) => Promise<EnsureForkResult>
-	removePluginForkDto: (fork: PluginForkNodeAddress) => Promise<RemoveForkResult>
-	setPluginAutoStartDto: (items: PluginAutoStartBatchItem[]) => Promise<PluginControlBatchResult>
+	setPluginProviderPolicyDefaultDto: (
+		input: {
+			policyOwner: PluginNodeAddress
+			provider: PluginNodeAddress | null
+		},
+		options?: ManagedInputMutationOptions,
+	) => Promise<PluginDependencyMutationResult>
+	ensurePluginForkDto: (
+		input: {
+			fork: PluginForkNodeAddress
+			autoStart?: boolean
+			selectFor?: {
+				consumer: PluginNodeAddress
+				requirement: PluginDefinitionAddress
+			}
+		},
+		options?: ManagedInputMutationOptions,
+	) => Promise<EnsureForkResult>
+	removePluginForkDto: (
+		fork: PluginForkNodeAddress,
+		options?: ManagedInputMutationOptions,
+	) => Promise<RemoveForkResult>
+	setPluginAutoStartDto: (
+		items: PluginAutoStartBatchItem[],
+		options?: ManagedInputMutationOptions,
+	) => Promise<PluginControlBatchResult>
 	applyPluginLifecycleCommandsDto: (
 		items: PluginLifecycleCommandBatchItem[],
 	) => Promise<PluginControlBatchResult>

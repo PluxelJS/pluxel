@@ -96,6 +96,8 @@ describe('TypstPlugin real host and worker', () => {
 			})
 			await using host = await createTestHost({
 				services: [nodeModules()],
+				config: resolved.config,
+				policy: resolved.policy,
 				runtime: resolved.runtime,
 			})
 			await host.commit((change) => {
@@ -120,8 +122,14 @@ describe('TypstPlugin real host and worker', () => {
 					},
 				}),
 			).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' })
-			const patched = await host.config.patch(TypstPlugin, { maxSessions: 3 })
-			expect(patched.ok).toBe(false)
+			const patched = await host.config.patch(TypstPlugin, { set: { maxSessions: 3 } })
+			expect(patched).toMatchObject({
+				ok: true,
+				managedInput: { maxSessions: 3 },
+				config: { maxSessions: 1 },
+				shadowedPaths: [['maxSessions']],
+			})
+			await expect(typst.open(source)).rejects.toMatchObject({ code: 'BUSY' })
 		},
 		30_000,
 	)

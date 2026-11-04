@@ -14,6 +14,8 @@ import {
 	HostStateRevisionConflictError,
 	type HostStateSnapshot,
 	type HostStateVersionedSnapshot,
+	type HostPolicyInput,
+	type HostPolicyField,
 } from './policy'
 import {
 	emptyPluginCatalogSnapshot,
@@ -21,8 +23,10 @@ import {
 	type PluginDefinitionRoleHistory,
 	type PluginCatalogSnapshot,
 } from './catalog'
-import { applyHostStatePatch, hostStateEqual, type HostStatePatch } from './state'
-import { validateHostStateMutation } from './mutation'
+import { type HostStatePatch } from './state'
+import { changedPolicyFields, hostPolicyInputEqual } from './state-store'
+import type { HostPersistenceResult } from './persistence'
+import { validateHostStateMutation, validateHostPolicyChange } from './mutation'
 import {
 	catalogTransitionRejections,
 	emptyAppliedPluginGraphSnapshot,
@@ -36,7 +40,10 @@ import {
 } from './reconcile'
 
 /** Cancellation is checked when queued work begins; admitted transactions complete normally. */
-export type HostOperationOptions = Readonly<{ signal?: AbortSignal }>
+export type HostOperationOptions = Readonly<{
+	signal?: AbortSignal
+	expectedManagedRevision?: string
+}>
 
 export interface CorePluginPreparedUpdate<TSummary = unknown> {
 	commit(options: { onGraphCommitted: () => void }): Promise<TSummary>
@@ -82,18 +89,23 @@ export type CorePluginDependencyAdjacency = Readonly<{
 export interface HostStateCoordinatorStore {
 	readonly ready: Promise<void>
 	versionedSnapshot(): HostStateVersionedSnapshot
-	savedSnapshot(): HostStateSnapshot
-	effectiveSnapshot(saved: HostStateSnapshot): HostStateSnapshot
+	managedSnapshot(): HostPolicyInput
+	effectiveSnapshot(saved: HostPolicyInput): HostStateSnapshot
+	prepareAction(patch: HostStatePatch | undefined): HostPolicyInput
+	assertManagedRevision(expected: string | undefined): void
+	persistence(changed: boolean): HostPersistenceResult
 	assertPatchMutable(patch: HostStatePatch | undefined): void
 	commitVersioned(
 		expectedRevision: number,
-		next: HostStateSnapshot,
+		next: HostPolicyInput,
 	): Promise<HostStateVersionedSnapshot>
 }
 
 export type PluginApplyReport<TSummary = CommitSummary> = Readonly<{
 	catalogRevision: number
 	runtimeStateRevision: number
+	persistence: HostPersistenceResult
+	writtenFields: readonly HostPolicyField[]
 	reconciliation: readonly PluginReconciliationIssue[]
 	core: Readonly<{ status: 'unchanged' }> | Readonly<{ status: 'committed'; summary: TSummary }>
 }>
@@ -152,6 +164,9 @@ export type HostPluginGraphUpdate = Readonly<{
 	reason?: string
 	catalog?: PluginCatalogSnapshot
 	statePatch?: HostStatePatch
+	/** Complete sparse managed candidate, prepared within the coordinator queue. */
+	policyInput?: HostPolicyInput
+	expectedManagedRevision?: string
 	/** Cold boot has no last-known-good catalog and therefore projects structural issues as blocked. */
 	mode?: 'cold-boot' | 'live'
 	sessionPatch?: readonly Readonly<{
@@ -168,7 +183,8 @@ export type HostPluginGraphUpdate = Readonly<{
 
 export interface HostPluginGraphExclusiveSession<TSummary = unknown> {
 	runtimeStateSnapshot(): HostStateSnapshot
-	validateRuntimeStatePatch(patch: HostStatePatch): void
+	readCommitted<T>(read: (view: HostPluginGraphCommittedView) => T): T
+	validateRuntimeStatePatch(patch: HostStatePatch, expectedManagedRevision?: string): void
 	report(): PluginApplyReport<TSummary>
 	update(update: HostPluginGraphUpdate): Promise<PluginApplyReport<TSummary>>
 }
@@ -248,6 +264,7 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		return this.enqueue(
 			Object.freeze({
 				...update,
+				expectedManagedRevision: options?.expectedManagedRevision ?? update.expectedManagedRevision,
 				reason: update.reason ?? 'runtime-graph-update',
 				...(update.sessionPatch ? { sessionPatch: Object.freeze([...update.sessionPatch]) } : {}),
 				...(update.lifecycleCommands
@@ -283,7 +300,15 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		reason = 'runtime-state-update',
 		options?: HostOperationOptions,
 	): Promise<PluginApplyReport<TSummary>> {
-		return this.enqueue({ reason, statePatch, mode: 'live' }, options)
+		return this.enqueue(
+			{
+				reason,
+				statePatch,
+				mode: 'live',
+				expectedManagedRevision: options?.expectedManagedRevision,
+			},
+			options,
+		)
 	}
 
 	reconcile(
@@ -348,11 +373,22 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		const execute = this.tail.then(async () => {
 			await this.runtimeState.ready
 			signal?.throwIfAborted()
-			const coreAdjacency = this.core.readCommittedDependencyAdjacency()
-			const runningNodes = Object.freeze(
-				coreAdjacency.nodes.filter((address) => this.core.isRunning(address)),
-			)
-			const view: HostPluginGraphCommittedView = Object.freeze({
+			return this.readCurrentView(read)
+		})
+		this.tail = execute.then(
+			(): void => undefined,
+			(): void => undefined,
+		)
+		return execute
+	}
+
+	private readCurrentView<T>(read: (view: HostPluginGraphCommittedView) => T): T {
+		const coreAdjacency = this.core.readCommittedDependencyAdjacency()
+		const runningNodes = Object.freeze(
+			coreAdjacency.nodes.filter((address) => this.core.isRunning(address)),
+		)
+		const value = read(
+			Object.freeze({
 				catalog: this.catalog,
 				runtimeState: this.runtimeState.versionedSnapshot(),
 				reconciliation: this.reconciliation,
@@ -361,21 +397,13 @@ export class PluginHostCoordinator<TSummary = unknown> {
 				applied: this.applied,
 				coreAdjacency,
 				runningNodes,
-			})
-			const value = read(view)
-			if (isPromiseLike(value)) {
-				void Promise.resolve(value).catch((): undefined => undefined)
-				throw new TypeError(
-					'[host:reconciliation] readCommitted callback must return synchronously',
-				)
-			}
-			return value
-		})
-		this.tail = execute.then(
-			(): void => undefined,
-			(): void => undefined,
+			}),
 		)
-		return execute
+		if (isPromiseLike(value)) {
+			void Promise.resolve(value).catch((): undefined => undefined)
+			throw new TypeError('[host:reconciliation] readCommitted callback must return synchronously')
+		}
+		return value
 	}
 
 	/** @internal Bounded multi-resource sequence on this host's graph mutation queue. */
@@ -393,13 +421,16 @@ export class PluginHostCoordinator<TSummary = unknown> {
 			signal?.throwIfAborted()
 			const session: HostPluginGraphExclusiveSession<TSummary> = Object.freeze({
 				runtimeStateSnapshot: () => this.runtimeState.versionedSnapshot().state,
-				validateRuntimeStatePatch: (patch: HostStatePatch) => {
-					this.runtimeState.assertPatchMutable(patch)
+				readCommitted: <TRead>(read: (view: HostPluginGraphCommittedView) => TRead) =>
+					this.readCurrentView(read),
+				validateRuntimeStatePatch: (patch: HostStatePatch, expectedManagedRevision?: string) => {
+					this.runtimeState.assertManagedRevision(expectedManagedRevision)
 					validateHostStateMutation(
 						this.catalog,
 						this.runtimeState.versionedSnapshot().state,
 						patch,
 					)
+					this.runtimeState.assertPatchMutable(patch)
 				},
 				report: () => this.currentReport(),
 				update: (update: HostPluginGraphUpdate) =>
@@ -460,6 +491,8 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		return Object.freeze({
 			catalogRevision: this.catalog.revision,
 			runtimeStateRevision: state.revision,
+			persistence: Object.freeze({ status: 'unchanged' as const }),
+			writtenFields: Object.freeze([]),
 			reconciliation: this.reconciliation,
 			core: Object.freeze({ status: 'unchanged' as const }),
 		})
@@ -472,6 +505,7 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		if (
 			!update.catalog &&
 			!update.statePatch &&
+			update.policyInput === undefined &&
 			!update.sessionPatch &&
 			!update.lifecycleCommands &&
 			!update.retryStartNodes &&
@@ -489,11 +523,16 @@ export class PluginHostCoordinator<TSummary = unknown> {
 				? extendPluginDefinitionRoleHistory(this.definitionRoles, proposedCatalog)
 				: this.definitionRoles
 			const pinnedState = this.runtimeState.versionedSnapshot()
-			this.runtimeState.assertPatchMutable(update.statePatch)
+			if (update.statePatch && update.policyInput !== undefined)
+				throw new TypeError('[host] Policy actions and managed replacement cannot be combined')
+			this.runtimeState.assertManagedRevision(update.expectedManagedRevision)
 			validateHostStateMutation(proposedCatalog, pinnedState.state, update.statePatch)
-			const pinnedSavedState = this.runtimeState.savedSnapshot()
-			const nextSavedState = applyHostStatePatch(pinnedSavedState, update.statePatch)
+			const pinnedSavedState = this.runtimeState.managedSnapshot()
+			const nextSavedState =
+				update.policyInput ?? this.runtimeState.prepareAction(update.statePatch)
 			const prospectiveState = this.runtimeState.effectiveSnapshot(nextSavedState)
+			if (update.policyInput !== undefined)
+				validateHostPolicyChange(proposedCatalog, pinnedState.state, prospectiveState)
 			assertLifecycleCommandAdmission(proposedCatalog, prospectiveState, update.lifecycleCommands)
 			const baseSession =
 				update.mode === 'cold-boot'
@@ -502,7 +541,8 @@ export class PluginHostCoordinator<TSummary = unknown> {
 			const rebasedSession =
 				update.mode === 'cold-boot'
 					? baseSession
-					: update.statePatch?.operations.some((operation) => operation.type === 'set-auto-start')
+					: update.policyInput !== undefined ||
+						  update.statePatch?.operations.some((operation) => operation.type === 'set-auto-start')
 						? rebaseSessionForPolicyPatch(
 								baseSession,
 								this.desiredControl,
@@ -516,7 +556,12 @@ export class PluginHostCoordinator<TSummary = unknown> {
 				prospectiveState,
 				update.lifecycleCommands,
 			)
-			const prospectiveSession = cleanupRemovedSessionIntents(commandedSession, update.statePatch)
+			const prospectiveSession = cleanupRemovedSessionIntents(
+				commandedSession,
+				update.statePatch,
+				pinnedState.state,
+				prospectiveState,
+			)
 			const plan = reconcilePluginGraph({
 				catalog: proposedCatalog,
 				runtimeState: prospectiveState,
@@ -567,7 +612,7 @@ export class PluginHostCoordinator<TSummary = unknown> {
 			}
 
 			let committedState = pinnedState
-			if (!hostStateEqual(pinnedSavedState, nextSavedState)) {
+			if (!hostPolicyInputEqual(pinnedSavedState, nextSavedState)) {
 				try {
 					committedState = await this.runtimeState.commitVersioned(
 						pinnedState.revision,
@@ -615,6 +660,10 @@ export class PluginHostCoordinator<TSummary = unknown> {
 			return Object.freeze({
 				catalogRevision: proposedCatalog.revision,
 				runtimeStateRevision: committedState.revision,
+				persistence: this.runtimeState.persistence(
+					!hostPolicyInputEqual(pinnedSavedState, nextSavedState),
+				),
+				writtenFields: changedPolicyFields(pinnedSavedState, nextSavedState),
 				reconciliation: plan.blocked,
 				core,
 			})
@@ -650,6 +699,8 @@ export class PluginHostCoordinator<TSummary = unknown> {
 				return Object.freeze({
 					catalogRevision: committedCatalog.revision,
 					runtimeStateRevision: pinnedState.revision,
+					persistence: Object.freeze({ status: 'unchanged' as const }),
+					writtenFields: Object.freeze([]),
 					reconciliation: this.reconciliation,
 					core: Object.freeze({ status: 'unchanged' as const }),
 				})
@@ -658,6 +709,8 @@ export class PluginHostCoordinator<TSummary = unknown> {
 			return Object.freeze({
 				catalogRevision: committedCatalog.revision,
 				runtimeStateRevision: pinnedState.revision,
+				persistence: Object.freeze({ status: 'unchanged' as const }),
+				writtenFields: Object.freeze([]),
 				reconciliation: this.reconciliation,
 				core: Object.freeze({ status: 'committed' as const, summary }),
 			})
@@ -830,8 +883,13 @@ function rebaseSessionForPolicyPatch(
 function cleanupRemovedSessionIntents(
 	current: ReadonlyMap<string, HostPluginSessionEntry>,
 	patch: HostStatePatch | undefined,
+	before: HostStateSnapshot,
+	after: HostStateSnapshot,
 ): ReadonlyMap<string, HostPluginSessionEntry> {
+	const retained = new Set(after.forks.map(pluginNodeIndexKey))
+	const removed = before.forks.filter((node) => !retained.has(pluginNodeIndexKey(node)))
 	if (
+		removed.length === 0 &&
 		!patch?.operations.some(
 			(operation) => operation.type === 'remove-node-policy' || operation.type === 'remove-fork',
 		)
@@ -839,7 +897,8 @@ function cleanupRemovedSessionIntents(
 		return current
 	}
 	const next = new Map(current)
-	for (const operation of patch.operations) {
+	for (const node of removed) next.delete(pluginNodeIndexKey(node))
+	for (const operation of patch?.operations ?? []) {
 		if (operation.type === 'remove-node-policy') {
 			next.delete(pluginNodeIndexKey(operation.node))
 		} else if (operation.type === 'remove-fork') {

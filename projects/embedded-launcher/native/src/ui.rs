@@ -118,6 +118,7 @@ pub struct Model {
     loading: bool,
     busy: bool,
     config_dirty: bool,
+    config_revision: Option<String>,
     status: Vec<Value>,
     packages: Value,
     package_busy: bool,
@@ -144,6 +145,7 @@ impl Default for Model {
             loading: false,
             busy: false,
             config_dirty: false,
+            config_revision: None,
             status: Vec::new(),
             packages: Value::Null,
             package_busy: false,
@@ -367,7 +369,7 @@ impl Model {
                             self.busy = true;
                             return Some(self.request(
                                 "host.config",
-                                json!({"plugin":"Calculator","patch":{"precision":precision}}),
+                                json!({"plugin":"Calculator","patch":{"set":{"precision":precision}},"expectedManagedRevision":self.config_revision}),
                                 ReplyKind::Config,
                             ));
                         }
@@ -511,6 +513,10 @@ impl Model {
                                     self.busy = false;
                                 }
                                 if value["ok"] == true {
+                                    if !self.config_dirty || request.kind == ReplyKind::Config {
+                                        self.config_revision =
+                                            value["managedRevision"].as_str().map(str::to_owned);
+                                    }
                                     if let Some(precision) = value["config"]["precision"].as_u64() {
                                         if !self.config_dirty || request.kind == ReplyKind::Config {
                                             self.precision = precision.to_string();
@@ -518,7 +524,7 @@ impl Model {
                                         }
                                     }
                                     self.notice = match value["application"].as_str() {
-                                    Some("applied") if value["saved"]==true=>"Configuration saved and applied.",
+                                    Some("applied") if value["persistence"]["status"]=="confirmed"=>"Managed configuration saved; the effective configuration is applied.",
                                     Some("applied")=>"Current configuration is applied.",
                                     Some("deferred")=>"Configuration saved; application is deferred until the plugin starts.",
                                     Some("saved-not-applied")=>"Configuration saved but not applied. See Diagnostics for the Host failure.",

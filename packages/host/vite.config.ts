@@ -14,7 +14,12 @@ export default defineConfig({
 				},
 			},
 			'check-types': 'tsc --noEmit --pretty false',
-			'check-tests': 'vp test run',
+			'check-tests': {
+				command: 'vp test run',
+				cache: {
+					env: ['PLAYWRIGHT_WS_ENDPOINT', 'PLAYWRIGHT_BROWSERS_PATH', 'XDG_CACHE_HOME'],
+				},
+			},
 		}),
 	},
 })

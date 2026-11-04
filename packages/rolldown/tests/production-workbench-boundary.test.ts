@@ -84,7 +84,7 @@ export default defineHostApplication(() => ({
   globalThis.__hostRpcTarget = Object.getPrototypeOf(session.target.constructor)
   session.dispose()
  },
- runtime: { state: { autoStart: [{ definition: { entry: { kind: 'package-root', packageName: 'installed-target' }, exportName: 'Dynamic' }, variant: 'default' }] } },
+ policy: { autoStart: [{ definition: { entry: { kind: 'package-root', packageName: 'installed-target' }, exportName: 'Dynamic' }, variant: 'default' }] },
 }))
 `,
 		)

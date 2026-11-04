@@ -97,9 +97,10 @@ export async function parseStaticRuntimeDeclaration(
 	const catalogPlugins = new Set(catalog!.map(sourceSymbolKey))
 	const targets: StaticConfigEnvironmentTarget[] = []
 	const seenTargets = new Set<string>()
+	const configPaths = new Map<string, readonly (readonly string[])[]>()
 	for (const [index, raw] of arrayOf(directBindings.elements).entries()) {
 		const binding = raw ? unwrapExpression(raw as AstNode) : undefined
-		const { bindingFields, pluginNode, pluginName } = readApplicationBinding(
+		const { bindingFields, pluginNode, pluginName, forkId } = readApplicationBinding(
 			binding,
 			'env',
 			index,
@@ -135,11 +136,21 @@ export async function parseStaticRuntimeDeclaration(
 			const schemaName = readIdentifier(schemaExpression) ?? `${pluginName}.${kind}`
 			const schemaSource = await sourceResolver.renderResolved(module, schemaExpression)
 			const schema = restoreStaticConfigSchema(schemaSource, { id, schemaName, error })
-			const targetKeys =
-				kind === 'config' ? [''] : [...new Set(leaves.map((leaf) => leaf.path[0]!))]
-			for (const targetKey of targetKeys) {
+			if (kind === 'config')
+				registerConfigBindingPaths(
+					configPaths,
+					JSON.stringify([sourceSymbolKey(pluginSymbol!), forkId ?? null]),
+					leaves.map((leaf) => leaf.path),
+					pluginName,
+					id,
+					error,
+				)
+			for (const targetKey of kind === 'vault'
+				? [...new Set(leaves.map((leaf) => leaf.path[0]!))]
+				: []) {
 				const identity = JSON.stringify([
 					sourceSymbolKey(pluginSymbol!),
+					forkId ?? null,
 					kind,
 					kind === 'vault' ? (namespace ?? '') : '',
 					targetKey,
@@ -161,9 +172,10 @@ export async function parseStaticRuntimeDeclaration(
 					Object.freeze({
 						environmentName: leaf.environmentName,
 						pluginName,
+						...(forkId === undefined ? {} : { forkId }),
 						schemaName,
 						kind,
-						...(namespace ? { namespace } : {}),
+						...(kind === 'vault' && namespace ? { namespace } : {}),
 						path: leaf.path,
 						projection: projection as RawInputProjection,
 					}),
@@ -183,8 +195,32 @@ export async function parseStaticRuntimeDeclaration(
 	})
 }
 
-/** Both consumers reject duplicate targets before publishing an unqualified binding. */
-export function registerBindingTarget(
+/** Config bindings in one input layer may compose disjoint raw input paths. */
+export function registerConfigBindingPaths(
+	seen: Map<string, readonly (readonly string[])[]>,
+	identity: string,
+	paths: readonly (readonly string[])[],
+	pluginName: string,
+	id: string,
+	error: DeclarationError,
+): void {
+	const previous = seen.get(identity) ?? []
+	for (const path of paths)
+		if (
+			previous.some((other) =>
+				path
+					.slice(0, Math.min(path.length, other.length))
+					.every((key, index) => key === other[index]),
+			)
+		)
+			error(`[static-application] ${id} duplicate environment target for Plugin ${pluginName}`, {
+				code: 'invalid_declaration',
+			})
+	seen.set(identity, [...previous, ...paths])
+}
+
+/** Vault bindings own complete records. */
+function registerBindingTarget(
 	seen: Set<string>,
 	identity: string,
 	pluginName: string,
@@ -205,7 +241,11 @@ export function readBindingNamespace(
 	id: string,
 	error: DeclarationError,
 ) {
-	const namespaceNode = bindingFields.get('namespace')?.value
+	const vault = bindingFields.get('vault')?.value
+	const namespaceNode =
+		vault?.type === 'ObjectExpression'
+			? directObjectProperties(vault, 'vault binding', id, error).get('namespace')?.value
+			: undefined
 	const namespace = namespaceNode ? readLiteralString(namespaceNode) : undefined
 	if (
 		namespaceNode &&
@@ -240,7 +280,7 @@ export function readBindingDescriptor(
 		)
 	const fields = directObjectProperties(node, `${kind} binding`, id, error)
 	for (const key of fields.keys())
-		if (!['schema', sourceKey].includes(key))
+		if (!['schema', sourceKey, ...(kind === 'vault' ? ['namespace'] : [])].includes(key))
 			error(`[static-application] ${id} unknown ${kind} binding field ${key}`, {
 				code: 'invalid_declaration',
 				node: fields.get(key),
@@ -283,19 +323,43 @@ export function readApplicationBinding(
 		error(`[static-application] ${id} ${helper} requires a Plugin and a direct object literal`)
 	const bindingFields = directObjectProperties(args[1], label, id, error)
 	for (const key of bindingFields.keys())
-		if (!['config', 'vault', 'namespace'].includes(key))
+		if (!['config', 'vault'].includes(key))
 			error(`[static-application] ${id} unknown ${kind}Bindings field ${key}`, {
 				code: 'invalid_declaration',
 				node: bindingFields.get(key),
 			})
-	const pluginNode = args[0]
+	let pluginNode = args[0] && unwrapExpression(args[0])
+	let forkId: string | undefined
+	if (pluginNode?.type === 'CallExpression') {
+		const callee = pluginNode.callee as AstNode
+		if (
+			callee.type !== 'MemberExpression' ||
+			callee.computed ||
+			readIdentifier(callee.property) !== 'nodeAddress'
+		)
+			error(
+				`[static-application] ${id} ${label} target must be a Plugin identifier or Plugin.nodeAddress(literalForkId)`,
+				{ code: 'unsupported_expression', node: pluginNode },
+			)
+		const targetArgs = directCallArguments(pluginNode, 'nodeAddress', id, error)
+		forkId = targetArgs.length > 0 ? readLiteralString(targetArgs[0]) : undefined
+		if (targetArgs.length > 1 || (targetArgs.length === 1 && (!forkId || forkId.includes('\0'))))
+			error(`[static-application] ${id} ${label} forkId must be a nonempty literal string`, {
+				code: 'unsupported_expression',
+				node: pluginNode,
+			})
+		pluginNode = callee.object as AstNode
+	}
 	const pluginName = readIdentifier(pluginNode)
 	if (!pluginNode || !pluginName)
-		error(`[static-application] ${id} ${label} plugin must be a direct identifier`, {
-			code: 'unsupported_expression',
-			node: pluginNode,
-		})
-	return { bindingFields, pluginNode, pluginName }
+		error(
+			`[static-application] ${id} ${label} plugin must be a direct identifier or Plugin.nodeAddress(literalForkId)`,
+			{
+				code: 'unsupported_expression',
+				node: pluginNode,
+			},
+		)
+	return { bindingFields, pluginNode, pluginName, forkId }
 }
 
 /** Shared source-only application shape; neither consumer executes the factory. */

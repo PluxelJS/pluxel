@@ -28,7 +28,7 @@ export type {
 export * from './web/protocol'
 export {
 	parseConfigFieldPathSegments,
-	parseConfigPresentationPlanV1,
+	parseConfigPresentationPlanV2,
 	parseRuntimeMeta,
 	parseRuntimePortableData,
 	RuntimeProtocolValidationError,

@@ -1,10 +1,12 @@
-import { type HostService, type HostRuntimeOptions } from '@pluxel/host'
+import { type HostService, type HostRuntimeOptions, type HostOptions } from '@pluxel/host'
 
 /** Isolated service composition; no listener or live development application is created. */
 export type ServiceTestHostOptions = Readonly<{
 	/** Core lifecycle settings. Defaults to a root named `test`. */
 	name?: string
 	runtime?: HostRuntimeOptions
+	policy?: HostOptions['policy']
+	config?: HostOptions['config']
 	/** Complete service list. Omitted installs HTTP, commands, Node artifacts and workers. */
 	services?: readonly HostService[]
 	/** Install Management without Workbench. Defaults to false. */

@@ -5,6 +5,7 @@ export type StaticConfigEnvironmentTarget = Readonly<{
 	namespace?: string
 	environmentName: string
 	pluginName: string
+	forkId?: string
 	schemaName: string
 	path: readonly string[]
 	projection: RawInputProjection
@@ -22,7 +23,7 @@ export function renderStaticConfigEnvironmentExample(
 	}
 	const lines = [
 		'# Generated Pluxel config and Vault environment bindings.',
-		'# Present environment values override saved and base values; they are never persisted.',
+		'# Config values join declared input and follow the owner mode; Vault bindings are read-only.',
 		'',
 	]
 	for (const environmentName of [...grouped.keys()].sort(compareUtf8)) {

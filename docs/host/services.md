@@ -63,11 +63,13 @@ await using host = await createHost({
 await host.start()
 ```
 
-`plugins` 是可用目录；需要自动启动时，在 `runtime.state.autoStart` 显式指定节点。`start()` 接纳目录并应用启动策略，服务准备在 `createHost()` 返回前完成。省略 `services` 不会创建附加服务的 backend、连接或清理任务。Vault 的默认加密后端借用 Core FS；`vault({ backend: 'bindings' })` 只提供部署绑定读取，不打开 Vault 加密目录。Host 不自动补装依赖。
+`plugins` 是可用目录；需要自动启动时，在 `policy.autoStart` 显式指定节点。`start()` 接纳目录并应用启动策略，服务准备在 `createHost()` 返回前完成。省略 `services` 不会创建附加服务的 backend、连接或清理任务。Vault 的默认加密后端借用 Core FS；`vault({ backend: 'bindings' })` 只提供部署绑定读取，不打开 Vault 加密目录。Host 不自动补装依赖。
 
 短作用域使用 `await using`：离开作用域时等待 Host 排空操作、停止插件并释放服务。`Symbol.asyncDispose` 与 `close()` 共用一次关闭结果，清理失败会向调用方传播。跨越函数作用域的长期运行 Host 由创建者显式 `await host.close()`。
 
 `createHost()` 只接受 Host 配置字段，未知字段在资源获取前拒绝；应用解析结果中的 `startup/sources/prepare` 属于执行入口，不能整对象传给它。服务选择和配置容器在异步准备前捕获；`updateCatalog()` 同样捕获调用时的插件数组。借用的 storage、callback 与服务 handle 保留原身份。
+
+Host 创建唯一 root 后读取配置和策略文档，确定本次执行参数，再准备 PluginService 与服务。因此保存的启动超时和并发在第一次 Plugin 创建前已经生效；修改它们的目标值需要新建 Host 才采用，见[保存与采用反馈](./configuration.md#保存与采用反馈)。
 
 两个 Host 可以使用不同清单；同一份服务声明也可创建多个相互隔离的 Host。安装集合创建后固定，普通 Plugin 更新复用已准备的服务。修改安装清单需要创建新 Host。
 
@@ -102,18 +104,23 @@ Token 的访问范围与 backend 生命周期不同：`owner` 只允许 Plugin�
 const snapshot = await host.config.get(owner)
 if (!snapshot.ok) throw new Error(snapshot.message)
 if (snapshot.readonly) throw new Error('Configuration is read-only')
-const checked = await host.config.validate(owner, { endpoint: 'https://example.com' })
+const change = { set: { endpoint: 'https://example.com' } }
+const checked = await host.config.validate(owner, change)
 if (!checked.ok) throw new Error(checked.message)
-const result = await host.config.patch(owner, { endpoint: 'https://example.com' })
+const result = await host.config.patch(owner, change, {
+	expectedManagedRevision: snapshot.managedRevision,
+})
 if (!result.ok) throw new Error(result.message)
-// result.application 区分 applied、deferred 和 saved-not-applied。
+if (result.application === 'saved-not-applied') {
+	throw new Error('Configuration saved but not adopted', { cause: result })
+}
 ```
 
-`owner` 是 `PluginNodeAddress`。方法会先完成 Host 初始目录接纳，然后与图更新共用一个队列；不存在的节点、未声明的 fork 或没有配置 schema 的节点以结构化失败返回。`validate()` 合并当前记录进行校验，不写入。`patch()` 顶层合并后校验完整对象；`reset()` 删除指定键再经 schema 标准化，省略键列表时重置整个对象。
+`owner` 是 `PluginNodeAddress`。方法会先完成 Host 初始目录接纳，然后与图更新共用一个队列；不存在的节点、未声明的 fork 或没有配置 schema 的节点以结构化失败返回。`validate()` 预览同一个 `{ set?, remove? }` 修改描述；`patch()` 先删除保存路径、再递归合并 set，校验完整有效输入一次。`reset(owner, paths?)` 删除保存输入并恢复继承，路径是字符串数组，省略 paths 清除整条记录。
 
-写入顺序为校验一次 → 暂存标准化快照 → 等待存储完成 → 确认 revision → 通知运行中的 generation。停止的节点返回 `deferred`，通知失败返回 `saved-not-applied`，不会把已经保存的值报告为未修改。默认文档使用 Core 的文件后端；Host 拥有唯一的配置存储实现，管理 RPC 和开发控制台也委托同一套用例。
+原始输入、保存回执和运行实例采用分开表达。停止的节点返回 deferred，通知失败返回 saved-not-applied；仅改变被声明遮盖的保存值不通知 listener。基于读取结果编辑时传 expectedManagedRevision，过期基线先返回 revision_conflict；该令牌只约束当前 Host。完整输入/回执字段、只读权限、模式与失败处理见[编辑保存值](./configuration.md#编辑保存值与恢复继承)和[保存与采用反馈](./configuration.md#保存与采用反馈)。
 
-成功读取与写入返回 `readonly`，`host.config.status()` 与 Management 的 `client.config.status()` 提供不依赖插件 schema 的只读状态。管理调用使用 `client.config.patch(owner, patch)` 与 `patchField(owner, input)`；不要求部署版本或 expected 参数。文件外部变化通过同一配置校验与通知路径接纳，见[共享文件](./configuration.md#共享文件与外部修改)。多个实例同时写入可能覆盖修改，需要并发保证时使用数据库。
+Management 的 config RPC 和开发控制台委托同一套用例，status 提供不依赖 Plugin schema 的只读状态。文件外部变化通过同一配置校验与通知路径接纳，见[共享文件](./configuration.md#共享文件与外部修改)；本地条件提交不能提供跨实例并发保证。
 
 关闭后所有配置方法拒绝新请求。Host 配置入口是受信任宿主 API，网络端点仍须通过既有认证和授权；它不会自动开放 RPC 或监听器。
 
@@ -123,6 +130,8 @@ if (!result.ok) throw new Error(result.message)
 `setProviderDefault()` / `setDependencyOverride()` 修改 provider 选择，`forks.ensure()` / `forks.remove()`
 管理 fork。它们与 `startNode()`、配置操作共用同一协调队列；读写前会完成首次 `start()`。
 状态包含不可用节点与最近生命周期失败，不因启动失败就丢弃用户意图。
+
+`host.policy.get / validate / patch / reset` 直接编辑八项保存输入，允许保存当前被声明遮盖的值。上面的单项动作则承诺改变实际策略；若 mode 阻挡目标生效，在副作用前返回 policy_shadowed。纯保存编辑与实际动作的区别、writtenFields 和执行参数采用边界见[Host 配置](./configuration.md#编辑保存值与恢复继承)。
 
 Fork 操作直接接收完整地址：`const east = WorkerPlugin.nodeAddress('east')`，然后调用
 `host.forks.ensure(east, { autoStart: true })` 或 `host.forks.remove(east)`。取得地址本身不创建实例；
@@ -163,7 +172,7 @@ export default defineConfig({
 
 `defineHostApplication(factory)` 提供 startup 上下文类型并保留工厂返回类型；`HostApplicationFactory` 表示工厂，`HostApplication` 表示其返回的完整配置对象。
 Host 每次启动传入 `{ root, mode, env, bindings, deployment }`，等待同步或异步工厂返回
-`name`、`plugins`、`sources`、`services`、`runtime` 与可选 `prepare`。
+`name`、`plugins`、`sources`、`policy`、`config`、`services`、`runtime` 与可选 `prepare`。
 Host 为每次装配浅复制并冻结 startup、env、bindings 和 deployment，工厂与 `prepare` 共用这份快照。bindings 中的资源对象保留原身份与调用方所有权；冻结不会递归到这些资源。直接调用 `runHostApplication` 时，传入的 env 是完整输入，不会隐式合并进程环境。
 模块导入不执行工厂。普通静态片段可用 `satisfies` 检查，在工厂中组合；工厂只描述装配，资源应由服务 `prepare` 获取。服务准备完成、开发附件接好之后，Host 调用可选的
 `prepare({ host, startup })`，再启动 Plugin；失败由启动入口回滚整个 Host。

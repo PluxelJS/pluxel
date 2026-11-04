@@ -292,27 +292,42 @@ afterEach(async () => {
 
 describe('Plugin config application scope', () => {
 	it('serializes a config patch requested during fork removal after final durable removal', async () => {
-		const host = await runtimeHost()
+		const entered = deferred<void>()
+		const release = deferred<void>()
+		let blocked = false
+		const host = await runtimeHost({
+			runtime: {
+				documents: {
+					config: {
+						storage(root) {
+							const documents = requireFs(root).documents('host/config')
+							return {
+								getText: (key) => documents.getText(key),
+								stat: (key) => documents.stat(key),
+								async put(key, value) {
+									if (blocked) {
+										entered.resolve()
+										await release.promise
+									}
+									await documents.put(key, value)
+								},
+							}
+						},
+					},
+				},
+			},
+		})
 		const fork = host.fork(ConfigFork, 'exclusive-remove')
+		host.cfg(fork).set({ value: 'initial' })
 		host.cfg(fork).setAutoStart(true)
 		host.start(fork)
 		await host.commit()
 		const configService = requireConfigService(host.ctx)
-		const originalFlush = configService.flush.bind(configService)
-		const entered = deferred<void>()
-		const release = deferred<void>()
-		let flushes = 0
-		configService.flush = async (options) => {
-			if (++flushes === 1) {
-				entered.resolve()
-				await release.promise
-			}
-			await originalFlush(options)
-		}
+		blocked = true
 
 		const removal = removeFork(host.ctx, ConfigFork.nodeAddress('exclusive-remove'))
 		await entered.promise
-		const patch = pluginConfigPatch(host.ctx, fork, { value: 'too-late' })
+		const patch = pluginConfigPatch(host.ctx, fork, { set: { value: 'too-late' } })
 		release.resolve()
 
 		await expect(removal).resolves.toMatchObject({ ok: true, status: 'removed' })
@@ -340,7 +355,7 @@ describe('Plugin config application scope', () => {
 			await originalFlush(options)
 		}
 
-		const patch = pluginConfigPatch(host.ctx, owner, { value: 'before-unlink' })
+		const patch = pluginConfigPatch(host.ctx, owner, { set: { value: 'before-unlink' } })
 		await entered.promise
 		host.remove(ConfigOwner)
 		const unlink = host.commit()
@@ -361,10 +376,10 @@ describe('Plugin config application scope', () => {
 
 		const owner = ConfigOwner.nodeAddress()
 		const generation = host.require(ConfigOwner)
-		const result = await pluginConfigPatch(host.ctx, owner, { value: 'changed' })
+		const result = await pluginConfigPatch(host.ctx, owner, { set: { value: 'changed' } })
 		expect(result).toMatchObject({
 			ok: true,
-			saved: true,
+			persistence: { status: 'confirmed' },
 			application: 'applied',
 			report: { core: { status: 'unchanged' } },
 			config: { value: 'changed' },
@@ -390,7 +405,9 @@ describe('Plugin config application scope', () => {
 
 		const east = East
 		const west = West
-		await expect(pluginConfigPatch(host.ctx, east, { value: 'east-only' })).resolves.toMatchObject({
+		await expect(
+			pluginConfigPatch(host.ctx, east, { set: { value: 'east-only' } }),
+		).resolves.toMatchObject({
 			ok: true,
 			application: 'applied',
 		})
@@ -414,9 +431,11 @@ describe('Plugin config application scope', () => {
 		await host.commit()
 
 		const owner = StoppedConfigOwner.nodeAddress()
-		await expect(pluginConfigPatch(host.ctx, owner, { value: 'later' })).resolves.toMatchObject({
+		await expect(
+			pluginConfigPatch(host.ctx, owner, { set: { value: 'later' } }),
+		).resolves.toMatchObject({
 			ok: true,
-			saved: true,
+			persistence: { status: 'confirmed' },
 			application: 'deferred',
 			appliedRevision: null,
 			report: {},
@@ -434,9 +453,11 @@ describe('Plugin config application scope', () => {
 
 		const owner = FailingConfigOwner.nodeAddress()
 		const appliedBefore = requireConfigService(host.ctx).getAppliedConfigRevision(owner)
-		await expect(pluginConfigPatch(host.ctx, owner, { value: 'desired' })).resolves.toMatchObject({
+		await expect(
+			pluginConfigPatch(host.ctx, owner, { set: { value: 'desired' } }),
+		).resolves.toMatchObject({
 			ok: true,
-			saved: true,
+			persistence: { status: 'confirmed' },
 			application: 'saved-not-applied',
 			appliedRevision: appliedBefore,
 			report: { core: { status: 'unchanged' } },
@@ -460,9 +481,11 @@ describe('Plugin config application scope', () => {
 		const generation = host.require(ConfigWithoutListener)
 		const appliedBefore = requireConfigService(host.ctx).getAppliedConfigRevision(owner)
 
-		await expect(pluginConfigPatch(host.ctx, owner, { value: 'desired' })).resolves.toMatchObject({
+		await expect(
+			pluginConfigPatch(host.ctx, owner, { set: { value: 'desired' } }),
+		).resolves.toMatchObject({
 			ok: true,
-			saved: true,
+			persistence: { status: 'confirmed' },
 			application: 'saved-not-applied',
 			appliedRevision: appliedBefore,
 			applyFailure: { code: 'listener_not_registered' },
@@ -482,8 +505,10 @@ describe('Plugin config application scope', () => {
 		const generation = host.require(ConfigPartOwner)
 
 		const result = await pluginConfigPatch(host.ctx, owner, {
-			value: 'root-desired',
-			part: { value: 'part-desired' },
+			set: {
+				value: 'root-desired',
+				part: { value: 'part-desired' },
+			},
 		})
 		expect(result).toMatchObject({ ok: true, application: 'applied' })
 		if (result.ok === false) throw new Error(result.message)
@@ -507,8 +532,10 @@ describe('Plugin config application scope', () => {
 
 		await expect(
 			pluginConfigPatch(host.ctx, owner, {
-				value: 'root-desired',
-				part: { value: 'part-desired' },
+				set: {
+					value: 'root-desired',
+					part: { value: 'part-desired' },
+				},
 			}),
 		).resolves.toMatchObject({
 			ok: true,
@@ -532,8 +559,10 @@ describe('Plugin config application scope', () => {
 
 		await expect(
 			pluginConfigPatch(host.ctx, owner, {
-				value: 'root-desired',
-				part: { value: 'part-desired' },
+				set: {
+					value: 'root-desired',
+					part: { value: 'part-desired' },
+				},
 			}),
 		).resolves.toMatchObject({
 			ok: true,
@@ -559,7 +588,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('rejects cross-owner registration while independent init windows overlap', async () => {
-		const host = await runtimeHost({ runtime: { plugins: { startConcurrency: 2 } } })
+		const host = await runtimeHost({ policy: { startConcurrency: 2 } })
 		host.add([ConcurrentConfigOwner, ConcurrentConfigBorrower])
 		host.cfg(ConcurrentConfigOwner).setAutoStart(true)
 		host.start(ConcurrentConfigOwner)
@@ -573,7 +602,9 @@ describe('Plugin config application scope', () => {
 		expect(host.isRunning(ConcurrentConfigBorrower)).toBe(true)
 		await expect(
 			pluginConfigPatch(host.ctx, ConcurrentConfigOwner.nodeAddress(), {
-				value: 'owner-update',
+				set: {
+					value: 'owner-update',
+				},
 			}),
 		).resolves.toMatchObject({ ok: true, application: 'applied' })
 	})
@@ -635,12 +666,16 @@ describe('Plugin config application scope', () => {
 		const owner = RetryConfigOwner.nodeAddress()
 		const generation = host.require(RetryConfigOwner)
 
-		await expect(pluginConfigPatch(host.ctx, owner, { value: 'reject' })).resolves.toMatchObject({
+		await expect(
+			pluginConfigPatch(host.ctx, owner, { set: { value: 'reject' } }),
+		).resolves.toMatchObject({
 			ok: true,
 			application: 'saved-not-applied',
 			applyFailure: { code: 'listener_failed' },
 		})
-		await expect(pluginConfigPatch(host.ctx, owner, { value: 'accepted' })).resolves.toMatchObject({
+		await expect(
+			pluginConfigPatch(host.ctx, owner, { set: { value: 'accepted' } }),
+		).resolves.toMatchObject({
 			ok: true,
 			application: 'applied',
 		})
@@ -659,7 +694,7 @@ describe('Plugin config application scope', () => {
 		await host.commit()
 		const owner = ConfigOwner.nodeAddress()
 
-		const result = await pluginConfigPatch(host.ctx, owner, { value: 'initial' })
+		const result = await pluginConfigPatch(host.ctx, owner, { set: { value: 'initial' } })
 		expect(result).toMatchObject({ ok: true, application: 'applied' })
 		if (result.ok === false) throw new Error(result.message)
 		expect(result.appliedRevision).toBe(result.desiredRevision)
@@ -678,9 +713,11 @@ describe('Plugin config application scope', () => {
 		singleValidationRuns = 0
 
 		const owner = SingleValidationOwner.nodeAddress()
-		await expect(pluginConfigPatch(host.ctx, owner, { value: 'desired' })).resolves.toMatchObject({
+		await expect(
+			pluginConfigPatch(host.ctx, owner, { set: { value: 'desired' } }),
+		).resolves.toMatchObject({
 			ok: true,
-			saved: true,
+			persistence: { status: 'confirmed' },
 			application: 'applied',
 			config: { value: 'desired:validated' },
 		})
@@ -719,18 +756,20 @@ describe('ConfigService persistence', () => {
 		const host = await runtimeHost({
 			services: standardServices(),
 			runtime: {
-				configRecords: {
-					storage(root) {
-						const documents = requireFs(root).documents('host/config')
-						return {
-							getText: (key) => documents.getText(key),
-							stat: (key) => documents.stat(key),
-							async put(key, value) {
-								if (rejectConfigWrite && key === 'config.json')
-									throw new Error('config persistence outcome unknown')
-								await documents.put(key, value)
-							},
-						}
+				documents: {
+					config: {
+						storage(root) {
+							const documents = requireFs(root).documents('host/config')
+							return {
+								getText: (key) => documents.getText(key),
+								stat: (key) => documents.stat(key),
+								async put(key, value) {
+									if (rejectConfigWrite && key === 'config.json')
+										throw new Error('config persistence outcome unknown')
+									await documents.put(key, value)
+								},
+							}
+						},
 					},
 				},
 			},
@@ -739,29 +778,25 @@ describe('ConfigService persistence', () => {
 		await host.commit()
 		rejectConfigWrite = true
 
-		await expect(
-			pluginConfigPatch(host.ctx, ConfigOwner.nodeAddress(), { value: 'desired' }),
-		).resolves.toMatchObject({
+		const failed = await pluginConfigPatch(host.ctx, ConfigOwner.nodeAddress(), {
+			set: { value: 'desired' },
+		})
+		expect(failed).toMatchObject({
 			ok: false,
 			code: 'persistence_failed',
 			state: 'unknown',
-			config: {},
+			managedInput: null,
+			effectiveInput: {},
+			persistence: { status: 'unknown' },
 		})
+		expect(failed).not.toHaveProperty('config')
 		host.cfg(ConfigOwner).setAutoStart(true)
 		host.start(ConfigOwner)
-		const unconfirmed = await host.commitAllowFail()
-		expect(unconfirmed.lifecycleReport.issues).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					phase: 'config',
-					kind: 'config-failed',
-					message: expect.stringMatching(/awaiting durable persistence/i),
-				}),
-			]),
-		)
-		expect(host.isRunning(ConfigOwner)).toBe(false)
-		hosts.splice(hosts.indexOf(host), 1)
-		await expect(host.dispose()).rejects.toThrow('Service internal test harness disposal failed')
+		const retained = await host.commitAllowFail()
+		expect(retained.lifecycleReport.issues).toEqual([])
+		expect(host.isRunning(ConfigOwner)).toBe(true)
+		expect(defaultStarts).toEqual(['initial'])
+		rejectConfigWrite = false
 	})
 })
 
@@ -783,31 +818,25 @@ function deferred<T>() {
 	return { promise, resolve, reject }
 }
 
-it('rejects same-value and parent field writes to an environment-controlled config', async () => {
+it('edits saved input while a declared value remains effective', async () => {
 	const owner = ConfigOwner.nodeAddress()
 	const host = await runtimeHost({
-		runtime: {
-			configRecords: {
-				overlays: [
-					{
-						owner,
-						config: { value: 'env' },
-						sources: [{ path: ['value'], kind: 'env', name: 'CONFIG_VALUE' }],
-					},
-				],
-			},
-		},
+		config: { records: [{ owner, config: { value: 'declared' } }] },
 	})
 	host.add(ConfigOwner)
 	await host.commit()
 	await expect(pluginConfigGet(host.ctx, owner)).resolves.toMatchObject({
 		ok: true,
-		sources: [{ path: ['value'], kind: 'env', readonly: true, name: 'CONFIG_VALUE' }],
+		managedInput: null,
+		effectiveInput: { value: 'declared' },
 	})
 	await expect(
-		pluginConfigPatchField(host.ctx, owner, { fieldPath: 'value', value: 'env' }),
-	).resolves.toMatchObject({ ok: false, code: 'mutation_rejected' })
-	await expect(
-		pluginConfigPatchField(host.ctx, owner, { fieldPath: 'value.child', value: 'changed' }),
-	).resolves.toMatchObject({ ok: false, code: 'mutation_rejected' })
+		pluginConfigPatchField(host.ctx, owner, { fieldPath: 'value', value: 'saved' }),
+	).resolves.toMatchObject({
+		ok: true,
+		managedInput: { value: 'saved' },
+		effectiveInput: { value: 'declared' },
+		shadowedPaths: [['value']],
+		persistence: { status: 'confirmed' },
+	})
 })

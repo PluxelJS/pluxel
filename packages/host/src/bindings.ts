@@ -28,35 +28,43 @@ type SchemaMapping<S extends Schema> = Readonly<{
 	mapping: InputMapping<StandardSchemaV1.InferInput<S>>
 }>
 type VaultSchemaMapping<S extends Schema> = Readonly<{
+	namespace?: string
 	schema: S
 	mapping: VaultInputMapping<StandardSchemaV1.InferInput<S>>
 }>
 
 /** Explicit schema-bearing deployment inputs. Use envBinding for schema-derived completion. */
-export type HostEnvironmentBinding<P extends PluginConstructor = PluginConstructor> = Readonly<{
+export type HostEnvironmentBinding<
+	P extends PluginConstructor | PluginNodeAddress = PluginConstructor | PluginNodeAddress,
+> = Readonly<{
 	plugin: P
-	namespace?: string
 	config?: Readonly<{ schema: Schema; mapping: InputMapping }>
 	vault?: Readonly<{
+		namespace?: string
 		schema: Schema
 		mapping: Readonly<Record<string, InputMapping | undefined>>
 	}>
 }>
-export type HostFileBinding<P extends PluginConstructor = PluginConstructor> = Readonly<{
+export type HostFileBinding<
+	P extends PluginConstructor | PluginNodeAddress = PluginConstructor | PluginNodeAddress,
+> = Readonly<{
 	plugin: P
-	namespace?: string
 	config?: Readonly<{ schema: Schema; path: string }>
 	vault?: Readonly<{
+		namespace?: string
 		schema: Schema
 		paths: Readonly<Record<string, string | undefined>>
 	}>
 }>
 
 /** Select environment inputs from one imported config schema and one deployment Vault root schema. */
-export function envBinding<P extends PluginConstructor, C extends Schema, V extends Schema>(
+export function envBinding<
+	P extends PluginConstructor | PluginNodeAddress,
+	C extends Schema,
+	V extends Schema,
+>(
 	plugin: P,
 	inputs: Readonly<{
-		namespace?: string
 		config?: SchemaMapping<C>
 		vault?: VaultSchemaMapping<V>
 	}>,
@@ -65,12 +73,16 @@ export function envBinding<P extends PluginConstructor, C extends Schema, V exte
 }
 
 /** JSON files provide config declaration values and complete Vault records. */
-export function fileBinding<P extends PluginConstructor, C extends Schema, V extends Schema>(
+export function fileBinding<
+	P extends PluginConstructor | PluginNodeAddress,
+	C extends Schema,
+	V extends Schema,
+>(
 	plugin: P,
 	inputs: Readonly<{
-		namespace?: string
 		config?: Readonly<{ schema: C; path: string }>
 		vault?: Readonly<{
+			namespace?: string
 			schema: V
 			paths: { readonly [K in keyof StandardSchemaV1.InferInput<V>]?: string }
 		}>

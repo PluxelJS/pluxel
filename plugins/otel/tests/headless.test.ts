@@ -28,7 +28,7 @@ it('uses the exported config schema for env-only Prometheus selection without Wo
 				},
 			}),
 		],
-		runtime: { state: { autoStart: [HeadlessMeter.nodeAddress()] } },
+		policy: { autoStart: [HeadlessMeter.nodeAddress()] },
 	}))
 	const resolved = await resolveHostApplication(application, {
 		root: process.cwd(),
@@ -40,6 +40,8 @@ it('uses the exported config schema for env-only Prometheus selection without Wo
 		plugins: resolved.plugins,
 		services: resolved.services,
 		name: resolved.name,
+		config: resolved.config,
+		policy: resolved.policy,
 		runtime: resolved.runtime,
 	})
 	try {

@@ -8,7 +8,9 @@ import {
 	withCoreInternalTestHost,
 } from '@pluxel/core/internal/test'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
+import * as v from 'valibot'
 import { consumePluginDefinitionCandidate } from '../src/internal'
+import { validateConfigRecord } from '../src/services/config/ops'
 import { pluginPartContextOf } from '../src/plugins/composition/PluginPart'
 import { lowerTestReplacement } from './lowered-replacement'
 
@@ -32,6 +34,19 @@ function objectSchema<T extends Record<string, unknown>>(
 const OwnerConfig = objectSchema({ ownerValue: 'owner-default' })
 const BranchConfig = objectSchema({ branchValue: 10 })
 const LeafConfig = objectSchema({ leafValue: 20 })
+
+const ValidatedOwnerConfig = v.object({ ownerValue: v.string() })
+const ValidatedPartConfig = v.object({ partValue: v.string() })
+
+class ValidatedPart extends PluginPart<ValidatedOwner> {
+	readonly config = this.configs.use(ValidatedPartConfig)
+}
+
+@Plugin()
+class ValidatedOwner extends BasePlugin {
+	readonly part = this.parts.use(ValidatedPart)
+	readonly config = this.configs.use(ValidatedOwnerConfig)
+}
 
 let trace: string[] = []
 
@@ -409,6 +424,28 @@ describe('owner-bound PluginPart', () => {
 			plugin: { displayName: 'PluginPart required provider replacement', forkable: true },
 		})
 	})
+
+	it.each([
+		{
+			input: { ownerValue: 42, part: { partValue: 'valid' } },
+			field: 'ownerValue',
+			path: ['ownerValue'],
+		},
+		{
+			input: { ownerValue: 'valid', part: { partValue: 42 } },
+			field: 'part',
+			path: ['part', 'partValue'],
+		},
+	])(
+		'rejects schema issues in $field even when the validator also returns a value',
+		async ({ input, field, path }) => {
+			const config = consumePluginDefinitionCandidate(ValidatedOwner).declaration.config!
+			await expect(validateConfigRecord(config.schema, input)).resolves.toMatchObject({
+				ok: false,
+				errors: { _root: { [field]: [expect.objectContaining({ path })] } },
+			})
+		},
+	)
 
 	it('builds nested occurrences, injects config slices and cleans up in inverse ownership order', async () => {
 		trace = []

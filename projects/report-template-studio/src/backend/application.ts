@@ -32,27 +32,27 @@ export default defineHostApplication(async (startup): Promise<HostApplication> =
 					: undefined,
 			),
 		],
+		config: {
+			records: [
+				{ owner, config: { root, assetsRoot } },
+				{ owner: FontsPlugin.nodeAddress(), config: { maxFontBytes: 32 * 1024 * 1024 } },
+				{
+					owner: TypstPlugin.nodeAddress(),
+					config: {
+						maxTemplateBytes: 128 * 1024 * 1024,
+						maxFontBytes: 96 * 1024 * 1024,
+						maxSessions: DOCUMENT_POLICY.maxSessions,
+						maxQueuedUpdates: DOCUMENT_POLICY.maxQueuedUpdates,
+					},
+				},
+			],
+		},
+		policy: { autoStart: [owner] },
 		runtime: {
 			zenfs: {
 				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 				durableMounts: ['/'],
 			},
-			configRecords: {
-				records: [
-					{ owner, config: { root, assetsRoot } },
-					{ owner: FontsPlugin.nodeAddress(), config: { maxFontBytes: 32 * 1024 * 1024 } },
-					{
-						owner: TypstPlugin.nodeAddress(),
-						config: {
-							maxTemplateBytes: 128 * 1024 * 1024,
-							maxFontBytes: 96 * 1024 * 1024,
-							maxSessions: DOCUMENT_POLICY.maxSessions,
-							maxQueuedUpdates: DOCUMENT_POLICY.maxQueuedUpdates,
-						},
-					},
-				],
-			},
-			state: { autoStart: [owner] },
 		},
 	}
 })

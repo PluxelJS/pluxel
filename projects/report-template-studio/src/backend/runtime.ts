@@ -40,6 +40,8 @@ export async function startBackend(config: BackendConfig): Promise<StudioBackend
 			vaultBindings: resolved.vaultBindings,
 			name: resolved.name,
 			runtime: resolved.runtime,
+			config: resolved.config,
+			policy: resolved.policy,
 		})
 		await prepareHostApplication(resolved, host)
 		const report = await host.start()

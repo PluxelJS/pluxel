@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import {
 	createHostConfigRecords,
 	hostPlugins,
-	createHostRuntimeState,
+	createHostPolicy,
 	redisBackedPlugins,
 	s3StorageNode,
 } from './catalog'
@@ -15,7 +15,7 @@ import { ReportStudioPlugin } from './ReportStudio'
 
 describe('plugin-host catalog', () => {
 	it('selects safe in-memory implementations without auto-starting Redis', () => {
-		const state = createHostRuntimeState()
+		const state = createHostPolicy()
 		const autoStart = state.autoStart ?? []
 		for (const plugin of redisBackedPlugins) {
 			expect(autoStart.some((node) => pluginNodeAddressEqual(node, plugin.nodeAddress()))).toBe(
@@ -50,7 +50,7 @@ describe('plugin-host catalog', () => {
 	})
 
 	it('prepares one S3 provider with isolated draft and release buckets', () => {
-		const state = createHostRuntimeState()
+		const state = createHostPolicy()
 		expect(state.forks).toBeUndefined()
 		expect(
 			state.autoStart?.filter((node) => pluginNodeAddressEqual(node, s3StorageNode)),

@@ -564,104 +564,95 @@ async function createServiceHostWorld(
 		assertForkRemoveExclusive(plan)
 		if (plan.forkRemoves.size > 0) return commitForkRemoval(plan)
 
-		const catalog = buildCatalog(plan, coordinator)
-		validatePlan(plan, catalog.entries, pluginService, stateStore)
-		if (
-			options.rejectRunningStartCatalogChange &&
-			catalog.snapshot &&
-			[...plan.starts.values()].some(({ address }) => pluginService.isRunning(address))
-		) {
-			throw new Error(
-				'[pluxel/test] start() cannot change catalog availability for an already-running target; use host.commit(change => ...) explicitly',
-			)
-		}
-		const seeds = await prepareSeeds(
-			plan,
-			catalog.entries,
-			configService,
-			enteredLifecycle,
-			configuredTargets,
-		)
-		const tickets: Array<
-			Readonly<{
-				key: string
-				ticket: ReturnType<typeof configService.stageManagedConfig>
-			}>
-		> = []
-		for (const seed of seeds) {
-			tickets.push(
-				Object.freeze({
-					key: seed.key,
-					ticket: configService.stageManagedConfig({
-						owner: seed.address,
-						authority: seed.authority,
-						expectedRevision: configService.getConfigRevision(seed.address),
-						value: seed.value,
-						managed: seed.managed,
-						paths: Object.keys(seed.managed).map((key) => [key]),
-					}),
-				}),
-			)
-		}
-		if (tickets.length > 0) {
-			await configService.flush()
-			for (const item of tickets) {
-				configService.confirmValidatedConfig(item.ticket)
-				configuredTargets.add(item.key)
+		return coordinator.runExclusive('service-test', async (session) => {
+			const catalog = buildCatalog(plan, coordinator)
+			validatePlan(plan, catalog.entries, pluginService, stateStore)
+			if (
+				options.rejectRunningStartCatalogChange &&
+				catalog.snapshot &&
+				[...plan.starts.values()].some(({ address }) => pluginService.isRunning(address))
+			) {
+				throw new Error(
+					'[pluxel/test] start() cannot change catalog availability for an already-running target; use host.commit(change => ...) explicitly',
+				)
 			}
-		}
-
-		const stateOperations = statePatchOperations(plan)
-		let report: PluginApplyReport<CommitSummary>
-		try {
-			report = await coordinator.update({
-				...(catalog.snapshot ? { catalog: catalog.snapshot } : {}),
-				...(stateOperations.length > 0 ? { statePatch: hostStatePatch(...stateOperations) } : {}),
-				...(plan.starts.size > 0 || plan.stops.size > 0
-					? {
-							lifecycleCommands: [
-								...Array.from(plan.starts.values(), ({ address }) => ({
-									address,
-									desiredState: 'running' as const,
-								})),
-								...Array.from(plan.stops.values(), ({ address }) => ({
-									address,
-									desiredState: 'stopped' as const,
-								})),
-							],
-						}
-					: {}),
-				...(plan.starts.size > 0
-					? { retryStartNodes: Array.from(plan.starts.values(), ({ address }) => address) }
-					: {}),
-				...(plan.restarts.size > 0
-					? { restartNodes: Array.from(plan.restarts.values(), ({ address }) => address) }
-					: {}),
-				reason: 'service-test',
-				mode: firstCommit ? 'cold-boot' : 'live',
-			})
-		} catch (error) {
-			if (isPreCommitRejection(error)) {
-				await rollbackSeeds(seeds, configService, configuredTargets)
+			const seeds = await prepareSeeds(
+				plan,
+				catalog.entries,
+				configService,
+				enteredLifecycle,
+				configuredTargets,
+			)
+			for (const seed of seeds) {
+				const ticket = configService.stageManagedConfig({
+					owner: seed.address,
+					authority: seed.authority,
+					expectedRevision: configService.getConfigRevision(seed.address),
+					value: seed.value,
+					managed: seed.managed,
+				})
+				try {
+					await configService.flush()
+					configService.confirmManagedConfig(ticket)
+				} catch (error) {
+					configService.discardManagedConfig(ticket)
+					throw error
+				}
+				configuredTargets.add(seed.key)
 			}
-			throw error
-		}
 
-		firstCommit = false
-		for (const command of plan.starts.values()) {
-			enteredLifecycle.add(pluginNodeIndexKey(command.address))
-		}
-		for (const node of pluginService.readCommittedDependencyAdjacency().nodes) {
-			enteredLifecycle.add(pluginNodeIndexKey(node))
-		}
-		if (report.reconciliation.length > 0 && report.core.status === 'unchanged') {
-			throw new PluginGraphRejectedError(report.reconciliation)
-		}
-		const summary =
-			report.core.status === 'committed'
-				? projectPluginTestCommitSummary(report.core.summary, pluginService)
-				: EMPTY_TEST_SUMMARY
-		return Object.freeze({ summary, targets: Object.freeze([...plan.targets.values()]) })
+			const stateOperations = statePatchOperations(plan)
+			let report: PluginApplyReport<CommitSummary>
+			try {
+				report = await session.update({
+					...(catalog.snapshot ? { catalog: catalog.snapshot } : {}),
+					...(stateOperations.length > 0 ? { statePatch: hostStatePatch(...stateOperations) } : {}),
+					...(plan.starts.size > 0 || plan.stops.size > 0
+						? {
+								lifecycleCommands: [
+									...Array.from(plan.starts.values(), ({ address }) => ({
+										address,
+										desiredState: 'running' as const,
+									})),
+									...Array.from(plan.stops.values(), ({ address }) => ({
+										address,
+										desiredState: 'stopped' as const,
+									})),
+								],
+							}
+						: {}),
+					...(plan.starts.size > 0
+						? { retryStartNodes: Array.from(plan.starts.values(), ({ address }) => address) }
+						: {}),
+					...(plan.restarts.size > 0
+						? { restartNodes: Array.from(plan.restarts.values(), ({ address }) => address) }
+						: {}),
+					reason: 'service-test',
+					mode: firstCommit ? 'cold-boot' : 'live',
+				})
+			} catch (error) {
+				if (isPreCommitRejection(error)) {
+					await rollbackSeeds(seeds, configService, configuredTargets)
+				}
+				throw error
+			}
+
+			firstCommit = false
+			for (const command of plan.starts.values()) {
+				enteredLifecycle.add(pluginNodeIndexKey(command.address))
+			}
+			for (const node of pluginService.readCommittedDependencyAdjacency().nodes) {
+				enteredLifecycle.add(pluginNodeIndexKey(node))
+			}
+			if (report.reconciliation.length > 0 && report.core.status === 'unchanged') {
+				throw new PluginGraphRejectedError(report.reconciliation)
+			}
+			const summary =
+				report.core.status === 'committed'
+					? projectPluginTestCommitSummary(report.core.summary, pluginService)
+					: EMPTY_TEST_SUMMARY
+			return Object.freeze({ summary, targets: Object.freeze([...plan.targets.values()]) })
+		})
 	}
 
 	const assertStrict = (
@@ -1105,7 +1096,7 @@ async function rollbackSeeds(
 	configuredTargets: Set<string>,
 ): Promise<void> {
 	for (const seed of seeds) {
-		configService.deleteConfig(seed.address)
+		await configService.deleteManagedConfig(seed.address)
 		configuredTargets.delete(seed.key)
 	}
 	await configService.flush()

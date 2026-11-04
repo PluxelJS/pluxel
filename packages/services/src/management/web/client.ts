@@ -1,4 +1,4 @@
-import type { HostConfigState } from '@pluxel/host'
+import type { HostConfigState, HostPolicyInput, HostPolicyField } from '@pluxel/host'
 import {
 	cloneRuntimeUpdateSnapshot,
 	type RuntimeUpdateSnapshot,
@@ -11,8 +11,11 @@ import {
 import { type RpcStub } from 'capnweb'
 import {
 	type ConfigFieldMutation,
+	type ConfigPatch,
+	type ManagedInputMutationOptions,
 	type ConfigPresentationResult,
 	type ConfigResult,
+	type PolicyResult,
 	type EnsureForkResult,
 	type LoggingHandleApi,
 	type PluginAutoStartBatchItem,
@@ -44,6 +47,7 @@ import { type RuntimeSecurityClient } from './security'
 import {
 	parseConfigPresentationResult,
 	parseConfigResult,
+	parsePolicyResult,
 	parseConfigState,
 	parseEnsureForkResult,
 	parseLogRangeResult,
@@ -96,7 +100,10 @@ export type RuntimeManagementClient = Readonly<{
 	}>
 	plugins: Readonly<{
 		status(owner: PluginNodeAddress): Promise<PluginStatusQueryResult>
-		setAutoStart(items: readonly PluginAutoStartBatchItem[]): Promise<PluginControlBatchResult>
+		setAutoStart(
+			items: readonly PluginAutoStartBatchItem[],
+			options?: ManagedInputMutationOptions,
+		): Promise<PluginControlBatchResult>
 		applyLifecycleCommands(
 			items: readonly PluginLifecycleCommandBatchItem[],
 		): Promise<PluginControlBatchResult>
@@ -105,37 +112,76 @@ export type RuntimeManagementClient = Readonly<{
 		status(): Promise<HostConfigState>
 		presentation(owner: PluginNodeAddress): Promise<ConfigPresentationResult>
 		get(owner: PluginNodeAddress): Promise<ConfigResult>
-		patch(owner: PluginNodeAddress, patch: Record<string, unknown>): Promise<ConfigResult>
-		patchField(owner: PluginNodeAddress, input: ConfigFieldMutation): Promise<ConfigResult>
+		validate(
+			owner: PluginNodeAddress,
+			patch: ConfigPatch,
+			options?: ManagedInputMutationOptions,
+		): Promise<ConfigResult>
+		patch(
+			owner: PluginNodeAddress,
+			patch: ConfigPatch,
+			options?: ManagedInputMutationOptions,
+		): Promise<ConfigResult>
+		reset(
+			owner: PluginNodeAddress,
+			paths?: readonly (readonly string[])[],
+			options?: ManagedInputMutationOptions,
+		): Promise<ConfigResult>
+		patchField(
+			owner: PluginNodeAddress,
+			input: ConfigFieldMutation,
+			options?: ManagedInputMutationOptions,
+		): Promise<ConfigResult>
+	}>
+	policy: Readonly<{
+		get(): Promise<PolicyResult>
+		validate(values: HostPolicyInput): Promise<PolicyResult>
+		patch(values: HostPolicyInput, options?: ManagedInputMutationOptions): Promise<PolicyResult>
+		reset(
+			keys?: readonly HostPolicyField[],
+			options?: ManagedInputMutationOptions,
+		): Promise<PolicyResult>
 	}>
 	dependencies: Readonly<{
 		graph(): Promise<PluginDependencyGraphSnapshot>
 		inspectConsumerRequirements(
 			consumer: PluginNodeAddress,
 		): Promise<PluginConsumerRequirementsInspectionResult>
-		setConsumerOverride(input: {
-			consumer: PluginNodeAddress
-			requirement: PluginDefinitionAddress
-			provider: PluginNodeAddress | null
-		}): Promise<PluginDependencyMutationResult>
+		setConsumerOverride(
+			input: {
+				consumer: PluginNodeAddress
+				requirement: PluginDefinitionAddress
+				provider: PluginNodeAddress | null
+			},
+			options?: ManagedInputMutationOptions,
+		): Promise<PluginDependencyMutationResult>
 		inspectProviderPolicy(
 			policyOwner: PluginNodeAddress,
 		): Promise<PluginProviderPolicyInspectionResult>
-		setProviderPolicyDefault(input: {
-			policyOwner: PluginNodeAddress
-			provider: PluginNodeAddress | null
-		}): Promise<PluginDependencyMutationResult>
+		setProviderPolicyDefault(
+			input: {
+				policyOwner: PluginNodeAddress
+				provider: PluginNodeAddress | null
+			},
+			options?: ManagedInputMutationOptions,
+		): Promise<PluginDependencyMutationResult>
 	}>
 	forks: Readonly<{
-		ensure(input: {
-			fork: PluginForkNodeAddress
-			autoStart?: boolean
-			selectFor?: {
-				consumer: PluginNodeAddress
-				requirement: PluginDefinitionAddress
-			}
-		}): Promise<EnsureForkResult>
-		remove(fork: PluginForkNodeAddress): Promise<RemoveForkResult>
+		ensure(
+			input: {
+				fork: PluginForkNodeAddress
+				autoStart?: boolean
+				selectFor?: {
+					consumer: PluginNodeAddress
+					requirement: PluginDefinitionAddress
+				}
+			},
+			options?: ManagedInputMutationOptions,
+		): Promise<EnsureForkResult>
+		remove(
+			fork: PluginForkNodeAddress,
+			options?: ManagedInputMutationOptions,
+		): Promise<RemoveForkResult>
 	}>
 	logging: Readonly<LoggingHandleApi>
 	logs: RuntimeLogClient
@@ -186,8 +232,11 @@ export function createRuntimeManagementClient(
 		}),
 		plugins: Object.freeze({
 			status: (owner) => call((root) => root.pluginStatusDto(owner), parsePluginStatusQueryResult),
-			setAutoStart: (items) =>
-				call((root) => root.setPluginAutoStartDto([...items]), parsePluginControlBatchResult),
+			setAutoStart: (items, options) =>
+				call(
+					(root) => root.setPluginAutoStartDto([...items], options),
+					parsePluginControlBatchResult,
+				),
 			applyLifecycleCommands: (items) =>
 				call(
 					(root) => root.applyPluginLifecycleCommandsDto([...items]),
@@ -199,10 +248,22 @@ export function createRuntimeManagementClient(
 			presentation: (owner) =>
 				call((root) => root.pluginConfigPresentationDto(owner), parseConfigPresentationResult),
 			get: (owner) => call((root) => root.pluginConfigDto(owner), parseConfigResult),
-			patch: (owner, patch) =>
-				call((root) => root.patchPluginConfigDto(owner, patch), parseConfigResult),
-			patchField: (owner, input) =>
-				call((root) => root.patchPluginConfigFieldDto(owner, input), parseConfigResult),
+			validate: (owner, patch, options) =>
+				call((root) => root.validatePluginConfigDto(owner, patch, options), parseConfigResult),
+			patch: (owner, patch, options) =>
+				call((root) => root.patchPluginConfigDto(owner, patch, options), parseConfigResult),
+			reset: (owner, paths, options) =>
+				call((root) => root.resetPluginConfigDto(owner, paths, options), parseConfigResult),
+			patchField: (owner, input, options) =>
+				call((root) => root.patchPluginConfigFieldDto(owner, input, options), parseConfigResult),
+		}),
+		policy: Object.freeze({
+			get: () => call((root) => root.hostPolicyDto(), parsePolicyResult),
+			validate: (values) => call((root) => root.validateHostPolicyDto(values), parsePolicyResult),
+			patch: (values, options) =>
+				call((root) => root.patchHostPolicyDto(values, options), parsePolicyResult),
+			reset: (keys, options) =>
+				call((root) => root.resetHostPolicyDto(keys, options), parsePolicyResult),
 		}),
 		dependencies: Object.freeze({
 			graph: () =>
@@ -212,9 +273,9 @@ export function createRuntimeManagementClient(
 					(root) => root.inspectPluginConsumerRequirementsDto(consumer),
 					parsePluginConsumerRequirementsInspectionResult,
 				),
-			setConsumerOverride: (input) =>
+			setConsumerOverride: (input, options) =>
 				call(
-					(root) => root.setPluginConsumerOverrideDto(input),
+					(root) => root.setPluginConsumerOverrideDto(input, options),
 					parsePluginDependencyMutationResult,
 				),
 			inspectProviderPolicy: (policyOwner) =>
@@ -222,15 +283,17 @@ export function createRuntimeManagementClient(
 					(root) => root.inspectPluginProviderPolicyDto(policyOwner),
 					parsePluginProviderPolicyInspectionResult,
 				),
-			setProviderPolicyDefault: (input) =>
+			setProviderPolicyDefault: (input, options) =>
 				call(
-					(root) => root.setPluginProviderPolicyDefaultDto(input),
+					(root) => root.setPluginProviderPolicyDefaultDto(input, options),
 					parsePluginDependencyMutationResult,
 				),
 		}),
 		forks: Object.freeze({
-			ensure: (input) => call((root) => root.ensurePluginForkDto(input), parseEnsureForkResult),
-			remove: (input) => call((root) => root.removePluginForkDto(input), parseRemoveForkResult),
+			ensure: (input, options) =>
+				call((root) => root.ensurePluginForkDto(input, options), parseEnsureForkResult),
+			remove: (input, options) =>
+				call((root) => root.removePluginForkDto(input, options), parseRemoveForkResult),
 		}),
 		logging: Object.freeze({
 			getPolicy: () =>

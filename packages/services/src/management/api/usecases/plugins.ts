@@ -18,11 +18,19 @@ export async function pluginStatus(
 	options?: HostOperationOptions,
 ): Promise<PluginStatusSnapshot | null> {
 	const projected = await requirePluginHostCoordinator(ctx).readCommitted(
-		(view) => projectedPluginByAddress(projectCommittedPluginCatalog(ctx, view), address),
+		(view) => pluginStatusFromView(ctx, view, address),
 		options,
 	)
-	if (!projected) return null
-	return portablePluginStatus(projected)
+	return projected
+}
+
+export function pluginStatusFromView(
+	ctx: Context,
+	view: HostPluginGraphCommittedView,
+	address: PluginNodeAddress,
+): PluginStatusSnapshot | null {
+	const projected = projectedPluginByAddress(projectCommittedPluginCatalog(ctx, view), address)
+	return projected ? portablePluginStatus(projected) : null
 }
 
 export type PluginStatusOverview = Readonly<{

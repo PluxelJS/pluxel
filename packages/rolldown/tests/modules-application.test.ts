@@ -343,7 +343,7 @@ import {Local} from './local';
 export default defineHostApplication(async startup=>({
  plugins:[External,Local],
  services:await servicesPreset(startup,{workbench:false,vault:{backend:'bindings'}}),
- runtime:{state:{mode:'memory',autoStart:[External.nodeAddress(),Local.nodeAddress()]}},
+ runtime:{documents:{state:false}},policy:{autoStart:[External,Local]},
 }))`,
 		)
 		await writeFile(
@@ -454,7 +454,7 @@ it('preserves public and private identities, named product, minified artifacts a
 		)
 		await writeFile(
 			resolve(root, 'src/app.ts'),
-			`import {defineHostApplication} from '@pluxel/host';  import {standardServices} from '@pluxel/services'; import {Public} from './public'; import {Feature} from './feature'; import {Private} from './private'; export const product={title:'Modules probe'}; export default defineHostApplication(()=>({plugins:[Public,Feature,Private],services:standardServices(),runtime:{state:{mode:'memory',autoStart:[Private.nodeAddress()]}},prepare({host,startup}){startup.bindings.capture?.(host)}}))`,
+			`import {defineHostApplication} from '@pluxel/host';  import {standardServices} from '@pluxel/services'; import {Public} from './public'; import {Feature} from './feature'; import {Private} from './private'; export const product={title:'Modules probe'}; export default defineHostApplication(()=>({plugins:[Public,Feature,Private],services:standardServices(),runtime:{documents:{state:false}},policy:{autoStart:[Private]},prepare({host,startup}){startup.bindings.capture?.(host)}}))`,
 		)
 		await writeFile(
 			resolve(root, 'build.mts'),

@@ -181,7 +181,16 @@ function management(): RuntimeManagementClient {
 		describe: call,
 		catalog: { snapshot: call, updateLayout: call },
 		plugins: { status: call, setAutoStart: call, applyLifecycleCommands: call },
-		config: { status: call, presentation: call, get: call, patch: call, patchField: call },
+		config: {
+			status: call,
+			presentation: call,
+			get: call,
+			patch: call,
+			patchField: call,
+			validate: call,
+			reset: call,
+		},
+		policy: { get: call, validate: call, patch: call, reset: call },
 		dependencies: {
 			graph: call,
 			inspectConsumerRequirements: call,

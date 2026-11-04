@@ -43,9 +43,63 @@ function inspect(
 }
 
 describe('application input declaration navigation', () => {
-	it('keeps two entry bindings separate and locates configRecords without evaluating application, schemas or reading inputs', async () => {
+	it('navigates disjoint mappings and multiple unread config files for one owner', async () => {
+		const report = await inspect(
+			application(`
+			envBindings: [
+				envBinding(P, {config: {schema: Schema, mapping: {nested: {one: 'FIRST'}}}}),
+				envBinding(P, {config: {schema: Schema, mapping: {nested: {two: 'SECOND'}}}}),
+			],
+			fileBindings: [
+				fileBinding(P, {config: {schema: Schema, path: './one.json'}}),
+				fileBinding(P, {config: {schema: Schema, path: './two.json'}}),
+			],
+		`),
+		).result
+		expect(report.status).toBe('complete')
+		if (report.status === 'unavailable') throw new Error('unavailable')
+		expect(report.value.bindings.map((binding) => binding.configPath)).toEqual([
+			['nested', 'one'],
+			['nested', 'two'],
+			[],
+			[],
+		])
+	})
+
+	it('reports ancestor mapping overlaps without guessing file contents', async () => {
+		const report = await inspect(
+			application(`envBindings: [
+			envBinding(P, {config: {schema: Schema, mapping: {nested: {one: 'FIRST'}}}}),
+			envBinding(P, {config: {schema: Schema, mapping: {nested: 'SECOND'}}}),
+		]`),
+		).result
+		expect(report.status).toBe('partial')
+		if (report.status !== 'partial') throw new Error('not partial')
+		expect(report.value.bindings).toHaveLength(1)
+		expect(report.gaps).toMatchObject([{ code: 'invalid_declaration' }])
+	})
+
+	it('keeps default and literal fork binding targets distinct without executing nodeAddress', async () => {
+		const report = await inspect(
+			application(`
+			envBindings: [
+				envBinding(P, {config: {schema: Schema, mapping: {endpoint: 'DEFAULT_ENDPOINT'}}}),
+				envBinding(P.nodeAddress('east'), {config: {schema: Schema, mapping: {endpoint: 'EAST_ENDPOINT'}}}),
+			],
+		`),
+		).result
+		expect(report.status).toBe('complete')
+		if (report.status === 'unavailable') throw new Error('unavailable')
+		expect(report.value.bindings).toMatchObject([
+			{ source: { name: 'DEFAULT_ENDPOINT' } },
+			{ forkId: 'east', source: { name: 'EAST_ENDPOINT' } },
+		])
+		expect(report.value.bindings[0]).not.toHaveProperty('forkId')
+	})
+
+	it('keeps two entry bindings separate and locates config without evaluating application, schemas or reading inputs', async () => {
 		const code = (name: string) =>
-			application(`runtime: { configRecords: makeRecords() }, services: install(), sources: discover(),
+			application(`config: makeRecords(), services: install(), sources: discover(),
    envBindings: [envBinding(P, {config: {schema: Schema, mapping: {endpoint: '${name}'}}})],
    fileBindings: [fileBinding(P, {config: {schema: Schema, path: './secret.json'}})]`)
 		const a = inspect(code('FIRST'), '/project/a.ts')
@@ -61,7 +115,7 @@ describe('application input declaration navigation', () => {
 			expect.objectContaining({ kind: 'file', path: './secret.json' }),
 		])
 		expect(second.value.bindings[0]!.source).toMatchObject({ name: 'SECOND' })
-		expect(first.value.configRecords).toMatchObject({ file: '/project/a.ts' })
+		expect(first.value.config).toMatchObject({ file: '/project/a.ts' })
 		expect(first.value.bindings[0]!.schema).toMatchObject({
 			symbol: 'Schema',
 			declaration: { file: '/project/plugins.ts' },
@@ -95,8 +149,7 @@ describe('application input declaration navigation', () => {
 		expect(report.gaps[0]!.code).toBe('unresolved_symbol')
 	})
 	it('does not report bindings as absent when application spread can override them or records', async () => {
-		const report = await inspect(application(`runtime: { configRecords: records() }, ...unknown`))
-			.result
+		const report = await inspect(application(`config: records(), ...unknown`)).result
 		expect(report.status).toBe('unavailable')
 	})
 	it('rejects duplicate mapping keys instead of selecting one value', async () => {
@@ -114,7 +167,7 @@ describe('application input declaration navigation', () => {
 		const report = await inspect(application(`services: install()`)).result
 		expect(report).toMatchObject({
 			status: 'complete',
-			value: { bindings: [], configRecords: null },
+			value: { bindings: [], config: null },
 		})
 		const unsupported = await inspect(
 			`${prefix}\nexport default defineHostApplication(() => chooseApplication())`,

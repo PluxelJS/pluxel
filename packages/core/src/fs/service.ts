@@ -1,6 +1,6 @@
 import type { RootContext } from '../context/Context'
 import type { HostDocumentStorage } from '../storage/documents'
-import type { BoundContext } from '@zenfs/core'
+import { InMemory, type BoundContext } from '@zenfs/core'
 import { withErrno } from 'kerium'
 import { FsDocuments } from './documents'
 import { FsMounts, type ResolvedFsConfig } from './config'
@@ -88,6 +88,29 @@ export class FsService {
 		if (documents.maxBytes !== maxBytes)
 			throw new TypeError('[core.fs] a document directory has one fixed byte limit')
 		return documents
+	}
+
+	/** @internal Retention asserted by the selected mounts; never inferred from backend names. */
+	documentRetention(path: string): 'session' | 'declared-durable' | 'unknown' {
+		validateDirectory(path)
+		const absolute = `/${path}`
+		const entries = Object.entries(this.config.mounts)
+		const parent = entries
+			.filter(([point]) => point === '/' || absolute === point || absolute.startsWith(`${point}/`))
+			.sort(([a], [b]) => b.length - a.length)[0]!
+		const relevant = [
+			parent,
+			...entries.filter(([point]) => point !== parent[0] && point.startsWith(`${absolute}/`)),
+		]
+		if (relevant.every(([point]) => this.config.durableMounts.includes(point)))
+			return 'declared-durable'
+		if (
+			relevant.every(
+				([, mount]) => mount === InMemory || ('backend' in mount && mount.backend === InMemory),
+			)
+		)
+			return 'session'
+		return 'unknown'
 	}
 
 	private assertOpen(requirement?: FsRequirement): void {

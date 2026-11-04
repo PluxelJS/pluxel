@@ -1,6 +1,8 @@
+import type { HostInputMode } from './input-mode'
 import {
 	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
+	type PluginConstructor,
 	type PluginDefinitionAddress,
 	type PluginForkNodeAddress,
 	type PluginNodeAddress,
@@ -12,6 +14,40 @@ export type HostStateSnapshot = Readonly<{
 	providerDefaults: readonly HostProviderDefaultState[]
 	dependencyOverrides: readonly HostDependencyOverrideState[]
 }>
+
+export type HostExecutionPolicy = Readonly<{
+	startTimeoutMs: number
+	drainTimeoutMs: number
+	startConcurrency: number
+	stopConcurrency: number
+}>
+export type HostPolicyValues = HostStateSnapshot & HostExecutionPolicy
+export type HostPolicyField = keyof HostPolicyValues
+export type HostExecutionPolicyField = keyof HostExecutionPolicy
+export type HostPolicyInput = Readonly<Partial<HostPolicyValues>>
+export type HostPolicyModes = Readonly<Partial<Record<HostPolicyField, HostInputMode>>>
+export type HostPolicyOptions = Readonly<
+	Omit<HostPolicyInput, 'autoStart'> & {
+		autoStart?: readonly (PluginConstructor | PluginNodeAddress)[]
+		mode?: HostPolicyModes
+	}
+>
+export const HOST_GRAPH_POLICY_FIELDS = [
+	'autoStart',
+	'forks',
+	'providerDefaults',
+	'dependencyOverrides',
+] as const
+export const HOST_EXECUTION_POLICY_FIELDS = [
+	'startTimeoutMs',
+	'drainTimeoutMs',
+	'startConcurrency',
+	'stopConcurrency',
+] as const
+export const HOST_POLICY_FIELDS = [
+	...HOST_GRAPH_POLICY_FIELDS,
+	...HOST_EXECUTION_POLICY_FIELDS,
+] as const
 
 export type HostStateVersionedSnapshot = Readonly<{
 	revision: number

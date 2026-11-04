@@ -161,12 +161,17 @@ export function usePluginDependencyControls() {
 				`${ownerKey}:consumer-override:${pluginDefinitionIndexKey(requirement)}`,
 				async () => {
 					try {
-						const result = await management.dependencies.setConsumerOverride({
-							consumer: owner,
-							requirement,
-							provider,
-						})
-						if (result.ok || ('state' in result && result.state === 'unknown')) await refreshAll()
+						if (!statePolicy) throw new Error('运行策略尚未加载')
+						const result = await management.dependencies.setConsumerOverride(
+							{
+								consumer: owner,
+								requirement,
+								provider,
+							},
+							{ expectedManagedRevision: statePolicy.managedRevision },
+						)
+						if (result.ok || result.state === 'unknown' || result.code === 'revision_conflict')
+							await refreshAll()
 						return result
 					} catch (error) {
 						await refreshAll()
@@ -174,7 +179,7 @@ export function usePluginDependencyControls() {
 					}
 				},
 			),
-		[management.dependencies, owner, ownerKey, refreshAll, runPending],
+		[management.dependencies, owner, ownerKey, refreshAll, runPending, statePolicy],
 	)
 
 	const createFork = useCallback(
@@ -183,12 +188,17 @@ export function usePluginDependencyControls() {
 				`${ownerKey}:fork-create:${pluginDefinitionIndexKey(requirement)}`,
 				async () => {
 					try {
-						const result = await management.forks.ensure({
-							fork: { definition: base.definition, variant: 'fork', forkId },
-							autoStart: false,
-							selectFor: { consumer: owner, requirement },
-						})
-						if (result.ok || ('state' in result && result.state === 'unknown')) await refreshAll()
+						if (!statePolicy) throw new Error('运行策略尚未加载')
+						const result = await management.forks.ensure(
+							{
+								fork: { definition: base.definition, variant: 'fork', forkId },
+								autoStart: false,
+								selectFor: { consumer: owner, requirement },
+							},
+							{ expectedManagedRevision: statePolicy.managedRevision },
+						)
+						if (result.ok || result.state === 'unknown' || result.code === 'revision_conflict')
+							await refreshAll()
 						return result
 					} catch (error) {
 						await refreshAll()
@@ -196,7 +206,7 @@ export function usePluginDependencyControls() {
 					}
 				},
 			),
-		[management.forks, owner, ownerKey, refreshAll, runPending],
+		[management.forks, owner, ownerKey, refreshAll, runPending, statePolicy],
 	)
 
 	const removeFork = useCallback(
@@ -206,12 +216,19 @@ export function usePluginDependencyControls() {
 					const state = configStateQuery.data
 					if (
 						!state ||
+						!statePolicy ||
 						state.readonly ||
 						!canWritePluginState(statePolicy, 'forks', 'autoStart', 'dependencyOverrides')
 					)
 						throw new Error('当前宿主的 Fork 策略或配置只读或尚未加载')
-					const result = await management.forks.remove(fork)
-					if (result.ok || ('code' in result && result.code === 'persistence_failed')) {
+					const result = await management.forks.remove(fork, {
+						expectedManagedRevision: statePolicy.managedRevision,
+					})
+					if (
+						result.ok ||
+						result.code === 'persistence_failed' ||
+						result.code === 'revision_conflict'
+					) {
 						await refreshAll()
 					}
 					return result

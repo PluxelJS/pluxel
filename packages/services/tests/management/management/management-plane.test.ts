@@ -19,7 +19,7 @@ describe('runtime Management plane installation', () => {
 
 		const target = new RuntimeManagementTargetImpl(host.ctx)
 		expect(target.describeDto()).toMatchObject({
-			protocol: { name: 'pluxel.management', major: 8 },
+			protocol: { name: 'pluxel.management', major: 9 },
 			workbench: { enabled: false },
 		})
 		expect(target.describeDto().protocol.capabilities).not.toContain('vault')

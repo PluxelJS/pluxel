@@ -18,8 +18,6 @@ export default defineHostApplication(() => ({
 	name: 'render-fixture',
 	plugins,
 	services: standardServices(),
-	runtime: {
-		configRecords: { mode: 'memory' },
-		state: { mode: 'memory', autoStart: plugins.map((plugin) => plugin.nodeAddress()) },
-	},
+	policy: { autoStart: plugins.map((plugin) => plugin.nodeAddress()) },
+	runtime: { documents: { config: false, state: false } },
 }))

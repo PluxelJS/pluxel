@@ -196,8 +196,8 @@ generation/socket epoch。Plugin 在 `ctx.require(ElysiaApp)` 中声明的 path 
 
 | 领域                      | 当前版本/编码                | 当前 owner 契约                     |
 | ------------------------- | ---------------------------- | ----------------------------------- |
-| HostState                 | v5                           | structured definition/node address  |
-| Config file/env           | v3                           | structured node address             |
+| HostState                 | v7                           | structured definition/node address  |
+| Config file/env           | v4                           | structured node address             |
 | Logger policy             | v3                           | structured node address             |
 | Management catalog groups | v1                           | structured definition address       |
 | Workbench browser state   | v4                           | current versioned Plugin route      |

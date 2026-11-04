@@ -16,6 +16,8 @@ import {
 	prepareNativeWorkbenchDom,
 	openDocument,
 } from './helpers/native-workbench'
+import { configSnapshot, savedConfig } from './helpers/config'
+import type { ConfigPatch } from '@pluxel/services/management/client'
 import type { RuntimeManagementClient } from '../src/runtime'
 
 const decisions = vi.hoisted(() => [] as { onConfirm?: () => void; onCancel?: () => void }[])
@@ -49,12 +51,10 @@ const fields = f.extractFormFields(
 function Configuration() {
 	return (
 		<ConfigForm
-			readonly={false}
 			owner={owner}
 			displayName="Config owner"
 			fields={fields}
-			savedConfig={empty}
-			defaults={empty}
+			snapshot={configSnapshot(empty)}
 		/>
 	)
 }
@@ -116,22 +116,9 @@ async function confirm(index = 0) {
 describe('business configuration save in native documents', () => {
 	it('saves two unchanged configuration owners before departure and keeps each copy\u0027s anchors, controls and outline scoped to its mounted form', async () => {
 		const warnings = vi.spyOn(console, 'error').mockImplementation(() => {})
-		const patch = vi.fn(async (_owner: PluginNodeAddress, config: Record<string, unknown>) => ({
-			ok: true as const,
-			config,
-			sources: [],
-			readonly: false,
-			saved: true as const,
-			desiredRevision: 1,
-			appliedRevision: 1,
-			report: {
-				catalogRevision: 1,
-				runtimeStateRevision: 1,
-				reconciliation: [],
-				core: { status: 'unchanged' as const },
-			},
-			application: 'applied' as const,
-		}))
+		const patch = vi.fn(async (_owner: PluginNodeAddress, mutation: ConfigPatch) =>
+			savedConfig(mutation.set ?? {}),
+		)
 		const { session, container, id, input } = await fixture(patch)
 		const second = await openDocument(session, '/security')
 		const secondScope = container.querySelector<HTMLElement>(
@@ -196,8 +183,18 @@ describe('business configuration save in native documents', () => {
 		await vi.waitFor(() => expect(window.location.hash).toBe('#forms-saved'))
 		expect(session.documents.get(id)!.isDirty()).toBe(false)
 		expect(session.documents.get(second)!.isDirty()).toBe(false)
-		expect(patch).toHaveBeenNthCalledWith(1, owner, { name: 'first saved configuration' })
-		expect(patch).toHaveBeenNthCalledWith(2, owner, { name: 'second saved configuration' })
+		expect(patch).toHaveBeenNthCalledWith(
+			1,
+			owner,
+			{ set: { name: 'first saved configuration' }, remove: [['name']] },
+			{ expectedManagedRevision: 'config:initial' },
+		)
+		expect(patch).toHaveBeenNthCalledWith(
+			2,
+			owner,
+			{ set: { name: 'second saved configuration' }, remove: [['name']] },
+			{ expectedManagedRevision: 'config:initial' },
+		)
 		expect(container.querySelector(`[data-worksplit-content="${id}"] input[name="name"]`)).toBe(
 			input,
 		)
@@ -206,22 +203,9 @@ describe('business configuration save in native documents', () => {
 	})
 
 	it('keeps a real configuration draft edited after its save while a later workspace departure decision is pending', async () => {
-		const patch = vi.fn(async (_owner: PluginNodeAddress, values: Record<string, unknown>) => ({
-			ok: true as const,
-			config: values,
-			sources: [],
-			readonly: false,
-			saved: true as const,
-			desiredRevision: 1,
-			appliedRevision: 1,
-			report: {
-				catalogRevision: 1,
-				runtimeStateRevision: 1,
-				reconciliation: [],
-				core: { status: 'unchanged' as const },
-			},
-			application: 'applied' as const,
-		}))
+		const patch = vi.fn(async (_owner: PluginNodeAddress, mutation: ConfigPatch) =>
+			savedConfig(mutation.set ?? {}),
+		)
 		const { session, container, id, input } = await fixture(patch)
 		const second = await openDocument(session, '/security')
 		const secondInput = container.querySelector<HTMLInputElement>(
@@ -269,25 +253,14 @@ describe('business configuration save in native documents', () => {
 			closing = session.workbench.close(id)
 		})
 		await confirm()
-		expect(patch).toHaveBeenCalledWith(owner, { name: 'saved draft' })
+		expect(patch).toHaveBeenCalledWith(
+			owner,
+			{ set: { name: 'saved draft' }, remove: [['name']] },
+			{ expectedManagedRevision: 'config:initial' },
+		)
 		expect(session.workbench.getDocument(id)).not.toBeNull()
 		await act(async () => {
-			release({
-				ok: true,
-				config: { name: 'saved draft' },
-				sources: [],
-				readonly: false,
-				saved: true as const,
-				desiredRevision: 1,
-				appliedRevision: 1,
-				report: {
-					catalogRevision: 1,
-					runtimeStateRevision: 1,
-					reconciliation: [],
-					core: { status: 'unchanged' as const },
-				},
-				application: 'applied',
-			})
+			release(savedConfig({ name: 'saved draft' }))
 			await pending
 		})
 		await act(async () => {
@@ -313,22 +286,7 @@ describe('business configuration save in native documents', () => {
 		await confirm()
 		await type(input, 'newer draft while saving')
 		await act(async () => {
-			release({
-				ok: true,
-				config: { name: 'submitted draft' },
-				sources: [],
-				readonly: false,
-				saved: true as const,
-				desiredRevision: 1,
-				appliedRevision: 1,
-				report: {
-					catalogRevision: 1,
-					runtimeStateRevision: 1,
-					reconciliation: [],
-					core: { status: 'unchanged' as const },
-				},
-				application: 'applied',
-			})
+			release(savedConfig({ name: 'submitted draft' }))
 			await pending
 		})
 		await act(async () => expect(await closing).toMatchObject({ status: 'rejected' }))
@@ -357,22 +315,9 @@ describe('business configuration save in native documents', () => {
 	})
 
 	it('checks a real earlier form revision after another document waits and deletes none when that form changes', async () => {
-		const patch = vi.fn(async (_owner: PluginNodeAddress, config: Record<string, unknown>) => ({
-			ok: true as const,
-			config,
-			sources: [],
-			readonly: false,
-			saved: true as const,
-			desiredRevision: 1,
-			appliedRevision: 1,
-			report: {
-				catalogRevision: 1,
-				runtimeStateRevision: 1,
-				reconciliation: [],
-				core: { status: 'unchanged' as const },
-			},
-			application: 'applied' as const,
-		}))
+		const patch = vi.fn(async (_owner: PluginNodeAddress, mutation: ConfigPatch) =>
+			savedConfig(mutation.set ?? {}),
+		)
 		const { session, container, id: first, input } = await fixture(patch)
 		await type(input, 'first configuration')
 		const second = await openDocument(session, '/security')

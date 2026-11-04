@@ -1,24 +1,22 @@
 import { type Context, type PluginNodeAddress } from '@pluxel/core'
-import { collectConfigDefaults } from '@pluxel/core/services'
 import {
 	type HostOperationOptions,
 	lookupPluginConfig,
-	mutatePluginConfig,
 	pluginConfigGet as getConfig,
 	pluginConfigValidate as validateConfig,
 	pluginConfigPatch as patchConfig,
 	pluginConfigReset as resetConfig,
 	projectPluginApplyReport,
 } from '@pluxel/host/internal'
-import { type HostPluginConfigResult } from '@pluxel/host'
+import { type HostConfigMutation, type HostPluginConfigResult } from '@pluxel/host'
 import { type ConfigPresentationResult, type ConfigResult } from '../../web/protocol'
-import { compileConfigPresentationPlanV1 } from '../presenters/configPresentation'
+import { compileConfigPresentationPlanV2 } from '../presenters/configPresentation'
 import { parseConfigFieldPathSegments } from '../../web/validation'
 
 function projectConfigResult(ctx: Context, result: HostPluginConfigResult): ConfigResult {
 	if (result.ok === false) return result
-	if (result.saved === false) return result
-	return { ...result, report: projectPluginApplyReport(ctx, result.report) }
+	const { report, ...snapshot } = result
+	return { ...snapshot, ...(report ? { report: projectPluginApplyReport(ctx, report) } : {}) }
 }
 export async function pluginConfigGet(
 	ctx: Context,
@@ -30,7 +28,7 @@ export async function pluginConfigGet(
 export async function pluginConfigValidate(
 	ctx: Context,
 	owner: PluginNodeAddress,
-	patch: Record<string, unknown>,
+	patch: HostConfigMutation,
 	options?: HostOperationOptions,
 ): Promise<ConfigResult> {
 	return projectConfigResult(ctx, await validateConfig(ctx, owner, patch, options))
@@ -38,7 +36,7 @@ export async function pluginConfigValidate(
 export async function pluginConfigPatch(
 	ctx: Context,
 	owner: PluginNodeAddress,
-	patch: Record<string, unknown>,
+	patch: HostConfigMutation,
 	options?: HostOperationOptions,
 ): Promise<ConfigResult> {
 	return projectConfigResult(ctx, await patchConfig(ctx, owner, patch, options))
@@ -46,10 +44,10 @@ export async function pluginConfigPatch(
 export async function pluginConfigReset(
 	ctx: Context,
 	owner: PluginNodeAddress,
-	keys?: string[],
+	paths?: readonly (readonly string[])[],
 	options?: HostOperationOptions,
 ): Promise<ConfigResult> {
-	return projectConfigResult(ctx, await resetConfig(ctx, owner, keys, options))
+	return projectConfigResult(ctx, await resetConfig(ctx, owner, paths, options))
 }
 
 function plainRecord(value: unknown): Record<string, unknown> {
@@ -95,24 +93,18 @@ export async function pluginConfigPresentation(
 			part.declaration ? [{ path: part.path, declaration: part.declaration }] : [],
 		),
 	]
-	const sections = await Promise.all(
-		declarations.map(async ({ path, declaration }) =>
-			Object.freeze({
-				path: Object.freeze([...path]),
-				fieldName: declaration.fieldName,
-				schema: declaration.schema,
-				defaults: await collectConfigDefaults(declaration.schema, {
-					missingObjectDefault: {},
-				}),
-			}),
-		),
+	const sections = declarations.map(({ path, declaration }) =>
+		Object.freeze({
+			path: Object.freeze([...path]),
+			fieldName: declaration.fieldName,
+			schema: declaration.schema,
+		}),
 	)
 	return {
 		ok: true,
-		plan: compileConfigPresentationPlanV1({
+		plan: compileConfigPresentationPlanV2({
 			fieldName: config.fieldName,
 			schema: config.schema,
-			defaults: await collectConfigDefaults(config.schema, { missingObjectDefault: {} }),
 			sections,
 		}),
 	}
@@ -135,13 +127,14 @@ export async function pluginConfigPatchField(
 	}
 	return projectConfigResult(
 		ctx,
-		await mutatePluginConfig(
+		await patchConfig(
 			ctx,
 			owner,
-			'plugin-config-patch-field',
-			(current) => writeNestedField(current, parsed.segments, parsed.value),
+			{
+				remove: [parsed.segments],
+				set: writeNestedField({}, parsed.segments, parsed.value),
+			},
 			options,
-			[parsed.segments],
 		),
 	)
 }
@@ -155,6 +148,12 @@ function parseConfigFieldMutation(
 		return { ok: false, message: 'Config field mutation must be an object.' }
 	}
 	const record = input as Record<string, unknown>
+	if (
+		!Object.hasOwn(record, 'value') ||
+		Object.keys(record).some((key) => key !== 'fieldPath' && key !== 'value')
+	) {
+		return { ok: false, message: 'Config field mutation requires only fieldPath and value.' }
+	}
 	if (typeof record.fieldPath !== 'string') {
 		return { ok: false, message: 'fieldPath is required.' }
 	}

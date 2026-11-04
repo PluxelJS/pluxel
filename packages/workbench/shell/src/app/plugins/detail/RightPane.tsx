@@ -121,7 +121,7 @@ function ConfigContent({
 				<Text c="dimmed">加载配置中…</Text>
 			</Center>
 		)
-	if (!config.data || config.data.fields.length === 0)
+	if (!config.data || !config.data.snapshot || config.data.fields.length === 0)
 		return (
 			<EmptyState
 				icon={<IconSettingsOff size={28} />}
@@ -135,9 +135,7 @@ function ConfigContent({
 			owner={owner}
 			displayName={displayName}
 			fields={config.data.fields}
-			savedConfig={config.data.savedConfig}
-			readonly={config.data.readonly}
-			defaults={config.data.defaults}
+			snapshot={config.data.snapshot}
 			sections={config.data.sections}
 			active={active}
 		/>

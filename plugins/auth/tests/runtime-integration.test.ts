@@ -76,7 +76,7 @@ describe('official authentication vNext Runtime integration', () => {
 			const management = await ready.management.describeDto()
 			try {
 				expect(management).toMatchObject({
-					protocol: { name: 'pluxel.management', major: 8 },
+					protocol: { name: 'pluxel.management', major: 9 },
 					workbench: { enabled: false },
 				})
 			} finally {

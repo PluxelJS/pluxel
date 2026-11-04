@@ -4,8 +4,8 @@ import { arrayMeta, formMeta, picklistMeta } from 'valibot-form'
 import { serialize } from 'capnweb'
 import type { ConfigPresentationFieldV1 } from '@pluxel/services/management/protocol'
 import {
-	compileConfigPresentationPlanV1,
-	parseConfigPresentationPlanV1,
+	compileConfigPresentationPlanV2,
+	parseConfigPresentationPlanV2,
 	parseRuntimePortableData,
 } from '@pluxel/services/management/internal'
 import {
@@ -25,15 +25,14 @@ const baseField = (path: string): ConfigPresentationFieldV1 => ({
 })
 
 const plan = (overrides: Record<string, unknown> = {}) => ({
-	version: 1,
+	version: 2,
 	fieldName: 'config',
-	defaults: {},
 	fields: [baseField('value')],
 	sections: [],
 	...overrides,
 })
 
-describe('ConfigPresentationPlanV1 compiler', () => {
+describe('ConfigPresentationPlanV2 compiler', () => {
 	it('projects supported schema kinds into closed portable DTOs', () => {
 		const schema = v.object({
 			title: v.string(),
@@ -48,10 +47,9 @@ describe('ConfigPresentationPlanV1 compiler', () => {
 				v.object({ type: v.literal('count'), value: v.number() }),
 			]),
 		})
-		const output = compileConfigPresentationPlanV1({
+		const output = compileConfigPresentationPlanV2({
 			fieldName: 'config',
 			schema,
-			defaults: { title: '', enabled: false, items: [], lookup: {} },
 			sections: [],
 		})
 
@@ -80,10 +78,9 @@ describe('ConfigPresentationPlanV1 compiler', () => {
 			createdAt: v.pipe(v.date(), formMeta({ title: 'Created at' })),
 			items: v.pipe(v.array(v.string()), arrayMeta({ defaultItem: () => 'not portable' })),
 		})
-		const output = compileConfigPresentationPlanV1({
+		const output = compileConfigPresentationPlanV2({
 			fieldName: 'config',
 			schema,
-			defaults: {},
 			sections: [],
 		})
 
@@ -102,7 +99,7 @@ describe('ConfigPresentationPlanV1 compiler', () => {
 	})
 
 	it('represents an opaque Standard Schema without sending executable schema state', () => {
-		const output = compileConfigPresentationPlanV1({
+		const output = compileConfigPresentationPlanV2({
 			fieldName: 'config',
 			schema: {
 				'~standard': {
@@ -111,7 +108,6 @@ describe('ConfigPresentationPlanV1 compiler', () => {
 					validate: () => ({ value: {} }),
 				},
 			},
-			defaults: {},
 			sections: [],
 		})
 
@@ -122,7 +118,7 @@ describe('ConfigPresentationPlanV1 compiler', () => {
 	})
 })
 
-describe('ConfigPresentationPlanV1 validation', () => {
+describe('ConfigPresentationPlanV2 validation', () => {
 	it('deeply freezes cloned portable data and rejects executable or realm-specific values', () => {
 		const parsed = parseRuntimePortableData({ values: ['safe'] }) as {
 			readonly values: readonly string[]
@@ -149,29 +145,27 @@ describe('ConfigPresentationPlanV1 validation', () => {
 
 	it('rejects unknown protocol fields and dangerous field or section paths', () => {
 		expect(() =>
-			parseConfigPresentationPlanV1(plan({ fields: [{ ...baseField('value'), depth: 1 }] })),
+			parseConfigPresentationPlanV2(plan({ fields: [{ ...baseField('value'), depth: 1 }] })),
 		).toThrow(/traversal depth/)
 		expect(() =>
-			parseConfigPresentationPlanV1(
+			parseConfigPresentationPlanV2(
 				plan({ fields: [{ ...baseField('value'), source: 'schema source' }] }),
 			),
 		).toThrow(/unsupported field source/)
 		expect(() =>
-			parseConfigPresentationPlanV1(plan({ fields: [{ ...baseField('__proto__.polluted') }] })),
+			parseConfigPresentationPlanV2(plan({ fields: [{ ...baseField('__proto__.polluted') }] })),
 		).toThrow(/reserved/)
 		expect(() =>
-			parseConfigPresentationPlanV1(
+			parseConfigPresentationPlanV2(
 				plan({
-					sections: [
-						{ path: ['safe', 'constructor'], fieldName: 'nested', defaults: {}, fields: [] },
-					],
+					sections: [{ path: ['safe', 'constructor'], fieldName: 'nested', fields: [] }],
 				}),
 			),
 		).toThrow(/reserved/)
 		expect(() =>
-			parseConfigPresentationPlanV1(
+			parseConfigPresentationPlanV2(
 				plan({
-					sections: [{ path: ['x'.repeat(129)], fieldName: 'nested', defaults: {}, fields: [] }],
+					sections: [{ path: ['x'.repeat(129)], fieldName: 'nested', fields: [] }],
 				}),
 			),
 		).toThrow(/128 characters/)
@@ -188,11 +182,11 @@ describe('ConfigPresentationPlanV1 validation', () => {
 			readOnly: true,
 			reason: 'No portable control',
 		}
-		expect(parseConfigPresentationPlanV1(plan({ fields: [unsupported] })).fields).toEqual([
+		expect(parseConfigPresentationPlanV2(plan({ fields: [unsupported] })).fields).toEqual([
 			unsupported,
 		])
 		expect(() =>
-			parseConfigPresentationPlanV1(
+			parseConfigPresentationPlanV2(
 				plan({ fields: [{ ...unsupported, meta: { label: 'Opaque' } }] }),
 			),
 		).toThrow(/read-only/)
@@ -211,20 +205,24 @@ describe('ConfigPresentationPlanV1 validation', () => {
 				fields: [nested],
 			}
 		}
-		expect(() => parseConfigPresentationPlanV1(plan({ fields: [nested] }))).toThrow(
+		expect(() => parseConfigPresentationPlanV2(plan({ fields: [nested] }))).toThrow(
 			/maximum nesting depth/,
 		)
 
 		const manyFields = Array.from({ length: 7_000 }, (_, index) => baseField(`field${index}`))
-		expect(() => parseConfigPresentationPlanV1(plan({ fields: manyFields }))).toThrow(
+		expect(() => parseConfigPresentationPlanV2(plan({ fields: manyFields }))).toThrow(
 			/total node budget/,
 		)
 
 		const largeText = 'x'.repeat(900_000)
 		expect(() =>
-			parseConfigPresentationPlanV1(
+			parseConfigPresentationPlanV2(
 				plan({
-					defaults: { a: largeText, b: largeText, c: largeText, d: largeText, e: largeText },
+					fields: [
+						{ ...baseField('a'), meta: { label: largeText, description: largeText } },
+						{ ...baseField('b'), meta: { label: largeText, description: largeText } },
+						{ ...baseField('c'), meta: { label: largeText } },
+					],
 				}),
 			),
 		).toThrow(/total text budget/)
@@ -287,14 +285,14 @@ describe('Workbench presentation adapter', () => {
 		)
 
 		expect(patch).toEqual({
-			title: 'changed',
-			nested: { name: 'changed' },
+			set: { title: 'changed', nested: { name: 'changed' } },
+			remove: [['title'], ['nested', 'name']],
 		})
 		expect(fields.find((field) => field.name === 'opaqueList')?.meta.readOnly).toBe(true)
 	})
 })
 
-it('explains env locks on nested fields while preserving editable siblings in the patch', () => {
+it('explains effective env sources on nested fields while preserving editable siblings in the patch', () => {
 	const fields = applyConfigSources(
 		adaptConfigPresentationFields([
 			{
@@ -329,7 +327,7 @@ it('explains env locks on nested fields while preserving editable siblings in th
 	const object = fields[0]!
 	if (object.kind !== 'object') throw new Error('Expected object')
 	expect(object.meta.readOnly).not.toBe(true)
-	expect(object.fields[0]?.meta.readOnly).toBe(true)
+	expect(object.fields[0]?.meta.readOnly).not.toBe(true)
 	expect(object.fields[0]?.meta.description).toContain('LOCKED_VALUE')
 	expect(
 		buildEditableConfigPatch(
@@ -337,5 +335,5 @@ it('explains env locks on nested fields while preserving editable siblings in th
 			{ nested: { locked: 'env', free: 'edit' } },
 			{ nested: { locked: 'env', free: 'old' } },
 		),
-	).toEqual({ nested: { free: 'edit' } })
+	).toEqual({ set: { nested: { free: 'edit' } }, remove: [['nested', 'free']] })
 })

@@ -113,11 +113,8 @@ describe('PluginPart runtime capabilities', () => {
 			await expect(pluginConfigPresentation(host.ctx, address)).resolves.toMatchObject({
 				ok: true,
 				plan: {
-					defaults: { enabled: true, configured: { size: 10 } },
-					sections: [
-						{ path: [], defaults: { enabled: true } },
-						{ path: ['configured'], defaults: { size: 10 } },
-					],
+					version: 2,
+					sections: [{ path: [] }, { path: ['configured'] }],
 				},
 			})
 		}

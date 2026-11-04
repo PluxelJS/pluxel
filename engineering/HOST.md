@@ -8,7 +8,8 @@
 
 ## 服务与资源
 
-`createHost({ plugins, services })` 在 root 创建前验证固定安装计划。服务用 `requires` 声明准备依赖；同步 capability factory 保持惰性，异步资源通常在 `prepare({ ctx, dependencies, effects })` 获取。Core 内建 [FS](FS.md) 提供 Host 普通配置文档，[TinyBase](TINYBASE.md) 承载 Plugin Store；首个异步文件/文档操作共享准备任务，不依赖服务安装顺序。
+`createHost({ plugins, policy, config, services, runtime })` 在 root 创建前捕获作者输入并验证固定安装计划。创建唯一 root 后解析文档 factory、读取保存输入，组合八项 policy，并一次绑定四项执行参数，再创建 PluginService、coordinator 和准备服务。Core 直接装配仍立即绑定原生执行配置；Host 的内部延迟绑定不改变 Context shape，也不是公开 setter。准备失败使用同一个 root 清理路径，保留原错误和清理错误。
+服务用 `requires` 声明准备依赖；同步 capability factory 保持惰性，异步资源通常在 `prepare({ ctx, dependencies, effects })` 获取。Core 内建 [FS](FS.md) 提供 Host 普通配置文档，[TinyBase](TINYBASE.md) 承载 Plugin Store；首个异步文件/文档操作共享准备任务，不依赖服务安装顺序。
 `@pluxel/host/browser` 从 `src/browser.ts` 只导出同一 Host 与服务组合实现，避免根 barrel 的 Node application/source loader 求值。它不提供另一套 runtime，也不为所选 Plugin 或服务补 Node polyfill；浏览器装配及 lowering 由[浏览器 Host 用法](../docs/host/configuration.md#浏览器-host)维护。
 每项服务的 effects scope 随服务准备失败或 Host 关闭释放。Plugin generation 的 effects 随该代停止释放，两者都使用 Core effects 契约，但 owner 与生命周期必须在调用位置清楚可见。
 关闭先停止接纳、排空协调操作和插件，再按依赖逆序释放服务；清理失败聚合，不能跳过其余清理。
@@ -25,8 +26,8 @@ Host 从协调队列末尾取得已应用 provider-default bindings，在同一 
 
 ## 应用、开发和部署
 
-应用每次启动执行配置工厂，取得完整 name/plugins/sources/services/runtime；来源、服务与插件选择在异步 binding 读取前捕获，服务声明复制能力与依赖集合，借用句柄保持身份。`createHost()` 仅接收 Host 正式字段，执行入口显式投影，不依赖忽略额外应用字段。`prepare` 在服务与开发附件准备好后、插件启动前执行。
-Host 不改变进程 cwd。入口与来源锚定 startup root，环境通过 startup 显式传递。`envBindings`/`fileBindings` 显式选择输入；声明初始化、runtime override、原始保存记录与 env 的权威顺序由 [Config](CONFIG.md#static-startup-config) 维护，受控路径只读且覆盖值不落盘。
+应用每次启动执行配置工厂，取得完整 name/plugins/sources/policy/config/services/runtime；来源、服务、插件选择和输入值在异步 binding 读取前捕获，服务声明复制能力与依赖集合，借用句柄保持身份。`createHost()` 仅接收 Host 正式字段，执行入口显式投影，不依赖忽略额外应用字段。`prepare` 在服务与开发附件准备好后、插件启动前执行。
+Host 不改变进程 cwd。入口与来源锚定 startup root，环境通过 startup 显式传递。`envBindings`/`fileBindings` 显式选择输入，与 config.records 共同构成本次声明；逐 node 的 mode 决定声明与保存输入的取值规则。模式、写入权限、跨启动保留与 generation 采用分别表达，唯一求值链由 [Config](CONFIG.md#static-startup-config) 维护。runtime 只保留四项原生设施与 documents 接线。
 
 Vite、生产 launcher 共用 Host 应用解析。工厂 identity 变化时重新求值完整配置并替换 Host，固定插件 import 更新也可能使工厂失效。工厂求值失败保留旧 Host。动态来源更新若工厂未变，则复用本次配置并提交 catalog。替换失败可用最后成功声明创建 fresh Host 补偿，但不能复活旧 generation。
 Host-vite 是唯一开发驱动；官方服务附件分别由 Services、Workbench 拥有。数据库 lowering 属于官方 Vite preset 的工具插件，不是运行时服务。
@@ -52,7 +53,7 @@ Management 安装认证、状态投影和 RPC session；Workbench 安装内容/p
 ## 资源边界与验证入口
 
 - Host plan、prepare rollback、关闭顺序：`packages/host/src/services.ts`、`host.ts`，对应 services/host/application 测试。
-- 配置与运行策略存储：Host `config-store.ts`、`state-store.ts`。默认借用 Core 私有文档；嵌入应用可通过同步 root factory 借用已有 document storage，不拥有外部后端；[FS](FS.md) 的普通文档 adapter 保存配置与运行策略，路径为 `services/host/<namespace>/<key>`，在 root final 关闭前停止观察并排空；嵌入宿主可提供自己的借用 adapter。配置只接受 v4，运行策略只接受 v6；文档若解析、版本或结构无效，Host 准备失败；原文件保持不变，不自动备份、重置或发布种子状态。只在文件确实不存在时按 writable/readonly 模式初始化或保留种子。恢复需由操作者检查并修复原文件或从备份恢复后重启。
+- 配置与运行策略存储：Host `config-store.ts`、`state-store.ts`。默认通过 [FS](FS.md) 普通文档 adapter 借用 `services/host/<namespace>/<key>`；`runtime.documents` 的每域 false 关闭文档 IO，readOnly 拒绝本实例写入，storage 同步 root factory 借用外部 backend。Host 不关闭借用 backend，在 root final 关闭前停止观察并排空。配置只接受 v4 原始记录，运行策略只接受 v7 稀疏输入；缺文档不写种子、默认值或声明，只有明确管理修改才提交。文档若解析、版本或结构无效，Host 准备失败并保留原文件。恢复或旧格式转换由操作者显式完成，没有兼容 reader、重置或启动迁移。
 - Catalog、failed candidate 和 committed authority：Host `coordinator.ts`；原生启动使用 `application.ts`、`source-discovery.ts` 与 `native-source-loader.ts`，持续观察和更新归 Host-vite `host-vite.ts`。细节见 [HMR](HMR.md)。
 - HTTP owner lease、stream、WS 与 carrier：[HTTP 用法](../docs/plugin-development/http.md)、`packages/services/src/elysia/`。
 - 数据库的 generation handle、迁移、backend 与应用自管边界：[DATABASE.md](DATABASE.md)。
@@ -80,7 +81,7 @@ owner/key/value/source 记录；缺少安装能力属于装配错误。Services 
 
 KV mutation 在本实例唯一 backend lock 内 clone、检查 revision、加密并原子提交，然后才交换 snapshot 与发布通知；失败不推进
 revision。删除保留 tombstone。watch/watchPrefix 在同一 lock 内读取初始 snapshot 并注册，通知在锁外、owner invocation 内运行。
-部署 env/file 整记录只读且不落盘；任何KV写入路径都检查overlay。owner namespace和其命名子空间隔离，root保持受信任管理权限。
+部署 env/file 整记录只读且不落盘；任何 KV 写入路径都检查 overlay。绑定通过 `vault.namespace` 选择命名子空间，default/fork owner namespace 和其命名子空间隔离，root 保持受信任管理权限。
 
 加密 snapshot 的外部变化由 Vault 重新解密并校验，在本实例 lock 内交换有效视图，再在锁外通知；无效更新保留最后有效值并报告错误，不重写文件。外部 revision 可以重复或回退，不能把本地条件检查和观察通知当作跨实例 CAS。持久 snapshot 只接受 version 2 的结构化 KV 与 revision。完整加密格式、操作与恢复边界见 [Vault](../docs/plugin-development/vault.md)。
 

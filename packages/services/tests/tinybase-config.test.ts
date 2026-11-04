@@ -32,79 +32,68 @@ class ConfiguredOwner extends BasePlugin {
 	}
 }
 
-it('keeps raw saved records, env locks and single normalization through filesystem documents across Hosts', async () => {
+it('keeps saved input sparse and normalizes once across durable Hosts', async () => {
 	const prefix = await mkdtemp(join(tmpdir(), 'pluxel-tinybase-config-'))
 	const owner = ConfiguredOwner.nodeAddress()
+	const runtime = {
+		zenfs: {
+			mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+			durableMounts: ['/'],
+		},
+	}
 	try {
 		const host = await createHost({
 			plugins: [ConfiguredOwner],
-			runtime: {
-				zenfs: {
-					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-					durableMounts: ['/'],
-				},
-				configRecords: {
-					records: [{ owner, config: { text: 'initial', locked: 'base' } }],
-					overlays: [
-						{
-							owner,
-							config: { locked: 'ENV' },
-							sources: [{ path: ['locked'], kind: 'env', name: 'LOCKED' }],
-						},
-					],
-				},
-				state: { autoStart: [owner] },
+			runtime,
+			config: {
+				mode: 'saved-first',
+				records: [{ owner, config: { text: 'initial', locked: 'declared' } }],
 			},
+			policy: { autoStart: [owner] },
 		})
 		try {
 			await host.start()
 			const before = normalizations
-			const result = await host.config.patch(owner, { text: ' saved ' })
+			const result = await host.config.patch(owner, { set: { text: ' saved ' } })
 			expect(result).toMatchObject({
 				ok: true,
-				saved: true,
+				persistence: { status: 'confirmed', retention: 'declared-durable' },
 				application: 'saved-not-applied',
 				applyFailure: { code: 'listener_not_registered' },
 			})
 			expect(normalizations).toBe(before + 1)
-			await expect(host.config.patch(owner, { locked: 'changed' })).resolves.toMatchObject({
-				ok: false,
-				code: 'mutation_rejected',
-			})
-			const text = await requireHostDocuments(host.ctx, 'config').getText('config.json')
-			expect(JSON.parse(text!)).toMatchObject({
-				json: { version: 4, plugins: [{ owner, config: { text: ' saved ', locked: 'base' } }] },
+			const persisted = await requireHostDocuments(host.ctx, 'config').getText('config.json')
+			expect(JSON.parse(persisted!)).toMatchObject({
+				json: { version: 4, plugins: [{ owner, config: { text: ' saved ' } }] },
 			})
 		} finally {
 			await host.close()
 		}
-
 		const reopened = await createHost({
 			plugins: [ConfiguredOwner],
-			runtime: {
-				zenfs: {
-					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-					durableMounts: ['/'],
-				},
-				configRecords: { records: [{ owner, config: { text: 'different base', locked: 'base' } }] },
-				state: { autoStart: [] },
+			runtime,
+			config: {
+				mode: 'saved-first',
+				records: [{ owner, config: { text: 'different base', locked: 'declared' } }],
 			},
+			policy: { autoStart: [owner] },
 		})
 		try {
 			await reopened.start()
+			const before = normalizations
 			await expect(reopened.config.get(owner)).resolves.toMatchObject({
 				ok: true,
 				application: 'applied',
-				config: { text: 'saved', locked: 'base' },
+				managedInput: { text: ' saved ' },
+				config: { text: 'saved', locked: 'declared' },
 			})
-			expect(applied).toEqual({ text: 'saved', locked: 'base' })
-			const persisted = await requireHostDocuments(reopened.ctx, 'config').getText('config.json')
-			expect(JSON.parse(persisted!)).toMatchObject({
-				json: { plugins: [{ owner, config: { text: ' saved ', locked: 'base' } }] },
-			})
-			await expect(reopened.config.reset(owner, ['text'])).resolves.toMatchObject({
+			expect(normalizations).toBe(before)
+			expect(applied).toEqual({ text: 'saved', locked: 'declared' })
+			await expect(reopened.config.reset(owner, [['text']])).resolves.toMatchObject({
 				ok: true,
-				saved: true,
+				managedInput: {},
+				effectiveInput: { text: 'different base', locked: 'declared' },
+				persistence: { status: 'confirmed' },
 			})
 		} finally {
 			await reopened.close()

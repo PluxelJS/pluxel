@@ -3,7 +3,6 @@ import {
 	type HostApplication,
 	type PluginHost,
 	type HostDocumentStorage,
-	type HostStateStoreOptions,
 } from '@pluxel/host'
 import { parsePluginNodeReference, type PluginConstructor } from '@pluxel/core'
 import { pluginSource } from '@pluxel/host/sources'
@@ -42,10 +41,9 @@ export default defineHostApplication(({ bindings }): HostApplication => {
 		.filter((name) => !available || available.has(name))
 		.map((name) => parsePluginNodeReference(`package:@embedded-launcher/app/plugins::${name}`))
 	const { stateStorage, configStorage } = execution
-	let state: HostStateStoreOptions = { autoStart }
-	if (stateStorage) state = { autoStart, storage: () => stateStorage }
 	return {
 		plugins: execution.plugins ?? [],
+		policy: { autoStart, mode: { autoStart: 'saved-first' } },
 		...(execution.plugins
 			? {}
 			: { sources: [pluginSource({ kind: 'file', path: 'src/plugins/index.ts' })] }),
@@ -71,8 +69,10 @@ export default defineHostApplication(({ bindings }): HostApplication => {
 			)
 		},
 		runtime: {
-			state,
-			...(configStorage ? { configRecords: { storage: () => configStorage } } : {}),
+			documents: {
+				...(stateStorage ? { state: { storage: () => stateStorage } } : {}),
+				...(configStorage ? { config: { storage: () => configStorage } } : {}),
+			},
 		},
 	}
 })

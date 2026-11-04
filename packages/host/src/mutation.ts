@@ -17,7 +17,7 @@ import { pluginCatalogEntry, type PluginCatalogEntry, type PluginCatalogSnapshot
 import type { HostStatePatch, HostStatePatchOperation } from './state'
 
 export type HostStateMutationRejection =
-	| Readonly<{ code: 'state_overridden'; field: keyof HostStateSnapshot; message: string }>
+	| Readonly<{ code: 'policy_shadowed'; field: keyof HostStateSnapshot; message: string }>
 	| Readonly<{
 			code: 'definition_unavailable'
 			definition: PluginDefinitionAddress
@@ -393,4 +393,76 @@ function nodeRole(
 
 function reject(issue: HostStateMutationRejection): never {
 	throw new HostStateMutationRejectedError(Object.freeze(issue))
+}
+
+/** Validate the full effective target through the same graph-action admission rules. */
+export function validateHostPolicyChange(
+	catalog: PluginCatalogSnapshot,
+	previous: HostStateSnapshot,
+	next: HostStateSnapshot,
+): void {
+	const operations: HostStatePatchOperation[] = []
+	const nextNodes = new Set(next.autoStart.map(pluginNodeIndexKey))
+	for (const node of previous.autoStart)
+		if (!nextNodes.has(pluginNodeIndexKey(node)))
+			operations.push({ type: 'set-auto-start', node, autoStart: false })
+	for (const entry of previous.dependencyOverrides)
+		if (
+			!next.dependencyOverrides.some(
+				(value) =>
+					overrideKey(value.consumerAddress, value.requirementAddress) ===
+					overrideKey(entry.consumerAddress, entry.requirementAddress),
+			)
+		)
+			operations.push({
+				type: 'set-dependency-override',
+				consumer: entry.consumerAddress,
+				requirement: entry.requirementAddress,
+				provider: null,
+			})
+	for (const entry of previous.providerDefaults)
+		if (
+			!next.providerDefaults.some(
+				(value) => pluginDefinitionIndexKey(value.token) === pluginDefinitionIndexKey(entry.token),
+			)
+		)
+			operations.push({ type: 'set-provider-default', token: entry.token, provider: null })
+	for (const node of next.forks)
+		if (!previous.forks.some((value) => pluginNodeAddressEqual(value, node)))
+			operations.push({ type: 'ensure-fork', definition: node.definition, forkId: node.forkId })
+	for (const entry of next.dependencyOverrides)
+		if (
+			!previous.dependencyOverrides.some(
+				(value) =>
+					overrideKey(value.consumerAddress, value.requirementAddress) ===
+						overrideKey(entry.consumerAddress, entry.requirementAddress) &&
+					pluginNodeAddressEqual(value.providerAddress, entry.providerAddress),
+			)
+		)
+			operations.push({
+				type: 'set-dependency-override',
+				consumer: entry.consumerAddress,
+				requirement: entry.requirementAddress,
+				provider: entry.providerAddress,
+			})
+	for (const entry of next.providerDefaults)
+		if (
+			!previous.providerDefaults.some(
+				(value) =>
+					pluginDefinitionIndexKey(value.token) === pluginDefinitionIndexKey(entry.token) &&
+					pluginNodeAddressEqual(value.provider, entry.provider),
+			)
+		)
+			operations.push({
+				type: 'set-provider-default',
+				token: entry.token,
+				provider: entry.provider,
+			})
+	for (const node of previous.forks)
+		if (!next.forks.some((value) => pluginNodeAddressEqual(value, node)))
+			operations.push({ type: 'remove-fork', definition: node.definition, forkId: node.forkId })
+	for (const node of next.autoStart)
+		if (!previous.autoStart.some((value) => pluginNodeAddressEqual(value, node)))
+			operations.push({ type: 'set-auto-start', node, autoStart: true })
+	validateHostStateMutation(catalog, previous, { operations })
 }

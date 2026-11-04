@@ -211,7 +211,7 @@ try {
 				),
 			}),
 		],
-		runtime: { state: { autoStart: [TypstPlugin.nodeAddress()] } },
+		policy: { autoStart: [TypstPlugin.nodeAddress()] },
 	})
 	const report = await renderHost.start()
 	assert.equal(report.reconciliation.length, 0)

@@ -346,17 +346,18 @@ describe('runtime web control protocol', () => {
 		host.add(ManagedPlugin)
 		await host.commit()
 		const address = host.cfg(ManagedPlugin).owner
-		const coordinator = requirePluginHostCoordinator(host.ctx)
-		const updateRuntimeState = coordinator.updateRuntimeState.bind(coordinator)
-		coordinator.updateRuntimeState = (() =>
-			Promise.reject(
-				new Error('injected programming failure'),
-			)) as typeof coordinator.updateRuntimeState
-
-		await expect(setAutoStart(host.ctx, [{ address, autoStart: true }])).rejects.toThrow(
-			'injected programming failure',
-		)
-		coordinator.updateRuntimeState = updateRuntimeState
+		const prepare = vi
+			.spyOn(requireHostStateStore(host.ctx), 'prepareAction')
+			.mockImplementation(() => {
+				throw new Error('injected programming failure')
+			})
+		try {
+			await expect(setAutoStart(host.ctx, [{ address, autoStart: true }])).rejects.toThrow(
+				'injected programming failure',
+			)
+		} finally {
+			prepare.mockRestore()
+		}
 	})
 
 	it('rejects malformed transport actions before applying any batch item', async () => {

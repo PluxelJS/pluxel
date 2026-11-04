@@ -99,8 +99,10 @@ node 已拥有 committed config 或进入过 lifecycle 后，使用运行期配�
 
 ```ts no-twoslash
 const result = await host.config.patch(WorkerPlugin, {
-	endpoint: 'https://api.example.com',
-	concurrency: 12,
+	set: {
+		endpoint: 'https://api.example.com',
+		concurrency: 12,
+	},
 })
 
 // 已注册 configs.onUpdate() 且处理成功时，application 为 'applied'。

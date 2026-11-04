@@ -19,7 +19,8 @@ import { RouterLinkAdapter } from '../../router/RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
 import { setPluginAutoStarts } from '../pluginStatusActions'
 import { usePluginOverview } from '../pluginOverview'
-import { canWritePluginState } from '../pluginOverviewModel'
+import { canWritePluginState, type PluginOverview } from '../pluginOverviewModel'
+import { managementQueryKeys } from '../../managementQuery'
 import { runtimeErrorMessage, useRuntimeManagementClient } from '../../../runtime'
 import {
 	EMPTY_OVERVIEW,
@@ -318,7 +319,8 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 
 	const handleBulkAutoStart = useCallback(
 		async (autoStart: boolean) => {
-			if (selectedIds.length === 0 || !canChangeAutoStart) return
+			const statePolicy = overviewState.overview?.statePolicy
+			if (selectedIds.length === 0 || !canChangeAutoStart || !statePolicy) return
 			const batch = selectedIds.map((id) => {
 				const status = overview.statuses[id]
 				if (!status) throw new Error(`Unknown catalog plugin id: ${id}`)
@@ -333,7 +335,11 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 					management,
 					queryClient,
 					batch.map(({ address }) => ({ address, autoStart })),
+					statePolicy.managedRevision,
 				)
+				const undoRevision = queryClient.getQueryData<PluginOverview>(
+					managementQueryKeys.pluginOverview(),
+				)?.statePolicy.managedRevision
 				const failed = results.filter((r) => !r.ok)
 				if (failed.length > 0) {
 					notifyAndRecord({
@@ -360,6 +366,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 										void (async () => {
 											setBulkBusy(true)
 											try {
+												if (!undoRevision) throw new Error('运行策略尚未重新加载，无法恢复')
 												const undoResults = await setPluginAutoStarts(
 													management,
 													queryClient,
@@ -367,6 +374,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 														address,
 														autoStart: previousAutoStart,
 													})),
+													undoRevision,
 												)
 												const undoFailed = undoResults.filter((result) => !result.ok)
 												if (undoFailed.length > 0) {
@@ -418,7 +426,14 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 				setBulkBusy(false)
 			}
 		},
-		[canChangeAutoStart, management, selectedIds, overview.statuses, queryClient],
+		[
+			canChangeAutoStart,
+			management,
+			selectedIds,
+			overview.statuses,
+			overviewState.overview?.statePolicy,
+			queryClient,
+		],
 	)
 
 	const handleBulkAction = useCallback(

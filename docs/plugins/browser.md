@@ -28,10 +28,8 @@ export default defineHostApplication(() => ({
 			},
 		}),
 	],
-	runtime: {
-		state: {
-			autoStart: [PlaywrightPlugin.nodeAddress()],
-		},
+	policy: {
+		autoStart: [PlaywrightPlugin.nodeAddress()],
 	},
 }))
 ```
@@ -64,10 +62,8 @@ export default defineHostApplication(() => ({
 			},
 		}),
 	],
-	runtime: {
-		state: {
-			autoStart: [PlaywrightPlugin.nodeAddress()],
-		},
+	policy: {
+		autoStart: [PlaywrightPlugin.nodeAddress()],
 	},
 }))
 ```
@@ -108,10 +104,8 @@ export class NativeBrowser extends Playwright {
 export default defineHostApplication(() => ({
 	plugins: [NativeBrowser],
 	services: [],
-	runtime: {
-		state: {
-			autoStart: [NativeBrowser.nodeAddress()],
-		},
+	policy: {
+		autoStart: [NativeBrowser.nodeAddress()],
 	},
 }))
 ```

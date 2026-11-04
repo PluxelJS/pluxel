@@ -13,7 +13,7 @@ Host 拥有插件目录、运行策略和服务生命周期。应用入口默认
 | 第三方 SDK 配置与可选预设          | [原生配置](#原生配置与预设)                                                               |
 | 服务与固定插件、启动策略           | [组合](#选择组合)、[应用入口](#应用入口)                                                  |
 | Vite 与动态插件来源                | [Vite](#vite-开发)、[动态来源](#动态来源)                                                 |
-| 环境变量、JSON 文件与只读覆盖      | [环境](#配置环境变量)、[插件配置绑定](#绑定部署环境与-json-文件)                          |
+| 环境变量、JSON 文件与来源规则      | [环境](#配置环境变量)、[插件配置绑定](#绑定部署环境与-json-文件)                          |
 | 配置保存、外部修改与共享文件       | [持久化](#保存配置和运行策略)、[外部修改](#共享文件与外部修改)                            |
 | 文件后端、只读或浏览器存储         | [FS](#选择文件后端)                                                                       |
 | Vault 后端、部署凭据与备份         | [后端](#选择后端)、[绑定](#部署凭据)、[备份](#密钥与备份)                                 |
@@ -70,11 +70,7 @@ import { DemoPlugin, ProviderPlugin } from './plugins'
 
 await using host = await createHost({
 	plugins: [DemoPlugin, ProviderPlugin],
-	runtime: {
-		state: {
-			autoStart: [DemoPlugin.nodeAddress()],
-		},
-	},
+	policy: { autoStart: [DemoPlugin] },
 })
 const report = await host.start()
 if (
@@ -91,7 +87,9 @@ FS 与 TinyBase 始终内建；配置和运行策略使用同一个 Core 文件�
 
 ## 应用入口
 
-`name` 是 Host 顶层身份。运行参数统一放在 `runtime`：`zenfs`、`logtape`、`tinybase`、`state` 和 `configRecords`；服务与 Plugin 清单仍在顶层。`runtime` 不接受第二个 `name`。直接使用 Core 独立入口时，`CoreHostConfig.name` 仍可用。
+`plugins` 提供可用代码，`policy` 选择运行策略，`config` 提供 Plugin 原始输入，`services` 安装能力。`runtime` 只装配 `zenfs`、`logtape`、`tinybase`、`events` 与进阶 `documents` 设施；普通应用可以省略。`name` 是顶层诊断身份。
+
+`HostApplication` 与 `createHost()` 共用这些作者字段；动态 `sources`、部署绑定和 `prepare` 由应用解析器处理，直接 `createHost()` 不接受这些应用专属字段。
 
 具体 Plugin 的 `MyPlugin.nodeAddress()` 返回 default 节点地址，`MyPlugin.nodeAddress('east')` 返回 fork 地址；只引用 lowering 后的身份，不创建或启动实例。abstract token 和未经过 lowering 的 class 不能产生节点地址。
 
@@ -112,6 +110,8 @@ export default defineHostApplication(async (startup) => {
 	return {
 		name: 'my-app',
 		plugins: [TodoPlugin],
+		policy: { autoStart: [TodoPlugin] },
+		config: { records: [{ owner: TodoPlugin, config: { maxItems: 100 } }] },
 		services: await servicesPreset(startup, {
 			workbench: environment.workbench ?? true,
 		}),
@@ -127,18 +127,12 @@ export default defineHostApplication(async (startup) => {
 				},
 				durableMounts: ['/'],
 			}),
-			state: {
-				autoStart: [TodoPlugin.nodeAddress()],
-			},
-			configRecords: {
-				records: [{ owner: TodoPlugin.nodeAddress(), config: { maxItems: 100 } }],
-			},
 		},
 	}
 })
 ```
 
-`plugins` 表示代码可用，不代表自动启动。`runtime.state.autoStart` 选择冷启动时运行的节点，插件自己的 required dependencies 由图统一处理。
+`plugins` 表示代码可用，不代表自动启动。`policy.autoStart` 选择冷启动时运行的节点，插件自己的 required dependencies 由图统一处理。
 
 配置工厂每次创建新 Host 时执行，可以读取 `env`、`bindings`、`root` 和 `deployment`。构建不会执行它。
 Vite 和生产构建都要求入口直接默认导出 `defineHostApplication(内联工厂)`：工厂直接返回对象，或在块中以唯一、无条件的最后一条顶层 `return` 返回对象；返回对象不使用 spread。`delivery: 'standalone'` 构建中的 `plugins` 使用直接数组或模块级 const/imported 数组，不使用条件、函数调用或 startup 计算。构建只分析静态清单，不执行工厂。没有环境绑定时，Vite 可运行条件插件数组。
@@ -147,7 +141,7 @@ Vite 和生产构建都要求入口直接默认导出 `defineHostApplication(内
 
 `prepare({ host, startup })` 在服务与开发附件准备完成后、插件启动前执行；适合应用级硬前提。资源获取成功后立即登记到明确的 owner，清理失败不会跳过其他资源。
 
-`runtime.configRecords` 和 `runtime.state` 默认使用 Core FS 文档，是否跨启动保存取决于 `runtime.zenfs`；省略后端时使用 InMemory。声明、已有文档与运行时覆盖的规则见[保存配置和运行策略](#保存配置和运行策略)。
+Plugin 配置和运行策略默认从 Core FS 文档读取管理输入；省略文件后端时使用 InMemory。启动不会把声明或默认值写成保存记录。来源规则、保存能力与采用时机各自独立，见[保存配置和运行策略](#保存配置和运行策略)。
 
 ## Vite 开发
 
@@ -275,9 +269,9 @@ Vite 在自己的启动边界解析环境，用 `publicOrigin` 展示公开地�
 
 大多数插件只需 `configs.use(schema)`，通过 Workbench 或 Host 配置 API 设置值。只有部署系统负责提供固定值时，才在应用入口加绑定：环境变量使用 `envBinding`，挂载的 JSON 文件使用 `fileBinding`。两者都由 Host 在启动时读取。
 
-应用解析在首次异步读取前捕获绑定的文件路径、namespace 和环境 mapping；读取期间修改原声明不会改变本次输入或来源记录。schema 保留原实例，不能借修改 schema 对象改变已声明的契约。
+应用解析在首次异步读取前捕获目标地址、文件路径、`vault.namespace` 和环境 mapping；读取期间修改原声明不会改变本次输入或来源记录。schema 保留原实例，不能借修改 schema 对象改变已声明的契约。
 
-环境绑定从本次 `startup.env` 生成覆盖层，优先于保存值；该层不写入配置存储。
+环境绑定从本次 `startup.env` 生成声明输入；它和代码、文件一起按目标节点的 mode 与保存值组合，不自动写回。
 
 Plugin 需要导出传给 `configs.use()` 的同一个 schema：
 
@@ -327,22 +321,18 @@ export default defineHostApplication(() => ({
 
 Mapping 从 schema input 推导：object 可展开，也可绑定一个 JSON 变量；array、tuple 与动态 record 使用完整 JSON。环境名称匹配 `[A-Z_][A-Z0-9_]*`。string 保留原文，number 要求有限 JSON number，boolean 只接受 `true`/`false`，复合类型使用 JSON。config 环境缺失不生成覆盖，空字符串和 `null` 按 schema 校验；诊断不包含输入值。
 
-`runtime.configRecords.records` 与 `fileBindings` 的 config 合成本次原始声明，文件声明在同 owner 的路径上优先。`override: false` 是默认值：已有保存文档完整决定管理配置；仅文档不存在时，用声明初始化。`override: true` 将声明的显式路径覆盖到保存记录上，仅影响当前运行时。环境绑定最后覆盖有效值，始终不写盘。
+声明顺序固定为 `config.records → fileBindings.config → envBindings.config`；后者覆盖同 owner 的相同路径。随后按 `record.mode → config.mode → declared-first` 选择声明与保存输入。`saved-first` 可以让保存值优先于环境值；部署必须控制某项时选择 `declared-first` 或 `declared-only`。
 
-对象递归合并，数组整体替换。保存的是原始输入记录；schema defaults、transform 输出、env 和运行时 override 不反写成管理记录。显式 reset 的恢复目标是本次声明，详见[保存配置和运行策略](#保存配置和运行策略)。
+对象递归合并，数组和 tuple 整项替换；原始保存输入与 schema output 分开。默认值、transform、环境和文件声明都不自动保存。被声明遮盖的保存值仍可编辑，结果用 `shadowedPaths` 说明当前没有参与合成的路径；`readonly` 只表达文档写入限制，网络授权由管理接入另行控制。
 
-被 env 控制的路径及其祖先、后代拒绝修改和 reset，包括提交相同值。Workbench 显示来源并禁用对应字段；Host 返回的 `sources` 只有路径、来源种类、名称和只读状态，不含凭据。未绑定的兄弟字段仍可编辑。
-
+绑定目标也可传 `WorkerPlugin.nodeAddress('east')` 或 canonical node address；fork 不自动创建，仍须由 `policy.forks` 声明。相同来源层中，同 owner 的相同或祖先/后代路径重复绑定会拒绝，互不重叠的 mapping 可组合。初次接纳核对真实 schema，动态替换继续检查绑定路径；缺失的可选环境变量不贡献值，明确提供的错误输入不能因随后被覆盖而忽略。
 JSON 文件通过 `fileBindings: [fileBinding(WorkerPlugin, { config: { schema: WorkerConfig, path: './worker.json' } })]` 提供原始声明（`fileBinding` 从 `@pluxel/host` 导入），路径相对 `startup.root`。文件只在启动时读取，不由构建读取或打包。修改文件或 env 需要重新创建 Host。
 
 部署凭据不放在普通 config。需要从环境变量或挂载文件提供凭据时，按 [Vault 部署绑定](#部署凭据)声明只读记录；需要交互登录或刷新凭据时，使用可写 Vault。
 
-应用生产构建 从同一声明生成 `.env.example`，只输出说明和注释状态的空 placeholder，不读取构建机环境或复制 schema default。`envBindings` 使用 direct array literal，每项调用从 `@pluxel/host` 导入的 `envBinding`，第一个参数是静态目录中的 Plugin 标识符，第二个参数直接声明 `config`/`vault` 与其 `schema`、`mapping`；mapping 使用对象树和字符串 literal。动态分支不作为构建期来源清单。
+应用生产构建 从同一声明生成 `.env.example`，只输出说明和注释状态的空 placeholder，不读取构建机环境或复制 schema default。`envBindings` 使用 direct array literal，每项调用从 `@pluxel/host` 导入的 `envBinding`，第一个参数是可静态识别的 Plugin 标识符或其 `nodeAddress()` / `nodeAddress(字符串字面量)`，第二个参数直接声明 `config`/`vault` 与其 `schema`、`mapping`；mapping 使用对象树和字符串 literal。动态分支不作为构建期来源清单。
 
-直接消费 runtime control-plane `ConfigResult` 时按 discriminant 处理返回值：query 返回 `config` 和 `defaults`，并标记
-`saved: false`；成功 mutation 返回已持久化的 `config`、`application` 与 apply report，不再重复返回 defaults。
-`validation_failed` 只有在 defaults 可以独立计算时才带可选 `defaults`。持久化失败不会发布 staged revision，也不会把未确认的值注入
-Plugin generation。
+Host 查询区分 `managedInput`（保存原始输入）、`effectiveInput`（按 mode 合成的 input）和 `config`（完整 schema output）。管理编辑与保存/采用回执见下节；查询不会为展示默认值另外执行 schema transform。
 
 ## 选择文件后端
 
@@ -387,85 +377,167 @@ await host.start()
 
 ## 保存配置和运行策略
 
-Host 通过 `runtime.configRecords.records` 声明 Plugin 配置，通过 `runtime.state` 声明运行策略。两者默认借用 Core FS 的普通文档；后端只在 `runtime.zenfs` 选择一次。
+配置声明首先表达本次运行意图；保存输入由明确的管理操作产生。普通应用只写 `policy` 和 `config`，无需填写存储选项。
 
-```ts twoslash
-import { zenfs } from '@pluxel/core/config'
-import { createHost } from '@pluxel/host'
-import { BasePlugin, Plugin } from '@pluxel/core'
-import * as nativeFs from 'node:fs'
-import { resolve } from 'node:path'
-import { Passthrough } from '@pluxel/core/fs'
-import * as v from 'valibot'
+### 选择声明与保存输入
 
-@Plugin()
-class MyPlugin extends BasePlugin {
-	private readonly config = this.configs.use(v.object({ endpoint: v.pipe(v.string(), v.url()) }))
+| mode                     | 当前有效输入                                               |
+| ------------------------ | ---------------------------------------------------------- |
+| `declared-first`（默认） | 声明显式提供的部分优先，其余继承保存输入                   |
+| `saved-first`            | 保存输入优先，缺失部分采用声明                             |
+| `declared-only`          | 只使用声明，再采用 schema 默认值、空策略列表或内建执行参数 |
 
-	endpoint(): string {
-		return this.config.endpoint
-	}
-}
+缺失的必填 Plugin 配置始终失败。模式不改变写入权限、是否跨启动保留或当前 generation 的采用时机。
 
-const owner = MyPlugin.nodeAddress()
-const prefix = resolve('./data/fs')
-await nativeFs.promises.mkdir(prefix, { recursive: true })
+每个节点把 mode 与 config 放在一起；节点规则优先于域默认，最后回退到 `declared-first`：
 
-await using host = await createHost({
-	plugins: [MyPlugin],
-	runtime: {
-		zenfs: zenfs({
-			mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-			durableMounts: ['/'],
-		}),
-		configRecords: {
-			records: [{ owner, config: { endpoint: 'https://example.com' } }],
-		},
-		state: {
-			autoStart: [owner],
-		},
+```ts no-twoslash
+import { defineHostApplication, type ConfigInputPatch } from '@pluxel/host'
+import type { InferInput } from 'valibot'
+import { WorkerPlugin, WorkerConfig } from '@app/workers'
+
+const east = WorkerPlugin.nodeAddress('east')
+const input = { endpoint: 'https://example.test' } satisfies ConfigInputPatch<
+	InferInput<typeof WorkerConfig>
+>
+
+export default defineHostApplication(() => ({
+	plugins: [WorkerPlugin],
+	policy: { forks: [east], autoStart: [WorkerPlugin, east] },
+	config: {
+		mode: 'declared-only',
+		records: [
+			{ owner: WorkerPlugin, config: input },
+			{ owner: east, mode: 'saved-first', config: input },
+		],
 	},
-})
-await host.start()
+}))
 ```
 
-`override` 默认 `false`。已有文档是原始保存输入的权威；只有文档缺失时，才用本次声明初始化。配置文档使用 v4，运行策略文档使用 v6；其他版本明确拒绝，不做启动迁移或兼容读取。
+此片段假设 WorkerPlugin 声明 `forkable: true`，且示例 input 满足其 schema 所需字段。constructor 是 default node 的简写；default 与每个 fork 的配置、模式、保存记录和 revision 互不继承。PluginPart 位于所属 node 的聚合记录中，没有独立 owner。record 可以只写 `{ owner, mode }`，但 mode 与 config 不能同时省略；同一层重复 owner 会拒绝。
 
-`runtime.configRecords: { records, override: true }` 只在当前运行时把声明的显式路径覆盖到保存记录上，不改写原文档。被覆盖路径及其祖先、后代在管理面和 Host API 中只读，未受控的兄弟字段仍可编辑。删除 override 声明后重新创建 Host，恢复保存值。schema 的默认值和 transform 输出只用于校验与运行，保存文档继续保留原始输入；env 也不落盘。
+来自 node_modules 的具名 Plugin export 也直接用 constructor。暂时不可用的动态 Plugin 可使用现有 canonical address，例如：
 
-`runtime.state` 平铺 `autoStart`、`forks`、`providerDefaults` 和 `dependencyOverrides`，不另包 initial。`forks` 直接使用 fork 节点地址，例如 `forks: [MyPlugin.nodeAddress('east')]`，同时需要 Plugin 声明 `forkable: true`。`override: true` 按显式声明的整列覆盖：`autoStart: []` 在本次运行关闭自动启动，省略 `autoStart` 继承保存列；受控列禁止管理写入。由可用目录推导出的 provider 默认选择只用于当前图，不自动写成用户持久选择。
+```ts no-twoslash
+const target = {
+	definition: {
+		entry: { kind: 'package-root', packageName: '@app/workers' },
+		exportName: 'WorkerPlugin',
+	},
+	variant: 'fork',
+	forkId: 'east',
+} as const
+```
 
-Workbench 使用 catalog 快照中的 `statePolicy.mode` 和 `overriddenFields` 判断管理动作是否可用：readonly 限制策略写入，override 只限制会写入对应列的动作；临时 session start/stop 仍可用。
+把它作为 record.owner 不会加载模块、安装包、创建 fork 或启动节点；代码由 plugins/sources 提供，fork 由策略声明。包子路径和源码入口沿用 `PluginNodeAddress`，不以 class name、文件名或包名猜导出。
 
-`host.config.reset(owner)` 显式用本次声明恢复该 owner 的原始记录；`reset(owner, ['field'])` 仅恢复列出的顶层字段，声明未提供的字段被移除。`reset(owner, [])` 是无操作读取，不保存。reset 仍受 readonly、env 与 declaration override 的受控路径限制，不能绕过管理写入规则。
+原始 input 仅允许普通对象、密集数组、有限数值、字符串、布尔值和 null；undefined、函数、class instance、accessor、symbol、循环及危险路径会拒绝。对象递归合并；数组与 tuple 完整替换，元素内部不合并。`false / 0 / '' / null` 是显式值，空对象不清除低优先级对象字段。`ConfigInputPatch<InferInput<typeof Schema>>` 为局部对象提供类型检查，不把局部输入误当作已经满足完整 schema。
 
-| mode              | 读取与写入                                                   |
-| ----------------- | ------------------------------------------------------------ |
-| 省略或 `writable` | 读取已有文档；缺失时用声明初始化并保存；管理修改等待完整提交 |
-| `readonly`        | 读取已有文档并拒绝管理写入；缺失时保留声明，不创建文件       |
-| `memory`          | 只在当前 Host 内使用声明与修改，不访问文档存储               |
+每层先检查原始结构，当前可用 owner 的最终 effective input 才运行完整 schema。被遮盖的保存路径只通过结构校验，不能据此宣称它们单独满足业务 schema；取消遮盖或 schema 变化时重新验证。原始输入和 definition facts 未变时复用已验证 output。
 
-整个数据后端只读时设置 `runtime.zenfs.readOnly: true`。领域 mode 与实际 FS 权限分别生效；可写目标不会被无关的只读挂载阻挡。
+### 八项运行策略
 
-嵌入宿主可在 `runtime.configRecords.storage` 或 `runtime.state.storage` 提供同步 `(root) => HostDocumentStorage` factory，借用已有适配；不转交 backend 所有权。factory 在 root 创建后、文档 IO 前解析一次，异步 factory 和直接对象会被拒绝。提供 storage 时只能选 writable 或 readonly，不能与 memory 同用。
+| policy 字段           | 值及缺省                                                                   |
+| --------------------- | -------------------------------------------------------------------------- |
+| `autoStart`           | constructor 或 node address 列表，默认 `[]`                                |
+| `forks`               | canonical fork address 列表，默认 `[]`                                     |
+| `providerDefaults`    | `{ token, provider }` 列表，默认 `[]`                                      |
+| `dependencyOverrides` | `{ consumerAddress, requirementAddress, providerAddress }` 列表，默认 `[]` |
+| `startTimeoutMs`      | 单个 generation 默认启动等待，默认 1500 ms                                 |
+| `drainTimeoutMs`      | 单个 generation 排空等待，默认 3000 ms                                     |
+| `startConcurrency`    | 可调度节点最大启动并发，默认 8                                             |
+| `stopConcurrency`     | 可调度节点最大停止并发，默认 1                                             |
 
-默认文件路径是 `services/host/config/config.json` 与 `services/host/state/state.json`，内容是各领域的 SuperJSON 文档文本，没有 TinyBase envelope。Logging 与 Management 分别使用 `services/host/logging/<key>` 和 `services/host/management/<key>`；普通文档单文件限制为 8 MiB，与 Plugin 的 TinyBase snapshot 预算独立。
+`policy.mode` 是这八个字段的可选映射，例如 `{ autoStart: 'declared-only', startTimeoutMs: 'saved-first' }`。每项独立默认 declared-first；空映射等价省略，没有父级标量 mode。列表整项选择，不拼接；显式 `[]` 是空值，省略才继承。超时必须是 `1..2_147_483_647` 的整数，并发必须是正 safe integer；每个来源的非法数值都拒绝，即使它当前被遮盖。
 
-`HostDocumentStorage` 提供 `getText(key)`、`put(key, text)`、`stat(key)` 和可选的 `subscribe(listener)`。只有缺失返回 `undefined`；put 等待完整原子替换并保留原始失败。领域服务只在提交成功后发布候选，失败的结果可能未知。订阅从已访问 key 开始观察，通知表示重新读取；取消最后一个订阅停止观察。借用适配没有 subscribe 时只在加载时读取。
+四项图策略先组成完整候选，再检查跨列引用；autoStart 引用不存在的 fork 不会被自动修复。Plugin 自己声明的启动超时优先于 Host 默认；并发仍满足 provider 先启动、后停止。
 
-Host 关闭先排空配置、策略和服务写入，FS 关闭前停止观察并排空已接纳文档 IO；Plugin Store 仍由 TinyBase 自己排空。外部借用 backend 由应用关闭。关闭报告 flush 失败，不能用请求已入队冒充写入成功。
+### 编辑保存值与恢复继承
+
+以下是已有 host 和 canonical owner 的操作片段。`patch` 与 `validate` 接收 `{ set?, remove? }`：先删除字段路径，再递归合并 set，只校验一次完整候选。
+
+```ts no-twoslash
+const before = await host.config.get(owner)
+if (!before.ok) throw new Error(before.message, { cause: before })
+const result = await host.config.patch(
+	owner,
+	{
+		remove: [['transport']],
+		set: { transport: { kind: 'http', url: 'https://example.test' } },
+	},
+	{ expectedManagedRevision: before.managedRevision },
+)
+if (!result.ok) throw new Error(result.message, { cause: result })
+if (result.application === 'saved-not-applied') {
+	throw new Error('配置已保存，运行实例尚未采用', { cause: result })
+}
+```
+
+remove 只清理保存输入，不能删除声明字段。路径使用非空字符串数组，不解析点号路径，也不索引数组；危险、重复或相互包含的删除路径会拒绝。`reset(owner, [['transport', 'url']])` 清除指定保存路径，`reset(owner)` 清除整条记录；它恢复继承，不保存声明副本。清掉最后一个字段时清理空父对象；无操作不会删掉原本显式保存的空对象。`reset(owner, [])` 只读取。
+
+`managedInput: null` 表示没有保存记录，区别于 `{}`。UI 使用 managedInput 编辑，effectiveInput 提示继承，config 展示转换后的目标。`validation_failed` 携带完整原始/合成输入事实和错误，但没有成功 config output 或采用状态。validate 不写入、不通知，也不预留提交资格。
+
+config 和 policy 的管理操作、目录接纳及生命周期操作共用协调队列。`expectedManagedRevision` 可选；Workbench 必须带编辑基线令牌，过期、不同 Host 或不同领域的令牌返回 `revision_conflict`。脚本省略时对执行时最新输入操作。令牌不冻结 schema，不提供跨 Host 的文件 CAS。
+
+Management 的 `catalog.statePolicy.managedRevision` 与 policy.get 使用同一个令牌，供自动启动、依赖选择和 fork 页面按显示基线提交原有领域动作。批量自动启动在同一次排他操作中检查一次基线，逐项返回结果；其中一项失败仍保留此前已完成项，不能当作整体回滚。
+
+`host.policy.get / validate / patch / reset` 编辑八项保存输入，patch 逐字段完整替换，reset 的 keys 是策略字段名列表；省略 keys 清除全部，`[]` 不修改。mode 固定在本次 Host 的作者声明中，不可通过管理面修改。
+
+纯保存编辑允许改变被声明遮盖的值，并报告实际影响。`setAutoStart / setProviderDefault / setDependencyOverride / forks.ensure / forks.remove` 则承诺实际策略或节点动作；若 mode 阻挡目标生效，会在副作用前以 `policy_shadowed` 拒绝。单项名单命令基于当前有效列保留其他成员，只显式写入受影响的完整列；`writtenFields` 报告接管哪些列。目标已经满足时不物化保存列。`forks.remove` 还清理配置与服务元数据，保留真实部分失败结果。
+
+### 保存与采用反馈
+
+| persistence.status | 含义                                             |
+| ------------------ | ------------------------------------------------ |
+| `unchanged`        | 查询、预览或原始输入未变，没有写入               |
+| `confirmed`        | 选定后端确认本次原始输入，附 retention           |
+| `unknown`          | 写入结算不确定；不发布未确认候选，不声称已经回滚 |
+
+retention 为 `session`、`declared-durable` 或 `unknown`。会话域和临时挂载报告 session，默认文档依据 FS durableMounts 声明报告 declared-durable，不能证明保留能力的借用 adapter 报告 unknown；它们不承诺 fsync、断电或多 writer 事务。
+
+Plugin 配置保存确认后才通知 owning generation。`application` 的 applied 表示框架确认采用，deferred 表示没有运行实例，saved-not-applied 表示 listener 缺失、失败或 generation 变化；desiredRevision 与 appliedRevision 分开。仅保存被遮盖的值不会推进目标 revision 或调用 listener。后端失败保留旧接纳输入和实例事实；persistence_failed 只返回旧输入事实及 unknown 回执，不把可能尚未通过 schema 的输入标成 config output。
+
+| 修改                                                                 | 本次 Host 的采用方式                                         |
+| -------------------------------------------------------------------- | ------------------------------------------------------------ |
+| autoStart                                                            | 更新启动意图，保留本次已请求的运行状态；立即启停使用节点命令 |
+| forks / providerDefaults / dependencyOverrides                       | 经协调器校验和提交，检查真实 PluginApplyReport               |
+| startTimeoutMs / drainTimeoutMs / startConcurrency / stopConcurrency | 只更新目标，新建 Host 才采用                                 |
+| 应用声明、mode、env/file、服务或设施                                 | 新建 Host；动态来源更新继续使用本次快照                      |
+
+policy 查询给出有效目标、固定的 appliedExecution 和 pendingExecutionFields，差异报告 `requires-host-recreation`。Plugin restart 不等于重建 Host。会话输入不会自动带入新 Host；新 Host 重新按声明和实际可读文档求值。
+
+### 进阶文档设施
+
+默认 config/state 文档借用 Core FS，后端只在 `runtime.zenfs` 选择一次。可选 `runtime.documents` 单独选择文档接线：
+
+| 每个 config/state 域的选项      | 行为                                               |
+| ------------------------------- | -------------------------------------------------- |
+| 省略或 `{}`                     | 内建 namespace，可管理写入                         |
+| `false`                         | 无文档 IO 或订阅，管理输入只在本次 Host 中保留     |
+| `{ readOnly: true }`            | 读取已有文档，拒绝本 Host 管理写入，不创建缺失文件 |
+| `{ storage: root => borrowed }` | 同步借用 HostDocumentStorage，可与 readOnly 组合   |
+
+例如 `runtime: { documents: { config: false } }` 让业务文件继续使用 FS，而 Plugin 配置只保留会话输入。storage factory 在唯一 root 创建后、文档 IO 前调用一次；不能执行 IO、返回 Promise 或访问尚未准备的 Plugin/config 服务。Host 只释放自己的订阅并排空已接纳操作，不关闭借用 backend。
+
+`declared-only` 不关闭文档、不忽略损坏内容；零文档 IO 使用 false。整个 FS 只读可设置 `runtime.zenfs.readOnly: true`；文档选项不能覆盖底层权限。
+
+配置只读写 v4 原始记录，运行策略只读写 v7 稀疏字段，不保存 mode、声明或默认值。缺失文件不会初始化种子；只有明确管理修改才写入。旧版本需要显式审查转换，运行时不做兼容读取或启动迁移。
+
+默认路径为 `services/host/config/config.json` 与 `services/host/state/state.json`，内容为 SuperJSON 文档；Logging/Management 各自使用 `services/host/logging/<key>`、`services/host/management/<key>`。普通文档单文件 8 MiB 上限与 TinyBase snapshot 预算独立。
+
+HostDocumentStorage 保留 getText、put、stat 和可选 subscribe；只有缺失返回 undefined，put 等待完整原子替换并保留失败。订阅表示应重读；没有 subscribe 的借用 adapter 只在启动读取。关闭先取消订阅、停止接纳并排空协调和文档 IO，最后释放 root 自有资源；借用后端仍由应用关闭。
 
 ## 共享文件与外部修改
 
 多个实例可以通过 `runtime.zenfs` 选择实际共享的文件后端。相同配置不等于共享数据：两台机器各自的 `./data` 是不同目录，默认 InMemory 也彼此独立。Pluxel 不提供文件复制、网络同步或实例角色配置。
 
-托管 TinyBase Store 定期读取自己的 Plugin snapshot。Host 配置独立订阅 FS 文档变化，并在订阅后补读以追平准备期间的修改；新文档通过 v4 格式与当前可用 Plugin schema 校验后才发布并通知运行中的 Plugin。外部删除记录会移除相应原始保存输入，删除 config.json 清空保存记录，不重新初始化声明或重建文件；显式 override 和 env 仍参与本实例的有效配置。外部加载不会写回文件。刷新延迟取决于后端可见性与读取耗时，不是跨实例强一致保证。
+托管 TinyBase Store 定期读取自己的 Plugin snapshot。Host 配置独立订阅 FS 文档变化，并在订阅后补读以追平准备期间的修改；新文档通过 v4 格式与当前可用 Plugin schema 校验后才发布并通知运行中的 Plugin。外部删除记录会移除相应原始保存输入，删除 config.json 清空保存记录，按本次 mode 重新组合声明和 schema 默认值，不写回文件。刷新延迟取决于后端可见性与读取耗时，不是跨实例强一致保证。
 
 已有文件损坏或 schema 不接受新内容时，运行中的 Host 保留当前有效配置并报告错误，源文件不被重置；修正文件后可重新加载。Plugin 的更新 listener 失败仍按已保存但未应用处理，见[配置更新](../plugin-development/configuration.md)。未知 Plugin 的原始记录保留到其实际接纳时校验，不自动创建或启动节点。
 
 文件保存采用完整快照替换。多个实例同时修改同一快照可能覆盖彼此的变化，即使修改的是不同记录；本地 revision、队列和原子文件替换都不提供跨实例条件提交或合并。需要共享并发更新不丢失、事务或协调的业务使用[数据库](../plugin-development/database.md)。配置与低频状态只承诺读取后端当前可见的完整内容。
 
-运行策略 `state` 决定当前 Host 的节点启停，不随其他实例的文件修改自动执行。Vault 的密文重新加载由 Vault 服务负责，密钥与凭据规则见下文。普通业务文件由其所属 Plugin 决定如何重新读取。
+运行策略文档只在启动读取，不随其他实例的文件修改自动启停节点或改变执行参数。Vault 的密文重新加载由 Vault 服务负责，密钥与凭据规则见下文。普通业务文件由其所属 Plugin 决定如何重新读取。
 
 ## 选择后端
 
@@ -541,14 +613,12 @@ export default defineHostApplication(async (startup) => {
 		name: 'vault-example',
 		services: await servicesPreset(startup, {}),
 		plugins: [VaultAdminPlugin],
+		policy: { autoStart: [VaultAdminPlugin] },
 		runtime: {
 			zenfs: zenfs({
 				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 				durableMounts: ['/'],
 			}),
-			state: {
-				autoStart: [VaultAdminPlugin.nodeAddress()],
-			},
 		},
 	}
 })

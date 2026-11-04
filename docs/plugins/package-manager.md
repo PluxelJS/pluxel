@@ -43,27 +43,25 @@ export default defineHostApplication(async (startup) => {
 			}),
 		],
 		services: await servicesPreset(startup, {}),
+		policy: { autoStart: [packageManagerNode] },
+		config: {
+			records: [
+				{
+					owner: packageManagerNode,
+					config: {
+						rootDir: managedPackagesRoot,
+						ignoreScripts: true,
+						allowBuilds: [],
+						minimumReleaseAgeMinutes: 1_440,
+					},
+				},
+			],
+		},
 		runtime: {
 			zenfs: zenfs({
 				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 				durableMounts: ['/'],
 			}),
-			configRecords: {
-				records: [
-					{
-						owner: packageManagerNode,
-						config: {
-							rootDir: managedPackagesRoot,
-							ignoreScripts: true,
-							allowBuilds: [],
-							minimumReleaseAgeMinutes: 1_440,
-						},
-					},
-				],
-			},
-			state: {
-				autoStart: [packageManagerNode],
-			},
 		},
 	}
 })
@@ -72,8 +70,8 @@ export default defineHostApplication(async (startup) => {
 四处配置缺一不可：
 
 1. `plugins` 把 Package Manager 放进 fixed catalog；
-2. `runtime.configRecords.records` 为它提供 Plugin config；
-3. `runtime.state.autoStart` 显式让它随宿主自动启动；
+2. `config.records` 为它提供 Plugin config；
+3. `policy.autoStart` 显式让它随宿主自动启动；
 4. `sources` 声明它被允许生产的 directory source。
 
 示例通过 `PLUXEL_DATA_ROOT` 统一定位存储和来源；默认是 cwd 下的 `.pluxel`。生产运行时设置 distribution root 外的绝对路径。

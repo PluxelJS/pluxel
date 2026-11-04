@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defineHostApplication, resolveHostApplication } from '../src/application'
 import { createHost } from '../src/host'
+import { configProvenance } from '../src/config-records'
 import { resolveInputBindings } from '../src/input-bindings'
 
 const Config = v.object({
@@ -14,7 +15,7 @@ const Config = v.object({
 	limit: v.optional(v.number(), 1),
 })
 const Credentials = v.object({ credentials: v.object({ token: v.string(), expires: v.number() }) })
-@Plugin()
+@Plugin({ forkable: true })
 export class Configured extends BasePlugin {
 	readonly config = this.configs.use(Config)
 }
@@ -30,15 +31,18 @@ it('captures binding paths, namespaces and mappings before the first file read',
 		await writeFile(join(root, 'secret.json'), JSON.stringify({ token: 'file-token', expires: 42 }))
 		const file = {
 			plugin: Configured,
-			namespace: 'file-selected',
 			config: { schema: Config, path: 'config.json' },
-			vault: { schema: Credentials, paths: { credentials: 'secret.json' } },
+			vault: {
+				namespace: 'file-selected',
+				schema: Credentials,
+				paths: { credentials: 'secret.json' },
+			},
 		}
 		const env = {
 			plugin: Configured,
-			namespace: 'env-selected',
 			config: { schema: Config, mapping: { limit: 'LIMIT' } },
 			vault: {
+				namespace: 'env-selected',
 				schema: Credentials,
 				mapping: { credentials: { token: 'TOKEN', expires: 'EXPIRY' } },
 			},
@@ -49,8 +53,8 @@ it('captures binding paths, namespaces and mappings before the first file read',
 		)
 		file.config.path = 'missing-config.json'
 		file.vault.paths.credentials = 'missing-secret.json'
-		file.namespace = 'file-changed'
-		env.namespace = 'env-changed'
+		file.vault.namespace = 'file-changed'
+		env.vault.namespace = 'env-changed'
 		env.config.mapping.limit = 'CHANGED_LIMIT'
 		env.vault.mapping.credentials.token = 'CHANGED_TOKEN'
 		const result = await resolving
@@ -71,22 +75,16 @@ it('decodes explicit config inputs as overlays without ambient PLUXEL_CONFIG or 
 	const application = defineHostApplication(() => ({
 		plugins: [Configured],
 		envBindings: [binding],
-		runtime: { configRecords: { records: [{ owner, config: { limit: 1 } }] } },
+		config: { records: [{ owner, config: { limit: 1 } }] },
 	}))
 	const resolved = await resolveHostApplication(application, {
 		...startup,
 		env: { APP_ENABLED: 'true', APP_LIMIT: '12', PLUXEL_CONFIG: 'invalid and ignored' },
 	})
-	expect(resolved.runtime?.configRecords?.records).toEqual([{ owner, config: { limit: 1 } }])
-	expect(resolved.runtime?.configRecords?.overlays).toEqual([
-		{
-			owner,
-			config: { enabled: true, limit: 12 },
-			sources: [
-				{ path: ['enabled'], kind: 'env', name: 'APP_ENABLED' },
-				{ path: ['limit'], kind: 'env', name: 'APP_LIMIT' },
-			],
-		},
+	expect(resolved.config?.records).toEqual([{ owner, config: { enabled: true, limit: 12 } }])
+	expect(configProvenance(resolved.config!).sources).toEqual([
+		{ owner, path: ['enabled'], kind: 'env', name: 'APP_ENABLED' },
+		{ owner, path: ['limit'], kind: 'env', name: 'APP_LIMIT' },
 	])
 	await expect(
 		resolveHostApplication(application, {
@@ -100,7 +98,7 @@ it('decodes explicit config inputs as overlays without ambient PLUXEL_CONFIG or 
 	}).catch((failure: unknown) => failure)
 	expect(String(error)).not.toContain('private-invalid-value')
 	const absent = await resolveHostApplication(application, startup)
-	expect(absent.runtime?.configRecords?.overlays).toEqual([])
+	expect(configProvenance(absent.config!).sources).toEqual([])
 })
 
 it('passes resolved environment values and source provenance into Host', async () => {
@@ -108,7 +106,7 @@ it('passes resolved environment values and source provenance into Host', async (
 	const application = defineHostApplication(() => ({
 		plugins: [Configured],
 		envBindings: [binding],
-		runtime: { configRecords: { records: [{ owner, config: { limit: 2 } }] } },
+		config: { records: [{ owner, config: { limit: 2 } }] },
 	}))
 	const resolved = await resolveHostApplication(application, {
 		...startup,
@@ -117,6 +115,7 @@ it('passes resolved environment values and source provenance into Host', async (
 	const host = await createHost({
 		plugins: resolved.plugins,
 		runtime: resolved.runtime,
+		config: resolved.config,
 	})
 	try {
 		await host.startNode(owner)
@@ -128,7 +127,7 @@ it('passes resolved environment values and source provenance into Host', async (
 			path: ['limit'],
 			kind: 'env',
 			name: 'APP_LIMIT',
-			readonly: true,
+			readonly: false,
 		})
 	} finally {
 		await host.close()
@@ -196,8 +195,8 @@ it('reads config declarations and whole Vault records from explicit JSON files',
 			}),
 			{ ...startup, root, env: { APP_LIMIT: '7' } },
 		)
-		expect(result.runtime?.configRecords?.records?.[0]?.config).toEqual({ limit: 4 })
-		expect(result.runtime?.configRecords?.overlays?.[0]?.config).toEqual({ limit: 7 })
+		expect(result.config?.records?.[0]?.config).toEqual({ limit: 7 })
+		expect(configProvenance(result.config!).sources.map((source) => source.kind)).toEqual(['env'])
 		expect(result.vaultBindings?.[0]).toMatchObject({
 			source: 'file',
 			value: { token: 'private', expires: 42 },
@@ -232,7 +231,7 @@ it('infers heterogeneous async binding arrays without const assertions', async (
 			CREDENTIALS: JSON.stringify({ token: 'test', expires: 12 }),
 		},
 	})
-	expect(resolved.runtime?.configRecords?.overlays?.map((record) => record.config)).toEqual([
+	expect(resolved.config?.records?.map((record) => record.config)).toEqual([
 		{ enabled: true },
 		{ title: 'example' },
 	])
@@ -297,6 +296,7 @@ it('keeps the Host Vault contract across plugin replacement without repeating tr
 		services: resolved.services,
 		vaultBindings: resolved.vaultBindings,
 		runtime: resolved.runtime,
+		config: resolved.config,
 	})
 	await host.start()
 	try {
@@ -402,6 +402,7 @@ it('checks environment paths against replacement config metadata without another
 	const host = await createHost({
 		plugins: resolved.plugins,
 		runtime: resolved.runtime,
+		config: resolved.config,
 	})
 	await host.start()
 	try {
@@ -430,3 +431,80 @@ it.each(['environment', 'file'] as const)(
 		})
 	},
 )
+
+it('combines disjoint mappings for one node, rejects overlap, and checks canonical fork schema identity', async () => {
+	const target = Configured.nodeAddress('east')
+	const forkBindings = [
+		envBinding(target, { config: { schema: Config, mapping: { enabled: 'ENABLED' } } }),
+		envBinding(target, { config: { schema: Config, mapping: { limit: 'LIMIT' } } }),
+	]
+	const result = await resolveHostApplication(
+		() => ({
+			plugins: [Configured],
+			envBindings: forkBindings,
+			config: { mode: 'declared-only', records: [{ owner: target, mode: 'saved-first' }] },
+		}),
+		{ ...startup, env: { ENABLED: 'true', LIMIT: '7' } },
+	)
+	expect(result.config?.records).toEqual([
+		{ owner: target, mode: 'saved-first', config: { enabled: true, limit: 7 } },
+	])
+	await expect(
+		resolveHostApplication(
+			() => ({
+				plugins: [Configured],
+				envBindings: [
+					...forkBindings,
+					envBinding(target, { config: { schema: Config, mapping: { limit: 'OTHER' } } }),
+				],
+			}),
+			startup,
+		),
+	).rejects.toThrow('overlapping')
+	await expect(
+		resolveHostApplication(
+			() => ({
+				plugins: [Configured],
+				envBindings: [
+					envBinding(target, {
+						config: { schema: v.object({ enabled: v.boolean() }), mapping: { enabled: 'ENABLED' } },
+					}),
+				],
+			}),
+			startup,
+		),
+	).rejects.toThrow('same schema')
+})
+
+const NestedConfig = v.object({ nested: v.object({ value: v.number() }) })
+@Plugin()
+class NestedConfigured extends BasePlugin {
+	readonly config = this.configs.use(NestedConfig)
+}
+it('attributes empty-object deployment patches only to paths they actually supply', async () => {
+	const result = await resolveHostApplication(
+		() => ({
+			plugins: [NestedConfigured],
+			config: { records: [{ owner: NestedConfigured, config: { nested: { value: 4 } } }] },
+			envBindings: [
+				envBinding(NestedConfigured, { config: { schema: NestedConfig, mapping: 'CONFIG' } }),
+			],
+		}),
+		{ ...startup, env: { CONFIG: '{"nested":{}}' } },
+	)
+	const host = await createHost({
+		plugins: result.plugins,
+		config: result.config,
+		runtime: { documents: { config: false, state: false } },
+	})
+	try {
+		const snapshot = await host.config.get(NestedConfigured.nodeAddress())
+		expect(snapshot).toMatchObject({
+			ok: true,
+			effectiveInput: { nested: { value: 4 } },
+			sources: [{ path: ['nested', 'value'], kind: 'declaration' }],
+		})
+	} finally {
+		await host.close()
+	}
+})

@@ -1,78 +1,105 @@
 import type { RootContext, HostDocumentStorage } from '@pluxel/core'
-import { requireHostDocuments } from '@pluxel/core/internal'
+import { requireFs, requireHostDocuments } from '@pluxel/core/internal'
+import type { HostPersistenceRetention } from './persistence'
 export type { HostDocumentStorage } from '@pluxel/core'
 
-export type HostStoreStorageOptions =
-	| Readonly<{
-			storage?: never
-			/** Omitted uses writable built-in documents. Memory bypasses document persistence. */
-			mode?: 'memory' | 'writable' | 'readonly'
-	  }>
-	| Readonly<{
-			/** Called once after root creation, before document IO or service prepare. Return a borrowed namespace synchronously. */
-			storage: (root: RootContext) => HostDocumentStorage
-			/** Omitted means writable. Readonly preserves startup values when no document exists. */
-			mode?: 'writable' | 'readonly'
-	  }>
+export type HostDocumentOptions = Readonly<{
+	readOnly?: boolean
+	/** Called once after root creation and before document IO; the returned namespace is borrowed. */
+	storage?: (root: RootContext) => HostDocumentStorage
+}>
+export type HostDocumentFacilities = Readonly<{
+	config?: false | HostDocumentOptions
+	state?: false | HostDocumentOptions
+}>
 
-/** @internal Stores consume already resolved namespaces; only createHost invokes application factories. */
-export type ResolvedHostStoreStorageOptions =
-	| Readonly<{ storage?: never; mode?: 'memory' }>
-	| Readonly<{ storage: HostDocumentStorage; mode?: 'writable' | 'readonly' }>
+/** @internal Absence of storage means session input without document IO. */
+export type ResolvedHostStoreStorageOptions = Readonly<{
+	storage?: HostDocumentStorage
+	readOnly?: boolean
+	retention?: HostPersistenceRetention
+}>
 
-/** @internal Reject impossible mode/storage pairs before starting document IO. */
-export function assertHostStoreStorage(options: HostStoreStorageOptions): void {
-	assertStorageMode(options)
+export function snapshotHostDocuments(input: HostDocumentFacilities = {}): HostDocumentFacilities {
+	assertRecord(input, ['config', 'state'], 'runtime.documents')
+	return Object.freeze(
+		Object.fromEntries(
+			Object.entries(input)
+				.filter(([, value]) => value !== undefined)
+				.map(([key, value]) => {
+					if (value === false) return [key, false]
+					assertHostDocumentOptions(value, `runtime.documents.${key}`)
+					return [key, Object.freeze({ ...value })]
+				}),
+		),
+	)
+}
+
+function assertHostDocumentOptions(options: HostDocumentOptions, label: string): void {
+	assertRecord(options, ['storage', 'readOnly'], label)
+	if (options.readOnly !== undefined && typeof options.readOnly !== 'boolean')
+		throw new TypeError(`[host] ${label}.readOnly must be a boolean`)
 	if (options.storage !== undefined && typeof options.storage !== 'function')
 		throw new TypeError('[host] document storage must be a synchronous root factory')
 }
 
-/** @internal Resolve and validate before constructing either Host document store. */
 export function resolveHostStoreStorage(
-	options: HostStoreStorageOptions,
+	options: false | HostDocumentOptions | undefined,
 	root: RootContext,
 	namespace: 'config' | 'state',
 ): ResolvedHostStoreStorageOptions {
-	if (options.storage === undefined) {
-		if (options.mode === 'memory') return { mode: 'memory' }
-		return {
+	if (options === false) return Object.freeze({ readOnly: false, retention: 'session' })
+	assertHostDocumentOptions(options ?? {}, `runtime.documents.${namespace}`)
+	if (options?.storage === undefined)
+		return Object.freeze({
 			storage: requireHostDocuments(root, namespace),
-			mode: options.mode ?? 'writable',
-		}
-	}
+			readOnly: options?.readOnly ?? false,
+			retention: requireFs(root).documentRetention(`services/host/${namespace}`),
+		})
 	const storage = options.storage(root)
 	assertDocumentStorage(storage)
-	return { storage, mode: options.mode === 'readonly' ? 'readonly' : 'writable' }
+	return Object.freeze({ storage, readOnly: options.readOnly ?? false, retention: 'unknown' })
 }
 
-/** @internal Reject invalid namespaces before starting store IO. */
 export function assertResolvedHostStoreStorage(options: ResolvedHostStoreStorageOptions): void {
-	assertStorageMode(options)
-	if (options.storage === undefined) {
-		if (options.mode !== undefined && options.mode !== 'memory')
-			throw new TypeError('[host] persistent store mode requires resolved document storage')
-		return
-	}
-	assertDocumentStorage(options.storage)
+	assertRecord(options, ['storage', 'readOnly', 'retention'], 'resolved document storage')
+	if (options.readOnly !== undefined && typeof options.readOnly !== 'boolean')
+		throw new TypeError('[host] document readOnly must be a boolean')
+	if (
+		options.retention !== undefined &&
+		!['session', 'declared-durable', 'unknown'].includes(options.retention)
+	)
+		throw new TypeError('[host] invalid document retention')
+	if (options.storage !== undefined) assertDocumentStorage(options.storage)
 }
 
 function assertDocumentStorage(storage: unknown): asserts storage is HostDocumentStorage {
 	if (!storage || typeof storage !== 'object' || Array.isArray(storage))
 		throw new TypeError('[host] document storage factory must synchronously return an object')
-	for (const method of ['getText', 'put', 'stat'] as const) {
+	for (const method of ['getText', 'put', 'stat'] as const)
 		if (typeof (storage as HostDocumentStorage)[method] !== 'function')
 			throw new TypeError(`[host] document storage requires ${method}()`)
-	}
+	if ('then' in storage) throw new TypeError('[host] document storage factory must be synchronous')
 }
 
-function assertStorageMode(options: { storage?: unknown; mode?: string }): void {
+function assertRecord(
+	input: unknown,
+	keys: readonly string[],
+	label: string,
+): asserts input is Record<string, unknown> {
 	if (
-		options.mode !== undefined &&
-		options.mode !== 'writable' &&
-		options.mode !== 'readonly' &&
-		options.mode !== 'memory'
+		!input ||
+		typeof input !== 'object' ||
+		Array.isArray(input) ||
+		![Object.prototype, null].includes(Object.getPrototypeOf(input))
 	)
-		throw new TypeError('[host] document storage mode must be writable, readonly or memory')
-	if (options.storage !== undefined && options.mode === 'memory')
-		throw new TypeError('[host] supplied document storage requires writable or readonly mode')
+		throw new TypeError(`[host] ${label} must be a plain object`)
+	for (const key of Reflect.ownKeys(input)) {
+		if (typeof key !== 'string' || !keys.includes(key))
+			throw new TypeError(`[host] ${label} includes unsupported ${String(key)}`)
+		if (!Object.getOwnPropertyDescriptor(input, key)!.enumerable)
+			throw new TypeError(`[host] ${label} cannot contain hidden fields`)
+		if (!('value' in Object.getOwnPropertyDescriptor(input, key)!))
+			throw new TypeError(`[host] ${label} cannot contain accessors`)
+	}
 }

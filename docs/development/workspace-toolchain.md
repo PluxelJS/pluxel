@@ -142,7 +142,7 @@ npm 消费项目用 `pluxel workspace doctor --root "{{config_root}}"`。显式 
 
 根 `vite.config.ts` 的同一份 native consumer 集合选择 CI 聚合范围与 typed lint 排除目录。`vp run ci:smoke` 可单独复现短测试，其中 `@pluxel/plugin-typst#check-wasm` 使用发布的 WASM 编译器验证编译、错误恢复和生命周期。`vp run verify` / `workspace:verify` 仍执行全工作区完整门禁，使用 native 的功能或桌面交付前在本地执行相应构建与验收。Release 保留公开包的标准构建；Takumi Markdown 只通过 Typst 的 `compile-lib` 获取 JavaScript 与声明，其 native 集成测试仍依赖完整 `compile`。hk 继续复用根检查器处理本地提交文件。
 
-Host 存储回归在真实 Chromium 页面和 Web Worker 中验证配置、TinyBase 与 IndexedDB 重开。CI 安装依赖后执行 `pnpm --filter @pluxel/host exec playwright-core install --with-deps --only-shell chromium`，使用锁文件对应的 headless shell 与系统依赖。本地可运行同一命令，或通过 `PLAYWRIGHT_WS_ENDPOINT` 接入已有的兼容 Playwright 服务；浏览器缺失会明确失败。
+Host 存储回归在真实 Chromium 页面和 Web Worker 中验证配置、TinyBase 与 IndexedDB 重开。CI 安装依赖后执行 `pnpm --filter @pluxel/host exec playwright-core install --with-deps --only-shell chromium`，使用锁文件对应的 headless shell 与系统依赖。本地可运行同一命令，或通过 `PLAYWRIGHT_WS_ENDPOINT` 接入已有的兼容 Playwright 服务；浏览器缺失会明确失败。Host 的 `check-tests` 任务显式透传并跟踪 `PLAYWRIGHT_WS_ENDPOINT`、`PLAYWRIGHT_BROWSERS_PATH` 和 `XDG_CACHE_HOME`，因此通过完整门禁运行时仍使用同一份浏览器配置与缓存目录。
 
 ## 管理开发服务
 

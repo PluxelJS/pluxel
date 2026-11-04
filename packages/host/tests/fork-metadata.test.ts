@@ -88,9 +88,7 @@ it('rejects declared fork policy writes before stopping or deleting metadata', a
 	let metadataRemovals = 0
 	const host = await createHost({
 		plugins: [ForkOwner],
-		runtime: {
-			state: { mode: 'memory', override: true, forks: [ForkOwner.nodeAddress('tenant')] },
-		},
+		policy: { forks: [ForkOwner.nodeAddress('tenant')] },
 		services: [
 			defineHostService({
 				name: 'Metadata',
@@ -100,16 +98,16 @@ it('rejects declared fork policy writes before stopping or deleting metadata', a
 				},
 			}),
 		],
+		runtime: { documents: { state: false } },
 	})
 	try {
 		await expect(host.forks.ensure(ForkOwner.nodeAddress('tenant'))).resolves.toMatchObject({
-			ok: false,
-			code: 'state_overridden',
-			state: 'unchanged',
+			ok: true,
+			report: { persistence: { status: 'unchanged' } },
 		})
 		await expect(host.forks.remove(ForkOwner.nodeAddress('tenant'))).resolves.toMatchObject({
 			ok: false,
-			code: 'state_overridden',
+			code: 'policy_shadowed',
 			state: 'unchanged',
 		})
 		expect(metadataRemovals).toBe(0)

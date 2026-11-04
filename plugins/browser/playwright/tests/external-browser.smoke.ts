@@ -52,14 +52,10 @@ it('uses two successive Pluxel generations without stopping the external browser
 					},
 				}),
 			],
-			runtime: {
-				state: { autoStart: [ExternalBrowserSmoke.nodeAddress()] },
-				configRecords: {
-					records: [
-						{ owner: PlaywrightPlugin.nodeAddress(), config: { connectionKey: 'primary' } },
-					],
-				},
+			config: {
+				records: [{ owner: PlaywrightPlugin.nodeAddress(), config: { connectionKey: 'primary' } }],
 			},
+			policy: { autoStart: [ExternalBrowserSmoke.nodeAddress()] },
 		}))
 		const resolved = await resolveHostApplication(application, {
 			root: process.cwd(),
@@ -76,6 +72,8 @@ it('uses two successive Pluxel generations without stopping the external browser
 			services: resolved.services,
 			vaultBindings: resolved.vaultBindings,
 			name: resolved.name,
+			config: resolved.config,
+			policy: resolved.policy,
 			runtime: resolved.runtime,
 		})
 		try {

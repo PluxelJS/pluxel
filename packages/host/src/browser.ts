@@ -4,3 +4,14 @@ export { defineHostService, type HostService, type HostServiceDependencies } fro
 export type { PluginApplyReport } from './coordinator'
 export type { HostPluginStatusOverview, HostPluginStatusSnapshot } from './status'
 export type { HostConfigState, HostPluginConfigResult } from './config'
+export type { HostConfigMutation, HostConfigInputSnapshot, HostPluginConfig } from './config'
+export type { HostConfigOptions, HostConfigRecordInput, ConfigInputPatch } from './config-records'
+export type { HostPolicyOptions, HostPolicyInput, HostPolicyValues } from './policy'
+export type { HostPolicy, HostPolicyResult } from './policy-management'
+export type { HostInputMode } from './input-mode'
+export type { HostPersistenceResult, HostPersistenceRetention } from './persistence'
+export type {
+	HostDocumentStorage,
+	HostDocumentOptions,
+	HostDocumentFacilities,
+} from './document-storage'

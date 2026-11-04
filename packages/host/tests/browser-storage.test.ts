@@ -105,7 +105,7 @@ self.onmessage = async () => {
 				}, chunk.code)
 				for (const result of [windowResult, workerResult])
 					expect(result).toMatchObject({
-						beforeStart: { stores: 0, label: ' persisted ', application: 'deferred' },
+						beforeStart: { stores: 0, label: 'persisted', application: 'deferred' },
 						reopened: { label: 'persisted', value: 42, file: 'OWNER-FILE' },
 						closed: 'EBADF',
 						stalePersisted: false,
@@ -145,11 +145,11 @@ class Owner extends BasePlugin {
 export async function run() {
  const storeName = 'pluxel-built-in-' + crypto.randomUUID()
  const owner = Owner.nodeAddress()
- const options = { plugins:[Owner], runtime:{ zenfs:{ mounts: { '/': { backend:IndexedDB, storeName } }, durableMounts: ['/'] }, state:{ mode:'memory' } } }
+ const options = { plugins:[Owner], runtime:{ zenfs:{ mounts: { '/': { backend:IndexedDB, storeName } }, durableMounts: ['/'] }, documents:{state:false} } }
  let host
  try {
   host = await createHost(options)
-  const patched = await host.config.patch(owner, {label:' persisted '})
+  const patched = await host.config.patch(owner, {set:{label:' persisted '}})
   if (!patched.ok) throw new Error(patched.message)
   await host.startNode(owner)
   running.store.setValue('value',42)

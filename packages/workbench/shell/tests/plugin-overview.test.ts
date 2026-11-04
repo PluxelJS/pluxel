@@ -43,7 +43,7 @@ const catalog = {
 			nodes: [address],
 		},
 	],
-	statePolicy: { mode: 'writable', overriddenFields: [] },
+	statePolicy: { readonly: false, managedRevision: 'policy:test:0', overriddenFields: [] },
 	summary: { total: 1, running: 1, stopped: 0, autoStart: 1 },
 } satisfies PluginCatalogSnapshot
 
@@ -64,18 +64,31 @@ describe('plugin overview projection', () => {
 })
 
 it('keeps unrelated state operations writable and locks every field used by composed fork operations', () => {
-	const policy = { mode: 'writable', overriddenFields: ['providerDefaults'] } as const
+	const policy = {
+		readonly: false,
+		managedRevision: 'policy:test:0',
+		overriddenFields: ['providerDefaults'],
+	} as const
 	expect(canWritePluginState(policy, 'providerDefaults')).toBe(false)
 	expect(canWritePluginState(policy, 'autoStart')).toBe(true)
 	expect(canWritePluginState(policy, 'forks', 'autoStart', 'dependencyOverrides')).toBe(true)
 	expect(
 		canWritePluginState(
-			{ mode: 'memory', overriddenFields: ['dependencyOverrides'] },
+			{
+				readonly: false,
+				managedRevision: 'policy:test:0',
+				overriddenFields: ['dependencyOverrides'],
+			},
 			'forks',
 			'autoStart',
 			'dependencyOverrides',
 		),
 	).toBe(false)
-	expect(canWritePluginState({ mode: 'readonly', overriddenFields: [] }, 'autoStart')).toBe(false)
+	expect(
+		canWritePluginState(
+			{ readonly: true, managedRevision: 'policy:test:0', overriddenFields: [] },
+			'autoStart',
+		),
+	).toBe(false)
 	expect(canWritePluginState(undefined, 'autoStart')).toBe(false)
 })

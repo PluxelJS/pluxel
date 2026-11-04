@@ -1,6 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { type PluginNodeAddress } from '@pluxel/core'
-import { type ConfigValidationErrors } from '@pluxel/services/management/client'
+import {
+	type ConfigValidationErrors,
+	type ConfigResultOk,
+} from '@pluxel/services/management/client'
 
 import { type RuntimeManagementClient } from '../../../runtime'
 import { notifyAndRecord } from '../../notifications/notifyBridge'
@@ -12,7 +15,7 @@ type ConfigSaveResult = Awaited<ReturnType<RuntimeManagementClient['config']['pa
 type ConfigSaveVariables = {
 	request: () => Promise<ConfigSaveResult>
 	onValidation: (errors: ConfigValidationErrors) => void
-	onSaved: () => void
+	onSaved: (result: ConfigResultOk) => void
 	sectionCount: number
 	all: boolean
 }
@@ -27,7 +30,7 @@ export function useConfigSave({ owner }: { owner: PluginNodeAddress }) {
 		onSuccess: async (result, { onValidation, onSaved, sectionCount, all }) => {
 			if (result.ok === false) {
 				if (result.code === 'validation_failed') onValidation(result.errors)
-				if (result.state === 'unknown') {
+				if (result.state === 'unknown' || result.code === 'revision_conflict') {
 					await Promise.allSettled([
 						refreshPluginConfig(queryClient, owner),
 						refreshPluginReadModels(queryClient),
@@ -41,31 +44,40 @@ export function useConfigSave({ owner }: { owner: PluginNodeAddress }) {
 				return
 			}
 
-			commitPluginConfig(queryClient, owner, result.config, result.sources, {
-				readonly: result.readonly,
-			})
-			onSaved()
+			commitPluginConfig(queryClient, owner, result)
+			onSaved(result)
 			// A failed read-model refresh must not turn an acknowledged write into a save failure.
 			await Promise.allSettled([refreshPluginReadModels(queryClient)])
-			if (result.application === 'saved-not-applied') {
-				notifyAndRecord({
-					title: '配置已保存，但尚未应用',
-					message:
-						result.saved === true ? result.applyFailure.message : '运行中的插件尚未应用当前配置。',
-					color: 'yellow',
-				})
-			} else {
-				notifyAndRecord({
-					title: all ? '全部保存成功' : '提交成功',
-					message:
-						result.application === 'deferred'
-							? '配置已保存，将在插件启动时应用'
-							: all
-								? `已保存 ${sectionCount} 个配置分区`
-								: '配置已保存并应用',
-					color: 'green',
-				})
-			}
+			const retention =
+				result.persistence.status === 'confirmed' ? result.persistence.retention : undefined
+			const persistenceMessage =
+				retention === 'session'
+					? '本次会话已更新，重建宿主后不保留。'
+					: retention === 'unknown'
+						? '写入已确认，跨重启保留能力由宿主后端决定。'
+						: ''
+			const shadowed =
+				result.shadowedPaths.length > 0 ? '部分保存值被声明覆盖，当前生效值保持其来源规则。' : ''
+			const applicationMessage =
+				result.application === 'saved-not-applied'
+					? (result.applyFailure?.message ?? '运行中的插件尚未采用当前目标配置。')
+					: result.application === 'deferred'
+						? '目标配置将在插件启动时采用。'
+						: '目标配置已被当前插件采用。'
+			notifyAndRecord({
+				title:
+					result.persistence.status === 'unchanged'
+						? '保存输入未改变'
+						: retention === 'session'
+							? '会话配置已更新'
+							: result.application === 'saved-not-applied'
+								? '配置已保存，但尚未应用'
+								: all
+									? `已保存 ${sectionCount} 个配置分区`
+									: '配置已保存',
+				message: [persistenceMessage, shadowed, applicationMessage].filter(Boolean).join(' '),
+				color: result.application === 'saved-not-applied' || shadowed ? 'yellow' : 'green',
+			})
 		},
 		onError: async (cause, { all }) => {
 			await Promise.allSettled([

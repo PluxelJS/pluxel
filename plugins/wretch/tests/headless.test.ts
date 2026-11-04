@@ -50,7 +50,7 @@ it('runs native HTTP, env policy and managed settings with services: []', async 
 					config: { schema: WretchConfig, mapping: { allowedOrigins: 'HTTP_ORIGINS' } },
 				}),
 			],
-			runtime: { state: { autoStart: [StatelessHttpConsumer.nodeAddress()] } },
+			policy: { autoStart: [StatelessHttpConsumer.nodeAddress()] },
 		}))
 		const resolved = await resolveHostApplication(application, {
 			root: process.cwd(),
@@ -62,6 +62,8 @@ it('runs native HTTP, env policy and managed settings with services: []', async 
 			plugins: resolved.plugins,
 			services: resolved.services,
 			name: resolved.name,
+			config: resolved.config,
+			policy: resolved.policy,
 			runtime: resolved.runtime,
 		})
 		try {
@@ -152,16 +154,14 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 					},
 				}),
 			],
+			config: { records: [{ owner: WretchPlugin.nodeAddress(), config: { timeoutMs: 5_000 } }] },
+			policy: {
+				autoStart: [HeadlessHttpConsumer.nodeAddress(), SecondManagedConsumer.nodeAddress()],
+			},
 			runtime: {
 				zenfs: {
 					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 					durableMounts: ['/'],
-				},
-				state: {
-					autoStart: [HeadlessHttpConsumer.nodeAddress(), SecondManagedConsumer.nodeAddress()],
-				},
-				configRecords: {
-					records: [{ owner: WretchPlugin.nodeAddress(), config: { timeoutMs: 5_000 } }],
 				},
 			},
 		}))
@@ -176,6 +176,8 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 				plugins: resolved.plugins,
 				services: resolved.services,
 				name: resolved.name,
+				config: resolved.config,
+				policy: resolved.policy,
 				runtime: resolved.runtime,
 			})
 			try {

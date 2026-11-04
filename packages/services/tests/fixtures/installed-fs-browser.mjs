@@ -148,8 +148,8 @@ export async function corruptConfig() {
 				plugins: [],
 				runtime: {
 					zenfs: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
-					configRecords: {
-						storage: (root) => (documents = requireHostDocuments(root, 'config')),
+					documents: {
+						config: { storage: (root) => (documents = requireHostDocuments(root, 'config')) },
 					},
 				},
 			})
@@ -167,7 +167,7 @@ export async function corruptConfig() {
 			plugins: [],
 			runtime: {
 				zenfs: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
-				configRecords: { mode: 'memory' },
+				documents: { config: false },
 			},
 		})
 		const text = await requireHostDocuments(host.ctx, 'config').getText('config.json')

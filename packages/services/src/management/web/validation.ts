@@ -4,8 +4,7 @@ import {
 	type ConfigPresentationBranchFieldV1,
 	type ConfigPresentationFieldV1,
 	type ConfigPresentationFieldMetaV1,
-	type ConfigPresentationPlanV1,
-	type RuntimeJsonObject,
+	type ConfigPresentationPlanV2,
 	type RuntimeJsonValue,
 	type RuntimeManagementCapability,
 	type RuntimeMeta,
@@ -167,36 +166,26 @@ function nullableString(input: unknown, label: string): string | null {
 }
 
 /** Validate the serializable config form plan received from a runtime boundary. */
-export function parseConfigPresentationPlanV1(input: unknown): ConfigPresentationPlanV1 {
+export function parseConfigPresentationPlanV2(input: unknown): ConfigPresentationPlanV2 {
 	validateRuntimePortableData(input, 'config presentation plan')
 	const plan = record(input, 'plan')
-	exact(plan, ['version', 'fieldName', 'defaults', 'fields', 'sections'], 'plan')
-	if (plan.version !== 1) fail('plan.version must be 1')
+	exact(plan, ['version', 'fieldName', 'fields', 'sections'], 'plan')
+	if (plan.version !== 2) fail('plan.version must be 2')
 	const fieldName = text(plan.fieldName, 'plan.fieldName')
-	const defaults = parseRuntimePortableData(
-		record(plan.defaults, 'plan.defaults'),
-		'plan.defaults',
-	) as RuntimeJsonObject
 	const fields = fieldArray(plan.fields, 'plan.fields', 0)
 	if (!Array.isArray(plan.sections)) fail('plan.sections must be an array')
 	const sections = plan.sections.map((inputSection, index) => {
 		const section = record(inputSection, `plan.sections[${index}]`)
-		exact(section, ['path', 'fieldName', 'defaults', 'fields'], `plan.sections[${index}]`)
-		const path = pathSegments(section.path, `plan.sections[${index}].path`, true)
+		exact(section, ['path', 'fieldName', 'fields'], `plan.sections[${index}]`)
 		return Object.freeze({
-			path,
+			path: pathSegments(section.path, `plan.sections[${index}].path`, true),
 			fieldName: text(section.fieldName, `plan.sections[${index}].fieldName`),
-			defaults: parseRuntimePortableData(
-				record(section.defaults, `plan.sections[${index}].defaults`),
-				`plan.sections[${index}].defaults`,
-			) as RuntimeJsonObject,
 			fields: fieldArray(section.fields, `plan.sections[${index}].fields`, 0),
 		})
 	})
 	return Object.freeze({
-		version: 1 as const,
+		version: 2 as const,
 		fieldName,
-		defaults,
 		fields,
 		sections: Object.freeze(sections),
 	})

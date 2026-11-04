@@ -19,10 +19,8 @@ import { managementQueryKeys } from '../../../managementQuery'
 
 export function usePluginProviderPolicy(refresh: () => Promise<void>) {
 	const { owner } = usePluginScope()
-	const canChangeDefault = canWritePluginState(
-		usePluginOverview().overview?.statePolicy,
-		'providerDefaults',
-	)
+	const statePolicy = usePluginOverview().overview?.statePolicy
+	const canChangeDefault = canWritePluginState(statePolicy, 'providerDefaults')
 	const ownerKey = pluginNodeIndexKey(owner)
 	const management = useRuntimeManagementClient()
 	const policyQuery = useQuery<PluginProviderPolicyInfo | null>({
@@ -65,10 +63,14 @@ export function usePluginProviderPolicy(refresh: () => Promise<void>) {
 	const updatePolicy = useMutation({
 		mutationKey: ['management', 'dependencies', 'set-provider-policy', ownerKey],
 		mutationFn: async (provider: PluginNodeAddress | null) => {
-			const result = await management.dependencies.setProviderPolicyDefault({
-				policyOwner: owner,
-				provider,
-			})
+			if (!statePolicy) throw new Error('运行策略尚未加载')
+			const result = await management.dependencies.setProviderPolicyDefault(
+				{
+					policyOwner: owner,
+					provider,
+				},
+				{ expectedManagedRevision: statePolicy.managedRevision },
+			)
 			if (result.ok === false) {
 				throw new Error(result.error || result.code || '操作失败')
 			}

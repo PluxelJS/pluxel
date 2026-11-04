@@ -15,24 +15,22 @@ const application: HostApplicationFactory = defineHostApplication((startup) => (
 			vault: { schema: InvoiceVaultSchema, mapping: { primary: { apiKey: 'INVOICE_VLM_KEY' } } },
 		}),
 	],
-	runtime: {
-		state: { autoStart: [InvoiceConsumer.nodeAddress()] },
-		configRecords: {
-			records: [
-				{
-					owner: InvoicePlugin.nodeAddress(),
-					config: {
-						vlm: {
-							endpoint: startup.env.INVOICE_VLM_ENDPOINT,
-							model: startup.env.INVOICE_VLM_MODEL,
-							credentialKey: 'primary',
-						},
-						captchaAttempts: 1,
+	config: {
+		records: [
+			{
+				owner: InvoicePlugin.nodeAddress(),
+				config: {
+					vlm: {
+						endpoint: startup.env.INVOICE_VLM_ENDPOINT,
+						model: startup.env.INVOICE_VLM_MODEL,
+						credentialKey: 'primary',
 					},
+					captchaAttempts: 1,
 				},
-			],
-		},
+			},
+		],
 	},
+	policy: { autoStart: [InvoiceConsumer.nodeAddress()] },
 }))
 
 export default application

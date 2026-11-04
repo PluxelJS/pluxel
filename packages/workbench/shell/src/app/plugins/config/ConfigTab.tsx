@@ -1,5 +1,5 @@
 import { Accordion, Box } from '@mantine/core'
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { FieldNode } from 'valibot-form'
 import { AutoForm, type AutoFormOptions, useAutoFormCtx } from 'valibot-form/web'
 
@@ -14,7 +14,6 @@ export function ConfigTabContent({
 	displayName,
 	fields,
 	savedValue,
-	defaultValue,
 	showToc = true,
 	path = EMPTY_PATH,
 	scrollHost,
@@ -25,7 +24,6 @@ export function ConfigTabContent({
 	displayName: string
 	fields: readonly FieldNode[]
 	savedValue: Record<string, unknown>
-	defaultValue: Record<string, unknown>
 	showToc?: boolean
 	path?: readonly string[]
 	scrollHost?: HTMLElement | null
@@ -33,14 +31,10 @@ export function ConfigTabContent({
 	onSubmit: (key: string) => Promise<void>
 	registerForm: (key: string, form: ConfigSectionForm) => () => void
 }) {
-	const initialValue = useMemo(
-		() => ({ ...defaultValue, ...savedValue }),
-		[defaultValue, savedValue],
-	)
+	const initialValue = useMemo(() => savedValue, [savedValue])
 	// Keep reset and React options aligned while the query publishes the saved configuration.
-	// Subsequent external configuration/default changes remain authoritative.
+	// External input changes refresh only clean forms; drafts keep their original baseline.
 	const [baseline, setBaseline] = useState(initialValue)
-	useEffect(() => setBaseline(initialValue), [initialValue])
 	const tabKey = path.join('.') || 'config'
 	const anchorScope = useId()
 	const sectionIdPrefix = `${anchorScope}-${makeSectionAnchorPrefix(displayName, tabKey)}`
@@ -63,7 +57,12 @@ export function ConfigTabContent({
 
 	return (
 		<AutoForm fields={fields} formOpts={opts}>
-			<RegisterForm tabKey={tabKey} registerForm={registerForm} setBaseline={setBaseline} />
+			<RegisterForm
+				tabKey={tabKey}
+				registerForm={registerForm}
+				setBaseline={setBaseline}
+				incomingValue={initialValue}
+			/>
 			{showToc ? (
 				<Accordion mb="md">
 					<Accordion.Item value="outline">
@@ -89,14 +88,25 @@ export function ConfigTabContent({
 
 function RegisterForm({
 	setBaseline,
+	incomingValue,
 	tabKey,
 	registerForm,
 }: {
 	tabKey: string
 	registerForm: (key: string, form: ConfigSectionForm) => () => void
 	setBaseline: (values: Record<string, unknown>) => void
+	incomingValue: Record<string, unknown>
 }): null {
 	const { form, reset, defaultValues } = useAutoFormCtx()
+	const observedInput = useRef(incomingValue)
+	useEffect(() => {
+		if (observedInput.current === incomingValue) return
+		observedInput.current = incomingValue
+		if (!form.state.isDirty) {
+			setBaseline(incomingValue)
+			reset(incomingValue)
+		}
+	}, [defaultValues, form, incomingValue, reset, setBaseline])
 
 	useEffect(() => {
 		return registerForm(tabKey, {
@@ -106,9 +116,11 @@ function RegisterForm({
 				if (values) setBaseline(values)
 				reset(values)
 			},
-			acceptSaved: (values) => {
-				setBaseline(values)
-				if (form.state.values === values) reset(values)
+			acceptSaved: (values, submitted) => {
+				const acknowledged =
+					JSON.stringify(values) === JSON.stringify(submitted) ? submitted : values
+				setBaseline(acknowledged)
+				if (form.state.values === submitted) reset(acknowledged)
 			},
 		})
 	}, [defaultValues, form, registerForm, reset, setBaseline, tabKey])

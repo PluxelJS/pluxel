@@ -151,6 +151,8 @@ export function host(options: HostViteOptions): PluginOption[] {
 			plugins: declaration.plugins,
 			vaultBindings: declaration.vaultBindings,
 			services: declaration.services,
+			config: declaration.config,
+			policy: declaration.policy,
 			runtime: declaration.runtime,
 		})
 		try {

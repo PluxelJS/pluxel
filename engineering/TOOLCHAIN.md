@@ -26,10 +26,10 @@ package target 从 entry 的解析上下文解析，source target 按正式 pack
 本次观察到同一 canonical definition 的冲突物理来源使查询失败。离线 resolver 不执行 Vite/custom hooks，不声称得到运行时 catalog。
 source-entry 支持定向查询，`plugins/file` 的 workspace 发现范围不隐式扩大。
 
-`inputs` 投影目标 Plugin 的 config env/file bindings 与应用级 configRecords 表达式位置，不执行工厂、不读取部署值。
+`inputs` 投影目标 Plugin 的 config env/file bindings 与应用级 config 表达式位置，不执行工厂、不读取部署值。可静态确认的 fork binding 记录 forkId；未知目标保留诊断，不猜默认节点。
 configPath 描述 schema input mapping，不是 normalized output；Part 按 occurrence 展开，config root 为 []，Part config path 为 occurrence path。
 依赖 aggregate 与 inputs 始终属于整个 Plugin，partPath 只缩小 parts/config/dependency origins。schema 符号证据不替代 Host 的运行期同对象校验。
-未解析的关系保留具名诊断与可用的源码位置；不能以空列表或 configRecords:null 代替未知。
+未解析的关系保留具名诊断与可用的源码位置；不能以空列表或 config:null 代替未知。
 
 每次查询创建新的 resolver 与观察集合，同次查询共用已读取源码和总预算，不保留 watcher 或跨查询索引。
 返回前复核成功读取的文件；revision 标识观察内容及显式应用解析选择，不能作为文件系统原子快照、负向解析候选的完整证明或 Host revision。

@@ -41,9 +41,21 @@ it('query/action revocation, CLI and config share the same Host', async () => {
 			await rpc('launcher.action', { handle: second.result.results[0].action.handle }),
 		).toMatchObject({ result: { committed: true } })
 		expect(writes).toEqual(['5'])
+		const baseline = await rpc('host.configGet', { plugin: 'Calculator' })
 		expect(
-			await rpc('host.config', { plugin: 'Calculator', patch: { precision: 3 } }),
+			await rpc('host.config', {
+				plugin: 'Calculator',
+				patch: { set: { precision: 3 } },
+				expectedManagedRevision: baseline.result.managedRevision,
+			}),
 		).toMatchObject({ result: { ok: true, application: 'applied' } })
+		expect(
+			await rpc('host.config', {
+				plugin: 'Calculator',
+				patch: { set: { precision: 9 } },
+				expectedManagedRevision: baseline.result.managedRevision,
+			}),
+		).toMatchObject({ result: { ok: false, code: 'revision_conflict' } })
 		expect(await rpc('cli.execute', { argv: ['calc', '1/3'] })).toMatchObject({
 			result: { ok: true, value: { text: '0.333', precision: 3 } },
 		})

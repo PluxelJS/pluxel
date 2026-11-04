@@ -14,7 +14,9 @@ export async function createServiceTestApplication(
 	internal: ServiceInternalTestRootOptions = {},
 ): Promise<PluginHost> {
 	for (const key of Object.keys(options))
-		if (!['name', 'runtime', 'services', 'management', 'workbench'].includes(key))
+		if (
+			!['name', 'runtime', 'policy', 'config', 'services', 'management', 'workbench'].includes(key)
+		)
 			throw new TypeError(`[pluxel/test] unsupported option ${key}`)
 	const withWorkbench = options.workbench ?? false
 	const withManagement = options.management ?? withWorkbench
@@ -87,5 +89,7 @@ export async function createServiceTestApplication(
 		services,
 		name: options.name ?? 'test',
 		runtime: options.runtime,
+		policy: options.policy,
+		config: options.config,
 	})
 }

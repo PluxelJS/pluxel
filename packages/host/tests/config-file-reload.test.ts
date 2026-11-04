@@ -27,10 +27,11 @@ it('reloads shared config files into running Hosts without rewriting external co
 	const owner = FileConfigured.nodeAddress()
 	const options = {
 		plugins: [FileConfigured],
+		config: { mode: 'saved-first' as const, records: [{ owner, config: { value: 'base' } }] },
+
 		runtime: {
+			documents: { state: false as const },
 			zenfs: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
-			state: { mode: 'memory' as const },
-			configRecords: { records: [{ owner, config: { value: 'base' } }] },
 		},
 	}
 	const first = await createHost(options)
@@ -40,7 +41,7 @@ it('reloads shared config files into running Hosts without rewriting external co
 		await first.startNode(owner)
 		await second.startNode(owner)
 		applied.length = 0
-		await expect(first.config.patch(owner, { value: 'first' })).resolves.toMatchObject({
+		await expect(first.config.patch(owner, { set: { value: 'first' } })).resolves.toMatchObject({
 			ok: true,
 			application: 'applied',
 		})
@@ -52,7 +53,7 @@ it('reloads shared config files into running Hosts without rewriting external co
 				config: { value: 'first' },
 			})
 		expect(applied).toEqual(['first', 'first'])
-		await second.config.patch(owner, { value: 'second' })
+		await second.config.patch(owner, { set: { value: 'second' } })
 		await expect
 			.poll(() => first.config.get(owner), { timeout: 3000 })
 			.toMatchObject({ config: { value: 'second' } })
@@ -98,14 +99,14 @@ it('reloads shared config files into running Hosts without rewriting external co
 			.poll(() => second!.config.get(owner), { timeout: 3000 })
 			.toMatchObject({ config: { value: 'repaired' } })
 
-		// Removing the saved document reveals schema defaults without restoring declaration records.
+		// Removing the saved document reveals declaration input without writing it back.
 		await rm(file)
 		await expect
 			.poll(() => first.config.get(owner), { timeout: 3000 })
-			.toMatchObject({ config: { value: 'default' } })
+			.toMatchObject({ config: { value: 'base' } })
 		await expect
 			.poll(() => second!.config.get(owner), { timeout: 3000 })
-			.toMatchObject({ config: { value: 'default' } })
+			.toMatchObject({ config: { value: 'base' } })
 		await expect(stat(file)).rejects.toMatchObject({ code: 'ENOENT' })
 	} finally {
 		await Promise.all([first.close(), second?.close()])
@@ -119,20 +120,20 @@ it('applies shared file updates in a Host with a readonly filesystem and config 
 	const storage = { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } }
 	const writer = await createHost({
 		plugins: [FileConfigured],
-		runtime: { zenfs: storage, state: { mode: 'memory' } },
+		runtime: { zenfs: storage, documents: { state: false } },
 	})
 	let reader: Awaited<ReturnType<typeof createHost>> | undefined
 	try {
 		reader = await createHost({
 			plugins: [FileConfigured],
+
 			runtime: {
 				zenfs: { ...storage, readOnly: true },
-				state: { mode: 'memory' },
-				configRecords: { mode: 'readonly' },
+				documents: { state: false, config: { readOnly: true } },
 			},
 		})
 		await reader.startNode(owner)
-		await writer.config.patch(owner, { value: 'shared' })
+		await writer.config.patch(owner, { set: { value: 'shared' } })
 		await expect
 			.poll(() => reader!.config.get(owner), { timeout: 3000 })
 			.toMatchObject({
@@ -141,7 +142,9 @@ it('applies shared file updates in a Host with a readonly filesystem and config 
 				application: 'applied',
 				config: { value: 'shared' },
 			})
-		await expect(reader.config.patch(owner, { value: 'forbidden' })).resolves.toMatchObject({
+		await expect(
+			reader.config.patch(owner, { set: { value: 'forbidden' } }),
+		).resolves.toMatchObject({
 			ok: false,
 			code: 'mutation_rejected',
 		})

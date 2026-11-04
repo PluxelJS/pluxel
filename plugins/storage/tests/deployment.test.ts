@@ -41,7 +41,7 @@ it('signs an S3 write without Workbench using env-backed configuration and Vault
 					},
 				}),
 			],
-			runtime: { state: { autoStart: [DeploymentWriter.nodeAddress()] } },
+			policy: { autoStart: [DeploymentWriter.nodeAddress()] },
 		}))
 		const resolved = await resolveHostApplication(application, {
 			root: process.cwd(),
@@ -68,6 +68,8 @@ it('signs an S3 write without Workbench using env-backed configuration and Vault
 			services: resolved.services,
 			vaultBindings: resolved.vaultBindings,
 			name: resolved.name,
+			config: resolved.config,
+			policy: resolved.policy,
 			runtime: resolved.runtime,
 		})
 		try {

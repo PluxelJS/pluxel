@@ -19,12 +19,10 @@ describe('Auth headless deployment', () => {
 						vault: { schema: AuthVaultSchema, mapping: { [recordKey]: 'AUTH_CREDENTIAL' } },
 					}),
 				],
-				runtime: {
-					state: { autoStart: [AuthPlugin.nodeAddress()] },
-					configRecords: {
-						records: [{ owner: AuthPlugin.nodeAddress(), config: { mode: { type: 'password' } } }],
-					},
+				config: {
+					records: [{ owner: AuthPlugin.nodeAddress(), config: { mode: { type: 'password' } } }],
 				},
+				policy: { autoStart: [AuthPlugin.nodeAddress()] },
 			}))
 			const credential =
 				mode === 'password'
@@ -57,6 +55,8 @@ describe('Auth headless deployment', () => {
 				services: resolved.services,
 				vaultBindings: resolved.vaultBindings,
 				name: resolved.name,
+				config: resolved.config,
+				policy: resolved.policy,
 				runtime: resolved.runtime,
 			})
 			try {

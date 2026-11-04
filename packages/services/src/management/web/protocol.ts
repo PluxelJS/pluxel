@@ -20,13 +20,14 @@ export type {
 } from '@pluxel/host/internal/protocol'
 export type { VaultKeyPair } from '../../vault'
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 8 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 9 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',
 	'runtime.updates',
 	'plugins.lifecycle',
 	'plugins.config',
+	'host.policy',
 	'plugins.dependencies',
 	'plugins.forks',
 	'logging',
@@ -107,7 +108,9 @@ export type PluginCatalogSection = Readonly<{
 }>
 
 export type PluginStatePolicy = Readonly<{
-	mode: 'memory' | 'writable' | 'readonly'
+	readonly: boolean
+	managedRevision: string
+	/** Graph columns that an immediate management action cannot change under the declaration rule. */
 	overriddenFields: readonly ('autoStart' | 'forks' | 'providerDefaults' | 'dependencyOverrides')[]
 }>
 
@@ -127,7 +130,8 @@ export type PluginStatusQueryResult =
 			error: string
 	  }>
 
-export type ConfigPatch = Record<string, unknown>
+export type ConfigPatch = import('@pluxel/host').HostConfigMutation
+export type ManagedInputMutationOptions = Readonly<{ expectedManagedRevision?: string }>
 export type ConfigFieldMutation = Readonly<{
 	fieldPath: string
 	value: unknown
@@ -197,6 +201,7 @@ export type {
 export type ConfigResultOk = import('@pluxel/host').HostPluginConfigResultOk<PluginApplyReport>
 export type ConfigResultErr = import('@pluxel/host').HostPluginConfigResultErr
 export type ConfigResult = ConfigResultOk | ConfigResultErr
+export type PolicyResult = import('@pluxel/host').HostPolicyResult<PluginApplyReport>
 
 export type RuntimeJsonValue =
 	| null
@@ -363,22 +368,20 @@ export type ConfigPresentationFieldV1 =
 				reason: string
 			}>)
 
-export type ConfigPresentationPlanV1 = Readonly<{
-	version: 1
+export type ConfigPresentationPlanV2 = Readonly<{
+	version: 2
 	fieldName: string
-	defaults: RuntimeJsonObject
 	fields: readonly ConfigPresentationFieldV1[]
 	sections: readonly Readonly<{
 		path: readonly string[]
 		fieldName: string
-		defaults: RuntimeJsonObject
 		fields: readonly ConfigPresentationFieldV1[]
 	}>[]
 }>
 
 export type ConfigPresentationResultOk = Readonly<{
 	ok: true
-	plan: ConfigPresentationPlanV1
+	plan: ConfigPresentationPlanV2
 }>
 
 export type ConfigPresentationResultErr = Readonly<{
@@ -401,7 +404,9 @@ export type PluginLifecycleCommandBatchItem = Readonly<{
 }>
 
 export type PluginControlMutationErrorCode =
-	| 'state_overridden'
+	| 'revision_conflict'
+	| 'mutation_rejected'
+	| 'policy_shadowed'
 	| 'plugin_not_found'
 	| 'start_unavailable'
 	| 'restart_unavailable'
@@ -420,7 +425,9 @@ export type PluginControlMutationFailure =
 			address: PluginNodeAddress
 			ok: false
 			code:
-				| 'state_overridden'
+				| 'revision_conflict'
+				| 'mutation_rejected'
+				| 'policy_shadowed'
 				| 'plugin_not_found'
 				| 'start_unavailable'
 				| 'restart_unavailable'
@@ -540,7 +547,9 @@ export type PluginConsumerRequirementState = Readonly<{
 }>
 
 export type PluginDependencyMutationErrorCode =
-	| 'state_overridden'
+	| 'revision_conflict'
+	| 'mutation_rejected'
+	| 'policy_shadowed'
 	| 'invalid_input'
 	| 'consumer_unavailable'
 	| 'provider_unavailable'
@@ -588,7 +597,9 @@ export type EnsureForkResult =
 	| Readonly<{
 			ok: false
 			code:
-				| 'state_overridden'
+				| 'policy_shadowed'
+				| 'mutation_rejected'
+				| 'revision_conflict'
 				| 'invalid_input'
 				| 'invalid_fork_address'
 				| 'definition_unavailable'
@@ -628,7 +639,8 @@ export type RemoveForkResult =
 						| 'invalid_fork_address'
 						| 'graph_rejected'
 						| 'mutation_rejected'
-						| 'state_overridden'
+						| 'policy_shadowed'
+						| 'revision_conflict'
 					state: 'unchanged'
 					error: string
 			  }

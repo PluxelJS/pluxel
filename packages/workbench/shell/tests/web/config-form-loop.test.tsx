@@ -10,6 +10,9 @@ import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { ConfigForm } from '../../src/app/plugins/config/ConfigForm'
 import { ManagementQueryProvider } from '../../src/app/managementQuery'
+import { configSnapshot, savedConfig } from '../helpers/config'
+import type { PluginConfigSnapshot } from '../../src/app/plugins/config/usePluginConfig'
+import type { RuntimeManagementClient } from '@pluxel/services/management/client'
 import { applyConfigSources } from '../../src/app/plugins/config/presentationAdapter'
 
 const OWNER: PluginNodeAddress = {
@@ -33,29 +36,19 @@ const schema = v.object({
 const fields = f.extractFormFields(schema)
 
 function createFakeManagementClient(
-	patchPluginConfig = vi.fn(async () => ({
-		ok: true as const,
-		config: { name: 'saved', enabled: false },
-		application: 'applied' as const,
-	})),
+	patch = vi.fn(async () => savedConfig({ name: 'saved', enabled: false })),
+	reset = vi.fn(async () => savedConfig({})),
 ) {
-	return {
-		config: {
-			patch: patchPluginConfig,
-			patchField: vi.fn(),
-		},
-	} as any
+	return { config: { patch, reset } } as unknown as RuntimeManagementClient
 }
 
 function ConfigHarness({
 	client,
-	savedConfig = EMPTY_CONFIG,
-	defaults = EMPTY_CONFIG,
+	snapshot = configSnapshot(EMPTY_CONFIG),
 	formFields = fields,
 }: {
-	client?: ReturnType<typeof createFakeManagementClient>
-	savedConfig?: Record<string, unknown>
-	defaults?: Record<string, unknown>
+	client?: RuntimeManagementClient
+	snapshot?: PluginConfigSnapshot
 	formFields?: readonly f.FieldNode[]
 }) {
 	const [dirty, setDirty] = useState(false)
@@ -66,12 +59,10 @@ function ConfigHarness({
 				<MantineProvider>
 					<div data-dirty={dirty ? 'true' : 'false'}>
 						<ConfigForm
-							readonly={false}
 							owner={OWNER}
 							displayName="Config owner"
 							fields={formFields}
-							savedConfig={savedConfig}
-							defaults={defaults}
+							snapshot={snapshot}
 							onDirtyChange={setDirty}
 						/>
 					</div>
@@ -130,148 +121,156 @@ afterEach(() => {
 	document.body.innerHTML = ''
 })
 
-describe('single-schema ConfigForm safety', () => {
-	it('locks declaration, file and environment fields and submits only the edited unlocked field', async () => {
+async function click(container: HTMLElement, label: string) {
+	const button = [...container.querySelectorAll('button')].find(
+		(candidate) => candidate.textContent?.trim() === label,
+	)!
+	expect(button).toBeDefined()
+	await act(async () => {
+		button.click()
+		await Promise.resolve()
+	})
+}
+
+describe('raw input ConfigForm transactions', () => {
+	it('keeps shadowed saved inputs editable without materializing effective values or defaults', async () => {
 		const sources = [
-			{ owner: OWNER, path: ['limit'], kind: 'declaration' as const, readonly: true },
-			{
-				owner: OWNER,
-				path: ['fileValue'],
-				kind: 'file' as const,
-				name: 'deployment.json',
-				readonly: true,
-			},
-			{ owner: OWNER, path: ['envValue'], kind: 'env' as const, name: 'APP_VALUE', readonly: true },
-			{ owner: OWNER, path: ['nested', 'locked'], kind: 'declaration' as const, readonly: true },
+			{ owner: OWNER, path: ['name'], kind: 'env' as const, name: 'APP_NAME', readonly: false },
 		]
-		const controlledFields = applyConfigSources(
-			f.extractFormFields(
-				v.object({
-					name: v.string(),
-					limit: v.number(),
-					fileValue: v.string(),
-					envValue: v.string(),
-					untouched: v.optional(v.string(), 'schema default'),
-					nested: v.object({ locked: v.string(), editable: v.string() }),
-				}),
-			),
-			sources,
+		const snapshot = configSnapshot(
+			{ name: 'saved' },
+			{
+				effectiveInput: { name: 'env', enabled: true },
+				config: { name: 'TRANSFORMED', enabled: true },
+				sources,
+				shadowedPaths: [['name']],
+			},
 		)
-		const patch = vi.fn(async () => ({
-			ok: true as const,
-			config: { name: 'changed', enabled: false },
-			sources,
-			readonly: false,
-			saved: true as const,
-			application: 'applied' as const,
-		}))
+		const patch = vi.fn(async () => savedConfig({ name: 'changed' }))
 		const { container, root } = await mount(
 			<ConfigHarness
+				snapshot={snapshot}
 				client={createFakeManagementClient(patch)}
-				formFields={controlledFields}
-				savedConfig={{
-					name: 'saved',
-					limit: 100,
-					fileValue: 'file',
-					envValue: 'env',
-					nested: { locked: 'declared nested', editable: 'saved nested' },
-				}}
-				defaults={{
-					name: 'saved',
-					untouched: 'schema default',
-					nested: { locked: 'ignored default', editable: 'nested default' },
-				}}
+				formFields={applyConfigSources(fields, sources, [], snapshot.effectiveInput)}
 			/>,
 		)
 		try {
-			for (const key of ['limit', 'fileValue', 'envValue']) {
-				const input = container.querySelector<HTMLInputElement>(`input[name="${key}"]`)!
-				expect(input.readOnly || input.disabled).toBe(true)
-			}
-			expect(container.textContent).toContain('由应用声明提供，只读')
-			expect(container.textContent).toContain('deployment.json')
-			expect(container.textContent).toContain('APP_VALUE')
-			await typeIntoInput(
-				container.querySelector<HTMLInputElement>('input[name="name"]')!,
-				'changed',
+			const input = container.querySelector<HTMLInputElement>('input[name="name"]')!
+			expect(input.value).toBe('saved')
+			expect(input.readOnly || input.disabled).toBe(false)
+			expect(container.textContent).toContain('APP_NAME')
+			await typeIntoInput(input, 'changed')
+			await click(container, '保存')
+			expect(patch).toHaveBeenCalledWith(
+				OWNER,
+				{ set: { name: 'changed' }, remove: [['name']] },
+				{ expectedManagedRevision: 'config:initial' },
 			)
-			const save = [...container.querySelectorAll('button')].find(
-				(button) => button.textContent?.trim() === '保存',
-			)!
-			await act(async () => {
-				save.click()
-				await Promise.resolve()
-			})
-			expect(patch).toHaveBeenCalledWith(OWNER, { name: 'changed' })
-			const reset = [...container.querySelectorAll('button')].find(
-				(button) => button.textContent?.trim() === '恢复默认',
-			)!
-			await act(async () => {
-				reset.click()
-				await Promise.resolve()
-			})
-			expect(container.querySelector<HTMLInputElement>('input[name="nested.locked"]')!.value).toBe(
-				'declared nested',
-			)
-			expect(
-				container.querySelector<HTMLInputElement>('input[name="nested.editable"]')!.value,
-			).toBe('nested default')
+			expect(input.value).toBe('changed')
 		} finally {
 			await act(async () => root.unmount())
 		}
 	})
 
-	it('submits one schema against the structured owner address', async () => {
-		const patchPluginConfig = vi.fn(async () => ({
-			ok: true as const,
-			config: { name: 'changed', enabled: false },
-			application: 'applied' as const,
-		}))
-		const { container, root } = await mount(
-			<ConfigHarness client={createFakeManagementClient(patchPluginConfig)} />,
-		)
-		try {
-			const input = container.querySelector('input[name="name"]') as HTMLInputElement
-			await typeIntoInput(input, 'changed')
-			const save = [...container.querySelectorAll('button')].find(
-				(button) => button.textContent?.trim() === '保存',
-			) as HTMLButtonElement
-			expect(save.disabled).toBe(false)
-			await act(async () => {
-				save.click()
-				await Promise.resolve()
-				await Promise.resolve()
-			})
-			expect(patchPluginConfig).toHaveBeenCalledWith(
-				OWNER,
-				expect.objectContaining({ name: 'changed' }),
-			)
-		} finally {
-			await act(async () => root.unmount())
-		}
-	}, 30_000)
-
-	it('resets to defaults and reports dirty without a render loop', async () => {
+	it('restores inheritance with one reset transaction and accepts the confirmed raw input', async () => {
 		const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+		const reset = vi.fn(async () =>
+			savedConfig(
+				{},
+				{
+					effectiveInput: { name: 'inherited', enabled: true },
+					config: { name: 'INHERITED', enabled: true },
+				},
+			),
+		)
 		const { container, root } = await mount(
 			<ConfigHarness
-				savedConfig={{ name: 'saved', enabled: false }}
-				defaults={{ name: 'default', enabled: false }}
+				snapshot={configSnapshot({ name: 'saved', enabled: false })}
+				client={createFakeManagementClient(undefined, reset)}
 			/>,
 		)
 		try {
-			const reset = [...container.querySelectorAll('button')].find(
-				(button) => button.textContent?.trim() === '恢复默认',
-			) as HTMLButtonElement
-			await act(async () => {
-				reset.click()
-				await Promise.resolve()
+			await click(container, '恢复继承')
+			expect(reset).toHaveBeenCalledWith(OWNER, [['name'], ['enabled']], {
+				expectedManagedRevision: 'config:initial',
 			})
-			expect((container.querySelector('input[name="name"]') as HTMLInputElement).value).toBe(
-				'default',
-			)
-			expect(container.querySelector('[data-dirty="true"]')).toBeTruthy()
+			expect(container.querySelector<HTMLInputElement>('input[name="name"]')!.value).toBe('')
+			expect(container.querySelector('[data-dirty="false"]')).not.toBeNull()
 			expect(error.mock.calls.flat().join('\n')).not.toContain('Maximum update depth exceeded')
+		} finally {
+			await act(async () => root.unmount())
+		}
+	})
+
+	it('keeps a draft and its original CAS token when a refreshed snapshot arrives', async () => {
+		const patch = vi.fn(async () => ({
+			ok: false as const,
+			code: 'revision_conflict' as const,
+			state: 'unchanged' as const,
+			message: 'Reload required',
+			managedRevision: 'config:external',
+		}))
+		const client = { config: { patch } } as unknown as RuntimeManagementClient
+		const { container, root } = await mount(<ConfigHarness client={client} />)
+		try {
+			const input = container.querySelector<HTMLInputElement>('input[name="name"]')!
+			await typeIntoInput(input, 'my draft')
+			await act(async () =>
+				root.render(
+					<ConfigHarness
+						client={client}
+						snapshot={configSnapshot(
+							{ name: 'external', enabled: true },
+							{ managedRevision: 'config:external' },
+						)}
+					/>,
+				),
+			)
+			expect(input.value).toBe('my draft')
+			await click(container, '保存')
+			expect(patch).toHaveBeenCalledWith(
+				OWNER,
+				{ set: { name: 'my draft' }, remove: [['name']] },
+				{ expectedManagedRevision: 'config:initial' },
+			)
+			expect(input.value).toBe('my draft')
+			expect(container.querySelector('[data-dirty="true"]')).not.toBeNull()
+		} finally {
+			await act(async () => root.unmount())
+		}
+	})
+
+	it('lets invalid saved input be repaired without fabricating parsed output', async () => {
+		const {
+			config: _config,
+			application: _application,
+			appliedRevision: _applied,
+			desiredRevision: _desired,
+			persistence: _persistence,
+			report: _report,
+			applyFailure: _failure,
+			...input
+		} = configSnapshot({ name: 'invalid' })
+		const snapshot: PluginConfigSnapshot = {
+			...input,
+			ok: false,
+			code: 'validation_failed',
+			state: 'unchanged',
+			errors: {},
+			message: 'Name is invalid',
+		}
+		const patch = vi.fn(async () => savedConfig({ name: 'repaired' }))
+		const { container, root } = await mount(
+			<ConfigHarness snapshot={snapshot} client={createFakeManagementClient(patch)} />,
+		)
+		try {
+			expect(container.textContent).toContain('Name is invalid')
+			await typeIntoInput(
+				container.querySelector<HTMLInputElement>('input[name="name"]')!,
+				'repaired',
+			)
+			await click(container, '保存')
+			expect(patch).toHaveBeenCalledOnce()
 		} finally {
 			await act(async () => root.unmount())
 		}

@@ -33,17 +33,15 @@ export default defineHostApplication(async (startup) => {
 		name: 'my-app',
 		plugins: [AuthPlugin],
 		services: await servicesPreset(startup, {}),
+		policy: { autoStart: [AuthPlugin] },
+		config: {
+			records: [{ owner: AuthPlugin, config: { mode: { type: 'password' } } }],
+		},
 		runtime: {
 			zenfs: zenfs({
 				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 				durableMounts: ['/'],
 			}),
-			state: {
-				autoStart: [AuthPlugin.nodeAddress()],
-			},
-			configRecords: {
-				records: [{ owner: AuthPlugin.nodeAddress(), config: { mode: { type: 'password' } } }],
-			},
 		},
 	}
 })
@@ -97,11 +95,7 @@ export default defineHostApplication(() => ({
 			},
 		}),
 	],
-	runtime: {
-		state: {
-			autoStart: [AuthPlugin.nodeAddress()],
-		},
-	},
+	policy: { autoStart: [AuthPlugin] },
 }))
 ```
 

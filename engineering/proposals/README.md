@@ -13,7 +13,7 @@
 
 研究与必要决策记录：
 
-- [Host 配置：声明优先与保存输入分层](HOST_CONFIGURATION_LAYERS.md)：讨论中的配置简化方案；复用自动启动名单，分离保存与运行时有效值，明确默认值、覆盖规则和未决边界，尚未实施。
+- [Host 配置重构：决策与验收](HOST_CONFIGURATION_LAYERS.md)：已实施，根仓库及三个 local-projects 的完整门禁通过；保留身份/mode、原始输入事务和执行绑定决策，以及六条验收路径、线上检查和数据迁移证据。当前 API 见正式 Host/Config 文档。
 
 - [Typst 内容创作与私有排版边界](TYPST_AUTHORING_BOUNDARIES.md)：待实施的整体重构提案；分离源码创作与 JSON 正文权威，明确私有模板/数据/资产边界、agent 协作提交和无兼容迁移。
 

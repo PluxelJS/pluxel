@@ -101,8 +101,8 @@ export async function run() {
           { category: ['logtape', 'meta'], lowestLevel: 'fatal', sinks: [] },
         ],
       }),
-      state: { autoStart: [consumer] },
     },
+    policy: { autoStart: [consumer] },
     plugins: [Provider, Consumer],
   })
   const rootId = host.ctx.logging?.resolved.root.id

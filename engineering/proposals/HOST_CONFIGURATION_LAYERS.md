@@ -1,176 +1,84 @@
-# Host 配置提案：声明优先、保存输入与有效值分离
+# Host 配置重构：决策与验收
 
-> 状态：讨论稿，尚未采纳或实施。记录 2026-11-04 的讨论方向，供后续继续评审。
-> 本次只提交提案；先前开始的 Host 与模板试改已撤回。本文示例不是当前可用 API。
-> 当前契约仍由 [Host 配置](../../docs/host/configuration.md) 与 [配置工程边界](../CONFIG.md) 维护。
+> 已实施，验收结算于 2026-11-05。核心契约、已知调用方和本地数据已迁移；根仓库与三个 local-projects 的完整门禁、生成应用和线上检查已通过。
 
-## 问题与目标
+本文只保留重构理由、迁移判断和验收索引。当前作者用法由 [Host 配置](../../docs/host/configuration.md#保存配置和运行策略)维护，事务与校验边界见 [CONFIG](../CONFIG.md)，创建和资源所有权见 [HOST](../HOST.md)。不在本页重复 API 类型、字段表或默认值。
 
-当前 `plugins` 只声明可用代码，`runtime.state.autoStart` 选择自动启动根节点，required dependencies 由图补齐。这一职责划分清楚，但静态应用需要重复列出 Plugin 并转换节点地址。
+## 必要决策
 
-另一个负担是配置权威：现有声明默认只在保存文档缺失时用于初始化；显式 `override` 才覆盖保存值，并禁止受控路径的管理写入。`memory`、`writable`、`readonly` 又分别涉及存储和写入权限。应用作者需要组合多个概念，才能表达“运行时采用代码里的值，其余使用保存值”。
+### 以运行意图组织入口
 
-本提案希望形成一个默认模型：
+配置和策略首先面向本次运行：顶层 config 管 Plugin 输入，policy 管图策略与执行参数，runtime 管原生设施。取值 mode 不再同时表达存储、写权限或采用时机；文档接线留在 runtime.documents，普通应用不必填写它。没有新增 runtime.lifecycle 或通用 Store 注册表。
 
-- `plugins` 拥有代码可用性，`autoStart` 拥有自动启动意图；名单可以复用。
-- 应用声明和部署绑定决定当前采用什么值，管理操作决定保存什么值。
-- 显式声明覆盖保存输入，未声明的部分继承保存输入。
-- 覆盖本身不禁止保存；保存结果与运行时实际采用的结果分别可观察。
-- 保留同一套 Host 装配、Core graph 和生命周期，不新增静态应用执行路径。
+policy 的八项值共享一个可选 mode 映射，各项独立选择声明与保存值。这样只改启动超时或某一份名单时，不需要额外的 `{ mode, value }` 包装，也不会改变其他策略的取值。执行参数与图策略属于同一个运行意图，但保留各自真实的采用时机。
 
-这次讨论的关键修正是：**有效值优先级不等于写入权限。** 不能因为应用声明了某个值，就拒绝用户保存另一个值。
+### 复用 Plugin 身份，精确到 node
 
-## 建议的应用入口
+`Plugin: { mode, config }` 的直觉保留为 records 中的 `{ owner, mode?, config? }`，使 constructor 有真正的值位置，避免 JavaScript 对象键退化为 class name。owner 复用现有 canonical PluginNodeAddress，不增加 nodeModule、包名或 fork 拼接 DSL。
 
-以下是待实现的应用声明示例。`TodoConfig` 应是 `TodoPlugin` 实际传给 `configs.use()` 的同一个导出 schema。
+| 场景                                   | 选择及理由                                                                                    |
+| -------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 源码 Plugin 或 node_modules 的具名导出 | 直接传 constructor，表示其 default node；包名不能区分同模块的多个导出                         |
+| 已导入 Plugin 的 fork                  | 使用 `Plugin.nodeAddress('east')`，与 default、其他 fork 各自独立                             |
+| 尚未加载的动态模块                     | 使用 canonical address 或已有引用解析器的结果；完整保留入口、导出名和 variant，不触发模块加载 |
+| 全应用规则与个别例外                   | `record.mode → config.mode → declared-first`；域默认同样覆盖后来进入 catalog 的节点           |
 
-```ts
-import { defineHostApplication } from '@pluxel/host'
-import type { InferInput } from 'valibot'
-import { TodoPlugin, TodoConfig } from '@app/todo'
-import { HttpPlugin } from '@app/http'
+允许 mode-only record，用来选择某个动态节点的规则；空记录和 canonical owner 重复均拒绝。default 与 fork 不继承彼此的值或 mode，复用输入用普通 TypeScript 变量表达。配置声明不代替代码来源、fork 声明或启动动作，Part 继续属于 owning node 的聚合记录。
 
-const plugins = [TodoPlugin, HttpPlugin] as const
+### 原始输入、目标输出和保存结果分开
 
-const todoConfig = {
-	maxItems: 100,
-} satisfies InferInput<typeof TodoConfig>
+声明始终独立于保存输入，缺文档不写种子。否则一次启动就会把部署声明或 schema 默认值变成后续管理权威，使“重新继承”失去明确含义。reset 因此删除保存输入，不复制声明；env/file 也进入声明层，不再隐式锁住管理写入。
 
-export default defineHostApplication(() => ({
-	plugins,
-	runtime: {
-		state: {
-			autoStart: plugins,
-		},
-		configRecords: {
-			records: [{ owner: TodoPlugin.nodeAddress(), config: todoConfig }],
-		},
-	},
-}))
-```
+事务在同一协调队列内检查原始版本、删除路径并合并 set、校验最终有效输入、等待保存确认，再发布和通知。保留 managedInput、effectiveInput 与 config output，才能正确处理 transform、被遮盖的保存编辑及失效原始输入修复。查询不为了 defaults 额外执行 schema；来源证明不进入作者形状。
 
-服务仍按 Plugin 的真实需要显式安装；日志、文件后端等沿用现有装配入口。示例省略这些与本提案无关的选择，不承诺任意 Plugin 都能在无服务的 Host 中运行。
+managedRevision 与 desired/applied revision 各自表达原始编辑和运行采用。Workbench 使用显示时的令牌；旧策略动作也透传 CAS，批量动作保留逐项结算。保存失败只返回已接纳输入及 unknown 回执，listener 失败仍保留已保存目标，不能伪装回滚。原始输入和 schema output 均遵守 [Core 的可移植数据边界](../CONFIG.md#toolchain-metadata)，不把带行为对象或未知 schema 异常投影成成功。
 
-`satisfies InferInput<typeof Schema>` 适用于提供完整 schema 输入的声明。允许依赖保存值补齐的局部声明，其静态类型如何同时表达部分输入与完整有效配置，见后文未决问题；不以额外手写接口代替 schema。
+### 在唯一 root 中绑定执行参数
 
-## 字段与默认行为
+保存的超时、并发必须在首次创建 PluginService 前采用。Host 因此先创建唯一 root、读取文档并求值 policy，再通过内部一次性绑定确定执行参数，随后准备服务。不能靠延迟 require 却继续提前捕获旧参数，也不能创建第二个 root 或先启动后修改冻结配置。
 
-保留现有领域名称，减少决定同一件事的开关。
+绑定不成为作者 setter 或新生命周期 hook。运行中修改执行目标只报告需重建 Host；重启 Plugin 不改变本次 Host 的执行设施。借用文档 backend 的关闭权仍属于应用。
 
-| 入口                                                               | 建议含义与默认行为                                          |
-| ------------------------------------------------------------------ | ----------------------------------------------------------- |
-| `plugins`                                                          | 显式可用代码清单，不隐式启动插件                            |
-| `runtime.state.autoStart`                                          | 自动启动根节点；省略时继承保存列，没有保存值则为空          |
-| `runtime.state.forks` / `providerDefaults` / `dependencyOverrides` | 显式声明按整列覆盖，省略时继承保存列，没有保存值则为空      |
-| `runtime.configRecords.records`                                    | 应用声明的原始配置覆盖；省略时没有这一层覆盖                |
-| 两个配置域各自的 `storage` 省略                                    | 使用 Host 内建文档存储；是否跨启动保留由实际文件后端决定    |
-| `storage: false`                                                   | 管理输入只在当前 Host 内保留，不读写该域的配置文档          |
-| `storage: factory`                                                 | 沿用同步 root factory，借用自定义文档存储，不转移后端所有权 |
+## 迁移判断
 
-建议移除 `mode` 和 `override`。不增加 `declarative` 模式，也不以 `readOnly` 或 `allowManagementWrites` 表达声明覆盖。真实只读存储仍需有诚实的能力与失败契约，其配置表达和管理面投影尚待讨论，不能在删除旧模式时丢失。
+| 旧入口或行为                                            | 迁移依据                                                                     |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| runtime.state / runtime.plugins / runtime.configRecords | 分别归入顶层图 policy、执行 policy 和 config；已知应用按实际启动意图迁移     |
+| storage、memory、readonly 与取值 mode 混用              | 文档能力归入 runtime.documents；取值规则、权限、保留能力和采用回执各自表达   |
+| override:false                                          | 不能机械替换为 saved-first：后者对缺少部分继承声明，旧行为由整份已有文档决定 |
+| env/override 导致保存路径只读                           | 声明遮盖与写权限分开；实际策略动作仍须证明能生效                             |
+| reset 恢复声明副本、裸 patch、saved boolean             | 分别改为删除原始输入、set/remove 事务和明确保存回执；表单编辑原始输入        |
 
-`storage: false` 只控制所在配置域的文档 IO，不禁止管理输入在本次会话变化，也不影响 Plugin 文件、TinyBase 或其他业务数据。没有持久化时，反馈应说明仅更新本次会话，不能声称已写入可跨启动保存的文档。
+config 保留 v4；state 改为只保存用户输入的稀疏 v7。v6 的真实四列原样转换，不猜测空列来自初始化还是人工选择，也不补四项执行默认值。转换保留原副本和可核对清单，运行时只读新格式，不留下兼容 reader、启动迁移或旧 alias。已有非可移植输入必须显式调整，不能靠 transform 后恰好可移植而静默接受。
 
-## 自动启动与依赖图
+作者字段、公共 exports、Management/Workbench、应用 resolver、Vite/native/browser、静态分析、生成模板与真实下游一并迁移。迁移过程的逐文件历史由 Git 保存。
 
-建议 `autoStart` 的代码输入接受 `readonly (PluginConstructor | PluginNodeAddress)[]`：
+## 六条验收路径
 
-```ts
-autoStart: plugins // 所列 Plugin 的 default 节点都作为启动根节点
-autoStart: [HttpPlugin] // 只选择所需根节点
-autoStart: [WorkerPlugin.nodeAddress('east')] // 显式选择 fork 节点
-```
+以下是可重复运行的回归入口；测试覆盖范围与整轮门禁是否通过分别记录，不以隔离 Host 代替在线应用。
 
-具体 Plugin constructor 只在 Host 输入边界转换成 default 节点地址。内部状态、文档、RPC 和运行报告仍使用 canonical 地址。未 lowering 的 class、abstract token、非法地址及重复节点应明确诊断，不通过 class name 或反射猜测身份。
+| 作者路径                | 核对事实                                                                        | 回归入口                                                                                                                                                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 纯声明应用              | 输入快照、三种 mode、无初始化写回、只读与会话文档                               | [application](../../packages/host/tests/application.test.ts)、[config-store](../../packages/host/tests/config-store.test.ts)、[builtin-storage](../../packages/host/tests/builtin-storage.test.ts)                                                       |
+| 局部声明加管理编辑      | 隐藏值仍可保存、路径替换/reset、CAS、保存失败与 listener 采用；表单不物化继承值 | [Host config](../../packages/host/tests/config.test.ts)、[真实 RPC 事务](../../packages/services/tests/management/management/host-input-transactions.test.ts)、[表单闭环](../../packages/workbench/shell/tests/web/config-form-loop.test.tsx)            |
+| 保存优先且包含部署绑定  | 同一节点组合 code/file/env/saved，来源事实与 raw/output 分离                    | [配置层集成](../../packages/host/tests/config-layers-integration.test.ts)、[部署绑定](../../packages/host/tests/config-environment.test.ts)                                                                                                              |
+| fork 与 Part 配置       | default/fork 隔离、Part 子树校验、动态目录和同包不同导出的精确 mode             | [配置层集成](../../packages/host/tests/config-layers-integration.test.ts)、[fork 控制面](../../packages/services/tests/management/management/plugin-forks.test.ts)、[静态绑定](../../packages/rolldown/tests/rolldown/static-config-environment.test.ts) |
+| 借用嵌入文档            | factory 只解析一次、准备失败清理、排空 IO、不关闭共享 backend                   | [document-storage](../../packages/host/tests/document-storage.test.ts)、[embedded-launcher](../../projects/embedded-launcher/src/app.ts)                                                                                                                 |
+| 保存执行参数后重建 Host | 服务准备前采用保存参数、当前执行不变、新 Host 采用目标                          | [policy-management](../../packages/host/tests/policy-management.test.ts)、[Core 一次性绑定](../../packages/core/tests/plugin-execution-binding.test.ts)                                                                                                  |
 
-未列入 `autoStart` 的节点仍可能因 required dependency 运行；依赖代码必须可从 catalog 获得。没有从 `autoStart` 自动注册代码或扫描模块的隐式行为。动态来源后续出现的插件不会自动追加到已声明的启动名单。
+补充边界由 [ConfigInputPatch 类型检查](../../packages/host/tests/config.types.ts)、[外部文件更新](../../packages/host/tests/config-file-reload.test.ts)、[浏览器存储](../../packages/host/tests/browser-storage.test.ts)和[生成应用测试](../../packages/create/tests/create.test.mjs)维护。此次集成还发现并补上 Part schema 同时返回 value/issues 时的失败判定，以及外部较短文件被 Passthrough 读取关闭过程扩长的问题；这些修正保留在对应回归中。
 
-fork 仍需合法声明和现有 fork 契约；一个 fork 地址不会自动兼任创建该 fork 的指令。临时 start、stop、restart 保留既有 session 语义，不修改保存名单或应用声明，也不因本提案引入持续强制运行。
+## 已取得的实施证据
 
-## 保存输入与有效值
+- 真实 plugin-host 完成 HMR apply 后应用 ready，目录含 24 个 Plugin；开发控制台验证 config 空提交不写入、过期 CAS 拒绝、policy validate 不推进 revision。应用与 Workbench HTTP 均为 200；验收结束后恢复原先停止的服务状态。脚本 runId 为 `70914715-e52d-4331-8045-42a1364c4ff5`，同实例 HMR 收尾 runId 为 `03ccb39d-eb89-4b57-8a42-fbf7e15f6867`；原 receipt 保留在本次操作记录中。这证明该次在线状态，不代表持续可用性。
+- local-projects 的 rhythm、bot-new-omni、chatbot 已完成显式数据转换并保留原副本。新 Host 只读恢复分别识别 18、11、7 条配置记录；备份哈希校验通过，恢复前后文件内容哈希与 mtime 不变，未启动业务 Plugin。chatbot 未有的策略输入保持缺省，没有补写空列。
+- 新生成 starter 已通过生产构建、制品完整性检查及开发/HMR 冒烟测试；这项证据独立于本仓库应用和静态模板断言。
+- report-template-studio 已通过独立 compile-code 构建与 [runtime.mjs](../../projects/report-template-studio/tests/runtime.mjs)：两个外部 Node client、渲染、重启后 artifacts 保留、forget 保留用户文件及 discovery 清理均完成验证。
 
-Host 持有可编辑的管理输入；使用文档存储时，管理输入从保存文档读取，并由显式管理操作保存。应用声明、文件绑定与环境绑定独立保留，不把覆盖结果写回管理输入。
+## 完整门禁结果
 
-对 Plugin 配置，建议采用以下顺序：
+根仓库执行 `mise exec pnpm@11.28.8 -- vp run --concurrency-limit=2 workspace:verify`，135/135 任务成功。静态检查覆盖 2786 个文件的格式、1967 个文件的 lint 与类型；Host 的 231 项测试包含真实 Chromium 页面与 Web Worker 存储恢复，plugin-host 的 native 与 production-vite 启动、制品和自然 SIGTERM 回归通过。
 
-```text
-管理输入（文档恢复或本次会话输入）
-  → runtime.configRecords.records
-  → fileBindings 的配置输入
-  → envBindings 的配置输入
-  → schema 校验、默认值与转换
-  → 运行时有效配置
-```
+三个下游分别执行无缓存 `workspace:verify`，并限制任务并发为 1：chatbot 34/34、rhythm 83/83、bot-new-omni 76/76。三者提交检查通过，迁移已提交推送。根仓库门禁使用仓库规定的缓存，日志中原有 skip 项保持跳过；以上结论针对本次本地工作区，不代表未执行用例或所有部署环境。
 
-文件绑定覆盖应用记录的同路径，环境绑定最后覆盖；沿用现有显式绑定解析和来源记录，不隐式读取整个环境。schema 默认值只补缺失项，transform 输出不反写原始输入。
-
-| 情况                   | 合并规则                                   |
-| ---------------------- | ------------------------------------------ |
-| 普通对象               | 按字段递归合并，未声明字段继承低优先级输入 |
-| 数组                   | 整体替换；`[]` 是明确清空                  |
-| `false`、`0`、空字符串 | 都是显式输入，不按 truthiness 回退         |
-| 省略字段               | 继承低优先级输入；仍缺失时交给 schema 处理 |
-| state 的各个策略列     | 按整列覆盖，不把两份启动名单隐式拼接       |
-
-非法文档和非法有效输入仍明确失败，不能用优先级覆盖掩盖结构、版本或校验错误。显式 `undefined`、合法 `null`、被遮盖输入的独立校验边界需在实施前进一步确定。
-
-### 保存被覆盖的值
-
-应用声明 `timeoutMs: 3000` 时：
-
-| 操作                    | 保存值 | 当前有效值 |
-| ----------------------- | ------ | ---------- |
-| 原文档保存 `1000`       | `1000` | `3000`     |
-| 管理面保存 `5000`       | `5000` | `3000`     |
-| 移除声明并重新创建 Host | `5000` | `5000`     |
-
-声明和绑定本身不禁止写入保存层。被覆盖的保存输入变化后，若重新计算的有效值未变，不通知 Plugin 配置更新，也不因此触发生命周期操作。其他未被覆盖字段的有效变化照常按现有契约应用。
-
-声明、绑定、schema 默认值和转换结果不自动复制到保存层，包括首次没有文档时。否则移除声明后，旧值会以保存值的身份继续生效，来源与退出覆盖的行为都不清楚。
-
-state 同样区分保存策略与有效策略：显式 `autoStart` 存在时，修改保存名单可以成功，当前图仍消费声明覆盖后的名单。其他列遵循相同规则。任何承诺实际创建、删除或启动节点的命令，仍必须报告其真实执行结果；不能把保存了被遮盖的策略当成节点操作完成。
-
-## 可观察性与管理体验
-
-复用现有 Host/coordinator 的事实，不让 Workbench 或管理服务重算优先级、依赖图或 provider 选择。
-
-管理面和 Host 结果需要让接收者区分：
-
-- 保存或会话更新是否完成；失败时保存层是否已改变。
-- 当前有效值、其来源，以及刚保存的值是否被声明或绑定覆盖。
-- 有效配置是否已被运行实例采用；生命周期是否实际完成。
-
-例如展示“已保存为 5000；当前有效值为 3000，来源：应用声明”。不能把成功写入解释成当前采用，也不能因为值被覆盖就报告保存失败。
-
-Plugin 状态继续区分自动启动、依赖带起和临时启动。provider 展示应从同一次已提交图读取实际选择，说明显式选择或默认选择；本提案不改变现有 provider 选择算法。
-
-配置读取、RPC 和 UI 的具体字段扩展还需评审。先确定保存输入、有效值和来源的语义，再调整现有结果类型，不另建一套状态报告。
-
-## 模板与后续实施范围
-
-建议最小示例和新项目入口直接使用静态插件数组，并在 `autoStart` 中复用；动态来源、额外服务与存储按真实用途添加。配置提示复用实际 schema，保留必要的失败处理与资源释放。
-
-若后续采纳，应作为一次完整契约调整处理：Host 输入和存储、coordinator 的保存与应用边界、管理协议与 UI、构建与源码分析、模板、已知调用方、公开与工程文档、对应验收。同一事实由原所属领域维护。
-
-迁移必须检查旧 `mode`、`override`、路径写入锁和“声明初始化保存文档”的调用方。已有文档可能包含历史初始化写入的值，不能把它们猜成可删除的声明副本。需要数据转换时显式执行并审查，不添加运行时迁移、兼容 alias 或自动清空数据。
-
-## 继续讨论的问题
-
-1. **被覆盖保存输入的校验。** 局部保存输入可能依赖声明补齐才能满足 schema；需要定义如何检查错误类型与无效潜伏值，同时不把合法的部分输入当成完整配置拒绝。
-2. **写入、reset 和删除的精确语义。** 当前 `reset` 会持久恢复声明；需要明确新模型中各操作修改哪一层、何时保存，以及未采用保存值时如何返回结果。暂不新增另一组同义 API。
-3. **实际图操作与保存策略的边界。** 尤其是 fork ensure/remove、依赖绑定与策略保存被整列覆盖时，明确哪些操作只完成保存，哪些必须完成实际图变更，保留事务与失败契约。
-4. **真实只读存储。** 删除 `mode` 后，如何表达只读文档消费者并在 IO 前投影能力，保留已有只读用例；不要重新把声明优先变成写入禁令。
-5. **局部输入类型与值边界。** 完整 `InferInput` 不直接适用于依赖保存输入补齐的声明；同时需确定 `undefined`、`null`、空对象的精确行为。
-6. **历史保存值与默认入口。** 评估已有声明种子数据的处理、首次文档创建时机，以及模板采用何种后端；不把不可证明的历史来源写成当前事实。
-
-## 采纳后的验收条件
-
-- 真实应用、standalone 构建与 Vite 使用同一静态插件数组；constructor 输入转成地址，fork、缺失依赖和非法声明保持明确报告。
-- 冷启动、已有文档、重开 Host、修改保存值、移除声明均符合优先级；不把声明或转换结果写回保存层。
-- 被遮盖的保存修改确实保存，有效值不变且无多余配置通知或生命周期动作；移除覆盖后采用保存值。
-- 配置对象按字段、策略按整列合并；空数组和 false/0/空字符串的意义不丢失。
-- 文档和会话存储分别验证；业务数据持久化、借用资源所有权、关闭等待和真实 IO 失败契约不受破坏。
-- 管理 API、Workbench 与实际 Plugin 行为分别证明保存、来源、采用和运行结果；不能只凭 schema 或序列化测试宣称端到端成立。
-- 已知调用方、类型、导出、模板和文档表达同一契约，再删除替代的开关与旧写入锁；不以兼容读取器维持两套含义。
-
-这些是未来采纳后的验证要求，不表示本次已实现或执行。后续讨论完成前保持现有运行时契约。
+验收还修正了两项测试基础问题：Host 测试任务显式透传浏览器环境与缓存目录；被通用 data/ 忽略规则漏掉的 Typst 申请表输入补为受控的空白 fixture，原有原生分页断言保持不变。没有保留临时数据转换代码或新的后台服务。

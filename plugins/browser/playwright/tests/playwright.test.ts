@@ -184,7 +184,7 @@ it('preserves effects registration failure if closing its acquired native connec
 })
 
 it('closes a native connection that arrives after its generation timed out', async () => {
-	await using host = await createTestHost({ runtime: { plugins: { drainTimeoutMs: 20 } } })
+	await using host = await createTestHost({ policy: { drainTimeoutMs: 20 } })
 	const entered = Promise.withResolvers<AbortSignal>()
 	const connected = Promise.withResolvers<Browser>()
 	nativeAcquire = (signal) => {
@@ -386,17 +386,15 @@ it.each(['cdp', 'playwright'] as const)(
 					},
 				}),
 			],
-			runtime: {
-				state: { autoStart: [PlaywrightPlugin.nodeAddress()] },
-				configRecords: {
-					records: [
-						{
-							owner: PlaywrightPlugin.nodeAddress(),
-							config: { connectionKey: 'primary', protocol },
-						},
-					],
-				},
+			config: {
+				records: [
+					{
+						owner: PlaywrightPlugin.nodeAddress(),
+						config: { connectionKey: 'primary', protocol },
+					},
+				],
 			},
+			policy: { autoStart: [PlaywrightPlugin.nodeAddress()] },
 		}))
 		const endpoint = 'wss://browser.invalid/?token=super-secret'
 		const headers = { Authorization: 'Bearer secret-header' }
@@ -411,6 +409,8 @@ it.each(['cdp', 'playwright'] as const)(
 			services: resolved.services,
 			vaultBindings: resolved.vaultBindings,
 			name: resolved.name,
+			config: resolved.config,
+			policy: resolved.policy,
 			runtime: resolved.runtime,
 		})
 		try {
@@ -525,17 +525,15 @@ it('validates a Vault endpoint against the selected native protocol before conne
 				},
 			}),
 		],
-		runtime: {
-			state: { autoStart: [PlaywrightPlugin.nodeAddress()] },
-			configRecords: {
-				records: [
-					{
-						owner: PlaywrightPlugin.nodeAddress(),
-						config: { connectionKey: 'primary', protocol: 'playwright' },
-					},
-				],
-			},
+		config: {
+			records: [
+				{
+					owner: PlaywrightPlugin.nodeAddress(),
+					config: { connectionKey: 'primary', protocol: 'playwright' },
+				},
+			],
 		},
+		policy: { autoStart: [PlaywrightPlugin.nodeAddress()] },
 	}))
 	const resolved = await resolveHostApplication(application, {
 		root: process.cwd(),
@@ -548,6 +546,8 @@ it('validates a Vault endpoint against the selected native protocol before conne
 		services: resolved.services,
 		vaultBindings: resolved.vaultBindings,
 		name: resolved.name,
+		config: resolved.config,
+		policy: resolved.policy,
 		runtime: resolved.runtime,
 	})
 	try {

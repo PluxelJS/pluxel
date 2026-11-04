@@ -32,7 +32,7 @@ it('admits one native snapshot and leaves later publications for a fresh process
 		await writeFile(join(root, 'initial.mjs'), builtModule('initial'))
 		await writeFile(
 			join(root, 'app.mjs'),
-			`export default () => ({name:'production-source',plugins:[],sources:[{kind:'directory',path:'.',include:['initial.mjs','added.mjs','after-close.mjs']}],runtime:{state:{autoStart:${JSON.stringify([address('initial'), address('added')])}}}})`,
+			`export default () => ({name:'production-source',plugins:[],sources:[{kind:'directory',path:'.',include:['initial.mjs','added.mjs','after-close.mjs']}],policy:{autoStart:${JSON.stringify([address('initial'), address('added')])}}})`,
 		)
 		const result = await promisify(execFile)(
 			process.execPath,
@@ -78,7 +78,7 @@ it('preserves startup and cleanup failures while draining resources and releasin
 		await writeFile(
 			join(root, 'app.mjs'),
 			`export const unused=import.meta.resolve('./late.mjs');
-export default () => ({plugins:[],runtime:{state:{mode:'memory'}},prepare({host,startup}){
+export default () => ({plugins:[],runtime:{documents:{state:false}},prepare({host,startup}){
  const {cleanup,failure,cleanupFailure}=startup.bindings;
  host.ctx.effects.defer(()=>cleanup.push('final'),{phase:'final'});
  host.ctx.effects.defer(()=>{cleanup.push('shutdown');if(cleanupFailure)throw cleanupFailure},{phase:'shutdown'});
@@ -87,7 +87,7 @@ export default () => ({plugins:[],runtime:{state:{mode:'memory'}},prepare({host,
 		)
 		await writeFile(
 			join(root, 'repaired.mjs'),
-			`import {value} from './late.mjs';export default()=>({plugins:[],runtime:{state:{mode:'memory'}},prepare({startup}){startup.bindings.values.push(value)}})`,
+			`import {value} from './late.mjs';export default()=>({plugins:[],runtime:{documents:{state:false}},prepare({startup}){startup.bindings.values.push(value)}})`,
 		)
 		const result = await promisify(execFile)(
 			process.execPath,

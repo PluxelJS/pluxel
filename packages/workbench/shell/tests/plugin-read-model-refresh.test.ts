@@ -39,6 +39,10 @@ describe('plugin read model refresh', () => {
 	it.each([
 		{ label: 'successful', result: { address, ok: true, status: 'applied' } },
 		{
+			label: 'revision-conflict',
+			result: { address, ok: false, code: 'revision_conflict', state: 'unchanged' },
+		},
+		{
 			label: 'persistence-unknown',
 			result: {
 				address,
@@ -54,8 +58,11 @@ describe('plugin read model refresh', () => {
 			plugins: { setAutoStart: vi.fn().mockResolvedValue({ results: [result] }) },
 		} as unknown as RuntimeManagementClient
 
-		await setPluginAutoStarts(client, queryClient, [{ address, autoStart: true }])
+		await setPluginAutoStarts(client, queryClient, [{ address, autoStart: true }], 'policy:test:0')
 
+		expect(client.plugins.setAutoStart).toHaveBeenCalledWith([{ address, autoStart: true }], {
+			expectedManagedRevision: 'policy:test:0',
+		})
 		expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(2)
 	})
 
@@ -90,7 +97,7 @@ describe('plugin read model refresh', () => {
 		} as unknown as RuntimeManagementClient
 
 		await expect(
-			setPluginAutoStarts(client, queryClient, [{ address, autoStart: true }]),
+			setPluginAutoStarts(client, queryClient, [{ address, autoStart: true }], 'policy:test:0'),
 		).rejects.toThrow('socket closed')
 		expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(2)
 	})

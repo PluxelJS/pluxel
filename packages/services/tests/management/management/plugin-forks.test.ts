@@ -1,4 +1,4 @@
-import { requireFs, requireConfigService, pluginNodePhysicalKey } from '@pluxel/core/internal'
+import { requireFs, pluginNodePhysicalKey } from '@pluxel/core/internal'
 import { requireHostStateStore, isPluginAutoStartEnabled, listForkIds } from '@pluxel/host/internal'
 import { standardServices } from '@pluxel/services'
 import { logtape } from '@pluxel/core/config'
@@ -9,6 +9,8 @@ import {
 } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { afterEach, describe, expect, it } from 'vitest'
+import * as v from 'valibot'
+import { pluginConfigPatch } from '../../../src/management/api/usecases/pluginConfig'
 import { RpcStub } from 'capnweb'
 import { createRuntimeManagementClient } from '../../../src/management/web/client'
 import { RuntimeManagementTargetImpl } from '../../../src/management/services/management/RuntimeManagementTarget.ts'
@@ -28,7 +30,9 @@ import {
 import { type PluginApplyReport } from '../../../src/management/web/protocol.ts'
 
 @Plugin({ forkable: true })
-class ForkProvider extends BasePlugin {}
+class ForkProvider extends BasePlugin {
+	readonly config = this.configs.use(v.object({ desired: v.optional(v.boolean(), false) }))
+}
 
 @Plugin()
 class ForkConsumer extends BasePlugin {
@@ -111,28 +115,26 @@ describe('Plugin fork control plane', () => {
 			}),
 		).toThrow(/fork node address/)
 	})
-	it('preserves state_overridden through management DTOs and receiver validation', async () => {
+	it('preserves policy_shadowed through management DTOs and receiver validation', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
 			management: true,
-			runtime: {
-				state: {
-					override: true,
-					autoStart: [],
-					forks: [ForkProvider.nodeAddress('locked')],
-					providerDefaults: [],
-					dependencyOverrides: [],
-				},
+			policy: {
+				autoStart: [],
+				forks: [ForkProvider.nodeAddress('locked')],
+				providerDefaults: [],
+				dependencyOverrides: [],
 			},
 		})
 		host.add([ForkProvider, ForkConsumer, PolicyProvider])
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
 		expect(parsePluginCatalogSnapshot(await rpc.pluginCatalogDto()).statePolicy).toEqual({
-			mode: 'writable',
+			readonly: false,
+			managedRevision: expect.any(String),
 			overriddenFields: ['autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'],
 		})
-		const expected = { ok: false, code: 'state_overridden', state: 'unchanged' }
+		const expected = { ok: false, code: 'policy_shadowed', state: 'unchanged' }
 		const base = ForkProvider.nodeAddress()
 		expect(
 			parseEnsureForkResult(
@@ -140,7 +142,11 @@ describe('Plugin fork control plane', () => {
 					fork: ForkProvider.nodeAddress('locked'),
 				}),
 			),
-		).toMatchObject(expected)
+		).toMatchObject({
+			ok: true,
+			status: 'deferred',
+			report: { persistence: { status: 'unchanged' }, writtenFields: [] },
+		})
 		expect(
 			parseRemoveForkResult(await rpc.removePluginForkDto(ForkProvider.nodeAddress('locked'))),
 		).toMatchObject(expected)
@@ -369,9 +375,8 @@ describe('Plugin fork control plane', () => {
 	it('rejects readonly Config metadata removal before stopping the fork', async () => {
 		const host = await runtimeHost({
 			runtime: {
-				configRecords: {
-					mode: 'readonly',
-					storage: (root) => requireFs(root).documents('host/config'),
+				documents: {
+					config: { readOnly: true, storage: (root) => requireFs(root).documents('host/config') },
 				},
 			},
 		})
@@ -404,18 +409,20 @@ describe('Plugin fork control plane', () => {
 		const host = await runtimeHost({
 			services: standardServices(),
 			runtime: {
-				configRecords: {
-					storage(root) {
-						const documents = requireFs(root).documents('host/config')
-						return {
-							getText: (key) => documents.getText(key),
-							stat: (key) => documents.stat(key),
-							async put(key, value) {
-								if (rejectConfigWrite && key === 'config.json')
-									throw new Error('config cleanup unavailable')
-								await documents.put(key, value)
-							},
-						}
+				documents: {
+					config: {
+						storage(root) {
+							const documents = requireFs(root).documents('host/config')
+							return {
+								getText: (key) => documents.getText(key),
+								stat: (key) => documents.stat(key),
+								async put(key, value) {
+									if (rejectConfigWrite && key === 'config.json')
+										throw new Error('config cleanup unavailable')
+									await documents.put(key, value)
+								},
+							}
+						},
 					},
 				},
 			},
@@ -429,9 +436,9 @@ describe('Plugin fork control plane', () => {
 			autoStart: true,
 		})
 		if (ensured.ok === false) throw new Error(ensured.error)
-		const config = requireConfigService(host.ctx)
-		config.patchConfig(ensured.fork, { desired: true })
-		await config.flush()
+		await expect(
+			pluginConfigPatch(host.ctx, ensured.fork, { set: { desired: true } }),
+		).resolves.toMatchObject({ ok: true })
 		const business = await requireFs(host.ctx).directory(
 			`plugins/${pluginNodePhysicalKey(ensured.fork)}`,
 		)
@@ -469,6 +476,7 @@ describe('Plugin fork control plane', () => {
 		const persisted: PluginLogPolicySnapshot[] = []
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
+			services: standardServices(),
 			runtime: {
 				logtape: logtape(loggingPlan(), {
 					policyStore(root) {
@@ -484,7 +492,6 @@ describe('Plugin fork control plane', () => {
 					},
 				}),
 			},
-			services: standardServices(),
 		})
 		const logging = host.ctx.require(Logging)
 		hosts.push(host)

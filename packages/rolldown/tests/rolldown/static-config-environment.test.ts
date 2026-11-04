@@ -77,6 +77,43 @@ async function parseFixture(code: string, requireStaticPlugins = false) {
 }
 
 describe('static config environment declaration lowering', () => {
+	it('combines disjoint config bindings while rejecting whole-input overlaps', async () => {
+		const bindings = `[
+			envBinding(AlphaPlugin, {config: {schema: AlphaConfig, mapping: {endpoint: 'APP_ENDPOINT'}}}),
+			envBinding(AlphaPlugin, {config: {schema: AlphaConfig, mapping: {count: 'APP_COUNT'}}}),
+		]`
+		const facts = await parseFixture(staticEntry({ bindings }))
+		expect(facts.targets.map((target) => target.path)).toEqual([['endpoint'], ['count']])
+		await expect(
+			parseFixture(
+				staticEntry({ bindings: bindings.replace("{count: 'APP_COUNT'}", "'APP_CONFIG'") }),
+			),
+		).rejects.toThrow('duplicate environment target for Plugin AlphaPlugin')
+	})
+
+	it('resolves default and fork transport targets and scopes namespaces to Vault', async () => {
+		const facts = await parseFixture(
+			`
+			import { defineHostApplication, envBinding } from '@pluxel/host'
+			import { AlphaPlugin, AlphaConfig, AlphaVault } from './plugins'
+			export default defineHostApplication(() => ({plugins: [AlphaPlugin], envBindings: [
+				envBinding(AlphaPlugin, {config: {schema: AlphaConfig, mapping: {endpoint: 'DEFAULT_ENDPOINT'}}}),
+				envBinding(AlphaPlugin.nodeAddress('east'), {
+					config: {schema: AlphaConfig, mapping: {endpoint: 'EAST_ENDPOINT'}},
+					vault: {namespace: 'account', schema: AlphaVault, mapping: {token: 'EAST_TOKEN'}},
+				}),
+			]}))
+		`,
+			true,
+		)
+		expect(facts.targets).toMatchObject([
+			{ kind: 'config', environmentName: 'DEFAULT_ENDPOINT' },
+			{ kind: 'config', forkId: 'east', environmentName: 'EAST_ENDPOINT' },
+			{ kind: 'vault', forkId: 'east', namespace: 'account', environmentName: 'EAST_TOKEN' },
+		])
+		expect(facts.targets[1]).not.toHaveProperty('namespace')
+	})
+
 	it('accepts the public Host consumer fixture as a static application entry', async () => {
 		const consumer = await readFile(
 			resolve(
@@ -222,7 +259,7 @@ describe('static config environment declaration lowering', () => {
 			export default defineHostApplication(() => ({
 				plugins: [AlphaPlugin],
 				fileBindings: [fileBinding(AlphaPlugin, {config:{schema:AlphaConfig,path:'/must/not/read.json'}, vault:{schema:AlphaVault,paths:{token:'/must/not/read.secret'}}})],
-				envBindings: [envBinding(AlphaPlugin, {namespace:'account-a', config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}, vault:{schema:AlphaVault,mapping:{token:'APP_TOKEN', account:{password:'APP_PASSWORD'}}}})],
+				envBindings: [envBinding(AlphaPlugin, {config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}, vault:{namespace:'account-a',schema:AlphaVault,mapping:{token:'APP_TOKEN', account:{password:'APP_PASSWORD'}}}})],
 			}))
 		`,
 			true,
@@ -323,7 +360,7 @@ describe('static config environment declaration lowering', () => {
 		expect(first.environmentExample).toBe(
 			[
 				'# Generated Pluxel config and Vault environment bindings.',
-				'# Present environment values override saved and base values; they are never persisted.',
+				'# Config values join declared input and follow the owner mode; Vault bindings are read-only.',
 				'',
 				'# count',
 				'# Input: number (finite integer, >= 1)',

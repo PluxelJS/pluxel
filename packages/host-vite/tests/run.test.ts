@@ -27,7 +27,7 @@ it('owns startup failure cleanup and rejects conflicting production configuratio
 	try {
 		await writeFile(
 			resolve(root, 'app.mjs'),
-			'export default () => ({plugins:[],runtime:{state:{mode:"memory"}}})',
+			'export default () => ({plugins:[],runtime:{documents:{state:false}}})',
 		)
 		await config('[host({entry:"app.mjs"})]')
 		const started = await run()
@@ -54,7 +54,7 @@ it('owns startup failure cleanup and rejects conflicting production configuratio
 		await config('[host({entry:"app.mjs"})]')
 		await writeFile(
 			resolve(root, 'app.mjs'),
-			'export default () => ({plugins:[],runtime:{state:{mode:"memory"}},prepare({host}){host.ctx.effects.defer(()=>console.log("DRAINED"));throw new Error("STARTUP_REJECTED")}})',
+			'export default () => ({plugins:[],runtime:{documents:{state:false}},prepare({host}){host.ctx.effects.defer(()=>console.log("DRAINED"));throw new Error("STARTUP_REJECTED")}})',
 		)
 		await expect(run()).rejects.toMatchObject({
 			stdout: expect.stringContaining('DRAINED'),
@@ -81,7 +81,7 @@ export default {logLevel:'silent',plugins:[host({entry:'app.mjs'}),{
 		)
 		await writeFile(
 			resolve(root, 'app.mjs'),
-			`export default (startup)=>({plugins:[],runtime:{state:{mode:'memory'}},prepare({host}){
+			`export default (startup)=>({plugins:[],runtime:{documents:{state:false}},prepare({host}){
  host.ctx.effects.defer(()=>console.log('HOST_DRAINED_AFTER_FAILURE'));
  host.ctx.effects.defer(()=>{console.log('HOST_DRAINED_FAILURE');throw new Error('HOST_CLOSE_FAILED')});
  if(startup.env.FAIL_STARTUP==='yes')throw new Error('STARTUP_FAILED');
@@ -140,7 +140,7 @@ export default {logLevel:'silent',plugins}`,
 			await writeFile(
 				resolve(root, 'app.mjs'),
 				`if(process.env.SHOULD_EVALUATE!=='yes')throw new Error('ABORTED_APPLICATION_EVALUATED');
-export default()=>({plugins:[],runtime:{state:{mode:'memory'}},prepare({host}){host.ctx.effects.defer(()=>console.log('APP_DRAINED'))}})`,
+export default()=>({plugins:[],runtime:{documents:{state:false}},prepare({host}){host.ctx.effects.defer(()=>console.log('APP_DRAINED'))}})`,
 			)
 			const result = await promisify(execFile)(
 				process.execPath,

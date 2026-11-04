@@ -13,10 +13,9 @@ import {
 	readApplicationBinding,
 	readBindingDescriptor,
 	readBindingNamespace,
-	registerBindingTarget,
+	registerConfigBindingPaths,
 	parseDirectMapping,
 	unwrapExpression,
-	directObjectProperties,
 } from '../rolldown/plugins/staticConfigEnvironment.ts'
 import type {
 	InspectionInputs,
@@ -115,7 +114,7 @@ export async function inspectApplicationInputs(options: {
 		return value
 	}
 	const bindings: InspectionConfigBinding[] = []
-	const seen = new Set<string>()
+	const seen = new Map<string, readonly (readonly string[])[]>()
 	for (const kind of ['env', 'file'] as const) {
 		const expression = fields.get(`${kind}Bindings`)?.value
 		if (!expression) continue
@@ -168,7 +167,6 @@ export async function inspectApplicationInputs(options: {
 			const descriptor = target.bindingFields.get('config')?.value
 			if (!descriptor) continue
 			try {
-				registerBindingTarget(seen, kind, target.pluginName, id, unsupported)
 				readBindingNamespace(target.bindingFields, kind, index, id, unsupported)
 				const { schemaExpression, source } = readBindingDescriptor(
 					descriptor,
@@ -224,8 +222,17 @@ export async function inspectApplicationInputs(options: {
 						unsupported,
 						(failure, node) => gaps.push(diagnostic(failure, node)),
 					)
+					registerConfigBindingPaths(
+						seen,
+						JSON.stringify([kind, target.forkId ?? null]),
+						leaves.map((leaf) => leaf.path),
+						target.pluginName,
+						id,
+						unsupported,
+					)
 					for (const leaf of leaves)
 						bindings.push({
+							...(target.forkId === undefined ? {} : { forkId: target.forkId }),
 							configPath: leaf.path,
 							declaration: loc(binding!),
 							schema,
@@ -241,6 +248,7 @@ export async function inspectApplicationInputs(options: {
 					if (!path || path.includes('\0'))
 						fail('Config file path must be nonempty and contain no null character.')
 					bindings.push({
+						...(target.forkId === undefined ? {} : { forkId: target.forkId }),
 						configPath: [],
 						declaration: loc(binding!),
 						schema,
@@ -258,23 +266,7 @@ export async function inspectApplicationInputs(options: {
 			a.declaration.start.column - b.declaration.start.column ||
 			JSON.stringify(a.configPath).localeCompare(JSON.stringify(b.configPath)),
 	)
-	let records: AstNode | undefined
-	const runtime = fields.get('runtime')?.value
-	if (runtime) {
-		try {
-			const object = unwrapExpression(runtime)
-			if (object.type !== 'ObjectExpression')
-				unsupported('Runtime configuration must be a direct object for source navigation.', {
-					code: 'unsupported_expression',
-					node: runtime,
-				})
-			records = directObjectProperties(object, 'runtime', id, unsupported).get(
-				'configRecords',
-			)?.value
-		} catch (failure) {
-			gaps.push(diagnostic(failure, runtime))
-		}
-	}
-	const value = { application, bindings, configRecords: records ? loc(records) : null }
+	const config = fields.get('config')?.value
+	const value = { application, bindings, config: config ? loc(config) : null }
 	return gaps.length > 0 ? { status: 'partial', value, gaps } : { status: 'complete', value }
 }

@@ -6,14 +6,16 @@ import { TodoPlugin } from '@example/todo-plugin'
 export const examplePlugins = [AuditPlugin, TodoPlugin, HttpPlugin, VaultAdminPlugin] as const
 const exampleAutoStartPlugins = [AuditPlugin, HttpPlugin, VaultAdminPlugin] as const
 
-export function exampleHostState() {
+export function exampleHostPolicy() {
 	return {
-		autoStart: exampleAutoStartPlugins.map((plugin) => plugin.nodeAddress()),
+		autoStart: exampleAutoStartPlugins,
+		mode: { autoStart: 'saved-first' as const },
 	}
 }
 
-export function exampleConfigRecords(rawMaxItems?: string) {
+export function exampleHostConfig(rawMaxItems?: string) {
 	return {
+		mode: 'saved-first' as const,
 		records: [
 			{
 				owner: TodoPlugin.nodeAddress(),

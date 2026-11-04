@@ -5,7 +5,9 @@ export function configLeafPaths(
 ): string[][] {
 	return Object.entries(value).flatMap(([key, child]) => {
 		const path = [...parent, key]
-		return isConfigObject(child) ? configLeafPaths(child, path) : [path]
+		return isConfigObject(child) && Object.keys(child).length > 0
+			? configLeafPaths(child, path)
+			: [path]
 	})
 }
 export function isConfigObject(value: unknown): value is Record<string, unknown> {
@@ -30,28 +32,69 @@ export function configHasPath(
 	}
 	return true
 }
-export function changedConfigPaths(
-	before: Readonly<Record<string, unknown>>,
-	after: Readonly<Record<string, unknown>>,
-	parent: readonly string[] = [],
-): string[][] {
-	return [...new Set([...Object.keys(before), ...Object.keys(after)])].flatMap((key) => {
-		const left = before[key],
-			right = after[key],
-			path = [...parent, key]
+/** Paths address object fields; arrays are atomic and cannot be indexed. */
+export function assertConfigPaths(input: unknown): asserts input is readonly (readonly string[])[] {
+	const dense = (value: unknown): unknown[] => {
+		if (!Array.isArray(value) || Reflect.ownKeys(value).length !== value.length + 1)
+			throw new TypeError('[host] config paths require dense arrays')
+		return Array.from({ length: value.length }, (_, index) => {
+			const property = Object.getOwnPropertyDescriptor(value, String(index))
+			if (!property?.enumerable || !('value' in property))
+				throw new TypeError('[host] config paths require data elements')
+			return property.value
+		})
+	}
+	const paths = dense(input).map(dense)
+	for (let index = 0; index < paths.length; index++) {
+		const path = paths[index]!
 		if (
-			(isConfigObject(left) || left === undefined) &&
-			(isConfigObject(right) || right === undefined) &&
-			(isConfigObject(left) || isConfigObject(right))
-		)
-			return changedConfigPaths(
-				isConfigObject(left) ? left : {},
-				isConfigObject(right) ? right : {},
-				path,
+			path.length === 0 ||
+			path.length > 64 ||
+			path.some(
+				(part) =>
+					typeof part !== 'string' ||
+					!part ||
+					part.length > 256 ||
+					part.includes('\0') ||
+					['__proto__', 'constructor', 'prototype'].includes(part),
 			)
-		return JSON.stringify(left) === JSON.stringify(right) &&
-			Object.hasOwn(before, key) === Object.hasOwn(after, key)
-			? []
-			: [path]
-	})
+		)
+			throw new TypeError('[host] config paths must contain safe non-empty field names')
+		if (
+			paths
+				.slice(0, index)
+				.some((previous) => configPathsOverlap(previous as string[], path as string[]))
+		)
+			throw new TypeError('[host] config removal paths must not overlap')
+	}
+}
+export function removeConfigPaths(
+	value: Record<string, unknown>,
+	paths: readonly (readonly string[])[],
+): boolean {
+	let changed = false
+	for (const path of paths) {
+		const parents: { object: Record<string, unknown>; key: string }[] = []
+		let current = value
+		let present = true
+		for (const key of path.slice(0, -1)) {
+			if (!Object.hasOwn(current, key)) {
+				present = false
+				break
+			}
+			if (!isConfigObject(current[key]))
+				throw new TypeError('[host] config removal cannot traverse arrays or scalar values')
+			parents.push({ object: current, key })
+			current = current[key]
+		}
+		if (!present || !Object.hasOwn(current, path.at(-1)!)) continue
+		delete current[path.at(-1)!]
+		changed = true
+		for (const parent of parents.toReversed()) {
+			if (Object.keys(current).length > 0) break
+			delete parent.object[parent.key]
+			current = parent.object
+		}
+	}
+	return changed
 }

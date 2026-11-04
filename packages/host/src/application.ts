@@ -1,16 +1,28 @@
 import { recordLoadedApplicationPlugins } from './loaded-modules'
 import { snapshotHostRuntime } from './runtime'
+import { snapshotHostPolicy } from './state-store'
+import {
+	configLeafPaths,
+	configPathContains,
+	configPathsOverlap,
+	isConfigObject,
+} from './config-paths'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { readFile, realpath } from 'node:fs/promises'
 import { installedPackageFacts } from './shared-packages'
-import { mergeConfigRecords } from './config-records'
+import {
+	mergeConfigRecords,
+	snapshotHostConfig,
+	attachConfigProvenance,
+	type ConfigDeclarationSource,
+} from './config-records'
 import { resolveInputBindings } from './input-bindings'
 import { createNativeSourceLoader } from './native-source-loader'
 import { discoverPluginSources } from './source-discovery'
 import { installPluginSources, pluginSource } from './source-contract'
 import { setHostCatalogProvenance } from './catalog-provenance'
 import type { PluginCatalogProvenance } from './catalog'
-import type { PluginConstructor } from '@pluxel/core'
+import { pluginNodeAddressEqual, type PluginConstructor } from '@pluxel/core'
 import { createHost, type HostApplication, type HostOptions, type PluginHost } from './host'
 
 export type HostStartupContext<
@@ -61,6 +73,8 @@ const fields = new Set([
 	'sources',
 	'services',
 	'runtime',
+	'policy',
+	'config',
 	'envBindings',
 	'fileBindings',
 	'prepare',
@@ -164,6 +178,8 @@ export async function resolveHostApplication(
 			: {}),
 		...(application.services ? { services: [...application.services] } : {}),
 		runtime: snapshotHostRuntime(application.runtime),
+		config: snapshotHostConfig(application.config),
+		policy: snapshotHostPolicy(application.policy),
 	}
 	const inputs = await resolveInputBindings(
 		{
@@ -173,23 +189,74 @@ export async function resolveHostApplication(
 		},
 		startup,
 	)
-	return {
-		...resolved,
-		startup,
-		vaultBindings: inputs.vaultBindings,
-		runtime: {
-			...resolved.runtime,
-			configRecords: {
-				...resolved.runtime.configRecords,
-				records: mergeConfigRecords(resolved.runtime.configRecords?.records, inputs.records),
-				declarationSources: [
-					...(resolved.runtime.configRecords?.declarationSources ?? []),
-					...inputs.declarationSources,
-				],
-				overlays: [...(resolved.runtime.configRecords?.overlays ?? []), ...inputs.overlays],
-			},
-		},
+	const merged = mergeConfigRecords(
+		mergeConfigRecords(
+			resolved.config.records.flatMap((item) =>
+				item.config === undefined ? [] : [{ owner: item.owner, config: item.config }],
+			),
+			inputs.records,
+		),
+		inputs.overlays,
+	)
+	const config = snapshotHostConfig({
+		mode: resolved.config.mode,
+		records: [
+			...resolved.config.records.map((item) => ({
+				...item,
+				config: merged.find((entry) => pluginNodeAddressEqual(entry.owner, item.owner))?.config,
+			})),
+			...merged.filter(
+				(entry) =>
+					!resolved.config.records.some((item) => pluginNodeAddressEqual(item.owner, entry.owner)),
+			),
+		],
+	})
+	const sources: ConfigDeclarationSource[] = []
+	const declared = mergeConfigRecords(
+		undefined,
+		resolved.config.records.flatMap((item) =>
+			item.config === undefined ? [] : [{ owner: item.owner, config: item.config }],
+		),
+	)
+	const layers = [
+		...inputs.records.map((entry) => ({
+			entry,
+			sources: inputs.declarationSources.filter((source) =>
+				pluginNodeAddressEqual(source.owner, entry.owner),
+			),
+		})),
+		...inputs.overlays.map((entry) => ({
+			entry,
+			sources: entry.sources.map((source) => ({ owner: entry.owner, ...source })),
+		})),
+	]
+	for (const layer of layers) {
+		const before = declared.find((entry) =>
+			pluginNodeAddressEqual(entry.owner, layer.entry.owner),
+		)?.config
+		const after = mergeConfigRecords(
+			before === undefined ? [] : [{ owner: layer.entry.owner, config: before }],
+			[layer.entry],
+		)[0]!
+		for (const path of configLeafPaths(layer.entry.config)) {
+			let selected: unknown = after.config
+			for (const key of path) selected = (selected as Record<string, unknown>)[key]
+			if (isConfigObject(selected) && Object.keys(selected).length > 0) continue
+			for (let index = sources.length - 1; index >= 0; index--)
+				if (
+					pluginNodeAddressEqual(sources[index]!.owner, layer.entry.owner) &&
+					configPathsOverlap(sources[index]!.path, path)
+				)
+					sources.splice(index, 1)
+			const source = layer.sources.find((fact) => configPathContains(fact.path, path))
+			if (source) sources.push({ ...source, path: Object.freeze(path) })
+		}
+		const index = declared.findIndex((entry) => pluginNodeAddressEqual(entry.owner, after.owner))
+		if (index < 0) declared.push(after)
+		else declared[index] = after
 	}
+	attachConfigProvenance(config, { sources: Object.freeze(sources), bindings: inputs.bindings })
+	return { ...resolved, startup, vaultBindings: inputs.vaultBindings, config }
 }
 /** The caller owns rollback and invokes this after attachments are ready and before Plugin admission. */
 export async function prepareHostApplication(
@@ -278,6 +345,8 @@ export async function runHostApplication(
 			plugins,
 			name: resolved.name,
 			runtime: resolved.runtime,
+			policy: resolved.policy,
+			config: resolved.config,
 			vaultBindings: resolved.vaultBindings,
 			services: resolved.services,
 		})

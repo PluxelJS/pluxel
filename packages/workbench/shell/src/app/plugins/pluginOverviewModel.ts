@@ -44,7 +44,7 @@ export function canWritePluginState(
 ): boolean {
 	return (
 		!!policy &&
-		policy.mode !== 'readonly' &&
+		!policy.readonly &&
 		fields.every((field) => !policy.overriddenFields.includes(field))
 	)
 }

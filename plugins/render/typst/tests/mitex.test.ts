@@ -104,19 +104,17 @@ it('renders the same LaTeX and cross-file references in WASM using only explicit
 		return new Response(await readFile(path))
 	})
 	await using host = await createTestHost({
-		runtime: {
-			configRecords: {
-				records: [
-					{
-						owner: TypstPlugin.nodeAddress(),
-						config: {
-							compilerWasmUrl: 'https://example.test/compiler.wasm',
-							rendererWasmUrl: 'https://example.test/renderer.wasm',
-							fontUrls: ['https://example.test/math.ttf'],
-						},
+		config: {
+			records: [
+				{
+					owner: TypstPlugin.nodeAddress(),
+					config: {
+						compilerWasmUrl: 'https://example.test/compiler.wasm',
+						rendererWasmUrl: 'https://example.test/renderer.wasm',
+						fontUrls: ['https://example.test/math.ttf'],
 					},
-				],
-			},
+				},
+			],
 		},
 	})
 	const typst = await host.start(TypstPlugin)

@@ -152,15 +152,13 @@ describe('Core-only Host', () => {
 		lowerTestReplacement(Original, Replacement)
 		const host = await createHost({
 			plugins: [Original],
-			runtime: {
-				state: {
-					autoStart: [{ definition: Original.definitionAddress(), variant: 'default' }],
-				},
-			},
+			policy: { autoStart: [{ definition: Original.definitionAddress(), variant: 'default' }] },
 		})
 		try {
 			await host.start()
-			await expect(host.updateCatalog([null as never])).rejects.toThrow(TypeError)
+			await expect(host.updateCatalog([null as never])).rejects.toMatchObject({
+				code: 'plugin_declaration_invalid',
+			})
 			expect(events).toEqual(['original'])
 			await host.updateCatalog([Replacement])
 			expect(events).toEqual(['original', 'stop original', 'replacement'])

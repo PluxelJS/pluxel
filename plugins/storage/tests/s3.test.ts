@@ -105,17 +105,15 @@ describe('S3Plugin remote backend', () => {
 					},
 				}),
 			],
-			runtime: {
-				state: { autoStart: [S3Plugin.nodeAddress()] },
-				configRecords: {
-					records: [
-						{
-							owner: S3Plugin.nodeAddress(),
-							config: remoteConfig({ type: 'vault', key: 'primary' }),
-						},
-					],
-				},
+			config: {
+				records: [
+					{
+						owner: S3Plugin.nodeAddress(),
+						config: remoteConfig({ type: 'vault', key: 'primary' }),
+					},
+				],
 			},
+			policy: { autoStart: [S3Plugin.nodeAddress()] },
 		}))
 		const startup = {
 			root: process.cwd(),
@@ -129,6 +127,8 @@ describe('S3Plugin remote backend', () => {
 			services: resolved.services,
 			vaultBindings: resolved.vaultBindings,
 			name: resolved.name,
+			config: resolved.config,
+			policy: resolved.policy,
 			runtime: resolved.runtime,
 		})
 		try {
@@ -165,14 +165,13 @@ describe('S3Plugin remote backend', () => {
 			})
 
 			await host.stop(S3Plugin)
-			await host.config.patch(
-				S3Plugin,
-				remoteConfig({
+			await host.config.patch(S3Plugin, {
+				set: remoteConfig({
 					type: 'vault',
 					key: 'assets.s3',
 					namespace: 'shared-secrets',
 				}),
-			)
+			})
 			await host.start(S3Plugin)
 			await host.start(S3Consumer)
 			expect(s3Mock.configs.at(-1)).toMatchObject({

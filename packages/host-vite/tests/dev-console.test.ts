@@ -75,19 +75,21 @@ it('validates and changes Host config without Management or persistence services
 		await scope.dev.plugins.start(Counter)
 		expect(await scope.dev.config.get(Counter)).toMatchObject({
 			ok: true,
-			defaults: { label: 'initial' },
+			managedInput: null,
+			effectiveInput: {},
+			config: { label: 'initial' },
 		})
-		expect(await scope.dev.config.validate(Counter, { label: 3 })).toMatchObject({
+		expect(await scope.dev.config.validate(Counter, { set: { label: 3 } })).toMatchObject({
 			ok: false,
 			code: 'validation_failed',
 		})
-		expect(snapshotJson(await scope.dev.config.patch(Counter, { label: 'changed' }))).toMatchObject(
-			{
-				ok: true,
-				saved: true,
-				application: 'applied',
-			},
-		)
+		expect(
+			snapshotJson(await scope.dev.config.patch(Counter, { set: { label: 'changed' } })),
+		).toMatchObject({
+			ok: true,
+			persistence: { status: 'confirmed' },
+			application: 'applied',
+		})
 		expect(await scope.dev.config.get(Counter)).toMatchObject({ config: { label: 'changed' } })
 		expect(scope.dev.plugins.require(Counter).label).toBe('changed')
 		expect(await scope.dev.config.reset(Counter)).toMatchObject({
@@ -104,43 +106,38 @@ it('inspects saved values and runtime declarations through the console without w
 	const owner = Counter.nodeAddress()
 	const host = await createHost({
 		plugins: [Counter],
-		runtime: {
-			state: { mode: 'memory', autoStart: [], override: true },
-			configRecords: {
-				mode: 'memory',
-				records: [{ owner, config: { label: 'declared' } }],
-				override: true,
-			},
+		config: {
+			mode: 'declared-only',
+			records: [{ owner, config: { label: 'declared' } }],
 		},
+		policy: { autoStart: [], mode: { autoStart: 'declared-only' } },
+		runtime: { documents: { state: false, config: false } },
 	})
 	await host.start()
 	const scope = createDevConsoleScope({ id: 'inspect', ctx: host.ctx })
 	try {
 		expect(snapshotJson(await scope.dev.config.inspect(Counter))).toMatchObject({
-			mode: 'memory',
+			mode: 'declared-only',
 			readonly: false,
-			override: true,
 			externalReload: false,
-			saved: { label: 'declared' },
+			managedInput: null,
 			declared: { label: 'declared' },
-			effective: { label: 'declared' },
-			sources: [{ kind: 'declaration', path: ['label'], readonly: true }],
+			effectiveInput: { label: 'declared' },
+			sources: [{ kind: 'declaration', path: ['label'] }],
 		})
-		expect(snapshotJson(await scope.dev.state.inspect())).toMatchObject({
-			mode: 'memory',
-			override: true,
-			overriddenFields: ['autoStart'],
-			saved: { autoStart: [] },
+		expect(snapshotJson(await scope.dev.policy.get())).toMatchObject({
+			mode: { autoStart: 'declared-only' },
+			managedInput: {},
 			effective: { autoStart: [] },
-			declared: { autoStart: [] },
 		})
-		expect(await scope.dev.config.patch(Counter, { label: 'blocked' })).toMatchObject({
-			ok: false,
-			code: 'mutation_rejected',
+		expect(await scope.dev.config.patch(Counter, { set: { label: 'blocked' } })).toMatchObject({
+			ok: true,
+			managedInput: { label: 'blocked' },
+			config: { label: 'declared' },
 		})
 		await scope.dispose()
 		await expect(scope.dev.config.inspect(Counter)).rejects.toMatchObject({ code: 'scope_closed' })
-		await expect(scope.dev.state.inspect()).rejects.toMatchObject({ code: 'scope_closed' })
+		await expect(scope.dev.policy.get()).rejects.toMatchObject({ code: 'scope_closed' })
 	} finally {
 		await scope.dispose()
 		await host.close()
@@ -149,6 +146,45 @@ it('inspects saved values and runtime declarations through the console without w
 
 @Plugin({ forkable: true })
 class Forkable extends BasePlugin {}
+
+it('edits saved execution policy through the console and rejects stale edit baselines', async () => {
+	await using host = await createHost({
+		plugins: [],
+		runtime: { documents: { state: false } },
+	})
+	await host.start()
+	const scope = createDevConsoleScope({ id: 'policy', ctx: host.ctx })
+	try {
+		const baseline = await scope.dev.policy.get()
+		if (baseline.ok === false) throw new Error(baseline.message)
+		expect(await scope.dev.policy.validate({ startTimeoutMs: 4_000 })).toMatchObject({
+			ok: true,
+			persistence: { status: 'unchanged' },
+		})
+		expect(await scope.dev.policy.get()).toMatchObject({ managedInput: {} })
+		expect(
+			await scope.dev.policy.patch(
+				{ startTimeoutMs: 4_000 },
+				{ expectedManagedRevision: baseline.managedRevision },
+			),
+		).toMatchObject({
+			ok: true,
+			managedInput: { startTimeoutMs: 4_000 },
+			effective: { startTimeoutMs: 4_000 },
+			appliedExecution: { startTimeoutMs: 1_500 },
+			pendingExecutionFields: ['startTimeoutMs'],
+			persistence: { status: 'confirmed', retention: 'session' },
+		})
+		expect(
+			await scope.dev.policy.reset(undefined, {
+				expectedManagedRevision: baseline.managedRevision,
+			}),
+		).toMatchObject({ ok: false, code: 'revision_conflict' })
+	} finally {
+		await scope.dispose()
+	}
+	await expect(scope.dev.policy.get()).rejects.toMatchObject({ code: 'scope_closed' })
+})
 
 it('borrows an existing typed fork and preserves it after the run closes', async () => {
 	const host = await createHost({ plugins: [Forkable] })
@@ -273,10 +309,10 @@ it('preserves saved-but-not-applied configuration in the portable result', async
 	try {
 		await scope.dev.plugins.start(RejectConfig)
 		expect(
-			snapshotJson(await scope.dev.config.patch(RejectConfig, { label: 'saved' })),
+			snapshotJson(await scope.dev.config.patch(RejectConfig, { set: { label: 'saved' } })),
 		).toMatchObject({
 			ok: true,
-			saved: true,
+			persistence: { status: 'confirmed' },
 			application: 'saved-not-applied',
 			applyFailure: { code: 'listener_failed' },
 			config: { label: 'saved' },

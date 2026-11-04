@@ -7,6 +7,7 @@ import type { ConcretePluginDefinitionCandidate } from '@pluxel/core/internal'
 import {
 	createPluginCatalogSnapshot,
 	hostStatePatch,
+	applyHostStatePatch,
 	PluginHostCoordinator,
 	type CorePluginDependencyAdjacency,
 	type CorePluginGraphDriver,
@@ -27,14 +28,21 @@ describe('PluginHostCoordinator committed reads', () => {
 		const store: HostStateCoordinatorStore = {
 			ready: Promise.resolve(),
 			versionedSnapshot: () => versioned,
-			savedSnapshot: () => versioned.state,
-			effectiveSnapshot: (saved) => saved,
+			managedSnapshot: () => versioned.state,
+			prepareAction: (patch) => applyHostStatePatch(versioned.state, patch),
+			assertManagedRevision() {},
+			persistence: (changed) =>
+				changed ? { status: 'confirmed', retention: 'session' } : { status: 'unchanged' },
+			effectiveSnapshot: (saved) => ({ ...emptyState(), ...saved }),
 			assertPatchMutable() {},
 			commitVersioned: async (expectedRevision, next) => {
 				expect(expectedRevision).toBe(versioned.revision)
 				persistenceEntered.resolve()
 				await releasePersistence.promise
-				versioned = Object.freeze({ revision: versioned.revision + 1, state: next })
+				versioned = Object.freeze({
+					revision: versioned.revision + 1,
+					state: { ...emptyState(), ...next },
+				})
 				return versioned
 			},
 		}

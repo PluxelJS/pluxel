@@ -12,7 +12,7 @@ it('retains native Vite options and forwards the application config policy to th
 			resolve(root, 'app.mjs'),
 			`export default startup => ({
  plugins: [],
- runtime: { configRecords: { mode: 'readonly' } },
+ runtime: { documents: { config: { readOnly: true } } },
  prepare({host}) { startup.bindings.capture(host) }
 })`,
 		)
@@ -53,7 +53,7 @@ try {
 	}
 }, 20_000)
 
-it('preserves raw saved config across application factory HMR and declaration override changes', async () => {
+it('preserves raw saved config across application factory HMR and configuration mode changes', async () => {
 	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-vite-config-records-'))
 	try {
 		await mkdir(resolve(root, 'node_modules/@pluxel'), { recursive: true })
@@ -84,13 +84,14 @@ import * as fs from 'node:fs'
 import { Passthrough } from '@pluxel/core/fs'
 import { Owner } from './owner.ts'
 const declaredLimit = 200
-const declarationOverride = false
+const configMode = 'saved-first'
 export default startup => ({
  plugins: [Owner],
+ config: { mode: configMode, records: [{ owner: Owner, config: { limit: declaredLimit } }] },
+ policy: { startTimeoutMs: 12345 },
  runtime: {
   zenfs: { mounts: { '/': { backend: Passthrough, fs, prefix: startup.bindings.prefix } } },
-  state: { mode: 'memory' },
-  configRecords: { records: [{ owner: Owner.nodeAddress(), config: { limit: declaredLimit } }], override: declarationOverride },
+  documents: { state: false },
  },
  prepare({host}) { startup.bindings.capture(host, Owner.nodeAddress()) }
 })
@@ -125,19 +126,21 @@ const reload = async (source) => {
  return next;
 };
 try {
+ assert.equal((await prepared.policy.get()).effective.startTimeoutMs,12345);
  assert.equal((await prepared.config.get(owner)).config.limit,200);
+ assert.equal((await prepared.config.patch(owner,{set:{limit:200}})).ok,true);
  let source = await readFile(root+'/app.ts','utf8');
- source=source.replace('declaredLimit = 200','declaredLimit = 100').replace('declarationOverride = false','declarationOverride = true');
+ source=source.replace('declaredLimit = 200','declaredLimit = 100').replace("configMode = 'saved-first'","configMode = 'declared-first'");
  const first = prepared;
  await reload(source);
  assert.notEqual(prepared,first);
  assert.equal((await prepared.config.get(owner)).config.limit,100);
- const patched = await prepared.config.patch(owner,{editable:true});
+ const patched = await prepared.config.patch(owner,{set:{editable:true}});
  assert.equal(patched.ok,true);
  assert.deepEqual((await read()).plugins[0].config,{limit:200,editable:true});
- source=source.replace('declarationOverride = true','declarationOverride = false');
+ source=source.replace("configMode = 'declared-first'","configMode = 'saved-first'");
  await reload(source);
- assert.deepEqual((await prepared.config.get(owner)).config,{limit:200,editable:true});
+ assert.deepEqual({...((await prepared.config.get(owner)).config)},{limit:200,editable:true});
  assert.deepEqual((await read()).plugins[0].config,{limit:200,editable:true});
  console.log('HMR_RAW_CONFIG_PRESERVED');
 } finally {await server.close()}

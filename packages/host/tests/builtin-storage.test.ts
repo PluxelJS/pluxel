@@ -43,14 +43,13 @@ describe('Host built-in storage without Services', () => {
 			mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 			durableMounts: ['/'],
 		}
-		const seed = await createHost({
-			plugins: [Configured],
-			runtime: { zenfs: storage, configRecords: { mode: 'writable' }, state: { mode: 'writable' } },
-		})
+		const seed = await createHost({ plugins: [Configured], runtime: { zenfs: storage } })
 		try {
-			await expect(seed.config.patch(owner, { value: 'persisted' })).resolves.toMatchObject({
+			await expect(
+				seed.config.patch(owner, { set: { value: 'persisted' } }),
+			).resolves.toMatchObject({
 				ok: true,
-				saved: true,
+				persistence: { status: 'confirmed' },
 			})
 			await seed.setAutoStart(owner, true)
 		} finally {
@@ -59,13 +58,11 @@ describe('Host built-in storage without Services', () => {
 		const confirmed = await savedDocuments(prefix)
 		const reopened = await createHost({
 			plugins: [Configured],
+			config: { mode: 'saved-first', records: [{ owner, config: { value: 'replacement seed' } }] },
+			policy: { mode: { autoStart: 'saved-first' }, autoStart: [] },
 			runtime: {
 				zenfs: { ...storage, readOnly: true },
-				configRecords: {
-					mode: 'readonly',
-					records: [{ owner, config: { value: 'replacement seed' } }],
-				},
-				state: { mode: 'readonly', autoStart: [] },
+				documents: { config: { readOnly: true }, state: { readOnly: true } },
 			},
 		})
 		try {
@@ -75,12 +72,14 @@ describe('Host built-in storage without Services', () => {
 				config: { value: 'persisted' },
 			})
 			expect(requireHostStateStore(reopened.ctx).snapshot().autoStart).toEqual([owner])
-			await expect(reopened.config.patch(owner, { value: 'rejected' })).resolves.toMatchObject({
+			await expect(
+				reopened.config.patch(owner, { set: { value: 'rejected' } }),
+			).resolves.toMatchObject({
 				ok: false,
 				code: 'mutation_rejected',
 			})
 			await expect(reopened.setAutoStart(owner, false)).rejects.toMatchObject({
-				message: expect.stringContaining('readonly mode'),
+				code: 'mutation_rejected',
 			})
 			expect(requireHostStateStore(reopened.ctx).snapshot().autoStart).toEqual([owner])
 		} finally {
@@ -94,17 +93,15 @@ describe('Host built-in storage without Services', () => {
 		const owner = Configured.nodeAddress()
 		const host = await createHost({
 			plugins: [Configured],
+			config: { records: [{ owner, config: { value: 'readonly seed' } }] },
+			policy: { autoStart: [owner] },
 			runtime: {
 				zenfs: {
 					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 					readOnly: true,
 					durableMounts: ['/'],
 				},
-				configRecords: {
-					mode: 'readonly',
-					records: [{ owner, config: { value: 'readonly seed' } }],
-				},
-				state: { mode: 'readonly', autoStart: [owner] },
+				documents: { config: { readOnly: true }, state: { readOnly: true } },
 			},
 		})
 		try {
@@ -132,14 +129,15 @@ describe('Host built-in storage without Services', () => {
 					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 					durableMounts: ['/'],
 				},
-				configRecords: { mode: 'memory' },
-				state: { mode: 'memory' },
+				documents: { config: false, state: false },
 			},
 		})
 		try {
-			await expect(host.config.patch(owner, { value: 'temporary' })).resolves.toMatchObject({
+			await expect(
+				host.config.patch(owner, { set: { value: 'temporary' } }),
+			).resolves.toMatchObject({
 				ok: true,
-				saved: true,
+				persistence: { status: 'confirmed' },
 			})
 			await host.setAutoStart(owner, true)
 			expect(requireTinyBaseHost(host.ctx).status()).toEqual([])
@@ -149,47 +147,42 @@ describe('Host built-in storage without Services', () => {
 		expect(await readdir(prefix)).toEqual([])
 	})
 
-	it('persists default config and state through the fixed Core document namespaces', async () => {
+	it('does not initialize missing built-in documents and confirms only explicit writes', async () => {
 		const prefix = await temporaryDirectory()
-		const host = await createHost({
-			plugins: [],
-			runtime: {
-				zenfs: {
-					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-					durableMounts: ['/'],
-				},
+		const runtime = {
+			zenfs: {
+				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+				durableMounts: ['/'],
 			},
-		})
+		}
+		const host = await createHost({ plugins: [Configured], runtime })
 		try {
-			expect(requireTinyBaseHost(host.ctx).status()).toEqual([])
-			expect(
-				SuperJSON.parse((await requireHostDocuments(host.ctx, 'config').getText('config.json'))!),
-			).toEqual({ version: 4, plugins: [] })
+			expect(await requireHostDocuments(host.ctx, 'config').getText('config.json')).toBeUndefined()
+			expect(await requireHostDocuments(host.ctx, 'state').getText('state.json')).toBeUndefined()
+			await expect(
+				host.config.patch(Configured.nodeAddress(), { set: { value: 'saved' } }),
+			).resolves.toMatchObject({
+				ok: true,
+				persistence: { status: 'confirmed', retention: 'declared-durable' },
+			})
+			await expect(host.policy.patch({ startConcurrency: 2 })).resolves.toMatchObject({
+				ok: true,
+				persistence: { status: 'confirmed', retention: 'declared-durable' },
+			})
 			expect(
 				SuperJSON.parse((await requireHostDocuments(host.ctx, 'state').getText('state.json'))!),
-			).toEqual({
-				version: 6,
-				autoStart: [],
-				forks: [],
-				providerDefaults: [],
-				dependencyOverrides: [],
-			})
-			expect(await savedDocuments(prefix)).toHaveLength(2)
+			).toEqual({ version: 7, startConcurrency: 2 })
 		} finally {
 			await host.close()
 		}
 		const confirmed = await savedDocuments(prefix)
-		const reopened = await createHost({
-			plugins: [],
-			runtime: {
-				zenfs: {
-					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-					durableMounts: ['/'],
-				},
-			},
-		})
+		const reopened = await createHost({ plugins: [Configured], runtime })
 		try {
 			expect(await savedDocuments(prefix)).toEqual(confirmed)
+			expect(await reopened.policy.get()).toMatchObject({
+				ok: true,
+				appliedExecution: { startConcurrency: 2 },
+			})
 		} finally {
 			await reopened.close()
 		}
@@ -210,16 +203,18 @@ describe('Host built-in storage without Services', () => {
 			plugins: [],
 			runtime: {
 				zenfs: { mounts: { '/': { backend, fs: nativeFs, prefix } }, durableMounts: ['/'] },
-				configRecords: {
-					storage(root) {
-						calls.push('config factory')
-						return requireHostDocuments(root, 'config')
+				documents: {
+					config: {
+						storage(root) {
+							calls.push('config factory')
+							return requireHostDocuments(root, 'config')
+						},
 					},
-				},
-				state: {
-					storage(root) {
-						calls.push('state factory')
-						return requireHostDocuments(root, 'state')
+					state: {
+						storage(root) {
+							calls.push('state factory')
+							return requireHostDocuments(root, 'state')
+						},
 					},
 				},
 			},
@@ -252,25 +247,27 @@ describe('Host built-in storage without Services', () => {
 				plugins: [],
 				runtime: {
 					zenfs: { mounts: { '/': { backend, fs: nativeFs, prefix } }, durableMounts: ['/'] },
-					configRecords: {
-						storage(root) {
-							filesystem = requireFs(root)
-							const documents = requireHostDocuments(root, 'config')
-							return {
-								put: documents.put.bind(documents),
-								stat: documents.stat.bind(documents),
-								async getText(key) {
-									observed = await Promise.allSettled([
-										documents.getText(key),
-										filesystem.ready(),
-										documents.getText(key),
-									])
-									throw failure
-								},
-							}
+					documents: {
+						config: {
+							storage(root) {
+								filesystem = requireFs(root)
+								const documents = requireHostDocuments(root, 'config')
+								return {
+									put: documents.put.bind(documents),
+									stat: documents.stat.bind(documents),
+									async getText(key) {
+										observed = await Promise.allSettled([
+											documents.getText(key),
+											filesystem.ready(),
+											documents.getText(key),
+										])
+										throw failure
+									},
+								}
+							},
 						},
+						state: { storage: (root) => requireHostDocuments(root, 'state') },
 					},
-					state: { storage: (root) => requireHostDocuments(root, 'state') },
 				},
 			}),
 		).rejects.toBe(failure)
@@ -294,6 +291,10 @@ describe('Host built-in storage without Services', () => {
 		const seed = await createHost({ plugins: [], runtime: { ...runtime } })
 		try {
 			await requireHostDocuments(seed.ctx, 'config').put('config.json', original)
+			await requireHostDocuments(seed.ctx, 'state').put(
+				'state.json',
+				SuperJSON.stringify({ version: 7 }),
+			)
 		} finally {
 			await seed.close()
 		}
@@ -305,11 +306,13 @@ describe('Host built-in storage without Services', () => {
 				plugins: [],
 				runtime: {
 					...runtime,
-					configRecords: {
-						storage(root) {
-							filesystem = requireFs(root)
-							documents = requireHostDocuments(root, 'config')
-							return documents
+					documents: {
+						config: {
+							storage(root) {
+								filesystem = requireFs(root)
+								documents = requireHostDocuments(root, 'config')
+								return documents
+							},
 						},
 					},
 				},

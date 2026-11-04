@@ -9,15 +9,13 @@ describe('HttpPlugin', () => {
 		const host = await createHost({
 			plugins: [HttpPlugin, TodoPlugin],
 			services: [elysia()],
-			runtime: {
-				configRecords: {
-					records: [
-						{
-							owner: TodoPlugin.nodeAddress(),
-							config: { maxItems: 2, seedTitle: 'First task' },
-						},
-					],
-				},
+			config: {
+				records: [
+					{
+						owner: TodoPlugin.nodeAddress(),
+						config: { maxItems: 2, seedTitle: 'First task' },
+					},
+				],
 			},
 		})
 		try {

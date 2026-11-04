@@ -228,7 +228,7 @@ async function verifyViteApplication(root: string): Promise<void> {
 		inspectionFile,
 		[
 			"import { defineDevConsole } from '@pluxel/host-vite/console'",
-			"import { examplePlugins } from '../src/runtime-state'",
+			"import { examplePlugins } from '../src/policy'",
 			"import { VaultAdminPlugin } from '@pluxel/services/plugins'",
 			'export default defineDevConsole(async (dev) => ({',
 			'  running: examplePlugins.map(plugin => dev.plugins.isRunning(plugin)),',

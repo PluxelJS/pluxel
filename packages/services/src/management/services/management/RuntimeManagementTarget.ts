@@ -10,7 +10,10 @@ import {
 	ensureFork,
 	removeFork,
 	projectPluginApplyReport,
+	createHostPolicy,
+	requireHostStateStore,
 } from '@pluxel/host/internal'
+import type { HostPolicy, HostPolicyResult, HostPolicyField } from '@pluxel/host'
 import { type RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
 import {
 	parsePluginDefinitionAddress,
@@ -31,6 +34,8 @@ import {
 import {
 	pluginConfigGet,
 	pluginConfigPatch,
+	pluginConfigValidate,
+	pluginConfigReset,
 	pluginConfigPatchField,
 	pluginConfigPresentation,
 } from '../../api/usecases/pluginConfig'
@@ -71,6 +76,8 @@ import {
 } from '../../web/management-target'
 import {
 	type ConfigResult,
+	type PolicyResult,
+	type ManagedInputMutationOptions,
 	type ConfigPresentationResult,
 	type RuntimeMeta,
 	type EnsureForkResult,
@@ -88,6 +95,7 @@ import {
 import {
 	parseConfigPresentationResult,
 	parseConfigResult,
+	parsePolicyResult,
 	parsePluginControlBatchResult,
 } from '../../web/management-validation'
 import { estimateRuntimeRpcPayloadBytes, prepareRuntimeLogRangeForRpc } from './log-transport'
@@ -100,6 +108,7 @@ function checkedDto<const T>(value: T): T {
 
 export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeManagementTarget {
 	private readonly ctx: Context
+	readonly #policy: HostPolicy
 	get #admission() {
 		return this.signal ? { signal: this.signal } : undefined
 	}
@@ -110,6 +119,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 	) {
 		super()
 		this.ctx = ctx
+		this.#policy = createHostPolicy(ctx, requireHostStateStore(ctx))
 	}
 
 	describeDto(): RuntimeMeta {
@@ -211,6 +221,53 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		return checkedDto(readHostConfigState(this.ctx))
 	}
 
+	async hostPolicyDto(): Promise<PolicyResult> {
+		this.signal?.throwIfAborted()
+		return this.#projectPolicy(await this.#policy.get(this.#admission))
+	}
+
+	async validateHostPolicyDto(values: unknown): Promise<PolicyResult> {
+		this.signal?.throwIfAborted()
+		const record = readRpcRecord(values)
+		if (!record) return invalidPolicyInput('Policy values must be an object')
+		return this.#projectPolicy(await this.#policy.validate(record, this.#admission))
+	}
+
+	async patchHostPolicyDto(values: unknown, options?: unknown): Promise<PolicyResult> {
+		this.signal?.throwIfAborted()
+		const record = readRpcRecord(values)
+		const parsed = parseManagedInputOptions(options)
+		if (!record || !parsed.ok) return invalidPolicyInput('Invalid policy mutation input')
+		return this.#projectPolicy(
+			await this.#policy.patch(record, { ...parsed.value, ...this.#admission }),
+		)
+	}
+
+	async resetHostPolicyDto(keys?: unknown, options?: unknown): Promise<PolicyResult> {
+		this.signal?.throwIfAborted()
+		const parsed = parseManagedInputOptions(options)
+		if (
+			!parsed.ok ||
+			(keys !== undefined && (!Array.isArray(keys) || keys.some((key) => typeof key !== 'string')))
+		)
+			return invalidPolicyInput('Invalid policy reset input')
+		return this.#projectPolicy(
+			await this.#policy.reset(keys as readonly HostPolicyField[] | undefined, {
+				...parsed.value,
+				...this.#admission,
+			}),
+		)
+	}
+
+	#projectPolicy(result: HostPolicyResult): PolicyResult {
+		if (!result.ok) return parsePolicyResult(result)
+		const { report, ...snapshot } = result
+		return parsePolicyResult({
+			...snapshot,
+			...(report ? { report: projectPluginApplyReport(this.ctx, report) } : {}),
+		})
+	}
+
 	async pluginConfigDto(owner: unknown): Promise<ConfigResult> {
 		this.signal?.throwIfAborted()
 		const address = parseRpcNode(owner)
@@ -218,23 +275,88 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		return parseConfigResult(await pluginConfigGet(this.ctx, address, this.#admission))
 	}
 
-	async patchPluginConfigDto(owner: unknown, patch: unknown): Promise<ConfigResult> {
+	async patchPluginConfigDto(
+		owner: unknown,
+		patch: unknown,
+		options?: unknown,
+	): Promise<ConfigResult> {
 		this.signal?.throwIfAborted()
 		const address = parseRpcNode(owner)
 		if (!address) return checkedDto(invalidConfigInput('Invalid Plugin node address'))
 		const record = readRpcRecord(patch)
 		if (!record) return checkedDto(invalidConfigInput('Config patch must be an object'))
-		return parseConfigResult(await pluginConfigPatch(this.ctx, address, record, this.#admission))
+		const parsed = parseManagedInputOptions(options)
+		if (!parsed.ok) return checkedDto(invalidConfigInput('Invalid config mutation options'))
+		return parseConfigResult(
+			await pluginConfigPatch(this.ctx, address, record, { ...parsed.value, ...this.#admission }),
+		)
 	}
 
-	async patchPluginConfigFieldDto(owner: unknown, input: unknown): Promise<ConfigResult> {
+	async validatePluginConfigDto(
+		owner: unknown,
+		patch: unknown,
+		options?: unknown,
+	): Promise<ConfigResult> {
+		this.signal?.throwIfAborted()
+		const address = parseRpcNode(owner)
+		const record = readRpcRecord(patch)
+		const parsed = parseManagedInputOptions(options)
+		if (!address || !record || !parsed.ok)
+			return checkedDto(invalidConfigInput('Invalid config validation input'))
+		return parseConfigResult(
+			await pluginConfigValidate(this.ctx, address, record, {
+				...parsed.value,
+				...this.#admission,
+			}),
+		)
+	}
+
+	async resetPluginConfigDto(
+		owner: unknown,
+		paths?: unknown,
+		options?: unknown,
+	): Promise<ConfigResult> {
+		this.signal?.throwIfAborted()
+		const address = parseRpcNode(owner)
+		const parsed = parseManagedInputOptions(options)
+		if (
+			!address ||
+			!parsed.ok ||
+			(paths !== undefined &&
+				(!Array.isArray(paths) ||
+					paths.some(
+						(path) => !Array.isArray(path) || path.some((segment) => typeof segment !== 'string'),
+					)))
+		) {
+			return checkedDto(invalidConfigInput('Invalid config reset input'))
+		}
+		return parseConfigResult(
+			await pluginConfigReset(
+				this.ctx,
+				address,
+				paths as readonly (readonly string[])[] | undefined,
+				{ ...parsed.value, ...this.#admission },
+			),
+		)
+	}
+
+	async patchPluginConfigFieldDto(
+		owner: unknown,
+		input: unknown,
+		options?: unknown,
+	): Promise<ConfigResult> {
 		this.signal?.throwIfAborted()
 		const address = parseRpcNode(owner)
 		if (!address) return checkedDto(invalidConfigInput('Invalid Plugin node address'))
 		if (!readRpcRecord(input))
 			return checkedDto(invalidConfigInput('Config field mutation must be an object'))
+		const parsed = parseManagedInputOptions(options)
+		if (!parsed.ok) return checkedDto(invalidConfigInput('Invalid config mutation options'))
 		return parseConfigResult(
-			await pluginConfigPatchField(this.ctx, address, input, this.#admission),
+			await pluginConfigPatchField(this.ctx, address, input, {
+				...parsed.value,
+				...this.#admission,
+			}),
 		)
 	}
 
@@ -259,8 +381,13 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		}
 	}
 
-	async setPluginConsumerOverrideDto(input: unknown): Promise<PluginDependencyMutationResult> {
+	async setPluginConsumerOverrideDto(
+		input: unknown,
+		options?: unknown,
+	): Promise<PluginDependencyMutationResult> {
 		this.signal?.throwIfAborted()
+		const parsed = parseManagedInputOptions(options)
+		if (!parsed.ok) return checkedDto(invalidDependencyInput('Invalid managed input options'))
 		const record = readRpcRecord(input)
 		const consumer = parseRpcNode(record?.consumer)
 		const requirement = parseRpcDefinition(record?.requirement)
@@ -275,13 +402,10 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 			return checkedDto(invalidDependencyInput('Invalid consumer override input'))
 		}
 		return checkedDto(
-			await applyPluginConsumerOverride(
-				this.ctx,
-				consumer,
-				requirement,
-				provider.value,
-				this.#admission,
-			),
+			await applyPluginConsumerOverride(this.ctx, consumer, requirement, provider.value, {
+				...parsed.value,
+				...this.#admission,
+			}),
 		)
 	}
 
@@ -301,8 +425,13 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		}
 	}
 
-	async setPluginProviderPolicyDefaultDto(input: unknown): Promise<PluginDependencyMutationResult> {
+	async setPluginProviderPolicyDefaultDto(
+		input: unknown,
+		options?: unknown,
+	): Promise<PluginDependencyMutationResult> {
 		this.signal?.throwIfAborted()
+		const parsed = parseManagedInputOptions(options)
+		if (!parsed.ok) return checkedDto(invalidDependencyInput('Invalid managed input options'))
 		const record = readRpcRecord(input)
 		const policyOwner = parseRpcNode(record?.policyOwner)
 		const provider = parseRpcNullableNode(record?.provider)
@@ -315,17 +444,17 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 			return checkedDto(invalidDependencyInput('Invalid provider policy input'))
 		}
 		return checkedDto(
-			await applyPluginProviderPolicyDefault(
-				this.ctx,
-				policyOwner,
-				provider.value,
-				this.#admission,
-			),
+			await applyPluginProviderPolicyDefault(this.ctx, policyOwner, provider.value, {
+				...parsed.value,
+				...this.#admission,
+			}),
 		)
 	}
 
-	async ensurePluginForkDto(input: unknown): Promise<EnsureForkResult> {
+	async ensurePluginForkDto(input: unknown, options?: unknown): Promise<EnsureForkResult> {
 		this.signal?.throwIfAborted()
+		const parsed = parseManagedInputOptions(options)
+		if (!parsed.ok) return checkedDto(invalidDependencyInput('Invalid managed input options'))
 		const record = readRpcRecord(input)
 		const fork = parseRpcNode(record?.fork)
 		const autoStart = record?.autoStart
@@ -346,6 +475,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		}
 		const result = await ensureFork(this.ctx, fork, {
 			autoStart: autoStart as boolean | undefined,
+			...parsed.value,
 			...this.#admission,
 			...(selectFor.value === undefined ? {} : { selectFor: selectFor.value }),
 		})
@@ -373,8 +503,10 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		})
 	}
 
-	async removePluginForkDto(input: unknown): Promise<RemoveForkResult> {
+	async removePluginForkDto(input: unknown, options?: unknown): Promise<RemoveForkResult> {
 		this.signal?.throwIfAborted()
+		const parsed = parseManagedInputOptions(options)
+		if (!parsed.ok) return checkedDto(invalidDependencyInput('Invalid managed input options'))
 		const fork = parseRpcNode(input)
 		if (fork?.variant !== 'fork') {
 			return checkedDto({
@@ -384,7 +516,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 				error: 'Invalid fork removal input',
 			})
 		}
-		const result = await removeFork(this.ctx, fork, this.#admission)
+		const result = await removeFork(this.ctx, fork, { ...parsed.value, ...this.#admission })
 		if (result.ok === true) {
 			if (result.status === 'already-absent') {
 				return checkedDto({
@@ -434,9 +566,23 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		})
 	}
 
-	async setPluginAutoStartDto(items: unknown): Promise<PluginControlBatchResult> {
+	async setPluginAutoStartDto(
+		items: unknown,
+		options?: unknown,
+	): Promise<PluginControlBatchResult> {
 		this.signal?.throwIfAborted()
-		return parsePluginControlBatchResult(await setAutoStart(this.ctx, items, this.#admission))
+		const parsed = parseManagedInputOptions(options)
+		if (!parsed.ok)
+			return {
+				ok: false,
+				status: 'rejected',
+				code: 'invalid_input',
+				error: 'Invalid managed input options',
+				results: [],
+			}
+		return parsePluginControlBatchResult(
+			await setAutoStart(this.ctx, items, { ...parsed.value, ...this.#admission }),
+		)
 	}
 
 	async applyPluginLifecycleCommandsDto(items: unknown): Promise<PluginControlBatchResult> {
@@ -975,6 +1121,28 @@ function parseRpcForkSelection(input: unknown):
 
 function invalidConfigInput(message: string): ConfigResult {
 	return { ok: false, code: 'invalid_input', state: 'unchanged', message }
+}
+
+function invalidPolicyInput(message: string): PolicyResult {
+	return {
+		ok: false,
+		code: 'invalid_input',
+		state: 'unchanged',
+		persistence: { status: 'unchanged' },
+		message,
+	}
+}
+
+function parseManagedInputOptions(
+	input: unknown,
+): { ok: true; value: ManagedInputMutationOptions } | { ok: false } {
+	if (input === undefined) return { ok: true, value: {} }
+	const record = readRpcRecord(input)
+	if (!record || !hasOnlyKeys(record, ['expectedManagedRevision'])) return { ok: false }
+	const revision = record.expectedManagedRevision
+	if (revision === undefined) return { ok: true, value: {} }
+	if (typeof revision !== 'string' || revision.length === 0) return { ok: false }
+	return { ok: true, value: { expectedManagedRevision: revision } }
 }
 
 function invalidDependencyInput(message: string): {

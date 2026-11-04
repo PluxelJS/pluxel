@@ -127,7 +127,7 @@ describe('FontsPlugin', () => {
 					source: 'preference',
 				})
 
-				const patched = await host.config.patch(FontsPlugin, { defaultFamily: 'serif' })
+				const patched = await host.config.patch(FontsPlugin, { set: { defaultFamily: 'serif' } })
 				expect(patched.ok).toBe(true)
 				await host.restart(FontsPlugin)
 				fonts = host.require(FontsTestConsumer).fonts

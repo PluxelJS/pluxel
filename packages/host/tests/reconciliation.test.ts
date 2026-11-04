@@ -1020,78 +1020,58 @@ describe('Host pinned mutation admission', () => {
 	})
 })
 
-describe('Declared state authority at the coordinator boundary', () => {
-	it('rejects writes to each overridden list before Core work, while session commands remain available', async () => {
+describe('Declared policy authority at the coordinator boundary', () => {
+	it('rejects changed shadowed targets but permits satisfied commands and session intent', async () => {
 		const Provider = definition('LockedProvider')
-		const Consumer = definition('LockedConsumer')
 		const provider = node(Provider)
-		const fork = node(Provider, 'tenant')
 		const store = new HostStateStore(createCoreContextHost().createRoot(), {
-			mode: 'memory',
-			override: true,
 			autoStart: [provider],
-			forks: [fork],
-			providerDefaults: [],
-			dependencyOverrides: [],
 		})
-		const commit = vi.fn(async ({ onGraphCommitted }: { onGraphCommitted: () => void }) => {
-			onGraphCommitted()
-			return 'committed'
-		})
-		const coordinator = new PluginHostCoordinator(store, coreDriver(commit))
+		const coordinator = new PluginHostCoordinator(
+			store,
+			coreDriver(async ({ onGraphCommitted }) => {
+				onGraphCommitted()
+				return 'committed'
+			}),
+		)
 		try {
 			await coordinator.reconcileStartup(
-				createPluginCatalogSnapshot(1, [{ candidate: candidate(Provider, { forkable: true }) }]),
+				createPluginCatalogSnapshot(1, [{ candidate: candidate(Provider) }]),
 			)
-			const before = commit.mock.calls.length
-			for (const patch of [
+			const unchanged = await coordinator.updateRuntimeState(
 				hostStatePatch({ type: 'set-auto-start', node: provider, autoStart: true }),
-				hostStatePatch({ type: 'ensure-fork', definition: Provider, forkId: 'tenant' }),
-				hostStatePatch({ type: 'remove-fork', definition: Provider, forkId: 'tenant' }),
-				hostStatePatch({ type: 'set-provider-default', token: Consumer, provider: null }),
-				hostStatePatch({
-					type: 'set-dependency-override',
-					consumer: node(Consumer),
-					requirement: Provider,
-					provider: null,
-				}),
-				hostStatePatch({ type: 'remove-node-policy', node: provider }),
-			]) {
-				await expect(coordinator.updateRuntimeState(patch)).rejects.toMatchObject({
-					code: 'state_overridden',
-				})
-			}
-			expect(commit).toHaveBeenCalledTimes(before)
+			)
+			expect(unchanged.persistence.status).toBe('unchanged')
+			await expect(
+				coordinator.updateRuntimeState(
+					hostStatePatch({ type: 'set-auto-start', node: provider, autoStart: false }),
+				),
+			).rejects.toMatchObject({ code: 'policy_shadowed' })
 			await coordinator.stopNode(provider)
 			expect(coordinator.desiredControlSnapshot().has(pluginNodeIndexKey(provider))).toBe(false)
 			await coordinator.startNode(provider)
 			expect(coordinator.desiredControlSnapshot().has(pluginNodeIndexKey(provider))).toBe(true)
-			expect(store.savedSnapshot().autoStart).toEqual([provider])
+			expect(store.managedSnapshot()).toEqual({})
 		} finally {
 			await coordinator.dispose()
 			await store.ctx.effects.dispose()
 		}
 	})
 
-	it.each(['writable', 'readonly'] as const)(
-		'recomputes inferred providers during catalog changes without saving in %s mode',
-		async (mode) => {
-			const Token = definition('InferredToken')
-			const ProviderA = definition('InferredA')
-			const ProviderB = definition('InferredB')
-			const Consumer = definition('InferredConsumer')
+	it.each([false, true])(
+		'never saves inferred provider policy (readOnly: %s)',
+		async (readOnly) => {
+			const Token = definition('InferredToken'),
+				ProviderA = definition('InferredA'),
+				ProviderB = definition('InferredB'),
+				Consumer = definition('InferredConsumer')
 			const backend = createDocumentStorage()
-			const seed = new HostStateStore(createCoreContextHost().createRoot(), {
-				storage: backend,
-				autoStart: [node(Consumer)],
-			})
-			await seed.ready
-			await seed.ctx.effects.dispose()
 			const put = vi.spyOn(backend, 'put')
-			const store = new HostStateStore(createCoreContextHost().createRoot(), {
-				storage: backend,
-				mode,
-			})
+			const store = new HostStateStore(
+				createCoreContextHost().createRoot(),
+				{ autoStart: [node(Consumer)] },
+				{ storage: backend, readOnly },
+			)
 			const coordinator = new PluginHostCoordinator(
 				store,
 				coreDriver(async ({ onGraphCommitted }) => {
@@ -1110,7 +1090,6 @@ describe('Declared state authority at the coordinator boundary', () => {
 				expect(coordinator.desiredControlSnapshot().has(pluginNodeIndexKey(node(ProviderA)))).toBe(
 					true,
 				)
-				const revision = store.versionedSnapshot().revision
 				await coordinator.updateCatalog(
 					createPluginCatalogSnapshot(2, [
 						{ candidate: candidate(ProviderB, { provides: Token }) },
@@ -1120,31 +1099,8 @@ describe('Declared state authority at the coordinator boundary', () => {
 				expect(coordinator.desiredControlSnapshot().has(pluginNodeIndexKey(node(ProviderB)))).toBe(
 					true,
 				)
-				expect(store.savedSnapshot().providerDefaults).toEqual([])
-				expect(store.versionedSnapshot().revision).toBe(revision)
+				expect(store.managedSnapshot()).toEqual({})
 				expect(put).not.toHaveBeenCalled()
-				const expectedDefaults =
-					mode === 'writable' ? [{ token: Token, provider: node(ProviderB) }] : []
-				if (mode === 'writable') {
-					await coordinator.updateRuntimeState(
-						hostStatePatch({
-							type: 'set-provider-default',
-							token: Token,
-							provider: node(ProviderB),
-						}),
-					)
-				}
-				expect(store.savedSnapshot().providerDefaults).toEqual(expectedDefaults)
-				expect(put).toHaveBeenCalledTimes(mode === 'writable' ? 1 : 0)
-				const reopened = new HostStateStore(createCoreContextHost().createRoot(), {
-					storage: backend,
-				})
-				try {
-					await reopened.ready
-					expect(reopened.snapshot().providerDefaults).toEqual(expectedDefaults)
-				} finally {
-					await reopened.ctx.effects.dispose()
-				}
 			} finally {
 				await coordinator.dispose()
 				await store.ctx.effects.dispose()
@@ -1152,24 +1108,17 @@ describe('Declared state authority at the coordinator boundary', () => {
 		},
 	)
 
-	it('saves unoverridden policy from raw saved state while validating against declared forks', async () => {
-		const Provider = definition('OverlayProvider')
-		const Consumer = definition('OverlayConsumer')
-		const provider = node(Provider)
-		const consumer = node(Consumer)
-		const fork = node(Provider, 'declared')
+	it('saves only the changed column and retains declared fork provenance', async () => {
+		const Provider = definition('OverlayProvider'),
+			Consumer = definition('OverlayConsumer')
+		const fork = node(Provider, 'declared'),
+			consumer = node(Consumer)
 		const backend = createDocumentStorage()
-		const seed = new HostStateStore(createCoreContextHost().createRoot(), {
-			storage: backend,
-			autoStart: [provider],
-		})
-		await seed.ready
-		await seed.ctx.effects.dispose()
-		const store = new HostStateStore(createCoreContextHost().createRoot(), {
-			storage: backend,
-			override: true,
-			forks: [fork],
-		})
+		const store = new HostStateStore(
+			createCoreContextHost().createRoot(),
+			{ forks: [fork] },
+			{ storage: backend },
+		)
 		const coordinator = new PluginHostCoordinator(
 			store,
 			coreDriver(async ({ onGraphCommitted }) => {
@@ -1178,12 +1127,13 @@ describe('Declared state authority at the coordinator boundary', () => {
 			}),
 		)
 		try {
-			const entries = [
-				{ candidate: candidate(Provider, { forkable: true }) },
-				{ candidate: candidate(Consumer, { requires: [Provider] }) },
-			]
-			await coordinator.reconcileStartup(createPluginCatalogSnapshot(1, entries))
-			await coordinator.updateRuntimeState(
+			await coordinator.reconcileStartup(
+				createPluginCatalogSnapshot(1, [
+					{ candidate: candidate(Provider, { forkable: true }) },
+					{ candidate: candidate(Consumer, { requires: [Provider] }) },
+				]),
+			)
+			const report = await coordinator.updateRuntimeState(
 				hostStatePatch({
 					type: 'set-dependency-override',
 					consumer,
@@ -1191,21 +1141,18 @@ describe('Declared state authority at the coordinator boundary', () => {
 					provider: fork,
 				}),
 			)
-			await coordinator.updateCatalog(createPluginCatalogSnapshot(2, entries))
-			expect(store.savedSnapshot().forks).toEqual([])
+			expect(report.writtenFields).toEqual(['dependencyOverrides'])
+			expect(store.managedSnapshot().forks).toBeUndefined()
 			expect(store.snapshot().forks).toEqual([fork])
-			expect(store.savedSnapshot().dependencyOverrides).toEqual([
-				{ consumerAddress: consumer, requirementAddress: Provider, providerAddress: fork },
-			])
-			const reopened = new HostStateStore(createCoreContextHost().createRoot(), {
-				storage: backend,
-			})
+			const reopened = new HostStateStore(
+				createCoreContextHost().createRoot(),
+				{ forks: [fork] },
+				{ storage: backend },
+			)
 			try {
 				await reopened.ready
-				expect(reopened.snapshot().forks).toEqual([])
-				expect(reopened.snapshot().autoStart).toEqual([provider])
 				expect(reopened.snapshot().dependencyOverrides).toEqual(
-					store.savedSnapshot().dependencyOverrides,
+					store.managedSnapshot().dependencyOverrides,
 				)
 			} finally {
 				await reopened.ctx.effects.dispose()
@@ -1222,12 +1169,16 @@ function memoryStateStore(initial: HostStateSnapshot): HostStateCoordinatorStore
 	return {
 		ready: Promise.resolve(),
 		versionedSnapshot: () => current,
-		savedSnapshot: () => current.state,
-		effectiveSnapshot: (saved) => saved,
+		managedSnapshot: () => current.state,
+		prepareAction: (patch) => applyHostStatePatch(current.state, patch),
+		assertManagedRevision() {},
+		persistence: (changed) =>
+			changed ? { status: 'confirmed', retention: 'session' } : { status: 'unchanged' },
+		effectiveSnapshot: (saved) => ({ ...initial, ...saved }),
 		assertPatchMutable() {},
 		commitVersioned: async (expectedRevision, next) => {
 			if (expectedRevision !== current.revision) throw new Error('unexpected revision conflict')
-			current = { revision: current.revision + 1, state: next }
+			current = { revision: current.revision + 1, state: { ...initial, ...next } }
 			return current
 		},
 	}

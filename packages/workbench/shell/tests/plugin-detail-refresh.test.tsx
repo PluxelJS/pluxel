@@ -53,7 +53,11 @@ describe('plugin detail refresh', () => {
 	it('disables declared auto-start controls while keeping session controls and selection usable', async () => {
 		const snapshot: PluginCatalogSnapshot = {
 			...pluginCatalog(ownerStatus),
-			statePolicy: { mode: 'writable', overriddenFields: ['autoStart'] },
+			statePolicy: {
+				readonly: false,
+				managedRevision: 'policy:test:0',
+				overriddenFields: ['autoStart'],
+			},
 		}
 		const client = {
 			catalog: { snapshot: vi.fn().mockResolvedValue(snapshot) },
@@ -219,7 +223,7 @@ function pluginCatalog(nodeStatus: PluginStatusSnapshot): PluginCatalogSnapshot 
 	return {
 		plugins: [nodeStatus],
 		sections: [],
-		statePolicy: { mode: 'writable', overriddenFields: [] },
+		statePolicy: { readonly: false, managedRevision: 'policy:test:0', overriddenFields: [] },
 		summary: { total: 1, running: 1, stopped: 0, autoStart: 1 },
 	}
 }

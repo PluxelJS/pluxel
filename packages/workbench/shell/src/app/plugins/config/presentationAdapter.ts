@@ -1,93 +1,118 @@
+import { makePathArray } from '@tanstack/react-form'
 import type { FieldNode } from 'valibot-form'
+import type { HostConfigMutation, HostConfigSource } from '@pluxel/host'
 export { adaptConfigPresentationFields } from '../../workbench/presentationAdapter'
 
-/**
- * Build a patch containing only renderer-editable fields changed from the displayed baseline.
- *
- * Object nodes are merged recursively so an unsupported child always keeps the
- * last server value. Collection and union nodes containing unsupported children
- * are locked by the adapter because their structural edits cannot preserve those
- * children reliably.
- */
+/** Diff editable raw inputs. Structural fields replace atomically; undefined restores inheritance. */
 export function buildEditableConfigPatch(
 	fields: readonly FieldNode[],
 	candidate: Record<string, unknown>,
 	current: Record<string, unknown>,
-): Record<string, unknown> {
-	const output: Record<string, unknown> = Object.create(null)
-	for (const field of fields) {
-		if (!field.name) continue
-		const projected = editableValue(field, candidate[field.name], current[field.name])
-		if (projected.editable) output[field.name] = projected.value
+): HostConfigMutation {
+	const set: Record<string, unknown> = Object.create(null)
+	const remove: string[][] = []
+	const visit = (
+		nodes: readonly FieldNode[],
+		next: Record<string, unknown>,
+		previous: Record<string, unknown>,
+		parent: string[],
+	) => {
+		for (const node of nodes) {
+			if (!node.name || !editable(node)) continue
+			const value = next[node.name]
+			const before = previous[node.name]
+			if (Object.is(value, before) || JSON.stringify(value) === JSON.stringify(before)) continue
+			const path = [...parent, node.name]
+			if (node.kind === 'object' && (isRecord(value) || value === undefined)) {
+				visit(node.fields, isRecord(value) ? value : {}, isRecord(before) ? before : {}, path)
+			} else {
+				// Replacing a union/record also deletes keys left by the previous branch.
+				remove.push(path)
+				if (value !== undefined) write(set, path, value)
+			}
+		}
 	}
-	return output
+	visit(fields, candidate, current, [])
+	return {
+		...(Object.keys(set).length > 0 ? { set } : {}),
+		...(remove.length > 0 ? { remove } : {}),
+	}
 }
-
-function editableValue(
-	node: FieldNode,
-	candidate: unknown,
-	current: unknown,
-): { editable: true; value: unknown } | { editable: false } {
-	if (node.kind === 'unsupported' || node.meta.readOnly || node.meta.disabled) {
-		return { editable: false }
-	}
-	if (Object.is(candidate, current) || JSON.stringify(candidate) === JSON.stringify(current)) {
-		return { editable: false }
-	}
-	if (node.kind !== 'object') return { editable: true, value: candidate }
-	const candidateRecord = plainRecord(candidate)
-	const currentRecord = plainRecord(current)
-	const output: Record<string, unknown> = Object.create(null)
-	let editable = false
-	for (const child of node.fields) {
-		if (!child.name) continue
-		const projected = editableValue(child, candidateRecord[child.name], currentRecord[child.name])
-		if (!projected.editable) continue
-		editable = true
-		output[child.name] = projected.value
-	}
-	return editable ? { editable: true, value: output } : { editable: false }
+export function editableConfigPaths(
+	fields: readonly FieldNode[],
+	parent: readonly string[] = [],
+): readonly (readonly string[])[] {
+	return fields.flatMap((node) => {
+		if (!node.name || !editable(node)) return []
+		const path = [...parent, node.name]
+		return node.kind === 'object' ? editableConfigPaths(node.fields, path) : [path]
+	})
 }
-
-function plainRecord(input: unknown): Record<string, unknown> {
-	return input && typeof input === 'object' && !Array.isArray(input)
-		? (input as Record<string, unknown>)
-		: Object.create(null)
+function editable(node: FieldNode): boolean {
+	if (!node.name) return false
+	const parsed = makePathArray(node.name)
+	return (
+		parsed.length === 1 &&
+		parsed[0] === node.name &&
+		node.kind !== 'unsupported' &&
+		!node.meta.readOnly &&
+		!node.meta.disabled
+	)
 }
-
-/** Mark only controlled paths readonly; object siblings remain independently editable. */
+function write(root: Record<string, unknown>, path: readonly string[], value: unknown) {
+	let cursor = root
+	for (const key of path.slice(0, -1)) {
+		const next = isRecord(cursor[key]) ? cursor[key] : Object.create(null)
+		cursor[key] = next
+		cursor = next
+	}
+	cursor[path.at(-1)!] = value
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+/** Explain the effective source without making shadowed saved inputs uneditable. */
 export function applyConfigSources(
 	fields: readonly FieldNode[],
-	sources: readonly import('@pluxel/host').HostConfigSource[],
+	sources: readonly HostConfigSource[],
 	parent: readonly string[] = [],
+	effectiveInput?: Readonly<Record<string, unknown>>,
+	config?: Readonly<Record<string, unknown>>,
 ): FieldNode[] {
 	return fields.map((field) => {
 		const path = field.name ? [...parent, field.name] : parent
-		const source = sources.find(
-			(item) =>
-				item.readonly &&
-				(contains(item.path, path) || (field.kind !== 'object' && contains(path, item.path))),
-		)
-		const meta = source
-			? {
-					...field.meta,
-					readOnly: true,
-					description: [
-						field.meta.description,
-						source.kind === 'env'
-							? `由环境变量 ${source.name ?? ''} 控制，只读`
-							: source.kind === 'file'
-								? `由文件 ${source.name ?? ''} 提供，只读`
-								: source.kind === 'declaration'
-									? '由应用声明提供，只读'
-									: '此配置来源只读',
-					]
-						.filter(Boolean)
-						.join('。'),
-				}
-			: field.meta
+		const source = sources.find((item) => contains(item.path, path))
+		const origin =
+			source?.kind === 'env'
+				? `当前生效值来自环境变量 ${source.name ?? ''}`
+				: source?.kind === 'file'
+					? `当前生效值来自文件 ${source.name ?? ''}`
+					: source?.kind === 'declaration'
+						? '当前生效值来自应用声明'
+						: undefined
+		let effective: unknown = effectiveInput
+		for (const segment of path) effective = isRecord(effective) ? effective[segment] : undefined
+		const displayScalar =
+			['string', 'number', 'boolean', 'picklist'].includes(field.kind) &&
+			!(field.kind === 'string' && field.control === 'password')
+		let output: unknown = config
+		for (const segment of path) output = isRecord(output) ? output[segment] : undefined
+		const inherited =
+			displayScalar && effective !== undefined
+				? `当前有效输入：${JSON.stringify(effective)}`
+				: undefined
+		const target =
+			displayScalar && output !== undefined ? `目标配置：${JSON.stringify(output)}` : undefined
+		const description = [field.meta.description, origin, inherited, target]
+			.filter(Boolean)
+			.join('。')
+		const meta = description ? { ...field.meta, description } : field.meta
 		return field.kind === 'object'
-			? { ...field, meta, fields: applyConfigSources(field.fields, sources, path) }
+			? {
+					...field,
+					meta,
+					fields: applyConfigSources(field.fields, sources, path, effectiveInput, config),
+				}
 			: { ...field, meta }
 	})
 }

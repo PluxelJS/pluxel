@@ -1,19 +1,10 @@
-import type { PluginNodeAddress, RootContext } from '@pluxel/core'
+import type { RootContext } from '@pluxel/core'
 import { defineContextCapability, installRootCapability } from '@pluxel/core/host'
 import { requireConfigService } from '@pluxel/core/internal'
-import { SuperJSON } from 'superjson'
 import { describe, expect, it } from 'vitest'
 import { createHost, defineHostService } from '../src/index'
 import { createDocumentStorage } from './helpers/document-storage'
 import { assertResolvedHostStoreStorage } from '../src/document-storage'
-
-const owner: PluginNodeAddress = {
-	definition: {
-		entry: { kind: 'package-root', packageName: '@test/host-documents' },
-		exportName: 'Owner',
-	},
-	variant: 'default',
-}
 
 function documentService(events: string[]) {
 	let closed = false
@@ -64,15 +55,13 @@ function documentService(events: string[]) {
 }
 
 describe('Host root document factories', () => {
-	it.each(['writable', 'readonly'] as const)(
-		'requires an actual namespace after resolving %s storage',
-		(mode) => {
-			expect(() => {
-				// @ts-expect-error Persistent modes need an actual namespace after Host resolves defaults.
-				assertResolvedHostStoreStorage({ mode })
-			}).toThrow('requires resolved document storage')
-		},
-	)
+	it('rejects malformed resolved storage rather than inventing a document adapter', () => {
+		expect(() => assertResolvedHostStoreStorage({ readOnly: 'yes' } as never)).toThrow('readOnly')
+		expect(() => assertResolvedHostStoreStorage({ storage: {} } as never)).toThrow(
+			'requires getText',
+		)
+	})
+
 	it.each([
 		{ name: 'a storage object', options: { storage: createDocumentStorage() } },
 		{ name: 'an unknown storage mode', options: { mode: 'unsupported' } },
@@ -84,7 +73,11 @@ describe('Host root document factories', () => {
 		const events: string[] = []
 		const { service } = documentService(events)
 		await expect(
-			createHost({ plugins: [], services: [service], runtime: { state: options as never } }),
+			createHost({
+				plugins: [],
+				services: [service],
+				runtime: { documents: { state: options as never } },
+			}),
 		).rejects.toBeInstanceOf(TypeError)
 		expect(events).toEqual([])
 	})
@@ -95,10 +88,10 @@ describe('Host root document factories', () => {
 		const { Documents, service, config, state } = documentService(events)
 		const flushingService = defineHostService({
 			...service,
-			prepare({ ctx, effects }) {
+			prepare({ effects }) {
 				events.push('prepared')
 				effects.defer(async () => {
-					requireConfigService(ctx).patchConfig(owner, { value: 'last config' })
+					await config.put('service-document.json', 'last config write')
 					await state.put('service-document.json', 'last service write')
 					events.push('runtime settled')
 				})
@@ -108,18 +101,20 @@ describe('Host root document factories', () => {
 			plugins: [],
 			services: [flushingService],
 			runtime: {
-				configRecords: {
-					storage(root) {
-						roots.push(root)
-						events.push('config factory')
-						return root.require(Documents).config
+				documents: {
+					config: {
+						storage(root) {
+							roots.push(root)
+							events.push('config factory')
+							return root.require(Documents).config
+						},
 					},
-				},
-				state: {
-					storage(root) {
-						roots.push(root)
-						events.push('state factory')
-						return root.require(Documents).state
+					state: {
+						storage(root) {
+							roots.push(root)
+							events.push('state factory')
+							return root.require(Documents).state
+						},
 					},
 				},
 			},
@@ -127,21 +122,19 @@ describe('Host root document factories', () => {
 		try {
 			expect(roots).toEqual([host.ctx, host.ctx])
 			expect(events.slice(0, 3)).toEqual(['config factory', 'constructed', 'state factory'])
-			expect(events.indexOf('prepared')).toBeGreaterThan(events.indexOf('committed config.json'))
-			expect(events.indexOf('prepared')).toBeGreaterThan(events.indexOf('committed state.json'))
+			expect(events.indexOf('prepared')).toBeGreaterThan(events.indexOf('read config.json'))
+			expect(events.indexOf('prepared')).toBeGreaterThan(events.indexOf('read state.json'))
 			await host.start()
 			await host.status()
 			expect(events.filter((event) => event.endsWith('factory'))).toHaveLength(2)
 		} finally {
 			await host.close()
 		}
-		expect(SuperJSON.parse(config.documents.get('config.json')!)).toEqual({
-			version: 4,
-			plugins: [{ owner, config: { value: 'last config' } }],
-		})
-		expect(state.documents.has('state.json')).toBe(true)
+		expect(config.documents.has('config.json')).toBe(false)
+		expect(config.documents.get('service-document.json')).toBe('last config write')
+		expect(state.documents.has('state.json')).toBe(false)
 		expect(state.documents.get('service-document.json')).toBe('last service write')
-		expect(events.slice(-3)).toEqual(['runtime settled', 'committed config.json', 'closed'])
+		expect(events.slice(-2)).toEqual(['runtime settled', 'closed'])
 	})
 
 	it.each([
@@ -159,8 +152,10 @@ describe('Host root document factories', () => {
 					plugins: [],
 					services: [service],
 					runtime: {
-						configRecords: { storage: (root) => root.require(Documents).config },
-						state: { storage: result as never },
+						documents: {
+							config: { storage: (root) => root.require(Documents).config },
+							state: { storage: result as never },
+						},
 					},
 				}),
 			).rejects.toBeInstanceOf(TypeError)
@@ -177,10 +172,12 @@ describe('Host root document factories', () => {
 				plugins: [],
 				services: [service],
 				runtime: {
-					configRecords: {
-						storage(root) {
-							root.require(Documents)
-							throw failure
+					documents: {
+						config: {
+							storage(root) {
+								root.require(Documents)
+								throw failure
+							},
 						},
 					},
 				},
@@ -189,7 +186,7 @@ describe('Host root document factories', () => {
 		expect(events).toEqual(['constructed', 'closed'])
 	})
 
-	it.each(['read', 'initial commit', 'service prepare'] as const)(
+	it.each(['read', 'service prepare'] as const)(
 		'releases root resources after a failed %s',
 		async (stage) => {
 			const events: string[] = []
@@ -199,10 +196,7 @@ describe('Host root document factories', () => {
 				config.getText = async () => {
 					throw failure
 				}
-			if (stage === 'initial commit')
-				config.put = async () => {
-					throw failure
-				}
+
 			const hostService = {
 				...service,
 				prepare() {
@@ -213,7 +207,7 @@ describe('Host root document factories', () => {
 				createHost({
 					plugins: [],
 					services: [hostService],
-					runtime: { configRecords: { storage: (root) => root.require(Documents).config } },
+					runtime: { documents: { config: { storage: (root) => root.require(Documents).config } } },
 				}),
 			).rejects.toBe(failure)
 			expect(events.at(-1)).toBe('closed')
@@ -224,7 +218,11 @@ describe('Host root document factories', () => {
 		const events: string[] = []
 		const entered = Promise.withResolvers<void>()
 		const release = Promise.withResolvers<void>()
-		const { Documents, service, state } = documentService(events)
+		const { Documents, service, state, config } = documentService(events)
+		const failure = new Error('config read rejected')
+		config.getText = async () => {
+			throw failure
+		}
 		state.getText = async () => {
 			entered.resolve()
 			await release.promise
@@ -235,21 +233,17 @@ describe('Host root document factories', () => {
 			plugins: [],
 			services: [service],
 			runtime: {
-				configRecords: {
-					storage: (root) => root.require(Documents).config,
-					overlays: [{ owner, config: { value: 'overlay' }, sources: [] }],
+				documents: {
+					config: { storage: (root) => root.require(Documents).config },
+					state: { storage: (root) => root.require(Documents).state },
 				},
-				state: { storage: (root) => root.require(Documents).state },
 			},
 		})
 		const observed = creation.catch((error: unknown) => error)
 		await entered.promise
 		release.resolve()
-		expect(await observed).toMatchObject({
-			message: '[host] every environment overlay value requires source metadata',
-		})
+		expect(await observed).toBe(failure)
 		expect(events.indexOf('closed')).toBeGreaterThan(events.indexOf('state read settled'))
-		expect(events.indexOf('closed')).toBeGreaterThan(events.indexOf('committed state.json'))
 	})
 
 	it('retains the preparation cause and runs final cleanup after another cleanup fails', async () => {
@@ -265,12 +259,14 @@ describe('Host root document factories', () => {
 				plugins: [],
 				services: [service],
 				runtime: {
-					configRecords: {
-						storage(root) {
-							root.effects.defer(() => {
-								throw cleanupFailure
-							})
-							return root.require(Documents).config
+					documents: {
+						config: {
+							storage(root) {
+								root.effects.defer(() => {
+									throw cleanupFailure
+								})
+								return root.require(Documents).config
+							},
 						},
 					},
 				},
@@ -290,11 +286,13 @@ describe('Host root document factories', () => {
 				plugins: [],
 				services: [service],
 				runtime: {
-					configRecords: { storage: (root) => root.require(Documents).config },
-					state: {
-						storage(root) {
-							requireConfigService(root)
-							return root.require(Documents).state
+					documents: {
+						config: { storage: (root) => root.require(Documents).config },
+						state: {
+							storage(root) {
+								requireConfigService(root)
+								return root.require(Documents).state
+							},
 						},
 					},
 				},

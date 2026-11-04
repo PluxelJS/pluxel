@@ -1,5 +1,6 @@
 import { removeHostNodeMetadata } from './services'
 import { clearLoggingPolicy } from '@pluxel/core/logging/internal'
+import { HostPolicyRevisionConflictError, HostPolicyMutationRejectedError } from './state-store'
 import { HostStateMutationRejectedError } from './mutation'
 import { hostStatePatch } from './state'
 import { requirePluginHostCoordinator } from './install'
@@ -41,8 +42,10 @@ export type ForkEnsureResult =
 	| {
 			ok: false
 			code:
+				| 'revision_conflict'
+				| 'mutation_rejected'
 				| 'invalid_fork_address'
-				| 'state_overridden'
+				| 'policy_shadowed'
 				| 'definition_unavailable'
 				| 'not_forkable'
 				| 'consumer_unavailable'
@@ -81,7 +84,7 @@ export type ForkRemoveResult =
 	  }
 	| {
 			ok: false
-			code: 'invalid_fork_address' | 'graph_rejected' | 'state_overridden'
+			code: 'revision_conflict' | 'invalid_fork_address' | 'graph_rejected' | 'policy_shadowed'
 			state: 'unchanged'
 			message: string
 	  }
@@ -157,7 +160,7 @@ export async function removeFork(
 					{ type: 'remove-node-policy', node },
 					{ type: 'remove-fork', definition: node.definition, forkId: node.forkId },
 				)
-				session.validateRuntimeStatePatch(removalPatch)
+				session.validateRuntimeStatePatch(removalPatch, options?.expectedManagedRevision)
 				const state = session.runtimeStateSnapshot()
 				if (!listForkIds(state, node.definition).includes(node.forkId)) {
 					return { ok: true, status: 'already-absent', node }
@@ -225,8 +228,13 @@ function invalidFork(message: string): ForkEnsureResult & ForkRemoveResult {
 
 function forkMutationFailure(error: unknown): ForkEnsureResult {
 	if (
+		error instanceof HostPolicyRevisionConflictError ||
+		error instanceof HostPolicyMutationRejectedError
+	)
+		return { ok: false, code: error.code, state: 'unchanged', message: error.message }
+	if (
 		error instanceof HostStateMutationRejectedError &&
-		(error.code === 'state_overridden' ||
+		(error.code === 'policy_shadowed' ||
 			error.code === 'definition_unavailable' ||
 			error.code === 'not_forkable' ||
 			error.code === 'consumer_unavailable' ||
@@ -266,7 +274,12 @@ function removeFailure(
 	state: 'retained' | 'stopped-retained' | 'unknown',
 	report?: PluginApplyReport,
 ): ForkRemoveResult {
-	if (error instanceof HostStateMutationRejectedError && error.code === 'state_overridden') {
+	if (
+		error instanceof HostPolicyRevisionConflictError ||
+		error instanceof HostPolicyMutationRejectedError
+	)
+		return { ok: false, code: error.code, state: 'unchanged', message: error.message }
+	if (error instanceof HostStateMutationRejectedError && error.code === 'policy_shadowed') {
 		return { ok: false, code: error.code, state: 'unchanged', message: error.message }
 	}
 	if (error instanceof ConfigMutationRejectedError)
@@ -335,6 +348,8 @@ function combineRemovalReports(
 		catalogRevision: finalReport.catalogRevision,
 		runtimeStateRevision: finalReport.runtimeStateRevision,
 		reconciliation: finalReport.reconciliation,
+		persistence: finalReport.persistence,
+		writtenFields: finalReport.writtenFields,
 		core: stopReport.core,
 	})
 }

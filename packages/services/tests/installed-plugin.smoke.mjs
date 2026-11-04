@@ -93,7 +93,7 @@ export const services=[elysia(),{name:'fixture.service',capabilities:[installRoo
 await writeFile(join(root, 'services.mjs'), serviceSource('one'))
 await writeFile(
 	join(root, 'app.ts'),
-	`import {defineHostApplication} from '@pluxel/host';import {services} from './services.mjs';import {Installed} from './fixed.mjs';import {pluginSource} from '@pluxel/host/sources';export default defineHostApplication(() => ({services,plugins:[Installed],sources:[pluginSource({kind:'directory',path:'./entries',include:['*.mjs','*.ts']})],runtime:{state:{autoStart:[{definition:${JSON.stringify(fixedDefinition)},variant:'default'},{definition:${JSON.stringify(definition)},variant:'default'},{definition:${JSON.stringify(typedDefinition)},variant:'default'}]}}}));`,
+	`import {defineHostApplication} from '@pluxel/host';import {services} from './services.mjs';import {Installed} from './fixed.mjs';import {pluginSource} from '@pluxel/host/sources';export default defineHostApplication(() => ({services,plugins:[Installed],sources:[pluginSource({kind:'directory',path:'./entries',include:['*.mjs','*.ts']})],policy:{autoStart:[{definition:${JSON.stringify(fixedDefinition)},variant:'default'},{definition:${JSON.stringify(definition)},variant:'default'},{definition:${JSON.stringify(typedDefinition)},variant:'default'}]}}));`,
 )
 globalThis.__installedHostSmoke = []
 globalThis.__typedHostSmoke = []

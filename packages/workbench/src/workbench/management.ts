@@ -3,7 +3,15 @@ import type { RuntimeManagementClient } from '@pluxel/services/management/client
 /** Borrowed unary management operations. Session ownership and subscriptions remain with the Shell. */
 export type WorkbenchManagementOperations = Pick<
 	RuntimeManagementClient,
-	'describe' | 'catalog' | 'plugins' | 'config' | 'dependencies' | 'forks' | 'logging' | 'security'
+	| 'describe'
+	| 'catalog'
+	| 'plugins'
+	| 'config'
+	| 'policy'
+	| 'dependencies'
+	| 'forks'
+	| 'logging'
+	| 'security'
 >
 
 /** Bind every callable leaf to the lifetime of one opened View, without exposing the source client. */
@@ -36,7 +44,15 @@ export function bindWorkbenchManagement(
 			presentation: method(input.config, 'presentation'),
 			get: method(input.config, 'get'),
 			patch: method(input.config, 'patch'),
+			validate: method(input.config, 'validate'),
+			reset: method(input.config, 'reset'),
 			patchField: method(input.config, 'patchField'),
+		}),
+		policy: Object.freeze({
+			get: method(input.policy, 'get'),
+			validate: method(input.policy, 'validate'),
+			patch: method(input.policy, 'patch'),
+			reset: method(input.policy, 'reset'),
 		}),
 		dependencies: Object.freeze({
 			graph: method(input.dependencies, 'graph'),

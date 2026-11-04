@@ -1,59 +1,44 @@
 import {
 	pluginNodeAddressEqual,
 	pluginNodeIndexKey,
-	type Context as PluxelContext,
+	type Context,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import {
-	ConfigService as CoreConfigService,
+	ConfigService,
 	ConfigValidationError,
 	validateConfigRecord,
 	type PluginConfigRecordSnapshot,
 } from '@pluxel/core/services'
 import { immutableConfigRecord } from '@pluxel/core/internal'
-import { hash as ohash } from 'ohash'
+import { hash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import { ConfigMutationRejectedError } from './config'
-import { coercePluginConfigRecords, mergeConfigRecords, mergeRecord } from './config-records'
+import {
+	coercePluginConfigRecords,
+	configProvenance,
+	mergeRecord,
+	snapshotConfigInput,
+	snapshotHostConfig,
+	type HostConfigOptions,
+} from './config-records'
 import {
 	configLeafPaths,
-	configPathsOverlap,
-	configPathContains,
 	configHasPath,
-	changedConfigPaths,
+	configPathContains,
+	configPathsOverlap,
 } from './config-paths'
 import {
 	assertResolvedHostStoreStorage,
-	type HostDocumentStorage,
-	type HostStoreStorageOptions,
 	type ResolvedHostStoreStorageOptions,
 } from './document-storage'
+import type { HostInputMode } from './input-mode'
+import type { HostPersistenceRetention } from './persistence'
 
-type HostStoreMode = 'memory' | 'writable' | 'readonly'
 export interface PluginConfigFile {
 	version: 4
 	plugins: readonly PluginConfigRecordSnapshot[]
 }
-export type HostConfigStoreOptions = HostStoreStorageOptions &
-	Readonly<{
-		/** Raw declaration records used when the saved document is absent. */
-		records?: readonly PluginConfigRecordSnapshot[]
-		/** Apply explicitly declared paths over saved records without changing the saved document. */
-		override?: boolean
-		overlays?: readonly HostConfigOverlay[]
-		declarationSources?: readonly HostConfigDeclarationSource[]
-	}>
-
-export type HostConfigOverlay = PluginConfigRecordSnapshot &
-	Readonly<{
-		sources: readonly Readonly<{ path: readonly string[]; kind: 'env'; name: string }>[]
-	}>
-export type HostConfigDeclarationSource = Readonly<{
-	owner: PluginNodeAddress
-	path: readonly string[]
-	kind: 'file'
-	name: string
-}>
 export type HostConfigSource = Readonly<{
 	owner: PluginNodeAddress
 	path: readonly string[]
@@ -61,104 +46,321 @@ export type HostConfigSource = Readonly<{
 	readonly: boolean
 	name?: string
 }>
+type Validation = Parameters<ConfigService['stageValidatedConfig']>[0]
+export type ManagedConfigTransaction = Readonly<{
+	validation: Validation
+	managed: Readonly<Record<string, unknown>> | null
+	effective: Readonly<Record<string, unknown>>
+	changed: boolean
+	desiredChanged: boolean
+}>
 
-/** Persistent runtime adapter over core's single config state and validation engine. */
-export class HostConfigStore extends CoreConfigService {
+/** Host owns raw inputs; Core owns the sole validated output and generation revisions. */
+export class HostConfigStore extends ConfigService {
 	private readonly file = 'config.json'
-	private readonly saveDelayMs = 200
-	private saveTimer: ReturnType<typeof setTimeout> | null = null
-	private saveScheduled = false
-	private saveInFlight: Promise<void> | null = null
-	private saveAgain = false
-	private lastWrittenDigest: string | undefined
+	private readonly options: ReturnType<typeof snapshotHostConfig>
+	private managed: readonly PluginConfigRecordSnapshot[] = []
+	private readonly instance = globalThis.crypto.randomUUID()
+	private managedSequence = 0
+	private readonly inputDigests = new Map<string, string>()
+	private pending?: ManagedConfigTransaction
+	private saving?: Promise<void>
 	private disposed = false
 	private closing?: Promise<void>
-	private batching = 0
-	private pendingSave = false
-	private readonly mode: HostStoreMode
-	private readonly readonlyMode: boolean
-	private readonly storage: HostDocumentStorage | undefined
 	private internalMutation = false
+	private lastWrittenDigest?: string
 	private unsubscribe?: () => void
-	private readonly deferredRecords = new Set<string>()
+	readonly retention: HostPersistenceRetention
 
-	private readonly declarations: readonly PluginConfigRecordSnapshot[]
-	private readonly declarationOverride: boolean
-	private readonly overlays: readonly HostConfigOverlay[]
-	private readonly declarationSources: readonly HostConfigDeclarationSource[]
-	private managed: readonly PluginConfigRecordSnapshot[] = []
-	private rawSource: 'declaration' | 'saved' | 'memory' = 'declaration'
-	private readonly pendingManaged = new Map<
-		string,
-		{ owner: PluginNodeAddress; config: Readonly<Record<string, unknown>> }
-	>()
-
-	get isReadonly(): boolean {
-		return this.readonlyMode
+	constructor(
+		ctx: Context,
+		options: HostConfigOptions = {},
+		private readonly documents: ResolvedHostStoreStorageOptions = {},
+	) {
+		super(ctx)
+		assertResolvedHostStoreStorage(documents)
+		this.options = snapshotHostConfig(options)
+		this.retention = documents.retention ?? (documents.storage ? 'unknown' : 'session')
+		if (documents.storage) this.setReadyTask(this.load())
+		ctx.effects.defer(() => this.dispose(), { tag: 'HostConfigStore' })
 	}
-	get storageMode(): HostStoreMode {
-		return this.mode
+	get isReadonly(): boolean {
+		return this.documents.readOnly ?? false
 	}
 	get supportsExternalReload(): boolean {
-		return this.mode !== 'memory' && typeof this.storage?.subscribe === 'function'
+		return typeof this.documents.storage?.subscribe === 'function'
 	}
-	get isDeclarationOverride(): boolean {
-		return this.declarationOverride
+	get managedRevision(): string {
+		return `config:${this.instance}:${this.managedSequence}`
+	}
+	getMode(owner: PluginNodeAddress): HostInputMode {
+		return (
+			this.options.records.find((entry) => pluginNodeAddressEqual(entry.owner, owner))?.mode ??
+			this.options.mode
+		)
 	}
 	getDeclaredConfig(owner: PluginNodeAddress): Record<string, unknown> {
 		return mergeRecord(
 			undefined,
-			this.declarations.find((record) => pluginNodeAddressEqual(record.owner, owner))?.config,
+			this.options.records.find((entry) => pluginNodeAddressEqual(entry.owner, owner))?.config,
 		)
 	}
 	getManagedRecords(): readonly PluginConfigRecordSnapshot[] {
-		return mergeConfigRecords(undefined, this.managed)
+		return this.managed
 	}
-
+	getManagedInput(owner: PluginNodeAddress): Readonly<Record<string, unknown>> | null {
+		return this.managed.find((entry) => pluginNodeAddressEqual(entry.owner, owner))?.config ?? null
+	}
+	getManagedConfig(owner: PluginNodeAddress): Record<string, unknown> {
+		return mergeRecord(undefined, this.getManagedInput(owner) ?? undefined)
+	}
+	composeConfig(
+		owner: PluginNodeAddress,
+		managed: Readonly<Record<string, unknown>> | null = this.getManagedInput(owner),
+	): Record<string, unknown> {
+		const declared = this.getDeclaredConfig(owner)
+		const mode = this.getMode(owner)
+		return mode === 'declared-only'
+			? declared
+			: mode === 'declared-first'
+				? mergeRecord(managed ?? undefined, declared)
+				: mergeRecord(declared, managed ?? undefined)
+	}
 	override getRawConfig<T extends object = Record<string, unknown>>(
 		owner: PluginNodeAddress,
 	): Readonly<T> {
-		if (this.deferredRecords.has(pluginNodeIndexKey(owner)))
-			return SuperJSON.parse(SuperJSON.stringify(this.composeConfig(owner))) as Readonly<T>
-		return super.getRawConfig<T>(owner)
+		return (
+			this.inputDigests.has(pluginNodeIndexKey(owner))
+				? super.getRawConfig(owner)
+				: snapshotConfigInput(this.composeConfig(owner))
+		) as Readonly<T>
 	}
-
-	/** Unknown saved owners enter Core only when their real declaration is admitted. */
+	/** Cache against effective input AND immutable definition facts, never schema output as input. */
+	async validateEffective(
+		owner: PluginNodeAddress,
+		authority: Validation['authority'],
+		effective: Readonly<Record<string, unknown>>,
+	) {
+		const cached = this.tryGetValidatedConfig(owner, authority)
+		if (cached && this.inputDigests.get(pluginNodeIndexKey(owner)) === hash(effective))
+			return { ok: true as const, output: cached }
+		return validateConfigRecord(authority.schema, effective)
+	}
 	override async ensureValidated(
 		owner: PluginNodeAddress,
-		authority: Parameters<CoreConfigService['ensureValidated']>[1],
-		options: Parameters<CoreConfigService['ensureValidated']>[2] = {},
+		authority: Validation['authority'],
+		_options: { missingObjectDefault?: unknown } = {},
 	): Promise<Readonly<Record<string, unknown>>> {
 		await this.ready
-		const key = pluginNodeIndexKey(owner)
-		if (!this.deferredRecords.has(key)) return super.ensureValidated(owner, authority, options)
-		const expectedRevision = this.getConfigRevision(owner)
-		const raw = this.composeConfig(owner)
-		const input =
-			Object.keys(raw).length === 0 && options.missingObjectDefault !== undefined
-				? options.missingObjectDefault
-				: raw
-		const validation = await validateConfigRecord(
-			authority.schema,
-			input as Record<string, unknown>,
+		const effective = this.composeConfig(owner)
+		const result = await this.validateEffective(owner, authority, effective)
+		if (result.ok === false)
+			throw new ConfigValidationError('Plugin config validation failed.', result.errors)
+		if (
+			this.tryGetValidatedConfig(owner, authority) &&
+			this.inputDigests.get(pluginNodeIndexKey(owner)) === hash(effective)
 		)
-		if (validation.ok === false)
-			throw new ConfigValidationError('Plugin config validation failed.', validation.errors)
-		const value = immutableConfigRecord(validation.output)
+			return result.output
+		return this.publish(
+			{ owner, authority, expectedRevision: this.getConfigRevision(owner), value: result.output },
+			effective,
+		)
+	}
+	private publish(
+		validation: Validation,
+		effective: Readonly<Record<string, unknown>>,
+	): Readonly<Record<string, unknown>> {
 		this.internalMutation = true
 		try {
-			const ticket = super.stageValidatedConfig({ owner, authority, expectedRevision, value })
+			const ticket = super.stageValidatedConfig(validation)
 			const result = super.confirmValidatedConfig(ticket)
-			this.deferredRecords.delete(key)
+			this.inputDigests.set(pluginNodeIndexKey(validation.owner), hash(effective))
 			return result
 		} finally {
 			this.internalMutation = false
 		}
 	}
-	/** Called after the Host coordinator is installed. External loads never write back. */
+	getConfigSources(
+		owner: PluginNodeAddress,
+		managed: Readonly<Record<string, unknown>> | null = this.getManagedInput(owner),
+	): readonly HostConfigSource[] {
+		const mode = this.getMode(owner)
+		const declared = this.getDeclaredConfig(owner)
+		const effective = this.composeConfig(owner, managed)
+		const facts = configProvenance(this.options).sources.filter((source) =>
+			pluginNodeAddressEqual(source.owner, owner),
+		)
+		return Object.freeze(
+			configLeafPaths(effective).map((path) => {
+				const fromSaved =
+					mode !== 'declared-only' &&
+					configHasPath(managed ?? {}, path) &&
+					(mode === 'saved-first' || !configHasPath(declared, path))
+				const source = fromSaved
+					? undefined
+					: facts.toReversed().find((fact) => configPathContains(fact.path, path))
+				return Object.freeze({
+					owner,
+					path: Object.freeze(path),
+					kind: fromSaved
+						? this.documents.storage
+							? ('saved' as const)
+							: ('memory' as const)
+						: (source?.kind ?? ('declaration' as const)),
+					readonly: this.isReadonly,
+					...(source ? { name: source.name } : {}),
+				})
+			}),
+		)
+	}
+	getShadowedPaths(
+		owner: PluginNodeAddress,
+		managed: Readonly<Record<string, unknown>> | null = this.getManagedInput(owner),
+	): readonly (readonly string[])[] {
+		const sources = this.getConfigSources(owner, managed)
+		return Object.freeze(
+			configLeafPaths(managed ?? {})
+				.filter(
+					(path) =>
+						!sources.some(
+							(source) =>
+								['saved', 'memory'].includes(source.kind) && configPathsOverlap(source.path, path),
+						),
+				)
+				.map((path) => Object.freeze(path)),
+		)
+	}
+	assertManagedMutation(): void {
+		this.assertConfigMutable('config mutation')
+	}
+	protected override assertConfigMutable(action: string): void {
+		if (this.internalMutation) return
+		if (!this.isReady)
+			throw new Error(`[ConfigService] ${action} requires a successfully loaded config document.`)
+		if (this.disposed) throw new Error(`[ConfigService] ${action} is disabled after dispose.`)
+		if (this.isReadonly) throw new ConfigMutationRejectedError(action)
+	}
+	stageManagedConfig(
+		input: Validation & { managed: Readonly<Record<string, unknown>> | null },
+	): ManagedConfigTransaction {
+		this.assertManagedMutation()
+		if (this.pending) throw new Error('[HostConfigStore] Another raw config transaction is pending')
+		const managed = input.managed === null ? null : snapshotConfigInput(input.managed)
+		const effective = snapshotConfigInput(this.composeConfig(input.owner, managed))
+		const current = this.getManagedInput(input.owner)
+		const transaction = Object.freeze({
+			validation: {
+				owner: input.owner,
+				authority: input.authority,
+				expectedRevision: input.expectedRevision,
+				value: immutableConfigRecord(input.value),
+			},
+			managed,
+			effective,
+			changed: hash(current) !== hash(managed),
+			desiredChanged:
+				!this.tryGetValidatedConfig(input.owner, input.authority) ||
+				this.inputDigests.get(pluginNodeIndexKey(input.owner)) !== hash(effective),
+		})
+		this.pending = transaction
+		return transaction
+	}
+	confirmManagedConfig(transaction: ManagedConfigTransaction): Readonly<Record<string, unknown>> {
+		if (this.pending !== transaction)
+			throw new Error('[HostConfigStore] Raw config transaction is stale')
+		const output = transaction.desiredChanged
+			? this.publish(transaction.validation, transaction.effective)
+			: this.getRawConfig(transaction.validation.owner)
+		if (transaction.changed) {
+			this.managed = replaceManaged(this.managed, transaction.validation.owner, transaction.managed)
+			this.managedSequence++
+		}
+		this.pending = undefined
+		return output
+	}
+	discardManagedConfig(transaction: ManagedConfigTransaction): void {
+		if (this.pending === transaction) this.pending = undefined
+	}
+	override async flush(): Promise<void> {
+		if (this.saving) await this.saving
+		if (!this.pending?.changed || !this.documents.storage) return
+		await this.write(
+			replaceManaged(this.managed, this.pending.validation.owner, this.pending.managed),
+		)
+	}
+	private async write(records: readonly PluginConfigRecordSnapshot[]): Promise<void> {
+		if (!this.documents.storage) return
+		const content = SuperJSON.stringify({ version: 4, plugins: records } satisfies PluginConfigFile)
+		const task = this.documents.storage.put(this.file, content).then((): undefined => {
+			this.lastWrittenDigest = hash(content)
+			return undefined
+		})
+		this.saving = task
+		try {
+			await task
+		} finally {
+			if (this.saving === task) this.saving = undefined
+		}
+	}
+	async deleteManagedConfig(owner: PluginNodeAddress): Promise<void> {
+		this.assertManagedMutation()
+		if (this.getManagedInput(owner) === null) return
+		const next = replaceManaged(this.managed, owner, null)
+		await this.write(next)
+		this.managed = next
+		this.managedSequence++
+		this.internalMutation = true
+		try {
+			super.deleteConfig(owner)
+			this.inputDigests.delete(pluginNodeIndexKey(owner))
+		} finally {
+			this.internalMutation = false
+		}
+	}
+	override stageValidatedConfig(_input: Validation): never {
+		this.assertManagedMutation()
+		throw new TypeError('[HostConfigStore] Use host.config.patch/reset for raw input transactions.')
+	}
+	override patchConfig<T extends object = Record<string, unknown>>(
+		_owner: PluginNodeAddress,
+		_patch: Partial<T>,
+	): never {
+		this.assertManagedMutation()
+		throw new TypeError('[HostConfigStore] Use host.config.patch/reset for raw input transactions.')
+	}
+	override unsetConfigKeys(_owner: PluginNodeAddress, _keys: readonly string[]): never {
+		this.assertManagedMutation()
+		throw new TypeError('[HostConfigStore] Use host.config.patch/reset for raw input transactions.')
+	}
+	override deleteConfig(_owner: PluginNodeAddress): never {
+		this.assertManagedMutation()
+		throw new TypeError('[HostConfigStore] Use host.config.reset for raw input transactions.')
+	}
+	private async load(): Promise<void> {
+		const text = await this.documents.storage!.getText(this.file)
+		this.lastWrittenDigest = hash(text)
+		if (text !== undefined) this.managed = this.parseDocument(text)
+	}
+	private parseDocument(text: string): readonly PluginConfigRecordSnapshot[] {
+		try {
+			const value = SuperJSON.parse(text) as { version?: unknown; plugins?: unknown }
+			if (!value || typeof value !== 'object' || Array.isArray(value))
+				throw new Error('persisted config must be an object')
+			if (value.version !== 4)
+				throw new Error(
+					`unsupported persisted config version: ${String(value.version)}; expected 4`,
+				)
+			return Object.freeze(coercePluginConfigRecords(value.plugins))
+		} catch (cause) {
+			throw new Error(
+				`[ConfigService] Cannot load ${this.file}: ${cause instanceof Error ? cause.message : String(cause)}. Existing document unchanged; repair or restore it before restarting.`,
+				{ cause },
+			)
+		}
+	}
 	async observe(reload: () => Promise<void>): Promise<void> {
-		if (this.mode === 'memory' || !this.storage) return
-		const reloadAndReport = async () => {
+		if (!this.documents.storage) return
+		const observe = async () => {
 			if (this.disposed) return
 			try {
 				await reload()
@@ -166,444 +368,43 @@ export class HostConfigStore extends CoreConfigService {
 				if (!this.disposed) this.ctx.logger.error('ConfigService external reload failed', { error })
 			}
 		}
-		this.unsubscribe = this.storage.subscribe?.(() => {
-			void reloadAndReport()
+		this.unsubscribe = this.documents.storage.subscribe?.(() => {
+			void observe()
 		})
-		// A document can change while Host services prepare, before the subscription exists.
-		await reloadAndReport()
+		await observe()
 	}
-
 	stopObserving(): void {
 		this.unsubscribe?.()
 		this.unsubscribe = undefined
 	}
-
-	assertManagedMutation(): void {
-		this.assertConfigMutable('config mutation')
-	}
-
-	async deleteManagedConfig(owner: PluginNodeAddress): Promise<void> {
-		this.deleteConfig(owner)
-		await this.flush()
-	}
-
 	async readExternal(): Promise<
 		{ text: string | undefined; records: readonly PluginConfigRecordSnapshot[] } | undefined
 	> {
-		if (this.disposed || this.mode === 'memory' || !this.storage) return undefined
-		const text = await this.storage.getText(this.file)
-		if (ohash(text) === this.lastWrittenDigest) return undefined
+		if (this.disposed || !this.documents.storage) return undefined
+		const text = await this.documents.storage.getText(this.file)
+		if (hash(text) === this.lastWrittenDigest) return undefined
 		return { text, records: text === undefined ? [] : this.parseDocument(text) }
 	}
-
-	/** Internal complete-document commit. Validation is pinned and completed by config.ts first. */
 	acceptExternal(
 		document: { text: string | undefined; records: readonly PluginConfigRecordSnapshot[] },
-		validated: readonly Parameters<CoreConfigService['stageValidatedConfig']>[0][],
-		knownOwners: readonly PluginNodeAddress[],
-	): readonly ReturnType<CoreConfigService['stageValidatedConfig']>[] {
-		const { records } = document
-		this.internalMutation = true
-		let tickets: ReturnType<CoreConfigService['stageValidatedConfig']>[]
-		try {
-			tickets = validated.map((input) => super.stageValidatedConfig(input))
-		} finally {
-			this.internalMutation = false
+		validated: readonly (Validation & { effective: Readonly<Record<string, unknown>> })[],
+	): readonly {
+		owner: PluginNodeAddress
+		snapshot: Readonly<Record<string, unknown>>
+		revision: number
+	}[] {
+		const updates = validated.map((entry) => ({
+			owner: entry.owner,
+			snapshot: this.publish(entry, entry.effective),
+			revision: this.getConfigRevision(entry.owner),
+		}))
+		if (hash(this.managed) !== hash(document.records)) {
+			this.managed = document.records
+			this.managedSequence++
 		}
-		const previous = this.managed
-		this.managed = records
-		this.rawSource = 'saved'
-		const known = new Set(knownOwners.map(pluginNodeIndexKey))
-		const changed = new Map(
-			[...previous, ...records].map((record) => [pluginNodeIndexKey(record.owner), record.owner]),
-		)
-		this.internalMutation = true
-		try {
-			for (const [key, owner] of changed) {
-				if (known.has(key)) continue
-				const before =
-					previous.find((record) => pluginNodeAddressEqual(record.owner, owner))?.config ?? {}
-				const after = this.getManagedConfig(owner)
-				if (ohash(before) !== ohash(after)) {
-					super.deleteConfig(owner)
-					this.deferredRecords.add(key)
-				}
-			}
-			for (const ticket of tickets) {
-				super.confirmValidatedConfig(ticket)
-				this.deferredRecords.delete(pluginNodeIndexKey(ticket.owner))
-			}
-		} finally {
-			this.internalMutation = false
-		}
-		this.lastWrittenDigest = ohash(document.text)
-		return tickets
+		this.lastWrittenDigest = hash(document.text)
+		return updates
 	}
-
-	getManagedConfig(owner: PluginNodeAddress): Record<string, unknown> {
-		return mergeRecord(
-			undefined,
-			this.managed.find((record) => pluginNodeAddressEqual(record.owner, owner))?.config,
-		)
-	}
-
-	composeConfig(
-		owner: PluginNodeAddress,
-		managed = this.getManagedConfig(owner),
-	): Record<string, unknown> {
-		const declared = this.declarationOverride ? this.getDeclaredConfig(owner) : undefined
-		const overlay = this.overlays.find((record) =>
-			pluginNodeAddressEqual(record.owner, owner),
-		)?.config
-		return mergeRecord(mergeRecord(managed, declared), overlay)
-	}
-
-	getConfigSources(owner: PluginNodeAddress): readonly HostConfigSource[] {
-		const declared = this.declarationOverride ? this.getDeclaredConfig(owner) : {}
-		const declarationPaths = configLeafPaths(declared)
-		const saved = this.getManagedConfig(owner)
-		const overlay = this.overlays.find((record) => pluginNodeAddressEqual(record.owner, owner))
-		const result: HostConfigSource[] = []
-		for (const path of configLeafPaths(mergeRecord(saved, declared))) {
-			if (overlay?.sources.some((source) => configPathsOverlap(source.path, path))) continue
-			const overridden = declarationPaths.some((source) => configPathContains(source, path))
-			const fromDeclaration = overridden || this.rawSource === 'declaration'
-			const file =
-				fromDeclaration &&
-				this.declarationSources.find(
-					(source) =>
-						pluginNodeAddressEqual(source.owner, owner) && configPathContains(source.path, path),
-				)
-			result.push(
-				Object.freeze({
-					owner,
-					path: Object.freeze(path),
-					kind: fromDeclaration ? (file ? 'file' : 'declaration') : this.rawSource,
-					readonly: this.isReadonly || overridden,
-					...(file ? { name: file.name } : {}),
-				}),
-			)
-		}
-		for (const source of overlay?.sources ?? [])
-			result.push(
-				Object.freeze({ owner, ...source, path: Object.freeze([...source.path]), readonly: true }),
-			)
-		return Object.freeze(result)
-	}
-
-	assertPathsMutable(owner: PluginNodeAddress, paths: readonly (readonly string[])[]): void {
-		this.assertConfigMutable('config mutation')
-		const blocked = this.getConfigSources(owner).find(
-			(source) => source.readonly && paths.some((path) => configPathsOverlap(path, source.path)),
-		)
-		if (blocked)
-			throw new ConfigMutationRejectedError('config mutation', {
-				path: blocked.path,
-				source: blocked.name ?? 'declaration override',
-				kind: blocked.kind === 'env' ? 'environment' : 'declaration',
-			})
-	}
-
-	stageManagedConfig(
-		input: Parameters<CoreConfigService['stageValidatedConfig']>[0] & {
-			managed: Readonly<Record<string, unknown>>
-			paths: readonly (readonly string[])[]
-		},
-	): ReturnType<CoreConfigService['stageValidatedConfig']> {
-		this.assertManagedMutation()
-		this.internalMutation = true
-		let ticket: ReturnType<CoreConfigService['stageValidatedConfig']>
-		try {
-			this.assertPathsMutable(input.owner, input.paths)
-			this.assertPathsMutable(
-				input.owner,
-				changedConfigPaths(this.getManagedConfig(input.owner), input.managed),
-			)
-			ticket = super.stageValidatedConfig(input)
-		} finally {
-			this.internalMutation = false
-		}
-		this.pendingManaged.set(pluginNodeIndexKey(input.owner), {
-			owner: input.owner,
-			config: mergeRecord(undefined, input.managed),
-		})
-		this.requestSave()
-		return ticket
-	}
-
-	override stageValidatedConfig(
-		input: Parameters<CoreConfigService['stageValidatedConfig']>[0],
-	): ReturnType<CoreConfigService['stageValidatedConfig']> {
-		this.assertPathsMutable(
-			input.owner,
-			changedConfigPaths(this.getRawConfig(input.owner), input.value),
-		)
-		throw new TypeError(
-			'[HostConfigStore] Config staging requires explicit raw records; use host.config.patch/reset.',
-		)
-	}
-
-	override confirmValidatedConfig(
-		ticket: Parameters<CoreConfigService['confirmValidatedConfig']>[0],
-	): Readonly<Record<string, unknown>> {
-		const result = super.confirmValidatedConfig(ticket)
-		const key = pluginNodeIndexKey(ticket.owner)
-		const pending = this.pendingManaged.get(key)
-		if (pending) {
-			this.managed = mergeManagedRecord(this.managed, pending.owner, pending.config)
-			if (this.mode === 'memory') this.rawSource = 'memory'
-			this.pendingManaged.delete(key)
-		}
-		this.deferredRecords.delete(key)
-		return result
-	}
-
-	override patchConfig<T extends object = Record<string, unknown>>(
-		owner: PluginNodeAddress,
-		patch: Partial<T>,
-	): void {
-		this.assertConfigMutable('patchConfig')
-		this.assertPathsMutable(owner, configLeafPaths(patch as Record<string, unknown>))
-		this.commitManaged(
-			owner,
-			mergeRecord(this.getManagedConfig(owner), patch as Record<string, unknown>),
-		)
-	}
-
-	override unsetConfigKeys(owner: PluginNodeAddress, keys: readonly string[]): void {
-		this.assertConfigMutable('unsetConfigKeys')
-		this.assertPathsMutable(
-			owner,
-			keys.map((key) => [key]),
-		)
-		const next = this.getManagedConfig(owner)
-		for (const key of keys) delete next[key]
-		this.commitManaged(owner, next)
-	}
-
-	override deleteConfig(owner: PluginNodeAddress): boolean {
-		this.assertConfigMutable('deleteConfig')
-		this.assertPathsMutable(owner, [[]])
-		const existed = this.managed.some((record) => pluginNodeAddressEqual(record.owner, owner))
-		this.commitManaged(owner, {})
-		return existed
-	}
-
-	private commitManaged(owner: PluginNodeAddress, value: Record<string, unknown>): void {
-		// Core validates and freezes the effective value before accepting the management layer.
-		this.replaceRecord(owner, this.composeConfig(owner, value))
-		this.managed = mergeManagedRecord(this.managed, owner, value)
-		if (this.mode === 'memory') this.rawSource = 'memory'
-		this.pendingManaged.delete(pluginNodeIndexKey(owner))
-		this.requestSave()
-	}
-
-	private replaceLayers(): void {
-		this.replaceConfigRecords(
-			mergeConfigRecords(
-				mergeConfigRecords(this.managed, this.declarationOverride ? this.declarations : undefined),
-				this.overlays,
-			),
-		)
-	}
-
-	constructor(
-		ctx: PluxelContext,
-		options: Omit<HostConfigStoreOptions, 'storage' | 'mode'> &
-			ResolvedHostStoreStorageOptions = {},
-	) {
-		super(ctx)
-		assertResolvedHostStoreStorage(options)
-		this.mode = options.mode ?? (options.storage ? 'writable' : 'memory')
-		this.readonlyMode = this.mode === 'readonly'
-		this.storage = options.storage
-		if (this.mode !== 'memory' && !this.storage)
-			throw new TypeError('[host] persistent config requires document storage')
-		this.declarations = mergeConfigRecords(
-			undefined,
-			coercePluginConfigRecords(options.records ?? []),
-		)
-		this.declarationOverride = options.override ?? false
-		this.managed = mergeConfigRecords(undefined, this.declarations)
-		const overlayRecords = coercePluginConfigRecords(options.overlays ?? [])
-		this.overlays = overlayRecords.map((record, index) => {
-			const config = mergeRecord(undefined, record.config)
-			const sources = options.overlays![index]!.sources.map((source) => {
-				assertSourcePath(source.path)
-				if (
-					source.kind !== 'env' ||
-					typeof source.name !== 'string' ||
-					!/^[A-Z_][A-Z0-9_]*$/.test(source.name)
-				)
-					throw new TypeError('[host] invalid config environment source')
-				if (!configHasPath(config, source.path))
-					throw new TypeError('[host] config environment source must refer to a present value')
-				return { path: Object.freeze([...source.path]), kind: 'env' as const, name: source.name }
-			})
-			if (
-				configLeafPaths(config).some(
-					(path) => !sources.some((source) => configPathContains(source.path, path)),
-				)
-			)
-				throw new TypeError('[host] every environment overlay value requires source metadata')
-			return { owner: record.owner, config, sources }
-		})
-		this.declarationSources = (options.declarationSources ?? []).map((source) => {
-			assertSourcePath(source.path)
-			return {
-				owner: source.owner,
-				kind: 'file',
-				name: source.name,
-				path: Object.freeze([...source.path]),
-			}
-		})
-		this.replaceLayers()
-		if (this.mode !== 'memory') this.setReadyTask(this.loadFromDisk())
-		ctx.effects.defer(() => this.dispose(), { tag: 'HostConfigStore' })
-	}
-
-	protected override assertConfigMutable(action: string): void {
-		if (!this.isReady)
-			throw new Error(`[ConfigService] ${action} requires a successfully loaded config document.`)
-		if (this.disposed) throw new Error(`[ConfigService] ${action} is disabled after dispose.`)
-		if (this.internalMutation) return
-		if (!this.readonlyMode) return
-		throw new ConfigMutationRejectedError(action)
-	}
-
-	override batch(run: () => void): void {
-		this.batching++
-		try {
-			run()
-		} finally {
-			this.batching--
-			if (this.batching === 0 && this.pendingSave) {
-				this.pendingSave = false
-				this.scheduleSave()
-			}
-		}
-	}
-
-	private requestSave(): void {
-		if (this.internalMutation) return
-		if (this.mode !== 'writable' || this.disposed) return
-		if (this.batching > 0) {
-			this.pendingSave = true
-			return
-		}
-		this.scheduleSave()
-	}
-
-	private scheduleSave(): void {
-		if (this.disposed) return
-		this.saveScheduled = true
-		if (this.saveTimer) return
-		this.saveTimer = setTimeout(() => {
-			this.saveTimer = null
-			if (!this.saveScheduled) return
-			this.saveScheduled = false
-			void this.saveToDisk().catch((error: unknown) => {
-				this.saveScheduled = true
-				this.ctx.logger.error('ConfigService background save failed', { error })
-			})
-		}, this.saveDelayMs)
-	}
-
-	private cancelScheduledSave(): void {
-		this.saveScheduled = false
-		if (!this.saveTimer) return
-		clearTimeout(this.saveTimer)
-		this.saveTimer = null
-	}
-
-	/** Flush pending disk writes. Use force while disposing inside a batch. */
-	override async flush(options: { force?: boolean } = {}): Promise<void> {
-		if (this.mode !== 'writable') return
-		try {
-			const hadScheduled = this.saveScheduled || this.saveTimer !== null
-			this.cancelScheduledSave()
-			if (this.saveInFlight) await this.saveInFlight
-			if (!hadScheduled && !this.pendingSave) return
-			this.pendingSave = false
-			await this.saveToDisk({ force: options.force })
-		} catch (error) {
-			this.saveScheduled = true
-			throw error
-		}
-	}
-
-	private async loadFromDisk(): Promise<void> {
-		const text = await this.storage!.getText(this.file)
-		this.lastWrittenDigest = ohash(text)
-		if (text === undefined) {
-			if (!this.readonlyMode) await this.saveToDisk()
-			return
-		}
-
-		this.managed = this.parseDocument(text)
-		this.rawSource = 'saved'
-		this.replaceLayers()
-	}
-
-	private parseDocument(text: string): PluginConfigRecordSnapshot[] {
-		try {
-			const value = SuperJSON.parse(text) as unknown
-			if (!value || typeof value !== 'object' || Array.isArray(value))
-				throw new Error('persisted config must be an object')
-			const parsed = value as Record<string, unknown>
-			if (parsed.version !== 4)
-				throw new Error(
-					`unsupported persisted config version: ${String(parsed.version)}; expected 4`,
-				)
-			return coercePluginConfigRecords(parsed.plugins)
-		} catch (cause) {
-			const reason = cause instanceof Error ? cause.message : String(cause)
-			throw new Error(
-				`[ConfigService] Cannot load ${this.file}: ${reason}. Existing document unchanged; repair or restore it before restarting.`,
-				{ cause },
-			)
-		}
-	}
-
-	private async saveToDisk(options: { force?: boolean } = {}): Promise<void> {
-		if (!options.force && this.batching > 0) return
-
-		if (this.saveInFlight) {
-			this.saveAgain = true
-			await this.saveInFlight
-			if (this.saveAgain) {
-				this.saveAgain = false
-				await this.saveToDisk(options)
-			}
-			return
-		}
-
-		const content = SuperJSON.stringify({
-			version: 4,
-			plugins: [...this.pendingManaged.values()].reduce(
-				(records, record) => mergeManagedRecord(records, record.owner, record.config),
-				this.managed,
-			),
-		} satisfies PluginConfigFile)
-		const nextDigest = ohash(content)
-		if (nextDigest === this.lastWrittenDigest && (await this.storage!.stat(this.file))) return
-
-		const task = this.storage!.put(this.file, content).then((): undefined => {
-			this.lastWrittenDigest = nextDigest
-			this.rawSource = 'saved'
-			return undefined
-		})
-		this.saveInFlight = task.finally(() => {
-			this.saveInFlight = null
-		})
-		await this.saveInFlight
-
-		if (this.saveAgain) {
-			this.saveAgain = false
-			await this.saveToDisk(options)
-		}
-	}
-
 	dispose(): Promise<void> {
 		return (this.closing ??= (async () => {
 			this.disposed = true
@@ -611,33 +412,19 @@ export class HostConfigStore extends CoreConfigService {
 			try {
 				await this.ready
 			} catch {
-				/* Preparation reports its original failure. */
+				/* preparation owns the original failure */
 			}
-			await this.flush({ force: true })
+			if (this.saving) await this.saving
 		})())
 	}
 }
-
-function mergeManagedRecord(
+function replaceManaged(
 	records: readonly PluginConfigRecordSnapshot[],
 	owner: PluginNodeAddress,
-	config: Readonly<Record<string, unknown>>,
+	config: Readonly<Record<string, unknown>> | null,
 ): readonly PluginConfigRecordSnapshot[] {
-	return [
+	return Object.freeze([
 		...records.filter((record) => !pluginNodeAddressEqual(record.owner, owner)),
-		...(Object.keys(config).length > 0 ? [{ owner, config: mergeRecord(undefined, config) }] : []),
-	]
-}
-
-function assertSourcePath(path: readonly string[]): void {
-	if (
-		!Array.isArray(path) ||
-		path.some(
-			(part) =>
-				typeof part !== 'string' ||
-				!part ||
-				['__proto__', 'constructor', 'prototype'].includes(part),
-		)
-	)
-		throw new TypeError('[host] invalid config source path')
+		...(config === null ? [] : [Object.freeze({ owner, config })]),
+	])
 }

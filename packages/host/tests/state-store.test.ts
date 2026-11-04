@@ -1,526 +1,251 @@
 import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
-import { createDocumentStorage } from './helpers/document-storage'
 import { createCoreContextHost } from '@pluxel/core/host'
-import type { HostStateSnapshot } from '../src/policy'
-import { HostStateStore, resolveHostStateDeclaration, type HostStateFile } from '../src/state-store'
-import { hostStatePatch } from '../src/state'
 import { SuperJSON } from 'superjson'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { HostStateStore, snapshotHostPolicy } from '../src/state-store'
+import { hostStatePatch } from '../src/state'
+import { createDocumentStorage } from './helpers/document-storage'
 
-const Provider: PluginDefinitionAddress = {
-	entry: { kind: 'package-root', packageName: '@example/provider' },
-	exportName: 'ProviderPlugin',
+const definition: PluginDefinitionAddress = {
+	entry: { kind: 'package-subpath', packageName: '@example/provider', subpath: './plugins' },
+	exportName: 'Provider',
 }
-const Consumer: PluginDefinitionAddress = {
-	entry: { kind: 'source-entry', sourceSpace: 'app', path: 'src/consumer.ts' },
-	exportName: 'ConsumerPlugin',
+const owner: PluginNodeAddress = { definition, variant: 'default' }
+const other: PluginNodeAddress = {
+	definition: { ...definition, exportName: 'Other' },
+	variant: 'default',
 }
-const ProviderNode: PluginNodeAddress = { definition: Provider, variant: 'default' }
-const ConsumerNode: PluginNodeAddress = { definition: Consumer, variant: 'default' }
+const fork = { definition, variant: 'fork' as const, forkId: 'tenant' }
 
-describe('Host state address persistence', () => {
-	it('preserves omitted declaration fields and rejects default nodes in forks', () => {
-		expect(resolveHostStateDeclaration({ autoStart: [] })).toEqual({ autoStart: [] })
-		// @ts-expect-error Default nodes cannot declare fork state.
-		expect(() => resolveHostStateDeclaration({ forks: [ProviderNode] })).toThrow(
-			/only fork node addresses/,
+describe('Host policy persistence and selection', () => {
+	it('captures declarations without initializing a missing document or managed columns', async () => {
+		const storage = createDocumentStorage()
+		const store = new HostStateStore(
+			createCoreContextHost().createRoot(),
+			{ autoStart: [owner], forks: [fork] },
+			{ storage },
 		)
-		expect(() =>
-			resolveHostStateDeclaration({ autoStart: [{ ...ProviderNode, enabled: true }] } as never),
-		).toThrow(/unknown field enabled/)
-	})
-
-	it('initializes all declared lists without adding inferred policy', async () => {
-		const backend = createDocumentStorage()
-		const fork: PluginNodeAddress = { definition: Provider, variant: 'fork', forkId: 'tenant' }
-		const declared = {
-			autoStart: [ConsumerNode],
-			forks: [fork],
-			providerDefaults: [{ token: Consumer, provider: ProviderNode }],
-			dependencyOverrides: [
-				{ consumerAddress: ConsumerNode, requirementAddress: Provider, providerAddress: fork },
-			],
-		}
-		const runtime = new HostStateStore(createCoreContextHost().createRoot(), {
-			storage: backend,
-			override: true,
-			...declared,
-		})
 		try {
-			await runtime.ready
-			expect(runtime.savedSnapshot()).toEqual(declared)
-			expect(runtime.snapshot()).toEqual(declared)
-			expect(SuperJSON.parse((await backend.getText('state.json'))!)).toEqual({
-				version: 6,
-				...declared,
+			await store.ready
+			expect(store.managedSnapshot()).toEqual({})
+			expect(store.snapshot()).toMatchObject({ autoStart: [owner], forks: [fork] })
+			expect(storage.documents.size).toBe(0)
+			await store.commitVersioned(store.versionedSnapshot().revision, { startTimeoutMs: 12_000 })
+			expect(SuperJSON.parse(storage.documents.get('state.json')!)).toEqual({
+				version: 7,
+				startTimeoutMs: 12_000,
+			})
+			expect(store.configurationSnapshot()).toMatchObject({
+				appliedExecution: { startTimeoutMs: 1500 },
+				pendingExecutionFields: ['startTimeoutMs'],
+				application: 'requires-host-recreation',
 			})
 		} finally {
-			await runtime.ctx.effects.dispose()
+			await store.ctx.effects.dispose()
 		}
-	})
-
-	it('restores saved lists when override is false and never observes external edits', async () => {
-		const backend = createDocumentStorage()
-		const persisted: HostStateFile = {
-			version: 6,
-			autoStart: [ProviderNode],
-			forks: [],
-			providerDefaults: [],
-			dependencyOverrides: [],
-		}
-		await backend.put('state.json', SuperJSON.stringify(persisted))
-		const runtime = new HostStateStore(createCoreContextHost().createRoot(), {
-			storage: backend,
-			autoStart: [ConsumerNode],
-		})
-		try {
-			await runtime.ready
-			expect(runtime.snapshot().autoStart).toEqual([ProviderNode])
-			expect(runtime.configurationSnapshot()).toMatchObject({
-				override: false,
-				declared: { autoStart: [ConsumerNode] },
-				overriddenFields: [],
-			})
-			await backend.put('state.json', SuperJSON.stringify({ ...persisted, autoStart: [] }))
-			expect(runtime.snapshot().autoStart).toEqual([ProviderNode])
-		} finally {
-			await runtime.ctx.effects.dispose()
-		}
-	})
-
-	it('overrides whole declared lists without contaminating saved values through other writes or reopen', async () => {
-		const backend = createDocumentStorage()
-		const fork: PluginNodeAddress = { definition: Provider, variant: 'fork', forkId: 'tenant' }
-		const saved: HostStateSnapshot = {
-			autoStart: [ProviderNode],
-			forks: [fork],
-			providerDefaults: [],
-			dependencyOverrides: [],
-		}
-		await backend.put('state.json', SuperJSON.stringify({ version: 6, ...saved }))
-		const runtime = new HostStateStore(createCoreContextHost().createRoot(), {
-			storage: backend,
-			override: true,
-			autoStart: [ConsumerNode],
-			forks: [],
-		})
-		const defaults = [{ token: Consumer, provider: ProviderNode }]
-		try {
-			await runtime.ready
-			expect(runtime.snapshot()).toEqual({ ...saved, autoStart: [ConsumerNode], forks: [] })
-			expect(runtime.savedSnapshot()).toEqual(saved)
-			expect(runtime.configurationSnapshot().overriddenFields).toEqual(['autoStart', 'forks'])
-			expect(() =>
-				runtime.assertPatchMutable(
-					hostStatePatch({ type: 'set-auto-start', node: ConsumerNode, autoStart: true }),
-				),
-			).toThrow(expect.objectContaining({ code: 'state_overridden' }))
-			await expect(
-				runtime.commitVersioned(runtime.versionedSnapshot().revision, runtime.snapshot()),
-			).rejects.toMatchObject({ code: 'state_overridden' })
-			await runtime.commitVersioned(runtime.versionedSnapshot().revision, {
-				...runtime.savedSnapshot(),
-				providerDefaults: defaults,
-			})
-			expect(runtime.snapshot()).toEqual({
-				...saved,
-				autoStart: [ConsumerNode],
-				forks: [],
-				providerDefaults: defaults,
-			})
-			expect(SuperJSON.parse((await backend.getText('state.json'))!)).toEqual({
-				version: 6,
-				...saved,
-				providerDefaults: defaults,
-			})
-		} finally {
-			await runtime.ctx.effects.dispose()
-		}
-		const reopened = new HostStateStore(createCoreContextHost().createRoot(), { storage: backend })
+		const reopened = new HostStateStore(createCoreContextHost().createRoot(), {}, { storage })
 		try {
 			await reopened.ready
-			expect(reopened.snapshot()).toEqual({ ...saved, providerDefaults: defaults })
+			expect(reopened.executionSnapshot().startTimeoutMs).toBe(12_000)
 		} finally {
 			await reopened.ctx.effects.dispose()
 		}
 	})
 
-	it('projects readonly overrides without writing and applies memory declarations without storage', async () => {
-		const backend = createDocumentStorage()
-		const content = SuperJSON.stringify({
-			version: 6,
-			autoStart: [ProviderNode],
-			forks: [],
-			providerDefaults: [],
-			dependencyOverrides: [],
-		})
-		await backend.put('state.json', content)
-		const runtime = new HostStateStore(createCoreContextHost().createRoot(), {
-			storage: backend,
-			mode: 'readonly',
-			override: true,
-			autoStart: [],
-		})
-		const memory = new HostStateStore(createCoreContextHost().createRoot(), {
-			mode: 'memory',
-			autoStart: [ConsumerNode],
-		})
-		try {
-			await runtime.ready
-			expect(runtime.snapshot().autoStart).toEqual([])
-			expect(runtime.savedSnapshot().autoStart).toEqual([ProviderNode])
-			expect(memory.snapshot().autoStart).toEqual([ConsumerNode])
-			expect(memory.configurationSnapshot().mode).toBe('memory')
-			expect(await backend.getText('state.json')).toBe(content)
-		} finally {
-			await runtime.ctx.effects.dispose()
-			await memory.ctx.effects.dispose()
-		}
-	})
-
-	it('persists and reloads a plugin from a package subpath', async () => {
-		const backend = createDocumentStorage()
-		const node: PluginNodeAddress = {
-			definition: {
-				entry: { kind: 'package-subpath', packageName: '@pluxel/services', subpath: './plugins' },
-				exportName: 'VaultAdminPlugin',
-			},
-			variant: 'default',
-		}
-		const host = new HostStateStore(createCoreContextHost().createRoot(), { storage: backend })
-		try {
-			await host.ready
-			const before = host.versionedSnapshot()
-			await host.commitVersioned(before.revision, { ...before.state, autoStart: [node] })
-			expect(host.snapshot().autoStart).toEqual([node])
-		} finally {
-			await host.ctx.effects.dispose()
-		}
-		const restored = new HostStateStore(createCoreContextHost().createRoot(), {
-			storage: backend,
-			mode: 'readonly',
-		})
-		try {
-			await restored.ready
-			expect(restored.snapshot().autoStart).toEqual([node])
-		} finally {
-			await restored.ctx.effects.dispose()
-		}
-	})
-
-	it('rejects legacy and unknown startup snapshot fields instead of silently dropping them', () => {
-		expect(
-			() =>
-				new HostStateStore(createCoreContextHost().createRoot(), {
-					initial: { enabled: [ProviderNode] },
-				} as never),
-		).toThrow(/state has unknown field initial/i)
-	})
-
 	it.each([
-		[
-			'legacy root field',
-			{
-				version: 6,
-				autoStart: [],
-				enabled: [ProviderNode],
-				forks: [],
-				providerDefaults: [],
-				dependencyOverrides: [],
-			},
-			/unknown field enabled/i,
-		],
-		[
-			'unknown nested field',
-			{
-				version: 6,
-				autoStart: [],
-				forks: [{ definition: Provider, variant: 'fork', forkId: 'tenant', enabled: true }],
-				providerDefaults: [],
-				dependencyOverrides: [],
-			},
-			/unknown field enabled/i,
-		],
-	] as const)('rejects a v6 file with %s', async (_case, file, expected) => {
-		const backend = createDocumentStorage()
-		await backend.put('state.json', SuperJSON.stringify(file))
-		const runtime = new HostStateStore(createCoreContextHost().createRoot(), {
-			storage: backend,
-			mode: 'readonly',
-		})
-		try {
-			await expect(runtime.ready).rejects.toThrow(expected)
-		} finally {
-			await runtime.ctx.effects.dispose()
-		}
-	})
-
-	it('loads existing state through a readonly backend and rejects mutation', async () => {
-		const backend = createDocumentStorage()
-		const persisted = SuperJSON.stringify({
-			version: 6,
-			autoStart: [ProviderNode],
-			forks: [],
-			providerDefaults: [],
-			dependencyOverrides: [],
-		})
-		await backend.put('state.json', persisted)
-		const runtime = new HostStateStore(createCoreContextHost().createRoot(), {
-			storage: backend,
-			mode: 'readonly',
-		})
-		try {
-			const runtimeState = runtime
-			await runtimeState.ready
-			expect(runtimeState.snapshot().autoStart).toEqual([ProviderNode])
-			const before = runtimeState.versionedSnapshot()
-			await expect(runtimeState.commitVersioned(before.revision, before.state)).rejects.toThrow(
-				/readonly mode/i,
-			)
-			expect(await backend.getText('state.json')).toBe(persisted)
-		} finally {
-			await runtime.ctx.effects.dispose()
-		}
-	})
-
-	it('keeps the startup state snapshot when a readonly file is absent', async () => {
-		const backend = createDocumentStorage()
-		const runtime = new HostStateStore(createCoreContextHost().createRoot(), {
-			storage: backend,
-			mode: 'readonly',
-			autoStart: [ProviderNode],
-		})
-		try {
-			const runtimeState = runtime
-			await runtimeState.ready
-			expect(runtimeState.snapshot().autoStart).toEqual([ProviderNode])
-			expect(await backend.stat('state.json')).toBeUndefined()
-		} finally {
-			await runtime.ctx.effects.dispose()
-		}
-	})
-
-	it.each([
-		['malformed', '{'],
-		[
-			'unsupported version',
-			SuperJSON.stringify({
-				version: 4,
-				autoStart: [],
-				forks: [],
-				providerDefaults: [],
-				dependencyOverrides: [],
-			}),
-		],
-	])('fails fast on %s readonly state without isolating or rewriting it', async (_case, text) => {
-		const backend = createDocumentStorage()
-		await backend.put('state.json', text)
-		const runtime = new HostStateStore(createCoreContextHost().createRoot(), {
-			storage: backend,
-			mode: 'readonly',
-		})
-		try {
-			await expect(runtime.ready).rejects.toThrow(/HostStateStore/)
-			expect(await backend.getText('state.json')).toBe(text)
-			const keys = [...backend.documents.keys()]
-			expect(keys).toEqual(['state.json'])
-		} finally {
-			await runtime.ctx.effects.dispose()
-		}
-	})
-
-	it.each([
-		['malformed JSON', '{', /state\.json:/i],
-		[
-			'wrong root type',
-			SuperJSON.stringify([]),
-			/state\.json: .*persisted state must be an object/i,
-		],
-		[
-			'unknown version',
-			SuperJSON.stringify({ version: 4 }),
-			/state\.json: .*unsupported persisted state version: 4/i,
-		],
-		[
-			'invalid field',
-			SuperJSON.stringify({
-				version: 6,
-				autoStart: {},
-				forks: [],
-				providerDefaults: [],
-				dependencyOverrides: [],
-			}),
-			/state\.json: .*autoStart must be an array/i,
-		],
+		['declared-only', [owner], 1500],
+		['declared-first', [owner], 9_000],
+		['saved-first', [other], 9_000],
 	] as const)(
-		'rejects %s in writable mode without writing any document',
-		async (_case, text, expected) => {
-			const backend = createDocumentStorage()
-			await backend.put('state.json', text)
-			const runtime = new HostStateStore(createCoreContextHost().createRoot(), { storage: backend })
+		'selects %s independently and preserves explicit saved empty arrays',
+		async (mode, expected, timeout) => {
+			const storage = createDocumentStorage()
+			await storage.put(
+				'state.json',
+				SuperJSON.stringify({ version: 7, autoStart: [other], forks: [], startTimeoutMs: 9_000 }),
+			)
+			const store = new HostStateStore(
+				createCoreContextHost().createRoot(),
+				{
+					autoStart: [owner],
+					forks: [fork],
+					mode: { autoStart: mode, forks: 'saved-first', startTimeoutMs: mode },
+				},
+				{ storage },
+			)
 			try {
-				await expect(runtime.ready).rejects.toThrow(expected)
-				await expect(runtime.ready).rejects.toThrow(
-					/Existing document unchanged; repair or restore it before restarting/,
-				)
-				expect(runtime.isReady).toBe(false)
-				const current = runtime.versionedSnapshot()
-				await expect(runtime.commitVersioned(current.revision, current.state)).rejects.toThrow(
-					/requires a successfully loaded state document/,
-				)
+				await store.ready
+				expect(store.snapshot().autoStart).toEqual(expected)
+				expect(store.snapshot().forks).toEqual([])
+				expect(store.executionSnapshot().startTimeoutMs).toBe(timeout)
+				await storage.put('state.json', SuperJSON.stringify({ version: 7, autoStart: [] }))
+				expect(store.snapshot().autoStart).toEqual(expected)
 			} finally {
-				await runtime.ctx.effects.dispose()
+				await store.ctx.effects.dispose()
 			}
-			expect(await backend.getText('state.json')).toBe(text)
-			expect([...backend.documents.keys()]).toEqual(['state.json'])
 		},
 	)
 
-	it('initializes an absent writable state document once', async () => {
-		const backend = createDocumentStorage()
-		const runtime = new HostStateStore(createCoreContextHost().createRoot(), { storage: backend })
+	it('lets pure saves edit shadowed input while actions refuse an ineffective target', async () => {
+		const store = new HostStateStore(createCoreContextHost().createRoot(), { autoStart: [owner] })
 		try {
-			await runtime.ready
-			expect(SuperJSON.parse((await backend.getText('state.json'))!)).toEqual({
-				version: 6,
-				autoStart: [],
-				forks: [],
-				providerDefaults: [],
-				dependencyOverrides: [],
+			await store.ready
+			expect(
+				store.prepareAction(
+					hostStatePatch({ type: 'set-auto-start', node: owner, autoStart: true }),
+				),
+			).toEqual({})
+			expect(() =>
+				store.prepareAction(
+					hostStatePatch({ type: 'set-auto-start', node: owner, autoStart: false }),
+				),
+			).toThrow(expect.objectContaining({ code: 'policy_shadowed' }))
+			await store.commitVersioned(0, { autoStart: [other] })
+			expect(store.configurationSnapshot()).toMatchObject({
+				managedInput: { autoStart: [other] },
+				effective: { autoStart: [owner] },
+				shadowedFields: ['autoStart'],
 			})
-			expect([...backend.documents.keys()]).toEqual(['state.json'])
 		} finally {
-			await runtime.ctx.effects.dispose()
+			await store.ctx.effects.dispose()
 		}
 	})
 
-	it('compare-and-commits coordinator snapshots without accepting a stale revision', async () => {
-		const host = new HostStateStore(createCoreContextHost().createRoot())
+	it('materializes only the changed effective column and preserves its other members', async () => {
+		const store = new HostStateStore(createCoreContextHost().createRoot(), {
+			autoStart: [owner],
+			forks: [fork],
+			mode: { autoStart: 'saved-first' },
+		})
 		try {
-			const runtimeState = host
-			await runtimeState.ready
-			const before = runtimeState.versionedSnapshot()
-			const committed = await runtimeState.commitVersioned(before.revision, {
-				...before.state,
-				autoStart: [ProviderNode],
-			})
-			expect(committed.revision).toBe(before.revision + 1)
-			await expect(
-				runtimeState.commitVersioned(before.revision, before.state),
-			).rejects.toMatchObject({ code: 'runtime_state_revision_conflict' })
-			expect(runtimeState.snapshot().autoStart).toEqual([ProviderNode])
-		} finally {
-			await host.ctx.effects.dispose()
-		}
-	})
-
-	it('reuses one immutable snapshot per revision and invalidates it on commit', async () => {
-		const host = new HostStateStore(createCoreContextHost().createRoot())
-		try {
-			const runtimeState = host
-			await runtimeState.ready
-			const before = runtimeState.versionedSnapshot()
-			expect(runtimeState.versionedSnapshot()).toBe(before)
-			expect(runtimeState.snapshot()).toBe(before.state)
-			expect(runtimeState.snapshot()).toBe(runtimeState.snapshot())
-
-			const committed = await runtimeState.commitVersioned(before.revision, {
-				...before.state,
-				autoStart: [ProviderNode],
-			})
-			expect(committed).not.toBe(before)
-			expect(committed.state).not.toBe(before.state)
-			expect(runtimeState.versionedSnapshot()).toBe(committed)
-			expect(runtimeState.snapshot()).toBe(committed.state)
-		} finally {
-			await host.ctx.effects.dispose()
-		}
-	})
-
-	it('keeps v6 structured addresses and requirement overrides stable', async () => {
-		const backend = createDocumentStorage()
-		const namespace = backend
-		const override = {
-			consumerAddress: ConsumerNode,
-			requirementAddress: Provider,
-			providerAddress: ProviderNode,
-		}
-		await namespace.put(
-			'state.json',
-			SuperJSON.stringify({
-				version: 6,
-				autoStart: [],
-				forks: [],
-				providerDefaults: [],
-				dependencyOverrides: [override],
-			}),
-		)
-
-		const host = new HostStateStore(createCoreContextHost().createRoot(), { storage: backend })
-		try {
-			const runtimeState = host
-			await runtimeState.ready
-			expect(runtimeState.snapshot()).toEqual({
-				autoStart: [],
-				forks: [],
-				providerDefaults: [],
-				dependencyOverrides: [override],
-			})
-		} finally {
-			await host.ctx.effects.dispose()
-		}
-	})
-
-	it.each([1, 2, 3, 4, 5])('rejects unsupported persisted v%s state', async (version) => {
-		const backend = createDocumentStorage()
-		await backend.put('state.json', SuperJSON.stringify({ version, autoStart: ['NameOnlyPlugin'] }))
-		const host = new HostStateStore(createCoreContextHost().createRoot(), { storage: backend })
-		try {
-			await expect(host.ready).rejects.toThrow(
-				new RegExp(`unsupported persisted state version: ${version}`, 'i'),
+			await store.ready
+			const candidate = store.prepareAction(
+				hostStatePatch({ type: 'set-auto-start', node: other, autoStart: true }),
 			)
+			expect(candidate).toEqual({
+				autoStart: [other, owner].sort((a, b) =>
+					a.definition.exportName.localeCompare(b.definition.exportName),
+				),
+			})
+			await store.commitVersioned(0, candidate)
+			expect(store.managedSnapshot().forks).toBeUndefined()
 		} finally {
-			await host.ctx.effects.dispose()
+			await store.ctx.effects.dispose()
 		}
 	})
 
-	it('rejects duplicate v6 node and requirement records', async () => {
-		const backend = createDocumentStorage()
-		await backend.put(
-			'state.json',
-			SuperJSON.stringify({
-				version: 6,
-				autoStart: [ProviderNode, ProviderNode],
-				forks: [],
-				providerDefaults: [],
-				dependencyOverrides: [],
-			}),
+	it('keeps readonly declarations without creating files and rejects writes before persistence', async () => {
+		const storage = createDocumentStorage()
+		const put = vi.spyOn(storage, 'put')
+		const store = new HostStateStore(
+			createCoreContextHost().createRoot(),
+			{ autoStart: [owner] },
+			{ storage, readOnly: true },
 		)
-		const host = new HostStateStore(createCoreContextHost().createRoot(), { storage: backend })
 		try {
-			await expect(host.ready).rejects.toThrow(/duplicates an earlier node/i)
+			await store.ready
+			expect(store.snapshot().autoStart).toEqual([owner])
+			await expect(store.commitVersioned(0, {})).rejects.toMatchObject({
+				code: 'mutation_rejected',
+			})
+			expect(put).not.toHaveBeenCalled()
 		} finally {
-			await host.ctx.effects.dispose()
+			await store.ctx.effects.dispose()
 		}
 	})
 
-	it('rejects invalid v6 fork ids', async () => {
-		const backend = createDocumentStorage()
-		await backend.put(
-			'state.json',
-			SuperJSON.stringify({
-				version: 6,
-				autoStart: [],
-				forks: [{ definition: Provider, variant: 'fork', forkId: 'tenant/acme' }],
-				providerDefaults: [],
-				dependencyOverrides: [],
-			}),
+	it.each([
+		{ version: 6 },
+		{ version: 7, unknown: true },
+		{ version: 7, autoStart: [owner, owner] },
+		{ version: 7, forks: [owner] },
+		{ version: 7, forks: [{ ...fork, forkId: 'bad/id' }] },
+		{ version: 7, startTimeoutMs: 2_147_483_648 },
+		{ version: 7, stopConcurrency: 0 },
+	])('rejects invalid persisted input without altering it: %j', async (input) => {
+		const storage = createDocumentStorage()
+		const text = SuperJSON.stringify(input)
+		await storage.put('state.json', text)
+		const store = new HostStateStore(
+			createCoreContextHost().createRoot(),
+			{ mode: { startTimeoutMs: 'declared-only' } },
+			{ storage },
 		)
-		const host = new HostStateStore(createCoreContextHost().createRoot(), { storage: backend })
 		try {
-			await expect(host.ready).rejects.toThrow(/fork id/i)
+			await expect(store.ready).rejects.toThrow('Cannot load state.json')
+			expect(storage.documents.get('state.json')).toBe(text)
+			expect(store.isReady).toBe(false)
 		} finally {
-			await host.ctx.effects.dispose()
+			await store.ctx.effects.dispose()
 		}
 	})
+
+	it('rejects mixed-mode graph references that omit their fork', async () => {
+		const storage = createDocumentStorage()
+		await storage.put(
+			'state.json',
+			SuperJSON.stringify({ version: 7, autoStart: [fork], forks: [fork] }),
+		)
+		const store = new HostStateStore(
+			createCoreContextHost().createRoot(),
+			{ mode: { forks: 'declared-only' } },
+			{ storage },
+		)
+		try {
+			await expect(store.ready).rejects.toThrow('absent from policy.forks')
+		} finally {
+			await store.ctx.effects.dispose()
+		}
+	})
+
+	it('does not publish an uncertain write and advances tokens only after confirmed changes', async () => {
+		const storage = createDocumentStorage()
+		const store = new HostStateStore(createCoreContextHost().createRoot(), {}, { storage })
+		try {
+			await store.ready
+			const before = store.versionedSnapshot()
+			const token = store.managedRevision()
+			storage.put = async () => {
+				throw new Error('unconfirmed')
+			}
+			await expect(store.commitVersioned(before.revision, { autoStart: [owner] })).rejects.toThrow(
+				'unconfirmed',
+			)
+			expect(store.versionedSnapshot()).toBe(before)
+			expect(store.managedRevision()).toBe(token)
+			storage.put = async () => {}
+			await store.commitVersioned(before.revision, { autoStart: [owner] })
+			expect(store.managedRevision()).not.toBe(token)
+			expect(() => store.assertManagedRevision(token)).toThrow(
+				expect.objectContaining({ code: 'revision_conflict' }),
+			)
+			await expect(store.commitVersioned(before.revision, {})).rejects.toMatchObject({
+				code: 'runtime_state_revision_conflict',
+			})
+		} finally {
+			await store.ctx.effects.dispose()
+		}
+	})
+
+	it.each([
+		{ mode: 'saved-first' },
+		{ mode: { typo: 'saved-first' } },
+		{ startConcurrency: 0 },
+		{ startTimeoutMs: Infinity },
+		{ autoStart: [owner, owner] },
+		{ stopConcurrency: undefined, extra: true },
+	])('rejects malformed author policy before resources: %j', (input) => {
+		expect(() => snapshotHostPolicy(input as never)).toThrow(/policy|duplicates/)
+	})
+})
+
+it('captures author autoStart without executing array accessors or dropping sparse entries', () => {
+	const getter = vi.fn(() => owner)
+	const values: PluginNodeAddress[] = []
+	Object.defineProperty(values, '0', { enumerable: true, get: getter })
+	expect(() => snapshotHostPolicy({ autoStart: values })).toThrow(/data properties/)
+	expect(getter).not.toHaveBeenCalled()
+	expect(() => snapshotHostPolicy({ autoStart: Array<PluginNodeAddress>(1) })).toThrow(
+		/dense array/,
+	)
 })

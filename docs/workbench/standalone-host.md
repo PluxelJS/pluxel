@@ -16,10 +16,8 @@ import { Viewer } from './viewer'
 export default defineHostApplication(() => ({
 	plugins: [Viewer],
 	services: [workbenchService()],
-	runtime: {
-		state: {
-			autoStart: [Viewer.nodeAddress()],
-		},
+	policy: {
+		autoStart: [Viewer.nodeAddress()],
 	},
 }))
 ```

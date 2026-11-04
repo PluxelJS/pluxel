@@ -16,7 +16,17 @@ export type {
 	HostForkState,
 	HostProviderDefaultState,
 	HostDependencyOverrideState,
+	HostPolicyOptions,
+	HostPolicyInput,
+	HostPolicyValues,
+	HostPolicyField,
+	HostPolicyModes,
+	HostExecutionPolicy,
+	HostExecutionPolicyField,
 } from './policy'
+export type { HostInputMode } from './input-mode'
+export type { HostPersistenceResult, HostPersistenceRetention } from './persistence'
+export type { HostConfigOptions, HostConfigRecordInput, ConfigInputPatch } from './config-records'
 export type { PluginSource } from './sources'
 
 export {
@@ -29,18 +39,20 @@ export {
 	ConfigMutationRejectedError,
 	type HostPluginConfig,
 	type HostConfigState,
+	type HostConfigMutation,
+	type HostConfigInputSnapshot,
 	type HostPluginConfigResult,
 	type HostPluginConfigResultOk,
 	type HostPluginConfigResultErr,
 } from './config'
-export type { HostDocumentStorage, HostStoreStorageOptions } from './document-storage'
 export type {
-	HostConfigStoreOptions,
-	HostConfigOverlay,
-	HostConfigDeclarationSource,
-	HostConfigSource,
-} from './config-store'
-export type { HostStateStoreOptions, HostStateConfigurationSnapshot } from './state-store'
+	HostDocumentStorage,
+	HostDocumentOptions,
+	HostDocumentFacilities,
+} from './document-storage'
+export type { HostConfigSource } from './config-store'
+export type { HostStateConfigurationSnapshot } from './state-store'
+export type { HostPolicy, HostPolicyResult } from './policy-management'
 
 export type {
 	HostPluginStatusSnapshot,

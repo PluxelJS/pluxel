@@ -1,13 +1,17 @@
 import type { CommandContext, CommandDescriptor } from '@pluxel/commands'
-import type { PluginTestTarget, RawPluginConfig } from '@pluxel/core/internal/test'
-import type { HostPluginConfigResult } from '@pluxel/host'
+import type { PluginTestTarget } from '@pluxel/core/internal/test'
+import type { HostConfigMutation, HostOperationOptions, HostPluginConfigResult } from '@pluxel/host'
 
 export interface ServiceConfigTestDriver<TTarget extends PluginTestTarget = PluginTestTarget> {
 	/**
-	 * Applies a shallow raw-config patch through the production persistence and running-generation
+	 * Applies an atomic set/remove change through the production persistence and running-generation
 	 * notification path. Fixture bootstrap config belongs on `host.start()` instead.
 	 */
-	patch(target: TTarget, patch: RawPluginConfig): Promise<HostPluginConfigResult>
+	patch(
+		target: TTarget,
+		patch: HostConfigMutation,
+		options?: HostOperationOptions,
+	): Promise<HostPluginConfigResult>
 }
 
 export interface ServiceHttpTestDriver {

@@ -139,7 +139,7 @@ export default async ({env,bindings}) => {
 			plugins: [] as [],
 			services: [original],
 			sources: [{ kind: 'directory' as const, path: 'selected', include: ['*.mjs'] }],
-			runtime: { state: { mode: 'memory' as const, autoStart: [] as [] } },
+			policy: { autoStart: [] as [], startTimeoutMs: 1500 },
 		}
 		const application = defineHostApplication(() => {
 			// Mutate after the factory result is received, while input resolution yields.
@@ -147,7 +147,7 @@ export default async ({env,bindings}) => {
 				queueMicrotask(() => {
 					declaration.services[0] = changed
 					declaration.sources[0]!.path = 'changed'
-					Object.assign(declaration.runtime.state, { mode: 'readonly' })
+					Object.assign(declaration.policy, { startTimeoutMs: 2000 })
 				}),
 			)
 			return declaration
@@ -155,7 +155,7 @@ export default async ({env,bindings}) => {
 		const resolved = await resolveHostApplication(application, startup)
 		expect(resolved.services?.[0]?.name).toBe('selected')
 		expect(resolved.sources?.[0]?.path).toBe('selected')
-		expect(resolved.runtime?.state?.mode).toBe('memory')
+		expect(resolved.policy?.startTimeoutMs).toBe(1500)
 	})
 
 	it('propagates factory rejection before service preparation', async () => {
@@ -175,18 +175,11 @@ export default async ({env,bindings}) => {
 		[(): undefined => undefined, 'must be an object'],
 		[() => ({ plugins: [] as const, configure() {} }), 'unsupported "configure"'],
 		[() => ({ plugins: [] as const, services: {} }), 'services must be an array'],
-		[() => ({ plugins: [] as const, config: {} }), 'unsupported "config"'],
 		[() => ({ plugins: [] as const, state: {} }), 'unsupported "state"'],
 		[() => ({ plugins: [] as const, configRecords: {} }), 'unsupported "configRecords"'],
 		[() => ({ plugins: [] as const, runtime: { storage: {} } }), 'unsupported "storage"'],
-		[
-			() => ({ plugins: [] as const, runtime: { state: { initial: {} } } }),
-			'unsupported "initial"',
-		],
-		[
-			() => ({ plugins: [] as const, runtime: { configRecords: { base: [] as const } } }),
-			'unsupported "base"',
-		],
+		[() => ({ plugins: [] as const, policy: { initial: {} } }), 'unsupported'],
+		[() => ({ plugins: [] as const, config: { base: [] as const } }), 'unsupported'],
 	])('rejects invalid JavaScript declarations at the boundary', async (application, message) => {
 		await expect(
 			resolveHostApplication(application as unknown as HostApplicationFactory, startup),

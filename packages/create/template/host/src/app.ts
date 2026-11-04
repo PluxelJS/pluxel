@@ -8,7 +8,7 @@ import { logtape, zenfs } from '@pluxel/core/config'
 import { pluginSource } from '@pluxel/host/sources'
 import { resolve } from 'node:path'
 import { product } from './product'
-import { exampleConfigRecords, examplePlugins, exampleHostState } from './runtime-state'
+import { exampleHostConfig, examplePlugins, exampleHostPolicy } from './policy'
 
 export { product }
 
@@ -32,14 +32,14 @@ export default defineHostApplication(async (startup) => {
 			product,
 			workbench: environment.workbench ?? true,
 		}),
+		config: exampleHostConfig(env.EXAMPLE_TODO_MAX_ITEMS),
+		policy: exampleHostPolicy(),
 		runtime: {
 			logtape: logtape(),
 			zenfs: zenfs({
 				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 				durableMounts: ['/'],
 			}),
-			configRecords: exampleConfigRecords(env.EXAMPLE_TODO_MAX_ITEMS),
-			state: exampleHostState(),
 		},
 	}
 })

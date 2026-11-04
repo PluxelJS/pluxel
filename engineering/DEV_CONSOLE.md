@@ -106,6 +106,6 @@ queued 取消不执行；running 取消保持 cancelling，直到真实代码 se
 
 ## 配置输入诊断
 
-`dev.config.inspect(target)` 投影 Host 的 mode/readonly/override/externalReload、原始 saved/declared、effective 和 sources；`dev.state.inspect()` 投影 mode/override/declared/overriddenFields/saved/effective/revision。诊断由现有 coordinator 查询当前 Host，不额外打开后端；普通 get/status 的契约不变。state 不观察外部文件，config 通过已订阅的文档接纳外部变化。
+`dev.config.get(target)` 与 `inspect(target)` 经过 coordinator 查询当前 Host，区分 mode/readonly、原始 managedInput、effectiveInput、schema 输出 config、sources/shadowedPaths 与 managedRevision。校验失败保留输入快照供修复。`dev.policy.get()` 提供八项独立 mode、稀疏保存输入、生效策略和执行预算待重建字段；不再提供重复的 state.inspect 入口。
 
-config reset 省略 keys 时显式恢复全部声明及已保存顶层字段；指定 `[]` 为无操作查询。reset 不绕过 readonly、env 和 declaration override 的受控路径。
+配置 mutation 使用 `{ set?, remove? }` 和可选 `expectedManagedRevision`；reset 省略 paths 删除全部保存输入，指定 `[]` 无操作，删除后按 mode 继承。声明覆盖不代表文档只读。策略和配置都返回 persistence 与运行采用事实，控制台只投影稳定地址，不绕过事务或另开后端。state 不观察外部文件，config 通过已订阅的文档接纳外部变化。公开用法见 [开发控制台](../docs/development/dev-console.md#编辑配置)，取值与事务由 [CONFIG](./CONFIG.md) 维护。
