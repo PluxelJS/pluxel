@@ -13,6 +13,8 @@
 
 研究与必要决策记录：
 
+- [插件分发与市场基础](plugin-distribution/README.md)：以 Drizzle ORM + SQLite 和 Cloudflare Workers/D1 为目标，设计在线运营配置、增量目录与按需 API，再细化发布标准、消费端市场插件和两类安装；独立于 legacy 分发实现，尚未实施。
+
 - [`TINYBASE_PLUGIN_STATE.md`](TINYBASE_PLUGIN_STATE.md)：已实施状态重构的必要决策与剩余验收边界；当前契约见 [TinyBase](../TINYBASE.md) 与 [Database](../DATABASE.md)，逐包结论及实际验证见[迁移记录](../TINYBASE_MIGRATION.md)。
 
 - [Worksplit API 精进决策](../../vendor/split-like-vscode/refactor/API_REFINEMENT_PROPOSAL.md)：2026-11-01 复核契约已实施，统一内容 hook 与资源 effect 并迁移全部已知消费者；当前边界见 [Frontend](../FRONTEND.md)，新验证及实际范围见[实施验收](../../vendor/split-like-vscode/refactor/API_REFINEMENT_VALIDATION.md)。
