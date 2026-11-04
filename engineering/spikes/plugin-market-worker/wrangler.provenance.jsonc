@@ -1,0 +1,8 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "plugin-market-provenance-probe",
+	"main": "probes/provenance-worker.ts",
+	"compatibility_date": "2026-11-03",
+	"compatibility_flags": ["nodejs_compat"],
+	"workers_dev": false,
+}

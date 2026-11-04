@@ -1,0 +1,33 @@
+{
+	"name": "@pluxel-internal/plugin-market",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "vp run compile",
+		"test": "vp run check-tests",
+		"typecheck": "vp run check-types",
+		"dev": "wrangler dev",
+		"db:generate": "drizzle-kit generate",
+		"db:migrate:local": "wrangler d1 migrations apply plugin-market --local"
+	},
+	"dependencies": {
+		"capnweb": "catalog:dev",
+		"drizzle-orm": "catalog:backend",
+		"modern-tar": "catalog:prod",
+		"semver": "catalog:dev",
+		"validate-npm-package-name": "catalog:prod"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:dev",
+		"@types/node": "catalog:types",
+		"@types/semver": "catalog:types",
+		"@types/validate-npm-package-name": "catalog:types",
+		"drizzle-kit": "catalog:backend",
+		"esbuild": "catalog:build",
+		"miniflare": "catalog:dev",
+		"typescript": "catalog:tooling",
+		"vite-plus": "catalog:build",
+		"vitest": "catalog:test",
+		"wrangler": "catalog:dev"
+	}
+}

@@ -59,7 +59,7 @@
 manifest 是静态 JSON，由标准构建从真实声明和制品生成，单独携带 `formatVersion`。
 格式版本只描述读取协议，Core peer 描述 API 兼容；两者独立校验。未知格式明确拒绝。
 
-首版应只包含以下已拥有生产者的事实；最终字段结构在[实施前验证](delivery-plan.md#实施前验证)中冻结：
+首版应只包含以下已拥有生产者的事实；最终字段结构在[分阶段验证](delivery-plan.md#分阶段验证)中冻结：
 
 | 事实                                    | 生产与校验                                                                     |
 | --------------------------------------- | ------------------------------------------------------------------------------ |
@@ -84,13 +84,46 @@ optional integration 只在条件满足时参与；不因为市场发现相关�
 
 ## 发布交付
 
-1. 构建并校验作者声明，生成 manifest 与实际制品。
-2. 打包真实 tarball；从 tarball 校验 exports、类型、manifest、资源、依赖范围与环境要求。
-3. 在搬离 workspace 的消费环境中验证；项目安装与 Host 安装消费同一份字节。
-4. 发布到作者选择的 registry；将完整来源坐标提交给索引生产端，或等待扫描发现。
+版本、依赖声明和生成事实分别有权威输入，标准发布流程把它们衔接起来：
 
-npm 发布与索引收录是两个结果。索引失败不撤销 npm 发布，也不能回报为已经上架。
+| 阶段             | 所有者与输出                                                                             |
+| ---------------- | ---------------------------------------------------------------------------------------- |
+| version          | 作者的发布工具确定包版本、依赖范围变更与发布计划；本仓库使用 Tegami                      |
+| build            | `pluxel build` 消费已确定的声明，生成 Plugin facts、manifest、类型与制品，并校验依赖角色 |
+| pack             | 原生包管理器形成真实 tarball，将 workspace/catalog 声明转换为消费者可用的依赖声明        |
+| verify           | 以 tarball 为对象检查发布契约，在搬离 workspace 的环境消费                               |
+| publish / notify | 按计划发布同一制品与 npm provenance，再通知市场实际已发布的版本                          |
+
+当前 build 已有依赖角色校验与生成 metadata 的边界，见[现有构建用法](../../../docs/development/plugin-package.md#依赖-metadata-如何生成)；本提案的新 manifest 仍待实现。
+本仓库的版本传播和发布重试由 [Tegami 发布流程](../../RELEASING.md)拥有；第三方插件可以使用自己的发布工具，不必采用本仓库与 Core 同步版本的政策。
+
+具体顺序为：
+
+1. 显式应用并审查版本计划及依赖变更，更新 lockfile；CI 从对应提交和锁定依赖开始。
+2. 执行标准 build，生成并校验作者声明、manifest 与实际制品；依赖任务由所属 workspace 的构建图编排。
+3. 原生打包真实 tarball；检查包内 exports、类型、manifest、资源、转换后的依赖和环境要求，并在搬离 workspace 的消费环境验证。
+4. 在支持的 CI 中按 npm 原生方式发布已验证的 tarball 及 provenance；若发布器重新打包，必须确认最终字节仍与验证对象一致，变化后重新验证。
+5. 仅对实际发布成功的包通知市场 registry、包名和精确版本，见 [CI 发布通知](index-production.md#ci-发布通知与-npm-provenance)。人工登记与扫描仍可发现其他发行。
+
+npm 发布、通知接收与索引收录分别报告；通知失败可单独重试，索引失败不撤销 npm 发布，也不能回报为已经上架。
+市场仍从 registry 获取实际包及 npm provenance。来源证明沿用 npm 契约，Plugin manifest 不增加仓库认证或公开程度字段。
 市场的评分、审核标记、封禁决定和认证凭据不进入作者 manifest。
+
+### 构建如何协同处理版本与依赖
+
+构建从 constructor、optional reference、可达 Part 和公开入口生成真实 Plugin 依赖事实，再核对作者维护的 `peerDependencies` 与 optional 标记。
+共享的 Core、服务和 provider 保持外部依赖；不能通过打入第二份实现使依赖检查通过。普通实现依赖、只用于构建的依赖和发布类型仍引用的依赖按实际用途声明，依据[依赖治理](../../GOVERNANCE.md#依赖与版本)。
+
+包版本与兼容范围来自版本计划、`package.json` 和所属 workspace/catalog。编译通过或当前安装了某个版本，都不能推导作者愿意承诺的最低兼容版本。
+build 自动生成确定的事实并报告声明冲突，不递增包版本、不猜 peer 范围、不隐式搬移作者的依赖字段；需要自动修正时使用独立、可审查的维护操作。
+manifest 的 Plugin 引用使用稳定公开地址，npm 兼容范围仍由发布后的 `package.json` 拥有，不再复制一套平行版本规则。
+
+`workspace:` / `catalog:` 在原生 pack/publish 阶段转换，沿用 [pnpm workspace](https://pnpm.io/workspaces#publishing-workspace-packages) 与 [catalog](https://pnpm.io/catalogs#publishing) 语义。例如目标包版本为 `1.2.3` 时，`workspace:^` 发布为 `^1.2.3`，`workspace:*` 发布为 `1.2.3`。
+发布校验以转换后的 tarball 为准，检查消费者依赖和类型引用不存在未解析的 workspace/catalog 或开发机路径；不能只检查源码 `package.json` 或 `dist/`。
+构建 lockfile 固定构建环境，发布依赖范围表达消费者兼容要求，安装端再拥有自己的求解与锁定结果。
+
+同批发布由发布工具编排 provider 与 consumer 的顺序及部分失败重试；只在本地存在的版本不算 registry 已可获取。
+市场和安装端保留缺失依赖的实际结果，不改用同名最新包，也不自动启用 optional provider。跨 registry 和共享模块的实际接纳继续由[安装能力](installation.md#插件依赖与普通-npm-依赖)负责。
 
 ## 依据与未决范围
 

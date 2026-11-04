@@ -17,7 +17,15 @@ import type {
 	PackageManagerSnapshot,
 	PackageMutationFailure,
 	PackageMutationResult,
+	PackageInstallPlan,
+	PackagePreparationResult,
+	PackageMarket,
+	MarketInstallRequest,
+	MarketPackageQuery,
+	MarketRelease,
+	MarketReleaseQuery,
 } from './contracts.ts'
+import { PackageMarketClient } from './market.ts'
 import type {
 	InstallOptions,
 	PackageManifest,
@@ -31,6 +39,8 @@ type StoreOptions = Readonly<{
 	ignoreScripts: boolean
 	allowBuilds: readonly string[]
 	minimumReleaseAgeMinutes: number
+	markets?: readonly PackageMarket[]
+	sourceUpdates?: 'live' | 'next-start'
 	/** Revokes publication; native installation still drains before close resolves. */
 	signal?: AbortSignal
 }>
@@ -62,6 +72,13 @@ type PublishedInstallation = Readonly<{
 	packages: readonly PublishedPackage[]
 }>
 
+type PreparedInstallation = Readonly<{
+	installation: PublishedInstallation
+	directory: string
+	dependenciesWithBuildScripts: readonly string[]
+}>
+type PendingInstallation = PreparedInstallation & Readonly<{ plan: PackageInstallPlan }>
+
 const MAX_MUTATION_INPUTS = 100
 const MAX_PACKAGE_SPEC_LENGTH = 512
 
@@ -76,6 +93,8 @@ export class ManagedPackageStore {
 	private dependenciesWithBuildScripts: readonly string[] = Object.freeze([])
 	private queue: Promise<void> = Promise.resolve()
 	private readonly options: StoreOptions
+	private readonly market: PackageMarketClient
+	private pending?: PendingInstallation
 
 	constructor(
 		private readonly engine: PnpmEngine,
@@ -84,6 +103,7 @@ export class ManagedPackageStore {
 		this.options = normalizeStoreOptions(options)
 		this.rootDir = resolve(this.options.rootDir)
 		this.entriesDir = resolve(this.rootDir, 'entries')
+		this.market = new PackageMarketClient(options.markets ?? [], options.signal)
 	}
 
 	initialize(): Promise<void> {
@@ -170,7 +190,212 @@ export class ManagedPackageStore {
 			packages: Object.freeze(packages.sort((left, right) => left.name.localeCompare(right.name))),
 			pendingRemovals: Object.freeze(pendingRemovals.sort()),
 			dependenciesWithBuildScripts: this.dependenciesWithBuildScripts,
+			markets: this.market.markets,
+			sourceUpdates: this.options.sourceUpdates ?? null,
+			ignoreScripts: this.options.ignoreScripts,
+			allowBuilds: this.options.allowBuilds,
 		})
+	}
+
+	marketPackages(marketId: string, query?: MarketPackageQuery) {
+		this.assertOpen()
+		return this.market.packages(marketId, query)
+	}
+
+	marketRelease(marketId: string, name: string, version: string) {
+		this.assertOpen()
+		return this.market.release(marketId, name, version)
+	}
+
+	marketReleases(marketId: string, name: string, query?: MarketReleaseQuery) {
+		this.assertOpen()
+		return this.market.releases(marketId, name, query)
+	}
+
+	prepareInstall(specs: readonly string[]): Promise<PackagePreparationResult> {
+		const inputs = normalizeMutationInputs(specs)
+		return this.serialize(() => this.prepare(inputs))
+	}
+
+	async prepareMarketInstall(request: MarketInstallRequest): Promise<PackagePreparationResult> {
+		this.assertOpen()
+		if (!request || typeof request !== 'object')
+			return {
+				ok: false,
+				failed: [failure('', 'INVALID_SPEC', new Error('Select a market package release'))],
+			}
+		const { marketId, name, version } = request
+		const release = await this.market.release(marketId, name, version)
+		if (release.ok === false)
+			return { ok: false, failed: [failure('', 'MARKET_FAILED', new Error(release.error.message))] }
+		return this.serialize(() =>
+			this.prepare(normalizeMutationInputs([`${name}@${version}`]), release.value),
+		)
+	}
+
+	/** Confirms the same private revision; no re-resolution, downloads or build scripts occur here. */
+	confirmInstall(planId: string): Promise<PackageMutationResult> {
+		return this.serialize(async () => {
+			const pending = this.pending
+			if (
+				!pending ||
+				pending.plan.id !== planId ||
+				pending.plan.baseRevision !== this.revision ||
+				pending.plan.expiresAt <= Date.now()
+			) {
+				if (pending?.plan.id === planId) await this.discardPending()
+				return mutationResult(
+					[],
+					[
+						failure(
+							'',
+							'INVALID_PLAN',
+							new Error('Installation preview expired or changed; prepare it again'),
+						),
+					],
+				)
+			}
+			this.pending = undefined
+			const names = pending.plan.requested
+			try {
+				for (const pkg of pending.installation.packages) {
+					if ((await installationBytes(pkg.packageRoot)) !== pkg.bytes)
+						throw new PublicMutationError(
+							`Prepared bytes changed for ${pkg.name}; prepare again`,
+							undefined,
+						)
+					if (
+						(await readFile(resolve(this.rootDir, pkg.target), 'utf8')) !==
+						this.innerEntry(pkg.name)
+					)
+						throw new PublicMutationError(
+							`Prepared entry changed for ${pkg.name}; prepare again`,
+							undefined,
+						)
+				}
+				await this.commitInstallation(pending)
+				return mutationResult(names, [])
+			} catch (error) {
+				if (error instanceof EntryPublicationError) {
+					const unpublished = new Set(error.unpublished)
+					return mutationResult(
+						names.filter((name) => !unpublished.has(name)),
+						error.unpublished.length > 0
+							? error.unpublished.map((name) => failure(name, 'INSTALL_FAILED', error))
+							: [failure('', 'INSTALL_FAILED', error)],
+					)
+				}
+				return mutationResult(
+					[],
+					names.map((name) => failure(name, 'INSTALL_FAILED', error)),
+				)
+			} finally {
+				if (this.installation !== pending.installation)
+					await rm(pending.directory, { recursive: true, force: true })
+			}
+		})
+	}
+
+	private async prepare(
+		normalized: NormalizedMutationInputs,
+		expected?: MarketRelease,
+	): Promise<PackagePreparationResult> {
+		if (normalized.tooLarge)
+			return { ok: false, failed: mutationBatchTooLarge(normalized.overflowInput).failed }
+		const failed = [...normalized.failed]
+		const requests = new Map<string, PackageRequest>()
+		for (const input of normalized.inputs) {
+			try {
+				const request = this.parseRequest(input)
+				if (requests.has(request.name) && requests.get(request.name)!.wanted !== request.wanted)
+					throw new Error(`Conflicting specs for package ${request.name}`)
+				requests.set(request.name, request)
+			} catch (error) {
+				failed.push(failure(input, 'INVALID_SPEC', error))
+			}
+		}
+		if (failed.length > 0) return { ok: false, failed }
+		await this.discardPending()
+		const next = cloneManifest(await this.readManifest())
+		for (const request of requests.values()) next.dependencies[request.name] = request.wanted
+		let prepared: PreparedInstallation | undefined
+		try {
+			prepared = await this.acquireInstallation(next, expected)
+			const lock = parseYaml(await readFile(resolve(prepared.directory, 'pnpm-lock.yaml'), 'utf8'))
+			const previous = await this.readSnapshot()
+			const packages: PackageInstallPlan['packages'][number][] = []
+			for (const pkg of prepared.installation.packages) {
+				const resolution = resolvedPackage(lock, pkg.name)
+				const packageJson = JSON.parse(
+					await readFile(resolve(pkg.packageRoot, 'package.json'), 'utf8'),
+				)
+				if (
+					!resolution ||
+					packageJson.name !== pkg.name ||
+					packageJson.version !== resolution.version
+				)
+					throw new PublicMutationError(
+						`Cannot verify the prepared release of ${pkg.name}`,
+						undefined,
+					)
+				if (
+					expected?.name === pkg.name &&
+					(expected.version !== resolution.version || expected.integrity !== resolution.integrity)
+				)
+					throw new PublicMutationError(
+						'The registry release differs from the selected market integrity; publication was rejected',
+						undefined,
+					)
+				const old = this.installation?.packages.find((item) => item.name === pkg.name)
+				packages.push(
+					Object.freeze({
+						name: pkg.name,
+						requested: pkg.requested,
+						...resolution,
+						previousVersion:
+							previous.packages.find((item) => item.name === pkg.name)?.installedVersion ?? null,
+						changed: !old || old.fingerprint !== pkg.fingerprint || old.bytes !== pkg.bytes,
+					}),
+				)
+			}
+			const plan: PackageInstallPlan = Object.freeze({
+				id: crypto.randomUUID(),
+				baseRevision: this.revision,
+				expiresAt: Date.now() + 600_000,
+				requested: Object.freeze([...requests.keys()]),
+				packages: Object.freeze(packages),
+				sourceUpdates: this.options.sourceUpdates ?? null,
+				dependenciesWithBuildScripts: prepared.dependenciesWithBuildScripts,
+			})
+			// The selected exact versions become the next managed selection. Original selectors remain in the preview.
+			const installation: PublishedInstallation = Object.freeze({
+				...prepared.installation,
+				packages: Object.freeze(
+					prepared.installation.packages.map((pkg) =>
+						Object.freeze({
+							...pkg,
+							requested: packages.find((item) => item.name === pkg.name)!.version,
+						}),
+					),
+				),
+			})
+			this.pending = { ...prepared, installation, plan }
+			return { ok: true, plan }
+		} catch (error) {
+			if (prepared) await rm(prepared.directory, { recursive: true, force: true })
+			return {
+				ok: false,
+				failed: [...requests.values()].map((request) =>
+					failure(request.input, 'INSTALL_FAILED', error),
+				),
+			}
+		}
+	}
+
+	private async discardPending(): Promise<void> {
+		const pending = this.pending
+		this.pending = undefined
+		if (pending) await rm(pending.directory, { recursive: true, force: true })
 	}
 
 	install(specs: readonly string[]): Promise<PackageMutationResult> {
@@ -307,7 +532,10 @@ export class ManagedPackageStore {
 	/** Revokes queued work and publication, then waits for admitted native operations. */
 	close(): Promise<void> {
 		this.closed = true
-		return (this.closing ??= this.queue.then(() => this.releaseWriter()))
+		this.market.close()
+		return (this.closing ??= this.queue
+			.then(() => this.discardPending())
+			.finally(() => this.releaseWriter()))
 	}
 
 	private assertOpen(): void {
@@ -319,9 +547,22 @@ export class ManagedPackageStore {
 		next: ManagedManifest,
 		withdrawn: readonly string[] = [],
 	): Promise<void> {
+		await this.discardPending()
+		const prepared = await this.acquireInstallation(next)
+		try {
+			await this.commitInstallation(prepared, withdrawn)
+		} finally {
+			if (this.installation !== prepared.installation)
+				await rm(prepared.directory, { recursive: true, force: true })
+		}
+	}
+
+	private async acquireInstallation(
+		next: ManagedManifest,
+		expected?: MarketRelease,
+	): Promise<PreparedInstallation> {
 		if (!this.writer) throw new Error('Package store must be initialized before mutation')
 		const directory = resolve(this.rootDir, 'revisions', crypto.randomUUID())
-		let published = false
 		try {
 			await mkdir(directory, { recursive: true })
 			await writeFile(resolve(directory, 'package.json'), JSON.stringify(next) + '\n')
@@ -332,8 +573,18 @@ export class ManagedPackageStore {
 				await writeFile(resolve(directory, 'pnpm-lock.yaml'), lock)
 			}
 			let result: Awaited<ReturnType<PnpmEngine['install']>>
+			const options = this.installOptions(next, directory)
+			if (expected) {
+				const scope = expected.name.startsWith('@') ? expected.name.split('/')[0]! : undefined
+				const registry = (scope && options.registries?.[scope]) || options.registries?.default
+				if (registry?.replace(/\/$/, '') !== expected.registry)
+					throw new PublicMutationError(
+						'Market installation requires the selected package to use the npm registry in pnpm configuration',
+						undefined,
+					)
+			}
 			try {
-				result = await this.engine.install(this.installOptions(next, directory))
+				result = await this.engine.install(options)
 			} catch (cause) {
 				throw new PublicMutationError(
 					'pnpm could not prepare the managed dependency graph; published installations remain available',
@@ -342,28 +593,37 @@ export class ManagedPackageStore {
 			}
 			this.assertOpen()
 			const packages = await this.prepareInstallation(next, directory)
-			const previous = this.installation?.packages ?? []
 			const installation: PublishedInstallation = Object.freeze({
 				version: 1,
 				directory: relative(this.rootDir, directory),
 				packages,
 			})
-			// The private installation is complete. Persist its authority before individually atomic wrappers.
-			await atomicWrite(
-				resolve(this.rootDir, 'published-installation.json'),
-				JSON.stringify(installation) + '\n',
-				() => this.assertOpen(),
-			)
-			this.installation = installation
-			this.dependenciesWithBuildScripts = Object.freeze(
-				[...(result.depsRequiringBuild ?? [])].sort(),
-			)
-			published = true
-			this.revision += 1
-			await this.publishInstallationEntries([...withdrawn, ...previous.map((pkg) => pkg.name)])
-		} finally {
-			if (!published) await rm(directory, { recursive: true, force: true })
+			return Object.freeze({
+				installation,
+				directory,
+				dependenciesWithBuildScripts: Object.freeze([...(result.depsRequiringBuild ?? [])].sort()),
+			})
+		} catch (error) {
+			await rm(directory, { recursive: true, force: true })
+			throw error
 		}
+	}
+
+	private async commitInstallation(
+		prepared: PreparedInstallation,
+		withdrawn: readonly string[] = [],
+	): Promise<void> {
+		const previous = this.installation?.packages ?? []
+		// Persist the complete selection before individually atomic source wrappers.
+		await atomicWrite(
+			resolve(this.rootDir, 'published-installation.json'),
+			JSON.stringify(prepared.installation) + '\n',
+			() => this.assertOpen(),
+		)
+		this.installation = prepared.installation
+		this.dependenciesWithBuildScripts = prepared.dependenciesWithBuildScripts
+		this.revision += 1
+		await this.publishInstallationEntries([...withdrawn, ...previous.map((pkg) => pkg.name)])
 	}
 
 	private async publishInstallationEntries(previousNames: readonly string[]): Promise<void> {
@@ -875,6 +1135,26 @@ function readErrorCode(error: unknown): string | undefined {
 	return error && typeof error === 'object' && 'code' in error
 		? String((error as { code?: unknown }).code)
 		: undefined
+}
+
+/** Only registry SRI releases can become reviewable plans. Native pnpm owns acquisition and verification. */
+function resolvedPackage(
+	lock: unknown,
+	name: string,
+): { version: string; integrity: string } | undefined {
+	if (!lock || typeof lock !== 'object') return undefined
+	const value = lock as {
+		importers?: Record<string, { dependencies?: Record<string, { version?: unknown }> }>
+		packages?: Record<string, { resolution?: { integrity?: unknown } }>
+	}
+	const reference = value.importers?.['.']?.dependencies?.[name]?.version
+	if (typeof reference !== 'string') return undefined
+	const version = reference.split('(')[0]!
+	if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) return undefined
+	const integrity = value.packages?.[`${name}@${version}`]?.resolution?.integrity
+	if (typeof integrity !== 'string' || !/^sha512-[A-Za-z0-9+/]{86}==$/.test(integrity))
+		return undefined
+	return { version, integrity }
 }
 
 /** pnpm v9 lock snapshots include resolved peer contexts and optional dependency edges. */

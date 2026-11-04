@@ -1,0 +1,16 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "pluxel-plugin-market",
+	"main": "src/worker.ts",
+	"compatibility_date": "2026-11-03",
+	"workers_dev": false,
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "plugin-market",
+			"database_id": "00000000-0000-0000-0000-000000000001",
+			"migrations_dir": "migrations",
+		},
+	],
+	"triggers": { "crons": ["*/5 * * * *"] },
+}

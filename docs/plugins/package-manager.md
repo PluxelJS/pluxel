@@ -1,6 +1,6 @@
 ---
-title: 插件包管理器
-description: 为 Native 与 Vite 应用管理和发布 pnpm 插件包。
+title: 插件市场与包管理器
+description: 可选连接插件市场，或直接通过 pnpm 准备和安装插件包。
 ---
 
 > `@pluxel/plugin-package-manager` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
@@ -8,6 +8,8 @@ description: 为 Native 与 Vite 应用管理和发布 pnpm 插件包。
 需要在受控应用中安装 npm 插件时使用本页；它目前是仓库内部预览。已有应用的固定依赖直接写进应用清单，Git 源码协作使用 [源码开发](../development/tooling.md)，部署格式见 [发行物](../development/distribution.md)。
 
 包管理器下载 npm 包并发布 `.mjs` 入口。Native 在下次新进程启动时发现；Vite 在当前进程观察更新。安装只增加可用插件，是否启动仍由应用的运行策略决定。
+
+市场浏览与直接安装都属于同一个 `PackageManagerPlugin`。默认没有市场连接，仍可直接输入 npm package spec 安装；配置市场后增加搜索和发行选择，不改变原生 pnpm 的 registry、认证或构建策略。
 
 ## 装配宿主
 
@@ -110,12 +112,59 @@ production host。
 | `ignoreScripts`            | `true`                    | 默认禁止 dependency scripts                        |
 | `allowBuilds`              | `[]`                      | 允许执行 build script 的精确 package names         |
 | `minimumReleaseAgeMinutes` | `1440`                    | 拒绝发布时间不足一天的版本                         |
+| `markets`                  | `[]`                      | 可选的市场连接 `{ id, url }`                       |
 
 只有同时设置 `ignoreScripts: false` 与非空、精确的 `allowBuilds` 时才允许 native/build scripts。Registry、auth 和 proxy 读取 pnpm config，但不会进入 snapshot、RPC payload 或日志。
 
+## 可选市场
+
+在该 Plugin 的 config 中加入连接即可；`url` 是服务的 base URL，不包含 `/v1`：
+
+```json
+{
+	"markets": [{ "id": "community", "url": "https://plugins.example.com" }]
+}
+```
+
+每个连接有唯一 ID；可使用 HTTP(S)，但 URL 不接受凭据、query 或 fragment。地址由部署配置提供，页面只提交连接 ID。
+连接在 Plugin 启动时读取，修改后重新启动 Package Manager 以采用新连接。
+未配置时页面只提供直接安装和已安装包管理。连接失败显示该市场的错误，直接安装仍可使用。
+
+初版市场使用公共 npm registry，支持搜索、分页和精确发行读取。市场安装由后端重新读取所选发行，再使用原生 pnpm 下载并核对版本与 SHA-512 integrity；不会执行市场返回的 tarball URL。pnpm 的包 scope registry 必须与发行声明一致，不会为了安装覆盖本机 registry/auth 配置。
+市场摘要的 `latest` 保留 npm 实际 tag 指向，尚未收录的版本会明确读取失败，不改成已收录的最高版本。页面另列已收录发行，用户可明确选择旧版；版本页的顺序不表示 semver 新旧。
+仓库链接仅展示市场的已验证 provenance 事实；未验证 package.json 的 repository 不作为来源依据。
+自建服务的启动、管理与当前 provenance 限制见 [Worker 项目](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md)。
+
+## 准备后确认安装
+
+Workbench 的直接输入与市场选择共用两步流程：
+
+1. **准备**：pnpm 解析版本并下载依赖，在私有 revision 中生成候选；当前公开入口保持不变。预览显示最终精确版本、摘要和发生变化的受管包。
+2. **确认**：校验预览仍有效、安装选择没有变化、准备文件字节未变，然后发布同一批文件。确认不再次解析 tag、下载或执行构建脚本。
+
+准备会使用磁盘和网络；部署方放开构建脚本时，准备阶段就会执行获准脚本。预览有效期 10 分钟，同一 Plugin 同时只保留一个候选；重新准备、其他安装/卸载提交或 Plugin 停止后，旧预览需重新生成。关闭页面不等于卸载已发布文件。
+
+通过注入的 `PackageManagerPlugin` 也可执行相同流程：
+
+```ts no-twoslash
+const prepared = await packages.prepareInstall(['@acme/example-plugin@^2.0.0'])
+if (!prepared.ok) {
+	console.error(prepared.failed)
+} else {
+	console.log(prepared.plan.packages) // 交给本应用的确认界面
+	// 用户确认后，使用同一 plan.id；不能重新 prepare 代替确认。
+	const installed = await packages.confirmInstall(prepared.plan.id)
+	if (!installed.ok) console.error(installed.failed)
+}
+```
+
+预览包含完整受管包选择；升级一个共享依赖可能使其他包也发生变化。首版尚未逐一列出 Host 内受影响的 Plugin/fork，确认前应评估这些包的所有消费者。
+确认后的选择固定为预览中的精确版本。Native 显示下次新进程启动发现，Vite 显示交由当前来源观察；两者都不声称 Plugin 已启动。
+准备流程要求 registry 提供 SHA-512 integrity；仅有旧 SHA-1 摘要的包仍可通过原有 `install()` 使用 pnpm 原生安装，但不支持该预览流程。
+
 ## Commands 与 Workbench Direct View
 
-Plugin running 后发布两个 runtime command：
+Plugin running 后发布 `package.prepare`、`package.confirm`、`package.install` 与 `package.remove`。交互式安装使用 prepare/confirm；已经明确授权安装的程序调用可以使用原有一步 install：
 
 ```ts no-twoslash
 import { Commands } from '@pluxel/services/commands'
@@ -133,9 +182,10 @@ if (removed.isErr()) throw new Error(removed.error.message)
 console.log(removed.value)
 ```
 
-- `package.install` 安装插件包，`package.remove` 删除插件包；
+- `package.prepare({ specs })` 返回准备回执，`package.confirm({ planId })` 发布所选候选；
+- `package.install` 直接安装插件包，`package.remove` 删除插件包；
 - 每次接受 1–100 个 spec，成功执行返回 `Result.ok({ ok, succeeded, failed })`；
-- 部分成功和每个包的失败仍是提交回执，failure code 是 `INVALID_SPEC`、`INSTALL_FAILED` 或 `REMOVE_FAILED`；
+- 部分成功和每个包的失败仍是提交回执；输入、安装、卸载、失效预览与市场读取分别使用 `INVALID_SPEC`、`INSTALL_FAILED`、`REMOVE_FAILED`、`INVALID_PLAN`、`MARKET_FAILED`；
 - 输入校验或命令执行故障返回 `Result.err(CommandFailure)`。
 
 初始化严格核对发布记录、不可变安装字节和既存 entry；缺失、损坏或旧布局明确失败，需离线修复/转换，不在运行时自动改写合同。有效 entry 不因重启而重发。
@@ -148,17 +198,8 @@ Host 不应继承用于构建调度的 `PNPM_CONFIG_WORKSPACE_DIR`（以及 pnpm
 
 Workbench enabled 时，Plugin 发布固定的 `PackageManagerWorkbench.manager` Direct View，placement 是 plugin-relative `/packages`。
 每次打开都会创建 fresh `PackageManagerApi` target；零 props renderer 通过 descriptor-bound scope 声明 snapshot query 与
-install/remove mutation，Framework 自动 detach 返回 DTO、释放 transport ownership，并刷新写入后的 snapshot：
-
-```ts no-twoslash
-import type { RpcTarget } from 'capnweb'
-
-interface PackageManagerApi extends RpcTarget {
-	snapshotDto(): Promise<PackageManagerSnapshot>
-	installDto(specs: readonly string[]): Promise<PackageMutationResult>
-	removeDto(names: readonly string[]): Promise<PackageMutationResult>
-}
-```
+prepare/confirm/remove mutation 与市场 query，Framework 自动 detach 返回 DTO、释放 transport ownership，并刷新写入后的 snapshot。
+完整类型从 `@pluxel/plugin-package-manager/workbench` 的 `PackageManagerApi` 获取；页面与无界面的 Plugin 方法消费同一 store。
 
 这些调用与 layout、Management 共用当前 Workbench 的 Cap’n Web over WebSocket Runtime Session，不经过 command registry 或业务 HTTP。
 Snapshot 在同一串行队列中读取已结算状态，包含 revision、engine、managed root、entries directory、packages、pendingRemovals 和检测到的 build-script dependencies。pendingRemovals 从实际残留入口推导，表示已离开安装选择但尚未完成撤回的包，不表示 Plugin 运行状态；Workbench 保留这些包的重试撤回操作。Workbench 路由由

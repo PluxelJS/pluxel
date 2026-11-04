@@ -1,0 +1,8 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"strictNullChecks": true,
+		"types": ["@cloudflare/workers-types", "node"]
+	},
+	"include": ["*.ts", "src/**/*.ts", "tests/**/*.ts", "examples/**/*.ts"]
+}

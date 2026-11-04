@@ -1,6 +1,7 @@
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
+import { createHash } from 'node:crypto'
 import type { InstallOptions, InstallResult, ParsedBareSpecifier } from '@pnpm/napi'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PnpmEngine } from '../src/pnpm-engine.ts'
@@ -9,6 +10,7 @@ import { ManagedPackageStore } from '../src/store.ts'
 const roots: string[] = []
 
 afterEach(async () => {
+	vi.restoreAllMocks()
 	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
@@ -51,7 +53,16 @@ function createEngine() {
 			JSON.stringify({
 				lockfileVersion: '9.0',
 				importers: { '.': { dependencies } },
-				packages: Object.fromEntries(keys.map((key) => [key, { resolution: { integrity: key } }])),
+				packages: Object.fromEntries(
+					keys.map((key) => [
+						key,
+						{
+							resolution: {
+								integrity: `sha512-${createHash('sha512').update(key).digest('base64')}`,
+							},
+						},
+					]),
+				),
 				snapshots: Object.fromEntries(keys.map((key) => [key, {}])),
 			}),
 		)
@@ -97,6 +108,251 @@ function createEngine() {
 }
 
 describe('ManagedPackageStore', () => {
+	it('prepares a fixed private installation and confirms its same bytes without repeating acquisition', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine, install } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+			sourceUpdates: 'next-start',
+		})
+		await store.initialize()
+		try {
+			const result = await store.prepareInstall(['alpha@^1.2.0'])
+			expect(result.ok).toBe(true)
+			if (!result.ok) throw new Error('Expected prepared installation')
+			expect(result.plan).toMatchObject({
+				baseRevision: 0,
+				sourceUpdates: 'next-start',
+				requested: ['alpha'],
+				packages: [{ name: 'alpha', version: '1.2.0', previousVersion: null, changed: true }],
+			})
+			expect(result.plan.packages[0]!.integrity).toMatch(/^sha512-/)
+			expect(await readdir(store.entriesDir)).toEqual([])
+			expect(await store.snapshot()).toMatchObject({ revision: 0, packages: [], markets: [] })
+			expect(await store.confirmInstall(result.plan.id)).toEqual({
+				ok: true,
+				succeeded: ['alpha'],
+				failed: [],
+			})
+			expect(install).toHaveBeenCalledTimes(1)
+			expect(await store.snapshot()).toMatchObject({
+				revision: 1,
+				packages: [
+					{
+						name: 'alpha',
+						requested: '1.2.0',
+						installedVersion: '1.2.0',
+						entryFile: expect.any(String),
+					},
+				],
+			})
+			expect(await store.confirmInstall(result.plan.id)).toMatchObject({
+				ok: false,
+				failed: [{ code: 'INVALID_PLAN' }],
+			})
+		} finally {
+			await store.close()
+		}
+	})
+
+	it('rejects an entire invalid preview before acquisition and replaces only successfully parsed candidates', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine, install } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+		})
+		await store.initialize()
+		try {
+			expect(
+				await store.prepareInstall(['alpha@1.0.0', 'https://invalid/package.tgz']),
+			).toMatchObject({ ok: false, failed: [{ code: 'INVALID_SPEC' }] })
+			expect(install).not.toHaveBeenCalled()
+			const first = await store.prepareInstall(['alpha@1.0.0'])
+			const second = await store.prepareInstall(['beta@2.0.0'])
+			if (!first.ok || !second.ok) throw new Error('Expected prepared installations')
+			expect(await readdir(resolve(rootDir, 'revisions'))).toHaveLength(1)
+			expect(await store.confirmInstall(first.plan.id)).toMatchObject({
+				ok: false,
+				failed: [{ code: 'INVALID_PLAN' }],
+			})
+			expect(await store.confirmInstall(second.plan.id)).toMatchObject({
+				ok: true,
+				succeeded: ['beta'],
+			})
+		} finally {
+			await store.close()
+		}
+	})
+
+	it('invalidates a preview after another mutation and after expiry without publishing it', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+		})
+		await store.initialize()
+		try {
+			const prepared = await store.prepareInstall(['alpha@1.0.0'])
+			if (!prepared.ok) throw new Error('Expected prepared installation')
+			await store.install(['beta@1.0.0'])
+			expect(await store.confirmInstall(prepared.plan.id)).toMatchObject({
+				ok: false,
+				failed: [{ code: 'INVALID_PLAN' }],
+			})
+			const expired = await store.prepareInstall(['alpha@1.0.0'])
+			if (!expired.ok) throw new Error('Expected prepared installation')
+			vi.spyOn(Date, 'now').mockReturnValue(expired.plan.expiresAt)
+			expect(await store.confirmInstall(expired.plan.id)).toMatchObject({
+				ok: false,
+				failed: [{ code: 'INVALID_PLAN' }],
+			})
+			const snapshot = await store.snapshot()
+			expect(snapshot.packages.map(({ name }) => name)).toEqual(['beta'])
+		} finally {
+			await store.close()
+		}
+	})
+
+	it('rejects modified prepared bytes and removes an unpublished revision on close', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+		})
+		await store.initialize()
+		const prepared = await store.prepareInstall(['alpha@1.0.0'])
+		if (!prepared.ok) throw new Error('Expected prepared installation')
+		await writeFile(resolve(rootDir, 'slots/alpha-1.0.0/node_modules/alpha/injected.js'), 'changed')
+		expect(await store.confirmInstall(prepared.plan.id)).toMatchObject({
+			ok: false,
+			succeeded: [],
+			failed: [{ code: 'INSTALL_FAILED' }],
+		})
+		expect(await readdir(store.entriesDir)).toEqual([])
+		expect(await readdir(resolve(rootDir, 'revisions'))).toEqual([])
+		await store.prepareInstall(['beta@1.0.0'])
+		await store.close()
+		expect(await readdir(resolve(rootDir, 'revisions'))).toEqual([])
+	})
+
+	it('compares the selected market integrity with native acquisition and keeps direct installation independent', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine, install } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+			markets: [{ id: 'community', url: 'https://market.example' }],
+		})
+		await store.initialize()
+		const fetch = vi.spyOn(globalThis, 'fetch')
+		const release = {
+			name: 'alpha',
+			version: '1.0.0',
+			registry: 'https://registry.npmjs.org',
+			integrity: `sha512-${createHash('sha512').update('wrong').digest('base64')}`,
+			checkedAt: 1,
+			provenance: { status: 'missing' },
+			peerDependencies: {},
+			pluginPackages: {},
+			tarball: 'https://attacker.invalid/code.tgz',
+		}
+		try {
+			fetch.mockResolvedValueOnce(Response.json(release))
+			expect(
+				await store.prepareMarketInstall({
+					marketId: 'community',
+					name: 'alpha',
+					version: '1.0.0',
+				}),
+			).toMatchObject({
+				ok: false,
+				failed: [{ code: 'INSTALL_FAILED', message: expect.stringContaining('integrity') }],
+			})
+			expect(await readdir(store.entriesDir)).toEqual([])
+			expect(install).toHaveBeenCalledTimes(1)
+			fetch.mockRejectedValueOnce(new Error('offline'))
+			expect(
+				await store.prepareMarketInstall({
+					marketId: 'community',
+					name: 'alpha',
+					version: '1.0.0',
+				}),
+			).toMatchObject({ ok: false, failed: [{ code: 'MARKET_FAILED' }] })
+			const direct = await store.prepareInstall(['alpha@1.0.0'])
+			expect(direct.ok).toBe(true)
+			expect(fetch).toHaveBeenCalledTimes(2)
+			if (!direct.ok) throw new Error('Expected direct preparation')
+			expect(await store.confirmInstall(direct.plan.id)).toMatchObject({ ok: true })
+			fetch.mockResolvedValueOnce(
+				Response.json({
+					...release,
+					integrity: `sha512-${createHash('sha512').update('alpha@1.0.0').digest('base64')}`,
+				}),
+			)
+			const selected = await store.prepareMarketInstall({
+				marketId: 'community',
+				name: 'alpha',
+				version: '1.0.0',
+			})
+			expect(selected.ok).toBe(true)
+			if (selected.ok === false) throw new Error(selected.failed[0]?.message)
+			expect(await store.confirmInstall(selected.plan.id)).toMatchObject({ ok: true })
+		} finally {
+			await store.close()
+		}
+	})
+
+	it('retains committed selection and partial source publication when confirmation cannot publish every wrapper', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+		})
+		await store.initialize()
+		try {
+			const prepared = await store.prepareInstall(['alpha@1.0.0', 'beta@1.0.0'])
+			if (prepared.ok === false) throw new Error(prepared.failed[0]?.message)
+			await mkdir(resolve(store.entriesDir, Buffer.from('beta').toString('base64url') + '.mjs'))
+			expect(await store.confirmInstall(prepared.plan.id)).toMatchObject({
+				ok: false,
+				succeeded: ['alpha'],
+				failed: [{ input: 'beta', code: 'INSTALL_FAILED' }],
+			})
+			const snapshot = await store.snapshot()
+			expect(snapshot).toMatchObject({
+				revision: 1,
+				packages: [
+					{ name: 'alpha', entryFile: expect.any(String) },
+					{ name: 'beta', entryFile: null },
+				],
+			})
+			expect(await readdir(resolve(rootDir, 'revisions'))).toHaveLength(1)
+			expect(await store.confirmInstall(prepared.plan.id)).toMatchObject({
+				ok: false,
+				failed: [{ code: 'INVALID_PLAN' }],
+			})
+		} finally {
+			await store.close()
+		}
+	})
+
 	it('reports individually published entries when a later wrapper fails', async () => {
 		const rootDir = await fixtureRoot()
 		const { engine } = createEngine()

@@ -13,8 +13,10 @@ it('materializes successive in-memory manifests and preserves publication on nat
 	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-native-materialize-'))
 	const name = 'pluxel-native-contract-fixture'
 	const archives = new Map<string, Buffer>()
+	let requests = 0
 	let store: ManagedPackageStore | undefined
 	const registry = createServer((request, response) => {
+		requests += 1
 		const path = request.url?.split('?')[0] ?? ''
 		const archiveVersion = /^\/archive\/(.+)\.tgz$/u.exec(path)?.[1]
 		if (archiveVersion && archives.has(archiveVersion)) {
@@ -40,6 +42,7 @@ it('materializes successive in-memory manifests and preserves publication on nat
 							version,
 							dist: {
 								tarball: `http://${request.headers.host}/archive/${version}.tgz`,
+								integrity: `sha512-${createHash('sha512').update(archive).digest('base64')}`,
 								shasum: createHash('sha1').update(archive).digest('hex'),
 							},
 						},
@@ -91,7 +94,18 @@ it('materializes successive in-memory manifests and preserves publication on nat
 		expect(first.packages[0]).toMatchObject({ installedVersion: '1.0.0' })
 		const entry = resolve(first.entriesDir, first.packages[0]!.entryFile!)
 		const firstPublication = await readFile(entry, 'utf8')
-		expect(await store.install([`${name}@2.0.0`])).toMatchObject({ ok: true })
+		const prepared = await store.prepareInstall([`${name}@2.0.0`])
+		expect(prepared).toMatchObject({
+			ok: true,
+			plan: { packages: [{ name, version: '2.0.0', previousVersion: '1.0.0', changed: true }] },
+		})
+		if (prepared.ok === false) throw new Error(prepared.failed[0]?.message)
+		expect(await readFile(entry, 'utf8')).toBe(firstPublication)
+		const beforeConfirmation = await store.snapshot()
+		expect(beforeConfirmation.packages[0]?.installedVersion).toBe('1.0.0')
+		const preparedRequests = requests
+		expect(await store.confirmInstall(prepared.plan.id)).toMatchObject({ ok: true })
+		expect(requests).toBe(preparedRequests)
 		const second = await store.snapshot()
 		expect(second.packages[0]).toMatchObject({ installedVersion: '2.0.0' })
 		const manifest = await readFile(resolve(rootDir, 'published-installation.json'), 'utf8')

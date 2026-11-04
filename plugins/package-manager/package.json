@@ -57,6 +57,7 @@
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
 		"capnweb": "catalog:prod",
+		"jsdom": "catalog:dev",
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
 		"tsx": "catalog:dev",

@@ -1,0 +1,7 @@
+packages:
+  - .
+
+# Standalone feasibility experiment; do not change the framework dependency graph.
+allowBuilds:
+  esbuild: true
+  workerd: true

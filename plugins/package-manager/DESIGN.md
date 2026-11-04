@@ -10,6 +10,12 @@ Plugin 拥有 pnpm acquisition、配置、安装记录、单写者 lock、comman
 
 ## 不可变安装与发布
 
+市场和直接安装由同一个 Plugin 拥有。`markets: []` 默认不进行目录请求；market client 只访问部署方配置的 base URL，页面只能提交连接 ID。公共 HTTP 的读取有 timeout、响应大小与 DTO 校验边界，禁止重定向；错误不退化为空目录，也不影响直接安装。Worker 是独立项目，不要求消费端启动 Pluxel Host 服务端。
+
+交互安装先 `prepareInstall` / `prepareMarketInstall`，再 `confirmInstall`。准备使用相同 pnpm engine 完整物化私有 revision，保留 registry/auth/proxy 语义，不另建 npm resolver。每 store 只保留一个内存候选，10 分钟有效；候选 ID、selection revision、固定版本、SRI 和图/字节绑定。确认重新核对文件再提交，不执行第二次 acquisition。停止、替换候选或其他安装 mutation 使旧预览失效；候选不是跨进程持久任务。
+
+市场选择由后端读取精确发行，核对 pnpm registry、lockfile SRI 和实际 package.json name/version；市场 tarball URL 不进入 acquisition。确认后的顶层选择固定为精确版本，原请求范围保留在预览。准备允许显式策略授权的构建脚本，故不承诺只读。当前预览覆盖受管包图变化，不冒充完整 Host Plugin/fork 生命周期预检。
+
 每次 mutation 将完整 manifest 交给一次 pnpm install，私有 revisions/<uuid> 保存 manifest/lockfile/node_modules 链接和 inner entries。global virtual store 位于 root/slots，copy 导入包字节；相同 resolution、peer context 和依赖图复用同一物理 slot，A/B 不会因安装批次得到两份共同 P。
 
 pnpm v9 graph fingerprint 包含 resolution、peer、optional 和可达依赖；实际 slot 闭包字节再做摘要。图与字节未变时必须保留同一物理路径与旧 inner entry，改变了就拒绝。图变化的包使用新 inner entry。未知图不做保守全量重发，明确拒绝。

@@ -21,7 +21,23 @@ class HeadlessPackageConsumer extends BasePlugin {
 	}
 	async init() {
 		expect(this.ctx.workbench).toBeUndefined()
-		expect(await this.packages.snapshot()).toMatchObject({ rootDir: headlessRoot, packages: [] })
+		expect(await this.packages.snapshot()).toMatchObject({
+			rootDir: headlessRoot,
+			packages: [],
+			markets: [],
+			sourceUpdates: 'next-start',
+		})
+		expect(
+			await this.packages.prepareInstall(['https://example.invalid/plugin.tgz']),
+		).toMatchObject({ ok: false, failed: [{ code: 'INVALID_SPEC' }] })
+		expect(await this.packages.confirmInstall('expired-plan')).toMatchObject({
+			ok: false,
+			failed: [{ code: 'INVALID_PLAN' }],
+		})
+		expect(await this.packages.marketPackages('unknown')).toMatchObject({
+			ok: false,
+			error: { code: 'UNKNOWN_MARKET' },
+		})
 		const rejected = await this.packages.install(['https://example.invalid/plugin.tgz'])
 		expect(rejected.ok).toBe(false)
 		expect(rejected.failed[0]?.code).toBe('INVALID_SPEC')
@@ -48,7 +64,7 @@ describe('PackageManagerPlugin', () => {
 					},
 				}),
 			],
-			runtime: { state: { autoStart: [HeadlessPackageConsumer.nodeAddress()] } },
+			policy: { autoStart: [HeadlessPackageConsumer.nodeAddress()] },
 		}))
 		const resolved = await resolveHostApplication(application, {
 			root,
@@ -60,6 +76,8 @@ describe('PackageManagerPlugin', () => {
 			plugins: resolved.plugins,
 			services: resolved.services,
 			name: resolved.name,
+			config: resolved.config,
+			policy: resolved.policy,
 			runtime: resolved.runtime,
 		})
 		try {
