@@ -13,6 +13,8 @@
 
 研究与必要决策记录：
 
+- [Host 配置：声明优先与保存输入分层](HOST_CONFIGURATION_LAYERS.md)：讨论中的配置简化方案；复用自动启动名单，分离保存与运行时有效值，明确默认值、覆盖规则和未决边界，尚未实施。
+
 - [Typst 内容创作与私有排版边界](TYPST_AUTHORING_BOUNDARIES.md)：待实施的整体重构提案；分离源码创作与 JSON 正文权威，明确私有模板/数据/资产边界、agent 协作提交和无兼容迁移。
 
 - [插件分发与市场基础](plugin-distribution/README.md)：以 Drizzle ORM + SQLite 和 Cloudflare Workers/D1 为目标，设计在线运营配置、增量目录与按需 API，再细化发布标准、消费端市场插件和两类安装；独立于 legacy 分发实现，尚未实施。
