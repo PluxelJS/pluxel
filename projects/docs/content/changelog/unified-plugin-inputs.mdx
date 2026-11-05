@@ -1,21 +1,21 @@
 ---
 title: Bind deployment inputs and preserve editable configuration layers
-date: 2026-09-28T16:27:41.085Z
+date: 2026-11-05T05:59:25.688Z
 packages:
   '@pluxel/core':
-    version: 1.1.0
+    version: 1.2.0
   '@pluxel/host':
-    version: 1.1.0
-  '@pluxel/host-dev':
-    version: 1.1.0
+    version: 1.2.0
+  '@pluxel/host-vite':
+    version: 1.2.0
   '@pluxel/services':
-    version: 1.1.0
+    version: 1.2.0
   '@pluxel/rolldown':
-    version: 1.1.0
+    version: 1.2.0
   '@pluxel/workbench':
-    version: 1.1.0
-  '@pluxel/auth':
-    version: 1.1.0
+    version: 1.2.0
+  '@pluxel/plugin-auth':
+    version: 1.2.0
 ---
 
 ## Bind deployment inputs and preserve editable configuration layers
@@ -37,7 +37,7 @@ implicit `PLUXEL_CONFIG` snapshot are removed.
 Vault KV reads return immutable snapshots with revision, source, and writability. Writes support
 expected revisions, batches publish only after durable commit, and owner-scoped subscriptions
 observe committed changes. Environment/file records are whole-record read-only overlays;
-bindings-only installations need neither Persistence nor disk keys. Encrypted Vault takes an
+bindings-only installations need neither Fs nor disk keys. Encrypted Vault takes an
 explicit deployment identity. Named namespaces are owner-local; legacy global namespaces require
 explicit owner migration mappings. Legacy documents migrate to collision-checked KV keys.
 Vault root schemas validate record keys and complete records as an application startup contract;
