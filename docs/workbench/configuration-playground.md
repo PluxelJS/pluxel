@@ -18,6 +18,7 @@ Valibot safeParse 归一化输出
 ## 核心功能
 
 访问文档站的 [配置 Playground](/playground) 即可开始体验：
+
 - **实时编辑**：在 Monaco 编辑器中编写 Schema，享受基于实际依赖库导出的 TypeScript 类型补全；
 - **双向联动**：右侧表单中的输入会实时反映在 Output 面板中，方便观察 `v.optional`、`v.pipe` 与数据转换效果；
 - **字段元数据辅助**：支持使用 `valibot-form` 的 `f.formMeta` 设置字段标题、占位符与表单布局提示。

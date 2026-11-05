@@ -100,6 +100,7 @@ export const readNoteCommand = defineCommand({
 ## 官方插件示例
 
 在官方插件包中，Better Result 主要应用于复杂的业务交互场景：
+
 - **`@pluxel/plugin-wretch`**：HTTP 请求在遇到特定状态码（如 404 或 429）时，将状态码映射为类型化的请求错误；
 - **`@pluxel/plugin-redis`**：分布式锁获取失败或 Lua 脚本返回业务拒绝时，返回明确的 Result；
 - **`@pluxel/plugin-invoice`**：发票识别与验真流程中，区分 OCR 识别错误、票面金额不一致与税务局接口超时的不同失败分支。

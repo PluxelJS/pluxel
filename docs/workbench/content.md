@@ -101,6 +101,7 @@ export const ServiceWorkbench = workbench.define({
 在插件的 `actions.probe` 中直接接收校验后的入参 `{ timeoutMs }`。
 
 <span id="只在状态会自行变化时加入-live-refresh"></span>
+
 ## 只在状态会自行变化时加入 live refresh
 
 如果数据源在后台会自发产生更新（例如后台定时拉取、收到 WebSocket 广播），可在绑定中提供 `subscribe` 监听：

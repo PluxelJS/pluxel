@@ -4,6 +4,7 @@ description: 使用 Attachment 机制跨插件复用通用设置页与选择器�
 ---
 
 在复杂的插件化系统中，一个插件的前端界面往往需要复用另一个插件提供的能力。例如：
+
 - 报表插件在自身的设置页中，直接嵌入 HTTP 客户端插件的统一网络配置面板；
 - 画布插件在属性编辑抽屉中，嵌入字体管理插件的字体选择器。
 
@@ -38,8 +39,7 @@ export const HttpWorkbench = workbench.define({
 
 ```ts
 this.ctx.workbench?.publish(HttpWorkbench, {
-	settings: ({ consumer, signal }) =>
-		new HttpSettingsTarget(consumer.node, signal),
+	settings: ({ consumer, signal }) => new HttpSettingsTarget(consumer.node, signal),
 })
 ```
 
@@ -53,9 +53,7 @@ import { workbench } from '@pluxel/workbench'
 
 export const ReportsWorkbench = workbench.define({
 	// 将提供方的 settings 挂载为当前插件的一个选项卡
-	http: HttpWorkbench.settings.place(
-		workbench.tab({ label: '网络设置' }),
-	),
+	http: HttpWorkbench.settings.place(workbench.tab({ label: '网络设置' })),
 })
 ```
 

@@ -82,6 +82,7 @@ export class SearchPlugin extends BasePlugin {
 Part 类与常规插件一样，可以直接在构造函数中声明所需上游依赖。
 
 工具链会自动收集并提升 Part 所需的依赖到主插件的依赖图中。这意味着：
+
 - **按需声明**：哪个 Part 真正使用上游服务，就在该 Part 的构造函数中注入它，主插件不需要重复列出该参数。
 - **拓扑统一**：若 Part 所需的上游服务不可用或启动失败，主插件也会整体处于阻塞状态，确保不会产生半就绪的异常状态。
 - **可选依赖**：Part 也支持在 `init()` 中通过 `this.plugins.use(Ref, callback)` 接入可选依赖。

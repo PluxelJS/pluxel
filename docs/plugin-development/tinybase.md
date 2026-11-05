@@ -7,6 +7,7 @@ description: 使用内建的 TinyBase Store 保存用户偏好与轻量业务记
 
 > [!TIP]
 > **状态选型建议**
+>
 > - **应用静态/环境配置**：使用 [`this.configs.use()`](./configuration.md)；
 > - **私密密钥与密码**：使用 [Vault 凭据服务](./vault.md)；
 > - **用户轻量状态与偏好**：使用本文介绍的 `ctx.tinybase`；

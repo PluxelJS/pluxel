@@ -12,6 +12,7 @@ pnpm add @pluxel/plugin-wretch
 ```
 
 <span id="第一个-http-consumer"></span>
+
 ## 第一个 HTTP consumer
 
 在业务插件中，通过构造函数注入 `WretchPlugin`，并使用链式调用发起请求：
@@ -52,9 +53,7 @@ export class CustomerPlugin extends BasePlugin {
 	find(id: string): Promise<Result<Customer, CustomerNotFound>> {
 		return this.api
 			.get(`/customers/${encodeURIComponent(id)}`)
-			.notFound(() =>
-				Result.err(new CustomerNotFound({ id, message: `Customer ${id} not found` })),
-			)
+			.notFound(() => Result.err(new CustomerNotFound({ id, message: `Customer ${id} not found` })))
 			.json((body) => Result.ok(v.parse(CustomerSchema, body)))
 	}
 }
@@ -74,9 +73,10 @@ export default defineHostApplication(() => ({
 			{
 				owner: WretchPlugin,
 				config: {
-					timeoutMs: 15_000,                  // 单次请求超时（毫秒）
-					maxConcurrentRequests: 32,          // 最大并发请求数
-					allowedOrigins: [                   // 域名白名单（留空允许所有）
+					timeoutMs: 15_000, // 单次请求超时（毫秒）
+					maxConcurrentRequests: 32, // 最大并发请求数
+					allowedOrigins: [
+						// 域名白名单（留空允许所有）
 						'https://api.example.com',
 						'https://auth.example.com',
 					],

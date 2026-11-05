@@ -4,6 +4,7 @@ description: 将特定逻辑编译为独立的 Node ESM 产物，或将 CPU 密�
 ---
 
 在某些场景下，插件可能需要执行繁重的计算（如排版渲染、图像处理、压缩等），或者需要隔离运行特定的 Node.js 模块。Pluxel 提供了两项专门的服务：
+
 - **`defineNodeModule()`**：将指定入口单独打包为纯净的 Node ESM 并在主线程按需动态加载；
 - **`defineWorkerTask()`**：将计算任务提交到宿主维护的 Worker 线程池中并发执行，避免阻塞主事件循环。
 
@@ -54,6 +55,7 @@ export function setup({ logger }: { logger: { info(msg: string): void } }) {
 ```
 
 <span id="取消与-plugin-stop"></span>
+
 ## 共享后台 Worker 任务（defineWorkerTask）
 
 对于可能阻塞事件循环的 CPU 密集型任务，推荐将其打包为 Worker 任务：

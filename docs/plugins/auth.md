@@ -55,6 +55,7 @@ export default defineHostApplication(async (startup) => ({
 ```
 
 并在你的身份认证提供商后台中，将回调地址配置为：
+
 ```text
 https://my-app.example.com/__pluxel/admin-access/oidc/callback
 ```

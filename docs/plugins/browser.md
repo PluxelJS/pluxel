@@ -26,8 +26,8 @@ export default defineHostApplication(() => ({
 			config: {
 				schema: PlaywrightConfig,
 				mapping: {
-					endpoint: 'BROWSER_ENDPOINT',   // 远程浏览器 WebSocket 或 HTTP 地址
-					protocol: 'BROWSER_PROTOCOL',   // 'cdp' 或 'playwright'（默认 cdp）
+					endpoint: 'BROWSER_ENDPOINT', // 远程浏览器 WebSocket 或 HTTP 地址
+					protocol: 'BROWSER_PROTOCOL', // 'cdp' 或 'playwright'（默认 cdp）
 				},
 			},
 		}),
@@ -39,6 +39,7 @@ export default defineHostApplication(() => ({
 ```
 
 <span id="使用原生连接参数"></span>
+
 ## 使用原生连接参数
 
 如果需要传递自定义的 Playwright 连接参数（如 `slowMo` 慢速模式、请求拦截代理等），可以直接编写自定义 Provider 插件并调用底层连接器：

@@ -63,6 +63,7 @@ const svgBytes = svg.getContent()
 ```
 
 SVG 导出模式说明：
+
 - `compact`（默认）：输出精简的标准 SVG。
 - `text-to-paths`：将文本预先渲染为贝塞尔曲线路径（Paths），在目标阅读环境缺乏相应字体时可保证字形绝对一致。
 - `relative-paths`：使用相对坐标编码路径指令。
@@ -170,14 +171,14 @@ export default async ({ canvas: snapshot }: Input) => {
 
 通过 `CanvasConfig` 可配置系统层面的画布和解码配额：
 
-| 配置项 | 默认值 | 说明 |
-| :--- | :--- | :--- |
-| `maxWidth` | `8192` | 允许创建的最大画布宽度（像素） |
-| `maxHeight` | `8192` | 允许创建的最大画布高度（像素） |
-| `maxPixels` | `16,777,216` | 最大单画布像素总数（宽 × 高，约 64 MiB 显存） |
-| `maxImageBytes` | `32 MiB` | 允许解码的最大单张图片文件体积 |
-| `maxConcurrentDecodes` | `2` | 进程内允许并发解码的原生任务数 |
-| `maxTextCharacters` | `100,000` | 单次文本排版计算允许的最大字符数 |
+| 配置项                 | 默认值       | 说明                                          |
+| :--------------------- | :----------- | :-------------------------------------------- |
+| `maxWidth`             | `8192`       | 允许创建的最大画布宽度（像素）                |
+| `maxHeight`            | `8192`       | 允许创建的最大画布高度（像素）                |
+| `maxPixels`            | `16,777,216` | 最大单画布像素总数（宽 × 高，约 64 MiB 显存） |
+| `maxImageBytes`        | `32 MiB`     | 允许解码的最大单张图片文件体积                |
+| `maxConcurrentDecodes` | `2`          | 进程内允许并发解码的原生任务数                |
+| `maxTextCharacters`    | `100,000`    | 单次文本排版计算允许的最大字符数              |
 
 ## 错误处理与 Result 封装
 

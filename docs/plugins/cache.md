@@ -26,9 +26,13 @@ export class ProductPlugin extends BasePlugin {
 
 	async getProduct(productId: string) {
 		// 先查缓存，未命中时执行 loader 并自动回填缓存
-		return this.cache.getOrLoad(`product:${productId}`, async () => {
-			return this.fetchFromDatabase(productId)
-		}, { ttlMs: 60_000 })
+		return this.cache.getOrLoad(
+			`product:${productId}`,
+			async () => {
+				return this.fetchFromDatabase(productId)
+			},
+			{ ttlMs: 60_000 },
+		)
 	}
 
 	async evictProduct(productId: string) {

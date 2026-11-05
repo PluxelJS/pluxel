@@ -7,11 +7,11 @@ description: 使用原生 Takumi API 或共享 Worker，将 JSX、HTML 与 node 
 
 核心 API 提供两种执行方式：
 
-| 渲染目标 | 主线程直接渲染 | 线程池异步渲染（推荐） | 输出格式 |
-| :--- | :--- | :--- | :--- |
-| 位图图片 | `render(input, options)` | `renderInWorker(input, options)` | `Buffer` / `Uint8Array` |
-| SVG 矢量图 | `renderSvg(input, options)` | `renderSvgInWorker(input, options)` | `string` (SVG) |
-| 动图序列 | `renderAnimation(options)` | `renderAnimationInWorker(options)` | `Buffer` / `Uint8Array` |
+| 渲染目标   | 主线程直接渲染              | 线程池异步渲染（推荐）              | 输出格式                |
+| :--------- | :-------------------------- | :---------------------------------- | :---------------------- |
+| 位图图片   | `render(input, options)`    | `renderInWorker(input, options)`    | `Buffer` / `Uint8Array` |
+| SVG 矢量图 | `renderSvg(input, options)` | `renderSvgInWorker(input, options)` | `string` (SVG)          |
+| 动图序列   | `renderAnimation(options)`  | `renderAnimationInWorker(options)`  | `Buffer` / `Uint8Array` |
 
 ## 安装与装配
 
@@ -97,6 +97,7 @@ return this.takumi.render(
 ## 字体与图片资源管理
 
 ### 字体注册
+
 Takumi 渲染中文或自定义字体时，需传入对应的字体字节：
 
 ```ts no-twoslash
@@ -115,6 +116,7 @@ const image = await this.takumi.render('<h1 class="title">Pluxel</h1>', {
 若宿主安装了 `FontsPlugin`，可调用其 `portableFonts` 接口读取系统或上传的字体字节后传入。
 
 ### 图片加载
+
 图片可以通过 URL 远程加载，或直接提供已下载的二进制数据：
 
 ```ts no-twoslash

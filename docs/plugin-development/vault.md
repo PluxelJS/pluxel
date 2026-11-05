@@ -24,11 +24,7 @@ export class AuthServicePlugin extends BasePlugin {
 		const current = await kv.get<{ token: string }>('primary-token')
 
 		// 2. 携带 expectedRevision 进行乐观锁提交，防止并发覆盖
-		await kv.set(
-			'primary-token',
-			{ token: newToken },
-			{ expectedRevision: current.revision },
-		)
+		await kv.set('primary-token', { token: newToken }, { expectedRevision: current.revision })
 	}
 
 	async getToken(): Promise<string | undefined> {

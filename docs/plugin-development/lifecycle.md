@@ -48,12 +48,12 @@ protected override async init(signal: AbortSignal) {
 
 ### 常用清理原语
 
-| API | 用途 | 示例 |
-| --- | --- | --- |
-| `effects.defer(fn)` | 登记一个清理函数 | `this.ctx.effects.defer(() => clearInterval(timer))` |
-| `effects.own(disposable)` | 托管实现了 `[Symbol.dispose]` 或 `dispose()` 的对象 | `this.ctx.effects.own(fileWatcher)` |
-| `effects.acquire(acquire, release)` | 声明配对的资源获取与释放逻辑 | `this.ctx.effects.acquire(() => lock(), () => unlock())` |
-| `effects.scope(meta)` | 为辅助子逻辑创建独立的子作用域 | 创建拥有局部清理范围的独立作用域 |
+| API                                 | 用途                                                | 示例                                                     |
+| ----------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| `effects.defer(fn)`                 | 登记一个清理函数                                    | `this.ctx.effects.defer(() => clearInterval(timer))`     |
+| `effects.own(disposable)`           | 托管实现了 `[Symbol.dispose]` 或 `dispose()` 的对象 | `this.ctx.effects.own(fileWatcher)`                      |
+| `effects.acquire(acquire, release)` | 声明配对的资源获取与释放逻辑                        | `this.ctx.effects.acquire(() => lock(), () => unlock())` |
+| `effects.scope(meta)`               | 为辅助子逻辑创建独立的子作用域                      | 创建拥有局部清理范围的独立作用域                         |
 
 ### 支持直接返回清理函数
 
@@ -69,6 +69,7 @@ protected override init() {
 ## 异步后台任务与优雅停止
 
 对于后台长循环（如消息队列消费、定时轮询等），优雅退出通常需要完成两件事：
+
 1. **停止派发新任务**：清除定时器或设置退出标志位；
 2. **等待在途任务完成**：等待正在执行的异步操作结束，避免新旧实例在交替时产生数据并发冲突。
 

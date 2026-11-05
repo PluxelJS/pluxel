@@ -15,7 +15,8 @@ class StatusPlugin extends BasePlugin {
   }
   status() { return this.health.status() } // 直接调用必需依赖
 }`,
-		description: 'Health 作为必需依赖未就绪时阻止 Status 启动；Audit 作为可选依赖就绪或变化时自动触发消费方更新。',
+		description:
+			'Health 作为必需依赖未就绪时阻止 Status 启动；Audit 作为可选依赖就绪或变化时自动触发消费方更新。',
 		href: '/docs/plugin-development/model',
 		label: '依赖',
 		packageName: '@acme/health + @acme/audit → src/status.ts',
@@ -54,7 +55,8 @@ class SamplerPlugin extends BasePlugin {
     )
   }
 }`,
-		description: '长期运行的资源与监听器统一注册到当前生命周期，在插件停止、启动回滚或热更新时自动释放。',
+		description:
+			'长期运行的资源与监听器统一注册到当前生命周期，在插件停止、启动回滚或热更新时自动释放。',
 		href: '/docs/plugin-development/model',
 		label: '回收',
 		packageName: 'src/sampler.ts',

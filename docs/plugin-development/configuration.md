@@ -155,6 +155,7 @@ class SearchPlugin extends BasePlugin {
 ## 配置表单
 
 在 Workbench 中，插件主配置会默认归入“常规”分区，各个 Part 的配置会按路径呈现为独立分区。支持使用快捷键保存修改：
+
 - `Ctrl/⌘ + S`：保存当前分区所做的修改；
 - `Ctrl/⌘ + Shift + S`：一次性保存当前插件所有分区的改动。
 

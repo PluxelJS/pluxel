@@ -90,13 +90,13 @@ export class BillingPlugin extends BasePlugin {
 
 ### 两种方式的对比
 
-| 比较维度 | 基于服务名称的绑定 | Pluxel 构造函数依赖注入 |
-| --- | --- | --- |
-| 依赖声明方式 | `inject` 字符串数组 | 构造函数参数与普通值导入 |
-| 能力访问方式 | `ctx.<serviceName>` 属性 | 构造函数注入的强类型实例 |
-| 依赖类型来源 | `declare module` 扩展 Context | 导入的插件类本身及其导出类型 |
-| 运行时元数据生成 | 手工编写服务名称列表 | 构建工具自动从源码提取依赖拓扑 |
-| 适用倾向 | 追求弱耦合与松散组装 | 追求构建期可追溯、跨包检查与重构安全性 |
+| 比较维度         | 基于服务名称的绑定            | Pluxel 构造函数依赖注入                |
+| ---------------- | ----------------------------- | -------------------------------------- |
+| 依赖声明方式     | `inject` 字符串数组           | 构造函数参数与普通值导入               |
+| 能力访问方式     | `ctx.<serviceName>` 属性      | 构造函数注入的强类型实例               |
+| 依赖类型来源     | `declare module` 扩展 Context | 导入的插件类本身及其导出类型           |
+| 运行时元数据生成 | 手工编写服务名称列表          | 构建工具自动从源码提取依赖拓扑         |
+| 适用倾向         | 追求弱耦合与松散组装          | 追求构建期可追溯、跨包检查与重构安全性 |
 
 ## 确定性生命周期与资源边界
 
@@ -107,7 +107,7 @@ export class BillingPlugin extends BasePlugin {
 export class WorkerPlugin extends BasePlugin {
 	protected override init() {
 		const timer = setInterval(() => this.heartbeat(), 5_000)
-		
+
 		// 注册清理回调，插件停止或重载时由框架自动执行
 		this.ctx.effects.defer(() => clearInterval(timer))
 	}

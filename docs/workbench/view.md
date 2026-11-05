@@ -18,6 +18,7 @@ description: 使用 React 与 Cap'n Web RPC 编写功能完整的 Workbench 页�
 ---
 
 <span id="默认路径snapshot--mutation"></span>
+
 ## 默认路径：snapshot + mutation
 
 ### 1. 声明页面与 RPC 契约
@@ -147,10 +148,7 @@ export function OrdersPage() {
 		<div style={{ padding: 16 }}>
 			<h2>订单列表（版本：{orders.data.revision}）</h2>
 			<p>当前待处理订单数：{orders.data.openOrders}</p>
-			<button
-				disabled={refresh.isPending}
-				onClick={() => refresh.mutate()}
-			>
+			<button disabled={refresh.isPending} onClick={() => refresh.mutate()}>
 				{refresh.isPending ? '正在刷新...' : '手动刷新'}
 			</button>
 		</div>
@@ -172,9 +170,11 @@ export default overviewScope.render(OrdersPage)
 ---
 
 <span id="检查结果"></span>
+
 ## 检查结果
 
 启动应用并访问 `/__pluxel/workbench`：
+
 1. 在左侧应用栏中可看到“订单管理”入口；
 2. 点击打开后，将呈现订单数据与操作按钮；
 3. 点击“手动刷新”，按钮进入加载状态，执行完成后界面数据与版本号自动更新。
@@ -182,6 +182,7 @@ export default overviewScope.render(OrdersPage)
 ---
 
 <span id="host-能力"></span>
+
 ## Host 能力
 
 在 React 组件中，除了调用当前插件的服务端 `api` 外，还可以调用宿主提供的全局能力（例如触发宿主通知、导航至其他标签页）：
@@ -196,6 +197,7 @@ host.notify({ title: '操作完成', message: '已同步最新订单' })
 ---
 
 <span id="依赖与构建"></span>
+
 ## 依赖与构建
 
 - 插件前端依赖的 React、Mantine、TanStack Query 等基础库由 Workbench Shell 在运行时统一提供，构建工具会自动配置模块联邦（Module Federation）与外部化。

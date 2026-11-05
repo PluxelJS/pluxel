@@ -31,28 +31,28 @@ import { AccountsPlugin } from '@acme/accounts'
 import * as v from 'valibot'
 
 const BillingConfig = v.object({
-  currency: v.optional(v.string(), 'USD'),
+	currency: v.optional(v.string(), 'USD'),
 })
 
 @Plugin({ displayName: 'Billing' })
 export class BillingPlugin extends BasePlugin {
-  private readonly config = this.configs.use(BillingConfig)
+	private readonly config = this.configs.use(BillingConfig)
 
-  // 1. 在构造函数中声明强类型依赖
-  constructor(private readonly accounts: AccountsPlugin) {
-    super()
-  }
+	// 1. 在构造函数中声明强类型依赖
+	constructor(private readonly accounts: AccountsPlugin) {
+		super()
+	}
 
-  protected override init() {
-    // 2. 创建长期运行的资源，随插件生命周期自动回收
-    const timer = setInterval(() => this.sync(), 60_000)
-    this.ctx.effects.defer(() => clearInterval(timer))
-  }
+	protected override init() {
+		// 2. 创建长期运行的资源，随插件生命周期自动回收
+		const timer = setInterval(() => this.sync(), 60_000)
+		this.ctx.effects.defer(() => clearInterval(timer))
+	}
 
-  private sync() {
-    const list = this.accounts.listInvoices()
-    this.ctx.logger.info('Synced invoices', { count: list.length, currency: this.config.currency })
-  }
+	private sync() {
+		const list = this.accounts.listInvoices()
+		this.ctx.logger.info('Synced invoices', { count: list.length, currency: this.config.currency })
+	}
 }
 ```
 

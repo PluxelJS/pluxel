@@ -69,14 +69,17 @@ vite.config.ts         全包任务调度（Vite Task）
 - `@pluxel/hmr` 条件用于在 Monorepo 源码联调时让 Vite 直接读取 TypeScript 源文件，`default` 则指向生产构建生成的 ESM 产物。
 
 <span id="依赖-metadata-如何生成"></span>
+
 ## 自动依赖元数据生成
 
 执行 `pluxel build` 时，构建系统会静态分析插件及其包含的全部 Part 依赖拓扑，并在打包产物中自动写入依赖元数据清单（Metadata）：
+
 - 自动提取构造函数中的依赖注入标记；
 - 聚合 Part 树中的依赖，自动去重并确定必需（required）与可选（optional）边界；
 - 若代码中注入的外部插件未在 `package.json` 的 `peerDependencies` 中声明，构建时会报错提醒补齐依赖。
 
 <span id="构建与发布检查"></span>
+
 ## 构建与发布检查清单
 
 在执行 `npm publish` 或 `pluxel publish` 之前，执行以下验证步骤：
@@ -93,6 +96,7 @@ vp exec pluxel publish --webhook
 ```
 
 发布前确认项：
+
 - `dist/` 目录下正确生成了 `.mjs` 模块及 `.d.ts` 类型声明文件；
 - 临时文件、测试夹具、敏感凭据或源码映射未被误打包；
 - `peerDependencies` 版本范围符合目标运行环境的要求。
