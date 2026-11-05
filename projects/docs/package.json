@@ -53,6 +53,7 @@
 		"@pluxel/plugin-redis": "workspace:*",
 		"@pluxel/plugin-storage": "workspace:*",
 		"@pluxel/plugin-takumi": "workspace:*",
+		"@pluxel/plugin-takumi-markdown": "workspace:*",
 		"@pluxel/plugin-typst": "workspace:*",
 		"@pluxel/plugin-wretch": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",

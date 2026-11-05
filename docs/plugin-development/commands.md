@@ -6,6 +6,7 @@ description: 定义具备类型校验、错误契约与自省元数据的操作�
 `@pluxel/commands` 提供了一套结构化的指令抽象。如果你正在构建可被控制台命令行、AI Agent（MCP 协议）或图形界面调用的统一业务动作，使用 Command 可以将参数校验、类型解码与执行逻辑规范化地组织在一起。
 
 每个 Command 包含四个核心部分：
+
 - `name`：全局唯一的命名空间标识（例如 `notes.read`）；
 - `description`：可被人或 AI 理解的功能描述；
 - `input`：基于 TypeBox 的强类型输入 Schema；
@@ -92,11 +93,11 @@ interface NoteContext extends CommandContext {
 	readonly getNote: (id: string) => Promise<string | null>
 }
 
-export const readNote = defineCommand<NoteContext>()({
+export const readNote = defineCommand({
 	name: 'notes.read',
 	description: '读取用户笔记内容。',
 	input: obj({ id: Type.String() }),
-	async execute({ id }, ctx) {
+	async execute({ id }, ctx: NoteContext) {
 		const note = await ctx.getNote(id)
 		if (!note) {
 			return Result.err({
