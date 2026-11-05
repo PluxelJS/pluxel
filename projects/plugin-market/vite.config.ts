@@ -13,7 +13,7 @@ export default defineConfig({
 				command: 'vp build --config web/vite.config.ts',
 				dependsOn: [],
 				cache: {
-					input: [{ pattern: 'plugins/package-manager/src/**', base: 'workspace' }],
+					input: [{ pattern: 'plugins/package-manager/src/**', base: 'workspace' }, '!dist/web/**'],
 					output: ['dist/web/**'],
 					env: ['VITE_MARKET_URL'],
 				},

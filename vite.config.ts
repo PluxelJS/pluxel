@@ -54,7 +54,7 @@ export default defineConfig(() => {
 		},
 		'governance:check': {
 			command:
-				'vp test run --dir scripts repository-packages.test.mjs prepare-npm-publishing.test.mjs check-source-declarations.test.mjs && node scripts/check-repository-governance.mjs',
+				'vp test run --dir scripts repository-packages.test.mjs prepare-npm-publishing.test.mjs check-source-declarations.test.mjs vite-tasks.test.mjs && node scripts/check-repository-governance.mjs',
 			dependsOn: ['catalog:check'],
 			cache: false,
 		},

@@ -73,7 +73,12 @@ export default defineConfig({
 					command: 'cross-env DEBUG= DOCS_TWOSLASH_MODE=production fumapress build',
 					dependsOn: ['prepare:docs'],
 					cache: {
-						input: ['docs/**'].map((pattern) => ({ pattern, base: 'workspace' as const })),
+						input: [
+							{ pattern: 'docs/**', base: 'workspace' },
+							'!dist/**',
+							'!.source/**',
+							'!.vercel/output/**',
+						],
 						output: ['dist/**', '.source/**', '.vercel/output/**'],
 						env: ['VERCEL*'],
 					},

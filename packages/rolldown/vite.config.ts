@@ -28,6 +28,7 @@ export default defineConfig({
 						'packages/host/src/shared-runtime.ts',
 						'packages/workbench/src/workbench/shared-transport.ts',
 						'packages/workbench/src/workbench/definition.ts',
+						'!packages/rolldown/dist/**',
 					].map((pattern) => ({ pattern, base: 'workspace' as const })),
 					output: ['dist/**'],
 				},

@@ -19,6 +19,7 @@ export default defineConfig({
 						'pnpm-workspace.yaml',
 						'packages/cli/scripts/dependency-policy.*',
 						'docs/**',
+						'!packages/create/dist/**',
 					].map((pattern) => ({ pattern, base: 'workspace' as const })),
 					output: ['dist/**'],
 				},
