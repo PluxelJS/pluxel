@@ -1,0 +1,21 @@
+---
+title: Support native Playwright connection providers
+date: 2026-11-05T05:59:25.688Z
+packages:
+  '@pluxel/plugin-playwright':
+    version: 1.2.0
+  '@pluxel/plugin-invoice':
+    version: 1.2.0
+---
+
+## Support native Playwright connection providers
+
+Consumers now depend on the abstract `Playwright` capability. `PlaywrightPlugin`
+keeps its existing name, endpoint/Vault configuration and connection defaults as
+the standard provider. Invoice uses the abstract capability, so applications can
+register a custom `@Plugin(Playwright)` provider without changing its consumers.
+
+Implement `protected connect(signal): Promise<Browser>` to use the upstream
+connection options directly. The returned native connection belongs to the
+generation; the base class manages rollback, late acquisition, caller contexts
+and shutdown. Custom providers need no placeholder preset or copied lifecycle.
