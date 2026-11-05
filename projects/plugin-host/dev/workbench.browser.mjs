@@ -488,6 +488,16 @@ try {
 		await expect
 			.poll(async () => nodes(await snapshot()).some((node) => node.maximized))
 			.toBe(false)
+		// Focusing chrome in the sibling does not change the active document. Maximizing
+		// the active container hides that focus owner; keyboard scope must remain usable.
+		await tab('Studio B').focus()
+		await page.keyboard.press('Control+Shift+M')
+		await expect.poll(async () => nodes(await snapshot()).some((node) => node.maximized)).toBe(true)
+		await expect(page.locator('.worksplit-workbench')).toBeFocused()
+		await page.keyboard.press('Control+Shift+M')
+		await expect
+			.poll(async () => nodes(await snapshot()).some((node) => node.maximized))
+			.toBe(false)
 		await expect(page).toHaveURL(accepted)
 		await retained()
 	})
