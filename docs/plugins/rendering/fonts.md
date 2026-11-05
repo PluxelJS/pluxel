@@ -3,54 +3,27 @@ title: 服务端字体
 description: 发现、注册和管理服务端字体，并为 Canvas、ECharts 与 Takumi 提供统一字体资源。
 ---
 
-`@pluxel/plugin-fonts` 统一管理服务端字体：发现系统字体、注册 Plugin 随包携带的字体、保存从 Workbench 上传的字体，
-并为 Canvas/ECharts 选择 native default、为 Takumi 等独立 renderer 提供可移植 bytes。
+`@pluxel/plugin-fonts` 统一管理服务端环境中的字体资源：自动发现宿主操作系统已安装字体、注册插件随包携带的字体文件、管理从控制台上传的自定义字体，并为 Canvas、ECharts 和 Takumi 等渲染引擎提供统一的字体查找与字节分发接口。
 
-Canvas/ECharts 能使用系统字体；Takumi 需要 Fonts 管理的可移植字体字节。需要一致的跨机器输出时，通过部署配置提供字体文件、随包提供字体或从 Workbench 上传；只安装 Fonts 不会替操作系统安装字体。
+<span id="何时直接使用-fontsplugin"></span>
+## 何时直接注入 FontsPlugin
 
-系统发现、部署字体与程序化注册沿用原生字体 SDK 和文件路径。上传集合使用 Core 固定提供的 [FS](../../plugin-development/fs.md)，默认偏好使用 [TinyBase](../../plugin-development/tinybase.md)；Workbench 是可选编辑入口。跨启动恢复取决于 Host 选择的持久后端。
+- 插件自身打包了 `.ttf`、`.otf`、`.woff` 或 `.woff2` 静态字体文件，需要在服务端渲染前完成注册。
+- 业务代码需要动态查询可用字体族（Font Families）或当前的全局默认字体。
+- 编写自定义渲染插件，需要感知字体变化信号（`revision`）以刷新文本测量缓存。
+- 在插件的 Workbench 控制台中嵌入预设的字体选择器。
 
-`DefaultFontSnapshot`、`FontFamilySnapshot` 和 `FontStyleSnapshot` 从包根以 `type` 导入；它们只描述字体数据。Workbench definition 与 RPC API 从 `/workbench` 导入。
+若仅是使用 Canvas、ECharts 或 Takumi 进行普通渲染，通常直接依赖对应的渲染插件即可，无需单独注入 `FontsPlugin`。
 
-## 无 Workbench 部署
+## 安装与装配
 
-`FontsConfig` 是插件使用的同一 schema，可由 Host config、`envBinding` 或 `fileBinding` 提供。应用在 `envBindings` 中声明：
-
-```ts no-twoslash
-import { envBinding } from '@pluxel/host'
-import { FontsPlugin, FontsConfig } from '@pluxel/plugin-fonts'
-
-envBinding(FontsPlugin, {
-	config: {
-		schema: FontsConfig,
-		mapping: { files: 'FONT_FILES', defaultFamily: 'FONT_FAMILY' },
-	},
-})
-```
-
-例如 `FONT_FILES='["/app/fonts/ReportSans.ttf","/app/fonts/ReportSans-Bold.ttf"]'`，`FONT_FAMILY='Report Sans'`。`files` 使用绝对路径 JSON 数组；启动时按配置顺序读取并注册，重复路径只读一次。部署文件属于 provider generation，停止时释放；不写入上传集合。文件缺失、非法字体或超限使启动失败，并释放已经注册的字体。
-
-配置字体不设置 Canvas alias，使用内嵌 family，因而同一字节可供 Typst、Takumi 等独立 renderer 使用。单文件和 provider 总预算仍生效，不占 consumer registration 或 managed upload 配额。配置变化下次 provider restart 生效；环境与文件绑定的变更需要重新创建 Host，来源优先级由 [Host 配置](../../host/configuration.md#绑定部署环境与-json-文件)维护。
-
-## 何时直接使用 FontsPlugin
-
-- Plugin 自带 `.ttf`、`.otf`、`.woff` 或 `.woff2` 文件，需要在服务端 renderer 中注册。
-- 需要读取当前可用的字体 family 或 provider 默认字体。
-- 自己实现 renderer，需要用 `revision` 使文字测量缓存失效。
-- renderer 有自己的字体 registry，需要按 `portableFonts.revision` 读取 managed/programmatic bytes。
-- 需要在 Plugin 的 Workbench 页面嵌入统一的字体选择器。
-
-只使用 Canvas、ECharts 或 Takumi 的业务 Plugin 通常不必直接注入 Fonts；由对应 renderer 依赖它即可。
-
-## 安装与 catalog
-
-以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
+在工作区中添加依赖：
 
 ```sh
 vp exec pluxel pncat add @pluxel/plugin-fonts
 ```
 
-host catalog 必须包含 `FontsPlugin`。直接使用字体能力的 Plugin 将它声明为 required dependency：
+在插件中声明注入：
 
 ```ts twoslash
 import { FontsPlugin } from '@pluxel/plugin-fonts'
@@ -64,20 +37,9 @@ export class ReportsPlugin extends BasePlugin {
 }
 ```
 
-以下 `host` 是 [测试宿主](../../plugin-development/testing.md)，用于验证装配。应用入口按 [添加插件](../index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
+## 注册随插件分发的字体
 
-```ts no-twoslash
-import { FontsPlugin } from '@pluxel/plugin-fonts'
-import { ReportsPlugin } from '@acme/reports'
-
-await host.start(ReportsPlugin, { catalog: [FontsPlugin] })
-```
-
-系统字体由 `@napi-rs/canvas` 的 platform font manager 在 FontsPlugin 启动时发现。它不会安装或删除操作系统字体，也不会把字体文件发到浏览器。
-
-## 注册 Plugin 随包携带的字体
-
-使用绝对服务端路径注册静态资源：
+如果插件携带了专属字体资产，可以在 `init()` 生命周期中进行注册：
 
 ```ts twoslash
 import { FontsPlugin } from '@pluxel/plugin-fonts'
@@ -99,82 +61,78 @@ export class ReportsPlugin extends BasePlugin {
 }
 ```
 
-注册后检查 `this.fonts.families` 是否包含 `Report Sans`，再让 renderer 使用它生成一张含中文、数字和标点的图片。部署产物也必须包含 `assets/ReportSans.woff2`，路径相对于最终模块位置解析。
+- `registerFromPath()` 接受本地绝对路径，并校验文件大小限制。
+- 如果已经将字体读取到内存（如 Buffer 或 `Uint8Array`），可直接调用 `this.fonts.register({ data, family })`。
+- 注册句柄与插件生命周期绑定：当插件停止或重载时，注册的字体资源会自动注销，防止内存泄漏。
 
-`registerFromPath()` 只接受绝对路径，异步读取并检查 `maxFontBytes`；读取期间文件尺寸变化会被拒绝。
-`family` 是可选 alias；省略时使用字体内嵌的 family metadata。
-
-已经取得字节时使用 `register()`：
-
-```ts no-twoslash
-const registration = await this.fonts.register({
-	data: fontBytes,
-	family: 'Report Sans',
-	signal,
-})
-
-console.log(registration.families)
-registration.dispose()
-```
-
-`data` 必须是非空 `Uint8Array`，在 Promise settle 前保持不变。读取、复制与 hash 可取消；
-最终 native 注册是受 byte 上限约束的同步操作，不能被抢占。返回的
-`FontRegistration` 包含：
-
-- `families`：本次注册新增或改变的 family。
-- `active`：registration 是否仍有效。
-- `dispose()`：提前移除注册；可重复调用。
-
-注册归属于当前 caller generation。consumer 停止或被 replacement 时，即使没有手动 `dispose()`，FontsPlugin 也会移除对应 native `FontKey`。因此不要将 registration handle 跨 generation 缓存。
-
-## 读取字体与默认选择
+## 读取字体信息与默认字体
 
 ```ts no-twoslash
+// 获取当前所有可用字体族的快照
 const families = this.fonts.families
+
+// 获取当前解析后的全局默认字体
 const current = this.fonts.defaultFont
+
+// 字体版本修订号（注册变化时递增，可用于测量缓存失效）
 const revision = this.fonts.revision
 ```
 
-`families` 是 detached、只读的 family snapshot。每项包含：
+默认字体的解析优先级如下：
+1. 宿主通过配置明确指定的 `defaultFamily`；
+2. 管理员在控制台中持久化保存的默认偏好；
+3. 当前操作系统的默认系统字体；
+4. 兜底回退至通用 `sans-serif`。
 
-- `family`：字体 family 名称。
-- `source`：`system` 或 `registered`。
-- `styles`：可用的 weight、width 与 style。
+### 导出可移植字体字节
 
-`defaultFont` 包含 `family`、可安全放进 Canvas font shorthand 的 `cssFamily`，以及选择来源。解析优先级为：
-
-1. 显式 `defaultFamily` host config。
-2. provider-wide 持久化 preference。
-3. 当前平台的自动系统字体。
-4. generic `sans-serif`。
-
-`source` 表示是哪一层选中了默认值：`preference`、`config`、`system` 或 `generic`，不是字体资源的来源。`preferredFamily` 或 `configuredFamily` 可能存在但暂时不可用，此时解析会继续 fallback。preference 是 Fonts 自身的 provider-wide domain state；显式配置暂时遮盖它，取消配置后可重新生效。即使 Workbench 未启用，仍会从 Core 后端恢复保存偏好。
-
-`revision` 是进程内字体注册与默认选择的变更信号。renderer 应把它纳入文字测量 cache key，或在其变化时清空缓存。直接操作 `GlobalFonts` 不会遵守这一契约。
-
-独立 native renderer 不能共享 Canvas `GlobalFonts` 时，使用轻量 metadata snapshot 与按需 byte read：
+针对独立的纯 WebAssembly 或原生渲染引擎（如 Takumi），无法直接共享 Canvas 全局字体库。此时可通过 `portableFonts` 按需获取字节：
 
 ```ts no-twoslash
 const snapshot = this.fonts.portableFonts
 
 for (const font of snapshot.fonts) {
-	const detachedBytes = await this.fonts.readPortableFont(font.id, { signal })
-	// 注册进 renderer-local registry；按 snapshot.revision 复用结果。
+	const fontBytes = await this.fonts.readPortableFont(font.id, { signal })
+	// 注册到独立渲染引擎的私有 Registry 中
 }
 ```
 
-`portableFonts` 包含配置 `files`、managed uploads 和 `register()` / `registerFromPath()` 资源。metadata snapshot 会缓存，
-不因轮询复制 font bytes；`readPortableFont(id, { signal })` 才 cooperative 返回 detached `Uint8Array`。相同 bytes + family alias 使用同一
-content ID，最后一个 registration 释放后才从集合移除。平台自动发现的 system font 没有 FontsPlugin-owned 文件，
-因此诚实地不进入可移植集合。
+## 宿主配置与环境变量绑定
 
-## Workbench 管理与 Selection Attachment
+宿主可通过配置或环境变量指定静态字体文件与默认字体族：
 
-FontsPlugin 自己的 manager View 管理 provider-owned 字体集合：上传、删除字体并设置默认 family。上传字体通过原子保存写入
-Fonts provider 的 FS 目录，provider 重启时恢复。上传受 `maxFontBytes` / `maxManagedFonts` 约束；
-关闭页面会阻止文件读取完成后的 RPC，但不能取消浏览器已经开始的 `File.arrayBuffer()`。
+```ts no-twoslash
+import { envBinding } from '@pluxel/host'
+import { FontsPlugin, FontsConfig } from '@pluxel/plugin-fonts'
 
-其他 Plugin 不应复制上传管理界面。如果只需在自己的详情页让用户选择统一默认字体，放置 Fonts 提供的 Attachment：
+envBinding(FontsPlugin, {
+	config: {
+		schema: FontsConfig,
+		mapping: {
+			files: 'FONT_FILES',
+			defaultFamily: 'FONT_FAMILY',
+		},
+	},
+})
+```
+
+示例环境变量：
+- `FONT_FILES='["/app/fonts/CustomSans.ttf"]'`
+- `FONT_FAMILY='Custom Sans'`
+
+常用配置项与其默认值：
+
+| 配置项 | 默认值 | 说明 |
+| :--- | :--- | :--- |
+| `files` | `[]` | 宿主启动时自动加载的字体文件绝对路径列表 |
+| `defaultFamily` | 自动检测 | 默认字体族名称 |
+| `maxManagedFonts` | `64` | 控制台持久化上传的字体数量上限 |
+| `maxFontBytes` | `16 MiB` | 单个字体文件最大字节限制 |
+| `maxTotalFontBytes` | `256 MiB` | 动态注册字体的总内存占用上限 |
+
+## 在 Workbench 中嵌入字体选择器
+
+`FontsPlugin` 提供了开箱即用的控制台挂件（Attachment），可直接嵌入业务插件的详情页中：
 
 ```ts no-twoslash
 import { FontsWorkbench } from '@pluxel/plugin-fonts/workbench'
@@ -191,54 +149,9 @@ protected override init() {
 }
 ```
 
-`FontsWorkbench.selection` 提供 `FontSelectionApi.snapshotDto()` 与
-`setPreferredFamily(family | null)`；传 `null` 恢复 host config / 自动选择。selection 修改 provider 统一默认值，
-不是 consumer 私有偏好。Consumer 不创建转发 target；Canvas、ECharts、Takumi 已放置该 selector，通常无需重复添加。
+## 错误处理与业务 Result 封装
 
-Workbench disabled 只会关闭界面，不会阻止 managed fonts 恢复、程序化注册或 headless 渲染。字体发现、配置文件与程序化注册可在没有额外服务时运行。FS 与 TinyBase 无需额外安装；插件尚未运行时，managed 上传/删除与偏好修改报 `NOT_RUNNING`。默认偏好保存在 Fonts provider node 唯一 Store 的 `defaultFamily` Value；保存与 reset 等待 Host `flush()` 确认后发布新选择，失败保留原已应用选择，并阻断故障 Store 的后续偏好提交。
-
-## 配置
-
-在应用的 Plugin config 中按需覆盖以下默认值：
-
-| 字段                            |    默认值 | 职责                                           |
-| ------------------------------- | --------: | ---------------------------------------------- |
-| `files`                         |      `[]` | provider 启动加载的绝对字体文件路径            |
-| `defaultFamily`                 |  自动选择 | 优先于保存偏好的部署默认 family                |
-| `maxRegistrationsPerConsumer`   |      `32` | 一个 caller 同时持有的程序化 registration 上限 |
-| `maxNativeRegistrations`        |     `512` | 此 FontsPlugin node 持有的 native key 总上限   |
-| `maxTotalFontBytes`             | `256 MiB` | active native registrations 的合计 bytes       |
-| `maxConcurrentFontTasks`        |       `4` | 同时进行的 caller copy/read/hash 数            |
-| `maxQueuedFontTasks`            |      `32` | 所有 caller 合计等待的字体任务数               |
-| `maxQueuedFontTasksPerConsumer` |       `8` | 单个 caller 等待的字体任务数                   |
-| `maxPendingManagedTasks`        |      `32` | 已接纳的串行 Workbench 操作数（含 active）     |
-| `maxManagedFonts`               |      `64` | provider-owned 持久化集合的字体数上限          |
-| `maxFontBytes`                  |  `16 MiB` | 单个注册或上传字体文件的字节上限               |
-
-系统字体不计入 `maxManagedFonts`，也不会被 FontsPlugin cleanup。尺寸、像素、图片解码和 DPR 都不属于 Fonts 配置：它们分别由 Canvas 与 ECharts 负责。
-
-## 错误处理
-
-字体领域校验和资源操作失败时抛出 `FontsError`，可按 `error.code` 分类；偏好持久化失败保留 Host 的 TinyBase 错误和 cause：
-
-- `NOT_RUNNING`：provider 或 caller generation 已停止。
-- `INVALID_INPUT`：路径、字节、文件名或 family alias 无效。
-- `INVALID_FONT`：native registry 拒绝字体。
-- `FONT_TOO_LARGE`、`FONT_LIMIT_EXCEEDED`：触发 byte/count 配额。
-- `FONT_BUSY`：全局或 caller 字体任务队列已满。
-- `FONT_NOT_FOUND`：选择或删除的字体不存在。
-- `CORRUPT_FONT_STORAGE`：持久化 managed font 或默认选择损坏。
-- `NOT_RUNNING`：当前插件尚未运行，无法修改 managed 字体或默认偏好。
-
-不要依赖错误 message 做分支；message 用于诊断，稳定分类在 `code`。
-
-默认字体变化只影响之后创建的 Canvas context 和之后执行的 ECharts/Takumi render。已经准备好的文字布局与已有
-native context/renderer state 保持不变；portable 集合变化会让 Takumi 在新 revision 创建新的 registry。
-
-## 将可恢复失败交给业务调用方
-
-业务品牌字体注册允许用户更换文件时，可只将内容不合法和单个文件超限转成 Result。
-下面的 `fonts` 是 consumer 注入的 `FontsPlugin`，并未另建字体管理入口。
+在面向用户的字体上传或注册场景中，可将预期的输入异常转换为结构化 Result：
 
 ```ts twoslash
 import { Result, TaggedError } from '@pluxel/core/better-result'
@@ -270,9 +183,3 @@ export async function registerBrandFont(
 	}
 }
 ```
-
-Err 的 `reason` 决定提示换文件还是缩小文件。Ok 的 `value` 仍是 `FontRegistration`：caller generation
-停止时自动释放，也可调用 `dispose()` 提前释放。Result 不负责释放资源，registration 不能变成 DTO。
-调用参数错误、累计容量、存储损坏、busy、取消和停止保持原异常；启动恢复失败仍必须让 Plugin 启动失败。
-
-[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/fonts/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/fonts/tests/fonts.test.ts)。

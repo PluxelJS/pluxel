@@ -1,60 +1,71 @@
 ---
-title: 添加说明、状态与操作按钮
-description: 用 Markdown 和配置 schema 添加管理界面，无需编写 React。
+title: Content 页面：声明式说明与操作按钮
+description: 使用 Markdown 与 Valibot Schema 快速搭建包含指标展示、操作按钮与表单的管理页面，无需编写前端 React 组件。
 ---
 
-当页面只需要说明、最新状态、少量按钮或一次性表单时，使用 Content。你写 Markdown 和数据处理函数，Workbench 负责显示。
-开始前，宿主应已[启用 Workbench](../host/configuration.md#选择组合)，Plugin 应能正常启动。
+如果插件的管理界面只需要展示运行状态、说明文档、几个操作按钮或简单的配置表单，使用 **Content** 是最快捷的选择。你只需编写标准的 Markdown 文本并定义数据槽位（Slot），Workbench 会自动负责界面渲染、数据加载与交互反馈。
 
-不要用 Content 做分页、progress/cancel、多份独立 loading state、lossless stream 或自定义组件。这些需求直接使用
-[View 标准配方](./view.md)。普通非敏感配置仍使用 `configs.use()` 的标准 Config UI。
+## 快速上手
 
-## 最小路径
+### 1. 声明页面与槽位结构
 
-先在 `src/workbench.ts` 声明页面。slot 是 Markdown 中插入数据或按钮的位置；下面的 `status` 与 `refresh` 各对应一个 slot：
+在 `src/workbench.ts` 中声明页面元数据：
 
 ```ts
-// src/workbench.ts
 import * as v from 'valibot'
 import { workbench } from '@pluxel/workbench'
 
-const Status = v.object({
+// 1. 定义展示数据的 Schema
+const StatusSchema = v.object({
 	connected: v.boolean(),
 	queued: v.pipe(v.number(), v.integer(), v.minValue(0)),
 })
 
+// 2. 定义页面结构：关联 Markdown 文件与槽位（Slots）
 export const ServiceWorkbench = workbench.define({
 	overview: workbench.content({
 		document: workbench.markdown(import.meta.url, './overview.md', {
-			status: workbench.data(Status),
-			refresh: workbench.action({ label: 'Refresh' }),
+			status: workbench.data(StatusSchema),
+			refresh: workbench.action({ label: '刷新状态' }),
 		}),
-		placement: workbench.tab({ label: 'Overview' }),
+		placement: workbench.tab({ label: '概览' }),
 	}),
 })
 ```
 
-Markdown 只决定 slot 的位置：
+### 2. 编写 Markdown 模板
+
+在同目录创建 `overview.md`，使用 `::slot[slotKey]` 标记交互组件出现的位置：
 
 ```md
-# Service
+# 服务运行概览
+
+当前连接与任务堆积状态：
 
 ::slot[status]
+
+点击下方按钮可手动触发上游同步：
 
 ::slot[refresh]
 ```
 
-在 Plugin `init()` 中只发布一次，并为每个 data/action key 提供 exact binding：
+### 3. 在插件中发布数据与操作
+
+在插件的 `init()` 钩子中，为定义的槽位绑定实际的获取与执行逻辑：
 
 ```ts
 override init() {
 	this.ctx.workbench?.publish(ServiceWorkbench, {
 		overview: () => ({
-			load: () => ({ status: this.inspectService() }),
+			// 对应 workbench.data 的数据加载函数
+			load: () => ({
+				status: this.inspectService(),
+			}),
+			// 对应 workbench.action 的操作逻辑
 			actions: {
 				refresh: async () => {
 					await this.refreshService()
-					return { ok: true, message: 'Refreshed' }
+					return { ok: true, message: '刷新成功' }
 				},
 			},
 		}),
@@ -62,84 +73,56 @@ override init() {
 }
 ```
 
-这就是默认完整路径：不创建 `RpcTarget`、不管理 query cache，也不手动 reload。含 data 的 Content action settle 后，Framework 会
-重新执行 `load()`。
+当用户在界面中点击“刷新状态”按钮后，后台执行完毕，Workbench 会自动重新调用 `load()` 刷新页面数据，无需前端编写任何状态维护逻辑。
 
-需要把同一 Content 放在当前插件的侧栏或底部时，使用 [`workbench.panel()`](./panels.md) 作为 placement；Markdown、data/action 与 bindings 保持相同。
+## 添加操作表单
 
-## 加入一次性表单
-
-在 action 上声明 `input`，Workbench 就会显示并校验表单。默认点击按钮打开对话框；需要直接展开时加 `form: 'embedded'`。
+如果按钮点击需要用户输入参数，可以为 `action` 声明输入 Schema：
 
 ```ts
 const ProbeInput = v.object({
 	timeoutMs: v.pipe(v.number(), v.integer(), v.minValue(100), v.maxValue(30_000)),
 })
 
-// 放进 workbench.markdown() 的 slots 对象
-probe: workbench.action({ label: '测试连接', input: ProbeInput, form: 'embedded' })
+export const ServiceWorkbench = workbench.define({
+	overview: workbench.content({
+		document: workbench.markdown(import.meta.url, './overview.md', {
+			probe: workbench.action({
+				label: '测试探测',
+				input: ProbeInput,
+				form: 'embedded', // 'embedded' 展开表单，默认点击后弹窗输入
+			}),
+		}),
+		placement: workbench.tab({ label: '概览' }),
+	}),
+})
 ```
 
-在 Markdown 中加入 `::slot[probe]`，并在 `actions.probe` 中处理校验后的 `{ timeoutMs }`，返回 `{ ok: true, message: '连接正常' }`。
-字段标题和控件偏好使用 [Valibot 表单 metadata](./valibot-form.mdx)。
+在插件的 `actions.probe` 中直接接收校验后的入参 `{ timeoutMs }`。
 
+<span id="只在状态会自行变化时加入-live-refresh"></span>
 ## 只在状态会自行变化时加入 live refresh
 
-Content binding 可以提供同步 `subscribe(changed): Disposable`。框架为每次打开注册一次，在首次 `load()` 前建立观察，并在关闭、socket 断开、Plugin replacement 或 publication 撤回时释放返回的订阅。没有外部变化源时省略 `subscribe`。
+如果数据源在后台会自发产生更新（例如后台定时拉取、收到 WebSocket 广播），可在绑定中提供 `subscribe` 监听：
 
 ```ts
 overview: () => ({
 	load: () => ({ status: this.inspectService() }),
+	// 订阅外部数据变化
 	subscribe: (changed) => {
-		this.serviceEvents.addEventListener('change', changed)
+		this.serviceEvents.on('change', changed)
+		// 返回注销函数，页面关闭时自动清理
 		return {
-			[Symbol.dispose]: () => this.serviceEvents.removeEventListener('change', changed),
+			[Symbol.dispose]: () => this.serviceEvents.off('change', changed),
 		}
 	},
-	actions: { refresh: async () => {
-		await this.refreshService()
-		return { ok: true, message: 'Refreshed' }
-	} },
-}),
+	actions: {
+		refresh: async () => {
+			await this.refreshService()
+			return { ok: true, message: '已刷新' }
+		},
+	},
+})
 ```
 
-`changed()` 只提示重新读取最新状态，不携带 payload，也不保证逐事件交付；框架合并提示并串行执行 `load()`。每次 `subscribe` 返回独立的标准 `Disposable`，注册失败抛错时由注册函数撤销已经创建的资源。工厂失败或打开已取消时不会开始订阅。
-
-首次或后续 `load()` 失败仍可在同一个打开页面中重试，不重复订阅；页面真正关闭时释放。工厂继续接收 `principal`、`params` 和 `signal`，可用于授权、路由参数与取消业务调用；领域订阅的释放交给 binding 契约。
-
-## Markdown 与字段规则
-
-Markdown 在 build time 编译，浏览器不会运行 Markdown parser 或插入 raw HTML。支持普通段落、标题、强调/删除线、
-列表、引用、分隔线、代码、bounded GFM table，以及安全的 `https:`、`mailto:` 和本文 fragment link。HTML、图片、
-相对链接、JSX 风格标签、task list 与 frontmatter 会使构建失败；`{name}` 一类 MDX expression 只按普通文本处理，
-不会执行。
-
-`:slot[key]` 只能在普通 paragraph 中放 inline scalar data；`::slot[key]` 放 block data 或 action。每个声明必须恰好出现一次，
-unknown、missing、duplicate、nested 或 inline action 都会使构建失败。Data schema 用于只读展示，不允许 default、transform、lazy、
-undefined-producing wrapper 或 password；action input 必须是 host form 支持的 Valibot object，默认用 dialog，`form: 'embedded'`
-固定展开。Shell 只提交 raw portable data，Runtime 会在 handler 前再次执行 authoritative Valibot validation。
-
-需要防止误触时给 action 添加确认文案，例如
-`workbench.action({ label: '删除', confirm: '确定删除这条记录吗？' })`。Shell 会显示危险样式并在提交前调用 host confirm。
-这只是 UX guard，不是授权边界：Framework 会在执行时重新确认 owner generation；handler 仍须根据 open 时认证的
-`principal` 重新授权，并在写入前重新检查当前领域状态，不能信任确认框、旧 data 或客户端提交的前置条件。
-
-`load()` 一次返回所有 data keys，可以复用领域已有的递归只读 detached snapshot；Framework 不修改它。`actions` 必须与声明的 action keys 精确对应。
-
-| 声明内容                | 打开与执行行为                                                                                                 |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------- |
-| data + action           | 打开时 initial load；action 在同一 `run()` 中 settle 后再 load                                                 |
-| 只有 action             | 不建立 data subscription，直接返回 action outcome                                                              |
-| action 之外也有状态变化 | 按上节提供 `subscribe(changed)`，通知最新状态变化                                                              |
-| 纯 Markdown             | 省略 slots；`publish(ServiceWorkbench)` 即可，不创建 root 或占 opened-entry quota，也不生成 MF producer/Bridge |
-
-`subscribe()`、`load()`、`run()` 是本地 opened handle 的领域名称；底层 Content RPC root 使用
-`subscribeDto()`、`loadDto()`、`runDto()`，纯数据结果与 root 持有的订阅寿命分离。
-
-需要逐事件交付、独立并发状态、进度/取消、服务端分页或自定义 React UI 时，改用 [View](./view.md)。
-
-## 检查结果
-
-运行应用，从“应用”目录打开插件的 Overview 入口。应看到状态和 Refresh 按钮；点击后状态会重新读取。
-如果入口缺失，检查宿主已开启 Workbench、Plugin 已运行，并且 `publish()` 的 key 与声明一致。
-Markdown 的错误 slot、重复 slot 或不支持的内容应在构建时修正。
+每当调用 `changed()` 时，Workbench 会自动重新调用 `load()` 更新界面上的数据展示。

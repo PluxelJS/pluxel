@@ -3,79 +3,63 @@ title: Package 与入口矩阵
 description: 区分公开包、仅供仓库内部使用的能力和不可直接导入的实现入口。
 ---
 
-先按你要完成的任务选包；插件作者从 `@pluxel/core` 和实际所需能力包开始，创建应用用 `@pluxel/create`，装配宿主使用 Host 与显式 service 列表。
+本页汇总了 Pluxel 官方包的功能分类、导出入口与公开可用状态。
 
-本页说明各包的用途和公开入口。`private` 和 `exports` 决定源码中的导入边界；实际可安装版本以 npm registry 和发布记录为准。
+## 公开发布的 npm 包
 
-## 公开包
+以下软件包公开发布在 npm 上，可直接作为项目的依赖引入：
 
-| Package                          | 用途                                                       | 从哪里开始                                                  |
-| -------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------- |
-| `@pluxel/create`                 | 创建包含宿主、插件、前端和测试的示例项目                   | [快速开始](../getting-started/index.md)                     |
-| `@pluxel/context`                | 为独立宿主组合固定能力与惰性服务                           | [组合 Context host](./context-hosts.md)                     |
-| `@pluxel/core`                   | 插件依赖、启动停止和资源生命周期                           | [Plugin 模型](../plugin-development/model.md)               |
-| `@pluxel/services`               | 官方服务、日志、管理面与应用组合                           | [组合 Host 服务](../host/services.md)                       |
-| `@pluxel/workbench`              | Content、View、Attachment、浏览器 SDK 与官方 Shell         | [View](../workbench/view.md)                                |
-| `@pluxel/host`                   | catalog、运行意图、图更新与原生来源启动                    | [配置插件宿主](../host/configuration.md)                    |
-| `@pluxel/host-vite`              | Vite 开发/生产执行、更新与开发控制台                       | [CLI 与工具链](../development/tooling.md)                   |
-| `@pluxel/cli`                    | 脚手架、构建、发行物、开发控制台与源码工作区命令           | [CLI 与工具链](../development/tooling.md)                   |
-| `@pluxel/rolldown`               | Plugin 构建集成与源码查询                                  | [开发和发布插件包](../development/plugin-package.md)        |
-| `@pluxel/test`                   | 统一插件测试 host、Vitest/Vite preset 与文件 fixture       | [测试 Plugin](../plugin-development/testing.md)             |
-| `@pluxel/async`                  | 零依赖异步组合、并发限制、重试与等待                       | [Async 异步组合工具](../plugin-development/async.md)        |
-| `@pluxel/commands`               | command 定义、校验、live registry 与 argv/message 参数路由 | [Commands](../plugin-development/commands.md)               |
-| `valibot-form`                   | Valibot 表单 metadata 与可选 Web adapter                   | [Valibot 配置表单](../workbench/valibot-form.mdx)           |
-| `@pluxel/plugin-auth`            | Workbench 与 Management API 认证 provider                  | [Management 认证](../plugins/auth.md)                       |
-| `@pluxel/plugin-wretch`          | Plugin-owned HTTP client                                   | [Wretch HTTP client](../plugins/wretch.md)                  |
-| `@pluxel/plugin-playwright`      | 外部 CDP / Playwright 浏览器连接与原生 BrowserContext      | [浏览器连接](../plugins/browser.md)                         |
-| `@pluxel/plugin-invoice`         | 财政票据与数电发票的图片提取、网站适配和统一查验           | [图片票据提取与查验](../plugins/invoice.md)                 |
-| `@pluxel/plugin-fonts`           | 服务端字体注册与 provider                                  | [字体](../plugins/rendering/fonts.md)                       |
-| `@pluxel/plugin-canvas`          | 有预算约束的服务端 Canvas、Pretext 文字准备与静态表格工具  | [Canvas](../plugins/rendering/canvas.md)                    |
-| `@pluxel/plugin-echarts`         | 服务端 ECharts 渲染                                        | [ECharts](../plugins/rendering/echarts.md)                  |
-| `@pluxel/plugin-takumi`          | 原生 JSX/HTML/node-tree 渲染与共享 Worker adapter          | [Takumi](../plugins/rendering/takumi.md)                    |
-| `@pluxel/plugin-takumi-markdown` | GFM、静态代码高亮与可选 Typst 数学渲染                     | [Markdown / Typst](../plugins/rendering/takumi-markdown.md) |
+| 软件包名 | 功能定位 | 指南文档 |
+| :--- | :--- | :--- |
+| `@pluxel/create` | 快速创建包含宿主、插件、前端与测试设施的脚手架 | [快速开始](../getting-started/index.md) |
+| `@pluxel/core` | 插件核心模型、依赖图编排、生命周期与持久化状态 | [插件模型](../plugin-development/model.md) |
+| `@pluxel/context` | 独立宿主的上下文能力组合与惰性初始化内核 | [组合 Context host](./context-hosts.md) |
+| `@pluxel/services` | 官方基础服务集合（HTTP 路由、进程日志、命令与管理端点） | [组合 Host 服务](../host/services.md) |
+| `@pluxel/workbench` | 控制台 Content、View 与 Attachment 定义及前端 SDK | [工作台视图](../workbench/view.md) |
+| `@pluxel/host` | 宿主应用装配、静态/动态来源加载与运行策略 | [配置插件宿主](../host/configuration.md) |
+| `@pluxel/host-vite` | 基于 Vite 的开发与生产运行支持、热更新与控制台驱动 | [CLI 与工具链](../development/tooling.md) |
+| `@pluxel/cli` | 项目管理、脚手架、编译构建、发行物打包与工作区治理工具 | [CLI 与工具链](../development/tooling.md) |
+| `@pluxel/rolldown` | 插件构建编译器、语义降阶转换器与源码静态分析接口 | [开发和发布插件包](../development/plugin-package.md) |
+| `@pluxel/test` | 隔离测试宿主、Vitest 预设与测试夹具 | [插件测试](../plugin-development/testing.md) |
+| `@pluxel/async` | 异步任务编排、并发池限制与重试工具库 | [Async 异步工具](../plugin-development/async.md) |
+| `@pluxel/commands` | 命令系统声明、参数校验与 Cap'n Web / MCP 协议投影 | [Commands 命令](../plugin-development/commands.md) |
+| `valibot-form` | 基于 Valibot 的表单元数据抽象与 Web 渲染适配器 | [Valibot 配置表单](../workbench/valibot-form.mdx) |
+| `@pluxel/plugin-auth` | Workbench 与管理 API 鉴权服务插件 | [Management 认证](../plugins/auth.md) |
+| `@pluxel/plugin-wretch` | 插件专属的类型安全 HTTP 客户端能力 | [Wretch HTTP 客户端](../plugins/wretch.md) |
+| `@pluxel/plugin-playwright` | 外部 CDP / Playwright 浏览器自动化连接插件 | [浏览器连接](../plugins/browser.md) |
+| `@pluxel/plugin-invoice` | 电子发票与财政票据图片解析提取插件 | [发票提取与查验](../plugins/invoice.md) |
+| `@pluxel/plugin-fonts` | 服务端跨平台字体注册与管理插件 | [服务端字体](../plugins/rendering/fonts.md) |
+| `@pluxel/plugin-canvas` | 基于原生 Skia 的服务端 Canvas 绘图与排版插件 | [服务端 Canvas](../plugins/rendering/canvas.md) |
+| `@pluxel/plugin-echarts` | 基于 Worker 线程池的服务端 Apache ECharts 渲染插件 | [服务端 ECharts](../plugins/rendering/echarts.md) |
+| `@pluxel/plugin-takumi` | JSX / HTML 图片矢量渲染与动画生成插件 | [Takumi 渲染](../plugins/rendering/takumi.md) |
+| `@pluxel/plugin-takumi-markdown` | 支持 GFM 与代码高亮的 Markdown 转图片渲染插件 | [Markdown 图片渲染](../plugins/rendering/takumi-markdown.md) |
 
-这些 package 未标记为 private，并声明了面向消费者的入口。消费者只从 package `exports` 导入；版本可用性以 registry 和 release metadata 为准。
+## 细粒度子路径导出
 
-`@pluxel/services/management/client`、`/session` 和 `/protocol` 提供浏览器管理客户端、认证会话与 DTO；`/react` 只提供 React Context adapter。`@pluxel/workbench` 提供 browser-safe Content、Direct View 与 Attachment definition，`/client` 提供 Shell layout/opened-handle client，`/react` 提供 exact descriptor hook、host facade 与 per-open renderer resources。React 入口使用宿主提供的 singleton。RPC object model 直接从 `capnweb` 导入。
+为了保持打包体积最小化，部分复杂能力包采用了按需子路径导出：
+- **`@pluxel/services`**：
+  - `@pluxel/services/elysia`：HTTP 路由与服务装配；
+  - `@pluxel/services/database`：基于 Drizzle 的数据库服务；
+  - `@pluxel/services/management`：管理端点与客户端会话；
+  - `@pluxel/services/preset`：常用基础服务的一站式集成预设。
+- **`@pluxel/core`**：
+  - `@pluxel/core/fs`：文件系统抽象与存储后端；
+  - `@pluxel/core/better-result`：标准类型化 Result 错误处理库；
+  - `@pluxel/core/logging`：日志捕获与流式游标查询。
 
-`@pluxel/core` 固定提供 `ctx.tinybase`，`@pluxel/core/fs` 提供后端配置、FS 类型和原子保存；浏览器 IndexedDB 从 `/fs/browser` 导入。原生 Store、Queries、React 与 schematizer 直接从 `tinybase` 及子路径导入。Core 持有精确 TinyBase runtime，共享原生 Store 的插件声明同版 peer/dev；纯 config、open 或 DTO 消费者不新增依赖。用法见[插件状态](../plugin-development/tinybase.md)。
+<span id="workspace-only-能力"></span>
+## 工作区私有包（Workspace-Only）
 
-`@pluxel/commands/capnweb` 与 `@pluxel/commands/mcp` 分别把选定 Command 投影为原生 Cap’n Web 方法与 MCP Tool；适配器不安装 server 或会话，协议依赖按入口隔离。
+以下包标记为 `private: true`，主要用于 Pluxel 官方工作区内部维护或源码联调开发：
 
-`@pluxel/plugin-takumi/worker` 供业务 Worker task 使用，在该线程内解析 JSX/HTML 并复用有界的 Renderer 缓存。宿主中的 Plugin 使用 `TakumiPlugin`；只传 HTML 或 node tree 时可直接调用其 `*InWorker()` 方法。两者都使用已有的共享 Workers 服务，详见 [Takumi](../plugins/rendering/takumi.md)。
+| 软件包名 | 核心能力 | 文档入口 |
+| :--- | :--- | :--- |
+| `@pluxel/plugin-typst` | Typst 文档增量编译、矢量预览与 PDF 导出 | [Typst 文档](../plugins/rendering/typst.md) |
+| `@pluxel/plugin-cache` | 细粒度业务缓存与 Single-flight 请求合并 | [缓存服务](../plugins/cache.md) |
+| `@pluxel/plugin-rates` | 基于令牌桶的请求频率限制 | [请求频率控制](../plugins/rates.md) |
+| `@pluxel/plugin-redis` | 共享 Redis 客户端与事务执行 | [Redis 客户端](../plugins/redis.md) |
+| `@pluxel/plugin-storage` | 兼容 S3 协议的本地及远程对象存储 | [S3 对象存储](../plugins/storage.md) |
+| `@pluxel/plugin-otel` | OpenTelemetry 遥测导出 | [OpenTelemetry](../plugins/otel.md) |
+| `@pluxel/plugin-package-manager` | 动态 npm 插件包管理与离线安装 | [包管理器](../plugins/package-manager.md) |
 
-宿主服务、preset 与开发附件的组合见[服务参考](../host/services.md)。开发脚本从 `@pluxel/host-vite/console` 导入 `defineDevConsole()`，调用方法见[devconsole](../development/dev-console.md)。
-
-`@pluxel/services/elysia/node` 提供应用 `launch` 使用的 `listenElysia()`；srvx/crossws carrier 为包内实现。`createElysiaHandler()` 与 HTTP 服务共用 `@pluxel/services/elysia` 入口。Plugin 业务 HTTP 通过 `@pluxel/services/elysia` 的 owner capability 声明。`@pluxel/services/management/http` 将管理入口挂到所选 carrier；管理服务、Workbench publication 和浏览器 shell 都需显式选择。
-
-源码查询从 `@pluxel/rolldown/inspect` 导入 `openProject()`，定位声明、依赖、配置和所选应用的输入；
-不启动 Host 或执行应用模块，详见[inspect 源码查询](../development/inspection.md)。
-
-## 同包的可选入口
-
-`@pluxel/services/database`、`/database/pglite`、`/database/postgres`、`/management`、`/preset` 与 `/vite` 都属于 `@pluxel/services`；`@pluxel/host/sources` 属于 Host。`@pluxel/core/config` 提供 `logtape()` 与 `zenfs()`，分别放入 `runtime.logtape` 和 `runtime.zenfs`；日志 manager、policy/query 与浏览器 DTO 分别从 `@pluxel/core/logging` 及 `/logging/protocol` 读取。安装包不等于启用所有领域：省略 `runtime.logtape` 不安装进程日志配置，基础服务入口不加载未选择的 SQL driver、管理面、Workbench 或开发后端。浏览器协议、开发工具与服务安装器通过各自入口保持求值边界。
-
-托管 SQL 的 schema 和 query 使用原生 Drizzle，应用安装所选 driver，见[数据库与数据归属](../plugin-development/database.md)。`@pluxel/rolldown/database` 提供迁移工具 API，命令使用 `pluxel database`；应用也可以完全自管 ORM、driver、迁移和连接。
-
-## Workspace-only 能力
-
-以下 package 标记为 `private: true`，不能作为普通 npm 安装依赖。只有在支持这些包的源码 workspace 中才能集成；跨仓库联调先看[源码开发](../development/source-workspaces.md)：
-
-| Package                          | 能力                                                 | 文档                                             |
-| -------------------------------- | ---------------------------------------------------- | ------------------------------------------------ |
-| `@pluxel/plugin-typst`           | 文档会话、stateless SVG 与 Vector/PDF；/browser 预览 | [Typst](../plugins/rendering/typst.md)           |
-| `@pluxel/plugin-cache`           | owner-scoped cache、single-flight、backend           | [缓存](../plugins/cache.md)                      |
-| `@pluxel/plugin-rates`           | 按 identity 计费的频率限制                           | [请求频率控制](../plugins/rates.md)              |
-| `@pluxel/plugin-redis`           | Redis client、script 与 backend                      | [Redis](../plugins/redis.md)                     |
-| `@pluxel/plugin-storage`         | local/remote object storage                          | [对象存储](../plugins/storage.md)                |
-| `@pluxel/plugin-otel`            | traces、metrics 与 exporters                         | [OpenTelemetry](../plugins/otel.md)              |
-| `@pluxel/plugin-package-manager` | Native/Vite 插件包管理                               | [Package manager](../plugins/package-manager.md) |
-
-仓库外项目不得把这些 package 视为可安装的公共依赖，也不得用源码相对路径绕过 package boundary。
-
-## 实现入口
-
-- 官方 Shell 源码位于 `packages/workbench/shell/`，与 Workbench SDK 同包维护，编译后作为静态资源交付。
-- `@pluxel/host/internal*` 等带 `internal` 的 export 由框架自身使用，不承诺作者兼容性。
-
-业务代码不得依赖这些实现入口。缺失的公开能力需要通过稳定 public contract 提供。
+若需在外部工程中使用这些私有包，请使用 `pluxel source` 命令建立跨仓源码关联。

@@ -3,30 +3,26 @@ title: 应用发行物
 description: 创建、检查并签名验证 standalone 或 modules Node 应用目录。
 ---
 
-需要把应用交付复制到另一台机器，或确认部署文件没有缺失和改动时，为最终构建目录创建发行清单。普通启动不读取这份发行清单；modules 启动会校验自身编译模块和制品 inventory，这不替代发行签名。
+在将构建后的应用交付部署到生产服务器、容器镜像或离线环境时，可以通过发行物工具生成数字清单并校验完整性，确保文件未被损坏或篡改。
 
-已有完成构建的 `dist/` 时，在安装了 CLI 与 `@pluxel/rolldown` 的项目里运行：
+## 快速使用：创建与校验清单
+
+当生产目录（如 `dist/`）构建完成后，执行以下指令生成并核对清单：
 
 ```sh
+# 1. 为产物目录生成确定性文件清单（pluxel-distribution.json）
 vp exec pluxel distribution create ./dist
+
+# 2. 检查当前目录文件哈希与清单是否一致
 vp exec pluxel distribution inspect ./dist
 ```
 
-`inspect` 返回 `INTACT` 表示目录与清单一致。把整个目录复制到目标环境后，再运行一次 `inspect`；若还需要确认发行者身份，继续阅读下面的签名与 `verify` 流程。
+- `create`：扫描目录下的所有静态文件、服务端代码模块与静态资源，计算 SHA-256 哈希值与文件尺寸并写入清单。
+- `inspect`：比对文件与清单的一致性，返回 `INTACT` 表示目录完整无误。
 
-starter 的 `vp run build` 已在 `host/dist` 上执行 create，可直接 `vp exec pluxel distribution inspect ./host/dist`。不要在已有签名的交付目录中重建清单来掩盖差异。
+## 自管数据库与原生依赖打包
 
-## 输入必须是最终目录
-
-本页假设应用交付目录已经构建完成。宿主入口和 `pluxel()` 配置见[配置插件宿主](../host/configuration.md)。
-
-构建会先写入 server chunks、`pluxel-deployment.json`、Workbench/public、Node artifacts 与 residual `node_modules`。如果后续任务还会写 SPA、SBOM 或业务 `public/`，必须等最后一个写入者结束后再执行 `distribution create`。
-
-持久化数据、日志、数据库、上传与 cache 必须位于 distribution root 外。协议没有 mutable subtree 或 exclusion glob。
-
-## 自管数据库与原生依赖
-
-自管 libSQL 等数据库时，应用不安装 Services 的 `database()`，由应用 `prepare` 获取连接并立即登记 root effects。standalone 通过公开构建入口排除未使用的托管驱动，并声明真正需要的原生包：
+在生产构建中（`standalone` 模式），若使用了非托管的嵌入式数据库（如 `@libsql/client`）或包含平台原生 C++ Addons 的依赖，需在构建配置中显式声明：
 
 ```ts no-twoslash
 import { defineConfig } from 'vite-plus/pack'
@@ -38,47 +34,30 @@ export default defineConfig({
 		pluxel({
 			variant: 'headless',
 			managedDatabaseDrivers: [],
-			residualDependencies: { packages: ['@libsql/client'] },
+			residualDependencies: {
+				packages: ['@libsql/client'],
+			},
 		}),
 	],
 })
 ```
 
-`managedDatabaseDrivers` 控制允许进入 standalone 交付的托管 driver，默认允许 `pglite` 和 `postgres`，不代表无条件复制这两个包。驱动作为 external 时不内联进 JavaScript，但 tracing 仍会复制实际解析到的依赖；空数组则显式切断两个托管适配器入口，使它们不引入对应 driver 闭包。调用被排除的适配器会明确报错，应用私有的真实包 import 不受影响。
+- `managedDatabaseDrivers: []`：显式切断未使用的托管数据库驱动（如默认的 pglite 或 postgres），避免无用依赖进入最终打包产物。
+- `residualDependencies.packages`：确保通过原生 binding 加载的依赖及其辅助二进制库被完整追踪并拷贝至交付目录。
 
-`residualDependencies.packages` 把应用通过原生 binding loader、`createRequire()` 等访问的包交给 tracing；无法静态发现的包内资源使用 `fullTrace`，其中的包同时隐含加入 `packages`。显式包解析失败会终止构建，最终复制的实际包集合记录在 `pluxel-deployment.json` 中。
+## CLI 工具核心命令
 
-modules 保持真实包依赖，不接受这两项 standalone 构建参数；部署时须一并准备应用声明的运行依赖。两种方式都使用同一份应用的准备、启动判定和 `launch`，不会替应用运行迁移或选择 HTTP 静态目录。应用资源所有权见[应用数据库](../host/configuration.md#application-private-database)，启动与最小 HTTP 依赖见[Host 配置](../host/configuration.md#生产构建)。
+| 命令 | 用途说明 |
+| :--- | :--- |
+| `create` | 扫描完整目录并生成确定性清单（`pluxel-distribution.json`） |
+| `inspect` | 比对当前目录与清单，检测是否存在新增、删除或内容修改的文件 |
+| `verify` | 结合 Ed25519 公钥验证 DSSE 签名凭据与清单的合法性 |
+| `mark` | 写入专属的发布标记（用于在不同发版批次间进行追踪） |
+| `correlate` | 比对产物中的标记与留存记录是否匹配 |
 
-## 五个 CLI 动作
+### 使用 Ed25519 签名验证（Verify）
 
-| 动作        | 用途                                                               | 会验证发行者吗 |
-| ----------- | ------------------------------------------------------------------ | -------------- |
-| `create`    | 根据当前完整目录重建 deterministic artifact manifest               | 否             |
-| `inspect`   | 将目录与 manifest 比较，发现新增、删除或修改                       | 否             |
-| `verify`    | 验证 DSSE trusted issuer、签名 subject 和完整目录                  | 是             |
-| `mark`      | 在 finalization 前写入 inert marker，并在目录外保存 private record | 否             |
-| `correlate` | 比较 marker 与一份 private record 的随机 token                     | 否             |
-
-### Create
-
-```sh
-pluxel distribution create ./dist
-```
-
-manifest 从 `pluxel-deployment.json` 读取 application name、catalog hash、Node target 和 headless/workbench variant，并记录所有 regular file 的 size/SHA-256 与允许的 symlink target。`pluxel-distribution.json` 和 `pluxel-distribution.dsse.json` 自身不进入 inventory。
-
-### Inspect
-
-```sh
-pluxel distribution inspect ./dist
-```
-
-成功 code 是 `INTACT`。`MANIFEST_ABSENT`、`MANIFEST_INVALID` 或 `ARTIFACT_MISMATCH` 会使 CLI 失败；difference 会区分 missing、unexpected、modified 和 unsupported entry。Inspect 只证明“当前目录仍等于 manifest”，不证明谁创建了 manifest。
-
-walker 还拒绝 path escaping、NFC/case-fold collision、越出 root 或成环的 symlink、FIFO/socket/device 等特殊 entry。V1 不证明 mtime、owner、ACL、xattr、POSIX mode、空目录或 archive container metadata，因此必须先由可信步骤安全解包再验证目录。
-
-### Verify
+在受控的 CI/CD 发布流水线中，可通过私钥对生成的清单进行 DSSE 签名，并在部署端进行公钥验证：
 
 ```sh
 pluxel distribution verify ./dist \
@@ -86,75 +65,28 @@ pluxel distribution verify ./dist \
 	--report ../reports/verification.json
 ```
 
-`--key` 可重复；至少要给一个显式 trusted public key。key 与可选 report 必须位于 distribution root 外。V1 只支持 Ed25519，并要求至少一个 trusted signature 成功；artifact 旁边附带的 key 不能自行建立信任。
+- `--key`：传入受信任的发布公钥文件路径（支持多次传入多个备用公钥）。
+- 校验通过后，返回 `VERIFIED` 状态并生成结构化验证报告。
 
-稳定 verification code 按处理优先级为：`MANIFEST_ABSENT`、`ATTESTATION_ABSENT`、`ATTESTATION_UNSUPPORTED`、`ATTESTATION_INVALID`、`SIGNATURE_UNTRUSTED`、`SUBJECT_MISMATCH`、`MANIFEST_INVALID`、`ARTIFACT_MISMATCH`、`VERIFIED`。CI 应按 code 分支，不解析 message。
+### 发布标记与批次追踪（Mark / Correlate）
 
-### Mark 与 Correlate
-
-```json
-{
-	"version": "2.4.0",
-	"revision": "8d4f9ac",
-	"distributionId": "release-2026-08-16-prod"
-}
-```
+在为特定客户或环境制作专属交付物时，可在生成清单前植入轻量级发布标记：
 
 ```sh
-# 必须在 create/finalization 之前执行，让 marker 进入 artifact inventory。
+# 写入发行标记
 pluxel distribution mark ./dist \
 	--claims ../private/release-claims.json \
 	--record-out ../private/delivery-record.json
 
+# 生成最终清单
 pluxel distribution create ./dist
 
+# 在接收端验证标记与交付记录的匹配度
 pluxel distribution correlate ./dist \
-	--delivery-record ../private/delivery-record.json \
-	--report ../reports/correlation.json
+	--delivery-record ../private/delivery-record.json
 ```
 
-`mark` 要求 claims 包含 `distributionId`，创建 `pluxel-delivery.json` 和一份 root 外的 private record；二者共享随机 256-bit token。marker 不含客户身份，也不改变 Runtime 或前端行为。
+## 生产部署建议
 
-Correlation 只会返回 `DELIVERY_MARK_MATCH` 或 `DELIVERY_MARK_NONE`。token 可以被删除、复制或移植，因此 match 只表示与该 record 相等，不代表 attribution、authorization、intent、chain of custody 或法律结论。
-
-## DSSE 签名流程
-
-CLI 故意没有 `distribution sign`。私钥、KMS client、issuer policy 和签名操作必须留在发布流水线；Pluxel 只提供确定性 statement/PAE/envelope helpers 和离线 verifier。
-
-正确顺序是：
-
-```text
-完成所有 artifact（可选先 mark）
-  -> distribution create
-  -> 读取 manifest 原始 bytes
-  -> createDistributionStatement(manifestBytes, claims)
-  -> createDssePreAuthenticationEncoding(payloadType, statementBytes)
-  -> 在外部 Ed25519/KMS signer 中签 PAE bytes
-  -> createDistributionDsseEnvelope(statementBytes, signatures)
-  -> serialize 到 pluxel-distribution.dsse.json
-  -> distribution verify --key trusted-public-key
-```
-
-核心 API 来自 `@pluxel/rolldown/distribution`：
-
-```ts twoslash
-import {
-	DISTRIBUTION_DSSE_PAYLOAD_TYPE,
-	createDistributionDsseEnvelope,
-	createDistributionStatement,
-	createDssePreAuthenticationEncoding,
-	fingerprintDistributionKey,
-	serializeDistributionDsseEnvelope,
-} from '@pluxel/rolldown/distribution'
-```
-
-statement 是 in-toto Statement v1，唯一 subject 是 manifest 原始 bytes 的 SHA-256；predicate claims 只允许 `version`、`revision`、`distributionId`，且至少一个存在。用 `createDssePreAuthenticationEncoding()` 生成标准 DSSE PAE bytes 后再交给外部 signer。signature `keyid` 可为空，或使用 `fingerprintDistributionKey()` 生成的 SHA-256 SPKI fingerprint。
-
-`pluxel-distribution.dsse.json` 被 manifest 明确排除，因此可在 create 后写入而不使 inventory 失效；不要在签名后修改其他 artifact。V1 不实现 threshold、certificate chain、transparency log、revocation 或 trusted timestamp，需要这些保证时由外层 release system 提供。
-
-## 交付验证
-
-将最终目录复制或归档后，在安全解包的副本上再次执行 `verify`。Verification report、private delivery record 与 trusted key 均留在发行目录外。
-Vite 的可变工作区不生成这种 artifact manifest。modules 发行清单覆盖已构建本包目录，外部包安装和可变 sources 不属于该签名范围。公开 raw schema 位于 `@pluxel/rolldown/distribution/schema.json`。
-
-原生依赖还必须在实际接收边界运行。[headless + libSQL + PDF 流示例](https://github.com/PluxelJS/pluxel/tree/main/packages/rolldown/tests/fixtures/headless-delivery) 与[交付回归](https://github.com/PluxelJS/pluxel/blob/main/packages/rolldown/tests/headless-delivery.test.ts) 使用同一应用检查两种交付：独立安装、搬离 workspace、打开/查询/关闭数据库、业务 404、流取消和启动拒绝时不建立 listener。发行清单完整只证明文件集合；它不证明目标镜像的系统库、架构或原生 ABI 可用。部署到新镜像时仍需在该镜像重跑真实数据库与 HTTP 路径，不能用源码测试或本机成功替代。
+- **持久化数据隔离**：运行时产生的数据存储、上传文件与日志流应配置在发行物根目录之外（如独立的数据卷或 `/var/lib/` 路径）。
+- **运行环境适配**：包含原生二进制扩展的依赖需在与目标运行系统架构（如 Linux x86_64 或 ARM64）兼容的环境中完成构建与镜像打包。

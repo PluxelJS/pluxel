@@ -3,9 +3,11 @@ title: 开发和发布插件包
 description: 创建一个可以独立构建、测试和发布的 Pluxel 插件包。
 ---
 
-需要把插件提供给其他应用时，用 CLI 生成可独立测试、构建和打包的 npm 包。只想在示例应用里写业务，先看[第一个插件](../getting-started/first-plugin.md)。
+当需要将开发的插件分发给其他工程或发布至 npm 时，可以使用 CLI 生成标准的独立插件包结构。
 
-准备 Node.js 24+、pnpm 11，在空的工作目录运行：
+## 创建插件包工程
+
+使用官方模板生成一个独立的插件包：
 
 ```sh
 vp dlx @pluxel/cli@1 new --template plugin --name @acme/orders
@@ -14,81 +16,39 @@ vp run verify
 vp pm pack --dry-run
 ```
 
-这个名称会规范化为 npm 包 `@acme/pluxel-plugin-orders`，输出目录为 `orders/`，实现文件为 `src/orders.ts`，导出类为 `OrdersPlugin`。
+- 该命令会自动规范化包名为 `@acme/pluxel-plugin-orders`。
+- 输出目录为 `orders/`，核心代码位于 `src/orders.ts`，主导出类为 `OrdersPlugin`。
+- 执行 `vp run verify` 可依次完成代码格式化、类型检查、测试与全量构建。
 
-本仓库 `plugins/` 下的官方独立插件包统一使用 `@pluxel/plugin-<name>`，例如 `@pluxel/plugin-auth` 和
-`@pluxel/plugin-takumi-markdown`。第三方插件使用自己的 npm scope 与模板命名；服务包的配套插件继续通过服务的公开子路径提供。
-
-`verify` 应完成治理、格式、lint、类型、测试和构建检查；pack 列表应包含 `dist/index.mjs`、类型声明及插件声明需要的生成文件。已有 workspace 固定 CLI 时，用 `vp exec pluxel new`。
-
-官方模板默认完成依赖安装；需要只生成文件时传入 `--no-install`。local template 则默认不执行安装，必须显式传入
-`--install` 才会运行 package manager。编写 manifest 与 `.tpl` 文件前先阅读[自定义本地 Plugin 模板](./tooling.md#自定义本地-plugin-模板)。
-
-CLI 生成的插件 TypeScript 配置包含 `ESNext.Disposable`，供 Pluxel 的资源清理类型使用；自定义 `compilerOptions.lib` 时也应保留它。
-
-## 标准目录
-
-CLI 先生成实现和测试文件；拆分配置或添加管理界面后，可以扩展为下面的布局，`config.ts`、`workbench.ts` 和 `ui/` 并非默认生成文件：
+## 标准目录组织
 
 ```text
 src/
-  orders.ts            Plugin implementation
-  config.ts            server/shared-safe schema
-  index.ts             如果模板使用独立 root barrel
-  workbench.ts         可选 Workbench definition
-  *.md                 可选 Workbench Content source
-  ui/                  可选 Workbench browser entry
+  orders.ts            插件核心实现（继承 BasePlugin 并使用 @Plugin 装饰）
+  config.ts            服务与共享安全的配置 Schema
+  workbench.ts         可选的控制台面板声明（Workbench Definition）
+  ui/                  可选的控制台前端界面组件
 tests/
-  orders.test.ts
-package.json
-tsconfig.json
-tsdown.config.ts
-vite.config.ts
-vitest.config.ts
-oxlint.config.ts
-oxfmt.config.ts
+  orders.test.ts       基于 @pluxel/test 的插件集成测试
+package.json           包清单与依赖声明
+tsconfig.json          TypeScript 编译配置
+tsdown.config.ts       tsdown 打包规则
+vite.config.ts         全包任务调度（Vite Task）
 ```
 
-包根或显式导出的子路径可以作为 plugin-bearing entry。它可以导出 schema、types 和普通 helper，但每个具体 Plugin class 必须能从唯一入口的唯一 named export 追溯。
+## 插件身份与导出规范
 
-## 公开入口决定 Plugin 身份
+- **权威身份**：插件的全局身份由其公开的 npm 包入口与具名导出（Named Export）共同决定，而非类名或 `displayName`。
+- **调用约定**：消费者必须直接从该包的根入口引入插件，例如：
+  ```ts
+  import { OrdersPlugin } from '@acme/pluxel-plugin-orders'
+  ```
+- **服务配套插件**：如果一个服务包需要附带管理插件，可统一放在 `./plugins` 子路径导出（如 `@pluxel/services/plugins`），并在 `package.json` 的 `exports` 中显式声明该子路径。
 
-- consumer 从声明该 Plugin 的公开 package entry value-import required Plugin。
-- identity 来自 canonical entry + named export，不是 class name、`displayName` 或 constructor object。
-- 不从 `src/`、`dist/` 或未声明 subpath 导入 Plugin。
-- 不跨 package re-export 别人的 Plugin class。
-- 同一个 Plugin 不得从包根与子路径重复导出；`./plugins` 可以集中导出多个不同的配套 Plugin。
-
-对于可发布包，包名、公开入口路径或导出名改变会得到新的 Plugin definition identity；这些公开标识不变时，内部源码文件移动不改变这个身份。持久 config/runtime state 不按旧 class name 自动迁移。
-
-官方插件统一包名前缀也会改变 canonical entry 中的 `packageName`。即使 Plugin class 与导出名不变，
-新的包名仍代表新的 definition identity；已有持久 config/runtime state 需要显式维护对应 address，不会自动映射旧包名。
-
-## 服务包的配套插件
-
-服务包可保留纯后端入口，并用一个 `./plugins` 入口集中导出配套插件，无需每个插件单独发包。
-例如 `@pluxel/services/plugins` 提供 `VaultAdminPlugin`；未来增加配套插件时继续使用具名导出。
-
-```ts no-twoslash
-// src/plugins.ts：唯一公开插件入口，不再从 src/index.ts 重复导出。
-export { VaultAdminPlugin } from './plugins/vault/index.ts'
-```
-
-在 package exports 中明确声明 `./plugins` 的源码与发行目标，并把该入口加入标准插件构建的 entry 清单。
-插件入口需要 Pluxel lowering 和 Workbench 制品构建，不能只用普通 TypeScript 转译。
-服务自身的入口不导入插件入口；浏览器组件由 Workbench renderer 加载，服务器只发布页面声明。
-
-应用显式安装服务、选择插件并声明启动策略，完整示例见 [Vault 配套管理页](../host/configuration.md#可选管理页面与服务配套插件)。
-服务通过 token 提供能力，配套插件使用公开 API 读取能力；官方配套插件也不享有专用框架入口。
-这种组织方式复用普通 Plugin 的停止、失败和页面撤回机制，不新增服务 UI 生命周期。
-
-## 包清单的关键字段
-
-下面只摘录关键字段；完整依赖、catalog 和任务配置使用 CLI 生成的文件，不要用这个片段覆盖整个 manifest：
+## 包清单配置（`package.json`）
 
 ```json
 {
-	"$schema": "https://market.pluxel.dev/schema/package.json",
 	"name": "@acme/pluxel-plugin-orders",
 	"version": "0.1.0",
 	"type": "module",
@@ -105,171 +65,34 @@ export { VaultAdminPlugin } from './plugins/vault/index.ts'
 }
 ```
 
-构建和验证任务由生成的 `vite.config.ts` 的 `run.tasks` 维护：`build` / `test` scripts 分别委托 `compile` / `check-tests`，`verify` 委托 `workspace:verify`，通过依赖图组合治理、`vp check`、测试与构建。独立 lint / fmt 规则模块由根配置引用；工具与规则的职责见[工作区工具链](./workspace-toolchain.md#每个工具维护什么)。`lint` 同时开启 `typeAware` 与 `typeCheck`，覆盖 TypeScript 项目检查。
+- 核心框架库（如 `@pluxel/core`）及其他必需的上游插件通常声明在 `peerDependencies` 中。
+- `@pluxel/hmr` 条件用于在 Monorepo 源码联调时让 Vite 直接读取 TypeScript 源文件，`default` 则指向生产构建生成的 ESM 产物。
 
-上例用 `@pluxel/hmr` 选择源码、`default` 选择构建制品，适合同时开发和发布的包。
-源码识别也接受 `@pluxel/source`、`development` 条件；仅在工作区消费的 TypeScript 包可以直接写
-`"exports": { ".": "./src/orders.ts" }`，或在 `"."` 下用 `import` / `default` 指向同一 TypeScript
-入口，无需重复添加 `@pluxel/hmr`。这些形式都使用相同的 package-root Plugin identity。
+<span id="依赖-metadata-如何生成"></span>
+## 自动依赖元数据生成
 
-`exports` 仍须是显式子路径映射；`types` 和 `.d.ts` / `.d.mts` / `.d.cts` 声明文件不提供运行时源码。
-普通 JavaScript 的 `import` / `default` 不会被自动当成源码入口；JavaScript 源码需要显式 source condition。
-可发布包仍应将生产导出指向构建制品。
+执行 `pluxel build` 时，构建系统会静态分析插件及其包含的全部 Part 依赖拓扑，并在打包产物中自动写入依赖元数据清单（Metadata）：
+- 自动提取构造函数中的依赖注入标记；
+- 聚合 Part 树中的依赖，自动去重并确定必需（required）与可选（optional）边界；
+- 若代码中注入的外部插件未在 `package.json` 的 `peerDependencies` 中声明，构建时会报错提醒补齐依赖。
 
-Pluxel Core、所用服务和 required provider packages 通常是 peer dependencies；构建、测试和 lint 工具在 devDependencies。具体版本策略由当前 workspace/catalog 决定。
-最终 Host 应用在 `dependencies` 直接声明并安装 `capnweb`。发布 Workbench View/Attachment `RpcTarget` 的包，
-以及向这些 publisher 提供 target class 的基础库，把宿主支持的精确版本声明为 `peerDependencies.capnweb`，
-源码开发还需同版本的 `devDependencies.capnweb`；生产 bundle 保留这个外部依赖。当前官方支持 `0.12.0`。
-`pluxel build` 根据实际 Workbench target publication 检查 publisher 的声明与安装，并生成
-`pluxel.workbenchCapnweb` 制品事实。基础库无需再手写发布标记：开发 Vite 与静态构建按该库的 peer
-声明和实际 import 解析结果准入，然后接到宿主 Workbench 的同一原生模块。生产动态来源也在加载前核对
-peer、可用的制品事实和实际解析版；不匹配时报告 `PLUGIN_SOURCE_WORKBENCH_CAPNWEB_MISMATCH`。
-只使用独立私有 RPC 的包保留普通依赖和自身解析，不受该接线影响。绕过标准构建或其它加载器产生的
-第二份构造器仍会在 Workbench 打开 target 时被拒绝。
+<span id="构建与发布检查"></span>
+## 构建与发布检查清单
 
-直接使用原生 TinyBase 并与 `ctx.tinybase` 托管 Store 互操作的插件或基础库，声明
-精确的 `peerDependencies.tinybase`，源码开发另声明同版 `devDependencies.tinybase`。当前支持
-`10.0.1`，由 Core 的精确 runtime dependency 提供；应用仅在直接使用原生 TinyBase 时声明自己的 dependency。
-固定能力使用 `ctx.tinybase`，桥接类型与错误从 `@pluxel/core` 导入；原生 Store、Queries、React hooks 与 Schematizer 直接从
-`tinybase`、`tinybase/queries`、`tinybase/ui-react`、`tinybase/schematizers/schematizer-valibot`
-导入，并声明真实依赖。
-
-标准构建从原生 TinyBase imports 与共享消费者的显式 peer 生成 `pluxel.tinybase` 版本事实，核对
-原声明和原安装，再保留外部原生 import。开发 Vite、静态应用与生产原生来源使用同一接纳规则，
-把通过检查的包绑定到 Host 选择的 TinyBase；上游子路径与 Node／browser 条件保持原义。
-同版安装在不同路径也会归一到 Core 模块。仅使用 `configs.use()` 或 `ctx.tinybase.open()`、且不导入原生 TinyBase 的插件无需 TinyBase import 或 peer。独立私有 Store 使用普通 dependency，保留自己的版本和解析；不要用全局 override
-或 shared-package 配置把所有 TinyBase import 强行合并。
-
-希望跨插件公开 `Result` 实例时，从 `@pluxel/core/better-result` 导入完整上游命名导出；
-无需另设 `better-result` peer。用法见 [better-result 共享入口](../plugin-development/better-result.md)。
-发布包的 Core peer 下限须为首次发布此子入口的 Core 版本，宽泛的 `^1` 无法保证旧宿主存在该入口。
-
-## `tsconfig.json`
-
-Plugin source 需要 decorator；使用条件源码导出时，让 TypeScript 选择相同条件：
-
-```json
-{
-	"compilerOptions": {
-		"target": "ES2023",
-		"lib": ["ES2023", "ESNext.Disposable"],
-		"module": "ESNext",
-		"moduleResolution": "bundler",
-		"moduleDetection": "force",
-		"strict": true,
-		"noEmit": true,
-		"verbatimModuleSyntax": true,
-		"allowImportingTsExtensions": true,
-		"isolatedModules": true,
-		"customConditions": ["@pluxel/hmr"],
-		"experimentalDecorators": true
-	},
-	"include": [
-		"src/**/*.ts",
-		"src/**/*.tsx",
-		"tests/**/*.ts",
-		"tests/**/*.tsx",
-		"tsdown.config.ts",
-		"vite.config.ts",
-		"vitest.config.ts",
-		"oxlint.config.ts",
-		"oxfmt.config.ts"
-	]
-}
-```
-
-不要用 TypeScript emit 代替 `pluxel build`。`tsc --noEmit` 只做类型检查，不生成 Plugin semantic facts、config schema、Workbench 或 Node artifacts。
-
-## `tsdown.config.ts`
-
-当前 CLI 模板使用普通 tsdown config：
-
-```ts twoslash
-import { defineConfig } from 'vite-plus/pack'
-
-export default defineConfig({
-	tsconfig: './tsconfig.json',
-	entry: {
-		index: 'src/orders.ts',
-	},
-	dts: {
-		sourcemap: true,
-		eager: true,
-	},
-	format: ['esm'],
-	sourcemap: true,
-	clean: true,
-	minify: true,
-	treeshake: true,
-})
-```
-
-构建命令仍然是 `pluxel build`。CLI 读取并合并这个 tsdown config，再安装标准 semantic/build pipeline；不要直接把 package script 改成裸 `vp pack`，也不要自行重复安装 decorator transform、config extractor 或 Workbench builder。
-
-`pluginPackage()` 是 `@pluxel/rolldown/build` 的底层集成入口，适合自定义构建工具；canonical CLI package 使用 `pluxel build`。
-`pluxel build --watch` 的 watcher、配置重启与终端交互由命令进程拥有；停止命令结束整个 watch 会话。
-
-## 依赖 metadata 如何生成
-
-`pluxel build` 根据实际 semantic facts 校验每个 provider 的 `peerDependencies`、`peerDependenciesMeta.optional` 和普通依赖字段；缺少 peer、把共享 provider 放入 `dependencies`/`optionalDependencies`、optional 标记不符都会指出 `package.json` 字段并使构建失败。先修改作者维护的清单，再重跑构建；构建本身不搬移或删除这些字段。通过校验后，CLI 同步编译生成的 package metadata：
-
-- required Plugin root imports；
-- generated plugin package records；
-- declaration/types 与 ESM artifact；
-- config schema source；
-- 可选 Workbench Content artifact、MF2 producer 与 Node/worker/database artifacts。
-
-Reachable Part 的 constructor requirements 自动聚合到所属 Plugin，同一 provider package 去重且 required 覆盖 optional；未挂载 Part 不计入清单。外部预构建 Part 由其自己的包声明 provider peers，consumer 不复制传递 inventory。
-
-清单依赖校验失败不会提交生成 metadata；构建工具仍可能生成 bundle 与 exports，不能把该次失败当成可发布结果。不要手写 generated `pluxel.pluginPackages`、伪造 constructor dependency 或复制 package root export facts。
-
-## 已安装包的开发期界面
-
-开发宿主可以同时使用源码插件和已构建的已安装插件包。已安装包的 Workbench View/Content 直接读取其
-`dist/workbench` inventory，与插件候选一起验证、接纳和撤回；不用重新编译包内 UI。只有进入本次插件目录的 export 会加载对应产物。
-inventory 中声明的产物缺失或无效会拒绝候选更新，并保留接纳之前的版本；错误可从开发控制台的 `dev.updates.latest()` 与运行日志查看。
-
-服务变化需要重建 Host 时，补偿会复用上一次接纳的产物计划。请保留仍被使用的不可变 revision；如果原地覆盖或删除旧制品，
-补偿可能失败，宿主会报告实际结果，不会把新界面产物配给旧插件。
-
-## Workbench 内容
-
-Workbench 的声明和 API 类型放在可供浏览器导入的 `workbench.ts`，Plugin implementation 与 `publish()` 留在插件实现文件中。新页面只从
-一条标准路径开始：
-
-- 说明、bounded live state、按钮或一次性表单：[Content 配方](../workbench/content.md)；
-- 自定义 React UI、分页、progress/cancel 或复杂交互：[View 配方](../workbench/view.md)；
-- provider-owned UI 由 consumer 决定 placement：[Attachment 配方](../workbench/composition.md)。
-
-不要为普通 config 复制一套页面；使用 `configs.use()` 的标准 Config UI。动态 item、权限和业务状态通过 Plugin API 返回，
-不通过动态增删 Workbench entry 表达。
-
-Content-only package 不加载 Federation builder、不生成 remote entry，也不要求 React/Mantine compatibility；schema 与 handler
-只存在于 server binding。完整 View 的 browser graph 不得导入 Node builtin、database handle、secret 或 Plugin implementation。
-
-带 renderer 的包由工具链生成 MF2 producer、React Bridge 和 manifest；作者不手写 shared/expose。发布与 static build 要求 Content 和 renderer 制品一起构建成功，开发期状态见[工作台故障](../workbench/operations.md#生命周期和故障)。
-
-## 数据库与 Node artifacts
-
-- 托管 SQL 的 `defineDatabase()` 由标准构建转换，migrations/check artifact 随 package 发布；应用完全自管时自行交付迁移资源，见[数据库与数据归属](../plugin-development/database.md)。
-- `defineNodeModule()`/`defineWorkerTask()` 生成独立 Node artifact，见 [Node module 与 worker task](../plugin-development/node-artifacts.md)。
-- Database 和 Node artifact declaration 必须能从 package source graph 静态提取，不能藏在动态 branch 中。
-
-## 构建与发布检查
+在执行 `npm publish` 或 `pluxel publish` 之前，执行以下验证步骤：
 
 ```sh
+# 1. 运行完整代码门禁
 vp run verify
+
+# 2. 模拟打包并检查打包文件列表
 vp pm pack --dry-run
+
+# 3. 发布并触发插件市场同步
+vp exec pluxel publish --webhook
 ```
 
-`verify` 应依次覆盖 format、lint、typecheck、test 和 `pluxel build`。发布前再检查 pack 列表：
-
-- 只有 `dist/` 等声明文件进入 npm package；
-- default export target、types 和生成 artifact 都存在；
-- 没有 source map、fixture、credential 或 workspace-only path 泄漏；
-- peer dependency 与真正 runtime/provider boundary 一致；
-- consumer 能只从 package root 安装和导入。
-
-本仓库可用 PNPR 体验构建、发布、市场更新和管理操作，见[本地市场体验](./plugin-market.md)。
-
-下一步：[编写第一个插件](../getting-started/first-plugin.md)。
+发布前确认项：
+- `dist/` 目录下正确生成了 `.mjs` 模块及 `.d.ts` 类型声明文件；
+- 临时文件、测试夹具、敏感凭据或源码映射未被误打包；
+- `peerDependencies` 版本范围符合目标运行环境的要求。

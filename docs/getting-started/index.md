@@ -1,13 +1,13 @@
 ---
 title: 快速开始
-description: 用 @pluxel/create 创建并启动一个带 React 页面、HTTP API 和 Workbench 的 Pluxel 应用。
+description: 使用 @pluxel/create 创建并运行一个包含 HTTP 接口、业务插件与 Workbench 的完整应用。
 ---
 
-用 `@pluxel/create` 创建一个可以直接运行的应用。示例包含 React Todo 页面、提供 HTTP API 的插件和管理插件的 Workbench；先跑起来，再按需要了解插件、配置和宿主。
+本教程将引导你使用官方脚手架创建并启动一个完整的 Pluxel 项目。示例项目包含一个 Todo 待办服务、对外开放的 HTTP 接口，以及内置的可视化 Workbench 管理界面。
 
-## 创建并启动
+## 创建项目
 
-先按 [mise 入门](https://mise.jdx.dev/getting-started.html)安装并激活 mise。使用 Node.js 24、pnpm 11 和 Vite+ 创建项目，进入生成目录后安装项目固定的工具链：
+确保已安装 [Node.js](https://nodejs.org/)（>= 24）和 [pnpm](https://pnpm.io/)（>= 11）。我们推荐配合 [mise](https://mise.jdx.dev/) 管理工具链：
 
 ```sh
 mise exec node@24 pnpm@11 viteplus@1.3.0 -- vp create @pluxel my-app --no-install
@@ -19,69 +19,60 @@ vp run setup
 vp run dev
 ```
 
-`vp create @pluxel` 调用 `@pluxel/create`。这里用 `--no-install` 先生成文件，再由 `vp install` 安装依赖、`vp run setup` 准备 Pluxel 工作区。目标目录需要不存在或为空；不需要克隆 Pluxel 源码或全局安装 CLI。
+> [!TIP]
+> 如果你的环境中没有使用 mise，可直接使用包管理器安装依赖并启动项目：
+> ```sh
+> npx @pluxel/cli new --name my-app
+> cd my-app
+> pnpm install
+> pnpm run dev
+> ```
 
-项目初始化 Git 后运行 `vp run hooks:install` 安装 hk 提交检查。工具职责、常用命令和代理设置见[工作区工具链](../development/workspace-toolchain.md)。
+## 访问与体验应用
 
-## 确认应用已运行
+启动成功后，开发服务器会打印出两个关键地址：
 
-`vp run dev` 通过 Pitchfork 启动 `app` 服务，命令结束后服务继续运行。用 `pitchfork logs app` 查看 Vite 打印的 **Application** 地址并打开。页面标题是 **Todo route lab**：输入一条待办并点击 **Add**，再试着勾选完成或删除。
+1. **业务前端页面**：在浏览器中打开打印的 Application 地址（默认端口通常为 `3000` 或通过代理的 `8088`）。页面提供了一个交互式 Todo 演示：尝试添加一条待办事项、标记完成或删除。
+2. **Workbench 管理工作台**：访问应用地址的 `/__pluxel/workbench` 路径。在这里可以直观查看所有已加载插件的运行状态、依赖拓扑，并在图形化界面中修改配置。
 
-这条操作已经经过完整的应用链路：React 页面请求同一站点的 `/api/example/todos`，HTTP 插件调用 Todo 插件处理状态。
+这个轻量待办应用已经走通了完整的插件协作链路：前端页面向 `/api/example/todos` 发起请求，HTTP 服务插件将请求派发给业务 Todo 插件，Todo 插件再通过持久化存储（TinyBase）维护数据状态。
 
-打开同一日志中打印的 **Workbench** 地址，可以查看和管理插件。它位于同一应用地址的 `/__pluxel/workbench` 路径。
+## 进行第一次代码修改
 
-示例的待办数据由 Host 通过 [TinyBase](../plugin-development/tinybase.md) 保存，正常关闭并重启后恢复。初始待办仅在快照缺失时创建，清空后不会重新填入。
-
-项目默认启用固定 `8088` 端口的 HTTP 代理，无需项目外配置。已有 supervisor 的迁移和代理诊断见[工作区指南](../development/workspace-toolchain.md#端口与公开地址)。需要直接调试 Vite 时运行：
-
-```sh
-pitchfork stop app
-vp run @example/host#dev:server
-```
-
-打开这次 Vite 输出的本地地址即可，应用和 API 仍在同一个服务中。结束托管开发会话时使用 `pitchfork stop app`。
-
-## 做第一处修改
-
-打开 `host/web/src/client/main.tsx`，把页面中的标题改成自己的项目名称：
+打开项目目录下的 `host/web/src/client/main.tsx`，将页面标题修改为你自己的项目名称：
 
 ```tsx
-<h1>我的待办应用</h1>
+<h1>我的第一个 Pluxel 应用</h1>
 ```
 
-保存后查看页面更新。接下来按你要修改的内容选择文件：
+保存文件后，浏览器将通过 HMR（模块热替换）实时更新界面。
 
-| 要修改什么                 | 从哪里开始                     |
-| -------------------------- | ------------------------------ |
-| 页面与交互                 | `host/web/src/client/main.tsx` |
-| HTTP 接口                  | `plugins/http/src/index.ts`    |
-| 待办业务逻辑与配置 schema  | `plugins/todo/src/index.ts`    |
-| 启动哪些插件、示例初始配置 | `host/src/runtime-state.ts`    |
-| 与框架无关的业务规则       | `packages/domain/`             |
+不同关注点的代码分布如下：
 
-生成项目中的包暂时使用 `@example/*` 名称，`my-app` 是你的目录名。可以先围绕示例开发，再统一替换这些包名。
+- **前端界面与交互**：位于 `host/web/src/client/` 目录。
+- **HTTP 路由与接口**：位于 `plugins/http/src/index.ts`。
+- **待办业务逻辑与配置 Schema**：位于 `plugins/todo/src/index.ts`。
+- **应用装配与插件启停策略**：位于 `host/src/runtime-state.ts`。
 
-## 验证与构建
+## 构建与生产部署
 
-在项目根目录运行完整检查：
+运行完整的代码质量检查（包含类型检查、代码格式化、Lint 与测试）：
 
 ```sh
 vp run verify
 ```
 
-它会执行格式、lint、类型检查、测试和构建。只需要构建并启动生产版本时：
+执行打包并启动生产模式：
 
 ```sh
 vp run build
 vp run @example/host#start
 ```
 
-示例使用同一个应用声明描述固定插件与可选动态来源，开发时支持热更新。配置来源与启动策略见[配置插件宿主](../host/configuration.md)。
+生产打包会静态分析插件清单与依赖拓扑，生成可直接在生产环境部署的轻量运行时产物。
 
-## 接下来做什么
+## 下一步
 
-- **继续开发这个应用**：[示例项目结构与开发流程](../development/starter-monorepo.md)。
-- **编写自己的插件**：[编写第一个插件](./first-plugin.md)，再了解[插件依赖与生命周期](../plugin-development/model.md)。
-- **添加一个功能**：[HTTP 接口](../plugin-development/http.md)、[配置与默认值](../plugin-development/configuration.md)、[Workbench 界面](../workbench/index.md)。
-- **定位并修改已有功能，或让 coding agent 协助开发**：从[开发工作流程](../development/index.md)选择 inspect、devconsole 和测试，再读任务对应的功能指南。
+- [编写第一个插件](./first-plugin.md)：从零开发一个拥有独立配置与清理机制的插件包。
+- [插件依赖与拓扑](../plugin-development/model.md)：掌握构造函数依赖注入与可选依赖的高级用法。
+- [宿主配置教程](../host/configuration.md)：了解如何自定义环境变量、挂载文件存储与组装生产服务。

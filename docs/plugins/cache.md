@@ -1,251 +1,54 @@
 ---
-title: 缓存
-description: 为每个 Plugin 隔离缓存，并组合本地缓存、后端、加载器、失效和请求合并。
+title: 多级缓存服务（Cache）
+description: 插件级自动隔离的多级缓存，支持进程内热点缓存、后端持久存储、自动请求合并与单飞防击穿。
 ---
 
-> `@pluxel/plugin-cache` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
+`@pluxel/plugin-cache` 提供了开箱即用的多级缓存抽象。在插件中注入 `Cache` 服务后，系统会自动根据插件身份隔离缓存 Key，防止不同业务插件之间的缓存冲突，并内置了并发合并（Singleflight）防止缓存击穿。
 
-`@pluxel/plugin-cache` 会识别当前调用它的 Plugin，并自动隔离普通 key。业务 Plugin 依赖抽象的 `Cache`，宿主选择内存或 Redis 后端；只有多个 Plugin 明确共享同一份值协议时，才应使用 `cache.global`。
+## 核心特性
 
-## 先选择用法
+- **插件级自动命名空间**：默认将 Key 限制在当前插件的命名空间内，无需手动添加前缀；
+- **多级存储架构**：本地极速内存缓存（Local L1）+ 集中式共享存储（Redis L2）；
+- **请求并发合并**：高并发下对同一 Key 的未命中读取，只触发一次真实的 Loader 查询；
+- **装饰器支持**：提供 `@Cached` 装饰器，一键为异步方法添加透明缓存。
 
-| 需求                                    | 写法                            |
-| --------------------------------------- | ------------------------------- |
-| 同步计算、进程内热点                    | `cache.local`                   |
-| 简单异步 cache-aside method             | `@Cached`                       |
-| 主动失效、独立策略、多层缓存或统计      | `cache.scope()` + `getOrLoad()` |
-| 跨 Plugin 共享完全相同的数据 contract   | `cache.global`                  |
-| 长期 freshness、跨实例 claim/lock、事务 | repository/database             |
+## 基础用法：getOrLoad
 
-`getOrLoad()` 的主流程是 `local -> backend -> loader -> backend/local write`。decorator 只是便利写法，不负责 repository orchestration。
-
-## 安装 provider
-
-consumer 只依赖 `Cache` 抽象；host catalog 选择：
-
-- `MemoryCacheBackendPlugin`：单进程或本地开发；
-- Redis cache backend adapter：多实例共享加速层，见 [Redis](./redis.md)。
-
-业务 Plugin 不同时维护独立 Redis client、第二套 namespace 和 cleanup。backend 选择属于 host composition。
-
-默认 `CachePlugin` 策略是 `ttlMs: 300000`、`maxEntries: 1000`、`maxInFlight: 256`、
-`readPolicy: 'cache-first'`、`backendFailure: 'required'`。应用将 `CachePlugin`、所选 backend 和 consumer
-加入 catalog，配置记录与启动策略见 [添加插件](./index.md#把一个插件加入应用)。
-
-`MemoryCacheBackendPlugin` 默认 `maxEntries: 10000`，`persistence.mode: 'off'` 不取得文件目录。
-启用 `best-effort` 或 `durable` 时，插件使用 Core 固定提供的 [FS](../plugin-development/fs.md)，宿主在 `runtime.zenfs` 中选择后端：`durable` 要求持久且可写的后端，快照恢复失败时拒绝启动；`best-effort` 在临时存储上告警，只读时仅恢复，快照恢复或保存失败按缓存策略告警并放弃这次恢复或保存。后端准备等其他失败不伪装为成功降级。`persistence.flushIntervalMs` 默认 1000，用于合并快照写入。
-快照只恢复异步 backend，停机时间计入 TTL；可写快照要求 value 能被 Node structured-clone codec 序列化。
-这是重启预热，不是数据库 durability。
-
-## 部署配置入口
-
-`@pluxel/plugin-cache` 根入口导出 `CacheConfig` 和 `MemoryCacheBackendConfig`，分别用于对应 Plugin 的 env/file 绑定。比如 `envBinding(CachePlugin, { config: { schema: CacheConfig, mapping: { maxEntries: 'CACHE_MAX_ENTRIES' } } })`。完整绑定与来源优先级见 [Host 部署绑定](../host/configuration.md#绑定部署环境与-json-文件)。Workbench 不参与配置生效。
-
-Cache 配置提供默认策略；consumer 的 `scope()` 显式字段覆盖默认值。Memory backend 的持久快照只恢复缓存条目，不恢复旧配置；当前容量、TTL 过期判定和持久化策略仍由本次部署决定。
-
-## 显式绑定稳定 scope
-
-复杂缓存应在 Plugin generation 启动时创建一次：
-
-```ts twoslash
-import { Cache, type CacheNamespace } from '@pluxel/plugin-cache'
+```ts
+import { Cache } from '@pluxel/plugin-cache'
 import { BasePlugin, Plugin } from '@pluxel/core'
 
-type CatalogItem = { id: string }
-
-async function fetchCatalogItem(_tenantId: string, itemId: string): Promise<CatalogItem> {
-	return { id: itemId }
-}
-
-// ---cut---
-
-@Plugin({ displayName: 'Catalog' })
-export class CatalogPlugin extends BasePlugin {
-	private catalog!: CacheNamespace
-
+@Plugin()
+export class ProductPlugin extends BasePlugin {
 	constructor(private readonly cache: Cache) {
 		super()
 	}
 
-	protected override init() {
-		this.catalog = this.cache.scope('catalog', {
-			ttlMs: 10 * 60_000,
-			maxEntries: 5_000,
-			maxInFlight: 32,
-			backendFailure: 'bypass',
-		})
+	async getProduct(productId: string) {
+		// 先查缓存，未命中时执行 loader 并自动回填缓存
+		return this.cache.getOrLoad(`product:${productId}`, async () => {
+			return this.fetchFromDatabase(productId)
+		}, { ttlMs: 60_000 })
 	}
 
-	getItem(tenantId: string, itemId: string) {
-		return this.catalog.getOrLoad([tenantId, itemId], () => this.loadItem(tenantId, itemId))
-	}
-
-	invalidateItem(tenantId: string, itemId: string) {
-		return this.catalog.delete([tenantId, itemId])
-	}
-
-	private loadItem(tenantId: string, itemId: string) {
-		return fetchCatalogItem(tenantId, itemId)
+	async evictProduct(productId: string) {
+		// 主动失效指定缓存
+		await this.cache.delete(`product:${productId}`)
 	}
 }
 ```
 
-同 caller、scope name 和 normalized policy 会复用同一个 bucket；同名 scope 请求不同 policy 会抛出 `CachePolicyConflictError`。不要让“第一次收到的业务请求”决定长期 scope policy。
+## 使用 `@Cached` 装饰器
 
-handle 绑定 caller 和 provider generation。任一 stop/replacement 后继续调用旧 handle 会抛出 `CacheStoppedError`。
+对于简单的只读方法，可以直接使用方法装饰器：
 
-## Key 设计
+```ts
+import { Cached } from '@pluxel/plugin-cache'
 
-key 支持 `string | number | bigint | boolean`、最多 16 项的 primitive tuple 或最多 16 字段的 primitive-value plain record；canonical encoding 最多 1024 UTF-8 bytes。拒绝 nested object、accessor、symbol、非 finite number 和未配对 surrogate：
-
-```ts no-twoslash
-catalog.getOrLoad(itemId, load)
-catalog.getOrLoad([tenantId, provider, itemId], load)
-catalog.getOrLoad({ tenantId, provider, itemId }, load)
-```
-
-类型、tuple 位置、record 字段和 `-0` 都参与 canonical encoding。不要手工拼接可能歧义的复合 key，也不要把 credential/token 放进 key。
-
-key 应包含所有会改变结果的 caller-visible input：tenant、locale、permission view、schema version 等。遗漏隔离维度会比 cache miss 更危险，因为它可能返回另一个安全域的数据。
-
-## Miss、负缓存和 single-flight
-
-`undefined` 始终表示 miss，不能缓存。需要表示“查无结果”时返回 `null` 或明确的 domain value：
-
-```ts no-twoslash
-const user = await users.getOrLoad(userId, async () => {
-	return (await repository.find(userId)) ?? null
-})
-```
-
-同一进程、同 scope、同 canonical key 的 backend read 和 loader 自动合并。后到调用者订阅已有 Promise，不重复消耗 `maxInFlight`。
-
-这是进程内 single-flight，不是跨进程 distributed lock。多个实例可能同时执行 loader；写入和外部 side effect 必须本身幂等或由 repository/database 协调。
-
-达到 `maxInFlight` 时新 key 会抛出 `CacheBusyError`。调用方决定返回 503、绕过缓存或排队；不要在 cache 内建立无界等待队列。
-
-## 读取策略与取消
-
-| `readPolicy`        | 行为                                                                      |
-| ------------------- | ------------------------------------------------------------------------- |
-| `cache-first`       | 默认：local → backend → loader                                            |
-| `cache-and-refresh` | 有效 local hit 立即返回，后台通过同一 single-flight 刷新；过期值仍是 miss |
-| `remote-first`      | 跳过 local read，backend / loader 结果仍写回 local                        |
-
-provider / scope 设置稳定策略，`get()` / `getOrLoad()` 可以按次覆盖 `readPolicy`。
-`set(key, value, { ttlMs })` 按值覆盖 TTL，`0` 表示不过期。
-subscriber 的 `AbortSignal` 只取消自己的等待，不取消其他 subscriber 的共享工作。等待取消时原样 reject `signal.reason`（包括非 Error 值）；未指定 reason 时为原生 `AbortError`。
-`global` 共享值和同进程 single-flight，handle 仍绑定各自 caller；最后一个 owner 停止后清理 local registration，backend 值按 TTL 存续。
-
-## Backend failure policy
-
-默认 `required` 适合把 backend 可用性视为业务前提。数据库是权威来源且能承受 Redis 故障后的降级流量时，在 scope 设置：
-
-```ts no-twoslash
-backendFailure: 'bypass'
-```
-
-`getOrLoad()` 的 backend read failure 会继续 loader；loader 成功后的 backend write failure 仍返回结果并发布 local。loader、数据库和外部 API error 不会被吞掉。
-
-显式 `get()`、`set()`、`delete()` 和 `clear()` 始终严格传播 backend failure，因为调用方明确要求 backend operation。
-
-## Local cache
-
-同步、纯计算热点使用 `cache.local`：
-
-```ts no-twoslash
-const parsed = this.cache.local.getOrCompute(['policy', policyVersion], () => parsePolicy(source), {
-	ttlMs: 60_000,
-})
-```
-
-local 数据只存在当前进程，不参与 Redis，也不提供跨 instance coherence。值应该是当前 caller 可安全复用的 immutable snapshot；不要缓存可被调用方继续 mutation 的共享对象。
-
-## Decorator
-
-简单 method cache-aside 可以使用 decorator：
-
-```ts no-twoslash
-import { Cached, Memoized } from '@pluxel/plugin-cache'
-
-@Cached({ ttlMs: 60_000 })
-async findUser(id: string): Promise<User | null> {
-	return (await this.users.find(id)) ?? null
-}
-
-@Memoized({ ttlMs: 5_000 })
-featureEnabled(name: string): boolean {
-	return this.flags.read(name)
-}
-```
-
-constructor 仍需声明 `Cache` required dependency。`@Cached` 要求 Promise-returning method；同步方法使用 `@Memoized`。参数必须能形成稳定 primitive tuple，复杂参数通过 `key` 显式映射。
-
-需要主动失效、查看 stats、按操作覆盖 read policy 或组合 repository 时，使用显式 scope，避免把 lifecycle 和 policy 藏在 decorator 中。
-
-## 长期 freshness
-
-`getOrLoad(key, () => repository.loadFresh(...))` 只包住短期缓存。长期保存、`refreshedAt`、
-跨实例 refresh claim/CAS/fencing、事务与外部 API 失败后的旧值策略属于 repository/database。
-数据库中的 missing/tombstone 可向 Cache 返回 `null`；进程内 single-flight 不提供跨实例锁。
-
-## 检查清单
-
-在 [测试宿主](../plugin-development/testing.md) 中用计数 loader 连续读取同一个 key，两次调用应只加载一次；执行 `delete()` 后再读，应重新加载。使用不同 tenant 的 tuple key 验证隔离，用 `null` 验证负缓存。需要 Redis 共享缓存时，再在目标 backend 验证失效；单进程的请求合并不保证跨实例只运行一次 loader。
-
-## 在缓存之外构造 Result
-
-如果调用方必须区分“账号不存在”，在业务方法返回 Result；Cache 的 miss 仍是 `undefined`，不改成 Err。
-下面的 `AccountSource` 是测试用内存数据源，实际应用换成权威 repository。`CachedAccounts` 只缓存普通账号或
-明确的负缓存 `null`，每次读取后才创建 Result。空值会缓存 60 秒；新建账号后调用 `invalidate()` 撤销负缓存。
-
-```ts twoslash
-import { BasePlugin, Plugin } from '@pluxel/core'
-import { Result, TaggedError } from '@pluxel/core/better-result'
-import { Cache, type CacheNamespace } from '@pluxel/plugin-cache'
-
-export type Account = Readonly<{ id: string; name: string }>
-
-export class AccountNotFound extends TaggedError('AccountNotFound')<{ id: string }> {}
-
-// 示例数据源；实际应用替换为 repository。
-@Plugin()
-export class AccountSource extends BasePlugin {
-	async find(id: string): Promise<Account | null> {
-		return id === 'alice' ? { id, name: 'Alice' } : null
-	}
-}
-
-@Plugin()
-export class CachedAccounts extends BasePlugin {
-	private accounts!: CacheNamespace
-
-	constructor(
-		private readonly cache: Cache,
-		private readonly source: AccountSource,
-	) {
-		super()
-	}
-
-	protected override init(): void {
-		this.accounts = this.cache.scope('accounts', { ttlMs: 60_000 })
-	}
-
-	async find(id: string): Promise<Result<Account, AccountNotFound>> {
-		// Only data and the deliberate negative-cache sentinel cross the backend.
-		const account = await this.accounts.getOrLoad(id, () => this.source.find(id))
-		return account === null ? Result.err(new AccountNotFound({ id })) : Result.ok(account)
-	}
-
-	invalidate(id: string): Promise<boolean> {
-		return this.accounts.delete(id)
+export class UserService extends BasePlugin {
+	@Cached({ ttlMs: 300_000 })
+	async getUserProfile(userId: string) {
+		return fetchRemoteUserProfile(userId)
 	}
 }
 ```
-
-不要直接在返回 `Result` 的方法上使用 `@Cached`，也不要让 `getOrLoad()` 的 loader 返回 `Err`：它是普通的
-fulfilled value，可能被缓存，经过 Redis / FS 快照序列化后也不保留 Result/Error prototype。
-这里 repository 或 backend 的拒绝继续传播，不会被保存成“找不到账号”。
-调用方对 `find()` 的 Err 提示账号缺失，对 Ok 使用 `value`；网络故障不应导致创建重复账号。
-
-[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/cache/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/cache/tests/result-example.test.ts)。

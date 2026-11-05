@@ -1,30 +1,27 @@
 ---
-title: 开发与验证
-description: 按任务选择源码查询、检查、隔离测试和在线操作。
+title: 开发与工作流
+description: 掌握 Pluxel 插件与应用的开发、代码检查、调试测试与构建发布流程。
 ---
 
-Coding agent 从 [pluxel-development skill](https://github.com/PluxelJS/pluxel/blob/main/.agents/skills/pluxel-development/SKILL.md)进入；本目录提供按需查阅的用法。已知修改点直接读对应页，无需顺序阅读。
+本章节介绍开发 Pluxel 应用与插件时的常用工具、工作流与调试指南。
 
-## 按任务选择
+## 任务指南导航
 
-| 任务                                   | 入口                                                         | 结果能证明什么                              |
-| -------------------------------------- | ------------------------------------------------------------ | ------------------------------------------- |
-| 定位 Plugin/Part、配置声明或应用绑定   | [源码 inspect](./inspection.md)                              | 静态声明关系；partial/空结果不证明不存在    |
-| 检查类型、lint、构建与工作区契约       | 项目 scripts、[工作区工具链](./workspace-toolchain.md)       | 实际执行的检查；inspect 列出脚本不等于执行  |
-| 验证插件行为、失败与清理               | [插件测试](../plugin-development/testing.md)                 | 隔离 host 的回归；不代表运行实例            |
-| 控制 HMR 批次、操作配置、方法或日志    | [开发控制台](./dev-console.md)                               | 选定 profile/实例的在线结果；保留原 receipt |
-| Git 源码联调、catalog、文档/skill 接入 | [源码工作区](./source-workspaces.md)                         | 安装与来源状态；doctor 不证明产物最新       |
-| 理解生成项目的目录与任务               | [示例项目](./starter-monorepo.md)                            | 模板的职责划分与操作入口                    |
-| CLI、构建转换与 HMR                    | [CLI 与工具链](./tooling.md)                                 | 命令职责、源码转换与更新边界                |
-| 发布插件或交付应用                     | [插件包](./plugin-package.md)、[应用交付](./distribution.md) | 包公开契约与最终发行物                      |
-| 本地体验发布、市场更新与管理员操作     | [市场体验](./plugin-market.md)                               | PNPR、真实 Worker/D1 与管理 API 的本地链路  |
+| 任务场景 | 指南文档 | 主要内容 |
+| :--- | :--- | :--- |
+| 定位插件、Part、配置声明与应用拓扑 | [源码静态检查（Inspect）](./inspection.md) | 通过 CLI 检查工作区内的插件声明、依赖拓扑与配置绑定 |
+| 运行类型检查、代码 Lint 与自动化测试 | [工作区工具链](./workspace-toolchain.md) | 使用 mise、Vite Task、hk 等工具链管理开发环境与质量检查 |
+| 编写插件单元测试与集成测试 | [插件测试](../plugin-development/testing.md) | 基于真实宿主容器执行依赖注入、生命周期与回执断言测试 |
+| 运行中调试、HMR 批次控制与日志查询 | [开发控制台（Dev Console）](./dev-console.md) | 在开发服务运行期间执行测试脚本、修改配置并精准控制热替换 |
+| 多包联调与框架源码开发 | [源码工作区管理](./source-workspaces.md) | 配置本地 Git 联调环境、工作区 Catalog 与文档同步 |
+| 理解官方脚手架项目结构 | [单体仓库脚手架指南](./starter-monorepo.md) | 了解模板工程的模块划分、依赖管理与常用 package scripts |
+| CLI 命令系统与编译机制 | [CLI 与构建工具](./tooling.md) | 了解 Pluxel CLI 的指令设计、Rollup/Vite 插件转换与打包逻辑 |
+| 打包分发独立插件包 | [插件包发布](./plugin-package.md) | 配置插件元数据清单、依赖声明与导出规范 |
+| 生产部署与单体二进制打包 | [应用交付与打包部署](./distribution.md) | 构建生产运行时发行物、打包原生依赖与静态资产 |
+| 本地运行插件市场与私有源 | [插件市场调试](./plugin-market.md) | 运行本地 PNPR 仓库与市场服务端，体验包上传与更新流程 |
 
-业务实现查[插件开发](../plugin-development/index.md)，装配与部署查[Host 配置](../host/configuration.md)，框架内部维护查[工程入口](https://github.com/PluxelJS/pluxel/blob/main/engineering/README.md)。
+## 开发调试工作流建议
 
-## 选择验证边界
-
-普通函数用普通测试；依赖注入、配置和生命周期用真实 lowering 的 test host；运行中应用的变化用现有 dev console。已知符号直接用 `rg`、exports 和源码，不必先做 inspect 或启动应用。
-
-确认输入、资源所有者、调用方与生效条件后修改；按风险执行检查，交付实际结果和未覆盖边界。各类证据不能相互替代。
-
-`pluxel docs <path>` 输出当前开发来源的正文；下游优先读 `docs/pluxel/`，接入方式见[源码工作区](./source-workspaces.md#文档skill-与接入状态)。文档与版本不一致时核对实际 exports 和实现。
+- **日常逻辑开发**：推荐在业务插件中优先编写纯单元测试或隔离宿主测试（`@pluxel/test`），验证业务逻辑与依赖注入行为。
+- **在线服务联调**：使用 `pluxel dev` 启动应用，通过控制台执行交互式运行脚本（`dev run`），并在需要连续修改代码时利用 `dev hmr pause` / `apply` 批次控制确保状态平稳迁移。
+- **查阅项目文档**：可通过 `pluxel docs <path>` 查看当前工作区或依赖包自带的离线文档。

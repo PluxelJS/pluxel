@@ -1,28 +1,22 @@
 ---
-title: 使用 PluginPart 组织内部资源
-description: 用静态 Part composition 隔离配置、注册和清理，同时保持一个 Plugin 治理边界。
+title: 使用 PluginPart 组织内部结构
+description: 使用静态 Part 组合拆分大型插件的局部配置、注册逻辑与资源清理，同时维持单一插件的治理边界。
 ---
 
-一个 Plugin 的代码需要拆开，但拆出的缓存、连接或同步任务仍应一起启停时，使用 `PluginPart`。
-Part 可以有自己的配置和资源清理；某个 Part 启动失败，整个插件都会启动失败。
+当一个插件的业务逻辑越来越庞大（例如同时包含缓存调度、后台同步和复杂的数据映射），但这些子功能始终随主插件一起启停时，可以使用 `PluginPart` 进行模块化拆分。
 
-资源和 `init()` 基础见[插件模型](./model.md)。下面用一个带配置与依赖的缓存说明完整路径。
+每个 `PluginPart` 都可以拥有自己独立的局部配置 Schema、生命周期 `init()` 和依赖声明。如果某个 Part 初始化失败，整个插件将安全回滚，保证系统状态的一致性。
 
-## 先判断是否应该使用 Part
+## 场景选型：何时使用 Part
 
-| 需求                                                 | 选择                       |
-| ---------------------------------------------------- | -------------------------- |
-| 少量纯逻辑或显式传参已经足够                         | 普通函数或 class           |
-| 只需要把一组 cleanup 从 owner effects 中分组         | `this.ctx.effects.scope()` |
-| 需要自动派生 config、Context、effects 或 nested 组成 | `PluginPart`               |
-| 需要独立启停、自动启动策略、失败状态或依赖选择       | 独立 `Plugin`              |
-| 需要被其他 Plugin 注入或被多个 owner 共享            | 独立 `Plugin`              |
-
-选择依据是能否独立运行，而不是代码量。下文将包含 Part 的插件称为 owner，将直接包含它的 Plugin 或 Part 称为 host。
+- **纯辅助函数**：仅包含纯数据计算或简单工具方法时，使用普通 TypeScript 函数或辅助类即可。
+- **拆分清理作用域**：仅需要把某组清理函数聚合在一起，使用 `this.ctx.effects.scope()` 即可。
+- **PluginPart**：子模块需要自己的 Valibot 配置、生命周期 `init()` 或独立的构造函数依赖，且生命周期依附于所属插件。
+- **独立 Plugin**：模块需要被其他插件复用、需要独立配置自动启动策略，或需要独立发布与管理。
 
 ## 标准写法
 
-需要配置和外部服务时，让 Part 自己声明。此例假设 `@acme/cache-backend` 提供 `createCache()`；实际项目换成自己的依赖：
+在下面的例子中，`SearchPlugin` 将本地缓存的管理职责拆分给了 `SearchCachePart`：
 
 ```ts no-twoslash
 import { CacheBackendPlugin } from '@acme/cache-backend'
@@ -38,10 +32,13 @@ const CacheConfig = v.object({
 	maxEntries: v.optional(v.number(), 1_000),
 })
 
+// 1. 定义 Part 类：指定宿主插件类型作为泛型参数
 class SearchCachePart extends PluginPart<SearchPlugin> {
+	// Part 拥有独立的局部配置
 	private readonly config = this.configs.use(CacheConfig)
 	private cache: CacheHandle | undefined
 
+	// Part 可以通过构造函数直接声明自己需要的依赖
 	constructor(private readonly backend: CacheBackendPlugin) {
 		super()
 	}
@@ -62,86 +59,36 @@ class SearchCachePart extends PluginPart<SearchPlugin> {
 
 @Plugin({ displayName: 'Search' })
 export class SearchPlugin extends BasePlugin {
+	// 2. 主插件通过 this.parts.use 静态挂载 Part
 	private readonly cache = this.parts.use(SearchCachePart)
 
+	// 3. 对外暴露高层业务接口
 	readCachedResult(key: string): string | undefined {
 		return this.cache.get(key)
 	}
 }
 ```
 
-这个例子保留了几个重要边界：
-
-- owner 不传入 Context、config、effects 或 dependency；Core 负责构造 Part；
-- 真正消费 `CacheBackendPlugin` 的 Part 自己声明 constructor dependency，owner 不重复声明；
-- `parts.use()` 和 `configs.use()` 只声明静态结构，不在 field initializer 创建资源；
-- Part field 默认 private，owner 对外暴露自己的业务 API；
-- Part 只公开 owner 真正需要调用的窄业务方法，composition internals 保持 protected。
-
 ## 静态声明规则
 
-构建工具需要提前知道有哪些 Part，因此声明需要保持以下形状：
+为了让编译器在静态分析阶段识别插件包含的所有部件，请遵守以下要求：
 
-1. Part 是 concrete direct `PluginPart` subclass，不加 `@Plugin()`。
-2. `this.parts.use(PartClass)` 必须完整占据一个普通 class field initializer。
-3. Part field 默认使用 TypeScript `private readonly`；不要用 ECMAScript `#private` field 承载 `parts.use()` 或 `configs.use()`。
-4. 不在 constructor、method、条件表达式、循环或 helper 中动态调用 `parts.use()`。
-5. constructor 只声明 required Plugin dependency 并调用 `super()`；不读取 config，也不创建外部资源。
-6. 每个具体 Plugin 或 Part class 最多声明一次 object `configs.use()`。
-7. 长期资源、registration 和 cleanup 放在 protected `init()` 或 `plugins.use()` callback。
-
-下面这些写法都不是静态 Part composition：
-
-```ts no-twoslash
-// 错误：Part class 由运行时条件决定。
-private readonly cache = this.parts.use(enabled ? FastCachePart : SafeCachePart)
-
-// 错误：在 method 中动态创建 occurrence。
-createCache() {
-	return this.parts.use(CachePart)
-}
-
-// 错误：把 Part 当成普通对象自行构造。
-private readonly cache = new CachePart()
-```
+1. **直接继承 `PluginPart`**：Part 类必须直接继承 `PluginPart<Parent>`，类上方无需添加 `@Plugin()` 装饰器。
+2. **顶层属性初始化**：`this.parts.use(PartClass)` 必须作为类的普通属性初值声明。不要在构造函数体、普通方法或循环中动态挂载。
+3. **使用 TypeScript 属性**：属性使用常规的 `private`、`protected` 或 `readonly`，不要使用 JavaScript 原生 `#private` 私有字段。
 
 ## 依赖写在实际 consumer
 
-Part 可以像 Plugin 一样在 constructor 声明 required Plugin。provider 必须从其 公开 package entry value-import；同一个 constructor 不能重复
-同一 Plugin definition。
+Part 类与常规插件一样，可以直接在构造函数中声明所需上游依赖。
 
-工具链会把所有 reachable Part requirements 提升并去重到 owning Plugin graph。因此不要在 owner constructor 或额外的 Part
-dependency allowlist 中再复制一份 requirement；provider package 仍是实际 consumer 的直接 import，必须正常声明在 `package.json`
-依赖中。provider 缺失或启动失败时，整个 owner blocked；Part 不会被跳过，也没有单独的 dependency override。
+工具链会自动收集并提升 Part 所需的依赖到主插件的依赖图中。这意味着：
+- **按需声明**：哪个 Part 真正使用上游服务，就在该 Part 的构造函数中注入它，主插件不需要重复列出该参数。
+- **拓扑统一**：若 Part 所需的上游服务不可用或启动失败，主插件也会整体处于阻塞状态，确保不会产生半就绪的异常状态。
+- **可选依赖**：Part 也支持在 `init()` 中通过 `this.plugins.use(Ref, callback)` 接入可选依赖。
 
-optional integration 仍使用 module-level `definePluginRef<T>()`，并在 Part `init()` 中直接调用 `plugins.use()`：
+## 嵌套 Part 与层级关系
 
-```ts no-twoslash
-import type { MetricsPlugin } from '@acme/metrics'
-import { definePluginRef, PluginPart } from '@pluxel/core'
-
-const Metrics = definePluginRef<MetricsPlugin>()
-
-class MetricsPart extends PluginPart<AppPlugin> {
-	protected override init() {
-		this.plugins.use(Metrics, (metrics) => {
-			const subscription = metrics.subscribe((sample) => this.record(sample))
-			return () => subscription.dispose()
-		})
-	}
-
-	private record(sample: unknown): void {
-		// 更新当前 Part 的普通业务状态。
-	}
-}
-```
-
-Part containment 始终存在。optional provider absent、当前未运行或 start-failed 时，只是不执行 setup callback；Part 仍会构造、校验 config
-并运行自己的 `init()`。provider 出现、消失或 replacement 时，整个 owner generation 重启。
-
-## 嵌套 Part 与 immediate host
-
-Part 可以用自己的 private field 静态拥有 child Part。nested Part 的 protected `host` 永远是 immediate parent，不是 root Plugin locator：
+Part 内部还可以继续嵌套挂载子 Part。在嵌套结构中，Part 内的 `this.host` 属性始终指向直接挂载它的父级组件：
 
 ```ts no-twoslash
 class ShardPart extends PluginPart<IndexPart> {
@@ -159,74 +106,43 @@ class IndexPart extends PluginPart<SearchPlugin> {
 }
 ```
 
-如果 child 需要更上层的业务信息，让 immediate host 暴露一个窄方法并显式转发。不要增加 root-owner getter、Context locator 或
-按 `partPath` 查找任意 sibling 的机制。
+## 启动生命周期顺序
 
-## 生命周期和所有权
-
-每个 `parts.use()` field occurrence 都得到独立 Part instance、child Context 和 child effects scope；同一个 Part class 可以在不同 field
-重复使用。它们共享 owning Plugin generation 和 runtime backend，但 registration、cleanup、日志与 dependency caller attribution
-保持 occurrence 隔离。
-
-生命周期顺序固定为：
+挂载了 Part 的插件在启动时，框架按照严格自底向上的顺序推进生命周期：
 
 ```text
-required providers running
-  -> construct owner and reachable Parts
-  -> inject and validate composite config
-  -> init nested children
-  -> init direct Parts
-  -> init owning Plugin
+1. 校验并运行主插件及所有 Part 的必需依赖
+2. 构造主插件与所有静态挂载的 Part 实例
+3. 合并校验主配置与各 Part 局部配置
+4. 执行最深层嵌套 Part 的 init()
+5. 执行直接子 Part 的 init()
+6. 执行主插件自身的 init()
 ```
 
-停止和 rollback 通过 effects tree 反向清理。任一 Part constructor、config 或 `init()` 失败都会让整个 Plugin start 失败；provider
-replacement 与 optional availability 会重启整个 owner。Config patch 只通知显式注册 `configs.onUpdate()` 的当前 Part/Plugin generation，
-不会隐式 restart。Part 不提供单独 restart、running 或 failure 状态。
+插件停止或初始化遇到错误时，清理流程则严格按照相反顺序逆向执行。
 
-Part Context 是资源归属边界，不是安全 sandbox，也不会复制完整 service graph。部分 capability 仍以 owning Plugin 为最终治理单位；
-Workbench definition 只能由 owning Plugin 统一发布，Part 需要参与时向 owner 暴露窄领域能力，由 owner 绑定 Direct View 或
-Attachment target。
+## Part 字段名对应配置路径
 
-## Part 字段名也是配置路径
+Part 在父类中声明的属性名，将直接作为其局部配置在主配置 JSON 中的字段名。例如：
 
-Part 字段名也是配置路径。假设插件中的字段叫 `cache`，保存的配置就有同名对象：
-
-```json
-{
-	"cache": { "maxEntries": 2000 }
+```ts no-twoslash
+class SearchPlugin extends BasePlugin {
+	private readonly cache = this.parts.use(SearchCachePart)
 }
 ```
 
-所有 Part config 都属于同一个 Plugin config record、持久化 owner 和 revision。修改任意 Part config 会重新校验完整 composite record，并在
-所有变化 declaration 都注册 listener 时按 nested children-before-owner 顺序通知；缺少任一 listener 就只保存 desired config。重命名 Part
-field 会改变公开配置 path，应按配置 contract 变更处理。
+在保存配置时，`SearchCachePart` 的配置项会自动归入 `cache` 键下：
 
-完整 schema、default 和 Workbench form 规则见[配置模型](./configuration.md#嵌套相关设置与-part-config)。
+```json
+{
+	"cache": {
+		"maxEntries": 2000
+	}
+}
+```
+
+在 Workbench 的配置界面中，主插件的配置会展示在“常规”分区，而每个 Part 的配置则会自动呈现为对应的独立子分区。
 
 ## 只暴露业务 API
 
-`PluginPart.ctx/host/parts/plugins/configs` 和 `BasePlugin.parts/plugins/configs` 都是 subclass 内的 protected author DSL；只有
-`BasePlugin.ctx` 保持 public。Part 的调用方只应看到 subclass 主动声明的业务方法或数据。
-
-不要为了宿主、测试或调试增加这些 escape hatch：
-
-- `context()` / `getCtx()`；
-- root Plugin getter；
-- `partPath`、Part id 或任意 sibling locator；
-- 转发 `parts`、`plugins`、`configs` 的 public getter；
-- 返回 provider facade 供外部长期缓存。
-
-诊断不需要破坏这个边界。结构化日志自动带 Part attribution；宿主从 `PluginLifecycleErrorInfo.partPath` 定位 construction、init 或 cleanup
-失败。`partPath` 是 definition-local diagnostic/config coordinate，不是业务 identity。
-
-## 测试正确边界
-
-不要直接 `new PartClass()`，也不要通过类型断言读取 protected DSL。使用真实 Pluxel test host 启动 owner，并验证：
-
-- owner 暴露的业务结果；
-- Part 注册的 HTTP、command、event 或其他 capability 是否出现并在 stop 后撤销；
-- required provider failure 是否阻塞整个 owner；
-- replacement、rollback 和 partial init 是否完整 cleanup；
-- lifecycle failure 是否携带预期 `partPath`。
-
-只有业务确实需要的 projection 才值得成为 public Part method。完整测试入口见[测试 Pluxel 插件](./testing.md#pluginpartoptional-integration-与-cleanup)。
+`PluginPart` 内部的 `ctx`、`host`、`parts` 等辅助属性受 `protected` 保护。Part 应当面向父插件只暴露清晰的业务方法（如上面的 `get(key)`），避免将内部实现细节暴露到外部。测试时也建议通过测试宿主启动主插件，直接测试主插件对外的业务行为与资源清理。

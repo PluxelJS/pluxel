@@ -1,29 +1,25 @@
 ---
-title: 配置 Playground
-description: 编辑 Valibot schema，操作生成的表单，并比较原始输入与归一化结果。
+title: 配置试验场（Playground）
+description: 在交互式 Playground 中编写 Valibot Schema，实时预览生成的表单与归一化输出结果。
 ---
 
-配置 Playground 是一个独立的交互页面，用于快速试验配置 schema。它把 schema、生成的表单和 Valibot 解析结果放在同一页，方便观察默认值、转换和校验如何影响最终配置。
+配置试验场（Playground）是一个纯前端的交互式演练环境。你可以在其中编写 Valibot Schema，实时观察它所生成的表单交互形态，并对比原始输入与经过校验、默认值填充后的最终输出。
 
 ```text
-Valibot schema
-  -> valibot-form 输入
-  -> Valibot parse/default/transform 输出
+Valibot Schema
+      │
+      ▼
+valibot-form 渲染交互表单
+      │
+      ▼
+Valibot safeParse 归一化输出
 ```
 
-打开 [配置 Playground](/playground) 即可开始操作。编辑器中的 `v` 对应文档当前使用的 `valibot`，`f` 对应 `valibot-form`。输入 `v.` 或 `f.` 可以查看由真实包生成的补全、参数类型和文档；Playground 不维护另一份容易过期的类型副本。
+## 核心功能
 
-宽屏下，左侧通过「Schema」和「Input / Output」标签页切换代码编辑与结果查看，右侧操作生成的表单，两侧独立滚动；窄屏下改为上下排列。Input 与 Output 在同一个标签页中同时显示，随表单输入实时更新。切换标签页会保留代码草稿和表单填写值。数组和记录的新增输入框取得焦点时不会自动滚动页面。
+访问文档站的 [配置 Playground](/playground) 即可开始体验：
+- **实时编辑**：在 Monaco 编辑器中编写 Schema，享受基于实际依赖库导出的 TypeScript 类型补全；
+- **双向联动**：右侧表单中的输入会实时反映在 Output 面板中，方便观察 `v.optional`、`v.pipe` 与数据转换效果；
+- **字段元数据辅助**：支持使用 `valibot-form` 的 `f.formMeta` 设置字段标题、占位符与表单布局提示。
 
-编辑代码或切换预设后，点击「运行 schema」更新表单；有未运行修改时，页面会提示预览仍使用上次运行的 schema。「撤销未运行修改」恢复上次成功运行的代码，保留当前表单填写值。表单标题旁的「恢复默认值」只重置表单值，不修改代码。
-
-运行代码后：
-
-- 表单由返回的 object/intersect schema 生成，直接展开，无需点击折叠标题；
-- Input 显示表单当前持有的原始值；
-- Output 显示 `v.safeParse()` 应用默认值、transform 和 validation 后的结果；
-- schema 执行失败或不是 object/intersect 时保留上一次可用表单。
-
-Playground 代码只在当前浏览器页面执行。不要粘贴 secret，也不要运行不可信代码。
-
-完整配置约束见 [配置模型](../plugin-development/configuration.md)；字段 metadata 与 Web adapter 见 [Valibot 配置表单](./valibot-form.mdx)。
+详细的配置语法规范请参考 [配置模型](../plugin-development/configuration.md)，完整的表单元数据请参考 [Valibot 配置表单](./valibot-form.mdx)。

@@ -1,11 +1,13 @@
 ---
-title: Management 管理入口
-description: 在独立 Host 中组合认证、管理投影与所选 HTTP carrier。
+title: Management 管理服务
+description: 装配宿主管理接口、权限认证与状态快照服务。
 ---
 
-## 在独立 Host 中组合 Management
+`@pluxel/services/management` 提供了宿主底层的管理与自省能力。它是 Workbench 界面与远程控制台的数据源，负责向客户端提供插件状态快照、配置修改与控制指令。
 
-Management 由 `@pluxel/services/management` 提供。`managementAccess()` 安装认证权威，`management()` 借用 Core 内建存储安装管理投影，`managementHttp()` 将控制入口接入已选中的 HTTP carrier。三者都借用已存在的 Host，不创建物理 listener。
+## 组装管理服务
+
+在需要自定义管理通道的独立宿主中，可以组合以下核心模块：
 
 ```ts
 import { elysia } from '@pluxel/services/elysia'
@@ -13,19 +15,20 @@ import { managementAccess } from '@pluxel/services/management/access'
 import { management } from '@pluxel/services/management/service'
 import { managementHttp } from '@pluxel/services/management/http'
 
-const services = [elysia(), managementAccess(), management(), managementHttp()]
+const services = [
+	elysia(),             // 底层 Web 服务
+	managementAccess(),   // 访问控制与认证鉴权
+	management(),         // 核心状态投影服务
+	managementHttp(),     // 将管理接口挂载至 HTTP 路径
+]
 ```
 
-自定义 carrier 可以借用 `createManagementEndpoint()`：HTTP 请求交给 `fetch()`，WebSocket 升级先调用 `prepareUpgrade()`，再将实际连接交给返回的 connection。可信地址、TLS 与 origin 来自 carrier；缺失时按未知处理，不从请求头推断。
+官方的 `servicesPreset()` 默认已经包含了这套管理服务。当在预设中设置 `workbench: false` 时，Workbench 前端界面将被禁用，但底层轻量的 Management API 仍可用于自动化脚本和远程管理。
 
-管理会话的浏览器 origin 来自 carrier 显式传入的 `publicOrigin`；Vite 在其环境边界解析，生产应用的 `launch` 显式调用 `resolveHostEnv(startup.env)` 并把结果传给 `listenElysia()`。未配置时使用监听 origin。环境输入优先级及反向代理边界见[Host 环境变量](./configuration.md#配置环境变量)。该值不改变物理监听地址、客户端地址或 TLS 判定，也不信任请求中的转发头。
+## 读取管理状态快照
 
-关闭管理入口会关闭连接、取消认证交接，并使尚未进入 Host 执行队列的请求失效。已经接受的变更继续完成，不因浏览器断开而回滚。入口不拥有 Host 或 listener。Workbench 可将会话工厂与 artifact handler 绑定到同一入口，浏览器使用同一认证连接。`workbenchHttp()` 只安装 Shell，不隐式安装管理入口；完整的[显式组合示例](../workbench/standalone-host.md)同时声明 Workbench 准备依赖。官方 `servicesPreset()` 总是安装 `managementHttp()`，`workbench: false` 只关闭 Workbench。
+通过管理客户端可以查询当前宿主所有插件的实时拓扑与运行状态：
 
-自定义 carrier 从 `@pluxel/services/management` 根入口导入 `createManagementEndpoint()`；浏览器管理 API 使用 `/client`、`/session`、`/protocol`，React 接入使用 `/react`。
-
-## 读取管理快照
-
-Management client 返回经过校验的不可变本地快照，调用方可直接读取或缓存，不需要复制 DTO 或释放 RPC result。客户端负责消费 transport envelope；领域 parser 负责字段、identity、集合引用等约束，并构造最终快照。配置、日志和表单中的任意数据叶子也与输入对象隔离。
-
-Portable 数据只接受有限数值、字符串、boolean、null、稠密普通数组和普通数据对象；拒绝 accessor、非枚举业务字段、symbol、循环、显式 `undefined` 和额外数组属性。TypeScript 类型不会替代这些运行时校验。订阅返回的资源仍须由订阅者释放，不能当作快照放入缓存。数据与资源的选择见 [API 契约](../plugin-development/contracts.md)。
+- 插件状态快照返回只读的不可变对象，可直接在 React 或外部监控系统中消费；
+- 状态中包含了每个插件节点的地址（NodeAddress）、期望状态（DesiredState）以及当前生命周期状态（LifecycleState）；
+- 如果插件启动失败，快照中将完整附带详细的失败原因与堆栈信息。

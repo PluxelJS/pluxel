@@ -1,97 +1,60 @@
 ---
-title: Host 配置教程
-description: 用一份 HostApplication 组合插件、服务、开发工具和生产部署。
+title: Host 宿主配置教程
+description: 使用 defineHostApplication 统一组装插件、挂载服务、配置存储与构建生产制品。
 ---
 
-Host 拥有插件目录、运行策略和服务生命周期。应用入口默认导出 `defineHostApplication(factory)` 声明的 `HostApplicationFactory`；Vite 和生产构建读取同一个入口。
-插件只依赖 Core 和实际使用的服务，不需要全局 Runtime。
+在 Pluxel 架构中，**宿主（Host）** 是整个应用的装配中心。它负责维护插件清单、设定启动策略、组装持久化服务，并管理应用从本地开发到生产部署的完整生命周期。
 
-本页是应用装配的权威教程，各章可独立读取。只改 Plugin 方法、schema 或日志写法时，直接读[插件开发范式](../plugin-development/index.md)。编写自定义服务安装器再读[服务扩展](./services.md)。
+应用入口通常默认导出一个由 `defineHostApplication(factory)` 定义的应用工厂。Vite 本地开发服务器与生产构建流水线直接读取同一个入口，保证开发环境与生产环境行为的一致性。
 
-| 本次要配置什么                     | 章节                                                                                      |
-| ---------------------------------- | ----------------------------------------------------------------------------------------- |
-| 第三方 SDK 配置与可选预设          | [原生配置](#原生配置与预设)                                                               |
-| 服务与固定插件、启动策略           | [组合](#选择组合)、[应用入口](#应用入口)                                                  |
-| Vite 与动态插件来源                | [Vite](#vite-开发)、[动态来源](#动态来源)                                                 |
-| 环境变量、JSON 文件与来源规则      | [环境](#配置环境变量)、[插件配置绑定](#绑定部署环境与-json-文件)                          |
-| 配置保存、外部修改与共享文件       | [持久化](#保存配置和运行策略)、[外部修改](#共享文件与外部修改)                            |
-| 文件后端、只读或浏览器存储         | [FS](#选择文件后端)                                                                       |
-| Vault 后端、部署凭据与备份         | [后端](#选择后端)、[绑定](#部署凭据)、[备份](#密钥与备份)                                 |
-| 控制台、Workbench store 与远程日志 | [日志配置](#host-logging)、[OTLP](#远程输出原生-logtape-sink)                             |
-| SQL 后端、应用自管连接与生命周期   | [Backend](#选择-native-postgresql-或-pglite)、[应用数据库](#application-private-database) |
-| 轻量独立 Host                      | [Logging](#独立-logging-host)、[HTTP listener](#独立-http-host)                           |
-| 浏览器与 Web Worker                | [浏览器 Host](#浏览器-host)                                                               |
-| 生产启动、就绪判定与制品           | [启动判定](#生产启动判定)、[构建](#生产构建)                                              |
+## 目录速查
 
-以下 `HostApplication`、`servicesPreset()` 和独立 `createHost()` 示例表示不同装配方式；选择一种适合现有项目的入口，不叠加创建第二个 Host。
+| 配置主题 | 核心内容 |
+| --- | --- |
+| [原生配置与预设](#原生配置与预设) | 原生第三方库（ZenFS、LogTape、Elysia）的直接配置 |
+| [选择服务组合](#选择组合) | 官方 `servicesPreset` 与轻量基础服务的选择 |
+| [应用入口配置](#应用入口) | `plugins` 清单、`policy.autoStart` 策略与应用生命周期钩子 |
+| [Vite 开发模式](#vite-开发) | 开发期间的 HMR 热更新与控制台支持 |
+| [动态插件来源](#动态来源) | 监听本地目录动态装载插件 |
+| [环境变量与配置绑定](#绑定部署环境与-json-文件) | 将系统环境变量映射到插件的 Valibot 配置 |
+| [文件系统后端](#选择文件后端) | 挂载纯内存、本地磁盘或浏览器存储后端 |
+| [配置与策略持久化](#保存配置和运行策略) | 配置的 `declared-first`、`saved-first` 模式与热应用机制 |
+| [日志系统配置](#host-logging) | 接入 LogTape 控制台与远程传输 Sink |
+| [数据库服务装配](#选择-native-postgresql-或-pglite) | 切换本地嵌入式 PGlite 与生产 PostgreSQL 数据库 |
+| [独立轻量 Host](#独立-http-host) | 纯脚本或轻量进程中快速创建 Host |
+| [浏览器环境 Host](#浏览器-host) | 在 Web Worker 或网页中运行插件图 |
+| [生产构建与启动判定](#生产启动判定) | 打包生产静态制品与严格就绪检查 |
 
+---
+
+<span id="原生配置与预设"></span>
 ## 原生配置与预设
 
-应用代码直接使用上游配置：文件后端使用 ZenFS `mounts`，日志使用 LogTape `Config`，SQL 使用 pg/PGlite 原生配置或实例，HTTP listener 使用 srvx options。预设负责常用默认值，自定义装配保留原生 options、callback 和组合能力；框架只约束自己拥有的身份、dispatch、资源与关闭行为。OTel 和 Playwright 分别通过[原生 providers](../plugins/otel.md)和[原生连接](../plugins/browser.md#使用原生连接参数)接入，业务插件依赖抽象能力，应用选择默认或自定义 provider。
+Pluxel 坚持尊重底层优秀生态的原生 API。在宿主配置中，你可以直接传入上游库的标准配置：
+- **文件存储**：直接使用 ZenFS 的标准挂载配置（`mounts`）；
+- **日志输出**：直接使用 LogTape 原生的 Sinks、Filters 与 Formatter 配置；
+- **关系数据库**：直接配置 PostgreSQL 连接参数或 PGlite 原生选项；
+- **Web 服务**：基于 Elysia 2 原生实例进行扩展。
 
-插件的 `configs.use()` 仍描述可保存、可经管理面编辑的领域设置。函数和连接通过代码装配，部署凭据沿用 Vault 与环境绑定；进阶 SDK 装配使用应用代码或各插件的 provider 扩展入口。
+预设函数负责填充开箱即用的默认参数，在需要深度定制时，你可以随时覆盖底层原生选项。
 
+---
+
+<span id="选择组合"></span>
 ## 选择组合
 
-- 自定义或轻量宿主：`@pluxel/host`，只安装显式列出的服务。
-- 浏览器与 Web Worker：`@pluxel/host/browser`，使用固定插件目录和浏览器可用的服务。
-- 官方服务器组合：`servicesPreset()`，包括 HTTP、Commands、Node artifacts、Workers、Vault、Management 和默认启用的 Workbench。日志通过 `runtime.logtape: logtape()` 选择，托管 SQL Database 按需另行安装。
-- 无管理页面的常用基础组合：`standardServices()`，包括 HTTP、Commands、Node artifacts 和 Workers。
+根据项目类型，可在入口中选择预设的服务组合：
 
-Database 单独安装；关闭 Workbench 不会关闭插件业务能力。详细服务列表与资源归属见[组合 Host 服务](./services.md)。
+- **`servicesPreset()`**：官方服务器推荐组合。开箱包含 HTTP 服务（Elysia）、指令系统（Commands）、Worker 线程池、Node 模块加载器、Vault 凭据存储与 Workbench 可视化管理面板。
+- **`standardServices()`**：无前端管理面板的纯后端基础组合。包含 HTTP、Commands 与 Worker 基础设施。
+- **按需手工组装**：通过 `@pluxel/host` 从零挑选所需服务，保持最小体积。
 
-## 浏览器 Host
+---
 
-`@pluxel/host/browser` 导出同一个 `createHost()`、`defineHostService()` 及其类型，执行真实的 Core 依赖图、配置和生命周期。这个入口不加载 Node 应用启动器或文件系统来源；插件、所选服务及其依赖也必须支持浏览器，能在启用 Node 兼容层的 Worker 运行不代表浏览器可用。
-
-普通 `@Plugin` 源码仍需在构建阶段经过 Pluxel lowering。Vite 同时为开发模块和生产 Worker 安装独立编译插件：
-
-```ts no-twoslash
-// vite.config.ts
-import { defineConfig } from 'vite'
-import { configSourcePlugin, createPluginSemanticsPlugin } from '@pluxel/rolldown/plugins'
-
-const root = import.meta.dirname
-export default defineConfig({
-	root,
-	oxc: { decorator: { legacy: true } },
-	plugins: [createPluginSemanticsPlugin({ root }).plugin, configSourcePlugin()],
-	worker: {
-		plugins: () => [createPluginSemanticsPlugin({ root }).plugin, configSourcePlugin()],
-	},
-})
-```
-
-在页面或 Worker 中装配已编译的插件，并检查启动报告。下面的 `DemoPlugin` 是普通导出的 Plugin；它依赖的 provider 也要列入 `plugins`：
-
-```ts no-twoslash
-import { createHost } from '@pluxel/host/browser'
-import { DemoPlugin, ProviderPlugin } from './plugins'
-
-await using host = await createHost({
-	plugins: [DemoPlugin, ProviderPlugin],
-	policy: { autoStart: [DemoPlugin] },
-})
-const report = await host.start()
-if (
-	report.reconciliation.length > 0 ||
-	(report.core.status === 'committed' && !report.core.summary.lifecycleReport.ok)
-) {
-	throw new Error('Plugin 启动失败', { cause: report })
-}
-console.log(await host.status())
-// 在 Host 存续期间执行应用操作。
-```
-
-FS 与 TinyBase 始终内建；配置和运行策略使用同一个 Core 文件后端，默认 InMemory 仅在内存中保留。业务 consumer 通过 constructor 注入 provider，在 `init()` 中注册页面或 Worker 的消息处理，并用 `ctx.effects` 释放监听器；界面可以消费 `host.status()` 展示真实节点状态。停止页面或 Worker 前由创建者 `await host.close()`，然后终止 Worker；直接 `terminate()` 不会等待插件清理。
-
+<span id="应用入口"></span>
 ## 应用入口
 
-`plugins` 提供可用代码，`policy` 选择运行策略，`config` 提供 Plugin 原始输入，`services` 安装能力。`runtime` 只装配 `zenfs`、`logtape`、`tinybase`、`events` 与进阶 `documents` 设施；普通应用可以省略。`name` 是顶层诊断身份。
-
-`HostApplication` 与 `createHost()` 共用这些作者字段；动态 `sources`、部署绑定、`prepare`、`acceptStartup` 和 `launch` 由应用启动流程处理，直接 `createHost()` 不接受这些应用专属字段。
-
-具体 Plugin 的 `MyPlugin.nodeAddress()` 返回 default 节点地址，`MyPlugin.nodeAddress('east')` 返回 fork 地址；只引用 lowering 后的身份，不创建或启动实例。abstract token 和未经过 lowering 的 class 不能产生节点地址。
+在 `src/app.ts` 中通过 `defineHostApplication()` 声明应用。这是应用的权威入口：
 
 ```ts no-twoslash
 import { resolve } from 'node:path'
@@ -105,24 +68,38 @@ import { logtape, zenfs } from '@pluxel/core/config'
 import { TodoPlugin } from '@app/todo'
 
 export default defineHostApplication(async (startup) => {
-	const environment = resolveHostEnv(startup.env)
-	const prefix = resolve(startup.root, environment.dataRoot, 'fs')
-	await nativeFs.promises.mkdir(prefix, { recursive: true })
+	const env = resolveHostEnv(startup.env)
+	const storagePrefix = resolve(startup.root, env.dataRoot, 'fs')
+	await nativeFs.promises.mkdir(storagePrefix, { recursive: true })
+
 	return {
 		name: 'my-app',
+		// 1. 声明本应用包含的插件清单
 		plugins: [TodoPlugin],
+
+		// 2. 声明冷启动时自动启动的插件节点
 		policy: { autoStart: [TodoPlugin] },
-		config: { records: [{ owner: TodoPlugin, config: { maxItems: 100 } }] },
+
+		// 3. 初始默认配置
+		config: {
+			records: [{ owner: TodoPlugin, config: { maxItems: 100 } }],
+		},
+
+		// 4. 挂载官方服务预设（含 HTTP、Vault 与 Workbench）
 		services: await servicesPreset(startup, {
-			workbench: environment.workbench ?? true,
+			workbench: env.workbench ?? true,
 		}),
+
+		// 5. 启动 HTTP 物理监听
 		async launch({ host }) {
 			await listenElysia(host, {
-				hostname: environment.hostBind,
-				port: environment.hostPort,
-				publicOrigin: environment.publicOrigin,
+				hostname: env.hostBind,
+				port: env.hostPort,
+				publicOrigin: env.publicOrigin,
 			})
 		},
+
+		// 6. 底层运行时基础设施
 		runtime: {
 			logtape: logtape(),
 			zenfs: zenfs({
@@ -130,7 +107,7 @@ export default defineHostApplication(async (startup) => {
 					'/': {
 						backend: Passthrough,
 						fs: nativeFs,
-						prefix,
+						prefix: storagePrefix,
 					},
 				},
 				durableMounts: ['/'],
@@ -140,107 +117,74 @@ export default defineHostApplication(async (startup) => {
 })
 ```
 
-`plugins` 表示代码可用，不代表自动启动。`policy.autoStart` 选择冷启动时运行的节点，插件自己的 required dependencies 由图统一处理。
+### 核心属性说明
 
-配置工厂每次创建新 Host 时执行，可以读取 `env`、`bindings`、`root` 和 `deployment`。构建不会执行它。
-Vite 和生产构建都要求入口直接默认导出 `defineHostApplication(内联工厂)`：工厂直接返回对象，或在块中以唯一、无条件的最后一条顶层 `return` 返回对象；返回对象不使用 spread。`delivery: 'standalone'` 构建中的 `plugins` 使用直接数组或模块级 const/imported 数组，不使用条件、函数调用或 startup 计算。构建只分析静态清单，不执行工厂。没有环境绑定时，Vite 可运行条件插件数组。
+- **`plugins`**：提供应用可用的插件代码清单。插件列入此清单表示可用，实际启动顺序由依赖图和启动策略统一管理。
+- **`policy.autoStart`**：列出应用启动时需要主动拉起的插件；它们的依赖项会被框架自动递归拉起。
+- **`prepare`**：在插件启动前执行的应用级准备工作（如准备基础目录、校验底层前置依赖）。
+- **`launch`**：在所有插件成功进入运行状态后执行，通常用于绑定并开启 Web 物理监听。
 
-静态清单的数组必须始终保留声明时的成员：不要在模块、工厂、helper 或 callback 中修改、通过别名修改，或用动态 import 追加插件。构建会拒绝工厂中的明显修改、别名和向 helper 传递数组；`map`、`slice` 等只读使用可以保留，但 callback 也不得修改原数组。这是部署合同，有限语法检查不能证明任意 JavaScript 的副作用。需要来源目录时使用 modules 交付和显式 `sources`；standalone 拒绝声明 sources。
+---
 
-`prepare({ host, startup })` 在服务与开发附件准备完成后、插件启动前执行；适合应用级硬前提。资源获取成功后立即登记到明确的 owner，清理失败不会跳过其他资源。
-
-Plugin 配置和运行策略默认从 Core FS 文档读取管理输入；省略文件后端时使用 InMemory。启动不会把声明或默认值写成保存记录。来源规则、保存能力与采用时机各自独立，见[保存配置和运行策略](#保存配置和运行策略)。
-
-### 生产启动判定
-
-原生 modules 入口与 standalone bootstrap 使用同一流程：准备 Host 服务与应用 `prepare` → 启动插件图并结算服务 → 判定启动结果 → 执行应用 `launch`。`runHostApplication()` resolve 或 standalone 模块求值完成，表示这条流程已经完成；`launch` 中必须等待 listener 或其他入口真正建立。
-
-默认要求有效启动意图中的每个节点都达到 `running`，包括 required dependency 引入的节点；未请求运行的 catalog 项不阻止启动。需要接受降级时声明 `acceptStartup({ host, startup, report, status })`，同步或异步返回 boolean。`status.statuses` 提供各节点的 `address`、`desiredState`、`lifecycleState` 与 `issues`，应用据此判断自己需要的能力，不另维护一份框架必需插件清单。这个回调替换默认判定；返回 `true` 后才会调用 `launch({ host, startup })`，因此应同时核对所有影响接流量的条件。
-
-判定返回 `false` 时抛出 `HostApplicationStartupError`（`code: 'startup_rejected'`），其中保留 `report` 和 `status`；返回其他类型会被拒绝。`prepare`、判定或 `launch` 抛错时保留原错误并关闭 Host，关闭也失败时用 `AggregateError` 同时保留两项错误。已经获取的资源必须及时登记到 owner effects。`listenElysia()` 自动登记物理 listener，`await host.close()` 即可完成关闭；应用不重复登记 `listener.close()`。
-
-这是一份启动时的结算快照，不承诺之后持续健康。Core 和直接使用的 `host.start()` 仍允许局部失败并返回事实。Vite 自己持有 listener，执行 `prepare` 和原有图更新，但不执行 `acceptStartup` 或 `launch`，从而保留失败插件的在线诊断和修复入口。
-
+<span id="vite-开发"></span>
 ## Vite 开发
 
+在本地开发时，配合 `@pluxel/services/vite` 提供的 Vite 插件实现实时热更新：
+
 ```ts no-twoslash
+// vite.config.ts
 import { defineConfig } from 'vite'
 import { vitePreset } from '@pluxel/services/vite'
 import { resolveHostEnv } from '@pluxel/host/environment'
 
-const environment = resolveHostEnv(process.env)
+const env = resolveHostEnv(process.env)
 
 export default defineConfig({
-	server: { host: environment.hostBind ?? '127.0.0.1', port: environment.hostPort ?? 3000 },
-	plugins: [vitePreset({ entry: './src/app.ts', devConsole: true })],
+	server: {
+		host: env.hostBind ?? '127.0.0.1',
+		port: env.hostPort ?? 3000,
+	},
+	plugins: [
+		vitePreset({
+			entry: './src/app.ts',
+			devConsole: true,
+		}),
+	],
 })
 ```
 
-自定义宿主可以使用 `@pluxel/host-vite` 的 `host()` 并显式组合服务开发附件。应用、动态插件和控制台共享 Host 专用的 `pluxel` Vite environment；默认 SSR 和第三方 SSR 加载保持独立。插件源码必须经过 Pluxel lowering，执行空间边界见[工具链说明](../development/tooling.md#source-build-boundary)。
-React 页面由应用显式安装 React Vite plugin。
+开发模式下，Vite 会处理插件的装饰器编译与依赖关系提取，并支持通过命令行控制台调试插件状态。
 
-配置工厂 identity 变化时重新求值完整配置并重建 Host，固定插件的 import 更新也可能触发重建。工厂求值失败保留旧 Host。动态来源更新若未使工厂失效，则复用本次配置并提交 catalog replacement。失败候选保留旧实现；已提交后的 init 失败则报告新一代的生命周期问题，不声称旧代仍然运行。
-在线检查与修改见[开发控制台](../development/dev-console.md)。
+---
 
-自行通过 Vite `createServer()` 持有开发会话、并向 `bindings` 借出连接或存储时，关闭顺序为：
-先 `await closeHostViteSession(server)`（从 `@pluxel/host-vite` 导入），然后在 `finally` 中
-`await server.close()`，最后释放借出的资源。首项停止 Host 更新接纳并排空已有工作，保留原始清理失败；
-仅调用 Vite `server.close()` 会丢失部分插件关闭错误。未取得 Host 会话的 server 返回 `undefined`；
-已取得会话的重复关闭复用同一个结果。这个函数不关闭 Vite server，也不接管调用者提供的连接。
-
+<span id="动态来源"></span>
 ## 动态来源
+
+如果需要在应用运行期间自动扫描并加载指定目录下的插件，可以配置 `sources`：
 
 ```ts no-twoslash
 import { pluginSource } from '@pluxel/host/sources'
 
-const sources = [
-	pluginSource({
-		kind: 'directory',
-		path: './managed-plugins/entries',
-		include: ['*.mjs'],
-	}),
-]
+export default defineHostApplication(() => ({
+	plugins: [],
+	sources: [
+		pluginSource({
+			kind: 'directory',
+			path: './managed-plugins/entries',
+			include: ['*.mjs'],
+		}),
+	],
+}))
 ```
 
-将 `sources` 放在应用声明中。来源负责发现入口，包安装由应用或 Package Manager 负责；新入口进入同一个 Host catalog，是否运行仍取决于策略。
-`pluginSource()` 只创建并冻结 file/directory 数据，不打开 watcher。启动时缺失 directory 为空；缺失 file、逃逸路径和坏入口明确失败。Vite 运行时删除已经观察的 file 会撤回其定义。
-声明指向的文件或目录根、以及 include 命中的入口必须是普通文件/目录，符号链接以 `TypeError`、`code: 'PLUGIN_SOURCE_SYMLINK'` 拒绝并附 `file` 位置；不遍历目录中的符号链接子目录。父级目录可以是别名，执行入口在打开来源时固定其真实路径。
-Vite 会话打开后新建父目录别名或重定向其真实路径，会以 `PLUGIN_SOURCE_PATH_CHANGED` 拒绝；恢复原路径或重启 Vite 应用会话后再接纳，普通 Host replacement 不重新绑定观察路径。
+目录中的新插件在被保存或移除时，宿主会自动更新可用插件目录。
 
-原生 `runHostApplication()` 在一次启动中扫描预编译 `.js/.mjs`，与固定 imports 合并后启动。当前进程不响应后续新增、改写或删除，发布在**新进程下次启动**生效。它不编译 TS，也不启动 Vite。
+---
 
-Vite 开发和生产均持续接纳来源发布，普通 ESM 传递依赖属于同一个 runner 图；CommonJS、原生模块及显式 singleton 保留 Node 缓存边界。入口进入 catalog 与 Plugin 启动是独立事实。
-显式设置 `CHOKIDAR_USEPOLLING` / `CHOKIDAR_INTERVAL` 时需符合固定观察策略；冲突会拒绝并给出所需值，规则见[来源观察与关闭](https://github.com/PluxelJS/pluxel/blob/main/engineering/HMR.md#来源发现与资源所有权)。
-
-producer 在副作用前验证声明：
-
-```ts no-twoslash
-import { requirePluginSource } from '@pluxel/host/sources'
-
-const policy = requirePluginSource(ctx, {
-	kind: 'directory',
-	path: entriesDir,
-	include: ['*.mjs'],
-})
-// policy.updates 是 'next-start' 或 'live'；缺失/不匹配会抛 SOURCE_REQUIRED / SOURCE_NOT_DECLARED。
-```
-
-`createHost()` 只接收已求值插件与服务；扫描和持续更新分别归上述执行入口。
-
+<span id="vite-生产"></span>
 ## Vite 生产
 
-在一个新的 `NODE_ENV=production` 进程中，显式选已有配置文件；唯一应用 entry 仍写在该文件的 `host()` / `vitePreset()` 中：
-
-```ts no-twoslash
-// vite.runtime.config.ts；与启动脚本放在同一目录
-import { defineConfig } from 'vite'
-import { vitePreset } from '@pluxel/services/vite'
-
-export default defineConfig({
-	root: import.meta.dirname,
-	plugins: [vitePreset({ entry: 'dist/app.mjs' })],
-})
-```
+在生产环境中，使用 Node 原生生产启动器加载构建产物：
 
 ```ts no-twoslash
 // start-vite.mjs
@@ -250,69 +194,39 @@ const session = await runViteApplication({
 	root: import.meta.dirname,
 	configFile: './vite.runtime.config.ts',
 })
+
 const shutdown = () => {
-	void session.close().catch((error) => {
-		process.exitCode = 1
-		console.error(error)
+	void session.close().catch((err) => {
+		console.error('Shutdown error:', err)
+		process.exit(1)
 	})
 }
+
 process.once('SIGTERM', shutdown)
 process.once('SIGINT', shutdown)
 ```
 
-未设置 NODE_ENV 时入口会设置 production；development/test 进程会被拒绝。入口强制 production conditions、middleware mode 和关闭浏览器 HMR，启动 promise 等待目录、制品、Host 报告和已安装 listener。Plugin init issue 保留在启动报告中；装配或硬前提失败会关闭整个会话并抛错。
+---
 
-`vitePreset()` 的 HTTP 服务拥有独立业务 listener；生产没有 Vite 公共中间件、dev console 或 source Shell。配置中启用 devConsole/source Shell 会拒绝启动。`close()` 或 signal abort 停止接纳、排空已接纳更新并释放 watcher/listener。清理失败仍继续释放其余资源，`close()` 拒绝并保留原始失败；重复调用返回同一关闭结果。不要将开发前端配置直接用作生产配置；create 模板提供独立示例。
-
-执行 `root` 必须是绝对路径；配置中另有 `root` 时必须指向同一目录。应用的相对来源和数据路径以 `startup.root` 为基准；开发前端 root 与生产应用 root 可能不同。需要共享已有数据时显式设置同一个绝对 `PLUXEL_DATA_ROOT`。
-
-选择 Vite 生产部署时，直接使用的 `@pluxel/host-vite`、`vite` 以及配置 imports 必须声明为应用的 `dependencies`。选择 native 部署时，这些执行工具留在 `devDependencies`，生产安装不需要它们。
-
+<span id="配置环境变量"></span>
 ## 配置环境变量
 
-`@pluxel/host/environment` 提供 typed `env` 与纯解析函数 `resolveHostEnv(input)`；input 必须显式传入。应用用 `resolveHostEnv(startup.env)`，Vite 配置或进程 launcher 可显式传 `process.env`。Core、Host 与 listener 不隐式读取或合并进程环境。
+`@pluxel/host/environment` 提供了纯解析函数 `resolveHostEnv(input)`，统一管理常用环境变量：
 
-| 变量                                    | 含义                                                     |
-| --------------------------------------- | -------------------------------------------------------- |
-| `PLUXEL_DATA_ROOT`                      | 数据目录默认值，省略为 `.pluxel`；应用决定子目录         |
-| `PLUXEL_HOST_BIND` / `PLUXEL_HOST_PORT` | 物理 listener 地址与端口，分别优先于通用 `HOST` / `PORT` |
-| `PLUXEL_WORKBENCH`                      | 由应用传给服务组合的页面开关                             |
-| `HOST` / `PORT`                         | 通用监听输入；没有反向代理或公开 origin 时也生效         |
-| `PLUXEL_PUBLIC_ORIGIN`                  | 显式 HTTP(S) 公开 origin，优先于 `PITCHFORK_URL`         |
-| `PITCHFORK_URL`                         | Pitchfork 提供的公开 origin；未显式配置时自动采用        |
+| 环境变量 | 默认值 | 作用说明 |
+| --- | --- | --- |
+| `PLUXEL_DATA_ROOT` | `.pluxel` | 本地数据持久化存储的相对根目录 |
+| `PLUXEL_HOST_BIND` | `127.0.0.1` | HTTP 服务监听的本地地址 |
+| `PLUXEL_HOST_PORT` | `3000` | HTTP 服务监听的物理端口 |
+| `PLUXEL_WORKBENCH` | `true` | 是否开启 Workbench 管理后台 |
+| `PLUXEL_PUBLIC_ORIGIN` | 监听地址 | 对外公开的 HTTP Origin（用于反向代理与同源校验） |
 
-Vite 在自己的启动边界解析环境，用 `publicOrigin` 展示公开地址并接入管理会话同源校验。应用 `launch` 把解析后的 `hostBind`、`hostPort`、`publicOrigin` 显式交给 `listenElysia()`；listener 不读取环境，没有公开 origin 时使用监听 origin。它不改变物理监听地址、客户端地址或 TLS 判定，也不从 `Forwarded` / `X-Forwarded-*` 请求头推断。公开 origin 必须是 HTTP(S) origin，不含凭证、业务路径、查询参数或片段。开发代理的配置与排障见[工作区工具链](../development/workspace-toolchain.md#端口与公开地址)。
+---
 
+<span id="绑定部署环境与-json-文件"></span>
 ## 绑定部署环境与 JSON 文件
 
-大多数插件只需 `configs.use(schema)`，通过 Workbench 或 Host 配置 API 设置值。只有部署系统负责提供固定值时，才在应用入口加绑定：环境变量使用 `envBinding`，挂载的 JSON 文件使用 `fileBinding`。两者都由 Host 在启动时读取。
-
-应用解析在首次异步读取前捕获目标地址、文件路径、`vault.namespace` 和环境 mapping；读取期间修改原声明不会改变本次输入或来源记录。schema 保留原实例，不能借修改 schema 对象改变已声明的契约。
-
-环境绑定从本次 `startup.env` 生成声明输入；它和代码、文件一起按目标节点的 mode 与保存值组合，不自动写回。
-
-Plugin 需要导出传给 `configs.use()` 的同一个 schema：
-
-```ts no-twoslash
-// WorkerPlugin.ts
-import { BasePlugin, Plugin } from '@pluxel/core'
-import * as v from 'valibot'
-
-export const WorkerConfig = v.object({
-	endpoint: v.pipe(v.string(), v.url()),
-	http: v.object({
-		enabled: v.optional(v.boolean(), true),
-		timeoutMs: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1)), 5_000),
-	}),
-})
-
-@Plugin()
-export class WorkerPlugin extends BasePlugin {
-	private readonly config = this.configs.use(WorkerConfig)
-}
-```
-
-应用入口 直接声明部署名称；不要在配置工厂中重复解析类型或拼装 Plugin address：
+当部署系统需要通过环境变量或外部 JSON 文件覆盖特定插件的配置时，可以使用 `envBinding` 与 `fileBinding`：
 
 ```ts no-twoslash
 import { defineHostApplication, envBinding } from '@pluxel/host'
@@ -327,7 +241,10 @@ export default defineHostApplication(() => ({
 				schema: WorkerConfig,
 				mapping: {
 					endpoint: 'WORKER_ENDPOINT',
-					http: { enabled: 'WORKER_HTTP_ENABLED', timeoutMs: 'WORKER_HTTP_TIMEOUT_MS' },
+					http: {
+						enabled: 'WORKER_HTTP_ENABLED',
+						timeoutMs: 'WORKER_HTTP_TIMEOUT_MS',
+					},
 				},
 			},
 		}),
@@ -335,810 +252,156 @@ export default defineHostApplication(() => ({
 }))
 ```
 
-插件不声明静态 schema 字段。宿主导入传给 `configs.use()` 的同一个 Valibot schema 值，`envBinding` 根据 `schema` 推导 `mapping` 的输入字段；Host 启动时核对它与插件的配置声明一致。`envBinding` 和 `fileBinding` 都要求 Valibot schema，普通 Standard Schema 实现不能用于这两个绑定。这里只复用定义，不复制 schema。普通静态配置可用 `satisfies`；`defineHostApplication` 保留启动上下文，绑定 helper 提供字段之间的类型推导。
+宿主在启动时会读取对应的环境变量，校验是否符合 `WorkerConfig` 的格式要求，并注入到插件中。
 
-Mapping 从 schema input 推导：object 可展开，也可绑定一个 JSON 变量；array、tuple 与动态 record 使用完整 JSON。环境名称匹配 `[A-Z_][A-Z0-9_]*`。string 保留原文，number 要求有限 JSON number，boolean 只接受 `true`/`false`，复合类型使用 JSON。config 环境缺失不生成覆盖，空字符串和 `null` 按 schema 校验；诊断不包含输入值。
+<span id="可选管理页面与服务配套插件"></span>
+<span id="部署凭据"></span>
+### 部署凭据与 Vault 绑定
 
-声明顺序固定为 `config.records → fileBindings.config → envBindings.config`；后者覆盖同 owner 的相同路径。随后按 `record.mode → config.mode → declared-first` 选择声明与保存输入。`saved-first` 可以让保存值优先于环境值；部署必须控制某项时选择 `declared-first` 或 `declared-only`。
+敏感凭证应当通过 Vault 进行绑定，而不是放置在普通明文配置中。详细配置模式请参考 [Vault 凭据指南](../plugin-development/vault.md)。
 
-对象递归合并，数组和 tuple 整项替换；原始保存输入与 schema output 分开。默认值、transform、环境和文件声明都不自动保存。被声明遮盖的保存值仍可编辑，结果用 `shadowedPaths` 说明当前没有参与合成的路径；`readonly` 只表达文档写入限制，网络授权由管理接入另行控制。
+---
 
-绑定目标也可传 `WorkerPlugin.nodeAddress('east')` 或 canonical node address；fork 不自动创建，仍须由 `policy.forks` 声明。相同来源层中，同 owner 的相同或祖先/后代路径重复绑定会拒绝，互不重叠的 mapping 可组合。初次接纳核对真实 schema，动态替换继续检查绑定路径；缺失的可选环境变量不贡献值，明确提供的错误输入不能因随后被覆盖而忽略。
-JSON 文件通过 `fileBindings: [fileBinding(WorkerPlugin, { config: { schema: WorkerConfig, path: './worker.json' } })]` 提供原始声明（`fileBinding` 从 `@pluxel/host` 导入），路径相对 `startup.root`。文件只在启动时读取，不由构建读取或打包。修改文件或 env 需要重新创建 Host。
-
-部署凭据不放在普通 config。需要从环境变量或挂载文件提供凭据时，按 [Vault 部署绑定](#部署凭据)声明只读记录；需要交互登录或刷新凭据时，使用可写 Vault。
-
-应用生产构建 从同一声明生成 `.env.example`，只输出说明和注释状态的空 placeholder，不读取构建机环境或复制 schema default。`envBindings` 使用 direct array literal，每项调用从 `@pluxel/host` 导入的 `envBinding`，第一个参数是可静态识别的 Plugin 标识符或其 `nodeAddress()` / `nodeAddress(字符串字面量)`，第二个参数直接声明 `config`/`vault` 与其 `schema`、`mapping`；mapping 使用对象树和字符串 literal。动态分支不作为构建期来源清单。
-
-Host 查询区分 `managedInput`（保存原始输入）、`effectiveInput`（按 mode 合成的 input）和 `config`（完整 schema output）。管理编辑与保存/采用回执见下节；查询不会为展示默认值另外执行 schema transform。
-
+<span id="选择文件后端"></span>
 ## 选择文件后端
 
-在 `runtime.zenfs` 中使用 `zenfs(nativeConfig)`（`@pluxel/core/config`）。它沿用 ZenFS 原生配置与 `mounts`，Plugin 文件、TinyBase 状态与 Host 私有文档共用每个 Core 的独立挂载表。helper 验证并快照声明、正规化挂载路径，省略根挂载时补 InMemory；不打开后端或等待 ready。Core 也接受原生 `FsConfig`，可直接组合上游 Backend、嵌套 BackendConfiguration 和已打开的 FileSystem。
-
-| 场景               | 原生挂载配置                                                          |
-| ------------------ | --------------------------------------------------------------------- |
-| 隔离测试、临时数据 | `{ mounts: { '/': InMemory } }`                                       |
-| Node 持久目录      | `{ mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } }` |
-| 浏览器持久数据     | `{ mounts: { '/': { backend: IndexedDB, storeName: 'my-app' } } }`    |
-
-`@pluxel/core/fs` 提供 InMemory、Passthrough 和常用原生类型，IndexedDB 从 `/fs/browser` 导入。也可以直接导入其他 ZenFS Backend。配置创建的实例由 Core 关闭；直接传入的 FileSystem 是借用资源，由应用在所有借用 Host 关闭后释放。同一份 backend 配置可为多个 Host 各创建新实例。
-
-Passthrough 接收完整 `node:fs`，目录须由应用显式准备；Core 不替上游更改 prefix 行为。例如独立 Node Host：
+通过 `runtime.zenfs` 挂载文件系统后端：
 
 ```ts
 import { zenfs } from '@pluxel/core/config'
+import { Passthrough, InMemory } from '@pluxel/core/fs'
 import * as nativeFs from 'node:fs'
-import { resolve } from 'node:path'
-import { createHost } from '@pluxel/host'
-import { Passthrough } from '@pluxel/core/fs'
 
-const prefix = resolve('./data/fs')
-await nativeFs.promises.mkdir(prefix, { recursive: true })
-await using host = await createHost({
-	plugins: [],
-	runtime: {
-		zenfs: zenfs({
-			mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-			durableMounts: ['/'],
+// 生产环境：挂载本地磁盘目录
+zenfs({
+	mounts: {
+		'/': { backend: Passthrough, fs: nativeFs, prefix: './data/fs' },
+		'/tmp': InMemory,
+	},
+	durableMounts: ['/'], // 标记具备持久化保证的挂载点
+})
+```
+
+- `durableMounts` 用于声明哪些挂载点在重启后依然能够保留数据。依赖持久存储的插件会在启动时核对该声明。
+
+---
+
+<span id="保存配置和运行策略"></span>
+## 保存配置和运行策略
+
+每个插件节点的配置来源可以指定优先模式（`mode`）：
+
+- **`declared-first`（默认）**：代码中的显式声明优先生效，其余缺失项继承持久化保存的值；
+- **`saved-first`**：管理后台保存的值优先，缺失项采用代码中的声明；
+- **`declared-only`**：完全忽略外部持久化修改，严格使用代码中声明的值或 Schema 默认值。
+
+在运行时通过管理 API（或 Workbench）修改配置后，若插件已注册了 `onUpdate` 监听器，新配置会被就地热应用；否则新配置将在插件下次重启后生效。
+
+---
+
+<span id="host-logging"></span>
+## 日志配置（Host Logging）
+
+宿主使用 LogTape 管理全局日志输出。通过 `runtime.logtape` 挂载格式化终端 Sink 或远程推送：
+
+```ts
+import { logtape } from '@pluxel/core/config'
+import { createRuntimePrettyConsoleSink } from '@pluxel/core/logging/pretty'
+
+export const loggingConfig = logtape({
+	sinks: {
+		console: createRuntimePrettyConsoleSink({
+			timezone: 'local',
+			pretty: { properties: true },
 		}),
 	},
+	loggers: [
+		{ category: ['pluxel'], sinks: ['console'], lowestLevel: 'info' },
+	],
 })
+```
+
+<span id="远程输出原生-logtape-sink"></span>
+### 远程输出原生 LogTape Sink
+
+若需将日志输出至 OpenTelemetry 收集器或远程文件，直接组合 LogTape 的官方 Sink 即可。
+
+---
+
+<span id="选择-native-postgresql-或-pglite"></span>
+## 数据库服务后端选择
+
+在挂载关系型数据库服务时，宿主可在本地嵌入式轻量引擎与生产外部数据库之间平滑切换：
+
+```ts
+import { database } from '@pluxel/services/database'
+import { pglite } from '@pluxel/services/database/pglite'
+import { postgres } from '@pluxel/services/database/postgres'
+
+// 本地开发或测试：使用嵌入式 PGlite
+database({
+	backend: pglite({ dataDir: './data/pglite' }),
+})
+
+// 生产部署：连接外部 PostgreSQL 数据库
+database({
+	backend: postgres({
+		connectionString: process.env.DATABASE_URL,
+	}),
+})
+```
+
+无论选择哪种后端，插件内部编写的 Drizzle Schema 与查询语句均保持完全一致。
+
+<span id="application-private-database"></span>
+### 应用私有数据库（Application-Private Database）
+
+对于整个应用统一共享的数据库连接，可由应用在 `prepare()` 钩子中直接建立，并通过自定义服务提供给内部模块使用。
+
+---
+
+<span id="独立-http-host"></span>
+<span id="独立-logging-host"></span>
+## 独立轻量 Host
+
+对于简单的脚本工具或批处理任务，可以直接调用 `@pluxel/host` 导出的 `createHost()`：
+
+```ts
+import { createHost } from '@pluxel/host'
+import { MyWorkerPlugin } from './worker'
+
+await using host = await createHost({
+	plugins: [MyWorkerPlugin],
+	policy: { autoStart: [MyWorkerPlugin] },
+})
+
 await host.start()
 ```
 
-可以再挂载 `'/tmp': InMemory`、应用的自定义 Backend 或借用的 FileSystem；backend 的 options、嵌套组合和错误沿用 ZenFS。浏览器的 `storeName` 使用稳定部署 profile，页面或 Worker 结束前等待 `host.close()`。
+---
 
-`durableMounts` 是应用对确切挂载点可跨启动保存的声明，默认空数组；需要持久保证的插件会据此检查。自定义后端不能仅凭名称推断持久性，嵌套挂载也不会自动继承父挂载声明。这不增加磁盘 fsync 保证。
+<span id="浏览器-host"></span>
+## 浏览器 Host
 
-`readOnly`、uid/gid、defaultDirectories 等保留原生配置。`log`、`disableAccessChecks`、`resolveFullWalk` 修改 ZenFS 模块全局状态，无法逐 Host 隔离；固定版本未实现的 `onlySyncOnClose` 也不接纳。插件目录与资源边界见[文件存储](../plugin-development/fs.md#目录与资源所有权)。
+`@pluxel/host/browser` 导出了适用于浏览器环境与 Web Worker 的轻量宿主实现。在该入口下，底层文件存储默认使用内存（InMemory）或浏览器的 IndexedDB 后端，插件与服务可在纯前端环境中协同运转。
 
-## 保存配置和运行策略
+---
 
-配置声明首先表达本次运行意图；保存输入由明确的管理操作产生。普通应用只写 `policy` 和 `config`，无需填写存储选项。
+<span id="生产启动判定"></span>
+<span id="生产构建"></span>
+## 生产构建与启动判定
 
-### 选择声明与保存输入
+在生产启动阶段，宿主严格按顺序执行以下阶段：
+1. 准备宿主服务与执行应用 `prepare()`；
+2. 启动插件依赖拓扑图；
+3. 校验启动报告，确认每个预期运行的插件均成功达到 `running` 状态；
+4. 执行应用 `launch()` 开启物理监听。
 
-| mode                     | 当前有效输入                                               |
-| ------------------------ | ---------------------------------------------------------- |
-| `declared-first`（默认） | 声明显式提供的部分优先，其余继承保存输入                   |
-| `saved-first`            | 保存输入优先，缺失部分采用声明                             |
-| `declared-only`          | 只使用声明，再采用 schema 默认值、空策略列表或内建执行参数 |
+如果启动过程中任何必需插件初始化失败，宿主将安全终止并输出完整的异常报告，防止应用在未就绪的状态下接收外部流量。
 
-缺失的必填 Plugin 配置始终失败。模式不改变写入权限、是否跨启动保留或当前 generation 的采用时机。
+---
 
-每个节点把 mode 与 config 放在一起；节点规则优先于域默认，最后回退到 `declared-first`：
-
-```ts no-twoslash
-import { defineHostApplication, type ConfigInputPatch } from '@pluxel/host'
-import type { InferInput } from 'valibot'
-import { WorkerPlugin, WorkerConfig } from '@app/workers'
-
-const east = WorkerPlugin.nodeAddress('east')
-const input = { endpoint: 'https://example.test' } satisfies ConfigInputPatch<
-	InferInput<typeof WorkerConfig>
->
-
-export default defineHostApplication(() => ({
-	plugins: [WorkerPlugin],
-	policy: { forks: [east], autoStart: [WorkerPlugin, east] },
-	config: {
-		mode: 'declared-only',
-		records: [
-			{ owner: WorkerPlugin, config: input },
-			{ owner: east, mode: 'saved-first', config: input },
-		],
-	},
-}))
-```
-
-此片段假设 WorkerPlugin 声明 `forkable: true`，且示例 input 满足其 schema 所需字段。constructor 是 default node 的简写；default 与每个 fork 的配置、模式、保存记录和 revision 互不继承。PluginPart 位于所属 node 的聚合记录中，没有独立 owner。record 可以只写 `{ owner, mode }`，但 mode 与 config 不能同时省略；同一层重复 owner 会拒绝。
-
-来自 node_modules 的具名 Plugin export 也直接用 constructor。暂时不可用的动态 Plugin 可使用现有 canonical address，例如：
-
-```ts no-twoslash
-const target = {
-	definition: {
-		entry: { kind: 'package-root', packageName: '@app/workers' },
-		exportName: 'WorkerPlugin',
-	},
-	variant: 'fork',
-	forkId: 'east',
-} as const
-```
-
-把它作为 record.owner 不会加载模块、安装包、创建 fork 或启动节点；代码由 plugins/sources 提供，fork 由策略声明。包子路径和源码入口沿用 `PluginNodeAddress`，不以 class name、文件名或包名猜导出。
-
-原始 input 仅允许普通对象、密集数组、有限数值、字符串、布尔值和 null；undefined、函数、class instance、accessor、symbol、循环及危险路径会拒绝。对象递归合并；数组与 tuple 完整替换，元素内部不合并。`false / 0 / '' / null` 是显式值，空对象不清除低优先级对象字段。`ConfigInputPatch<InferInput<typeof Schema>>` 为局部对象提供类型检查，不把局部输入误当作已经满足完整 schema。
-
-每层先检查原始结构，当前可用 owner 的最终 effective input 才运行完整 schema。被遮盖的保存路径只通过结构校验，不能据此宣称它们单独满足业务 schema；取消遮盖或 schema 变化时重新验证。原始输入和 definition facts 未变时复用已验证 output。
-
-### 八项运行策略
-
-| policy 字段           | 值及缺省                                                                   |
-| --------------------- | -------------------------------------------------------------------------- |
-| `autoStart`           | constructor 或 node address 列表，默认 `[]`                                |
-| `forks`               | canonical fork address 列表，默认 `[]`                                     |
-| `providerDefaults`    | `{ token, provider }` 列表，默认 `[]`                                      |
-| `dependencyOverrides` | `{ consumerAddress, requirementAddress, providerAddress }` 列表，默认 `[]` |
-| `startTimeoutMs`      | 单个 generation 默认启动等待，默认 1500 ms                                 |
-| `drainTimeoutMs`      | 单个 generation 排空等待，默认 3000 ms                                     |
-| `startConcurrency`    | 可调度节点最大启动并发，默认 8                                             |
-| `stopConcurrency`     | 可调度节点最大停止并发，默认 1                                             |
-
-`policy.mode` 是这八个字段的可选映射，例如 `{ autoStart: 'declared-only', startTimeoutMs: 'saved-first' }`。每项独立默认 declared-first；空映射等价省略，没有父级标量 mode。列表整项选择，不拼接；显式 `[]` 是空值，省略才继承。超时必须是 `1..2_147_483_647` 的整数，并发必须是正 safe integer；每个来源的非法数值都拒绝，即使它当前被遮盖。
-
-四项图策略先组成完整候选，再检查跨列引用；autoStart 引用不存在的 fork 不会被自动修复。Plugin 自己声明的启动超时优先于 Host 默认；并发仍满足 provider 先启动、后停止。
-
-### 编辑保存值与恢复继承
-
-以下是已有 host 和 canonical owner 的操作片段。`patch` 与 `validate` 接收 `{ set?, remove? }`：先删除字段路径，再递归合并 set，只校验一次完整候选。
-
-```ts no-twoslash
-const before = await host.config.get(owner)
-if (!before.ok) throw new Error(before.message, { cause: before })
-const result = await host.config.patch(
-	owner,
-	{
-		remove: [['transport']],
-		set: { transport: { kind: 'http', url: 'https://example.test' } },
-	},
-	{ expectedManagedRevision: before.managedRevision },
-)
-if (!result.ok) throw new Error(result.message, { cause: result })
-if (result.application === 'saved-not-applied') {
-	throw new Error('配置已保存，运行实例尚未采用', { cause: result })
-}
-```
-
-remove 只清理保存输入，不能删除声明字段。路径使用非空字符串数组，不解析点号路径，也不索引数组；危险、重复或相互包含的删除路径会拒绝。`reset(owner, [['transport', 'url']])` 清除指定保存路径，`reset(owner)` 清除整条记录；它恢复继承，不保存声明副本。清掉最后一个字段时清理空父对象；无操作不会删掉原本显式保存的空对象。`reset(owner, [])` 只读取。
-
-`managedInput: null` 表示没有保存记录，区别于 `{}`。UI 使用 managedInput 编辑，effectiveInput 提示继承，config 展示转换后的目标。`validation_failed` 携带完整原始/合成输入事实和错误，但没有成功 config output 或采用状态。validate 不写入、不通知，也不预留提交资格。
-
-config 和 policy 的管理操作、目录接纳及生命周期操作共用协调队列。`expectedManagedRevision` 可选；Workbench 必须带编辑基线令牌，过期、不同 Host 或不同领域的令牌返回 `revision_conflict`。脚本省略时对执行时最新输入操作。令牌不冻结 schema，不提供跨 Host 的文件 CAS。
-
-Management 的 `catalog.statePolicy.managedRevision` 与 policy.get 使用同一个令牌，供自动启动、依赖选择和 fork 页面按显示基线提交原有领域动作。批量自动启动在同一次排他操作中检查一次基线，逐项返回结果；其中一项失败仍保留此前已完成项，不能当作整体回滚。
-
-`host.policy.get / validate / patch / reset` 编辑八项保存输入，patch 逐字段完整替换，reset 的 keys 是策略字段名列表；省略 keys 清除全部，`[]` 不修改。mode 固定在本次 Host 的作者声明中，不可通过管理面修改。
-
-纯保存编辑允许改变被声明遮盖的值，并报告实际影响。`setAutoStart / setProviderDefault / setDependencyOverride / forks.ensure / forks.remove` 则承诺实际策略或节点动作；若 mode 阻挡目标生效，会在副作用前以 `policy_shadowed` 拒绝。单项名单命令基于当前有效列保留其他成员，只显式写入受影响的完整列；`writtenFields` 报告接管哪些列。目标已经满足时不物化保存列。`forks.remove` 还清理配置与服务元数据，保留真实部分失败结果。
-
-### 保存与采用反馈
-
-| persistence.status | 含义                                             |
-| ------------------ | ------------------------------------------------ |
-| `unchanged`        | 查询、预览或原始输入未变，没有写入               |
-| `confirmed`        | 选定后端确认本次原始输入，附 retention           |
-| `unknown`          | 写入结算不确定；不发布未确认候选，不声称已经回滚 |
-
-retention 为 `session`、`declared-durable` 或 `unknown`。会话域和临时挂载报告 session，默认文档依据 FS durableMounts 声明报告 declared-durable，不能证明保留能力的借用 adapter 报告 unknown；它们不承诺 fsync、断电或多 writer 事务。
-
-Plugin 配置保存确认后才通知 owning generation。`application` 的 applied 表示框架确认采用，deferred 表示没有运行实例，saved-not-applied 表示 listener 缺失、失败或 generation 变化；desiredRevision 与 appliedRevision 分开。仅保存被遮盖的值不会推进目标 revision 或调用 listener。后端失败保留旧接纳输入和实例事实；persistence_failed 只返回旧输入事实及 unknown 回执，不把可能尚未通过 schema 的输入标成 config output。
-
-| 修改                                                                 | 本次 Host 的采用方式                                         |
-| -------------------------------------------------------------------- | ------------------------------------------------------------ |
-| autoStart                                                            | 更新启动意图，保留本次已请求的运行状态；立即启停使用节点命令 |
-| forks / providerDefaults / dependencyOverrides                       | 经协调器校验和提交，检查真实 PluginApplyReport               |
-| startTimeoutMs / drainTimeoutMs / startConcurrency / stopConcurrency | 只更新目标，新建 Host 才采用                                 |
-| 应用声明、mode、env/file、服务或设施                                 | 新建 Host；动态来源更新继续使用本次快照                      |
-
-policy 查询给出有效目标、固定的 appliedExecution 和 pendingExecutionFields，差异报告 `requires-host-recreation`。Plugin restart 不等于重建 Host。会话输入不会自动带入新 Host；新 Host 重新按声明和实际可读文档求值。
-
-### 进阶文档设施
-
-默认 config/state 文档借用 Core FS，后端只在 `runtime.zenfs` 选择一次。可选 `runtime.documents` 单独选择文档接线：
-
-| 每个 config/state 域的选项      | 行为                                               |
-| ------------------------------- | -------------------------------------------------- |
-| 省略或 `{}`                     | 内建 namespace，可管理写入                         |
-| `false`                         | 无文档 IO 或订阅，管理输入只在本次 Host 中保留     |
-| `{ readOnly: true }`            | 读取已有文档，拒绝本 Host 管理写入，不创建缺失文件 |
-| `{ storage: root => borrowed }` | 同步借用 HostDocumentStorage，可与 readOnly 组合   |
-
-例如 `runtime: { documents: { config: false } }` 让业务文件继续使用 FS，而 Plugin 配置只保留会话输入。storage factory 在唯一 root 创建后、文档 IO 前调用一次；不能执行 IO、返回 Promise 或访问尚未准备的 Plugin/config 服务。Host 只释放自己的订阅并排空已接纳操作，不关闭借用 backend。
-
-`declared-only` 不关闭文档、不忽略损坏内容；零文档 IO 使用 false。整个 FS 只读可设置 `runtime.zenfs.readOnly: true`；文档选项不能覆盖底层权限。
-
-配置只读写 v4 原始记录，运行策略只读写 v7 稀疏字段，不保存 mode、声明或默认值。缺失文件不会初始化种子；只有明确管理修改才写入。旧版本需要显式审查转换，运行时不做兼容读取或启动迁移。
-
-默认路径为 `services/host/config/config.json` 与 `services/host/state/state.json`，内容为 SuperJSON 文档；Logging/Management 各自使用 `services/host/logging/<key>`、`services/host/management/<key>`。普通文档单文件 8 MiB 上限与 TinyBase snapshot 预算独立。
-
-HostDocumentStorage 保留 getText、put、stat 和可选 subscribe；只有缺失返回 undefined，put 等待完整原子替换并保留失败。订阅表示应重读；没有 subscribe 的借用 adapter 只在启动读取。关闭先取消订阅、停止接纳并排空协调和文档 IO，最后释放 root 自有资源；借用后端仍由应用关闭。
-
+<span id="共享文件与外部修改"></span>
 ## 共享文件与外部修改
 
-多个实例可以通过 `runtime.zenfs` 选择实际共享的文件后端。相同配置不等于共享数据：两台机器各自的 `./data` 是不同目录，默认 InMemory 也彼此独立。Pluxel 不提供文件复制、网络同步或实例角色配置。
-
-托管 TinyBase Store 定期读取自己的 Plugin snapshot。Host 配置独立订阅 FS 文档变化，并在订阅后补读以追平准备期间的修改；新文档通过 v4 格式与当前可用 Plugin schema 校验后才发布并通知运行中的 Plugin。外部删除记录会移除相应原始保存输入，删除 config.json 清空保存记录，按本次 mode 重新组合声明和 schema 默认值，不写回文件。刷新延迟取决于后端可见性与读取耗时，不是跨实例强一致保证。
-
-已有文件损坏或 schema 不接受新内容时，运行中的 Host 保留当前有效配置并报告错误，源文件不被重置；修正文件后可重新加载。Plugin 的更新 listener 失败仍按已保存但未应用处理，见[配置更新](../plugin-development/configuration.md)。未知 Plugin 的原始记录保留到其实际接纳时校验，不自动创建或启动节点。
-
-文件保存采用完整快照替换。多个实例同时修改同一快照可能覆盖彼此的变化，即使修改的是不同记录；本地 revision、队列和原子文件替换都不提供跨实例条件提交或合并。需要共享并发更新不丢失、事务或协调的业务使用[数据库](../plugin-development/database.md)。配置与低频状态只承诺读取后端当前可见的完整内容。
-
-运行策略文档只在启动读取，不随其他实例的文件修改自动启停节点或改变执行参数。Vault 的密文重新加载由 Vault 服务负责，密钥与凭据规则见下文。普通业务文件由其所属 Plugin 决定如何重新读取。
-
-## 选择后端
-
-可写 Vault 使用加密后端，文件位置沿用 Host 的 Core 存储配置：
-
-```ts no-twoslash
-import { defineHostApplication } from '@pluxel/host'
-import { vault } from '@pluxel/services/vault'
-
-export default defineHostApplication((startup) => ({
-	plugins: [],
-	services: [vault({ deployIdentity: startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY })],
-}))
-```
-
-只有部署凭据时选择 `vault({ backend: 'bindings' })`。它不打开 FS，不创建密钥或磁盘文件；没有绑定的记录不存在，所有写入拒绝。`servicesPreset(startup, options)` 显式从该 startup 环境读取部署解锁身份，`options.vault` 可以覆盖后端和部署解锁身份。直接 `vault()` 不读取进程环境。
-
-## 部署凭据
-
-宿主在应用工厂中通过 `envBindings` 或 `fileBindings` 用 `envBinding` / `fileBinding` 把导出的凭据根 schema 绑定到输入。Host 先完成 schema 校验、准备服务，再安装绑定，最后启动插件。见[应用入口](./configuration.md)。
-
-```ts no-twoslash
-import { defineHostApplication, envBinding } from '@pluxel/host'
-import * as v from 'valibot'
-import { MyPlugin } from './MyPlugin.ts'
-
-const Credentials = v.object({ primary: v.object({ token: v.string() }) })
-
-export default defineHostApplication(() => ({
-	plugins: [MyPlugin],
-	envBindings: [
-		envBinding(MyPlugin, {
-			vault: { schema: Credentials, mapping: { primary: { token: 'APP_TOKEN' } } },
-		}),
-	],
-}))
-```
-
-若凭据由挂载的 JSON 文件提供，则在同一个应用入口中用 `fileBindings: [fileBinding(MyPlugin, { vault: { schema: Credentials, paths: { primary: './credentials.json' } } })]` 替换上面的 `envBindings`。同一记录只能绑定一个来源。
-
-显式绑定的 env/file 是整条只读记录，绝不与已存 KV 拼接。缺失输入不会偷偷回退到旧凭据；移除绑定后才重新读取持久记录。部署输入不写入加密 snapshot。
-
-导出的凭据根 schema 使用 `v.object({ primary: CredentialSchema })` 声明固定记录，或 `v.record(KeySchema, CredentialSchema)` 声明账号记录。宿主显式导入这个 schema，传给绑定的 `vault.schema`，在 `mapping` / `paths` 中填写记录 key 和环境名/JSON 路径。它是本次 Host 的部署入口契约，修改它需要重新创建 Host；Plugin 热替换不会自动替换该契约。私有 KV 的写入仍由业务用例校验，不会自动成为部署入口。每个明确映射的环境名都必须存在；schema 的 optional 字段可以不映射。
-
-## 密钥与备份
-
-Vault snapshot 使用 version 2，包含结构化 KV 与每条记录的 revision；不支持的版本或缺少 revision 时启动失败。
-
-加密后端使用 `global/keys.age` 包装数据密钥，`global/state.enc` 保存记录，`global/blobs/` 保存独立 blob。`security/identity.json` 保存宿主身份。已有仓库无法解锁、损坏或缺失 snapshot 时启动失败，不作为空仓库覆盖。运行期间外部密文变化会重新解密、校验并更新内存；无效更新保留当前有效内容并报告错误。读取到的外部快照不写回。
-
-Root 通过 `VaultAdmin` 管理解锁、宿主密钥和部署 recipients。`rekey()` 原子重写密钥 envelope，数据密钥与密文内容保持；失败保留先前可用数据。部署私钥由宿主显式输入，不放入 Plugin config、日志或 UI。
-
-备份与回滚应在 Host 停止后整体复制 FS 的 `services/vault/` 目录：包括 `security/identity.json`、`global/keys.age`、`global/state.enc` 和 `global/blobs/`。不要分别恢复不匹配的 key envelope 与数据文件；不提供跨 config/Vault 事务或跨实例并发写入协调。
-
-## 可选管理页面与服务配套插件
-
-Vault 管理页由同一个服务包的 `@pluxel/services/plugins` 入口提供，不需要额外安装 UI 插件包。
-`VaultAdminPlugin` 是普通 Plugin：它使用 Vault 能力并发布 Workbench 页面，管理操作仍通过 Management 的已认证会话执行。
-
-```ts no-twoslash
-import { zenfs } from '@pluxel/core/config'
-import { defineHostApplication } from '@pluxel/host'
-import * as nativeFs from 'node:fs'
-import { resolve } from 'node:path'
-import { servicesPreset } from '@pluxel/services/preset'
-import { Passthrough } from '@pluxel/core/fs'
-import { VaultAdminPlugin } from '@pluxel/services/plugins'
-
-export default defineHostApplication(async (startup) => {
-	const prefix = resolve(startup.root, '.pluxel/fs')
-	await nativeFs.promises.mkdir(prefix, { recursive: true })
-	return {
-		name: 'vault-example',
-		services: await servicesPreset(startup, {}),
-		plugins: [VaultAdminPlugin],
-		policy: { autoStart: [VaultAdminPlugin] },
-		runtime: {
-			zenfs: zenfs({
-				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-				durableMounts: ['/'],
-			}),
-		},
-	}
-})
-```
-
-在正常 Host 开发或生产入口启动应用后，登录 Workbench 即可访问 Vault 页面。缺少 Vault 服务时插件启动失败；关闭 Workbench 时不发布页面，Vault 服务仍独立运行。页面撤回随 Plugin 停止，后端资源随 Host 服务关闭，不建立第二套生命周期。
-
-第三方服务可以采用同样的结构：服务入口负责业务能力，一个显式 `./plugins` 导出集中提供可选配套 Plugin；应用选择服务、插件与启动策略。基础服务入口不导入 `/plugins`，页面组件不在服务器入口求值。同一个 Plugin 只从一个公开入口具名导出，不能再从根入口重复转发。包内路径、构建和测试示例见 `packages/services/src/plugins.ts` 与 `packages/services/tests/vault-plugin.test.ts`。
-
-## Host logging
-
-`runtime.logtape` 直接接收 LogTape 原生 `Config` 或同步 root factory；需要框架选项时用 `{ input: nativeConfig, options }`。`@pluxel/core/config` 的 `logtape()` 是可选 console/store 预设，`logtape(nativeConfig, options)` 可捕获同一声明，不是准入要求。原生配置中的 `sinks` 填原生 sink，`filters`、`loggers`、`parentSinks`、`captureSourceLocation` 和 `contextLocalStorage` 沿用上游语义，formatter 由 sink 自己选择。
-
-```ts
-import { getConsoleSink, getJsonLinesFormatter, type Config } from '@logtape/logtape'
-import { createHost } from '@pluxel/host'
-
-const nativeConfig = {
-	sinks: { console: getConsoleSink({ formatter: getJsonLinesFormatter() }) },
-	loggers: [
-		{ category: ['pluxel'], sinks: ['console'], lowestLevel: 'trace' },
-		{ category: ['pluxel', 'runtime'], lowestLevel: 'info' },
-		{ category: ['logtape', 'meta'], sinks: ['console'], lowestLevel: 'warning' },
-	],
-} satisfies Config<'console', string>
-
-await using host = await createHost({
-	plugins: [],
-	runtime: {
-		logtape: {
-			input: nativeConfig,
-			options: { profile: 'production', debugTopics: ['cache:lookup'] },
-		},
-	},
-})
-host.ctx.logger.info('Host ready')
-```
-
-`options` 只描述 Pluxel 自己拥有的 policy 命名空间、`initialPluginPolicy`、`debugTopics`、`policyLoadFailure` 与借用的 `policyStore`；rootId 由 Core 固定，不由日志属性或 native category 配置改写。普通应用 category 也可直接加入 `loggers`。插件 category 使用可逆 node address，框架会在原生 filter 之前检查 active root、插件动态 policy 和 debug topic。
-
-`loggers` 的级别与 filter 仍是宿主静态门槛。需要 Workbench 调低某个插件等级时，把接收插件日志的 logger 保持在 `trace`；动态 policy 不会越过原生的门槛。子 logger 的 `filters` 替换继承、`parentSinks: 'inherit' | 'override' | 'forward'` 均保留。完整配置见 [LogTape Configuration](https://logtape.org/manual/config)，格式与输出见 [Sinks](https://logtape.org/manual/sinks)。
-
-`logtape()` 提供可选的默认预设：易读 console、按 `info` 过滤的终端输出，以及接收 `trace` 的有界 Workbench store。自定义配置完整替换默认输出；静默且保留 policy manager 时使用 `logtape({ sinks: {}, loggers: [] })`。省略 `runtime.logtape` 不安装进程日志配置，`ctx.logger` 仍可调用。`servicesPreset()` 只组合服务，不安装日志；应用和 starter 在自己的 `runtime.logtape` 中明确选择输出。
-
-已有 foreign LogTape installation 会使配置了 logtape 的 Host 准备失败；`reset: true` 也会被明确拒绝。不要在同一进程额外调用全局 `configure()`/`reset()` 接管 Core 的安装。关闭只释放本 root 安装的配置，发现外部替换时报告错误并保留它。
-
-### 隐式上下文与原生资源
-
-需要跨 `await` 关联请求时，直接在原生配置中传入运行时适用的 `contextLocalStorage`，再使用 LogTape 的 `withContext()`：
-
-```ts
-import { AsyncLocalStorage } from 'node:async_hooks'
-import { getConsoleSink, withContext } from '@logtape/logtape'
-import { logtape } from '@pluxel/core/config'
-import { createHost } from '@pluxel/host'
-
-await using host = await createHost({
-	plugins: [],
-	runtime: {
-		logtape: logtape({
-			contextLocalStorage: new AsyncLocalStorage<Record<string, unknown>>(),
-			sinks: { console: getConsoleSink() },
-			loggers: [{ category: ['pluxel'], sinks: ['console'], lowestLevel: 'info' }],
-		}),
-	},
-})
-await withContext({ requestId: 'request-42' }, async () => {
-	await Promise.resolve()
-	host.ctx.logger.info('request completed')
-})
-```
-
-传入的 sink、filter、formatter 和 context storage 保持原对象。LogTape 处理 `Symbol.dispose`/`Symbol.asyncDispose`；Core 在插件停止并输出关闭日志后等待它们释放。配置了 logtape 的 root 可通过 `ctx.require(Logging)`（`@pluxel/core/logging`）读取 manager；`await logging.flush()` 刷新 store/policy，并等待提供原生 `drain()` 的 sink。它不把任何后端的接纳改成远端送达确认，自定义 sink 的投递、重试与资源语义仍由该 sink 决定。
-
-## 远程输出：原生 LogTape sink
-
-直接把 `@logtape/otel` 的 sink 放进原生 `sinks`。应用按需安装 exporter；Pluxel 默认不加载网络输出：
-
-```sh
-vp add @logtape/otel@^2.4.2 @opentelemetry/sdk-logs@^0.222.0 @opentelemetry/resources@^2.11.0 @opentelemetry/exporter-logs-otlp-proto@^0.222.0
-```
-
-在启动环境中设置完整的 logs endpoint；VictoriaLogs 示例：
-
-```sh
-OTEL_SERVICE_NAME=orders
-OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://victorialogs:9428/insert/opentelemetry/v1/logs
-```
-
-下面使用原生批量 processor 与 HTTP/protobuf exporter。认证、超时沿用 exporter 的标准 `OTEL_EXPORTER_OTLP_LOGS_HEADERS`、`OTEL_EXPORTER_OTLP_LOGS_TIMEOUT` 环境变量。
-
-```ts no-twoslash
-import { getConsoleSink, getJsonLinesFormatter } from '@logtape/logtape'
-import { getOpenTelemetrySink } from '@logtape/otel'
-import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-proto'
-import { resourceFromAttributes } from '@opentelemetry/resources'
-import { BatchLogRecordProcessor, LoggerProvider } from '@opentelemetry/sdk-logs'
-import { logtape } from '@pluxel/core/config'
-import { createHost } from '@pluxel/host'
-
-const endpoint = process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
-if (!endpoint) throw new Error('Set OTEL_EXPORTER_OTLP_LOGS_ENDPOINT before enabling remote logs')
-
-const provider = new LoggerProvider({
-	resource: resourceFromAttributes({
-		'service.name': process.env.OTEL_SERVICE_NAME ?? 'pluxel-app',
-	}),
-	processors: [new BatchLogRecordProcessor({ exporter: new OTLPLogExporter({ url: endpoint }) })],
-})
-const sink = getOpenTelemetrySink({ loggerProvider: provider, diagnostics: true })
-await using host = await createHost({
-	plugins: [],
-	runtime: {
-		logtape: logtape(
-			({ createRuntimeLogSink }) => ({
-				sinks: {
-					remote: sink,
-					console: getConsoleSink({ formatter: getJsonLinesFormatter() }),
-					memory: createRuntimeLogSink(),
-				},
-				loggers: [
-					{ category: ['pluxel'], sinks: ['remote', 'memory'], lowestLevel: 'trace' },
-					{ category: ['pluxel', 'runtime'], lowestLevel: 'info' },
-					{ category: ['logtape', 'meta'], sinks: ['console'], lowestLevel: 'warning' },
-				],
-			}),
-			{ profile: 'production' },
-		),
-	},
-}).catch(async (error: unknown) => {
-	// Also cover failures before Core takes ownership; SDK shutdown is idempotent.
-	const [cleanup] = await Promise.allSettled([provider.shutdown()])
-	if (cleanup.status === 'rejected') {
-		throw new AggregateError(
-			[error, cleanup.reason],
-			'Host setup and log provider shutdown failed',
-			{
-				cause: error,
-			},
-		)
-	}
-	throw error
-})
-host.ctx.logger.info('Host ready')
-```
-
-`memory` 保留 Workbench/开发控制台的有界查询；`diagnostics: true` 把进程级 OTel SDK diagnostics 接入 LogTape。meta logger 独立输出到本地，避免回送远程 sink。
-
-- 每个配置了日志的 root 创建独立 sink/provider。LogTape async disposal 也会 shutdown 传入的 provider，不要传入其他组件仍在使用的共享 provider。
-- 需要立即发送 OTel 批次时使用原生 `await provider.forceFlush()`。这个 sink 没有原生 `drain()`，所以 manager 的 `flush()` 不替代 provider 的 flush。队列、超时、重试与丢弃遵循 OTel SDK，没有持久队列或无损交付保证。
-- 原生 sink 保留 category 和结构化属性，默认把 Error 投影为 OTel exception 属性；需要 cause/自定义字段时使用上游 `exceptionAttributes: 'raw'`。后端 stream 使用稳定 service/deployment 属性，不使用每次启动变化的 rootId 或 request ID。
-- 本方案不依赖 `@pluxel/plugin-otel` Plugin；该 Plugin 的 telemetry logger 与 `ctx.logger` 是不同入口。
-
-更多参数直接查 [LogTape OTel sink](https://logtape.org/sinks/otel) 和 [OTel SDK](https://open-telemetry.github.io/opentelemetry-js/modules/_opentelemetry_sdk-logs.html)。已有采集器时可选择原生 JSON console 或 JSONL file sink，不必经过网络 exporter。
-
-## 独立 Logging Host
-
-Workbench store 需要绑定当前 manager 的 registry，所以使用同步 factory；它在 Core 准备期间求值一次。其余配置仍是原生 `Config`，也可直接组合 LogTape 的 `withFilter()` 等函数。factory 的 `rootId` 可用于精确匹配当前 root；`createRuntimeLogSink()` 只能在 factory 求值期间调用。
-
-```ts
-import { logtape } from '@pluxel/core/config'
-import { Logging } from '@pluxel/core/logging'
-import { createHost } from '@pluxel/host'
-
-await using host = await createHost({
-	plugins: [],
-	runtime: {
-		logtape: logtape(
-			({ createRuntimeLogSink }) => ({
-				sinks: { memory: createRuntimeLogSink({ windowLines: 50_000 }) },
-				loggers: [
-					{ category: ['pluxel'], sinks: ['memory'], lowestLevel: 'trace' },
-					{ category: ['logtape', 'meta'], lowestLevel: null },
-				],
-			}),
-			{ profile: 'application' },
-		),
-	},
-})
-host.ctx.logger.info('Host ready')
-const logging = host.ctx.require(Logging)
-logging.flushStores()
-const recent = logging.stores.getOrCreate('default').tailWindow(100)
-```
-
-日志查询和 policy 属于所选 Core root 的 manager，不依赖 Services 或 Management。policy 默认通过 Core 私有文档保存，沿用 `runtime.zenfs` 后端。省略后端时使用 InMemory；持久后端会恢复同一 profile 的 policy。`logtape(nativeConfig, { policyStore })` 可提供同步 root factory，返回借用的 `PluginLogPolicyStore`，不转交后端所有权。
-
-删除 fork 会在同一 Host 队列内清理日志 policy；保存失败时保留 fork。policy 保存失败保留失败回执；先检查实际文档再显式重试，不能把失败当作未提交。同一进程只允许一个配置了日志的活动 root；其他未配置 logtape 的 Host 不安装进程日志 owner。
-
-### 宿主安装与访问
-
-Core 负责安装、绑定和关闭进程日志 owner。宿主或控制台从 `@pluxel/core/logging` 导入 `Logging`，通过 `host.ctx.require(Logging)` 或 `dev.ctx.require(Logging)` 访问这一个 manager；省略 `runtime.logtape` 时不提供这个 token。控制台查询不创建第二个日志 owner。
-
-## 在 Workbench 查看与归档
-
-Workbench 使用同一份有界日志存储，通过已认证的 Management 会话查询与 follow，不增加 HTTP/SSE 日志 API。
-日志携带 node address、reference 和可读标签；range 按传输预算分页，超大单条记录明确标记 payload 截断。
-需要进程外归档时配置 file 或 OpenTelemetry sink；Plugin 的业务 HTTP 不负责暴露宿主日志。
-
-## 独立 HTTP Host
-
-安装 `@pluxel/services` 与 `elysia@2.0.0-rc.0`；Elysia 是 HTTP 服务的可选 peer，不会随其他服务安装。
-
-当前 Elysia 已通过 TypeBox 1.4.2 的发布前 schema 编译回归；生成项目通过 catalog 统一版本。
-
-`elysia()` 安装 generation-scoped Elysia application；生产 Node 接线统一使用 srvx。
-`listenElysia()` 直接接收原生 [srvx ServerOptions](https://srvx.h3.dev/guide/options)，包括 TLS、Node server options、middleware、plugins、trustProxy、body limit 和 error handler。Host 拥有请求分发、启动时机和关闭，故不接受 `fetch`、`manual`、`gracefulShutdown`；这些字段在资源获取前拒绝。
-`publicOrigin` 是显式的浏览器公开 origin，不改变物理绑定地址。可选 `publicDir` 在创建 listener 时固定（相对路径以当时 cwd 解析），只有未被 Host endpoint、业务路由或已安装 Shell fallback 处理的非保留请求才进入静态资源与 SPA fallback。业务返回的 404 保留原有 headers 和 body。应用应从明确的部署目录构造绝对路径；两种交付方式都不会自动选择 `dist/public`。
-
-```ts no-twoslash
-import { createHost } from '@pluxel/host'
-import { elysia } from '@pluxel/services/elysia'
-import { listenElysia } from '@pluxel/services/elysia/node'
-
-const host = await createHost({ plugins: [MyRoutes], services: [elysia()] })
-await host.startNode(MyRoutesAddress)
-const listener = await listenElysia(host, {
-	hostname: '127.0.0.1',
-	port: 3000,
-	node: { keepAliveTimeout: 5_000 },
-	maxRequestBodySize: 1024 * 1024,
-	publicOrigin: 'https://app.example.com',
-})
-// Host 同时拥有 listener；listener.close() 也委托同一关闭流程。
-await host.close()
-```
-
-需要 IPC、自定义启动/关闭或独立 transport 时，使用 `/elysia` 的 `createElysiaHandler(host)` 与原生 srvx；调用者负责关闭 server 与 Host。TCP helper 不接受 `node.path/handle/fd`，因为返回值和 carrier metadata 需要实际 TCP 地址。
-
-```ts
-import { createHost } from '@pluxel/host'
-import { createElysiaHandler, elysia } from '@pluxel/services/elysia'
-import { serve } from 'srvx/node'
-
-await using host = await createHost({ plugins: [], services: [elysia()] })
-const server = serve({
-	fetch: createElysiaHandler(host),
-	port: 0,
-	gracefulShutdown: false,
-})
-try {
-	await server.ready()
-	// 运行应用；连接选项直接使用 srvx 原生配置。
-} finally {
-	await server.close(true)
-}
-```
-
-`ElysiaApp` 仅供 Plugin/Part 使用。底层 directory、endpoint/fallback 和 carrier 接线属于框架内部，
-不提供第二套公共 server API 或可替换 adapter。Management 与 Workbench 复用同一请求分发。
-
-宿主拥有 listener、port、process shutdown 和物理 server policy，部署 ingress、反向代理或平台拥有 TLS。Plugin 调用 application 的 `listen()` / `stop()` 会立即
-失败；`onStart()` / `onStop()` 也会立即失败，因为 Elysia 2 rc.0 尚未公开供外部 carrier 驱动的 attach/detach epoch。Plugin 也不
-调用 Server view 的 `stop()`、`reload()`、`ref()` 或 `unref()`，不选择 srvx/runtime adapter。srvx 的接入属于宿主 carrier 工作，
-不是 Plugin 的第二套 Web 作者 API。
-
-handler 取得的 `server` 是 generation-scoped、carrier-backed view。`url`、`port`、`hostname` 和 `development` 反映当前宿主 listener；
-`id` 是本 generation 内稳定的 virtual-server value，不是物理 listener identity。`server.url` 每次返回独立 `URL`，修改它不会重配
-listener。Node carrier 还支持 `server.requestIP(request)` 读取该请求的远端 address、port 和 IP family；把其他来源或已经脱离当前
-owner invocation 的 `Request` 传入会明确失败。
-
-## Application-private database
-
-应用也可以完全自管 SQL：把 schema、client、repositories、migration 和 connection lifecycle 放进普通 application-private package，例如 `@app/database`。这个 package 自己声明 ORM 和 driver dependency；不要只把依赖安装在 workspace root，再让子包隐式使用。与托管 Database 的选择及原生查询见[数据库与数据归属](../plugin-development/database.md)。
-
-只选择自管 SQL 时，应用服务列表不安装 `database()`；误用 `ctx.require(Database)` 会直接失败。standalone 需要明确排除托管 driver 时设置 `managedDatabaseDrivers: []`，应用自己的 driver 与动态资源按需通过 `residualDependencies` 声明。构建排除与 external 的区别见[应用交付](../development/distribution.md#自管数据库与原生依赖)。迁移资源也由应用明确发布，开发与生产构建不执行 SQL 迁移。
-
-内置 Plugin 优先消费 repository 或 application service。只有确实需要构造查询时才暴露 ORM client；不要让每个 Plugin 各自读取 DSN、创建 pool 或运行 migration。
-
-### 整个应用依赖数据库
-
-如果没有数据库，整个应用 就没有可运行的核心功能，数据库是 host-owned root resource：应用 `prepare()` 必须在 Plugin graph 启动前完成连接、migration 和必要 preflight；失败直接终止本次 host startup。成功实例按 root Context 绑定，关闭登记到 root effects，不能归属任一 consumer Plugin。
-
-Application package 导出接收 Context 的 typed accessor，不把数据库投影成 `ctx.database`，也不使用进程级 module singleton：
-
-```ts no-twoslash
-// @app/database — application-private server module
-import type { Context } from '@pluxel/core'
-import { openDatabase, migrate, type AppDatabase, type DatabaseOptions } from './internal.js'
-
-const active = new WeakMap<object, AppDatabase>()
-
-export async function prepareAppDatabase(ctx: Context, options: DatabaseOptions): Promise<void> {
-	const root = ctx.root
-	if (active.has(root)) return
-	const database = await openDatabase(options)
-
-	try {
-		await migrate(database)
-		active.set(root, database)
-		root.effects.defer(
-			async () => {
-				if (active.get(root) === database) active.delete(root)
-				await database.close()
-			},
-			{ tag: 'AppDatabase', phase: 'shutdown' },
-		)
-	} catch (error) {
-		if (active.get(root) === database) active.delete(root)
-		await database.close()
-		throw error
-	}
-}
-
-export function appDatabaseFor(ctx: Context): AppDatabase {
-	const database = active.get(ctx.root)
-	if (!database) throw new Error('Application database has not been prepared')
-	return database
-}
-```
-
-`appDatabaseFor(ctx)` 的参数既保留 root 隔离和完整返回类型，也在调用点诚实表达 application-private dependency。不要用 declaration merging 增加 `ctx.appDatabase`；应用声明的泛型不能反向改变独立编译 Plugin 的 Context shape。
-
-应用入口统一决定部署路径，同时供宿主 FS 和 application database 使用：
-
-```ts no-twoslash
-import { zenfs } from '@pluxel/core/config'
-import { resolve } from 'node:path'
-import * as nativeFs from 'node:fs'
-import { defineHostApplication } from '@pluxel/host'
-import { prepareAppDatabase } from '@app/database'
-import { standardServices } from '@pluxel/services'
-import { Passthrough } from '@pluxel/core/fs'
-
-function storagePaths({ env }) {
-	// 部署时传入发行目录外的绝对路径。
-	const root = resolve(env.APP_DATA_ROOT ?? './data')
-	return {
-		hostFiles: resolve(root, 'runtime'),
-		applicationDatabase: resolve(root, 'application.sqlite'),
-	}
-}
-
-export default defineHostApplication(async (startup) => {
-	const prefix = storagePaths(startup).hostFiles
-	await nativeFs.promises.mkdir(prefix, { recursive: true })
-	return {
-		name: 'application',
-		plugins: [BillingPlugin, AuditPlugin],
-		services: standardServices(),
-		async prepare({ host, startup }) {
-			await prepareAppDatabase(host.ctx, {
-				filename: storagePaths(startup).applicationDatabase,
-			})
-		},
-		runtime: {
-			zenfs: zenfs({
-				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-				durableMounts: ['/'],
-			}),
-		},
-	}
-})
-```
-
-Plugin 在 `init()` 或之后同步取得已准备实例：
-
-```ts no-twoslash
-protected override init() {
-	this.database = appDatabaseFor(this.ctx)
-}
-```
-
-SQLite path、DSN、TLS 和 pool options 从 `startup.env`、`bindings` 或部署配置显式解析，不从 Context 猜测。FS 后端可能是 InMemory 或 IndexedDB，不保证存在原生 driver 可打开的磁盘目录。
-
-`prepare()` 不是通用 service lifecycle：这里只表达“数据库是整个应用的硬 readiness 前提”。数据库 package 负责领域初始化，root effects 负责 acquisition rollback、正常 stop 和 shutdown；consumer replacement 不能关闭共享实例。
-
-### 只有部分 Plugin 依赖数据库
-
-如果数据库失败时无关 Plugin 仍应运行，把数据库建模为 application-private provider Plugin，并让 consumer 通过 constructor 声明 required dependency。provider 在 `init()` 打开和迁移数据库，并立即把关闭登记到自己的 effects；provider failure 只阻塞 dependents。不要同时保留 root `prepare()` 和 provider Plugin 两套所有权。
-
-应用自行负责 migration 并发、连接恢复、备份、durability 和 shutdown。provider 的替换会关闭它持有的连接；consumer 不能缓存该连接跨越 provider 的生命周期。原生 driver 与目标数据库的行为由应用验证。
-
-## 选择 native PostgreSQL 或 PGlite
-
-`postgres()` 直接接收 [`pg.PoolConfig`](https://node-postgres.com/apis/pool)，`pglite()` 直接接收 [`PGliteOptions`](https://pglite.dev/docs/api#options)。参数名、连接来源和默认值由 driver 决定：PostgreSQL 可使用 `connectionString`、Unix socket、`PG*` 环境变量、异步 `password`、完整 `ssl` 和原生 pool 选项；PGlite 可使用 `extensions`、`fs`、`loadDataDir`、parser/serializer 与启动参数。无需连接字符串时也可以调用 `postgres()`；`pglite()` 省略配置使用上游的内存默认值。
-
-```ts twoslash
-import { createHost } from '@pluxel/host'
-import { database } from '@pluxel/services/database'
-import { postgres } from '@pluxel/services/database/postgres'
-
-await using host = await createHost({
-	plugins: [],
-	services: [
-		database({
-			backend: postgres({
-				host: '/var/run/postgresql',
-				database: 'app',
-				user: 'app',
-				max: 4,
-				connectionTimeoutMillis: 5_000,
-				application_name: 'app',
-			}),
-		}),
-	],
-})
-// 启动使用托管 SQL 的 Plugin。
-```
-
-传入配置时，所选 driver 仍在第一次 Plugin 使用 Database 时才加载并创建资源；Host 在已接纳操作排空后关闭自己创建的资源。也可以传入已有的原生 `Pool` 或 `PGlite` 实例：`postgres(pool)` / `pglite(client)` 借用该实例，Host 排空后只撤下自己的 listener，不调用它的 `end()` / `close()`。应用负责让借用资源在 Host 生命周期内保持可用，并在所有使用者关闭后释放；不要在运行中改变借用 pool 的并发上限。PostgreSQL 调度并发读取原生 pool 的 `options.max`，PGlite 始终串行调度。
-
-| 部署或验证目标                                     | Backend                |
-| -------------------------------------------------- | ---------------------- |
-| 正式部署、持续用户数据或多个 Plugin 频繁访问数据库 | native PostgreSQL      |
-| 本机开发、自动化测试                               | PGlite                 |
-| row lock、deadlock、pool exhaustion、连接中断      | 必须验证 native PG     |
-| 多进程并发 migration、advisory lock 和故障恢复     | 必须验证 native PG     |
-| throughput、latency、容量规划或生产硬件性能验收    | 必须使用目标 native PG |
-
-PGlite 是执行真实 PostgreSQL 语义的本地 backend，不是 query mock；它适合快速验证 schema、migration、CRUD、owner isolation 和 Plugin lifecycle。但是 Pluxel 会把共享 PGlite 上的所有 database operation 串行调度，因此一个 host 中的 Plugin 会共同受到单连接吞吐上限影响。不要用 PGlite benchmark 推断 native PostgreSQL 性能。
-
-PGlite 的 data directory 只为本机工作流提供正常关闭后的便利重启，不是部署存储承诺。Pluxel 不以补充 filesystem flush 或 fault-injection 测试的方式把它升级为 production baseline；需要正式部署时使用 native PostgreSQL。资源受限时，应在目标设备上调低 PostgreSQL connection/pool budget 并实测，而不是把 PGlite 带入部署。
-
-连接字符串、TLS、pool 与 PGlite data directory 是 host startup policy，不是 Plugin config。Plugin schema/query 不根据 backend 分支。
-
-## 生产构建
-
-把构建选项保存在 `tsdown.config.ts`：
-
-```ts no-twoslash
-import { defineConfig } from 'vite-plus/pack'
-import { pluxel } from '@pluxel/rolldown'
-
-export default defineConfig({
-	entry: './src/app.ts',
-	plugins: [pluxel()],
-})
-```
-
-在应用的 `vite.config.ts` 中导入这份配置并设置 `pack` 字段，然后运行 `vp pack`。已有开发配置时保留其他字段：
-
-```ts no-twoslash
-import { defineConfig } from 'vite-plus'
-import pack from './tsdown.config'
-
-export default defineConfig({ pack })
-```
-
-`@pluxel/rolldown` 的 `pluxel()` 统一构建官方与自定义服务组合。应用的 `launch` 决定生产入口，HTTP handler/listener 属于 `@pluxel/services/elysia/*`。构建不接受 `launcher`，也不隐式建立 listener、导出 `fetch/address` 或选择静态目录。
-`delivery` 只选择交付边界：默认 `standalone` 内联框架和固定插件，不能声明 sources；生成入口启动应用后导出 `host`、`ctx`、`start`、`stop`，并保留应用显式导出的其他 ESM 成员。这四个名称由生成入口拥有；应用直接导出或通过其他模块重新导出其中任何名称，产物会在启动时、应用工厂求值前明确拒绝，不覆盖应用导出。应用需要 Fetch 交付时，在自己的模块中导出 handler，在 `launch` 中接通 `createElysiaHandler(host)`；导出在启动前不可用时应明确报错。`modules` 编译本包模块、保留真实包 imports 与公开 Plugin identity，并导出应用工厂；它不自动启动，也不接受 standalone 专属的 `managedDatabaseDrivers` 或 `residualDependencies`。资源 `variant` 与服务安装是独立决定。
-
-modules 同时支持 `package.json#imports`：本包目标进入编译，外部目标保留包依赖；搬移输出后不依赖原来的源码映射。
-
-有 sources 的应用（包括 create 模板）使用：
-
-```ts no-twoslash
-export default defineConfig({
-	entry: './src/app.ts',
-	plugins: [pluxel({ delivery: 'modules' })],
-})
-```
-
-默认应用入口为 `dist/app.mjs`。若用 tsdown 的 `outputOptions.entryFileNames` 自定义命名，保留 `.mjs` 扩展名，并让启动路径对应实际产物；输出的 `package.json` 的 `./app` export 与 `pluxel-deployment.json` 的 `server.entry` 会同步记录实际入口。
-
-以下是使用完整服务组合的原生启动器 `start.mjs`。HTTP 配置留在前面的应用 `launch` 中：
-
-```ts no-twoslash
-import { runHostApplication } from '@pluxel/host'
-import { serviceSharedPackages } from '@pluxel/services/sources'
-
-const startupEnv = { ...process.env }
-const host = await runHostApplication('./dist/app.mjs', {
-	startup: { root: import.meta.dirname, mode: 'production', env: startupEnv, bindings: {} },
-	sharedPackages: serviceSharedPackages,
-})
-export const stop = () => host.close()
-```
-
-启动器先调用 `runHostApplication()`，再由它加载应用及业务依赖；不要在启动器中提前 import 应用或服务运行入口。应用模块内部正常使用静态 import，包含 `listenElysia`。`@pluxel/services/sources` 是可提前读取的纯数据入口，不求值服务 token。这样的写法先建立共享身份，再执行应用的准备、判定和入口发布；无需在应用业务代码中安排延后 import。
-
-Core/Host 绑定启动器安装；其他共享包相对 `startup.root` 解析，应用必须直接声明所用清单中的依赖。完整 `serviceSharedPackages` 包含 Services、Workbench、Commands、Elysia、`@sinclair/typebox`、`typebox` 和 `exact-mirror`，用于官方组合。实际安装版本及 importer 声明必须兼容，错误版本会拒绝；清单不安装服务。自定义服务可以追加包名。Workbench publisher 的 `capnweb` 和托管状态消费者的 `tinybase` 各自按领域精确版本接纳，不能放入全局 `sharedPackages`；私有库保留自身解析。依赖声明见[插件包](../development/plugin-package.md)。
-
-### 纯 HTTP 的最小组合
-
-应用只需要 HTTP 时，直接安装 `elysia()`，并由同一个应用选择 listener：
-
-```ts no-twoslash
-// src/app.ts
-import { defineHostApplication } from '@pluxel/host'
-import { resolveHostEnv } from '@pluxel/host/environment'
-import { elysia } from '@pluxel/services/elysia'
-import { listenElysia } from '@pluxel/services/elysia/node'
-import { ApiPlugin } from './api'
-
-export default defineHostApplication((startup) => ({
-	plugins: [ApiPlugin],
-	policy: { autoStart: [ApiPlugin] },
-	services: [elysia()],
-	async launch({ host }) {
-		const env = resolveHostEnv(startup.env)
-		await listenElysia(host, { hostname: env.hostBind, port: env.hostPort })
-	},
-}))
-```
-
-modules 启动器使用 `import { elysiaSharedPackages } from '@pluxel/services/sources'` 并传入 `sharedPackages: elysiaSharedPackages`。应用的运行依赖为 `@pluxel/core`、`@pluxel/host`、`@pluxel/services`、`elysia`、`typebox`、`exact-mirror`；后四项就是 HTTP 叶子维护的共享清单。类型依赖按项目的 Node/TypeScript 配置选择。纯 HTTP 不需要安装 Workbench、Commands 或托管 Database。standalone 使用 `pluxel({ variant: 'headless', managedDatabaseDrivers: [] })`；modules 使用 `pluxel({ delivery: 'modules', variant: 'headless' })`，应用代码与 HTTP 行为保持一致。
-
-原生启动必须使用全新 Node 进程。已在 scope 外求值的 entry 与受控缓存中的绑定冲突会明确拒绝；Node 没有公开的 ESM cache 查询，不能证明此前普通依赖的完整闭包，也不能事后重新绑定 token。独立安装、libSQL 与 PDF 流的完整示例和验证入口见[交付验证](../development/distribution.md#交付验证)。
-
-交付和搬离工作区验证见[发行物](../development/distribution.md)。Node 已有回归覆盖；其他平台需要独立验证网络与原生依赖，不能只凭 Fetch 类型兼容推定支持。
-
-## 测试
-
-插件测试统一使用 `@pluxel/test` 的 `createTestHost()`，按需显式组合服务。它们是隔离宿主，不能代表已经运行的开发应用。具体调用见[测试插件](../plugin-development/testing.md)。
+当多个宿主实例共同挂载同一个本地磁盘目录时，底层存储引擎会自动监听外部修改，并在快照合法的前提下热同步给运行中的插件。多实例共享高并发写操作时，建议采用集中式的 PostgreSQL 数据库确保事务安全。
