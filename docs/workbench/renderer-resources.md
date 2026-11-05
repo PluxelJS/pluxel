@@ -9,11 +9,11 @@ description: 掌握 Workbench 前端基于 TanStack Query 的查询缓存、变�
 
 在声明 Query 和 Mutation 时，根据业务场景选择最适宜的刷新策略：
 
-| 场景 | 推荐实现方式 | 机制说明 |
-| --- | --- | --- |
-| 仅由当前页面的操作按钮修改数据 | `mutation` 中声明 `workbench: { invalidates: [query] }` | 操作成功后，自动触发前端重新拉取指定 Query |
-| 后台或其他客户端也会并发修改数据 | `query` 中声明 `workbench.subscribe` | 服务端数据发生变动时，向前端推送失效信号并自动刷新 |
-| 查询参数随选中项或搜索关键字变化 | 使用 `queryFamily()` 动态构造查询 | 为不同参数生成隔离缓存，支持按 key 精准失效 |
+| 场景                             | 推荐实现方式                                            | 机制说明                                           |
+| -------------------------------- | ------------------------------------------------------- | -------------------------------------------------- |
+| 仅由当前页面的操作按钮修改数据   | `mutation` 中声明 `workbench: { invalidates: [query] }` | 操作成功后，自动触发前端重新拉取指定 Query         |
+| 后台或其他客户端也会并发修改数据 | `query` 中声明 `workbench.subscribe`                    | 服务端数据发生变动时，向前端推送失效信号并自动刷新 |
+| 查询参数随选中项或搜索关键字变化 | 使用 `queryFamily()` 动态构造查询                       | 为不同参数生成隔离缓存，支持按 key 精准失效        |
 
 ## 参数化查询（queryFamily）
 
@@ -21,12 +21,10 @@ description: 掌握 Workbench 前端基于 TanStack Query 的查询缓存、变�
 
 ```ts
 // 声明带参数的查询
-const orderQuery = overviewScope.queryFamily(
-	({ api }, input: Readonly<{ id: string }>) => ({
-		queryKey: ['orders', 'detail', input.id] as const,
-		queryFn: ({ signal }) => api.orderDto(input.id),
-	}),
-)
+const orderQuery = overviewScope.queryFamily(({ api }, input: Readonly<{ id: string }>) => ({
+	queryKey: ['orders', 'detail', input.id] as const,
+	queryFn: ({ signal }) => api.orderDto(input.id),
+}))
 
 // 声明操作变更并指定失效特定目标
 const renameOrder = overviewScope.mutation(({ api }) => ({
@@ -48,6 +46,7 @@ function OrderDetail({ id }: { id: string }) {
 ```
 
 <span id="数据与订阅如何清理"></span>
+
 ## 数据与订阅如何清理
 
 - **隔离的生命周期**：每次在 Workbench 中打开一个标签页，都会分配一个全新的渲染上下文与独立的 QueryClient。不同标签页之间不会意外共享临时脏状态；
@@ -55,6 +54,7 @@ function OrderDetail({ id }: { id: string }) {
 - **浅冻结防护**：查询成功返回的 DTO 数据会被深冻结为只读对象，防止组件在渲染时意外就地篡改缓存数据。
 
 <span id="服务端最新状态通知"></span>
+
 ### 服务端最新状态通知
 
 对于需要在服务端数据变动时自动推送更新的场景，服务端可借助 `createWorkbenchWatch` 将本地事件连接到客户端：

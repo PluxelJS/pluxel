@@ -6,6 +6,7 @@ description: 发现、注册和管理服务端字体，并为 Canvas、ECharts �
 `@pluxel/plugin-fonts` 统一管理服务端环境中的字体资源：自动发现宿主操作系统已安装字体、注册插件随包携带的字体文件、管理从控制台上传的自定义字体，并为 Canvas、ECharts 和 Takumi 等渲染引擎提供统一的字体查找与字节分发接口。
 
 <span id="何时直接使用-fontsplugin"></span>
+
 ## 何时直接注入 FontsPlugin
 
 - 插件自身打包了 `.ttf`、`.otf`、`.woff` 或 `.woff2` 静态字体文件，需要在服务端渲染前完成注册。
@@ -79,6 +80,7 @@ const revision = this.fonts.revision
 ```
 
 默认字体的解析优先级如下：
+
 1. 宿主通过配置明确指定的 `defaultFamily`；
 2. 管理员在控制台中持久化保存的默认偏好；
 3. 当前操作系统的默认系统字体；
@@ -117,18 +119,19 @@ envBinding(FontsPlugin, {
 ```
 
 示例环境变量：
+
 - `FONT_FILES='["/app/fonts/CustomSans.ttf"]'`
 - `FONT_FAMILY='Custom Sans'`
 
 常用配置项与其默认值：
 
-| 配置项 | 默认值 | 说明 |
-| :--- | :--- | :--- |
-| `files` | `[]` | 宿主启动时自动加载的字体文件绝对路径列表 |
-| `defaultFamily` | 自动检测 | 默认字体族名称 |
-| `maxManagedFonts` | `64` | 控制台持久化上传的字体数量上限 |
-| `maxFontBytes` | `16 MiB` | 单个字体文件最大字节限制 |
-| `maxTotalFontBytes` | `256 MiB` | 动态注册字体的总内存占用上限 |
+| 配置项              | 默认值    | 说明                                     |
+| :------------------ | :-------- | :--------------------------------------- |
+| `files`             | `[]`      | 宿主启动时自动加载的字体文件绝对路径列表 |
+| `defaultFamily`     | 自动检测  | 默认字体族名称                           |
+| `maxManagedFonts`   | `64`      | 控制台持久化上传的字体数量上限           |
+| `maxFontBytes`      | `16 MiB`  | 单个字体文件最大字节限制                 |
+| `maxTotalFontBytes` | `256 MiB` | 动态注册字体的总内存占用上限             |
 
 ## 在 Workbench 中嵌入字体选择器
 

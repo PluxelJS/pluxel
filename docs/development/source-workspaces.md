@@ -6,6 +6,7 @@ description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联�
 在同时开发 Pluxel 框架源码与外部业务插件（或消费应用）时，`pluxel source` 工具链允许在保持各个仓库独立的 Git 分支、依赖锁文件（`pnpm-lock.yaml`）和构建配置的前提下，实现本地代码的实时符号链接与跨仓联调。
 
 <span id="准备-checkout-和-cli"></span>
+
 ## 准备源码环境与 CLI
 
 1. 分别克隆消费应用仓库与 Pluxel 框架源码仓库。
@@ -22,11 +23,8 @@ description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联�
 ```jsonc
 {
 	"version": 1,
-	"sources": [
-		"https://github.com/PluxelJS/pluxel",
-		"https://github.com/PluxelJS/chatbot"
-	],
-	"singletons": ["drizzle-orm"]
+	"sources": ["https://github.com/PluxelJS/pluxel", "https://github.com/PluxelJS/chatbot"],
+	"singletons": ["drizzle-orm"],
 }
 ```
 
@@ -56,6 +54,7 @@ pluxel source doctor
 - 该覆盖文件属于本地调试资产，需加入 `.gitignore`。
 
 <span id="何时重新安装或构建"></span>
+
 ## 何时需要重新构建或安装
 
 - **上游仓库增删依赖或改动包名**：运行 `pluxel source install` 更新模块代理拓扑。
@@ -63,6 +62,7 @@ pluxel source doctor
 - **仅构建特定子包**：可通过 `pluxel source build --package @pluxel/core` 执行定向构建。
 
 <span id="文档skill-与接入状态"></span>
+
 ## 开发文档与 AI Skill 自动接入
 
 在应用工程中，可通过以下命令将框架内置的开发文档和 coding agent skill 软链接到本地：
@@ -79,6 +79,7 @@ vp exec pluxel workspace setup
 - 本地查阅文档：`pluxel docs <path>`（例如 `pluxel docs plugin-development/testing.md`）。
 
 <span id="统一外部依赖"></span>
+
 ## 工作区依赖版本治理与 Catalog
 
 Pluxel 推荐使用 pnpm Catalog 统一约束第三方依赖版本，避免多包依赖版本漂移：

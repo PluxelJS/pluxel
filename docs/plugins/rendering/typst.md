@@ -8,6 +8,7 @@ description: 复用 Typst 生成无状态 SVG，或用多文件会话生成同�
 ## 核心运行环境
 
 Typst 插件依赖宿主安装的底层支撑能力：
+
 - **无状态 SVG 渲染（`renderSvg`）**：使用宿主共享的 `Workers` 线程池。
 - **持久化文档会话（`open`）**：通过 `NodeModules` 服务加载当前平台编译的原生 Typst 动态库与专用编译 Worker。
 - **字体服务**：通过 `FontsPlugin` 注册和分发排版所需的中英文可移植字体。
@@ -32,6 +33,7 @@ await saveSvg(svg)
 - 源码受 `TypstConfig.maxInputBytes` 约束，生成的 SVG 受 `maxOutputBytes` 限制。
 
 <span id="浏览器编译"></span>
+
 ## 纯前端浏览器编译（WebAssembly）
 
 针对无需后端参与的纯前端场景，`@pluxel/plugin-typst/wasm` 提供了完全运行在浏览器 Web Worker 内的独立实现：
@@ -126,6 +128,7 @@ try {
 - 每次成功编译会推进修订版本号（`revision`），`exportPdf()` 能够精准提取指定版本的产物。
 
 <span id="浏览器预览"></span>
+
 ## 浏览器矢量预览组件
 
 前端可以通过 `@pluxel/plugin-typst/browser` 提供的 `TypstPreviewView` 高性能渲染矢量预览包：
@@ -178,11 +181,11 @@ await saveImage('page-1.png', image.data)
 
 通过 `TypstConfig` 可在应用层统筹管理编译会话的资源配额：
 
-| 配置项 | 默认值 | 说明 |
-| :--- | :--- | :--- |
-| `maxSessions` | `4` | 宿主允许同时保有的常驻编译会话数 |
-| `maxQueuedUpdates` | `8` | 单个会话允许排队的最大增量更新请求数 |
-| `maxTemplateBytes` | `64 MiB` | 静态模板目录的最大体积上限 |
-| `maxInputBytes` | `256 MiB` | 单次动态更新传入文件的最大数据量 |
-| `maxOutputBytes` | `64 MiB` | 编译生成的产物（PDF + Preview）最大允许大小 |
-| `maxFontBytes` | `64 MiB` | 注册字体的最大内存占用 |
+| 配置项             | 默认值    | 说明                                        |
+| :----------------- | :-------- | :------------------------------------------ |
+| `maxSessions`      | `4`       | 宿主允许同时保有的常驻编译会话数            |
+| `maxQueuedUpdates` | `8`       | 单个会话允许排队的最大增量更新请求数        |
+| `maxTemplateBytes` | `64 MiB`  | 静态模板目录的最大体积上限                  |
+| `maxInputBytes`    | `256 MiB` | 单次动态更新传入文件的最大数据量            |
+| `maxOutputBytes`   | `64 MiB`  | 编译生成的产物（PDF + Preview）最大允许大小 |
+| `maxFontBytes`     | `64 MiB`  | 注册字体的最大内存占用                      |

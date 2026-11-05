@@ -16,10 +16,10 @@ import { management } from '@pluxel/services/management/service'
 import { managementHttp } from '@pluxel/services/management/http'
 
 const services = [
-	elysia(),             // 底层 Web 服务
-	managementAccess(),   // 访问控制与认证鉴权
-	management(),         // 核心状态投影服务
-	managementHttp(),     // 将管理接口挂载至 HTTP 路径
+	elysia(), // 底层 Web 服务
+	managementAccess(), // 访问控制与认证鉴权
+	management(), // 核心状态投影服务
+	managementHttp(), // 将管理接口挂载至 HTTP 路径
 ]
 ```
 

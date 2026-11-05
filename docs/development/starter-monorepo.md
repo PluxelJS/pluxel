@@ -20,14 +20,14 @@ vp run dev
 
 按业务需求查找对应的修改入口：
 
-| 需求场景 | 修改目标路径 | 验证与调试方式 |
-| :--- | :--- | :--- |
-| 调整核心领域实体与业务逻辑 | `packages/domain/` | 运行该子包的 Vitest 单元测试 |
-| 调整业务插件的状态、配置或审计 | `plugins/todo/src/index.ts` | 运行插件集成测试，并在前端界面中操作验证 |
-| 增删或修改 HTTP API 接口 | `plugins/http/src/index.ts` | 编写基于 `createTestHost()` 的 HTTP 接口测试 |
-| 修改前端界面与交互 | `host/web/src/client/` | 在浏览器中直接查看热更新后的界面 |
-| 调整自启插件与应用初始配置 | `host/src/app.ts` 与 `host/src/runtime-state.ts` | 检查应用启动日志并在控制台确认生效状态 |
-| 新增独立的业务插件 | 参考 [编写第一个插件](../getting-started/first-plugin.md) | 装配到宿主清单中进行验证 |
+| 需求场景                       | 修改目标路径                                              | 验证与调试方式                               |
+| :----------------------------- | :-------------------------------------------------------- | :------------------------------------------- |
+| 调整核心领域实体与业务逻辑     | `packages/domain/`                                        | 运行该子包的 Vitest 单元测试                 |
+| 调整业务插件的状态、配置或审计 | `plugins/todo/src/index.ts`                               | 运行插件集成测试，并在前端界面中操作验证     |
+| 增删或修改 HTTP API 接口       | `plugins/http/src/index.ts`                               | 编写基于 `createTestHost()` 的 HTTP 接口测试 |
+| 修改前端界面与交互             | `host/web/src/client/`                                    | 在浏览器中直接查看热更新后的界面             |
+| 调整自启插件与应用初始配置     | `host/src/app.ts` 与 `host/src/runtime-state.ts`          | 检查应用启动日志并在控制台确认生效状态       |
+| 新增独立的业务插件             | 参考 [编写第一个插件](../getting-started/first-plugin.md) | 装配到宿主清单中进行验证                     |
 
 ## 工程目录结构
 
@@ -69,9 +69,11 @@ vp run @example/host#start
 构建流程会依次打包前端静态资源、编译服务端模块并将静态页面输出至 `host/dist/public`。
 
 <span id="添加依赖"></span>
+
 ## 添加与管理依赖
 
 Monorepo 中的各个包应各自显式声明直接使用的依赖：
+
 - `host/web/` 维护纯前端依赖（React、组件库等）；
 - `host/` 维护服务端运行时与插件宿主依赖；
 - 插件包将核心运行时（如 `@pluxel/core`）声明为 `peerDependencies`，实现依赖放入 `dependencies`，测试辅助包放入 `devDependencies`。
@@ -94,6 +96,7 @@ vp run governance:check
 ## 测试分层
 
 工程提供了不同层次的测试方案：
+
 - **纯逻辑测试**：在 `packages/domain/tests` 中使用纯 Vitest 进行无框架的快速测试。
 - **插件行为测试**：使用 `@pluxel/test` 提供的 `createTestHost()` 启动内存宿主，验证依赖装配、生命周期回调与配置更新。
 - **接口测试**：为测试宿主安装 HTTP 服务，直接通过 `host.http.fetch()` 发起内存请求断言响应。

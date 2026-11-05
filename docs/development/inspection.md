@@ -7,13 +7,13 @@ description: 用 TypeScript 定位插件、Part、配置声明与应用输入，
 
 ## 场景速查
 
-| 查询目标 | 推荐调用方式 |
-| :--- | :--- |
-| 查询某个特定 npm 包内的插件 | `plugins({ packageName })` 获取定义后，调用 `plugin()` 深入分析 |
-| 查询具体插件的完整结构 | `plugin(reference, { include: ['parts', 'config', 'dependencies'] })` |
-| 根据文件反查归属插件 | `file(path)`，返回引用了该文件的插件及 Part 列表 |
-| 定位宿主环境变量与配置文件映射 | `plugin(..., { application, include: ['inputs', 'config'] })` |
-| 浏览工作区项目概览 | `overview()` 列出所有子包与可用脚本 |
+| 查询目标                       | 推荐调用方式                                                          |
+| :----------------------------- | :-------------------------------------------------------------------- |
+| 查询某个特定 npm 包内的插件    | `plugins({ packageName })` 获取定义后，调用 `plugin()` 深入分析       |
+| 查询具体插件的完整结构         | `plugin(reference, { include: ['parts', 'config', 'dependencies'] })` |
+| 根据文件反查归属插件           | `file(path)`，返回引用了该文件的插件及 Part 列表                      |
+| 定位宿主环境变量与配置文件映射 | `plugin(..., { application, include: ['inputs', 'config'] })`         |
+| 浏览工作区项目概览             | `overview()` 列出所有子包与可用脚本                                   |
 
 ## 查询子包中的插件定义
 
@@ -55,6 +55,7 @@ if (plugins.data.status !== 'unavailable') {
 ```
 
 各 Section 数据内容说明：
+
 - `parts`：按挂载路径展开的所有 Part 实例、类声明代码位置及依赖；
 - `config`：插件及各 Part 声明的配置字段、Schema 表达式及其原始定义位置；
 - `dependencies`：当前插件必需（required）与可选（optional）的外部插件依赖列表；
@@ -102,9 +103,11 @@ console.log(JSON.stringify(owners, null, 2))
 
 <span id="读取结果"></span>
 <span id="读取结果和处理变化"></span>
+
 ## 结果状态与数据契约
 
 返回的 `Inspection` 数据对象中包含 `root`、`revision` 与 `data`：
+
 - `status: 'complete'`：在当前解析范围内完整提取了所有静态元数据；
 - `status: 'partial'`：已提取部分可用事实，并在 `gaps` 中列出由于动态表达式或外部模块无法静态分析的节点；
 - `status: 'unavailable'`：无法完成该 section 的分析，具体原因记录在 `reason` 字段中。

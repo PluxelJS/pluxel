@@ -30,15 +30,14 @@ export default defineHostApplication(async (startup) => ({
 - **Workbench 管理后台**：提供位于 `/__pluxel/workbench` 的可视化插件管理与调试页面。
 
 <span id="初始侧栏入口"></span>
+
 ### 初始侧栏入口
 
 在带有 Workbench 的应用中，你可以为用户首次打开界面时预设固定的侧栏快捷入口（例如将核心业务页固定在侧边栏）：
 
 ```ts
 services: await servicesPreset(startup, {
-	initialShortcuts: [
-		{ target: OrdersPlugin.nodeAddress(), entryKey: 'overview' },
-	],
+	initialShortcuts: [{ target: OrdersPlugin.nodeAddress(), entryKey: 'overview' }],
 })
 ```
 

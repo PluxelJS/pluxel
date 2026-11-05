@@ -10,6 +10,7 @@ description: 连接插件市场，或直接通过受控 pnpm 环境安装与更�
 ## 宿主装配
 
 在宿主配置中启用包管理器需要配置四个关键项：
+
 1. 在 `plugins` 列表中声明 `PackageManagerPlugin`；
 2. 在 `sources` 中注册对应的受管插件入口目录；
 3. 在 `policy.autoStart` 中将其加入随宿主自启列表；
@@ -76,13 +77,13 @@ export default defineHostApplication(async (startup) => {
 
 包管理器配置参数如下：
 
-| 参数 | 类型 / 默认值 | 说明 |
-| :--- | :--- | :--- |
-| `rootDir` | `string` (`.pluxel/managed-plugins`) | 宿主专用的隔离 pnpm 项目目录 |
-| `ignoreScripts` | `boolean` (`true`) | 是否禁用 npm 依赖中的安装脚本（如 `postinstall`） |
-| `allowBuilds` | `string[]` (`[]`) | 允许执行构建/原生编译脚本的包名白名单 |
-| `minimumReleaseAgeMinutes` | `number` (`1440`) | 拒绝安装发布时间少于指定分钟数的包（默认 24 小时，防范供应链投毒） |
-| `markets` | `Array<{ id, url }>` (`[]`) | 远程插件市场连接端点列表 |
+| 参数                       | 类型 / 默认值                        | 说明                                                               |
+| :------------------------- | :----------------------------------- | :----------------------------------------------------------------- |
+| `rootDir`                  | `string` (`.pluxel/managed-plugins`) | 宿主专用的隔离 pnpm 项目目录                                       |
+| `ignoreScripts`            | `boolean` (`true`)                   | 是否禁用 npm 依赖中的安装脚本（如 `postinstall`）                  |
+| `allowBuilds`              | `string[]` (`[]`)                    | 允许执行构建/原生编译脚本的包名白名单                              |
+| `minimumReleaseAgeMinutes` | `number` (`1440`)                    | 拒绝安装发布时间少于指定分钟数的包（默认 24 小时，防范供应链投毒） |
+| `markets`                  | `Array<{ id, url }>` (`[]`)          | 远程插件市场连接端点列表                                           |
 
 通过 `envBinding` 将配置项与环境变量绑定：
 
@@ -107,9 +108,7 @@ envBinding(PackageManagerPlugin, {
 
 ```json
 {
-	"markets": [
-		{ "id": "community", "url": "https://plugins.example.com" }
-	]
+	"markets": [{ "id": "community", "url": "https://plugins.example.com" }]
 }
 ```
 
@@ -179,6 +178,7 @@ if (removed.isErr()) throw new Error(removed.error.message)
 ```
 
 支持的命令列表：
+
 - `package.prepare({ specs })`：生成两阶段安装预览计划。
 - `package.confirm({ planId })`：发布指定计划的插件。
 - `package.install({ specs })`：一步完成依赖解析与安装发布。

@@ -48,12 +48,12 @@ try {
 
 LogTape 支持多种调用风格，可根据场景灵活选用：
 
-| 场景 | 推荐写法 | 示例 |
-| --- | --- | --- |
-| 常规文本输出 | `logger.info(message)` | `logger.info('Service ready')` |
-| 携带查询属性 | `logger.info(message, properties)` | `logger.info('Job done', { jobId, durationMs: 120 })` |
-| 带有插值的直观展示 | 模板字符串占位符 | `logger.info('Processed {count} items for {user}', { count, user })` |
-| 需昂贵计算生成的字段 | `lazy()` 延迟求值 | `logger.debug('Snapshot', { stats: lazy(() => calc()) })` |
+| 场景                 | 推荐写法                           | 示例                                                                 |
+| -------------------- | ---------------------------------- | -------------------------------------------------------------------- |
+| 常规文本输出         | `logger.info(message)`             | `logger.info('Service ready')`                                       |
+| 携带查询属性         | `logger.info(message, properties)` | `logger.info('Job done', { jobId, durationMs: 120 })`                |
+| 带有插值的直观展示   | 模板字符串占位符                   | `logger.info('Processed {count} items for {user}', { count, user })` |
+| 需昂贵计算生成的字段 | `lazy()` 延迟求值                  | `logger.debug('Snapshot', { stats: lazy(() => calc()) })`            |
 
 ### 延迟计算（Lazy Evaluation）
 
@@ -116,6 +116,7 @@ export class CachePlugin extends BasePlugin {
 ## 安全与隐私建议
 
 为了防止敏感数据泄漏到日志存储中，请注意：
+
 - 避免记录密码、API Key、Bearer Token 或数据库凭证；
 - 避免直接将整个未经清洗的请求 Payload 或大型用户隐私对象打入属性中；
 - 优先记录请求 ID（`requestId`）或业务主键，避免输出难以索引的高基数长文本。

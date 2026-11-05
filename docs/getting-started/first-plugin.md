@@ -4,6 +4,7 @@ description: 从零构建一个包含业务方法、Valibot 配置校验、结�
 ---
 
 本篇教程带你从零实现一个独立的状态采样插件（`StatusPlugin`）。通过这个例子，你将掌握 Pluxel 插件最核心的四个机制：
+
 1. 使用 `@Plugin()` 装饰器声明插件身份；
 2. 使用 Valibot 定义并注入强类型配置；
 3. 在 `init()` 钩子中启动后台工作并输出日志；
@@ -21,6 +22,7 @@ vp run verify
 ```
 
 模板会自动生成标准插件项目结构。我们将主要关注两个核心文件：
+
 - `src/status.ts`：插件的实现代码。
 - `tests/status.test.ts`：插件的自动化测试。
 
@@ -121,6 +123,7 @@ vp run verify
 ## 进阶探索
 
 掌握了单插件的基础写法后，你可以继续探索更多高级能力：
+
 - [插件依赖拓扑](../plugin-development/model.md)：如何在构造函数中注入其他插件，或声明可选依赖。
 - [结构化日志最佳实践](../plugin-development/logging.md)：使用上下文日志记录关键指标与调试信息。
 - [插件拆分与 Part 机制](../plugin-development/parts.md)：使用 `PluginPart` 将庞大插件的内部状态模块化拆分。

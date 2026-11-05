@@ -45,17 +45,17 @@ export default defineConfig({ lint })
 
 ## 核心规则清单
 
-| 规则名称 | 校验目的 | 推荐修复方式 |
-| :--- | :--- | :--- |
-| `plugin-base-class-requires-plugin-registration` | 确保具体插件类添加了必要的注册装饰器 | 添加 `@Plugin()` 装饰器 |
-| `plugin-constructor-canonical-dependencies` | 依赖注入应从包公开根入口引入，保证类型溯源 | 从包根路径进行 `value-import` |
-| `configs-use-top-level-class` | 确保配置字段位于类的顶层声明中，以便元数据提取 | 将配置字段提升至类声明顶层 |
-| `configs-use-no-private-field` | 运行时需注入配置，禁止使用 JS 原生私有字段（`#`） | 改用 TypeScript `private` 访问修饰符 |
-| `configs-use-no-early-read` | 防止在构造函数中过早读取尚未注入的配置 | 将配置访问逻辑移至 `init()` 或后续业务方法中 |
-| `configs-use-no-redefault` | 默认值应集中在 Schema 中定义，避免逻辑分散 | 移除二次回退（如 `?? 'default'`），在 Schema 中指定默认值 |
-| `configs-use-single-object-schema` | 插件仅支持挂载单个配置 Schema 对象 | 将多个配置项合并为一个顶层 Object Schema |
-| `plugin-no-process-exit` | 插件内部禁止随意调用 `process.exit()` | 抛出带有明确原因的异常，交由宿主生命周期处理 |
-| `no-direct-logtape-get-logger` | 日志器需保持与插件 Context 绑定的所有权 | 使用当前插件上下文的 `this.ctx.logger` |
+| 规则名称                                         | 校验目的                                          | 推荐修复方式                                              |
+| :----------------------------------------------- | :------------------------------------------------ | :-------------------------------------------------------- |
+| `plugin-base-class-requires-plugin-registration` | 确保具体插件类添加了必要的注册装饰器              | 添加 `@Plugin()` 装饰器                                   |
+| `plugin-constructor-canonical-dependencies`      | 依赖注入应从包公开根入口引入，保证类型溯源        | 从包根路径进行 `value-import`                             |
+| `configs-use-top-level-class`                    | 确保配置字段位于类的顶层声明中，以便元数据提取    | 将配置字段提升至类声明顶层                                |
+| `configs-use-no-private-field`                   | 运行时需注入配置，禁止使用 JS 原生私有字段（`#`） | 改用 TypeScript `private` 访问修饰符                      |
+| `configs-use-no-early-read`                      | 防止在构造函数中过早读取尚未注入的配置            | 将配置访问逻辑移至 `init()` 或后续业务方法中              |
+| `configs-use-no-redefault`                       | 默认值应集中在 Schema 中定义，避免逻辑分散        | 移除二次回退（如 `?? 'default'`），在 Schema 中指定默认值 |
+| `configs-use-single-object-schema`               | 插件仅支持挂载单个配置 Schema 对象                | 将多个配置项合并为一个顶层 Object Schema                  |
+| `plugin-no-process-exit`                         | 插件内部禁止随意调用 `process.exit()`             | 抛出带有明确原因的异常，交由宿主生命周期处理              |
+| `no-direct-logtape-get-logger`                   | 日志器需保持与插件 Context 绑定的所有权           | 使用当前插件上下文的 `this.ctx.logger`                    |
 
 ## 日志错误记录规范
 
@@ -68,4 +68,5 @@ try {
 	this.ctx.logger.error('同步数据失败', { error })
 }
 ```
+
 避免仅记录 `error.message` 导致丢失原始错误调用栈。

@@ -95,6 +95,7 @@ await this.renderer.render('![Logo](https://assets.example.com/logo.png)', {
 
 <span id="可选的-typst-数学"></span>
 <span id="工作区可选的-typst-数学"></span>
+
 ## 可选的 Typst 数学公式支持
 
 如果宿主同时装配了工作区内的 `@pluxel/plugin-typst` 插件，Markdown 渲染器会自动激活数学公式扩展，支持行内公式（`$E=mc^2$`）与独立行公式（`$$...$$`）：

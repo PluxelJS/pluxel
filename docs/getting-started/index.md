@@ -21,6 +21,7 @@ vp run dev
 
 > [!TIP]
 > 如果你的环境中没有使用 mise，可直接使用包管理器安装依赖并启动项目：
+>
 > ```sh
 > npx @pluxel/cli new --name my-app
 > cd my-app

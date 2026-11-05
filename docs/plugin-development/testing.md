@@ -99,14 +99,14 @@ await using host = await createTestHost({
 
 ## 测试宿主核心 API
 
-| 操作 | 说明 |
-| --- | --- |
-| `await host.start(PluginClass, options?)` | 启动目标插件并等待就绪，返回强类型实例 |
-| `await host.start([PluginA, PluginB])` | 一次性启动多个插件，返回实例元组 |
-| `await host.stop(PluginClass)` | 停止指定插件并触发其资源清理回调 |
-| `await host.restart(PluginClass)` | 重启插件并返回新实例 |
-| `host.isRunning(PluginClass)` | 检查插件当前是否处于运行状态 |
-| `await host.config.patch(PluginClass, { set, remove })` | 在运行时修改插件配置并验证热更新 |
+| 操作                                                    | 说明                                   |
+| ------------------------------------------------------- | -------------------------------------- |
+| `await host.start(PluginClass, options?)`               | 启动目标插件并等待就绪，返回强类型实例 |
+| `await host.start([PluginA, PluginB])`                  | 一次性启动多个插件，返回实例元组       |
+| `await host.stop(PluginClass)`                          | 停止指定插件并触发其资源清理回调       |
+| `await host.restart(PluginClass)`                       | 重启插件并返回新实例                   |
+| `host.isRunning(PluginClass)`                           | 检查插件当前是否处于运行状态           |
+| `await host.config.patch(PluginClass, { set, remove })` | 在运行时修改插件配置并验证热更新       |
 
 ## 初始配置与运行时配置更新
 
@@ -168,6 +168,7 @@ expect(failure.lifecycleReport.issues).toContainEqual(
 ```
 
 <span id="抽象-provider-与-consumer-override"></span>
+
 ## 抽象 Provider 与 Consumer 依赖替换
 
 在单元测试中，经常需要用 Mock 插件替换真实的上游服务：
@@ -175,13 +176,13 @@ expect(failure.lifecycleReport.issues).toContainEqual(
 ```ts no-twoslash
 await host.commit((change) => {
 	change.catalog.add([MockStoragePlugin, ConsumerPlugin])
-	
+
 	// 将 Storage 抽象依赖定向到 MockStoragePlugin
 	change.dependencies.setDefault({
 		requirement: StorageToken,
 		provider: MockStoragePlugin,
 	})
-	
+
 	change.start(ConsumerPlugin)
 })
 ```
@@ -203,6 +204,7 @@ await host.commit((change) => {
 ## PluginPart、optional integration 与 cleanup
 
 验证带有局部部件和资源清理的插件时，建议重点覆盖：
+
 1. **清理是否彻底**：插件调用 `host.stop()` 后，其内部通过 `ctx.effects.defer()` 注册的回调是否被调用，后台连接是否真正关闭；
 2. **局部异常回滚**：如果挂载的某个 `PluginPart` 在 `init()` 中抛出错误，验证主插件是否能够整洁回滚，已创建的资源是否被完整清理；
 3. **可选依赖启闭**：验证可选依赖从“不存在”到“被动态启动”时，消费方插件能否正确建立与断开集成。

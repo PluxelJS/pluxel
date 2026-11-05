@@ -6,6 +6,7 @@ description: 控制现有 Vite 的 HMR 批次，提交 TypeScript 操作，检�
 Pluxel 开发控制台（Dev Console）运行在当前正在运行的 Vite 进程与宿主（Host）上下文中。它提供了在服务运行期间执行测试脚本、在线查看和修改配置、精准管理热模块替换（HMR）批次以及按条件筛选业务日志的能力。
 
 <span id="coding-agent-工作流程"></span>
+
 ## 推荐工作流程
 
 1. **确认服务与应用状态**：
@@ -29,6 +30,7 @@ vp exec pluxel dev status --profile local
 ```
 
 <span id="hmr-批次控制"></span>
+
 ## HMR 批次控制
 
 默认情况下，HMR 为 `auto` 自动更新模式。在需要跨多个文件连续重构代码、避免中间半成品状态频繁触发热更新时，可以通过批次控制命令显式编排：
@@ -51,14 +53,15 @@ vp exec pluxel dev hmr resume
 
 ### 命令说明
 
-| 命令 | 行为说明 |
-| :--- | :--- |
-| `dev hmr pause` | 将更新模式切换为 `paused`，后台文件监听器继续收集并合并文件变动 |
-| `dev hmr apply` | 将当前积累的全部文件变动作为单个完整批次应用到宿主应用中，执行后仍保持 `paused` |
-| `dev hmr resume` | 应用剩余的待处理改动并将模式切回 `auto`，后续变更恢复自动热更新 |
-| `dev status` | 查看当前的 HMR 调度状态、是否有在途更新任务以及待处理文件数量 |
+| 命令             | 行为说明                                                                        |
+| :--------------- | :------------------------------------------------------------------------------ |
+| `dev hmr pause`  | 将更新模式切换为 `paused`，后台文件监听器继续收集并合并文件变动                 |
+| `dev hmr apply`  | 将当前积累的全部文件变动作为单个完整批次应用到宿主应用中，执行后仍保持 `paused` |
+| `dev hmr resume` | 应用剩余的待处理改动并将模式切回 `auto`，后续变更恢复自动热更新                 |
+| `dev status`     | 查看当前的 HMR 调度状态、是否有在途更新任务以及待处理文件数量                   |
 
 `dev status` 中的 `hmr` 字段结构：
+
 - `mode`：当前模式（`auto` 或 `paused`）；
 - `running`：当前是否有正在执行的应用更新批次；
 - `pending.files`：当前已累积的文件变动数；若超过 4096 个文件则自动标记为 `full: true` 执行全量重算；
@@ -100,6 +103,7 @@ vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"测试待�
 - 修改脚本自身或添加新的具名导出无需重启 Vite 服务，控制台会自动热加载最新脚本。
 
 <span id="项目入口与启动方式"></span>
+
 ## 配置 profile 与启动方式
 
 在 `package.json` 的 `pluxel.dev` 节点中声明开发环境配置文件（Profile）：
@@ -128,6 +132,7 @@ vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"测试待�
 - `command`：直接在前台启动的命令（与 `pitchfork` 二选一）。
 
 <span id="编辑配置"></span>
+
 ## 在线查看与更新插件配置
 
 在调试脚本中，可通过 `dev.config` 接口在线查询和修改插件配置：
@@ -154,6 +159,7 @@ export const increaseLimit = defineDevConsole(async (dev) => {
 - `dev.config.reset(Plugin)`：清除所有已保存的覆盖配置，恢复默认设置。
 
 <span id="有界操作日志与等待"></span>
+
 ## 捕获与筛选运行时日志
 
 通过 `Logging` 服务可实时读取特定插件的结构化日志流：
@@ -186,6 +192,7 @@ export const restartWithLogs = defineDevConsole(async (dev) => {
 - `readLogs(logging, cursor, { limit, filter })`：根据游标与插件地址筛选出最新产生的有界日志记录。
 
 <span id="结果取消和恢复"></span>
+
 ## 异步任务结果查询与取消
 
 执行脚本时可传入 `--detach` 将任务放入后台执行并获取回执：

@@ -36,11 +36,11 @@ export class OrdersPlugin extends BasePlugin {
 > [!NOTE]
 > **关于路由前缀与命名空间**
 > 声明的路由路径即为最终对外暴露的 URL 路径。如果需要统一的路由前缀，建议使用 Elysia 的 `.group()` 组织：
+>
 > ```ts
-> this.ctx.require(ElysiaApp).group('/api/v1', (app) =>
-> 	app.get('/orders', () => this.listOrders())
-> )
+> this.ctx.require(ElysiaApp).group('/api/v1', (app) => app.get('/orders', () => this.listOrders()))
 > ```
+>
 > 注意：`/__pluxel` 为框架管理面板的保留前缀，插件不可占用。
 
 ## 直接使用 Elysia 能力
@@ -75,7 +75,8 @@ this.ctx.require(ElysiaApp).post(
 可以使用 `onRequest`、`onBeforeHandle` 或 `onError` 统一处理请求生命周期：
 
 ```ts no-twoslash
-this.ctx.require(ElysiaApp)
+this.ctx
+	.require(ElysiaApp)
 	.onRequest(({ request }) => {
 		this.ctx.logger.debug('Incoming request', { url: request.url })
 	})

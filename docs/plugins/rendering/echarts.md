@@ -113,13 +113,13 @@ theme.dispose()
 
 通过 `EChartsConfig` 可以在应用层调整限制参数：
 
-| 配置项 | 默认值 | 说明 |
-| :--- | :--- | :--- |
-| `defaultDevicePixelRatio` | `1` | 未显式传入 DPR 时的默认倍率 |
-| `maxDevicePixelRatio` | `4` | 单次渲染允许的最大 DPR 上限 |
-| `maxOptionBytes` | `8 MiB` | Option 配置结构允许的最大序列化体积 |
-| `maxOutputBytes` | `64 MiB` | 渲染生成的单张图片最大体积 |
-| `maxTotalImagePixels` | `16.8 M` | 单次渲染中所有内嵌图片解码后的最大总像素数 |
+| 配置项                    | 默认值   | 说明                                       |
+| :------------------------ | :------- | :----------------------------------------- |
+| `defaultDevicePixelRatio` | `1`      | 未显式传入 DPR 时的默认倍率                |
+| `maxDevicePixelRatio`     | `4`      | 单次渲染允许的最大 DPR 上限                |
+| `maxOptionBytes`          | `8 MiB`  | Option 配置结构允许的最大序列化体积        |
+| `maxOutputBytes`          | `64 MiB` | 渲染生成的单张图片最大体积                 |
+| `maxTotalImagePixels`     | `16.8 M` | 单次渲染中所有内嵌图片解码后的最大总像素数 |
 
 ## 错误处理与 Result 封装
 

@@ -5,11 +5,13 @@
 ## 贡献流程
 
 ### 1. 提交 Issue
+
 - 报告 Bug 时，请尽量提供最小复现步骤、Node.js 与 pnpm 版本、操作系统信息以及错误日志。
 - 提出较大范围的 API 变更或新功能建议前，建议先开启 Issue 讨论设计思路与适用场景。
 - 涉及安全隐患的问题请参阅 [安全策略](./SECURITY.md) 私下联络，请勿直接公开在 Issue 中。
 
 ### 2. 签署贡献协议
+
 提交代码前请阅读本项目的[贡献者许可协议（CLA）](./CLA.md)。提交 PR 时，请在 PR 模板中勾选同意该协议。
 
 ## 本地环境搭建
@@ -28,6 +30,7 @@ vp run verify
 ```
 
 日常开发常用命令：
+
 - 启动示例宿主：`vp run dev`
 - 启动本地文档站：`vp run docs`
 - 服务管理（Pitchfork）：`pitchfork list` 或 `pitchfork logs plugin-host`

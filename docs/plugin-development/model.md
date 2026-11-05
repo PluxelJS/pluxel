@@ -9,13 +9,14 @@ description: 掌握 Pluxel 中的必需依赖、可选集成、拓扑关系与�
 
 根据模块是否需要独立分发、启停或注入，可分为以下三种组成方式：
 
-| 组成方式 | 适用场景 | 声明方式 |
-| --- | --- | --- |
-| **必需依赖（Required）** | 缺少提供方功能便无法运行 | 构造函数参数 + 强类型值导入 |
-| **可选依赖（Optional）** | 提供方缺席时仍可工作；提供方就绪或重启时自动接入 | `definePluginRef<T>()` + `this.plugins.use()` |
-| **子部件（PluginPart）** | 属于当前插件的内部实现，需要独立配置或资源，但随父插件启停 | `this.parts.use(MyPart)` |
+| 组成方式                 | 适用场景                                                   | 声明方式                                      |
+| ------------------------ | ---------------------------------------------------------- | --------------------------------------------- |
+| **必需依赖（Required）** | 缺少提供方功能便无法运行                                   | 构造函数参数 + 强类型值导入                   |
+| **可选依赖（Optional）** | 提供方缺席时仍可工作；提供方就绪或重启时自动接入           | `definePluginRef<T>()` + `this.plugins.use()` |
+| **子部件（PluginPart）** | 属于当前插件的内部实现，需要独立配置或资源，但随父插件启停 | `this.parts.use(MyPart)`                      |
 
 <span id="required-dependency"></span>
+
 ## 必需依赖（Required Dependency）
 
 如果一个插件离开另一个插件就无法完成自身核心业务，请通过构造函数声明必需依赖。提供能力的插件称为**提供方（Provider）**，发起调用的插件称为**消费方（Consumer）**。
@@ -51,6 +52,7 @@ export class BillingPlugin extends BasePlugin {
 ```
 
 在实际多包工程中，通常从提供方包的公共入口导入：
+
 ```ts
 import { AccountsPlugin } from '@acme/accounts'
 ```
@@ -67,6 +69,7 @@ import { AccountsPlugin } from '@acme/accounts'
 
 > [!NOTE]
 > **语法限制**
+>
 > 1. **使用 TypeScript `private` 代替 JS `#private`**：代理视图无法穿透原生 JavaScript 私有字段（`#field`），构建工具会拦截并报错 `plugin_caller_view_private_brand_unsupported`。请使用常规的 `private` 关键字修饰内部状态。
 > 2. **对外暴露的方法请声明为原型方法**：对外提供调用的方法请直接写为标准的类方法（`method() {}`）。不要使用箭头函数字段（如 `handler = () => {}`）或在属性上使用 `.bind(this)`，这类属性会直接捕获原始实例导致调用方上下文丢失，构建工具会提示 `plugin_caller_view_callable_field_unsupported`。
 > 3. **显式声明公开字段**：公开属性请在类定义中声明并赋初值，不要只使用 `declare field` 占位或在运行时动态挂载字段。

@@ -67,9 +67,7 @@ vp run @pluxel-internal/plugin-market#sandbox:admin facets
 
 ```json
 {
-	"markets": [
-		{ "id": "market-local", "url": "http://127.0.0.1:8787" }
-	]
+	"markets": [{ "id": "market-local", "url": "http://127.0.0.1:8787" }]
 }
 ```
 
