@@ -4,13 +4,15 @@ packages:
   - plugins/*/*
   - vendor/eventure
   - vendor/pncat
-  - vendor/split-like-vscode/packages/core
+  - vendor/split-like-vscode/packages/split-view
   - vendor/split-like-vscode/packages/react
   - vendor/split-like-vscode/packages/demo
   - projects/*
   - projects/embedded-launcher/sdk
 
 allowBuilds:
+  # Places the pinned platform binary at the PNPR executable entry.
+  '@pnpm/pnpr@0.1.0-alpha.17': true
   electron: true
   koffi: true
   # Studio excludes just-bash archive commands; optional native codecs are unused.
@@ -200,7 +202,7 @@ catalogs:
     '@logtape/otel': ^2.4.2
     '@opentelemetry/api': ^1.10.0
     '@platformatic/vfs': ^0.5.0
-    '@pluxel/market': ^0.1.0
+    '@pnpm/pnpr': 0.1.0-alpha.17
     '@sinclair/parsebox': ^0.11.6
     '@tanstack/router-plugin': ^1.168.48
     capnweb: 0.12.0
@@ -258,7 +260,7 @@ catalogs:
     '@tanstack/react-query': ^5.105.3
     '@tanstack/react-form': ^1.33.5
     '@tanstack/react-hotkeys': ^0.22.0
-    '@tanstack/react-router': ^1.170.46
+    '@tanstack/react-router': 1.170.46
     '@tanstack/react-store': ^0.11.2
     '@tanstack/react-virtual': ^3.14.26
     '@tiptap/core': 3.32.2
@@ -301,9 +303,12 @@ catalogs:
     pkg-types: ^2.4.0
   override:
     tegami: ^1.5.0
+  internal:
+    '@worksplit/split-view': workspace:*
   peer:
+    '@tanstack/react-router': 1.170.46
+    flexlayout-react: 0.11.1
     '@opentelemetry/api': ^1.10.0
-    '@pluxel/market': ^0.1.0
   prod:
     modern-tar: ^0.7.7
     tinybase: 10.0.1
@@ -451,6 +456,9 @@ catalogs:
   workflow:
     '@tanstack/pacer': ^0.23.1
 patchedDependencies:
+  '@tanstack/history@1.162.5': vendor/split-like-vscode/patches/@tanstack+history@1.162.5.patch
+  '@tanstack/router-core@1.171.39': vendor/split-like-vscode/patches/@tanstack+router-core@1.171.39.patch
+  '@tanstack/react-router@1.170.46': vendor/split-like-vscode/patches/@tanstack+react-router@1.170.46.patch
   '@zenfs/core@2.8.3': patches/@zenfs__core@2.8.3.patch
   '@zenfs/dom@1.2.14': patches/@zenfs__dom@1.2.14.patch
   flexlayout-react@0.11.1: vendor/split-like-vscode/patches/flexlayout-react@0.11.1.patch

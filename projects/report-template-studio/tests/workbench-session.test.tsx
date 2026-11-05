@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
-import { Workbench, useWorkbenchContent } from '@worksplit/react'
-import { Actions, Model, type BorderNode } from 'flexlayout-react'
+import { Workbench } from '@worksplit/react'
+import { Actions, type BorderNode } from 'flexlayout-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../src/renderer/api'
-import { editorLifecycle } from '../src/renderer/editor-lifecycle'
-import { WorkspaceContext, useWorkspace } from '../src/renderer/workspace-context'
+import { WorkspaceContext } from '../src/renderer/workspace-context'
 import { StudioSession } from '../src/renderer/workbench-session'
 import { studioDocument } from '../src/renderer/workbench-routes'
 import { App } from '../src/renderer/app'
@@ -21,9 +20,7 @@ vi.mock('../src/renderer/panes', () => ({
 	FormPane: ({ entry }: { entry: string }) => <Editor path={entry} kind="form" />,
 	PreviewPane: () => <div>Preview</div>,
 }))
-function Editor({ path, kind = 'file' }: { path: string; kind?: 'file' | 'form' }) {
-	const workspace = useWorkspace()
-	useWorkbenchContent(editorLifecycle(workspace, path, kind))
+function Editor({ path }: { path: string; kind?: 'file' | 'form' }) {
 	return <div data-testid={`editor-${path}`}>{path}</div>
 }
 const sessions: StudioSession[] = []
@@ -68,6 +65,48 @@ afterEach(async () => {
 })
 
 describe('Studio project operations through the public Worksplit API', () => {
+	it('allows native exit after approved workspace cleanup reports a failure', async () => {
+		let decide!: () => Promise<boolean>
+		vi.stubGlobal('studio', {
+			onBeforeClose: (callback: () => Promise<boolean>) => {
+				decide = callback
+				return () => {}
+			},
+		})
+		vi.spyOn(console, 'error').mockImplementation(() => {})
+		vi.mocked(api.listProjects).mockResolvedValue([
+			{ id: 'project', name: 'Project', root: '/project' },
+		])
+		const starting = vi.spyOn(StudioSession.prototype, 'start')
+		const view = render(
+			<MantineProvider>
+				<App />
+			</MantineProvider>,
+		)
+		fireEvent.click(await screen.findByText('Project', { exact: true }))
+		await screen.findByRole('textbox', { name: '筛选文件和文件夹' })
+		await waitFor(() => expect(starting).toHaveBeenCalledOnce())
+		const session = starting.mock.contexts[0]
+		if (!(session instanceof StudioSession))
+			throw new Error('The app did not start a Studio session')
+		await act(async () => {
+			await session.open('file', 'notes.typ')
+		})
+		const document = session.workbench.getActiveDocument()!
+		const released = vi.fn(() => {
+			throw new Error('Content cleanup failed')
+		})
+		document.handle.runEffect(({ defer }) => defer(released))
+		await act(async () => {
+			expect(await decide()).toBe(true)
+		})
+		expect(released).toHaveBeenCalledOnce()
+		expect(session.workbench.getDocuments()).toHaveLength(0)
+		expect(session.workspace.error).toMatch(/资源释放失败/)
+		view.unmount()
+		await Promise.resolve()
+	})
+
 	it('runs workspace shortcuts only after the focused content has had a chance to consume them', async () => {
 		vi.mocked(api.listProjects).mockResolvedValue([
 			{ id: 'project', name: 'Project', root: '/project' },
@@ -194,7 +233,7 @@ describe('Studio project operations through the public Worksplit API', () => {
 	)
 	it('keeps every tab when a later shared draft refuses a batch close', async () => {
 		const session = setup()
-		await session.workbench.start('/')
+		await session.workbench.start({ href: '/' })
 		session.workspace.files.set('second.typ', {
 			path: 'second.typ',
 			content: 'draft',
@@ -208,7 +247,7 @@ describe('Studio project operations through the public Worksplit API', () => {
 		})
 		render(
 			<WorkspaceContext.Provider value={session.workspace}>
-				<Workbench workbench={session.workbench} />
+				<Workbench instance={session.workbench} />
 			</WorkspaceContext.Provider>,
 		)
 		await act(async () => {
@@ -238,9 +277,9 @@ describe('Studio project operations through the public Worksplit API', () => {
 	})
 	it('reopens duplicate instances after a filesystem failure and restores the active resource', async () => {
 		const session = setup()
-		await session.workbench.start('/')
+		await session.workbench.start({ href: '/' })
 		await session.open('file', 'notes/a.typ')
-		await session.open('file', 'notes/a.typ', { newInstance: true })
+		await session.open('file', 'notes/a.typ', { reuse: 'new' })
 		const before = new Set(session.workbench.getDocuments().map((document) => document.id))
 		const failure = new Error('permission denied')
 		const action = vi.fn().mockRejectedValue(failure)
@@ -346,15 +385,15 @@ describe('Studio project operations through the public Worksplit API', () => {
 	})
 	it('reveals, moves and reopens the assistant without changing the active document', async () => {
 		const session = setup()
-		await session.workbench.start('/')
+		await session.workbench.start({ href: '/' })
 		await session.open('file', 'notes/a.typ')
 		const active = session.workbench.getActiveDocument()?.id
 		await session.workbench.dispatch(Actions.updateNodeAttributes('border_bottom', { show: false }))
 		await session.showAssistant()
-		let model = Model.fromJson(session.workbench.getLayout())
+		let model = session.workbench.model
 		expect((model.getNodeById('border_bottom') as BorderNode).isShowing()).toBe(true)
 		await session.showAssistant('right')
-		model = Model.fromJson(session.workbench.getLayout())
+		model = session.workbench.model
 		expect(model.getNodeById('assistant')?.getParent()?.getId()).toBe('border_right')
 		await session.closeAssistant()
 		await session.showAssistant()

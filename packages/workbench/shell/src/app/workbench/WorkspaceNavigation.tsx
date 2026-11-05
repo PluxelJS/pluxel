@@ -1,5 +1,6 @@
 import {
 	Alert,
+	ActionIcon,
 	Button,
 	Group,
 	Modal,
@@ -9,10 +10,21 @@ import {
 	TextInput,
 	Tooltip,
 } from '@mantine/core'
-import { IconArrowUpRight, IconChevronRight, IconSearch } from '@tabler/icons-react'
+import {
+	IconArrowUpRight,
+	IconChevronRight,
+	IconSearch,
+	IconPin,
+	IconPinnedOff,
+} from '@tabler/icons-react'
+import { useWorkbenchState } from '@worksplit/react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { formatPluginNodeRoute } from '@pluxel/core'
-import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
+import {
+	readWorkbenchShortcuts,
+	type WorkbenchLayoutEntry,
+	type WorkbenchShortcut,
+} from '@pluxel/workbench/client'
 import { buildPluginDetailHref } from '../../workbench/paths'
 import { getWorkbenchDirectoryHref } from '../../workbench/route-directory'
 import { matchWorkbenchRoute } from '../../workbench/routes'
@@ -46,10 +58,18 @@ type WorkspaceNavigationProps = {
 /** Publication categories organize discovery; native TabGroups remain user-owned layout. */
 export function WorkspaceNavigation(props: WorkspaceNavigationProps) {
 	const session = useOptionalWorkspaceSession()
-	return session && props.mode !== 'publications' ? (
-		<ConnectedNavigation {...props} session={session} />
+	return session ? (
+		<SessionNavigation {...props} session={session} />
 	) : (
 		<NavigationContent {...props} />
+	)
+}
+function SessionNavigation(props: WorkspaceNavigationProps & { session: WorkspaceSession }) {
+	useWorkbenchState(props.session.workbench, (state) => state.revision)
+	return props.mode === 'publications' ? (
+		<NavigationContent {...props} />
+	) : (
+		<ConnectedNavigation {...props} />
 	)
 }
 function ConnectedNavigation({
@@ -57,7 +77,7 @@ function ConnectedNavigation({
 	...props
 }: WorkspaceNavigationProps & { session: WorkspaceSession }) {
 	const panels = usePluginPanelDirectory(session)
-	return <NavigationContent {...props} panels={panels} />
+	return <NavigationContent {...props} session={session} panels={panels} />
 }
 function NavigationContent({
 	onChosen,
@@ -67,7 +87,8 @@ function NavigationContent({
 	activePluginRoute,
 	activeEntryKey,
 	panels,
-}: WorkspaceNavigationProps & { panels?: PluginPanelDirectoryState }) {
+	session,
+}: WorkspaceNavigationProps & { session?: WorkspaceSession; panels?: PluginPanelDirectoryState }) {
 	const navigation = useWorkbenchNavigation()
 	const snapshot = useWorkbenchTargetSnapshot(null)
 	const plugins = usePluginOverview()
@@ -83,6 +104,7 @@ function NavigationContent({
 		})
 	const [routeEntry, setRouteEntry] = useState<PageEntry>()
 	const [routePath, setRoutePath] = useState('')
+	const [routeAction, setRouteAction] = useState<'open' | 'pin'>('open')
 	const needle = query.trim().toLocaleLowerCase()
 	const matches = (text: string) => !needle || text.toLocaleLowerCase().includes(needle)
 	const entries = useMemo(
@@ -112,11 +134,34 @@ function NavigationContent({
 		}
 		const route = snapshot.directory.routes.find((candidate) => candidate.entry === entry)
 		if (route?.compiled.segments.some((segment) => segment.parameter)) {
+			setRouteAction('open')
 			setRouteEntry(entry)
 			setRoutePath(entry.placement.path)
 			return
 		}
 		open(getWorkbenchDirectoryHref(snapshot.directory, entry.target.node, entry.placement.path))
+	}
+	const togglePin = (entry: PageEntry) => {
+		if (!session) return
+		const shortcut: WorkbenchShortcut = {
+			target: entry.target.node,
+			entryKey: entry.descriptor.key,
+		}
+		if (
+			!session.isSidebarShortcut(shortcut) &&
+			entry.placement.kind === 'route' &&
+			snapshot.directory.routes
+				.find((candidate) => candidate.entry === entry)
+				?.compiled.segments.some((segment) => segment.parameter)
+		) {
+			setRouteAction('pin')
+			setRouteEntry(entry)
+			setRoutePath(entry.placement.path)
+			return
+		}
+		void session
+			.setSidebarShortcut(shortcut, !session.isSidebarShortcut(shortcut))
+			.catch((error: unknown) => session.report(error))
 	}
 	const visiblePlugins = (mode === 'all' ? (plugins.overview?.status.statuses ?? []) : []).filter(
 		(plugin) => matches(`${plugin.label} ${plugin.route}`),
@@ -199,14 +244,25 @@ function NavigationContent({
 		!routePath.startsWith('//') &&
 		routePath !== selectedRoute.compiled.path
 	) {
-		const candidate = new URL(routePath, 'https://workbench.invalid')
-		const params = matchWorkbenchRoute(selectedRoute.compiled, candidate.pathname)
-		if (
-			candidate.origin === 'https://workbench.invalid' &&
-			params &&
-			Object.entries(params).every(([name, value]) => value !== `:${name}`)
-		)
-			concreteLocation = candidate
+		try {
+			readWorkbenchShortcuts([
+				{
+					target: selectedRoute.entry.target.node,
+					entryKey: selectedRoute.entry.descriptor.key,
+					location: routePath,
+				},
+			])
+			const candidate = new URL(routePath, 'https://workbench.invalid')
+			const params = matchWorkbenchRoute(selectedRoute.compiled, candidate.pathname)
+			if (
+				candidate.origin === 'https://workbench.invalid' &&
+				params &&
+				Object.entries(params).every(([name, value]) => value !== `:${name}`)
+			)
+				concreteLocation = candidate
+		} catch {
+			/* Keep malformed paths visibly unavailable for both open and pin. */
+		}
 	}
 	return (
 		<div className="plx-workspace-navigation" data-compact={compact || undefined}>
@@ -409,6 +465,11 @@ ${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalon
 											activeEntryKey === entry.descriptor.key
 										}
 										onOpen={() => openEntry(entry)}
+										pinned={session?.isSidebarShortcut({
+											target: entry.target.node,
+											entryKey: entry.descriptor.key,
+										})}
+										onTogglePin={session ? () => togglePin(entry) : undefined}
 										standalone={standalone}
 									/>
 								)
@@ -434,7 +495,7 @@ ${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalon
 			<Modal
 				opened={Boolean(routeEntry)}
 				onClose={() => setRouteEntry(undefined)}
-				title="输入具体页面路径"
+				title={routeAction === 'pin' ? '固定具体页面到侧栏' : '输入具体页面路径'}
 				size="sm"
 				centered
 			>
@@ -453,6 +514,21 @@ ${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalon
 						disabled={!concreteLocation}
 						onClick={() => {
 							if (!routeEntry || routeEntry.placement.kind !== 'route' || !concreteLocation) return
+							if (routeAction === 'pin' && session) {
+								void session
+									.setSidebarShortcut(
+										{
+											target: routeEntry.target.node,
+											entryKey: routeEntry.descriptor.key,
+											location:
+												concreteLocation.pathname + concreteLocation.search + concreteLocation.hash,
+										},
+										true,
+									)
+									.then(() => setRouteEntry(undefined))
+									.catch((error: unknown) => session.report(error))
+								return
+							}
 							const href = getWorkbenchDirectoryHref(
 								snapshot.directory,
 								routeEntry.target.node,
@@ -463,7 +539,7 @@ ${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalon
 							setRouteEntry(undefined)
 						}}
 					>
-						打开页面
+						{routeAction === 'pin' ? '固定到侧栏' : '打开页面'}
 					</Button>
 				</Stack>
 			</Modal>
@@ -482,6 +558,8 @@ function NavigationItem({
 	statusTone,
 	statusLabel,
 	attention,
+	pinned,
+	onTogglePin,
 }: {
 	label: string
 	description: string
@@ -493,6 +571,8 @@ function NavigationItem({
 	statusTone?: string
 	statusLabel?: string
 	attention?: string
+	pinned?: boolean
+	onTogglePin?: () => void
 }) {
 	return (
 		<Group gap={2} wrap="nowrap" className="plx-workspace-navigation__item">
@@ -541,6 +621,19 @@ function NavigationItem({
 					</span>
 				</Button>
 			</Tooltip>
+			{onTogglePin && (
+				<Tooltip label={pinned ? '取消侧栏固定' : '固定到侧栏'}>
+					<ActionIcon
+						variant={pinned ? 'light' : 'subtle'}
+						size="sm"
+						aria-label={`${pinned ? '取消侧栏固定' : '固定到侧栏'} ${label}`}
+						aria-pressed={pinned}
+						onClick={onTogglePin}
+					>
+						{pinned ? <IconPinnedOff size={14} aria-hidden /> : <IconPin size={14} aria-hidden />}
+					</ActionIcon>
+				</Tooltip>
+			)}
 			{compact && attention && (
 				<span className="plx-workspace-navigation__attention" data-tone={statusTone}>
 					{attention}

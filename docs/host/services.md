@@ -37,6 +37,24 @@ Host 的配置和启动策略默认通过 Core 私有文档保存，沿用 `runt
 
 应用构建默认携带 Workbench shell；原生来源的共享身份由 runtime sharedPackages 选择。后台应用可以同时选择 `servicesPreset(startup, { workbench: false })` 与 `pluxel({ variant: 'headless' })`。构建 variant 决定交付资源，服务声明决定本次启动安装哪些能力。`workbench: false` 保留认证与管理 HTTP/WebSocket 接入，但不加载 Workbench 后端或 Shell。
 
+### 初始侧栏入口
+
+在现有 `defineHostApplication()` 的工厂中，可以为用户首次打开工作区提供快捷入口。
+例如已装配并发布 `overview` 页面的 `OrdersPlugin`：
+
+```ts
+services: await servicesPreset(startup, {
+	initialShortcuts: [{ target: OrdersPlugin.nodeAddress(), entryKey: 'overview' }],
+})
+```
+
+显式组合服务时，同一选项传给 `workbenchService({ initialShortcuts })`。每项为 `{ target, entryKey, location? }`：
+`target` 是包含 fork 身份的节点地址，`entryKey` 是声明中的稳定键；参数路由用 `location` 指定具体的本地路径，可包含 query/hash。
+每个 target/entry 只能出现一次。名称、图标与打开方式取自当前声明，不由快捷配置覆盖。
+
+默认值只初始化尚无侧栏偏好的浏览器工作区。用户取消固定后，即使列表为空也不重新添加；“恢复默认布局”会重新使用宿主默认值。
+快捷入口不授予插件新的权限，打开页面仍经过原有认证与 factory。插件无法通过自己的 placement 声明要求固定到侧栏。
+
 ## 创建宿主
 
 ```ts

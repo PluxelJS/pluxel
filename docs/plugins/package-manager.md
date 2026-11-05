@@ -114,7 +114,7 @@ production host。
 | `minimumReleaseAgeMinutes` | `1440`                    | 拒绝发布时间不足一天的版本                         |
 | `markets`                  | `[]`                      | 可选的市场连接 `{ id, url }`                       |
 
-只有同时设置 `ignoreScripts: false` 与非空、精确的 `allowBuilds` 时才允许 native/build scripts。Registry、auth 和 proxy 读取 pnpm config，但不会进入 snapshot、RPC payload 或日志。
+只有同时设置 `ignoreScripts: false` 与非空、精确的 `allowBuilds` 时才允许 native/build scripts。Registry、auth 和 proxy 读取 pnpm config；认证、代理和原始配置不会进入 snapshot、RPC payload 或日志。市场返回的发行来源 URL 是独立的公开坐标。
 
 ## 可选市场
 
@@ -130,10 +130,38 @@ production host。
 连接在 Plugin 启动时读取，修改后重新启动 Package Manager 以采用新连接。
 未配置时页面只提供直接安装和已安装包管理。连接失败显示该市场的错误，直接安装仍可使用。
 
-初版市场使用公共 npm registry，支持搜索、分页和精确发行读取。市场安装由后端重新读取所选发行，再使用原生 pnpm 下载并核对版本与 SHA-512 integrity；不会执行市场返回的 tarball URL。pnpm 的包 scope registry 必须与发行声明一致，不会为了安装覆盖本机 registry/auth 配置。
+同一市场可列出多个部署方配置的 registry。包身份为 `registry + name`，同名的公共 npm 和私有 PNPR 包保持独立；列表、已收录版本和安装准备始终保留所选来源。`marketPackages(marketId, query)` 支持文本、`registry`、`official`、`category`、`tag` 筛选，文本最长 100 字符，每页 1–50 条。`official`、分类和标签由市场管理员维护，不根据包名前缀、作者 keywords 或构建 provenance 推断。
+
+Workbench 的 `/market` 直接打开市场；`/packages` 保留已安装包、直接安装和市场页。两个入口复用同一个 Store 和安装 API，每次打开各有独立的 renderer 资源所有者。市场用紧凑卡片展示来源、官方标记、分类和标签；次要筛选默认折叠，点击分类或标签也可筛选。筛选变化从第一页开始，窄容器使用单列卡片，打开包详情后收起搜索区域。
+
+`marketPackage(marketId, name, registry)` 读取包概览，`marketReleases(marketId, name, { registry })` 从所选来源读取已校验版本，`marketRelease(marketId, name, version, registry)` 读取精确发行。三者省略 registry 时选择公共 npm。`prepareMarketInstall` 必须带上列表返回的 registry，例如 `{ marketId, registry: pkg.registry, name: pkg.name, version }`；`version` 应来自该来源的已收录版本列表。
+
+包概览可在 `indexedVersions: 0` 时提供介绍、许可和 registry 提供的包级 README；这只表示元数据已观察，不表示已有可安装发行。页面明确区分概览 README 与经过校验的发行制品 README，后者还可查看 peer/plugin dependencies 和 integrity。README 支持标题、段落、列表、代码块、引用、链接和 GFM 表格；HTML 只显示为文本，图片显示替代文字，不请求远程图片。只有 HTTP(S) 或邮件绝对链接可跳转，相对链接和其他协议保留文字。公共 npm 包可打开对应版本的 npmx 页面；私有来源不生成公共链接。
+
+市场安装由后端重新读取所选发行，再使用原生 pnpm 下载并核对来源、版本与 SHA-512 integrity；不会执行市场返回的 tarball URL。pnpm 的包 scope registry 必须与发行声明一致，不会为了安装覆盖本机 registry/auth 配置。请求来源不匹配或私有包读取失败时，返回明确失败，不改装公共 npm 的同名包。客户端当前匿名读取市场目录，需要认证的私有来源由市场管理 API 操作，不把管理密钥加入市场 URL 或普通插件配置。
 市场摘要的 `latest` 保留 npm 实际 tag 指向，尚未收录的版本会明确读取失败，不改成已收录的最高版本。页面另列已收录发行，用户可明确选择旧版；版本页的顺序不表示 semver 新旧。
-仓库链接仅展示市场的已验证 provenance 事实；未验证 package.json 的 repository 不作为来源依据。
+卡片与概览的 Repository 是包声明的规范 HTTPS 仓库链接，不等于构建来源已验证。仓库 stars 只显示市场实际观测到的数量，并保留观测时间；未知数量不显示为 0。只有精确发行的已验证 provenance 才展示 Source verified、提交和构建链接。
 自建服务的启动、管理与当前 provenance 限制见 [Worker 项目](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md)。
+
+### 独立挂载市场界面
+
+`@pluxel/plugin-package-manager/marketplace` 导出纯 React `Marketplace`、市场 DTO 和 `PackageMarketClient`。这个入口不依赖 Mantine、Workbench Provider 或 CapnWeb，样式随组件携带，所有规则限定在 `.plx-marketplace` 内；`colorScheme` 可设为 `light` 或 `dark`，默认 `light`。
+
+宿主提供一个稳定的 `MarketplaceData`，包含 `Packages`、`Package`、`Releases`、`Release` 四个读取组件。它们分别接收 `query`、`identity`、`identity + query`、精确发行 `identity`，并通过 `children(read)` 渲染 `{ data?, error?, isFetching, refetch }`。`data` 保留 `MarketReadResult<T>` 成功或失败事实。读取组件负责缓存、取消和丢弃晚到结果；市场界面只维护搜索、分页和所选包。组件类型应在模块中创建，切换市场时用 React `key` 隔离界面状态。
+
+下面的组件接收宿主已绑定到一个市场的读取组件，不提供安装能力：
+
+```tsx
+import { Marketplace, type MarketplaceData } from '@pluxel/plugin-package-manager/marketplace'
+
+export function Catalog({ data }: { data: MarketplaceData }) {
+	return <Marketplace data={data} />
+}
+```
+
+独立 HTTP 适配实例见 [市场网页数据适配器](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/web/market-data.ts)。复用 `PackageMarketClient` 时，创建时可传 `AbortSignal`，读取所有权结束时调用 `close()`。Workbench 适配器继续使用当前打开项的 query resources 和现有 RPC，不新建 HTTP transport。
+
+只有宿主显式传入 `onPrepare({ registry, name, version })` 时，经过市场校验的精确发行才显示安装预览按钮。回调不执行安装，宿主仍应使用自己的 `prepareMarketInstall`、预览和 `confirmInstall`；官网浏览不传此回调。
 
 ## 准备后确认安装
 

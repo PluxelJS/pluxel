@@ -76,6 +76,56 @@ const unavailableEntry: WorkbenchUnavailableFederatedLayoutEntry = Object.freeze
 })
 
 describe('Workbench opened View client', () => {
+	it('reads user-removable initial shortcuts without opening capabilities', async () => {
+		const disposeResult = vi.fn()
+		const session = {
+			layoutDto: vi.fn().mockResolvedValue({
+				profile: 1,
+				revision: 1,
+				target: null,
+				entries: [entry],
+				initialShortcuts: [{ target: node, entryKey: 'settings' }],
+				[Symbol.dispose]: disposeResult,
+			}),
+		} as unknown as RpcStub<WorkbenchSessionApi>
+		const layout = await readWorkbenchLayout(session, { target: null })
+		expect(layout.initialShortcuts).toEqual([{ target: node, entryKey: 'settings' }])
+		expect(Object.isFrozen(layout.initialShortcuts)).toBe(true)
+		expect(Object.isFrozen(layout.initialShortcuts![0])).toBe(true)
+		expect(disposeResult).toHaveBeenCalledTimes(1)
+	})
+
+	it.each([
+		{ initialShortcuts: null },
+		{ initialShortcuts: [{ target: node, entryKey: 'settings', pinned: true }] },
+		{
+			initialShortcuts: [
+				{ target: node, entryKey: 'settings' },
+				{ target: node, entryKey: 'settings' },
+			],
+		},
+		{
+			initialShortcuts: [
+				{ target: node, entryKey: 'settings', location: '//outside.example/path' },
+			],
+		},
+		{ initialShortcuts: [{ target: node, entryKey: 'settings', location: '/accounts/a%2Fb' }] },
+	])('rejects invalid shortcut DTOs and releases the result %#', async ({ initialShortcuts }) => {
+		const disposeResult = vi.fn()
+		const session = {
+			layoutDto: vi.fn().mockResolvedValue({
+				profile: 1,
+				revision: 1,
+				target: null,
+				entries: [],
+				initialShortcuts,
+				[Symbol.dispose]: disposeResult,
+			}),
+		} as unknown as RpcStub<WorkbenchSessionApi>
+		await expect(readWorkbenchLayout(session, { target: null })).rejects.toThrow('shortcut')
+		expect(disposeResult).toHaveBeenCalledTimes(1)
+	})
+
 	it.each(['left', 'right', 'bottom'] as const)(
 		'reads a %s panel with its exact target owner',
 		async (region) => {

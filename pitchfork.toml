@@ -29,3 +29,18 @@ run = "vp run @pluxel/plugin-typst#dev:consumer"
 mise = true
 port = { expect = [3410], bump = 100 }
 ready_output = { pattern = "Local:", timeout = "5m" }
+
+# Local npm publication and market administration experience; no public npm writes.
+[daemons.market-registry]
+run = "vp run @pluxel-internal/plugin-market#dev:registry"
+mise = true
+port = { expect = [7677], bump = 100 }
+ready_cmd = 'curl --fail --silent http://127.0.0.1:$PORT/-/ready'
+
+[daemons.market]
+run = "vp run @pluxel-internal/plugin-market#dev:sandbox"
+mise = true
+depends = ["market-registry"]
+port = { expect = [8787], bump = 100 }
+env = { MARKET_TEST_REGISTRY = 'http://127.0.0.1:{{ daemons["market-registry"].port }}/npm/' }
+ready_output = { pattern = "Market sandbox ready:", timeout = "2m" }

@@ -124,6 +124,12 @@ export class WorkspaceSnapshotStorage {
 	private onVisibility = () => {
 		if (document.visibilityState === 'hidden') this.flush()
 	}
+	/** Final protected snapshot wins over all earlier scheduled writes. */
+	finish(snapshot: WorkbenchSnapshot | null) {
+		this.pending = false
+		this.close()
+		if (snapshot) this.write(snapshot)
+	}
 	close() {
 		this.flush()
 		this.closed = true
@@ -135,7 +141,7 @@ export class WorkspaceSnapshotStorage {
 
 export function WorkspacePersistence() {
 	const session = useWorkspaceSession()
-	const revision = useWorkbenchState(session.workbench, (state) => state.revision)
+	const revision = useWorkbenchState(session.workbench, (state) => state.snapshotRevision)
 	useEffect(() => {
 		session.storage.schedule()
 	}, [revision, session])

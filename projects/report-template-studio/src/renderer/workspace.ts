@@ -144,6 +144,7 @@ export class WorkspaceController {
 	private sourceLoads = new Map<string, { key: string; promise: Promise<TypstSourceProject> }>()
 	private syncingSource = new Set<string>()
 	private bodyEditors = new Map<string, Map<string, Set<Editor>>>()
+	private leavePauses = new Map<string, { count: number; editors: Map<Editor, boolean> }>()
 	private bodyLocks = new Map<
 		string,
 		{ lease: string; token: number; content: string; editability: Map<Editor, boolean> }
@@ -237,14 +238,50 @@ export class WorkspaceController {
 		let editors = paths.get(path)
 		if (!editors) paths.set(path, (editors = new Set()))
 		editors.add(editor)
+		const pause = this.leavePauses.get(entry)
+		if (pause) {
+			pause.editors.set(editor, editor.isEditable)
+			editor.setEditable(false, false)
+		}
 		return () => {
 			editors.delete(editor)
 			if (editors.size === 0) paths.delete(path)
 			if (paths.size === 0) this.bodyEditors.delete(entry)
 		}
 	}
+	isEditingPaused(path: string): boolean {
+		return this.leavePauses.has(this.inputOwner(path)?.entry ?? path)
+	}
+	/** Each approved departure holds its own lease through native loading and redirects. */
+	pauseEditing(path: string): () => void {
+		const key = this.inputOwner(path)?.entry ?? path
+		let pause = this.leavePauses.get(key)
+		if (!pause) {
+			pause = { count: 0, editors: new Map() }
+			for (const editors of this.bodyEditors.get(key)?.values() ?? [])
+				for (const editor of editors) {
+					pause.editors.set(editor, editor.isEditable)
+					editor.setEditable(false, false)
+				}
+			this.leavePauses.set(key, pause)
+		}
+		pause.count++
+		this.emit()
+		let released = false
+		return () => {
+			if (released) return
+			released = true
+			if (--pause.count > 0) return
+			this.leavePauses.delete(key)
+			for (const [editor, editable] of pause.editors)
+				if (!editor.isDestroyed) editor.setEditable(editable, false)
+			this.emit()
+		}
+	}
+
 	async captureBody({ entry }: { entry: string }): ReturnType<BodyEditorParticipant['capture']> {
 		if (this.closed) throw new Error('项目已关闭')
+		if (this.isEditingPaused(entry)) throw new Error('正文正在离开，请稍后重试')
 		if (!this.documents.has(entry)) return null
 		if (this.bodyLocks.has(entry)) throw new Error('正文操作正在进行')
 		const editability = new Map<Editor, boolean>()
@@ -633,6 +670,7 @@ export class WorkspaceController {
 		)
 	}
 	edit(path: string, content: string) {
+		if (this.isEditingPaused(path)) return
 		const current = this.files.get(path)
 		if (!current || current.missing) return
 		const document = this.inputOwner(path)
@@ -796,8 +834,14 @@ export class WorkspaceController {
 	}
 	isDirty() {
 		return (
-			[...this.files.values()].some((file) => file.dirty) ||
-			[...this.documents.values()].some((document) => document.inputDirty)
+			[...this.files.values()].some((file) => file.dirty || file.saving) ||
+			[...this.documents.values()].some(
+				(document) =>
+					document.inputDirty ||
+					document.inputSaving ||
+					document.inputConflict ||
+					document.bodyLocked,
+			)
 		)
 	}
 	/** One in-flight compilation and one latest pending snapshot per document. */
@@ -1117,6 +1161,7 @@ export class WorkspaceController {
 		this.syncInputFiles(entry, input.editor.files, savedFiles)
 	}
 	writeSources(entry: string, files: Record<string, string>) {
+		if (this.isEditingPaused(entry)) return
 		if (this.bodyLocks.has(entry)) return
 		const current = this.documents.get(entry)
 		if (!current?.editor) return
@@ -1164,6 +1209,7 @@ export class WorkspaceController {
 	}
 
 	async writeData(entry: string, data: JsonObject) {
+		if (this.isEditingPaused(entry)) return
 		if (this.bodyLocks.has(entry)) return
 		const current = this.documents.get(entry)
 		if (!current) return

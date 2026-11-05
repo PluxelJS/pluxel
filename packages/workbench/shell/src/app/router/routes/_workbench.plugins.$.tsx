@@ -13,6 +13,12 @@ function PluginDetailRoute() {
 
 export const Route = createFileRoute('/_workbench/plugins/$')({
 	validateSearch: validatePluginDetailSearch,
-	staticData: { worksplit: { title: '插件详情', identitySearch: ['entry'] } },
+	staticData: {
+		worksplit: {
+			title: '插件详情',
+			documentKey: ({ params, search }) =>
+				JSON.stringify([params, 'entry' in search ? search.entry : null]),
+		},
+	},
 	component: PluginDetailRoute,
 })

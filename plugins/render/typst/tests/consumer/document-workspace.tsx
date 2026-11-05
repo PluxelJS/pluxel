@@ -10,8 +10,14 @@ import {
 } from 'react'
 import type { Editor } from '@tiptap/core'
 import { createRoute, type AnyRouter } from '@tanstack/react-router'
-import { useWorkbenchContent, useWorkbenchState, type WorkbenchInstance } from '@worksplit/react'
-import { Actions, DockLocation } from 'flexlayout-react'
+import {
+	useContent,
+	useContentController,
+	useWorkbenchState,
+	type WorkbenchInstance,
+	type ContentHandle,
+} from '@worksplit/react'
+import { DockLocation } from 'flexlayout-react'
 import { TypstDocumentEditor } from '@pluxel/plugin-typst/tiptap/document/react'
 import { DocumentClient, type DocumentClientState } from './document-client'
 import { DocumentPreview as Preview } from './document-preview'
@@ -26,8 +32,13 @@ interface DocumentWorkspaceValue {
 	focus?: { chapterId: string; position?: number; serial: number }
 	selection?: TypstDocumentSelection
 	locate(chapterId: string, position: number, explicit?: boolean): void
-	openChapter(id: string, position?: number, previewRevision?: number): Promise<void>
-	showPreview(): Promise<void>
+	openChapter(
+		id: string,
+		position?: number,
+		previewRevision?: number,
+		source?: ContentHandle,
+	): Promise<void>
+	showPreview(source?: ContentHandle): Promise<void>
 	open(): Promise<void>
 }
 const Context = createContext<DocumentWorkspaceValue | null>(null)
@@ -50,6 +61,7 @@ export const documentRoutes = [chapterRoute, previewRoute] as const
 
 export function ChapterExplorer() {
 	const { state, client, active, openChapter, open } = useDocumentWorkspace()
+	const source = useContent()
 	const [creating, setCreating] = useState(false)
 	const [title, setTitle] = useState('')
 	useEffect(() => {
@@ -86,7 +98,7 @@ export function ChapterExplorer() {
 							className="chapter-open"
 							aria-current={active === chapter.id ? 'page' : undefined}
 							onClick={() => {
-								void openChapter(chapter.id)
+								void openChapter(chapter.id, undefined, undefined, source)
 							}}
 						>
 							<span aria-hidden="true">{index + 1}</span>
@@ -173,17 +185,30 @@ function ChapterPane({ chapterId }: { chapterId: string }) {
 				?.querySelector('[data-typst-unapplied]'),
 		)
 	}
-	const content = useWorkbenchContent({
-		isDirty: () => Boolean(chapter) && (changed || hasPendingInput()),
-		getCloseRevision: () => `${state.view!.revision}:${JSON.stringify(document)}`,
-		beforeLeave: () =>
-			!chapter ||
-			!hasPendingInput() ||
-			window.confirm('放弃尚未确认的输入？已经同步的正文仍保留在文档中。'),
-		focus: () => editor.current?.commands.focus(),
-		save: () => {
-			void client.perform({ action: 'save' }).catch(ignore)
+	const content = useContent()
+	const inputVersion = useRef(0)
+	const [leavePauses, setLeavePauses] = useState(0)
+	useContentController({
+		title: chapter?.title ?? '章节',
+		leave: {
+			getState: () => ({
+				hasUnsavedChanges: Boolean(chapter) && (changed || hasPendingInput()),
+				token: `${client.leaveToken}:${inputVersion.current}`,
+			}),
+			decide: (request) => {
+				if (
+					chapter &&
+					hasPendingInput() &&
+					!window.confirm('放弃尚未确认的输入？已经同步的正文仍保留在文档中。')
+				)
+					return { decision: 'deny' }
+				setLeavePauses((count) => count + 1)
+				request.defer(() => setLeavePauses((count) => count - 1))
+				return { decision: 'allow', token: `${client.leaveToken}:${inputVersion.current}` }
+			},
 		},
+		focus: () => editor.current?.commands.focus(),
+		save: () => client.perform({ action: 'save' }),
 	})
 	useEffect(() => {
 		if (!chapter) {
@@ -191,7 +216,6 @@ function ChapterPane({ chapterId }: { chapterId: string }) {
 			return
 		}
 		setTitle(chapter.title)
-		void workbench.dispatch(Actions.renameTab(content.id, chapter.title))
 	}, [chapter?.title, content.id])
 	const focus = workspace.focus?.chapterId === chapterId ? workspace.focus : undefined
 	useEffect(() => {
@@ -208,6 +232,10 @@ function ChapterPane({ chapterId }: { chapterId: string }) {
 			className="workspace-panel document-chapter"
 			aria-label="章节编辑器"
 			data-chapter-id={chapterId}
+			inert={leavePauses > 0}
+			onInputCapture={() => {
+				inputVersion.current++
+			}}
 			onFocusCapture={(event) => {
 				if (editor.current?.view.dom.contains(event.target as Node))
 					workspace.locate(chapterId, editor.current.state.selection.from)
@@ -235,7 +263,7 @@ function ChapterPane({ chapterId }: { chapterId: string }) {
 					content={document}
 					editable={chapter.editable}
 					onChange={(next) => {
-						workbench.keep(content.id)
+						void workbench.keepOpen(content.id)
 						client.edit(chapterId, next)
 					}}
 					fontFamilies={['Noto Serif CJK SC', 'Liberation Serif']}
@@ -259,7 +287,7 @@ function ChapterPane({ chapterId }: { chapterId: string }) {
 						if (editor.current?.isFocused) workspace.locate(chapterId, position)
 					}}
 					onReference={(id, position) => {
-						void workspace.openChapter(id, position)
+						void workspace.openChapter(id, position, undefined, content)
 					}}
 					onReveal={(position) => {
 						workspace.locate(chapterId, position, true)
@@ -272,13 +300,14 @@ function ChapterPane({ chapterId }: { chapterId: string }) {
 
 function DocumentPreview() {
 	const { state, client, selection, openChapter } = useDocumentWorkspace()
+	const source = useContent()
 	return (
 		<Preview
 			state={state}
 			client={client}
 			selection={selection}
 			onSelect={({ documentId, position }) => {
-				void openChapter(documentId, position, state.view!.revision)
+				void openChapter(documentId, position, state.view!.revision, source)
 			}}
 		/>
 	)
@@ -311,7 +340,7 @@ export function DocumentWorkspaceProvider({
 		if (!workbench.getDocuments().some((doc) => doc.navigationKey === 'chapter'))
 			await openChapter(client.getSnapshot().view!.documents[0]!.id)
 	}
-	async function showPreview(preserveFocus = false) {
+	async function showPreview(preserveFocus = false, source?: ContentHandle) {
 		const current = workbench.getActiveDocument()
 		const existing = workbench.getDocuments().find((doc) => doc.href === '/preview')
 		const anyPreview = workbench.getDocuments().find((doc) => doc.navigationKey === 'preview')
@@ -321,12 +350,15 @@ export function DocumentWorkspaceProvider({
 		await workbench.open(
 			{ to: '/preview' },
 			{
-				target,
-				...(!existing && !anyPreview ? { location: DockLocation.RIGHT } : {}),
+				source,
+				destination: {
+					target,
+					location: !existing && !anyPreview ? DockLocation.RIGHT : DockLocation.CENTER,
+				},
 				...(preserveFocus
 					? sameGroup && (existing || anyPreview)
-						? { background: true }
-						: { preserveFocus: true }
+						? { presentation: 'background' as const }
+						: { presentation: 'reveal' as const }
 					: {}),
 				reuse: 'preserve',
 			},
@@ -334,10 +366,34 @@ export function DocumentWorkspaceProvider({
 	}
 	function locate(chapterId: string, position: number, explicit = false) {
 		setSelection({ documentId: chapterId, position, explicit })
-		if (explicit) void showPreview(true)
+		if (explicit) void showPreview(true, workbench.getActiveDocument()?.handle)
 	}
-	async function openChapter(id: string, position?: number, previewRevision?: number) {
-		await ensureOpen()
+	async function openChapter(
+		id: string,
+		position?: number,
+		previewRevision?: number,
+		source?: ContentHandle,
+	) {
+		const link = workbench.createLink(
+			async () => {
+				await ensureOpen()
+				return { to: '/chapter/$id', params: { id } }
+			},
+			{
+				source,
+				preview: true,
+				reuse: 'preserve',
+				destination: (context) => {
+					const editors = workbench
+						.getDocuments()
+						.filter((doc) => doc.navigationKey === 'editor' || doc.navigationKey === 'chapter')
+					const candidate = editors.find((doc) => doc.id === context.source?.id) ?? editors[0]
+					return candidate?.containerId
+						? { target: candidate.containerId, location: DockLocation.CENTER }
+						: context.defaultDestination
+				},
+			},
+		)
 		const current = () => {
 			const snapshot = client.getSnapshot()
 			return (
@@ -346,25 +402,17 @@ export function DocumentWorkspaceProvider({
 			)
 		}
 		if (!current()) return
-		const editors = workbench
-			.getDocuments()
-			.filter((doc) => doc.navigationKey === 'editor' || doc.navigationKey === 'chapter')
-		const candidate =
-			editors.find((doc) => doc.id === workbench.getActiveDocument()?.id) ?? editors[0]
 		const previousId = workbench.getActiveDocument()?.id
-		const result = await workbench.open(
-			{ to: '/chapter/$id', params: { id } },
-			{ target: candidate?.containerId, preview: true, reuse: 'preserve' },
-		)
-		if (result.status !== 'committed' || !current()) return
+		const result = await link.open()
+		if (result.status !== 'applied' || !current()) return
 		setActive(id)
 		locate(id, position ?? 0)
 		setFocus(
 			position === undefined ? undefined : { chapterId: id, position, serial: ++serial.current },
 		)
-		if (result.document.id === previousId) {
-			workbench.activate('chapters', { focus: false })
-			await showPreview(true)
+		if (result.value.document.id === previousId) {
+			void workbench.activate('chapters', { presentation: 'reveal' })
+			await showPreview(true, result.value.document.handle)
 		}
 	}
 	useEffect(() => {
@@ -383,8 +431,8 @@ export function DocumentWorkspaceProvider({
 		const href = workbench.getActiveDocument()?.href
 		if (href?.startsWith('/chapter/')) {
 			setActive(decodeURIComponent(href.slice('/chapter/'.length)))
-			workbench.activate('chapters', { focus: false })
-			void showPreview(true)
+			void workbench.activate('chapters', { presentation: 'reveal' })
+			void showPreview(true, workbench.getActiveDocument()?.handle)
 		}
 	}, [activeId])
 	useEffect(() => {
@@ -405,7 +453,7 @@ export function DocumentWorkspaceProvider({
 			selection,
 			locate,
 			openChapter,
-			showPreview,
+			showPreview: (source?: ContentHandle) => showPreview(false, source),
 			open,
 		}),
 		[client, state, workbench, active, focus, selection],

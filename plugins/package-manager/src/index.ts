@@ -160,6 +160,7 @@ export class PackageManagerPlugin extends BasePlugin {
 			}),
 		)
 		this.ctx.workbench?.publish(PackageManagerWorkbench, {
+			marketplace: () => new PackageManagerTarget(store),
 			manager: () => new PackageManagerTarget(store),
 		})
 	}
@@ -184,8 +185,12 @@ export class PackageManagerPlugin extends BasePlugin {
 		return this.requireStore().marketPackages(marketId, query)
 	}
 
-	marketRelease(marketId: string, name: string, version: string) {
-		return this.requireStore().marketRelease(marketId, name, version)
+	marketPackage(marketId: string, name: string, registry?: string) {
+		return this.requireStore().marketPackage(marketId, name, registry)
+	}
+
+	marketRelease(marketId: string, name: string, version: string, registry?: string) {
+		return this.requireStore().marketRelease(marketId, name, version, registry)
 	}
 
 	marketReleases(marketId: string, name: string, query?: MarketReleaseQuery) {
@@ -249,8 +254,14 @@ class PackageManagerTarget extends RpcTarget implements PackageManagerApi {
 		return result
 	}
 
-	async marketReleaseDto(marketId: string, name: string, version: string) {
-		const result = await this.store.marketRelease(marketId, name, version)
+	async marketPackageDto(marketId: string, name: string, registry?: string) {
+		const result = await this.store.marketPackage(marketId, name, registry)
+		assertWorkbenchDto(result)
+		return result
+	}
+
+	async marketReleaseDto(marketId: string, name: string, version: string, registry?: string) {
+		const result = await this.store.marketRelease(marketId, name, version, registry)
 		assertWorkbenchDto(result)
 		return result
 	}
@@ -287,6 +298,7 @@ export type {
 	MarketPackageQuery,
 	MarketPackageSummary,
 	MarketPackagePage,
+	MarketPackageDetail,
 	MarketRelease,
 	MarketReleasePage,
 	MarketReleaseQuery,

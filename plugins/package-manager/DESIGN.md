@@ -6,6 +6,10 @@
 持久化安装清单和发布 revision 属于业务状态，不反向覆盖配置。公共 `snapshot/install/remove` 与 Commands 在无 Workbench 时完整可用；
 Workbench target 仅投影同一 store，不是配置或安装操作的唯一入口。registry/auth/proxy 保留 pnpm 原生输入契约，不另建普通 secret 配置。
 
+`/market` 和 `/packages` 两个 Direct View 通过同一 `PackageManagerApi` factory 绑定同一 Store，每个打开项独立拥有 RPC root 和 renderer query resources。资源定义由一个工厂按 descriptor 建立，不能跨 open 共享查询缓存。市场浏览的 `./marketplace` 导出仅依赖 React、无导入的 market DTO 和公共 HTTP client，不引入 Mantine、Workbench 或 CapnWeb；Workbench adapter 与公开 UI 不在同一导出依赖图。
+
+市场 UI 的搜索、分页和所选坐标只有一个 React 所有者；`MarketplaceData` 的四个稳定读取组件只提供当前查询状态，通过 render children 投影结果。使用组件 slot 保持 React hook 静态调用，不能在 props 中动态传 hook。Workbench adapter 复用原有 per-open queryFamily；独立网页自行拥有 HTTP 请求、取消和晚到结果清理。`onPrepare` 是宿主显式授予的能力，缺省只浏览，不建立第二套安装或收藏服务。
+
 Plugin 拥有 pnpm acquisition、配置、安装记录、单写者 lock、commands 和可选 Direct View。Host 只消费普通 ESM wrapper；不读取安装私有状态。init 在任何 native/文件/UI 副作用前用 requirePluginSource 校验 rootDir/entries，返回 next-start/live 事实。Native 下次新进程启动扫描；Vite 独立报告目录事务与 lifecycle。
 
 ## 不可变安装与发布
@@ -14,7 +18,11 @@ Plugin 拥有 pnpm acquisition、配置、安装记录、单写者 lock、comman
 
 交互安装先 `prepareInstall` / `prepareMarketInstall`，再 `confirmInstall`。准备使用相同 pnpm engine 完整物化私有 revision，保留 registry/auth/proxy 语义，不另建 npm resolver。每 store 只保留一个内存候选，10 分钟有效；候选 ID、selection revision、固定版本、SRI 和图/字节绑定。确认重新核对文件再提交，不执行第二次 acquisition。停止、替换候选或其他安装 mutation 使旧预览失效；候选不是跨进程持久任务。
 
-市场选择由后端读取精确发行，核对 pnpm registry、lockfile SRI 和实际 package.json name/version；市场 tarball URL 不进入 acquisition。确认后的顶层选择固定为精确版本，原请求范围保留在预览。准备允许显式策略授权的构建脚本，故不承诺只读。当前预览覆盖受管包图变化，不冒充完整 Host Plugin/fork 生命周期预检。
+市场包身份为 registry + name；官方标记、分类和标签消费市场自身的管理事实，不根据 scope 或 provenance 推断。列表筛选、renderer query key、版本选择、精确发行和安装准备保留同一 registry。公开查询省略来源时明确选择公共 npm；安装准备必须显式携带来源，不能从不可用私有包回退公共同名包。客户端不持有管理密钥，受保护来源由市场访问控制决定是否可读。
+
+包概览与可安装发行是不同事实：`marketPackage` 允许只观察过元数据的包显示 registry README、许可和声明仓库，`indexedVersions: 0` 不产生安装入口。Workbench 先读概览，打开版本页才查询已校验发行；发行 README 来自已校验 archive。两处 README 复用 browser-safe mdast/GFM 到 React 的渲染器：不注入 HTML、不加载包声明的图片，只允许 HTTP(S)/mailto 绝对链接，相对链接保留文字，表格和代码块在局部横向滚动。来源 stars 仅消费带观测时间的实际缓存，声明仓库和官方标记不赋予 provenance verified 状态。
+
+市场选择由后端读取精确发行，核对 pnpm registry、lockfile SRI 和实际 package.json name/version；市场 tarball URL 不进入 acquisition。pnpm 的 scoped registry 优先于 default，来源不一致在 acquisition 之前拒绝；相同来源复用原生认证和代理配置。确认后的顶层选择固定为精确版本，原请求范围保留在预览。准备允许显式策略授权的构建脚本，故不承诺只读。当前预览覆盖受管包图变化，不冒充完整 Host Plugin/fork 生命周期预检。
 
 每次 mutation 将完整 manifest 交给一次 pnpm install，私有 revisions/<uuid> 保存 manifest/lockfile/node_modules 链接和 inner entries。global virtual store 位于 root/slots，copy 导入包字节；相同 resolution、peer context 和依赖图复用同一物理 slot，A/B 不会因安装批次得到两份共同 P。
 

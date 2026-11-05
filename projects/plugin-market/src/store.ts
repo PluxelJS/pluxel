@@ -1,11 +1,21 @@
-import { and, asc, eq, gt, gte, inArray, lt, lte, ne, notExists, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, notExists, or, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import { audits, notifications, packages, releases } from './schema'
 import {
 	MarketError,
-	registry,
+	decodeCursor,
+	encodeCursor,
+	object,
+	packageName,
+	pageLimit,
+	taxonomySlug,
 	type Coordinate,
+	type MarketMetadata,
+	type NotificationDetail,
+	type NotificationQuery,
+	type PackageIdentity,
 	type PackagePage,
+	type PackageQuery,
 	type Receipt,
 	type Release,
 } from './protocol'
@@ -24,7 +34,7 @@ export type Notification = typeof notifications.$inferSelect
 export function receipt(row: Notification): Receipt {
 	return {
 		id: row.id,
-		registry,
+		registry: row.registry,
 		name: row.name,
 		version: row.version,
 		status: row.status,
@@ -36,15 +46,29 @@ export function receipt(row: Notification): Receipt {
 	}
 }
 
+function retryState(row: Notification): NotificationDetail['retry'] {
+	if (row.code === 'provenance-runtime-unsupported') return 'provenance-runtime-unsupported'
+	if (row.status !== 'failed') return 'not-failed'
+	return row.attempts >= maxAttempts ? 'attempts-exhausted' : 'available'
+}
+
+export function notificationDetail(row: Notification): NotificationDetail {
+	return { ...receipt(row), diagnostic: row.diagnostic, retry: retryState(row) }
+}
+
 export async function enqueue(db: Database, input: Coordinate, now: number): Promise<Notification> {
-	const key = and(eq(notifications.name, input.name), eq(notifications.version, input.version))
+	const key = and(
+		eq(notifications.registry, input.registry),
+		eq(notifications.name, input.name),
+		eq(notifications.version, input.version),
+	)
 	const existing = await db.select().from(notifications).where(key).get()
 	if (existing) return existing
 	// Admission limits belong in the INSERT: concurrent requests cannot all pass a prior COUNT.
 	const admitted = and(
 		sql`(select count(*) from ${notifications}) < 5000`,
 		sql`(select count(*) from ${notifications} where ${notifications.createdAt} >= ${now - 60_000}) < 100`,
-		sql`(select count(*) from ${notifications} where ${notifications.name} = ${input.name}
+		sql`(select count(*) from ${notifications} where ${notifications.registry} = ${input.registry} and ${notifications.name} = ${input.name}
 			and ${notifications.status} in ('pending', 'processing')) < 10`,
 	)
 	const rows = await db
@@ -53,6 +77,7 @@ export async function enqueue(db: Database, input: Coordinate, now: number): Pro
 			db
 				.select({
 					id: sql<string>`${crypto.randomUUID()}`.as('id'),
+					registry: sql<string>`${input.registry}`.as('registry'),
 					name: sql<string>`${input.name}`.as('name'),
 					version: sql<string>`${input.version}`.as('version'),
 					status: sql<'pending'>`'pending'`.as('status'),
@@ -139,10 +164,10 @@ export async function failAttempt(
 export async function retryNotification(db: Database, id: string, now: number) {
 	const row = await db.select().from(notifications).where(eq(notifications.id, id)).get()
 	if (!row) return { status: 'not-found' as const }
-	if (row.code === 'provenance-runtime-unsupported')
+	const retry = retryState(row)
+	if (retry === 'provenance-runtime-unsupported')
 		return { status: 'unavailable' as const, code: row.code }
-	if (row.status !== 'failed' || row.attempts >= maxAttempts)
-		return { status: 'not-retryable' as const, receipt: receipt(row) }
+	if (retry !== 'available') return { status: 'not-retryable' as const, receipt: receipt(row) }
 	const changed = await db
 		.update(notifications)
 		.set({
@@ -217,6 +242,10 @@ export async function cleanReceipts(db: Database, now: number) {
 
 export type Observation = {
 	description: string | null
+	repository: string | null
+	metadataVersion: string | null
+	readme: Release['readme']
+	license: string | null
 	distTags: Record<string, string>
 	observedAt: number
 }
@@ -228,6 +257,7 @@ export async function commitRelease(db: Database, release: Release, observation:
 			.from(releases)
 			.where(
 				and(
+					eq(releases.registry, release.registry),
 					eq(releases.name, release.name),
 					eq(releases.version, release.version),
 					ne(releases.integrity, release.integrity),
@@ -242,22 +272,44 @@ export async function commitRelease(db: Database, release: Release, observation:
 			.select(
 				db
 					.select({
+						registry: sql<string>`${release.registry}`.as('registry'),
 						name: sql<string>`${release.name}`.as('name'),
 						description: sql<string | null>`${observation.description}`.as('description'),
+						repository: sql<string | null>`${observation.repository}`.as('repository'),
+						repositoryStars: sql<null>`null`.as('repository_stars'),
+						repositoryObservedAt: sql<null>`null`.as('repository_observed_at'),
+						metadataVersion: sql<string | null>`${observation.metadataVersion}`.as(
+							'metadata_version',
+						),
+						readme: sql<
+							Release['readme']
+						>`${observation.readme === null ? null : JSON.stringify(observation.readme)}`.as(
+							'readme',
+						),
+						license: sql<string | null>`${observation.license}`.as('license'),
 						distTags: sql<Record<string, string>>`${JSON.stringify(observation.distTags)}`.as(
 							'dist_tags',
 						),
 						observedAt: sql<number>`${observation.observedAt}`.as('observed_at'),
 						hidden: sql<boolean>`0`.as('hidden'),
 						revision: sql<number>`1`.as('revision'),
+						official: sql<boolean>`0`.as('official'),
+						category: sql<null>`null`.as('category'),
+						tags: sql<string[]>`'[]'`.as('tags'),
 					})
 					.from(sql`(select 1)`)
 					.where(noConflict),
 			)
 			.onConflictDoUpdate({
-				target: packages.name,
+				target: [packages.registry, packages.name],
 				set: {
 					description: observation.description,
+					repository: observation.repository,
+					metadataVersion: observation.metadataVersion,
+					readme: observation.readme,
+					license: observation.license,
+					repositoryStars: sql`case when ${packages.repository} = ${observation.repository} then ${packages.repositoryStars} else null end`,
+					repositoryObservedAt: sql`case when ${packages.repository} = ${observation.repository} then ${packages.repositoryObservedAt} else null end`,
 					distTags: observation.distTags,
 					observedAt: observation.observedAt,
 				},
@@ -268,6 +320,7 @@ export async function commitRelease(db: Database, release: Release, observation:
 			.select(
 				db
 					.select({
+						registry: sql<string>`${release.registry}`.as('registry'),
 						name: sql<string>`${release.name}`.as('name'),
 						version: sql<string>`${release.version}`.as('version'),
 						tarball: sql<string>`${release.tarball}`.as('tarball'),
@@ -282,6 +335,10 @@ export async function commitRelease(db: Database, release: Release, observation:
 						pluginPackages: sql<
 							Release['pluginPackages']
 						>`${JSON.stringify(release.pluginPackages)}`.as('plugin_packages'),
+						readme: sql<
+							Release['readme']
+						>`${release.readme === null ? null : JSON.stringify(release.readme)}`.as('readme'),
+						license: sql<string | null>`${release.license}`.as('license'),
 					})
 					.from(sql`(select 1)`)
 					.where(noConflict),
@@ -291,16 +348,18 @@ export async function commitRelease(db: Database, release: Release, observation:
 			db
 				.select({
 					id: sql<string>`${crypto.randomUUID()}`.as('id'),
+					registry: sql<string>`${release.registry}`.as('registry'),
 					name: sql<string>`${release.name}`.as('name'),
 					action: sql<string>`'refresh'`.as('action'),
 					revision: sql<null>`null`.as('revision'),
+					changes: sql<null>`null`.as('changes'),
 					at: sql<number>`${release.checkedAt}`.as('at'),
 				})
 				.from(sql`(select 1)`)
 				.where(noConflict),
 		),
 	])
-	const stored = await getRelease(db, release.name, release.version, true)
+	const stored = await getRelease(db, release, true)
 	if (stored?.integrity !== release.integrity)
 		throw new MarketError(
 			'immutable-release-conflict',
@@ -310,80 +369,290 @@ export async function commitRelease(db: Database, release: Release, observation:
 	return stored
 }
 
+/** Discovery does not create a checked release or settle any notification. */
+export async function commitObservation(
+	db: Database,
+	input: PackageIdentity,
+	observation: Observation,
+) {
+	await db
+		.insert(packages)
+		.values({ ...input, ...observation })
+		.onConflictDoUpdate({
+			target: [packages.registry, packages.name],
+			set: {
+				...observation,
+				repositoryStars: sql`case when ${packages.repository} = ${observation.repository} then ${packages.repositoryStars} else null end`,
+				repositoryObservedAt: sql`case when ${packages.repository} = ${observation.repository} then ${packages.repositoryObservedAt} else null end`,
+			},
+			setWhere: lt(packages.observedAt, observation.observedAt),
+		})
+	return db
+		.select()
+		.from(packages)
+		.where(and(eq(packages.registry, input.registry), eq(packages.name, input.name)))
+		.get()
+}
+
 export async function getRelease(
 	db: Database,
-	name: string,
-	version: string,
+	input: Coordinate,
 	includeHidden = false,
 ): Promise<Release | null> {
 	const row = await db
 		.select({ release: releases })
 		.from(releases)
-		.innerJoin(packages, eq(packages.name, releases.name))
+		.innerJoin(
+			packages,
+			and(eq(packages.registry, releases.registry), eq(packages.name, releases.name)),
+		)
 		.where(
 			and(
-				eq(releases.name, name),
-				eq(releases.version, version),
+				eq(releases.registry, input.registry),
+				eq(releases.name, input.name),
+				eq(releases.version, input.version),
 				includeHidden ? undefined : eq(packages.hidden, false),
 			),
 		)
 		.get()
-	return row ? { registry, ...row.release } : null
+	return row?.release ?? null
 }
 
 export async function listPackages(
 	db: Database,
-	query: string,
-	after: string | null,
-	limit: number,
+	input: PackageQuery,
+	visibleRegistries: readonly string[],
 ): Promise<PackagePage> {
-	const filter = query.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')
+	const query = input.query ?? ''
+	if (typeof query !== 'string' || query.length > 100)
+		throw new MarketError('invalid-query', 'query must contain at most 100 characters')
+	if (
+		(input.official !== undefined && typeof input.official !== 'boolean') ||
+		(input.category !== undefined && !taxonomySlug(input.category)) ||
+		(input.tag !== undefined && !taxonomySlug(input.tag))
+	)
+		throw new MarketError(
+			'invalid-query',
+			'Use a boolean official filter and lowercase category/tag slugs',
+		)
+	const limit = pageLimit(input.limit)
+	const scope = JSON.stringify([
+		visibleRegistries,
+		query,
+		input.registry ?? null,
+		input.official ?? null,
+		input.category ?? null,
+		input.tag ?? null,
+	])
+	const after = decodeCursor(input.cursor, scope)
+	if (
+		after !== null &&
+		(!object(after) ||
+			!packageName(after.name) ||
+			typeof after.registry !== 'string' ||
+			Object.keys(after).length !== 2)
+	)
+		throw new MarketError('invalid-cursor', 'Invalid package cursor; restart the query')
+	const terms = query.match(/[\p{L}\p{N}]+/gu) ?? []
+	// Each term is quoted data, never an FTS operator supplied by a requester.
+	const match = terms.map((term) => `"${term}"*`).join(' AND ')
+	if (visibleRegistries.length === 0) return { packages: [], nextCursor: null }
 	const rows = await db
 		.select({
+			registry: packages.registry,
 			name: packages.name,
 			description: packages.description,
 			distTags: packages.distTags,
 			observedAt: packages.observedAt,
-			indexedVersions: sql<number>`(select count(*) from releases indexed_release where indexed_release.name = packages.name)`,
+			repository: packages.repository,
+			repositoryStars: packages.repositoryStars,
+			repositoryObservedAt: packages.repositoryObservedAt,
+			official: packages.official,
+			category: packages.category,
+			tags: packages.tags,
+			indexedVersions: sql<number>`(select count(*) from releases indexed_release where indexed_release.registry = packages.registry and indexed_release.name = packages.name)`,
 		})
 		.from(packages)
 		.where(
 			and(
 				eq(packages.hidden, false),
-				after === null ? undefined : gt(packages.name, after),
-				query ? sql`${packages.name} like ${`%${filter}%`} escape ${'\\'}` : undefined,
+				inArray(packages.registry, [...visibleRegistries]),
+				input.registry === undefined ? undefined : eq(packages.registry, input.registry),
+				input.official === undefined ? undefined : eq(packages.official, input.official),
+				input.category === undefined ? undefined : eq(packages.category, input.category),
+				input.tag === undefined
+					? undefined
+					: sql`exists (select 1 from json_each(${packages.tags}) where value = ${input.tag})`,
+				after === null
+					? undefined
+					: or(
+							gt(packages.name, after.name as string),
+							and(
+								eq(packages.name, after.name as string),
+								gt(packages.registry, after.registry as string),
+							),
+						),
+				query
+					? match
+						? sql`${packages}.rowid in (select rowid from package_search where package_search match ${match})`
+						: sql`0`
+					: undefined,
 			),
 		)
-		.orderBy(asc(packages.name))
+		.orderBy(asc(packages.name), asc(packages.registry))
 		.limit(limit + 1)
 	const selected = rows.slice(0, limit)
 	return {
 		packages: selected.map((row) => ({
+			registry: row.registry,
 			name: row.name,
 			description: row.description,
 			latest: row.distTags.latest ?? null,
-			repository: null,
+			repository: row.repository,
+			repositoryStars: row.repositoryStars,
+			repositoryObservedAt: row.repositoryObservedAt,
 			indexedVersions: row.indexedVersions,
 			observedAt: row.observedAt,
+			official: row.official,
+			category: row.category,
+			tags: row.tags,
 		})),
-		nextCursor: rows.length > limit ? selected.at(-1)!.name : null,
+		nextCursor:
+			rows.length > limit
+				? encodeCursor(scope, { name: selected.at(-1)!.name, registry: selected.at(-1)!.registry })
+				: null,
 	}
+}
+
+export async function listNotifications(db: Database, input: NotificationQuery = {}) {
+	if (
+		!object(input) ||
+		Object.keys(input).some(
+			(key) => !['registry', 'name', 'status', 'code', 'cursor', 'limit'].includes(key),
+		) ||
+		(input.name !== undefined && !packageName(input.name)) ||
+		(input.registry !== undefined && typeof input.registry !== 'string') ||
+		(input.status !== undefined &&
+			!['pending', 'processing', 'indexed', 'failed'].includes(input.status)) ||
+		(input.code !== undefined &&
+			(typeof input.code !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(input.code)))
+	)
+		throw new MarketError('invalid-query', 'Invalid notification filters')
+	const limit = pageLimit(input.limit)
+	const scope = JSON.stringify([
+		'notifications',
+		input.registry ?? null,
+		input.name ?? null,
+		input.status ?? null,
+		input.code ?? null,
+	])
+	const after = decodeCursor(input.cursor, scope)
+	if (
+		after !== null &&
+		(!object(after) ||
+			!Number.isSafeInteger(after.createdAt) ||
+			(after.createdAt as number) < 0 ||
+			typeof after.id !== 'string' ||
+			!/^[\w-]{1,64}$/.test(after.id) ||
+			Object.keys(after).length !== 2)
+	)
+		throw new MarketError('invalid-cursor', 'Invalid notification cursor; restart the query')
+	const rows = await db
+		.select()
+		.from(notifications)
+		.where(
+			and(
+				input.registry === undefined ? undefined : eq(notifications.registry, input.registry),
+				input.name === undefined ? undefined : eq(notifications.name, input.name),
+				input.status === undefined ? undefined : eq(notifications.status, input.status),
+				input.code === undefined ? undefined : eq(notifications.code, input.code),
+				after === null
+					? undefined
+					: or(
+							lt(notifications.createdAt, after.createdAt as number),
+							and(
+								eq(notifications.createdAt, after.createdAt as number),
+								lt(notifications.id, after.id as string),
+							),
+						),
+			),
+		)
+		.orderBy(desc(notifications.createdAt), desc(notifications.id))
+		.limit(limit + 1)
+	return {
+		notifications: rows.slice(0, limit).map(notificationDetail),
+		nextCursor:
+			rows.length > limit
+				? encodeCursor(scope, { createdAt: rows[limit - 1].createdAt, id: rows[limit - 1].id })
+				: null,
+	}
+}
+
+export async function facets(db: Database, visibleRegistries: readonly string[]) {
+	if (visibleRegistries.length === 0) return { categories: [], tags: [] }
+	const visible = and(
+		eq(packages.hidden, false),
+		inArray(packages.registry, [...visibleRegistries]),
+	)
+	const categories = await db
+		.select({ value: packages.category, count: sql<number>`count(*)` })
+		.from(packages)
+		.where(and(visible, sql`${packages.category} is not null`))
+		.groupBy(packages.category)
+		.orderBy(asc(packages.category))
+	const tags = await db
+		.select({ value: sql<string>`tag.value`, count: sql<number>`count(*)` })
+		.from(packages)
+		.innerJoin(sql`json_each(${packages.tags}) tag`, sql`true`)
+		.where(visible)
+		.groupBy(sql`tag.value`)
+		.orderBy(sql`tag.value`)
+	return { categories, tags }
 }
 
 export async function setVisibility(
 	db: Database,
-	input: { name: string; expectedRevision: number; hidden: boolean },
+	input: PackageIdentity & { expectedRevision: number; hidden: boolean },
 	now: number,
 ) {
-	const matches = and(eq(packages.name, input.name), eq(packages.revision, input.expectedRevision))
+	return editPackage(db, input, { hidden: input.hidden }, input.hidden ? 'hide' : 'show', now)
+}
+
+export async function setMetadata(
+	db: Database,
+	input: PackageIdentity & MarketMetadata & { expectedRevision: number },
+	now: number,
+) {
+	return editPackage(
+		db,
+		input,
+		{ official: input.official, category: input.category, tags: input.tags },
+		'metadata',
+		now,
+	)
+}
+
+async function editPackage(
+	db: Database,
+	input: PackageIdentity & { expectedRevision: number },
+	changes: MarketMetadata | { hidden: boolean },
+	action: string,
+	now: number,
+) {
+	const identity = and(eq(packages.registry, input.registry), eq(packages.name, input.name))
+	const matches = and(identity, eq(packages.revision, input.expectedRevision))
 	const [, changed] = await db.batch([
 		db.insert(audits).select(
 			db
 				.select({
 					id: sql<string>`${crypto.randomUUID()}`.as('id'),
+					registry: packages.registry,
 					name: packages.name,
-					action: sql<string>`${input.hidden ? 'hide' : 'show'}`.as('action'),
+					action: sql<string>`${action}`.as('action'),
 					revision: sql<number>`${input.expectedRevision + 1}`.as('revision'),
+					changes: sql<MarketMetadata | { hidden: boolean }>`${JSON.stringify(changes)}`.as(
+						'changes',
+					),
 					at: sql<number>`${now}`.as('at'),
 				})
 				.from(packages)
@@ -391,12 +660,12 @@ export async function setVisibility(
 		),
 		db
 			.update(packages)
-			.set({ hidden: input.hidden, revision: input.expectedRevision + 1 })
+			.set({ ...changes, revision: input.expectedRevision + 1 })
 			.where(matches)
 			.returning(),
 	])
 	if (changed[0]) return { status: 'updated' as const, record: changed[0] }
-	const current = await db.select().from(packages).where(eq(packages.name, input.name)).get()
+	const current = await db.select().from(packages).where(identity).get()
 	return current
 		? { status: 'conflict' as const, currentRevision: current.revision }
 		: { status: 'not-found' as const }

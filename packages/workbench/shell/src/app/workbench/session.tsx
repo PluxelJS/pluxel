@@ -1,5 +1,13 @@
-import { formatPluginNodeReference, parsePluginNodeReference } from '@pluxel/core'
-import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
+import {
+	formatPluginNodeReference,
+	parsePluginNodeReference,
+	pluginNodeAddressEqual,
+} from '@pluxel/core'
+import {
+	readWorkbenchShortcuts,
+	type WorkbenchLayoutEntry,
+	type WorkbenchShortcut,
+} from '@pluxel/workbench/client'
 import {
 	panelIdentity,
 	panelTab,
@@ -8,13 +16,7 @@ import {
 	resolvePanelTool,
 	type PanelRegion,
 } from './panelTabs'
-import {
-	createWorkbench,
-	type StartResult,
-	type NavigationResult,
-	type CloseResult,
-	type DispatchResult,
-} from '@worksplit/react'
+import { createWorkbench, type StartResult, type OperationResult } from '@worksplit/react'
 import {
 	Actions,
 	DockLocation,
@@ -40,14 +42,19 @@ export const navigationTab = {
 	type: 'tab' as const,
 	id: 'navigation',
 	name: '插件目录',
-	component: 'worksplit.tool',
+	component: 'pluxel.navigation',
 	enableClose: false,
 	enableDrag: false,
 	enableRename: false,
 	enablePin: false,
 	minHeight: 0,
 }
-export const pluginInspectorTab = { ...navigationTab, id: 'plugin-inspector', name: '插件面板' }
+export const pluginInspectorTab = {
+	...navigationTab,
+	id: 'plugin-inspector',
+	name: '插件面板',
+	component: 'pluxel.inspector',
+}
 
 /** Documents stay in the center; auxiliary tools belong to their declared region. */
 function allowWorkspaceDrop(tabs: readonly TabNode[], target: Node, location: DockLocation) {
@@ -93,6 +100,8 @@ function validPanelLayout(model: Model) {
 			const border = model.getNodeById(`border_${side}`)
 			if (!(border instanceof BorderNode)) return false
 			const config = border.getConfig() ?? {}
+			if (side === 'left' && config.shortcuts !== undefined)
+				readWorkbenchShortcuts(config.shortcuts)
 			if (
 				config.panelOwner !== undefined &&
 				(typeof config.panelOwner !== 'string' ||
@@ -120,7 +129,7 @@ function validPanelLayout(model: Model) {
 						!tab ||
 						typeof tab !== 'object' ||
 						tab.type !== 'tab' ||
-						tab.component !== 'worksplit.tool'
+						tab.component !== 'pluxel.plugin-panel'
 					)
 						return false
 					const identity = readPanelIdentity(tab)
@@ -152,10 +161,7 @@ const panelLayoutPolicy = {
 			// Native node JSON preserves those facts without Model.toJson()'s save events.
 			const candidate = Model.fromJson(
 				structuredClone({
-					global: {
-						rootOrientationVertical: model.isRootOrientationVertical(),
-						tabGroupType: model.getTabGroupType(),
-					},
+					global: model.getGlobalAttributes(),
 					layout: root.toJson(),
 					borders: model.getBorderSet().toJson(),
 				}),
@@ -171,7 +177,10 @@ const panelLayoutPolicy = {
 	},
 }
 
-export function defaultWorkspaceLayout(compact = window.innerWidth <= 680): IJsonModel {
+export function defaultWorkspaceLayout(
+	compact = window.innerWidth <= 680,
+	shortcuts: readonly WorkbenchShortcut[] = [],
+): IJsonModel {
 	return {
 		global: {
 			tabEnableFloat: false,
@@ -190,7 +199,7 @@ export function defaultWorkspaceLayout(compact = window.innerWidth <= 680): IJso
 				show: false,
 				size: 280,
 				className: 'plx-navigation-border',
-				config: { navigationMode: 'icons' },
+				config: { navigationMode: 'icons', shortcuts },
 				selected: compact ? -1 : 0,
 				enableDrop: true,
 				children: [{ ...navigationTab }],
@@ -226,6 +235,7 @@ export function defaultWorkspaceLayout(compact = window.innerWidth <= 680): IJso
 /** The authenticated page owns this session. React Shell borrows it; effect replay retains it. */
 export class WorkspaceSession {
 	readonly workbench
+	resolveTitle?: (href: string) => string | undefined
 	readonly documents = new Map<string, WorkbenchDocumentState>()
 	readonly basepath: string
 	readonly storage: WorkspaceSnapshotStorage
@@ -243,14 +253,22 @@ export class WorkspaceSession {
 		for (const listener of this.contentListeners) listener()
 	}
 	private started?: Promise<StartResult>
-	private disconnect?: () => void
 	private disposing?: Promise<void>
 	private synchronizingPanels?: Promise<void>
 	private panelsPending = false
+	private readonly initialShortcuts: readonly WorkbenchShortcut[]
 
 	constructor(
-		options: { basepath?: string; snapshot?: unknown; storage?: WorkspaceSnapshotStorage } = {},
+		options: {
+			basepath?: string
+			snapshot?: unknown
+			storage?: WorkspaceSnapshotStorage
+			initialShortcuts?: readonly WorkbenchShortcut[]
+		} = {},
 	) {
+		this.initialShortcuts = readWorkbenchShortcuts(
+			options.initialShortcuts === undefined ? [] : options.initialShortcuts,
+		)
 		this.basepath = options.basepath ?? readWorkbenchUiBasePath()
 		this.storage =
 			options.storage ?? new WorkspaceSnapshotStorage(workspaceStorageKey(this.basepath))
@@ -258,23 +276,23 @@ export class WorkspaceSession {
 		try {
 			this.workbench = createWorkbench({
 				workspaceId: `pluxel:${this.basepath}`,
-				home: this.basepath,
+				home: { mode: 'route', href: this.basepath },
+				previewScope: 'workspace',
+				captureSnapshotOnClose: true,
 				createRouter: (history) =>
 					createAppRouter({ history, uiBasePath: this.basepath, Wrap: WorkbenchDocumentRoot }),
-				layout: defaultWorkspaceLayout(),
-				snapshot,
+				initial:
+					snapshot === undefined
+						? { layout: defaultWorkspaceLayout(undefined, this.initialShortcuts) }
+						: { snapshot },
 				allowDrop: allowWorkspaceDrop,
 				resolveTool: resolvePanelTool,
 				layoutPolicy: panelLayoutPolicy,
-				tools: [
-					{ id: 'navigation', render: () => <PluginNavigation /> },
-					{ id: 'plugin-inspector', render: () => <PluginTool /> },
-				],
+				tools: {
+					'pluxel.navigation': { render: () => <PluginNavigation /> },
+					'pluxel.inspector': { render: () => <PluginTool /> },
+				},
 				onIssue: ({ code, error }) => {
-					if (code === 'history-outside-scope') {
-						void this.leave(location.href).catch((cause: unknown) => this.report(cause))
-						return
-					}
 					this.report(new Error(`${code}: ${String(error)}`, { cause: error }))
 				},
 			})
@@ -297,9 +315,7 @@ export class WorkspaceSession {
 	}
 	isPanelOpen(entry: WorkbenchLayoutEntry): boolean {
 		const identity = panelIdentity(entry)
-		const node = Model.fromJson(this.workbench.getLayout()).getNodeById(
-			panelTabId(identity.owner, identity.key),
-		)
+		const node = this.workbench.model.getNodeById(panelTabId(identity.owner, identity.key))
 		return node instanceof TabNode && readPanelIdentity(node.toJson())?.region === identity.region
 	}
 	async openPanel(entry: WorkbenchLayoutEntry): Promise<void> {
@@ -322,13 +338,13 @@ export class WorkspaceSession {
 		await this.syncWorkspacePanels()
 		const current = currentEntry()
 		const tab = panelTab(current)
-		const existing = Model.fromJson(this.workbench.getLayout()).getNodeById(tab.id!)
+		const existing = this.workbench.model.getNodeById(tab.id!)
 		if (
 			existing instanceof TabNode &&
 			readPanelIdentity(existing.toJson())?.region !== identity.region
 		) {
 			const result = await this.workbench.close(tab.id!)
-			if (result.status !== 'closed') throw new Error('面板区域已改变，但旧面板无法关闭')
+			if (result.status !== 'applied') throw new Error('面板区域已改变，但旧面板无法关闭')
 			this.check(result)
 		} else if (existing instanceof TabNode && existing.getName() !== tab.name) {
 			this.check(
@@ -336,23 +352,14 @@ export class WorkspaceSession {
 			)
 		}
 		currentEntry()
-		if (!Model.fromJson(this.workbench.getLayout()).getNodeById(tab.id!)) {
+		if (!this.workbench.model.getNodeById(tab.id!)) {
 			const result = await this.workbench.dispatch(
 				Actions.addNode(tab, `border_${identity.region}`, DockLocation.CENTER, -1, false),
 			)
 			if (result.status !== 'applied') throw new Error('无法打开插件扩展面板')
 		}
 		currentEntry()
-		const border = Model.fromJson(this.workbench.getLayout()).getNodeById(
-			`border_${identity.region}`,
-		) as BorderNode
-		// SELECT_TAB toggles a selected Border tab; setting its index is idempotent.
-		await this.workbench.dispatch(
-			Actions.updateNodeAttributes(border.getId(), {
-				show: true,
-				selected: border.getChildren().findIndex((node) => node.getId() === tab.id),
-			}),
-		)
+		this.check(await this.workbench.activate(tab.id!))
 		await this.syncWorkspacePanels()
 	}
 	/** Native layout owns active tabs. Inactive owner layouts are UI-only archives in Border config. */
@@ -373,7 +380,7 @@ export class WorkspaceSession {
 					this.panelsPending = false
 					const owner = this.currentPanelOwner()
 					for (const side of ['left', 'right', 'bottom'] as const) {
-						let border = Model.fromJson(this.workbench.getLayout()).getNodeById(`border_${side}`)
+						let border = this.workbench.model.getNodeById(`border_${side}`)
 						if (!(border instanceof BorderNode)) continue
 						const config = border.getConfig() ?? {}
 						if (config.panelOwner !== owner) {
@@ -390,7 +397,7 @@ export class WorkspaceSession {
 							if (owner) delete archives[owner]
 							for (const tab of tabs) {
 								const result = await this.workbench.close(tab.id!)
-								if (result.status !== 'closed') throw new Error('插件上下文切换时无法释放旧面板')
+								if (result.status !== 'applied') throw new Error('插件上下文切换时无法释放旧面板')
 								this.check(result)
 							}
 							for (const tab of restore?.tabs ?? []) {
@@ -403,9 +410,7 @@ export class WorkspaceSession {
 								if (result.status !== 'applied') throw new Error('无法恢复插件面板布局')
 							}
 							const expanded = border.getSelected() >= 0
-							border = Model.fromJson(this.workbench.getLayout()).getNodeById(
-								`border_${side}`,
-							) as BorderNode
+							border = this.workbench.model.getNodeById(`border_${side}`) as BorderNode
 							const selectedId = restore
 								? restore.selected
 								: expanded
@@ -427,9 +432,7 @@ export class WorkspaceSession {
 							)
 						}
 						const show = this.panelAvailable(side)
-						const current = Model.fromJson(this.workbench.getLayout()).getNodeById(
-							`border_${side}`,
-						) as BorderNode
+						const current = this.workbench.model.getNodeById(`border_${side}`) as BorderNode
 						if (current.isShowing() !== show)
 							this.check(
 								await this.workbench.dispatch(
@@ -445,15 +448,38 @@ export class WorkspaceSession {
 		}))
 	}
 	navigationMode(): 'icons' | 'labels' {
-		const config: unknown = this.workbench
-			.getLayout()
-			.borders?.find((border) => border.location === 'left')?.config
-		return config &&
-			typeof config === 'object' &&
-			'navigationMode' in config &&
-			config.navigationMode === 'labels'
-			? 'labels'
-			: 'icons'
+		return this.navigationConfig().navigationMode === 'labels' ? 'labels' : 'icons'
+	}
+	sidebarShortcuts(): readonly WorkbenchShortcut[] {
+		return (
+			(this.navigationConfig().shortcuts as readonly WorkbenchShortcut[] | undefined) ??
+			this.initialShortcuts
+		)
+	}
+	isSidebarShortcut(shortcut: WorkbenchShortcut): boolean {
+		return this.sidebarShortcuts().some(
+			(saved) =>
+				saved.entryKey === shortcut.entryKey &&
+				pluginNodeAddressEqual(saved.target, shortcut.target),
+		)
+	}
+	async setSidebarShortcut(shortcut: WorkbenchShortcut, pinned: boolean): Promise<void> {
+		const [validated] = readWorkbenchShortcuts([shortcut])
+		const current = this.sidebarShortcuts()
+		const matches = (saved: WorkbenchShortcut) =>
+			saved.entryKey === validated!.entryKey &&
+			pluginNodeAddressEqual(saved.target, validated!.target)
+		const shortcuts = pinned
+			? current.some(matches)
+				? current.map((saved) => (matches(saved) ? validated! : saved))
+				: [...current, validated!]
+			: current.filter((saved) => !matches(saved))
+		const result = await this.workbench.dispatch(
+			Actions.updateNodeAttributes('border_left', {
+				config: { ...this.navigationConfig(), shortcuts },
+			}),
+		)
+		if (result.status !== 'applied') throw new Error('侧栏偏好未保存，请重试')
 	}
 	async setNavigationMode(navigationMode: 'icons' | 'labels') {
 		this.check(
@@ -465,13 +491,11 @@ export class WorkspaceSession {
 		)
 	}
 	private navigationConfig(): Record<string, unknown> {
-		const config: unknown = this.workbench
-			.getLayout()
-			.borders?.find((border) => border.location === 'left')?.config
-		return config && typeof config === 'object' ? (config as Record<string, unknown>) : {}
+		const node = this.workbench.model.getNodeById('border_left')
+		return node instanceof BorderNode ? (node.getConfig() ?? {}) : {}
 	}
 	isToolVisible(id: string): boolean {
-		const model = Model.fromJson(this.workbench.getLayout())
+		const model = this.workbench.model
 		const node = model.getNodeById(id)
 		if (!(node instanceof TabNode)) return false
 		const parent = node.getParent()
@@ -485,7 +509,7 @@ export class WorkspaceSession {
 		const owner = this.currentPanelOwner()
 		if (side === 'right') return !!owner
 		if (side === 'left' && this.activeWorkspace() === 'plugins') return true
-		const border = Model.fromJson(this.workbench.getLayout()).getNodeById(`border_${side}`)
+		const border = this.workbench.model.getNodeById(`border_${side}`)
 		return (
 			!!owner &&
 			border instanceof BorderNode &&
@@ -504,7 +528,7 @@ export class WorkspaceSession {
 		await this.syncWorkspacePanels()
 	}
 	async toggleTool(id: string) {
-		const model = Model.fromJson(this.workbench.getLayout())
+		const model = this.workbench.model
 		const node = model.getNodeById(id)
 		const border = node?.getParent()
 		if (!(node instanceof TabNode) || !(border instanceof BorderNode)) return
@@ -521,7 +545,7 @@ export class WorkspaceSession {
 	async toggleBorder(side: 'left' | 'right' | 'bottom') {
 		if (!this.panelAvailable(side)) return
 		const id = `border_${side}`
-		const model = Model.fromJson(this.workbench.getLayout())
+		const model = this.workbench.model
 		const container = model.getNodeById(id)
 		if (!(container instanceof BorderNode))
 			throw new Error('保存的布局缺少工具区域，请恢复默认布局。')
@@ -539,24 +563,44 @@ export class WorkspaceSession {
 		browser = true,
 	): Promise<StartResult> {
 		return (this.started ??= (async () => {
-			if (browser) this.disconnect = this.workbench.connectBrowser()
-			this.storage.connect(() => this.workbench.snapshot())
-			window.addEventListener('beforeunload', this.beforeUnload)
-			const result = await this.workbench.start(href)
+			const result = await this.workbench.start(
+				browser
+					? {
+							browser: {
+								onOutsideNavigate: ({ snapshot, cleanup }) => {
+									this.storage.finish(snapshot)
+									void cleanup.then((cleanupResult) => {
+										this.check(cleanupResult)
+										// The browser already visited the host entry. Reload it without pushing again.
+										return location.reload()
+									})
+								},
+							},
+						}
+					: { href },
+			)
 			this.check(result)
+			if (result.status === 'applied') {
+				if (this.navigationConfig().shortcuts === undefined) {
+					const seeded = await this.workbench.dispatch(
+						Actions.updateNodeAttributes('border_left', {
+							config: { ...this.navigationConfig(), shortcuts: this.initialShortcuts },
+						}),
+					)
+					if (seeded.status !== 'applied') throw new Error('无法初始化侧栏偏好')
+				}
+				this.storage.connect(() => this.workbench.createSnapshot())
+				window.addEventListener('beforeunload', this.beforeUnload)
+			}
 			return result
 		})())
 	}
-	check(result: StartResult | NavigationResult | CloseResult | DispatchResult) {
+	check(result: OperationResult<unknown>) {
 		if (result.status === 'failed') this.report(result.error)
-		else if (result.status === 'rejected')
-			this.report(
-				new Error(`操作未完成：${'reason' in result ? result.reason : '目标不允许此操作'}`),
-			)
-		else if (result.status === 'superseded')
-			this.report(new Error('操作目标已改变，请重新选择目标'))
-		else if (result.status === 'closed' && result.cleanupErrors.length > 0)
-			this.report(new AggregateError(result.cleanupErrors, '标签已关闭，但资源释放失败'))
+		else if (result.status === 'denied' && result.reason !== 'decision')
+			this.report(new Error(`操作未完成：${result.detail ?? result.reason}`))
+		if ('cleanupErrors' in result && result.cleanupErrors.length > 0)
+			this.report(new AggregateError(result.cleanupErrors, '操作已结算，但资源释放失败'))
 	}
 	report(error: unknown) {
 		notifyAndRecord({
@@ -566,78 +610,22 @@ export class WorkspaceSession {
 		})
 	}
 	async leave(href: string): Promise<void> {
-		const restoreAcceptedLocation = () => {
-			const active = this.workbench.getActiveDocument()
-			// Preserve the live draft when an outside entry is refused. The foreign
-			// history state remains foreign; no Worksplit scope or index is invented.
-			if (active && location.pathname + location.search + location.hash !== active.href)
-				history.replaceState(history.state, '', active.href)
-		}
-		try {
-			const owners = [...this.documents.entries()]
-			const approvals = []
-			for (const [id, state] of owners) {
-				if (!(await state.beforeLeave())) {
-					restoreAcceptedLocation()
-					return
-				}
-				approvals.push({
-					id,
-					state,
-					editor: state.editor,
-					dirty: state.isDirty(),
-					revision: state.editor?.getCloseRevision?.(),
-					hasRevision: Boolean(state.editor?.getCloseRevision),
-				})
-			}
-			// A later confirmation can wait while an already approved editor changes.
-			// Recheck its actual editing facts before replacing the whole document.
-			if (
-				this.documents.size !== owners.length ||
-				approvals.some(
-					({ id, state, editor, dirty, revision, hasRevision }) =>
-						this.documents.get(id) !== state ||
-						state.editor !== editor ||
-						(state.isDirty() &&
-							(!dirty ||
-								hasRevision !== Boolean(editor?.getCloseRevision) ||
-								(hasRevision && revision !== editor?.getCloseRevision?.()))),
-				)
-			)
-				throw new Error('退出期间文档或未保存的输入已改变，请重新检查后继续。')
-		} catch (cause) {
-			restoreAcceptedLocation()
-			throw cause
-		}
+		const result = await this.workbench.closeWorkspace({ destination: href })
+		this.check(result)
+		if (result.status !== 'applied') return
+		this.storage.finish(result.value.snapshot)
 		location.assign(href)
 	}
 	private beforeUnload = (event: BeforeUnloadEvent) => {
-		if (![...this.documents.values()].some((document) => document.isDirty())) return
+		if (![...this.documents.values()].some((document) => document.blocksUnload())) return
 		event.preventDefault()
 		event.returnValue = ''
 	}
 	async closeDocuments(): Promise<boolean> {
 		const documents = this.workbench.getDocuments()
-		const layout = this.workbench.getLayout()
-		const protectedIds = new Set<string>()
-		const visit = (node: {
-			id?: string
-			type?: string
-			pinned?: boolean
-			enableClose?: boolean
-			children?: unknown[]
-		}) => {
-			if (
-				node.type === 'tab' &&
-				node.id &&
-				(node.pinned || (node.enableClose ?? layout.global?.tabEnableClose) === false)
-			)
-				protectedIds.add(node.id)
-			for (const child of node.children ?? []) visit(child as Parameters<typeof visit>[0])
-		}
-		visit(layout.layout)
-		for (const border of layout.borders ?? []) visit(border)
-		const protectedDocuments = documents.filter((document) => protectedIds.has(document.id))
+		const protectedDocuments = documents.filter(
+			({ node }) => node.isPinned() || !node.isEnableClose(),
+		)
 		if (protectedDocuments.length > 0) {
 			this.report(
 				new Error(
@@ -647,20 +635,9 @@ export class WorkspaceSession {
 			return false
 		}
 		if (documents.length === 0) return true
-		const result = await this.workbench.dispatch(
-			Actions.group(documents.map((document) => Actions.deleteTab(document.id))),
-		)
-		if (result.status === 'failed') this.report(result.error)
-		if (result.status === 'rejected')
-			this.report(new Error(`内容未关闭：${'reason' in result ? result.reason : '操作被拒绝'}`))
-		if (result.status !== 'closed') return false
-		if (result.cleanupErrors.length > 0) {
-			this.report(
-				new AggregateError(result.cleanupErrors, '内容已关闭，但资源释放失败；暂不重建工作区'),
-			)
-			return false
-		}
-		return true
+		const result = await this.workbench.close(documents.map(({ id }) => id))
+		this.check(result)
+		return result.status === 'applied' && result.cleanupErrors.length === 0
 	}
 	async resetLayout(): Promise<boolean> {
 		const confirmed = await new Promise<boolean>((resolve) =>
@@ -675,14 +652,7 @@ export class WorkspaceSession {
 			}),
 		)
 		if (!confirmed || !(await this.closeDocuments())) return false
-		if (
-			!this.storage.write({
-				version: 1,
-				workspaceId: `pluxel:${this.basepath}`,
-				layout: defaultWorkspaceLayout(),
-			})
-		)
-			return false
+		if (!this.storage.reset()) return false
 		// Stop pending writes before a full page replacement; no unsupported Model replacement.
 		this.storage.blocked = true
 		location.assign(this.basepath)
@@ -692,9 +662,7 @@ export class WorkspaceSession {
 		return (this.disposing ??= (async () => {
 			this.storage.close()
 			window.removeEventListener('beforeunload', this.beforeUnload)
-			this.disconnect?.()
-			const errors = await this.workbench.dispose()
-			if (errors.length > 0) this.report(new AggregateError(errors, '内容已关闭，资源释放失败'))
+			this.check(await this.workbench.dispose())
 		})())
 	}
 }

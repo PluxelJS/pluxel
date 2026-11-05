@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { URL } from 'node:url'
@@ -24,6 +24,7 @@ import {
 } from '../src/store'
 
 type Fixture = {
+	registry: string
 	name: string
 	version: string
 	bytes: Uint8Array
@@ -39,14 +40,31 @@ describe('plugin market on workerd and D1', () => {
 	let directory: string
 	let script: string
 	const token = crypto.randomUUID()
+	const privateRegistry = 'https://private.example/npm'
+	const sources = [
+		{ registry, access: 'public' },
+		{
+			registry: privateRegistry,
+			access: 'admin',
+			token: 'read-private',
+			notificationToken: 'notify-private',
+		},
+	]
 	const fixtures = new Map<string, Fixture>()
 	const requests: string[] = []
+	let github = { status: 200, body: { full_name: 'unverified/claim', stargazers_count: 42 } }
 	const selected = { registry, name: '@example/plugin', version: '1.0.0' }
 
 	async function fixture(
 		name = selected.name,
-		options: { version?: string; manifest?: Record<string, unknown>; extra?: TarEntry[] } = {},
+		options: {
+			registry?: string
+			version?: string
+			manifest?: Record<string, unknown>
+			extra?: TarEntry[]
+		} = {},
 	) {
+		const source = options.registry ?? registry
 		const version = options.version ?? selected.version
 		const body = JSON.stringify({
 			name,
@@ -76,6 +94,7 @@ describe('plugin market on workerd and D1', () => {
 		)
 		const integrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`
 		const result: Fixture = {
+			registry: source,
 			name,
 			version,
 			bytes,
@@ -86,12 +105,12 @@ describe('plugin market on workerd and D1', () => {
 				version,
 				description: 'Untrusted metadata description',
 				dist: {
-					tarball: `${registry}/${encodeURIComponent(name)}/-/${version}.tgz`,
+					tarball: `${source}/${encodeURIComponent(name)}/-/${version}.tgz`,
 					integrity,
 				},
 			},
 		}
-		fixtures.set(`${name}@${version}`, result)
+		fixtures.set(`${source}:${name}@${version}`, result)
 		return result
 	}
 
@@ -112,6 +131,7 @@ describe('plugin market on workerd and D1', () => {
 						env: {
 							DB: { type: 'd1', id: 'plugin-market-test' },
 							ADMIN_TOKEN: { type: 'text', value: token },
+							REGISTRIES: { type: 'text', value: JSON.stringify(sources) },
 						},
 					},
 					dev: {
@@ -120,13 +140,40 @@ describe('plugin market on workerd and D1', () => {
 							handler(request) {
 								requests.push(request.url)
 								const url = new URL(request.url)
-								if (url.origin !== registry) throw new Error(`Unexpected origin ${url.origin}`)
+								if (url.origin === 'https://api.github.com')
+									return MiniflareResponse.json(github.body, { status: github.status })
+								if (!sources.some((source) => request.url.startsWith(`${source.registry}/`)))
+									throw new Error(`Unexpected source ${url.origin}`)
+								if (request.url.startsWith(`${privateRegistry}/`))
+									expect(request.headers.get('Authorization')).toBe('Bearer read-private')
 								for (const item of fixtures.values()) {
-									if (url.pathname === `/${encodeURIComponent(item.name)}/${item.version}`)
+									if (request.url === `${item.registry}/${encodeURIComponent(item.name)}`)
+										return MiniflareResponse.json({
+											name: item.name,
+											'dist-tags': item.tags,
+											versions: Object.fromEntries(
+												[...fixtures.values()]
+													.filter(
+														(other) => other.registry === item.registry && other.name === item.name,
+													)
+													.map((other) => [other.version, other.metadata]),
+											),
+											readme: '# Registry README\nRead before choosing a version.',
+										})
+									if (
+										request.url ===
+										`${item.registry}/${encodeURIComponent(item.name)}/${item.version}`
+									)
 										return MiniflareResponse.json(item.metadata)
-									if (url.pathname === `/${encodeURIComponent(item.name)}/-/${item.version}.tgz`)
+									if (
+										request.url ===
+										`${item.registry}/${encodeURIComponent(item.name)}/-/${item.version}.tgz`
+									)
 										return new MiniflareResponse(item.bytes)
-									if (url.pathname === `/-/package/${encodeURIComponent(item.name)}/dist-tags`)
+									if (
+										request.url ===
+										`${item.registry}/-/package/${encodeURIComponent(item.name)}/dist-tags`
+									)
 										return MiniflareResponse.json(item.tags)
 								}
 								if (url.pathname === '/redirect.tgz')
@@ -158,13 +205,17 @@ describe('plugin market on workerd and D1', () => {
 		script = output.outputFiles[0].text
 		await start()
 		const binding = await runtime.getD1Database('DB')
-		const migration = await readFile(
-			new URL('../migrations/0000_nebulous_zaladane.sql', import.meta.url),
-			'utf8',
-		)
-		await binding.batch(
-			migration.split('--> statement-breakpoint').map((statement) => binding.prepare(statement)),
-		)
+		const migrationEntries = await readdir(new URL('../migrations/', import.meta.url))
+		const files = migrationEntries.filter((name) => name.endsWith('.sql')).sort()
+		for (const file of files) {
+			const migration = await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8')
+			await binding.batch(
+				migration
+					.split('--> statement-breakpoint')
+					.filter((statement) => statement.trim())
+					.map((statement) => binding.prepare(statement)),
+			)
+		}
 	})
 
 	afterAll(async () => {
@@ -184,6 +235,7 @@ describe('plugin market on workerd and D1', () => {
 		])
 		fixtures.clear()
 		requests.length = 0
+		github = { status: 200, body: { full_name: 'unverified/claim', stargazers_count: 42 } }
 	})
 
 	function admin(auth: string = token) {
@@ -193,6 +245,11 @@ describe('plugin market on workerd and D1', () => {
 	}
 	function get(path: string, headers?: Record<string, string>) {
 		return fetch(new URL(path, origin).href, { headers })
+	}
+	async function getJson(path: string, headers?: Record<string, string>) {
+		const response = await get(path, headers)
+		expect(response.status).toBe(200)
+		return response.json()
 	}
 	function notify(value: unknown = selected) {
 		return fetch(new URL('/v1/notifications', origin).href, {
@@ -219,7 +276,7 @@ describe('plugin market on workerd and D1', () => {
 					name: selected.name,
 					description: `Package ${selected.name}`,
 					latest: '1.0.0',
-					repository: null,
+					repository: 'https://github.com/unverified/claim',
 					indexedVersions: 1,
 				},
 			],
@@ -242,13 +299,15 @@ describe('plugin market on workerd and D1', () => {
 		await expect(denied.refresh(selected)).rejects.toThrow(/401/)
 		expect(requests).toHaveLength(0)
 		for (const invalid of [
-			{ ...selected, registry: 'https://untrusted.example' },
 			{ ...selected, version: '^1.0.0' },
 			{ ...selected, name: '../escape' },
 			{ ...selected, repository: 'https://github.com/claim' },
 		]) {
 			await expect(notify(invalid)).resolves.toMatchObject({ status: 400 })
 		}
+		await expect(
+			notify({ ...selected, registry: 'https://untrusted.example' }),
+		).resolves.toMatchObject({ status: 422 })
 		await expect(notify({ ...selected, padding: 'x'.repeat(5000) })).resolves.toMatchObject({
 			status: 413,
 		})
@@ -370,6 +429,8 @@ describe('plugin market on workerd and D1', () => {
 			provenance: { status: 'missing' as const },
 			peerDependencies: {},
 			pluginPackages: {},
+			readme: null,
+			license: null,
 		}
 		const second = {
 			...first,
@@ -378,8 +439,24 @@ describe('plugin market on workerd and D1', () => {
 			checkedAt: 2,
 		}
 		const outcomes = await Promise.allSettled([
-			commitRelease(db, first, { description: 'first', distTags: {}, observedAt: 1 }),
-			commitRelease(db, second, { description: 'second', distTags: {}, observedAt: 2 }),
+			commitRelease(db, first, {
+				description: 'first',
+				repository: null,
+				metadataVersion: '1.0.0',
+				readme: null,
+				license: null,
+				distTags: {},
+				observedAt: 1,
+			}),
+			commitRelease(db, second, {
+				description: 'second',
+				repository: null,
+				metadataVersion: '1.0.0',
+				readme: null,
+				license: null,
+				distTags: {},
+				observedAt: 2,
+			}),
 		])
 		expect(outcomes.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected'])
 		const [stored] = await db.select().from(releases)
@@ -423,7 +500,12 @@ describe('plugin market on workerd and D1', () => {
 		).toMatchObject({ status: 'indexed' })
 		using hidden = admin()
 		expect(
-			await hidden.setVisibility({ name: '@example/ab', expectedRevision: 1, hidden: true }),
+			await hidden.setVisibility({
+				registry,
+				name: '@example/ab',
+				expectedRevision: 1,
+				hidden: true,
+			}),
 		).toMatchObject({ status: 'updated' })
 		const firstResponse = await get('/v1/packages?query=%40example&limit=1')
 		expect(firstResponse.status).toBe(200)
@@ -470,7 +552,7 @@ describe('plugin market on workerd and D1', () => {
 		await session.refresh(selected)
 		using first = admin()
 		using second = admin()
-		const input = { name: selected.name, expectedRevision: 1, hidden: true }
+		const input = { registry, name: selected.name, expectedRevision: 1, hidden: true }
 		const results = await Promise.all([first.setVisibility(input), second.setVisibility(input)])
 		expect(results.map((result) => result.status).sort()).toEqual(['conflict', 'updated'])
 		expect(await db.select().from(audits)).toHaveLength(2)
@@ -531,5 +613,357 @@ describe('plugin market on workerd and D1', () => {
 		expect(await restored.json()).toEqual(body)
 		const duplicate = await notify()
 		expect(await duplicate.json()).toEqual(body)
+	})
+
+	it('keeps same-name packages, notifications, and curation scoped to their real registry', async () => {
+		const publicItem = await fixture('@pluxel/plugin-example')
+		const privateItem = await fixture(publicItem.name, {
+			registry: privateRegistry,
+			manifest: { description: 'Private replacement', official: true },
+		})
+		const publicCoordinate = { ...selected, name: publicItem.name }
+		const privateCoordinate = { ...publicCoordinate, registry: privateRegistry }
+		{
+			using publicAdmin = admin()
+			expect(await publicAdmin.refresh(publicCoordinate)).toMatchObject({ status: 'indexed' })
+		}
+		{
+			using privateAdmin = admin()
+			expect(await privateAdmin.refresh(privateCoordinate)).toMatchObject({ status: 'indexed' })
+		}
+		const path = `/v1/packages/${encodeURIComponent(publicItem.name)}/releases/1.0.0`
+		expect(await getJson(path)).toMatchObject({
+			registry,
+			integrity: publicItem.integrity,
+		})
+		await expect(
+			get(`${path}?registry=${encodeURIComponent(privateRegistry)}`),
+		).resolves.toMatchObject({ status: 404 })
+		const privateRead = await get(`${path}?registry=${encodeURIComponent(privateRegistry)}`, {
+			Authorization: `Bearer ${token}`,
+		})
+		expect(privateRead.headers.get('Cache-Control')).toBe('no-store')
+		expect(await privateRead.json()).toMatchObject({
+			registry: privateRegistry,
+			integrity: privateItem.integrity,
+		})
+		expect(await getJson('/v1/packages')).toMatchObject({
+			packages: [{ registry, name: publicItem.name, official: false }],
+		})
+		const both = (await getJson('/v1/packages', {
+			Authorization: `Bearer ${token}`,
+		})) as PackagePage
+		expect(both.packages).toHaveLength(2)
+		expect(new Set(both.packages.map((item) => item.registry))).toEqual(
+			new Set([registry, privateRegistry]),
+		)
+		const first = await notify(publicCoordinate)
+		const publicReceipt = (await first.json()) as Receipt
+		const submitPrivate = (authorization?: string) =>
+			fetch(new URL('/v1/notifications', origin), {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					...(authorization ? { Authorization: authorization } : {}),
+				},
+				body: JSON.stringify(privateCoordinate),
+			})
+		await expect(submitPrivate()).resolves.toMatchObject({ status: 401 })
+		const accepted = await submitPrivate('Bearer notify-private')
+		const privateReceipt = (await accepted.json()) as Receipt
+		expect(privateReceipt.id).not.toBe(publicReceipt.id)
+		expect(privateReceipt.registry).toBe(privateRegistry)
+		await expect(get(`/v1/notifications/${privateReceipt.id}`)).resolves.toMatchObject({
+			status: 404,
+		})
+		expect(
+			await getJson(`/v1/notifications/${privateReceipt.id}`, {
+				Authorization: 'Bearer notify-private',
+			}),
+		).toEqual(privateReceipt)
+		await expect(
+			get('/v1/packages', { Authorization: 'Bearer notify-private' }),
+		).resolves.toMatchObject({ status: 401 })
+		const capabilities = JSON.stringify(await getJson('/v1'))
+		expect(capabilities).not.toContain(privateRegistry)
+		expect(capabilities).not.toContain('read-private')
+		expect(capabilities).not.toContain('notify-private')
+		privateItem.metadata.dist = {
+			...(privateItem.metadata.dist as object),
+			tarball:
+				publicItem.metadata.dist && (publicItem.metadata.dist as { tarball: string }).tarball,
+		}
+		{
+			using rejected = admin()
+			expect(await rejected.refresh(privateCoordinate)).toMatchObject({
+				status: 'failed',
+				code: 'disallowed-npm-url',
+			})
+		}
+	})
+
+	it('searches indexed descriptions and market tags, filters curation, and preserves it across refreshes', async () => {
+		await fixture('@pluxel/plugin-example', {
+			manifest: {
+				description: 'HTTP transport integration',
+				official: true,
+				category: 'forged',
+				tags: ['forged'],
+			},
+		})
+		const identity = { registry, name: '@pluxel/plugin-example' }
+		{
+			using indexing = admin()
+			await indexing.refresh({ ...identity, version: '1.0.0' })
+		}
+		{
+			using curation = admin()
+			expect(
+				await curation.setMetadata({
+					...identity,
+					expectedRevision: 1,
+					official: true,
+					category: 'integration',
+					tags: ['network', 'http'],
+				}),
+			).toMatchObject({ status: 'updated', record: { revision: 2, tags: ['http', 'network'] } })
+		}
+		const beforeSearch = requests.length
+		for (const query of ['transport', 'netw', 'HTTP transport', 'pluxel example']) {
+			const response = await get(
+				`/v1/packages?query=${encodeURIComponent(query)}&official=true&category=integration&tag=http`,
+			)
+			expect(response.status).toBe(200)
+			expect(await response.json()).toMatchObject({
+				packages: [
+					{ ...identity, official: true, category: 'integration', tags: ['http', 'network'] },
+				],
+			})
+		}
+		for (const query of ['forged', 'missing', '%']) {
+			expect(await getJson(`/v1/packages?query=${encodeURIComponent(query)}`)).toMatchObject({
+				packages: [],
+			})
+		}
+		expect(requests).toHaveLength(beforeSearch)
+		expect(await getJson('/v1/facets')).toEqual({
+			categories: [{ value: 'integration', count: 1 }],
+			tags: [
+				{ value: 'http', count: 1 },
+				{ value: 'network', count: 1 },
+			],
+		})
+		{
+			using stale = admin()
+			expect(
+				await stale.setMetadata({
+					...identity,
+					expectedRevision: 1,
+					official: false,
+					category: null,
+					tags: [],
+				}),
+			).toEqual({ status: 'conflict', currentRevision: 2 })
+		}
+		{
+			using refresh = admin()
+			await refresh.refresh({ ...identity, version: '1.0.0' })
+		}
+		{
+			using read = admin()
+			expect(await read.getPackage(identity)).toMatchObject({
+				revision: 2,
+				official: true,
+				category: 'integration',
+				tags: ['http', 'network'],
+			})
+		}
+		{
+			using audit = admin()
+			const changes = await audit.recentChanges(identity)
+			expect(changes.filter((change) => change.action === 'metadata')).toMatchObject([
+				{
+					revision: 2,
+					changes: { official: true, category: 'integration', tags: ['http', 'network'] },
+				},
+			])
+		}
+		{
+			using hidden = admin()
+			await hidden.setVisibility({ ...identity, expectedRevision: 2, hidden: true })
+		}
+		expect(await getJson('/v1/facets')).toEqual({ categories: [], tags: [] })
+		expect(await getJson('/v1/packages?query=network')).toMatchObject({ packages: [] })
+	})
+
+	it('lists actionable notifications with stable tied-time paging and query-bound cursors', async () => {
+		const rows = await Promise.all(
+			['1.0.0', '1.1.0', '1.2.0'].map((version) => enqueue(db, { ...selected, version }, 100)),
+		)
+		const task = await claim(db, rows[0].id, 100)
+		await failAttempt(
+			db,
+			task!,
+			new MarketError('invalid-package', 'Fix the package before a bounded manual retry', 422),
+			101,
+		)
+		let next: string | null = null
+		let firstCursor: string | undefined
+		const seen: string[] = []
+		do {
+			using session = admin()
+			const page = await session.listNotifications({
+				name: selected.name,
+				limit: 1,
+				...(next ? { cursor: next } : {}),
+			})
+			expect(page.notifications).toHaveLength(1)
+			seen.push(page.notifications[0].id)
+			expect(page.notifications[0]).not.toHaveProperty('leaseToken')
+			next = page.nextCursor
+			firstCursor ??= next ?? undefined
+		} while (next)
+		expect(new Set(seen)).toEqual(new Set(rows.map((row) => row.id)))
+		{
+			using mismatch = admin()
+			await expect(
+				mismatch.listNotifications({ status: 'failed', cursor: firstCursor }),
+			).rejects.toThrow(/cursor|query/i)
+		}
+		{
+			using failed = admin()
+			expect(
+				await failed.listNotifications({ registry, status: 'failed', code: 'invalid-package' }),
+			).toMatchObject({
+				notifications: [
+					{
+						id: task!.id,
+						diagnostic: 'Fix the package before a bounded manual retry',
+						retry: 'available',
+					},
+				],
+				nextCursor: null,
+			})
+		}
+		{
+			using retry = admin()
+			expect(await retry.retryNotification(task!.id)).toMatchObject({
+				status: 'queued',
+				receipt: { attempts: 1 },
+			})
+		}
+		{
+			using changed = admin()
+			expect(await changed.getNotification(task!.id)).toMatchObject({
+				status: 'pending',
+				retry: 'not-failed',
+			})
+		}
+		{
+			using invalid = admin()
+			await expect(invalid.listNotifications({ limit: 51 })).rejects.toThrow(/limit/)
+		}
+	})
+
+	it('observes legacy npm packages for browsing without fabricating a checked release or provenance', async () => {
+		const item = await fixture('@pluxel/legacy', {
+			manifest: { peerDependencies: { '@pluxel/runtime': '^1.0.0' } },
+		})
+		Object.assign(item.metadata, {
+			description: 'Public legacy plugin',
+			repository: { url: 'git+https://github.com/unverified/claim.git' },
+			license: 'MIT',
+		})
+		Object.assign(item.metadata.dist as object, {
+			attestations: { url: `${registry}/attestation` },
+		})
+		{
+			using observe = admin()
+			expect(await observe.observe({ registry, name: item.name })).toMatchObject({
+				status: 'observed',
+			})
+		}
+		expect(await getJson('/v1/packages?query=legacy')).toMatchObject({
+			packages: [
+				{
+					registry,
+					name: item.name,
+					indexedVersions: 0,
+					repository: 'https://github.com/unverified/claim',
+					repositoryStars: null,
+				},
+			],
+		})
+		const detail = await getJson(`/v1/packages/${encodeURIComponent(item.name)}`)
+		expect(detail).toMatchObject({
+			metadataVersion: '1.0.0',
+			readme: { text: '# Registry README\nRead before choosing a version.', truncated: false },
+			license: 'MIT',
+			indexedVersions: 0,
+		})
+		await expect(
+			get(`/v1/packages/${encodeURIComponent(item.name)}/releases/1.0.0`),
+		).resolves.toMatchObject({ status: 404 })
+		{
+			using refresh = admin()
+			expect(await refresh.refresh({ registry, name: item.name, version: '1.0.0' })).toMatchObject({
+				status: 'failed',
+				code: 'provenance-runtime-unsupported',
+			})
+		}
+		expect(await db.select().from(releases)).toEqual([])
+		expect(await db.select().from(notifications)).toEqual([])
+	})
+
+	it('stores real repository observations and packaged README previews without conflating provenance or unknown stars', async () => {
+		const text = '# Plugin README\n<script>never execute this</script>'
+		await fixture(selected.name, {
+			manifest: { license: 'MIT' },
+			extra: [
+				{ header: { name: 'package/README.md', type: 'file', size: text.length }, body: text },
+			],
+		})
+		{
+			using refresh = admin()
+			await refresh.refresh(selected)
+		}
+		expect(await getJson(releasePath)).toMatchObject({
+			readme: { text, truncated: false },
+			license: 'MIT',
+			provenance: { status: 'missing' },
+		})
+		const identity = { registry, name: selected.name }
+		{
+			using stars = admin()
+			expect(await stars.refreshRepository(identity)).toMatchObject({
+				status: 'updated',
+				stars: 42,
+			})
+		}
+		const listing = (await getJson('/v1/packages')) as PackagePage
+		expect(listing.packages[0]).toMatchObject({
+			repositoryStars: 42,
+			repositoryObservedAt: expect.any(Number),
+		})
+		github.status = 429
+		{
+			using limited = admin()
+			expect(await limited.refreshRepository(identity)).toMatchObject({
+				status: 'failed',
+				code: 'repository-unavailable',
+				retryable: true,
+			})
+		}
+		{
+			using refreshing = admin()
+			await refreshing.refresh(selected)
+		}
+		const after = (await getJson('/v1/packages')) as PackagePage
+		expect(after.packages[0].repositoryStars).toBe(42)
+		expect(after.packages[0].repositoryObservedAt).toBe(listing.packages[0].repositoryObservedAt)
+		const count = requests.length
+		await getJson('/v1/packages')
+		await getJson('/v1/packages?query=plugin')
+		expect(requests).toHaveLength(count)
 	})
 })

@@ -8,6 +8,34 @@
 			"when": 1793811458406,
 			"tag": "0000_nebulous_zaladane",
 			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "6",
+			"when": 1793863996104,
+			"tag": "0001_lame_nitro",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "6",
+			"when": 1793864129175,
+			"tag": "0002_package_search",
+			"breakpoints": true
+		},
+		{
+			"idx": 3,
+			"version": "6",
+			"when": 1793864936501,
+			"tag": "0003_package_details",
+			"breakpoints": true
+		},
+		{
+			"idx": 4,
+			"version": "6",
+			"when": 1793865310173,
+			"tag": "0004_catalog_observation",
+			"breakpoints": true
 		}
 	]
 }

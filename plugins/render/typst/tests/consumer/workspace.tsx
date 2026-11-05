@@ -3,10 +3,12 @@ import { createRoute, createRouter } from '@tanstack/react-router'
 import {
 	createWorkbench,
 	Workbench,
-	useWorkbenchContent,
+	useContent,
+	useContentController,
+	type ContentHandle,
 	useWorkbenchState,
 } from '@worksplit/react'
-import { Actions, DockLocation, type IJsonModel } from 'flexlayout-react'
+import { DockLocation, type IJsonModel } from 'flexlayout-react'
 import { findTypstEditorPosition } from '@pluxel/plugin-typst/source/browser'
 import { FileExplorer, type WorkspaceFolders } from './file-explorer'
 import { EditorPane } from './editor-pane'
@@ -68,10 +70,8 @@ function PreviewDocument() {
 	const { folder: value } = previewRoute.useParams()
 	const workspace = useWorkspace()
 	const folder = value as ExampleId
-	const content = useWorkbenchContent()
-	useEffect(() => {
-		void workspace.workbench.dispatch(Actions.renameTab(content.id, `${folder} · 预览`))
-	}, [content.id, folder])
+	const content = useContent()
+	useContentController({ leave: null, title: `${folder} · 预览` })
 	if (!Object.hasOwn(workspace.folders, folder)) return <p role="alert">文件夹不存在。</p>
 	const project = workspace.folders[folder].project
 	return (
@@ -97,6 +97,7 @@ function PreviewDocument() {
 					path,
 					position,
 					folder === 'application-form' && path === 'main.typ',
+					content,
 				)
 			}}
 		/>
@@ -105,19 +106,20 @@ function PreviewDocument() {
 
 function ExplorerTool() {
 	const workspace = useWorkspace()
+	const source = useContent()
 	return (
 		<FileExplorer
 			folders={workspace.folders}
 			activeFolder={workspace.active.folder}
 			activePath={workspace.active.path}
 			onOpen={(folder, path) => {
-				void workspace.openFile(folder, path)
+				void workspace.openFile(folder, path, undefined, undefined, source)
 			}}
 			onCreate={async (path) => {
 				const project = workspace.folders[workspace.active.folder].project
 				const result = project.createFile({ baseRevision: project.revision, path, contents: '' })
 				if (!result.ok) return result.issues.map((issue) => issue.message).join('\n')
-				await workspace.openFile(workspace.active.folder, path)
+				await workspace.openFile(workspace.active.folder, path, undefined, undefined, source)
 				return undefined
 			}}
 		/>
@@ -146,7 +148,7 @@ function layout(): IJsonModel {
 						type: 'tab',
 						id: 'files',
 						name: '文件',
-						component: 'worksplit.tool',
+						component: 'files',
 						enableClose: false,
 						enableDrag: false,
 					},
@@ -154,7 +156,7 @@ function layout(): IJsonModel {
 						type: 'tab',
 						id: 'chapters',
 						name: '章节',
-						component: 'worksplit.tool',
+						component: 'chapters',
 						enableClose: false,
 						enableDrag: false,
 					},
@@ -165,24 +167,39 @@ function layout(): IJsonModel {
 	}
 }
 
-/** Worksplit alone owns tab identities, preview replacement, selection and split geometry. */
-export function Workspace({ folders }: { folders: WorkspaceFolders }) {
+/** The browser bootstrap owns this session; React only binds its view. */
+export function createTypstWorkspace(onIssue: (message: string) => void) {
+	return createWorkbench({
+		createRouter: (history) =>
+			createRouter({ routeTree, history, defaultPendingMinMs: 0, defaultStaleTime: Infinity }),
+		initial: { layout: layout() },
+		home: { href: '/', mode: 'empty' },
+		workspaceId: 'typst-playground',
+		// There was one temporary editor across both source and chapter documents.
+		previewScope: 'workspace',
+		tools: {
+			files: { render: () => <ExplorerTool /> },
+			chapters: { render: () => <ChapterExplorer /> },
+		},
+		onIssue: ({ error }) => onIssue(String(error)),
+	})
+}
+export type TypstWorkspace = ReturnType<typeof createTypstWorkspace>
+
+/** Project drafts and paired-preview policy belong to this application. */
+export function Workspace({
+	folders,
+	workbench,
+	issue,
+}: {
+	folders: WorkspaceFolders
+	workbench: TypstWorkspace
+	issue: string
+}) {
 	const [message, report] = useState('')
-	const [workbench] = useState(() =>
-		createWorkbench({
-			createRouter: (history) =>
-				createRouter({ routeTree, history, defaultPendingMinMs: 0, defaultStaleTime: Infinity }),
-			layout: layout(),
-			home: '/',
-			homeMode: 'empty',
-			workspaceId: 'typst-playground',
-			tools: [
-				{ id: 'files', render: () => <ExplorerTool /> },
-				{ id: 'chapters', render: () => <ChapterExplorer /> },
-			],
-			onIssue: ({ error }) => report(String(error)),
-		}),
-	)
+	useEffect(() => {
+		if (issue) report(issue)
+	}, [issue])
 	const activeId = useWorkbenchState(workbench, (state) => state.activeDocumentId)
 	useWorkbenchState(workbench, (state) => state.revision)
 	const [lastFile, setLastFile] = useState<{ folder: ExampleId; path: string }>({
@@ -211,7 +228,11 @@ export function Workspace({ folders }: { folders: WorkspaceFolders }) {
 					? lastFile.path
 					: defaultPath(folder),
 	}
-	async function showPreview(targetFolder: ExampleId, preserveFocus = false) {
+	async function showPreview(
+		targetFolder: ExampleId,
+		preserveFocus = false,
+		source?: ContentHandle,
+	) {
 		const current = workbench.getActiveDocument()
 		const existing = workbench.getDocuments().find((doc) => doc.href === `/preview/${targetFolder}`)
 		const anyPreview = workbench.getDocuments().find((doc) => doc.navigationKey === 'preview')
@@ -221,12 +242,16 @@ export function Workspace({ folders }: { folders: WorkspaceFolders }) {
 		const result = await workbench.open(
 			{ to: '/preview/$folder', params: { folder: targetFolder } },
 			{
-				target,
-				...(sameGroup && !existing && !anyPreview ? { location: DockLocation.RIGHT } : {}),
+				source,
+				destination: {
+					target,
+					location:
+						sameGroup && !existing && !anyPreview ? DockLocation.RIGHT : DockLocation.CENTER,
+				},
 				...(preserveFocus
 					? sameGroup && (existing || anyPreview)
-						? { background: true }
-						: { preserveFocus: true }
+						? { presentation: 'background' as const }
+						: { presentation: 'reveal' as const }
 					: {}),
 				reuse: 'preserve',
 			},
@@ -237,7 +262,8 @@ export function Workspace({ folders }: { folders: WorkspaceFolders }) {
 		targetFolder: ExampleId,
 		path: string,
 		position?: number,
-		source?: boolean,
+		showSource?: boolean,
+		source?: ContentHandle,
 	) {
 		const editors = workbench
 			.getDocuments()
@@ -248,17 +274,22 @@ export function Workspace({ folders }: { folders: WorkspaceFolders }) {
 		const previousId = workbench.getActiveDocument()?.id
 		const result = await workbench.open(
 			{ to: '/edit/$folder/$', params: { folder: targetFolder, _splat: path } },
-			{ target, preview: true, reuse: 'preserve' },
+			{
+				source,
+				...(target ? { destination: { target, location: DockLocation.CENTER } } : {}),
+				preview: true,
+				reuse: 'preserve',
+			},
 		)
-		if (result.status !== 'committed') {
+		if (result.status !== 'applied') {
 			if (result.status === 'failed') report(String(result.error))
 			return
 		}
 		setLastFile({ folder: targetFolder, path })
-		setFocus({ folder: targetFolder, path, position, source, serial: ++serial.current })
-		if (result.document.id === previousId) {
-			workbench.activate('files', { focus: false })
-			await showPreview(targetFolder, true)
+		setFocus({ folder: targetFolder, path, position, source: showSource, serial: ++serial.current })
+		if (result.value.document.id === previousId) {
+			void workbench.activate('files', { presentation: 'reveal' })
+			await showPreview(targetFolder, true, result.value.document.handle)
 		}
 	}
 	function save(targetFolder: ExampleId) {
@@ -280,15 +311,12 @@ export function Workspace({ folders }: { folders: WorkspaceFolders }) {
 	}
 	useEffect(() => {
 		void openFile('report', defaultPath('report'))
-		return () => {
-			void workbench.dispose()
-		}
 	}, [workbench])
 	useEffect(() => {
 		if (parts[1] === 'edit') {
 			setLastFile(active)
-			workbench.activate('files', { focus: false })
-			void showPreview(active.folder, true)
+			void workbench.activate('files', { presentation: 'reveal' })
+			void showPreview(active.folder, true, activeDocument?.handle)
 		}
 	}, [activeId, activeHref])
 	const context = useMemo<WorkspaceContextValue>(
@@ -364,7 +392,7 @@ export function Workspace({ folders }: { folders: WorkspaceFolders }) {
 												report(
 													result.ok
 														? '已从保存的源码重新打开。'
-														: result.issues.map((issue) => issue.message).join('\n'),
+														: result.issues.map((problem) => problem.message).join('\n'),
 												)
 											} catch (error) {
 												report(String(error))
@@ -388,7 +416,7 @@ export function Workspace({ folders }: { folders: WorkspaceFolders }) {
 											report(
 												result.ok
 													? '已重置为示例源码。'
-													: result.issues.map((issue) => issue.message).join('\n'),
+													: result.issues.map((problem) => problem.message).join('\n'),
 											)
 										}}
 									>
@@ -409,7 +437,7 @@ export function Workspace({ folders }: { folders: WorkspaceFolders }) {
 					<DocumentStatus />
 					<div className="workspace-layout">
 						<Workbench
-							workbench={workbench}
+							instance={workbench}
 							empty={<p>从左侧打开文件或章节。</p>}
 							native={{
 								onRenderTab: (node, values) => {

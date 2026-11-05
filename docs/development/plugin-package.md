@@ -270,4 +270,6 @@ vp pm pack --dry-run
 - peer dependency 与真正 runtime/provider boundary 一致；
 - consumer 能只从 package root 安装和导入。
 
+本仓库可用 PNPR 体验构建、发布、市场更新和管理操作，见[本地市场体验](./plugin-market.md)。
+
 下一步：[编写第一个插件](../getting-started/first-plugin.md)。

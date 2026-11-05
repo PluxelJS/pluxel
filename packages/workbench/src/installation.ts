@@ -14,6 +14,7 @@ import type {
 	WorkbenchPublishBindings,
 } from './workbench/definition'
 import { Workbench, WorkbenchHost } from './token'
+import { readWorkbenchShortcuts } from './workbench/shortcuts'
 
 /** @internal Runtime tests and trusted assemblies may supply the backend implementation. */
 export function createWorkbenchService(
@@ -23,6 +24,9 @@ export function createWorkbenchService(
 	const snapshot = Object.freeze({
 		...options,
 		...(options.artifacts ? { artifacts: Object.freeze({ ...options.artifacts }) } : {}),
+		initialShortcuts: readWorkbenchShortcuts(
+			options.initialShortcuts === undefined ? [] : options.initialShortcuts,
+		),
 	})
 	return defineHostService({
 		name: 'Workbench',

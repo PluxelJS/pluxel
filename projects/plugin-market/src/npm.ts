@@ -7,11 +7,12 @@ import {
 	packageName,
 	readBytes,
 	readJson,
-	registry,
 	type Coordinate,
+	type PackageIdentity,
 	type Release,
 } from './protocol'
 import type { Observation } from './store'
+import type { RegistrySource } from './sources'
 
 const metadataBytes = 512 * 1024
 const tarballBytes = 16 * 1024 * 1024
@@ -26,7 +27,7 @@ export const provenanceUnavailable = () =>
 		422,
 	)
 
-async function npmResponse(url: string, signal: AbortSignal) {
+async function npmResponse(url: string, source: RegistrySource, signal: AbortSignal) {
 	let parsed: URL
 	try {
 		parsed = new URL(url)
@@ -34,7 +35,8 @@ async function npmResponse(url: string, signal: AbortSignal) {
 		throw new MarketError('disallowed-npm-url', 'npm metadata references an invalid URL', 422)
 	}
 	if (
-		parsed.origin !== registry ||
+		parsed.origin !== new URL(source.registry).origin ||
+		!parsed.href.startsWith(`${source.registry}/`) ||
 		parsed.username ||
 		parsed.password ||
 		parsed.search ||
@@ -51,7 +53,10 @@ async function npmResponse(url: string, signal: AbortSignal) {
 		response = await fetch(parsed.href, {
 			redirect: 'manual',
 			signal,
-			headers: { Accept: 'application/json' },
+			headers: {
+				Accept: 'application/json',
+				...(source.token ? { Authorization: `Bearer ${source.token}` } : {}),
+			},
 		})
 	} catch {
 		throw new MarketError('npm-unavailable', 'The npm request failed or timed out', 502, true)
@@ -70,8 +75,8 @@ async function npmResponse(url: string, signal: AbortSignal) {
 	return response
 }
 
-async function npmBytes(url: string, signal: AbortSignal, limit: number) {
-	const response = await npmResponse(url, signal)
+async function npmBytes(url: string, source: RegistrySource, signal: AbortSignal, limit: number) {
+	const response = await npmResponse(url, source, signal)
 	try {
 		return await readBytes(response.body, limit)
 	} catch (error) {
@@ -85,8 +90,13 @@ async function npmBytes(url: string, signal: AbortSignal, limit: number) {
 	}
 }
 
-async function npmJson(url: string, signal: AbortSignal, limit: number): Promise<unknown> {
-	const bytes = await npmBytes(url, signal, limit)
+async function npmJson(
+	url: string,
+	source: RegistrySource,
+	signal: AbortSignal,
+	limit: number,
+): Promise<unknown> {
+	const bytes = await npmBytes(url, source, signal, limit)
 	return readJson(new Response(bytes).body, limit)
 }
 
@@ -157,6 +167,7 @@ async function inspectTarball(bytes: Uint8Array<ArrayBuffer>, input: Coordinate)
 	let expanded = 0
 	let fileCount = 0
 	let manifest: unknown
+	let readme: Release['readme'] = null
 	const files = new Set<string>()
 	const paths = new Set<string>()
 	const entries = new Response(bytes)
@@ -194,6 +205,34 @@ async function inspectTarball(bytes: Uint8Array<ArrayBuffer>, input: Coordinate)
 			if (entry.header.type === 'file') files.add(path)
 			if (entry.header.type === 'file' && path === 'package/package.json') {
 				manifest = await readJson(entry.body, metadataBytes)
+			} else if (
+				entry.header.type === 'file' &&
+				/^package\/readme(?:\.(?:md|markdown|txt))?$/i.test(path) &&
+				readme === null
+			) {
+				const reader = entry.body.getReader()
+				const decoder = new TextDecoder()
+				let size = 0
+				let text = ''
+				let truncated = false
+				try {
+					for (;;) {
+						const chunk = await reader.read()
+						if (chunk.done) break
+						const remaining = 256 * 1024 - size
+						text += decoder.decode(chunk.value.subarray(0, remaining), { stream: true })
+						size += chunk.value.length
+						if (size > 256 * 1024) {
+							truncated = true
+							break
+						}
+					}
+					text += decoder.decode()
+					readme = { text, truncated }
+				} finally {
+					await reader.cancel()
+					reader.releaseLock()
+				}
 			} else {
 				await entry.body.cancel()
 			}
@@ -259,6 +298,9 @@ async function inspectTarball(bytes: Uint8Array<ArrayBuffer>, input: Coordinate)
 		}
 	}
 	return {
+		readme,
+		license: typeof manifest.license === 'string' ? manifest.license.slice(0, 256) : null,
+		repository: repositoryLink(manifest.repository),
 		peerDependencies: peers,
 		pluginPackages,
 		description:
@@ -266,8 +308,78 @@ async function inspectTarball(bytes: Uint8Array<ArrayBuffer>, input: Coordinate)
 	}
 }
 
+function repositoryLink(value: unknown): string | null {
+	const raw = object(value) ? value.url : value
+	if (typeof raw !== 'string' || raw.length > 2048) return null
+	try {
+		const url = new URL(raw.replace(/^git\+/, '').replace(/\.git$/, ''))
+		return url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash
+			? url.href.replace(/\/$/, '')
+			: null
+	} catch {
+		return null
+	}
+}
+
+/** Observe browsing metadata without accepting a release for installation. */
+export async function fetchObservation(
+	input: PackageIdentity,
+	source: RegistrySource,
+): Promise<Observation> {
+	const observedAt = Date.now()
+	const value = await npmJson(
+		`${source.registry}/${encodeURIComponent(input.name)}`,
+		source,
+		AbortSignal.timeout(30_000),
+		2 * 1024 * 1024,
+	)
+	if (
+		!object(value) ||
+		value.name !== input.name ||
+		!object(value.versions) ||
+		!object(value['dist-tags'])
+	)
+		throw new MarketError(
+			'invalid-npm-metadata',
+			'The registry did not return the selected package metadata',
+			422,
+		)
+	const tags = value['dist-tags']
+	if (
+		Object.keys(tags).length > 100 ||
+		Object.entries(tags).some(([tag, version]) => tag.length > 128 || !exactVersion(version)) ||
+		!exactVersion(tags.latest)
+	)
+		throw new MarketError(
+			'invalid-dist-tags',
+			'The registry must provide a valid latest version',
+			422,
+		)
+	const metadata = value.versions[tags.latest]
+	if (!object(metadata) || metadata.name !== input.name || metadata.version !== tags.latest)
+		throw new MarketError(
+			'invalid-npm-metadata',
+			'The latest tag does not reference valid package metadata',
+			422,
+		)
+	return {
+		description:
+			typeof metadata.description === 'string' ? metadata.description.slice(0, 2000) : null,
+		repository: repositoryLink(metadata.repository),
+		metadataVersion: tags.latest,
+		readme:
+			typeof value.readme === 'string'
+				? { text: value.readme.slice(0, 256 * 1024), truncated: value.readme.length > 256 * 1024 }
+				: null,
+		license: typeof metadata.license === 'string' ? metadata.license.slice(0, 256) : null,
+		distTags: tags as Record<string, string>,
+		observedAt,
+	}
+}
+
 export async function fetchRelease(
 	input: Coordinate,
+	source: RegistrySource,
 ): Promise<{ release: Release; observation: Observation }> {
 	// A tarball plus digest input can occupy several compressed-size buffers.
 	// Keep that memory bounded across simultaneous HTTP batch sessions in an isolate.
@@ -280,7 +392,13 @@ export async function fetchRelease(
 		)
 	activeRefreshes++
 	try {
-		return await inspectRelease(input)
+		if (input.registry !== source.registry)
+			throw new MarketError(
+				'unconfigured-registry',
+				'Selected source does not match the coordinate',
+				422,
+			)
+		return await inspectRelease(input, source)
 	} finally {
 		activeRefreshes--
 	}
@@ -288,11 +406,13 @@ export async function fetchRelease(
 
 async function inspectRelease(
 	input: Coordinate,
+	source: RegistrySource,
 ): Promise<{ release: Release; observation: Observation }> {
 	const observedAt = Date.now()
 	const signal = AbortSignal.timeout(30_000)
 	const metadata = await npmJson(
-		`${registry}/${encodeURIComponent(input.name)}/${encodeURIComponent(input.version)}`,
+		`${source.registry}/${encodeURIComponent(input.name)}/${encodeURIComponent(input.version)}`,
+		source,
 		signal,
 		metadataBytes,
 	)
@@ -322,7 +442,7 @@ async function inspectRelease(
 			422,
 		)
 	}
-	const bytes = await npmBytes(tarball, signal, tarballBytes)
+	const bytes = await npmBytes(tarball, source, signal, tarballBytes)
 	const hash = new Uint8Array(await crypto.subtle.digest('SHA-512', bytes))
 	const actual = `sha512-${btoa(String.fromCharCode(...hash))}`
 	if (actual !== integrity)
@@ -333,7 +453,8 @@ async function inspectRelease(
 		)
 	const facts = await inspectTarball(bytes, input)
 	const tags = await npmJson(
-		`${registry}/-/package/${encodeURIComponent(input.name)}/dist-tags`,
+		`${source.registry}/-/package/${encodeURIComponent(input.name)}/dist-tags`,
+		source,
 		signal,
 		16 * 1024,
 	)
@@ -353,9 +474,15 @@ async function inspectRelease(
 			provenance: { status: 'missing' },
 			peerDependencies: facts.peerDependencies,
 			pluginPackages: facts.pluginPackages,
+			readme: facts.readme,
+			license: facts.license,
 		},
 		observation: {
 			description: facts.description,
+			repository: facts.repository,
+			metadataVersion: input.version,
+			readme: facts.readme,
+			license: facts.license,
 			distTags: tags as Record<string, string>,
 			observedAt,
 		},

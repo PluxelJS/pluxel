@@ -39,6 +39,12 @@ export default defineConfig(() => {
 		}
 	}
 	Object.assign(tasks, {
+		'worksplit:native:check': {
+			command:
+				'node scripts/check-worksplit-native.mjs packages/workbench plugins/render/typst projects/report-template-studio',
+			dependsOn: ['@worksplit/react#compile'],
+			cache: false,
+		},
 		pncat: { command: 'node vendor/pncat/bin/pncat.mjs', cache: false },
 		'catalog:check': {
 			command: 'node packages/cli/bin/pluxel.mjs workspace sync --check',
@@ -67,6 +73,7 @@ export default defineConfig(() => {
 			command: [],
 			dependsOn: [
 				'verify:checks',
+				'worksplit:native:check',
 				'governance:check',
 				'workspace:build',
 				'workspace:typecheck',
@@ -99,6 +106,7 @@ export default defineConfig(() => {
 			command: [],
 			dependsOn: [
 				'ci:checks',
+				'worksplit:native:check',
 				'governance:check',
 				'ci:build',
 				'ci:typecheck',

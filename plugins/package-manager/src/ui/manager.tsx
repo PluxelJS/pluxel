@@ -23,9 +23,20 @@ import {
 	packageManagerSnapshotQuery,
 	prepareInstallMutation,
 	removePackagesMutation,
+	marketPackagesQuery,
+	marketPackageQuery,
+	marketReleasesQuery,
+	marketReleaseQuery,
 	type PrepareInstallInput,
 } from './manager.scope.ts'
-import { Marketplace } from './marketplace.tsx'
+import { WorkbenchMarketplace, createWorkbenchMarketplaceData } from './marketplace-workbench.tsx'
+
+const marketQueries = createWorkbenchMarketplaceData({
+	marketPackagesQuery,
+	marketPackageQuery,
+	marketReleasesQuery,
+	marketReleaseQuery,
+})
 
 function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
@@ -222,8 +233,10 @@ export function Manager() {
 					</Tabs.Panel>
 					{snapshot?.markets.length ? (
 						<Tabs.Panel value="market" pt="md">
-							<Marketplace
+							<WorkbenchMarketplace
 								markets={snapshot.markets}
+								data={marketQueries}
+								colorScheme={host.colorScheme}
 								busy={busy}
 								onPrepare={(request) => prepare({ kind: 'market', ...request })}
 							/>

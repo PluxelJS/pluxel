@@ -290,6 +290,7 @@ export interface DesktopApi extends StudioApi {
 	abort(input: { projectId: string; threadId: string }): Promise<AiSnapshot>
 }
 export interface StudioBridge {
+	onBeforeClose(decide: () => Promise<boolean>): () => void
 	connect(): void
 	saveArtifact(input: { artifactId: string; suggestedName: string }): Promise<boolean>
 	saveFile(input: { suggestedName: string; bytes: Uint8Array }): Promise<boolean>

@@ -221,7 +221,7 @@ function management(): RuntimeManagementClient {
 }
 function PublishedWorkspace({ workspace }: { workspace: WorkspaceSession }) {
 	const snapshot = useWorkbenchTargetSnapshot(null)
-	return snapshot.layout ? <Workbench workbench={workspace.workbench} /> : null
+	return snapshot.layout ? <Workbench instance={workspace.workbench} /> : null
 }
 async function mount(
 	open: (input: unknown) => Promise<OwnedResult>,
@@ -304,7 +304,10 @@ describe('native document activation resource ownership', () => {
 			const content = container.querySelector(`[data-worksplit-content="${id}"]`)!
 			expect(content).not.toBeNull()
 			expect(dispose).toHaveBeenCalledOnce()
-			workspace.documents.get(id)!.remoteDirty = true
+			await act(async () => {
+				workspace.documents.get(id)!.remoteDirty = true
+				workspace.notifyContentState()
+			})
 			let closing!: ReturnType<typeof workspace.workbench.close>
 			await act(async () => {
 				closing = workspace.workbench.close(id)
@@ -312,14 +315,17 @@ describe('native document activation resource ownership', () => {
 			await vi.waitFor(() => expect(mf.confirmations).toHaveLength(1))
 			await act(async () => {
 				mf.confirmations[0]!.onCancel?.()
-				expect(await closing).toMatchObject({ status: 'rejected', reason: 'decision' })
+				expect(await closing).toMatchObject({ status: 'denied', reason: 'decision' })
 			})
 			expect(container.querySelector(`[data-worksplit-content="${id}"]`)).toBe(content)
 			expect(dispose).toHaveBeenCalledOnce()
-			workspace.documents.get(id)!.remoteDirty = false
+			await act(async () => {
+				workspace.documents.get(id)!.remoteDirty = false
+				workspace.notifyContentState()
+			})
 			await act(async () => {
 				expect(await workspace.workbench.close(id)).toMatchObject({
-					status: 'closed',
+					status: 'applied',
 					cleanupErrors: [],
 				})
 			})
@@ -337,7 +343,7 @@ describe('native document activation resource ownership', () => {
 		const original = await mount(open)
 		const background = await openDocument(original.workspace, '/native-content')
 		const selected = await openDocument(original.workspace, '/native-view')
-		const snapshot = original.workspace.workbench.snapshot()
+		const snapshot = original.workspace.workbench.createSnapshot()
 		await act(async () => {
 			await original.workspace.dispose()
 			original.root.unmount()
@@ -444,7 +450,7 @@ describe('native document activation resource ownership', () => {
 		expect(dispose).toHaveBeenCalledOnce()
 		await act(async () => {
 			const closed = await workspace.workbench.close(id)
-			expect(closed.status).toBe('closed')
+			expect(closed.status).toBe('applied')
 		})
 		expect(dispose).toHaveBeenCalledTimes(2)
 		await act(async () => {
@@ -505,7 +511,7 @@ describe('native document activation resource ownership', () => {
 		input.value = 'edited remote draft'
 		const originalDocument = workspace.workbench.getDocument(id)!
 		await act(async () => {
-			const rootId = workspace.workbench.getLayout().layout.id!
+			const rootId = workspace.workbench.model.toJson().layout.id!
 			await workspace.workbench.dispatch(Actions.moveNode(id, rootId, DockLocation.RIGHT, -1))
 			await workspace.workbench.dispatch(Actions.addTabToNewGroup(id, 'Remote tools', '#228be6'))
 			await workspace.workbench.dispatch(Actions.setTabPinned(id, true))
@@ -528,7 +534,7 @@ describe('native document activation resource ownership', () => {
 		await act(async () => {
 			await workspace.workbench.dispatch(Actions.setTabPinned(id, false))
 			const result = await workspace.workbench.close(id)
-			expect(result.status).toBe('closed')
+			expect(result.status).toBe('applied')
 		})
 		expect(dispose).toHaveBeenCalledTimes(2)
 		expect(container.querySelector('[aria-label="Bridge draft"]')).toBeNull()
@@ -576,11 +582,11 @@ describe('native document activation resource ownership', () => {
 		await act(async () => {
 			const result = await workspace.workbench.close(id)
 			expect(result).toMatchObject({
-				status: 'closed',
-				id,
+				status: 'applied',
+				value: { closedIds: [id] },
 				cleanupErrors: [expect.objectContaining({ message: 'Bridge teardown failed' })],
 			})
-			if (result.status !== 'closed') throw new Error(`Native close failed: ${result.status}`)
+			if (result.status !== 'applied') throw new Error(`Native close failed: ${result.status}`)
 			expect(result.cleanupErrors?.flatMap(errorMessages)).toContain('Bridge teardown failed')
 			expect(report).not.toHaveBeenCalled()
 			workspace.check(result)
@@ -608,7 +614,7 @@ describe('native document activation resource ownership', () => {
 			expect(session.openEntry).toHaveBeenCalledTimes(2)
 			await act(async () => {
 				const result = await workspace.workbench.close(id)
-				expect(result).toMatchObject({ status: 'closed', cleanupErrors: [] })
+				expect(result).toMatchObject({ status: 'applied', cleanupErrors: [] })
 			})
 			const disposals = requests.map(() => vi.fn())
 			await act(async () => {
@@ -662,7 +668,7 @@ describe('native document activation resource ownership', () => {
 			const report = vi.spyOn(workspace, 'report').mockImplementation(() => {})
 			await act(async () => {
 				const result = await workspace.workbench.close(id)
-				expect(result).toMatchObject({ status: 'closed', cleanupErrors: [] })
+				expect(result).toMatchObject({ status: 'applied', cleanupErrors: [] })
 				workspace.check(result)
 			})
 			expect(report).not.toHaveBeenCalled()

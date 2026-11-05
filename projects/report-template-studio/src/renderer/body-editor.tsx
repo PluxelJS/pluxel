@@ -125,7 +125,7 @@ function Source({
 			<TypstSourceEditor
 				project={project}
 				path={path}
-				editable={!workspace.documents.get(entry)?.bodyLocked}
+				editable={!workspace.documents.get(entry)?.bodyLocked && !workspace.isEditingPaused(entry)}
 				className="studio-region-editor"
 				slashCommands={studioSlashCommands}
 				fontFamilies={studioFontFamilies}

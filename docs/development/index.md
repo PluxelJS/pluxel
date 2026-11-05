@@ -17,6 +17,7 @@ Coding agent 从 [pluxel-development skill](https://github.com/PluxelJS/pluxel/b
 | 理解生成项目的目录与任务               | [示例项目](./starter-monorepo.md)                            | 模板的职责划分与操作入口                    |
 | CLI、构建转换与 HMR                    | [CLI 与工具链](./tooling.md)                                 | 命令职责、源码转换与更新边界                |
 | 发布插件或交付应用                     | [插件包](./plugin-package.md)、[应用交付](./distribution.md) | 包公开契约与最终发行物                      |
+| 本地体验发布、市场更新与管理员操作     | [市场体验](./plugin-market.md)                               | PNPR、真实 Worker/D1 与管理 API 的本地链路  |
 
 业务实现查[插件开发](../plugin-development/index.md)，装配与部署查[Host 配置](../host/configuration.md)，框架内部维护查[工程入口](https://github.com/PluxelJS/pluxel/blob/main/engineering/README.md)。
 

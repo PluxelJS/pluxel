@@ -102,8 +102,8 @@
 		"prepare:native": "node native/build.mjs",
 		"build": "vp run compile",
 		"test": "vp run check-tests",
-		"test:consumer": "node tests/consumer.mjs",
-		"dev:consumer": "vp dev --config tests/consumer/vite.config.ts",
+		"test:consumer": "node ../../../scripts/check-worksplit-native.mjs . && node tests/consumer.mjs",
+		"dev:consumer": "node ../../../scripts/check-worksplit-native.mjs . && vp dev --config tests/consumer/vite.config.ts",
 		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
@@ -125,7 +125,6 @@
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
-		"@tanstack/react-hotkeys": "catalog:frontend",
 		"@tanstack/react-router": "catalog:frontend",
 		"@tanstack/react-store": "catalog:frontend",
 		"@tiptap/core": "catalog:frontend",

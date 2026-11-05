@@ -70,6 +70,7 @@ function ConfigFormInstance({
 	const workspace = useOptionalWorkspaceSession()
 	const { mutateAsync: saveConfig, isPending: saving, variables } = useConfigSave({ owner })
 	const savingRef = useRef(false)
+	const saveRevision = useRef(0)
 	const visibleSections = useMemo<readonly PluginConfigSection[]>(
 		() => (sections.length > 0 ? sections : [{ path: [], fields, fieldName: '' }]),
 		[fields, sections],
@@ -141,6 +142,7 @@ function ConfigFormInstance({
 		const paths = editableConfigPaths(activeSection.fields, activeSection.path)
 		if (paths.length === 0) return
 		savingRef.current = true
+		saveRevision.current++
 		try {
 			await saveConfig({
 				request: () =>
@@ -170,6 +172,7 @@ function ConfigFormInstance({
 			// The mutation owns failure feedback; keep the draft until confirmed.
 		} finally {
 			savingRef.current = false
+			saveRevision.current++
 		}
 	}, [
 		activeSection,
@@ -213,6 +216,7 @@ function ConfigFormInstance({
 			const request = () =>
 				management.config.patch(owner, patch, { expectedManagedRevision: editingRevision })
 			savingRef.current = true
+			saveRevision.current++
 			for (const { bridge } of targets)
 				bridge.form.setErrorMap({ onServer: { fields: {} } } as never)
 			try {
@@ -246,6 +250,7 @@ function ConfigFormInstance({
 				// The mutation owns transport failure recovery and notification.
 			} finally {
 				savingRef.current = false
+				saveRevision.current++
 			}
 		},
 		[editingRevision, forms, management, owner, readOnly, saveConfig, sectionItems],
@@ -253,12 +258,12 @@ function ConfigFormInstance({
 	const saveAll = useCallback(() => save(), [save])
 	const saveRef = useRef(saveAll)
 	saveRef.current = saveAll
-	const lifecycle = useMemo(() => {
+	const editor = useMemo(() => {
 		let facts: readonly unknown[] = []
 		let revision = 0
 		return {
-			isDirty: () => Object.values(forms.get()).some(({ form }) => form.state.isDirty),
-			getCloseRevision: () => {
+			isWritePending: () => savingRef.current,
+			getState: () => {
 				// Immutable form values and registered form identities are the editing
 				// facts; keep a stable aggregate only while every actual fact is equal.
 				const current = Object.entries(forms.get()).flatMap(([key, { form }]) => [
@@ -273,20 +278,23 @@ function ConfigFormInstance({
 					facts = current
 					revision++
 				}
-				return revision
+				return {
+					hasUnsavedChanges: Object.values(forms.get()).some(({ form }) => form.state.isDirty),
+					token: `${revision}:${saveRevision.current}`,
+				}
 			},
 			save: () => saveRef.current(),
 		}
 	}, [forms])
 	useEffect(() => {
 		if (!document) return
-		document.state.editor = lifecycle
+		document.state.editor = editor
 		workspace?.notifyContentState()
 		return () => {
-			if (document.state.editor === lifecycle) document.state.editor = undefined
+			if (document.state.editor === editor) document.state.editor = undefined
 			workspace?.notifyContentState()
 		}
-	}, [document, lifecycle, workspace])
+	}, [document, editor, workspace])
 	useEffect(() => {
 		workspace?.notifyContentState()
 	}, [dirtySections.length, workspace])

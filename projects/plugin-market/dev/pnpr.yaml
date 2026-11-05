@@ -1,0 +1,27 @@
+# Hosted private packages and a read-only public npm cache share the native router.
+storage: ../.local-market/pnpr
+auth:
+  htpasswd:
+    file: ../.local-market/pnpr/htpasswd
+    maxUsers: 100
+registries:
+  local:
+    type: hosted
+    packages:
+      '@market-demo/*':
+        access: $authenticated
+        publish: $authenticated
+  npmjs:
+    type: upstream
+    url: https://registry.npmjs.org/
+    public: true
+  main:
+    type: router
+    sources: [local, npmjs]
+defaultRegistry: main
+resolver:
+  enabled: false
+artifacts:
+  enabled: false
+pipeline:
+  enabled: false

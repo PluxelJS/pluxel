@@ -51,7 +51,9 @@ Workbench 是可选 Host 服务，投影已有业务能力。关闭时不安装 
 写入 HttpOnly cookie 的 same-origin single-use ticket POST 与 MF 静态资源使用 HTTP；它们不承载第二套 RPC。代理须保留 cookie、Upgrade 与实例归属，HTTP 服务不从 forwarding headers 推断 physical TLS/locality。
 
 `layoutDto({ target })` 返回 capability-free immutable snapshot：target、placement、descriptor、owner revision、pinned Content/MF reference；没有 API dictionary 或 Content plan。
-`target: null` 包含全部 route placements，包括无 navigation 的参数化/standalone route，不含 tabs。Shell 据完整目录计算短路径；冲突的所有参与者回退 canonical node URL，不能 first-wins。
+`target: null` 包含全部 route 和 tab placements，包括无 navigation 的参数化/standalone route；不包含 panel 或 provider attachment。目录读取不调用 factory。Shell 据完整 route 目录计算短路径；冲突的所有参与者回退 canonical node URL，不能 first-wins。认证与 openEntry 的 principal、运行代和租约边界不变。
+
+`workbenchService({ initialShortcuts })` 经 session layout 向 Shell 提供可移除的初始侧栏偏好。用户选择保存在原生左 Border config 的 `shortcuts` 中，缺失才初始化，`[]` 表示用户清空；声明不能要求 Shell 把自身放到根侧栏。具体交互和失效规则见 [Workbench 设计](WORKBENCH_DESIGN.md#导航和文档不变量)。
 
 打开顺序：
 

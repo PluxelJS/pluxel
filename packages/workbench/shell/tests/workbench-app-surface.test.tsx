@@ -4,14 +4,13 @@ import { MantineProvider } from '@mantine/core'
 import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import { useQueryClient } from '@tanstack/react-query'
 import { useRouter, useRouterState } from '@tanstack/react-router'
-import { WorkbenchInstance } from '@worksplit/react'
 import type {
 	WorkbenchLayout,
 	WorkbenchLayoutEntry,
 	WorkbenchSessionApi,
 } from '@pluxel/workbench/client'
 import type { RpcStub } from 'capnweb'
-import { Actions, DockLocation, Model, TabGroupNode, TabNode } from 'flexlayout-react'
+import { Actions, DockLocation, TabGroupNode, TabNode } from 'flexlayout-react'
 import { StrictMode, act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -27,7 +26,7 @@ import {
 	useWorkbenchNavigation,
 	type WorkbenchNavigationContextValue,
 } from '../src/app/workbench/context'
-import { type WorkspaceSession } from '../src/app/workbench/session'
+import { WorkspaceSession } from '../src/app/workbench/session'
 import {
 	buildPluginDetailHref,
 	buildWorkbenchHref,
@@ -151,8 +150,13 @@ function entry(path: string, frame: 'shell' | 'standalone') {
 		federatedViewUnavailable: { reason: 'failed', message: 'Preview renderer unavailable' },
 	} satisfies WorkbenchLayoutEntry
 }
-async function mount(href: string, entries: WorkbenchLayoutEntry[] = [], pending?: Promise<void>) {
-	window.history.replaceState(null, '', href)
+async function mount(
+	href: string,
+	entries: WorkbenchLayoutEntry[] = [],
+	pending?: Promise<void>,
+	historyState: unknown = null,
+) {
+	window.history.replaceState(historyState, '', href)
 	const layout = vi.fn(
 		async ({ target }: { target: PluginNodeAddress | null }): Promise<WorkbenchLayout> => {
 			await pending
@@ -192,6 +196,30 @@ async function mount(href: string, entries: WorkbenchLayoutEntry[] = [], pending
 }
 
 describe('authenticated App surface ownership', () => {
+	it('waits for native startup before reconciling restored panel visibility', async () => {
+		const seed = new WorkspaceSession()
+		const seeded = await seed.start('/logs', false)
+		expect(seeded.status).toBe('applied')
+		const snapshot = structuredClone(seed.workbench.createSnapshot())
+		await seed.dispose()
+		snapshot.layout.borders!.find((border) => border.location === 'right')!.show = true
+		window.localStorage.setItem(workspaceStorageKey('/'), JSON.stringify(snapshot))
+		const report = vi.spyOn(WorkspaceSession.prototype, 'report').mockImplementation(() => {})
+		const { container } = await mount('/logs')
+		await vi.waitFor(() =>
+			expect(container.querySelector('[aria-label="Page /logs"]')).not.toBeNull(),
+		)
+		const workspace = [...fixture.probes.values()][0]!.workspace!
+		await act(async () => {
+			const started = await workspace.start('/logs', false)
+			expect(started.status).toBe('applied')
+		})
+		expect(workspace.workbench.model.getNodeById('border_right')!.toJson()).toMatchObject({
+			show: false,
+		})
+		expect(report).not.toHaveBeenCalled()
+	})
+
 	it.each([true, false])(
 		'uses a committed tab label or key on the initial deep link: labeled=%s',
 		async (labeled) => {
@@ -246,10 +274,13 @@ describe('authenticated App surface ownership', () => {
 		await vi.waitFor(() => expect(window.location.hash).toBe('#form'))
 		expect(workspace.workbench.getActiveDocument()).toMatchObject({ id, title: 'Research notes' })
 		expect(workspace.workbench.getDocuments()).toHaveLength(1)
-		workspace.documents.get(id)!.remoteDirty = true
+		await act(async () => {
+			workspace.documents.get(id)!.remoteDirty = true
+			workspace.notifyContentState()
+		})
 		const refuseLeave = vi
-			.spyOn(workspace.documents.get(id)!, 'beforeLeave')
-			.mockResolvedValue(false)
+			.spyOn(workspace.documents.get(id)!, 'decide')
+			.mockResolvedValue({ decision: 'deny' })
 		await act(async () => {
 			probe.navigation.navigate(`${buildPluginDetailHref(labeled.target.node)}?entry=diagnostics`)
 		})
@@ -257,7 +288,10 @@ describe('authenticated App surface ownership', () => {
 		expect(workspace.workbench.getActiveDocument()).toMatchObject({ id, title: 'Research notes' })
 		expect(workspace.workbench.getActiveDocument()?.href).toContain('entry=preview')
 		refuseLeave.mockRestore()
-		workspace.documents.get(id)!.remoteDirty = false
+		await act(async () => {
+			workspace.documents.get(id)!.remoteDirty = false
+			workspace.notifyContentState()
+		})
 		await act(async () =>
 			probe.navigation.openTab({
 				path: `${buildPluginDetailHref(labeled.target.node)}?entry=diagnostics`,
@@ -270,11 +304,13 @@ describe('authenticated App surface ownership', () => {
 		await act(async () => workspace.workbench.activate(id))
 		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.id).toBe(id))
 		expect(workspace.workbench.getActiveDocument()?.title).toBe('Research notes')
-		const snapshot = workspace.workbench.snapshot()
+		const restoreHref = workspace.workbench.getActiveDocument()!.href
+		const restoreState: unknown = window.history.state
+		const snapshot = workspace.workbench.createSnapshot()
 		await act(async () => root.unmount())
 		roots.splice(roots.indexOf(root), 1)
 		window.localStorage.setItem(workspaceStorageKey(basepath), JSON.stringify(snapshot))
-		const restored = await mount(`${basepath}${href}`, [labeled, fallback])
+		const restored = await mount(restoreHref, [labeled, fallback], undefined, restoreState)
 		await vi.waitFor(() =>
 			expect(
 				restored.container.querySelector('[role="tab"][aria-label="Research notes"]'),
@@ -345,7 +381,7 @@ describe('authenticated App surface ownership', () => {
 		const pending = new Promise<void>((resolve) => {
 			release = resolve
 		})
-		const connect = vi.spyOn(WorkbenchInstance.prototype, 'connectBrowser')
+		const connect = vi.spyOn(WorkspaceSession.prototype, 'start')
 		const read = vi.spyOn(Storage.prototype, 'getItem')
 		const { container, layout } = await mount('/logs', [], pending)
 		expect(container.textContent).toContain('正在准备 Workbench 入口')
@@ -377,7 +413,7 @@ describe('authenticated App surface ownership', () => {
 			const corrupt = '{broken workspace snapshot'
 			window.localStorage.setItem(key, corrupt)
 			const read = vi.spyOn(Storage.prototype, 'getItem')
-			const connect = vi.spyOn(WorkbenchInstance.prototype, 'connectBrowser')
+			const connect = vi.spyOn(WorkspaceSession.prototype, 'start')
 			const { container, root, view } = await mount(
 				`${basepath === '/' ? '' : basepath}/preview/a`,
 				[entry('/preview/:id', 'standalone')],
@@ -405,7 +441,7 @@ describe('authenticated App surface ownership', () => {
 				: '/preview/a'
 			const key = workspaceStorageKey('/')
 			const read = vi.spyOn(Storage.prototype, 'getItem')
-			const connect = vi.spyOn(WorkbenchInstance.prototype, 'connectBrowser')
+			const connect = vi.spyOn(WorkspaceSession.prototype, 'start')
 			const { container } = await mount(href, [publication])
 			await vi.waitFor(() =>
 				expect(container.textContent).toContain('Preview renderer unavailable'),
@@ -423,7 +459,7 @@ describe('authenticated App surface ownership', () => {
 		const key = workspaceStorageKey('/')
 		const corrupt = '{bad native snapshot'
 		window.localStorage.setItem(key, corrupt)
-		const connect = vi.spyOn(WorkbenchInstance.prototype, 'connectBrowser')
+		const connect = vi.spyOn(WorkspaceSession.prototype, 'start')
 		const { container } = await mount('/logs')
 		await vi.waitFor(() => expect(container.textContent).toContain('工作区无法恢复'))
 		expect(container.textContent).toContain('保留现场并重试')
@@ -555,7 +591,7 @@ describe('authenticated App surface ownership', () => {
 		})
 		expect(visible()).toEqual([true, true])
 		await act(async () => {
-			await workspace.workbench.dispatch(Actions.maximizeToggle(pluginDocument.containerId))
+			await workspace.workbench.dispatch(Actions.maximizeToggle(pluginDocument.containerId!))
 		})
 		await act(async () =>
 			container
@@ -565,11 +601,11 @@ describe('authenticated App surface ownership', () => {
 		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/security'))
 		expect(visible()).toEqual([false, false])
 		expect(
-			workspace.workbench.getLayout().borders?.find((border) => border.location === 'bottom')
+			workspace.workbench.model.toJson().borders?.find((border) => border.location === 'bottom')
 				?.children,
 		).toEqual([])
 		await act(async () => {
-			await workspace.workbench.dispatch(Actions.maximizeToggle(pluginDocument.containerId))
+			await workspace.workbench.dispatch(Actions.maximizeToggle(pluginDocument.containerId!))
 		})
 		await act(async () => probe.navigation.navigate(pluginHref))
 		expect(visible()).toEqual([true, true])
@@ -605,12 +641,13 @@ describe('authenticated App surface ownership', () => {
 				await workspace.workbench.dispatch(
 					Actions.moveNode(security.id, 'border_left', DockLocation.CENTER, -1),
 				),
-			).toMatchObject({ status: 'rejected' })
+			).toMatchObject({ status: 'denied' })
 			workspace.workbench.activate(security.id)
 		})
 		expect(workspace.activeWorkspace()).toBeUndefined()
 		expect(
-			workspace.workbench.getLayout().borders?.find((border) => border.location === 'left')?.show,
+			workspace.workbench.model.toJson().borders?.find((border) => border.location === 'left')
+				?.show,
 		).toBe(false)
 		expect(container.querySelector('[aria-label="Page /security"]')).not.toBeNull()
 		expect(workspace.workbench.getActiveDocument()?.id).toBe(security.id)
@@ -634,7 +671,7 @@ describe('authenticated App surface ownership', () => {
 		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/security'))
 		expect(workspace.workbench.getActiveDocument()).toMatchObject({
 			id: original.id,
-			containerId: original.containerId,
+			containerId: original.containerId!,
 		})
 		expect(workspace.workbench.getDocuments()).toHaveLength(1)
 		expect(workspace.isToolVisible('plugin-inspector')).toBe(false)
@@ -643,9 +680,9 @@ describe('authenticated App surface ownership', () => {
 				await workspace.workbench.dispatch(
 					Actions.moveNode(original.id, 'border_bottom', DockLocation.CENTER, -1),
 				),
-			).toMatchObject({ status: 'rejected' })
+			).toMatchObject({ status: 'denied' })
 		})
-		expect(workspace.workbench.getActiveDocument()?.containerId).toBe(original.containerId)
+		expect(workspace.workbench.getActiveDocument()!.containerId).toBe(original.containerId!)
 	})
 
 	it.each(['ordinary', 'grouped', 'pinned'] as const)(
@@ -677,10 +714,8 @@ describe('authenticated App surface ownership', () => {
 			await vi.waitFor(() => expect(workspace.workbench.getDocuments()).toHaveLength(3))
 			const copy = workspace.workbench.getActiveDocument()!
 			expect(copy.id).not.toBe(original.id)
-			expect(copy.containerId).toBe(original.containerId)
-			const node = Model.fromJson(workspace.workbench.getLayout()).getNodeById(
-				original.id,
-			) as TabNode
+			expect(copy.containerId!).toBe(original.containerId!)
+			const node = workspace.workbench.model.getNodeById(original.id) as TabNode
 			const parent = node.getParent()!
 			const container = parent instanceof TabGroupNode ? parent.getParent()! : parent
 			expect(container.getChildren().map((child) => child.getId())).toEqual(
@@ -695,7 +730,7 @@ describe('authenticated App surface ownership', () => {
 	)
 
 	it('shares service Providers across documents and keeps their owners across a theme rerender', async () => {
-		const connect = vi.spyOn(WorkbenchInstance.prototype, 'connectBrowser')
+		const connect = vi.spyOn(WorkspaceSession.prototype, 'start')
 		const { container, root, view } = await mount('/logs')
 		await vi.waitFor(() =>
 			expect(container.querySelector('[aria-label="Page /logs"]')).not.toBeNull(),

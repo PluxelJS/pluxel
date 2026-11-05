@@ -1,10 +1,10 @@
 import { resolve } from 'pathe'
 import { readPackageJSON, type PackageJson } from 'pkg-types'
 import { detectCiContext } from '../ci/context'
-import { resolveOidcToken } from '../ci/oidc'
 import { CLI_DEFAULTS } from '../config'
 import { runCommand } from '../utils/exec'
-import { resolveMarketWebhookClient } from './market-rpc'
+import { notifyMarket, parseMarketOrigin, type MarketNotification } from './market-notification'
+import { publicNpmRegistry, resolvePublishTarget } from './registry'
 
 type Logger = (...args: unknown[]) => void
 type ReadPackageJson = (path: string) => Promise<PackageJson>
@@ -17,20 +17,14 @@ function isTruthyEnv(value: string | undefined) {
 	return normalized === '1' || normalized === 'true' || normalized === 'yes'
 }
 
-export function resolveWebhookAudience(baseUrl: string | undefined, env: NodeJS.ProcessEnv) {
-	if (env.PLUXEL_MARKET_AUDIENCE?.trim()) return env.PLUXEL_MARKET_AUDIENCE.trim()
-	if (env.PLUXEL_MARKET_WEBHOOK_AUDIENCE?.trim()) return env.PLUXEL_MARKET_WEBHOOK_AUDIENCE.trim()
-	if (!baseUrl) return undefined
-	const normalized = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl
-	return `${normalized}/webhook`
-}
-
 export interface PublishOptions {
 	access?: string
 	dryRun?: boolean
 	skipVersionCheck?: boolean
 	debug?: boolean
 	webhook?: boolean
+	/** Market HTTP API origin. Defaults to the official market. */
+	marketUrl?: string
 	log?: Logger
 	cwd?: string
 	env?: NodeJS.ProcessEnv
@@ -40,9 +34,12 @@ export interface PublishOptions {
 export interface PublishResult {
 	packageName: string
 	version: string
+	registry: string
 	published: boolean
 	alreadyPublished?: boolean
 	notified: boolean
+	/** An accepted notification receipt; acceptance does not mean the release was indexed. */
+	notification?: MarketNotification
 }
 
 export async function publishPackage(options: PublishOptions): Promise<PublishResult> {
@@ -77,9 +74,17 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 		throw new Error(`Package ${pkg.name} is marked as private, cannot publish`)
 	}
 
+	const target = await resolvePublishTarget(pkg, { cwd, env, access })
+	const privatePublication = target.registry !== publicNpmRegistry || target.access !== 'public'
+	if (!options.dryRun && forceWebhook && privatePublication && options.marketUrl === undefined) {
+		throw new Error(
+			'Private registry or unconfirmed public access: --webhook requires an explicit --market-url; no notification was sent',
+		)
+	}
 	const result: PublishResult = {
 		packageName: pkg.name,
 		version: pkg.version,
+		registry: target.registry,
 		published: false,
 		notified: false,
 	}
@@ -88,23 +93,35 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 	// 检查版本是否已发布（除非跳过）
 	if (!rawPublish && !options.skipVersionCheck) {
 		log(`[publish] checking if ${pkg.name}@${pkg.version} is already published...`)
-		const publishedVersion = await getPublishedVersion(pkg.name, log, env)
+		const publishedVersion = await getPublishedVersion({
+			name: pkg.name,
+			version: pkg.version,
+			registry: target.registry,
+			cwd,
+			env,
+		})
 		if (publishedVersion === pkg.version) {
 			log(`[publish] ${pkg.name}@${pkg.version} already published, skipping`)
 			result.alreadyPublished = true
 			skipPublish = true
 			if (!forceWebhook) return result
 		}
-		if (publishedVersion) {
-			log(`[publish] current published version: ${publishedVersion}`)
-		}
 	}
 
-	// 检测 CI 环境，在 CI 中使用 --provenance 启用 OIDC
-	// 但只对公开包使用，私有包不支持 provenance
 	const ciContext = detectCiContext(env)
 	const shouldNotify =
-		forceWebhook || (Boolean(ciContext) && options.dryRun !== true && !skipPublish)
+		options.dryRun !== true &&
+		(forceWebhook || (Boolean(ciContext) && !skipPublish && !privatePublication))
+	const marketOrigin = shouldNotify
+		? parseMarketOrigin(options.marketUrl ?? CLI_DEFAULTS.publish.marketBaseUrl)
+		: undefined
+	const marketToken = env.PLUXEL_MARKET_TOKEN
+	if (marketOrigin && marketToken !== undefined) {
+		if (options.marketUrl === undefined)
+			throw new Error('PLUXEL_MARKET_TOKEN requires an explicit --market-url before publishing')
+		if (!marketToken || /[^\x21-\x7e]/.test(marketToken))
+			throw new TypeError('PLUXEL_MARKET_TOKEN must be a nonempty bearer token without whitespace')
+	}
 	const publishArgs = ['publish']
 	if (access) {
 		publishArgs.push('--access', access)
@@ -125,7 +142,7 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 
 	// 执行 npm publish，让 npm 自己处理 registry、OIDC、provenance
 	if (!skipPublish && !options.dryRun) {
-		log(`[publish] publishing ${pkg.name}@${pkg.version}...`)
+		log(`[publish] publishing ${pkg.name}@${pkg.version} to ${target.registry}...`)
 		const publishResult = await runCommand('npm', publishArgs, { cwd, env })
 
 		if (publishResult.code !== 0) {
@@ -142,81 +159,85 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 		log('[publish] npm publish skipped')
 	}
 
-	// 发送 market webhook（如果在 CI 环境或强制开启）
-	if (shouldNotify) {
+	// npm owns publishing/provenance; the market owns the durable notification receipt.
+	if (marketOrigin) {
 		try {
-			// 在 CI 环境自动获取 OIDC token
-			const marketBaseUrl = CLI_DEFAULTS.publish.marketBaseUrl
-			const audience = resolveWebhookAudience(marketBaseUrl, env)
-			const oidcToken = await resolveOidcToken({
-				required: forceWebhook,
-				audience,
-				log,
-				env,
-			})
-
-			if (!oidcToken) {
-				log('[publish] warn: skipping market notification (no OIDC token available)')
-			} else {
-				log(`[publish] notifying market at ${marketBaseUrl}...`)
-				const rpcClient = await resolveMarketWebhookClient(marketBaseUrl, log)
-				if (rpcClient) {
-					await rpcClient.submit({ packageName: pkg.name, version: pkg.version }, oidcToken)
-					log('[publish] ✓ market notified')
-					result.notified = true
-				} else {
-					log('[publish] warn: market RPC client unavailable')
-				}
-			}
+			log(`[publish] notifying market at ${marketOrigin.origin}...`)
+			result.notification = await notifyMarket(
+				marketOrigin,
+				{ registry: target.registry, name: pkg.name, version: pkg.version },
+				marketToken,
+			)
+			result.notified = true
+			const { receipt, url } = result.notification
+			log(`[publish] market receipt: ${JSON.stringify(receipt)}`)
+			log(`[publish] receipt URL: ${url}`)
+			if (receipt.status === 'indexed') log('[publish] market release indexed')
+			else if (receipt.status === 'failed')
+				log(`[publish] warn: market indexing failed (${receipt.code}); inspect the receipt`)
+			else log(`[publish] market notification ${receipt.status}; indexing is not complete`)
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error)
+			const state = result.published ? 'npm publish succeeded' : 'the npm release already exists'
 			if (forceWebhook) {
-				throw new Error(`[publish] market notification failed: ${reason}`, { cause: error })
+				throw new Error(`[publish] ${state}, but market notification failed: ${reason}`, {
+					cause: error,
+				})
 			}
-			log(`[publish] warn: market notification failed: ${reason}`)
+			log(`[publish] warn: ${state}, but market notification failed: ${reason}`)
 		}
 	} else {
-		log('[publish] market notification skipped')
+		log(
+			privatePublication && ciContext && !options.dryRun
+				? '[publish] automatic market notification skipped for this registry/access; explicitly choose --webhook and --market-url to notify'
+				: '[publish] market notification skipped',
+		)
 	}
 
 	return result
 }
 
-async function getPublishedVersion(
-	packageName: string,
-	log: Logger,
-	env: NodeJS.ProcessEnv,
-): Promise<string | undefined> {
-	const res = await runCommand('npm', ['view', packageName, 'version', '--json'], {
+async function getPublishedVersion(input: {
+	name: string
+	version: string
+	registry: string
+	cwd: string
+	env: NodeJS.ProcessEnv
+}): Promise<string | undefined> {
+	const { name, version, registry, cwd, env } = input
+	const specifier = `${name}@${version}`
+	const scope = name.startsWith('@') ? name.split('/')[0] : undefined
+	// npm view does not apply package.publishConfig. Pin its read to the selected
+	// publish registry, including npm's higher-priority scoped registry setting.
+	const args = [
+		'view',
+		specifier,
+		'version',
+		'--json',
+		`--registry=${registry}`,
+		'--scope=',
+		...(scope ? [`--${scope}:registry=${registry}`] : []),
+	]
+	const res = await runCommand('npm', args, {
+		cwd,
 		env,
 	})
 
 	if (res.code !== 0) {
-		// 404 意味着包不存在，这是正常的
-		if (res.stderr.includes('404') || res.stderr.includes('E404')) {
-			return undefined
-		}
-		log(`[publish] warn: npm view ${packageName} exited with code ${res.code}`)
-		return undefined
+		let errorCode: unknown
+		try {
+			errorCode = (JSON.parse(res.stdout) as { error?: { code?: unknown } }).error?.code
+		} catch {}
+		if (errorCode === 'E404') return undefined
+		throw new Error(`npm view ${specifier} failed: ${res.stderr || res.stdout || res.code}`)
 	}
 
 	const output = res.stdout.trim() || res.stderr.trim()
-	if (!output) return undefined
-
 	try {
 		const parsed = JSON.parse(output) as unknown
-		if (typeof parsed === 'string') return parsed
-		if (Array.isArray(parsed)) {
-			// 如果返回数组，取最后一个版本
-			for (let i = parsed.length - 1; i >= 0; i -= 1) {
-				const value = parsed[i]
-				if (typeof value === 'string') return value
-			}
-		}
+		if (parsed === version) return version
 	} catch {
-		// 解析失败，尝试简单提取
+		// A successful exact-version query must return that version as JSON.
 	}
-
-	const segments = output.split(/\s+/).filter(Boolean)
-	return segments.length > 0 ? segments.at(-1) : undefined
+	throw new Error(`npm view ${specifier} returned an unexpected version response`)
 }

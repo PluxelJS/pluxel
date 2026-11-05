@@ -4,32 +4,59 @@ import {
 	createRouter,
 	defaultParseSearch,
 	Outlet,
+	useRouterState,
 	type RouterHistory,
 } from '@tanstack/react-router'
+import { useContentController } from '@worksplit/react'
+import { useWorkspace } from './workspace-context'
+import { editorLifecycle } from './editor-lifecycle'
 import { FilePane, FormPane, PreviewPane } from './panes'
 
 export type StudioDocument = { kind: 'file' | 'form' | 'preview'; path: string }
 
-const rootRoute = createRootRoute({ component: Outlet })
+/** The root survives file/form/preview route changes and explicitly withdraws read-only protection. */
+function StudioDocumentRoot() {
+	const workspace = useWorkspace()
+	const href = useRouterState({ select: (state) => state.resolvedLocation?.href })
+	const resource =
+		href && new URL(href, 'https://studio.invalid').pathname !== '/' ? studioDocument(href) : null
+	const name = resource
+		? (workspace.documents.get(resource.path)?.result?.name ??
+			resource.path.split('/').at(-1) ??
+			resource.path)
+		: undefined
+	useContentController(
+		resource
+			? {
+					...(resource.kind === 'preview'
+						? { leave: null }
+						: editorLifecycle(workspace, resource.path, resource.kind)),
+					title: `${resource.kind === 'preview' ? '预览 · ' : ''}${resource.kind === 'file' ? name : name?.replace(/\.ts$/, '')}`,
+				}
+			: { leave: null },
+	)
+	return <Outlet />
+}
+const rootRoute = createRootRoute({ component: StudioDocumentRoot })
 const fileRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: '/file',
 	validateSearch: (search: Record<string, unknown>) => ({ path: resourcePath(search.path) }),
-	staticData: { worksplit: { title: '文件', identitySearch: ['path'] } },
+	staticData: { worksplit: { title: '文件' } },
 	component: () => <FilePane path={fileRoute.useSearch().path} />,
 })
 const formRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: '/form',
 	validateSearch: (search: Record<string, unknown>) => ({ entry: resourcePath(search.entry) }),
-	staticData: { worksplit: { title: '表单', identitySearch: ['entry'] } },
+	staticData: { worksplit: { title: '表单' } },
 	component: () => <FormPane entry={formRoute.useSearch().entry} />,
 })
 const previewRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: '/preview',
 	validateSearch: (search: Record<string, unknown>) => ({ entry: resourcePath(search.entry) }),
-	staticData: { worksplit: { title: '预览', identitySearch: ['entry'] } },
+	staticData: { worksplit: { title: '预览' } },
 	component: () => <PreviewPane entry={previewRoute.useSearch().entry} />,
 })
 const routeTree = rootRoute.addChildren([fileRoute, formRoute, previewRoute])

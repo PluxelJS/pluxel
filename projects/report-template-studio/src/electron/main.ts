@@ -53,6 +53,9 @@ let window: BrowserWindow | undefined
 let backend: UtilityProcess | undefined
 let closed = false
 let shutdownComplete = false
+let closeReady = false
+let closeRequested = false
+let closeApproved = false
 let nativeClient: ReturnType<typeof createNativeDesktopClient> | undefined
 
 function sender(event: IpcMainInvokeEvent | IpcMainEvent) {
@@ -133,6 +136,30 @@ async function startWindow() {
 				nativeClient = undefined
 				backend = undefined
 			})
+		})
+		ipcMain.on('studio:close-ready', (event, ready: unknown) => {
+			try {
+				sender(event)
+				closeReady = ready === true
+			} catch (error) {
+				console.error('Studio renderer close registration rejected', error)
+			}
+		})
+		ipcMain.on('studio:close-result', (event, allowed: unknown) => {
+			try {
+				sender(event)
+				if (!closeRequested) return
+				closeRequested = false
+				if (allowed === true) {
+					closeApproved = true
+					window?.close()
+				} else if (restarting) {
+					restarting = false
+					process.send?.({ type: 'studio:dev-stop-cancelled' })
+				}
+			} catch (error) {
+				console.error('Studio renderer close decision rejected', error)
+			}
 		})
 		ipcMain.on('studio:connect', (event) => {
 			try {
@@ -250,6 +277,13 @@ async function startWindow() {
 				sandbox: true,
 				nodeIntegration: false,
 			},
+		})
+		window.on('close', (event) => {
+			if (!closeReady || closeApproved) return
+			event.preventDefault()
+			if (closeRequested) return
+			closeRequested = true
+			window?.webContents.send('studio:before-close')
 		})
 		if (development) {
 			window.webContents.session.webRequest.onHeadersReceived(

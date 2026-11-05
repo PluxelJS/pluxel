@@ -37,6 +37,7 @@ export default defineHostApplication(async (startup) => {
 		services: await servicesPreset(startup, {
 			product,
 			workbench: environment.workbench ?? true,
+			initialShortcuts: [{ target: packageManagerNode, entryKey: 'marketplace' }],
 		}),
 		async launch({ host }) {
 			await listenElysia(host, {

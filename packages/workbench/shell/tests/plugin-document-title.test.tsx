@@ -1,22 +1,20 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { createRoot } from 'react-dom/client'
-import { expect, it, vi } from 'vitest'
-import { PluginScreen } from '../src/app/plugins/detail/PluginScreen'
+import type { Root } from 'react-dom/client'
+import { Actions } from 'flexlayout-react'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import type { PluginNodeAddress } from '@pluxel/core'
+import { WorkspaceSession } from '../src/app/workbench/session'
+import { buildPluginDetailHref } from '../src/workbench/paths'
+import {
+	openDocument,
+	prepareNativeWorkbenchDom,
+	renderWorkspace,
+} from './helpers/native-workbench'
 
-const state = vi.hoisted(() => ({
-	label: 'FontsPlugin',
-	title: '插件详情',
-	dispatch: vi.fn(async (_action: unknown) => ({ status: 'applied' })),
-	refresh: () => {},
-	document: { id: 'document' },
-}))
-vi.mock('@worksplit/react', () => ({
-	useWorkbenchState: (_workbench: unknown, select: () => unknown) => select(),
-}))
-vi.mock('@mantine/core', () => ({ Stack: () => null, Skeleton: () => null }))
-vi.mock('../src/components', () => ({ EmptyState: () => null, ErrorState: () => null }))
+const state = vi.hoisted(() => ({ label: 'FontsPlugin' as string | undefined, refresh: () => {} }))
 vi.mock('../src/app/plugins/detail/RightPane', () => ({ RightPane: () => null }))
+vi.mock('../src/app/workbench/WorkspaceNavigation', () => ({ WorkspaceNavigation: () => null }))
 vi.mock('../src/app/plugins/config/usePluginConfig', () => ({ usePluginConfig: () => ({}) }))
 vi.mock('../src/app/plugins/detail/usePluginDetail', async () => {
 	const { useState } = await import('react')
@@ -24,93 +22,106 @@ vi.mock('../src/app/plugins/detail/usePluginDetail', async () => {
 		usePluginDetail: () => {
 			const [, setRevision] = useState(0)
 			state.refresh = () => setRevision((value) => value + 1)
-			return { detail: { label: state.label }, ready: false }
+			return { detail: state.label ? { label: state.label } : undefined, ready: false }
 		},
 	}
 })
-vi.mock('../src/app/router/useCurrentRoute', () => ({ useCurrentPathname: () => '/plugins/fonts' }))
-vi.mock('../src/app/plugins/detail/pluginDetailSearchState', () => ({
-	usePluginDetailSearch: () => ({}),
-}))
-vi.mock('../src/app/workbench/document', () => ({
-	useDocumentWorkspace: () => {},
-	useOptionalWorkbenchDocument: () => state.document,
-}))
-vi.mock('../src/app/workbench/workspaceContext', () => {
-	const session = {
-		workbench: { dispatch: state.dispatch, getDocument: () => ({ title: state.title }) },
-		check: () => {},
-		report: () => {},
-	}
-	return { useOptionalWorkspaceSession: () => session }
+const owner: PluginNodeAddress = {
+	definition: {
+		entry: { kind: 'package-root', packageName: '@test/plugin-title' },
+		exportName: 'FontsPlugin',
+	},
+	variant: 'default',
+}
+const roots: Root[] = []
+const sessions: WorkspaceSession[] = []
+beforeEach(() => {
+	prepareNativeWorkbenchDom()
+	state.label = 'FontsPlugin'
 })
-it('updates automatic titles for route or label changes without overwriting a user rename on detail refresh', async () => {
-	Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-	const host = document.createElement('div')
-	const root = createRoot(host)
-	try {
-		await act(async () => root.render(<PluginScreen pluginRoute="fonts" />))
-		expect(state.dispatch).toHaveBeenCalledTimes(1)
-		// A fresh detail object from status refresh must leave a manually renamed tab alone.
-		state.dispatch.mockClear()
-		await act(async () => state.refresh())
-		expect(state.dispatch).not.toHaveBeenCalled()
-		state.title = 'FontsPlugin'
+afterEach(async () => {
+	await act(async () => {
+		for (const root of roots.splice(0)) root.unmount()
+		for (const session of sessions.splice(0)) await session.dispose()
+	})
+	document.body.replaceChildren()
+	window.localStorage.clear()
+	vi.restoreAllMocks()
+	vi.unstubAllGlobals()
+})
+async function mount(snapshot?: unknown) {
+	const session = new WorkspaceSession({ basepath: '/', snapshot })
+	sessions.push(session)
+	const view = await renderWorkspace(session)
+	roots.push(view.root)
+	let id: string
+	if (snapshot === undefined) id = await openDocument(session, buildPluginDetailHref(owner))
+	else {
+		await act(async () => {
+			const result = await session.workbench.start()
+			if (result.status !== 'applied') throw new Error(JSON.stringify(result))
+		})
+		id = session.workbench.getActiveDocument()!.id
+	}
+	return { session, id, ...view }
+}
+
+it('updates automatic native titles on label refresh and preserves a subsequent user rename', async () => {
+	const { session, id } = await mount()
+	expect(session.workbench.getDocument(id)?.title).toBe('FontsPlugin')
+	await act(async () => {
 		state.label = 'Updated Fonts'
-		await act(async () => state.refresh())
-		expect(state.dispatch).toHaveBeenCalledTimes(1)
-		expect(state.dispatch.mock.calls[0]?.[0]).toMatchObject({
-			data: { json: { name: 'Updated Fonts' } },
-		})
-		state.dispatch.mockClear()
-		state.title = '插件详情'
-		await act(async () => root.render(<PluginScreen pluginRoute="another-plugin" />))
-		expect(state.dispatch).toHaveBeenCalledTimes(1)
-		expect(state.dispatch.mock.calls[0]?.[0]).toMatchObject({
-			data: { json: { helpText: 'another-plugin' } },
-		})
-	} finally {
-		await act(async () => root.unmount())
-	}
+		state.refresh()
+	})
+	expect(session.workbench.getDocument(id)?.title).toBe('Updated Fonts')
+	await act(async () => {
+		await session.workbench.dispatch(Actions.renameTab(id, 'My font notes'))
+	})
+	await act(async () => {
+		state.label = 'New server label'
+		state.refresh()
+	})
+	expect(session.workbench.getDocument(id)?.title).toBe('My font notes')
 })
 
-it('preserves a copied or restored custom title on initial mount and later label refresh', async () => {
-	Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-	state.dispatch.mockClear()
-	state.title = '我的字体配置'
-	state.label = 'FontsPlugin'
-	const root = createRoot(document.createElement('div'))
-	try {
-		await act(async () => root.render(<PluginScreen pluginRoute="fonts" />))
-		expect(state.dispatch).not.toHaveBeenCalled()
+it('starts native copies with automatic titles and restores the source manual title separately', async () => {
+	const { session, id, root } = await mount()
+	await act(async () => {
+		await session.workbench.dispatch(Actions.renameTab(id, '我的字体配置'))
+		await session.workbench.duplicate(id)
+	})
+	const copy = session.workbench.getActiveDocument()!
+	expect(copy.id).not.toBe(id)
+	expect(copy.title).toBe('FontsPlugin')
+	expect(session.workbench.getDocument(id)?.title).toBe('我的字体配置')
+	const snapshot = session.workbench.createSnapshot()
+	await act(async () => {
+		root.unmount()
+		await session.dispose()
+	})
+	roots.splice(roots.indexOf(root), 1)
+	const restored = await mount(snapshot)
+	expect(restored.session.workbench.getDocuments()).toHaveLength(2)
+	expect(restored.session.workbench.getActiveDocument()?.id).toBe(copy.id)
+	expect(restored.session.workbench.getDocument(copy.id)?.title).toBe('FontsPlugin')
+	expect(restored.session.workbench.getDocument(id)?.title).toBe('我的字体配置')
+	await act(async () => {
 		state.label = 'Renamed Fonts'
-		await act(async () => state.refresh())
-		expect(state.dispatch).not.toHaveBeenCalled()
-	} finally {
-		await act(async () => root.unmount())
-	}
+		state.refresh()
+	})
+	expect(restored.session.workbench.getDocument(copy.id)?.title).toBe('Renamed Fonts')
+	expect(restored.session.workbench.getDocument(id)?.title).toBe('我的字体配置')
 })
 
-it('replaces the native default accepted after the route view first mounts', async () => {
-	Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-	state.dispatch.mockClear()
-	state.title = '插件'
-	state.label = 'FontsPlugin'
-	const root = createRoot(document.createElement('div'))
-	try {
-		await act(async () => root.render(<PluginScreen pluginRoute="fonts" />))
-		expect(state.dispatch).not.toHaveBeenCalled()
-		state.title = '插件详情'
-		await act(async () => state.refresh())
-		expect(state.dispatch).toHaveBeenCalledTimes(1)
-		expect(state.dispatch.mock.calls[0]?.[0]).toMatchObject({
-			data: { json: { name: 'FontsPlugin' } },
-		})
-		state.dispatch.mockClear()
-		state.title = 'FontsPlugin'
-		await act(async () => state.refresh())
-		expect(state.dispatch).not.toHaveBeenCalled()
-	} finally {
-		await act(async () => root.unmount())
-	}
+it('replaces the accepted native default when plugin details arrive after the route mounts', async () => {
+	state.label = undefined
+	const { session, id } = await mount()
+	expect(session.workbench.getDocument(id)?.title).toBe('插件详情')
+	await act(async () => {
+		state.label = 'FontsPlugin'
+		state.refresh()
+	})
+	expect(session.workbench.getDocument(id)?.title).toBe('FontsPlugin')
+	await act(async () => state.refresh())
+	expect(session.workbench.getDocument(id)?.title).toBe('FontsPlugin')
 })

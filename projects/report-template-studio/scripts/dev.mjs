@@ -5,8 +5,10 @@ import { fileURLToPath } from 'node:url'
 import electron from 'electron'
 import { build } from 'vite-plus/pack'
 import { createServer } from 'vite'
+import { checkWorksplitNative } from '../../../scripts/check-worksplit-native.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+checkWorksplitNative(root)
 const output = join(root, '.studio-dev')
 const forwarded = process.argv.slice(2).filter((arg) => arg !== '--')
 const env = { ...process.env, STUDIO_DEV: '1', STUDIO_PROJECT_ROOT: root }

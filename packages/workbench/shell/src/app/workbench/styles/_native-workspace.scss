@@ -456,6 +456,52 @@
 .plx-activity__mode {
 	margin-top: auto;
 }
+.plx-activity__divider {
+	border-top: 1px solid var(--plx-border-strong);
+	margin: 5px 4px;
+}
+.plx-activity__shortcut {
+	position: relative;
+	flex-shrink: 0;
+}
+.plx-activity__shortcut > .plx-activity__item {
+	width: 100%;
+}
+.plx-activity__shortcut .plx-activity__item span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	padding-right: 12px;
+}
+.plx-activity__item[aria-disabled='true'] {
+	opacity: 0.5;
+	cursor: default;
+}
+.plx-activity__remove {
+	position: absolute;
+	top: 0;
+	right: 0;
+	display: grid;
+	place-items: center;
+	width: 18px;
+	height: 18px;
+	border: 0;
+	border-radius: 3px;
+	background: var(--plx-app-bg);
+	color: var(--mantine-color-dimmed);
+	cursor: pointer;
+	opacity: 0;
+}
+.plx-activity__shortcut:hover .plx-activity__remove,
+.plx-activity__shortcut:focus-within .plx-activity__remove {
+	opacity: 1;
+}
+.plx-activity__remove:hover {
+	background: var(--plx-hover-bg);
+}
+.plx-activity__remove:focus-visible {
+	outline: 2px solid var(--mantine-primary-color-filled);
+}
 
 // Hide only the redundant navigation strip; native content and splitter keep their geometry.
 .plx-workspace--unified-navigation .flexlayout__border.plx-navigation-border {

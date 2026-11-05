@@ -701,6 +701,7 @@ describe('Workbench vNext publication', () => {
 		const layout = session.target.layoutDto({ target })
 
 		expect(layout.entries).toHaveLength(1)
+		expect(session.target.layoutDto({ target: null }).entries).toEqual(layout.entries)
 		expect(localFactoryCalls).toBe(0)
 		expect(layout.entries[0]).not.toHaveProperty('api')
 

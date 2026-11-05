@@ -19,6 +19,10 @@
 			"@pluxel/hmr": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./marketplace": {
+			"@pluxel/hmr": "./src/marketplace.tsx",
+			"default": "./dist/marketplace.mjs"
+		},
 		"./workbench": {
 			"@pluxel/hmr": "./src/workbench.ts",
 			"default": "./dist/workbench.mjs"
@@ -28,6 +32,7 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./marketplace": "./dist/marketplace.mjs",
 			"./workbench": "./dist/workbench.mjs",
 			"./package.json": "./package.json"
 		}
@@ -39,6 +44,9 @@
 	},
 	"dependencies": {
 		"@pnpm/napi": "catalog:prod",
+		"mdast-util-from-markdown": "catalog:prod",
+		"mdast-util-gfm": "catalog:prod",
+		"micromark-extension-gfm": "catalog:prod",
 		"valibot": "catalog:validation",
 		"valibot-form": "workspace:^",
 		"yaml": "catalog:prod"
@@ -54,6 +62,7 @@
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
 		"@tabler/icons-react": "catalog:icons",
+		"@types/mdast": "catalog:types",
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
 		"capnweb": "catalog:prod",

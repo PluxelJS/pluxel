@@ -21,7 +21,7 @@
 
 - [`TINYBASE_PLUGIN_STATE.md`](TINYBASE_PLUGIN_STATE.md)：已实施状态重构的必要决策与剩余验收边界；当前契约见 [TinyBase](../TINYBASE.md) 与 [Database](../DATABASE.md)，逐包结论及实际验证见[迁移记录](../TINYBASE_MIGRATION.md)。
 
-- [Worksplit API 精进决策](../../vendor/split-like-vscode/refactor/API_REFINEMENT_PROPOSAL.md)：2026-11-01 复核契约已实施，统一内容 hook 与资源 effect 并迁移全部已知消费者；当前边界见 [Frontend](../FRONTEND.md)，新验证及实际范围见[实施验收](../../vendor/split-like-vscode/refactor/API_REFINEMENT_VALIDATION.md)。
+- Worksplit 的旧 API 精进提案已由新版会话契约替代；当前所有权见 [Frontend](../FRONTEND.md)，采用版本与实际宿主结果见 [Worksplit 迁移记录](../WORKSPLIT_MIGRATION.md)。
 
 - [`ZENFS_FS_REFACTOR.md`](ZENFS_FS_REFACTOR.md)：ZenFS FS 重构的实施决策与验收记录；当前用法和资源契约见正式 FS 文档。
 

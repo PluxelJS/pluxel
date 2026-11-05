@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { Actions } from 'flexlayout-react'
-import { useWorkbenchContent } from '@worksplit/react'
+import { useContent, useContentController } from '@worksplit/react'
 import { TypstSourceEditor } from '@pluxel/plugin-typst/tiptap/react'
 import type { Editor } from '@tiptap/core'
 import { ApplicationForm } from './application-form'
@@ -32,27 +31,37 @@ export function EditorPane({ folder, path }: { folder: ExampleId; path: string }
 	const openedSource = useRef(source)
 	const sourceDirty = draft.text !== draft.base
 	const pending = sourceDirty || unapplied
-	const latestPending = useRef(pending)
-	latestPending.current = pending
-	const content = useWorkbenchContent({
-		isDirty: () => pending || source !== openedSource.current,
-		getCloseRevision: () => `${revision}:${draft.text}:${unapplied}`,
-		beforeLeave: () =>
-			!latestPending.current ||
-			window.confirm('放弃这个标签页中尚未应用的输入？已应用的源码仍保留在项目中。'),
+	const editVersion = useRef(0)
+	const [leavePauses, setLeavePauses] = useState(0)
+	const content = useContent()
+	useContentController({
+		title: path.split('/').at(-1)!,
+		leave: {
+			getState: () => ({
+				hasUnsavedChanges: pending || source !== openedSource.current,
+				token: `${revision}:${editVersion.current}`,
+			}),
+			decide: (request) => {
+				if (
+					pending &&
+					!window.confirm('放弃这个标签页中尚未应用的输入？已应用的源码仍保留在项目中。')
+				)
+					return { decision: 'deny' }
+				setLeavePauses((count) => count + 1)
+				request.defer(() => setLeavePauses((count) => count - 1))
+				return { decision: 'allow', token: `${revision}:${editVersion.current}` }
+			},
+		},
 		focus: () => {
 			if (mode === 'editor') editor.current?.commands.focus()
 			else if (mode === 'source') sourceInput.current?.focus({ preventScroll: true })
 		},
 		save: () => {
-			workspace.save(folder)
+			if (!workspace.save(folder)) throw new Error('项目尚未保存，请先处理当前输入。')
 		},
 	})
 	useEffect(() => {
-		void workspace.workbench.dispatch(Actions.renameTab(content.id, path.split('/').at(-1)!))
-	}, [content.id, path])
-	useEffect(() => {
-		if (source !== openedSource.current || pending) workspace.workbench.keep(content.id)
+		if (source !== openedSource.current || pending) void workspace.workbench.keepOpen(content.id)
 		workspace.setPending(content.id, folder, pending)
 	}, [source, pending])
 	useEffect(() => () => workspace.setPending(content.id, folder, false), [content.id, folder])
@@ -71,7 +80,10 @@ export function EditorPane({ folder, path }: { folder: ExampleId; path: string }
 				const popup = document.getElementById(button.getAttribute('aria-controls')!)
 				if (popup?.querySelector('[data-typst-unapplied]')) dirty = true
 			}
-			setUnapplied(dirty)
+			setUnapplied((current) => {
+				if (current !== dirty) editVersion.current++
+				return dirty
+			})
 		}
 		const observer = new MutationObserver(check)
 		observer.observe(document.body, {
@@ -120,6 +132,10 @@ export function EditorPane({ folder, path }: { folder: ExampleId; path: string }
 			className="workspace-panel"
 			aria-label="文件编辑器"
 			data-folder={folder}
+			inert={leavePauses > 0}
+			onInputCapture={() => {
+				editVersion.current++
+			}}
 			data-file={path}
 		>
 			<nav className="region-tabs" aria-label="文件编辑方式">
@@ -160,7 +176,7 @@ export function EditorPane({ folder, path }: { folder: ExampleId; path: string }
 						fontFamilies={fontFamilies}
 						renderComponentParameters={renderComponentParameters}
 						onOpenFile={(file) => {
-							void workspace.openFile(folder, file)
+							void workspace.openFile(folder, file, undefined, undefined, content)
 						}}
 						onEditor={(instance) => {
 							editor.current = instance
@@ -184,7 +200,7 @@ export function EditorPane({ folder, path }: { folder: ExampleId; path: string }
 							})
 						}
 						onReference={(file, position) => {
-							void workspace.openFile(folder, file, position)
+							void workspace.openFile(folder, file, position, undefined, content)
 						}}
 					/>
 				</div>

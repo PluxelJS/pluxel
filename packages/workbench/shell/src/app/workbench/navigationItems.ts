@@ -8,7 +8,7 @@ import {
 	IconTopologyStar3,
 } from '@tabler/icons-react'
 
-/** Official destinations only; published business pages are discovered through Apps. */
+/** Built-in destinations; user-selected publication shortcuts share the rail separately. */
 export const builtinPages = [
 	{ href: '/', label: '首页', description: '运行状态与常用操作', icon: IconHome2 },
 	{ href: '/apps', label: '应用', description: '已发布的业务应用', icon: IconApps },

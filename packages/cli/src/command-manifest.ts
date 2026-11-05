@@ -246,8 +246,12 @@ export const publishCommandArgs = {
 	},
 	webhook: {
 		type: 'boolean',
-		description: 'Notify market webhook even if npm publish is skipped (requires OIDC token)',
+		description: 'Submit a market notification even if this exact npm release already exists',
 		default: false,
+	},
+	'market-url': {
+		type: 'string',
+		description: 'Market HTTP(S) origin (defaults to https://market.pluxel.dev)',
 	},
 	'skip-version-check': {
 		type: 'boolean',

@@ -202,9 +202,14 @@ export class ManagedPackageStore {
 		return this.market.packages(marketId, query)
 	}
 
-	marketRelease(marketId: string, name: string, version: string) {
+	marketPackage(marketId: string, name: string, registry?: string) {
 		this.assertOpen()
-		return this.market.release(marketId, name, version)
+		return this.market.package(marketId, name, registry)
+	}
+
+	marketRelease(marketId: string, name: string, version: string, registry?: string) {
+		this.assertOpen()
+		return this.market.release(marketId, name, version, registry)
 	}
 
 	marketReleases(marketId: string, name: string, query?: MarketReleaseQuery) {
@@ -219,13 +224,15 @@ export class ManagedPackageStore {
 
 	async prepareMarketInstall(request: MarketInstallRequest): Promise<PackagePreparationResult> {
 		this.assertOpen()
-		if (!request || typeof request !== 'object')
+		if (!request || typeof request !== 'object' || typeof request.registry !== 'string')
 			return {
 				ok: false,
-				failed: [failure('', 'INVALID_SPEC', new Error('Select a market package release'))],
+				failed: [
+					failure('', 'INVALID_SPEC', new Error('Select a market registry and package release')),
+				],
 			}
-		const { marketId, name, version } = request
-		const release = await this.market.release(marketId, name, version)
+		const { marketId, registry, name, version } = request
+		const release = await this.market.release(marketId, name, version, registry)
 		if (release.ok === false)
 			return { ok: false, failed: [failure('', 'MARKET_FAILED', new Error(release.error.message))] }
 		return this.serialize(() =>
@@ -579,7 +586,7 @@ export class ManagedPackageStore {
 				const registry = (scope && options.registries?.[scope]) || options.registries?.default
 				if (registry?.replace(/\/$/, '') !== expected.registry)
 					throw new PublicMutationError(
-						'Market installation requires the selected package to use the npm registry in pnpm configuration',
+						'Market installation requires pnpm configuration to select the same registry as the market release',
 						undefined,
 					)
 			}

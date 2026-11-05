@@ -59,7 +59,7 @@ export function WorkspaceProviders({
 			},
 			openTab: ({ path }) => {
 				void session.workbench
-					.open({ to: path }, { newInstance: true })
+					.open({ to: path }, { reuse: 'new' })
 					.then((result) => session.check(result))
 			},
 		}),
@@ -78,7 +78,7 @@ export function WorkspaceProviders({
 
 export async function renderWorkspace(
 	session: WorkspaceSession,
-	children = <Workbench workbench={session.workbench} />,
+	children = <Workbench instance={session.workbench} />,
 ) {
 	const container = document.body.appendChild(document.createElement('div'))
 	const root = createRoot(container, { onCaughtError: () => undefined })
@@ -91,9 +91,10 @@ export async function renderWorkspace(
 export async function openDocument(session: WorkspaceSession, href: string, newInstance = false) {
 	let documentId = ''
 	await act(async () => {
-		const result = await session.workbench.open({ to: href }, { newInstance })
-		if (result.status !== 'committed') throw new Error(`Open ${href}: ${JSON.stringify(result)}`)
-		documentId = result.document.id
+		await session.start(href, false)
+		const result = await session.workbench.open({ to: href }, newInstance ? { reuse: 'new' } : {})
+		if (result.status !== 'applied') throw new Error(`Open ${href}: ${JSON.stringify(result)}`)
+		documentId = result.value.document.id
 	})
 	return documentId
 }

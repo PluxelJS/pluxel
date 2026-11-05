@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
-import { act, useRef } from 'react'
+import { act } from 'react'
 import type { Root } from 'react-dom/client'
 import { Workbench } from '@worksplit/react'
-import { Actions, DockLocation, Model, TabGroupNode, TabNode } from 'flexlayout-react'
+import { Actions, DockLocation, TabGroupNode, TabNode } from 'flexlayout-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceSession } from '../src/app/workbench/session'
 import { useNativeMenus } from '../src/app/workbench/nativeMenus'
@@ -42,12 +42,10 @@ afterEach(async () => {
 })
 
 function Menus({ session }: { session: WorkspaceSession }) {
-	const root = useRef<HTMLDivElement>(null)
-	const menu = useNativeMenus(session, root)
+	const menu = useNativeMenus(session)
 	return (
-		<div ref={root} tabIndex={-1} data-testid="workspace" onKeyDownCapture={menu.onKeyDown}>
-			<Workbench workbench={session.workbench} native={menu.native} />
-			{menu.popup}
+		<div tabIndex={-1} data-testid="workspace">
+			<Workbench instance={session.workbench} native={menu.native} menus={menu.menus} />
 		</div>
 	)
 }
@@ -67,6 +65,14 @@ function tab(container: HTMLElement, id: string) {
 }
 async function context(target: HTMLElement) {
 	await act(async () => {
+		target.dispatchEvent(
+			new MouseEvent('pointerdown', {
+				bubbles: true,
+				cancelable: true,
+				button: 2,
+				buttons: 2,
+			}),
+		)
 		target.dispatchEvent(
 			new MouseEvent('contextmenu', {
 				bubbles: true,
@@ -98,7 +104,7 @@ async function pressKey(element: HTMLElement, key: string, options: KeyboardEven
 	return event
 }
 function findGroup(session: WorkspaceSession) {
-	const model = Model.fromJson(session.workbench.getLayout())
+	const model = session.workbench.model
 	let group: TabGroupNode | undefined
 	model.visitNodes((node) => {
 		if (node instanceof TabGroupNode) group = node
@@ -108,7 +114,7 @@ function findGroup(session: WorkspaceSession) {
 }
 
 describe('Pluxel native workspace menus', () => {
-	it('duplicates a non-active user-named document through native menus with a fresh ordinary document and an isolated draft', async () => {
+	it('duplicates a non-active user-named document through native menus with an automatic title and an isolated draft', async () => {
 		const { session, container } = await workspace()
 		const source = await openDocument(session, '/logs?filter=error#tail')
 		const sourceInput = container.querySelector<HTMLInputElement>(
@@ -139,28 +145,28 @@ describe('Pluxel native workspace menus', () => {
 			const operation = duplicate.mock.results.at(-1)
 			expect(operation?.type).toBe('return')
 			const result = await operation!.value
-			expect(result.status).toBe('committed')
-			if (result.status !== 'committed') throw new Error(JSON.stringify(result))
+			expect(result.status).toBe('applied')
+			if (result.status !== 'applied') throw new Error(JSON.stringify(result))
 			await act(async () => {
 				await vi.waitFor(() =>
 					expect(session.workbench.getActiveDocument()).toMatchObject({
-						id: result.document.id,
+						id: result.value.document.id,
 						href: '/logs?filter=error#tail',
-						title: '用户诊断名称',
+						title: '日志',
 						preview: false,
 					}),
 				)
 			})
-			const copy = session.workbench.getDocument(result.document.id)!
+			const copy = session.workbench.getDocument(result.value.document.id)!
 			expect(copy.id).not.toBe(source)
 			expect(copy.id).not.toBe(other)
 			expect(copies.has(copy.id)).toBe(false)
 			copies.add(copy.id)
-			const model = Model.fromJson(session.workbench.getLayout())
+			const model = session.workbench.model
 			const sourceNode = model.getNodeById(source) as TabNode
 			const copyNode = model.getNodeById(copy.id) as TabNode
 			expect(copyNode).toBeInstanceOf(TabNode)
-			expect(copyNode.getName()).toBe('用户诊断名称')
+			expect(copyNode.getName()).toBe('日志')
 			expect(copyNode.getComponent()).toBe(sourceNode.getComponent())
 			expect(copyNode.isPinned()).toBe(false)
 			expect(copyNode.getParent()?.getId() === sourceNode.getParent()?.getId()).toBe(!split)
@@ -185,8 +191,7 @@ describe('Pluxel native workspace menus', () => {
 		expect(duplicate).toHaveBeenCalledTimes(2)
 		expect(duplicate).toHaveBeenNthCalledWith(1, source)
 		expect(duplicate).toHaveBeenNthCalledWith(2, source, {
-			target: expect.any(String),
-			location: DockLocation.RIGHT,
+			destination: expect.any(Function),
 		})
 		expect(session.workbench.getDocuments()).toHaveLength(4)
 	})
@@ -195,9 +200,10 @@ describe('Pluxel native workspace menus', () => {
 		const { session, container } = await workspace()
 		let first = ''
 		await act(async () => {
+			await session.start('/security', false)
 			const opened = await session.workbench.open({ to: '/logs' }, { preview: true })
-			if (opened.status !== 'committed') throw new Error(JSON.stringify(opened))
-			first = opened.document.id
+			if (opened.status !== 'applied') throw new Error(JSON.stringify(opened))
+			first = opened.value.document.id
 		})
 		expect(session.workbench.getDocument(first)?.preview).toBe(true)
 		const input = container.querySelector<HTMLInputElement>('[aria-label="日志输入"]')!
@@ -208,14 +214,18 @@ describe('Pluxel native workspace menus', () => {
 		await context(target)
 		await click(menuItem('固定标签（分组中的标签会移出分组）'))
 		expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: Actions.SET_TAB_PINNED }))
-		expect(
-			(Model.fromJson(session.workbench.getLayout()).getNodeById(first) as TabNode).isPinned(),
-		).toBe(true)
+		expect((session.workbench.model.getNodeById(first) as TabNode).isPinned()).toBe(true)
 		expect(session.workbench.getDocument(first)?.preview).toBe(false)
 		expect(session.workbench.getActiveDocument()?.id).toBe(active)
 		expect(container.querySelector('[aria-label="日志输入"]')).toBe(input)
 		expect(input.value).toBe('retained input')
 		expect(document.querySelector('[role="menu"]')).toBeNull()
+		expect(document.activeElement).toBe(target)
+		await pressKey(target, 'F6')
+		await act(async () => {
+			await vi.waitFor(() => expect(document.activeElement).toBe(input))
+		})
+		await pressKey(input, 'F6')
 		expect(document.activeElement).toBe(target)
 	})
 
@@ -223,7 +233,11 @@ describe('Pluxel native workspace menus', () => {
 		const { session, container } = await workspace()
 		const id = await openDocument(session, '/logs')
 		await context(tab(container, id))
+		const grouping = vi.spyOn(session.workbench, 'dispatch')
 		await click(menuItem('加入新分组'))
+		await act(async () => {
+			expect(await grouping.mock.results.at(-1)!.value).toMatchObject({ status: 'applied' })
+		})
 		await context(container.querySelector<HTMLElement>('.flexlayout__group_pill')!)
 		const name = container.querySelector<HTMLInputElement>('input[aria-label="分组名称"]')!
 		expect(document.activeElement).toBe(name)
@@ -244,6 +258,9 @@ describe('Pluxel native workspace menus', () => {
 		})
 		await pressKey(colors[0]!, 'ArrowRight')
 		expect(document.activeElement).toBe(colors[1])
+		const activateColor = await pressKey(colors[1]!, 'Enter')
+		expect(activateColor.defaultPrevented).toBe(false)
+		// JSDOM has no native button keyboard default; the raw browser fixture presses Enter/Space.
 		await click(colors[1]!)
 		expect(findGroup(session).getColor()).toBe('#dd8a4a')
 		expect(document.querySelector('[role="menu"]')).not.toBeNull()
@@ -255,13 +272,17 @@ describe('Pluxel native workspace menus', () => {
 		const { session, container } = await workspace()
 		const id = await openDocument(session, '/logs')
 		const state = session.documents.get(id)!
-		state.editor = { isDirty: () => true, getCloseRevision: () => 1 }
+		await act(async () => {
+			state.editor = {
+				getState: () => ({ hasUnsavedChanges: true, token: 1 }),
+				isWritePending: () => false,
+			}
+			session.notifyContentState()
+		})
 		const target = tab(container, id)
 		await act(async () => target.focus())
 		await pressKey(target, 'F10', { shiftKey: true })
-		expect(document.querySelector('[role="menu"]')?.getAttribute('aria-label')).toContain(
-			'标签操作',
-		)
+		expect(document.querySelector('[role="menu"]')).not.toBeNull()
 		await click(menuItem('关闭标签'))
 		const cancel = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
 			(button) => button.textContent === '保留文档',
@@ -315,14 +336,18 @@ describe('Pluxel native workspace menus', () => {
 		})
 		const group = findGroup(session)
 		await context(container.querySelector<HTMLElement>('.flexlayout__group_pill')!)
-		const stale = menuItem('关闭分组内全部标签')
+		const stale = menuItem('关闭整个标签容器（含折叠分组）')
 		await act(async () => {
 			await session.workbench.dispatch(Actions.ungroup(group.getId()))
 		})
 		expect(document.querySelector('[role="menu"]')).toBeNull()
-		expect(document.activeElement).toBe(container.querySelector('[data-testid="workspace"]'))
+		const nativeScope = container.querySelector<HTMLElement>('.worksplit-workbench')!
+		await act(async () => {
+			await vi.waitFor(() => expect(document.activeElement).toBe(nativeScope))
+		})
 		await click(stale)
 		expect(session.workbench.getDocument(id)).not.toBeNull()
+		expect(document.activeElement).toBe(nativeScope)
 	})
 
 	it('closes the current whole group, including a member added after the menu opened', async () => {
@@ -339,7 +364,7 @@ describe('Pluxel native workspace menus', () => {
 				Actions.moveNode(security, group.getId(), DockLocation.CENTER, -1),
 			)
 		})
-		await click(menuItem('关闭分组内全部标签'))
+		await click(menuItem('关闭整个标签容器（含折叠分组）'))
 		expect(session.workbench.getDocuments()).toHaveLength(0)
 		expect(container.querySelector('[aria-label="日志输入"]')).toBeNull()
 		expect(container.querySelector('[aria-label="安全输入"]')).toBeNull()
@@ -352,14 +377,16 @@ describe('Pluxel native workspace menus', () => {
 		const input = container.querySelector('[aria-label="日志输入"]')!
 		await context(tab(container, logs))
 		const stale = menuItem('关闭标签')
-		const target = (Model.fromJson(session.workbench.getLayout()).getNodeById(logs) as TabNode)
-			.getParent()!
-			.getId()
+		const target = (session.workbench.model.getNodeById(logs) as TabNode).getParent()!.getId()
 		await act(async () => {
 			await session.workbench.dispatch(Actions.moveNode(logs, target, DockLocation.RIGHT, -1))
 		})
 		expect(document.querySelector('[role="menu"]')).toBeNull()
-		expect(document.activeElement).toBe(container.querySelector('[data-testid="workspace"]'))
+		await act(async () => {
+			await vi.waitFor(() =>
+				expect(document.activeElement).toBe(container.querySelector('.worksplit-workbench')),
+			)
+		})
 		await click(stale)
 		expect(session.workbench.getDocument(logs)).not.toBeNull()
 		expect(container.querySelector('[aria-label="日志输入"]')).toBe(input)
@@ -368,20 +395,19 @@ describe('Pluxel native workspace menus', () => {
 	it('keeps native custom Border controls under the Mantine Provider and removes portals on unmount', async () => {
 		const { session, container, root } = await workspace()
 		await act(async () => {
+			await session.start('/', false)
 			await session.workbench.dispatch(Actions.updateNodeAttributes('border_left', { show: true }))
 		})
-		const trigger = [...container.querySelectorAll<HTMLElement>('.plx-native-container-menu')].find(
-			(element) => element.getAttribute('aria-label') === '边栏操作',
-		)!
-		await click(trigger)
+		const trigger = container.querySelector<HTMLElement>('.flexlayout__border')!
+		await context(trigger)
 		const size = container.querySelector<HTMLInputElement>('.mantine-NumberInput-input')!
 		expect(size).not.toBeNull()
 		expect(size.value).toBe('280')
 		const left = await pressKey(size, 'ArrowLeft')
 		expect(left.defaultPrevented).toBe(false)
 		await click(menuItem('边栏悬浮显示'))
-		expect(session.workbench.getLayout().borders?.[0]?.borderType).toBe('overlay')
-		await click(trigger)
+		expect(session.workbench.model.toJson().borders?.[0]?.borderType).toBe('overlay')
+		await context(trigger)
 		expect(container.querySelector('[role="menu"]')).not.toBeNull()
 		await act(async () => root.unmount())
 		roots.splice(roots.indexOf(root), 1)
@@ -411,7 +437,9 @@ describe('Pluxel native workspace menus', () => {
 		expect(items.map((item) => item.textContent)).toContain(
 			session.workbench.getDocument(logs)?.title,
 		)
-		expect(items.some((item) => item.querySelector('[aria-label="当前标签"]'))).toBe(true)
+		expect(
+			items.some((item) => item.classList.contains('flexlayout__popup_menu_item--selected')),
+		).toBe(true)
 		await pressKey(items[0]!, 'End')
 		expect(document.activeElement).toBe(items.at(-1))
 		await pressKey(document.activeElement as HTMLElement, 'Home')

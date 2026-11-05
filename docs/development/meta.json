@@ -10,6 +10,7 @@
 		"tooling",
 		"source-workspaces",
 		"plugin-package",
+		"plugin-market",
 		"distribution"
 	]
 }

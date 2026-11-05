@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { WorkbenchInstance } from '@worksplit/react'
+import type { WorkbenchInstance, ContentHandle } from '@worksplit/react'
 import type { AnyRouter } from '@tanstack/react-router'
 import type { Editor } from '@tiptap/core'
 import type { ExampleId } from './examples'
@@ -26,7 +26,13 @@ export type WorkspaceContextValue = {
 	focus?: FileFocus
 	selections: Partial<Record<ExampleId, CaretSelection>>
 	pending: Readonly<Record<string, { folder: ExampleId; pending: boolean }>>
-	openFile(folder: ExampleId, path: string, position?: number, source?: boolean): Promise<void>
+	openFile(
+		folder: ExampleId,
+		path: string,
+		position?: number,
+		showSource?: boolean,
+		source?: ContentHandle,
+	): Promise<void>
 	selectCaret(folder: ExampleId, value: Omit<CaretSelection, 'serial'>): void
 	setPending(id: string, folder: ExampleId, pending: boolean): void
 	save(folder: ExampleId): boolean

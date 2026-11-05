@@ -3,7 +3,7 @@
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { Workbench } from '@worksplit/react'
-import { Actions, Model } from 'flexlayout-react'
+import { Actions } from 'flexlayout-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceSession, defaultWorkspaceLayout } from '../src/app/workbench/session'
 import {
@@ -59,7 +59,7 @@ async function mount(
 	const content = (
 		<WorkspaceProviders session={workspace}>
 			<WorkspacePersistence />
-			<Workbench workbench={workspace.workbench} />
+			<Workbench instance={workspace.workbench} />
 		</WorkspaceProviders>
 	)
 	await act(async () => {
@@ -98,7 +98,7 @@ describe('native Workbench snapshot persistence', () => {
 		expect(write).not.toHaveBeenCalled()
 		await act(async () => vi.advanceTimersByTime(180))
 		expect(write).toHaveBeenCalledTimes(1)
-		expect(saved()).toEqual(workspace.workbench.snapshot())
+		expect(saved()).toEqual(workspace.workbench.createSnapshot())
 		const raw = JSON.stringify(saved())
 		expect(raw).not.toMatch(/dirty|draft|router|openedHandle|RpcStub/)
 		workspace.documents.get(first)!.remoteDirty = true
@@ -113,7 +113,7 @@ describe('native Workbench snapshot persistence', () => {
 			const write = vi.spyOn(Storage.prototype, 'setItem')
 			const { workspace } = await mount()
 			await openDocument(workspace, '/security')
-			const snapshot = workspace.workbench.snapshot()
+			const snapshot = workspace.workbench.createSnapshot()
 			await act(async () => {
 				if (event === 'session teardown') await workspace.dispose()
 				else if (event === 'visibilitychange') {
@@ -156,8 +156,11 @@ describe('native Workbench snapshot persistence', () => {
 		const snapshot = saved('/__pluxel/workbench')
 		const restored = new WorkspaceSession({ basepath: '/__pluxel/workbench' })
 		workspaces.push(restored)
-		expect(restored.workbench.snapshot()).toEqual(snapshot)
-		const model = Model.fromJson(restored.workbench.getLayout())
+		await act(async () => {
+			await restored.start(workspace.workbench.getActiveDocument()!.href, false)
+		})
+		expect(restored.workbench.createSnapshot()).toEqual(snapshot)
+		const model = restored.workbench.model
 		expect(model.getNodeById(second)?.toJson()).toMatchObject({ pinned: true })
 		expect(model.getNodeById(first)?.getParent()?.toJson()).toMatchObject({
 			type: 'tabgroup',
@@ -203,7 +206,7 @@ describe('native Workbench snapshot persistence', () => {
 		expect(workspace.workbench.getDocuments().map((document) => document.href)).toEqual(['/logs'])
 		await act(async () => vi.advanceTimersByTime(180))
 		expect(window.localStorage.getItem('pluxel:workbench:ui')).toBe(legacy)
-		expect(saved().version).toBe(1)
+		expect(saved().version).toBe(2)
 	})
 
 	it('keeps editing when storage is unavailable, publishes a bounded error and retries the latest snapshot', async () => {
@@ -235,7 +238,7 @@ describe('native Workbench snapshot persistence', () => {
 		expect(storage.getSnapshot()).toBeUndefined()
 		expect(listener).toHaveBeenCalledTimes(2)
 		expect(JSON.parse(backend.setItem.mock.calls.at(-1)![1])).toEqual(
-			workspace.workbench.snapshot(),
+			workspace.workbench.createSnapshot(),
 		)
 	})
 })

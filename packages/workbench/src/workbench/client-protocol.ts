@@ -75,11 +75,19 @@ export type WorkbenchContentLayoutEntry = Readonly<{
 
 export type WorkbenchLayoutEntry = WorkbenchFederatedLayoutEntry | WorkbenchContentLayoutEntry
 
+/** A user-owned sidebar shortcut to one declared entry, including a concrete parameter route. */
+export type WorkbenchShortcut = Readonly<{
+	target: PluginNodeAddress
+	entryKey: string
+	location?: string
+}>
+
 export type WorkbenchLayout = Readonly<{
 	profile: 1
 	revision: number
 	target: WorkbenchLayoutTarget | null
 	entries: readonly WorkbenchLayoutEntry[]
+	initialShortcuts?: readonly WorkbenchShortcut[]
 }>
 
 export type WorkbenchLayoutInput = Readonly<{

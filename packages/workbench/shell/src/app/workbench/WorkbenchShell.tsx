@@ -1,4 +1,4 @@
-import { Workbench, useWorkbenchState } from '@worksplit/react'
+import { Workbench, useWorkbenchState, type WorkbenchProps } from '@worksplit/react'
 import {
 	ActionIcon,
 	Alert,
@@ -29,7 +29,7 @@ import {
 	IconShieldLock,
 	IconX,
 } from '@tabler/icons-react'
-import { Actions, type IJsonModel, type ILayoutApi } from 'flexlayout-react'
+import { Actions, BorderNode, type ILayoutApi } from 'flexlayout-react'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ThemeCustomizer } from '../../theme'
 import { useNotificationCenter } from '../notifications/NotificationCenterProvider'
@@ -58,22 +58,24 @@ export function WorkbenchShell() {
 	}, [])
 	const [helpOpen, setHelpOpen] = useState(false)
 	const [pending, setPending] = useState(false)
-	const menu = useNativeMenus(session, root)
+	const menu = useNativeMenus(session)
 	const count = useWorkbenchState(session.workbench, () => session.workbench.getDocuments().length)
 	const activeDocumentId = useWorkbenchState(session.workbench, (state) => state.activeDocumentId)
 	const activeGroup = useWorkbenchState(
 		session.workbench,
-		() => session.workbench.getEditingContext().activeGroupId,
+		() => session.workbench.getContext().activeContainerId,
 	)
 	const layoutRevision = useWorkbenchState(session.workbench, (state) => state.revision)
-	const borders = useWorkbenchState(session.workbench, () => session.workbench.getLayout().borders)
+	const lifecycle = useWorkbenchState(session.workbench, (state) => state.lifecycle)
+	const borders = useWorkbenchState(session.workbench, () =>
+		session.workbench.getContainers().filter((container) => container.kind === 'border'),
+	)
 	const unifiedNavigation =
-		(session.workbench.getLayout().borders?.find((border) => border.location === 'left')?.children
-			?.length ?? 0) <= 1
-
+		(session.workbench.getContainers().find(({ id }) => id === 'border_left')?.tabIds.length ??
+			0) <= 1
 	const borderVisible = (side: string) => {
-		const border = borders?.find((item) => item.location === side)
-		return !!border && border.show !== false && (border.selected ?? -1) >= 0
+		const border = borders.find(({ id }) => id === `border_${side}`)?.node
+		return border instanceof BorderNode && border.isShowing() && border.getSelected() >= 0
 	}
 	const toggleBorder = useCallback(
 		(side: 'left' | 'right' | 'bottom') => {
@@ -88,27 +90,16 @@ export function WorkbenchShell() {
 	const owner = activeDocumentId ? session.documents.get(activeDocumentId)?.plugin : undefined
 	const ownerSnapshot = useWorkbenchTargetSnapshot(owner ?? null)
 	useEffect(() => {
+		if (lifecycle !== 'running') return
 		void session
 			.syncWorkspacePanels(ownerSnapshot.layout?.entries ?? [])
 			.catch((error: unknown) => session.report(error))
-	}, [activeDocumentId, contentRevision, ownerSnapshot.layout, layoutRevision, session])
+	}, [activeDocumentId, contentRevision, ownerSnapshot.layout, layoutRevision, lifecycle, session])
 	const storageError = useSyncExternalStore(session.storage.subscribe, session.storage.getSnapshot)
 	useEffect(() => {
 		layoutRef.current?.redraw()
 	}, [contentRevision])
-	const restoreWorkspaceFocus = useCallback(() => {
-		requestAnimationFrame(() => {
-			const active = document.activeElement
-			// A removed tab or a native container hidden by maximize cannot receive the next scoped key.
-			if (
-				active === document.body ||
-				(active instanceof HTMLElement &&
-					root.current?.contains(active) &&
-					active.closest<HTMLElement>('.flexlayout__tabset_container')?.style.display === 'none')
-			)
-				root.current?.focus()
-		})
-	}, [])
+
 	const showNavigation = useCallback(() => {
 		void session
 			.showTool()
@@ -125,40 +116,36 @@ export function WorkbenchShell() {
 				.close(id)
 				.then((result) => {
 					session.check(result)
-					restoreWorkspaceFocus()
 					return result
 				})
 				.catch((error: unknown) => session.report(error))
-	}, [restoreWorkspaceFocus, session])
+	}, [session])
 	const cycle = useCallback(
 		(delta: number) => {
-			const ids: string[] = []
-			const documents = new Set(session.workbench.getDocuments().map((document) => document.id))
-			const visit = (node: { type?: string; id?: string; children?: unknown[] }) => {
-				if (node.type === 'tab' && node.id && documents.has(node.id)) ids.push(node.id)
-				node.children?.forEach((child) => visit(child as Parameters<typeof visit>[0]))
-			}
-			const layout: IJsonModel = session.workbench.getLayout()
-			visit(layout.layout)
-			layout.borders?.forEach(visit)
+			const documents = new Set(session.workbench.getDocuments().map(({ id }) => id))
+			const ids = session.workbench
+				.getContainers()
+				.flatMap(({ tabIds }) => tabIds)
+				.filter((id) => documents.has(id))
 			if (ids.length === 0) return
 			const index = ids.indexOf(session.workbench.getActiveDocument()?.id ?? '')
-			session.workbench.activate(ids[(index + delta + ids.length) % ids.length]!)
+			void session.workbench
+				.activate(ids[(index + delta + ids.length) % ids.length]!)
+				.then((result) => session.check(result))
 		},
 		[session],
 	)
 	const maximize = useCallback(() => {
-		const group = session.workbench.getEditingContext().activeGroupId
+		const group = session.workbench.getContext().activeContainerId
 		if (!group || group.startsWith('border_')) return
 		void session.workbench
 			.dispatch(Actions.maximizeToggle(group))
 			.then((result) => {
 				session.check(result)
-				restoreWorkspaceFocus()
 				return result
 			})
 			.catch((error: unknown) => session.report(error))
-	}, [restoreWorkspaceFocus, session])
+	}, [session])
 	useHotkeys(
 		[
 			{
@@ -176,15 +163,15 @@ export function WorkbenchShell() {
 			target: root,
 			ignoreInputs: true,
 			preventDefault: true,
-			enabled: !searchOpen && !helpOpen && !pending && !menu.popup,
+			enabled: !searchOpen && !helpOpen && !pending,
 		},
 	)
 	const native = useMemo(
 		() => ({
 			...menu.native,
 			onRenderTab: (
-				node: Parameters<NonNullable<typeof menu.native.onRenderTab>>[0],
-				values: Parameters<NonNullable<typeof menu.native.onRenderTab>>[1],
+				node: Parameters<NonNullable<NonNullable<WorkbenchProps['native']>['onRenderTab']>>[0],
+				values: Parameters<NonNullable<NonNullable<WorkbenchProps['native']>['onRenderTab']>>[1],
 			) => {
 				const document = session.workbench.getDocument(node.getId())
 				values.leading =
@@ -259,7 +246,6 @@ export function WorkbenchShell() {
 			className={`plx-workspace${unifiedNavigation ? ' plx-workspace--unified-navigation' : ''}`}
 			ref={root}
 			tabIndex={-1}
-			onKeyDownCapture={menu.onKeyDown}
 		>
 			<header className="plx-workspace__toolbar">
 				<Group gap={4} wrap="nowrap" className="plx-workspace__primary">
@@ -389,7 +375,8 @@ export function WorkbenchShell() {
 				<ActivityRail onShowPlugins={showNavigation} />
 				<Workbench
 					className="plx-workspace__layout"
-					workbench={session.workbench}
+					instance={session.workbench}
+					menus={menu.menus}
 					native={native}
 					layoutRef={layoutRef}
 					empty={
@@ -404,7 +391,6 @@ export function WorkbenchShell() {
 					}
 				/>
 			</div>
-			{menu.popup}
 			<Modal
 				opened={searchOpen}
 				onClose={() => setSearchOpen(false)}

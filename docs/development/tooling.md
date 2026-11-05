@@ -79,15 +79,27 @@ npx nypm add @pluxel/host-vite vite
 
 具体装配见 [Host 配置](../host/configuration.md)。
 
-`publish --webhook`：
-
-```sh package-install
-npx nypm add -D @pluxel/market
-```
-
 有 Workbench browser entry 的 host 还需要 Vite/React 等自己的 web toolchain。插件 package 的 canonical scripts 见 [开发和发布插件包](./plugin-package.md)。
 
-`pluxel --help`、`pluxel --version` 和 `pluxel new` 不加载 Rolldown 或 market。缺少可选包只影响对应命令，并给出安装提示。
+`pluxel --help`、`pluxel --version` 和 `pluxel new` 不加载 Rolldown。缺少可选包只影响对应命令，并给出安装提示。市场通知直接使用 HTTP，不需要额外安装 market 包。
+
+## 发布与市场通知
+
+在插件包目录先完成[构建与发布检查](./plugin-package.md#构建与发布检查)，再执行：
+
+```sh
+vp exec pluxel publish --webhook
+```
+
+npm 读取当前目录的 `.npmrc`、环境变量和 `publishConfig`，拥有 registry、认证与 provenance；CLI 不另行获取 CI OIDC token。CLI 通过原生 `npm config get` 读取有效配置，按 npm 发布的 `publishConfig` 覆盖与 scoped registry 优先级选择来源：包 scope 的 registry 优先于 `publishConfig.registry`。精确版本预检和通知使用这个相同来源，已存在时跳过 npm 发布；`--webhook` 仍提交通知。`--dry-run` 只读取配置和可选版本信息，同时禁止 npm 发布与通知写入。
+
+通知使用 `POST /v1/notifications`，坐标包含真实 registry base URL，保留 `/npm` 等路径并去掉末尾 `/`，不把 PNPR 冒充公共 npm。同名同版来自不同 registry 时是不同发行。`--market-url <origin>` 选择市场 HTTP(S) origin，默认 `https://market.pluxel.dev`；需要通知时在 npm 发布前校验，拒绝凭据、非根路径、query 或 fragment。registry 允许远程 HTTPS 和 loopback HTTP，不接受 URL 内凭据、query 或 fragment。
+
+CI 仅对公共 npm 且明确公开的发布默认通知。其他 registry、受限访问和未明确公开的 raw 发布，必须同时指定 `--webhook --market-url <origin>`，避免把私有坐标发到默认公开市场。需要认证的来源通过 `PLUXEL_MARKET_TOKEN` 环境变量提供通知专用 Bearer token；只有显式 `--market-url` 才允许发送这个 token，命令不打印它，也不将 npm 的 registry 凭据转给市场。私有通知若没有通过市场认证，会在发布成功后保留明确的通知失败结果。本地 PNPR 体验见[市场发布与管理体验](./plugin-market.md)。
+
+CLI 输出原始回执及查询 URL；`pending` / `processing` 表示收录尚未完成，`indexed` 才表示该回执已完成收录，`failed` 保留稳定 `code`。重复提交复用已有回执，因此 HTTP `200` 也可能返回失败。当前 Worker 不支持的 provenance 校验会明确结算为 `provenance-runtime-unsupported`；管理刷新、可见性与审计入口见[市场项目说明](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md)。
+
+npm 发布成功而通知请求失败时，发行仍已存在。显式 `--webhook` 使命令报错，CI 自动通知则输出 warning；修复通知问题后可再次运行同一命令，版本检查会避免重复发布。查询已有回执时使用输出的 URL，无需重新发布或重复提交通知。
 
 ## 自定义本地 Plugin 模板
 

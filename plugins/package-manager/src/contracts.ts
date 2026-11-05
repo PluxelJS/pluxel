@@ -1,4 +1,29 @@
 import type { RpcTarget } from 'capnweb'
+import type {
+	PackageMarket,
+	MarketPackageQuery,
+	MarketReleaseQuery,
+	MarketPackagePage,
+	MarketPackageDetail,
+	MarketReleasePage,
+	MarketRelease,
+	MarketReadResult,
+	MarketInstallRequest,
+} from './market-contracts.ts'
+export type {
+	PackageMarket,
+	MarketPackageQuery,
+	MarketReleaseQuery,
+	MarketPackageSummary,
+	MarketPackagePage,
+	MarketPackageDetail,
+	MarketReleasePage,
+	MarketRelease,
+	MarketReadResult,
+	MarketPackageIdentity,
+	MarketReleaseIdentity,
+	MarketInstallRequest,
+} from './market-contracts.ts'
 
 export type ManagedPackage = Readonly<{
 	name: string
@@ -43,8 +68,6 @@ export type PackageManagerSnapshot = Readonly<{
 	allowBuilds: readonly string[]
 }>
 
-export type PackageMarket = Readonly<{ id: string; url: string }>
-
 /** A detached preview of one materialized installation. Preparing again replaces the previous plan. */
 export type PackageInstallPlan = Readonly<{
 	id: string
@@ -68,49 +91,6 @@ export type PackagePreparationResult =
 	| Readonly<{ ok: true; plan: PackageInstallPlan }>
 	| Readonly<{ ok: false; failed: readonly PackageMutationFailure[] }>
 
-export type MarketPackageQuery = Readonly<{ query?: string; cursor?: string; limit?: number }>
-export type MarketReleaseQuery = Readonly<{ cursor?: string; limit?: number }>
-export type MarketPackageSummary = Readonly<{
-	name: string
-	description: string | null
-	latest: string | null
-	repository: string | null
-	indexedVersions: number
-	observedAt: number
-}>
-export type MarketPackagePage = Readonly<{
-	packages: readonly MarketPackageSummary[]
-	nextCursor: string | null
-}>
-export type MarketReleasePage = Readonly<{
-	releases: readonly Readonly<{ version: string; integrity: string; checkedAt: number }>[]
-	nextCursor: string | null
-	/** This is the indexed subset, not a complete npm version history. */
-	coverage: 'indexed-only'
-}>
-export type MarketRelease = Readonly<{
-	name: string
-	version: string
-	registry: string
-	integrity: string
-	checkedAt: number
-	provenance:
-		| Readonly<{ status: 'missing' }>
-		| Readonly<{ status: 'verified'; repository: string; commit: string; buildUrl: string | null }>
-	peerDependencies: Readonly<Record<string, string>>
-	pluginPackages: Readonly<Record<string, 'required' | 'optional'>>
-}>
-export type MarketReadResult<T> =
-	| Readonly<{ ok: true; value: T }>
-	| Readonly<{
-			ok: false
-			error: Readonly<{
-				code: 'UNKNOWN_MARKET' | 'INVALID_QUERY' | 'MARKET_UNAVAILABLE' | 'INVALID_RESPONSE'
-				message: string
-			}>
-	  }>
-export type MarketInstallRequest = Readonly<{ marketId: string; name: string; version: string }>
-
 export interface PackageManagerApi extends RpcTarget {
 	/** Queued with mutations; rejects after the owner starts closing. */
 	snapshotDto(): Promise<PackageManagerSnapshot>
@@ -121,10 +101,18 @@ export interface PackageManagerApi extends RpcTarget {
 		marketId: string,
 		query?: MarketPackageQuery,
 	): Promise<MarketReadResult<MarketPackagePage>>
+	/** Read package metadata even without checked releases; omitting registry selects public npm. */
+	marketPackageDto(
+		marketId: string,
+		name: string,
+		registry?: string,
+	): Promise<MarketReadResult<MarketPackageDetail>>
+	/** Read one exact release; omitting registry selects public npm. */
 	marketReleaseDto(
 		marketId: string,
 		name: string,
 		version: string,
+		registry?: string,
 	): Promise<MarketReadResult<MarketRelease>>
 	marketReleasesDto(
 		marketId: string,

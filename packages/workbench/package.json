@@ -104,7 +104,7 @@
 		"test:installed": "node tests/installed-vite.smoke.mjs",
 		"build:web": "vp run compile-web",
 		"build:lib": "vp run compile-lib",
-		"dev:shell": "vp dev --config shell/vite.config.ts"
+		"dev:shell": "node ../../scripts/check-worksplit-native.mjs . && vp dev --config shell/vite.config.ts"
 	},
 	"dependencies": {
 		"@module-federation/runtime": "catalog:prod",

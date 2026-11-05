@@ -138,7 +138,7 @@ async function mount(
 						{standalone ? (
 							<RouterProvider router={standalone} />
 						) : (
-							<Workbench workbench={workspace.workbench} />
+							<Workbench instance={workspace.workbench} />
 						)}
 					</WorkbenchRuntimeProvider>
 				</WorkbenchSessionProvider>
@@ -169,7 +169,7 @@ it.each(['/', '/__pluxel/workbench'])(
 		const native = container.querySelector('.worksplit-workbench')
 		await act(async () => {
 			const result = await workspace.workbench.open({ to: '/logs' })
-			expect(result.status).toBe('committed')
+			expect(result.status).toBe('applied')
 		})
 		expect(active().textContent).toContain('Runtime logs')
 		expect(container.querySelector('.worksplit-workbench')).toBe(native)

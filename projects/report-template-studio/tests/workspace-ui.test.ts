@@ -1,3 +1,4 @@
+import { decideLeave } from './editor-leave'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { serialize } from 'capnweb'
 import { createTypstSourceEditor } from '@pluxel/plugin-typst/tiptap'
@@ -105,9 +106,11 @@ describe('workspace explicit form input and preview ownership', () => {
 			editorLifecycle(workspace, 'second.typ', 'file'),
 			editorLifecycle(workspace, 'first.typ', 'form'),
 			editorLifecycle(other, 'first.typ', 'file'),
-		].map((lifecycle) => lifecycle.getCloseRevision!())
+		].map((lifecycle) => lifecycle.leave!.getState().token)
 		expect(new Set(revisions).size).toBe(revisions.length)
-		expect(editorLifecycle(workspace, 'first.typ', 'file').getCloseRevision!()).toBe(revisions[0])
+		expect(editorLifecycle(workspace, 'first.typ', 'file').leave!.getState().token).toBe(
+			revisions[0],
+		)
 		workspace.dispose()
 		other.dispose()
 	})
@@ -1268,13 +1271,13 @@ describe('workspace explicit form input and preview ownership', () => {
 		})
 		const form = editorLifecycle(workspace, target.entry, 'form')
 		const file = editorLifecycle(workspace, target.entry, 'file')
-		expect(await form.beforeLeave!('close', { id: 'form', from: '/form' })).toBe(false)
-		expect(file.isDirty!()).toBe(true)
+		expect(await decideLeave(form)).toBe(false)
+		expect(file.leave!.getState().hasUnsavedChanges).toBe(true)
 		expect(workspace.files.get(target.entry)?.content).toBe('draft')
-		const revision = file.getCloseRevision!()
+		const revision = file.leave!.getState().token
 		await workspace.discard(target.entry)
-		expect(file.getCloseRevision!()).not.toBe(revision)
-		expect(await file.beforeLeave!('close', { id: 'file', from: '/file' })).toBe(true)
+		expect(file.leave!.getState().token).not.toBe(revision)
+		expect(await decideLeave(file)).toBe(true)
 		expect(workspace.files.get(target.entry)?.content).toBe('saved')
 		workspace.dispose()
 	})
@@ -1309,25 +1312,25 @@ describe('workspace explicit form input and preview ownership', () => {
 			})
 			const lifecycle = editorLifecycle(workspace, path, 'file')
 			workspace.edit(path, path.endsWith('.json') ? '{"title":"Saved data"}' : 'Saved body')
-			expect(lifecycle.isDirty!()).toBe(true)
+			expect(lifecycle.leave!.getState().hasUnsavedChanges).toBe(true)
 			await workspace.save(path)
 			expect(api.setInput).toHaveBeenCalledWith(
 				expect.objectContaining({ entry: target.entry, expectedVersion: 'original' }),
 			)
 			expect(api.writeFile).not.toHaveBeenCalled()
-			expect(lifecycle.isDirty!()).toBe(false)
-			const before = lifecycle.getCloseRevision!()
+			expect(lifecycle.leave!.getState().hasUnsavedChanges).toBe(false)
+			const before = lifecycle.leave!.getState().token
 			workspace.edit(path, path.endsWith('.json') ? '{"title":"Unsaved data"}' : 'Unsaved body')
-			expect(lifecycle.getCloseRevision!()).not.toBe(before)
+			expect(lifecycle.leave!.getState().token).not.toBe(before)
 			vi.mocked(api.setInput).mockRejectedValueOnce({ code: 'DRAFT_VERSION_CONFLICT' })
 			vi.mocked(api.getInput).mockResolvedValue({
 				data: {},
 				editor: { files },
 				storageVersion: 'external',
 			})
-			expect(await lifecycle.beforeLeave!('close', { id: 'file', from: '/file' })).toBe(false)
+			expect(await decideLeave(lifecycle)).toBe(false)
 			expect(workspace.documents.get(target.entry)?.inputConflict).toBeDefined()
-			expect(lifecycle.isDirty!()).toBe(true)
+			expect(lifecycle.leave!.getState().hasUnsavedChanges).toBe(true)
 			workspace.dispose()
 		},
 	)

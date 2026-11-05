@@ -15,14 +15,13 @@ type OfficialCapabilityModules = {
 	'rolldown-distribution': typeof import('@pluxel/rolldown/distribution')
 	'rolldown-workspace-fs': typeof import('@pluxel/rolldown/workspace/fs')
 	'rolldown-workspace-info': typeof import('@pluxel/rolldown/workspace/info')
-	market: typeof import('@pluxel/market')
 }
 
 type OfficialCapabilityId = keyof OfficialCapabilityModules
 
 type OfficialCapabilityMetadata = {
 	command: string
-	owner: '@pluxel/rolldown' | '@pluxel/market'
+	owner: '@pluxel/rolldown'
 	subpath: '.' | `./${string}`
 	install: string
 }
@@ -59,12 +58,6 @@ const OFFICIAL_CAPABILITIES = {
 		owner: '@pluxel/rolldown',
 		subpath: './workspace/info',
 		install: 'vp add -D @pluxel/rolldown',
-	},
-	market: {
-		command: 'publish --webhook',
-		owner: '@pluxel/market',
-		subpath: '.',
-		install: 'vp add -D @pluxel/market',
 	},
 } satisfies Record<OfficialCapabilityId, OfficialCapabilityMetadata>
 

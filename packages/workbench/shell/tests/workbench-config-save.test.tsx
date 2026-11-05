@@ -86,7 +86,7 @@ async function fixture(patch: RuntimeManagementClient['config']['patch']) {
 			<RuntimeManagementClientProvider client={client}>
 				<ManagementQueryProvider>
 					<WorkspaceProviders session={session}>
-						<Workbench workbench={session.workbench} />
+						<Workbench instance={session.workbench} />
 					</WorkspaceProviders>
 				</ManagementQueryProvider>
 			</RuntimeManagementClientProvider>,
@@ -171,6 +171,7 @@ describe('business configuration save in native documents', () => {
 		await act(async () => {
 			await session.start('/security', false)
 		})
+		const states = [session.documents.get(id)!, session.documents.get(second)!]
 		let leaving!: Promise<unknown>
 		await act(async () => {
 			leaving = session.leave('/security#forms-saved').catch((cause: unknown) => cause)
@@ -181,8 +182,8 @@ describe('business configuration save in native documents', () => {
 			expect(await leaving).toBeUndefined()
 		})
 		await vi.waitFor(() => expect(window.location.hash).toBe('#forms-saved'))
-		expect(session.documents.get(id)!.isDirty()).toBe(false)
-		expect(session.documents.get(second)!.isDirty()).toBe(false)
+		expect(states.map((state) => state.isDirty())).toEqual([false, false])
+		expect(session.workbench.getDocuments()).toHaveLength(0)
 		expect(patch).toHaveBeenNthCalledWith(
 			1,
 			owner,
@@ -195,10 +196,8 @@ describe('business configuration save in native documents', () => {
 			{ set: { name: 'second saved configuration' }, remove: [['name']] },
 			{ expectedManagedRevision: 'config:initial' },
 		)
-		expect(container.querySelector(`[data-worksplit-content="${id}"] input[name="name"]`)).toBe(
-			input,
-		)
-		expect(secondScope.querySelector('input[name="name"]')).toBe(secondInput)
+		expect(container.querySelector(`[data-worksplit-content="${id}"]`)).toBeNull()
+		expect(container.querySelector(`[data-worksplit-content="${second}"]`)).toBeNull()
 		expect(warnings).not.toHaveBeenCalled()
 	})
 
@@ -213,7 +212,7 @@ describe('business configuration save in native documents', () => {
 		)!
 		await type(input, 'first saved config')
 		await type(secondInput, 'second config')
-		window.history.replaceState(null, '', '/foreign')
+		window.history.replaceState(null, '', '/security')
 		vi.spyOn(console, 'error').mockImplementation(() => {})
 		let leaving!: Promise<unknown>
 		await act(async () => {
@@ -225,7 +224,7 @@ describe('business configuration save in native documents', () => {
 		await type(input, 'new config during later departure guard')
 		await confirm(1)
 		await act(async () => {
-			expect(await leaving).toMatchObject({ message: expect.stringContaining('退出期间文档') })
+			expect(await leaving).toBeUndefined()
 		})
 		expect(window.location.pathname + window.location.hash).toBe('/security')
 		expect(session.documents.get(id)!.isDirty()).toBe(true)
@@ -265,7 +264,7 @@ describe('business configuration save in native documents', () => {
 		})
 		await act(async () => {
 			const result = await closing
-			expect(result.status).toBe('closed')
+			expect(result.status).toBe('applied')
 		})
 		expect(session.workbench.getDocuments()).toHaveLength(0)
 	})
@@ -289,7 +288,7 @@ describe('business configuration save in native documents', () => {
 			release(savedConfig({ name: 'submitted draft' }))
 			await pending
 		})
-		await act(async () => expect(await closing).toMatchObject({ status: 'rejected' }))
+		await act(async () => expect(await closing).toMatchObject({ status: 'denied' }))
 		expect(session.workbench.getDocument(id)).not.toBeNull()
 		expect(session.documents.get(id)!.isDirty()).toBe(true)
 		expect(container.querySelector(`input[name="name"]`)).toBe(input)
@@ -307,7 +306,7 @@ describe('business configuration save in native documents', () => {
 			closing = session.workbench.close(id)
 		})
 		await confirm()
-		await act(async () => expect(await closing).toMatchObject({ status: 'rejected' }))
+		await act(async () => expect(await closing).toMatchObject({ status: 'denied' }))
 		expect(session.workbench.getDocument(id)).not.toBeNull()
 		expect(session.documents.get(id)!.isDirty()).toBe(true)
 		expect(container.querySelector(`input[name="name"]`)).toBe(input)

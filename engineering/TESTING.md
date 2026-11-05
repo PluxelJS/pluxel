@@ -68,6 +68,8 @@ SSR 条件会进入 Vitest worker 的 Node `--conditions`。不能把 `import` �
 
 嵌套 vendor workspace 的 Vitest 5 文件模块缓存按最近的 lockfile 失效，而实际依赖由外层安装。根依赖或补丁更新后若仍加载旧依赖，用原生 `vp run --ignore-depends-on --no-cache @worksplit/react#check-tests --clearCache` 清理所属测试缓存，再执行正常测试；不删除服务数据或复制第二份依赖安装。
 
+Worksplit 的 `react`、独立 `split-view` 和 demo 是根 workspace 成员，不再接入 `@worksplit/core`。原生 Router/history/FlexLayout 的完整补丁由根 pnpm `patchedDependencies` 应用，正文只维护在 vendor。`vp run worksplit:native:check` 在当前源码构建后，调用制品内的只读安装检查验证 Shell、Typst 和 Studio 的实际依赖、唯一实例及全部补丁文件；各消费者 build/dev 入口也在执行前检查。这个原生依赖证据不替代各宿主的导航、草稿、关闭和布局验收，支持版本和补丁移除条件见 [Worksplit 原生支持](../vendor/split-like-vscode/docs/navigation-support.md)。
+
 消费本包发布制品的测试任务必须显式依赖本包 `build`，不能只依赖 依赖包的 `build` 或依赖暖缓存碰巧留下的文件。Package Manager 的不可变安装测试与维护者 Host 的 native/production-Vite smoke 都遵守这一顺序；测试子进程失败或超时也必须被回收。
 
 文档构建与开发服务共用原生 `prepare:docs` 任务，准备 Core、Host、Services、valibot-form、Typst 浏览器库与 Playground 类型资源；Typst 只运行 `compile-lib`，Core 的构建边负责准备 Context、Eventure 的声明。Twoslash 使用源码条件验证示例，仍需准备没有这些源码条件的依赖声明。完整文档构建由 Vite Task 缓存，不另存只以示例代码为键的 Twoslash 类型结果，避免 API 变化或缺失声明被旧结果掩盖。

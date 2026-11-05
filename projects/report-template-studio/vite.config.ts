@@ -36,9 +36,14 @@ export default defineConfig({
 					],
 				},
 			},
+			'check-native': {
+				command: 'node ../../scripts/check-worksplit-native.mjs .',
+				dependsOn: ['@worksplit/react#compile'],
+				cache: false,
+			},
 			compile: {
 				command: 'vp build',
-				dependsOn: ['compile-code'],
+				dependsOn: ['compile-code', 'check-native'],
 				cache: { ...compileCache, output: ['dist/renderer/**'] },
 			},
 		},

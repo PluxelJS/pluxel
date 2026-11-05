@@ -12,7 +12,7 @@ const { values } = parseArgs({
 		origin: { type: 'string' },
 		root: { type: 'string' },
 		instance: { type: 'string' },
-		executable: { type: 'string' },
+		'ws-endpoint': { type: 'string' },
 		artifacts: { type: 'string', default: '/tmp/pluxel-workbench-browser' },
 		lifecycle: { type: 'boolean', default: false },
 	},
@@ -96,15 +96,34 @@ async function check(name, run) {
 const flatten = (node) => [node, ...(node.children ?? []).flatMap(flatten)]
 const nodes = (snapshot) =>
 	snapshot ? [snapshot.layout.layout, ...(snapshot.layout.borders ?? [])].flatMap(flatten) : []
-const browser = await chromium.launch({
-	headless: true,
-	...(values.executable ? { executablePath: values.executable } : {}),
-})
+const browser = await chromium.connect(
+	values['ws-endpoint'] ?? process.env.PLAYWRIGHT_WS_ENDPOINT ?? 'ws://127.0.0.1:3000',
+	{ exposeNetwork: '<loopback>' },
+)
 const context = await browser.newContext({
 	viewport: { width: 1440, height: 900 },
 	colorScheme: 'light',
 })
 const page = await context.newPage()
+let holdReplies = false
+let runtimeReleases = 0
+const delayedReplies = []
+await page.routeWebSocket('**/__pluxel/runtime/session', (socket) => {
+	const server = socket.connectToServer()
+	socket.onMessage((message) => {
+		const frame = JSON.parse(String(message))
+		if (Array.isArray(frame) && frame[0] === 'release') runtimeReleases++
+		server.send(message)
+	})
+	server.onMessage((message) => {
+		if (holdReplies) delayedReplies.push(() => socket.send(message))
+		else socket.send(message)
+	})
+})
+function releaseReplies() {
+	holdReplies = false
+	for (const send of delayedReplies.splice(0)) send()
+}
 const runtimeSockets = new Set()
 let runtimeDocument
 page.setDefaultTimeout(20000)
@@ -220,7 +239,8 @@ async function duplicateDocument(target, placement) {
 	}
 	await expect.poll(added).toHaveLength(1)
 	const [id] = await added()
-	return tabs.and(page.locator(`[aria-controls=${JSON.stringify(id)}]`))
+	const copy = tabs.and(page.locator(`[aria-controls=${JSON.stringify(id)}]`))
+	return copy
 }
 async function openMenu(target) {
 	await target.click({ button: 'right' })
@@ -371,7 +391,33 @@ try {
 		await input.press('Enter')
 		await expect(pill).toHaveAttribute('aria-label', 'Research')
 		await openMenu(pill)
-		await menu().getByRole('button', { name: '分组颜色 4', exact: true }).click()
+		const colors = menu().getByRole('button', { name: /^分组颜色 \d+$/ })
+		const assertColor = async (index) => {
+			const expected = await colors.nth(index).evaluate((element) => element.style.backgroundColor)
+			await expect
+				.poll(async () => {
+					const color = nodes(await snapshot()).find(
+						(node) => node.type === 'tabgroup' && node.name === 'Research',
+					)?.color
+					return page.evaluate((value) => {
+						const element = document.createElement('span')
+						element.style.color = value
+						return element.style.color
+					}, color)
+				})
+				.toBe(expected)
+			await expect(menu()).toBeVisible()
+		}
+		await colors.first().focus()
+		await page.keyboard.press('End')
+		await expect(colors.last()).toBeFocused()
+		await page.keyboard.press('Space')
+		await assertColor(9)
+		await page.keyboard.press('Home')
+		for (let index = 0; index < 3; index++) await page.keyboard.press('ArrowRight')
+		await expect(colors.nth(3)).toBeFocused()
+		await page.keyboard.press('Enter')
+		await assertColor(3)
 		await page.keyboard.press('Escape')
 		await openMenu(tab('Studio B'))
 		await menu().getByRole('button', { name: 'Research', exact: true }).click()
@@ -449,7 +495,7 @@ try {
 		'published Border tools retain the central document URL and native activation preserves drafts',
 		async () => {
 			await openMenu(tab('Studio A'))
-			await menu().getByRole('menuitem', { name: '移动标签到：标签容器 1', exact: true }).click()
+			await menu().getByRole('menuitem', { name: '移动到：标签容器 1', exact: true }).click()
 			await tab('Studio A').click()
 			const accepted = page.url()
 			await findWorkspaceEntry('操作指南 · 左侧 · 打开')
@@ -532,7 +578,6 @@ try {
 					size,
 				}))
 			assert.deepEqual(projectLayout(after), projectLayout(before))
-			await expect(page.getByText(/native-identity-conflict:/)).toHaveCount(0)
 		},
 	)
 	await check(
@@ -542,9 +587,28 @@ try {
 			await tab('Studio B').click()
 			const restoredInput = await reportInput('Studio B').elementHandle()
 			assert.ok(restoredInput)
+			// First activation of a lazy restored document must survive another round trip.
+			const restoredDocuments = nodes(await snapshot()).filter(
+				(node) => node.component === 'worksplit:document',
+			).length
+			await reportInput('Studio B').fill('lazy restored local draft')
+			await tab('Studio A').click()
+			await tab('Studio B').click()
+			const returnedInput = await reportInput('Studio B').elementHandle()
+			assert.ok(
+				await restoredInput.evaluate(
+					(element, returned) => element === returned && element.isConnected,
+					returnedInput,
+				),
+			)
+			await expect(reportInput('Studio B')).toHaveValue('lazy restored local draft')
+			assert.equal(
+				nodes(await snapshot()).filter((node) => node.component === 'worksplit:document').length,
+				restoredDocuments,
+			)
 			if ((await pill.getAttribute('aria-expanded')) === 'true') await pill.click()
 			await expect(pill).toHaveAttribute('aria-expanded', 'false')
-			await page.getByRole('button', { name: '标签容器操作', exact: true }).last().click()
+			await openMenu(pill)
 			await menu()
 				.getByRole('menuitem', { name: '关闭整个标签容器（含折叠分组）', exact: true })
 				.click()
@@ -566,19 +630,19 @@ try {
 			await expect
 				.poll(async () =>
 					nodes(await snapshot()).some(
-						(node) => node.component === 'worksplit.document' && node.name === '插件',
+						(node) => node.component === 'worksplit:document' && node.name === '插件',
 					),
 				)
 				.toBe(true)
 			const initialDocuments = nodes(await snapshot()).filter(
-				(node) => node.component === 'worksplit.document',
+				(node) => node.component === 'worksplit:document',
 			).length
 			for (let index = 0; index < 12; index++) {
 				await duplicateDocument(tab('首页').first())
 				await expect
 					.poll(
 						async () =>
-							nodes(await snapshot()).filter((node) => node.component === 'worksplit.document')
+							nodes(await snapshot()).filter((node) => node.component === 'worksplit:document')
 								.length,
 					)
 					.toBe(initialDocuments + 1 + index)
@@ -641,7 +705,9 @@ try {
 		async () => {
 			await page.setViewportSize({ width: 1440, height: 900 })
 			const publication = online.layout.entries.find(
-				(candidate) => candidate.descriptor.owner.exportName === 'PackageManagerPlugin',
+				(candidate) =>
+					candidate.descriptor.owner?.exportName === 'PackageManagerPlugin' &&
+					candidate.descriptor.key === 'manager',
 			)
 			assert.equal(publication?.placement.kind, 'route')
 			assert.equal(publication.placement.path, '/packages')
@@ -649,17 +715,19 @@ try {
 			const before = await consoleRun('packageManagerSnapshot')
 			await showApps()
 			await duplicateDocument(tab('应用'))
-			await entry(title).click()
+			await entry(publication.placement.navigation?.label ?? title).click()
 			await expect(page).toHaveURL(origin + basepath + '/packages')
 			const pane = page.getByRole('tabpanel', { name: title, exact: true })
 			await expect(
-				pane.getByRole('heading', { name: 'Managed plugin packages', exact: true }),
+				pane.getByRole('heading', { name: 'Plugin packages', exact: true }),
 			).toBeVisible()
-			const input = pane.getByRole('textbox', { name: 'Install package specs', exact: true })
-			await expect(input).toBeEnabled()
-			await expect(pane.getByText(/^pnpm /)).toBeVisible()
-			await expect(pane.getByText('Managed root:', { exact: false })).toContainText(before.rootDir)
+			await expect(
+				pane.getByRole('tab', { name: `Installed (${before.packages.length})`, exact: true }),
+			).toBeVisible()
 			await expect(pane.locator('tbody tr')).toHaveCount(before.packages.length)
+			await pane.getByRole('tab', { name: 'Direct install', exact: true }).click()
+			const input = pane.getByRole('textbox', { name: 'npm packages', exact: true })
+			await expect(input).toBeEnabled()
 			const packageInputA = await input.elementHandle()
 			const draftA = '@pluxel/browser-draft-a@0.0.0'
 			await input.fill(draftA)
@@ -675,8 +743,9 @@ try {
 			await rename(duplicate, copyTitle)
 			await expect(tab(copyTitle)).toBeVisible()
 			const copyPane = page.getByRole('tabpanel', { name: copyTitle, exact: true })
+			await copyPane.getByRole('tab', { name: 'Direct install', exact: true }).click()
 			const copyInput = copyPane.getByRole('textbox', {
-				name: 'Install package specs',
+				name: 'npm packages',
 				exact: true,
 			})
 			await expect(copyInput).toBeEnabled()
@@ -694,7 +763,7 @@ try {
 			assert.deepEqual(after, before)
 			receipt.packages = {
 				placement: publication.placement,
-				heading: 'Managed plugin packages',
+				heading: 'Plugin packages',
 				draftA,
 				draftB,
 				reusedOriginalNode: true,
@@ -769,7 +838,7 @@ try {
 		},
 	)
 	await check(
-		'real dirty View refuses native and context close, reports once, then releases after approval',
+		'real dirty View refuses native and context close, then releases after approval',
 		async () => {
 			const publication = online.layout.entries.find(
 				(candidate) =>
@@ -816,11 +885,9 @@ try {
 			await expect(input).toHaveValue(draft)
 			assert.equal(await handle.evaluate((element) => element.isConnected), true)
 			const contextHistory = await notificationHistory()
-			await expect(contextHistory.filter({ hasText: rejection })).toHaveCount(reportsBefore + 1)
+			await expect(contextHistory.filter({ hasText: rejection })).toHaveCount(reportsBefore)
 			await page.getByRole('button', { name: '关闭', exact: true }).click()
 			const notification = page.locator('.mantine-Notification-root').filter({ hasText: rejection })
-			await expect(notification).toHaveCount(1)
-			await notification.locator('.mantine-Notification-closeButton').click()
 			await expect(notification).toHaveCount(0)
 			await target.locator('[title="关闭标签"]').click()
 			await expect(dialog).toBeVisible()
@@ -834,7 +901,7 @@ try {
 				key: publication.descriptor.key,
 				href,
 				nativeCloseRejectedWithoutReport: true,
-				contextCloseRejectedWithOneReport: true,
+				contextCloseRejectedWithoutFailureReport: true,
 				inputRetainedUntilApproval: true,
 				approvedCloseUnmounted: true,
 				backendInstructionsUnchanged: true,
@@ -842,6 +909,44 @@ try {
 			await page.screenshot({ path: resolve(artifacts, 'dirty-view-reopened.png') })
 		},
 	)
+	await check('newer document navigation supersedes a slow real MF activation', async () => {
+		await showApps()
+		const pendingTab = await duplicateDocument(tab('应用'))
+		const id = await pendingTab.getAttribute('id')
+		const pendingPanel = page.locator(
+			`[id=${JSON.stringify(await pendingTab.getAttribute('aria-controls'))}]`,
+		)
+		const before = await tabs.count()
+		holdReplies = true
+		try {
+			await entry('Architecture Lab').click()
+			await expect(page).toHaveURL(origin + basepath + '/architecture-lab')
+			await expect.poll(() => delayedReplies.length).toBeGreaterThan(0)
+			await page.locator('.plx-activity [aria-label="首页"]').click()
+			await expect(page).toHaveURL(origin + basepath + '/')
+			const releasesBeforeReply = runtimeReleases
+			const heldReplies = delayedReplies.length
+			releaseReplies()
+			// Wait for the real late RPC roots to be disposed, rather than asserting before
+			// the delayed response has reached the abandoned activation.
+			await expect.poll(() => runtimeReleases).toBeGreaterThan(releasesBeforeReply)
+			await expect(pendingTab).toHaveAttribute('aria-selected', 'true')
+			await expect(
+				pendingPanel.getByRole('textbox', { name: 'Report title', exact: true }),
+			).toHaveCount(0)
+			await expect(tabs).toHaveCount(before)
+			await expect(page).toHaveURL(origin + basepath + '/')
+			receipt.slowActivation = {
+				originalTab: id,
+				newerHref: basepath,
+				documentCount: before,
+				heldReplies,
+				lateRootsReleased: runtimeReleases - releasesBeforeReply,
+			}
+		} finally {
+			releaseReplies()
+		}
+	})
 	if (values.lifecycle)
 		await check(
 			'real plugin stop withdraws epoch, destroys old MF roots and permits fresh activation',
@@ -920,12 +1025,14 @@ try {
 	console.error(receipt.failure)
 	process.exitCode = 1
 } finally {
+	releaseReplies()
 	if (stopped)
 		await consoleRun('startStudio').catch((error) => {
 			receipt.restoreFailure = String(error)
 			process.exitCode = 1
 		})
 	await writeFile(resolve(artifacts, 'receipt.json'), JSON.stringify(receipt, null, 2) + '\n')
+	await context.close()
 	await browser.close()
 	console.log(`Receipt: ${resolve(artifacts, 'receipt.json')}`)
 }

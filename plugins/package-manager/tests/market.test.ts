@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PackageMarketClient } from '../src/market.ts'
+import type { MarketPackageDetail, MarketPackageSummary, MarketRelease } from '../src/contracts.ts'
 
 afterEach(() => vi.restoreAllMocks())
 
 const market = [{ id: 'community', url: 'https://market.example/catalog' }]
-const release = {
+const release: MarketRelease = {
 	name: '@example/plugin',
 	version: '1.0.0',
 	registry: 'https://registry.npmjs.org',
@@ -13,6 +14,8 @@ const release = {
 	provenance: { status: 'missing' },
 	peerDependencies: {},
 	pluginPackages: {},
+	readme: null,
+	license: null,
 }
 
 describe('PackageMarketClient', () => {
@@ -48,7 +51,7 @@ describe('PackageMarketClient', () => {
 			const result = await client.release('community', release.name, release.version)
 			expect(result).toEqual({ ok: true, value: release })
 			expect(fetch).toHaveBeenCalledWith(
-				'https://market.example/catalog/v1/packages/%40example%2Fplugin/releases/1.0.0',
+				'https://market.example/catalog/v1/packages/%40example%2Fplugin/releases/1.0.0?registry=https%3A%2F%2Fregistry.npmjs.org',
 				expect.objectContaining({ redirect: 'error' }),
 			)
 		} finally {
@@ -98,12 +101,18 @@ describe('PackageMarketClient', () => {
 				Response.json({
 					packages: [
 						{
+							registry: release.registry,
 							name: release.name,
 							description: null,
 							latest: '2.0.0',
 							repository: null,
+							repositoryStars: null,
+							repositoryObservedAt: null,
 							indexedVersions: 1,
 							observedAt: 1,
+							official: true,
+							category: 'development',
+							tags: ['tooling'],
 						},
 					],
 					nextCursor: null,
@@ -118,6 +127,159 @@ describe('PackageMarketClient', () => {
 				ok: false,
 				error: { code: 'MARKET_UNAVAILABLE', message: expect.stringContaining('not indexed') },
 			})
+		} finally {
+			client.close()
+		}
+	})
+
+	it('preserves the selected registry and market filters without accepting a same-name public release', async () => {
+		const source = 'http://127.0.0.1:7677/npm'
+		const fetch = vi.spyOn(globalThis, 'fetch')
+		const client = new PackageMarketClient(market)
+		try {
+			const summary: MarketPackageSummary = {
+				registry: source,
+				name: release.name,
+				description: 'Private plugin',
+				latest: release.version,
+				repository: null,
+				repositoryStars: null,
+				repositoryObservedAt: null,
+				indexedVersions: 1,
+				observedAt: 1,
+				official: false,
+				category: 'storage',
+				tags: ['cache'],
+			}
+			fetch.mockResolvedValueOnce(Response.json({ packages: [summary], nextCursor: null }))
+			expect(
+				await client.packages('community', {
+					registry: source,
+					query: 'plugin',
+					official: false,
+					category: 'storage',
+					tag: 'cache',
+					limit: 50,
+				}),
+			).toEqual({ ok: true, value: { packages: [summary], nextCursor: null } })
+			const search = new URL(String(fetch.mock.calls.at(-1)![0])).searchParams
+			expect(Object.fromEntries(search)).toEqual({
+				registry: source,
+				query: 'plugin',
+				official: 'false',
+				category: 'storage',
+				tag: 'cache',
+				limit: '50',
+			})
+			fetch.mockResolvedValueOnce(Response.json({ ...release, registry: source }))
+			expect(await client.release('community', release.name, release.version, source)).toEqual({
+				ok: true,
+				value: { ...release, registry: source },
+			})
+			expect(new URL(String(fetch.mock.calls.at(-1)![0])).searchParams.get('registry')).toBe(source)
+			fetch.mockResolvedValueOnce(Response.json(release))
+			expect(
+				await client.release('community', release.name, release.version, source),
+			).toMatchObject({ ok: false, error: { code: 'INVALID_RESPONSE' } })
+			fetch.mockResolvedValueOnce(
+				Response.json({ packages: [{ ...summary, registry: release.registry }], nextCursor: null }),
+			)
+			expect(await client.packages('community', { registry: source })).toMatchObject({
+				ok: false,
+				error: { code: 'INVALID_RESPONSE' },
+			})
+			fetch.mockResolvedValueOnce(
+				Response.json({ releases: [], nextCursor: null, coverage: 'indexed-only' }),
+			)
+			expect(await client.releases('community', release.name, { registry: source })).toMatchObject({
+				ok: true,
+			})
+			expect(new URL(String(fetch.mock.calls.at(-1)![0])).searchParams.get('registry')).toBe(source)
+		} finally {
+			client.close()
+		}
+	})
+
+	it('rejects unsupported registry URLs and Worker query bounds before requesting', async () => {
+		const fetch = vi.spyOn(globalThis, 'fetch')
+		const client = new PackageMarketClient(market)
+		try {
+			for (const source of [
+				'http://registry.example',
+				'https://registry.example/',
+				'https://user:password@registry.example',
+				'https://registry.example?token=secret',
+				'https://registry.example#fragment',
+			]) {
+				expect(
+					await client.release('community', release.name, release.version, source),
+				).toMatchObject({ ok: false, error: { code: 'INVALID_QUERY' } })
+			}
+			for (const query of [{ query: 'x'.repeat(101) }, { limit: 51 }]) {
+				expect(await client.packages('community', query)).toMatchObject({
+					ok: false,
+					error: { code: 'INVALID_QUERY' },
+				})
+			}
+			expect(fetch).not.toHaveBeenCalled()
+		} finally {
+			client.close()
+		}
+	})
+
+	it('reads registry metadata without inventing an installable release and rejects a different package identity', async () => {
+		const source = 'http://127.0.0.1:7677/npm'
+		const detail: MarketPackageDetail = {
+			registry: source,
+			name: '@example/plugin',
+			description: 'A metadata-only plugin',
+			latest: '1.0.0',
+			distTags: { latest: '1.0.0' },
+			metadataVersion: '1.0.0',
+			repository: 'https://github.com/example/plugin',
+			repositoryStars: null,
+			repositoryObservedAt: null,
+			indexedVersions: 0,
+			observedAt: 1,
+			official: true,
+			category: 'development',
+			tags: ['tooling'],
+			readme: { text: '# Registry README', truncated: false },
+			license: 'MIT',
+			coverage: 'indexed-only',
+		}
+		const fetch = vi.spyOn(globalThis, 'fetch')
+		const client = new PackageMarketClient(market)
+		try {
+			fetch.mockResolvedValueOnce(Response.json(detail))
+			expect(await client.package('community', detail.name, source)).toEqual({
+				ok: true,
+				value: detail,
+			})
+			expect(fetch).toHaveBeenLastCalledWith(
+				'https://market.example/catalog/v1/packages/%40example%2Fplugin?registry=http%3A%2F%2F127.0.0.1%3A7677%2Fnpm',
+				expect.any(Object),
+			)
+			for (const different of [
+				{ registry: release.registry },
+				{ name: '@example/other' },
+				{ repositoryStars: -1 },
+			]) {
+				fetch.mockResolvedValueOnce(Response.json({ ...detail, ...different }))
+				expect(await client.package('community', detail.name, source)).toMatchObject({
+					ok: false,
+					error: { code: 'INVALID_RESPONSE' },
+				})
+			}
+			const publicDetail: MarketPackageDetail = { ...detail, registry: release.registry }
+			fetch.mockResolvedValueOnce(Response.json(publicDetail))
+			expect(await client.package('community', detail.name)).toEqual({
+				ok: true,
+				value: publicDetail,
+			})
+			expect(new URL(String(fetch.mock.calls.at(-1)![0])).searchParams.get('registry')).toBe(
+				release.registry,
+			)
 		} finally {
 			client.close()
 		}

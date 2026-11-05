@@ -4,7 +4,7 @@ import { Activity, act, useEffect, useMemo, useState, type ReactNode } from 'rea
 import type { Root } from 'react-dom/client'
 import { useRouter, type AnyRouter } from '@tanstack/react-router'
 import { Actions } from 'flexlayout-react'
-import { useWorkbenchContent } from '@worksplit/react'
+import { useContent } from '@worksplit/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceSession } from '../src/app/workbench/session'
 import { useOptionalWorkbenchDocument } from '../src/app/workbench/document'
@@ -49,8 +49,8 @@ function Editor() {
 		model.setHidden = setHidden
 		fixtures.models.set(document.id, model)
 		const editor = {
-			isDirty: () => model.dirty,
-			getCloseRevision: () => model.revision,
+			getState: () => ({ hasUnsavedChanges: model.dirty, token: model.revision }),
+			isWritePending: () => false,
 			get save() {
 				return model.save
 			},
@@ -77,10 +77,10 @@ function Editor() {
 }
 
 function EditorResources({ model, children }: { model: EditingModel; children: ReactNode }) {
-	const content = useWorkbenchContent()
+	const content = useContent()
 	useEffect(
 		() =>
-			content.effect(({ defer }) => {
+			content.runEffect(({ defer }) => {
 				defer(model.dispose)
 			}),
 		[content, model],
@@ -104,9 +104,13 @@ afterEach(async () => {
 	vi.restoreAllMocks()
 	vi.unstubAllGlobals()
 })
-async function fixture() {
+async function fixture(browser = false) {
 	const session = new WorkspaceSession({ basepath: '/' })
 	sessions.push(session)
+	if (browser) {
+		window.history.replaceState(null, '', '/logs')
+		await session.start('/logs', true)
+	}
 	const { container, root } = await renderWorkspace(session)
 	mounted.push(root)
 	const first = await openDocument(session, '/logs')
@@ -134,7 +138,7 @@ describe('native document close and save decisions', () => {
 		})
 		await decide(0, false)
 		await act(async () =>
-			expect(await closing).toMatchObject({ status: 'rejected', reason: 'decision' }),
+			expect(await closing).toMatchObject({ status: 'denied', reason: 'decision' }),
 		)
 		expect(session.workbench.getDocument(first)).not.toBeNull()
 		expect(model.dispose).toHaveBeenCalledOnce()
@@ -142,7 +146,7 @@ describe('native document close and save decisions', () => {
 		model.dirty = false
 		await act(async () =>
 			expect(await session.workbench.close(first)).toMatchObject({
-				status: 'closed',
+				status: 'applied',
 				cleanupErrors: [],
 			}),
 		)
@@ -195,15 +199,16 @@ describe('native document close and save decisions', () => {
 		expect(firstModel.dispose).not.toHaveBeenCalled()
 	})
 
-	it('rejects remote dirty batch close without inventing an editing revision', async () => {
+	it('protects remote dirty state and preserves the entire batch when its owner refuses', async () => {
 		const { session, first } = await fixture()
 		session.documents.get(first)!.remoteDirty = true
-		const report = vi.spyOn(session, 'report').mockImplementation(() => {})
-		await act(async () => expect(await session.closeDocuments()).toBe(false))
-		expect(report).toHaveBeenCalledWith(
-			expect.objectContaining({ message: expect.stringContaining('revision-required') }),
-		)
-		expect(fixtures.decisions).toHaveLength(0)
+		let closing!: Promise<boolean>
+		await act(async () => {
+			closing = session.closeDocuments()
+		})
+		await decide(0, false)
+		await act(async () => expect(await closing).toBe(false))
+		expect(fixtures.decisions).toHaveLength(1)
 		expect(session.workbench.getDocuments()).toHaveLength(2)
 	})
 
@@ -219,7 +224,10 @@ describe('native document close and save decisions', () => {
 		await decide(0, true)
 		await vi.waitFor(() => expect(fixtures.decisions[1]).toBeDefined())
 		const state = session.documents.get(first)!
-		state.editor = { isDirty: () => true, getCloseRevision: () => firstModel.revision }
+		state.editor = {
+			getState: () => ({ hasUnsavedChanges: true, token: firstModel.revision }),
+			isWritePending: () => false,
+		}
 		await decide(1, true)
 		await act(async () => expect(await closing).toBe(false))
 		expect(session.workbench.getDocuments().map((document) => document.id)).toEqual([first, second])
@@ -271,9 +279,7 @@ describe('native document close and save decisions', () => {
 	})
 
 	it('allows search/hash edits in a dirty document and rejects a pathname departure with no ghost browser history', async () => {
-		const { session, first } = await fixture()
-		window.history.replaceState(null, '', '/logs')
-		session.workbench.connectBrowser()
+		const { session, first } = await fixture(true)
 		await act(async () => session.workbench.activate(first))
 		const model = fixtures.models.get(first)!
 		model.dirty = true
@@ -298,7 +304,7 @@ describe('native document close and save decisions', () => {
 		await act(async () => {
 			await session.workbench.dispatch(Actions.setTabPinned(first, true))
 		})
-		const original = session.workbench.snapshot()
+		const original = session.workbench.createSnapshot()
 		const write = vi.spyOn(session.storage, 'write')
 		const dispose = vi.spyOn(session.workbench, 'dispose')
 		const report = vi.spyOn(session, 'report').mockImplementation(() => {})
@@ -308,7 +314,7 @@ describe('native document close and save decisions', () => {
 		})
 		await decide(0, true)
 		await act(async () => expect(await resetting).toBe(false))
-		expect(session.workbench.snapshot()).toEqual(original)
+		expect(session.workbench.createSnapshot()).toEqual(original)
 		expect(write).not.toHaveBeenCalled()
 		expect(dispose).not.toHaveBeenCalled()
 		expect(report).toHaveBeenCalledWith(
@@ -321,7 +327,7 @@ describe('native document close and save decisions', () => {
 		const firstModel = fixtures.models.get(first)!
 		await act(async () => {
 			const result = await session.workbench.close(first)
-			expect(result.status).toBe('closed')
+			expect(result.status).toBe('applied')
 		})
 		expect(firstModel.dispose).toHaveBeenCalledOnce()
 		expect(session.workbench.getDocument(second)).not.toBeNull()
@@ -340,7 +346,7 @@ describe('workspace departure decisions', () => {
 		})
 		fixtures.models.get(second)!.dirty = true
 		const input = container.querySelector<HTMLInputElement>(`[aria-label="draft ${first}"]`)!
-		window.history.replaceState(null, '', '/foreign')
+		window.history.replaceState(null, '', '/security')
 		vi.spyOn(console, 'error').mockImplementation(() => {})
 		let leaving!: Promise<unknown>
 		await act(async () => {
@@ -353,7 +359,7 @@ describe('workspace departure decisions', () => {
 		input.value = 'new edit during departure'
 		await decide(1, true)
 		await act(async () => {
-			expect(await leaving).toMatchObject({ message: expect.stringContaining('退出期间文档') })
+			expect(await leaving).toBeUndefined()
 		})
 		expect(window.location.pathname + window.location.search + window.location.hash).toBe(
 			'/security',
@@ -372,7 +378,7 @@ describe('workspace departure decisions', () => {
 		firstModel.dirty = true
 		fixtures.models.get(second)!.dirty = true
 		const input = container.querySelector<HTMLInputElement>(`[aria-label="draft ${first}"]`)!
-		window.history.replaceState(null, '', '/foreign')
+		window.history.replaceState(null, '', '/security')
 		vi.spyOn(console, 'error').mockImplementation(() => {})
 		let leaving!: Promise<unknown>
 		await act(async () => {
@@ -381,12 +387,12 @@ describe('workspace departure decisions', () => {
 		await decide(0, true)
 		await vi.waitFor(() => expect(fixtures.decisions[1]).toBeDefined())
 		session.documents.get(first)!.editor = {
-			isDirty: () => true,
-			getCloseRevision: () => firstModel.revision,
+			getState: () => ({ hasUnsavedChanges: true, token: firstModel.revision }),
+			isWritePending: () => false,
 		}
 		await decide(1, true)
 		await act(async () => {
-			expect(await leaving).toMatchObject({ message: expect.stringContaining('退出期间文档') })
+			expect(await leaving).toBeUndefined()
 		})
 		expect(window.location.pathname + window.location.hash).toBe('/security')
 		expect(session.workbench.getDocuments()).toHaveLength(2)
@@ -394,7 +400,7 @@ describe('workspace departure decisions', () => {
 		expect(firstModel.dispose).not.toHaveBeenCalled()
 	})
 
-	it('accepts unchanged save and discard decisions while retaining the final native beforeunload protection for dirty content', async () => {
+	it('accepts unchanged save and discard decisions, terminates content and releases beforeunload protection', async () => {
 		const { session, first, second } = await fixture()
 		const firstModel = fixtures.models.get(first)!
 		firstModel.dirty = true
@@ -420,9 +426,10 @@ describe('workspace departure decisions', () => {
 		expect(firstModel.save).toHaveBeenCalledOnce()
 		expect(firstModel.dirty).toBe(false)
 		expect(fixtures.models.get(second)!.dirty).toBe(true)
-		expect(session.workbench.getDocuments()).toHaveLength(2)
+		expect(session.workbench.getDocuments()).toHaveLength(0)
+		expect(firstModel.dispose).toHaveBeenCalledOnce()
 		const beforeUnload = new Event('beforeunload', { cancelable: true })
 		window.dispatchEvent(beforeUnload)
-		expect(beforeUnload.defaultPrevented).toBe(true)
+		expect(beforeUnload.defaultPrevented).toBe(false)
 	})
 })

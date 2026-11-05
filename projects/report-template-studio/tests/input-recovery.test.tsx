@@ -16,6 +16,7 @@ import { api } from '../src/renderer/api'
 import { FilePane, FormPane } from '../src/renderer/panes'
 import { WorkspaceController } from '../src/renderer/workspace'
 import { WorkspaceContext } from '../src/renderer/workspace-context'
+import { decideLeave } from './editor-leave'
 import { editorLifecycle } from '../src/renderer/editor-lifecycle'
 
 vi.mock('@pluxel/plugin-typst/source/browser', async () => {
@@ -30,7 +31,7 @@ vi.mock('@pluxel/plugin-typst/source/browser', async () => {
 vi.mock('@worksplit/react', () => {
 	// Editor recovery is isolated here; panes-lifecycle tests use real Worksplit ownership.
 	const content = {
-		effect(setup: (effect: { defer(cleanup: () => void): void }) => void) {
+		runEffect(setup: (effect: { defer(cleanup: () => void): void }) => void) {
 			const cleanups: (() => void)[] = []
 			setup({ defer: (release) => cleanups.push(release) })
 			return () => {
@@ -38,7 +39,7 @@ vi.mock('@worksplit/react', () => {
 			}
 		},
 	}
-	return { useWorkbenchContent: () => content }
+	return { useContent: () => content }
 })
 vi.mock('../src/renderer/code-editor', () => ({
 	CodeEditor: () => <textarea aria-label="Code editor keyboard target" />,
@@ -413,12 +414,7 @@ it('confirms a complete committed draft after its save response is lost', async 
 		inputError: undefined,
 		inputConflict: undefined,
 	})
-	expect(
-		await editorLifecycle(workspace, target.entry, 'form').beforeLeave?.('close', {
-			id: 'form',
-			from: '/form',
-		}),
-	).toBe(true)
+	expect(await decideLeave(editorLifecycle(workspace, target.entry, 'form'))).toBe(true)
 })
 
 it('keeps local input and requires another decision if a writer changes the conflict snapshot', async () => {

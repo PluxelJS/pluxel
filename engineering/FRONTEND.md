@@ -118,27 +118,29 @@ Remote 只得到固定 appearance、feedback、受限 relative navigation、docu
 
 已认证 browser document 持有一个 `WorkspaceSession`；这里的 browser document 不等于工作区标签。Shell 借用 session 中的 Worksplit 实例。FlexLayout Model 是标签、TabSet、TabGroup、Border、顺序、pin、尺寸和最大化的唯一事实来源；Worksplit 拥有文档身份、独立 Router/history、MRU、复用和关闭协调。业务 dirty、revision、draft 和保存结果属于具体文档。禁止第二套 tabs/grid store 或将只读投影反向同步回 Model。
 
-每个文档用 `createAppRouter({ history })` 消费同一生成 route tree，history 由 Worksplit 提供并在内存中保存。路由只渲染内容，不递归创建 Shell；Management、Product、Mantine 和 session providers 位于文档 Router 之外。`connectBrowser()` 是工作区浏览器地址的唯一写入者，固定工具取得焦点不改变活动文档 URL。
+每个文档用 `createAppRouter({ history })` 消费同一生成 route tree，history 由 Worksplit 提供并在内存中保存。路由只渲染内容，不递归创建 Shell；Management、Product、Mantine 和 session providers 位于文档 Router 之外。`WorkspaceSession.start()` 通过 `instance.start({ browser })` 取得工作区浏览器地址的唯一写入权；固定工具取得焦点不改变活动文档 URL。宿主拥有创建、启动和最终 dispose，`<Workbench instance>` 只绑定视图。
 
 Plugin route 的 pathname 由该 match 的 `beforeLoad` 保存到 route context，页面显式消费该输入。导航期间旧 match 仍可能显示，不能让它解析 Router 已指向的新目标地址；Shell 与 standalone 使用相同边界。
 
 ### 导航与身份
 
-- 普通 Shell 入口交给活动文档注册的 Router 导航，经过离开确认；没有活动文档才创建文档。标签外的“+”复制当前已提交地址，在源标签后创建独立 Router 和 opened owner，不复制草稿。
+- 普通 Shell 入口交给活动文档注册的 Router 导航，经过离开确认；没有活动文档才创建文档。标签外的“+”复制当前已提交地址，通过 Worksplit duplicate 创建独立 Router 和 opened owner，不复制草稿。
 - 内部 `to`、解析后的 search/hash 与浏览器公开 href 分开。文档地址取 TanStack `publicHref`；不能把带 basepath 的 href 再作为 `to`。恢复的惰性文档也使用同一 Router parser。
 - `frame: standalone` 使用完整页面导航跨越工作区边界；它的 browser Router 与工作区 history 不同时运行。站外链接、下载、修饰键和新窗口行为交给浏览器。
-- Publication 文档身份使用 canonical descriptor key，publication group 仅组织业务入口，与原生 TabGroup 无关。标题来源是 committed publication、相同 canonical owner 的 displayName 或 compiled route title；不得借用其他 fork 或未发布 owner 的名称。插件配置页完成详情读取后更新为实际插件名。
+- 路由 `documentKey` 只声明实际业务身份：配置文档按 canonical 路径与 entry、日志文档按 plugin 筛选复用；其他路由采用原生已接纳路径和 search。`reuse: preserve` 保留匹配文档的当前位置，显式副本使用 `reuse: new`。Shell 保留整个 workspace 一份 preview 的政策，使用 `previewScope: workspace`；publication group 仅组织业务入口，与原生 TabGroup 无关。标题来源是 committed publication、相同 canonical owner 的 displayName 或 compiled route title；不得借用其他 fork 或未发布 owner 的名称。插件配置页完成详情读取后更新为实际插件名。
 - 原生 Model 拥有已提交的名称，复用和恢复不重新投影默认名称。Host/F2 标题更新检查 Action 回执，撤销遵守 [Host facade](#host-facade) 的借用边界。
 
-中央文档移动、拆分、pin、分组、折叠和最大化保留内容实例。activation 由原生 React effect 接入 `content.effect()`；路由替换、React cleanup 或内容正式关闭结束本次使用期限。Activity 隐藏或 Suspense 的实际 effect 清理遵守 React 边界，不承诺组件状态保留时连接也保留。单文档 Router 错误只影响该文档，允许重试，不卸载全局 Shell。
+中央文档移动、拆分、pin、分组、折叠和最大化保留内容实例。activation 由原生 React effect 接入 `content.runEffect()`；路由替换、React cleanup 或内容正式关闭结束本次使用期限。Activity 隐藏或 Suspense 的实际 effect 清理遵守 React 边界，不承诺组件状态保留时连接也保留。单文档 Router 错误只影响该文档，允许重试，不卸载全局 Shell。
 
-根 `pnpm-workspace.yaml` 接入 Worksplit 维护的 FlexLayout 0.11.1 patch，保证移出组内最后一个标签时不提前清理其容器；补丁正文只有 `vendor/split-like-vscode/patches/` 一份，由 vendor 的 `native-singleton-group.test.ts` 验证。嵌套 workspace 的补丁声明不会自动应用到根安装。
+根 `pnpm-workspace.yaml` 接入 Worksplit 的完整四份原生补丁；版本、补丁边界和移除条件由 [Worksplit 原生支持](../vendor/split-like-vscode/docs/navigation-support.md)拥有。根工作区提供唯一依赖安装，`scripts/check-worksplit-native.mjs` 运行库自带检查器验证精确版本、实例和全部补丁文件；构建与开发任务执行该检查。采用的库提交及宿主验收见[本次迁移记录](WORKSPLIT_MIGRATION.md)。
 
 ### 动作与关闭
 
-Shell 呈现原生 `onContextMenu` / `onShowOverflowMenu`，保留 React Provider ancestry，通过 `workbench.dispatch()` 提交 Actions 并检查实际回执。可见标签的批量操作不包含折叠组隐藏成员，文案必须准确表达范围。完整容器关闭与纯删除 Action group 由 Worksplit 一次预检全部内容守卫；拒绝时不逐个删除。已成功的业务保存不因后续拒绝而回滚。
+Worksplit 提供默认上下文/溢出菜单、键盘操作、popup 关闭与焦点交接。Shell 使用 `menus.transform` 保留中文、插件工具的显隐/尺寸和移动目标，以及在右侧打开副本的业务组合；不再维护菜单会话、复制命令或延迟聚焦链。协调修改经过 `dispatch(Actions...)`，关闭范围通过 `close(target)` 一次预检；拒绝时不逐个删除，已成功的业务保存不因后续拒绝回滚。
 
-`WorkbenchDocumentRoot` 通过 `useWorkbenchContent(lifecycle)` 持续拥有 dirty、保存、确认和业务修订；子 renderer 只持有 `content.effect(({ signal, defer }) => …)` 中的资源。`WorkbenchDocumentState` 不汇总资源，不为 React 重放维护资源 Set、detach 或延迟注销。每次获取成功立即 defer SDK 释放；await 后检查 signal，晚到结果只释放、不发布。普通组件局部行为继续使用普通 effect。
+`WorkbenchDocumentRoot` 用 `useContent()` 借用 handle，用单一 `useContentController()` 持续拥有离开、保存、标题和焦点。子 renderer 仅在 `content.runEffect(({ signal, defer }) => …)` 中持有资源。表单 `DocumentEditor` 提供真实状态 token 与待确认写入；新编辑和新写入撤销旧批准，保存期间继续输入仍保留。确认允许后，以本次 request 的 `defer` 持有原页面交互暂停，直至原生导航接纳、拒绝或取代；只读页面显式声明 `leave: null`。共享服务、草稿和写入回执仍由业务 owner 拥有。
+
+`WorkbenchDocumentState` 不汇总资源，不为 React 重放维护资源 Set、detach 或延迟注销。每次获取成功立即 defer SDK 释放；await 后检查 signal，晚到结果只释放、不发布。普通组件局部行为继续使用普通 effect。正常退出调用 `closeWorkspace`，批准后保存其最终快照，再交接页面；外部浏览器遍历交接时直接接管已到达的 entry，不再 push 或手工补 history。`dispose` 仅作最终强制资源清理，`beforeunload` 继续保护未保存输入和待确认写入。
 
 关闭批准前不停止资源。原生移除确认后，Worksplit 固定已知清理集合、停止内容接纳并等待该集合；未完成的 setup 与截取后的资源不延长回执，晚到失败由 `onIssue` 报告。程序 close/dispatch/dispose 的错误归返回值，Shell 的 `WorkspaceSession.check()` 处理；原生 UI 的同一操作由 Worksplit 消费回执并上报一次。standalone surface 没有 Worksplit handle，沿用原生 React/AbortController 使用期限与同一 SDK 释放顺序。完整资源契约由 [Worksplit 资源指南](../vendor/split-like-vscode/docs/resource-lifetimes.md)维护。
 
@@ -146,11 +148,11 @@ Shell 呈现原生 `onContextMenu` / `onShowOverflowMenu`，保留 React Provide
 
 ### 持久化与恢复
 
-`WorkspaceSnapshotStorage` 保存 Worksplit snapshot：原生 Model 和文档恢复信息。RPC handle、Router、业务 draft、dirty 和服务对象不进入快照。存储 key 的版本由 `snapshot.ts` 的 `workspaceStorageKey()` 定义，并由浏览器 origin 与 UI basepath 隔离；只读当前版本，不双读、双写或运行时迁移旧布局。
+`WorkspaceSnapshotStorage` 保存 Worksplit v2 snapshot：原生 Model 和文档恢复信息。RPC handle、Router、业务 draft、dirty 和服务对象不进入快照。存储 key 的版本由 `snapshot.ts` 的 `workspaceStorageKey()` 定义，并由浏览器 origin 与 UI basepath 隔离；只读当前版本，不双读、双写或运行时迁移旧布局。
 
 恢复验证 workspace、结构与实际 publication/权限。已保存节点要求明确 `type` 和容器 `children`；不能让 Model 将损坏数据补齐为默认布局。只有源码初始 layout 可以使用原生缺省字段。坏快照保留现场，由用户显式修复或重置；后台恢复的文档惰性打开，不同时发起所有插件的 open RPC。
 
-连续变化合并写入，`pagehide`、页面隐藏和 teardown 补写；相同序列化结果不重复写盘。读取或结构校验失败不写回默认值。显式恢复默认布局先协调文档关闭与 pin/关闭保护，再写默认快照并完整导航。存储失败需可发现地报告，但不能阻塞普通打开和编辑；不保证浏览器强制终止或存储故障时的持久性。
+`snapshotRevision` 触发布局保存，普通查询直接读 `instance.model` / containers 而不序列化。连续变化合并写入，`pagehide`、页面隐藏和 teardown 补写；相同序列化结果不重复写盘。读取或结构校验失败不写回默认值。显式恢复默认布局先协调文档关闭与 pin/关闭保护，再显式删除布局存储并完整导航。受保护退出和外部交接使用库在移除前捕获的最终快照，关闭旧 writer 防止较早的定时写覆盖。存储失败需可发现地报告，但不能阻塞普通打开和编辑；不保证浏览器强制终止或存储故障时的持久性。
 
 Remote 不 import Worksplit、Shell router、布局 store 或宿主私有 Provider。内容使用 CSS Flex/Grid、Mantine 和容器响应式布局，独立页面通过 publication 声明，不再建立第二套宿主分区协议。
 
@@ -162,7 +164,7 @@ Remote 不 import Worksplit、Shell router、布局 store 或宿主私有 Provid
 
 ### 导航和目录
 
-官方 ActivityRail 始终独立于可收起工具区，只展示 `navigationItems.ts` 中的官方入口，并与全局查找共享入口来源。`/apps` 聚合显式 navigation 的业务 route，使用 navigation label、publication group 和 canonical owner 组织；`/plugins` 进入管理工作区。业务入口与插件管理不按 owner 混为一类，`/apps` 聚合页本身不登记插件 owner。
+ActivityRail 始终独立于可收起工具区，展示 `navigationItems.ts` 中的内置入口与用户固定的当前 publication 页面。`border_left.config.shortcuts` 是快捷偏好的唯一存储；Host 的 `initialShortcuts` 仅在缺失偏好时初始化，空列表不补种。名称、图标、frame 和可用性从当前全局布局解析，target/entry 身份不回退；失效入口保留移除按钮。插件声明不控制一级位置。`/apps` 聚合 tab 和显式 navigation 的业务 route，使用 navigation label、publication group 和 canonical owner 组织；全局查找还列出未加入常用导航的 route。`/plugins` 进入管理工作区。业务入口与插件管理不按 owner 混为一类，`/apps` 聚合页本身不登记插件 owner。
 
 `PluginNavigation` 在管理工作区呈现唯一 `PluginCatalog`，沿用分组、DnD、多选和管理持久化；中央索引只提供选择提示，不再渲染第二个目录。全局 `WorkspaceNavigation` 是入口查找投影，不拥有管理目录状态。目录高亮比较 canonical plugin route；业务页面高亮同时比较 owner 和精确 entry key。
 

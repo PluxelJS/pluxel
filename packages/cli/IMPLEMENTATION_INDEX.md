@@ -34,7 +34,8 @@ CLI scaffold 只有 Plugin package identity 和 bundled `plugin` template。完�
 可选能力：
 
 - `build`、`workspace` → `@pluxel/rolldown`；
-- publish market webhook → `@pluxel/market`。
+
+`publish` 直接提交市场 HTTP 通知并输出持久回执，不加载可选 market 包；npm 拥有发布与 provenance，市场拥有收录结果。
 
 缺少可选能力只影响对应命令；`--help` 和 `new` 保持可用。
 

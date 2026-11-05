@@ -3,7 +3,7 @@
 import { ModalsProvider } from '@mantine/modals'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { Actions, DockLocation, Model, TabNode } from 'flexlayout-react'
+import { Actions, DockLocation, TabNode } from 'flexlayout-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppThemeProvider } from '../src/app/AppThemeProvider'
 import { NotificationCenterProvider } from '../src/app/notifications/NotificationCenterProvider'
@@ -113,7 +113,7 @@ describe('native Shell interaction contracts', () => {
 			await session.workbench.dispatch(
 				Actions.moveNode(
 					second,
-					session.workbench.getDocument(first)!.containerId,
+					session.workbench.getDocument(first)!.containerId!,
 					DockLocation.RIGHT,
 					-1,
 				),
@@ -131,6 +131,7 @@ describe('native Shell interaction contracts', () => {
 		})
 		expect(document.querySelector('[role="dialog"]')).toBeNull()
 		await click(container.querySelector('[aria-label="查找所有工作区入口"]')!)
+		await appear('[aria-label="入口搜索"]')
 		expect(document.querySelector('[aria-label="入口搜索"]')).not.toBeNull()
 	})
 
@@ -139,7 +140,7 @@ describe('native Shell interaction contracts', () => {
 		const id = await openDocument(session, '/plugins')
 		const input = container.querySelector<HTMLInputElement>('[aria-label="插件输入"]')!
 		input.value = 'independent draft'
-		const rail = container.querySelector('[aria-label="官方入口"]')!
+		const rail = container.querySelector('[aria-label="工作区入口"]')!
 		expect(rail.getAttribute('data-mode')).toBe('icons')
 		expect(
 			[...rail.querySelectorAll('.plx-activity__items button')].map((item) =>
@@ -151,12 +152,12 @@ describe('native Shell interaction contracts', () => {
 		await act(async () => {
 			session.workbench.activate('navigation')
 		})
-		const restored = new WorkspaceSession({ snapshot: session.workbench.snapshot() })
+		const restored = new WorkspaceSession({ snapshot: session.workbench.createSnapshot() })
 		sessions.push(restored)
 		expect(restored.navigationMode()).toBe('labels')
 		expect(
-			restored.workbench
-				.getLayout()
+			restored.workbench.model
+				.toJson()
 				.borders?.find((border) => border.location === 'left')
 				?.children?.map((node) => node.id),
 		).toEqual(['navigation'])
@@ -164,7 +165,8 @@ describe('native Shell interaction contracts', () => {
 		await click(container.querySelector('[aria-label="左侧导航"]')!)
 		await click(container.querySelector('[aria-label="左侧导航"]')!)
 		expect(
-			session.workbench.getLayout().borders?.find((border) => border.location === 'left')?.children,
+			session.workbench.model.toJson().borders?.find((border) => border.location === 'left')
+				?.children,
 		).toHaveLength(1)
 		await click(container.querySelector('[aria-label="仅显示图标"]')!)
 		expect(rail.getAttribute('data-mode')).toBe('icons')
@@ -174,18 +176,14 @@ describe('native Shell interaction contracts', () => {
 
 	it('preserves the fixed navigation tool and isolates document keyboard commands from text inputs', async () => {
 		const { session, container } = await workspace()
-		await openDocument(session, '/plugins')
+		const plugins = await openDocument(session, '/plugins')
 		await act(async () => {
 			const result = await session.workbench.dispatch(Actions.deleteTab('navigation'))
-			expect(result.status).toBe('rejected')
+			expect(result.status).toBe('denied')
 		})
-		expect(Model.fromJson(session.workbench.getLayout()).getNodeById('navigation')).toBeInstanceOf(
-			TabNode,
-		)
+		expect(session.workbench.model.getNodeById('navigation')).toBeInstanceOf(TabNode)
 		await click(container.querySelector('.plx-activity [aria-label="插件管理"]')!)
-		expect(Model.fromJson(session.workbench.getLayout()).getNodeById('navigation')).toBeInstanceOf(
-			TabNode,
-		)
+		expect(session.workbench.model.getNodeById('navigation')).toBeInstanceOf(TabNode)
 		const logs = await openDocument(session, '/logs')
 		const input = container.querySelector<HTMLInputElement>('[aria-label="日志输入"]')!
 		await act(async () => input.focus())
@@ -197,9 +195,13 @@ describe('native Shell interaction contracts', () => {
 		const close = await pressKey(target, 'w', { ctrlKey: true, code: 'KeyW' })
 		expect(close.defaultPrevented).toBe(true)
 		expect(session.workbench.getDocument(logs)).toBeNull()
+		const nativeScope = container.querySelector<HTMLElement>('.worksplit-workbench')!
 		await act(async () => {
-			await vi.waitUntil(() => document.activeElement === container.querySelector('.plx-workspace'))
+			await vi.waitUntil(() => document.activeElement === nativeScope)
 		})
+		const nextClose = await pressKey(nativeScope, 'w', { ctrlKey: true, code: 'KeyW' })
+		expect(nextClose.defaultPrevented).toBe(true)
+		expect(session.workbench.getDocument(plugins)).toBeNull()
 	})
 
 	it('keeps scoped keyboard commands available when maximizing hides a focused sibling container', async () => {
@@ -208,12 +210,11 @@ describe('native Shell interaction contracts', () => {
 		const security = await openDocument(session, '/security')
 		const input = container.querySelector<HTMLInputElement>('[aria-label="安全输入"]')!
 		input.value = 'retained across maximize'
-		const group = session.workbench.getEditingContext().activeGroupId!
+		const group = session.workbench.getContext().activeContainerId!
 		await act(async () => {
 			await session.workbench.dispatch(Actions.moveNode(security, group, DockLocation.RIGHT, -1))
 			session.workbench.activate(logs)
 		})
-		const shell = container.querySelector<HTMLElement>('.plx-workspace')!
 		const focusedSibling = tab(container, security)
 		await act(async () => focusedSibling.focus())
 		await pressKey(focusedSibling, 'M', {
@@ -221,12 +222,24 @@ describe('native Shell interaction contracts', () => {
 			ctrlKey: true,
 			shiftKey: true,
 		})
-		expect(Model.fromJson(session.workbench.getLayout()).getMaximizedTabset()).toBeDefined()
+		expect(session.workbench.model.getMaximizedTabset()).toBeDefined()
+		const hiddenContainer = focusedSibling.closest<HTMLElement>('.flexlayout__tabset_container')!
+		expect(hiddenContainer.style.display).toBe('none')
+		// Chromium blurs hidden focus to body; JSDOM also needs it temporarily visible to blur.
+		hiddenContainer.style.display = ''
+		focusedSibling.blur()
+		hiddenContainer.style.display = 'none'
+		const nativeScope = container.querySelector<HTMLElement>('.worksplit-workbench')!
 		await act(async () => {
-			await vi.waitUntil(() => document.activeElement === shell)
+			await vi.waitFor(() => expect(document.activeElement).toBe(nativeScope))
 		})
-		await pressKey(shell, 'M', { code: 'KeyM', ctrlKey: true, shiftKey: true })
-		expect(Model.fromJson(session.workbench.getLayout()).getMaximizedTabset()).toBeUndefined()
+		const restore = await pressKey(nativeScope, 'M', {
+			code: 'KeyM',
+			ctrlKey: true,
+			shiftKey: true,
+		})
+		expect(restore.defaultPrevented).toBe(true)
+		expect(session.workbench.model.getMaximizedTabset()).toBeUndefined()
 		expect(container.querySelector('[aria-label="安全输入"]')).toBe(input)
 		expect(input.value).toBe('retained across maximize')
 	})
@@ -243,7 +256,10 @@ describe('native Shell interaction contracts', () => {
 		expect(session.workbench.getActiveDocument()?.id).toBe(logs)
 		expect(container.querySelector('[aria-label="日志输入"]')).toBe(input)
 		await act(async () => {
-			session.documents.get(logs)!.editor = { isDirty: () => true, getCloseRevision: () => 1 }
+			session.documents.get(logs)!.editor = {
+				getState: () => ({ hasUnsavedChanges: true, token: 1 }),
+				isWritePending: () => false,
+			}
 			session.notifyContentState()
 		})
 		expect(tab(container, logs).querySelector('[aria-label="未保存的更改"]')).not.toBeNull()

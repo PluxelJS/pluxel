@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import type { InstallOptions, InstallResult, ParsedBareSpecifier } from '@pnpm/napi'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PnpmEngine } from '../src/pnpm-engine.ts'
+import type { MarketRelease } from '../src/contracts.ts'
 import { ManagedPackageStore } from '../src/store.ts'
 
 const roots: string[] = []
@@ -259,7 +260,7 @@ describe('ManagedPackageStore', () => {
 		})
 		await store.initialize()
 		const fetch = vi.spyOn(globalThis, 'fetch')
-		const release = {
+		const release: MarketRelease & { tarball: string } = {
 			name: 'alpha',
 			version: '1.0.0',
 			registry: 'https://registry.npmjs.org',
@@ -268,6 +269,8 @@ describe('ManagedPackageStore', () => {
 			provenance: { status: 'missing' },
 			peerDependencies: {},
 			pluginPackages: {},
+			readme: null,
+			license: null,
 			tarball: 'https://attacker.invalid/code.tgz',
 		}
 		try {
@@ -275,6 +278,7 @@ describe('ManagedPackageStore', () => {
 			expect(
 				await store.prepareMarketInstall({
 					marketId: 'community',
+					registry: release.registry,
 					name: 'alpha',
 					version: '1.0.0',
 				}),
@@ -288,6 +292,7 @@ describe('ManagedPackageStore', () => {
 			expect(
 				await store.prepareMarketInstall({
 					marketId: 'community',
+					registry: release.registry,
 					name: 'alpha',
 					version: '1.0.0',
 				}),
@@ -305,12 +310,77 @@ describe('ManagedPackageStore', () => {
 			)
 			const selected = await store.prepareMarketInstall({
 				marketId: 'community',
+				registry: release.registry,
 				name: 'alpha',
 				version: '1.0.0',
 			})
 			expect(selected.ok).toBe(true)
 			if (selected.ok === false) throw new Error(selected.failed[0]?.message)
 			expect(await store.confirmInstall(selected.plan.id)).toMatchObject({ ok: true })
+		} finally {
+			await store.close()
+		}
+	})
+
+	it('requires the selected private registry in native configuration and rejects public-source substitution', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine, install } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+			markets: [{ id: 'community', url: 'https://market.example' }],
+		})
+		await store.initialize()
+		const request = {
+			marketId: 'community',
+			registry: 'http://127.0.0.1:7677/npm',
+			name: '@example/plugin',
+			version: '1.0.0',
+		}
+		const release: MarketRelease = {
+			registry: request.registry,
+			name: request.name,
+			version: request.version,
+			integrity: `sha512-${createHash('sha512').update('@example/plugin@1.0.0').digest('base64')}`,
+			checkedAt: 1,
+			provenance: { status: 'missing' },
+			peerDependencies: {},
+			pluginPackages: {},
+			readme: null,
+			license: null,
+		}
+		const fetch = vi.spyOn(globalThis, 'fetch')
+		try {
+			fetch.mockResolvedValueOnce(
+				Response.json({ ...release, registry: 'https://registry.npmjs.org' }),
+			)
+			expect(await store.prepareMarketInstall(request)).toMatchObject({
+				ok: false,
+				failed: [{ code: 'MARKET_FAILED' }],
+			})
+			expect(install).not.toHaveBeenCalled()
+			fetch.mockResolvedValueOnce(Response.json(release))
+			expect(await store.prepareMarketInstall(request)).toMatchObject({
+				ok: false,
+				failed: [{ code: 'INSTALL_FAILED', message: expect.stringContaining('same registry') }],
+			})
+			expect(install).not.toHaveBeenCalled()
+			expect(await readdir(store.entriesDir)).toEqual([])
+			const config = engine.readConfig({ dir: rootDir })
+			vi.spyOn(engine, 'readConfig').mockReturnValue({
+				...config,
+				registries: [...config.registries, { name: '@example', url: `${request.registry}/` }],
+			})
+			fetch.mockResolvedValueOnce(Response.json(release))
+			const prepared = await store.prepareMarketInstall(request)
+			expect(prepared.ok).toBe(true)
+			if (prepared.ok === false) throw new Error(prepared.failed[0]?.message)
+			expect(install).toHaveBeenCalledTimes(1)
+			expect(install.mock.calls[0]![0].registries?.['@example']).toBe(`${request.registry}/`)
+			expect(await store.confirmInstall(prepared.plan.id)).toMatchObject({ ok: true })
+			expect(install).toHaveBeenCalledTimes(1)
 		} finally {
 			await store.close()
 		}

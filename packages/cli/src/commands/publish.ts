@@ -14,6 +14,7 @@ export const publishCommand = define({
 			dryRun: values['dry-run'],
 			debug: values.debug,
 			webhook: values.webhook,
+			marketUrl: values['market-url'],
 			skipVersionCheck: values['skip-version-check'],
 			log: ctx.log,
 		})

@@ -5,7 +5,8 @@ export default defineConfig({
 	run: {
 		tasks: {
 			'prepare-dev': {
-				command: [],
+				command: 'node ../../scripts/check-worksplit-native.mjs ../../packages/workbench',
+				cache: false,
 				dependsOn: [
 					'compile-report-card-css',
 					{ task: 'compile', from: ['dependencies', 'devDependencies', 'peerDependencies'] },

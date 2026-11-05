@@ -1,7 +1,7 @@
 import { useRuntimeManagementClient } from '../runtime'
 import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type { RpcStub } from 'capnweb'
-import type { WorkbenchContent } from '@worksplit/react'
+import type { ContentHandle } from '@worksplit/react'
 import {
 	openWorkbenchEntry,
 	type WorkbenchFederatedLayoutEntry,
@@ -182,7 +182,7 @@ export function WorkbenchRoute({
 }
 
 type WorkbenchEntryViewProps = Readonly<{
-	content?: WorkbenchContent
+	content?: ContentHandle
 	entry: WorkbenchLayoutEntry
 	frame: 'shell' | 'standalone'
 	layoutRevision: number
@@ -383,7 +383,7 @@ function ReadyFederatedWorkbenchEntryView({
 			const originalTab = openingTabId
 				? openingWorkspace?.workbench.getDocument(openingTabId)
 				: undefined
-			let originalPresentation: { title: string; helpText?: string } | undefined
+			let originalPresentation: { helpText?: string } | undefined
 			const host = createWorkbenchViewHost({
 				management,
 				locale: localeRef.current,
@@ -404,25 +404,15 @@ function ReadyFederatedWorkbenchEntryView({
 									// starts opening. Capture the native rollback value at the first override.
 									const currentTab = openingWorkspace.workbench.getDocument(openingTabId)
 									if (currentTab && !originalPresentation) {
-										const layout = openingWorkspace.workbench.getLayout()
-										let helpText: string | undefined
-										const visit = (node: {
-											id?: string
-											helpText?: string
-											children?: unknown[]
-										}) => {
-											if (node.id === openingTabId) helpText = node.helpText
-											for (const child of node.children ?? [])
-												visit(child as Parameters<typeof visit>[0])
-										}
-										visit(layout.layout)
-										for (const border of layout.borders ?? []) visit(border)
-										originalPresentation = { title: currentTab.title, helpText }
+										const helpText = currentTab.node.getHelpText()
+										originalPresentation = { helpText }
 									}
+									if (openingDocument)
+										openingDocument.remoteTitle = { owner: activation, value: input.title }
+									openingWorkspace.notifyContentState()
 									void openingWorkspace.workbench
 										.dispatch(
 											Actions.updateNodeAttributes(openingTabId, {
-												name: input.title,
 												helpText: input.meta,
 											}),
 										)
@@ -450,7 +440,6 @@ function ReadyFederatedWorkbenchEntryView({
 										void openingWorkspace.workbench
 											.dispatch(
 												Actions.updateNodeAttributes(openingTabId, {
-													name: originalPresentation.title,
 													helpText: originalPresentation.helpText,
 												}),
 											)
@@ -460,7 +449,11 @@ function ReadyFederatedWorkbenchEntryView({
 											})
 											.catch((cause: unknown) => openingWorkspace.report(cause))
 									}
-									if (openingDocument) openingDocument.remoteDirty = false
+									if (openingDocument) {
+										openingDocument.remoteDirty = false
+										if (openingDocument.remoteTitle?.owner === activation)
+											openingDocument.remoteTitle = undefined
+									}
 									openingWorkspace.notifyContentState()
 								},
 							},
@@ -510,7 +503,7 @@ function ReadyFederatedWorkbenchEntryView({
 			}
 		}
 		if (contentOwner) {
-			return contentOwner.effect(({ signal, defer }) => {
+			return contentOwner.runEffect(({ signal, defer }) => {
 				defer(release)
 				return open(signal, () => defer(release))
 			})
@@ -585,7 +578,7 @@ export function WorkbenchContentEntryView({
 	entry: WorkbenchContentLayoutEntry
 	layoutRevision: number
 	location?: string
-	content?: WorkbenchContent
+	content?: ContentHandle
 }) {
 	const { confirm, notify, session } = useWorkbenchRuntime()
 	const document = useOptionalWorkbenchDocument()
@@ -654,7 +647,7 @@ export function WorkbenchContentEntryView({
 			}
 		}
 		if (contentOwner) {
-			return contentOwner.effect(({ signal, defer }) => {
+			return contentOwner.runEffect(({ signal, defer }) => {
 				defer(release)
 				return open(signal, () => defer(release))
 			})

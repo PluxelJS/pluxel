@@ -4,7 +4,7 @@ import { createTypstSourceProject } from '@pluxel/plugin-typst/source/browser'
 import type { ExampleId } from './examples'
 import type { WorkspaceFolders } from './file-explorer'
 import type { sourceExample } from './source-example'
-import { Workspace, storageKeys } from './workspace'
+import { Workspace, createTypstWorkspace, storageKeys } from './workspace'
 import 'flexlayout-react/style/light.css'
 import '@worksplit/react/style.css'
 import '@pluxel/plugin-typst/tiptap/style.css'
@@ -36,7 +36,27 @@ async function start() {
 			}),
 		}
 	}
-	createRoot(document.getElementById('root')!).render(<Workspace folders={folders} />)
+	const root = createRoot(document.getElementById('root')!)
+	let issue = ''
+	const workbench = createTypstWorkspace((message) => {
+		issue = message
+		render()
+	})
+	function render() {
+		root.render(<Workspace folders={folders} workbench={workbench} issue={issue} />)
+	}
+	const started = await workbench.start()
+	if (started.status !== 'applied') {
+		await workbench.dispose()
+		throw new Error(`Workspace startup: ${started.status}`)
+	}
+	const dispose = () => {
+		root.unmount()
+		void workbench.dispose()
+	}
+	window.addEventListener('pagehide', dispose, { once: true })
+	if (import.meta.hot) import.meta.hot.dispose(dispose)
+	render()
 }
 void start().catch((error) => {
 	document.getElementById('root')!.textContent = String(error)

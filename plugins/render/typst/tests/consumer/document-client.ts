@@ -19,6 +19,7 @@ export class DocumentClient {
 	private readonly listeners = new Set<() => void>()
 	private readonly pending = new Map<string, { document: JSONContent; version: number }>()
 	private version = 0
+	private stateVersion = 0
 	private queued = 0
 	private tail: Promise<unknown> = Promise.resolve()
 	private timer?: ReturnType<typeof setTimeout>
@@ -37,6 +38,7 @@ export class DocumentClient {
 	getSnapshot = () => this.state
 
 	private update(patch: Partial<DocumentClientState>) {
+		this.stateVersion++
 		this.state = { ...this.state, ...patch }
 		for (const listener of this.listeners) listener()
 	}
@@ -177,6 +179,10 @@ export class DocumentClient {
 			anchor.click()
 			URL.revokeObjectURL(url)
 		})
+	}
+
+	get leaveToken() {
+		return this.stateVersion
 	}
 
 	get unsaved() {

@@ -10,13 +10,12 @@ import {
 	Tooltip,
 } from '@mantine/core'
 import { IconDots, IconDownload, IconRefresh, IconDeviceFloppy } from '@tabler/icons-react'
-import { useWorkbenchContent } from '@worksplit/react'
+import { useContent } from '@worksplit/react'
 import { CodeEditor } from './code-editor'
 import { DataForm } from './data-form'
 import { Preview } from './preview'
 import { api } from './api'
 import { useWorkspace } from './workspace-context'
-import { editorLifecycle } from './editor-lifecycle'
 import { BodyEditor } from './body-editor'
 
 const saveShortcut =
@@ -177,7 +176,7 @@ function FileEditorContent({ path, scope = 'file' }: { path: string; scope?: str
 						onChange={(changed, source) => workspace.edit(changed, source)}
 						onClickPosition={(line, column) => workspace.revealPreview({ path, line, column })}
 						diagnostics={dirty ? [] : diagnostics}
-						readOnly={file.missing || owner?.bodyLocked}
+						readOnly={file.missing || owner?.bodyLocked || workspace.isEditingPaused(path)}
 						location={workspace.location?.path === path ? workspace.location : undefined}
 					/>
 				</div>
@@ -193,10 +192,10 @@ export function FilePane({ path }: { path: string }) {
 	const file = workspace.files.get(path)
 	const owner = workspace.inputOwner(path)
 	const ownerEntry = owner?.entry
-	const content = useWorkbenchContent(editorLifecycle(workspace, path, 'file'))
+	const content = useContent()
 	useEffect(
 		() =>
-			content.effect(({ defer }) => {
+			content.runEffect(({ defer }) => {
 				if (ownerEntry) defer(workspace.retainDocument(ownerEntry))
 			}),
 		[content, workspace, ownerEntry],
@@ -242,9 +241,9 @@ export function FormPane({ entry }: { entry: string }) {
 	const [mode, setMode] = useState('form')
 	const [codeOpened, setCodeOpened] = useState(false)
 	const [bodyOpened, setBodyOpened] = useState(false)
-	const content = useWorkbenchContent(editorLifecycle(workspace, entry, 'form'))
+	const content = useContent()
 	useEffect(
-		() => content.effect(({ defer }) => defer(workspace.retainDocument(entry))),
+		() => content.runEffect(({ defer }) => defer(workspace.retainDocument(entry))),
 		[content, workspace, entry],
 	)
 	const document = workspace.documents.get(entry)
@@ -330,7 +329,7 @@ export function FormPane({ entry }: { entry: string }) {
 				</Alert>
 			)}
 			<div
-				inert={document?.bodyLocked}
+				inert={document?.bodyLocked || workspace.isEditingPaused(entry)}
 				className="form-scroll"
 				style={{ display: mode === 'form' ? undefined : 'none' }}
 			>
@@ -355,7 +354,7 @@ export function FormPane({ entry }: { entry: string }) {
 			</div>
 			{bodyOpened && document?.description?.editor && (
 				<div
-					inert={document.bodyLocked}
+					inert={document.bodyLocked || workspace.isEditingPaused(entry)}
 					style={{
 						display: mode === 'body' ? undefined : 'none',
 						flex: 1,
@@ -384,9 +383,9 @@ export function FormPane({ entry }: { entry: string }) {
 
 export function PreviewPane({ entry }: { entry: string }) {
 	const workspace = useWorkspace()
-	const content = useWorkbenchContent()
+	const content = useContent()
 	useEffect(
-		() => content.effect(({ defer }) => defer(workspace.retainDocument(entry))),
+		() => content.runEffect(({ defer }) => defer(workspace.retainDocument(entry))),
 		[content, workspace, entry],
 	)
 	const document = workspace.documents.get(entry)
