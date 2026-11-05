@@ -258,6 +258,9 @@
 		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
+		"@pluxel/commands": {
+			"optional": true
+		},
 		"@electric-sql/pglite": {
 			"optional": true
 		},

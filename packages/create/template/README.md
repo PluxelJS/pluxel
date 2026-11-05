@@ -83,7 +83,8 @@ The declaration validates and freezes data. Native startup accepts one snapshot;
 `vp run build` emits modules delivery: `host/dist/app.mjs` exports the factory and product, package dependencies
 remain installed, and each example Plugin builds its public `dist/index.mjs` before the host. Local
 Plugin/Node/Workbench artifacts are compiled. `vp run @example/host#start`
-runs `host/start.mjs` in native Node and serves the compiled SPA and Workbench Shell. Publish sources before
+runs `host/start.mjs` in native Node. The application `launch` callback opens the listener after startup is accepted
+and explicitly selects the compiled SPA directory; Workbench serves its own Shell. Publish sources before
 starting a fresh process to accept their new versions. The launcher binds before evaluating business imports;
 do not preload the application or its dependency graph. The host declares every package in the official
 shared list directly so binding does not depend on workspace hoisting.

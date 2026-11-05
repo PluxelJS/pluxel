@@ -28,6 +28,119 @@ class ListenerSocketProbe extends BasePlugin {
 	}
 }
 
+let cancelDocumentStream: ((reason: unknown) => void) | undefined
+
+@Plugin()
+class ListenerHttpProbe extends BasePlugin {
+	protected override init() {
+		this.ctx
+			.require(ElysiaApp)
+			.get(
+				'/documents/missing',
+				() =>
+					new Response('document does not exist', {
+						status: 404,
+						headers: { 'content-type': 'text/plain', 'x-response-owner': 'document' },
+					}),
+			)
+			.get(
+				'/documents/stream',
+				() =>
+					new Response(
+						new ReadableStream<Uint8Array>({
+							start(controller) {
+								controller.enqueue(new TextEncoder().encode('document stream'))
+							},
+							cancel(reason) {
+								cancelDocumentStream?.(reason)
+							},
+						}),
+						{ status: 404, headers: { 'content-type': 'application/pdf' } },
+					),
+			)
+	}
+}
+
+it('preserves handled 404 responses before considering application assets', async () => {
+	const publicDir = await mkdtemp(join(tmpdir(), 'pluxel-listener-owned-'))
+	await writeFile(join(publicDir, 'index.html'), '<main>application</main>')
+	const host = await createHost({ plugins: [ListenerHttpProbe], services: [elysia()] })
+	try {
+		const http = resolveContextCapability(host.ctx, ElysiaRuntime)
+		http.mountEndpoint({
+			prefix: '/endpoint',
+			matchesWebSocketRoute: () => false,
+			fetch: async () => new Response('endpoint missing', { status: 404 }),
+		})
+		http.mountFallback({
+			matchesRequest: (request) => new URL(request.url).pathname.startsWith('/shell/'),
+			fetch: async (request) =>
+				new URL(request.url).pathname.startsWith('/shell/')
+					? new Response('shell missing', { status: 404 })
+					: null,
+		})
+		await host.startNode(ListenerHttpProbe.nodeAddress())
+		const listener = await listenElysia(host, { hostname: '127.0.0.1', port: 0, publicDir })
+		try {
+			const origin = `http://127.0.0.1:${listener.address.port}`
+			const document = await fetch(`${origin}/documents/missing`, {
+				headers: { accept: 'text/html' },
+			})
+			expect(document.status).toBe(404)
+			expect(document.headers.get('content-type')).toBe('text/plain')
+			expect(document.headers.get('x-response-owner')).toBe('document')
+			expect(await document.text()).toBe('document does not exist')
+			for (const owner of ['endpoint', 'shell']) {
+				const response = await fetch(`${origin}/${owner}/missing`, {
+					headers: { accept: 'text/html' },
+				})
+				expect(response.status).toBe(404)
+				expect(await response.text()).toBe(`${owner} missing`)
+			}
+			const unmatched = await fetch(`${origin}/application/page`, {
+				headers: { accept: 'text/html' },
+			})
+			expect(unmatched.status).toBe(200)
+			expect(await unmatched.text()).toBe('<main>application</main>')
+		} finally {
+			await listener.close()
+		}
+	} finally {
+		await host.close()
+		await rm(publicDir, { recursive: true, force: true })
+	}
+})
+
+it('cancels a handled 404 stream when its client disconnects with public assets enabled', async () => {
+	const publicDir = await mkdtemp(join(tmpdir(), 'pluxel-listener-stream-'))
+	await writeFile(join(publicDir, 'index.html'), '<main>application</main>')
+	const host = await createHost({ plugins: [ListenerHttpProbe], services: [elysia()] })
+	const cancelled = Promise.withResolvers<unknown>()
+	cancelDocumentStream = cancelled.resolve
+	try {
+		await host.startNode(ListenerHttpProbe.nodeAddress())
+		const listener = await listenElysia(host, { hostname: '127.0.0.1', port: 0, publicDir })
+		try {
+			const response = await fetch(`http://127.0.0.1:${listener.address.port}/documents/stream`, {
+				headers: { accept: 'text/html' },
+			})
+			expect(response.status).toBe(404)
+			expect(response.headers.get('content-type')).toBe('application/pdf')
+			const reader = response.body!.getReader()
+			const first = await reader.read()
+			expect(new TextDecoder().decode(first.value)).toBe('document stream')
+			await reader.cancel()
+			expect(await cancelled.promise).toBeInstanceOf(Error)
+		} finally {
+			await listener.close()
+		}
+	} finally {
+		cancelDocumentStream = undefined
+		await host.close()
+		await rm(publicDir, { recursive: true, force: true })
+	}
+}, 10000)
+
 it.each([false, true])(
 	'upgrades business sockets with a shell fallback enabled: %s',
 	async (fallback) => {
@@ -71,6 +184,109 @@ it.each([false, true])(
 	},
 	10_000,
 )
+
+it('closes its physical listener, stream and WebSocket through the Host lifetime', async () => {
+	const host = await createHost({
+		plugins: [ListenerHttpProbe, ListenerSocketProbe],
+		services: [elysia()],
+		policy: { autoStart: [ListenerHttpProbe, ListenerSocketProbe] },
+	})
+	const cancelled = Promise.withResolvers<unknown>()
+	cancelDocumentStream = cancelled.resolve
+	let native: Server | undefined
+	let socket: WebSocket | undefined
+	try {
+		await host.start()
+		const listener = await listenElysia(host, {
+			hostname: '127.0.0.1',
+			port: 0,
+			plugins: [
+				(server) => {
+					native = server
+				},
+			],
+		})
+		const origin = `http://127.0.0.1:${listener.address.port}`
+		const response = await fetch(`${origin}/documents/stream`)
+		const reader = response.body!.getReader()
+		const first = await reader.read()
+		expect(new TextDecoder().decode(first.value)).toBe('document stream')
+		const reading = reader.read().catch((error: unknown) => error)
+		socket = new WebSocket(`ws://127.0.0.1:${listener.address.port}/probe/socket`)
+		await new Promise<void>((resolve, reject) => {
+			socket!.addEventListener('open', () => resolve(), { once: true })
+			socket!.addEventListener('error', () => reject(new Error('WebSocket handshake failed')), {
+				once: true,
+			})
+		})
+		const socketClosed = new Promise<void>((resolve) =>
+			socket!.addEventListener('close', () => resolve(), { once: true }),
+		)
+		const closePhysical = vi.spyOn(native!, 'close')
+		const closing = host.close()
+		expect(host.close()).toBe(closing)
+		expect(listener.close()).toBe(closing)
+		await Promise.all([closing, socketClosed, reading])
+		expect(await cancelled.promise).toBeInstanceOf(Error)
+		expect(closePhysical).toHaveBeenCalledTimes(1)
+		expect(native!.node!.server.listening).toBe(false)
+		await expect(fetch(`${origin}/documents/missing`)).rejects.toThrow('fetch failed')
+	} finally {
+		cancelDocumentStream = undefined
+		socket?.close()
+		await host.close()
+	}
+}, 10000)
+
+it('settles concurrent Host close during listener acquisition without retaining the startup lease', async () => {
+	const host = await createHost({ plugins: [], services: [elysia()] })
+	let native: Server | undefined
+	let closing: Promise<void> | undefined
+	try {
+		await expect(
+			listenElysia(host, {
+				hostname: '127.0.0.1',
+				port: 0,
+				plugins: [
+					(server) => {
+						native = server
+						closing = host.close()
+					},
+				],
+			}),
+		).rejects.toThrow('Plugin owner stopped')
+		await closing
+		expect(native!.node!.server.listening).toBe(false)
+	} finally {
+		await host.close()
+	}
+})
+
+it('preserves listener startup failure and Host cleanup failure while releasing the carrier', async () => {
+	const occupied = await createHost({ plugins: [], services: [elysia()] })
+	const listener = await listenElysia(occupied, { hostname: '127.0.0.1', port: 0 })
+	const host = await createHost({ plugins: [], services: [elysia()] })
+	const cleanupFailure = new Error('cleanup probe')
+	host.ctx.effects.defer(() => {
+		throw cleanupFailure
+	})
+	try {
+		const error = await listenElysia(host, {
+			hostname: '127.0.0.1',
+			port: listener.address.port,
+		}).catch((cause: unknown) => cause)
+		expect(error).toBeInstanceOf(AggregateError)
+		const failure = error as AggregateError
+		expect(failure.cause).toMatchObject({ code: 'EADDRINUSE' })
+		expect(failure.errors[0]).toBe(failure.cause)
+		const errors = (cause: unknown): unknown[] =>
+			cause instanceof AggregateError ? cause.errors.flatMap(errors) : [cause]
+		expect(errors(failure.errors[1])).toContain(cleanupFailure)
+		expect(() => host.start()).toThrow('host is closed')
+	} finally {
+		await Promise.allSettled([host.close(), listener.close()])
+	}
+})
 
 it('binds Node request metadata and propagates client disconnect before closing the Host', async () => {
 	const host = await createHost({ plugins: [], services: [elysia()] })
@@ -208,8 +424,17 @@ it('captures the public directory before requests and keeps reserved paths outsi
 			const page = await fetch(`${origin}/nested/page`, { headers: { accept: 'text/html' } })
 			expect(page.status).toBe(200)
 			expect(await page.text()).toBe('<main>original</main>')
-			const reserved = await fetch(`${origin}/@vite/client`, { headers: { accept: 'text/html' } })
-			expect(reserved.status).toBe(404)
+			for (const path of [
+				'/__pluxel',
+				'/__pluxel/missing',
+				'/@vite/client',
+				'/node_modules',
+				'/node_modules/private.js',
+			]) {
+				const reserved = await fetch(`${origin}${path}`, { headers: { accept: 'text/html' } })
+				expect(reserved.status).toBe(404)
+				expect(await reserved.text()).toBe('Not Found')
+			}
 		} finally {
 			await listener.close()
 		}

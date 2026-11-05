@@ -161,12 +161,14 @@ async function verifyModulesApplicationDistribution(root: string): Promise<void>
 	}
 
 	const entry = pathToFileURL(resolve(root, 'host/start.mjs')).href
+	const port = await reservePort()
 	const smoke = [
 		"import { registerHooks } from 'node:module'",
+		`import { requestDocument } from ${JSON.stringify(new URL('./smoke-navigation.mjs', import.meta.url).href)}`,
 		'registerHooks({ resolve(id, context, next) { if (/^(?:vite|vite-plus|@pluxel\\/host-vite|@pluxel\\/rolldown|rolldown|oxc-parser|oxc-resolver|tsdown|tsx|typescript|chokidar)(?:$|\\/)/.test(id)) throw new Error(`Native loaded execution tools: ${id}`); return next(id, context) } })',
 		'const app = await import(process.argv[1])',
 		'try {',
-		'\tconst origin = `http://${app.address.host}:${app.address.port}`',
+		'\tconst origin = `http://127.0.0.1:${process.env.PLUXEL_HOST_PORT}`',
 		'\tconst initial = await fetch(`${origin}/api/example/todos`)',
 		'\tconst initialTodos = await initial.json()',
 		"\tif (!initial.ok || initialTodos.items[0]?.title !== 'Trace a Todo from React to a Plugin' || initialTodos.maxItems !== 2) throw new Error(`Modules Todo route or deployment config failed: ${initial.status}`)",
@@ -174,9 +176,9 @@ async function verifyModulesApplicationDistribution(root: string): Promise<void>
 		'\tif (created.status !== 201 || (await created.json()).items.length !== 2) throw new Error(`Modules Todo mutation returned ${created.status}`)',
 		"\tconst page = await fetch(`${origin}/nested/page`, { headers: { accept: 'text/html' } })",
 		'\tif (!page.ok || !(await page.text()).includes(\'<div id="root"></div>\')) throw new Error(`Modules SPA fallback returned ${page.status}`)',
-		"\tconst workbench = await app.fetch(new Request(`${origin}/__pluxel/workbench/plugins`, { headers: { accept: 'text/html' } }))",
-		'\tconst workbenchHtml = await workbench.text()',
-		'\tif (!workbench.ok || !workbenchHtml.includes(\'content="/__pluxel/workbench"\')) throw new Error(`Modules Workbench navigation returned ${workbench.status}: ${workbenchHtml.slice(0, 240)}`)',
+		'\tconst workbench = await requestDocument(`${origin}/__pluxel/workbench/plugins`)',
+		'\tconst workbenchHtml = workbench.text',
+		'\tif (workbench.status !== 200 || !workbenchHtml.includes(\'content="/__pluxel/workbench"\')) throw new Error(`Modules Workbench navigation returned ${workbench.status}: ${workbenchHtml.slice(0, 240)}`)',
 		'\tconst shellEntry = workbenchHtml.match(/<script[^>]* type="module"[^>]* src="([^"]+)"/)?.[1]',
 		"\tif (!shellEntry?.startsWith('/__pluxel/workbench/assets/')) throw new Error(`Modules Workbench asset escaped the reserved namespace: ${shellEntry}`)",
 		'\tconst shellAsset = await fetch(new URL(shellEntry, origin))',
@@ -187,7 +189,8 @@ async function verifyModulesApplicationDistribution(root: string): Promise<void>
 		'}',
 	].join('\n')
 	await runProcess(process.execPath, ['--input-type=module', '--eval', smoke, entry], root, {
-		PLUXEL_HOST_PORT: '0',
+		PLUXEL_HOST_BIND: '127.0.0.1',
+		PLUXEL_HOST_PORT: String(port),
 		EXAMPLE_TODO_MAX_ITEMS: '2',
 	})
 }

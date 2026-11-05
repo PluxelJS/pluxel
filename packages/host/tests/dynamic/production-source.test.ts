@@ -32,7 +32,7 @@ it('admits one native snapshot and leaves later publications for a fresh process
 		await writeFile(join(root, 'initial.mjs'), builtModule('initial'))
 		await writeFile(
 			join(root, 'app.mjs'),
-			`export default () => ({name:'production-source',plugins:[],sources:[{kind:'directory',path:'.',include:['initial.mjs','added.mjs','after-close.mjs']}],policy:{autoStart:${JSON.stringify([address('initial'), address('added')])}}})`,
+			`export default () => ({name:'production-source',plugins:[],sources:[{kind:'directory',path:'.',include:['initial.mjs','added.mjs','after-close.mjs']}],policy:{autoStart:${JSON.stringify([address('initial'), address('added')])}},acceptStartup:({status})=>status.statuses.some(node=>node.address.definition.entry.packageName==='@fixture/initial'&&node.lifecycleState==='running')})`,
 		)
 		const result = await promisify(execFile)(
 			process.execPath,

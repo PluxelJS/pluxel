@@ -60,3 +60,4 @@ export {
 	recordLoadedHostApplication,
 	readLoadedHostApplicationModule,
 } from './loaded-modules'
+export { startHostApplication } from './application-start'

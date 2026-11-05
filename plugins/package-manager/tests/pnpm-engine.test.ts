@@ -148,9 +148,11 @@ export { Dynamic }
 		const script = resolve(root, 'host.mjs')
 		const coreManifest = import.meta.resolve('@pluxel/core/package.json')
 		const hostManifest = import.meta.resolve('@pluxel/host/package.json')
+		// This fixture deliberately starts before installation and after withdrawal.
+		// Missing definitions are accepted; an installed Plugin must still start successfully.
 		await writeFile(
 			resolve(root, 'app.mjs'),
-			`export default () => ({plugins:[],sources:[{kind:'directory',path:${JSON.stringify(store.entriesDir)},include:['*.mjs']}],policy:{autoStart:${JSON.stringify(names.map(address))}}})`,
+			`export default () => ({plugins:[],sources:[{kind:'directory',path:${JSON.stringify(store.entriesDir)},include:['*.mjs']}],policy:{autoStart:${JSON.stringify(names.map(address))}},acceptStartup:({status})=>status.statuses.every(node=>node.desiredState!=='running'||node.availability==='unavailable'||node.lifecycleState==='running')})`,
 		)
 		await writeFile(
 			script,

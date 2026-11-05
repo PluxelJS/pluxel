@@ -2,18 +2,22 @@ import { createModulesApplicationConfig } from './cli/modules-application'
 import type { TsdownPlugin, TsdownPluginOption, UserConfig } from 'vite-plus/pack'
 import {
 	createStaticApplicationConfig,
+	resolveManagedDatabaseDrivers,
 	resolveResidualDependencies,
 	type StaticApplicationBuildOptions,
 } from './cli/static-application'
 
 export type PluxelApplicationBuildOptions =
-	| (Pick<StaticApplicationBuildOptions, 'variant' | 'launcher' | 'residualDependencies' | 'lint'> &
+	| (Pick<
+			StaticApplicationBuildOptions,
+			'variant' | 'managedDatabaseDrivers' | 'residualDependencies' | 'lint'
+	  > &
 			Readonly<{ delivery?: 'standalone' }>)
 	| Readonly<{
 			delivery: 'modules'
 			variant?: 'headless' | 'workbench'
 			lint?: boolean
-			launcher?: never
+			managedDatabaseDrivers?: never
 			residualDependencies?: never
 	  }>
 
@@ -26,7 +30,11 @@ export function pluxel(options: PluxelApplicationBuildOptions = {}): TsdownPlugi
 	)
 		throw new TypeError('[pluxel:application] delivery must be standalone or modules')
 	for (const key of Object.keys(options))
-		if (!['delivery', 'variant', 'launcher', 'residualDependencies', 'lint'].includes(key))
+		if (
+			!['delivery', 'variant', 'managedDatabaseDrivers', 'residualDependencies', 'lint'].includes(
+				key,
+			)
+		)
 			throw new TypeError(`[pluxel:application] unsupported ${key}`)
 	if (
 		options.variant !== undefined &&
@@ -37,7 +45,7 @@ export function pluxel(options: PluxelApplicationBuildOptions = {}): TsdownPlugi
 	if (options.lint !== undefined && typeof options.lint !== 'boolean')
 		throw new TypeError('[pluxel:application] lint must be a boolean')
 	if (options.delivery === 'modules')
-		for (const key of ['launcher', 'residualDependencies'])
+		for (const key of ['managedDatabaseDrivers', 'residualDependencies'])
 			if (Object.hasOwn(options, key))
 				throw new TypeError(`[pluxel:application] modules includes standalone-only ${key}`)
 	options =
@@ -45,6 +53,13 @@ export function pluxel(options: PluxelApplicationBuildOptions = {}): TsdownPlugi
 			? Object.freeze({ ...options })
 			: Object.freeze({
 					...options,
+					...(options.managedDatabaseDrivers === undefined
+						? {}
+						: {
+								managedDatabaseDrivers: Object.freeze(
+									resolveManagedDatabaseDrivers(options.managedDatabaseDrivers),
+								),
+							}),
 					...(options.residualDependencies === undefined
 						? {}
 						: {

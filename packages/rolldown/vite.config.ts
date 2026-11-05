@@ -9,11 +9,14 @@ export default defineConfig({
 			'check-tests': {
 				command: 'vp test run',
 				dependsOn: [
+					'compile',
 					{
 						task: 'compile',
 						from: ['dependencies', 'devDependencies', 'peerDependencies'],
 					},
 				],
+				// Container bind mounts must see the caller's temporary directory too.
+				cache: { env: ['PLUXEL_HEADLESS_IMAGE', 'TMPDIR'] },
 			},
 			compile: {
 				command: 'vp pack',

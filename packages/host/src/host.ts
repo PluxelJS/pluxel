@@ -102,6 +102,15 @@ export type HostApplication = Omit<HostBaseOptions, 'vaultBindings'> &
 			host: PluginHost
 			startup: import('./application').HostStartupContext
 		}): void | Promise<void>
+		/** Production startup decision after graph settlement. Omitted requires every intended node to be running. */
+		acceptStartup?(
+			input: import('./application-start').HostApplicationStartup,
+		): boolean | Promise<boolean>
+		/** Publish the production entry point after startup is accepted. Register resources with host.ctx.effects. */
+		launch?(input: {
+			host: PluginHost
+			startup: import('./application').HostStartupContext
+		}): void | Promise<void>
 	}>
 
 export type HostOptions<TServices extends readonly HostService[] = readonly HostService[]> =

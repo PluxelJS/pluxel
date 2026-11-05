@@ -153,8 +153,10 @@
 		"yaml": "catalog:prod"
 	},
 	"devDependencies": {
+		"@libsql/client": "catalog:backend",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
 		"@rolldown/pluginutils": "catalog:build",

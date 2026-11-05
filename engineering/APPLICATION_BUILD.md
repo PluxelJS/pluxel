@@ -7,7 +7,7 @@
 ## 交付选择与 modules
 
 `@pluxel/rolldown` 的 `pluxel({ delivery })` 将交付边界与 headless/workbench 资源 variant 分开。默认 standalone；modules 适合保留真实包边界及来源目录的应用。
-构建插件在创建时校验并捕获交付选项；后续修改原 options 或 residual package 数组不会改变异步构建的交付边界。
+构建插件在创建时校验并捕获交付选项；后续修改原 options、managed driver 或 residual package 数组不会改变异步构建的交付边界。`managedDatabaseDrivers` 与 `residualDependencies` 只适用于 standalone；构建没有 transport launcher 选项，生产入口由同一个应用 launch 拥有。
 
 modules 复用 `createPluginBuildPipeline` 的 lowering、config metadata、Node/Workbench 制品编译，不冻结 plugins 数组、不执行工厂。它编译本包相对模块和 `package.json#imports` 指向的本地模块；`#imports` 由构建解析，指向外部依赖时保持真实包边界，不向产物保留失去映射的别名。bare package imports 保持 external；明确的 public source exports 输出为对应 ESM entry，保留 package-root/subpath identity。`app.mjs` 默认导出应用工厂并保留 product/named exports，不自动启动。自定义 `outputOptions.entryFileNames` 时须保留 `.mjs` 扩展名；package exports 与 deployment server entry 从实际输出 chunk 生成，不另维护文件名。共享 parser 仍检查 application/bindings 声明；static catalog 限制只进入 standalone 分支。
 
@@ -20,6 +20,8 @@ modules 的 `pluxel-deployment.json` kind 为 pluxel-modules-application，runti
 ## Static application freezer
 
 standalone 交付使用 `@pluxel/rolldown` 的 `pluxel()` tsdown 插件；入口与输出归普通 tsdown 配置。用法见 [构建部署](../docs/development/distribution.md)。
+
+bootstrap 只负责应用加载、Host 装配与 provenance，再调用 Host 内部共享的 `startHostApplication`。它导出 host/ctx/start/stop，并转发应用显式 named exports；不自动导出 fetch/address 或选择 publicDir。入口在启动时检查应用 ESM namespace，若这四个保留名通过直接导出、alias 或 `export *` 出现，在读取 deployment 和应用工厂求值前拒绝；不依靠未展开 `export *` 的构建 moduleInfo 掩盖冲突。应用 callback 在 bundle 内使用同一份服务 token，失败清理由 Host 统一处理，不能由生成字符串复制另一套 prepare/start/close 逻辑。
 
 freezer 接受直接默认导出的 `defineHostApplication(factory)`。工厂是同步或异步的箭头/函数表达式，直接返回对象，或在块中以唯一、无条件的顶层 `return` 返回对象。返回对象不允许 spread。`plugins` 使用直接数组或模块级 const/imported 数组，不能依赖 startup 分支或函数调用；构建不会执行工厂或静态求值任意 JavaScript。它在同一 graph 中执行 macro、config metadata、lint、Workbench
 remote extraction 和 production preprocessing，然后生成以 canonical entry 为 namespace import 的 platform bootstrap。Wrapper
@@ -34,9 +36,9 @@ standalone 中的官方 `@pluxel/services/plugins` 入口使用 production expor
 optional ref 不产生实现 import；只有 host fixed catalog 或其他可达代码显式引入的 provider 才进入 application closure。
 缺席的 optional provider 不产生 chunk、virtual absent module、nf3 residual 或 deployment external。
 
-bootstrap 在 host namespace 求值前先加载 static Elysia wiring。freezer 从 Services HTTP 所有的 Elysia manifest 读取全部显式 public
-exports，并把 Elysia subpath、TypeBox 的 type/system/value/schema/compile namespace 与 `exact-mirror` 固定到同一 bundle identity；
-随后调用 Elysia 公开 `setupTypebox()`。因此 source-linked Plugin 不能带入第二份 Elysia，搬离 workspace 的 schema-backed
+HTTP 模块进入实际闭包时才激活 static Elysia wiring；纯 Host 应用不解析 Elysia。freezer 从 Services HTTP 所有的 Elysia manifest 读取全部显式 public
+exports，并把 Elysia subpath、`typebox` 和 `exact-mirror` 的根入口及合法子路径固定到各自同一 bundle identity；
+在应用使用 schema 前调用 Elysia 公开 `setupTypebox()`。因此 source-linked Plugin 不能带入第二份 Elysia，搬离 workspace 的 schema-backed
 distribution 也不依赖相对生成 chunk 的同步 module lookup。resolve hook 使用原生 id filter，非相关 graph import 不进入该插件。
 
 ### 环境绑定与无求值投影

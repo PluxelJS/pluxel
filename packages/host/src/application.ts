@@ -24,6 +24,8 @@ import { setHostCatalogProvenance } from './catalog-provenance'
 import type { PluginCatalogProvenance } from './catalog'
 import { pluginNodeAddressEqual, type PluginConstructor } from '@pluxel/core'
 import { createHost, type HostApplication, type HostOptions, type PluginHost } from './host'
+import { startHostApplication } from './application-start'
+export { prepareHostApplication } from './application-start'
 
 export type HostStartupContext<
 	TBindings extends Readonly<Record<string, unknown>> = Readonly<Record<string, unknown>>,
@@ -66,6 +68,8 @@ export type ResolvedHostApplication = Omit<HostOptions, 'plugins'> &
 		plugins: readonly PluginConstructor[]
 		sources?: HostApplication['sources']
 		prepare?: HostApplication['prepare']
+		acceptStartup?: HostApplication['acceptStartup']
+		launch?: HostApplication['launch']
 	}>
 const fields = new Set([
 	'name',
@@ -78,6 +82,8 @@ const fields = new Set([
 	'envBindings',
 	'fileBindings',
 	'prepare',
+	'acceptStartup',
+	'launch',
 ])
 function record(input: unknown, label: string): Record<string, unknown> {
 	if (!input || typeof input !== 'object' || Array.isArray(input))
@@ -104,8 +110,9 @@ function assertApplicationShape(input: unknown): asserts input is HostApplicatio
 			throw new TypeError(`[host] Application ${key} must be an array`)
 	if (app.name !== undefined && (typeof app.name !== 'string' || !app.name.trim()))
 		throw new TypeError('[host] Application name must be a non-empty string')
-	if (app.prepare !== undefined && typeof app.prepare !== 'function')
-		throw new TypeError('[host] Application prepare must be a function')
+	for (const key of ['prepare', 'acceptStartup', 'launch'])
+		if (app[key] !== undefined && typeof app[key] !== 'function')
+			throw new TypeError(`[host] Application ${key} must be a function`)
 }
 function snapshotStartup(input: HostStartupContext): HostStartupContext {
 	const startup = record(input, '[host] startup')
@@ -258,14 +265,6 @@ export async function resolveHostApplication(
 	attachConfigProvenance(config, { sources: Object.freeze(sources), bindings: inputs.bindings })
 	return { ...resolved, startup, vaultBindings: inputs.vaultBindings, config }
 }
-/** The caller owns rollback and invokes this after attachments are ready and before Plugin admission. */
-export async function prepareHostApplication(
-	application: ResolvedHostApplication,
-	host: PluginHost,
-): Promise<void> {
-	await application.prepare?.({ host, startup: application.startup })
-}
-
 /**
  * Start from a fresh Node launcher before importing the application or its business dependency graph.
  * Bind shared packages before evaluating the precompiled entry and its fixed imports. Node cannot
@@ -299,9 +298,10 @@ export async function runHostApplication(
 		sharedPackages,
 	})
 	let host: PluginHost | undefined
+	let resolved: ResolvedHostApplication
 	try {
 		const application = await loader.loadApplication(applicationEntry)
-		const resolved = await resolveHostApplication(application, startup)
+		resolved = await resolveHostApplication(application, startup)
 		const paths = await discoverPluginSources({
 			root: resolved.startup.root,
 			sources: resolved.sources ?? [],
@@ -357,9 +357,6 @@ export async function runHostApplication(
 			updates: 'next-start',
 		})
 		host.ctx.effects.defer(() => loader.close(), { tag: 'NativeSourceLoader', phase: 'shutdown' })
-		await prepareHostApplication(resolved, host)
-		await host.start()
-		return host
 	} catch (error) {
 		try {
 			const [cleanup] = await Promise.allSettled([host?.close()])
@@ -374,6 +371,8 @@ export async function runHostApplication(
 		}
 		throw error
 	}
+	await startHostApplication(resolved, host)
+	return host
 }
 
 /** Native module deliveries carry the same compiled application identity as static deliveries. */

@@ -70,7 +70,7 @@ export function elysiaDevelopment(): Plugin<HostVitePluginApi> {
 										if (!active) return new Response('Service Unavailable', { status: 503 })
 										return dispatchElysiaRequest(
 											request,
-											active.http.fetch,
+											active.http.dispatch,
 											active.carrier,
 											active.publicDir,
 										)

@@ -48,7 +48,7 @@ async function setOutputPermissions(directory: string, writable: boolean): Promi
 
 it('rejects standalone-only and removed options in JavaScript modules calls', () => {
 	for (const [options, message] of [
-		[{ delivery: 'modules', launcher: 'node' }, 'standalone-only launcher'],
+		[{ delivery: 'modules', launcher: 'node' }, 'unsupported launcher'],
 		[{ delivery: 'modules', residualDependencies: [] }, 'standalone-only residualDependencies'],
 		[{ delivery: 'modules', sourceFrameworks: true }, 'unsupported sourceFrameworks'],
 		[{ delivery: 'modules', variant: 'dynamic' }, 'variant must be'],

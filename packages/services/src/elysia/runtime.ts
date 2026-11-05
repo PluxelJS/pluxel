@@ -19,6 +19,8 @@ export interface ElysiaFallback {
 
 export interface ElysiaRuntimeApi {
 	matchesRequest(request: Request): boolean
+	/** Preserve an unmatched request for the physical ingress owner's fallback. */
+	dispatch(request: Request): Promise<Response | undefined>
 	fetch(request: Request): Promise<Response>
 	matchesWebSocketRoute(request: Request): boolean
 	attachApplicationCarrier(carrier: ElysiaApplicationCarrier): () => void
@@ -39,7 +41,9 @@ export class HostElysiaRuntime implements ElysiaRuntimeApi {
 		private readonly ctx: RootContext,
 		private readonly directory: ElysiaApplicationDirectory,
 	) {}
-	fetch = async (request: Request): Promise<Response> => {
+	fetch = async (request: Request): Promise<Response> =>
+		(await this.dispatch(request)) ?? new Response('Not Found', { status: 404 })
+	dispatch = async (request: Request): Promise<Response | undefined> => {
 		if (this.closed) return new Response('Service Unavailable', { status: 503 })
 		const endpoint = this.select(request)
 		if (endpoint) {
@@ -85,7 +89,7 @@ export class HostElysiaRuntime implements ElysiaRuntimeApi {
 				lease.dispose()
 			}
 		}
-		return new Response('Not Found', { status: 404 })
+		return undefined
 	}
 	matchesRequest = (request: Request): boolean => {
 		if (this.closed) return false

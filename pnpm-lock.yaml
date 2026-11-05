@@ -1609,12 +1609,18 @@ importers:
         specifier: catalog:prod
         version: 2.9.1
     devDependencies:
+      '@libsql/client':
+        specifier: catalog:backend
+        version: 0.18.0
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
       '@pluxel/host':
         specifier: workspace:*
         version: link:../host
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test

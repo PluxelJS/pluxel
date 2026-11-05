@@ -5,7 +5,11 @@ import { serve } from 'srvx/node'
 import type { ServerOptions } from 'srvx'
 import { dispatchElysiaRequest } from './dispatch'
 import type { PluginHost } from '@pluxel/host'
-import { resolveContextCapability } from '@pluxel/core/host'
+import {
+	enterOwnerInvocation,
+	resolveContextCapability,
+	type OwnerInvocationLease,
+} from '@pluxel/core/host'
 import { ElysiaRuntime } from './runtime'
 import { NodeElysiaApplicationCarrier } from './node'
 
@@ -18,14 +22,14 @@ export type ListenElysiaOptions = Readonly<
 			handle?: never
 			fd?: never
 		}
-		/** Optional public directory, resolved against cwd and served after a non-reserved 404. */
+		/** Optional public directory, resolved against cwd and served only for unmatched, non-reserved requests. */
 		publicDir?: string
 		/** Trusted public HTTP(S) origin supplied by the listener owner. */
 		publicOrigin?: string
 	}
 >
 
-/** Start the prepared Host on srvx. close() drains the Host and closes its listener; also handles SIGINT/SIGTERM. */
+/** Start srvx under the Host's effects. Host close(), listener close() and process signals share shutdown. */
 export async function listenElysia(host: PluginHost, options: ListenElysiaOptions = {}) {
 	if (!options || typeof options !== 'object' || Array.isArray(options))
 		throw new TypeError('[host] listener options must be an object')
@@ -74,18 +78,17 @@ export async function listenElysia(host: PluginHost, options: ListenElysiaOption
 	let node: NodeHttpServer | undefined
 	const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) =>
 		carrier.handleUpgrade(request, socket, head)
-	let closing: Promise<void> | undefined
-	const close = (): Promise<void> =>
-		(closing ??= (async () => {
+	let startup: OwnerInvocationLease | undefined
+	let owned = false
+	const stopAccepting = () => carrier.stopAccepting()
+	let disposing: Promise<void> | undefined
+	const dispose = (): Promise<void> =>
+		(disposing ??= (async () => {
 			process.off('SIGINT', signal)
 			process.off('SIGTERM', signal)
-			carrier.stopAccepting()
+			startup?.signal.removeEventListener('abort', stopAccepting)
+			stopAccepting()
 			const failures: unknown[] = []
-			try {
-				await host.close()
-			} catch (error) {
-				failures.push(error)
-			}
 			try {
 				await carrier.close()
 			} catch (error) {
@@ -100,6 +103,7 @@ export async function listenElysia(host: PluginHost, options: ListenElysiaOption
 			}
 			if (failures.length > 0) throw new AggregateError(failures, '[host] HTTP shutdown failed')
 		})())
+	const close = (): Promise<void> => host.close()
 	const signal = () => {
 		void close().catch((error) => {
 			process.exitCode = 1
@@ -107,6 +111,13 @@ export async function listenElysia(host: PluginHost, options: ListenElysiaOption
 		})
 	}
 	try {
+		// Startup participates in root admission until the listener has settled. The
+		// signal keeps rejecting ingress after that lease is released, before effects drain.
+		startup = enterOwnerInvocation(host.ctx)
+		const ownerSignal = startup.signal
+		ownerSignal.addEventListener('abort', stopAccepting, { once: true })
+		host.ctx.effects.defer(dispose, { tag: 'ElysiaListener', phase: 'shutdown' })
+		owned = true
 		server = serve({
 			...serverOptions,
 			manual: true,
@@ -114,13 +125,17 @@ export async function listenElysia(host: PluginHost, options: ListenElysiaOption
 			port,
 			silent: serverOptions.silent ?? true,
 			gracefulShutdown: false,
-			fetch: (request) => dispatchElysiaRequest(request, http.fetch, carrier, publicDir),
+			fetch: (request) =>
+				ownerSignal.aborted
+					? new Response('Service Unavailable', { status: 503 })
+					: dispatchElysiaRequest(request, http.dispatch, carrier, publicDir),
 		})
 		node = server.node?.server as NodeHttpServer | undefined
 		if (!node) throw new Error('[host] HTTP listener has no Node server')
 		node.on('upgrade', upgrade)
 		await server.serve()
 		await server.ready()
+		startup.signal.throwIfAborted()
 		process.once('SIGINT', signal)
 		process.once('SIGTERM', signal)
 		const url = new URL(server.url)
@@ -132,12 +147,16 @@ export async function listenElysia(host: PluginHost, options: ListenElysiaOption
 			close,
 		})
 	} catch (error) {
-		const [cleanup] = await Promise.allSettled([close()])
+		// close() first drains root admission; never wait for it while holding this lease.
+		startup?.dispose()
+		const [cleanup] = await Promise.allSettled([owned ? close() : dispose()])
 		if (cleanup.status === 'rejected')
 			throw new AggregateError([error, cleanup.reason], '[host] HTTP startup and cleanup failed', {
 				cause: error,
 			})
 		throw error
+	} finally {
+		startup?.dispose()
 	}
 }
 

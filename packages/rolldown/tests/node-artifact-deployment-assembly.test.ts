@@ -191,7 +191,6 @@ describe('static Node artifact deployment assembly', () => {
 				cwd: root,
 				entry: './src/app.ts',
 				variant: 'headless',
-				launcher: 'host',
 				lint: false,
 			})
 			const configuredPlugins = config.plugins as Plugin[]
@@ -369,7 +368,6 @@ const config = createStaticApplicationConfig({
 	cwd: root,
 	entry: './src/app.ts',
 	variant: 'headless',
-	launcher: 'host',
 	lint: false,
 })
 const compilerPlugins = [

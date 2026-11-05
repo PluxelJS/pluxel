@@ -27,11 +27,12 @@ Host 从协调队列末尾取得已应用 provider-default bindings，在同一 
 ## 应用、开发和部署
 
 应用每次启动执行配置工厂，取得完整 name/plugins/sources/policy/config/services/runtime；来源、服务、插件选择和输入值在异步 binding 读取前捕获，服务声明复制能力与依赖集合，借用句柄保持身份。`createHost()` 仅接收 Host 正式字段，执行入口显式投影，不依赖忽略额外应用字段。`prepare` 在服务与开发附件准备好后、插件启动前执行。
+生产启动由内部 `application-start.ts` 维护唯一顺序：prepare → host.start 与服务结算 → acceptStartup → launch。默认消费 Host status 中的有效运行意图，任何 desiredState=running 而 lifecycleState 非 running 的节点都拒绝启动；应用 callback 可显式接受降级。拒绝保留 report/status，异常和清理异常保留因果链，所有失败仍调用既有 host.close，不建立另一套 graph 或资源容器。launch 只在判定通过后发布生产入口；Vite 不执行 acceptStartup/launch，保留自己的 listener、更新与局部失败诊断。
 Host 不改变进程 cwd。入口与来源锚定 startup root，环境通过 startup 显式传递。`envBindings`/`fileBindings` 显式选择输入，与 config.records 共同构成本次声明；逐 node 的 mode 决定声明与保存输入的取值规则。模式、写入权限、跨启动保留与 generation 采用分别表达，唯一求值链由 [Config](CONFIG.md#static-startup-config) 维护。runtime 只保留四项原生设施与 documents 接线。
 
 Vite、生产 launcher 共用 Host 应用解析。工厂 identity 变化时重新求值完整配置并替换 Host，固定插件 import 更新也可能使工厂失效。工厂求值失败保留旧 Host。动态来源更新若工厂未变，则复用本次配置并提交 catalog。替换失败可用最后成功声明创建 fresh Host 补偿，但不能复活旧 generation。
 Host-vite 是唯一开发驱动；官方服务附件分别由 Services、Workbench 拥有。数据库 lowering 属于官方 Vite preset 的工具插件，不是运行时服务。
-modules 的 native launcher 在全新 Node 进程、业务闭包首次求值前向 `runHostApplication(entry, { startup, sharedPackages })` 提交预编译入口路径，先建立共享绑定，再求值默认工厂及固定 imports。standalone bootstrap 已内联闭包，直接组合 `resolveHostApplication/createHost/prepareHostApplication` 和 Host 启动，不再次发现模块。Fetch handler 和 Node listener 属于 HTTP 服务；构建资源 variant 不替应用安装服务。此前普通依赖的 ESM cache 闭包不能由 Node hook 证明；准确拒绝范围和调用前置条件见[Host 配置](../docs/host/configuration.md#生产构建)。
+modules 的 native launcher 在全新 Node 进程、业务闭包首次求值前向 `runHostApplication(entry, { startup, sharedPackages })` 提交预编译入口路径，先建立共享绑定，再求值默认工厂及固定 imports。standalone bootstrap 已内联闭包，不再次发现模块；两条路径在 Host 创建与附件接线完成后都调用 `startHostApplication`。应用在自己的闭包内静态导入 HTTP 服务并在 launch 中调用，避免把 bundle 内 Host 交给外部另一套服务 token。构建资源 variant 不替应用安装服务或决定静态目录。此前普通依赖的 ESM cache 闭包不能由 Node hook 证明；准确拒绝范围和调用前置条件见[Host 配置](../docs/host/configuration.md#生产构建)。
 Native loader 在本次 scope 内复用已完成 owner、exports 与 ABI 检查的求值 namespace；新加载模块继续检查，无法确认 owner 或检查失败时不记成功。共享 import 的安装版本准入仍消费实际 manifest，不使用通用或跨 Host 的 manifest cache。
 待检查 namespace 使用同一 loader 的 pending 集合。成功 entry 的累计闭包事实引用本次唯一 URL 顺序数组和当时的前缀长度；后续加载不延长较早 entry 的事实，关闭后冻结数组供 Node namespace cache 保留，不复制另一套依赖图。
 
@@ -42,7 +43,8 @@ Native loader 在本次 scope 内复用已完成 owner、exports 与 ABI 检查�
 ## HTTP 与管理页面
 
 `ElysiaApp` 是 Plugin generation 所有的真实 Elysia application，Plugin 与 Parts 共享同一 app。init 成功后 Host HTTP lifecycle 完成 finalize、settle、prepare、publish，原子交换完整 directory。初始化失败不发布半成品路由。
-`ElysiaRuntime` 是框架内部 root-only 分发，不进入公共服务入口；`ElysiaApp`、`elysia()`、`createElysiaHandler()` 属于 `/elysia`，`listenElysia()` 属于 `/elysia/node`。唯一生产适配为 Elysia 2 + srvx。物理 listener 由 Node launcher 或 Vite 持有；generation 停止不能关闭共享 listener。
+`ElysiaRuntime` 是框架内部 root-only 分发，不进入公共服务入口；`ElysiaApp`、`elysia()`、`createElysiaHandler()` 属于 `/elysia`，`listenElysia()` 属于 `/elysia/node`。唯一生产适配为 Elysia 2 + srvx。应用创建的 Node listener 登记到 root effects，公开 listener.close 与 Host close 共用关闭；Vite 持有自己的 listener。generation 停止不能关闭共享 listener。
+内部 dispatch 保留 Response 与 undefined，最终传输边界才把未处理请求转成 404；静态文件与 SPA fallback 只处理未处理请求，不读取业务 status 来判断所有权，也不预检查一次路由。公开 Fetch handler 仍始终返回 Response。
 请求、stream 和 WebSocket 持有 generation lease；停止先拒绝新操作，排空已接纳操作后再清理。跨 owner route collision 只检查已证明的精确 route inventory，不模拟 Elysia matcher grammar。
 
 Carrier metadata 的 `url` 保留物理监听事实；launcher 显式提供的 `publicOrigin` 只用于管理会话同源校验，不能据此推断 TLS 或客户端地址。Vite 和 Node listener 从 Host 的 `publicOrigin` 传入该值；Vite 同时用该值展示终端 URL。`resolveHostEnv(input)` 在 Vite/native launcher 的显式环境边界按 `PLUXEL_PUBLIC_ORIGIN` > `PITCHFORK_URL`、`PLUXEL_HOST_BIND/PORT` > `HOST/PORT` 解析；listener 接受显式 hostname/port/publicOrigin，不读取 process.env。缺省公开 origin 使用物理地址，不信任 Forwarded / X-Forwarded-* 头。
@@ -54,7 +56,7 @@ Management 安装认证、状态投影和 RPC session；Workbench 安装内容/p
 
 - Host plan、prepare rollback、关闭顺序：`packages/host/src/services.ts`、`host.ts`，对应 services/host/application 测试。
 - 配置与运行策略存储：Host `config-store.ts`、`state-store.ts`。默认通过 [FS](FS.md) 普通文档 adapter 借用 `services/host/<namespace>/<key>`；`runtime.documents` 的每域 false 关闭文档 IO，readOnly 拒绝本实例写入，storage 同步 root factory 借用外部 backend。Host 不关闭借用 backend，在 root final 关闭前停止观察并排空。配置只接受 v4 原始记录，运行策略只接受 v7 稀疏输入；缺文档不写种子、默认值或声明，只有明确管理修改才提交。文档若解析、版本或结构无效，Host 准备失败并保留原文件。恢复或旧格式转换由操作者显式完成，没有兼容 reader、重置或启动迁移。
-- Catalog、failed candidate 和 committed authority：Host `coordinator.ts`；原生启动使用 `application.ts`、`source-discovery.ts` 与 `native-source-loader.ts`，持续观察和更新归 Host-vite `host-vite.ts`。细节见 [HMR](HMR.md)。
+- Catalog、failed candidate 和 committed authority：Host `coordinator.ts`；原生加载使用 `application.ts`、`source-discovery.ts` 与 `native-source-loader.ts`，生产启动共用 `application-start.ts`，持续观察和更新归 Host-vite `host-vite.ts`。细节见 [HMR](HMR.md)。
 - HTTP owner lease、stream、WS 与 carrier：[HTTP 用法](../docs/plugin-development/http.md)、`packages/services/src/elysia/`。
 - 数据库的 generation handle、迁移、backend 与应用自管边界：[DATABASE.md](DATABASE.md)。
 - 日志 root、策略与有界 store：[LOGGING.md](LOGGING.md)。

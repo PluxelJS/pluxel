@@ -74,6 +74,7 @@ export {
 	type ResolvedHostApplication,
 } from './application'
 export type { HostRuntimeOptions } from './host'
+export { HostApplicationStartupError, type HostApplicationStartup } from './application-start'
 
 export type {
 	PluginApplyReportSnapshot,

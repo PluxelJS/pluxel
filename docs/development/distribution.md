@@ -24,6 +24,32 @@ starter 的 `vp run build` 已在 `host/dist` 上执行 create，可直接 `vp e
 
 持久化数据、日志、数据库、上传与 cache 必须位于 distribution root 外。协议没有 mutable subtree 或 exclusion glob。
 
+## 自管数据库与原生依赖
+
+自管 libSQL 等数据库时，应用不安装 Services 的 `database()`，由应用 `prepare` 获取连接并立即登记 root effects。standalone 通过公开构建入口排除未使用的托管驱动，并声明真正需要的原生包：
+
+```ts no-twoslash
+import { defineConfig } from 'vite-plus/pack'
+import { pluxel } from '@pluxel/rolldown'
+
+export default defineConfig({
+	entry: './src/app.ts',
+	plugins: [
+		pluxel({
+			variant: 'headless',
+			managedDatabaseDrivers: [],
+			residualDependencies: { packages: ['@libsql/client'] },
+		}),
+	],
+})
+```
+
+`managedDatabaseDrivers` 控制允许进入 standalone 交付的托管 driver，默认允许 `pglite` 和 `postgres`，不代表无条件复制这两个包。驱动作为 external 时不内联进 JavaScript，但 tracing 仍会复制实际解析到的依赖；空数组则显式切断两个托管适配器入口，使它们不引入对应 driver 闭包。调用被排除的适配器会明确报错，应用私有的真实包 import 不受影响。
+
+`residualDependencies.packages` 把应用通过原生 binding loader、`createRequire()` 等访问的包交给 tracing；无法静态发现的包内资源使用 `fullTrace`，其中的包同时隐含加入 `packages`。显式包解析失败会终止构建，最终复制的实际包集合记录在 `pluxel-deployment.json` 中。
+
+modules 保持真实包依赖，不接受这两项 standalone 构建参数；部署时须一并准备应用声明的运行依赖。两种方式都使用同一份应用的准备、启动判定和 `launch`，不会替应用运行迁移或选择 HTTP 静态目录。应用资源所有权见[应用数据库](../host/configuration.md#application-private-database)，启动与最小 HTTP 依赖见[Host 配置](../host/configuration.md#生产构建)。
+
 ## 五个 CLI 动作
 
 | 动作        | 用途                                                               | 会验证发行者吗 |
@@ -130,3 +156,5 @@ statement 是 in-toto Statement v1，唯一 subject 是 manifest 原始 bytes �
 
 将最终目录复制或归档后，在安全解包的副本上再次执行 `verify`。Verification report、private delivery record 与 trusted key 均留在发行目录外。
 Vite 的可变工作区不生成这种 artifact manifest。modules 发行清单覆盖已构建本包目录，外部包安装和可变 sources 不属于该签名范围。公开 raw schema 位于 `@pluxel/rolldown/distribution/schema.json`。
+
+原生依赖还必须在实际接收边界运行。[headless + libSQL + PDF 流示例](https://github.com/PluxelJS/pluxel/tree/main/packages/rolldown/tests/fixtures/headless-delivery) 与[交付回归](https://github.com/PluxelJS/pluxel/blob/main/packages/rolldown/tests/headless-delivery.test.ts) 使用同一应用检查两种交付：独立安装、搬离 workspace、打开/查询/关闭数据库、业务 404、流取消和启动拒绝时不建立 listener。发行清单完整只证明文件集合；它不证明目标镜像的系统库、架构或原生 ABI 可用。部署到新镜像时仍需在该镜像重跑真实数据库与 HTTP 路径，不能用源码测试或本机成功替代。

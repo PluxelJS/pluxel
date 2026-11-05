@@ -9,6 +9,7 @@
 ## 本项目位置与检查
 
 - `host/src/app.ts` 是开发与生产共用的应用声明；可选 `sources` 扩展固定 catalog。默认 modules 构建与原生 `start.mjs` 只在启动接纳预编译来源；开发 Vite 持续更新。生产 Vite 使用独立 `vite.runtime.config.ts` 与 `start-vite.mjs`，加载同一 compiled factory。
+- 生产 listener 与 `publicDir` 由应用 `launch` 显式选择；启动意图通过判定后才执行，关闭统一使用 Host。Vite 自己持有 listener，不执行应用 `acceptStartup` 或 `launch`。
 - 浏览器 React/Vite 代码位于 `host/web/`；Node catalog、配置和路由策略位于 `host/`；共享中立逻辑位于 `packages/`。
 - inspect 选择本应用时使用 workspace-relative `application: { root: 'host', entry: 'src/app.ts' }`。
 - 修改 `plugins/`、公共契约、Host 配置或 lint / fmt 规则前，按开发指南确认对应契约。应用装配见 `vp exec pluxel docs host/configuration.md`。

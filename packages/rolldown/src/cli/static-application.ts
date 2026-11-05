@@ -36,8 +36,6 @@ export type StaticApplicationBuildOptions = {
 	cwd?: string
 	outDir?: string
 	variant?: 'headless' | 'workbench'
-	/** Runtime adapter emitted by the production bootstrap. @default 'node' */
-	launcher?: 'node' | 'fetch' | 'host'
 	target?: 'node'
 	/** Managed database drivers carried by this deployment. @default ['pglite', 'postgres'] */
 	managedDatabaseDrivers?: readonly StaticApplicationManagedDatabaseDriver[]
@@ -101,10 +99,6 @@ export function createStaticApplicationConfig(
 	const entry = resolve(cwd, options.entry)
 	const outDir = resolve(cwd, options.outDir ?? 'dist')
 	const variant = options.variant ?? 'workbench'
-	const launcher = String(options.launcher ?? 'node')
-	if (launcher !== 'node' && launcher !== 'fetch' && launcher !== 'host') {
-		throw new Error('[static-application] launcher must be node, fetch or host')
-	}
 	const target = String(options.target ?? 'node')
 	if (target !== 'node')
 		throw new Error('[static-application] only the node target is currently supported')
@@ -197,7 +191,7 @@ export function createStaticApplicationConfig(
 				},
 			}),
 			staticFrameworkSingletonPlugin(entry, BundledFrameworkPackages),
-			...(launcher === 'host' ? [] : [staticElysiaSingletonPlugin(cwd)]),
+			staticElysiaSingletonPlugin(cwd),
 			staticWorkbenchCapnwebPlugin(entry),
 			staticTinybasePlugin(entry),
 			...(sourcePipeline.plugins ?? []),
@@ -229,7 +223,6 @@ export function createStaticApplicationConfig(
 			staticApplicationEntryPlugin({
 				entry,
 				variant,
-				launcher,
 			}),
 			staticApplicationAssemblyPlugin({
 				cwd,
@@ -504,7 +497,7 @@ export function resolveResidualDependencies(
 	}
 }
 
-function resolveManagedDatabaseDrivers(
+export function resolveManagedDatabaseDrivers(
 	value: readonly StaticApplicationManagedDatabaseDriver[] | undefined,
 ): StaticApplicationManagedDatabaseDriver[] {
 	if (value === undefined) return [...ManagedDatabaseDrivers]
@@ -555,7 +548,6 @@ function readPackageName(id: string): string | null {
 function staticApplicationEntryPlugin(options: {
 	entry: string
 	variant: 'headless' | 'workbench'
-	launcher: 'node' | 'fetch' | 'host'
 }): Plugin {
 	return {
 		name: 'pluxel-static-application-entry',
@@ -567,54 +559,37 @@ function staticApplicationEntryPlugin(options: {
 		},
 		async load(id) {
 			if (id !== RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID) return null
-			return buildHostBootstrap(options.entry, options.variant, options.launcher)
+			return buildHostBootstrap(options.entry, options.variant)
 		},
 	}
 }
 
-function buildHostBootstrap(
-	entry: string,
-	variant: 'headless' | 'workbench',
-	launcher: 'host' | 'node' | 'fetch',
-): string {
-	const http = launcher !== 'host'
+function buildHostBootstrap(entry: string, variant: 'headless' | 'workbench'): string {
 	return `
-${http ? "import 'pluxel:static-elysia-wiring'" : ''}
-import application from ${JSON.stringify(entry)}
-import { createHost, resolveHostApplication, prepareHostApplication } from '@pluxel/host'
-import { setHostCatalogProvenance } from '@pluxel/host/internal'
+import application, * as applicationExports from ${JSON.stringify(entry)}
+export * from ${JSON.stringify(entry)}
+import { createHost, resolveHostApplication } from '@pluxel/host'
+import { setHostCatalogProvenance, startHostApplication } from '@pluxel/host/internal'
 import { readFile } from 'node:fs/promises'
-${http ? "import { createElysiaHandler } from '@pluxel/services/elysia'" : ''}
-${launcher === 'node' ? "import { listenElysia } from '@pluxel/services/elysia/node'\nimport { resolveHostEnv } from '@pluxel/host/environment'" : ''}
+const reservedExports = ['host', 'ctx', 'start', 'stop'].filter(name => Object.hasOwn(applicationExports, name))
+if (reservedExports.length > 0) throw new TypeError('[pluxel:application] standalone application exports reserved entry names: ' + reservedExports.join(', '))
 const deployment = JSON.parse(await readFile(new URL('./pluxel-deployment.json', import.meta.url), 'utf8'))
 const resolved = await resolveHostApplication(application, {root:import.meta.dirname,mode:'production',env:process.env,bindings:{},deployment:{root:import.meta.dirname,target:'node',delivery:'standalone',variant:${JSON.stringify(variant)},application:deployment.application}})
-const host = await createHost({
+export const host = await createHost({
  name:resolved.name,plugins:resolved.plugins,runtime:resolved.runtime,config:resolved.config,policy:resolved.policy,
  vaultBindings:resolved.vaultBindings,services:resolved.services,
 })
 try {
  setHostCatalogProvenance(host.ctx, new Map(resolved.plugins.map(plugin => [plugin, {execution:{kind:'native',origin:'fixed',artifact:{kind:'application-bundle'},update:{kind:'next-start'}}}])))
- await prepareHostApplication(resolved, host)
- await host.start()
 } catch (error) {
  const [cleanup] = await Promise.allSettled([host.close()])
  if (cleanup.status==='rejected') throw new AggregateError([error,cleanup.reason], 'Application startup and cleanup failed', {cause:error})
  throw error
 }
+await startHostApplication(resolved, host)
 export const ctx = host.ctx
 export const start = () => host.start()
-${
-	http
-		? `let handler
-try { handler = createElysiaHandler(host) } catch (error) {
- const [cleanup] = await Promise.allSettled([host.close()])
- if (cleanup.status==='rejected') throw new AggregateError([error,cleanup.reason], 'Application handler startup and cleanup failed', {cause:error})
- throw error
-}
-export const fetch = handler`
-		: ''
-}
-${launcher === 'node' ? 'const environment = resolveHostEnv(resolved.startup.env)\nconst listener = await listenElysia(host, {hostname:environment.hostBind,port:environment.hostPort,publicOrigin:environment.publicOrigin,publicDir:import.meta.dirname+"/public"}).catch(async (error) => { const [cleanup] = await Promise.allSettled([host.close()]); if (cleanup.status==="rejected") throw new AggregateError([error,cleanup.reason], "Application listener startup and cleanup failed", {cause:error}); throw error })\nexport const address = listener.address\nexport const stop = listener.close' : 'export const stop = () => host.close()'}
+export const stop = () => host.close()
 `
 }
 

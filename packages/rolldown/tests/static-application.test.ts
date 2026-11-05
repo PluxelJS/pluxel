@@ -185,6 +185,7 @@ describe('application', () => {
 					name?: string
 					buildStart?: unknown
 					resolveId?: unknown
+					load?: unknown
 				}>
 			).find((candidate) => candidate?.name === 'pluxel:static-elysia-singleton')
 			const resolve = vi.fn(async (id: string, importer: string | undefined) => {
@@ -197,6 +198,7 @@ describe('application', () => {
 			})
 			const context = {
 				resolve,
+				load: vi.fn(async () => ({ exports: ['Type'] })),
 				error(message: string): never {
 					throw new Error(message)
 				},
@@ -204,6 +206,7 @@ describe('application', () => {
 			await (plugin?.buildStart as ((this: typeof context) => Promise<void>) | undefined)?.call(
 				context,
 			)
+			expect(resolve).not.toHaveBeenCalled()
 			const resolveId = (plugin?.resolveId as { handler?: unknown } | undefined)?.handler as
 				| ((
 						this: typeof context,
@@ -212,12 +215,21 @@ describe('application', () => {
 						options: object,
 				  ) => Promise<unknown> | null)
 				| undefined
+			const entry = (await resolveId?.call(
+				context,
+				'elysia/type',
+				join(root, 'plugin.ts'),
+				{},
+			)) as { id: string }
+			const load = plugin?.load as (this: typeof context, id: string) => Promise<string>
+			const source = await load.call(context, entry.id)
+			expect(source).toContain('import "pluxel:static-elysia-wiring"')
+			expect(source).toContain(`export * from ${JSON.stringify(typeEntry)}`)
+			expect(source).not.toContain('export { default }')
+			expect(context.load).toHaveBeenCalledWith({ id: typeEntry })
 			await expect(
-				resolveId?.call(context, 'elysia/type', join(root, 'plugin.ts'), {}),
-			).resolves.toEqual({ id: typeEntry, external: false })
-			expect(
 				resolveId?.call(context, 'elysia/package.json', join(root, 'plugin.ts'), {}),
-			).toBeNull()
+			).resolves.toBeNull()
 			await expect(
 				resolveId?.call(context, 'typebox/value', join(root, 'plugin.ts'), {}),
 			).resolves.toEqual({ id: typeboxValueEntry, external: false })
@@ -238,17 +250,7 @@ describe('application', () => {
 		}
 	})
 
-	it('rejects an unknown launcher instead of silently opening a listener', () => {
-		expect(() =>
-			application({
-				cwd: '/tmp/pluxel-static-invalid-launcher',
-				entry: './src/pluxel.static.ts',
-				launcher: 'invalid' as never,
-			}),
-		).toThrow('[static-application] launcher must be node, fetch or host')
-	})
-
-	it('generates a namespace-based production bootstrap for default and product exports', async () => {
+	it('delegates production startup to Host and preserves explicit application exports', async () => {
 		const config = application({
 			cwd: '/tmp/pluxel-static-node',
 			entry: './src/pluxel.static.ts',
@@ -266,13 +268,14 @@ describe('application', () => {
 		const source = String(await plugin?.load?.(String(resolved)))
 
 		expect(resolved).toBe('\0pluxel:static-application-bootstrap')
-		expect(source).toContain('import application from')
+		expect(source).toContain('import application, * as applicationExports from')
 		expect(source).toContain('/tmp/pluxel-static-node/src/pluxel.static.ts')
 		expect(source).toContain("from '@pluxel/host'")
-		expect(source.indexOf("import 'pluxel:static-elysia-wiring'")).toBeLessThan(
-			source.indexOf('import application from'),
-		)
 		expect(source).toContain('resolveHostApplication(application,')
+		expect(source).toContain('startHostApplication(')
+		expect(source).toContain('export * from')
+		expect(source).not.toContain('listenElysia')
+		expect(source).not.toContain('publicDir')
 		expect(source).not.toContain('@pluxel/runtime')
 	})
 
@@ -306,31 +309,6 @@ describe('application', () => {
 			expect(source).toContain(`from '${specifier}'`)
 		}
 		expect(source).toContain('__setupTypebox({')
-	})
-
-	it('emits a fetch-only production bootstrap without a listener address', async () => {
-		const config = application({
-			cwd: '/tmp/pluxel-static-fetch',
-			entry: './src/pluxel.static.ts',
-			variant: 'workbench',
-			launcher: 'fetch',
-			lint: false,
-		})
-		const plugin = (
-			config.plugins as Array<{
-				name?: string
-				resolveId?: (id: string) => unknown
-				load?: (id: string) => unknown
-			}>
-		).find((candidate) => candidate?.name === 'pluxel-static-application-entry')
-		const resolved = plugin?.resolveId?.('pluxel:static-application-bootstrap')
-		const source = String(await plugin?.load?.(String(resolved)))
-
-		expect(source).toContain('@pluxel/services/elysia')
-		expect(source).toContain('createElysiaHandler(host)')
-		expect(source).toContain('export const fetch = handler')
-		expect(source).not.toContain('runStaticNodeApplication')
-		expect(source).not.toContain('export const address')
 	})
 
 	it('keeps PostgreSQL on the Node residual boundary', async () => {
@@ -649,19 +627,5 @@ describe('application', () => {
 				target: 'fetch' as never,
 			}),
 		).toThrow('only the node target is currently supported')
-	})
-
-	it('keeps production bootstrap imports inside the directly installed route package', async () => {
-		const source = await import('node:fs/promises').then(({ readFile: readSourceFile }) =>
-			readSourceFile(new URL('../src/cli/static-application.ts', import.meta.url), 'utf8'),
-		)
-
-		expect(source).not.toContain("from '@pluxel/runtime/internal/static'")
-		expect(source).not.toContain("from '@pluxel/runtime/internal'")
-		expect(source).toContain("from '@pluxel/host'")
-		expect(source).toContain('@pluxel/services/elysia/node')
-		expect(source).toContain('listenElysia(host,')
-		expect(source).toContain('...RuntimeFullTracePackages')
-		expect(source).toContain('...residualDependencies.fullTrace')
 	})
 })

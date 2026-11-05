@@ -3,6 +3,7 @@ import { pluginSource } from '@pluxel/host/sources'
 import { defineHostApplication } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { servicesPreset } from '@pluxel/services/preset'
+import { listenElysia } from '@pluxel/services/elysia/node'
 import { Passthrough } from '@pluxel/core/fs'
 import { logtape, zenfs } from '@pluxel/core/config'
 
@@ -37,6 +38,14 @@ export default defineHostApplication(async (startup) => {
 			product,
 			workbench: environment.workbench ?? true,
 		}),
+		async launch({ host }) {
+			await listenElysia(host, {
+				hostname: environment.hostBind,
+				port: environment.hostPort,
+				publicOrigin: environment.publicOrigin,
+				publicDir: resolve(startup.deployment?.root ?? startup.root, 'public'),
+			})
+		},
 		config: {
 			mode: 'saved-first',
 			records: [

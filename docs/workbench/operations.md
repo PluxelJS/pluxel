@@ -152,7 +152,7 @@ description: 查看依赖、定位启动和更新失败，以及部署 Workbench
 
 生产反向代理只需保留同源路径并正确转发 WebSocket Upgrade：Workbench document、`/__pluxel/` HTTP endpoints、MF assets
 和 `/__pluxel/runtime/session` 应到达同一个 Runtime deployment。Runtime 不相信 `Forwarded` / `X-Forwarded-*` 推断
-physical TLS 或 locality。内建 production Node launcher 只监听 HTTP，因此默认只通过 loopback/SSH tunnel 管理，不通过普通
+physical TLS 或 locality。应用的 `launch` 选择 listener 的 HTTP/TLS 配置；仅使用普通 HTTP listener 时，通过 loopback/SSH tunnel 管理，不通过普通
 TLS 反代开放 remote Management，反代也不应从 loopback 地址回源。需要 remote Management 的平台集成必须提供自身能证明
 HTTPS 的 application carrier。多实例部署还需要让 control socket、OIDC callback 和短期 cookie ticket 命中签发它们的实例。
 

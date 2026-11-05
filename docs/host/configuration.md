@@ -21,7 +21,7 @@ Host 拥有插件目录、运行策略和服务生命周期。应用入口默认
 | SQL 后端、应用自管连接与生命周期   | [Backend](#选择-native-postgresql-或-pglite)、[应用数据库](#application-private-database) |
 | 轻量独立 Host                      | [Logging](#独立-logging-host)、[HTTP listener](#独立-http-host)                           |
 | 浏览器与 Web Worker                | [浏览器 Host](#浏览器-host)                                                               |
-| 生产制品                           | [构建](#生产构建)                                                                         |
+| 生产启动、就绪判定与制品           | [启动判定](#生产启动判定)、[构建](#生产构建)                                              |
 
 以下 `HostApplication`、`servicesPreset()` 和独立 `createHost()` 示例表示不同装配方式；选择一种适合现有项目的入口，不叠加创建第二个 Host。
 
@@ -89,7 +89,7 @@ FS 与 TinyBase 始终内建；配置和运行策略使用同一个 Core 文件�
 
 `plugins` 提供可用代码，`policy` 选择运行策略，`config` 提供 Plugin 原始输入，`services` 安装能力。`runtime` 只装配 `zenfs`、`logtape`、`tinybase`、`events` 与进阶 `documents` 设施；普通应用可以省略。`name` 是顶层诊断身份。
 
-`HostApplication` 与 `createHost()` 共用这些作者字段；动态 `sources`、部署绑定和 `prepare` 由应用解析器处理，直接 `createHost()` 不接受这些应用专属字段。
+`HostApplication` 与 `createHost()` 共用这些作者字段；动态 `sources`、部署绑定、`prepare`、`acceptStartup` 和 `launch` 由应用启动流程处理，直接 `createHost()` 不接受这些应用专属字段。
 
 具体 Plugin 的 `MyPlugin.nodeAddress()` 返回 default 节点地址，`MyPlugin.nodeAddress('east')` 返回 fork 地址；只引用 lowering 后的身份，不创建或启动实例。abstract token 和未经过 lowering 的 class 不能产生节点地址。
 
@@ -99,6 +99,7 @@ import * as nativeFs from 'node:fs'
 import { defineHostApplication } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { servicesPreset } from '@pluxel/services/preset'
+import { listenElysia } from '@pluxel/services/elysia/node'
 import { Passthrough } from '@pluxel/core/fs'
 import { logtape, zenfs } from '@pluxel/core/config'
 import { TodoPlugin } from '@app/todo'
@@ -115,6 +116,13 @@ export default defineHostApplication(async (startup) => {
 		services: await servicesPreset(startup, {
 			workbench: environment.workbench ?? true,
 		}),
+		async launch({ host }) {
+			await listenElysia(host, {
+				hostname: environment.hostBind,
+				port: environment.hostPort,
+				publicOrigin: environment.publicOrigin,
+			})
+		},
 		runtime: {
 			logtape: logtape(),
 			zenfs: zenfs({
@@ -142,6 +150,16 @@ Vite 和生产构建都要求入口直接默认导出 `defineHostApplication(内
 `prepare({ host, startup })` 在服务与开发附件准备完成后、插件启动前执行；适合应用级硬前提。资源获取成功后立即登记到明确的 owner，清理失败不会跳过其他资源。
 
 Plugin 配置和运行策略默认从 Core FS 文档读取管理输入；省略文件后端时使用 InMemory。启动不会把声明或默认值写成保存记录。来源规则、保存能力与采用时机各自独立，见[保存配置和运行策略](#保存配置和运行策略)。
+
+### 生产启动判定
+
+原生 modules 入口与 standalone bootstrap 使用同一流程：准备 Host 服务与应用 `prepare` → 启动插件图并结算服务 → 判定启动结果 → 执行应用 `launch`。`runHostApplication()` resolve 或 standalone 模块求值完成，表示这条流程已经完成；`launch` 中必须等待 listener 或其他入口真正建立。
+
+默认要求有效启动意图中的每个节点都达到 `running`，包括 required dependency 引入的节点；未请求运行的 catalog 项不阻止启动。需要接受降级时声明 `acceptStartup({ host, startup, report, status })`，同步或异步返回 boolean。`status.statuses` 提供各节点的 `address`、`desiredState`、`lifecycleState` 与 `issues`，应用据此判断自己需要的能力，不另维护一份框架必需插件清单。这个回调替换默认判定；返回 `true` 后才会调用 `launch({ host, startup })`，因此应同时核对所有影响接流量的条件。
+
+判定返回 `false` 时抛出 `HostApplicationStartupError`（`code: 'startup_rejected'`），其中保留 `report` 和 `status`；返回其他类型会被拒绝。`prepare`、判定或 `launch` 抛错时保留原错误并关闭 Host，关闭也失败时用 `AggregateError` 同时保留两项错误。已经获取的资源必须及时登记到 owner effects。`listenElysia()` 自动登记物理 listener，`await host.close()` 即可完成关闭；应用不重复登记 `listener.close()`。
+
+这是一份启动时的结算快照，不承诺之后持续健康。Core 和直接使用的 `host.start()` 仍允许局部失败并返回事实。Vite 自己持有 listener，执行 `prepare` 和原有图更新，但不执行 `acceptStartup` 或 `launch`，从而保留失败插件的在线诊断和修复入口。
 
 ## Vite 开发
 
@@ -263,7 +281,7 @@ process.once('SIGINT', shutdown)
 | `PLUXEL_PUBLIC_ORIGIN`                  | 显式 HTTP(S) 公开 origin，优先于 `PITCHFORK_URL`         |
 | `PITCHFORK_URL`                         | Pitchfork 提供的公开 origin；未显式配置时自动采用        |
 
-Vite 在自己的启动边界解析环境，用 `publicOrigin` 展示公开地址并接入管理会话同源校验。native launcher 必须把解析后的 `hostBind`、`hostPort`、`publicOrigin` 显式交给 `listenElysia()`；listener 不读取环境，没有公开 origin 时使用监听 origin。它不改变物理监听地址、客户端地址或 TLS 判定，也不从 `Forwarded` / `X-Forwarded-*` 请求头推断。公开 origin 必须是 HTTP(S) origin，不含凭证、业务路径、查询参数或片段。开发代理的配置与排障见[工作区工具链](../development/workspace-toolchain.md#端口与公开地址)。
+Vite 在自己的启动边界解析环境，用 `publicOrigin` 展示公开地址并接入管理会话同源校验。应用 `launch` 把解析后的 `hostBind`、`hostPort`、`publicOrigin` 显式交给 `listenElysia()`；listener 不读取环境，没有公开 origin 时使用监听 origin。它不改变物理监听地址、客户端地址或 TLS 判定，也不从 `Forwarded` / `X-Forwarded-*` 请求头推断。公开 origin 必须是 HTTP(S) origin，不含凭证、业务路径、查询参数或片段。开发代理的配置与排障见[工作区工具链](../development/workspace-toolchain.md#端口与公开地址)。
 
 ## 绑定部署环境与 JSON 文件
 
@@ -826,7 +844,7 @@ Workbench 使用同一份有界日志存储，通过已认证的 Management 会�
 
 `elysia()` 安装 generation-scoped Elysia application；生产 Node 接线统一使用 srvx。
 `listenElysia()` 直接接收原生 [srvx ServerOptions](https://srvx.h3.dev/guide/options)，包括 TLS、Node server options、middleware、plugins、trustProxy、body limit 和 error handler。Host 拥有请求分发、启动时机和关闭，故不接受 `fetch`、`manual`、`gracefulShutdown`；这些字段在资源获取前拒绝。
-`publicOrigin` 是显式的浏览器公开 origin，不改变物理绑定地址。可选 `publicDir` 在创建 listener 时固定（相对路径以当时 cwd 解析），只在非保留路径的业务 404 后服务编译资源和 SPA fallback。
+`publicOrigin` 是显式的浏览器公开 origin，不改变物理绑定地址。可选 `publicDir` 在创建 listener 时固定（相对路径以当时 cwd 解析），只有未被 Host endpoint、业务路由或已安装 Shell fallback 处理的非保留请求才进入静态资源与 SPA fallback。业务返回的 404 保留原有 headers 和 body。应用应从明确的部署目录构造绝对路径；两种交付方式都不会自动选择 `dist/public`。
 
 ```ts no-twoslash
 import { createHost } from '@pluxel/host'
@@ -842,8 +860,8 @@ const listener = await listenElysia(host, {
 	maxRequestBodySize: 1024 * 1024,
 	publicOrigin: 'https://app.example.com',
 })
-// 应用结束时关闭 listener 与 Host。
-await listener.close()
+// Host 同时拥有 listener；listener.close() 也委托同一关闭流程。
+await host.close()
 ```
 
 需要 IPC、自定义启动/关闭或独立 transport 时，使用 `/elysia` 的 `createElysiaHandler(host)` 与原生 srvx；调用者负责关闭 server 与 Host。TCP helper 不接受 `node.path/handle/fd`，因为返回值和 carrier metadata 需要实际 TCP 地址。
@@ -884,7 +902,7 @@ owner invocation 的 `Request` 传入会明确失败。
 
 应用也可以完全自管 SQL：把 schema、client、repositories、migration 和 connection lifecycle 放进普通 application-private package，例如 `@app/database`。这个 package 自己声明 ORM 和 driver dependency；不要只把依赖安装在 workspace root，再让子包隐式使用。与托管 Database 的选择及原生查询见[数据库与数据归属](../plugin-development/database.md)。
 
-只选择自管 SQL 时，应用服务列表不安装 `database()`；误用 `ctx.require(Database)` 会直接失败。standalone 构建设置 `managedDatabaseDrivers: []`，移除托管后端的 driver 闭包，再用 `residualDependencies` 声明应用实际需要交付的 driver 与动态资源，见[应用交付](../development/distribution.md)。迁移资源也由应用明确发布，开发与生产构建不执行 SQL 迁移。
+只选择自管 SQL 时，应用服务列表不安装 `database()`；误用 `ctx.require(Database)` 会直接失败。standalone 需要明确排除托管 driver 时设置 `managedDatabaseDrivers: []`，应用自己的 driver 与动态资源按需通过 `residualDependencies` 声明。构建排除与 external 的区别见[应用交付](../development/distribution.md#自管数据库与原生依赖)。迁移资源也由应用明确发布，开发与生产构建不执行 SQL 迁移。
 
 内置 Plugin 优先消费 repository 或 application service。只有确实需要构造查询时才暴露 ORM client；不要让每个 Plugin 各自读取 DSN、创建 pool 或运行 migration。
 
@@ -1058,8 +1076,8 @@ import pack from './tsdown.config'
 export default defineConfig({ pack })
 ```
 
-`@pluxel/rolldown` 的 `pluxel()` 统一构建官方与自定义服务组合。生产 bootstrap 通过 `@pluxel/host` 启动同一应用，HTTP handler/listener 属于 `@pluxel/services/elysia/*`。
-`delivery` 独立选择交付边界：默认 `standalone` 内联框架和固定插件，`launcher` 可选 `node`、`fetch` 或 `host`，不能声明 sources。`modules` 编译本包模块、保留真实包 imports 与公开 Plugin identity，并导出应用工厂；它不自动启动，也不接受 launcher/residualDependencies。资源 `variant` 与服务安装是独立决定。
+`@pluxel/rolldown` 的 `pluxel()` 统一构建官方与自定义服务组合。应用的 `launch` 决定生产入口，HTTP handler/listener 属于 `@pluxel/services/elysia/*`。构建不接受 `launcher`，也不隐式建立 listener、导出 `fetch/address` 或选择静态目录。
+`delivery` 只选择交付边界：默认 `standalone` 内联框架和固定插件，不能声明 sources；生成入口启动应用后导出 `host`、`ctx`、`start`、`stop`，并保留应用显式导出的其他 ESM 成员。这四个名称由生成入口拥有；应用直接导出或通过其他模块重新导出其中任何名称，产物会在启动时、应用工厂求值前明确拒绝，不覆盖应用导出。应用需要 Fetch 交付时，在自己的模块中导出 handler，在 `launch` 中接通 `createElysiaHandler(host)`；导出在启动前不可用时应明确报错。`modules` 编译本包模块、保留真实包 imports 与公开 Plugin identity，并导出应用工厂；它不自动启动，也不接受 standalone 专属的 `managedDatabaseDrivers` 或 `residualDependencies`。资源 `variant` 与服务安装是独立决定。
 
 modules 同时支持 `package.json#imports`：本包目标进入编译，外部目标保留包依赖；搬移输出后不依赖原来的源码映射。
 
@@ -1074,41 +1092,50 @@ export default defineConfig({
 
 默认应用入口为 `dist/app.mjs`。若用 tsdown 的 `outputOptions.entryFileNames` 自定义命名，保留 `.mjs` 扩展名，并让启动路径对应实际产物；输出的 `package.json` 的 `./app` export 与 `pluxel-deployment.json` 的 `server.entry` 会同步记录实际入口。
 
-原生启动示例：
+以下是使用完整服务组合的原生启动器 `start.mjs`。HTTP 配置留在前面的应用 `launch` 中：
 
 ```ts no-twoslash
 import { runHostApplication } from '@pluxel/host'
 import { serviceSharedPackages } from '@pluxel/services/sources'
-import { resolveHostEnv } from '@pluxel/host/environment'
 
 const startupEnv = { ...process.env }
-const environment = resolveHostEnv(startupEnv)
 const host = await runHostApplication('./dist/app.mjs', {
 	startup: { root: import.meta.dirname, mode: 'production', env: startupEnv, bindings: {} },
 	sharedPackages: serviceSharedPackages,
 })
-let listener
-try {
-	const { listenElysia } = await import('@pluxel/services/elysia/node')
-	listener = await listenElysia(host, {
-		hostname: environment.hostBind,
-		port: environment.hostPort,
-		publicOrigin: environment.publicOrigin,
-	})
-} catch (error) {
-	const [cleanup] = await Promise.allSettled([host.close()])
-	if (cleanup.status === 'rejected')
-		throw new AggregateError([error, cleanup.reason], 'Listener startup and cleanup failed', {
-			cause: error,
-		})
-	throw error
-}
-export const stop = listener.close
+export const stop = () => host.close()
 ```
 
-必须由全新 Node 进程的 launcher 在应用及其业务依赖闭包首次求值之前调用；服务运行入口也延后 import。入口先建立共享绑定，再加载默认工厂、固定 imports 和来源。已在 scope 外求值的 entry 与受控缓存中的绑定冲突会明确拒绝；Node 没有公开的 ESM cache 查询，不能证明此前普通依赖的完整闭包。预先导入这些依赖违反启动前置条件，不能事后重新绑定 token。
+启动器先调用 `runHostApplication()`，再由它加载应用及业务依赖；不要在启动器中提前 import 应用或服务运行入口。应用模块内部正常使用静态 import，包含 `listenElysia`。`@pluxel/services/sources` 是可提前读取的纯数据入口，不求值服务 token。这样的写法先建立共享身份，再执行应用的准备、判定和入口发布；无需在应用业务代码中安排延后 import。
 
-Core/Host 绑定启动器安装；`sharedPackages` 中的其他包相对 startup.root 解析，包括合法 exports，应用须声明所使用的共享包依赖。官方清单来自 `@pluxel/services/sources`，因此官方模板直接声明 Services、Workbench、Commands、Elysia、`@sinclair/typebox`、`typebox` 和 `exact-mirror`；不要依赖工作区 hoist 提供这些安装事实。实际安装版本及 importer 声明必须兼容，错误版本会拒绝；清单不安装服务。自定义服务可以追加包名。Workbench publisher 的 `capnweb` 和托管状态消费者的 `tinybase` 各自按领域精确版本接纳，不能放入全局 `sharedPackages`；私有库保留自身解析。依赖声明见[插件包](../development/plugin-package.md)。
+Core/Host 绑定启动器安装；其他共享包相对 `startup.root` 解析，应用必须直接声明所用清单中的依赖。完整 `serviceSharedPackages` 包含 Services、Workbench、Commands、Elysia、`@sinclair/typebox`、`typebox` 和 `exact-mirror`，用于官方组合。实际安装版本及 importer 声明必须兼容，错误版本会拒绝；清单不安装服务。自定义服务可以追加包名。Workbench publisher 的 `capnweb` 和托管状态消费者的 `tinybase` 各自按领域精确版本接纳，不能放入全局 `sharedPackages`；私有库保留自身解析。依赖声明见[插件包](../development/plugin-package.md)。
+
+### 纯 HTTP 的最小组合
+
+应用只需要 HTTP 时，直接安装 `elysia()`，并由同一个应用选择 listener：
+
+```ts no-twoslash
+// src/app.ts
+import { defineHostApplication } from '@pluxel/host'
+import { resolveHostEnv } from '@pluxel/host/environment'
+import { elysia } from '@pluxel/services/elysia'
+import { listenElysia } from '@pluxel/services/elysia/node'
+import { ApiPlugin } from './api'
+
+export default defineHostApplication((startup) => ({
+	plugins: [ApiPlugin],
+	policy: { autoStart: [ApiPlugin] },
+	services: [elysia()],
+	async launch({ host }) {
+		const env = resolveHostEnv(startup.env)
+		await listenElysia(host, { hostname: env.hostBind, port: env.hostPort })
+	},
+}))
+```
+
+modules 启动器使用 `import { elysiaSharedPackages } from '@pluxel/services/sources'` 并传入 `sharedPackages: elysiaSharedPackages`。应用的运行依赖为 `@pluxel/core`、`@pluxel/host`、`@pluxel/services`、`elysia`、`typebox`、`exact-mirror`；后四项就是 HTTP 叶子维护的共享清单。类型依赖按项目的 Node/TypeScript 配置选择。纯 HTTP 不需要安装 Workbench、Commands 或托管 Database。standalone 使用 `pluxel({ variant: 'headless', managedDatabaseDrivers: [] })`；modules 使用 `pluxel({ delivery: 'modules', variant: 'headless' })`，应用代码与 HTTP 行为保持一致。
+
+原生启动必须使用全新 Node 进程。已在 scope 外求值的 entry 与受控缓存中的绑定冲突会明确拒绝；Node 没有公开的 ESM cache 查询，不能证明此前普通依赖的完整闭包，也不能事后重新绑定 token。独立安装、libSQL 与 PDF 流的完整示例和验证入口见[交付验证](../development/distribution.md#交付验证)。
 
 交付和搬离工作区验证见[发行物](../development/distribution.md)。Node 已有回归覆盖；其他平台需要独立验证网络与原生依赖，不能只凭 Fetch 类型兼容推定支持。
 

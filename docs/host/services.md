@@ -220,10 +220,10 @@ standalone 交付由 freezer 输出的 `artifacts/node` 必须相对 `deployment
 
 显式配置 Node 制品的 `root` 或 `resolve` 时，Vite 保留该制品来源，不创建自动源码编译附件。显式再附加源码 compiler 会因来源冲突失败；清理时即使来源撤回失败，也会排空已接纳 setup 并清理活动 consumer，多个失败聚合报告。
 直接 `runHostApplication('./dist/app.mjs', { startup })`（`@pluxel/host`）返回普通 `PluginHost`，
-不创建监听器，也不增加 `fetch` 成员。
+完成启动判定后执行应用的 `launch`，不在 Host 上增加 `fetch` 成员。
 
-应用 `tsdown.config.ts` 使用 `pluxel()`（`@pluxel/rolldown`）。`launcher: 'host'` 适合后台服务；
-`'fetch'` 输出 HTTP handler，`'node'` 再启动 Node 监听器。后两项要求应用选择 `elysia()`。
+应用 `tsdown.config.ts` 使用 `pluxel()`（`@pluxel/rolldown`）。后台应用可以省略 `launch`；HTTP 应用安装 `elysia()`，
+在 `launch` 中调用 `listenElysia()` 或发布自己的 Fetch handler。listener 配置与资源关闭属于应用/Host，不由交付类型决定。
 构建不会执行配置工厂，运行时才读取最新环境。`variant: 'headless'` 不携带 Workbench shell。
 Workbench 应用通过 `servicesPreset()`，或[显式组合](../workbench/standalone-host.md) `workbenchService()`、`managementHttp({ bindings })` 与 `workbenchHttp()`，并选择 `variant: 'workbench'` 携带 shell。
 
@@ -240,6 +240,8 @@ Workbench 应用通过 `servicesPreset()`，或[显式组合](../workbench/stand
 ### 动态插件的共享入口
 
 原生固定 imports 与来源共享身份使用 `runHostApplication(..., { sharedPackages: serviceSharedPackages })`，清单来自 `@pluxel/services/sources`，包括 Services、Workbench、Commands 及其共享 token 依赖。Core/Host 始终由执行入口绑定；额外包从 startup.root 解析。需要自定义服务时追加 package name，并显式安装对应服务。
+
+纯 HTTP 应用使用同一入口导出的 `elysiaSharedPackages`，无需从完整清单中手动筛选。它由 HTTP 叶子维护，读取清单不会提前求值服务或 Elysia；运行依赖与最短启动写法见[纯 HTTP 的最小组合](./configuration.md#纯-http-的最小组合)。
 
 该机制先验证实际安装版本与 importer 声明，再选择 canonical 安装。Workbench target 与托管 TinyBase 消费者分别使用能力所有者的精确版本准入，私有 RPC／Store 保留自身解析。`capnweb` 与 `tinybase` 不直接加入 `sharedPackages`，以免绕过能力归属而重定向私有依赖。`serviceSingletons()` 在 Vite 中使用同一共享包清单和版本原则。交付选择与完整启动示例见[Host 配置](./configuration.md#生产构建)。
 
