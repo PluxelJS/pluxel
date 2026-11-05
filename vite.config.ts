@@ -14,6 +14,7 @@ export default defineConfig(() => {
 		'@pluxel/plugin-takumi-markdown',
 		'@pluxel/plugins-host',
 		'@report-template-studio/app',
+		'@pluxel-example/typst-agent-workspace',
 	])
 	const ciPackages = packages.filter(({ manifest }) => !nativeConsumers.has(manifest.name))
 	// Explicit task edges avoid cycles in the publishing dependency graph.

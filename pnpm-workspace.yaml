@@ -187,6 +187,7 @@ catalogs:
     '@tailwindcss/vite': ^4.3.4
     '@vitejs/plugin-react': ^6.2.1
     esbuild: 0.28.2
+    pacote: ^22.0.1
     react-server-dom-webpack: ^19.3.1
     readable-stream: 4.8.0
     rolldown: ^1.2.16

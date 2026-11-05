@@ -107,6 +107,8 @@ jobs:
 
       - name: Capture Vite task execution details
         if: always() && steps.task-verify.outcome != 'skipped'
+        # --last-details repeats the failed task's exit status after printing its report.
+        continue-on-error: true
         run: |
           mkdir -p .pluxel
           vp run --last-details > .pluxel/ci-task-details.txt
