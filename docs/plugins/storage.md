@@ -3,11 +3,13 @@ title: S3 对象存储
 description: 通过统一的 s3mini API 在本地存储、远端 S3 和平台实现之间切换。
 ---
 
-> `@pluxel/plugin-storage` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
+> `@pluxel/plugin-storage` 目前主要供 Pluxel 工作区内使用。完整包状态见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/plugin-storage` 提供接近原始 bucket 的 `S3` 能力。业务 Plugin 通过 `S3.bucket(id).client` 使用 s3mini 1.x API，宿主则通过 `S3Plugin` 配置一个有界的 local/remote bucket catalog。
+`@pluxel/plugin-storage` 为业务插件提供接近原生 bucket 的 `S3` 访问能力。插件通过 `S3.bucket(id).client` 调用 [s3mini](https://github.com/evanw/s3mini) 1.x API，应用宿主则通过 `S3Plugin` 配置一组本地或远端 bucket。
 
 ## 写入与读取对象
+
+业务插件注入 `S3` 实例后，直接按 bucket ID 获取客户端操作对象：
 
 ```ts twoslash
 import { S3 } from '@pluxel/plugin-storage'
@@ -31,9 +33,9 @@ export class AssetsPlugin extends BasePlugin {
 }
 ```
 
-## 默认 local backend
+## 本地存储配置（Local Backend）
 
-没有配置时，`S3Plugin` 使用：
+未传入配置时，`S3Plugin` 默认在 `.pluxel/s3` 目录下创建名为 `default` 的本地 bucket：
 
 ```ts no-twoslash
 {
@@ -51,9 +53,7 @@ export class AssetsPlugin extends BasePlugin {
 }
 ```
 
-显式配置示例：
-
-以下 `host` 是 [测试宿主](../plugin-development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
+显式配置多个本地存储：
 
 ```ts no-twoslash
 import { S3Plugin } from '@pluxel/plugin-storage'
@@ -76,21 +76,14 @@ await host.start(S3Plugin, {
 await host.start(AssetsPlugin)
 ```
 
-local backend 支持 CRUD、typed/stream/range/conditional reads、delimiter/prefix listing、opaque pagination、copy/move、批量删除和显式 multipart upload。`putAnyObject()` 会流式写入临时 container，校验声明长度，计算 SHA-256 ETag，按需 fsync，最后 atomic rename；失败的写入不会发布成完整对象。
+本地后端特性：
+- 支持基础 CRUD、流式/Range/条件读取、前缀列出（Listing）、分段读取、复制、移动与批量删除。
+- 写入时先写入临时容器并校验长度与 SHA-256 ETag，最后原子重命名为最终对象，防止损坏的对象文件被发布。
+- 对象 Key 采用安全编码拆分为本地文件名，避免路径穿越。
 
-完整 S3 key 会被可逆 base32 编码并拆成有界文件名。`../x`、leading slash、反斜杠、空 path segment 和 Unicode 都只是普通 object key，不参与本地路径解析。
+## 远端 S3：匿名访问
 
-`.pluxel/s3` 适合开发。生产若使用 local backend，应把 `rootDir` 放在 immutable `dist/` 之外，并纳入备份、磁盘容量、权限和故障恢复策略。
-
-`S3Client` 是 ``Omit<S3mini, `_${string}`>``，因此公开业务面直接锚定 s3mini：bucket create/exists、listing、字符串/JSON/ArrayBuffer/Response 读取、range 与 conditional read、PUT、multipart、copy/move、delete 和 presign 都使用原生 method signature。
-
-它是 raw bucket capability，不会自动给 key 加 caller prefix。key namespace、metadata schema、对象大小与 content type policy、保留期和删除所有权都由 consumer 或 host contract 定义。
-
-先调用 `putAvatar()` 写入一个小图片，再调用 `getAvatar()` 确认字节与 `Content-Type`。示例选择的 bucket ID 是 `assets`；默认配置只有 `default`，因此不能省略上面的显式 bucket 配置。
-
-## 远端 S3：anonymous
-
-同一个 provider 可以创建真实 `S3mini` client：
+针对公开公开资源的 S3 或兼容存储（如 R2、MinIO），可配置 `anonymous` 模式：
 
 ```ts no-twoslash
 await host.start(S3Plugin, {
@@ -113,30 +106,23 @@ await host.start(S3Plugin, {
 })
 ```
 
-endpoint 必须是没有 userinfo、query 或 hash 的 HTTP(S) URL。`minPartSize` 至少 5 MiB、最多 5 GiB；其余 size/timeout 字段必须是正整数。
+- `endpoint` 必须是标准的 HTTP(S) URL。
+- `minPartSize` 范围在 5 MiB 至 5 GiB 之间。
 
-anonymous 是显式选择，不是 credential 查找失败后的隐式 fallback。
+## 远端 S3：Vault 凭据存储
 
-## 部署配置入口
-
-根入口的 `S3Config` 就是 `S3Plugin` 的配置声明，可直接用于 `envBinding(S3Plugin, { config: { schema: S3Config, mapping: { buckets: 'S3_BUCKETS' } } })`；`S3_BUCKETS` 是完整 bucket 数组 JSON。文件部署复用同一 schema。配置层优先级、数组替换和 env 锁定规则由 [Host](../host/configuration.md#绑定部署环境与-json-文件) 统一维护。
-
-无 Workbench 时 local/anonymous 直接启动，remote/vault 使用根入口的 `S3VaultSchema` 声明 [部署凭据](../host/configuration.md#部署凭据)。Workbench rotation 只是可写 Vault 的可选管理入口；只读绑定的 credential 更新由部署输入负责。bucket 对象内容是业务存储，不作为 Plugin 配置恢复或覆盖。
-
-## 远端 S3：Vault credential
-
-access key 不进入普通 Plugin config。先把以下对象写入 Vault：
+在生产环境中，Access Key 等敏感凭据应当与插件代码及常规配置解耦。可先将凭据写入 Vault：
 
 ```ts no-twoslash
 import type { S3AccessKeyCredentials } from '@pluxel/plugin-storage'
 
 const credentials = {
-	accessKeyId: '…',
-	secretAccessKey: '…',
+	accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
+	secretAccessKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
 } satisfies S3AccessKeyCredentials
 ```
 
-然后在 S3 config 中只保存引用：
+然后在 S3 配置中通过 Vault 引用：
 
 ```ts no-twoslash
 await host.start(S3Plugin, {
@@ -160,38 +146,25 @@ await host.start(S3Plugin, {
 })
 ```
 
-省略 `namespace` 时使用当前 `S3Plugin` 的 Vault namespace；default bucket 的 `key` 默认是 `s3.credentials`，其他 bucket 默认是
-`s3.<bucket-id>.credentials`。provider 在 `init()` 中为每个 remote/vault bucket 订阅 credential record，并校验初始 snapshot。Vault 不可用、key
-缺失或对象非法分别以 `S3CredentialsError.reason` 的 `unavailable`、`missing`、`invalid` 失败整个 generation。
+省略 `namespace` 时默认使用当前 `S3Plugin` 的命名空间；默认 bucket 的 `key` 默认为 `s3.credentials`，其他 bucket 默认为 `s3.<bucket-id>.credentials`。
 
-Workbench enabled 时，provider 固定发布一个 `S3 buckets` Content，以 bounded rows 显示各 ID 的 local、remote/anonymous 或
-remote/vault；只有选中的 remote/vault bucket 接受一次性 password form，local/anonymous 报告 `not-applicable`、明确拒绝且
-不访问 Vault。Handler 将 replacement access key 写入当前配置引用的 Vault record，
-并重新检查 authenticated Management principal、当前 generation 与 backend，
-串行执行写入和 `flush()`。Content 不读取或展示旧 credential，新 credential 也不会进入 plan、load、action result 或日志。
-保存后新请求使用更新的 client；已发出的请求可继续使用旧 snapshot。record 缺失或非法时，后续 client 访问失败，不回退 anonymous。环境和文件绑定只读；修改绑定源后重启应用。
+启用 Workbench 时，管理控制台会提供配置面板。管理员可在界面中轮换指定 bucket 的凭据，写入新凭据后客户端会自动更新并生效。
 
-这条 Content 不能用于首次 provisioning。缺失或非法 record 会让 S3Plugin 启动失败，而失败 generation 的 Workbench publication
-必然回滚；宿主必须在启动前写入 credential。不要为了显示 setup Content 让 S3 capability 半启动，也不要另建脱离 Plugin owner
-lifecycle 的 secret registry。
+## 本地与远端能力对比
 
-local 和 anonymous backend 不访问 Vault。当前 s3mini contract 不接受 session token；STS、平台 credential chain 或特殊认证协议需要由平台提供另一个 `S3` implementation。
+远端后端是真实的 s3mini 客户端，支持标准 S3 服务的完整能力。本地文件后端由于存储机制限制，对以下特性会显式抛出 `S3UnsupportedOperationError`（错误码 `S3_UNSUPPORTED_OPERATION`）：
 
-## local 与 remote 的能力差异
+- Presigned 预签名 URL；
+- Bucket/Object 版本控制（Versioning）；
+- 客户端加密（SSE-C）；
+- 指定版本的复制与删除；
+- 替换标签（Replacement Tagging）。
 
-remote backend 是真实 s3mini client，支持范围取决于目标 S3 服务。local backend 对无法保持语义的操作会明确抛出 `S3UnsupportedOperationError`，其稳定 code 为 `S3_UNSUPPORTED_OPERATION`，包括：
+如果业务需要使用预签名 URL 或多版本特性，请配置真实的远端 S3 存储或兼容服务。
 
-- presigned URL；
-- bucket/object versioning 相关操作；
-- SSE-C；
-- version-specific copy/delete；
-- replacement tagging。
+## 分片上传（Multipart Upload）
 
-不要通过捕获并忽略该错误来假装操作成功。若业务必须依赖 presign 或 versioning，应在部署契约中要求 remote/platform provider，或显式检测并返回 capability unavailable。
-
-## multipart 与大对象
-
-普通 `putAnyObject()` 已支持流式 body。需要显式控制 multipart 时，使用 s3mini 的原生序列：
+对于大文件，可以通过分片上传接口手动控制上传流程：
 
 ```ts no-twoslash
 const client = this.s3.bucket('assets').client
@@ -210,23 +183,9 @@ try {
 }
 ```
 
-`firstChunk` 与 `secondChunk` 应使用 `uploadPart()` 接受的 s3mini body 类型。part number、最小 part size 与服务限制仍由 s3mini/backend 约束。
+## 将对象缺失转为业务 Result
 
-## Catalog 生命周期与一致性
-
-`S3Plugin` 的 `buckets` 配置包含 1–64 个唯一 stable ID。consumer 通过 `s3.bucket(id)` 取得 owner-bound handle；重复选择为
-O(1)，consumer 或 provider 停止后旧 handle 会被撤销。所有 bucket 属于同一个原子 generation：资源并行初始化，任一项失败会回滚
-全部项。需要独立启停、故障隔离或扩缩容的对象存储应使用独立进程/host。
-
-provider stop/replacement 后，旧 `S3` caller facade 先由 Core generation gate 拒绝。此前取得的 local client
-会被 revoke 并抛 `S3NotRunningError`（code `S3_NOT_RUNNING`）；remote client 的 in-flight fetch 会收到 lifecycle abort。
-
-对象存储不是关系型事务。若数据库 metadata 与对象必须协调，先设计显式 state machine，再用 outbox、幂等 key 和补偿流程处理对象 side effect；不要假设 DB transaction 能回滚 S3 PUT。
-
-## 将对象缺失返回给调用方
-
-S3 继续提供 s3mini 原生接口；业务 consumer 才知道缺少对象是否是可恢复失败。`getObject()` 以 `null`
-表示对象不存在，空文本是成功值。下面用 default bucket 读取文本文件：
+`getObject()` 在对象不存在时返回 `null`。在业务层中，推荐将其封装为显式的 Result 类型以区分“业务数据不存在”与“系统网络异常”：
 
 ```ts twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
@@ -248,8 +207,4 @@ export class DocumentsPlugin extends BasePlugin {
 }
 ```
 
-调用方可对 `DocumentNotFound` 提供重新上传入口，成功时使用 `value`。不要捕获所有异常并返回缺失：bucket
-未配置、认证/权限、网络/磁盘错误和 generation 撤回应继续拒绝。该示例只读取文本；流式 `Response`、multipart
-或已经开始的写入仍遵循自己的 body、取消、补偿和部分成功协议，不能靠 Result 回滚。
-
-[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/storage/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/storage/tests/s3.test.ts)。
+调用方匹配到 `DocumentNotFound` 时可提示重新上传，而真正的存储连接异常或权限错误则继续作为未捕获异常抛出，由系统容错机制统一处理。

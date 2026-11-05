@@ -3,21 +3,17 @@ title: 服务端 Apache ECharts
 description: 通过 Fonts、Canvas 和共享 Worker 在服务端渲染 Apache ECharts 6 图片。
 ---
 
-`@pluxel/plugin-echarts` 使用 Apache ECharts 6 在服务端生成 PNG、JPEG 或 WebP 图片，适合报表、分享图、邮件附件和预生成图表。它依赖 `CanvasPlugin` 与 `FontsPlugin`，只在线程池中完成布局、文字测量、ZRender 刷新和图片编码，避免把同步 ECharts 渲染放到主线程。
+`@pluxel/plugin-echarts` 基于 Apache ECharts 6 在服务端生成 PNG、JPEG 或 WebP 格式的图表图片。它结合 `CanvasPlugin` 与 `FontsPlugin`，将排版、ZRender 绘制和图片编码全部调度至 Worker 工作线程中异步执行，避免同步渲染阻塞 Node.js 事件循环。
 
-## 部署配置
+## 安装与引入
 
-`@pluxel/plugin-echarts` 导出的 `EChartsConfig` 与 Plugin 的 `configs.use()` 使用同一 schema，配置 DPR、主题与输入容量；画布尺寸上限由 CanvasConfig 管理。通过 [Host env/file 绑定](../../host/configuration.md#绑定部署环境与-json-文件)传入该 schema 即可部署，无需 Workbench；不直接读取环境变量。配置变更后重启插件，env/file 变更后重建 Host。字体文件及默认 family 由 [FontsPlugin](./fonts.md) 配置，渲染内容保留为方法输入。
-
-## 安装与 catalog
-
-以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
+在工作区中添加依赖：
 
 ```sh
 vp exec pluxel pncat add @pluxel/plugin-echarts @pluxel/plugin-canvas @pluxel/plugin-fonts
 ```
 
-host catalog 包含 `FontsPlugin`、`CanvasPlugin`、`EChartsPlugin` 与 consumer。业务 Plugin 只注入 ECharts：
+在插件中声明注入并渲染图表：
 
 ```ts twoslash
 import type { Buffer } from 'node:buffer'
@@ -45,32 +41,12 @@ export class ReportsPlugin extends BasePlugin {
 }
 ```
 
-以下 `host` 是 [测试宿主](../../plugin-development/testing.md)，用于验证装配。应用入口按 [添加插件](../index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
+- `result.data` 返回图片的二进制数据（`Buffer`）。
+- 生成图片可直接用于保存文件、写入邮件附件或通过 HTTP 响应发送。
 
-```ts no-twoslash
-import { CanvasPlugin } from '@pluxel/plugin-canvas'
-import { EChartsPlugin } from '@pluxel/plugin-echarts'
-import { FontsPlugin } from '@pluxel/plugin-fonts'
-import { ReportsPlugin } from '@acme/reports'
+## 渲染参数与输出格式
 
-await host.start(ReportsPlugin, {
-	catalog: [FontsPlugin, CanvasPlugin, EChartsPlugin],
-})
-```
-
-调用 `renderSales()`，把返回的 `Buffer` 保存为 PNG，应能看到三个柱子。它不创建浏览器页面；若需要交互图表，在前端直接使用 ECharts。本文后面的 `host` 示例用于测试装配，应用启动配置见 [添加插件](../index.md#把一个插件加入应用)。
-
-## render 输入与结果
-
-`render()` 的核心输入是：
-
-- `width`、`height`：正整数逻辑尺寸。
-- `option`：declarative Apache ECharts `EChartsOption`；render settle 前不得修改 caller graph。
-- `theme`：caller 注册的名称、内置 `default`/`dark`，或 inline JSON theme。
-- `devicePixelRatio`：可选，省略时使用 ECharts config 默认值。
-- `locale`、`setOption`：透传给 ECharts 的 locale 和 `setOption()` 配置。
-- `output`：PNG，或带可选 quality 的 JPEG/WebP。
-- `signal`：取消排队或 worker execution。
+`render()` 支持指定尺寸、像素比（DPR）、主题和图片压缩格式：
 
 ```ts no-twoslash
 const result = await this.charts.render({
@@ -82,23 +58,24 @@ const result = await this.charts.render({
 	signal,
 })
 
-result.data // Buffer
-result.mediaType // 'image/webp'
-result.width // 800
-result.height // 400
-result.devicePixelRatio // 2
+console.log(result.mediaType) // 'image/webp'
+console.log(result.width, result.height) // 800, 400 (逻辑尺寸)
 ```
 
-PNG 是默认格式且不接受 `quality`；JPEG/WebP quality 必须在 0 到 100。返回尺寸是逻辑尺寸，实际 surface 按 `ceil(width × DPR)` 与 `ceil(height × DPR)` 创建，因此仍受 Canvas 尺寸和总像素预算约束。
+- `output.format` 支持 `png`（默认）、`jpeg` 以及 `webp`。
+- `output.quality` 接受 0 到 100 的数值（仅对 JPEG 和 WebP 生效）。
+- `signal` 支持传入 `AbortSignal` 用于主动取消队列排队或渲染计算。
 
-## caller-owned theme
+## 自定义主题
+
+可通过 `registerTheme()` 为当前插件注册专属的 ECharts 主题：
 
 ```ts no-twoslash
 const theme = this.charts.registerTheme({
 	name: 'reports',
 	theme: {
 		color: ['#2563eb', '#16a34a'],
-		backgroundColor: '#fff',
+		backgroundColor: '#ffffff',
 	},
 })
 
@@ -109,103 +86,44 @@ await this.charts.render({
 	theme: theme.name,
 })
 
+// 不再使用时可提前注销，插件停止时也会自动清理
 theme.dispose()
 ```
 
-`registerTheme()` 接受 plain JSON object，深度复制并冻结。函数、class instance、cycle、非有限 number 或过深结构会被拒绝。返回 registration 提供 `name`、`active` 与幂等的 `dispose()`。
+- 主题定义为标准 JSON 对象。
+- 系统同时内置了 `'default'` 和 `'dark'` 两套基础主题。
 
-主题名称与 registration 归属于当前 caller generation：
+## 默认字体集成
 
-- 不同 caller 可使用相同 local name。
-- 同一 caller 重复名称得到 `THEME_CONFLICT`。
-- consumer stop/replacement 自动撤销全部 registration。
-- `charts.themes` 返回当前 caller 的只读 `{ name, byteLength }` snapshot。
+若未在 `option` 或主题中显式指定 `textStyle.fontFamily`，渲染器会自动读取 `FontsPlugin` 的全局默认字体族。管理员在 Workbench 控制台中修改默认字体后，后续渲染的图表将自动采用新字体。
 
-这些主题不会写进 ECharts process-global `registerTheme()` 表，因为上游没有 unregister API。`default` 和 `dark` 是可直接使用的内置名称；也可在单次 render 中传 inline JSON theme。
+## 图片资源（Data URL）支持
 
-## 默认字体
+当图表 option 中包含散点图标、背景图等图片标记时，支持使用 Data URL：
 
-当 option 与 theme 都没有提供 `textStyle.fontFamily` 时，每次 render 会注入当前 `FontsPlugin.defaultFont.cssFamily`。内置 `default`/`dark` theme 也会在 option 层补入默认字体。
+- 图片会在进入 Worker 绘制前被统一解码并受到单次渲染总像素和大小限制。
+- 为保证服务端执行安全，ECharts 渲染不直接发起远程 HTTP 请求；若需展示外部图片，请预先下载并转为 Data URL 传入。
 
-因此 Workbench 改变 Fonts 默认选择后，后续 render 自动使用新 family；不需要重新注册 theme。`charts.defaultFont` 可读取当前 provider 默认字体。
+## Worker 线程与输入限制
 
-EChartsPlugin 的详情页使用 FontsPlugin 提供的统一字体选择器。字体上传、删除、持久化和 native registration 只属于 FontsPlugin。
+- ECharts 的 SSR 计算由宿主共享的 Worker 服务托管。
+- 由于 option 需要序列化传入 Worker 线程，请使用纯 JSON 数据结构（Object、Array、数字、字符串）；不支持函数回调形式的 formatter（可改用 ECharts 模板字符串，如 `'{b}: {c}'`）。
 
-## 图片来源 policy
+## 配置项与配额
 
-worker mode 支持 ECharts image 字段中的 data URL。插件只重写明确的图片位置，包括普通 `image` 字段和 `image://data:` source；普通文本里恰好以 `data:` 开头的字符串不会被当成图片。
+通过 `EChartsConfig` 可以在应用层调整限制参数：
 
-data URL 在 ZRender 前被替换为 render-local key，并通过 Canvas worker adapter 解码，因此同时受到两层限制：
+| 配置项 | 默认值 | 说明 |
+| :--- | :--- | :--- |
+| `defaultDevicePixelRatio` | `1` | 未显式传入 DPR 时的默认倍率 |
+| `maxDevicePixelRatio` | `4` | 单次渲染允许的最大 DPR 上限 |
+| `maxOptionBytes` | `8 MiB` | Option 配置结构允许的最大序列化体积 |
+| `maxOutputBytes` | `64 MiB` | 渲染生成的单张图片最大体积 |
+| `maxTotalImagePixels` | `16.8 M` | 单次渲染中所有内嵌图片解码后的最大总像素数 |
 
-- ECharts `maxDataUrlBytes`：单张图片 base64/percent decode 后的 source bytes 上限。
-- ECharts `maxImages` / `maxTotalImageBytes`：单次 render 的 distinct source 数与 decoded source bytes 总量。
-- ECharts `maxTotalImagePixels`：所有图片完成 native decode 后的总像素数。
-- Canvas `maxImageBytes`、width、height 与 pixels：实际图片解码上限。
+## 错误处理与 Result 封装
 
-每个 distinct source 只解码一次。Canvas worker adapter 默认并发 1，宿主 Workers 提供外层并行。
-图片失败会取消尚未开始的 decode；已提交的 native decode 会在复用线程前等待结束。Canvas decode queue 满时返回 `RENDER_BUSY`。
-
-HTTP(S) URL 与服务端文件路径会被拒绝。ECharts/Canvas 不应隐式拥有网络、认证、redirect、proxy 或文件读取权限。
-先通过业务 outbound HTTP capability 获取 bytes，再转换成受支持的 data URL；native Image 不能进入 declarative option。
-
-## Worker-only execution
-
-ECharts 使用宿主共享 Workers 服务，线程数与 global / per-owner queue 在服务配置中设置。
-满队列返回 `RENDER_BUSY`，不会先遍历大 option；取得 admission 后，宿主 cooperative 校验输入预算，
-Worker 执行 SSR layout、图片解码、flush 与 encode，并在结束时释放 ECharts instance 和 Canvas adapter。
-
-option 必须是 plain object、array、typed array 和 scalar data；formatter function、accessor、native/class object
-与 SharedArrayBuffer 会以 `WORKER_INPUT_UNSUPPORTED` 拒绝，不回退主线程渲染。
-option 与 `setOption` 共用 bytes、value count、depth 预算；渲染结束前不得修改输入。
-输入检查与 transport serialization 仍有有界主线程成本，Worker 不代表零主线程开销或 native 安全隔离。
-
-## 配置与职责
-
-在应用的 Plugin config 中按需覆盖以下默认值：
-
-| 字段                      |    默认值 | 职责                                               |
-| ------------------------- | --------: | -------------------------------------------------- |
-| `defaultDevicePixelRatio` |       `1` | render 未传 DPR 时使用的值                         |
-| `maxDevicePixelRatio`     |       `4` | 单次 render 可请求的 DPR 上限                      |
-| `maxThemesPerConsumer`    |      `32` | 一个 caller 同时注册的 named theme 数              |
-| `maxTotalThemes`          |     `256` | 此 Plugin node 保留的 named theme 总数             |
-| `maxTotalThemeBytes`      |  `16 MiB` | 所有 retained named theme 的合计 JSON bytes        |
-| `maxThemeBytes`           |   `1 MiB` | 一个 registered 或 inline JSON theme 的 UTF-8 上限 |
-| `maxThemeNodes`           |  `20,000` | 一个 theme 的 value 数上限                         |
-| `maxThemeDepth`           |      `64` | 一个 theme 的 object/array nesting 上限            |
-| `maxDataUrlBytes`         |  `32 MiB` | 单张 data URL decoded source bytes 上限            |
-| `maxImages`               |      `32` | 单次 render 的 distinct image source 数            |
-| `maxTotalImageBytes`      |  `32 MiB` | 单次 render 的 decoded image source bytes 总量     |
-| `maxTotalImagePixels`     |  `16.8 M` | 单次 render decoded pixels；约 64 MiB raw RGBA     |
-| `maxOptionBytes`          |   `8 MiB` | option structured-clone payload 的估算上限         |
-| `maxOptionNodes`          | `100,000` | option 遍历的 value 数上限                         |
-| `maxOptionDepth`          |      `64` | option object/array nesting 上限                   |
-| `maxOutputBytes`          |  `64 MiB` | worker 返回前的 encoded raster 上限                |
-
-`defaultDevicePixelRatio` 不能高于 `maxDevicePixelRatio`。字体由 FontsPlugin 配置，单张图片的 native dimensions/pixels 与
-encoded bytes 由 CanvasPlugin 配置，worker 并发与队列由 runtime `ctx.require(Workers)` 配置，网络访问策略由业务 HTTP capability
-配置。EChartsConfig 拥有 DPR、theme、option/data URL transport、每次 render 的图片累计预算与 output 限制。
-
-默认单次 render 的 root surface 与 decoded images 各最多约 64 MiB raw RGBA。encoded source、output、ECharts/Skia
-结构和解码时的临时 allocation 仍会增加 RSS；聚合像素检查也只能发生在一张图片 decode 完成后，不能撤销已发生的 native
-allocation。高并发 host 应联合测量 `workers.maxThreads`、Canvas per-worker decode admission、`UV_THREADPOOL_SIZE` 与 peak RSS，
-不要把任一局部上限当成进程总内存保证。
-
-## 错误处理
-
-`render()`、theme registration 与 lifecycle 错误使用 `EChartsError`。稳定 code 包括：
-
-- lifecycle/input：`NOT_RUNNING`、`INVALID_INPUT`、`OPTION_TOO_LARGE`。
-- theme：`INVALID_THEME`、`THEME_TOO_LARGE`、`THEME_LIMIT_EXCEEDED`、`THEME_CONFLICT`、`THEME_NOT_FOUND`。
-- image：`INVALID_IMAGE_SOURCE`、`IMAGE_SOURCE_TOO_LARGE`、`UNSUPPORTED_IMAGE_SOURCE`、`IMAGE_LOAD_FAILED`。
-- execution：`WORKER_INPUT_UNSUPPORTED`、`OUTPUT_TOO_LARGE`、`RENDER_BUSY`、`RENDER_FAILED`。
-
-Canvas dimensions/pixels 校验发生在 render 前；底层 Canvas failure 最终作为带 cause 的 render failure 暴露。业务层应按 code 决定拒绝、降级或重试，不要解析 message。
-
-## 将可恢复失败交给业务调用方
-
-报表 consumer 如果能在繁忙时展示已有图表，可把 `RENDER_BUSY` 转成明确的业务 Err。
-下面的 `charts` 来自 constructor 注入；其余错误继续遵守 ECharts 原来的异常契约。
+在图表队列繁忙或渲染排队超时时，可捕获 `RENDER_BUSY` 错误并封装为业务层提示：
 
 ```ts twoslash
 import { Result, TaggedError } from '@pluxel/core/better-result'
@@ -226,15 +144,9 @@ export async function renderChart(
 		return Result.ok(await charts.render(input))
 	} catch (error) {
 		if (error instanceof EChartsError && error.code === 'RENDER_BUSY') {
-			return Result.err(new ChartBusy({ message: 'Chart renderer is busy; retry later.' }))
+			return Result.err(new ChartBusy({ message: '图表渲染队列已满，请稍后重试' }))
 		}
 		throw error
 	}
 }
 ```
-
-`result.isErr()` 时展示已有图表并让调用方决定何时重试，Ok 时使用 `value.data` / `mediaType`。
-不要把取消、Worker 故障、输入损坏或 `RENDER_FAILED` 统一映射成 busy，也不要在这里无界重试。
-成功的 Buffer 走 HTTP 图片响应或存储协议，不直接进入 Workbench portable DTO。
-
-[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/echarts/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/echarts/tests/echarts.test.ts)。

@@ -4,36 +4,28 @@ title: 为什么是 Pluxel？
 description: 从 Koishi 与 Cordis 的实践出发，理解 Pluxel 对依赖身份、Context、生命周期和构建语义的选择。
 ---
 
-Pluxel 是对 [Cordis v3](https://github.com/cordiverse/cordis/tree/f8f10ec6734ebb4558addeba0f6a25294684d494) 插件思想的一次再诠释。我们延续 Context、依赖注入和资源随插件回收的模型，希望把业务依赖的声明、类型和运行时身份进一步连接起来：开发者写下导入和构造函数参数，构建工具记录依赖关系，运行时据此管理启动、替换与清理。
+Pluxel 是对 [Cordis v3](https://github.com/cordiverse/cordis/tree/f8f10ec6734ebb4558addeba0f6a25294684d494) 插件模型的一次重新诠释。我们继承了上下文（Context）、依赖注入和资源随插件生命周期自动回收的设计，进一步探索如何将业务依赖的类型导入、构建期分析与运行时身份无缝衔接起来。
 
-需要判断是否采用 Pluxel 时读本页；开始开发直接进入[快速开始](./getting-started/index.md)。
+开发者只需按照 TypeScript 的直觉编写常规的 `import` 语句与构造函数参数，构建工具便能在编译阶段提取依赖关系，并由运行时统一驱动插件的启动、热替换与资源清理。
 
-## 从 Koishi Plugin 实践出发
+## 从插件化实践出发
 
-我们从 2023 年开始编写 [Koishi](https://github.com/koishijs/koishi) 插件。Koishi 的插件运行时建立在 Cordis 之上；本文引用的 `@koishijs/core` 提交明确依赖 [Cordis 3.18.1](https://github.com/koishijs/koishi/blob/fb6e2c092242c0387f07f36e21082d5715c48449/packages/core/package.json#L36-L42)。Pluxel 对依赖模型的思考，来自持续编写、组合、替换插件和处理其资源生命周期的经验。
+编写复杂插件生态的经验表明，一个清晰的插件模型需要妥善处理以下核心问题：
 
-Cordis 的应用也已超出 Koishi 生态。DeepSeek 官方的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness/tree/47f943859bef60e4160492346772ded9b24f765a) 将其 “everything is a plugin” 架构标记为 [powered by Cordis](https://github.com/deepseek-ai/deepseek-harness/blob/47f943859bef60e4160492346772ded9b24f765a/README.md#L1-L9)，并在仓库中维护和发布 [Cordis 4.0.1](https://github.com/deepseek-ai/deepseek-harness/blob/47f943859bef60e4160492346772ded9b24f765a/vendor/cordis/package.json#L1-L12)。这些实践说明了插件模型可以服务于不同类型的应用。
+- **以插件为能力与副作用的边界**：每个功能模块连同其注册的监听器、定时器、网络连接等资源，都应当具备完整的装载与卸载能力。
+- **让上下文追踪资源所属方**：当共享服务接收调用时，需要清楚知晓本次操作由哪个插件发起，以便在插件卸载时及时回收相关资源。
+- **依赖关系驱动生命周期**：当下游插件所依赖的上游服务发生变更或重新加载时，框架应当能自动感知并协调依赖树的平滑演进。
+- **局部作用域管理资源释放**：随插件卸载自动释放关联资源，无需频繁重启整个应用进程。
 
-下面的代码与类型对比以链接中固定提交的 **Cordis v3** 为依据。DeepSeek Harness 的采用是模型背景，不作为推断 Cordis v4 实现细节的依据。
+Cordis v3 通过优秀的架构设计奠定了这些基石。在此基础上，Pluxel 关注的核心痛点是：**一条业务依赖关系，如何在编辑器类型提示、构建产物与运行时调用中，始终保持连贯且可追踪的一致性？**
 
-## 从 Cordis 学到的 Plugin 模型
+## 类型与运行时的连接方式
 
-Cordis 把功能组织成具有 Context 和生命周期的插件，这给应用组合提供了几个重要基础：
+为了理解设计选型上的差异，我们可以回顾 Cordis 中两个相互配合的机制：TypeScript 通过类型合并为 Context 提供提示，而运行时则根据服务名称来决定插件的可用性。
 
-- **插件是能力与副作用的边界。** 一个功能可以连同它的监听器、定时器和其他资源一起装载、卸载。
-- **Context 关联调用者与资源所有者。** 共享服务处理调用时，需要知道注册和清理属于哪个插件。
-- **依赖可用性参与生命周期。** 必需服务尚未出现时等待，服务变化时卸载并按条件重新加载插件。
-- **scope 和 effect 管理清理。** 资源跟随所属作用域释放，动态替换不必重启整个应用。
+### 模块声明合并扩展 Context
 
-Pluxel 保留了这些判断。我们进一步关注的问题是：同一条业务依赖，如何在编辑器、构建产物和运行时中保持可追溯的关联？
-
-## Cordis 如何连接类型与运行时
-
-理解差异，需要分清 Cordis 中两个配合工作的部分：TypeScript 为 Context 提供类型，运行时根据服务名称和依赖声明决定插件何时可用。
-
-### Declaration merging 提供 Context 类型
-
-Cordis v3 的 service package 通过 module augmentation 扩展 `Context`。以 timer package 为例，下面保留类型扩展与服务注册，省略具体计时器实现：
+在 Cordis v3 中，服务包通常通过 `declare module` 为 `Context` 接口增加属性。以计时器服务为例：
 
 ```ts
 import { Context, Service } from '@cordisjs/core'
@@ -50,47 +42,33 @@ export class TimerService extends Service {
 		super(ctx, 'timer')
 		ctx.mixin('timer', ['setTimeout'])
 	}
-
-	// setTimeout 的具体实现见下方源码链接。
 }
 ```
 
-当包含这些声明的 package 进入 TypeScript program 后，`timer` 和 `setTimeout` 会合并进 `Context` interface，编辑器因而能检查 `ctx.timer` 和 `ctx.setTimeout()` 的使用。完整实现见 [timer package 源码](https://github.com/cordiverse/cordis/blob/f8f10ec6734ebb4558addeba0f6a25294684d494/packages/timer/src/index.ts#L1-L35)。
+当包含这段声明的代码被 TypeScript 编译时，`timer` 与 `setTimeout` 就会合并进入 `Context` 接口中，开发者在编辑器中便能享受到 `ctx.timer` 的补全。这种机制在静态阶段提供了良好的开发体验，而服务何时就绪并可以使用，则由运行时根据字符串标识独立调度。
 
-`declare module` 建立静态类型表面；服务是否已经注册、当前是否可用、何时释放，则由 Cordis runtime 处理。类型中存在某个属性，与当前插件可以使用该服务，是需要分别表达的两件事。
+### 基于名称的运行时绑定
 
-### 一个名称连接注册、依赖和访问
-
-以 `database` 服务为例，下面三个片段分别位于 provider 和 consumer 中：
+在消费方和服务提供方之间，通常通过字符串名称建立连接：
 
 ```ts
-// provider：以 database 名称注册服务
+// 提供方：以 'database' 为标识注册服务
 super(ctx, 'database')
 
-// consumer：声明自己依赖 database 服务
+// 消费方：声明自己需要 'database' 服务
 export const inject = ['database']
 
-// consumer：通过 Context 使用服务
+// 消费方：通过 Context 访问服务
 ctx.database.get(table, id)
 ```
 
-`database` 同时连接服务注册、依赖 metadata 和 Context 属性。Cordis 的 [Service 文档](https://github.com/cordiverse/cordis/blob/f8f10ec6734ebb4558addeba0f6a25294684d494/packages/core/README.md#L380-L407) 明确约定：必需服务为真值时插件才加载；服务变化时插件卸载；新值仍可用时插件重新加载。依赖可用性和动态生命周期已经是这套模型的一部分。
+这种机制保持了极高的灵活性：消费方只需知道所需服务的名称，无需直接依赖提供方的具体实现类。
 
-类型扩展可以检查 `ctx.database` 的属性访问，却不会自动生成或同步 `inject: ['database']`。对应源码中的 [`Inject`](https://github.com/cordiverse/cordis/blob/f8f10ec6734ebb4558addeba0f6a25294684d494/packages/core/src/registry.ts#L10-L43) 类型为 `string[] | Dict<Inject.Meta>`。如果 consumer 改用另一个已声明的 Context 属性，还需要同时维护依赖 metadata。
+在大型长期项目中，多处分散维护的字符串标识与类型定义可能会面临同步成本：消费方需要同时维护 `inject` 数组与属性调用，当消费方改用另一项服务时，也需要手动确保依赖元数据与代码保持一致。
 
-这种按名称连接的模型保留了运行时绑定的灵活性：consumer 可以声明所需的服务名称，而不必通过值导入绑定提供该服务的具体插件。常量、lint 或封装可以帮助维护名称的一致性；在上面的基础写法中，这几个位置仍是分别声明的。
+## Pluxel 的解法：构造函数依赖注入
 
-## Pluxel 为什么选择另一种依赖表达
-
-在长期维护多个插件包时，我们希望构建工具能够沿源码回答：这个参数依赖哪个包的哪个插件导出？声明的依赖是否就是代码正在使用的依赖？这个身份能否继续用于配置、日志、替换和发行检查？
-
-这对应三个具体问题：
-
-1. **声明与使用需要一起维护。** 独立的依赖名称列表和属性访问容易在修改时不同步，尤其是两边各自仍满足 TypeScript 类型检查时。
-2. **服务名称没有直接表达来源。** 名称能够参与运行时查找，但它本身不包含包根入口、具名导出或构建时记录的来源关系。
-3. **一部分错误希望提前发现。** 服务是否存在仍需运行时判断；可追溯的导入、参数与包边界错误，则可以交给构建阶段检查。
-
-Pluxel 因此把必需插件依赖写在构造函数中：
+为了让构建工具能够在静态编译阶段直接追踪“这个参数依赖哪个包的哪个插件”，Pluxel 选择直接将必需依赖声明在构造函数中：
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
@@ -101,58 +79,49 @@ export class BillingPlugin extends BasePlugin {
 	constructor(private readonly accounts: AccountsPlugin) {
 		super()
 	}
+
+	checkout(orderId: string) {
+		return this.accounts.processInvoice(orderId)
+	}
 }
 ```
 
-构建工具在 TypeScript 擦除类型之前，记录 `AccountsPlugin` 的值导入来源及构造函数参数位置。包根入口与具名导出确定插件定义，参数声明确定依赖边；运行时根据这些 metadata 注入当前的 provider 实例。
+构建流水线在 TypeScript 擦除类型之前，记录 `AccountsPlugin` 的值导入来源与其在构造函数中的参数位置。包的具名导出确定了插件的身份，参数列表则定义了依赖拓扑。应用运行时依据这些元数据，自动将就绪的提供方实例注入到构造函数中。
 
-业务插件不再另写一份 `inject` 列表，也不通过扩展 Context 属性注册自己。构造函数依赖的具体规则见[插件依赖与生命周期](./plugin-development/model.md)。
+### 两种方式的对比
 
-### 两种选择的区别
+| 比较维度 | 基于服务名称的绑定 | Pluxel 构造函数依赖注入 |
+| --- | --- | --- |
+| 依赖声明方式 | `inject` 字符串数组 | 构造函数参数与普通值导入 |
+| 能力访问方式 | `ctx.<serviceName>` 属性 | 构造函数注入的强类型实例 |
+| 依赖类型来源 | `declare module` 扩展 Context | 导入的插件类本身及其导出类型 |
+| 运行时元数据生成 | 手工编写服务名称列表 | 构建工具自动从源码提取依赖拓扑 |
+| 适用倾向 | 追求弱耦合与松散组装 | 追求构建期可追溯、跨包检查与重构安全性 |
 
-| 比较点                 | Cordis v3 的上述 service 写法    | Pluxel 的必需插件依赖                        |
-| ---------------------- | -------------------------------- | -------------------------------------------- |
-| consumer 如何声明依赖  | `inject` 中的服务名称            | 构造函数中的插件参数与值导入                 |
-| consumer 如何访问能力  | 对应的 Context 属性              | 注入的插件实例                               |
-| 类型从哪里来           | Context 的类型扩展和服务类型     | 导入的插件类型与构造函数签名                 |
-| 依赖关系如何进入运行时 | 运行时读取名称与依赖 metadata    | 构建工具从源码生成依赖 metadata              |
-| provider 变化时怎么办  | 依赖服务变化驱动卸载和重新加载   | 依赖图与插件实例生命周期驱动替换、重启和清理 |
-| 主要取舍               | 保留按名称进行运行时绑定的灵活性 | 以源码和构建约束换取可追溯的依赖身份         |
+## 确定性生命周期与资源边界
 
-两者都提供类型支持，也都处理动态生命周期。Pluxel 增加的约束服务于源码、构建与运行时身份的一致性；这些检查也不能替代实际启动、业务校验或运行时的依赖可用性判断。
+在 Pluxel 中，插件的每一次实例化运行称为一个生命周期周期（Generation）。每次启动、热重载或依赖实例替换，都会创建新实例并终结旧周期。
 
-## 能力与所有权
+```ts
+@Plugin({ displayName: 'Worker' })
+export class WorkerPlugin extends BasePlugin {
+	protected override init() {
+		const timer = setInterval(() => this.heartbeat(), 5_000)
+		
+		// 注册清理回调，插件停止或重载时由框架自动执行
+		this.ctx.effects.defer(() => clearInterval(timer))
+	}
+}
+```
 
-| 需求         | 标准表达                              | 生命周期                                     |
-| ------------ | ------------------------------------- | -------------------------------------------- |
-| 必需业务能力 | constructor + 值导入                  | provider 变化驱动依赖图更新                  |
-| 可选业务集成 | `definePluginRef()` + `plugins.use()` | 不安装 provider；其运行代变化时重启 consumer |
-| 宿主设施     | root 创建前安装 Context services      | 宿主准备与关闭，访问绑定 caller/owner        |
-| 内部组成     | 函数、effects scope 或 PluginPart     | 跟随所属 Plugin generation                   |
-| 管理界面     | 可选 Workbench publication            | 每次打开创建 API；关闭或 owner 退出后释放    |
+每个插件实例持有的 Context 与依赖视图均绑定了所属插件的身份。即使在复杂的异步流程中，也能清楚辨识调用来源，并且在提供方插件停止或重启后，旧的代理调用会自动失效，避免调用到已经卸载的僵尸实例。
 
-一次启动产生一个 generation。旧实例和缓存 handle 在停止或 replacement 后如何失效，是公开契约的一部分；不能仅按 class name 判断可用性。
+## 适用场景与权衡
 
-Context 与本地依赖视图使用固定 owner 的对象或预编译成员，避免在并发异步调用间改写全局“当前调用者”。远程 Workbench 使用 Cap’n Web 的 RPC 对象模型；网络引用与本地资源仍各有明确 owner。
-这些实现选择服务于可追溯、可撤回的调用，不构成比其他框架更快的承诺；目前没有与 Cordis 同场、同语义的性能对照。
+Pluxel 的设计专注于以下场景：
 
-## 源码也是契约
+1. **依赖关系复杂的企业级应用**：通过强类型导入和构建期依赖图，能够在开发和 CI 阶段捕获依赖缺失与循环依赖。
+2. **需要完善热重载与资源回收的应用**：长时间运行的宿主进程（如后台守护进程、开发者工作台）需要精确控制定时器、连接和事件监听的释放，避免内存泄漏。
+3. **重视配置可读性与可视化管理**：单份 Valibot Schema 同时解决类型、校验、默认值与 Workbench 管理表单。
 
-构造器 import 提供依赖，包根 named export 提供身份，Valibot schema 提供配置类型、默认值和校验。
-Vite/Rolldown 在类型擦除前提取这些事实，runtime 依此启动、替换与清理；[inspect](./development/inspection.md) 复用同一语义来定位修改位置。
-普通 TypeScript 擦除无法代替这条工具链。
-
-同一份应用声明可冻结为发行物，也可通过显式动态来源扩展 catalog。业务 Plugin 的依赖、配置与生命周期模型保持一致；开发期的真实状态通过[devconsole](./development/dev-console.md)读取。
-
-## 选择与代价
-
-这些能力建立在明确的约束之上：
-
-- 插件源码必须经过 Pluxel 的 Vite/Rolldown 处理，保留构建所需的依赖与资源信息。
-- 可发布插件必须来自可追溯的包根具名导出；无法确定稳定来源的动态写法会被构建工具拒绝。
-- 插件作者需要遵循依赖图和 generation 生命周期：长期资源登记清理，旧实例退出后不继续复用其句柄。
-- 应用显式选择插件清单和宿主能力，并承担它们的组合与交付配置。
-
-这些限制适合需要长期维护插件组合、配置、热更新、可审计发行和资源回收的应用。它们也减少了一部分开放字符串注册和任意动态装配的自由度。是否值得采用，取决于应用是否需要这套可追溯的依赖与生命周期模型。
-
-要实际体验，可以用[快速开始](./getting-started/index.md)创建已配置好工具链的项目；要继续理解作者模型，阅读[插件依赖与生命周期](./plugin-development/model.md)。框架实现和约束的索引在[工程文档](https://github.com/PluxelJS/pluxel/blob/main/engineering/README.md)。
+如果你需要一个完全动态、任意字符串插拔、不经过专门编译步骤即可运行的微型脚本环境，传统的服务定位器模式会更加轻巧。Pluxel 适合追求架构清晰度、构建期可验证性与长期可维护性的 TypeScript 工程。

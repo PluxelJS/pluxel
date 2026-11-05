@@ -1,69 +1,62 @@
 ---
 title: Node 模块与 Worker 任务
-description: 为独立 Node ESM 和 CPU 密集任务选择合适的构建与生命周期模型。
+description: 将特定逻辑编译为独立的 Node ESM 产物，或将 CPU 密集型任务分派给后台 Worker 线程池。
 ---
 
-Pluxel 可以把一段代码构建成独立 Node ESM，也可以把 CPU 密集任务放进共享线程池。两者解决的问题不同：
-
-| 需求                                                | 选择                 |
-| --------------------------------------------------- | -------------------- |
-| 把另一份源码构建成独立 Node ESM，并在当前线程初始化 | `defineNodeModule()` |
-| 把可结构化克隆的 CPU 密集工作放入共享线程池         | `defineWorkerTask()` |
-| 普通异步 I/O、数据库或短小调用                      | 直接在 Plugin 中执行 |
-
-在 [快速开始](../getting-started/index.md) 创建的插件包内添加下列文件；保留 Pluxel 的 Vite/构建配置，普通 TypeScript 编译不会生成这些独立产物。声明必须位于模块顶层，入口使用静态相对路径。
+在某些场景下，插件可能需要执行繁重的计算（如排版渲染、图像处理、压缩等），或者需要隔离运行特定的 Node.js 模块。Pluxel 提供了两项专门的服务：
+- **`defineNodeModule()`**：将指定入口单独打包为纯净的 Node ESM 并在主线程按需动态加载；
+- **`defineWorkerTask()`**：将计算任务提交到宿主维护的 Worker 线程池中并发执行，避免阻塞主事件循环。
 
 ## 选择安装能力
 
-`standardServices()` 与 `servicesPreset()` 安装 Node modules 与 Workers。组合自己的 Host 时，显式列出 `nodeModules({ root })` 和 `workers()`；Workers 依赖 Node modules，缺少该安装项会在创建资源前失败。`root` 指向已构建的 Node artifact 目录；也可提供声明所属插件的 artifact resolver。只安装 Node modules 不创建线程池。
+在宿主配置中，`standardServices()` 与 `servicesPreset()` 默认已包含 Node 模块与 Worker 服务。如果手动装配宿主，请显式挂载 `nodeModules()` 与 `workers()`：
 
-服务入口不安装开发编译器。`@pluxel/services/vite` 的 `vitePreset()` 负责源码 artifact 更新；仅在普通 Host 声明服务不等于已接入源码编译与 HMR。
+```ts
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 
-## 独立 Node module
+export default defineHostApplication(() => ({
+	services: [nodeModules(), workers()],
+}))
+```
+
+## 独立 Node 模块（defineNodeModule）
+
+使用 `defineNodeModule()` 将辅助代码编译为自包含的单文件 Node ESM：
 
 ```ts twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { NodeModules, defineNodeModule } from '@pluxel/services/node'
 
+// 1. 声明独立模块入口（相对于当前文件）
 const rulesModule = defineNodeModule(import.meta.url, './rules-entry.ts')
 
 @Plugin({ displayName: 'Rules' })
 export class RulesPlugin extends BasePlugin {
 	protected override async init() {
+		// 2. 加载模块并在当前插件作用域中执行初始化
 		await this.ctx.require(NodeModules).use(rulesModule, async (url) => {
-			const module = await import(url.href)
-			return module.setup({ logger: this.ctx.logger })
+			const mod = await import(url.href)
+			return mod.setup({ logger: this.ctx.logger })
 		})
 	}
 }
 ```
 
-`rules-entry.ts` 默认没有 Pluxel Context；它导出上面调用的 `setup()`，返回释放资源的函数：
+在 `rules-entry.ts` 中编写标准导出的模块逻辑：
 
 ```ts no-twoslash
-export function setup({ logger }: { logger: { info(message: string): void } }) {
-	logger.info('rules module ready')
-	return () => logger.info('rules module released')
+export function setup({ logger }: { logger: { info(msg: string): void } }) {
+	logger.info('Rules engine ready')
+	// 返回清理回调
+	return () => logger.info('Rules engine disposed')
 }
 ```
 
-启动插件后应看到 `rules module ready`；停用插件后应看到释放日志。
+<span id="取消与-plugin-stop"></span>
+## 共享后台 Worker 任务（defineWorkerTask）
 
-`defineNodeModule()` 只声明 entry，不创建线程。`ctx.require(NodeModules).use()`：
-
-- 等待 artifact 首次可用和 setup 完成；
-- setup/import 失败会让 Plugin `init()` 失败；
-- callback 返回的 cleanup/disposable 绑定当前 owner generation；
-- 开发期 replacement 先 setup 新 URL，成功后再清理上一成功消费者；
-- 新 artifact 失败时保留旧成功 consumer，不提交半成品。
-
-artifact 是自包含单文件 Node ESM。它可以使用 Node builtin 和可安全 bundle 的普通 library，但不能 value-import Pluxel runtime/core、Plugin、Context 或 Workbench server API，也不能嵌套声明 Plugin/Workbench/Node module。
-
-需要把 Context 能力交给 module 时，传入窄的、明确 owner 的 facade，不要传整个 Context 或 Plugin instance。
-
-## 共享 worker task
-
-持续占用 JavaScript event loop、thread-safe 且能用纯数据描述的 CPU/native 工作使用 worker task：
+对于可能阻塞事件循环的 CPU 密集型任务，推荐将其打包为 Worker 任务：
 
 ```ts twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
@@ -72,17 +65,19 @@ import { Workers, defineWorkerTask } from '@pluxel/services/workers'
 type SumInput = { values: number[] }
 type SumOutput = { total: number }
 
+// 1. 声明 Worker 任务类型与入口
 const sumTask = defineWorkerTask<SumInput, SumOutput>(import.meta.url, './sum-worker.ts')
 
 @Plugin({ displayName: 'Reports' })
 export class ReportsPlugin extends BasePlugin {
 	calculate(values: number[], signal?: AbortSignal) {
+		// 2. 将任务分派给线程池执行，支持 AbortSignal 取消
 		return this.ctx.require(Workers).run(sumTask, { values }, { signal })
 	}
 }
 ```
 
-把下一段保存为与插件文件同目录的 `sum-worker.ts`。它默认导出 handler，不接收 Pluxel Context：
+在同目录创建 `sum-worker.ts`，导出默认的处理函数：
 
 ```ts twoslash
 import type { WorkerTaskHandler } from '@pluxel/services/workers'
@@ -91,153 +86,10 @@ type SumInput = { values: number[] }
 type SumOutput = { total: number }
 
 const run: WorkerTaskHandler<SumInput, SumOutput> = ({ values }) => ({
-	total: values.reduce((sum, value) => sum + value, 0),
+	total: values.reduce((sum, item) => sum + item, 0),
 })
 
 export default run
 ```
 
-调用 `calculate([1, 2, 3])` 应得到 `{ total: 6 }`。用 [测试宿主](./testing.md) 或现有应用的 [开发控制台](../development/dev-console.md) 调用插件方法，才能同时验证产物提取与执行路径。
-
-所有插件共享宿主的线程池，线程按需创建，队列有上限，并在插件之间公平调度。host 统一配置 concurrent execution slots、全局和每
-Plugin queue limit、idle timeout；Plugin 不创建私有线程池，也不自行扩大进程预算。取消 running task 会终止对应 worker；
-caller Promise 可以立即结束，但 runtime 会等 worker 真正退出后才归还 active slot，避免 replacement task 穿透执行上限。
-
-任务持有调用方的临时文件等外部资源时，给 `run()` / `runPrepared()` 传入
-`{ settlement: 'execution' }`。此模式在结果、取消及 owner 停止时均等待线程完成工作或确认退出后才
-settle，调用方可随后释放这些资源；队列取消仍立即结束。默认 `'result'` 保留取消后立即结束等待的行为。
-此模式下线程终止本身失败会报告 `EXECUTION_UNSETTLED` 并保留 cause；调用方必须保留仍可能被使用的资源，不能把该失败当作已经确认退出。
-
-### 原生线程选项
-
-Host 的 `workers({ worker })` 接收 Node 原生 [WorkerOptions](https://nodejs.org/api/worker_threads.html#new-workerfilename-options)，保留 `resourceLimits`、`execArgv`、`env`、`argv`、`name`、`workerData` 与 `trackUnmanagedFds`。这些是只在应用代码中使用的启动参数，不保存为 Plugin 配置。把下列服务与现有 `nodeModules(...)` 一起加入 Host 的 `services`：
-
-```ts
-import { workers, type WorkersConfig } from '@pluxel/services/workers'
-
-const threadOptions = {
-	env: { ...process.env, TZ: 'UTC' },
-	execArgv: ['--no-warnings'],
-	name: 'report-worker',
-	workerData: { locale: 'zh-HK' },
-	resourceLimits: {
-		maxOldGenerationSizeMb: 128,
-		maxYoungGenerationSizeMb: 16,
-		stackSizeMb: 4,
-	},
-} satisfies NonNullable<WorkersConfig['worker']>
-
-export const workerService = workers({ maxThreads: 4, worker: threadOptions })
-```
-
-装配时复制选项容器、环境映射、参数数组和资源限制，后续修改这些输入不改变服务快照。`workerData` 保留原始值，由 Node 在每次创建线程时执行 structured clone，供任务入口读取启动数据。`env: SHARE_ENV` 也按 Node 原生语义保留；它让线程和父进程共享环境写入，应用须明确接受这一行为。其余 native 默认值与参数合法性由 Node 决定；非法 `execArgv` 等在线程首次创建时让任务以 `TASK_FAILED` 拒绝并保留 native cause，不伪装为启动成功或自动更改参数。
-
-Pluxel 拥有固定入口、每任务 message/transfer 协议和继承的父进程 stdio，因此 `eval`、`transferList`、`stdin`、`stdout`、`stderr` 不属于该输入；即使值是 `false` 或 `undefined`，出现这些字段也会在创建服务前明确拒绝。每次任务的数据继续通过 `run()`，buffer 转移继续使用每任务 `transfer`。原生线程选项不改变共享并发上限、owner 公平队列、取消和实际退出结算；`resourceLimits` 也不是进程内存或外部 ArrayBuffer 的总配额。
-
-## 什么可以跨线程
-
-输入输出必须满足 structured clone：
-
-- 可以：plain object、array、string、number、boolean、`ArrayBuffer`、typed array；
-- 不可以：function、closure、Context、Plugin instance、数据库连接、native Canvas/Image；
-- native binding 必须明确 thread-safe，并由拥有它的 package 声明构建 metadata。
-
-网络/数据库 I/O、短调用、不可重试 side effect 通常不应为了“统一”而进入 worker。worker cancellation 可能终止线程，任务必须能安全重做或丢弃。
-
-## 大型二进制 transfer
-
-默认输入在 `run()` 接纳时 snapshot。大型 `ArrayBuffer` 可以明确移交 ownership：
-
-```ts no-twoslash
-const bytes = new Uint8Array(await response.arrayBuffer())
-const result = this.ctx.require(Workers).run(
-	decodeTask,
-	{ bytes },
-	{
-		signal,
-		transfer: [bytes.buffer],
-	},
-)
-
-// 接纳成功后 bytes.buffer 已同步 detached。
-return result
-```
-
-transfer 规则：
-
-- 只接受 `ArrayBuffer`；
-- 同一个 buffer 不能重复列出；
-- accepted 后即使任务最终失败也不会恢复 ownership；
-- queue 已满、任务未接纳时 runtime 不 detach；
-- `SharedArrayBuffer` 本来就是共享内存，不进入 transfer，调用方自行负责同步协议。
-
-## 借用输入，避免排队时复制
-
-默认 snapshot 适合调用后立即复用或修改 input。若领域 API 已经要求 input 在 Promise settle 前保持不变，可以省略
-排队 snapshot，只保留真正 dispatch 的 transport clone：
-
-```ts no-twoslash
-return this.ctx.require(Workers).run(renderTask, input, {
-	signal,
-	inputOwnership: 'borrowed',
-})
-```
-
-borrowed 模式在 queue 中保留 caller graph，因此 mutation 会改变尚未 dispatch 的任务；它不能与 `transfer` 同时使用。
-该模式减少一次 clone，不会让 `postMessage` serialization 离开主线程，领域仍必须对超大 object graph 设置 bytes/count/depth
-预算。
-
-## 任务获准执行后再准备输入
-
-如果 domain budget walk 或 snapshot 本身较重，先用共享 queue admission，再准备输入：
-
-```ts no-twoslash
-return this.ctx.require(Workers).runPrepared(
-	renderTask,
-	async (signal) => {
-		await assertBoundedDeclarativeGraph(option, signal)
-		return { option, policy }
-	},
-	{ signal, inputOwnership: 'borrowed' },
-)
-```
-
-`prepare(signal)` 只在 artifact route 可用、任务轮到 fair execution slot 后执行；queue full 不调用它。准备期间该 slot
-保持 active，因此 host-side preflight 数也受 `maxThreads` 限制。callback 应分段让出 event loop 并观察 signal；runtime
-不能抢占一个同步 callback。callback error 原样返回，prepared value 的 structured-clone error 仍归类为
-`WorkerTaskError('INVALID_INPUT')`。
-
-默认会 snapshot prepared value；只有领域 API 已要求 caller 到最终 Promise settle 前保持 captured/returned graph 不变时
-才使用 borrowed。`runPrepared()` 不支持 transfer，因为 admission 时 buffer 尚未产生，无法提供“接纳成功即同步 detach”
-的 ownership contract。
-
-## 取消与 Plugin stop
-
-`run(task, input, { signal })` 的 signal 取消 admission 或运行中任务。Plugin stop/replacement 也会取消并等待该 owner 已接纳任务，不让旧 generation 在后台继续写结果。
-
-不要只 fire-and-forget：
-
-```ts no-twoslash
-// 错误：调用方无法观察失败，业务也不知道结果是否提交。
-void this.ctx.require(Workers).run(task, input)
-```
-
-后台调用需要明确捕获 error、更新有界状态，并决定重试/丢弃。请求级任务把 Promise 返回给 HTTP/command 边界。
-
-## Canvas 与 ECharts
-
-native Canvas/Image 不能 structured clone。官方 [Canvas Plugin](../plugins/rendering/canvas.md) 提供纯数据 `workerSnapshot` 和 `@pluxel/plugin-canvas/worker` adapter，让 worker 在自己的线程内创建 native surface；业务插件不直接传 native handle。
-
-`@pluxel/plugin-echarts` 始终使用 runtime shared worker pool。调用方只需调用 `render()`，不要再套一层自建 worker。
-
-## 构建与验证
-
-Plugin build 会提取 literal declaration，并输出独立 artifact。验证至少覆盖：
-
-- declaration 使用 literal relative entry；
-- artifact 中没有 Pluxel runtime/Context import；
-- input/output 可 clone，transfer 后调用方不再访问 buffer；
-- queue full、abort、worker error 和 Plugin stop；
-- native dependency metadata 与真正 package owner 一致。
-
-构建产物与缓存位置见 [CLI 与工具链](../development/tooling.md)，测试 host 选择见 [测试 Pluxel 插件](./testing.md)。
+当调用 `calculate([1, 2, 3])` 时，计算将在 Worker 独立线程中执行，返回最终的 `{ total: 6 }`，确保主线程的 HTTP 响应与 UI 交互始终流畅。

@@ -1,16 +1,20 @@
 # 参与贡献
 
-感谢你帮助改进 Pluxel。Issue、文档、测试、错误修复和功能实现都很有价值。
+感谢你对 Pluxel 的关注与支持！无论是提交缺陷报告、改进文档、编写测试用例还是实现新功能，我们都非常欢迎。
 
-## 开始之前
+## 贡献流程
 
-- 使用 GitHub Issues 讨论缺陷和范围明确的改进；较大的 API 或架构变化请先说明问题、使用场景和兼容性影响。
-- 安全漏洞不要提交公开 Issue，请按照 [安全策略](./SECURITY.md) 私下报告。
-- 提交贡献前请阅读本项目的 [Contributor License Agreement](./CLA.md)，并在 PR 中亲自确认同意。你仍然保留贡献内容的版权。
+### 1. 提交 Issue
+- 报告 Bug 时，请尽量提供最小复现步骤、Node.js 与 pnpm 版本、操作系统信息以及错误日志。
+- 提出较大范围的 API 变更或新功能建议前，建议先开启 Issue 讨论设计思路与适用场景。
+- 涉及安全隐患的问题请参阅 [安全策略](./SECURITY.md) 私下联络，请勿直接公开在 Issue 中。
 
-## 准备开发环境
+### 2. 签署贡献协议
+提交代码前请阅读本项目的[贡献者许可协议（CLA）](./CLA.md)。提交 PR 时，请在 PR 模板中勾选同意该协议。
 
-仓库默认通过 mise 管理 Node.js、pnpm、Vite+、hk 与 Pitchfork，准备方式与职责见[工作区工具链](./docs/development/workspace-toolchain.md)。安装并激活 mise 后：
+## 本地环境搭建
+
+本项目通过 mise 统一管理 Node.js、pnpm、Vite+、hk 与 Pitchfork。请先参考[工作区工具链](./docs/development/workspace-toolchain.md)安装并启用 mise，然后在仓库根目录运行：
 
 ```sh
 git clone https://github.com/PluxelJS/pluxel.git
@@ -23,25 +27,27 @@ vp run hooks:install
 vp run verify
 ```
 
-通过 `vp run dev` 启动示例宿主，`vp run docs` 启动文档站；通过 Pitchfork 查看、重启和停止对应服务。未激活 mise shell 时使用 `mise exec -- <command>`。不要提交 `node_modules/`、`dist/`、`.vite/`、`.pluxel/`、`.bench-results/` 或 `local-projects/` 中的本地产物。
+日常开发常用命令：
+- 启动示例宿主：`vp run dev`
+- 启动本地文档站：`vp run docs`
+- 服务管理（Pitchfork）：`pitchfork list` 或 `pitchfork logs plugin-host`
 
-## 修改规则
+## 代码与提交规范
 
-1. 修改前先阅读 [工程文档入口](./engineering/README.md) 和相关领域文档；定位与验证工具见[开发指南](./docs/development/index.md)。
-2. 用户可见行为必须同步更新 `docs/`；内部架构约束更新 `engineering/`，不要把未实现设计写成当前能力。
-3. 新增或修改公开 API、类型、错误契约、配置契约或资源生命周期时，遵循 [library API design guide](.agents/rules/library-api-design.md)。
-4. 保持 package boundary；只从 `package.json#exports` 声明的入口导入，不使用其他 package 的源码相对路径。
-5. 为行为变化补充测试，并确保 acquire 的长期资源在 replacement、rollback 与 shutdown 时都能释放。
+1. **架构契约**：修改核心逻辑前，请先查阅 [工程文档索引](./engineering/README.md) 及对应专题设计；涉及公共 API 变动时，遵循 [API 设计准则](.agents/rules/library-api-design.md)。
+2. **包边界**：跨包调用只能引用目标包在 `package.json` 的 `exports` 中显式暴露的公共入口，禁止使用跨包内部相对路径。
+3. **文档同步**：当公开 API 或交互行为发生变动时，请同步更新 `docs/` 目录中的相关文档。
+4. **测试补充**：为新功能或 Bug 修复添加对应的单元测试或回归测试，确保资源的生命周期得到妥善释放。
 
-## 验证
+## 验证与检查
 
-提交前运行完整门禁：
+在提交代码前，请运行本地完整检查：
 
 ```sh
 vp run verify
 ```
 
-开发期间可以先运行更小的反馈循环：
+在开发过程中，也可以针对具体包或单项检查运行轻量命令：
 
 ```sh
 vp run <package-name>#test
@@ -50,26 +56,18 @@ vp lint
 vp fmt --check
 ```
 
-不要通过削弱测试、跳过检查或提交生成缓存来让验证通过。
+## 更新日志（Changelog）
 
-## Changelog
-
-公开 package 的用户可见变化需要 Tegami changelog：
+如果你的修改包含了对公开发布包（packages 目录下）的用户可见行为调整，请生成一条 Tegami 更新记录：
 
 ```sh
 vp run tegami
 ```
 
-只选择公开行为实际发生变化的 package，并写清楚用户会感知到的结果。纯文档、测试或不影响公开行为的内部重构不需要空 changelog。版本与发布规则见 [发布指南](./engineering/RELEASING.md)。
+按照交互提示选择受影响的包名，并用简明中文描述该版本变更的具体内容。纯内部重构、测试补充或文档修改无需生成更新记录。
 
-## Pull Request
+## 提交 Pull Request
 
-- 保持一个 PR 聚焦于一个问题，并说明动机、主要变化和验证方式。
-- UI 或交互变化请附截图；兼容性变化请明确迁移方式。
-- 勾选 PR 模板中的检查项。
-- 由贡献者本人勾选 PR 模板开头的协议确认项；已有 PR 没有该项时，请自行补上，或发表评论并链接协议、明确表示同意。多位贡献者需各自确认自己的贡献。
-- 维护者合并前人工核对确认人、协议版本和确认内容；没有明确同意或存在争议时不合并，不代替贡献者勾选。
-- PR 模板不会强制阻止提交或合并。确认记录保留在 GitHub PR 描述、评论及可用的编辑历史中；仓库不再运行 CLA Action，也不维护签署信息。
-- Dependabot 等机器人生成的纯依赖版本更新由维护者人工审核，不要求机器人签署；其中若包含人工贡献，相关贡献者仍需自行确认。
-
-维护者可能要求补充测试、文档或 Tegami changelog。所有检查通过并不保证合并，但会让评审集中在设计和行为本身。
+- 建议单个 PR 聚焦于单一主题，并在描述中简要说明变更动机、核心改动点与验证方式。
+- 若包含界面或交互改动，请在 PR 中附上截图或录屏。
+- 勾选 PR 模板中的各项检查，并确认已签署 CLA。

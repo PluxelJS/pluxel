@@ -35,7 +35,7 @@ export default defineHostApplication(() => ({
   plugins: [OrdersPlugin],
 }))`,
 		description:
-			'Plugin 清单随应用构建，开发期支持 HMR。目录表示代码可用，冷启动策略通过 policy.autoStart 显式选择。',
+			'插件清单在应用构建时静态打包，开发时支持实时热更新。通过 policy.autoStart 指定应用启动时默认运行的插件。',
 		icon: ServerCog,
 		meta: 'Fixed catalog',
 		title: '固定插件目录',
@@ -52,7 +52,7 @@ export default defineHostApplication(() => ({
   })],
 }))`,
 		description:
-			'开发期新增、更新、删除文件入口，变化提交到同一 Host catalog；是否启动仍由运行策略决定。',
+			'开发期间可在指定目录新增、更新或移除插件文件，宿主会自动发现变动并按运行策略加载。',
 		icon: CloudCog,
 		meta: 'Mutable sources',
 		title: '增加动态来源',
@@ -117,8 +117,8 @@ export default function HomePage() {
 						</p>
 						<h1>Pluxel</h1>
 						<p className="pluxel-hero-lead">
-							写一个 class，用构造函数注入能力；配置、HTTP route
-							和资源清理都放在固定位置，开发期直接热更新。
+							写一个普通的 TypeScript 类，直接在构造函数中注入所需插件。
+							配置校验、路由挂载与资源回收清晰直观，开发阶段支持快速热重载。
 						</p>
 						<div className="pluxel-hero-actions">
 							<Link className="pluxel-primary-action" href="/docs/getting-started">
@@ -191,8 +191,7 @@ export default function HomePage() {
 					<div className="pluxel-section-heading">
 						<h2 id="host-toolchain">同一份应用，开发与生产共用</h2>
 						<p>
-							在上面的应用声明中加入
-							configure，显式选择服务；内存存储适合本地尝试，持久部署见宿主配置。
+							在应用配置中按需挂载核心服务；本地尝鲜支持纯内存模式，生产部署可自由配置持久化存储。
 						</p>
 					</div>
 					<div className="pluxel-host-cards">

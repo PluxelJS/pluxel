@@ -3,22 +3,18 @@ title: Pluxel Oxlint 规则
 description: 用静态规则检查 Plugin 元数据、配置、资源归属和生命周期约束。
 ---
 
-普通 Oxlint 检查 JavaScript 和 TypeScript 代码质量；`@pluxel/rolldown/oxlint` 继续检查只有 Pluxel 才理解的 Plugin 规则，例如元数据位置、配置读取时机和资源归属。
+`@pluxel/rolldown/oxlint` 提供了一套专用于检查 Pluxel 插件规范与生命周期约束的 Oxlint 静态分析规则集，能够在编译与提交阶段识别插件装饰器、配置 Schema 定义、日志调用及资源归属问题。
 
-CLI 生成的插件包已经接入这些规则，先在包目录运行：
+由脚手架生成的工程默认已配置好该规则集，可通过以下命令执行检查：
 
 ```sh
 vp lint
 vp check --fix
 ```
 
-修复后 `vp lint` 应成功，且没有 unused-disable 诊断。已有项目手动接入时，安装 `vite-plus` 与 `@pluxel/rolldown` 为开发依赖，再保存下面的配置为 `oxlint.config.ts`：
+## 标准配置（`oxlint.config.ts`）
 
-```sh
-vp exec vp lint --report-unused-disable-directives-severity=error src tests
-```
-
-## 标准配置
+在项目根目录下创建 `oxlint.config.ts`：
 
 ```ts twoslash
 import type { OxlintConfig } from 'vite-plus/lint'
@@ -38,7 +34,7 @@ export default {
 } satisfies OxlintConfig
 ```
 
-在根 `vite.config.ts` 引用规则对象，`vp lint` 从这个入口读取 `lint`：
+在 `vite.config.ts` 中引用该配置：
 
 ```ts no-twoslash
 import { defineConfig } from 'vite-plus'
@@ -47,42 +43,29 @@ import lint from './oxlint.config'
 export default defineConfig({ lint })
 ```
 
-已有 Vite 配置时只添加 `lint` 字段；规则内容仍只维护在 `oxlint.config.ts`。
+## 核心规则清单
 
-## 重点规则
+| 规则名称 | 校验目的 | 推荐修复方式 |
+| :--- | :--- | :--- |
+| `plugin-base-class-requires-plugin-registration` | 确保具体插件类添加了必要的注册装饰器 | 添加 `@Plugin()` 装饰器 |
+| `plugin-constructor-canonical-dependencies` | 依赖注入应从包公开根入口引入，保证类型溯源 | 从包根路径进行 `value-import` |
+| `configs-use-top-level-class` | 确保配置字段位于类的顶层声明中，以便元数据提取 | 将配置字段提升至类声明顶层 |
+| `configs-use-no-private-field` | 运行时需注入配置，禁止使用 JS 原生私有字段（`#`） | 改用 TypeScript `private` 访问修饰符 |
+| `configs-use-no-early-read` | 防止在构造函数中过早读取尚未注入的配置 | 将配置访问逻辑移至 `init()` 或后续业务方法中 |
+| `configs-use-no-redefault` | 默认值应集中在 Schema 中定义，避免逻辑分散 | 移除二次回退（如 `?? 'default'`），在 Schema 中指定默认值 |
+| `configs-use-single-object-schema` | 插件仅支持挂载单个配置 Schema 对象 | 将多个配置项合并为一个顶层 Object Schema |
+| `plugin-no-process-exit` | 插件内部禁止随意调用 `process.exit()` | 抛出带有明确原因的异常，交由宿主生命周期处理 |
+| `no-direct-logtape-get-logger` | 日志器需保持与插件 Context 绑定的所有权 | 使用当前插件上下文的 `this.ctx.logger` |
 
-| 规则                                             | 保护什么                         | 典型修复                     |
-| ------------------------------------------------ | -------------------------------- | ---------------------------- |
-| `plugin-base-class-requires-plugin-registration` | concrete Plugin 有 marker        | 添加 `@Plugin()`             |
-| `plugin-constructor-canonical-dependencies`      | required edge 有 root provenance | 从 package root value-import |
-| `configs-use-top-level-class`                    | config metadata 可提取           | 把 field 放到 class 顶层     |
-| `configs-use-no-private-field`                   | runtime 可以注入 config          | 不使用 `#private`            |
-| `configs-use-no-early-read`                      | config 已完成注入                | 在 `init()` 之后读取         |
-| `configs-use-no-redefault`                       | schema 是唯一默认值来源          | 移除额外的 fallback          |
-| `configs-use-single-object-schema`               | 每个 Plugin 只有一个 schema      | 合并成一个 object            |
-| `plugin-no-process-exit`                         | 退出策略属于 host                | 抛出事实错误                 |
-| `no-direct-logtape-get-logger`                   | logger 保留 Context ownership    | 使用 `ctx.logger`            |
+## 日志错误记录规范
 
-## Error log
-
-记录完整错误对象，便于日志界面保留错误类型和堆栈：
+在捕获异常并记录日志时，建议将错误对象作为属性传递，便于日志收集平台保留完整的堆栈信息与错误类型：
 
 ```ts no-twoslash
 try {
 	await sync()
 } catch (error) {
-	this.ctx.logger.error('sync failed', { error })
+	this.ctx.logger.error('同步数据失败', { error })
 }
 ```
-
-不要插值 error、只记录 `error.message`，也不要把 `failure` 另造一套错误字段。
-
-## 验证顺序
-
-这些规则运行在 Pluxel/Vite build-correctness pipeline 中，依赖 package-root provenance 和 source semantics；普通 `tsc` 无法替代。
-
-1. 运行 `vp check --fix`，应用安全的 import、字段名和 re-default 修复。
-2. 按 semantic 诊断修正 Plugin metadata、配置和 lifecycle 边界。
-3. 运行 `vp run verify`，确认没有 unused disable。
-
-不要用大范围 disable 绕过规则。若确有误报，保留最小范围、说明原因，并让 unused-disable 检查仍然开启。
+避免仅记录 `error.message` 导致丢失原始错误调用栈。

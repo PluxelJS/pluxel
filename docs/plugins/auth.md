@@ -1,196 +1,62 @@
 ---
-title: Management 认证
-description: 用官方 Auth Plugin 在唯一 Cap’n Web control socket 上提供 OIDC、密码或密码加 TOTP。
+title: Auth 身份认证插件
+description: 为 Workbench 工作台与 Management 管理接口提供 OIDC 单点登录、本地密码与 TOTP 双因素认证。
 ---
 
-`@pluxel/plugin-auth` 是官方 Management authentication provider。它保护 Workbench 与 Management Cap’n Web object graph，不会自动保护业务 Plugin 路由。
+`@pluxel/plugin-auth` 是官方提供的身份认证插件。它为管理通道（Workbench 前端和 Management API）提供强大的认证保护，支持 OIDC（单点登录）、本地管理员密码以及 TOTP 两步验证（2FA）。
 
-## 启用
-
-以下命令在快速开始生成的工作区根目录执行；按 [添加插件](./index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
+## 安装与快速配置
 
 ```sh
-vp exec pluxel pncat add @pluxel/plugin-auth
+pnpm add @pluxel/plugin-auth
 ```
 
-在宿主入口从 `@pluxel/plugin-auth` 导入 `AuthPlugin`，加入 `plugins` 清单和自动启动项；完整装配方式见 [添加插件](./index.md#把一个插件加入应用)。
-
-先选择登录方式：已有身份服务用 OIDC；本地账号用 password 或 password + TOTP。下面是密码登录的完整宿主配置，在应用入口合入现有清单：
+在应用入口中注册 `AuthPlugin` 并设置认证模式：
 
 ```ts no-twoslash
-import { zenfs } from '@pluxel/core/config'
-import { AuthPlugin } from '@pluxel/plugin-auth'
 import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
-import { Passthrough } from '@pluxel/core/fs'
-import * as nativeFs from 'node:fs'
-import { resolve } from 'node:path'
+import { AuthPlugin } from '@pluxel/plugin-auth'
 
-export default defineHostApplication(async (startup) => {
-	const prefix = resolve(startup.root, '.pluxel/fs')
-	await nativeFs.promises.mkdir(prefix, { recursive: true })
-	return {
-		name: 'my-app',
-		plugins: [AuthPlugin],
-		services: await servicesPreset(startup, {}),
-		policy: { autoStart: [AuthPlugin] },
-		config: {
-			records: [{ owner: AuthPlugin, config: { mode: { type: 'password' } } }],
-		},
-		runtime: {
-			zenfs: zenfs({
-				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-				durableMounts: ['/'],
-			}),
-		},
-	}
-})
+export default defineHostApplication(async (startup) => ({
+	name: 'my-app',
+	plugins: [AuthPlugin],
+	policy: { autoStart: [AuthPlugin] },
+	config: {
+		records: [
+			{
+				owner: AuthPlugin,
+				config: {
+					mode: { type: 'password' }, // 可选 'password'、'password_totp' 或 'oidc'
+				},
+			},
+		],
+	},
+	services: await servicesPreset(startup, {}),
+}))
 ```
 
-首次启动后，在本机 Workbench 进入 Auth 的 setup 页面完成账号配置；远程服务器通过 SSH tunnel 打开 loopback Workbench。完成后从远端打开 Workbench 验证登录，退出后重新加载应再次要求认证。密码、TOTP 和 confidential OIDC 的密钥依赖 [Vault](../plugin-development/vault.md)；public OIDC 只需下节配置。
+首次启动服务后，访问 Workbench 地址，系统会引导管理员设置初始登录账号与密码。
 
-## OIDC
+## 接入 OIDC 单点登录
 
-把上例的插件 `config` 换为以下内容，并在身份服务登记下方 callback URL：
+如果企业已有通用的身份提供商（如 Keycloak、Auth0、Okta），可将认证模式配置为 `oidc`：
 
 ```ts no-twoslash
 {
 	mode: {
 		type: 'oidc',
-		issuer: 'https://id.example.com',
+		issuer: 'https://auth.example.com',
 		clientId: 'pluxel-admin',
-		publicOrigin: 'https://pluxel.example.com',
-		clientKind: 'public',
+		publicOrigin: 'https://my-app.example.com',
+		clientKind: 'public', // 支持 'public' (PKCE) 或 'confidential'
 	}
 }
 ```
 
-OIDC challenge 返回固定 same-origin navigation path。Authorization redirect 和 callback 是保留的浏览器 HTTP 硬边界；callback 固定为：
-
+并在你的身份认证提供商后台中，将回调地址配置为：
 ```text
-<publicOrigin>/__pluxel/admin-access/oidc/callback
+https://my-app.example.com/__pluxel/admin-access/oidc/callback
 ```
 
-插件验证 Authorization Code + PKCE、state、nonce、issuer/audience/`azp`、required claims 和 JWKS signature。成功 callback 只提交 `HttpOnly` cookie 并回到新 document；不保存 access/refresh token，也不把 bearer token、raw claims 或 principal 放入 URL/browser storage。
-
-## 无 Workbench 部署
-
-`AuthConfig` 与 `AuthVaultSchema` 均从 `@pluxel/plugin-auth` 根入口导出。前者只描述登录模式和 OIDC 的非敏感参数，后者校验版本化凭据记录。部署不需要调用 setup RPC：
-
-```ts no-twoslash
-import { AuthPlugin, AuthConfig, AuthVaultSchema } from '@pluxel/plugin-auth'
-import { defineHostApplication, envBinding } from '@pluxel/host'
-import { managementAccess } from '@pluxel/services/management/access'
-import { vault } from '@pluxel/services/vault'
-
-export default defineHostApplication(() => ({
-	plugins: [AuthPlugin],
-	services: [managementAccess(), vault({ backend: 'bindings' })],
-	envBindings: [
-		envBinding(AuthPlugin, {
-			config: { schema: AuthConfig, mapping: { mode: 'AUTH_MODE' } },
-			vault: {
-				schema: AuthVaultSchema,
-				mapping: { 'oidc-client-secret-v1': 'AUTH_OIDC_CREDENTIAL' },
-			},
-		}),
-	],
-	policy: { autoStart: [AuthPlugin] },
-}))
-```
-
-`AUTH_MODE` 是完整 mode JSON，例如 `{"type":"oidc","issuer":"https://id.example.com","clientId":"admin","publicOrigin":"https://admin.example.com","clientKind":"confidential"}`。
-`AUTH_OIDC_CREDENTIAL` 是 `{"version":1,"type":"oidc-client-secret","secret":"…"}` 的完整 JSON 记录。上述服务只安装认证能力；需要控制端点时再接入 [Management](../host/management.md)。Public OIDC 不需要 Vault 绑定。
-
-挂载凭据文件使用同一 `AuthVaultSchema` 和 [fileBinding](../host/configuration.md#部署凭据)，不把 secret 放入普通 config。
-Password 模式可绑定已有的 `management-account-v1` 完整记录，其中包含 scrypt hash 而不是明文密码；记录结构由 schema 校验。Password + TOTP 每次成功验证都要持久提交防重放计数，须使用可写 Vault，不能把该账号整条绑定为只读 env/file 记录。
-
-普通配置的 env/file/saved 优先级遵循 [Host 部署绑定](../host/configuration.md#绑定部署环境与-json-文件)。凭据绑定是整条只读记录，不与已有 Vault KV 合并；映射环境缺失即失败，移除绑定后才重新使用保存记录。更新部署输入需要重建 Host。
-
-## Credential readiness 与首次配置
-
-Public OIDC 只依赖配置，始终进入 `configured`。Password、password + TOTP 和 confidential OIDC 还要求 Vault 中存在有效
-credential record；缺失或损坏时 provider 报告 `ready: false`，远端得到 `access_unavailable`。
-
-Workbench enabled 时，Auth Plugin 发布 `@pluxel/plugin-auth/workbench` 的 `AuthWorkbench.setup` Direct View，固定 route 为
-`/auth/setup`。这是唯一的交互式 credential provisioning 入口；不存在 setup HTTP endpoint、CLI 命令或备用 transport。通过 SSH
-tunnel 打开 loopback Workbench 后进入该 route。View API 是：
-
-```ts no-twoslash
-interface AuthSetupApi extends RpcTarget {
-	snapshotDto(): AuthSetupSnapshot
-	setupPasswordDto(input: AuthPasswordSetupInput): Promise<AuthSetupMutationResult>
-	beginTotpDto(input: AuthPasswordSetupInput): Promise<AuthTotpEnrollmentResult>
-	confirmTotpDto(input: AuthTotpConfirmationInput): Promise<AuthSetupMutationResult>
-	setupOidcSecretDto(input: AuthOidcSecretSetupInput): Promise<AuthSetupMutationResult>
-}
-```
-
-`snapshotDto()` 只返回以下封闭状态：
-
-| mode                 | state            | reason                | 含义                                 |
-| -------------------- | ---------------- | --------------------- | ------------------------------------ |
-| `oidc-public`        | `configured`     | —                     | 不需要也不接受 client secret         |
-| 其余 credential mode | `configured`     | —                     | 已有有效记录，mutation 不允许覆盖    |
-| 其余 credential mode | `setup-required` | `missing` / `invalid` | loopback recovery 可以执行一次性配置 |
-| 其余 credential mode | `unavailable`    | `vault-unavailable`   | Vault 不可用，mutation fail closed   |
-
-Password 与 TOTP enrollment 共用 `{ username, password, passwordConfirmation }`。`beginTotpDto()` 返回 enrollment ID、secret、
-provisioning URI 和过期时间，只有同一个 opened target 能用 `{ enrollmentId, code }` 确认。Confidential OIDC 只接受
-`{ secret }`。失败返回稳定 code：`forbidden`、`not_required`、`unavailable`、`invalid_input`、`busy`、
-`enrollment_expired`、`verification_failed` 或 `storage_failed`。
-
-所有 mutation 同时要求真实 loopback recovery principal 和当前 `setup-required` 状态；即使已认证的远端管理员也不能调用，
-已配置 credential 不能通过这个 API 覆盖。成功保存后同一 Plugin generation 立即变为 ready，并撤销旧 cookie session。每次打开
-View 都得到 fresh target 和 provisioning session；close、abort、socket epoch 失效或 Plugin stop 会销毁未完成的 TOTP enrollment。
-
-Vault record 更新会刷新 provider 凭据；账号身份、密码、TOTP secret 或 OIDC secret 改变时撤销旧 cookie session。
-
-没有接入 Workbench setup View/API 的应用，使用 local credential 或 confidential OIDC 时可通过上面的 Vault 部署绑定提供记录，或使用已配置的可写 Vault；否则 provider 保持 `ready: false`。
-Public OIDC 无 provisioning，可以仅凭配置使用。是否提供配置页面由实际服务和页面接入决定，不由 headless 构建标签决定。
-
-## 浏览器如何认证
-
-Workbench 每个 document 只建立一个 control WebSocket。没有有效 `HttpOnly` cookie 时，password 与 TOTP challenge 直接在该 socket 上完成：
-
-```text
-password      { password }
-    ↓
-totp（按 mode）{ code }
-    ↓
-authenticated + single-use cookie commit ticket
-```
-
-当前 socket 在 authenticated step 后立即取得 principal authority。浏览器随后用 60 秒、single-use ticket 调用固定 cookie-commit endpoint；响应只有 `204 + Set-Cookie`，cookie 用于下一 document/session。Authentication challenge 和 Management API 始终留在同一 Cap’n Web session。
-
-logout 也是 control capability：插件先撤销当前或刚签发的 server session，再返回 60 秒、single-use clear-cookie ticket，Management 随后关闭整个 socket epoch。浏览器使用同一个固定 cookie-commit endpoint 清理 `HttpOnly` cookie；server session 一旦撤销，遗留 cookie 也不能恢复它。
-
-## 安全与生命周期
-
-- 远端 control socket 与 OIDC 要求可信 physical carrier 提供 HTTPS；Management 不相信 forwarding headers 或 URL hostname。
-- password scrypt、登录失败、challenge、session、cookie commit、OIDC pending state 和 TOTP replay counter 都有固定上界。
-- stop、replacement 或 credential mutation 会撤销对应 generation 的 authority。
-- 业务 HTTP authorization、Bearer token 与 RBAC 由业务 Plugin 自己设计，不属于此 provider。
-
-## 本地 Result 与设置回执
-
-Auth 的 `CredentialProvisioning.prepareAccount()` 逐项校验 Vault 可用性、用户名和密码确认，失败就直接返回 `Result.err(...)`。
-这些是内部业务步骤；输入、密码 record 和 Result 实例都不作为新的插件公共 API。
-
-密码哈希使用普通 `try/catch`，只把 `PasswordInputError` / `PasswordHashBusyError` 转成 `invalid_input` / `busy`。
-未知 crypto 故障以固定的安全 message 拒绝，保留本地 cause；不会误报为密码格式错误，也不会执行保存或应用。
-简单校验使用提前返回，哈希使用普通 `await`，无需把整个流程包进 Result 组合器。
-
-领域方法显式消费 Result，再返回原有 setup 回执：
-
-```ts no-twoslash
-const base = await this.prepareAccount(input)
-if (Result.isError(base)) return base.error
-return await this.saveAccount({ version: 1, type: 'local-account', ...base.value })
-```
-
-Workbench target 对最终 `AuthSetupMutationResult` 调用 `assertWorkbenchDto()`，成功分支附上 readiness snapshot。
-未知 mutation rejection 在 target 边界重新抛出无 cause 的通用错误，避免本地诊断随 RPC 传出；它不会变成 expected DTO。
-这个稳定 DTO 已经拥有 `ok` / `code`，无需再给它套 Result 或换成 TaggedError。
-
-[实际实现](https://github.com/PluxelJS/pluxel/blob/main/plugins/auth/src/credential-provisioning.ts)、[成功与持久化验证](https://github.com/PluxelJS/pluxel/blob/main/plugins/auth/tests/credential-provisioning.test.ts)和[预期 / 未知失败验证](https://github.com/PluxelJS/pluxel/blob/main/plugins/auth/tests/credential-failures.test.ts)。
+登录完成后，认证插件会自动签发安全的 `HttpOnly` Cookie 保持会话，敏感的 Token 和密码不会暴露在前端存储中。

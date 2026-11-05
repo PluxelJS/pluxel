@@ -15,7 +15,7 @@ class StatusPlugin extends BasePlugin {
   }
   status() { return this.health.status() } // 直接调用必需依赖
 }`,
-		description: 'Health 缺席会阻塞 Status；Audit 缺席不阻塞，出现、消失或替换时重启 consumer。',
+		description: 'Health 作为必需依赖未就绪时阻止 Status 启动；Audit 作为可选依赖就绪或变化时自动触发消费方更新。',
 		href: '/docs/plugin-development/model',
 		label: '依赖',
 		packageName: '@acme/health + @acme/audit → src/status.ts',
@@ -35,7 +35,7 @@ class SearchPlugin extends BasePlugin {
   private readonly cache = this.parts.use(CachePart)
 }`,
 		description:
-			'Part 隔离 config、registration 和 cleanup，但始终跟随 owning Plugin 一起启动、失败和重启。',
+			'Part 用于拆分复杂插件的内部结构，拥有独立的局部配置与清理逻辑，随所属插件统一启停。',
 		href: '/docs/plugin-development/parts',
 		label: '内部组成',
 		packageName: 'src/search.ts',
@@ -54,7 +54,7 @@ class SamplerPlugin extends BasePlugin {
     )
   }
 }`,
-		description: '副作用登记到当前 generation；停止、启动回滚和 HMR replacement 都走同一套回收。',
+		description: '长期运行的资源与监听器统一注册到当前生命周期，在插件停止、启动回滚或热更新时自动释放。',
 		href: '/docs/plugin-development/model',
 		label: '回收',
 		packageName: 'src/sampler.ts',

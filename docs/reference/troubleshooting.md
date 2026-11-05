@@ -3,151 +3,72 @@ title: 常见错误与排查
 description: 按构建、依赖图、配置、生命周期和宿主边界定位 Pluxel 集成问题。
 ---
 
-先按报错或看得见的现象找对应小节。构建问题在失败的 package 目录重跑原命令；正在运行的应用先读取真实状态和日志，避免用重启掩盖原因。
+本页汇总了在开发、编译与运行 Pluxel 应用时常见的报错及排查方案。
 
-源码定位、在线状态和隔离回归分别使用 [inspect、devconsole 与测试](../development/index.md)。下面按具体症状排查。
+## 快速问题定位
 
-| 现象             | 优先查证                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------- |
-| 安装或构建失败   | 报错 package 的直接依赖、exports、实际产物；不要先改 runtime                          |
-| 声明像普通 class | [工具链是否执行](#plugin-看起来是普通-class)                                          |
-| 节点未运行       | [目录、依赖、配置、生命周期报告](#plugin-没有启动)                                    |
-| 配置保存却未生效 | [配置更新结果](../plugin-development/configuration.md#让运行中的-plugin-接收配置更新) |
-| HTTP 404         | [generation 发布与实际 carrier](#http-返回-404)                                       |
-| 停止后仍有工作   | [资源 owner 与等待清理](#停止后端口timer-或连接仍存在)                                |
-
-记录实际命令、实例、结构化错误及报告，再进入对应小节。错误消息用于阅读；程序分支依赖稳定 code。
+| 错误或异常现象 | 优先排查方向 |
+| :--- | :--- |
+| 安装新版本依赖报 `ERR_PNPM_NO_MATURE_MATCHING_VERSION` | [检查发布等待时间策略](#刚发布的版本安装时报-err_pnpm_no_mature_matching_version) |
+| 无法解析子路径导入（如 `Failed to resolve import`） | [检查 package.json 导出声明与构建产物](#构建无法解析包或-subpath) |
+| TypeScript 报错 `TS2574`（关于 Rest 元素需为数组） | [查看 Cap'n Web 类型兼容性说明](#capn-web-声明报-ts2574) |
+| 插件未生效或类行为表现异常 | [确认是否经过了 Pluxel 编译器转换](#plugin-看起来是普通-class) |
+| 插件处于期望运行状态但未实际启动 | [检查生命周期错误日志与依赖关系](#plugin-没有启动) |
+| 插件停止后后台端口、Timer 或连接仍存活 | [检查生命周期清理逻辑（Effects 与 dispose）](#停止后端口timer-或连接仍存在) |
+| 插件中定义的 HTTP 路由返回 404 | [排查路由挂载时机与载体上下文](#http-返回-404) |
 
 ## 刚发布的版本安装时报 `ERR_PNPM_NO_MATURE_MATCHING_VERSION`
 
-这表示当前项目或机器配置了 `minimumReleaseAge`，所需版本仍在等待窗口内，不等于 npm 上没有该版本。先看错误中的发布时间与 cutoff；1440 分钟就是 24 小时。创建新应用应从普通项目目录执行，避免继承框架源码 workspace 的依赖政策。
-
-最直接的处理是等该版本满足等待期后，重跑原安装命令。团队确认要立即使用这个版本时，可以按现有依赖政策批准针对具体包的 `minimumReleaseAgeExclude`，不要为一次安装关闭全部依赖的等待策略。
+这表明当前工程或全局 pnpm 配置了供应链安全防范策略 `minimumReleaseAge`（默认通常为 24 小时）。
+- **原因**：目标 npm 包版本的发布时间尚短，处于防御锁定期内。
+- **解决方案**：
+  1. 等待该版本发布满设定时长（如 1440 分钟）后重新执行安装；
+  2. 若为紧急上线，可在 `pnpm-workspace.yaml` 中为该特定包配置 `minimumReleaseAgeExclude` 白名单放行。
 
 ## 构建无法解析包或 subpath
 
-例如 `Failed to resolve import "valibot-form/web"`：
+例如报错：`Failed to resolve import "valibot-form/web"`：
+1. **依赖直属声明**：确认报错模块所在的子包在自己的 `package.json` 中直接声明了该依赖，不要依赖 Monorepo 根目录的隐式提升（Hoist）。
+2. **确认 Exports 导出**：检查目标依赖包的 `package.json` 中的 `exports` 字段，确认是否声明了对应的子路径导出（如 `"./web"`）。
+3. **工作区依赖构建顺序**：如果引用的是本地 Monorepo 子包，确认在当前构建执行前，依赖包已经完成了编译并生成了产物。
 
-1. 确认报错文件所在的 package 直接声明了 `valibot-form`，不要依赖根目录偶然 hoist 的依赖。
-2. 查看所安装版本的 `package.json#exports`，确认包含 `./web`，并检查它指向的文件是否存在。
-3. 若解析的是 workspace 包，确认部署构建先完成该依赖的 build。只运行页面项目的 Vite build 不一定构建 workspace 依赖；使用仓库定义的完整部署命令。
-4. 本地正常而 CI 失败时，比较干净 checkout 中的安装与构建顺序；本地旧 `dist/` 可能掩盖缺失步骤。
-
-不要把浏览器真正需要的模块加到 `external` 来消除报错；这样可能只是把构建失败变成浏览器加载失败。使用跨仓库源码时，先运行 `pluxel source doctor`，再按[源码开发](../development/source-workspaces.md)检查生成的解析配置。
-
-多个构建可以复用同一份 Node 制品编译缓存，但每个发行目录都必须拥有自己的 `artifacts/node` 文件与原生依赖清单。
-缓存目录存在不代表发行目录已经完整；部署时检查最终发行制品。
-
+<span id="capn-web-声明报-ts2574"></span>
 ## Cap’n Web 声明报 `TS2574`
 
-`capnweb@0.12.0` 的 `UnstubifyInner` 将 `Unstubify<Tail>` 展开为元组尾部，但该类型包含 `Promise` 和 placeholder，
-不保证是数组。TypeScript 6/7 在 `skipLibCheck: false` 时会报告两处 `A rest element type must be an array type`。
-这是上游声明问题；这一诊断本身不表示 RPC 运行时失败，但会阻塞严格类型检查。
-
-框架的独立安装检查只容忍这两处精确诊断，使用侧不会继承该例外。需要完整声明检查的项目应等待上游修复，或在自己的
-依赖管理中维护经过验证的类型补丁；框架 workspace 的补丁不会自动随 npm 包传递给使用侧。不要为此替换 RPC 协议。
-
-## Plugin 源码解析失败
-
-Vite/Rolldown lowering 只接受无语法错误的 AST；OXC 能生成恢复 AST 并不代表源码有效。修复报错模块中的语法后重试，
-不要依赖切换 parser 或关闭检查来生成 Plugin 元数据。
+在开启严格类型检查（`skipLibCheck: false`）的 TypeScript 6/7 环境中，`capnweb@0.12.0` 的某些泛型解包可能触发：
+`A rest element type must be an array type (TS2574)`。
+- **说明**：这是上游类型声明的问题，并不影响运行时 RPC 的正常执行。
+- **处理建议**：在工程的 `tsconfig.json` 中设置 `"skipLibCheck": true`，或者在依赖补丁中对该声明打上类型修补。
 
 ## Plugin 看起来是普通 class
 
-**现象：** Plugin 元数据、依赖、`configs.use()` 或 HMR 行为缺失。
-
-Plugin 源码必须经过 Pluxel 的 Vite/Rolldown 转换。不要用普通 TypeScript runner 直接执行 Plugin 文件，也不要把包的构建命令替换成裸 `tsc`。构建使用 `pluxel build`，测试使用 [Pluxel 测试宿主](../plugin-development/testing.md)。
-
-若出现 `plugin_lowering_abi_unsupported`，说明已构建 Plugin 与当前 Core/Host 工具链不属于同一 lowering ABI。升级匹配版本的
-Core、Host 与 Rolldown 后重新构建 Plugin；不要手写 toolchain payload 或把旧产物当作缺省 metadata 继续加载。
+**现象**：定义的 `@Plugin()` 装饰器、`configs.use()` 配置注入或依赖注入无法正常工作。
+- **原因**：Plugin 源码未经过 Pluxel 的专用编译插件（`@pluxel/rolldown` 或 `@pluxel/host-vite`）进行语义降阶。
+- **解决方案**：
+  - 构建插件时请使用 `pluxel build`，避免使用裸 `tsc` 编译；
+  - 运行单元测试时使用 `@pluxel/test` 提供的专用宿主容器；
+  - 在 Vite 中开发时，确保宿主工程配置了 `@pluxel/host-vite` 插件。
 
 ## Plugin 没有启动
 
-Workbench 中“期望运行”表示运行意图，不保证 `init()` 成功。启动失败与依赖阻塞会保留在插件状态中，
-无关操作不会清除；恢复运行或移除节点后清除。到实时日志中查找 `Plugin lifecycle operation failed`，
-可查看插件引用、失败阶段及错误堆栈。启动操作的错误通知保留到手动关闭，“复制通知”包含完整生命周期回执。
-
-若堆栈来自 PGlite 并包含 `Aborted()`，先检查是否有多个宿主共用同一数据目录。停止重复进程后完整重启宿主；
-仅重试插件会复用已经初始化失败的共享数据库。重启仍失败时，保留错误堆栈并检查目录权限和数据库状态，
-不要直接把删除数据库作为默认恢复步骤。
-
-依次检查：
-
-1. Plugin 是否进入宿主的 root/plugin plan；
-2. required dependency 是否都可解析；
-3. 启动或更新操作是否完成，返回结果是否报告失败；
-4. 配置是否通过 schema 校验；
-5. `init()` 是否抛错，或在 signal 取消后仍继续工作。
-
-required dependency 失败会阻止消费者启动。optional provider absent、当前未运行或 start-failed 时 callback 不执行，但不会阻止消费者启动。参见 [Plugin 模型](../plugin-development/model.md)。
-
-Part constructor 的 required dependency 会提升到 owning Plugin graph。它缺失或启动失败时，整个 owner blocked；Part 不会被跳过，
-也没有单独的 blocked/running 状态。dependency override 同样设置在 owning Plugin requirement 上，而不是 `partPath`。
+**排查步骤**：
+1. **检查控制台日志**：在实时日志中搜索 `Plugin lifecycle operation failed`，查看具体的异常堆栈。
+2. **检查必需依赖（Required Dependencies）**：若当前插件依赖了外部服务或插件，确认该依赖已被装配且成功启动。前置依赖启动失败会自动阻塞后续依赖节点的初始化。
+3. **检查配置校验**：确认宿主传入的初始配置符合当前插件声明的 Schema 结构。
+4. **检查 `init()` 方法**：确认初始化生命周期逻辑中是否存在未捕获的 Promise Rejection 或死循环。
 
 ## PluginPart constructor dependency 无法解析
 
-- Part 必须是 concrete direct `PluginPart` subclass，并由普通 `parts.use(PartClass)` field 静态拥有；
-- constructor 参数必须是从 provider 公开 package entry value-import 的具体 Plugin type；type-only import 只用于 optional ref；
-- 同一个 Part constructor 不能重复同一 definition，但 root、不同 Part 或同一 Part class 的多个 occurrence 可以合法共享；
-- 不要在 owner constructor 重复一份 Part requirement，也不要用 `this.host` 充当未声明的 provider locator。
+- `PluginPart` 必须通过宿主插件的 `this.parts.use(PartClass)` 进行静态挂载；
+- Part 构造函数中注入的插件类型，必须从对应的公开包根路径进行 `value-import`。
 
-多个 occurrence 依赖同一 provider 时，graph 与 package metadata 会自动去重；任一来源为 required 时 effective mode 为 required。
-完整标准写法见[使用 PluginPart](../plugin-development/parts.md#依赖写在实际-consumer)。
+## 停止后端口、Timer 或连接仍存在
 
-## 无法从所属插件或测试读取 PluginPart 的 `ctx`、`host` 或 `plugins`
-
-这些字段用于 Part 内部声明能力，不是外部业务 API。`PluginPart.ctx/host/parts/plugins/configs` 与 `BasePlugin.parts/plugins/configs` 是 protected declaration
-DSL，只能在对应 subclass 内使用。Part 不提供 root-owner accessor；不要用类型断言、Context service locator、公开 path/id 或 wrapper
-把这些 composition internals 重新泄露出去。
-
-业务调用为 Part 定义最小 public method/property，测试优先观察 registration、cleanup 与显式业务 projection。需要定位 lifecycle failure
-时读取 `PluginLifecycleErrorInfo.partPath`。Part occurrence Context 不提供 attribution path 或 identity；具体 Context capability type 和
-immediate host class 由作者代码直接声明。完整边界见[只暴露业务 API](../plugin-development/parts.md#只暴露业务-api)。
-
-## Optional provider 不存在但 Part 仍被构造
-
-这是预期行为。`parts.use()` 声明静态 containment；每个 owner generation 都会构造 Part、注入并校验 config，再调用一次
-`init()`。`plugins.use()` 控制的是 callback 内的业务 activation，不控制 Part class 的加载或实例是否存在。保持 Part field
-initializer 无副作用，并把该 integration 的 registration、资源和 cleanup 全部放进 callback。若实现 package 本身可能未安装，
-或需要独立启停与失败状态，应使用 optional Plugin。
-
-## 配置值是 `undefined` 或配置校验失败
-
-- `this.configs.use(schema)` 必须是具体 Plugin 或 direct PluginPart subclass 的顶层普通 field；
-- `this.parts.use(PartClass)` 必须完整占据普通 field initializer；Part 可以声明 required dependency constructor，但不能使用 `@Plugin`；
-- schema 必须是支持的 object 形状，并且每个具体 Plugin/PluginPart class 各自只声明一次；
-- 不要在 constructor 中读取配置；
-- 默认值放进 schema，宿主输入仍要经过同一个 schema normalization。
-
-完整规则见 [配置模型](../plugin-development/configuration.md)。浏览器表单不是信任边界，提交后服务端仍需校验。
-
-## 停止后端口、timer 或连接仍存在
-
-资源创建成功后立即登记到当前 owner effects，或在 `init()` 返回 cleanup。不要只依赖进程退出和测试框架回收。替换 generation、部分初始化失败和正常 stop 都必须走同一条清理路径。
+在插件销毁或重载时遗留资源：
+- **解决方案**：在插件或 Part 中创建的长连接、定时器（`setInterval`）或后台工作任务，应使用 `this.ctx.effects.defer(() => clearInterval(id))` 进行登记，或者在 `init()` 返回清理回调函数。
 
 ## HTTP 返回 404
 
-业务路由与 Workbench View API 使用不同边界：
-
-- 业务 API 直接注册到 generation-scoped `ctx.require(ElysiaApp)`；
-- Elysia 中声明的 path 就是最终产品 path，不会再自动增加 Plugin namespace；
-- Workbench API 只有启用 Workbench、owner publication 生效且用户实际打开 View 时才创建 fresh target；
-- route 必须在 Plugin/Part 的 construction 或 `init()` authoring window 声明；finalization 后 app 已由 Elysia 2 seal；
-- `/__pluxel` 是保留 namespace，跨 owner 的相同 method/path 冲突会使 contribution 启动失败；
-- stop、replacement 或 rollback 后旧 generation 的 handler 不应继续服务。
-
-先查看 commit/lifecycle summary，确认 Plugin 正在 running 且 finalization 没有因 reserved path、route conflict、lazy module 或 compile
-失败。测试时直接请求最终地址，例如 `host.http.fetch(new URL('/orders/1', host.http.origin))`。
-
-当前 Node 生产承载与 Vite 开发承载 已支持并验证基础业务 WebSocket；若 `.ws()` 返回 404，除 route
-publication 外还要确认请求经过真实 Upgrade listener，而不是 `host.http.fetch()`。不要依赖仅参数名不同的 route pattern 自动获得完整冲突诊断；测试应覆盖你的实际 URL 和 Upgrade 请求。
-
-参见 [插件 HTTP](../plugin-development/http.md) 与 [管理工作台](../workbench/index.md)。
-
-## 导入路径存在于源码但 package 无法安装
-
-检查 [Package 与入口矩阵](./package-matrix.md)。`private: true` package 仅供 workspace 使用；`internal` 和未列入 `exports` 的路径不是作者入口。
-
-## 诊断信息
-
-诊断记录应包含 Plugin definition/node address、generation、宿主形态、commit summary、结构化错误 code、owner 日志，以及取消或停止状态。debug 日志只针对已经确定的配置、graph、request 或 lifecycle 边界启用。
+1. **路由声明时机**：插件的路由必须在构造函数或 `init()` 生命周期阶段声明在 `this.ctx.require(ElysiaApp)` 上。在服务完成初始化并开始对外监听后动态追加的路由将无法被生效识别。
+2. **路由路径**：Elysia 中声明的路径即为最终请求路径，框架不会自动拼接插件名作为前缀。
+3. **保留路径冲突**：`/__pluxel` 为系统控制台与管理端点预留命名空间，业务路由请勿以此为前缀。

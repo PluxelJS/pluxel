@@ -3,159 +3,107 @@ title: 把示例项目改成自己的应用
 description: 快速开始之后，定位业务代码、添加依赖、配置动态来源并构建应用。
 ---
 
-完成[快速开始](../getting-started/index.md)后，用本页把 Todo 示例改成自己的应用：找到业务代码、调整配置、增加依赖，再构建可运行的目录。还没有项目时，先完成快速开始的创建和启动步骤。
+完成 [快速开始](../getting-started/index.md) 后，可以通过本指南将生成的 Todo 示例脚手架改造为自己的实际业务系统：熟悉目录职责、调整配置与插件装配、添加第三方依赖并完成生产构建。
 
-## 创建和首次验证
+## 启动与初始化验证
 
-以下命令都在生成项目的根目录运行，先完成[工作区工具链](./workspace-toolchain.md)的 mise 安装和 setup：
+在脚手架工程根目录下执行：
 
 ```sh
 vp run verify
 vp run dev
 ```
 
-`verify` 成功后，通过 `pitchfork logs app` 查看 `Application` 地址并打开。创建一条 Todo，再完成或删除它；这些操作经过真实 Plugin HTTP 路由。管理界面使用同一地址下的 `/__pluxel/workbench`。
+启动完成后，通过 `pitchfork logs app` 查看本地访问地址并在浏览器中打开。应用前端访问根路径，管理控制台访问 `/__pluxel/workbench`。
 
-生成项目暂时保留 `@example/*` 包名，根 `package.json` 没有 `name`。先保持示例可运行，确定自己的业务划分后再一起修改包名、依赖引用和导入。
+## 代码目录与功能映射
 
-## 按要修改的功能找文件
+按业务需求查找对应的修改入口：
 
-| 要做什么                 | 从哪里改                                         | 如何确认                              |
-| ------------------------ | ------------------------------------------------ | ------------------------------------- |
-| 修改 Todo 规则           | `packages/domain/`                               | 运行该包的普通单元测试                |
-| 修改状态、配置或审计集成 | `plugins/todo/src/index.ts`                      | 运行 Todo 插件测试，再通过页面操作    |
-| 新增 HTTP 接口           | `plugins/http/src/index.ts`                      | 用 服务 test host 请求最终路径        |
-| 修改产品页面             | `host/web/src/client/`                           | 打开 Application 地址                 |
-| 改启动插件或初始配置     | `host/src/app.ts`、`host/src/runtime-state.ts`   | 检查启动结果和 Workbench 中的当前状态 |
-| 新增独立插件             | [第一个插件](../getting-started/first-plugin.md) | 接入宿主后验证业务结果                |
+| 需求场景 | 修改目标路径 | 验证与调试方式 |
+| :--- | :--- | :--- |
+| 调整核心领域实体与业务逻辑 | `packages/domain/` | 运行该子包的 Vitest 单元测试 |
+| 调整业务插件的状态、配置或审计 | `plugins/todo/src/index.ts` | 运行插件集成测试，并在前端界面中操作验证 |
+| 增删或修改 HTTP API 接口 | `plugins/http/src/index.ts` | 编写基于 `createTestHost()` 的 HTTP 接口测试 |
+| 修改前端界面与交互 | `host/web/src/client/` | 在浏览器中直接查看热更新后的界面 |
+| 调整自启插件与应用初始配置 | `host/src/app.ts` 与 `host/src/runtime-state.ts` | 检查应用启动日志并在控制台确认生效状态 |
+| 新增独立的业务插件 | 参考 [编写第一个插件](../getting-started/first-plugin.md) | 装配到宿主清单中进行验证 |
 
-框架文档可用 `vp exec pluxel docs [path]` 定位；项目自己的 `docs/` 留给业务说明。
-
-## 目录与依赖方向
+## 工程目录结构
 
 ```text
-packages/domain/            @example/domain，纯函数与普通 Vitest
-plugins/audit/              @example/audit-plugin，可选 provider
-plugins/todo/               config + domain + optional AuditPlugin
-plugins/http/               constructor required TodoPlugin + validated HTTP route
+packages/domain/            @example/domain：纯业务领域逻辑，无框架依赖
+plugins/audit/              @example/audit-plugin：可选的审计日志插件
+plugins/todo/               Todo 核心业务插件（管理状态与配置，可选依赖审计）
+plugins/http/               Todo HTTP API 路由插件（注入 TodoPlugin 并暴露接口）
 host/
-  src/app.ts                开发与生产应用声明：固定插件 + 可选 sources
-  src/runtime-state.ts      auto-start/config snapshot
-  vite.config.ts            指向 web/ 的唯一 Vite config
-  tsdown.config.ts          pluxel({ delivery: 'modules' }) + Web public copy
-  web/                      @example/web workspace package，React client 与前端专属依赖
-mise.toml                   工具版本、环境和 PATH
-vite.config.ts              原生任务图与 lint / fmt 接入
-oxlint.config.ts            lint 规则
-oxfmt.config.ts             fmt 规则
-pitchfork.toml              app 开发服务、端口与就绪检查
-hk.pkl                      提交检查与修复规则
-pncat.config.ts             catalog 分组和迁移的唯一策略入口
+  src/app.ts                开发与生产共用的宿主装配文件（声明插件列表与数据来源）
+  src/runtime-state.ts      插件自启策略与初始配置快照
+  vite.config.ts            前端 Vite 开发配置
+  tsdown.config.ts          生产构建打包配置
+  web/                      前端 React 应用工程与 UI 组件
+mise.toml                   工具链版本管理
+vite.config.ts              全仓 Vite Task 任务拓扑与 Lint/Fmt 规范
+pitchfork.toml              后台服务托管配置
+pncat.config.ts             依赖版本分组管理策略
 ```
 
-核心方向是：
+整个系统的调用流向遵循单向清晰的分层：
+前端客户端请求单一 Origin，API 路由分发给 `HttpPlugin`，再调用 `TodoPlugin` 执行具体领域动作。
 
-```text
-one Vite origin
-  ├─ / + browser modules -> web
-  └─ /api/example/todos  -> HttpPlugin -> TodoPlugin -> domain
-                                             |
-                                             +-- optional -> AuditPlugin
-```
+## 开发与生产部署
 
-`@example/domain` 不导入 Pluxel；需要 Context、config、依赖图或 lifecycle 的代码留在 Plugin。HTTP 对 Todo 的必需
-peer dependency 与 constructor import 对应 required edge。Todo 对 Audit 使用 optional peer dependency、
-`peerDependenciesMeta.optional` 和非导出的 module-level `definePluginRef<AuditPlugin>()`，provider 不存在时仍能启动。
-
-## 开发与部署
-
-一个 `defineHostApplication(factory)` 声明同时用于开发和生产。`@pluxel/services/preset` 的 `servicesPreset()` 选择官方服务，`@pluxel/services/vite` 的 `vitePreset()` 接上已安装服务的开发附件，`@pluxel/rolldown` 的 `pluxel()` 选择应用交付并编译配套制品；不需要逐项维护 Node、HTTP、Workbench 的开发接线。共享身份由 Native 启动的 `sharedPackages` 或 Vite 的 singleton 绑定；完整契约见[组合 Host 服务](../host/services.md)。
+宿主定义 `defineHostApplication` 同时适用于本地开发与生产运行：
 
 ```sh
+# 启动本地开发服务
 vp run dev
+
+# 执行全仓构建
 vp run build
+
+# 启动生产构建产物
 vp run @example/host#start
 ```
 
-`vp run build` 生成 modules 交付的 `host/dist/`，`vp run @example/host#start` 通过 fresh Node launcher 从 `host/dist/app.mjs` 启动；`vp run @example/host#start:vite` 使用独立生产 Vite 配置。启动契约见[Host 配置](../host/configuration.md#生产构建)。开发与生产使用同一份 `host/src/app.ts`，因此插件列表、启动策略和配置声明不需要维护两份。
+构建流程会依次打包前端静态资源、编译服务端模块并将静态页面输出至 `host/dist/public`。
 
-构建先生成 `host/web/dist`，再构建服务端并把页面复制到 `host/dist/public`，最后创建包含全部文件的发行清单。扩展构建时，把额外的静态文件写入安排在清单创建之前；详见[发行物](./distribution.md)。
+<span id="添加依赖"></span>
+## 添加与管理依赖
 
-Workbench 默认包含在构建结果中；需要临时关闭开发管理界面时，先停止托管服务，再直接启动：
+Monorepo 中的各个包应各自显式声明直接使用的依赖：
+- `host/web/` 维护纯前端依赖（React、组件库等）；
+- `host/` 维护服务端运行时与插件宿主依赖；
+- 插件包将核心运行时（如 `@pluxel/core`）声明为 `peerDependencies`，实现依赖放入 `dependencies`，测试辅助包放入 `devDependencies`。
 
-```sh
-pitchfork stop app
-PLUXEL_WORKBENCH=false vp run @example/host#dev:server
-```
-
-### 打开页面与直接运行 Vite
-
-`vp run dev` 通过 Pitchfork 启动 `app` 服务，使用 `pitchfork logs app` 查看 `Application` 与 `Workbench` 地址。命令结束后服务继续运行；用 `pitchfork stop app` 停止。稳定公开地址、端口分配和换用其他反代的输入契约见[工作区工具链](./workspace-toolchain.md#端口与公开地址)。
-
-需要直接调试 Vite 时先停止 `app`，再运行 `vp run @example/host#dev:server`。Vite root 为 `host/web/`：Todo API `/api/example/todos` 由插件处理，页面、模块和静态文件由同一 Vite 进程提供。生产应用同样从一个 origin 提供 API 与 `public/` 页面。
-
-### 添加依赖
-
-每个 workspace package 声明自己直接使用的依赖。`host/web/` 声明纯前端依赖；`host/` 声明运行时、插件，以及宿主需要共享的 React。两者的 React 版本来自同一 catalog，不依赖隐式 hoist。
-
-CLI 内联的 pncat 集中管理 `pluxel`、`frontend`、`backend`、`test`、`tooling` 分组版本：
+使用内建的 pncat 工具维护依赖版本一致性：
 
 ```sh
+# 添加依赖到 catalog
 vp exec pluxel pncat add <package>
+
+# 迁移旧依赖并清理
 vp exec pluxel pncat migrate
 vp exec pluxel workspace sync
 vp exec pluxel pncat clean
+
+# 检查工作区依赖治理规范
 vp run governance:check
 ```
 
-分别用于添加、迁移声明、同步版本、清理和核对依赖。同步只改 workspace catalog；完整边界见[统一外部依赖](./source-workspaces.md#统一外部依赖)。使用 pncat 更新 catalog 与包引用，不要直接写第三方裸版本；新引入的依赖族在 `pncat.config.ts` 中定义分组规则。内部依赖保留 `workspace:`，peer dependency 保留包自己的兼容契约。
+## 测试分层
 
-插件将 Core、消费的服务或 Plugin provider 声明为 `peerDependencies`，并用 `devDependencies` 支持本包开发；validation 等实现依赖留在 `dependencies`。Vitest、TypeScript、`@pluxel/test` 和使用的测试宿主包属于实际使用它们的包的 `devDependencies`；具体入口见[测试插件](../plugin-development/testing.md)。
+工程提供了不同层次的测试方案：
+- **纯逻辑测试**：在 `packages/domain/tests` 中使用纯 Vitest 进行无框架的快速测试。
+- **插件行为测试**：使用 `@pluxel/test` 提供的 `createTestHost()` 启动内存宿主，验证依赖装配、生命周期回调与配置更新。
+- **接口测试**：为测试宿主安装 HTTP 服务，直接通过 `host.http.fetch()` 发起内存请求断言响应。
 
-## 可选动态来源
+## 新增可发布的独立插件包
 
-`host/src/app.ts` 在固定 Plugin imports 之外声明 `.pluxel/managed-plugins/entries/*.mjs`；默认数据目录相对 `startup.deployment.root ?? startup.root`。
-`PLUXEL_DATA_ROOT` 可以统一覆盖动态来源与 FS 的数据根目录；部署时使用 distribution root 外的绝对路径。
-向这个目录原子发布预编译 ESM 入口，Native 在下次 fresh 进程启动时扫描接纳，Vite 会话持续观察并更新同一个 catalog；是否启动由正常运行策略决定。
-这个示例不包含 package 下载或 market 管理。只需要固定插件时删除 `sources` 即可，Vite 配置和命令都不变。
-
-## 测试层次
-
-- `packages/domain/tests` 是不启动 Pluxel 的普通 Vitest。
-- `plugins/audit/tests` 使用 `@pluxel/test` 的 `createTestHost()` 与立即完成的 `start/stop`。
-- `plugins/todo/tests` 使用统一 host 的 `initialConfig`，验证状态操作及 optional provider 存在与缺失两种情况。
-- `plugins/http/tests` 使用 `@pluxel/test` 的 `createTestHost({ services: [elysia()] })`、`await using` 和 `host.http.fetch()` 验证 required edge、
-  HTTP schema、mutation 与错误状态。
-- `@pluxel/test/vitest` 对 Plugin source 执行与 build 一致的 semantic lowering 和 lint guard。
-
-统一使用 `createTestHost()`，只安装本次需要的 HTTP、Workbench 或 Vault 等服务。常用操作会立即提交；
-多个变化必须共享边界时才使用同步 `commit(change => ...)`。首次配置使用 `initialConfig`，运行期更新使用
-`host.config.patch()`。
-
-## 常用命令
-
-```sh
-vp run dev
-vp run build
-vp run test
-vp check --no-fmt --no-lint
-vp lint
-vp fmt --check
-vp exec pluxel workspace sync --check
-vp run governance:check
-vp run verify
-```
-
-`vp run verify` 委托原生 `workspace:verify` 门禁，覆盖 governance、format、lint，以及 Vite Task 任务图中的 typecheck、test 和 build。CI 直接调用原生聚合任务，详见[工作区工具链](./workspace-toolchain.md#构建检查与任务图)。
-
-## 创建自己的 Plugin package
-
-starter root 安装 `@pluxel/cli` 是为了后续工具命令，不代表 create package 依赖 CLI。在 workspace 中新增一个可独立
-发布的 Plugin：
+在工作区中直接生成符合规范的新插件模板：
 
 ```sh
 vp exec pluxel new --name @your-scope/your-plugin plugins
 ```
 
-CLI 会在 `plugins/` 下生成新包。Plugin package 的发布形状见
-[开发和发布插件包](./plugin-package.md)。
+CLI 会在 `plugins/` 目录下自动生成包含标准清单、TypeScript 配置与测试设施的新插件骨架。

@@ -1,42 +1,32 @@
 ---
 title: 契约、数据与资源
-description: 区分本地能力、RPC 数据和资源引用，让插件作者只维护必要的公共契约。
+description: 区分本地插件方法、RPC 传输数据与远程资源引用，规范接口契约与生命周期归属。
 ---
 
-设计 API 时，先回答调用方要读取一个事实，还是取得一项可持续使用的能力。前者返回 snapshot 或操作回执，后者返回有明确生命周期的 handle；不必让每个业务实体都变成远端对象。
-
-| 要决定什么             | 规则位置                                                                              |
-| ---------------------- | ------------------------------------------------------------------------------------- |
-| 本地方法还是浏览器 API | [本地边界](#本地插件-api-按领域设计)、[页面边界](#页面-api-只公开客户端需要的能力)    |
-| 返回数据、回执还是资源 | [方法命名](#rpc-方法名表达返回值所有权)、[数据与资源](#数据与资源分别持有)            |
-| 谁创建、共享、释放引用 | [作用域持有](#共享-rpc-能力按作用域持有)                                              |
-| 哪一层校验和授权       | [生产者边界](#生产者负责-dto-边界)                                                    |
-| 错误如何让调用方恢复   | [本地 Result](#本地插件可选-result-契约)、[签名之外的契约](#方法签名之外还要说明什么) |
+在设计插件公开接口或 Workbench 扩展视图时，首要的是区分两类返回值：
+- **纯数据（Data / Snapshot）**：只包含业务快照或操作回执，通常可以安全序列化、缓存并渲染在界面上；
+- **资源能力（Capability / Resource Handle）**：代表一个可被调用的远程对象、事件订阅或长任务句柄，具有明确的生命周期和释放责任。
 
 ## 选择调用边界
 
-| 调用方                   | 使用方式                                                      | 需要保证的边界                               |
-| ------------------------ | ------------------------------------------------------------- | -------------------------------------------- |
-| 同一 host 的其他 Plugin  | constructor dependency，调用领域方法                          | caller 归属、generation 撤回、返回对象所有权 |
-| Workbench 页面           | fresh `RpcTarget` + View/Attachment                           | 当前授权、输入校验、per-open 资源清理        |
-| 简单管理内容             | Content 的 data/action                                        | 有界展示数据、服务端表单校验                 |
-| 独立业务 Web、外部客户端 | 自己的 HTTP application；确有需要时挂载独立 Cap’n Web session | 自己的认证、授权、连接与错误契约             |
+| 调用场景 | 通信机制 | 核心关注点 |
+| --- | --- | --- |
+| 宿主内插件之间互相调用 | 构造函数依赖注入，直接调用领域方法 | 强类型实例、插件重启时代理视图自动失效 |
+| Workbench 前端调用插件 | 基于 Cap'n Web 的 RPC Target 接口 | 输入参数校验、权限鉴权、页面关闭时自动清理 |
+| 独立外部客户端访问 | HTTP 路由（Elysia）或 WebSocket 通道 | 自定义认证、标准 JSON 响应与错误码规范 |
 
-Plugin 间本地调用不需要绕经 Workbench 或先序列化成 RPC DTO。业务能力应能在 Workbench 关闭时独立工作。DTO 是可传输的数据快照；capability 是允许调用某项能力的对象引用，两者的寿命不同。
+插件之间的本地调用无需经过 RPC 封装或 DTO 序列化，直接调用方法即可；仅当通过 Workbench 暴露给前端时，才需要将其投影为符合 DTO 规范的数据。
 
 ## 本地插件 API 按领域设计
 
-同一 host 中，required dependency 通过 constructor 声明。方法使用领域词汇，按需要返回普通数据或具有明确撤回语义的对象，不为本地调用复制一套 RPC 方法和 DTO。
+同一宿主中的插件调用应直接使用领域方法。方法返回普通数据或具有明确关闭语义的对象：
 
-只读 TypeScript 类型不会隔离共享可变对象。返回快照时，由生产者保证调用方不能通过它意外修改内部状态；返回 handle 时，说明谁拥有资源、停止或 replacement 后还能否调用。需要持续使用的对象不能只靠最初取得它时的一次可用性检查。
-
-跨 Plugin 的可调用入口使用 prototype method；不要用捕获原始实例的 function-valued field 代替。具体 caller 与生命周期规则见[插件模型](./model.md)。
+- 返回快照对象时，建议返回浅冻结或不可变数据，避免调用方修改影响内部状态；
+- 返回连接句柄时，应明确说明资源由谁负责关闭，并在插件停止时提供失效保护。
 
 ## 页面 API 只公开客户端需要的能力
 
-Workbench 的默认写法把 browser-safe DTO、API interface 和 definition 放在 `workbench.ts`。服务端 target 实现这个 interface；客户端通过 exact descriptor 获得对应类型，不再手写第二份 client interface。
-
-沿用 [View 教程](../workbench/view.md)中的 `OrdersSnapshot`、`OrdersApi` 和 `OrdersWorkbench`，查询直接调用 API：
+面向 Workbench 前端暴露的接口，通常将 DTO 定义、接口描述与路由放置在 `workbench.ts` 中。这样前端与服务端能够共享同一份 TypeScript 类型契约：
 
 ```ts
 import { createWorkbenchRenderer } from '@pluxel/workbench/react'
@@ -50,62 +40,33 @@ export const ordersQuery = overviewScope.query(({ api }) => ({
 }))
 ```
 
-普通 scope query/mutation 已经处理结果边界，作者不需要在其中再包一次 `consumeWorkbenchValue()`。只有 UI 需要消费写入后的事实时才返回回执或快照；只需刷新查询时，mutation 可以返回 `void` 并声明失效范围。
+## RPC 方法名表达返回值所有权
 
-一个公开类型应对应一个真实兼容性承诺。不要直接把数据库 row、SDK 实例或 Plugin implementation 当作浏览器契约。只有出现真实的第二客户端时，才把共用 contract 提取到中立模块或独立 subpath；`import type` 避免运行时加载，但仍需保证公开声明的依赖适合客户端消费。
+为了让前端开发者仅凭方法名就能辨别返回的是纯数据还是可调用对象，Workbench 的 RPC 接口遵循以下命名规范：
 
-## 本地插件可选 Result 契约
+| 方法命名规范 | 返回值类型 | 示例 |
+| --- | --- | --- |
+| **以 `*Dto` 结尾** | 纯数据（快照、列表、分页、写入回执） | `snapshotDto()`、`listDto(query)`、`updateDto(params)` |
+| **标准动词（无 DTO 后缀）** | 无返回值命令操作 | `refresh()`、`remove(id)` |
+| **标准动词（无 DTO 后缀）** | 返回可调用的 Capability、订阅句柄或长任务 | `watch(observer)`、`openSession(config)` |
 
-跨 Plugin 公开可预期失败时，可以共同从 `@pluxel/core/better-result` 导入。该子入口直接再导出
-上游的全部命名导出与类型；安装、完整导出范围、同步/异步组合和错误处理见
-[better-result 共享入口](./better-result.md)。
-
-`Result` 实例只用于本地 API。通过 Workbench、Worker 或 JSON 传输时，由生产者投影为经过校验的普通 DTO，
-消费者按领域协议恢复；部分成功、已保存未应用等状态继续保留各自语义。
-仅将调用方需要按类型恢复的预期业务失败放进错误分支。用户可以修正的输入错误可作为领域失败；上游响应
-schema 损坏、未知服务故障和 Plugin 生命周期失败仍按各自契约传播。
-具体选择与[官方插件示例索引](./better-result.md#官方插件示例)见 Better Result 指南。
+例如，`refreshDto(): Promise<OrdersSnapshot>` 表示刷新数据并返回最新的订单快照；而 `refresh(): Promise<void>` 则表示触发后台刷新并等待操作完成。
 
 ## 共享 RPC 能力按作用域持有
 
-Workbench 已经为每次打开页面取得所需 root。`scope.useWorkbench()`、query 和 mutation factory 借用同一组引用，不执行获取 RPC，也不调用 `dup()`。View 使用 `api`，Attachment 使用 `provider` 和可选 `consumer`；这里的 `provider` 表示 Attachment 的能力提供方，不是需要作者再创建的 React Provider。
+在前端页面中，每次打开 View 或 Attachment 时，底层都会建立一个对应的生命周期作用域。在组件内直接消费此作用域提供的能力即可：
 
-组件需要手动使用能力时，直接写 `const { api } = overviewScope.useWorkbench()`；普通读写优先声明 scope query/mutation，统一处理结果、订阅和查询失效。页面组件默认消费 scope/resource，不从 host 或 session 根重新导航，也不创建自己的连接。`host` 提供宿主交互；本地服务端 Plugin 之间仍通过 dependency 调用领域能力，不绕经浏览器 RPC。
+```ts
+const { api } = overviewScope.useWorkbench()
+```
 
-| 边界                          | 持有与共享规则                                                       |
-| ----------------------------- | -------------------------------------------------------------------- |
-| document session              | Shell 持有连接、认证与顶层 capability                                |
-| 单次 View/Attachment open     | opened handle 持有 root；scope 向本页面所有组件借出同一引用          |
-| 多组件长期共用的子 capability | 在最近共同父级设置一个领域 owner，获取一次，用 Context 或 props 借出 |
-| 单次任务独占的子 capability   | 任务内取得并释放，依赖它的异步调用完成后再退出作用域                 |
-| DTO 查询                      | resource cache 只保存数据，不承担 capability 生命周期                |
-
-不要按服务端对象层级机械增加 Provider。只有某个 scope 确实绑定身份、资源范围或独立生命周期时才建立相应 owner；简单查询直接传业务参数。不同 open 的 root 与 cache 保持独立，即使 descriptor 相同也不建立全局 stub 池。
-
-借用者不释放共享引用。`dup()` 只用于确实需要独立持有的引用，并由新 owner 释放；它不会延长服务端授权或 Plugin generation。子 owner 在 scope 变化或页面关闭时释放自己取得的引用，迟到的获取结果只释放、不发布。共享 capability 不等于调用自动去重；重复 DTO 读取由同一 resource 的 query key 管理。
-
-## RPC 方法名表达返回值所有权
-
-纯数据 RPC 方法统一使用 `*Dto` 后缀，并在 interface 和 target 实现中写出返回类型。名称描述返回值契约，不表示这个方法只读；返回纯数据回执的写操作也使用后缀。
-
-| 方法边界与返回值                                             | 命名                          | 示例                                                         |
-| ------------------------------------------------------------ | ----------------------------- | ------------------------------------------------------------ |
-| RPC 返回纯数据，包括 primitive、snapshot、分页结果或操作回执 | `*Dto`                        | `snapshotDto()`、`listDto(input)`、`updateDto(input)`        |
-| RPC 命令返回 `void`                                          | 领域动词                      | `refresh()`、`remove(id)`                                    |
-| RPC 返回 capability、订阅 handle 或混合数据与 capability     | 领域动词，不加 `Dto`          | `watch(observer)`、`openEntry(input)`                        |
-| 本地 Plugin 领域方法、客户端 facade 或已打开的 handle        | 领域词汇，不随 transport 改名 | `plugin.snapshot()`、`client.plugins.list()`、`opened.run()` |
-
-例如 `refreshDto(): Promise<OrdersSnapshot>` 返回刷新后的事实，`refresh(): Promise<void>` 只承诺操作完成。两者按实际消费需求选择，不为统一命名额外制造回执。纯数据 Result union 仍是 DTO；只要其中一个分支带 capability，整体就是资源或混合结果。
-
-Framework raw RPC 同样遵守这项规则：`layoutDto()` 返回数据，`openEntry()` 返回含 root 的资源。`*Dto` 不承诺“无副作用”：Content 的 `subscribeDto()` 注册 observer，但订阅寿命属于 root，返回值仍是纯数据。Content 的其余 raw 方法和本地 handle 名称见 [Content](../workbench/content.md#markdown-与字段规则)；Management 消费后的本地 facade 继续使用领域名称。
+页面内的多个组件共享同一个 `api` 引用，页面关闭时底层会自动向服务端注销对应的 RPC 会话，开发者无需手动调用释放逻辑。
 
 ## 生产者负责 DTO 边界
 
-服务端 target 依次完成输入的领域校验、基于可信 principal 与当前状态的授权、领域操作，以及面向客户端的字段投影。不要直接返回数据库 row、Plugin、Context 或供应商对象。标注返回类型可以检查已知字段；运行时输入和可传输性仍要验证。
+服务端在向前端返回数据前，应当完成输入校验、鉴权和数据字段投影。避免直接将数据库原始 ORM 实体或带有敏感私有字段的对象直接传给客户端。
 
-`RpcTarget` 的原型方法和 getter 属于远端可访问表面，TypeScript `private` 不会在运行时隐藏它们。Target 的内部辅助方法使用 `#private` 或移到普通领域服务。此规则只针对 RPC target；Plugin 类受 caller facade 约束，不能照搬 `#private`，遵循[插件模型](./model.md)。
-
-已经是明确 DTO 的领域快照可以直接复用；只在需要隐藏字段或转换领域表示时建立投影。返回前调用 `@pluxel/workbench/server` 的 `assertWorkbenchDto(dto)`，验证完整数据树和大小、深度预算。该函数不复制、不冻结、不释放资源，也不改变对象身份；它不替代领域 schema、授权或隐私字段选择，不会替调用方删除 capability。异步领域结果先 `await`，再校验实际 DTO。
+可以使用 `@pluxel/workbench/server` 提供的 `assertWorkbenchDto` 校验数据是否符合传输要求：
 
 ```ts
 import { assertWorkbenchDto } from '@pluxel/workbench/server'
@@ -121,30 +82,10 @@ function projectOrdersDto(snapshot: OrdersSnapshot): OrdersSnapshot {
 }
 ```
 
-生产者校验负责保证发出的值符合 DTO 承诺；Cap’n Web 负责 transport 编解码；客户端消费边界负责接管解码后的对象并冻结以供缓存。它们分别拥有不同责任，不需要再增加 `copyDto()` 层。
-
 ## 数据与资源分别持有
 
-| 结果                                  | 消费方式                                | 清理责任                                         |
-| ------------------------------------- | --------------------------------------- | ------------------------------------------------ |
-| scope query/mutation 的 portable 数据 | 页面读取本地结果，不缓存 stub           | renderer boundary 处理 transport result          |
-| View/Attachment root                  | 通过 scope 或对应低层 Hook 借用         | 打开页面的 owner 释放，组件不自行释放借来的 root |
-| 订阅、child capability、长任务 handle | 显式持有，按领域契约使用                | 获取者或接管它的 owner 清理                      |
-| 混合数据与 capability 的结果          | 拆分数据和资源，明确 ownership transfer | 不能整体当作普通查询数据缓存                     |
+在处理返回结果时，区分纯数据与资源引用的生命周期：
 
-当前 scope 的数据边界接管返回值所有权，校验完整数据树后原地深冻结，移除并释放 top-level transport result 的元数据；不会再复制 RPC 已解码的数据。它不是任意 Cap’n Web 值的缓存：显式 `undefined` 字段、非枚举业务字段、class、accessor、cycle、binary 和 capability 都不属于 portable 查询结果。省略 optional 字段与写入 `undefined` 字段不同。
-
-如果 query/mutation 返回本地对象而非 RPC 结果，也会转移整个数据树的所有权；返回新构造或已不可变的快照，不要返回其他代码仍会修改的借用对象。表单需要独立草稿时，按业务字段建立草稿。
-
-手动读取 RPC、订阅和资源型返回值的操作方式以[页面资源](../workbench/renderer-resources.md)为准。`consumeWorkbenchValue()` 处理纯数据并返回 `WorkbenchSnapshot<T>`。它接管传入的对象或 PromiseLike 结果，保留数据对象身份，并在成功或失败时清理结果；调用方不再单独 dispose 同一结果。它不把 capability 转成数据。不要把通用的 `JSON.stringify()` / `structuredClone()` 当作 RPC ownership 转移机制。
-
-## 方法签名之外还要说明什么
-
-为一个公开方法写文档时，补充调用方无法从类型推导的内容即可：
-
-- 返回的是 snapshot、live handle 还是写入回执；是否有版本、新鲜度或部分成功语义。
-- 输入在哪里验证，身份与 scope 从何而来，实际执行时如何授权。
-- 资源由谁创建、借用和释放，stop、replacement、关闭页面后如何失效。
-- 哪些失败可恢复；取消或断线后，写入是否可能已提交。
-
-Cap’n Web 负责远端引用和调用，不替业务决定授权、事务和恢复。不要假设自定义 Error 的字段会自动穿过 transport；需要客户端分支处理的错误必须验证实际接收结果。已有领域 Result 或 receipt 若承载部分成功、冲突或未知结果，也不能为了统一返回风格丢掉这些信息。
+- **纯数据（DTO）**：可以直接在 React Query 或状态库中缓存，渲染完毕后由垃圾回收机制自然处理；
+- **长连接与订阅句柄**：必须由显式的所属组件持有，并在组件卸载（如 `useEffect` 清理函数）时主动注销；
+- **混合结果**：如果一次调用既返回业务数据又返回可调用的句柄，应在接收时解构并分别管理，不可将包含方法的句柄整体存入通用缓存中。

@@ -1,15 +1,20 @@
 ---
-title: 插件状态
-description: 在每个 Plugin node 的原生 TinyBase Store 中保存偏好与有界业务记录。
+title: 插件持久化状态（TinyBase）
+description: 使用内建的 TinyBase Store 保存用户偏好与轻量业务记录，支持自动快照与跨重启恢复。
 ---
 
-用户偏好、开关和小型结构化业务记录使用 Host 托管的 TinyBase。部署配置继续用 [`configs.use()`](./configuration.md)，凭据用 [Vault](./vault.md)，文件和二进制用 [FS](./fs.md)。大量记录、复杂 SQL 或多进程事务使用 [SQL 数据库](./database.md)，可选择 Services 托管或应用完全自管。
+对于用户偏好设置、开关标记或轻量业务记录，Pluxel 内置了对 [TinyBase](https://tinybase.org/) 响应式内存数据存储的支持。每个插件节点拥有专属的 Store，修改会自动由宿主生成快照并持久化到文件后端。
 
-每个 Core 与 Host 都内建 FS 和 TinyBase；插件直接使用固定的 `ctx.tinybase`，无需安装服务。[后端选择](../host/configuration.md#选择文件后端)决定是否跨 Host 保留数据。插件不选择存储目录、driver 或持久策略。
+> [!TIP]
+> **状态选型建议**
+> - **应用静态/环境配置**：使用 [`this.configs.use()`](./configuration.md)；
+> - **私密密钥与密码**：使用 [Vault 凭据服务](./vault.md)；
+> - **用户轻量状态与偏好**：使用本文介绍的 `ctx.tinybase`；
+> - **大型关系型数据与高频事务**：使用 [SQL 数据库服务](./database.md)。
 
 ## 打开并使用原生 Store
 
-以下是完整的 Plugin 示例。初始化失败沿现有 init 失败路径传播；Store 连接和关闭排空由 Host 管理：
+在插件的 `init()` 阶段，通过 `this.ctx.tinybase.open()` 打开托管的 Store：
 
 ```ts twoslash
 // @filename: preferences.ts
@@ -19,12 +24,13 @@ import * as v from 'valibot'
 
 const Preference = v.object({ theme: v.picklist(['system', 'light', 'dark']) })
 
-@Plugin()
+@Plugin({ displayName: 'Preferences' })
 export class PreferencesPlugin extends BasePlugin {
 	private readonly state = this.ctx.tinybase
 	private store!: Store
 
 	protected override async init(): Promise<void> {
+		// 1. 打开或创建 Store，并提供初始值快照
 		this.store = await this.state.open(createStore().setValues({ theme: 'system' }))
 		v.parse(Preference, this.store.getValues())
 	}
@@ -36,56 +42,34 @@ export class PreferencesPlugin extends BasePlugin {
 	async setTheme(input: unknown): Promise<void> {
 		const preference = v.parse(Preference, input)
 		this.store.setValue('theme', preference.theme)
+
+		// 2. 显式等待持久化刷新确认
 		await this.state.flush()
 	}
 }
 ```
 
-`open()` 不传参数时由 Core 创建普通 Store；传入时返回同一 native 实例。也可在 open 前使用原生 `setTablesSchema()`、`setValuesSchema()` 或 [Valibot schematizer](https://tinybase.org/api/schematizers/schematizer-valibot/) 配置 schema。Valibot 仍从上游直接导入，不需要第二套 Pluxel 校验接口。
+### 自动持久化与快照刷新
 
-open 完成前不使用或公开该 Store；成功后创建原生 Queries/listeners，并在 `ctx.effects` 中登记相应 `destroy()` 或 `delListener()`。不要给托管 Store 添加 Persister 或 Synchronizer。原生临时 Store 不需交给 Host。
+- **自动持久化**：宿主会在插件更新数据后自动生成快照并安排写入，在插件卸载时会确保所有在途数据安全排空（Drain）。
+- **显式确认（`flush`）**：在对外提供的方法中，如果需要等待数据真正落盘并返回调用回执，可以 `await this.state.flush()`。
 
-每个 Plugin node 一份 Store，Part 共用 owning Plugin 的实例；fork 的数据独立。重复或并发 open 共用恢复结果，同代换入另一 Store 明确失败。实例必须新建且无已挂载监听或未结束事务，不可跨 Host/generation 重用；不接受 MergeableStore。
+## 单元测试中的状态验证
 
-## 初值、保存与确认
-
-只有快照不存在时才使用初值；已有快照替换全部 Tables/Values，合法空状态也会保留。恢复会检查格式、owner、内容和原生 schema 的保真结果；损坏或 schema 丢失字段时初始化失败，源文件不被重写。业务领域校验在 open 后、公开能力前完成。
-
-原生 mutation 同步改变内存和订阅。Host 在 Plugin 成功发布后自动保存完整 transaction，停止时排空。初始化失败不自动写回候选；init 内显式 `await state.flush()` 则是真实提交，即使随后 init 失败也不会撤销。
-
-需要向调用者确认保存时，await `flush()` 并传播失败。它等待调用时最后一个完整事务被后端确认，可与更新快照合并；不保证每个中间状态落盘，也不回滚已经可见的内存 mutation。未 open、未结束事务、已故障或已撤回时拒绝。没有持久确认承诺的同步方法可使用普通 mutation，由 Host autosave 与关闭排空。
-
-如果领域要求“保存前不可见”，在领域内部区分 candidate 与 applied view，并串行执行保存及发布；不能把同步 native Store 当作提交后才可见的事务。Wretch 的[管理设置](../plugins/wretch.md)使用这条契约。
-
-## 外部文件修改
-
-托管 Store 会定期读取保存的文件。其他进程或外部编辑器更新了实际共享后端中的快照后，Core 校验格式、owner 和 schema，再替换内存内容；现有 Queries 和 listeners 可观察到更新。外部加载不触发原样保存，也不需要另装 Persister 或 Synchronizer。
-
-无效文件保留原内容，当前 Store 保持最后一次有效状态并报告错误；修正后的新内容可继续加载。删除文件按空 Tables/Values 加载，仍需通过当前 schema 校验，不恢复调用方初始值，也不自动重建文件。保存与刷新都受后端的可见性和 IO 耗时影响，不保证即时看到每个中间版本。
-
-保存采用完整快照替换；多个实例同时修改同一文件可能覆盖彼此的变化。`flush()` 只确认本次写入，不保证它不会被其他实例覆盖，也不提供跨实例事务或冲突合并。需要共享并发修改不丢失的数据使用[数据库](./database.md)。共享后端由 [Host 配置](../host/configuration.md#共享文件与外部修改)统一选择。
-
-## 失败、容量与依赖
-
-快照只接受 string、boolean 和有限 number；嵌套记录可由领域编码为 string，不能把任意对象直接作为 cell。Host 默认每份完整快照最多 8 MiB，可通过 Host 的 `runtime.tinybase.maxSnapshotBytes` 调整。超限或 IO 错误可从 `flush()`、启动和关闭报告观察，Host 内部诊断可查询 owner、revision 与失败状态。
-
-快照和 writer 失败使用公开的 `TinyBaseError`，例如 `SNAPSHOT_INVALID`、`BUDGET_EXCEEDED` 与 `SAVE_FAILED`；底层失败保留在 `cause`。插件的 Valibot 领域校验仍抛原生校验异常，不把无效数据改成默认值。
-
-保存失败后 writer 阻断后续保存，不在 shutdown 隐式重试。内存仍可能包含候选，后端结果也可能未知；调用方应保留失败状态，由 Host 停止并显式恢复 writer，再启动新代。FS 后端只读时无法打开托管 Store；InMemory 只能确认内存写入。停止不会删除已有数据。
-
-Core 持有精确的 `tinybase` runtime dependency；应用直接使用原生 TinyBase 时声明自己的 dependency。使用共享 Store 的插件声明同版 peer 与 devDependency；原生能力始终从 `tinybase` 或其子路径导入。只声明 `configs.use()` 的插件无需再打开 Store 或添加 TinyBase 依赖。[版本与打包约束](../development/plugin-package.md)包含实际版本接纳规则。
-
-## 隔离验证
-
-将上面的插件保存为 `preferences.ts`。测试通过真实 `createTestHost()` 使用默认内存后端，结束时释放 Host：
+使用 `@pluxel/test` 可以在隔离的内存环境中测试状态读写与持久化：
 
 ```ts no-twoslash
 import { createTestHost } from '@pluxel/test'
 import { PreferencesPlugin } from './preferences'
+import { expect, it } from 'vitest'
 
-await using host = await createTestHost()
-const preferences = await host.start(PreferencesPlugin)
-await preferences.setTheme({ theme: 'dark' })
+it('能够保存并读取偏好状态', async () => {
+	await using host = await createTestHost()
+	const preferences = await host.start(PreferencesPlugin)
+
+	expect(preferences.getTheme()).toBe('system')
+
+	await preferences.setTheme({ theme: 'dark' })
+	expect(preferences.getTheme()).toBe('dark')
+})
 ```
-
-跨 Host 恢复测试使用同一临时 Passthrough 目录，关闭第一个 Host 后再创建第二个，分别检查内容、合法空状态和失败不覆盖。外部修改测试让两个 Host 同时打开同一目录，检查另一实例保存后现有查询／监听器最终收到新内容，且读取方不会原样回写。隔离 Host 不证明在线应用已接纳修改；在线操作使用[开发控制台](../development/dev-console.md)。

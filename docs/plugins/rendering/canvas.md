@@ -3,19 +3,19 @@ title: 服务端 Canvas
 description: 在服务端绘制位图与 SVG，解码图片、排版文字和生成静态数据表，并用资源预算约束原生内存。
 ---
 
-`@pluxel/plugin-canvas` 基于 `@napi-rs/canvas` 提供服务端绘图能力，包括位图 Canvas、SVG Canvas、图片解码、Pretext 文字布局和静态数据表。宿主会在分配原生内存前检查资源预算，避免单个 Plugin 无限制占用内存。
+`@pluxel/plugin-canvas` 基于高性能的 `@napi-rs/canvas` 提供服务端绘图能力，涵盖 2D 位图绘制、SVG 矢量图导出、图片安全解码、Pretext 高性能文本排版以及轻量静态表格绘制。
 
-`CanvasPlugin` 必须依赖 `FontsPlugin`，也为 `EChartsPlugin` 提供底层绘图能力。业务 Plugin 直接绘图时只需注入 `CanvasPlugin`。
+`CanvasPlugin` 依赖 `FontsPlugin` 提供的字体基础设施，同时也作为 `EChartsPlugin` 的底层渲染支持。
 
-## 安装与 catalog
+## 安装与引入
 
-以下命令在快速开始生成的工作区根目录执行；按 [添加插件](../index.md#把一个插件加入应用) 选择直接使用依赖的包，再运行 `vp install`。
+在工作区中添加依赖：
 
 ```sh
 vp exec pluxel pncat add @pluxel/plugin-canvas @pluxel/plugin-fonts
 ```
 
-host catalog 至少包含 `FontsPlugin`、`CanvasPlugin` 和 consumer。CanvasPlugin required-depend FontsPlugin；业务 Plugin 只需注入 Canvas：
+在插件中注入 `CanvasPlugin` 并绘制图形：
 
 ```ts twoslash
 import type { Buffer } from 'node:buffer'
@@ -44,107 +44,70 @@ export class BadgePlugin extends BasePlugin {
 }
 ```
 
-以下 `host` 是 [测试宿主](../../plugin-development/testing.md)，用于验证装配。应用入口按 [添加插件](../index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
+- `createCanvasSync()` 返回底层的原生 Canvas 实例，包含标准的 W3C 2D 上下文 API。
+- 绘制完成后可直接调用 `surface.encode('png')` 或 `surface.encode('jpeg')` 获取图片二进制 Buffer。
+
+## 绘制位图与 SVG 矢量图
+
+支持同步创建位图表面或 SVG 矢量图：
 
 ```ts no-twoslash
-import { CanvasPlugin } from '@pluxel/plugin-canvas'
-import { FontsPlugin } from '@pluxel/plugin-fonts'
-import { BadgePlugin } from '@acme/badge'
-
-await host.start(BadgePlugin, {
-	catalog: [FontsPlugin, CanvasPlugin],
-})
-```
-
-调用 `BadgePlugin.render()` 后将返回的 `Buffer` 保存为 PNG，应得到带 Pluxel 字样的 640 × 320 图片。通过 HTTP 返回时设置 `Content-Type: image/png`；保存文件与响应处理都由业务插件决定。
-
-`createCanvasSync()` 返回上游 native Canvas。名称明确表示 allocation、2D context、绘图和 measure 会占用调用线程；
-encode/stream 遵循上游契约，surface 由 caller 持有。重 drawing 应进入业务 worker task。
-
-## 创建 raster 与 SVG
-
-```ts no-twoslash
+// 创建 1200x630 位图画布
 const raster = this.canvas.createCanvasSync(1200, 630)
 
+// 创建 SVG 画布，支持紧凑模式与路径文字模式
 const svg = this.canvas.createSvgCanvasSync(1200, 630, {
 	mode: 'text-to-paths',
 })
 const svgBytes = svg.getContent()
 ```
 
-`createSvgCanvasSync(width, height, options)` 支持三个互斥 mode：
+SVG 导出模式说明：
+- `compact`（默认）：输出精简的标准 SVG。
+- `text-to-paths`：将文本预先渲染为贝塞尔曲线路径（Paths），在目标阅读环境缺乏相应字体时可保证字形绝对一致。
+- `relative-paths`：使用相对坐标编码路径指令。
 
-- `compact`：默认，输出紧凑 SVG。
-- `text-to-paths`：将文字转成 path，适合目标环境缺少字体时使用。
-- `relative-paths`：使用相对 path encoding。
+## 服务端图片解码
 
-两种 factory 都会先检查 width、height 与总像素，并为新 context 设置当前 `FontsPlugin.defaultFont`。后续更改默认字体不会改写已有 context。
-
-`assertDimensions(width, height)` 可在分配前复用相同校验。注意：factory 返回原生 Canvas，调用方之后仍能自行 resize；预算只保证通过 factory 发生的初始分配。
-
-## 图片解码
+为防范恶意大图消耗过多内存，解码操作由系统预算统一控制：
 
 ```ts no-twoslash
-const response = await fetchFromAnApprovedSource()
+const response = await fetch('https://example.com/avatar.png')
 const bytes = new Uint8Array(await response.arrayBuffer())
-const image = await this.canvas.decodeImage(bytes, { signal })
 
+const image = await this.canvas.decodeImage(bytes, { signal })
 const surface = this.canvas.createCanvasSync(image.width, image.height)
 surface.getContext('2d').drawImage(image, 0, 0)
 ```
 
-`decodeImage()` 只接受已经取得的非空 `Uint8Array`。它会检查 encoded bytes，解码后再检查图片 width、height 与像素数。网络认证、重试、redirect、origin policy 和下载上限应由业务 HTTP capability 负责；Canvas 不接受 URL，也不主动 fetch。
+- `decodeImage()` 会在解码前检查文件大小，解码后检查图片宽高与总像素上限。
+- 默认为借用模式（`borrowed`），数据会在安全隔离区解码；若传入 `dataOwnership: 'owned'`，可直接移交底层内存以避免二次拷贝。
 
-默认 `dataOwnership: 'borrowed'`，调用方在 Promise settle 前不得修改 bytes；Canvas 在 native decode 前以 cooperative
-chunk 复制输入。只有 render-local buffer 确定不再使用时才可传：
+## 高性能文本排版与 Pretext
 
-```ts no-twoslash
-const image = await this.canvas.decodeImage(bytes, {
-	dataOwnership: 'owned',
-	signal,
-})
-```
-
-`owned` 会永久移交输入 storage，避免 copy；调用后不得再次读取或修改，即使 decode abort 或失败也不会返还。native decoder 无法取消已经提交的工作，`signal` 只会停止等待并丢弃迟到结果。
-
-CanvasPlugin root 不提供裸 Image placeholder factory；native `src` setter 无法拦截，会绕过 decode budget。图片输入使用
-`decodeImage()`。
-
-## 文字准备与 Pretext
-
-Canvas 将 `@chenglou/pretext` 的文字准备连接到 native measurement context：
+`CanvasPlugin` 集成了 `@chenglou/pretext` 的纯计算排版算法，在无需频繁操作 DOM 或复杂排版库的情况下完成高效的换行与测量：
 
 ```ts no-twoslash
 import { layoutWithLines } from '@pluxel/plugin-canvas/pretext'
 
 const prepared = this.canvas.prepareTextSync({
-	text: 'A progressively wrapped paragraph',
+	text: '一段需要按宽度自动断行并测量高度的长文本...',
 	fontSize: 18,
 	whiteSpace: 'normal',
 	wordBreak: 'normal',
-	letterSpacing: 0,
 })
 
+// 计算在 360px 宽度、24px 行高下的排版行信息
 const layout = layoutWithLines(prepared, 360, 24)
 ```
 
-主 API 包括：
+- `prepareTextSync()`：预计算常规文本字形信息。
+- `prepareTextWithSegmentsSync()`：保留词元与断行段落信息，方便在 Canvas 上逐行绘制。
+- `prepareRichInlineSync()`：支持不同字号、加粗、间距的行内富文本排版。
 
-- `prepareTextSync()`：准备普通文本。
-- `prepareTextWithSegmentsSync()`：保留手动 Canvas line rendering 所需的 segment 信息。
-- `prepareRichInlineSync()`：准备带独立 font、spacing、break 与 extra width 的 inline items。
+## 渲染静态数据表格
 
-省略 `font` 时使用当前 Pluxel 默认 family，可通过 `fontSize` 指定字号，默认 16px。传完整 Canvas `font` shorthand 时不能再传 `fontSize`。准备结果是不可变快照；默认字体之后发生变化，不会重写旧结果。
-
-`@pluxel/plugin-canvas/pretext` 导出 Pretext 的纯布局 helper，包括 `layoutWithLines()`、`layoutNextLine()`、`measureLineStats()`、`measureNaturalWidth()`、line range walkers，以及对应 rich-inline helper。准备步骤读取 native 字体；之后的布局计算是纯 arithmetic。
-
-这些 helper 使用 Pretext 1.0 契约：`layoutNextLine(prepared, maxWidth, cursor?)` 与 `layoutNextLineRange(prepared, maxWidth, cursor?)` 都将宽度放在 cursor 前。Prepared handle 的 segments 为只读；rich-inline fragment 的源文本偏移使用 `sourceStart` / `sourceEnd`。
-
-共享 measurement cache 会在 Fonts revision 改变或累计准备字符达到 `maxTextCacheCharacters` 时清空。
-
-## 生成静态数据表
-
-当输出是报告、榜单或审计表格时，使用 `@pluxel/plugin-canvas/table`。它只处理 Canvas 最后一公里的列宽、单元格、Pretext 断行和默认省略；排序、筛选、数值本地化、二维码、图表和文件输出仍应由调用方或各自成熟工具负责。
+`@pluxel/plugin-canvas/table` 提供了一站式的数据报表渲染工具：
 
 ```ts no-twoslash
 import { drawTable, layoutTable } from '@pluxel/plugin-canvas/table'
@@ -152,56 +115,44 @@ import { drawTable, layoutTable } from '@pluxel/plugin-canvas/table'
 const table = layoutTable({
 	width: 640,
 	columns: [
-		{ header: 'Service', weight: 2 },
-		{ header: 'Status', width: 112, textAlign: 'center' },
-		{ header: 'P95', width: 88, textAlign: 'right' },
+		{ header: '服务名称', weight: 2 },
+		{ header: '当前状态', width: 112, textAlign: 'center' },
+		{ header: '延迟 (P95)', width: 88, textAlign: 'right' },
 	],
 	rows: [
-		['API gateway', 'Healthy', '18 ms'],
-		['Background worker', 'Delayed', '81 ms'],
+		['API Gateway', '正常', '18 ms'],
+		['Worker Node', '高负载', '81 ms'],
 	],
 	body: {
-		font: '14px ' + this.canvas.defaultFont.cssFamily,
+		font: `14px ${this.canvas.defaultFont.cssFamily}`,
 		lineHeight: 20,
 		padding: 6,
 	},
 	header: {
-		font: '700 14px ' + this.canvas.defaultFont.cssFamily,
+		font: `700 14px ${this.canvas.defaultFont.cssFamily}`,
 		background: '#e2e8f0',
 	},
 	prepareText: (input) => this.canvas.prepareTextWithSegmentsSync(input),
 })
 
 const height = Math.ceil(table.bounds.height)
-this.canvas.assertDimensions(640, height)
 const surface = this.canvas.createCanvasSync(640, height)
 drawTable(surface.getContext('2d'), table)
 ```
 
-没有 `width` 的列按 `weight`（默认 `1`）分走余宽；若所有列都是 fixed，它们必须恰好占满总宽。每个 row 的 cell 数必须等于 columns 数。`body.font` 和 `body.lineHeight` 是必填项，确保 Pretext 测量与 native `fillText()` 使用同一 font。默认 `maxLines: 1`、`overflow: 'ellipsis'`；设置 `maxLines` 或 `overflow: 'clip'` 可改为多行或直接裁切。
+- 支持固定宽度与按权重分配剩余宽度的自适应列。
+- 支持单行溢出省略（`ellipsis`）或多行换行。
+- 通过 `paintCell` 回调可完全自定义特定单元格的绘制逻辑。
 
-`layoutTable()` 返回不可变 snapshot，不创建 Canvas 或编码数据。调用方先取得实际高度，再用 `assertDimensions()` / factory 执行既有 host budget；过长报表应由调用方按页拆分，而不是让 table 工具暗中分配超大 surface。它同样可在 worker 中使用：将 `prepareText` 换成 `createCanvasWorkerTextLayout(snapshot).prepareTextWithSegments`，再向 worker adapter 创建的 context 调用 `drawTable()`。
+## 在 Worker 线程中渲染
 
-可选 `drawTable(context, table, { paintCell })` callback 在每个 cell 的 background 后、默认文本前执行；返回 `'skip-text'` 可完全接管该 cell 的内容。每次 callback 后都会恢复 Canvas state，避免影响其他 cell；callback 只属于本次 draw pass，不注册 Plugin、事件或持久化资源。
-
-## 在 worker 中使用
-
-native Canvas、Image 和 Plugin Context 不能 structured clone。主线程只把纯数据策略传给 worker：
+由于原生 Canvas 对象不能跨线程传递，在多工作线程任务中，主线程可将配置快照传入 Worker 中重建适配器：
 
 ```ts no-twoslash
+// 主线程获取无状态配置快照
 const snapshot = this.canvas.workerSnapshot
-```
 
-`workerSnapshot` 包含：
-
-- `limits`：width、height、pixels 和 image bytes。
-- `textLimits`：text length、rich item count 与 cache budget。
-- `decodeLimits`：单个 worker adapter 的 native decode concurrency 与 waiting queue。
-- `font`：默认 CSS family、Fonts revision，以及非 generic family 的存在要求。
-
-worker artifact 从独立子入口重建 adapter，不启动第二个 CanvasPlugin：
-
-```ts no-twoslash
+// Worker 线程中初始化适配器
 import { createCanvasWorkerAdapter } from '@pluxel/plugin-canvas/worker'
 
 export default async ({ canvas: snapshot }: Input) => {
@@ -215,79 +166,22 @@ export default async ({ canvas: snapshot }: Input) => {
 }
 ```
 
-adapter 提供 `createCanvas()`、`createSvgCanvas()`、`createImage()`、`decodeImageInto()` 与 `decodeImage()`。
-`createImage()` 只满足 ECharts 一类必须同步返回 placeholder 的受信任 platform contract；随后应把同一个 placeholder 与
-bytes 交给 `decodeImageInto()`，它只执行一次 native decode，并在 Promise settle 前独占该 placeholder。普通调用方直接用
-`decodeImage()`。直接写 native `src` 无法受 budget 约束。allocation/decode 会重新执行 host budget，decode concurrency/
-queue 来自 snapshot；具体 family 若在线程 native registry 中不存在，会以 `FONT_UNAVAILABLE` 失败。adapter 拥有自己的
-decode scheduler；任务结束时必须 `await close()`。close 会拒绝 queued decode、等待 already-submitted native decode
-真正 settle，且不会回收已经返回给 caller 的 Canvas/Image/SVG。
+## 配置项与资源配额
 
-只有 worker 需要 Pretext 时再引入额外子入口：
+通过 `CanvasConfig` 可配置系统层面的画布和解码配额：
 
-```ts no-twoslash
-import { createCanvasWorkerTextLayout } from '@pluxel/plugin-canvas/worker/pretext'
+| 配置项 | 默认值 | 说明 |
+| :--- | :--- | :--- |
+| `maxWidth` | `8192` | 允许创建的最大画布宽度（像素） |
+| `maxHeight` | `8192` | 允许创建的最大画布高度（像素） |
+| `maxPixels` | `16,777,216` | 最大单画布像素总数（宽 × 高，约 64 MiB 显存） |
+| `maxImageBytes` | `32 MiB` | 允许解码的最大单张图片文件体积 |
+| `maxConcurrentDecodes` | `2` | 进程内允许并发解码的原生任务数 |
+| `maxTextCharacters` | `100,000` | 单次文本排版计算允许的最大字符数 |
 
-const text = createCanvasWorkerTextLayout(snapshot)
-const prepared = text.prepareText({ text: 'Hello', fontSize: 24 })
-```
+## 错误处理与 Result 封装
 
-`@pluxel/plugin-canvas/worker/pretext` 只提供受限 preparation；纯 layout/walker 始终从 `@pluxel/plugin-canvas/pretext` 导入。这避免 ECharts 等不使用 Pretext 的 worker artifact 承担其代码与 cache 成本。两个 worker 子入口都不提供 Plugin、Context、Workbench 或字体 mutation。
-
-## 配置与职责
-
-`@pluxel/plugin-canvas` 导出的 `CanvasConfig` 与 Plugin 的 `configs.use()` 使用同一 schema，配置画布、图片、文字与解码容量。通过 [Host env/file 绑定](../../host/configuration.md#绑定部署环境与-json-文件)传入该 schema 即可部署，无需 Workbench；不直接读取环境变量。配置变更后重启插件，env/file 变更后重建 Host。字体文件及默认 family 由 [FontsPlugin](./fonts.md) 配置，渲染内容保留为方法输入。
-
-在应用的 Plugin config 中按需覆盖以下默认值：
-
-| 字段                                   |       默认值 | 检查对象                                      |
-| -------------------------------------- | -----------: | --------------------------------------------- |
-| `maxWidth`                             |       `8192` | factory 分配和 decoded image 的宽度           |
-| `maxHeight`                            |       `8192` | factory 分配和 decoded image 的高度           |
-| `maxPixels`                            | `16,777,216` | width × height；默认相当于 64 MiB raw RGBA    |
-| `maxImageBytes`                        |     `32 MiB` | `decodeImage()` 接受的 encoded bytes          |
-| `maxConcurrentDecodes`                 |          `2` | CanvasPlugin root 的在途 decode 数            |
-| `maxQueuedDecodes`                     |         `32` | CanvasPlugin root 的合计等待数                |
-| `maxQueuedDecodesPerConsumer`          |          `8` | 单个 caller 等待的 root decode 数             |
-| `maxConcurrentDecodesPerWorkerAdapter` |          `1` | 每个 detached worker adapter 的在途 decode 数 |
-| `maxQueuedDecodesPerWorkerAdapter`     |         `32` | 每个 detached worker adapter 的等待数         |
-| `maxTextCharacters`                    |    `100,000` | 单次 Pretext preparation 的 UTF-16 长度       |
-| `maxRichTextItems`                     |      `2,048` | 单次 rich-inline preparation 的 item 数       |
-| `maxTextCacheCharacters`               |  `1,000,000` | 清空共享 measurement cache 前的累计字符预算   |
-
-CanvasConfig 分开配置 Canvas root 与每个 worker adapter 的 native decode admission，不配置通用 worker task queue、render timeout、
-output bytes、DPR 或主题：
-
-- Worker task 的线程并发与队列由 runtime 的 root-owned `ctx.require(Workers)` 配置。
-- `maxConcurrentDecodesPerWorkerAdapter` 是每个 adapter 的局部上限；ECharts 每 job 创建一个 adapter，默认 4 个
-  宿主 Workers × 1 个 decode，仍不是可接管 libuv 的进程级线程池。提高它会按 active worker 数产生乘法，应与
-  `UV_THREADPOOL_SIZE`、其他 native work 和 RSS
-  基准一起调整。
-- encoded output 的格式与大小由调用方和上游 encoder 决定。
-- 图表 DPR、主题与 data URL 上限由 EChartsPlugin 配置。
-
-## 字体、Workbench 与生命周期
-
-CanvasPlugin 使用 FontsPlugin 的默认字体，并在自己的详情页挂载统一字体选择器。字体上传、删除和持久化只属于 FontsPlugin；Workbench disabled 不影响字体恢复、Canvas 创建、解码或 worker snapshot。
-
-Canvas 为每个 caller generation 建立 lease。consumer stop/replacement 会中止该 generation 正在等待的 decode；已返回给 caller 的 native surface 仍由 caller 自己持有，不应跨 generation 保存。
-
-## 错误处理
-
-`CanvasError.code` 提供稳定分类：
-
-- lifecycle：`NOT_RUNNING`。
-- surface budget：`INVALID_DIMENSIONS`、`DIMENSIONS_EXCEEDED`、`PIXELS_EXCEEDED`。
-- image：`INVALID_IMAGE`、`IMAGE_BYTES_EXCEEDED`、`DECODE_BUSY`。
-- text：`INVALID_TEXT`、`TEXT_TOO_LARGE`、`TEXT_LAYOUT_UNAVAILABLE`。
-- worker/font：`FONT_UNAVAILABLE`、`INVALID_WORKER_SNAPSHOT`。
-
-不要在 consumer 中捕获后放宽 host budget；应缩小输入、拒绝任务，或由 host operator 明确调整配置。
-
-## 将可恢复失败交给业务调用方
-
-上传预览允许用户换一张图片，所以 consumer 可以只将无效图片和内容超限转换成 `ImageRejected`。
-下面是普通业务 helper，`canvas` 来自 constructor 注入的 `CanvasPlugin`。
+在接收用户上传图片的业务中，可捕获超出配额或格式损坏的错误并转换为业务提示：
 
 ```ts twoslash
 import { Result, TaggedError } from '@pluxel/core/better-result'
@@ -297,7 +191,6 @@ export class ImageRejected extends TaggedError('ImageRejected')<{
 	reason: 'invalid_image' | 'too_large'
 }> {}
 
-// An ordinary business helper; pass the consumer's injected CanvasPlugin.
 export async function decodeUpload(
 	canvas: CanvasPlugin,
 	data: Uint8Array,
@@ -322,9 +215,3 @@ export async function decodeUpload(
 	}
 }
 ```
-
-调用方检查 `result.isErr()` 后按 `reason` 提示重新上传；Ok 的 `value` 是 caller-owned native Image。
-不要把 Image/Result 直接作为 Workbench DTO。`DECODE_BUSY`、取消、无效调用参数和停止在此示例中继续 reject；
-需要降级 busy 的产品可以单独建模。Result 不改变 borrowed/owned bytes 或 native decode 的取消语义。
-
-[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/canvas/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/render/canvas/tests/canvas.test.ts)。

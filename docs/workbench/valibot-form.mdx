@@ -1,12 +1,13 @@
 ---
 title: Valibot 配置表单
-description: 用一个 Valibot object schema 同时驱动 Plugin 配置、字段信息和 Web 表单。
+description: 使用 Valibot Schema 与表单元数据自动生成规范的可视化配置界面。
 ---
 
-给配置字段加标题、说明、控件偏好时，使用 `valibot-form` metadata。Plugin 仍只声明一份 Valibot schema，
-Workbench 会自动显示配置表单；无需为普通配置另外编写 React 页面。
+通过使用 `valibot-form`，你可以在声明 Valibot 配置 Schema 的同时，为字段指定中文标题、说明提示、输入控件与展示分组。Workbench 会直接读取这些元数据生成交互表单，免去为常规配置专门编写前端页面的繁琐工作。
 
 ## 先给一个字段加标题
+
+使用 `f.formMeta()` 为字段注入标题与说明：
 
 ```ts twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
@@ -23,14 +24,11 @@ export class ServicePlugin extends BasePlugin {
 }
 ```
 
-构建并运行插件，标准配置页应出现“启用服务”开关，初始值为开启。
-`f.formMeta()` 只描述显示方式；字段是否必填、默认值和有效范围仍由 Valibot 决定。
-保存与运行时应用的区别见[插件配置](../plugin-development/configuration.md)。
+启动插件后，在 Workbench 的配置界面中，该字段将自动呈现为“启用服务”开关组件，默认状态为开启。
 
-## 最小配置与渲染结果
+## 综合配置与表单组件展示
 
-下面是覆盖多种控件的完整参考例子。按需查找开关、分段选择、URL、整数、嵌套对象和列表；
-无需在第一个 Plugin 中一次性采用全部控件。展开预览可直接操作表单，比较原始 Input 与校验后的 Output。
+以下示例展示了多种常用控件（开关、分段选择器、URL 校验、端口范围、嵌套卡片、动态列表）：
 
 <ConfigurationExampleLayout>
 
@@ -48,9 +46,9 @@ const Config = v.object({
 		v.pipe(
 			v.boolean(),
 			f.formMeta({
-				title: '启用示例服务',
-				description: 'schema 默认值会进入 normalized config',
-				section: { id: 'runtime', title: '运行时' },
+				title: '启用服务',
+				description: '开启后后台进程将自动开始同步',
+				section: { id: 'runtime', title: '运行参数' },
 			}),
 		),
 		true,
@@ -58,10 +56,10 @@ const Config = v.object({
 	mode: v.optional(
 		v.pipe(
 			v.picklist(['development', 'production'] as const),
-			f.formMeta({ title: '运行环境', section: 'runtime' }),
+			f.formMeta({ title: '运行模式', section: 'runtime' }),
 			f.picklistMeta({
 				control: 'segmented',
-				labels: { development: '开发', production: '生产' },
+				labels: { development: '开发环境', production: '生产环境' },
 			}),
 		),
 		'development',
@@ -71,9 +69,8 @@ const Config = v.object({
 			v.string(),
 			v.url(),
 			f.formMeta({
-				title: '上游地址',
-				description: 'URL 约束来自 schema；表单只负责编辑。',
-				section: { id: 'network', title: '网络与重试' },
+				title: '上游接口地址',
+				section: { id: 'network', title: '网络连接' },
 			}),
 			f.stringMeta({ placeholder: 'https://api.example.com' }),
 		),
@@ -99,7 +96,7 @@ const Config = v.object({
 						v.integer(),
 						v.minValue(1),
 						v.maxValue(10),
-						f.formMeta({ title: '最大次数' }),
+						f.formMeta({ title: '最大重试次数' }),
 						f.numberMeta({ step: 1 }),
 					),
 					3,
@@ -109,7 +106,7 @@ const Config = v.object({
 						v.number(),
 						v.integer(),
 						v.minValue(100),
-						f.formMeta({ title: '退避时间（毫秒）' }),
+						f.formMeta({ title: '退避间隔（毫秒）' }),
 						f.numberMeta({ step: 100 }),
 					),
 					250,
@@ -126,11 +123,11 @@ const Config = v.object({
 	allowedOrigins: v.optional(
 		v.pipe(
 			v.array(v.pipe(v.string(), v.url())),
-			f.formMeta({ title: '允许的 Origin', section: 'network' }),
+			f.formMeta({ title: '允许的域名白名单', section: 'network' }),
 			f.arrayMeta({
 				layout: 'list',
-				itemLabel: 'Origin',
-				addLabel: '添加 Origin',
+				itemLabel: '域名',
+				addLabel: '添加域名',
 				defaultItem: 'https://api.example.com',
 			}),
 		),
@@ -152,163 +149,14 @@ export class ExamplePlugin extends BasePlugin {
 
 </ConfigurationExampleLayout>
 
-当字段既有默认值又有表单 metadata 时，让 `v.optional()` 包住完成后的 `v.pipe()`：`v.optional(v.pipe(base, constraints, metadata), default)`。这样默认值属于外层可选语义，字段 extractor 解包 optional 后仍能读取内层 metadata；不要写成 `v.pipe(v.optional(base, default), metadata)`。
+> [!TIP]
+> **组合规范**
+> 当字段同时具有默认值与表单元数据时，请使用 `v.optional(v.pipe(baseSchema, metadata), defaultValue)` 结构。让 `v.optional` 位于外层，这样在解包 Schema 时表单引擎依然能正常读取内层的元数据。
 
-Plugin 的声明和读取时机见[配置规则](../plugin-development/configuration.md#声明规则)。
+## 常用元数据函数
 
-## metadata 做什么
-
-`valibot-form` 的 core entry 不依赖 React/Mantine，适合 runtime config、CLI prompt、配置文件编辑器和 schema inspection：
-
-```ts twoslash
-import * as v from 'valibot'
-import * as f from 'valibot-form'
-
-const Config = v.object({
-	mode: v.pipe(
-		v.picklist(['development', 'production'] as const),
-		f.formMeta({ title: '运行环境' }),
-		f.picklistMeta({
-			control: 'segmented',
-			labels: { development: '开发', production: '生产' },
-		}),
-	),
-})
-
-const fields = f.extractFormFields(Config)
-```
-
-常用映射：
-
-| Valibot schema        | metadata       | 默认 web 控件    |
-| --------------------- | -------------- | ---------------- |
-| `v.string()`          | `stringMeta`   | TextInput        |
-| `v.number()`          | `numberMeta`   | NumberInput      |
-| `v.boolean()`         | —              | Switch           |
-| `v.picklist()`        | `picklistMeta` | Select           |
-| `v.array()`           | `arrayMeta`    | List             |
-| `v.record()`          | `recordMeta`   | Table            |
-| `v.object()`          | `objectMeta`   | Card/stack       |
-| `v.variant()` / union | `unionMeta`    | Select/segmented |
-
-### 类型入口
-
-类型直接从 package 源码导出。下面的示例由 Twoslash 对当前 workspace 类型检查，不在文档中维护另一份类型声明：
-
-```ts twoslash
-import type { FormMeta, ObjectLikeSchema } from 'valibot-form'
-import type { AutoFormProps } from 'valibot-form/web'
-
-type MetadataKeys = keyof FormMeta
-//   ^?
-
-type FormProps = keyof AutoFormProps<ObjectLikeSchema>
-//   ^?
-```
-
-`formMeta()` 的 `title` / `description` 使用 Valibot 标准 metadata，help、section、layout、disabled、readOnly 和 hidden
-仍是表单展示偏好；类型对应的 `*Meta()` 只负责控件偏好。requiredness、选项、格式和范围仍来自 Valibot schema，例如
-`v.optional()`、`v.url()`、`v.minValue()`、`v.maxValue()` 和 `v.integer()`。原生 `v.title()`、`v.description()` 与
-`v.metadata({ title, description })` 也会按 pipe 顺序互操作，但标准示例使用一次 `formMeta()` 集中声明。
-
-需要编辑 schema 或查看类型补全时，打开独立的[配置 Playground](./configuration-playground.md)。
-
-## Web adapter
-
-只有在自己的 React 应用中需要自动表单，才从 `valibot-form/web` 导入。标准 Workbench 配置页已包含它。
-独立应用需要安装 React、Mantine、TanStack Form、Tabler Icons 和 dnd-kit：
-
-```sh package-install
-npx nypm add valibot-form valibot react react-dom @mantine/core @mantine/hooks @tanstack/react-form @tabler/icons-react @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
-```
-
-```tsx twoslash
-/// <reference types="vite/client" />
-// ---cut---
-import { MantineProvider } from '@mantine/core'
-import '@mantine/core/styles.css'
-import * as v from 'valibot'
-import { AutoForm } from 'valibot-form/web'
-
-const Config = v.object({
-	mode: v.picklist(['development', 'production']),
-})
-
-async function saveConfig(_value: v.InferOutput<typeof Config>) {}
-
-// ---cut---
-
-export function ConfigEditor() {
-	return (
-		<MantineProvider>
-			<AutoForm
-				schema={Config}
-				formOpts={{
-					defaultValues: { mode: 'development' },
-					onSubmit: async ({ value }) => saveConfig(value),
-				}}
-			>
-				<AutoForm.Fields />
-				<AutoForm.Actions>
-					{({ submit, reset, dirty, canSubmit, submitting }) => (
-						<div>
-							<button type="button" onClick={() => reset()} disabled={!dirty || submitting}>
-								重置
-							</button>
-							<button type="button" onClick={submit} disabled={!canSubmit || submitting}>
-								保存
-							</button>
-						</div>
-					)}
-				</AutoForm.Actions>
-			</AutoForm>
-		</MantineProvider>
-	)
-}
-```
-
-上例是独立 React 应用，因此自行导入 Mantine CSS。放进 Workbench View 时，仍需自己的 `MantineProvider`，
-但应删除 `@mantine/core/styles.css` 导入，基础 CSS 已由宿主加载；见[页面资源参考](./renderer-resources.md)。
-
-`AutoForm` 负责根据 schema metadata 规划和渲染字段；配置 authority 仍然是 runtime 的 `configs.use()` 校验流程。把表单值送回 host API 前，服务端必须再次用同一个 schema 校验，不能把浏览器表单当作信任边界。
-
-### 嵌套编辑与错误反馈
-
-Object、数组行和当前 Union 分支中的可编辑字段使用完整的 TanStack 字段路径，例如
-`database.host`、`servers[0].host`。各字段独立记录 blur 和错误；数组删除、重排使用 TanStack 的数组操作，
-交互状态随行移动，受影响的校验错误重新校验或清除。
-
-Workbench 的配置保存和 Content action 会把服务端错误放到对应的已显示字段；隐藏字段、未激活分支、
-无法准确定位的路径错误保留在表单摘要。编辑字段会清除该字段的旧服务端错误和表单摘要，
-其他字段的错误继续显示；开始下一次提交时清除上一轮服务端错误。修改后可保留草稿再次提交。
-请求期间继续编辑时，迟到响应不会覆盖新草稿或给新值挂上旧校验错误；配置保存成功仍会更新已保存基线，
-新草稿保留为未保存修改。Content action 有新草稿时也不会自动清空或关闭表单；操作反馈仍报告已提交请求的结果。
-
-配置分区保留独立的保存基线与撤销范围；保存当前分区不会清空其他分区的草稿。当前保存和全部保存共享请求流程，
-请求结束前不能启动另一笔配置保存，但可以继续编辑。网络失败后保留草稿并允许重试；保存已确认成功时，
-后续运行状态刷新失败不会将这笔保存报告为失败。
-
-独立使用 `AutoForm` 时，
-`form.setErrorMap({ onServer: { fields: { 'database.host': '地址不可用' } } })` 可设置字段错误；
-编辑该字段会清除它的旧服务端错误。跨字段错误与表单摘要的失效策略由调用方决定。
-
-`reset()` 同时重置表单和局部编辑草稿，包括 Union 的非激活分支缓存、数组与 Record 的新增草稿。
-在提交回调中调用 `formApi.reset()` 具有相同效果。切换字段计划时，使用 `resetKey` 明确开始新的编辑会话。
-
-`formOpts.defaultValues` 未提供或为 `undefined` 时，使用 schema 默认值。控件、context 和重置共享同一次默认值解析结果，
-因此动态默认值工厂生成的值也保持一致。`AutoForm.Actions` 提供的 `setValues` 按 TanStack 字段路径逐项更新，
-例如 `setValues({ 'database.host': 'db.example' })`；它保留其他值，不把带点的 key 当作顶层字面量名称。
-
-Record 内无法被路径准确表示的字面量 key（如 `x.y`、`0` 或空字符串）保持原样，通过可绑定的祖先字段编辑；
-这类值没有独立的 TanStack 字段路径，Workbench 将相应服务端错误显示在摘要。
-如果顶层 key 本身无法被 TanStack 路径准确表示，则显示只读说明并保留原值，避免写入错误位置。
-需要编辑这类数据时，将它放在普通命名的 Record 或 Object 字段内。
-
-传入 `schema` 用于字段规划和默认值，不会自动安装客户端 validator 或将编辑值转换成 schema output。
-独立表单可通过 `formOpts.validators` 显式选择客户端校验时机；Workbench 的 portable 字段计划仍由服务端执行完整校验。
-
-## 与 Pluxel 配置界面的边界
-
-`valibot-form` 提供 schema metadata、字段提取和可选 Web adapter，不提供 Pluxel Plugin 发现、配置传输或持久化 API。自定义配置界面应直接接收 browser-safe 的 schema，并通过应用自己的服务端接口提交修改；服务端继续使用同一 schema 校验输入。
-
-Pluxel Workbench 内置的 Plugin 配置页由宿主读取 runtime config metadata。Plugin 作者只声明 `this.configs.use(Config)`，不调用 Workbench 内部的 schema projection 或配置 patch 实现。
+- **`f.formMeta({ title, description, section })`**：基础元数据，设置表单项标签、辅助描述文字及所属分组分段。
+- **`f.stringMeta({ placeholder, multiline })`**：字符串配置，提供占位提示或启用多行文本域（Textarea）。
+- **`f.numberMeta({ step, min, max })`**：数值控件，设置步长调节器。
+- **`f.picklistMeta({ control, labels })`**：枚举选项，支持切换为分段选择器（`segmented`）或下拉选择框（`select`）。
+- **`f.arrayMeta({ layout, addLabel })`**：数组列表，提供列表展开与新增项文案提示。

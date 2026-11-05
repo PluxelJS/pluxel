@@ -1,47 +1,49 @@
 ---
 title: 声明和更新插件配置
-description: 用一个 Valibot object schema 统一配置类型、默认值、归一化和校验。
+description: 使用 Valibot Schema 统一定义插件配置的类型推导、默认值填充、运行时校验与 Workbench 表单。
 ---
 
-配置适合会随部署或用户选择变化的值，例如服务地址、超时和开关。
-在 Plugin 中声明一个 Valibot schema，Pluxel 会从中得到类型、默认值、校验规则和 Workbench 配置表单。
-
-开始前，你应已有一个能启动的 Plugin。先给配置加默认值，在 `init()` 中读取，再从工作台修改它。
-普通配置不保存密钥；密码、Token 等使用 [Vault](./vault.md)。
-
-| 本次任务         | 阅读位置                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------ |
-| 新增或调整字段   | [最小 schema](#先添加一个有默认值的字段) → [声明规则](#声明规则)                     |
-| 保存后立即生效   | [在线更新](#让运行中的-plugin-接收配置更新)，检查保存和应用两个结果                  |
-| 拆分局部配置     | [Part config](#嵌套相关设置与-part-config)，字段名会成为公开配置路径                 |
-| 部署提供固定输入 | [env/file 绑定](../host/configuration.md#绑定部署环境与-json-文件)，与管理保存值分层 |
-| 调整编辑界面     | [配置表单](#配置表单)，继续复用同一 schema                                           |
+配置项用于管理随部署环境或用户意图动态调整的参数（例如服务地址、请求超时、并发上限等）。Pluxel 采用 [Valibot](https://valibot.dev/) 作为统一的配置定义工具：一份 Schema 同时搞定 TypeScript 静态类型推导、默认值填充、启动时严格校验以及 Workbench 可视化表单生成。
 
 ## 先添加一个有默认值的字段
+
+在插件类中使用 `this.configs.use()` 传入 Valibot Schema：
 
 ```ts twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
 import * as v from 'valibot'
 
+// 1. 定义配置 Schema
+export const WorkerConfig = v.object({
+	concurrency: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1)), 4),
+})
+
 @Plugin({ displayName: 'Worker' })
 export class WorkerPlugin extends BasePlugin {
-	private readonly config = this.configs.use(
-		v.object({
-			concurrency: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1)), 4),
-		}),
-	)
+	// 2. 注入配置：得到经过校验与默认值填充的冻结对象
+	private readonly config = this.configs.use(WorkerConfig)
 
 	protected override init() {
-		this.ctx.logger.info('worker configured', { concurrency: this.config.concurrency })
+		// 3. 读取配置项
+		this.ctx.logger.info('Worker initialized', { concurrency: this.config.concurrency })
 	}
 }
 ```
 
-首次没有保存配置时，启动日志应显示 `concurrency: 4`；工作台的标准配置页应出现此字段。
-输入 `0` 会校验失败。保存为 `8` 后，若没有注册下文的在线更新处理，重启插件才会应用新值。
-“保存成功”与“运行中已应用”需要分别检查。
+首次运行且无外部配置时，`this.config.concurrency` 会自动采用默认值 `4`。如果传入了非法数值（例如 `0`），配置校验将失败并阻止插件进入运行状态，同时输出具体字段的校验报错。
 
-## 添加标题、约束和更多字段
+## 声明规则
+
+为了让编译器在构建阶段顺利提取配置结构，定义配置字段时请遵循以下规范：
+
+1. **类顶层字段声明**：`this.configs.use()` 必须声明为插件类（或 `PluginPart` 类）的普通类属性。请勿将其放置在构造函数体内、类方法中或外部辅助函数中。
+2. **使用 TypeScript 属性**：使用常规的 `private`、`protected` 或 `readonly` 关键字，不要使用 JavaScript 原生私有字段（`#config`）。
+3. **顶层必须为 Object**：传入的 Schema 顶层必须解析为一个普通对象结构（`v.object(...)`）。
+4. **深层冻结只读**：`this.configs.use()` 返回的是深度冻结的只读快照。如果业务需要对配置内的数据进行就地排序或增删，请先进行浅拷贝（例如 `[...this.config.items]`）。
+
+## 增强表单展示（valibot-form）
+
+如果需要在 Workbench 管理后台中呈现清晰的表单标题、输入提示或步长控制，可以配合使用 `@pluxel/valibot-form`：
 
 ```ts twoslash
 // @filename: config.ts
@@ -49,20 +51,21 @@ import * as f from 'valibot-form'
 import * as v from 'valibot'
 
 export const WorkerConfig = v.object({
-	enabled: v.optional(v.pipe(v.boolean(), f.formMeta({ title: '启用同步' })), true),
-	endpoint: v.pipe(v.string(), v.url(), f.formMeta({ title: '上游地址' })),
+	enabled: v.optional(v.pipe(v.boolean(), f.formMeta({ title: '启用任务' })), true),
+	endpoint: v.pipe(v.string(), v.url(), f.formMeta({ title: '上游服务地址' })),
 	concurrency: v.optional(
 		v.pipe(
 			v.number(),
 			v.integer(),
 			v.minValue(1),
 			v.maxValue(32),
-			f.formMeta({ title: '并发数' }),
+			f.formMeta({ title: '并发线程数' }),
 			f.numberMeta({ step: 1 }),
 		),
 		4,
 	),
 })
+
 // @filename: WorkerPlugin.ts
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { WorkerConfig } from './config.ts'
@@ -70,81 +73,17 @@ import { WorkerConfig } from './config.ts'
 @Plugin({ displayName: 'Worker' })
 export class WorkerPlugin extends BasePlugin {
 	private readonly config = this.configs.use(WorkerConfig)
-
-	protected override init() {
-		this.ctx.logger.info('worker configured', {
-			endpoint: this.config.endpoint,
-			concurrency: this.config.concurrency,
-		})
-	}
 }
 ```
 
-## 在测试中验证配置
-
-日常手动配置使用 Workbench；以下 `host` 指 [插件测试宿主](./testing.md)，适合检查初始值和更新结果。
-正在运行的开发应用应通过 [开发控制台](../development/dev-console.md)修改配置。
-测试中，首次启动可以传入 `initialConfig`：
-
-```ts no-twoslash
-const worker = await host.start(WorkerPlugin, {
-	initialConfig: {
-		endpoint: 'https://api.example.com',
-		concurrency: 8,
-	},
-})
-```
-
-node 已拥有 committed config 或进入过 lifecycle 后，使用运行期配置 API：
-
-```ts no-twoslash
-const result = await host.config.patch(WorkerPlugin, {
-	set: {
-		endpoint: 'https://api.example.com',
-		concurrency: 12,
-	},
-})
-
-// 已注册 configs.onUpdate() 且处理成功时，application 为 'applied'。
-// 否则检查 'saved-not-applied'，再按业务需要显式重启。
-expect(result.ok).toBe(true)
-```
-
-`initialConfig` 不会根据当前状态偷偷变成 live update；越过 bootstrap boundary 后继续传它会明确失败。Native 与 Vite 应用的持久化和
-reload 行为由宿主决定；Plugin 只读取校验后的配置。配置保存与显式 restart 是两个独立操作，`host.config.patch()` 不会隐式重启；
-运行中的原地更新只通过 `configs.onUpdate()` 通知。
-
-## 声明规则
-
-工具链依赖这个稳定形状提取 metadata，因此：
-
-- `configs.use()` 必须是 concrete `@Plugin` 或 direct `PluginPart` subclass 的普通 class field；
-- 不能放进 constructor、method、嵌套 class 或 helper function；
-- 不能使用 JavaScript `#private` field，因为 runtime 无法注入；
-- 每个 Plugin/Part class 各自最多一次，并且 schema 必须产出 object；
-- schema expression 要能由 semantic pass 追踪，不用动态 runtime 分支拼接。
-
-使用 TypeScript `private` 或 `protected` 字段即可。构造器和其他字段初始化器中提前读取配置会被构建检查拒绝；读取时机见下节。
-`configs` 只在 Plugin/Part 子类内部使用；测试和宿主通过配置 API 操作，不直接改实例字段。
-`configs.use(schema)` 返回 schema output 的深只读 `ConfigSnapshot`，与运行时深冻结一致，包括嵌套对象、array 和 tuple。需要排序或编辑的临时数据先复制，例如 `[...this.config.targets]`；不通过类型断言绕过冻结。
-
-## 默认值与读取时机
-
-默认值、trim、范围和跨字段校验统一写在 schema 中；业务代码直接使用校验结果，不再加 `?? default`。
-字段标题和说明用 `f.formMeta()`；必填、格式和范围由 Valibot 表达。
-配置在构造完成后、`init()` 前注入。依赖配置的连接在 `init()` 中创建，并立即登记 cleanup；constructor 和其他 field initializer 不读取配置。
+这些表单元数据只增强界面的编辑体验，不会增加运行时的额外开销。
 
 ## 让运行中的 Plugin 接收配置更新
 
-保存配置会先持久化 desired 值，不会自动重启插件。先看 mutation 的 `ok`，再看 `application`：
+通过 Workbench 或管理 API 保存新配置时，宿主首先完成新配置的持久化。如果当前插件处于运行中，有以下两种方式使新配置生效：
 
-| `application`       | 已发生什么                         | 调用方下一步                            |
-| ------------------- | ---------------------------------- | --------------------------------------- |
-| `applied`           | 当前 generation 已确认应用         | 核对业务状态                            |
-| `deferred`          | 已保存，节点未运行                 | 下次启动时应用                          |
-| `saved-not-applied` | 已保存，当前 generation 未确认应用 | 查看 apply report，修正处理器或显式重启 |
-
-连接或服务可以原地更新时，在 `init()` 中注册一次 `configs.onUpdate()`；处理完成后，框架才确认 applied：
+1. **重启插件**：默认情况下，插件将在下一次重启时加载最新配置。
+2. **原地热应用（Live Update）**：在 `init()` 中注册 `this.configs.onUpdate()` 监听器，在不重启插件的前提下无缝应用新参数。
 
 ```ts twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
@@ -158,84 +97,47 @@ const GatewayConfig = v.object({
 @Plugin()
 export class GatewayPlugin extends BasePlugin {
 	private readonly config = this.configs.use(GatewayConfig)
-	private options = { timeoutMs: 0, concurrency: 0 }
+	private runtimeOptions = { timeoutMs: 5_000, concurrency: 4 }
 
 	protected override init() {
-		this.options = { ...this.config }
+		this.runtimeOptions = { ...this.config }
+
+		// 注册配置更新回调
 		this.configs.onUpdate(this.config, ({ desired }) => {
-			this.options = {
+			this.runtimeOptions = {
 				timeoutMs: desired.timeoutMs,
 				concurrency: desired.concurrency,
 			}
 		})
 	}
-
-	currentOptions() {
-		return this.options
-	}
 }
 ```
 
-更新函数收到两个只读快照和一个取消信号。这里的一次运行指插件从启动到停止或重启之前的这段生命周期：
-
-- `applied` 是本次运行已确认应用的配置；
-- `desired` 是本次已保存、等待应用的配置；
-- `signal` 在插件停止、重启或热替换时取消。
-
-listener resolve 表示 Plugin 确认自己已经处理更新。框架随后更新 config field 与 applied revision，但不会检查 Plugin 的普通字段、连接或
-外部系统，也不会回滚 listener 已经产生的副作用。需要并发一致读取时，先构造完整 runtime object，再像示例一样一次替换引用。
-
-注册只允许发生在声明该 field 的 Plugin/Part `init()` 中，每个 declaration、每个 generation 一次。Listener 应保持幂等，并能从当前
-真实 runtime state 收敛到最新 `desired`。如果只能通过完整重建安全应用配置，就不要注册 listener；保存结果会是
-`saved-not-applied`，由用户或宿主显式 restart。Listener 内不要等待另一个 config mutation、restart 或 graph operation，因为这些操作
-与当前通知使用同一个 coordinator queue。
-
-## 缺失值、显式值和归一化
-
-host 提供的是 raw config record，schema 负责把它变成冻结的 normalized snapshot：
-
-```text
-host config patch
-  -> raw object
-  -> Valibot parse/default/transform
-  -> frozen config snapshot
-  -> Plugin init
-```
-
-`undefined`/缺失是否允许、空字符串是否有效、数字是否转换，都由 schema 明确决定。不要依赖表单控件或环境变量碰巧给出正确类型。
-
-如果校验失败，Plugin 不进入 running，错误以字段 path 形式反馈给宿主。不要在 Plugin 内捕获 `ConfigValidationError` 后继续启动。
-
-normalized output 必须是无环的 plain object/array tree，leaf 使用 JSON-compatible primitive。runtime 会复制并冻结这棵树；`Date`、
-`Map`、`Set`、class instance、function、symbol、getter/setter 和 cycle 都会被拒绝。需要领域对象时，把它保存成稳定的 plain value，
-再在 Plugin `init()` 中显式构造资源；不要让 schema transform 把带 identity 或 behavior 的对象塞进 config snapshot。
+在更新回调中，`desired` 代表已保存的新配置对象。更新回调执行完成后，框架即确认新配置已成功应用（`applied`）。如果底层连接必须完全断开重连才能改变配置，通常无需注册 `onUpdate`，由用户或宿主触发插件重启即可。
 
 ## 嵌套相关设置与 Part config
 
-每个 Plugin 声明一个 object schema；不同配置域使用嵌套 object 组织，不要多次调用 `configs.use()`：
+当配置项较多时，可以在单个 Schema 内使用嵌套对象清晰划分配置域：
 
 ```ts twoslash
 import * as v from 'valibot'
 
-const Config = v.object({
+export const ServerConfig = v.object({
 	http: v.object({
-		baseUrl: v.string(),
-		timeoutMs: v.optional(v.number(), 5_000),
+		port: v.optional(v.number(), 3000),
+		timeoutMs: v.optional(v.number(), 10_000),
 	}),
-	retry: v.object({
-		attempts: v.optional(v.number(), 3),
-		backoffMs: v.optional(v.number(), 250),
+	rateLimit: v.object({
+		maxRequests: v.optional(v.number(), 100),
+		windowSeconds: v.optional(v.number(), 60),
 	}),
 })
 ```
 
-是否拆成另一个 Plugin 的判断标准不是“字段很多”，而是这部分是否拥有独立依赖、失败、启停或治理意义。
-
-如果设置对应一个 owner-bound `PluginPart`，Part 可以声明自己的 schema，配置会自然进入 occurrence field path：
+如果某个子模块已被拆分为 `PluginPart`，该 Part 可以直接拥有自己独立的配置 Schema：
 
 ```ts no-twoslash
 const CacheConfig = v.object({ maxEntries: v.optional(v.number(), 1_000) })
-const SearchConfig = v.object({ endpoint: v.string() })
 
 class CachePart extends PluginPart<SearchPlugin> {
 	private readonly config = this.configs.use(CacheConfig)
@@ -248,50 +150,14 @@ class SearchPlugin extends BasePlugin {
 }
 ```
 
-对应 raw record：
-
-```json
-{
-	"endpoint": "https://search.example.com",
-	"cache": { "maxEntries": 2000 }
-}
-```
-
-父 schema 仍占 root，Part schema 只接收 `cache` subtree；两边分别执行 default/transform，随后合成冻结 snapshot。父 schema
-output 不能使用与 direct Part field 相同的 key。Part field rename 会改变公开配置 path，应按配置 contract 变更处理。
-这个 path 是静态配置坐标，不会同时作为 Part Context 上可读的 runtime identity。
-Part config 属于静态 owner schema：即使 optional provider absent、对应 Part 没有产生业务 effects，这个 subtree 仍会执行
-default、transform 和 validation。需要“未启用时不要求凭据”等语义时，在 schema 中使用带 `enabled` discriminator 的 object
-明确表达，不根据 runtime catalog 动态改变配置契约。
-
-Part 的静态声明、依赖与生命周期边界见[使用 PluginPart 组织内部资源](./parts.md)。
-
-## 敏感信息
-
-普通 Plugin config 会被宿主配置系统和 Workbench 管理面读取，不应当默认承载 secret。token、私钥和长期 credential 优先由宿主 secret provider、部署环境或 [Vault](./vault.md) 管理，再在 server-side capability 中使用。
-
-不要把 secret 放进：
-
-- browser-safe Workbench DTO/API；
-- config form metadata、description 或 option label；
-- structured log properties；
-- status snapshot、command output 或序列化错误。
+框架会自动将 `CachePart` 的配置映射到父级配置中的 `cache` 字段下，形成统一的配置存储与表单展示。
 
 ## 配置表单
 
-`valibot-form` metadata 可以让同一 schema 生成字段、说明、布局和控件选择。它不改变 Valibot validation，也不建立第二份 config model。
+在 Workbench 中，插件主配置会默认归入“常规”分区，各个 Part 的配置会按路径呈现为独立分区。支持使用快捷键保存修改：
+- `Ctrl/⌘ + S`：保存当前分区所做的修改；
+- `Ctrl/⌘ + Shift + S`：一次性保存当前插件所有分区的改动。
 
-使用 [配置 Playground](../workbench/configuration-playground.md) 可编辑 schema、操作生成的表单，并比较原始输入与 Valibot 输出。完整 metadata 与 React adapter 见 [Valibot 配置表单](../workbench/valibot-form.mdx)。浏览器表单只是编辑界面；提交到宿主后仍必须由 server runtime 使用同一个 schema 校验。
+## 敏感信息说明
 
-Workbench 把父 schema 显示为“常规”分区，把 Part schema 按 nested path 显示为独立分区。配置操作栏固定在内容区顶部，切换分区时会保留
-各自的滚动位置和未保存草稿；分区名称后的圆点与“待保存”计数用于提示尚未提交的变化。使用 `Ctrl/⌘ + S` 保存当前分区，或使用
-`Ctrl/⌘ + Shift + S` 一次保存当前 Plugin 的全部已修改分区。所有分区编辑同一个 Plugin config owner；保存当前分区或全部分区都会在
-server 重新验证完整 composite record。只有所有变化的 Plugin/Part declaration 都注册 listener 时才通知当前 generation；否则只保存
-desired config，不会单独更新 Part 或隐式 restart。
-
-## 验证
-
-测试默认值、非法输入、归一化输出，以及保存后实际 `application` 状态；schema 变化后重新构建并检查标准配置表单。
-用 [inspect](../development/inspection.md) 定位 schema 与应用绑定，用[开发控制台](../development/dev-console.md)核对当前生效值。
-
-部署绑定与来源优先级由[Host 配置](../host/configuration.md#绑定部署环境与-json-文件)维护；插件只声明 schema 并消费校验后的值。
+普通的配置项会被宿主配置系统和 Workbench 界面读取，因此请勿在常规配置中明文存储数据库密码、个人令牌或私钥。对于此类机密凭据，请配合使用 [Vault 凭证服务](./vault.md)。
