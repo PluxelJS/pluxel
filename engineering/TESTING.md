@@ -64,6 +64,12 @@ SSR 条件会进入 Vitest worker 的 Node `--conditions`。不能把 `import` �
 
 任务缓存位于当前 checkout 的 `node_modules/.vite/task-cache`。不同 worktree 保持独立本地缓存，CI 按 workflow 的缓存键复用该目录。
 
+`repositoryTasks` 默认将任务声明的 output 从自动 input 跟踪中排除，冷 checkout 缺少旧产物时仍能恢复缓存。
+显式 input 接管过滤规则，须排除当前任务的生成目录，保留依赖包产物、前一构建阶段的输出与需要读写的真实输入。
+Vite Task 的否定 glob 优先于肯定 glob，不能靠在否定规则后追加路径重新纳入输入。
+任务分阶段展开后再调用 `repositoryTasks`，避免继承另一阶段的排除范围。
+治理检查用真实 `vp run` 验证产物恢复、源码变更、依赖产物变更、分阶段构建与输出目录中保留的输入。
+
 不同产物的命令各自声明 task 与 output，再用依赖连接。Vite Task 会将 `&&` 命令拆为独立缓存步骤；生成 CSS 的步骤不能共用后续打包的 `dist/**` 输出，否则缓存恢复会覆盖或叠回旧构建产物。
 
 嵌套 vendor workspace 的 Vitest 5 文件模块缓存按最近的 lockfile 失效，而实际依赖由外层安装。根依赖或补丁更新后若仍加载旧依赖，用原生 `vp run --ignore-depends-on --no-cache @worksplit/react#check-tests --clearCache` 清理所属测试缓存，再执行正常测试；不删除服务数据或复制第二份依赖安装。

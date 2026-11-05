@@ -4,29 +4,24 @@ import react from '@vitejs/plugin-react'
 import { offlineMonaco } from './scripts/monaco-vite.ts'
 import { generateEditorTypes } from './scripts/generate-editor-types.mjs'
 
-const tasks = repositoryTasks({
-	compile: 'node ../../scripts/pack.mjs',
-	// Tests and examples consume this package's public client/contracts artifacts.
-	'check-tests': { command: 'vp test run', dependsOn: ['compile-code'] },
-	'check-types': { command: 'tsc --noEmit', dependsOn: ['compile-code'] },
-})
-const compile = tasks.compile!
-const compileCache = typeof compile.cache === 'object' ? compile.cache : {}
-
 export default defineConfig({
 	run: {
-		tasks: {
-			...tasks,
+		tasks: repositoryTasks({
+			// Tests and examples consume this package's public client/contracts artifacts.
+			'check-tests': { command: 'vp test run', dependsOn: ['compile-code'] },
+			'check-types': { command: 'tsc --noEmit', dependsOn: ['compile-code'] },
 			'check-discovery': {
 				// Node-only protocol checks run before framework and native compiler builds.
 				command: 'vp test run --config ../../vite.config.ts tests/discovery-acl.test.ts',
 				cache: false,
 			},
 			'compile-code': {
-				...compile,
+				command: 'node ../../scripts/pack.mjs',
+				dependsOn: [
+					{ task: 'compile', from: ['dependencies', 'devDependencies', 'peerDependencies'] },
+				],
 				cache: {
-					...compileCache,
-					input: [...(compileCache.input ?? [{ auto: true }]), '!dist/**'],
+					input: ['!dist/**'],
 					output: [
 						'dist/*.mjs',
 						'dist/*.mjs.map',
@@ -44,9 +39,9 @@ export default defineConfig({
 			compile: {
 				command: 'vp build',
 				dependsOn: ['compile-code', 'check-native'],
-				cache: { ...compileCache, output: ['dist/renderer/**'] },
+				cache: { output: ['dist/renderer/**'] },
 			},
-		},
+		}),
 	},
 	base: './',
 	// Declaration files must reach the language worker unchanged, without Vite's TS transform.
