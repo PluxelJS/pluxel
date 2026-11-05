@@ -54,6 +54,7 @@ afterEach(async () => {
 	})
 	document.body.replaceChildren()
 	window.localStorage.clear()
+	vi.useRealTimers()
 	vi.restoreAllMocks()
 	vi.unstubAllGlobals()
 })
@@ -211,6 +212,8 @@ describe('native Shell interaction contracts', () => {
 		const input = container.querySelector<HTMLInputElement>('[aria-label="安全输入"]')!
 		input.value = 'retained across maximize'
 		const group = session.workbench.getContext().activeContainerId!
+		// A browser's visibility blur runs before the next animation-frame focus handoff.
+		vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] })
 		await act(async () => {
 			await session.workbench.dispatch(Actions.moveNode(security, group, DockLocation.RIGHT, -1))
 			session.workbench.activate(logs)
@@ -231,8 +234,10 @@ describe('native Shell interaction contracts', () => {
 		hiddenContainer.style.display = 'none'
 		const nativeScope = container.querySelector<HTMLElement>('.worksplit-workbench')!
 		await act(async () => {
-			await vi.waitFor(() => expect(document.activeElement).toBe(nativeScope))
+			await vi.advanceTimersToNextFrame()
 		})
+		expect(document.activeElement).toBe(nativeScope)
+		vi.useRealTimers()
 		const restore = await pressKey(nativeScope, 'M', {
 			code: 'KeyM',
 			ctrlKey: true,
