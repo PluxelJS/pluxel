@@ -1,21 +1,26 @@
 # Pluxel Projects
 
-`projects/` contains reference applications that must evolve in the Pluxel repository-level
-workspace, including explicitly marked designs awaiting implementation. The current and intentionally small set is:
+`projects/` contains the maintainer applications and integration consumers that
+currently evolve with this framework workspace.
 
-| Project                                            | Purpose                                                                             |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `plugin-host`                                      | Native modules delivery, Vite execution, HMR diagnostics and focused runtime demos. |
-| `docs`                                             | Fumapress/Waku site built from the repository's `docs/` Markdown source.            |
-| [`embedded-launcher`](embedded-launcher/README.md) | Design only: Rust native UI, Node/Vite HMR and an embedded LLRT plugin runtime.     |
+| Project                                                    | Purpose                                                                      |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [`plugin-host`](plugin-host/README.md)                     | Native module delivery, Vite execution and HMR diagnostics.                  |
+| `docs`                                                     | Documentation site built from the repository's `docs/` Markdown source.      |
+| [`plugin-market`](plugin-market/README.md)                 | Plugin marketplace service and its Cloudflare Worker/D1 integration.         |
+| [`typst-agent-workspace`](typst-agent-workspace/README.md) | Typst source editing, persistence and native-rendering integration consumer. |
 
-Product-scale applications have independent Git history, lockfiles, CI and release lifecycles.
-During cross-repository development they consume the current Pluxel checkout through
-[`pluxel source`](../docs/development/source-workspaces.md), rather than becoming nested members of this
-workspace.
+Execution-environment experiments live in [Pluxel Lab](https://github.com/PluxelJS/lab),
+with their own lockfile, CI and validation records. The former `embedded-launcher`
+and `report-template-studio` projects are now
+[QuickJS native](https://github.com/PluxelJS/lab/tree/main/experiments/quickjs-native)
+and [Electron studio](https://github.com/PluxelJS/lab/tree/main/experiments/electron-studio).
+Framework unit and compatibility fixtures remain with their owning packages.
 
-For a new application, generate the canonical standalone monorepo:
+Independent applications consume a framework checkout through
+[`pluxel source`](../docs/development/source-workspaces.md). For a new application,
+generate the canonical standalone monorepo:
 
-```bash
+```sh
 pnpm create @pluxel my-workspace
 ```

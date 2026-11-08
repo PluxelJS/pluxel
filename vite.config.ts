@@ -13,7 +13,6 @@ export default defineConfig(() => {
 		'@pluxel/plugin-typst',
 		'@pluxel/plugin-takumi-markdown',
 		'@pluxel/plugins-host',
-		'@report-template-studio/app',
 		'@pluxel-example/typst-agent-workspace',
 	])
 	const ciPackages = packages.filter(({ manifest }) => !nativeConsumers.has(manifest.name))
@@ -41,8 +40,7 @@ export default defineConfig(() => {
 	}
 	Object.assign(tasks, {
 		'worksplit:native:check': {
-			command:
-				'node scripts/check-worksplit-native.mjs packages/workbench plugins/render/typst projects/report-template-studio',
+			command: 'node scripts/check-worksplit-native.mjs packages/workbench plugins/render/typst',
 			dependsOn: ['@worksplit/react#compile'],
 			cache: false,
 		},
@@ -97,9 +95,6 @@ export default defineConfig(() => {
 				'vp test run --config vite.config.ts',
 				'plugins/render/typst/tests/preview.test.ts',
 				'plugins/render/typst/tests/source-navigation.test.ts',
-				'projects/report-template-studio/tests/inputs.test.ts',
-				'projects/report-template-studio/tests/discovery-acl.test.ts',
-				'projects/report-template-studio/tests/electron-shutdown.test.ts',
 			].join(' '),
 			cache: false,
 		},

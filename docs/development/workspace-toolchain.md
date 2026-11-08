@@ -101,7 +101,7 @@ CI 环境通过 [mise-action](https://github.com/jdx/mise-action) 依据 `mise.t
 - 持久化保存 `node_modules/.vite/task-cache` 目录以实现跨工作流的构建结果缓存。
 - 涉及端到端页面与 Worker 存储回归的测试，可在安装依赖后使用 Playwright 进行验证。
 
-`workspace:ci` 不编译 Typst 原生库，也不打包 Electron；Typst、Studio、Takumi Markdown、示例 Plugin Host 和 Typst Agent Workspace 的完整验收由本地 `vp run verify` 执行。CI 保留 Typst WASM 与编辑、存储、退出确认的短测试。
+`workspace:ci` 不编译 Typst 原生库；Typst、Takumi Markdown、示例 Plugin Host 和 Typst Agent Workspace 的完整验收由本地 `vp run verify` 执行。CI 保留 Typst WASM、预览和源码定位的短测试。QuickJS 与 Electron 应用已迁入 [Pluxel Lab](https://github.com/PluxelJS/lab)，由该仓库维护构建、测试与 CI。
 
 文档站的 `prepare:docs` 为示例类型检查准备包产物，Typst 使用 `compile-lib`，Takumi Markdown 使用不依赖原生编译的 `compile`。Vercel 安装入口的 Vite+ 版本须与 `mise.toml` 和 catalog 一致。
 

@@ -39,7 +39,6 @@ packages/*              框架库、contract、adapter 与可含配套 /plugins 
 plugins/*               可独立装配的具体插件 package
 plugins/<domain>/*      共享明确能力链的具体插件 package
 projects/*              必须随框架一起演进的可运行维护者宿主
-projects/embedded-launcher/sdk  原生嵌入演示的 private 服务身份包
 vendor/*                明确纳入的上游源码；不套用第一方目录语义
 ```
 
@@ -47,6 +46,8 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
 具体 `@Plugin`，仍可位于 `packages/*`；服务包可通过显式 `./plugins` 入口提供配套插件，基础服务入口不反向加载该入口。独立分发的具体插件 package 位于 `plugins/*` 或
 `plugins/<domain>/*`。领域目录只表达仓库分类，不创建隐式依赖、聚合插件或新的公开入口。Pluxel
 仓库内可运行 host 位于 `projects/*`，当前只保留维护者宿主。
+跨运行环境的应用实验维护在独立的 [Pluxel Lab](https://github.com/PluxelJS/lab)，拥有自己的锁文件、CI 和验证记录。
+框架的单元测试、兼容性测试和回归夹具继续由各包维护。
 官方浏览器 Shell 属于 `packages/workbench/shell/`，拥有独立 TypeScript 与 Vitest 配置；它随 Workbench 编译成静态资源，
 不另建 workspace 包。仅用于 Shell 构建的依赖放在 Workbench devDependencies，不扩大 SDK 的安装依赖。产品项目使用独立 workspace；其中可按
 领域需要使用 `platforms/*` 隔离外部平台 capability 与直接 bridge。

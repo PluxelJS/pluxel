@@ -63,7 +63,7 @@ config 保留 v4；state 改为只保存用户输入的稀疏 v7。v6 的真实�
 | 局部声明加管理编辑      | 隐藏值仍可保存、路径替换/reset、CAS、保存失败与 listener 采用；表单不物化继承值 | [Host config](../../packages/host/tests/config.test.ts)、[真实 RPC 事务](../../packages/services/tests/management/management/host-input-transactions.test.ts)、[表单闭环](../../packages/workbench/shell/tests/web/config-form-loop.test.tsx)            |
 | 保存优先且包含部署绑定  | 同一节点组合 code/file/env/saved，来源事实与 raw/output 分离                    | [配置层集成](../../packages/host/tests/config-layers-integration.test.ts)、[部署绑定](../../packages/host/tests/config-environment.test.ts)                                                                                                              |
 | fork 与 Part 配置       | default/fork 隔离、Part 子树校验、动态目录和同包不同导出的精确 mode             | [配置层集成](../../packages/host/tests/config-layers-integration.test.ts)、[fork 控制面](../../packages/services/tests/management/management/plugin-forks.test.ts)、[静态绑定](../../packages/rolldown/tests/rolldown/static-config-environment.test.ts) |
-| 借用嵌入文档            | factory 只解析一次、准备失败清理、排空 IO、不关闭共享 backend                   | [document-storage](../../packages/host/tests/document-storage.test.ts)、[embedded-launcher](../../projects/embedded-launcher/src/app.ts)                                                                                                                 |
+| 借用嵌入文档            | factory 只解析一次、准备失败清理、排空 IO、不关闭共享 backend                   | [document-storage](../../packages/host/tests/document-storage.test.ts)、[embedded-launcher](https://github.com/PluxelJS/pluxel/blob/dc532cffb074441b6c07050ea5fcf79bb4439a4a/projects/embedded-launcher/src/app.ts)                                      |
 | 保存执行参数后重建 Host | 服务准备前采用保存参数、当前执行不变、新 Host 采用目标                          | [policy-management](../../packages/host/tests/policy-management.test.ts)、[Core 一次性绑定](../../packages/core/tests/plugin-execution-binding.test.ts)                                                                                                  |
 
 补充边界由 [ConfigInputPatch 类型检查](../../packages/host/tests/config.types.ts)、[外部文件更新](../../packages/host/tests/config-file-reload.test.ts)、[浏览器存储](../../packages/host/tests/browser-storage.test.ts)和[生成应用测试](../../packages/create/tests/create.test.mjs)维护。此次集成还发现并补上 Part schema 同时返回 value/issues 时的失败判定，以及外部较短文件被 Passthrough 读取关闭过程扩长的问题；这些修正保留在对应回归中。
@@ -73,7 +73,7 @@ config 保留 v4；state 改为只保存用户输入的稀疏 v7。v6 的真实�
 - 真实 plugin-host 完成 HMR apply 后应用 ready，目录含 24 个 Plugin；开发控制台验证 config 空提交不写入、过期 CAS 拒绝、policy validate 不推进 revision。应用与 Workbench HTTP 均为 200；验收结束后恢复原先停止的服务状态。脚本 runId 为 `70914715-e52d-4331-8045-42a1364c4ff5`，同实例 HMR 收尾 runId 为 `03ccb39d-eb89-4b57-8a42-fbf7e15f6867`；原 receipt 保留在本次操作记录中。这证明该次在线状态，不代表持续可用性。
 - local-projects 的 rhythm、bot-new-omni、chatbot 已完成显式数据转换并保留原副本。新 Host 只读恢复分别识别 18、11、7 条配置记录；备份哈希校验通过，恢复前后文件内容哈希与 mtime 不变，未启动业务 Plugin。chatbot 未有的策略输入保持缺省，没有补写空列。
 - 新生成 starter 已通过生产构建、制品完整性检查及开发/HMR 冒烟测试；这项证据独立于本仓库应用和静态模板断言。
-- report-template-studio 已通过独立 compile-code 构建与 [runtime.mjs](../../projects/report-template-studio/tests/runtime.mjs)：两个外部 Node client、渲染、重启后 artifacts 保留、forget 保留用户文件及 discovery 清理均完成验证。
+- report-template-studio 已通过独立 compile-code 构建与 [runtime.mjs](https://github.com/PluxelJS/pluxel/blob/dc532cffb074441b6c07050ea5fcf79bb4439a4a/projects/report-template-studio/tests/runtime.mjs)：两个外部 Node client、渲染、重启后 artifacts 保留、forget 保留用户文件及 discovery 清理均完成验证。
 
 ## 完整门禁结果
 
