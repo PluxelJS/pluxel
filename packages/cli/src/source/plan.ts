@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { relative, resolve } from 'pathe'
 import {
 	normalizeRepositoryIdentity,
@@ -248,14 +248,39 @@ function resolveSingletonOverride(
 	const owners = checkouts.flatMap((checkout) =>
 		checkout.workspace.packages.filter(
 			(pkg) =>
-				selectedPackages.has(pkg.name) && Object.hasOwn(pkg.manifest.dependencies ?? {}, name),
+				selectedPackages.has(pkg.name) &&
+				(Object.hasOwn(pkg.manifest.dependencies ?? {}, name) ||
+					Object.hasOwn(pkg.manifest.peerDependencies ?? {}, name)),
 		),
 	)
-	if (owners.length !== 1) {
-		throw new Error(
-			`Singleton ${name} must have exactly one direct source dependency owner; found ${owners.length}` +
-				(owners.length > 0 ? ` (${owners.map((owner) => owner.name).join(', ')})` : ''),
-		)
+	if (owners.length === 0) {
+		throw new Error(`Singleton ${name} has no selected source dependency or peer owner`)
+	}
+	// Several linked UI packages can share one installed peer. Compare physical
+	// installations before linking; never pick one of conflicting copies.
+	if (owners.length > 1) {
+		const installations = new Map<string, string[]>()
+		for (const owner of owners) {
+			const path = resolve(owner.dir, 'node_modules', name)
+			let installation: string
+			try {
+				installation = realpathSync(path)
+			} catch (cause) {
+				throw new Error(
+					`Cannot resolve singleton ${name} for ${owner.name} at ${path}; install the source checkout dependencies first`,
+					{ cause },
+				)
+			}
+			const names = installations.get(installation) ?? []
+			names.push(owner.name)
+			installations.set(installation, names)
+		}
+		if (installations.size !== 1)
+			throw new Error(
+				`Singleton ${name} resolves to different source installations: ${[...installations]
+					.map(([path, names]) => `${names.join(', ')} -> ${path}`)
+					.join('; ')}; align the source checkout dependencies first`,
+			)
 	}
 	return `link:${normalizeLinkPath(resolve(owners[0]!.dir, 'node_modules', name))}`
 }
