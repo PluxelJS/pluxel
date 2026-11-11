@@ -4,6 +4,7 @@
 
 以下仍未实现，不构成当前 API 承诺：
 
+- Vite 无关的 Host 控制、远程客户端及配置校验见 [面向 Coding Agent 的配置与 Host 控制](AGENT_HOST_CONTROL.md)。
 - 浏览器脚本编辑器与 inline TS cells：复用同一执行内核，明确 import base、local authorization/Origin 和代码提交边界，不另建模块 runner。
 - 持久 scratch bindings：只有真实工作流证明 JSON input/result 不够时再设计；区分可保留数据与 generation-scoped handles，明确失效和 disposal，不用全局 Map 保活任意对象。
 - 通用 SQL admin：定义 active instance、owner role、statement/timeout、outbox 与权限后再增加；当前通过 Plugin 业务方法或其有意公开的 database handle 操作。

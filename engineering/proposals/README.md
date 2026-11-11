@@ -13,6 +13,8 @@
 
 研究与必要决策记录：
 
+- [面向 Coding Agent 的配置与 Host 控制](AGENT_HOST_CONTROL.md)：待实施；以类型化远程控制 API 支持原生与单文件部署，统一配置声明、Workbench 编辑、离线校验与 Vault 部署绑定。
+
 - [Host 配置重构：决策与验收](HOST_CONFIGURATION_LAYERS.md)：已实施，根仓库及三个 local-projects 的完整门禁通过；保留身份/mode、原始输入事务和执行绑定决策，以及六条验收路径、线上检查和数据迁移证据。当前 API 见正式 Host/Config 文档。
 
 - [Typst 内容创作与私有排版边界](TYPST_AUTHORING_BOUNDARIES.md)：待实施的整体重构提案；分离源码创作与 JSON 正文权威，明确私有模板/数据/资产边界、agent 协作提交和无兼容迁移。
