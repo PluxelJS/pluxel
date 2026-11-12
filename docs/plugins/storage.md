@@ -7,6 +7,12 @@ description: 通过统一的 s3mini API 在本地存储、远端 S3 和平台实
 
 `@pluxel/plugin-storage` 为业务插件提供接近原生 bucket 的 `S3` 访问能力。插件通过 `S3.bucket(id).client` 调用 [s3mini](https://github.com/evanw/s3mini) 1.x API，应用宿主则通过 `S3Plugin` 配置一组本地或远端 bucket。
 
+## Bucket 目录与生命周期
+
+`buckets` 接受 1–64 个唯一 ID，按配置并行初始化，全部成功后才发布能力；任一项失败会清理已创建的资源。`bucketIds()` 列出当前 ID，`bucket(id)` 选择指定项，省略 ID 时使用 `default`；缺失项抛出 `S3BucketNotFoundError`，不会自动选择其他 bucket。
+
+Bucket 共享 owning Plugin 的 generation，配置变更通过普通 Plugin replacement 采用。客户端及缓存方法绑定 provider 与 consumer 的生命周期，任一方停止后旧句柄失效并抛出 `S3NotRunningError`。资源由 provider 关闭；consumer 保存自己选择的 ID，并决定该项不可用时的业务处理。实现与回归见 [S3 provider](../../plugins/storage/src/s3.ts) 和 [Storage 测试](../../plugins/storage/tests/)。
+
 ## 写入与读取对象
 
 业务插件注入 `S3` 实例后，直接按 bucket ID 获取客户端操作对象：

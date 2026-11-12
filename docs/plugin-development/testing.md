@@ -208,3 +208,19 @@ await host.commit((change) => {
 1. **清理是否彻底**：插件调用 `host.stop()` 后，其内部通过 `ctx.effects.defer()` 注册的回调是否被调用，后台连接是否真正关闭；
 2. **局部异常回滚**：如果挂载的某个 `PluginPart` 在 `init()` 中抛出错误，验证主插件是否能够整洁回滚，已创建的资源是否被完整清理；
 3. **可选依赖启闭**：验证可选依赖从“不存在”到“被动态启动”时，消费方插件能否正确建立与断开集成。
+
+## 文件夹具
+
+`@pluxel/test/fixtures` 的 `createFixture()` 创建内存文件树；需要真实磁盘路径、子进程或原生文件监听时使用 `createDiskFixture()`。两者都支持 `await using`，作用域结束后删除夹具目录。
+
+```ts
+import { createFixture } from '@pluxel/test/fixtures'
+import { expect } from 'vitest'
+
+await using fixture = await createFixture({ 'input.txt': 'hello' })
+const path = fixture.getPath('input.txt')
+await fixture.fsp.writeFile(path, 'updated')
+expect(await fixture.fsp.readFile(path, 'utf8')).toBe('updated')
+```
+
+Promise 文件操作使用 `fixture.fsp`（或 `fixture.fs.promises`）。`fixture.fs` 的异步方法遵循 Node callback 形式，必须传入回调；同步方法保留 `Sync` 后缀。内存夹具自行拥有文件系统与临时目录，不接受 `fs` 或 `tempDir` 选项；磁盘夹具允许 `tempDir`，使用原生文件系统并拒绝 `fs` 覆盖。非法选项在 JavaScript 调用中也会抛错。

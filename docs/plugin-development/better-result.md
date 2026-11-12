@@ -7,6 +7,10 @@ description: 掌握 Better Result 在本地插件方法、Command 指令与多�
 
 Pluxel 核心在 `@pluxel/core/better-result` 子路径下直接导出了 [Better Result](https://better-result.dev/) 的完整运行时 API 与类型，供插件直接使用。
 
+跨插件公开 Result 实例时，提供方和调用方使用同一子入口，通过 `@pluxel/core` peer 共享所选版本，无需额外声明 `better-result` peer。Core peer 范围应包含所用子入口和 API 的最低版本；只导入 Core 主入口不会加载 Better Result。独立安装的双包 ESM/CJS 消费与对象身份检查见 [Core 发行回归](../../packages/core/tests/installed-result.smoke.mjs)。
+
+本地业务方法按恢复需要选择 Result；SDK 原生返回值、部分成功回执及配置的保存/采用状态继续使用各自协议。`Plugin.init()` 无法提供能力时仍按生命周期约定失败。
+
 ## 场景选型：何时使用 Result
 
 - **常规成功与单一空值**：如果只是查询可能找不到（如缓存未命中），直接返回 `null` 或 `undefined` 最为简洁直观。
@@ -99,11 +103,10 @@ export const readNoteCommand = defineCommand({
 
 ## 官方插件示例
 
-在官方插件包中，Better Result 主要应用于复杂的业务交互场景：
+现有调用方展示了两种边界：
 
-- **`@pluxel/plugin-wretch`**：HTTP 请求在遇到特定状态码（如 404 或 429）时，将状态码映射为类型化的请求错误；
-- **`@pluxel/plugin-redis`**：分布式锁获取失败或 Lua 脚本返回业务拒绝时，返回明确的 Result；
-- **`@pluxel/plugin-invoice`**：发票识别与验真流程中，区分 OCR 识别错误、票面金额不一致与税务局接口超时的不同失败分支。
+- [Wretch consumer](../../plugins/wretch/tests/fixtures/wretch-example.ts) 将查询的 404 转为 `CustomerNotFound`，由另一个 Plugin 的 HTTP route 转为普通 JSON 与 404 响应；其他 HTTP、网络及生命周期错误保留原语义。
+- [Auth credential preparation](../../plugins/auth/src/credential-provisioning.ts) 在内部组合输入、账户与凭据校验，公开方法继续返回领域 DTO，Workbench 不接收 Result 实例。
 
 ## 跨进程与 RPC 边界
 

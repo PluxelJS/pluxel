@@ -43,7 +43,7 @@ physical key 使用唯一 `PluginNodeAddress` canonical bytes 的 SHA-256；包�
 
 ## Host 文档与关闭
 
-Host 默认从 Core 内部 `requireHostDocuments(root, namespace)` 借用 `config` 和 `state` 文档，所选 backend 只在 `runtime.zenfs` 中输入。嵌入应用仍可通过同步 root factory 提供已有借用适配；不转交连接所有权。显式 `mode: 'memory'` 选择临时领域状态。
+Host 默认从 Core 内部 `requireHostDocuments(root, namespace)` 借用 `config` 和 `state` 文档，所选 backend 只在 `runtime.zenfs` 中输入。嵌入应用仍可通过同步 root factory 提供已有借用适配；不转交连接所有权。将 `runtime.documents.config` 或 `runtime.documents.state` 设为 `false` 可关闭对应领域的文档 IO。
 
 `HostDocumentStorage` 定义在 Core，Host 保留原名 re-export，包含 `getText(key)`、`put(key, text)`、`stat(key)` 与可选的 namespace 变化订阅 `subscribe(listener)`。`put` 等待完整原子提交，不接收可选 atomic 标记。只有确实缺失返回 `undefined`；损坏内容保留原文件并失败。Vault 使用内部 `requireFs(root)` 获取自己的目录；Logging 与 Management 使用同一普通文档入口。FS 只限制普通文档单文件 8 MiB（UTF-8），不解释领域编码；TinyBase snapshot adapter 使用自己的 maxSnapshotBytes。原子写失败保留原生错误，结果可能未知，由领域 owner 决定发布与恢复。
 
@@ -74,4 +74,6 @@ ZenFS 的定向修复集中在固定版本依赖补丁，业务不包含事务�
 
 新增后端或升级依赖时重新验证实际提交与释放边界。真实浏览器页面/Worker 的 IndexedDB 和工作区外安装结果必须分别记录；API 形状相似与 mock store 不能证明这些结果。
 
-2026-10-30 的独立安装、在线接收方、数据转换及未验证边界见[实施验收记录](proposals/ZENFS_FS_REFACTOR.md#验收证据)。当前实现不包含旧路径读取器或启动迁移；已有部署需要按实际数据格式显式转换，保留原副本并验证领域恢复。
+后端回归从 [ZenFS](../packages/core/tests/zenfs.test.ts)、[StoreFS](../packages/core/tests/zenfs-store.test.ts)、[浏览器验收](../packages/core/tests/zenfs.browser.mjs)进入。已有浏览器配额证据来自事务 abort 与 `QuotaExceededError` 注入，未实际填满配额；Windows、Cloudflare 持久后端和 DO 文件系统尚无验收结论。
+
+已有部署需要按实际数据格式显式转换，保留原副本并验证领域恢复；当前实现不包含旧路径读取器或启动迁移。文件路径转换与领域格式恢复分别检查，不能把未识别的历史配置或布局自动启用。Core 固定能力的迁移范围与有日期的执行记录见 [TinyBase 迁移清单](TINYBASE_MIGRATION.md)。
