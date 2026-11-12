@@ -307,7 +307,50 @@ zenfs({
 - **`saved-first`**：管理后台保存的值优先，缺失项采用代码中的声明；
 - **`declared-only`**：完全忽略外部持久化修改，严格使用代码中声明的值或 Schema 默认值。
 
-在运行时通过管理 API（或 Workbench）修改配置后，若插件已注册了 `onUpdate` 监听器，新配置会被就地热应用；否则新配置将在插件下次重启后生效。
+顶层 `config.records` 按节点声明输入，`policy` 声明运行策略。例如让管理保存值优先，同时为新安装提供初始声明：
+
+```ts no-twoslash
+import { defineHostApplication } from '@pluxel/host'
+import { WorkerPlugin } from './worker'
+
+export default defineHostApplication(() => ({
+	plugins: [WorkerPlugin],
+	config: {
+		mode: 'saved-first',
+		records: [{ owner: WorkerPlugin, config: { concurrency: 2 } }],
+	},
+	policy: {
+		autoStart: [WorkerPlugin],
+		startTimeoutMs: 30_000,
+		mode: { autoStart: 'saved-first' },
+	},
+}))
+```
+
+每条记录的 `owner` 接受 Plugin constructor 或 canonical node address。constructor 表示 default node；fork 使用 `Plugin.nodeAddress('east')`。default 与 fork 的值和 mode 各自独立，Part 的输入仍属于所在 Plugin。mode 按 `record.mode → config.mode → declared-first` 选择；仅声明 `{ owner, mode }` 合法，重复 owner 或同时缺少 mode/config 会报错。记录本身不加载代码、创建 fork 或启动节点。
+
+声明按 `config.records → fileBindings.config → envBindings.config` 合成，后者覆盖同路径，再按 mode 与保存输入组合。普通对象递归合并，数组整项替换。缺失保存文档不会写入声明或 schema 默认值；`reset` 删除保存输入，重新继承声明。env/file 的覆盖与管理写权限分别设置。
+
+Host 默认通过所选文件后端保存 config/state。`runtime.documents.config` 与 `runtime.documents.state` 可分别设为 `false` 关闭该域的文档 IO，或设为 `{ readOnly: true }` 允许读取、拒绝本实例管理写入。嵌入应用可提供同步 `storage: (root) => HostDocumentStorage` 借用已有适配，backend 仍由创建者关闭。跨重开保留取决于[文件后端](#选择文件后端)，默认 InMemory 只保留本次会话。
+
+Workbench 编辑原始保存输入，Host 查询同时返回 `managedInput`、有效输入与校验输出。提交使用 `{ set?, remove? }`，`expectedManagedRevision` 在保存前检查本 Host 的原始输入版本；保存与运行采用分别查看 `persistence` 和 `application`。保存成功后，所有受影响声明的 `onUpdate` 监听器均成功才确认 `applied`；缺少或失败的监听器返回 `saved-not-applied`，保存的目标仍供后续更新或重启使用。只编辑被声明遮盖的保存值不会触发运行更新。
+
+### 八项运行策略
+
+`policy.mode` 按字段分别设置上述三种模式，省略的字段使用 `declared-first`。
+
+| 字段                  | 含义                                             |
+| --------------------- | ------------------------------------------------ |
+| `autoStart`           | 自动启动节点，可使用 constructor 或 node address |
+| `forks`               | 已声明的 canonical fork addresses                |
+| `providerDefaults`    | 抽象依赖的默认 provider                          |
+| `dependencyOverrides` | 指定 consumer 的 provider 选择                   |
+| `startTimeoutMs`      | Plugin 启动期限                                  |
+| `drainTimeoutMs`      | 已接纳操作的排空期限                             |
+| `startConcurrency`    | Plugin 启动并发数                                |
+| `stopConcurrency`     | Plugin 停止并发数                                |
+
+前四个列表整项选择，显式 `[]` 是空列表，省略才继承。后四项执行参数在创建 Plugin 服务前确定；运行中保存新目标会报告 `requires-host-recreation`，需要重建 Host 才能采用，单独重启 Plugin 不改变本次 Host 的执行参数。管理动作若被声明遮盖而无法生效，会在副作用前以 `policy_shadowed` 拒绝。
 
 ---
 

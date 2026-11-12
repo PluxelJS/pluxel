@@ -40,6 +40,12 @@
 
 这些是选择场景的清单，不要求每次小改都跑全套。改动影响的边界必须有相应证据；未执行的场景直接注明。
 
+## 独立发行与浏览器边界
+
+[installed-vite smoke](../packages/workbench/tests/installed-vite.smoke.mjs)使用临时 root 中的源码 publisher，检查 Shell HTTP、服务端 View RPC 和会话释放。独立发行的完整路径还需保留实际浏览器证据：安装可发布的 publisher 产物，经官方 Vite Host 打开 Shell/View，读取 RPC，再关闭并确认释放；直连、代理和生产发行入口分别记录结果。
+
+早期手写 publisher 的构建曾因 MF 类型生成 `TYPE-001`、缺少 `@mf-types.d.ts` 被制品终结拒绝；应使用可成功构建的真实 publisher 重建场景。Services 独立安装的上游声明限制见 [Host 部署验证](HOST_DEPLOYMENT_VALIDATION.md)。现有 Node/Vite、HTTP 或服务端 RPC 结果不能充当上述浏览器路径的执行记录。
+
 ## 如何记录结果
 
 检查结果放在本次变更说明中，包含所改行为、执行命令或浏览器场景、实际结果与未验证边界。本页维护检查方法，不积累单次运行的测试数量、截图路径、进程 ID 和旧通过记录。

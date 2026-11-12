@@ -26,7 +26,7 @@ Plugin + owned PluginPart fields: configs.use(ObjectSchema)
 | Playwright          | 抽象 `Playwright` 的原生连接 hook 保留完整 connect/connectOverCDP 配置；`PlaywrightPlugin` 是 endpoint/Vault 预设。generation 拥有返回的连接，caller 拥有其 BrowserContext，外部浏览器进程仍由部署者管理。[Browser](../docs/plugins/browser.md)。                                                    |
 | srvx / Elysia       | `listenElysia()` 保留原生 srvx TCP/TLS、middleware、plugin 和错误选项；Host 拥有 dispatch 与关闭。完全自管 transport 使用 `createElysiaHandler()` 与原生 srvx。[公开接线](../docs/host/configuration.md#独立-http-host)。                                                                            |
 | Vite / tsdown       | 使用真实 Vite/tsdown 配置文件及原生插件；Pluxel 插件只加入 lowering、共享身份与制品约束。production runner 固定自身执行模式，不复制一套 bundler 参数。[Artifact build](ARTIFACT_BUILD.md)。                                                                                                          |
-| Workers             | `workers({ worker })` 保留原生 Node WorkerOptions 的环境、参数、启动数据与资源限制；Services 只拥有固定入口、message/transfer、stdio、接纳和实际退出结算，不另建线程工厂 DSL。[Node artifacts](../docs/plugin-development/node-artifacts.md#原生线程选项)。                                          |
+| Workers             | `workers({ worker })` 保留原生 Node WorkerOptions 的环境、参数、启动数据与资源限制；Services 只拥有固定入口、message/transfer、stdio、接纳和实际退出结算，不另建线程工厂 DSL。[Node artifacts](../docs/plugin-development/node-artifacts.md#选择安装能力)。                                          |
 | Wretch / Redis / S3 | HTTP client 和连接继续返回原生 SDK；可保存设置拥有预算、凭据引用和部署选择。高级装配通过原生 client 或既有 provider，不能将密钥或函数扩散到管理记录。[Wretch](../docs/plugins/wretch.md)、[Redis](../docs/plugins/redis.md)、[Storage](../docs/plugins/storage.md)。                                 |
 
 Vault 的 envelope/轮换与渲染的资源预算是独立领域契约，不作为 SDK 配置镜像。新增第三方能力时先明确代码配置与保存设置的所有者，再决定是否需要新的框架字段；不能用封闭实现白名单代替扩展点。
@@ -184,4 +184,13 @@ control-plane 查询与成功修改返回 `HostConfigInputSnapshot`（mode、rea
 
 覆盖 Plugin/重复 Part 的 config 聚合、constructor 不提前读取、schema input/output 差异、逐 node mode、env/file 声明、隐藏保存值与 reset 恢复继承。保存路径必须证明原始版本冲突在副作用前拒绝、flush 失败不发布、schema 不重复执行、candidate/revision 不匹配不能复用 snapshot。在线 apply 覆盖 listener 缺失/拒绝、generation 撤回、children-before-owner、fork 隔离以及 `saved-not-applied` 保留 desired record。
 
-直接入口是 `packages/host/tests/config.test.ts`、`config-store.test.ts`、`config-environment.test.ts`、`config-file-reload.test.ts`、`config.types.ts`，以及 Core config/PluginPart 和 Services management config 测试。操作当前应用仍通过 [devconsole](../docs/development/dev-console.md)，检查返回的 persistence/application/applyFailure，不以命令完成代替应用成功。
+直接入口是 `packages/host/tests/config.test.ts`、`config-store.test.ts`、`config-environment.test.ts`、`config-file-reload.test.ts`、`config.types.ts`，以及 Core config/PluginPart 和 Services management config 测试。
+
+跨层路径分别由以下回归维护：
+
+- [配置层集成](../packages/host/tests/config-layers-integration.test.ts)覆盖 code/file/env/saved 组合、动态节点和 default/fork 隔离。
+- [管理事务](../packages/services/tests/management/management/host-input-transactions.test.ts)与[表单闭环](../packages/workbench/shell/tests/web/config-form-loop.test.tsx)覆盖原始输入、CAS、保存与采用反馈。
+- [借用文档](../packages/host/tests/document-storage.test.ts)覆盖 factory 解析、失败清理、IO 排空和 backend 所有权；[浏览器存储](../packages/host/tests/browser-storage.test.ts)覆盖页面与 Worker 的恢复。
+- [运行策略](../packages/host/tests/policy-management.test.ts)与[执行参数绑定](../packages/core/tests/plugin-execution-binding.test.ts)覆盖当前 Host 保持既有执行参数、重建 Host 采用保存目标。
+
+操作当前应用仍通过 [devconsole](../docs/development/dev-console.md)，检查返回的 persistence/application/applyFailure，不以命令完成代替应用成功。

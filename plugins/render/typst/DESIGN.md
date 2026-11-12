@@ -122,7 +122,7 @@ Worker 保留 NodeCompiler、最新成功 document 与文件内容索引；同�
 
 `/tiptap/document` 与 `/tiptap/document/react` 不加载 source/parser，复用语义节点和原生编辑控件。引用使用不透明 ID 与可选 `{documentId, position}`，没有编辑器目的地时不提供虚构的跳转按钮。内容校验拒绝 schema 外属性，普通事务不能改写固定节点，宿主同步只替换差异并保留原生选区。默认本地历史和显式远端历史各有一个所有者；共享 UI 的事务标记放在不依赖 source 的模块中。`/document/react` 独立持有安全 PNG 页面的命中、跟随、原生内部链接、滚动与高亮，过期/草稿状态禁用旧几何，宿主只持有实际页图 URL、当前修订与打开面板行为。第三个分章演示直接消费这些公开入口，私有 project 适配仅保留章节目录事务与模板文件，server 适配仅保留串行 lease、编译、持久化和 HTTP。
 
-文件工作区以磁盘文件快照和 CAS 提交为存储边界。浏览器示例保存普通文件表；Studio 将正文与数据存入工作区，保留捕获 lease 和保存/编译/preview 分阶段回执。它们共享 source 核心，不能用隔离 test host 证明在线状态。
+文件工作区以磁盘文件快照和 CAS 提交为存储边界。浏览器示例保存普通文件表；外部消费者 [Electron Studio](https://github.com/PluxelJS/lab/tree/main/experiments/electron-studio) 的工作区、存储与桌面验收由 Pluxel Lab 维护。它们共享 source 核心，不能用隔离 test host 证明在线状态。
 
 浏览器 consumer 以桌面工作区为目标，将经营报告与固定审批表放在同一文件树的两个根文件夹中，各自持有项目、编辑历史与保存键；文件导航不改变浏览器 URL；Worksplit 的 routed document 持有每个文件的编辑草稿，其 `preview`/`keep` 持有临时标签与编辑后保留语义。左侧 Border 放文件树，中央默认编辑与整篇预览左右分组，原生 Model 独占标签、选择、分屏和最大化。各项目预览拥有一条编译会话，文件标签共用该预览；会话随预览关闭释放。文件树从项目快照派生，不另外维护文件内容。宿主通过 `createFile` 创建可撤销的新 `.typ`，章节经普通 `include` 进入所属文件夹的 `main.typ` 完整预览；源码修订决定当前预览和 PDF 是否可用，不另设预览入口状态。审批表由宿主原生表单编辑实际 JSON，一次字段确认是一笔项目事务；模板保留只读，长单元格的留白与续页由普通 Typst 定义。当前两个用例共享文件、准入、历史和编译，不从单个表单提取公共 schema 或另一份文档状态。
 
