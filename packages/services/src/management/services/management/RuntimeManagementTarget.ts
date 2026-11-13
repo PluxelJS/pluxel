@@ -10,6 +10,7 @@ import {
 	ensureFork,
 	removeFork,
 	projectPluginApplyReport,
+	projectHostPolicyResult,
 	createHostPolicy,
 	requireHostStateStore,
 } from '@pluxel/host/internal'
@@ -260,12 +261,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 	}
 
 	#projectPolicy(result: HostPolicyResult): PolicyResult {
-		if (!result.ok) return parsePolicyResult(result)
-		const { report, ...snapshot } = result
-		return parsePolicyResult({
-			...snapshot,
-			...(report ? { report: projectPluginApplyReport(this.ctx, report) } : {}),
-		})
+		return parsePolicyResult(projectHostPolicyResult(this.ctx, result))
 	}
 
 	async pluginConfigDto(owner: unknown): Promise<ConfigResult> {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, mkdir, writeFile, readFile, readdir, symlink, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { createConnection } from 'node:net'
+import { openProjectControl } from './script-control.fixture.mjs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -45,10 +45,11 @@ async function scenario(initiallyInvalid, run) {
 	const source = (index, value) => `
 import { BasePlugin, Plugin } from '@pluxel/core';
 import { __setPluginDefinition } from '@pluxel/core/toolchain';
+${index === 0 ? "import { offset } from './offset.mjs';" : ''}
 const metrics = globalThis[${JSON.stringify(key)}];
 metrics.evaluations.push(${JSON.stringify(`${index}:${value}`)});
 export class Probe extends BasePlugin {
-	value = ${value};
+	value = ${value}${index === 0 ? ' + offset' : ''};
 	async init() {
 		metrics.starts.push(${JSON.stringify(`${index}:${value}`)});
 		if (metrics.gate?.index === ${index}) {
@@ -72,36 +73,11 @@ export default defineHostApplication(() => ({
 	prepare() { globalThis[${JSON.stringify(key)}].prepared.push(${version}); }
 }));
 `
-	const request = (payload) =>
-		new Promise((resolve, reject) => {
-			const socket = createConnection(instance.socketPath)
-			let response = ''
-			socket.setTimeout(10000, () => socket.destroy(new Error('Console request timed out')))
-			socket.on('error', reject)
-			socket.once('connect', () =>
-				socket.write(
-					JSON.stringify({
-						protocol: instance.protocol,
-						instanceId: instance.instanceId,
-						nonce: instance.nonce,
-						...payload,
-					}) + '\n',
-				),
-			)
-			socket.on('data', (chunk) => {
-				response += chunk.toString()
-			})
-			socket.once('end', () => {
-				try {
-					const packet = JSON.parse(response)
-					assert.equal(packet.ok, true, JSON.stringify(packet))
-					resolve(packet.value)
-				} catch (error) {
-					reject(error)
-				}
-			})
-		})
-	const inspect = () => request({ method: 'inspect' })
+	const inspect = async () => {
+		using client = await openProjectControl(instance)
+		return await client.describe()
+	}
+
 	async function until(check, label) {
 		const deadline = Date.now() + 10000
 		while (true) {
@@ -113,13 +89,15 @@ export default defineHostApplication(() => ({
 	}
 	async function result(runId) {
 		return until(async () => {
-			const snapshot = await request({ method: 'result', runId })
+			using client = await openProjectControl(instance)
+			const snapshot = await client.result(runId)
 			return ['succeeded', 'failed', 'cancelled'].includes(snapshot.state) && snapshot
 		}, `run ${runId} must settle`)
 	}
 	async function submit(action) {
 		const runId = randomUUID()
-		await request({ method: 'hmr', runId, action })
+		using client = await openProjectControl(instance)
+		await client.control({ runId, action })
 		return runId
 	}
 	async function control(action) {
@@ -139,12 +117,15 @@ export default defineHostApplication(() => ({
 		const file = join(root, name)
 		const bytes = await readFile(file)
 		const runId = randomUUID()
-		await request({
-			method: 'run',
+		using client = await openProjectControl(instance)
+		await client.submit({
 			runId,
-			file,
-			sourceHash: createHash('sha256').update(bytes).digest('hex'),
-			exportName: 'default',
+			code: {
+				kind: 'project',
+				file,
+				sourceHash: createHash('sha256').update(bytes).digest('hex'),
+				exportName: 'default',
+			},
 		})
 		return result(runId)
 	}
@@ -161,14 +142,23 @@ export default defineHostApplication(() => ({
 			JSON.stringify({ name: 'hmr-control-fixture', type: 'module' }),
 		)
 		await mkdir(join(root, 'entries'))
+		await writeFile(join(root, 'entries/offset.mjs'), 'export const offset = 0')
 		await writeFile(join(root, 'app.ts'), app(0))
 		const artifactFile = join(root, 'view.txt')
 		await writeFile(artifactFile, 'initial')
 		await writeFile(
 			join(root, 'inspect.ts'),
-			"import { Probe } from './entries/probe-0.entry.mjs'; export default (dev) => dev.plugins.require(Probe).value",
+			"import { Probe } from './entries/probe-0.entry.mjs'; export default (sdk) => sdk.dev.instance(Probe).value",
 		)
 		await writeFile(join(root, 'fresh.ts'), await readFile(join(root, 'inspect.ts')))
+		await writeFile(
+			join(root, 'save.ts'),
+			`import { Probe } from './entries/probe-0.entry.mjs'; export default () => { globalThis[${JSON.stringify(key)}].savedConstructor = Probe; return true }`,
+		)
+		await writeFile(
+			join(root, 'stale.ts'),
+			`export default (sdk) => sdk.dev.instance(globalThis[${JSON.stringify(key)}].savedConstructor).value`,
+		)
 		await Promise.all(
 			Array.from({ length: count }, (_, index) =>
 				writeFile(
@@ -182,7 +172,7 @@ export default defineHostApplication(() => ({
 			configFile: false,
 			server: { port: 0, host: '127.0.0.1' },
 			plugins: [
-				...host({ entry: 'app.ts', devConsole: true }),
+				...host({ entry: 'app.ts', scripts: true }),
 				{
 					name: 'fixture:artifact',
 					api: {
@@ -234,7 +224,6 @@ export default defineHostApplication(() => ({
 			sourcePath,
 			source,
 			app,
-			request,
 			inspect,
 			until,
 			result,
@@ -295,6 +284,8 @@ await scenario(
 		assert.equal(metrics.starts.length, count)
 		const initialRead = await script()
 		assert.equal(initialRead.value, 0)
+		const savedConstructor = await script('save.ts')
+		assert.equal(savedConstructor.state, 'succeeded')
 		const paused = await control('pause')
 		assert.equal(paused.hmr.mode, 'paused')
 
@@ -325,6 +316,9 @@ await scenario(
 		assert.equal(metrics.starts.at(-1), '0:1')
 		const firstRead = await script()
 		assert.equal(firstRead.value, 1)
+		const staleRead = await script('stale.ts')
+		assert.equal(staleRead.state, 'failed')
+		assert.equal(staleRead.error.code, 'stale_target')
 		const sequence = applied.application.latestUpdate.sequence
 		const unchanged = await control('apply')
 		assert.equal(unchanged.application.latestUpdate.sequence, sequence)
@@ -342,6 +336,16 @@ await scenario(
 		await control('apply')
 		const repairedRead = await script()
 		assert.equal(repairedRead.value, 2)
+
+		// A project dependency update reaches the same module graph and current Plugin identity.
+		await writeObserved(join(root, 'entries/offset.mjs'), 'export const offset = 10')
+		await control('apply')
+		const dependencyRead = await script()
+		assert.equal(dependencyRead.value, 12)
+		await writeObserved(join(root, 'entries/offset.mjs'), 'export const offset = 0')
+		await control('apply')
+		const restoredDependencyRead = await script()
+		assert.equal(restoredDependencyRead.value, 2)
 
 		// Edits observed during lifecycle await belong to the next explicit batch.
 		const gate = { index: 0, release: Promise.withResolvers() }

@@ -137,7 +137,7 @@ try {
 		},
 		server: { port: 0, host: '127.0.0.1' },
 		plugins: [
-			vitePreset({ entry: 'app.ts', devConsole: true }),
+			vitePreset({ entry: 'app.ts', scripts: true }),
 			{
 				name: 'fixture:late-package-notification',
 				async watchChange(id) {

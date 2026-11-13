@@ -2,8 +2,13 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { startDevConsoleServer } from '../src/console/server'
-import { controlDevHmr, requestDev, runDevFile, selectDevInstance } from '../../cli/src/dev/client'
+import { startProjectScriptServer } from '../src/console/server'
+import {
+	controlDevHmr,
+	connectDevInstance,
+	runDevFile,
+	selectDevInstance,
+} from '../../cli/src/dev/client'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -21,7 +26,7 @@ describe('dev console wire interoperability', () => {
 			observedRevision: 3,
 			attemptedRevision: 0,
 		}
-		const server = await startDevConsoleServer({
+		const server = await startProjectScriptServer({
 			root,
 			execute: async () => {
 				throw new Error('Host unavailable')
@@ -31,6 +36,7 @@ describe('dev console wire interoperability', () => {
 		})
 		cleanup.push(() => server.close())
 		const instance = await selectDevInstance({ root })
+		using client = await connectDevInstance(instance)
 		expect(instance.hmr).toEqual(hmr)
 		for (const action of ['pause', 'apply', 'resume']) {
 			const result = await controlDevHmr({ instance, action, timeoutMs: 1000, detach: false })
@@ -42,7 +48,7 @@ describe('dev console wire interoperability', () => {
 				instanceId: instance.instanceId,
 				value: { action, hmr },
 			})
-			expect(await requestDev(instance, { method: 'result', runId: result.runId })).toMatchObject({
+			expect(await client.result(result.runId)).toMatchObject({
 				kind: 'hmr',
 				action,
 				state: 'succeeded',
@@ -57,12 +63,12 @@ describe('dev console wire interoperability', () => {
 		const file = resolve(root, 'operation.ts')
 		await writeFile(file, 'export default () => 1')
 		let calls = 0
-		const server = await startDevConsoleServer({
+		const server = await startProjectScriptServer({
 			root,
 			async execute(input, run) {
 				calls++
 				run.phase('execute')
-				if (input.exportName === 'wait') {
+				if ((input.code as { exportName: string }).exportName === 'wait') {
 					await new Promise<void>((done) =>
 						run.signal.addEventListener('abort', () => done(), { once: true }),
 					)
@@ -73,6 +79,7 @@ describe('dev console wire interoperability', () => {
 		})
 		cleanup.push(() => server.close())
 		const instance = await selectDevInstance({ root })
+		using client = await connectDevInstance(instance)
 		expect(instance.instanceId).toBe(server.instance.instanceId)
 		const first = await runDevFile({
 			instance,
@@ -103,11 +110,13 @@ describe('dev console wire interoperability', () => {
 			timeoutMs: 1000,
 			detach: true,
 		})
-		expect(await requestDev(instance, { method: 'cancel', runId: waiting.runId })).toMatchObject({
+		expect(await client.cancel(waiting.runId)).toMatchObject({
 			state: 'cancelling',
 		})
-		expect(await server.executor.settled(waiting.runId)).toMatchObject({ state: 'cancelled' })
-		expect(await requestDev(instance, { method: 'result', runId: first.runId })).toMatchObject({
+		expect(await server.executor.settled(waiting.runId, instance.instanceId)).toMatchObject({
+			state: 'cancelled',
+		})
+		expect(await client.result(first.runId)).toMatchObject({
 			value: { calls: 1 },
 		})
 	})

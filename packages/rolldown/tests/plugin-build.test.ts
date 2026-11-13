@@ -143,6 +143,7 @@ const buildFixtures = {
 			'./internal/react',
 		]),
 		...fixturePackage('@pluxel/core', '1.0.0', ['.']),
+		...fixturePackage('@pluxel/host', '1.0.0', ['.']),
 		...fixturePackage('capnweb', '0.12.0', ['.']),
 		'node_modules/@pluxel/core/index.js':
 			'export class BasePlugin {}\nexport function Plugin() { return () => {} }\n',

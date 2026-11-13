@@ -10,6 +10,7 @@ const AUTHENTICATION_TTL_MS = 2 * 60_000
 type PasswordResult = 'accepted' | 'rejected' | 'limited' | 'unavailable'
 
 export type PasswordAuthenticationActions = Readonly<{
+	authorizationSignal?: AbortSignal
 	label?: string
 	requireTotp: boolean
 	verifyPassword(password: string): Promise<PasswordResult>
@@ -45,6 +46,7 @@ export class FixedAuthenticationSession implements ManagementAuthenticationProvi
 	constructor(
 		private readonly step: ManagementAuthenticationProviderStep,
 		private logoutAction?: () => ManagementAuthenticationCookieCommit | undefined,
+		readonly authorizationSignal?: AbortSignal,
 	) {}
 
 	state(): ManagementAuthenticationProviderStep {
@@ -70,6 +72,7 @@ export class FixedAuthenticationSession implements ManagementAuthenticationProvi
 }
 
 export class PasswordAuthenticationSession implements ManagementAuthenticationProviderSession {
+	readonly authorizationSignal?: AbortSignal
 	private phase: 'password' | 'totp' | 'terminal' = 'password'
 	private terminal?: ManagementAuthenticationProviderStep
 	private disposed = false
@@ -79,6 +82,7 @@ export class PasswordAuthenticationSession implements ManagementAuthenticationPr
 	private logoutAction?: () => ManagementAuthenticationCookieCommit | undefined
 
 	constructor(actions: PasswordAuthenticationActions | undefined) {
+		this.authorizationSignal = actions?.authorizationSignal
 		this.actions = actions
 		this.logoutAction = actions?.logout
 	}
@@ -194,6 +198,11 @@ export class PasswordAuthenticationSession implements ManagementAuthenticationPr
 export function authenticatedSession(
 	principal: ManagementAccessPrincipal,
 	logout?: () => ManagementAuthenticationCookieCommit | undefined,
+	authorizationSignal?: AbortSignal,
 ): FixedAuthenticationSession {
-	return new FixedAuthenticationSession(Object.freeze({ kind: 'authenticated', principal }), logout)
+	return new FixedAuthenticationSession(
+		Object.freeze({ kind: 'authenticated', principal }),
+		logout,
+		authorizationSignal,
+	)
 }

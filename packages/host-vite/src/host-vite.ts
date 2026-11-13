@@ -6,7 +6,7 @@ import { checkDevelopmentWorkspace } from './workspace-setup'
 import { pluginDefinitionIndexKey, type PluginConstructor } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { randomUUID } from 'node:crypto'
-import type { DevConsoleAttachment } from './console/attachment'
+import type { ProjectScriptsAttachment } from './console/attachment'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
@@ -68,7 +68,7 @@ export type HostViteOptions = Readonly<{
 	/** Application module default-exporting defineHostApplication(factory). Relative to Vite root. */
 	entry: string
 	/** Enable the local TypeScript console. @default false */
-	devConsole?: boolean
+	scripts?: boolean
 	/** Shallow immutable startup bindings shared by the application factory and prepare; omitted means an empty record. */
 	bindings?: Readonly<Record<string, unknown>>
 }>
@@ -82,13 +82,13 @@ class HostInitializationError extends Error {
 /** Host Vite assembly owning one runner, source evaluator and candidate protocol. */
 export function host(options: HostViteOptions): PluginOption[] {
 	for (const key of Object.keys(options))
-		if (!['entry', 'devConsole', 'bindings'].includes(key))
+		if (!['entry', 'scripts', 'bindings'].includes(key))
 			throw new TypeError(`[host-vite] unsupported ${key}`)
-	const { entry: inputEntry, devConsole: enableDevConsole, bindings: inputBindings } = options
+	const { entry: inputEntry, scripts: enableScripts, bindings: inputBindings } = options
 	if (typeof inputEntry !== 'string' || !inputEntry.trim())
 		throw new TypeError('[host-vite] entry is required')
-	if (enableDevConsole !== undefined && typeof enableDevConsole !== 'boolean')
-		throw new TypeError('[host-vite] devConsole must be a boolean')
+	if (enableScripts !== undefined && typeof enableScripts !== 'boolean')
+		throw new TypeError('[host-vite] scripts must be a boolean')
 	if (
 		inputBindings !== undefined &&
 		(!inputBindings ||
@@ -129,7 +129,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 		| undefined
 	let closing = false
 	let shutdown: Promise<void> | undefined
-	let devConsole: DevConsoleAttachment | undefined
+	let scripts: ProjectScriptsAttachment | undefined
 	let dependencies: ReturnType<typeof createHostDependencyWatch> | undefined
 	const epochs = new WeakMap<PluginHost, string>()
 	const attachments = new WeakMap<PluginHost, Awaited<ReturnType<typeof attachHostVitePlugins>>>()
@@ -389,7 +389,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 					replacement = true
 					recentUpdates.updatePhase('application-reload')
 					const previous = application
-					await devConsole?.hostChanged()
+					await scripts?.hostChanged()
 					const previousHost = active
 					active = undefined
 					compensation = previous
@@ -429,13 +429,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 				acceptedCatalog = nextCatalog
 				files = sourceCandidate.files
 				await settle(true)
-				await dependencies?.replace(
-					[...files].filter(
-						(file) =>
-							!sources.covers(file) &&
-							(profile === 'production' || file.includes('/node_modules/')),
-					),
-				)
+				await dependencies?.replace([...files].filter((file) => !sources.covers(file)))
 			})
 		} catch (error) {
 			let failure = error
@@ -448,13 +442,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 					acceptedCatalog = nextCatalog
 					files = sourceCandidate.files
 					await settle(true)
-					await dependencies?.replace(
-						[...files].filter(
-							(file) =>
-								!sources.covers(file) &&
-								(profile === 'production' || file.includes('/node_modules/')),
-						),
-					)
+					await dependencies?.replace([...files].filter((file) => !sources.covers(file)))
 				} else {
 					if (active) setHostCatalogProvenance(active.ctx, provenance)
 					await settle(false)
@@ -604,7 +592,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 	const update = async (file: string, type: 'create' | 'update' | 'delete'): Promise<void> => {
 		if (closing) return
 		driver.changed({ file: normalizePath(file), type, kind: 'source' })
-		devConsole?.observed(file)
+		scripts?.observed(file)
 	}
 	let sourceFailure: { cause: unknown } | undefined
 	let sourceFailureQueued = false
@@ -646,7 +634,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 			const drained = driver.close()
 			const errors: unknown[] = []
 			for (const dispose of [
-				() => devConsole?.close(),
+				() => scripts?.close(),
 				() => sources?.close(),
 				() => dependencies?.close(),
 				() => recovery.close(),
@@ -675,8 +663,8 @@ export function host(options: HostViteOptions): PluginOption[] {
 		name: 'pluxel:host',
 		config(config) {
 			profile = hostViteProfile(config.plugins ?? [])
-			if (profile === 'production' && enableDevConsole)
-				throw new TypeError('[host-vite] devConsole is available only in development')
+			if (profile === 'production' && enableScripts)
+				throw new TypeError('[host-vite] scripts is available only in development')
 		},
 		apply: 'serve',
 		applyToEnvironment(environment) {
@@ -740,9 +728,9 @@ export function host(options: HostViteOptions): PluginOption[] {
 				}
 				report(error)
 			}
-			if (enableDevConsole) {
-				const { attachDevConsole } = await import('./console/attachment')
-				devConsole = await attachDevConsole({
+			if (enableScripts) {
+				const { attachProjectScripts } = await import('./console/attachment')
+				scripts = await attachProjectScripts({
 					server,
 					getHost: () => active && { ctx: active.ctx, epoch: epochs.get(active)! },
 					getApplicationStatus: applicationStatus,
@@ -765,7 +753,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 			async handler(context) {
 				if (this.environment.name !== HOST_VITE_ENVIRONMENT || closing) return undefined
 				try {
-					devConsole?.observed(context.file)
+					scripts?.observed(context.file)
 					if (sources.covers(context.file)) return undefined
 					if (dependencies?.covers(context.file)) return undefined
 					if (
@@ -781,7 +769,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 							})
 							return []
 						}
-						devConsole?.invalidate(context.file)
+						scripts?.invalidate(context.file)
 						return undefined
 					}
 					await update(context.file, context.type)

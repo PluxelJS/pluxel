@@ -11,11 +11,15 @@ export default defineHostApplication(() => ({ plugins: [MyPlugin] }))
 
 声明只将 Plugin 加入 catalog。启动策略、env/file bindings、来源和启动示例由[Host 配置](../../docs/host/configuration.md)维护。
 
-| 入口                 | 用途                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------ |
-| 根入口               | `defineHostApplication()`、`runHostApplication()`、`createHost()`、配置输入绑定      |
-| `/sources`           | 纯数据 `pluginSource()`、producer 检查 `requirePluginSource()` 和 consumption policy |
-| `/internal/protocol` | 框架共享的无 IO 执行/更新协议                                                        |
+| 入口                 | 用途                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| 根入口               | `defineHostApplication()`、`runHostApplication()`、`createHost()`、配置输入绑定          |
+| `/agent`             | 可移植 `Script`、`ScriptSdk` 与执行内核；[自动化脚本](../../docs/development/scripts.md) |
+| `/agent/node`        | 受信任 Node 工厂加载与 Host 所有的运行                                                   |
+| `/agent/transport`   | 两种载体共用的 Cap’n Web 控制 target 与普通 Promise 客户端                               |
+| `/agent/socket`      | 私有 Unix socket 的原生 Cap’n Web carrier                                                |
+| `/sources`           | 纯数据 `pluginSource()`、producer 检查 `requirePluginSource()` 和 consumption policy     |
+| `/internal/protocol` | 框架共享的无 IO 执行/更新协议                                                            |
 
 `createHost()` 只接受已求值的 plugins；先 `start()`，退出时等待幂等 `close()`。Host 不关闭借用的 storage backend。
 

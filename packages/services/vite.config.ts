@@ -21,7 +21,15 @@ export default defineConfig({
 					].map((pattern) => ({ pattern, base: 'workspace' as const })),
 				},
 			},
-			'check-tests': 'vp test run',
+			'check-tests': {
+				command: 'vp test run',
+				dependsOn: [
+					'compile',
+					'@pluxel/cli#compile',
+					{ task: 'compile', from: ['dependencies', 'devDependencies', 'peerDependencies'] },
+					'@pluxel/test#compile',
+				],
+			},
 			'check-types': 'tsc --noEmit --pretty false',
 		}),
 	},

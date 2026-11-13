@@ -5,7 +5,10 @@ const root = resolve(import.meta.dirname, '..')
 const sourceRoots = ['packages', 'plugins', 'projects']
 const ignoredDirectories = new Set(['.git', '.pluxel', '.vercel', 'dist', 'node_modules', 'public'])
 // Native dependency checkouts are disposable inputs, not repository source declarations.
-const nativeDependencyTrees = new Set(['plugins/render/typst/native/.build'])
+const nativeDependencyTrees = new Set([
+	'plugins/render/typst/native/.build',
+	'projects/embedded-launcher/native/vendor',
+])
 const declarationPattern = /\.d\.[cm]?ts$/
 const declarationMapPattern = /\.d\.[cm]?ts\.map$/
 // Handwritten ambient declarations and module augmentations are source inputs.

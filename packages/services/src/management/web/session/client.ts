@@ -1,5 +1,8 @@
 import { parseRuntimeLogoutResult } from './validation'
 import { newWebSocketRpcSession, type RpcStub, type RpcTarget } from 'capnweb'
+import type { ScriptControlTarget } from '@pluxel/host/agent/transport'
+import { providerStepSnapshot } from '../../services/admin-access/authentication'
+import type { ManagementAuthenticationProviderStep } from '../../services/admin-access/types'
 import { ADMIN_ACCESS_COOKIE_COMMIT_PATH } from '../../services/admin-access/transport'
 import {
 	RUNTIME_SESSION_PATH,
@@ -20,18 +23,24 @@ export type RuntimeClientBootstrap<TWorkbench extends RpcTarget = RpcTarget> =
 			kind: 'management'
 			profile: 2
 			management: RpcStub<RuntimeManagementTarget>
+			execution?: RpcStub<ScriptControlTarget>
 	  }>
 	| Readonly<{
 			kind: 'workbench'
 			profile: 2
 			management: RpcStub<RuntimeManagementTarget>
 			workbench: RpcStub<TWorkbench>
+			execution?: RpcStub<ScriptControlTarget>
 	  }>
 
 type OwnedRuntimeBootstrap<TWorkbench extends RpcTarget = RpcTarget> =
 	RuntimeClientBootstrap<TWorkbench> & Disposable
 
 export type RuntimeSessionClientOptions = Readonly<{
+	/** Explicit HTTP(S) origin or session WebSocket URL. Omitted uses the current document. */
+	endpoint?: string | URL
+	/** Carrier injection for native clients, including required Origin or credential headers. */
+	webSocket?(url: string): WebSocket
 	onBroken?(error: unknown): void
 }>
 
@@ -43,7 +52,7 @@ export interface RuntimeSessionClient<TWorkbench extends RpcTarget = RpcTarget> 
 	readonly current: RuntimeClientBootstrap<TWorkbench> | undefined
 }
 
-/** Creates the document's one non-reconnecting Cap'n Web control session. */
+/** Creates one non-reconnecting Cap'n Web control session. */
 export function createRuntimeSessionClient<TWorkbench extends RpcTarget = RpcTarget>(
 	options: RuntimeSessionClientOptions = {},
 ): RuntimeSessionClient<TWorkbench> {
@@ -54,11 +63,16 @@ class RuntimeSessionClientImpl<
 	TWorkbench extends RpcTarget,
 > implements RuntimeSessionClient<TWorkbench> {
 	private readonly root: RpcStub<RuntimeSessionRoot<TWorkbench>>
+	private readonly cookieCommitUrl: string
 	private owned?: OwnedRuntimeBootstrap<TWorkbench>
 	private disposed = false
 
 	constructor(options: RuntimeSessionClientOptions) {
-		const socket = new WebSocket(runtimeSessionUrl())
+		const endpoint = runtimeSessionUrl(options.endpoint)
+		const cookieCommit = new URL(ADMIN_ACCESS_COOKIE_COMMIT_PATH, endpoint)
+		cookieCommit.protocol = cookieCommit.protocol === 'wss:' ? 'https:' : 'http:'
+		this.cookieCommitUrl = cookieCommit.href
+		const socket = (options.webSocket ?? ((url) => new WebSocket(url)))(endpoint)
 		this.root = newWebSocketRpcSession<RuntimeSessionRoot<TWorkbench>>(socket)
 		if (options.onBroken) this.root.onRpcBroken(options.onBroken)
 	}
@@ -111,7 +125,7 @@ class RuntimeSessionClientImpl<
 		if (typeof globalThis.fetch !== 'function') {
 			throw new TypeError('Cookie commit requires browser fetch')
 		}
-		const response = await globalThis.fetch(ADMIN_ACCESS_COOKIE_COMMIT_PATH, {
+		const response = await globalThis.fetch(this.cookieCommitUrl, {
 			method: 'POST',
 			credentials: 'same-origin',
 			headers: { 'content-type': 'application/json' },
@@ -133,12 +147,24 @@ class RuntimeSessionClientImpl<
 	}
 }
 
-function runtimeSessionUrl(): string {
-	if (typeof window === 'undefined') {
-		throw new TypeError('Runtime session requires a browser document')
+function runtimeSessionUrl(endpoint?: string | URL): string {
+	if (endpoint === undefined && typeof window === 'undefined') {
+		throw new TypeError('Runtime session requires an explicit endpoint outside a browser')
 	}
-	const url = new URL(RUNTIME_SESSION_PATH, window.location.href)
-	url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+	const base = new URL(endpoint ?? window.location.href)
+	if (
+		!['http:', 'https:', 'ws:', 'wss:'].includes(base.protocol) ||
+		base.username ||
+		base.password ||
+		(endpoint !== undefined && (base.search || base.hash))
+	)
+		throw new TypeError(
+			'Runtime session endpoint must use HTTP(S) or WebSocket without URL credentials',
+		)
+	const url = new URL(RUNTIME_SESSION_PATH, base)
+	if (endpoint !== undefined && base.pathname !== '/' && base.pathname !== RUNTIME_SESSION_PATH)
+		throw new TypeError(`Runtime session endpoint must be an origin or ${RUNTIME_SESSION_PATH}`)
+	url.protocol = base.protocol === 'https:' || base.protocol === 'wss:' ? 'wss:' : 'ws:'
 	return url.href
 }
 
@@ -156,13 +182,32 @@ function validateBootstrap(value: unknown): asserts value is OwnedRuntimeBootstr
 			assertTarget(input.authentication, 'authentication')
 			return
 		case 'management':
-			assertExactKeys(input, ['kind', 'management', 'profile'])
+			assertExactKeys(
+				input,
+				[
+					'kind',
+					'management',
+					'profile',
+					...(Object.hasOwn(input, 'execution') ? ['execution'] : []),
+				].sort(),
+			)
 			assertTarget(input.management, 'management')
+			if (input.execution !== undefined) assertTarget(input.execution, 'execution')
 			return
 		case 'workbench':
-			assertExactKeys(input, ['kind', 'management', 'profile', 'workbench'])
+			assertExactKeys(
+				input,
+				[
+					'kind',
+					'management',
+					'profile',
+					'workbench',
+					...(Object.hasOwn(input, 'execution') ? ['execution'] : []),
+				].sort(),
+			)
 			assertTarget(input.management, 'management')
 			assertTarget(input.workbench, 'workbench')
+			if (input.execution !== undefined) assertTarget(input.execution, 'execution')
 			return
 		default:
 			throw new TypeError('Runtime session bootstrap kind is invalid')
@@ -179,5 +224,23 @@ function assertExactKeys(input: Record<PropertyKey, unknown>, expected: readonly
 function assertTarget(value: unknown, name: string): void {
 	if ((!value || typeof value !== 'object') && typeof value !== 'function') {
 		throw new TypeError(`Runtime session ${name} target is invalid`)
+	}
+}
+
+/** Copy and validate a native authentication response, then release its Cap'n Web payload. */
+export async function readRuntimeAuthenticationStep(
+	input: PromiseLike<ManagementAuthenticationProviderStep> | ManagementAuthenticationProviderStep,
+): Promise<ManagementAuthenticationProviderStep> {
+	const raw = await input
+	const dispose = Object.getOwnPropertyDescriptor(raw, Symbol.dispose)?.value
+	try {
+		if (
+			dispose !== undefined &&
+			(typeof dispose !== 'function' || !Reflect.deleteProperty(raw, Symbol.dispose))
+		)
+			throw new TypeError('Authentication result has an invalid lifetime')
+		return providerStepSnapshot(raw)
+	} finally {
+		if (typeof dispose === 'function') dispose.call(raw)
 	}
 }

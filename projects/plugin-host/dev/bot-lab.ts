@@ -1,4 +1,4 @@
-import { defineDevConsole } from '@pluxel/host-vite/console'
+import type { ProjectScript } from '@pluxel/host-vite/project'
 import { openLocalWorkbenchEntry, WorkbenchHost } from '@pluxel/workbench/server'
 import { consumeWorkbenchValue, readWorkbenchLayout } from '@pluxel/workbench/client'
 import { RpcStub } from 'capnweb'
@@ -9,11 +9,11 @@ import { BotWorkspaceWorkbench } from '../src/bot-lab/BotWorkspace.workbench'
 const principal = { provider: 'development-console', subject: 'bot-lab-validation' }
 
 /** Read the real aggregator, provider lifecycles, and target-scoped publications. */
-export default defineDevConsole(async (dev) => {
-	const plugins = await dev.plugins.list()
+export default (async (sdk) => {
+	const plugins = await sdk.plugins.list()
 	const owner = plugins.find((plugin) => plugin.rootExportName === 'BotWorkspacePlugin')
 	if (!owner) throw new Error('BotWorkspacePlugin is not registered')
-	const session = dev.ctx.require(WorkbenchHost).createSession(principal, () => {})
+	const session = sdk.dev.ctx.require(WorkbenchHost).createSession(principal, () => {})
 	try {
 		using target = new RpcStub(session.target)
 		const layout = await readWorkbenchLayout(target, { target: owner.address })
@@ -24,7 +24,7 @@ export default defineDevConsole(async (dev) => {
 					plugin.rootExportName ?? '',
 				),
 			),
-			snapshot: dev.plugins.require(BotWorkspacePlugin).snapshot(),
+			snapshot: sdk.dev.instance(BotWorkspacePlugin).snapshot(),
 			entries: layout.entries.map(({ descriptor, placement }) => ({
 				key: descriptor.key,
 				placement,
@@ -33,25 +33,25 @@ export default defineDevConsole(async (dev) => {
 	} finally {
 		session.dispose()
 	}
-})
+}) satisfies ProjectScript
 
 /** Exercise the actual entity-scoped Workbench API, never a frontend-owned mock store. */
-export const saveInstructions = defineDevConsole(async (dev) => {
-	const input = dev.input
+export const saveInstructions = (async (sdk, run) => {
+	const input = run.input
 	if (!input || typeof input !== 'object' || Array.isArray(input))
 		throw new TypeError('Expected source, id and instructions')
 	const record = input as Record<string, unknown>
 	if (typeof record.instructions !== 'string') throw new TypeError('Expected instructions string')
-	const identity = dev.plugins.require(BotWorkspacePlugin).identity(record.source, record.id)
-	const plugins = await dev.plugins.list()
+	const identity = sdk.dev.instance(BotWorkspacePlugin).identity(record.source, record.id)
+	const plugins = await sdk.plugins.list()
 	const owner = plugins.find((plugin) => plugin.rootExportName === 'BotWorkspacePlugin')
 	if (!owner) throw new Error('BotWorkspacePlugin is not registered')
-	using opened = await openLocalWorkbenchEntry(dev.ctx, {
+	using opened = await openLocalWorkbenchEntry(sdk.dev.ctx, {
 		target: owner.address,
 		entry: BotWorkspaceWorkbench.bot,
 		principal,
 		location: `/bot-lab/${identity.source}/${identity.id}`,
-		signal: dev.signal,
+		signal: run.signal,
 	})
 	const before = await consumeWorkbenchValue(opened.api.snapshotDto(), 'Bot before save')
 	const result = await consumeWorkbenchValue(
@@ -60,15 +60,15 @@ export const saveInstructions = defineDevConsole(async (dev) => {
 	)
 	const after = await consumeWorkbenchValue(opened.api.snapshotDto(), 'Bot after save')
 	return { result, before, after }
-})
+}) satisfies ProjectScript
 
-export const stopDiscord = defineDevConsole(async (dev) => ({
-	report: await dev.plugins.stop(DiscordBotPlugin),
-	current: await dev.plugins.status(DiscordBotPlugin),
-	snapshot: dev.plugins.require(BotWorkspacePlugin).snapshot(),
-}))
-export const startDiscord = defineDevConsole(async (dev) => ({
-	report: await dev.plugins.start(DiscordBotPlugin),
-	current: await dev.plugins.status(DiscordBotPlugin),
-	snapshot: dev.plugins.require(BotWorkspacePlugin).snapshot(),
-}))
+export const stopDiscord = (async (sdk) => ({
+	report: await sdk.plugins.stop(sdk.dev.address(DiscordBotPlugin)),
+	current: await sdk.plugins.status(sdk.dev.address(DiscordBotPlugin)),
+	snapshot: sdk.dev.instance(BotWorkspacePlugin).snapshot(),
+})) satisfies ProjectScript
+export const startDiscord = (async (sdk) => ({
+	report: await sdk.plugins.start(sdk.dev.address(DiscordBotPlugin)),
+	current: await sdk.plugins.status(sdk.dev.address(DiscordBotPlugin)),
+	snapshot: sdk.dev.instance(BotWorkspacePlugin).snapshot(),
+})) satisfies ProjectScript

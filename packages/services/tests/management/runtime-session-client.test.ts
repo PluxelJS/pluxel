@@ -195,14 +195,18 @@ afterEach(async () => {
 	vi.unstubAllGlobals()
 })
 
-async function fixture(bootstrapGate?: Promise<void>, maxMessageBytes?: number) {
+async function fixture(
+	bootstrapGate?: Promise<void>,
+	maxMessageBytes?: number,
+	documentPath = '/',
+) {
 	const server = new SessionProbeServer(maxMessageBytes)
 	server.state.bootstrapGate = bootstrapGate
 	servers.push(server)
 	await server.listen()
 	const sockets: WebSocket[] = []
 	const sends: { readyState: number; message: unknown }[] = []
-	vi.stubGlobal('window', { location: { href: server.url() } })
+	vi.stubGlobal('window', { location: { href: new URL(documentPath, server.url()).href } })
 	vi.stubGlobal(
 		'WebSocket',
 		class extends WebSocket {
@@ -224,6 +228,16 @@ async function fixture(bootstrapGate?: Promise<void>, maxMessageBytes?: number) 
 }
 
 describe('Runtime session client over native Capnweb and WebSocket', () => {
+	it('opens the shared session from a routed Workbench document', async () => {
+		const { client, server } = await fixture(
+			undefined,
+			undefined,
+			'/__pluxel/workbench/plugins?selected=counter#logs',
+		)
+		expect(await client.bootstrap(() => {})).toMatchObject({ kind: 'workbench' })
+		expect(server.state.connections).toBe(1)
+	})
+
 	it('rejects pending and future bootstrap calls when the physical socket dies', async () => {
 		const gate = Promise.withResolvers<void>()
 		const { server, client, onBroken } = await fixture(gate.promise)

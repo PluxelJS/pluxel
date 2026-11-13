@@ -3,6 +3,10 @@ import { defineConfig } from 'vite-plus/pack'
 export default defineConfig({
 	exports: { devExports: '@pluxel/source' },
 	entry: {
+		agent: './src/agent.ts',
+		'agent/socket': './src/agent/socket.ts',
+		'agent/transport': './src/agent/transport.ts',
+		'agent/node': './src/agent/node.ts',
 		bindings: './src/bindings.ts',
 		browser: './src/browser.ts',
 		environment: './src/environment.ts',

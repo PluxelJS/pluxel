@@ -2,7 +2,10 @@ import { Button, ColorSchemeScript, PasswordInput, PinInput, Stack, Text } from 
 import type { ViteHotContext } from 'vite/types/hot.js'
 import type { ManagementAuthenticationProviderStep } from '@pluxel/services/management/access'
 import type { RpcStub } from 'capnweb'
-import type { RuntimeAuthenticationTarget } from '@pluxel/services/management/session'
+import {
+	readRuntimeAuthenticationStep,
+	type RuntimeAuthenticationTarget,
+} from '@pluxel/services/management/session'
 import React, { useEffect, useState, type FormEvent } from 'react'
 import ReactDOM from 'react-dom/client'
 import { AppThemeProvider } from './app/AppThemeProvider.tsx'
@@ -150,7 +153,7 @@ function AuthenticationChallenge({
 		event.preventDefault()
 		if (state.submitting || !secret) return
 		setState({ ...state, submitting: true, error: undefined })
-		void readAuthenticationStep(
+		void readRuntimeAuthenticationStep(
 			state.authentication.submitDto(
 				challenge.kind === 'password' ? { password: secret } : { code: secret },
 			),
@@ -214,7 +217,7 @@ async function acceptBootstrap(
 	if (bootstrap.kind === 'management') {
 		throw new Error('此部署未启用核心 Workbench capability')
 	}
-	const step = await readAuthenticationStep(bootstrap.authentication.stateDto())
+	const step = await readRuntimeAuthenticationStep(bootstrap.authentication.stateDto())
 	await acceptAuthenticationStep(bootstrap.authentication, step, setState)
 }
 
@@ -248,45 +251,6 @@ function terminalGateState(signal: SessionSignal): GateState {
 	return signal.kind === 'epoch-invalidated'
 		? { kind: 'invalidated', cause: signal.cause }
 		: { kind: 'error', error: toError(signal.error, 'Runtime WebSocket 已断开') }
-}
-
-async function readAuthenticationStep(
-	input: PromiseLike<ManagementAuthenticationProviderStep> | ManagementAuthenticationProviderStep,
-): Promise<ManagementAuthenticationProviderStep> {
-	const raw = await input
-	try {
-		switch (raw.kind) {
-			case 'challenge':
-				return raw.challenge.kind === 'password'
-					? Object.freeze({
-							kind: 'challenge' as const,
-							challenge: Object.freeze({
-								kind: 'password' as const,
-								...(raw.challenge.label === undefined ? {} : { label: raw.challenge.label }),
-							}),
-						})
-					: Object.freeze({
-							kind: 'challenge' as const,
-							challenge: Object.freeze({ kind: 'totp' as const, digits: raw.challenge.digits }),
-						})
-			case 'navigate':
-				return Object.freeze({ kind: 'navigate', path: raw.path })
-			case 'failed':
-				return Object.freeze({ kind: 'failed', code: raw.code })
-			case 'authenticated':
-				return Object.freeze({
-					kind: 'authenticated' as const,
-					principal: Object.freeze({ ...raw.principal }),
-					...(raw.cookieCommit ? { cookieCommit: Object.freeze({ ...raw.cookieCommit }) } : {}),
-				})
-		}
-	} finally {
-		const dispose = (raw as ManagementAuthenticationProviderStep & Partial<Disposable>)[
-			Symbol.dispose
-		]
-		if (typeof dispose === 'function') dispose.call(raw)
-	}
-	throw new TypeError('认证 provider 返回了未知步骤')
 }
 
 function authenticationFailureMessage(code: string): string {

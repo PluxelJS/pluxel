@@ -61,12 +61,12 @@
 			"docs": {
 				"root": "projects/docs",
 				"pitchfork": "docs",
-				"console": false
+				"scripts": false
 			},
 			"typst": {
 				"root": "plugins/render/typst/tests/consumer",
 				"pitchfork": "typst",
-				"console": false
+				"scripts": false
 			}
 		}
 	}

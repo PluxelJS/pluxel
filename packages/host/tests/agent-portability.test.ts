@@ -1,0 +1,237 @@
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { compileScript } from '@pluxel/rolldown/scripts'
+import { Miniflare, Response as WorkerResponse } from 'miniflare'
+import { build } from 'vite-plus'
+import { expect, it } from 'vitest'
+import { createHost } from '../src/index'
+import { createScriptScope } from '../src/agent'
+
+const hostRoot = fileURLToPath(new URL('../', import.meta.url))
+
+it('bundles the actual portable SDK and execution entry without platform or compiler imports', async () => {
+	await mkdir(join(hostRoot, '.tmp'), { recursive: true })
+	const root = await mkdtemp(join(hostRoot, '.tmp/agent-portable-'))
+	try {
+		await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
+		await symlink(hostRoot, join(root, 'node_modules/@pluxel/host'), 'dir')
+		await writeFile(join(root, 'entry.ts'), "export * from '@pluxel/host/agent'")
+		const modules: string[] = []
+		const output = await build({
+			configFile: false,
+			root,
+			logLevel: 'silent',
+			resolve: { conditions: ['@pluxel/source', 'browser', 'module', 'production'] },
+			plugins: [
+				{
+					name: 'observe-agent-closure',
+					generateBundle() {
+						modules.push(...this.getModuleIds())
+					},
+				},
+			],
+			build: {
+				write: false,
+				target: 'esnext',
+				minify: false,
+				lib: { entry: join(root, 'entry.ts'), formats: ['es'] },
+			},
+		})
+		const chunks = (Array.isArray(output) ? output : [output]).flatMap((result) => {
+			if (!('output' in result)) throw new Error('Expected an immediate portable build')
+			return result.output.filter((chunk) => chunk.type === 'chunk')
+		})
+		expect(chunks).toHaveLength(1)
+		expect(chunks[0]!.exports).toEqual(
+			expect.arrayContaining(['createScriptScope', 'ScriptExecutor', 'executeHostScript']),
+		)
+		expect(chunks[0]!.imports).toEqual([])
+		expect(chunks[0]!.dynamicImports).toEqual([])
+		expect(
+			modules.filter((id) =>
+				/(?:^node:|__vite-browser-external|\/packages\/(?:host-vite|services|rolldown)\/|\/agent\/(?:node|socket|transport)\.ts$)/.test(
+					id,
+				),
+			),
+		).toEqual([])
+		expect(chunks[0]!.code).not.toContain('__vite-browser-external')
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})
+
+const schema = {
+	'~standard': {
+		version: 1 as const,
+		vendor: 'worker-bridge-test',
+		types: undefined as { input: Record<string, unknown>; output: { count: number } } | undefined,
+		validate(input: unknown) {
+			const count = (input as { count?: unknown })?.count ?? 2
+			return typeof count === 'number'
+				? { value: { count } }
+				: { issues: [{ message: 'Expected count to be numeric', path: ['count'] }] }
+		},
+	},
+}
+
+@Plugin()
+class WorkerCounter extends BasePlugin {
+	readonly config = this.configs.use(schema)
+	init() {
+		this.configs.onUpdate(this.config, () => {})
+	}
+}
+
+it('loads the compiled factory in real workerd and bridges ordinary SDK calls to the original Host', async () => {
+	await mkdir(join(hostRoot, '.tmp'), { recursive: true })
+	const directory = await mkdtemp(join(hostRoot, '.tmp/agent-workerd-'))
+	await using host = await createHost({
+		plugins: [WorkerCounter],
+		runtime: { documents: { config: false, state: false } },
+	})
+	await host.start()
+	await host.startNode(WorkerCounter.nodeAddress())
+	const scope = createScriptScope({ ctx: host.ctx })
+	let runtime: Miniflare | undefined
+	try {
+		await mkdir(join(directory, 'node_modules/@pluxel'), { recursive: true })
+		await symlink(hostRoot, join(directory, 'node_modules/@pluxel/host'), 'dir')
+		await writeFile(
+			join(directory, 'tsconfig.json'),
+			JSON.stringify({
+				extends: join(hostRoot, 'tsconfig.json'),
+			}),
+		)
+		const file = join(directory, 'task.ts')
+		await writeFile(
+			file,
+			`
+import type { Script } from '@pluxel/host/agent'
+let moduleInvocations = 0
+export default (async (sdk, run) => {
+  run.signal.throwIfAborted()
+  const nodes = await sdk.plugins.list()
+  const node = nodes[0].address
+  const before = await sdk.config.get(node)
+  if (before.ok === false) return before
+  const values = [before.config.count]
+  let next = 0
+  for (const value of values) {
+    if (typeof value === 'number') next += value * 2
+  }
+  const changed = await sdk.config.patch(node, { set: { count: next } }, { expectedManagedRevision: before.managedRevision })
+  if (changed.ok === false) return changed
+  return { moduleInvocations: ++moduleInvocations, changed, actual: await sdk.config.get(node), runtime: navigator.userAgent }
+}) satisfies Script
+`,
+		)
+		const artifact = await compileScript({ file })
+		const dynamic = `
+import { WorkerEntrypoint } from 'cloudflare:workers'
+function loadModule() { ${artifact.code} }
+export default class Task extends WorkerEntrypoint {
+  async run(input) {
+    const sdk = {
+      plugins: { list: () => this.env.HOST.listPlugins() },
+      config: {
+        get: (node) => this.env.HOST.getConfig(node),
+        patch: (node, change, options) => this.env.HOST.patchConfig(node, change, options),
+      },
+    }
+    return loadModule()[${JSON.stringify(artifact.exportName)}](sdk, { id: 'workerd-probe', input, signal: new AbortController().signal })
+  }
+}
+`
+		const parent = `
+import { WorkerEntrypoint } from 'cloudflare:workers'
+export class HostBridge extends WorkerEntrypoint {
+  async listPlugins() { return this.call({ operation: 'plugins' }) }
+  async getConfig(node) { return this.call({ operation: 'get', node }) }
+  async patchConfig(node, change, options) { return this.call({ operation: 'patch', node, change, options }) }
+  async call(input) {
+    const response = await this.env.HOST.fetch('http://host/', { method: 'POST', body: JSON.stringify(input) })
+    return response.json()
+  }
+}
+export default {
+  async fetch(request, env, ctx) {
+    const worker = env.LOADER.load({ compatibilityDate: '2026-11-03', mainModule: 'task.js', modules: { 'task.js': ${JSON.stringify(dynamic)} }, env: { HOST: ctx.exports.HostBridge({}) }, globalOutbound: null })
+    return Response.json(await worker.getEntrypoint().run(await request.json()))
+  }
+}
+`
+		runtime = new Miniflare({
+			host: '127.0.0.1',
+			port: 0,
+			workers: [
+				{
+					config: {
+						name: 'pluxel-agent-boundary',
+						compatibilityDate: '2026-11-03',
+						manifest: {
+							mainModule: 'parent.js',
+							modules: { 'parent.js': { type: 'esm', contents: parent } },
+						},
+						env: {
+							LOADER: { type: 'worker-loader' },
+							HOST: {
+								type: 'fetcher',
+								async handler(request) {
+									const input = (await request.json()) as {
+										operation: string
+										node: Parameters<typeof scope.sdk.config.get>[0]
+										change: Parameters<typeof scope.sdk.config.patch>[1]
+										options: Parameters<typeof scope.sdk.config.patch>[2]
+									}
+									switch (input.operation) {
+										case 'plugins':
+											return WorkerResponse.json(await scope.sdk.plugins.list())
+										case 'get':
+											return WorkerResponse.json(await scope.sdk.config.get(input.node))
+										case 'patch':
+											return WorkerResponse.json(
+												await scope.sdk.config.patch(input.node, input.change, input.options),
+											)
+										default:
+											throw new Error(`Unexpected bridge operation ${input.operation}`)
+									}
+								},
+							},
+						},
+					},
+				},
+			],
+		})
+		await runtime.ready
+		for (const count of [4, 8]) {
+			const response = await runtime.dispatchFetch('http://probe/', {
+				method: 'POST',
+				body: 'null',
+			})
+			const body = await response.text()
+			expect({ status: response.status, error: response.ok ? null : body }).toEqual({
+				status: 200,
+				error: null,
+			})
+			expect(JSON.parse(body)).toMatchObject({
+				moduleInvocations: 1,
+				changed: { ok: true, application: 'applied', config: { count } },
+				actual: { config: { count } },
+				runtime: 'Cloudflare-Workers',
+			})
+			expect(await host.config.get(WorkerCounter.nodeAddress())).toMatchObject({
+				config: { count },
+				application: 'applied',
+			})
+		}
+	} finally {
+		try {
+			await runtime?.dispose()
+		} finally {
+			await scope.dispose()
+			await rm(directory, { recursive: true, force: true })
+		}
+	}
+}, 30000)

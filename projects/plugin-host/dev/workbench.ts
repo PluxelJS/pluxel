@@ -1,4 +1,4 @@
-import { defineDevConsole } from '@pluxel/host-vite/console'
+import type { ProjectScript } from '@pluxel/host-vite/project'
 import { openLocalWorkbenchEntry, WorkbenchHost } from '@pluxel/workbench/server'
 import { consumeWorkbenchValue, readWorkbenchLayout } from '@pluxel/workbench/client'
 import { RpcStub } from 'capnweb'
@@ -10,21 +10,21 @@ import { PackageManagerPlugin } from '@pluxel/plugin-package-manager'
 const principal = { provider: 'development-console', subject: 'workbench-migration-validation' }
 
 /** Read real publications and exercise a bounded, explicitly owned RPC activation. */
-export default defineDevConsole(async (dev) => {
-	const plugins = await dev.plugins.list()
+export default (async (sdk, run) => {
+	const plugins = await sdk.plugins.list()
 	const studio = plugins.find((plugin) => plugin.rootExportName === 'ReportStudioPlugin')
 	if (!studio) throw new Error('ReportStudioPlugin is not registered')
-	const session = dev.ctx.require(WorkbenchHost).createSession(principal, () => {})
+	const session = sdk.dev.ctx.require(WorkbenchHost).createSession(principal, () => {})
 	try {
 		using target = new RpcStub(session.target)
 		const layout = await readWorkbenchLayout(target, { target: null })
 		const targetLayout = await readWorkbenchLayout(target, { target: studio.address })
-		using opened = await openLocalWorkbenchEntry(dev.ctx, {
+		using opened = await openLocalWorkbenchEntry(sdk.dev.ctx, {
 			target: studio.address,
 			entry: ReportStudioWorkbench.studio,
 			principal,
 			location: '/architecture-lab',
-			signal: dev.signal,
+			signal: run.signal,
 		})
 		return {
 			studio,
@@ -55,26 +55,25 @@ export default defineDevConsole(async (dev) => {
 	} finally {
 		session.dispose()
 	}
-})
+}) satisfies ProjectScript
 
 /** Stop/restart are explicit online operations, used to verify browser epoch invalidation. */
-export const stopStudio = defineDevConsole(async (dev) => ({
-	report: await dev.plugins.stop(ReportStudioPlugin),
-	current: await dev.plugins.status(ReportStudioPlugin),
-}))
-export const startStudio = defineDevConsole(async (dev) => ({
-	report: await dev.plugins.start(ReportStudioPlugin),
-	current: await dev.plugins.status(ReportStudioPlugin),
-}))
+export const stopStudio = (async (sdk) => ({
+	report: await sdk.plugins.stop(sdk.dev.address(ReportStudioPlugin)),
+	current: await sdk.plugins.status(sdk.dev.address(ReportStudioPlugin)),
+})) satisfies ProjectScript
+export const startStudio = (async (sdk) => ({
+	report: await sdk.plugins.start(sdk.dev.address(ReportStudioPlugin)),
+	current: await sdk.plugins.status(sdk.dev.address(ReportStudioPlugin)),
+})) satisfies ProjectScript
 
 /** Compare authoritative package snapshots before/after browser-only input drafts. */
-export const packageManagerSnapshot = defineDevConsole((dev) =>
-	dev.plugins.require(PackageManagerPlugin).snapshot(),
-)
+export const packageManagerSnapshot = ((sdk) =>
+	sdk.dev.instance(PackageManagerPlugin).snapshot()) satisfies ProjectScript
 
 /** Render through the current Workbench publication, keeping online operations on this console. */
-export const renderReport = defineDevConsole(async (dev) => {
-	const input = dev.input
+export const renderReport = (async (sdk, run) => {
+	const input = run.input
 	if (
 		!input ||
 		typeof input !== 'object' ||
@@ -88,15 +87,15 @@ export const renderReport = defineDevConsole(async (dev) => {
 	const { SHOWCASE_ENGINES } = await import('../src/showcase/ReportStudio.contracts')
 	const engine = SHOWCASE_ENGINES.find((candidate) => candidate === input.engine)
 	if (!engine) throw new TypeError('Unknown rendering engine')
-	using opened = await openLocalWorkbenchEntry(dev.ctx, {
+	using opened = await openLocalWorkbenchEntry(sdk.dev.ctx, {
 		target: ReportStudioPlugin.nodeAddress(),
 		entry: ReportStudioWorkbench.studio,
 		principal,
 		location: '/architecture-lab',
-		signal: dev.signal,
+		signal: run.signal,
 	})
 	return await consumeWorkbenchValue(
 		opened.api.generateDto({ title: input.title, engine }),
 		'Report Studio artifact',
 	)
-})
+}) satisfies ProjectScript

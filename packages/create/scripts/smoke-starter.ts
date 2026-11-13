@@ -230,14 +230,14 @@ async function verifyViteApplication(root: string): Promise<void> {
 	await writeFile(
 		inspectionFile,
 		[
-			"import { defineDevConsole } from '@pluxel/host-vite/console'",
+			"import type { ProjectScript } from '@pluxel/host-vite/project'",
 			"import { examplePlugins } from '../src/policy'",
 			"import { VaultAdminPlugin } from '@pluxel/services/plugins'",
-			'export default defineDevConsole(async (dev) => ({',
-			'  running: examplePlugins.map(plugin => dev.plugins.isRunning(plugin)),',
-			'  vaultArtifact: (await dev.plugins.status(VaultAdminPlugin))?.execution.artifact.kind,',
-			'  status: await dev.plugins.list(),',
-			'}))',
+			'export default (async (sdk) => ({',
+			"  running: await Promise.all(examplePlugins.map(async plugin => (await sdk.plugins.status(sdk.dev.address(plugin)))?.lifecycleState === 'running')),",
+			'  vaultArtifact: (await sdk.plugins.status(sdk.dev.address(VaultAdminPlugin)))?.execution.artifact.kind,',
+			'  status: await sdk.plugins.list(),',
+			'})) satisfies ProjectScript',
 		].join('\n'),
 	)
 	const port = await reservePort()

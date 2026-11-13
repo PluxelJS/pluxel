@@ -941,7 +941,7 @@ import { workbenchService } from '@pluxel/workbench/service'
 import { requireWorkbench, createWorkbenchArtifactHandler } from '@pluxel/workbench/server'
 import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import type { WorkbenchSessionApi } from '@pluxel/workbench/client'
-import type * as ConsoleContracts from '@pluxel/host-vite/console'
+import type * as ScriptContracts from '@pluxel/host/agent'
 import { host as viteHost } from '@pluxel/host-vite'
 import { servicesPreset } from '@pluxel/services/preset'
 import { vitePreset, serviceSingletons } from '@pluxel/services/vite'
@@ -961,7 +961,7 @@ class UiConsumer extends BasePlugin { init() {
 const rootUi = requireWorkbench(uiHost.ctx)
 const serveUi = createWorkbenchArtifactHandler(uiHost.ctx)
 const development = [serviceSingletons(), viteHost({ entry: './app.ts' }), elysiaDevelopment(), nodeArtifacts(), workbenchArtifacts()]
-const officialDevelopment = vitePreset({ entry: './app.ts', devConsole: true })
+const officialDevelopment = vitePreset({ entry: './app.ts', scripts: true })
 void [servicesPreset, officialDevelopment]
 void [UiConsumer, rootUi, serveUi, development, workbench, createWorkbenchRenderer, workbenchHttp, createWorkbenchShellHandler]
 `
@@ -1023,15 +1023,16 @@ const hook = registerHooks({ load(url, context, next) {
  return next(url, context)
 } })
 const { createHost } = await import('@pluxel/host')
-const { createDevConsoleScope } = await import('@pluxel/host-vite/internal')
+const { createScriptScope } = await import('@pluxel/host/agent')
 const host = await createHost({ plugins: [] })
-const scope = createDevConsoleScope({ id: 'installed-services', ctx: host.ctx })
+await host.start()
+const scope = createScriptScope({ ctx: host.ctx })
 try {
- assert.equal(scope.dev.ctx, host.ctx)
- assert.equal(typeof scope.dev.ctx.logger.info, 'function')
- assert.deepEqual(await scope.dev.plugins.list(), [])
+ assert.equal(host.ctx, host.ctx)
+ assert.equal(typeof host.ctx.logger.info, 'function')
+ assert.deepEqual(await scope.sdk.plugins.list(), [])
  const missing = { definition: { entry: { kind: 'package-root', packageName: '@test/missing' }, exportName: 'Missing' }, variant: 'default' }
- assert.equal((await scope.dev.config.get(missing)).ok, false)
+ assert.equal((await scope.sdk.config.get(missing)).ok, false)
 } finally {
  await scope.dispose()
  await host.close()

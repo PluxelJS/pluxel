@@ -12,6 +12,8 @@ import type { PluginApplyReport } from './coordinator'
 import type { PluginReconciliationIssue } from './reconcile'
 import type { HostPolicyField } from './policy'
 import type { HostPersistenceResult } from './persistence'
+import type { HostPluginConfigResult } from './config'
+import type { HostPolicyResult } from './policy-management'
 export type PluginApplyLifecycleErrorInfo = Readonly<{
 	name: string
 	message: string
@@ -55,6 +57,26 @@ export type PluginApplyReportSnapshot = Readonly<{
 		| Readonly<{ status: 'unchanged' }>
 		| Readonly<{ status: 'committed'; summary: PluginApplyCommitSummary }>
 }>
+
+/** The configuration domain result with an address-only report for every control-plane consumer. */
+export function projectPluginConfigResult(
+	ctx: Context,
+	result: HostPluginConfigResult,
+): HostPluginConfigResult<PluginApplyReportSnapshot> {
+	if (result.ok === false) return result
+	const { report, ...snapshot } = result
+	return { ...snapshot, ...(report ? { report: projectPluginApplyReport(ctx, report) } : {}) }
+}
+
+/** The policy domain result with the same address-only lifecycle report. */
+export function projectHostPolicyResult(
+	ctx: Context,
+	result: HostPolicyResult,
+): HostPolicyResult<PluginApplyReportSnapshot> {
+	if (result.ok === false) return result
+	const { report, ...snapshot } = result
+	return { ...snapshot, ...(report ? { report: projectPluginApplyReport(ctx, report) } : {}) }
+}
 
 /** Projects Core identities once for every Host control-plane consumer. */
 export function projectPluginApplyReport(

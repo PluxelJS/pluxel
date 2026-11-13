@@ -19,6 +19,22 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./agent": {
+			"@pluxel/source": "./src/agent.ts",
+			"default": "./dist/agent.mjs"
+		},
+		"./agent/node": {
+			"@pluxel/source": "./src/agent/node.ts",
+			"default": "./dist/agent/node.mjs"
+		},
+		"./agent/socket": {
+			"@pluxel/source": "./src/agent/socket.ts",
+			"default": "./dist/agent/socket.mjs"
+		},
+		"./agent/transport": {
+			"@pluxel/source": "./src/agent/transport.ts",
+			"default": "./dist/agent/transport.mjs"
+		},
 		"./bindings": {
 			"@pluxel/source": "./src/bindings.ts",
 			"default": "./dist/bindings.mjs"
@@ -52,6 +68,10 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./agent": "./dist/agent.mjs",
+			"./agent/node": "./dist/agent/node.mjs",
+			"./agent/socket": "./dist/agent/socket.mjs",
+			"./agent/transport": "./dist/agent/transport.mjs",
 			"./bindings": "./dist/bindings.mjs",
 			"./browser": "./dist/browser.mjs",
 			"./environment": "./dist/environment.mjs",
@@ -86,12 +106,15 @@
 		"@types/node": "catalog:types",
 		"@types/picomatch": "catalog:types",
 		"@types/semver": "catalog:types",
+		"capnweb": "catalog:prod",
+		"miniflare": "catalog:dev",
 		"playwright-core": "catalog:prod",
 		"valibot": "catalog:validation",
 		"vite-plus": "catalog:build"
 	},
 	"peerDependencies": {
-		"@pluxel/core": "workspace:^"
+		"@pluxel/core": "workspace:^",
+		"capnweb": "catalog:prod"
 	},
 	"engines": {
 		"node": ">=24"

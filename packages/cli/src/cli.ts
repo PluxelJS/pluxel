@@ -12,10 +12,18 @@ import {
 	normalizeDevArgs,
 	publishCommandDefinition,
 	sourceCommandDefinition,
+	scriptCommandDefinition,
 	workspaceCommandDefinition,
 } from './command-manifest'
 
 const commands = new Map<string, SubCommandable>([
+	[
+		'script',
+		lazy(
+			() => import('./commands/script').then((module) => module.scriptCommand),
+			scriptCommandDefinition,
+		),
+	],
 	[
 		'pncat',
 		define({ name: 'pncat', description: 'Run the bundled pncat CLI with its native arguments' }),

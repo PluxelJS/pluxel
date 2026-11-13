@@ -37,6 +37,8 @@
 
 `vp run build` 通过 Vite Task 调度各包的标准 `build` 入口（委托 `compile` task）；`vp run verify` 组合治理、`vp check`、测试和构建。根 `package.json` scripts 保留 IDE 可发现的开发、构建、测试和检查入口；聚合 scripts 委托给 `workspace:*` 原生任务，入口不缓存，底层任务按各自规则缓存。`oxlint.config.ts` 与 `oxfmt.config.ts` 分别维护规则，根 `vite.config.ts` 引用为 `lint` / `fmt` 并启用类型检查；包配置拥有任务、依赖和缓存。CI 直接运行 `vp run --concurrency-limit=2 workspace:verify`，让并发限制覆盖实际任务图。原生 `tsdown.config.ts` 通过 `pack` 引用，Plugin 构建继续使用 `pluxel build` 的编译语义。依赖操作使用 `vp exec pluxel pncat`，版本对齐使用 `vp exec pluxel workspace sync`；不要添加重复的 catalog 脚本。
 
+项目脚本使用普通 TypeScript 函数与 `satisfies ProjectScript`（`@pluxel/host-vite/project`），通过 `sdk.dev.address/instance/ctx` 访问当前模块图。通用 SDK 为 `Script`（`@pluxel/host/agent`），方法返回普通 Promise；配置修改后核对领域报告与实际采用。部署上传执行、认证与 receipt 见 `vp exec pluxel docs development/scripts.md`。
+
 ## 持久状态与原生依赖
 
 配置继续使用 `configs.use()`。配置之外的有界状态通过固定的 `ctx.tinybase.open()` 取得每个 Plugin node 唯一的托管 Store；原生 API 和类型直接从 `tinybase` 与上游子路径导入。持久位置、恢复和保存归 Host，不在插件管理 Persister 或另写 JSON 设置。密钥留在 Vault，大文件通过固定的 `ctx.fs()` 保存；后端在 Host 的 `runtime.zenfs: zenfs(...)` 中选择；日志输出在 `runtime.logtape: logtape(...)` 中选择，两个可选 helper 都从 `@pluxel/core/config` 导入，原生配置可直接输入，不加入服务清单。

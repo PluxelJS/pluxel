@@ -5,14 +5,13 @@ import { resolve } from 'node:path'
 import { createHost } from '@pluxel/host'
 import type { ViteDevServer } from 'vite'
 import { afterEach, expect, it, vi } from 'vitest'
-import { attachDevConsole } from '../src/console/attachment'
-import type { RunExecution } from '../src/console/executor'
-import type { DevConsoleRunInput } from '../src/console/protocol'
+import { attachProjectScripts } from '../src/console/attachment'
+import type { RunExecution, ScriptSubmission } from '@pluxel/host/agent'
 
 const mocked = vi.hoisted(() => ({
 	execute: undefined as
 		| undefined
-		| ((input: DevConsoleRunInput, run: RunExecution) => Promise<unknown>),
+		| ((input: ScriptSubmission, run: RunExecution) => Promise<unknown>),
 	script: vi.fn(),
 	load: vi.fn(async () => {}),
 }))
@@ -26,7 +25,7 @@ vi.mock('../src/environment', () => ({
 	invalidateHostModule: vi.fn(),
 }))
 vi.mock('../src/console/server', () => ({
-	startDevConsoleServer: async (options: { execute: typeof mocked.execute }) => {
+	startProjectScriptServer: async (options: { execute: typeof mocked.execute }) => {
 		mocked.execute = options.execute
 		return { close: async () => {}, executor: { abortScripts: vi.fn() } }
 	},
@@ -46,7 +45,7 @@ async function fixture() {
 	const application = await createHost({ plugins: [] })
 	cleanup.push(() => application.close())
 	const host = { ctx: application.ctx, epoch: 'first' }
-	const attachment = await attachDevConsole({
+	const attachment = await attachProjectScripts({
 		server: { config: { root } } as ViteDevServer,
 		getHost: () => ({ ...host }),
 		prepare: async () => {},
@@ -58,14 +57,18 @@ async function fixture() {
 		phase: vi.fn(),
 		hostEpoch: vi.fn(),
 		revision: vi.fn(),
+		cleanupFailure: vi.fn(),
 	}
 	const execute = () =>
 		mocked.execute!(
 			{
 				runId: 'run',
-				file,
-				sourceHash: createHash('sha256').update(source).digest('hex'),
-				exportName: 'default',
+				code: {
+					kind: 'project',
+					file,
+					sourceHash: createHash('sha256').update(source).digest('hex'),
+					exportName: 'default',
+				},
 			},
 			run,
 		)
@@ -74,10 +77,10 @@ async function fixture() {
 
 it('executes against a Host without official services or configured logging', async () => {
 	const current = await fixture()
-	mocked.script.mockImplementation(async (dev) => ({
-		plugins: await dev.plugins.list(),
-		logger: typeof dev.ctx.logger.info,
-		signal: dev.signal === current.run.signal,
+	mocked.script.mockImplementation(async (sdk, run) => ({
+		plugins: await sdk.plugins.list(),
+		logger: typeof sdk.dev.ctx.logger.info,
+		signal: run.signal === current.run.signal,
 	}))
 	expect(await current.execute()).toEqual({ plugins: [], logger: 'function', signal: true })
 	expect(current.run.revision).toHaveBeenCalledTimes(2)

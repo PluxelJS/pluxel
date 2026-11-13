@@ -22,7 +22,7 @@ import {
 	parseRunSnapshot,
 	publicInstance,
 	readBoundedFile,
-	requestDev,
+	connectDevInstance,
 	runDevFile,
 	selectDevInstance,
 	withDevContext,
@@ -32,10 +32,11 @@ import {
 import {
 	connectDevProject,
 	readDevService,
-	requireDevConsole,
+	requireDevScripts,
 	resolveDevSelection,
 	startDevService,
 } from '../dev/project'
+import { validateCommandOptions } from '../command-options'
 import { runDevCommand } from '../dev/process'
 import { decodeDevReceipt, encodeDevReceipt } from '../dev/receipt'
 
@@ -64,59 +65,28 @@ function terminalUrl(line: string): string {
 	)
 }
 
-function validateDevOptions(ctx: DevCommandContext): void {
-	const allowed = new Set(['help', 'version'])
-	const short = new Set(['h', 'v'])
-	for (const [name, argument] of Object.entries(ctx.args)) {
-		if (argument.type === 'positional') continue
-		allowed.add(name)
-		if (argument.short) short.add(argument.short)
-		if (argument.type === 'boolean' && argument.negatable) allowed.add(`no-${name}`)
-	}
-	for (const token of ctx.tokens) {
-		if (token.kind !== 'option') continue
-		const names = token.rawName?.startsWith('--') ? allowed : short
-		if (token.name && names.has(token.name)) continue
-		throw new DevClientError(
-			'invalid_input',
-			`Unknown dev option ${token.rawName ?? token.name ?? '(unnamed)'}.`,
-			{
-				hint: 'Check the selected dev command’s --help for supported options.',
-			},
-		)
-	}
-	const positionalCount = ctx.positionals.length
-	const declaredPositionals = Object.values(ctx.args).filter(
-		(arg) => arg.type === 'positional',
-	).length
-	if (positionalCount > ctx.commandPath.length + declaredPositionals)
-		throw new DevClientError(
-			'invalid_input',
-			'Unexpected argument; check the selected dev command’s --help',
-		)
-}
-
-function runReceipt(instance: DevInstance, runId: string): string {
+function runReceipt(instance: DevInstance, runId: string, requestHash: string): string {
 	return encodeDevReceipt({
 		root: instance.root,
 		instanceId: instance.instanceId,
 		runId,
+		requestHash,
 		serviceId: instance.serviceId,
 	})
 }
 
 function runResult(instance: DevInstance, snapshot: DevRunSnapshot) {
-	return { ...snapshot, receipt: runReceipt(instance, snapshot.runId) }
+	return { ...snapshot, receipt: runReceipt(instance, snapshot.runId, snapshot.requestHash) }
 }
 
 function printAccepted(instance: DevInstance, snapshot: DevRunSnapshot): void {
 	process.stderr.write(
 		JSON.stringify({
-			event: 'accepted',
+			event: snapshot.state === 'submitting' ? 'submitting' : 'accepted',
 			root: snapshot.root,
 			runId: snapshot.runId,
 			instanceId: snapshot.instanceId,
-			receipt: runReceipt(instance, snapshot.runId),
+			receipt: runReceipt(instance, snapshot.runId, snapshot.requestHash),
 			state: snapshot.state,
 		}) + '\n',
 	)
@@ -128,7 +98,7 @@ async function printResult(
 	pendingExitCode = 2,
 ) {
 	try {
-		validateDevOptions(ctx)
+		validateCommandOptions(ctx)
 		const value = await action()
 		ctx.log(JSON.stringify({ ok: true, value }))
 		if (value && typeof value === 'object' && 'state' in value) {
@@ -139,11 +109,12 @@ async function printResult(
 		const failure = withDevContext(error, {})
 		const context = failure.context
 		const receipt =
-			failure.runId && context?.root && context.instanceId
+			failure.runId && failure.requestHash && context?.root && context.instanceId
 				? encodeDevReceipt({
 						root: context.root,
 						instanceId: context.instanceId,
 						runId: failure.runId,
+						requestHash: failure.requestHash,
 						serviceId: context.serviceId,
 					})
 				: undefined
@@ -169,10 +140,10 @@ export const devCommand = define({
 	...devCommandDefinition,
 	async run(ctx) {
 		try {
-			validateDevOptions(ctx)
+			validateCommandOptions(ctx)
 			const selection = await resolveDevSelection(ctx.values as ArgValues<typeof devCommonArgs>)
 			const project = selection.project
-			if (selection.instance !== undefined) requireDevConsole(project)
+			if (selection.instance !== undefined) requireDevScripts(project)
 			let instance: DevInstance
 			let action: 'started' | 'reused' = 'reused'
 			if (project?.pitchfork && selection.instance === undefined) {
@@ -183,7 +154,7 @@ export const devCommand = define({
 					return
 				}
 				action = service.status === 'running' ? 'reused' : 'started'
-				if (project.console === false) {
+				if (project.scripts === false) {
 					const current = await readDevService(project)
 					if (current.id !== service.id)
 						throw new DevClientError(
@@ -217,7 +188,7 @@ export const devCommand = define({
 							'invalid_project',
 							'No running console or development command was found.',
 							{
-								hint: 'Declare a named pluxel.dev profile with a command or pitchfork service in package.json, or start Vite with devConsole enabled.',
+								hint: 'Declare a named pluxel.dev profile with a command or pitchfork service in package.json, or start Vite with scripts enabled.',
 							},
 						)
 					// The foreground process owns startup output, keyboard shortcuts and its lifetime.
@@ -235,7 +206,7 @@ export const devCommand = define({
 					'dev_unavailable',
 					'The selected Vite instance has no URL presentation.',
 					{
-						hint: 'Check devConsole and host-vite, then restart the selected development server.',
+						hint: 'Check scripts and host-vite, then restart the selected development server.',
 					},
 				)
 			printDevHeading(ctx, project.profile, action)
@@ -264,7 +235,7 @@ export const devInstancesCommand = define({
 	async run(ctx) {
 		await printResult(ctx, async () => {
 			const selection = await resolveDevSelection(ctx.values as ArgValues<typeof devCommonArgs>)
-			requireDevConsole(selection.project)
+			requireDevScripts(selection.project)
 			const instances = await liveDevInstances(selection.root)
 			return instances
 				.filter((instance) => matchesDevInstance(instance, selection))
@@ -278,13 +249,13 @@ export const devStatusCommand = define({
 	async run(ctx) {
 		await printResult(ctx, async () => {
 			const selection = await resolveDevSelection(ctx.values as ArgValues<typeof devCommonArgs>)
-			if (selection.project.console === false) {
-				if (selection.instance !== undefined) requireDevConsole(selection.project)
+			if (selection.project.scripts === false) {
+				if (selection.instance !== undefined) requireDevScripts(selection.project)
 				return {
 					workspace: selection.project.workspace,
 					profile: selection.project.profile,
 					root: selection.root,
-					console: false,
+					scripts: false,
 					service: await readDevService(selection.project),
 				}
 			}
@@ -323,6 +294,7 @@ export const devRunCommand = define({
 					input,
 					timeoutMs: Number(values.timeout),
 					detach: values.detach,
+					onPrepared: (snapshot) => printAccepted(instance, snapshot),
 					onAccepted: (snapshot) => printAccepted(instance, snapshot),
 				})
 				return runResult(instance, result)
@@ -345,6 +317,7 @@ export const devHmrCommand = define({
 					action: values.action,
 					timeoutMs: Number(values.timeout),
 					detach: values.detach,
+					onPrepared: (snapshot) => printAccepted(instance, snapshot),
 					onAccepted: (snapshot) => printAccepted(instance, snapshot),
 				})
 				return runResult(instance, result)
@@ -363,11 +336,17 @@ async function receiptResult(ctx: DevCommandContext, token: string, method: 'res
 				instance: receipt.instanceId,
 				serviceId: receipt.serviceId,
 			})
+			using control = await connectDevInstance(instance)
 			const snapshot = parseRunSnapshot(
-				await requestDev(instance, { method, runId: receipt.runId }),
+				await control[method](receipt.runId),
 				instance,
 				receipt.runId,
 			)
+			if (snapshot.requestHash !== receipt.requestHash)
+				throw new DevClientError(
+					'request_conflict',
+					'Receipt content does not match the retained request',
+				)
 			return runResult(instance, snapshot)
 		} catch (error) {
 			throw withDevContext(error, receipt, receipt.runId)
