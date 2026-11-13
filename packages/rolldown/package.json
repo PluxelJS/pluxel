@@ -50,6 +50,10 @@
 			"@pluxel/source": "./src/resolver/oxc.ts",
 			"default": "./dist/resolver/oxc.mjs"
 		},
+		"./scripts": {
+			"@pluxel/source": "./src/scripts.ts",
+			"default": "./dist/scripts.mjs"
+		},
 		"./vite": {
 			"@pluxel/source": "./src/vite/index.ts",
 			"default": "./dist/vite.mjs"
@@ -108,6 +112,7 @@
 			"./oxlint": "./dist/oxlint.mjs",
 			"./plugins": "./dist/plugins.mjs",
 			"./resolver/oxc": "./dist/resolver/oxc.mjs",
+			"./scripts": "./dist/scripts.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./vite/declaration": "./dist/vite/declaration.mjs",
 			"./vite/environment": "./dist/vite/environment.mjs",
@@ -171,6 +176,7 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
 		"@pluxel/workbench": "workspace:^",
 		"rolldown": "catalog:build",
 		"vite": ">=8.2.2 <9"

@@ -7,7 +7,7 @@ description: 掌握 Better Result 在本地插件方法、Command 指令与多�
 
 Pluxel 核心在 `@pluxel/core/better-result` 子路径下直接导出了 [Better Result](https://better-result.dev/) 的完整运行时 API 与类型，供插件直接使用。
 
-跨插件公开 Result 实例时，提供方和调用方使用同一子入口，通过 `@pluxel/core` peer 共享所选版本，无需额外声明 `better-result` peer。Core peer 范围应包含所用子入口和 API 的最低版本；只导入 Core 主入口不会加载 Better Result。独立安装的双包 ESM/CJS 消费与对象身份检查见 [Core 发行回归](../../packages/core/tests/installed-result.smoke.mjs)。
+跨插件公开 Result 实例时，提供方和调用方使用同一子入口，通过 `@pluxel/core` peer 共享所选版本，无需额外声明 `better-result` peer。Core peer 范围应包含所用子入口和 API 的最低版本；只导入 Core 主入口不会加载 Better Result。独立安装的双包 ESM/CJS 消费与对象身份检查见 [Core 发行回归](https://github.com/PluxelJS/pluxel/blob/main/packages/core/tests/installed-result.smoke.mjs)。
 
 本地业务方法按恢复需要选择 Result；SDK 原生返回值、部分成功回执及配置的保存/采用状态继续使用各自协议。`Plugin.init()` 无法提供能力时仍按生命周期约定失败。
 
@@ -105,8 +105,8 @@ export const readNoteCommand = defineCommand({
 
 现有调用方展示了两种边界：
 
-- [Wretch consumer](../../plugins/wretch/tests/fixtures/wretch-example.ts) 将查询的 404 转为 `CustomerNotFound`，由另一个 Plugin 的 HTTP route 转为普通 JSON 与 404 响应；其他 HTTP、网络及生命周期错误保留原语义。
-- [Auth credential preparation](../../plugins/auth/src/credential-provisioning.ts) 在内部组合输入、账户与凭据校验，公开方法继续返回领域 DTO，Workbench 不接收 Result 实例。
+- [Wretch consumer](https://github.com/PluxelJS/pluxel/blob/main/plugins/wretch/tests/fixtures/wretch-example.ts) 将查询的 404 转为 `CustomerNotFound`，由另一个 Plugin 的 HTTP route 转为普通 JSON 与 404 响应；其他 HTTP、网络及生命周期错误保留原语义。
+- [Auth credential preparation](https://github.com/PluxelJS/pluxel/blob/main/plugins/auth/src/credential-provisioning.ts) 在内部组合输入、账户与凭据校验，公开方法继续返回领域 DTO，Workbench 不接收 Result 实例。
 
 ## 跨进程与 RPC 边界
 

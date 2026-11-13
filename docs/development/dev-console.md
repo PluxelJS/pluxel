@@ -1,215 +1,144 @@
 ---
-title: 在线开发控制台
-description: 控制现有 Vite 的 HMR 批次，提交 TypeScript 操作，检查应用状态、配置、Workbench 和日志，并恢复原操作结果。
+title: Vite 项目脚本与 HMR
+description: 在当前 Vite 模块图中执行普通 TypeScript，访问真实插件和 Context，并控制源码更新批次。
 ---
 
-Pluxel 开发控制台（Dev Console）运行在当前正在运行的 Vite 进程与宿主（Host）上下文中。它提供了在服务运行期间执行测试脚本、在线查看和修改配置、精准管理热模块替换（HMR）批次以及按条件筛选业务日志的能力。
-
-<span id="coding-agent-工作流程"></span>
+项目脚本由目标 Vite 的现有 ModuleRunner 加载。它与应用共享 Plugin constructor、能力 token 和模块身份，可以访问真实实例和 root Context。配置、插件、策略与日志使用 [Script SDK](./scripts.md)；脱离 Vite 的部署使用同一 SDK 的上传执行。
 
 ## 推荐工作流程
 
-1. **确认服务与应用状态**：
-   运行 `pluxel dev status` 确认当前 Vite 根目录、匹配的实例 ID、HMR 运行模式以及宿主就绪状态（`application.state`）。
-2. **多文件连续修改时暂停 HMR**：
-   若需修改多个代码文件，可执行 `pluxel dev hmr pause` 暂停自动热更新。在完成全部修改并通过类型检查后，执行 `pluxel dev hmr apply` 将改动作为一个批次统一提交。确认状态正常后执行 `pluxel dev hmr resume` 恢复自动模式。
-3. **提交与执行交互式脚本**：
-   在工作区内编写普通的 TypeScript 导出函数，通过 `pluxel dev run <path>` 提交执行。
-4. **保存与查询操作回执**：
-   对于耗时较长或后台异步执行的操作，系统会返回操作回执（Receipt）。可通过 `pluxel dev result <receipt>` 查询真实结果或通过 `cancel` 主动取消。
+```sh
+vp exec pluxel dev status
+vp exec pluxel dev run host/web/dev/inspect.ts
+```
+
+先确认 profile、Vite root、instanceId 与 `application.state`。修改运行中应用的多个文件前暂停 HMR，完成检查后 apply 并核对应用报告与实际行为。命令在 stderr 的 `submitting` 事件中先给出 receipt 和请求摘要，接纳后给出 `accepted`；stdout 保留一个最终 JSON。保存 receipt，后续查询和取消始终定位原实例。
 
 ```sh
-# 检查默认配置文件的服务状态
-vp exec pluxel dev status
-
-# 执行指定的开发调试脚本
-vp exec pluxel dev run host/web/dev/inspect.ts
-
-# 若使用前台 local 配置文件，显式携带 --profile 参数
-vp exec pluxel dev status --profile local
+vp exec pluxel dev result RECEIPT
+vp exec pluxel dev cancel RECEIPT
 ```
+
+CLI 与 Vite 通过私有 Unix socket 上的 Cap’n Web 连接。发现目录和 socket 受当前用户文件权限保护；Vite 的公共 HTTP listener 不提供脚本执行。`dev status/instances/run/hmr` 查询现有实例，`pluxel dev` 才负责启动或复用配置的开发服务。
 
 <span id="hmr-批次控制"></span>
 
 ## HMR 批次控制
 
-默认情况下，HMR 为 `auto` 自动更新模式。在需要跨多个文件连续重构代码、避免中间半成品状态频繁触发热更新时，可以通过批次控制命令显式编排：
-
 ```sh
-# 1. 暂停自动更新
 vp exec pluxel dev hmr pause
-
-# 2. 编辑修改源码并完成静态检查
-
-# 3. 统一应用当前批次的变更
+# 编辑源码并完成静态检查
 vp exec pluxel dev hmr apply
-
-# 4. 执行测试脚本确认应用状态
 vp exec pluxel dev run host/web/dev/inspect.ts
-
-# 5. 确认正常后恢复自动模式
 vp exec pluxel dev hmr resume
 ```
 
-### 命令说明
+`pause` 等待已接纳批次结算，然后保持 `paused`，watcher 继续收集变化。`apply` 应用有限的一批待处理变化，完成后仍保持暂停。`resume` 完成有限待处理工作后回到 `auto`。失败时保持暂停修复；成功且原来为自动模式时才恢复。
 
-| 命令             | 行为说明                                                                        |
-| :--------------- | :------------------------------------------------------------------------------ |
-| `dev hmr pause`  | 将更新模式切换为 `paused`，后台文件监听器继续收集并合并文件变动                 |
-| `dev hmr apply`  | 将当前积累的全部文件变动作为单个完整批次应用到宿主应用中，执行后仍保持 `paused` |
-| `dev hmr resume` | 应用剩余的待处理改动并将模式切回 `auto`，后续变更恢复自动热更新                 |
-| `dev status`     | 查看当前的 HMR 调度状态、是否有在途更新任务以及待处理文件数量                   |
+状态中的 `hmr` 提供 mode、running、pending.files/full 和 observedRevision/attemptedRevision。最近的候选与生命周期结果在 `application.latestUpdate`。控制请求成功后继续检查应用是否 ready、更新是否被采用以及实际行为。
 
-`dev status` 中的 `hmr` 字段结构：
-
-- `mode`：当前模式（`auto` 或 `paused`）；
-- `running`：当前是否有正在执行的应用更新批次；
-- `pending.files`：当前已累积的文件变动数；若超过 4096 个文件则自动标记为 `full: true` 执行全量重算；
-- `observedRevision` / `attemptedRevision`：监听观察到的版本与已尝试更新的版本号。
+HMR 控制属于 Vite 实例，在应用启动失败或 Host replacement 期间仍可用。暂停且有待处理运行时变化时，项目脚本以 `hmr_pending` 结束；脚本不会自动 apply。执行中的普通脚本不占有整个 HMR/coordinator 锁，更新可以与脚本中的 await 交错。
 
 ## 编写可交互的开发脚本
 
-在 `host/web/dev/inspect.ts` 中定义可执行函数：
+在目标 Vite root 内创建 `dev/inspect.ts`。以下示例使用应用自己的 TodoPlugin；`snapshot()`、`add()` 是该插件公开的业务方法。
 
 ```ts no-twoslash
-import { defineDevConsole } from '@pluxel/host-vite/console'
+import type { ProjectScript } from '@pluxel/host-vite/project'
 import { TodoPlugin } from '@example/todo-plugin'
 
-// 默认导出：直接执行状态检查
-export default defineDevConsole(async (dev) => ({
-	status: await dev.plugins.status(TodoPlugin),
-	todos: dev.plugins.require(TodoPlugin).snapshot(),
-}))
+export default (async (sdk) => ({
+	status: await sdk.plugins.status(sdk.dev.address(TodoPlugin)),
+	todos: sdk.dev.instance(TodoPlugin).snapshot(),
+})) satisfies ProjectScript
 
-// 具名导出：支持接收外部参数执行操作
-export const add = defineDevConsole(async (dev) => {
-	if (typeof dev.input !== 'string') throw new TypeError('Expected a todo title')
-	return dev.plugins.require(TodoPlugin).add(dev.input)
-})
+export const add = ((sdk, run) => {
+	if (typeof run.input !== 'string') throw new TypeError('Expected a todo title')
+	run.signal.throwIfAborted()
+	return sdk.dev.instance(TodoPlugin).add(run.input)
+}) satisfies ProjectScript
 ```
 
-通过 CLI 触发执行：
-
 ```sh
-# 执行默认导出
 vp exec pluxel dev run host/web/dev/inspect.ts
-
-# 执行具名导出并传入 JSON 参数
 vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"测试待办事项"'
 ```
 
-- 脚本内部可通过 `dev.plugins` 直接访问已加载的插件实例与运行状态。
-- 函数返回值会被自动序列化为 JSON 格式在控制台输出。
-- 修改脚本自身或添加新的具名导出无需重启 Vite 服务，控制台会自动热加载最新脚本。
+`ProjectScript` 使用普通函数与 `satisfies`；没有运行时定义 helper。输入从 unknown 校验。所有通用 SDK 方法返回普通 Promise。返回可移植纯数据；实例、Context、函数和其他运行句柄留在目标进程。
+
+`sdk.dev.address(Constructor)` 对当前 catalog 检查 constructor 身份后返回稳定节点地址。通用配置与生命周期方法使用这个地址。fork 使用 `{ plugin: TodoPlugin, forkId: 'east' }`，只查找已有节点。`sdk.dev.instance()` 返回实际当前实例；每次 restart/HMR 后重新取得。已取得的普通 JavaScript 对象无法通用撤销，不能跨 run 或 Host epoch 缓存。
+
+通过 `sdk.dev.ctx.require(Token)` 访问应用已安装的能力。脚本借用 root，自己创建的订阅、RPC lease 和原生资源由脚本通过 `using`、`await using` 或 `try/finally` 释放；直接业务调用显式传递 `run.signal` 并 await 结算。通用 SDK 接纳的操作由执行内核跟踪并排空。
+
+<span id="编辑配置"></span>
+
+## 在线查看与更新插件配置
+
+```ts no-twoslash
+import type { ProjectScript } from '@pluxel/host-vite/project'
+import { TodoPlugin } from '@example/todo-plugin'
+
+export const increaseLimit = (async (sdk) => {
+	const node = sdk.dev.address(TodoPlugin)
+	const current = await sdk.config.get(node)
+	if (!current.ok) return current
+	const limit = current.config.limit
+	if (typeof limit !== 'number') throw new TypeError('Expected a numeric limit')
+	const changed = await sdk.config.patch(
+		node,
+		{ set: { limit: limit + 1 } },
+		{
+			expectedManagedRevision: current.managedRevision,
+		},
+	)
+	if (!changed.ok) return changed
+	return {
+		persistence: changed.persistence,
+		application: changed.application,
+		current: await sdk.config.get(node),
+		actual: sdk.dev.instance(TodoPlugin).config.limit,
+	}
+}) satisfies ProjectScript
+```
+
+`config` 是经过 Schema 计算的期望输出，修改只提交 managed input 的变更字段。查询还提供来源、遮盖路径和 managed revision。保存确认、desired 接纳和 generation 实际采用分别检查；详见 [SDK 配置操作](./scripts.md)与[配置指南](../plugin-development/configuration.md)。
+
+日志用 `sdk.logs.mark()`、`read()`、`wait()`，与插件启停使用同一 SDK。没有历史 store 时会返回能力诊断，执行器不会自行安装日志 backend。日志 cursor 保留 epoch、retention 和 gap 含义。
 
 <span id="项目入口与启动方式"></span>
 
 ## 配置 profile 与启动方式
 
-在 `package.json` 的 `pluxel.dev` 节点中声明开发环境配置文件（Profile）：
+Vite 配置显式启用项目执行：
+
+```ts no-twoslash
+import { defineConfig } from 'vite'
+import { host } from '@pluxel/host-vite'
+
+export default defineConfig({ plugins: host({ entry: './app.ts', scripts: true }) })
+```
+
+使用官方服务附件时同样设置 `vitePreset({ entry, scripts: true })`。此开发入口只在 development profile 可用。
 
 ```json
 {
 	"pluxel": {
 		"dev": {
 			"default": "app",
-			"app": {
-				"root": "host/web",
-				"pitchfork": "app"
-			},
-			"local": {
-				"root": "host/web",
-				"command": "vp run @example/host#dev:server"
-			}
+			"app": { "root": "host/web", "pitchfork": "app" },
+			"local": { "root": "host/web", "command": "vp run @example/host#dev:server" },
+			"docs": { "root": "docs", "pitchfork": "docs", "scripts": false }
 		}
 	}
 }
 ```
 
-- `default`：默认使用的 profile 名称；
-- `root`：相对于当前包的 Vite 根目录；
-- `pitchfork`：指定托管该服务的 Pitchfork 任务名；
-- `command`：直接在前台启动的命令（与 `pitchfork` 二选一）。
+`root` 相对声明 package；pitchfork 与 command 二选一。显式 `--profile` 优先于 default，多个 profile 没有默认时必须选择。相同目标匹配多个实例时加 `--instance`；此参数保留 profile 与启动归属检查。无配置的手动 Vite 可以用 `--root` 选择其真实根目录。只有 Pitchfork profile 可以设置 `scripts: false`，用于没有 Pluxel Host 的文档站等服务。
 
-<span id="编辑配置"></span>
+## 失败、取消与恢复
 
-## 在线查看与更新插件配置
+函数返回 `{ ok: false }` 等领域结果时，run 仍可成功；调用方继续处理领域结果。执行记录区分 admission/load/execute/encode/cleanup，保留错误、独立清理错误及前后版本。部分写入后抛错或结果编码失败，已提交操作继续保留，执行器不会自动回滚或重投。
 
-在调试脚本中，可通过 `dev.config` 接口在线查询和修改插件配置：
+取消先关闭新的 SDK 接纳并传递 signal，正在进行的 Host 修改按真实生产路径结算。running run 在结算前保持 cancelling；同步死循环仍受同进程 JavaScript 的协作取消限制。断开连接保留已接纳 run，可用原 receipt 重连查询。结果过期、原 owner 消失与没有找到 run 分别报告；切勿用新的 run ID 自动重发写操作。
 
-```ts no-twoslash
-export const increaseLimit = defineDevConsole(async (dev) => {
-	// 读取当前配置快照
-	const current = await dev.config.get(TodoPlugin)
-	if (!current.ok) return current
-
-	// 提交增量补丁，传入期望的修订号以防止并发冲突
-	const result = await dev.config.patch(
-		TodoPlugin,
-		{ set: { maxItems: 100 } },
-		{ expectedManagedRevision: current.managedRevision },
-	)
-
-	return { result, latest: await dev.config.get(TodoPlugin) }
-})
-```
-
-- `dev.config.get(Plugin)`：返回包含 `managedInput`（原始持久化输入）、`effectiveInput`（生效输入）与版本修订号的完整数据。
-- `dev.config.patch(Plugin, { set, remove })`：应用增量字段更新或删除特定配置路径。
-- `dev.config.reset(Plugin)`：清除所有已保存的覆盖配置，恢复默认设置。
-
-<span id="有界操作日志与等待"></span>
-
-## 捕获与筛选运行时日志
-
-通过 `Logging` 服务可实时读取特定插件的结构化日志流：
-
-```ts no-twoslash
-import { defineDevConsole } from '@pluxel/host-vite/console'
-import { Logging, markLogs, readLogs } from '@pluxel/core/logging'
-import { TodoPlugin } from '@example/todo-plugin'
-
-export const restartWithLogs = defineDevConsole(async (dev) => {
-	const logging = dev.ctx.require(Logging)
-
-	// 1. 在操作前记录游标位置
-	const cursor = markLogs(logging)
-
-	// 2. 执行目标动作（如重启插件）
-	const report = await dev.plugins.restart(TodoPlugin)
-
-	// 3. 读取游标之后产生的相关日志
-	const logs = readLogs(logging, cursor, {
-		limit: 100,
-		filter: { plugin: TodoPlugin.nodeAddress() },
-	})
-
-	return { report, logs }
-})
-```
-
-- `markLogs(logging)`：捕获当前时刻的日志游标；
-- `readLogs(logging, cursor, { limit, filter })`：根据游标与插件地址筛选出最新产生的有界日志记录。
-
-<span id="结果取消和恢复"></span>
-
-## 异步任务结果查询与取消
-
-执行脚本时可传入 `--detach` 将任务放入后台执行并获取回执：
-
-```sh
-# 后台运行脚本
-vp exec pluxel dev run host/web/dev/seed.ts --detach
-
-# 使用返回的回执查询执行状态与结果
-vp exec pluxel dev result <RECEIPT>
-
-# 若任务执行时间过长，可根据回执主动取消
-vp exec pluxel dev cancel <RECEIPT>
-```
-
-- 回执严格绑定当前的进程实例与运行 ID。
-- 退出码说明：
-  - `0`：任务成功完成；
-  - `1`：脚本抛出异常或已被取消；
-  - `2`：任务仍处于排队或执行中。
+输入、返回值和单个源码文件各有 1 MiB 预算，结果保留最近 100 项且总计不超过 16 MiB。结果过期后仍保留有界接纳身份，旧 ID 不会再次执行。源码变化会明确报 `source_changed`；检查当前源码后再作新的显式提交。

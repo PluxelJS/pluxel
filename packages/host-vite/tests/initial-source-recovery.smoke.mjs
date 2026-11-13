@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, readdir, symlink, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createConnection } from 'node:net'
+import { openProjectControl } from './script-control.fixture.mjs'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -16,33 +16,9 @@ async function inspectApplication(root) {
 	const [file] = await readdir(join(root, '.pluxel/dev-console'))
 	assert.ok(file)
 	const instance = JSON.parse(await readFile(join(root, '.pluxel/dev-console', file), 'utf8'))
-	return new Promise((resolve, reject) => {
-		const socket = createConnection(instance.socketPath)
-		let response = ''
-		socket.on('error', reject)
-		socket.once('connect', () =>
-			socket.write(
-				JSON.stringify({
-					protocol: instance.protocol,
-					instanceId: instance.instanceId,
-					nonce: instance.nonce,
-					method: 'inspect',
-				}) + '\n',
-			),
-		)
-		socket.on('data', (chunk) => {
-			response += chunk.toString()
-		})
-		socket.once('end', () => {
-			try {
-				const packet = JSON.parse(response)
-				assert.equal(packet.ok, true)
-				resolve(packet.value.application)
-			} catch (error) {
-				reject(error)
-			}
-		})
-	})
+	using client = await openProjectControl(instance)
+	const description = await client.describe()
+	return description.application
 }
 
 async function runScenario(scenario) {
@@ -81,7 +57,7 @@ export default defineHostApplication(() => ({plugins:[],sources:[pluginSource({k
 			root,
 			configFile: false,
 			server: { port: 0, host: '127.0.0.1' },
-			plugins: host({ entry: 'app.ts', devConsole: true }),
+			plugins: host({ entry: 'app.ts', scripts: true }),
 			customLogger: {
 				hasWarned: false,
 				info() {},

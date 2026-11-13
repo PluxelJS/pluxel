@@ -8,6 +8,8 @@ import { attachManagementHttp } from './http-internal'
 
 /** Optional Workbench bindings are borrowed from the selected Host's service. */
 export type ManagementHttpOptions = Readonly<{
+	/** Enable trusted uploaded scripts. Grants authenticated administrators in-process Node execution. @default false */
+	scripts?: boolean
 	bindings?(ctx: RootContext): Pick<ManagementEndpointOptions, 'createWorkbench' | 'artifacts'>
 	onError?(error: unknown): void
 }>

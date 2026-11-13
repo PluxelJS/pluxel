@@ -219,4 +219,4 @@ Core 拥有日志安装、sink、policy 持久化、store 与 query；配置 hel
 
 ## Trusted development scripts
 
-`ctx.logger` 是 Core 基础能力；logging backend、policy 与 store 由宿主配置。开启 devConsole 不改变 logging 方案，也不自动增加 bounded store。可信脚本从 `@pluxel/core/logging` 显式 import `Logging`，通过当前借用的 root 解析，调用 `RuntimeLogging.flushStores()` 及已有 store API 读取有界快照。保留 stream 的 retention、epoch 和 gap 语义，不经 `ctx.require(ElysiaApp)` 安装日志接口，也不增加远程 live follow 通道。`markLogs/readLogs/waitForLogs` 由 Logging 领域提供；JSON cursor 绑定 rootId、streamId、bootId 和 epoch，不把 Host replacement 或 retention gap 静默当作连续日志。wait 要求调用方 signal，完成或取消后撤销订阅，不拥有日志生产者。所有权及执行边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。
+`ctx.logger` 是 Core 基础能力；logging backend、policy 与 store 由宿主配置。开启 scripts 不改变 logging 方案，也不自动增加 bounded store。可信脚本从 `@pluxel/core/logging` 显式 import `Logging`，通过当前借用的 root 解析，调用 `RuntimeLogging.flushStores()` 及已有 store API 读取有界快照。保留 stream 的 retention、epoch 和 gap 语义，不经 `ctx.require(ElysiaApp)` 安装日志接口，也不增加远程 live follow 通道。`markLogs/readLogs/waitForLogs` 由 Logging 领域提供；JSON cursor 绑定 rootId、streamId、bootId 和 epoch，不把 Host replacement 或 retention gap 静默当作连续日志。wait 要求调用方 signal，完成或取消后撤销订阅，不拥有日志生产者。所有权及执行边界见 [`DEV_CONSOLE.md`](DEV_CONSOLE.md)。

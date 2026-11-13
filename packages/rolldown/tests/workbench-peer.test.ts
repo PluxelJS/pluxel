@@ -42,24 +42,21 @@ async function fixture(
 		await put(`${directory}/index.js`, 'export class RpcTarget {}')
 	}
 	await put(
-		'node_modules/@pluxel/workbench/package.json',
+		'node_modules/@pluxel/host/package.json',
 		JSON.stringify({
-			name: '@pluxel/workbench',
+			name: '@pluxel/host',
 			version: '0.1.0',
 			exports: { '.': './index.js', './package.json': './package.json' },
 		}),
 	)
-	await put('node_modules/@pluxel/workbench/index.js', 'export {}')
-	await writeCapnweb(
-		'node_modules/@pluxel/workbench/node_modules/capnweb',
-		options.host ?? '0.12.0',
-	)
+	await put('node_modules/@pluxel/host/index.js', 'export {}')
+	await writeCapnweb('node_modules/@pluxel/host/node_modules/capnweb', options.host ?? '0.12.0')
 	if (options.installed) {
 		await writeCapnweb('plugin/node_modules/capnweb', options.installed)
 	} else {
 		await mkdir(join(root, 'plugin/node_modules'), { recursive: true })
 		await symlink(
-			join(root, 'node_modules/@pluxel/workbench/node_modules/capnweb'),
+			join(root, 'node_modules/@pluxel/host/node_modules/capnweb'),
 			join(root, 'plugin/node_modules/capnweb'),
 			'dir',
 		)
@@ -78,21 +75,21 @@ async function fixture(
 	return { root, packageJsonPath }
 }
 
-it('admits an exact catalog peer and development version matching the Workbench copy', async () => {
+it('admits an exact catalog peer and development version matching the Host copy', async () => {
 	const { packageJsonPath } = await fixture({ peer: 'catalog:prod', dev: 'catalog:prod' })
 	await expect(validateWorkbenchCapnwebPeer(packageJsonPath)).resolves.toBe('0.12.0')
 })
 
-it('validates the installed Workbench owner without requiring its runtime build', async () => {
+it('validates the installed Host owner without requiring its runtime build', async () => {
 	const { root, packageJsonPath } = await fixture({ peer: 'catalog:prod', dev: 'catalog:prod' })
-	await rm(join(root, 'node_modules/@pluxel/workbench/index.js'))
+	await rm(join(root, 'node_modules/@pluxel/host/index.js'))
 	await expect(validateWorkbenchCapnwebPeer(packageJsonPath)).resolves.toBe('0.12.0')
 })
 
 it('reports the owner, declarations, actual copy and supported version before package publication', async () => {
 	const { packageJsonPath } = await fixture({ peer: '^0.12.0', dev: '0.12.0', installed: '0.13.0' })
 	await expect(validateWorkbenchCapnwebPeer(packageJsonPath)).rejects.toThrow(
-		/@fixture\/view.*peerDependencies.capnweb \^0\.12\.0, devDependencies.capnweb 0\.12\.0; resolved 0\.13\.0.*Host Workbench supports 0\.12\.0/,
+		/@fixture\/view.*peerDependencies.capnweb \^0\.12\.0, devDependencies.capnweb 0\.12\.0; resolved 0\.13\.0.*Host capnweb supports 0\.12\.0/,
 	)
 })
 
@@ -104,7 +101,7 @@ it('allows an equal version in an author install that may resolve through the ho
 it('takes the supported version from the installed Workbench dependency', async () => {
 	const { packageJsonPath } = await fixture({ host: '0.13.0', peer: '0.12.0', dev: '0.12.0' })
 	await expect(validateWorkbenchCapnwebPeer(packageJsonPath)).rejects.toThrow(
-		/Host Workbench supports 0\.13\.0/,
+		/Host capnweb supports 0\.13\.0/,
 	)
 })
 

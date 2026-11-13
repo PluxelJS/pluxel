@@ -41,7 +41,11 @@ export { requireHostStateStore } from './host'
 
 export * from './recent-update'
 
-export { projectPluginApplyReport } from './apply-report'
+export {
+	projectPluginApplyReport,
+	projectPluginConfigResult,
+	projectHostPolicyResult,
+} from './apply-report'
 
 export { setHostCatalogProvenance } from './catalog-provenance'
 

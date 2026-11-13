@@ -1177,6 +1177,18 @@ importers:
       '@clack/prompts':
         specifier: catalog:prod
         version: 1.8.1
+      '@pluxel/host':
+        specifier: workspace:^
+        version: link:../host
+      '@pluxel/services':
+        specifier: workspace:^
+        version: link:../services
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
+      crossws:
+        specifier: catalog:prod
+        version: 0.4.17(srvx@1.0.8)
       gunshi:
         specifier: catalog:prod
         version: 0.37.3
@@ -1433,6 +1445,12 @@ importers:
       '@types/semver':
         specifier: catalog:types
         version: 7.8.0
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
+      miniflare:
+        specifier: catalog:dev
+        version: 5.20261103.0-beta(@types/node@26.6.6)
       playwright-core:
         specifier: catalog:prod
         version: 1.64.1
@@ -1470,6 +1488,9 @@ importers:
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
       react:
         specifier: catalog:frontend
         version: 19.3.1

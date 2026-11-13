@@ -2,7 +2,7 @@
 
 为 Pluxel Host 提供独立服务与官方组合。导入入口不会安装服务；资源由 Host 准备和关闭。
 
-根入口的 `standardServices()` 组合 Elysia、Commands、Node artifacts 和 Workers，不加载 Management 或 Workbench 后端。官方完整应用组合使用 `@pluxel/services/preset`，Vite 附件组合使用 `@pluxel/services/vite`；应用构建统一使用 `@pluxel/rolldown` 的 `pluxel()`。自定义宿主逐项选择服务与 `/elysia/vite`、`/node/vite` 附件。开发控制台归 `@pluxel/host-vite/console`。
+根入口的 `standardServices()` 组合 Elysia、Commands、Node artifacts 和 Workers，不加载 Management 或 Workbench 后端。官方完整应用组合使用 `@pluxel/services/preset`，Vite 附件组合使用 `@pluxel/services/vite`；应用构建统一使用 `@pluxel/rolldown` 的 `pluxel()`。自定义宿主逐项选择服务与 `/elysia/vite`、`/node/vite` 附件。通用脚本 SDK 归 `@pluxel/host/agent`；Vite 项目扩展归 `@pluxel/host-vite/project`。通过 `managementHttp({ scripts: true })` 显式启用 Node 上传执行，见[自动化脚本](../../docs/development/scripts.md)。
 
 FS 与 TinyBase 是 Core 固定能力，通过 `ctx.fs()` 与 `ctx.tinybase` 使用；后端在 Host 的 `runtime.zenfs` 中选择一次，TinyBase 预算在 `runtime.tinybase` 中设置。Core 安装其精确 TinyBase 版本；只有直接导入原生 Store、Queries 等参与托管互操作的插件声明同版 peer 与 devDependency，见[插件包](../../docs/development/plugin-package.md)。
 

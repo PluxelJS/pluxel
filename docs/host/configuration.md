@@ -152,7 +152,7 @@ export default defineConfig({
 	plugins: [
 		vitePreset({
 			entry: './src/app.ts',
-			devConsole: true,
+			scripts: true,
 		}),
 	],
 })

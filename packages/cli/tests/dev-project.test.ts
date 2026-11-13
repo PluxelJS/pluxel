@@ -1,10 +1,8 @@
-import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { delimiter, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { publicInstance, type DevInstance } from '../src/dev/client'
+import { createDevFixture } from './helpers/dev-fixture'
 import {
 	connectDevProject,
 	readDevService,
@@ -14,7 +12,6 @@ import {
 } from '../src/dev/project'
 
 const cleanup: Array<() => Promise<void>> = []
-let socketCounter = 0
 
 afterEach(async () => {
 	vi.unstubAllEnvs()
@@ -75,63 +72,13 @@ async function consoleInstance(
 	project = profile ? root : undefined,
 	reportedProject = project,
 ) {
-	const discovery = resolve(root, '.pluxel/dev-console')
-	await mkdir(discovery, { recursive: true, mode: 0o700 })
-	// Keep Unix socket paths short even when the platform's temporary directory is nested.
-	const sockets = await mkdtemp(resolve(tmpdir(), 'px-s-'))
-	cleanup.push(() => rm(sockets, { recursive: true, force: true }))
-	const instance: DevInstance = {
-		protocol: 1,
-		instanceId: randomUUID(),
-		nonce: randomUUID(),
-		pid: process.pid,
+	const fixture = await createDevFixture({
 		root,
-		socketPath: resolve(sockets, `${++socketCounter}.sock`),
-		startedAt: new Date().toISOString(),
-		...(serviceId ? { serviceId } : {}),
-		...(profile ? { profile, project } : {}),
-	}
-	const requests: Record<string, unknown>[] = []
-	const server = createServer((socket) => {
-		let buffer = ''
-		socket.on('data', (chunk) => {
-			buffer += chunk.toString()
-			if (!buffer.includes('\n')) return
-			const request: Record<string, unknown> = JSON.parse(buffer.slice(0, buffer.indexOf('\n')))
-			requests.push(request)
-			const authenticated =
-				request.nonce === instance.nonce && request.instanceId === instance.instanceId
-			socket.end(
-				JSON.stringify(
-					authenticated
-						? {
-								ok: true,
-								value: {
-									...publicInstance(instance),
-									serviceId: reportedServiceId,
-									profile: reportedProfile,
-									project: reportedProject,
-								},
-							}
-						: { ok: false, error: { code: 'unauthorized', message: 'Wrong fixture identity' } },
-				) + '\n',
-			)
-		})
+		metadata: { serviceId, profile, project },
+		reported: { serviceId: reportedServiceId, profile: reportedProfile, project: reportedProject },
 	})
-	await new Promise<void>((ready, reject) => {
-		server.once('error', reject)
-		server.listen(instance.socketPath, ready)
-	})
-	cleanup.push(
-		() =>
-			new Promise<void>((done, reject) => {
-				server.close((error) => (error ? reject(error) : done()))
-			}),
-	)
-	await writeFile(resolve(discovery, `${instance.instanceId}.json`), JSON.stringify(instance), {
-		mode: 0o600,
-	})
-	return { instance, requests }
+	cleanup.push(() => fixture.close())
+	return { instance: fixture.instance, requests: fixture.requests }
 }
 
 describe('development profiles', () => {
@@ -168,7 +115,7 @@ describe('development profiles', () => {
 		const project = await workspace({
 			default: 'app',
 			app: { root: 'web', command: 'vp dev' },
-			docs: { pitchfork: 'docs', console: false },
+			docs: { pitchfork: 'docs', scripts: false },
 		})
 		expect(await resolveDevProject({ root: project.root })).toMatchObject({
 			profile: 'app',
@@ -177,7 +124,7 @@ describe('development profiles', () => {
 		expect(await resolveDevProject({ root: project.root, profile: 'docs' })).toMatchObject({
 			profile: 'docs',
 			pitchfork: 'docs',
-			console: false,
+			scripts: false,
 		})
 		await expect(
 			resolveDevProject({ root: project.root, profile: 'default' }),
@@ -197,9 +144,9 @@ describe('development profiles', () => {
 	)
 
 	it.each([undefined, true])(
-		'normalizes console-enabled profiles without redundant state (%j)',
-		async (console) => {
-			const project = await workspace({ app: { pitchfork: 'server', console } })
+		'normalizes script-enabled profiles without redundant state (%j)',
+		async (scripts) => {
+			const project = await workspace({ app: { pitchfork: 'server', scripts } })
 			expect(await resolveDevProject({ root: project.root })).toEqual({
 				workspace: project.root,
 				root: project.root,
@@ -210,11 +157,11 @@ describe('development profiles', () => {
 	)
 
 	it('rejects console connection for a service-only profile before discovery or Pitchfork', async () => {
-		const project = await workspace({ docs: { root: 'web', pitchfork: 'docs', console: false } })
+		const project = await workspace({ docs: { root: 'web', pitchfork: 'docs', scripts: false } })
 		const console = await consoleInstance(project.web, 'fixture/docs')
 		vi.stubEnv('PATH', '')
 		await expect(connectDevProject({ root: project.root })).rejects.toMatchObject({
-			code: 'unsupported_console',
+			code: 'unsupported_scripts',
 		})
 		expect(console.requests).toHaveLength(0)
 	})
@@ -235,10 +182,10 @@ describe('development profiles', () => {
 		{ targets: { app: 'web' } },
 		{ root: 'web', command: 'vp dev' },
 		{ app: { command: 'vp dev', pitchfork: 'server' } },
-		{ app: { command: 'vp dev', console: false } },
-		{ app: { pitchfork: 'app', console: 'false' } },
-		{ app: { pitchfork: 'app', console: 0 } },
-		{ app: { pitchfork: 'app', console: null } },
+		{ app: { command: 'vp dev', scripts: false } },
+		{ app: { pitchfork: 'app', scripts: 'false' } },
+		{ app: { pitchfork: 'app', scripts: 0 } },
+		{ app: { pitchfork: 'app', scripts: null } },
 		{ app: { root: '/absolute', command: 'vp dev' } },
 		{ app: { root: '', command: 'vp dev' } },
 		{ app: { root: 42, command: 'vp dev' } },
@@ -337,7 +284,9 @@ describe('local discovery with profile ownership', () => {
 		await consoleInstance(project.web, 'fixture/app')
 		vi.stubEnv('PATH', '')
 		expect(await connectDevProject({ root: project.root })).toEqual(console.instance)
-		expect(console.requests.every((request) => request.method === 'inspect')).toBe(true)
+		expect(
+			console.requests.every((request) => ['connect', 'describe'].includes(request.method)),
+		).toBe(true)
 	})
 
 	it.each([undefined, 'fixture/app'])(

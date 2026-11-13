@@ -25,6 +25,7 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 | 插件文件、后端或文档保存                | `plugin-development/fs.md`；Host 后端与 config/state 接线读 `host/configuration.md` 对应章节，保留原生 errno 和完整提交                                          |
 | 查声明、配置绑定与源码位置              | `development/inspection.md`；定向请求所需 sections，显式选择 application；先检查 complete/partial/unavailable，缺口不等于不存在                                  |
 | 验证插件依赖、配置或生命周期            | `plugin-development/testing.md`；使用真实 lowering 的 `@pluxel/test`，显式安装所需服务并释放 test host；普通函数用普通测试                                       |
+| 部署应用的自动化脚本                    | `development/scripts.md`；普通 `Script`、CLI 编译上传、原 receipt 查询与取消；目标必须显式授权脚本执行                                                           |
 | 操作运行中的应用、分批接纳源码修改      | `development/dev-console.md`；使用现有 Vite 控制台与 HMR 批次控制，隔离 host 不能证明在线状态                                                                    |
 | 安装工具、管理服务或修改任务缓存/hk/Pkl | `development/workspace-toolchain.md`；先看现有配置与服务                                                                                                         |
 | 源码联调、安装、catalog 或开发文档接入  | `development/source-workspaces.md`；source doctor 不证明构建产物最新，按需 source build                                                                          |
@@ -36,7 +37,7 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 
 先读 `package.json` 的 `pluxel.dev` 并运行 `pluxel dev status`。profile 选择顺序：显式 `--profile` → `default` → 唯一 profile；跨目录用 `--root` 指定配置查找起点。多个匹配实例用 `dev instances` 后明确 `--instance`，不猜最近进程。
 
-确需启动时用项目 `vp run dev`：已有实例会再次显示实际地址。`command` 保持前台，Ctrl+C 停止；Pitchfork 启动就绪后返回，停止/完整重启用 `pitchfork stop/restart <service>`。`console: false` 是没有 Pluxel 控制台的托管服务，只查服务状态，不执行 console 操作。
+确需启动时用项目 `vp run dev`：已有实例会再次显示实际地址。`command` 保持前台，Ctrl+C 停止；Pitchfork 启动就绪后返回，停止/完整重启用 `pitchfork stop/restart <service>`。`scripts: false` 是没有 Pluxel 控制台的托管服务，只查服务状态，不执行 console 操作。
 
 使用 Pitchfork 时先读 `pitchfork.toml` 并核对完整服务 ID；实际 URL 从服务或 `dev` 输出取得。已注册服务可由访问 URL 唤起；HTTP 响应和进程 running 不代表应用 ready。`pitchfork wait` 等待停止，不能用来等待就绪。启动、编译和进程故障先读有界日志：
 
@@ -54,7 +55,7 @@ pitchfork logs <service> --since 5min -n 100 --no-pager
 
 ## 在线操作与交付
 
-执行前读控制台指南，用同一 profile 核对 `application.state` 和 `latestUpdate`，在其 Vite root 内写 `defineDevConsole` TypeScript 操作。文件参数相对终端当前目录，`--root` 不改变文件基准。源码仓库已有只读入口：
+执行前读控制台指南，用同一 profile 核对 `application.state` 和 `latestUpdate`，在其 Vite root 内写普通 `(sdk, run) => … satisfies ProjectScript` TypeScript 函数，类型从 `@pluxel/host-vite/project` 导入。文件参数相对终端当前目录，`--root` 不改变文件基准。源码仓库已有只读入口：
 
 ```sh
 vp run pluxel dev status

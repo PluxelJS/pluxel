@@ -4,7 +4,7 @@ import type {
 } from '../../services/admin-access/AdminAccessService'
 import { RuntimeSessionServer, type RuntimeSessionFactories } from './server'
 import { RuntimeSessionWebSocket, type ManagementSocket } from './elysia-websocket'
-import { RUNTIME_SESSION_MAX_MESSAGE_BYTES } from './limits'
+import { RUNTIME_SESSION_MAX_MESSAGE_BYTES, RUNTIME_SCRIPT_MAX_MESSAGE_BYTES } from './limits'
 import { RUNTIME_SESSION_PATH } from './protocol'
 
 const MAX_INITIALIZATION_MESSAGES = 32
@@ -60,7 +60,9 @@ export class RuntimeSessionIngress {
 			return
 		}
 		const socket = new RuntimeSessionWebSocket(rawSocket, {
-			maxMessageBytes: RUNTIME_SESSION_MAX_MESSAGE_BYTES,
+			maxMessageBytes: this.options.createExecution
+				? RUNTIME_SCRIPT_MAX_MESSAGE_BYTES
+				: RUNTIME_SESSION_MAX_MESSAGE_BYTES,
 		})
 		this.socket = socket
 		let authentication: AdminAuthenticationSession | undefined
@@ -78,6 +80,8 @@ export class RuntimeSessionIngress {
 			authentication = undefined
 			this.server = new RuntimeSessionServer({
 				createManagement: this.options.createManagement,
+				createExecution: this.options.createExecution,
+				revokeExecution: this.options.revokeExecution,
 				createWorkbench: this.options.createWorkbench,
 				onError: this.options.onError,
 				authentication: ownedAuthentication,

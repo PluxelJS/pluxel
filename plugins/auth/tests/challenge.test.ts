@@ -12,9 +12,11 @@ function authenticated(): ManagementAuthenticationProviderStep {
 
 describe("Cap'n Web password challenge", () => {
 	it('uses password then TOTP on one disposable session', async () => {
+		const authority = new AbortController()
 		const verifyPassword = vi.fn(async () => 'accepted' as const)
 		const verifyTotp = vi.fn(async () => 'accepted' as const)
 		const session = new PasswordAuthenticationSession({
+			authorizationSignal: authority.signal,
 			label: 'Admin',
 			requireTotp: true,
 			verifyPassword,
@@ -41,6 +43,10 @@ describe("Cap'n Web password challenge", () => {
 		session[Symbol.dispose]()
 		session[Symbol.dispose]()
 		expect(session.state()).toEqual({ kind: 'failed', code: 'authentication_expired' })
+		expect(session.authorizationSignal).toBe(authority.signal)
+		expect(authority.signal.aborted).toBe(false)
+		authority.abort()
+		expect(session.authorizationSignal?.aborted).toBe(true)
 	})
 
 	it('rejects ambiguous payloads without invoking a verifier', async () => {

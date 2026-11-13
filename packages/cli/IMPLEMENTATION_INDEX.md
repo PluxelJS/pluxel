@@ -14,6 +14,7 @@
 - `src/cli.ts`：root wiring，只静态加载命令 manifest。
 - `src/command-manifest.ts`：帮助文本、参数和 lazy command 映射。
 - `src/commands/`、`src/scaffold/`：仅在对应命令执行时加载。
+- `src/commands/script.ts`、`src/script/client.ts`：作者侧编译、显式 endpoint 认证与原 receipt 查询；执行内核与控制 target 归 Host。
 - `src/source/`：source checkout 扫描、package/repository DAG、machine-local pnpm overlay、诊断与有锁执行。
 
 Scaffold 内部边界：
@@ -33,6 +34,7 @@ CLI scaffold 只有 Plugin package identity 和 bundled `plugin` template。完�
 
 可选能力：
 
+- `script run` → `@pluxel/rolldown/scripts`；`result/cancel` 只连接原 owner。
 - `build`、`workspace` → `@pluxel/rolldown`；
 
 `publish` 直接提交市场 HTTP 通知并输出持久回执，不加载可选 market 包；npm 拥有发布与 provenance，市场拥有收录结果。

@@ -79,7 +79,7 @@ import { vitePreset } from '@pluxel/services/vite'
 
 export default defineConfig({
   plugins: [vitePreset({
-    entry: './src/app.ts', devConsole: true,
+    entry: './src/app.ts', scripts: true,
   })],
 })`,
 	},

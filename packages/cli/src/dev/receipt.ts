@@ -1,17 +1,18 @@
 import { isAbsolute } from 'node:path'
 import { DevClientError } from './client'
 
-const PREFIX = 'pluxel-dev-v1.'
+const PREFIX = 'pluxel-dev-v2.'
 const MAX_TOKEN_LENGTH = 16 * 1024
 const MAX_PAYLOAD_BYTES = 8 * 1024
 const ID = /^[a-zA-Z0-9_-]{1,128}$/
-const fields = new Set(['root', 'instanceId', 'runId', 'serviceId'])
+const fields = new Set(['root', 'instanceId', 'runId', 'serviceId', 'requestHash'])
 
 /** A locator for the original run, never a credential or a mutable target selection. */
 export interface DevReceipt {
 	root: string
 	instanceId: string
 	runId: string
+	requestHash: string
 	serviceId?: string
 }
 
@@ -42,7 +43,9 @@ function validate(value: unknown): DevReceipt {
 		!ID.test(input.instanceId) ||
 		!boundedText(input.runId, 128) ||
 		!ID.test(input.runId) ||
-		('serviceId' in input && !boundedText(input.serviceId, 1024))
+		('serviceId' in input && !boundedText(input.serviceId, 1024)) ||
+		typeof input.requestHash !== 'string' ||
+		!/^[a-f0-9]{64}$/.test(input.requestHash)
 	) {
 		invalid()
 	}
@@ -51,6 +54,7 @@ function validate(value: unknown): DevReceipt {
 		instanceId: input.instanceId,
 		runId: input.runId,
 		...(typeof input.serviceId === 'string' ? { serviceId: input.serviceId } : {}),
+		requestHash: input.requestHash,
 	}
 }
 
@@ -60,6 +64,7 @@ export function encodeDevReceipt(input: DevReceipt): string {
 		root: input.root,
 		instanceId: input.instanceId,
 		runId: input.runId,
+		requestHash: input.requestHash,
 		...(input.serviceId === undefined ? {} : { serviceId: input.serviceId }),
 	})
 	const payload = Buffer.from(JSON.stringify(receipt), 'utf8')

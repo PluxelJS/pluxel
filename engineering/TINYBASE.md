@@ -82,7 +82,7 @@ Host 在停止失败 Plugin 后，可显式 `recover(node, 'retry')` 重存保�
 
 `tinybase` 及子路径保持上游导入；Core 持有精确 runtime dependency；共享原生 Store 的 Plugin 声明同版 peer/dev 并由 `pluxel.tinybase` facts 记录接纳版本。只使用固定 open 的消费者不新增上游依赖。只消费 `configs.use()` 或 DTO 的包不添加 TinyBase 依赖。支持 Valibot schematizer 的版本范围由上游 TinyBase 自身 peer 声明决定。
 
-Host 内部 shared-runtime helper 负责精确 semver/安装事实与上游 manifest 校验，Workbench Cap’n Web 复用同一机制。原生启动、静态制品与 Vite 使用同一 admission；同版多路径统一模块，shared 异版拒绝，private 异版保留原解析。全局 `sharedPackages` 不接受 `tinybase` 或 `capnweb` 绕开能力所有者。Node/browser 子路径按目标条件绑定，浏览器原生 import 不加载 Host/FS。细节见[Governance](GOVERNANCE.md)与[插件包](../docs/development/plugin-package.md)。
+Host 内部 shared-runtime helper 负责精确 semver/安装事实与上游 manifest 校验，Host Cap’n Web 复用同一机制。原生启动、静态制品与 Vite 使用同一 admission；同版多路径统一模块，shared 异版拒绝，private 异版保留原解析。全局 `sharedPackages` 不接受 `tinybase` 或 `capnweb` 绕开能力所有者。Node/browser 子路径按目标条件绑定，浏览器原生 import 不加载 Host/FS。细节见[Governance](GOVERNANCE.md)与[插件包](../docs/development/plugin-package.md)。
 
 ## 实现与回归入口
 

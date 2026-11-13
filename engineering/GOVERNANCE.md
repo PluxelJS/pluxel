@@ -147,7 +147,7 @@ dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实
 
 Host 互操作依赖按能力事实接纳：Workbench target／基础库使用精确 `capnweb` peer，托管
 TinyBase Store 消费者／交换原生 Store 的基础库使用精确 `tinybase` peer；源码开发安装同版 dev
-副本。TinyBase 的精确普通 dependency 由 Core 维护；只调用 `ctx.tinybase.open()` 的消费者无需直接依赖。Workbench 的 transport 版本继续由自身 peer 维护。普通原生 import 不代表参加共享边界，独立
+副本。TinyBase 的精确普通 dependency 由 Core 维护；只调用 `ctx.tinybase.open()` 的消费者无需直接依赖。Host 为通用脚本控制与 Management、Workbench 选择同一 Cap’n Web 安装；参与方以精确 peer/dev 声明版本。普通原生 import 不代表参加共享边界，独立
 私有库和应用私有副本的版本与解析保持隔离，任意 Core import 也不构成互操作声明。目前
 TinyBase 为 `10.0.1`，升级时同步 Core、共享消费者和制品事实。包作者仍直接导入
 上游 API，不增加框架镜像入口。

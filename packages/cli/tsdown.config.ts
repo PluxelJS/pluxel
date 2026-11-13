@@ -11,6 +11,9 @@ export default defineConfig({
 	// @pluxel/rolldown as a published toolchain package instead of vendoring it.
 	deps: {
 		neverBundle: [
+			'@pluxel/host',
+			'@pluxel/host/*',
+			'capnweb',
 			'@pluxel/core',
 			'@pluxel/core/*',
 			'@pluxel/rolldown',
@@ -20,7 +23,11 @@ export default defineConfig({
 		],
 		// pncat owns catalog mutation and ships inside both Git and npm CLIs.
 		// Its transitive implementation is bundled; optional Pluxel owners stay external.
-		alwaysBundle: ['semver', /^@pluxel-internal\/pncat(?:\/|$)/],
+		alwaysBundle: [
+			'semver',
+			/^@pluxel\/services\/management\/session$/,
+			/^@pluxel-internal\/pncat(?:\/|$)/,
+		],
 		onlyBundle: false,
 	},
 	dts: {

@@ -49,6 +49,7 @@ function redirect(path: string, cookies: readonly string[]): Response {
 export class AuthPlugin extends BasePlugin {
 	private readonly config = this.configs.use(AuthConfig)
 	private readonly sessions = new SessionStore()
+	private authorization = new AbortController()
 	private readonly loginFailures = new LoginFailureLimiter()
 	private active = false
 	private account?: LocalAccountRecord
@@ -96,7 +97,7 @@ export class AuthPlugin extends BasePlugin {
 		this.ctx.effects.defer(
 			() => {
 				this.active = false
-				this.sessions.clear()
+				this.revokeSessions()
 				this.loginFailures.clear()
 				this.oidc?.clear()
 				this.account = undefined
@@ -122,7 +123,7 @@ export class AuthPlugin extends BasePlugin {
 					identity(this.account) !== identity(account.account) ||
 					this.oidcSecret !== oidc.secret
 				) {
-					this.sessions.clear()
+					this.revokeSessions()
 					this.loginFailures.clear()
 					this.oidc?.clear()
 				}
@@ -157,6 +158,12 @@ export class AuthPlugin extends BasePlugin {
 		}
 		if (this.accountInvalid || !this.account) return false
 		return mode.type === 'password' || Boolean(this.account.totp)
+	}
+
+	private revokeSessions(): void {
+		this.sessions.clear()
+		this.authorization.abort(new Error('Authentication credentials were revoked'))
+		this.authorization = new AbortController()
 	}
 
 	private setupSnapshot(): AuthSetupSnapshot {
@@ -200,12 +207,12 @@ export class AuthPlugin extends BasePlugin {
 			(account) => {
 				this.account = account
 				this.accountInvalid = false
-				this.sessions.clear()
+				this.revokeSessions()
 			},
 			(secret) => {
 				this.oidcSecret = secret
 				this.oidcSecretInvalid = false
-				this.sessions.clear()
+				this.revokeSessions()
 			},
 		)
 		return new AuthSetupTarget({
@@ -234,7 +241,11 @@ export class AuthPlugin extends BasePlugin {
 		const mode = this.config.mode
 		const existing = this.sessions.read(request, mode.type, context.local)
 		if (existing) {
-			return authenticatedSession(existing, () => this.sessions.issueLogout(request, context.local))
+			return authenticatedSession(
+				existing,
+				() => this.sessions.issueLogout(request, context.local),
+				this.authorization.signal,
+			)
 		}
 		if (mode.type === 'oidc') {
 			return new FixedAuthenticationSession(
@@ -256,6 +267,7 @@ export class AuthPlugin extends BasePlugin {
 			  }>
 			| undefined
 		return new PasswordAuthenticationSession({
+			authorizationSignal: this.authorization.signal,
 			label: account.username,
 			requireTotp: mode.type === 'password-totp',
 			verifyPassword: async (password) => {

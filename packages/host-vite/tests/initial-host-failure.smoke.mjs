@@ -20,7 +20,7 @@ for (const stage of ['service', 'application']) {
 		)
 		await writeFile(
 			join(root, 'vite.config.mjs'),
-			`import {host} from ${JSON.stringify(host)}; export default {plugins:host({entry:'app.mjs',devConsole:true})}`,
+			`import {host} from ${JSON.stringify(host)}; export default {plugins:host({entry:'app.mjs',scripts:true})}`,
 		)
 		await assert.rejects(
 			promisify(execFile)(

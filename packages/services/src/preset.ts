@@ -15,6 +15,8 @@ export async function servicesPreset(
 		product?: ProductDescriptor
 		/** Include the Workbench UI at /__pluxel/workbench. @default true */
 		workbench?: boolean
+		/** Explicitly grant authenticated administrators trusted Node script execution. @default false */
+		scripts?: boolean
 		/** Initial user-removable sidebar shortcuts; declarations never control root placement. */
 		initialShortcuts?: readonly WorkbenchShortcut[]
 	}>,
@@ -22,11 +24,13 @@ export async function servicesPreset(
 	if (!options || typeof options !== 'object' || Array.isArray(options))
 		throw new TypeError('[services/preset] options must be an object')
 	for (const key of Object.keys(options)) {
-		if (!['vault', 'product', 'workbench', 'initialShortcuts'].includes(key))
+		if (!['vault', 'product', 'workbench', 'scripts', 'initialShortcuts'].includes(key))
 			throw new TypeError(`[services/preset] Unknown option options.${key}`)
 	}
 	if (options.workbench !== undefined && typeof options.workbench !== 'boolean')
 		throw new TypeError('[services/preset] options.workbench must be a boolean')
+	if (options.scripts !== undefined && typeof options.scripts !== 'boolean')
+		throw new TypeError('[services/preset] options.scripts must be a boolean')
 	const withWorkbench = options.workbench ?? true
 	const deployment = startup.deployment
 	const nodeModules =
@@ -59,8 +63,9 @@ export async function servicesPreset(
 				}),
 			)
 		: undefined
-	const managementTransport = managementHttp(
-		workbench
+	const managementTransport = managementHttp({
+		scripts: options.scripts,
+		...(workbench
 			? {
 					bindings: (ctx) => ({
 						createWorkbench: (principal, invalidate) =>
@@ -68,8 +73,8 @@ export async function servicesPreset(
 						artifacts: workbench.createWorkbenchArtifactHandler(ctx),
 					}),
 				}
-			: {},
-	)
+			: {}),
+	})
 	return [
 		...standardServices({ nodeModules }),
 		vault({ deployIdentity: startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY, ...options.vault }),

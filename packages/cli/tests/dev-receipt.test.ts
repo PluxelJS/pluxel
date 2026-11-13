@@ -7,11 +7,12 @@ const original = {
 	root: resolve('/workspace/应用'),
 	instanceId: 'instance_1',
 	runId: 'run-2',
+	requestHash: 'a'.repeat(64),
 	serviceId: 'workspace/app',
 }
 
 function token(value: unknown): string {
-	return `pluxel-dev-v1.${Buffer.from(JSON.stringify(value)).toString('base64url')}`
+	return `pluxel-dev-v2.${Buffer.from(JSON.stringify(value)).toString('base64url')}`
 }
 
 function expectInvalid(value: string) {
@@ -45,15 +46,15 @@ describe('development run receipts', () => {
 	it.each([
 		'',
 		'run-2',
-		'pluxel-dev-v2.e30',
+		'pluxel-dev-v1.e30',
 		'pluxel-dev-v01.e30',
-		'pluxel-dev-v1.',
-		'pluxel-dev-v1.e30=',
-		'pluxel-dev-v1.e31', // Noncanonical trailing base64 bits.
-		'pluxel-dev-v1.%%% ',
-		'pluxel-dev-v1._w', // Invalid UTF-8.
-		`pluxel-dev-v1.${Buffer.from('{').toString('base64url')}`,
-		`pluxel-dev-v1.${'a'.repeat(16 * 1024)}`,
+		'pluxel-dev-v2.',
+		'pluxel-dev-v2.e30=',
+		'pluxel-dev-v2.e31', // Noncanonical trailing base64 bits.
+		'pluxel-dev-v2.%%% ',
+		'pluxel-dev-v2._w', // Invalid UTF-8.
+		`pluxel-dev-v2.${Buffer.from('{').toString('base64url')}`,
+		`pluxel-dev-v2.${'a'.repeat(16 * 1024)}`,
 	])('rejects malformed or unsupported token %s', expectInvalid)
 
 	it.each([
@@ -68,6 +69,8 @@ describe('development run receipts', () => {
 		{ ...original, runId: '../run' },
 		{ ...original, runId: 'run\n' },
 		{ ...original, runId: 123 },
+		{ ...original, requestHash: undefined },
+		{ ...original, requestHash: 'not-a-hash' },
 		{ ...original, serviceId: '' },
 		{ ...original, serviceId: null },
 		{ ...original, serviceId: 'x'.repeat(1025) },
@@ -85,8 +88,8 @@ describe('development run receipts', () => {
 		const encoded = Buffer.from(`${' '.repeat(8192)}${JSON.stringify(original)}`).toString(
 			'base64url',
 		)
-		expect(() => decodeDevReceipt(`pluxel-dev-v1.${encoded}`)).toThrow(DevClientError)
-		expect(() => decodeDevReceipt(`pluxel-dev-v1.${encoded}`)).toThrow(
+		expect(() => decodeDevReceipt(`pluxel-dev-v2.${encoded}`)).toThrow(DevClientError)
+		expect(() => decodeDevReceipt(`pluxel-dev-v2.${encoded}`)).toThrow(
 			expect.objectContaining({ code: 'invalid_input' }),
 		)
 	})

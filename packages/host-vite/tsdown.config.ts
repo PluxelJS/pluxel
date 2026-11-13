@@ -8,7 +8,7 @@ export default defineConfig({
 		neverBundle: ['@pluxel/core', '@pluxel/rolldown', '@pluxel/rolldown/*', 'vite', 'vite/*'],
 	},
 	entry: {
-		console: 'src/console.ts',
+		project: 'src/project.ts',
 		internal: 'src/internal.ts',
 
 		index: 'src/index.ts',

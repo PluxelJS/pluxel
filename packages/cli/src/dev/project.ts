@@ -12,9 +12,9 @@ const object = (value: unknown): value is Record<string, unknown> =>
 
 export type DevSelection = { root?: string; profile?: string; instance?: string }
 export type DevProject = { workspace: string; root: string } & (
-	| { profile: string; command: string; pitchfork?: never; console?: true }
-	| { profile: string; pitchfork: string; command?: never; console?: boolean }
-	| { profile?: never; command?: never; pitchfork?: never; console?: true }
+	| { profile: string; command: string; pitchfork?: never; scripts?: true }
+	| { profile: string; pitchfork: string; command?: never; scripts?: boolean }
+	| { profile?: never; command?: never; pitchfork?: never; scripts?: true }
 )
 export type DevService = {
 	id: string
@@ -74,14 +74,14 @@ export async function resolveDevProject(options: {
 					if (
 						!object(config) ||
 						Object.keys(config).some(
-							(key) => !['root', 'command', 'pitchfork', 'console'].includes(key),
+							(key) => !['root', 'command', 'pitchfork', 'scripts'].includes(key),
 						)
 					)
-						invalid(`${label} accepts only root, command, pitchfork and console`)
-					if (config.console !== undefined && typeof config.console !== 'boolean')
-						invalid(`${label}.console must be a boolean`)
-					if (config.console === false && config.pitchfork === undefined)
-						invalid(`${label}: console: false requires a Pitchfork service`)
+						invalid(`${label} accepts only root, command, pitchfork and scripts`)
+					if (config.scripts !== undefined && typeof config.scripts !== 'boolean')
+						invalid(`${label}.scripts must be a boolean`)
+					if (config.scripts === false && config.pitchfork === undefined)
+						invalid(`${label}: scripts: false requires a Pitchfork service`)
 					for (const key of ['root', 'command', 'pitchfork']) {
 						const field = config[key]
 						if (
@@ -113,7 +113,7 @@ export async function resolveDevProject(options: {
 					root?: string
 					command?: string
 					pitchfork?: string
-					console?: boolean
+					scripts?: boolean
 				}
 				const root = await resolveDevRoot(resolve(directory, config.root ?? '.'))
 				const path = relative(directory, root)
@@ -126,7 +126,7 @@ export async function resolveDevProject(options: {
 					root,
 					profile,
 					pitchfork: config.pitchfork!,
-					...(config.console === false ? { console: false } : {}),
+					...(config.scripts === false ? { scripts: false } : {}),
 				}
 			}
 		}
@@ -222,17 +222,17 @@ export async function resolveDevSelection(options: DevSelection) {
 
 export async function connectDevProject(options: DevSelection) {
 	const selection = await resolveDevSelection(options)
-	requireDevConsole(selection.project)
+	requireDevScripts(selection.project)
 	return selectDevInstance(selection)
 }
 
-export function requireDevConsole(project: DevProject): void {
-	if (project.console === false)
+export function requireDevScripts(project: DevProject): void {
+	if (project.scripts === false)
 		throw new DevClientError(
-			'unsupported_console',
-			`Profile ${project.profile} has no Pluxel development console.`,
+			'unsupported_scripts',
+			`Profile ${project.profile} has no Pluxel development scripts.`,
 			{
-				hint: 'Use dev status for service state, or select an application profile for console operations.',
+				hint: 'Use dev status for service state, or select an application profile for script operations.',
 			},
 		)
 }

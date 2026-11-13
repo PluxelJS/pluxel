@@ -1,6 +1,7 @@
 import type { RpcTarget } from 'capnweb'
 import type { ManagementAuthenticationProviderStep } from '../../services/admin-access/types'
 import type { RuntimeManagementTarget } from '../management-target'
+import type { ScriptControlTarget } from '@pluxel/host/agent/transport'
 
 export const RUNTIME_SESSION_PROFILE = 2 as const
 export const RUNTIME_SESSION_PATH = '/__pluxel/runtime/session' as const
@@ -39,12 +40,14 @@ export type RuntimeBootstrap<TWorkbench extends RpcTarget = RpcTarget> =
 			kind: 'management'
 			profile: 2
 			management: RuntimeManagementTarget
+			execution?: ScriptControlTarget
 	  }>
 	| Readonly<{
 			kind: 'workbench'
 			profile: 2
 			management: RuntimeManagementTarget
 			workbench: TWorkbench
+			execution?: ScriptControlTarget
 	  }>
 
 export interface RuntimeSessionRoot<TWorkbench extends RpcTarget = RpcTarget> extends RpcTarget {

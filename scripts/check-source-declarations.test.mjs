@@ -32,6 +32,8 @@ it('accepts registered ambient inputs and keeps build/cache output outside the s
 		'packages/test/src/vendor-types.d.ts': "declare module 'external-dependency'\n",
 		'packages/valibot-form/src/web/vite-env.d.ts': "/// <reference types='vite/client' />\n",
 		'plugins/render/typst/native/.build/source/packages/compiler/src/global.d.ts': 'export {}\n',
+		'projects/embedded-launcher/native/vendor/llrt/llrt_core/src/modules/js/llrt.d.ts':
+			'export {}\n',
 		'packages/example/dist/index.d.ts': 'export declare const value = 1\n',
 		'packages/example/dist/index.d.ts.map': '{}',
 		'packages/example/.pluxel/types/index.d.mts': 'export {}\n',

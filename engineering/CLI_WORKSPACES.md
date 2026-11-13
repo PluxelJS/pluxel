@@ -28,11 +28,11 @@ Starter 的 Host package 拥有唯一 Vite 配置、应用与构建，独立 Web
 
 向上发现配置止于最近 Git / pnpm workspace 边界；`--root` 选择发现起点，默认 cwd。没有声明时控制台采用最近 package 根目录，若显式传入 `--root` 则采用该目录本身；没有配置却指定 `--profile` 必须失败。`--root` 不绕过已发现配置。控制台 profile 的 `dev status/run/hmr/instances` 仅依赖本地实例描述与握手，不调用 Pitchfork、不自动启动；按 profile 绑定过滤后，多个候选使用 `--instance`，该选项不能越过归属检查。
 
-`console` 默认 true。只有 Pitchfork profile 可以显式设置 false，用于文档站等没有 Pluxel Host 的服务：启动遵守 Pitchfork readiness，随后重新读取服务状态与公开 URL；status 查询 Pitchfork，run/instances/--instance 在产生效果前报 unsupported_console。此类服务不创建假控制台，也不生成 Vite Application / Workbench 输出。框架仓库的 docs script 使用该 profile；create 模板只包含真实存在的默认 app 与前台 local。
+`scripts` 默认 true。只有 Pitchfork profile 可以显式设置 false，用于文档站等没有 Pluxel Host 的服务：启动遵守 Pitchfork readiness，随后重新读取服务状态与公开 URL；status 查询 Pitchfork，run/instances/--instance 在产生效果前报 unsupported_scripts。此类服务不创建假控制台，也不生成 Vite Application / Workbench 输出。框架仓库的 docs script 使用该 profile；create 模板只包含真实存在的默认 app 与前台 local。
 
 控制台地址由 Vite URL presenter 拥有，不复制反代命名、Workbench 挂载路径或日志历史。Pitchfork 是可选启动集成，不成为 runtime capability；控制台直接读取已捕获的启动归属，不调用服务管理器；公开地址由 Host 环境契约解析。配置与使用见[开发控制台](../docs/development/dev-console.md#项目入口与启动方式)。Browser assets 在应用构建后写入时，必须再次调用同一个 distribution finalizer。目录、命令和样例以 [create README](../packages/create/README.md) 为准。
 
-`result/cancel` 只接受绑定原 root/instanceId/runId/serviceId 的 receipt，不重新解析当前项目，不转投重启后的实例；nonce 不进入 receipt 或公开诊断。执行队列、取消、资源释放与结果保留仍由控制台内核拥有，见 [DEV_CONSOLE](DEV_CONSOLE.md)。
+`result/cancel` 只接受绑定原 root/instanceId/runId/serviceId 的 receipt，不重新解析当前项目，不转投重启后的实例；nonce 不进入 receipt 或公开诊断。执行队列、取消、资源释放与结果保留由共享 Host 执行内核拥有，见 [AGENT_WORKFLOW](AGENT_WORKFLOW.md)。远程 `script run/result/cancel` 使用同一控制 target，经 Management session 认证并固定原 endpoint、instanceId、runId 与 requestHash。
 
 CLI packed smoke 验证独立 Plugin scaffold，create packed smoke 验证完整 workspace、Vite 与 production distribution；两者不是输出 parity。CLI 不提供第三方 command discovery/registry，capability ID 的类型映射只用 type import，不能提前加载可选 owner。
 

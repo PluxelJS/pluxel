@@ -43,6 +43,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
   - `@pluxel/services/database`：基于 Drizzle 的数据库服务；
   - `@pluxel/services/management`：管理端点与客户端会话；
   - `@pluxel/services/preset`：常用基础服务的一站式集成预设。
+- **脚本执行**：`@pluxel/host/agent` 提供通用 SDK，`@pluxel/host-vite/project` 提供 Vite 类型与真实实例扩展，`@pluxel/rolldown/scripts` 提供作者侧编译；见[自动化脚本](../development/scripts.md)。
 - **`@pluxel/core`**：
   - `@pluxel/core/fs`：文件系统抽象与存储后端；
   - `@pluxel/core/better-result`：标准类型化 Result 错误处理库；

@@ -43,6 +43,10 @@
 	},
 	"dependencies": {
 		"@clack/prompts": "catalog:prod",
+		"@pluxel/host": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"capnweb": "catalog:prod",
+		"crossws": "catalog:prod",
 		"gunshi": "catalog:prod",
 		"jsonc-parser": "catalog:prod",
 		"package-manager-detector": "catalog:prod",

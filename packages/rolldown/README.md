@@ -6,6 +6,7 @@ Pluxel 的构建、Vite 源码转换与离线查询工具。应用和插件包�
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `@pluxel/rolldown` 的 `pluxel()` | Vite+ pack 应用构建，选择 standalone/modules 交付；[工具链](../../docs/development/tooling.md)                |
 | `/build` 的 `pluginPackage()`    | 自定义 Plugin package 构建；普通项目使用 `pluxel build`，见[插件包](../../docs/development/plugin-package.md) |
+| `/scripts`                       | `compileScript()` 检查 TypeScript 并编译可上传工厂；[自动化脚本](../../docs/development/scripts.md)           |
 | `/inspect` 的 `openProject()`    | 定位 Plugin/Part、依赖、配置与显式选择的应用输入；[源码查询](../../docs/development/inspection.md)            |
 | `/vite`                          | Vite source adapter 与 sourceSpaces；[源码边界](../../docs/development/tooling.md#source-build-boundary)      |
 | `/distribution`                  | static artifact finalizer、签名和离线验证；[交付](../../docs/development/distribution.md)                     |

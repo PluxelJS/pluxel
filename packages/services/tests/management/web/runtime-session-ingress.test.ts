@@ -51,6 +51,7 @@ function createAuthentication(): AdminAuthenticationSession {
 	const controller = new AbortController()
 	return {
 		signal: controller.signal,
+		authorizationSignal: controller.signal,
 		providerId: 'runtime-session-ingress-test',
 		state: async () => ({
 			kind: 'challenge',
