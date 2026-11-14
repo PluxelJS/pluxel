@@ -2,7 +2,7 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { nodeModules } from '@pluxel/services/node'
 import { workers } from '@pluxel/services/workers'
-import { createTestHost } from '@pluxel/test'
+import { createTestHost, PluginLifecycleAssertionError } from '@pluxel/test'
 import { describe, expect, it } from 'vitest'
 import { TypstError, TypstPlugin } from '../src/index.ts'
 
@@ -15,6 +15,7 @@ class SvgConsumer extends BasePlugin {
 
 async function fixture(maxInputBytes?: number) {
 	const host = await createTestHost({ services: [nodeModules(), workers({ maxThreads: 1 })] })
+	const started = performance.now()
 	try {
 		await host.start(TypstPlugin, {
 			catalog: [FontsPlugin],
@@ -23,6 +24,11 @@ async function fixture(maxInputBytes?: number) {
 		await host.start(SvgConsumer, { catalog: [FontsPlugin, TypstPlugin] })
 		return host
 	} catch (error) {
+		if (error instanceof PluginLifecycleAssertionError)
+			console.error(
+				'Typst SVG fixture startup failed',
+				JSON.stringify({ elapsedMs: performance.now() - started, summary: error.summary }),
+			)
 		await host.dispose()
 		throw error
 	}
