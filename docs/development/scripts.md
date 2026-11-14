@@ -3,7 +3,7 @@ title: Host 自动化脚本
 description: 使用普通 TypeScript 读取配置、计算、条件修改、核对采用，并通过 CLI 提交与查询运行。
 ---
 
-脚本导出一个普通函数。执行器传入 `ScriptSdk` 与本次运行的 `{ id, input, signal }`，SDK 方法返回普通 Promise。配置、插件生命周期、执行策略、更新记录和日志直接使用目标 Host 的实现。
+脚本导出一个普通函数。执行器传入 `ScriptSdk` 与本次运行的 `{ id, input, signal }`。`sdk.plugin(target)` 同步选择插件；配置、插件生命周期、执行策略、更新记录和日志操作返回普通 Promise，直接使用目标 Host 的实现。
 
 ```ts
 import type { Script } from '@pluxel/host/agent'
@@ -32,18 +32,18 @@ export default (async (sdk, run) => {
 	if (typeof factor !== 'number' || !Number.isFinite(factor)) {
 		throw new TypeError('Expected a finite factor')
 	}
-	const before = await sdk.config.get(QueuePlugin)
+	const { get, patch } = sdk.plugin(QueuePlugin).config
+	const before = await get()
 	if (before.ok === false) return { step: 'read', result: before }
 
 	run.signal.throwIfAborted()
 	const desired = before.config.concurrency * factor
-	const changed = await sdk.config.patch(
-		QueuePlugin,
+	const changed = await patch(
 		{ set: { concurrency: desired } },
 		{ expectedManagedRevision: before.managedRevision },
 	)
 	if (changed.ok === false) return { step: 'write', result: changed }
-	const actual = await sdk.config.get(QueuePlugin)
+	const actual = await get()
 	return {
 		changed,
 		actual,
@@ -56,9 +56,9 @@ export default (async (sdk, run) => {
 }) satisfies Script
 ```
 
-`config.get()` 同时返回原始保存输入 `managedInput`、合成输入 `effectiveInput`、Schema 输出 `config`、来源 `sources`、被遮盖路径 `shadowedPaths` 和版本。`managedInput: null` 表示尚无保存记录。编辑时提交 `{ set?, remove? }`；`remove` 使用字符串路径数组。`config.reset(node)` 清除全部保存输入，传入路径列表则只清除这些路径，随后恢复来源合成。
+插件引用的 `config.get()` 同时返回原始保存输入 `managedInput`、合成输入 `effectiveInput`、Schema 输出 `config`、来源 `sources`、被遮盖路径 `shadowedPaths` 和版本。`managedInput: null` 表示尚无保存记录。编辑时提交 `{ set?, remove? }`；`remove` 使用字符串路径数组。`config.reset()` 清除全部保存输入，传入路径列表则只清除这些路径，随后恢复来源合成。配置对象和其中的方法都可以提取到局部变量，目标由引用固定。
 
-`expectedManagedRevision` 比较本 Host 的配置保存版本。冲突返回 `ok: false, code: 'revision_conflict', state: 'unchanged'`。重新读取后由任务决定如何处理，执行器不会重投。`config.validate(node, change)` 只预检候选输入，后续写入仍需自己的版本条件。来源优先顺序和只读策略见 [Host 配置](../host/configuration.md#保存配置和运行策略)。
+`expectedManagedRevision` 比较本 Host 的配置保存版本。冲突返回 `ok: false, code: 'revision_conflict', state: 'unchanged'`。重新读取后由任务决定如何处理，执行器不会重投。`config.validate(change)` 只预检候选输入，后续写入仍需自己的版本条件。来源优先顺序和只读策略见 [Host 配置](../host/configuration.md#保存配置和运行策略)。
 
 保存和运行采用分别查看：
 
@@ -74,7 +74,7 @@ export default (async (sdk, run) => {
 
 ## 插件、策略、更新与日志
 
-`plugins.list()` 提供节点地址、期望与实际状态、诊断和最近更新，适合发现与巡检。已知插件的 `status/start/stop/restart` 直接传描述符，也接受发现的完整地址；fork 使用 `{ plugin: Descriptor, forkId }` 或原节点地址。启停返回应用报告，需要检查报告中的失败和最终状态。`plugins.instance(Descriptor)` 取得本次运行的业务实例视图，方法与资源寿命见[实例调用](./plugin-control.md#调用原插件实例)。
+`plugins.list()` 提供节点地址、期望与实际状态、诊断和最近更新，适合发现与巡检。`sdk.plugin(descriptorOrAddress)` 固定目标，随后通过引用的 `status/start/stop/restart` 操作节点；`fork(id)` 返回另一个目标引用。启停返回应用报告，需要检查报告中的失败和最终状态。生成描述符的引用还提供 `instance()`，取得本次运行的业务实例视图，方法与资源寿命见[实例调用](./plugin-control.md#调用原插件实例)。
 
 `policy.get/validate/patch/reset` 管理 Host 执行策略，修改使用相同的 `expectedManagedRevision` 条件。策略结果会区分已保存策略与需要重建 Host 才采用的设置。`updates.latest()` 读取 Host 最近一次更新报告，没有记录时返回 `null`。
 
@@ -89,14 +89,15 @@ export default (async (sdk) => {
 	const { streams } = await sdk.logs.streams()
 	const stream = streams[0]
 	if (!stream) throw new Error('Configure a Logging history stream first')
+	const plugin = sdk.plugin(node.address)
 	const cursor = await sdk.logs.mark(stream.streamId)
-	const report = await sdk.plugins.restart(node.address)
+	const report = await plugin.restart()
 	const logs = await sdk.logs.wait(cursor, {
-		filter: { plugin: node.address },
+		filter: { plugin: plugin.address },
 		limit: 100,
 		timeoutMs: 2000,
 	})
-	return { report, status: await sdk.plugins.status(node.address), logs }
+	return { report, status: await plugin.status(), logs }
 }) satisfies Script
 ```
 

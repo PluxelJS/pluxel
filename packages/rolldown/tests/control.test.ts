@@ -660,6 +660,112 @@ void enabled
 		expect(contracts(relatedChanged, 'Sibling').config).toBe(contracts(related, 'Sibling').config)
 	}, 45_000)
 
+	it('preserves author JSDoc through comment-stripping projects without making local contracts depend on comments', async () => {
+		const directory = await fixture()
+		const config = resolve(directory, 'tsconfig.json')
+		const configured = JSON.parse(await readFile(config, 'utf8'))
+		configured.compilerOptions.removeComments = true
+		configured.compilerOptions.stripInternal = true
+		const originalConfig = JSON.stringify(configured)
+		await writeFile(config, originalConfig)
+		const file = resolve(directory, 'counter.ts')
+		const classDocumentation = `/** Counter author entry.
+ * @example const current = counter.self()
+ * @deprecated Author migration guidance.
+ */`
+		const methodDocumentation = `/** Author method contract.
+ * @param other Another original Counter instance.
+ * @returns The original supplied instance.
+ * @example counter.same(counter)
+ */`
+		const original = await readFile(file, 'utf8')
+		const documented = original
+			.replace(
+				'const CounterConfig =',
+				'/** Author Schema definition and defaults. */\nconst CounterConfig =',
+			)
+			.replace(
+				'export abstract class BusinessBase extends BasePlugin { inherited',
+				'/** Author business base contract. */\nexport abstract class BusinessBase extends BasePlugin {\n /** Author inherited generic method. */\n inherited',
+			)
+			.replace(
+				'export class NativeHandle',
+				'/** Author nominal handle contract. */\nexport class NativeHandle',
+			)
+			.replace(
+				'@Plugin(BusinessBase)',
+				`const EXAMPLE_DOCUMENTATION = '/** Not attached author documentation. */'\n${classDocumentation}\n@Plugin(BusinessBase)`,
+			)
+			.replace(
+				'private brand = 0',
+				'/** @internal Author internal member. */\n internalOnly():void {}\n private brand = 0',
+			)
+			.replace(
+				'private readonly config =',
+				'/** Author managed configuration source. */\n private readonly config =',
+			)
+			.replace(
+				'readonly part =',
+				'/** Author Part property.\n  * @deprecated Author Part migration guidance.\n  */\n readonly part =',
+			)
+			.replace('same(other:Counter)', `${methodDocumentation}\n same(other:Counter)`)
+		await writeFile(file, documented)
+		const payload = resolve(directory, 'payload.ts')
+		const payloadDocumentation =
+			'/** Author associated Payload contract. */\nexport interface Payload {\n /** Author Payload identity. */\n readonly id: string\n}\n'
+		await writeFile(payload, payloadDocumentation)
+		const generate = () =>
+			generatePluginControl({
+				root: directory,
+				definitions: [{ moduleId: file, className: 'Counter', definition }],
+			})
+		const before = await generate()
+		const index = before.files['index.d.mts']!
+		expect(index).toContain(`${classDocumentation}\nexport type CounterInstance`)
+		expect(index).toContain(`${classDocumentation}\nexport declare const Counter`)
+		expect(index).not.toContain('Not attached author documentation')
+		expect(index).toContain('Schema input before validation, defaults and transforms')
+		expect(index).toContain('Validated Schema output after defaults and transforms')
+		expect(index).toContain('{@link CounterConfigDeclaration}')
+		expect(index).toContain('Author managed configuration source')
+		expect(index).toContain('Author Schema definition and defaults')
+		const declarations = Object.entries(before.files)
+			.filter(([path]) => path.startsWith('types/') && /\.d\.[cm]?ts$/.test(path))
+			.map(([, code]) => code)
+			.join('\n')
+		for (const marker of [
+			'Counter author entry.',
+			'Author method contract.',
+			'@param other Another original Counter instance.',
+			'@returns The original supplied instance.',
+			'@example counter.same(counter)',
+			'@deprecated Author Part migration guidance.',
+			'Author business base contract.',
+			'Author inherited generic method.',
+			'Author nominal handle contract.',
+			'Author associated Payload contract.',
+			'Author Payload identity.',
+		])
+			expect(declarations).toContain(marker)
+		expect(declarations).not.toContain('internalOnly')
+		expect(declarations).not.toContain('this.brand++')
+		expect(declarations).not.toContain('control generation must never evaluate implementation')
+		await writeFile(
+			file,
+			documented
+				.replaceAll('Author', 'Revised author')
+				.replace('Counter author entry.', 'Revised Counter author entry.'),
+		)
+		await writeFile(payload, payloadDocumentation.replaceAll('Author', 'Revised author'))
+		const revised = await generate()
+		expect(revised.files['index.d.mts']).toContain('Revised Counter author entry.')
+		expect(revised.snapshot).not.toBe(before.snapshot)
+		expect(revised.manifest.definitions[0]!.contracts).toEqual(
+			before.manifest.definitions[0]!.contracts,
+		)
+		expect(await readFile(config, 'utf8')).toBe(originalConfig)
+	}, 30_000)
+
 	it('emits complete native class declarations and readable config witnesses without evaluating source', async () => {
 		const directory = await fixture()
 		const generation = await generatePluginControl({
@@ -694,7 +800,7 @@ void enabled
 import type {CounterInstance,CounterConfigInput,CounterConfigOutput} from './index.mjs'
 import type {ScriptSdk} from '@pluxel/host/agent'
 declare const sdk:ScriptSdk
-const {instance:counter}=await sdk.plugins.instance(Counter)
+const {instance:counter}=await sdk.plugin(Counter).instance()
 const same:CounterInstance=counter.same(counter)
 const self:CounterInstance=counter.self()
 counter.part.owner().same(counter)

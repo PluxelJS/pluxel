@@ -1,4 +1,4 @@
-import { pluginNodeIndexKey, type RootContext } from '@pluxel/core'
+import { parsePluginNodeAddress, pluginNodeIndexKey, type RootContext } from '@pluxel/core'
 import {
 	getPluginGenerationContext,
 	requirePluginGenerationInfo,
@@ -34,7 +34,7 @@ import { readHostRecentUpdates } from '../recent-update'
 import type { HostOperationOptions } from '../coordinator'
 import type { HostConfigStore } from '../config-store'
 import type { HostPolicyField, HostPolicyInput } from '../policy'
-import type { ScriptSdk } from './sdk-types'
+import type { ScriptPlugin, ScriptSdk } from './sdk-types'
 import type { PluginTarget, ScriptLogReadOptions } from './control'
 import { normalizePluginTarget } from './control-target'
 import { createPluginInstanceView } from './instance-view'
@@ -144,24 +144,6 @@ export function createScriptScope(
 				queuedCalls--
 			}
 		})
-	const targetRun = <T>(
-		target: PluginTarget,
-		work: (selected: ReturnType<typeof normalizePluginTarget>) => T | Promise<T>,
-	): Promise<T> => {
-		try {
-			const selected = normalizePluginTarget(target)
-			return queued(() => work(selected))
-		} catch (error) {
-			return Promise.reject(error)
-		}
-	}
-	const lifecycle = (target: PluginTarget, action: 'start' | 'stop' | 'restart') =>
-		targetRun(target, async ({ node }) =>
-			projectPluginApplyReport(
-				ctx,
-				await coordinator[`${action}Node`](node, `script-${action}`, admission),
-			),
-		)
 	const logOptions = (input?: ScriptLogReadOptions): LogReadOptions | undefined => {
 		if (input === undefined) return undefined
 		const { filter, ...readOptions } = input
@@ -190,121 +172,158 @@ export function createScriptScope(
 		)
 			throw new RangeError('Log read limit must be an integer from 1 to 10000')
 	}
-	const sdk = Object.freeze({
-		plugins: Object.freeze({
-			list: () =>
+	// A reference owns only a validated target snapshot. Host state and generation
+	// admission remain in the original coordinator for every operation.
+	const select = (selected: ReturnType<typeof normalizePluginTarget>): ScriptPlugin => {
+		assertOpen()
+		const { node, descriptor } = selected
+		const lifecycle = (action: 'start' | 'stop' | 'restart') =>
+			queued(async () =>
+				projectPluginApplyReport(
+					ctx,
+					await coordinator[`${action}Node`](node, `script-${action}`, admission),
+				),
+			)
+		const borrowInstance = descriptor
+			? () =>
+					queued(() => {
+						return coordinator.readCommitted(({ catalog }) => {
+							assertOpen()
+							const entry = pluginCatalogEntry(catalog, node.definition)
+							if (!entry)
+								throw new ScriptExecutionError(
+									'target_unavailable',
+									'Plugin definition is absent from the current catalog',
+								)
+							assertPluginControlContract(entry, 'instance', descriptor.contracts.instance)
+							const instance = requirePluginService(ctx).getInstance(node)
+							if (!instance)
+								throw new ScriptExecutionError('plugin_not_running', 'Plugin node is not running')
+							if (
+								requirePluginGenerationInfo(getPluginGenerationContext(instance)).implementation !==
+								entry.candidate.implementation
+							)
+								throw new ScriptExecutionError(
+									'stale_target',
+									'Running Plugin generation differs from the committed candidate',
+								)
+							let view = views.get(instance)
+							if (!view) {
+								view = createPluginInstanceView(instance, {
+									signal: controller.signal,
+									assertOpen: () => {
+										assertOpen()
+										if (queuedCalls > 0)
+											throw new ScriptScopeError(
+												'borrowed_generation_conflict',
+												'Await pending Host operations before accessing Plugin instance members',
+											)
+									},
+									track,
+									unwrap,
+									begin: () => {
+										activeCalls++
+									},
+									end: () => {
+										activeCalls--
+									},
+								})
+								views.set(instance, view)
+								originals.set(view, instance)
+							}
+							return Object.freeze({ instance: view })
+						}, admission)
+					})
+			: undefined
+		const config =
+			descriptor?.contracts.config === null
+				? undefined
+				: Object.freeze({
+						get: () =>
+							queued(async () =>
+								projectPluginConfigResult(
+									ctx,
+									await pluginConfigGet(ctx, node, admission, descriptor?.contracts.config),
+								),
+							),
+						validate: (change: HostConfigMutation) =>
+							queued(async () =>
+								projectPluginConfigResult(
+									ctx,
+									await pluginConfigValidate(
+										ctx,
+										node,
+										change,
+										admission,
+										descriptor?.contracts.config,
+									),
+								),
+							),
+						patch: (change: HostConfigMutation, input?: HostOperationOptions) =>
+							queued(async () =>
+								projectPluginConfigResult(
+									ctx,
+									await pluginConfigPatch(
+										ctx,
+										node,
+										change,
+										mutationOptions(input),
+										descriptor?.contracts.config,
+									),
+								),
+							),
+						reset: (paths?: readonly (readonly string[])[], input?: HostOperationOptions) =>
+							queued(async () =>
+								projectPluginConfigResult(
+									ctx,
+									await pluginConfigReset(
+										ctx,
+										node,
+										paths,
+										mutationOptions(input),
+										descriptor?.contracts.config,
+									),
+								),
+							),
+					})
+		return Object.freeze({
+			address: node,
+			fork: (forkId: string) => {
+				assertOpen()
+				return select({
+					node: parsePluginNodeAddress({ definition: node.definition, variant: 'fork', forkId }),
+					descriptor,
+				})
+			},
+			status: () =>
 				queued(async () => {
-					const overview = await readHostPluginStatusOverview(ctx)
-					return overview.statuses
-				}),
-			status: (target: PluginTarget) =>
-				targetRun(target, async ({ node }) => {
 					const key = pluginNodeIndexKey(node)
 					const overview = await readHostPluginStatusOverview(ctx)
 					return (
 						overview.statuses.find((entry) => pluginNodeIndexKey(entry.address) === key) ?? null
 					)
 				}),
-			start: (target: PluginTarget) => lifecycle(target, 'start'),
-			stop: (target: PluginTarget) => lifecycle(target, 'stop'),
-			restart: (target: PluginTarget) => lifecycle(target, 'restart'),
-			instance: (target: PluginTarget) =>
-				targetRun(target, ({ node, descriptor }) => {
-					if (!descriptor)
-						throw new TypeError('Instance access requires a generated Plugin descriptor')
-					return coordinator.readCommitted(({ catalog }) => {
-						assertOpen()
-						const entry = pluginCatalogEntry(catalog, node.definition)
-						if (!entry)
-							throw new ScriptExecutionError(
-								'target_unavailable',
-								'Plugin definition is absent from the current catalog',
-							)
-						assertPluginControlContract(entry, 'instance', descriptor.contracts.instance)
-						const instance = requirePluginService(ctx).getInstance(node)
-						if (!instance)
-							throw new ScriptExecutionError('plugin_not_running', 'Plugin node is not running')
-						if (
-							requirePluginGenerationInfo(getPluginGenerationContext(instance)).implementation !==
-							entry.candidate.implementation
-						)
-							throw new ScriptExecutionError(
-								'stale_target',
-								'Running Plugin generation differs from the committed candidate',
-							)
-						let view = views.get(instance)
-						if (!view) {
-							view = createPluginInstanceView(instance, {
-								signal: controller.signal,
-								assertOpen: () => {
-									assertOpen()
-									if (queuedCalls > 0)
-										throw new ScriptScopeError(
-											'borrowed_generation_conflict',
-											'Await pending Host operations before accessing Plugin instance members',
-										)
-								},
-								track,
-								unwrap,
-								begin: () => {
-									activeCalls++
-								},
-								end: () => {
-									activeCalls--
-								},
-							})
-							views.set(instance, view)
-							originals.set(view, instance)
-						}
-						return Object.freeze({ instance: view })
-					}, admission)
+			start: () => lifecycle('start'),
+			stop: () => lifecycle('stop'),
+			restart: () => lifecycle('restart'),
+			...(borrowInstance ? { instance: borrowInstance } : {}),
+			...(config ? { config } : {}),
+		})
+	}
+	const plugin = <const T extends PluginTarget>(target: T): ScriptPlugin<T> => {
+		assertOpen()
+		// The descriptor's declaration-only marker associates types with this same
+		// runtime snapshot; no generic inference is repeated by bound operations.
+		return select(normalizePluginTarget(target)) as ScriptPlugin<T>
+	}
+	const sdk = Object.freeze({
+		plugin,
+		plugins: Object.freeze({
+			list: () =>
+				queued(async () => {
+					const overview = await readHostPluginStatusOverview(ctx)
+					return overview.statuses
 				}),
-		}),
-		config: Object.freeze({
-			get: (target: PluginTarget) =>
-				targetRun(target, async ({ node, descriptor }) =>
-					projectPluginConfigResult(
-						ctx,
-						await pluginConfigGet(ctx, node, admission, descriptor?.contracts.config),
-					),
-				),
-			validate: (target: PluginTarget, change: HostConfigMutation) =>
-				targetRun(target, async ({ node, descriptor }) =>
-					projectPluginConfigResult(
-						ctx,
-						await pluginConfigValidate(ctx, node, change, admission, descriptor?.contracts.config),
-					),
-				),
-			patch: (target: PluginTarget, change: HostConfigMutation, input?: HostOperationOptions) =>
-				targetRun(target, async ({ node, descriptor }) =>
-					projectPluginConfigResult(
-						ctx,
-						await pluginConfigPatch(
-							ctx,
-							node,
-							change,
-							mutationOptions(input),
-							descriptor?.contracts.config,
-						),
-					),
-				),
-			reset: (
-				target: PluginTarget,
-				paths?: readonly (readonly string[])[],
-				input?: HostOperationOptions,
-			) =>
-				targetRun(target, async ({ node, descriptor }) =>
-					projectPluginConfigResult(
-						ctx,
-						await pluginConfigReset(
-							ctx,
-							node,
-							paths,
-							mutationOptions(input),
-							descriptor?.contracts.config,
-						),
-					),
-				),
 		}),
 		policy: Object.freeze({
 			get: () => queued(async () => projectHostPolicyResult(ctx, await policy.get(admission))),
@@ -378,7 +397,7 @@ export function createScriptScope(
 					}
 				}),
 		}),
-	}) as ScriptSdk
+	}) satisfies ScriptSdk
 	return Object.freeze({
 		sdk,
 		assertOpen,

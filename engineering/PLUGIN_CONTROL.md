@@ -27,7 +27,9 @@ Core 不解释控制格式，也不生成第二种插件身份。描述符里的
 
 实例类型 S 使用完整 class 声明，保留继承、private nominal identity、重载、显式 this、泛型与递归关系。`typeImports: 'package'` 用于独立插件包，引用原公开包类型；默认 `closure` 用于应用/Vite，携带本地声明闭包和显式 ambient roots，保留公开外部包引用，作者仍需提供这些类型依赖。模式由构建所有者选择，不能由地址的 package-root 形式猜测包是否可安装。业务成员的手工 Pick 会使 `same(other: OriginalClass)` 与 `self()` 产生互不相容的身份，因此这里保持完整 class。闭包内的私有关系完整，另行安装的原实现声明属于另一个物理模块身份。可见性和权限仍由 TypeScript、Host 以及执行授权各自处理。
 
-配置 input/output 从原 Standard Schema 类型及 Part 树组合。输入保留默认值前的可选字段，输出保留校验和变换后的结果。无配置使用 `never`。`ConfigDeclaration` 类型及 JSDoc 记录 schema 表达式、节点路径和引用的本地源码声明。环境变量保持源码表达式，不在生成时读取环境。
+控制声明 emit 显式使用 `removeComments: false`，保留原生 emitter 可关联的公共 class、成员、继承及关联类型 JSDoc，`stripInternal` 沿用作者配置。入口的 descriptor 和 Instance alias 从原生 `Node.jsDoc` 取得原 class 说明，装饰器前的注释仍属于原 class；字符串里的伪注释不会被采纳。package 模式保持 canonical import，成员提示仍由原公开包的声明提供，材料内本地声明继续携带源文档供阅读。
+
+配置 input/output 从原 Standard Schema 类型及 Part 树组合。输入保留默认值前的可选字段，输出保留校验和变换后的结果。无配置使用 `never`。`ConfigDeclaration` 类型及 JSDoc 记录 schema 表达式、节点路径和引用的本地源码声明，原配置字段 JSDoc 通过可选 `documentation` 字段交付。Input/Output alias 说明验证阶段并关联原源码描述。环境变量保持源码表达式，不在生成时读取环境。注释更新改变材料 snapshot，本地配置和实例的结构摘要继续排除文档差异。
 
 JSON 不属于共享 ambient 声明。仅公开类型实际引用的 JSON 才进入声明材料，配置表达式引用的 JSON 原文进入源码描述与配置摘要；只在实现体中使用的数据保留在编译读集中。消费 JSON 类型依赖的作者项目需要启用 `resolveJsonModule`。
 
@@ -51,7 +53,11 @@ Vite 在候选准备时核对 `ModuleRunner.evaluatedModules` 中实际缓存代
 
 ## typed 配置与实例
 
-`PluginDescriptor<I, O, S>` 的类型关联包含不变标记；JavaScript 不携带类型标记或逻辑。typed mutation 用 `NoInfer` 从 target 推导输入，拒绝丢失对应关系的异构配置联合和包含无配置定义的联合。动态地址保留原未知配置 API。
+`PluginDescriptor<I, O, S>` 的类型关联包含不变标记；JavaScript 不携带类型标记或逻辑。`sdk.plugin(target)` 同步验证并保存不可变目标快照，返回 `ScriptPlugin<T>`。引用持有地址和描述符摘要，各次操作仍通过原 Host coordinator 读取当前状态。`fork(id)` 选择同一定义的另一个 fork，保留原引用，不物化节点或启动实例。
+
+引用统一提供 status、start、stop、restart。typed descriptor 提供 instance；已声明配置时还提供 `ScriptPluginConfig<I, O>`。配置参数不再重复目标，也不重新推导输入类型。配置函数使用 readonly 函数属性，提取、赋值或注解后仍保持输入约束。配置不同的联合只开放 get，无配置或已擦除类型关联的描述符不开放 config；动态地址保留原未知配置操作且不开放业务 instance。已知调用方、public exports、文档及生成项目入口统一使用这一形态。
+
+工厂、fork、引用和配置方法均由闭包持有目标，不依赖调用 receiver。选择和派生先检查 scope；异步操作继续走原 run/queued 准入和排空。引用可以在 restart 后重新取得当前 generation 的实例，旧业务 view 仍然失效。全局 plugins.list、policy、updates 和 logs 保持各自职责，日志可用引用的 address 作为原生过滤条件。Node/Vite describe 声明 plugin、plugin.config 和 plugin.instance 能力。
 
 配置摘要在原 lookup/transaction 内检查，保留原 CAS 的错误顺序，并在 Schema 执行和持久化之前拒绝失配。没有先检查、再第二次排队写入的窗口。配置成功与失败继续返回原领域报告，preview 不保存。
 
@@ -93,15 +99,17 @@ CLI 的 `script sync` 和 `dev sync` 使用同一实现。完整验证后写入 
 
 ### 2026-11-14 落地验证
 
-本轮使用实际构建入口和隔离的 Node/Vite 应用完成验证：
+插件引用重构使用实际构建入口和隔离的 Node/Vite 应用完成验证：
 
-- 最终 `mise exec -- vp run --concurrency-limit=2 workspace:verify`：136/136 项任务成功，109/121 项可缓存任务命中；2725 个文件格式正确，1905 个文件没有 lint 警告、错误或类型错误。仓库治理、源码声明和文档站构建通过，生成 664 个文件。
+- 最终 `mise exec -- vp run --concurrency-limit=2 workspace:verify`：136/136 项任务成功，73/121 项可缓存任务命中；2726 个文件格式正确，1905 个文件没有 lint 警告、错误或类型错误。仓库治理、源码声明和文档站构建通过，生成 664 个文件。
 - `mise exec -- vp run --concurrency-limit=2 workspace:build`：48/48 项任务成功；正式插件包、modules 应用和文档站均完成构建。
-- 完整包测试通过：Host 37 文件 / 283 项、Rolldown 51 / 555、host-vite 28 / 142、Services 62 / 384、CLI 21 / 236。生成器的 17 项用例包含原生声明消费、配置源码、包身份、编译环境及 ambient 提供者缺失；Storage 另有 Node 与 DOM/Bun 类型环境及实际流读取、取消回归。
-- 18 个包的正式控制入口共交付 23 个定义、102 个材料文件；实际 plugin-host 应用交付 5 个定义、9 个材料文件。核对清单摘要、文件字节、纯 JavaScript 渲染及开发/发布 exports。
-- 独立作者从真实 tarball 安装 CLI/SDK，通过 TLS 管理认证同步材料、编译和提交脚本；接收端删除源码且不安装编译器。配置实际完成 2→4→8，每次通过生成描述符调用原插件的异步方法并读取属性；重复同步保持相同快照。standalone 与 modules 的独立安装交付均通过。
+- 完整包测试通过：Host 37 文件 / 285 项、Rolldown 51 / 556、host-vite 28 / 142、Services 62 / 384、CLI 21 / 236。生成器的 18 项用例包含原生声明消费、配置源码、包身份、编译环境及 ambient 提供者缺失，并覆盖作者启用 `removeComments` 时的原始 JSDoc、继承声明、关联类型和注释变化后的摘要稳定性。Host 的独立严格类型检查覆盖提取方法、配置输入约束、fork、异构联合及无配置描述符。
+- 18 个包的正式控制入口共交付 23 个定义、102 个清单列出的材料文件，另有 18 份清单；实际 plugin-host 应用交付 5 个定义、9 个材料文件和 1 份清单。使用公开验证器核对清单摘要、文件字节、纯 JavaScript 渲染及开发/发布 exports。
+- 独立作者从真实 tarball 安装 CLI/SDK，通过 TLS 管理认证同步材料、编译和提交脚本；接收端删除源码且不安装编译器。配置实际完成 2→4→8，每次通过插件引用调用原插件的异步方法并读取属性；重复同步保持相同快照。独立安装回归、4 项 CLI 同步回归和 TLS 脚本执行通过。Node/Workerd 回归保留原有调用与资源释放检查，控制方法提取后继续服从 run 和 generation 寿命。
 - 真实 Vite watcher 覆盖配置与类型依赖变化、暂停和 apply、独立定义摘要、相同源码、失败修复、Host replacement 和 generation 释放。测试继续核对业务结果及原 receipt，不通过重启代替更新。
 
-执行中曾分别遇到嵌套 `vp run` fixture 的 30 秒超时，以及 HMR 失败修复后一次脚本结果缺失。已补充子进程退出信息和完整 receipt、Host 状态、generation 诊断；直接用例、包测试、对应 Vite Task 与后续完整门禁中的相应用例均已通过。这两次瞬态失败尚未定位独立根因，没有增加重试或放宽断言，也没有据此推测并修改生产行为。
+前一轮交付验证中曾分别遇到嵌套 `vp run` fixture 的 30 秒超时，以及 HMR 失败修复后一次脚本结果缺失。已补充子进程退出信息和完整 receipt、Host 状态、generation 诊断；直接用例、包测试、对应 Vite Task 与后续完整门禁中的相应用例均已通过。这两次瞬态失败尚未定位独立根因，没有增加重试或放宽断言，也没有据此推测并修改生产行为。
+
+额外运行 Services 的可选独立安装检查 `mise exec -- vp test run --config tests/installed.config.mts`：3 项通过、1 项失败。实际可选服务运行及插件引用调用通过，最后的严格声明检查在 Elysia `2.0.0-rc.0` 的上游泛型声明中失败。使用 TypeScript `7.0.2`、`@types/bun` `1.3.14`、`@types/node` `26.6.6`，仅写 `import type { Elysia } from 'elysia'; export type Baseline = Elysia` 的独立项目同样产生 30 条 TS2536 和 35 条 TS2344。该基线未导入 Pluxel；它的 `exact-mirror` 为 `1.2.6`，安装检查解析为 `1.2.7`。原可选声明示例与重构前的 `cd4c370f` 完全一致，未扩大诊断允许列表或关闭 library checking；该检查继续记为失败。
 
 跨 isolate 的业务调用投影、持久化任务和离线 Schema validator 是各自独立的后续能力。普通 class 声明与同进程实例视图不提供这些后端。

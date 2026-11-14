@@ -18,9 +18,9 @@
 
 消费应用运行时，跨文件或连续修改按指南的「HMR 批次控制」使用 `dev hmr pause` → 修改与检查 → `dev hmr apply` → 验证。失败保持暂停；成功且原本 auto 才恢复，不为独立插件测试另起应用。
 
-项目脚本使用普通 TypeScript 函数与 `satisfies ProjectScript`（`@pluxel/host-vite/project`），通过 `sdk.dev.address/instance/ctx` 访问当前模块图。通用 SDK 为 `Script`（`@pluxel/host/agent`），方法返回普通 Promise；配置修改后核对领域报告与实际采用。部署上传执行、认证与 receipt 见 `vp exec pluxel docs development/scripts.md`。
+项目脚本使用普通 TypeScript 函数与 `satisfies ProjectScript`（`@pluxel/host-vite/project`），通过 `sdk.dev.address/instance/ctx` 访问当前模块图。通用 SDK 为 `Script`（`@pluxel/host/agent`），通过 `sdk.plugin(target)` 同步选择引用，Host 操作返回普通 Promise；配置修改后核对领域报告与实际采用。部署上传执行、认证与 receipt 见 `vp exec pluxel docs development/scripts.md`。
 
-`pluxel build` 同时生成 `./control` 描述符、class 成员类型和配置 Schema 源码描述。作者安装原包及公开类型依赖后可使用 `sdk.plugins.instance(descriptor)` 调用实际业务方法；运行中应用的材料用 `pluxel dev sync` 或 `pluxel script sync` 获取。先 await 业务方法，再做配置或生命周期操作。用法见 `vp exec pluxel docs development/plugin-control.md`。
+`pluxel build` 同时生成 `./control` 描述符、class 成员类型和配置 Schema 源码描述。作者安装原包及公开类型依赖后可使用 `sdk.plugin(descriptor).instance()` 调用实际业务方法；运行中应用的材料用 `pluxel dev sync` 或 `pluxel script sync` 获取。先 await 业务方法，再做配置或生命周期操作。用法见 `vp exec pluxel docs development/plugin-control.md`。
 
 ## 持久状态与原生依赖
 

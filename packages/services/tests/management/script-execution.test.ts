@@ -267,10 +267,19 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 				backend: 'node',
 				codeKinds: ['artifact'],
 				lifetime: 'host',
+				capabilities: [
+					'plugins',
+					'plugin',
+					'plugin.instance',
+					'plugin.config',
+					'policy',
+					'updates',
+					'logs',
+				],
 			})
 			const node = ScriptCounter.nodeAddress()
 			const change = await artifact(
-				`const before = await sdk.config.get(run.input); if (!before.ok) return before; return sdk.config.patch(run.input, {set:{count: before.config.count + 1}}, {expectedManagedRevision:before.managedRevision});`,
+				`const select = sdk.plugin; const counter = select(run.input); const {get, patch} = counter.config; const before = await get(); if (!before.ok) return before; return patch({set:{count: before.config.count + 1}}, {expectedManagedRevision:before.managedRevision});`,
 			)
 			const submitted = { runId: randomUUID(), code: change, input: node }
 			const accepted = await first.control.submit(submitted)
@@ -305,7 +314,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 				runId: randomUUID(),
 				input: node,
 				code: await artifact(
-					`return sdk.config.patch(run.input,{set:{count:99}},{expectedManagedRevision:'outdated'});`,
+					`return sdk.plugin(run.input).config.patch({set:{count:99}},{expectedManagedRevision:'outdated'});`,
 				),
 			}
 			await reconnected.control.submit(conflict)
@@ -317,7 +326,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 				runId: randomUUID(),
 				input: node,
 				code: await artifact(
-					`await sdk.config.patch(run.input,{set:{count:8}}); throw new Error('after persisted change');`,
+					`await sdk.plugin(run.input).config.patch({set:{count:8}}); throw new Error('after persisted change');`,
 				),
 			}
 			await reconnected.control.submit(partial)

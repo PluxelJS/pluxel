@@ -50,13 +50,13 @@ it('executes a portable task on a real Host and creates fresh module locals on e
 	await using owner = createNodeScriptOwner({ ctx: host.ctx })
 	const code = await artifact(`let runs = 0;
 return {default: async (sdk, run) => {
-  const node = run.input;
-  const before = await sdk.config.get(node);
+  const selected = sdk.plugin(run.input);
+  const before = await selected.config.get();
   if (!before.ok) return before;
   const count = before.config.count * 2;
-  const changed = await sdk.config.patch(node, {set: {count}}, {expectedManagedRevision: before.managedRevision});
+  const changed = await selected.config.patch({set: {count}}, {expectedManagedRevision: before.managedRevision});
   if (!changed.ok) return changed;
-  return {runs: ++runs, changed, actual: await sdk.config.get(node)};
+  return {runs: ++runs, changed, actual: await selected.config.get()};
 }};`)
 	for (const [id, expected] of [
 		['first', 4],
@@ -104,7 +104,7 @@ it('preserves committed Host changes and versions after an execution or result-e
 		['encode', 'return 1n', 9],
 	] as const) {
 		const code = await artifact(
-			`return {default: async (sdk,run) => { await sdk.config.patch(run.input,{set:{count:${count}}}); ${ending}; }};`,
+			`return {default: async (sdk,run) => { await sdk.plugin(run.input).config.patch({set:{count:${count}}}); ${ending}; }};`,
 		)
 		await owner.executor.submit({ runId: id, code, input: Counter.nodeAddress() }, subject)
 		const result = await owner.executor.settled(id, subject)
@@ -141,7 +141,7 @@ it('cancellation closes new SDK admission while an accepted mutation settles on 
 	}
 	try {
 		const code = await artifact(
-			'return {default:async(sdk,run)=>{await sdk.config.patch(run.input,{set:{count:12}});return sdk.plugins.list();}};',
+			'return {default:async(sdk,run)=>{await sdk.plugin(run.input).config.patch({set:{count:12}});return sdk.plugins.list();}};',
 		)
 		await owner.executor.submit({ runId: 'cancel', code, input: Counter.nodeAddress() }, subject)
 		await mutationEntered

@@ -16,12 +16,17 @@ it('borrows real instances and root without Services and closes cached extension
 	const scope = createScriptScope({ ctx: host.ctx })
 	const sdk = createProjectSdk(host.ctx, scope)
 	const address = sdk.dev.address(Counter)
-	await sdk.plugins.start(address)
+	const select = sdk.plugin
+	const counter = select(address)
+	expect(counter.address).toEqual(address)
+	const { start, status } = counter
+	await start()
 	const first = sdk.dev.instance(Counter)
 	first.count = 4
 	expect(sdk.dev.ctx).toBe(host.ctx)
 	const cached = sdk.dev.instance
 	await scope.dispose()
+	await expect(status()).rejects.toMatchObject({ code: 'scope_closed' })
 	expect(() => cached(Counter)).toThrow(expect.objectContaining({ code: 'scope_closed' }))
 	expect(() => sdk.dev.ctx).toThrow(expect.objectContaining({ code: 'scope_closed' }))
 	const next = createScriptScope({ ctx: host.ctx })
@@ -29,7 +34,8 @@ it('borrows real instances and root without Services and closes cached extension
 		const nextSdk = createProjectSdk(host.ctx, next)
 		expect(nextSdk.dev.instance(Counter)).toBe(first)
 		expect(first.count).toBe(4)
-		await nextSdk.plugins.restart(address)
+		const { restart } = nextSdk.plugin(address)
+		await restart()
 		expect(nextSdk.dev.instance(Counter)).not.toBe(first)
 	} finally {
 		await next.dispose()
@@ -44,10 +50,12 @@ it('resolves existing typed forks', async () => {
 		const sdk = createProjectSdk(host.ctx, scope)
 		const fork = { plugin: Counter, forkId: 'east' }
 		expect(await host.forks.ensure(Counter.nodeAddress('east'))).toMatchObject({ ok: true })
-		await sdk.plugins.start(sdk.dev.address(fork))
+		const counter = sdk.plugin(sdk.dev.address(Counter)).fork('east')
+		expect(counter.address).toEqual(sdk.dev.address(fork))
+		await counter.start()
 		expect(sdk.dev.instance(fork)).toBeInstanceOf(Counter)
 		expect(() => sdk.dev.instance(Counter.nodeAddress() as never)).toThrow(TypeError)
-		expect(await sdk.plugins.status(Counter.nodeAddress('east'))).toMatchObject({
+		expect(await counter.status()).toMatchObject({
 			lifecycleState: 'running',
 		})
 	} finally {
@@ -63,12 +71,12 @@ it('rejects an imported constructor superseded by the actual catalog', async () 
 	const scope = createScriptScope({ ctx: host.ctx })
 	try {
 		const sdk = createProjectSdk(host.ctx, scope)
-		await sdk.plugins.start(sdk.dev.address(Replaceable))
+		await sdk.plugin(sdk.dev.address(Replaceable)).start()
 		await host.updateCatalog([lowerTestReplacement(Replaceable, class extends Replaceable {})])
 		expect(() => sdk.dev.address(Replaceable)).toThrow(
 			expect.objectContaining({ code: 'stale_target' }),
 		)
-		expect(await sdk.plugins.status(Replaceable.nodeAddress())).toMatchObject({
+		expect(await sdk.plugin(Replaceable.nodeAddress()).status()).toMatchObject({
 			lifecycleState: 'running',
 		})
 	} finally {

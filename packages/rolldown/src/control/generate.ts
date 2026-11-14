@@ -66,6 +66,7 @@ type ConfigSource = {
 	path: readonly string[]
 	source: string
 	className: string
+	documentation?: string
 	expression: string
 	dependencies: readonly { source: string; name: string; declaration: string }[]
 }
@@ -497,16 +498,31 @@ export async function generatePluginControl(options: {
 				const output = shape
 					? rewriteImports(shape.output, file.fileName, 'index.d.mts', true)
 					: 'never'
+				const classDocumentation = originalDocumentation(klass)
+				const configDocumentation =
+					shape?.sources
+						.filter((item) => item.documentation)
+						.map(
+							(item) =>
+								` * Original declaration at ${item.source} ${JSON.stringify(item.path)}:\n * ${escapeComment(item.documentation!)}\n`,
+						)
+						.join('') ?? ''
 				if (shape) {
 					declarations.push(
-						`/** Original configuration expressions. These are source descriptions, never executable exports.\n${shape.sources.map((item) => ` * ${item.source} ${JSON.stringify(item.path)}\n * ${escapeComment(item.expression)}\n${item.dependencies.map((dependency) => ` * ${dependency.source} #${dependency.name}\n * ${escapeComment(dependency.declaration)}\n`).join('')}`).join('')} */\n`,
+						`/** Original configuration expressions. These are source descriptions, never executable exports.\n${configDocumentation}${shape.sources.map((item) => ` * ${item.source} ${JSON.stringify(item.path)}\n * ${escapeComment(item.expression)}\n${item.dependencies.map((dependency) => ` * ${dependency.source} #${dependency.name}\n * ${escapeComment(dependency.declaration)}\n`).join('')}`).join('')} */\n`,
 					)
 					declarations.push(
 						`export type ${exportName}ConfigDeclaration = ${readonlyLiteral(shape.sources)}\n`,
 					)
-				} else declarations.push(`export type ${exportName}ConfigDeclaration = never\n`)
+				} else
+					declarations.push(
+						`/** This Plugin declares no managed configuration source. */\nexport type ${exportName}ConfigDeclaration = never\n`,
+					)
 				declarations.push(
-					`export type ${exportName}ConfigInput = ${input}\nexport type ${exportName}ConfigOutput = ${output}\nexport type ${exportName}Instance = __${exportName}Class\nexport declare const ${exportName}: PluginDescriptor<${exportName}ConfigInput, ${exportName}ConfigOutput, ${exportName}Instance>\n`,
+					`/** ${shape ? `Schema input before validation, defaults and transforms, including managed Part paths.\n * See {@link ${exportName}ConfigDeclaration} for the original expressions and dependencies.\n${configDocumentation}` : 'This Plugin declares no managed configuration input.\n'} */\nexport type ${exportName}ConfigInput = ${input}\n`,
+					`/** ${shape ? `Validated Schema output after defaults and transforms, including managed Part paths.\n * See {@link ${exportName}ConfigDeclaration} for the original expressions and dependencies.\n${configDocumentation}` : 'This Plugin declares no managed configuration output.\n'} */\nexport type ${exportName}ConfigOutput = ${output}\n`,
+					`${classDocumentation}export type ${exportName}Instance = __${exportName}Class\n`,
+					`${classDocumentation}export declare const ${exportName}: PluginDescriptor<${exportName}ConfigInput, ${exportName}ConfigOutput, ${exportName}Instance>\n`,
 				)
 				const environment = {
 					format: 1,
@@ -629,6 +645,12 @@ function findClass(file: SourceFile, name: string): ClassDeclaration | undefined
 		(node): node is ClassDeclaration =>
 			node.kind === SyntaxKind.ClassDeclaration && (node as ClassDeclaration).name?.text === name,
 	)
+}
+
+/** Native JSDoc nodes attach through decorators and exclude comment-looking strings. */
+function originalDocumentation(declaration: Node): string {
+	const file = declaration.getSourceFile()
+	return (declaration.jsDoc ?? []).map((comment) => `${comment.getText(file)}\n`).join('')
 }
 
 function createDeclarationGraph(
@@ -834,10 +856,19 @@ function configTree(
 			fail(`Cannot locate ${owner.className} schema expression`)
 		const reference = `typeof import(${JSON.stringify(owner.moduleId)}).${helpers.get(key) ?? fail(`Missing schema declaration helper ${key}`)}`
 		own = { input: `__ControlInput<${reference}>`, output: `__ControlOutput<${reference}>` }
+		let declaration = node
+		while (
+			declaration.parent &&
+			declaration.kind !== SyntaxKind.PropertyDeclaration &&
+			declaration.kind !== SyntaxKind.SourceFile
+		)
+			declaration = declaration.parent
+		const documentation = originalDocumentation(declaration)
 		sources.push({
 			path,
 			source: identify(owner.moduleId),
 			className: owner.className,
+			...(documentation ? { documentation } : {}),
 			expression: fact.schemaExpression,
 			dependencies: schemaDependencies(project, node, identify),
 		})
@@ -999,6 +1030,7 @@ async function emitDeclarations(options: {
 				typeRoots: options.typeRoots?.map(mirrorPath),
 				noEmit: false,
 				declaration: true,
+				removeComments: false,
 				emitDeclarationOnly: true,
 				declarationMap: false,
 				sourceMap: false,

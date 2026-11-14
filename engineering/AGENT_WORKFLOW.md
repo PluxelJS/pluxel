@@ -11,7 +11,7 @@ CLI / 编辑器
       ├─ Vite：ModuleRunner 加载目标项目模块
       └─ Node：加载作者侧编译的 JS 工厂
   → executeHostScript：创建并结算本次 scope
-  → ScriptSdk：普通 Promise，直接调用 Host 用例
+  → ScriptSdk：同步选择插件引用，Host 操作返回普通 Promise
   → Host coordinator / 配置 / 策略 / Core Logging
 
 Workbench 管理 RPC
@@ -36,7 +36,7 @@ Host 持有插件图、配置来源和原始输入、版本、运行意图及生
 
 ## scope 的接纳和结算
 
-`createScriptScope` 借用原 Host 和本次 signal，返回 SDK、`assertOpen`、`abort`、`dispose` 和版本 `snapshot`。SDK 每次调用都在 scope 中接纳并跟踪 Promise；缓存下来的方法同样检查是否关闭。scope 不拥有 Host，也不释放 root Context。
+`createScriptScope` 借用原 Host 和本次 signal，返回 SDK、`assertOpen`、`abort`、`dispose` 和版本 `snapshot`。`plugin()` 和引用的 `fork()` 同步选择并检查 scope，其余 Host 操作在 scope 中接纳并跟踪 Promise；缓存的工厂、引用和配置方法同样检查是否关闭。scope 不拥有 Host，也不释放 root Context。引用的类型关联与生成声明由 [Plugin Control](PLUGIN_CONTROL.md#typed-配置与实例)维护。
 
 脚本结束后 `executeHostScript` 关闭后续调用，等待已接纳的 SDK 工作，再读取结束版本。取消先关闭接纳、传递 signal，并释放日志等待订阅；Host 已接纳的写入或生命周期操作依原路径结算。排空期间的失败保留为运行或 `cleanupError`，不能把取消抢先投影成操作未发生。
 
