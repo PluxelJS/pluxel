@@ -9,7 +9,7 @@ Pluxel 核心在 `@pluxel/core/better-result` 子路径下直接导出了 [Bette
 
 跨插件公开 Result 实例时，提供方和调用方使用同一子入口，通过 `@pluxel/core` peer 共享所选版本，无需额外声明 `better-result` peer。Core peer 范围应包含所用子入口和 API 的最低版本；只导入 Core 主入口不会加载 Better Result。独立安装的双包 ESM/CJS 消费与对象身份检查见 [Core 发行回归](https://github.com/PluxelJS/pluxel/blob/main/packages/core/tests/installed-result.smoke.mjs)。
 
-本地业务方法按恢复需要选择 Result；SDK 原生返回值、部分成功回执及配置的保存/采用状态继续使用各自协议。Host 的[脚本 SDK](../development/scripts.md)在其控制边界统一返回 Better Result，并通过 `sdk.Result` 注入同一 namespace，保留原报告与持久化、采用信息。`Plugin.init()` 无法提供能力时仍按生命周期约定失败。
+本地业务方法按恢复需要选择 Result；SDK 原生返回值、部分成功回执及配置的保存/采用状态继续使用各自协议。Host 的[脚本 SDK](../development/scripts.md)在控制边界统一返回 `Promise<Result<T, E>>`，保留原报告与持久化、采用信息。需要构造或组合 Result 时同样从 `@pluxel/core/better-result` 导入。`Plugin.init()` 无法提供能力时仍按生命周期约定失败。
 
 ## 场景选型：何时使用 Result
 
@@ -53,7 +53,7 @@ if (result.isErr()) {
 
 ## 组合多个可能失败的步骤（Result.gen）
 
-当多个操作需要串联执行，且任何一步出错都立即中断流程时，可以使用生成器语法 `Result.gen`，免去层层嵌套的 `if (res.isErr())`：
+常规调用使用 async/await，在 `isErr()` 分支提前返回即可。库内部有较长的可恢复流程时，还可以选用 `Result.gen` 串联多个 Result：
 
 ```ts no-twoslash
 import { Result } from '@pluxel/core/better-result'
@@ -74,7 +74,7 @@ async function registerAccount(input: AccountInput) {
 }
 ```
 
-异步生成器通过 `yield* Result.await(promise)` 解包成功值；若某一步返回 `Result.err`，整个流程提前短路并返回该错误。生成器正常结束时返回 `Result.ok(value)`。同步 Result 可以直接 `yield*`；生成器中的未知异常遵循上游 `Panic` 规则。
+异步生成器通过 `yield* Result.await(promise)` 解包成功值；若某一步返回 `Result.err`，整个流程提前短路并返回该错误。生成器正常结束时返回 `Result.ok(value)`。同步 Result 可以直接 `yield*`；生成器中的未知异常遵循上游 `Panic` 规则。短路只停止后续步骤，已经提交的修改继续有效。
 
 ## Command 指令中的使用
 

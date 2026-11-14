@@ -1,6 +1,6 @@
 # 插件控制的后续方向
 
-插件描述符、class 成员声明、配置源码描述、Host 实例视图、Rolldown 构建和材料同步已进入正式实现。当前使用方式见[插件控制指南](../../../docs/development/plugin-control.md)，内部边界和测试入口见[Plugin Control](../../PLUGIN_CONTROL.md)。旧设计和实施顺序由 Git 保存。
+插件描述符、class 成员声明、配置源码描述、Host 实例视图、Rolldown 构建和材料同步已进入正式实现。当前使用方式见[插件控制指南](../../../docs/development/plugin-control.md)，普通 async/await 与 Result 处理见[自动化脚本](../../../docs/development/scripts.md)；内部边界和测试入口见[Plugin Control](../../PLUGIN_CONTROL.md)。旧设计和实施顺序由 Git 保存。
 
 后续按实际调用方推进以下独立能力：
 

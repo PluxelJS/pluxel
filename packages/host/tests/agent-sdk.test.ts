@@ -43,32 +43,30 @@ it('runs ordinary typed configuration tasks against a Host without official Serv
 	const node = Counter.nodeAddress()
 	try {
 		Result.unwrap(await scope.sdk.plugin(node).start())
-		const script = ((sdk, run) =>
-			sdk.Result.gen(async function* () {
-				run.signal.throwIfAborted()
-				const selected = sdk.plugin(node)
-				const before = yield* sdk.Result.await(selected.config.get())
-				const count = before.config.count
-				if (typeof count !== 'number') throw new TypeError('Expected numeric count')
-				const changed = yield* sdk.Result.await(
-					selected.config.patch(
-						{ set: { count: count * 2 } },
-						{ expectedManagedRevision: before.managedRevision },
-					),
-				)
-				return sdk.Result.ok({
-					changed,
-					actual: yield* sdk.Result.await(selected.config.get()),
-					status: yield* sdk.Result.await(selected.status()),
-				})
-			})) satisfies Script
+		const script = (async (sdk, run) => {
+			run.signal.throwIfAborted()
+			const selected = sdk.plugin(node)
+			const before = await selected.config.get()
+			if (before.isErr()) return before
+			const count = before.value.config.count
+			if (typeof count !== 'number') throw new TypeError('Expected numeric count')
+			const changed = await selected.config.patch(
+				{ set: { count: count * 2 } },
+				{ expectedManagedRevision: before.value.managedRevision },
+			)
+			if (changed.isErr()) return changed
+			const actual = await selected.config.get()
+			if (actual.isErr()) return actual
+			const status = await selected.status()
+			if (status.isErr()) return status
+			return { changed: changed.value, actual: actual.value, status: status.value }
+		}) satisfies Script
 		const result = await script(scope.sdk, {
 			id: 'config-task',
 			input: null,
 			signal: new AbortController().signal,
 		})
-		expect(result).toBeInstanceOf(Ok)
-		expect(Result.unwrap(result)).toMatchObject({
+		expect(result).toMatchObject({
 			changed: {
 				application: 'applied',
 				persistence: { status: 'confirmed', retention: 'session' },
@@ -176,7 +174,7 @@ it('preserves shadowed raw inputs, source facts and readonly rejection', async (
 	}
 })
 
-it('injects the shared Result namespace and short-circuits a real CAS conflict without rolling back prior changes', async () => {
+it('propagates a real CAS conflict with ordinary await without rolling back prior changes', async () => {
 	await using host = await createHost({
 		plugins: [Counter],
 		runtime: { documents: { config: false, state: false } },
@@ -185,25 +183,24 @@ it('injects the shared Result namespace and short-circuits a real CAS conflict w
 	await host.startNode(Counter.nodeAddress())
 	const scope = createScriptScope({ ctx: host.ctx })
 	try {
-		expect(scope.sdk.Result).toBe(Result)
+		expect(scope.sdk).not.toHaveProperty('Result')
 		const selected = scope.sdk.plugin(Counter.nodeAddress())
 		const initial = await selected.config.get()
 		expect(initial).toBeInstanceOf(Ok)
 		const before = initial.unwrap()
 		expect(before).not.toHaveProperty('ok')
 		let reachedFinalMutation = false
-		const outcome = await scope.sdk.Result.gen(async function* () {
-			yield* scope.sdk.Result.await(selected.config.patch({ set: { count: 4 } }))
-			yield* scope.sdk.Result.await(
-				selected.config.patch(
-					{ set: { count: 8 } },
-					{ expectedManagedRevision: before.managedRevision },
-				),
+		const outcome = await (async () => {
+			const first = await selected.config.patch({ set: { count: 4 } })
+			if (first.isErr()) return first
+			const conflict = await selected.config.patch(
+				{ set: { count: 8 } },
+				{ expectedManagedRevision: before.managedRevision },
 			)
+			if (conflict.isErr()) return conflict
 			reachedFinalMutation = true
-			yield* scope.sdk.Result.await(selected.config.patch({ set: { count: 999 } }))
-			return scope.sdk.Result.ok('complete')
-		})
+			return selected.config.patch({ set: { count: 999 } })
+		})()
 		expect(outcome).toBeInstanceOf(Err)
 		expect(outcome).toMatchObject({
 			status: 'error',

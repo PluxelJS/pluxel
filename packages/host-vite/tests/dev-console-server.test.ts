@@ -16,7 +16,7 @@ import { dirname, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { openScriptSocketSession } from '@pluxel/host/agent/socket'
 import type { ScriptConnectionTarget } from '@pluxel/host/agent/transport'
-import type { ScriptSubmission } from '@pluxel/host/agent'
+import { SCRIPT_ARTIFACT_FORMAT, type ScriptSubmission } from '@pluxel/host/agent'
 import { connectDevInstance, selectDevInstance } from '../../cli/src/dev/client'
 import { startProjectScriptServer } from '../src/console/server'
 
@@ -107,7 +107,6 @@ it('captures startup provenance, protects discovery, and keeps credentials out o
 		serviceId: 'fixture/server',
 		codeKinds: ['project'],
 		capabilities: [
-			'result',
 			'plugins',
 			'plugin',
 			'plugin.instance',
@@ -145,7 +144,7 @@ it('rejects invalid inputs, unsupported loading modes, source changes and realpa
 			...input,
 			code: {
 				kind: 'artifact',
-				format: 'pluxel-js-factory/1',
+				format: SCRIPT_ARTIFACT_FORMAT,
 				code: '',
 				sourceHash,
 				exportName: 'default',

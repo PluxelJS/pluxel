@@ -3,6 +3,7 @@ import { openLocalWorkbenchEntry, WorkbenchHost } from '@pluxel/workbench/server
 import { consumeWorkbenchValue, readWorkbenchLayout } from '@pluxel/workbench/client'
 import { RpcStub } from 'capnweb'
 import { formatPluginNodeRoute } from '@pluxel/core'
+import { Result } from '@pluxel/core/better-result'
 import { ReportStudioPlugin } from '../src/showcase/ReportStudio'
 import { ReportStudioWorkbench } from '../src/showcase/ReportStudio.workbench'
 import { PackageManagerPlugin } from '@pluxel/plugin-package-manager'
@@ -10,77 +11,78 @@ import { PackageManagerPlugin } from '@pluxel/plugin-package-manager'
 const principal = { provider: 'development-console', subject: 'workbench-migration-validation' }
 
 /** Read real publications and exercise a bounded, explicitly owned RPC activation. */
-export default ((sdk, run) =>
-	sdk.Result.gen(async function* () {
-		const studio = yield* sdk.Result.await(sdk.plugin(ReportStudioPlugin).status())
-		if (!studio) throw new Error('ReportStudioPlugin is not registered')
-		const session = sdk.dev.ctx.require(WorkbenchHost).createSession(principal, () => {})
-		try {
-			using target = new RpcStub(session.target)
-			const layout = await readWorkbenchLayout(target, { target: null })
-			const targetLayout = await readWorkbenchLayout(target, { target: studio.address })
-			using opened = await openLocalWorkbenchEntry(sdk.dev.ctx, {
-				target: studio.address,
-				entry: ReportStudioWorkbench.studio,
-				principal,
-				location: '/architecture-lab',
-				signal: run.signal,
-			})
-			return sdk.Result.ok({
-				studio,
-				studioRoute: formatPluginNodeRoute(studio.address),
-				layout: {
-					revision: layout.revision,
-					entries: layout.entries.map((entry) => ({
-						descriptor: entry.descriptor,
-						target: entry.target,
-						placement: entry.placement,
-					})),
-				},
-				targetLayout: {
-					revision: targetLayout.revision,
-					entries: targetLayout.entries.map((entry) => ({
-						descriptor: entry.descriptor,
-						target: entry.target,
-						placement: entry.placement,
-					})),
-				},
-				opened: {
-					kind: opened.kind,
-					params: opened.params,
-					producer: opened.federatedViewRef.producer,
-				},
-				snapshot: await consumeWorkbenchValue(opened.api.snapshotDto(), 'Report Studio snapshot'),
-			})
-		} finally {
-			session.dispose()
-		}
-	})) satisfies ProjectScript
+export default (async (sdk, run) => {
+	const status = await sdk.plugin(ReportStudioPlugin).status()
+	if (status.isErr()) return status
+	const studio = status.value
+	if (!studio) throw new Error('ReportStudioPlugin is not registered')
+	const session = sdk.dev.ctx.require(WorkbenchHost).createSession(principal, () => {})
+	try {
+		using target = new RpcStub(session.target)
+		const layout = await readWorkbenchLayout(target, { target: null })
+		const targetLayout = await readWorkbenchLayout(target, { target: studio.address })
+		using opened = await openLocalWorkbenchEntry(sdk.dev.ctx, {
+			target: studio.address,
+			entry: ReportStudioWorkbench.studio,
+			principal,
+			location: '/architecture-lab',
+			signal: run.signal,
+		})
+		return Result.ok({
+			studio,
+			studioRoute: formatPluginNodeRoute(studio.address),
+			layout: {
+				revision: layout.revision,
+				entries: layout.entries.map((entry) => ({
+					descriptor: entry.descriptor,
+					target: entry.target,
+					placement: entry.placement,
+				})),
+			},
+			targetLayout: {
+				revision: targetLayout.revision,
+				entries: targetLayout.entries.map((entry) => ({
+					descriptor: entry.descriptor,
+					target: entry.target,
+					placement: entry.placement,
+				})),
+			},
+			opened: {
+				kind: opened.kind,
+				params: opened.params,
+				producer: opened.federatedViewRef.producer,
+			},
+			snapshot: await consumeWorkbenchValue(opened.api.snapshotDto(), 'Report Studio snapshot'),
+		})
+	} finally {
+		session.dispose()
+	}
+}) satisfies ProjectScript
 
 /** Stop/restart are explicit online operations, used to verify browser epoch invalidation. */
-export const stopStudio = ((sdk) =>
-	sdk.Result.gen(async function* () {
-		const { stop, status } = sdk.plugin(ReportStudioPlugin)
-		return sdk.Result.ok({
-			report: yield* sdk.Result.await(stop()),
-			current: yield* sdk.Result.await(status()),
-		})
-	})) satisfies ProjectScript
-export const startStudio = ((sdk) =>
-	sdk.Result.gen(async function* () {
-		const { start, status } = sdk.plugin(ReportStudioPlugin)
-		return sdk.Result.ok({
-			report: yield* sdk.Result.await(start()),
-			current: yield* sdk.Result.await(status()),
-		})
-	})) satisfies ProjectScript
+export const stopStudio = (async (sdk) => {
+	const { stop, status } = sdk.plugin(ReportStudioPlugin)
+	const report = await stop()
+	if (report.isErr()) return report
+	const current = await status()
+	if (current.isErr()) return current
+	return Result.ok({ report: report.value, current: current.value })
+}) satisfies ProjectScript
+export const startStudio = (async (sdk) => {
+	const { start, status } = sdk.plugin(ReportStudioPlugin)
+	const report = await start()
+	if (report.isErr()) return report
+	const current = await status()
+	if (current.isErr()) return current
+	return Result.ok({ report: report.value, current: current.value })
+}) satisfies ProjectScript
 
 /** Compare authoritative package snapshots before/after browser-only input drafts. */
-export const packageManagerSnapshot = ((sdk) =>
-	sdk.Result.gen(async function* () {
-		const manager = yield* sdk.Result.await(sdk.plugin(PackageManagerPlugin).instance())
-		return sdk.Result.ok(manager.snapshot())
-	})) satisfies ProjectScript
+export const packageManagerSnapshot = (async (sdk) => {
+	const manager = await sdk.plugin(PackageManagerPlugin).instance()
+	if (manager.isErr()) return manager
+	return Result.ok(manager.value.snapshot())
+}) satisfies ProjectScript
 
 /** Render through the current Workbench publication, keeping online operations on this console. */
 export const renderReport = (async (sdk, run) => {

@@ -1,5 +1,4 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { Result } from '@pluxel/core/better-result'
 import { createHost } from '@pluxel/host'
 import { createScriptScope } from '@pluxel/host/agent'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
@@ -23,7 +22,6 @@ it('borrows real instances and root without Services and closes cached extension
 	expect(counter.address).toEqual(Counter.nodeAddress())
 	expect('config' in counter).toBe(false)
 	expect(Object.keys(sdk.dev)).toEqual(['ctx'])
-	expect(sdk.Result).toBe(Result)
 	const { start, status, instance } = counter
 	const started = await start()
 	started.unwrap()

@@ -44,7 +44,7 @@ mise 管工具、环境和 PATH，package scripts 管操作入口，Vite Task �
 
 profile 选择、日志命令、服务就绪与应用 ready 的区别由 skill 和指南说明。隔离 test host 不能证明在线状态。
 
-项目脚本使用普通 TypeScript 函数与 `satisfies ProjectScript`（`@pluxel/host-vite/project`），通过 `sdk.plugin(Constructor)` 选择当前实现，借用 Context 使用 `sdk.dev.ctx`。通用 SDK 为 `Script`（`@pluxel/host/agent`）；`plugin()`、`fork()` 同步选择引用，异步控制操作统一返回 Better Result，通过 `sdk.Result` 组合流程；配置修改后核对领域报告与实际采用。部署上传执行、认证与 receipt 见 [自动化脚本](docs/development/scripts.md)。
+项目脚本使用普通 TypeScript 函数与 `satisfies ProjectScript`（`@pluxel/host-vite/project`），通过 `sdk.plugin(Constructor)` 选择实现，Context 从 `sdk.dev.ctx` 借用。通用脚本类型为 `Script`（`@pluxel/host/agent`）。`plugin()`、`fork()` 同步选择引用，异步控制返回 `Promise<Result<T, E>>`；默认 await 并用 `isErr()` 提前返回，需要构造 Result 时从 `@pluxel/core/better-result` 导入。配置修改后核对保存与实际采用；上传、认证与 receipt 见[自动化脚本](docs/development/scripts.md)。
 
 ## 完成变更
 

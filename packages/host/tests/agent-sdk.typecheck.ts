@@ -34,7 +34,9 @@ void sdk.logs.wait({ rootId: '', streamId: '', bootId: '', epoch: 1, nextSeq: '0
 export default (async (api, run) => {
 	run.signal.throwIfAborted()
 	const results = []
-	for (const entry of api.Result.unwrap(await api.plugins.list())) {
+	const plugins = await api.plugins.list()
+	if (plugins.isErr()) return plugins
+	for (const entry of plugins.value) {
 		const current = await api.plugin(entry.address).config.get()
 		if (current.isErr()) {
 			results.push(current.error)

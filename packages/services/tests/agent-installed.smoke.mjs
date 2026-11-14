@@ -433,23 +433,29 @@ export default defineHostApplication((startup):HostApplication=>({
 }))
 `
 const task = `import type {Script} from '@pluxel/host/agent'
+import {Result} from '@pluxel/core/better-result'
 let moduleRuns=0
-export default (sdk=>sdk.Result.gen(async function* (){
+export default (async sdk=>{
  const select=sdk.plugin
  const counter=select(Counter)
  const {get,patch}=counter.config
  const {stop,start,restart,status,instance:borrow}=counter
- const before=yield* sdk.Result.await(get())
- const count=[before.config.count].map(value=>value*2)[0]
- const changed=yield* sdk.Result.await(patch({set:{count}},{expectedManagedRevision:before.managedRevision}))
- const conflict=await patch({set:{count:999}},{expectedManagedRevision:before.managedRevision})
+ const before=await get();if(before.isErr())return before
+ const count=[before.value.config.count].map(value=>value*2)[0]
+ const changed=await patch({set:{count}},{expectedManagedRevision:before.value.managedRevision});if(changed.isErr())return changed
+ const conflict=await patch({set:{count:999}},{expectedManagedRevision:before.value.managedRevision})
  if(conflict.isOk())throw new Error('Expected a revision conflict')
- const cursor=yield* sdk.Result.await(sdk.logs.mark());yield* sdk.Result.await(stop());yield* sdk.Result.await(start());yield* sdk.Result.await(restart())
- const logs=yield* sdk.Result.await(sdk.logs.read(cursor,{filter:{plugin:Counter},limit:20}))
- const instance=yield* sdk.Result.await(borrow())
- const business=await instance.increment(3)
- return sdk.Result.ok({moduleRuns:++moduleRuns,changed,conflict:conflict.error,logs,business,calls:instance.calls,actual:yield* sdk.Result.await(get()),lifecycle:yield* sdk.Result.await(status())})
-})) satisfies Script
+ const cursor=await sdk.logs.mark();if(cursor.isErr())return cursor
+ const stopped=await stop();if(stopped.isErr())return stopped
+ const started=await start();if(started.isErr())return started
+ const restarted=await restart();if(restarted.isErr())return restarted
+ const logs=await sdk.logs.read(cursor.value,{filter:{plugin:Counter},limit:20});if(logs.isErr())return logs
+ const instance=await borrow();if(instance.isErr())return instance
+ const business=await instance.value.increment(3)
+ const actual=await get();if(actual.isErr())return actual
+ const lifecycle=await status();if(lifecycle.isErr())return lifecycle
+ return Result.ok({moduleRuns:++moduleRuns,changed:changed.value,conflict:conflict.error,logs:logs.value,business,calls:instance.value.calls,actual:actual.value,lifecycle:lifecycle.value})
+}) satisfies Script
 `
 const failure = `import type {Script} from '@pluxel/host/agent'
 export default (async sdk=>{

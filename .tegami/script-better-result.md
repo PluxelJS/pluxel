@@ -10,8 +10,10 @@ packages:
 # Compose script controls with one shared Better Result
 
 All asynchronous Script SDK controls return `Promise<Result<Value, Error>>`.
-Use the original namespace injected as `sdk.Result` for `gen`, `await`, and
-ordinary Result operations. Each control operation has one entry; no parallel
+Use ordinary `await` and `isErr()` to handle expected failures, and return an
+existing control result directly. Import `Result` from
+`@pluxel/core/better-result` when constructing a new result or choosing optional
+generator composition. Each control operation has one entry; no parallel
 throwing, safe, or compatibility methods are retained. Configuration, policy,
 and log domain results are projected once, with their redundant `ok` fields
 removed while retaining validation details, revisions, persistence uncertainty,
@@ -30,8 +32,8 @@ native Result codec. Plain JSON results remain plain JSON. Domain Err results
 remain successfully completed script runs; cancellation and execution defects
 retain their original execution state. Payloads retain strict JSON validation
 and complete-envelope budgets, with no implicit class or `toJSON` conversion.
-Uploaded factories use the injected namespace; direct or indirect copies of
-the Better Result runtime are rejected.
+Uploaded factories bind that canonical import to the receiver's shared namespace;
+direct or indirect copies of the Better Result runtime are rejected.
 
 # Use one Plugin selector in Vite and uploaded scripts
 

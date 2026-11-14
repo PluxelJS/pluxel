@@ -30,11 +30,12 @@ class Counter extends BasePlugin {
 	}
 }
 async function artifact(code: string): Promise<ScriptArtifact> {
+	const body = `const {Result} = __pluxel_script_better_result;\n${code}`
 	return {
 		kind: 'artifact',
-		format: 'pluxel-js-factory/1',
-		code,
-		sourceHash: await hashScriptSource(code),
+		format: 'pluxel-js-factory/2',
+		code: body,
+		sourceHash: await hashScriptSource(body),
 		exportName: 'default',
 	}
 }
@@ -49,14 +50,17 @@ it('executes a portable task on a real Host and creates fresh module locals on e
 	await host.startNode(Counter.nodeAddress())
 	await using owner = createNodeScriptOwner({ ctx: host.ctx })
 	const code = await artifact(`let runs = 0;
-return {default: async (sdk, run) => sdk.Result.gen(async function* () {
+return {default: async (sdk, run) => {
   const selected = sdk.plugin(run.input);
-  const before = yield* await selected.config.get();
-  const count = before.config.count * 2;
-  const changed = yield* await selected.config.patch({set: {count}}, {expectedManagedRevision: before.managedRevision});
-  const actual = yield* await selected.config.get();
-  return sdk.Result.ok({runs: ++runs, changed, actual});
-})};`)
+  const before = await selected.config.get();
+  if (before.isErr()) return before;
+  const count = before.value.config.count * 2;
+  const changed = await selected.config.patch({set: {count}}, {expectedManagedRevision: before.value.managedRevision});
+  if (changed.isErr()) return changed;
+  const actual = await selected.config.get();
+  if (actual.isErr()) return actual;
+  return Result.ok({runs: ++runs, changed: changed.value, actual: actual.value});
+}};`)
 	for (const [id, expected] of [
 		['first', 4],
 		['second', 8],
@@ -88,7 +92,10 @@ return {default: async (sdk, run) => sdk.Result.gen(async function* () {
 	).rejects.toMatchObject({ code: 'source_changed' })
 	await expect(
 		owner.executor.submit(
-			{ runId: 'wrong-format', code: { ...code, format: 'other' as typeof code.format } },
+			{
+				runId: 'old-format',
+				code: { ...code, format: 'pluxel-js-factory/1' as typeof code.format },
+			},
 			subject,
 		),
 	).rejects.toMatchObject({ code: 'artifact_incompatible' })
@@ -102,7 +109,7 @@ it('retains domain Err as a successful script value while defects and invalid pa
 	await host.start()
 	await using owner = createNodeScriptOwner({ ctx: host.ctx })
 	const domain = await artifact(
-		'return {default: sdk => sdk.Result.err({code:"expected_rejection",message:"Domain result"})};',
+		'return {default: () => Result.err({code:"expected_rejection",message:"Domain result"})};',
 	)
 	await owner.executor.submit({ runId: 'domain', code: domain }, subject)
 	const completed = await owner.executor.settled('domain', subject)
@@ -111,14 +118,10 @@ it('retains domain Err as a successful script value while defects and invalid pa
 		value: { status: 'error', error: { code: 'expected_rejection', message: 'Domain result' } },
 	})
 	for (const [id, source, phase] of [
-		['defect', 'return sdk.Result.ok(1).map(() => {throw new Error("author defect")})', 'execute'],
-		[
-			'payload',
-			'return sdk.Result.err(new Error("Requires an explicit boundary codec"))',
-			'encode',
-		],
+		['defect', 'return Result.ok(1).map(() => {throw new Error("author defect")})', 'execute'],
+		['payload', 'return Result.err(new Error("Requires an explicit boundary codec"))', 'encode'],
 	] as const) {
-		const code = await artifact(`return {default: sdk => {${source}}};`)
+		const code = await artifact(`return {default: () => {${source}}};`)
 		await owner.executor.submit({ runId: id, code }, subject)
 		expect(await owner.executor.settled(id, subject)).toMatchObject({ state: 'failed', phase })
 	}
@@ -131,7 +134,7 @@ it('retains the original unknown defect in a native Result.gen failure receipt',
 	})
 	await host.start()
 	await using owner = createNodeScriptOwner({ ctx: host.ctx })
-	const code = await artifact(`return {default: sdk => sdk.Result.gen(async function* () {
+	const code = await artifact(`return {default: sdk => Result.gen(async function* () {
   yield* await sdk.plugins.list();
   throw new Error("counter storage is unavailable");
 })};`)

@@ -133,8 +133,6 @@ export type ScriptPlugin<T extends PluginTarget = PluginTarget> = ScriptPluginOp
  * before the script finishes; nested resources retain their original ownership.
  */
 export interface ScriptSdk {
-	/** Original shared Better Result namespace. Use gen/await to short-circuit workflows. */
-	readonly Result: typeof Result
 	/**
 	 * Select a Plugin synchronously, without reading Host state or starting it. Captures
 	 * a validated target snapshot. The selector and all reference methods can be cached

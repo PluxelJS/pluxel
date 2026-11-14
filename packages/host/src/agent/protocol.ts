@@ -1,6 +1,6 @@
 /** Script control and artifact versions are independent from application/Plugin ABI. */
 export const SCRIPT_PROTOCOL = 2 as const
-export const SCRIPT_ARTIFACT_FORMAT = 'pluxel-js-factory/1' as const
+export const SCRIPT_ARTIFACT_FORMAT = 'pluxel-js-factory/2' as const
 export const SCRIPT_VALUE_BYTES = 1024 * 1024
 export const SCRIPT_DEFAULT_TIMEOUT = 30_000
 export const SCRIPT_MAX_TIMEOUT = 300_000
@@ -18,7 +18,12 @@ export type ScriptProjectCode = Readonly<{
 	sourceHash: string
 	exportName: string
 }>
-/** Self-contained function body which returns an object of module exports. */
+/**
+ * Function body returning module exports. Format 2 receives exactly one parameter,
+ * named `__pluxel_script_better_result`, bound to the receiver's native shared
+ * `@pluxel/core/better-result` namespace. Ordinary computation dependencies are
+ * bundled into the body; the source map describes this body without a wrapper prefix.
+ */
 export type ScriptArtifact = Readonly<{
 	kind: 'artifact'
 	format: typeof SCRIPT_ARTIFACT_FORMAT

@@ -4,7 +4,7 @@
 
 ## Ownership 与包边界
 
-`host({ entry, scripts: true })` 选择私有本地脚本通道。`@pluxel/host-vite/project` 只有 ProjectScript/ProjectSdk 与引用类型；Host-vite 扩展同一个 `plugin()` 选择器以接受当前 constructor，Context 从 `dev.ctx` 借用。异步控制操作复用 Host ScriptScope 的 Better Result 与原生 `sdk.Result`，不依赖官方 Services、Management 或 Workbench。
+`host({ entry, scripts: true })` 选择私有本地脚本通道。`@pluxel/host-vite/project` 只有 ProjectScript/ProjectSdk 与引用类型；Host-vite 扩展同一个 `plugin()` 选择器以接受当前 constructor，Context 从 `dev.ctx` 借用。异步控制操作复用 Host ScriptScope 的 `Promise<Result<T, E>>`；需要构造或组合结果时按普通项目 import 使用 `@pluxel/core/better-result`。开发通道不依赖官方 Services、Management 或 Workbench。
 
 现有 `pluxel` environment 的唯一 ModuleRunner 加载项目源码。Host-vite 不创建第二个 Host、database、logger 或执行队列。ScriptExecutor 来自 Host，项目和上传执行共享接纳、主体、预算、去重、取消与结果结算；HMR 使用同一内核的独立 lane。
 

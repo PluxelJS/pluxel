@@ -57,13 +57,13 @@ Vite 在候选准备时核对 `ModuleRunner.evaluatedModules` 中实际缓存代
 
 引用统一提供 status、start、stop、restart。typed descriptor 提供 instance；已声明配置时还提供 `ScriptPluginConfig<I, O>`。配置参数不再重复目标，也不重新推导输入类型。配置函数使用 readonly 函数属性，提取、赋值或注解后仍保持输入约束。配置不同的联合只开放 get，无配置或已擦除类型关联的描述符不开放 config；动态地址保留原未知配置操作且不开放业务 instance。已知调用方、public exports、文档及生成项目入口统一使用这一形态。
 
-工厂、fork、引用和配置方法均由闭包持有目标，不依赖调用 receiver。选择和派生先检查 scope；异步操作统一返回共享 Better Result，继续走原 run/queued 准入和排空。已知失败在被跟踪的 Promise 结算前转换为 Err，避免排空时误记 cleanup failure。未知异常继续 reject。配置、策略和日志结果在 `sdk-results.ts` 去除原 `ok` 后分流，保持所有来源、修订、持久化和采用信息；start/stop/restart 报告含协调或 lifecycle 问题时返回携带 report 的 Err。引用可以在 restart 后重新取得当前 generation 的实例，旧业务 view 仍然失效。Node/Vite describe 声明 result、plugin、plugin.config 和 plugin.instance 能力。
+工厂、fork、引用和配置方法均由闭包持有目标，不依赖调用 receiver。选择和派生先检查 scope；异步操作统一返回 `Promise<Result<T, E>>`，继续走原 run/queued 准入和排空。已知失败在被跟踪的 Promise 结算前转换为 Err，避免排空时误记 cleanup failure。未知异常继续 reject。配置、策略和日志结果在 `sdk-results.ts` 去除原 `ok` 后分流，保持所有来源、修订、持久化和采用信息；start/stop/restart 报告含协调或 lifecycle 问题时返回携带 report 的 Err。引用可以在 restart 后重新取得当前 generation 的实例，旧业务 view 仍然失效。Node/Vite describe 声明 plugin、plugin.config 和 plugin.instance 能力。
 
 配置摘要在原 lookup/transaction 内检查，保留原 CAS 的错误顺序，并在 Schema 执行和持久化之前拒绝失配。没有先检查、再第二次排队写入的窗口。原 Host/Workbench 协议继续使用其领域结果，Script SDK 只在自己的返回边界投影；preview 不保存。公开错误按操作区分，持久化失败的 unknown 和保存后未采用的 application 状态保持原义。
 
 实例获取通过 committed read，核对 descriptor、当前实现和真实 generation。回调在任何 Promise 接触业务实例之前创建 `Result.ok(view)`，以 Result 的成功值直接交付实例，避免 Promise 同化读取作者的 then。成员视图在本次 scope 缓存，每次方法/get/set 进入原 owner invocation，原 provider 作为调用 receiver；方法提取及显式 call 保留 JavaScript 的 this 行为，已识别的同 scope 直接实例参数可解包。Vite 的 constructor 选择通过同一 scope 接入，规则见 [Dev Console](DEV_CONSOLE.md#操作-api-与资源)。
 
-调用方只学习一个插件选择入口、引用的 fork 和共享 Result 组合，不再重复传入目标或拆开实例 envelope；控制方法可以直接提取，单步 Result 可以直接返回。类型和原始 JSDoc 继续提供配置与业务信息。这些是已落实的调用结构变化，尚未通过模型 token 基准测量节省比例或任务成功率。
+调用方使用一个插件选择入口和引用的 fork；控制方法可以直接提取，已有 SDK Result 可以直接返回。多步任务使用普通 async/await，检查 `isErr()` 并提前返回；需要构造或组合结果时从 `@pluxel/core/better-result` 导入。类型和原始 JSDoc 继续提供配置与业务信息。上传共享绑定和结果交付由 [Agent workflow](AGENT_WORKFLOW.md)维护。
 
 标准 native Promise 保持原返回对象，由旁路 reaction 跟踪至结算；同步调用保持同步。scope 和 generation 等待已接纳工作。自定义 thenable、流、迭代器与嵌套返回资源遵守业务协议，视图不递归改写它们。本 realm 可识别的 native Promise 若 species 异常，明确抛出原异常；无法识别的自定义协议不提供自动跟踪保证。
 
@@ -81,7 +81,7 @@ CLI 的 `script sync` 和 `dev sync` 使用同一实现。完整验证后写入 
 
 材料完整性不证明作者安装的外部类型与生成环境相同。package 模式引用原包的公共声明，closure 模式保留公开外部包引用；这些本地声明会固定为本次脚本输入，但不与生成时的依赖声明逐项比对。作者须提供匹配版本；Host 的摘要检查只核对描述符与已接纳实现，不核验作者侧这些外部声明。
 
-上传编译和 Vite 项目检查使用 native TypeScript 的固定输入读取器。读取器固定文件内容、缺失结果与目录 realpath，原子切换 current 后同一次编译仍读取原快照。纯控制入口必须通过完整清单和内容验证才允许进入上传工厂，并在检查结束后核对 TypeScript 实际使用了对应的声明文件；package exports 在两阶段切换会明确失败。原框架运行时 import 继续拒绝。Vite 在原源码屏障后检查类型，加载仍由原 ModuleRunner 完成，并将实际缓存输入与受检输入比较；失败不会调用脚本导出函数。请求身份与 receipt 继续使用原协议，检查所得读集属于本次加载证据。
+上传编译和 Vite 项目检查使用 native TypeScript 的固定输入读取器。读取器固定文件内容、缺失结果与目录 realpath，原子切换 current 后同一次编译仍读取原快照。纯控制入口必须通过完整清单和内容验证才允许进入上传工厂，并在检查结束后核对 TypeScript 实际使用了对应的声明文件；package exports 在两阶段切换会明确失败。上传的 Core Better Result 子入口使用受控共享绑定，其余框架运行时 import 继续拒绝。Vite 在原源码屏障后检查类型，加载仍由原 ModuleRunner 完成，并将实际缓存输入与受检输入比较；失败不会调用脚本导出函数。请求身份与 receipt 继续使用原协议，检查所得读集属于本次加载证据。
 
 ## 验证入口
 
@@ -98,26 +98,27 @@ CLI 的 `script sync` 和 `dev sync` 使用同一实现。完整验证后写入 
 | 同步导出稳定性、完整验证与作者目录冲突                      | [`script-sync.test.ts`](../packages/cli/tests/script-sync.test.ts)                                                                                                                     |
 | 开发和发布导出、作者定制与连续构建幂等                      | [`plugin-build.test.ts`](../packages/rolldown/tests/plugin-build.test.ts)                                                                                                              |
 | 真实 HMR、独立插件摘要、相同源码与全部 generation 释放      | [`hmr-control.test.ts`](../packages/host-vite/tests/hmr-control.test.ts)、[`module-bytes.test.ts`](../packages/host-vite/tests/module-bytes.test.ts)                                   |
+| Result 编码、预期失败、未知异常与取消排空                   | [`agent-runtime.test.ts`](../packages/host/tests/agent-runtime.test.ts)、[`agent-sdk.test.ts`](../packages/host/tests/agent-sdk.test.ts)                                               |
+| 生成项目的正式安装、部署与项目脚本                          | [`smoke-starter.ts`](../packages/create/scripts/smoke-starter.ts)                                                                                                                      |
 
 ### 2026-11-14 落地验证
 
-共享 Better Result 与插件引用重构使用实际构建入口和隔离的 Node/Vite 应用完成验证：
+显式 Core import、工厂共享绑定和普通 async/await 的完整工作区门禁通过：`workspace:verify` 136/136、`workspace:build` 48/48。2732 个文件格式正确，1907 个文件无 lint、类型错误或警告；文档生成 664 个文件。Host 302、Rolldown 559、Host-vite 143、Services 384 项测试通过。
 
-- 最终 `mise exec -- vp run --concurrency-limit=1 workspace:verify`：136/136 项任务成功，113/121 项可缓存任务命中；2731 个文件格式正确，1907 个文件没有 lint 警告、错误或类型错误。仓库治理、源码声明和文档站构建通过，生成 664 个文件。
-- `mise exec -- vp run --concurrency-limit=2 workspace:build`：48/48 项任务成功；正式插件包、modules 应用和文档站均完成构建。
-- 完整包测试通过：Host 37 文件 / 302 项、Rolldown 51 / 557、host-vite 28 / 143、Services 62 / 384、CLI 21 / 236，原生 Typst 34 / 282。生成器的 18 项用例包含原生声明消费、配置源码、包身份、编译环境及 ambient 提供者缺失，并覆盖作者启用 `removeComments` 时的原始 JSDoc、继承声明、关联类型和注释变化后的摘要稳定性。Host 的独立严格类型检查覆盖提取方法、配置输入约束、fork、异构联合及无配置描述符。
-- Result 回归核对原生 `gen/await` 短路、顶层 codec 与普通 JSON 的区分、嵌套或外来 Result 的拒绝、完整结果字节预算，以及未知缺陷和 `Panic.cause` 的有界诊断。实例在 committed read 内装入 Result，带有 `then` 的原插件仍按业务对象交付。取消根据已接纳信号的原始 reason 识别，涵盖已知领域错误类作为取消原因及策略写入未发生的事实。
-- 18 个包的正式控制入口共交付 23 个定义、102 个清单列出的材料文件，另有 18 份清单；实际 plugin-host 应用交付 5 个定义、9 个材料文件和 1 份清单。使用公开验证器核对清单摘要、文件字节、纯 JavaScript 渲染及开发/发布 exports。
-- 独立作者从真实 tarball 安装 CLI/SDK，通过 TLS 管理认证同步材料、编译和提交脚本；接收端删除源码且不安装编译器。配置实际完成 2→4→8，每次通过插件引用调用原插件的异步方法并读取属性；重复同步保持相同快照。独立安装回归、4 项 CLI 同步回归和 TLS 脚本执行通过。Node/Workerd 回归保留原有调用与资源释放检查，控制方法提取后继续服从 run 和 generation 寿命。
-- 真实 Vite watcher 覆盖配置与类型依赖变化、暂停和 apply、独立定义摘要、相同源码、失败修复、Host replacement 和 generation 释放。测试继续核对业务结果及原 receipt，不通过重启代替更新。
-- Create 的完整 tarball 安装回归通过：新生成工作区的 14/14 项验证任务、57 个条目的部署分发校验、无开发工具的 native 应用、production Vite、开发 Vite 页面和 Workbench，以及真实 `dev run`。模板直接声明 Elysia 所需的 `@types/bun`，并为 `host/web/dev` 提供继承 Host 的脚本配置。真实 Vite/native TypeScript 回归同时核对：前端配置读取发行声明时与运行源码不匹配，Host 配置则读取相同源码；源码守卫继续拒绝前一种输入。
+正式材料校验覆盖 18 个包的 23 个定义、102 份材料，以及应用聚合的 5 个定义、9 份材料。CLI 内置的三份指南和开发 skill 与源码逐字一致。Create 完整安装烟囱通过，生成项目门禁 14/14，部署完整性报告为 `INTACT`，57 项无差异；native、Vite 与项目脚本均实际执行。
 
-本轮门禁暴露并修复了两处测试所有权问题。Services 的独立 dependency watcher 不随 `server.watcher.close()` 停止；旧 helper 在写文件后才读取基线，遗漏了已经开始、随后成功结算的同一批次。修复为先记录基线和订阅，再执行唯一的写入或删除；保留旧报告排除、重复 hook 的 `sequence + 1`、业务断言及 10 秒期限。CLI 编译用例超时后未取消 native TypeScript，曾留下孤儿编译进程并阻塞门禁退出。测试现在持有取消信号，先取消并等待编译结算，再删除目录；原 5 秒期限不变。临时 trace 在真实 `updateSnapshot` 阶段以 1000ms 诊断超时，观察到取消关闭、finally 关闭、编译与清理依次结算，命令在 2.03 秒退出且无子进程或夹具残留；trace 已删除。更早的 500ms 诊断未观察到 native 启动且未及时退出，未计作 native 取消通过证据。最初 5 秒超时的耗时根因仍未定位。
+交付验收沿用上表入口，关键检查包括：
 
-本轮另有两项 Typst 首次启动断言曾失败；加入原生命周期 summary 与耗时诊断后，直接回归及后续完整门禁通过。该瞬态失败尚未定位独立根因，未增加重试或放宽期限、生命周期断言，也未修改生产行为。
+- native 声明真实消费、配置表达式与 Part、JSDoc、名义关系、泛型、联合和无配置输入约束；注释变化更新材料快照，兼容性摘要保持对应规则。
+- Result 的短路、JSON 编码及完整字节预算，未知异常与预期 Err 的区分，带业务 `then` 的实例交付，以及取消、队列和 generation 工作的真实排空。
+- 编译器与真实 workerd 的共享 namespace 身份；标准 ESM 转工厂后的严格模式、同名变量隔离、特殊导出与重导出，以及原文件、原行号的错误定位。旧工厂格式明确拒绝。
+- 独立 tarball 作者通过 TLS 认证同步并提交脚本，接收端无源码和编译器；核对 CAS、配置实际采用、业务方法与属性、原 receipt 和资源释放。
+- 正式 exports 与材料完整性、连续构建和重复同步稳定性；真实 watcher 的暂停、apply、失败修复与 Host replacement；Create 生成项目的 native、Vite 与部署交付。
 
-前一轮交付验证中曾分别遇到嵌套 `vp run` fixture 的 30 秒超时，以及 HMR 失败修复后一次脚本结果缺失。已补充子进程退出信息和完整 receipt、Host 状态、generation 诊断；直接用例、包测试、对应 Vite Task 与后续完整门禁中的相应用例均已通过。这两次瞬态失败尚未定位独立根因，没有增加重试或放宽断言，也没有据此推测并修改生产行为。
+### 已知限制
 
-额外运行 Services 的可选独立安装检查 `mise exec -- vp test run --config tests/installed.config.mts`：3 项通过、1 项失败。实际可选服务运行及插件引用调用通过，最后的严格声明检查在 Elysia `2.0.0-rc.0` 的上游泛型声明中失败。使用 TypeScript `7.0.2`、`@types/bun` `1.3.14`、`@types/node` `26.6.6`，仅写 `import type { Elysia } from 'elysia'; export type Baseline = Elysia` 的独立项目同样产生 30 条 TS2536 和 35 条 TS2344。该基线未导入 Pluxel；它的 `exact-mirror` 为 `1.2.6`，安装检查解析为 `1.2.7`。原可选声明示例与重构前的 `cd4c370f` 完全一致，未扩大诊断允许列表或关闭 library checking；该检查继续记为失败。
+Services 可选独立安装检查的严格声明部分有 Elysia `2.0.0-rc.0` 上游泛型声明的已知失败，本轮未重复此额外检查。仅导入 Elysia 的独立 TypeScript `7.0.2` 项目也能复现 TS2536 / TS2344；保留原 library checking 和诊断约束。
+
+Typst 首次启动、嵌套任务超时及一次 HMR 脚本结果缺失曾出现未定位的瞬态失败。后续回归通过，仍未据此宣称根因修复，也未增加重试或放宽断言。模型 token 消耗与任务成功率基准尚未开展。
 
 跨 isolate 的业务调用投影、持久化任务和离线 Schema validator 是各自独立的后续能力。普通 class 声明与同进程实例视图不提供这些后端。

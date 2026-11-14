@@ -40,11 +40,10 @@ async function fixture(
 ) {
 	const directory = await mkdtemp(join(tmpdir(), 'pluxel-control-sync-'))
 	directories.push(directory)
-	await symlink(
-		resolve(import.meta.dirname, '../node_modules'),
-		join(directory, 'node_modules'),
-		'dir',
-	)
+	const dependencies = join(directory, 'node_modules/@pluxel')
+	await mkdir(dependencies, { recursive: true })
+	for (const name of ['core', 'host'])
+		await symlink(resolve(import.meta.dirname, `../../${name}`), join(dependencies, name), 'dir')
 	await writeFile(
 		join(directory, 'package.json'),
 		JSON.stringify({ private: true, type: 'module' }),
@@ -181,7 +180,7 @@ it('publishes a verified aggregate atomically and compiles imports through its s
 	}
 	await writeFile(
 		script,
-		`import type {Script} from '@pluxel/host/agent';\nimport {${first.definitions[0].exportName} as Counter} from './control/current/index.mjs';\nexport default ((sdk) => sdk.Result.gen(async function* () { const select=sdk.plugin; const counter=select(Counter); const {get,patch}=counter.config; const before=yield* sdk.Result.await(get()); const result=yield* sdk.Result.await(patch({set:{step:2}},{expectedManagedRevision:before.managedRevision})); const instance=yield* sdk.Result.await(counter.instance()); return sdk.Result.ok({result,count:instance.add(2)}) })) satisfies Script;\n`,
+		`import type {Script} from '@pluxel/host/agent';\nimport {Result} from '@pluxel/core/better-result';\nimport {${first.definitions[0].exportName} as Counter} from './control/current/index.mjs';\nexport default (async (sdk) => { const select=sdk.plugin; const counter=select(Counter); const {get,patch}=counter.config; const before=await get(); if(before.isErr())return before; const result=await patch({set:{step:2}},{expectedManagedRevision:before.value.managedRevision}); if(result.isErr())return result; const instance=await counter.instance(); if(instance.isErr())return instance; return Result.ok({result:result.value,count:instance.value.add(2)}) }) satisfies Script;\n`,
 	)
 	const artifact = await compile()
 	expect(artifact.code).toContain('synced-counter')
