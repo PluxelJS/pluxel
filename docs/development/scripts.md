@@ -77,6 +77,8 @@ export default (async (sdk, run) => {
 
 `plugins.list()` 的成功值提供节点地址、期望与实际状态、诊断和最近更新，适合发现与巡检。`sdk.plugin(descriptorOrAddress)` 固定目标，随后通过引用的 `status/start/stop/restart` 操作节点；`fork(id)` 返回另一个目标引用。启停成功值为应用报告；报告存在生命周期或协调问题时返回 `lifecycle_failed`，错误携带完整 `report`，保留已提交的变化。生成描述符的引用还提供 `instance()`，成功值直接是本次运行的业务实例视图，方法与资源寿命见[实例调用](./plugin-control.md#调用原插件实例)。
 
+包管理器动态新增的插件在 Host 接纳后同样出现在列表中，尚未启动也能发现。用普通数组 `filter` 按包入口、具名导出与 fork 筛选，再将完整节点地址传给 `sdk.plugin()`。尚无类型时，先同步当前材料再编写强类型业务调用；流程与 class import 的使用条件见[动态安装后的发现与操作](./plugin-control.md#动态安装后的发现与操作)。
+
 `policy.get/validate/patch/reset` 管理 Host 执行策略，修改使用相同的 `expectedManagedRevision` 条件。策略结果会区分已保存策略与需要重建 Host 才采用的设置。`updates.latest()` 读取 Host 最近一次更新报告，没有记录时返回 `null`。
 
 日志沿用应用配置的 Core Logging 历史流。以下脚本在重启前标记范围，随后最多等待两秒读取该节点的前 100 条日志：

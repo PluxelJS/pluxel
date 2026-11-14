@@ -199,3 +199,5 @@ if (removed.isErr()) throw new Error(removed.error.message)
 
 - 进程内采用单写者模型，初始化与变更操作严格串行。
 - 卸载插件时，系统会移除对应的 `entries/*.mjs` 入口文件；在 Vite 开发模式下系统会自动感知更新，在生产 Native 运行时通常在下一次重启时生效。
+
+安装发布后，自动化脚本通过 Host 当前 catalog 发现插件并操作。尚无类型时，同步控制材料后再编写强类型方法调用，见[动态安装后的发现与操作](../development/plugin-control.md#动态安装后的发现与操作)。
