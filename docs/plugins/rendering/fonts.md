@@ -107,7 +107,7 @@ for (const font of snapshot.fonts) {
 import { envBinding } from '@pluxel/host'
 import { FontsPlugin, FontsConfig } from '@pluxel/plugin-fonts'
 
-envBinding(FontsPlugin, {
+envBinding(FontsPlugin.nodeAddress(), {
 	config: {
 		schema: FontsConfig,
 		mapping: {

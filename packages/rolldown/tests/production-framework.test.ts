@@ -70,8 +70,8 @@ class Probe extends BasePlugin {
 }
 export default defineHostApplication(() => ({
  plugins:[Probe],
- policy:{autoStart:[Probe],startTimeoutMs:12345},
- config:{records:[{owner:Probe,config:{answer:42}}]},
+ policy:{autoStart:[Probe.nodeAddress()],startTimeoutMs:12345},
+ config:{records:[{owner:Probe.nodeAddress(),config:{answer:42}}]},
  async prepare({host}) {
   const policy=await host.policy.get();
   if(!policy.ok || policy.effective.startTimeoutMs!==12345) throw new Error('Standalone execution policy was lost');
@@ -200,7 +200,7 @@ class FrozenWorker extends BasePlugin {
  }
 }
 import {defineHostApplication} from '@pluxel/host';
-export default defineHostApplication(() => ({name:'production-bridge', plugins:[FrozenWorker],sources:[pluginSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkCommands=Commands},services:standardServices(),policy:{autoStart:[FrozenWorker,${JSON.stringify(address)}]}}))
+export default defineHostApplication(() => ({name:'production-bridge', plugins:[FrozenWorker],sources:[pluginSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkCommands=Commands},services:standardServices(),policy:{autoStart:[FrozenWorker.nodeAddress(),${JSON.stringify(address)}]}}))
 `,
 		)
 		const buildScript = join(root, 'build.mts')

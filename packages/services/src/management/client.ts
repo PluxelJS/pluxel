@@ -31,7 +31,7 @@ export type {
 	PluginControlManifestRequest,
 	PluginControlFileRequest,
 	PluginControlFileChunk,
-} from '@pluxel/host/agent'
+} from '@pluxel/host/agent/runtime'
 export {
 	parseConfigFieldPathSegments,
 	parseConfigPresentationPlanV2,

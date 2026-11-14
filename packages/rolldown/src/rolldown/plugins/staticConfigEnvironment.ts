@@ -320,7 +320,9 @@ export function readApplicationBinding(
 		)
 	const args = directCallArguments(binding, helper, id, error)
 	if (args.length !== 2 || args[1]?.type !== 'ObjectExpression')
-		error(`[static-application] ${id} ${helper} requires a Plugin and a direct object literal`)
+		error(
+			`[static-application] ${id} ${helper} requires a Plugin node address and a direct object literal`,
+		)
 	const bindingFields = directObjectProperties(args[1], label, id, error)
 	for (const key of bindingFields.keys())
 		if (!['config', 'vault'].includes(key))
@@ -330,6 +332,11 @@ export function readApplicationBinding(
 			})
 	let pluginNode = args[0] && unwrapExpression(args[0])
 	let forkId: string | undefined
+	if (pluginNode?.type !== 'CallExpression')
+		error(
+			`[static-application] ${id} ${label} target must call Plugin.nodeAddress() or Plugin.nodeAddress(literalForkId)`,
+			{ code: 'unsupported_expression', node: pluginNode },
+		)
 	if (pluginNode?.type === 'CallExpression') {
 		const callee = pluginNode.callee as AstNode
 		if (
@@ -338,7 +345,7 @@ export function readApplicationBinding(
 			readIdentifier(callee.property) !== 'nodeAddress'
 		)
 			error(
-				`[static-application] ${id} ${label} target must be a Plugin identifier or Plugin.nodeAddress(literalForkId)`,
+				`[static-application] ${id} ${label} target must call Plugin.nodeAddress() or Plugin.nodeAddress(literalForkId)`,
 				{ code: 'unsupported_expression', node: pluginNode },
 			)
 		const targetArgs = directCallArguments(pluginNode, 'nodeAddress', id, error)
@@ -353,7 +360,7 @@ export function readApplicationBinding(
 	const pluginName = readIdentifier(pluginNode)
 	if (!pluginNode || !pluginName)
 		error(
-			`[static-application] ${id} ${label} plugin must be a direct identifier or Plugin.nodeAddress(literalForkId)`,
+			`[static-application] ${id} ${label} nodeAddress receiver must be a direct Plugin identifier`,
 			{
 				code: 'unsupported_expression',
 				node: pluginNode,

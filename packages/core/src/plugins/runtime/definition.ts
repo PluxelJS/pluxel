@@ -1,9 +1,9 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
+import { createPluginNodeAddressEvidence } from '../../internal/plugin-address-evidence'
 import { isStandardSchemaV1 } from '../../services/config/standardSchema'
 import { consumePluginMarker, getPluginMarker } from '../decorators/marker'
 import type { PluginConstructor, PluginToken } from '../types'
 import {
-	parsePluginNodeAddress,
 	parsePluginDefinitionAddress,
 	pluginDefinitionIndexKey,
 	type PluginDefinitionAddress,
@@ -213,10 +213,10 @@ export function __setPluginDefinition(
 			? Object.freeze({
 					kind: facts.kind,
 					definition: facts.definition,
-					defaultNode: parsePluginNodeAddress({
-						definition: facts.definition,
-						variant: 'default',
-					}),
+					defaultNode: createPluginNodeAddressEvidence(
+						{ definition: facts.definition, variant: 'default' as const },
+						Object.freeze({ kind: 'constructor', implementation: ctor }),
+					),
 				})
 			: Object.freeze({ kind: facts.kind, definition: facts.definition }),
 	)
@@ -365,7 +365,10 @@ export function pluginNodeAddressOf(ctor: PluginToken, forkId?: string): PluginN
 	}
 	return forkId === undefined
 		? facts.defaultNode
-		: parsePluginNodeAddress({ definition: facts.definition, variant: 'fork', forkId })
+		: createPluginNodeAddressEvidence(
+				{ definition: facts.definition, variant: 'fork' as const, forkId },
+				Object.freeze({ kind: 'constructor', implementation: ctor }),
+			)
 }
 
 function mergeOptionalDefinitions(

@@ -8,7 +8,7 @@ const exampleAutoStartPlugins = [AuditPlugin, HttpPlugin, VaultAdminPlugin] as c
 
 export function exampleHostPolicy() {
 	return {
-		autoStart: exampleAutoStartPlugins,
+		autoStart: exampleAutoStartPlugins.map((plugin) => plugin.nodeAddress()),
 		mode: { autoStart: 'saved-first' as const },
 	}
 }

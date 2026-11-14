@@ -4,6 +4,7 @@ import {
 	requireHostStateStore,
 } from '@pluxel/host/internal'
 import {
+	parsePluginNodeAddress,
 	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
@@ -295,9 +296,9 @@ describe('Plugin dependency graph read model', () => {
 
 		await expect(
 			rpc.setPluginConsumerOverrideDto({
-				consumer: CycleConsumer.nodeAddress(),
+				consumer: parsePluginNodeAddress(CycleConsumer.nodeAddress()),
 				requirement: CycleTokenDefinition,
-				provider: CycleProvider.nodeAddress(),
+				provider: parsePluginNodeAddress(CycleProvider.nodeAddress()),
 			}),
 		).resolves.toMatchObject({
 			ok: false,
@@ -305,7 +306,9 @@ describe('Plugin dependency graph read model', () => {
 			state: 'unchanged',
 		})
 		expect(requireHostStateStore(host.ctx).snapshot().dependencyOverrides).toEqual([
-			expect.objectContaining({ providerAddress: SafeProvider.nodeAddress() }),
+			expect.objectContaining({
+				providerAddress: parsePluginNodeAddress(SafeProvider.nodeAddress()),
+			}),
 		])
 		expect(await rpc.pluginDependencyGraphDto()).toEqual(before)
 	})

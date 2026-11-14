@@ -7,12 +7,7 @@ import {
 	configBindingProof,
 	type InputSchema,
 } from './input-binding-contract'
-import {
-	parsePluginNodeAddress,
-	pluginNodeIndexKey,
-	type PluginConstructor,
-	type PluginNodeAddress,
-} from '@pluxel/core'
+import { parsePluginNodeAddress, pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type { PluginConfigRecordSnapshot } from '@pluxel/core/services'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { projectRawInput, type Schema } from 'valibot-form'
@@ -225,15 +220,8 @@ export async function resolveInputBindings(
 	const seen = new Set<string>()
 	const bindings: ConfigBindingProof[] = []
 	const configTargets = new Map<string, (readonly string[])[]>()
-	const target = (
-		plugin: PluginConstructor | PluginNodeAddress,
-		kind: string,
-		namespace = '',
-		key = '',
-	) => {
-		const owner = parsePluginNodeAddress(
-			typeof plugin === 'function' ? plugin.nodeAddress() : plugin,
-		)
+	const target = (plugin: PluginNodeAddress, kind: string, namespace = '', key = '') => {
+		const owner = parsePluginNodeAddress(plugin)
 		const identity = JSON.stringify([pluginNodeIndexKey(owner), kind, namespace, key])
 		if (seen.has(identity)) fail('[host] An input target cannot have multiple source bindings')
 		seen.add(identity)
@@ -281,10 +269,7 @@ export async function resolveInputBindings(
 			schema(binding.vault.schema, 'Vault binding schema')
 		}
 		return {
-			plugin:
-				typeof binding.plugin === 'function'
-					? binding.plugin
-					: parsePluginNodeAddress(binding.plugin),
+			plugin: parsePluginNodeAddress(binding.plugin),
 			config: binding.config && { ...binding.config },
 			vault: binding.vault && {
 				schema: binding.vault.schema,
@@ -304,10 +289,7 @@ export async function resolveInputBindings(
 			schema(binding.vault.schema, 'Vault binding schema')
 		}
 		return {
-			plugin:
-				typeof binding.plugin === 'function'
-					? binding.plugin
-					: parsePluginNodeAddress(binding.plugin),
+			plugin: parsePluginNodeAddress(binding.plugin),
 			config: binding.config && {
 				schema: binding.config.schema,
 				mapping: leaves(binding.config.mapping),
@@ -331,9 +313,7 @@ export async function resolveInputBindings(
 				schema(binding.config.schema, 'Config binding schema'),
 				application.plugins,
 			)
-			const owner = parsePluginNodeAddress(
-				typeof binding.plugin === 'function' ? binding.plugin.nodeAddress() : binding.plugin,
-			)
+			const owner = binding.plugin
 			const value = await readJson(binding.config.path, startup.root)
 			if (!record(value))
 				throw new InputBindingError('INVALID_INPUT', '[host] A config file must contain an object')
@@ -364,9 +344,7 @@ export async function resolveInputBindings(
 	}
 	for (const binding of envBindings) {
 		if (binding.config !== undefined) {
-			const owner = parsePluginNodeAddress(
-				typeof binding.plugin === 'function' ? binding.plugin.nodeAddress() : binding.plugin,
-			)
+			const owner = binding.plugin
 			checkPaths(
 				owner,
 				'env',

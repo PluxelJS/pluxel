@@ -8,7 +8,8 @@ import { Miniflare, Response as WorkerResponse } from 'miniflare'
 import { build } from 'vite-plus'
 import { expect, it } from 'vitest'
 import { createHost } from '../src/index'
-import { createScriptScope, snapshotJson, type ScriptPluginConfig } from '../src/agent'
+import { createScriptScope, snapshotJson } from '../src/agent-runtime'
+import type { ScriptPluginConfig } from '../src/agent'
 
 const hostRoot = fileURLToPath(new URL('../', import.meta.url))
 
@@ -18,7 +19,7 @@ it('bundles the actual portable SDK and execution entry without platform or comp
 	try {
 		await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
 		await symlink(hostRoot, join(root, 'node_modules/@pluxel/host'), 'dir')
-		await writeFile(join(root, 'entry.ts'), "export * from '@pluxel/host/agent'")
+		await writeFile(join(root, 'entry.ts'), "export * from '@pluxel/host/agent/runtime'")
 		const modules: string[] = []
 		const output = await build({
 			configFile: false,
@@ -118,7 +119,7 @@ export const namespace = () => sharedBetterResult
 export default ((sdk, run) => Result.gen(async function* () {
   run.signal.throwIfAborted()
   const nodes = yield* Result.await(sdk.plugins.list())
-  const { get, patch } = sdk.plugin(nodes[0].address).config
+  const { get, patch } = sdk.plugin(nodes.nodes[0].address).config
   const before = yield* Result.await(get())
   const values = [before.config.count]
   let next = 0

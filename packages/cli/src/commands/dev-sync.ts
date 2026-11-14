@@ -5,7 +5,8 @@ import { validateCommandOptions } from '../command-options'
 import { connectDevProject } from '../dev/project'
 import { connectDevInstance } from '../dev/client'
 import { syncPluginControl } from '../script/sync'
-import { scriptFailure } from '@pluxel/host/agent'
+import { scriptFailure } from '@pluxel/host/agent/runtime'
+import { printFailure, printValue } from '../script/output'
 
 export const devSyncCommand = define({
 	...devSyncDefinition,
@@ -23,10 +24,9 @@ export const devSyncCommand = define({
 				},
 				out,
 			})
-			ctx.log(JSON.stringify({ ok: true, value }))
+			printValue(ctx.log, value)
 		} catch (error) {
-			ctx.log(JSON.stringify({ ok: false, error: scriptFailure(error, 'control_sync_failed') }))
-			process.exitCode = 1
+			printFailure(ctx.log, scriptFailure(error, 'control_sync_failed'))
 		}
 	},
 })

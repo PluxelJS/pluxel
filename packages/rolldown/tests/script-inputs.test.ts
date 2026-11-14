@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { encodeControlData, renderPluginDescriptors } from '@pluxel/host/agent'
+import { encodeControlData, renderPluginDescriptors } from '@pluxel/host/internal/control-manifest'
 import { expect, it, vi } from 'vitest'
 import { ScriptInputs } from '../src/script-inputs'
 import { compileScript } from '../src/scripts'
@@ -89,15 +89,17 @@ it('rejects package exports switching the checker to another control declaration
 		const directory = join(packageRoot, name)
 		await mkdir(directory, { recursive: true })
 		const contracts = { config: null as null, instance: `sha256:${name.repeat(64)}` }
-		const definitions = [{ definition, exportName: 'Counter', contracts, source: 'fixture' }]
+		const definitions = [
+			{ definition, module: 'index.mjs', exportName: 'Counter', contracts, source: 'fixture' },
+		]
 		const contents = {
 			'index.mjs': renderPluginDescriptors([
-				{ exportName: 'Counter', descriptor: { format: 1, definition, contracts } },
+				{ exportName: 'Counter', descriptor: { format: 2, definition, contracts } },
 			]),
-			'index.d.mts': 'export declare const Counter: {readonly format:1}',
+			'index.d.mts': 'export declare const Counter: {readonly format:2}',
 		}
 		const unsigned = {
-			format: 1,
+			format: 2,
 			compiler: 'script-input-test',
 			definitions,
 			files: Object.entries(contents).map(([path, content]) => ({

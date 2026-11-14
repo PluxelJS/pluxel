@@ -2,7 +2,6 @@ import type { HostInputMode } from './input-mode'
 import {
 	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
-	type PluginConstructor,
 	type PluginDefinitionAddress,
 	type PluginForkNodeAddress,
 	type PluginNodeAddress,
@@ -26,12 +25,7 @@ export type HostPolicyField = keyof HostPolicyValues
 export type HostExecutionPolicyField = keyof HostExecutionPolicy
 export type HostPolicyInput = Readonly<Partial<HostPolicyValues>>
 export type HostPolicyModes = Readonly<Partial<Record<HostPolicyField, HostInputMode>>>
-export type HostPolicyOptions = Readonly<
-	Omit<HostPolicyInput, 'autoStart'> & {
-		autoStart?: readonly (PluginConstructor | PluginNodeAddress)[]
-		mode?: HostPolicyModes
-	}
->
+export type HostPolicyOptions = HostPolicyInput & Readonly<{ mode?: HostPolicyModes }>
 export const HOST_GRAPH_POLICY_FIELDS = [
 	'autoStart',
 	'forks',

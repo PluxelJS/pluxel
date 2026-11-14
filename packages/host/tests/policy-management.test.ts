@@ -83,7 +83,7 @@ describe('Host public policy management', () => {
 		const options = {
 			plugins: [Delayed],
 			policy: {
-				autoStart: [Delayed],
+				autoStart: [Delayed.nodeAddress()],
 				startTimeoutMs: 5,
 				mode: { startTimeoutMs: 'saved-first' as const },
 			},

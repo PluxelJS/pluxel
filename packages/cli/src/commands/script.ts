@@ -18,32 +18,27 @@ import {
 	scriptFailure,
 	snapshotJson,
 	scriptRequestHash,
-	type ScriptRunSnapshot,
 	type ScriptSubmission,
-} from '@pluxel/host/agent'
+} from '@pluxel/host/agent/runtime'
+import { connectScriptTarget, readScriptCredentials } from '../script/client'
+
 import {
-	connectScriptTarget,
-	readScriptCredentials,
-	encodeScriptReceipt,
 	decodeScriptReceipt,
+	encodeScriptReceipt,
 	verifyScriptReceipt,
-	type RemoteScriptReceipt,
-} from '../script/client'
+	type ScriptReceipt,
+} from '../script/receipt'
+import { isTerminalRun, printFailure, printRun, printRunProgress } from '../script/output'
+import {
+	connectDevInstance,
+	DevClientError,
+	parseRunSnapshot,
+	selectDevInstance,
+	withDevContext,
+} from '../dev/client'
 
 type RunValues = ArgValues<typeof scriptRunArgs>
 type ReceiptValues = ArgValues<typeof scriptReceiptArgs>
-const terminal = (run: ScriptRunSnapshot) =>
-	['succeeded', 'failed', 'cancelled'].includes(run.state)
-function printRun(
-	log: (value: string) => void,
-	receipt: string,
-	run: ScriptRunSnapshot,
-	detached = false,
-): void {
-	log(JSON.stringify({ receipt, run }))
-	if (run.state === 'failed' || run.state === 'cancelled') process.exitCode = 1
-	else if (!detached && !terminal(run)) process.exitCode = 2
-}
 async function boundedInput(file: string, maximum = 1024 * 1024): Promise<string> {
 	await using handle = await open(file, 'r')
 	const stat = await handle.stat()
@@ -64,6 +59,7 @@ export const scriptRunCommand = define({
 	...scriptRunDefinition,
 	async run(ctx) {
 		let receipt: string | undefined
+		let submitted = false
 		try {
 			validateCommandOptions(ctx)
 			const values = ctx.values as RunValues
@@ -108,9 +104,9 @@ export const scriptRunCommand = define({
 				...(input !== undefined ? { input } : {}),
 				timeoutMs,
 			}
-			const request: RemoteScriptReceipt = {
-				version: 2,
-				endpoint: new URL(values.endpoint).href,
+			const request: ScriptReceipt = {
+				version: 3,
+				connection: { kind: 'remote', endpoint: new URL(values.endpoint).href },
 				instanceId: connection.description.instanceId,
 				runId: submission.runId,
 				requestHash: await scriptRequestHash(submission),
@@ -118,13 +114,14 @@ export const scriptRunCommand = define({
 			receipt = encodeScriptReceipt(request)
 			if (values['receipt-file'])
 				await writeFile(values['receipt-file'], receipt + '\n', { mode: 0o600, flag: 'wx' })
-			process.stderr.write(JSON.stringify({ stage: 'prepared', receipt }) + '\n')
+			printRunProgress('prepared', receipt)
+			submitted = true
 			let run = await connection.control.submit(submission)
 			verifyScriptReceipt(run, request)
-			process.stderr.write(JSON.stringify({ stage: 'accepted', receipt }) + '\n')
+			printRunProgress('accepted', receipt)
 			if (!values.detach) {
 				const deadline = Date.now() + timeoutMs + 5000
-				while (!terminal(run) && Date.now() < deadline) {
+				while (!isTerminalRun(run) && Date.now() < deadline) {
 					await setTimeout(50)
 					run = await connection.control.result(request.runId)
 					verifyScriptReceipt(run, request)
@@ -132,13 +129,11 @@ export const scriptRunCommand = define({
 			}
 			printRun(ctx.log, receipt, run, values.detach)
 		} catch (error) {
-			ctx.log(
-				JSON.stringify({
-					...(receipt ? { receipt } : {}),
-					error: scriptFailure(error, receipt ? 'outcome_unknown' : 'submission_failed'),
-				}),
+			printFailure(
+				ctx.log,
+				scriptFailure(error, submitted ? 'outcome_unknown' : 'submission_failed'),
+				receipt,
 			)
-			process.exitCode = 1
 		}
 	},
 })
@@ -154,19 +149,64 @@ function receiptCommand(
 			try {
 				validateCommandOptions(ctx)
 				const receipt = decodeScriptReceipt(values.receipt)
-				using connection = await connectScriptTarget({
-					endpoint: receipt.endpoint,
-					instanceId: receipt.instanceId,
-					credentials: await readScriptCredentials(values['credentials-file']),
-				})
-				const run = await connection.control[method](receipt.runId)
-				verifyScriptReceipt(run, receipt)
-				printRun(ctx.log, values.receipt, run)
+				if (receipt.connection.kind === 'local') {
+					const locator = receipt.connection
+					if (values['credentials-file'])
+						throw new ScriptExecutionError(
+							'invalid_input',
+							'Local receipts use the original console authentication; omit --credentials-file',
+						)
+					try {
+						const instance = await selectDevInstance({
+							root: locator.root,
+							instance: receipt.instanceId,
+							serviceId: locator.serviceId,
+						})
+						using connection = await connectDevInstance(instance)
+						const snapshot = parseRunSnapshot(
+							await connection[method](receipt.runId),
+							instance,
+							receipt.runId,
+						)
+						verifyScriptReceipt(snapshot, receipt)
+						const { root: _root, ...run } = snapshot
+						printRun(ctx.log, values.receipt, run)
+					} catch (error) {
+						throw withDevContext(
+							error,
+							{ root: locator.root, instanceId: receipt.instanceId, serviceId: locator.serviceId },
+							receipt.runId,
+						)
+					}
+				} else {
+					using connection = await connectScriptTarget({
+						endpoint: receipt.connection.endpoint,
+						instanceId: receipt.instanceId,
+						credentials: await readScriptCredentials(values['credentials-file']),
+					})
+					const run = await connection.control[method](receipt.runId)
+					verifyScriptReceipt(run, receipt)
+					printRun(ctx.log, values.receipt, run)
+				}
 			} catch (error) {
-				ctx.log(
-					JSON.stringify({ receipt: values.receipt, error: scriptFailure(error, 'query_failed') }),
+				printFailure(
+					ctx.log,
+					scriptFailure(
+						error,
+						'query_failed',
+						error instanceof DevClientError
+							? {
+									hint: error.hint,
+									context: Object.fromEntries(
+										Object.entries(error.context ?? {}).filter(
+											(entry): entry is [string, string] => entry[1] !== undefined,
+										),
+									),
+								}
+							: undefined,
+					),
+					values.receipt,
 				)
-				process.exitCode = 1
 			}
 		},
 	})

@@ -32,11 +32,18 @@
 		"valibot": "catalog:"
 	},
 	"peerDependencies": {
-		"@pluxel/core": "catalog:"
+		"@pluxel/core": "catalog:",
+		"@pluxel/host": "catalog:"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		}
 	},
 	"devDependencies": {
 		"@pluxel/cli": "catalog:",
 		"@pluxel/core": "catalog:",
+		"@pluxel/host": "catalog:",
 		"@pluxel/rolldown": "catalog:",
 		"@pluxel/test": "catalog:",
 		"typescript": "catalog:",

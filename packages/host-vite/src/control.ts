@@ -97,7 +97,7 @@ export async function prepareHostPluginControls(options: {
 				)
 			metadata.set(
 				key,
-				Object.freeze({ state: 'available', format: 1, contracts: item.contracts, material }),
+				Object.freeze({ state: 'available', format: 2, contracts: item.contracts, material }),
 			)
 		}
 		const owners = new Map<string, Set<string>>()

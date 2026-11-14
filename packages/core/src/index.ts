@@ -69,6 +69,7 @@ export type {
 	PluginEntryAddress,
 	PluginForkNodeAddress,
 	PluginNodeAddress,
+	PluginInstanceNodeAddress,
 	PluginNodeInfo,
 	PluginNodeSlot,
 } from './plugins'

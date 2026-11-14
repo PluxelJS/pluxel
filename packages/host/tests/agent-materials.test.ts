@@ -3,18 +3,20 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost } from '../src'
 import { setHostCatalogProvenance } from '../src/internal'
 import {
-	controlSha256,
 	createPluginControlMaterialReader,
-	encodeControlData,
 	parsePluginControlFileChunk,
 	parsePluginControlManifestIndex,
-	renderPluginDescriptors,
 	PLUGIN_CONTROL_CACHE_MS,
 	readPluginControlMaterials,
+	type PluginControlMaterialsSnapshot,
+} from '../src/agent-runtime'
+import {
+	controlSha256,
+	encodeControlData,
+	renderPluginDescriptors,
 	type PluginControlDescriptorData,
 	type PluginControlManifest,
-	type PluginControlMaterialsSnapshot,
-} from '../src/agent'
+} from '../src/control-manifest'
 
 async function snapshot(
 	large = false,
@@ -30,7 +32,7 @@ async function snapshot(
 	}
 	const files: Record<string, string> = {
 		'index.mjs': renderPluginDescriptors([
-			{ exportName: 'Counter', descriptor: { format: 1, definition, contracts } },
+			{ exportName: 'Counter', descriptor: { format: 2, definition, contracts } },
 		]),
 		'index.d.mts': `export declare const Counter: object;\n${large ? `/* ${'🧩中'.repeat(30_000)} */` : ''}`,
 	}
@@ -45,9 +47,11 @@ async function snapshot(
 		})),
 	)
 	const unsigned = {
-		format: 1 as const,
+		format: 2 as const,
 		compiler: 'material-reader-test',
-		definitions: [{ definition, exportName: 'Counter', contracts, source: 'index.d.mts' }],
+		definitions: [
+			{ definition, module: 'index.mjs', exportName: 'Counter', contracts, source: 'index.d.mts' },
+		],
 		files: entries,
 	}
 	const manifest: PluginControlManifest = {
@@ -77,7 +81,7 @@ it('reads the committed candidate material and ignores uncommitted route provena
 	setHostCatalogProvenance(
 		host.ctx,
 		new Map([
-			[MaterialPlugin, { control: { state: 'available', format: 1, contracts, material } }],
+			[MaterialPlugin, { control: { state: 'available', format: 2, contracts, material } }],
 		]),
 	)
 	await host.start()
@@ -105,7 +109,7 @@ it('reads the committed candidate material and ignores uncommitted route provena
 				{
 					control: {
 						state: 'available',
-						format: 1,
+						format: 2,
 						contracts: { ...contracts, instance: `sha256:${'c'.repeat(64)}` },
 						material,
 					},

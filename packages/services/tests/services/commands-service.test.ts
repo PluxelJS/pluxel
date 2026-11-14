@@ -5,6 +5,7 @@ import { defineCommand, Result } from '@pluxel/commands'
 import { obj } from '@pluxel/commands/typebox'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
+import { parsePluginNodeAddress } from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
@@ -430,7 +431,7 @@ describe('CommandsService', () => {
 		lowerTestPlugin(ManagedPlugin)
 		host.add(ManagedPlugin)
 		await host.commit()
-		const address = ManagedPlugin.nodeAddress()
+		const address = parsePluginNodeAddress(ManagedPlugin.nodeAddress())
 		const started = await host.ctx.require(Commands).execute('plugin.start', {
 			address,
 		})
@@ -516,7 +517,7 @@ describe('CommandsService', () => {
 		await host.commit()
 
 		expect({ providerStarts, consumerStarts }).toEqual({ providerStarts: 1, consumerStarts: 1 })
-		const providerAddress = ManagedProvider.nodeAddress()
+		const providerAddress = parsePluginNodeAddress(ManagedProvider.nodeAddress())
 		const restarted = await host.ctx.require(Commands).execute('plugin.restart', {
 			address: providerAddress,
 		})

@@ -1,3 +1,27 @@
+import type { WorkspacePackageJson } from '../workspace/package-json'
+
+/** Generated address providers use the consuming application's shared Host runtime. */
+export function assertControlHostPeer(pkg: WorkspacePackageJson, packageJsonPath: string): void {
+	const name = '@pluxel/host'
+	const failures: string[] = []
+	const peer = pkg.peerDependencies?.[name]
+	if (typeof peer !== 'string' || !peer.trim())
+		failures.push(
+			`peerDependencies.${name}: expected a declared Host peer, actual ${String(peer ?? '<missing>')}`,
+		)
+	for (const field of ['dependencies', 'optionalDependencies'] as const) {
+		const value = pkg[field]?.[name]
+		if (value !== undefined)
+			failures.push(
+				`${field}.${name}: expected absent for the shared Host runtime, actual ${value}`,
+			)
+	}
+	if (failures.length > 0)
+		throw new Error(
+			`[pluxel:build] Invalid generated control dependency declarations in ${packageJsonPath}:\n${failures.join('\n')}\nDeclare @pluxel/host as an author-maintained peer; mark it optional only when non-control runtime entrypoints do not require Host. Then rerun pluxel build.`,
+		)
+}
+
 export const controlEntry = (directory: string) => ({
 	types: `${directory}/index.d.mts`,
 	import: `${directory}/index.mjs`,

@@ -68,7 +68,10 @@ async function fixture(
 		JSON.stringify({
 			name: options.privateRpc ? '@fixture/private-rpc' : '@fixture/view',
 			version: '1.0.0',
-			peerDependencies: options.peer ? { capnweb: options.peer } : {},
+			peerDependencies: {
+				'@pluxel/host': '^0.1.0',
+				...(options.peer ? { capnweb: options.peer } : {}),
+			},
 			devDependencies: options.dev ? { capnweb: options.dev } : {},
 		}),
 	)

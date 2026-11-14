@@ -64,8 +64,14 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
 		"@pluxel/plugin-playwright": "workspace:^",
 		"@pluxel/services": "workspace:^"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		}
 	},
 	"pluxel": {
 		"artifactRoot": "dist",

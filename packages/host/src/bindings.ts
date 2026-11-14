@@ -1,4 +1,4 @@
-import type { PluginConstructor, PluginNodeAddress } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 import { defineContextCapability } from '@pluxel/core/host'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import type { Schema } from 'valibot-form'
@@ -34,9 +34,7 @@ type VaultSchemaMapping<S extends Schema> = Readonly<{
 }>
 
 /** Explicit schema-bearing deployment inputs. Use envBinding for schema-derived completion. */
-export type HostEnvironmentBinding<
-	P extends PluginConstructor | PluginNodeAddress = PluginConstructor | PluginNodeAddress,
-> = Readonly<{
+export type HostEnvironmentBinding<P extends PluginNodeAddress = PluginNodeAddress> = Readonly<{
 	plugin: P
 	config?: Readonly<{ schema: Schema; mapping: InputMapping }>
 	vault?: Readonly<{
@@ -45,9 +43,7 @@ export type HostEnvironmentBinding<
 		mapping: Readonly<Record<string, InputMapping | undefined>>
 	}>
 }>
-export type HostFileBinding<
-	P extends PluginConstructor | PluginNodeAddress = PluginConstructor | PluginNodeAddress,
-> = Readonly<{
+export type HostFileBinding<P extends PluginNodeAddress = PluginNodeAddress> = Readonly<{
 	plugin: P
 	config?: Readonly<{ schema: Schema; path: string }>
 	vault?: Readonly<{
@@ -58,11 +54,7 @@ export type HostFileBinding<
 }>
 
 /** Select environment inputs from one imported config schema and one deployment Vault root schema. */
-export function envBinding<
-	P extends PluginConstructor | PluginNodeAddress,
-	C extends Schema,
-	V extends Schema,
->(
+export function envBinding<P extends PluginNodeAddress, C extends Schema, V extends Schema>(
 	plugin: P,
 	inputs: Readonly<{
 		config?: SchemaMapping<C>
@@ -73,11 +65,7 @@ export function envBinding<
 }
 
 /** JSON files provide config declaration values and complete Vault records. */
-export function fileBinding<
-	P extends PluginConstructor | PluginNodeAddress,
-	C extends Schema,
-	V extends Schema,
->(
+export function fileBinding<P extends PluginNodeAddress, C extends Schema, V extends Schema>(
 	plugin: P,
 	inputs: Readonly<{
 		config?: Readonly<{ schema: C; path: string }>

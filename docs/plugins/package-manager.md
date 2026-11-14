@@ -91,7 +91,7 @@ export default defineHostApplication(async (startup) => {
 import { envBinding } from '@pluxel/host'
 import { PackageManagerPlugin, PackageManagerConfig } from '@pluxel/plugin-package-manager'
 
-envBinding(PackageManagerPlugin, {
+envBinding(PackageManagerPlugin.nodeAddress(), {
 	config: {
 		schema: PackageManagerConfig,
 		mapping: {

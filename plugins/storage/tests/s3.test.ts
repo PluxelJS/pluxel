@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { envBinding, defineHostApplication, resolveHostApplication, createHost } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
@@ -96,7 +96,7 @@ describe('S3Plugin remote backend', () => {
 			plugins: [S3Plugin],
 			services: [vault({ backend: 'bindings' })],
 			envBindings: [
-				envBinding(S3Plugin, {
+				envBinding(S3Plugin.nodeAddress(), {
 					vault: {
 						schema: S3VaultSchema,
 						mapping: {
@@ -243,7 +243,7 @@ describe('S3Plugin remote backend', () => {
 			expect(host.isRunning(S3Plugin)).toBe(false)
 			expect(failure.lifecycleReport.issues).toContainEqual(
 				expect.objectContaining({
-					plugin: S3Plugin.nodeAddress(),
+					plugin: parsePluginNodeAddress(S3Plugin.nodeAddress()),
 					kind: 'start-failed',
 				}),
 			)

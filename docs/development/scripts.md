@@ -3,7 +3,7 @@ title: Host 自动化脚本
 description: 使用普通 TypeScript 读取配置、计算、条件修改、核对采用，并通过 CLI 提交与查询运行。
 ---
 
-脚本导出一个普通函数。执行器传入 `ScriptSdk` 与本次运行的 `{ id, input, signal }`。`sdk.plugin(target)` 同步选择插件；异步控制操作统一返回 `Promise<Result<T, E>>`，直接使用目标 Host 的实现。单次操作可以直接返回：
+脚本导出一个普通函数。执行器传入 `ScriptSdk` 与本次运行的 `{ id, input, signal }`。`sdk.plugin(nodeAddress)` 同步选择插件节点；异步控制操作统一返回 `Promise<Result<T, E>>`，直接使用目标 Host 的实现。单次操作可以直接返回：
 
 ```ts
 import type { Script } from '@pluxel/host/agent'
@@ -34,7 +34,7 @@ export default (async (sdk, run) => {
 	if (typeof factor !== 'number' || !Number.isFinite(factor)) {
 		throw new TypeError('Expected a finite factor')
 	}
-	const { get, patch } = sdk.plugin(QueuePlugin).config
+	const { get, patch } = sdk.plugin(QueuePlugin.nodeAddress()).config
 	const before = await get()
 	if (before.isErr()) return before
 	run.signal.throwIfAborted()
@@ -75,9 +75,9 @@ export default (async (sdk, run) => {
 
 ## 插件、策略、更新与日志
 
-`plugins.list()` 的成功值提供节点地址、期望与实际状态、诊断和最近更新，适合发现与巡检。`sdk.plugin(descriptorOrAddress)` 固定目标，随后通过引用的 `status/start/stop/restart` 操作节点；`fork(id)` 返回另一个目标引用。启停成功值为应用报告；报告存在生命周期或协调问题时返回 `lifecycle_failed`，错误携带完整 `report`，保留已提交的变化。生成描述符的引用还提供 `instance()`，成功值直接是本次运行的业务实例视图，方法与资源寿命见[实例调用](./plugin-control.md#调用原插件实例)。
+`plugins.list()` 返回一次发现快照，成功值为 `{ nodes, catalogRevision, runtimeStateRevision }`。`nodes` 提供节点地址、期望与实际状态、诊断和最近更新；两个 revision 分别描述已接纳的定义集合与运行意图。`sdk.plugin(Provider.nodeAddress())` 固定默认节点，`Provider.nodeAddress(id)` 选择已声明的 fork，随后通过引用的 `status/start/stop/restart` 操作节点。启停成功值为应用报告；报告存在生命周期或协调问题时返回 `lifecycle_failed`，错误携带完整 `report`，保留已提交的变化。生成地址保留的类型关联还提供 `instance()`，成功值直接是本次运行的业务实例视图，方法与资源寿命见[实例调用](./plugin-control.md#调用原插件实例)。
 
-包管理器动态新增的插件在 Host 接纳后同样出现在列表中，尚未启动也能发现。用普通数组 `filter` 按包入口、具名导出与 fork 筛选，再将完整节点地址传给 `sdk.plugin()`。尚无类型时，先同步当前材料再编写强类型业务调用；流程与 class import 的使用条件见[动态安装后的发现与操作](./plugin-control.md#动态安装后的发现与操作)。
+包管理器动态新增的插件在 Host 接纳后同样出现在列表中，尚未启动也能发现。对成功值的 `nodes` 用普通数组 `filter` 按包入口、具名导出与 fork 筛选，再将完整节点地址传给 `sdk.plugin()`。尚无类型时，先同步当前材料再编写强类型业务调用；流程与 class import 的使用条件见[动态安装后的发现与操作](./plugin-control.md#动态安装后的发现与操作)。
 
 `policy.get/validate/patch/reset` 管理 Host 执行策略，修改使用相同的 `expectedManagedRevision` 条件。策略结果会区分已保存策略与需要重建 Host 才采用的设置。`updates.latest()` 读取 Host 最近一次更新报告，没有记录时返回 `null`。
 
@@ -85,17 +85,14 @@ export default (async (sdk, run) => {
 
 ```ts
 import type { Script } from '@pluxel/host/agent'
+import { QueuePlugin } from '@acme/pluxel-plugin-queue/control'
 
 export default (async (sdk) => {
-	const nodes = await sdk.plugins.list()
-	if (nodes.isErr()) return nodes
-	const node = nodes.value[0]
-	if (!node) return { skipped: 'no_plugin' }
+	const plugin = sdk.plugin(QueuePlugin.nodeAddress())
 	const history = await sdk.logs.streams()
 	if (history.isErr()) return history
 	const stream = history.value.streams[0]
 	if (!stream) return { skipped: 'no_history_stream' }
-	const plugin = sdk.plugin(node.address)
 	const cursor = await sdk.logs.mark(stream.streamId)
 	if (cursor.isErr()) return cursor
 	const report = await plugin.restart()
@@ -146,9 +143,9 @@ pnpm exec pluxel script run ./scripts/scale.ts \
   --receipt-file ./receipts/scale.receipt
 ```
 
-`--input-file FILE` 可替代 `--input`。默认调用 `default` 导出，具名函数用 `--export NAME`。作者侧先进行 TypeScript 检查和打包，上传 JS 工厂与源码映射。经清单验证的纯描述符和普通计算依赖可随脚本打包；`@pluxel/core/better-result` 使用受控共享绑定。其余框架运行时、Node builtin、原生扩展和运行时动态 import 在上传模式中拒绝。异步工作放入导出函数，工厂顶层同步初始化。需要项目模块或 Context 时使用 Vite 项目模式。
+`--input-file FILE` 可替代 `--input`。默认调用 `default` 导出，具名函数用 `--export NAME`。作者侧先进行 TypeScript 检查和打包，上传 JS 工厂与源码映射。经清单验证的生成地址提供者和普通计算依赖可随脚本打包。生成提供者的标准工厂与 `@pluxel/core/better-result` 使用目标框架的受控共享绑定。其余框架运行时、Node builtin、原生扩展和运行时动态 import 在上传模式中拒绝。异步工作放入导出函数，工厂顶层同步初始化。需要项目模块或 Context 时使用 Vite 项目模式。
 
-CLI 在首次提交前向 stderr 输出 `{ stage: 'prepared', receipt }`，收到接纳后输出 `{ stage: 'accepted', receipt }`。`--receipt-file` 在上传前以 `0600` 新建文件，父目录需已存在，同名文件不会覆盖。stdout 返回单个 `{ receipt, run }` JSON；编译、连接或调用失败时返回 `{ receipt?, error }`。默认等待结算，`--detach` 在接纳后返回；`--timeout` 默认为 30000，最大 300000 毫秒，包含排队与加载时间。
+CLI 在首次提交前向 stderr 输出 `{ stage: 'prepared', receipt }`，收到接纳后输出 `{ stage: 'accepted', receipt }`。`--receipt-file` 在上传前以 `0600` 新建文件，父目录需已存在，同名文件不会覆盖。run、result 和 cancel 的 stdout 返回单个 `{ ok: true, value: { receipt, run } }` JSON；编译、连接或查询失败时返回 `{ ok: false, error: { code, message, receipt? } }`。dev 与 script 的 sync 同样使用 `{ ok, value/error }`，成功值的 `definitions` 提供每个插件的准确 `module` 和 `exportName`，见[控制材料同步](./plugin-control.md#取得控制入口)。默认等待结算，`--detach` 在接纳后返回；`--timeout` 默认为 30000，最大 300000 毫秒，包含排队与加载时间。
 
 查询和取消传入原 receipt token：
 
@@ -157,15 +154,17 @@ pnpm exec pluxel script result "$(cat ./receipts/scale.receipt)" --credentials-f
 pnpm exec pluxel script cancel "$(cat ./receipts/scale.receipt)" --credentials-file ./admin.json
 ```
 
-receipt 记录原 endpoint、执行实例、run ID 和请求摘要，权限仍由重新认证的原主体决定。断线后可查询原运行；receipt 本身不授予权限。接纳响应丢失时先查询原 receipt，避免再次提交产生新任务。执行实例关闭或结果过期会明确报错，CLI 会核对原实例与摘要。
+上传与 Vite 项目执行共享 `pluxel-script-v3` receipt。它记录原执行实例、run ID、请求摘要及连接方式：远程保存 endpoint，本地保存 Vite root 和可选 serviceId。所有运行统一用 `script result/cancel` 查询或取消，本地 receipt 使用原控制台认证，省略 `--credentials-file`；远程权限由重新认证的原主体决定。断线后可查询原运行；receipt 本身不授予权限。接纳响应丢失时先查询原 receipt，避免再次提交产生新任务。执行实例关闭或结果过期会明确报错，CLI 会核对原实例与摘要。
 
 ## 失败、取消和释放
 
 `run.state: 'succeeded'` 表示函数返回、结果编码和 SDK 清理已完成。顶层共享 Result 由执行边界通过原生 `Result.codec` 编码为 `{ status: 'ok', value }` 或 `{ status: 'error', error }`；领域 `Err` 仍是成功运行中的业务结果。原有 JSON 返回值继续作为普通数据。识别依据是共享库的实际 Result 实例，JSON 的同名字段不会改变执行语义。
 
+CLI 退出码按执行状态判断：`failed/cancelled` 为 1，等待结束时仍未结算为 2，`succeeded` 或 `--detach` 已接纳为 0。业务 `Err` 保留在成功运行的 `run.value` 内，调用方继续检查它。
+
 SDK 的预期失败以 `Err` 返回，错误是包含 `code`、`message` 的只读数据。按 `error.code` 缩小类型，原配置、持久化和应用报告继续保留。生命周期失败同样携带完整报告，可能已有部分变化生效。持久化确认失败保留 `state: 'unknown'`，先核对当前状态。关闭后的异步调用返回 `scope_closed`，禁止交错的业务与管理调用返回 `borrowed_generation_conflict`，已知取消返回 `cancelled`。
 
-`plugin()` 和 `fork()` 是同步选择器，错误参数或关闭的 run 同步抛错。异步操作的错误参数形状、无效数值和未知实现缺陷仍可 reject；原业务方法保持自己的返回类型、异常和资源协议。加载、执行、结果编码或清理失败形成 `failed`，带有阶段和错误，清理错误另存 `cleanupError`。
+`sdk.plugin()` 同步选择目标，错误参数或关闭的 run 同步抛错。提供者的 `definitionAddress()`、`nodeAddress()` 和 `nodeAddress(id)` 只生成地址，不查询或启动插件。异步操作的错误参数形状、无效数值和未知实现缺陷仍可 reject；原业务方法保持自己的返回类型、异常和资源协议。加载、执行、结果编码或清理失败形成 `failed`，带有阶段和错误，清理错误另存 `cleanupError`。
 
 Result 的 payload 使用同样的 JSON 约束。嵌套 Result、业务 Error/TaggedError 实例和资源句柄需要作者在自己的边界通过显式 codec 或数据投影处理；执行器不会调用任意 `toJSON`。
 
@@ -182,22 +181,17 @@ Result 的 payload 使用同样的 JSON 约束。嵌套 Result、业务 Error/Ta
 自定义宿主工具可以在已启动 Host 上直接创建 scope，无需认证通道或官方 Services：
 
 ```ts
-import { createScriptScope } from '@pluxel/host/agent'
+import { createScriptScope } from '@pluxel/host/agent/runtime'
 import task from './scripts/scale'
 
-await host.start()
 const controller = new AbortController()
-const scope = createScriptScope({ ctx: host.ctx, signal: controller.signal })
-try {
-	const value = await task(scope.sdk, {
-		id: 'local-scale',
-		input: { factor: 2 },
-		signal: controller.signal,
-	})
-	console.log(value)
-} finally {
-	await scope.dispose()
-}
+await using scope = createScriptScope({ ctx: host.ctx, signal: controller.signal })
+const value = await task(scope.sdk, {
+	id: 'local-scale',
+	input: { factor: 2 },
+	signal: controller.signal,
+})
+console.log(value)
 ```
 
-这里的 `host` 由调用方创建和关闭。`scope.abort(reason)` 关闭接纳并通知在途 SDK 操作，`dispose()` 等待结算；可在其后读取 `scope.snapshot()` 的 Host 版本。需要队列、run 查询与可移植结果时使用 `ScriptExecutor` / `executeHostScript`，Node 制品加载器单独从 `@pluxel/host/agent/node` 引入。实现边界与验证入口见[脚本架构](https://github.com/PluxelJS/pluxel/blob/main/engineering/AGENT_WORKFLOW.md)。
+这里的 `host` 由调用方创建和关闭。`scope.abort(reason)` 关闭接纳并通知在途 SDK 操作，`await using` 或显式 `dispose()` 等待同一个幂等结算过程；可在其后读取 `scope.snapshot()` 的 Host 版本。需要队列、run 查询与可移植结果时使用 `ScriptExecutor` / `executeHostScript`，Node 制品加载器单独从 `@pluxel/host/agent/node` 引入。实现边界与验证入口见[脚本架构](https://github.com/PluxelJS/pluxel/blob/main/engineering/AGENT_WORKFLOW.md)。

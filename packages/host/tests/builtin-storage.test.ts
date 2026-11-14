@@ -2,7 +2,7 @@ import * as nativeFs from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BasePlugin, Plugin, type HostDocumentStorage } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress, type HostDocumentStorage } from '@pluxel/core'
 import { Passthrough } from '@pluxel/core/fs'
 import { requireFs, requireHostDocuments, requireTinyBaseHost } from '@pluxel/core/internal'
 import { SuperJSON } from 'superjson'
@@ -71,7 +71,9 @@ describe('Host built-in storage without Services', () => {
 				readonly: true,
 				config: { value: 'persisted' },
 			})
-			expect(requireHostStateStore(reopened.ctx).snapshot().autoStart).toEqual([owner])
+			expect(requireHostStateStore(reopened.ctx).snapshot().autoStart).toEqual([
+				parsePluginNodeAddress(owner),
+			])
 			await expect(
 				reopened.config.patch(owner, { set: { value: 'rejected' } }),
 			).resolves.toMatchObject({
@@ -81,7 +83,9 @@ describe('Host built-in storage without Services', () => {
 			await expect(reopened.setAutoStart(owner, false)).rejects.toMatchObject({
 				code: 'mutation_rejected',
 			})
-			expect(requireHostStateStore(reopened.ctx).snapshot().autoStart).toEqual([owner])
+			expect(requireHostStateStore(reopened.ctx).snapshot().autoStart).toEqual([
+				parsePluginNodeAddress(owner),
+			])
 		} finally {
 			await reopened.close()
 		}
@@ -110,7 +114,9 @@ describe('Host built-in storage without Services', () => {
 				readonly: true,
 				config: { value: 'readonly seed' },
 			})
-			expect(requireHostStateStore(host.ctx).snapshot().autoStart).toEqual([owner])
+			expect(requireHostStateStore(host.ctx).snapshot().autoStart).toEqual([
+				parsePluginNodeAddress(owner),
+			])
 			expect(await requireHostDocuments(host.ctx, 'config').getText('config.json')).toBeUndefined()
 			expect(await requireHostDocuments(host.ctx, 'state').getText('state.json')).toBeUndefined()
 		} finally {

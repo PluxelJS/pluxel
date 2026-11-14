@@ -2,7 +2,7 @@ import { requireFs, pluginNodePhysicalKey } from '@pluxel/core/internal'
 import { requireHostStateStore, isPluginAutoStartEnabled, listForkIds } from '@pluxel/host/internal'
 import { standardServices } from '@pluxel/services'
 import { logtape } from '@pluxel/core/config'
-import { pluginNodeAddressEqual } from '@pluxel/core'
+import { parsePluginNodeAddress, pluginNodeAddressEqual } from '@pluxel/core'
 import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
@@ -74,7 +74,8 @@ describe('Plugin fork control plane', () => {
 		await host.commit()
 		using remote = new RpcStub(new RuntimeManagementTargetImpl(host.ctx))
 		const client = createRuntimeManagementClient(remote)
-		const fork = ForkProvider.nodeAddress('retained')
+		const fork = parsePluginNodeAddress(ForkProvider.nodeAddress('retained'))
+		if (fork.variant !== 'fork') throw new Error('Expected a fork address')
 		expect(await client.forks.ensure({ fork, autoStart: true })).toMatchObject({ ok: true, fork })
 		expect(await client.forks.ensure({ fork })).toMatchObject({ ok: true, fork })
 		expect(isPluginAutoStartEnabled(requireHostStateStore(host.ctx).snapshot(), fork)).toBe(true)
@@ -95,13 +96,16 @@ describe('Plugin fork control plane', () => {
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
 		const expected = { ok: false, code: 'invalid_input', state: 'unchanged' }
 		for (const fork of [
-			ForkProvider.nodeAddress(),
-			{ ...ForkProvider.nodeAddress('bad'), forkId: '' },
+			parsePluginNodeAddress(ForkProvider.nodeAddress()),
+			{ ...parsePluginNodeAddress(ForkProvider.nodeAddress('bad')), forkId: '' },
 		]) {
 			expect(parseEnsureForkResult(await rpc.ensurePluginForkDto({ fork }))).toMatchObject(expected)
 			expect(parseRemoveForkResult(await rpc.removePluginForkDto(fork))).toMatchObject(expected)
 		}
-		const obsolete = { base: ForkProvider.nodeAddress(), forkId: 'obsolete' }
+		const obsolete = {
+			base: parsePluginNodeAddress(ForkProvider.nodeAddress()),
+			forkId: 'obsolete',
+		}
 		expect(parseEnsureForkResult(await rpc.ensurePluginForkDto(obsolete))).toMatchObject(expected)
 		expect(parseRemoveForkResult(await rpc.removePluginForkDto(obsolete))).toMatchObject(expected)
 		expect(
@@ -111,7 +115,7 @@ describe('Plugin fork control plane', () => {
 			parseRemoveForkResult({
 				ok: true,
 				status: 'already-absent',
-				fork: ForkProvider.nodeAddress(),
+				fork: parsePluginNodeAddress(ForkProvider.nodeAddress()),
 			}),
 		).toThrow(/fork node address/)
 	})
@@ -135,11 +139,11 @@ describe('Plugin fork control plane', () => {
 			overriddenFields: ['autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'],
 		})
 		const expected = { ok: false, code: 'policy_shadowed', state: 'unchanged' }
-		const base = ForkProvider.nodeAddress()
+		const base = parsePluginNodeAddress(ForkProvider.nodeAddress())
 		expect(
 			parseEnsureForkResult(
 				await rpc.ensurePluginForkDto({
-					fork: ForkProvider.nodeAddress('locked'),
+					fork: parsePluginNodeAddress(ForkProvider.nodeAddress('locked')),
 				}),
 			),
 		).toMatchObject({
@@ -148,7 +152,9 @@ describe('Plugin fork control plane', () => {
 			report: { persistence: { status: 'unchanged' }, writtenFields: [] },
 		})
 		expect(
-			parseRemoveForkResult(await rpc.removePluginForkDto(ForkProvider.nodeAddress('locked'))),
+			parseRemoveForkResult(
+				await rpc.removePluginForkDto(parsePluginNodeAddress(ForkProvider.nodeAddress('locked'))),
+			),
 		).toMatchObject(expected)
 		expect(await rpc.setPluginAutoStartDto([{ address: base, autoStart: true }])).toMatchObject({
 			ok: false,
@@ -157,7 +163,7 @@ describe('Plugin fork control plane', () => {
 		expect(
 			parsePluginDependencyMutationResult(
 				await rpc.setPluginConsumerOverrideDto({
-					consumer: ForkConsumer.nodeAddress(),
+					consumer: parsePluginNodeAddress(ForkConsumer.nodeAddress()),
 					requirement: ForkProvider.definitionAddress(),
 					provider: base,
 				}),
@@ -166,8 +172,8 @@ describe('Plugin fork control plane', () => {
 		expect(
 			parsePluginDependencyMutationResult(
 				await rpc.setPluginProviderPolicyDefaultDto({
-					policyOwner: PolicyProvider.nodeAddress(),
-					provider: PolicyProvider.nodeAddress(),
+					policyOwner: parsePluginNodeAddress(PolicyProvider.nodeAddress()),
+					provider: parsePluginNodeAddress(PolicyProvider.nodeAddress()),
 				}),
 			),
 		).toMatchObject(expected)
@@ -178,11 +184,11 @@ describe('Plugin fork control plane', () => {
 		host.add([ForkProvider, ForkConsumer])
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const base = ForkProvider.nodeAddress()
-		const consumer = ForkConsumer.nodeAddress()
+		const base = parsePluginNodeAddress(ForkProvider.nodeAddress())
+		const consumer = parsePluginNodeAddress(ForkConsumer.nodeAddress())
 
 		const result = await rpc.ensurePluginForkDto({
-			fork: ForkProvider.nodeAddress('atomic'),
+			fork: parsePluginNodeAddress(ForkProvider.nodeAddress('atomic')),
 			autoStart: true,
 			selectFor: {
 				consumer,
@@ -212,14 +218,14 @@ describe('Plugin fork control plane', () => {
 		host.add([ForkProvider, ForkConsumer])
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const base = ForkProvider.nodeAddress()
+		const base = parsePluginNodeAddress(ForkProvider.nodeAddress())
 
 		await expect(
 			rpc.ensurePluginForkDto({
-				fork: ForkProvider.nodeAddress('must-not-survive'),
+				fork: parsePluginNodeAddress(ForkProvider.nodeAddress('must-not-survive')),
 				autoStart: true,
 				selectFor: {
-					consumer: ForkConsumer.nodeAddress(),
+					consumer: parsePluginNodeAddress(ForkConsumer.nodeAddress()),
 					requirement: FailingForkProvider.definitionAddress(),
 				},
 			}),
@@ -240,10 +246,10 @@ describe('Plugin fork control plane', () => {
 		host.start(ForkConsumer)
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const consumer = ForkConsumer.nodeAddress()
+		const consumer = parsePluginNodeAddress(ForkConsumer.nodeAddress())
 
 		const applied = await rpc.ensurePluginForkDto({
-			fork: ForkProvider.nodeAddress('running'),
+			fork: parsePluginNodeAddress(ForkProvider.nodeAddress('running')),
 			autoStart: false,
 			selectFor: {
 				consumer,
@@ -254,14 +260,14 @@ describe('Plugin fork control plane', () => {
 		if (applied.ok) expectBrowserSafeReport(applied.report)
 
 		const deferred = await rpc.ensurePluginForkDto({
-			fork: ForkProvider.nodeAddress('dormant'),
+			fork: parsePluginNodeAddress(ForkProvider.nodeAddress('dormant')),
 			autoStart: false,
 		})
 		expect(deferred).toMatchObject({ ok: true, status: 'deferred', report: {} })
 		if (deferred.ok) expectBrowserSafeReport(deferred.report)
 
 		const nextBoot = await rpc.ensurePluginForkDto({
-			fork: FailingForkProvider.nodeAddress('failing'),
+			fork: parsePluginNodeAddress(FailingForkProvider.nodeAddress('failing')),
 			autoStart: true,
 		})
 		expect(nextBoot).toMatchObject({
@@ -277,10 +283,10 @@ describe('Plugin fork control plane', () => {
 		host.add([ForkProvider, ForkConsumer])
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const base = ForkProvider.nodeAddress()
-		const consumer = ForkConsumer.nodeAddress()
+		const base = parsePluginNodeAddress(ForkProvider.nodeAddress())
+		const consumer = parsePluginNodeAddress(ForkConsumer.nodeAddress())
 		const ensured = await rpc.ensurePluginForkDto({
-			fork: ForkProvider.nodeAddress('referenced'),
+			fork: parsePluginNodeAddress(ForkProvider.nodeAddress('referenced')),
 			autoStart: true,
 			selectFor: {
 				consumer,
@@ -290,7 +296,7 @@ describe('Plugin fork control plane', () => {
 		if (ensured.ok === false) throw new Error(ensured.error)
 
 		await expect(
-			rpc.removePluginForkDto(ForkProvider.nodeAddress('referenced')),
+			rpc.removePluginForkDto(parsePluginNodeAddress(ForkProvider.nodeAddress('referenced'))),
 		).resolves.toMatchObject({
 			ok: false,
 			code: 'fork_referenced',
@@ -317,7 +323,9 @@ describe('Plugin fork control plane', () => {
 		await business.mkdir('referenced', { recursive: true })
 		await business.writeFile('referenced/data.json', '{"retained":true}')
 
-		const removed = await rpc.removePluginForkDto(ForkProvider.nodeAddress('referenced'))
+		const removed = await rpc.removePluginForkDto(
+			parsePluginNodeAddress(ForkProvider.nodeAddress('referenced')),
+		)
 		expect(removed).toMatchObject({ ok: true, status: 'removed', fork: ensured.fork, report: {} })
 		if (removed.ok && removed.status !== 'already-absent') {
 			expectBrowserSafeReport(removed.report)
@@ -328,7 +336,7 @@ describe('Plugin fork control plane', () => {
 		)
 
 		await expect(
-			rpc.removePluginForkDto(ForkProvider.nodeAddress('referenced')),
+			rpc.removePluginForkDto(parsePluginNodeAddress(ForkProvider.nodeAddress('referenced'))),
 		).resolves.toMatchObject({
 			ok: true,
 			status: 'already-absent',
@@ -342,7 +350,7 @@ describe('Plugin fork control plane', () => {
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
 		const ensured = await rpc.ensurePluginForkDto({
-			fork: DrainFailureForkProvider.nodeAddress('drain'),
+			fork: parsePluginNodeAddress(DrainFailureForkProvider.nodeAddress('drain')),
 			autoStart: true,
 		})
 		if (ensured.ok === false) throw new Error(ensured.error)
@@ -351,7 +359,9 @@ describe('Plugin fork control plane', () => {
 		).resolves.toMatchObject({ results: [{ ok: true }] })
 		expect(host.isRunning(ensured.fork)).toBe(true)
 
-		const removed = await rpc.removePluginForkDto(DrainFailureForkProvider.nodeAddress('drain'))
+		const removed = await rpc.removePluginForkDto(
+			parsePluginNodeAddress(DrainFailureForkProvider.nodeAddress('drain')),
+		)
 		expect(removed).toMatchObject({
 			ok: true,
 			status: 'removed-with-lifecycle-issues',
@@ -383,16 +393,16 @@ describe('Plugin fork control plane', () => {
 		host.add(ForkProvider)
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const base = ForkProvider.nodeAddress()
+		const base = parsePluginNodeAddress(ForkProvider.nodeAddress())
 		const ensured = await rpc.ensurePluginForkDto({
-			fork: ForkProvider.nodeAddress('readonly'),
+			fork: parsePluginNodeAddress(ForkProvider.nodeAddress('readonly')),
 			autoStart: true,
 		})
 		if (ensured.ok === false) throw new Error(ensured.error)
 		await rpc.applyPluginLifecycleCommandsDto([{ address: ensured.fork, command: 'start' }])
 
 		await expect(
-			rpc.removePluginForkDto(ForkProvider.nodeAddress('readonly')),
+			rpc.removePluginForkDto(parsePluginNodeAddress(ForkProvider.nodeAddress('readonly'))),
 		).resolves.toMatchObject({
 			ok: false,
 			code: 'mutation_rejected',
@@ -430,9 +440,9 @@ describe('Plugin fork control plane', () => {
 		host.add(ForkProvider)
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const base = ForkProvider.nodeAddress()
+		const base = parsePluginNodeAddress(ForkProvider.nodeAddress())
 		const ensured = await rpc.ensurePluginForkDto({
-			fork: ForkProvider.nodeAddress('retry'),
+			fork: parsePluginNodeAddress(ForkProvider.nodeAddress('retry')),
 			autoStart: true,
 		})
 		if (ensured.ok === false) throw new Error(ensured.error)
@@ -446,26 +456,26 @@ describe('Plugin fork control plane', () => {
 		await business.writeFile('retry/data.bin', 'business-state')
 
 		rejectConfigWrite = true
-		await expect(rpc.removePluginForkDto(ForkProvider.nodeAddress('retry'))).resolves.toMatchObject(
-			{
-				ok: false,
-				code: 'persistence_failed',
-				state: 'stopped-retained',
-				fork: ensured.fork,
-			},
-		)
+		await expect(
+			rpc.removePluginForkDto(parsePluginNodeAddress(ForkProvider.nodeAddress('retry'))),
+		).resolves.toMatchObject({
+			ok: false,
+			code: 'persistence_failed',
+			state: 'stopped-retained',
+			fork: ensured.fork,
+		})
 		let state = requireHostStateStore(host.ctx).snapshot()
 		expect(listForkIds(state, base.definition)).toContain('retry')
 		expect(isPluginAutoStartEnabled(state, ensured.fork)).toBe(true)
 		expect(await business.readFile('retry/data.bin', 'utf8')).toBe('business-state')
 
 		rejectConfigWrite = false
-		await expect(rpc.removePluginForkDto(ForkProvider.nodeAddress('retry'))).resolves.toMatchObject(
-			{
-				ok: true,
-				status: 'removed',
-			},
-		)
+		await expect(
+			rpc.removePluginForkDto(parsePluginNodeAddress(ForkProvider.nodeAddress('retry'))),
+		).resolves.toMatchObject({
+			ok: true,
+			status: 'removed',
+		})
 		state = requireHostStateStore(host.ctx).snapshot()
 		expect(listForkIds(state, base.definition)).not.toContain('retry')
 		expect(await business.readFile('retry/data.bin', 'utf8')).toBe('business-state')
@@ -499,9 +509,9 @@ describe('Plugin fork control plane', () => {
 		host.add(ForkProvider)
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const base = ForkProvider.nodeAddress()
+		const base = parsePluginNodeAddress(ForkProvider.nodeAddress())
 		const ensured = await rpc.ensurePluginForkDto({
-			fork: ForkProvider.nodeAddress('logging-retry'),
+			fork: parsePluginNodeAddress(ForkProvider.nodeAddress('logging-retry')),
 			autoStart: true,
 		})
 		if (ensured.ok === false) throw new Error(ensured.error)
@@ -511,7 +521,7 @@ describe('Plugin fork control plane', () => {
 
 		rejectLoggingWrite = true
 		await expect(
-			rpc.removePluginForkDto(ForkProvider.nodeAddress('logging-retry')),
+			rpc.removePluginForkDto(parsePluginNodeAddress(ForkProvider.nodeAddress('logging-retry'))),
 		).resolves.toMatchObject({
 			ok: false,
 			code: 'persistence_failed',
@@ -525,7 +535,7 @@ describe('Plugin fork control plane', () => {
 
 		rejectLoggingWrite = false
 		await expect(
-			rpc.removePluginForkDto(ForkProvider.nodeAddress('logging-retry')),
+			rpc.removePluginForkDto(parsePluginNodeAddress(ForkProvider.nodeAddress('logging-retry'))),
 		).resolves.toMatchObject({
 			ok: true,
 			status: 'removed',

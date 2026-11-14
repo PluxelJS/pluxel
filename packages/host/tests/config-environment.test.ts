@@ -1,4 +1,5 @@
 import { envBinding, fileBinding } from '../src/bindings'
+import { parsePluginNodeAddress } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import * as v from 'valibot'
 import { expect, it } from 'vitest'
@@ -20,7 +21,7 @@ export class Configured extends BasePlugin {
 	readonly config = this.configs.use(Config)
 }
 const startup = { root: process.cwd(), mode: 'test' as const, bindings: {}, env: {} }
-const binding = envBinding(Configured, {
+const binding = envBinding(Configured.nodeAddress(), {
 	config: { schema: Config, mapping: { enabled: 'APP_ENABLED', limit: 'APP_LIMIT' } },
 })
 
@@ -30,7 +31,7 @@ it('captures binding paths, namespaces and mappings before the first file read',
 		await writeFile(join(root, 'config.json'), JSON.stringify({ limit: 4 }))
 		await writeFile(join(root, 'secret.json'), JSON.stringify({ token: 'file-token', expires: 42 }))
 		const file = {
-			plugin: Configured,
+			plugin: Configured.nodeAddress(),
 			config: { schema: Config, path: 'config.json' },
 			vault: {
 				namespace: 'file-selected',
@@ -39,7 +40,7 @@ it('captures binding paths, namespaces and mappings before the first file read',
 			},
 		}
 		const env = {
-			plugin: Configured,
+			plugin: Configured.nodeAddress(),
 			config: { schema: Config, mapping: { limit: 'LIMIT' } },
 			vault: {
 				namespace: 'env-selected',
@@ -71,7 +72,7 @@ it('captures binding paths, namespaces and mappings before the first file read',
 })
 
 it('decodes explicit config inputs as overlays without ambient PLUXEL_CONFIG or seed mutation', async () => {
-	const owner = Configured.nodeAddress()
+	const owner = parsePluginNodeAddress(Configured.nodeAddress())
 	const application = defineHostApplication(() => ({
 		plugins: [Configured],
 		envBindings: [binding],
@@ -102,7 +103,7 @@ it('decodes explicit config inputs as overlays without ambient PLUXEL_CONFIG or 
 })
 
 it('passes resolved environment values and source provenance into Host', async () => {
-	const owner = Configured.nodeAddress()
+	const owner = parsePluginNodeAddress(Configured.nodeAddress())
 	const application = defineHostApplication(() => ({
 		plugins: [Configured],
 		envBindings: [binding],
@@ -138,7 +139,7 @@ it('validates a complete Vault record, rejects partial deployment inputs, and re
 	const application = defineHostApplication(() => ({
 		plugins: [Configured],
 		envBindings: [
-			envBinding(Configured, {
+			envBinding(Configured.nodeAddress(), {
 				vault: {
 					schema: Credentials,
 					mapping: { credentials: { token: 'TOKEN', expires: 'EXPIRY' } },
@@ -152,7 +153,7 @@ it('validates a complete Vault record, rejects partial deployment inputs, and re
 	})
 	expect(resolved.vaultBindings).toEqual([
 		{
-			owner: Configured.nodeAddress(),
+			owner: parsePluginNodeAddress(Configured.nodeAddress()),
 			key: 'credentials',
 			namespace: undefined,
 			source: 'env',
@@ -186,7 +187,7 @@ it('reads config declarations and whole Vault records from explicit JSON files',
 			() => ({
 				plugins: [Configured],
 				fileBindings: [
-					fileBinding(Configured, {
+					fileBinding(Configured.nodeAddress(), {
 						config: { schema: Config, path: 'config.json' },
 						vault: { schema: Credentials, paths: { credentials: 'secret.json' } },
 					}),
@@ -216,9 +217,13 @@ it('infers heterogeneous async binding arrays without const assertions', async (
 	const application = defineHostApplication(async () => ({
 		plugins: [Configured, OtherConfigured],
 		envBindings: [
-			envBinding(Configured, { config: { schema: Config, mapping: { enabled: 'ENABLED' } } }),
-			envBinding(OtherConfigured, { config: { schema: OtherConfig, mapping: { title: 'TITLE' } } }),
-			envBinding(Configured, {
+			envBinding(Configured.nodeAddress(), {
+				config: { schema: Config, mapping: { enabled: 'ENABLED' } },
+			}),
+			envBinding(OtherConfigured.nodeAddress(), {
+				config: { schema: OtherConfig, mapping: { title: 'TITLE' } },
+			}),
+			envBinding(Configured.nodeAddress(), {
 				vault: { schema: Credentials, mapping: { credentials: 'CREDENTIALS' } },
 			}),
 		],
@@ -281,7 +286,7 @@ it('keeps the Host Vault contract across plugin replacement without repeating tr
 			plugins: [Bound],
 			services: [service],
 			envBindings: [
-				envBinding(Bound, {
+				envBinding(Bound.nodeAddress(), {
 					vault: {
 						schema: v.object({ credentials: tokenSchema }),
 						mapping: { credentials: { token: 'TOKEN' } },
@@ -319,7 +324,7 @@ it('requires the same config schema value even when another schema has the same 
 			() => ({
 				plugins: [Configured],
 				envBindings: [
-					envBinding(Configured, {
+					envBinding(Configured.nodeAddress(), {
 						config: { schema: unrelated, mapping: { enabled: 'ENABLED' } },
 					}),
 				],
@@ -339,7 +344,7 @@ it('validates Vault root record keys and redacts rejected values', async () => {
 			() => ({
 				plugins: [Configured],
 				envBindings: [
-					envBinding(Configured, {
+					envBinding(Configured.nodeAddress(), {
 						vault: { schema, mapping: { invalid: { token: 'TOKEN' } } },
 					}),
 				],
@@ -351,7 +356,7 @@ it('validates Vault root record keys and redacts rejected values', async () => {
 		() => ({
 			plugins: [Configured],
 			envBindings: [
-				envBinding(Configured, {
+				envBinding(Configured.nodeAddress(), {
 					vault: { schema, mapping: { 'account-main': { token: 'TOKEN' } } },
 				}),
 			],
@@ -392,7 +397,7 @@ it('checks environment paths against replacement config metadata without another
 		defineHostApplication(() => ({
 			plugins: [BeforeConfigReplacement],
 			envBindings: [
-				envBinding(BeforeConfigReplacement, {
+				envBinding(BeforeConfigReplacement.nodeAddress(), {
 					config: { schema: OriginalConfig, mapping: { enabled: 'ENABLED' } },
 				}),
 			],
@@ -420,9 +425,15 @@ it.each(['environment', 'file'] as const)(
 		const application = defineHostApplication(() => ({
 			plugins: [Configured],
 			...(kind === 'environment'
-				? { envBindings: [envBinding(Configured, { vault: { schema: Credentials, mapping: {} } })] }
+				? {
+						envBindings: [
+							envBinding(Configured.nodeAddress(), { vault: { schema: Credentials, mapping: {} } }),
+						],
+					}
 				: {
-						fileBindings: [fileBinding(Configured, { vault: { schema: Credentials, paths: {} } })],
+						fileBindings: [
+							fileBinding(Configured.nodeAddress(), { vault: { schema: Credentials, paths: {} } }),
+						],
 					}),
 		}))
 		await expect(resolveHostApplication(application, startup)).rejects.toMatchObject({
@@ -433,7 +444,7 @@ it.each(['environment', 'file'] as const)(
 )
 
 it('combines disjoint mappings for one node, rejects overlap, and checks canonical fork schema identity', async () => {
-	const target = Configured.nodeAddress('east')
+	const target = parsePluginNodeAddress(Configured.nodeAddress('east'))
 	const forkBindings = [
 		envBinding(target, { config: { schema: Config, mapping: { enabled: 'ENABLED' } } }),
 		envBinding(target, { config: { schema: Config, mapping: { limit: 'LIMIT' } } }),
@@ -485,9 +496,13 @@ it('attributes empty-object deployment patches only to paths they actually suppl
 	const result = await resolveHostApplication(
 		() => ({
 			plugins: [NestedConfigured],
-			config: { records: [{ owner: NestedConfigured, config: { nested: { value: 4 } } }] },
+			config: {
+				records: [{ owner: NestedConfigured.nodeAddress(), config: { nested: { value: 4 } } }],
+			},
 			envBindings: [
-				envBinding(NestedConfigured, { config: { schema: NestedConfig, mapping: 'CONFIG' } }),
+				envBinding(NestedConfigured.nodeAddress(), {
+					config: { schema: NestedConfig, mapping: 'CONFIG' },
+				}),
 			],
 		}),
 		{ ...startup, env: { CONFIG: '{"nested":{}}' } },

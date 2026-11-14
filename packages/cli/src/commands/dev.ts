@@ -1,17 +1,14 @@
 import { type ArgValues, type CommandContext, define } from 'gunshi'
 import { styleText } from 'node:util'
 import {
-	devCancelDefinition,
 	devCommandDefinition,
 	devCommonArgs,
 	devHmrArgs,
 	devHmrDefinition,
 	devInstancesDefinition,
 	devStatusDefinition,
-	devResultDefinition,
 	devRunArgs,
 	devRunDefinition,
-	devReceiptArgs,
 } from '../command-manifest'
 import {
 	DevClientError,
@@ -19,10 +16,8 @@ import {
 	liveDevInstances,
 	matchesDevInstance,
 	parseInput,
-	parseRunSnapshot,
 	publicInstance,
 	readBoundedFile,
-	connectDevInstance,
 	runDevFile,
 	selectDevInstance,
 	withDevContext,
@@ -38,7 +33,8 @@ import {
 } from '../dev/project'
 import { validateCommandOptions } from '../command-options'
 import { runDevCommand } from '../dev/process'
-import { decodeDevReceipt, encodeDevReceipt } from '../dev/receipt'
+import { encodeScriptReceipt } from '../script/receipt'
+import { printFailure, printRun, printRunProgress, printValue } from '../script/output'
 
 type DevCommandContext = Pick<
 	CommandContext,
@@ -66,73 +62,60 @@ function terminalUrl(line: string): string {
 }
 
 function runReceipt(instance: DevInstance, runId: string, requestHash: string): string {
-	return encodeDevReceipt({
-		root: instance.root,
+	return encodeScriptReceipt({
+		version: 3,
+		connection: { kind: 'local', root: instance.root, serviceId: instance.serviceId },
 		instanceId: instance.instanceId,
 		runId,
 		requestHash,
-		serviceId: instance.serviceId,
 	})
 }
 
 function runResult(instance: DevInstance, snapshot: DevRunSnapshot) {
-	return { ...snapshot, receipt: runReceipt(instance, snapshot.runId, snapshot.requestHash) }
+	const { root: _root, ...run } = snapshot
+	return { receipt: runReceipt(instance, snapshot.runId, snapshot.requestHash), run }
 }
 
 function printAccepted(instance: DevInstance, snapshot: DevRunSnapshot): void {
-	process.stderr.write(
-		JSON.stringify({
-			event: snapshot.state === 'submitting' ? 'submitting' : 'accepted',
-			root: snapshot.root,
-			runId: snapshot.runId,
-			instanceId: snapshot.instanceId,
-			receipt: runReceipt(instance, snapshot.runId, snapshot.requestHash),
-			state: snapshot.state,
-		}) + '\n',
+	printRunProgress(
+		snapshot.state === 'submitting' ? 'prepared' : 'accepted',
+		runReceipt(instance, snapshot.runId, snapshot.requestHash),
 	)
 }
 
-async function printResult(
+async function printResult<T>(
 	ctx: DevCommandContext,
-	action: () => Promise<unknown>,
-	pendingExitCode = 2,
+	action: () => Promise<T>,
+	print: (value: T) => void = (value) => printValue(ctx.log, value),
 ) {
 	try {
 		validateCommandOptions(ctx)
-		const value = await action()
-		ctx.log(JSON.stringify({ ok: true, value }))
-		if (value && typeof value === 'object' && 'state' in value) {
-			if (value.state === 'failed' || value.state === 'cancelled') process.exitCode = 1
-			else if (value.state !== 'succeeded') process.exitCode = pendingExitCode
-		}
+		print(await action())
 	} catch (error) {
 		const failure = withDevContext(error, {})
 		const context = failure.context
 		const receipt =
 			failure.runId && failure.requestHash && context?.root && context.instanceId
-				? encodeDevReceipt({
-						root: context.root,
+				? encodeScriptReceipt({
+						version: 3,
+						connection: { kind: 'local', root: context.root, serviceId: context.serviceId },
 						instanceId: context.instanceId,
 						runId: failure.runId,
 						requestHash: failure.requestHash,
-						serviceId: context.serviceId,
 					})
 				: undefined
-		ctx.log(
-			JSON.stringify({
-				ok: false,
-				error: {
-					code: failure.code,
-					message: failure.message.slice(0, 8192),
-					...(failure.runId ? { runId: failure.runId } : {}),
-					...(receipt ? { receipt } : {}),
-					...(context && Object.keys(context).length > 0 ? { context } : {}),
-					...(failure.hint ? { hint: failure.hint } : {}),
-					...(failure.candidates ? { candidates: failure.candidates } : {}),
-				},
-			}),
+		printFailure(
+			ctx.log,
+			{
+				code: failure.code,
+				message: failure.message.slice(0, 8192),
+				...(failure.runId ? { runId: failure.runId } : {}),
+				...(context && Object.keys(context).length > 0 ? { context } : {}),
+				...(failure.hint ? { hint: failure.hint } : {}),
+				...(failure.candidates ? { candidates: failure.candidates } : {}),
+			},
+			receipt,
 		)
-		process.exitCode = 1
 	}
 }
 
@@ -299,7 +282,7 @@ export const devRunCommand = define({
 				})
 				return runResult(instance, result)
 			},
-			values.detach ? 0 : 2,
+			(value) => printRun(ctx.log, value.receipt, value.run, values.detach),
 		)
 	},
 })
@@ -322,47 +305,7 @@ export const devHmrCommand = define({
 				})
 				return runResult(instance, result)
 			},
-			values.detach ? 0 : 2,
+			(value) => printRun(ctx.log, value.receipt, value.run, values.detach),
 		)
-	},
-})
-
-async function receiptResult(ctx: DevCommandContext, token: string, method: 'result' | 'cancel') {
-	await printResult(ctx, async () => {
-		const receipt = decodeDevReceipt(token)
-		try {
-			const instance = await selectDevInstance({
-				root: receipt.root,
-				instance: receipt.instanceId,
-				serviceId: receipt.serviceId,
-			})
-			using control = await connectDevInstance(instance)
-			const snapshot = parseRunSnapshot(
-				await control[method](receipt.runId),
-				instance,
-				receipt.runId,
-			)
-			if (snapshot.requestHash !== receipt.requestHash)
-				throw new DevClientError(
-					'request_conflict',
-					'Receipt content does not match the retained request',
-				)
-			return runResult(instance, snapshot)
-		} catch (error) {
-			throw withDevContext(error, receipt, receipt.runId)
-		}
-	})
-}
-
-export const devResultCommand = define({
-	...devResultDefinition,
-	async run(ctx) {
-		await receiptResult(ctx, (ctx.values as ArgValues<typeof devReceiptArgs>).receipt, 'result')
-	},
-})
-export const devCancelCommand = define({
-	...devCancelDefinition,
-	async run(ctx) {
-		await receiptResult(ctx, (ctx.values as ArgValues<typeof devReceiptArgs>).receipt, 'cancel')
 	},
 })

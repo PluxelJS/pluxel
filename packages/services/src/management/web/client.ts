@@ -80,7 +80,7 @@ import {
 	type PluginControlManifestRequest,
 	type PluginControlFileRequest,
 	type PluginControlFileChunk,
-} from '@pluxel/host/agent'
+} from '@pluxel/host/agent/runtime'
 
 export type { RuntimeLogFollowInput, RuntimeLogRangeQuery, RuntimeLogStreamsIndex }
 

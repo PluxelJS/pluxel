@@ -41,7 +41,7 @@ export const scriptReceiptArgs = {
 	receipt: {
 		type: 'positional',
 		required: true,
-		description: 'Complete receipt returned by script run',
+		description: 'Complete receipt returned by script run, dev run or dev hmr',
 	},
 } as const
 export const scriptRunDefinition = {
@@ -59,7 +59,8 @@ export const scriptSyncArgs = {
 	out: {
 		type: 'string',
 		default: '.pluxel/control',
-		description: 'Tool-owned Plugin contract directory; import its current/index.mjs',
+		description:
+			'Tool-owned Plugin contract directory; import each definition using its returned module path',
 	},
 } as const
 export const scriptSyncDefinition = {
@@ -806,26 +807,6 @@ export const devSyncDefinition = {
 	args: devSyncArgs,
 } as const
 
-export const devReceiptArgs = {
-	receipt: {
-		type: 'positional',
-		required: true,
-		description: 'Complete receipt returned by dev run or dev hmr',
-	},
-} as const
-
-export const devResultDefinition = {
-	name: 'result',
-	description: 'Read a retained run from its original instance using its receipt',
-	args: devReceiptArgs,
-} as const
-
-export const devCancelDefinition = {
-	name: 'cancel',
-	description: 'Request cooperative cancellation at the original instance using its receipt',
-	args: devReceiptArgs,
-} as const
-
 export const devCommandDefinition = {
 	name: 'dev',
 	description: 'Start or reuse the project application or service and display current addresses',
@@ -860,19 +841,19 @@ export const devCommandDefinition = {
 			'run',
 			lazy(() => import('./commands/dev').then((module) => module.devRunCommand), devRunDefinition),
 		],
-		[
-			'result',
-			lazy(
-				() => import('./commands/dev').then((module) => module.devResultCommand),
-				devResultDefinition,
-			),
-		],
-		[
-			'cancel',
-			lazy(
-				() => import('./commands/dev').then((module) => module.devCancelCommand),
-				devCancelDefinition,
-			),
-		],
 	]),
 } as const
+
+/** Exact operational paths that promise one final control JSON envelope. */
+const controlCommandPaths = new Set([
+	'script run',
+	'script result',
+	'script cancel',
+	'script sync',
+	'dev run',
+	'dev hmr',
+	'dev sync',
+])
+
+export const isControlCommandPath = (path: readonly string[]): boolean =>
+	controlCommandPaths.has(path.join(' '))

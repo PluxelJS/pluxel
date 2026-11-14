@@ -5,7 +5,7 @@ import { dirname, isAbsolute, resolve } from 'node:path'
 import { rolldown, type Plugin } from 'rolldown'
 import MagicString from 'magic-string'
 import type { BindingPattern, ModuleExportName, Program } from 'oxc-parser'
-import type { ScriptArtifact } from '@pluxel/host/agent'
+import type { ScriptArtifact } from '@pluxel/host/agent/runtime'
 import { ScriptInputs } from './script-inputs'
 import { readScriptControlModule } from './script-control-inputs'
 
@@ -41,16 +41,27 @@ function scriptFactory(code: string, program: Program, filename: string) {
 		while (code.includes(base)) base += '$'
 		return base
 	}
-	const shared = fresh('__pluxel_script_shared')
+	const sharedBindings = new Map([
+		[
+			'@pluxel/core/better-result',
+			{ local: fresh('__pluxel_script_shared'), input: '__pluxel_script_better_result' },
+		],
+		[
+			'@pluxel/host/internal/control-reference',
+			{ local: fresh('__pluxel_script_control'), input: '__pluxel_script_control' },
+		],
+	])
+	const used = new Map<string, string>()
 	const merge = fresh('__pluxel_script_export_star')
-	let usesShared = false
-	let exportStar = false
+	let exportStar: string | undefined
 	const name = (node: ModuleExportName): string =>
 		node.type === 'Identifier' ? node.name : node.value
-	const external = (source: string): void => {
-		if (source !== '@pluxel/core/better-result')
+	const external = (source: string): string => {
+		const binding = sharedBindings.get(source)
+		if (!binding)
 			throw new ScriptCompileError('unsupported_import', `Unbound script import ${source}`)
-		usesShared = true
+		used.set(binding.local, binding.input)
+		return binding.local
 	}
 	const bindings = (pattern: BindingPattern): string[] => {
 		switch (pattern.type) {
@@ -70,7 +81,7 @@ function scriptFactory(code: string, program: Program, filename: string) {
 	}
 	for (const statement of program.body) {
 		if (statement.type === 'ImportDeclaration') {
-			external(statement.source.value)
+			const shared = external(statement.source.value)
 			if (statement.attributes.length > 0)
 				throw new ScriptCompileError(
 					'unsupported_import',
@@ -90,7 +101,7 @@ function scriptFactory(code: string, program: Program, filename: string) {
 					.join('\n'),
 			)
 		} else if (statement.type === 'ExportNamedDeclaration') {
-			if (statement.source) external(statement.source.value)
+			const shared = statement.source ? external(statement.source.value) : undefined
 			if (statement.attributes.length > 0)
 				throw new ScriptCompileError(
 					'unsupported_import',
@@ -137,14 +148,14 @@ function scriptFactory(code: string, program: Program, filename: string) {
 				exports.set('default', binding)
 			}
 		} else if (statement.type === 'ExportAllDeclaration') {
-			external(statement.source.value)
+			const shared = external(statement.source.value)
 			if (statement.attributes.length > 0)
 				throw new ScriptCompileError(
 					'unsupported_import',
 					'Script export attributes are unsupported',
 				)
 			if (statement.exported) exports.set(name(statement.exported), shared)
-			else exportStar = true
+			else exportStar = shared
 			output.remove(statement.start, statement.end)
 		}
 	}
@@ -152,10 +163,10 @@ function scriptFactory(code: string, program: Program, filename: string) {
 		.map(([key, value]) => `get [${JSON.stringify(key)}]() { return ${value}; }`)
 		.join(',')}}`
 	output.prepend(
-		`var __pluxel_script_exports = (function(${usesShared ? shared : ''}${exportStar ? `, ${merge}` : ''}) {\n'use strict';\n`,
+		`var __pluxel_script_exports = (function(${[...used.keys(), ...(exportStar ? [merge] : [])].join(', ')}) {\n'use strict';\n`,
 	)
 	output.append(
-		`\nreturn ${exportStar ? `${merge}(${shared}, ${result})` : result};\n})(${usesShared ? '__pluxel_script_better_result' : ''}${
+		`\nreturn ${exportStar ? `${merge}(${exportStar}, ${result})` : result};\n})(${[...used.values()].join(', ')}${
 			exportStar
 				? `, (shared, exports) => {
 	for (const key of Object.keys(shared)) {
@@ -187,7 +198,7 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 		const code = await readScriptControlModule(inputs, id)
 		if (code !== undefined) {
 			controls.set(id, code)
-			inputs.requireCheckedFile(resolve(dirname(id), 'index.d.mts'))
+			inputs.requireCheckedFile(id.slice(0, -4) + '.d.mts')
 		}
 		return code
 	}
@@ -239,9 +250,15 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 	const imports: Plugin = {
 		name: 'pluxel-script-imports',
 		async resolveId(source, importer) {
-			// Format 2 binds this exact public entry to the receiver's native module.
+			// Format 3 binds the public Result and verified control-provider template to receiver modules.
 			// It never reads or bundles an author's separate Better Result runtime.
 			if (importer && source === '@pluxel/core/better-result') return { id: source, external: true }
+			if (
+				importer &&
+				source === '@pluxel/host/internal/control-reference' &&
+				controls.has(importer)
+			)
+				return { id: source, external: true }
 			if (importer && forbidden(source)) {
 				if (source.startsWith('@pluxel/')) {
 					const resolved = await this.resolve(source, importer, { skipSelf: true })
@@ -318,7 +335,11 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 				`Module ${file} does not export ${exportName}`,
 			)
 		if (
-			chunk.imports.some((specifier) => specifier !== '@pluxel/core/better-result') ||
+			chunk.imports.some(
+				(specifier) =>
+					specifier !== '@pluxel/core/better-result' &&
+					specifier !== '@pluxel/host/internal/control-reference',
+			) ||
 			chunk.dynamicImports.length > 0
 		)
 			throw new ScriptCompileError(
@@ -347,7 +368,7 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 		}
 		return {
 			kind: 'artifact',
-			format: 'pluxel-js-factory/2',
+			format: 'pluxel-js-factory/3',
 			code,
 			sourceHash: createHash('sha256').update(code).digest('hex'),
 			exportName,

@@ -6,6 +6,7 @@ import {
 	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 	type PluginToken,
+	type PluginInstanceNodeAddress,
 } from '@pluxel/core'
 
 declare const concrete: PluginConstructor
@@ -16,6 +17,20 @@ export const defaultNode: PluginDefaultNodeAddress = concrete.nodeAddress()
 export const forkNode: PluginForkNodeAddress = concrete.nodeAddress('east')
 export const maybeFork: PluginNodeAddress = concrete.nodeAddress(forkId)
 export const definition: PluginDefinitionAddress = token.definitionAddress()
+
+class Concrete extends BasePlugin {
+	readonly count = 1
+	increment(by: number): number {
+		return this.count + by
+	}
+}
+export const typedDefault: PluginInstanceNodeAddress<Concrete, PluginDefaultNodeAddress> =
+	Concrete.nodeAddress()
+export const typedFork: PluginInstanceNodeAddress<Concrete, PluginForkNodeAddress> =
+	Concrete.nodeAddress('east')
+export const typedMaybeFork: PluginInstanceNodeAddress<Concrete> = Concrete.nodeAddress(forkId)
+// @ts-expect-error An address does not retain a different Plugin's instance contract.
+export const wrongInstance: PluginInstanceNodeAddress<{ other(): void }> = Concrete.nodeAddress()
 
 abstract class Capability extends BasePlugin {}
 export const capability: PluginDefinitionAddress = Capability.definitionAddress()

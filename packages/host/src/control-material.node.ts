@@ -74,7 +74,7 @@ function readControlAt(
 		if (!entry) return Object.freeze({ state: 'unavailable', reason: 'missing' })
 		return Object.freeze({
 			state: 'available',
-			format: 1,
+			format: 2,
 			contracts: entry.contracts,
 			material: Object.freeze({
 				snapshot: manifest.snapshot,

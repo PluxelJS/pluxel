@@ -4,7 +4,7 @@ import { execFile as execFileCallback, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { networkInterfaces, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { findPackageJSON } from 'node:module'
 import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -279,15 +279,29 @@ async function main() {
 			if (expectedCode !== null)
 				assert.equal(code, expectedCode, `${result.stdout}\n${result.stderr}`)
 			const output = JSON.parse(result.stdout.trim())
-			if (expectedCode === 0) assert.ok(!output.error, JSON.stringify(output))
-			return output
+			assert.equal(typeof output.ok, 'boolean', JSON.stringify(output))
+			if (expectedCode === 0) assert.equal(output.ok, true, JSON.stringify(output))
+			if (args[0] === 'run' && output.ok) {
+				const events = result.stderr
+					.trim()
+					.split('\n')
+					.filter(Boolean)
+					.map((line) => JSON.parse(line))
+				assert.deepEqual(
+					events.map((event) => event.stage),
+					['prepared', 'accepted'],
+				)
+				assert.ok(events.every((event) => event.receipt === output.value.receipt))
+			}
+			return output.ok ? output.value : output
 		}
 		const synchronized = await cli(['sync', '--endpoint', ready.endpoint, '--out', 'control'])
 		const counter = synchronized.definitions.filter(
 			(item) => item.definition.exportName === 'Counter',
 		)
 		assert.equal(counter.length, 1, JSON.stringify(synchronized))
-		const controlImport = `import {${counter[0].exportName} as Counter} from './control/current/index.mjs'\n`
+		const modulePath = './' + relative(author, counter[0].module).replaceAll('\\', '/')
+		const controlImport = `import {${counter[0].exportName} as Counter} from ${JSON.stringify(modulePath)}\n`
 		const synchronizedAgain = await cli(['sync', '--endpoint', ready.endpoint, '--out', 'control'])
 		assert.equal(synchronizedAgain.snapshot, synchronized.snapshot)
 		await writeFile(join(author, 'task.ts'), controlImport + task)
@@ -427,7 +441,7 @@ export default defineHostApplication((startup):HostApplication=>({
  plugins:[ScriptCliAuthentication,Counter],
  services:[elysia(),managementAccess(),management(),managementHttp({scripts:true})],
  runtime:{documents:{config:false,state:false},logtape:logtape(({createRuntimeLogSink})=>({sinks:{history:createRuntimeLogSink({windowLines:100})},loggers:[{category:['pluxel'],lowestLevel:'trace',sinks:['history']},{category:['logtape','meta'],lowestLevel:'fatal',sinks:[]}]}))},
- policy:{autoStart:[ScriptCliAuthentication,Counter]},
+ policy:{autoStart:[ScriptCliAuthentication.nodeAddress(),Counter.nodeAddress()]},
  prepare:({host})=>{host.ctx.effects.defer(()=>{process.stdout.write(JSON.stringify({stage:'closed',authentication:scriptTestAuthentication})+'\\n')},{tag:'AgentSmokeShutdown',phase:'shutdown'})},
  launch:async({host})=>{const listener=await listenElysia(host,{hostname:startup.env.AGENT_SMOKE_HOST,port:0,tls:{key:await readFile('tls.key','utf8'),cert:await readFile('tls.crt','utf8')}});process.stdout.write(JSON.stringify({stage:'ready',endpoint:'https://'+listener.address.host+':'+listener.address.port})+'\\n')},
 }))
@@ -437,7 +451,7 @@ import {Result} from '@pluxel/core/better-result'
 let moduleRuns=0
 export default (async sdk=>{
  const select=sdk.plugin
- const counter=select(Counter)
+ const counter=select(Counter.nodeAddress())
  const {get,patch}=counter.config
  const {stop,start,restart,status,instance:borrow}=counter
  const before=await get();if(before.isErr())return before
@@ -449,7 +463,7 @@ export default (async sdk=>{
  const stopped=await stop();if(stopped.isErr())return stopped
  const started=await start();if(started.isErr())return started
  const restarted=await restart();if(restarted.isErr())return restarted
- const logs=await sdk.logs.read(cursor.value,{filter:{plugin:Counter},limit:20});if(logs.isErr())return logs
+ const logs=await sdk.logs.read(cursor.value,{filter:{plugin:Counter.nodeAddress()},limit:20});if(logs.isErr())return logs
  const instance=await borrow();if(instance.isErr())return instance
  const business=await instance.value.increment(3)
  const actual=await get();if(actual.isErr())return actual
@@ -459,12 +473,12 @@ export default (async sdk=>{
 `
 const failure = `import type {Script} from '@pluxel/host/agent'
 export default (async sdk=>{
- const listed=await sdk.plugins.list();if(listed.isErr())return listed;const node=listed.value.find(node=>node.displayName==='Installed counter')!.address
+ const listed=await sdk.plugins.list();if(listed.isErr())return listed;const node=listed.value.nodes.find(node=>node.displayName==='Installed counter')!.address
  const saved=await sdk.plugin(node).config.patch({set:{count:11}});if(saved.isErr())return saved
  throw new Error('author failed after committing')
 }) satisfies Script
 `
-const query = `import type {Script} from '@pluxel/host/agent';export default(async sdk=>{const listed=await sdk.plugins.list();if(listed.isErr())return listed;const node=listed.value.find(node=>node.displayName==='Installed counter')!.address;return sdk.plugin(node).config.get()}) satisfies Script`
+const query = `import type {Script} from '@pluxel/host/agent';export default(async sdk=>{const listed=await sdk.plugins.list();if(listed.isErr())return listed;const node=listed.value.nodes.find(node=>node.displayName==='Installed counter')!.address;return sdk.plugin(node).config.get()}) satisfies Script`
 const wait = `import type {Script} from '@pluxel/host/agent';export default(async sdk=>{const marked=await sdk.logs.mark();if(marked.isErr())return marked;return sdk.logs.wait(marked.value,{timeoutMs:120000,filter:{category:'not-emitted'}})}) satisfies Script`
 
 await main()

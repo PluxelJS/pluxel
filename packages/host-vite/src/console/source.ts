@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
 import { open } from 'node:fs/promises'
-import { ScriptExecutionError, SCRIPT_VALUE_BYTES } from '@pluxel/host/agent'
+import { ScriptExecutionError, SCRIPT_VALUE_BYTES } from '@pluxel/host/agent/runtime'
 
 export async function sourceHash(file: string): Promise<string> {
 	await using handle = await open(file, 'r')

@@ -3,9 +3,11 @@ title: 插件控制类型与实例调用
 description: 使用构建生成的插件描述符、配置源码声明和实例类型，编写可检查的 Host 脚本。
 ---
 
-插件构建会生成独立的 `control` 入口。入口里的值是冻结的数据描述符，携带插件的完整地址和配置、实例类型的摘要；类型文件保留原 class 的方法、属性、继承、重载与泛型。脚本通过 `sdk.plugin(Descriptor)` 选择插件，再使用同一个引用读取配置、启停节点或调用业务实例。
+插件构建会生成独立的 `control` 入口。入口里的值是冻结的地址提供者，提供 `definitionAddress()` 和 `nodeAddress(forkId?)`。它们携带构建绑定的类型与校验信息，类型文件保留原 class 的方法、属性、继承、重载与泛型。脚本通过 `sdk.plugin(Descriptor.nodeAddress())` 选择插件，再使用同一个引用读取配置、启停节点或调用业务实例。
 
 ## 取得控制入口
+
+发布生成的 `./control` 时，插件包须在 `peerDependencies` 显式声明兼容的 `@pluxel/host`，因为标准地址方法使用共享的 Host 工厂。仅此入口需要 Host 时，将该 peer 标为 optional；其他运行入口也使用 Host 时保持必需。开发构建在 `devDependencies` 安装兼容版本。构建会拒绝缺失 peer、仅 devDependency 或嵌套运行依赖，不会修改这些声明。脚本作者安装匹配目标平台的 Host；控制入口不加载插件实现。
 
 独立插件包经 `pluxel build` 构建后，从它的 `./control` 导出导入描述符：
 
@@ -36,43 +38,45 @@ pluxel script sync --endpoint https://app.example.com \
   --credentials-file ./admin.json --out .pluxel/control
 ```
 
-`dev sync` 默认写入所选 Vite root 的 `.pluxel/control`。部署同步的默认目录相对于当前工作目录。部署命令输出 `entry`、`snapshot`、`catalogRevision`、`unavailableCount` 和 `definitions`；开发命令在 `{ ok: true, value }` 的 `value` 中提供相同字段。每项 definition 都包含完整地址、实际 `exportName` 和可导入的 `module` 路径。聚合入口为名称添加稳定的地址后缀；按输出导入，并在脚本内使用易读的局部名：
+`dev sync` 默认写入所选 Vite root 的 `.pluxel/control`。部署同步的默认目录相对于当前工作目录。两种同步命令均在 `{ ok: true, value }` 的 `value` 中返回 `out`、`snapshot`、`catalogRevision`、`unavailableCount` 和 `definitions`。每项 definition 都包含完整地址、实际 `exportName` 和可导入的 `module` 路径。同步按权威入口生成稳定模块，同一入口的插件共享模块，普通具名导出沿用原名。不同包的同名插件通过模块路径区分。使用返回的准确 `module` 与 `exportName` 导入；特殊导出名或类型名冲突的实际名称也以该输出为准：
 
 ```ts
-// 使用 sync 实际返回的 exportName；下面的后缀仅用于展示形式。
-import { Counter_0123456789abcdef as Counter } from '../.pluxel/control/current/index.mjs'
+// 使用 sync 实际返回的 module；下面的目录摘要仅展示路径形式。
+import { Counter } from '../.pluxel/control/current/entries/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/index.mjs'
 ```
 
 同步先验证完整清单和每个文件，再原子切换 `current`。已有快照继续保留，当前导入不会看到半份材料。输出目录由工具管理；目录内已有作者文件或快照被修改时会报冲突。使用新目录或显式清理已经确认废弃的生成目录后再同步。
 
-同步后的聚合入口只导出当前 catalog 已接纳的定义；底层声明闭包按已验证的原材料保留。`unavailableCount` 表示缺失、分析失败等尚不能提供材料的定义数量。已知分析失败或源码失配的原因显示在插件 `status()` 和全局 `plugins.list()` 的 `issues` 中；应用的配置读取和生命周期操作仍可通过动态地址进行。
+同步模块只导出当前 catalog 已接纳的定义；底层声明闭包按已验证的原材料保留。`unavailableCount` 表示缺失、分析失败等尚不能提供材料的定义数量。已知分析失败或源码失配的原因显示在插件 `status()` 和全局 `plugins.list()` 的 `issues` 中；应用的配置读取和生命周期操作仍可通过动态地址进行。
 
 ## 选择插件与复用引用
 
-`sdk.plugin()` 同步创建本次运行的插件引用，固定传入的地址和描述符摘要。它不查询 Host，也不启动插件。控制方法用闭包保存目标，可以直接提取工厂、配置对象或单个方法：
+`sdk.plugin()` 同步创建本次运行的插件引用，固定传入地址所绑定的声明证据。它不查询 Host，也不启动插件。控制方法用闭包保存目标，可以直接提取工厂、配置对象或单个方法：
 
 ```ts
 const plugin = sdk.plugin
-const counter = plugin(Counter)
+const counter = plugin(Counter.nodeAddress())
 const { config } = counter
 const { get, patch } = config
 ```
 
-引用提供 `address`、`fork()`、`status()`、`start()`、`stop()` 和 `restart()`。生成描述符还提供 `instance()`，有配置的描述符提供准确推导的 `config`。运行时发现的完整地址使用同一入口：`sdk.plugin(node.address)`，配置字段保持未知数据。
+引用提供 `address`、`status()`、`start()`、`stop()` 和 `restart()`。生成入口的地址还提供 `instance()`，有配置时提供准确推导的 `config`。选择 fork 使用 `Counter.nodeAddress('east')`，同样交给 `sdk.plugin()`。
 
-三种目标共用这个选择入口：
+| 地址来源                           | 使用位置                     | 类型信息                                      |
+| ---------------------------------- | ---------------------------- | --------------------------------------------- |
+| 生成入口的 `nodeAddress()`         | 上传脚本和 Vite 项目脚本     | 配置输入/输出、声明源码和业务实例类型         |
+| 原 Plugin class 的 `nodeAddress()` | 同一 Vite 模块图中的项目脚本 | 原 class 实例类型；完整配置类型由生成入口提供 |
+| 运行时发现的 `node.address`        | 上传脚本和 Vite 项目脚本     | 动态配置与生命周期                            |
 
-| 传入目标                    | 使用位置                             | 类型信息                                               |
-| --------------------------- | ------------------------------------ | ------------------------------------------------------ |
-| 生成的描述符                | 上传脚本和 Vite 项目脚本             | 配置输入/输出、声明源码和业务实例类型                  |
-| 直接 import 的 Plugin class | 同一 Vite 模块图中的 `ProjectScript` | 原 class 的实例类型；控制配置使用生成描述符或节点地址  |
-| 运行时发现的节点地址        | 上传脚本和 Vite 项目脚本             | 动态配置与生命周期；业务实例访问需要描述符或当前 class |
+直接 import class 时，脚本和 Host 必须使用同一个已加载的 constructor。包管理器的独立安装目录可能与项目 `node_modules` 中的副本不同。HMR 后旧 class 地址返回 `stale_target`，重新导入当前实现再取得地址。class 的使用条件由目标 Vite 模块图决定，见[项目脚本](./dev-console.md)。
 
-直接 import class 时，脚本和 Host 必须使用同一个已加载的 constructor。包管理器的独立安装目录可能与项目 `node_modules` 中的副本不同；仅有相同包名和 class 名不能满足这个条件。HMR 替换后，旧 constructor 引用返回 `stale_target`。本地或远端指执行位置，class 用法取决于目标 Vite 的模块图，具体见[项目脚本](./dev-console.md)。
+类型与运行时证据绑定到原始不可变地址。直接传递、保存变量和选择 fork 都保留它；spread / `Object.assign` 后的副本会明确报错。JSON 往返和 `parsePluginNodeAddress()` 得到普通身份地址，用于动态管理；实例调用需要重新从原提供者取得地址。TypeScript 断言无法恢复实例能力。
+
+脚本直接返回原地址、把它放入普通对象或 Result 时，执行器也只交付纯身份，接收方不会得到调用证据。地址提供者和原地址对象可以跨 run 持有；SDK 引用与实例视图仍属于各自的 run。
 
 异步控制操作返回 `Promise<Result<T, E>>`，可以直接作为脚本返回值。多步调用使用 async/await，在 `isErr()` 分支提前返回，从 `value` 读取成功值。配置、日志和策略的原领域结果在 SDK 边界转换一次，保留原字段并去掉重复的 `ok` 标记。完整用法和失败处理见[自动化脚本](./scripts.md)。
 
-引用的使用期限由本次 run 管理。每次操作读取当前 Host 状态，重启后可以用同一引用重新取得业务实例；旧实例视图会失效。run 关闭后，缓存的工厂和 `fork()` 同步抛错，异步控制方法返回 `scope_closed` 的 `Err`。原插件业务方法仍遵守自身的返回类型和 JavaScript `this` 约定。
+引用的使用期限由本次 run 管理。每次操作读取当前 Host 状态，重启后可以用同一引用重新取得业务实例；旧实例视图会失效。run 关闭后，缓存的 SDK 选择工厂同步抛错，异步控制方法返回 `scope_closed` 的 `Err`。原插件业务方法仍遵守自身的返回类型和 JavaScript `this` 约定。
 
 ## 地址、契约摘要与升级
 
@@ -84,7 +88,7 @@ const { get, patch } = config
 
 [包管理器](../plugins/package-manager.md)将安装结果发布到配置的目录来源。Vite 接纳相应 HMR 批次后，新 definition 进入当前 catalog；Native 运行时按其 `next-start` 规则在下次启动加载。安装回执、Host 接纳和插件启动分别核对。
 
-使用 `sdk.plugins.list()` 读取当前节点，再用普通数组 `filter` 缩小候选。列表包括已接纳但尚未启动的 default 节点、已配置的 forks，以及仍被配置引用的不可用节点。以下脚本查找指定包的可用插件：
+使用 `sdk.plugins.list()` 读取 `{ nodes, catalogRevision, runtimeStateRevision }` 快照，再用普通数组 `filter` 缩小候选。两个 revision 分别描述 catalog 与运行状态；跨调用关联同步材料时核对 catalog revision，变化后重新读取。列表包括已接纳但尚未启动的 default 节点、已配置的 forks，以及仍被配置引用的不可用节点。以下脚本查找指定包的可用插件：
 
 ```ts
 import type { Script } from '@pluxel/host/agent'
@@ -92,7 +96,7 @@ import type { Script } from '@pluxel/host/agent'
 export default (async (sdk) => {
 	const nodes = await sdk.plugins.list()
 	if (nodes.isErr()) return nodes
-	return nodes.value.filter(({ address, availability }) => {
+	return nodes.value.nodes.filter(({ address, availability }) => {
 		const { entry } = address.definition
 		return (
 			availability === 'available' &&
@@ -107,7 +111,7 @@ export default (async (sdk) => {
 
 要查看安装清单，读取 PackageManagerPlugin 原生 `snapshot()` 的 `packages`。Host 列表以插件节点为单位，安装包可以包含零个或多个插件；`execution.kind === 'vite'` 且 `execution.origin === 'source'` 表示 Vite 动态来源，也包含其他目录来源。
 
-首次安装且作者尚无类型时，分两次编写脚本：先安装并确认 Host 接纳，然后执行 `dev sync` 或 `script sync`，从实际返回的 `module` / `exportName` 导入新描述符，再调用 `sdk.plugin(Descriptor).instance()`。TypeScript 在执行前检查，首次发现的未知类型通过这次同步提供。作者已有匹配版本的包控制入口时，可以直接使用它的描述符。同步读取当前 catalog，Vite 的后续动态来源同样参与。
+首次安装且作者尚无类型时，分两次编写脚本：先安装并确认 Host 接纳，然后执行 `dev sync` 或 `script sync`，从实际返回的 `module` / `exportName` 导入新描述符，再调用 `sdk.plugin(Descriptor.nodeAddress()).instance()`。TypeScript 在执行前检查，首次发现的未知类型通过这次同步提供。作者已有匹配版本的包控制入口时，可以直接使用它的描述符。同步读取当前 catalog，Vite 的后续动态来源同样参与。
 
 包缺少合法控制材料时，同步结果会报告 `unavailableCount`；此时仍可按地址进行动态配置与生命周期管理。生成材料中的公开外部类型依赖仍需在作者环境提供匹配版本。
 
@@ -138,7 +142,7 @@ import type { Script } from '@pluxel/host/agent'
 import { Counter } from '@acme/pluxel-plugin-counter/control'
 
 export default (async ({ plugin }) => {
-	const { get, patch } = plugin(Counter).config
+	const { get, patch } = plugin(Counter.nodeAddress()).config
 	const before = await get()
 	if (before.isErr()) return before
 	const changed = await patch(
@@ -152,7 +156,7 @@ export default (async ({ plugin }) => {
 
 `get` 返回 Schema 输出，`patch` 与 `validate` 接受 Schema 输入的递归 patch，数组整体替换。`managedInput` 和 `effectiveInput` 继续表达观察到的原始数据。`validate` 只预览候选输出；返回的 application 字段仍描述当前运行状态。保存与采用、版本冲突的处理见[自动化脚本](./scripts.md#读取计算条件修改与核对采用)。
 
-已知无配置的描述符使用 `never` 输入和输出，对应引用没有 `config`。配置不同的目标联合只提供 `config.get()`；写入前先缩小描述符，再创建引用。擦除类型关联的描述符也不提供 typed 配置入口。运行时发现的 `PluginNodeAddress` 保留动态配置方法，配置字段为未知数据，调用方自行验证。
+已知无配置的描述符使用 `never` 输入和输出，对应引用没有 `config`。配置不同的目标联合只提供 `config.get()`；写入前先缩小地址类型，再创建引用。擦除为 `PluginTypedNodeAddress` 的地址也不提供 typed 配置入口。运行时发现的 `PluginNodeAddress` 保留动态配置方法，配置字段为未知数据，调用方自行验证。
 
 ## 调用原插件实例
 
@@ -163,14 +167,14 @@ import type { Script } from '@pluxel/host/agent'
 import { Counter } from '@acme/pluxel-plugin-counter/control'
 
 export default (async ({ plugin }) => {
-	const instance = await plugin(Counter).instance()
+	const instance = await plugin(Counter.nodeAddress()).instance()
 	if (instance.isErr()) return instance
 	const changed = await instance.value.increment(3)
 	return { changed, calls: instance.value.calls }
 }) satisfies Script
 ```
 
-`counter.instance()` 要求节点已经运行，获取时不会启动它。`Result` 的成功值直接是实例，带有 `then` 成员的插件也能安全交付。未运行、目标失效和控制摘要不匹配等错误在返回类型中明确列出。实例保留原 class 的公共成员类型和可写性，私有与 protected 成员沿用 TypeScript 的可见性。通过原始地址选择的引用只有管理操作，业务实例访问需要生成描述符；Vite 项目还可以从当前 constructor 选择，见[项目脚本](./dev-console.md#编写可交互的开发脚本)。
+`counter.instance()` 要求节点已经运行，获取时不会启动它。`Result` 的成功值直接是实例，带有 `then` 成员的插件也能安全交付。未运行、目标失效和控制摘要不匹配等错误在返回类型中明确列出。实例保留原 class 的公共成员类型和可写性，私有与 protected 成员沿用 TypeScript 的可见性。通过原始地址选择的引用只有管理操作，业务实例访问需要生成入口的原始地址；Vite 项目还可以使用当前 class 的原始地址，见[项目脚本](./dev-console.md#编写可交互的开发脚本)。
 
 实例视图限定在本次运行内，对象身份不同于原 provider；同一次运行内重复获取会复用视图。成员访问检查当前 scope 和 provider 的接纳状态，方法在原 provider 上执行，同步返回保持同步；标准 Promise 返回保持原对象并参与运行和 generation 的排空。重启后重新获取实例，缓存的旧成员调用会失败。
 
@@ -180,14 +184,14 @@ export default (async ({ plugin }) => {
 
 ## 默认节点、fork 与更新
 
-描述符选择默认节点。`fork()` 返回同一定义的另一个不可变引用；它替换 fork ID，原引用保持不变。以下片段用于应用已经声明并运行的 fork：
+`Counter.nodeAddress()` 选择默认节点，`Counter.nodeAddress('tenant-a')` 选择同一定义的 fork。它们只生成不可变地址，fork 需要先由应用声明，再通过引用的 `start()` 启动。以下片段用于应用已经声明的 fork：
 
 ```ts
-const counter = sdk.plugin(Counter)
-const tenant = counter.fork('tenant-a')
+const counter = sdk.plugin(Counter.nodeAddress())
+const tenant = sdk.plugin(Counter.nodeAddress('tenant-a'))
 ```
 
-选择 fork 不会创建或启动节点；它需要先由应用声明，再通过 `start()` 启动。`forkId` 沿用 Core 的非空标识规则。未知插件的发现继续使用 `plugins.list()` 返回的完整地址。日志使用原生过滤字段，例如 `{ filter: { plugin: tenant.address } }`。
+`forkId` 沿用 Core 的非空标识规则。动态发现继续使用列表中的完整地址。日志使用原生过滤字段，例如 `{ filter: { plugin: tenant.address } }`。
 
 typed 配置调用检查配置摘要，实例获取检查实例摘要。材料过期返回 `control_contract_mismatch`，在调用前重新同步并检查脚本。缺失材料返回 `control_material_unavailable`。执行前可从 `describe.capabilities` 确认 `plugin.instance` 能力；当前 Node、Vite 后端提供同进程实例访问。材料读取权限与脚本执行权限分别判断。
 

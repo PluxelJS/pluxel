@@ -44,19 +44,14 @@ export function schema(value: unknown, label: string): InputSchema {
 	return value as unknown as InputSchema
 }
 export function configSchema(
-	target: PluginConstructor | PluginNodeAddress,
+	target: PluginNodeAddress,
 	selected?: StandardSchemaV1,
 	plugins: readonly PluginConstructor[] = [],
 ): InputSchema {
-	const plugin =
-		typeof target === 'function'
-			? target
-			: plugins.find((candidate) =>
-					pluginDefinitionAddressEqual(
-						candidate.nodeAddress().definition,
-						parsePluginNodeAddress(target).definition,
-					),
-				)
+	const owner = parsePluginNodeAddress(target)
+	const plugin = plugins.find((candidate) =>
+		pluginDefinitionAddressEqual(candidate.definitionAddress(), owner.definition),
+	)
 	if (!plugin) return schema(selected, 'Config binding schema')
 	const candidate = consumePluginDefinitionCandidate(plugin)
 	const declared = schema(candidate.declaration.config?.owner?.schema, 'configs.use()')
@@ -65,21 +60,20 @@ export function configSchema(
 	return declared
 }
 export function configBindingProof(
-	target: PluginConstructor | PluginNodeAddress,
+	target: PluginNodeAddress,
 	selected: StandardSchemaV1,
 	paths: readonly (readonly string[])[],
 	plugins: readonly PluginConstructor[],
 ): ConfigBindingProof {
-	const owner = parsePluginNodeAddress(typeof target === 'function' ? target.nodeAddress() : target)
+	const owner = parsePluginNodeAddress(target)
 	const proof = Object.freeze({
 		owner,
 		schema: selected,
 		paths: Object.freeze(paths.map((path) => Object.freeze([...path]))),
 	})
 	if (
-		typeof target === 'function' ||
 		plugins.some((plugin) =>
-			pluginDefinitionAddressEqual(plugin.nodeAddress().definition, owner.definition),
+			pluginDefinitionAddressEqual(plugin.definitionAddress(), owner.definition),
 		)
 	)
 		checkedBindings.add(proof)
@@ -95,7 +89,7 @@ export async function validateInputBindingCandidates(
 			pluginDefinitionAddressEqual(plugin.nodeAddress().definition, binding.owner.definition),
 		)
 		if (bindings.length === 0) continue
-		const declared = configSchema(plugin)
+		const declared = configSchema(plugin.nodeAddress(), undefined, [plugin])
 		for (const binding of bindings) {
 			if (!checkedBindings.has(binding) && binding.schema !== declared)
 				fail('[host] Config binding must reference the same schema as configs.use()')

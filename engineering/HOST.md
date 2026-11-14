@@ -52,6 +52,26 @@ Carrier metadata 的 `url` 保留物理监听事实；launcher 显式提供的 `
 Management 安装认证、状态投影和 RPC session；Workbench 安装内容/publication、页面和交互能力。它们共享 Host coordinator，不保存第二份插件运行状态。业务 HTTP 不自动继承 Management 认证。`managementHttp()` 唯一持有管理 endpoint；`workbenchHttp()` 只拥有 Shell fallback。preset 通过既有 bindings 组合 Workbench session/artifact handler，并用 `requires: { workbench: WorkbenchHost }` 声明准备顺序。
 `managementCommands()` 把插件查询和 lifecycle 命令发布到显式安装的 Commands catalog；它是独立接入，不能让通用 Commands 服务隐式安装管理面。
 
+Host 的 `pluginApplyReportOutcome()` 统一判定操作报告的完成结果。持久化未知、生命周期或协调问题，以及无问题的完成分别保留准确结论与原报告；Script 只转换为 Better Result，Management 只转换为其 DTO。管理生命周期失败仍交付操作后的 control 与完整 report，Workbench 刷新状态并展示其中的诊断。配置、策略与 fork 删除继续保留各自的保存、采用和排空结果。
+
+`status.ts` 分开维护节点枚举和单节点状态投影。列表枚举已接纳的 default、已配置的 forks 及仍被策略或运行状态引用的节点，精确读取按完整地址定位后使用同一个投影器。Services 的 label 消歧只读取节点身份和显示名，单节点查询无需构造并排序所有运行状态。所有读取来自同一 committed view，每次查询都观察当前诊断与 recent update。对应回归为 `status-projection.test.ts`。
+
+### 状态投影测量
+
+Core 与 Host 构建完成后，在工作区运行 `mise exec -- node packages/host/bench/status.bench.mjs`。基准仅导入 `dist`，先核对精确读取与 overview/find 完整结果相同，再为 8、1,000、10,000 个停止的配置 fork 各测 20 个样本，每项至少预热 5 次。输出 JSON 分开记录热状态索引的 overview/find、精确读取，以及新 state identity 的首次精确读取；冷路径在计时外准备不可变输入，只测索引构建和投影。
+
+2026-11-15 本机 Node 24.22.2 的一次原生投影测量如下，时间为每次调用的均值。计数在计时外记录，sort 观察在 `finally` 中恢复。投影对象数只计算返回的 status 对象，不代表全部对象或净堆分配。
+
+| 停止的配置 forks | 热 overview/find 均值 | 热精确读取均值 | 冷精确读取均值 | status 对象数，overview → 精确 | 状态投影排序次数，overview → 精确 |
+| ---------------- | --------------------- | -------------- | -------------- | ------------------------------ | --------------------------------- |
+| 8                | 0.2024 ms             | 0.0118 ms      | 0.0736 ms      | 9 → 1                          | 1 → 0                             |
+| 1,000            | 28.47 ms              | 0.0139 ms      | 8.77 ms        | 1,001 → 1                      | 1 → 0                             |
+| 10,000           | 313.17 ms             | 0.0150 ms      | 101.24 ms      | 10,001 → 1                     | 1 → 0                             |
+
+热索引以已发布的 `HostStateSnapshot` 对象为 WeakMap key；`HostStateStore.versionedSnapshot()` 连续读取复用同一对象，只有有效策略提交后才重建。新 state 的冷索引仍遍历 auto-start 与 forks，创建两个 Set、按 definition 聚合 forkId 的 Map 及数组；其成本由 `coldExact` 单列，不能算作恒定时间读取。
+
+这些数值只比较同一 committed view 的状态投影，排除协调排队、Core 图读取、诊断收集和 RPC。真实 SDK 每次 `readCommitted` 仍枚举并排序 Core adjacency 的节点和边、筛选运行节点，再构建运行 key 集合；精确投影还会检查当前 reconciliation 和 lifecycle issues。大量尚未启动的配置 fork 通常不进入 Core 图，本次优化消除了对它们重复创建和排序 status 的成本，不承诺完整 SDK 跨请求 O(1)。
+
 ## 资源边界与验证入口
 
 - Host plan、prepare rollback、关闭顺序：`packages/host/src/services.ts`、`host.ts`，对应 services/host/application 测试。
@@ -71,7 +91,9 @@ Services 包含基础服务、Management 与官方 preset；子入口按能力�
 
 ### 可移植 execution 协议
 
-`@pluxel/host/internal/protocol` 是浏览器和服务端共享 execution/update snapshots 与验证函数的唯一内部跨包入口，直接构建无外部依赖的 `src/execution.ts`。服务端框架集成仍使用 `/internal`，该入口不再转发 execution 协议。Management 客户端直接消费 protocol，不经过包含来源加载、IO 和生命周期编排的服务端 barrel；此拆分表达真实的运行环境边界，不能因减少路径而合并。
+`@pluxel/host/internal/protocol` 是浏览器和服务端共享 execution/update snapshots、操作报告及其验证函数的内部跨包入口，由 `src/protocol.ts` 组合可移植模块。`report-protocol.ts` 拥有报告、reconciliation、lifecycle summary 与 persistence 的严格字段和语义检查，地址继续调用 Core codec。Parser 接受字段标签并抛出 `TypeError`，Management 在载体边界转换为自己的协议错误。新增 Host 报告字段时，类型和校验在 Host 同批维护。
+
+服务端框架集成使用 `/internal`。Management 客户端直接消费可移植 protocol，保留与来源加载、IO 和生命周期编排的依赖隔离。报告 producer/consumer 对照与输入检查位于 `report-protocol.test.ts`，管理载体继续校验自己的 envelope 和权限输入。
 
 服务内部不为单个 consumer 建立 token/resolve 转发层：Elysia directory token 与安装器同属 `elysia.ts`，开发附件直接读取 Node backend token。Vite 子入口直接映射开发模块；只有需要限制导出集合或组合多个实现的入口才保留 facade。数据库 adapter 实现与调用方共享 `DatabaseAdapter` 和 backend options 类型，资源策略仍由原有 coordinator 统一拥有。
 

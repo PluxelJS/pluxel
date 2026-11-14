@@ -1,4 +1,4 @@
-import type { PluginNodeAddress } from '@pluxel/core'
+import type { PluginNodeAddress, PluginInstanceNodeAddress } from '@pluxel/core'
 import type { Result } from '@pluxel/core/better-result'
 import type { LogCursor, LogStreamMeta } from '@pluxel/core/logging'
 import type { HostConfigMutation } from '../config'
@@ -21,8 +21,7 @@ import type {
 	ScriptLogError,
 } from './sdk-results'
 import type {
-	PluginTypedTarget,
-	PluginTarget,
+	PluginTypedNodeAddress,
 	PluginConfigInput,
 	PluginConfigOutput,
 	PluginInstance,
@@ -72,15 +71,9 @@ export interface ScriptPluginConfig<
 	) => Promise<Result<ScriptConfigSnapshot<O>, ScriptConfigError>>
 }
 
-interface ScriptPluginOperations<T extends PluginTarget> {
+interface ScriptPluginOperations {
 	/** Frozen address selected by this reference; suitable for native log filters. */
 	readonly address: PluginNodeAddress
-	/**
-	 * Select another fork of this definition. Returns a new reference, without creating
-	 * or starting a node. Repeated calls replace the fork ID and preserve this reference.
-	 * Throws synchronously for an invalid ID or a closed run (`scope_closed`).
-	 */
-	readonly fork: (forkId: string) => ScriptPlugin<T>
 	/** Read current state, or null when this node is absent. */
 	readonly status: () => Promise<
 		Result<HostPluginStatusSnapshot | null, ScriptOperationError | ScriptTargetError>
@@ -93,7 +86,7 @@ interface ScriptPluginOperations<T extends PluginTarget> {
 	readonly restart: () => Promise<Result<PluginApplyReportSnapshot, ScriptLifecycleError>>
 }
 
-type TypedPluginOperations<T extends PluginTypedTarget> = {
+type TypedPluginOperations<T extends PluginTypedNodeAddress> = {
 	/**
 	 * Borrow the current generation without starting it. Result safely delivers Plugins
 	 * with a `then` member. Reacquire after restart; public members preserve the
@@ -109,23 +102,45 @@ type TypedPluginOperations<T extends PluginTypedTarget> = {
 				: ScriptPluginConfig<PluginConfigInput<T>, PluginConfigOutput<T>>
 		})
 
+type AddressEvidence<T extends PluginNodeAddress> = T extends PluginTypedNodeAddress
+	? Readonly<{ target: T; instance: PluginInstance<T> }>
+	: T extends PluginInstanceNodeAddress<infer S>
+		? Readonly<{ target: T; instance: S }>
+		: never
+
+type AddressOperations<T extends PluginNodeAddress> = [T] extends [PluginTypedNodeAddress]
+	? TypedPluginOperations<T>
+	: [T] extends [AddressEvidence<T>['target']]
+		? {
+				readonly instance: () => Promise<
+					Result<AddressEvidence<T>['instance'], ScriptInstanceError>
+				>
+			}
+		: [AddressEvidence<T>] extends [never]
+			? { readonly config: ScriptPluginConfig }
+			: unknown
+
 /**
  * Immutable, run-scoped selection of one Plugin node. It holds an address and the
  * descriptor contracts, while each operation resolves current committed Host state.
  * All control functions are safe to extract. Closing the run revokes their admission.
- * Generated descriptors provide typed configuration and business instance access;
- * discovered addresses provide configuration with unknown fields. Narrow descriptor
- * unions before selection to mutate variant-specific configuration.
+ * Generated addresses provide typed configuration and business instance access;
+ * source class addresses retain their original instance type. Plain discovered
+ * addresses provide configuration with unknown fields. Mixed address kinds require
+ * narrowing; typed configuration unions permit writes only with one schema association.
  */
-export type ScriptPlugin<T extends PluginTarget = PluginTarget> = ScriptPluginOperations<T> &
-	([T] extends [PluginTypedTarget]
-		? TypedPluginOperations<T>
-		: [T] extends [PluginNodeAddress]
-			? { readonly config: ScriptPluginConfig }
-			: unknown)
+export type ScriptPlugin<T extends PluginNodeAddress = PluginNodeAddress> = ScriptPluginOperations &
+	AddressOperations<T>
+
+/** One committed discovery snapshot. Revisions retain their separate domain meanings. */
+export type ScriptPluginSnapshot = Readonly<{
+	nodes: readonly HostPluginStatusSnapshot[]
+	catalogRevision: number
+	runtimeStateRevision: number
+}>
 
 /**
- * Host operations return promises of the shared Better Result; plugin/fork selection
+ * Host operations return promises of the shared Better Result; Plugin address selection
  * is synchronous. Closing the run denies new calls and waits for accepted work;
  * it does not undo mutations.
  * Management values are snapshots. Business instance views admit each member access
@@ -138,18 +153,17 @@ export interface ScriptSdk {
 	 * a validated target snapshot. The selector and all reference methods can be cached
 	 * within this run without binding `this`; a closed run rejects further selection.
 	 * Malformed targets and closed runs throw synchronously. Async expected failures
-	 * return Err; unknown implementation defects reject. Unsupported descriptor formats
-	 * report `control_format_unsupported`.
+	 * return Err; unknown implementation defects reject. Detached address evidence is rejected before normalization.
 	 *
 	 * @example
 	 * const plugin = sdk.plugin
-	 * const counter = plugin(Counter).fork('tenant-a')
+	 * const counter = plugin(Counter.nodeAddress('tenant-a'))
 	 * const { get, patch } = counter.config
 	 */
-	readonly plugin: <const T extends PluginTarget>(target: T) => ScriptPlugin<T>
+	readonly plugin: <const T extends PluginNodeAddress>(target: T) => ScriptPlugin<T>
 	readonly plugins: {
 		/** Discover current node addresses, lifecycle state and diagnostics. */
-		readonly list: () => Promise<Result<readonly HostPluginStatusSnapshot[], ScriptOperationError>>
+		readonly list: () => Promise<Result<ScriptPluginSnapshot, ScriptOperationError>>
 	}
 	readonly policy: {
 		readonly get: () => Promise<Result<ScriptPolicySnapshot, ScriptPolicyError>>

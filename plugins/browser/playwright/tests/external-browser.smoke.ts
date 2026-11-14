@@ -44,7 +44,7 @@ it('uses two successive Pluxel generations without stopping the external browser
 			plugins: [PlaywrightPlugin, ExternalBrowserSmoke],
 			services: [vault({ backend: 'bindings' })],
 			envBindings: [
-				envBinding(PlaywrightPlugin, {
+				envBinding(PlaywrightPlugin.nodeAddress(), {
 					config: { schema: PlaywrightConfig, mapping: { protocol: 'BROWSER_PROTOCOL' } },
 					vault: {
 						schema: PlaywrightVaultSchema,

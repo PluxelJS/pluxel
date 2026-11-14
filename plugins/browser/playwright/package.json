@@ -62,7 +62,13 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
 		"@pluxel/services": "workspace:^"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		}
 	},
 	"engines": {
 		"node": ">=24"

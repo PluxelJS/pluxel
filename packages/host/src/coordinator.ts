@@ -910,13 +910,7 @@ function cleanupRemovedSessionIntents(
 		if (operation.type === 'remove-node-policy') {
 			next.delete(pluginNodeIndexKey(operation.node))
 		} else if (operation.type === 'remove-fork') {
-			next.delete(
-				pluginNodeIndexKey({
-					definition: operation.definition,
-					variant: 'fork',
-					forkId: operation.forkId,
-				}),
-			)
+			next.delete(pluginNodeIndexKey(operation.node))
 		}
 	}
 	return next

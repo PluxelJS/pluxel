@@ -3,7 +3,8 @@ import { scriptSyncArgs, scriptSyncDefinition } from '../command-manifest'
 import { validateCommandOptions } from '../command-options'
 import { connectRuntimeTarget, readScriptCredentials } from '../script/session'
 import { syncPluginControl } from '../script/sync'
-import { ScriptExecutionError, scriptFailure } from '@pluxel/host/agent'
+import { ScriptExecutionError, scriptFailure } from '@pluxel/host/agent/runtime'
+import { printFailure, printValue } from '../script/output'
 
 export const scriptSyncCommand = define({
 	...scriptSyncDefinition,
@@ -20,14 +21,12 @@ export const scriptSyncCommand = define({
 					'control_material_unavailable',
 					'This Host does not expose Plugin control material',
 				)
-			ctx.log(
-				JSON.stringify(
-					await syncPluginControl({ source: connection.management.materials, out: values.out }),
-				),
+			printValue(
+				ctx.log,
+				await syncPluginControl({ source: connection.management.materials, out: values.out }),
 			)
 		} catch (error) {
-			ctx.log(JSON.stringify({ error: scriptFailure(error, 'control_sync_failed') }))
-			process.exitCode = 1
+			printFailure(ctx.log, scriptFailure(error, 'control_sync_failed'))
 		}
 	},
 })

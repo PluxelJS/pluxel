@@ -189,7 +189,7 @@ it('closes its physical listener, stream and WebSocket through the Host lifetime
 	const host = await createHost({
 		plugins: [ListenerHttpProbe, ListenerSocketProbe],
 		services: [elysia()],
-		policy: { autoStart: [ListenerHttpProbe, ListenerSocketProbe] },
+		policy: { autoStart: [ListenerHttpProbe.nodeAddress(), ListenerSocketProbe.nodeAddress()] },
 	})
 	const cancelled = Promise.withResolvers<unknown>()
 	cancelDocumentStream = cancelled.resolve

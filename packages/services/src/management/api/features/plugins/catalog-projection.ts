@@ -10,6 +10,9 @@ import {
 import {
 	readHostPluginStatusOverview,
 	hostPluginStatusOverviewFromView,
+	hostPluginStatusFromView,
+	hostPluginCatalogEntriesFromView,
+	type HostPluginCatalogEntry,
 	type HostPluginStatusOverview,
 	type HostPluginStatusProjectionView,
 	type HostPluginStatusSnapshot,
@@ -59,6 +62,18 @@ export function projectPluginCatalogFromView(
 	return projectPluginCatalogOverview(root, hostPluginStatusOverviewFromView(view))
 }
 
+/** One runtime projection; the label inventory contains identity and display names only. */
+export function projectPluginStatusFromView(
+	root: PlxContext,
+	view: HostPluginStatusProjectionView,
+	address: PluginNodeAddress,
+): PluginCatalogProjectionEntry | null {
+	const status = hostPluginStatusFromView(view, address)
+	if (!status) return null
+	const labels = staticPluginCatalogProjection(root, hostPluginCatalogEntriesFromView(view))
+	return { ...status, ...labels.byAddress.get(pluginNodeIndexKey(address))! }
+}
+
 function projectPluginCatalogOverview(
 	root: PlxContext,
 	overview: HostPluginStatusOverview,
@@ -78,20 +93,18 @@ function projectPluginCatalogOverview(
 
 function staticPluginCatalogProjection(
 	root: PlxContext,
-	statuses: readonly HostPluginStatusSnapshot[],
+	statuses: readonly HostPluginCatalogEntry[],
 ): PluginCatalogStaticProjection {
 	const shape = statuses.map(({ address, displayName }) => ({
 		nodeKey: pluginNodeIndexKey(address),
 		displayName,
 	}))
 	const cached = staticProjectionByRoot.get(root)
+	const names = new Map(shape.map(({ nodeKey, displayName }) => [nodeKey, displayName]))
 	if (
 		cached &&
 		cached.shape.length === shape.length &&
-		cached.shape.every(
-			(entry, index) =>
-				entry.nodeKey === shape[index]!.nodeKey && entry.displayName === shape[index]!.displayName,
-		)
+		cached.shape.every((entry) => names.get(entry.nodeKey) === entry.displayName)
 	) {
 		return cached
 	}

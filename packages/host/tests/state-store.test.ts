@@ -1,4 +1,10 @@
-import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
+import {
+	BasePlugin,
+	Plugin,
+	parsePluginNodeAddress,
+	type PluginDefinitionAddress,
+	type PluginNodeAddress,
+} from '@pluxel/core'
 import { createCoreContextHost } from '@pluxel/core/host'
 import { SuperJSON } from 'superjson'
 import { describe, expect, it, vi } from 'vitest'
@@ -16,6 +22,9 @@ const other: PluginNodeAddress = {
 	variant: 'default',
 }
 const fork = { definition, variant: 'fork' as const, forkId: 'tenant' }
+
+@Plugin({ forkable: true })
+class PolicyAddressOwner extends BasePlugin {}
 
 describe('Host policy persistence and selection', () => {
 	it('captures declarations without initializing a missing document or managed columns', async () => {
@@ -247,5 +256,21 @@ it('captures author autoStart without executing array accessors or dropping spar
 	expect(getter).not.toHaveBeenCalled()
 	expect(() => snapshotHostPolicy({ autoStart: Array<PluginNodeAddress>(1) })).toThrow(
 		/dense array/,
+	)
+})
+
+it('normalizes framework address evidence in policy and refuses detached copies', () => {
+	const node = PolicyAddressOwner.nodeAddress()
+	const eastFork = PolicyAddressOwner.nodeAddress('east')
+	const policy = snapshotHostPolicy({ autoStart: [node, eastFork], forks: [eastFork] })
+	expect(policy.autoStart).toHaveLength(2)
+	expect(policy.autoStart).toEqual(
+		expect.arrayContaining([node, eastFork].map(parsePluginNodeAddress)),
+	)
+	expect(policy.forks).toEqual([parsePluginNodeAddress(eastFork)])
+	expect(Object.getOwnPropertySymbols(policy.autoStart![0]!)).toHaveLength(0)
+	expect(() => snapshotHostPolicy({ autoStart: [{ ...node }] })).toThrow('copied or detached')
+	expect(() => snapshotHostPolicy({ autoStart: [PolicyAddressOwner as never] })).toThrow(
+		'portable data tree',
 	)
 })

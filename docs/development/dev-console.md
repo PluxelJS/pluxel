@@ -3,7 +3,7 @@ title: Vite 项目脚本与 HMR
 description: 在当前 Vite 模块图中执行普通 TypeScript，访问真实插件和 Context，并控制源码更新批次。
 ---
 
-项目脚本由目标 Vite 的现有 ModuleRunner 加载。它与应用共享 Plugin constructor、能力 token 和模块身份。配置、插件、策略与日志使用 [Script SDK](./scripts.md)，异步控制操作统一返回 Better Result。`sdk.plugin(Constructor)` 选择当前实现并借用受守卫的实例；通过 `pluxel dev sync` 取得[控制类型与配置源码描述](./plugin-control.md)后，同一入口还接受描述符并提供准确配置类型。脱离 Vite 的部署使用同一 SDK 的上传执行。
+项目脚本由目标 Vite 的现有 ModuleRunner 加载。它与应用共享 Plugin constructor、能力 token 和模块身份。配置、插件、策略与日志使用 [Script SDK](./scripts.md)，异步控制操作统一返回 Better Result。`sdk.plugin(Constructor.nodeAddress())` 按当前实现选择节点，并通过 `.instance()` 借用受守卫的实例；通过 `pluxel dev sync` 取得[控制类型与配置源码描述](./plugin-control.md)后，生成提供者的 `.nodeAddress()` 通过同一入口提供准确配置类型。脱离 Vite 的部署使用同一 SDK 的上传执行。
 
 ## 推荐工作流程
 
@@ -12,11 +12,11 @@ vp exec pluxel dev status
 vp exec pluxel dev run host/web/dev/inspect.ts
 ```
 
-先确认 profile、Vite root、instanceId 与 `application.state`。修改运行中应用的多个文件前暂停 HMR，完成检查后 apply 并核对应用报告与实际行为。命令在 stderr 的 `submitting` 事件中先给出 receipt 和请求摘要，接纳后给出 `accepted`；stdout 保留一个最终 JSON。保存 receipt，后续查询和取消始终定位原实例。
+先确认 profile、Vite root、instanceId 与 `application.state`。修改运行中应用的多个文件前暂停 HMR，完成检查后 apply 并核对应用报告与实际行为。命令在 stderr 先输出 `{ stage: 'prepared', receipt }`，接纳后输出 `{ stage: 'accepted', receipt }`；stdout 保留一个最终 `{ ok: true, value: { receipt, run } }` JSON。命令失败使用 `{ ok: false, error }`，已准备的 receipt 保留在 error 中。保存 receipt，后续查询和取消始终定位原实例。
 
 ```sh
-vp exec pluxel dev result RECEIPT
-vp exec pluxel dev cancel RECEIPT
+vp exec pluxel script result RECEIPT
+vp exec pluxel script cancel RECEIPT
 ```
 
 CLI 与 Vite 通过私有 Unix socket 上的 Cap’n Web 连接。发现目录和 socket 受当前用户文件权限保护；Vite 的公共 HTTP listener 不提供脚本执行。`dev status/instances/run/hmr` 查询现有实例，`pluxel dev` 才负责启动或复用配置的开发服务。
@@ -48,7 +48,7 @@ import type { ProjectScript } from '@pluxel/host-vite/project'
 import { TodoPlugin } from '@example/todo-plugin'
 
 export default (async ({ plugin }) => {
-	const todo = plugin(TodoPlugin)
+	const todo = plugin(TodoPlugin.nodeAddress())
 	const status = await todo.status()
 	if (status.isErr()) return status
 	const instance = await todo.instance()
@@ -60,7 +60,7 @@ export const add = (async (sdk, run) => {
 	const title = run.input
 	if (typeof title !== 'string') throw new TypeError('Expected a todo title')
 	run.signal.throwIfAborted()
-	const instance = await sdk.plugin(TodoPlugin).instance()
+	const instance = await sdk.plugin(TodoPlugin.nodeAddress()).instance()
 	if (instance.isErr()) return instance
 	return instance.value.add(title)
 }) satisfies ProjectScript
@@ -71,7 +71,7 @@ vp exec pluxel dev run host/web/dev/inspect.ts
 vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"测试待办事项"'
 ```
 
-`ProjectScript` 使用普通函数与 `satisfies`；输入从 unknown 校验。`plugin()` 和 `fork()` 同步选择目标，异步操作返回 `Promise<Result<T, E>>`。脚本按[自动化脚本](./scripts.md)的方式处理 Result，需要构造时从 `@pluxel/core/better-result` 导入。源码屏障结算后，执行器完成 TypeScript 检查并核对真实缓存模块的原始输入，声明或源码变化时会明确失败。返回 JSON 或共享的顶层 Result，由执行边界编码；实例、Context、函数和其他运行句柄留在目标进程。
+`ProjectScript` 使用普通函数与 `satisfies`；输入从 unknown 校验。`Provider.nodeAddress(id?)` 取得默认节点或 fork 地址，`sdk.plugin(address)` 同步选择目标，异步操作返回 `Promise<Result<T, E>>`。脚本按[自动化脚本](./scripts.md)的方式处理 Result，需要构造时从 `@pluxel/core/better-result` 导入。源码屏障结算后，执行器完成 TypeScript 检查并核对真实缓存模块的原始输入，声明或源码变化时会明确失败。返回 JSON 或共享的顶层 Result，由执行边界编码；实例、Context、函数和其他运行句柄留在目标进程。
 
 脚本采用所在目录最近的 `tsconfig.json`，其模块解析条件应与 Host 一致。前端配置常清空 `customConditions`，从插件发行声明读取类型；服务端 Vite 使用 `@pluxel/hmr` 加载源码时，这两种输入会被源码守卫拒绝。官方 starter 为服务端脚本提供 `host/web/dev/tsconfig.json`，继承 Host 的 Node、源码条件和装饰器配置：
 
@@ -84,9 +84,9 @@ vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"测试待�
 
 自定义目录结构时，让脚本目录继承自己的 Host 配置。前端继续使用其原配置。
 
-`sdk.plugin(Constructor)` 的状态、生命周期和实例获取都在同一 committed 操作内核对 constructor 身份。HMR 替换实现后，原引用返回 `stale_target`；重新 import 当前实现再选择。同一实现 restart 后可用原引用重新取得新 generation，旧实例视图失效。fork 统一使用 `.fork('east')`，选择不会物化节点。引用和原业务成员的寿命见[实例调用](./plugin-control.md#调用原插件实例)。
+`sdk.plugin(Constructor.nodeAddress())` 的状态、生命周期和实例获取都在同一 committed 操作内核对 constructor 身份。HMR 替换实现后，原引用返回 `stale_target`；重新 import 当前实现再选择。同一实现 restart 后可用原引用重新取得新 generation，旧实例视图失效。fork 使用 `Constructor.nodeAddress('east')`，它保留相同实现证据，选择不会物化节点。引用和原业务成员的寿命见[实例调用](./plugin-control.md#调用原插件实例)。
 
-constructor 类型保留实例签名，Schema 的输入、默认值前状态及 Part 配置树由生成描述符提供。因此 constructor 引用只提供管理与实例操作，配置使用生成描述符；显式使用 `Constructor.nodeAddress()` 时则选择原生动态地址 API，配置字段为未知数据，由脚本自行检查。
+源码 class 的地址保留实例签名与精确实现证据。Schema 输入、输出及 Part 配置树由生成控制入口的地址关联，因此 class 地址提供管理与实例操作，配置使用生成提供者的地址。动态发现得到的普通节点地址提供未知字段的配置操作，由脚本自行检查。
 
 通过 `sdk.dev.ctx.require(Token)` 访问应用已安装的能力。脚本借用 root，自己创建的订阅、RPC lease 和原生资源由脚本通过 `using`、`await using` 或 `try/finally` 释放；直接业务调用显式传递 `run.signal` 并 await 结算。通用 SDK 接纳的操作由执行内核跟踪并排空。
 
@@ -96,15 +96,14 @@ constructor 类型保留实例签名，Schema 的输入、默认值前状态及 
 
 ```ts no-twoslash
 import type { ProjectScript } from '@pluxel/host-vite/project'
-import { TodoPlugin } from '@example/todo-plugin'
+import { TodoPlugin } from '@example/todo-plugin/control'
 
 export const increaseLimit = (async ({ plugin }) => {
-	// 动态地址配置；需要精确 Schema 输入类型时改用生成描述符。
-	const { get, patch } = plugin(TodoPlugin.nodeAddress()).config
+	const todo = plugin(TodoPlugin.nodeAddress())
+	const { get, patch } = todo.config
 	const current = await get()
 	if (current.isErr()) return current
 	const limit = current.value.config.limit
-	if (typeof limit !== 'number') throw new TypeError('Expected a numeric limit')
 	const changed = await patch(
 		{ set: { limit: limit + 1 } },
 		{ expectedManagedRevision: current.value.managedRevision },
@@ -112,7 +111,7 @@ export const increaseLimit = (async ({ plugin }) => {
 	if (changed.isErr()) return changed
 	const currentConfig = await get()
 	if (currentConfig.isErr()) return currentConfig
-	const instance = await plugin(TodoPlugin).instance()
+	const instance = await todo.instance()
 	if (instance.isErr()) return instance
 	return {
 		persistence: changed.value.persistence,

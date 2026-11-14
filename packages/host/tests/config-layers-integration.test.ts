@@ -167,7 +167,7 @@ it('selects and validates Part subtrees within each default or fork owner record
 		policy: { forks: [fork] },
 		config: {
 			records: [
-				{ owner: PartOwner, config: { part: { value: 'declared-default' } } },
+				{ owner: PartOwner.nodeAddress(), config: { part: { value: 'declared-default' } } },
 				{ owner: fork, mode: 'saved-first', config: { part: { value: 'declared-fork' } } },
 			],
 		},
@@ -302,7 +302,8 @@ try {
  assert.deepEqual((await host.policy.get()).managedInput,{},'declared-only does not persist session intent');
  assert.equal(writes,0,'loading and reading must not seed managed records');
  const {Later}=await import(root+'/package/index.mjs');
- await assert.rejects(createHost({plugins:[Later],config:{records:[{owner:Later,config:{value:'constructor'}},{owner:nodes.later,mode:'saved-first'}]}}),/duplicates a Plugin node owner/);
+ await assert.rejects(createHost({plugins:[Later],config:{records:[{owner:Later.nodeAddress(),config:{value:'duplicate'}},{owner:nodes.later,mode:'saved-first'}]}}),/duplicates a Plugin node owner/);
+ await assert.rejects(createHost({plugins:[Later],config:{records:[{owner:Later,config:{value:'constructor'}}]}}),/Plugin node address must be an object/);
  console.log('CONFIG_LAYERS_NATIVE_OK');
 } finally {await host.close()}
 `,

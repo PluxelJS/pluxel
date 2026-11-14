@@ -18,12 +18,14 @@ import {
 	hostStatePatch,
 	projectPluginApplyReport,
 } from '@pluxel/host/internal'
+import { pluginApplyReportOutcome } from '@pluxel/host/internal/protocol'
 import type {
 	PluginAutoStartBatchItem,
 	PluginControlBatchResult,
 	PluginControlMutationResult,
 	PluginControlMutationSuccess,
 	PluginControlSnapshot,
+	PluginApplyReport,
 	PluginLifecycleCommand,
 	PluginLifecycleCommandBatchItem,
 } from '../../web/protocol'
@@ -73,13 +75,11 @@ async function setOneAutoStart(
 			reason: 'plugin-auto-start-set',
 			mode: 'live',
 		})
-		return {
+		return mutationReport(
 			address,
-			ok: true,
-			status: 'applied',
-			report: projectPluginApplyReport(ctx, report),
-			control: controlOf(readStatus(), autoStart ? undefined : INHERITED_STOPPED_CONTROL),
-		}
+			projectPluginApplyReport(ctx, report),
+			controlOf(readStatus(), autoStart ? undefined : INHERITED_STOPPED_CONTROL),
+		)
 	} catch (error) {
 		return mutationFailure(address, error)
 	}
@@ -100,16 +100,14 @@ async function runLifecycleCommand(
 				: command === 'stop'
 					? await coordinator.stopNode(address, undefined, options)
 					: await coordinator.restartNode(address, undefined, options)
-		return {
+		return mutationReport(
 			address,
-			ok: true,
-			status: 'applied',
-			report: projectPluginApplyReport(ctx, report),
-			control: controlOf(
+			projectPluginApplyReport(ctx, report),
+			controlOf(
 				await pluginStatus(ctx, address),
 				command === 'stop' ? INHERITED_STOPPED_CONTROL : undefined,
 			),
-		}
+		)
 	} catch (error) {
 		return mutationFailure(address, error)
 	}
@@ -164,8 +162,41 @@ async function runBatch<T>(
 		return { ok: true, status: 'applied', results: successes }
 	return {
 		ok: false,
-		status: successes.length > 0 ? 'partially-applied' : 'rejected',
+		status: results.every((result) => result.ok === true || result.code === 'lifecycle_failed')
+			? 'applied-with-issues'
+			: results.some((result) => result.ok === true || result.code === 'lifecycle_failed')
+				? 'partially-applied'
+				: 'rejected',
 		results,
+	}
+}
+
+function mutationReport(
+	address: PluginNodeAddress,
+	report: PluginApplyReport,
+	control: PluginControlSnapshot,
+): PluginControlMutationResult {
+	const outcome = pluginApplyReportOutcome(report)
+	if (outcome.status === 'applied') return { address, ok: true, status: 'applied', report, control }
+	if (outcome.status === 'lifecycle_failed') {
+		return {
+			address,
+			ok: false,
+			code: 'lifecycle_failed',
+			status: 'applied-with-issues',
+			error: outcome.message,
+			report,
+			control,
+		}
+	}
+	return {
+		address,
+		ok: false,
+		code: 'persistence_failed',
+		state: 'unknown',
+		error: outcome.message,
+		report,
+		control,
 	}
 }
 

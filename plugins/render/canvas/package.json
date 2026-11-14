@@ -73,6 +73,7 @@
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
 		"@pluxel/plugin-fonts": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
@@ -84,8 +85,14 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
 		"@pluxel/plugin-fonts": "workspace:^",
 		"@pluxel/workbench": "workspace:^"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		}
 	},
 	"engines": {
 		"node": ">=24"

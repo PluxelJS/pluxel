@@ -82,11 +82,11 @@ export default defineHostApplication(async (startup) => {
 		plugins: [TodoPlugin],
 
 		// 2. 声明冷启动时自动启动的插件节点
-		policy: { autoStart: [TodoPlugin] },
+		policy: { autoStart: [TodoPlugin.nodeAddress()] },
 
 		// 3. 初始默认配置
 		config: {
-			records: [{ owner: TodoPlugin, config: { maxItems: 100 } }],
+			records: [{ owner: TodoPlugin.nodeAddress(), config: { maxItems: 100 } }],
 		},
 
 		// 4. 挂载官方服务预设（含 HTTP、Vault 与 Workbench）
@@ -245,7 +245,7 @@ export default defineHostApplication(() => ({
 	name: 'worker-app',
 	plugins: [WorkerPlugin],
 	envBindings: [
-		envBinding(WorkerPlugin, {
+		envBinding(WorkerPlugin.nodeAddress(), {
 			config: {
 				schema: WorkerConfig,
 				mapping: {
@@ -317,17 +317,17 @@ export default defineHostApplication(() => ({
 	plugins: [WorkerPlugin],
 	config: {
 		mode: 'saved-first',
-		records: [{ owner: WorkerPlugin, config: { concurrency: 2 } }],
+		records: [{ owner: WorkerPlugin.nodeAddress(), config: { concurrency: 2 } }],
 	},
 	policy: {
-		autoStart: [WorkerPlugin],
+		autoStart: [WorkerPlugin.nodeAddress()],
 		startTimeoutMs: 30_000,
 		mode: { autoStart: 'saved-first' },
 	},
 }))
 ```
 
-每条记录的 `owner` 接受 Plugin constructor 或 canonical node address。constructor 表示 default node；fork 使用 `Plugin.nodeAddress('east')`。default 与 fork 的值和 mode 各自独立，Part 的输入仍属于所在 Plugin。mode 按 `record.mode → config.mode → declared-first` 选择；仅声明 `{ owner, mode }` 合法，重复 owner 或同时缺少 mode/config 会报错。记录本身不加载代码、创建 fork 或启动节点。
+每条记录的 `owner` 使用完整 node address：`Plugin.nodeAddress()` 表示 default node，`Plugin.nodeAddress('east')` 表示 fork。default 与 fork 的值和 mode 各自独立，Part 的输入仍属于所在 Plugin。mode 按 `record.mode → config.mode → declared-first` 选择；仅声明 `{ owner, mode }` 合法，重复 owner 或同时缺少 mode/config 会报错。记录本身不加载代码、创建 fork 或启动节点。
 
 声明按 `config.records → fileBindings.config → envBindings.config` 合成，后者覆盖同路径，再按 mode 与保存输入组合。普通对象递归合并，数组整项替换。缺失保存文档不会写入声明或 schema 默认值；`reset` 删除保存输入，重新继承声明。env/file 的覆盖与管理写权限分别设置。
 
@@ -430,7 +430,7 @@ import { MyWorkerPlugin } from './worker'
 
 await using host = await createHost({
 	plugins: [MyWorkerPlugin],
-	policy: { autoStart: [MyWorkerPlugin] },
+	policy: { autoStart: [MyWorkerPlugin.nodeAddress()] },
 })
 
 await host.start()

@@ -1,8 +1,6 @@
 import {
 	parsePluginNodeAddress,
 	pluginNodeIndexKey,
-	pluginDefinitionAddressEqual,
-	type PluginConstructor,
 	type PluginNodeAddress,
 	type RootContext,
 } from '@pluxel/core'
@@ -38,7 +36,7 @@ import {
 } from '../config'
 import { createHostPolicy } from '../policy-management'
 import { requireHostStateStore } from '../host'
-import { hostPluginStatusOverviewFromView } from '../status'
+import { hostPluginStatusOverviewFromView, hostPluginStatusFromView } from '../status'
 import { readHostPluginLifecycleIssues } from '../diagnostics'
 import { readHostRecentUpdates } from '../recent-update'
 import {
@@ -53,7 +51,7 @@ import {
 import type { HostConfigStore } from '../config-store'
 import type { HostPolicyField, HostPolicyInput } from '../policy'
 import type { ScriptPlugin, ScriptSdk } from './sdk-types'
-import type { PluginTarget, ScriptLogReadOptions } from './control'
+import type { ScriptLogReadOptions } from './control'
 import { normalizePluginTarget } from './control-target'
 import { createPluginInstanceView } from './instance-view'
 import {
@@ -77,12 +75,6 @@ import {
 	type ScriptLogError,
 } from './sdk-results'
 
-type ConstructorPlugin = Omit<ScriptPlugin<PluginNodeAddress>, 'config' | 'fork'> &
-	Readonly<{
-		fork: (forkId: string) => ConstructorPlugin
-		instance: () => Promise<Result<object, ScriptInstanceError>>
-	}>
-
 export class ScriptScopeError extends Error {
 	constructor(
 		readonly code:
@@ -104,15 +96,10 @@ export type ScriptRevisions = Readonly<{
 	policyManagedRevision: string
 }>
 
-export interface ScriptScope {
+export interface ScriptScope extends AsyncDisposable {
 	readonly sdk: ScriptSdk
 	/** Guard trusted in-process extensions at the same run admission boundary. */
 	assertOpen(): void
-	/** @internal Bind a trusted project constructor to this same scope and committed Host queue. */
-	selectPlugin(
-		node: PluginNodeAddress,
-		expectedImplementation: PluginConstructor,
-	): ConstructorPlugin
 	/** Close admission and signal cooperative cancellation; accepted operations still settle. */
 	abort(reason?: unknown): void
 	/** Idempotent. Drains tracked calls and releases subscriptions; never closes the Host. */
@@ -276,18 +263,17 @@ export function createScriptScope(
 				queuedCalls--
 			}
 		}, failure)
-	const overview = (view: HostPluginGraphCommittedView) =>
-		hostPluginStatusOverviewFromView({
-			catalog: view.catalog,
-			state: view.runtimeState.state,
-			reconciliation: view.reconciliation,
-			lifecycleIssues: readHostPluginLifecycleIssues(ctx),
-			sessionIntents: view.sessionIntents,
-			desiredControl: view.desiredControl,
-			coreNodes: view.coreAdjacency.nodes,
-			runningNodeKeys: new Set(view.runningNodes.map(pluginNodeIndexKey)),
-			recentUpdate: readHostRecentUpdates(ctx),
-		})
+	const statusView = (view: HostPluginGraphCommittedView) => ({
+		catalog: view.catalog,
+		state: view.runtimeState.state,
+		reconciliation: view.reconciliation,
+		lifecycleIssues: readHostPluginLifecycleIssues(ctx),
+		sessionIntents: view.sessionIntents,
+		desiredControl: view.desiredControl,
+		coreNodes: view.coreAdjacency.nodes,
+		runningNodeKeys: new Set(view.runningNodes.map(pluginNodeIndexKey)),
+		recentUpdate: readHostRecentUpdates(ctx),
+	})
 	const logOptions = (input?: ScriptLogReadOptions): LogReadOptions | undefined => {
 		if (input === undefined) return undefined
 		const { filter, ...readOptions } = input
@@ -318,9 +304,7 @@ export function createScriptScope(
 	}
 	// A reference owns only a validated target snapshot. Host state and generation
 	// admission remain in the original coordinator for every operation.
-	const select = (
-		selected: ReturnType<typeof normalizePluginTarget> & { implementation?: PluginConstructor },
-	): ScriptPlugin => {
+	const select = (selected: ReturnType<typeof normalizePluginTarget>): unknown => {
 		assertOpen()
 		const { node, descriptor, implementation } = selected
 		const assertImplementation = (catalog: PluginCatalogSnapshot) => {
@@ -408,111 +392,108 @@ export function createScriptScope(
 							}, admission)
 						}, instanceError)
 				: undefined
-		const config =
-			implementation || descriptor?.contracts.config === null
-				? undefined
-				: Object.freeze({
-						get: () =>
-							queued(
-								async () =>
-									scriptConfigResult(
-										projectPluginConfigResult(
-											ctx,
-											await pluginConfigGet(ctx, node, admission, descriptor?.contracts.config),
-										),
-									),
-								controlError,
+		const config = Object.freeze({
+			get: () =>
+				queued(
+					async () =>
+						scriptConfigResult(
+							projectPluginConfigResult(
+								ctx,
+								await pluginConfigGet(
+									ctx,
+									node,
+									admission,
+									implementation ?? descriptor?.contracts.config,
+								),
 							),
-						validate: (change: HostConfigMutation) =>
-							queued(
-								async () =>
-									scriptConfigResult(
-										projectPluginConfigResult(
-											ctx,
-											await pluginConfigValidate(
-												ctx,
-												node,
-												change,
-												admission,
-												descriptor?.contracts.config,
-											),
-										),
-									),
-								controlError,
+						),
+					controlError,
+				),
+			validate: (change: HostConfigMutation) =>
+				queued(
+					async () =>
+						scriptConfigResult(
+							projectPluginConfigResult(
+								ctx,
+								await pluginConfigValidate(
+									ctx,
+									node,
+									change,
+									admission,
+									implementation ?? descriptor?.contracts.config,
+								),
 							),
-						patch: (change: HostConfigMutation, input?: HostOperationOptions) =>
-							queued(
-								async () =>
-									scriptConfigResult(
-										projectPluginConfigResult(
-											ctx,
-											await pluginConfigPatch(
-												ctx,
-												node,
-												change,
-												mutationOptions(input),
-												descriptor?.contracts.config,
-											),
-										),
-									),
-								(error) =>
-									input?.signal?.aborted && error === input.signal.reason
-										? runError(error, input.signal)
-										: controlError(error),
+						),
+					controlError,
+				),
+			patch: (change: HostConfigMutation, input?: HostOperationOptions) =>
+				queued(
+					async () =>
+						scriptConfigResult(
+							projectPluginConfigResult(
+								ctx,
+								await pluginConfigPatch(
+									ctx,
+									node,
+									change,
+									mutationOptions(input),
+									implementation ?? descriptor?.contracts.config,
+								),
 							),
-						reset: (paths?: readonly (readonly string[])[], input?: HostOperationOptions) =>
-							queued(
-								async () =>
-									scriptConfigResult(
-										projectPluginConfigResult(
-											ctx,
-											await pluginConfigReset(
-												ctx,
-												node,
-												paths,
-												mutationOptions(input),
-												descriptor?.contracts.config,
-											),
-										),
-									),
-								(error) =>
-									input?.signal?.aborted && error === input.signal.reason
-										? runError(error, input.signal)
-										: controlError(error),
+						),
+					(error) =>
+						input?.signal?.aborted && error === input.signal.reason
+							? runError(error, input.signal)
+							: controlError(error),
+				),
+			reset: (paths?: readonly (readonly string[])[], input?: HostOperationOptions) =>
+				queued(
+					async () =>
+						scriptConfigResult(
+							projectPluginConfigResult(
+								ctx,
+								await pluginConfigReset(
+									ctx,
+									node,
+									paths,
+									mutationOptions(input),
+									implementation ?? descriptor?.contracts.config,
+								),
 							),
-					})
+						),
+					(error) =>
+						input?.signal?.aborted && error === input.signal.reason
+							? runError(error, input.signal)
+							: controlError(error),
+				),
+		})
 		return Object.freeze({
 			address: node,
-			fork: (forkId: string) => {
-				assertOpen()
-				return select({
-					node: parsePluginNodeAddress({ definition: node.definition, variant: 'fork', forkId }),
-					descriptor,
-					implementation,
-				})
-			},
 			status: () =>
 				queued(
 					() =>
 						coordinator.readCommitted((view) => {
 							assertImplementation(view.catalog)
-							const key = pluginNodeIndexKey(node)
-							return Result.ok(
-								overview(view).statuses.find(
-									(entry) => pluginNodeIndexKey(entry.address) === key,
-								) ?? null,
-							)
+							return Result.ok(hostPluginStatusFromView(statusView(view), node))
 						}, admission),
 					targetError,
 				),
 			start: () => lifecycle('start'),
 			stop: () => lifecycle('stop'),
 			restart: () => lifecycle('restart'),
-			...(borrowInstance ? { instance: borrowInstance } : {}),
-			...(config ? { config } : {}),
+			instance:
+				borrowInstance ??
+				(() =>
+					queued(() => {
+						throw new PluginControlError(
+							'control_evidence_missing',
+							'Instance access requires an original address from a generated provider or current Plugin class',
+						)
+					}, instanceError)),
+			config,
 		})
 	}
-	const plugin = <const T extends PluginTarget>(target: T): ScriptPlugin<T> => {
+	const plugin = <const T extends PluginNodeAddress>(target: T): ScriptPlugin<T> => {
 		assertOpen()
 		// The descriptor's declaration-only marker associates types with this same
 		// runtime snapshot; no generic inference is repeated by bound operations.
@@ -523,7 +504,18 @@ export function createScriptScope(
 		plugins: Object.freeze({
 			list: () =>
 				queued(
-					() => coordinator.readCommitted((view) => Result.ok(overview(view).statuses), admission),
+					() =>
+						coordinator.readCommitted(
+							(view) =>
+								Result.ok(
+									Object.freeze({
+										nodes: hostPluginStatusOverviewFromView(statusView(view)).statuses,
+										catalogRevision: view.catalog.revision,
+										runtimeStateRevision: view.runtimeState.revision,
+									}),
+								),
+							admission,
+						),
 					operationError,
 				),
 		}),
@@ -627,24 +619,24 @@ export function createScriptScope(
 				}, logError),
 		}),
 	}) satisfies ScriptSdk
+	const dispose = () => {
+		if (disposal) return disposal
+		abort()
+		signal?.removeEventListener('abort', externalAbort)
+		disposal = Promise.allSettled(pending).then((results): void => {
+			const errors = results.flatMap((result) =>
+				result.status === 'rejected' ? [result.reason] : [],
+			)
+			if (errors.length > 0)
+				throw new AggregateError(errors, 'Script operations failed while closing the run')
+			return undefined
+		})
+		return disposal
+	}
+
 	return Object.freeze({
 		sdk,
 		assertOpen,
-		selectPlugin: (
-			node: PluginNodeAddress,
-			expectedImplementation: PluginConstructor,
-		): ConstructorPlugin => {
-			assertOpen()
-			const address = parsePluginNodeAddress(node)
-			if (
-				!pluginDefinitionAddressEqual(
-					address.definition,
-					expectedImplementation.nodeAddress().definition,
-				)
-			)
-				throw new TypeError('Project constructor and selected Plugin definition must match')
-			return select({ node: address, implementation: expectedImplementation }) as ConstructorPlugin
-		},
 		abort,
 		snapshot: () =>
 			coordinator.readCommitted((view) => ({
@@ -653,19 +645,7 @@ export function createScriptScope(
 				configManagedRevision: (requireConfigService(ctx) as HostConfigStore).managedRevision,
 				policyManagedRevision: state.managedRevision(),
 			})),
-		dispose() {
-			if (disposal) return disposal
-			abort()
-			signal?.removeEventListener('abort', externalAbort)
-			disposal = Promise.allSettled(pending).then((results): void => {
-				const errors = results.flatMap((result) =>
-					result.status === 'rejected' ? [result.reason] : [],
-				)
-				if (errors.length > 0)
-					throw new AggregateError(errors, 'Script operations failed while closing the run')
-				return undefined
-			})
-			return disposal
-		},
+		dispose,
+		[Symbol.asyncDispose]: dispose,
 	})
 }

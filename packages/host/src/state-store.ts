@@ -8,7 +8,8 @@ import {
 	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { consumePluginDefinitionCandidate, DEFAULT_PLUGIN_EXECUTION } from '@pluxel/core/internal'
+import { DEFAULT_PLUGIN_EXECUTION } from '@pluxel/core/internal'
+import { readPluginNodeAddressEvidence } from '@pluxel/core/internal/plugin-address-evidence'
 import { SuperJSON } from 'superjson'
 import { HostStateMutationRejectedError } from './mutation'
 import { applyHostStatePatch, type HostStatePatch } from './state'
@@ -307,23 +308,12 @@ export function snapshotHostPolicy(
 	input: HostPolicyOptions = {},
 ): HostPolicyInput & Readonly<{ mode?: HostPolicyModes }> {
 	assertPolicyRecord(input, [...HOST_POLICY_FIELDS, 'mode'], 'policy')
-	const { mode, autoStart, ...rest } = input
-	if (autoStart !== undefined && !Array.isArray(autoStart))
-		throw new HostPolicyInputError('[host] policy.autoStart must be an array')
+	const { mode, autoStart, ...values } = input
 	const declared = canonicalHostPolicyInput({
-		...rest,
+		...values,
 		...(autoStart === undefined
 			? {}
-			: {
-					autoStart: snapshotPolicyArray(autoStart, 'policy.autoStart').map((value) =>
-						typeof value === 'function'
-							? {
-									definition: consumePluginDefinitionCandidate(value).declaration.address,
-									variant: 'default' as const,
-								}
-							: value,
-					),
-				}),
+			: { autoStart: snapshotPolicyArray(autoStart, 'policy.autoStart') }),
 	})
 	return Object.freeze({ ...declared, ...(mode === undefined ? {} : { mode: resolveModes(mode) }) })
 }
@@ -460,6 +450,20 @@ function assertPortablePolicy(value: unknown, seen = new Set<object>()): void {
 		(typeof value === 'number' && Number.isFinite(value))
 	)
 		return
+	if (value && typeof value === 'object') {
+		let evidence: unknown
+		try {
+			evidence = readPluginNodeAddressEvidence(value as PluginNodeAddress)
+		} catch (cause) {
+			throw new HostPolicyInputError('[host] Plugin address evidence was copied or detached', {
+				cause,
+			})
+		}
+		if (evidence !== undefined) {
+			assertPortablePolicy(parsePluginNodeAddress(value), seen)
+			return
+		}
+	}
 	if (
 		!value ||
 		typeof value !== 'object' ||

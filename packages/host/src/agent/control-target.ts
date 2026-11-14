@@ -1,38 +1,40 @@
 import {
-	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
+	pluginDefinitionAddressEqual,
+	type PluginConstructor,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { PluginControlError } from '../catalog'
-import type { PluginTarget } from './control'
+import { readPluginNodeAddressEvidence } from '@pluxel/core/internal/plugin-address-evidence'
+import { parsePluginControlDescriptor, type PluginControlDescriptorData } from '../control-manifest'
 
-type Descriptor = Readonly<{
-	format: 1
-	contracts: Readonly<{ config: string | null; instance: string }>
-}>
-
-/** Snapshot target data before it enters an asynchronous Host queue. */
-export function normalizePluginTarget(target: PluginTarget): Readonly<{
+/** Capture evidence before normalizing identity; never restore it by looking up a definition. */
+export function normalizePluginTarget(target: PluginNodeAddress): Readonly<{
 	node: PluginNodeAddress
-	descriptor?: Descriptor
+	descriptor?: PluginControlDescriptorData
+	implementation?: PluginConstructor
 }> {
-	if (!target || typeof target !== 'object') throw new TypeError('Expected a Plugin target')
-	if ('variant' in target) return { node: parsePluginNodeAddress(target) }
-	const source = target
-	if (source.format !== 1)
-		throw new PluginControlError('control_format_unsupported', 'Control format 1 is required')
-	const definition = parsePluginDefinitionAddress(source.definition)
-	const contracts = source.contracts
+	const evidence = readPluginNodeAddressEvidence(target)
+	const node = parsePluginNodeAddress(target)
+	if (evidence === undefined) return Object.freeze({ node })
+	if (!evidence || typeof evidence !== 'object' || !('kind' in evidence))
+		throw new TypeError('Unrecognized Plugin address evidence')
+	if (evidence.kind === 'control' && 'descriptor' in evidence) {
+		const descriptor = parsePluginControlDescriptor(evidence.descriptor)
+		if (!pluginDefinitionAddressEqual(node.definition, descriptor.definition))
+			throw new TypeError('Plugin address and control evidence must identify the same definition')
+		return Object.freeze({ node, descriptor })
+	}
 	if (
-		!contracts ||
-		(contracts.config !== null &&
-			(typeof contracts.config !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(contracts.config))) ||
-		typeof contracts.instance !== 'string' ||
-		!/^sha256:[a-f0-9]{64}$/.test(contracts.instance)
-	)
-		throw new TypeError('Plugin descriptor contracts require SHA-256 digests')
-	return Object.freeze({
-		node: parsePluginNodeAddress({ definition, variant: 'default' }),
-		descriptor: Object.freeze({ format: 1, contracts: Object.freeze({ ...contracts }) }),
-	})
+		evidence.kind === 'constructor' &&
+		'implementation' in evidence &&
+		typeof evidence.implementation === 'function'
+	) {
+		const implementation = evidence.implementation as PluginConstructor
+		if (!pluginDefinitionAddressEqual(node.definition, implementation.definitionAddress()))
+			throw new TypeError(
+				'Plugin address and constructor evidence must identify the same definition',
+			)
+		return Object.freeze({ node, implementation })
+	}
+	throw new TypeError('Unrecognized Plugin address evidence')
 }

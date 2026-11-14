@@ -23,8 +23,9 @@ Pluxel 只有两个 Plugin 身份作用域：
 同一 address 在同一 registry 内只产生一个 slot。generation 是 node 当前的一次运行，不进入 address。
 
 作者通过 lowered class 的 `Plugin.definitionAddress()` 取得声明身份，abstract token 同样支持；`Plugin.nodeAddress()` 和
-`Plugin.nodeAddress(forkId)` 只适用于 concrete Plugin，分别返回 `PluginDefaultNodeAddress` 和 `PluginForkNodeAddress`。
-这些静态投影不创建或启动实例，不通过继承查找另一个 class 的 lowering facts；Core 内部直接读取同一 canonical identity owner。
+`Plugin.nodeAddress(forkId)` 只适用于 concrete Plugin。返回值保留 default/fork 判别字段，并通过 `PluginInstanceNodeAddress<S, A>`
+关联原 class 的实例类型。生成的控制入口提供相同方法，同时关联配置输入、输出和实例类型。
+这些投影不创建或启动实例，不通过继承查找另一个 class 的 lowering facts。SDK 统一通过 `sdk.plugin(nodeAddress)` 选择节点。
 
 fork 是同一 definition 的运行时多态，不是源码副本：default 和所有 fork 共享 constructor implementation、schema、metadata、
 artifact input 与 HMR invalidation，各自隔离 auto-start/session/running 状态、config value/revision、dependency override、Context、effects 和资源 lease。
@@ -84,6 +85,22 @@ identity 的唯一性域是一个 host application/persistence profile，不是�
 - 一个 source space 中 canonical POSIX `path` 唯一；
 - 一个 definition 中 `forkId` 唯一；
 - 跨 deployment 的相同 address 由 carrier 的 deployment/root/boot facts 区分。
+
+### 调用证据与可序列化身份
+
+框架在生成 node address 时，将调用证据关联到这个确切的不可变对象。Core class 证据保存原 constructor，Host 控制入口的证据保存声明的配置和实例摘要。
+Core 的 browser-safe internal address-evidence 叶子入口维护一个 WeakMap，Core 不依赖 Host、控制材料或执行器。
+工厂每次创建独立值，不能按相同 definition 覆盖已有证据。class 的默认地址按 constructor 缓存，fork 地址在投影时创建。
+
+证据地址的字符串字段与普通地址完全相同。内部可枚举 symbol 只携带冻结的标记，equality、index、reference、route 和 JSON 编码均使用身份字段。
+SDK 在规范化前读取证据，随后仍在 committed lookup 或配置事务中验证当前实现和摘要。HMR 后，旧 class 地址继续指向旧 constructor 的要求；相同地址的新 class 不能替它更新证据。
+
+JSON 往返与显式 `parsePluginNodeAddress()` 得到普通地址，适合持久化和动态管理。它们提供未知字段的配置与生命周期操作，业务实例访问要求原 class 或控制入口生成的地址。
+Host 脚本的 JSON 边界也可直接编码原厂地址，输出相同的纯身份字段；唯一投影所有者、拒绝规则和预算见 [Agent Workflow](AGENT_WORKFLOW.md)。
+将 JSON 值断言成原地址类型不会恢复证据：实例请求明确失败，配置仍按动态地址执行，没有该断言声称的类型或历史摘要保证。
+spread 和 `Object.assign` 会复制内部标记，却不会复制 WeakMap 注册，选择时明确拒绝这类分离的证据。
+不同 Core 副本共用标记的 symbol key，但各自持有私有 WeakMap；外来证据也按分离证据拒绝，不按 definition 共享或补全调用权限。
+源码 class 的地址保留实例类型；配置的完整输入、输出和 Part 声明由生成控制入口提供，具体用法见[插件控制](../docs/development/plugin-control.md)。
 
 ## Entry canonicalization
 
@@ -228,6 +245,7 @@ generation/socket epoch。Plugin 在 `ctx.require(ElysiaApp)` 中声明的 path 
 ## 实现入口与验证
 
 - Core address/slot/codec：`packages/core/src/plugins/runtime/identity.ts`
+- Core 调用证据：`packages/core/src/internal/plugin-address-evidence.ts`、class lowering 的 `definition.ts`
 - Core logger category codec：`packages/core/src/logger/categories.ts`
 - source canonicalization：`packages/rolldown/src/rolldown/plugins/pluginSemanticsPlugin.ts`
 - catalog projection/label：`packages/services/src/management/api/features/plugins/catalog-projection.ts`、`packages/core/src/plugins/runtime/plugin-label.ts`

@@ -1,3 +1,4 @@
+import { parsePluginNodeAddress } from '@pluxel/core'
 import { requirePluginHostCoordinator, requireHostStateStore } from '@pluxel/host/internal'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
@@ -7,7 +8,11 @@ import {
 	applyLifecycleCommands,
 	setAutoStart,
 } from '../../../src/management/api/usecases/pluginStatus.ts'
-import { parsePluginStatusQueryResult } from '../../../src/management/web/management-validation.ts'
+import {
+	parsePluginStatusQueryResult,
+	parsePluginControlBatchResult,
+} from '../../../src/management/web/management-validation.ts'
+import { pluginApplyReportOutcome } from '@pluxel/host/internal/protocol'
 import { RuntimeManagementTargetImpl } from '../../../src/management/services/management/RuntimeManagementTarget.ts'
 import type { PluginApplyReport } from '../../../src/management/web/protocol.ts'
 
@@ -155,12 +160,13 @@ describe('runtime web control protocol', () => {
 
 		const result = await rpc.applyPluginLifecycleCommandsDto([{ address, command: 'start' }])
 		expect(result).toMatchObject({
-			ok: true,
-			status: 'applied',
+			ok: false,
+			status: 'applied-with-issues',
 			results: [
 				{
 					address,
-					ok: true,
+					ok: false,
+					code: 'lifecycle_failed',
 					control: { desiredState: 'running', lifecycleState: 'stopped' },
 					report: {
 						core: {
@@ -183,6 +189,14 @@ describe('runtime web control protocol', () => {
 			],
 		})
 		expect(() => serialize(result)).not.toThrow()
+		expect(parsePluginControlBatchResult(JSON.parse(JSON.stringify(result)))).toEqual(result)
+		const mutation = result.results[0]
+		if (!mutation || !('report' in mutation) || !mutation.report)
+			throw new Error('Missing application report')
+		expect(pluginApplyReportOutcome(mutation.report)).toMatchObject({
+			status: 'lifecycle_failed',
+			report: mutation.report,
+		})
 	})
 
 	it('keeps provider policy on provider content and consumer override on requirement rows', async () => {
@@ -192,9 +206,9 @@ describe('runtime web control protocol', () => {
 		const providerFork = host.fork(ManagedProvider, 'policy-ineligible')
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const policyOwner = ManagedProvider.nodeAddress()
-		const alternateProvider = ManagedAlternateProvider.nodeAddress()
-		const consumer = ManagedProviderConsumer.nodeAddress()
+		const policyOwner = parsePluginNodeAddress(ManagedProvider.nodeAddress())
+		const alternateProvider = parsePluginNodeAddress(ManagedAlternateProvider.nodeAddress())
+		const consumer = parsePluginNodeAddress(ManagedProviderConsumer.nodeAddress())
 		const token = ManagedProviderToken.definitionAddress()
 
 		await expect(rpc.inspectPluginProviderPolicyDto(consumer)).resolves.toEqual({
@@ -291,7 +305,7 @@ describe('runtime web control protocol', () => {
 		host.add([ManagedPlugin, ManagedProvider, ManagedProviderConsumer, ManagedDirectConsumer])
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		const consumer = ManagedProviderConsumer.nodeAddress()
+		const consumer = parsePluginNodeAddress(ManagedProviderConsumer.nodeAddress())
 		const requirement = ManagedProviderToken.definitionAddress()
 
 		const inspection = await rpc.inspectPluginConsumerRequirementsDto(consumer)
@@ -305,16 +319,18 @@ describe('runtime web control protocol', () => {
 		expect(inspection.items[0]).toHaveProperty('consumerOverride', null)
 
 		await expect(
-			rpc.inspectPluginConsumerRequirementsDto(ManagedDirectConsumer.nodeAddress()),
+			rpc.inspectPluginConsumerRequirementsDto(
+				parsePluginNodeAddress(ManagedDirectConsumer.nodeAddress()),
+			),
 		).resolves.toMatchObject({
 			ok: true,
 			items: [
 				{
 					kind: 'plugin',
-					inheritedProvider: ManagedPlugin.nodeAddress(),
+					inheritedProvider: parsePluginNodeAddress(ManagedPlugin.nodeAddress()),
 					options: [
 						expect.objectContaining({
-							address: ManagedPlugin.nodeAddress(),
+							address: parsePluginNodeAddress(ManagedPlugin.nodeAddress()),
 						}),
 					],
 				},

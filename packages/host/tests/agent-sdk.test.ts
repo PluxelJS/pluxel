@@ -1,10 +1,12 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { Result, Ok, Err } from '@pluxel/core/better-result'
 import { logtape } from '@pluxel/core/config'
 import { requirePluginService } from '@pluxel/core/internal'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { createHost } from '../src/index'
-import { createScriptScope, type Script } from '../src/agent'
+import type { Script } from '../src/agent'
+import { createScriptScope } from '../src/agent-runtime'
+import { requirePluginHostCoordinator } from '../src/internal'
 import { createDocumentStorage } from './helpers/document-storage'
 
 const schema = {
@@ -40,7 +42,7 @@ it('runs ordinary typed configuration tasks against a Host without official Serv
 	})
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
-	const node = Counter.nodeAddress()
+	const node = parsePluginNodeAddress(Counter.nodeAddress())
 	try {
 		Result.unwrap(await scope.sdk.plugin(node).start())
 		const script = (async (sdk, run) => {
@@ -99,7 +101,7 @@ it('runs ordinary typed configuration tasks against a Host without official Serv
 		})
 		Result.unwrap(await scope.sdk.plugin(node).restart())
 		Result.unwrap(await scope.sdk.plugin(node).stop())
-		expect(Result.unwrap(await scope.sdk.plugins.list())).toMatchObject([
+		expect(Result.unwrap(await scope.sdk.plugins.list()).nodes).toMatchObject([
 			{ address: node, lifecycleState: 'stopped' },
 		])
 	} finally {
@@ -108,7 +110,7 @@ it('runs ordinary typed configuration tasks against a Host without official Serv
 })
 
 it('preserves shadowed raw inputs, source facts and readonly rejection', async () => {
-	const node = Counter.nodeAddress()
+	const node = parsePluginNodeAddress(Counter.nodeAddress())
 	await using host = await createHost({
 		plugins: [Counter],
 		config: { mode: 'declared-only', records: [{ owner: node, config: { count: 7 } }] },
@@ -180,11 +182,11 @@ it('propagates a real CAS conflict with ordinary await without rolling back prio
 		runtime: { documents: { config: false, state: false } },
 	})
 	await host.start()
-	await host.startNode(Counter.nodeAddress())
+	await host.startNode(parsePluginNodeAddress(Counter.nodeAddress()))
 	const scope = createScriptScope({ ctx: host.ctx })
 	try {
 		expect(scope.sdk).not.toHaveProperty('Result')
-		const selected = scope.sdk.plugin(Counter.nodeAddress())
+		const selected = scope.sdk.plugin(parsePluginNodeAddress(Counter.nodeAddress()))
 		const initial = await selected.config.get()
 		expect(initial).toBeInstanceOf(Ok)
 		const before = initial.unwrap()
@@ -213,7 +215,9 @@ it('propagates a real CAS conflict with ordinary await without rolling back prio
 		const after = Result.unwrap(await selected.config.get())
 		expect(after).toMatchObject({ config: { count: 4 }, application: 'applied' })
 		expect(after.managedRevision).not.toBe(before.managedRevision)
-		expect(requirePluginService(host.ctx).getInstance(Counter.nodeAddress())).toMatchObject({
+		expect(
+			requirePluginService(host.ctx).getInstance(parsePluginNodeAddress(Counter.nodeAddress())),
+		).toMatchObject({
 			count: 4,
 		})
 	} finally {
@@ -243,10 +247,14 @@ it('keeps saved-but-not-applied and lifecycle failures as domain results', async
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
 	try {
-		Result.unwrap(await scope.sdk.plugin(RejectConfig.nodeAddress()).start())
+		Result.unwrap(
+			await scope.sdk.plugin(parsePluginNodeAddress(RejectConfig.nodeAddress())).start(),
+		)
 		expect(
 			Result.unwrap(
-				await scope.sdk.plugin(RejectConfig.nodeAddress()).config.patch({ set: { count: 5 } }),
+				await scope.sdk
+					.plugin(parsePluginNodeAddress(RejectConfig.nodeAddress()))
+					.config.patch({ set: { count: 5 } }),
 			),
 		).toMatchObject({
 			config: { count: 5 },
@@ -255,10 +263,15 @@ it('keeps saved-but-not-applied and lifecycle failures as domain results', async
 			applyFailure: { code: 'listener_failed' },
 		})
 		expect(
-			(requirePluginService(host.ctx).getInstance(RejectConfig.nodeAddress()) as RejectConfig)
-				.config,
+			(
+				requirePluginService(host.ctx).getInstance(
+					parsePluginNodeAddress(RejectConfig.nodeAddress()),
+				) as RejectConfig
+			).config,
 		).toMatchObject({ count: 2 })
-		expect(await scope.sdk.plugin(Broken.nodeAddress()).start()).toMatchObject({
+		expect(
+			await scope.sdk.plugin(parsePluginNodeAddress(Broken.nodeAddress())).start(),
+		).toMatchObject({
 			status: 'error',
 			error: {
 				code: 'lifecycle_failed',
@@ -268,14 +281,21 @@ it('keeps saved-but-not-applied and lifecycle failures as domain results', async
 						summary: {
 							lifecycleReport: {
 								ok: false,
-								issues: [{ plugin: Broken.nodeAddress(), error: { message: 'startup refused' } }],
+								issues: [
+									{
+										plugin: parsePluginNodeAddress(Broken.nodeAddress()),
+										error: { message: 'startup refused' },
+									},
+								],
 							},
 						},
 					},
 				},
 			},
 		})
-		expect(Result.unwrap(await scope.sdk.plugin(Broken.nodeAddress()).status())).toMatchObject({
+		expect(
+			Result.unwrap(await scope.sdk.plugin(parsePluginNodeAddress(Broken.nodeAddress())).status()),
+		).toMatchObject({
 			lifecycleState: 'stopped',
 		})
 		expect(Result.unwrap(await scope.sdk.updates.latest())).toBeNull()
@@ -298,7 +318,9 @@ it('does not publish a configuration whose persistence acknowledgement failed', 
 			throw new Error('write acknowledgement lost')
 		}
 		expect(
-			await scope.sdk.plugin(Counter.nodeAddress()).config.patch({ set: { count: 10 } }),
+			await scope.sdk
+				.plugin(parsePluginNodeAddress(Counter.nodeAddress()))
+				.config.patch({ set: { count: 10 } }),
 		).toMatchObject({
 			status: 'error',
 			error: {
@@ -307,12 +329,14 @@ it('does not publish a configuration whose persistence acknowledgement failed', 
 				persistence: { status: 'unknown' },
 			},
 		})
-		expect(Result.unwrap(await scope.sdk.plugin(Counter.nodeAddress()).config.get())).toMatchObject(
-			{
-				managedInput: null,
-				config: { count: 2 },
-			},
-		)
+		expect(
+			Result.unwrap(
+				await scope.sdk.plugin(parsePluginNodeAddress(Counter.nodeAddress())).config.get(),
+			),
+		).toMatchObject({
+			managedInput: null,
+			config: { count: 2 },
+		})
 		const after = await scope.snapshot()
 		expect(after.configManagedRevision).toBe(before.configManagedRevision)
 	} finally {
@@ -330,6 +354,64 @@ class Delayed extends BasePlugin {
 	}
 }
 
+it('closes lexical scopes after normal return and a thrown task without closing the borrowed Host', async () => {
+	await using host = await createHost({ plugins: [Counter] })
+	await host.start()
+	const normal = createScriptScope({ ctx: host.ctx })
+	{
+		await using scope = normal
+		Result.unwrap(await scope.sdk.plugin(Counter.nodeAddress()).start())
+	}
+	await expect(normal.sdk.plugins.list()).resolves.toMatchObject({
+		status: 'error',
+		error: { code: 'scope_closed' },
+	})
+	const failed = createScriptScope({ ctx: host.ctx })
+	const failure = new Error('task failed')
+	await expect(
+		(async () => {
+			await using scope = failed
+			Result.unwrap(await scope.sdk.plugins.list())
+			throw failure
+		})(),
+	).rejects.toBe(failure)
+	await expect(failed.sdk.plugins.list()).resolves.toMatchObject({
+		status: 'error',
+		error: { code: 'scope_closed' },
+	})
+	expect(requirePluginService(host.ctx).isRunning(Counter.nodeAddress())).toBe(true)
+})
+
+it('shares standard and explicit cleanup rejection while draining an admitted failure', async () => {
+	await using host = await createHost({ plugins: [] })
+	await host.start()
+	const scope = createScriptScope({ ctx: host.ctx })
+	const entered = Promise.withResolvers<void>()
+	const release = Promise.withResolvers<void>()
+	const failure = new Error('committed read failed')
+	const read = vi
+		.spyOn(requirePluginHostCoordinator(host.ctx), 'readCommitted')
+		.mockImplementationOnce(async () => {
+			entered.resolve()
+			await release.promise
+			throw failure
+		})
+	const admitted = scope.sdk.plugins.list()
+	await entered.promise
+	const settlement = scope[Symbol.asyncDispose]()
+	expect(scope.dispose()).toBe(settlement)
+	try {
+		queueMicrotask(() => release.resolve())
+		await Promise.all([
+			expect(admitted).rejects.toBe(failure),
+			expect(settlement).rejects.toMatchObject({ errors: [failure] }),
+		])
+		expect(scope[Symbol.asyncDispose]()).toBe(settlement)
+	} finally {
+		read.mockRestore()
+	}
+})
+
 it('closes cached admission on cancellation and drains a real accepted Host mutation', async () => {
 	startup = Promise.withResolvers<void>()
 	finishStartup = Promise.withResolvers<void>()
@@ -338,7 +420,7 @@ it('closes cached admission on cancellation and drains a real accepted Host muta
 	const controller = new AbortController()
 	const scope = createScriptScope({ ctx: host.ctx, signal: controller.signal })
 	const cached = scope.sdk.plugins.list
-	const admitted = scope.sdk.plugin(Delayed.nodeAddress()).start()
+	const admitted = scope.sdk.plugin(parsePluginNodeAddress(Delayed.nodeAddress())).start()
 	await startup.promise
 	controller.abort(new Error('user cancelled'))
 	await expect(cached()).resolves.toMatchObject({
@@ -346,7 +428,9 @@ it('closes cached admission on cancellation and drains a real accepted Host muta
 		error: { code: 'scope_closed' },
 	})
 	let disposed = false
-	const disposal = scope.dispose().then((): void => {
+	const settlement = scope[Symbol.asyncDispose]()
+	expect(scope.dispose()).toBe(settlement)
+	const disposal = settlement.then((): void => {
 		disposed = true
 		return undefined
 	})
@@ -355,8 +439,10 @@ it('closes cached admission on cancellation and drains a real accepted Host muta
 	await admitted
 	await disposal
 	expect(disposed).toBe(true)
-	expect(requirePluginService(host.ctx).isRunning(Delayed.nodeAddress())).toBe(true)
-	expect(scope.dispose()).toBe(scope.dispose())
+	expect(
+		requirePluginService(host.ctx).isRunning(parsePluginNodeAddress(Delayed.nodeAddress())),
+	).toBe(true)
+	expect(scope[Symbol.asyncDispose]()).toBe(scope.dispose())
 	expect(await scope.snapshot()).toMatchObject({
 		catalogRevision: expect.any(Number),
 		configManagedRevision: expect.any(String),
@@ -364,7 +450,9 @@ it('closes cached admission on cancellation and drains a real accepted Host muta
 	})
 	const next = createScriptScope({ ctx: host.ctx })
 	try {
-		expect(Result.unwrap(await next.sdk.plugin(Delayed.nodeAddress()).status())).toMatchObject({
+		expect(
+			Result.unwrap(await next.sdk.plugin(parsePluginNodeAddress(Delayed.nodeAddress())).status()),
+		).toMatchObject({
 			lifecycleState: 'running',
 		})
 	} finally {
@@ -405,10 +493,12 @@ it('reads real bounded logging streams, waits with a deadline and preserves rete
 			expect(rejected.error.message).not.toBe('')
 			expect(Object.isFrozen(rejected.error)).toBe(true)
 		}
-		Result.unwrap(await scope.sdk.plugin(Counter.nodeAddress()).start())
+		Result.unwrap(await scope.sdk.plugin(parsePluginNodeAddress(Counter.nodeAddress())).start())
 		expect(
 			Result.unwrap(
-				await scope.sdk.logs.read(cursor, { filter: { plugin: Counter.nodeAddress() } }),
+				await scope.sdk.logs.read(cursor, {
+					filter: { plugin: parsePluginNodeAddress(Counter.nodeAddress()) },
+				}),
 			),
 		).toMatchObject({ lines: [{ msg: 'counter started' }] })
 		const end = Result.unwrap(await scope.sdk.logs.mark())

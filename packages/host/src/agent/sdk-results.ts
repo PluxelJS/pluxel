@@ -9,6 +9,7 @@ import type {
 import type { HostPolicyResult } from '../policy-management'
 import type { PluginApplyReportSnapshot } from '../apply-report'
 import type { PluginReconciliationIssue } from '../reconcile'
+import { pluginApplyReportOutcome } from '../report-protocol'
 
 type WithoutOk<T> = T extends unknown ? Readonly<Omit<T, 'ok'>> : never
 
@@ -34,7 +35,12 @@ export type ScriptTargetError = Readonly<{
 
 /** Synchronize control materials again before using an incompatible descriptor. */
 export type ScriptControlError = Readonly<{
-	code: 'control_format_unsupported' | 'control_material_unavailable' | 'control_contract_mismatch'
+	code:
+		| 'stale_target'
+		| 'control_evidence_missing'
+		| 'control_format_unsupported'
+		| 'control_material_unavailable'
+		| 'control_contract_mismatch'
 	message: string
 }>
 
@@ -76,7 +82,12 @@ export type ScriptLifecycleError =
 			state: 'unchanged'
 			issues: readonly PluginReconciliationIssue[]
 	  }>
-	| Readonly<{ code: 'persistence_failed'; message: string; state: 'unknown' }>
+	| Readonly<{
+			code: 'persistence_failed'
+			message: string
+			state: 'unknown'
+			report?: PluginApplyReportSnapshot
+	  }>
 	| Readonly<{
 			code: 'start_unavailable' | 'restart_unavailable'
 			message: string
@@ -144,18 +155,22 @@ export function scriptLogResult(
 
 export function scriptLifecycleResult(
 	report: PluginApplyReportSnapshot,
-): Result<PluginApplyReportSnapshot, Extract<ScriptLifecycleError, { code: 'lifecycle_failed' }>> {
-	if (
-		report.reconciliation.length > 0 ||
-		(report.core.status === 'committed' && !report.core.summary.lifecycleReport.ok)
-	)
+): Result<
+	PluginApplyReportSnapshot,
+	Extract<ScriptLifecycleError, { code: 'lifecycle_failed' | 'persistence_failed' }>
+> {
+	const outcome = pluginApplyReportOutcome(report)
+	if (outcome.status === 'applied') return Result.ok(outcome.report)
+	if (outcome.status === 'persistence_failed')
 		return Result.err(
 			Object.freeze({
-				code: 'lifecycle_failed',
-				message:
-					'Plugin lifecycle application completed with issues; inspect the report before continuing',
-				report,
+				code: outcome.status,
+				message: outcome.message,
+				state: outcome.state,
+				report: outcome.report,
 			}),
 		)
-	return Result.ok(report)
+	return Result.err(
+		Object.freeze({ code: outcome.status, message: outcome.message, report: outcome.report }),
+	)
 }

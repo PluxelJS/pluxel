@@ -851,7 +851,7 @@ describe('Host pinned mutation admission', () => {
 
 			const catalogUpdate = coordinator.updateCatalog(next)
 			const ensureFork = coordinator.updateRuntimeState(
-				hostStatePatch({ type: 'ensure-fork', definition: Provider, forkId: 'queued' }),
+				hostStatePatch({ type: 'ensure-fork', node: node(Provider, 'queued') }),
 			)
 			await catalogUpdate
 			await expect(ensureFork).rejects.toMatchObject({
@@ -892,8 +892,7 @@ describe('Host pinned mutation admission', () => {
 		const removeFork = coordinator.runExclusive('test-remove-fork', async (session) => {
 			const patch = hostStatePatch({
 				type: 'remove-fork',
-				definition: Provider,
-				forkId: 'retained',
+				node: fork,
 			})
 			session.validateRuntimeStatePatch(patch)
 			metadataCleanups++
@@ -948,7 +947,7 @@ describe('Host pinned mutation admission', () => {
 		const removeFork = coordinator.runExclusive('test-exclusive-remove', async (session) => {
 			const removalPatch = hostStatePatch(
 				{ type: 'remove-node-policy', node: fork },
-				{ type: 'remove-fork', definition: Provider, forkId: 'exclusive' },
+				{ type: 'remove-fork', node: fork },
 			)
 			session.validateRuntimeStatePatch(removalPatch)
 			await session.update({

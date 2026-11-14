@@ -594,7 +594,7 @@ describe('management protocol validation', () => {
 					},
 				],
 			}),
-		).toThrow(/successes and failures/)
+		).toThrow(/applied and unapplied results/)
 	})
 
 	it('requires a closed state write policy with distinct recognized override fields', () => {

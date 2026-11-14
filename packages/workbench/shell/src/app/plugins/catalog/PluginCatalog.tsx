@@ -340,16 +340,23 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 				const undoRevision = queryClient.getQueryData<PluginOverview>(
 					managementQueryKeys.pluginOverview(),
 				)?.statePolicy.managedRevision
-				const failed = results.filter((r) => !r.ok)
+				const failed = results.filter((result) => result.ok === false)
 				if (failed.length > 0) {
 					notifyAndRecord({
-						title: '操作完成但部分失败',
-						message:
-							failed
-								.map((result) => displayNameByAddress.get(pluginNodeIndexKey(result.address)))
-								.filter(Boolean)
-								.join('，') || '操作失败',
+						title: failed.every((result) => result.code === 'lifecycle_failed')
+							? '自动启动策略已应用，运行协调存在问题'
+							: failed.some((result) => result.code === 'persistence_failed')
+								? '自动启动策略应用结果待核对'
+								: '自动启动策略未全部应用',
+						message: failed
+							.map((result) => {
+								const name =
+									displayNameByAddress.get(pluginNodeIndexKey(result.address)) ?? 'Plugin'
+								return `${name}：${result.code === 'lifecycle_failed' ? '策略已应用；' : ''}${result.error}`
+							})
+							.join('\n'),
 						color: 'red',
+						diagnosticText: JSON.stringify(failed, null, 2),
 					})
 				} else {
 					notifyAndRecord({
@@ -376,18 +383,24 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 													})),
 													undoRevision,
 												)
-												const undoFailed = undoResults.filter((result) => !result.ok)
+												const undoFailed = undoResults.filter((result) => result.ok === false)
 												if (undoFailed.length > 0) {
 													notifyAndRecord({
-														title: '部分策略恢复失败',
-														message:
-															undoFailed
-																.map((result) =>
-																	displayNameByAddress.get(pluginNodeIndexKey(result.address)),
-																)
-																.filter(Boolean)
-																.join('，') || '恢复失败',
+														title: undoFailed.every((result) => result.code === 'lifecycle_failed')
+															? '原策略已恢复，运行协调存在问题'
+															: undoFailed.some((result) => result.code === 'persistence_failed')
+																? '策略恢复结果待核对'
+																: '策略未全部恢复',
+														message: undoFailed
+															.map((result) => {
+																const name =
+																	displayNameByAddress.get(pluginNodeIndexKey(result.address)) ??
+																	'Plugin'
+																return `${name}：${result.code === 'lifecycle_failed' ? '原策略已恢复；' : ''}${result.error}`
+															})
+															.join('\n'),
 														color: 'red',
+														diagnosticText: JSON.stringify(undoFailed, null, 2),
 													})
 												} else {
 													notifyAndRecord({

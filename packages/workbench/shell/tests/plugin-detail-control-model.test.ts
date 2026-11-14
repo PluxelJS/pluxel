@@ -173,8 +173,10 @@ describe('plugin detail control presentation', () => {
 	it('surfaces the target lifecycle issue instead of a generic unsettled warning', () => {
 		const outcome = describePluginLifecycleOutcome('Discord', 'start', {
 			address: memory,
-			ok: true,
-			status: 'applied',
+			ok: false,
+			code: 'lifecycle_failed',
+			status: 'applied-with-issues',
+			error: 'Plugin lifecycle application completed with issues',
 			control: {
 				autoStart: true,
 				sessionIntent: 'run',

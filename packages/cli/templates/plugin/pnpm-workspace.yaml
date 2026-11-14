@@ -5,6 +5,7 @@ catalog:
   vite-plus: 1.4.0
   '@pluxel/cli': ^1.1.0
   '@pluxel/core': ^1.1.0
+  '@pluxel/host': ^1.1.0
   '@pluxel/rolldown': ^1.1.0
   '@pluxel/test': ^1.1.0
   '@pluxel/services': ^1.1.0

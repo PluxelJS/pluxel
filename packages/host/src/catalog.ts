@@ -31,7 +31,7 @@ export type PluginControlMaterial = Readonly<{
 export type PluginControlMetadata =
 	| Readonly<{
 			state: 'available'
-			format: 1
+			format: 2
 			contracts: Readonly<{ config: string | null; instance: string }>
 			material?: PluginControlMaterial
 	  }>
@@ -44,6 +44,8 @@ export type PluginControlMetadata =
 export class PluginControlError extends Error {
 	constructor(
 		readonly code:
+			| 'stale_target'
+			| 'control_evidence_missing'
 			| 'control_format_unsupported'
 			| 'control_material_unavailable'
 			| 'control_contract_mismatch',
@@ -65,8 +67,8 @@ export function assertPluginControlContract(
 			'control_material_unavailable',
 			`Control declarations are unavailable for ${formatPluginDefinitionReference(entry.address)}`,
 		)
-	if (control.format !== 1)
-		throw new PluginControlError('control_format_unsupported', 'Control format 1 is required')
+	if (control.format !== 2)
+		throw new PluginControlError('control_format_unsupported', 'Control format 2 is required')
 	if (control.contracts[surface] !== expected)
 		throw new PluginControlError(
 			'control_contract_mismatch',
@@ -97,14 +99,14 @@ function immutableControlValue(value: unknown, depth = 0): unknown {
 
 function snapshotPluginControl(control: PluginControlMetadata): PluginControlMetadata {
 	if (control.state === 'unavailable') return Object.freeze({ ...control })
-	if (control.state !== 'available' || control.format !== 1)
-		throw new PluginControlError('control_format_unsupported', 'Control format 1 is required')
+	if (control.state !== 'available' || control.format !== 2)
+		throw new PluginControlError('control_format_unsupported', 'Control format 2 is required')
 	for (const digest of [control.contracts.config, control.contracts.instance])
 		if (digest !== null && !/^sha256:[a-f0-9]{64}$/.test(digest))
 			throw new TypeError('Control contracts require a SHA-256 digest')
 	return Object.freeze({
 		state: 'available',
-		format: 1,
+		format: 2,
 		contracts: Object.freeze({ ...control.contracts }),
 		...(control.material === undefined
 			? {}

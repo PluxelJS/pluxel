@@ -13,7 +13,7 @@ const principal = { provider: 'development-console', subject: 'bot-lab-validatio
 export default (async (sdk) => {
 	const plugins = await sdk.plugins.list()
 	if (plugins.isErr()) return plugins
-	const workspace = sdk.plugin(BotWorkspacePlugin)
+	const workspace = sdk.plugin(BotWorkspacePlugin.nodeAddress())
 	const status = await workspace.status()
 	if (status.isErr()) return status
 	const owner = status.value
@@ -26,7 +26,7 @@ export default (async (sdk) => {
 		const layout = await readWorkbenchLayout(target, { target: owner.address })
 		return Result.ok({
 			owner,
-			providers: plugins.value.filter((plugin) =>
+			providers: plugins.value.nodes.filter((plugin) =>
 				['TelegramBotPlugin', 'DiscordBotPlugin', 'WeComBotPlugin'].includes(
 					plugin.rootExportName ?? '',
 				),
@@ -49,7 +49,7 @@ export const saveInstructions = (async (sdk, run) => {
 		throw new TypeError('Expected source, id and instructions')
 	const record = input as Record<string, unknown>
 	if (typeof record.instructions !== 'string') throw new TypeError('Expected instructions string')
-	const workspace = sdk.plugin(BotWorkspacePlugin)
+	const workspace = sdk.plugin(BotWorkspacePlugin.nodeAddress())
 	const instance = await workspace.instance()
 	if (instance.isErr()) return instance
 	const identity = instance.value.identity(record.source, record.id)
@@ -74,12 +74,12 @@ export const saveInstructions = (async (sdk, run) => {
 }) satisfies ProjectScript
 
 export const stopDiscord = (async (sdk) => {
-	const { stop, status } = sdk.plugin(DiscordBotPlugin)
+	const { stop, status } = sdk.plugin(DiscordBotPlugin.nodeAddress())
 	const report = await stop()
 	if (report.isErr()) return report
 	const current = await status()
 	if (current.isErr()) return current
-	const workspace = await sdk.plugin(BotWorkspacePlugin).instance()
+	const workspace = await sdk.plugin(BotWorkspacePlugin.nodeAddress()).instance()
 	if (workspace.isErr()) return workspace
 	return Result.ok({
 		report: report.value,
@@ -88,12 +88,12 @@ export const stopDiscord = (async (sdk) => {
 	})
 }) satisfies ProjectScript
 export const startDiscord = (async (sdk) => {
-	const { start, status } = sdk.plugin(DiscordBotPlugin)
+	const { start, status } = sdk.plugin(DiscordBotPlugin.nodeAddress())
 	const report = await start()
 	if (report.isErr()) return report
 	const current = await status()
 	if (current.isErr()) return current
-	const workspace = await sdk.plugin(BotWorkspacePlugin).instance()
+	const workspace = await sdk.plugin(BotWorkspacePlugin.nodeAddress()).instance()
 	if (workspace.isErr()) return workspace
 	return Result.ok({
 		report: report.value,

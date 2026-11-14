@@ -42,7 +42,10 @@ async function fixture(
 	await put('plugin/package.json', {
 		name: '@fixture/store',
 		version: '1.0.0',
-		peerDependencies: options.peer ? { tinybase: options.peer } : {},
+		peerDependencies: {
+			'@pluxel/host': '^1.1.0',
+			...(options.peer ? { tinybase: options.peer } : {}),
+		},
 		devDependencies: options.dev ? { tinybase: options.dev } : {},
 	})
 	await put('plugin/index.ts', options.source ?? "export { createStore } from 'tinybase'")

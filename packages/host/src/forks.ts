@@ -115,7 +115,7 @@ export async function ensureFork(
 	try {
 		const report = await coordinator.updateRuntimeState(
 			hostStatePatch(
-				{ type: 'ensure-fork', definition: node.definition, forkId: node.forkId },
+				{ type: 'ensure-fork', node },
 				...(options.autoStart === undefined
 					? []
 					: [{ type: 'set-auto-start' as const, node, autoStart: options.autoStart }]),
@@ -158,7 +158,7 @@ export async function removeFork(
 			async (session) => {
 				const removalPatch = hostStatePatch(
 					{ type: 'remove-node-policy', node },
-					{ type: 'remove-fork', definition: node.definition, forkId: node.forkId },
+					{ type: 'remove-fork', node },
 				)
 				session.validateRuntimeStatePatch(removalPatch, options?.expectedManagedRevision)
 				const state = session.runtimeStateSnapshot()

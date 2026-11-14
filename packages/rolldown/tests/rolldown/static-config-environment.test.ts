@@ -79,8 +79,8 @@ async function parseFixture(code: string, requireStaticPlugins = false) {
 describe('static config environment declaration lowering', () => {
 	it('combines disjoint config bindings while rejecting whole-input overlaps', async () => {
 		const bindings = `[
-			envBinding(AlphaPlugin, {config: {schema: AlphaConfig, mapping: {endpoint: 'APP_ENDPOINT'}}}),
-			envBinding(AlphaPlugin, {config: {schema: AlphaConfig, mapping: {count: 'APP_COUNT'}}}),
+			envBinding(AlphaPlugin.nodeAddress(), {config: {schema: AlphaConfig, mapping: {endpoint: 'APP_ENDPOINT'}}}),
+			envBinding(AlphaPlugin.nodeAddress(), {config: {schema: AlphaConfig, mapping: {count: 'APP_COUNT'}}}),
 		]`
 		const facts = await parseFixture(staticEntry({ bindings }))
 		expect(facts.targets.map((target) => target.path)).toEqual([['endpoint'], ['count']])
@@ -97,7 +97,7 @@ describe('static config environment declaration lowering', () => {
 			import { defineHostApplication, envBinding } from '@pluxel/host'
 			import { AlphaPlugin, AlphaConfig, AlphaVault } from './plugins'
 			export default defineHostApplication(() => ({plugins: [AlphaPlugin], envBindings: [
-				envBinding(AlphaPlugin, {config: {schema: AlphaConfig, mapping: {endpoint: 'DEFAULT_ENDPOINT'}}}),
+				envBinding(AlphaPlugin.nodeAddress(), {config: {schema: AlphaConfig, mapping: {endpoint: 'DEFAULT_ENDPOINT'}}}),
 				envBinding(AlphaPlugin.nodeAddress('east'), {
 					config: {schema: AlphaConfig, mapping: {endpoint: 'EAST_ENDPOINT'}},
 					vault: {namespace: 'account', schema: AlphaVault, mapping: {token: 'EAST_TOKEN'}},
@@ -258,8 +258,8 @@ describe('static config environment declaration lowering', () => {
 			import { AlphaPlugin, AlphaConfig, AlphaVault } from './plugins'
 			export default defineHostApplication(() => ({
 				plugins: [AlphaPlugin],
-				fileBindings: [fileBinding(AlphaPlugin, {config:{schema:AlphaConfig,path:'/must/not/read.json'}, vault:{schema:AlphaVault,paths:{token:'/must/not/read.secret'}}})],
-				envBindings: [envBinding(AlphaPlugin, {config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}, vault:{namespace:'account-a',schema:AlphaVault,mapping:{token:'APP_TOKEN', account:{password:'APP_PASSWORD'}}}})],
+				fileBindings: [fileBinding(AlphaPlugin.nodeAddress(), {config:{schema:AlphaConfig,path:'/must/not/read.json'}, vault:{schema:AlphaVault,paths:{token:'/must/not/read.secret'}}})],
+				envBindings: [envBinding(AlphaPlugin.nodeAddress(), {config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}, vault:{namespace:'account-a',schema:AlphaVault,mapping:{token:'APP_TOKEN', account:{password:'APP_PASSWORD'}}}})],
 			}))
 		`,
 			true,
@@ -281,7 +281,7 @@ describe('static config environment declaration lowering', () => {
 			import { AlphaPlugin } from './plugins'
 			import * as v from 'valibot'
 			export default defineHostApplication(() => ({ plugins: [AlphaPlugin], envBindings: [
-				bind(AlphaPlugin, {config: {schema: v.object({name: v.string()}), mapping: {name: 'APP_NAME'}}})
+				bind(AlphaPlugin.nodeAddress(), {config: {schema: v.object({name: v.string()}), mapping: {name: 'APP_NAME'}}})
 			]}))
 		`)
 		expect(facts.targets[0]).toMatchObject({ environmentName: 'APP_NAME', path: ['name'] })
@@ -290,19 +290,19 @@ describe('static config environment declaration lowering', () => {
 	it.each([
 		["[{plugin: AlphaPlugin, config:{endpoint:'APP_ENDPOINT'}}]", 'must call envBinding'],
 		[
-			"[envBinding(AlphaPlugin, {config:{mapping:{endpoint:'APP_ENDPOINT'}}})]",
+			"[envBinding(AlphaPlugin.nodeAddress(), {config:{mapping:{endpoint:'APP_ENDPOINT'}}})]",
 			'requires schema and mapping',
 		],
 		[
-			"[envBinding(AlphaPlugin, {config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'},extra:true}})]",
+			"[envBinding(AlphaPlugin.nodeAddress(), {config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'},extra:true}})]",
 			'unknown config binding field',
 		],
 		[
-			"[envBinding(AlphaPlugin, {vault:{schema:AlphaVault,mapping:'APP_VAULT'}})]",
+			"[envBinding(AlphaPlugin.nodeAddress(), {vault:{schema:AlphaVault,mapping:'APP_VAULT'}})]",
 			'must declare record keys directly',
 		],
 		[
-			"[envBinding(AlphaPlugin, {vault:{schema:AlphaVault,mapping:{missing:'APP_TOKEN'}}})]",
+			"[envBinding(AlphaPlugin.nodeAddress(), {vault:{schema:AlphaVault,mapping:{missing:'APP_TOKEN'}}})]",
 			'is not declared by the Vault binding schema',
 		],
 	])('rejects malformed explicit bindings: %s', async (bindings, message) => {
@@ -315,7 +315,7 @@ describe('static config environment declaration lowering', () => {
 			import { defineHostApplication, envBinding } from '@pluxel/host'
 			import { AlphaPlugin, AlphaConfig } from './plugins'
 			export default defineHostApplication((envBinding) => ({plugins:[AlphaPlugin],envBindings:[
-				envBinding(AlphaPlugin,{config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}})
+				envBinding(AlphaPlugin.nodeAddress(),{config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}})
 			]}))
 		`),
 		).rejects.toThrow('must call envBinding imported from @pluxel/host directly')
@@ -327,7 +327,7 @@ describe('static config environment declaration lowering', () => {
 			import { defineHostApplication, envBinding } from '@pluxel/host'
 			import { AlphaPlugin, AlphaConfig } from './plugins'
 			export default defineHostApplication((AlphaConfig) => ({plugins:[AlphaPlugin],envBindings:[
-				envBinding(AlphaPlugin,{config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}})
+				envBinding(AlphaPlugin.nodeAddress(),{config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}})
 			]}))
 		`),
 		).rejects.toThrow(/AlphaConfig/)
@@ -337,7 +337,7 @@ describe('static config environment declaration lowering', () => {
 		const facts = await parseFixture(
 			staticEntry({
 				bindings:
-					"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: {endpoint:'PLUXEL_CUSTOM_ENDPOINT'} } })]",
+					"[envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: {endpoint:'PLUXEL_CUSTOM_ENDPOINT'} } })]",
 			}),
 		)
 		expect(facts.environmentExample).toContain('# PLUXEL_CUSTOM_ENDPOINT=')
@@ -346,11 +346,11 @@ describe('static config environment declaration lowering', () => {
 	it('uses source resolution and raw-input projection to render deterministic fan-out', async () => {
 		const code = staticEntry({
 			bindings: `[
-				envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: {
+				envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: {
 					count: 'APP_COUNT',
 					endpoint: 'APP_ENDPOINT',
 				} } }),
-				envBinding(BetaPlugin, { config: { schema: BetaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } }),
+				envBinding(BetaPlugin.nodeAddress(), { config: { schema: BetaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } }),
 			]`,
 		})
 		const first = await parseFixture(code)
@@ -382,7 +382,7 @@ describe('static config environment declaration lowering', () => {
 			staticEntry({
 				plugins: 'examplePlugins',
 				bindings:
-					"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } })]",
+					"[envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } })]",
 			}),
 			true,
 		)
@@ -396,7 +396,7 @@ describe('static config environment declaration lowering', () => {
 				extra: `import { AlphaPlugin as ConfiguredAlpha } from './plugins'`,
 				plugins: 'examplePlugins',
 				bindings:
-					"[envBinding(ConfiguredAlpha, { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } })]",
+					"[envBinding(ConfiguredAlpha.nodeAddress(), { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } })]",
 			}),
 		)
 
@@ -411,7 +411,7 @@ describe('static config environment declaration lowering', () => {
 					extra: `import { otherPlugins } from './other-plugins'`,
 					plugins: 'otherPlugins',
 					bindings:
-						"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } })]",
+						"[envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } })]",
 				}),
 			),
 		).rejects.toThrow('is not present in the statically resolved plugins catalog')
@@ -421,7 +421,7 @@ describe('static config environment declaration lowering', () => {
 		{
 			name: 'indirect array',
 			code: staticEntry({
-				extra: `const declarations = [envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: 'APP_CONFIG' } })]`,
+				extra: `const declarations = [envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: 'APP_CONFIG' } })]`,
 				bindings: 'declarations',
 			}),
 			message: 'must be a direct array literal',
@@ -429,7 +429,7 @@ describe('static config environment declaration lowering', () => {
 		{
 			name: 'indirect bind',
 			code: staticEntry({
-				extra: `const declaration = envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: 'APP_CONFIG' } })`,
+				extra: `const declaration = envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: 'APP_CONFIG' } })`,
 				bindings: '[declaration]',
 			}),
 			message: 'must call envBinding imported from @pluxel/host directly',
@@ -444,7 +444,7 @@ describe('static config environment declaration lowering', () => {
 			code: staticEntry({
 				extra: `const mapping = { endpoint: 'APP_ENDPOINT' }`,
 				bindings:
-					'[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: mapping } })]',
+					'[envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: mapping } })]',
 			}),
 			message: 'must be a direct environment name string or object literal',
 		},
@@ -452,7 +452,7 @@ describe('static config environment declaration lowering', () => {
 			name: 'mapping spread',
 			code: staticEntry({
 				bindings:
-					"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { ...{ endpoint: 'APP_ENDPOINT' } } } })]",
+					"[envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: { ...{ endpoint: 'APP_ENDPOINT' } } } })]",
 			}),
 			message: 'does not allow spread properties',
 		},
@@ -460,7 +460,7 @@ describe('static config environment declaration lowering', () => {
 			name: 'computed key',
 			code: staticEntry({
 				bindings:
-					"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { ['endpoint']: 'APP_ENDPOINT' } } })]",
+					"[envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: { ['endpoint']: 'APP_ENDPOINT' } } })]",
 			}),
 			message: 'must use a direct key',
 		},
@@ -468,7 +468,7 @@ describe('static config environment declaration lowering', () => {
 			name: 'duplicate key',
 			code: staticEntry({
 				bindings:
-					"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_A', endpoint: 'APP_B' } } })]",
+					"[envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_A', endpoint: 'APP_B' } } })]",
 			}),
 			message: 'contains duplicate key "endpoint"',
 		},
@@ -476,7 +476,7 @@ describe('static config environment declaration lowering', () => {
 			name: 'non-portable name',
 			code: staticEntry({
 				bindings:
-					"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { endpoint: 'app-endpoint' } } })]",
+					"[envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: { endpoint: 'app-endpoint' } } })]",
 			}),
 			message: 'must match [A-Z_][A-Z0-9_]*',
 		},
@@ -484,8 +484,8 @@ describe('static config environment declaration lowering', () => {
 			name: 'duplicate Plugin binding',
 			code: staticEntry({
 				bindings: `[
-					envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_A' } } }),
-					envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_B' } } }),
+					envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_A' } } }),
+					envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_B' } } }),
 				]`,
 			}),
 			message: 'duplicate environment target for Plugin AlphaPlugin',
@@ -495,7 +495,7 @@ describe('static config environment declaration lowering', () => {
 			code: staticEntry({
 				plugins: '[BetaPlugin]',
 				bindings:
-					"[envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } })]",
+					"[envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: { endpoint: 'APP_ENDPOINT' } } })]",
 			}),
 			message: 'is not present in the statically resolved plugins catalog',
 		},
@@ -508,8 +508,8 @@ describe('static config environment declaration lowering', () => {
 			parseFixture(
 				staticEntry({
 					bindings: `[
-						envBinding(AlphaPlugin, { config: { schema: AlphaConfig, mapping: { count: 'APP_SHARED' } } }),
-						envBinding(BetaPlugin, { config: { schema: BetaConfig, mapping: { endpoint: 'APP_SHARED' } } }),
+						envBinding(AlphaPlugin.nodeAddress(), { config: { schema: AlphaConfig, mapping: { count: 'APP_SHARED' } } }),
+						envBinding(BetaPlugin.nodeAddress(), { config: { schema: BetaConfig, mapping: { endpoint: 'APP_SHARED' } } }),
 					]`,
 				}),
 			),
@@ -519,7 +519,7 @@ describe('static config environment declaration lowering', () => {
 			parseFixture(
 				staticEntry({
 					bindings:
-						"[envBinding(BetaPlugin, { config: { schema: BetaConfig, mapping: { unknown: 'APP_UNKNOWN' } } })]",
+						"[envBinding(BetaPlugin.nodeAddress(), { config: { schema: BetaConfig, mapping: { unknown: 'APP_UNKNOWN' } } })]",
 				}),
 			),
 		).rejects.toThrow('Raw input transport cannot be derived from schema type unknown')
@@ -541,7 +541,7 @@ import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 				export default defineHostApplication(() => ({
 					name: 'unsafe',
 					plugins: [UnsafePlugin],
-					envBindings: [envBinding(UnsafePlugin, { config: { schema: UnsafeConfig, mapping: 'APP_CONFIG' } })],
+					envBindings: [envBinding(UnsafePlugin.nodeAddress(), { config: { schema: UnsafeConfig, mapping: 'APP_CONFIG' } })],
 				}))
 			`,
 		})
@@ -581,7 +581,7 @@ import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 				export default defineHostApplication(() => ({
 					name: 'unsafe-valibot-method',
 					plugins: [UnsafePlugin],
-					envBindings: [envBinding(UnsafePlugin, { config: { schema: UnsafeConfig, mapping: 'APP_CONFIG' } })],
+					envBindings: [envBinding(UnsafePlugin.nodeAddress(), { config: { schema: UnsafeConfig, mapping: 'APP_CONFIG' } })],
 				}))
 			`,
 		})

@@ -3,6 +3,7 @@ import { SourceMap, type SourceMapPayload } from 'node:module'
 import { compileFunction } from 'node:vm'
 import type { RootContext } from '@pluxel/core'
 import * as sharedBetterResult from '@pluxel/core/better-result'
+import * as sharedControl from '../control-reference'
 import { executeHostScript } from './execute'
 import { ScriptExecutor } from './runtime'
 import { ScriptExecutionError, type ScriptArtifact } from './protocol'
@@ -45,9 +46,13 @@ export function createNodeScriptOwner(
 			const sourceMap = readSourceMap(artifact)
 			try {
 				// Each call creates fresh module locals in the existing realm; no ESM cache entries accumulate.
-				const exports: unknown = compileFunction(artifact.code, ['__pluxel_script_better_result'], {
-					filename,
-				})(sharedBetterResult)
+				const exports: unknown = compileFunction(
+					artifact.code,
+					['__pluxel_script_better_result', '__pluxel_script_control'],
+					{
+						filename,
+					},
+				)(sharedBetterResult, sharedControl)
 				if (!exports || (typeof exports !== 'object' && typeof exports !== 'function'))
 					throw new ScriptExecutionError(
 						'artifact_invalid',

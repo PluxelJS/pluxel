@@ -230,11 +230,11 @@ async function verifyViteApplication(root: string): Promise<void> {
 			'export default (async (sdk) => {',
 			'  const running: boolean[] = []',
 			'  for (const plugin of examplePlugins) {',
-			'    const status = await sdk.plugin(plugin).status()',
+			'    const status = await sdk.plugin(plugin.nodeAddress()).status()',
 			'    if (status.isErr()) return status',
 			"    running.push(status.value?.lifecycleState === 'running')",
 			'  }',
-			'  const vault = await sdk.plugin(VaultAdminPlugin).status()',
+			'  const vault = await sdk.plugin(VaultAdminPlugin.nodeAddress()).status()',
 			'  if (vault.isErr()) return vault',
 			'  const status = await sdk.plugins.list()',
 			'  if (status.isErr()) return status',
@@ -310,11 +310,11 @@ async function verifyViteApplication(root: string): Promise<void> {
 		)
 		if (
 			!inspection.ok ||
-			inspection.value.state !== 'succeeded' ||
-			inspection.value.value.status !== 'ok' ||
-			inspection.value.value.value.running.length !== 4 ||
-			inspection.value.value.value.vaultArtifact !== 'built-module' ||
-			inspection.value.value.value.running.some((running: boolean) => !running)
+			inspection.value.run.state !== 'succeeded' ||
+			inspection.value.run.value.status !== 'ok' ||
+			inspection.value.run.value.value.running.length !== 4 ||
+			inspection.value.run.value.value.vaultArtifact !== 'built-module' ||
+			inspection.value.run.value.value.running.some((running: boolean) => !running)
 		) {
 			throw new Error(`Starter Plugin admission failed: ${JSON.stringify(inspection)}`)
 		}

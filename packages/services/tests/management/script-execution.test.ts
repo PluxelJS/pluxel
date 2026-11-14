@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { networkInterfaces, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -15,7 +15,7 @@ import {
 	SCRIPT_ARTIFACT_FORMAT,
 	type ScriptArtifact,
 	type ScriptRunSnapshot,
-} from '@pluxel/host/agent'
+} from '@pluxel/host/agent/runtime'
 import { createScriptControlClient, type ScriptControlClient } from '@pluxel/host/agent/transport'
 import { elysia } from '@pluxel/services/elysia'
 import { listenElysia } from '@pluxel/services/elysia/node'
@@ -121,7 +121,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 					{
 						control: {
 							state: 'available',
-							format: 1,
+							format: generation.manifest.format,
 							contracts: generation.manifest.definitions[0].contracts,
 							material: generation,
 						},
@@ -219,15 +219,19 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			)
 			const synced = JSON.parse(sync.stdout)
 			expect(synced).toMatchObject({
-				entry: join(directory, 'synced-control/current/index.mjs'),
-				definitions: [
-					{
-						definition: ScriptCounter.definitionAddress(),
-						exportName: expect.stringMatching(/^ScriptCounter_[a-f0-9]{16}$/),
-					},
-				],
+				ok: true,
+				value: {
+					out: join(directory, 'synced-control'),
+					definitions: [
+						{
+							definition: ScriptCounter.definitionAddress(),
+							exportName: 'ScriptCounter',
+							module: expect.any(String),
+						},
+					],
+				},
 			})
-			expect(await readFile(synced.entry, 'utf8')).toContain('ScriptCounter')
+			expect(await readFile(synced.value.definitions[0].module, 'utf8')).toContain('ScriptCounter')
 			expect(sync.stderr).not.toContain(SCRIPT_TEST_PASSWORD)
 			const badCredentials = join(directory, 'sync-bad-credentials.json')
 			await writeFile(badCredentials, JSON.stringify({ password: 'incorrect' }), { mode: 0o600 })
@@ -252,9 +256,9 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 					},
 				),
 			).rejects.toMatchObject({ code: 1, stdout: expect.stringContaining('authentication_failed') })
-			await expect(
-				readFile(join(directory, 'denied-control/current/index.mjs')),
-			).rejects.toMatchObject({ code: 'ENOENT' })
+			await expect(access(join(directory, 'denied-control/current'))).rejects.toMatchObject({
+				code: 'ENOENT',
+			})
 		} finally {
 			await disabled.host.close()
 		}
@@ -348,7 +352,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			const file = join(directory, 'task.ts')
 			await writeFile(
 				file,
-				`import type { Script } from '@pluxel/host/agent';\nimport { Result } from '@pluxel/core/better-result';\nexport default (async (sdk) => { const plugins = await sdk.plugins.list(); if (plugins.isErr()) return plugins; return Result.ok({plugins: plugins.value.map(p => p.displayName)}) }) satisfies Script;\n`,
+				`import type { Script } from '@pluxel/host/agent';\nimport { Result } from '@pluxel/core/better-result';\nexport default (async (sdk) => { const plugins = await sdk.plugins.list(); if (plugins.isErr()) return plugins; return Result.ok({plugins: plugins.value.nodes.map(p => p.displayName)}) }) satisfies Script;\n`,
 			)
 			const cli = resolve(import.meta.dirname, '../../../cli/dist/cli.mjs')
 			const result = await execute(
@@ -360,9 +364,11 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 					timeout: 60_000,
 				},
 			)
-			const output = JSON.parse(result.stdout)
+			const envelope = JSON.parse(result.stdout)
+			expect(envelope.ok).toBe(true)
+			const output = envelope.value
 			expect(output).toMatchObject({
-				receipt: expect.stringMatching(/^ps2\./),
+				receipt: expect.stringMatching(/^pluxel-script-v3\./),
 				run: {
 					state: 'succeeded',
 					value: { status: 'ok', value: { plugins: expect.arrayContaining(['ScriptCounter']) } },
@@ -383,7 +389,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 					timeout: 15_000,
 				},
 			)
-			expect(JSON.parse(queried.stdout).run).toMatchObject({
+			expect(JSON.parse(queried.stdout).value.run).toMatchObject({
 				runId: output.run.runId,
 				requestHash: output.run.requestHash,
 				state: 'succeeded',

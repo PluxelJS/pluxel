@@ -40,7 +40,7 @@ export default defineHostApplication(() => ({
 	// 注册可用插件
 	plugins: [WretchPlugin, MyBusinessPlugin],
 	// 启动策略
-	policy: { autoStart: [MyBusinessPlugin] },
+	policy: { autoStart: [MyBusinessPlugin.nodeAddress()] },
 }))
 ```
 

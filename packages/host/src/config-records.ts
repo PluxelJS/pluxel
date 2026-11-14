@@ -1,7 +1,6 @@
 import {
 	parsePluginNodeAddress,
 	pluginNodeAddressEqual,
-	type PluginConstructor,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import type { PluginConfigRecordSnapshot } from '@pluxel/core/services'
@@ -14,7 +13,7 @@ export type ConfigInputPatch<T> = T extends readonly unknown[]
 		? { readonly [K in keyof T]?: ConfigInputPatch<T[K]> }
 		: T
 export type HostConfigRecordInput = Readonly<{
-	owner: PluginConstructor | PluginNodeAddress
+	owner: PluginNodeAddress
 	mode?: HostInputMode
 	config?: Readonly<Record<string, unknown>>
 }>
@@ -62,11 +61,7 @@ export function snapshotHostConfig(input: HostConfigOptions = {}): ResolvedHostC
 		assertDataObject(record, 'config record', ['owner', 'mode', 'config'])
 		if (record.mode === undefined && record.config === undefined)
 			throw new TypeError('[host] config record requires mode or config')
-		const owner = parsePluginNodeAddress(
-			typeof record.owner === 'function'
-				? (record.owner as PluginConstructor).nodeAddress()
-				: record.owner,
-		)
+		const owner = parsePluginNodeAddress(record.owner)
 		if (records.some((entry) => pluginNodeAddressEqual(entry.owner, owner)))
 			throw new TypeError('[host] config.records duplicates a Plugin node owner')
 		records.push(

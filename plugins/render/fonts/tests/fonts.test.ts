@@ -1,5 +1,5 @@
 import { InMemory, Passthrough, writeFileAtomic } from '@pluxel/core/fs'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { standardServices } from '@pluxel/services'
 import * as nativeFs from 'node:fs'
@@ -464,7 +464,7 @@ describe('FontsPlugin', () => {
 				})
 				expect(failure.lifecycleReport.issues).toContainEqual(
 					expect.objectContaining({
-						plugin: FontsPlugin.nodeAddress(),
+						plugin: parsePluginNodeAddress(FontsPlugin.nodeAddress()),
 						kind: 'start-failed',
 						message: expect.stringContaining(message),
 					}),
@@ -488,7 +488,7 @@ describe('FontsPlugin', () => {
 		const failure = await host.commitExpectFail((change) => change.start(FontsPlugin))
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
-				plugin: FontsPlugin.nodeAddress(),
+				plugin: parsePluginNodeAddress(FontsPlugin.nodeAddress()),
 				kind: 'start-failed',
 				message: expect.stringContaining('Default font preference is corrupt'),
 			}),

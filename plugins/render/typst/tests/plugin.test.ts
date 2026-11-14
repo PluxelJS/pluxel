@@ -81,15 +81,15 @@ describe('TypstPlugin real host and worker', () => {
 			const application = defineHostApplication(() => ({
 				plugins: [FontsPlugin, TypstPlugin, TypstConsumer],
 				envBindings: [
-					envBinding(FontsPlugin, {
+					envBinding(FontsPlugin.nodeAddress(), {
 						config: { schema: FontsConfig, mapping: { files: 'FONT_FILES' } },
 					}),
-					envBinding(TypstPlugin, {
+					envBinding(TypstPlugin.nodeAddress(), {
 						config: { schema: TypstConfig, mapping: { maxSessions: 'TYPST_SESSIONS' } },
 					}),
 				],
 				fileBindings: [
-					fileBinding(TypstPlugin, {
+					fileBinding(TypstPlugin.nodeAddress(), {
 						config: { schema: TypstConfig, path: './typst.json' },
 					}),
 				],

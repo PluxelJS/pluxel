@@ -7,7 +7,7 @@ import { Result } from '@pluxel/core/better-result'
 import type { ViteDevServer } from 'vite'
 import { afterEach, expect, it, vi } from 'vitest'
 import { attachProjectScripts } from '../src/console/attachment'
-import type { RunExecution, ScriptSubmission } from '@pluxel/host/agent'
+import type { RunExecution, ScriptSubmission } from '@pluxel/host/agent/runtime'
 
 const mocked = vi.hoisted(() => ({
 	execute: undefined as
@@ -86,7 +86,7 @@ it('executes against a Host without official services or configured logging', as
 		const plugins = await sdk.plugins.list()
 		if (plugins.isErr()) return plugins
 		return Result.ok({
-			plugins: plugins.value,
+			plugins: plugins.value.nodes,
 			logger: typeof sdk.dev.ctx.logger.info,
 			signal: run.signal === current.run.signal,
 		})

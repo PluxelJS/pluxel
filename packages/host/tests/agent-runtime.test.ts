@@ -1,15 +1,21 @@
 import { describe, expect, it, vi } from 'vitest'
+import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { Ok, Panic, Result, TaggedError } from '@pluxel/core/better-result'
 import { snapshotScriptResult } from '../src/agent/result-codec'
+import { createPluginControlReference } from '../src/control-reference'
 import {
 	ScriptExecutor,
 	ScriptExecutionError,
 	scriptFailure,
 	snapshotJson,
 	type ScriptSubmission,
-} from '../src/agent'
+} from '../src/agent-runtime'
 
 const subject = 'admin:alice'
+
+@Plugin({ forkable: true })
+class JsonAddressOwner extends BasePlugin {}
+
 function input(runId: string, extra: Partial<ScriptSubmission> = {}): ScriptSubmission {
 	return {
 		runId,
@@ -361,6 +367,29 @@ describe('portable result encoding', () => {
 		)
 	})
 
+	it('retains explicitly supplied diagnostic data without copying arbitrary Error properties', () => {
+		const context = { root: '/original/project', instanceId: 'original-owner' }
+		const error = Object.assign(new Error('Owner is unavailable'), {
+			code: 'dev_unavailable',
+			password: 'not diagnostic data',
+		})
+		const failure = scriptFailure(error, 'query_failed', {
+			hint: 'Query the original receipt',
+			context,
+		})
+		expect(failure).toMatchObject({
+			code: 'dev_unavailable',
+			message: 'Owner is unavailable',
+			hint: 'Query the original receipt',
+			context,
+		})
+		expect(failure).not.toHaveProperty('password')
+		expect(failure.context).not.toBe(context)
+		expect(
+			scriptFailure('Unknown owner', 'query_failed', { hint: 'x'.repeat(5000) }).hint,
+		).toHaveLength(4096)
+	})
+
 	it('uses the shared native codec only for genuine top-level Results', () => {
 		const json = {
 			'~standard': {
@@ -409,6 +438,99 @@ describe('portable result encoding', () => {
 		expect(() => snapshotScriptResult(Result.err(new Error('plain Error')))).toThrow('plain JSON')
 		expect(getter).not.toHaveBeenCalled()
 		expect(toJSON).not.toHaveBeenCalled()
+	})
+
+	it('projects original class and generated node addresses as portable identities at any payload depth', () => {
+		const generated = createPluginControlReference({
+			format: 2,
+			definition: JsonAddressOwner.definitionAddress(),
+			contracts: { config: null, instance: `sha256:${'a'.repeat(64)}` },
+		})
+		for (const address of [
+			JsonAddressOwner.nodeAddress(),
+			JsonAddressOwner.nodeAddress('east'),
+			generated.nodeAddress(),
+			generated.nodeAddress('east'),
+		]) {
+			const pure = parsePluginNodeAddress(address)
+			expect(snapshotJson(address)).toEqual(pure)
+			expect(snapshotJson({ items: [{ owner: address }] })).toEqual({ items: [{ owner: pure }] })
+			expect(snapshotScriptResult(Result.ok(address))).toEqual({ status: 'ok', value: pure })
+			expect(snapshotScriptResult(Result.err({ code: 'selected_target', owner: address }))).toEqual(
+				{
+					status: 'error',
+					error: { code: 'selected_target', owner: pure },
+				},
+			)
+		}
+	})
+
+	it('rejects detached, foreign and unrelated symbol data without evaluating evidence accessors', () => {
+		const address = JsonAddressOwner.nodeAddress()
+		const pure = parsePluginNodeAddress(address)
+		const marker = Symbol.for('@pluxel/core/plugin-node-address-evidence')
+		const getter = vi.fn(() => Object.freeze({}))
+		for (const invalid of [
+			{ ...address },
+			Object.assign({}, address),
+			{ ...pure, [marker]: Object.freeze({}) },
+			Object.defineProperty({ ...pure }, marker, { enumerable: true, get: getter }),
+		]) {
+			expect(() => snapshotJson({ owner: invalid })).toThrow(
+				expect.objectContaining({ code: 'result_not_serializable' }),
+			)
+			expect(() => snapshotScriptResult(Result.ok(invalid))).toThrow('copied or detached')
+		}
+		expect(getter).not.toHaveBeenCalled()
+		expect(() => snapshotJson({ ...pure, [Symbol('other')]: true })).toThrow(
+			expect.objectContaining({ code: 'result_not_serializable' }),
+		)
+	})
+
+	it('charges registered address fields once under the ordinary JSON depth, node and byte budgets', () => {
+		const address = createPluginControlReference({
+			format: 2,
+			definition: {
+				entry: { kind: 'package-root', packageName: '@fixture/json-budget' },
+				exportName: 'Counter',
+			},
+			contracts: { config: null, instance: `sha256:${'b'.repeat(64)}` },
+		}).nodeAddress()
+		const pure = parsePluginNodeAddress(address)
+		expect(snapshotJson(address, { depth: 3, nodes: 7 })).toEqual(pure)
+		for (const limits of [{ depth: 2 }, { nodes: 6 }, { bytes: 1 }]) {
+			for (const value of [address, pure])
+				expect(() => snapshotJson(value, limits)).toThrow(
+					expect.objectContaining({ code: 'result_too_large' }),
+				)
+		}
+	})
+
+	it('preserves unknown descriptor-trap TypeErrors through JSON and native Result encoding', () => {
+		const defect = new TypeError('Unexpected descriptor trap defect')
+		const payload = new Proxy(
+			{},
+			{
+				getOwnPropertyDescriptor: () => {
+					throw defect
+				},
+			},
+		)
+		let jsonFailure: unknown
+		try {
+			snapshotJson(payload)
+		} catch (error) {
+			jsonFailure = error
+		}
+		expect(jsonFailure).toBe(defect)
+		let resultFailure: unknown
+		try {
+			snapshotScriptResult(Result.ok(payload))
+		} catch (error) {
+			resultFailure = error
+		}
+		expect(resultFailure).toBeInstanceOf(Panic)
+		expect((resultFailure as Error).cause).toBe(defect)
 	})
 
 	it('preserves native codec defects and the complete Result envelope budget', () => {

@@ -87,7 +87,7 @@ const declaredLimit = 200
 const configMode = 'saved-first'
 export default startup => ({
  plugins: [Owner],
- config: { mode: configMode, records: [{ owner: Owner, config: { limit: declaredLimit } }] },
+ config: { mode: configMode, records: [{ owner: Owner.nodeAddress(), config: { limit: declaredLimit } }] },
  policy: { startTimeoutMs: 12345 },
  runtime: {
   zenfs: { mounts: { '/': { backend: Passthrough, fs, prefix: startup.bindings.prefix } } },

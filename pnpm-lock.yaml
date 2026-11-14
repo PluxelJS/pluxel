@@ -2133,6 +2133,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../packages/host
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -2352,6 +2355,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../packages/host
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../packages/rolldown
@@ -2389,6 +2395,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../packages/host
       '@pluxel/plugin-cache':
         specifier: workspace:*
         version: link:../cache
@@ -2438,6 +2447,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../../packages/host
       '@pluxel/plugin-fonts':
         specifier: workspace:*
         version: link:../fonts
@@ -2609,6 +2621,9 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../../../packages/core
+      '@pluxel/host':
+        specifier: workspace:*
+        version: link:../../../packages/host
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown

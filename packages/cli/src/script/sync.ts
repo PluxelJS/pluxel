@@ -13,21 +13,23 @@ import {
 	writeFile,
 } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { isControlExportName } from '@pluxel/host/internal/control-manifest'
 import {
+	isControlExportName,
 	encodeControlData,
 	parsePluginControlManifest,
-	parsePluginControlManifestIndex,
-	parsePluginControlFileChunk,
 	renderPluginDescriptors,
 	verifyPluginControlMaterial,
-	ScriptExecutionError,
 	type PluginControlManifest,
+} from '@pluxel/host/internal/control-manifest'
+import {
+	ScriptExecutionError,
+	parsePluginControlManifestIndex,
+	parsePluginControlFileChunk,
 	type PluginControlManifestIndex,
 	type PluginControlManifestRequest,
 	type PluginControlFileRequest,
 	type PluginControlFileChunk,
-} from '@pluxel/host/agent'
+} from '@pluxel/host/agent/runtime'
 
 type PluginDefinitionAddress = PluginControlManifest['definitions'][number]['definition']
 const definitionKey = (definition: PluginDefinitionAddress) => encodeControlData(definition)
@@ -42,7 +44,6 @@ export type ControlSyncResult = Readonly<{
 	snapshot: string
 	catalogRevision: number
 	unavailableCount: number
-	entry: string
 	definitions: readonly Readonly<{
 		definition: PluginDefinitionAddress
 		exportName: string
@@ -51,7 +52,7 @@ export type ControlSyncResult = Readonly<{
 }>
 const MAX_BYTES = 64 * 1024 * 1024
 const OWNER_FILE = '.pluxel-control-owner.json'
-const OWNER_CONTENT = '{"format":"pluxel-control-sync/1"}\n'
+const OWNER_CONTENT = '{"format":"pluxel-control-sync/2"}\n'
 const sha256 = (content: string | Uint8Array) => createHash('sha256').update(content).digest('hex')
 const failure = (code: string, message: string) => new ScriptExecutionError(code, message)
 
@@ -118,11 +119,18 @@ export async function syncPluginControl(
 	const files: Record<string, string> = Object.create(null)
 	for (const [snapshot, material] of materials) {
 		const prefix = `materials/${snapshot.slice(7)}`
-		for (const [path, content] of Object.entries(material.files))
+		for (const [path, content] of Object.entries(material.files)) {
+			// Providers are emitted once in their canonical entry modules. Preserve the
+			// verified declaration closure and data, without unreachable runtime copies.
+			if (path === 'manifest.json' || path.endsWith('.mjs')) continue
 			files[`${prefix}/${path}`] = content
+		}
 	}
 	const selected = new Set<string>()
+	const entryKeys = new Map<string, string>()
+	const namesByModule = new Map<string, Set<string>>()
 	const exports = selection
+		.sort((left, right) => compare(definitionKey(left.definition), definitionKey(right.definition)))
 		.map((entry) => {
 			const key = definitionKey(entry.definition)
 			if (selected.has(key))
@@ -140,39 +148,68 @@ export async function syncPluginControl(
 					'control_contract_mismatch',
 					'The selected Plugin definition is absent from its material snapshot',
 				)
-			const canonicalName = isControlExportName(entry.definition.exportName)
-				? entry.definition.exportName
-				: 'Plugin'
-			const exportName = `${canonicalName.slice(0, 230)}_${sha256(key).slice(0, 16)}`
+			const entryKey = encodeControlData(entry.definition.entry)
+			const digest = sha256(entryKey)
+			if (entryKeys.has(digest) && entryKeys.get(digest) !== entryKey)
+				throw failure(
+					'control_contract_mismatch',
+					'Canonical Plugin entries collide in the generated module layout',
+				)
+			entryKeys.set(digest, entryKey)
+			const module = `entries/${digest}/index.mjs`
+			let names = namesByModule.get(module)
+			if (!names) namesByModule.set(module, (names = new Set()))
+			const family = (name: string) => [
+				name,
+				...['ConfigDeclaration', 'ConfigInput', 'ConfigOutput', 'Instance'].map(
+					(suffix) => `${name}${suffix}`,
+				),
+			]
+			let exportName = entry.definition.exportName
+			if (!isControlExportName(exportName) || family(exportName).some((name) => names.has(name)))
+				exportName = `Plugin_${sha256(key)}`
+			if (family(exportName).some((name) => names.has(name)))
+				throw failure(
+					'control_contract_mismatch',
+					'Plugin control exports collide in one canonical entry',
+				)
+			for (const name of family(exportName)) names.add(name)
 			return {
 				definition: entry.definition,
 				exportName,
+				module,
 				contracts: definition.contracts,
-				source: `materials/${entry.snapshot.slice(7)}/index.d.mts`,
+				source: `materials/${entry.snapshot.slice(7)}/${definition.module.replace(/\.mjs$/, '.d.mts')}`,
+				originalModule: definition.module,
 				originalExport: entry.exportName,
 				snapshot: entry.snapshot,
 			}
 		})
-		.sort((left, right) => compare(definitionKey(left.definition), definitionKey(right.definition)))
-	files['index.mjs'] = renderPluginDescriptors(
-		exports.map((entry) => ({
-			exportName: entry.exportName,
-			descriptor: { format: 1, definition: entry.definition, contracts: entry.contracts },
-		})),
-	)
-	files['index.d.mts'] =
-		exports
+	for (const module of namesByModule.keys()) {
+		const definitions = exports.filter((entry) => entry.module === module)
+		files[module] = renderPluginDescriptors(
+			definitions.map((entry) => ({
+				exportName: entry.exportName,
+				descriptor: { format: 2, definition: entry.definition, contracts: entry.contracts },
+			})),
+		)
+		files[module.replace(/\.mjs$/, '.d.mts')] = definitions
 			.map((entry) => {
-				const path = JSON.stringify(`./materials/${entry.snapshot.slice(7)}/index.mjs`)
+				const path = JSON.stringify(
+					`../../materials/${entry.snapshot.slice(7)}/${entry.originalModule}`,
+				)
 				return `export { ${entry.originalExport} as ${entry.exportName} } from ${path};\nexport type { ${['ConfigDeclaration', 'ConfigInput', 'ConfigOutput', 'Instance'].map((suffix) => `${entry.originalExport}${suffix} as ${entry.exportName}${suffix}`).join(', ')} } from ${path};\n`
 			})
-			.join('') || 'export {};\n'
+			.join('')
+	}
+
 	const unsigned = {
-		format: 1 as const,
-		compiler: '@pluxel/cli/control-sync/1',
-		definitions: exports.map(({ definition, exportName, contracts, source }) => ({
+		format: 2 as const,
+		compiler: '@pluxel/cli/control-sync/2',
+		definitions: exports.map(({ definition, exportName, module, contracts, source }) => ({
 			definition,
 			exportName,
+			module,
 			contracts,
 			source,
 		})),
@@ -189,16 +226,14 @@ export async function syncPluginControl(
 	await verifyPluginControlMaterial(manifest, files)
 	const out = resolve(options.out)
 	await installSnapshot(out, manifest.snapshot, files)
-	const entry = join(out, 'current', 'index.mjs')
 	return Object.freeze({
 		out,
 		snapshot: manifest.snapshot,
 		catalogRevision: first.catalogRevision,
 		unavailableCount: first.unavailableCount,
-		entry,
 		definitions: Object.freeze(
-			exports.map(({ definition, exportName }) =>
-				Object.freeze({ definition, exportName, module: entry }),
+			exports.map(({ definition, exportName, module }) =>
+				Object.freeze({ definition, exportName, module: join(out, 'current', module) }),
 			),
 		),
 	})

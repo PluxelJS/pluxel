@@ -57,6 +57,11 @@
 			"import": "./dist/internal.mjs",
 			"require": "./dist/internal.cjs"
 		},
+		"./internal/plugin-address-evidence": {
+			"@pluxel/source": "./src/internal/plugin-address-evidence.ts",
+			"import": "./dist/internal/plugin-address-evidence.mjs",
+			"require": "./dist/internal/plugin-address-evidence.cjs"
+		},
 		"./internal/test": {
 			"@pluxel/source": "./src/internal-test.ts",
 			"import": "./dist/internal/test.mjs",
@@ -132,6 +137,10 @@
 			"./internal": {
 				"import": "./dist/internal.mjs",
 				"require": "./dist/internal.cjs"
+			},
+			"./internal/plugin-address-evidence": {
+				"import": "./dist/internal/plugin-address-evidence.mjs",
+				"require": "./dist/internal/plugin-address-evidence.cjs"
 			},
 			"./internal/test": {
 				"import": "./dist/internal/test.mjs",

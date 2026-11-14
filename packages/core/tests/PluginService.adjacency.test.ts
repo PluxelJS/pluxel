@@ -4,7 +4,7 @@ import {
 	definePluginRef,
 	withCoreInternalTestHost,
 } from '@pluxel/core/internal/test'
-import { comparePluginNodeAddress } from '@pluxel/core'
+import { comparePluginNodeAddress, parsePluginNodeAddress } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { describe, expect, it } from 'vitest'
 
@@ -46,10 +46,10 @@ describe('PluginService committed dependency adjacency', () => {
 
 			await host.commit()
 			const adjacency = registry.readCommittedDependencyAdjacency()
-			const provider = AdjacencyProvider.nodeAddress()
-			const requiredConsumer = AdjacencyRequiredConsumer.nodeAddress()
-			const optionalConsumer = AdjacencyOptionalConsumer.nodeAddress()
-			const isolated = AdjacencyIsolated.nodeAddress()
+			const provider = parsePluginNodeAddress(AdjacencyProvider.nodeAddress())
+			const requiredConsumer = parsePluginNodeAddress(AdjacencyRequiredConsumer.nodeAddress())
+			const optionalConsumer = parsePluginNodeAddress(AdjacencyOptionalConsumer.nodeAddress())
+			const isolated = parsePluginNodeAddress(AdjacencyIsolated.nodeAddress())
 
 			expect(adjacency.nodes).toEqual(
 				[provider, requiredConsumer, optionalConsumer, isolated].sort(comparePluginNodeAddress),

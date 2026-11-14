@@ -78,11 +78,13 @@ export declare function Plugin(options?:unknown):ClassDecorator
 					'pluxel-plugin-beta': '^0.5.0',
 				},
 				peerDependencies: {
+					'@pluxel/host': '^1.1.0',
 					'pluxel-plugin-alpha': '^1.0.0',
 					'pluxel-plugin-beta': '^0.5.0',
 					'pluxel-plugin-stale': '^9.0.0',
 				},
 				peerDependenciesMeta: {
+					'@pluxel/host': { optional: true },
 					'pluxel-plugin-beta': { optional: true },
 					'pluxel-plugin-stale': { optional: true },
 				},
@@ -211,7 +213,8 @@ export function createWorkbenchBridge(identity, Renderer) {
 					react: '19.3.1',
 					'react-dom': '19.3.1',
 				},
-				peerDependencies: { capnweb: '0.12.0' },
+				peerDependencies: { '@pluxel/host': '^1.1.0', capnweb: '0.12.0' },
+				peerDependenciesMeta: { '@pluxel/host': { optional: true } },
 				devDependencies: { capnweb: '0.12.0' },
 				exports: {
 					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
@@ -350,6 +353,8 @@ describe('plugin package build', () => {
 			expect(pkg.peerDependencies?.['pluxel-plugin-alpha']).toBe('^1.0.0')
 			expect(pkg.peerDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
 			expect(pkg.peerDependencies?.['pluxel-plugin-stale']).toBe('^9.0.0')
+			expect(pkg.peerDependencies?.['@pluxel/host']).toBe('^1.1.0')
+			expect(pkg.peerDependenciesMeta?.['@pluxel/host']?.optional).toBe(true)
 			expect(pkg.peerDependenciesMeta?.['pluxel-plugin-stale']?.optional).toBe(true)
 			expect(pkg.dependencies?.['pluxel-plugin-alpha']).toBeUndefined()
 			expect(pkg.devDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
@@ -397,6 +402,7 @@ describe('plugin package build', () => {
 			exports: { '.': './dist/index.mjs' },
 			publishConfig: { access: 'public' },
 			scripts: { test: 'test', build: 'build' },
+			peerDependencies: { '@pluxel/host': '^1.1.0' },
 		}
 		await using fixture = await createFixture({ 'package.json': JSON.stringify(author) })
 		const packageJsonPath = resolve(fixture.path, 'package.json')
@@ -435,6 +441,7 @@ describe('plugin package build', () => {
 			'package.json': JSON.stringify({
 				name: 'control-exports',
 				type: 'module',
+				peerDependencies: { '@pluxel/host': '^1.1.0' },
 				exports: { types: './dist/index.d.mts', import: './dist/index.mjs' },
 				publishConfig: { exports: { '.': './dist/index.mjs', './extra': './dist/extra.mjs' } },
 			}),
@@ -460,6 +467,7 @@ describe('plugin package build', () => {
 	it('rejects an author-owned control export without rewriting the package manifest', async () => {
 		const original = JSON.stringify({
 			name: 'author-control',
+			peerDependencies: { '@pluxel/host': '^1.1.0' },
 			exports: { '.': './dist/index.mjs', './control': './author.mjs' },
 		})
 		await using fixture = await createFixture({ 'package.json': original })
@@ -468,6 +476,69 @@ describe('plugin package build', () => {
 			runRules({ packageJsonPath, pluginUsages: new Map(), artifactRoot: 'dist', control: true }),
 		).rejects.toThrow(/belongs to the author/)
 		expect(await readFile(packageJsonPath, 'utf8')).toBe(original)
+	})
+
+	it.each([false, true])(
+		'preserves an explicitly declared Host peer with optional=%s',
+		async (optional) => {
+			const declaration = {
+				name: 'control-host-peer',
+				peerDependencies: { '@pluxel/host': '^1.1.0' },
+				peerDependenciesMeta: { '@pluxel/host': { optional } },
+			}
+			await using fixture = await createFixture({ 'package.json': JSON.stringify(declaration) })
+			const packageJsonPath = resolve(fixture.path, 'package.json')
+			await runRules({
+				packageJsonPath,
+				pluginUsages: new Map(),
+				artifactRoot: 'dist',
+				control: true,
+			})
+			const updated = JSON.parse(await readFile(packageJsonPath, 'utf8'))
+			expect(updated.peerDependencies).toEqual(declaration.peerDependencies)
+			expect(updated.peerDependenciesMeta).toEqual(declaration.peerDependenciesMeta)
+			expect(updated.exports['./control']).toBeDefined()
+		},
+	)
+
+	it.each([
+		{ devDependencies: { '@pluxel/host': '^1.1.0' } },
+		{ dependencies: { '@pluxel/host': '^1.1.0' } },
+		{ peerDependencies: { '@pluxel/host': '^1.1.0' }, dependencies: { '@pluxel/host': '^1.1.0' } },
+		{
+			peerDependencies: { '@pluxel/host': '^1.1.0' },
+			optionalDependencies: { '@pluxel/host': '^1.1.0' },
+		},
+	])(
+		'rejects undeclared or nested Host runtime ownership without writing the package: %j',
+		async (fields) => {
+			const original = JSON.stringify({ name: 'missing-control-host-peer', ...fields })
+			await using fixture = await createFixture({ 'package.json': original })
+			const packageJsonPath = resolve(fixture.path, 'package.json')
+			await expect(
+				runRules({ packageJsonPath, pluginUsages: new Map(), artifactRoot: 'dist', control: true }),
+			).rejects.toThrow(/Invalid generated control dependency declarations/)
+			expect(await readFile(packageJsonPath, 'utf8')).toBe(original)
+		},
+	)
+
+	it('checks Host peer ownership before tsdown writes generated control exports', async () => {
+		await withBuildFixture('basic', async () => {
+			const runtime = await resolveBuildContext({})
+			const pkg = JSON.parse(await readFile(runtime.packageJsonPath, 'utf8'))
+			delete pkg.peerDependencies['@pluxel/host']
+			pkg.devDependencies['@pluxel/host'] = '^1.1.0'
+			const original = JSON.stringify(pkg)
+			await writeFile(runtime.packageJsonPath, original)
+			await expect(
+				runWithTsdown({
+					context: runtime,
+					log: () => {},
+					extraConfig: pluginPackageOverlay(runtime),
+				}),
+			).rejects.toThrow(/peerDependencies\.@pluxel\/host/)
+			expect(await readFile(runtime.packageJsonPath, 'utf8')).toBe(original)
+		})
 	})
 
 	it('checks control export ownership before tsdown replaces its previous export map', async () => {

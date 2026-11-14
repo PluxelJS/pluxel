@@ -18,13 +18,14 @@ Workbench 管理 RPC
   → 相同 Host 用例与报告投影
 ```
 
-Host 持有插件图、配置来源和原始输入、版本、运行意图及生命周期。SDK 组织这些现有能力，复用 Host 配置和策略用例、稳定 `PluginNodeAddress` 以及共享 `PluginApplyReportSnapshot` 投影。原领域结果只在 SDK 返回边界去掉 `ok`，转换成共享 Better Result，保留全部领域字段；Workbench 原协议保持原义。作者通常使用 async/await 和 `isErr()` 提前返回，需要构造或组合结果时从 `@pluxel/core/better-result` 导入原生 `Result`。领域约束继续由 [Host](HOST.md)、[Config](CONFIG.md) 和 [Logging](LOGGING.md) 维护。
+Host 持有插件图、配置来源和原始输入、版本、运行意图及生命周期。SDK 组织这些现有能力，复用 Host 配置和策略用例、稳定 `PluginNodeAddress` 以及共享 `PluginApplyReportSnapshot` 投影。Host 统一判定协调与生命周期问题，SDK 与 Management 保留相同结论和完整报告。SDK 在返回边界转换成共享 Better Result，保留领域字段；网络边界使用 DTO。作者通常使用 async/await 和 `isErr()` 提前返回，需要构造或组合结果时从 `@pluxel/core/better-result` 导入原生 `Result`。领域约束继续由 [Host](HOST.md)、[Config](CONFIG.md) 和 [Logging](LOGGING.md) 维护。
 
 执行器持有 run，加载器持有求值方式，连接持有认证和远程引用。跨进程 target 只负责提交与控制；同进程直接调用执行器和 Host。SDK 方法没有经过 Cap’n Web，也没有复制一套配置或生命周期逻辑。
 
 | 公共入口                       | 所属职责                                                                       |
 | ------------------------------ | ------------------------------------------------------------------------------ |
-| `@pluxel/host/agent`           | 可移植 SDK、scope、运行内核、输入输出与制品协议                                |
+| `@pluxel/host/agent`           | 作者使用的 SDK、地址关联与结果类型                                             |
+| `@pluxel/host/agent/runtime`   | 自定义 Host 使用的 scope、执行内核、材料读取与输入输出协议                     |
 | `@pluxel/host/agent/node`      | 显式启用的可信 Node 工厂加载器与 Host 执行所有者                               |
 | `@pluxel/host/agent/transport` | 共享 Cap’n Web target、普通 Promise 客户端及跨边界校验                         |
 | `@pluxel/host/agent/socket`    | 本地 Node socket carrier 的分帧、大小预算、背压与关闭                          |
@@ -32,11 +33,11 @@ Host 持有插件图、配置来源和原始输入、版本、运行意图及生
 | `@pluxel/rolldown/scripts`     | 作者侧 TS 检查、依赖打包与源码映射                                             |
 | Services management session    | 管理认证、显式脚本权限和远程连接接线                                           |
 
-可移植入口的运行时依赖闭包不包含 Node builtin、Vite、Services、编译器或平台加载器。transport 和 socket 分别从叶子入口选择。无官方 Services 的已启动 Host 可以直接使用 `createScriptScope({ ctx, signal })`。
+作者入口只导出类型。可移植 runtime 入口的依赖闭包不包含 Node builtin、Vite、Services、编译器或平台加载器。transport 和 socket 分别从叶子入口选择。无官方 Services 的已启动 Host 可以直接使用 `createScriptScope({ ctx, signal })`。
 
 ## scope 的接纳和结算
 
-`createScriptScope` 借用原 Host 和本次 signal，返回 SDK、`assertOpen`、`abort`、`dispose` 和版本 `snapshot`。`plugin()` 和引用的 `fork()` 同步选择并检查 scope，其余 Host 操作在 scope 中接纳并跟踪 Promise；缓存的工厂、引用和配置方法同样检查是否关闭。scope 不拥有 Host，也不释放 root Context。引用的类型关联与生成声明由 [Plugin Control](PLUGIN_CONTROL.md#typed-配置与实例)维护。
+`createScriptScope` 借用原 Host 和本次 signal，返回 SDK、`assertOpen`、`abort`、`dispose` 和版本 `snapshot`，并实现 `AsyncDisposable`。`Symbol.asyncDispose` 与 `dispose()` 使用同一个幂等结算 Promise，供 `await using` 或显式关闭使用。`sdk.plugin(nodeAddress)` 同步选择并检查 scope，其余 Host 操作在 scope 中接纳并跟踪 Promise；缓存的工厂、引用和配置方法同样检查是否关闭。scope 不拥有 Host，也不释放 root Context。引用的类型关联与生成声明由 [Plugin Control](PLUGIN_CONTROL.md#typed-配置与实例)维护。
 
 脚本结束后 `executeHostScript` 关闭后续调用，等待已接纳的 SDK 工作，再读取结束版本。异步控制的已知失败先转换为 Err，再进入 pending 跟踪；预期失败不形成清理异常。未知缺陷继续 reject，并保留为运行或 `cleanupError`。取消按信号的原始 reason 严格相等判定，并先于领域错误分类；策略用例保留相同的原生取消 reject 契约。取消先关闭接纳、传递 signal，并释放日志等待订阅；Host 已接纳的写入或生命周期操作依原路径结算，取消终态仍优先，不能抢先投影成操作未发生。
 
@@ -44,13 +45,13 @@ Host 持有插件图、配置来源和原始输入、版本、运行意图及生
 
 SDK 的日志方法复用 Core Logging 的 stream、cursor、retention、gap 和等待订阅。`streams()` 只列出已配置历史流；`mark()` 可以创建尚未写入的已配置空流；缺少后端返回明确能力诊断。读取单批最多 10000 条，等待必须指定有限 timeout。scope 不新建 Logging sink，也不接管生产者寿命。
 
-开发扩展从同一 scope 添加 Context 借用和 constructor 选择。构造函数统一从 `sdk.plugin(Constructor)` 接入原成员视图，身份校验和生命周期变更属于同一个 committed 操作，见 [Dev Console](DEV_CONSOLE.md#操作-api-与资源)。原生资源由创建它的脚本按原协议释放。
+开发扩展从同一 scope 添加 Context 借用。源码 class 通过 `sdk.plugin(Constructor.nodeAddress())` 接入原成员视图，精确实现证据随地址保留，身份校验和生命周期变更属于同一个 committed 操作，见 [Dev Console](DEV_CONSOLE.md#操作-api-与资源)。原生资源由创建它的脚本按原协议释放。
 
 ## 代码交付和加载
 
-上传输入是 `ScriptArtifact`，格式为 `pluxel-js-factory/2`。`compileScript({ file, exportName, signal })` 对普通 TS/JS 文件使用 native TypeScript 检查并用 Rolldown 打包，共享固定输入。交付物包含工厂函数体、导出名、内容摘要和版本 3 source map，编译不会求值应用工厂。上传工厂包含脚本、通过材料验证的纯描述符与可打包的计算依赖，类型 import 被消除。
+上传输入是 `ScriptArtifact`，格式为 `pluxel-js-factory/3`。`compileScript({ file, exportName, signal })` 对普通 TS/JS 文件使用 native TypeScript 检查并用 Rolldown 打包，共享固定输入。交付物包含工厂函数体、导出名、内容摘要和版本 3 source map，编译不会求值应用工厂。上传工厂包含脚本、通过材料验证的标准地址提供者与可打包的计算依赖，类型 import 被消除。
 
-作者的 `@pluxel/core/better-result` import 由编译器保留为受控共享绑定，加载器传入当前 realm 的实际 Core 子入口，避免打包第二份 Result 实现。独立 Better Result 包、其余框架运行时、Node builtin、远端协议、原生扩展和动态 import 明确拒绝。旧制品格式在输入校验时拒绝。
+作者的 `@pluxel/core/better-result` 和生成控制模块的 `@pluxel/host/internal/control-reference` import 保留为受控共享绑定。加载器传入当前 realm 的实际 namespace，共用原生 Result 身份和地址调用证据，生成入口按固定模板验证。独立 Better Result 包、其余框架运行时、Node builtin、远端协议、原生扩展和动态 import 明确拒绝。旧制品格式在输入校验时拒绝。
 
 Rolldown 先生成 ESM，私有工厂转换器只处理标准 import/export 声明，保留严格模式、共享 namespace 身份与导出绑定；它不依赖打包器的互操作 helper。转换通过 `renderChunk` 与 MagicString 合成原源码映射，并在交付前重新按 Script 语法检查工厂。接收端执行固定参数的普通函数体，无需解析模块或安装编译工具。
 
@@ -64,7 +65,9 @@ Vite 输入为项目路径、导出名和源码摘要。Vite 使用目标项目�
 
 执行器接纳前验证输入、目标可支持的加载方式、内容摘要、认证主体和预算；异步 preparation 后再次验证授权。相同 run ID 和相同摘要返回原运行，相同 ID 的不同内容返回 `request_conflict`。身份索引包含主体，其他主体不能查询或取消原 run。
 
-CLI 在首次提交前保存或输出 receipt，记录原 endpoint/实例/run ID/请求摘要。每次查询仍向原实例重新认证并核对请求身份，无法连接、原 owner 消失、运行不存在和结果过期分别报告。结果过期保留 identity tombstone，旧 ID 不会重新执行。进程重启后没有持久去重或恢复承诺。
+CLI 在首次提交前保存或输出 receipt，采用单一 v3 协议，记录原实例/run ID/请求摘要，以及 local root/serviceId 或 remote endpoint。`script result/cancel` 根据回执选择原连接，不重新选择当前 profile。每次查询仍向原实例重新认证并核对请求身份，无法连接、原 owner 消失、运行不存在和结果过期分别报告。结果过期保留 identity tombstone，旧 ID 不会重新执行。进程重启后由调用方根据业务状态核对已发生的变化。
+
+CLI 的 run/result/cancel 共用 `{ ok: true, value: { receipt, run } }`，命令失败输出 `{ ok: false, error }`，已准备的回执保留在 error。stderr 共同阶段为 prepared/accepted。退出码由同一实现按终态与等待策略判定，返回的领域 Err 保留为 `run.value`，不会改变执行完成状态。同步使用同一外壳，并按 canonical entry 返回准确 import，见 [Plugin Control](PLUGIN_CONTROL.md)。
 
 阶段为 admission、load、execute、encode、cleanup；状态从 queued/preparing/running 进入 succeeded、failed 或 cancelled。取消中的活动 run 保持 cancelling，直到脚本和 scope 真正结算。取消的终态保留取消错误及同期发生的 `executionError`。`close()` 等待真实结算，断开连接只释放控制引用。
 
@@ -72,7 +75,9 @@ CLI 在首次提交前保存或输出 receipt，记录原 endpoint/实例/run ID
 
 运行错误的有界诊断保留原生 Panic 的 cause 文本。cause 链及 Aggregate/Suppressed 子错误只读取自身数据属性，跳过访问器；沿用深度、节点、循环和消息长度限制，不把业务 Error 实例放入结果 DTO。
 
-[`result-codec.ts`](../packages/host/src/agent/result-codec.ts) 只在 `executeHostScript` 的最终返回边界识别共享 Ok/Err 的实际原型和 own data，使用原生 `Result.codec` 输出 SerializedResult。普通 JSON 的 status/value/error 不触发识别。Result payload 继续经原 `snapshotJson` 验证，拒绝嵌套 Result、能力对象、其他 class instance、getter、循环、BigInt、函数和非有限数值，不执行任意 `toJSON`。执行器最后再检查完整 envelope 的预算。直接使用 scope 得到的值仍是原生 Result；跨进程结果是 DTO，不自动复活类。预算在 [`protocol.ts`](../packages/host/src/agent/protocol.ts) 和 [`runtime.ts`](../packages/host/src/agent/runtime.ts) 维护：
+[`result-codec.ts`](../packages/host/src/agent/result-codec.ts) 只在 `executeHostScript` 的最终返回边界识别共享 Ok/Err 的实际原型和 own data，使用原生 `Result.codec` 输出 SerializedResult。普通 JSON 的 status/value/error 不触发识别。Result payload 继续经 `snapshotJson` 验证，拒绝嵌套 Result、能力对象、其他 class instance、getter、循环、BigInt、函数和非有限数值，不执行任意 `toJSON`。执行器最后再检查完整 envelope 的预算。直接使用 scope 得到的值仍是原生 Result；跨进程结果是 DTO，不自动复活类。
+
+[`protocol.ts`](../packages/host/src/agent/protocol.ts) 的 `snapshotJson` 是脚本 JSON 输入和 payload 的唯一投影所有者。它显式识别 Core 私有 WeakMap 中注册的原厂节点地址，仅编码规范 identity 字段；嵌套地址和 Result payload 复用同一分支及原有预算，不复制或输出调用证据。分离或外来标记转为 `result_not_serializable`，其余 symbol、访问器和能力对象仍按原规则拒绝。该分支不按 definition 重建证据；经 JSON 保存或交付的地址只具有动态管理能力。运行保留及完整 envelope 的预算由 [`runtime.ts`](../packages/host/src/agent/runtime.ts) 维护：
 
 | 项目                                 | 当前上限                      |
 | ------------------------------------ | ----------------------------- |

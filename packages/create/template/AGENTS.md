@@ -29,7 +29,7 @@
 
 - 复用现有服务；已注册项目可访问真实代理 URL 唤起，首次 checkout 仍需准备依赖并注册或启动。访问 URL 会启动服务和依赖；不要猜域名或把启动页当作应用 ready。
 - 启动失败、Vite 编译错误、进程退出和 stdout/stderr 使用 `pitchfork logs app --since 5min -n 100 --no-pager`。跨目录先发现完整服务 ID；仅为具体观察短暂使用 `--follow`，不另起进程收集日志。
-- 应用状态、HMR 接纳、Plugin 业务日志、配置、方法和 Workbench RPC 使用 `docs/pluxel/development/dev-console.md` 指导的控制台。用 `vp exec pluxel dev status` 确认 `host/web` 的实例与应用状态，再用 `dev run host/web/dev/<script>.ts` 操作。控制台不调用 Pitchfork；显式 `--profile` 优先于 default，再选择唯一 profile，匹配实例仍有多个时显式 `--instance`，跨目录用 `--root` 选择配置发现起点；保存 receipt 用于 `dev result/cancel`，旧操作不转投重启后的实例。不能用进程 running 代替业务结果。
+- 应用状态、HMR 接纳、Plugin 业务日志、配置、方法和 Workbench RPC 使用 `docs/pluxel/development/dev-console.md` 指导的控制台。用 `vp exec pluxel dev status` 确认 `host/web` 的实例与应用状态，再用 `dev run host/web/dev/<script>.ts` 操作。控制台不调用 Pitchfork；显式 `--profile` 优先于 default，再选择唯一 profile，匹配实例仍有多个时显式 `--instance`，跨目录用 `--root` 选择配置发现起点；保存 receipt 用于 `script result/cancel`，旧操作不转投重启后的实例。不能用进程 running 代替业务结果。
 - 在运行中的应用上跨文件或连续修改前，按控制台指南的「HMR 批次控制」先 `dev hmr pause`；检查通过后 `dev hmr apply` 并验证报告与实际行为。失败保持暂停，成功且原本 auto 才 `dev hmr resume`，不在 finally 中无条件恢复或重启服务模拟 apply。
 - 按需启动不等于自动空闲停止。只清理本任务启动的临时服务，保留原有共享实例。冷启动和日志保留策略按工作区指南及已安装 CLI 帮助配置。
 
@@ -37,9 +37,9 @@
 
 `vp run build` 通过 Vite Task 调度各包的标准 `build` 入口（委托 `compile` task）；`vp run verify` 组合治理、`vp check`、测试和构建。根 `package.json` scripts 保留 IDE 可发现的开发、构建、测试和检查入口；聚合 scripts 委托给 `workspace:*` 原生任务，入口不缓存，底层任务按各自规则缓存。`oxlint.config.ts` 与 `oxfmt.config.ts` 分别维护规则，根 `vite.config.ts` 引用为 `lint` / `fmt` 并启用类型检查；包配置拥有任务、依赖和缓存。CI 直接运行 `vp run --concurrency-limit=2 workspace:verify`，让并发限制覆盖实际任务图。原生 `tsdown.config.ts` 通过 `pack` 引用，Plugin 构建继续使用 `pluxel build` 的编译语义。依赖操作使用 `vp exec pluxel pncat`，版本对齐使用 `vp exec pluxel workspace sync`；不要添加重复的 catalog 脚本。
 
-项目脚本使用普通 TypeScript 函数与 `satisfies ProjectScript`（`@pluxel/host-vite/project`），通过 `sdk.plugin(Constructor)` 选择实现，Context 从 `sdk.dev.ctx` 借用。通用脚本类型为 `Script`（`@pluxel/host/agent`）。`plugin()`、`fork()` 同步选择引用，异步控制返回 `Promise<Result<T, E>>`；默认 await 并用 `isErr()` 提前返回，需要构造 Result 时从 `@pluxel/core/better-result` 导入。配置修改后核对保存与实际采用；上传、认证与 receipt 见 `vp exec pluxel docs development/scripts.md`。
+项目脚本、上传脚本、失败处理和资源释放见 `vp exec pluxel docs development/scripts.md`，项目模块与 HMR 操作见 `vp exec pluxel docs development/dev-console.md`。配置修改后核对保存结果与实际采用。
 
-已知插件优先使用构建生成的 `./control` 描述符；运行中的应用可用 `pluxel dev sync` 或 `pluxel script sync` 取得当前已接纳材料。配置声明包含输入、输出、Schema 源码表达式和 Part 路径，业务调用使用 `sdk.plugin(descriptor).instance()`；先 await 业务方法，再做配置或生命周期操作。同步输出提供实际导出名和模块路径；用法见 `vp exec pluxel docs development/plugin-control.md`。
+插件地址、控制材料同步、配置类型和业务实例调用见 `vp exec pluxel docs development/plugin-control.md`。完整调用由这些随 CLI 交付的指南维护。
 
 ## 持久状态与原生依赖
 

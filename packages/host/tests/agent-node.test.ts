@@ -1,7 +1,7 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { expect, it } from 'vitest'
 import { createHost } from '../src/index'
-import { hashScriptSource, type ScriptArtifact } from '../src/agent'
+import { hashScriptSource, type ScriptArtifact } from '../src/agent-runtime'
 import { createNodeScriptOwner } from '../src/agent/node'
 
 const schema = {
@@ -33,7 +33,7 @@ async function artifact(code: string): Promise<ScriptArtifact> {
 	const body = `const {Result} = __pluxel_script_better_result;\n${code}`
 	return {
 		kind: 'artifact',
-		format: 'pluxel-js-factory/2',
+		format: 'pluxel-js-factory/3',
 		code: body,
 		sourceHash: await hashScriptSource(body),
 		exportName: 'default',
@@ -65,7 +65,10 @@ return {default: async (sdk, run) => {
 		['first', 4],
 		['second', 8],
 	] as const) {
-		await owner.executor.submit({ runId: id, code, input: Counter.nodeAddress() }, subject)
+		await owner.executor.submit(
+			{ runId: id, code, input: parsePluginNodeAddress(Counter.nodeAddress()) },
+			subject,
+		)
 		const completed = await owner.executor.settled(id, subject)
 		expect(completed).toMatchObject({
 			state: 'succeeded',
@@ -165,7 +168,10 @@ it('preserves committed Host changes and versions after an execution or result-e
 		const code = await artifact(
 			`return {default: async (sdk,run) => { await sdk.plugin(run.input).config.patch({set:{count:${count}}}); ${ending}; }};`,
 		)
-		await owner.executor.submit({ runId: id, code, input: Counter.nodeAddress() }, subject)
+		await owner.executor.submit(
+			{ runId: id, code, input: parsePluginNodeAddress(Counter.nodeAddress()) },
+			subject,
+		)
 		const result = await owner.executor.settled(id, subject)
 		expect(result).toMatchObject({
 			state: 'failed',
@@ -202,7 +208,10 @@ it('cancellation closes new SDK admission while an accepted mutation settles on 
 		const code = await artifact(
 			'return {default:async(sdk,run)=>{await sdk.plugin(run.input).config.patch({set:{count:12}});return sdk.plugins.list();}};',
 		)
-		await owner.executor.submit({ runId: 'cancel', code, input: Counter.nodeAddress() }, subject)
+		await owner.executor.submit(
+			{ runId: 'cancel', code, input: parsePluginNodeAddress(Counter.nodeAddress()) },
+			subject,
+		)
 		await mutationEntered
 		expect(owner.executor.cancel('cancel', subject)).toMatchObject({ state: 'cancelling' })
 		release()

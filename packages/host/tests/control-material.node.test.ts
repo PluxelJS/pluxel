@@ -23,7 +23,7 @@ class Published extends BasePlugin {
 
 async function material(instance: string) {
 	const descriptor = {
-		format: 1 as const,
+		format: 2 as const,
 		definition: Published.definitionAddress(),
 		contracts: { config: null as null, instance },
 	}
@@ -32,13 +32,14 @@ async function material(instance: string) {
 		'index.d.mts': 'export declare const Published: object;\n',
 	}
 	const unsigned = {
-		format: 1 as const,
+		format: 2 as const,
 		compiler: 'fixture',
 		definitions: [
 			{
 				definition: descriptor.definition,
 				contracts: descriptor.contracts,
 				exportName: 'Published',
+				module: 'index.mjs',
 				source: 'fixture',
 			},
 		],

@@ -1,5 +1,5 @@
 import type { CommandContext } from 'gunshi'
-import { ScriptExecutionError } from '@pluxel/host/agent'
+import { ScriptExecutionError } from '@pluxel/host/agent/runtime'
 
 /** Reject ignored flags and excess positionals before an operational command opens its target. */
 export function validateCommandOptions(

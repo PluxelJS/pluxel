@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { commands } from '@pluxel/services/commands'
 import { pluginSource } from '@pluxel/host/sources'
@@ -57,7 +57,7 @@ describe('PackageManagerPlugin', () => {
 			plugins: [PackageManagerPlugin, HeadlessPackageConsumer],
 			services: [commands()],
 			envBindings: [
-				envBinding(PackageManagerPlugin, {
+				envBinding(PackageManagerPlugin.nodeAddress(), {
 					config: {
 						schema: PackageManagerConfig,
 						mapping: { rootDir: 'MANAGED_ROOT', minimumReleaseAgeMinutes: 'MINIMUM_RELEASE_AGE' },
@@ -135,7 +135,7 @@ describe('PackageManagerPlugin', () => {
 
 			expect(failure.lifecycleReport.issues).toContainEqual(
 				expect.objectContaining({
-					plugin: PackageManagerPlugin.nodeAddress(),
+					plugin: parsePluginNodeAddress(PackageManagerPlugin.nodeAddress()),
 					kind: 'start-failed',
 					message: expect.stringMatching(/Plugin source|Plugin sources/),
 				}),

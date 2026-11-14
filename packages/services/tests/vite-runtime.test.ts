@@ -79,7 +79,7 @@ describe('static Vite runtime', () => {
 				"  name: 'static-vite-smoke',",
 				'  plugins: runtimePlugins,',
 				'  envBindings: [',
-				"    envBinding(ConfiguredPlugin, { config: { schema: ConfiguredPluginConfig, mapping: { label: 'VITE_STATIC_LABEL' } } }),",
+				"    envBinding(ConfiguredPlugin.nodeAddress(), { config: { schema: ConfiguredPluginConfig, mapping: { label: 'VITE_STATIC_LABEL' } } }),",
 				'  ],',
 
 				'      services: standardServices(),',

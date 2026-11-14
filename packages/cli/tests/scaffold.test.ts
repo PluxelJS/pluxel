@@ -365,7 +365,11 @@ describe('scaffold template rendering', () => {
 		]) {
 			expect(fixture.fs.existsSync(resolve(targetDir, name))).toBe(true)
 		}
-		expect(manifest.peerDependencies).toEqual({ '@pluxel/core': 'catalog:' })
+		expect(manifest.peerDependencies).toEqual({
+			'@pluxel/core': 'catalog:',
+			'@pluxel/host': 'catalog:',
+		})
+		expect(manifest.peerDependenciesMeta).toEqual({ '@pluxel/host': { optional: true } })
 		expect(manifest.dependencies).toEqual({ valibot: 'catalog:' })
 		expect(manifest.exports).toEqual({
 			'.': {
@@ -377,6 +381,7 @@ describe('scaffold template rendering', () => {
 		expect(manifest.devDependencies).toMatchObject({
 			'@pluxel/cli': 'catalog:',
 			'@pluxel/core': 'catalog:',
+			'@pluxel/host': 'catalog:',
 			'@pluxel/rolldown': 'catalog:',
 			'@pluxel/test': 'catalog:',
 			'vite-plus': 'catalog:',

@@ -6,7 +6,7 @@ import type {
 	PluginConfigInput,
 	PluginConfigOutput,
 	PluginInstance,
-	PluginTypedTarget,
+	PluginTypedNodeAddress,
 	Script,
 	ScriptSdk,
 	ScriptPlugin,
@@ -95,9 +95,15 @@ declare const NoConfig: PluginDescriptor<never, never, OtherInstance>
 declare const sdk: ScriptSdk
 declare const address: PluginNodeAddress
 
-expectTypeOf<PluginConfigInput<typeof Counter>>().toEqualTypeOf<CounterInput>()
-expectTypeOf<PluginConfigOutput<typeof Counter>>().toEqualTypeOf<CounterOutput>()
-expectTypeOf<PluginInstance<typeof Counter>>().toEqualTypeOf<CounterInstance>()
+expectTypeOf<
+	PluginConfigInput<ReturnType<typeof Counter.nodeAddress>>
+>().toEqualTypeOf<CounterInput>()
+expectTypeOf<
+	PluginConfigOutput<ReturnType<typeof Counter.nodeAddress>>
+>().toEqualTypeOf<CounterOutput>()
+expectTypeOf<
+	PluginInstance<ReturnType<typeof Counter.nodeAddress>>
+>().toEqualTypeOf<CounterInstance>()
 expectTypeOf<HostConfigMutation<CounterInput>['set']>().not.toBeAny()
 
 // @ts-expect-error Annotation cannot widen the schema input accepted by a descriptor.
@@ -111,14 +117,18 @@ void widenedInput
 const { plugin } = sdk
 // @ts-expect-error Import Better Result from its own module when constructing a result.
 void sdk.Result
-const counterRef = plugin(Counter)
-expectTypeOf(counterRef).toEqualTypeOf<ScriptPlugin<typeof Counter>>()
+const counterRef = plugin(Counter.nodeAddress())
+// @ts-expect-error Selectors accept node addresses, never descriptor objects.
+plugin(Counter)
+// @ts-expect-error Fork selection belongs to the address provider.
+void counterRef.fork
+expectTypeOf(counterRef).toEqualTypeOf<ScriptPlugin<ReturnType<typeof Counter.nodeAddress>>>()
 expectTypeOf(counterRef.config).toEqualTypeOf<ScriptPluginConfig<CounterInput, CounterOutput>>()
 expectTypeOf(counterRef.address).toEqualTypeOf<PluginNodeAddress>()
 // @ts-expect-error A selector's captured address is readonly.
 counterRef.address = address
-const { fork: selectFork, instance: borrow, config: counterConfig } = counterRef
-const selectedFork = selectFork('east')
+const { instance: borrow, config: counterConfig } = counterRef
+const selectedFork = plugin(Counter.nodeAddress('east'))
 expectTypeOf(selectedFork.config).toEqualTypeOf<ScriptPluginConfig<CounterInput, CounterOutput>>()
 const { get, validate, patch, reset } = counterConfig
 void patch({ set: { step: 2 } })
@@ -146,56 +156,53 @@ expectTypeOf<Awaited<ReturnType<typeof borrow>>>().toEqualTypeOf<
 const forkedBorrowed = Result.unwrap(await selectedFork.instance())
 expectTypeOf(forkedBorrowed).toEqualTypeOf<CounterInstance>()
 
-void sdk.plugin(Counter).config.patch({ set: { step: 2, converted: '12' } })
-const fork = sdk.plugin(Counter).fork('east')
-// @ts-expect-error Fork selection has one API; object-shaped typed fork targets were removed.
+void sdk.plugin(Counter.nodeAddress()).config.patch({ set: { step: 2, converted: '12' } })
+const fork = sdk.plugin(Counter.nodeAddress('east'))
+// @ts-expect-error Selection accepts a complete node address.
 void sdk.plugin({ plugin: Counter, forkId: 'east' })
 void fork.config.patch({ set: { step: 2 } })
-void sdk
-	.plugin(Counter)
-	.fork('east')
-	.config.patch({ set: { converted: '12' } })
-const sameDefinitionForks = sdk.plugin(Counter).fork(Math.random() > 0.5 ? 'east' : 'west')
+void sdk.plugin(Counter.nodeAddress('east')).config.patch({ set: { converted: '12' } })
+const sameDefinitionForks = sdk.plugin(Counter.nodeAddress(Math.random() > 0.5 ? 'east' : 'west'))
 void sameDefinitionForks.config.patch({ set: { step: 2 } })
 const sameShapeTargets = Math.random() > 0.5 ? Counter : SameShape
-void sdk.plugin(sameShapeTargets).config.patch({ set: { step: 2 } })
+void sdk.plugin(sameShapeTargets.nodeAddress()).config.patch({ set: { step: 2 } })
 const sameConfigTargets = Math.random() > 0.5 ? Counter : SameConfig
-void sdk.plugin(sameConfigTargets).config.patch({ set: { converted: '12' } })
+void sdk.plugin(sameConfigTargets.nodeAddress()).config.patch({ set: { converted: '12' } })
 
 // @ts-expect-error Incorrect fields cannot fall through to a dynamic-address overload.
-void sdk.plugin(Counter).config.patch({ set: { typo: 2 } })
+void sdk.plugin(Counter.nodeAddress()).config.patch({ set: { typo: 2 } })
 // @ts-expect-error Schema input differs from the transformed output.
-void sdk.plugin(Counter).config.patch({ set: { converted: 12 } })
+void sdk.plugin(Counter.nodeAddress()).config.patch({ set: { converted: 12 } })
 // @ts-expect-error Arrays replace complete elements.
-void sdk.plugin(Counter).config.patch({ set: { items: [{ value: 2 }] } })
+void sdk.plugin(Counter.nodeAddress()).config.patch({ set: { items: [{ value: 2 }] } })
 // @ts-expect-error Discriminated input retains its branch fields.
-void sdk.plugin(Counter).config.patch({ set: { mode: { kind: 'http', path: '/tmp/socket' } } })
+void counterRef.config.patch({ set: { mode: { kind: 'http', path: '/tmp/socket' } } })
 // @ts-expect-error A known lack of configuration rejects typed writes.
-void sdk.plugin(NoConfig).config.patch({ set: {} })
+void sdk.plugin(NoConfig.nodeAddress()).config.patch({ set: {} })
 // @ts-expect-error A known lack of configuration rejects typed reads.
-void sdk.plugin(NoConfig).config.get()
+void sdk.plugin(NoConfig.nodeAddress()).config.get()
 // @ts-expect-error A no-config descriptor cannot be assigned a configured type.
 const forgedConfig: typeof Other = NoConfig
 void forgedConfig
 
 const mixed = Math.random() > 0.5 ? Counter : Other
-const mixedConfig = sdk.plugin(mixed).config
+const mixedConfig = sdk.plugin(mixed.nodeAddress()).config
 expectTypeOf<keyof typeof mixedConfig>().toEqualTypeOf<'get'>()
 // @ts-expect-error Incompatible configuration associations require narrowing before mutation.
-void sdk.plugin(mixed).config.patch({ set: { step: 2 } })
+void sdk.plugin(mixed.nodeAddress()).config.patch({ set: { step: 2 } })
 // @ts-expect-error Validation candidates must retain their target correlation.
-void sdk.plugin(mixed).config.validate({ set: { title: 'updated' } })
+void sdk.plugin(mixed.nodeAddress()).config.validate({ set: { title: 'updated' } })
 // @ts-expect-error Reset likewise requires a consistent known configuration association.
-void sdk.plugin(mixed).config.reset([['step']])
-const mixedForks = sdk.plugin(mixed).fork(Math.random() > 0.5 ? 'east' : 'west')
+void sdk.plugin(mixed.nodeAddress()).config.reset([['step']])
+const mixedForks = sdk.plugin(mixed.nodeAddress(Math.random() > 0.5 ? 'east' : 'west'))
 // @ts-expect-error Fork targets with incompatible configuration associations also require narrowing.
 void mixedForks.config.patch({ set: { step: 2 } })
 const maybeConfigured = Math.random() > 0.5 ? Counter : NoConfig
 // @ts-expect-error Every possible typed configuration target must declare a schema.
-void sdk.plugin(maybeConfigured).config.get()
+void sdk.plugin(maybeConfigured.nodeAddress()).config.get()
 // @ts-expect-error The no-config branch cannot be erased to accept a mutation.
-void sdk.plugin(maybeConfigured).config.patch({ set: { step: 2 } })
-const maybeConfiguredFork = sdk.plugin(maybeConfigured).fork('east')
+void sdk.plugin(maybeConfigured.nodeAddress()).config.patch({ set: { step: 2 } })
+const maybeConfiguredFork = sdk.plugin(maybeConfigured.nodeAddress('east'))
 // @ts-expect-error A union inside a predeclared fork must retain its no-config branch.
 void maybeConfiguredFork.config.get()
 // @ts-expect-error Mutation cannot drop the no-config branch nested in a fork.
@@ -207,16 +214,18 @@ const tasks = [
 	{ kind: 'other', target: Other },
 ] as const
 for (const task of tasks) {
-	if (task.kind === 'counter') void sdk.plugin(task.target).config.patch({ set: { step: 2 } })
-	else void sdk.plugin(task.target).config.patch({ set: { title: 'updated' } })
+	if (task.kind === 'counter')
+		void sdk.plugin(task.target.nodeAddress()).config.patch({ set: { step: 2 } })
+	else void sdk.plugin(task.target.nodeAddress()).config.patch({ set: { title: 'updated' } })
 }
 
-const result = await sdk.plugin(Counter).config.get()
+const result = await sdk.plugin(Counter.nodeAddress()).config.get()
 expectTypeOf(result).toEqualTypeOf<Result<ScriptConfigSnapshot<CounterOutput>, ScriptConfigError>>()
 expectTypeOf<ScriptInstanceError['code']>().toEqualTypeOf<
 	| 'scope_closed'
 	| 'cancelled'
 	| 'borrowed_generation_conflict'
+	| 'control_evidence_missing'
 	| 'control_format_unsupported'
 	| 'control_material_unavailable'
 	| 'control_contract_mismatch'
@@ -252,7 +261,7 @@ if (result.isErr()) {
 	// @ts-expect-error Failure values have no duplicate domain discriminator.
 	void result.error.ok
 }
-const unionResult = await sdk.plugin(mixed).config.get()
+const unionResult = await sdk.plugin(mixed.nodeAddress()).config.get()
 if (unionResult.isOk()) {
 	// @ts-expect-error A successful union read still requires narrowing its output.
 	void unionResult.value.config.step
@@ -266,7 +275,7 @@ expectTypeOf(result.unwrap()).toEqualTypeOf<
 // @ts-expect-error Success has no duplicate domain discriminator inside its native Result payload.
 void result.unwrap().ok
 
-const counter = Result.unwrap(await sdk.plugin(Counter).instance())
+const counter = Result.unwrap(await sdk.plugin(Counter.nodeAddress()).instance())
 expectTypeOf(counter.add(2)).toEqualTypeOf<number>()
 expectTypeOf(counter.refresh(new AbortController().signal)).toEqualTypeOf<Promise<number>>()
 expectTypeOf(counter.echo({ x: 1 })).toEqualTypeOf<{ x: number }>()
@@ -291,13 +300,15 @@ counter.accept(new NominalToken())
 expectTypeOf(counter.ctx).toEqualTypeOf<CounterPlugin['ctx']>()
 // @ts-expect-error Addresses carry no concrete instance type.
 void sdk.plugin(address).instance()
-const unknownInstance = Result.unwrap(await sdk.plugin(mixed).instance())
+const unknownInstance = Result.unwrap(await sdk.plugin(mixed.nodeAddress()).instance())
 // @ts-expect-error A union instance requires narrowing before a variant member.
 unknownInstance.add(2)
-const sameConfigInstances = Result.unwrap(await sdk.plugin(sameConfigTargets).instance())
+const sameConfigInstances = Result.unwrap(
+	await sdk.plugin(sameConfigTargets.nodeAddress()).instance(),
+)
 // @ts-expect-error Equal config contracts do not erase distinct instance surfaces.
 sameConfigInstances.add(2)
-const erasedTarget: PluginTypedTarget = Counter
+const erasedTarget: PluginTypedNodeAddress = Counter.nodeAddress()
 const erasedInstance = Result.unwrap(await sdk.plugin(erasedTarget).instance())
 expectTypeOf(erasedInstance).toEqualTypeOf<object>()
 // @ts-expect-error Erasing the descriptor association must not invent a validated output type.
@@ -305,16 +316,49 @@ void sdk.plugin(erasedTarget).config.get()
 // @ts-expect-error Erased descriptors have no statically available config surface.
 void sdk.plugin(erasedTarget).config
 // @ts-expect-error Known no-config descriptors have no config property.
-void sdk.plugin(NoConfig).config
-const other = Result.unwrap(await sdk.plugin(NoConfig).instance())
+void sdk.plugin(NoConfig.nodeAddress()).config
+const other = Result.unwrap(await sdk.plugin(NoConfig.nodeAddress()).instance())
 expectTypeOf(other.title()).toEqualTypeOf<string>()
+
+class OtherSourcePlugin extends BasePlugin {
+	title(): string {
+		return 'other'
+	}
+}
+const sourceChoice =
+	Math.random() > 0.5 ? CounterPlugin.nodeAddress() : OtherSourcePlugin.nodeAddress()
+const sourceInstance = Result.unwrap(await sdk.plugin(sourceChoice).instance())
+expectTypeOf(sourceInstance).toEqualTypeOf<CounterPlugin | OtherSourcePlugin>()
+// @ts-expect-error Source constructor unions do not invent configuration associations.
+void sdk.plugin(sourceChoice).config
+const controlOrSource = Math.random() > 0.5 ? Counter.nodeAddress() : CounterPlugin.nodeAddress()
+const controlOrSourceInstance = Result.unwrap(await sdk.plugin(controlOrSource).instance())
+expectTypeOf(controlOrSourceInstance).toEqualTypeOf<CounterPlugin>()
+// @ts-expect-error Mixed evidence retains instance access but requires narrowing for configuration.
+void sdk.plugin(controlOrSource).config
+type RawOrControl = PluginNodeAddress | ReturnType<typeof Counter.nodeAddress>
+declare const rawOrControl: RawOrControl
+const rawOrControlRef = sdk.plugin<RawOrControl>(rawOrControl)
+// @ts-expect-error A union with a plain address has no common instance evidence.
+void rawOrControlRef.instance()
+// @ts-expect-error Plain and typed branches require narrowing or explicit identity normalization.
+void rawOrControlRef.config
+type RawOrSource = PluginNodeAddress | ReturnType<typeof CounterPlugin.nodeAddress>
+declare const rawOrSource: RawOrSource
+const rawOrSourceRef = sdk.plugin<RawOrSource>(rawOrSource)
+// @ts-expect-error Source evidence cannot make a plain address acquire instance access.
+void rawOrSourceRef.instance()
+// @ts-expect-error A source address branch does not declare configuration.
+void rawOrSourceRef.config
+const erasedNode: PluginNodeAddress = CounterPlugin.nodeAddress()
+expectTypeOf(sdk.plugin(erasedNode).config).toEqualTypeOf<ScriptPluginConfig>()
 
 interface ThenInstance {
 	then(resolve: (value: string) => void): void
 	readonly marker: 'thenable'
 }
 declare const ThenPlugin: PluginDescriptor<never, never, ThenInstance>
-const thenPlugin = Result.unwrap(await sdk.plugin(ThenPlugin).instance())
+const thenPlugin = Result.unwrap(await sdk.plugin(ThenPlugin.nodeAddress()).instance())
 expectTypeOf(thenPlugin.marker).toEqualTypeOf<'thenable'>()
 
 const OptionalSchema = v.optional(v.object({ retries: v.optional(v.number(), 3) }), {})
@@ -323,11 +367,11 @@ declare const OptionalConfig: PluginDescriptor<
 	v.InferOutput<typeof OptionalSchema>,
 	OtherInstance
 >
-void sdk.plugin(OptionalConfig).config.patch({ set: { retries: 2 } })
+void sdk.plugin(OptionalConfig.nodeAddress()).config.patch({ set: { retries: 2 } })
 // @ts-expect-error Host mutation roots remain objects even when the schema input is optional.
-void sdk.plugin(OptionalConfig).config.patch({ set: 'not an object' })
+void sdk.plugin(OptionalConfig.nodeAddress()).config.patch({ set: 'not an object' })
 // @ts-expect-error Optional schema roots preserve known field input types.
-void sdk.plugin(OptionalConfig).config.patch({ set: { retries: '2' } })
+void sdk.plugin(OptionalConfig.nodeAddress()).config.patch({ set: { retries: '2' } })
 
 const UnknownInputSchema = v.pipe(
 	v.unknown(),
@@ -338,9 +382,11 @@ declare const UnknownInput: PluginDescriptor<
 	v.InferOutput<typeof UnknownInputSchema>,
 	OtherInstance
 >
-void sdk.plugin(UnknownInput).config.patch({ set: { arbitrary: 'schema accepts unknown input' } })
+void sdk
+	.plugin(UnknownInput.nodeAddress())
+	.config.patch({ set: { arbitrary: 'schema accepts unknown input' } })
 // @ts-expect-error A schema accepting unknown input does not allow scalar Host mutation roots.
-void sdk.plugin(UnknownInput).config.patch({ set: 3 })
+void sdk.plugin(UnknownInput.nodeAddress()).config.patch({ set: 3 })
 
 class ConfiguredPart extends PluginPart<PartOwner> {
 	readonly config = this.configs.use(v.object({ retries: v.optional(v.number(), 3) }))
@@ -349,10 +395,10 @@ class PartOwner extends BasePlugin {
 	readonly part = this.parts.use(ConfiguredPart)
 }
 declare const Owner: PluginDescriptor<never, never, PartOwner>
-const owner = Result.unwrap(await sdk.plugin(Owner).instance())
+const owner = Result.unwrap(await sdk.plugin(Owner.nodeAddress()).instance())
 expectTypeOf(owner.part.config.retries).toEqualTypeOf<number>()
 // @ts-expect-error Part-owned schema is not the owner Plugin's configuration declaration.
-void sdk.plugin(Owner).config.patch({ set: { retries: 3 } })
+void sdk.plugin(Owner.nodeAddress()).config.patch({ set: { retries: 3 } })
 
 const cursor = Result.unwrap(await sdk.logs.mark())
 declare const logError: ScriptLogError
@@ -364,14 +410,14 @@ logError.code = 'root_mismatch'
 const logResult = await sdk.logs.read(cursor)
 if (logResult.isErr()) expectTypeOf(logResult.error.message).toEqualTypeOf<string>()
 void sdk.logs.read(cursor, { filter: { plugin: fork.address } })
-void sdk.logs.read(cursor, { filter: { plugin: Counter } })
+void sdk.logs.read(cursor, { filter: { plugin: Counter.nodeAddress() } })
 void sdk.logs.read(cursor, { filter: { plugin: address } })
 // @ts-expect-error The existing finite log wait deadline stays required.
-void sdk.logs.wait(cursor, { filter: { plugin: Counter } })
+void sdk.logs.wait(cursor, { filter: { plugin: Counter.nodeAddress() } })
 
 export default (async (api, run) => {
 	run.signal.throwIfAborted()
-	const selected = api.plugin(Counter)
+	const selected = api.plugin(Counter.nodeAddress())
 	const current = await selected.config.get()
 	if (current.isErr()) return current
 	const changed = await selected.config.patch(

@@ -1,4 +1,4 @@
-import { type Context } from '@pluxel/core'
+import { parsePluginNodeAddress, type Context } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { workbenchFederationExpose, workbenchFederationProducerName } from '@pluxel/core/federation'
 import { RpcTarget, type RpcStub } from 'capnweb'
@@ -349,7 +349,7 @@ describe('Workbench vNext publication', () => {
 		).toBe(true)
 		let inspector: SettingsTarget | undefined
 		for (const entry of layout.entries) {
-			expect(entry.target.node).toEqual(target)
+			expect(entry.target.node).toEqual(parsePluginNodeAddress(target))
 			const input = { layoutRevision: layout.revision, target, descriptor: entry.descriptor }
 			await expect(
 				session.target.openEntry({ ...input, location: '/not-a-route' }),
@@ -376,7 +376,7 @@ describe('Workbench vNext publication', () => {
 			if (entry.descriptor.key === 'inspector' && opened.value.kind === 'local')
 				inspector = opened.value.api as SettingsTarget
 		}
-		expect(attachmentConsumerNode).toEqual(target)
+		expect(attachmentConsumerNode).toEqual(parsePluginNodeAddress(target))
 		expect(inspector?.disposed).toBe(false)
 		host.stop(PanelPlugin)
 		await host.commit()
@@ -1191,7 +1191,7 @@ describe('Workbench vNext publication', () => {
 		if (!result.ok || result.value.kind !== 'attachment') throw new Error('open failed')
 		expect(result.value).toHaveProperty('provider')
 		expect(result.value).toHaveProperty('consumer')
-		expect(attachmentConsumerNode).toEqual(target)
+		expect(attachmentConsumerNode).toEqual(parsePluginNodeAddress(target))
 		session.dispose()
 	})
 

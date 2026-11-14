@@ -46,6 +46,24 @@ export type PluginForkNodeAddress = Readonly<{
 
 export type PluginNodeAddress = PluginDefaultNodeAddress | PluginForkNodeAddress
 
+declare const pluginInstanceTypes: unique symbol
+
+/**
+ * A node address produced by a concrete Plugin declaration, retaining its instance type.
+ * The marker is declaration-only: serializing or copying the address preserves identity,
+ * while execution evidence belongs to the original immutable address object.
+ */
+export type PluginInstanceNodeAddress<
+	S extends object,
+	A extends PluginNodeAddress = PluginNodeAddress,
+> = A &
+	Readonly<{
+		[pluginInstanceTypes]: Readonly<{
+			instance: S
+			invariant: (instance: S) => S
+		}>
+	}>
+
 type PluginEntrySlot = Readonly<{ address: PluginEntryAddress }>
 
 export type PluginDefinitionSlot = Readonly<{

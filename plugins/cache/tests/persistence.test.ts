@@ -2,7 +2,7 @@ import * as nativeFs from 'node:fs'
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { standardServices } from '@pluxel/services'
 import { Passthrough, type FsConfig } from '@pluxel/core/fs'
@@ -184,7 +184,7 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 		})
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
-				plugin: MemoryCacheBackendPlugin.nodeAddress(),
+				plugin: parsePluginNodeAddress(MemoryCacheBackendPlugin.nodeAddress()),
 				kind: 'start-failed',
 				message: expect.stringMatching(/durable|ephemeral/i),
 			}),
@@ -226,7 +226,7 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 		})
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
-				plugin: MemoryCacheBackendPlugin.nodeAddress(),
+				plugin: parsePluginNodeAddress(MemoryCacheBackendPlugin.nodeAddress()),
 				kind: 'start-failed',
 				message: expect.stringContaining('could not be restored'),
 			}),

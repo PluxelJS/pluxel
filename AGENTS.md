@@ -38,13 +38,13 @@ mise 管工具、环境和 PATH，package scripts 管操作入口，Vite Task �
 
 1. `pluxel dev status` 确认 profile、Vite root、实例与应用状态；后续 `dev run` 保持选择，多个匹配实例才加 `--instance`。
 2. 提交普通 TypeScript 导出函数，检查运行结果、领域/应用报告与日志。
-3. 保存 `receipt`；`dev result/cancel` 使用原 receipt，不转投重启后的实例。
+3. 保存 `receipt`；`script result/cancel` 使用原 receipt，不转投重启后的实例。
 
 在运行中的应用上进行多文件或连续源码修改前，用同一目标的 `dev hmr pause` 等待当前批次结算；完成检查后 `dev hmr apply`，核对 HMR 与应用报告及实际行为。失败保持暂停继续修复，成功且原模式为 auto 时才 `dev hmr resume`。控制范围与待处理变化见[HMR 批次控制](docs/development/dev-console.md#hmr-批次控制)；不通过重启服务代替 apply。
 
 profile 选择、日志命令、服务就绪与应用 ready 的区别由 skill 和指南说明。隔离 test host 不能证明在线状态。
 
-项目脚本使用普通 TypeScript 函数与 `satisfies ProjectScript`（`@pluxel/host-vite/project`），通过 `sdk.plugin(Constructor)` 选择实现，Context 从 `sdk.dev.ctx` 借用。通用脚本类型为 `Script`（`@pluxel/host/agent`）。`plugin()`、`fork()` 同步选择引用，异步控制返回 `Promise<Result<T, E>>`；默认 await 并用 `isErr()` 提前返回，需要构造 Result 时从 `@pluxel/core/better-result` 导入。配置修改后核对保存与实际采用；上传、认证与 receipt 见[自动化脚本](docs/development/scripts.md)。
+项目脚本使用普通 TypeScript 导出函数与 `satisfies ProjectScript`（`@pluxel/host-vite/project`），通过 `sdk.dev.address/instance/ctx` 访问当前模块图。通用脚本类型为 `Script`（`@pluxel/host/agent`）。调用与失败处理见[自动化脚本](docs/development/scripts.md)，插件地址与生成类型见[插件控制](docs/development/plugin-control.md)。配置修改后核对领域报告与实际采用。
 
 ## 完成变更
 

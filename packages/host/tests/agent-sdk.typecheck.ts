@@ -12,11 +12,12 @@ void sdk.config
 void sdk.plugin(node).instance
 const { plugin } = sdk
 const dynamic = plugin(node)
-const { config, status, fork } = dynamic
+const { config, status } = dynamic
 const { get, patch } = config
 void status()
 void patch({ set: { concurrency: 'unknown external input' } })
-void fork('tenant-a').config.patch({ set: { concurrency: true } })
+// @ts-expect-error Node references have no second fork selector.
+void dynamic.fork
 const dynamicResult = await get()
 if (dynamicResult.isOk())
 	expectTypeOf(dynamicResult.value.config.concurrency).toEqualTypeOf<unknown>()
@@ -36,7 +37,7 @@ export default (async (api, run) => {
 	const results = []
 	const plugins = await api.plugins.list()
 	if (plugins.isErr()) return plugins
-	for (const entry of plugins.value) {
+	for (const entry of plugins.value.nodes) {
 		const current = await api.plugin(entry.address).config.get()
 		if (current.isErr()) {
 			results.push(current.error)

@@ -21,11 +21,11 @@ import { AuthPlugin } from '@pluxel/plugin-auth'
 export default defineHostApplication(async (startup) => ({
 	name: 'my-app',
 	plugins: [AuthPlugin],
-	policy: { autoStart: [AuthPlugin] },
+	policy: { autoStart: [AuthPlugin.nodeAddress()] },
 	config: {
 		records: [
 			{
-				owner: AuthPlugin,
+				owner: AuthPlugin.nodeAddress(),
 				config: {
 					mode: { type: 'password' }, // 可选 'password'、'password_totp' 或 'oidc'
 				},

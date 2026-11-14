@@ -11,6 +11,7 @@ import type {
 	PluginDefaultNodeAddress,
 	PluginForkNodeAddress,
 	PluginNodeAddress,
+	PluginInstanceNodeAddress,
 } from '../runtime/identity'
 import { pluginDefinitionAddressOf, pluginNodeAddressOf } from '../runtime/definition'
 import type { PluginPartDefinitionTree } from '../runtime/part-definition'
@@ -150,9 +151,17 @@ export abstract class BasePlugin<C extends PluginContext = PluginContext> {
 	}
 
 	/** Reference a lowered concrete Plugin node without constructing or starting it. */
-	static nodeAddress(): PluginDefaultNodeAddress
-	static nodeAddress(forkId: string): PluginForkNodeAddress
-	static nodeAddress(forkId: string | undefined): PluginNodeAddress
+	static nodeAddress<P extends abstract new (...args: any[]) => BasePlugin>(
+		this: P,
+	): PluginInstanceNodeAddress<InstanceType<P>, PluginDefaultNodeAddress>
+	static nodeAddress<P extends abstract new (...args: any[]) => BasePlugin>(
+		this: P,
+		forkId: string,
+	): PluginInstanceNodeAddress<InstanceType<P>, PluginForkNodeAddress>
+	static nodeAddress<P extends abstract new (...args: any[]) => BasePlugin>(
+		this: P,
+		forkId: string | undefined,
+	): PluginInstanceNodeAddress<InstanceType<P>>
 	static nodeAddress(forkId?: string): PluginNodeAddress {
 		return pluginNodeAddressOf(this, forkId)
 	}

@@ -1,7 +1,7 @@
 import { Cache, CacheBackend, CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/plugin-cache'
 import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@pluxel/plugin-rates'
 import { RedisCacheBackendPlugin, RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/plugin-redis'
-import { pluginNodeAddressEqual } from '@pluxel/core'
+import { parsePluginNodeAddress, pluginNodeAddressEqual } from '@pluxel/core'
 import { S3 } from '@pluxel/plugin-storage'
 import { describe, expect, it } from 'vitest'
 import {
@@ -31,19 +31,19 @@ describe('plugin-host catalog', () => {
 			expect.arrayContaining([
 				expect.objectContaining({
 					token: Cache.definitionAddress(),
-					provider: CachePlugin.nodeAddress(),
+					provider: parsePluginNodeAddress(CachePlugin.nodeAddress()),
 				}),
 				expect.objectContaining({
 					token: CacheBackend.definitionAddress(),
-					provider: MemoryCacheBackendPlugin.nodeAddress(),
+					provider: parsePluginNodeAddress(MemoryCacheBackendPlugin.nodeAddress()),
 				}),
 				expect.objectContaining({
 					token: Rates.definitionAddress(),
-					provider: RatesPlugin.nodeAddress(),
+					provider: parsePluginNodeAddress(RatesPlugin.nodeAddress()),
 				}),
 				expect.objectContaining({
 					token: RatesBackend.definitionAddress(),
-					provider: MemoryRatesBackendPlugin.nodeAddress(),
+					provider: parsePluginNodeAddress(MemoryRatesBackendPlugin.nodeAddress()),
 				}),
 			]),
 		)

@@ -11,7 +11,7 @@ import {
 	ScriptExecutionError,
 	type ScriptScope,
 	type RunExecution,
-} from '@pluxel/host/agent'
+} from '@pluxel/host/agent/runtime'
 import { createProjectSdk } from '../project-sdk'
 import {
 	collectHostImportFiles,

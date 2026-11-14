@@ -23,7 +23,7 @@ carrier、browser 和 deployment 行为仍要在各自真实边界验证。
 
 `@pluxel/test` 根入口的异步 `createTestHost()` 组合生产 `createHost()`；业务符号从 `@pluxel/core` 导入，服务工厂从原领域入口导入。`services` 默认 `[]`，完整列表不隐式合并；`standardServices()` 由调用方显式选择。
 
-`workbench: true` 增加 Management、测试后端和本地 RPC driver，要求显式提供 HTTP，FS 与 TinyBase 已由 Core 固定提供；`management: false` 与它冲突时拒绝创建。Workbench 禁用时不初始化后端。HTTP/commands driver 调用已安装的生产服务，缺服务时明确失败。
+`workbench: true` 增加 Management、测试后端和本地 RPC driver，要求显式提供 HTTP，FS 与 TinyBase 已由 Core 固定提供；`management: false` 与它冲突时拒绝创建。Workbench 禁用时不初始化后端。HTTP/commands driver 调用已安装的生产服务，缺服务时明确失败。共享测试 driver 从独立 capability token 模块取得服务身份，避免静态导入 installer 时加载未选择服务的可选运行依赖；无服务的 Host 创建不要求安装 Commands。
 
 选择无显式制品来源的 Node 服务后，组合层接入正式按需源码编译器并拥有其关闭；显式制品来源保留制品消费路径。Vitest 插件只作用于 Vitest 模块图，不会隐式流入独立 Node 制品构建。领域 driver 与 compiler 仍由各自 package 维护，组合层负责接线和测试寿命。
 

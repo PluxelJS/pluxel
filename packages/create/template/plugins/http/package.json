@@ -33,7 +33,13 @@
 	"peerDependencies": {
 		"@example/todo-plugin": "*",
 		"@pluxel/core": "catalog:pluxel",
+		"@pluxel/host": "catalog:pluxel",
 		"@pluxel/services": "catalog:pluxel"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		}
 	},
 	"pluxel": {
 		"artifactRoot": "dist",

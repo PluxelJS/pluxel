@@ -313,7 +313,7 @@ export class Plain extends BasePlugin { readonly value = 1n }`,
 			declaration,
 			'// @ts-expect-error optional dependency\n\n// retained comment\n' + body,
 		)
-		await expect(generate()).resolves.toHaveProperty('format', 1)
+		await expect(generate()).resolves.toHaveProperty('format', 2)
 		await checkOriginal()
 		await writeFile(declaration, ignored)
 		const installed = resolve(directory, 'node_modules/control-test-electron')
@@ -777,7 +777,7 @@ void enabled
 		await expect(
 			verifyPluginControlMaterial(generation.manifest, generation.files),
 		).resolves.toEqual(generation.manifest)
-		expect(generation.files['index.mjs']).not.toMatch(/import|CounterPart|throw new/)
+		expect(generation.files['index.mjs']).not.toMatch(/CounterPart|throw new/)
 		expect(generation.files['index.d.mts']).toContain('ConfigDeclaration')
 		expect(generation.files['index.d.mts']).toContain('DEFAULT_COUNT = 2')
 		expect(generation.files['index.d.mts']).toContain('v.minValue(0)')
@@ -798,9 +798,9 @@ void enabled
 			resolve(consumer, 'usage.mts'),
 			`import {Counter} from './index.mjs'
 import type {CounterInstance,CounterConfigInput,CounterConfigOutput} from './index.mjs'
-import type {ScriptSdk} from '@pluxel/host/agent'
+import type { ScriptSdk } from '@pluxel/host/agent'
 declare const sdk:ScriptSdk
-const counter=(await sdk.plugin(Counter).instance()).unwrap()
+const counter=(await sdk.plugin(Counter.nodeAddress()).instance()).unwrap()
 const same:CounterInstance=counter.same(counter)
 const self:CounterInstance=counter.self()
 counter.part.owner().same(counter)
@@ -869,12 +869,16 @@ void [same,self,inherited,exact,text,number,input,output,forged,missing]
 		).rejects.toThrow(/Type 'string' does not satisfy the constraint 'object'/)
 	}, 30_000)
 
-	it('aliases descriptor names that shadow the deterministic renderer or declaration helpers', async () => {
+	it('preserves ordinary export names and aliases strict bindings or declaration helper collisions', async () => {
 		const directory = await fixture()
 		const generation = await generatePluginControl({
 			root: directory,
 			definitions: [
 				'Object',
+				'eval',
+				'arguments',
+				'__pluxel_control_reference',
+				'__pluxel_control_reference$',
 				'PluginDescriptor',
 				'__ControlInput',
 				'Counter',
@@ -886,13 +890,17 @@ void [same,self,inherited,exact,text,number,input,output,forged,missing]
 			})),
 		})
 		const names = generation.manifest.definitions.map((entry) => entry.exportName)
-		expect(names).not.toContain('Object')
+		expect(names).toContain('Object')
+		expect(names).toContain('__pluxel_control_reference')
+		expect(names).toContain('__pluxel_control_reference$')
+		expect(names).not.toContain('eval')
+		expect(names).not.toContain('arguments')
 		expect(names).not.toContain('PluginDescriptor')
 		expect(names).not.toContain('__ControlInput')
 		expect(names).not.toContain('CounterConfigInput')
-		const namespace = await import(
-			`data:text/javascript,${encodeURIComponent(generation.files['index.mjs']!)}`
-		)
+		const generatedModule = resolve(directory, 'control-descriptors.mjs')
+		await writeFile(generatedModule, generation.files['index.mjs']!)
+		const namespace = await import(pathToFileURL(generatedModule).href)
 		expect(Object.keys(namespace).sort()).toEqual(names.toSorted())
 	}, 30_000)
 
@@ -924,8 +932,8 @@ void [same,self,inherited,exact,text,number,input,output,forged,missing]
 			'Counter',
 		])
 		const control = await import(pathToFileURL(resolve(directory, 'dist/control/index.mjs')).href)
-		expect(control.Counter.definition).toEqual(definition)
-		expect(Object.isFrozen(control.Counter.definition.entry)).toBe(true)
+		expect(control.Counter.definitionAddress()).toEqual(definition)
+		expect(Object.isFrozen(control.Counter.definitionAddress().entry)).toBe(true)
 	}, 30_000)
 
 	it('changes the instance contract for a type-only dependency while presentation changes preserve contracts', async () => {

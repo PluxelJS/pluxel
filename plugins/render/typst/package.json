@@ -172,6 +172,7 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
 		"@pluxel/plugin-fonts": "workspace:^",
 		"@pluxel/services": "workspace:^",
 		"@tiptap/core": "catalog:frontend",
@@ -191,6 +192,9 @@
 		"react-dom": "catalog:frontend"
 	},
 	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		},
 		"@tiptap/extension-mathematics": {
 			"optional": true
 		},

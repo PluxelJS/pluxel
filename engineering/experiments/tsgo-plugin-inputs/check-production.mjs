@@ -33,6 +33,15 @@ try {
 					strict: true,
 					skipLibCheck: false,
 					target: 'ES2022',
+					lib: [
+						'ES2022',
+						'DOM',
+						'DOM.Iterable',
+						'DOM.AsyncIterable',
+						'WebWorker.ImportScripts',
+						'ScriptHost',
+						'ESNext.Temporal',
+					],
 					module: 'NodeNext',
 					moduleResolution: 'NodeNext',
 					types: ['node'],
@@ -76,8 +85,9 @@ try {
 			compiler,
 			root,
 			filename,
+			pluginTarget: 'ExamplePlugin.nodeAddress()',
 			extraProbes:
-				'\nfileBinding(ExamplePlugin, {vault:{schema:ExampleCredentials,paths:{ /* file-completion */ }}})\n',
+				'\nfileBinding(ExamplePlugin.nodeAddress(), {vault:{schema:ExampleCredentials,paths:{ /* file-completion */ }}})\n',
 			extraMarkers: [['file-completion', ['credentials']]],
 		}),
 	}

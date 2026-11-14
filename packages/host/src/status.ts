@@ -1,6 +1,7 @@
 import {
 	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
+	parsePluginNodeAddress,
 	type Context,
 	type PluginNodeAddress,
 } from '@pluxel/core'
@@ -92,24 +93,30 @@ export type HostPluginStatusProjectionView = Readonly<{
 	recentUpdate: PluginRecentUpdateRead | undefined
 }>
 
-function createHostPluginStatusProjectionFromView(view: HostPluginStatusProjectionView) {
+function createHostPluginStatusProjectionFromView(
+	view: HostPluginStatusProjectionView,
+	targetKey?: string,
+) {
 	const catalog = view.catalog
 	const state = view.state
 	const stateIndex = hostStateReadIndex(state)
 	const issuesByNode = new Map<string, HostPluginStatusIssue[]>()
 	for (const issue of view.reconciliation) {
+		const addresses: PluginNodeAddress[] = []
+		if ('consumer' in issue && issue.consumer !== undefined) addresses.push(issue.consumer)
+		if ('provider' in issue) addresses.push(issue.provider)
+		if ('node' in issue) addresses.push(issue.node)
+		if (targetKey && !addresses.some((address) => pluginNodeIndexKey(address) === targetKey))
+			continue
 		const projected = Object.freeze({
 			id: pluginReconciliationIssueKey(issue),
 			code: issue.kind,
 			message: issue.message,
 		})
 		const touched = new Set<string>()
-		const addresses: PluginNodeAddress[] = []
-		if ('consumer' in issue && issue.consumer !== undefined) addresses.push(issue.consumer)
-		if ('provider' in issue) addresses.push(issue.provider)
-		if ('node' in issue) addresses.push(issue.node)
 		for (const address of addresses) {
 			const key = pluginNodeIndexKey(address)
+			if (targetKey && key !== targetKey) continue
 			if (touched.has(key)) continue
 			touched.add(key)
 			const nodeIssues = issuesByNode.get(key)
@@ -119,6 +126,7 @@ function createHostPluginStatusProjectionFromView(view: HostPluginStatusProjecti
 	}
 	for (const issue of view.lifecycleIssues ?? []) {
 		const key = pluginNodeIndexKey(issue.plugin)
+		if (targetKey && key !== targetKey) continue
 		const issues = issuesByNode.get(key) ?? []
 		issues.push(
 			Object.freeze({
@@ -232,44 +240,75 @@ export async function readHostPluginStatusOverview(
 	)
 }
 
+/** Read one known node from one committed view without projecting or sorting the catalog. */
+export async function readHostPluginStatus(
+	ctx: Context,
+	address: PluginNodeAddress,
+	recentUpdate?: PluginRecentUpdateRead,
+): Promise<HostPluginStatusSnapshot | null> {
+	return await requirePluginHostCoordinator(ctx).readCommitted((view) =>
+		hostPluginStatusFromView(
+			{
+				catalog: view.catalog,
+				state: view.runtimeState.state,
+				reconciliation: view.reconciliation,
+				lifecycleIssues: readHostPluginLifecycleIssues(ctx),
+				sessionIntents: view.sessionIntents,
+				desiredControl: view.desiredControl,
+				coreNodes: view.coreAdjacency.nodes,
+				runningNodeKeys: new Set(view.runningNodes.map(pluginNodeIndexKey)),
+				recentUpdate: recentUpdate ?? readHostRecentUpdates(ctx),
+			},
+			address,
+		),
+	)
+}
+
+/** @internal The exact counterpart of overview, using the same node projection. */
+export function hostPluginStatusFromView(
+	view: HostPluginStatusProjectionView,
+	address: PluginNodeAddress,
+): HostPluginStatusSnapshot | null {
+	const selectedAddress = parsePluginNodeAddress(address)
+	const key = pluginNodeIndexKey(selectedAddress)
+	const definition = view.catalog.byDefinition.get(
+		pluginDefinitionIndexKey(selectedAddress.definition),
+	)
+	const stateIndex = hostStateReadIndex(view.state)
+	const declared =
+		!!definition && (selectedAddress.variant === 'default' || stateIndex.forkNodeKeys.has(key))
+	const matches = (candidate: PluginNodeAddress) => pluginNodeIndexKey(candidate) === key
+	if (
+		!declared &&
+		!stateIndex.forkNodeKeys.has(key) &&
+		!stateIndex.autoStartKeys.has(key) &&
+		!view.sessionIntents.has(key) &&
+		!view.desiredControl.has(key) &&
+		!view.coreNodes.some(matches) &&
+		!view.state.providerDefaults.some((binding) => matches(binding.provider)) &&
+		!view.state.dependencyOverrides.some(
+			(binding) => matches(binding.consumerAddress) || matches(binding.providerAddress),
+		)
+	)
+		return null
+	return projectHostPluginStatus(
+		{
+			address: selectedAddress,
+			displayName: declared
+				? definition.candidate.declaration.displayName
+				: selectedAddress.definition.exportName,
+			rootExportName: selectedAddress.definition.exportName,
+		},
+		createHostPluginStatusProjectionFromView(view, key),
+	)
+}
+
 /** @internal Projects status exclusively from one coordinator-pinned committed view. */
 export function hostPluginStatusOverviewFromView(
 	view: HostPluginStatusProjectionView,
 ): HostPluginStatusOverview {
 	const projection = createHostPluginStatusProjectionFromView(view)
-	const catalog = projection.catalog
-	const state = projection.state
-	const entries = new Map<string, HostPluginCatalogEntry>()
-	const add = (address: PluginNodeAddress, displayName = address.definition.exportName): void => {
-		const key = pluginNodeIndexKey(address)
-		if (entries.has(key)) return
-		entries.set(key, {
-			address,
-			displayName,
-			rootExportName: address.definition.exportName,
-		})
-	}
-	for (const entry of catalog.entries) {
-		const declaration = entry.candidate.declaration
-		add({ definition: declaration.address, variant: 'default' }, declaration.displayName)
-		for (const forkId of projection.stateIndex.forkIdsByDefinition.get(
-			pluginDefinitionIndexKey(declaration.address),
-		) ?? []) {
-			add({ definition: declaration.address, variant: 'fork', forkId }, declaration.displayName)
-		}
-	}
-	for (const address of state.forks) add(address)
-	for (const address of state.autoStart) add(address)
-	for (const entry of projection.sessionIntents.values()) add(entry.address)
-	for (const entry of projection.desiredControl.values()) add(entry.address)
-	for (const address of projection.coreNodes) add(address)
-	for (const binding of state.providerDefaults) add(binding.provider)
-	for (const binding of state.dependencyOverrides) {
-		add(binding.consumerAddress)
-		add(binding.providerAddress)
-	}
-
-	const statuses = [...entries.values()]
+	const statuses = hostPluginCatalogEntriesFromView(view)
 		.map((entry) => projectHostPluginStatus(entry, projection))
 		.sort((left, right) =>
 			pluginNodeIndexKey(left.address).localeCompare(pluginNodeIndexKey(right.address)),
@@ -289,4 +328,43 @@ export function hostPluginStatusOverviewFromView(
 			stopped: statuses.length - running,
 		},
 	}
+}
+
+/** @internal Enumerates node identity and labels without projecting runtime state. */
+export function hostPluginCatalogEntriesFromView(
+	view: HostPluginStatusProjectionView,
+): HostPluginCatalogEntry[] {
+	const state = view.state
+	const stateIndex = hostStateReadIndex(state)
+	const entries = new Map<string, HostPluginCatalogEntry>()
+	const add = (address: PluginNodeAddress, displayName = address.definition.exportName): void => {
+		const key = pluginNodeIndexKey(address)
+		if (entries.has(key)) return
+		entries.set(key, {
+			address,
+			displayName,
+			rootExportName: address.definition.exportName,
+		})
+	}
+	for (const entry of view.catalog.entries) {
+		const declaration = entry.candidate.declaration
+		add({ definition: declaration.address, variant: 'default' }, declaration.displayName)
+		for (const forkId of stateIndex.forkIdsByDefinition.get(
+			pluginDefinitionIndexKey(declaration.address),
+		) ?? []) {
+			add({ definition: declaration.address, variant: 'fork', forkId }, declaration.displayName)
+		}
+	}
+	for (const address of state.forks) add(address)
+	for (const address of state.autoStart) add(address)
+	for (const entry of view.sessionIntents.values()) add(entry.address)
+	for (const entry of view.desiredControl.values()) add(entry.address)
+	for (const address of view.coreNodes) add(address)
+	for (const binding of state.providerDefaults) add(binding.provider)
+	for (const binding of state.dependencyOverrides) {
+		add(binding.consumerAddress)
+		add(binding.providerAddress)
+	}
+
+	return [...entries.values()]
 }

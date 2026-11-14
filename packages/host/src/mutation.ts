@@ -162,17 +162,13 @@ function validateOperation(
 			return
 		}
 		case 'ensure-fork': {
-			const node: PluginNodeAddress = {
-				definition: operation.definition,
-				variant: 'fork',
-				forkId: operation.forkId,
-			}
+			const { node } = operation
 			if (isDurableFork(state, node)) return
-			const entry = pluginCatalogEntry(catalog, operation.definition)
+			const entry = pluginCatalogEntry(catalog, node.definition)
 			if (!entry) {
 				reject({
 					code: 'definition_unavailable',
-					definition: operation.definition,
+					definition: node.definition,
 					message: 'Plugin definition is unavailable in the route catalog',
 				})
 			}
@@ -187,11 +183,7 @@ function validateOperation(
 			return
 		}
 		case 'remove-fork': {
-			const node: PluginNodeAddress = {
-				definition: operation.definition,
-				variant: 'fork',
-				forkId: operation.forkId,
-			}
+			const { node } = operation
 			if (!isDurableFork(state, node)) return
 			const references = [...(state.overridesByProvider.get(pluginNodeIndexKey(node)) ?? [])]
 				.map((key) => state.dependencyOverrides.get(key))
@@ -327,10 +319,7 @@ function requireAvailableNode(
 	return entry
 }
 
-function isDurableFork(
-	state: AdmissionState,
-	node: PluginNodeAddress,
-): node is Extract<PluginNodeAddress, { variant: 'fork' }> {
+function isDurableFork(state: AdmissionState, node: PluginNodeAddress): boolean {
 	return node.variant === 'fork' && state.forks.has(pluginNodeIndexKey(node))
 }
 
@@ -429,7 +418,7 @@ export function validateHostPolicyChange(
 			operations.push({ type: 'set-provider-default', token: entry.token, provider: null })
 	for (const node of next.forks)
 		if (!previous.forks.some((value) => pluginNodeAddressEqual(value, node)))
-			operations.push({ type: 'ensure-fork', definition: node.definition, forkId: node.forkId })
+			operations.push({ type: 'ensure-fork', node })
 	for (const entry of next.dependencyOverrides)
 		if (
 			!previous.dependencyOverrides.some(
@@ -460,7 +449,7 @@ export function validateHostPolicyChange(
 			})
 	for (const node of previous.forks)
 		if (!next.forks.some((value) => pluginNodeAddressEqual(value, node)))
-			operations.push({ type: 'remove-fork', definition: node.definition, forkId: node.forkId })
+			operations.push({ type: 'remove-fork', node })
 	for (const node of next.autoStart)
 		if (!previous.autoStart.some((value) => pluginNodeAddressEqual(value, node)))
 			operations.push({ type: 'set-auto-start', node, autoStart: true })

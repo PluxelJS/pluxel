@@ -1,4 +1,9 @@
-import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
+import type {
+	PluginDefinitionAddress,
+	PluginNodeAddress,
+	PluginDefaultNodeAddress,
+	PluginForkNodeAddress,
+} from '@pluxel/core'
 import type { LogFilter, LogReadOptions } from '@pluxel/core/logging'
 
 type RawConfig = Readonly<Record<string, unknown>>
@@ -10,54 +15,49 @@ type PluginTypes<I, O extends object, S extends object> = Readonly<{
 	instance: S
 }>
 
-interface DescriptorData {
-	readonly format: 1
-	readonly definition: PluginDefinitionAddress
-	readonly contracts: Readonly<{ config: string | null; instance: string }>
-	readonly [pluginTypes]: unknown
-}
+/** Address with generated configuration and instance associations. Evidence is bound to this exact value. */
+export type PluginControlNodeAddress<
+	I = RawConfig,
+	O extends object = RawConfig,
+	S extends object = object,
+	A extends PluginNodeAddress = PluginNodeAddress,
+> = A &
+	Readonly<{
+		[pluginTypes]: Readonly<{
+			signature: PluginTypes<I, O, S>
+			invariant: (value: PluginTypes<I, O, S>) => PluginTypes<I, O, S>
+		}>
+	}>
 
-/**
- * Generated, data-only reference to a Plugin definition and its public contracts.
- * I is schema input, O is validated output, and S is the canonical Plugin class's
- * instance type, including its inherited public members and nominal identities.
- * A Plugin without configuration uses never for both I and O. The private marker
- * is declaration-only; generated JavaScript contains no symbol or implementation.
- */
+/** Generated identity provider. Its standard methods never load, create or start a Plugin. */
 export interface PluginDescriptor<
 	I = RawConfig,
 	O extends object = RawConfig,
 	S extends object = object,
-> extends DescriptorData {
-	readonly contracts: Readonly<{
-		config: [I] extends [never] ? null : string
-		instance: string
-	}>
-	readonly [pluginTypes]: Readonly<{
-		signature: PluginTypes<I, O, S>
-		invariant: (value: PluginTypes<I, O, S>) => PluginTypes<I, O, S>
-	}>
+> {
+	readonly definitionAddress: () => PluginDefinitionAddress
+	readonly nodeAddress: {
+		(): PluginControlNodeAddress<I, O, S, PluginDefaultNodeAddress>
+		(forkId: string): PluginControlNodeAddress<I, O, S, PluginForkNodeAddress>
+		(forkId?: string): PluginControlNodeAddress<I, O, S>
+	}
 }
 
-/** A descriptor selects its default node. Select forks through the reference's fork(). */
-export type PluginTypedTarget = DescriptorData
+export type PluginTypedNodeAddress = PluginNodeAddress & Readonly<{ [pluginTypes]: unknown }>
 
-/** Management also accepts an address discovered at runtime. */
-export type PluginTarget = PluginTypedTarget | PluginNodeAddress
-
-type TypesOf<T extends PluginTypedTarget> = T[typeof pluginTypes] extends {
+type TypesOf<T extends PluginTypedNodeAddress> = T[typeof pluginTypes] extends {
 	signature: infer S extends PluginTypes<unknown, object, object>
 }
 	? S
 	: never
 
-export type PluginConfigInput<T extends PluginTypedTarget> = TypesOf<T>['input']
-export type PluginConfigOutput<T extends PluginTypedTarget> = TypesOf<T>['output']
-export type PluginInstance<T extends PluginTypedTarget> = [TypesOf<T>] extends [never]
+export type PluginConfigInput<T extends PluginTypedNodeAddress> = TypesOf<T>['input']
+export type PluginConfigOutput<T extends PluginTypedNodeAddress> = TypesOf<T>['output']
+export type PluginInstance<T extends PluginTypedNodeAddress> = [TypesOf<T>] extends [never]
 	? object
 	: TypesOf<T>['instance']
 
-type ConfigAssociation<T extends PluginTypedTarget> =
+type ConfigAssociation<T extends PluginTypedNodeAddress> =
 	TypesOf<T> extends infer S
 		? S extends PluginTypes<infer I, infer O, object>
 			? Readonly<{
@@ -70,9 +70,9 @@ type ConfigAssociation<T extends PluginTypedTarget> =
 type IsUnion<T, Whole = T> = T extends Whole ? ([Whole] extends [T] ? false : true) : never
 
 /** Internal admission: mutation input must retain one configuration association. */
-export type SinglePluginConfig<T extends PluginTypedTarget> =
+export type SinglePluginConfig<T extends PluginTypedNodeAddress> =
 	true extends IsUnion<ConfigAssociation<T>> ? never : unknown
-type HasNoConfig<T extends PluginTypedTarget> = [TypesOf<T>] extends [never]
+type HasNoConfig<T extends PluginTypedNodeAddress> = [TypesOf<T>] extends [never]
 	? true
 	: TypesOf<T> extends infer S
 		? S extends PluginTypes<infer I, object, object>
@@ -82,9 +82,9 @@ type HasNoConfig<T extends PluginTypedTarget> = [TypesOf<T>] extends [never]
 			: true
 		: never
 /** Internal admission: every possible target must declare configuration. */
-export type ConfiguredPlugin<T extends PluginTypedTarget> =
+export type ConfiguredPlugin<T extends PluginTypedNodeAddress> =
 	true extends HasNoConfig<T> ? never : unknown
 
-/** Logging keeps the native filter shape and normalizes only the Plugin target. */
+/** Logging uses the original node-address filter shape. */
 export type ScriptLogReadOptions = Omit<LogReadOptions, 'filter'> &
-	Readonly<{ filter?: Omit<LogFilter, 'plugin'> & Readonly<{ plugin?: PluginTarget }> }>
+	Readonly<{ filter?: Omit<LogFilter, 'plugin'> & Readonly<{ plugin?: PluginNodeAddress }> }>

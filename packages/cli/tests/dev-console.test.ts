@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto'
-import { chmod, symlink, writeFile } from 'node:fs/promises'
+import { chmod, rm, symlink, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { cli as gunshiCli } from 'gunshi'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { devCommand } from '../src/commands/dev'
+import { scriptCommand } from '../src/commands/script'
 import { normalizeDevArgs } from '../src/command-manifest'
-import { decodeDevReceipt, encodeDevReceipt } from '../src/dev/receipt'
+import { decodeScriptReceipt, encodeScriptReceipt } from '../src/script/receipt'
 import {
 	DevClientError,
 	connectDevInstance,
@@ -41,9 +42,9 @@ async function cli(argv: string[], options: { log?(value: string): void } = {}) 
 	const output = options.log ? vi.spyOn(console, 'log').mockImplementation(options.log) : undefined
 	try {
 		return await gunshiCli(
-			normalizeDevArgs(['dev', ...argv]),
+			normalizeDevArgs(argv[0] === 'script' ? argv : ['dev', ...argv]),
 			{ run() {} },
-			{ subCommands: { dev: devCommand } },
+			{ subCommands: { dev: devCommand, script: scriptCommand } },
 		)
 	} finally {
 		output?.mockRestore()
@@ -260,18 +261,37 @@ describe('development control through native Capn Web', () => {
 			timeoutMs: 500,
 			detach: false,
 		})
-		const token = encodeDevReceipt({
-			...first.instance,
+		const token = encodeScriptReceipt({
+			version: 3,
+			connection: { kind: 'local', root: first.instance.root, serviceId: first.instance.serviceId },
+			instanceId: first.instance.instanceId,
 			runId: accepted.runId,
 			requestHash: accepted.requestHash as string,
 		})
 		const second = await fixture({ root: first.root })
 		for (const command of ['result', 'cancel']) {
 			const output: string[] = []
-			await cli([command, token], { log: (value) => output.push(String(value)) })
+			await cli(['script', command, token], { log: (value) => output.push(String(value)) })
 			expect(JSON.parse(output[0]!)).toMatchObject({
 				ok: true,
-				value: { instanceId: first.instance.instanceId, runId: accepted.runId, state: 'succeeded' },
+				value: {
+					receipt: token,
+					run: { instanceId: first.instance.instanceId, runId: accepted.runId, state: 'succeeded' },
+				},
+			})
+		}
+		await rm(first.record)
+		for (const command of ['result', 'cancel']) {
+			const output: string[] = []
+			await cli(['script', command, token], { log: (value) => output.push(String(value)) })
+			expect(JSON.parse(output[0]!)).toMatchObject({
+				ok: false,
+				error: {
+					code: 'dev_unavailable',
+					receipt: token,
+					hint: expect.stringContaining('script result'),
+					context: { root: first.root, instanceId: first.instance.instanceId },
+				},
 			})
 		}
 		expect(
@@ -295,11 +315,11 @@ describe('development control through native Capn Web', () => {
 		})
 		expect(output).toHaveLength(1)
 		const result = JSON.parse(output[0]!)
-		expect(result).toMatchObject({ ok: true, value: { state: 'succeeded' } })
-		expect(events.map((event) => event.event)).toEqual(['submitting', 'accepted'])
-		expect(decodeDevReceipt(String(events[0]?.receipt))).toMatchObject({
+		expect(result).toMatchObject({ ok: true, value: { run: { state: 'succeeded' } } })
+		expect(events.map((event) => event.stage)).toEqual(['prepared', 'accepted'])
+		expect(decodeScriptReceipt(String(events[0]?.receipt))).toMatchObject({
 			instanceId: instance.instanceId,
-			requestHash: result.value.requestHash,
+			requestHash: result.value.run.requestHash,
 		})
 		expect(events[0]?.receipt).toBe(result.value.receipt)
 		expect(output[0]).not.toContain(instance.nonce)

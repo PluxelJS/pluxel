@@ -36,9 +36,6 @@ import {
 	type PolicyResult,
 	type ConfigValidationErrors,
 	type EnsureForkResult,
-	type PluginApplyCommitSummary,
-	type PluginApplyLifecycleErrorInfo,
-	type PluginApplyLifecycleIssue,
 	type PluginApplyReport,
 	type PluginControlBatchResult,
 	type PluginControlMutationFailure,
@@ -59,7 +56,6 @@ import {
 	type PluginCatalogSectionBasis,
 	type PluginCatalogSnapshot,
 	type PluginLogPolicyMutationResult,
-	type PluginReconciliationIssue,
 	type PluginStatusIssue,
 	type PluginStatusQueryResult,
 	type PluginStatusSnapshot,
@@ -70,6 +66,9 @@ import {
 	type VersionedPluginLogPolicySnapshot,
 } from './protocol'
 import {
+	parsePluginApplyReportSnapshot,
+	parseHostPersistenceResult,
+	pluginApplyReportOutcome,
 	HOST_POLICY_FIELDS,
 	HOST_EXECUTION_POLICY_FIELDS,
 	clonePluginExecutionSnapshot,
@@ -82,14 +81,6 @@ import {
 	RuntimeProtocolValidationError,
 } from './validation'
 
-const LIFECYCLE_PHASES = ['resolve', 'config', 'start', 'dependency', 'drain'] as const
-const LIFECYCLE_KINDS = [
-	'resolve-failed',
-	'config-failed',
-	'start-failed',
-	'dependency-blocked',
-	'drain-failed',
-] as const
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warning', 'error', 'fatal'] as const
 const RUNTIME_LOG_LEVELS = [...LOG_LEVELS, 'off'] as const
 
@@ -697,7 +688,7 @@ export function parsePluginControlBatchResult(input: unknown): PluginControlBatc
 	if (value.ok !== false) fail('plugin control batch result.ok must be boolean')
 	const status = literal(
 		value.status,
-		['partially-applied', 'rejected'],
+		['applied-with-issues', 'partially-applied', 'rejected'],
 		'plugin control batch result.status',
 	)
 	if (Object.hasOwn(value, 'code')) {
@@ -728,12 +719,18 @@ export function parsePluginControlBatchResult(input: unknown): PluginControlBatc
 	const results = array(value.results, 'plugin control batch result.results').map((item, index) =>
 		controlMutationResult(item, `plugin control batch result.results[${index}]`),
 	)
-	if (status === 'partially-applied') {
-		if (!results.some((result) => result.ok) || !results.some((result) => !result.ok)) {
-			fail('partially-applied control batch must contain successes and failures')
-		}
-	} else if (results.some((result) => result.ok)) {
-		fail('rejected control batch must not contain successful results')
+	const applied = (result: PluginControlMutationResult) =>
+		result.ok === true || result.code === 'lifecycle_failed'
+	if (status === 'applied-with-issues') {
+		if (!results.every(applied) || !results.some((result) => !result.ok))
+			fail(
+				'applied-with-issues control batch must contain only applied results and lifecycle issues',
+			)
+	} else if (status === 'partially-applied') {
+		if (!results.some(applied) || !results.some((result) => !applied(result)))
+			fail('partially-applied control batch must contain applied and unapplied results')
+	} else if (results.some(applied)) {
+		fail('rejected control batch must not contain applied results')
 	}
 	return Object.freeze({
 		ok: false,
@@ -1197,19 +1194,11 @@ function persistenceResult(
 	input: unknown,
 	label: string,
 ): import('@pluxel/host').HostPersistenceResult {
-	const value = object(input, label)
-	const status = literal(value.status, ['unchanged', 'confirmed', 'unknown'], `${label}.status`)
-	shape(value, status === 'confirmed' ? ['status', 'retention'] : ['status'], [], label)
-	return status === 'confirmed'
-		? Object.freeze({
-				status,
-				retention: literal(
-					value.retention,
-					['session', 'declared-durable', 'unknown'],
-					`${label}.retention`,
-				),
-			})
-		: Object.freeze({ status })
+	try {
+		return parseHostPersistenceResult(input, label)
+	} catch (error) {
+		fail(errorMessage(error))
+	}
 }
 
 function configValue(value: Record<string, unknown>) {
@@ -1489,239 +1478,11 @@ function providerPolicyInfo(input: unknown, label: string): PluginProviderPolicy
 }
 
 function pluginApplyReport(input: unknown, label: string): PluginApplyReport {
-	const value = object(input, label)
-	shape(
-		value,
-		[
-			'catalogRevision',
-			'runtimeStateRevision',
-			'reconciliation',
-			'core',
-			'persistence',
-			'writtenFields',
-		],
-		[],
-		label,
-	)
-	const core = object(value.core, `${label}.core`)
-	const status = literal(core.status, ['unchanged', 'committed'], `${label}.core.status`)
-	const parsedCore: PluginApplyReport['core'] =
-		status === 'unchanged'
-			? (() => {
-					shape(core, ['status'], [], `${label}.core`)
-					return Object.freeze({ status: 'unchanged' as const })
-				})()
-			: (() => {
-					shape(core, ['status', 'summary'], [], `${label}.core`)
-					return Object.freeze({
-						status: 'committed' as const,
-						summary: pluginApplyCommitSummary(core.summary, `${label}.core.summary`),
-					})
-				})()
-	return Object.freeze({
-		persistence: persistenceResult(value.persistence, `${label}.persistence`),
-		writtenFields: policyFields(value.writtenFields, HOST_POLICY_FIELDS, `${label}.writtenFields`),
-		catalogRevision: nonNegativeInteger(value.catalogRevision, `${label}.catalogRevision`),
-		runtimeStateRevision: nonNegativeInteger(
-			value.runtimeStateRevision,
-			`${label}.runtimeStateRevision`,
-		),
-		reconciliation: Object.freeze(
-			array(value.reconciliation, `${label}.reconciliation`).map((item, index) =>
-				reconciliationIssue(item, `${label}.reconciliation[${index}]`),
-			),
-		),
-		core: parsedCore,
-	})
-}
-
-function reconciliationIssue(input: unknown, label: string): PluginReconciliationIssue {
-	const value = object(input, label)
-	const kind = literal(
-		value.kind,
-		[
-			'consumer_unavailable',
-			'requirement_removed',
-			'provider_unavailable',
-			'provider_incompatible',
-			'fork_not_allowed',
-			'fork_default_forbidden',
-			'provider_default_requires_abstract',
-			'explicit_binding_invalid',
-			'missing_required_provider',
-		],
-		`${label}.kind`,
-	)
-	const message = text(value.message, `${label}.message`)
-	if (kind === 'consumer_unavailable' || kind === 'missing_required_provider') {
-		shape(
-			value,
-			kind === 'consumer_unavailable'
-				? ['kind', 'consumer', 'message']
-				: ['kind', 'consumer', 'requirement', 'message'],
-			[],
-			label,
-		)
-		return kind === 'consumer_unavailable'
-			? Object.freeze({
-					kind,
-					consumer: nodeAddress(value.consumer, `${label}.consumer`),
-					message,
-				})
-			: Object.freeze({
-					kind,
-					consumer: nodeAddress(value.consumer, `${label}.consumer`),
-					requirement: definitionAddress(value.requirement, `${label}.requirement`),
-					message,
-				})
+	try {
+		return parsePluginApplyReportSnapshot(input, label)
+	} catch (error) {
+		fail(errorMessage(error))
 	}
-	if (kind === 'requirement_removed') {
-		shape(value, ['kind', 'binding', 'consumer', 'requirement', 'provider', 'message'], [], label)
-		literal(value.binding, ['dependency-override'], `${label}.binding`)
-		return Object.freeze({
-			kind,
-			binding: 'dependency-override',
-			consumer: nodeAddress(value.consumer, `${label}.consumer`),
-			requirement: definitionAddress(value.requirement, `${label}.requirement`),
-			provider: nodeAddress(value.provider, `${label}.provider`),
-			message,
-		})
-	}
-	if (kind === 'provider_unavailable' || kind === 'provider_incompatible') {
-		shape(value, ['kind', 'binding', 'requirement', 'provider', 'message'], ['consumer'], label)
-		return Object.freeze({
-			kind,
-			binding: literal(
-				value.binding,
-				['provider-default', 'dependency-override'],
-				`${label}.binding`,
-			),
-			...(value.consumer === undefined
-				? {}
-				: { consumer: nodeAddress(value.consumer, `${label}.consumer`) }),
-			requirement: definitionAddress(value.requirement, `${label}.requirement`),
-			provider: nodeAddress(value.provider, `${label}.provider`),
-			message,
-		})
-	}
-	if (kind === 'fork_not_allowed') {
-		shape(value, ['kind', 'node', 'message'], [], label)
-		return Object.freeze({
-			kind,
-			node: nodeAddress(value.node, `${label}.node`),
-			message,
-		})
-	}
-	if (kind === 'fork_default_forbidden' || kind === 'provider_default_requires_abstract') {
-		shape(value, ['kind', 'requirement', 'provider', 'message'], [], label)
-		return Object.freeze({
-			kind,
-			requirement: definitionAddress(value.requirement, `${label}.requirement`),
-			provider: nodeAddress(value.provider, `${label}.provider`),
-			message,
-		})
-	}
-	shape(value, ['kind', 'binding', 'requirement', 'provider', 'message'], ['consumer'], label)
-	return Object.freeze({
-		kind: 'explicit_binding_invalid',
-		binding: literal(
-			value.binding,
-			['provider-default', 'dependency-override'],
-			`${label}.binding`,
-		),
-		...(value.consumer === undefined
-			? {}
-			: { consumer: nodeAddress(value.consumer, `${label}.consumer`) }),
-		requirement: definitionAddress(value.requirement, `${label}.requirement`),
-		provider: nodeAddress(value.provider, `${label}.provider`),
-		message,
-	})
-}
-
-function pluginApplyCommitSummary(input: unknown, label: string): PluginApplyCommitSummary {
-	const value = object(input, label)
-	shape(value, ['pluginChanges', 'runtimeUpdate', 'lifecycleReport'], [], label)
-	const changes = object(value.pluginChanges, `${label}.pluginChanges`)
-	shape(
-		changes,
-		['added', 'replaced', 'removed', 'restarted', 'availabilityChanged'],
-		[],
-		`${label}.pluginChanges`,
-	)
-	const runtimeUpdate = object(value.runtimeUpdate, `${label}.runtimeUpdate`)
-	shape(runtimeUpdate, [], ['reason'], `${label}.runtimeUpdate`)
-	const lifecycleReport = object(value.lifecycleReport, `${label}.lifecycleReport`)
-	shape(lifecycleReport, ['ok', 'issues'], [], `${label}.lifecycleReport`)
-	const issues = array(lifecycleReport.issues, `${label}.lifecycleReport.issues`).map(
-		(item, index) => lifecycleIssue(item, `${label}.lifecycleReport.issues[${index}]`),
-	)
-	const ok = boolean(lifecycleReport.ok, `${label}.lifecycleReport.ok`)
-	if (ok !== (issues.length === 0)) {
-		fail(`${label}.lifecycleReport.ok is inconsistent with issues`)
-	}
-	const parsedRuntimeUpdate =
-		runtimeUpdate.reason === undefined
-			? Object.freeze({})
-			: Object.freeze({ reason: text(runtimeUpdate.reason, `${label}.runtimeUpdate.reason`) })
-	return Object.freeze({
-		pluginChanges: Object.freeze({
-			added: addressArray(changes.added, `${label}.pluginChanges.added`),
-			replaced: Object.freeze(
-				array(changes.replaced, `${label}.pluginChanges.replaced`).map((item, index) => {
-					const replacementLabel = `${label}.pluginChanges.replaced[${index}]`
-					const replacement = object(item, replacementLabel)
-					shape(replacement, ['from', 'to'], [], replacementLabel)
-					return Object.freeze({
-						from: nodeAddress(replacement.from, `${replacementLabel}.from`),
-						to: nodeAddress(replacement.to, `${replacementLabel}.to`),
-					})
-				}),
-			),
-			removed: addressArray(changes.removed, `${label}.pluginChanges.removed`),
-			restarted: addressArray(changes.restarted, `${label}.pluginChanges.restarted`),
-			availabilityChanged: addressArray(
-				changes.availabilityChanged,
-				`${label}.pluginChanges.availabilityChanged`,
-			),
-		}),
-		runtimeUpdate: parsedRuntimeUpdate,
-		lifecycleReport: Object.freeze({ ok, issues: Object.freeze(issues) }),
-	})
-}
-
-function lifecycleIssue(input: unknown, label: string): PluginApplyLifecycleIssue {
-	const value = object(input, label)
-	shape(value, ['plugin', 'phase', 'kind', 'message'], ['error', 'blockedBy'], label)
-	return Object.freeze({
-		plugin: nodeAddress(value.plugin, `${label}.plugin`),
-		phase: literal(value.phase, LIFECYCLE_PHASES, `${label}.phase`),
-		kind: literal(value.kind, LIFECYCLE_KINDS, `${label}.kind`),
-		message: text(value.message, `${label}.message`),
-		...(value.error === undefined ? {} : { error: lifecycleError(value.error, `${label}.error`) }),
-		...(value.blockedBy === undefined
-			? {}
-			: { blockedBy: nodeAddress(value.blockedBy, `${label}.blockedBy`) }),
-	})
-}
-
-function lifecycleError(input: unknown, label: string): PluginApplyLifecycleErrorInfo {
-	const value = object(input, label)
-	shape(value, ['name', 'message'], ['stack', 'cause', 'partPath'], label)
-	return Object.freeze({
-		name: text(value.name, `${label}.name`),
-		message: text(value.message, `${label}.message`),
-		...(value.stack === undefined ? {} : { stack: text(value.stack, `${label}.stack`) }),
-		...(value.cause === undefined ? {} : { cause: text(value.cause, `${label}.cause`) }),
-		...(value.partPath === undefined
-			? {}
-			: {
-					partPath: Object.freeze(
-						array(value.partPath, `${label}.partPath`).map((item, index) =>
-							text(item, `${label}.partPath[${index}]`),
-						),
-					),
-				}),
-	})
 }
 
 function forkNodeAddress(input: unknown, label: string) {
@@ -1835,11 +1596,14 @@ function controlMutationSuccess(input: unknown, label: string): PluginControlMut
 		[],
 		`${label}.control`,
 	)
+	const report = pluginApplyReport(value.report, `${label}.report`)
+	if (pluginApplyReportOutcome(report).status !== 'applied')
+		fail(`${label}.ok is inconsistent with the Host application report`)
 	return Object.freeze({
 		address: nodeAddress(value.address, `${label}.address`),
 		ok: true,
 		status: 'applied',
-		report: pluginApplyReport(value.report, `${label}.report`),
+		report,
 		control: pluginControlSnapshot(controlValue, `${label}.control`),
 	})
 }
@@ -1847,7 +1611,29 @@ function controlMutationSuccess(input: unknown, label: string): PluginControlMut
 function controlMutationFailure(input: unknown, label: string): PluginControlMutationFailure {
 	const value = object(input, label)
 	if (value.ok !== false) fail(`${label}.ok must be false`)
-	shape(value, ['address', 'ok', 'code', 'state', 'error'], [], label)
+	if (value.code === 'lifecycle_failed') {
+		shape(value, ['address', 'ok', 'code', 'status', 'error', 'report', 'control'], [], label)
+		literal(value.status, ['applied-with-issues'], `${label}.status`)
+		const report = pluginApplyReport(value.report, `${label}.report`)
+		if (pluginApplyReportOutcome(report).status !== 'lifecycle_failed')
+			fail(`${label}.code is inconsistent with the Host application report`)
+		return Object.freeze({
+			address: nodeAddress(value.address, `${label}.address`),
+			ok: false,
+			code: 'lifecycle_failed',
+			status: 'applied-with-issues',
+			error: text(value.error, `${label}.error`),
+			report,
+			control: pluginControlSnapshot(object(value.control, `${label}.control`), `${label}.control`),
+		})
+	}
+	const hasReport = Object.hasOwn(value, 'report') || Object.hasOwn(value, 'control')
+	shape(
+		value,
+		['address', 'ok', 'code', 'state', 'error', ...(hasReport ? ['report', 'control'] : [])],
+		[],
+		label,
+	)
 	const code = literal(
 		value.code,
 		[
@@ -1868,6 +1654,22 @@ function controlMutationFailure(input: unknown, label: string): PluginControlMut
 		code === 'persistence_failed' ? ['unknown'] : ['unchanged'],
 		`${label}.state`,
 	)
+	if (hasReport) {
+		if (code !== 'persistence_failed')
+			fail(`${label}.report is only valid for application uncertainty`)
+		const report = pluginApplyReport(value.report, `${label}.report`)
+		if (pluginApplyReportOutcome(report).status !== 'persistence_failed')
+			fail(`${label}.code is inconsistent with the Host application report`)
+		return Object.freeze({
+			address: nodeAddress(value.address, `${label}.address`),
+			ok: false,
+			code: 'persistence_failed',
+			state: 'unknown',
+			error: text(value.error, `${label}.error`),
+			report,
+			control: pluginControlSnapshot(object(value.control, `${label}.control`), `${label}.control`),
+		})
+	}
 	return Object.freeze({
 		address: nodeAddress(value.address, `${label}.address`),
 		ok: false,
@@ -2374,12 +2176,6 @@ function definitionAddress(input: unknown, label: string): PluginDefinitionAddre
 	} catch (error) {
 		fail(`${label} is invalid: ${errorMessage(error)}`)
 	}
-}
-
-function addressArray(input: unknown, label: string): readonly PluginNodeAddress[] {
-	return Object.freeze(
-		array(input, label).map((item, index) => nodeAddress(item, `${label}[${index}]`)),
-	)
 }
 
 function runtimeLogLevel(input: unknown, label: string): RuntimePluginLogLevel {

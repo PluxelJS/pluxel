@@ -25,7 +25,7 @@ import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 					name: 'watch-fixture',
 					plugins,
 					envBindings: [
-						envBinding(DemoPlugin, { config: { schema: DemoConfig, mapping: { endpoint: 'APP_ENDPOINT' } } }),
+						envBinding(DemoPlugin.nodeAddress(), { config: { schema: DemoConfig, mapping: { endpoint: 'APP_ENDPOINT' } } }),
 					],
 				}))
 			`,

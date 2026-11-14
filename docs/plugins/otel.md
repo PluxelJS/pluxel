@@ -15,7 +15,7 @@ description: 为每个 Plugin 提供原生 Meter、Tracer 与 Logger，由宿主
 import { envBinding } from '@pluxel/host'
 import { OtelPlugin, OtelConfig } from '@pluxel/plugin-otel'
 
-envBinding(OtelPlugin, {
+envBinding(OtelPlugin.nodeAddress(), {
 	config: {
 		schema: OtelConfig,
 		mapping: {

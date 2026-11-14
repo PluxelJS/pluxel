@@ -48,6 +48,7 @@
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -56,7 +57,13 @@
 		"vitest": "catalog:test"
 	},
 	"peerDependencies": {
-		"@pluxel/core": "workspace:^"
+		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		}
 	},
 	"pluxel": {
 		"artifactRoot": "dist",

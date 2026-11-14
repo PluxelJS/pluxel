@@ -3,12 +3,13 @@ import { readWorkspacePackageJson, writeWorkspacePackageJson } from '../package-
 import type { RuleContext, RuleMessages } from './types'
 import { pluginDependencyRule } from './plugin-deps'
 import { workbenchCapnwebRule } from './workbench-capnweb'
-import { addControlExport, controlEntry } from '../control-exports'
+import { addControlExport, assertControlHostPeer, controlEntry } from '../control-exports'
 
 const RULES = [pluginDependencyRule, workbenchCapnwebRule] as const
 
 export async function runRules(context: RuleContext): Promise<RuleMessages> {
 	const pkg = (await readWorkspacePackageJson(context.packageJsonPath)) as WorkspacePackageJson
+	if (context.control) assertControlHostPeer(pkg, context.packageJsonPath)
 	const messages: string[] = []
 	if (context.artifactRoot !== undefined) {
 		const pluxel =

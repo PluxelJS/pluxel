@@ -107,7 +107,7 @@ import {
 	type PluginControlMaterialReader,
 	type PluginControlManifestIndex,
 	type PluginControlFileChunk,
-} from '@pluxel/host/agent'
+} from '@pluxel/host/agent/runtime'
 import type { ScriptControlResponse } from '@pluxel/host/agent/transport'
 
 /** Assert the producer's existing snapshot without rebuilding its value tree. */

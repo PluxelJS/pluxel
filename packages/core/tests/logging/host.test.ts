@@ -2,7 +2,7 @@ import { requireHostDocuments, requireFs } from '@pluxel/core/internal'
 import * as nativeFs from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { getContextLoggerRootId } from '@pluxel/core/host'
 import { createHost } from '@pluxel/host'
 import { Passthrough } from '@pluxel/core/fs'
@@ -164,7 +164,7 @@ it('restores TinyBase policy documents, flushes before FS final closure and keep
 				return createPluginLogPolicyStore(requireHostDocuments(root, 'logging'))
 			},
 		})
-	const owner = LoggedOwner.nodeAddress()
+	const owner = parsePluginNodeAddress(LoggedOwner.nodeAddress())
 	const config = {
 		zenfs: zenfs({
 			mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix: directory } },

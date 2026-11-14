@@ -283,7 +283,7 @@ export function fetch(request: Request): Promise<Response> {
 }
 export const endpointName = 'echo';
 export default defineHostApplication(() => ({
- plugins:[Echo], services:[elysia()], policy:{autoStart:[Echo]},
+ plugins:[Echo], services:[elysia()], policy:{autoStart:[Echo.nodeAddress()]},
  launch({host}) { handler=createElysiaHandler(host); }
 }));`,
 		)

@@ -12,7 +12,7 @@ import {
 } from '@pluxel/services/management/client'
 import type { RpcStub } from 'capnweb'
 import type { ScriptControlTarget } from '@pluxel/host/agent/transport'
-import { ScriptExecutionError } from '@pluxel/host/agent'
+import { ScriptExecutionError } from '@pluxel/host/agent/runtime'
 
 export type Credentials = Readonly<{ password?: string; code?: string; cookie?: string }>
 const HeaderWebSocket = NodeWebSocket as typeof NodeWebSocket & {

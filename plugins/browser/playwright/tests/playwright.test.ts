@@ -379,7 +379,7 @@ it.each(['cdp', 'playwright'] as const)(
 			plugins: [PlaywrightPlugin],
 			services: [vault({ backend: 'bindings' })],
 			envBindings: [
-				envBinding(PlaywrightPlugin, {
+				envBinding(PlaywrightPlugin.nodeAddress(), {
 					vault: {
 						schema: PlaywrightVaultSchema,
 						mapping: { primary: { endpoint: 'BROWSER_ENDPOINT', headers: 'BROWSER_HEADERS' } },
@@ -518,7 +518,7 @@ it('validates a Vault endpoint against the selected native protocol before conne
 		plugins: [PlaywrightPlugin],
 		services: [vault({ backend: 'bindings' })],
 		envBindings: [
-			envBinding(PlaywrightPlugin, {
+			envBinding(PlaywrightPlugin.nodeAddress(), {
 				vault: {
 					schema: PlaywrightVaultSchema,
 					mapping: { primary: { endpoint: 'BROWSER_ENDPOINT' } },

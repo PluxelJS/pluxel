@@ -20,7 +20,7 @@ export type {
 } from '@pluxel/host/internal/protocol'
 export type { VaultKeyPair } from '../../vault'
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 10 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 11 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',
@@ -416,6 +416,7 @@ export type PluginControlMutationErrorCode =
 	| 'node_unavailable'
 	| 'graph_rejected'
 	| 'persistence_failed'
+	| 'lifecycle_failed'
 export type PluginControlMutationSuccess = Readonly<{
 	address: PluginNodeAddress
 	ok: true
@@ -439,12 +440,25 @@ export type PluginControlMutationFailure =
 			state: 'unchanged'
 			error: string
 	  }>
-	| Readonly<{
+	| (Readonly<{
 			address: PluginNodeAddress
 			ok: false
 			code: 'persistence_failed'
 			state: 'unknown'
 			error: string
+	  }> &
+			(
+				| Readonly<{ report: PluginApplyReport; control: PluginControlSnapshot }>
+				| Readonly<{ report?: never; control?: never }>
+			))
+	| Readonly<{
+			address: PluginNodeAddress
+			ok: false
+			code: 'lifecycle_failed'
+			status: 'applied-with-issues'
+			error: string
+			report: PluginApplyReport
+			control: PluginControlSnapshot
 	  }>
 export type PluginControlMutationResult =
 	| PluginControlMutationSuccess
@@ -454,7 +468,7 @@ export type PluginControlBatchResult =
 	| Readonly<{ ok: true; status: 'applied'; results: readonly PluginControlMutationSuccess[] }>
 	| Readonly<{
 			ok: false
-			status: 'partially-applied' | 'rejected'
+			status: 'applied-with-issues' | 'partially-applied' | 'rejected'
 			results: readonly PluginControlMutationResult[]
 	  }>
 	| Readonly<{

@@ -45,14 +45,14 @@ export default (async(sdk,run) => {
   const plugins = (await sdk.plugins.list()).unwrap()
   const values = []
   for (const value of [1,2,3]) if (value > 1) values.push(twice(value))
-  return {executions:++executions, values, plugins:plugins.length, input:run.input}
+  return {executions:++executions, values, plugins:plugins.nodes.length, input:run.input}
 }) satisfies Script
 `,
 	})
 	const artifact = await compileScript({ file: resolve(files.directory, 'script.ts') })
 	expect(artifact).toMatchObject({
 		kind: 'artifact',
-		format: 'pluxel-js-factory/2',
+		format: 'pluxel-js-factory/3',
 		exportName: 'default',
 		sourceHash: expect.stringMatching(/^[a-f0-9]{64}$/),
 		sourceMap: expect.any(String),
@@ -76,7 +76,7 @@ export default (async(sdk,run) => {
 
 it('binds ordinary canonical imports to the receiver shared Result without bundling a library copy', async () => {
 	await using files = await fixture({
-		'script.ts': `import type {Script} from '@pluxel/host/agent'
+		'script.ts': `import type { Script } from '@pluxel/host/agent'
 import {Result,Ok} from '@pluxel/core/better-result'
 import * as shared from '@pluxel/core/better-result'
 import * as reexported from './shared'
@@ -89,11 +89,11 @@ export default (async(sdk,run) => {
   const plugins = await sdk.plugins.list()
   if (plugins.isErr()) return plugins
   if (run.input === 'reject') return Result.err({code:'expected_rejection',message:'Domain result'})
-  return Result.ok({count:plugins.value.length,sharedIdentity:plugins instanceof Ok,canonicalReexport:reexported.Result===Result,authorLocal:__pluxel_script_better_result})
+  return Result.ok({count:plugins.value.nodes.length,sharedIdentity:plugins instanceof Ok,canonicalReexport:reexported.Result===Result,authorLocal:__pluxel_script_better_result})
 }) satisfies Script
 export const composed = ((sdk) => Result.gen(async function* () {
   const plugins = yield* Result.await(sdk.plugins.list())
-  return Result.ok(plugins.length)
+  return Result.ok(plugins.nodes.length)
 })) satisfies Script
 `,
 		'shared.ts': "export {Result} from '@pluxel/core/better-result'",
@@ -239,9 +239,10 @@ it('rejects field mistakes before delivery, unsupported imports and top-level aw
 		resolve(import.meta.dirname, '../node_modules/@pluxel/core/package.json'),
 	)
 	await using files = await fixture({
-		'wrong.ts': `import type {Script} from '@pluxel/host/agent'; export default (async(sdk)=>sdk.plguins.list()) satisfies Script`,
+		'wrong.ts': `import type { Script } from '@pluxel/host/agent'; export default (async(sdk)=>sdk.plguins.list()) satisfies Script`,
 		'builtin.ts': `import {readFile} from 'node:fs/promises'; export default () => readFile('x')`,
 		'framework.ts': `import {BasePlugin} from '@pluxel/core'; export default () => BasePlugin`,
+		'control-helper.ts': `import {createPluginControlReference} from '@pluxel/host/internal/control-reference'; export default () => createPluginControlReference({})`,
 		'source.ts': `import {BasePlugin} from ${JSON.stringify(resolve(import.meta.dirname, '../../core/src/index.ts'))}; export default () => BasePlugin`,
 		'result.ts': `import {Result} from 'better-result'; export default () => Result.ok(1)`,
 		'result-subpath.ts': `import {Result} from '@pluxel/core/better-result/private'; export default () => Result.ok(1)`,
@@ -259,6 +260,7 @@ it('rejects field mistakes before delivery, unsupported imports and top-level aw
 	for (const name of [
 		'builtin.ts',
 		'framework.ts',
+		'control-helper.ts',
 		'source.ts',
 		'result.ts',
 		'result-subpath.ts',

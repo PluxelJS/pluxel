@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { parsePluginNodeAddress } from '@pluxel/core'
 import {
 	defineHostApplication,
 	envBinding,
@@ -46,10 +47,12 @@ describe('Fonts deployment without Workbench', () => {
 				const application = defineHostApplication(() => ({
 					plugins: [FontsPlugin],
 					fileBindings: [
-						fileBinding(FontsPlugin, { config: { schema: FontsConfig, path: 'fonts.json' } }),
+						fileBinding(FontsPlugin.nodeAddress(), {
+							config: { schema: FontsConfig, path: 'fonts.json' },
+						}),
 					],
 					envBindings: [
-						envBinding(FontsPlugin, {
+						envBinding(FontsPlugin.nodeAddress(), {
 							config: {
 								schema: FontsConfig,
 								mapping: { files: 'FONT_FILES', defaultFamily: 'FONT_FAMILY' },
@@ -101,7 +104,7 @@ describe('Fonts deployment without Workbench', () => {
 			})
 			expect(failure.lifecycleReport.issues).toContainEqual(
 				expect.objectContaining({
-					plugin: FontsPlugin.nodeAddress(),
+					plugin: parsePluginNodeAddress(FontsPlugin.nodeAddress()),
 					kind: 'start-failed',
 					message: expect.stringContaining('Cannot read configured font file'),
 				}),

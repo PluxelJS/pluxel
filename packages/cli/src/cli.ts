@@ -8,6 +8,7 @@ import {
 	devCommandDefinition,
 	distributionCommandDefinition,
 	docsCommandDefinition,
+	isControlCommandPath,
 	newCommandDefinition,
 	normalizeDevArgs,
 	publishCommandDefinition,
@@ -15,6 +16,7 @@ import {
 	scriptCommandDefinition,
 	workspaceCommandDefinition,
 } from './command-manifest'
+import { printFailure } from './script/output'
 
 const commands = new Map<string, SubCommandable>([
 	[
@@ -97,6 +99,7 @@ const rootCommand = define({
 })
 
 async function main() {
+	let failureReported = false
 	try {
 		const argv = process.argv.slice(2)
 		if (argv[0] === 'pncat') {
@@ -110,8 +113,28 @@ async function main() {
 			version: pkg.version,
 			renderHeader: renderCliHeader,
 			subCommands: commands,
+			onBeforeCommand(ctx) {
+				// Run before Gunshi's global decorator renders validation errors on stdout.
+				if (
+					isControlCommandPath(ctx.commandPath) &&
+					!ctx.values.help &&
+					!ctx.values.version &&
+					ctx.validationError
+				)
+					throw ctx.validationError
+			},
+			async onErrorCommand(ctx, error) {
+				if (!isControlCommandPath(ctx.commandPath) || ctx.values.help || ctx.values.version) return
+				const { scriptFailure } = await import('@pluxel/host/agent/runtime')
+				printFailure(
+					ctx.log,
+					scriptFailure(error, error === ctx.validationError ? 'invalid_input' : 'command_failed'),
+				)
+				failureReported = true
+			},
 		})
 	} catch (error) {
+		if (failureReported) return
 		const msg = error instanceof Error ? error.message : String(error)
 		process.stderr.write(`${msg}\n`)
 		process.exitCode = 1

@@ -33,7 +33,7 @@ it('signs an S3 write without Workbench using env-backed configuration and Vault
 			plugins: [S3Plugin, DeploymentWriter],
 			services: [vault({ backend: 'bindings' })],
 			envBindings: [
-				envBinding(S3Plugin, {
+				envBinding(S3Plugin.nodeAddress(), {
 					config: { schema: S3Config, mapping: { buckets: 'S3_BUCKETS' } },
 					vault: {
 						schema: S3VaultSchema,

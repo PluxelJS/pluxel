@@ -46,7 +46,7 @@ it('runs native HTTP, env policy and managed settings with services: []', async 
 			plugins: [WretchPlugin, StatelessHttpConsumer],
 			services: [],
 			envBindings: [
-				envBinding(WretchPlugin, {
+				envBinding(WretchPlugin.nodeAddress(), {
 					config: { schema: WretchConfig, mapping: { allowedOrigins: 'HTTP_ORIGINS' } },
 				}),
 			],
@@ -147,7 +147,7 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 			plugins: [WretchPlugin, HeadlessHttpConsumer, SecondManagedConsumer],
 			services: [],
 			envBindings: [
-				envBinding(WretchPlugin, {
+				envBinding(WretchPlugin.nodeAddress(), {
 					config: {
 						schema: WretchConfig,
 						mapping: { timeoutMs: 'HTTP_TIMEOUT', allowedOrigins: 'HTTP_ORIGINS' },

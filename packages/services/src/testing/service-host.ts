@@ -1048,8 +1048,7 @@ function statePatchOperations(plan: ServiceDraftPlan): HostStatePatchOperation[]
 		if (command.address.variant !== 'fork') continue
 		operations.push({
 			type: 'ensure-fork',
-			definition: command.address.definition,
-			forkId: command.address.forkId,
+			node: command.address,
 		})
 	}
 	for (const command of plan.defaults.values()) {

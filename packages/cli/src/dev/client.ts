@@ -1,3 +1,4 @@
+import { verifyScriptReceipt } from '../script/receipt'
 import { createHash, randomUUID } from 'node:crypto'
 import { lstat, open, readdir, realpath } from 'node:fs/promises'
 import type { Stats } from 'node:fs'
@@ -11,7 +12,7 @@ import {
 	type ScriptControlSubmission,
 	type PluginControlManifestRequest,
 	type PluginControlFileRequest,
-} from '@pluxel/host/agent'
+} from '@pluxel/host/agent/runtime'
 import {
 	connectScriptControl,
 	type ScriptControlClient,
@@ -83,7 +84,7 @@ export class DevClientError extends Error {
 
 function diagnosticHint(code: string, runId?: string): string | undefined {
 	if (code === 'outcome_unknown' || (code === 'dev_unavailable' && runId)) {
-		return 'Read the retained result with dev result using the receipt before submitting again.'
+		return 'Read the retained result with script result using the receipt before submitting again.'
 	}
 	if (code === 'ambiguous_instance')
 		return 'Choose one candidate instanceId and pass --instance with the same --root.'
@@ -582,12 +583,14 @@ async function submitDevOperation(
 			instance,
 			runId,
 		)
+		verifyScriptReceipt(snapshot, { instanceId: instance.instanceId, runId, requestHash })
 		options.onAccepted?.(snapshot)
 		if (options.detach) return snapshot
 		const waitUntil = Date.now() + options.timeoutMs + 5000
 		while (!terminalStates.has(snapshot.state) && Date.now() < waitUntil) {
 			await delay(100)
 			snapshot = parseRunSnapshot(await control.result(runId), instance, runId)
+			verifyScriptReceipt(snapshot, { instanceId: instance.instanceId, runId, requestHash })
 		}
 		return snapshot
 	} catch (error) {

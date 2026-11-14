@@ -10,7 +10,7 @@ import {
 	type ScriptSubmission,
 	type RunExecution,
 	type PluginControlMaterialsSnapshot,
-} from '@pluxel/host/agent'
+} from '@pluxel/host/agent/runtime'
 import {
 	createScriptControlTarget,
 	type ScriptControlTarget,

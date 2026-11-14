@@ -44,9 +44,15 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 			)
 			if (result.ok === false) {
 				notifyAndRecord({
-					title: '自动启动策略更新失败',
+					title:
+						result.code === 'persistence_failed'
+							? '自动启动策略结果待核对'
+							: result.code === 'lifecycle_failed'
+								? '自动启动策略已应用，运行协调存在问题'
+								: '自动启动策略更新失败',
 					message: result.error || '操作失败，请稍后重试',
-					color: 'red',
+					color: result.code === 'persistence_failed' ? 'yellow' : 'red',
+					diagnosticText: JSON.stringify(result, null, 2),
 				})
 				return
 			}
@@ -76,11 +82,15 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 		setLifecyclePending(command)
 		try {
 			const result = await applyPluginLifecycleCommand(management, queryClient, owner, command)
-			if (result.ok === false) {
+			if (result.ok === false && result.code !== 'lifecycle_failed') {
 				notifyAndRecord({
-					title: '生命周期命令执行失败',
+					title:
+						result.code === 'persistence_failed'
+							? '生命周期命令结果待核对'
+							: '生命周期命令执行失败',
 					message: result.error || '操作失败，请稍后重试',
-					color: 'red',
+					color: result.code === 'persistence_failed' ? 'yellow' : 'red',
+					diagnosticText: JSON.stringify(result, null, 2),
 				})
 				return
 			}

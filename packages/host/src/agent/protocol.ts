@@ -1,6 +1,12 @@
+import { parsePluginNodeAddress, type PluginNodeAddress } from '@pluxel/core'
+import {
+	DetachedPluginNodeAddressError,
+	readPluginNodeAddressEvidence,
+} from '@pluxel/core/internal/plugin-address-evidence'
+
 /** Script control and artifact versions are independent from application/Plugin ABI. */
 export const SCRIPT_PROTOCOL = 2 as const
-export const SCRIPT_ARTIFACT_FORMAT = 'pluxel-js-factory/2' as const
+export const SCRIPT_ARTIFACT_FORMAT = 'pluxel-js-factory/3' as const
 export const SCRIPT_VALUE_BYTES = 1024 * 1024
 export const SCRIPT_DEFAULT_TIMEOUT = 30_000
 export const SCRIPT_MAX_TIMEOUT = 300_000
@@ -19,9 +25,10 @@ export type ScriptProjectCode = Readonly<{
 	exportName: string
 }>
 /**
- * Function body returning module exports. Format 2 receives exactly one parameter,
- * named `__pluxel_script_better_result`, bound to the receiver's native shared
- * `@pluxel/core/better-result` namespace. Ordinary computation dependencies are
+ * Function body returning module exports. Format 3 receives two parameters:
+ * `__pluxel_script_better_result` and `__pluxel_script_control`, bound to the
+ * receiver's shared Better Result and verified control-reference namespaces.
+ * Ordinary computation dependencies are
  * bundled into the body; the source map describes this body without a wrapper prefix.
  */
 export type ScriptArtifact = Readonly<{
@@ -48,7 +55,13 @@ export type ScriptControlSubmission = Readonly<{
 	timeoutMs?: number
 }>
 export type ScriptPhase = 'admission' | 'load' | 'execute' | 'encode' | 'cleanup'
-export type ScriptFailure = Readonly<{ code: string; message: string; stack?: string }>
+export type ScriptFailure = Readonly<{
+	code: string
+	message: string
+	stack?: string
+	hint?: string
+	context?: JsonValue
+}>
 type ScriptMetadata = Readonly<{
 	runId: string
 	instanceId: string
@@ -93,17 +106,27 @@ export class ScriptExecutionError extends Error {
 	}
 }
 
-export function scriptFailure(error: unknown, fallback = 'execution_failed'): ScriptFailure {
+export function scriptFailure(
+	error: unknown,
+	fallback = 'execution_failed',
+	diagnostics?: Pick<ScriptFailure, 'hint' | 'context'>,
+): ScriptFailure {
+	const details = {
+		...(diagnostics?.hint === undefined ? {} : { hint: diagnostics.hint.slice(0, 4096) }),
+		...(diagnostics?.context === undefined ? {} : { context: snapshotJson(diagnostics.context) }),
+	}
 	if (error instanceof Error) {
 		return {
 			code: 'code' in error && typeof error.code === 'string' ? error.code : fallback,
 			message: failureMessage(error),
 			...(error.stack ? { stack: error.stack.slice(0, 16_384) } : {}),
+			...details,
 		}
 	}
 	return {
 		code: fallback,
 		message: typeof error === 'string' ? error.slice(0, 4096) : 'Script threw a non-Error value',
+		...details,
 	}
 }
 
@@ -151,7 +174,7 @@ export function scriptByteLength(value: string): number {
 	return encoder.encode(value).byteLength
 }
 
-/** Native JSON undefined conventions; values with behavior are rejected, never evaluated. */
+/** Native JSON conventions plus registered Plugin address identities; never evaluates behavior. */
 export function snapshotJson(
 	value: unknown,
 	limits: Readonly<{ bytes?: number; depth?: number; nodes?: number }> = {},
@@ -197,8 +220,6 @@ export function snapshotJson(
 				'result_not_serializable',
 				'Return JSON data; functions, symbols, BigInt and non-finite numbers are unsupported',
 			)
-		if (active.has(input))
-			throw new ScriptExecutionError('result_not_serializable', 'Circular JSON result')
 		const array = Array.isArray(input)
 		if (
 			!array &&
@@ -209,15 +230,28 @@ export function snapshotJson(
 				'result_not_serializable',
 				'Return a plain JSON projection, not a class instance or capability',
 			)
-		active.add(input)
+		// Only the original frozen value can shed execution evidence at this DTO
+		// boundary. Continue through this visit so identity fields use the same budget.
+		let identity: PluginNodeAddress | undefined
+		try {
+			if (readPluginNodeAddressEvidence(input as PluginNodeAddress) !== undefined)
+				identity = parsePluginNodeAddress(input)
+		} catch (error) {
+			if (!(error instanceof DetachedPluginNodeAddressError)) throw error
+			throw new ScriptExecutionError('result_not_serializable', error.message)
+		}
+		const data = identity ?? input
+		if (active.has(data))
+			throw new ScriptExecutionError('result_not_serializable', 'Circular JSON result')
+		active.add(data)
 		charge(2)
 		try {
-			if (array) {
-				if (input.length > maxNodes)
+			if (Array.isArray(data)) {
+				if (data.length > maxNodes)
 					throw new ScriptExecutionError('result_too_large', 'JSON array exceeds the node limit')
 				const result: JsonValue[] = []
-				for (let index = 0; index < input.length; index++) {
-					const descriptor = Object.getOwnPropertyDescriptor(input, String(index))
+				for (let index = 0; index < data.length; index++) {
+					const descriptor = Object.getOwnPropertyDescriptor(data, String(index))
 					if (descriptor && !('value' in descriptor))
 						throw new ScriptExecutionError(
 							'result_not_serializable',
@@ -229,8 +263,8 @@ export function snapshotJson(
 				return result
 			}
 			const result: Record<string, JsonValue> = {}
-			for (const key of Reflect.ownKeys(input)) {
-				const descriptor = Object.getOwnPropertyDescriptor(input, key)!
+			for (const key of Reflect.ownKeys(data)) {
+				const descriptor = Object.getOwnPropertyDescriptor(data, key)!
 				if (!descriptor.enumerable) continue
 				if (typeof key !== 'string' || !('value' in descriptor))
 					throw new ScriptExecutionError(
@@ -248,7 +282,7 @@ export function snapshotJson(
 			}
 			return result
 		} finally {
-			active.delete(input)
+			active.delete(data)
 		}
 	}
 	return visit(value, 0)

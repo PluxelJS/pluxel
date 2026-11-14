@@ -53,7 +53,7 @@ void invalidOutput
 export default defineHostApplication(async () => ({
 	plugins: [ExamplePlugin],
 	envBindings: [
-		envBinding(ExamplePlugin, {
+		envBinding(ExamplePlugin.nodeAddress(), {
 			config: {
 				schema: ExampleConfig,
 				mapping: {
@@ -64,41 +64,45 @@ export default defineHostApplication(async () => ({
 				},
 			},
 		}),
-		envBinding(ExamplePlugin, {
+		envBinding(ExamplePlugin.nodeAddress(), {
 			vault: { schema: ExampleCredentials, mapping: { credentials: { token: 'TOKEN' } } },
 		}),
 	],
 	fileBindings: [
-		fileBinding(ExamplePlugin, {
+		fileBinding(ExamplePlugin.nodeAddress(), {
 			config: { schema: ExampleConfig, path: './config.json' },
 			vault: { schema: ExampleCredentials, paths: { credentials: './credential.json' } },
 		}),
 	],
 }))
 
-// @ts-expect-error Unknown configuration property cannot widen the schema.
-envBinding(ExamplePlugin, { config: { schema: ExampleConfig, mapping: { missing: 'BAD' } } })
-envBinding(ExamplePlugin, {
+envBinding(ExamplePlugin.nodeAddress(), {
+	// @ts-expect-error Unknown configuration property cannot widen the schema.
+	config: { schema: ExampleConfig, mapping: { missing: 'BAD' } },
+})
+envBinding(ExamplePlugin.nodeAddress(), {
 	// @ts-expect-error Mapping follows input object rather than transformed number.
 	config: { schema: ExampleConfig, mapping: { payload: { length: 'BAD' } } },
 })
-envBinding(ExamplePlugin, {
+envBinding(ExamplePlugin.nodeAddress(), {
 	// @ts-expect-error Arrays are whole JSON inputs.
 	config: { schema: ExampleConfig, mapping: { labels: { zero: 'BAD' } } },
 })
-envBinding(ExamplePlugin, {
+envBinding(ExamplePlugin.nodeAddress(), {
 	// @ts-expect-error Dynamic records below the root are whole JSON inputs.
 	config: { schema: ExampleConfig, mapping: { options: { arbitrary: 'BAD' } } },
 })
-// @ts-expect-error Vault root keys are schema-checked.
-envBinding(ExamplePlugin, { vault: { schema: ExampleCredentials, mapping: { wrongKey: 'BAD' } } })
-envBinding(ExamplePlugin, {
+envBinding(ExamplePlugin.nodeAddress(), {
+	// @ts-expect-error Vault root keys are schema-checked.
+	vault: { schema: ExampleCredentials, mapping: { wrongKey: 'BAD' } },
+})
+envBinding(ExamplePlugin.nodeAddress(), {
 	// @ts-expect-error Vault record fields are schema-checked.
 	vault: { schema: ExampleCredentials, mapping: { credentials: { password: 'BAD' } } },
 })
 // @ts-expect-error Vault root cannot become one JSON binding.
-envBinding(ExamplePlugin, { vault: { schema: ExampleCredentials, mapping: 'BAD' } })
-fileBinding(ExamplePlugin, {
+envBinding(ExamplePlugin.nodeAddress(), { vault: { schema: ExampleCredentials, mapping: 'BAD' } })
+fileBinding(ExamplePlugin.nodeAddress(), {
 	// @ts-expect-error File paths must use declared Vault record keys.
 	vault: { schema: ExampleCredentials, paths: { wrongKey: './bad.json' } },
 })

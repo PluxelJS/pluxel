@@ -12,7 +12,7 @@ import { createPluginDependencyMetadataHook } from './plugin-metadata'
 import type { BuildLogger } from './types'
 import type { OutputChunk, Plugin } from 'rolldown'
 import { createPluginControlPlugin } from '../control/plugin'
-import { addControlExport, controlEntry } from './control-exports'
+import { addControlExport, assertControlHostPeer, controlEntry } from './control-exports'
 
 type TsdownInputOptions = Exclude<
 	NonNullable<InlineConfig['inputOptions']>,
@@ -166,6 +166,7 @@ function pluginControlExportsPlugin(options: PluginPackageOptions): TsdownPlugin
 			config.exports = {
 				...exportsOptions,
 				async customExports(exports, context) {
+					assertControlHostPeer(context.pkg, options.packageMetadata.packageJsonPath)
 					const field = context.isPublish ? 'publishConfig.exports' : 'exports'
 					const original = context.isPublish
 						? context.pkg.publishConfig?.exports

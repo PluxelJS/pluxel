@@ -1,5 +1,8 @@
-import { dirname, isAbsolute, resolve } from 'node:path'
-import { parsePluginControlManifest, verifyPluginControlMaterial } from '@pluxel/host/agent'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import {
+	parsePluginControlManifest,
+	verifyPluginControlMaterial,
+} from '@pluxel/host/internal/control-manifest'
 import type { ScriptInputs } from './script-inputs'
 
 /** Fix the entire declaration/descriptor pair before admitting the pure control module. */
@@ -7,25 +10,34 @@ export async function readScriptControlModule(
 	inputs: ScriptInputs,
 	id: string,
 ): Promise<string | undefined> {
-	if (!isAbsolute(id) || !id.endsWith('/index.mjs')) return undefined
-	const directory = dirname(id)
-	const raw = inputs.read(resolve(directory, 'manifest.json'))
-	if (raw === null) return undefined
-	let data: unknown
-	try {
-		data = JSON.parse(raw)
-	} catch {
-		return undefined
+	if (!isAbsolute(id) || !id.endsWith('.mjs')) return undefined
+	let directory = dirname(id)
+	while (true) {
+		const raw = inputs.read(resolve(directory, 'manifest.json'))
+		if (raw !== null) {
+			let data: unknown
+			try {
+				data = JSON.parse(raw)
+			} catch {
+				data = null
+			}
+			if (data && typeof data === 'object' && 'compiler' in data && 'definitions' in data) {
+				const manifest = parsePluginControlManifest(data)
+				const module = relative(directory, id).split(sep).join('/')
+				if (!manifest.definitions.some((definition) => definition.module === module))
+					return undefined
+				const files: Record<string, string> = { 'manifest.json': raw }
+				for (const file of manifest.files) {
+					const content = inputs.read(resolve(directory, file.path))
+					if (content === null) throw new Error(`Control material file is missing: ${file.path}`)
+					files[file.path] = content
+				}
+				await verifyPluginControlMaterial(manifest, files)
+				return files[module]
+			}
+		}
+		const parent = dirname(directory)
+		if (parent === directory) return undefined
+		directory = parent
 	}
-	if (!data || typeof data !== 'object' || !('compiler' in data) || !('definitions' in data))
-		return undefined
-	const manifest = parsePluginControlManifest(data)
-	const files: Record<string, string> = { 'manifest.json': raw }
-	for (const file of manifest.files) {
-		const content = inputs.read(resolve(directory, file.path))
-		if (content === null) throw new Error(`Control material file is missing: ${file.path}`)
-		files[file.path] = content
-	}
-	await verifyPluginControlMaterial(manifest, files)
-	return files['index.mjs']
 }

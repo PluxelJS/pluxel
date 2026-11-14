@@ -45,7 +45,7 @@ distribution 也不依赖相对生成 chunk 的同步 module lookup。resolve ho
 
 ### 环境绑定与无求值投影
 
-同一个 static entry validator 解析可选 `envBindings`。它是直接数组，每项调用从 `@pluxel/host` 导入的 `envBinding(Plugin, { config?, vault?, namespace? })`；
+同一个 static entry validator 解析可选 `envBindings`。它是直接数组，每项调用从 `@pluxel/host` 导入的 `envBinding(Plugin.nodeAddress(), { config?, vault?, namespace? })`；
 `Plugin` 是静态目录中的直接标识符，config/vault 各自声明 `schema` 与 `mapping`。工具链解析显式 schema 引用，
 不读取 Plugin 静态 schema 字段。mapping 是环境变量名字字符串或直接 object tree。Vault 顶层 key 对应完整凭据 record，可映射为一个 JSON
 变量或多个字段变量。生成 `.env.example` 只包含变量名、输入类型与 schema 描述，不包含环境值或凭据默认值。

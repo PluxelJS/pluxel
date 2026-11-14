@@ -254,12 +254,12 @@ export const metrics = (globalThis as unknown as Record<string, FixtureMetrics>)
 		await writeFile(artifactFile, 'initial')
 		await writeFile(
 			join(root, 'inspect.ts'),
-			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { Probe } from './entries/probe-0.entry.ts'; export default (async (sdk) => { const selected = await sdk.plugin(Probe).instance(); if (selected.isErr()) return selected; return selected.value.value }) satisfies ProjectScript",
+			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { Probe } from './entries/probe-0.entry.ts'; export default (async (sdk) => { const selected = await sdk.plugin(Probe.nodeAddress()).instance(); if (selected.isErr()) return selected; return selected.value.value }) satisfies ProjectScript",
 		)
 		await writeFile(join(root, 'fresh.ts'), await readFile(join(root, 'inspect.ts')))
 		await writeFile(
 			join(root, 'status.ts'),
-			"import type { ProjectScript } from '@pluxel/host-vite/project'; export default (async (sdk) => { const listed = await sdk.plugins.list(); if (listed.isErr()) return listed; return listed.value }) satisfies ProjectScript",
+			"import type { ProjectScript } from '@pluxel/host-vite/project'; export default (async (sdk) => { const listed = await sdk.plugins.list(); if (listed.isErr()) return listed; return listed.value.nodes }) satisfies ProjectScript",
 		)
 		await writeFile(
 			join(root, 'save.ts'),
@@ -267,7 +267,7 @@ export const metrics = (globalThis as unknown as Record<string, FixtureMetrics>)
 		)
 		await writeFile(
 			join(root, 'stale.ts'),
-			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { metrics } from './metrics.ts'; export default ((sdk) => { if (!metrics.savedConstructor) throw new Error('Missing saved constructor'); return sdk.plugin(metrics.savedConstructor).instance() }) satisfies ProjectScript",
+			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { metrics } from './metrics.ts'; export default ((sdk) => { if (!metrics.savedConstructor) throw new Error('Missing saved constructor'); return sdk.plugin(metrics.savedConstructor.nodeAddress()).instance() }) satisfies ProjectScript",
 		)
 		await Promise.all(
 			Array.from({ length: count }, (_, index) =>

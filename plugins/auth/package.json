@@ -77,6 +77,7 @@
 	"peerDependencies": {
 		"@mantine/core": "catalog:frontend",
 		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
 		"@pluxel/services": "workspace:^",
 		"@pluxel/workbench": "workspace:^",
 		"@tabler/icons-react": "catalog:icons",
@@ -86,6 +87,9 @@
 	},
 	"peerDependenciesMeta": {
 		"@mantine/core": {
+			"optional": true
+		},
+		"@pluxel/host": {
 			"optional": true
 		},
 		"@tabler/icons-react": {

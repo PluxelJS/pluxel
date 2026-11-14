@@ -211,8 +211,7 @@ export async function createServiceInternalTestHarness(
 					{ type: 'remove-node-policy', node: address },
 					{
 						type: 'remove-fork',
-						definition: address.definition,
-						forkId: address.forkId,
+						node: address,
 					},
 				)
 				continue
@@ -392,9 +391,9 @@ export async function createServiceInternalTestHarness(
 				definition: definitionAddress(plugin),
 				variant: 'fork' as const,
 				forkId,
-			}) as PluginNodeHandle<TPlugin>
-			stageState({ type: 'ensure-fork', definition: address.definition, forkId })
-			return address
+			})
+			stageState({ type: 'ensure-fork', node: address })
+			return address as PluginNodeHandle<TPlugin>
 		},
 		override: (
 			consumer: ServiceInternalTestTarget,

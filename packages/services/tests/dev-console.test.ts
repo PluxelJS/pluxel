@@ -1,6 +1,7 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
-import { createScriptScope, type Script } from '@pluxel/host/agent'
+import { type Script } from '@pluxel/host/agent'
+import { createScriptScope } from '@pluxel/host/agent/runtime'
 import { elysia, ElysiaApp } from '@pluxel/services/elysia'
 import { ElysiaRuntime } from '@pluxel/services/internal'
 import { Commands, commands } from '@pluxel/services/commands'

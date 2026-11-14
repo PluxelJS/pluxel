@@ -62,6 +62,7 @@ export default defineConfig({
 		'logging/pretty': 'src/logging/pretty.ts',
 		federation: 'src/federation.ts',
 		internal: 'src/internal.ts',
+		'internal/plugin-address-evidence': 'src/internal/plugin-address-evidence.ts',
 		'internal/test': 'src/internal-test.ts',
 		index: 'src/index.ts',
 		host: 'src/host.ts',

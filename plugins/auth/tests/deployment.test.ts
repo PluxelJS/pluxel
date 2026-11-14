@@ -14,7 +14,7 @@ describe('Auth headless deployment', () => {
 				plugins: [AuthPlugin],
 				services: [managementAccess(), vault({ backend: 'bindings' })],
 				envBindings: [
-					envBinding(AuthPlugin, {
+					envBinding(AuthPlugin.nodeAddress(), {
 						config: { schema: AuthConfig, mapping: { mode: 'AUTH_MODE' } },
 						vault: { schema: AuthVaultSchema, mapping: { [recordKey]: 'AUTH_CREDENTIAL' } },
 					}),

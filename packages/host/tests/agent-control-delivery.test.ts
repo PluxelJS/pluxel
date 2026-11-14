@@ -4,10 +4,11 @@ import { fileURLToPath } from 'node:url'
 import { generatePluginControl } from '@pluxel/rolldown/control'
 import { compileScript } from '@pluxel/rolldown/scripts'
 import { requirePluginService } from '@pluxel/core/internal'
+import { parsePluginNodeAddress } from '@pluxel/core'
 import { expect, it } from 'vitest'
 import { createHost } from '../src'
 import { setHostCatalogProvenance } from '../src/internal'
-import { SCRIPT_PROTOCOL, scriptRequestHash } from '../src/agent'
+import { SCRIPT_PROTOCOL, scriptRequestHash } from '../src/agent-runtime'
 import { createNodeScriptOwner } from '../src/agent/node'
 import { createScriptControlTarget } from '../src/agent/transport'
 import { DeliveryCounter } from './fixtures/control-delivery-plugin'
@@ -43,7 +44,7 @@ it('generates real Plugin declarations, compiles an author script and uploads it
 					{
 						control: {
 							state: 'available',
-							format: 1,
+							format: 2,
 							contracts: entry.contracts,
 							material: {
 								snapshot: generation.snapshot,
@@ -76,9 +77,9 @@ it('generates real Plugin declarations, compiles an author script and uploads it
 			source,
 			`
 import type { Script } from '@pluxel/host/agent'
-import { DeliveryCounter } from './control/index.mjs'
+import { DeliveryCounter } from './control/${entry.module}'
 export default (async (sdk, run) => {
-  const selected = sdk.plugin(DeliveryCounter)
+  const selected = sdk.plugin(DeliveryCounter.nodeAddress())
   const { get, patch } = selected.config
   const before = await get()
   if (before.isErr()) return before
@@ -89,14 +90,15 @@ export default (async (sdk, run) => {
   const added = await instance.value.addAsync(5, run.signal)
   return { changed: changed.value, added, observed: instance.value.count }
 }) satisfies Script
+export const selectedAddress = (() => DeliveryCounter.nodeAddress()) satisfies Script
 export const encodeFailure = (async (sdk) => {
-  const instance = await sdk.plugin(DeliveryCounter).instance()
+  const instance = await sdk.plugin(DeliveryCounter.nodeAddress()).instance()
   if (instance.isErr()) return instance
   instance.value.add(3)
   return instance.value
 }) satisfies Script
 export const shortCircuit = (async (sdk) => {
-  const selected = sdk.plugin(DeliveryCounter)
+  const selected = sdk.plugin(DeliveryCounter.nodeAddress())
   const changed = await selected.config.patch({ set: { count: 999 } }, { expectedManagedRevision: 'stale revision' })
   if (changed.isErr()) return changed
   const instance = await selected.instance()
@@ -159,6 +161,17 @@ export const shortCircuit = (async (sdk) => {
 			config: { count: 12 },
 			application: 'applied',
 		})
+		const addressArtifact = await compileScript({ file: source, exportName: 'selectedAddress' })
+		await target.submit({
+			protocol: receipt.protocol,
+			instanceId: receipt.instanceId,
+			runId: 'generated-node-address',
+			code: addressArtifact,
+		})
+		const addressRun = await owner.executor.settled('generated-node-address', 'control-delivery')
+		expect(addressRun).toMatchObject({ state: 'succeeded' })
+		if (addressRun.state !== 'succeeded') throw new Error('Expected a portable generated address')
+		expect(addressRun.value).toEqual(parsePluginNodeAddress(DeliveryCounter.nodeAddress()))
 		const failureArtifact = await compileScript({ file: source, exportName: 'encodeFailure' })
 		await target.submit({
 			protocol: receipt.protocol,

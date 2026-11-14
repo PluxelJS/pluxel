@@ -8,8 +8,8 @@ import {
 import { readManagementHostOptions } from '../../host-options'
 import type { PluginStatusSnapshot } from '../../web/protocol'
 import {
-	projectedPluginByAddress,
 	projectPluginCatalogFromView,
+	projectPluginStatusFromView,
 } from '../features/plugins/catalog-projection'
 
 export async function pluginStatus(
@@ -29,7 +29,7 @@ export function pluginStatusFromView(
 	view: HostPluginGraphCommittedView,
 	address: PluginNodeAddress,
 ): PluginStatusSnapshot | null {
-	const projected = projectedPluginByAddress(projectCommittedPluginCatalog(ctx, view), address)
+	const projected = projectPluginStatusFromView(ctx.root, committedStatusView(ctx, view), address)
 	return projected ? portablePluginStatus(projected) : null
 }
 
@@ -63,7 +63,11 @@ export function portablePluginStatus(
 }
 
 export function projectCommittedPluginCatalog(ctx: Context, view: HostPluginGraphCommittedView) {
-	return projectPluginCatalogFromView(ctx.root, {
+	return projectPluginCatalogFromView(ctx.root, committedStatusView(ctx, view))
+}
+
+function committedStatusView(ctx: Context, view: HostPluginGraphCommittedView) {
+	return {
 		catalog: view.catalog,
 		state: view.runtimeState.state,
 		reconciliation: view.reconciliation,
@@ -73,5 +77,5 @@ export function projectCommittedPluginCatalog(ctx: Context, view: HostPluginGrap
 		coreNodes: view.coreAdjacency.nodes,
 		runningNodeKeys: new Set(view.runningNodes.map(pluginNodeIndexKey)),
 		recentUpdate: readManagementHostOptions(ctx)?.recentUpdate,
-	})
+	}
 }

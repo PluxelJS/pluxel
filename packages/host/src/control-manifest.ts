@@ -5,17 +5,18 @@ import {
 } from '@pluxel/core'
 
 export type PluginControlDescriptorData = Readonly<{
-	format: 1
+	format: 2
 	definition: PluginDefinitionAddress
 	contracts: Readonly<{ config: string | null; instance: string }>
 }>
 
 export type PluginControlManifest = Readonly<{
-	format: 1
+	format: 2
 	compiler: string
 	snapshot: string
 	definitions: readonly Readonly<{
 		definition: PluginDefinitionAddress
+		module: string
 		exportName: string
 		contracts: PluginControlDescriptorData['contracts']
 		source: string
@@ -43,21 +44,23 @@ export function encodeControlData(value: unknown): string {
 		.join(',')}}`
 }
 
-/** The only executable control-module format. It has no imports or user expressions. */
+/** Deterministic provider template; its sole import is bound by the receiving framework. */
 export function renderPluginDescriptors(
 	descriptors: readonly Readonly<{ exportName: string; descriptor: PluginControlDescriptorData }>[],
 ): string {
-	return descriptors
-		.map(({ exportName, descriptor }) => {
-			if (!isControlExportName(exportName)) throw new TypeError('Invalid control export name')
-			const parsed = parsePluginControlDescriptor(descriptor)
-			return `export const ${exportName} = Object.freeze({format:1,definition:Object.freeze(${renderAddress(parsed.definition)}),contracts:Object.freeze(${encodeControlData(parsed.contracts)})});\n`
-		})
-		.join('')
-}
-
-function renderAddress(definition: PluginDefinitionAddress): string {
-	return `{entry:Object.freeze(${encodeControlData(definition.entry)}),exportName:${JSON.stringify(definition.exportName)}}`
+	let factory = '__pluxel_control_reference'
+	const names = new Set(descriptors.map(({ exportName }) => exportName))
+	while (names.has(factory)) factory += '$'
+	return (
+		`import { createPluginControlReference as ${factory} } from '@pluxel/host/internal/control-reference';\n` +
+		descriptors
+			.map(({ exportName, descriptor }) => {
+				if (!isControlExportName(exportName)) throw new TypeError('Invalid control export name')
+				const parsed = parsePluginControlDescriptor(descriptor)
+				return `export const ${exportName} = ${factory}(${encodeControlData(parsed)});\n`
+			})
+			.join('')
+	)
 }
 
 function record(value: unknown, keys: readonly string[], label: string): Record<string, unknown> {
@@ -82,7 +85,7 @@ function record(value: unknown, keys: readonly string[], label: string): Record<
 
 export function parsePluginControlDescriptor(value: unknown): PluginControlDescriptorData {
 	const item = record(value, ['format', 'definition', 'contracts'], 'Control descriptor')
-	if (item.format !== 1) throw new TypeError('Unsupported control descriptor format')
+	if (item.format !== 2) throw new TypeError('Unsupported control descriptor format')
 	const contracts = record(item.contracts, ['config', 'instance'], 'Control contracts')
 	if (
 		(contracts.config !== null && !isContract(contracts.config)) ||
@@ -90,7 +93,7 @@ export function parsePluginControlDescriptor(value: unknown): PluginControlDescr
 	)
 		throw new TypeError('Invalid control contract digest')
 	return Object.freeze({
-		format: 1,
+		format: 2,
 		definition: parsePluginDefinitionAddress(item.definition),
 		contracts: Object.freeze({
 			config: contracts.config as string | null,
@@ -102,7 +105,7 @@ export function parsePluginControlDescriptor(value: unknown): PluginControlDescr
 const isContract = (value: unknown): value is string =>
 	typeof value === 'string' && /^sha256:[a-f0-9]{64}$/.test(value)
 const reservedControlNames = new Set(
-	'await break case catch class const continue debugger default delete do else enum export extends false finally for function if implements import in instanceof interface let new null package private protected public return static super switch this throw true try typeof var void while with yield'.split(
+	'arguments await break case catch class const continue debugger default delete do else enum eval export extends false finally for function if implements import in instanceof interface let new null package private protected public return static super switch this throw true try typeof var void while with yield'.split(
 		' ',
 	),
 )
@@ -110,7 +113,6 @@ export const isControlExportName = (value: unknown): value is string =>
 	typeof value === 'string' &&
 	value.length <= 256 &&
 	/^[A-Za-z_$][\w$]*$/.test(value) &&
-	value !== 'Object' &&
 	!reservedControlNames.has(value)
 export const isControlFilePath = (value: unknown): value is string =>
 	typeof value === 'string' &&
@@ -128,7 +130,7 @@ export function parsePluginControlManifest(value: unknown): PluginControlManifes
 		'Control manifest',
 	)
 	if (
-		item.format !== 1 ||
+		item.format !== 2 ||
 		typeof item.compiler !== 'string' ||
 		item.compiler.length > 256 ||
 		!isContract(item.snapshot) ||
@@ -144,27 +146,31 @@ export function parsePluginControlManifest(value: unknown): PluginControlManifes
 	const definitions = item.definitions.map((raw) => {
 		const entry = record(
 			raw,
-			['definition', 'exportName', 'contracts', 'source'],
+			['definition', 'module', 'exportName', 'contracts', 'source'],
 			'Control definition',
 		)
 		const descriptor = parsePluginControlDescriptor({
-			format: 1,
+			format: 2,
 			definition: entry.definition,
 			contracts: entry.contracts,
 		})
+		const module = entry.module
 		if (
+			!isControlFilePath(module) ||
+			!module.endsWith('.mjs') ||
 			!isControlExportName(entry.exportName) ||
-			names.has(entry.exportName) ||
+			names.has(`${module}\0${entry.exportName}`) ||
 			typeof entry.source !== 'string' ||
 			entry.source.length > 1024
 		)
 			throw new TypeError('Invalid control definition export/source')
 		const key = pluginDefinitionIndexKey(descriptor.definition)
 		if (identities.has(key)) throw new TypeError('Duplicate control definition identity')
-		names.add(entry.exportName)
+		names.add(`${module}\0${entry.exportName}`)
 		identities.add(key)
 		return Object.freeze({
 			definition: descriptor.definition,
+			module,
 			exportName: entry.exportName,
 			contracts: descriptor.contracts,
 			source: entry.source,
@@ -188,13 +194,18 @@ export function parsePluginControlManifest(value: unknown): PluginControlManifes
 		paths.add(file.path)
 		return Object.freeze({ path: file.path, size: file.size as number, sha256: file.sha256 })
 	})
-	if (total > 64 * 1024 * 1024 || !paths.has('index.mjs') || !paths.has('index.d.mts'))
+	if (
+		total > 64 * 1024 * 1024 ||
+		definitions.some(
+			({ module }) => !paths.has(module) || !paths.has(module.slice(0, -4) + '.d.mts'),
+		)
+	)
 		throw new TypeError('Control material is incomplete or exceeds its budget')
-	const unsigned = { format: 1 as const, compiler: item.compiler, definitions, files }
+	const unsigned = { format: 2 as const, compiler: item.compiler, definitions, files }
 	return Object.freeze({ ...unsigned, snapshot: item.snapshot as string })
 }
 
-/** Verify a complete immutable file map, including the exact pure-data executable entry. */
+/** Verify all files and every exact framework-generated executable module. */
 export function verifyPluginControlMaterialSync(
 	value: unknown,
 	files: Readonly<Record<string, string>>,
@@ -221,14 +232,29 @@ export function verifyPluginControlMaterialSync(
 	}
 	if (files['manifest.json'] !== `${encodeControlData(manifest)}\n`)
 		throw new TypeError('Control manifest file mismatch')
-	const executable = renderPluginDescriptors(
-		manifest.definitions.map((entry) => ({
-			exportName: entry.exportName,
-			descriptor: { format: 1, definition: entry.definition, contracts: entry.contracts },
-		})),
-	)
-	if (files['index.mjs'] !== executable)
-		throw new TypeError('Control entry is not the deterministic data-only emitter output')
+	const modules = new Map<string, PluginControlManifest['definitions'][number][]>()
+	for (const entry of manifest.definitions) {
+		const definitions = modules.get(entry.module) ?? []
+		definitions.push(entry)
+		modules.set(entry.module, definitions)
+	}
+	for (const file of manifest.files) {
+		if (!file.path.endsWith('.mjs')) continue
+		const definitions = modules.get(file.path)
+		if (
+			!definitions ||
+			files[file.path] !==
+				renderPluginDescriptors(
+					definitions.map((entry) => ({
+						exportName: entry.exportName,
+						descriptor: { format: 2, definition: entry.definition, contracts: entry.contracts },
+					})),
+				)
+		)
+			throw new TypeError(
+				`Control entry is not the deterministic provider emitter output: ${file.path}`,
+			)
+	}
 	return manifest
 }
 

@@ -71,7 +71,7 @@ export default defineHostApplication(() => ({
 	config: {
 		records: [
 			{
-				owner: WretchPlugin,
+				owner: WretchPlugin.nodeAddress(),
 				config: {
 					timeoutMs: 15_000, // 单次请求超时（毫秒）
 					maxConcurrentRequests: 32, // 最大并发请求数

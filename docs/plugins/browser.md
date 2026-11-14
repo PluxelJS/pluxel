@@ -22,7 +22,7 @@ import { PlaywrightConfig, PlaywrightPlugin } from '@pluxel/plugin-playwright'
 export default defineHostApplication(() => ({
 	plugins: [PlaywrightPlugin],
 	envBindings: [
-		envBinding(PlaywrightPlugin, {
+		envBinding(PlaywrightPlugin.nodeAddress(), {
 			config: {
 				schema: PlaywrightConfig,
 				mapping: {

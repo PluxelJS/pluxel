@@ -15,7 +15,7 @@ import {
 	type CoreInternalTestHostOptions,
 	assertPluginLifecycleIssue,
 } from '@pluxel/core/internal/test'
-import { type RootContext } from '@pluxel/core'
+import { parsePluginNodeAddress, type RootContext } from '@pluxel/core'
 import { describe, expect, it, vi } from 'vitest'
 
 let lifecycleTrace: string[] = []
@@ -194,7 +194,9 @@ describe('Core host lifecycle seams', () => {
 					finalizeGeneration: ({ ctx, operation, signal }) => {
 						expect(signal.aborted).toBe(false)
 						finalizerOperation = operation
-						expect(ctx.pluginInfo.nodeAddress).toEqual(OrderedPlugin.nodeAddress())
+						expect(ctx.pluginInfo.nodeAddress).toEqual(
+							parsePluginNodeAddress(OrderedPlugin.nodeAddress()),
+						)
 						expect(registry.isRunning(OrderedPlugin)).toBe(false)
 						lifecycleTrace.push('host:finalize')
 					},
@@ -425,7 +427,7 @@ describe('Core host lifecycle seams', () => {
 		expect(completions).toEqual(['B:complete', 'A:failed'])
 		expect(settled).toEqual([['ParallelFinalizerB']])
 		expect(publication.started.map((ctx) => ctx.pluginInfo.nodeAddress)).toEqual([
-			ParallelFinalizerB.nodeAddress(),
+			parsePluginNodeAddress(ParallelFinalizerB.nodeAddress()),
 		])
 		expect(publication.failed).toEqual([
 			requirePluginService(host.ctx).resolvePluginNode(ParallelFinalizerA),

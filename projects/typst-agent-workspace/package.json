@@ -70,6 +70,7 @@
 		"vite-plus": "catalog:build"
 	},
 	"peerDependencies": {
+		"@pluxel/host": "workspace:^",
 		"@pluxel/plugin-typst": "*"
 	},
 	"pluxel": {

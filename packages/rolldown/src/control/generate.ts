@@ -45,7 +45,7 @@ export type PluginControlSource = Readonly<{
 }>
 
 export type PluginControlGeneration = Readonly<{
-	format: 1
+	format: 2
 	snapshot: string
 	manifest: PluginControlManifest
 	files: Readonly<Record<string, string>>
@@ -525,7 +525,7 @@ export async function generatePluginControl(options: {
 					`${classDocumentation}export declare const ${exportName}: PluginDescriptor<${exportName}ConfigInput, ${exportName}ConfigOutput, ${exportName}Instance>\n`,
 				)
 				const environment = {
-					format: 1,
+					format: 2,
 					compiler: `typescript@${version}`,
 					strictNullChecks: project.compilerOptions.strictNullChecks ?? false,
 				}
@@ -583,6 +583,7 @@ export async function generatePluginControl(options: {
 				manifestDefinitions.push(
 					Object.freeze({
 						definition: source.definition,
+						module: 'index.mjs',
 						exportName,
 						contracts,
 						source: identify(file.fileName),
@@ -593,11 +594,11 @@ export async function generatePluginControl(options: {
 			materials['index.mjs'] = renderPluginDescriptors(
 				manifestDefinitions.map((entry) => ({
 					exportName: entry.exportName,
-					descriptor: { format: 1, definition: entry.definition, contracts: entry.contracts },
+					descriptor: { format: 2, definition: entry.definition, contracts: entry.contracts },
 				})),
 			)
 			const unsigned = {
-				format: 1 as const,
+				format: 2 as const,
 				compiler: `typescript@${version}`,
 				definitions: manifestDefinitions,
 				files: Object.entries(materials)
@@ -622,7 +623,7 @@ export async function generatePluginControl(options: {
 				inputs[path] = controlSha256(content)
 			}
 			return Object.freeze({
-				format: 1,
+				format: 2,
 				snapshot: manifest.snapshot,
 				manifest,
 				files: Object.freeze(materials),

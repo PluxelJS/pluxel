@@ -1,4 +1,4 @@
-import { Commands } from '../commands'
+import { Commands } from '../commands/token'
 import { type PluginNodeAddress, type RootContext } from '@pluxel/core'
 import { PluginTestOperationGate, type PluginTestTarget } from '@pluxel/core/internal/test'
 import { pluginConfigPatch } from '@pluxel/host/internal'

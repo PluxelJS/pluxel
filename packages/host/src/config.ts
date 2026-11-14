@@ -4,6 +4,7 @@ import {
 	type CommitSummary,
 	type Context,
 	type PluginNodeAddress,
+	type PluginConstructor,
 } from '@pluxel/core'
 import {
 	notifyRunningPluginConfigUpdate,
@@ -17,6 +18,7 @@ import {
 } from '@pluxel/core/services'
 import {
 	assertPluginControlContract,
+	PluginControlError,
 	pluginCatalogEntry,
 	type PluginCatalogSnapshot,
 } from './catalog'
@@ -160,7 +162,7 @@ function configLookup(
 	catalog: PluginCatalogSnapshot,
 	state: HostStateSnapshot,
 	owner: PluginNodeAddress,
-	expectedControlContract?: string | null,
+	expectedControl?: string | null | PluginConstructor,
 ): ConfigLookup {
 	const entry = pluginCatalogEntry(catalog, owner.definition)
 	if (
@@ -176,8 +178,14 @@ function configLookup(
 			message: 'Plugin node is unavailable in the committed runtime graph policy.',
 		}
 	}
-	if (expectedControlContract !== undefined)
-		assertPluginControlContract(entry, 'config', expectedControlContract)
+	if (typeof expectedControl === 'function') {
+		if (entry.candidate.implementation !== expectedControl)
+			throw new PluginControlError(
+				'stale_target',
+				'Plugin constructor was replaced; obtain the current implementation address',
+			)
+	} else if (expectedControl !== undefined)
+		assertPluginControlContract(entry, 'config', expectedControl)
 	const config = entry.candidate.declaration.config
 	if (!config) {
 		return {
@@ -269,7 +277,7 @@ export async function pluginConfigGet(
 	ctx: Context,
 	owner: PluginNodeAddress,
 	options?: HostOperationOptions,
-	expectedControlContract?: string | null,
+	expectedControl?: string | null | PluginConstructor,
 ): Promise<HostPluginConfigResult> {
 	const coordinator = requirePluginHostCoordinator(ctx)
 	return coordinator.runExclusive(
@@ -280,7 +288,7 @@ export async function pluginConfigGet(
 				coordinator.catalogSnapshot(),
 				session.runtimeStateSnapshot(),
 				owner,
-				expectedControlContract,
+				expectedControl,
 			)
 			if (lookup.ok === false) return lookup
 			let output: Readonly<Record<string, unknown>>
@@ -313,7 +321,7 @@ export async function pluginConfigValidate(
 	owner: PluginNodeAddress,
 	change: HostConfigMutation,
 	options?: HostOperationOptions,
-	expectedControlContract?: string | null,
+	expectedControl?: string | null | PluginConstructor,
 ): Promise<HostPluginConfigResult> {
 	const coordinator = requirePluginHostCoordinator(ctx)
 	return coordinator.runExclusive(
@@ -324,7 +332,7 @@ export async function pluginConfigValidate(
 				coordinator.catalogSnapshot(),
 				session.runtimeStateSnapshot(),
 				owner,
-				expectedControlContract,
+				expectedControl,
 			)
 			if (lookup.ok === false) return lookup
 			let managed: Readonly<Record<string, unknown>> | null
@@ -415,7 +423,7 @@ async function mutatePluginConfig(
 		current: Readonly<Record<string, unknown>> | null,
 	) => Readonly<Record<string, unknown>> | null,
 	options?: HostOperationOptions,
-	expectedControlContract?: string | null,
+	expectedControl?: string | null | PluginConstructor,
 ): Promise<HostPluginConfigResult> {
 	const coordinator = requirePluginHostCoordinator(ctx)
 	return coordinator.runExclusive(
@@ -437,7 +445,7 @@ async function mutatePluginConfig(
 				coordinator.catalogSnapshot(),
 				session.runtimeStateSnapshot(),
 				owner,
-				expectedControlContract,
+				expectedControl,
 			)
 			if (lookup.ok === false) return lookup
 			let managed: Readonly<Record<string, unknown>> | null
@@ -549,7 +557,7 @@ export async function pluginConfigPatch(
 	owner: PluginNodeAddress,
 	change: HostConfigMutation,
 	options?: HostOperationOptions,
-	expectedControlContract?: string | null,
+	expectedControl?: string | null | PluginConstructor,
 ): Promise<HostPluginConfigResult> {
 	return mutatePluginConfig(
 		ctx,
@@ -557,7 +565,7 @@ export async function pluginConfigPatch(
 		'plugin-config-patch',
 		(current) => changeInput(current, change),
 		options,
-		expectedControlContract,
+		expectedControl,
 	)
 }
 export async function pluginConfigReset(
@@ -565,16 +573,16 @@ export async function pluginConfigReset(
 	owner: PluginNodeAddress,
 	paths?: readonly (readonly string[])[],
 	options?: HostOperationOptions,
-	expectedControlContract?: string | null,
+	expectedControl?: string | null | PluginConstructor,
 ): Promise<HostPluginConfigResult> {
-	if (paths?.length === 0) return pluginConfigGet(ctx, owner, options, expectedControlContract)
+	if (paths?.length === 0) return pluginConfigGet(ctx, owner, options, expectedControl)
 	return mutatePluginConfig(
 		ctx,
 		owner,
 		'plugin-config-reset',
 		(current) => (paths === undefined ? null : changeInput(current, { remove: paths })),
 		options,
-		expectedControlContract,
+		expectedControl,
 	)
 }
 

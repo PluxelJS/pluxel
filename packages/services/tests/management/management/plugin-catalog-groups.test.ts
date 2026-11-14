@@ -1,4 +1,5 @@
 import { requirePluginService } from '@pluxel/core/internal'
+import { parsePluginNodeAddress } from '@pluxel/core'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { describe, expect, it, vi } from 'vitest'
@@ -36,8 +37,12 @@ describe('committed Management catalog groups', () => {
 			name: '业务报告',
 			basis: { kind: 'dependency' },
 		})
-		expect(snapshot.sections[0]!.nodes).toContainEqual(Reports.nodeAddress())
-		expect(snapshot.sections[0]!.nodes).toContainEqual(Documents.nodeAddress())
+		expect(snapshot.sections[0]!.nodes).toContainEqual(
+			parsePluginNodeAddress(Reports.nodeAddress()),
+		)
+		expect(snapshot.sections[0]!.nodes).toContainEqual(
+			parsePluginNodeAddress(Documents.nodeAddress()),
+		)
 		const saved = await target.updatePluginCatalogLayoutDto({
 			sections: [
 				{

@@ -13,7 +13,7 @@ import {
 	type ScriptHmrAction,
 	type RunExecution,
 	type PluginControlMaterialsSnapshot,
-} from '@pluxel/host/agent'
+} from '@pluxel/host/agent/runtime'
 import { openScriptSocketSession } from '@pluxel/host/agent/socket'
 import {
 	createScriptControlTarget,

@@ -1,5 +1,5 @@
 import { createDocumentStorage } from './helpers/document-storage'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { SuperJSON } from 'superjson'
 import * as v from 'valibot'
 import { expect, it } from 'vitest'
@@ -113,7 +113,7 @@ it('separates per-node modes, declared fallback and missing document input', asy
 		config: {
 			mode: 'declared-only',
 			records: [
-				{ owner: ConfigOwner, config: { value: 'declared' } },
+				{ owner: ConfigOwner.nodeAddress(), config: { value: 'declared' } },
 				{ owner: east, mode: 'saved-first', config: { value: 'east' } },
 				{ owner: west, mode: 'declared-first', config: { value: 'west' } },
 			],
@@ -188,7 +188,7 @@ it('does not seed documents and saves hidden raw values without changing desired
 		expect(writes).toBe(1)
 		expect(SuperJSON.parse((await storage.getText('config.json'))!)).toEqual({
 			version: 4,
-			plugins: [{ owner, config: { value: 200 } }],
+			plugins: [{ owner: parsePluginNodeAddress(owner), config: { value: 200 } }],
 		})
 		expect(() => requireConfigService(host.ctx).patchConfig(owner, { value: 'bypass' })).toThrow(
 			'host.config',
@@ -267,7 +267,7 @@ it('retains the confirmed generation and raw revision when document completion i
 	}
 	const host = await createHost({
 		plugins: [ConfigOwner],
-		policy: { autoStart: [ConfigOwner] },
+		policy: { autoStart: [ConfigOwner.nodeAddress()] },
 		runtime: { documents: { config: { storage: () => borrowed }, state: false } },
 	})
 	try {
@@ -303,7 +303,7 @@ it('reuses transformed output for reads and hidden saves', async () => {
 	const node = Transformed.nodeAddress()
 	const host = await createHost({
 		plugins: [Transformed],
-		config: { records: [{ owner: Transformed, config: { value: 'raw' } }] },
+		config: { records: [{ owner: Transformed.nodeAddress(), config: { value: 'raw' } }] },
 		runtime: { documents: { config: false, state: false } },
 	})
 	try {

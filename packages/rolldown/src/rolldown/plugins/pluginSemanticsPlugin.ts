@@ -1303,15 +1303,21 @@ async function lowerModule(options: SemanticModuleOptions) {
 			`import { ${imports.join(', ')} } from ${JSON.stringify('@pluxel/core/toolchain')};`,
 		]
 		for (const definition of definitions) {
-			lines.push(
-				`__pluxelSetPluginDefinition(${definition.className}, ${JSON.stringify({
+			const declaration = options.analysis.classes.get(definition.className)
+			if (!declaration)
+				options.error(`[pluxel:plugin-semantics] Missing class ${definition.className}`)
+			// Identity is available to subsequent module-level application declarations.
+			// Config/Part assembly still settles at module end, preserving forward schema references.
+			transformed.appendLeft(
+				numberPosition(declaration.node.end, options.error, `${options.id} class end`),
+				`\n__pluxelSetPluginDefinition(${definition.className}, ${JSON.stringify({
 					abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 					kind: definition.kind,
 					definition: definition.definition,
 					constructorRequires: definition.requires,
 					optional: definition.optional,
 					...(definition.provides ? { provides: definition.provides } : {}),
-				})});`,
+				})});\n`,
 			)
 		}
 		for (const owner of partOwners) {

@@ -67,6 +67,51 @@ async function releaseBin() {
 }
 
 describe('pluxel bin launcher', () => {
+	it.each([
+		['script', 'run'],
+		['script', 'run', 'task.ts'],
+		['script', 'run', '--endpoint', 'https://host.test/'],
+		['script', 'result'],
+		['script', 'cancel'],
+		['script', 'sync'],
+		['dev', 'run'],
+		['dev', 'hmr'],
+		['script', 'run', 'task.ts', '--endpoint', 'https://host.test/', '--unknown'],
+		['script', 'result', 'not-a-receipt', '--unknown'],
+		['dev', 'run', 'task.ts', '--unknown'],
+		['dev', 'hmr', 'pause', '--unknown'],
+		['dev', 'sync', '--unknown'],
+	])('prints one control JSON error for arguments %j', async (...argv) => {
+		const result = await runNode([await releaseBin(), ...argv], tmpdir())
+		expect(result.code).toBe(1)
+		expect(result.stderr).toBe('')
+		expect(result.stdout.trim().split('\n')).toHaveLength(1)
+		expect(JSON.parse(result.stdout)).toMatchObject({
+			ok: false,
+			error: { code: 'invalid_input', message: expect.any(String) },
+		})
+	})
+
+	it.each([
+		['script', 'run', '--help'],
+		['script', 'result', '--help'],
+		['dev', 'hmr', '--help'],
+		['docs', '--help'],
+	])('preserves rendered help for arguments %j', async (...argv) => {
+		const result = await runNode([await releaseBin(), ...argv], tmpdir())
+		expect(result.code).toBe(0)
+		expect(result.stderr).toBe('')
+		expect(result.stdout).toContain('USAGE:')
+		expect(() => JSON.parse(result.stdout)).toThrow(SyntaxError)
+	})
+
+	it('preserves non-control validation output', async () => {
+		const result = await runNode([await releaseBin(), 'source', 'unregister'], tmpdir())
+		expect(result.code).toBe(1)
+		expect(result.stderr).not.toBe('')
+		expect(() => JSON.parse(result.stdout)).toThrow(SyntaxError)
+	})
+
 	it.each(['--root'])('checks dev %s source binding before loading CLI code', async (option) => {
 		const root = await createProject({
 			'package.json': '{"name":"bound-consumer"}',

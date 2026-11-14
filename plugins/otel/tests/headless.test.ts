@@ -21,7 +21,7 @@ it('uses the exported config schema for env-only Prometheus selection without Wo
 		plugins: [OtelPlugin, HeadlessMeter],
 		services: [elysia()],
 		envBindings: [
-			envBinding(OtelPlugin, {
+			envBinding(OtelPlugin.nodeAddress(), {
 				config: {
 					schema: OtelConfig,
 					mapping: { otlp: 'TELEMETRY_SIGNALS', prometheus: 'TELEMETRY_PROMETHEUS' },

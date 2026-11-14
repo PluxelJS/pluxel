@@ -9,9 +9,11 @@ export default defineHostApplication((startup) => ({
 	name: 'headless-documents',
 	plugins: [QueryHttpPlugin, PdfHttpPlugin],
 	services: [elysia()],
-	policy: { autoStart: [QueryHttpPlugin, PdfHttpPlugin] },
+	policy: { autoStart: [QueryHttpPlugin.nodeAddress(), PdfHttpPlugin.nodeAddress()] },
 	config: {
-		records: [{ owner: QueryHttpPlugin, config: { fail: startup.env.FAIL_QUERY === '1' } }],
+		records: [
+			{ owner: QueryHttpPlugin.nodeAddress(), config: { fail: startup.env.FAIL_QUERY === '1' } },
+		],
 	},
 	async prepare({ host }) {
 		const directory = startup.env.DATA_DIRECTORY

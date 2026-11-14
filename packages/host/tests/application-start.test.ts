@@ -27,7 +27,7 @@ describe('production application startup', () => {
 		const application = await resolveHostApplication(
 			defineHostApplication(() => ({
 				plugins: [Healthy, Failing],
-				policy: { autoStart: [Healthy, Failing] },
+				policy: { autoStart: [Healthy.nodeAddress(), Failing.nodeAddress()] },
 				prepare({ host }) {
 					host.ctx.effects.defer(close)
 				},
@@ -55,7 +55,7 @@ describe('production application startup', () => {
 		const application = await resolveHostApplication(
 			defineHostApplication(() => ({
 				plugins: [Healthy, Failing],
-				policy: { autoStart: [Healthy, Failing] },
+				policy: { autoStart: [Healthy.nodeAddress(), Failing.nodeAddress()] },
 				prepare({ host }) {
 					order.push('prepare')
 					host.ctx.effects.defer(() => {
@@ -92,7 +92,7 @@ describe('production application startup', () => {
 		const application = await resolveHostApplication(
 			defineHostApplication(() => ({
 				plugins: [Healthy, Failing],
-				policy: { autoStart: [Healthy] },
+				policy: { autoStart: [Healthy.nodeAddress()] },
 				launch,
 			})),
 			startup,

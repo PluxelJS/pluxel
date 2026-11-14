@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
+import { parsePluginNodeAddress } from '@pluxel/core'
 import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
 const declaration = defineNodeModule(import.meta.url, './fixtures/task.ts')
@@ -33,7 +34,7 @@ describe('NodeModuleService', () => {
 		})
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
-				plugin: NodeModuleFailure.nodeAddress(),
+				plugin: parsePluginNodeAddress(NodeModuleFailure.nodeAddress()),
 				kind: 'start-failed',
 				message: expect.stringContaining('node build failed'),
 			}),

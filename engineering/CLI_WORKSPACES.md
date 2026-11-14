@@ -32,7 +32,11 @@ Starter 的 Host package 拥有唯一 Vite 配置、应用与构建，独立 Web
 
 控制台地址由 Vite URL presenter 拥有，不复制反代命名、Workbench 挂载路径或日志历史。Pitchfork 是可选启动集成，不成为 runtime capability；控制台直接读取已捕获的启动归属，不调用服务管理器；公开地址由 Host 环境契约解析。配置与使用见[开发控制台](../docs/development/dev-console.md#项目入口与启动方式)。Browser assets 在应用构建后写入时，必须再次调用同一个 distribution finalizer。目录、命令和样例以 [create README](../packages/create/README.md) 为准。
 
-`result/cancel` 只接受绑定原 root/instanceId/runId/serviceId 的 receipt，不重新解析当前项目，不转投重启后的实例；nonce 不进入 receipt 或公开诊断。执行队列、取消、资源释放与结果保留由共享 Host 执行内核拥有，见 [AGENT_WORKFLOW](AGENT_WORKFLOW.md)。远程 `script run/result/cancel` 使用同一控制 target，经 Management session 认证并固定原 endpoint、instanceId、runId 与 requestHash。
+`dev run` 与 `script run` 分别选择项目加载与上传加载，结果查询和取消统一为 `script result/cancel RECEIPT`。v3 回执由 `src/script/receipt.ts` 编解码，公共字段固定 instanceId、runId 与 requestHash，连接部分按 local root/serviceId 或 remote endpoint 区分。查询重新认证原 owner，凭据、nonce 与 socket 不进入回执。字段、UTF-8、8 KiB payload、16 KiB token 和规范编码由同一实现校验。
+
+CLI 的 run/result/cancel 共用 `{ ok: true, value: { receipt, run } }`，sync 共用 `{ ok: true, value }`。命令失败输出 `{ ok: false, error }` 并保留已准备的原 receipt，stdout 只有一个最终 JSON；stderr 使用 prepared/accepted 的 stage 事件。退出码统一按执行终态与等待策略判断，领域 Err 保留在成功运行的结果里。执行队列、取消、资源释放与结果保留由共享 Host 执行内核拥有，见 [AGENT_WORKFLOW](AGENT_WORKFLOW.md)。
+
+控制同步按 canonical entry 分配稳定模块，普通导出保留原名。同一 entry 的插件共享模块，跨 entry 的同名导出使用不同路径。`out` 和每项 definition 的 `module/exportName` 直接提供 import 信息；特殊名称或生成类型名冲突在输出中给出实际 alias。材料布局、校验与快照由 [Plugin Control](PLUGIN_CONTROL.md) 维护。
 
 CLI packed smoke 验证独立 Plugin scaffold，create packed smoke 验证完整 workspace、Vite 与 production distribution；两者不是输出 parity。CLI 不提供第三方 command discovery/registry，capability ID 的类型映射只用 type import，不能提前加载可选 owner。
 

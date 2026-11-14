@@ -8,10 +8,10 @@ const application: HostApplicationFactory = defineHostApplication((startup) => (
 	plugins: [PlaywrightPlugin, InvoicePlugin, InvoiceConsumer],
 	services: [vault({ backend: 'bindings' })],
 	envBindings: [
-		envBinding(PlaywrightPlugin, {
+		envBinding(PlaywrightPlugin.nodeAddress(), {
 			config: { schema: PlaywrightConfig, mapping: { endpoint: 'BROWSER_ENDPOINT' } },
 		}),
-		envBinding(InvoicePlugin, {
+		envBinding(InvoicePlugin.nodeAddress(), {
 			vault: { schema: InvoiceVaultSchema, mapping: { primary: { apiKey: 'INVOICE_VLM_KEY' } } },
 		}),
 	],

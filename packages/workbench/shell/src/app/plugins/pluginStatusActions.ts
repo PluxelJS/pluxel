@@ -10,7 +10,12 @@ function shouldRefreshControlResult(result: {
 	state?: string
 	code?: string
 }): boolean {
-	return result.ok || result.state === 'unknown' || result.code === 'revision_conflict'
+	return (
+		result.ok ||
+		result.state === 'unknown' ||
+		result.code === 'revision_conflict' ||
+		result.code === 'lifecycle_failed'
+	)
 }
 
 async function alignControlReadModels(

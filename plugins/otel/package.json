@@ -80,8 +80,14 @@
 	"peerDependencies": {
 		"@opentelemetry/api": "catalog:peer",
 		"@pluxel/core": "workspace:^",
+		"@pluxel/host": "workspace:^",
 		"@pluxel/services": "workspace:^",
 		"@pluxel/workbench": "workspace:^"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		}
 	},
 	"pluxel": {
 		"artifactRoot": "dist",

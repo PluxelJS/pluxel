@@ -32,8 +32,8 @@ export default defineHostApplication(() => ({
   plugins: [MailPlugin],
   services: prepareServices(),
   config: makeRecords(),
-  envBindings: [envBinding(MailPlugin, { config: { schema: Schema, mapping: ${mapping} } })],
-  fileBindings: [fileBinding(MailPlugin, { config: { schema: Schema, path: './private/config.json' } })],
+  envBindings: [envBinding(MailPlugin.nodeAddress(), { config: { schema: Schema, mapping: ${mapping} } })],
+  fileBindings: [fileBinding(MailPlugin.nodeAddress(), { config: { schema: Schema, path: './private/config.json' } })],
 }))
 `
 }
