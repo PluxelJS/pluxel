@@ -1,4 +1,8 @@
-import { recordLoadedApplicationPlugins } from './loaded-modules'
+import {
+	recordLoadedApplicationPlugins,
+	readLoadedPluginModule,
+	readLoadedApplicationControl,
+} from './loaded-modules'
 import { snapshotHostRuntime } from './runtime'
 import { snapshotHostPolicy } from './state-store'
 import {
@@ -313,6 +317,9 @@ export async function runHostApplication(
 			plugins.map((plugin) => [
 				plugin,
 				{
+					control:
+						readLoadedApplicationControl(application, plugin) ??
+						readLoadedPluginModule(plugin)?.control,
 					execution: {
 						kind: 'native',
 						origin: 'fixed',
@@ -333,6 +340,7 @@ export async function runHostApplication(
 				if (!facts.has(plugin))
 					facts.set(plugin, {
 						moduleId: path,
+						control: readLoadedPluginModule(plugin)?.control,
 						execution: {
 							kind: 'native',
 							origin: 'source',

@@ -112,7 +112,12 @@ async function main() {
 			'exact-mirror': JSON.parse(
 				await readFile(findPackageJSON('exact-mirror', elysiaEntry), 'utf8'),
 			).version,
+			'openapi-types': JSON.parse(
+				await readFile(findPackageJSON('openapi-types', elysiaEntry), 'utf8'),
+			).version,
 			'@types/node': await packageVersion('@types/node'),
+			'@types/bun': JSON.parse(await readFile(findPackageJSON('@types/bun', elysiaEntry), 'utf8'))
+				.version,
 		}
 		await writeFile(
 			join(author, 'package.json'),
@@ -173,10 +178,10 @@ async function main() {
 		await rm(join(author, 'dist'), { recursive: true })
 		const receiverFiles = await listFiles(receiver)
 		assert.deepEqual(
-			receiverFiles.filter(
-				(file) => /\.(?:mjs|cjs|js)$/.test(file) && !file.startsWith('node_modules/'),
-			),
-			['app.mjs'],
+			receiverFiles
+				.filter((file) => /\.(?:mjs|cjs|js)$/.test(file) && !file.startsWith('node_modules/'))
+				.sort(),
+			['app.mjs', 'control/index.mjs'],
 		)
 		assert.ok(
 			receiverFiles.every(
@@ -277,11 +282,21 @@ async function main() {
 			if (expectedCode === 0) assert.ok(!output.error, JSON.stringify(output))
 			return output
 		}
-		await writeFile(join(author, 'task.ts'), task)
+		const synchronized = await cli(['sync', '--endpoint', ready.endpoint, '--out', 'control'])
+		const counter = synchronized.definitions.filter(
+			(item) => item.definition.exportName === 'Counter',
+		)
+		assert.equal(counter.length, 1, JSON.stringify(synchronized))
+		const controlImport = `import {${counter[0].exportName} as Counter} from './control/current/index.mjs'\n`
+		const synchronizedAgain = await cli(['sync', '--endpoint', ready.endpoint, '--out', 'control'])
+		assert.equal(synchronizedAgain.snapshot, synchronized.snapshot)
+		await writeFile(join(author, 'task.ts'), controlImport + task)
 		const first = await cli(['run', 'task.ts', '--endpoint', ready.endpoint])
 		assert.equal(first.run.state, 'succeeded')
 		assert.equal(first.run.value.moduleRuns, 1)
 		assert.equal(first.run.value.actual.config.count, 4)
+		assert.deepEqual(first.run.value.business, { calls: 3, count: 4 })
+		assert.equal(first.run.value.calls, 3)
 		assert.equal(first.run.value.actual.application, 'applied')
 		assert.equal(first.run.value.actual.desiredRevision, first.run.value.actual.appliedRevision)
 		assert.equal(first.run.value.conflict.code, 'revision_conflict')
@@ -290,6 +305,7 @@ async function main() {
 		const second = await cli(['run', 'task.ts', '--endpoint', ready.endpoint])
 		assert.equal(second.run.value.moduleRuns, 1)
 		assert.equal(second.run.value.actual.config.count, 8)
+		assert.deepEqual(second.run.value.business, { calls: 3, count: 8 })
 		// A new authenticated connection queries the original receipt; no source re-delivery occurs.
 		const queried = await cli(['result', first.receipt])
 		assert.equal(queried.run.runId, first.run.runId)
@@ -386,7 +402,7 @@ const application = `
 import {readFile} from 'node:fs/promises'
 import {BasePlugin,Plugin} from '@pluxel/core'
 import {logtape} from '@pluxel/core/config'
-import {defineHostApplication} from '@pluxel/host'
+import {defineHostApplication,type HostApplication} from '@pluxel/host'
 import {elysia} from '@pluxel/services/elysia'
 import {listenElysia} from '@pluxel/services/elysia/node'
 import {managementAccess} from '@pluxel/services/management/access'
@@ -399,9 +415,11 @@ const Schema=v.object({count:v.optional(v.number(),2)})
 @Plugin({displayName:'Installed counter'})
 export class Counter extends BasePlugin {
  readonly config=this.configs.use(Schema)
+ calls=0
+ async increment(by:number){await Promise.resolve();this.calls+=by;return {calls:this.calls,count:this.config.count}}
  protected init(){this.ctx.logger.info('installed counter started');this.configs.onUpdate(this.config,({desired})=>{this.ctx.logger.info('adopted {count}',{count:desired.count})})}
 }
-export default defineHostApplication(startup=>({
+export default defineHostApplication((startup):HostApplication=>({
  plugins:[ScriptCliAuthentication,Counter],
  services:[elysia(),managementAccess(),management(),managementHttp({scripts:true})],
  runtime:{documents:{config:false,state:false},logtape:logtape(({createRuntimeLogSink})=>({sinks:{history:createRuntimeLogSink({windowLines:100})},loggers:[{category:['pluxel'],lowestLevel:'trace',sinks:['history']},{category:['logtape','meta'],lowestLevel:'fatal',sinks:[]}]}))},
@@ -413,15 +431,15 @@ export default defineHostApplication(startup=>({
 const task = `import type {Script} from '@pluxel/host/agent'
 let moduleRuns=0
 export default (async sdk=>{
- const node=(await sdk.plugins.list()).find(node=>node.displayName==='Installed counter')!.address
- const before=await sdk.config.get(node);if(!before.ok)return before
- if(typeof before.config.count!=='number')throw new Error('Expected numeric count')
+ const before=await sdk.config.get(Counter);if(!before.ok)return before
  const count=[before.config.count].map(value=>value*2)[0]
- const changed=await sdk.config.patch(node,{set:{count}},{expectedManagedRevision:before.managedRevision});if(!changed.ok)return changed
- const conflict=await sdk.config.patch(node,{set:{count:999}},{expectedManagedRevision:before.managedRevision})
- const cursor=await sdk.logs.mark();await sdk.plugins.stop(node);await sdk.plugins.start(node);await sdk.plugins.restart(node)
- const logs=await sdk.logs.read(cursor,{filter:{plugin:node},limit:20})
- return {moduleRuns:++moduleRuns,changed,conflict,logs,actual:await sdk.config.get(node),lifecycle:await sdk.plugins.status(node)}
+ const changed=await sdk.config.patch(Counter,{set:{count}},{expectedManagedRevision:before.managedRevision});if(!changed.ok)return changed
+ const conflict=await sdk.config.patch(Counter,{set:{count:999}},{expectedManagedRevision:before.managedRevision})
+ const cursor=await sdk.logs.mark();await sdk.plugins.stop(Counter);await sdk.plugins.start(Counter);await sdk.plugins.restart(Counter)
+ const logs=await sdk.logs.read(cursor,{filter:{plugin:Counter},limit:20})
+ const {instance}=await sdk.plugins.instance(Counter)
+ const business=await instance.increment(3)
+ return {moduleRuns:++moduleRuns,changed,conflict,logs,business,calls:instance.calls,actual:await sdk.config.get(Counter),lifecycle:await sdk.plugins.status(Counter)}
 }) satisfies Script
 `
 const failure = `import type {Script} from '@pluxel/host/agent'

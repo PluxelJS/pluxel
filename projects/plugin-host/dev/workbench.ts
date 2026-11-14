@@ -11,8 +11,7 @@ const principal = { provider: 'development-console', subject: 'workbench-migrati
 
 /** Read real publications and exercise a bounded, explicitly owned RPC activation. */
 export default (async (sdk, run) => {
-	const plugins = await sdk.plugins.list()
-	const studio = plugins.find((plugin) => plugin.rootExportName === 'ReportStudioPlugin')
+	const studio = await sdk.plugins.status(sdk.dev.address(ReportStudioPlugin))
 	if (!studio) throw new Error('ReportStudioPlugin is not registered')
 	const session = sdk.dev.ctx.require(WorkbenchHost).createSession(principal, () => {})
 	try {

@@ -14,45 +14,37 @@ export default (async (sdk, run) => {
 }) satisfies Script
 ```
 
-远程 Node 应用接收作者侧编译的 JavaScript 制品，应用机器只需运行时。Vite 项目脚本可以 import 项目模块并访问真实实例和 Context，见[开发控制台](./dev-console.md)。两种加载方式使用同一组 Host SDK 方法。
+远程 Node 应用接收作者侧编译的 JavaScript 制品，应用机器只需运行时。已知插件使用[生成的控制入口](./plugin-control.md)，可直接推导配置类型并调用实际实例的方法。Vite 项目脚本还可以 import 项目模块和访问 Context，见[开发控制台](./dev-console.md)。两种加载方式使用同一组 Host SDK 方法。
 
 ## 读取、计算、条件修改与核对采用
 
-以下 `scripts/scale.ts` 查找默认节点，将数值配置 `concurrency` 乘以输入中的倍数。目标插件需要声明这个配置字段；希望运行中立即采用时，还需注册配置更新监听器，见[插件配置](../plugin-development/configuration.md)。
+以下 `scripts/scale.ts` 使用 QueuePlugin 的控制入口，将数值配置 `concurrency` 乘以输入中的倍数。目标插件需要声明这个配置字段；希望运行中立即采用时，还需注册配置更新监听器，见[插件配置](../plugin-development/configuration.md)。运行中应用也可通过 `script sync` 或 `dev sync` 取得入口，见[控制材料同步](./plugin-control.md#取得控制入口)。
 
 ```ts
 import type { Script } from '@pluxel/host/agent'
+import { QueuePlugin } from '@acme/pluxel-plugin-queue/control'
 
 export default (async (sdk, run) => {
 	if (!run.input || typeof run.input !== 'object' || Array.isArray(run.input)) {
-		throw new TypeError('Expected { plugin: string, factor: number }')
+		throw new TypeError('Expected { factor: number }')
 	}
-	const { plugin, factor } = run.input as Record<string, unknown>
-	if (typeof plugin !== 'string' || typeof factor !== 'number' || !Number.isFinite(factor)) {
-		throw new TypeError('Expected { plugin: string, factor: number }')
+	const { factor } = run.input as Record<string, unknown>
+	if (typeof factor !== 'number' || !Number.isFinite(factor)) {
+		throw new TypeError('Expected a finite factor')
 	}
-	const candidates = (await sdk.plugins.list()).filter(
-		(node) => node.rootExportName === plugin && node.address.variant === 'default',
-	)
-	if (candidates.length !== 1) throw new Error(`Expected one default node for ${plugin}`)
-	const node = candidates[0]!.address
-	const before = await sdk.config.get(node)
+	const before = await sdk.config.get(QueuePlugin)
 	if (before.ok === false) return { step: 'read', result: before }
-	if (typeof before.config.concurrency !== 'number') {
-		throw new TypeError('The plugin must declare numeric concurrency')
-	}
 
 	run.signal.throwIfAborted()
 	const desired = before.config.concurrency * factor
 	const changed = await sdk.config.patch(
-		node,
+		QueuePlugin,
 		{ set: { concurrency: desired } },
 		{ expectedManagedRevision: before.managedRevision },
 	)
 	if (changed.ok === false) return { step: 'write', result: changed }
-	const actual = await sdk.config.get(node)
+	const actual = await sdk.config.get(QueuePlugin)
 	return {
-		node,
 		changed,
 		actual,
 		adopted:
@@ -82,7 +74,7 @@ export default (async (sdk, run) => {
 
 ## 插件、策略、更新与日志
 
-`plugins.list()` 提供节点地址、期望与实际状态、诊断和最近更新。后续 `plugins.status(address)`、`start(address)`、`stop(address)`、`restart(address)` 使用该稳定地址；fork 节点保留地址中的 `variant` 和 `forkId`。启停返回应用报告，需要检查报告中的失败和最终状态。
+`plugins.list()` 提供节点地址、期望与实际状态、诊断和最近更新，适合发现与巡检。已知插件的 `status/start/stop/restart` 直接传描述符，也接受发现的完整地址；fork 使用 `{ plugin: Descriptor, forkId }` 或原节点地址。启停返回应用报告，需要检查报告中的失败和最终状态。`plugins.instance(Descriptor)` 取得本次运行的业务实例视图，方法与资源寿命见[实例调用](./plugin-control.md#调用原插件实例)。
 
 `policy.get/validate/patch/reset` 管理 Host 执行策略，修改使用相同的 `expectedManagedRevision` 条件。策略结果会区分已保存策略与需要重建 Host 才采用的设置。`updates.latest()` 读取 Host 最近一次更新报告，没有记录时返回 `null`。
 
@@ -138,11 +130,11 @@ mkdir -p receipts
 pnpm exec pluxel script run ./scripts/scale.ts \
   --endpoint https://app.example.com \
   --credentials-file ./admin.json \
-  --input '{"plugin":"Queue","factor":2}' \
+  --input '{"factor":2}' \
   --receipt-file ./receipts/scale.receipt
 ```
 
-`--input-file FILE` 可替代 `--input`。默认调用 `default` 导出，具名函数用 `--export NAME`。作者侧先进行 TypeScript 检查和打包，上传自包含 JS 工厂与源码映射。普通计算依赖可随脚本打包；Node builtin、框架运行时、原生扩展和运行时动态 import 在上传模式中拒绝。异步工作放入导出函数，工厂顶层同步初始化。项目模块、Context 和插件实例访问使用 Vite 项目模式。
+`--input-file FILE` 可替代 `--input`。默认调用 `default` 导出，具名函数用 `--export NAME`。作者侧先进行 TypeScript 检查和打包，上传自包含 JS 工厂与源码映射。经清单验证的纯描述符和普通计算依赖可随脚本打包；Node builtin、框架运行时、原生扩展和运行时动态 import 在上传模式中拒绝。异步工作放入导出函数，工厂顶层同步初始化。需要项目模块或 Context 时使用 Vite 项目模式。
 
 CLI 在首次提交前向 stderr 输出 `{ stage: 'prepared', receipt }`，收到接纳后输出 `{ stage: 'accepted', receipt }`。`--receipt-file` 在上传前以 `0600` 新建文件，父目录需已存在，同名文件不会覆盖。stdout 返回单个 `{ receipt, run }` JSON；编译、连接或调用失败时返回 `{ receipt?, error }`。默认等待结算，`--detach` 在接纳后返回；`--timeout` 默认为 30000，最大 300000 毫秒，包含排队与加载时间。
 
@@ -181,7 +173,7 @@ const scope = createScriptScope({ ctx: host.ctx, signal: controller.signal })
 try {
 	const value = await task(scope.sdk, {
 		id: 'local-scale',
-		input: { plugin: 'Queue', factor: 2 },
+		input: { factor: 2 },
 		signal: controller.signal,
 	})
 	console.log(value)

@@ -1,0 +1,125 @@
+---
+title: 插件控制类型与实例调用
+description: 使用构建生成的插件描述符、配置源码声明和实例类型，编写可检查的 Host 脚本。
+---
+
+插件构建会生成独立的 `control` 入口。入口里的值是冻结的数据描述符，携带插件的完整地址和配置、实例类型的摘要；类型文件保留原 class 的方法、属性、继承、重载与泛型。脚本通过描述符选择 Host 中实际运行的插件，再调用它的业务方法。
+
+## 取得控制入口
+
+独立插件包经 `pluxel build` 构建后，从它的 `./control` 导出导入描述符：
+
+```ts
+import { Counter } from '@acme/pluxel-plugin-counter/control'
+import type {
+	CounterConfigInput,
+	CounterConfigOutput,
+	CounterConfigDeclaration,
+	CounterInstance,
+} from '@acme/pluxel-plugin-counter/control'
+```
+
+插件包模式的实例类型引用原包的公开 class 声明，作者安装该包及原 API 使用的公开类型依赖。应用和 Vite 默认携带本地应用声明闭包，作者取得材料后无需应用源码，仍需安装声明引用的公开外部类型包；同步命令不安装依赖。公开类型引用 JSON 时，作者项目需要启用 `resolveJsonModule`。闭包内部保留原 class 的私有名义关系，它与另行安装的实现包声明属于各自的模块身份。生成失败会使构建失败，并指出无法处理的声明。
+
+原插件包和公开类型依赖的版本应与材料生成环境匹配。同步不安装、锁定或核验这些外部依赖版本；材料完整性与配对声明检查只验证交付材料，本地不同版本的外部声明仍可能推导出不同的成员类型。此要求同样适用于应用声明闭包保留的外部类型引用。
+
+声明生成要求相关模块的公开类型可被 TypeScript 命名。若插件与应用工厂在同一文件，工厂返回具体服务类导致 `TS2883` / `TS4094`，为回调声明 `: HostApplication` 或 `: Promise<HostApplication>` 返回类型。这样应用保持明确的公开返回类型，插件成员继续保留自身的完整声明。
+
+对运行中的应用，可以通过现有认证连接读取它已接纳的材料：
+
+```sh
+# 使用 dev status 已选择的 profile；有多个匹配实例时再加 --instance。
+pluxel dev sync --profile app
+
+# 部署应用沿用 Management 管理认证，读取无需开启 scripts。
+pluxel script sync --endpoint https://app.example.com \
+  --credentials-file ./admin.json --out .pluxel/control
+```
+
+`dev sync` 默认写入所选 Vite root 的 `.pluxel/control`。部署同步的默认目录相对于当前工作目录。部署命令输出 `entry`、`snapshot`、`catalogRevision`、`unavailableCount` 和 `definitions`；开发命令在 `{ ok: true, value }` 的 `value` 中提供相同字段。每项 definition 都包含完整地址、实际 `exportName` 和可导入的 `module` 路径。聚合入口为名称添加稳定的地址后缀；按输出导入，并在脚本内使用易读的局部名：
+
+```ts
+// 使用 sync 实际返回的 exportName；下面的后缀仅用于展示形式。
+import { Counter_0123456789abcdef as Counter } from '../.pluxel/control/current/index.mjs'
+```
+
+同步先验证完整清单和每个文件，再原子切换 `current`。已有快照继续保留，当前导入不会看到半份材料。输出目录由工具管理；目录内已有作者文件或快照被修改时会报冲突。使用新目录或显式清理已经确认废弃的生成目录后再同步。
+
+同步后的聚合入口只导出当前 catalog 已接纳的定义；底层声明闭包按已验证的原材料保留。`unavailableCount` 表示缺失、分析失败等尚不能提供材料的定义数量。已知分析失败或源码失配的原因显示在 `plugins.status/list` 的 `issues` 中；应用的配置读取和生命周期操作仍可通过动态地址进行。
+
+## 配置输入、输出与源码表达式
+
+假设插件使用以下 Schema：
+
+```ts
+const CounterConfig = v.object({
+	count: v.optional(v.pipe(v.number(), v.minValue(0)), 2),
+})
+```
+
+生成的 `CounterConfigInput` 允许省略 `count`，`CounterConfigOutput` 则包含已经补齐的数值字段。`CounterConfigDeclaration` 是只读的源码描述类型，记录每个配置节点的 `path`、`source`、`className`、`expression` 和引用的 `dependencies`。声明旁的注释也保留 Schema 表达式、本地常量、helper 声明和直接引用的 JSON 数据，所以编辑器和 agent 能看到默认值、校验器、转换以及 Part 的配置位置。
+
+这些源码描述不会作为 JavaScript 执行，也不会读取运行环境里的值。真正的校验、来源合成、保存和运行采用继续由目标 Host 的原 Schema 完成。
+
+描述符让 SDK 自动关联输入和输出类型：
+
+```ts
+import type { Script } from '@pluxel/host/agent'
+import { Counter } from '@acme/pluxel-plugin-counter/control'
+
+export default (async (sdk) => {
+	const before = await sdk.config.get(Counter)
+	if (before.ok === false) return before
+	const changed = await sdk.config.patch(
+		Counter,
+		{ set: { count: before.config.count * 2 } },
+		{ expectedManagedRevision: before.managedRevision },
+	)
+	if (changed.ok === false) return changed
+	return { changed, actual: await sdk.config.get(Counter) }
+}) satisfies Script
+```
+
+`get` 返回 Schema 输出，`patch` 与 `validate` 接受 Schema 输入的递归 patch，数组整体替换。`managedInput` 和 `effectiveInput` 继续表达观察到的原始数据。`validate` 只预览候选输出；返回的 application 字段仍描述当前运行状态。保存与采用、版本冲突的处理见[自动化脚本](./scripts.md#读取计算条件修改与核对采用)。
+
+已知无配置的描述符使用 `never` 输入和输出，不能调用 typed 配置方法。异构目标联合需要先缩小到相应配置类型再写入。运行时发现的 `PluginNodeAddress` 保留动态 API，配置字段为未知数据，调用方自行验证。
+
+## 调用原插件实例
+
+假设 Counter 的公开业务 API 包含 `increment(by: number)` 和可读属性 `calls`：
+
+```ts
+import type { Script } from '@pluxel/host/agent'
+import { Counter } from '@acme/pluxel-plugin-counter/control'
+
+export default (async (sdk) => {
+	const { instance } = await sdk.plugins.instance(Counter)
+	const changed = await instance.increment(3)
+	return { changed, calls: instance.calls }
+}) satisfies Script
+```
+
+`plugins.instance()` 要求节点已经运行，获取时不会启动它。返回外层 `{ instance }`，所以带有 `then` 成员的插件也能安全交付。实例保留原 class 的公共成员类型和可写性，私有与 protected 成员沿用 TypeScript 的可见性。
+
+实例视图限定在本次运行内，对象身份不同于原 provider；同一次运行内重复获取会复用视图。成员访问检查当前 scope 和 provider 的接纳状态，方法在原 provider 上执行，同步返回保持同步；标准 Promise 返回保持原对象并参与运行和 generation 的排空。重启后重新获取实例，缓存的旧成员调用会失败。
+
+先 `await` 业务异步方法，再调用配置、策略、实例获取或插件启停等 Host 操作。这些操作与 provider 调用可能互相等待，SDK 会用 `borrowed_generation_conflict` 拒绝产生这种并发的调用。日志读取可以在业务等待期间进行。
+
+方法返回的流、迭代器、自定义 thenable 和其他子资源遵循原业务 API 的释放协议。脚本用 `using`、`await using` 或 `try/finally` 释放它们；视图不会递归包装返回值。只返回纯 JSON 结果，实例和资源句柄留在执行进程内。
+
+## 默认节点、fork 与更新
+
+描述符直接选择默认节点。fork 使用相同描述符加上 fork ID：
+
+```ts
+const tenant = { plugin: Counter, forkId: 'tenant-a' } as const
+const status = await sdk.plugins.status(tenant)
+const { instance } = await sdk.plugins.instance(tenant)
+const changed = await instance.increment(1)
+```
+
+`status`、启停、配置和日志的 `filter.plugin` 都接受描述符或 fork；未知插件的发现继续使用 `plugins.list()` 返回的完整地址。
+
+typed 配置调用检查配置摘要，实例获取检查实例摘要。材料过期返回 `control_contract_mismatch`，在调用前重新同步并检查脚本。缺失材料返回 `control_material_unavailable`。执行前可从 `describe.capabilities` 确认 `plugins.instance` 能力；当前 Node、Vite 后端提供同进程实例访问。材料读取权限与脚本执行权限分别判断。
+
+Vite 在原更新批次接纳候选后提供对应材料。修改源码时按[HMR 批次控制](./dev-console.md#hmr-批次控制)执行，成功 apply 后重新同步；未接纳源码不会成为在线描述符。上传与项目脚本都检查真实输入，拒绝声明与执行内容不一致的组合。提交、查询和取消仍使用原 [receipt](./scripts.md#向-node-应用提交)。

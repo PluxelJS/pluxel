@@ -15,7 +15,11 @@ import {
 	ConfigValidationError,
 	type ConfigValidationErrors as CoreConfigValidationErrors,
 } from '@pluxel/core/services'
-import { pluginCatalogEntry, type PluginCatalogSnapshot } from './catalog'
+import {
+	assertPluginControlContract,
+	pluginCatalogEntry,
+	type PluginCatalogSnapshot,
+} from './catalog'
 import type {
 	HostOperationOptions,
 	HostPluginGraphExclusiveSession,
@@ -24,7 +28,12 @@ import type {
 import type { HostStateSnapshot } from './policy'
 import { requirePluginHostCoordinator } from './install'
 import type { HostConfigStore, HostConfigSource } from './config-store'
-import { assertDataObject, mergeRecord, snapshotConfigInput } from './config-records'
+import {
+	assertDataObject,
+	mergeRecord,
+	snapshotConfigInput,
+	type ConfigInputPatch,
+} from './config-records'
 import type { HostInputMode } from './input-mode'
 import type { HostPersistenceResult } from './persistence'
 import { assertConfigPaths, removeConfigPaths } from './config-paths'
@@ -43,8 +52,8 @@ export class ConfigMutationRejectedError extends Error {
 	}
 }
 
-export type HostConfigMutation = Readonly<{
-	set?: Readonly<Record<string, unknown>>
+export type HostConfigMutation<I = Readonly<Record<string, unknown>>> = Readonly<{
+	set?: ConfigInputPatch<I> & object
 	remove?: readonly (readonly string[])[]
 }>
 export type HostConfigInputSnapshot = Readonly<{
@@ -56,9 +65,12 @@ export type HostConfigInputSnapshot = Readonly<{
 	shadowedPaths: readonly (readonly string[])[]
 	managedRevision: string
 }>
-type ConfigValueResult = HostConfigInputSnapshot &
-	Readonly<{ config: Readonly<Record<string, unknown>> }>
-export type HostPluginConfigResultOk<TReport = PluginApplyReport> = ConfigValueResult &
+type ConfigValueResult<O extends object = Readonly<Record<string, unknown>>> =
+	HostConfigInputSnapshot & Readonly<{ config: ReadonlyConfigValue<O> }>
+export type HostPluginConfigResultOk<
+	TReport = PluginApplyReport,
+	O extends object = Readonly<Record<string, unknown>>,
+> = ConfigValueResult<O> &
 	Readonly<{
 		ok: true
 		persistence: HostPersistenceResult
@@ -101,9 +113,10 @@ export type HostPluginConfigResultErr =
 				message: string
 				persistence: Readonly<{ status: 'unknown' }>
 			}>)
-export type HostPluginConfigResult<TReport = PluginApplyReport> =
-	| HostPluginConfigResultOk<TReport>
-	| HostPluginConfigResultErr
+export type HostPluginConfigResult<
+	TReport = PluginApplyReport,
+	O extends object = Readonly<Record<string, unknown>>,
+> = HostPluginConfigResultOk<TReport, O> | HostPluginConfigResultErr
 
 /** Raw input edits, validation and reads share the catalog/lifecycle queue. */
 export interface HostPluginConfig {
@@ -147,6 +160,7 @@ function configLookup(
 	catalog: PluginCatalogSnapshot,
 	state: HostStateSnapshot,
 	owner: PluginNodeAddress,
+	expectedControlContract?: string | null,
 ): ConfigLookup {
 	const entry = pluginCatalogEntry(catalog, owner.definition)
 	if (
@@ -162,6 +176,8 @@ function configLookup(
 			message: 'Plugin node is unavailable in the committed runtime graph policy.',
 		}
 	}
+	if (expectedControlContract !== undefined)
+		assertPluginControlContract(entry, 'config', expectedControlContract)
 	const config = entry.candidate.declaration.config
 	if (!config) {
 		return {
@@ -253,6 +269,7 @@ export async function pluginConfigGet(
 	ctx: Context,
 	owner: PluginNodeAddress,
 	options?: HostOperationOptions,
+	expectedControlContract?: string | null,
 ): Promise<HostPluginConfigResult> {
 	const coordinator = requirePluginHostCoordinator(ctx)
 	return coordinator.runExclusive(
@@ -263,6 +280,7 @@ export async function pluginConfigGet(
 				coordinator.catalogSnapshot(),
 				session.runtimeStateSnapshot(),
 				owner,
+				expectedControlContract,
 			)
 			if (lookup.ok === false) return lookup
 			let output: Readonly<Record<string, unknown>>
@@ -295,6 +313,7 @@ export async function pluginConfigValidate(
 	owner: PluginNodeAddress,
 	change: HostConfigMutation,
 	options?: HostOperationOptions,
+	expectedControlContract?: string | null,
 ): Promise<HostPluginConfigResult> {
 	const coordinator = requirePluginHostCoordinator(ctx)
 	return coordinator.runExclusive(
@@ -305,6 +324,7 @@ export async function pluginConfigValidate(
 				coordinator.catalogSnapshot(),
 				session.runtimeStateSnapshot(),
 				owner,
+				expectedControlContract,
 			)
 			if (lookup.ok === false) return lookup
 			let managed: Readonly<Record<string, unknown>> | null
@@ -395,6 +415,7 @@ async function mutatePluginConfig(
 		current: Readonly<Record<string, unknown>> | null,
 	) => Readonly<Record<string, unknown>> | null,
 	options?: HostOperationOptions,
+	expectedControlContract?: string | null,
 ): Promise<HostPluginConfigResult> {
 	const coordinator = requirePluginHostCoordinator(ctx)
 	return coordinator.runExclusive(
@@ -416,6 +437,7 @@ async function mutatePluginConfig(
 				coordinator.catalogSnapshot(),
 				session.runtimeStateSnapshot(),
 				owner,
+				expectedControlContract,
 			)
 			if (lookup.ok === false) return lookup
 			let managed: Readonly<Record<string, unknown>> | null
@@ -527,6 +549,7 @@ export async function pluginConfigPatch(
 	owner: PluginNodeAddress,
 	change: HostConfigMutation,
 	options?: HostOperationOptions,
+	expectedControlContract?: string | null,
 ): Promise<HostPluginConfigResult> {
 	return mutatePluginConfig(
 		ctx,
@@ -534,6 +557,7 @@ export async function pluginConfigPatch(
 		'plugin-config-patch',
 		(current) => changeInput(current, change),
 		options,
+		expectedControlContract,
 	)
 }
 export async function pluginConfigReset(
@@ -541,14 +565,16 @@ export async function pluginConfigReset(
 	owner: PluginNodeAddress,
 	paths?: readonly (readonly string[])[],
 	options?: HostOperationOptions,
+	expectedControlContract?: string | null,
 ): Promise<HostPluginConfigResult> {
-	if (paths?.length === 0) return pluginConfigGet(ctx, owner, options)
+	if (paths?.length === 0) return pluginConfigGet(ctx, owner, options, expectedControlContract)
 	return mutatePluginConfig(
 		ctx,
 		owner,
 		'plugin-config-reset',
 		(current) => (paths === undefined ? null : changeInput(current, { remove: paths })),
 		options,
+		expectedControlContract,
 	)
 }
 

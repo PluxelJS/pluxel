@@ -1,5 +1,42 @@
 /** Portable script SDK. Importing this entry installs no execution backend or transport. */
 export type { Script, ScriptSdk, ScriptContext } from './agent/sdk-types'
+export type {
+	PluginDescriptor,
+	PluginTypedTarget,
+	PluginTarget,
+	PluginConfigInput,
+	PluginConfigOutput,
+	PluginInstance,
+	ScriptLogReadOptions,
+} from './agent/control'
+export {
+	parsePluginControlDescriptor,
+	parsePluginControlManifest,
+	verifyPluginControlMaterial,
+	verifyPluginControlMaterialSync,
+	renderPluginDescriptors,
+	encodeControlData,
+	isControlFilePath,
+	controlSha256,
+	type PluginControlDescriptorData,
+	type PluginControlManifest,
+} from './control-manifest'
+export {
+	readPluginControlMaterials,
+	createPluginControlMaterialReader,
+	parsePluginControlManifestIndex,
+	parsePluginControlManifestRequest,
+	parsePluginControlFileRequest,
+	parsePluginControlFileChunk,
+	PLUGIN_CONTROL_CHUNK_BYTES,
+	PLUGIN_CONTROL_CACHE_MS,
+	type PluginControlMaterialsSnapshot,
+	type PluginControlManifestIndex,
+	type PluginControlManifestRequest,
+	type PluginControlFileRequest,
+	type PluginControlFileChunk,
+	type PluginControlMaterialReader,
+} from './agent/materials'
 export {
 	createScriptScope,
 	ScriptScopeError,

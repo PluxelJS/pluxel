@@ -12,17 +12,13 @@
 
 D1/KV 配置与状态适配按真实部署验证提交、读取和传播；完整采用结果继续由 Host 报告。Dynamic Worker 不保存另一份 Host graph，也不创建另一套插件实例。
 
+后端按实际实现声明 `describe.capabilities`。管理能力可以通过受控桥提供；同进程真实实例借用需要 `plugins.instance` 支持，跨 isolate 后端未实现时准确拒绝，不能以 `artifact` 加载能力或异步 RPC 代理代替。插件类型与借用边界由[Plugin Control](../PLUGIN_CONTROL.md)维护。
+
 ## 远程 Vite 入口
 
 为需要远端项目排障的部署提供显式授权的连接入口，复用现有共享执行 target 和项目加载器。验收必须经过目标 Vite 的真实模块图：项目 import、Plugin/token 身份、当前实例和 Context 保持在目标进程，源码屏障与 HMR pause/apply/resume 仍由原 Vite 实例拥有。
 
 远程连接位置与开发能力授权分开选择。连接失败时报告原目标状态；保留原 run receipt，不自动切换上传执行或重投新 owner。共享开发进程中的 HMR 控制需要明确多人操作的所有权与可观察状态。
-
-## 发现与类型材料
-
-核心 SDK 声明随包发布。插件的可导入描述符、配置类型和控制制品生成由[插件身份与控制 SDK 提案](plugin-control-sdk/README.md)统一设计：复用 canonical entry + exportName，让构建、HMR 和已安装包提供同一身份的类型化操作目标，替代按短名称筛选已知插件。
-
-目标材料的取得、下载与缓存消费同一生成格式，核对实际 catalog 和控制契约版本。类型发现不运行应用工厂或 Plugin init，也不要求部署机器保留源码；接口与配置声明仍来自原定义，权限、完整校验和 generation 撤回由实际调用边界维护。
 
 ## 离线配置校验与 Vault 部署绑定
 

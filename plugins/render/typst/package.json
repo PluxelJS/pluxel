@@ -76,6 +76,11 @@
 		"./tiptap/style.css": {
 			"@pluxel/hmr": "./src/tiptap/style.css",
 			"default": "./dist/tiptap/style.css"
+		},
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
 		}
 	},
 	"publishConfig": {
@@ -95,7 +100,12 @@
 			"./wasm": "./dist/wasm.mjs",
 			"./package.json": "./package.json",
 			"./source/parser.wasm": "./dist/source/typst_ast_bg.wasm",
-			"./tiptap/style.css": "./dist/tiptap/style.css"
+			"./tiptap/style.css": "./dist/tiptap/style.css",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
 		}
 	},
 	"scripts": {
@@ -236,6 +246,7 @@
 		},
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,
-		"workbenchArtifacts": true
+		"workbenchArtifacts": true,
+		"control": "./dist/control/manifest.json"
 	}
 }

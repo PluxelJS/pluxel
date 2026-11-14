@@ -61,6 +61,7 @@ type InstalledPackageManifest = Readonly<{
 	dependencies?: Readonly<Record<string, unknown>>
 	optionalDependencies?: Readonly<Record<string, unknown>>
 	pluxel?: Readonly<{
+		control?: unknown
 		artifactRoot?: unknown
 		nodeArtifacts?: unknown
 		workbenchArtifacts?: unknown

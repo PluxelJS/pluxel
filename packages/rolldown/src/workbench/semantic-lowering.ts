@@ -2240,20 +2240,31 @@ function canonicalPackageMetadata(manifest: Record<string, unknown>): string {
 				.map((field) => [
 					field,
 					field === 'exports'
-						? canonicalPackageExports(manifest[field])
+						? canonicalPackageExports(
+								manifest[field],
+								Boolean(
+									manifest.pluxel &&
+									typeof manifest.pluxel === 'object' &&
+									typeof (manifest.pluxel as Record<string, unknown>).control === 'string',
+								),
+							)
 						: canonicalJsonValue(manifest[field]),
 				]),
 		),
 	)
 }
 
-function canonicalPackageExports(value: unknown): unknown {
+function canonicalPackageExports(value: unknown, controlMaterial = false): unknown {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		return canonicalJsonValue(value)
 	}
 	return canonicalJsonValue(
 		Object.fromEntries(
-			Object.entries(value as Record<string, unknown>).filter(([key]) => key !== './package.json'),
+			// The generated control entry is separately content-addressed. A renderer importing it
+			// contributes its actual file through the normal dependency walk.
+			Object.entries(value as Record<string, unknown>).filter(
+				([key]) => key !== './package.json' && (!controlMaterial || key !== './control'),
+			),
 		),
 	)
 }

@@ -8,6 +8,7 @@
  * shape, cardinality and source capture.
  */
 import { readFile } from 'node:fs/promises'
+import MagicString from 'magic-string'
 import type { Program } from 'oxc-parser'
 import type { TransformPluginContext } from 'rolldown'
 import { PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
@@ -145,7 +146,11 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 						`${helper}(${declaration.className}, { abiVersion: ${PLUGIN_LOWERING_ABI_VERSION}, fieldName: ${JSON.stringify(declaration.fieldName)}, schema: ${declaration.schemaExpression}, source: ${JSON.stringify(declaration.source)} });`,
 					)
 				}
-				return { code: `${code}\n${lines.join('\n')}\n`, map: null }
+				const transformed = new MagicString(code).append(`\n${lines.join('\n')}\n`)
+				return {
+					code: transformed.toString(),
+					map: transformed.generateMap({ source: id, includeContent: true, hires: true }),
+				}
 			},
 		},
 	}

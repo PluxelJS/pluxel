@@ -13,6 +13,7 @@ description: 掌握 Pluxel 插件与应用的开发、代码检查、调试测�
 | 运行类型检查、代码 Lint 与自动化测试 | [工作区工具链](./workspace-toolchain.md)      | 使用 mise、Vite Task、hk 等工具链管理开发环境与质量检查    |
 | 编写插件单元测试与集成测试           | [插件测试](../plugin-development/testing.md)  | 基于真实宿主容器执行依赖注入、生命周期与回执断言测试       |
 | 配置自动化、插件启停与远程脚本       | [Host 自动化脚本](./scripts.md)               | 普通 TypeScript SDK、条件修改、实际采用与运行查询          |
+| 插件业务方法、配置类型与材料同步     | [插件控制类型](./plugin-control.md)           | 生成 class 声明、配置源码描述、实例调用与同步              |
 | 运行中调试、HMR 批次控制与日志查询   | [开发控制台（Dev Console）](./dev-console.md) | 在开发服务运行期间执行测试脚本、修改配置并精准控制热替换   |
 | 多包联调与框架源码开发               | [源码工作区管理](./source-workspaces.md)      | 配置本地 Git 联调环境、工作区 Catalog 与文档同步           |
 | 理解官方脚手架项目结构               | [单体仓库脚手架指南](./starter-monorepo.md)   | 了解模板工程的模块划分、依赖管理与常用 package scripts     |

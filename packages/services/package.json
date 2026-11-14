@@ -149,7 +149,12 @@
 			"@pluxel/source": "./src/workers.ts",
 			"default": "./dist/workers.mjs"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
+		}
 	},
 	"publishConfig": {
 		"imports": {
@@ -188,7 +193,12 @@
 			"./vault": "./dist/vault.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./workers": "./dist/workers.mjs",
-			"./package.json": "./package.json"
+			"./package.json": "./package.json",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
 		},
 		"access": "public"
 	},
@@ -302,6 +312,7 @@
 		"workbenchCapnweb": "0.12.0",
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,
-		"workbenchArtifacts": true
+		"workbenchArtifacts": true,
+		"control": "./dist/control/manifest.json"
 	}
 }

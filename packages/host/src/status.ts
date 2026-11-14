@@ -42,6 +42,8 @@ export type HostPluginReconciliationCode =
 	| 'start-failed'
 	| 'dependency-blocked'
 	| 'drain-failed'
+	| 'control_analysis_failed'
+	| 'control_source_changed'
 export type HostPluginStatusIssue = Readonly<{
 	id: string
 	code: HostPluginReconciliationCode
@@ -167,6 +169,26 @@ function projectHostPluginStatus(
 				id: `definition_unavailable:${nodeKey}`,
 				code: 'definition_unavailable',
 				message: 'Plugin definition is unavailable in the route catalog',
+			}),
+		)
+	}
+	const control = definition?.provenance.control
+	if (
+		control?.state === 'unavailable' &&
+		(control.reason === 'analysis_failed' || control.reason === 'source_changed')
+	) {
+		issues.push(
+			Object.freeze({
+				id: `control:${nodeKey}:${control.reason}`,
+				code:
+					control.reason === 'analysis_failed'
+						? 'control_analysis_failed'
+						: 'control_source_changed',
+				message:
+					control.message ??
+					(control.reason === 'analysis_failed'
+						? 'Plugin control declaration analysis failed'
+						: 'Plugin control declarations differ from the evaluated implementation input'),
 			}),
 		)
 	}

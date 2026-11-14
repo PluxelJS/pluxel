@@ -13,7 +13,8 @@ export default defineConfig({
 					output: ['dist/**'],
 				},
 			},
-			'check-types': 'tsc --noEmit --pretty false',
+			'check-types':
+				'tsc --noEmit --pretty false && tsc --project tsconfig.control.json --pretty false',
 			'check-tests': {
 				command: 'vp test run',
 				cache: {

@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import MagicString from 'magic-string'
 import { readSourceCondition, readSourceExportEntries } from '../../source-exports'
 import { createReadStream } from 'node:fs'
 import { readFile as readSourceFile, realpath } from 'node:fs/promises'
@@ -148,6 +149,7 @@ type ArtifactGenerationState = {
 	status: 'active' | 'committed' | 'rolled-back'
 	definitionsByModule: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>
 	builtDefinitionsByModule: Map<string, ReadonlyMap<string, BuiltPluginDefinition>>
+	sourceContents: Map<string, string>
 	/** Ambient versions captured with the candidate view when the generation began. */
 	baseVersions: ReadonlyMap<string, number>
 	touchedModules: Set<string>
@@ -169,6 +171,9 @@ export type PluginSemanticsCollector = {
 	plugin: ViteCompatPlugin
 	snapshot(): Map<string, PluginDependencyMode>
 	definitions(): readonly PluginSemanticDefinition[]
+	/** Concrete source declarations and bytes from the same semantic generation. */
+	sourceDefinitions(): readonly (PluginSemanticDefinition & Readonly<{ moduleId: string }>)[]
+	sourceContents(): ReadonlyMap<string, string>
 	/** Resolves a lexical constructor binding using collected source or lowering ABI facts. */
 	definitionForBinding(moduleId: string, local: string): PluginDefinitionAddress | undefined
 	/**
@@ -303,6 +308,7 @@ export function createPluginSemanticsPlugin(
 	const workbenchLowering = createWorkbenchSemanticLowering(sourceRoot)
 	const definitionsByModule = new Map<string, ReadonlyMap<string, PluginSemanticDefinition>>()
 	const builtDefinitionsByModule = new Map<string, ReadonlyMap<string, BuiltPluginDefinition>>()
+	const sourceContents = new Map<string, string>()
 	const artifactModuleVersions = new Map<string, number>()
 	const artifactGenerationContext = new AsyncLocalStorage<ArtifactGenerationState>()
 	const dependencyInventory = new Map<string, DependencyInventoryNode>()
@@ -340,11 +346,12 @@ export function createPluginSemanticsPlugin(
 	const currentArtifactFacts = (): Readonly<{
 		definitionsByModule: ReadonlyMap<string, ReadonlyMap<string, PluginSemanticDefinition>>
 		builtDefinitionsByModule: ReadonlyMap<string, ReadonlyMap<string, BuiltPluginDefinition>>
+		sourceContents: Map<string, string>
 	}> => {
 		const generation = artifactGenerationContext.getStore()
 		return generation === activeArtifactGeneration && generation?.status === 'active'
 			? generation
-			: { definitionsByModule, builtDefinitionsByModule }
+			: { definitionsByModule, builtDefinitionsByModule, sourceContents }
 	}
 
 	const currentWorkbench = (): WorkbenchSemanticLowering => {
@@ -361,6 +368,7 @@ export function createPluginSemanticsPlugin(
 		if (update) {
 			if (!update.remove()) return
 		} else currentWorkbench().remove(id)
+		currentArtifactFacts().sourceContents.delete(semanticModuleKey(id))
 		mutateArtifactModuleFacts(id, (definitions, builtDefinitions) =>
 			clearArtifactModuleFacts(definitions, builtDefinitions, id),
 		)
@@ -378,6 +386,7 @@ export function createPluginSemanticsPlugin(
 			workbenchLowering.reset()
 			definitionsByModule.clear()
 			builtDefinitionsByModule.clear()
+			sourceContents.clear()
 			artifactModuleVersions.clear()
 			dependencyInventory.clear()
 			requiredImports.clear()
@@ -405,6 +414,7 @@ export function createPluginSemanticsPlugin(
 			},
 			async handler(code, rawId) {
 				const id = stripQuery(rawId)
+				currentArtifactFacts().sourceContents.set(semanticModuleKey(id), code)
 				// Reserve before any asynchronous provenance/resolution work, not just collect().
 				const update = currentWorkbench().beginUpdate(id)
 				const mightContainBuiltFacts = code.includes('__setPluginDefinition')
@@ -488,7 +498,7 @@ export function createPluginSemanticsPlugin(
 						return resolved?.id ? stripQuery(resolved.id) : undefined
 					},
 				})
-				if (!accepted) return result.code === code ? null : { code: result.code, map: null }
+				if (!accepted) return result.code === code ? null : { code: result.code, map: result.map }
 				for (const node of result.dependencyInventory) {
 					dependencyInventory.set(node.key, node)
 				}
@@ -499,7 +509,7 @@ export function createPluginSemanticsPlugin(
 					requiredImports.set(id, result.requiredSources)
 					requiredImports.set(rawId, result.requiredSources)
 				}
-				return result.code === code ? null : { code: result.code, map: null }
+				return result.code === code ? null : { code: result.code, map: result.map }
 			},
 		},
 		resolveId(source, importer) {
@@ -526,6 +536,11 @@ export function createPluginSemanticsPlugin(
 		snapshot: () =>
 			collectReachablePackageDependencies(dependencyInventory, packagePlan?.packageName),
 		definitions: () => collectedSemanticDefinitions(currentArtifactFacts().definitionsByModule),
+		sourceDefinitions: () =>
+			[...currentArtifactFacts().definitionsByModule].flatMap(([moduleId, definitions]) =>
+				[...definitions.values()].map((definition) => Object.assign({}, definition, { moduleId })),
+			),
+		sourceContents: () => new Map(currentArtifactFacts().sourceContents),
 		definitionForBinding: (moduleId, local) => {
 			const facts = currentArtifactFacts()
 			const key = semanticModuleKey(moduleId)
@@ -564,6 +579,7 @@ export function createPluginSemanticsPlugin(
 				status: 'active',
 				definitionsByModule: new Map(definitionsByModule),
 				builtDefinitionsByModule: new Map(builtDefinitionsByModule),
+				sourceContents: new Map(sourceContents),
 				baseVersions: new Map(artifactModuleVersions),
 				touchedModules: new Set(),
 				workbench: workbenchLowering.fork(),
@@ -593,6 +609,9 @@ export function createPluginSemanticsPlugin(
 						generation.builtDefinitionsByModule,
 						moduleKey,
 					)
+					const source = generation.sourceContents.get(moduleKey)
+					if (source === undefined) sourceContents.delete(moduleKey)
+					else sourceContents.set(moduleKey, source)
 					artifactModuleVersions.set(moduleKey, baseVersion + 1)
 					committedModules.push(moduleKey)
 				}
@@ -1258,7 +1277,9 @@ async function lowerModule(options: SemanticModuleOptions) {
 		end,
 		text: `__pluxelDefinePluginRef(${JSON.stringify({ abiVersion: PLUGIN_LOWERING_ABI_VERSION, definition })})`,
 	}))
-	let transformed = applyReplacements(options.code, replacements)
+	const transformed = new MagicString(options.code)
+	for (const replacement of replacements)
+		transformed.overwrite(replacement.start, replacement.end, replacement.text)
 	if (
 		definitions.length > 0 ||
 		replacements.length > 0 ||
@@ -1311,9 +1332,15 @@ async function lowerModule(options: SemanticModuleOptions) {
 				`__pluxelSetPluginPartOptional(${part.className}, ${JSON.stringify({ abiVersion: PLUGIN_LOWERING_ABI_VERSION, optional: part.optional })});`,
 			)
 		}
-		transformed = `${transformed}\n${lines.join('\n')}\n`
+		transformed.append(`\n${lines.join('\n')}\n`)
 	}
-	return { code: transformed, definitions, dependencyInventory, requiredSources }
+	return {
+		code: transformed.toString(),
+		map: transformed.generateMap({ source: options.id, includeContent: true, hires: true }),
+		definitions,
+		dependencyInventory,
+		requiredSources,
+	}
 }
 
 function collectReachablePackageDependencies(
@@ -2664,12 +2691,4 @@ function arrayOf(value: unknown): unknown[] {
 function numberPosition(value: unknown, error: (message: string) => never, label: string): number {
 	if (typeof value === 'number') return value
 	return error(`[pluxel:plugin-semantics] cannot locate ${label}`)
-}
-
-function applyReplacements(code: string, replacements: readonly Replacement[]): string {
-	let out = code
-	for (const replacement of [...replacements].sort((left, right) => right.start - left.start)) {
-		out = `${out.slice(0, replacement.start)}${replacement.text}${out.slice(replacement.end)}`
-	}
-	return out
 }

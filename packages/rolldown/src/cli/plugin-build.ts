@@ -1,4 +1,5 @@
-import type { InlineConfig, TsdownPluginOption } from 'vite-plus/pack'
+import type { InlineConfig, TsdownPlugin, TsdownPluginOption } from 'vite-plus/pack'
+import { dirname, relative, resolve } from 'node:path'
 import Macros from 'unplugin-macros/rolldown'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 import { configSourcePlugin } from '../rolldown/plugins/configSourcePlugin'
@@ -10,6 +11,8 @@ import { collectTinybaseConsumers } from './tinybase-peer'
 import { createPluginDependencyMetadataHook } from './plugin-metadata'
 import type { BuildLogger } from './types'
 import type { OutputChunk, Plugin } from 'rolldown'
+import { createPluginControlPlugin } from '../control/plugin'
+import { addControlExport, controlEntry } from './control-exports'
 
 type TsdownInputOptions = Exclude<
 	NonNullable<InlineConfig['inputOptions']>,
@@ -82,6 +85,11 @@ function createPipeline(
 			Macros(),
 			options.lint === false ? undefined : lintGuardPlugin({ cwd: options.root }),
 			configSourcePlugin(),
+			createPluginControlPlugin({
+				root: options.root,
+				semantics,
+				typeImports: 'packageMetadata' in options ? 'package' : 'closure',
+			}),
 			pluginArtifactBuildPlugin({
 				root: options.root,
 				buildDir: options.artifactBuildDir ?? workbenchOptions.buildDir,
@@ -115,7 +123,7 @@ export function pluginPackage(
 	})
 	const { semantics: _collector, ...pipeline } = createPipeline(options, semantics)
 	const tinybase = collectTinybaseConsumers(options.packageMetadata.packageJsonPath)
-	pipeline.plugins.unshift(tinybase.plugin)
+	pipeline.plugins.unshift(pluginControlExportsPlugin(options), tinybase.plugin)
 	return {
 		exports: {
 			// Keep linked development packages on the HMR source condition without exposing raw TS
@@ -137,6 +145,42 @@ export function pluginPackage(
 				return targets.length > 0
 			},
 		}),
+	}
+}
+
+/** Register the generated asset in tsdown's own writeback, after author export customization. */
+function pluginControlExportsPlugin(options: PluginPackageOptions): TsdownPlugin {
+	return {
+		name: 'pluxel:plugin-control-exports',
+		tsdownConfig(config) {
+			if (!config.exports) return
+			const exportsOptions =
+				typeof config.exports === 'object' ? config.exports : { enabled: config.exports }
+			const customExports = exportsOptions.customExports
+			const outDir = resolve(config.cwd ?? options.root, config.outDir ?? 'dist')
+			const artifactRoot = relative(
+				dirname(options.packageMetadata.packageJsonPath),
+				outDir,
+			).replaceAll('\\', '/')
+			const entry = controlEntry(artifactRoot ? `./${artifactRoot}/control` : './control')
+			config.exports = {
+				...exportsOptions,
+				async customExports(exports, context) {
+					const field = context.isPublish ? 'publishConfig.exports' : 'exports'
+					const original = context.isPublish
+						? context.pkg.publishConfig?.exports
+						: context.pkg.exports
+					const marker = context.pkg.pluxel?.control
+					// Check ownership before tsdown discards the previous generated export map.
+					addControlExport(original, entry, marker, field)
+					const authored =
+						typeof customExports === 'function'
+							? await customExports(exports, context)
+							: { ...exports, ...customExports }
+					return addControlExport(authored, entry, marker, field)
+				},
+			}
+		},
 	}
 }
 

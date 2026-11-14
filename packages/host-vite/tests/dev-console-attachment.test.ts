@@ -14,9 +14,11 @@ const mocked = vi.hoisted(() => ({
 		| ((input: ScriptSubmission, run: RunExecution) => Promise<unknown>),
 	script: vi.fn(),
 	load: vi.fn(async () => {}),
+	inputs: new Map<string, string>(),
 }))
 vi.mock('../src/environment', () => ({
 	collectHostImportFiles: (): string[] => [],
+	collectHostEvaluatedInputs: () => new Map(mocked.inputs),
 	importHostModule: async () => {
 		await mocked.load()
 		return { default: mocked.script }
@@ -34,6 +36,7 @@ const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
 	for (const close of cleanup.splice(0).toReversed()) await close()
 	vi.clearAllMocks()
+	mocked.inputs.clear()
 })
 
 async function fixture() {
@@ -42,6 +45,7 @@ async function fixture() {
 	const file = resolve(root, 'script.ts')
 	const source = 'export default () => null'
 	await writeFile(file, source)
+	mocked.inputs.set(file, source)
 	const application = await createHost({ plugins: [] })
 	cleanup.push(() => application.close())
 	const host = { ctx: application.ctx, epoch: 'first' }
@@ -99,5 +103,13 @@ it('rejects replacement during module loading before running the script', async 
 	current.host.epoch = 'second'
 	ready.resolve()
 	await expect(result).rejects.toMatchObject({ code: 'host_changed' })
+	expect(mocked.script).not.toHaveBeenCalled()
+})
+
+it('rejects a cached module whose original source differs from the checked input', async () => {
+	const current = await fixture()
+	for (const path of mocked.inputs.keys())
+		mocked.inputs.set(path, 'export default () => "old cached version"')
+	await expect(current.execute()).rejects.toMatchObject({ code: 'source_changed' })
 	expect(mocked.script).not.toHaveBeenCalled()
 })

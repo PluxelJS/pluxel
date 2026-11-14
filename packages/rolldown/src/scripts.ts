@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
-import { builtinModules, createRequire } from 'node:module'
-import { access, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
+import { builtinModules } from 'node:module'
+import { realpath } from 'node:fs/promises'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { rolldown, type Plugin } from 'rolldown'
 import type { ScriptArtifact } from '@pluxel/host/agent'
+import { ScriptInputs } from './script-inputs'
+import { readScriptControlModule } from './script-control-inputs'
 
 export type ScriptCompileOptions = Readonly<{
 	/** Ordinary TS/JS module. Compilation never evaluates it or the application factory. */
@@ -38,6 +38,17 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 	if (!/^[A-Za-z_$][A-Za-z0-9_$]{0,127}$/.test(exportName))
 		throw new TypeError('exportName must be a JavaScript identifier')
 	options.signal?.throwIfAborted()
+	const inputs = new ScriptInputs(options.signal)
+	const controls = new Map<string, string>()
+	const findControl = async (id: string): Promise<string | undefined> => {
+		if (controls.has(id)) return controls.get(id)
+		const code = await readScriptControlModule(inputs, id)
+		if (code !== undefined) {
+			controls.set(id, code)
+			inputs.requireCheckedFile(resolve(dirname(id), 'index.d.mts'))
+		}
+		return code
+	}
 	const forbidden = (specifier: string): boolean =>
 		specifier.startsWith('@pluxel/') ||
 		specifier.startsWith('node:') ||
@@ -60,11 +71,12 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 		if (!pending) {
 			pending = (async () => {
 				try {
-					return (
-						JSON.parse(await readFile(resolve(directory, 'package.json'), 'utf8')) as {
-							name?: string
-						}
-					).name
+					const content = inputs.read(resolve(directory, 'package.json'))
+					if (content === null) {
+						const parent = dirname(directory)
+						return parent === directory ? undefined : packageName(parent)
+					}
+					return (JSON.parse(content) as { name?: string }).name
 				} catch (error) {
 					if (error.code !== 'ENOENT') throw error
 					const parent = dirname(directory)
@@ -81,11 +93,16 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 	}
 	const imports: Plugin = {
 		name: 'pluxel-script-imports',
-		resolveId(source, importer) {
-			if (importer && forbidden(source))
+		async resolveId(source, importer) {
+			if (importer && forbidden(source)) {
+				if (source.startsWith('@pluxel/')) {
+					const resolved = await this.resolve(source, importer, { skipSelf: true })
+					if (resolved && (await findControl(resolved.id)) !== undefined) return resolved
+				}
 				rejectImport(
 					`Upload scripts cannot import ${JSON.stringify(source)}. Use type-only SDK imports, injected SDK operations, or a Vite project script for real application objects.`,
 				)
+			}
 			return null
 		},
 		resolveDynamicImport(_source, importer) {
@@ -94,12 +111,18 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 			)
 		},
 		async load(id) {
+			const control = await findControl(id)
+			if (control !== undefined) return control
 			if (id !== file && isAbsolute(id)) {
 				const name = await packageName(dirname(id))
 				if (runtimePackages.has(name) || /\.node(?:$|\?)/.test(id))
 					rejectImport(
 						`Upload scripts cannot bundle runtime module ${JSON.stringify(id)}. Access application objects through the injected SDK or a Vite project script.`,
 					)
+			}
+			if (isAbsolute(id) && /\.(?:[cm]?[jt]sx?|json)$/.test(id)) {
+				const content = inputs.read(id)
+				if (content !== null) return content
 			}
 			return null
 		},
@@ -108,6 +131,7 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 	try {
 		build = await rolldown({
 			input: file,
+			resolve: { symlinks: false },
 			plugins: [imports],
 			external: [],
 			treeshake: true,
@@ -152,7 +176,16 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 				'source_too_large',
 				'Compiled script or source map exceeds 1 MiB',
 			)
-		await checkScript(file, options.signal)
+		try {
+			await inputs.check(file)
+		} catch (cause) {
+			if (options.signal?.aborted) throw options.signal.reason
+			throw new ScriptCompileError(
+				'typecheck_failed',
+				cause instanceof Error ? cause.message : String(cause),
+				{ cause },
+			)
+		}
 		return {
 			kind: 'artifact',
 			format: 'pluxel-js-factory/1',
@@ -174,73 +207,38 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 	}
 }
 
-async function checkScript(file: string, signal?: AbortSignal): Promise<void> {
-	let directory = dirname(file)
-	let configPath: string | undefined
-	while (true) {
-		try {
-			await access(resolve(directory, 'tsconfig.json'))
-			configPath = resolve(directory, 'tsconfig.json')
-			break
-		} catch (error) {
-			if (error.code !== 'ENOENT') throw error
-		}
-		const parent = dirname(directory)
-		if (parent === directory) break
-		directory = parent
-	}
-	// Keeping the transient config beside its author preserves native inferred @types lookup.
-	const temporary = await mkdtemp(
-		resolve(configPath ? dirname(configPath) : dirname(file), '.pluxel-script-types-'),
-	)
+/** Native type checking for a Vite project; loading remains owned by its existing ModuleRunner. */
+export async function checkProjectScript(
+	options: Readonly<{ file: string; signal?: AbortSignal }>,
+): Promise<
+	Readonly<{
+		inputs: ReadonlyMap<string, string>
+		digest: string
+	}>
+> {
+	const file = await realpath(resolve(options.file))
+	const inputs = new ScriptInputs(options.signal)
 	try {
-		const config = resolve(temporary, 'tsconfig.json')
-		await writeFile(
-			config,
-			JSON.stringify({
-				...(configPath ? { extends: configPath } : {}),
-				files: [file],
-				include: [],
-				exclude: [],
-				compilerOptions: {
-					...(!configPath
-						? {
-								target: 'ES2023',
-								module: 'ESNext',
-								moduleResolution: 'Bundler',
-								strict: true,
-								skipLibCheck: true,
-							}
-						: {}),
-					noEmit: true,
-					incremental: false,
-					composite: false,
-					declaration: false,
-					emitDeclarationOnly: false,
-					allowJs: true,
-					checkJs: true,
-				},
-			}),
+		await inputs.check(file)
+		for (const path of inputs.snapshot().keys())
+			if (path.endsWith('/index.d.mts'))
+				await readScriptControlModule(inputs, path.slice(0, -'.d.mts'.length) + '.mjs')
+	} catch (cause) {
+		if (options.signal?.aborted) throw options.signal.reason
+		throw new ScriptCompileError(
+			'typecheck_failed',
+			cause instanceof Error ? cause.message : String(cause),
+			{ cause },
 		)
-		const compiler = resolve(
-			dirname(createRequire(import.meta.url).resolve('typescript/package.json')),
-			'bin/tsc',
-		)
-		try {
-			await promisify(execFile)(
-				process.execPath,
-				[compiler, '--project', config, '--pretty', 'false'],
-				{ signal, maxBuffer: 4 * 1024 * 1024 },
-			)
-		} catch (cause) {
-			if (signal?.aborted) throw signal.reason
-			throw new ScriptCompileError(
-				'typecheck_failed',
-				String(cause.stdout || cause.stderr || cause.message),
-				{ cause },
-			)
-		}
-	} finally {
-		await rm(temporary, { recursive: true, force: true })
 	}
+	const captured = inputs.snapshot()
+	const digest = createHash('sha256')
+	for (const [path, content] of [...captured].sort(([a], [b]) => a.localeCompare(b))) {
+		digest
+			.update(path)
+			.update('\0')
+			.update(createHash('sha256').update(content).digest())
+			.update('\0')
+	}
+	return Object.freeze({ inputs: captured, digest: digest.digest('hex') })
 }

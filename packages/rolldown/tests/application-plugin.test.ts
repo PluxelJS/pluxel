@@ -271,7 +271,9 @@ import { t } from 'elysia';
 @Plugin()
 class Echo extends BasePlugin {
  protected init() {
-  this.ctx.elysia.get('/echo', {query:t.Object({message:t.String()})}, ({query}) => query.message);
+  const router = this.ctx.elysia;
+  if (!router) throw new Error('Elysia service is not installed');
+  router.get('/echo', {query:t.Object({message:t.String()})}, ({query}) => query.message);
  }
 }
 let handler: ReturnType<typeof createElysiaHandler> | undefined;

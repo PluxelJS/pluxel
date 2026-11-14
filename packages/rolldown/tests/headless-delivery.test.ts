@@ -34,7 +34,9 @@ async function run(file: string, args: string[], cwd: string, env = process.env)
 }
 
 async function installedVersion(specifier: string, require: NodeJS.Require): Promise<string> {
-	let directory = dirname(require.resolve(specifier))
+	let directory = dirname(
+		require.resolve(specifier.startsWith('@types/') ? `${specifier}/package.json` : specifier),
+	)
 	for (;;) {
 		try {
 			const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'))
@@ -86,6 +88,7 @@ it('delivers a native libSQL HTTP application through independent standalone and
 		dependencies.valibot = await installedVersion('valibot', buildRequire)
 		const devDependencies = {
 			'@pluxel/rolldown': versions.get('@pluxel/rolldown')!,
+			'@types/bun': await installedVersion('@types/bun', elysiaRequire),
 			'vite-plus': await installedVersion('vite-plus', buildRequire),
 		}
 		const manifest = {

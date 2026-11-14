@@ -22,6 +22,10 @@
 			"@pluxel/source": "./src/cli/index.ts",
 			"default": "./dist/build.mjs"
 		},
+		"./control": {
+			"@pluxel/source": "./src/control/index.ts",
+			"default": "./dist/control.mjs"
+		},
 		"./database": {
 			"@pluxel/source": "./src/database/index.ts",
 			"default": "./dist/database.mjs"
@@ -105,6 +109,7 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./build": "./dist/build.mjs",
+			"./control": "./dist/control.mjs",
 			"./database": "./dist/database.mjs",
 			"./distribution": "./dist/distribution.mjs",
 			"./inspect": "./dist/inspect.mjs",
@@ -139,7 +144,9 @@
 		"@module-federation/bridge-react": "catalog:frontend",
 		"@module-federation/sdk": "catalog:prod",
 		"@module-federation/vite": "catalog:build",
+		"@types/node": "catalog:types",
 		"drizzle-kit": "catalog:backend",
+		"magic-string": "catalog:prod",
 		"mdast-util-directive": "catalog:prod",
 		"mdast-util-from-markdown": "catalog:prod",
 		"mdast-util-gfm": "catalog:prod",
@@ -166,7 +173,6 @@
 		"@pluxel/workbench": "workspace:*",
 		"@rolldown/pluginutils": "catalog:build",
 		"@types/mdast": "catalog:types",
-		"@types/node": "catalog:types",
 		"fdir": "catalog:dev",
 		"fs-fixture": "catalog:dev",
 		"pathe": "catalog:node",

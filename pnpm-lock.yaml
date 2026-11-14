@@ -895,6 +895,9 @@ catalogs:
     kerium:
       specifier: ^1.5.0
       version: 1.5.0
+    magic-string:
+      specifier: ^0.30.21
+      version: 0.30.21
     mdast-util-directive:
       specifier: ^3.2.0
       version: 3.2.0
@@ -1518,9 +1521,15 @@ importers:
       '@module-federation/vite':
         specifier: catalog:build
         version: 1.23.9(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(typescript@7.0.2)
+      '@types/node':
+        specifier: catalog:types
+        version: 26.6.6
       drizzle-kit:
         specifier: catalog:backend
         version: 0.31.11
+      magic-string:
+        specifier: catalog:prod
+        version: 0.30.21
       mdast-util-directive:
         specifier: catalog:prod
         version: 3.2.0(supports-color@8.1.1)
@@ -1597,9 +1606,6 @@ importers:
       '@types/mdast':
         specifier: catalog:types
         version: 4.0.4
-      '@types/node':
-        specifier: catalog:types
-        version: 26.6.6
       fdir:
         specifier: catalog:dev
         version: 6.5.0(picomatch@4.0.7)

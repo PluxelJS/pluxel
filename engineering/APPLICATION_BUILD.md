@@ -4,6 +4,8 @@
 
 应用构建宿主为 `vite-plus/pack` 的原生 tsdown API；`pluxel()` 的 `tsdownConfig` hook 和构建语义保持不变。独立打包配置由 `tsdown.config.ts` 拥有：普通包的 `vite.config.ts.pack` 引用它供 `vp pack` 使用；冷任务图扫描不能提前加载框架构建产物的应用，使用 `scripts/pack.mjs` 在前置构建完成后调用 `build({ config: 'tsdown.config.ts', watch: false })`。`vp pack --config` 不负责读取独立配置。
 
+同一次编译通过正式 Rolldown control 插件生成 `control/` 描述符、应用声明闭包与配置源码描述。modules metadata 和 standalone 的实际 bootstrap 分别绑定所属材料，运行端不需要编译器或应用源码。生成、owner 绑定与材料同步的内部规则见 [Plugin Control](PLUGIN_CONTROL.md)。
+
 ## 交付选择与 modules
 
 `@pluxel/rolldown` 的 `pluxel({ delivery })` 将交付边界与 headless/workbench 资源 variant 分开。默认 standalone；modules 适合保留真实包边界及来源目录的应用。

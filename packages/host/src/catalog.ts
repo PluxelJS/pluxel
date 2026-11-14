@@ -21,6 +21,97 @@ export class PluginCatalogError extends Error {
 	}
 }
 
+/** Immutable public control files produced with one implementation candidate. */
+export type PluginControlMaterial = Readonly<{
+	snapshot: string
+	manifest: Readonly<Record<string, unknown>>
+	files: Readonly<Record<string, string>>
+}>
+
+export type PluginControlMetadata =
+	| Readonly<{
+			state: 'available'
+			format: 1
+			contracts: Readonly<{ config: string | null; instance: string }>
+			material?: PluginControlMaterial
+	  }>
+	| Readonly<{
+			state: 'unavailable'
+			reason: 'missing' | 'analysis_failed' | 'source_changed'
+			message?: string
+	  }>
+
+export class PluginControlError extends Error {
+	constructor(
+		readonly code:
+			| 'control_format_unsupported'
+			| 'control_material_unavailable'
+			| 'control_contract_mismatch',
+		message: string,
+	) {
+		super(message)
+		this.name = 'PluginControlError'
+	}
+}
+
+export function assertPluginControlContract(
+	entry: PluginCatalogEntry,
+	surface: 'config' | 'instance',
+	expected: string | null,
+): void {
+	const control = entry.provenance.control
+	if (!control || control.state !== 'available')
+		throw new PluginControlError(
+			'control_material_unavailable',
+			`Control declarations are unavailable for ${formatPluginDefinitionReference(entry.address)}`,
+		)
+	if (control.format !== 1)
+		throw new PluginControlError('control_format_unsupported', 'Control format 1 is required')
+	if (control.contracts[surface] !== expected)
+		throw new PluginControlError(
+			'control_contract_mismatch',
+			`${surface} contract mismatch: expected ${String(expected)}, actual ${String(control.contracts[surface])}`,
+		)
+}
+
+function immutableControlValue(value: unknown, depth = 0): unknown {
+	if (depth > 128) throw new TypeError('Control metadata exceeds the maximum nesting depth')
+	if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+	if (typeof value === 'number' && Number.isFinite(value)) return value
+	if (Array.isArray(value))
+		return Object.freeze(value.map((item) => immutableControlValue(item, depth + 1)))
+	if (value && typeof value === 'object') {
+		const prototype = Object.getPrototypeOf(value)
+		if (prototype !== null && prototype !== Object.prototype)
+			throw new TypeError('Control metadata must contain plain portable data')
+		const result: Record<string, unknown> = Object.create(null)
+		for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+			if (!descriptor.enumerable) continue
+			if (!('value' in descriptor)) throw new TypeError('Control metadata cannot contain accessors')
+			result[key] = immutableControlValue(descriptor.value, depth + 1)
+		}
+		return Object.freeze(result)
+	}
+	throw new TypeError('Control metadata must contain plain portable data')
+}
+
+function snapshotPluginControl(control: PluginControlMetadata): PluginControlMetadata {
+	if (control.state === 'unavailable') return Object.freeze({ ...control })
+	if (control.state !== 'available' || control.format !== 1)
+		throw new PluginControlError('control_format_unsupported', 'Control format 1 is required')
+	for (const digest of [control.contracts.config, control.contracts.instance])
+		if (digest !== null && !/^sha256:[a-f0-9]{64}$/.test(digest))
+			throw new TypeError('Control contracts require a SHA-256 digest')
+	return Object.freeze({
+		state: 'available',
+		format: 1,
+		contracts: Object.freeze({ ...control.contracts }),
+		...(control.material === undefined
+			? {}
+			: { material: immutableControlValue(control.material) as PluginControlMaterial }),
+	})
+}
+
 export type PluginCatalogProvenance = Readonly<{
 	/** Route-owned module identity. It never enters Core identity or graph state. */
 	moduleId?: string
@@ -28,6 +119,8 @@ export type PluginCatalogProvenance = Readonly<{
 	execution?: PluginExecutionSnapshot
 	/** Route-owned artifact/build input. Core must never receive this value. */
 	artifactInput?: unknown
+	/** Same-candidate declaration contracts and optional public control files. */
+	control?: PluginControlMetadata
 }>
 
 export type PluginCatalogEntry = Readonly<{
@@ -98,6 +191,9 @@ export function createPluginCatalogSnapshot(
 			candidate: input.candidate,
 			provenance: Object.freeze({
 				...provenance,
+				...(provenance?.control === undefined
+					? {}
+					: { control: snapshotPluginControl(provenance.control) }),
 				...(provenance?.execution === undefined
 					? {}
 					: {

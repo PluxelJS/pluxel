@@ -11,7 +11,7 @@ const principal = { provider: 'development-console', subject: 'bot-lab-validatio
 /** Read the real aggregator, provider lifecycles, and target-scoped publications. */
 export default (async (sdk) => {
 	const plugins = await sdk.plugins.list()
-	const owner = plugins.find((plugin) => plugin.rootExportName === 'BotWorkspacePlugin')
+	const owner = await sdk.plugins.status(sdk.dev.address(BotWorkspacePlugin))
 	if (!owner) throw new Error('BotWorkspacePlugin is not registered')
 	const session = sdk.dev.ctx.require(WorkbenchHost).createSession(principal, () => {})
 	try {
@@ -43,8 +43,7 @@ export const saveInstructions = (async (sdk, run) => {
 	const record = input as Record<string, unknown>
 	if (typeof record.instructions !== 'string') throw new TypeError('Expected instructions string')
 	const identity = sdk.dev.instance(BotWorkspacePlugin).identity(record.source, record.id)
-	const plugins = await sdk.plugins.list()
-	const owner = plugins.find((plugin) => plugin.rootExportName === 'BotWorkspacePlugin')
+	const owner = await sdk.plugins.status(sdk.dev.address(BotWorkspacePlugin))
 	if (!owner) throw new Error('BotWorkspacePlugin is not registered')
 	using opened = await openLocalWorkbenchEntry(sdk.dev.ctx, {
 		target: owner.address,

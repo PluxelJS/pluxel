@@ -5,18 +5,20 @@ import { mkdtemp, mkdir, writeFile, readFile, readdir, symlink, rm } from 'node:
 import { createRequire } from 'node:module'
 import { openProjectControl } from './script-control.fixture.mjs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
+import { pluginDefinitionIndexKey } from '@pluxel/core'
 import { host } from '../dist/index.mjs'
 
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 const require = createRequire(new URL('../package.json', import.meta.url))
 const { createServer } = await import(require.resolve('vite'))
 const count = 8
+const smokeStarted = performance.now()
 const address = (index) => ({
 	definition: {
-		entry: { kind: 'source-entry', sourceSpace: 'fixture', path: `probe-${index}.mjs` },
+		entry: { kind: 'source-entry', sourceSpace: 'app', path: `entries/probe-${index}.entry.ts` },
 		exportName: 'Probe',
 	},
 	variant: 'default',
@@ -41,15 +43,16 @@ async function scenario(initiallyInvalid, run) {
 	const errors = []
 	let server
 	let instance
-	const sourcePath = (index) => join(root, 'entries', `probe-${index}.entry.mjs`)
+	const sourcePath = (index) => join(root, 'entries', `probe-${index}.entry.ts`)
 	const source = (index, value) => `
 import { BasePlugin, Plugin } from '@pluxel/core';
-import { __setPluginDefinition } from '@pluxel/core/toolchain';
+import { metrics } from '../metrics.ts';
 ${index === 0 ? "import { offset } from './offset.mjs';" : ''}
-const metrics = globalThis[${JSON.stringify(key)}];
 metrics.evaluations.push(${JSON.stringify(`${index}:${value}`)});
+@Plugin()
 export class Probe extends BasePlugin {
 	value = ${value}${index === 0 ? ' + offset' : ''};
+	readonly version: ${value} = ${value};
 	async init() {
 		metrics.starts.push(${JSON.stringify(`${index}:${value}`)});
 		if (metrics.gate?.index === ${index}) {
@@ -57,25 +60,72 @@ export class Probe extends BasePlugin {
 			metrics.gate = undefined;
 			await gate.release.promise;
 		}
-		return () => metrics.stops.push(${JSON.stringify(`${index}:${value}`)});
+		return () => { metrics.stops.push(${JSON.stringify(`${index}:${value}`)}); };
 	}
 }
-Plugin()(Probe);
-__setPluginDefinition(Probe, ${JSON.stringify({ abiVersion: 2, kind: 'plugin', definition: address(index).definition })});
 `
 	const app = (version) => `
 import { defineHostApplication } from '@pluxel/host';
 import { pluginSource } from '@pluxel/host/sources';
+import { metrics } from './metrics.ts';
 export default defineHostApplication(() => ({
 	plugins: [],
-	sources: [pluginSource({kind:'directory',path:'./entries',include:['*.entry.mjs']})],
+	sources: [pluginSource({kind:'directory',path:'./entries',include:['*.entry.ts']})],
 	policy: { autoStart: ${JSON.stringify(Array.from({ length: count }, (_, index) => address(index)))} },
-	prepare() { globalThis[${JSON.stringify(key)}].prepared.push(${version}); }
+	prepare() { metrics.prepared.push(${version}); }
 }));
 `
 	const inspect = async () => {
 		using client = await openProjectControl(instance)
 		return await client.describe()
+	}
+	const material = async () => {
+		using client = await openProjectControl(instance)
+		const index = await client.materials()
+		if (index.unavailableCount) {
+			const status = await script('status.ts')
+			assert.fail(
+				JSON.stringify({
+					index,
+					issues:
+						status.state === 'succeeded'
+							? status.value.map(({ address: node, issues }) => ({ address: node, issues }))
+							: status,
+				}),
+			)
+		}
+		assert.equal(index.definitions.length, count)
+		const selected = index.definitions.find(
+			(entry) =>
+				pluginDefinitionIndexKey(entry.definition) ===
+				pluginDefinitionIndexKey(address(0).definition),
+		)
+		assert.ok(selected, JSON.stringify(index))
+		const chunks = []
+		let offset = 0
+		for (;;) {
+			const chunk = await client.materialFile({
+				snapshot: selected.snapshot,
+				path: 'manifest.json',
+				offset,
+			})
+			chunks.push(Buffer.from(chunk.data, 'base64'))
+			offset = chunk.nextOffset
+			if (chunk.done) break
+		}
+		const manifest = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+		assert.equal(manifest.snapshot, selected.snapshot)
+		const definition = manifest.definitions.find(
+			(entry) =>
+				pluginDefinitionIndexKey(entry.definition) ===
+				pluginDefinitionIndexKey(selected.definition),
+		)
+		assert.ok(definition)
+		return {
+			snapshot: selected.snapshot,
+			definition,
+			definitions: manifest.definitions,
+		}
 	}
 
 	async function until(check, label) {
@@ -83,7 +133,10 @@ export default defineHostApplication(() => ({
 		while (true) {
 			const matched = await check()
 			if (matched) return matched
-			if (Date.now() >= deadline) throw new Error(`${label}: ${errors.slice(-3).join('; ')}`)
+			if (Date.now() >= deadline)
+				throw new Error(
+					`${label}: ${JSON.stringify({ status: await inspect(), starts: metrics.starts.slice(-count * 2), errors: errors.slice(-3), durationMs: performance.now() - smokeStarted })}`,
+				)
 			await delay(20)
 		}
 	}
@@ -113,7 +166,7 @@ export default defineHostApplication(() => ({
 			return status.hmr.observedRevision > before.hmr.observedRevision && status
 		}, `${file} must reach HMR admission`)
 	}
-	async function script(name = 'inspect.ts') {
+	async function script(name = 'inspect.ts', expectedState = 'succeeded') {
 		const file = join(root, name)
 		const bytes = await readFile(file)
 		const runId = randomUUID()
@@ -127,11 +180,31 @@ export default defineHostApplication(() => ({
 				exportName: 'default',
 			},
 		})
-		return result(runId)
+		const outcome = await result(runId)
+		assert.equal(
+			outcome.state,
+			expectedState,
+			JSON.stringify(
+				outcome.state === expectedState
+					? { script: name, outcome }
+					: {
+							script: name,
+							outcome,
+							status: await inspect(),
+							errors: errors.slice(-3),
+							lifecycle: {
+								starts: metrics.starts.slice(-4),
+								stops: metrics.stops.slice(-4),
+								evaluations: metrics.evaluations.slice(-4),
+							},
+						},
+			),
+		)
+		return outcome
 	}
 	try {
 		await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
-		for (const name of ['host', 'core'])
+		for (const name of ['host', 'core', 'host-vite'])
 			await symlink(
 				join(workspace, 'packages', name),
 				join(root, 'node_modules/@pluxel', name),
@@ -141,6 +214,39 @@ export default defineHostApplication(() => ({
 			join(root, 'package.json'),
 			JSON.stringify({ name: 'hmr-control-fixture', type: 'module' }),
 		)
+		await writeFile(
+			join(root, 'tsconfig.json'),
+			JSON.stringify({
+				compilerOptions: {
+					target: 'ESNext',
+					module: 'ESNext',
+					moduleResolution: 'Bundler',
+					strict: true,
+					skipLibCheck: true,
+					experimentalDecorators: true,
+					allowImportingTsExtensions: true,
+					allowJs: true,
+					checkJs: true,
+					noEmit: true,
+					types: ['node'],
+					typeRoots: [dirname(dirname(require.resolve('@types/node/package.json')))],
+					lib: ['ESNext', 'DOM'],
+				},
+				include: ['*.ts', 'entries/*'],
+			}),
+		)
+		await writeFile(
+			join(root, 'metrics.ts'),
+			`
+import type { PluginConstructor } from '@pluxel/core';
+interface FixtureMetrics {
+	evaluations: string[]; starts: string[]; stops: string[]; prepared: number[];
+	gate?: { index: number; release: PromiseWithResolvers<void> };
+	savedConstructor?: PluginConstructor;
+}
+export const metrics = (globalThis as unknown as Record<string, FixtureMetrics>)[${JSON.stringify(key)}]!;
+`,
+		)
 		await mkdir(join(root, 'entries'))
 		await writeFile(join(root, 'entries/offset.mjs'), 'export const offset = 0')
 		await writeFile(join(root, 'app.ts'), app(0))
@@ -148,16 +254,20 @@ export default defineHostApplication(() => ({
 		await writeFile(artifactFile, 'initial')
 		await writeFile(
 			join(root, 'inspect.ts'),
-			"import { Probe } from './entries/probe-0.entry.mjs'; export default (sdk) => sdk.dev.instance(Probe).value",
+			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { Probe } from './entries/probe-0.entry.ts'; export default ((sdk) => sdk.dev.instance(Probe).value) satisfies ProjectScript",
 		)
 		await writeFile(join(root, 'fresh.ts'), await readFile(join(root, 'inspect.ts')))
 		await writeFile(
+			join(root, 'status.ts'),
+			"import type { ProjectScript } from '@pluxel/host-vite/project'; export default ((sdk) => sdk.plugins.list()) satisfies ProjectScript",
+		)
+		await writeFile(
 			join(root, 'save.ts'),
-			`import { Probe } from './entries/probe-0.entry.mjs'; export default () => { globalThis[${JSON.stringify(key)}].savedConstructor = Probe; return true }`,
+			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { metrics } from './metrics.ts'; import { Probe } from './entries/probe-0.entry.ts'; export default (() => { metrics.savedConstructor = Probe; return true }) satisfies ProjectScript",
 		)
 		await writeFile(
 			join(root, 'stale.ts'),
-			`export default (sdk) => sdk.dev.instance(globalThis[${JSON.stringify(key)}].savedConstructor).value`,
+			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { metrics } from './metrics.ts'; export default ((sdk) => { if (!metrics.savedConstructor) throw new Error('Missing saved constructor'); sdk.dev.instance(metrics.savedConstructor); return true }) satisfies ProjectScript",
 		)
 		await Promise.all(
 			Array.from({ length: count }, (_, index) =>
@@ -225,6 +335,7 @@ export default defineHostApplication(() => ({
 			source,
 			app,
 			inspect,
+			material,
 			until,
 			result,
 			submit,
@@ -240,6 +351,7 @@ export default defineHostApplication(() => ({
 			metrics.starts.length,
 			'every initialized generation must release',
 		)
+		assert.deepEqual([...metrics.stops].sort(), [...metrics.starts].sort())
 		assert.equal(metrics.attachmentDisposals, metrics.attachments)
 		if (server) {
 			assert.equal(server.httpServer.listening, false)
@@ -271,6 +383,7 @@ await scenario(
 		source,
 		app,
 		inspect,
+		material,
 		until,
 		result,
 		submit,
@@ -280,10 +393,14 @@ await scenario(
 	}) => {
 		const initial = await inspect()
 		assert.equal(initial.application.state, 'ready')
+		assert.ok(initial.capabilities.includes('plugins.control-materials'))
 		assert.equal(metrics.evaluations.length, count)
 		assert.equal(metrics.starts.length, count)
 		const initialRead = await script()
+		assert.equal(initialRead.state, 'succeeded', JSON.stringify(initialRead))
 		assert.equal(initialRead.value, 0)
+		const initialMaterial = await material()
+		assert.equal(initialMaterial.definition.contracts.config, null)
 		const savedConstructor = await script('save.ts')
 		assert.equal(savedConstructor.state, 'succeeded')
 		const paused = await control('pause')
@@ -297,11 +414,17 @@ await scenario(
 			assert.equal(metrics.starts.length, count)
 			assert.equal(metrics.stops.length, 0)
 		}
+		const pausedMaterial = await material()
+		assert.equal(
+			pausedMaterial.snapshot,
+			initialMaterial.snapshot,
+			'unadmitted edits must not replace committed material',
+		)
 		await writeObserved(sourcePath(0), source(0, 1))
-		const dirty = await script()
+		const dirty = await script('inspect.ts', 'failed')
 		assert.equal(dirty.state, 'failed')
 		assert.equal(dirty.error.code, 'hmr_pending')
-		const freshDirty = await script('fresh.ts')
+		const freshDirty = await script('fresh.ts', 'failed')
 		assert.equal(freshDirty.state, 'failed')
 		assert.equal(freshDirty.error.code, 'hmr_pending')
 		assert.equal(
@@ -314,9 +437,34 @@ await scenario(
 		assert.equal(applied.hmr.pending.files, 0)
 		assert.equal(metrics.evaluations.length, count + 1)
 		assert.equal(metrics.starts.at(-1), '0:1')
+		const firstMaterial = await material()
+		assert.notEqual(firstMaterial.snapshot, initialMaterial.snapshot)
+		assert.notEqual(
+			firstMaterial.definition.contracts.instance,
+			initialMaterial.definition.contracts.instance,
+		)
+		for (const original of initialMaterial.definitions) {
+			if (
+				pluginDefinitionIndexKey(original.definition) ===
+				pluginDefinitionIndexKey(address(0).definition)
+			)
+				continue
+			const unchanged = firstMaterial.definitions.find(
+				(entry) =>
+					pluginDefinitionIndexKey(entry.definition) ===
+					pluginDefinitionIndexKey(original.definition),
+			)
+			assert.ok(unchanged)
+			assert.deepEqual(
+				unchanged.contracts,
+				original.contracts,
+				'an unrelated Plugin keeps its accepted contract',
+			)
+		}
 		const firstRead = await script()
+		assert.equal(firstRead.state, 'succeeded', JSON.stringify(firstRead))
 		assert.equal(firstRead.value, 1)
-		const staleRead = await script('stale.ts')
+		const staleRead = await script('stale.ts', 'failed')
 		assert.equal(staleRead.state, 'failed')
 		assert.equal(staleRead.error.code, 'stale_target')
 		const sequence = applied.application.latestUpdate.sequence
@@ -332,6 +480,12 @@ await scenario(
 		assert.equal(failedStatus.hmr.mode, 'paused')
 		assert.equal(failedStatus.application.latestUpdate.outcome, 'retained-previous')
 		assert.equal(metrics.starts.at(-1), '0:1')
+		const retainedMaterial = await material()
+		assert.equal(
+			retainedMaterial.snapshot,
+			firstMaterial.snapshot,
+			'a failed batch must retain the previous material',
+		)
 		await writeObserved(sourcePath(0), source(0, 2))
 		await control('apply')
 		const repairedRead = await script()
@@ -432,11 +586,44 @@ await scenario(
 		const repeatedRead = await script()
 		assert.equal(repeatedRead.value, 14)
 		await control('resume')
+		const beforeSingleAutomatic = await inspect()
+		const beforeSingleEvaluations = metrics.evaluations.length
+		await writeObserved(sourcePath(0), source(0, 19))
+		await until(async () => {
+			const status = await inspect()
+			return (
+				metrics.starts.includes('0:19') &&
+				!status.hmr.running &&
+				status.hmr.pending.files === 0 &&
+				!status.hmr.pending.full
+			)
+		}, 'a single source edit must apply automatically')
+		const singleAutomatic = await inspect()
+		assert.equal(singleAutomatic.hmr.mode, 'auto')
+		assert.equal(
+			singleAutomatic.application.latestUpdate.sequence,
+			beforeSingleAutomatic.application.latestUpdate.sequence + 1,
+		)
+		assert.equal(metrics.evaluations.length, beforeSingleEvaluations + 1)
+		assert.equal(metrics.starts.filter((entry) => entry === '0:19').length, 1)
+		const singleAutomaticRead = await script()
+		assert.equal(singleAutomaticRead.value, 19)
+
+		// Concurrent filesystem writes are not one atomic watcher admission. Pause until every
+		// real observation is pending, then resume: this is the boundary for one automatic batch.
+		await control('pause')
 		const beforeAutomatic = await inspect()
 		const beforeAuto = beforeAutomatic.application.latestUpdate.sequence
+		const beforeAutomaticStarts = metrics.starts.length
 		await Promise.all(
 			Array.from({ length: count }, (_, index) => writeFile(sourcePath(index), source(index, 20))),
 		)
+		await until(async () => {
+			const status = await inspect()
+			return status.hmr.pending.files === count
+		}, 'the automatic batch must admit all burst files before resume')
+		assert.equal(metrics.evaluations.length, beforeSingleEvaluations + 1)
+		await control('resume')
 		await until(async () => {
 			const status = await inspect()
 			return (
@@ -447,9 +634,23 @@ await scenario(
 			)
 		}, 'automatic burst must finish')
 		const automatic = await inspect()
+		assert.equal(automatic.hmr.mode, 'auto')
 		assert.equal(automatic.hmr.pending.files, 0)
-		assert.equal(automatic.application.latestUpdate.sequence, beforeAuto + 1)
-		assert.equal(metrics.evaluations.length, beforeEvaluations + count * (cycles + 1))
+		assert.equal(
+			automatic.application.latestUpdate.sequence,
+			beforeAuto + 1,
+			JSON.stringify({
+				before: beforeAutomatic,
+				after: automatic,
+				starts: metrics.starts.slice(-count * 3),
+				evaluations: metrics.evaluations.slice(-count * 3),
+				durationMs: performance.now() - smokeStarted,
+			}),
+		)
+		assert.equal(metrics.evaluations.length, beforeEvaluations + count * (cycles + 1) + 1)
+		assert.equal(metrics.starts.length, beforeAutomaticStarts + count)
+		for (let index = 0; index < count; index++)
+			assert.equal(metrics.starts.filter((entry) => entry === `${index}:20`).length, 1)
 		const automaticRead = await script()
 		assert.equal(automaticRead.value, 20)
 
@@ -463,7 +664,7 @@ await scenario(
 		)
 		const duplicateEvaluations = metrics.evaluations.length
 		await writeObserved(sourcePath(0), source(0, 20))
-		const target = join(root, 'same-bytes.mjs')
+		const target = join(root, 'same-bytes.ts')
 		await writeFile(target, source(0, 20))
 		await rm(sourcePath(0))
 		await symlink(target, sourcePath(0))
@@ -506,6 +707,7 @@ await scenario(
 			'HMR_CONTROL_SMOKE_OK',
 			JSON.stringify({
 				cycles,
+				durationMs: performance.now() - smokeStarted,
 				filesPerBatch: count,
 				evaluations: metrics.evaluations.length,
 				updates: automatic.application.latestUpdate.sequence,
@@ -517,7 +719,7 @@ await scenario(
 
 await scenario(
 	true,
-	async ({ metrics, sourcePath, source, inspect, control, writeObserved, script }) => {
+	async ({ metrics, sourcePath, source, inspect, material, control, writeObserved, script }) => {
 		const unavailable = await inspect()
 		assert.equal(unavailable.application.state, 'unavailable')
 		await control('pause')
@@ -527,6 +729,8 @@ await scenario(
 		assert.equal(recovered.application.state, 'ready')
 		assert.equal(recovered.hmr.mode, 'paused')
 		assert.equal(recovered.hmr.pending.files, 0)
+		const recoveredMaterial = await material()
+		assert.equal(recoveredMaterial.definition.contracts.config, null)
 		const recoveredRead = await script()
 		assert.equal(recoveredRead.value, 1)
 		console.log('HMR_UNAVAILABLE_RECOVERY_OK')

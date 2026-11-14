@@ -39,6 +39,8 @@
 
 项目脚本使用普通 TypeScript 函数与 `satisfies ProjectScript`（`@pluxel/host-vite/project`），通过 `sdk.dev.address/instance/ctx` 访问当前模块图。通用 SDK 为 `Script`（`@pluxel/host/agent`），方法返回普通 Promise；配置修改后核对领域报告与实际采用。部署上传执行、认证与 receipt 见 `vp exec pluxel docs development/scripts.md`。
 
+已知插件优先使用构建生成的 `./control` 描述符；运行中的应用可用 `pluxel dev sync` 或 `pluxel script sync` 取得当前已接纳材料。配置声明包含输入、输出、Schema 源码表达式和 Part 路径，业务调用使用 `sdk.plugins.instance(descriptor)`；先 await 业务方法，再做配置或生命周期操作。同步输出提供实际导出名和模块路径；用法见 `vp exec pluxel docs development/plugin-control.md`。
+
 ## 持久状态与原生依赖
 
 配置继续使用 `configs.use()`。配置之外的有界状态通过固定的 `ctx.tinybase.open()` 取得每个 Plugin node 唯一的托管 Store；原生 API 和类型直接从 `tinybase` 与上游子路径导入。持久位置、恢复和保存归 Host，不在插件管理 Persister 或另写 JSON 设置。密钥留在 Vault，大文件通过固定的 `ctx.fs()` 保存；后端在 Host 的 `runtime.zenfs: zenfs(...)` 中选择；日志输出在 `runtime.logtape: logtape(...)` 中选择，两个可选 helper 都从 `@pluxel/core/config` 导入，原生配置可直接输入，不加入服务清单。

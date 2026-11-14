@@ -229,6 +229,7 @@ export default application;`
 								...metadata,
 								artifactRoot: '.',
 								nodeArtifacts: true,
+								control: './control/manifest.json',
 								workbenchArtifacts: (options.variant ?? 'workbench') === 'workbench',
 								workbenchCapnweb,
 								modules: { version: 1 },
