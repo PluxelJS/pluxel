@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { FontsConfig, FontsPlugin } from '@pluxel/plugin-fonts'
-import { createTestHost } from '@pluxel/test'
+import { createTestHost, PluginLifecycleAssertionError } from '@pluxel/test'
 import {
 	defineHostApplication,
 	envBinding,
@@ -47,6 +47,7 @@ async function fixture() {
 	const host = await createTestHost({
 		services: [nodeModules()],
 	})
+	const started = performance.now()
 	try {
 		await host.commit((change) => {
 			change.catalog.add([FontsPlugin, TypstPlugin, TypstConsumer])
@@ -54,6 +55,11 @@ async function fixture() {
 		})
 		return host
 	} catch (cause) {
+		if (cause instanceof PluginLifecycleAssertionError)
+			console.error(
+				'Typst fixture startup failed',
+				JSON.stringify({ elapsedMs: performance.now() - started, summary: cause.summary }),
+			)
 		await host.dispose()
 		throw cause
 	}
@@ -100,10 +106,20 @@ describe('TypstPlugin real host and worker', () => {
 				policy: resolved.policy,
 				runtime: resolved.runtime,
 			})
-			await host.commit((change) => {
-				change.catalog.add([FontsPlugin, TypstPlugin, TypstConsumer])
-				change.start([FontsPlugin, TypstPlugin, TypstConsumer])
-			})
+			const started = performance.now()
+			await host
+				.commit((change) => {
+					change.catalog.add([FontsPlugin, TypstPlugin, TypstConsumer])
+					change.start([FontsPlugin, TypstPlugin, TypstConsumer])
+				})
+				.catch((cause: unknown) => {
+					if (cause instanceof PluginLifecycleAssertionError)
+						console.error(
+							'Typst configured startup failed',
+							JSON.stringify({ elapsedMs: performance.now() - started, summary: cause.summary }),
+						)
+					throw cause
+				})
 			const consumer = host.require(TypstConsumer)
 			expect(consumer.fonts.portableFonts.fonts).toHaveLength(1)
 			const typst = consumer.typst
