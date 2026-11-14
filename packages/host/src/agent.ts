@@ -1,5 +1,11 @@
 /** Portable script SDK. Importing this entry installs no execution backend or transport. */
-export type { Script, ScriptSdk, ScriptContext } from './agent/sdk-types'
+export type {
+	Script,
+	ScriptSdk,
+	ScriptContext,
+	ScriptPlugin,
+	ScriptPluginConfig,
+} from './agent/sdk-types'
 export type {
 	PluginDescriptor,
 	PluginTypedTarget,

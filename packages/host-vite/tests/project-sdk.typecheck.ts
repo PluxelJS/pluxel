@@ -12,13 +12,21 @@ const instance: Counter = sdk.dev.instance(Counter)
 const fork: Counter = sdk.dev.instance({ plugin: Counter, forkId: 'east' })
 void instance
 void fork
-void sdk.plugins.start(sdk.dev.address(Counter))
-void sdk.config.get(address)
+const select = sdk.plugin
+const counter = select(sdk.dev.address(Counter))
+const { start, status, fork: selectFork } = counter
+const { get, patch } = counter.config
+void start()
+void status()
+void selectFork('east').start()
+void get()
+void patch({ set: { count: 1 } })
+void sdk.plugin(address).config.get()
 void sdk.dev.ctx.logger
 // @ts-expect-error Stable addresses carry no concrete instance type.
 sdk.dev.instance(address)
 // @ts-expect-error Portable operations use stable addresses.
-sdk.plugins.start(Counter)
+sdk.plugin(Counter)
 // @ts-expect-error Inputs must be validated by the task.
 run.input.count
 // @ts-expect-error A borrowed SDK cannot close the Host.

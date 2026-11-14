@@ -106,6 +106,15 @@ it('captures startup provenance, protects discovery, and keeps credentials out o
 		root,
 		serviceId: 'fixture/server',
 		codeKinds: ['project'],
+		capabilities: [
+			'plugins',
+			'plugin',
+			'plugin.instance',
+			'plugin.config',
+			'policy',
+			'updates',
+			'logs',
+		],
 	})
 	expect(status).not.toHaveProperty('nonce')
 	expect(status).not.toHaveProperty('socketPath')

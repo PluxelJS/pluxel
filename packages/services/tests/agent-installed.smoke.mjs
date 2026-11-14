@@ -431,25 +431,29 @@ export default defineHostApplication((startup):HostApplication=>({
 const task = `import type {Script} from '@pluxel/host/agent'
 let moduleRuns=0
 export default (async sdk=>{
- const before=await sdk.config.get(Counter);if(!before.ok)return before
+ const select=sdk.plugin
+ const counter=select(Counter)
+ const {get,patch}=counter.config
+ const {stop,start,restart,status,instance:borrow}=counter
+ const before=await get();if(!before.ok)return before
  const count=[before.config.count].map(value=>value*2)[0]
- const changed=await sdk.config.patch(Counter,{set:{count}},{expectedManagedRevision:before.managedRevision});if(!changed.ok)return changed
- const conflict=await sdk.config.patch(Counter,{set:{count:999}},{expectedManagedRevision:before.managedRevision})
- const cursor=await sdk.logs.mark();await sdk.plugins.stop(Counter);await sdk.plugins.start(Counter);await sdk.plugins.restart(Counter)
+ const changed=await patch({set:{count}},{expectedManagedRevision:before.managedRevision});if(!changed.ok)return changed
+ const conflict=await patch({set:{count:999}},{expectedManagedRevision:before.managedRevision})
+ const cursor=await sdk.logs.mark();await stop();await start();await restart()
  const logs=await sdk.logs.read(cursor,{filter:{plugin:Counter},limit:20})
- const {instance}=await sdk.plugins.instance(Counter)
+ const {instance}=await borrow()
  const business=await instance.increment(3)
- return {moduleRuns:++moduleRuns,changed,conflict,logs,business,calls:instance.calls,actual:await sdk.config.get(Counter),lifecycle:await sdk.plugins.status(Counter)}
+ return {moduleRuns:++moduleRuns,changed,conflict,logs,business,calls:instance.calls,actual:await get(),lifecycle:await status()}
 }) satisfies Script
 `
 const failure = `import type {Script} from '@pluxel/host/agent'
 export default (async sdk=>{
  const node=(await sdk.plugins.list()).find(node=>node.displayName==='Installed counter')!.address
- await sdk.config.patch(node,{set:{count:11}})
+ await sdk.plugin(node).config.patch({set:{count:11}})
  throw new Error('author failed after committing')
 }) satisfies Script
 `
-const query = `import type {Script} from '@pluxel/host/agent';export default(async sdk=>{const node=(await sdk.plugins.list()).find(node=>node.displayName==='Installed counter')!.address;return sdk.config.get(node)}) satisfies Script`
+const query = `import type {Script} from '@pluxel/host/agent';export default(async sdk=>{const node=(await sdk.plugins.list()).find(node=>node.displayName==='Installed counter')!.address;return sdk.plugin(node).config.get()}) satisfies Script`
 const wait = `import type {Script} from '@pluxel/host/agent';export default(async sdk=>{const cursor=await sdk.logs.mark();return sdk.logs.wait(cursor,{timeoutMs:120000,filter:{category:'not-emitted'}})}) satisfies Script`
 
 await main()

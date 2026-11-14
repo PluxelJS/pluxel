@@ -162,14 +162,14 @@ it('publishes a verified aggregate atomically and compiles imports through its s
 	const script = join(directory, 'task.ts')
 	await writeFile(
 		script,
-		`import type {Script} from '@pluxel/host/agent';\nimport {${first.definitions[0].exportName} as Counter} from './control/current/index.mjs';\nexport default (async(sdk) => { const result = await sdk.config.patch(Counter,{set:{step:2}}); const {instance}=await sdk.plugins.instance(Counter); return {result,count:instance.add(2)} }) satisfies Script;\n`,
+		`import type {Script} from '@pluxel/host/agent';\nimport {${first.definitions[0].exportName} as Counter} from './control/current/index.mjs';\nexport default (async(sdk) => { const select=sdk.plugin; const counter=select(Counter); const {get,patch}=counter.config; const before=await get(); if(!before.ok)return before; const result = await patch({set:{step:2}},{expectedManagedRevision:before.managedRevision}); if(!result.ok)return result; const {instance}=await counter.instance(); return {result,count:instance.add(2)} }) satisfies Script;\n`,
 	)
 	const artifact = await compileScript({ file: script })
 	expect(artifact.code).toContain('synced-counter')
 	expect(artifact.code).not.toContain('class CounterInstance')
 	await writeFile(
 		script,
-		`import type {Script} from '@pluxel/host/agent';\nimport {${first.definitions[0].exportName} as Counter} from './control/current/index.mjs';\nexport default (async(sdk) => sdk.config.patch(Counter,{set:{step:'wrong'}})) satisfies Script;\n`,
+		`import type {Script} from '@pluxel/host/agent';\nimport {${first.definitions[0].exportName} as Counter} from './control/current/index.mjs';\nexport default (async(sdk) => {const {patch}=sdk.plugin(Counter).config;return patch({set:{step:'wrong'}})}) satisfies Script;\n`,
 	)
 	await expect(compileScript({ file: script })).rejects.toMatchObject({ code: 'typecheck_failed' })
 })

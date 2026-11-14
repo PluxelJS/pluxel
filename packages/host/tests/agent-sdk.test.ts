@@ -41,20 +41,25 @@ it('runs ordinary typed configuration tasks against a Host without official Serv
 	const scope = createScriptScope({ ctx: host.ctx })
 	const node = Counter.nodeAddress()
 	try {
-		await scope.sdk.plugins.start(node)
+		await scope.sdk.plugin(node).start()
 		const script = (async (sdk, run) => {
 			run.signal.throwIfAborted()
-			const before = await sdk.config.get(node)
+			const before = await sdk.plugin(node).config.get()
 			if (before.ok === false) return before
 			const count = before.config.count
 			if (typeof count !== 'number') throw new TypeError('Expected numeric count')
-			const changed = await sdk.config.patch(
-				node,
-				{ set: { count: count * 2 } },
-				{ expectedManagedRevision: before.managedRevision },
-			)
+			const changed = await sdk
+				.plugin(node)
+				.config.patch(
+					{ set: { count: count * 2 } },
+					{ expectedManagedRevision: before.managedRevision },
+				)
 			if (changed.ok === false) return changed
-			return { changed, actual: await sdk.config.get(node), status: await sdk.plugins.status(node) }
+			return {
+				changed,
+				actual: await sdk.plugin(node).config.get(),
+				status: await sdk.plugin(node).status(),
+			}
 		}) satisfies Script
 		const result = await script(scope.sdk, {
 			id: 'config-task',
@@ -71,32 +76,30 @@ it('runs ordinary typed configuration tasks against a Host without official Serv
 			status: { lifecycleState: 'running' },
 		})
 		expect(requirePluginService(host.ctx).getInstance(node)).toMatchObject({ count: 4 })
-		const saved = await scope.sdk.config.get(node)
+		const saved = await scope.sdk.plugin(node).config.get()
 		if (saved.ok === false) throw new Error(saved.message)
-		expect(await scope.sdk.config.validate(node, { set: { count: 'wrong' } })).toMatchObject({
-			ok: false,
-			code: 'validation_failed',
-			errors: { _root: { count: [{ message: 'count must be a number', path: ['count'] }] } },
-		})
-		await scope.sdk.config.patch(
-			node,
-			{ set: { count: 8 } },
-			{ expectedManagedRevision: saved.managedRevision },
+		expect(await scope.sdk.plugin(node).config.validate({ set: { count: 'wrong' } })).toMatchObject(
+			{
+				ok: false,
+				code: 'validation_failed',
+				errors: { _root: { count: [{ message: 'count must be a number', path: ['count'] }] } },
+			},
 		)
+		await scope.sdk
+			.plugin(node)
+			.config.patch({ set: { count: 8 } }, { expectedManagedRevision: saved.managedRevision })
 		expect(
-			await scope.sdk.config.patch(
-				node,
-				{ set: { count: 16 } },
-				{ expectedManagedRevision: saved.managedRevision },
-			),
+			await scope.sdk
+				.plugin(node)
+				.config.patch({ set: { count: 16 } }, { expectedManagedRevision: saved.managedRevision }),
 		).toMatchObject({ ok: false, code: 'revision_conflict', state: 'unchanged' })
-		expect(await scope.sdk.config.reset(node)).toMatchObject({
+		expect(await scope.sdk.plugin(node).config.reset()).toMatchObject({
 			ok: true,
 			config: { count: 2 },
 			application: 'applied',
 		})
-		await scope.sdk.plugins.restart(node)
-		await scope.sdk.plugins.stop(node)
+		await scope.sdk.plugin(node).restart()
+		await scope.sdk.plugin(node).stop()
 		expect(await scope.sdk.plugins.list()).toMatchObject([
 			{ address: node, lifecycleState: 'stopped' },
 		])
@@ -115,7 +118,7 @@ it('preserves shadowed raw inputs, source facts and readonly rejection', async (
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
 	try {
-		expect(await scope.sdk.config.patch(node, { set: { count: 100 } })).toMatchObject({
+		expect(await scope.sdk.plugin(node).config.patch({ set: { count: 100 } })).toMatchObject({
 			ok: true,
 			managedInput: { count: 100 },
 			effectiveInput: { count: 7 },
@@ -154,7 +157,7 @@ it('preserves shadowed raw inputs, source facts and readonly rejection', async (
 	await readonly.start()
 	const locked = createScriptScope({ ctx: readonly.ctx })
 	try {
-		expect(await locked.sdk.config.patch(node, { set: { count: 3 } })).toMatchObject({
+		expect(await locked.sdk.plugin(node).config.patch({ set: { count: 3 } })).toMatchObject({
 			ok: false,
 			code: 'mutation_rejected',
 			state: 'unchanged',
@@ -190,9 +193,9 @@ it('keeps saved-but-not-applied and lifecycle failures as domain results', async
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
 	try {
-		await scope.sdk.plugins.start(RejectConfig.nodeAddress())
+		await scope.sdk.plugin(RejectConfig.nodeAddress()).start()
 		expect(
-			await scope.sdk.config.patch(RejectConfig.nodeAddress(), { set: { count: 5 } }),
+			await scope.sdk.plugin(RejectConfig.nodeAddress()).config.patch({ set: { count: 5 } }),
 		).toMatchObject({
 			ok: true,
 			config: { count: 5 },
@@ -204,7 +207,7 @@ it('keeps saved-but-not-applied and lifecycle failures as domain results', async
 			(requirePluginService(host.ctx).getInstance(RejectConfig.nodeAddress()) as RejectConfig)
 				.config,
 		).toMatchObject({ count: 2 })
-		expect(await scope.sdk.plugins.start(Broken.nodeAddress())).toMatchObject({
+		expect(await scope.sdk.plugin(Broken.nodeAddress()).start()).toMatchObject({
 			core: {
 				status: 'committed',
 				summary: {
@@ -215,7 +218,7 @@ it('keeps saved-but-not-applied and lifecycle failures as domain results', async
 				},
 			},
 		})
-		expect(await scope.sdk.plugins.status(Broken.nodeAddress())).toMatchObject({
+		expect(await scope.sdk.plugin(Broken.nodeAddress()).status()).toMatchObject({
 			lifecycleState: 'stopped',
 		})
 		expect(await scope.sdk.updates.latest()).toBeNull()
@@ -238,14 +241,14 @@ it('does not publish a configuration whose persistence acknowledgement failed', 
 			throw new Error('write acknowledgement lost')
 		}
 		expect(
-			await scope.sdk.config.patch(Counter.nodeAddress(), { set: { count: 10 } }),
+			await scope.sdk.plugin(Counter.nodeAddress()).config.patch({ set: { count: 10 } }),
 		).toMatchObject({
 			ok: false,
 			code: 'persistence_failed',
 			state: 'unknown',
 			persistence: { status: 'unknown' },
 		})
-		expect(await scope.sdk.config.get(Counter.nodeAddress())).toMatchObject({
+		expect(await scope.sdk.plugin(Counter.nodeAddress()).config.get()).toMatchObject({
 			managedInput: null,
 			config: { count: 2 },
 		})
@@ -274,7 +277,7 @@ it('closes cached admission on cancellation and drains a real accepted Host muta
 	const controller = new AbortController()
 	const scope = createScriptScope({ ctx: host.ctx, signal: controller.signal })
 	const cached = scope.sdk.plugins.list
-	const admitted = scope.sdk.plugins.start(Delayed.nodeAddress())
+	const admitted = scope.sdk.plugin(Delayed.nodeAddress()).start()
 	await startup.promise
 	controller.abort(new Error('user cancelled'))
 	await expect(cached()).rejects.toMatchObject({ code: 'scope_closed' })
@@ -297,7 +300,7 @@ it('closes cached admission on cancellation and drains a real accepted Host muta
 	})
 	const next = createScriptScope({ ctx: host.ctx })
 	try {
-		expect(await next.sdk.plugins.status(Delayed.nodeAddress())).toMatchObject({
+		expect(await next.sdk.plugin(Delayed.nodeAddress()).status()).toMatchObject({
 			lifecycleState: 'running',
 		})
 	} finally {
@@ -324,7 +327,7 @@ it('reads real bounded logging streams, waits with a deadline and preserves rete
 		const streams = await scope.sdk.logs.streams()
 		expect(streams.streams).toMatchObject([{ streamId: 'default', retention: { windowLines: 2 } }])
 		const cursor = await scope.sdk.logs.mark()
-		await scope.sdk.plugins.start(Counter.nodeAddress())
+		await scope.sdk.plugin(Counter.nodeAddress()).start()
 		expect(
 			await scope.sdk.logs.read(cursor, { filter: { plugin: Counter.nodeAddress() } }),
 		).toMatchObject({ ok: true, lines: [{ msg: 'counter started' }] })

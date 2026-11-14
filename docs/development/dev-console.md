@@ -3,7 +3,7 @@ title: Vite 项目脚本与 HMR
 description: 在当前 Vite 模块图中执行普通 TypeScript，访问真实插件和 Context，并控制源码更新批次。
 ---
 
-项目脚本由目标 Vite 的现有 ModuleRunner 加载。它与应用共享 Plugin constructor、能力 token 和模块身份，可以访问真实实例和 root Context。配置、插件、策略与日志使用 [Script SDK](./scripts.md)；已知插件还可通过 `pluxel dev sync` 取得[控制类型与配置源码描述](./plugin-control.md)，使用 `sdk.plugins.instance()` 调用业务 API。脱离 Vite 的部署使用同一 SDK 的上传执行。
+项目脚本由目标 Vite 的现有 ModuleRunner 加载。它与应用共享 Plugin constructor、能力 token 和模块身份，可以访问真实实例和 root Context。配置、插件、策略与日志使用 [Script SDK](./scripts.md)；已知插件还可通过 `pluxel dev sync` 取得[控制类型与配置源码描述](./plugin-control.md)，使用 `sdk.plugin(descriptor).instance()` 调用业务 API。脱离 Vite 的部署使用同一 SDK 的上传执行。
 
 ## 推荐工作流程
 
@@ -48,7 +48,7 @@ import type { ProjectScript } from '@pluxel/host-vite/project'
 import { TodoPlugin } from '@example/todo-plugin'
 
 export default (async (sdk) => ({
-	status: await sdk.plugins.status(sdk.dev.address(TodoPlugin)),
+	status: await sdk.plugin(sdk.dev.address(TodoPlugin)).status(),
 	todos: sdk.dev.instance(TodoPlugin).snapshot(),
 })) satisfies ProjectScript
 
@@ -64,7 +64,7 @@ vp exec pluxel dev run host/web/dev/inspect.ts
 vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"测试待办事项"'
 ```
 
-`ProjectScript` 使用普通函数与 `satisfies`；没有运行时定义 helper。输入从 unknown 校验。所有通用 SDK 方法返回普通 Promise。源码屏障结算后，执行器完成 TypeScript 检查并核对真实缓存模块的原始输入，声明或源码变化时会明确失败。返回可移植纯数据；实例、Context、函数和其他运行句柄留在目标进程。
+`ProjectScript` 使用普通函数与 `satisfies`；没有运行时定义 helper。输入从 unknown 校验。通用 SDK 的 `plugin()` 和 `fork()` 同步选择目标，Host 操作返回普通 Promise。源码屏障结算后，执行器完成 TypeScript 检查并核对真实缓存模块的原始输入，声明或源码变化时会明确失败。返回可移植纯数据；实例、Context、函数和其他运行句柄留在目标进程。
 
 `sdk.dev.address(Constructor)` 对当前 catalog 检查 constructor 身份后返回稳定节点地址。通用配置与生命周期方法使用这个地址。fork 使用 `{ plugin: TodoPlugin, forkId: 'east' }`，只查找已有节点。`sdk.dev.instance()` 返回实际当前实例；每次 restart/HMR 后重新取得。已取得的普通 JavaScript 对象无法通用撤销，不能跨 run 或 Host epoch 缓存。
 
@@ -79,13 +79,12 @@ import type { ProjectScript } from '@pluxel/host-vite/project'
 import { TodoPlugin } from '@example/todo-plugin'
 
 export const increaseLimit = (async (sdk) => {
-	const node = sdk.dev.address(TodoPlugin)
-	const current = await sdk.config.get(node)
+	const { get, patch } = sdk.plugin(sdk.dev.address(TodoPlugin)).config
+	const current = await get()
 	if (!current.ok) return current
 	const limit = current.config.limit
 	if (typeof limit !== 'number') throw new TypeError('Expected a numeric limit')
-	const changed = await sdk.config.patch(
-		node,
+	const changed = await patch(
 		{ set: { limit: limit + 1 } },
 		{
 			expectedManagedRevision: current.managedRevision,
@@ -95,7 +94,7 @@ export const increaseLimit = (async (sdk) => {
 	return {
 		persistence: changed.persistence,
 		application: changed.application,
-		current: await sdk.config.get(node),
+		current: await get(),
 		actual: sdk.dev.instance(TodoPlugin).config.limit,
 	}
 }) satisfies ProjectScript

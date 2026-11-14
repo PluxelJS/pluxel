@@ -1032,7 +1032,7 @@ try {
  assert.equal(typeof host.ctx.logger.info, 'function')
  assert.deepEqual(await scope.sdk.plugins.list(), [])
  const missing = { definition: { entry: { kind: 'package-root', packageName: '@test/missing' }, exportName: 'Missing' }, variant: 'default' }
- assert.equal((await scope.sdk.config.get(missing)).ok, false)
+ assert.equal((await scope.sdk.plugin(missing).config.get()).ok, false)
 } finally {
  await scope.dispose()
  await host.close()

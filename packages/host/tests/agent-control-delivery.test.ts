@@ -78,16 +78,18 @@ it('generates real Plugin declarations, compiles an author script and uploads it
 import type { Script } from '@pluxel/host/agent'
 import { DeliveryCounter } from './control/index.mjs'
 export default (async (sdk, run) => {
-  const before = await sdk.config.get(DeliveryCounter)
+  const selected = sdk.plugin(DeliveryCounter)
+  const { get, patch } = selected.config
+  const before = await get()
   if (before.ok === false) return before
-  const changed = await sdk.config.patch(DeliveryCounter, { set: { count: 12 } }, { expectedManagedRevision: before.managedRevision })
+  const changed = await patch({ set: { count: 12 } }, { expectedManagedRevision: before.managedRevision })
   if (changed.ok === false || changed.application !== 'applied') return changed
-  const { instance: counter } = await sdk.plugins.instance(DeliveryCounter)
+  const { instance: counter } = await selected.instance()
   const added = await counter.addAsync(5, run.signal)
   return { changed, added, observed: counter.count }
 }) satisfies Script
 export const encodeFailure = (async (sdk) => {
-  const { instance: counter } = await sdk.plugins.instance(DeliveryCounter)
+  const { instance: counter } = await sdk.plugin(DeliveryCounter).instance()
   counter.add(3)
   return counter
 }) satisfies Script
@@ -102,7 +104,7 @@ export const encodeFailure = (async (sdk) => {
 			executor: owner.executor,
 			subject: 'control-delivery',
 			assertAuthorized() {},
-			describe: () => ({ capabilities: ['plugins.instance'] }),
+			describe: () => ({ capabilities: ['plugin.instance'] }),
 		})
 		const request = { runId: 'generated-control-operation', code: artifact }
 		const receipt = {

@@ -12,7 +12,7 @@
 
 D1/KV 配置与状态适配按真实部署验证提交、读取和传播；完整采用结果继续由 Host 报告。Dynamic Worker 不保存另一份 Host graph，也不创建另一套插件实例。
 
-后端按实际实现声明 `describe.capabilities`。管理能力可以通过受控桥提供；同进程真实实例借用需要 `plugins.instance` 支持，跨 isolate 后端未实现时准确拒绝，不能以 `artifact` 加载能力或异步 RPC 代理代替。插件类型与借用边界由[Plugin Control](../PLUGIN_CONTROL.md)维护。
+后端按实际实现声明 `describe.capabilities`。管理能力可以通过受控桥提供；同进程真实实例借用需要 `plugin.instance` 支持，跨 isolate 后端未实现时准确拒绝，不能以 `artifact` 加载能力或异步 RPC 代理代替。插件类型与借用边界由[Plugin Control](../PLUGIN_CONTROL.md)维护。
 
 ## 远程 Vite 入口
 

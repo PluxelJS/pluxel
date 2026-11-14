@@ -11,7 +11,7 @@ const principal = { provider: 'development-console', subject: 'bot-lab-validatio
 /** Read the real aggregator, provider lifecycles, and target-scoped publications. */
 export default (async (sdk) => {
 	const plugins = await sdk.plugins.list()
-	const owner = await sdk.plugins.status(sdk.dev.address(BotWorkspacePlugin))
+	const owner = await sdk.plugin(sdk.dev.address(BotWorkspacePlugin)).status()
 	if (!owner) throw new Error('BotWorkspacePlugin is not registered')
 	const session = sdk.dev.ctx.require(WorkbenchHost).createSession(principal, () => {})
 	try {
@@ -43,7 +43,7 @@ export const saveInstructions = (async (sdk, run) => {
 	const record = input as Record<string, unknown>
 	if (typeof record.instructions !== 'string') throw new TypeError('Expected instructions string')
 	const identity = sdk.dev.instance(BotWorkspacePlugin).identity(record.source, record.id)
-	const owner = await sdk.plugins.status(sdk.dev.address(BotWorkspacePlugin))
+	const owner = await sdk.plugin(sdk.dev.address(BotWorkspacePlugin)).status()
 	if (!owner) throw new Error('BotWorkspacePlugin is not registered')
 	using opened = await openLocalWorkbenchEntry(sdk.dev.ctx, {
 		target: owner.address,
@@ -61,13 +61,19 @@ export const saveInstructions = (async (sdk, run) => {
 	return { result, before, after }
 }) satisfies ProjectScript
 
-export const stopDiscord = (async (sdk) => ({
-	report: await sdk.plugins.stop(sdk.dev.address(DiscordBotPlugin)),
-	current: await sdk.plugins.status(sdk.dev.address(DiscordBotPlugin)),
-	snapshot: sdk.dev.instance(BotWorkspacePlugin).snapshot(),
-})) satisfies ProjectScript
-export const startDiscord = (async (sdk) => ({
-	report: await sdk.plugins.start(sdk.dev.address(DiscordBotPlugin)),
-	current: await sdk.plugins.status(sdk.dev.address(DiscordBotPlugin)),
-	snapshot: sdk.dev.instance(BotWorkspacePlugin).snapshot(),
-})) satisfies ProjectScript
+export const stopDiscord = (async (sdk) => {
+	const { stop, status } = sdk.plugin(sdk.dev.address(DiscordBotPlugin))
+	return {
+		report: await stop(),
+		current: await status(),
+		snapshot: sdk.dev.instance(BotWorkspacePlugin).snapshot(),
+	}
+}) satisfies ProjectScript
+export const startDiscord = (async (sdk) => {
+	const { start, status } = sdk.plugin(sdk.dev.address(DiscordBotPlugin))
+	return {
+		report: await start(),
+		current: await status(),
+		snapshot: sdk.dev.instance(BotWorkspacePlugin).snapshot(),
+	}
+}) satisfies ProjectScript

@@ -1,13 +1,13 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, type PluginNodeAddress } from '@pluxel/core'
 import { compileScript } from '@pluxel/rolldown/scripts'
 import { Miniflare, Response as WorkerResponse } from 'miniflare'
 import { build } from 'vite-plus'
 import { expect, it } from 'vitest'
 import { createHost } from '../src/index'
-import { createScriptScope } from '../src/agent'
+import { createScriptScope, type ScriptPluginConfig } from '../src/agent'
 
 const hostRoot = fileURLToPath(new URL('../', import.meta.url))
 
@@ -113,17 +113,17 @@ let moduleInvocations = 0
 export default (async (sdk, run) => {
   run.signal.throwIfAborted()
   const nodes = await sdk.plugins.list()
-  const node = nodes[0].address
-  const before = await sdk.config.get(node)
+  const { get, patch } = sdk.plugin(nodes[0].address).config
+  const before = await get()
   if (before.ok === false) return before
   const values = [before.config.count]
   let next = 0
   for (const value of values) {
     if (typeof value === 'number') next += value * 2
   }
-  const changed = await sdk.config.patch(node, { set: { count: next } }, { expectedManagedRevision: before.managedRevision })
+  const changed = await patch({ set: { count: next } }, { expectedManagedRevision: before.managedRevision })
   if (changed.ok === false) return changed
-  return { moduleInvocations: ++moduleInvocations, changed, actual: await sdk.config.get(node), runtime: navigator.userAgent }
+  return { moduleInvocations: ++moduleInvocations, changed, actual: await get(), runtime: navigator.userAgent }
 }) satisfies Script
 `,
 		)
@@ -135,10 +135,14 @@ export default class Task extends WorkerEntrypoint {
   async run(input) {
     const sdk = {
       plugins: { list: () => this.env.HOST.listPlugins() },
-      config: {
-        get: (node) => this.env.HOST.getConfig(node),
-        patch: (node, change, options) => this.env.HOST.patchConfig(node, change, options),
-      },
+      // This test bridge supplies only the two calls exercised by this task.
+      plugin: (node) => ({
+        address: node,
+        config: {
+          get: () => this.env.HOST.getConfig(node),
+          patch: (change, options) => this.env.HOST.patchConfig(node, change, options),
+        },
+      }),
     }
     return loadModule()[${JSON.stringify(artifact.exportName)}](sdk, { id: 'workerd-probe', input, signal: new AbortController().signal })
   }
@@ -181,18 +185,20 @@ export default {
 								async handler(request) {
 									const input = (await request.json()) as {
 										operation: string
-										node: Parameters<typeof scope.sdk.config.get>[0]
-										change: Parameters<typeof scope.sdk.config.patch>[1]
-										options: Parameters<typeof scope.sdk.config.patch>[2]
+										node: PluginNodeAddress
+										change: Parameters<ScriptPluginConfig['patch']>[0]
+										options: Parameters<ScriptPluginConfig['patch']>[1]
 									}
 									switch (input.operation) {
 										case 'plugins':
 											return WorkerResponse.json(await scope.sdk.plugins.list())
 										case 'get':
-											return WorkerResponse.json(await scope.sdk.config.get(input.node))
+											return WorkerResponse.json(await scope.sdk.plugin(input.node).config.get())
 										case 'patch':
 											return WorkerResponse.json(
-												await scope.sdk.config.patch(input.node, input.change, input.options),
+												await scope.sdk
+													.plugin(input.node)
+													.config.patch(input.change, input.options),
 											)
 										default:
 											throw new Error(`Unexpected bridge operation ${input.operation}`)

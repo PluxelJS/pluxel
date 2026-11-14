@@ -11,7 +11,7 @@ const principal = { provider: 'development-console', subject: 'workbench-migrati
 
 /** Read real publications and exercise a bounded, explicitly owned RPC activation. */
 export default (async (sdk, run) => {
-	const studio = await sdk.plugins.status(sdk.dev.address(ReportStudioPlugin))
+	const studio = await sdk.plugin(sdk.dev.address(ReportStudioPlugin)).status()
 	if (!studio) throw new Error('ReportStudioPlugin is not registered')
 	const session = sdk.dev.ctx.require(WorkbenchHost).createSession(principal, () => {})
 	try {
@@ -57,14 +57,14 @@ export default (async (sdk, run) => {
 }) satisfies ProjectScript
 
 /** Stop/restart are explicit online operations, used to verify browser epoch invalidation. */
-export const stopStudio = (async (sdk) => ({
-	report: await sdk.plugins.stop(sdk.dev.address(ReportStudioPlugin)),
-	current: await sdk.plugins.status(sdk.dev.address(ReportStudioPlugin)),
-})) satisfies ProjectScript
-export const startStudio = (async (sdk) => ({
-	report: await sdk.plugins.start(sdk.dev.address(ReportStudioPlugin)),
-	current: await sdk.plugins.status(sdk.dev.address(ReportStudioPlugin)),
-})) satisfies ProjectScript
+export const stopStudio = (async (sdk) => {
+	const { stop, status } = sdk.plugin(sdk.dev.address(ReportStudioPlugin))
+	return { report: await stop(), current: await status() }
+}) satisfies ProjectScript
+export const startStudio = (async (sdk) => {
+	const { start, status } = sdk.plugin(sdk.dev.address(ReportStudioPlugin))
+	return { report: await start(), current: await status() }
+}) satisfies ProjectScript
 
 /** Compare authoritative package snapshots before/after browser-only input drafts. */
 export const packageManagerSnapshot = ((sdk) =>
