@@ -78,6 +78,7 @@ export function createHostPolicy(ctx: Context, store: HostStateStore): HostPolic
 				options,
 			)
 		} catch (error) {
+			if (options?.signal?.aborted && error === options.signal.reason) throw error
 			return failure(error)
 		}
 	}
@@ -96,6 +97,7 @@ export function createHostPolicy(ctx: Context, store: HostStateStore): HostPolic
 					return result(input)
 				}, options)
 			} catch (error) {
+				if (options?.signal?.aborted && error === options.signal.reason) throw error
 				return failure(error)
 			}
 		},

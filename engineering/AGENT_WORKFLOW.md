@@ -11,14 +11,14 @@ CLI / 编辑器
       ├─ Vite：ModuleRunner 加载目标项目模块
       └─ Node：加载作者侧编译的 JS 工厂
   → executeHostScript：创建并结算本次 scope
-  → ScriptSdk：同步选择插件引用，Host 操作返回普通 Promise
+  → ScriptSdk：同步选择插件引用，异步控制返回 Promise<Result<T, E>>
   → Host coordinator / 配置 / 策略 / Core Logging
 
 Workbench 管理 RPC
   → 相同 Host 用例与报告投影
 ```
 
-Host 持有插件图、配置来源和原始输入、版本、运行意图及生命周期。SDK 组织这些现有能力，复用 Host 配置和策略结果、稳定 `PluginNodeAddress` 以及共享 `PluginApplyReportSnapshot` 投影。Workbench 与脚本使用同一业务实现。领域约束继续由 [Host](HOST.md)、[Config](CONFIG.md) 和 [Logging](LOGGING.md) 维护。
+Host 持有插件图、配置来源和原始输入、版本、运行意图及生命周期。SDK 组织这些现有能力，复用 Host 配置和策略用例、稳定 `PluginNodeAddress` 以及共享 `PluginApplyReportSnapshot` 投影。原领域结果只在 SDK 返回边界去掉 `ok`，转换成共享 Better Result，保留全部领域字段；Workbench 原协议保持原义。SDK 注入 `@pluxel/core/better-result` 的原生 `Result` namespace，作者无需把另一份库打进制品。领域约束继续由 [Host](HOST.md)、[Config](CONFIG.md) 和 [Logging](LOGGING.md) 维护。
 
 执行器持有 run，加载器持有求值方式，连接持有认证和远程引用。跨进程 target 只负责提交与控制；同进程直接调用执行器和 Host。SDK 方法没有经过 Cap’n Web，也没有复制一套配置或生命周期逻辑。
 
@@ -38,17 +38,17 @@ Host 持有插件图、配置来源和原始输入、版本、运行意图及生
 
 `createScriptScope` 借用原 Host 和本次 signal，返回 SDK、`assertOpen`、`abort`、`dispose` 和版本 `snapshot`。`plugin()` 和引用的 `fork()` 同步选择并检查 scope，其余 Host 操作在 scope 中接纳并跟踪 Promise；缓存的工厂、引用和配置方法同样检查是否关闭。scope 不拥有 Host，也不释放 root Context。引用的类型关联与生成声明由 [Plugin Control](PLUGIN_CONTROL.md#typed-配置与实例)维护。
 
-脚本结束后 `executeHostScript` 关闭后续调用，等待已接纳的 SDK 工作，再读取结束版本。取消先关闭接纳、传递 signal，并释放日志等待订阅；Host 已接纳的写入或生命周期操作依原路径结算。排空期间的失败保留为运行或 `cleanupError`，不能把取消抢先投影成操作未发生。
+脚本结束后 `executeHostScript` 关闭后续调用，等待已接纳的 SDK 工作，再读取结束版本。异步控制的已知失败先转换为 Err，再进入 pending 跟踪；预期失败不形成清理异常。未知缺陷继续 reject，并保留为运行或 `cleanupError`。取消按信号的原始 reason 严格相等判定，并先于领域错误分类；策略用例保留相同的原生取消 reject 契约。取消先关闭接纳、传递 signal，并释放日志等待订阅；Host 已接纳的写入或生命周期操作依原路径结算，取消终态仍优先，不能抢先投影成操作未发生。
 
 `snapshot()` 在 scope 关闭后仍可读取 Host 版本，供结算后的 `revisions.after` 使用。它包含 catalog/runtime state 的 revision，以及配置/策略各自的 managed revision。版本差异提供核对线索，单步结果仍以领域报告为准。
 
 SDK 的日志方法复用 Core Logging 的 stream、cursor、retention、gap 和等待订阅。`streams()` 只列出已配置历史流；`mark()` 可以创建尚未写入的已配置空流；缺少后端返回明确能力诊断。读取单批最多 10000 条，等待必须指定有限 timeout。scope 不新建 Logging sink，也不接管生产者寿命。
 
-开发扩展从同一 scope 添加真实 Context 和实例能力。真实对象只在所属 run、Host epoch 和 Plugin generation 内借用，不能跨 run 保存。原生资源由创建它的脚本按原协议释放。
+开发扩展从同一 scope 添加 Context 借用和 constructor 选择。构造函数统一从 `sdk.plugin(Constructor)` 接入原成员视图，身份校验和生命周期变更属于同一个 committed 操作，见 [Dev Console](DEV_CONSOLE.md#操作-api-与资源)。原生资源由创建它的脚本按原协议释放。
 
 ## 代码交付和加载
 
-上传输入是 `ScriptArtifact`，格式为 `pluxel-js-factory/1`。`compileScript({ file, exportName, signal })` 对普通 TS/JS 文件使用 native TypeScript 检查并用 Rolldown 打包，共享固定输入。交付物包含工厂函数体、导出名、内容摘要和版本 3 source map，编译不会求值应用工厂。上传工厂包含脚本、通过材料验证的纯描述符与可打包的计算依赖，类型 import 被消除；运行时框架 import、Node builtin、远端协议、原生扩展和动态 import 明确拒绝。
+上传输入是 `ScriptArtifact`，格式为 `pluxel-js-factory/1`。`compileScript({ file, exportName, signal })` 对普通 TS/JS 文件使用 native TypeScript 检查并用 Rolldown 打包，共享固定输入。交付物包含工厂函数体、导出名、内容摘要和版本 3 source map，编译不会求值应用工厂。上传工厂包含脚本、通过材料验证的纯描述符与可打包的计算依赖，类型 import 被消除；运行时框架 import、Node builtin、远端协议、原生扩展和动态 import 明确拒绝。独立 Better Result 副本也在 specifier 与实际 package owner 两处拒绝，作者使用注入的 `sdk.Result`。
 
 工厂同步初始化并返回模块 exports，异步任务在导出函数中执行。Node 加载器在原进程 realm 使用 `vm.compileFunction`，每次 run 创建新的模块局部状态，随后调用所选导出并传入 SDK。它不依赖实验 ESM VM API、临时执行文件、`data:` import 或 ESM 缓存。加载错误和执行错误按工厂附带 source map 映回原作者文件。
 
@@ -64,9 +64,11 @@ CLI 在首次提交前保存或输出 receipt，记录原 endpoint/实例/run ID
 
 阶段为 admission、load、execute、encode、cleanup；状态从 queued/preparing/running 进入 succeeded、failed 或 cancelled。取消中的活动 run 保持 cancelling，直到脚本和 scope 真正结算。取消的终态保留取消错误及同期发生的 `executionError`。`close()` 等待真实结算，断开连接只释放控制引用。
 
-成功终态要求函数、结果编码和清理均完成。脚本返回的领域失败值仍是成功结果；配置的保存与采用、生命周期和部分失败由原报告表达。脚本中途抛错、编码或清理失败都不会撤销已提交修改，也不会自动重试。前后版本、错误阶段和清理失败共同支持后续核对。
+成功终态要求函数、结果编码和清理均完成。脚本返回的领域 Err 仍是成功结果；配置的保存与采用、生命周期和部分失败由原报告表达。`Result.gen` 可以停止后续步骤，不能回滚已经提交的步骤；未知缺陷按上游 Panic 规则形成执行失败。脚本中途抛错、编码或清理失败都不会撤销已提交修改，也不会自动重试。前后版本、错误阶段和清理失败共同支持后续核对。
 
-结果编码只读取普通 JSON 数据，拒绝能力对象、class instance、getter、循环、BigInt、函数和非有限数值。预算在 [`protocol.ts`](../packages/host/src/agent/protocol.ts) 和 [`runtime.ts`](../packages/host/src/agent/runtime.ts) 维护：
+运行错误的有界诊断保留原生 Panic 的 cause 文本。cause 链及 Aggregate/Suppressed 子错误只读取自身数据属性，跳过访问器；沿用深度、节点、循环和消息长度限制，不把业务 Error 实例放入结果 DTO。
+
+[`result-codec.ts`](../packages/host/src/agent/result-codec.ts) 只在 `executeHostScript` 的最终返回边界识别共享 Ok/Err 的实际原型和 own data，使用原生 `Result.codec` 输出 SerializedResult。普通 JSON 的 status/value/error 不触发识别。Result payload 继续经原 `snapshotJson` 验证，拒绝嵌套 Result、能力对象、其他 class instance、getter、循环、BigInt、函数和非有限数值，不执行任意 `toJSON`。执行器最后再检查完整 envelope 的预算。直接使用 scope 得到的值仍是原生 Result；跨进程结果是 DTO，不自动复活类。预算在 [`protocol.ts`](../packages/host/src/agent/protocol.ts) 和 [`runtime.ts`](../packages/host/src/agent/runtime.ts) 维护：
 
 | 项目                                 | 当前上限                      |
 | ------------------------------------ | ----------------------------- |

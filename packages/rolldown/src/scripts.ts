@@ -51,6 +51,8 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 	}
 	const forbidden = (specifier: string): boolean =>
 		specifier.startsWith('@pluxel/') ||
+		specifier === 'better-result' ||
+		specifier.startsWith('better-result/') ||
 		specifier.startsWith('node:') ||
 		builtinModules.includes(specifier) ||
 		/^[A-Za-z][A-Za-z\d+.-]*:/.test(specifier) ||
@@ -65,6 +67,7 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 		'@pluxel/services',
 		'@pluxel/workbench',
 		'@pluxel/commands',
+		'better-result',
 	])
 	const packageName = (directory: string): Promise<string | undefined> => {
 		let pending = packageNames.get(directory)
@@ -100,7 +103,7 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 					if (resolved && (await findControl(resolved.id)) !== undefined) return resolved
 				}
 				rejectImport(
-					`Upload scripts cannot import ${JSON.stringify(source)}. Use type-only SDK imports, injected SDK operations, or a Vite project script for real application objects.`,
+					`Upload scripts cannot import ${JSON.stringify(source)}. Use type-only SDK imports, injected SDK operations including sdk.Result, or a Vite project script for real application objects.`,
 				)
 			}
 			return null

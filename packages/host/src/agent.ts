@@ -7,6 +7,20 @@ export type {
 	ScriptPluginConfig,
 } from './agent/sdk-types'
 export type {
+	ScriptRunError,
+	ScriptOperationError,
+	ScriptTargetError,
+	ScriptControlError,
+	ScriptConfigSnapshot,
+	ScriptConfigError,
+	ScriptPolicySnapshot,
+	ScriptPolicyError,
+	ScriptInstanceError,
+	ScriptLifecycleError,
+	ScriptLogSnapshot,
+	ScriptLogError,
+} from './agent/sdk-results'
+export type {
 	PluginDescriptor,
 	PluginTypedTarget,
 	PluginTarget,

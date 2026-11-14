@@ -9,7 +9,7 @@ Pluxel 核心在 `@pluxel/core/better-result` 子路径下直接导出了 [Bette
 
 跨插件公开 Result 实例时，提供方和调用方使用同一子入口，通过 `@pluxel/core` peer 共享所选版本，无需额外声明 `better-result` peer。Core peer 范围应包含所用子入口和 API 的最低版本；只导入 Core 主入口不会加载 Better Result。独立安装的双包 ESM/CJS 消费与对象身份检查见 [Core 发行回归](https://github.com/PluxelJS/pluxel/blob/main/packages/core/tests/installed-result.smoke.mjs)。
 
-本地业务方法按恢复需要选择 Result；SDK 原生返回值、部分成功回执及配置的保存/采用状态继续使用各自协议。`Plugin.init()` 无法提供能力时仍按生命周期约定失败。
+本地业务方法按恢复需要选择 Result；SDK 原生返回值、部分成功回执及配置的保存/采用状态继续使用各自协议。Host 的[脚本 SDK](../development/scripts.md)在其控制边界统一返回 Better Result，并通过 `sdk.Result` 注入同一 namespace，保留原报告与持久化、采用信息。`Plugin.init()` 无法提供能力时仍按生命周期约定失败。
 
 ## 场景选型：何时使用 Result
 
@@ -61,20 +61,20 @@ import { Result } from '@pluxel/core/better-result'
 async function registerAccount(input: AccountInput) {
 	return Result.gen(async function* () {
 		// 校验输入
-		const validated = yield* validateInput(input)
+		const validated = yield* Result.await(validateInput(input))
 
 		// 检查重复账号
-		yield* ensureNotRegistered(validated.email)
+		yield* Result.await(ensureNotRegistered(validated.email))
 
 		// 创建数据库记录
-		const account = yield* createDbRecord(validated)
+		const account = yield* Result.await(createDbRecord(validated))
 
-		return account
+		return Result.ok(account)
 	})
 }
 ```
 
-在生成器内部，`yield*` 会自动解包 `Result.ok` 的值；若某一步返回 `Result.err`，整个流程将提前短路并返回该错误。
+异步生成器通过 `yield* Result.await(promise)` 解包成功值；若某一步返回 `Result.err`，整个流程提前短路并返回该错误。生成器正常结束时返回 `Result.ok(value)`。同步 Result 可以直接 `yield*`；生成器中的未知异常遵循上游 `Panic` 规则。
 
 ## Command 指令中的使用
 

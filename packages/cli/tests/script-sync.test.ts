@@ -18,11 +18,18 @@ import { devCommand } from '../src/commands/dev'
 import { normalizeDevArgs } from '../src/command-manifest'
 
 const directories: string[] = []
+const pendingCompilations = new Set<ReturnType<typeof compileScript>>()
+let compilationController: AbortController | undefined
 afterEach(async () => {
 	try {
+		// Vitest timing out does not cancel the compiler's native child process.
+		compilationController?.abort()
+		await Promise.allSettled(pendingCompilations)
+	} finally {
+		compilationController = undefined
+		pendingCompilations.clear()
 		process.exitCode = 0
 		vi.restoreAllMocks()
-	} finally {
 		await Promise.all(
 			directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
 		)
@@ -121,6 +128,8 @@ it('keeps canonical imports stable when material aliases and the set of same-nam
 })
 
 it('publishes a verified aggregate atomically and compiles imports through its stable current entry', async () => {
+	const controller = new AbortController()
+	compilationController = controller
 	const { directory, reader } = await fixture()
 	using source = reader
 	const out = join(directory, 'control')
@@ -160,18 +169,28 @@ it('publishes a verified aggregate atomically and compiles imports through its s
 		}),
 	)
 	const script = join(directory, 'task.ts')
+	async function compile() {
+		controller.signal.throwIfAborted()
+		const pending = compileScript({ file: script, signal: controller.signal })
+		pendingCompilations.add(pending)
+		try {
+			return await pending
+		} finally {
+			pendingCompilations.delete(pending)
+		}
+	}
 	await writeFile(
 		script,
-		`import type {Script} from '@pluxel/host/agent';\nimport {${first.definitions[0].exportName} as Counter} from './control/current/index.mjs';\nexport default (async(sdk) => { const select=sdk.plugin; const counter=select(Counter); const {get,patch}=counter.config; const before=await get(); if(!before.ok)return before; const result = await patch({set:{step:2}},{expectedManagedRevision:before.managedRevision}); if(!result.ok)return result; const {instance}=await counter.instance(); return {result,count:instance.add(2)} }) satisfies Script;\n`,
+		`import type {Script} from '@pluxel/host/agent';\nimport {${first.definitions[0].exportName} as Counter} from './control/current/index.mjs';\nexport default ((sdk) => sdk.Result.gen(async function* () { const select=sdk.plugin; const counter=select(Counter); const {get,patch}=counter.config; const before=yield* sdk.Result.await(get()); const result=yield* sdk.Result.await(patch({set:{step:2}},{expectedManagedRevision:before.managedRevision})); const instance=yield* sdk.Result.await(counter.instance()); return sdk.Result.ok({result,count:instance.add(2)}) })) satisfies Script;\n`,
 	)
-	const artifact = await compileScript({ file: script })
+	const artifact = await compile()
 	expect(artifact.code).toContain('synced-counter')
 	expect(artifact.code).not.toContain('class CounterInstance')
 	await writeFile(
 		script,
 		`import type {Script} from '@pluxel/host/agent';\nimport {${first.definitions[0].exportName} as Counter} from './control/current/index.mjs';\nexport default (async(sdk) => {const {patch}=sdk.plugin(Counter).config;return patch({set:{step:'wrong'}})}) satisfies Script;\n`,
 	)
-	await expect(compileScript({ file: script })).rejects.toMatchObject({ code: 'typecheck_failed' })
+	await expect(compile()).rejects.toMatchObject({ code: 'typecheck_failed' })
 })
 
 it('rejects corrupted or mixed chunks before publishing and preserves author files and edited snapshots', async () => {

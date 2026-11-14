@@ -107,6 +107,7 @@ it('captures startup provenance, protects discovery, and keeps credentials out o
 		serviceId: 'fixture/server',
 		codeKinds: ['project'],
 		capabilities: [
+			'result',
 			'plugins',
 			'plugin',
 			'plugin.instance',

@@ -40,6 +40,7 @@ catalogs:
     vitest: 5.1.0
   tooling:
     vite-plus: 1.4.0
+    '@types/bun': ^1.3.14
     '@types/node': ^26.6.6
     typescript: ^7.0.2
     vite: npm:@voidzero-dev/vite-plus-core@1.4.0

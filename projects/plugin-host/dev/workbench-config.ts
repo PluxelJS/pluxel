@@ -1,9 +1,9 @@
 import type { ProjectScript } from '@pluxel/host-vite/project'
 import { ReportStudioPlugin } from '../src/showcase/ReportStudio'
 
-/** Saved/effective authority for the browser ConfigForm acceptance. */
+/** Dynamic-address configuration for browser acceptance; generated descriptors provide schema I/O. */
 export default ((sdk) =>
-	sdk.plugin(sdk.dev.address(ReportStudioPlugin)).config.get()) satisfies ProjectScript
+	sdk.plugin(ReportStudioPlugin.nodeAddress()).config.get()) satisfies ProjectScript
 
 /** Restore only the field changed by explicit --save browser acceptance. */
 export const restoreOutboundPath = ((sdk, run) => {
@@ -17,7 +17,7 @@ export const restoreOutboundPath = ((sdk, run) => {
 		throw new TypeError('restoreOutboundPath requires { hadOverride, value? }')
 	if (input.hadOverride && (!('value' in input) || typeof input.value !== 'string'))
 		throw new TypeError('An existing outboundPath override must be a string')
-	const { patch } = sdk.plugin(sdk.dev.address(ReportStudioPlugin)).config
+	const { patch } = sdk.plugin(ReportStudioPlugin.nodeAddress()).config
 	return patch(
 		input.hadOverride
 			? { set: { outboundPath: 'value' in input ? input.value : undefined } }

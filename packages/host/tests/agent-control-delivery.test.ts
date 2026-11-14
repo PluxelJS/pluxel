@@ -77,22 +77,28 @@ it('generates real Plugin declarations, compiles an author script and uploads it
 			`
 import type { Script } from '@pluxel/host/agent'
 import { DeliveryCounter } from './control/index.mjs'
-export default (async (sdk, run) => {
+export default ((sdk, run) => sdk.Result.gen(async function* () {
   const selected = sdk.plugin(DeliveryCounter)
   const { get, patch } = selected.config
-  const before = await get()
-  if (before.ok === false) return before
-  const changed = await patch({ set: { count: 12 } }, { expectedManagedRevision: before.managedRevision })
-  if (changed.ok === false || changed.application !== 'applied') return changed
-  const { instance: counter } = await selected.instance()
+  const before = yield* sdk.Result.await(get())
+  const changed = yield* sdk.Result.await(patch({ set: { count: 12 } }, { expectedManagedRevision: before.managedRevision }))
+  if (changed.application !== 'applied') return sdk.Result.ok(changed)
+  const counter = yield* sdk.Result.await(selected.instance())
   const added = await counter.addAsync(5, run.signal)
-  return { changed, added, observed: counter.count }
-}) satisfies Script
+  return sdk.Result.ok({ changed, added, observed: counter.count })
+})) satisfies Script
 export const encodeFailure = (async (sdk) => {
-  const { instance: counter } = await sdk.plugin(DeliveryCounter).instance()
+  const counter = sdk.Result.unwrap(await sdk.plugin(DeliveryCounter).instance())
   counter.add(3)
   return counter
 }) satisfies Script
+export const shortCircuit = ((sdk) => sdk.Result.gen(async function* () {
+  const selected = sdk.plugin(DeliveryCounter)
+  yield* sdk.Result.await(selected.config.patch({ set: { count: 999 } }, { expectedManagedRevision: 'stale revision' }))
+  const counter = yield* sdk.Result.await(selected.instance())
+  counter.add(1000)
+  return sdk.Result.ok(counter.count)
+})) satisfies Script
 `,
 		)
 		const artifact = await compileScript({ file: source })
@@ -123,9 +129,12 @@ export const encodeFailure = (async (sdk) => {
 		expect(await owner.executor.settled(receipt.runId, 'control-delivery')).toMatchObject({
 			state: 'succeeded',
 			value: {
-				changed: { ok: true, application: 'applied', config: { count: 12 } },
-				added: 17,
-				observed: 17,
+				status: 'ok',
+				value: {
+					changed: { application: 'applied', config: { count: 12 } },
+					added: 17,
+					observed: 17,
+				},
 			},
 		})
 		expect(
@@ -166,6 +175,26 @@ export const encodeFailure = (async (sdk) => {
 		expect(requirePluginService(host.ctx).getInstance(DeliveryCounter.nodeAddress())).toMatchObject(
 			{ count: 20 },
 		)
+		const shortCircuit = await compileScript({ file: source, exportName: 'shortCircuit' })
+		await target.submit({
+			protocol: receipt.protocol,
+			instanceId: receipt.instanceId,
+			runId: 'generated-short-circuit',
+			code: shortCircuit,
+		})
+		expect(
+			await owner.executor.settled('generated-short-circuit', 'control-delivery'),
+		).toMatchObject({
+			state: 'succeeded',
+			value: { status: 'error', error: { code: 'revision_conflict', state: 'unchanged' } },
+		})
+		expect(requirePluginService(host.ctx).getInstance(DeliveryCounter.nodeAddress())).toMatchObject(
+			{ count: 20 },
+		)
+		expect(await host.config.get(DeliveryCounter.nodeAddress())).toMatchObject({
+			config: { count: 12 },
+			application: 'applied',
+		})
 	} finally {
 		await owner?.close()
 		await host.close()

@@ -10,65 +10,77 @@ import { PackageManagerPlugin } from '@pluxel/plugin-package-manager'
 const principal = { provider: 'development-console', subject: 'workbench-migration-validation' }
 
 /** Read real publications and exercise a bounded, explicitly owned RPC activation. */
-export default (async (sdk, run) => {
-	const studio = await sdk.plugin(sdk.dev.address(ReportStudioPlugin)).status()
-	if (!studio) throw new Error('ReportStudioPlugin is not registered')
-	const session = sdk.dev.ctx.require(WorkbenchHost).createSession(principal, () => {})
-	try {
-		using target = new RpcStub(session.target)
-		const layout = await readWorkbenchLayout(target, { target: null })
-		const targetLayout = await readWorkbenchLayout(target, { target: studio.address })
-		using opened = await openLocalWorkbenchEntry(sdk.dev.ctx, {
-			target: studio.address,
-			entry: ReportStudioWorkbench.studio,
-			principal,
-			location: '/architecture-lab',
-			signal: run.signal,
-		})
-		return {
-			studio,
-			studioRoute: formatPluginNodeRoute(studio.address),
-			layout: {
-				revision: layout.revision,
-				entries: layout.entries.map((entry) => ({
-					descriptor: entry.descriptor,
-					target: entry.target,
-					placement: entry.placement,
-				})),
-			},
-			targetLayout: {
-				revision: targetLayout.revision,
-				entries: targetLayout.entries.map((entry) => ({
-					descriptor: entry.descriptor,
-					target: entry.target,
-					placement: entry.placement,
-				})),
-			},
-			opened: {
-				kind: opened.kind,
-				params: opened.params,
-				producer: opened.federatedViewRef.producer,
-			},
-			snapshot: await consumeWorkbenchValue(opened.api.snapshotDto(), 'Report Studio snapshot'),
+export default ((sdk, run) =>
+	sdk.Result.gen(async function* () {
+		const studio = yield* sdk.Result.await(sdk.plugin(ReportStudioPlugin).status())
+		if (!studio) throw new Error('ReportStudioPlugin is not registered')
+		const session = sdk.dev.ctx.require(WorkbenchHost).createSession(principal, () => {})
+		try {
+			using target = new RpcStub(session.target)
+			const layout = await readWorkbenchLayout(target, { target: null })
+			const targetLayout = await readWorkbenchLayout(target, { target: studio.address })
+			using opened = await openLocalWorkbenchEntry(sdk.dev.ctx, {
+				target: studio.address,
+				entry: ReportStudioWorkbench.studio,
+				principal,
+				location: '/architecture-lab',
+				signal: run.signal,
+			})
+			return sdk.Result.ok({
+				studio,
+				studioRoute: formatPluginNodeRoute(studio.address),
+				layout: {
+					revision: layout.revision,
+					entries: layout.entries.map((entry) => ({
+						descriptor: entry.descriptor,
+						target: entry.target,
+						placement: entry.placement,
+					})),
+				},
+				targetLayout: {
+					revision: targetLayout.revision,
+					entries: targetLayout.entries.map((entry) => ({
+						descriptor: entry.descriptor,
+						target: entry.target,
+						placement: entry.placement,
+					})),
+				},
+				opened: {
+					kind: opened.kind,
+					params: opened.params,
+					producer: opened.federatedViewRef.producer,
+				},
+				snapshot: await consumeWorkbenchValue(opened.api.snapshotDto(), 'Report Studio snapshot'),
+			})
+		} finally {
+			session.dispose()
 		}
-	} finally {
-		session.dispose()
-	}
-}) satisfies ProjectScript
+	})) satisfies ProjectScript
 
 /** Stop/restart are explicit online operations, used to verify browser epoch invalidation. */
-export const stopStudio = (async (sdk) => {
-	const { stop, status } = sdk.plugin(sdk.dev.address(ReportStudioPlugin))
-	return { report: await stop(), current: await status() }
-}) satisfies ProjectScript
-export const startStudio = (async (sdk) => {
-	const { start, status } = sdk.plugin(sdk.dev.address(ReportStudioPlugin))
-	return { report: await start(), current: await status() }
-}) satisfies ProjectScript
+export const stopStudio = ((sdk) =>
+	sdk.Result.gen(async function* () {
+		const { stop, status } = sdk.plugin(ReportStudioPlugin)
+		return sdk.Result.ok({
+			report: yield* sdk.Result.await(stop()),
+			current: yield* sdk.Result.await(status()),
+		})
+	})) satisfies ProjectScript
+export const startStudio = ((sdk) =>
+	sdk.Result.gen(async function* () {
+		const { start, status } = sdk.plugin(ReportStudioPlugin)
+		return sdk.Result.ok({
+			report: yield* sdk.Result.await(start()),
+			current: yield* sdk.Result.await(status()),
+		})
+	})) satisfies ProjectScript
 
 /** Compare authoritative package snapshots before/after browser-only input drafts. */
 export const packageManagerSnapshot = ((sdk) =>
-	sdk.dev.instance(PackageManagerPlugin).snapshot()) satisfies ProjectScript
+	sdk.Result.gen(async function* () {
+		const manager = yield* sdk.Result.await(sdk.plugin(PackageManagerPlugin).instance())
+		return sdk.Result.ok(manager.snapshot())
+	})) satisfies ProjectScript
 
 /** Render through the current Workbench publication, keeping online operations on this console. */
 export const renderReport = (async (sdk, run) => {

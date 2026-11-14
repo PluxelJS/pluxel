@@ -3,18 +3,20 @@ title: Host 自动化脚本
 description: 使用普通 TypeScript 读取配置、计算、条件修改、核对采用，并通过 CLI 提交与查询运行。
 ---
 
-脚本导出一个普通函数。执行器传入 `ScriptSdk` 与本次运行的 `{ id, input, signal }`。`sdk.plugin(target)` 同步选择插件；配置、插件生命周期、执行策略、更新记录和日志操作返回普通 Promise，直接使用目标 Host 的实现。
+脚本导出一个普通函数。执行器传入 `ScriptSdk` 与本次运行的 `{ id, input, signal }`。`sdk.plugin(target)` 同步选择插件；异步控制操作统一返回 `Promise<Result<Value, Error>>`，直接使用目标 Host 的实现。单次操作可以直接返回：
 
 ```ts
 import type { Script } from '@pluxel/host/agent'
 
-export default (async (sdk, run) => {
+export default ((sdk, run) => {
 	run.signal.throwIfAborted()
-	return await sdk.plugins.list()
+	return sdk.plugins.list()
 }) satisfies Script
 ```
 
 远程 Node 应用接收作者侧编译的 JavaScript 制品，应用机器只需运行时。已知插件使用[生成的控制入口](./plugin-control.md)，可直接推导配置类型并调用实际实例的方法。Vite 项目脚本还可以 import 项目模块和访问 Context，见[开发控制台](./dev-console.md)。两种加载方式使用同一组 Host SDK 方法。
+
+`sdk.Result` 是 `@pluxel/core/better-result` 提供的原生 Better Result namespace。脚本使用注入值，上传制品无需打入第二份库，也无需运行时 import。多步流程使用 `Result.gen` 和 `Result.await`，第一个 `Err` 会结束生成器，后续步骤不执行；正常结束时返回 `Result.ok(value)`。
 
 ## 读取、计算、条件修改与核对采用
 
@@ -24,7 +26,7 @@ export default (async (sdk, run) => {
 import type { Script } from '@pluxel/host/agent'
 import { QueuePlugin } from '@acme/pluxel-plugin-queue/control'
 
-export default (async (sdk, run) => {
+export default ((sdk, run) => {
 	if (!run.input || typeof run.input !== 'object' || Array.isArray(run.input)) {
 		throw new TypeError('Expected { factor: number }')
 	}
@@ -32,33 +34,31 @@ export default (async (sdk, run) => {
 	if (typeof factor !== 'number' || !Number.isFinite(factor)) {
 		throw new TypeError('Expected a finite factor')
 	}
-	const { get, patch } = sdk.plugin(QueuePlugin).config
-	const before = await get()
-	if (before.ok === false) return { step: 'read', result: before }
-
-	run.signal.throwIfAborted()
-	const desired = before.config.concurrency * factor
-	const changed = await patch(
-		{ set: { concurrency: desired } },
-		{ expectedManagedRevision: before.managedRevision },
-	)
-	if (changed.ok === false) return { step: 'write', result: changed }
-	const actual = await get()
-	return {
-		changed,
-		actual,
-		adopted:
-			actual.ok === true &&
-			actual.application === 'applied' &&
-			actual.appliedRevision === changed.desiredRevision &&
-			actual.config.concurrency === desired,
-	}
+	const { Result, plugin } = sdk
+	return Result.gen(async function* () {
+		const { get, patch } = plugin(QueuePlugin).config
+		const before = yield* Result.await(get())
+		run.signal.throwIfAborted()
+		const desired = before.config.concurrency * factor
+		const changed = yield* Result.await(
+			patch({ set: { concurrency: desired } }, { expectedManagedRevision: before.managedRevision }),
+		)
+		const actual = yield* Result.await(get())
+		return Result.ok({
+			changed,
+			actual,
+			adopted:
+				actual.application === 'applied' &&
+				actual.appliedRevision === changed.desiredRevision &&
+				actual.config.concurrency === desired,
+		})
+	})
 }) satisfies Script
 ```
 
 插件引用的 `config.get()` 同时返回原始保存输入 `managedInput`、合成输入 `effectiveInput`、Schema 输出 `config`、来源 `sources`、被遮盖路径 `shadowedPaths` 和版本。`managedInput: null` 表示尚无保存记录。编辑时提交 `{ set?, remove? }`；`remove` 使用字符串路径数组。`config.reset()` 清除全部保存输入，传入路径列表则只清除这些路径，随后恢复来源合成。配置对象和其中的方法都可以提取到局部变量，目标由引用固定。
 
-`expectedManagedRevision` 比较本 Host 的配置保存版本。冲突返回 `ok: false, code: 'revision_conflict', state: 'unchanged'`。重新读取后由任务决定如何处理，执行器不会重投。`config.validate(change)` 只预检候选输入，后续写入仍需自己的版本条件。来源优先顺序和只读策略见 [Host 配置](../host/configuration.md#保存配置和运行策略)。
+`expectedManagedRevision` 比较本 Host 的配置保存版本。冲突返回 `Err`，其中 `error.code` 为 `revision_conflict`、`state` 为 `unchanged`。重新读取后由任务决定如何处理，执行器不会重投。`config.validate(change)` 只预检候选输入，后续写入仍需自己的版本条件。来源优先顺序和只读策略见 [Host 配置](../host/configuration.md#保存配置和运行策略)。
 
 保存和运行采用分别查看：
 
@@ -74,7 +74,7 @@ export default (async (sdk, run) => {
 
 ## 插件、策略、更新与日志
 
-`plugins.list()` 提供节点地址、期望与实际状态、诊断和最近更新，适合发现与巡检。`sdk.plugin(descriptorOrAddress)` 固定目标，随后通过引用的 `status/start/stop/restart` 操作节点；`fork(id)` 返回另一个目标引用。启停返回应用报告，需要检查报告中的失败和最终状态。生成描述符的引用还提供 `instance()`，取得本次运行的业务实例视图，方法与资源寿命见[实例调用](./plugin-control.md#调用原插件实例)。
+`plugins.list()` 的成功值提供节点地址、期望与实际状态、诊断和最近更新，适合发现与巡检。`sdk.plugin(descriptorOrAddress)` 固定目标，随后通过引用的 `status/start/stop/restart` 操作节点；`fork(id)` 返回另一个目标引用。启停成功值为应用报告；报告存在生命周期或协调问题时返回 `lifecycle_failed`，错误携带完整 `report`，保留已提交的变化。生成描述符的引用还提供 `instance()`，成功值直接是本次运行的业务实例视图，方法与资源寿命见[实例调用](./plugin-control.md#调用原插件实例)。
 
 `policy.get/validate/patch/reset` 管理 Host 执行策略，修改使用相同的 `expectedManagedRevision` 条件。策略结果会区分已保存策略与需要重建 Host 才采用的设置。`updates.latest()` 读取 Host 最近一次更新报告，没有记录时返回 `null`。
 
@@ -83,25 +83,31 @@ export default (async (sdk, run) => {
 ```ts
 import type { Script } from '@pluxel/host/agent'
 
-export default (async (sdk) => {
-	const node = (await sdk.plugins.list())[0]
-	if (!node) throw new Error('No installed plugin')
-	const { streams } = await sdk.logs.streams()
-	const stream = streams[0]
-	if (!stream) throw new Error('Configure a Logging history stream first')
-	const plugin = sdk.plugin(node.address)
-	const cursor = await sdk.logs.mark(stream.streamId)
-	const report = await plugin.restart()
-	const logs = await sdk.logs.wait(cursor, {
-		filter: { plugin: plugin.address },
-		limit: 100,
-		timeoutMs: 2000,
-	})
-	return { report, status: await plugin.status(), logs }
-}) satisfies Script
+export default ((sdk) =>
+	sdk.Result.gen(async function* () {
+		const { Result } = sdk
+		const nodes = yield* Result.await(sdk.plugins.list())
+		const node = nodes[0]
+		if (!node) return Result.err({ code: 'no_plugin' })
+		const { streams } = yield* Result.await(sdk.logs.streams())
+		const stream = streams[0]
+		if (!stream) return Result.err({ code: 'no_history_stream' })
+		const plugin = sdk.plugin(node.address)
+		const cursor = yield* Result.await(sdk.logs.mark(stream.streamId))
+		const report = yield* Result.await(plugin.restart())
+		const logs = yield* Result.await(
+			sdk.logs.wait(cursor, {
+				filter: { plugin: plugin.address },
+				limit: 100,
+				timeoutMs: 2000,
+			}),
+		)
+		const status = yield* Result.await(plugin.status())
+		return Result.ok({ report, status, logs })
+	})) satisfies Script
 ```
 
-`logs.read(cursor, { limit, filter })` 立即读取，成功结果的新 `cursor` 可用于下一批。`wait` 的 `timeoutMs` 必填，范围为 1–300000；到时返回当前读取结果，取消会拒绝等待并移除订阅。每批默认 100 条，最多 10000 条。
+`logs.read(cursor, { limit, filter })` 立即读取，成功值的新 `cursor` 可用于下一批。`wait` 的 `timeoutMs` 必填，范围为 1–300000；到时返回当前读取结果，取消返回 `Err` 并移除订阅。每批默认 100 条，最多 10000 条。
 
 日志流重置、替换或超过保留窗口时返回明确的 `epoch_mismatch`、`stream_replaced` 或 `from_too_old` 等结果；调用方决定从哪里重新开始。缺少 Logging 或历史存储会给出 `logging_unavailable` / `store_unavailable` 诊断，SDK 不安装新存储。日志窗口内也可以存在其他并发操作产生的记录。
 
@@ -150,9 +156,15 @@ receipt 记录原 endpoint、执行实例、run ID 和请求摘要，权限仍�
 
 ## 失败、取消和释放
 
-`run.state: 'succeeded'` 表示函数返回、结果编码和 SDK 清理已完成。函数返回 `{ ok: false }` 仍然是成功运行中的领域结果。配置只读、版本冲突、校验失败等通过 SDK 返回值处理；生命周期、保存采用和部分失败按各自报告处理。抛出的异常、加载失败、结果编码失败或清理失败形成 `failed`，带有阶段和错误，清理错误另存 `cleanupError`。
+`run.state: 'succeeded'` 表示函数返回、结果编码和 SDK 清理已完成。顶层共享 Result 由执行边界通过原生 `Result.codec` 编码为 `{ status: 'ok', value }` 或 `{ status: 'error', error }`；领域 `Err` 仍是成功运行中的业务结果。原有 JSON 返回值继续作为普通数据。识别依据是共享库的实际 Result 实例，JSON 的同名字段不会改变执行语义。
 
-脚本的每个 Host 操作独立提交。前几步已成功而后一步失败时，原修改继续有效。执行器不自动回滚或重放；需要批量逐项处理时用普通循环和 `try/catch` 收集报告。只返回 JSON 数据，实例、Context、函数、循环引用、BigInt 或带 getter 的对象会在编码阶段失败。输入与结果分别限 1 MiB，结果保留有界；需要后续访问的对象返回业务 ID。
+SDK 的预期失败以 `Err` 返回，按 `error.code` 缩小类型：配置校验、只读和版本冲突保留原领域详情；材料不匹配需重新同步；未运行的实例需检查节点状态；生命周期失败检查完整报告。持久化确认失败保留 `state: 'unknown'`，先核对当前状态。关闭后的异步调用返回 `scope_closed`，禁止交错的业务与管理调用返回 `borrowed_generation_conflict`，已知取消返回 `cancelled`。生成器遇到错误只结束后续步骤，已经提交的操作继续有效。
+
+`plugin()` 和 `fork()` 是同步选择器，错误参数或关闭的 run 同步抛错。异步操作的错误参数形状、无效数值和未知实现缺陷仍可 reject；原业务方法保持自己的 Result、异常和资源协议。`Result.gen` 按上游规则把生成器中的未知缺陷包装为 `Panic`。加载、执行、结果编码或清理失败形成 `failed`，带有阶段和错误，清理错误另存 `cleanupError`。
+
+Result 的 payload 使用同样的 JSON 约束。嵌套 Result、业务 Error/TaggedError 实例和资源句柄需要作者在自己的边界通过显式 codec 或数据投影处理；执行器不会调用任意 `toJSON`。
+
+脚本的每个 Host 操作独立提交。前几步已成功而后一步失败时，原修改继续有效。执行器不自动回滚或重放；需要批量逐项处理时用普通循环检查各步 Result。普通返回值和 Result payload 均须为 JSON 数据，实例、Context、函数、循环引用、BigInt 或带 getter 的对象会在编码阶段失败。输入与结果分别限 1 MiB，结果保留有界；需要后续访问的对象返回业务 ID。
 
 取消先传递 `run.signal` 并关闭新的 SDK 调用，状态可保持 `cancelling`，直到已接纳的 Host 操作和脚本真正结算。Node 和 Vite 都使用协作取消；自定义等待应监听 signal，同步死循环无法由同一事件循环的 timer 强制中断。已发生的修改保持原结果，终态保留执行错误与前后版本以便核对。
 

@@ -8,11 +8,11 @@ packages:
 ## Use generated Plugin contracts in ordinary scripts
 
 Export `PluginDescriptor<Input, Output, Instance>` and extend the existing Script
-SDK with typed descriptor and fork targets. Configuration writes infer schema
+SDK with typed descriptors and reference-based fork selection. Configuration writes infer schema
 input, successful reads infer readonly validated output, and raw observations
 retain their unknown values. Select a target with `sdk.plugin(descriptor)`;
-its `instance()` returns an envelope containing a generation-bound instance
-view with the canonical Plugin class type.
+its `instance()` returns a Better Result whose success value is a generation-bound
+instance view with the canonical Plugin class type.
 
 Provide one portable control-manifest parser, deterministic descriptor renderer
 and integrity verifier for generators, script compilation and material readers.

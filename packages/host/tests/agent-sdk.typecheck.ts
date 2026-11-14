@@ -18,8 +18,8 @@ void status()
 void patch({ set: { concurrency: 'unknown external input' } })
 void fork('tenant-a').config.patch({ set: { concurrency: true } })
 const dynamicResult = await get()
-if (dynamicResult.ok === true)
-	expectTypeOf(dynamicResult.config.concurrency).toEqualTypeOf<unknown>()
+if (dynamicResult.isOk())
+	expectTypeOf(dynamicResult.value.config.concurrency).toEqualTypeOf<unknown>()
 
 void sdk
 	.plugin(node)
@@ -34,16 +34,16 @@ void sdk.logs.wait({ rootId: '', streamId: '', bootId: '', epoch: 1, nextSeq: '0
 export default (async (api, run) => {
 	run.signal.throwIfAborted()
 	const results = []
-	for (const entry of await api.plugins.list()) {
+	for (const entry of api.Result.unwrap(await api.plugins.list())) {
 		const current = await api.plugin(entry.address).config.get()
-		if (!current.ok) {
-			results.push(current)
+		if (current.isErr()) {
+			results.push(current.error)
 			continue
 		}
 		results.push({
 			node: entry.address,
-			sources: current.sources,
-			revision: current.managedRevision,
+			sources: current.value.sources,
+			revision: current.value.managedRevision,
 		})
 	}
 	return results

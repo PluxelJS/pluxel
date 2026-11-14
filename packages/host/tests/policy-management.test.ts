@@ -2,7 +2,7 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { SuperJSON } from 'superjson'
 import { describe, expect, it, vi } from 'vitest'
-import { createHost, defineHostService } from '../src/index'
+import { createHost, defineHostService, HostStatePersistenceError } from '../src/index'
 import { createDocumentStorage } from './helpers/document-storage'
 
 @Plugin({ forkable: true })
@@ -16,6 +16,23 @@ class Delayed extends BasePlugin {
 }
 
 describe('Host public policy management', () => {
+	it('preserves cancellation identity when the reason is a recoverable policy error', async () => {
+		await using host = await createHost({
+			plugins: [],
+			runtime: { documents: { state: false } },
+		})
+		const before = await host.policy.get()
+		const reason = new HostStatePersistenceError(new Error('caller stopped waiting'))
+		const options = { signal: AbortSignal.abort(reason) }
+		for (const action of [
+			() => host.policy.validate({ startConcurrency: 3 }, options),
+			() => host.policy.patch({ startConcurrency: 3 }, options),
+			() => host.policy.reset(undefined, options),
+		])
+			await expect(action()).rejects.toBe(reason)
+		expect(await host.policy.get()).toEqual(before)
+	})
+
 	it('previews raw edits, retains shadowed values, resets inheritance and detects stale tokens', async () => {
 		await using host = await createHost({
 			plugins: [],

@@ -1030,9 +1030,9 @@ const scope = createScriptScope({ ctx: host.ctx })
 try {
  assert.equal(host.ctx, host.ctx)
  assert.equal(typeof host.ctx.logger.info, 'function')
- assert.deepEqual(await scope.sdk.plugins.list(), [])
+ assert.deepEqual((await scope.sdk.plugins.list()).unwrap(), [])
  const missing = { definition: { entry: { kind: 'package-root', packageName: '@test/missing' }, exportName: 'Missing' }, variant: 'default' }
- assert.equal((await scope.sdk.plugin(missing).config.get()).ok, false)
+ assert.equal((await scope.sdk.plugin(missing).config.get()).isErr(), true)
 } finally {
  await scope.dispose()
  await host.close()

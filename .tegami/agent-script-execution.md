@@ -21,8 +21,9 @@ waits follow the run's cancellation and resource lifetime.
 
 Replace `@pluxel/host-vite/console` and its definition helper with type-only
 `ProjectScript` and `ProjectSdk` at `@pluxel/host-vite/project`. Use
-`sdk.dev.address`, `sdk.dev.instance` and `sdk.dev.ctx` for the current project
-module graph. Rename the Vite and development profile execution option to
+`sdk.plugin(Constructor)` for current project implementations and `sdk.dev.ctx`
+for borrowed Context capabilities. Async controls return the shared Better Result;
+`sdk.Result` supplies its native composition namespace. Rename the Vite and development profile execution option to
 `scripts`; the prior option and JSON command protocol are removed. Templates,
 project scripts and generated agent instructions use these entries.
 

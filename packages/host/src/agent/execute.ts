@@ -2,7 +2,7 @@ import type { RootContext } from '@pluxel/core'
 import { createScriptScope, type ScriptScope } from './sdk'
 import type { Script, ScriptSdk } from './sdk-types'
 import type { RunExecution } from './runtime'
-import { snapshotJson } from './protocol'
+import { snapshotScriptResult } from './result-codec'
 
 /** Same-process execution uses Host implementations directly, without an RPC session. */
 export async function executeHostScript(
@@ -53,5 +53,5 @@ export async function executeHostScript(
 	// Validate before an async return can probe `then` on a now-closed business
 	// view. Keep encoding after the scope has drained, and report its own phase.
 	run.phase('encode')
-	return snapshotJson(result)
+	return snapshotScriptResult(result)
 }

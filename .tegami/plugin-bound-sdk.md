@@ -28,7 +28,7 @@ association: heterogeneous unions permit reads until narrowed, known
 unconfigured descriptors expose no configuration entry, and extracted methods
 cannot widen the accepted schema input.
 
-The Node and Vite descriptions advertise `plugin`, `plugin.config`, and
+The Node and Vite descriptions advertise `result`, `plugin`, `plugin.config`, and
 `plugin.instance` capabilities alongside global `plugins` discovery.
 
 # Preserve source documentation in generated control declarations

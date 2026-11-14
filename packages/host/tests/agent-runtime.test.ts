@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
+import { Ok, Panic, Result, TaggedError } from '@pluxel/core/better-result'
+import { snapshotScriptResult } from '../src/agent/result-codec'
 import {
 	ScriptExecutor,
 	ScriptExecutionError,
+	scriptFailure,
 	snapshotJson,
 	type ScriptSubmission,
 } from '../src/agent'
@@ -285,6 +288,150 @@ describe('script execution owner', () => {
 })
 
 describe('portable result encoding', () => {
+	it('settles a failed receipt without reading accessors in nested Error metadata', async () => {
+		const getter = vi.fn(() => {
+			throw new Error('Error metadata getter must not run')
+		})
+		const message = Object.defineProperty(new Error('hidden message'), 'message', { get: getter })
+		const aggregate = Object.defineProperty(new AggregateError([], 'aggregate'), 'errors', {
+			get: getter,
+		})
+		const suppressed = Object.defineProperties(new SuppressedError(null, null, 'suppressed'), {
+			error: { get: getter },
+			suppressed: { get: getter },
+		})
+		const items = Object.defineProperty([], '0', { get: getter })
+		const indexed = new AggregateError([], 'indexed aggregate')
+		Object.defineProperty(indexed, 'errors', { value: items })
+		const causes = [message, aggregate, suppressed, indexed]
+		await using executor = new ScriptExecutor({
+			instanceId: 'owner',
+			execute: async (request, run) => {
+				run.phase('execute')
+				throw new Error('workflow failed', { cause: causes[Number(request.input)] })
+			},
+		})
+		for (let index = 0; index < causes.length; index++) {
+			const id = `metadata-${index}`
+			await executor.submit(input(id, { input: index }), subject)
+			expect(await executor.settled(id, subject)).toMatchObject({
+				state: 'failed',
+				phase: 'execute',
+				error: { code: 'execution_failed', message: expect.stringContaining('workflow failed | ') },
+			})
+		}
+		expect(scriptFailure(new Error('wrapper', { cause: message })).message).toBe('wrapper | Error')
+		expect(getter).not.toHaveBeenCalled()
+	})
+
+	it('reports bounded Error causes without evaluating cause accessors or domain serialization', () => {
+		const cause = new Error('underlying business failure')
+		const error = new Error('operation failed', { cause })
+		expect(scriptFailure(error)).toMatchObject({
+			code: 'execution_failed',
+			message: 'operation failed | underlying business failure',
+		})
+		cause.cause = error
+		expect(scriptFailure(error).message).toContain('[circular error]')
+		const combined = new Error('wrapper', {
+			cause: new AggregateError(
+				[new SuppressedError(new Error('operation'), new Error('cleanup'), 'disposal')],
+				'aggregate',
+			),
+		})
+		expect(scriptFailure(combined).message).toBe(
+			'wrapper | aggregate | disposal | operation | cleanup',
+		)
+		const getter = vi.fn(() => cause)
+		const accessor = Object.defineProperty(new Error('no accessor evaluation'), 'cause', {
+			get: getter,
+		})
+		expect(scriptFailure(accessor).message).toBe('no accessor evaluation')
+		expect(getter).not.toHaveBeenCalled()
+		const toJSON = vi.fn(() => 'must not serialize')
+		expect(scriptFailure(new Error('object cause', { cause: { toJSON } })).message).toBe(
+			'object cause | Non-Error value',
+		)
+		expect(toJSON).not.toHaveBeenCalled()
+		let chain = new Error('original defect')
+		for (let index = 0; index < 100; index++) chain = new Error(`layer ${index}`, { cause: chain })
+		expect(scriptFailure(chain).message).not.toContain('original defect')
+		expect(scriptFailure(new Error('outer', { cause: 'x'.repeat(10_000) })).message.length).toBe(
+			4096,
+		)
+	})
+
+	it('uses the shared native codec only for genuine top-level Results', () => {
+		const json = {
+			'~standard': {
+				version: 1 as const,
+				vendor: 'native-result-test',
+				validate: (value: unknown) => ({ value: snapshotJson(value) }),
+			},
+		}
+		const native = Result.codec({
+			serialize: { ok: json, err: json },
+			deserialize: { ok: json, err: json },
+		})
+		for (const result of [
+			Result.ok({ count: 3 }),
+			Result.err({ code: 'expected_rejection', message: 'Domain result' }),
+			Result.ok(),
+		])
+			expect(snapshotScriptResult(result)).toEqual(native.serialize(result).unwrap())
+		const ordinary = { status: 'ok', value: { ordinary: true } }
+		expect(snapshotScriptResult(ordinary)).toEqual(ordinary)
+		expect(snapshotScriptResult({ status: 'error', error: 'ordinary JSON' })).toEqual({
+			status: 'error',
+			error: 'ordinary JSON',
+		})
+		expect(() => snapshotJson(Result.ok(1))).toThrow('plain JSON')
+		expect(() => snapshotScriptResult({ nested: Result.ok(1) })).toThrow('plain JSON')
+		class ForeignOk {
+			readonly status = 'ok'
+			readonly value = 1
+		}
+		class CustomOk extends Ok<number> {}
+		expect(() => snapshotScriptResult(new ForeignOk())).toThrow('plain JSON')
+		expect(() => snapshotScriptResult(new CustomOk(1))).toThrow('plain JSON')
+	})
+
+	it('never evaluates Result or payload accessors and rejects unknown domain classes', () => {
+		const getter = vi.fn(() => 1)
+		const invalid = Object.defineProperty(Result.ok(1), 'value', { get: getter })
+		expect(() => snapshotScriptResult(invalid)).toThrow('accessors')
+		const accessor = Object.defineProperty({}, 'count', { enumerable: true, get: getter })
+		expect(() => snapshotScriptResult(Result.ok(accessor))).toThrow('accessors')
+		class DomainError extends TaggedError('DomainError')<{ id: string }> {}
+		const domain = new DomainError({ id: 'counter' })
+		const toJSON = vi.spyOn(domain, 'toJSON')
+		expect(() => snapshotScriptResult(Result.err(domain))).toThrow('plain JSON')
+		expect(() => snapshotScriptResult(Result.err(new Error('plain Error')))).toThrow('plain JSON')
+		expect(getter).not.toHaveBeenCalled()
+		expect(toJSON).not.toHaveBeenCalled()
+	})
+
+	it('preserves native codec defects and the complete Result envelope budget', () => {
+		expect(() => snapshotScriptResult(Result.ok('x'.repeat(1024 * 1024 - 2)))).toThrow(
+			expect.objectContaining({ code: 'result_too_large' }),
+		)
+		expect(() => snapshotScriptResult(Result.err(1n))).toThrow(
+			expect.objectContaining({ code: 'result_not_serializable' }),
+		)
+		const defect = new Error('Unexpected proxy defect')
+		const payload = new Proxy(
+			{},
+			{
+				ownKeys: () => {
+					throw defect
+				},
+			},
+		)
+		const encode = () => snapshotScriptResult(Result.ok(payload))
+		expect(encode).toThrow(Panic)
+		expect(encode).toThrow(expect.objectContaining({ cause: defect }))
+	})
+
 	it('copies native JSON data without evaluating accessors or toJSON', () => {
 		const source: { nested: { count: number }; absent: undefined; values: undefined[] } = {
 			nested: { count: 1 },

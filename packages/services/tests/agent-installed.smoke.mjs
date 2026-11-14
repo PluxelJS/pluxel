@@ -293,19 +293,22 @@ async function main() {
 		await writeFile(join(author, 'task.ts'), controlImport + task)
 		const first = await cli(['run', 'task.ts', '--endpoint', ready.endpoint])
 		assert.equal(first.run.state, 'succeeded')
-		assert.equal(first.run.value.moduleRuns, 1)
-		assert.equal(first.run.value.actual.config.count, 4)
-		assert.deepEqual(first.run.value.business, { calls: 3, count: 4 })
-		assert.equal(first.run.value.calls, 3)
-		assert.equal(first.run.value.actual.application, 'applied')
-		assert.equal(first.run.value.actual.desiredRevision, first.run.value.actual.appliedRevision)
-		assert.equal(first.run.value.conflict.code, 'revision_conflict')
-		assert.ok(first.run.value.logs.ok && first.run.value.logs.lines.length > 0)
-		assert.equal(first.run.value.lifecycle.lifecycleState, 'running')
+		assert.equal(first.run.value.status, 'ok')
+		const firstValue = first.run.value.value
+		assert.equal(firstValue.moduleRuns, 1)
+		assert.equal(firstValue.actual.config.count, 4)
+		assert.deepEqual(firstValue.business, { calls: 3, count: 4 })
+		assert.equal(firstValue.calls, 3)
+		assert.equal(firstValue.actual.application, 'applied')
+		assert.equal(firstValue.actual.desiredRevision, firstValue.actual.appliedRevision)
+		assert.equal(firstValue.conflict.code, 'revision_conflict')
+		assert.ok(firstValue.logs.lines.length > 0)
+		assert.equal(firstValue.lifecycle.lifecycleState, 'running')
 		const second = await cli(['run', 'task.ts', '--endpoint', ready.endpoint])
-		assert.equal(second.run.value.moduleRuns, 1)
-		assert.equal(second.run.value.actual.config.count, 8)
-		assert.deepEqual(second.run.value.business, { calls: 3, count: 8 })
+		assert.equal(second.run.value.status, 'ok')
+		assert.equal(second.run.value.value.moduleRuns, 1)
+		assert.equal(second.run.value.value.actual.config.count, 8)
+		assert.deepEqual(second.run.value.value.business, { calls: 3, count: 8 })
 		// A new authenticated connection queries the original receipt; no source re-delivery occurs.
 		const queried = await cli(['result', first.receipt])
 		assert.equal(queried.run.runId, first.run.runId)
@@ -320,7 +323,8 @@ async function main() {
 		)
 		await writeFile(join(author, 'query.ts'), query)
 		const afterFailure = await cli(['run', 'query.ts', '--endpoint', ready.endpoint])
-		assert.equal(afterFailure.run.value.config.count, 11)
+		assert.equal(afterFailure.run.value.status, 'ok')
+		assert.equal(afterFailure.run.value.value.config.count, 11)
 		await writeFile(join(author, 'wait.ts'), wait)
 		const waiting = await cli([
 			'run',
@@ -430,30 +434,31 @@ export default defineHostApplication((startup):HostApplication=>({
 `
 const task = `import type {Script} from '@pluxel/host/agent'
 let moduleRuns=0
-export default (async sdk=>{
+export default (sdk=>sdk.Result.gen(async function* (){
  const select=sdk.plugin
  const counter=select(Counter)
  const {get,patch}=counter.config
  const {stop,start,restart,status,instance:borrow}=counter
- const before=await get();if(!before.ok)return before
+ const before=yield* sdk.Result.await(get())
  const count=[before.config.count].map(value=>value*2)[0]
- const changed=await patch({set:{count}},{expectedManagedRevision:before.managedRevision});if(!changed.ok)return changed
+ const changed=yield* sdk.Result.await(patch({set:{count}},{expectedManagedRevision:before.managedRevision}))
  const conflict=await patch({set:{count:999}},{expectedManagedRevision:before.managedRevision})
- const cursor=await sdk.logs.mark();await stop();await start();await restart()
- const logs=await sdk.logs.read(cursor,{filter:{plugin:Counter},limit:20})
- const {instance}=await borrow()
+ if(conflict.isOk())throw new Error('Expected a revision conflict')
+ const cursor=yield* sdk.Result.await(sdk.logs.mark());yield* sdk.Result.await(stop());yield* sdk.Result.await(start());yield* sdk.Result.await(restart())
+ const logs=yield* sdk.Result.await(sdk.logs.read(cursor,{filter:{plugin:Counter},limit:20}))
+ const instance=yield* sdk.Result.await(borrow())
  const business=await instance.increment(3)
- return {moduleRuns:++moduleRuns,changed,conflict,logs,business,calls:instance.calls,actual:await get(),lifecycle:await status()}
-}) satisfies Script
+ return sdk.Result.ok({moduleRuns:++moduleRuns,changed,conflict:conflict.error,logs,business,calls:instance.calls,actual:yield* sdk.Result.await(get()),lifecycle:yield* sdk.Result.await(status())})
+})) satisfies Script
 `
 const failure = `import type {Script} from '@pluxel/host/agent'
 export default (async sdk=>{
- const node=(await sdk.plugins.list()).find(node=>node.displayName==='Installed counter')!.address
- await sdk.plugin(node).config.patch({set:{count:11}})
+ const listed=await sdk.plugins.list();if(listed.isErr())return listed;const node=listed.value.find(node=>node.displayName==='Installed counter')!.address
+ const saved=await sdk.plugin(node).config.patch({set:{count:11}});if(saved.isErr())return saved
  throw new Error('author failed after committing')
 }) satisfies Script
 `
-const query = `import type {Script} from '@pluxel/host/agent';export default(async sdk=>{const node=(await sdk.plugins.list()).find(node=>node.displayName==='Installed counter')!.address;return sdk.plugin(node).config.get()}) satisfies Script`
-const wait = `import type {Script} from '@pluxel/host/agent';export default(async sdk=>{const cursor=await sdk.logs.mark();return sdk.logs.wait(cursor,{timeoutMs:120000,filter:{category:'not-emitted'}})}) satisfies Script`
+const query = `import type {Script} from '@pluxel/host/agent';export default(async sdk=>{const listed=await sdk.plugins.list();if(listed.isErr())return listed;const node=listed.value.find(node=>node.displayName==='Installed counter')!.address;return sdk.plugin(node).config.get()}) satisfies Script`
+const wait = `import type {Script} from '@pluxel/host/agent';export default(async sdk=>{const marked=await sdk.logs.mark();if(marked.isErr())return marked;return sdk.logs.wait(marked.value,{timeoutMs:120000,filter:{category:'not-emitted'}})}) satisfies Script`
 
 await main()
