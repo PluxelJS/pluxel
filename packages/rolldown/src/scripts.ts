@@ -3,6 +3,8 @@ import { builtinModules } from 'node:module'
 import { realpath } from 'node:fs/promises'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { rolldown, type Plugin } from 'rolldown'
+import MagicString from 'magic-string'
+import type { BindingPattern, ModuleExportName, Program } from 'oxc-parser'
 import type { ScriptArtifact } from '@pluxel/host/agent'
 import { ScriptInputs } from './script-inputs'
 import { readScriptControlModule } from './script-control-inputs'
@@ -28,6 +30,146 @@ export class ScriptCompileError extends Error {
 	) {
 		super(message, options)
 		this.name = 'ScriptCompileError'
+	}
+}
+
+/** Lower standard ESM syntax, without depending on a bundler's interop helpers. */
+function scriptFactory(code: string, program: Program, filename: string) {
+	const output = new MagicString(code)
+	const exports = new Map<string, string>()
+	const fresh = (base: string): string => {
+		while (code.includes(base)) base += '$'
+		return base
+	}
+	const shared = fresh('__pluxel_script_shared')
+	const merge = fresh('__pluxel_script_export_star')
+	let usesShared = false
+	let exportStar = false
+	const name = (node: ModuleExportName): string =>
+		node.type === 'Identifier' ? node.name : node.value
+	const external = (source: string): void => {
+		if (source !== '@pluxel/core/better-result')
+			throw new ScriptCompileError('unsupported_import', `Unbound script import ${source}`)
+		usesShared = true
+	}
+	const bindings = (pattern: BindingPattern): string[] => {
+		switch (pattern.type) {
+			case 'Identifier':
+				return [pattern.name]
+			case 'AssignmentPattern':
+				return bindings(pattern.left)
+			case 'ObjectPattern':
+				return pattern.properties.flatMap((property) =>
+					bindings(property.type === 'RestElement' ? property.argument : property.value),
+				)
+			case 'ArrayPattern':
+				return pattern.elements.flatMap((element) =>
+					element ? bindings(element.type === 'RestElement' ? element.argument : element) : [],
+				)
+		}
+	}
+	for (const statement of program.body) {
+		if (statement.type === 'ImportDeclaration') {
+			external(statement.source.value)
+			if (statement.attributes.length > 0)
+				throw new ScriptCompileError(
+					'unsupported_import',
+					'Script import attributes are unsupported',
+				)
+			output.overwrite(
+				statement.start,
+				statement.end,
+				statement.specifiers
+					.map((specifier) => {
+						const value =
+							specifier.type === 'ImportNamespaceSpecifier'
+								? shared
+								: `${shared}[${JSON.stringify(specifier.type === 'ImportDefaultSpecifier' ? 'default' : name(specifier.imported))}]`
+						return `const ${specifier.local.name} = ${value};`
+					})
+					.join('\n'),
+			)
+		} else if (statement.type === 'ExportNamedDeclaration') {
+			if (statement.source) external(statement.source.value)
+			if (statement.attributes.length > 0)
+				throw new ScriptCompileError(
+					'unsupported_import',
+					'Script export attributes are unsupported',
+				)
+			if (statement.declaration) {
+				const declaration = statement.declaration
+				output.remove(statement.start, declaration.start)
+				if (declaration.type === 'VariableDeclaration') {
+					for (const item of declaration.declarations)
+						for (const binding of bindings(item.id)) exports.set(binding, binding)
+				} else if (
+					declaration.type === 'FunctionDeclaration' ||
+					declaration.type === 'ClassDeclaration'
+				) {
+					exports.set(declaration.id.name, declaration.id.name)
+				} else {
+					throw new ScriptCompileError('compile_failed', 'Unsupported script export declaration')
+				}
+			} else {
+				for (const specifier of statement.specifiers) {
+					const local = name(specifier.local)
+					if (!statement.source && specifier.local.type !== 'Identifier')
+						throw new ScriptCompileError('compile_failed', 'Expected a local script export binding')
+					exports.set(
+						name(specifier.exported),
+						statement.source ? `${shared}[${JSON.stringify(local)}]` : local,
+					)
+				}
+				output.remove(statement.start, statement.end)
+			}
+		} else if (statement.type === 'ExportDefaultDeclaration') {
+			const declaration = statement.declaration
+			if (
+				(declaration.type === 'FunctionDeclaration' || declaration.type === 'ClassDeclaration') &&
+				declaration.id
+			) {
+				output.remove(statement.start, declaration.start)
+				exports.set('default', declaration.id.name)
+			} else {
+				const binding = fresh('__pluxel_script_default')
+				output.overwrite(statement.start, declaration.start, `const ${binding} = `)
+				output.appendLeft(statement.end, ';')
+				exports.set('default', binding)
+			}
+		} else if (statement.type === 'ExportAllDeclaration') {
+			external(statement.source.value)
+			if (statement.attributes.length > 0)
+				throw new ScriptCompileError(
+					'unsupported_import',
+					'Script export attributes are unsupported',
+				)
+			if (statement.exported) exports.set(name(statement.exported), shared)
+			else exportStar = true
+			output.remove(statement.start, statement.end)
+		}
+	}
+	const result = `{${[...exports]
+		.map(([key, value]) => `get [${JSON.stringify(key)}]() { return ${value}; }`)
+		.join(',')}}`
+	output.prepend(
+		`var __pluxel_script_exports = (function(${usesShared ? shared : ''}${exportStar ? `, ${merge}` : ''}) {\n'use strict';\n`,
+	)
+	output.append(
+		`\nreturn ${exportStar ? `${merge}(${shared}, ${result})` : result};\n})(${usesShared ? '__pluxel_script_better_result' : ''}${
+			exportStar
+				? `, (shared, exports) => {
+	for (const key of Object.keys(shared)) {
+		if (key !== 'default' && !Object.hasOwn(exports, key))
+			Object.defineProperty(exports, key, { enumerable: true, get: () => shared[key] });
+	}
+	return exports;
+}`
+				: ''
+		});\n`,
+	)
+	return {
+		code: output.toString(),
+		map: output.generateMap({ hires: true, source: filename, includeContent: true }),
 	}
 }
 
@@ -97,13 +239,16 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 	const imports: Plugin = {
 		name: 'pluxel-script-imports',
 		async resolveId(source, importer) {
+			// Format 2 binds this exact public entry to the receiver's native module.
+			// It never reads or bundles an author's separate Better Result runtime.
+			if (importer && source === '@pluxel/core/better-result') return { id: source, external: true }
 			if (importer && forbidden(source)) {
 				if (source.startsWith('@pluxel/')) {
 					const resolved = await this.resolve(source, importer, { skipSelf: true })
 					if (resolved && (await findControl(resolved.id)) !== undefined) return resolved
 				}
 				rejectImport(
-					`Upload scripts cannot import ${JSON.stringify(source)}. Use type-only SDK imports, injected SDK operations including sdk.Result, or a Vite project script for real application objects.`,
+					`Upload scripts cannot import ${JSON.stringify(source)}. Use type-only SDK imports, @pluxel/core/better-result, or a Vite project script for real application objects.`,
 				)
 			}
 			return null
@@ -129,6 +274,13 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 			}
 			return null
 		},
+		renderChunk(code, chunk) {
+			const factory = scriptFactory(code, this.parse(code), chunk.fileName)
+			// The factory is also valid Script syntax: reject module-only constructs
+			// such as import.meta and top-level await before admitting the artifact.
+			this.parse(factory.code, { sourceType: 'script' })
+			return factory
+		},
 	}
 	let build: Awaited<ReturnType<typeof rolldown>> | undefined
 	try {
@@ -141,8 +293,9 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 			platform: 'neutral',
 		})
 		const output = await build.generate({
-			format: 'iife',
-			name: '__pluxel_script_exports',
+			format: 'es',
+			// The factory's exports binding is consumed by the appended return below.
+			minify: false,
 			sourcemap: 'hidden',
 			sourcemapPathTransform: (source, mapFile) =>
 				isAbsolute(source) ? source : resolve(dirname(mapFile), source),
@@ -156,7 +309,7 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 		)
 			throw new ScriptCompileError(
 				'compile_failed',
-				'Upload scripts must produce one self-contained JavaScript chunk',
+				'Upload scripts must produce one JavaScript factory chunk',
 			)
 		const chunk = chunks[0]
 		if (!chunk.exports.includes(exportName))
@@ -164,7 +317,10 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 				'export_not_found',
 				`Module ${file} does not export ${exportName}`,
 			)
-		if (chunk.imports.length > 0 || chunk.dynamicImports.length > 0)
+		if (
+			chunk.imports.some((specifier) => specifier !== '@pluxel/core/better-result') ||
+			chunk.dynamicImports.length > 0
+		)
 			throw new ScriptCompileError(
 				'unsupported_import',
 				'The script contains unresolved runtime imports',
@@ -191,7 +347,7 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 		}
 		return {
 			kind: 'artifact',
-			format: 'pluxel-js-factory/1',
+			format: 'pluxel-js-factory/2',
 			code,
 			sourceHash: createHash('sha256').update(code).digest('hex'),
 			exportName,

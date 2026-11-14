@@ -111,20 +111,23 @@ it('loads the compiled factory in real workerd and bridges ordinary SDK calls to
 			file,
 			`
 import type { Script } from '@pluxel/host/agent'
+import * as sharedBetterResult from '@pluxel/core/better-result'
+const { Result } = sharedBetterResult
 let moduleInvocations = 0
-export default ((sdk, run) => sdk.Result.gen(async function* () {
+export const namespace = () => sharedBetterResult
+export default ((sdk, run) => Result.gen(async function* () {
   run.signal.throwIfAborted()
-  const nodes = yield* sdk.Result.await(sdk.plugins.list())
+  const nodes = yield* Result.await(sdk.plugins.list())
   const { get, patch } = sdk.plugin(nodes[0].address).config
-  const before = yield* sdk.Result.await(get())
+  const before = yield* Result.await(get())
   const values = [before.config.count]
   let next = 0
   for (const value of values) {
     if (typeof value === 'number') next += value * 2
   }
-  const changed = yield* sdk.Result.await(patch({ set: { count: next } }, { expectedManagedRevision: before.managedRevision }))
-  const actual = yield* sdk.Result.await(get())
-  return sdk.Result.ok({ moduleInvocations: ++moduleInvocations, changed, actual, runtime: navigator.userAgent })
+  const changed = yield* Result.await(patch({ set: { count: next } }, { expectedManagedRevision: before.managedRevision }))
+  const actual = yield* Result.await(get())
+  return Result.ok({ moduleInvocations: ++moduleInvocations, changed, actual, runtime: navigator.userAgent })
 })) satisfies Script
 `,
 		)
@@ -133,11 +136,12 @@ export default ((sdk, run) => sdk.Result.gen(async function* () {
 		await writeFile(
 			resultEntry,
 			`
-import { Result } from '@pluxel/core/better-result'
+import * as sharedBetterResult from '@pluxel/core/better-result'
+const { Result } = sharedBetterResult
 // The Host codec checks payloads before JSON transport. The Worker bridge only restores those JSON DTOs.
 const payload = { '~standard': { version: 1 as const, vendor: 'workerd-test-bridge', validate: (input: unknown) => ({ value: input }) } }
 export const codec = Result.codec({ serialize: { ok: payload, err: payload }, deserialize: { ok: payload, err: payload } })
-export { Result }
+export { sharedBetterResult }
 `,
 		)
 		const resultBuild = await build({
@@ -173,12 +177,11 @@ export { Result }
 		})
 		const dynamic = `
 import { WorkerEntrypoint } from 'cloudflare:workers'
-import { Result, codec } from './result.js'
-function loadModule() { ${artifact.code} }
+import { codec, sharedBetterResult } from './result.js'
+function loadModule(__pluxel_script_better_result) { ${artifact.code} }
 export default class Task extends WorkerEntrypoint {
   async run(input) {
     const sdk = {
-      Result,
       plugins: { list: async () => codec.deserializeUnsafe(await this.env.HOST.listPlugins()) },
       // This test bridge supplies only the two calls exercised by this task.
       plugin: (node) => ({
@@ -189,7 +192,9 @@ export default class Task extends WorkerEntrypoint {
         },
       }),
     }
-    return codec.serializeUnsafe(await loadModule()[${JSON.stringify(artifact.exportName)}](sdk, { id: 'workerd-probe', input, signal: new AbortController().signal }))
+    const module = loadModule(sharedBetterResult)
+    if (module.namespace() !== sharedBetterResult) throw new Error('Factory replaced the Worker Result namespace')
+    return codec.serializeUnsafe(await module[${JSON.stringify(artifact.exportName)}](sdk, { id: 'workerd-probe', input, signal: new AbortController().signal }))
   }
 }
 `

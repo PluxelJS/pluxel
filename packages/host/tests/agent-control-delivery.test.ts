@@ -77,28 +77,32 @@ it('generates real Plugin declarations, compiles an author script and uploads it
 			`
 import type { Script } from '@pluxel/host/agent'
 import { DeliveryCounter } from './control/index.mjs'
-export default ((sdk, run) => sdk.Result.gen(async function* () {
+export default (async (sdk, run) => {
   const selected = sdk.plugin(DeliveryCounter)
   const { get, patch } = selected.config
-  const before = yield* sdk.Result.await(get())
-  const changed = yield* sdk.Result.await(patch({ set: { count: 12 } }, { expectedManagedRevision: before.managedRevision }))
-  if (changed.application !== 'applied') return sdk.Result.ok(changed)
-  const counter = yield* sdk.Result.await(selected.instance())
-  const added = await counter.addAsync(5, run.signal)
-  return sdk.Result.ok({ changed, added, observed: counter.count })
-})) satisfies Script
-export const encodeFailure = (async (sdk) => {
-  const counter = sdk.Result.unwrap(await sdk.plugin(DeliveryCounter).instance())
-  counter.add(3)
-  return counter
+  const before = await get()
+  if (before.isErr()) return before
+  const changed = await patch({ set: { count: 12 } }, { expectedManagedRevision: before.value.managedRevision })
+  if (changed.isErr() || changed.value.application !== 'applied') return changed
+  const instance = await selected.instance()
+  if (instance.isErr()) return instance
+  const added = await instance.value.addAsync(5, run.signal)
+  return { changed: changed.value, added, observed: instance.value.count }
 }) satisfies Script
-export const shortCircuit = ((sdk) => sdk.Result.gen(async function* () {
+export const encodeFailure = (async (sdk) => {
+  const instance = await sdk.plugin(DeliveryCounter).instance()
+  if (instance.isErr()) return instance
+  instance.value.add(3)
+  return instance.value
+}) satisfies Script
+export const shortCircuit = (async (sdk) => {
   const selected = sdk.plugin(DeliveryCounter)
-  yield* sdk.Result.await(selected.config.patch({ set: { count: 999 } }, { expectedManagedRevision: 'stale revision' }))
-  const counter = yield* sdk.Result.await(selected.instance())
-  counter.add(1000)
-  return sdk.Result.ok(counter.count)
-})) satisfies Script
+  const changed = await selected.config.patch({ set: { count: 999 } }, { expectedManagedRevision: 'stale revision' })
+  if (changed.isErr()) return changed
+  const instance = await selected.instance()
+  if (instance.isErr()) return instance
+  return instance.value.add(1000)
+}) satisfies Script
 `,
 		)
 		const artifact = await compileScript({ file: source })
@@ -129,12 +133,9 @@ export const shortCircuit = ((sdk) => sdk.Result.gen(async function* () {
 		expect(await owner.executor.settled(receipt.runId, 'control-delivery')).toMatchObject({
 			state: 'succeeded',
 			value: {
-				status: 'ok',
-				value: {
-					changed: { application: 'applied', config: { count: 12 } },
-					added: 17,
-					observed: 17,
-				},
+				changed: { application: 'applied', config: { count: 12 } },
+				added: 17,
+				observed: 17,
 			},
 		})
 		expect(

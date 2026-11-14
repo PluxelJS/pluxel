@@ -519,7 +519,6 @@ export function createScriptScope(
 		return select(normalizePluginTarget(target)) as ScriptPlugin<T>
 	}
 	const sdk = Object.freeze({
-		Result,
 		plugin,
 		plugins: Object.freeze({
 			list: () =>

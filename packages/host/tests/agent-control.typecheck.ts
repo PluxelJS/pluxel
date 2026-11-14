@@ -109,7 +109,8 @@ const widenedInput: PluginDescriptor<
 void widenedInput
 
 const { plugin } = sdk
-expectTypeOf(sdk.Result).toEqualTypeOf<typeof Result>()
+// @ts-expect-error Import Better Result from its own module when constructing a result.
+void sdk.Result
 const counterRef = plugin(Counter)
 expectTypeOf(counterRef).toEqualTypeOf<ScriptPlugin<typeof Counter>>()
 expectTypeOf(counterRef.config).toEqualTypeOf<ScriptPluginConfig<CounterInput, CounterOutput>>()
@@ -368,18 +369,17 @@ void sdk.logs.read(cursor, { filter: { plugin: address } })
 // @ts-expect-error The existing finite log wait deadline stays required.
 void sdk.logs.wait(cursor, { filter: { plugin: Counter } })
 
-export default ((api, run) =>
-	api.Result.gen(async function* () {
-		run.signal.throwIfAborted()
-		const selected = api.plugin(Counter)
-		const current = yield* api.Result.await(selected.config.get())
-		const changed = yield* api.Result.await(
-			selected.config.patch(
-				{ set: { step: 2 } },
-				{ expectedManagedRevision: current.managedRevision },
-			),
-		)
-		if (changed.application !== 'applied') return api.Result.ok(changed)
-		const instance = yield* api.Result.await(selected.instance())
-		return api.Result.ok({ count: instance.add(2), changed })
-	})) satisfies Script
+export default (async (api, run) => {
+	run.signal.throwIfAborted()
+	const selected = api.plugin(Counter)
+	const current = await selected.config.get()
+	if (current.isErr()) return current
+	const changed = await selected.config.patch(
+		{ set: { step: 2 } },
+		{ expectedManagedRevision: current.value.managedRevision },
+	)
+	if (changed.isErr() || changed.value.application !== 'applied') return changed
+	const instance = await selected.instance()
+	if (instance.isErr()) return instance
+	return { count: instance.value.add(2), changed: changed.value }
+}) satisfies Script

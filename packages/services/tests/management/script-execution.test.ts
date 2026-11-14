@@ -10,7 +10,12 @@ import { createHost } from '@pluxel/host'
 import { setHostCatalogProvenance } from '@pluxel/host/internal'
 import { generatePluginControl } from '@pluxel/rolldown/control'
 import { createRuntimeManagementClient } from '@pluxel/services/management/client'
-import { hashScriptSource, type ScriptArtifact, type ScriptRunSnapshot } from '@pluxel/host/agent'
+import {
+	hashScriptSource,
+	SCRIPT_ARTIFACT_FORMAT,
+	type ScriptArtifact,
+	type ScriptRunSnapshot,
+} from '@pluxel/host/agent'
 import { createScriptControlClient, type ScriptControlClient } from '@pluxel/host/agent/transport'
 import { elysia } from '@pluxel/services/elysia'
 import { listenElysia } from '@pluxel/services/elysia/node'
@@ -45,7 +50,7 @@ async function artifact(body: string): Promise<ScriptArtifact> {
 	const code = `return { default: async (sdk, run) => { ${body} } };`
 	return {
 		kind: 'artifact',
-		format: 'pluxel-js-factory/1',
+		format: SCRIPT_ARTIFACT_FORMAT,
 		exportName: 'default',
 		code,
 		sourceHash: await hashScriptSource(code),
@@ -268,7 +273,6 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 				codeKinds: ['artifact'],
 				lifetime: 'host',
 				capabilities: [
-					'result',
 					'plugins',
 					'plugin',
 					'plugin.instance',
@@ -280,7 +284,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			})
 			const node = ScriptCounter.nodeAddress()
 			const change = await artifact(
-				`return sdk.Result.gen(async function* () { const select = sdk.plugin; const counter = select(run.input); const {get, patch} = counter.config; const before = yield* sdk.Result.await(get()); const saved = yield* sdk.Result.await(patch({set:{count: before.config.count + 1}}, {expectedManagedRevision:before.managedRevision})); return sdk.Result.ok(saved); });`,
+				`const select = sdk.plugin; const counter = select(run.input); const {get, patch} = counter.config; const before = await get(); if (before.isErr()) return before; return patch({set:{count: before.value.config.count + 1}}, {expectedManagedRevision:before.value.managedRevision});`,
 			)
 			const submitted = { runId: randomUUID(), code: change, input: node }
 			const accepted = await first.control.submit(submitted)
@@ -344,7 +348,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			const file = join(directory, 'task.ts')
 			await writeFile(
 				file,
-				`import type { Script } from '@pluxel/host/agent';\nexport default ((sdk) => sdk.Result.gen(async function* () { const plugins = yield* sdk.Result.await(sdk.plugins.list()); return sdk.Result.ok({plugins: plugins.map(p => p.displayName)}) })) satisfies Script;\n`,
+				`import type { Script } from '@pluxel/host/agent';\nimport { Result } from '@pluxel/core/better-result';\nexport default (async (sdk) => { const plugins = await sdk.plugins.list(); if (plugins.isErr()) return plugins; return Result.ok({plugins: plugins.value.map(p => p.displayName)}) }) satisfies Script;\n`,
 			)
 			const cli = resolve(import.meta.dirname, '../../../cli/dist/cli.mjs')
 			const result = await execute(

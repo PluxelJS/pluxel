@@ -60,7 +60,7 @@ const { get, patch } = config
 
 引用提供 `address`、`fork()`、`status()`、`start()`、`stop()` 和 `restart()`。生成描述符还提供 `instance()`，有配置的描述符提供准确推导的 `config`。运行时发现的完整地址使用同一入口：`sdk.plugin(node.address)`，配置字段保持未知数据。
 
-异步控制操作统一返回共享 Better Result。`sdk.Result` 提供原生 namespace，单次操作可以直接作为脚本返回值；多步操作使用 `Result.gen` 和 `Result.await`，遇到 `Err` 即结束后续步骤。配置、日志和策略的原领域结果在 SDK 边界转换一次，成功值和错误没有重复的 `ok` 标记。完整错误及结果交付规则见[自动化脚本](./scripts.md#失败取消和释放)。
+异步控制操作返回 `Promise<Result<T, E>>`，可以直接作为脚本返回值。多步调用使用 async/await，在 `isErr()` 分支提前返回，从 `value` 读取成功值。配置、日志和策略的原领域结果在 SDK 边界转换一次，保留原字段并去掉重复的 `ok` 标记。完整用法和失败处理见[自动化脚本](./scripts.md)。
 
 引用的使用期限由本次 run 管理。每次操作读取当前 Host 状态，重启后可以用同一引用重新取得业务实例；旧实例视图会失效。run 关闭后，缓存的工厂和 `fork()` 同步抛错，异步控制方法返回 `scope_closed` 的 `Err`。原插件业务方法仍遵守自身的返回类型和 JavaScript `this` 约定。
 
@@ -90,19 +90,17 @@ const CounterConfig = v.object({
 import type { Script } from '@pluxel/host/agent'
 import { Counter } from '@acme/pluxel-plugin-counter/control'
 
-export default (({ Result, plugin }) =>
-	Result.gen(async function* () {
-		const { get, patch } = plugin(Counter).config
-		const before = yield* Result.await(get())
-		const changed = yield* Result.await(
-			patch(
-				{ set: { count: before.config.count * 2 } },
-				{ expectedManagedRevision: before.managedRevision },
-			),
-		)
-		const actual = yield* Result.await(get())
-		return Result.ok({ changed, actual })
-	})) satisfies Script
+export default (async ({ plugin }) => {
+	const { get, patch } = plugin(Counter).config
+	const before = await get()
+	if (before.isErr()) return before
+	const changed = await patch(
+		{ set: { count: before.value.config.count * 2 } },
+		{ expectedManagedRevision: before.value.managedRevision },
+	)
+	if (changed.isErr()) return changed
+	return get()
+}) satisfies Script
 ```
 
 `get` 返回 Schema 输出，`patch` 与 `validate` 接受 Schema 输入的递归 patch，数组整体替换。`managedInput` 和 `effectiveInput` 继续表达观察到的原始数据。`validate` 只预览候选输出；返回的 application 字段仍描述当前运行状态。保存与采用、版本冲突的处理见[自动化脚本](./scripts.md#读取计算条件修改与核对采用)。
@@ -117,12 +115,12 @@ export default (({ Result, plugin }) =>
 import type { Script } from '@pluxel/host/agent'
 import { Counter } from '@acme/pluxel-plugin-counter/control'
 
-export default (({ Result, plugin }) =>
-	Result.gen(async function* () {
-		const instance = yield* Result.await(plugin(Counter).instance())
-		const changed = await instance.increment(3)
-		return Result.ok({ changed, calls: instance.calls })
-	})) satisfies Script
+export default (async ({ plugin }) => {
+	const instance = await plugin(Counter).instance()
+	if (instance.isErr()) return instance
+	const changed = await instance.value.increment(3)
+	return { changed, calls: instance.value.calls }
+}) satisfies Script
 ```
 
 `counter.instance()` 要求节点已经运行，获取时不会启动它。`Result` 的成功值直接是实例，带有 `then` 成员的插件也能安全交付。未运行、目标失效和控制摘要不匹配等错误在返回类型中明确列出。实例保留原 class 的公共成员类型和可写性，私有与 protected 成员沿用 TypeScript 的可见性。通过原始地址选择的引用只有管理操作，业务实例访问需要生成描述符；Vite 项目还可以从当前 constructor 选择，见[项目脚本](./dev-console.md#编写可交互的开发脚本)。

@@ -3,7 +3,7 @@ title: Host 自动化脚本
 description: 使用普通 TypeScript 读取配置、计算、条件修改、核对采用，并通过 CLI 提交与查询运行。
 ---
 
-脚本导出一个普通函数。执行器传入 `ScriptSdk` 与本次运行的 `{ id, input, signal }`。`sdk.plugin(target)` 同步选择插件；异步控制操作统一返回 `Promise<Result<Value, Error>>`，直接使用目标 Host 的实现。单次操作可以直接返回：
+脚本导出一个普通函数。执行器传入 `ScriptSdk` 与本次运行的 `{ id, input, signal }`。`sdk.plugin(target)` 同步选择插件；异步控制操作统一返回 `Promise<Result<T, E>>`，直接使用目标 Host 的实现。单次操作可以直接返回：
 
 ```ts
 import type { Script } from '@pluxel/host/agent'
@@ -16,7 +16,7 @@ export default ((sdk, run) => {
 
 远程 Node 应用接收作者侧编译的 JavaScript 制品，应用机器只需运行时。已知插件使用[生成的控制入口](./plugin-control.md)，可直接推导配置类型并调用实际实例的方法。Vite 项目脚本还可以 import 项目模块和访问 Context，见[开发控制台](./dev-console.md)。两种加载方式使用同一组 Host SDK 方法。
 
-`sdk.Result` 是 `@pluxel/core/better-result` 提供的原生 Better Result namespace。脚本使用注入值，上传制品无需打入第二份库，也无需运行时 import。多步流程使用 `Result.gen` 和 `Result.await`，第一个 `Err` 会结束生成器，后续步骤不执行；正常结束时返回 `Result.ok(value)`。
+多步操作使用普通 async/await：检查 `result.isErr()` 并提前返回，从 `result.value` 读取成功值。脚本可以直接返回已有 SDK Result 或普通 JSON。需要构造或组合 Result 时，使用 `import { Result } from '@pluxel/core/better-result'`；上传编译器和加载器将这个入口绑定到目标共享库。进阶组合见 [Better Result](../plugin-development/better-result.md#组合多个可能失败的步骤resultgen)。
 
 ## 读取、计算、条件修改与核对采用
 
@@ -26,7 +26,7 @@ export default ((sdk, run) => {
 import type { Script } from '@pluxel/host/agent'
 import { QueuePlugin } from '@acme/pluxel-plugin-queue/control'
 
-export default ((sdk, run) => {
+export default (async (sdk, run) => {
 	if (!run.input || typeof run.input !== 'object' || Array.isArray(run.input)) {
 		throw new TypeError('Expected { factor: number }')
 	}
@@ -34,25 +34,26 @@ export default ((sdk, run) => {
 	if (typeof factor !== 'number' || !Number.isFinite(factor)) {
 		throw new TypeError('Expected a finite factor')
 	}
-	const { Result, plugin } = sdk
-	return Result.gen(async function* () {
-		const { get, patch } = plugin(QueuePlugin).config
-		const before = yield* Result.await(get())
-		run.signal.throwIfAborted()
-		const desired = before.config.concurrency * factor
-		const changed = yield* Result.await(
-			patch({ set: { concurrency: desired } }, { expectedManagedRevision: before.managedRevision }),
-		)
-		const actual = yield* Result.await(get())
-		return Result.ok({
-			changed,
-			actual,
-			adopted:
-				actual.application === 'applied' &&
-				actual.appliedRevision === changed.desiredRevision &&
-				actual.config.concurrency === desired,
-		})
-	})
+	const { get, patch } = sdk.plugin(QueuePlugin).config
+	const before = await get()
+	if (before.isErr()) return before
+	run.signal.throwIfAborted()
+	const desired = before.value.config.concurrency * factor
+	const changed = await patch(
+		{ set: { concurrency: desired } },
+		{ expectedManagedRevision: before.value.managedRevision },
+	)
+	if (changed.isErr()) return changed
+	const actual = await get()
+	if (actual.isErr()) return actual
+	return {
+		changed: changed.value,
+		actual: actual.value,
+		adopted:
+			actual.value.application === 'applied' &&
+			actual.value.appliedRevision === changed.value.desiredRevision &&
+			actual.value.config.concurrency === desired,
+	}
 }) satisfies Script
 ```
 
@@ -83,28 +84,30 @@ export default ((sdk, run) => {
 ```ts
 import type { Script } from '@pluxel/host/agent'
 
-export default ((sdk) =>
-	sdk.Result.gen(async function* () {
-		const { Result } = sdk
-		const nodes = yield* Result.await(sdk.plugins.list())
-		const node = nodes[0]
-		if (!node) return Result.err({ code: 'no_plugin' })
-		const { streams } = yield* Result.await(sdk.logs.streams())
-		const stream = streams[0]
-		if (!stream) return Result.err({ code: 'no_history_stream' })
-		const plugin = sdk.plugin(node.address)
-		const cursor = yield* Result.await(sdk.logs.mark(stream.streamId))
-		const report = yield* Result.await(plugin.restart())
-		const logs = yield* Result.await(
-			sdk.logs.wait(cursor, {
-				filter: { plugin: plugin.address },
-				limit: 100,
-				timeoutMs: 2000,
-			}),
-		)
-		const status = yield* Result.await(plugin.status())
-		return Result.ok({ report, status, logs })
-	})) satisfies Script
+export default (async (sdk) => {
+	const nodes = await sdk.plugins.list()
+	if (nodes.isErr()) return nodes
+	const node = nodes.value[0]
+	if (!node) return { skipped: 'no_plugin' }
+	const history = await sdk.logs.streams()
+	if (history.isErr()) return history
+	const stream = history.value.streams[0]
+	if (!stream) return { skipped: 'no_history_stream' }
+	const plugin = sdk.plugin(node.address)
+	const cursor = await sdk.logs.mark(stream.streamId)
+	if (cursor.isErr()) return cursor
+	const report = await plugin.restart()
+	if (report.isErr()) return report
+	const logs = await sdk.logs.wait(cursor.value, {
+		filter: { plugin: plugin.address },
+		limit: 100,
+		timeoutMs: 2000,
+	})
+	if (logs.isErr()) return logs
+	const status = await plugin.status()
+	if (status.isErr()) return status
+	return { report: report.value, status: status.value, logs: logs.value }
+}) satisfies Script
 ```
 
 `logs.read(cursor, { limit, filter })` 立即读取，成功值的新 `cursor` 可用于下一批。`wait` 的 `timeoutMs` 必填，范围为 1–300000；到时返回当前读取结果，取消返回 `Err` 并移除订阅。每批默认 100 条，最多 10000 条。
@@ -113,10 +116,10 @@ export default ((sdk) =>
 
 ## 向 Node 应用提交
 
-在作者项目安装 CLI、脚本类型和编译器，使用 Node 24 或更新版本：
+在作者项目直接安装 CLI、Core、脚本类型和编译器，使用 Node 24 或更新版本：
 
 ```sh
-pnpm add -D @pluxel/cli @pluxel/host @pluxel/rolldown typescript
+pnpm add -D @pluxel/cli @pluxel/core @pluxel/host @pluxel/rolldown typescript
 ```
 
 目标应用使用官方管理服务时显式开启脚本执行，例如现有应用装配中的：
@@ -141,7 +144,7 @@ pnpm exec pluxel script run ./scripts/scale.ts \
   --receipt-file ./receipts/scale.receipt
 ```
 
-`--input-file FILE` 可替代 `--input`。默认调用 `default` 导出，具名函数用 `--export NAME`。作者侧先进行 TypeScript 检查和打包，上传自包含 JS 工厂与源码映射。经清单验证的纯描述符和普通计算依赖可随脚本打包；Node builtin、框架运行时、原生扩展和运行时动态 import 在上传模式中拒绝。异步工作放入导出函数，工厂顶层同步初始化。需要项目模块或 Context 时使用 Vite 项目模式。
+`--input-file FILE` 可替代 `--input`。默认调用 `default` 导出，具名函数用 `--export NAME`。作者侧先进行 TypeScript 检查和打包，上传 JS 工厂与源码映射。经清单验证的纯描述符和普通计算依赖可随脚本打包；`@pluxel/core/better-result` 使用受控共享绑定。其余框架运行时、Node builtin、原生扩展和运行时动态 import 在上传模式中拒绝。异步工作放入导出函数，工厂顶层同步初始化。需要项目模块或 Context 时使用 Vite 项目模式。
 
 CLI 在首次提交前向 stderr 输出 `{ stage: 'prepared', receipt }`，收到接纳后输出 `{ stage: 'accepted', receipt }`。`--receipt-file` 在上传前以 `0600` 新建文件，父目录需已存在，同名文件不会覆盖。stdout 返回单个 `{ receipt, run }` JSON；编译、连接或调用失败时返回 `{ receipt?, error }`。默认等待结算，`--detach` 在接纳后返回；`--timeout` 默认为 30000，最大 300000 毫秒，包含排队与加载时间。
 
@@ -158,9 +161,9 @@ receipt 记录原 endpoint、执行实例、run ID 和请求摘要，权限仍�
 
 `run.state: 'succeeded'` 表示函数返回、结果编码和 SDK 清理已完成。顶层共享 Result 由执行边界通过原生 `Result.codec` 编码为 `{ status: 'ok', value }` 或 `{ status: 'error', error }`；领域 `Err` 仍是成功运行中的业务结果。原有 JSON 返回值继续作为普通数据。识别依据是共享库的实际 Result 实例，JSON 的同名字段不会改变执行语义。
 
-SDK 的预期失败以 `Err` 返回，按 `error.code` 缩小类型：配置校验、只读和版本冲突保留原领域详情；材料不匹配需重新同步；未运行的实例需检查节点状态；生命周期失败检查完整报告。持久化确认失败保留 `state: 'unknown'`，先核对当前状态。关闭后的异步调用返回 `scope_closed`，禁止交错的业务与管理调用返回 `borrowed_generation_conflict`，已知取消返回 `cancelled`。生成器遇到错误只结束后续步骤，已经提交的操作继续有效。
+SDK 的预期失败以 `Err` 返回，错误是包含 `code`、`message` 的只读数据。按 `error.code` 缩小类型，原配置、持久化和应用报告继续保留。生命周期失败同样携带完整报告，可能已有部分变化生效。持久化确认失败保留 `state: 'unknown'`，先核对当前状态。关闭后的异步调用返回 `scope_closed`，禁止交错的业务与管理调用返回 `borrowed_generation_conflict`，已知取消返回 `cancelled`。
 
-`plugin()` 和 `fork()` 是同步选择器，错误参数或关闭的 run 同步抛错。异步操作的错误参数形状、无效数值和未知实现缺陷仍可 reject；原业务方法保持自己的 Result、异常和资源协议。`Result.gen` 按上游规则把生成器中的未知缺陷包装为 `Panic`。加载、执行、结果编码或清理失败形成 `failed`，带有阶段和错误，清理错误另存 `cleanupError`。
+`plugin()` 和 `fork()` 是同步选择器，错误参数或关闭的 run 同步抛错。异步操作的错误参数形状、无效数值和未知实现缺陷仍可 reject；原业务方法保持自己的返回类型、异常和资源协议。加载、执行、结果编码或清理失败形成 `failed`，带有阶段和错误，清理错误另存 `cleanupError`。
 
 Result 的 payload 使用同样的 JSON 约束。嵌套 Result、业务 Error/TaggedError 实例和资源句柄需要作者在自己的边界通过显式 codec 或数据投影处理；执行器不会调用任意 `toJSON`。
 

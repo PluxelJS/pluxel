@@ -1,5 +1,5 @@
 import type { BasePlugin, PluginNodeAddress } from '@pluxel/core'
-import type { Result } from '@pluxel/core/better-result'
+import { Result } from '@pluxel/core/better-result'
 import type { ProjectSdk, ProjectScript } from '@pluxel/host-vite/project'
 import type {
 	PluginDescriptor,
@@ -40,16 +40,19 @@ sdk.plugin({ plugin: Counter, forkId: 'east' })
 run.input.count
 // @ts-expect-error A borrowed SDK cannot close the Host.
 sdk.dispose()
-const project = ((sdk, run) =>
-	sdk.Result.gen(async function* () {
-		run.signal.throwIfAborted()
-		const { instance, fork: selectFork } = sdk.plugin(Counter)
-		const current: Counter = yield* sdk.Result.await(instance())
-		const fork: Counter = yield* sdk.Result.await(selectFork('east').instance())
-		const self: Counter = current.self()
-		void fork
-		return sdk.Result.ok(self.add(1))
-	})) satisfies ProjectScript
+const project = (async (sdk, run) => {
+	run.signal.throwIfAborted()
+	const { instance, fork: selectFork } = sdk.plugin(Counter)
+	const borrowed = await instance()
+	if (borrowed.isErr()) return borrowed
+	const current: Counter = borrowed.value
+	const selected = await selectFork('east').instance()
+	if (selected.isErr()) return selected
+	const fork: Counter = selected.value
+	const self: Counter = current.self()
+	void fork
+	return Result.ok(self.add(1))
+}) satisfies ProjectScript
 const result: Promise<Result<number, ScriptInstanceError>> = project(sdk, run)
 void result
 const portable = ((sdk) => {

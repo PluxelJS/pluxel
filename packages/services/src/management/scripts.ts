@@ -57,7 +57,6 @@ export function createManagementScripts(
 					hostEpoch: owner.hostEpoch,
 					lifetime: 'host',
 					capabilities: [
-						'result',
 						'plugins',
 						'plugin',
 						'plugin.instance',

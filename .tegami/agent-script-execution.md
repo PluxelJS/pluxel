@@ -23,13 +23,14 @@ Replace `@pluxel/host-vite/console` and its definition helper with type-only
 `ProjectScript` and `ProjectSdk` at `@pluxel/host-vite/project`. Use
 `sdk.plugin(Constructor)` for current project implementations and `sdk.dev.ctx`
 for borrowed Context capabilities. Async controls return the shared Better Result;
-`sdk.Result` supplies its native composition namespace. Rename the Vite and development profile execution option to
+use ordinary `await` and `isErr()` for expected failures. Import its constructors
+from `@pluxel/core/better-result` when needed. Rename the Vite and development profile execution option to
 `scripts`; the prior option and JSON command protocol are removed. Templates,
 project scripts and generated agent instructions use these entries.
 
 ## Compile on the client and query the original execution owner
 
-`pluxel script run` type-checks and compiles a self-contained factory with
+`pluxel script run` type-checks and compiles a JavaScript factory with
 `@pluxel/rolldown/scripts`, then authenticates to the explicit Management session
 endpoint. Node receivers need no Vite, source tree or compiler. Enable execution
 explicitly with `managementHttp({ scripts: true })` or the corresponding preset

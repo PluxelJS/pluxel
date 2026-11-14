@@ -47,22 +47,22 @@ HMR 控制属于 Vite 实例，在应用启动失败或 Host replacement 期间�
 import type { ProjectScript } from '@pluxel/host-vite/project'
 import { TodoPlugin } from '@example/todo-plugin'
 
-export default (({ Result, plugin }) =>
-	Result.gen(async function* () {
-		const todo = plugin(TodoPlugin)
-		const status = yield* Result.await(todo.status())
-		const instance = yield* Result.await(todo.instance())
-		return Result.ok({ status, todos: instance.snapshot() })
-	})) satisfies ProjectScript
+export default (async ({ plugin }) => {
+	const todo = plugin(TodoPlugin)
+	const status = await todo.status()
+	if (status.isErr()) return status
+	const instance = await todo.instance()
+	if (instance.isErr()) return instance
+	return { status: status.value, todos: instance.value.snapshot() }
+}) satisfies ProjectScript
 
-export const add = ((sdk, run) => {
+export const add = (async (sdk, run) => {
 	const title = run.input
 	if (typeof title !== 'string') throw new TypeError('Expected a todo title')
 	run.signal.throwIfAborted()
-	return sdk.Result.gen(async function* () {
-		const instance = yield* sdk.Result.await(sdk.plugin(TodoPlugin).instance())
-		return sdk.Result.ok(await instance.add(title))
-	})
+	const instance = await sdk.plugin(TodoPlugin).instance()
+	if (instance.isErr()) return instance
+	return instance.value.add(title)
 }) satisfies ProjectScript
 ```
 
@@ -71,7 +71,7 @@ vp exec pluxel dev run host/web/dev/inspect.ts
 vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"测试待办事项"'
 ```
 
-`ProjectScript` 使用普通函数与 `satisfies`；输入从 unknown 校验。`plugin()` 和 `fork()` 同步选择目标，异步操作返回 `Promise<Result<T, E>>`，`sdk.Result` 复用共享库的原生组合方法。源码屏障结算后，执行器完成 TypeScript 检查并核对真实缓存模块的原始输入，声明或源码变化时会明确失败。返回 JSON 或共享的顶层 Result，由执行边界编码；实例、Context、函数和其他运行句柄留在目标进程。
+`ProjectScript` 使用普通函数与 `satisfies`；输入从 unknown 校验。`plugin()` 和 `fork()` 同步选择目标，异步操作返回 `Promise<Result<T, E>>`。脚本按[自动化脚本](./scripts.md)的方式处理 Result，需要构造时从 `@pluxel/core/better-result` 导入。源码屏障结算后，执行器完成 TypeScript 检查并核对真实缓存模块的原始输入，声明或源码变化时会明确失败。返回 JSON 或共享的顶层 Result，由执行边界编码；实例、Context、函数和其他运行句柄留在目标进程。
 
 脚本采用所在目录最近的 `tsconfig.json`，其模块解析条件应与 Host 一致。前端配置常清空 `customConditions`，从插件发行声明读取类型；服务端 Vite 使用 `@pluxel/hmr` 加载源码时，这两种输入会被源码守卫拒绝。官方 starter 为服务端脚本提供 `host/web/dev/tsconfig.json`，继承 Host 的 Node、源码条件和装饰器配置：
 
@@ -98,30 +98,29 @@ constructor 类型保留实例签名，Schema 的输入、默认值前状态及 
 import type { ProjectScript } from '@pluxel/host-vite/project'
 import { TodoPlugin } from '@example/todo-plugin'
 
-export const increaseLimit = (({ Result, plugin }) =>
-	Result.gen(async function* () {
-		// 动态地址配置；需要精确 Schema 输入类型时改用生成描述符。
-		const { get, patch } = plugin(TodoPlugin.nodeAddress()).config
-		const current = yield* Result.await(get())
-		const limit = current.config.limit
-		if (typeof limit !== 'number') throw new TypeError('Expected a numeric limit')
-		const changed = yield* Result.await(
-			patch(
-				{ set: { limit: limit + 1 } },
-				{
-					expectedManagedRevision: current.managedRevision,
-				},
-			),
-		)
-		const currentConfig = yield* Result.await(get())
-		const instance = yield* Result.await(plugin(TodoPlugin).instance())
-		return Result.ok({
-			persistence: changed.persistence,
-			application: changed.application,
-			current: currentConfig,
-			actual: instance.config.limit,
-		})
-	})) satisfies ProjectScript
+export const increaseLimit = (async ({ plugin }) => {
+	// 动态地址配置；需要精确 Schema 输入类型时改用生成描述符。
+	const { get, patch } = plugin(TodoPlugin.nodeAddress()).config
+	const current = await get()
+	if (current.isErr()) return current
+	const limit = current.value.config.limit
+	if (typeof limit !== 'number') throw new TypeError('Expected a numeric limit')
+	const changed = await patch(
+		{ set: { limit: limit + 1 } },
+		{ expectedManagedRevision: current.value.managedRevision },
+	)
+	if (changed.isErr()) return changed
+	const currentConfig = await get()
+	if (currentConfig.isErr()) return currentConfig
+	const instance = await plugin(TodoPlugin).instance()
+	if (instance.isErr()) return instance
+	return {
+		persistence: changed.value.persistence,
+		application: changed.value.application,
+		current: currentConfig.value,
+		actual: instance.value.config.limit,
+	}
+}) satisfies ProjectScript
 ```
 
 `config` 是经过 Schema 计算的期望输出，修改只提交 managed input 的变更字段。查询还提供来源、遮盖路径和 managed revision。保存确认、desired 接纳和 generation 实际采用分别检查；详见 [SDK 配置操作](./scripts.md)与[配置指南](../plugin-development/configuration.md)。
@@ -160,8 +159,6 @@ export default defineConfig({ plugins: host({ entry: './app.ts', scripts: true }
 
 ## 失败、取消与恢复
 
-函数返回 `Result.err(...)` 时，run 仍可成功，执行边界编码为 `{ status: 'error', error }`；调用方继续处理领域结果。SDK 返回类型列出预期失败，未知缺陷继续使执行失败。执行记录区分 admission/load/execute/encode/cleanup，保留错误、独立清理错误及前后版本。部分写入后抛错或结果编码失败，已提交操作继续保留，执行器不会自动回滚或重投。详细规则见[脚本失败处理](./scripts.md#失败取消和释放)。
-
-取消先关闭新的 SDK 接纳并传递 signal，正在进行的 Host 修改按真实生产路径结算。running run 在结算前保持 cancelling；同步死循环仍受同进程 JavaScript 的协作取消限制。断开连接保留已接纳 run，可用原 receipt 重连查询。结果过期、原 owner 消失与没有找到 run 分别报告；切勿用新的 run ID 自动重发写操作。
+脚本返回 SDK 的 `Err` 时，run 仍可成功交付领域结果；未知异常形成执行失败。已提交修改继续保留。取消、编码、清理和原 receipt 查询规则由[自动化脚本](./scripts.md#失败取消和释放)维护。
 
 输入、返回值和单个源码文件各有 1 MiB 预算，结果保留最近 100 项且总计不超过 16 MiB。结果过期后仍保留有界接纳身份，旧 ID 不会再次执行。源码变化会明确报 `source_changed`；检查当前源码后再作新的显式提交。

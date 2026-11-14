@@ -18,7 +18,7 @@ Workbench 管理 RPC
   → 相同 Host 用例与报告投影
 ```
 
-Host 持有插件图、配置来源和原始输入、版本、运行意图及生命周期。SDK 组织这些现有能力，复用 Host 配置和策略用例、稳定 `PluginNodeAddress` 以及共享 `PluginApplyReportSnapshot` 投影。原领域结果只在 SDK 返回边界去掉 `ok`，转换成共享 Better Result，保留全部领域字段；Workbench 原协议保持原义。SDK 注入 `@pluxel/core/better-result` 的原生 `Result` namespace，作者无需把另一份库打进制品。领域约束继续由 [Host](HOST.md)、[Config](CONFIG.md) 和 [Logging](LOGGING.md) 维护。
+Host 持有插件图、配置来源和原始输入、版本、运行意图及生命周期。SDK 组织这些现有能力，复用 Host 配置和策略用例、稳定 `PluginNodeAddress` 以及共享 `PluginApplyReportSnapshot` 投影。原领域结果只在 SDK 返回边界去掉 `ok`，转换成共享 Better Result，保留全部领域字段；Workbench 原协议保持原义。作者通常使用 async/await 和 `isErr()` 提前返回，需要构造或组合结果时从 `@pluxel/core/better-result` 导入原生 `Result`。领域约束继续由 [Host](HOST.md)、[Config](CONFIG.md) 和 [Logging](LOGGING.md) 维护。
 
 执行器持有 run，加载器持有求值方式，连接持有认证和远程引用。跨进程 target 只负责提交与控制；同进程直接调用执行器和 Host。SDK 方法没有经过 Cap’n Web，也没有复制一套配置或生命周期逻辑。
 
@@ -48,7 +48,11 @@ SDK 的日志方法复用 Core Logging 的 stream、cursor、retention、gap 和
 
 ## 代码交付和加载
 
-上传输入是 `ScriptArtifact`，格式为 `pluxel-js-factory/1`。`compileScript({ file, exportName, signal })` 对普通 TS/JS 文件使用 native TypeScript 检查并用 Rolldown 打包，共享固定输入。交付物包含工厂函数体、导出名、内容摘要和版本 3 source map，编译不会求值应用工厂。上传工厂包含脚本、通过材料验证的纯描述符与可打包的计算依赖，类型 import 被消除；运行时框架 import、Node builtin、远端协议、原生扩展和动态 import 明确拒绝。独立 Better Result 副本也在 specifier 与实际 package owner 两处拒绝，作者使用注入的 `sdk.Result`。
+上传输入是 `ScriptArtifact`，格式为 `pluxel-js-factory/2`。`compileScript({ file, exportName, signal })` 对普通 TS/JS 文件使用 native TypeScript 检查并用 Rolldown 打包，共享固定输入。交付物包含工厂函数体、导出名、内容摘要和版本 3 source map，编译不会求值应用工厂。上传工厂包含脚本、通过材料验证的纯描述符与可打包的计算依赖，类型 import 被消除。
+
+作者的 `@pluxel/core/better-result` import 由编译器保留为受控共享绑定，加载器传入当前 realm 的实际 Core 子入口，避免打包第二份 Result 实现。独立 Better Result 包、其余框架运行时、Node builtin、远端协议、原生扩展和动态 import 明确拒绝。旧制品格式在输入校验时拒绝。
+
+Rolldown 先生成 ESM，私有工厂转换器只处理标准 import/export 声明，保留严格模式、共享 namespace 身份与导出绑定；它不依赖打包器的互操作 helper。转换通过 `renderChunk` 与 MagicString 合成原源码映射，并在交付前重新按 Script 语法检查工厂。接收端执行固定参数的普通函数体，无需解析模块或安装编译工具。
 
 工厂同步初始化并返回模块 exports，异步任务在导出函数中执行。Node 加载器在原进程 realm 使用 `vm.compileFunction`，每次 run 创建新的模块局部状态，随后调用所选导出并传入 SDK。它不依赖实验 ESM VM API、临时执行文件、`data:` import 或 ESM 缓存。加载错误和执行错误按工厂附带 source map 映回原作者文件。
 
@@ -64,7 +68,7 @@ CLI 在首次提交前保存或输出 receipt，记录原 endpoint/实例/run ID
 
 阶段为 admission、load、execute、encode、cleanup；状态从 queued/preparing/running 进入 succeeded、failed 或 cancelled。取消中的活动 run 保持 cancelling，直到脚本和 scope 真正结算。取消的终态保留取消错误及同期发生的 `executionError`。`close()` 等待真实结算，断开连接只释放控制引用。
 
-成功终态要求函数、结果编码和清理均完成。脚本返回的领域 Err 仍是成功结果；配置的保存与采用、生命周期和部分失败由原报告表达。`Result.gen` 可以停止后续步骤，不能回滚已经提交的步骤；未知缺陷按上游 Panic 规则形成执行失败。脚本中途抛错、编码或清理失败都不会撤销已提交修改，也不会自动重试。前后版本、错误阶段和清理失败共同支持后续核对。
+成功终态要求函数、结果编码和清理均完成。脚本返回的领域 Err 仍是成功结果；配置的保存与采用、生命周期和部分失败由原报告表达。普通 async/await 的 `isErr()` 早退可以停止后续步骤，已经提交的修改继续有效。未知异常、编码或清理失败形成执行失败，不撤销已提交修改，也不会自动重试。前后版本、错误阶段和清理失败共同支持后续核对。可选的生成器组合与 Panic 语义由 [Better Result](../docs/plugin-development/better-result.md)维护。
 
 运行错误的有界诊断保留原生 Panic 的 cause 文本。cause 链及 Aggregate/Suppressed 子错误只读取自身数据属性，跳过访问器；沿用深度、节点、循环和消息长度限制，不把业务 Error 实例放入结果 DTO。
 
@@ -101,21 +105,13 @@ Vite 控制 owner 随开发实例存活，其私有本地连接认证独立于�
 | 可移植入口与 Workers 最小桥 | [`agent-portability.test.ts`](../packages/host/tests/agent-portability.test.ts)，范围见下                                                                                                               |
 | Vite、CLI 与部署接收端      | [Dev Console](DEV_CONSOLE.md) 和各包 integration / installed smoke；交付门禁需包含真实 CLI→认证→无源码、无编译器的 Node 应用                                                                            |
 
-2026-11-13 脚本执行器的历史验证基线如下；2026-11-14 插件控制重构的当前验证记录由 [Plugin Control](PLUGIN_CONTROL.md#2026-11-14-落地验证)维护。
-
-- SDK、Config、policy 与可移植/Workers 测试 25 项通过；SDK/执行器/Node 专项 22 项通过，脚本编译 3 项、Cap’n Web 共享身份与打包 22 项通过。
-- 真实 TLS、非 loopback、密码 challenge 的 CLI→Management session→Node Host 路径通过，核对未启用执行、错误凭据、主体隔离、重复身份、冲突、断线查询、部分失败、取消结算和提供者撤回。Services 管理与 HTTP 相关 186 项、CLI 104 项、Auth 8 项专项通过。
-- [`agent-installed.test.ts`](../packages/services/tests/agent-installed.test.ts) 从真实 tarball 独立安装作者 CLI/SDK，使用正式 standalone/headless 构建，将单文件应用移至接收目录并删除应用源码，Node loader 禁止从接收目录之外加载模块。接收端无 compiler、Vite 或 Workbench。配置 2→4→8、CAS 冲突、采用、非空日志、启停、原 receipt、部分失败不回滚、原脚本堆栈、取消与 SIGTERM 关闭均通过。
-- 只获得公开指南、声明和目标信息的独立 agent，通过上述安装后的 CLI 读取配置，处理 count 字符串的 validation_failed，再以版本条件将 count 从 11 改为 22。复读的 application 为 applied、desiredRevision=appliedRevision=5；原 receipt 新连接查询得到相同 instanceId/runId/requestHash。
-- [`hmr-control.test.ts`](../packages/host-vite/tests/hmr-control.test.ts) 的真实 Vite 用例核对同一模块图、实际实例、过期 constructor、依赖修改、paused pending、失败修复、Host replacement 和五轮八文件批量更新。最近直接运行记录为 64 次模块求值、16 批更新、72 个 Plugin generation 启动并全部释放，失败启动恢复另有 8/8 释放。
-
-该基线的全工作区门禁 `mise exec -- vp run --concurrency-limit=2 verify` 通过：135/135 项任务成功，118/120 项可缓存任务命中。2683 个文件格式正确，1876 个文件没有 lint 警告、错误或类型错误；仓库治理与源码声明检查均通过。文档站构建与链接校验通过，生成 660 个文件。
+交付验收及已知限制由 [Plugin Control](PLUGIN_CONTROL.md#验证入口)维护；具体历史执行记录由 Git 保留。
 
 ### Workers 的当前证据
 
 可移植测试以 browser 条件从真实 `@pluxel/host/agent` export 生成单一 ESM bundle，检查模块闭包和外部 import，确认没有 Node、Vite、Services 或编译器依赖。
 
-同一测试使用已安装的 Miniflare 5.20261103.0-beta / workerd 1.20261103.1，在本机真实 workerd 中加载由 `compileScript` 生成的工厂。工厂作为 Dynamic Worker 的静态 JavaScript 模块文本加载，脚本通过普通 SDK 方法调用 WorkerEntrypoint RPC，再经受控测试桥进入原 Host。两次运行执行普通 await、循环和计算，将真实配置从 2 改为 4、再改为 8；每次工厂的模块计数均从 1 开始，Host 侧核对 `application: 'applied'`，测试最后关闭 workerd 与 scope。
+同一测试使用已安装的 Miniflare / workerd，在本机真实 workerd 中加载由 `compileScript` 生成的工厂。工厂作为 Dynamic Worker 的静态 JavaScript 模块文本加载，Core Better Result 绑定 Worker 内共享子入口。脚本通过普通 SDK 方法调用 WorkerEntrypoint RPC，再经受控测试桥进入原 Host。两次运行执行普通 await、循环和计算，将真实配置从 2 改为 4、再改为 8；每次工厂的模块计数均从 1 开始，Host 侧核对 `application: 'applied'`，测试最后关闭 workerd 与 scope。
 
 测试复用官方 [Dynamic Worker Loader](https://developers.cloudflare.com/dynamic-workers/api-reference/) 和 [Workers RPC / ctx.exports](https://developers.cloudflare.com/workers/runtime-apis/context/#exports) 机制，使用 `globalOutbound: null` 限定最小能力桥。跨边界只传参数与结果，本地 run signal 在 Worker 内创建。这个测试桥只公开插件发现、配置读取和条件写入，作为受控 fixture 保留。
 
