@@ -1,0 +1,11 @@
+---
+title: Preserve Node artifact ownership in modules applications
+date: 2026-11-05T05:59:25.688Z
+packages:
+  '@pluxel/services':
+    version: 1.2.0
+---
+
+## Preserve Node artifact ownership in modules applications
+
+`servicesPreset()` now reads the application deployment manifest to distinguish standalone and modules delivery. Standalone applications keep their bundled Node artifact directory; modules applications use each loaded plugin package's verified artifact inventory, including workers owned by external packages. Missing or invalid deployment manifests fail explicitly.
