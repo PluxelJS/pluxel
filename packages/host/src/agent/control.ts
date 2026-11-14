@@ -39,21 +39,13 @@ export interface PluginDescriptor<
 	}>
 }
 
-/** A typed definition selects its default node; a fork selects that definition's fork. */
-export type PluginTypedTarget =
-	| DescriptorData
-	| Readonly<{ plugin: DescriptorData; forkId: string }>
+/** A descriptor selects its default node. Select forks through the reference's fork(). */
+export type PluginTypedTarget = DescriptorData
 
 /** Management also accepts an address discovered at runtime. */
 export type PluginTarget = PluginTypedTarget | PluginNodeAddress
 
-type DescriptorOf<T extends PluginTypedTarget> = T extends DescriptorData
-	? T
-	: T extends { plugin: infer D extends DescriptorData }
-		? D
-		: never
-
-type TypesOf<T extends PluginTypedTarget> = DescriptorOf<T>[typeof pluginTypes] extends {
+type TypesOf<T extends PluginTypedTarget> = T[typeof pluginTypes] extends {
 	signature: infer S extends PluginTypes<unknown, object, object>
 }
 	? S

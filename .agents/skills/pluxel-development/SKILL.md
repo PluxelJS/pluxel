@@ -26,7 +26,7 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 | 查声明、配置绑定与源码位置              | `development/inspection.md`；定向请求所需 sections，显式选择 application；先检查 complete/partial/unavailable，缺口不等于不存在                                  |
 | 验证插件依赖、配置或生命周期            | `plugin-development/testing.md`；使用真实 lowering 的 `@pluxel/test`，显式安装所需服务并释放 test host；普通函数用普通测试                                       |
 | 部署应用的自动化脚本                    | `development/scripts.md`；普通 `Script`、CLI 编译上传、原 receipt 查询与取消；目标必须显式授权脚本执行                                                           |
-| 取得插件类型、配置源码与业务实例        | `development/plugin-control.md`；`./control`、材料同步、`sdk.plugin(target)`、配置、业务实例与公共 JSDoc；外部类型依赖使用匹配版本                               |
+| 取得插件类型、配置源码与业务实例        | `development/plugin-control.md`；`./control`、材料同步、`sdk.plugin(target)`、`sdk.Result`、配置、实例及 JSDoc；外部类型依赖使用匹配版本                         |
 | 操作运行中的应用、分批接纳源码修改      | `development/dev-console.md`；使用现有 Vite 控制台与 HMR 批次控制，隔离 host 不能证明在线状态                                                                    |
 | 安装工具、管理服务或修改任务缓存/hk/Pkl | `development/workspace-toolchain.md`；先看现有配置与服务                                                                                                         |
 | 源码联调、安装、catalog 或开发文档接入  | `development/source-workspaces.md`；source doctor 不证明构建产物最新，按需 source build                                                                          |

@@ -18,8 +18,7 @@ export function normalizePluginTarget(target: PluginTarget): Readonly<{
 }> {
 	if (!target || typeof target !== 'object') throw new TypeError('Expected a Plugin target')
 	if ('variant' in target) return { node: parsePluginNodeAddress(target) }
-	const source = 'plugin' in target ? target.plugin : target
-	if (!source || typeof source !== 'object') throw new TypeError('Expected a Plugin descriptor')
+	const source = target
 	if (source.format !== 1)
 		throw new PluginControlError('control_format_unsupported', 'Control format 1 is required')
 	const definition = parsePluginDefinitionAddress(source.definition)
@@ -33,11 +32,7 @@ export function normalizePluginTarget(target: PluginTarget): Readonly<{
 	)
 		throw new TypeError('Plugin descriptor contracts require SHA-256 digests')
 	return Object.freeze({
-		node: parsePluginNodeAddress(
-			'plugin' in target
-				? { definition, variant: 'fork', forkId: target.forkId }
-				: { definition, variant: 'default' },
-		),
+		node: parsePluginNodeAddress({ definition, variant: 'default' }),
 		descriptor: Object.freeze({ format: 1, contracts: Object.freeze({ ...contracts }) }),
 	})
 }

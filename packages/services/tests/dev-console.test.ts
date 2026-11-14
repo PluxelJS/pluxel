@@ -20,7 +20,8 @@ it('uses installed service tokens alongside the portable SDK without a console p
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx, signal: controller.signal })
 	try {
-		await scope.sdk.plugin(Health.nodeAddress()).start()
+		const started = await scope.sdk.plugin(Health.nodeAddress()).start()
+		expect(started.isOk()).toBe(true)
 		const script: Script = async (_sdk, run) => {
 			const server = host.ctx.require(ElysiaRuntime)
 			const response = await server.fetch(

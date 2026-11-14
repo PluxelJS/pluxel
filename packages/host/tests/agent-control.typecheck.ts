@@ -1,5 +1,6 @@
 /** Compile-only consumption of the actual public SDK export. */
 import { BasePlugin, PluginPart, type PluginNodeAddress } from '@pluxel/core'
+import { Result } from '@pluxel/core/better-result'
 import type {
 	PluginDescriptor,
 	PluginConfigInput,
@@ -10,8 +11,13 @@ import type {
 	ScriptSdk,
 	ScriptPlugin,
 	ScriptPluginConfig,
+	ScriptConfigSnapshot,
+	ScriptConfigError,
+	ScriptInstanceError,
+	ScriptOperationError,
+	ScriptLogError,
 } from '@pluxel/host/agent'
-import type { HostConfigMutation, HostPluginConfigResult } from '@pluxel/host'
+import type { HostConfigMutation, HostPluginConfigResultOk } from '@pluxel/host'
 import * as v from 'valibot'
 import { expectTypeOf } from 'vitest'
 
@@ -103,6 +109,7 @@ const widenedInput: PluginDescriptor<
 void widenedInput
 
 const { plugin } = sdk
+expectTypeOf(sdk.Result).toEqualTypeOf<typeof Result>()
 const counterRef = plugin(Counter)
 expectTypeOf(counterRef).toEqualTypeOf<ScriptPlugin<typeof Counter>>()
 expectTypeOf(counterRef.config).toEqualTypeOf<ScriptPluginConfig<CounterInput, CounterOutput>>()
@@ -128,22 +135,27 @@ const widenedConfig: ScriptPluginConfig<
 > = counterConfig
 void widenedConfig
 const extractedResult = await get()
-if (extractedResult.ok === true)
-	expectTypeOf(extractedResult.config.converted).toEqualTypeOf<number>()
-const borrowed = await borrow()
-expectTypeOf(borrowed.instance).toEqualTypeOf<CounterInstance>()
-const forkedBorrowed = await selectedFork.instance()
-expectTypeOf(forkedBorrowed.instance).toEqualTypeOf<CounterInstance>()
+if (extractedResult.isOk())
+	expectTypeOf(extractedResult.value.config.converted).toEqualTypeOf<number>()
+const borrowed = Result.unwrap(await borrow())
+expectTypeOf(borrowed).toEqualTypeOf<CounterInstance>()
+expectTypeOf<Awaited<ReturnType<typeof borrow>>>().toEqualTypeOf<
+	Result<CounterInstance, ScriptInstanceError>
+>()
+const forkedBorrowed = Result.unwrap(await selectedFork.instance())
+expectTypeOf(forkedBorrowed).toEqualTypeOf<CounterInstance>()
 
 void sdk.plugin(Counter).config.patch({ set: { step: 2, converted: '12' } })
-const fork = { plugin: Counter, forkId: 'east' }
-void sdk.plugin(fork).config.patch({ set: { step: 2 } })
-void sdk.plugin({ plugin: Counter, forkId: 'east' }).config.patch({ set: { converted: '12' } })
-const sameDefinitionForks =
-	Math.random() > 0.5
-		? ({ plugin: Counter, forkId: 'east' } as const)
-		: ({ plugin: Counter, forkId: 'west' } as const)
-void sdk.plugin(sameDefinitionForks).config.patch({ set: { step: 2 } })
+const fork = sdk.plugin(Counter).fork('east')
+// @ts-expect-error Fork selection has one API; object-shaped typed fork targets were removed.
+void sdk.plugin({ plugin: Counter, forkId: 'east' })
+void fork.config.patch({ set: { step: 2 } })
+void sdk
+	.plugin(Counter)
+	.fork('east')
+	.config.patch({ set: { converted: '12' } })
+const sameDefinitionForks = sdk.plugin(Counter).fork(Math.random() > 0.5 ? 'east' : 'west')
+void sameDefinitionForks.config.patch({ set: { step: 2 } })
 const sameShapeTargets = Math.random() > 0.5 ? Counter : SameShape
 void sdk.plugin(sameShapeTargets).config.patch({ set: { step: 2 } })
 const sameConfigTargets = Math.random() > 0.5 ? Counter : SameConfig
@@ -174,20 +186,19 @@ void sdk.plugin(mixed).config.patch({ set: { step: 2 } })
 void sdk.plugin(mixed).config.validate({ set: { title: 'updated' } })
 // @ts-expect-error Reset likewise requires a consistent known configuration association.
 void sdk.plugin(mixed).config.reset([['step']])
-const mixedForks =
-	Math.random() > 0.5 ? { plugin: Counter, forkId: 'east' } : { plugin: Other, forkId: 'west' }
+const mixedForks = sdk.plugin(mixed).fork(Math.random() > 0.5 ? 'east' : 'west')
 // @ts-expect-error Fork targets with incompatible configuration associations also require narrowing.
-void sdk.plugin(mixedForks).config.patch({ set: { step: 2 } })
+void mixedForks.config.patch({ set: { step: 2 } })
 const maybeConfigured = Math.random() > 0.5 ? Counter : NoConfig
 // @ts-expect-error Every possible typed configuration target must declare a schema.
 void sdk.plugin(maybeConfigured).config.get()
 // @ts-expect-error The no-config branch cannot be erased to accept a mutation.
 void sdk.plugin(maybeConfigured).config.patch({ set: { step: 2 } })
-const maybeConfiguredFork = { plugin: maybeConfigured, forkId: 'east' }
+const maybeConfiguredFork = sdk.plugin(maybeConfigured).fork('east')
 // @ts-expect-error A union inside a predeclared fork must retain its no-config branch.
-void sdk.plugin(maybeConfiguredFork).config.get()
+void maybeConfiguredFork.config.get()
 // @ts-expect-error Mutation cannot drop the no-config branch nested in a fork.
-void sdk.plugin(maybeConfiguredFork).config.patch({ set: { step: 2 } })
+void maybeConfiguredFork.config.patch({ set: { step: 2 } })
 void sdk.plugin(address).config.patch({ set: { step: 'external candidate' } })
 
 const tasks = [
@@ -200,31 +211,61 @@ for (const task of tasks) {
 }
 
 const result = await sdk.plugin(Counter).config.get()
-if (result.ok === true) {
-	expectTypeOf(result.config.converted).toEqualTypeOf<number>()
-	expectTypeOf(result.config.step).toEqualTypeOf<number>()
+expectTypeOf(result).toEqualTypeOf<Result<ScriptConfigSnapshot<CounterOutput>, ScriptConfigError>>()
+expectTypeOf<ScriptInstanceError['code']>().toEqualTypeOf<
+	| 'scope_closed'
+	| 'cancelled'
+	| 'borrowed_generation_conflict'
+	| 'control_format_unsupported'
+	| 'control_material_unavailable'
+	| 'control_contract_mismatch'
+	| 'target_unavailable'
+	| 'stale_target'
+	| 'plugin_not_running'
+>()
+expectTypeOf<Extract<ScriptInstanceError, { code: 'validation_failed' }>>().toEqualTypeOf<never>()
+expectTypeOf<Extract<ScriptOperationError, { code: 'persistence_failed' }>>().toEqualTypeOf<never>()
+if (result.isOk()) {
+	expectTypeOf(result.value.config.converted).toEqualTypeOf<number>()
+	expectTypeOf(result.value.config.step).toEqualTypeOf<number>()
 	// @ts-expect-error Validated output is readonly.
-	result.config.step = 3
+	result.value.config.step = 3
 	// @ts-expect-error Nested normalized output is readonly too.
-	result.config.items[0].value = 3
+	result.value.config.items[0].value = 3
 	// @ts-expect-error Raw observation remains unknown after successful validation.
-	const raw: number = result.managedInput!.step
+	const raw: number = result.value.managedInput!.step
 	void raw
-} else if (result.code === 'validation_failed') {
+} else if (result.error.code === 'validation_failed') {
 	// @ts-expect-error A validation failure does not expose validated output.
-	void result.config
-	void result.errors
+	void result.value.config
+	void result.error.errors
+}
+if (result.isErr() && result.error.code === 'persistence_failed') {
+	expectTypeOf(result.error.state).toEqualTypeOf<'unknown'>()
+	// @ts-expect-error Persistence failure retains uncertainty and cannot claim a validated output.
+	void result.error.config
+}
+if (result.isErr()) {
+	// @ts-expect-error SDK errors are readonly plain domain values.
+	result.error.message = 'rewritten'
+	// @ts-expect-error Failure values have no duplicate domain discriminator.
+	void result.error.ok
 }
 const unionResult = await sdk.plugin(mixed).config.get()
-if (unionResult.ok === true) {
+if (unionResult.isOk()) {
 	// @ts-expect-error A successful union read still requires narrowing its output.
-	void unionResult.config.step
+	void unionResult.value.config.step
 }
-expectTypeOf(result).toEqualTypeOf<
-	HostPluginConfigResult<import('@pluxel/host').PluginApplyReportSnapshot, CounterOutput>
+expectTypeOf(result.unwrap()).toEqualTypeOf<
+	Omit<
+		HostPluginConfigResultOk<import('@pluxel/host').PluginApplyReportSnapshot, CounterOutput>,
+		'ok'
+	>
 >()
+// @ts-expect-error Success has no duplicate domain discriminator inside its native Result payload.
+void result.unwrap().ok
 
-const { instance: counter } = await sdk.plugin(Counter).instance()
+const counter = Result.unwrap(await sdk.plugin(Counter).instance())
 expectTypeOf(counter.add(2)).toEqualTypeOf<number>()
 expectTypeOf(counter.refresh(new AbortController().signal)).toEqualTypeOf<Promise<number>>()
 expectTypeOf(counter.echo({ x: 1 })).toEqualTypeOf<{ x: number }>()
@@ -249,22 +290,22 @@ counter.accept(new NominalToken())
 expectTypeOf(counter.ctx).toEqualTypeOf<CounterPlugin['ctx']>()
 // @ts-expect-error Addresses carry no concrete instance type.
 void sdk.plugin(address).instance()
-const unknownInstance = await sdk.plugin(mixed).instance()
+const unknownInstance = Result.unwrap(await sdk.plugin(mixed).instance())
 // @ts-expect-error A union instance requires narrowing before a variant member.
-unknownInstance.instance.add(2)
-const sameConfigInstances = await sdk.plugin(sameConfigTargets).instance()
+unknownInstance.add(2)
+const sameConfigInstances = Result.unwrap(await sdk.plugin(sameConfigTargets).instance())
 // @ts-expect-error Equal config contracts do not erase distinct instance surfaces.
-sameConfigInstances.instance.add(2)
+sameConfigInstances.add(2)
 const erasedTarget: PluginTypedTarget = Counter
-const erasedInstance = await sdk.plugin(erasedTarget).instance()
-expectTypeOf(erasedInstance.instance).toEqualTypeOf<object>()
+const erasedInstance = Result.unwrap(await sdk.plugin(erasedTarget).instance())
+expectTypeOf(erasedInstance).toEqualTypeOf<object>()
 // @ts-expect-error Erasing the descriptor association must not invent a validated output type.
 void sdk.plugin(erasedTarget).config.get()
 // @ts-expect-error Erased descriptors have no statically available config surface.
 void sdk.plugin(erasedTarget).config
 // @ts-expect-error Known no-config descriptors have no config property.
 void sdk.plugin(NoConfig).config
-const { instance: other } = await sdk.plugin(NoConfig).instance()
+const other = Result.unwrap(await sdk.plugin(NoConfig).instance())
 expectTypeOf(other.title()).toEqualTypeOf<string>()
 
 interface ThenInstance {
@@ -272,7 +313,7 @@ interface ThenInstance {
 	readonly marker: 'thenable'
 }
 declare const ThenPlugin: PluginDescriptor<never, never, ThenInstance>
-const { instance: thenPlugin } = await sdk.plugin(ThenPlugin).instance()
+const thenPlugin = Result.unwrap(await sdk.plugin(ThenPlugin).instance())
 expectTypeOf(thenPlugin.marker).toEqualTypeOf<'thenable'>()
 
 const OptionalSchema = v.optional(v.object({ retries: v.optional(v.number(), 3) }), {})
@@ -307,26 +348,38 @@ class PartOwner extends BasePlugin {
 	readonly part = this.parts.use(ConfiguredPart)
 }
 declare const Owner: PluginDescriptor<never, never, PartOwner>
-const { instance: owner } = await sdk.plugin(Owner).instance()
+const owner = Result.unwrap(await sdk.plugin(Owner).instance())
 expectTypeOf(owner.part.config.retries).toEqualTypeOf<number>()
 // @ts-expect-error Part-owned schema is not the owner Plugin's configuration declaration.
 void sdk.plugin(Owner).config.patch({ set: { retries: 3 } })
 
-const cursor = await sdk.logs.mark()
-void sdk.logs.read(cursor, { filter: { plugin: fork } })
+const cursor = Result.unwrap(await sdk.logs.mark())
+declare const logError: ScriptLogError
+expectTypeOf(logError.message).toEqualTypeOf<string>()
+// @ts-expect-error Every SDK log error has a readonly diagnostic, including native cursor failures.
+logError.message = 'rewritten'
+// @ts-expect-error Native log error codes cannot be mutated through the public SDK type.
+logError.code = 'root_mismatch'
+const logResult = await sdk.logs.read(cursor)
+if (logResult.isErr()) expectTypeOf(logResult.error.message).toEqualTypeOf<string>()
+void sdk.logs.read(cursor, { filter: { plugin: fork.address } })
 void sdk.logs.read(cursor, { filter: { plugin: Counter } })
 void sdk.logs.read(cursor, { filter: { plugin: address } })
 // @ts-expect-error The existing finite log wait deadline stays required.
 void sdk.logs.wait(cursor, { filter: { plugin: Counter } })
 
-export default (async (api, run) => {
-	run.signal.throwIfAborted()
-	const current = await api.plugin(Counter).config.get()
-	if (current.ok === false) return current
-	const changed = await api
-		.plugin(Counter)
-		.config.patch({ set: { step: 2 } }, { expectedManagedRevision: current.managedRevision })
-	if (changed.ok === false || changed.application !== 'applied') return changed
-	const { instance } = await api.plugin(Counter).instance()
-	return { count: instance.add(2), changed }
-}) satisfies Script
+export default ((api, run) =>
+	api.Result.gen(async function* () {
+		run.signal.throwIfAborted()
+		const selected = api.plugin(Counter)
+		const current = yield* api.Result.await(selected.config.get())
+		const changed = yield* api.Result.await(
+			selected.config.patch(
+				{ set: { step: 2 } },
+				{ expectedManagedRevision: current.managedRevision },
+			),
+		)
+		if (changed.application !== 'applied') return api.Result.ok(changed)
+		const instance = yield* api.Result.await(selected.instance())
+		return api.Result.ok({ count: instance.add(2), changed })
+	})) satisfies Script

@@ -254,12 +254,12 @@ export const metrics = (globalThis as unknown as Record<string, FixtureMetrics>)
 		await writeFile(artifactFile, 'initial')
 		await writeFile(
 			join(root, 'inspect.ts'),
-			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { Probe } from './entries/probe-0.entry.ts'; export default ((sdk) => sdk.dev.instance(Probe).value) satisfies ProjectScript",
+			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { Probe } from './entries/probe-0.entry.ts'; export default (async (sdk) => { const selected = await sdk.plugin(Probe).instance(); if (selected.isErr()) return selected; return selected.value.value }) satisfies ProjectScript",
 		)
 		await writeFile(join(root, 'fresh.ts'), await readFile(join(root, 'inspect.ts')))
 		await writeFile(
 			join(root, 'status.ts'),
-			"import type { ProjectScript } from '@pluxel/host-vite/project'; export default ((sdk) => sdk.plugins.list()) satisfies ProjectScript",
+			"import type { ProjectScript } from '@pluxel/host-vite/project'; export default (async (sdk) => { const listed = await sdk.plugins.list(); if (listed.isErr()) return listed; return listed.value }) satisfies ProjectScript",
 		)
 		await writeFile(
 			join(root, 'save.ts'),
@@ -267,7 +267,7 @@ export const metrics = (globalThis as unknown as Record<string, FixtureMetrics>)
 		)
 		await writeFile(
 			join(root, 'stale.ts'),
-			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { metrics } from './metrics.ts'; export default ((sdk) => { if (!metrics.savedConstructor) throw new Error('Missing saved constructor'); sdk.dev.instance(metrics.savedConstructor); return true }) satisfies ProjectScript",
+			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { metrics } from './metrics.ts'; export default ((sdk) => { if (!metrics.savedConstructor) throw new Error('Missing saved constructor'); return sdk.plugin(metrics.savedConstructor).instance() }) satisfies ProjectScript",
 		)
 		await Promise.all(
 			Array.from({ length: count }, (_, index) =>
@@ -464,9 +464,10 @@ await scenario(
 		const firstRead = await script()
 		assert.equal(firstRead.state, 'succeeded', JSON.stringify(firstRead))
 		assert.equal(firstRead.value, 1)
-		const staleRead = await script('stale.ts', 'failed')
-		assert.equal(staleRead.state, 'failed')
-		assert.equal(staleRead.error.code, 'stale_target')
+		const staleRead = await script('stale.ts')
+		assert.equal(staleRead.state, 'succeeded')
+		assert.equal(staleRead.value.status, 'error')
+		assert.equal(staleRead.value.error.code, 'stale_target')
 		const sequence = applied.application.latestUpdate.sequence
 		const unchanged = await control('apply')
 		assert.equal(unchanged.application.latestUpdate.sequence, sequence)

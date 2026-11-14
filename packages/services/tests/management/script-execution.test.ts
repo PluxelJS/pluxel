@@ -268,6 +268,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 				codeKinds: ['artifact'],
 				lifetime: 'host',
 				capabilities: [
+					'result',
 					'plugins',
 					'plugin',
 					'plugin.instance',
@@ -279,7 +280,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			})
 			const node = ScriptCounter.nodeAddress()
 			const change = await artifact(
-				`const select = sdk.plugin; const counter = select(run.input); const {get, patch} = counter.config; const before = await get(); if (!before.ok) return before; return patch({set:{count: before.config.count + 1}}, {expectedManagedRevision:before.managedRevision});`,
+				`return sdk.Result.gen(async function* () { const select = sdk.plugin; const counter = select(run.input); const {get, patch} = counter.config; const before = yield* sdk.Result.await(get()); const saved = yield* sdk.Result.await(patch({set:{count: before.config.count + 1}}, {expectedManagedRevision:before.managedRevision})); return sdk.Result.ok(saved); });`,
 			)
 			const submitted = { runId: randomUUID(), code: change, input: node }
 			const accepted = await first.control.submit(submitted)
@@ -289,7 +290,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			})
 			expect(await settled(first.control, submitted.runId)).toMatchObject({
 				state: 'succeeded',
-				value: { config: { count: 3 }, application: 'applied' },
+				value: { status: 'ok', value: { config: { count: 3 }, application: 'applied' } },
 			})
 			await expect(first.control.submit({ ...submitted, input: null })).rejects.toMatchObject({
 				code: 'request_conflict',
@@ -320,13 +321,13 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			await reconnected.control.submit(conflict)
 			expect(await settled(reconnected.control, conflict.runId)).toMatchObject({
 				state: 'succeeded',
-				value: { ok: false, code: 'revision_conflict' },
+				value: { status: 'error', error: { code: 'revision_conflict' } },
 			})
 			const partial = {
 				runId: randomUUID(),
 				input: node,
 				code: await artifact(
-					`await sdk.plugin(run.input).config.patch({set:{count:8}}); throw new Error('after persisted change');`,
+					`const saved = await sdk.plugin(run.input).config.patch({set:{count:8}}); if(saved.isErr()) return saved; throw new Error('after persisted change');`,
 				),
 			}
 			await reconnected.control.submit(partial)
@@ -343,7 +344,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			const file = join(directory, 'task.ts')
 			await writeFile(
 				file,
-				`import type { Script } from '@pluxel/host/agent';\nexport default (async (sdk) => ({plugins: (await sdk.plugins.list()).map(p => p.displayName)})) satisfies Script;\n`,
+				`import type { Script } from '@pluxel/host/agent';\nexport default ((sdk) => sdk.Result.gen(async function* () { const plugins = yield* sdk.Result.await(sdk.plugins.list()); return sdk.Result.ok({plugins: plugins.map(p => p.displayName)}) })) satisfies Script;\n`,
 			)
 			const cli = resolve(import.meta.dirname, '../../../cli/dist/cli.mjs')
 			const result = await execute(
@@ -358,7 +359,10 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			const output = JSON.parse(result.stdout)
 			expect(output).toMatchObject({
 				receipt: expect.stringMatching(/^ps2\./),
-				run: { state: 'succeeded', value: { plugins: expect.arrayContaining(['ScriptCounter']) } },
+				run: {
+					state: 'succeeded',
+					value: { status: 'ok', value: { plugins: expect.arrayContaining(['ScriptCounter']) } },
+				},
 			})
 			expect(result.stderr).not.toContain(SCRIPT_TEST_PASSWORD)
 			expect(

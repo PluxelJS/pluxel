@@ -4,7 +4,7 @@
 
 ## Ownership 与包边界
 
-`host({ entry, scripts: true })` 选择私有本地脚本通道。`@pluxel/host-vite/project` 只有 ProjectScript/ProjectSdk 与 typed target 类型；Host-vite 提供 `dev.ctx/address/instance` 开发扩展。通用插件、配置、policy、update 与 logs 方法直接来自 Host ScriptScope，不依赖官方 Services、Management 或 Workbench。
+`host({ entry, scripts: true })` 选择私有本地脚本通道。`@pluxel/host-vite/project` 只有 ProjectScript/ProjectSdk 与引用类型；Host-vite 扩展同一个 `plugin()` 选择器以接受当前 constructor，Context 从 `dev.ctx` 借用。异步控制操作复用 Host ScriptScope 的 Better Result 与原生 `sdk.Result`，不依赖官方 Services、Management 或 Workbench。
 
 现有 `pluxel` environment 的唯一 ModuleRunner 加载项目源码。Host-vite 不创建第二个 Host、database、logger 或执行队列。ScriptExecutor 来自 Host，项目和上传执行共享接纳、主体、预算、去重、取消与结果结算；HMR 使用同一内核的独立 lane。
 
@@ -15,6 +15,8 @@ CLI 生成原 run ID 和请求摘要，发送前输出 v2 receipt，随后用同
 发现仍使用 `.pluxel/dev-console`，目录 0700、描述文件 0600、短临时 socket 父目录 0700。连接先检查 protocol、instanceId 和 nonce，再授予共享控制 target；nonce/socket 不进入 receipt 或公开状态。profile/project/Pitchfork qualified serviceId 在启动时捕获，并与 root、instanceId 共同验证归属。发现与执行不调用 Pitchfork。
 
 项目请求携带文件、exportName 与 SHA-256。接纳前检查 realpath、源码预算与摘要，入口必须在 Vite root 内，排除 node_modules/.git/.pluxel。ModuleRunner 已合法加载的工作区依赖可以在 root 外。结果与输入遵循通用可移植数据规则。
+
+检查器沿用脚本最近的 TypeScript 配置；前端发行声明与服务端源码解析不同，同样属于输入失配。starter 的服务端脚本目录继承 Host 配置，具体布局由[公开指南](../docs/development/dev-console.md#编写可交互的开发脚本)维护，检查器保留原生解析与源码守卫。
 
 ## Vite 更新与执行边界
 
@@ -34,7 +36,9 @@ pause/apply/resume 由 Vite 批次调度器执行，不加载项目模块，不�
 
 ## 操作 API 与资源
 
-`createProjectSdk(ctx, scope)` 扩展当前 ScriptScope；同步 root/instance/address 访问调用同一 assertOpen。实际实例通过 Core PluginService 取得，constructor identity 由当前 catalog 验证。普通对象已取得后无法通用撤销，作者不能跨 run、restart 或 epoch 缓存。
+`createProjectSdk(ctx, scope)` 只扩展当前 ScriptScope 的工厂和 `dev.ctx`。constructor 经 scope 的内部 `selectPlugin` 接入原 Host 队列和成员视图，不另行读取裸实例。状态与实例获取在 committed read 内验证实现身份；生命周期通过同一 exclusive session 验证并提交，共用 coordinator 的 `pluginLifecycleUpdate` 请求构造。候选更替无法插入校验与执行之间。已缓存 constructor 引用在 HMR 替换后返回 `stale_target`，fork 同样保留这个前提。
+
+constructor 类型提供完整实例类型，Schema input/output 与 Part 配置关联由生成描述符提供。constructor 引用不提供 config；显式选择原生节点地址时使用未知字段的动态配置操作。所有实例视图都服从同一 run/generation 准入和排空。Root Context 及原业务返回的嵌套资源继续遵守各自所有权。
 
 `executeHostScript` 拥有统一的函数执行、关闭 admission、排空 SDK 操作与 before/after revision 读取；after 包含排空期间真实完成的变更。开发扩展直接业务调用和原生资源仍由作者 await、传递取消与释放。Host replacement abort 原脚本并 drain 已跟踪工作后才释放旧 root；未协作脚本不能强制终止。
 

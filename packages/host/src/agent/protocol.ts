@@ -105,21 +105,36 @@ export function scriptFailure(error: unknown, fallback = 'execution_failed'): Sc
 function failureMessage(error: Error): string {
 	const seen = new Set<Error>()
 	let remaining = 16
+	const ownData = (value: object, key: string): unknown => {
+		const descriptor = Object.getOwnPropertyDescriptor(value, key)
+		return descriptor && 'value' in descriptor ? descriptor.value : undefined
+	}
 	const read = (value: unknown, depth: number): string => {
 		if (remaining-- <= 0) return '[error limit]'
 		if (!(value instanceof Error))
 			return typeof value === 'string' ? value.slice(0, 4096) : 'Non-Error value'
 		if (seen.has(value)) return '[circular error]'
 		seen.add(value)
-		const message = value.message.slice(0, 4096)
+		const originalMessage = ownData(value, 'message')
+		const message = typeof originalMessage === 'string' ? originalMessage.slice(0, 4096) : 'Error'
 		if (depth >= 3) return message
-		const nested =
-			value instanceof SuppressedError
-				? [value.error, value.suppressed]
-				: value instanceof AggregateError
-					? value.errors.slice(0, 4)
-					: []
-		return [message, ...nested.map((cause: unknown) => read(cause, depth + 1))]
+		const nested: unknown[] = []
+		if (value instanceof SuppressedError)
+			nested.push(ownData(value, 'error'), ownData(value, 'suppressed'))
+		else if (value instanceof AggregateError) {
+			const errors = ownData(value, 'errors')
+			if (Array.isArray(errors)) {
+				const length = ownData(errors, 'length')
+				if (typeof length === 'number')
+					for (let index = 0; index < Math.min(length, 4); index++)
+						nested.push(ownData(errors, String(index)))
+			}
+		}
+		// Native Error/Panic metadata is own data. Never execute author accessors
+		// while traversing causes or aggregate/suppressed errors for a receipt.
+		const cause = ownData(value, 'cause')
+		if (cause !== undefined) nested.push(cause)
+		return [message, ...nested.map((nestedError: unknown) => read(nestedError, depth + 1))]
 			.join(' | ')
 			.slice(0, 4096)
 	}

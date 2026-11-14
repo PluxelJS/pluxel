@@ -60,7 +60,9 @@ const { get, patch } = config
 
 引用提供 `address`、`fork()`、`status()`、`start()`、`stop()` 和 `restart()`。生成描述符还提供 `instance()`，有配置的描述符提供准确推导的 `config`。运行时发现的完整地址使用同一入口：`sdk.plugin(node.address)`，配置字段保持未知数据。
 
-引用的使用期限由本次 run 管理。每次操作读取当前 Host 状态，重启后可以用同一引用重新取得业务实例；旧实例视图会失效。run 关闭后，缓存的工厂、`fork()` 和控制方法也会拒绝新调用。原插件业务方法仍遵守自身的 JavaScript `this` 约定。
+异步控制操作统一返回共享 Better Result。`sdk.Result` 提供原生 namespace，单次操作可以直接作为脚本返回值；多步操作使用 `Result.gen` 和 `Result.await`，遇到 `Err` 即结束后续步骤。配置、日志和策略的原领域结果在 SDK 边界转换一次，成功值和错误没有重复的 `ok` 标记。完整错误及结果交付规则见[自动化脚本](./scripts.md#失败取消和释放)。
+
+引用的使用期限由本次 run 管理。每次操作读取当前 Host 状态，重启后可以用同一引用重新取得业务实例；旧实例视图会失效。run 关闭后，缓存的工厂和 `fork()` 同步抛错，异步控制方法返回 `scope_closed` 的 `Err`。原插件业务方法仍遵守自身的返回类型和 JavaScript `this` 约定。
 
 ## 声明中的注释
 
@@ -88,17 +90,19 @@ const CounterConfig = v.object({
 import type { Script } from '@pluxel/host/agent'
 import { Counter } from '@acme/pluxel-plugin-counter/control'
 
-export default (async (sdk) => {
-	const { get, patch } = sdk.plugin(Counter).config
-	const before = await get()
-	if (before.ok === false) return before
-	const changed = await patch(
-		{ set: { count: before.config.count * 2 } },
-		{ expectedManagedRevision: before.managedRevision },
-	)
-	if (changed.ok === false) return changed
-	return { changed, actual: await get() }
-}) satisfies Script
+export default (({ Result, plugin }) =>
+	Result.gen(async function* () {
+		const { get, patch } = plugin(Counter).config
+		const before = yield* Result.await(get())
+		const changed = yield* Result.await(
+			patch(
+				{ set: { count: before.config.count * 2 } },
+				{ expectedManagedRevision: before.managedRevision },
+			),
+		)
+		const actual = yield* Result.await(get())
+		return Result.ok({ changed, actual })
+	})) satisfies Script
 ```
 
 `get` 返回 Schema 输出，`patch` 与 `validate` 接受 Schema 输入的递归 patch，数组整体替换。`managedInput` 和 `effectiveInput` 继续表达观察到的原始数据。`validate` 只预览候选输出；返回的 application 字段仍描述当前运行状态。保存与采用、版本冲突的处理见[自动化脚本](./scripts.md#读取计算条件修改与核对采用)。
@@ -113,21 +117,21 @@ export default (async (sdk) => {
 import type { Script } from '@pluxel/host/agent'
 import { Counter } from '@acme/pluxel-plugin-counter/control'
 
-export default (async (sdk) => {
-	const counter = sdk.plugin(Counter)
-	const { instance } = await counter.instance()
-	const changed = await instance.increment(3)
-	return { changed, calls: instance.calls }
-}) satisfies Script
+export default (({ Result, plugin }) =>
+	Result.gen(async function* () {
+		const instance = yield* Result.await(plugin(Counter).instance())
+		const changed = await instance.increment(3)
+		return Result.ok({ changed, calls: instance.calls })
+	})) satisfies Script
 ```
 
-`counter.instance()` 要求节点已经运行，获取时不会启动它。返回外层 `{ instance }`，所以带有 `then` 成员的插件也能安全交付。实例保留原 class 的公共成员类型和可写性，私有与 protected 成员沿用 TypeScript 的可见性。通过原始地址选择的引用只有管理操作，业务实例访问需要生成描述符。
+`counter.instance()` 要求节点已经运行，获取时不会启动它。`Result` 的成功值直接是实例，带有 `then` 成员的插件也能安全交付。未运行、目标失效和控制摘要不匹配等错误在返回类型中明确列出。实例保留原 class 的公共成员类型和可写性，私有与 protected 成员沿用 TypeScript 的可见性。通过原始地址选择的引用只有管理操作，业务实例访问需要生成描述符；Vite 项目还可以从当前 constructor 选择，见[项目脚本](./dev-console.md#编写可交互的开发脚本)。
 
 实例视图限定在本次运行内，对象身份不同于原 provider；同一次运行内重复获取会复用视图。成员访问检查当前 scope 和 provider 的接纳状态，方法在原 provider 上执行，同步返回保持同步；标准 Promise 返回保持原对象并参与运行和 generation 的排空。重启后重新获取实例，缓存的旧成员调用会失败。
 
 先 `await` 业务异步方法，再调用配置、策略、实例获取或插件启停等 Host 操作。这些操作与 provider 调用可能互相等待，SDK 会用 `borrowed_generation_conflict` 拒绝产生这种并发的调用。日志读取可以在业务等待期间进行。
 
-方法返回的流、迭代器、自定义 thenable 和其他子资源遵循原业务 API 的释放协议。脚本用 `using`、`await using` 或 `try/finally` 释放它们；视图不会递归包装返回值。只返回纯 JSON 结果，实例和资源句柄留在执行进程内。
+方法返回的流、迭代器、自定义 thenable 和其他子资源遵循原业务 API 的释放协议。脚本用 `using`、`await using` 或 `try/finally` 释放它们；视图不会递归包装返回值。脚本返回 JSON 或共享的顶层 Result，其 payload 仍需是 JSON；实例和资源句柄留在执行进程内。
 
 ## 默认节点、fork 与更新
 
@@ -136,9 +140,6 @@ export default (async (sdk) => {
 ```ts
 const counter = sdk.plugin(Counter)
 const tenant = counter.fork('tenant-a')
-const status = await tenant.status()
-const { instance } = await tenant.instance()
-const changed = await instance.increment(1)
 ```
 
 选择 fork 不会创建或启动节点；它需要先由应用声明，再通过 `start()` 启动。`forkId` 沿用 Core 的非空标识规则。未知插件的发现继续使用 `plugins.list()` 返回的完整地址。日志使用原生过滤字段，例如 `{ filter: { plugin: tenant.address } }`。

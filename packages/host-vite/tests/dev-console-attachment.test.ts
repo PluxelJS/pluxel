@@ -81,12 +81,19 @@ async function fixture() {
 
 it('executes against a Host without official services or configured logging', async () => {
 	const current = await fixture()
-	mocked.script.mockImplementation(async (sdk, run) => ({
-		plugins: await sdk.plugins.list(),
-		logger: typeof sdk.dev.ctx.logger.info,
-		signal: run.signal === current.run.signal,
-	}))
-	expect(await current.execute()).toEqual({ plugins: [], logger: 'function', signal: true })
+	mocked.script.mockImplementation((sdk, run) =>
+		sdk.Result.gen(async function* () {
+			return sdk.Result.ok({
+				plugins: yield* sdk.Result.await(sdk.plugins.list()),
+				logger: typeof sdk.dev.ctx.logger.info,
+				signal: run.signal === current.run.signal,
+			})
+		}),
+	)
+	expect(await current.execute()).toEqual({
+		status: 'ok',
+		value: { plugins: [], logger: 'function', signal: true },
+	})
 	expect(current.run.revision).toHaveBeenCalledTimes(2)
 })
 
