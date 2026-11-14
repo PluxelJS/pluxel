@@ -30,16 +30,11 @@
 
 只删除按钮/作者入口而保留双 durable identity，不满足本提案。若无法完整收缩，应保留当前 fork 或重新决策。
 
-## 已完成的验证性迁移
+## 已有依据与剩余问题
 
-| Producer | 当前已实施边界                                                                                                                                              | 没有实施                                      |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Redis    | 1–64 唯一 connection IDs；并行 connect，全 catalog 原子成功/回滚；`connection(id)` 返回 consumer/provider-bound handle；Cache/Rates 保存自己的 connectionId | 运行期 create/remove、通用 profile registry   |
-| S3       | 1–64 唯一 bucket IDs；每项选择 local/remote/anonymous/vault；并行初始化、原子 generation；`bucket(id)` 返回 owner-bound client，Vault 引用属于 bucket       | 动态 store control plane、synthetic lifecycle |
+已完成的有界目录与句柄规则由 [Redis](../../docs/plugins/redis.md) 和 [S3](../../docs/plugins/storage.md#bucket-目录与生命周期)维护，源码与回归位于 `plugins/redis/`、`plugins/storage/`。这两个已知用例已脱离 fork，Core/Host 的通用 node 模型仍保留。
 
-两者使用固定 Workbench Content 展示有界 rows，item 数量不改变 entry/root/socket；配置变更走普通 generation replacement。源码与用法分别位于 `plugins/redis/`、`plugins/storage/`。这说明已知用例可脱离 fork，不能证明所有第三方需求也可迁移。
-
-Consumer 拥有 stable item ID 的保存与 missing/unhealthy/rebind/fallback policy。Producer 不扫描并重写 consumer，不静默选择第一个 item。Handle 必须明确 cached use、remove、provider replacement、abort 和 in-flight drain；这些是领域协议，不统一成 CRUD 或 framework status。
+继续决策需要查明真实 consumer 的 missing/unhealthy/rebind/fallback 需求，以及 provider replacement、abort 和在途操作的结算要求。若领域 collection 为此需要复制通用 graph/coordinator，应重新评估删除方案。运行期增删、通用 profile registry 和 synthetic lifecycle 均未由这次验证性迁移引入。
 
 ## 删除与迁移范围
 

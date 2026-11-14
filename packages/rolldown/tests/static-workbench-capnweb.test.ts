@@ -22,16 +22,16 @@ async function fixture(installedVersion: string) {
 	}
 	await put('package.json', JSON.stringify({ name: 'app', type: 'module' }))
 	await put(
-		'node_modules/@pluxel/workbench/package.json',
+		'node_modules/@pluxel/host/package.json',
 		JSON.stringify({
-			name: '@pluxel/workbench',
+			name: '@pluxel/host',
 			type: 'module',
 			peerDependencies: { capnweb: '0.12.0' },
 			exports: { './package.json': './package.json', './service': './service.mjs' },
 		}),
 	)
-	await put('node_modules/@pluxel/workbench/service.mjs', "export { RpcTarget } from 'capnweb'")
-	await capnweb('node_modules/@pluxel/workbench/node_modules/capnweb', '0.12.0')
+	await put('node_modules/@pluxel/host/service.mjs', "export { RpcTarget } from 'capnweb'")
+	await capnweb('node_modules/@pluxel/host/node_modules/capnweb', '0.12.0')
 	for (const [name, version, shared, marked] of [
 		['target-plugin', installedVersion, true, true],
 		['target-library', installedVersion, true, false],
@@ -53,7 +53,7 @@ async function fixture(installedVersion: string) {
 	await put(
 		'app.mjs',
 		[
-			"import { RpcTarget as Host } from '@pluxel/workbench/service'",
+			"import { RpcTarget as Host } from '@pluxel/host/service'",
 			"import { RpcTarget as Target } from 'target-plugin'",
 			"import { RpcTarget as Library } from 'target-library'",
 			"import { RpcTarget as Private } from 'private-rpc'",
@@ -65,7 +65,7 @@ async function fixture(installedVersion: string) {
 	return { root, entry: join(root, 'app.mjs') }
 }
 
-it('bundles a marked target with the Workbench constructor while preserving private RPC', async () => {
+it('bundles a marked target with the Host constructor without Workbench while preserving private RPC', async () => {
 	const { root, entry } = await fixture('0.12.0')
 	try {
 		const bundle = await rolldown({ input: entry, plugins: [staticWorkbenchCapnwebPlugin(entry)] })
@@ -80,12 +80,12 @@ it('bundles a marked target with the Workbench constructor while preserving priv
 	}
 })
 
-it('rejects a marked target whose installed version differs from Workbench', async () => {
+it('rejects a marked target whose installed version differs from Host', async () => {
 	const { root, entry } = await fixture('0.13.0')
 	try {
 		const bundle = await rolldown({ input: entry, plugins: [staticWorkbenchCapnwebPlugin(entry)] })
 		await expect(bundle.write({ file: join(root, 'bundle.mjs'), format: 'esm' })).rejects.toThrow(
-			/target-plugin.*resolved 0\.13\.0.*Host Workbench supports 0\.12\.0/,
+			/target-plugin.*resolved 0\.13\.0.*Host capnweb supports 0\.12\.0/,
 		)
 		await bundle.close()
 	} finally {

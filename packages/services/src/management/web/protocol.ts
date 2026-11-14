@@ -20,13 +20,14 @@ export type {
 } from '@pluxel/host/internal/protocol'
 export type { VaultKeyPair } from '../../vault'
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 9 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 10 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',
 	'runtime.updates',
 	'plugins.lifecycle',
 	'plugins.config',
+	'plugins.control-materials',
 	'host.policy',
 	'plugins.dependencies',
 	'plugins.forks',
@@ -69,6 +70,8 @@ export type PluginStatusIssue = Readonly<{
 		| 'start-failed'
 		| 'dependency-blocked'
 		| 'drain-failed'
+		| 'control_analysis_failed'
+		| 'control_source_changed'
 	message: string
 }>
 

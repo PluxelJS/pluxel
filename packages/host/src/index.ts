@@ -10,6 +10,8 @@ export {
 	PluginCatalogError,
 	type PluginCatalogErrorCode,
 	type PluginCatalogSnapshot,
+	type PluginControlMetadata,
+	type PluginControlMaterial,
 } from './catalog'
 export type {
 	HostStateSnapshot,

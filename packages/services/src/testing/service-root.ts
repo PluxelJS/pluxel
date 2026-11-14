@@ -56,7 +56,7 @@ export async function createServiceTestApplication(
 				if (!withManagement) return
 				const { attachManagementHttp } = await import('../management/http-internal')
 				const workbench = withWorkbench ? await import('@pluxel/workbench/server') : undefined
-				attachManagementHttp(
+				await attachManagementHttp(
 					ctx,
 					effects,
 					withWorkbench

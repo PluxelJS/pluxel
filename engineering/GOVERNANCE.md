@@ -39,7 +39,6 @@ packages/*              框架库、contract、adapter 与可含配套 /plugins 
 plugins/*               可独立装配的具体插件 package
 plugins/<domain>/*      共享明确能力链的具体插件 package
 projects/*              必须随框架一起演进的可运行维护者宿主
-projects/embedded-launcher/sdk  原生嵌入演示的 private 服务身份包
 vendor/*                明确纳入的上游源码；不套用第一方目录语义
 ```
 
@@ -47,6 +46,8 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
 具体 `@Plugin`，仍可位于 `packages/*`；服务包可通过显式 `./plugins` 入口提供配套插件，基础服务入口不反向加载该入口。独立分发的具体插件 package 位于 `plugins/*` 或
 `plugins/<domain>/*`。领域目录只表达仓库分类，不创建隐式依赖、聚合插件或新的公开入口。Pluxel
 仓库内可运行 host 位于 `projects/*`，当前只保留维护者宿主。
+跨运行环境的应用实验维护在独立的 [Pluxel Lab](https://github.com/PluxelJS/lab)，拥有自己的锁文件、CI 和验证记录。
+框架的单元测试、兼容性测试和回归夹具继续由各包维护。
 官方浏览器 Shell 属于 `packages/workbench/shell/`，拥有独立 TypeScript 与 Vitest 配置；它随 Workbench 编译成静态资源，
 不另建 workspace 包。仅用于 Shell 构建的依赖放在 Workbench devDependencies，不扩大 SDK 的安装依赖。产品项目使用独立 workspace；其中可按
 领域需要使用 `platforms/*` 隔离外部平台 capability 与直接 bridge。
@@ -146,7 +147,7 @@ dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实
 
 Host 互操作依赖按能力事实接纳：Workbench target／基础库使用精确 `capnweb` peer，托管
 TinyBase Store 消费者／交换原生 Store 的基础库使用精确 `tinybase` peer；源码开发安装同版 dev
-副本。TinyBase 的精确普通 dependency 由 Core 维护；只调用 `ctx.tinybase.open()` 的消费者无需直接依赖。Workbench 的 transport 版本继续由自身 peer 维护。普通原生 import 不代表参加共享边界，独立
+副本。TinyBase 的精确普通 dependency 由 Core 维护；只调用 `ctx.tinybase.open()` 的消费者无需直接依赖。Host 为通用脚本控制与 Management、Workbench 选择同一 Cap’n Web 安装；参与方以精确 peer/dev 声明版本。普通原生 import 不代表参加共享边界，独立
 私有库和应用私有副本的版本与解析保持隔离，任意 Core import 也不构成互操作声明。目前
 TinyBase 为 `10.0.1`，升级时同步 Core、共享消费者和制品事实。包作者仍直接导入
 上游 API，不增加框架镜像入口。

@@ -20,7 +20,12 @@
 			"@pluxel/hmr": "./src/workspace.ts",
 			"default": "./dist/workspace.mjs"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
+		}
 	},
 	"publishConfig": {
 		"exports": {
@@ -28,7 +33,12 @@
 			"./cli": "./dist/cli.mjs",
 			"./model": "./dist/model.mjs",
 			"./workspace": "./dist/workspace.mjs",
-			"./package.json": "./package.json"
+			"./package.json": "./package.json",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
 		}
 	},
 	"scripts": {
@@ -68,6 +78,7 @@
 		},
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,
-		"workbenchArtifacts": true
+		"workbenchArtifacts": true,
+		"control": "./dist/control/manifest.json"
 	}
 }

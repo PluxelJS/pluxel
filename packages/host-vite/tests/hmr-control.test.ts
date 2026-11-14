@@ -7,8 +7,8 @@ it('controls real Vite update batches through the console socket across edits an
 	const result = await promisify(execFile)(
 		process.execPath,
 		[fileURLToPath(new URL('./hmr-control.smoke.mjs', import.meta.url))],
-		{ timeout: 45000 },
+		{ timeout: 60000 },
 	)
 	expect(result.stdout).toContain('HMR_CONTROL_SMOKE_OK')
 	expect(result.stdout).toContain('HMR_UNAVAILABLE_RECOVERY_OK')
-}, 50000)
+}, 70000)

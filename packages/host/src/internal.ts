@@ -1,4 +1,5 @@
 export * from './catalog'
+export * from './control-manifest'
 export * from './coordinator'
 export * from './mutation'
 export * from './reconcile'
@@ -41,7 +42,11 @@ export { requireHostStateStore } from './host'
 
 export * from './recent-update'
 
-export { projectPluginApplyReport } from './apply-report'
+export {
+	projectPluginApplyReport,
+	projectPluginConfigResult,
+	projectHostPolicyResult,
+} from './apply-report'
 
 export { setHostCatalogProvenance } from './catalog-provenance'
 
@@ -56,6 +61,7 @@ export {
 } from './shared-packages'
 export {
 	readLoadedPluginModule,
+	readLoadedApplicationControl,
 	recordLoadedPluginModule,
 	recordLoadedHostApplication,
 	readLoadedHostApplicationModule,

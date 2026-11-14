@@ -78,6 +78,18 @@ vite.config.ts         全包任务调度（Vite Task）
 - 聚合 Part 树中的依赖，自动去重并确定必需（required）与可选（optional）边界；
 - 若代码中注入的外部插件未在 `package.json` 的 `peerDependencies` 中声明，构建时会报错提醒补齐依赖。
 
+## 插件控制声明
+
+同一次 `pluxel build` 使用正式 Rolldown 插件生成 `dist/control/`，并维护包的 `./control` 导出和 `pluxel.control` 标记。消费者从这个独立入口导入纯数据描述符，可以读取配置类型、Schema 源码表达式和 class 的方法、属性类型；生成过程不会加载插件实现。
+
+控制生成沿用 tsdown 最终选定的 `tsconfig`，包含自定义路径或显式 `false`。直接使用 `@pluxel/rolldown/control` 的生成器或 Rolldown 插件时，可用同名选项指定配置；省略时从 `root` 查找项目配置，`false` 使用生成器的默认类型环境。整批声明使用构建所有者的配置，不从某个插件包推断。
+
+插件包的实例类型引用原公开包声明，保留与原 class 的名义兼容性；调用方安装该包及其公开类型依赖。应用和 Vite 的控制材料则携带本地应用声明闭包，适合没有应用源码的脚本作者，公开外部类型包仍由作者提供。两种模式的调用与材料同步见[插件控制类型](./plugin-control.md)。
+
+发布时将 `dist/control/` 与其他产物一起打包。生成失败、缺失类型或无法表达的公开声明会使构建失败，先修复后再发布。
+
+构建作者需要安装公开声明实际引用的类型依赖，包括上游标记为 optional peer 的类型包。例如使用 Elysia 时，作者环境须提供匹配的 `@types/bun`，才能完整分析它的公开声明；可放在作者工程的 `devDependencies`。
+
 <span id="构建与发布检查"></span>
 
 ## 构建与发布检查清单

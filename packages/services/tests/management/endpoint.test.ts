@@ -65,6 +65,7 @@ it('closes pending authentication and handoffs without owning the Host', async (
 	const release = vi.fn()
 	pending.resolve({
 		signal: new AbortController().signal,
+		authorizationSignal: new AbortController().signal,
 		providerId: 'test',
 		state: async () => ({ kind: 'authenticated', principal: { subject: 'test' } }),
 		submit: vi.fn(),

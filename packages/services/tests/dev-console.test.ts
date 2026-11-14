@@ -1,7 +1,6 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
-import type { DevScript } from '@pluxel/host-vite/console'
-import { createDevConsoleScope } from '@pluxel/host-vite/internal'
+import { createScriptScope, type Script } from '@pluxel/host/agent'
 import { elysia, ElysiaApp } from '@pluxel/services/elysia'
 import { ElysiaRuntime } from '@pluxel/services/internal'
 import { Commands, commands } from '@pluxel/services/commands'
@@ -15,27 +14,30 @@ class Health extends BasePlugin {
 	}
 }
 
-it('lets a script import installed service tokens and use its borrowed root directly', async () => {
+it('uses installed service tokens alongside the portable SDK without a console proxy', async () => {
 	const host = await createHost({ plugins: [Health], services: [elysia(), commands()] })
 	const controller = new AbortController()
 	await host.start()
-	const scope = createDevConsoleScope({ id: 'test', ctx: host.ctx, signal: controller.signal })
+	const scope = createScriptScope({ ctx: host.ctx, signal: controller.signal })
 	try {
-		await scope.dev.plugins.start(Health)
-		const script: DevScript = async (dev) => {
-			const server = dev.ctx.require(ElysiaRuntime)
+		const started = await scope.sdk.plugin(Health.nodeAddress()).start()
+		expect(started.isOk()).toBe(true)
+		const script: Script = async (_sdk, run) => {
+			const server = host.ctx.require(ElysiaRuntime)
 			const response = await server.fetch(
-				new Request('http://local.dev/health', { signal: dev.signal }),
+				new Request('http://local.dev/health', { signal: run.signal }),
 			)
 			return {
 				status: response.status,
 				body: await response.json(),
-				commands: dev.ctx.require(Commands).list(),
+				commands: host.ctx.require(Commands).list(),
 			}
 		}
-		expect(await script(scope.dev)).toEqual({ status: 200, body: { ok: true }, commands: [] })
+		expect(
+			await script(scope.sdk, { id: 'test', input: undefined, signal: controller.signal }),
+		).toEqual({ status: 200, body: { ok: true }, commands: [] })
 		// @ts-expect-error Root Context cannot access owner-only HTTP routes.
-		expect(() => scope.dev.ctx.require(ElysiaApp)).toThrow(
+		expect(() => host.ctx.require(ElysiaApp)).toThrow(
 			expect.objectContaining({ code: 'CONTEXT_CAPABILITY_ACCESS_DENIED' }),
 		)
 	} finally {
@@ -48,7 +50,7 @@ it('passes run cancellation explicitly to a service without a console proxy', as
 	const host = await createHost({ plugins: [], services: [commands()] })
 	const controller = new AbortController()
 	await host.start()
-	const scope = createDevConsoleScope({ id: 'test', ctx: host.ctx, signal: controller.signal })
+	const scope = createScriptScope({ ctx: host.ctx, signal: controller.signal })
 	const entered = Promise.withResolvers<AbortSignal>()
 	vi.spyOn(host.ctx.require(Commands), 'execute').mockImplementation(
 		(_name, _input, context) =>
@@ -59,9 +61,9 @@ it('passes run cancellation explicitly to a service without a console proxy', as
 			}),
 	)
 	try {
-		const script: DevScript = (dev) =>
-			dev.ctx.require(Commands).execute('pending', {}, { signal: dev.signal })
-		const pending = script(scope.dev)
+		const script: Script = (_sdk, run) =>
+			host.ctx.require(Commands).execute('pending', {}, { signal: run.signal })
+		const pending = script(scope.sdk, { id: 'test', input: undefined, signal: controller.signal })
 		expect(await entered.promise).toBe(controller.signal)
 		controller.abort()
 		expect(await pending).toEqual(Result.ok('aborted'))

@@ -111,7 +111,7 @@ keeps its own product boundary and independent sources.
 
 The Vite configuration explicitly enables the development console. Coding agents must use this
 console for runtime inspection, config edits, Plugin methods, Workbench RPC, data and logs.
-The current local transport supports Unix systems; on Windows disable `devConsole` in the
+The current local transport supports Unix systems; on Windows disable `scripts` in the
 configuration to run the host without the console.
 
 From the repository root, discover the already running host and use its returned instance ID:
@@ -129,7 +129,7 @@ previous operations. The default `inspect.ts` export returns current Plugin stat
 the real showcase and Workbench HTTP routes and returns bounded logs; set `origin` to the address reported by the selected instance.
 
 Follow the [development console guide](../../docs/development/dev-console.md) for typed config,
-explicit service access and recovery. Scripts import `DevConsole` from `@pluxel/host-vite/console` and use `dev.ctx` with service APIs; they pass `dev.signal` and release their own service resources. Isolated regressions continue to use the test host.
+explicit service access and recovery. Scripts use `satisfies ProjectScript` from `@pluxel/host-vite/project` and access services through `sdk.dev.ctx`; they pass `run.signal` and release their own service resources. The portable SDK is documented in [Host scripts](../../docs/development/scripts.md). Isolated regressions continue to use the test host.
 
 ## Boundary
 

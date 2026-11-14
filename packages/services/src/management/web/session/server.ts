@@ -1,9 +1,8 @@
 import { newWebSocketRpcSession, RpcTarget, type RpcStub } from 'capnweb'
-import {
-	providerStepSnapshot,
-	type AdminAuthenticationSession,
-} from '../../services/admin-access/AdminAccessService'
+import type { AdminAuthenticationSession } from '../../services/admin-access/AdminAccessService'
+import { providerStepSnapshot } from '../../services/admin-access/authentication'
 import type { RuntimeManagementTarget } from '../management-target'
+import type { ScriptControlTarget } from '@pluxel/host/agent/transport'
 import type {
 	AdminAccessPrincipal,
 	ManagementAuthenticationProviderStep,
@@ -27,6 +26,11 @@ const OBSERVER_DEADLINE_MS = 250
 
 export type RuntimeSessionFactories = Readonly<{
 	createManagement(session: Readonly<{ signal: AbortSignal }>): RuntimeManagementTarget
+	createExecution?(
+		principal: AdminAccessPrincipal,
+		session: Readonly<{ signal: AbortSignal; authorizationSignal: AbortSignal }>,
+	): ScriptControlTarget
+	revokeExecution?(principal: AdminAccessPrincipal): void
 	createWorkbench?(
 		principal: AdminAccessPrincipal,
 		invalidate: (cause: Error) => void,
@@ -104,6 +108,8 @@ class RuntimeSessionRootTarget extends RpcTarget implements RuntimeSessionRoot {
 	private readonly authenticationTarget: RuntimeAuthenticationTargetImpl
 	private observer?: RpcStub<RuntimeSessionObserver>
 	private management?: RuntimeManagementTarget
+	private execution?: ScriptControlTarget
+	private principal?: AdminAccessPrincipal
 	private readonly scope = new AbortController()
 	private workbenchSession?: ReturnType<NonNullable<RuntimeSessionFactories['createWorkbench']>>
 	private authenticationDelivered = false
@@ -146,21 +152,28 @@ class RuntimeSessionRootTarget extends RpcTarget implements RuntimeSessionRoot {
 		const management = (this.management ??= this.options.createManagement({
 			signal: AbortSignal.any([this.scope.signal, this.options.authentication.signal]),
 		}))
-		if (!this.options.createWorkbench) {
-			return Object.freeze({
-				kind: 'management',
-				profile: RUNTIME_SESSION_PROFILE,
-				management,
-			})
-		}
-
-		const principal = Object.freeze({
+		const principal = (this.principal ??= Object.freeze({
 			provider: this.options.authentication.providerId,
 			subject: step.principal.subject,
 			...(step.principal.displayName === undefined
 				? {}
 				: { displayName: step.principal.displayName }),
-		})
+		}))
+		const execution = this.options.createExecution
+			? (this.execution ??= this.options.createExecution(principal, {
+					signal: AbortSignal.any([this.scope.signal, this.options.authentication.signal]),
+					authorizationSignal: this.options.authentication.authorizationSignal,
+				}))
+			: undefined
+		if (!this.options.createWorkbench) {
+			return Object.freeze({
+				kind: 'management',
+				profile: RUNTIME_SESSION_PROFILE,
+				management,
+				...(execution ? { execution } : {}),
+			})
+		}
+
 		const workbench = (this.workbenchSession ??= this.options.createWorkbench(principal, (cause) =>
 			this.#invalidate('workbench', cause),
 		))
@@ -169,6 +182,7 @@ class RuntimeSessionRootTarget extends RpcTarget implements RuntimeSessionRoot {
 			profile: RUNTIME_SESSION_PROFILE,
 			management,
 			workbench: workbench.target,
+			...(execution ? { execution } : {}),
 		})
 	}
 
@@ -176,6 +190,7 @@ class RuntimeSessionRootTarget extends RpcTarget implements RuntimeSessionRoot {
 		this.#assertActive()
 		const commit = await this.options.authentication.logout()
 		this.#assertActive()
+		if (this.principal) this.options.revokeExecution?.(this.principal)
 		const result: RuntimeLogoutResult = commit
 			? Object.freeze({
 					kind: 'cookie-commit-required',

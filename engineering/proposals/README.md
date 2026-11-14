@@ -1,52 +1,42 @@
-# Proposals
+# 待讨论与待实施的设计
 
-这里仅保存尚未采纳或尚未实现的研究。Proposal 不是当前 API 权威，也不能覆盖
-[`../PLUGIN_SYSTEM.md`](../PLUGIN_SYSTEM.md)、相关领域工程文档或 `docs/` 的用户契约。
+这里保存尚未采纳或尚未完成的设计。当前架构从 [工程索引](../README.md)进入，公开用法由 [docs](../../docs/index.md)维护。
 
-规则：
+## 剩余方向
 
-- 明确标注问题、假设、未决问题和验收条件；
-- 不把 proposal 示例复制进用户文档；
-- 实现后的当前事实进入对应 `engineering/` 与 `docs/` 文档；
-- 已实现 proposal 应删除，或缩为仍未实现边界、必要决策摘要与可核对的实施证据；
-- 已被替代或没有继续价值的内容直接删除，历史由 Git 保存。
+以下状态于 2026-11-12 对照本仓 exports、实现、测试和正式文档核对；Agent 方向于 2026-11-13 完成首轮实现。插件控制 SDK 于 2026-11-14 进入正式生成、运行和同步链路，当前规则见 [Plugin Control](../PLUGIN_CONTROL.md)。表中的下一步按各提案的完成条件推进。
 
-研究与必要决策记录：
+| 方向                                                    | 当前进展与缺口                                                                                                    | 下一步要回答的问题                                                               |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| [Schema Form 与内部表单 UI](schema-form/README.md)      | 2026-11-13 新增提案：独立字段契约、Valibot/JSON Schema 适配、Pluxel 内部 UI 迁移；尚未实施                        | typed metadata、配置校验桥、真实 UI 与独立包消费能否共同满足清晰可用的 API？     |
+| [Agent 脚本执行后续方向](AGENT_WORKFLOW.md)             | SDK、Node/Vite 执行与共享控制已有实现；真实 workerd 最小桥已验证；正式 CF 后端与部署待交付                        | CF 首个部署的 run owner、取消传播、能力桥释放和查询寿命由谁持有？                |
+| [插件控制的后续方向](plugin-control-sdk/README.md)      | 生成、实例调用与材料同步已有正式实现；跨 isolate、离线 validator 和自动快照清理分别待推进                         | 新后端的资源寿命和活动材料保留由谁持有？                                         |
+| [严格契约的剩余缺口](STRICT_CONTRACT_REVIEW.md)         | 既有迁移已落地；显式修复工具、应用级 capnweb 所有权检查及部分解析失败分类仍有缺口                                 | doctor 的首批确定性修复是什么，应用版本与解析诊断各自有哪些可靠依据？            |
+| [插件分发与市场](plugin-distribution/README.md)         | Worker/D1、市场网页、管理 API 和安装确认已有实现；自动 provenance 收录、新 manifest、消费者认证与恢复流程尚未完成 | 先解决 Worker 的 provenance 验证，还是先交付需要认证的市场消费闭环？             |
+| [Typst 内容与私有排版](TYPST_AUTHORING_BOUNDARIES.md)   | 源码编辑、JSON 投影和 native 编译已有实现；独立 JSON 正文、私有排版输出与按单元提交待实施                         | 两章 JSON 能否经私有模板生成 PNG，保留跨章引用与导航，并满足资产保密和输出质量？ |
+| [是否删除 Plugin fork](REMOVE_PLUGIN_FORKS.md)          | Redis/S3 已改为领域目录；Core/Host 删除 fork 尚未采纳                                                             | 是否仍有真实调用方必须使用独立 graph node，删除后的身份和数据怎样一次迁移？      |
+| [Elysia 外部承载边界](NATIVE_ELYSIA_APPLICATION.md)     | Node/Vite HTTP、stream 和 WebSocket 已有实现；等价 matcher 冲突、包 peer 准入和外部 lifecycle 仍有缺口            | 哪些准入工作可由本仓完成，哪些必须等上游提供公开接口？                           |
+| [Decoratorless 声明](FUTURE_ARCHITECTURE_DIRECTIONS.md) | 研究方向，未采纳                                                                                                  | 相比薄 `@Plugin`，是否真能减少整体复杂度，并保留发现、身份与诊断质量？           |
+| [Identity Platform](IDENTITY_PLATFORM.md)               | 独立产品假设，未立项；现有 Auth 插件不等于该产品                                                                  | 首个真实 OIDC 调用方、Authority 的职责和持久事务边界是什么？                     |
 
-- [Host 配置重构：决策与验收](HOST_CONFIGURATION_LAYERS.md)：已实施，根仓库及三个 local-projects 的完整门禁通过；保留身份/mode、原始输入事务和执行绑定决策，以及六条验收路径、线上检查和数据迁移证据。当前 API 见正式 Host/Config 文档。
+Agent 与插件控制 SDK 提案沿用当前 node/fork 身份。若决定删除 fork，需要同步调整相关提案的寻址与验收；讨论控制接口本身不要求先改身份模型。Typst 的 Electron Studio 已移至 [Pluxel Lab](https://github.com/PluxelJS/lab)，其应用改造与验收由 Lab 维护。
 
-- [Typst 内容创作与私有排版边界](TYPST_AUTHORING_BOUNDARIES.md)：待实施的整体重构提案；分离源码创作与 JSON 正文权威，明确私有模板/数据/资产边界、agent 协作提交和无兼容迁移。
+## 已落地内容的入口
 
-- [插件分发与市场基础](plugin-distribution/README.md)：以 Drizzle ORM + SQLite 和 Cloudflare Workers/D1 为目标，设计在线运营配置、增量目录与按需 API，再细化发布标准、消费端市场插件和两类安装；独立于 legacy 分发实现，尚未实施。
+- Host 配置与执行策略：[Host 配置用法](../../docs/host/configuration.md)、[Config](../CONFIG.md)、[Host](../HOST.md)。
+- 状态与文件系统：[TinyBase](../TINYBASE.md)、[迁移清单](../TINYBASE_MIGRATION.md)、[FS](../FS.md)。
+- Agent 脚本 SDK 与执行：[使用指南](../../docs/development/scripts.md)、[架构与验证](../AGENT_WORKFLOW.md)。
+- 插件控制类型与实例：[使用指南](../../docs/development/plugin-control.md)、[生成与运行边界](../PLUGIN_CONTROL.md)。
+- Native/Vite 与开发控制台：[应用交付](../APPLICATION_BUILD.md)、[HMR](../HMR.md)、[Dev Console](../DEV_CONSOLE.md)。
+- API 与第三方库互操作：[契约与资源](../../docs/plugin-development/contracts.md)、[Better Result](../../docs/plugin-development/better-result.md)、[Workbench](../WORKBENCH.md)、[依赖治理](../GOVERNANCE.md)。
+- Typst 当前编辑器：[源码编辑](../../docs/plugins/rendering/typst-editor.md)、[Typst DESIGN](../../plugins/render/typst/DESIGN.md)。
+- 市场与安装：[市场服务](../../projects/plugin-market/README.md)、[Package Manager](../../docs/plugins/package-manager.md)。
 
-- [`TINYBASE_PLUGIN_STATE.md`](TINYBASE_PLUGIN_STATE.md)：已实施状态重构的必要决策与剩余验收边界；当前契约见 [TinyBase](../TINYBASE.md) 与 [Database](../DATABASE.md)，逐包结论及实际验证见[迁移记录](../TINYBASE_MIGRATION.md)。
+环境与发行验收的剩余边界保留在 [Host 部署验证](../HOST_DEPLOYMENT_VALIDATION.md)、[Workbench 验收](../WORKBENCH_FLEXLAYOUT_VALIDATION.md)及各领域验证记录中。
 
-- Worksplit 的旧 API 精进提案已由新版会话契约替代；当前所有权见 [Frontend](../FRONTEND.md)，采用版本与实际宿主结果见 [Worksplit 迁移记录](../WORKSPLIT_MIGRATION.md)。
+## 维护规则
 
-- [`ZENFS_FS_REFACTOR.md`](ZENFS_FS_REFACTOR.md)：ZenFS FS 重构的实施决策与验收记录；当前用法和资源契约见正式 FS 文档。
-
-- [`TYPST_EDITOR_REFACTOR.md`](TYPST_EDITOR_REFACTOR.md)：旧 JSON 正文方案的 Typst 编辑器重构、独立验收及后续修正历史；当前 API 见正式用法与 Typst DESIGN。
-
-- [`TYPST_EDITOR.md`](TYPST_EDITOR.md)：Typst 预览/定位下沉、区域 JSON 编辑器与 Studio 迁移的历史记录；当前 API 见正式用法与 Typst DESIGN。
-
-- [`../WORKBENCH_FLEXLAYOUT_VALIDATION.md`](../WORKBENCH_FLEXLAYOUT_VALIDATION.md)：当前工作区的定向回归与浏览器验收入口；迁移记录保留在 Git 历史，设计理由见 [交互设计决策](../WORKBENCH_DESIGN.md)。
-
-- [`VITE_DYNAMIC_RUNTIME.md`](VITE_DYNAMIC_RUNTIME.md)：已完成 native/modules/Vite 重构的必要决策、实际证据修正与验证入口；当前用法进入正式文档。
-
-- [`STRICT_CONTRACT_REVIEW.md`](STRICT_CONTRACT_REVIEW.md)：严格契约迁移的实施证据、审查修正与剩余验收边界。
-
-- [`PUBLIC_API_DESIGN_REVIEW.md`](PUBLIC_API_DESIGN_REVIEW.md)：13 项已实施修复的必要决策和验证索引。
-
-- [`DEV_CONSOLE.md`](DEV_CONSOLE.md)：在线开发控制台尚未实现的编辑器、scratch bindings、SQL admin 与 Windows 通道方向；已实现契约已移入正式工程文档。
-- [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍，包含待验证的
-  decoratorless Plugin declaration。
-- [`REMOVE_PLUGIN_FORKS.md`](REMOVE_PLUGIN_FORKS.md)：评估删除通用 Plugin fork；Redis/S3 的 producer-owned bounded catalog
-  验证迁移已完成，Core/Host 身份与控制面的完整删除仍待决策。
-- [`NATIVE_ELYSIA_APPLICATION.md`](NATIVE_ELYSIA_APPLICATION.md)：核心 HTTP application contract 已进入当前架构；本文只应
-  跟踪 beta.7 lifecycle、WebSocket 能力与 peer-range admission 等尚未完成的 gate。
-- [`PLUGIN_THIRD_PARTY_VERSION_BOUNDARIES.md`](PLUGIN_THIRD_PARTY_VERSION_BOUNDARIES.md)：区分宿主 Elysia/Workbench Cap’n Web
-  互操作版本、插件私有实现，以及可选的公共 Result 导入入口。
-- [`IDENTITY_PLATFORM.md`](IDENTITY_PLATFORM.md)：尚未实现的自托管身份产品架构，研究 protocol-neutral Authority、认证方式、
-  OIDC/OAuth、实验性 GNAP 与独立管理面的所有权和信任边界。
-
-已实施架构与用户行为分别从 [`../README.md`](../README.md) 与 [`../../docs/index.md`](../../docs/index.md) 进入。
+- 提案写清问题、已有依据、未决判断与完成条件，拟议 API 始终标明尚未实施。
+- 已实现规则进入所属 `engineering/` 或 `docs/` 页面；提案只保留影响下一步决策的依据与剩余工作。
+- 已完成或已被替代的提案删除，实施过程由 Git 保存；必要的验收范围归相应验证记录。
+- 实验结果只证明实验边界；实现存在、部署运行和环境验收分别按实际证据标注。

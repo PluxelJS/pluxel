@@ -1,6 +1,6 @@
 import * as nativeFs from 'node:fs'
 import { pluginSource } from '@pluxel/host/sources'
-import { defineHostApplication } from '@pluxel/host'
+import { defineHostApplication, type HostApplication } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { servicesPreset } from '@pluxel/services/preset'
 import { listenElysia } from '@pluxel/services/elysia/node'
@@ -18,7 +18,7 @@ import {
 
 export { product }
 
-export default defineHostApplication(async (startup) => {
+export default defineHostApplication(async (startup): Promise<HostApplication> => {
 	const environment = resolveHostEnv(startup.env)
 	const dataRoot = resolve(startup.deployment?.root ?? startup.root, environment.dataRoot)
 	const managedPackagesRoot = resolve(dataRoot, 'managed-plugins')

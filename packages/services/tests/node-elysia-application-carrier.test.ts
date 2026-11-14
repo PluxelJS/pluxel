@@ -1,5 +1,6 @@
 import { getWebSocketHooks } from 'crossws'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ElysiaWS, ServerWebSocket, WSConnectionData } from 'elysia/ws'
 import { NodeElysiaApplicationCarrier } from '../src/elysia/node'
 
 describe('Node Elysia application carrier', () => {
@@ -23,12 +24,20 @@ describe('Node Elysia application carrier', () => {
 		const owner = new AbortController()
 		const release = vi.fn()
 		const routeClose = vi.fn()
+		let raw: ServerWebSocket<WSConnectionData> | undefined
 		expect(
 			carrier.upgrade({
 				request,
 				upgradeRequest: request,
 				ownerKey: 'owner-a',
-				data: { message() {}, close: routeClose, context: {} },
+				data: {
+					open(socket: ElysiaWS) {
+						raw = socket.raw
+					},
+					message() {},
+					close: routeClose,
+					context: {},
+				},
 				signal: owner.signal,
 				release,
 			}),
@@ -54,6 +63,12 @@ describe('Node Elysia application carrier', () => {
 		}
 		await hooks.open?.(peer as never)
 		expect(carrier.pending('owner-a')).toBe(1)
+		peer.bufferedAmount = 128
+		expect(raw!.send('queued')).toBe(-1)
+		expect(peer.send).toHaveBeenCalledWith('queued', { compress: undefined })
+		peer.bufferedAmount = 16 * 1024 * 1024
+		expect(raw!.send('overflow')).toBe(0)
+		expect(peer.send).toHaveBeenCalledOnce()
 
 		owner.abort(new Error('owner stopped'))
 		expect(peer.close).toHaveBeenCalledWith(1012, 'Service Restart')

@@ -24,3 +24,4 @@ export {
 } from './plugins/pluginUtils.ts'
 export { rewriteDtsText } from './plugins/rewriteDtsText.ts'
 export { assertBundleNoText } from './plugins/assertBundleNoText.ts'
+export { createPluginControlPlugin, type PluginControlPluginOptions } from '../control/plugin.ts'

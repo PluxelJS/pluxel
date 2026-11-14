@@ -13,7 +13,7 @@ Host-vite 拥有每个 Vite 实例唯一的更新调度器，默认 auto。最�
 
 暂停先关闭自动批次的接纳，再等待已执行批次结算；watcher 继续记录变化。apply 保持 paused，等待当前批次后取得一份 pending 工作，resume 等待当前批次后恢复 auto 并应用一份 pending 工作。批次执行期间新增的观察属于后续 pending，不能随当前结算一起清空。失败批次重新保留待处理意图，auto 只因新观察再尝试，不建立失败重试循环。关闭时停止接纳，清除未执行的 pending 并排空已开始的工作，不为退出额外应用未完成编辑。
 
-控制边界在应用模块求值、候选制品准备与生命周期提交之前；主 watcher、来源与恢复 watcher、已求值 ESM dependency watcher 汇入同一调度入口。文件观察、来源路径准入与 IO 校验仍运行；Vite watchChange 的缓存失效属于观察，不等于已经求值应用。普通 client React/CSS HMR 与 Vite 配置触发的 server restart 仍由 Vite 所有，不宣称冻结整个 dev server、请求触发的 transform 或文件系统。
+控制边界在应用模块求值、候选制品准备与生命周期提交之前。来源入口由来源 watcher 观察，其他已求值的应用依赖在开发与生产中均交给现有 dependency watcher，等待 ready 后才发布新的观察集合；Vite hotUpdate 对这些文件让出接纳权。恢复与制品事件汇入同一调度入口。文件观察、来源路径准入与 IO 校验仍运行；Vite watchChange 的缓存失效属于观察，不等于已经求值应用。普通 client React/CSS HMR 与 Vite 配置触发的 server restart 仍由 Vite 所有，不宣称冻结整个 dev server、请求触发的 transform 或文件系统。
 
 dev console 直接控制调度器，不经过操作脚本 loader、应用 ready gate 或随 Host 替换撤销的 run scope。模式在完整 Host replacement 后保留，Vite 实例关闭后释放。状态只包含 mode、running、有界 pending 与观察/尝试 revision；最近候选结果仍由 `application.latestUpdate` 所有，不增加第二套生命周期成功判定。命令和 agent 工作流只维护在[开发控制台指南](../docs/development/dev-console.md#hmr-批次控制)。
 
@@ -108,7 +108,7 @@ source/package artifact inputs，以便补偿 Host 复用旧计划，而不是�
 只增加分类、invalidation、source anchor 和诊断，不创建第二个 Host cache。默认 `ssr` 与第三方 `ssrLoadModule`
 使用独立的 Vite 环境、执行缓存与生命周期，不接受 Host 的 source conditions、singleton 或语义 collector。
 
-Core、Host 是通用开发驱动的 singleton identity 边界；官方 `serviceSingletons(entry?)` 另外固定 Services（含 Management）与 Workbench，并在确认能力消费者／基础库的精确 peer、开发副本与实际解析版本后，将 `capnweb` 接到 Workbench、将 `tinybase` 及原生子路径接到 Core 所选安装。Host entry 确定应用 package owner，以 direct dependency 检查最终应用。私有 RPC／Store 保留自身解析，仅 externalize 不能统一跨仓库的同版本副本。共同 metadata 校验由 Host 的 `internal/shared-runtime` 叶子拥有；具体声明规则见[插件包](../docs/development/plugin-package.md)。相应 public、internal 和 workspace source path 都必须解析到
+Core、Host 是通用开发驱动的 singleton identity 边界；官方 `serviceSingletons()` 另外固定 Services（含 Management）与 Workbench，并在确认能力消费者／基础库的精确 peer、开发副本与实际解析版本后，将 `capnweb` 接到 Host、将 `tinybase` 及原生子路径接到 Core 所选安装。最终 Host 应用的直接依赖声明检查仍需确定 package owner，见[剩余设计问题](proposals/STRICT_CONTRACT_REVIEW.md#host-共享运行时的应用所有权)。私有 RPC／Store 保留自身解析，仅 externalize 不能统一跨仓库的同版本副本。共同 metadata 校验由 Host 的 `internal/shared-runtime` 叶子拥有；具体声明规则见[插件包](../docs/development/plugin-package.md)。相应 public、internal 和 workspace source path 都必须解析到
 host 安装的 ESM entry；解析使用 import conditions，不能通过 CJS path 冒充 ESM singleton。Standalone
 `@pluxel/context` 只有 host 直接安装时才进入 bridge。
 

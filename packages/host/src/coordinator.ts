@@ -203,6 +203,29 @@ export type HostPluginGraphCommittedView = Readonly<{
 
 type QueuedRuntimePluginGraphUpdate = HostPluginGraphUpdate & Readonly<{ reason: string }>
 
+/** @internal One lifecycle command shape, shared by direct and guarded Host operations. */
+export function pluginLifecycleUpdate(
+	action: 'start' | 'stop' | 'restart',
+	address: PluginNodeAddress,
+	reason: string,
+): QueuedRuntimePluginGraphUpdate {
+	return {
+		reason,
+		mode: 'live',
+		...(action === 'restart'
+			? { restartNodes: Object.freeze([address]) }
+			: {
+					lifecycleCommands: Object.freeze([
+						{
+							address,
+							desiredState: action === 'start' ? ('running' as const) : ('stopped' as const),
+						},
+					]),
+				}),
+		...(action === 'start' ? { retryStartNodes: Object.freeze([address]) } : {}),
+	}
+}
+
 /**
  * The single graph-affecting mutation queue for one host.
  *
@@ -323,7 +346,7 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		reason = 'plugin-restart',
 		options?: HostOperationOptions,
 	): Promise<PluginApplyReport<TSummary>> {
-		return this.enqueue({ reason, mode: 'live', restartNodes: Object.freeze([address]) }, options)
+		return this.enqueue(pluginLifecycleUpdate('restart', address, reason), options)
 	}
 
 	startNode(
@@ -331,15 +354,7 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		reason = 'plugin-start',
 		options?: HostOperationOptions,
 	): Promise<PluginApplyReport<TSummary>> {
-		return this.enqueue(
-			{
-				reason,
-				mode: 'live',
-				lifecycleCommands: Object.freeze([{ address, desiredState: 'running' as const }]),
-				retryStartNodes: Object.freeze([address]),
-			},
-			options,
-		)
+		return this.enqueue(pluginLifecycleUpdate('start', address, reason), options)
 	}
 
 	stopNode(
@@ -347,14 +362,7 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		reason = 'plugin-stop',
 		options?: HostOperationOptions,
 	): Promise<PluginApplyReport<TSummary>> {
-		return this.enqueue(
-			{
-				reason,
-				mode: 'live',
-				lifecycleCommands: Object.freeze([{ address, desiredState: 'stopped' as const }]),
-			},
-			options,
-		)
+		return this.enqueue(pluginLifecycleUpdate('stop', address, reason), options)
 	}
 
 	/**

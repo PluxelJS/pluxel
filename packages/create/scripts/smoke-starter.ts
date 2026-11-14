@@ -18,17 +18,10 @@ const temporaryRoot = await mkdtemp(join(tmpdir(), 'pluxel-create-smoke-'))
 const tarballRoot = resolve(temporaryRoot, 'tarballs')
 const installRoot = resolve(temporaryRoot, 'create-install')
 const generatedRoot = resolve(temporaryRoot, 'starter')
-const publishRoots = [
-	'@pluxel/cli',
-	'@pluxel/core',
-	'@pluxel/create',
-	'@pluxel/rolldown',
-	'@pluxel/host',
-	'@pluxel/services',
-	'@pluxel/workbench',
-	'@pluxel/host-vite',
-	'@pluxel/test',
-] as const
+const templateWorkspace = parse(
+	await readFile(resolve(repositoryRoot, 'packages/create/template/pnpm-workspace.yaml'), 'utf8'),
+)
+const publishRoots = ['@pluxel/create', ...Object.keys(templateWorkspace.catalogs.pluxel)]
 
 try {
 	await mkdir(tarballRoot, { recursive: true })
@@ -226,18 +219,27 @@ async function verifyProductionViteApplication(root: string): Promise<void> {
 
 async function verifyViteApplication(root: string): Promise<void> {
 	const consoleRoot = resolve(root, 'host/web')
-	const inspectionFile = resolve(consoleRoot, 'smoke-inspect.ts')
+	const inspectionFile = resolve(consoleRoot, 'dev/smoke-inspect.ts')
 	await writeFile(
 		inspectionFile,
 		[
-			"import { defineDevConsole } from '@pluxel/host-vite/console'",
-			"import { examplePlugins } from '../src/policy'",
+			"import type { ProjectScript } from '@pluxel/host-vite/project'",
+			"import { Result } from '@pluxel/core/better-result'",
+			"import { examplePlugins } from '../../src/policy'",
 			"import { VaultAdminPlugin } from '@pluxel/services/plugins'",
-			'export default defineDevConsole(async (dev) => ({',
-			'  running: examplePlugins.map(plugin => dev.plugins.isRunning(plugin)),',
-			'  vaultArtifact: (await dev.plugins.status(VaultAdminPlugin))?.execution.artifact.kind,',
-			'  status: await dev.plugins.list(),',
-			'}))',
+			'export default (async (sdk) => {',
+			'  const running: boolean[] = []',
+			'  for (const plugin of examplePlugins) {',
+			'    const status = await sdk.plugin(plugin).status()',
+			'    if (status.isErr()) return status',
+			"    running.push(status.value?.lifecycleState === 'running')",
+			'  }',
+			'  const vault = await sdk.plugin(VaultAdminPlugin).status()',
+			'  if (vault.isErr()) return vault',
+			'  const status = await sdk.plugins.list()',
+			'  if (status.isErr()) return status',
+			'  return Result.ok({ running, vaultArtifact: vault.value?.execution.artifact.kind, status: status.value })',
+			'}) satisfies ProjectScript',
 		].join('\n'),
 	)
 	const port = await reservePort()
@@ -309,9 +311,10 @@ async function verifyViteApplication(root: string): Promise<void> {
 		if (
 			!inspection.ok ||
 			inspection.value.state !== 'succeeded' ||
-			inspection.value.value.running.length !== 4 ||
-			inspection.value.value.vaultArtifact !== 'built-module' ||
-			inspection.value.value.running.some((running: boolean) => !running)
+			inspection.value.value.status !== 'ok' ||
+			inspection.value.value.value.running.length !== 4 ||
+			inspection.value.value.value.vaultArtifact !== 'built-module' ||
+			inspection.value.value.value.running.some((running: boolean) => !running)
 		) {
 			throw new Error(`Starter Plugin admission failed: ${JSON.stringify(inspection)}`)
 		}
@@ -479,7 +482,12 @@ async function runVpCapture(args: string[], cwd: string): Promise<string> {
 		child.once('error', reject)
 		child.once('exit', (code, signal) => {
 			if (code === 0) accept(stdout)
-			else reject(new Error(`vp ${args.join(' ')} failed (${signal ?? code}): ${stderr || stdout}`))
+			else
+				reject(
+					new Error(
+						`vp ${args.join(' ')} failed (${signal ?? code}):\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+					),
+				)
 		})
 	})
 }

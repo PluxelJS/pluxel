@@ -1,14 +1,18 @@
 # Typst 内容创作与私有排版边界重构提案
 
-状态：设计收敛稿，待采纳、未实施。2026-11-05。
+状态：设计收敛稿，待采纳、未实施。设计日期 2026-11-05；2026-11-12 对照 `chore/extract-runtime-labs` 分支的 exports、实现与测试静态复核，状态未变。
 
 本文是一次不保留兼容层的重构设计，不是当前 API 文档。当前实现仍以包 exports、[Typst DESIGN](../../plugins/render/typst/DESIGN.md) 和实际调用方为准。
 
-已确认的产品边界：**外部编辑者可以查看最终页面，但不能取得原始业务数据、模板代码和资产文件。** 本轮交付提案，不修改运行中的编辑器。
+已确认的产品边界：**外部编辑者可以查看最终页面，但不能取得原始业务数据、模板代码和资产文件。**
 
 推荐方案是：**JSON 正文单向生成 Typst；原生 Tiptap 承担编辑扩展，普通 Typst 模板承担布局，现有编译会话承担排版；宿主拥有存储、业务授权和提交。** 首版交付三个真实演示及其可独立消费的能力，不建立新的文档引擎。设计取舍已经给出，尚未取得的运行时证据集中在第 11、12 节。
 
-阅读调用与扩展看第 4、5 节；预览和并发看第 7、8 节；实施范围、顺序与停止条件看第 10—12 节。下文新 API 均为拟议契约，代码标明其所处边界，不代表当前包已经提供。
+现有源码编辑、无源码 DTO 编辑器和 native 编译能力已经落地，正式用法见[源码编辑](../../docs/plugins/rendering/typst-editor.md)。待实现的是 `/content` 的 JSON 校验与生成、持久公开身份、完整渲染快照、按正文单元提交，以及只公开派生图像的输出路径。当前 `/document` 仍向 SourceProject 回写；它不能作为新 JSON 正文模型已完成的证据。
+
+下一轮先核对第 11 节的最小链路：两个 JSON 章节经真实私有模板生成 PNG，并保持跨章引用与准确导航。来源映射、公式隔离及栅格 PDF 的实际质量是替换现有正文存储前的决定性问题；通过后再接入第 8 节的并发提交。下文新 API 均为拟议契约。
+
+本仓拥有 Typst 包、浏览器 consumer 和 `typst-agent-workspace`。[Electron Studio](https://github.com/PluxelJS/lab/tree/main/experiments/electron-studio) 已迁至 Pluxel Lab，拥有自己的应用装配、存储、Monaco 和生成工作区。下文涉及 Studio 的迁移与验收是跨仓库依赖，需要在 Lab 同步完成；本仓文档清理不代表这些应用变更已经实施。
 
 ## 1. 核心决定
 
@@ -536,7 +540,7 @@ await documents.edit({
 | 原始资产路由及对外 native PDF 下载                             | 删除并换为公开派生图像/栅格 PDF                                              |
 | 插件 `/template` 的 Studio 专用定义协议                        | 移到 Studio 所属入口，保留 `defineTypstDocument` 名称；删除插件旧 export     |
 
-`defineTypstDocument` 当前描述 Studio 的 schema、template 与 createFiles，并不是一个通用“正文模板对象”。其迁移必须同步 Studio 的沙箱 import 允许列表、模板校验、Monaco 类型生成、项目生成字符串、seed、AI prompt 和生成 workspace 的 AGENTS/skill。不能只改 TypeScript import 而留下用户生成项目的旧用法。
+`defineTypstDocument` 当前描述 Studio 的 schema、template 与 createFiles，并不是一个通用“正文模板对象”。删除本仓 `/template` export 前，须在 Pluxel Lab 核对并同步 Studio 的沙箱 import 允许列表、模板校验、Monaco 类型生成、项目生成字符串、seed、AI prompt 和生成 workspace 的 AGENTS/skill。不能只改 TypeScript import 而留下用户生成项目的旧用法。
 
 源码 Studio 与 `typst-agent-workspace` 不转换为 JSON 项目。新正文能力不吞并它们；只调整确有所有权变更的入口。
 
@@ -555,7 +559,7 @@ await documents.edit({
 1. **闭合普通正文链路。** 在插件包的 `src/content/` 实现第 4.1 节的三个函数，在 `src/tiptap/` 抽出共享正文定义和 extensions 工厂。用两个 JSON 章节覆盖标题、列表、表格与跨章引用，按第 4.3 节从真实模板 `include` 到 PNG、导航和释放。默认调用无需逐项注册 renderer，服务端构造 schema 无需 DOM，`/content` 不加载源码 parser 或 React。这就是第一批实现的范围。
 2. **证明扩展与受限写作。** 在同一消费样本中加入第 5.2 节的私有图表、图片和行内/独立公式，验证真实来源定位与隔离。宿主内容工具接入 Markdown 阅读、两类局部写入和结构化对象操作，并用实际浏览器及 agent 验证，完成下表迁移门槛；只补所需 NodeView、转换和现有 native 提取，不改编译会话或预览中的业务分支。
 3. **切换真实宿主。** 第三演示改存共享 JSON 单元，接入同一提交事务、保存回执、草稿保护、撤销和预览调度。移除旧 DocumentProject 消费，保留同页 Worksplit 装配；审批表改为私有模板、字段和正文直接组合。通过并发、响应丢失及保存期间继续输入的验收后，执行本地内容转换。
-4. **完成删除与交付。** 按第 10 节删除旧 exports、投影、占位与资产出口，修订 Studio、源码 agent 示例、生成工程、公开文档和 DESIGN；保留源码消费者的实际能力。通过第 12 节验收，涉及公共契约时添加 Tegami 变更说明，不手改版本。
+4. **完成删除与交付。** 按第 10 节删除旧 exports、投影、占位与资产出口，修订本仓源码 agent 示例、公开文档和 DESIGN，并在 Pluxel Lab 同步 Studio 与生成工程；保留源码消费者的实际能力。通过第 12 节验收，涉及公共契约时添加 Tegami 变更说明，不手改版本。
 
 前两步至少取得以下证据，才开始替换已有内容的权威来源：
 

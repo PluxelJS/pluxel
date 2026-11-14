@@ -13,7 +13,7 @@ mise exec -- pitchfork start typst
 
 Open the registered `http://typst.pluxel.localhost:8088` URL. The Vite consumer uses built package entries. Rebuild after changing the package; page code uses the existing Vite server. The server's compiler is an explicitly isolated public `@pluxel/test` host, not an accessor into a running application. The file-workspace consumer separately demonstrates ordinary Host constructor injection.
 
-The server-side package entries are loaded by Node with the Vite configuration. After rebuilding those artifacts, use `pitchfork restart typst` to load the new package bytes; this consumer has `console: false`. Ordinary page and stylesheet edits use Vite HMR.
+The server-side package entries are loaded by Node with the Vite configuration. After rebuilding those artifacts, use `pitchfork restart typst` to load the new package bytes; this consumer has `scripts: false`. Ordinary page and stylesheet edits use Vite HMR.
 
 The playground declares `color-scheme: light dark` and follows the system theme. Editor controls and page surfaces share that scheme; the rendered document keeps its original colors on white paper. Hosts can explicitly choose light or dark through their document's `color-scheme`.
 

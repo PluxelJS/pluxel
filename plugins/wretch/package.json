@@ -23,13 +23,23 @@
 			"@pluxel/hmr": "./src/workbench.ts",
 			"default": "./dist/workbench.mjs"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
+		}
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
 			"./workbench": "./dist/workbench.mjs",
-			"./package.json": "./package.json"
+			"./package.json": "./package.json",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
 		},
 		"access": "public"
 	},
@@ -98,6 +108,7 @@
 		"artifactRoot": "dist",
 		"nodeArtifacts": true,
 		"workbenchArtifacts": true,
-		"tinybase": "10.0.1"
+		"tinybase": "10.0.1",
+		"control": "./dist/control/manifest.json"
 	}
 }

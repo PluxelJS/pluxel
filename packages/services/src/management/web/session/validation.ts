@@ -1,10 +1,18 @@
 import type { RuntimeLogoutResult } from './protocol'
-import { validateRuntimePortableData } from '../validation'
 
 export function parseRuntimeLogoutResult(input: unknown): RuntimeLogoutResult {
-	validateRuntimePortableData(input, 'Runtime logout result', true)
 	if (!input || typeof input !== 'object' || Array.isArray(input)) {
 		throw new TypeError('Runtime logout result must be an object')
+	}
+	const prototype = Object.getPrototypeOf(input)
+	if (prototype !== null && prototype !== Object.prototype)
+		throw new TypeError('Runtime logout result must be a plain object')
+	for (const key of Reflect.ownKeys(input)) {
+		if (
+			typeof key !== 'string' ||
+			!Object.hasOwn(Object.getOwnPropertyDescriptor(input, key)!, 'value')
+		)
+			throw new TypeError('Runtime logout result must contain only data fields')
 	}
 	const value = input as Record<string, unknown>
 	if (value.kind === 'closed') {

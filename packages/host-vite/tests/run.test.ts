@@ -39,8 +39,8 @@ it('owns startup failure cleanup and rejects conflicting production configuratio
 		await expect(run()).rejects.toThrow('exactly one host()')
 		await config('[host({entry:"app.mjs"}),host({entry:"app.mjs"})]')
 		await expect(run()).rejects.toThrow(/exactly one host\(\)|environment is owned by host/)
-		await config('[host({entry:"app.mjs",devConsole:true})]')
-		await expect(run()).rejects.toThrow('devConsole is available only in development')
+		await config('[host({entry:"app.mjs",scripts:true})]')
+		await expect(run()).rejects.toThrow('scripts is available only in development')
 		await config(
 			'[host({entry:"app.mjs"}),workbenchSourceShell({entry:"browser.tsx"})]',
 			`import {workbenchSourceShell} from ${JSON.stringify(sourceShell)}`,
@@ -132,9 +132,9 @@ it.each(['abort', 'close'] as const)(
 			await writeFile(
 				resolve(root, 'vite.config.mjs'),
 				`import {host} from ${JSON.stringify(new URL('../dist/index.mjs', import.meta.url).href)};
-const options={entry:'app.mjs',devConsole:false};const plugins=host(options);
+const options={entry:'app.mjs',scripts:false};const plugins=host(options);
 await new Promise(resolve=>setTimeout(resolve,40));
-options.entry='missing-app.mjs';options.devConsole=true;
+options.entry='missing-app.mjs';options.scripts=true;
 export default {logLevel:'silent',plugins}`,
 			)
 			await writeFile(

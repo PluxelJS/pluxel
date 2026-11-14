@@ -1,3 +1,4 @@
+import { providerStepSnapshot, readRecord, boundedText, assertExactKeys } from './authentication'
 import type { Context as PluxelContext, PluginContext } from '@pluxel/core'
 import { enterOwnerInvocation, requirePluginService } from '@pluxel/core/internal'
 
@@ -16,7 +17,6 @@ import type {
 	ManagementAccessProvider,
 	ManagementAccessProviderStatus,
 	ManagementAccessRegistration,
-	ManagementAuthenticationChallenge,
 	ManagementAuthenticationCookieCommit,
 	ManagementAuthenticationFailureCode,
 	ManagementAuthenticationProviderSession,
@@ -26,6 +26,8 @@ import type {
 type ProviderRegistration = Readonly<{
 	owner: PluginContext
 	provider: ManagementAccessProvider
+	authority: AbortSignal
+	credentials: WeakMap<AbortSignal, AbortSignal>
 }>
 
 type ActiveProvider = Readonly<{
@@ -42,6 +44,8 @@ export type AdminAccessAdmission = Readonly<{
 
 export interface AdminAuthenticationSession {
 	readonly signal: AbortSignal
+	/** Authority lifetime only; physical connection closure does not revoke admitted script runs. */
+	readonly authorizationSignal: AbortSignal
 	readonly providerId: string
 	state(): Promise<ManagementAuthenticationProviderStep>
 	submit(input: unknown): Promise<ManagementAuthenticationProviderStep>
@@ -53,6 +57,15 @@ const MAX_AUTH_ATTEMPTS = 8
 const MAX_AUTH_INPUT_BYTES = 16 * 1024
 const AUTHENTICATION_DEADLINE_MS = 2 * 60_000
 const NOOP_RELEASE = (): void => undefined
+
+function authoritySignal(owner: PluxelContext): AbortSignal {
+	const lease = enterOwnerInvocation(owner)
+	try {
+		return lease.signal
+	} finally {
+		lease.dispose()
+	}
+}
 
 function providerRequest(request: Request, signal: AbortSignal, includeBody = false): Request {
 	const hasBody = includeBody && request.method !== 'GET' && request.method !== 'HEAD'
@@ -86,84 +99,6 @@ function statusSnapshot(value: unknown): ManagementAccessProviderStatus {
 	return Object.freeze({ id, label, method: input.method, ready: input.ready })
 }
 
-/** @internal Closed data projection shared by provider admission and the RPC producer. */
-export function providerStepSnapshot(value: unknown): ManagementAuthenticationProviderStep {
-	const input = readRecord(value, 'authentication step')
-	switch (input.kind) {
-		case 'challenge': {
-			assertExactKeys(input, ['kind', 'challenge'], 'authentication challenge step')
-			return Object.freeze({ kind: 'challenge', challenge: challengeSnapshot(input.challenge) })
-		}
-		case 'navigate': {
-			assertExactKeys(input, ['kind', 'path'], 'authentication navigation step')
-			if (input.path !== ADMIN_ACCESS_OIDC_START_PATH) {
-				throw new TypeError('authentication navigation path is invalid')
-			}
-			return Object.freeze({ kind: 'navigate', path: ADMIN_ACCESS_OIDC_START_PATH })
-		}
-		case 'authenticated': {
-			assertOnlyKeys(input, ['kind', 'principal', 'cookieCommit'], 'authenticated step')
-			if (!Object.hasOwn(input, 'principal')) {
-				throw new TypeError('authenticated step.principal is required')
-			}
-			const principal = principalSnapshot(input.principal)
-			if (input.cookieCommit === undefined) {
-				return Object.freeze({ kind: 'authenticated', principal })
-			}
-			const commit = readRecord(input.cookieCommit, 'cookie commit ticket')
-			assertExactKeys(commit, ['ticket', 'expiresAt'], 'cookie commit ticket')
-			const ticket = boundedText(commit.ticket, 4096)
-			if (!ticket || !Number.isSafeInteger(commit.expiresAt) || Number(commit.expiresAt) <= 0) {
-				throw new TypeError('cookie commit ticket is invalid')
-			}
-			return Object.freeze({
-				kind: 'authenticated',
-				principal,
-				cookieCommit: Object.freeze({ ticket, expiresAt: Number(commit.expiresAt) }),
-			})
-		}
-		case 'failed': {
-			assertExactKeys(input, ['kind', 'code'], 'authentication failure step')
-			if (!isAuthenticationFailureCode(input.code)) {
-				throw new TypeError('authentication failure code is invalid')
-			}
-			return Object.freeze({ kind: 'failed', code: input.code })
-		}
-		default:
-			throw new TypeError('authentication step.kind is invalid')
-	}
-}
-
-function challengeSnapshot(value: unknown): ManagementAuthenticationChallenge {
-	const input = readRecord(value, 'authentication challenge')
-	if (input.kind === 'password') {
-		assertOnlyKeys(input, ['kind', 'label'], 'password challenge')
-		const label = input.label === undefined ? undefined : boundedText(input.label, 128)
-		if (input.label !== undefined && !label)
-			throw new TypeError('password challenge.label is invalid')
-		return Object.freeze({ kind: 'password', ...(label ? { label } : {}) })
-	}
-	if (input.kind === 'totp') {
-		assertExactKeys(input, ['kind', 'digits'], 'TOTP challenge')
-		if (input.digits !== 6) throw new TypeError('TOTP challenge.digits must be 6')
-		return Object.freeze({ kind: 'totp', digits: 6 })
-	}
-	throw new TypeError('authentication challenge.kind is invalid')
-}
-
-function principalSnapshot(value: unknown): Readonly<{ subject: string; displayName?: string }> {
-	const input = readRecord(value, 'provider principal')
-	assertOnlyKeys(input, ['subject', 'displayName'], 'provider principal')
-	const subject = boundedText(input.subject, 512)
-	if (!subject) throw new TypeError('provider principal.subject is invalid')
-	const displayName =
-		input.displayName === undefined ? undefined : boundedText(input.displayName, 256)
-	if (input.displayName !== undefined && !displayName) {
-		throw new TypeError('provider principal.displayName is invalid')
-	}
-	return Object.freeze({ subject, ...(displayName ? { displayName } : {}) })
-}
-
 function failedStep(
 	code: ManagementAuthenticationFailureCode,
 ): ManagementAuthenticationProviderStep {
@@ -180,6 +115,7 @@ function authenticatedLocal(): ManagementAuthenticationProviderStep {
 class FixedAuthenticationSession implements AdminAuthenticationSession {
 	constructor(
 		readonly signal: AbortSignal,
+		readonly authorizationSignal: AbortSignal,
 		readonly providerId: string,
 		private readonly step: ManagementAuthenticationProviderStep,
 	) {}
@@ -206,6 +142,7 @@ class ProviderAuthenticationSession implements AdminAuthenticationSession {
 
 	constructor(
 		readonly signal: AbortSignal,
+		readonly authorizationSignal: AbortSignal,
 		readonly providerId: string,
 		private readonly providerSession: ManagementAuthenticationProviderSession,
 		private readonly lease: ResponseLease,
@@ -294,10 +231,18 @@ export class AdminAccessService {
 		local: boolean,
 		secure: boolean,
 	): Promise<AdminAuthenticationSession> {
-		if (local) return new FixedAuthenticationSession(request.signal, 'local', authenticatedLocal())
+		const rootAuthority = authoritySignal(this.ctx.root)
+		if (local)
+			return new FixedAuthenticationSession(
+				request.signal,
+				rootAuthority,
+				'local',
+				authenticatedLocal(),
+			)
 		if (!secure) {
 			return new FixedAuthenticationSession(
 				request.signal,
+				rootAuthority,
 				'unavailable',
 				failedStep('access_unavailable'),
 			)
@@ -317,6 +262,7 @@ export class AdminAccessService {
 			clearTimeout(deadlineTimer)
 			return new FixedAuthenticationSession(
 				request.signal,
+				rootAuthority,
 				'unavailable',
 				failedStep('access_unavailable'),
 			)
@@ -326,6 +272,7 @@ export class AdminAccessService {
 			clearTimeout(deadlineTimer)
 			return new FixedAuthenticationSession(
 				request.signal,
+				rootAuthority,
 				'unavailable',
 				failedStep('access_unavailable'),
 			)
@@ -340,8 +287,18 @@ export class AdminAccessService {
 			assertProviderSession(providerSession)
 			const step = providerStepSnapshot(await providerSession.state())
 			if (current.lease.signal.aborted) throw current.lease.signal.reason
+			const registration = current.registration
+			let authority = registration.authority
+			const credential = providerSession.authorizationSignal
+			if (credential) {
+				const shared =
+					registration.credentials.get(credential) ?? AbortSignal.any([authority, credential])
+				registration.credentials.set(credential, shared)
+				authority = shared
+			}
 			return new ProviderAuthenticationSession(
-				current.lease.signal,
+				AbortSignal.any([current.lease.signal, authority]),
+				authority,
 				current.status.id,
 				providerSession,
 				current.lease,
@@ -358,6 +315,7 @@ export class AdminAccessService {
 			this.auditFailure('provider_open_error', error)
 			return new FixedAuthenticationSession(
 				request.signal,
+				rootAuthority,
 				'unavailable',
 				failedStep('access_unavailable'),
 			)
@@ -467,13 +425,20 @@ export class AdminAccessService {
 			}
 		}
 
-		const registration = Object.freeze({ owner: owner as PluginContext, provider })
+		const withdrawn = new AbortController()
+		const registration = Object.freeze({
+			owner: owner as PluginContext,
+			provider,
+			authority: AbortSignal.any([authoritySignal(owner), withdrawn.signal]),
+			credentials: new WeakMap<AbortSignal, AbortSignal>(),
+		})
 		this.registrations.add(registration)
 		let active = true
 		const cleanup = () => {
 			if (!active) return
 			active = false
 			this.registrations.delete(registration)
+			withdrawn.abort(new Error('Management authentication provider was withdrawn'))
 		}
 		let guard: ReturnType<PluxelContext['effects']['defer']>
 		try {
@@ -601,49 +566,6 @@ function inputBytes(input: unknown): number {
 	} catch {
 		return Number.POSITIVE_INFINITY
 	}
-}
-
-function readRecord(value: unknown, label: string): Record<string, unknown> {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) {
-		throw new TypeError(`${label} must be an object`)
-	}
-	return value as Record<string, unknown>
-}
-
-function boundedText(value: unknown, maxLength: number): string | undefined {
-	if (typeof value !== 'string') return undefined
-	const normalized = value.trim()
-	return normalized && normalized.length <= maxLength ? normalized : undefined
-}
-
-function assertExactKeys(
-	value: Record<string, unknown>,
-	expected: readonly string[],
-	label: string,
-): void {
-	const keys = Object.keys(value)
-	if (keys.length !== expected.length || !expected.every((key) => Object.hasOwn(value, key))) {
-		throw new TypeError(`${label} has unknown or missing fields`)
-	}
-}
-
-function assertOnlyKeys(
-	value: Record<string, unknown>,
-	allowed: readonly string[],
-	label: string,
-): void {
-	if (Object.keys(value).some((key) => !allowed.includes(key))) {
-		throw new TypeError(`${label} has unknown fields`)
-	}
-}
-
-function isAuthenticationFailureCode(value: unknown): value is ManagementAuthenticationFailureCode {
-	return (
-		value === 'authentication_failed' ||
-		value === 'authentication_expired' ||
-		value === 'access_unavailable' ||
-		value === 'attempt_limited'
-	)
 }
 
 function noStoreHeaders(): HeadersInit {

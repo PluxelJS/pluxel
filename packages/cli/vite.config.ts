@@ -5,7 +5,7 @@ import { repositoryTasks } from '../../scripts/vite-tasks'
 const tasks = {
 	compile: {
 		command: 'vp pack',
-		dependsOn: ['@pluxel/rolldown#compile'],
+		dependsOn: ['@pluxel/rolldown#compile', '@pluxel/host#compile', '@pluxel/services#compile'],
 		cache: {
 			input: [
 				{

@@ -3,36 +3,43 @@ import { chmod, lstat, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/p
 import { createServer, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
-import { DevConsoleExecutor, type RunExecution } from './executor'
+import { RpcTarget } from 'capnweb'
 import {
-	ConsoleExecutionError,
-	consoleFailure,
-	snapshotJson,
-	DEV_CONSOLE_FRAME_BYTES,
-	DEV_CONSOLE_MAX_TIMEOUT,
-	DEV_CONSOLE_PROTOCOL,
-	type DevConsoleInstance,
-	type DevConsoleHmrAction,
-	type DevConsoleRequest,
-	type DevConsoleRunInput,
-	type DevConsoleResponse,
-} from './protocol'
+	ScriptExecutor,
+	ScriptExecutionError,
+	SCRIPT_PROTOCOL,
+	scriptFailure,
+	type ScriptSubmission,
+	type ScriptHmrAction,
+	type RunExecution,
+	type PluginControlMaterialsSnapshot,
+} from '@pluxel/host/agent'
+import { openScriptSocketSession } from '@pluxel/host/agent/socket'
+import {
+	createScriptControlTarget,
+	type ScriptConnectionTarget,
+	type ScriptControlResponse,
+	type ScriptControlTarget,
+} from '@pluxel/host/agent/transport'
+import type { ProjectScriptInstance } from './discovery'
+import { sourceHash } from './source'
 
-export type DevConsoleServer = Readonly<{
-	instance: DevConsoleInstance
-	executor: DevConsoleExecutor
+export type ProjectScriptServer = Readonly<{
+	instance: ProjectScriptInstance
+	executor: ScriptExecutor
 	close(): Promise<void>
 }>
 
 /** This endpoint accepts trusted project code only. It is never mounted on the Vite HTTP listener. */
-export async function startDevConsoleServer(options: {
+export async function startProjectScriptServer(options: {
 	root: string
-	execute(input: DevConsoleRunInput, run: RunExecution): Promise<unknown>
-	control?(action: DevConsoleHmrAction, run: RunExecution): Promise<unknown>
+	execute(input: ScriptSubmission, run: RunExecution): Promise<unknown>
+	control?(action: ScriptHmrAction, run: RunExecution): Promise<unknown>
 	inspect?(): Readonly<Record<string, unknown>>
-}): Promise<DevConsoleServer> {
+	materials?(): Promise<PluginControlMaterialsSnapshot>
+}): Promise<ProjectScriptServer> {
 	if (process.platform === 'win32')
-		throw new ConsoleExecutionError(
+		throw new ScriptExecutionError(
 			'unsupported_platform',
 			'Dev console currently requires Unix local socket permissions',
 		)
@@ -43,7 +50,7 @@ export async function startDevConsoleServer(options: {
 		serviceId !== undefined &&
 		(serviceId.trim() !== serviceId || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(serviceId))
 	)
-		throw new ConsoleExecutionError(
+		throw new ScriptExecutionError(
 			'invalid_service_id',
 			'PITCHFORK_DAEMON_ID must be the qualified namespace/name assigned by Pitchfork',
 		)
@@ -52,13 +59,13 @@ export async function startDevConsoleServer(options: {
 		profile !== undefined &&
 		(profile.trim() !== profile || !/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(profile))
 	)
-		throw new ConsoleExecutionError(
+		throw new ScriptExecutionError(
 			'invalid_profile',
 			'PLUXEL_DEV_PROFILE must be a nonempty Pluxel development profile name',
 		)
 	const projectPath = process.env.PLUXEL_DEV_PROJECT
 	if ((profile === undefined) !== (projectPath === undefined))
-		throw new ConsoleExecutionError(
+		throw new ScriptExecutionError(
 			'invalid_project',
 			'PLUXEL_DEV_PROFILE and PLUXEL_DEV_PROJECT must be supplied together',
 		)
@@ -66,7 +73,7 @@ export async function startDevConsoleServer(options: {
 	if (projectPath !== undefined) {
 		// eslint-disable-next-line no-control-regex -- Discovery paths must reject control characters.
 		if (!isAbsolute(projectPath) || /[\u0000-\u001f\u007f]/.test(projectPath))
-			throw new ConsoleExecutionError(
+			throw new ScriptExecutionError(
 				'invalid_project',
 				'PLUXEL_DEV_PROJECT must be an absolute declaring package directory',
 			)
@@ -75,7 +82,7 @@ export async function startDevConsoleServer(options: {
 			const projectStat = await lstat(project)
 			if (!projectStat.isDirectory()) throw new Error('Not a directory')
 		} catch {
-			throw new ConsoleExecutionError(
+			throw new ScriptExecutionError(
 				'invalid_project',
 				'PLUXEL_DEV_PROJECT must identify an existing declaring package directory',
 			)
@@ -89,8 +96,8 @@ export async function startDevConsoleServer(options: {
 	const socketPath = join(privateDir, 'socket')
 	const descriptorDir = join(root, '.pluxel', 'dev-console')
 	const descriptorPath = join(descriptorDir, `${instanceId}.json`)
-	const instance: DevConsoleInstance = Object.freeze({
-		protocol: DEV_CONSOLE_PROTOCOL,
+	const instance: ProjectScriptInstance = Object.freeze({
+		protocol: SCRIPT_PROTOCOL,
 		instanceId,
 		nonce,
 		pid: process.pid,
@@ -101,7 +108,12 @@ export async function startDevConsoleServer(options: {
 		socketPath,
 		startedAt: new Date().toISOString(),
 	})
-	const executor = new DevConsoleExecutor(instanceId, options.execute, options.control)
+	const executor = new ScriptExecutor({
+		instanceId,
+		execute: options.execute,
+		control: options.control,
+		codeKinds: ['project'],
+	})
 	const sockets = new Set<Socket>()
 	const server = createServer((socket) => {
 		if (sockets.size >= 32) {
@@ -109,136 +121,104 @@ export async function startDevConsoleServer(options: {
 			return
 		}
 		sockets.add(socket)
-		socket.on('error', () => {
-			socket.destroy()
-		})
+		let active = true
 		socket.on('close', () => {
+			active = false
 			sockets.delete(socket)
 		})
-		socket.setTimeout(5000, () => {
-			socket.destroy()
-		})
-		let buffer = Buffer.alloc(0)
-		let handled = false
-		socket.on('data', (chunk: Buffer) => {
-			if (handled) return
-			if (buffer.length + chunk.length > DEV_CONSOLE_FRAME_BYTES) {
-				handled = true
-				socket.destroy()
-				return
-			}
-			buffer = Buffer.concat([buffer, chunk])
-			const newline = buffer.indexOf(10)
-			if (newline < 0) return
-			handled = true
-			void respond(buffer.subarray(0, newline)).then(
-				(response) => {
-					return socket.end(JSON.stringify(response) + '\n')
-				},
-				(error) => {
-					return socket.end(JSON.stringify({ ok: false, error: consoleFailure(error) }) + '\n')
-				},
+		socket.setTimeout(5000, () => socket.destroy())
+		const rootTarget = new LocalScriptConnection(async (credentials) => {
+			if (!active || !credentials || typeof credentials !== 'object' || Array.isArray(credentials))
+				throw new ScriptExecutionError('unauthorized', 'Script connection credentials are required')
+			const value = credentials as Record<string, unknown>
+			if (value.protocol !== SCRIPT_PROTOCOL)
+				throw new ScriptExecutionError(
+					'protocol_mismatch',
+					'Script control protocol version mismatch',
+				)
+			if (
+				Object.keys(value).some((key) => !['protocol', 'instanceId', 'nonce'].includes(key)) ||
+				value.instanceId !== instanceId ||
+				typeof value.nonce !== 'string' ||
+				Buffer.byteLength(value.nonce) !== Buffer.byteLength(nonce) ||
+				!timingSafeEqual(Buffer.from(value.nonce), Buffer.from(nonce))
 			)
-		})
-	})
-
-	const respond = async (bytes: Buffer): Promise<DevConsoleResponse> => {
-		try {
-			let packet: unknown
-			try {
-				packet = JSON.parse(bytes.toString('utf8'))
-			} catch {
-				throw new ConsoleExecutionError('invalid_request', 'Expected one JSON request')
-			}
-			const request = validateRequest(packet, instance)
-			switch (request.method) {
-				case 'inspect':
-					return {
-						ok: true,
-						value: {
-							...options.inspect?.(),
-							protocol: instance.protocol,
-							instanceId,
-							pid: instance.pid,
-							root,
-							serviceId: instance.serviceId,
-							profile: instance.profile,
-							project: instance.project,
-							startedAt: instance.startedAt,
-						},
-					}
-				case 'result':
-					return { ok: true, value: executor.result(request.runId) }
-				case 'cancel':
-					return { ok: true, value: executor.cancel(request.runId) }
-				case 'hmr':
-					return {
-						ok: true,
-						value: executor.submitControl({
-							runId: request.runId,
-							action: request.action,
-							...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
-						}),
-					}
-				case 'run': {
-					const file = await realpath(request.file)
+				throw new ScriptExecutionError('unauthorized', 'Script instance credentials do not match')
+			return createScriptControlTarget({
+				materials: options.materials,
+				executor,
+				subject: instanceId,
+				assertAuthorized() {
+					if (!active) throw new ScriptExecutionError('unauthorized', 'Script connection is closed')
+				},
+				describe: () => ({
+					...options.inspect?.(),
+					capabilities: [
+						'plugins',
+						'plugin',
+						'plugin.instance',
+						'plugin.config',
+						'policy',
+						'updates',
+						'logs',
+						...(options.materials ? ['plugins.control-materials'] : []),
+					],
+					lifetime: 'vite-instance',
+					cancellation: 'cooperative',
+					pid: instance.pid,
+					root,
+					serviceId,
+					profile,
+					project,
+					startedAt: instance.startedAt,
+				}),
+				prepare: async (input) => {
+					if (!input || !input.code || input.code.kind !== 'project')
+						throw new ScriptExecutionError(
+							'loading_unavailable',
+							'This Vite target loads project modules',
+						)
+					if (
+						typeof input.code.file !== 'string' ||
+						input.code.file.includes('\0') ||
+						!isAbsolute(input.code.file)
+					)
+						throw new ScriptExecutionError(
+							'invalid_request',
+							'Expected an absolute project source path',
+						)
+					const file = await realpath(input.code.file)
 					if (
 						!inside(root, file) ||
 						/(?:^|[\\/])(?:node_modules|\.git|\.pluxel)(?:[\\/]|$)/.test(relative(root, file))
-					) {
-						throw new ConsoleExecutionError(
+					)
+						throw new ScriptExecutionError(
 							'file_not_allowed',
-							'Script must be a source file inside the dev project',
+							'Script must be a source file inside the Vite project',
 						)
-					}
 					const stat = await lstat(file)
-					if (!/\.(?:[cm]?[jt]s|[jt]sx)$/.test(file) || !stat.isFile()) {
-						throw new ConsoleExecutionError(
+					if (!/\.(?:[cm]?[jt]s|[jt]sx)$/.test(file) || !stat.isFile())
+						throw new ScriptExecutionError(
 							'file_not_allowed',
 							'Expected a JavaScript or TypeScript source file',
 						)
-					}
-					let jsonInput: ReturnType<typeof snapshotJson> | undefined
-					try {
-						if (request.input !== undefined) jsonInput = snapshotJson(request.input)
-					} catch (error) {
-						if (error instanceof ConsoleExecutionError && error.code === 'result_too_large') {
-							throw new ConsoleExecutionError(
-								'input_too_large',
-								'JSON input exceeds the byte, depth or node limit',
-							)
-						}
-						if (
-							error instanceof ConsoleExecutionError &&
-							error.code === 'result_not_serializable'
-						) {
-							throw new ConsoleExecutionError(
-								'invalid_input',
-								'Input must contain only finite, plain JSON data',
-							)
-						}
-						throw error
-					}
-					const input: DevConsoleRunInput = {
-						runId: request.runId,
-						file,
-						sourceHash: request.sourceHash,
-						exportName: request.exportName,
-						...(jsonInput === undefined ? {} : { input: jsonInput }),
-						...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
-					}
-					return { ok: true, value: executor.submit(input) }
-				}
-			}
-		} catch (error) {
-			return { ok: false, error: consoleFailure(error, 'invalid_request') }
-		}
-	}
+					if ((await sourceHash(file)) !== input.code.sourceHash)
+						throw new ScriptExecutionError(
+							'source_changed',
+							'Script changed after submission; review and submit again',
+						)
+					return { ...input, code: { ...input.code, file } }
+				},
+			})
+		})
+		const session = openScriptSocketSession(socket, rootTarget)
+		socket.once('close', () => session.close())
+	})
 
 	let closeTask: Promise<void> | undefined
 	const close = () =>
 		(closeTask ??= (async () => {
-			executor.close()
+			const settled = executor.close()
 			for (const socket of sockets) socket.destroy()
 			if (server.listening)
 				await new Promise<void>((resolveClose, reject) =>
@@ -247,13 +227,14 @@ export async function startDevConsoleServer(options: {
 			await rm(descriptorPath, { force: true })
 			await rm(`${descriptorPath}.tmp`, { force: true })
 			await rm(privateDir, { recursive: true, force: true })
+			await settled
 		})())
 	try {
 		// Validate the existing persistence parent before creating discovery beneath it.
 		const parent = join(root, '.pluxel')
 		await mkdir(parent, { recursive: true })
 		if (!inside(root, await realpath(parent)))
-			throw new ConsoleExecutionError(
+			throw new ScriptExecutionError(
 				'file_not_allowed',
 				'Dev discovery must remain inside the project',
 			)
@@ -265,7 +246,7 @@ export async function startDevConsoleServer(options: {
 			(process.getuid && directory.uid !== process.getuid()) ||
 			(directory.mode & 0o077) !== 0
 		) {
-			throw new ConsoleExecutionError(
+			throw new ScriptExecutionError(
 				'discovery_permissions',
 				'Dev discovery directory must be private to the current user (0700)',
 			)
@@ -300,74 +281,17 @@ export function inside(root: string, file: string): boolean {
 	)
 }
 
-function validateRequest(input: unknown, instance: DevConsoleInstance): DevConsoleRequest {
-	if (!input || typeof input !== 'object' || Array.isArray(input))
-		throw new ConsoleExecutionError('invalid_request', 'Expected a request object')
-	const value = input as Record<string, unknown>
-	if (value.protocol !== DEV_CONSOLE_PROTOCOL)
-		throw new ConsoleExecutionError('protocol_mismatch', 'Dev console protocol version mismatch')
-	if (
-		value.instanceId !== instance.instanceId ||
-		typeof value.nonce !== 'string' ||
-		Buffer.byteLength(value.nonce) !== Buffer.byteLength(instance.nonce) ||
-		!timingSafeEqual(Buffer.from(value.nonce), Buffer.from(instance.nonce))
-	) {
-		throw new ConsoleExecutionError('unauthorized', 'Dev console instance credentials do not match')
+class LocalScriptConnection extends RpcTarget implements ScriptConnectionTarget {
+	readonly #connect: (credentials: unknown) => Promise<ScriptControlTarget>
+	constructor(connect: (credentials: unknown) => Promise<ScriptControlTarget>) {
+		super()
+		this.#connect = connect
 	}
-	const common = ['protocol', 'instanceId', 'nonce', 'method']
-	const allowed =
-		value.method === 'run'
-			? [...common, 'runId', 'file', 'sourceHash', 'exportName', 'input', 'timeoutMs']
-			: value.method === 'hmr'
-				? [...common, 'runId', 'action', 'timeoutMs']
-				: value.method === 'result' || value.method === 'cancel'
-					? [...common, 'runId']
-					: common
-	if (Object.keys(value).some((key) => !allowed.includes(key)))
-		throw new ConsoleExecutionError('invalid_request', 'Unexpected request field')
-	if (value.method === 'inspect') return value as DevConsoleRequest
-	if (
-		value.method !== 'run' &&
-		value.method !== 'hmr' &&
-		value.method !== 'result' &&
-		value.method !== 'cancel'
-	)
-		throw new ConsoleExecutionError('invalid_request', 'Unknown console request method')
-	if (typeof value.runId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(value.runId))
-		throw new ConsoleExecutionError('invalid_request', 'Invalid run ID')
-	if (value.method !== 'run' && value.method !== 'hmr') return value as DevConsoleRequest
-	if (
-		value.timeoutMs !== undefined &&
-		(typeof value.timeoutMs !== 'number' ||
-			!Number.isInteger(value.timeoutMs) ||
-			value.timeoutMs < 1 ||
-			value.timeoutMs > DEV_CONSOLE_MAX_TIMEOUT)
-	)
-		throw new ConsoleExecutionError(
-			'invalid_request',
-			'timeoutMs must be an integer between 1 and 300000',
-		)
-	if (value.method === 'hmr') {
-		if (value.action !== 'pause' && value.action !== 'apply' && value.action !== 'resume')
-			throw new ConsoleExecutionError(
-				'invalid_request',
-				'Expected HMR action pause, apply or resume',
-			)
-		return value as DevConsoleRequest
+	async connect(credentials: unknown): Promise<ScriptControlResponse<ScriptControlTarget>> {
+		try {
+			return { ok: true, value: await this.#connect(credentials) }
+		} catch (error) {
+			return { ok: false, error: scriptFailure(error, 'unauthorized') }
+		}
 	}
-	if (
-		typeof value.file !== 'string' ||
-		value.file.length > 4096 ||
-		!isAbsolute(value.file) ||
-		value.file.includes('\0')
-	)
-		throw new ConsoleExecutionError('invalid_request', 'Expected an absolute source file path')
-	if (typeof value.sourceHash !== 'string' || !/^[a-f0-9]{64}$/.test(value.sourceHash))
-		throw new ConsoleExecutionError('invalid_request', 'Expected a SHA-256 source hash')
-	if (
-		typeof value.exportName !== 'string' ||
-		!/^[a-zA-Z_$][a-zA-Z0-9_$]{0,127}$/.test(value.exportName)
-	)
-		throw new ConsoleExecutionError('invalid_request', 'Invalid export name')
-	return value as DevConsoleRequest
 }

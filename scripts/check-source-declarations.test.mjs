@@ -29,11 +29,11 @@ it('accepts a clean checkout without build output or pre-existing declarations',
 it('accepts registered ambient inputs and keeps build/cache output outside the source boundary', async () => {
 	const check = await fixture({
 		'projects/docs/src/styles.d.ts': "declare module '*.css'\n",
-		'projects/report-template-studio/src/renderer/modern-monaco.d.ts':
-			"declare module 'modern-monaco/lsp/typescript/setup'\n",
-		'projects/embedded-launcher/src/execution/native.d.ts': "declare module 'launcher:bridge'\n",
+		'packages/test/src/vendor-types.d.ts': "declare module 'external-dependency'\n",
+		'packages/valibot-form/src/web/vite-env.d.ts': "/// <reference types='vite/client' />\n",
 		'plugins/render/typst/native/.build/source/packages/compiler/src/global.d.ts': 'export {}\n',
-		'projects/embedded-launcher/native/vendor/llrt/src/global.d.ts': 'export {}\n',
+		'projects/embedded-launcher/native/vendor/llrt/llrt_core/src/modules/js/llrt.d.ts':
+			'export {}\n',
 		'packages/example/dist/index.d.ts': 'export declare const value = 1\n',
 		'packages/example/dist/index.d.ts.map': '{}',
 		'packages/example/.pluxel/types/index.d.mts': 'export {}\n',
@@ -48,7 +48,7 @@ it('rejects unregistered source declarations and leaked declaration maps in ever
 		'plugins/example/src/index.d.mts',
 		'projects/example/src/index.d.cts',
 		'plugins/render/typst/src/.build/generated.d.ts',
-		'projects/embedded-launcher/src/vendor/generated.d.ts',
+		'projects/example/src/vendor/generated.d.ts',
 		'packages/example/index.d.ts.map',
 		'plugins/example/src/index.d.mts.map',
 		'projects/docs/src/styles.d.ts.map',

@@ -2,15 +2,31 @@
 import { mkdtemp, writeFile, mkdir, symlink, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createRequire, stripTypeScriptTypes } from 'node:module'
+import { createRequire, registerHooks, stripTypeScriptTypes } from 'node:module'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
-const clientSource = await readFile(new URL('../../cli/src/dev/client.ts', import.meta.url), 'utf8')
-const { discoverDevInstances, runDevFile, selectDevInstance } = await import(
-	'data:text/javascript;base64,' +
-		Buffer.from(stripTypeScriptTypes(clientSource, { mode: 'transform' })).toString('base64')
-)
+const clientUrl = new URL('../../cli/src/dev/client.ts', import.meta.url)
+const clientSource = await readFile(clientUrl, 'utf8')
+// Keep the real module URL so the client's public package imports use the CLI's dependencies.
+const clientLoader = registerHooks({
+	load(url, context, nextLoad) {
+		if (url === clientUrl.href)
+			return {
+				format: 'module',
+				source: stripTypeScriptTypes(clientSource, { mode: 'transform' }),
+				shortCircuit: true,
+			}
+		return nextLoad(url, context)
+	},
+})
+let client
+try {
+	client = await import(clientUrl.href)
+} finally {
+	clientLoader.deregister()
+}
+const { discoverDevInstances, runDevFile, selectDevInstance } = client
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 const require = createRequire(join(workspace, 'packages/host-vite/package.json'))
 const { createServer } = await import(pathToFileURL(require.resolve('vite')).href)
@@ -137,7 +153,7 @@ try {
 		},
 		server: { port: 0, host: '127.0.0.1' },
 		plugins: [
-			vitePreset({ entry: 'app.ts', devConsole: true }),
+			vitePreset({ entry: 'app.ts', scripts: true }),
 			{
 				name: 'fixture:late-package-notification',
 				async watchChange(id) {
@@ -163,7 +179,10 @@ try {
 	assert.equal(await fallback.text(), 'native-body')
 	const instance = await selectDevInstance({ root })
 	const consoleFile = join(root, 'inspect.ts')
-	await writeFile(consoleFile, 'export default async (dev) => await dev.plugins.list()')
+	await writeFile(
+		consoleFile,
+		"import type { Script } from '@pluxel/host/agent'; export default ((sdk) => sdk.plugins.list()) satisfies Script",
+	)
 	const inspect = () =>
 		runDevFile({
 			instance,
@@ -174,7 +193,10 @@ try {
 		})
 	const initial = await inspect()
 	assert.equal(initial.state, 'succeeded', JSON.stringify(initial))
-	assert.ok(initial.value.some((plugin) => plugin.address.definition.exportName === 'Installed'))
+	assert.equal(initial.value.status, 'ok', JSON.stringify(initial.value))
+	assert.ok(
+		initial.value.value.some((plugin) => plugin.address.definition.exportName === 'Installed'),
+	)
 	const latestUpdate = () =>
 		readHostRecentUpdates(globalThis.__installedHostSmokeContext)?.latestUpdate()
 	await writeFile(
@@ -206,9 +228,10 @@ try {
 	// Console preparation drains the existing Host driver before taking this snapshot.
 	const upgraded = await inspect()
 	assert.equal(upgraded.state, 'succeeded', JSON.stringify(upgraded))
+	assert.equal(upgraded.value.status, 'ok', JSON.stringify(upgraded.value))
 	assert.equal(latestUpdate()?.sequence, acceptedUpgradeSequence, 'late bytes already consumed')
 	assert.equal(globalThis.__installedHostSmoke.filter((entry) => entry === 'two').length, 1)
-	const upgradedPlugin = upgraded.value.find(
+	const upgradedPlugin = upgraded.value.value.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/installed',
 	)
 	assert.equal(upgradedPlugin.recentUpdate.batch.outcome, 'applied')
@@ -283,8 +306,9 @@ try {
 	assert.equal(await typedUpdatedResponse.text(), 'ts-two')
 	const typedInspection = await inspect()
 	assert.equal(typedInspection.state, 'succeeded', JSON.stringify(typedInspection))
+	assert.equal(typedInspection.value.status, 'ok', JSON.stringify(typedInspection.value))
 	assert.equal(typedInspection.hostEpoch, initial.hostEpoch, 'Plugin HMR keeps the Host')
-	const typedPlugin = typedInspection.value.find(
+	const typedPlugin = typedInspection.value.value.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/typed',
 	)
 	assert.deepEqual(typedPlugin.execution, {
@@ -299,7 +323,8 @@ try {
 	assert.equal(typedRemovedResponse.status, 404)
 	const removedTyped = await inspect()
 	assert.equal(removedTyped.state, 'succeeded', JSON.stringify(removedTyped))
-	const withdrawn = removedTyped.value.find(
+	assert.equal(removedTyped.value.status, 'ok', JSON.stringify(removedTyped.value))
+	const withdrawn = removedTyped.value.value.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/typed',
 	)
 	assert.equal(withdrawn.availability, 'unavailable')
@@ -340,8 +365,9 @@ try {
 	assert.equal(await updatedResponse.text(), 'fixed')
 	const replaced = await inspect()
 	assert.equal(replaced.state, 'succeeded', JSON.stringify(replaced))
+	assert.equal(replaced.value.status, 'ok', JSON.stringify(replaced.value))
 	assert.notEqual(replaced.hostEpoch, initial.hostEpoch)
-	const restoredPlugin = replaced.value.find(
+	const restoredPlugin = replaced.value.value.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/fixed',
 	)
 	assert.equal(restoredPlugin.recentUpdate.batch.outcome, 'applied')

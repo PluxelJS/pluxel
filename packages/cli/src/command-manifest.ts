@@ -1,5 +1,119 @@
 import { lazy, type SubCommandable } from 'gunshi'
 
+export const scriptConnectionArgs = {
+	'credentials-file': {
+		type: 'string',
+		description: 'Private JSON file containing password, code or session cookie',
+	},
+} as const
+export const scriptRunArgs = {
+	...scriptConnectionArgs,
+	file: {
+		type: 'positional',
+		required: true,
+		description: 'Portable TypeScript module to compile and upload',
+	},
+	endpoint: {
+		type: 'string',
+		required: true,
+		description: 'HTTP(S) origin or runtime session WebSocket URL',
+	},
+	export: { type: 'string', default: 'default', description: 'Exported function to call' },
+	input: { type: 'string', description: 'Explicit JSON input' },
+	'input-file': { type: 'string', description: 'Read explicit JSON input from this file' },
+	timeout: {
+		type: 'string',
+		default: '30000',
+		description: 'Cooperative execution deadline in milliseconds (1–300000)',
+	},
+	detach: {
+		type: 'boolean',
+		default: false,
+		description: 'Return after admission without waiting for settlement',
+	},
+	'receipt-file': {
+		type: 'string',
+		description: 'Save the original request receipt before submitting code',
+	},
+} as const
+export const scriptReceiptArgs = {
+	...scriptConnectionArgs,
+	receipt: {
+		type: 'positional',
+		required: true,
+		description: 'Complete receipt returned by script run',
+	},
+} as const
+export const scriptRunDefinition = {
+	name: 'run',
+	description: 'Compile and execute a trusted script on an explicitly enabled Host',
+	args: scriptRunArgs,
+} as const
+export const scriptSyncArgs = {
+	...scriptConnectionArgs,
+	endpoint: {
+		type: 'string',
+		required: true,
+		description: 'Authenticated HTTP(S) origin or runtime session WebSocket URL',
+	},
+	out: {
+		type: 'string',
+		default: '.pluxel/control',
+		description: 'Tool-owned Plugin contract directory; import its current/index.mjs',
+	},
+} as const
+export const scriptSyncDefinition = {
+	name: 'sync',
+	description: 'Download and verify committed Plugin contracts without enabling code execution',
+	args: scriptSyncArgs,
+} as const
+export const scriptResultDefinition = {
+	name: 'result',
+	description: 'Query the original script owner without resubmitting',
+	args: scriptReceiptArgs,
+} as const
+export const scriptCancelDefinition = {
+	name: 'cancel',
+	description: 'Request cooperative cancellation at the original script owner',
+	args: scriptReceiptArgs,
+} as const
+export const scriptCommandDefinition = {
+	name: 'script',
+	description:
+		'Read Plugin contracts and execute trusted TypeScript on an authenticated deployment',
+	args: {},
+	subCommands: new Map<string, SubCommandable>([
+		[
+			'sync',
+			lazy(
+				() => import('./commands/script-sync').then((module) => module.scriptSyncCommand),
+				scriptSyncDefinition,
+			),
+		],
+		[
+			'run',
+			lazy(
+				() => import('./commands/script').then((module) => module.scriptRunCommand),
+				scriptRunDefinition,
+			),
+		],
+		[
+			'result',
+			lazy(
+				() => import('./commands/script').then((module) => module.scriptResultCommand),
+				scriptResultDefinition,
+			),
+		],
+		[
+			'cancel',
+			lazy(
+				() => import('./commands/script').then((module) => module.scriptCancelCommand),
+				scriptCancelDefinition,
+			),
+		],
+	]),
+} as const
+
 export const docsCommandArgs = {
 	path: {
 		type: 'positional',
@@ -678,6 +792,19 @@ export const devRunDefinition = {
 	toKebab: true,
 	args: devRunArgs,
 } as const
+export const devSyncArgs = {
+	...devCommonArgs,
+	out: {
+		type: 'string',
+		description:
+			'Tool-owned contract directory; defaults to the selected Vite root .pluxel/control',
+	},
+} as const
+export const devSyncDefinition = {
+	name: 'sync',
+	description: 'Download committed Plugin contracts from the selected development console',
+	args: devSyncArgs,
+} as const
 
 export const devReceiptArgs = {
 	receipt: {
@@ -704,6 +831,13 @@ export const devCommandDefinition = {
 	description: 'Start or reuse the project application or service and display current addresses',
 	args: devCommonArgs,
 	subCommands: new Map<string, SubCommandable>([
+		[
+			'sync',
+			lazy(
+				() => import('./commands/dev-sync').then((module) => module.devSyncCommand),
+				devSyncDefinition,
+			),
+		],
 		[
 			'status',
 			lazy(

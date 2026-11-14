@@ -1,28 +1,35 @@
+import { sourceHash, observedSourceHash } from './source'
 import { createHash } from 'node:crypto'
-import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
-import { open, realpath } from 'node:fs/promises'
+import { realpath } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { normalizePath, type ViteDevServer } from 'vite'
+import { checkProjectScript } from '@pluxel/rolldown/scripts'
 import type { RootContext } from '@pluxel/core'
-import { createDevConsoleScope, type DevConsoleScope } from '../dev/console'
+import {
+	executeHostScript,
+	readPluginControlMaterials,
+	ScriptExecutionError,
+	type ScriptScope,
+	type RunExecution,
+} from '@pluxel/host/agent'
+import { createProjectSdk } from '../project-sdk'
 import {
 	collectHostImportFiles,
+	collectHostEvaluatedInputs,
 	importHostModule,
 	invalidateHostModuleGraphFiles,
 	invalidateHostModule,
 } from '../environment'
-import { ConsoleExecutionError, DEV_CONSOLE_VALUE_BYTES } from './protocol'
-import { startDevConsoleServer } from './server'
-import type { RunExecution } from './executor'
+import { startProjectScriptServer } from './server'
 import type { HostViteUpdateStatus } from '../driver'
 import { readViteUrlOutput } from '../internal/vite-urls'
 
-export type DevConsoleHost = Readonly<{
+export type ProjectScriptHost = Readonly<{
 	ctx: RootContext
 	epoch: string
 }>
 
-export type DevConsoleAttachment = Readonly<{
+export type ProjectScriptsAttachment = Readonly<{
 	/** Abort old scopes and drain tracked resources; does not forcibly terminate arbitrary JavaScript. */
 	hostChanged(): Promise<void>
 	close(): Promise<void>
@@ -32,9 +39,9 @@ export type DevConsoleAttachment = Readonly<{
 	observed(file: string): void
 	tracks(file: string): boolean
 }>
-export type AttachDevConsoleOptions = Readonly<{
+export type AttachProjectScriptsOptions = Readonly<{
 	server: ViteDevServer
-	getHost(): DevConsoleHost | undefined
+	getHost(): ProjectScriptHost | undefined
 	getApplicationStatus?(): Readonly<Record<string, unknown>>
 	getUpdateStatus?(): HostViteUpdateStatus
 	assertApplied?(): void
@@ -44,9 +51,9 @@ export type AttachDevConsoleOptions = Readonly<{
 }>
 
 /** Route-owned optional console. No listener, runner or log owner is installed until explicitly attached. */
-export async function attachDevConsole(
-	options: AttachDevConsoleOptions,
-): Promise<DevConsoleAttachment> {
+export async function attachProjectScripts(
+	options: AttachProjectScriptsOptions,
+): Promise<ProjectScriptsAttachment> {
 	const root = await realpath(options.server.config.root)
 	const scripts = new Map<string, Map<string, string>>()
 	const observedHashes = new Map<string, string>()
@@ -55,11 +62,17 @@ export async function attachDevConsole(
 		const path = normalizePath(file)
 		return scripts.has(path) || [...scripts.values()].some((dependencies) => dependencies.has(path))
 	}
-	const scopes = new Set<DevConsoleScope>()
+	const scopes = new Set<ScriptScope>()
 	let closed = false
-	const server = await startDevConsoleServer({
+	const server = await startProjectScriptServer({
 		root,
 		control: options.control,
+		materials: () => {
+			const host = options.getHost()
+			if (!host || closed)
+				throw new ScriptExecutionError('dev_unavailable', 'Dev host is not available')
+			return readPluginControlMaterials(host.ctx)
+		},
 		inspect: () => ({
 			hostEpoch: options.getHost()?.epoch,
 			application: options.getApplicationStatus?.(),
@@ -68,19 +81,22 @@ export async function attachDevConsole(
 		}),
 		execute: async (input, run) => {
 			run.signal.throwIfAborted()
-			const file = normalizePath(input.file)
+			const code = input.code
+			if (code.kind !== 'project')
+				throw new ScriptExecutionError('loading_unavailable', 'Vite loads project modules')
+			const file = normalizePath(code.file)
 			let dependencies = scripts.get(file)
 			if (!dependencies) {
 				if (scripts.size >= 128)
-					throw new ConsoleExecutionError(
+					throw new ScriptExecutionError(
 						'script_limit_reached',
 						'Reuse an existing script; this console already tracks 128 script entries',
 					)
 				dependencies = new Map()
 				scripts.set(file, dependencies)
 			}
-			if ((await sourceHash(file)) !== input.sourceHash)
-				throw new ConsoleExecutionError(
+			if ((await sourceHash(file)) !== code.sourceHash)
+				throw new ScriptExecutionError(
 					'source_changed',
 					'Script changed after submission; review and submit again',
 				)
@@ -117,26 +133,40 @@ export async function attachDevConsole(
 			run.signal.throwIfAborted()
 			const host = options.getHost()
 			if (!host || closed)
-				throw new ConsoleExecutionError('dev_unavailable', 'Dev host is not available')
+				throw new ScriptExecutionError('dev_unavailable', 'Dev host is not available')
 			run.hostEpoch(host.epoch)
-			if ((await sourceHash(file)) !== input.sourceHash)
-				throw new ConsoleExecutionError(
-					'source_changed',
-					'Script changed while preparing execution',
-				)
+			if ((await sourceHash(file)) !== code.sourceHash)
+				throw new ScriptExecutionError('source_changed', 'Script changed while preparing execution')
 			options.assertApplied?.()
+			const checked = await checkProjectScript({ file, signal: run.signal })
+			const checkedEntry = checked.inputs.get(file)
+			if (
+				checkedEntry === undefined ||
+				createHash('sha256').update(checkedEntry).digest('hex') !== code.sourceHash
+			)
+				throw new ScriptExecutionError('source_changed', 'Script changed before type checking')
 			const exports = await importHostModule<Record<string, unknown>>(options.server, file)
 			options.assertApplied?.()
 			run.signal.throwIfAborted()
 			if (options.getHost()?.epoch !== host.epoch)
-				throw new ConsoleExecutionError('host_changed', 'Dev host changed during module loading')
-			if ((await sourceHash(file)) !== input.sourceHash)
-				throw new ConsoleExecutionError('source_changed', 'Script changed during module loading')
-			const execute = exports[input.exportName]
+				throw new ScriptExecutionError('host_changed', 'Dev host changed during module loading')
+			try {
+				for (const [path, content] of collectHostEvaluatedInputs(options.server, file))
+					if (checked.inputs.get(path) !== content)
+						throw new Error(`Checked source does not match the evaluated module input: ${path}`)
+			} catch (cause) {
+				throw new ScriptExecutionError(
+					'source_changed',
+					cause instanceof Error ? cause.message : String(cause),
+				)
+			}
+			if ((await sourceHash(file)) !== code.sourceHash)
+				throw new ScriptExecutionError('source_changed', 'Script changed during module loading')
+			const execute = exports[code.exportName]
 			if (typeof execute !== 'function')
-				throw new ConsoleExecutionError(
+				throw new ScriptExecutionError(
 					'export_not_callable',
-					`Export ${input.exportName} is not a function`,
+					`Export ${code.exportName} is not a function`,
 				)
 			const nextDependencies = new Map<string, string>()
 			for (const dependency of collectHostImportFiles(options.server, file)) {
@@ -147,7 +177,7 @@ export async function attachDevConsole(
 				)
 					continue
 				if (nextDependencies.size >= 4096)
-					throw new ConsoleExecutionError(
+					throw new ScriptExecutionError(
 						'script_limit_reached',
 						'Script dependency graph exceeds 4096 local files',
 					)
@@ -160,53 +190,30 @@ export async function attachDevConsole(
 				}
 			run.signal.throwIfAborted()
 			if (options.getHost()?.epoch !== host.epoch)
-				throw new ConsoleExecutionError(
+				throw new ScriptExecutionError(
 					'host_changed',
 					'Dev host changed while loading dependencies',
 				)
 			options.assertApplied?.()
-			const scope = createDevConsoleScope({
-				ctx: host.ctx,
-				id: input.runId,
-				input: input.input,
-				signal: run.signal,
-			})
-			scopes.add(scope)
-			run.phase('execute')
-			let result: unknown
-			let executionError: unknown
-			let failed = false
+			let borrowed: ScriptScope | undefined
 			try {
-				run.revision('before', await scope.snapshot())
-				result = await execute(scope.dev)
-			} catch (error) {
-				failed = true
-				executionError = error
-			}
-			try {
-				run.revision('after', await scope.snapshot())
-			} catch (error) {
-				if (!failed) {
-					failed = true
-					executionError = error
-				}
-			}
-			try {
-				if (!failed) run.phase('cleanup')
-				await scope.dispose()
-			} catch (cleanupError) {
-				if (failed)
-					throw new AggregateError(
-						[executionError, cleanupError],
-						'Script execution and resource cleanup failed',
-						{ cause: cleanupError },
-					)
-				throw cleanupError
+				return await executeHostScript(
+					{
+						ctx: host.ctx,
+						id: input.runId,
+						input: input.input,
+						script: execute as Parameters<typeof executeHostScript>[0]['script'],
+						extendSdk(scope) {
+							borrowed = scope
+							scopes.add(scope)
+							return createProjectSdk(host.ctx, scope)
+						},
+					},
+					run,
+				)
 			} finally {
-				scopes.delete(scope)
+				if (borrowed) scopes.delete(borrowed)
 			}
-			if (failed) throw executionError
-			return result
 		},
 	})
 	const disposeScopes = async () => {
@@ -256,46 +263,4 @@ export async function attachDevConsole(
 			})())
 		},
 	})
-}
-
-async function sourceHash(file: string): Promise<string> {
-	await using handle = await open(file, 'r')
-	const stat = await handle.stat()
-	if (!stat.isFile())
-		throw new ConsoleExecutionError('file_not_allowed', 'Expected a regular source file')
-	const bytes = Buffer.alloc(DEV_CONSOLE_VALUE_BYTES + 1)
-	let size = 0
-	while (size < bytes.length) {
-		const chunk = await handle.read(bytes, size, bytes.length - size, null)
-		if (chunk.bytesRead === 0) break
-		size += chunk.bytesRead
-	}
-	if (size > DEV_CONSOLE_VALUE_BYTES)
-		throw new ConsoleExecutionError('source_too_large', 'Dev source file exceeds 1 MiB')
-	return createHash('sha256').update(bytes.subarray(0, size)).digest('hex')
-}
-
-/** Only called for a watched, already imported source. Bound work before the route's synchronous admission. */
-function observedSourceHash(file: string): string {
-	const descriptor = openSync(file, 'r')
-	try {
-		const stat = fstatSync(descriptor)
-		if (!stat.isFile() || stat.size > DEV_CONSOLE_VALUE_BYTES)
-			throw new ConsoleExecutionError(
-				'source_too_large',
-				'Dev source file is not a bounded regular file',
-			)
-		const bytes = Buffer.alloc(DEV_CONSOLE_VALUE_BYTES + 1)
-		let size = 0
-		while (size < bytes.length) {
-			const count = readSync(descriptor, bytes, size, bytes.length - size, null)
-			if (count === 0) break
-			size += count
-		}
-		if (size > DEV_CONSOLE_VALUE_BYTES)
-			throw new ConsoleExecutionError('source_too_large', 'Dev source file exceeds 1 MiB')
-		return createHash('sha256').update(bytes.subarray(0, size)).digest('hex')
-	} finally {
-		closeSync(descriptor)
-	}
 }

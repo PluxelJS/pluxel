@@ -26,6 +26,12 @@ export type {
 	RuntimeLogLine,
 } from '@pluxel/core/logging/protocol'
 export * from './web/protocol'
+export type {
+	PluginControlManifestIndex,
+	PluginControlManifestRequest,
+	PluginControlFileRequest,
+	PluginControlFileChunk,
+} from '@pluxel/host/agent'
 export {
 	parseConfigFieldPathSegments,
 	parseConfigPresentationPlanV2,

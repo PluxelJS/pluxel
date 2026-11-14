@@ -37,6 +37,13 @@ import {
 	type VaultKeyPair,
 } from './protocol'
 import type { VaultAdminState } from '../../vault'
+import type {
+	PluginControlManifestIndex,
+	PluginControlManifestRequest,
+	PluginControlFileRequest,
+	PluginControlFileChunk,
+} from '@pluxel/host/agent'
+import type { ScriptControlResponse } from '@pluxel/host/agent/transport'
 
 export type RuntimeLogStreamsIndex = Readonly<{ streams: readonly LogStreamMeta[] }>
 
@@ -69,6 +76,12 @@ export interface RuntimeManagementTarget extends RpcTarget {
 		observer: (snapshot: unknown) => Promise<void>,
 	) => RuntimeSubscriptionTarget
 	pluginCatalogDto: () => Promise<PluginCatalogSnapshot>
+	pluginControlManifestDto: (
+		input?: PluginControlManifestRequest,
+	) => Promise<ScriptControlResponse<PluginControlManifestIndex>>
+	pluginControlFileDto: (
+		input: PluginControlFileRequest,
+	) => ScriptControlResponse<PluginControlFileChunk>
 	updatePluginCatalogLayoutDto: (
 		input: PluginCatalogLayoutInput,
 	) => Promise<PluginCatalogLayoutMutationResult>

@@ -1,12 +1,13 @@
-import { defineDevConsole } from '@pluxel/host-vite/console'
+import type { ProjectScript } from '@pluxel/host-vite/project'
 import { ReportStudioPlugin } from '../src/showcase/ReportStudio'
 
-/** Saved/effective authority for the browser ConfigForm acceptance. */
-export default defineDevConsole((dev) => dev.config.get(ReportStudioPlugin))
+/** Dynamic-address configuration for browser acceptance; generated descriptors provide schema I/O. */
+export default ((sdk) =>
+	sdk.plugin(ReportStudioPlugin.nodeAddress()).config.get()) satisfies ProjectScript
 
 /** Restore only the field changed by explicit --save browser acceptance. */
-export const restoreOutboundPath = defineDevConsole((dev) => {
-	const input = dev.input
+export const restoreOutboundPath = ((sdk, run) => {
+	const input = run.input
 	if (
 		!input ||
 		typeof input !== 'object' ||
@@ -16,10 +17,10 @@ export const restoreOutboundPath = defineDevConsole((dev) => {
 		throw new TypeError('restoreOutboundPath requires { hadOverride, value? }')
 	if (input.hadOverride && (!('value' in input) || typeof input.value !== 'string'))
 		throw new TypeError('An existing outboundPath override must be a string')
-	return dev.config.patch(
-		ReportStudioPlugin,
+	const { patch } = sdk.plugin(ReportStudioPlugin.nodeAddress()).config
+	return patch(
 		input.hadOverride
 			? { set: { outboundPath: 'value' in input ? input.value : undefined } }
 			: { remove: [['outboundPath']] },
 	)
-})
+}) satisfies ProjectScript

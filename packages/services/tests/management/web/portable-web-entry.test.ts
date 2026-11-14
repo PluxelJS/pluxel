@@ -21,7 +21,7 @@ describe('@pluxel/services/management/client framework boundary', () => {
 			ready: true,
 			protocol: {
 				name: 'pluxel.management',
-				major: 9,
+				major: 10,
 				capabilities: ['plugin-catalog'],
 			},
 			application: { product: null },
@@ -48,7 +48,7 @@ describe('@pluxel/services/management/client framework boundary', () => {
 			ready: true,
 			protocol: {
 				name: 'pluxel.management',
-				major: 9,
+				major: 10,
 				capabilities: ['plugin-catalog'],
 			},
 			application: { product: null },

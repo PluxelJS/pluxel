@@ -1,8 +1,9 @@
 import { watch, type FSWatcher } from 'chokidar'
+import { isAbsolute } from 'node:path'
 import { normalizePath } from 'vite'
 import { hostFileWatchOptions } from './internal/watch-policy'
 
-/** Vite omits node_modules watches; production also owns updates without browser HMR. */
+/** Own the evaluated dependency closure, ready before publication, in both Vite profiles. */
 export function createHostDependencyWatch(options: {
 	onChange(file: string, type: 'create' | 'update' | 'delete'): Promise<void>
 	onError(error: unknown): void
@@ -20,7 +21,10 @@ export function createHostDependencyWatch(options: {
 		},
 		async replace(input: Iterable<string>): Promise<void> {
 			if (closed) return
-			const next = new Set([...input].map(normalizePath))
+			// Vite's evaluated closure also includes virtual module IDs, which have no file to watch.
+			const next = new Set(
+				[...input].filter((file) => isAbsolute(file) && !file.includes('\0')).map(normalizePath),
+			)
 			if (next.size === files.size && [...next].every((file) => files.has(file))) return
 			const policy = next.size > 0 ? hostFileWatchOptions() : undefined
 			const previous = watcher

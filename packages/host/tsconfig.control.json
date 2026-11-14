@@ -1,0 +1,9 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"strictNullChecks": true,
+		"skipLibCheck": false
+	},
+	"files": ["tests/agent-control.typecheck.ts"],
+	"include": []
+}

@@ -66,6 +66,7 @@ async function consoleRead(file, exportName = 'default', input) {
 	assert.ok(accepted?.receipt)
 	assert.equal(result.ok, true, JSON.stringify(result))
 	assert.equal(result.value.state, 'succeeded', JSON.stringify(result.value))
+	assert.equal(result.value.value.status, 'ok', JSON.stringify(result.value.value))
 	receipt.console.push({
 		file,
 		exportName,
@@ -74,7 +75,7 @@ async function consoleRead(file, exportName = 'default', input) {
 		hostEpoch: result.value.hostEpoch,
 		value: result.value.value,
 	})
-	return result.value.value
+	return result.value.value.value
 }
 async function check(name, run) {
 	const evidence = await run()
@@ -143,7 +144,6 @@ try {
 	assert.equal(online.studio.lifecycleState, 'running')
 	const configBefore = await consoleRead('workbench-config.ts')
 	savedConfigBefore = configBefore
-	assert.equal(configBefore.ok, true)
 	const studioEntry = online.layout.entries.find((entry) => entry.descriptor.key === 'studio')
 	assert.equal(studioEntry?.placement.kind, 'route')
 	assert.equal(studioEntry.placement.frame, 'shell')
@@ -397,7 +397,6 @@ try {
 				await assertInputIdentity(originalHandle, pathInput(panel), newer)
 				await expect(detailTab.locator('[aria-label="未保存的更改"]')).toHaveCount(1)
 				const saved = await consoleRead('workbench-config.ts')
-				assert.equal(saved.ok, true)
 				assert.equal(saved.managedInput.outboundPath, draft)
 				// This sample has no config update listener; persisted input is explicit about that boundary.
 				assert.equal(saved.application, 'saved-not-applied')
@@ -409,7 +408,6 @@ try {
 					'restoreOutboundPath',
 					restoreInput,
 				)
-				assert.equal(restored.ok, true)
 				assert.equal(restored.application, 'applied')
 				restoreInput = undefined
 				return {
@@ -442,7 +440,6 @@ try {
 	if (restoreInput) {
 		try {
 			const restored = await consoleRead('workbench-config.ts', 'restoreOutboundPath', restoreInput)
-			assert.equal(restored.ok, true)
 			for (const key of ['managedInput', 'effectiveInput', 'config'])
 				assert.deepEqual(restored[key], savedConfigBefore[key])
 			receipt.restoredAfterFailure = true

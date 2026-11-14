@@ -1,5 +1,7 @@
 /** Physical UTF-8 ceiling enforced in both directions by the Runtime control WebSocket. */
 export const RUNTIME_SESSION_MAX_MESSAGE_BYTES = 256 * 1024
+/** Enabled script uploads carry code, source map and input in one Cap'n Web message. */
+export const RUNTIME_SCRIPT_MAX_MESSAGE_BYTES = 8 * 1024 * 1024
 
 /**
  * Budget for one application DTO before Cap'n Web adds its result envelope.

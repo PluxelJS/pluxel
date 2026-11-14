@@ -5,384 +5,255 @@ import {
 	mkdir,
 	mkdtemp,
 	readFile,
-	readdir,
 	rm,
 	symlink,
+	unlink,
 	writeFile,
 } from 'node:fs/promises'
 import { createConnection } from 'node:net'
-import type { DevConsoleInstance } from '../src/console/protocol'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { requestDev } from '../../cli/src/dev/client'
-import { startDevConsoleServer } from '../src/console/server'
+import { afterEach, expect, it, vi } from 'vitest'
+import { openScriptSocketSession } from '@pluxel/host/agent/socket'
+import type { ScriptConnectionTarget } from '@pluxel/host/agent/transport'
+import { SCRIPT_ARTIFACT_FORMAT, type ScriptSubmission } from '@pluxel/host/agent'
+import { connectDevInstance, selectDevInstance } from '../../cli/src/dev/client'
+import { startProjectScriptServer } from '../src/console/server'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
 	for (const close of cleanup.splice(0).toReversed()) await close()
 	vi.unstubAllEnvs()
 })
-
 async function project() {
-	const root = await mkdtemp(resolve(tmpdir(), 'px-console-server-'))
+	const root = await mkdtemp(resolve(tmpdir(), 'px-script-server-'))
 	cleanup.push(() => rm(root, { recursive: true, force: true }))
 	const file = resolve(root, 'script.ts')
-	const source = 'export default async () => ({ count: 1 })'
+	const source = 'export default async () => 1'
 	await writeFile(file, source)
 	return { root, file, sourceHash: createHash('sha256').update(source).digest('hex') }
 }
-
 async function fixture() {
 	const files = await project()
-	let calls = 0
-	const server = await startDevConsoleServer({
-		root: files.root,
-		async execute(input, run) {
-			calls++
-			run.phase('execute')
-			return { calls, input: input.input }
+	const execute = vi.fn(async () => ({ count: 1 }))
+	const server = await startProjectScriptServer({ root: files.root, execute })
+	cleanup.push(() => server.close())
+	const input: ScriptSubmission = {
+		runId: randomUUID(),
+		code: {
+			kind: 'project',
+			file: files.file,
+			sourceHash: files.sourceHash,
+			exportName: 'default',
+		},
+	}
+	return { ...files, execute, server, input }
+}
+it('grants the shared control target only after native Cap’n Web instance authentication', async () => {
+	const { server, execute } = await fixture()
+	for (const nonce of ['', randomUUID()]) {
+		await expect(connectDevInstance({ ...server.instance, nonce })).rejects.toMatchObject({
+			code: 'unauthorized',
+		})
+	}
+	const socket = createConnection(server.instance.socketPath)
+	const session = openScriptSocketSession<ScriptConnectionTarget>(socket)
+	try {
+		using response = await session.remote.connect({
+			protocol: 1,
+			instanceId: server.instance.instanceId,
+			nonce: server.instance.nonce,
+		})
+		expect(response).toMatchObject({ ok: false, error: { code: 'protocol_mismatch' } })
+	} finally {
+		session.close()
+	}
+	expect(execute).not.toHaveBeenCalled()
+})
+it('captures startup provenance, protects discovery, and keeps credentials out of status', async () => {
+	vi.stubEnv('PITCHFORK_DAEMON_ID', 'fixture/server')
+	const { root } = await project()
+	vi.stubEnv('PLUXEL_DEV_PROFILE', 'app')
+	vi.stubEnv('PLUXEL_DEV_PROJECT', root)
+	const server = await startProjectScriptServer({
+		root,
+		execute: async () => null,
+		inspect: () => ({ root: 'wrong', instanceId: 'wrong', serviceId: 'wrong/app' }),
+	})
+	cleanup.push(() => server.close())
+	vi.stubEnv('PITCHFORK_DAEMON_ID', 'other/server')
+	const descriptor = JSON.parse(
+		await readFile(
+			resolve(root, '.pluxel/dev-console', `${server.instance.instanceId}.json`),
+			'utf8',
+		),
+	)
+	expect(descriptor).toMatchObject({
+		protocol: 2,
+		serviceId: 'fixture/server',
+		profile: 'app',
+		project: root,
+	})
+	const discoveryStat = await lstat(resolve(root, '.pluxel/dev-console'))
+	const socketDirectoryStat = await lstat(dirname(descriptor.socketPath))
+	expect(discoveryStat.mode & 0o777).toBe(0o700)
+	expect(socketDirectoryStat.mode & 0o777).toBe(0o700)
+	const selected = await selectDevInstance({ root, serviceId: 'fixture/server' })
+	using client = await connectDevInstance(selected)
+	const status = await client.describe()
+	expect(status).toMatchObject({
+		instanceId: server.instance.instanceId,
+		root,
+		serviceId: 'fixture/server',
+		codeKinds: ['project'],
+		capabilities: [
+			'plugins',
+			'plugin',
+			'plugin.instance',
+			'plugin.config',
+			'policy',
+			'updates',
+			'logs',
+		],
+	})
+	expect(status).not.toHaveProperty('nonce')
+	expect(status).not.toHaveProperty('socketPath')
+})
+it('rejects invalid inputs, unsupported loading modes, source changes and realpath escapes before execution', async () => {
+	const { server, input, sourceHash, root, execute } = await fixture()
+	using client = await connectDevInstance(server.instance)
+	const outside = await project()
+	const linked = resolve(root, 'linked.ts')
+	await symlink(outside.file, linked)
+	const code = input.code
+	for (const file of [outside.file, linked])
+		await expect(
+			client.submit({ ...input, code: { ...code, kind: 'project', file } } as ScriptSubmission),
+		).rejects.toMatchObject({ code: 'file_not_allowed' })
+	await expect(
+		client.submit({ ...input, code: { ...code, sourceHash: 'a'.repeat(64) } }),
+	).rejects.toMatchObject({ code: 'source_changed' })
+	await expect(client.submit({ ...input, timeoutMs: 300001 })).rejects.toMatchObject({
+		code: 'invalid_request',
+	})
+	await expect(client.submit({ ...input, input: 'x'.repeat(1024 * 1024) })).rejects.toMatchObject({
+		code: 'input_too_large',
+	})
+	await expect(
+		client.submit({
+			...input,
+			code: {
+				kind: 'artifact',
+				format: SCRIPT_ARTIFACT_FORMAT,
+				code: '',
+				sourceHash,
+				exportName: 'default',
+			},
+		}),
+	).rejects.toMatchObject({ code: 'loading_unavailable' })
+	expect(execute).not.toHaveBeenCalled()
+})
+it('queries the same accepted identity after disconnect and source deletion; conflicting content never replays', async () => {
+	const { server, input, file, execute } = await fixture()
+	{
+		using first = await connectDevInstance(server.instance)
+		await first.submit(input)
+	}
+	const result = await server.executor.settled(input.runId, server.instance.instanceId)
+	await unlink(file)
+	using reconnected = await connectDevInstance(server.instance)
+	expect(await reconnected.result(input.runId)).toEqual(result)
+	expect(await reconnected.submit(input)).toEqual(result)
+	await expect(reconnected.submit({ ...input, input: { changed: true } })).rejects.toMatchObject({
+		code: 'request_conflict',
+	})
+	expect(execute).toHaveBeenCalledTimes(1)
+})
+it('transmits a full-budget result with its run metadata over the native carrier', async () => {
+	const { root, file, sourceHash } = await project()
+	const value = 'x'.repeat(1024 * 1024 - 2)
+	const server = await startProjectScriptServer({ root, execute: async () => value })
+	cleanup.push(() => server.close())
+	using client = await connectDevInstance(server.instance)
+	await client.submit({
+		runId: 'large-result',
+		code: { kind: 'project', file, sourceHash, exportName: 'default' },
+	})
+	await server.executor.settled('large-result', server.instance.instanceId)
+	expect(await client.result('large-result')).toMatchObject({ state: 'succeeded', value })
+})
+it('retains expired identities across native submissions and reports conflicting content', async () => {
+	const { server, input, execute } = await fixture()
+	using client = await connectDevInstance(server.instance)
+	await client.submit(input)
+	await server.executor.settled(input.runId, server.instance.instanceId)
+	for (let index = 0; index < 100; index++) {
+		const next = { ...input, runId: `retained-${index}` }
+		await client.submit(next)
+		await server.executor.settled(next.runId, server.instance.instanceId)
+	}
+	await expect(client.result(input.runId)).rejects.toMatchObject({ code: 'result_expired' })
+	await expect(client.submit(input)).rejects.toMatchObject({ code: 'result_expired' })
+	await expect(client.submit({ ...input, input: { different: true } })).rejects.toMatchObject({
+		code: 'request_conflict',
+	})
+	expect(execute).toHaveBeenCalledTimes(101)
+})
+it('closes discovery and waits for actual cooperative settlement before completing owner shutdown', async () => {
+	const { root, file, sourceHash } = await project()
+	const entered = Promise.withResolvers<void>()
+	const release = Promise.withResolvers<void>()
+	const server = await startProjectScriptServer({
+		root,
+		execute: async () => {
+			entered.resolve()
+			await release.promise
+			return 1
 		},
 	})
 	cleanup.push(() => server.close())
-	const packet = {
-		method: 'run',
-		runId: randomUUID(),
-		file: files.file,
-		sourceHash: files.sourceHash,
-		exportName: 'default',
+	using client = await connectDevInstance(server.instance)
+	const input: ScriptSubmission = {
+		runId: 'closing',
+		code: { kind: 'project', file, sourceHash, exportName: 'default' },
 	}
-	return { ...files, server, packet, calls: () => calls }
-}
-
-function requestWithProtocol(instance: DevConsoleInstance, protocol: number): Promise<unknown> {
-	return new Promise((resolveResponse, reject) => {
-		const socket = createConnection(instance.socketPath)
-		let response = ''
-		socket.on('error', reject)
-		socket.once('connect', () =>
-			socket.write(
-				JSON.stringify({
-					protocol,
-					instanceId: instance.instanceId,
-					nonce: instance.nonce,
-					method: 'inspect',
-				}) + '\n',
-			),
-		)
-		socket.on('data', (chunk) => {
-			response += chunk.toString()
-		})
-		socket.once('end', () => {
-			try {
-				resolveResponse(JSON.parse(response))
-			} catch (error) {
-				reject(error)
-			}
-		})
+	await client.submit(input)
+	await entered.promise
+	let closed = false
+	const closing = server.close().then((): void => {
+		closed = true
+		return undefined
 	})
-}
-
-describe('private development console server boundaries', () => {
-	it('validates HMR action, deadline and fields before admission', async () => {
-		const { root } = await project()
-		const control = vi.fn(async () => null)
-		const server = await startDevConsoleServer({ root, execute: async () => null, control })
-		cleanup.push(() => server.close())
-		const packet = { method: 'hmr', runId: 'hmr-action', action: 'pause' }
-		for (const invalid of [
-			{ action: 'restart' },
-			{ action: undefined },
-			{ timeoutMs: 0 },
-			{ timeoutMs: 300001 },
-			{ timeoutMs: '1000' },
-			{ file: '/script.ts' },
-			{ input: {} },
-			{ runId: '' },
-		]) {
-			await expect(requestDev(server.instance, { ...packet, ...invalid })).rejects.toMatchObject({
-				code: 'invalid_request',
-			})
-		}
-		expect(control).not.toHaveBeenCalled()
-		await requestDev(server.instance, packet)
-		expect(await server.executor.settled(packet.runId)).toMatchObject({
-			kind: 'hmr',
-			action: 'pause',
-			state: 'succeeded',
-		})
-		expect(control).toHaveBeenCalledTimes(1)
+	await Promise.resolve()
+	expect(closed).toBe(false)
+	expect(server.executor.result('closing', server.instance.instanceId)).toMatchObject({
+		state: 'cancelling',
 	})
-
-	it('binds discovery and inspect to the Pitchfork service captured at startup', async () => {
-		vi.stubEnv('PITCHFORK_DAEMON_ID', 'pluxel.worktree/plugin-host')
-		const { root } = await project()
-		const server = await startDevConsoleServer({
-			root,
-			async execute() {
-				return null
-			},
-			inspect: () => ({ serviceId: 'wrong/app', instanceId: 'wrong-instance' }),
-		})
-		cleanup.push(() => server.close())
-		vi.stubEnv('PITCHFORK_DAEMON_ID', 'other-project/app')
-		const descriptor = JSON.parse(
-			await readFile(
-				resolve(root, '.pluxel/dev-console', `${server.instance.instanceId}.json`),
-				'utf8',
-			),
-		)
-		expect(descriptor.serviceId).toBe('pluxel.worktree/plugin-host')
-		expect(Object.isFrozen(server.instance)).toBe(true)
-		await expect(requestDev(server.instance, { method: 'inspect' })).resolves.toMatchObject({
-			instanceId: server.instance.instanceId,
-			serviceId: descriptor.serviceId,
-		})
+	release.resolve()
+	await closing
+	expect(server.executor.result('closing', server.instance.instanceId)).toMatchObject({
+		state: 'cancelled',
 	})
-
-	it('keeps manually started Vite unbound', async () => {
-		vi.stubEnv('PITCHFORK_DAEMON_ID', undefined)
-		vi.stubEnv('PLUXEL_DEV_PROFILE', undefined)
-		vi.stubEnv('PLUXEL_DEV_PROJECT', undefined)
-		const { server } = await fixture()
-		expect(server.instance).not.toHaveProperty('serviceId')
-		expect(server.instance).not.toHaveProperty('profile')
-		expect(server.instance).not.toHaveProperty('project')
-		const inspection = await requestDev(server.instance, { method: 'inspect' })
-		expect(inspection).not.toHaveProperty('serviceId')
-		expect(inspection).not.toHaveProperty('profile')
-		expect(inspection).not.toHaveProperty('project')
-	})
-
-	it('protects the command profile captured at startup in discovery and inspect', async () => {
-		vi.stubEnv('PITCHFORK_DAEMON_ID', undefined)
-		vi.stubEnv('PLUXEL_DEV_PROFILE', 'app.preview-1')
-		const { root } = await project()
-		vi.stubEnv('PLUXEL_DEV_PROJECT', root)
-		const server = await startDevConsoleServer({
-			root,
-			execute: async () => null,
-			inspect: () => ({ profile: 'other', project: '/other' }),
-		})
-		cleanup.push(() => server.close())
-		vi.stubEnv('PLUXEL_DEV_PROFILE', 'changed')
-		vi.stubEnv('PLUXEL_DEV_PROJECT', '/changed')
-		const descriptor = JSON.parse(
-			await readFile(
-				resolve(root, '.pluxel/dev-console', `${server.instance.instanceId}.json`),
-				'utf8',
-			),
-		)
-		expect(descriptor.profile).toBe('app.preview-1')
-		expect(descriptor.project).toBe(root)
-		expect(server.instance.project).toBe(root)
-		expect(server.instance.profile).toBe('app.preview-1')
-		expect(Object.isFrozen(server.instance)).toBe(true)
-		await expect(requestDev(server.instance, { method: 'inspect' })).resolves.toMatchObject({
-			profile: 'app.preview-1',
-			project: root,
-		})
-	})
-
-	it.each(['', ' app', 'app ', 'app\n', 'app/other', '-app', 'app name'])(
-		'refuses malformed command profile %j before publishing discovery',
-		async (profile) => {
-			vi.stubEnv('PLUXEL_DEV_PROFILE', profile)
-			const { root } = await project()
-			vi.stubEnv('PLUXEL_DEV_PROJECT', root)
-			await expect(
-				startDevConsoleServer({ root, execute: async () => null }),
-			).rejects.toMatchObject({
-				code: 'invalid_profile',
-			})
-			await expect(lstat(resolve(root, '.pluxel/dev-console'))).rejects.toMatchObject({
-				code: 'ENOENT',
-			})
-		},
+	await expect(
+		lstat(resolve(root, '.pluxel/dev-console', `${server.instance.instanceId}.json`)),
+	).rejects.toMatchObject({ code: 'ENOENT' })
+})
+it('rejects non-private or redirected discovery and invalid startup provenance', async () => {
+	const { root } = await project()
+	await mkdir(resolve(root, '.pluxel/dev-console'), { recursive: true })
+	await chmod(resolve(root, '.pluxel/dev-console'), 0o755)
+	await expect(startProjectScriptServer({ root, execute: async () => null })).rejects.toMatchObject(
+		{ code: 'discovery_permissions' },
 	)
-
-	it.each(['profile', 'project'] as const)('rejects an unpaired command %s', async (field) => {
-		const { root } = await project()
-		vi.stubEnv('PLUXEL_DEV_PROFILE', field === 'profile' ? 'app' : undefined)
-		vi.stubEnv('PLUXEL_DEV_PROJECT', field === 'project' ? root : undefined)
-		await expect(startDevConsoleServer({ root, execute: async () => null })).rejects.toMatchObject({
-			code: 'invalid_project',
-		})
-		await expect(lstat(resolve(root, '.pluxel/dev-console'))).rejects.toMatchObject({
-			code: 'ENOENT',
-		})
-	})
-
-	it.each(['', 'relative/path', '/path\n', '/path\u0000', '/path\u007f', 'missing', 'file'])(
-		'rejects invalid command project %j before publishing discovery',
-		async (value) => {
-			const { root, file } = await project()
-			vi.stubEnv('PLUXEL_DEV_PROFILE', 'app')
-			vi.stubEnv(
-				'PLUXEL_DEV_PROJECT',
-				value === 'missing' ? resolve(root, 'missing') : value === 'file' ? file : value,
-			)
-			await expect(
-				startDevConsoleServer({ root, execute: async () => null }),
-			).rejects.toMatchObject({ code: 'invalid_project' })
-			await expect(lstat(resolve(root, '.pluxel/dev-console'))).rejects.toMatchObject({
-				code: 'ENOENT',
-			})
-		},
+	await chmod(resolve(root, '.pluxel/dev-console'), 0o700)
+	vi.stubEnv('PITCHFORK_DAEMON_ID', 'invalid')
+	await expect(startProjectScriptServer({ root, execute: async () => null })).rejects.toMatchObject(
+		{ code: 'invalid_service_id' },
 	)
-
-	it('canonicalizes the declaring directory while preserving valid spaces', async () => {
-		const { root } = await project()
-		const actual = resolve(root, 'package with spaces')
-		const alias = resolve(root, 'alias')
-		await mkdir(actual)
-		await symlink(actual, alias)
-		vi.stubEnv('PLUXEL_DEV_PROFILE', 'app')
-		vi.stubEnv('PLUXEL_DEV_PROJECT', alias)
-		const server = await startDevConsoleServer({ root, execute: async () => null })
-		cleanup.push(() => server.close())
-		expect(server.instance.project).toBe(actual)
-	})
-
-	it.each(['', 'plugin-host', 'pluxel/app/extra', ' pluxel/app', 'pluxel/app\n'])(
-		'refuses malformed managed service identity %j before publishing discovery',
-		async (serviceId) => {
-			vi.stubEnv('PITCHFORK_DAEMON_ID', serviceId)
-			const { root } = await project()
-			await expect(
-				startDevConsoleServer({ root, execute: async () => null }),
-			).rejects.toMatchObject({
-				code: 'invalid_service_id',
-			})
-			await expect(lstat(resolve(root, '.pluxel/dev-console'))).rejects.toMatchObject({
-				code: 'ENOENT',
-			})
-		},
+	vi.stubEnv('PITCHFORK_DAEMON_ID', undefined)
+	vi.stubEnv('PLUXEL_DEV_PROFILE', 'app')
+	vi.stubEnv('PLUXEL_DEV_PROJECT', undefined)
+	await expect(startProjectScriptServer({ root, execute: async () => null })).rejects.toMatchObject(
+		{ code: 'invalid_project' },
 	)
-
-	it('rejects wrong credentials, Unicode credentials, versions and unexpected fields before execution', async () => {
-		const { server, packet, calls } = await fixture()
-		for (const nonce of [
-			'x'.repeat(server.instance.nonce.length),
-			'é'.repeat(server.instance.nonce.length),
-		]) {
-			await expect(requestDev({ ...server.instance, nonce }, packet)).rejects.toMatchObject({
-				code: 'unauthorized',
-			})
-		}
-		await expect(requestWithProtocol(server.instance, 2)).resolves.toMatchObject({
-			ok: false,
-			error: { code: 'protocol_mismatch' },
-		})
-		await expect(
-			requestDev(server.instance, { ...packet, unexpected: true }),
-		).rejects.toMatchObject({ code: 'invalid_request' })
-		await expect(
-			requestDev(server.instance, { ...packet, method: 'unsupported' }),
-		).rejects.toMatchObject({ code: 'invalid_request' })
-		expect(calls()).toBe(0)
-	})
-
-	it('keeps the source inside the selected real project even through symlinks', async () => {
-		const { server, root, packet, calls } = await fixture()
-		const outside = await project()
-		await expect(
-			requestDev(server.instance, { ...packet, file: outside.file }),
-		).rejects.toMatchObject({ code: 'file_not_allowed' })
-		const linkedFile = resolve(root, 'linked.ts')
-		await symlink(outside.file, linkedFile)
-		await expect(
-			requestDev(server.instance, { ...packet, file: linkedFile }),
-		).rejects.toMatchObject({ code: 'file_not_allowed' })
-		expect(calls()).toBe(0)
-	})
-
-	it('reports unavailable application and its last rejection through authorized inspect', async () => {
-		const { root } = await project()
-		const server = await startDevConsoleServer({
-			root,
-			async execute() {
-				throw new Error('Must not execute')
-			},
-			inspect: () => ({
-				application: {
-					state: 'unavailable',
-					latestUpdate: {
-						state: 'settled',
-						outcome: 'failed',
-						phase: 'application-reload',
-						error: { message: 'Invalid app entry', file: 'app.ts', importChain: [] },
-					},
-				},
-			}),
-		})
-		cleanup.push(() => server.close())
-		await expect(requestDev(server.instance, { method: 'inspect' })).resolves.toMatchObject({
-			application: { state: 'unavailable', latestUpdate: { error: { file: 'app.ts' } } },
-		})
-	})
-
-	it('publishes private discovery and removes the descriptor and socket on idempotent close', async () => {
-		const { server, root } = await fixture()
-		const directory = resolve(root, '.pluxel/dev-console')
-		const descriptor = resolve(directory, `${server.instance.instanceId}.json`)
-		const directoryStat = await lstat(directory)
-		const descriptorStat = await lstat(descriptor)
-		const socketDirectoryStat = await lstat(dirname(server.instance.socketPath))
-		expect(directoryStat.mode & 0o777).toBe(0o700)
-		expect(descriptorStat.mode & 0o777).toBe(0o600)
-		expect(socketDirectoryStat.mode & 0o777).toBe(0o700)
-		await server.close()
-		await server.close()
-		expect(await readdir(directory)).toEqual([])
-		await expect(lstat(server.instance.socketPath)).rejects.toMatchObject({ code: 'ENOENT' })
-	})
-
-	it('refuses an existing discovery directory readable by other users', async () => {
-		const { root } = await project()
-		const directory = resolve(root, '.pluxel/dev-console')
-		await mkdir(directory, { recursive: true })
-		await chmod(directory, 0o755)
-		await expect(
-			startDevConsoleServer({
-				root,
-				async execute() {
-					throw new Error('Must not execute')
-				},
-			}),
-		).rejects.toMatchObject({ code: 'discovery_permissions' })
-		expect(await readdir(directory)).toEqual([])
-	})
-
-	it('bounds private JSON input before admitting any side effects', async () => {
-		const { server, packet, calls } = await fixture()
-		await expect(
-			requestDev(server.instance, { ...packet, input: 'x'.repeat(1024 * 1024) }),
-		).rejects.toMatchObject({ code: 'input_too_large' })
-		let nested: unknown = null
-		for (let index = 0; index < 66; index++) nested = [nested]
-		await expect(requestDev(server.instance, { ...packet, input: nested })).rejects.toMatchObject({
-			code: 'input_too_large',
-		})
-		expect(calls()).toBe(0)
-	})
-
-	it('deduplicates the original request and refuses different source metadata for the same run ID', async () => {
-		const { server, packet, calls } = await fixture()
-		const request = { ...packet, input: { count: 3 } }
-		await requestDev(server.instance, request)
-		const completed = await server.executor.settled(packet.runId)
-		expect(completed).toMatchObject({
-			state: 'succeeded',
-			file: packet.file,
-			exportName: 'default',
-			sourceHash: packet.sourceHash,
-			value: { calls: 1, input: { count: 3 } },
-		})
-		expect(await requestDev(server.instance, request)).toEqual(completed)
-		await expect(
-			requestDev(server.instance, { ...request, sourceHash: 'a'.repeat(64) }),
-		).rejects.toMatchObject({ code: 'request_conflict' })
-		expect(calls()).toBe(1)
-	})
 })

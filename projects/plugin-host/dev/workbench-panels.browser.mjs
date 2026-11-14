@@ -58,6 +58,7 @@ async function inspect() {
 	const result = JSON.parse(stdout)
 	assert.equal(result.ok, true, JSON.stringify(result))
 	assert.equal(result.value.state, 'succeeded', JSON.stringify(result.value))
+	assert.equal(result.value.value.status, 'ok', JSON.stringify(result.value.value))
 	const accepted = stderr
 		.trim()
 		.split('\n')
@@ -69,7 +70,7 @@ async function inspect() {
 		runId: result.value.runId,
 		hostEpoch: result.value.hostEpoch,
 	})
-	return result.value.value
+	return result.value.value.value
 }
 async function check(name, run) {
 	await run()

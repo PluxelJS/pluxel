@@ -135,7 +135,7 @@ try {
 			}),
 		)
 		await expect(run()).rejects.toThrow(
-			/installed-target.*peerDependencies\.capnweb 0\.12\.0.*resolved 0\.13\.0.*Host Workbench supports 0\.12\.0/,
+			/installed-target.*peerDependencies\.capnweb 0\.12\.0.*resolved 0\.13\.0.*Host capnweb supports 0\.12\.0/,
 		)
 	} finally {
 		await rm(root, { recursive: true, force: true })

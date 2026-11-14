@@ -59,9 +59,9 @@ const routePlugin = server.config.plugins.find(
 ) as VitePlugin
 assert.ok(routePlugin, 'Host route is missing')
 await server.listen()
-// This runner invokes the route hook directly so each write has one deterministic HMR operation.
-// A real listener is still required for the HTTP/WebSocket assertions, but its watcher must not
-// race the explicit hook and process the same file event a second time.
+// Keep the real listener for HTTP/WebSocket assertions, but suppress Vite's duplicate file events.
+// The route owns a separate dependency watcher; invokeHotUpdate subscribes before each mutation
+// so that watcher cannot begin or finish the expected batch before it is observed.
 await server.watcher.close()
 
 const capturedHost = host
@@ -163,8 +163,9 @@ try {
 		assert.equal(instance?.constructor, startupImplementation)
 	}
 
-	await writeFile(pluginPath, pluginSource('v2', true))
-	await invokeHotUpdate(routePlugin, pluginPath)
+	await invokeHotUpdate(routePlugin, pluginPath, () =>
+		writeFile(pluginPath, pluginSource('v2', true)),
+	)
 	const replacementInstances = [address, east, west].map((node) =>
 		currentPlugins().getInstance(node),
 	)
@@ -206,8 +207,11 @@ try {
 	assert.equal(await replacementSocket.nextMessage(), 'v2')
 	const replacementSocketClosed = replacementSocket.closed
 	const originalBuiltPlugin = await readFile(builtPluginPath, 'utf8')
-	await writeFile(builtPluginPath, 'export const invalidBuiltPlugin =')
-	await assert.rejects(() => invokeHotUpdate(routePlugin, builtPluginPath))
+	await assert.rejects(() =>
+		invokeHotUpdate(routePlugin, builtPluginPath, () =>
+			writeFile(builtPluginPath, 'export const invalidBuiltPlugin ='),
+		),
+	)
 	const statusesAfterBuiltFailureOverview = await readHostPluginStatusOverview(currentHost().ctx)
 	const statusesAfterBuiltFailure = statusesAfterBuiltFailureOverview.statuses
 	const retainedBuiltStatus = statusesAfterBuiltFailure.find((status) =>
@@ -225,10 +229,14 @@ try {
 	assert.equal(retainedBuiltStatus?.execution.artifact.kind, 'built-module')
 	assert.equal(retainedBuiltStatus?.execution.update.kind, 'host-reload')
 	assert.ok((builtAttempt?.sequence ?? 0) > (appliedStatus?.recentUpdate?.batch.sequence ?? 0))
-	await writeFile(builtPluginPath, originalBuiltPlugin)
-
-	await writeFile(pluginPath, 'export const invalidReplacement =')
-	await assert.rejects(() => invokeHotUpdate(routePlugin, pluginPath))
+	await assert.rejects(() =>
+		invokeHotUpdate(routePlugin, pluginPath, async () => {
+			// Keep the replacement invalid while restoring the other dependency: no intermediate
+			// valid candidate may replace the Host and close its still-running sockets.
+			await writeFile(pluginPath, 'export const invalidReplacement =')
+			await writeFile(builtPluginPath, originalBuiltPlugin)
+		}),
+	)
 	const retainedStatusOverview = await readHostPluginStatusOverview(currentHost().ctx)
 	const retainedStatus = retainedStatusOverview.statuses.find((status) =>
 		pluginNodeAddressEqual(status.address, address),
@@ -252,8 +260,9 @@ try {
 	await replacementSocketClosed
 
 	// A valid source edit after evaluation failure must activate without a Start command.
-	await writeFile(pluginPath, pluginSource('syntax-fixed', true))
-	await invokeHotUpdate(routePlugin, pluginPath)
+	await invokeHotUpdate(routePlugin, pluginPath, () =>
+		writeFile(pluginPath, pluginSource('syntax-fixed', true)),
+	)
 	assert.equal(currentPlugins().isRunning(address), true)
 	assert.equal(
 		await fetch(`${runtimeUrl}/configured/version`).then((response) => response.text()),
@@ -262,8 +271,9 @@ try {
 
 	// Init failure happens after the old dependency closure has stopped. Healthy siblings run,
 	// and a later source edit must recover both provider and required consumer automatically.
-	await writeFile(pluginPath, pluginSource('init-broken', true, true))
-	await invokeHotUpdate(routePlugin, pluginPath)
+	await invokeHotUpdate(routePlugin, pluginPath, () =>
+		writeFile(pluginPath, pluginSource('init-broken', true, true)),
+	)
 	assert.equal(currentPlugins().isRunning(partProviderAddress), false)
 	assert.equal(currentPlugins().isRunning(partOwnerAddress), false)
 	assert.equal(currentPlugins().isRunning(configuredAddress), true)
@@ -290,8 +300,9 @@ try {
 		await fetch(`${runtimeUrl}/configured/version`).then((response) => response.text()),
 		'init-broken',
 	)
-	await writeFile(pluginPath, pluginSource('v2', true))
-	await invokeHotUpdate(routePlugin, pluginPath)
+	await invokeHotUpdate(routePlugin, pluginPath, () =>
+		writeFile(pluginPath, pluginSource('v2', true)),
+	)
 	assert.equal(currentPlugins().isRunning(partProviderAddress), true)
 	assert.equal(currentPlugins().isRunning(partOwnerAddress), true)
 	assert.equal(
@@ -318,8 +329,9 @@ try {
 	assert.equal(await removableSocket.nextMessage(), 'v2')
 	const removableSocketClosed = removableSocket.closed
 
-	await writeFile(pluginPath, pluginSource('removed', false))
-	await invokeHotUpdate(routePlugin, pluginPath)
+	await invokeHotUpdate(routePlugin, pluginPath, () =>
+		writeFile(pluginPath, pluginSource('removed', false)),
+	)
 	assert.deepEqual(
 		[address, east, west].map((node) => currentPlugins().getInstance(node)),
 		[undefined, undefined, undefined],
@@ -338,8 +350,9 @@ try {
 	)
 	assert.deepEqual(await removableSocketClosed, { code: 1012, reason: 'Service Restart' })
 
-	await writeFile(pluginPath, pluginSource('v3', true))
-	await invokeHotUpdate(routePlugin, pluginPath)
+	await invokeHotUpdate(routePlugin, pluginPath, () =>
+		writeFile(pluginPath, pluginSource('v3', true)),
+	)
 	assert.equal(currentPlugins().isRunning(address), true)
 	assert.equal(
 		await fetch(`${runtimeUrl}/vite-static/version`).then((response) => response.text()),
@@ -363,14 +376,19 @@ try {
 	)?.execution
 	const originalEntry = await readFile(entryPath, 'utf8')
 	const beforeFactoryFailure = currentHost()
-	await writeFile(
-		entryPath,
-		originalEntry.replace(
-			'export default defineHostApplication(() => {',
-			"export default defineHostApplication(() => { throw new Error('factory rejected')",
-		),
+	await assert.rejects(
+		() =>
+			invokeHotUpdate(routePlugin, entryPath, () =>
+				writeFile(
+					entryPath,
+					originalEntry.replace(
+						'export default defineHostApplication(() => {',
+						"export default defineHostApplication(() => { throw new Error('factory rejected')",
+					),
+				),
+			),
+		/factory rejected/,
 	)
-	await assert.rejects(() => invokeHotUpdate(routePlugin, entryPath), /factory rejected/)
 	assert.equal(currentHost(), beforeFactoryFailure, 'factory failure retains the running Host')
 	assert.equal(
 		await fetch(`${runtimeUrl}/vite-static/version`).then((response) => response.text()),
@@ -381,8 +399,10 @@ try {
 		"  prepare({ host, startup }) { throw new Error('replacement prepare failed')",
 	)
 	assert.notEqual(failingEntry, originalEntry)
-	await writeFile(entryPath, failingEntry)
-	await assert.rejects(() => invokeHotUpdate(routePlugin, entryPath), /replacement prepare failed/)
+	await assert.rejects(
+		() => invokeHotUpdate(routePlugin, entryPath, () => writeFile(entryPath, failingEntry)),
+		/replacement prepare failed/,
+	)
 	const compensatedHost = host
 	assert.ok(compensatedHost, 'previous application was not restored after replacement failure')
 	assert.notEqual(compensatedHost, beforeFactoryFailure)
@@ -404,8 +424,7 @@ try {
 		'v3',
 	)
 
-	await writeFile(entryPath, originalEntry)
-	await invokeHotUpdate(routePlugin, entryPath)
+	await invokeHotUpdate(routePlugin, entryPath, () => writeFile(entryPath, originalEntry))
 	const replacementHost = host
 	assert.ok(replacementHost, 'valid application did not replace the compensated host')
 	assert.notEqual(replacementHost, compensatedHost)
@@ -419,10 +438,10 @@ try {
 		'v3',
 	)
 
-	await writeFile(pluginPath, pluginSource('v4', true))
 	await Promise.all([
-		invokeHotUpdate(routePlugin, pluginPath),
-		invokeHotUpdate(routePlugin, pluginPath),
+		invokeHotUpdate(routePlugin, pluginPath, () => writeFile(pluginPath, pluginSource('v4', true))),
+		// Both observers are installed before the write; duplicate hooks still share one batch.
+		invokeHotUpdate(routePlugin, pluginPath, () => Promise.resolve()),
 	])
 	const serializedHost = host
 	assert.ok(serializedHost, 'serialized source updates lost the active host')
@@ -444,9 +463,12 @@ try {
 	const originalSourcePlugin = await readFile(pluginPath, 'utf8')
 	const statusBeforeUnlink = await readHostPluginStatusOverview(serializedHost.ctx)
 	try {
-		await unlink(pluginPath)
-		await invokeViteWatchChange(pluginPath, 'delete')
-		await assert.rejects(() => invokeHotUpdate(routePlugin, pluginPath))
+		await assert.rejects(() =>
+			invokeHotUpdate(routePlugin, pluginPath, async () => {
+				await unlink(pluginPath)
+				await invokeViteWatchChange(pluginPath, 'delete')
+			}),
+		)
 		assert.equal(host, serializedHost)
 
 		const statusesAfterUnlinkOverview = await readHostPluginStatusOverview(serializedHost.ctx)
@@ -480,16 +502,59 @@ try {
 }
 assert.equal(currentPlugins().isRunning(address), false)
 
-async function invokeHotUpdate(route: VitePlugin, changedFile: string): Promise<void> {
+async function invokeHotUpdate(
+	route: VitePlugin,
+	changedFile: string,
+	mutate: () => Promise<void>,
+): Promise<void> {
 	const hook = typeof route.hotUpdate === 'function' ? route.hotUpdate : route.hotUpdate?.handler
 	if (typeof hook !== 'function') throw new Error('static Vite hot-update hook is missing')
-	// The hook admits changes; the route-owned report signals batch completion across Host replacement.
-	const updates = readHostRecentUpdates(currentHost().ctx)
+	// Subscribe before changing bytes: the route's dependency watcher can admit and settle a batch
+	// before the explicit hook runs. Reports already present at entry belong to earlier mutations.
+	// The route-owned subscription remains valid across Host replacement.
+	const subscribedHost = currentHost()
+	const updates = readHostRecentUpdates(subscribedHost.ctx)
 	assert.ok(updates?.subscribeUpdates, 'route update subscription is missing')
-	const previousSequence = updates.latestUpdate?.()?.sequence ?? 0
+	const initialSnapshot = updates.latestUpdate?.()
+	const previousSequence = initialSnapshot?.sequence ?? 0
+	const started = performance.now()
+	const observed: Array<{ elapsedMs: number; snapshot: unknown }> = []
+	let hookState = 'pending'
+	let hookResult = 'not returned'
 	const settled = Promise.withResolvers<void>()
-	const timer = setTimeout(() => settled.reject(new Error('HMR batch did not settle')), 10_000)
+	const timer = setTimeout(() => {
+		let currentOwner: unknown
+		try {
+			const currentUpdates = host && readHostRecentUpdates(host.ctx)
+			currentOwner = {
+				sameHost: host === subscribedHost,
+				sameUpdateOwner: currentUpdates === updates,
+				latest: currentUpdates?.latestUpdate?.(),
+			}
+		} catch (error) {
+			currentOwner = { error: String(error) }
+		}
+		// Keep timeout diagnostics out of the Error message: a captured factory error must
+		// not accidentally satisfy the caller's /factory rejected/ business assertion.
+		process.stderr.write(
+			`VITE_RUNTIME_HMR_TIMEOUT ${JSON.stringify({
+				file: normalizePath(changedFile),
+				elapsedMs: performance.now() - started,
+				previousSequence,
+				initialSnapshot,
+				hookState,
+				hookResult,
+				observed,
+				subscribedLatest: updates.latestUpdate?.(),
+				currentOwner,
+				loggerErrors: errors.slice(-8).map((message) => message.slice(0, 4096)),
+			})}\n`,
+		)
+		settled.reject(new Error('HMR batch did not settle'))
+	}, 10_000)
 	const unsubscribe = updates.subscribeUpdates((snapshot) => {
+		observed.push({ elapsedMs: performance.now() - started, snapshot })
+		if (observed.length > 12) observed.shift()
 		if (!snapshot || snapshot.sequence <= previousSequence || snapshot.state !== 'settled') return
 		if (snapshot.error) settled.reject(new Error(snapshot.error.message))
 		else settled.resolve()
@@ -497,14 +562,29 @@ async function invokeHotUpdate(route: VitePlugin, changedFile: string): Promise<
 	try {
 		await Promise.all([
 			settled.promise,
-			hook.call({ environment: server.environments[HOST_VITE_ENVIRONMENT] } as never, {
-				type: 'update',
-				file: normalizePath(changedFile),
-				server,
-				modules: [],
-				read: () => Promise.resolve(''),
-				timestamp: Date.now(),
-			} satisfies HotUpdateOptions),
+			Promise.resolve()
+				.then(mutate)
+				.then(() =>
+					hook.call({ environment: server.environments[HOST_VITE_ENVIRONMENT] } as never, {
+						type: 'update',
+						file: normalizePath(changedFile),
+						server,
+						modules: [],
+						read: () => Promise.resolve(''),
+						timestamp: Date.now(),
+					} satisfies HotUpdateOptions),
+				)
+				.then(
+					(result) => {
+						hookState = 'fulfilled'
+						hookResult = Array.isArray(result) ? `array(${result.length})` : typeof result
+						return result
+					},
+					(error) => {
+						hookState = 'rejected'
+						throw error
+					},
+				),
 		])
 	} finally {
 		clearTimeout(timer)
