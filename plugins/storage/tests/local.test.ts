@@ -3,6 +3,7 @@ import { createTestHost } from '@pluxel/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { ReadableStream as NodeReadableStream } from 'node:stream/web'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { afterEach, describe, expect, it } from 'vitest'
 import { S3, S3NotRunningError, S3Plugin, S3UnsupportedOperationError } from '../src/index.ts'
@@ -23,6 +24,28 @@ afterEach(async () => {
 })
 
 describe('S3Plugin local backend', () => {
+	it('reads and cancels Node-backed global Web Stream responses without changing stored bytes', async () => {
+		const root = await temporaryRoot()
+		await withLocalS3(root, async (s3) => {
+			const bytes = Uint8Array.from({ length: 256 * 1024 }, (_, index) => index % 251)
+			const client = s3.bucket().client
+			await client.putObject('stream.bin', bytes)
+			const response = (await client.getObjectResponse('stream.bin'))!
+			expect(NodeReadableStream).toBe(globalThis.ReadableStream)
+			expect(response.body).toBeInstanceOf(globalThis.ReadableStream)
+			const reader = response.body!.getReader()
+			try {
+				const chunk = await reader.read()
+				expect(chunk.done).toBe(false)
+				expect(chunk.value).toEqual(bytes.subarray(0, chunk.value!.byteLength))
+				await reader.cancel()
+			} finally {
+				reader.releaseLock()
+			}
+			expect(new Uint8Array((await client.getObjectArrayBuffer('stream.bin'))!)).toEqual(bytes)
+		})
+	})
+
 	it('preserves S3 keys and object metadata across provider lifecycles', async () => {
 		const root = await temporaryRoot()
 		const keys = ['documents/你好.txt', '../escape', '/absolute//key', 'windows\\key']

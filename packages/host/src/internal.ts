@@ -1,4 +1,5 @@
 export * from './catalog'
+export * from './control-manifest'
 export * from './coordinator'
 export * from './mutation'
 export * from './reconcile'
@@ -60,6 +61,7 @@ export {
 } from './shared-packages'
 export {
 	readLoadedPluginModule,
+	readLoadedApplicationControl,
 	recordLoadedPluginModule,
 	recordLoadedHostApplication,
 	readLoadedHostApplicationModule,

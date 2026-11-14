@@ -56,7 +56,7 @@ export function createManagementScripts(
 					codeKinds: ['artifact'],
 					hostEpoch: owner.hostEpoch,
 					lifetime: 'host',
-					capabilities: ['plugins', 'config', 'policy', 'updates', 'logs'],
+					capabilities: ['plugins', 'plugins.instance', 'config', 'policy', 'updates', 'logs'],
 				}),
 			})
 		},

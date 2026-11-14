@@ -12,6 +12,7 @@ import {
 	type ScriptSubmission,
 	type ScriptHmrAction,
 	type RunExecution,
+	type PluginControlMaterialsSnapshot,
 } from '@pluxel/host/agent'
 import { openScriptSocketSession } from '@pluxel/host/agent/socket'
 import {
@@ -35,6 +36,7 @@ export async function startProjectScriptServer(options: {
 	execute(input: ScriptSubmission, run: RunExecution): Promise<unknown>
 	control?(action: ScriptHmrAction, run: RunExecution): Promise<unknown>
 	inspect?(): Readonly<Record<string, unknown>>
+	materials?(): Promise<PluginControlMaterialsSnapshot>
 }): Promise<ProjectScriptServer> {
 	if (process.platform === 'win32')
 		throw new ScriptExecutionError(
@@ -143,6 +145,7 @@ export async function startProjectScriptServer(options: {
 			)
 				throw new ScriptExecutionError('unauthorized', 'Script instance credentials do not match')
 			return createScriptControlTarget({
+				materials: options.materials,
 				executor,
 				subject: instanceId,
 				assertAuthorized() {
@@ -150,6 +153,15 @@ export async function startProjectScriptServer(options: {
 				},
 				describe: () => ({
 					...options.inspect?.(),
+					capabilities: [
+						'plugins',
+						'plugins.instance',
+						'config',
+						'policy',
+						'updates',
+						'logs',
+						...(options.materials ? ['plugins.control-materials'] : []),
+					],
 					lifetime: 'vite-instance',
 					cancellation: 'cooperative',
 					pid: instance.pid,

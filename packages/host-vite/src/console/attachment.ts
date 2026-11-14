@@ -1,10 +1,13 @@
 import { sourceHash, observedSourceHash } from './source'
+import { createHash } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { normalizePath, type ViteDevServer } from 'vite'
+import { checkProjectScript } from '@pluxel/rolldown/scripts'
 import type { RootContext } from '@pluxel/core'
 import {
 	executeHostScript,
+	readPluginControlMaterials,
 	ScriptExecutionError,
 	type ScriptScope,
 	type RunExecution,
@@ -12,6 +15,7 @@ import {
 import { createProjectSdk } from '../project-sdk'
 import {
 	collectHostImportFiles,
+	collectHostEvaluatedInputs,
 	importHostModule,
 	invalidateHostModuleGraphFiles,
 	invalidateHostModule,
@@ -63,6 +67,12 @@ export async function attachProjectScripts(
 	const server = await startProjectScriptServer({
 		root,
 		control: options.control,
+		materials: () => {
+			const host = options.getHost()
+			if (!host || closed)
+				throw new ScriptExecutionError('dev_unavailable', 'Dev host is not available')
+			return readPluginControlMaterials(host.ctx)
+		},
 		inspect: () => ({
 			hostEpoch: options.getHost()?.epoch,
 			application: options.getApplicationStatus?.(),
@@ -128,11 +138,28 @@ export async function attachProjectScripts(
 			if ((await sourceHash(file)) !== code.sourceHash)
 				throw new ScriptExecutionError('source_changed', 'Script changed while preparing execution')
 			options.assertApplied?.()
+			const checked = await checkProjectScript({ file, signal: run.signal })
+			const checkedEntry = checked.inputs.get(file)
+			if (
+				checkedEntry === undefined ||
+				createHash('sha256').update(checkedEntry).digest('hex') !== code.sourceHash
+			)
+				throw new ScriptExecutionError('source_changed', 'Script changed before type checking')
 			const exports = await importHostModule<Record<string, unknown>>(options.server, file)
 			options.assertApplied?.()
 			run.signal.throwIfAborted()
 			if (options.getHost()?.epoch !== host.epoch)
 				throw new ScriptExecutionError('host_changed', 'Dev host changed during module loading')
+			try {
+				for (const [path, content] of collectHostEvaluatedInputs(options.server, file))
+					if (checked.inputs.get(path) !== content)
+						throw new Error(`Checked source does not match the evaluated module input: ${path}`)
+			} catch (cause) {
+				throw new ScriptExecutionError(
+					'source_changed',
+					cause instanceof Error ? cause.message : String(cause),
+				)
+			}
 			if ((await sourceHash(file)) !== code.sourceHash)
 				throw new ScriptExecutionError('source_changed', 'Script changed during module loading')
 			const execute = exports[code.exportName]

@@ -9,6 +9,8 @@ import {
 	scriptRequestHash,
 	type ScriptSubmission,
 	type ScriptControlSubmission,
+	type PluginControlManifestRequest,
+	type PluginControlFileRequest,
 } from '@pluxel/host/agent'
 import {
 	connectScriptControl,
@@ -304,6 +306,8 @@ export async function connectDevInstance(
 			result: (id: string) => control.result(id),
 			cancel: (id: string) => control.cancel(id),
 			control: (input: ScriptControlSubmission) => control.control(input),
+			materials: (input?: PluginControlManifestRequest) => control.materials(input),
+			materialFile: (input: PluginControlFileRequest) => control.materialFile(input),
 			[Symbol.dispose]() {
 				if (closed) return
 				closed = true

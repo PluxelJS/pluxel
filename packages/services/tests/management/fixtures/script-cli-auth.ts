@@ -21,7 +21,9 @@ export const scriptTestAuthentication = { opened: 0, submitted: 0, disposed: 0 }
 @Plugin()
 export class ScriptCliAuthentication extends BasePlugin {
 	protected override init(): void {
-		scriptTestProvider.registration = this.ctx.managementAccess.provide({
+		const access = this.ctx.managementAccess
+		if (!access) throw new Error('Management access service is required')
+		scriptTestProvider.registration = access.provide({
 			status: () => ({
 				id: 'script-cli-test',
 				label: 'Script test',

@@ -9,6 +9,7 @@ import {
 	SCRIPT_PROTOCOL,
 	type ScriptSubmission,
 	type RunExecution,
+	type PluginControlMaterialsSnapshot,
 } from '@pluxel/host/agent'
 import {
 	createScriptControlTarget,
@@ -26,6 +27,7 @@ export async function createDevFixture(
 		reported?: Partial<DevInstance>
 		execute?(input: ScriptSubmission, run: RunExecution): Promise<unknown>
 		control?(action: 'pause' | 'apply' | 'resume', run: RunExecution): Promise<unknown>
+		materials?(): Promise<PluginControlMaterialsSnapshot>
 		dropAdmissionResponse?: boolean
 	}> = {},
 ) {
@@ -59,6 +61,7 @@ export async function createDevFixture(
 		sockets.add(socket)
 		socket.once('close', () => sockets.delete(socket))
 		const target = createScriptControlTarget({
+			materials: options.materials,
 			executor,
 			subject: instance.instanceId,
 			assertAuthorized() {
@@ -101,6 +104,14 @@ export async function createDevFixture(
 					control(input: unknown) {
 						requests.push({ method: 'control', input })
 						return target.control(input)
+					}
+					materials(input: unknown) {
+						requests.push({ method: 'materials', input })
+						return target.materials(input)
+					}
+					materialFile(input: unknown) {
+						requests.push({ method: 'materialFile', input })
+						return target.materialFile(input)
 					}
 				}
 				return { ok: true, value: new Control() }

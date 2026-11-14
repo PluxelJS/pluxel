@@ -78,6 +78,18 @@ const section = {
 } as const
 
 describe('management protocol validation', () => {
+	it('preserves control declaration diagnostics without changing runtime availability or lifecycle', () => {
+		for (const code of ['control_analysis_failed', 'control_source_changed'] as const) {
+			const issue = {
+				id: `control:${code}`,
+				code,
+				message: 'Plugin declaration input could not be matched',
+			}
+			const value = { ...plugin, lifecycleState: 'running', issues: [issue] }
+			expect(parsePluginStatusQueryResult({ ok: true, value })).toEqual({ ok: true, value })
+		}
+	})
+
 	it('validates config write policy without invoking accessors', () => {
 		expect(parseConfigState({ readonly: true })).toEqual({ readonly: true })
 		const getter = vi.fn(() => false)

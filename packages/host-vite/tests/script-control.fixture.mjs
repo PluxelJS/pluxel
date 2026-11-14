@@ -22,6 +22,8 @@ export async function openProjectControl(instance) {
 			submit: (input) => control.submit(input),
 			result: (runId) => control.result(runId),
 			control: (input) => control.control(input),
+			materials: (input) => control.materials(input),
+			materialFile: (input) => control.materialFile(input),
 			[Symbol.dispose]() {
 				try {
 					control[Symbol.dispose]()

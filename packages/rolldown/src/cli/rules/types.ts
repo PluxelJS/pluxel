@@ -5,6 +5,7 @@ export interface RuleContext {
 	pluginUsages: Map<string, PluginDependencyMode>
 	workbenchArtifacts?: boolean
 	artifactRoot?: string
+	control?: boolean
 	workbenchCapnwebVersion?: string
 	tinybaseVersion?: string
 }

@@ -1062,6 +1062,8 @@ function pluginStatusIssue(input: unknown, label: string): PluginStatusIssue {
 				'start-failed',
 				'dependency-blocked',
 				'drain-failed',
+				'control_analysis_failed',
+				'control_source_changed',
 			],
 			`${label}.code`,
 		),

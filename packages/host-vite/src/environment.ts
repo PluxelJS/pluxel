@@ -119,6 +119,50 @@ export async function importHostModule<T = Record<string, unknown>>(
 	return runner.import<T>(id)
 }
 
+/** Original inputs attached to the exact evaluated/cached module, never a fresh disk reread. */
+export function collectHostEvaluatedInputs(
+	server: ViteDevServer,
+	entry: string,
+): ReadonlyMap<string, string> {
+	const runner = getHostModuleRunner(server)
+	const graph = runner.evaluatedModules
+	const queue = [...(graph.getModulesByFile(normalizePath(entry)) ?? [])]
+	const seen = new Set<string>()
+	const inputs = new Map<string, string>()
+	while (queue.length > 0) {
+		const node = queue.shift()!
+		if (seen.has(node.id)) continue
+		seen.add(node.id)
+		if (seen.size > 4096) throw new Error('Evaluated script graph exceeds 4096 modules')
+		if (!node.meta || !('code' in node.meta)) continue
+		for (const id of node.imports) {
+			const dependency = graph.getModuleById(id) ?? graph.getModuleByUrl(id)
+			if (dependency) queue.push(dependency)
+		}
+		if (!node.file || !isAbsolute(node.file) || node.file.includes('/node_modules/')) continue
+		const map = graph.getModuleSourceMapById(node.id)
+		if (!map?.map.sourcesContent?.length)
+			throw new Error(`Evaluated module has no verifiable original input: ${node.file}`)
+		let original = false
+		for (const [index, source] of map.resolvedSources.entries()) {
+			if (!isAbsolute(source) || source.includes('\0') || source.includes('/node_modules/'))
+				continue
+			const content = map.map.sourcesContent[index]
+			if (typeof content !== 'string')
+				throw new Error(`Evaluated source map omits its input: ${source}`)
+			const path = normalizePath(source)
+			if (inputs.has(path) && inputs.get(path) !== content)
+				throw new Error(`Evaluated graph contains different inputs for ${path}`)
+			inputs.set(path, content)
+			original = true
+		}
+		if (!original) throw new Error(`Evaluated module has no local source input: ${node.file}`)
+	}
+	if (!inputs.has(normalizePath(entry)))
+		throw new Error(`Script entry has no evaluated source input: ${entry}`)
+	return inputs
+}
+
 export function invalidateHostModule(server: ViteDevServer, file: string): number {
 	const runner = getHostModuleRunner(server)
 	const queue = [...(runner.evaluatedModules.getModulesByFile(file) ?? [])]
@@ -148,9 +192,12 @@ export function collectHostImportFiles(server: ViteDevServer, entry: string): Se
 	const queue = [
 		...(server.environments[HOST_VITE_ENVIRONMENT].moduleGraph.getModulesByFile(entry) ?? []),
 	] as ViteSsrModuleGraphEntry[]
+	const seen = new Set<ViteSsrModuleGraphEntry>()
 
 	while (queue.length > 0) {
 		const module = queue.shift()!
+		if (seen.has(module)) continue
+		seen.add(module)
 		// Native imports are shared process identities, outside this runner's reload
 		// closure. Traversing Core here would invalidate every unrelated plugin.
 		if (
@@ -160,9 +207,12 @@ export function collectHostImportFiles(server: ViteDevServer, entry: string): Se
 			)
 		)
 			continue
-		if (module.file) files.add(normalizePath(module.file))
+		// Compiler helpers can have a virtual `file` ID. Traverse their imports, but only
+		// physical inputs participate in filesystem observation and accepted byte snapshots.
+		if (module.file && isAbsolute(module.file) && !module.file.includes('\0'))
+			files.add(normalizePath(module.file))
 		for (const imported of module.importedModules ?? []) {
-			if (imported.file && !files.has(normalizePath(imported.file))) queue.push(imported)
+			if (!seen.has(imported)) queue.push(imported)
 		}
 	}
 	return files

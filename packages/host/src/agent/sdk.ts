@@ -1,10 +1,10 @@
+import { pluginNodeIndexKey, type RootContext } from '@pluxel/core'
 import {
-	parsePluginNodeAddress,
-	pluginNodeIndexKey,
-	type RootContext,
-	type PluginNodeAddress,
-} from '@pluxel/core'
-import { requireConfigService } from '@pluxel/core/internal'
+	getPluginGenerationContext,
+	requirePluginGenerationInfo,
+	requirePluginService,
+	requireConfigService,
+} from '@pluxel/core/internal'
 import {
 	Logging,
 	markLogs,
@@ -35,10 +35,19 @@ import type { HostOperationOptions } from '../coordinator'
 import type { HostConfigStore } from '../config-store'
 import type { HostPolicyField, HostPolicyInput } from '../policy'
 import type { ScriptSdk } from './sdk-types'
+import type { PluginTarget, ScriptLogReadOptions } from './control'
+import { normalizePluginTarget } from './control-target'
+import { createPluginInstanceView } from './instance-view'
+import { assertPluginControlContract, pluginCatalogEntry } from '../catalog'
+import { ScriptExecutionError } from './protocol'
 
 export class ScriptScopeError extends Error {
 	constructor(
-		readonly code: 'scope_closed' | 'logging_unavailable' | 'store_unavailable',
+		readonly code:
+			| 'scope_closed'
+			| 'logging_unavailable'
+			| 'store_unavailable'
+			| 'borrowed_generation_conflict',
 		message: string,
 	) {
 		super(message)
@@ -75,6 +84,14 @@ export function createScriptScope(
 	const policy = createHostPolicy(ctx, state)
 	const controller = new AbortController()
 	const pending = new Set<Promise<unknown>>()
+	const views = new WeakMap<object, object>()
+	const originals = new WeakMap<object, object>()
+	const unwrap = (value: unknown): unknown =>
+		value !== null && (typeof value === 'object' || typeof value === 'function')
+			? (originals.get(value) ?? value)
+			: value
+	let activeCalls = 0
+	let queuedCalls = 0
 	let disposal: Promise<void> | undefined
 	const abort = (reason?: unknown) => {
 		if (!controller.signal.aborted) controller.abort(reason)
@@ -86,6 +103,13 @@ export function createScriptScope(
 		if (controller.signal.aborted)
 			throw new ScriptScopeError('scope_closed', 'Script run is closing or closed')
 	}
+	const track = (task: Promise<unknown>) => {
+		pending.add(task)
+		void task.then(
+			() => pending.delete(task),
+			() => pending.delete(task),
+		)
+	}
 	const run = <T>(work: () => T | Promise<T>): Promise<T> => {
 		try {
 			assertOpen()
@@ -96,11 +120,7 @@ export function createScriptScope(
 			assertOpen()
 			return work()
 		})
-		pending.add(task)
-		void task.then(
-			() => pending.delete(task),
-			() => pending.delete(task),
-		)
+		track(task)
 		return task
 	}
 	const admission = { signal: controller.signal }
@@ -108,17 +128,53 @@ export function createScriptScope(
 		...input,
 		signal: input?.signal ? AbortSignal.any([controller.signal, input.signal]) : controller.signal,
 	})
-	const lifecycle = (node: PluginNodeAddress, action: 'start' | 'stop' | 'restart') =>
-		run(async () =>
+	// A coordinator update may already be waiting for an admitted business call.
+	// Queueing a Host read from that call would make both operations wait for each other.
+	const queued = <T>(work: () => T | Promise<T>): Promise<T> =>
+		run(async () => {
+			if (activeCalls > 0)
+				throw new ScriptScopeError(
+					'borrowed_generation_conflict',
+					'Await active business member calls before using queued Host operations',
+				)
+			queuedCalls++
+			try {
+				return await work()
+			} finally {
+				queuedCalls--
+			}
+		})
+	const targetRun = <T>(
+		target: PluginTarget,
+		work: (selected: ReturnType<typeof normalizePluginTarget>) => T | Promise<T>,
+	): Promise<T> => {
+		try {
+			const selected = normalizePluginTarget(target)
+			return queued(() => work(selected))
+		} catch (error) {
+			return Promise.reject(error)
+		}
+	}
+	const lifecycle = (target: PluginTarget, action: 'start' | 'stop' | 'restart') =>
+		targetRun(target, async ({ node }) =>
 			projectPluginApplyReport(
 				ctx,
-				await coordinator[`${action}Node`](
-					parsePluginNodeAddress(node),
-					`script-${action}`,
-					admission,
-				),
+				await coordinator[`${action}Node`](node, `script-${action}`, admission),
 			),
 		)
+	const logOptions = (input?: ScriptLogReadOptions): LogReadOptions | undefined => {
+		if (input === undefined) return undefined
+		const { filter, ...readOptions } = input
+		if (filter === undefined) return readOptions
+		const { plugin, ...fields } = filter
+		return {
+			...readOptions,
+			filter: {
+				...fields,
+				...(plugin === undefined ? {} : { plugin: normalizePluginTarget(plugin).node }),
+			},
+		}
+	}
 	const logging = (): RuntimeLogging => {
 		if (!ctx.logging)
 			throw new ScriptScopeError(
@@ -127,70 +183,139 @@ export function createScriptScope(
 			)
 		return ctx.require(Logging)
 	}
-	const assertReadOptions = (input?: LogReadOptions) => {
+	const assertReadOptions = (input?: Pick<LogReadOptions, 'limit'>) => {
 		if (
 			input?.limit !== undefined &&
 			(!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 10000)
 		)
 			throw new RangeError('Log read limit must be an integer from 1 to 10000')
 	}
-	const sdk: ScriptSdk = Object.freeze({
+	const sdk = Object.freeze({
 		plugins: Object.freeze({
 			list: () =>
-				run(async () => {
+				queued(async () => {
 					const overview = await readHostPluginStatusOverview(ctx)
 					return overview.statuses
 				}),
-			status: (node: PluginNodeAddress) =>
-				run(async () => {
-					const key = pluginNodeIndexKey(parsePluginNodeAddress(node))
+			status: (target: PluginTarget) =>
+				targetRun(target, async ({ node }) => {
+					const key = pluginNodeIndexKey(node)
 					const overview = await readHostPluginStatusOverview(ctx)
 					return (
 						overview.statuses.find((entry) => pluginNodeIndexKey(entry.address) === key) ?? null
 					)
 				}),
-			start: (node: PluginNodeAddress) => lifecycle(node, 'start'),
-			stop: (node: PluginNodeAddress) => lifecycle(node, 'stop'),
-			restart: (node: PluginNodeAddress) => lifecycle(node, 'restart'),
+			start: (target: PluginTarget) => lifecycle(target, 'start'),
+			stop: (target: PluginTarget) => lifecycle(target, 'stop'),
+			restart: (target: PluginTarget) => lifecycle(target, 'restart'),
+			instance: (target: PluginTarget) =>
+				targetRun(target, ({ node, descriptor }) => {
+					if (!descriptor)
+						throw new TypeError('Instance access requires a generated Plugin descriptor')
+					return coordinator.readCommitted(({ catalog }) => {
+						assertOpen()
+						const entry = pluginCatalogEntry(catalog, node.definition)
+						if (!entry)
+							throw new ScriptExecutionError(
+								'target_unavailable',
+								'Plugin definition is absent from the current catalog',
+							)
+						assertPluginControlContract(entry, 'instance', descriptor.contracts.instance)
+						const instance = requirePluginService(ctx).getInstance(node)
+						if (!instance)
+							throw new ScriptExecutionError('plugin_not_running', 'Plugin node is not running')
+						if (
+							requirePluginGenerationInfo(getPluginGenerationContext(instance)).implementation !==
+							entry.candidate.implementation
+						)
+							throw new ScriptExecutionError(
+								'stale_target',
+								'Running Plugin generation differs from the committed candidate',
+							)
+						let view = views.get(instance)
+						if (!view) {
+							view = createPluginInstanceView(instance, {
+								signal: controller.signal,
+								assertOpen: () => {
+									assertOpen()
+									if (queuedCalls > 0)
+										throw new ScriptScopeError(
+											'borrowed_generation_conflict',
+											'Await pending Host operations before accessing Plugin instance members',
+										)
+								},
+								track,
+								unwrap,
+								begin: () => {
+									activeCalls++
+								},
+								end: () => {
+									activeCalls--
+								},
+							})
+							views.set(instance, view)
+							originals.set(view, instance)
+						}
+						return Object.freeze({ instance: view })
+					}, admission)
+				}),
 		}),
 		config: Object.freeze({
-			get: (node: PluginNodeAddress) =>
-				run(async () =>
-					projectPluginConfigResult(ctx, await pluginConfigGet(ctx, node, admission)),
-				),
-			validate: (node: PluginNodeAddress, change: HostConfigMutation) =>
-				run(async () =>
-					projectPluginConfigResult(ctx, await pluginConfigValidate(ctx, node, change, admission)),
-				),
-			patch: (node: PluginNodeAddress, change: HostConfigMutation, input?: HostOperationOptions) =>
-				run(async () =>
+			get: (target: PluginTarget) =>
+				targetRun(target, async ({ node, descriptor }) =>
 					projectPluginConfigResult(
 						ctx,
-						await pluginConfigPatch(ctx, node, change, mutationOptions(input)),
+						await pluginConfigGet(ctx, node, admission, descriptor?.contracts.config),
+					),
+				),
+			validate: (target: PluginTarget, change: HostConfigMutation) =>
+				targetRun(target, async ({ node, descriptor }) =>
+					projectPluginConfigResult(
+						ctx,
+						await pluginConfigValidate(ctx, node, change, admission, descriptor?.contracts.config),
+					),
+				),
+			patch: (target: PluginTarget, change: HostConfigMutation, input?: HostOperationOptions) =>
+				targetRun(target, async ({ node, descriptor }) =>
+					projectPluginConfigResult(
+						ctx,
+						await pluginConfigPatch(
+							ctx,
+							node,
+							change,
+							mutationOptions(input),
+							descriptor?.contracts.config,
+						),
 					),
 				),
 			reset: (
-				node: PluginNodeAddress,
+				target: PluginTarget,
 				paths?: readonly (readonly string[])[],
 				input?: HostOperationOptions,
 			) =>
-				run(async () =>
+				targetRun(target, async ({ node, descriptor }) =>
 					projectPluginConfigResult(
 						ctx,
-						await pluginConfigReset(ctx, node, paths, mutationOptions(input)),
+						await pluginConfigReset(
+							ctx,
+							node,
+							paths,
+							mutationOptions(input),
+							descriptor?.contracts.config,
+						),
 					),
 				),
 		}),
 		policy: Object.freeze({
-			get: () => run(async () => projectHostPolicyResult(ctx, await policy.get(admission))),
+			get: () => queued(async () => projectHostPolicyResult(ctx, await policy.get(admission))),
 			validate: (values: HostPolicyInput) =>
-				run(async () => projectHostPolicyResult(ctx, await policy.validate(values, admission))),
+				queued(async () => projectHostPolicyResult(ctx, await policy.validate(values, admission))),
 			patch: (values: HostPolicyInput, input?: HostOperationOptions) =>
-				run(async () =>
+				queued(async () =>
 					projectHostPolicyResult(ctx, await policy.patch(values, mutationOptions(input))),
 				),
 			reset: (keys?: readonly HostPolicyField[], input?: HostOperationOptions) =>
-				run(async () =>
+				queued(async () =>
 					projectHostPolicyResult(ctx, await policy.reset(keys, mutationOptions(input))),
 				),
 		}),
@@ -221,12 +346,12 @@ export function createScriptScope(
 						)
 					return markLogs(manager, streamId)
 				}),
-			read: (cursor: LogCursor, input?: LogReadOptions) =>
+			read: (cursor: LogCursor, input?: ScriptLogReadOptions) =>
 				run(() => {
 					assertReadOptions(input)
-					return readLogs(logging(), cursor, input)
+					return readLogs(logging(), cursor, logOptions(input))
 				}),
-			wait: (cursor: LogCursor, input: LogReadOptions & Readonly<{ timeoutMs: number }>) =>
+			wait: (cursor: LogCursor, input: ScriptLogReadOptions & Readonly<{ timeoutMs: number }>) =>
 				run(async () => {
 					assertReadOptions(input)
 					if (
@@ -241,19 +366,19 @@ export function createScriptScope(
 					const timer = setTimeout(() => timeout.abort(expired), input.timeoutMs)
 					try {
 						return await waitForLogs(manager, cursor, {
-							...input,
+							...logOptions(input),
 							signal: AbortSignal.any([controller.signal, timeout.signal]),
 						})
 					} catch (error) {
 						if (timeout.signal.aborted && !controller.signal.aborted && error === expired)
-							return readLogs(manager, cursor, input)
+							return readLogs(manager, cursor, logOptions(input))
 						throw error
 					} finally {
 						clearTimeout(timer)
 					}
 				}),
 		}),
-	})
+	}) as ScriptSdk
 	return Object.freeze({
 		sdk,
 		assertOpen,

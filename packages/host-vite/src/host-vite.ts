@@ -63,6 +63,7 @@ import {
 } from './environment'
 import { hostSingletons } from './singletons'
 import { attachHostVitePlugins, type HostViteCandidate, type HostViteCatalog } from './attachments'
+import { emptyHostPluginControls, prepareHostPluginControls } from './control'
 
 export type HostViteOptions = Readonly<{
 	/** Application module default-exporting defineHostApplication(factory). Relative to Vite root. */
@@ -122,6 +123,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 	let applicationFactory: HostApplicationFactory | undefined
 	let fixedApplication: ResolvedHostApplication | undefined
 	let provenance = new Map<PluginConstructor, PluginCatalogProvenance>()
+	let controls = emptyHostPluginControls()
 	let files = new Set<string>()
 	let acceptedCatalog: HostViteCatalog | undefined
 	let acceptedSources:
@@ -238,7 +240,12 @@ export function host(options: HostViteOptions): PluginOption[] {
 			}
 			invalidateHostChangedModules({
 				server,
-				changes: changes.map(({ file }) => ({ file, reloadDependencies: sources.covers(file) })),
+				changes: [
+					...changes.map(({ file }) => ({ file, reloadDependencies: sources.covers(file) })),
+					...new Set(changes.flatMap(({ file }) => [...(controls.owners.get(file) ?? [])])),
+				].map((change) =>
+					typeof change === 'string' ? { file: change, reloadDependencies: false } : change,
+				),
 				applicationFiles: recovery.invalidationFiles(files),
 				changedDependencies: await moduleBytes.changed(dependenciesToCheck),
 				recoverMissingImports:
@@ -254,6 +261,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 		let sourceCandidate: HostSourceCandidate<ResolvedHostApplication> | undefined
 		let nextSourceBytes: ReadonlyMap<string, string> | undefined
 		let nextProvenance = provenance
+		let nextControls = controls
 		let nextCatalog: HostViteCatalog | undefined
 		let accepted = false
 		let restored = false
@@ -354,6 +362,13 @@ export function host(options: HostViteOptions): PluginOption[] {
 					}
 				}
 
+				nextControls = await prepareHostPluginControls({
+					server,
+					entry,
+					plugins: next.plugins,
+					semantics: pipeline.semantics,
+					previous: controls,
+				})
 				nextProvenance = new Map(
 					next.plugins.map((plugin) => {
 						const definition = plugin.definitionAddress()
@@ -380,7 +395,13 @@ export function host(options: HostViteOptions): PluginOption[] {
 									artifact: { kind: artifactKind },
 									update: { kind: 'definition-hmr' },
 								}
-						return [plugin, { execution }]
+						return [
+							plugin,
+							{
+								execution,
+								control: nextControls.metadata.get(pluginDefinitionIndexKey(definition)),
+							},
+						]
 					}),
 				)
 				const replace =
@@ -426,10 +447,15 @@ export function host(options: HostViteOptions): PluginOption[] {
 				applicationFactory = nextFactory
 				fixedApplication = nextFixed
 				provenance = nextProvenance
+				controls = nextControls
 				acceptedCatalog = nextCatalog
 				files = sourceCandidate.files
 				await settle(true)
-				await dependencies?.replace([...files].filter((file) => !sources.covers(file)))
+				await dependencies?.replace(
+					[...new Set([...files, ...controls.dependencies])].filter(
+						(file) => !sources.covers(file),
+					),
+				)
 			})
 		} catch (error) {
 			let failure = error
@@ -439,10 +465,15 @@ export function host(options: HostViteOptions): PluginOption[] {
 					applicationFactory = nextFactory
 					fixedApplication = nextFixed
 					provenance = nextProvenance
+					controls = nextControls
 					acceptedCatalog = nextCatalog
 					files = sourceCandidate.files
 					await settle(true)
-					await dependencies?.replace([...files].filter((file) => !sources.covers(file)))
+					await dependencies?.replace(
+						[...new Set([...files, ...controls.dependencies])].filter(
+							(file) => !sources.covers(file),
+						),
+					)
 				} else {
 					if (active) setHostCatalogProvenance(active.ctx, provenance)
 					await settle(false)

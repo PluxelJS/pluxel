@@ -51,6 +51,10 @@
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
 		},
+		"./internal/control-manifest": {
+			"@pluxel/source": "./src/control-manifest.ts",
+			"default": "./dist/internal/control-manifest.mjs"
+		},
 		"./internal/protocol": {
 			"@pluxel/source": "./src/execution.ts",
 			"default": "./dist/internal/protocol.mjs"
@@ -76,6 +80,7 @@
 			"./browser": "./dist/browser.mjs",
 			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
+			"./internal/control-manifest": "./dist/internal/control-manifest.mjs",
 			"./internal/protocol": "./dist/internal/protocol.mjs",
 			"./internal/shared-runtime": "./dist/internal/shared-runtime.mjs",
 			"./sources": "./dist/sources.mjs",

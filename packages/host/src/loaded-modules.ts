@@ -9,10 +9,12 @@ import { resolve, relative, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { HostApplicationFactory } from './application'
 import { installedPackageFacts, type InstalledPackageFacts } from './shared-packages'
+import { readApplicationPluginControl, readLoadedPluginControl } from './control-material.node.ts'
+import type { PluginControlMetadata } from './catalog'
 
 const owners = new WeakMap<
 	PluginConstructor,
-	Readonly<{ module: string; package: InstalledPackageFacts }>
+	Readonly<{ module: string; package: InstalledPackageFacts; control: PluginControlMetadata }>
 >()
 
 /** @internal Verified loaded module ownership, independent of catalog identity and execution policy. */
@@ -24,33 +26,82 @@ export function recordLoadedPluginModule(
 	const existing = owners.get(plugin)
 	if (existing && existing.package.root !== owner.root)
 		throw new TypeError('[host] loaded Plugin has conflicting physical package owners')
-	owners.set(plugin, Object.freeze({ module, package: owner }))
+	// Node may retain the constructor after this package's files have changed. Its
+	// original control snapshot must never be relabelled from newer sidecar files.
+	if (existing) return
+	owners.set(
+		plugin,
+		Object.freeze({
+			module,
+			package: owner,
+			control: readLoadedPluginControl(owner, plugin.definitionAddress()),
+		}),
+	)
 }
 
 export function readLoadedPluginModule(plugin: PluginConstructor) {
 	return owners.get(plugin)
 }
 
-const applications = new WeakMap<HostApplicationFactory, string>()
+type LoadedApplication = {
+	module: string
+	controlManifest?: string
+	controls: Map<PluginConstructor, PluginControlMetadata>
+}
+const applications = new WeakMap<HostApplicationFactory, LoadedApplication>()
 /** @internal Generated modules entry records its own output; no paths are inferred from source identity. */
 export function recordLoadedHostApplication(
 	factory: HostApplicationFactory,
 	moduleURL: string,
+	options?: Readonly<{ controlManifest?: string }>,
 ): void {
-	applications.set(factory, fileURLToPath(moduleURL))
+	const module = fileURLToPath(moduleURL)
+	const existing = applications.get(factory)
+	if (existing) {
+		if (existing.module !== module || existing.controlManifest !== options?.controlManifest)
+			throw new TypeError('[host] loaded application has conflicting output origins')
+		return
+	}
+	applications.set(factory, {
+		module,
+		controlManifest: options?.controlManifest,
+		controls: new Map(),
+	})
 }
 /** @internal Exact compiled factory location; source factories have no loaded output owner. */
 export function readLoadedHostApplicationModule(
 	factory: HostApplicationFactory,
 ): string | undefined {
-	return applications.get(factory)
+	return applications.get(factory)?.module
+}
+
+/** Exact constructor selected by this evaluated generated application. */
+export function readLoadedApplicationControl(
+	factory: HostApplicationFactory,
+	plugin: PluginConstructor,
+): PluginControlMetadata | undefined {
+	return applications.get(factory)?.controls.get(plugin)
 }
 export function recordLoadedApplicationPlugins(
 	factory: HostApplicationFactory,
 	plugins: readonly PluginConstructor[],
 ): void {
-	const module = applications.get(factory)
-	if (!module) return
+	const application = applications.get(factory)
+	if (!application) return
+	const { module } = application
+	if (application.controlManifest !== undefined) {
+		for (const plugin of plugins)
+			if (!application.controls.has(plugin))
+				application.controls.set(
+					plugin,
+					readApplicationPluginControl(
+						module,
+						application.controlManifest,
+						plugin.definitionAddress(),
+					),
+				)
+		return
+	}
 	const owner = installedPackageFacts(module)
 	if (!owner || owner.manifest.pluxel?.modules?.version !== 1)
 		throw new TypeError('[host] modules application lacks its owning package metadata')

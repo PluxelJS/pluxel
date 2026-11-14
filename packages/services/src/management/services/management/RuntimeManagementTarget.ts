@@ -100,6 +100,15 @@ import {
 	parsePluginControlBatchResult,
 } from '../../web/management-validation'
 import { estimateRuntimeRpcPayloadBytes, prepareRuntimeLogRangeForRpc } from './log-transport'
+import {
+	createPluginControlMaterialReader,
+	readPluginControlMaterials,
+	scriptFailure,
+	type PluginControlMaterialReader,
+	type PluginControlManifestIndex,
+	type PluginControlFileChunk,
+} from '@pluxel/host/agent'
+import type { ScriptControlResponse } from '@pluxel/host/agent/transport'
 
 /** Assert the producer's existing snapshot without rebuilding its value tree. */
 function checkedDto<const T>(value: T): T {
@@ -110,6 +119,7 @@ function checkedDto<const T>(value: T): T {
 export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeManagementTarget {
 	private readonly ctx: Context
 	readonly #policy: HostPolicy
+	readonly #materials: PluginControlMaterialReader
 	get #admission() {
 		return this.signal ? { signal: this.signal } : undefined
 	}
@@ -121,6 +131,37 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		super()
 		this.ctx = ctx
 		this.#policy = createHostPolicy(ctx, requireHostStateStore(ctx))
+		this.#materials = createPluginControlMaterialReader(
+			() => readPluginControlMaterials(ctx, this.#admission),
+			{ signal },
+		)
+	}
+
+	async pluginControlManifestDto(
+		input?: unknown,
+	): Promise<ScriptControlResponse<PluginControlManifestIndex>> {
+		this.signal?.throwIfAborted()
+		try {
+			const value = await this.#materials.manifest(input)
+			this.signal?.throwIfAborted()
+			return checkedDto({ ok: true, value })
+		} catch (error) {
+			this.signal?.throwIfAborted()
+			return checkedDto({ ok: false, error: scriptFailure(error, 'control_material_unavailable') })
+		}
+	}
+
+	pluginControlFileDto(input: unknown): ScriptControlResponse<PluginControlFileChunk> {
+		this.signal?.throwIfAborted()
+		try {
+			return checkedDto({ ok: true, value: this.#materials.file(input) })
+		} catch (error) {
+			return checkedDto({ ok: false, error: scriptFailure(error, 'control_file_unavailable') })
+		}
+	}
+
+	[Symbol.dispose](): void {
+		this.#materials[Symbol.dispose]()
 	}
 
 	describeDto(): RuntimeMeta {

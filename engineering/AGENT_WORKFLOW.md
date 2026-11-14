@@ -1,6 +1,6 @@
 # Host 脚本 SDK 与执行
 
-公开作者入口是 [`@pluxel/host/agent`](../packages/host/src/agent.ts)：`Script = (sdk, run) => unknown | Promise<unknown>`，其中 `run` 为 `{ id, input, signal }`。完整调用、CLI 与失败处理见[Host 自动化脚本](../docs/development/scripts.md)。Vite 项目模块、真实对象借用和 HMR 的约束由 [Dev Console](DEV_CONSOLE.md) 维护。
+公开作者入口是 [`@pluxel/host/agent`](../packages/host/src/agent.ts)：`Script = (sdk, run) => unknown | Promise<unknown>`，其中 `run` 为 `{ id, input, signal }`。完整调用、CLI 与失败处理见[Host 自动化脚本](../docs/development/scripts.md)。插件 class 声明、配置源码描述、实例视图和材料同步由 [Plugin Control](PLUGIN_CONTROL.md) 维护。Vite 项目模块、Context 借用和 HMR 的约束由 [Dev Console](DEV_CONSOLE.md) 维护。
 
 ## 所有者和调用路径
 
@@ -48,13 +48,13 @@ SDK 的日志方法复用 Core Logging 的 stream、cursor、retention、gap 和
 
 ## 代码交付和加载
 
-上传输入是 `ScriptArtifact`，格式为 `pluxel-js-factory/1`。`compileScript({ file, exportName, signal })` 对普通 TS/JS 文件调用 TypeScript 检查并用 Rolldown 打包，交付工厂函数体、导出名、内容摘要和版本 3 source map。编译不会求值应用工厂。上传工厂只包含脚本和可打包的计算依赖，类型 import 被消除；运行时框架 import、Node builtin、远端协议、原生扩展和动态 import 明确拒绝。
+上传输入是 `ScriptArtifact`，格式为 `pluxel-js-factory/1`。`compileScript({ file, exportName, signal })` 对普通 TS/JS 文件使用 native TypeScript 检查并用 Rolldown 打包，共享固定输入。交付物包含工厂函数体、导出名、内容摘要和版本 3 source map，编译不会求值应用工厂。上传工厂包含脚本、通过材料验证的纯描述符与可打包的计算依赖，类型 import 被消除；运行时框架 import、Node builtin、远端协议、原生扩展和动态 import 明确拒绝。
 
 工厂同步初始化并返回模块 exports，异步任务在导出函数中执行。Node 加载器在原进程 realm 使用 `vm.compileFunction`，每次 run 创建新的模块局部状态，随后调用所选导出并传入 SDK。它不依赖实验 ESM VM API、临时执行文件、`data:` import 或 ESM 缓存。加载错误和执行错误按工厂附带 source map 映回原作者文件。
 
 Node 执行所有者固定借用的 Host、`instanceId` 和 `hostEpoch`。`close()` / `Symbol.asyncDispose` 取消并等待运行结算，借用的 Host 由应用继续拥有。这个加载器用于受信任同进程代码执行，`vm` 不提供安全沙盒；同步无限循环也无法在同一事件循环中强制终止。
 
-Vite 输入为项目路径、导出名和源码摘要。Vite 使用目标项目的 ModuleRunner 与共享模块图，保留应用模块身份、import 基址、真实实例和 Context。它在源码更新屏障后绑定原 Host，并在加载前后复核摘要与身份；Host 被替换会撤回原 run。Vite 的模块缓存语义保持不变，不以复制应用依赖的方式重置脚本模块。HMR 与脚本采用独立执行位置，具体控制顺序见 [Dev Console](DEV_CONSOLE.md)。
+Vite 输入为项目路径、导出名和源码摘要。Vite 使用目标项目的 ModuleRunner 与共享模块图，保留应用模块身份、import 基址、真实实例和 Context。它在源码更新屏障后绑定原 Host，完成 native 类型检查，并核对实际求值/缓存模块的原始输入和 Host 身份；Host 被替换会撤回原 run。Vite 的模块缓存语义保持不变，不以复制应用依赖的方式重置脚本模块。HMR 与脚本采用独立执行位置，具体控制顺序见 [Dev Console](DEV_CONSOLE.md)。
 
 ## 运行身份、失败和预算
 
@@ -99,7 +99,7 @@ Vite 控制 owner 随开发实例存活，其私有本地连接认证独立于�
 | 可移植入口与 Workers 最小桥 | [`agent-portability.test.ts`](../packages/host/tests/agent-portability.test.ts)，范围见下                                                                                                               |
 | Vite、CLI 与部署接收端      | [Dev Console](DEV_CONSOLE.md) 和各包 integration / installed smoke；交付门禁需包含真实 CLI→认证→无源码、无编译器的 Node 应用                                                                            |
 
-2026-11-13 本轮实际运行结果：
+2026-11-13 脚本执行器的历史验证基线如下；2026-11-14 插件控制重构的当前验证记录由 [Plugin Control](PLUGIN_CONTROL.md#2026-11-14-落地验证)维护。
 
 - SDK、Config、policy 与可移植/Workers 测试 25 项通过；SDK/执行器/Node 专项 22 项通过，脚本编译 3 项、Cap’n Web 共享身份与打包 22 项通过。
 - 真实 TLS、非 loopback、密码 challenge 的 CLI→Management session→Node Host 路径通过，核对未启用执行、错误凭据、主体隔离、重复身份、冲突、断线查询、部分失败、取消结算和提供者撤回。Services 管理与 HTTP 相关 186 项、CLI 104 项、Auth 8 项专项通过。
@@ -107,7 +107,7 @@ Vite 控制 owner 随开发实例存活，其私有本地连接认证独立于�
 - 只获得公开指南、声明和目标信息的独立 agent，通过上述安装后的 CLI 读取配置，处理 count 字符串的 validation_failed，再以版本条件将 count 从 11 改为 22。复读的 application 为 applied、desiredRevision=appliedRevision=5；原 receipt 新连接查询得到相同 instanceId/runId/requestHash。
 - [`hmr-control.test.ts`](../packages/host-vite/tests/hmr-control.test.ts) 的真实 Vite 用例核对同一模块图、实际实例、过期 constructor、依赖修改、paused pending、失败修复、Host replacement 和五轮八文件批量更新。最近直接运行记录为 64 次模块求值、16 批更新、72 个 Plugin generation 启动并全部释放，失败启动恢复另有 8/8 释放。
 
-最终全工作区门禁 `mise exec -- vp run --concurrency-limit=2 verify` 通过：135/135 项任务成功，118/120 项可缓存任务命中。2683 个文件格式正确，1876 个文件没有 lint 警告、错误或类型错误；仓库治理与源码声明检查均通过。文档站构建与链接校验通过，生成 660 个文件。
+该基线的全工作区门禁 `mise exec -- vp run --concurrency-limit=2 verify` 通过：135/135 项任务成功，118/120 项可缓存任务命中。2683 个文件格式正确，1876 个文件没有 lint 警告、错误或类型错误；仓库治理与源码声明检查均通过。文档站构建与链接校验通过，生成 660 个文件。
 
 ### Workers 的当前证据
 

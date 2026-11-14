@@ -59,10 +59,10 @@ export type PluginApplyReportSnapshot = Readonly<{
 }>
 
 /** The configuration domain result with an address-only report for every control-plane consumer. */
-export function projectPluginConfigResult(
+export function projectPluginConfigResult<O extends object = Readonly<Record<string, unknown>>>(
 	ctx: Context,
-	result: HostPluginConfigResult,
-): HostPluginConfigResult<PluginApplyReportSnapshot> {
+	result: HostPluginConfigResult<PluginApplyReport, O>,
+): HostPluginConfigResult<PluginApplyReportSnapshot, O> {
 	if (result.ok === false) return result
 	const { report, ...snapshot } = result
 	return { ...snapshot, ...(report ? { report: projectPluginApplyReport(ctx, report) } : {}) }

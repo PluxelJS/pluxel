@@ -33,11 +33,21 @@ export default { run: { tasks: repositoryTasks(${JSON.stringify(tasks)}) } };`,
 	return {
 		root,
 		async run(task = 'compile') {
-			const { stdout } = await exec(process.execPath, [vp, 'run', '-v', task], {
-				cwd: root,
-				timeout: 30_000,
-			})
-			return stdout
+			const started = performance.now()
+			try {
+				const { stdout } = await exec(process.execPath, [vp, 'run', '-v', task], {
+					cwd: root,
+					timeout: 30_000,
+				})
+				return stdout
+			} catch (error) {
+				throw new Error(
+					`Task fixture ${task} in ${root} failed after ${Math.round(performance.now() - started)}ms ` +
+						`(code=${error.code}, signal=${error.signal}, killed=${error.killed}).\n` +
+						`stdout:\n${error.stdout ?? ''}\nstderr:\n${error.stderr ?? ''}`,
+					{ cause: error },
+				)
+			}
 		},
 	}
 }

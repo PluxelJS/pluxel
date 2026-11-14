@@ -49,6 +49,24 @@ export const scriptRunDefinition = {
 	description: 'Compile and execute a trusted script on an explicitly enabled Host',
 	args: scriptRunArgs,
 } as const
+export const scriptSyncArgs = {
+	...scriptConnectionArgs,
+	endpoint: {
+		type: 'string',
+		required: true,
+		description: 'Authenticated HTTP(S) origin or runtime session WebSocket URL',
+	},
+	out: {
+		type: 'string',
+		default: '.pluxel/control',
+		description: 'Tool-owned Plugin contract directory; import its current/index.mjs',
+	},
+} as const
+export const scriptSyncDefinition = {
+	name: 'sync',
+	description: 'Download and verify committed Plugin contracts without enabling code execution',
+	args: scriptSyncArgs,
+} as const
 export const scriptResultDefinition = {
 	name: 'result',
 	description: 'Query the original script owner without resubmitting',
@@ -61,9 +79,17 @@ export const scriptCancelDefinition = {
 } as const
 export const scriptCommandDefinition = {
 	name: 'script',
-	description: 'Execute portable TypeScript on an authenticated deployment',
+	description:
+		'Read Plugin contracts and execute trusted TypeScript on an authenticated deployment',
 	args: {},
 	subCommands: new Map<string, SubCommandable>([
+		[
+			'sync',
+			lazy(
+				() => import('./commands/script-sync').then((module) => module.scriptSyncCommand),
+				scriptSyncDefinition,
+			),
+		],
 		[
 			'run',
 			lazy(
@@ -766,6 +792,19 @@ export const devRunDefinition = {
 	toKebab: true,
 	args: devRunArgs,
 } as const
+export const devSyncArgs = {
+	...devCommonArgs,
+	out: {
+		type: 'string',
+		description:
+			'Tool-owned contract directory; defaults to the selected Vite root .pluxel/control',
+	},
+} as const
+export const devSyncDefinition = {
+	name: 'sync',
+	description: 'Download committed Plugin contracts from the selected development console',
+	args: devSyncArgs,
+} as const
 
 export const devReceiptArgs = {
 	receipt: {
@@ -792,6 +831,13 @@ export const devCommandDefinition = {
 	description: 'Start or reuse the project application or service and display current addresses',
 	args: devCommonArgs,
 	subCommands: new Map<string, SubCommandable>([
+		[
+			'sync',
+			lazy(
+				() => import('./commands/dev-sync').then((module) => module.devSyncCommand),
+				devSyncDefinition,
+			),
+		],
 		[
 			'status',
 			lazy(

@@ -12,6 +12,17 @@ import {
 	type ScriptRunSnapshot,
 	type ScriptFailure,
 } from './protocol'
+import {
+	createPluginControlMaterialReader,
+	parsePluginControlManifestIndex,
+	parsePluginControlFileChunk,
+	type PluginControlMaterialReader,
+	type PluginControlMaterialsSnapshot,
+	type PluginControlManifestIndex,
+	type PluginControlManifestRequest,
+	type PluginControlFileRequest,
+	type PluginControlFileChunk,
+} from './materials'
 
 export const SCRIPT_CONTROL_PROTOCOL = SCRIPT_PROTOCOL
 export type ScriptTargetDescription = Readonly<{
@@ -31,6 +42,8 @@ export interface ScriptControlTarget extends RpcTarget {
 	result(input: unknown): Promise<ScriptControlResponse<ScriptRunSnapshot>>
 	cancel(input: unknown): Promise<ScriptControlResponse<ScriptRunSnapshot>>
 	control(input: unknown): Promise<ScriptControlResponse<ScriptRunSnapshot>>
+	materials(input: unknown): Promise<ScriptControlResponse<PluginControlManifestIndex>>
+	materialFile(input: unknown): Promise<ScriptControlResponse<PluginControlFileChunk>>
 }
 
 /** A private carrier authenticates a connection before it grants the shared control target. */
@@ -63,6 +76,8 @@ export type ScriptControlTargetOptions = Readonly<{
 	describe(): Readonly<Record<string, unknown>>
 	/** The project loader owns realpath and source admission. */
 	prepare?(input: ScriptSubmission): Promise<ScriptSubmission>
+	/** Optional read-only catalog material source; it creates no additional execution owner. */
+	materials?(): Promise<PluginControlMaterialsSnapshot>
 }>
 
 /** Connection disposal revokes this reference; runs remain owned by the executor. */
@@ -75,9 +90,13 @@ export function createScriptControlTarget(
 class ScriptControlTargetImpl extends RpcTarget implements ScriptControlTarget {
 	readonly #options: ScriptControlTargetOptions
 	#active = true
+	readonly #materials?: PluginControlMaterialReader
 	constructor(options: ScriptControlTargetOptions) {
 		super()
 		this.#options = options
+		this.#materials = options.materials
+			? createPluginControlMaterialReader(options.materials)
+			: undefined
 	}
 	#check(input: unknown, keys: readonly string[], discovery = false): Record<string, unknown> {
 		if (!this.#active)
@@ -173,8 +192,33 @@ class ScriptControlTargetImpl extends RpcTarget implements ScriptControlTarget {
 			)
 		})
 	}
+	materials(input: unknown) {
+		return this.#respond(async () => {
+			const value = this.#check(input, ['protocol', 'instanceId', 'page'])
+			if (!this.#materials)
+				throw new ScriptExecutionError(
+					'control_material_unavailable',
+					'This target does not expose control material',
+				)
+			const result = await this.#materials.manifest(value.page)
+			this.#check(input, ['protocol', 'instanceId', 'page'])
+			return result
+		})
+	}
+	materialFile(input: unknown) {
+		return this.#respond(() => {
+			const value = this.#check(input, ['protocol', 'instanceId', 'file'])
+			if (!this.#materials)
+				throw new ScriptExecutionError(
+					'control_material_unavailable',
+					'This target does not expose control material',
+				)
+			return this.#materials.file(value.file)
+		})
+	}
 	[Symbol.dispose](): void {
 		this.#active = false
+		this.#materials?.[Symbol.dispose]()
 	}
 }
 
@@ -184,6 +228,8 @@ export interface ScriptControlClient extends Disposable {
 	result(runId: string): Promise<ScriptRunSnapshot>
 	cancel(runId: string): Promise<ScriptRunSnapshot>
 	control(input: ScriptControlSubmission): Promise<ScriptRunSnapshot>
+	materials(input?: PluginControlManifestRequest): Promise<PluginControlManifestIndex>
+	materialFile(input: PluginControlFileRequest): Promise<PluginControlFileChunk>
 }
 
 /** Owns the supplied stub. The first description fixes its owner; reconnection never retargets it. */
@@ -227,6 +273,18 @@ export function createScriptControlClient(
 		result: (id: string) => call('result', { runId: id }),
 		cancel: (id: string) => call('cancel', { runId: id }),
 		control: (input: ScriptControlSubmission) => call('control', input),
+		materials: async (page?: PluginControlManifestRequest) => {
+			if (!instanceId) await describe()
+			return parsePluginControlManifestIndex(
+				consumeControlResponse(await target.materials({ ...request(), ...(page ? { page } : {}) })),
+			)
+		},
+		materialFile: async (file: PluginControlFileRequest) => {
+			if (!instanceId) await describe()
+			return parsePluginControlFileChunk(
+				consumeControlResponse(await target.materialFile({ ...request(), file })),
+			)
+		},
 		[Symbol.dispose]() {
 			if (closed) return
 			closed = true

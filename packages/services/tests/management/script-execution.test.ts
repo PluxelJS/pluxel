@@ -5,9 +5,11 @@ import { networkInterfaces, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { setTimeout } from 'node:timers/promises'
-import { BasePlugin, Plugin } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { createHost } from '@pluxel/host'
+import { setHostCatalogProvenance } from '@pluxel/host/internal'
+import { generatePluginControl } from '@pluxel/rolldown/control'
+import { createRuntimeManagementClient } from '@pluxel/services/management/client'
 import { hashScriptSource, type ScriptArtifact, type ScriptRunSnapshot } from '@pluxel/host/agent'
 import { createScriptControlClient, type ScriptControlClient } from '@pluxel/host/agent/transport'
 import { elysia } from '@pluxel/services/elysia'
@@ -29,6 +31,7 @@ import {
 	revokeScriptTestAuthorization,
 	scriptTestProvider,
 } from './fixtures/script-cli-auth'
+import { ScriptCounter } from './fixtures/control-sync-counter'
 
 const execute = promisify(execFile)
 const HeaderWebSocket = NativeWebSocket as typeof NativeWebSocket & {
@@ -37,29 +40,6 @@ const HeaderWebSocket = NativeWebSocket as typeof NativeWebSocket & {
 		protocols: string[],
 		options: { headers: Record<string, string>; ca: string },
 	): WebSocket
-}
-const schema = {
-	'~standard': {
-		version: 1 as const,
-		vendor: 'script-transport-test',
-		types: undefined as { input: Record<string, unknown>; output: { count: number } } | undefined,
-		validate(input: unknown) {
-			const count = (input as { count?: unknown })?.count ?? 2
-			return typeof count === 'number'
-				? { value: { count } }
-				: { issues: [{ message: 'Expected number' }] }
-		},
-	},
-}
-@Plugin()
-class ScriptCounter extends BasePlugin {
-	readonly config = this.configs.use(schema)
-	count = 2
-	init() {
-		this.configs.onUpdate(this.config, ({ desired }) => {
-			this.count = desired.count
-		})
-	}
 }
 async function artifact(body: string): Promise<ScriptArtifact> {
 	const code = `return { default: async (sdk, run) => { ${body} } };`
@@ -112,12 +92,38 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 		join(directory, 'node_modules'),
 		'dir',
 	)
+	const generation = await generatePluginControl({
+		root: resolve(import.meta.dirname, '../..'),
+		definitions: [
+			{
+				moduleId: resolve(import.meta.dirname, 'fixtures/control-sync-counter.ts'),
+				className: 'ScriptCounter',
+				definition: ScriptCounter.definitionAddress(),
+			},
+		],
+	})
 	const makeHost = async (scripts: boolean) => {
 		const host = await createHost({
 			plugins: [ScriptCliAuthentication, ScriptCounter],
 			services: [elysia(), managementAccess(), management(), managementHttp({ scripts })],
 			runtime: { documents: { config: false, state: false } },
 		})
+		setHostCatalogProvenance(
+			host.ctx,
+			new Map([
+				[
+					ScriptCounter,
+					{
+						control: {
+							state: 'available',
+							format: 1,
+							contracts: generation.manifest.definitions[0].contracts,
+							material: generation,
+						},
+					},
+				],
+			]),
+		)
 		await host.start()
 		await host.startNode(ScriptCliAuthentication.nodeAddress())
 		await host.startNode(ScriptCounter.nodeAddress())
@@ -173,6 +179,77 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 		try {
 			using denied = await connect(disabled.endpoint)
 			expect(denied.control).toBeUndefined()
+			const boot = denied.session.current
+			if (!boot || boot.kind === 'authentication-required')
+				throw new Error('Expected authenticated Management')
+			const managementClient = createRuntimeManagementClient(boot.management)
+			const description = await managementClient.describe()
+			expect(description.protocol.capabilities).toContain('plugins.control-materials')
+			const index = await managementClient.materials.manifest()
+			expect(index.materials).toHaveLength(1)
+			expect(index.definitions[0].definition).toEqual(ScriptCounter.definitionAddress())
+			const credentials = join(directory, 'sync-credentials.json')
+			await writeFile(credentials, JSON.stringify({ password: SCRIPT_TEST_PASSWORD }), {
+				mode: 0o600,
+			})
+			const cli = resolve(import.meta.dirname, '../../../cli/dist/cli.mjs')
+			const sync = await execute(
+				process.execPath,
+				[
+					cli,
+					'script',
+					'sync',
+					'--endpoint',
+					disabled.endpoint,
+					'--credentials-file',
+					credentials,
+					'--out',
+					join(directory, 'synced-control'),
+				],
+				{
+					cwd: directory,
+					env: { ...process.env, NODE_EXTRA_CA_CERTS: certificate },
+					timeout: 60_000,
+				},
+			)
+			const synced = JSON.parse(sync.stdout)
+			expect(synced).toMatchObject({
+				entry: join(directory, 'synced-control/current/index.mjs'),
+				definitions: [
+					{
+						definition: ScriptCounter.definitionAddress(),
+						exportName: expect.stringMatching(/^ScriptCounter_[a-f0-9]{16}$/),
+					},
+				],
+			})
+			expect(await readFile(synced.entry, 'utf8')).toContain('ScriptCounter')
+			expect(sync.stderr).not.toContain(SCRIPT_TEST_PASSWORD)
+			const badCredentials = join(directory, 'sync-bad-credentials.json')
+			await writeFile(badCredentials, JSON.stringify({ password: 'incorrect' }), { mode: 0o600 })
+			await expect(
+				execute(
+					process.execPath,
+					[
+						cli,
+						'script',
+						'sync',
+						'--endpoint',
+						disabled.endpoint,
+						'--credentials-file',
+						badCredentials,
+						'--out',
+						join(directory, 'denied-control'),
+					],
+					{
+						cwd: directory,
+						env: { ...process.env, NODE_EXTRA_CA_CERTS: certificate },
+						timeout: 15_000,
+					},
+				),
+			).rejects.toMatchObject({ code: 1, stdout: expect.stringContaining('authentication_failed') })
+			await expect(
+				readFile(join(directory, 'denied-control/current/index.mjs')),
+			).rejects.toMatchObject({ code: 'ENOENT' })
 		} finally {
 			await disabled.host.close()
 		}

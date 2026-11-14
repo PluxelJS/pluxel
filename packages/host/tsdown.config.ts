@@ -14,6 +14,7 @@ export default defineConfig({
 		index: './src/index.ts',
 		internal: './src/internal.ts',
 		'internal/protocol': './src/execution.ts',
+		'internal/control-manifest': './src/control-manifest.ts',
 		'internal/shared-runtime': './src/shared-runtime.ts',
 	},
 	format: ['esm'],

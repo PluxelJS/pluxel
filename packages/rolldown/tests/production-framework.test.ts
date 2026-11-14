@@ -40,7 +40,16 @@ it('relocates a traced native library in the Pluxel namespace without external f
 		)
 		await writeFile(
 			join(library, 'package.json'),
-			JSON.stringify({ name: '@pluxel/native-fixture', version: '1.0.0', main: 'dist/index.cjs' }),
+			JSON.stringify({
+				name: '@pluxel/native-fixture',
+				version: '1.0.0',
+				main: 'dist/index.cjs',
+				types: 'dist/index.d.cts',
+			}),
+		)
+		await writeFile(
+			join(library, 'dist/index.d.cts'),
+			'declare const native: string; export = native;\n',
 		)
 		await writeFile(join(library, 'dist/index.cjs'), "module.exports = require('../binding.cjs')")
 		await writeFile(
@@ -180,6 +189,7 @@ import {standardServices} from '@pluxel/services';
 import {BasePlugin,Plugin} from '@pluxel/core';
 import {Workers,defineWorkerTask} from '@pluxel/services/workers';
 import {resolve} from 'node:path';
+declare global { var __frameworkCommands: typeof Commands | undefined; }
 const task = defineWorkerTask<number,number>(import.meta.url, './task.ts');
 @Plugin()
 class FrozenWorker extends BasePlugin {
