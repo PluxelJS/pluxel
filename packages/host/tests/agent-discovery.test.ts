@@ -12,11 +12,12 @@ import { expect, it, vi } from 'vitest'
 import { createPluginCatalogSnapshot } from '../src/catalog'
 import { createHost } from '../src/index'
 import { createScriptScope } from '../src/agent-runtime'
-import { captureScriptPluginListOptions, scriptPluginList } from '../src/agent/discovery'
 import {
-	hostPluginStatusOverviewFromView,
-	type HostPluginStatusProjectionView,
-} from '../src/status'
+	captureScriptPluginListOptions,
+	scriptPluginList,
+	type ScriptPluginDiscoveryView,
+} from '../src/agent/discovery'
+import { hostPluginStatusOverviewFromView } from '../src/status'
 
 const rootDefinition: PluginDefinitionAddress = {
 	entry: { kind: 'package-root', packageName: '@fixture/discovery' },
@@ -41,7 +42,7 @@ const node = (definition: PluginDefinitionAddress, forkId?: string): PluginNodeA
 
 function fixture(forkCount = 3) {
 	const definitions = [rootDefinition, subpathDefinition, sourceDefinition]
-	const view: HostPluginStatusProjectionView & { runtimeStateRevision: number } = {
+	const view: ScriptPluginDiscoveryView = {
 		catalog: createPluginCatalogSnapshot(
 			1,
 			definitions.map((address) => ({
@@ -59,6 +60,7 @@ function fixture(forkCount = 3) {
 			})),
 		),
 		runtimeStateRevision: 1,
+		appliedNodes: new Map(),
 		state: {
 			autoStart: [node(rootDefinition, 'orphan')],
 			forks: Array.from({ length: forkCount }, (_, index) => ({
@@ -213,6 +215,74 @@ it('rejects malformed limits and cursors instead of silently normalizing queries
 		'Plugin package name must be an npm package name',
 	)
 })
+
+it('reuses identity enumeration across pages while reading current lifecycle and diagnostics', () => {
+	const owner = {}
+	const initial = fixture(250)
+	const readEntries = vi.fn(() => initial.catalog.entries)
+	const view = {
+		...initial,
+		catalog: {
+			...initial.catalog,
+			get entries() {
+				return readEntries()
+			},
+		},
+	}
+	const first = Result.unwrap(scriptPluginList(owner, view))
+	const second = Result.unwrap(
+		scriptPluginList(owner, view, captureScriptPluginListOptions({ cursor: first.nextCursor! })),
+	)
+	expect(readEntries).toHaveBeenCalledOnce()
+	const selected = second.nodes[0]!.address
+	const resolveRecentUpdate = vi.fn(() => null)
+	const observed = Result.unwrap(
+		scriptPluginList(
+			owner,
+			{
+				...view,
+				runningNodeKeys: new Set([pluginNodeIndexKey(selected)]),
+				recentUpdate: { resolveRecentUpdate },
+			},
+			captureScriptPluginListOptions({ cursor: first.nextCursor! }),
+		),
+	)
+	expect(observed.nodes[0]).toMatchObject({ address: selected, lifecycleState: 'running' })
+	expect(resolveRecentUpdate).toHaveBeenCalledTimes(50)
+	expect(readEntries).toHaveBeenCalledOnce()
+})
+
+it.each(['policy', 'session', 'desired', 'core'] as const)(
+	'invalidates a paginated inventory when %s adds a node without a catalog change',
+	(source) => {
+		const owner = {}
+		const initial = fixture()
+		const first = Result.unwrap(
+			scriptPluginList(owner, initial, captureScriptPluginListOptions({ limit: 2 })),
+		)
+		const address = { definition: rootDefinition, variant: 'fork', forkId: 'new-member' } as const
+		const key = pluginNodeIndexKey(address)
+		const view: ScriptPluginDiscoveryView =
+			source === 'policy'
+				? { ...initial, state: { ...initial.state, forks: [...initial.state.forks, address] } }
+				: source === 'session'
+					? { ...initial, sessionIntents: new Map([[key, { address, intent: 'run' }]]) }
+					: source === 'desired'
+						? {
+								...initial,
+								desiredControl: new Map([[key, { address, activationReason: 'session' }]]),
+							}
+						: { ...initial, coreNodes: [address], appliedNodes: new Map() }
+		expect(
+			scriptPluginList(owner, view, captureScriptPluginListOptions({ cursor: first.nextCursor! })),
+		).toMatchObject({
+			status: 'error',
+			error: { code: 'cursor_stale' },
+		})
+		const current = Result.unwrap(scriptPluginList(owner, view))
+		expect(current.nodes.some((entry) => pluginNodeIndexKey(entry.address) === key)).toBe(true)
+	},
+)
 
 @Plugin({ forkable: true })
 class Discoverable extends BasePlugin {}

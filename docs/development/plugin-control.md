@@ -60,7 +60,7 @@ const { config } = counter
 const { get, patch } = config
 ```
 
-引用提供 `address`、`status()`、`start()`、`stop()` 和 `restart()`。同一引用的 `inspect()` 按 definition [定位作者源码](./inspection.md)，源码可用性由目标环境决定。选择 fork 使用 `Counter.nodeAddress('east')`，同样交给 `sdk.plugin()`。
+引用提供 `address`、`status()`、`start()`、`stop()` 和 `restart()`。`sdk.inspect(Counter.definitionAddress())` 按定义 [定位作者源码](./inspection.md)，源码可用性由目标环境决定。选择 fork 使用 `Counter.nodeAddress('east')`，同样交给 `sdk.plugin()`。
 
 `sdk.plugin(counter.address)` 保留原有类型与调用证据，可以在另一个 run 中重新选择。新引用的寿命属于新 run，保存地址不会延长旧引用或实例的寿命。
 

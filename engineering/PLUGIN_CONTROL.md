@@ -77,7 +77,7 @@ SDK 工厂、引用和配置方法均由闭包持有目标，不依赖调用 rec
 
 ## 同步与脚本输入
 
-Management major 12 的 `plugins.control-materials` 与 Vite 本地控制 target 复用原连接。材料读取独立于脚本执行开关，`scripts: false` 不初始化执行器。一次读取固定 committed catalog 及被选中的 definitions；CLI 保留已验证的原始材料和声明闭包，按 canonical entry 分组的同步模块只导出被选中且已接纳的定义。
+Management major 13 的 `plugins.control-materials` 与 Vite 本地控制 target 复用原连接。材料读取独立于脚本执行开关，`scripts: false` 不初始化执行器。一次读取固定 committed catalog 及被选中的 definitions；CLI 保留已验证的原始材料和声明闭包，按 canonical entry 分组的同步模块只导出被选中且已接纳的定义。
 
 每连接缓存最长 5 分钟、128 份材料、总量 64 MiB。索引分页列出定义，文件以 32 KiB UTF-8/base64 分块，保持现有 DTO/frame 预算。过期读取返回 `control_snapshot_expired`，由调用方重新开始同步。
 

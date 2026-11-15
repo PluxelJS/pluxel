@@ -490,7 +490,7 @@ export default(async sdk=>{
  const node=listed.value.nodes.find(node=>node.address.variant==='default');if(!node)throw new Error('Missing discovered Counter')
  const selected=sdk.plugin(node.address)
  const config=await selected.config.get();if(config.isErr())return config
- const inspection=await selected.inspect()
+ const inspection=await sdk.inspect(selected.address.definition)
  return Result.ok({...config.value,inspection:inspection.isErr()?inspection.error:inspection.value})
 }) satisfies Script`
 const wait = `import type {Script} from '@pluxel/host/agent';export default(async sdk=>{const marked=await sdk.logs.mark();if(marked.isErr())return marked;return sdk.logs.wait(marked.value,{timeoutMs:120000,filter:{category:'not-emitted'}})}) satisfies Script`

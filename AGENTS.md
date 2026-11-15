@@ -10,7 +10,7 @@
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
 | 工作区工具、提交检查、开发服务                   | [工作区工具链](docs/development/workspace-toolchain.md)；检查涉及的 mise.toml、vite.config.ts、hk.pkl、pitchfork.toml 与已有服务    |
 | 插件业务、配置、日志                             | [插件开发](docs/plugin-development/index.md)选择目标主题                                                                            |
-| 插件发现、声明与源码位置                         | [源码查询](docs/development/inspection.md)；已有 SDK 用 `sdk.plugin(nodeAddress).inspect()`，离线用 `openProject()`                 |
+| 插件发现、声明与源码位置                         | [源码查询](docs/development/inspection.md)；已有 SDK 用 `sdk.inspect(definitionAddress)`，离线用 `openProject()`                    |
 | 应用装配、部署、服务扩展                         | [Host 配置](docs/host/configuration.md)对应章节，扩展再读 host/services                                                             |
 | Workbench 导航、布局或视觉                       | [交互设计](engineering/WORKBENCH_DESIGN.md)、[Frontend](engineering/FRONTEND.md)                                                    |
 | 文档编写与组织                                   | [文档职责](engineering/DOCUMENTATION.md)                                                                                            |

@@ -20,7 +20,7 @@ export type {
 } from '@pluxel/host/internal/protocol'
 export type { VaultKeyPair } from '../../vault'
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 12 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 13 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',

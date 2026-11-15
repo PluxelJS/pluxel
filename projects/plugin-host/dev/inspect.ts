@@ -11,7 +11,7 @@ export default ((sdk) => {
 
 /** Locate the current disk declaration, configuration and application bindings on this target. */
 export const source = ((sdk) =>
-	sdk.plugin(ReportStudioPlugin.nodeAddress()).inspect({
+	sdk.inspect(ReportStudioPlugin.definitionAddress(), {
 		include: ['config', 'parts', 'dependencies', 'inputs', 'checks'],
 	})) satisfies ProjectScript
 

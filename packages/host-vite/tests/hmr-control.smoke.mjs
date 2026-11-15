@@ -287,7 +287,7 @@ export const metrics = (globalThis as unknown as Record<string, FixtureMetrics>)
 		)
 		await writeFile(
 			join(root, 'stale.ts'),
-			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { metrics } from './metrics.ts'; export default ((sdk) => { if (!metrics.savedConstructor) throw new Error('Missing saved constructor'); return sdk.plugin(metrics.savedConstructor.nodeAddress()).instance() }) satisfies ProjectScript; export const locate = ((sdk) => { if (!metrics.savedConstructor) throw new Error('Missing saved constructor'); return sdk.plugin(metrics.savedConstructor.nodeAddress()).inspect() }) satisfies ProjectScript",
+			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { metrics } from './metrics.ts'; export default ((sdk) => { if (!metrics.savedConstructor) throw new Error('Missing saved constructor'); return sdk.plugin(metrics.savedConstructor.nodeAddress()).instance() }) satisfies ProjectScript; export const locate = ((sdk) => { if (!metrics.savedConstructor) throw new Error('Missing saved constructor'); return sdk.inspect(metrics.savedConstructor.definitionAddress()) }) satisfies ProjectScript",
 		)
 		await writeFile(
 			join(root, 'locate.ts'),
@@ -299,15 +299,15 @@ export default (async (sdk) => {
 	if (discovered.isErr()) return discovered;
 	const selected = discovered.value.nodes[0];
 	if (!selected) throw new Error('Missing discovered Probe');
-	const dynamic = await sdk.plugin(selected.address).inspect();
+	const dynamic = await sdk.inspect(selected.address.definition);
 	if (dynamic.isErr()) return dynamic;
-	const source = await sdk.plugin(Probe.nodeAddress()).inspect();
+	const source = await sdk.inspect(Probe.definitionAddress());
 	if (source.isErr()) return source;
 	const page = await sdk.plugins.list({ limit: 200 });
 	if (page.isErr()) return page;
 	const locations = [];
 	for (const node of page.value.nodes) {
-		const located = await sdk.plugin(node.address).inspect();
+		const located = await sdk.inspect(node.address.definition);
 		if (located.isErr()) return located;
 		locations.push(located.value);
 	}
@@ -442,7 +442,7 @@ await scenario(
 		const initial = await inspect()
 		assert.equal(initial.application.state, 'ready')
 		assert.ok(initial.capabilities.includes('plugins.control-materials'))
-		assert.ok(initial.capabilities.includes('plugin.inspect'))
+		assert.ok(initial.capabilities.includes('inspect'))
 		assert.equal(metrics.evaluations.length, count)
 		assert.equal(metrics.starts.length, count)
 		const initialRead = await script()
@@ -563,8 +563,9 @@ await scenario(
 		assert.equal(staleRead.value.status, 'error')
 		assert.equal(staleRead.value.error.code, 'stale_target')
 		const staleLocation = await script('stale.ts', 'succeeded', 'locate')
-		assert.equal(staleLocation.value.status, 'error')
-		assert.equal(staleLocation.value.error.code, 'stale_target')
+		assert.equal(staleLocation.value.status, 'ok')
+		assertLocation(staleLocation.value.value, 0, source(0, 1))
+		assert.equal(staleLocation.value.value.source.runtimeMatch, 'unverified')
 		const sequence = applied.application.latestUpdate.sequence
 		const unchanged = await control('apply')
 		assert.equal(unchanged.application.latestUpdate.sequence, sequence)

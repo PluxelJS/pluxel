@@ -462,7 +462,7 @@ expectTypeOf<Parameters<ScriptSdk['logs']['wait']>[1]>().toEqualTypeOf<
 // @ts-expect-error The existing finite log wait deadline stays required.
 void sdk.logs.wait(cursor, { filter: { plugin: Counter.nodeAddress() } })
 
-const declarationOnly = await counterRef.inspect()
+const declarationOnly = await sdk.inspect(Counter.definitionAddress())
 expectTypeOf(declarationOnly).toEqualTypeOf<
 	Result<Inspection<InspectionPluginReport<readonly []>>, ScriptInspectionError>
 >()
@@ -471,8 +471,11 @@ if (declarationOnly.isOk()) {
 	// @ts-expect-error The lightweight default has no unrequested sections.
 	void declarationOnly.value.data.sections.config
 }
-const { inspect } = counterRef
-const configAndParts = await inspect({ include: ['config', 'parts'], partPath: ['worker'] })
+const { inspect } = sdk
+const configAndParts = await inspect(Counter.definitionAddress(), {
+	include: ['config', 'parts'],
+	partPath: ['worker'],
+})
 expectTypeOf(configAndParts).toEqualTypeOf<
 	Result<Inspection<InspectionPluginReport<readonly ['config', 'parts']>>, ScriptInspectionError>
 >()
@@ -484,25 +487,31 @@ if (configAndParts.isOk()) {
 	void configAndParts.value.data.sections.inputs
 }
 declare const dynamicSections: readonly InspectionPluginSection[]
-const dynamicInspection = await inspect({ include: dynamicSections })
+const dynamicInspection = await inspect(Counter.definitionAddress(), { include: dynamicSections })
 if (dynamicInspection.isOk())
 	expectTypeOf(dynamicInspection.value.data.sections.parts).toEqualTypeOf<
 		InspectionSection<InspectionSectionData['parts']> | undefined
 	>()
 declare const optionalSections: ScriptInspectionOptions & { include?: readonly ['config'] }
-const optionalInspection = await inspect(optionalSections)
+const optionalInspection = await inspect(Counter.definitionAddress(), optionalSections)
 if (optionalInspection.isOk())
 	expectTypeOf(optionalInspection.value.data.sections.config).toEqualTypeOf<
 		InspectionSection<InspectionSectionData['config']> | undefined
 	>()
-expectTypeOf(sdk.plugin(address).inspect).toEqualTypeOf<typeof inspect>()
-expectTypeOf(sdk.plugin(CounterPlugin.nodeAddress()).inspect).toEqualTypeOf<typeof inspect>()
-expectTypeOf(sdk.plugin(NoConfig.nodeAddress()).inspect).toEqualTypeOf<typeof inspect>()
-void selectedFork.inspect({ include: ['inputs'], signal: new AbortController().signal })
+void inspect(selectedFork.address.definition, {
+	include: ['inputs'],
+	signal: new AbortController().signal,
+})
+void inspect(CounterPlugin.definitionAddress())
+void inspect(NoConfig.definitionAddress())
+// @ts-expect-error Source inspection takes a definition, never a runtime node address.
+void inspect(address)
+// @ts-expect-error Node handles own runtime operations; source queries use sdk.inspect.
+void counterRef.inspect()
 // @ts-expect-error The execution target fixes its application; a caller cannot redirect it.
-void inspect({ application: { root: '/other', entry: 'app.ts' } })
+void inspect(Counter.definitionAddress(), { application: { root: '/other', entry: 'app.ts' } })
 // @ts-expect-error Reuse compiler section names instead of adding parallel inspection options.
-void inspect({ include: ['schemas'] })
+void inspect(Counter.definitionAddress(), { include: ['schemas'] })
 
 export default (async (api, run) => {
 	run.signal.throwIfAborted()

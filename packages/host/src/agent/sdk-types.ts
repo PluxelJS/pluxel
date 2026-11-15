@@ -1,4 +1,4 @@
-import type { PluginNodeAddress } from '@pluxel/core'
+import type { PluginDefinitionAddress, PluginNodeAddress } from '@pluxel/core'
 import type { Result } from '@pluxel/core/better-result'
 import type { LogCursor, LogReadOptions, LogStreamMeta } from '@pluxel/core/logging'
 import type { HostConfigMutation } from '../config'
@@ -102,12 +102,6 @@ type SelectedAddress<T extends PluginNodeAddress> = {
 interface ScriptPluginOperations<T extends PluginNodeAddress> {
 	/** Immutable selection; retains the input's types and evidence when selected again. */
 	readonly address: SelectedAddress<T>
-	/**
-	 * Locate this definition in current disk source on the execution target. Default/fork
-	 * share a declaration. No module or schema is evaluated, no editor is opened, and no
-	 * association with the accepted runtime version is inferred. A missing backend is Err.
-	 */
-	readonly inspect: ScriptPluginInspect
 	/** Read current state, or null when this node is absent. */
 	readonly status: () => Promise<
 		Result<HostPluginStatusSnapshot | null, ScriptOperationError | ScriptTargetError>
@@ -165,12 +159,15 @@ export type ScriptInspectionOptions = Omit<InspectionPluginOptions, 'application
 
 export interface ScriptPluginInspect {
 	(
+		target: PluginDefinitionAddress,
 		options?: ScriptInspectionOptions & { readonly include?: readonly [] },
 	): Promise<Result<Inspection<InspectionPluginReport<readonly []>>, ScriptInspectionError>>
 	<const S extends readonly InspectionPluginSection[]>(
+		target: PluginDefinitionAddress,
 		options: ScriptInspectionOptions & { readonly include: S },
 	): Promise<Result<Inspection<InspectionPluginReport<S>>, ScriptInspectionError>>
 	<const S extends readonly InspectionPluginSection[]>(
+		target: PluginDefinitionAddress,
 		options: ScriptInspectionOptions & { readonly include?: S },
 	): Promise<
 		Result<Inspection<InspectionPluginReport<readonly S[number][]>>, ScriptInspectionError>
@@ -186,6 +183,13 @@ export interface ScriptPluginInspect {
  * before the script finishes; nested resources retain their original ownership.
  */
 export interface ScriptSdk {
+	/**
+	 * Inspect a concrete or abstract definition in the target environment's current disk source.
+	 * Pass dependency definitions directly, or node.address.definition after discovery.
+	 * No running node, constructor evidence, or runtime-version match is required or inferred.
+	 * The lightweight default returns the declaration; include selects additional source sections.
+	 */
+	readonly inspect: ScriptPluginInspect
 	/**
 	 * Select a Plugin synchronously, without reading Host state or starting it. Captures
 	 * a validated target snapshot. The selector and all reference methods can be cached

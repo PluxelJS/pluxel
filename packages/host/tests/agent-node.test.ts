@@ -54,10 +54,11 @@ const subject = 'admin:alice'
 it('runs compiled uploaded source lookup through an explicitly installed backend without evaluating author code', async () => {
 	const hostRoot = fileURLToPath(new URL('../', import.meta.url))
 	const source = [
-		"import { BasePlugin, Plugin } from '@pluxel/core'",
+		"import { Plugin } from '@pluxel/core'",
+		"import { Backend } from './backend'",
 		"export const AuthorSchema = (() => { throw new Error('SCHEMA_MUST_NOT_EXECUTE') })()",
-		'@Plugin()',
-		'export class AuthorPlugin extends BasePlugin {',
+		'@Plugin(Backend)',
+		'export class AuthorPlugin extends Backend {',
 		'  settings = this.configs.use(AuthorSchema)',
 		'}',
 		"throw new Error('PLUGIN_MUST_NOT_EXECUTE')",
@@ -71,6 +72,8 @@ it('runs compiled uploaded source lookup through an explicitly installed backend
 			'package.json': JSON.stringify({ private: true, type: 'module' }),
 			'tsconfig.json': JSON.stringify({ extends: `${hostRoot}/tsconfig.json` }),
 			'author/plugin.ts': source,
+			'author/backend.ts':
+				"import { BasePlugin } from '@pluxel/core'; export abstract class Backend extends BasePlugin {}",
 			'author/application.ts': [
 				"import { defineHostApplication } from '@pluxel/host'",
 				"import { AuthorPlugin } from './plugin'",
@@ -78,11 +81,23 @@ it('runs compiled uploaded source lookup through an explicitly installed backend
 				'export default defineHostApplication(() => ({ plugins: [AuthorPlugin] }))',
 			].join('\n'),
 			'task.ts': `
-import type { PluginNodeAddress } from '@pluxel/core'
+import type { PluginDefinitionAddress } from '@pluxel/core'
 import type { Script } from '@pluxel/host/agent'
-export default (async (sdk, run) => sdk.plugin(run.input as PluginNodeAddress).inspect({
+export default (async (sdk, run) => sdk.inspect(run.input as PluginDefinitionAddress, {
   include: ['config', 'inputs'],
 })) satisfies Script
+`,
+			'follow.ts': `
+import type { PluginDefinitionAddress } from '@pluxel/core'
+import type { Script } from '@pluxel/host/agent'
+export default (async (sdk, run) => {
+  const report = await sdk.inspect(run.input as PluginDefinitionAddress, { include: ['dependencies'] })
+  if (report.isErr()) return report
+  const dependencies = report.value.data.sections.dependencies
+  if (dependencies.status === 'unavailable') return dependencies
+  if (!dependencies.value.provides) throw new Error('Expected an abstract provider token')
+  return sdk.inspect(dependencies.value.provides)
+}) satisfies Script
 `,
 		}
 		for (const [name, contents] of Object.entries(files)) {
@@ -103,10 +118,7 @@ export default (async (sdk, run) => sdk.plugin(run.input as PluginNodeAddress).i
 		})
 		await host.start()
 		const code = await compileScript({ file: join(directory, 'task.ts') })
-		const input = parsePluginNodeAddress({
-			definition: parsePluginDefinitionReference('source:app/plugin.ts::AuthorPlugin'),
-			variant: 'default',
-		})
+		const input = parsePluginDefinitionReference('source:app/plugin.ts::AuthorPlugin')
 		const installation = {
 			ctx: host.ctx,
 			inspection: createInspectionBackend({
@@ -119,7 +131,8 @@ export default (async (sdk, run) => sdk.plugin(run.input as PluginNodeAddress).i
 			throw new Error('Caller mutation must not replace the installed source backend')
 		}
 		await owner.executor.submit({ runId: 'author-source', code, input }, subject)
-		expect(await owner.executor.settled('author-source', subject)).toMatchObject({
+		const located = await owner.executor.settled('author-source', subject)
+		expect(located).toMatchObject({
 			state: 'succeeded',
 			hostEpoch: owner.hostEpoch,
 			value: {
@@ -134,11 +147,11 @@ export default (async (sdk, run) => sdk.plugin(run.input as PluginNodeAddress).i
 					},
 					data: {
 						summary: {
-							definition: input.definition,
+							definition: input,
 							declaration: {
 								file: join(directory, 'author/plugin.ts'),
 								start: declarationStart,
-								end: { line: 6, column: 2 },
+								end: { line: 7, column: 2 },
 							},
 						},
 						sections: {
@@ -167,6 +180,23 @@ export default (async (sdk, run) => sdk.plugin(run.input as PluginNodeAddress).i
 									bindings: [],
 								},
 							},
+						},
+					},
+				},
+			},
+		})
+		const follow = await compileScript({ file: join(directory, 'follow.ts') })
+		await owner.executor.submit({ runId: 'abstract-source', code: follow, input }, subject)
+		expect(await owner.executor.settled('abstract-source', subject)).toMatchObject({
+			state: 'succeeded',
+			value: {
+				status: 'ok',
+				value: {
+					data: {
+						summary: {
+							definition: parsePluginDefinitionReference('source:app/backend.ts::Backend'),
+							kind: 'abstract',
+							declaration: { file: join(directory, 'author/backend.ts') },
 						},
 					},
 				},

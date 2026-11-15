@@ -25,6 +25,6 @@ description: 掌握 Pluxel 插件与应用的开发、代码检查、调试测�
 ## 开发调试工作流建议
 
 - **日常逻辑开发**：推荐在业务插件中优先编写纯单元测试或隔离宿主测试（`@pluxel/test`），验证业务逻辑与依赖注入行为。
-- **定位源码**：已有 SDK 时使用 `sdk.plugin(nodeAddress).inspect()`；应用无法启动或需要查询其他工作区时使用离线 `openProject()`。位置属于执行查询的环境，完整结果处理见[源码查询](./inspection.md)。
+- **定位源码**：已有 SDK 时使用 `sdk.inspect(definitionAddress)`；应用无法启动或需要查询其他工作区时使用离线 `openProject()`。位置属于执行查询的环境，完整结果处理见[源码查询](./inspection.md)。
 - **在线服务联调**：使用 `pluxel dev` 启动应用，通过控制台执行交互式运行脚本（`dev run`），并在需要连续修改代码时利用 `dev hmr pause` / `apply` 批次控制确保状态平稳迁移。
 - **查阅项目文档**：可通过 `pluxel docs <path>` 查看当前工作区或依赖包自带的离线文档。

@@ -70,7 +70,7 @@ async function createInspectionHost() {
 	return host
 }
 
-describe('selected Plugin source inspection', () => {
+describe('Plugin definition source inspection', () => {
 	it('locates source, generated and discovered nodes through the same definition query', async () => {
 		await using host = await createInspectionHost()
 		const inspection = vi.fn<ScriptInspectionBackend>(async (definition) =>
@@ -98,9 +98,8 @@ describe('selected Plugin source inspection', () => {
 			...discovered.nodes.map(({ address }) => address),
 		]
 		for (const address of addresses) {
-			const selected = scope.sdk.plugin(address)
-			const { inspect } = selected
-			const located = Result.unwrap(await inspect())
+			const { inspect } = scope.sdk
+			const located = Result.unwrap(await inspect(address.definition))
 			expect(located).toEqual({
 				...report(Inspectable.definitionAddress()),
 				source: {
@@ -158,7 +157,7 @@ describe('selected Plugin source inspection', () => {
 		const include = ['parts', 'inputs'] as const
 		const partPath = ['worker'] as const
 		const located = Result.unwrap(
-			await scope.sdk.plugin(parsePluginNodeAddress(Inspectable.nodeAddress())).inspect({
+			await scope.sdk.inspect(Inspectable.definitionAddress(), {
 				include,
 				partPath,
 			}),
@@ -173,7 +172,7 @@ describe('selected Plugin source inspection', () => {
 	it('reports absent source backends without describing control materials as author source', async () => {
 		await using host = await createInspectionHost()
 		await using scope = createScriptScope({ ctx: host.ctx })
-		expect(await scope.sdk.plugin(Inspectable.nodeAddress()).inspect()).toMatchObject({
+		expect(await scope.sdk.inspect(Inspectable.definitionAddress())).toMatchObject({
 			status: 'error',
 			error: {
 				code: 'inspection_unavailable',
@@ -190,7 +189,7 @@ describe('selected Plugin source inspection', () => {
 		await using scope = createScriptScope({ ctx: host.ctx, inspection })
 		const options = { include: ['inputs'], application: { root: '/another', entry: 'app.ts' } }
 		expect(
-			await scope.sdk.plugin(Inspectable.nodeAddress()).inspect(options as never),
+			await scope.sdk.inspect(Inspectable.definitionAddress(), options as never),
 		).toMatchObject({
 			status: 'error',
 			error: { code: 'invalid_input', context: {} },
@@ -204,20 +203,24 @@ describe('selected Plugin source inspection', () => {
 			Result.ok(report(definition)),
 		)
 		await using scope = createScriptScope({ ctx: host.ctx, inspection })
-		const selected = scope.sdk.plugin(Inspectable.nodeAddress())
 		const malformed: readonly unknown[] = [42, null, []]
 		for (const input of malformed) {
-			const pending = selected.inspect(input as never)
+			const pending = scope.sdk.inspect(Inspectable.definitionAddress(), input as never)
 			expect(pending).toBeInstanceOf(Promise)
 			await expect(pending).rejects.toThrow(TypeError)
 		}
 		expect(inspection).not.toHaveBeenCalled()
-		const valid = await selected.inspect()
+		for (const target of [null, {}, Inspectable.nodeAddress()]) {
+			const pending = scope.sdk.inspect(target as never)
+			expect(pending).toBeInstanceOf(Promise)
+			await expect(pending).rejects.toThrow(TypeError)
+		}
+		const valid = await scope.sdk.inspect(Inspectable.definitionAddress())
 		expect(valid.isOk()).toBe(true)
 		expect(inspection).toHaveBeenCalledOnce()
 	})
 
-	it('fixes option values and nested selection arrays when the query is called', async () => {
+	it('captures definition, option values and nested selection arrays when the query is called', async () => {
 		await using host = await createInspectionHost()
 		const inspection = vi.fn<ScriptInspectionBackend>(async (definition) =>
 			Result.ok(report(definition)),
@@ -227,9 +230,11 @@ describe('selected Plugin source inspection', () => {
 		const partPath = ['worker']
 		const originalSignal = new AbortController()
 		const options = { include, partPath, signal: originalSignal.signal }
-		const pending = scope.sdk
-			.plugin(parsePluginNodeAddress(Inspectable.nodeAddress()))
-			.inspect(options)
+		const original = Inspectable.definitionAddress()
+		const definition = { entry: { ...original.entry }, exportName: original.exportName }
+		const pending = scope.sdk.inspect(definition, options)
+		definition.exportName = 'Changed'
+		if (definition.entry.kind === 'source-entry') definition.entry.path = 'changed.ts'
 		include.push('dependencies')
 		partPath[0] = 'changed-worker'
 		options.include = ['inputs']
@@ -244,7 +249,7 @@ describe('selected Plugin source inspection', () => {
 		expect(inspection.mock.calls[0]![1].signal?.aborted).toBe(true)
 	})
 
-	it('guards constructor checks during a borrowed business call while plain source queries stay independent', async () => {
+	it('locates definitions without contending with a borrowed business call', async () => {
 		await using host = await createInspectionHost()
 		const inspection = vi.fn<ScriptInspectionBackend>(async (definition) =>
 			Result.ok(report(definition)),
@@ -256,15 +261,8 @@ describe('selected Plugin source inspection', () => {
 		const release = Promise.withResolvers<void>()
 		const business = instance.hold(release.promise)
 		try {
-			expect(await selected.inspect()).toMatchObject({
-				status: 'error',
-				error: { code: 'borrowed_generation_conflict' },
-			})
-			expect(inspection).not.toHaveBeenCalled()
-			const dynamic = await scope.sdk
-				.plugin(parsePluginNodeAddress(Inspectable.nodeAddress()))
-				.inspect()
-			expect(dynamic.isOk()).toBe(true)
+			const located = await scope.sdk.inspect(Inspectable.definitionAddress())
+			expect(located.isOk()).toBe(true)
 			expect(inspection).toHaveBeenCalledOnce()
 		} finally {
 			release.resolve()
@@ -283,14 +281,12 @@ describe('selected Plugin source inspection', () => {
 			ctx: host.ctx,
 			inspection: async () => Result.err(failure),
 		})
-		const result = await scope.sdk
-			.plugin(parsePluginNodeAddress(Inspectable.nodeAddress()))
-			.inspect()
+		const result = await scope.sdk.inspect(Inspectable.definitionAddress())
 		if (result.isOk()) throw new Error('Expected the original compiler failure')
 		expect(result.error).toEqual(failure)
 	})
 
-	it('rejects replaced constructor evidence while current and plain addresses still locate that definition', async () => {
+	it('locates a definition after constructor replacement and catalog removal', async () => {
 		const After = lowerTestReplacement(Before, class extends Before {})
 		await using host = await createHost({
 			plugins: [Before],
@@ -303,22 +299,19 @@ describe('selected Plugin source inspection', () => {
 		await using scope = createScriptScope({ ctx: host.ctx, inspection })
 		const selected = scope.sdk.plugin(Before.nodeAddress())
 		await host.updateCatalog([After])
-		expect(await selected.inspect()).toMatchObject({
+		expect(await selected.status()).toMatchObject({
 			status: 'error',
 			error: { code: 'stale_target' },
 		})
-		expect(inspection).not.toHaveBeenCalled()
-		const current = Result.unwrap(await scope.sdk.plugin(After.nodeAddress()).inspect())
-		const dynamic = Result.unwrap(
-			await scope.sdk.plugin(parsePluginNodeAddress(Before.nodeAddress())).inspect(),
-		)
+		const current = Result.unwrap(await scope.sdk.inspect(After.definitionAddress()))
+		const previous = Result.unwrap(await scope.sdk.inspect(Before.definitionAddress()))
 		expect(current.data.summary.definition).toEqual(Before.definitionAddress())
-		expect(dynamic.data.summary).toEqual(current.data.summary)
+		expect(previous).toEqual(current)
+		expect(current.source.runtimeMatch).toBe('unverified')
 		await host.updateCatalog([])
-		expect(await selected.inspect()).toMatchObject({
-			status: 'error',
-			error: { code: 'target_unavailable' },
-		})
+		const removed = await scope.sdk.inspect(Before.definitionAddress())
+		expect(removed.isOk()).toBe(true)
+		expect(inspection).toHaveBeenCalledTimes(3)
 	})
 
 	it.each(['diagnostic', 'throw'] as const)(
@@ -340,7 +333,9 @@ describe('selected Plugin source inspection', () => {
 			await using scope = createScriptScope({ ctx: host.ctx, inspection })
 			const controller = new AbortController()
 			const selected = scope.sdk.plugin(parsePluginNodeAddress(Inspectable.nodeAddress()))
-			const pending = selected.inspect({ signal: controller.signal })
+			const pending = scope.sdk.inspect(Inspectable.definitionAddress(), {
+				signal: controller.signal,
+			})
 			const querySignal = await entered.promise
 			controller.abort(new Error('Stop this query'))
 			expect(querySignal.aborted).toBe(true)
@@ -369,8 +364,8 @@ describe('selected Plugin source inspection', () => {
 		})
 		const scope = createScriptScope({ ctx: host.ctx, inspection })
 		const selected = scope.sdk.plugin(parsePluginNodeAddress(Inspectable.nodeAddress()))
-		const { inspect } = selected
-		const pending = inspect()
+		const { inspect } = scope.sdk
+		const pending = inspect(Inspectable.definitionAddress())
 		try {
 			const querySignal = await entered.promise
 			const closing = scope.dispose()
@@ -388,7 +383,10 @@ describe('selected Plugin source inspection', () => {
 			await closing
 			expect(backendClosed).toBe(true)
 			expect(await pending).toMatchObject({ status: 'error', error: { code: 'cancelled' } })
-			expect(await inspect()).toMatchObject({ status: 'error', error: { code: 'scope_closed' } })
+			expect(await inspect(Inspectable.definitionAddress())).toMatchObject({
+				status: 'error',
+				error: { code: 'scope_closed' },
+			})
 			expect(inspection).toHaveBeenCalledOnce()
 			expect(() => scope.sdk.plugin(selected.address)).toThrow('closing or closed')
 		} finally {
@@ -415,7 +413,7 @@ describe('selected Plugin source inspection', () => {
 					throw failure
 				},
 			})
-			const pending = scope.sdk.plugin(parsePluginNodeAddress(Inspectable.nodeAddress())).inspect()
+			const pending = scope.sdk.inspect(Inspectable.definitionAddress())
 			await entered.promise
 			if (cancel) scope.abort(new Error('Run cancelled independently'))
 			release.resolve()

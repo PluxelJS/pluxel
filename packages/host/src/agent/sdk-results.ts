@@ -36,8 +36,7 @@ export type ScriptTargetError = Readonly<{
 
 /** Source analysis preserves section gaps and compiler diagnostics independently of run failures. */
 export type ScriptInspectionError =
-	| ScriptOperationError
-	| ScriptTargetError
+	| ScriptRunError
 	| InspectionFailure
 	| Readonly<{
 			code: 'inspection_unavailable'

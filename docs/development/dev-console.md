@@ -5,7 +5,7 @@ description: 在当前 Vite 模块图中执行普通 TypeScript，访问真实�
 
 项目脚本由目标 Vite 的现有 ModuleRunner 加载。它与应用共享 Plugin constructor、能力 token 和模块身份。配置、插件、策略与日志使用 [Script SDK](./scripts.md)，异步控制操作统一返回 Better Result。`sdk.plugin(Constructor.nodeAddress())` 按当前实现选择节点，并通过 `.instance()` 借用受守卫的实例；通过 `pluxel dev sync` 取得[控制类型与配置源码描述](./plugin-control.md)后，生成提供者的 `.nodeAddress()` 通过同一入口提供准确配置类型。脱离 Vite 的部署使用同一 SDK 的上传执行。
 
-同一引用的 `await sdk.plugin(Constructor.nodeAddress()).inspect()` 默认定位作者声明；`include` / `partPath` 扩展到 Part、Schema、依赖和应用输入。Vite 自动绑定所选应用的源码后端，返回目标环境的当前磁盘位置。位置与运行版本、离线查询及缺少源码的处理见[查询插件源码](./inspection.md)。
+`await sdk.inspect(Constructor.definitionAddress())` 默认定位作者声明；`include` / `partPath` 扩展到 Part、Schema、依赖和应用输入。Vite 自动绑定所选应用的源码后端，返回目标环境的当前磁盘位置。位置与运行版本、离线查询及缺少源码的处理见[查询插件源码](./inspection.md)。
 
 ## 推荐工作流程
 

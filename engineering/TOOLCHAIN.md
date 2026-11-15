@@ -14,7 +14,7 @@
 
 `@pluxel/rolldown/inspect` 的 `openProject()` 提供源码查询作用域：`overview()`、`plugins()`、`plugin()` 和 `file()` 返回冻结的普通数据、规范 definition identity 与源码位置。用户用法见[查询插件源码](../docs/development/inspection.md)。它不启动 Host、不求值项目模块、不执行 schema 或 package scripts；在线操作继续由 devconsole 拥有。
 
-在线默认从 `sdk.plugin(nodeAddress).inspect()` 进入同一个分析器。Host 的 type-only agent 入口拥有 detached inspection 数据合同；Rolldown 继续公开重导出这些类型并拥有 `InspectionError`、离线 scope 和具体后端。`createInspectionBackend({ root, application })` 固定解析环境，每次调用创建、排空并释放独立 `openProject` scope，将原查询级诊断转为 Better Result；没有新 parser、resolver 或跨查询缓存。Vite 从真实配置 root/entry 接线后端；查询不能覆盖 application。自定义 Host 只有显式安装后端才加载工具链。
+在线默认从 `sdk.inspect(definitionAddress)` 进入同一个分析器。Host 的 type-only agent 入口拥有 detached inspection 数据合同；Rolldown 继续公开重导出这些类型并拥有 `InspectionError`、离线 scope 和具体后端。`createInspectionBackend({ root, application })` 固定解析环境，每次调用创建、排空并释放独立 `openProject` scope，将原查询级诊断转为 Better Result；没有新 parser、resolver 或跨查询缓存。Vite 从真实配置 root/entry 接线后端；查询不能覆盖 application。自定义 Host 只有显式安装后端才加载工具链。
 
 所有结果的 source 元数据标明 `current-disk` 和 `runtimeMatch: unverified`。离线物理路径属于 query-process，SDK 路径属于 execution-target。静态生成声明和普通构建 JS 不进入作者源码选择；缺源码保留诊断。HMR 未接纳源码的查询使用离线入口，运行状态与已接纳材料仍由原 Host/Vite 控制面拥有。
 

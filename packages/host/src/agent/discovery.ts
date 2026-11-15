@@ -1,6 +1,7 @@
 import {
 	parsePluginDefinitionAddress,
 	parsePluginEntryAddress,
+	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
 } from '@pluxel/core'
@@ -11,7 +12,9 @@ import {
 	hostPluginStatusesFromView,
 	type HostPluginStatusProjectionView,
 	type HostPluginStatusSnapshot,
+	type HostPluginCatalogEntry,
 } from '../status'
+import type { HostPluginGraphCommittedView } from '../coordinator'
 import type { ScriptOperationError } from './sdk-results'
 
 /** Query input is captured at list() invocation. Both identity filters may be combined. */
@@ -37,35 +40,81 @@ export type ScriptPluginListError =
 	| ScriptOperationError
 	| Readonly<{ code: 'cursor_stale'; message: string }>
 
-// This identifies only the borrowed coordinator's lifetime. Results are not cached:
-// every page reads the committed query, revisions and identity sequence again.
-const owners = new WeakMap<object, string>()
+/** @internal Applied membership is stable; Core adjacency arrays are rebuilt on every read. */
+export type ScriptPluginDiscoveryView = HostPluginStatusProjectionView &
+	Readonly<{
+		runtimeStateRevision: number
+		appliedNodes: HostPluginGraphCommittedView['applied']['nodes']
+	}>
+
+type Inventory = Readonly<{
+	catalog: ScriptPluginDiscoveryView['catalog']
+	state: ScriptPluginDiscoveryView['state']
+	sessionIntents: ScriptPluginDiscoveryView['sessionIntents']
+	desiredControl: ScriptPluginDiscoveryView['desiredControl']
+	appliedNodes: ScriptPluginDiscoveryView['appliedNodes']
+	runtimeStateRevision: number
+	queryKey: string
+	entries: readonly HostPluginCatalogEntry[]
+	signature: string
+}>
+
+// Each coordinator retains at most its last query's identity inventory. Status, diagnostics,
+// and recent updates are always projected from the current committed read.
+const owners = new WeakMap<object, { id: string; inventory?: Inventory }>()
 
 /** @internal Called under the original coordinator's committed-read boundary. */
 export function scriptPluginList(
 	owner: object,
-	view: HostPluginStatusProjectionView & Readonly<{ runtimeStateRevision: number }>,
+	view: ScriptPluginDiscoveryView,
 	query: ReturnType<typeof captureScriptPluginListOptions> = captureScriptPluginListOptions(),
 ): Result<ScriptPluginSnapshot, Extract<ScriptPluginListError, { code: 'cursor_stale' }>> {
-	let ownerId = owners.get(owner)
-	if (!ownerId) {
-		ownerId = crypto.randomUUID()
-		owners.set(owner, ownerId)
+	const cursor = query.cursor === undefined ? undefined : parseCursor(query.cursor)
+	let state = owners.get(owner)
+	if (!state) {
+		state = { id: crypto.randomUUID() }
+		owners.set(owner, state)
 	}
-	const entries = hostPluginCatalogEntriesFromView(view, query).sort((left, right) =>
-		pluginNodeIndexKey(left.address).localeCompare(pluginNodeIndexKey(right.address)),
-	)
-	const signature = hash([
-		ownerId,
+	const queryKey = JSON.stringify([
 		query.packageName ?? null,
-		query.definition ?? null,
-		view.catalog.revision,
-		view.runtimeStateRevision,
-		entries.map((entry) => pluginNodeIndexKey(entry.address)),
+		query.definition ? pluginDefinitionIndexKey(query.definition) : null,
 	])
+	let inventory = state.inventory
+	if (
+		!inventory ||
+		inventory.catalog !== view.catalog ||
+		inventory.state !== view.state ||
+		inventory.sessionIntents !== view.sessionIntents ||
+		inventory.desiredControl !== view.desiredControl ||
+		inventory.appliedNodes !== view.appliedNodes ||
+		inventory.runtimeStateRevision !== view.runtimeStateRevision ||
+		inventory.queryKey !== queryKey
+	) {
+		const entries = hostPluginCatalogEntriesFromView(view, query).sort((left, right) =>
+			pluginNodeIndexKey(left.address).localeCompare(pluginNodeIndexKey(right.address)),
+		)
+		inventory = {
+			catalog: view.catalog,
+			state: view.state,
+			sessionIntents: view.sessionIntents,
+			desiredControl: view.desiredControl,
+			appliedNodes: view.appliedNodes,
+			runtimeStateRevision: view.runtimeStateRevision,
+			queryKey,
+			entries,
+			signature: hash([
+				state.id,
+				queryKey,
+				view.catalog.revision,
+				view.runtimeStateRevision,
+				entries.map((entry) => pluginNodeIndexKey(entry.address)),
+			]),
+		}
+		state.inventory = inventory
+	}
+	const { entries, signature } = inventory
 	let offset = 0
-	if (query.cursor !== undefined) {
-		const cursor = parseCursor(query.cursor)
+	if (cursor !== undefined) {
 		if (cursor[1] !== signature)
 			return Result.err(
 				Object.freeze({

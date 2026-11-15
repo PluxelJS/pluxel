@@ -3,9 +3,9 @@ title: 查询插件源码
 description: 从标准插件地址定位声明、Part、Schema、依赖和应用输入，区分目标环境的磁盘源码与已接纳运行版本。
 ---
 
-已有 Script SDK 时，使用 `sdk.plugin(nodeAddress).inspect()`。它按地址中的 definition 查询作者声明，默认只返回 summary 和声明文件、行列；default 与 fork 指向同一份声明。生成控制入口、当前源码 class 和动态发现的地址使用相同写法。
+已有 Script SDK 时，使用 `sdk.inspect(definitionAddress)`。它直接查询具体插件或抽象 token 的作者声明，默认只返回 summary 和声明文件、行列。源码 class 与生成控制入口均提供 `definitionAddress()`；动态发现使用 `node.address.definition`，依赖结果中的 definition 可直接继续查询。default 与 fork 指向同一份声明。
 
-尚无地址时，通过 `sdk.plugins.list({ packageName })` 取得有界发现页，再把所选 `node.address` 直接交给 `sdk.plugin()`。分页、按完整 definition 筛选与同步类型材料见[动态发现](./plugin-control.md#动态安装后的发现与操作)。
+尚无地址时，通过 `sdk.plugins.list({ packageName })` 取得有界发现页，把所选 `node.address.definition` 交给 `sdk.inspect()` 定位源码，`node.address` 交给 `sdk.plugin()` 操作运行节点。分页、按完整 definition 筛选与同步类型材料见[动态发现](./plugin-control.md#动态安装后的发现与操作)。
 
 ## 从插件地址定位源码
 
@@ -16,7 +16,7 @@ import type { ProjectScript } from '@pluxel/host-vite/project'
 import { TodoPlugin } from '@example/todo-plugin'
 
 export default (async (sdk) => {
-	const report = await sdk.plugin(TodoPlugin.nodeAddress()).inspect()
+	const report = await sdk.inspect(TodoPlugin.definitionAddress())
 	if (report.isErr()) return report
 	return report.value
 }) satisfies ProjectScript
@@ -45,11 +45,10 @@ const { file, start, end } = report.value.data.summary.declaration
 
 ## 按需查询 Part、Schema、依赖和应用输入
 
-扩展查询沿用同一引用的 `include`、`partPath` 和 `signal`：
+同一查询通过 `include`、`partPath` 和 `signal` 扩展：
 
 ```ts no-twoslash
-const selected = sdk.plugin(TodoPlugin.nodeAddress())
-const report = await selected.inspect({
+const report = await sdk.inspect(TodoPlugin.definitionAddress(), {
 	include: ['parts', 'config', 'dependencies', 'inputs', 'checks'],
 })
 if (report.isErr()) return report
@@ -64,9 +63,21 @@ return config.value.declarations
 - `inputs` 返回所选应用的 config 表达式和 env/file bindings，不读取部署值。fork binding 保留 forkId；内容属于整个 definition。
 - `checks` 返回所属 package 声明的 scripts，查询不会执行这些命令。
 
+沿依赖继续定位时直接传返回的 definition，抽象 token 不需要构造虚假的运行节点：
+
+```ts no-twoslash
+const report = await sdk.inspect(TodoPlugin.definitionAddress(), { include: ['dependencies'] })
+if (report.isErr()) return report
+const dependencies = report.value.data.sections.dependencies
+if (dependencies.status === 'unavailable') return dependencies
+const required = dependencies.value.requires[0]
+if (!required) return dependencies
+return sdk.inspect(required)
+```
+
 `partPath: ['delivery', 'retry']` 缩小 parts、config 和 dependency origins；依赖全集及 inputs 仍描述整个 Plugin。Section 的 `complete` 表示请求范围内分析完整，`partial` 保留可用值与 `gaps`，`unavailable` 保留 `reason`。未知表达式不能解释成空列表或不存在。
 
-SDK 返回共享 Better Result。已知分析失败保留原 `code`、`message`、`context`；section gaps 和 unavailable 数据原样返回。旧 class 的实现证据在 HMR 替换后返回 `stale_target`，重新导入当前 class；动态身份可继续查询当前磁盘。长查询接受 signal，scope 关闭会撤回接纳并等待已接纳的查询及其资源结算。关闭后的调用返回 `scope_closed`，取消返回 `cancelled`；未知实现缺陷继续 reject。
+SDK 返回共享 Better Result。已知分析失败保留原 `code`、`message`、`context`；section gaps 和 unavailable 数据原样返回。查询只按 definition 定位当前磁盘，不要求 catalog 中存在运行节点，也不验证 class 实现代际。HMR 前后相同 definition 均可查源码；节点操作仍独立验证实现证据。长查询接受 signal，scope 关闭会撤回接纳并等待已接纳的查询及其资源结算。关闭后的调用返回 `scope_closed`，取消返回 `cancelled`；未知实现缺陷继续 reject。
 
 ## 应用无法启动、跨工作区和文件反查
 
