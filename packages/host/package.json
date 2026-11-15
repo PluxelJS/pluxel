@@ -19,26 +19,6 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./agent": {
-			"@pluxel/source": "./src/agent.ts",
-			"default": "./dist/agent.mjs"
-		},
-		"./agent/node": {
-			"@pluxel/source": "./src/agent/node.ts",
-			"default": "./dist/agent/node.mjs"
-		},
-		"./agent/runtime": {
-			"@pluxel/source": "./src/agent-runtime.ts",
-			"default": "./dist/agent/runtime.mjs"
-		},
-		"./agent/socket": {
-			"@pluxel/source": "./src/agent/socket.ts",
-			"default": "./dist/agent/socket.mjs"
-		},
-		"./agent/transport": {
-			"@pluxel/source": "./src/agent/transport.ts",
-			"default": "./dist/agent/transport.mjs"
-		},
 		"./bindings": {
 			"@pluxel/source": "./src/bindings.ts",
 			"default": "./dist/bindings.mjs"
@@ -54,6 +34,26 @@
 		"./internal": {
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
+		},
+		"./internal/agent-types": {
+			"@pluxel/source": "./src/agent.ts",
+			"default": "./dist/internal/agent-types.mjs"
+		},
+		"./internal/agent/node": {
+			"@pluxel/source": "./src/agent/node.ts",
+			"default": "./dist/internal/agent/node.mjs"
+		},
+		"./internal/agent/runtime": {
+			"@pluxel/source": "./src/agent-runtime.ts",
+			"default": "./dist/internal/agent/runtime.mjs"
+		},
+		"./internal/agent/socket": {
+			"@pluxel/source": "./src/agent/socket.ts",
+			"default": "./dist/internal/agent/socket.mjs"
+		},
+		"./internal/agent/transport": {
+			"@pluxel/source": "./src/agent/transport.ts",
+			"default": "./dist/internal/agent/transport.mjs"
 		},
 		"./internal/control-manifest": {
 			"@pluxel/source": "./src/control-manifest.ts",
@@ -80,15 +80,15 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
-			"./agent": "./dist/agent.mjs",
-			"./agent/node": "./dist/agent/node.mjs",
-			"./agent/runtime": "./dist/agent/runtime.mjs",
-			"./agent/socket": "./dist/agent/socket.mjs",
-			"./agent/transport": "./dist/agent/transport.mjs",
 			"./bindings": "./dist/bindings.mjs",
 			"./browser": "./dist/browser.mjs",
 			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
+			"./internal/agent-types": "./dist/internal/agent-types.mjs",
+			"./internal/agent/node": "./dist/internal/agent/node.mjs",
+			"./internal/agent/runtime": "./dist/internal/agent/runtime.mjs",
+			"./internal/agent/socket": "./dist/internal/agent/socket.mjs",
+			"./internal/agent/transport": "./dist/internal/agent/transport.mjs",
 			"./internal/control-manifest": "./dist/internal/control-manifest.mjs",
 			"./internal/control-reference": "./dist/internal/control-reference.mjs",
 			"./internal/protocol": "./dist/internal/protocol.mjs",
@@ -115,6 +115,7 @@
 		"yaml": "catalog:prod"
 	},
 	"devDependencies": {
+		"@pluxel/agent-sdk": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",

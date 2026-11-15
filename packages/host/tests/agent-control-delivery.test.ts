@@ -76,7 +76,7 @@ it('generates real Plugin declarations, compiles an author script and uploads it
 		await writeFile(
 			source,
 			`
-import type { Script } from '@pluxel/host/agent'
+import type { Script } from '@pluxel/agent-sdk/host'
 import { DeliveryCounter } from './control/${entry.module}'
 export default (async (sdk, run) => {
   const address = sdk.plugin(DeliveryCounter.nodeAddress()).address

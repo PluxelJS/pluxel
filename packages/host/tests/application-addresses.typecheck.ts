@@ -1,6 +1,6 @@
 import { BasePlugin, type PluginNodeAddress } from '@pluxel/core'
 import { defineHostApplication, type HostPolicyOptions } from '@pluxel/host'
-import type { PluginDescriptor } from '@pluxel/host/agent'
+import type { PluginDescriptor } from '@pluxel/agent-sdk/host'
 import { pluginSource } from '@pluxel/host/sources'
 
 declare class Worker extends BasePlugin {}

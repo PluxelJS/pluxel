@@ -3,17 +3,10 @@ import { Result } from '@pluxel/core/better-result'
 import { Logging } from '@pluxel/core/logging'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
-import { ReportStudioPlugin } from '../src/showcase/ReportStudio'
 
 export default ((sdk) => {
 	return sdk.plugins.list()
 }) satisfies ProjectScript
-
-/** Locate the current disk declaration, configuration and application bindings on this target. */
-export const source = ((sdk) =>
-	sdk.inspect(ReportStudioPlugin.definitionAddress(), {
-		include: ['config', 'parts', 'dependencies', 'inputs', 'checks'],
-	})) satisfies ProjectScript
 
 /** Check the application's HTTP endpoints and logs. Input: { origin: 'http://localhost:5173' }. */
 export const health = (async (sdk, run) => {

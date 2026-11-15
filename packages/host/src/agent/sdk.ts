@@ -1,7 +1,5 @@
 import {
 	parsePluginNodeAddress,
-	parsePluginDefinitionAddress,
-	type PluginDefinitionAddress,
 	pluginNodeIndexKey,
 	type PluginNodeAddress,
 	type RootContext,
@@ -52,9 +50,7 @@ import {
 } from '../coordinator'
 import type { HostConfigStore } from '../config-store'
 import type { HostPolicyField, HostPolicyInput } from '../policy'
-import type { ScriptPlugin, ScriptSdk, ScriptInspectionOptions } from './sdk-types'
-import type { Inspection, InspectionPluginReport, InspectionPluginSection } from './inspection'
-import type { ScriptInspectionBackend } from './inspection-backend'
+import type { ScriptPlugin, ScriptSdk } from './sdk-types'
 import {
 	captureScriptPluginListOptions,
 	scriptPluginList,
@@ -81,7 +77,6 @@ import {
 	type ScriptInstanceError,
 	type ScriptLifecycleError,
 	type ScriptLogError,
-	type ScriptInspectionError,
 } from './sdk-results'
 
 export class ScriptScopeError extends Error {
@@ -122,10 +117,9 @@ export function createScriptScope(
 	options: Readonly<{
 		ctx: RootContext
 		signal?: AbortSignal
-		inspection?: ScriptInspectionBackend
 	}>,
 ): ScriptScope {
-	const { ctx, signal, inspection } = options
+	const { ctx, signal } = options
 	const coordinator = requirePluginHostCoordinator(ctx)
 	const state = requireHostStateStore(ctx)
 	const policy = createHostPolicy(ctx, state)
@@ -512,77 +506,7 @@ export function createScriptScope(
 		// runtime snapshot; no generic inference is repeated by bound operations.
 		return select(normalizePluginTarget(target)) as ScriptPlugin<T>
 	}
-	const inspect = async (
-		target: PluginDefinitionAddress,
-		input: ScriptInspectionOptions & {
-			readonly include?: readonly InspectionPluginSection[]
-		} = {},
-	) => {
-		const definition = parsePluginDefinitionAddress(target)
-		if (!input || typeof input !== 'object' || Array.isArray(input))
-			throw new TypeError('Inspection query options must be an object')
-		// Capture caller-owned arrays before this scope's asynchronous admission.
-		// The backend remains responsible for validating analysis options.
-		const query = {
-			...input,
-			...(Array.isArray(input.include) ? { include: input.include.slice() } : {}),
-			...(Array.isArray(input.partPath) ? { partPath: input.partPath.slice() } : {}),
-		}
-		const querySignal = input.signal
-			? AbortSignal.any([controller.signal, input.signal])
-			: controller.signal
-		return run(
-			async (): Promise<
-				Result<
-					Inspection<InspectionPluginReport<readonly InspectionPluginSection[]>>,
-					ScriptInspectionError
-				>
-			> => {
-				querySignal.throwIfAborted()
-				if ('application' in query)
-					return Result.err({
-						code: 'invalid_input',
-						message:
-							'A script query uses its execution target application; use openProject() to select another application.',
-						context: {},
-					})
-				if (!inspection)
-					return Result.err({
-						code: 'inspection_unavailable' as const,
-						message: 'This execution target has no source inspection backend.',
-						reason: {
-							code: 'inspection_backend_unavailable',
-							message:
-								'Use openProject() in the source workspace, or install a source backend on this target. Control declarations and build artifacts are not author source.',
-						},
-					})
-				const result = await inspection(definition, {
-					...query,
-					signal: querySignal,
-				})
-				if (result.isErr()) {
-					if (result.error.code === 'aborted' && querySignal.aborted)
-						return Result.err(runError(querySignal.reason, querySignal))
-					return result
-				}
-				return Result.ok(
-					Object.freeze({
-						...result.value,
-						source: Object.freeze({
-							...result.value.source,
-							environment: 'execution-target' as const,
-						}),
-					}),
-				)
-			},
-			(error) =>
-				querySignal.aborted && error === querySignal.reason
-					? runError(error, querySignal)
-					: runError(error),
-		)
-	}
 	const sdk = Object.freeze({
-		inspect,
 		plugin,
 		plugins: Object.freeze({
 			list: (input?: ScriptPluginListOptions) => {

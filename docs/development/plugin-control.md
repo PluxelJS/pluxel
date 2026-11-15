@@ -60,13 +60,13 @@ const { config } = counter
 const { get, patch } = config
 ```
 
-引用提供 `address`、`status()`、`start()`、`stop()` 和 `restart()`。`sdk.inspect(Counter.definitionAddress())` 按定义 [定位作者源码](./inspection.md)，源码可用性由目标环境决定。选择 fork 使用 `Counter.nodeAddress('east')`，同样交给 `sdk.plugin()`。
+引用提供 `address`、`status()`、`start()`、`stop()` 和 `restart()`。把 definition 交给 `@pluxel/agent-sdk/source` 的 `inspectPlugin` [定位作者源码](./inspection.md)。选择 fork 使用 `Counter.nodeAddress('east')`，同样交给 `sdk.plugin()`。
 
 `sdk.plugin(counter.address)` 保留原有类型与调用证据，可以在另一个 run 中重新选择。新引用的寿命属于新 run，保存地址不会延长旧引用或实例的寿命。
 
 源码 class 地址提供原实例类型与动态 `config`，配置字段为未知数据。生成入口提供精确的配置输入／输出类型；已知无配置的插件不开放 `config`。
 
-通用工具可从 `@pluxel/host/agent` 导入 `PluginInstance<TAddress>`，同时提取源码地址和生成地址关联的实例类型。先保存 `const node = Counter.nodeAddress()`，再用 `PluginInstance<typeof node>` 提取具体实例。`PluginConfigInput<TAddress>`、`PluginConfigOutput<TAddress>` 继续用于生成地址，保留 Schema 输入与输出的对应关系。
+通用工具可从 `@pluxel/agent-sdk/host` 导入 `PluginInstance<TAddress>`，同时提取源码地址和生成地址关联的实例类型。先保存 `const node = Counter.nodeAddress()`，再用 `PluginInstance<typeof node>` 提取具体实例。`PluginConfigInput<TAddress>`、`PluginConfigOutput<TAddress>` 继续用于生成地址，保留 Schema 输入与输出的对应关系。
 
 | 地址来源                           | 使用位置                     | 类型信息                              |
 | ---------------------------------- | ---------------------------- | ------------------------------------- |
@@ -97,7 +97,7 @@ const { get, patch } = config
 使用 `sdk.plugins.list({ packageName })` 定向发现包中的节点，已知完整 definition 时使用 `{ definition }`；已有节点地址则直接 `sdk.plugin(address)`。成功值为 `{ nodes, catalogRevision, runtimeStateRevision, nextCursor }`。列表包括已接纳但尚未启动的 default 节点、已配置的 forks，以及仍被配置引用的不可用节点。以下脚本返回指定包的一页可用插件：
 
 ```ts
-import type { Script } from '@pluxel/host/agent'
+import type { Script } from '@pluxel/agent-sdk/host'
 
 export default (async (sdk) => {
 	const page = await sdk.plugins.list({ packageName: '@acme/pluxel-plugin-counter' })
@@ -142,7 +142,7 @@ const CounterConfig = v.object({
 描述符让 SDK 自动关联输入和输出类型：
 
 ```ts
-import type { Script } from '@pluxel/host/agent'
+import type { Script } from '@pluxel/agent-sdk/host'
 import { Counter } from '@acme/pluxel-plugin-counter/control'
 
 export default (async ({ plugin }) => {
@@ -167,7 +167,7 @@ export default (async ({ plugin }) => {
 假设 Counter 的公开业务 API 包含 `increment(by: number)` 和可读属性 `calls`：
 
 ```ts
-import type { Script } from '@pluxel/host/agent'
+import type { Script } from '@pluxel/agent-sdk/host'
 import { Counter } from '@acme/pluxel-plugin-counter/control'
 
 export default (async ({ plugin }) => {

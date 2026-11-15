@@ -51,6 +51,7 @@
 	"devDependencies": {
 		"@mantine/core": "catalog:frontend",
 		"@mantine/hooks": "catalog:frontend",
+		"@pluxel/agent-sdk": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",

@@ -6,7 +6,7 @@ import type {
 	Script,
 	ScriptContext,
 	ScriptInstanceError,
-} from '@pluxel/host/agent'
+} from '@pluxel/agent-sdk/host'
 
 declare class Counter extends BasePlugin {
 	private readonly config: { count: number }

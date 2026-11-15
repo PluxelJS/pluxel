@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path'
-import { ScriptExecutionError } from '@pluxel/host/agent/runtime'
+import { ScriptExecutionError } from '@pluxel/host/internal/agent/runtime'
 
 const PREFIX = 'pluxel-script-v3.'
 const MAX_TOKEN_LENGTH = 16 * 1024

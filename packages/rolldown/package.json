@@ -34,9 +34,9 @@
 			"@pluxel/source": "./src/distribution/index.ts",
 			"default": "./dist/distribution.mjs"
 		},
-		"./inspect": {
+		"./internal/agent": {
 			"@pluxel/source": "./src/inspect/index.ts",
-			"default": "./dist/inspect.mjs"
+			"default": "./dist/internal/agent.mjs"
 		},
 		"./internal/cli": {
 			"@pluxel/source": "./src/internal-cli.ts",
@@ -112,7 +112,7 @@
 			"./control": "./dist/control.mjs",
 			"./database": "./dist/database.mjs",
 			"./distribution": "./dist/distribution.mjs",
-			"./inspect": "./dist/inspect.mjs",
+			"./internal/agent": "./dist/internal/agent.mjs",
 			"./internal/cli": "./dist/internal/cli.mjs",
 			"./oxlint": "./dist/oxlint.mjs",
 			"./plugins": "./dist/plugins.mjs",
@@ -166,6 +166,7 @@
 	},
 	"devDependencies": {
 		"@libsql/client": "catalog:backend",
+		"@pluxel/agent-sdk": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
 		"@pluxel/services": "workspace:*",

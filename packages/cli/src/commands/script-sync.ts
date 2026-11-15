@@ -3,7 +3,7 @@ import { scriptSyncArgs, scriptSyncDefinition } from '../command-manifest'
 import { validateCommandOptions } from '../command-options'
 import { connectRuntimeTarget, readScriptCredentials } from '../script/session'
 import { syncPluginControl } from '../script/sync'
-import { ScriptExecutionError, scriptFailure } from '@pluxel/host/agent/runtime'
+import { ScriptExecutionError, scriptFailure } from '@pluxel/host/internal/agent/runtime'
 import { printFailure, printValue } from '../script/output'
 
 export const scriptSyncCommand = define({

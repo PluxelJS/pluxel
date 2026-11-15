@@ -22,7 +22,7 @@ export default defineConfig({
 			},
 			compile: {
 				command: 'vp pack',
-				dependsOn: ['@pluxel/core#compile', '@pluxel/host#compile', '@pluxel/rolldown#compile'],
+				dependsOn: ['@pluxel/host#compile', '@pluxel/rolldown#compile'],
 				cache: {
 					output: ['dist/**'],
 				},

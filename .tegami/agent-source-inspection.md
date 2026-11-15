@@ -9,9 +9,9 @@ packages:
 
 # Locate author source from the Plugin definition address
 
-Use `await sdk.inspect(definitionAddress)` for the declaration, or select existing `include` and `partPath` sections for Parts, Schema, dependencies, application inputs and package checks. Vite binds the selected application's read-only source backend. Portable Host execution and the Node script owner accept an explicitly installed backend and report its absence; they do not import a compiler or filesystem.
+Use ordinary functions from `@pluxel/agent-sdk/source` for declarations, Parts, Schema, dependencies, application inputs and package checks. Calls receive an explicit root/application and settle their own file IO. The shared compiler semantics remain read-only and never execute project code. Source results identify current disk content with runtime matching explicitly unverified.
 
-Source results identify the query environment and current disk content, with runtime matching explicitly unverified. Generated and source descriptors provide `definitionAddress()`; discovered nodes provide `address.definition`. Concrete and abstract dependencies can be inspected directly. Runtime node operations retain their distinct invocation evidence. Offline `openProject()` remains available when the application cannot start, for an explicit application selection, workspace discovery and file ownership queries. Detached query types have one owner in the Host agent entry and are re-exported by Rolldown.
+`@pluxel/agent-sdk/host` publishes Host SDK types and `createScriptScope` for runtime operations. Discovered nodes provide `address.definition` for source queries; concrete and abstract dependencies use the same definition identity. Source querying does not require a Host, Vite console, script executor or lifecycle wrapper.
 
 `plugins.list({ packageName, definition, limit, cursor })` now returns bounded pages (default 50, maximum 200) with `nextCursor`. Filters apply before status projection. Cursors continue across runs on the same unchanged Host and return `cursor_stale` after query, owner or revision changes. Callers that need every node must consume all pages.
 

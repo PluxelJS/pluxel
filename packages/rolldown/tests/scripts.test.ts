@@ -5,12 +5,12 @@ import { createRequire } from 'node:module'
 import * as sharedBetterResult from '@pluxel/core/better-result'
 import { expect, it } from 'vitest'
 import { createHost } from '@pluxel/host'
-import { createNodeScriptOwner } from '@pluxel/host/agent/node'
+import { createNodeScriptOwner } from '@pluxel/host/internal/agent/node'
 import { compileScript } from '../src/scripts'
 
 async function fixture(files: Record<string, string>) {
 	const directory = await mkdtemp(resolve(tmpdir(), 'pluxel-script-fixture-'))
-	for (const name of ['@pluxel/core', '@pluxel/host', '@types/node']) {
+	for (const name of ['@pluxel/core', '@pluxel/host', '@pluxel/agent-sdk', '@types/node']) {
 		const dependency = resolve(directory, 'node_modules', name)
 		await mkdir(dirname(dependency), { recursive: true })
 		await symlink(resolve(import.meta.dirname, '../node_modules', name), dependency, 'dir')
@@ -38,7 +38,7 @@ async function fixture(files: Record<string, string>) {
 it('compiles ordinary typed modules to fresh portable factories and executes against a real Host', async () => {
 	await using files = await fixture({
 		'helper.ts': 'export const twice = (value:number) => value * 2',
-		'script.ts': `import type { Script } from '@pluxel/host/agent'
+		'script.ts': `import type { Script } from '@pluxel/agent-sdk/host'
 import {twice} from './helper'
 let executions = 0
 export default (async(sdk,run) => {
@@ -76,7 +76,7 @@ export default (async(sdk,run) => {
 
 it('binds ordinary canonical imports to the receiver shared Result without bundling a library copy', async () => {
 	await using files = await fixture({
-		'script.ts': `import type { Script } from '@pluxel/host/agent'
+		'script.ts': `import type { Script } from '@pluxel/agent-sdk/host'
 import {Result,Ok} from '@pluxel/core/better-result'
 import * as shared from '@pluxel/core/better-result'
 import * as reexported from './shared'
@@ -239,7 +239,7 @@ it('rejects field mistakes before delivery, unsupported imports and top-level aw
 		resolve(import.meta.dirname, '../node_modules/@pluxel/core/package.json'),
 	)
 	await using files = await fixture({
-		'wrong.ts': `import type { Script } from '@pluxel/host/agent'; export default (async(sdk)=>sdk.plguins.list()) satisfies Script`,
+		'wrong.ts': `import type { Script } from '@pluxel/agent-sdk/host'; export default (async(sdk)=>sdk.plguins.list()) satisfies Script`,
 		'builtin.ts': `import {readFile} from 'node:fs/promises'; export default () => readFile('x')`,
 		'framework.ts': `import {BasePlugin} from '@pluxel/core'; export default () => BasePlugin`,
 		'control-helper.ts': `import {createPluginControlReference} from '@pluxel/host/internal/control-reference'; export default () => createPluginControlReference({})`,

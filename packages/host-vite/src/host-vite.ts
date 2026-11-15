@@ -763,7 +763,6 @@ export function host(options: HostViteOptions): PluginOption[] {
 				const { attachProjectScripts } = await import('./console/attachment')
 				scripts = await attachProjectScripts({
 					server,
-					applicationEntry: entry,
 					getHost: () => active && { ctx: active.ctx, epoch: epochs.get(active)! },
 					getApplicationStatus: applicationStatus,
 					getUpdateStatus: driver.status,

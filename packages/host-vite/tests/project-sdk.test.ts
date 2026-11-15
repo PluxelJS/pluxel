@@ -1,6 +1,6 @@
 import { BasePlugin, Plugin, parsePluginNodeAddress, type PluginNodeAddress } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
-import { createScriptScope } from '@pluxel/host/agent/runtime'
+import { createScriptScope } from '@pluxel/host/internal/agent/runtime'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { expect, it } from 'vitest'
 import { createProjectSdk } from '../src/project-sdk'

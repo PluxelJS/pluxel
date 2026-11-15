@@ -12,13 +12,13 @@ import {
 	type ScriptControlSubmission,
 	type PluginControlManifestRequest,
 	type PluginControlFileRequest,
-} from '@pluxel/host/agent/runtime'
+} from '@pluxel/host/internal/agent/runtime'
 import {
 	connectScriptControl,
 	type ScriptControlClient,
 	type ScriptConnectionTarget,
-} from '@pluxel/host/agent/transport'
-import { openScriptSocketSession } from '@pluxel/host/agent/socket'
+} from '@pluxel/host/internal/agent/transport'
+import { openScriptSocketSession } from '@pluxel/host/internal/agent/socket'
 
 const PROTOCOL = SCRIPT_PROTOCOL
 const MAX_JSON_BYTES = 1024 * 1024

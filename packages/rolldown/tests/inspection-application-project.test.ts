@@ -1,13 +1,13 @@
 import { mkdir, symlink, writeFile } from 'node:fs/promises'
 import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
-import { parsePluginDefinitionReference } from '@pluxel/core'
 import {
-	createInspectionBackend,
-	openProject,
+	inspectPlugin,
+	listPlugins,
+	inspectFile,
 	type InspectionSection,
 	type InspectionSourceLocation,
-} from '../src/inspect/index.ts'
+} from '@pluxel/agent-sdk/source'
 
 const reference = 'package:@fixture/mail::MailPlugin'
 const plugin = `
@@ -76,114 +76,68 @@ async function packageFixture() {
 }
 
 describe('application-aware public Plugin inspection', () => {
-	it('binds a read-only source backend to one application and fixes each admitted query', async () => {
-		await using fixture = await packageFixture()
-		const selection = { root: 'host', entry: 'a.ts' }
-		const backend = createInspectionBackend({ root: fixture.path, application: selection })
-		selection.entry = 'b.ts'
-		const target = parsePluginDefinitionReference(reference)
-		const summary = await backend(target, {})
-		if (summary.isErr()) throw new Error(JSON.stringify(summary.error))
-		expect(summary.value.data.summary.declaration.file).toBe(
-			fixture.getPath('installed/mail/src/index.ts'),
-		)
-		expect(summary.value.data.sections).toEqual({})
-		expect(summary.value.source).toEqual({
-			content: 'current-disk',
-			environment: 'query-process',
-			runtimeMatch: 'unverified',
+	it('discovers local source definitions without package exports or a Host and follows their returned addresses', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ private: true }),
+			'host/app.ts': "import './barrel'; throw new Error('APP_MUST_NOT_RUN')",
+			'host/barrel.ts': "export { MailPlugin } from './mail'; import './other'",
+			'host/mail.ts': plugin,
+			'host/other.ts':
+				"import { BasePlugin, Plugin } from '@pluxel/core'; @Plugin() export class MailPlugin extends BasePlugin {}",
+			'host/unrelated.ts': "throw new Error('OUTSIDE_THE_SELECTED_IMPORT_GRAPH')",
 		})
-
-		const include: ('parts' | 'config' | 'inputs')[] = ['parts', 'config', 'inputs']
-		const partPath = ['retry']
-		const pending = backend(target, { include, partPath })
-		include.splice(0, include.length, 'inputs')
-		partPath[0] = 'missing'
-		const expanded = await pending
-		if (expanded.isErr()) throw new Error(JSON.stringify(expanded.error))
-		const { sections, summary: declaration } = expanded.value.data
-		expect(Object.keys(sections).sort()).toEqual(['config', 'inputs', 'parts'])
-		expect(selectedText(plugin, declaration.declaration)).toContain('class MailPlugin')
-		const parts = available(sections.parts!)
-		expect(parts.occurrences.map((part) => part.partPath)).toEqual([['retry']])
-		expect(selectedText(plugin, parts.occurrences[0]!.declaration)).toContain('class Retry')
-		const configs = available(sections.config!).declarations
-		expect(configs.map((item) => item.partPath)).toEqual([['retry']])
-		expect(configs[0]!.schema.declaration?.file).toBe(
-			fixture.getPath('installed/mail/src/index.ts'),
-		)
-		expect(selectedText(plugin, configs[0]!.schema.declaration!)).toContain(
-			'SCHEMA_MUST_NOT_EXECUTE',
-		)
-		expect(sections.inputs!.status).toBe('complete')
-		const inputs = available(sections.inputs!)
-		expect(inputs.application.entry).toBe(fixture.getPath('host/a.ts'))
-		expect(inputs.bindings.map((binding) => binding.source)).toEqual([
-			expect.objectContaining({ kind: 'env', name: 'MAIL_A' }),
-			expect.objectContaining({ kind: 'file', path: './private/config.json' }),
+		const options = { root: fixture.path, application: { root: 'host', entry: 'app.ts' } }
+		const first = await listPlugins({ ...options, limit: 1 })
+		expect(first.data.status).toBe('complete')
+		const firstPage = available(first.data)
+		expect(firstPage.items).toHaveLength(1)
+		expect(firstPage.nextCursor).not.toBeNull()
+		const second = await listPlugins({ ...options, cursor: firstPage.nextCursor! })
+		const items = [...firstPage.items, ...available(second.data).items]
+		expect(items.map((item) => item.reference)).toEqual([
+			'source:app/mail.ts::MailPlugin',
+			'source:app/other.ts::MailPlugin',
 		])
-		expect(selectedText(application('@fixture/mail', 'MAIL_A'), inputs.config!)).toBe(
-			'makeRecords()',
-		)
+		for (const item of items) {
+			const located = await inspectPlugin(item.definition, options)
+			expect(located.data.summary).toEqual(item)
+		}
+		const owners = await inspectFile('host/mail.ts', options)
+		expect(available(owners.data).items.map((item) => item.definition)).toEqual([
+			items[0]!.definition,
+		])
+		await writeFile(fixture.getPath('host/barrel.ts'), "export { MailPlugin } from './other'")
+		await expect(listPlugins({ ...options, cursor: firstPage.nextCursor! })).rejects.toMatchObject({
+			code: 'cursor_stale',
+		})
 	})
 
-	it('keeps backend cancellation and application diagnostics and rejects build-only material', async () => {
-		await using fixture = await packageFixture()
-		expect(() =>
-			createInspectionBackend({ root: '', application: { root: 'host', entry: 'a.ts' } }),
-		).toThrow(expect.objectContaining({ code: 'invalid_input' }))
-		const backend = createInspectionBackend({
+	it('reports dynamic source imports as gaps instead of claiming an exhaustive application inventory', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ private: true }),
+			'host/app.ts': "import './mail'; void import(pluginEntry)",
+			'host/mail.ts': plugin,
+		})
+		const result = await listPlugins({
 			root: fixture.path,
-			application: { root: 'host', entry: 'a.ts' },
+			application: { root: 'host', entry: 'app.ts' },
 		})
-		const target = parsePluginDefinitionReference(reference)
-		const overridden = await backend(target, {
-			// @ts-expect-error JavaScript callers cannot redirect a target's source environment.
-			application: { root: 'host', entry: 'b.ts' },
-		})
-		if (overridden.isOk()) throw new Error('Expected the bound application to reject an override')
-		expect(overridden.error).toMatchObject({
-			code: 'invalid_input',
-			message: expect.stringContaining('execution target application'),
-			context: {},
-		})
-		const cancelled = await backend(target, { signal: AbortSignal.abort(new Error('stop query')) })
-		if (cancelled.isOk()) throw new Error('Expected an aborted query to fail')
-		expect(cancelled.error.code).toBe('aborted')
-
-		await mkdir(fixture.getPath('installed/mail/dist'), { recursive: true })
-		await Promise.all([
-			writeFile(
-				fixture.getPath('installed/mail/package.json'),
-				JSON.stringify({
-					name: '@fixture/mail',
-					type: 'module',
-					exports: { '.': { types: './dist/index.d.ts', default: './dist/index.js' } },
-				}),
-			),
-			writeFile(fixture.getPath('installed/mail/dist/index.js'), plugin),
-			writeFile(
-				fixture.getPath('installed/mail/dist/index.d.ts'),
-				`import { BasePlugin } from '@pluxel/core'; export declare class MailPlugin extends BasePlugin {}`,
-			),
-		])
-		const unavailable = await backend(target, { include: ['config'] })
-		if (unavailable.isOk()) throw new Error('Expected build-only material to lack author source')
-		expect(unavailable.error).toMatchObject({
-			code: 'analysis_unavailable',
-			message: expect.stringContaining('a public export must expose executable source'),
-			context: {},
+		expect(result.data).toMatchObject({
+			status: 'partial',
+			value: { items: [{ exportName: 'MailPlugin' }] },
+			gaps: [{ code: 'dynamic_source_import' }],
 		})
 	})
 
 	it('resolves from the application, isolates entries, and locates inputs without executing source', async () => {
 		await using fixture = await packageFixture()
-		await using project = await openProject({ root: fixture.path })
-		const workspace = await project.plugin(reference)
+		const context = { root: fixture.path }
+		const workspace = await inspectPlugin(reference, context)
 		expect(workspace.data.summary.declaration.file).toBe(
 			fixture.getPath('plugins/mail/src/index.ts'),
 		)
-		const summary = await project.plugin(reference, {
+		const summary = await inspectPlugin(reference, {
+			...context,
 			application: { root: 'host', entry: 'a.ts' },
 		})
 		expect(summary.data.summary.declaration.file).toBe(
@@ -191,7 +145,8 @@ describe('application-aware public Plugin inspection', () => {
 		)
 		const [a, b] = await Promise.all(
 			['a.ts', 'b.ts'].map((entry) =>
-				project.plugin(reference, {
+				inspectPlugin(reference, {
+					...context,
 					application: { root: 'host', entry },
 					include: ['config', 'inputs'],
 				}),
@@ -221,7 +176,8 @@ describe('application-aware public Plugin inspection', () => {
 			expect(selectedText(application('@fixture/mail', name), inputs.config!)).toBe('makeRecords()')
 			expect(available(result.data.sections.config).declarations).toHaveLength(2)
 		}
-		const part = await project.plugin(reference, {
+		const part = await inspectPlugin(reference, {
+			...context,
 			application: { root: 'host', entry: 'a.ts' },
 			partPath: ['retry'],
 			include: ['config', 'inputs'],
@@ -249,16 +205,17 @@ describe('application-aware public Plugin inspection', () => {
 			writeFile(fixture.getPath('installed/mail/package.json'), subpathManifest),
 			writeFile(fixture.getPath('host/a.ts'), application('@fixture/mail/plugins', 'MAIL_UI')),
 		])
-		await using project = await openProject({ root: fixture.path })
+		const context = { root: fixture.path }
 		const subpathReference = 'package:@fixture/mail/plugins::MailPlugin'
-		const listResult = await project.plugins({ packageName: '@fixture/mail' })
+		const listResult = await listPlugins({ ...context, packageName: '@fixture/mail' })
 		const listed = available(listResult.data)
 		expect(listed.items.map((item) => item.reference)).toEqual([subpathReference])
-		const workspace = await project.plugin(subpathReference)
+		const workspace = await inspectPlugin(subpathReference, context)
 		expect(workspace.data.summary.declaration.file).toBe(
 			fixture.getPath('plugins/mail/src/index.ts'),
 		)
-		const installed = await project.plugin(subpathReference, {
+		const installed = await inspectPlugin(subpathReference, {
+			...context,
 			application: { root: 'host', entry: 'a.ts' },
 			include: ['config', 'inputs'],
 		})
@@ -277,9 +234,10 @@ describe('application-aware public Plugin inspection', () => {
 			fixture.getPath('host/a.ts'),
 			application('../plugins/mail/src/index', 'WORKSPACE_COPY'),
 		)
-		await using project = await openProject({ root: fixture.path })
+		const context = { root: fixture.path }
 		await expect(
-			project.plugin(reference, {
+			inspectPlugin(reference, {
+				...context,
 				application: { root: 'host', entry: 'a.ts' },
 				include: ['inputs'],
 			}),
@@ -294,8 +252,9 @@ describe('application-aware public Plugin inspection', () => {
 			'host/local-app.ts': application('./local', 'LOCAL'),
 			'host/managed-app.ts': application('./managed/mail', 'MANAGED'),
 		})
-		await using project = await openProject({ root: fixture.path })
-		const local = await project.plugin('source:app/local.ts::MailPlugin', {
+		const context = { root: fixture.path }
+		const local = await inspectPlugin('source:app/local.ts::MailPlugin', {
+			...context,
 			application: { root: 'host', entry: 'local-app.ts' },
 			include: ['inputs'],
 		})
@@ -308,7 +267,8 @@ describe('application-aware public Plugin inspection', () => {
 			entry: 'managed-app.ts',
 			sourceSpaces: [{ name: 'managed', root: 'managed' }],
 		}
-		const managed = await project.plugin('source:managed/mail.ts::MailPlugin', {
+		const managed = await inspectPlugin('source:managed/mail.ts::MailPlugin', {
+			...context,
 			application: applicationSelection,
 			include: ['inputs'],
 		})
@@ -318,7 +278,8 @@ describe('application-aware public Plugin inspection', () => {
 			name: 'MANAGED',
 		})
 		await expect(
-			project.plugin('source:app/managed/mail.ts::MailPlugin', {
+			inspectPlugin('source:app/managed/mail.ts::MailPlugin', {
+				...context,
 				application: applicationSelection,
 			}),
 		).rejects.toMatchObject({ code: 'analysis_unavailable' })
@@ -331,9 +292,10 @@ describe('application-aware public Plugin inspection', () => {
 			'outside/mail.ts': plugin,
 		})
 		await symlink(fixture.getPath('outside/mail.ts'), fixture.getPath('host/escaped.ts'))
-		await using project = await openProject({ root: fixture.path })
+		const context = { root: fixture.path }
 		await expect(
-			project.plugin('source:app/escaped.ts::MailPlugin', {
+			inspectPlugin('source:app/escaped.ts::MailPlugin', {
+				...context,
 				application: { root: 'host', entry: 'app.ts' },
 			}),
 		).rejects.toMatchObject({ code: 'analysis_unavailable' })
@@ -346,8 +308,9 @@ describe('application-aware public Plugin inspection', () => {
 			'shared/mail.ts': plugin,
 		})
 		await symlink(fixture.getPath('physical/host'), fixture.getPath('linked-host'), 'dir')
-		await using project = await openProject({ root: fixture.path })
-		const result = await project.plugin('source:shared/mail.ts::MailPlugin', {
+		const context = { root: fixture.path }
+		const result = await inspectPlugin('source:shared/mail.ts::MailPlugin', {
+			...context,
 			application: {
 				root: 'linked-host',
 				entry: 'app.ts',
@@ -371,8 +334,9 @@ describe('application-aware public Plugin inspection', () => {
 			'host/mail.ts': plugin,
 			'host/app.ts': code,
 		})
-		await using project = await openProject({ root: fixture.path })
-		const result = await project.plugin('source:app/mail.ts::MailPlugin', {
+		const context = { root: fixture.path }
+		const result = await inspectPlugin('source:app/mail.ts::MailPlugin', {
+			...context,
 			application: { root: 'host', entry: 'app.ts' },
 			include: ['inputs'],
 		})
@@ -399,10 +363,11 @@ describe('application-aware public Plugin inspection', () => {
 			'host/managed/mail.ts': plugin,
 			'host/app.ts': application('./managed/mail', 'ORIGINAL'),
 		})
-		await using project = await openProject({ root: fixture.path })
+		const context = { root: fixture.path }
 		const sourceSpace = { name: 'managed', root: 'managed' }
 		const selection = { root: 'host', entry: 'app.ts', sourceSpaces: [sourceSpace] }
-		const pending = project.plugin('source:managed/mail.ts::MailPlugin', {
+		const pending = inspectPlugin('source:managed/mail.ts::MailPlugin', {
+			...context,
 			application: selection,
 			include: ['inputs'],
 		})
@@ -420,11 +385,13 @@ describe('application-aware public Plugin inspection', () => {
 
 	it('requires an application for input inspection and source-entry references', async () => {
 		await using fixture = await packageFixture()
-		await using project = await openProject({ root: fixture.path })
-		await expect(project.plugin(reference, { include: ['inputs'] })).rejects.toMatchObject({
+		const context = { root: fixture.path }
+		await expect(
+			inspectPlugin(reference, { ...context, include: ['inputs'] }),
+		).rejects.toMatchObject({
 			code: 'invalid_input',
 		})
-		await expect(project.plugin('source:app/mail.ts::MailPlugin')).rejects.toMatchObject({
+		await expect(inspectPlugin('source:app/mail.ts::MailPlugin', context)).rejects.toMatchObject({
 			code: 'invalid_input',
 		})
 	})

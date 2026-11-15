@@ -4,7 +4,6 @@ import { realpath } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { normalizePath, type ViteDevServer } from 'vite'
 import { checkProjectScript } from '@pluxel/rolldown/scripts'
-import { createInspectionBackend } from '@pluxel/rolldown/inspect'
 import type { RootContext } from '@pluxel/core'
 import {
 	executeHostScript,
@@ -12,7 +11,7 @@ import {
 	ScriptExecutionError,
 	type ScriptScope,
 	type RunExecution,
-} from '@pluxel/host/agent/runtime'
+} from '@pluxel/host/internal/agent/runtime'
 import { createProjectSdk } from '../project-sdk'
 import {
 	collectHostImportFiles,
@@ -42,8 +41,6 @@ export type ProjectScriptsAttachment = Readonly<{
 }>
 export type AttachProjectScriptsOptions = Readonly<{
 	server: ViteDevServer
-	/** The source application loaded by this Vite owner; not inferred from a Plugin name. */
-	applicationEntry: string
 	getHost(): ProjectScriptHost | undefined
 	getApplicationStatus?(): Readonly<Record<string, unknown>>
 	getUpdateStatus?(): HostViteUpdateStatus
@@ -58,10 +55,6 @@ export async function attachProjectScripts(
 	options: AttachProjectScriptsOptions,
 ): Promise<ProjectScriptsAttachment> {
 	const root = await realpath(options.server.config.root)
-	const inspection = createInspectionBackend({
-		root,
-		application: { root, entry: options.applicationEntry },
-	})
 	const scripts = new Map<string, Map<string, string>>()
 	const observedHashes = new Map<string, string>()
 	const observationWaiters = new Set<() => void>()
@@ -207,7 +200,6 @@ export async function attachProjectScripts(
 				return await executeHostScript(
 					{
 						ctx: host.ctx,
-						inspection,
 						id: input.runId,
 						input: input.input,
 						script: execute as Parameters<typeof executeHostScript>[0]['script'],

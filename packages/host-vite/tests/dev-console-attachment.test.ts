@@ -7,7 +7,7 @@ import { Result } from '@pluxel/core/better-result'
 import type { ViteDevServer } from 'vite'
 import { afterEach, expect, it, vi } from 'vitest'
 import { attachProjectScripts } from '../src/console/attachment'
-import type { RunExecution, ScriptSubmission } from '@pluxel/host/agent/runtime'
+import type { RunExecution, ScriptSubmission } from '@pluxel/host/internal/agent/runtime'
 
 const mocked = vi.hoisted(() => ({
 	execute: undefined as
@@ -52,7 +52,6 @@ async function fixture() {
 	const host = { ctx: application.ctx, epoch: 'first' }
 	const attachment = await attachProjectScripts({
 		server: { config: { root } } as ViteDevServer,
-		applicationEntry: file,
 		getHost: () => ({ ...host }),
 		prepare: async () => {},
 	})

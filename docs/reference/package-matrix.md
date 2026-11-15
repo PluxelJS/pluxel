@@ -16,6 +16,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/context`                | 独立宿主的上下文能力组合与惰性初始化内核                | [组合 Context host](./context-hosts.md)                      |
 | `@pluxel/services`               | 官方基础服务集合（HTTP 路由、进程日志、命令与管理端点） | [组合 Host 服务](../host/services.md)                        |
 | `@pluxel/workbench`              | 控制台 Content、View 与 Attachment 定义及前端 SDK       | [工作台视图](../workbench/view.md)                           |
+| `@pluxel/agent-sdk`              | 面向 agent 的 `/host` 运行操作和 `/source` 普通源码函数 | [Agent SDK](../development/agent-sdk.md)                     |
 | `@pluxel/host`                   | 宿主应用装配、静态/动态来源加载与运行策略               | [配置插件宿主](../host/configuration.md)                     |
 | `@pluxel/host-vite`              | 基于 Vite 的开发与生产运行支持、热更新与控制台驱动      | [CLI 与工具链](../development/tooling.md)                    |
 | `@pluxel/cli`                    | 项目管理、脚手架、编译构建、发行物打包与工作区治理工具  | [CLI 与工具链](../development/tooling.md)                    |
@@ -43,7 +44,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
   - `@pluxel/services/database`：基于 Drizzle 的数据库服务；
   - `@pluxel/services/management`：管理端点与客户端会话；
   - `@pluxel/services/preset`：常用基础服务的一站式集成预设。
-- **脚本执行**：`@pluxel/host/agent` 提供通用 SDK，`@pluxel/host-vite/project` 提供 Vite 类型与真实实例扩展，`@pluxel/rolldown/scripts` 提供作者侧编译；见[自动化脚本](../development/scripts.md)。
+- **脚本执行**：`@pluxel/agent-sdk/host` 提供通用 SDK，`@pluxel/host-vite/project` 提供 Vite 类型与真实实例扩展，`@pluxel/rolldown/scripts` 提供作者侧编译；见[自动化脚本](../development/scripts.md)。
 - **`@pluxel/core`**：
   - `@pluxel/core/fs`：文件系统抽象与存储后端；
   - `@pluxel/core/better-result`：标准类型化 Result 错误处理库；

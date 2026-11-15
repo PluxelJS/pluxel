@@ -28,6 +28,7 @@ catalogs:
     '@pluxel/cli': ^1.1.0
     '@pluxel/core': ^1.1.0
     '@pluxel/commands': ^1.1.0
+    '@pluxel/agent-sdk': ^1.1.0
     '@pluxel/host': ^1.1.0
     '@pluxel/services': ^1.1.0
     '@pluxel/workbench': ^1.1.0

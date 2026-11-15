@@ -11,7 +11,7 @@
 - `host/src/app.ts` 是开发与生产共用的应用声明；可选 `sources` 扩展固定 catalog。默认 modules 构建与原生 `start.mjs` 只在启动接纳预编译来源；开发 Vite 持续更新。生产 Vite 使用独立 `vite.runtime.config.ts` 与 `start-vite.mjs`，加载同一 compiled factory。
 - 生产 listener 与 `publicDir` 由应用 `launch` 显式选择；启动意图通过判定后才执行，关闭统一使用 Host。Vite 自己持有 listener，不执行应用 `acceptStartup` 或 `launch`。
 - 浏览器 React/Vite 代码位于 `host/web/`；Node catalog、配置和路由策略位于 `host/`；共享中立逻辑位于 `packages/`。
-- 已有 SDK 时用 `sdk.inspect(definitionAddress)` 定位声明，Vite 使用所选实例的应用。离线 `openProject()` 选择本应用时使用 workspace-relative `application: { root: 'host', entry: 'src/app.ts' }`；源码环境和结果处理见 `vp exec pluxel docs development/inspection.md`。
+- 源码查询从 `@pluxel/agent-sdk/source` 导入普通函数，运行 `node dev/inspect.mjs`。本应用使用 `application: { root: 'host', entry: 'src/app.ts' }`；用法见 `vp exec pluxel docs development/inspection.md`。Host 操作入口为 `@pluxel/agent-sdk/host`。
 - 修改 `plugins/`、公共契约、Host 配置或 lint / fmt 规则前，按开发指南确认对应契约。应用装配见 `vp exec pluxel docs host/configuration.md`。
 - 完成后运行 `vp run verify`；不得无理由绕过 Pluxel lint 规则。
 

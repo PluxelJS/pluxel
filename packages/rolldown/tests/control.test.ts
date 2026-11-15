@@ -29,7 +29,13 @@ afterEach(async () => {
 async function fixture() {
 	const directory = await mkdtemp(resolve(tmpdir(), 'pluxel-control-fixture-'))
 	fixtures.push(directory)
-	for (const name of ['@pluxel/core', '@pluxel/host', '@types/node', 'valibot']) {
+	for (const name of [
+		'@pluxel/core',
+		'@pluxel/host',
+		'@pluxel/agent-sdk',
+		'@types/node',
+		'valibot',
+	]) {
 		const dependency = resolve(directory, 'node_modules', name)
 		await mkdir(dirname(dependency), { recursive: true })
 		await symlink(resolve(root, 'node_modules', name), dependency, 'dir')
@@ -798,7 +804,7 @@ void enabled
 			resolve(consumer, 'usage.mts'),
 			`import {Counter} from './index.mjs'
 import type {CounterInstance,CounterConfigInput,CounterConfigOutput} from './index.mjs'
-import type { ScriptSdk } from '@pluxel/host/agent'
+import type { ScriptSdk } from '@pluxel/agent-sdk/host'
 declare const sdk:ScriptSdk
 const counter=(await sdk.plugin(Counter.nodeAddress()).instance()).unwrap()
 const same:CounterInstance=counter.same(counter)

@@ -55,6 +55,7 @@ try {
 
 	await runVp(['install', '--no-frozen-lockfile'], generatedRoot)
 	await runVp(['exec', 'pluxel', 'workspace', 'setup'], generatedRoot)
+	await verifySourceInspection(generatedRoot)
 	await runVp(['run', 'verify'], generatedRoot, { CI: '1' })
 	await verifyModulesApplicationDistribution(generatedRoot)
 	await verifyProductionViteApplication(generatedRoot)
@@ -317,66 +318,47 @@ async function verifyViteApplication(root: string): Promise<void> {
 		) {
 			throw new Error(`Starter Plugin admission failed: ${JSON.stringify(status)}`)
 		}
-
-		const inspection = JSON.parse(
-			await runVpCapture(
-				[
-					'exec',
-					'pluxel',
-					'dev',
-					'run',
-					resolve(consoleRoot, 'dev/inspect.ts'),
-					'--profile',
-					'local',
-					'--root',
-					consoleRoot,
-					'--instance',
-					discovered.value[0].instanceId,
-				],
-				root,
-			),
-		)
-		assert.equal(inspection.ok, true, JSON.stringify(inspection))
-		assert.equal(inspection.value.run.state, 'succeeded', JSON.stringify(inspection))
-		assert.equal(inspection.value.run.value.status, 'ok', JSON.stringify(inspection))
-		const report = inspection.value.run.value.value
-		assert.equal(report.root, await realpath(consoleRoot))
-		assert.deepEqual(report.source, {
-			content: 'current-disk',
-			environment: 'execution-target',
-			runtimeMatch: 'unverified',
-		})
-		assert.equal(report.data.summary.exportName, 'TodoPlugin')
-		const todoSource = resolve(root, 'plugins/todo/src/index.ts')
-		await assertSourceStart(
-			report.data.summary.declaration,
-			todoSource,
-			'class TodoPlugin extends BasePlugin',
-		)
-		const { config, parts, inputs, checks } = report.data.sections
-		for (const section of [config, parts, inputs, checks])
-			assert.equal(section.status, 'complete', JSON.stringify(section))
-		assert.equal(config.value.declarations.length, 1)
-		const schema = config.value.declarations[0].schema
-		assert.equal(schema.symbol, 'TodoConfig')
-		await assertSourceStart(schema.declaration, todoSource, 'v.object({')
-		assert.deepEqual(parts.value.occurrences, [])
-		const applicationSource = resolve(root, 'host/src/app.ts')
-		assert.equal(inputs.value.application.root, await realpath(consoleRoot))
-		assert.equal(inputs.value.application.entry, await realpath(applicationSource))
-		await assertSourceStart(
-			inputs.value.config,
-			applicationSource,
-			'exampleHostConfig(env.EXAMPLE_TODO_MAX_ITEMS)',
-		)
-		assert.deepEqual(checks.value.scripts.map((script: { name: string }) => script.name).sort(), [
-			'build',
-			'test',
-			'typecheck',
-		])
 	} finally {
 		await stopVite(vite)
 	}
+}
+
+async function verifySourceInspection(root: string): Promise<void> {
+	const report = JSON.parse(await runProcessCapture(process.execPath, ['dev/inspect.mjs'], root))
+	assert.equal(report.root, await realpath(root))
+	assert.deepEqual(report.source, {
+		content: 'current-disk',
+		environment: 'query-process',
+		runtimeMatch: 'unverified',
+	})
+	assert.equal(report.data.summary.exportName, 'TodoPlugin')
+	const todoSource = resolve(root, 'plugins/todo/src/index.ts')
+	await assertSourceStart(
+		report.data.summary.declaration,
+		todoSource,
+		'class TodoPlugin extends BasePlugin',
+	)
+	const { config, parts, inputs, checks } = report.data.sections
+	for (const section of [config, parts, inputs, checks])
+		assert.equal(section.status, 'complete', JSON.stringify(section))
+	assert.equal(config.value.declarations.length, 1)
+	const schema = config.value.declarations[0].schema
+	assert.equal(schema.symbol, 'TodoConfig')
+	await assertSourceStart(schema.declaration, todoSource, 'v.object({')
+	assert.deepEqual(parts.value.occurrences, [])
+	const applicationSource = resolve(root, 'host/src/app.ts')
+	assert.equal(inputs.value.application.root, await realpath(resolve(root, 'host')))
+	assert.equal(inputs.value.application.entry, await realpath(applicationSource))
+	await assertSourceStart(
+		inputs.value.config,
+		applicationSource,
+		'exampleHostConfig(env.EXAMPLE_TODO_MAX_ITEMS)',
+	)
+	assert.deepEqual(checks.value.scripts.map((script: { name: string }) => script.name).sort(), [
+		'build',
+		'test',
+		'typecheck',
+	])
 }
 
 async function assertSourceStart(
@@ -537,7 +519,10 @@ async function runVp(
 }
 
 async function runVpCapture(args: string[], cwd: string): Promise<string> {
-	const command = 'vp'
+	return runProcessCapture('vp', args, cwd)
+}
+
+async function runProcessCapture(command: string, args: string[], cwd: string): Promise<string> {
 	return await new Promise((accept, reject) => {
 		const child = spawn(command, args, {
 			cwd,
@@ -557,7 +542,7 @@ async function runVpCapture(args: string[], cwd: string): Promise<string> {
 			else
 				reject(
 					new Error(
-						`vp ${args.join(' ')} failed (${signal ?? code}):\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+						`${command} ${args.join(' ')} failed (${signal ?? code}):\nstdout:\n${stdout}\nstderr:\n${stderr}`,
 					),
 				)
 		})

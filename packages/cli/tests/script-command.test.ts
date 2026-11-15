@@ -5,7 +5,7 @@ import {
 	ScriptExecutionError,
 	scriptRequestHash,
 	type ScriptSubmission,
-} from '@pluxel/host/agent/runtime'
+} from '@pluxel/host/internal/agent/runtime'
 import { decodeScriptReceipt, encodeScriptReceipt, type ScriptReceipt } from '../src/script/receipt'
 import { scriptCommand } from '../src/commands/script'
 

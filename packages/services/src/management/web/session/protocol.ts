@@ -1,7 +1,7 @@
 import type { RpcTarget } from 'capnweb'
 import type { ManagementAuthenticationProviderStep } from '../../services/admin-access/types'
 import type { RuntimeManagementTarget } from '../management-target'
-import type { ScriptControlTarget } from '@pluxel/host/agent/transport'
+import type { ScriptControlTarget } from '@pluxel/host/internal/agent/transport'
 
 export const RUNTIME_SESSION_PROFILE = 2 as const
 export const RUNTIME_SESSION_PATH = '/__pluxel/runtime/session' as const

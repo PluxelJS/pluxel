@@ -6,7 +6,7 @@ description: 使用普通 TypeScript 读取配置、计算、条件修改、核�
 脚本导出一个普通函数。执行器传入 `ScriptSdk` 与本次运行的 `{ id, input, signal }`。`sdk.plugin(nodeAddress)` 同步选择插件节点；异步控制操作统一返回 `Promise<Result<T, E>>`，直接使用目标 Host 的实现。单次操作可以直接返回：
 
 ```ts
-import type { Script } from '@pluxel/host/agent'
+import type { Script } from '@pluxel/agent-sdk/host'
 
 export default ((sdk, run) => {
 	run.signal.throwIfAborted()
@@ -23,7 +23,7 @@ export default ((sdk, run) => {
 以下 `scripts/scale.ts` 使用 QueuePlugin 的控制入口，将数值配置 `concurrency` 乘以输入中的倍数。目标插件需要声明这个配置字段；希望运行中立即采用时，还需注册配置更新监听器，见[插件配置](../plugin-development/configuration.md)。运行中应用也可通过 `script sync` 或 `dev sync` 取得入口，见[控制材料同步](./plugin-control.md#取得控制入口)。
 
 ```ts
-import type { Script } from '@pluxel/host/agent'
+import type { Script } from '@pluxel/agent-sdk/host'
 import { QueuePlugin } from '@acme/pluxel-plugin-queue/control'
 
 export default (async (sdk, run) => {
@@ -75,7 +75,7 @@ export default (async (sdk, run) => {
 
 ## 插件、策略、更新与日志
 
-`plugins.list(options?)` 返回有界发现页，成功值为 `{ nodes, catalogRevision, runtimeStateRevision, nextCursor }`。`nodes` 提供节点地址、期望与实际状态、诊断和最近更新；两个 revision 分别描述已接纳的定义集合与运行意图。按 package / definition 定向查询及分页规则见[动态发现](./plugin-control.md#动态安装后的发现与操作)。`sdk.plugin(Provider.nodeAddress())` 固定默认节点，`Provider.nodeAddress(id)` 选择已声明的 fork，随后通过引用的 `status/start/stop/restart` 操作节点。`sdk.inspect(Provider.definitionAddress())` 用于[查询作者源码](./inspection.md)，也直接接受依赖 definition 或发现节点的 `address.definition`；目标需要提供源码后端。启停成功值为应用报告；报告存在生命周期或协调问题时返回 `lifecycle_failed`，错误携带完整 `report`，保留已提交的变化。生成地址保留的类型关联还提供 `instance()`，成功值直接是本次运行的业务实例视图，方法与资源寿命见[实例调用](./plugin-control.md#调用原插件实例)。
+`plugins.list(options?)` 返回有界发现页，成功值为 `{ nodes, catalogRevision, runtimeStateRevision, nextCursor }`。`nodes` 提供节点地址、期望与实际状态、诊断和最近更新；两个 revision 分别描述已接纳的定义集合与运行意图。按 package / definition 定向查询及分页规则见[动态发现](./plugin-control.md#动态安装后的发现与操作)。`sdk.plugin(Provider.nodeAddress())` 固定默认节点，`Provider.nodeAddress(id)` 选择已声明的 fork，随后通过引用的 `status/start/stop/restart` 操作节点。源码定位使用独立的 [`@pluxel/agent-sdk/source`](./inspection.md) 函数，可直接接收发现节点的 `address.definition`。启停成功值为应用报告；报告存在生命周期或协调问题时返回 `lifecycle_failed`，错误携带完整 `report`，保留已提交的变化。生成地址保留的类型关联还提供 `instance()`，成功值直接是本次运行的业务实例视图，方法与资源寿命见[实例调用](./plugin-control.md#调用原插件实例)。
 
 包管理器动态新增的插件在 Host 接纳后同样可发现，尚未启动也能查询。默认通过 `sdk.plugins.list({ packageName })` 定向发现包，已知完整 definition 时传 `{ definition }`；按页的 `nextCursor` 继续查询，再按节点的 default/fork 选择，将返回的完整 `address` 直接交给 `sdk.plugin()`。已有地址无需先列举。分页、材料同步与 class import 的使用条件见[动态安装后的发现与操作](./plugin-control.md#动态安装后的发现与操作)。
 
@@ -84,7 +84,7 @@ export default (async (sdk, run) => {
 日志沿用应用配置的 Core Logging 历史流。以下脚本在重启前标记范围，随后最多等待两秒读取该节点的前 100 条日志：
 
 ```ts
-import type { Script } from '@pluxel/host/agent'
+import type { Script } from '@pluxel/agent-sdk/host'
 import { QueuePlugin } from '@acme/pluxel-plugin-queue/control'
 
 export default (async (sdk) => {
@@ -183,7 +183,7 @@ Result 的 payload 使用同样的 JSON 约束。嵌套 Result、业务 Error/Ta
 自定义宿主工具可以在已启动 Host 上直接创建 scope，无需认证通道或官方 Services：
 
 ```ts
-import { createScriptScope } from '@pluxel/host/agent/runtime'
+import { createScriptScope } from '@pluxel/agent-sdk/host'
 import task from './scripts/scale'
 
 const controller = new AbortController()
@@ -196,4 +196,4 @@ const value = await task(scope.sdk, {
 console.log(value)
 ```
 
-这里的 `host` 由调用方创建和关闭。`scope.abort(reason)` 关闭接纳并通知在途 SDK 操作，`await using` 或显式 `dispose()` 等待同一个幂等结算过程；可在其后读取 `scope.snapshot()` 的 Host 版本。需要队列、run 查询与可移植结果时使用 `ScriptExecutor` / `executeHostScript`，Node 制品加载器单独从 `@pluxel/host/agent/node` 引入。实现边界与验证入口见[脚本架构](https://github.com/PluxelJS/pluxel/blob/main/engineering/AGENT_WORKFLOW.md)。
+这里的 `host` 由调用方创建和关闭。`scope.abort(reason)` 关闭接纳并通知在途 SDK 操作，`await using` 或显式 `dispose()` 等待同一个幂等结算过程；可在其后读取 `scope.snapshot()` 的 Host 版本。需要队列、run 查询与可移植结果时使用 `ScriptExecutor` / `executeHostScript`，Node 制品加载器单独从 `@pluxel/host/internal/agent/node` 引入。实现边界与验证入口见[脚本架构](https://github.com/PluxelJS/pluxel/blob/main/engineering/AGENT_WORKFLOW.md)。

@@ -310,7 +310,7 @@ try {
  assert.equal(globalThis.configLayerModuleLoads,1);
  assert.equal(host.catalog().entries.length,2);
  assert.equal(requirePluginService(host.ctx).isRunning(nodes.later),true,'generated startup address selects the discovered implementation');
- const {createScriptScope}=await import('@pluxel/host/agent/runtime');
+ const {createScriptScope}=await import('@pluxel/host/internal/agent/runtime');
  await using scope=createScriptScope({ctx:host.ctx});
  const page=(await scope.sdk.plugins.list({definition:nodes.later.definition})).unwrap();
  assert.equal(page.nextCursor,null);

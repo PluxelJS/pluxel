@@ -17,14 +17,7 @@ import type {
 	ScriptInstanceError,
 	ScriptOperationError,
 	ScriptLogError,
-	Inspection,
-	InspectionPluginReport,
-	InspectionPluginSection,
-	InspectionSection,
-	InspectionSectionData,
-	ScriptInspectionError,
-	ScriptInspectionOptions,
-} from '@pluxel/host/agent'
+} from '@pluxel/agent-sdk/host'
 import type { HostConfigMutation, HostPluginConfigResultOk } from '@pluxel/host'
 import * as v from 'valibot'
 import { expectTypeOf } from 'vitest'
@@ -462,56 +455,8 @@ expectTypeOf<Parameters<ScriptSdk['logs']['wait']>[1]>().toEqualTypeOf<
 // @ts-expect-error The existing finite log wait deadline stays required.
 void sdk.logs.wait(cursor, { filter: { plugin: Counter.nodeAddress() } })
 
-const declarationOnly = await sdk.inspect(Counter.definitionAddress())
-expectTypeOf(declarationOnly).toEqualTypeOf<
-	Result<Inspection<InspectionPluginReport<readonly []>>, ScriptInspectionError>
->()
-if (declarationOnly.isOk()) {
-	expectTypeOf(declarationOnly.value.data.summary.declaration.file).toEqualTypeOf<string>()
-	// @ts-expect-error The lightweight default has no unrequested sections.
-	void declarationOnly.value.data.sections.config
-}
-const { inspect } = sdk
-const configAndParts = await inspect(Counter.definitionAddress(), {
-	include: ['config', 'parts'],
-	partPath: ['worker'],
-})
-expectTypeOf(configAndParts).toEqualTypeOf<
-	Result<Inspection<InspectionPluginReport<readonly ['config', 'parts']>>, ScriptInspectionError>
->()
-if (configAndParts.isOk()) {
-	expectTypeOf(configAndParts.value.data.sections.config).toEqualTypeOf<
-		InspectionSection<InspectionSectionData['config']>
-	>()
-	// @ts-expect-error Requested sections stay distinct from unrequested application inputs.
-	void configAndParts.value.data.sections.inputs
-}
-declare const dynamicSections: readonly InspectionPluginSection[]
-const dynamicInspection = await inspect(Counter.definitionAddress(), { include: dynamicSections })
-if (dynamicInspection.isOk())
-	expectTypeOf(dynamicInspection.value.data.sections.parts).toEqualTypeOf<
-		InspectionSection<InspectionSectionData['parts']> | undefined
-	>()
-declare const optionalSections: ScriptInspectionOptions & { include?: readonly ['config'] }
-const optionalInspection = await inspect(Counter.definitionAddress(), optionalSections)
-if (optionalInspection.isOk())
-	expectTypeOf(optionalInspection.value.data.sections.config).toEqualTypeOf<
-		InspectionSection<InspectionSectionData['config']> | undefined
-	>()
-void inspect(selectedFork.address.definition, {
-	include: ['inputs'],
-	signal: new AbortController().signal,
-})
-void inspect(CounterPlugin.definitionAddress())
-void inspect(NoConfig.definitionAddress())
-// @ts-expect-error Source inspection takes a definition, never a runtime node address.
-void inspect(address)
-// @ts-expect-error Node handles own runtime operations; source queries use sdk.inspect.
-void counterRef.inspect()
-// @ts-expect-error The execution target fixes its application; a caller cannot redirect it.
-void inspect(Counter.definitionAddress(), { application: { root: '/other', entry: 'app.ts' } })
-// @ts-expect-error Reuse compiler section names instead of adding parallel inspection options.
-void inspect(Counter.definitionAddress(), { include: ['schemas'] })
+// @ts-expect-error Source queries use @pluxel/agent-sdk/source without a Host.
+void sdk.inspect(Counter.definitionAddress())
 
 export default (async (api, run) => {
 	run.signal.throwIfAborted()

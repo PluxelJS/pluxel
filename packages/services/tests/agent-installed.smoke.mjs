@@ -84,6 +84,7 @@ async function main() {
 		for (const name of [
 			'core',
 			'host',
+			'agent-sdk',
 			'commands',
 			'services',
 			'rolldown',
@@ -339,11 +340,6 @@ async function main() {
 		const afterFailure = await cli(['run', 'query.ts', '--endpoint', ready.endpoint])
 		assert.equal(afterFailure.run.value.status, 'ok')
 		assert.equal(afterFailure.run.value.value.config.count, 11)
-		assert.equal(afterFailure.run.value.value.inspection.code, 'inspection_unavailable')
-		assert.equal(
-			afterFailure.run.value.value.inspection.reason.code,
-			'inspection_backend_unavailable',
-		)
 		await writeFile(join(author, 'wait.ts'), wait)
 		const waiting = await cli([
 			'run',
@@ -451,7 +447,7 @@ export default defineHostApplication((startup):HostApplication=>({
  launch:async({host})=>{const listener=await listenElysia(host,{hostname:startup.env.AGENT_SMOKE_HOST,port:0,tls:{key:await readFile('tls.key','utf8'),cert:await readFile('tls.crt','utf8')}});process.stdout.write(JSON.stringify({stage:'ready',endpoint:'https://'+listener.address.host+':'+listener.address.port})+'\\n')},
 }))
 `
-const task = `import type {Script} from '@pluxel/host/agent'
+const task = `import type {Script} from '@pluxel/agent-sdk/host'
 import {Result} from '@pluxel/core/better-result'
 let moduleRuns=0
 export default (async sdk=>{
@@ -476,23 +472,22 @@ export default (async sdk=>{
  return Result.ok({moduleRuns:++moduleRuns,changed:changed.value,conflict:conflict.error,logs:logs.value,business,calls:instance.value.calls,actual:actual.value,lifecycle:lifecycle.value})
 }) satisfies Script
 `
-const failure = (definition) => `import type {Script} from '@pluxel/host/agent'
+const failure = (definition) => `import type {Script} from '@pluxel/agent-sdk/host'
 export default (async sdk=>{
  const listed=await sdk.plugins.list({definition:${JSON.stringify(definition)}});if(listed.isErr())return listed;const node=listed.value.nodes.find(node=>node.address.variant==='default')!.address
  const saved=await sdk.plugin(node).config.patch({set:{count:11}});if(saved.isErr())return saved
  throw new Error('author failed after committing')
 }) satisfies Script
 `
-const query = (definition) => `import type {Script} from '@pluxel/host/agent'
+const query = (definition) => `import type {Script} from '@pluxel/agent-sdk/host'
 import {Result} from '@pluxel/core/better-result'
 export default(async sdk=>{
  const listed=await sdk.plugins.list({definition:${JSON.stringify(definition)}});if(listed.isErr())return listed
  const node=listed.value.nodes.find(node=>node.address.variant==='default');if(!node)throw new Error('Missing discovered Counter')
  const selected=sdk.plugin(node.address)
  const config=await selected.config.get();if(config.isErr())return config
- const inspection=await sdk.inspect(selected.address.definition)
- return Result.ok({...config.value,inspection:inspection.isErr()?inspection.error:inspection.value})
+ return Result.ok(config.value)
 }) satisfies Script`
-const wait = `import type {Script} from '@pluxel/host/agent';export default(async sdk=>{const marked=await sdk.logs.mark();if(marked.isErr())return marked;return sdk.logs.wait(marked.value,{timeoutMs:120000,filter:{category:'not-emitted'}})}) satisfies Script`
+const wait = `import type {Script} from '@pluxel/agent-sdk/host';export default(async sdk=>{const marked=await sdk.logs.mark();if(marked.isErr())return marked;return sdk.logs.wait(marked.value,{timeoutMs:120000,filter:{category:'not-emitted'}})}) satisfies Script`
 
 await main()

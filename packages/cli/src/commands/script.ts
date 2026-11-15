@@ -19,7 +19,7 @@ import {
 	snapshotJson,
 	scriptRequestHash,
 	type ScriptSubmission,
-} from '@pluxel/host/agent/runtime'
+} from '@pluxel/host/internal/agent/runtime'
 import { connectScriptTarget, readScriptCredentials } from '../script/client'
 
 import {

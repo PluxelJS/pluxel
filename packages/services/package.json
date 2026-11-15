@@ -227,6 +227,7 @@
 		"@libsql/client": "catalog:backend",
 		"@logtape/logtape": "catalog:prod",
 		"@mantine/core": "catalog:frontend",
+		"@pluxel/agent-sdk": "workspace:*",
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",

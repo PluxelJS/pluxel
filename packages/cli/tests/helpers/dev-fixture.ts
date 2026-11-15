@@ -10,14 +10,14 @@ import {
 	type ScriptSubmission,
 	type RunExecution,
 	type PluginControlMaterialsSnapshot,
-} from '@pluxel/host/agent/runtime'
+} from '@pluxel/host/internal/agent/runtime'
 import {
 	createScriptControlTarget,
 	type ScriptControlTarget,
 	type ScriptConnectionTarget,
 	type ScriptControlResponse,
-} from '@pluxel/host/agent/transport'
-import { openScriptSocketSession } from '@pluxel/host/agent/socket'
+} from '@pluxel/host/internal/agent/transport'
+import { openScriptSocketSession } from '@pluxel/host/internal/agent/socket'
 import { publicInstance, type DevInstance } from '../../src/dev/client'
 
 export async function createDevFixture(

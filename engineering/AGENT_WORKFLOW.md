@@ -1,6 +1,6 @@
 # Host 脚本 SDK 与执行
 
-公开作者入口是 [`@pluxel/host/agent`](../packages/host/src/agent.ts)：`Script = (sdk, run) => unknown | Promise<unknown>`，其中 `run` 为 `{ id, input, signal }`。完整调用、CLI 与失败处理见[Host 自动化脚本](../docs/development/scripts.md)。插件 class 声明、配置源码描述、实例视图和材料同步由 [Plugin Control](PLUGIN_CONTROL.md) 维护。Vite 项目模块、Context 借用和 HMR 的约束由 [Dev Console](DEV_CONSOLE.md) 维护。
+公开作者入口是 [`@pluxel/agent-sdk/host`](../packages/agent-sdk/src/host.ts)：`Script = (sdk, run) => unknown | Promise<unknown>`，其中 `run` 为 `{ id, input, signal }`。完整调用、CLI 与失败处理见[Host 自动化脚本](../docs/development/scripts.md)。插件 class 声明、配置源码描述、实例视图和材料同步由 [Plugin Control](PLUGIN_CONTROL.md) 维护。Vite 项目模块、Context 借用和 HMR 的约束由 [Dev Console](DEV_CONSOLE.md) 维护。
 
 ## 所有者和调用路径
 
@@ -22,22 +22,22 @@ Host 持有插件图、配置来源和原始输入、版本、运行意图及生
 
 执行器持有 run，加载器持有求值方式，连接持有认证和远程引用。跨进程 target 只负责提交与控制；同进程直接调用执行器和 Host。SDK 方法没有经过 Cap’n Web，也没有复制一套配置或生命周期逻辑。
 
-| 公共入口                       | 所属职责                                                                       |
-| ------------------------------ | ------------------------------------------------------------------------------ |
-| `@pluxel/host/agent`           | 作者使用的 SDK、地址关联与结果类型                                             |
-| `@pluxel/host/agent/runtime`   | 自定义 Host 使用的 scope、执行内核、材料读取与输入输出协议                     |
-| `@pluxel/host/agent/node`      | 显式启用的可信 Node 工厂加载器与 Host 执行所有者                               |
-| `@pluxel/host/agent/transport` | 共享 Cap’n Web target、普通 Promise 客户端及跨边界校验                         |
-| `@pluxel/host/agent/socket`    | 本地 Node socket carrier 的分帧、大小预算、背压与关闭                          |
-| `@pluxel/host-vite/project`    | Vite 项目的 `ProjectScript` / `ProjectSdk`，当前构造器身份、真实实例和 Context |
-| `@pluxel/rolldown/scripts`     | 作者侧 TS 检查、依赖打包与源码映射                                             |
-| Services management session    | 管理认证、显式脚本权限和远程连接接线                                           |
+| 入口                                    | 所属职责                                                                       |
+| --------------------------------------- | ------------------------------------------------------------------------------ |
+| `@pluxel/agent-sdk/host`                | 作者使用的 SDK、地址关联与结果类型                                             |
+| `@pluxel/host/internal/agent/runtime`   | 框架执行内核、材料读取与输入输出协议                                           |
+| `@pluxel/host/internal/agent/node`      | 显式启用的可信 Node 工厂加载器与 Host 执行所有者                               |
+| `@pluxel/host/internal/agent/transport` | 共享 Cap’n Web target、普通 Promise 客户端及跨边界校验                         |
+| `@pluxel/host/internal/agent/socket`    | 本地 Node socket carrier 的分帧、大小预算、背压与关闭                          |
+| `@pluxel/host-vite/project`             | Vite 项目的 `ProjectScript` / `ProjectSdk`，当前构造器身份、真实实例和 Context |
+| `@pluxel/rolldown/scripts`              | 作者侧 TS 检查、依赖打包与源码映射                                             |
+| Services management session             | 管理认证、显式脚本权限和远程连接接线                                           |
 
-作者入口只导出类型。可移植 runtime 入口的依赖闭包不包含 Node builtin、Vite、Services、编译器或平台加载器。transport 和 socket 分别从叶子入口选择。无官方 Services 的已启动 Host 可以直接使用 `createScriptScope({ ctx, signal })`。
+`/host` 导出作者类型和原 `createScriptScope`；Host 的 executor、载体和材料接线位于内部入口。可移植 runtime 入口的依赖闭包不包含 Node builtin、Vite、Services、编译器或平台加载器。transport 和 socket 分别从叶子入口选择。无官方 Services 的已启动 Host 可以直接使用 `createScriptScope({ ctx, signal })`。
 
-`sdk.inspect(definitionAddress)` 的数据与请求类型由 Host 作者入口声明，`ScriptInspectionBackend` 从 runtime 入口提供宿主接线合同。`createScriptScope` / `executeHostScript` 借用可选 `inspection` 后端，按同一 scope 接纳、传递合并 signal 并排空查询；查询接受具体或抽象 definition，不依赖运行节点、实现代际或 coordinator 写队列；它们不关闭后端所属 Host。`createNodeScriptOwner` 将显式选择的同一后端转交执行内核；未提供后端返回 `inspection_unavailable`。Vite 固定本实例 application 后安装 Rolldown 的 `createInspectionBackend`；Node/远端默认不安装编译器。分析实现、源码解析与离线资源继续由 [Toolchain](TOOLCHAIN.md#offline-plugin-inspection) 拥有。
+生成控制声明引用 Host 内部类型所有者 `@pluxel/host/internal/agent-types`，沿用控制模块已有的 Host 依赖；作者从 `/host` 导入相同类型，插件包无需因此引入源码编译器。
 
-源码查询只使用 definition，default/fork 共用声明，不读取或投影全局运行状态。返回 source 明示 `current-disk`、`execution-target` 与 `runtimeMatch: unverified`；源码 revision 不能充当运行版本证明。生成控制材料的兼容性仍由原领域操作检查。
+源码工具从 `@pluxel/agent-sdk/source` 直接调用，不经过 Script、SDK、Host、receipt 或 Vite console。类型、实现和资源归属由 [Toolchain](TOOLCHAIN.md#offline-plugin-inspection) 维护；运行节点的 `address.definition` 可直接交给源码查询。`@pluxel/agent-sdk/host` 发布 Host SDK 类型和 `createScriptScope`，两条入口通过标准地址互通，各自保持依赖边界。
 
 ## scope 的接纳和结算
 
@@ -120,7 +120,7 @@ Vite 控制 owner 随开发实例存活，其私有本地连接认证独立于�
 
 ### Workers 的当前证据
 
-可移植测试以 browser 条件从真实 `@pluxel/host/agent` export 生成单一 ESM bundle，检查模块闭包和外部 import，确认没有 Node、Vite、Services 或编译器依赖。
+可移植测试以 browser 条件从真实 `@pluxel/agent-sdk/host` export 生成单一 ESM bundle，检查模块闭包和外部 import，确认没有 Node、Vite、Services 或编译器依赖。
 
 同一测试使用已安装的 Miniflare / workerd，在本机真实 workerd 中加载由 `compileScript` 生成的工厂。工厂作为 Dynamic Worker 的静态 JavaScript 模块文本加载，Core Better Result 绑定 Worker 内共享子入口。脚本通过普通 SDK 方法调用 WorkerEntrypoint RPC，再经受控测试桥进入原 Host。两次运行执行普通 await、循环和计算，将真实配置从 2 改为 4、再改为 8；每次工厂的模块计数均从 1 开始，Host 侧核对 `application: 'applied'`，测试最后关闭 workerd 与 scope。
 

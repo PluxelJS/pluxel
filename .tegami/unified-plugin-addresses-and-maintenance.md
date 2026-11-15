@@ -62,8 +62,8 @@ disposal promise and drain accepted work without closing the borrowed Host.
 Service test drivers use capability tokens without eagerly loading optional
 Commands runtime dependencies when no command service was selected.
 
-Keep script author types at `@pluxel/host/agent`, execution APIs at
-`@pluxel/host/agent/runtime`, and control-format tools solely at Host's internal
+Keep script author types at `@pluxel/agent-sdk/host`, execution APIs at
+`@pluxel/host/internal/agent/runtime`, and control-format tools solely at Host's internal
 entry. Rolldown's control entry exports generation APIs. Update known consumers,
 templates, offline guides and skill routing together, removing duplicate API
 tutorials and obsolete forwarding exports.

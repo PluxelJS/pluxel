@@ -42,8 +42,8 @@ import type {
 	PluginControlManifestRequest,
 	PluginControlFileRequest,
 	PluginControlFileChunk,
-} from '@pluxel/host/agent/runtime'
-import type { ScriptControlResponse } from '@pluxel/host/agent/transport'
+} from '@pluxel/host/internal/agent/runtime'
+import type { ScriptControlResponse } from '@pluxel/host/internal/agent/transport'
 
 export type RuntimeLogStreamsIndex = Readonly<{ streams: readonly LogStreamMeta[] }>
 

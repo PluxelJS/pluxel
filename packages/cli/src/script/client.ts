@@ -2,8 +2,8 @@ import {
 	createScriptControlClient,
 	type ScriptControlClient,
 	type ScriptTargetDescription,
-} from '@pluxel/host/agent/transport'
-import { ScriptExecutionError } from '@pluxel/host/agent/runtime'
+} from '@pluxel/host/internal/agent/transport'
+import { ScriptExecutionError } from '@pluxel/host/internal/agent/runtime'
 import { connectRuntimeTarget, type Credentials } from './session'
 export { readScriptCredentials } from './session'
 

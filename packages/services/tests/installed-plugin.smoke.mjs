@@ -181,7 +181,7 @@ try {
 	const consoleFile = join(root, 'inspect.ts')
 	await writeFile(
 		consoleFile,
-		"import type { Script } from '@pluxel/host/agent'; export default ((sdk) => sdk.plugins.list()) satisfies Script",
+		"import type { Script } from '@pluxel/agent-sdk/host'; export default ((sdk) => sdk.plugins.list()) satisfies Script",
 	)
 	const inspect = () =>
 		runDevFile({

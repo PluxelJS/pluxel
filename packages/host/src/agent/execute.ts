@@ -3,7 +3,6 @@ import { createScriptScope, type ScriptScope } from './sdk'
 import type { Script, ScriptSdk } from './sdk-types'
 import type { RunExecution } from './runtime'
 import { snapshotScriptResult } from './result-codec'
-import type { ScriptInspectionBackend } from './inspection-backend'
 
 /** Same-process execution uses Host implementations directly, without an RPC session. */
 export async function executeHostScript(
@@ -12,7 +11,6 @@ export async function executeHostScript(
 		id: string
 		input?: unknown
 		script: Script
-		inspection?: ScriptInspectionBackend
 		extendSdk?(scope: ScriptScope): ScriptSdk
 	}>,
 	run: RunExecution,
@@ -20,7 +18,6 @@ export async function executeHostScript(
 	const scope = createScriptScope({
 		ctx: options.ctx,
 		signal: run.signal,
-		inspection: options.inspection,
 	})
 	let result: unknown
 	let failure: unknown

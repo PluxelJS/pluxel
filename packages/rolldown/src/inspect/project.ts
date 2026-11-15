@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { dirname, resolve, relative, isAbsolute } from 'node:path'
 import {
-	formatPluginNodeReference,
+	formatPluginDefinitionReference,
 	parsePluginDefinitionAddress,
-	parsePluginNodeReference,
+	parsePluginDefinitionReference,
 	pluginDefinitionIndexKey,
 	type PluginDefinitionAddress,
 } from '@pluxel/core'
@@ -19,6 +19,11 @@ import {
 } from '../rolldown/plugins/pluginSemanticsPlugin'
 import { inspectOwnerConfigs } from './config'
 import { inspectApplicationInputs } from './application'
+import {
+	parseStandaloneWithLang,
+	readLiteralString,
+	walkAst,
+} from '../rolldown/plugins/pluginUtils'
 import type { ConfigSourceSymbol } from '../rolldown/plugins/configSourcePlugin'
 import {
 	discoverPackages,
@@ -44,8 +49,10 @@ import {
 	type InspectionSection,
 	type InspectionSectionData,
 	type InspectionSourceLocation,
-	type OpenProjectOptions,
-	type ProjectInspection,
+	type InspectionDiscoveryOptions,
+	type InspectionQueryOptions,
+	type InspectionProjectOverview,
+	type InspectionFileReport,
 } from './contracts'
 
 const SECTIONS = new Set<InspectionPluginSection>([
@@ -68,380 +75,335 @@ type Occurrence = {
 }
 type LoadedPackage = { pkg?: WorkspacePackage; semantic: InspectedPluginPackage }
 
-/**
- * Open a read-only query scope. No project module, build hook or application is evaluated.
- * Queries reread source using fresh resolver state; dispose drains admitted work.
- */
-export async function openProject(openOptions: OpenProjectOptions): Promise<ProjectInspection> {
-	validateObject(openOptions, ['root', 'signal'])
-	const selection = { ...openOptions }
-	const declaredRoot = resolveInspectionRoot(selection.root)
-	checkSignal(selection.signal)
+export async function inspectProject(
+	input: InspectionPageOptions,
+): Promise<Inspection<InspectionProjectOverview>> {
+	validatePage(input)
+	const options = { ...input }
+	return runInspection(options, async (snapshot) => {
+		const root = snapshot.root
+		const packages = await snapshot.packages()
+		return {
+			packages: page(
+				packages.map((pkg) => ({
+					name: typeof pkg.manifest.name === 'string' ? pkg.manifest.name : null,
+					version: typeof pkg.manifest.version === 'string' ? pkg.manifest.version : null,
+					root: pkg.root,
+					manifest: pkg.manifestPath,
+				})),
+				options,
+				`${root}:overview`,
+				snapshot.revision(),
+			),
+			scripts: scripts(packages.find((pkg) => pkg.root === root)),
+		}
+	})
+}
+
+export async function listPlugins(
+	input: InspectionDiscoveryOptions,
+): Promise<Inspection<InspectionSection<InspectionPage<InspectionPluginSummary>>>> {
+	const options = discoveryOptions(input)
+	return runInspection(options, async (snapshot) => {
+		const root = snapshot.root
+		const { sources, gaps } = await snapshot.sources(options)
+		const found = sources.flatMap((loaded) =>
+			loaded.semantic.definitions.map((definition) => summary(definition, snapshot)),
+		)
+		found.sort((a, b) => compare(a.reference, b.reference))
+		if (options.packageName !== undefined && gaps.length > 0 && found.length === 0) {
+			return { status: 'unavailable' as const, reason: gaps[0]! }
+		}
+		return section(
+			page(
+				found,
+				options,
+				`${root}:plugins:${JSON.stringify([options.packageName ?? null, options.application ?? null])}`,
+				digest([snapshot.revision(), gaps]),
+			),
+			gaps,
+		)
+	})
+}
+
+export function inspectPlugin(
+	target: PluginDefinitionAddress | string,
+	options: InspectionPluginOptions & { readonly include?: readonly [] },
+): Promise<Inspection<InspectionPluginReport<readonly []>>>
+export function inspectPlugin<const S extends readonly InspectionPluginSection[]>(
+	target: PluginDefinitionAddress | string,
+	options: InspectionPluginOptions & { readonly include: S },
+): Promise<Inspection<InspectionPluginReport<S>>>
+export function inspectPlugin<const S extends readonly InspectionPluginSection[]>(
+	target: PluginDefinitionAddress | string,
+	options: InspectionPluginOptions & { readonly include?: S },
+): Promise<Inspection<InspectionPluginReport<readonly S[number][]>>>
+export async function inspectPlugin<
+	const S extends readonly InspectionPluginSection[] = readonly [],
+>(
+	target: PluginDefinitionAddress | string,
+	input: InspectionPluginOptions & {
+		readonly include?: S
+		readonly partPath?: readonly string[]
+	},
+): Promise<Inspection<InspectionPluginReport<S>>> {
+	validateObject(input, ['root', 'signal', 'include', 'partPath', 'application'])
+	const options = { ...input }
+	if (options.include !== undefined && !Array.isArray(options.include))
+		invalid('include must be an array')
+	const include = Array.from(options.include ?? [])
+	if (include.some((name) => !SECTIONS.has(name)))
+		invalid('include contains an unsupported inspection section')
+	if (options.partPath !== undefined && !Array.isArray(options.partPath))
+		invalid('partPath must be an array')
+	const partPath = Array.from(options.partPath ?? [])
+	if (partPath.some((part) => typeof part !== 'string' || !part))
+		invalid('partPath must contain non-empty field names')
+	const address = definitionTarget(target)
+	const application = copyApplication(options.application)
+	if (!application && (address.entry.kind === 'source-entry' || include.includes('inputs')))
+		invalid('An explicit application is required for inputs and source-entry queries.')
+	return runInspection(options, async (snapshot) => {
+		const root = snapshot.root
+		const loaded = application
+			? await snapshot.applicationTarget(address, application)
+			: await snapshot.load(
+					await resolveInspectionPackage(
+						root,
+						(address.entry as { packageName: string }).packageName,
+						await snapshot.packages(),
+					),
+				)
+		const pkg = loaded.pkg
+		const definition = loaded.semantic.definitions.find((item) =>
+			sameDefinition(item.definition, address),
+		)
+		if (!definition)
+			throw new InspectionError(
+				'plugin_not_found',
+				`The selected source does not declare ${address.exportName} at the requested Plugin address.`,
+				{ context: { reference: reference(address) } },
+			)
+		const needsOccurrences =
+			partPath.length > 0 ||
+			include.some((name) => name === 'parts' || name === 'config' || name === 'dependencies')
+		const expanded = needsOccurrences
+			? occurrences(loaded.semantic, definition, snapshot)
+			: { value: [], gaps: [] }
+		if (partPath.length > 0 && !expanded.value.some((item) => samePath(item.path, partPath))) {
+			if (expanded.gaps.length > 0)
+				throw new InspectionError(
+					'analysis_unavailable',
+					'The requested Part path could not be resolved.',
+					{ context: { partPath: JSON.stringify(partPath) } },
+				)
+			throw new InspectionError(
+				'part_not_found',
+				`Part path ${JSON.stringify(partPath)} was not found.`,
+				{ context: { paths: JSON.stringify(expanded.value.map((item) => item.path)) } },
+			)
+		}
+		const selected = expanded.value.filter((item) => isPathPrefix(partPath, item.path))
+		const sections: Partial<{
+			[K in InspectionPluginSection]: InspectionSection<InspectionSectionData[K]>
+		}> = {}
+		if (include.includes('parts')) {
+			sections.parts = section(
+				{
+					occurrences: selected
+						.filter((item) => item.mount)
+						.map((item): InspectionPart => ({
+							partPath: item.path,
+							className: item.owner.className,
+							declaration: snapshot.location(item.owner.moduleId, item.owner.start, item.owner.end),
+							mount: item.mount!,
+							requires: item.owner.requires,
+							optional: item.owner.optional,
+						})),
+				},
+				expanded.gaps,
+			)
+		}
+		if (include.includes('dependencies')) {
+			const required = uniqueDefinitions(expanded.value.flatMap((item) => [...item.owner.requires]))
+			const requiredKeys = new Set(required.map(pluginDefinitionIndexKey))
+			const optional = uniqueDefinitions(
+				expanded.value.flatMap((item) => [...item.owner.optional]),
+			).filter((item) => !requiredKeys.has(pluginDefinitionIndexKey(item)))
+			sections.dependencies = section(
+				{
+					requires: required,
+					optional,
+					provides: definition.provides ?? null,
+					origins: selected.map((item) => ({
+						partPath: item.path,
+						declaration: snapshot.location(item.owner.moduleId, item.owner.start, item.owner.end),
+						requires: item.owner.requires,
+						optional: item.owner.optional,
+					})),
+				},
+				expanded.gaps,
+			)
+		}
+		if (include.includes('config')) {
+			const configs = await snapshot.configs(loaded)
+			sections.config = section({ declarations: configDeclarations(configs, selected, snapshot) }, [
+				...expanded.gaps,
+				...configs.diagnostics,
+			])
+		}
+		if (include.includes('checks'))
+			sections.checks = pkg
+				? section({ scripts: scripts(pkg) }, [])
+				: {
+						status: 'unavailable',
+						reason: {
+							code: 'package_not_found',
+							message: 'No owning package manifest for this source declaration.',
+						},
+					}
+		if (include.includes('inputs')) {
+			sections.inputs = await inspectApplicationInputs({
+				application: snapshot.application!,
+				read: (file) => snapshot.read(file),
+				resolve: snapshot.resolve,
+				location: (file, start, end) => snapshot.location(file, start, end),
+				signal: options.signal,
+				matchesPlugin: (symbol) => snapshot.matchesPlugin(symbol, definition),
+			})
+		}
+		return { summary: summary(definition, snapshot), sections } as InspectionPluginReport<S>
+	})
+}
+
+export async function inspectFile(
+	path: string,
+	input: InspectionDiscoveryOptions,
+): Promise<Inspection<InspectionSection<InspectionFileReport>>> {
+	const options = discoveryOptions(input)
+	if (typeof path !== 'string' || !path) invalid('file path must be non-empty')
+	return runInspection(options, async (snapshot) => {
+		const root = snapshot.root
+		const file = await realpath(resolve(root, path)).catch((cause) => {
+			throw new InspectionError('invalid_input', `Cannot read ${path}`, { cause })
+		})
+		await snapshot.read(file)
+		const owners: InspectionFileOwner[] = []
+		const { sources, gaps } = await snapshot.sources(options)
+		for (const loaded of sources) {
+			try {
+				const configs = await snapshot.configs(loaded)
+				gaps.push(...configs.diagnostics)
+				for (const definition of loaded.semantic.definitions) {
+					const expanded = occurrences(loaded.semantic, definition, snapshot)
+					gaps.push(...expanded.gaps)
+					const relations: InspectionFileOwner['relations'][number][] = []
+					for (const item of expanded.value) {
+						const location = snapshot.location(
+							item.owner.moduleId,
+							item.owner.start,
+							item.owner.end,
+						)
+						if (location.file === file)
+							relations.push({
+								kind: item.path.length > 0 ? 'part' : 'declaration',
+								partPath: item.path,
+								source: location,
+							})
+					}
+					for (const config of configDeclarations(configs, expanded.value, snapshot)) {
+						if (config.schema.declaration?.file === file)
+							relations.push({
+								kind: 'config-schema',
+								partPath: config.partPath,
+								source: config.schema.declaration,
+							})
+					}
+					if (relations.length > 0)
+						owners.push({
+							definition: definition.definition,
+							reference: reference(definition.definition),
+							relations,
+						})
+				}
+			} catch (cause) {
+				checkSignal(options.signal)
+				if (normalizeError(cause).code === 'source_changed') throw cause
+				gaps.push(diagnostic(cause, loaded.semantic.rootEntry))
+			}
+		}
+		owners.sort((a, b) => compare(a.reference, b.reference))
+		return section(
+			{
+				file,
+				scope:
+					options.application && options.packageName === undefined
+						? ('application-source-graph' as const)
+						: options.packageName
+							? ('package-plugin-declarations' as const)
+							: ('workspace-plugin-declarations' as const),
+				...page(
+					owners,
+					options,
+					`${root}:file:${file}:${JSON.stringify([options.packageName ?? null, options.application ?? null])}`,
+					digest([snapshot.revision(), gaps]),
+				),
+			},
+			gaps,
+		)
+	})
+}
+
+function discoveryOptions(input: InspectionDiscoveryOptions): InspectionDiscoveryOptions {
+	validatePage(input, ['packageName', 'application'])
+	const options = { ...input, application: copyApplication(input.application) }
+	if (
+		options.packageName !== undefined &&
+		(typeof options.packageName !== 'string' || !options.packageName.trim())
+	)
+		invalid('packageName must be a non-empty package name')
+	return options
+}
+
+/** Each call owns its source snapshot and settles all of its IO before returning. */
+async function runInspection<T>(
+	options: InspectionQueryOptions,
+	work: (snapshot: Snapshot) => Promise<T>,
+): Promise<Inspection<T>> {
+	const declaredRoot = resolveInspectionRoot(options.root)
+	checkSignal(options.signal)
 	let root: string
 	try {
 		root = await realpath(declaredRoot)
-		await discoverPackages(root, { signal: selection.signal })
+		await discoverPackages(root, { signal: options.signal })
 	} catch (cause) {
-		checkSignal(selection.signal)
+		checkSignal(options.signal)
 		throw normalizeError(cause, 'project_not_found')
 	}
-	checkSignal(selection.signal)
-	let closed = false
-	let admitted = 0
-	let tail: Promise<void> = Promise.resolve()
-	let disposal: Promise<void> | undefined
-
-	const query = <T>(
-		signal: AbortSignal | undefined,
-		work: (snapshot: Snapshot) => Promise<T>,
-	): Promise<Inspection<T>> => {
-		try {
-			checkSignal(signal)
-			if (closed)
-				throw new InspectionError('project_closed', 'The project query scope has been disposed.')
-			if (admitted >= 17)
-				throw new InspectionError(
-					'query_queue_full',
-					'At most one query can run and sixteen can wait.',
-				)
-		} catch (cause) {
-			return Promise.reject(cause)
+	try {
+		const snapshot = new Snapshot(root, options.signal)
+		const data = await work(snapshot)
+		await snapshot.verify()
+		const result = {
+			root,
+			revision: snapshot.revision(),
+			data,
+			source: {
+				content: 'current-disk' as const,
+				environment: 'query-process' as const,
+				runtimeMatch: 'unverified' as const,
+			},
 		}
-		admitted++
-		return new Promise((fulfill, reject) => {
-			let aborted = false
-			const onAbort = () => {
-				aborted = true
-				reject(
-					new InspectionError('aborted', 'Project inspection was aborted.', {
-						cause: signal?.reason,
-					}),
-				)
-			}
-			signal?.addEventListener('abort', onAbort, { once: true })
-			const run = async () => {
-				try {
-					if (aborted) return
-					if (closed)
-						throw new InspectionError(
-							'project_closed',
-							'The project query scope has been disposed.',
-						)
-					const snapshot = new Snapshot(root, signal)
-					const data = await work(snapshot)
-					await snapshot.verify()
-					const result = {
-						root,
-						revision: snapshot.revision(),
-						data,
-						source: {
-							content: 'current-disk' as const,
-							environment: 'query-process' as const,
-							runtimeMatch: 'unverified' as const,
-						},
-					}
-					if (Buffer.byteLength(JSON.stringify(result)) > MAX_OUTPUT_BYTES) {
-						throw new InspectionError(
-							'analysis_unavailable',
-							'Inspection output exceeds 1 MiB. Select fewer sections, a Part subtree, or a smaller page.',
-						)
-					}
-					fulfill(freeze(result))
-				} catch (cause) {
-					reject(normalizeError(cause))
-				} finally {
-					admitted--
-					signal?.removeEventListener('abort', onAbort)
-				}
-			}
-			tail = tail.then(run, run)
-		})
-	}
-
-	const project: ProjectInspection = {
-		root,
-		async overview(input = {}) {
-			validatePage(input)
-			const options = { ...input }
-			return query(options.signal, async (snapshot) => {
-				const packages = await snapshot.packages()
-				return {
-					packages: page(
-						packages.map((pkg) => ({
-							name: typeof pkg.manifest.name === 'string' ? pkg.manifest.name : null,
-							version: typeof pkg.manifest.version === 'string' ? pkg.manifest.version : null,
-							root: pkg.root,
-							manifest: pkg.manifestPath,
-						})),
-						options,
-						`${root}:overview`,
-						snapshot.revision(),
-					),
-					scripts: scripts(packages.find((pkg) => pkg.root === root)),
-				}
-			})
-		},
-		async plugins(input = {}) {
-			validatePage(input, ['packageName'])
-			const options = { ...input }
-			if (
-				options.packageName !== undefined &&
-				(typeof options.packageName !== 'string' || !options.packageName.trim())
+		if (Buffer.byteLength(JSON.stringify(result)) > MAX_OUTPUT_BYTES)
+			throw new InspectionError(
+				'analysis_unavailable',
+				'Inspection output exceeds 1 MiB. Select fewer sections, a Part subtree, or a smaller page.',
 			)
-				invalid('packageName must be a non-empty package name')
-			return query(options.signal, async (snapshot) => {
-				const packages = await snapshot.packages()
-				const selected =
-					options.packageName === undefined
-						? packages
-						: [await resolveInspectionPackage(root, options.packageName, packages)]
-				const found: InspectionPluginSummary[] = []
-				const gaps: InspectionDiagnostic[] = []
-				for (const pkg of selected) {
-					if (!hasExports(pkg)) continue
-					try {
-						const loaded = await snapshot.load(pkg)
-						found.push(
-							...loaded.semantic.definitions.map((definition) => summary(definition, snapshot)),
-						)
-					} catch (cause) {
-						checkSignal(options.signal)
-						if (normalizeError(cause).code === 'source_changed') throw cause
-						gaps.push(diagnostic(cause, pkg.manifestPath))
-					}
-				}
-				found.sort((a, b) => compare(a.reference, b.reference))
-				if (options.packageName !== undefined && gaps.length > 0 && found.length === 0) {
-					return { status: 'unavailable' as const, reason: gaps[0]! }
-				}
-				return section(
-					page(
-						found,
-						options,
-						`${root}:plugins:${options.packageName ?? ''}`,
-						digest([snapshot.revision(), gaps]),
-					),
-					gaps,
-				)
-			})
-		},
-		async plugin<const S extends readonly InspectionPluginSection[] = readonly []>(
-			target: PluginDefinitionAddress | string,
-			input: InspectionPluginOptions & {
-				readonly include?: S
-				readonly partPath?: readonly string[]
-			} = {},
-		): Promise<Inspection<InspectionPluginReport<S>>> {
-			validateObject(input, ['signal', 'include', 'partPath', 'application'])
-			const options = { ...input }
-			if (options.include !== undefined && !Array.isArray(options.include))
-				invalid('include must be an array')
-			const include = Array.from(options.include ?? [])
-			if (include.some((name) => !SECTIONS.has(name)))
-				invalid('include contains an unsupported inspection section')
-			if (options.partPath !== undefined && !Array.isArray(options.partPath))
-				invalid('partPath must be an array')
-			const partPath = Array.from(options.partPath ?? [])
-			if (partPath.some((part) => typeof part !== 'string' || !part))
-				invalid('partPath must contain non-empty field names')
-			const address = definitionTarget(target)
-			const application = copyApplication(options.application)
-			if (!application && (address.entry.kind === 'source-entry' || include.includes('inputs')))
-				invalid('An explicit application is required for inputs and source-entry queries.')
-			return query(options.signal, async (snapshot) => {
-				const loaded = application
-					? await snapshot.applicationTarget(address, application)
-					: await snapshot.load(
-							await resolveInspectionPackage(
-								root,
-								(address.entry as { packageName: string }).packageName,
-								await snapshot.packages(),
-							),
-						)
-				const pkg = loaded.pkg
-				const definition = loaded.semantic.definitions.find((item) =>
-					sameDefinition(item.definition, address),
-				)
-				if (!definition)
-					throw new InspectionError(
-						'plugin_not_found',
-						`The selected source does not declare ${address.exportName} at the requested Plugin address.`,
-						{ context: { reference: reference(address) } },
-					)
-				const needsOccurrences =
-					partPath.length > 0 ||
-					include.some((name) => name === 'parts' || name === 'config' || name === 'dependencies')
-				const expanded = needsOccurrences
-					? occurrences(loaded.semantic, definition, snapshot)
-					: { value: [], gaps: [] }
-				if (partPath.length > 0 && !expanded.value.some((item) => samePath(item.path, partPath))) {
-					if (expanded.gaps.length > 0)
-						throw new InspectionError(
-							'analysis_unavailable',
-							'The requested Part path could not be resolved.',
-							{ context: { partPath: JSON.stringify(partPath) } },
-						)
-					throw new InspectionError(
-						'part_not_found',
-						`Part path ${JSON.stringify(partPath)} was not found.`,
-						{ context: { paths: JSON.stringify(expanded.value.map((item) => item.path)) } },
-					)
-				}
-				const selected = expanded.value.filter((item) => isPathPrefix(partPath, item.path))
-				const sections: Partial<{
-					[K in InspectionPluginSection]: InspectionSection<InspectionSectionData[K]>
-				}> = {}
-				if (include.includes('parts')) {
-					sections.parts = section(
-						{
-							occurrences: selected
-								.filter((item) => item.mount)
-								.map((item): InspectionPart => ({
-									partPath: item.path,
-									className: item.owner.className,
-									declaration: snapshot.location(
-										item.owner.moduleId,
-										item.owner.start,
-										item.owner.end,
-									),
-									mount: item.mount!,
-									requires: item.owner.requires,
-									optional: item.owner.optional,
-								})),
-						},
-						expanded.gaps,
-					)
-				}
-				if (include.includes('dependencies')) {
-					const required = uniqueDefinitions(
-						expanded.value.flatMap((item) => [...item.owner.requires]),
-					)
-					const requiredKeys = new Set(required.map(pluginDefinitionIndexKey))
-					const optional = uniqueDefinitions(
-						expanded.value.flatMap((item) => [...item.owner.optional]),
-					).filter((item) => !requiredKeys.has(pluginDefinitionIndexKey(item)))
-					sections.dependencies = section(
-						{
-							requires: required,
-							optional,
-							provides: definition.provides ?? null,
-							origins: selected.map((item) => ({
-								partPath: item.path,
-								declaration: snapshot.location(
-									item.owner.moduleId,
-									item.owner.start,
-									item.owner.end,
-								),
-								requires: item.owner.requires,
-								optional: item.owner.optional,
-							})),
-						},
-						expanded.gaps,
-					)
-				}
-				if (include.includes('config')) {
-					const configs = await snapshot.configs(loaded)
-					sections.config = section(
-						{ declarations: configDeclarations(configs, selected, snapshot) },
-						[...expanded.gaps, ...configs.diagnostics],
-					)
-				}
-				if (include.includes('checks'))
-					sections.checks = pkg
-						? section({ scripts: scripts(pkg) }, [])
-						: {
-								status: 'unavailable',
-								reason: {
-									code: 'package_not_found',
-									message: 'No owning package manifest for this source declaration.',
-								},
-							}
-				if (include.includes('inputs')) {
-					sections.inputs = await inspectApplicationInputs({
-						application: snapshot.application!,
-						read: (file) => snapshot.read(file),
-						resolve: snapshot.resolve,
-						location: (file, start, end) => snapshot.location(file, start, end),
-						signal: options.signal,
-						matchesPlugin: (symbol) => snapshot.matchesPlugin(symbol, definition),
-					})
-				}
-				return { summary: summary(definition, snapshot), sections } as InspectionPluginReport<S>
-			})
-		},
-		async file(path, input = {}) {
-			validatePage(input)
-			const options = { ...input }
-			if (typeof path !== 'string' || !path) invalid('file path must be non-empty')
-			return query(options.signal, async (snapshot) => {
-				const file = await realpath(resolve(root, path)).catch((cause) => {
-					throw new InspectionError('invalid_input', `Cannot read ${path}`, { cause })
-				})
-				await snapshot.read(file)
-				const owners: InspectionFileOwner[] = []
-				const gaps: InspectionDiagnostic[] = []
-				for (const pkg of await snapshot.packages()) {
-					if (!hasExports(pkg)) continue
-					try {
-						const loaded = await snapshot.load(pkg)
-						const configs = await snapshot.configs(loaded)
-						gaps.push(...configs.diagnostics)
-						for (const definition of loaded.semantic.definitions) {
-							const expanded = occurrences(loaded.semantic, definition, snapshot)
-							gaps.push(...expanded.gaps)
-							const relations: InspectionFileOwner['relations'][number][] = []
-							for (const item of expanded.value) {
-								const location = snapshot.location(
-									item.owner.moduleId,
-									item.owner.start,
-									item.owner.end,
-								)
-								if (location.file === file)
-									relations.push({
-										kind: item.path.length > 0 ? 'part' : 'declaration',
-										partPath: item.path,
-										source: location,
-									})
-							}
-							for (const config of configDeclarations(configs, expanded.value, snapshot)) {
-								if (config.schema.declaration?.file === file)
-									relations.push({
-										kind: 'config-schema',
-										partPath: config.partPath,
-										source: config.schema.declaration,
-									})
-							}
-							if (relations.length > 0)
-								owners.push({
-									definition: definition.definition,
-									reference: reference(definition.definition),
-									relations,
-								})
-						}
-					} catch (cause) {
-						checkSignal(options.signal)
-						if (normalizeError(cause).code === 'source_changed') throw cause
-						gaps.push(diagnostic(cause, pkg.manifestPath))
-					}
-				}
-				owners.sort((a, b) => compare(a.reference, b.reference))
-				return section(
-					{
-						file,
-						scope: 'workspace-plugin-declarations' as const,
-						...page(owners, options, `${root}:file:${file}`, digest([snapshot.revision(), gaps])),
-					},
-					gaps,
-				)
-			})
-		},
-		[Symbol.asyncDispose]() {
-			closed = true
-			disposal ??= tail
-			return disposal
-		},
+		return freeze(result)
+	} catch (cause) {
+		checkSignal(options.signal)
+		throw normalizeError(cause)
 	}
-	return Object.freeze(project)
 }
 
 class Snapshot {
@@ -594,10 +556,9 @@ class Snapshot {
 		}
 		return pending
 	}
-	async applicationTarget(
-		address: PluginDefinitionAddress,
+	async selectApplication(
 		selection: InspectionApplicationSelection,
-	): Promise<LoadedPackage> {
+	): Promise<InspectionInputs['application']> {
 		const declaredRoot = resolve(this.root, selection.root)
 		const root = await realpath(declaredRoot)
 		const rootStat = await stat(root)
@@ -611,6 +572,13 @@ class Snapshot {
 			throw new InspectionError('invalid_input', 'Invalid application sourceSpaces.', { cause })
 		}
 		this.application = { root, entry, sourceSpaces }
+		return this.application
+	}
+	async applicationTarget(
+		address: PluginDefinitionAddress,
+		selection: InspectionApplicationSelection,
+	): Promise<LoadedPackage> {
+		const { entry, sourceSpaces } = await this.selectApplication(selection)
 		if (address.entry.kind !== 'source-entry') {
 			const specifier =
 				address.entry.packageName +
@@ -644,6 +612,134 @@ class Snapshot {
 				{ context: { reference: reference(canonical.definition) } },
 			)
 		return { semantic, pkg: await this.packageFor(file) }
+	}
+	async sources(
+		options: InspectionDiscoveryOptions,
+	): Promise<{ sources: LoadedPackage[]; gaps: InspectionDiagnostic[] }> {
+		const sources: LoadedPackage[] = []
+		const gaps: InspectionDiagnostic[] = []
+		if (options.application) await this.selectApplication(options.application)
+		if (this.application && options.packageName === undefined) {
+			// Follow statically named imports within the explicit source spaces. This is
+			// a source graph, not a claim about the factory's runtime Plugin selection.
+			const pending = [this.application.entry]
+			const visited = new Set<string>()
+			const within = (file: string) =>
+				this.application!.sourceSpaces.some((space) => {
+					const path = relative(space.root, file)
+					return (
+						path.split(/[\\/]/)[0] !== '..' &&
+						!isAbsolute(path) &&
+						!path.split(/[\\/]/).includes('node_modules')
+					)
+				})
+			while (pending.length > 0) {
+				checkSignal(this.signal)
+				const file = pending.shift()!
+				if (visited.has(file)) continue
+				visited.add(file)
+				try {
+					const code = await this.read(file)
+					const ast = parseStandaloneWithLang(code, file, { cache: false })
+					if (!ast)
+						throw new InspectionError('analysis_unavailable', `Cannot parse source: ${file}`)
+					const specifiers = new Set<string>()
+					walkAst(ast, (node) => {
+						if (
+							typeof node.type !== 'string' ||
+							![
+								'ImportDeclaration',
+								'ExportNamedDeclaration',
+								'ExportAllDeclaration',
+								'ImportExpression',
+							].includes(node.type)
+						)
+							return
+						if (!node.source) return
+						const source = readLiteralString(node.source)
+						if (source !== undefined) specifiers.add(source)
+						else
+							gaps.push({
+								code: 'dynamic_source_import',
+								message: 'The import target cannot be determined statically.',
+								file,
+								location: this.location(file, Number(node.start), Number(node.end)),
+							})
+					})
+					for (const specifier of specifiers) {
+						if (specifier.startsWith('node:')) continue
+						const imported = await this.resolve(specifier, file)
+						if (!imported) {
+							if (specifier.startsWith('.'))
+								gaps.push({
+									code: 'unresolved_source_import',
+									message: `Cannot resolve ${specifier}`,
+									file,
+								})
+							continue
+						}
+						if (
+							within(imported) &&
+							/\.[cm]?tsx?$/.test(imported) &&
+							!/\.d\.[cm]?ts$/.test(imported)
+						)
+							pending.push(imported)
+					}
+					sources.push({
+						semantic: await this.sourceModule(file),
+						pkg: await this.packageFor(file),
+					})
+				} catch (cause) {
+					checkSignal(this.signal)
+					if (normalizeError(cause).code === 'source_changed') throw cause
+					gaps.push(diagnostic(cause, file))
+				}
+			}
+		} else {
+			let packages: readonly WorkspacePackage[]
+			if (this.application && options.packageName !== undefined) {
+				const entry = await this.resolve(options.packageName, this.application.entry)
+				const pkg = entry && (await this.packageFor(entry))
+				if (!pkg || pkg.manifest.name !== options.packageName)
+					throw new InspectionError(
+						'package_not_found',
+						`Cannot resolve ${options.packageName} from ${this.application.entry}`,
+					)
+				packages = [pkg]
+			} else {
+				packages = await this.packages()
+				if (options.packageName !== undefined)
+					packages = [await resolveInspectionPackage(this.root, options.packageName, packages)]
+			}
+			for (const pkg of packages) {
+				if (!hasExports(pkg)) continue
+				try {
+					sources.push(await this.load(pkg))
+				} catch (cause) {
+					checkSignal(this.signal)
+					if (normalizeError(cause).code === 'source_changed') throw cause
+					gaps.push(diagnostic(cause, pkg.manifestPath))
+				}
+			}
+		}
+		// Shared Parts may be read from multiple graph roots; retain one physical definition.
+		const seen = new Map<string, string>()
+		const unique: LoadedPackage[] = []
+		for (const loaded of sources) {
+			const definitions = loaded.semantic.definitions.filter((definition) => {
+				const key = pluginDefinitionIndexKey(definition.definition)
+				const previous = seen.get(key)
+				if (previous && previous !== definition.moduleId)
+					throw new InspectionError(
+						'analysis_unavailable',
+						'Conflicting physical sources for one Plugin definition.',
+					)
+				seen.set(key, definition.moduleId)
+				return previous === undefined
+			})
+			unique.push({ ...loaded, semantic: { ...loaded.semantic, definitions } })
+		}
+		return { sources: unique, gaps }
 	}
 	async matchesPlugin(
 		symbol: ConfigSourceSymbol,
@@ -719,14 +815,13 @@ class Snapshot {
 	}
 }
 
-/** @internal Shared by offline scopes and the Host source-backend binding. */
-export function resolveInspectionRoot(root: string): string {
+function resolveInspectionRoot(root: string): string {
 	if (typeof root !== 'string' || !root.trim()) invalid('root must be a non-empty path')
 	return resolve(root)
 }
 
-/** @internal Snapshot the same validated application selection before asynchronous admission. */
-export function copyApplication(
+/** Capture nested input before starting IO. */
+function copyApplication(
 	input: InspectionApplicationSelection | undefined,
 ): InspectionApplicationSelection | undefined {
 	if (input === undefined) return undefined
@@ -862,30 +957,22 @@ function summary(
 	}
 }
 function reference(definition: PluginDefinitionAddress): string {
-	return formatPluginNodeReference({ definition, variant: 'default' })
+	return formatPluginDefinitionReference(definition)
 }
-/** @internal Shared target validation and immutable identity snapshot for source queries. */
-export function definitionTarget(
-	target: PluginDefinitionAddress | string,
-): PluginDefinitionAddress {
+function definitionTarget(target: PluginDefinitionAddress | string): PluginDefinitionAddress {
 	try {
-		if (typeof target !== 'string') return parsePluginDefinitionAddress(target)
-		const node = parsePluginNodeReference(target)
-		if (node.variant !== 'default')
-			throw new InspectionError(
-				'definition_required',
-				'Offline source inspection requires a definition, not a fork reference.',
-			)
-		return node.definition
+		return typeof target === 'string'
+			? parsePluginDefinitionReference(target)
+			: parsePluginDefinitionAddress(target)
 	} catch (cause) {
-		if (cause instanceof InspectionError) throw cause
 		throw new InspectionError(
 			'invalid_input',
-			'Expected a canonical Plugin definition address or default node reference.',
+			'Expected a canonical Plugin definition address or reference.',
 			{ cause },
 		)
 	}
 }
+
 function scripts(pkg: WorkspacePackage | undefined): InspectionScript[] {
 	if (!pkg) return []
 	const value = pkg.manifest.scripts
@@ -956,7 +1043,7 @@ function page<T>(
 	}
 }
 function validatePage(options: InspectionPageOptions, extra: readonly string[] = []): void {
-	validateObject(options, ['signal', 'limit', 'cursor', ...extra])
+	validateObject(options, ['root', 'signal', 'limit', 'cursor', ...extra])
 	if (
 		options.limit !== undefined &&
 		(!Number.isInteger(options.limit) || options.limit < 1 || options.limit > 200)

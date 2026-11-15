@@ -433,7 +433,7 @@ export async function generatePluginControl(options: {
 					(path) =>
 						`/// <reference path=${JSON.stringify(`./${declarationPaths.get(path)!}`)} />\n`,
 				),
-				"import type { PluginDescriptor } from '@pluxel/host/agent'\n",
+				"import type { PluginDescriptor } from '@pluxel/host/internal/agent-types'\n",
 				"type __ControlInput<S extends { readonly '~standard': { readonly types?: { readonly input: unknown; readonly output: unknown } } }> = NonNullable<S['~standard']['types']>['input']\ntype __ControlOutput<S extends { readonly '~standard': { readonly types?: { readonly input: unknown; readonly output: unknown } } }> = NonNullable<S['~standard']['types']>['output']\n",
 			]
 			const exported = new Set<string>(['PluginDescriptor', '__ControlInput', '__ControlOutput'])

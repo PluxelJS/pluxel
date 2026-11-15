@@ -5,7 +5,7 @@ import { validateCommandOptions } from '../command-options'
 import { connectDevProject } from '../dev/project'
 import { connectDevInstance } from '../dev/client'
 import { syncPluginControl } from '../script/sync'
-import { scriptFailure } from '@pluxel/host/agent/runtime'
+import { scriptFailure } from '@pluxel/host/internal/agent/runtime'
 import { printFailure, printValue } from '../script/output'
 
 export const devSyncCommand = define({

@@ -15,8 +15,11 @@ import {
 	SCRIPT_ARTIFACT_FORMAT,
 	type ScriptArtifact,
 	type ScriptRunSnapshot,
-} from '@pluxel/host/agent/runtime'
-import { createScriptControlClient, type ScriptControlClient } from '@pluxel/host/agent/transport'
+} from '@pluxel/host/internal/agent/runtime'
+import {
+	createScriptControlClient,
+	type ScriptControlClient,
+} from '@pluxel/host/internal/agent/transport'
 import { elysia } from '@pluxel/services/elysia'
 import { listenElysia } from '@pluxel/services/elysia/node'
 import { managementAccess } from '@pluxel/services/management/access'
@@ -352,7 +355,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			const file = join(directory, 'task.ts')
 			await writeFile(
 				file,
-				`import type { Script } from '@pluxel/host/agent';\nimport { Result } from '@pluxel/core/better-result';\nexport default (async (sdk) => { const plugins = await sdk.plugins.list(); if (plugins.isErr()) return plugins; return Result.ok({plugins: plugins.value.nodes.map(p => p.displayName)}) }) satisfies Script;\n`,
+				`import type { Script } from '@pluxel/agent-sdk/host';\nimport { Result } from '@pluxel/core/better-result';\nexport default (async (sdk) => { const plugins = await sdk.plugins.list(); if (plugins.isErr()) return plugins; return Result.ok({plugins: plugins.value.nodes.map(p => p.displayName)}) }) satisfies Script;\n`,
 			)
 			const cli = resolve(import.meta.dirname, '../../../cli/dist/cli.mjs')
 			const result = await execute(

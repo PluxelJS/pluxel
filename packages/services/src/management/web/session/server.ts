@@ -2,7 +2,7 @@ import { newWebSocketRpcSession, RpcTarget, type RpcStub } from 'capnweb'
 import type { AdminAuthenticationSession } from '../../services/admin-access/AdminAccessService'
 import { providerStepSnapshot } from '../../services/admin-access/authentication'
 import type { RuntimeManagementTarget } from '../management-target'
-import type { ScriptControlTarget } from '@pluxel/host/agent/transport'
+import type { ScriptControlTarget } from '@pluxel/host/internal/agent/transport'
 import type {
 	AdminAccessPrincipal,
 	ManagementAuthenticationProviderStep,

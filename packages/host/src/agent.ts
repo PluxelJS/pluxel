@@ -8,8 +8,6 @@ export type {
 	ScriptPluginSnapshot,
 	ScriptPluginListOptions,
 	ScriptPluginListError,
-	ScriptPluginInspect,
-	ScriptInspectionOptions,
 } from './agent/sdk-types'
 export type {
 	ScriptRunError,
@@ -24,7 +22,6 @@ export type {
 	ScriptLifecycleError,
 	ScriptLogSnapshot,
 	ScriptLogError,
-	ScriptInspectionError,
 } from './agent/sdk-results'
 export type {
 	PluginDescriptor,
@@ -34,5 +31,3 @@ export type {
 	PluginConfigOutput,
 	PluginInstance,
 } from './agent/control'
-/** Detached source-query data; this entry loads no compiler or filesystem backend. */
-export type * from './agent/inspection'

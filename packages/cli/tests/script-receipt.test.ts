@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ScriptExecutionError } from '@pluxel/host/agent/runtime'
+import { ScriptExecutionError } from '@pluxel/host/internal/agent/runtime'
 import {
 	decodeScriptReceipt,
 	encodeScriptReceipt,

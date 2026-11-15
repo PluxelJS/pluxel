@@ -1,5 +1,5 @@
 import type { RootContext } from '@pluxel/core'
-import type { ScriptContext, ScriptSdk } from '@pluxel/host/agent'
+import type { ScriptContext, ScriptSdk } from '@pluxel/host/internal/agent-types'
 
 export interface ProjectSdk extends ScriptSdk {
 	readonly dev: {

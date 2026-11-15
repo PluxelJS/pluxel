@@ -1,6 +1,6 @@
 import { parseRuntimeLogoutResult } from './validation'
 import { newWebSocketRpcSession, type RpcStub, type RpcTarget } from 'capnweb'
-import type { ScriptControlTarget } from '@pluxel/host/agent/transport'
+import type { ScriptControlTarget } from '@pluxel/host/internal/agent/transport'
 import { providerStepSnapshot } from '../../services/admin-access/authentication'
 import type { ManagementAuthenticationProviderStep } from '../../services/admin-access/types'
 import { ADMIN_ACCESS_COOKIE_COMMIT_PATH } from '../../services/admin-access/transport'

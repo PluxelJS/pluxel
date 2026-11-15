@@ -12,11 +12,11 @@
 
 ## Offline plugin inspection
 
-`@pluxel/rolldown/inspect` 的 `openProject()` 提供源码查询作用域：`overview()`、`plugins()`、`plugin()` 和 `file()` 返回冻结的普通数据、规范 definition identity 与源码位置。用户用法见[查询插件源码](../docs/development/inspection.md)。它不启动 Host、不求值项目模块、不执行 schema 或 package scripts；在线操作继续由 devconsole 拥有。
+`@pluxel/agent-sdk/source` 是源码查询的唯一作者入口，导出 `inspectPlugin`、`listPlugins`、`inspectFile` 与 `inspectProject` 普通函数。查询类型和实现归 Rolldown 的 `inspect/` 模块所有，Agent SDK 从内部导出边界发布；Host 不拥有查询类型或接线后端。用户用法见[源码查询](../docs/development/inspection.md)。
 
-在线默认从 `sdk.inspect(definitionAddress)` 进入同一个分析器。Host 的 type-only agent 入口拥有 detached inspection 数据合同；Rolldown 继续公开重导出这些类型并拥有 `InspectionError`、离线 scope 和具体后端。`createInspectionBackend({ root, application })` 固定解析环境，每次调用创建、排空并释放独立 `openProject` scope，将原查询级诊断转为 Better Result；没有新 parser、resolver 或跨查询缓存。Vite 从真实配置 root/entry 接线后端；查询不能覆盖 application。自定义 Host 只有显式安装后端才加载工具链。
+每次调用建立自己的 bounded read snapshot，读取并核对源码后返回冻结数据；资源在调用内释放。调用方不创建 query session，查询之间不共享队列或缓存。取消返回 `InspectionError`，所有函数使用同一失败契约。application 源码发现复用既有 AST 和语义分析，沿显式 source-spaces 内的静态 import 图找定义；动态来源保留 gaps，不推断实际 Host catalog。
 
-所有结果的 source 元数据标明 `current-disk` 和 `runtimeMatch: unverified`。离线物理路径属于 query-process，SDK 路径属于 execution-target。静态生成声明和普通构建 JS 不进入作者源码选择；缺源码保留诊断。HMR 未接纳源码的查询使用离线入口，运行状态与已接纳材料仍由原 Host/Vite 控制面拥有。
+结果的 source 元数据标明 `current-disk`、`query-process` 和 `runtimeMatch: unverified`。HMR 暂停或应用未启动时仍可查询。生成控制声明与构建 JS 不充当作者源码；运行状态与已接纳材料仍由 Host/Vite 控制面拥有。
 
 构建与查询共享同一套声明事实：`pluginSemanticsPlugin.ts` 的 `analyzeSemanticModule()` 生成 definition、direct dependency、
 Part target/mount 与源码范围，`lowerModule()` 单独生成注入代码；inspection 不执行 lowering 来取得信息。

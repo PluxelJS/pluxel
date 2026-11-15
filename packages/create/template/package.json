@@ -16,6 +16,7 @@
 		"dev:stop": "pitchfork stop app"
 	},
 	"devDependencies": {
+		"@pluxel/agent-sdk": "catalog:pluxel",
 		"@pluxel/cli": "catalog:pluxel",
 		"@pluxel/rolldown": "catalog:pluxel",
 		"typescript": "catalog:tooling",

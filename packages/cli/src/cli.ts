@@ -125,7 +125,7 @@ async function main() {
 			},
 			async onErrorCommand(ctx, error) {
 				if (!isControlCommandPath(ctx.commandPath) || ctx.values.help || ctx.values.version) return
-				const { scriptFailure } = await import('@pluxel/host/agent/runtime')
+				const { scriptFailure } = await import('@pluxel/host/internal/agent/runtime')
 				printFailure(
 					ctx.log,
 					scriptFailure(error, error === ctx.validationError ? 'invalid_input' : 'command_failed'),

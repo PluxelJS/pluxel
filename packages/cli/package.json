@@ -58,6 +58,7 @@
 	},
 	"devDependencies": {
 		"@pluxel-internal/pncat": "workspace:*",
+		"@pluxel/agent-sdk": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/picomatch": "catalog:types",

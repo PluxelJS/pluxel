@@ -5,7 +5,7 @@ import { dirname, isAbsolute, resolve } from 'node:path'
 import { rolldown, type Plugin } from 'rolldown'
 import MagicString from 'magic-string'
 import type { BindingPattern, ModuleExportName, Program } from 'oxc-parser'
-import type { ScriptArtifact } from '@pluxel/host/agent/runtime'
+import type { ScriptArtifact } from '@pluxel/host/internal/agent/runtime'
 import { ScriptInputs } from './script-inputs'
 import { readScriptControlModule } from './script-control-inputs'
 

@@ -1,6 +1,6 @@
 import { createConnection } from 'node:net'
-import { openScriptSocketSession } from '@pluxel/host/agent/socket'
-import { connectScriptControl } from '@pluxel/host/agent/transport'
+import { openScriptSocketSession } from '@pluxel/host/internal/agent/socket'
+import { connectScriptControl } from '@pluxel/host/internal/agent/transport'
 
 /** The built-artifact scenarios consume the same public carrier and control client as CLI. */
 export async function openProjectControl(instance) {

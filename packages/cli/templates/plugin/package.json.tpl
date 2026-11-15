@@ -41,6 +41,7 @@
 		}
 	},
 	"devDependencies": {
+		"@pluxel/agent-sdk": "catalog:",
 		"@pluxel/cli": "catalog:",
 		"@pluxel/core": "catalog:",
 		"@pluxel/host": "catalog:",

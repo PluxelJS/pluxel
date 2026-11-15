@@ -56,6 +56,7 @@
 	},
 	"devDependencies": {
 		"@logtape/logtape": "catalog:dev",
+		"@pluxel/agent-sdk": "workspace:*",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
 		"@pluxel/test": "workspace:*",

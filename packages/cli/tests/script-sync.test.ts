@@ -12,7 +12,7 @@ import {
 import {
 	createPluginControlMaterialReader,
 	type PluginControlMaterialsSnapshot,
-} from '@pluxel/host/agent/runtime'
+} from '@pluxel/host/internal/agent/runtime'
 import { compileScript } from '@pluxel/rolldown/scripts'
 import { syncPluginControl } from '../src/script/sync'
 import { createDevFixture } from './helpers/dev-fixture'
@@ -49,7 +49,7 @@ async function fixture(
 	directories.push(directory)
 	const dependencies = join(directory, 'node_modules/@pluxel')
 	await mkdir(dependencies, { recursive: true })
-	for (const name of ['core', 'host'])
+	for (const name of ['core', 'host', 'agent-sdk'])
 		await symlink(resolve(import.meta.dirname, `../../${name}`), join(dependencies, name), 'dir')
 	await writeFile(
 		join(directory, 'package.json'),
@@ -68,7 +68,7 @@ async function fixture(
 		'index.mjs': renderPluginDescriptors([
 			{ exportName, descriptor: { format: 2, definition, contracts } },
 		]),
-		'index.d.mts': `import type { PluginDescriptor } from '@pluxel/host/agent';\ndeclare class ${exportName}Instance { count: number; add(delta: number): number }\nexport type { ${exportName}Instance };\nexport type ${exportName}ConfigDeclaration = readonly [{ readonly expression: 'schema' }];\nexport type ${exportName}ConfigInput = { step?: number };\nexport type ${exportName}ConfigOutput = { step: number };\nexport declare const ${exportName}: PluginDescriptor<${exportName}ConfigInput, ${exportName}ConfigOutput, ${exportName}Instance>;\n`,
+		'index.d.mts': `import type { PluginDescriptor } from '@pluxel/host/internal/agent-types';\ndeclare class ${exportName}Instance { count: number; add(delta: number): number }\nexport type { ${exportName}Instance };\nexport type ${exportName}ConfigDeclaration = readonly [{ readonly expression: 'schema' }];\nexport type ${exportName}ConfigInput = { step?: number };\nexport type ${exportName}ConfigOutput = { step: number };\nexport declare const ${exportName}: PluginDescriptor<${exportName}ConfigInput, ${exportName}ConfigOutput, ${exportName}Instance>;\n`,
 	}
 	const entries = await Promise.all(
 		Object.entries(files).map(async ([path, content]) => ({
@@ -268,14 +268,14 @@ it('publishes verified entry modules atomically and compiles imports through the
 	}
 	await writeFile(
 		script,
-		`import type {Script} from '@pluxel/host/agent';\nimport {Result} from '@pluxel/core/better-result';\nimport {${first.definitions[0].exportName} as Counter} from '${first.definitions[0].module}';\nexport default (async (sdk) => { const select=sdk.plugin; const counter=select(Counter.nodeAddress()); const {get,patch}=counter.config; const before=await get(); if(before.isErr())return before; const result=await patch({set:{step:2}},{expectedManagedRevision:before.value.managedRevision}); if(result.isErr())return result; const instance=await counter.instance(); if(instance.isErr())return instance; return Result.ok({result:result.value,count:instance.value.add(2)}) }) satisfies Script;\n`,
+		`import type {Script} from '@pluxel/agent-sdk/host';\nimport {Result} from '@pluxel/core/better-result';\nimport {${first.definitions[0].exportName} as Counter} from '${first.definitions[0].module}';\nexport default (async (sdk) => { const select=sdk.plugin; const counter=select(Counter.nodeAddress()); const {get,patch}=counter.config; const before=await get(); if(before.isErr())return before; const result=await patch({set:{step:2}},{expectedManagedRevision:before.value.managedRevision}); if(result.isErr())return result; const instance=await counter.instance(); if(instance.isErr())return instance; return Result.ok({result:result.value,count:instance.value.add(2)}) }) satisfies Script;\n`,
 	)
 	const artifact = await compile()
 	expect(artifact.code).toContain('synced-counter')
 	expect(artifact.code).not.toContain('class CounterInstance')
 	await writeFile(
 		script,
-		`import type {Script} from '@pluxel/host/agent';\nimport {${first.definitions[0].exportName} as Counter} from '${first.definitions[0].module}';\nexport default (async(sdk) => {const {patch}=sdk.plugin(Counter.nodeAddress()).config;return patch({set:{step:'wrong'}})}) satisfies Script;\n`,
+		`import type {Script} from '@pluxel/agent-sdk/host';\nimport {${first.definitions[0].exportName} as Counter} from '${first.definitions[0].module}';\nexport default (async(sdk) => {const {patch}=sdk.plugin(Counter.nodeAddress()).config;return patch({set:{step:'wrong'}})}) satisfies Script;\n`,
 	)
 	await expect(compile()).rejects.toMatchObject({ code: 'typecheck_failed' })
 })

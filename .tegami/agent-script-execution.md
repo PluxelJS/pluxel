@@ -12,7 +12,7 @@ packages:
 
 ## Execute ordinary TypeScript against the current Host
 
-Add the portable `@pluxel/host/agent` SDK and one run executor for Vite project
+Add the portable `@pluxel/agent-sdk/host` SDK and one run executor for Vite project
 modules and uploaded Node JavaScript factories. Scripts receive `(sdk, run)` and
 return ordinary values or promises. Configuration and policy use the same Host
 operations and report projections as Management; reads retain sources, saved and

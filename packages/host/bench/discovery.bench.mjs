@@ -4,7 +4,7 @@ import { performance } from 'node:perf_hooks'
 import { BasePlugin, Plugin } from '../../core/dist/index.mjs'
 import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '../../core/dist/toolchain.mjs'
 import { createHost } from '../dist/index.mjs'
-import { createScriptScope } from '../dist/agent/runtime.mjs'
+import { createScriptScope } from '@pluxel/agent-sdk/host'
 
 // oxlint-disable-next-line pluxel/plugin-base-class-requires-plugin-registration -- Native Node benchmark explicitly registers the lowered fixture below.
 class DiscoveryProvider extends BasePlugin {}

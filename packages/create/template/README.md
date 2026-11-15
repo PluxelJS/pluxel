@@ -27,6 +27,8 @@ Use `vp exec pluxel dev status` to inspect the Vite instance and application, an
 
 For continuous or multi-file edits while the application is running, use the console guide's HMR batch workflow: `dev hmr pause`, edit and check, then `dev hmr apply` and verify the result. Failed updates remain paused; use `dev hmr resume` only after verification if the original mode was auto. These commands use the same profile and instance selection as `dev run`.
 
+Run `node dev/inspect.mjs` to locate the example Plugin, Parts, Schema and application bindings directly from local source. This uses `@pluxel/agent-sdk/source` and works before starting the app. See the [source query guide](https://github.com/PluxelJS/pluxel/blob/main/docs/development/inspection.md).
+
 The host declares its fixed Plugin catalog and optional sources in `host/src/app.ts`.
 Vite development and production execution consume that same `defineHostApplication(factory)` declaration.
 The application factory returns an explicit service list; `servicesPreset()` from `@pluxel/services/preset` combines base services,

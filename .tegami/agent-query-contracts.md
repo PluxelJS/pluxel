@@ -9,9 +9,8 @@ packages:
 
 # Separate definition inspection from runtime node operations
 
-Use `sdk.inspect(Plugin.definitionAddress(), options)` for source queries, including abstract dependency tokens. Discovered nodes use `sdk.inspect(node.address.definition)`. The node handle no longer provides `inspect()`; `sdk.plugin(Plugin.nodeAddress())` continues to own runtime operations. Source lookup stays valid across constructor replacement and catalog removal and explicitly reports current disk content with runtime matching unverified.
-
-Discovery reuses one identity inventory per Host and filter while its committed inputs remain unchanged. It continues to project current status and diagnostics for every bounded page. Membership, owner, filter or revision changes invalidate the corresponding cursor. Templates, workspace instructions and Vite capabilities follow the same inspection entry.
+Source querying uses `inspectPlugin(definition, options)` from `@pluxel/agent-sdk/source`, including abstract dependency tokens. Discovered nodes pass `node.address.definition`; the Host SDK owns runtime node operations. Source lookup reports current disk content with runtime matching unverified.
+Discovery reuses one identity inventory per Host and filter while its committed inputs remain unchanged. It continues to project current status and diagnostics for every bounded page. Membership, owner, filter or revision changes invalidate the corresponding cursor. Templates and workspace instructions follow the same source entry.
 
 # Reject incompatible Management clients before writes
 

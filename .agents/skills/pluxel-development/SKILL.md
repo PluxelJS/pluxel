@@ -5,7 +5,7 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 
 # Pluxel 开发
 
-先读项目 `AGENTS.md`、目标包 scripts 与已安装版本。已知文件或符号直接查源码；已有 SDK 时用 `sdk.inspect(definitionAddress)` 定位声明，再按需查询 Part、配置和应用绑定。离线查询使用 `openProject()`。只展开本次任务所需章节。
+先读项目 `AGENTS.md`、目标包 scripts 与已安装版本。已知文件或符号直接查源码；通过 `@pluxel/agent-sdk/source` 的普通函数定位声明、Part、配置和应用绑定，直接使用 Node。Host 操作使用 `@pluxel/agent-sdk/host`。只展开本次任务所需章节。
 
 ## 入口与职责
 
@@ -17,24 +17,24 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 
 ## 按任务选正文
 
-| 任务                                    | 读取入口与使用边界                                                                                                                                               |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 修改 Plugin/Part                        | `plugin-development/index.md` 选对应主题；公共契约、失败、并发或取消先读 `plugin-development/contracts.md`，可恢复失败再读 `plugin-development/better-result.md` |
-| 装配应用或服务                          | `host/configuration.md`；扩展服务读 `host/services.md`，不要混用生产应用、独立 Host 与 test host API                                                             |
-| 插件状态、偏好或有界结构化记录          | `plugin-development/tinybase.md`；使用原生 Store，Host 托管恢复与保存；部署配置继续使用 `configs.use()`                                                          |
-| 插件文件、后端或文档保存                | `plugin-development/fs.md`；Host 后端与 config/state 接线读 `host/configuration.md` 对应章节，保留原生 errno 和完整提交                                          |
-| 查声明、配置绑定与源码位置              | `development/inspection.md`；SDK 的 `sdk.inspect(definitionAddress)` 默认只查声明，扩展使用 include/partPath；离线 `openProject()` 显式选择 application          |
-| 验证插件依赖、配置或生命周期            | `plugin-development/testing.md`；使用真实 lowering 的 `@pluxel/test`，显式安装所需服务并释放 test host；普通函数用普通测试                                       |
-| 部署应用的自动化脚本                    | `development/scripts.md`；普通 `Script`、CLI 编译上传、原 receipt 查询与取消；目标必须显式授权脚本执行                                                           |
-| 取得插件类型、配置源码与业务实例        | `development/plugin-control.md`；`./control`、材料同步、`sdk.plugin(Provider.nodeAddress())`、配置、实例及 JSDoc；外部类型依赖使用匹配版本                       |
-| 操作运行中的应用、分批接纳源码修改      | `development/dev-console.md`；使用现有 Vite 控制台与 HMR 批次控制，隔离 host 不能证明在线状态                                                                    |
-| 安装工具、管理服务或修改任务缓存/hk/Pkl | `development/workspace-toolchain.md`；先看现有配置与服务                                                                                                         |
-| 源码联调、安装、catalog 或开发文档接入  | `development/source-workspaces.md`；source doctor 不证明构建产物最新，按需 source build                                                                          |
-| CLI、构建/HMR、包导出或发布             | `development/tooling.md`、`development/plugin-package.md`；跨包职责查 `reference/package-matrix.md`                                                              |
+| 任务                                    | 读取入口与使用边界                                                                                                                                                 |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 修改 Plugin/Part                        | `plugin-development/index.md` 选对应主题；公共契约、失败、并发或取消先读 `plugin-development/contracts.md`，可恢复失败再读 `plugin-development/better-result.md`   |
+| 装配应用或服务                          | `host/configuration.md`；扩展服务读 `host/services.md`，不要混用生产应用、独立 Host 与 test host API                                                               |
+| 插件状态、偏好或有界结构化记录          | `plugin-development/tinybase.md`；使用原生 Store，Host 托管恢复与保存；部署配置继续使用 `configs.use()`                                                            |
+| 插件文件、后端或文档保存                | `plugin-development/fs.md`；Host 后端与 config/state 接线读 `host/configuration.md` 对应章节，保留原生 errno 和完整提交                                            |
+| 查声明、配置绑定与源码位置              | `development/agent-sdk.md` 与 `development/inspection.md`；`/source` 的 inspectPlugin/listPlugins/inspectFile/inspectProject 是普通函数，显式指定 root/application |
+| 验证插件依赖、配置或生命周期            | `plugin-development/testing.md`；使用真实 lowering 的 `@pluxel/test`，显式安装所需服务并释放 test host；普通函数用普通测试                                         |
+| 部署应用的自动化脚本                    | `development/scripts.md`；普通 `Script`、CLI 编译上传、原 receipt 查询与取消；目标必须显式授权脚本执行                                                             |
+| 取得插件类型、配置源码与业务实例        | `development/plugin-control.md`；`./control`、材料同步、`sdk.plugin(Provider.nodeAddress())`、配置、实例及 JSDoc；外部类型依赖使用匹配版本                         |
+| 操作运行中的应用、分批接纳源码修改      | `development/dev-console.md`；使用现有 Vite 控制台与 HMR 批次控制，隔离 host 不能证明在线状态                                                                      |
+| 安装工具、管理服务或修改任务缓存/hk/Pkl | `development/workspace-toolchain.md`；先看现有配置与服务                                                                                                           |
+| 源码联调、安装、catalog 或开发文档接入  | `development/source-workspaces.md`；source doctor 不证明构建产物最新，按需 source build                                                                            |
+| CLI、构建/HMR、包导出或发布             | `development/tooling.md`、`development/plugin-package.md`；跨包职责查 `reference/package-matrix.md`                                                                |
 
 框架内部维护按仓库 `AGENTS.md` → `engineering/README.md` 选择领域。表格是路由，不是通读清单；已明确契约、所有者、调用方和验证方式后开始修改。
 
-源码查询返回当前磁盘位置与执行环境。按指南检查 Result、section 状态和 source 元数据，再由该环境的编辑器或 agent 打开文件。Vite 使用所选实例的应用声明；应用无法启动、需要选择其他 application 或反查文件归属时使用离线查询。
+源码查询返回当前磁盘位置；检查 section 状态和 source 元数据，由查询进程所在环境的编辑器或 agent 打开文件。查询失败 reject InspectionError，不需要启动应用或提交 Script。仓库示例：`node projects/plugin-host/dev/source.mjs`。
 
 ## 需要运行应用时
 

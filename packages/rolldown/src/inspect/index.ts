@@ -1,3 +1,2 @@
-export { openProject } from './project'
-export { createInspectionBackend } from './backend'
+export { inspectProject, listPlugins, inspectPlugin, inspectFile } from './project'
 export * from './contracts'

@@ -13,14 +13,14 @@ import {
 	type ScriptHmrAction,
 	type RunExecution,
 	type PluginControlMaterialsSnapshot,
-} from '@pluxel/host/agent/runtime'
-import { openScriptSocketSession } from '@pluxel/host/agent/socket'
+} from '@pluxel/host/internal/agent/runtime'
+import { openScriptSocketSession } from '@pluxel/host/internal/agent/socket'
 import {
 	createScriptControlTarget,
 	type ScriptConnectionTarget,
 	type ScriptControlResponse,
 	type ScriptControlTarget,
-} from '@pluxel/host/agent/transport'
+} from '@pluxel/host/internal/agent/transport'
 import type { ProjectScriptInstance } from './discovery'
 import { sourceHash } from './source'
 
@@ -156,7 +156,6 @@ export async function startProjectScriptServer(options: {
 					capabilities: [
 						'plugins',
 						'plugin',
-						'inspect',
 						'plugin.instance',
 						'plugin.config',
 						'policy',

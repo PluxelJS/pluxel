@@ -379,6 +379,7 @@ describe('scaffold template rendering', () => {
 		})
 		expect(manifest.files).toEqual(['dist', '!**/*.map'])
 		expect(manifest.devDependencies).toMatchObject({
+			'@pluxel/agent-sdk': 'catalog:',
 			'@pluxel/cli': 'catalog:',
 			'@pluxel/core': 'catalog:',
 			'@pluxel/host': 'catalog:',

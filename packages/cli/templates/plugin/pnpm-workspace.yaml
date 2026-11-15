@@ -2,6 +2,7 @@ packages:
   - .
 
 catalog:
+  '@pluxel/agent-sdk': ^1.1.0
   vite-plus: 1.4.0
   '@pluxel/cli': ^1.1.0
   '@pluxel/core': ^1.1.0

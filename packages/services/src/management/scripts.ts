@@ -1,7 +1,7 @@
 import type { EffectsScope, RootContext } from '@pluxel/core'
-import { createNodeScriptOwner } from '@pluxel/host/agent/node'
-import { ScriptExecutionError } from '@pluxel/host/agent/runtime'
-import { createScriptControlTarget } from '@pluxel/host/agent/transport'
+import { createNodeScriptOwner } from '@pluxel/host/internal/agent/node'
+import { ScriptExecutionError } from '@pluxel/host/internal/agent/runtime'
+import { createScriptControlTarget } from '@pluxel/host/internal/agent/transport'
 import type { RuntimeSessionFactories } from './web/session/server'
 import type { AdminAccessPrincipal } from './services/admin-access/types'
 

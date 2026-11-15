@@ -19,7 +19,10 @@ it('bundles the actual portable SDK and execution entry without platform or comp
 	try {
 		await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
 		await symlink(hostRoot, join(root, 'node_modules/@pluxel/host'), 'dir')
-		await writeFile(join(root, 'entry.ts'), "export * from '@pluxel/host/agent/runtime'")
+		await writeFile(
+			join(root, 'entry.ts'),
+			"export * from '@pluxel/agent-sdk/host'; export { ScriptExecutor, executeHostScript } from '@pluxel/host/internal/agent/runtime'",
+		)
 		const modules: string[] = []
 		const output = await build({
 			configFile: false,
@@ -111,7 +114,7 @@ it('loads the compiled factory in real workerd and bridges ordinary SDK calls to
 		await writeFile(
 			file,
 			`
-import type { Script } from '@pluxel/host/agent'
+import type { Script } from '@pluxel/agent-sdk/host'
 import * as sharedBetterResult from '@pluxel/core/better-result'
 const { Result } = sharedBetterResult
 let moduleInvocations = 0

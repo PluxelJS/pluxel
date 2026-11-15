@@ -1,7 +1,7 @@
 import { BasePlugin, Plugin, type PluginNodeAddress } from '@pluxel/core'
 import type { LogReadOptions } from '@pluxel/core/logging'
 import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
-import type { PluginDescriptor, PluginInstance, ScriptSdk } from '@pluxel/host/agent'
+import type { PluginDescriptor, PluginInstance, ScriptSdk } from '@pluxel/agent-sdk/host'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import * as v from 'valibot'
 

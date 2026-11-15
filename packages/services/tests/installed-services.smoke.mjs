@@ -952,7 +952,7 @@ import { workbenchService } from '@pluxel/workbench/service'
 import { requireWorkbench, createWorkbenchArtifactHandler } from '@pluxel/workbench/server'
 import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import type { WorkbenchSessionApi } from '@pluxel/workbench/client'
-import type * as ScriptContracts from '@pluxel/host/agent'
+import type * as ScriptContracts from '@pluxel/agent-sdk/host'
 import { host as viteHost } from '@pluxel/host-vite'
 import { servicesPreset } from '@pluxel/services/preset'
 import { vitePreset, serviceSingletons } from '@pluxel/services/vite'
@@ -1034,7 +1034,7 @@ const hook = registerHooks({ load(url, context, next) {
  return next(url, context)
 } })
 const { createHost } = await import('@pluxel/host')
-const { createScriptScope } = await import('@pluxel/host/agent/runtime')
+const { createScriptScope } = await import('@pluxel/host/internal/agent/runtime')
 const host = await createHost({ plugins: [] })
 await host.start()
 const scope = createScriptScope({ ctx: host.ctx })
