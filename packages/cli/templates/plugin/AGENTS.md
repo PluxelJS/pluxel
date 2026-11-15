@@ -22,6 +22,8 @@
 
 插件地址、控制材料同步、配置类型和业务实例调用见 `vp exec pluxel docs development/plugin-control.md`。完整调用由这些随 CLI 交付的指南维护。
 
+源码查询见 `vp exec pluxel docs development/inspection.md`。已有消费应用 SDK 时用 `sdk.plugin(nodeAddress).inspect()` 定位声明；独立包离线查询使用 `openProject()`，应用无法启动时也可运行。文件位置的执行环境由查询结果说明。
+
 ## 持久状态与原生依赖
 
 配置继续使用 `configs.use()`。配置之外的有界状态通过固定的 `ctx.tinybase.open()` 取得每个 Plugin node 唯一的托管 Store；原生 API 和类型直接从 `tinybase` 与上游子路径导入。持久位置、恢复和保存归 Host，不在插件管理 Persister 或另写 JSON 设置。密钥留在 Vault，大文件通过固定的 `ctx.fs()` 保存；后端只在 Host 的 `runtime.zenfs` 中选择。

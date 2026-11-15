@@ -10,6 +10,7 @@ import type { HostPolicyResult } from '../policy-management'
 import type { PluginApplyReportSnapshot } from '../apply-report'
 import type { PluginReconciliationIssue } from '../reconcile'
 import { pluginApplyReportOutcome } from '../report-protocol'
+import type { InspectionDiagnostic, InspectionFailure } from './inspection'
 
 type WithoutOk<T> = T extends unknown ? Readonly<Omit<T, 'ok'>> : never
 
@@ -32,6 +33,17 @@ export type ScriptTargetError = Readonly<{
 	code: 'target_unavailable' | 'stale_target'
 	message: string
 }>
+
+/** Source analysis preserves section gaps and compiler diagnostics independently of run failures. */
+export type ScriptInspectionError =
+	| ScriptOperationError
+	| ScriptTargetError
+	| InspectionFailure
+	| Readonly<{
+			code: 'inspection_unavailable'
+			message: string
+			reason: InspectionDiagnostic
+	  }>
 
 /** Synchronize control materials again before using an incompatible descriptor. */
 export type ScriptControlError = Readonly<{

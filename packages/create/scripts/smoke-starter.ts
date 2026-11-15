@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import assert from 'node:assert/strict'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -219,9 +220,9 @@ async function verifyProductionViteApplication(root: string): Promise<void> {
 
 async function verifyViteApplication(root: string): Promise<void> {
 	const consoleRoot = resolve(root, 'host/web')
-	const inspectionFile = resolve(consoleRoot, 'dev/smoke-inspect.ts')
+	const statusFile = resolve(consoleRoot, 'dev/smoke-status.ts')
 	await writeFile(
-		inspectionFile,
+		statusFile,
 		[
 			"import type { ProjectScript } from '@pluxel/host-vite/project'",
 			"import { Result } from '@pluxel/core/better-result'",
@@ -236,9 +237,7 @@ async function verifyViteApplication(root: string): Promise<void> {
 			'  }',
 			'  const vault = await sdk.plugin(VaultAdminPlugin.nodeAddress()).status()',
 			'  if (vault.isErr()) return vault',
-			'  const status = await sdk.plugins.list()',
-			'  if (status.isErr()) return status',
-			'  return Result.ok({ running, vaultArtifact: vault.value?.execution.artifact.kind, status: status.value })',
+			'  return Result.ok({ running, vaultArtifact: vault.value?.execution.artifact.kind })',
 			'}) satisfies ProjectScript',
 		].join('\n'),
 	)
@@ -290,14 +289,14 @@ async function verifyViteApplication(root: string): Promise<void> {
 		if (!discovered.ok || discovered.value.length !== 1) {
 			throw new Error(`Expected one starter development console: ${JSON.stringify(discovered)}`)
 		}
-		const inspection = JSON.parse(
+		const status = JSON.parse(
 			await runVpCapture(
 				[
 					'exec',
 					'pluxel',
 					'dev',
 					'run',
-					inspectionFile,
+					statusFile,
 					'--profile',
 					'local',
 					'--root',
@@ -309,18 +308,91 @@ async function verifyViteApplication(root: string): Promise<void> {
 			),
 		)
 		if (
-			!inspection.ok ||
-			inspection.value.run.state !== 'succeeded' ||
-			inspection.value.run.value.status !== 'ok' ||
-			inspection.value.run.value.value.running.length !== 4 ||
-			inspection.value.run.value.value.vaultArtifact !== 'built-module' ||
-			inspection.value.run.value.value.running.some((running: boolean) => !running)
+			!status.ok ||
+			status.value.run.state !== 'succeeded' ||
+			status.value.run.value.status !== 'ok' ||
+			status.value.run.value.value.running.length !== 4 ||
+			status.value.run.value.value.vaultArtifact !== 'built-module' ||
+			status.value.run.value.value.running.some((running: boolean) => !running)
 		) {
-			throw new Error(`Starter Plugin admission failed: ${JSON.stringify(inspection)}`)
+			throw new Error(`Starter Plugin admission failed: ${JSON.stringify(status)}`)
 		}
+
+		const inspection = JSON.parse(
+			await runVpCapture(
+				[
+					'exec',
+					'pluxel',
+					'dev',
+					'run',
+					resolve(consoleRoot, 'dev/inspect.ts'),
+					'--profile',
+					'local',
+					'--root',
+					consoleRoot,
+					'--instance',
+					discovered.value[0].instanceId,
+				],
+				root,
+			),
+		)
+		assert.equal(inspection.ok, true, JSON.stringify(inspection))
+		assert.equal(inspection.value.run.state, 'succeeded', JSON.stringify(inspection))
+		assert.equal(inspection.value.run.value.status, 'ok', JSON.stringify(inspection))
+		const report = inspection.value.run.value.value
+		assert.equal(report.root, await realpath(consoleRoot))
+		assert.deepEqual(report.source, {
+			content: 'current-disk',
+			environment: 'execution-target',
+			runtimeMatch: 'unverified',
+		})
+		assert.equal(report.data.summary.exportName, 'TodoPlugin')
+		const todoSource = resolve(root, 'plugins/todo/src/index.ts')
+		await assertSourceStart(
+			report.data.summary.declaration,
+			todoSource,
+			'class TodoPlugin extends BasePlugin',
+		)
+		const { config, parts, inputs, checks } = report.data.sections
+		for (const section of [config, parts, inputs, checks])
+			assert.equal(section.status, 'complete', JSON.stringify(section))
+		assert.equal(config.value.declarations.length, 1)
+		const schema = config.value.declarations[0].schema
+		assert.equal(schema.symbol, 'TodoConfig')
+		await assertSourceStart(schema.declaration, todoSource, 'v.object({')
+		assert.deepEqual(parts.value.occurrences, [])
+		const applicationSource = resolve(root, 'host/src/app.ts')
+		assert.equal(inputs.value.application.root, await realpath(consoleRoot))
+		assert.equal(inputs.value.application.entry, await realpath(applicationSource))
+		await assertSourceStart(
+			inputs.value.config,
+			applicationSource,
+			'exampleHostConfig(env.EXAMPLE_TODO_MAX_ITEMS)',
+		)
+		assert.deepEqual(checks.value.scripts.map((script: { name: string }) => script.name).sort(), [
+			'build',
+			'test',
+			'typecheck',
+		])
 	} finally {
 		await stopVite(vite)
 	}
+}
+
+async function assertSourceStart(
+	location: { file: string; start: { line: number; column: number } },
+	file: string,
+	marker: string,
+): Promise<void> {
+	assert.equal(location.file, await realpath(file))
+	const source = await readFile(file, 'utf8')
+	const offset = source.indexOf(marker)
+	assert.notEqual(offset, -1, `Expected source declaration ${marker} in ${file}`)
+	const lines = source.slice(0, offset).split('\n')
+	assert.deepEqual(location.start, {
+		line: lines.length,
+		column: lines.at(-1)!.length + 1,
+	})
 }
 
 async function verifyViteBrowserGraph(origin: string): Promise<void> {

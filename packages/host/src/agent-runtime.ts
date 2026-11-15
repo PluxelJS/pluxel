@@ -46,3 +46,4 @@ export {
 } from './agent/protocol'
 export { ScriptExecutor, type ScriptExecutorOptions, type RunExecution } from './agent/runtime'
 export { executeHostScript } from './agent/execute'
+export type { ScriptInspectionBackend } from './agent/inspection-backend'

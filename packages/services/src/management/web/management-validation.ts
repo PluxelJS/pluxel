@@ -697,7 +697,7 @@ export function parsePluginControlBatchResult(input: unknown): PluginControlBatc
 			results: Object.freeze([]) as [],
 		})
 	}
-	shape(value, ['ok', 'status', 'results'], [], 'plugin control batch result')
+	shape(value, ['ok', 'status', 'results'], ['managedRevision'], 'plugin control batch result')
 	const results = array(value.results, 'plugin control batch result.results').map((item, index) =>
 		controlMutationResult(item, `plugin control batch result.results[${index}]`),
 	)
@@ -706,7 +706,12 @@ export function parsePluginControlBatchResult(input: unknown): PluginControlBatc
 		fail(
 			`plugin control batch summary must match its results (ok: ${batch.ok}, status: ${batch.status})`,
 		)
-	return batch
+	return value.managedRevision === undefined
+		? batch
+		: Object.freeze({
+				...batch,
+				managedRevision: text(value.managedRevision, 'plugin control batch result.managedRevision'),
+			})
 }
 
 /** Validate and deep-freeze the current logging policy snapshot. */

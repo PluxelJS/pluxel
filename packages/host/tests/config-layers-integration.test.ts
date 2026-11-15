@@ -312,7 +312,9 @@ try {
  assert.equal(requirePluginService(host.ctx).isRunning(nodes.later),true,'generated startup address selects the discovered implementation');
  const {createScriptScope}=await import('@pluxel/host/agent/runtime');
  await using scope=createScriptScope({ctx:host.ctx});
- const discovered=(await scope.sdk.plugins.list()).unwrap().nodes.find(node=>node.address.definition.exportName==='Later'&&node.address.variant==='default');
+ const page=(await scope.sdk.plugins.list({definition:nodes.later.definition})).unwrap();
+ assert.equal(page.nextCursor,null);
+ const discovered=page.nodes.find(node=>node.address.variant==='default');
  assert.ok(discovered);
  assert.deepEqual(discovered.address,nodes.later);
  assert.equal((await scope.sdk.plugin(discovered.address).config.get()).unwrap().config.value,'saved-Later');

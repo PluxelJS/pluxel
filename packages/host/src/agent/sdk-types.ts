@@ -19,7 +19,24 @@ import type {
 	ScriptLifecycleError,
 	ScriptLogSnapshot,
 	ScriptLogError,
+	ScriptInspectionError,
 } from './sdk-results'
+import type {
+	Inspection,
+	InspectionPluginOptions,
+	InspectionPluginReport,
+	InspectionPluginSection,
+} from './inspection'
+import type {
+	ScriptPluginListOptions,
+	ScriptPluginSnapshot,
+	ScriptPluginListError,
+} from './discovery'
+export type {
+	ScriptPluginListOptions,
+	ScriptPluginSnapshot,
+	ScriptPluginListError,
+} from './discovery'
 import type {
 	PluginTypedNodeAddress,
 	PluginConfigInput,
@@ -85,6 +102,12 @@ type SelectedAddress<T extends PluginNodeAddress> = {
 interface ScriptPluginOperations<T extends PluginNodeAddress> {
 	/** Immutable selection; retains the input's types and evidence when selected again. */
 	readonly address: SelectedAddress<T>
+	/**
+	 * Locate this definition in current disk source on the execution target. Default/fork
+	 * share a declaration. No module or schema is evaluated, no editor is opened, and no
+	 * association with the accepted runtime version is inferred. A missing backend is Err.
+	 */
+	readonly inspect: ScriptPluginInspect
 	/** Read current state, or null when this node is absent. */
 	readonly status: () => Promise<
 		Result<HostPluginStatusSnapshot | null, ScriptOperationError | ScriptTargetError>
@@ -137,12 +160,22 @@ type AddressOperations<T extends PluginNodeAddress> = [T] extends [PluginTypedNo
 export type ScriptPlugin<T extends PluginNodeAddress = PluginNodeAddress> =
 	ScriptPluginOperations<T> & AddressOperations<T>
 
-/** One committed discovery snapshot. Revisions retain their separate domain meanings. */
-export type ScriptPluginSnapshot = Readonly<{
-	nodes: readonly HostPluginStatusSnapshot[]
-	catalogRevision: number
-	runtimeStateRevision: number
-}>
+/** Source resolution is fixed by the execution target; another application is an offline query. */
+export type ScriptInspectionOptions = Omit<InspectionPluginOptions, 'application'>
+
+export interface ScriptPluginInspect {
+	(
+		options?: ScriptInspectionOptions & { readonly include?: readonly [] },
+	): Promise<Result<Inspection<InspectionPluginReport<readonly []>>, ScriptInspectionError>>
+	<const S extends readonly InspectionPluginSection[]>(
+		options: ScriptInspectionOptions & { readonly include: S },
+	): Promise<Result<Inspection<InspectionPluginReport<S>>, ScriptInspectionError>>
+	<const S extends readonly InspectionPluginSection[]>(
+		options: ScriptInspectionOptions & { readonly include?: S },
+	): Promise<
+		Result<Inspection<InspectionPluginReport<readonly S[number][]>>, ScriptInspectionError>
+	>
+}
 
 /**
  * Host operations return promises of the shared Better Result; Plugin address selection
@@ -167,8 +200,10 @@ export interface ScriptSdk {
 	 */
 	readonly plugin: <const T extends PluginNodeAddress>(target: T) => ScriptPlugin<T>
 	readonly plugins: {
-		/** Discover current node addresses, lifecycle state and diagnostics. */
-		readonly list: () => Promise<Result<ScriptPluginSnapshot, ScriptOperationError>>
+		/** Discover one bounded page; reuse nextCursor while this Host and its revisions are unchanged. */
+		readonly list: (
+			options?: ScriptPluginListOptions,
+		) => Promise<Result<ScriptPluginSnapshot, ScriptPluginListError>>
 	}
 	readonly policy: {
 		readonly get: () => Promise<Result<ScriptPolicySnapshot, ScriptPolicyError>>

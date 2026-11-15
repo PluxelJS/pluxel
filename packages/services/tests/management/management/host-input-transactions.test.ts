@@ -56,6 +56,7 @@ it('guards existing policy actions with the displayed revision and keeps batch s
 	const updatedCatalog = await client.catalog.snapshot()
 	const current = updatedCatalog.statePolicy.managedRevision
 	expect(current).not.toBe(baseline)
+	expect(batch.managedRevision).toBe(current)
 	const stale = { expectedManagedRevision: baseline }
 	const conflict = { ok: false, code: 'revision_conflict', state: 'unchanged' }
 	expect(
@@ -84,6 +85,53 @@ it('guards existing policy actions with the displayed revision and keeps batch s
 	const afterFork = forkCatalog.statePolicy.managedRevision
 	expect(await client.forks.remove(fork, { expectedManagedRevision: afterFork })).toMatchObject({
 		ok: true,
+	})
+})
+
+it('rejects bulk undo after another client changes the policy and preserves that later write', async () => {
+	await using host = await createServiceInternalTestHarness({ workbench: false, management: true })
+	host.add([ManagedOwner, ManagedProvider])
+	await host.commit()
+	using originalRemote = new RpcStub(new RuntimeManagementTargetImpl(host.ctx))
+	using otherRemote = new RpcStub(new RuntimeManagementTargetImpl(host.ctx))
+	const client = createRuntimeManagementClient(originalRemote)
+	const otherClient = createRuntimeManagementClient(otherRemote)
+	const owner = ManagedOwner.nodeAddress()
+	const provider = ManagedProvider.nodeAddress()
+	const before = await client.catalog.snapshot()
+	const batch = await client.plugins.setAutoStart(
+		[owner, provider].map((address) => ({ address, autoStart: true })),
+		{ expectedManagedRevision: before.statePolicy.managedRevision },
+	)
+	expect(batch.ok).toBe(true)
+	if (!batch.managedRevision) throw new Error('Missing original batch policy revision')
+
+	const later = await otherClient.plugins.setAutoStart([{ address: owner, autoStart: false }], {
+		expectedManagedRevision: batch.managedRevision,
+	})
+	expect(later.ok).toBe(true)
+	expect(later.managedRevision).not.toBe(batch.managedRevision)
+	// The refresh can legitimately observe the later client's version before undo is offered.
+	const refreshed = await client.catalog.snapshot()
+	expect(refreshed.statePolicy.managedRevision).toBe(later.managedRevision)
+	const undo = await client.plugins.setAutoStart(
+		[owner, provider].map((address) => ({ address, autoStart: false })),
+		{ expectedManagedRevision: batch.managedRevision },
+	)
+	expect(undo).toMatchObject({
+		ok: false,
+		status: 'rejected',
+		results: [owner, provider].map((address) => ({
+			address,
+			ok: false,
+			code: 'revision_conflict',
+			state: 'unchanged',
+		})),
+	})
+	expect(await client.policy.get()).toMatchObject({
+		ok: true,
+		managedRevision: later.managedRevision,
+		managedInput: { autoStart: [provider] },
 	})
 })
 

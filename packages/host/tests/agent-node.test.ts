@@ -1,8 +1,18 @@
-import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import {
+	BasePlugin,
+	Plugin,
+	parsePluginDefinitionReference,
+	parsePluginNodeAddress,
+} from '@pluxel/core'
+import { createInspectionBackend } from '@pluxel/rolldown/inspect'
+import { compileScript } from '@pluxel/rolldown/scripts'
+import { createNodeScriptOwner } from '@pluxel/host/agent/node'
 import { expect, it } from 'vitest'
 import { createHost } from '../src/index'
 import { hashScriptSource, type ScriptArtifact } from '../src/agent-runtime'
-import { createNodeScriptOwner } from '../src/agent/node'
 
 const schema = {
 	'~standard': {
@@ -40,6 +50,144 @@ async function artifact(code: string): Promise<ScriptArtifact> {
 	}
 }
 const subject = 'admin:alice'
+
+it('runs compiled uploaded source lookup through an explicitly installed backend without evaluating author code', async () => {
+	const hostRoot = fileURLToPath(new URL('../', import.meta.url))
+	const source = [
+		"import { BasePlugin, Plugin } from '@pluxel/core'",
+		"export const AuthorSchema = (() => { throw new Error('SCHEMA_MUST_NOT_EXECUTE') })()",
+		'@Plugin()',
+		'export class AuthorPlugin extends BasePlugin {',
+		'  settings = this.configs.use(AuthorSchema)',
+		'}',
+		"throw new Error('PLUGIN_MUST_NOT_EXECUTE')",
+	].join('\n')
+	const prefix = source.slice(0, source.indexOf('class AuthorPlugin')).split('\n')
+	const declarationStart = { line: prefix.length, column: prefix.at(-1)!.length + 1 }
+	await mkdir(join(hostRoot, '.tmp'), { recursive: true })
+	const directory = await mkdtemp(join(hostRoot, '.tmp/node-inspection-'))
+	try {
+		const files = {
+			'package.json': JSON.stringify({ private: true, type: 'module' }),
+			'tsconfig.json': JSON.stringify({ extends: `${hostRoot}/tsconfig.json` }),
+			'author/plugin.ts': source,
+			'author/application.ts': [
+				"import { defineHostApplication } from '@pluxel/host'",
+				"import { AuthorPlugin } from './plugin'",
+				"throw new Error('APPLICATION_MUST_NOT_EXECUTE')",
+				'export default defineHostApplication(() => ({ plugins: [AuthorPlugin] }))',
+			].join('\n'),
+			'task.ts': `
+import type { PluginNodeAddress } from '@pluxel/core'
+import type { Script } from '@pluxel/host/agent'
+export default (async (sdk, run) => sdk.plugin(run.input as PluginNodeAddress).inspect({
+  include: ['config', 'inputs'],
+})) satisfies Script
+`,
+		}
+		for (const [name, contents] of Object.entries(files)) {
+			const file = join(directory, name)
+			await mkdir(dirname(file), { recursive: true })
+			await writeFile(file, contents)
+		}
+		await mkdir(join(directory, 'node_modules/@pluxel'), { recursive: true })
+		for (const name of ['core', 'host'])
+			await symlink(
+				join(hostRoot, '..', name),
+				join(directory, `node_modules/@pluxel/${name}`),
+				'dir',
+			)
+		await using host = await createHost({
+			plugins: [],
+			runtime: { documents: { config: false, state: false } },
+		})
+		await host.start()
+		const code = await compileScript({ file: join(directory, 'task.ts') })
+		const input = parsePluginNodeAddress({
+			definition: parsePluginDefinitionReference('source:app/plugin.ts::AuthorPlugin'),
+			variant: 'default',
+		})
+		const installation = {
+			ctx: host.ctx,
+			inspection: createInspectionBackend({
+				root: directory,
+				application: { root: 'author', entry: 'application.ts' },
+			}),
+		}
+		await using owner = createNodeScriptOwner(installation)
+		installation.inspection = async () => {
+			throw new Error('Caller mutation must not replace the installed source backend')
+		}
+		await owner.executor.submit({ runId: 'author-source', code, input }, subject)
+		expect(await owner.executor.settled('author-source', subject)).toMatchObject({
+			state: 'succeeded',
+			hostEpoch: owner.hostEpoch,
+			value: {
+				status: 'ok',
+				value: {
+					root: directory,
+					revision: expect.any(String),
+					source: {
+						content: 'current-disk',
+						environment: 'execution-target',
+						runtimeMatch: 'unverified',
+					},
+					data: {
+						summary: {
+							definition: input.definition,
+							declaration: {
+								file: join(directory, 'author/plugin.ts'),
+								start: declarationStart,
+								end: { line: 6, column: 2 },
+							},
+						},
+						sections: {
+							config: {
+								status: 'complete',
+								value: {
+									declarations: [
+										{
+											fieldName: 'settings',
+											schema: {
+												expression: 'AuthorSchema',
+												declaration: { file: join(directory, 'author/plugin.ts') },
+											},
+										},
+									],
+								},
+							},
+							inputs: {
+								status: 'complete',
+								value: {
+									application: {
+										root: join(directory, 'author'),
+										entry: join(directory, 'author/application.ts'),
+									},
+									config: null,
+									bindings: [],
+								},
+							},
+						},
+					},
+				},
+			},
+		})
+		await using withoutSource = createNodeScriptOwner({ ctx: host.ctx })
+		await withoutSource.executor.submit({ runId: 'no-source-backend', code, input }, subject)
+		expect(await withoutSource.executor.settled('no-source-backend', subject)).toMatchObject({
+			state: 'succeeded',
+			value: {
+				status: 'error',
+				error: {
+					code: 'inspection_unavailable',
+					reason: { code: 'inspection_backend_unavailable' },
+				},
+			},
+		})
+	} finally {
+		await rm(directory, { recursive: true, force: true })
+	}
+})
 
 it('executes a portable task on a real Host and creates fresh module locals on every run', async () => {
 	await using host = await createHost({

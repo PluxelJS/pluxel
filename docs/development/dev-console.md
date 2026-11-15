@@ -5,6 +5,8 @@ description: 在当前 Vite 模块图中执行普通 TypeScript，访问真实�
 
 项目脚本由目标 Vite 的现有 ModuleRunner 加载。它与应用共享 Plugin constructor、能力 token 和模块身份。配置、插件、策略与日志使用 [Script SDK](./scripts.md)，异步控制操作统一返回 Better Result。`sdk.plugin(Constructor.nodeAddress())` 按当前实现选择节点，并通过 `.instance()` 借用受守卫的实例；通过 `pluxel dev sync` 取得[控制类型与配置源码描述](./plugin-control.md)后，生成提供者的 `.nodeAddress()` 通过同一入口提供准确配置类型。脱离 Vite 的部署使用同一 SDK 的上传执行。
 
+同一引用的 `await sdk.plugin(Constructor.nodeAddress()).inspect()` 默认定位作者声明；`include` / `partPath` 扩展到 Part、Schema、依赖和应用输入。Vite 自动绑定所选应用的源码后端，返回目标环境的当前磁盘位置。位置与运行版本、离线查询及缺少源码的处理见[查询插件源码](./inspection.md)。
+
 ## 推荐工作流程
 
 ```sh
@@ -86,7 +88,7 @@ vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"测试待�
 
 `sdk.plugin(Constructor.nodeAddress())` 的状态、生命周期、动态配置和实例获取都在同一 committed 操作内核对 constructor 身份。HMR 替换实现后，原引用返回 `stale_target`；重新 import 当前实现再选择。同一实现 restart 后可用原引用重新取得新 generation，旧实例视图失效。fork 使用 `Constructor.nodeAddress('east')`，它保留相同实现证据，选择不会物化节点。引用和原业务成员的寿命见[实例调用](./plugin-control.md#调用原插件实例)。
 
-源码 class 的地址保留实例签名与精确实现证据。Schema 输入、输出及 Part 配置树由生成控制入口的地址关联，因此 class 地址提供管理与实例操作，配置使用生成提供者的地址。动态发现得到的普通节点地址提供未知字段的配置操作，由脚本自行检查。
+源码 class 的地址保留实例签名与精确实现证据，配置使用未知字段的动态类型。生成控制入口额外关联 Schema 输入、输出及 Part 配置树；需要准确字段类型时使用生成提供者的地址。动态发现得到的普通节点地址同样提供动态配置操作，由脚本自行检查。
 
 通过 `sdk.dev.ctx.require(Token)` 访问应用已安装的能力。脚本借用 root，自己创建的订阅、RPC lease 和原生资源由脚本通过 `using`、`await using` 或 `try/finally` 释放；直接业务调用显式传递 `run.signal` 并 await 结算。通用 SDK 接纳的操作由执行内核跟踪并排空。
 

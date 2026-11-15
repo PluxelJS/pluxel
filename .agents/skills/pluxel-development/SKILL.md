@@ -5,7 +5,7 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 
 # Pluxel 开发
 
-先读项目 `AGENTS.md`、目标包 scripts 与已安装版本。已知文件或符号直接查源码；需要确认 Plugin/Part 声明和应用绑定时用 inspect。只展开本次任务所需章节。
+先读项目 `AGENTS.md`、目标包 scripts 与已安装版本。已知文件或符号直接查源码；已有 SDK 时用 `sdk.plugin(nodeAddress).inspect()` 定位声明，再按需查询 Part、配置和应用绑定。离线查询使用 `openProject()`。只展开本次任务所需章节。
 
 ## 入口与职责
 
@@ -23,7 +23,7 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 | 装配应用或服务                          | `host/configuration.md`；扩展服务读 `host/services.md`，不要混用生产应用、独立 Host 与 test host API                                                             |
 | 插件状态、偏好或有界结构化记录          | `plugin-development/tinybase.md`；使用原生 Store，Host 托管恢复与保存；部署配置继续使用 `configs.use()`                                                          |
 | 插件文件、后端或文档保存                | `plugin-development/fs.md`；Host 后端与 config/state 接线读 `host/configuration.md` 对应章节，保留原生 errno 和完整提交                                          |
-| 查声明、配置绑定与源码位置              | `development/inspection.md`；定向请求所需 sections，显式选择 application；先检查 complete/partial/unavailable，缺口不等于不存在                                  |
+| 查声明、配置绑定与源码位置              | `development/inspection.md`；SDK 的 `plugin(address).inspect()` 默认只查声明，扩展使用 include/partPath；离线 `openProject()` 显式选择 application               |
 | 验证插件依赖、配置或生命周期            | `plugin-development/testing.md`；使用真实 lowering 的 `@pluxel/test`，显式安装所需服务并释放 test host；普通函数用普通测试                                       |
 | 部署应用的自动化脚本                    | `development/scripts.md`；普通 `Script`、CLI 编译上传、原 receipt 查询与取消；目标必须显式授权脚本执行                                                           |
 | 取得插件类型、配置源码与业务实例        | `development/plugin-control.md`；`./control`、材料同步、`sdk.plugin(Provider.nodeAddress())`、配置、实例及 JSDoc；外部类型依赖使用匹配版本                       |
@@ -33,6 +33,8 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 | CLI、构建/HMR、包导出或发布             | `development/tooling.md`、`development/plugin-package.md`；跨包职责查 `reference/package-matrix.md`                                                              |
 
 框架内部维护按仓库 `AGENTS.md` → `engineering/README.md` 选择领域。表格是路由，不是通读清单；已明确契约、所有者、调用方和验证方式后开始修改。
+
+源码查询返回当前磁盘位置与执行环境。按指南检查 Result、section 状态和 source 元数据，再由该环境的编辑器或 agent 打开文件。Vite 使用所选实例的应用声明；应用无法启动、需要选择其他 application 或反查文件归属时使用离线查询。
 
 ## 需要运行应用时
 

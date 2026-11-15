@@ -9,7 +9,8 @@ import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { pluginDefinitionIndexKey } from '@pluxel/core'
-import { host } from '../dist/index.mjs'
+import { openProject } from '@pluxel/rolldown/inspect'
+import { host } from '@pluxel/host-vite'
 
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 const require = createRequire(new URL('../package.json', import.meta.url))
@@ -166,7 +167,7 @@ export default defineHostApplication(() => ({
 			return status.hmr.observedRevision > before.hmr.observedRevision && status
 		}, `${file} must reach HMR admission`)
 	}
-	async function script(name = 'inspect.ts', expectedState = 'succeeded') {
+	async function script(name = 'inspect.ts', expectedState = 'succeeded', exportName = 'default') {
 		const file = join(root, name)
 		const bytes = await readFile(file)
 		const runId = randomUUID()
@@ -177,7 +178,7 @@ export default defineHostApplication(() => ({
 				kind: 'project',
 				file,
 				sourceHash: createHash('sha256').update(bytes).digest('hex'),
-				exportName: 'default',
+				exportName,
 			},
 		})
 		const outcome = await result(runId)
@@ -201,6 +202,25 @@ export default defineHostApplication(() => ({
 			),
 		)
 		return outcome
+	}
+	function assertLocation(report, index, code, environment = 'execution-target') {
+		assert.equal(report.root, root)
+		assert.deepEqual(report.source, {
+			content: 'current-disk',
+			environment,
+			runtimeMatch: 'unverified',
+		})
+		assert.deepEqual(report.data.summary.definition, address(index).definition)
+		const position = (offset) => {
+			const lines = code.slice(0, offset).split('\n')
+			return { line: lines.length, column: lines.at(-1).length + 1 }
+		}
+		assert.deepEqual(report.data.summary.declaration, {
+			file: sourcePath(index),
+			start: position(code.indexOf('class Probe extends BasePlugin')),
+			end: position(code.lastIndexOf('}') + 1),
+		})
+		assert.deepEqual(report.data.sections, {})
 	}
 	try {
 		await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
@@ -267,7 +287,33 @@ export const metrics = (globalThis as unknown as Record<string, FixtureMetrics>)
 		)
 		await writeFile(
 			join(root, 'stale.ts'),
-			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { metrics } from './metrics.ts'; export default ((sdk) => { if (!metrics.savedConstructor) throw new Error('Missing saved constructor'); return sdk.plugin(metrics.savedConstructor.nodeAddress()).instance() }) satisfies ProjectScript",
+			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { metrics } from './metrics.ts'; export default ((sdk) => { if (!metrics.savedConstructor) throw new Error('Missing saved constructor'); return sdk.plugin(metrics.savedConstructor.nodeAddress()).instance() }) satisfies ProjectScript; export const locate = ((sdk) => { if (!metrics.savedConstructor) throw new Error('Missing saved constructor'); return sdk.plugin(metrics.savedConstructor.nodeAddress()).inspect() }) satisfies ProjectScript",
+		)
+		await writeFile(
+			join(root, 'locate.ts'),
+			`
+import type { ProjectScript } from '@pluxel/host-vite/project';
+import { Probe } from './entries/probe-0.entry.ts';
+export default (async (sdk) => {
+	const discovered = await sdk.plugins.list({ definition: Probe.definitionAddress() });
+	if (discovered.isErr()) return discovered;
+	const selected = discovered.value.nodes[0];
+	if (!selected) throw new Error('Missing discovered Probe');
+	const dynamic = await sdk.plugin(selected.address).inspect();
+	if (dynamic.isErr()) return dynamic;
+	const source = await sdk.plugin(Probe.nodeAddress()).inspect();
+	if (source.isErr()) return source;
+	const page = await sdk.plugins.list({ limit: 200 });
+	if (page.isErr()) return page;
+	const locations = [];
+	for (const node of page.value.nodes) {
+		const located = await sdk.plugin(node.address).inspect();
+		if (located.isErr()) return located;
+		locations.push(located.value);
+	}
+	return { discovered: discovered.value, dynamic: dynamic.value, source: source.value, locations };
+}) satisfies ProjectScript;
+`,
 		)
 		await Promise.all(
 			Array.from({ length: count }, (_, index) =>
@@ -342,6 +388,7 @@ export const metrics = (globalThis as unknown as Record<string, FixtureMetrics>)
 			control,
 			writeObserved,
 			script,
+			assertLocation,
 		})
 	} finally {
 		metrics.gate?.release.resolve()
@@ -390,15 +437,41 @@ await scenario(
 		control,
 		writeObserved,
 		script,
+		assertLocation,
 	}) => {
 		const initial = await inspect()
 		assert.equal(initial.application.state, 'ready')
 		assert.ok(initial.capabilities.includes('plugins.control-materials'))
+		assert.ok(initial.capabilities.includes('plugin.inspect'))
 		assert.equal(metrics.evaluations.length, count)
 		assert.equal(metrics.starts.length, count)
 		const initialRead = await script()
 		assert.equal(initialRead.state, 'succeeded', JSON.stringify(initialRead))
 		assert.equal(initialRead.value, 0)
+		const initialLocation = await script('locate.ts')
+		assert.equal(initialLocation.value.discovered.nodes.length, 1)
+		assert.equal(initialLocation.value.discovered.nextCursor, null)
+		assert.deepEqual(initialLocation.value.dynamic, initialLocation.value.source)
+		assertLocation(initialLocation.value.dynamic, 0, source(0, 0))
+		assert.equal(initialLocation.value.locations.length, count)
+		assert.equal(
+			new Set(
+				initialLocation.value.locations.map((located) =>
+					pluginDefinitionIndexKey(located.data.summary.definition),
+				),
+			).size,
+			count,
+		)
+		for (const located of initialLocation.value.locations) {
+			const index = Array.from({ length: count }, (_, candidate) => candidate).find(
+				(candidate) =>
+					pluginDefinitionIndexKey(located.data.summary.definition) ===
+					pluginDefinitionIndexKey(address(candidate).definition),
+			)
+			assert.notEqual(index, undefined)
+			assertLocation(located, index, source(index, 0))
+		}
+		assert.equal(metrics.evaluations.length, count, 'source queries must not evaluate project code')
 		const initialMaterial = await material()
 		assert.equal(initialMaterial.definition.contracts.config, null)
 		const savedConstructor = await script('save.ts')
@@ -427,6 +500,17 @@ await scenario(
 		const freshDirty = await script('fresh.ts', 'failed')
 		assert.equal(freshDirty.state, 'failed')
 		assert.equal(freshDirty.error.code, 'hmr_pending')
+		const dirtyLocation = await script('locate.ts', 'failed')
+		assert.equal(dirtyLocation.error.code, 'hmr_pending')
+		let offlineLocation
+		{
+			await using project = await openProject({ root })
+			offlineLocation = await project.plugin(address(0).definition, {
+				application: { root, entry: 'app.ts' },
+			})
+		}
+		assertLocation(offlineLocation, 0, source(0, 1), 'query-process')
+		assert.notEqual(offlineLocation.revision, initialLocation.value.dynamic.revision)
 		assert.equal(
 			metrics.evaluations.length,
 			count,
@@ -464,10 +548,23 @@ await scenario(
 		const firstRead = await script()
 		assert.equal(firstRead.state, 'succeeded', JSON.stringify(firstRead))
 		assert.equal(firstRead.value, 1)
+		const appliedLocation = await script('locate.ts')
+		assertLocation(appliedLocation.value.dynamic, 0, source(0, 1))
+		assert.deepEqual(appliedLocation.value.dynamic, appliedLocation.value.source)
+		assert.equal(appliedLocation.value.dynamic.revision, offlineLocation.revision)
+		assert.notEqual(appliedLocation.value.dynamic.revision, initialLocation.value.dynamic.revision)
+		assert.equal(
+			metrics.evaluations.length,
+			count + 1,
+			'source queries must reuse the live module graph',
+		)
 		const staleRead = await script('stale.ts')
 		assert.equal(staleRead.state, 'succeeded')
 		assert.equal(staleRead.value.status, 'error')
 		assert.equal(staleRead.value.error.code, 'stale_target')
+		const staleLocation = await script('stale.ts', 'succeeded', 'locate')
+		assert.equal(staleLocation.value.status, 'error')
+		assert.equal(staleLocation.value.error.code, 'stale_target')
 		const sequence = applied.application.latestUpdate.sequence
 		const unchanged = await control('apply')
 		assert.equal(unchanged.application.latestUpdate.sequence, sequence)

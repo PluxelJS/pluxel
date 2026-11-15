@@ -8,6 +8,7 @@ import { executeHostScript } from './execute'
 import { ScriptExecutor } from './runtime'
 import { ScriptExecutionError, type ScriptArtifact } from './protocol'
 import type { Script } from './sdk-types'
+import type { ScriptInspectionBackend } from './inspection-backend'
 
 export type NodeScriptOwner = Readonly<{
 	instanceId: string
@@ -25,8 +26,11 @@ export function createNodeScriptOwner(
 		/** Omitted identities are generated once for this owner, never recovered across process restarts. */
 		instanceId?: string
 		hostEpoch?: string
+		/** Borrow a source environment's read-only analyzer. Omitted means source lookup is unavailable. */
+		inspection?: ScriptInspectionBackend
 	}>,
 ): NodeScriptOwner {
+	const { ctx, inspection } = options
 	const instanceId = options.instanceId ?? randomUUID()
 	const hostEpoch = options.hostEpoch ?? randomUUID()
 	const executor = new ScriptExecutor({
@@ -65,7 +69,13 @@ export function createNodeScriptOwner(
 						`Export ${artifact.exportName} is not a function`,
 					)
 				return await executeHostScript(
-					{ ctx: options.ctx, id: input.runId, input: input.input, script: script as Script },
+					{
+						ctx,
+						id: input.runId,
+						input: input.input,
+						script: script as Script,
+						inspection,
+					},
 					run,
 				)
 			} catch (error) {

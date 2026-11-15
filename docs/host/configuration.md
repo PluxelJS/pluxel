@@ -143,7 +143,7 @@ export default defineHostApplication(async (startup) => {
 
 源码 class、生成控制入口与动态发现返回的地址可以用于同一节点配置。名称只用于展示，实际选择包含 canonical entry、具名导出及 default/fork。静态构建或动态加载不会为同一入口另造身份。
 
-当前 Host 的节点通过 `sdk.plugins.list()` 发现，包括可用但尚未启动的节点；按完整入口选择后复用它的 `address`。取得有类型的控制入口使用 `dev sync` / `script sync` 返回的准确模块与导出名，见[插件发现与控制](../development/plugin-control.md#动态安装后的发现与操作)。配置声明保存地址的身份字段，采用 catalog 中的当前实现。
+当前 Host 的节点通过 `sdk.plugins.list({ packageName })` 或 `{ definition }` 定向分页发现，包括可用但尚未启动的节点；按页的 `nextCursor` 继续查询，选定后直接复用它的 `address`。已有地址则使用 `sdk.plugin(address)`。分页规则与有类型控制入口的 `dev sync` / `script sync` 用法见[插件发现与控制](../development/plugin-control.md#动态安装后的发现与操作)。配置声明保存地址的身份字段，采用 catalog 中的当前实现。
 
 ---
 

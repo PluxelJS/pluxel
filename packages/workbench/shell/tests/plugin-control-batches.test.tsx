@@ -45,6 +45,7 @@ const statuses = [controlStatus(first), controlStatus(second)]
 const applied: PluginControlBatchResult = {
 	ok: true,
 	status: 'applied',
+	managedRevision: 'policy:test:1',
 	results: [appliedControl(first), appliedControl(second)],
 }
 const failures: ReadonlyArray<{
@@ -305,6 +306,26 @@ describe('plugin control batch notifications', () => {
 		expect(notify.mock.calls[1]![0]).toMatchObject({ title: '已恢复原策略', color: 'green' })
 		expect(JSON.parse(notify.mock.calls[1]![0].diagnosticText!)).toEqual(applied)
 		expect(setAutoStart).toHaveBeenCalledTimes(2)
+	})
+
+	it('keeps the original batch revision when the refresh observes another client write', async () => {
+		const conflict = failures.find(({ label }) => label === 'revision conflict')!.batch
+		const { client, setAutoStart, snapshot } = clientDouble(applied)
+		snapshot.mockResolvedValue(controlCatalog(statuses, 'policy:test:2'))
+		setAutoStart.mockResolvedValueOnce(applied).mockResolvedValueOnce(conflict)
+		const container = await mountControls(client)
+		await click(container, '.plx-pluginCatalog__body button')
+		await click(container, 'button[aria-label="关闭自动启动"]')
+		expect(snapshot).toHaveBeenCalled()
+		const undo = await mount(notify.mock.calls[0]![0].message)
+		await click(undo, 'button[aria-label="恢复原自动启动策略"]')
+
+		expect(setAutoStart).toHaveBeenLastCalledWith(
+			statuses.map(({ address }) => ({ address, autoStart: true })),
+			{ expectedManagedRevision: applied.managedRevision },
+		)
+		expect(notify.mock.calls[1]![0]).toMatchObject({ title: '策略恢复被拒绝', color: 'red' })
+		expect(JSON.parse(notify.mock.calls[1]![0].diagnosticText!)).toEqual(conflict)
 	})
 
 	it('reports undo transport failure without resubmitting it', async () => {

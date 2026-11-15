@@ -36,7 +36,7 @@ import {
 } from '../config'
 import { createHostPolicy } from '../policy-management'
 import { requireHostStateStore } from '../host'
-import { hostPluginStatusOverviewFromView, hostPluginStatusFromView } from '../status'
+import { hostPluginStatusFromView } from '../status'
 import { readHostPluginLifecycleIssues } from '../diagnostics'
 import { readHostRecentUpdates } from '../recent-update'
 import {
@@ -50,7 +50,14 @@ import {
 } from '../coordinator'
 import type { HostConfigStore } from '../config-store'
 import type { HostPolicyField, HostPolicyInput } from '../policy'
-import type { ScriptPlugin, ScriptSdk } from './sdk-types'
+import type { ScriptPlugin, ScriptSdk, ScriptInspectionOptions } from './sdk-types'
+import type { Inspection, InspectionPluginReport, InspectionPluginSection } from './inspection'
+import type { ScriptInspectionBackend } from './inspection-backend'
+import {
+	captureScriptPluginListOptions,
+	scriptPluginList,
+	type ScriptPluginListOptions,
+} from './discovery'
 import { normalizePluginTarget } from './control-target'
 import { createPluginInstanceView } from './instance-view'
 import {
@@ -72,6 +79,7 @@ import {
 	type ScriptInstanceError,
 	type ScriptLifecycleError,
 	type ScriptLogError,
+	type ScriptInspectionError,
 } from './sdk-results'
 
 export class ScriptScopeError extends Error {
@@ -109,9 +117,13 @@ export interface ScriptScope extends AsyncDisposable {
 
 /** Borrow a started Host. No Services, compiler, transport, log backend or new root is installed. */
 export function createScriptScope(
-	options: Readonly<{ ctx: RootContext; signal?: AbortSignal }>,
+	options: Readonly<{
+		ctx: RootContext
+		signal?: AbortSignal
+		inspection?: ScriptInspectionBackend
+	}>,
 ): ScriptScope {
-	const { ctx, signal } = options
+	const { ctx, signal, inspection } = options
 	const coordinator = requirePluginHostCoordinator(ctx)
 	const state = requireHostStateStore(ctx)
 	const policy = createHostPolicy(ctx, state)
@@ -468,6 +480,79 @@ export function createScriptScope(
 		})
 		return Object.freeze({
 			address,
+			inspect: async (
+				input: ScriptInspectionOptions & {
+					readonly include?: readonly InspectionPluginSection[]
+				} = {},
+			) => {
+				if (!input || typeof input !== 'object' || Array.isArray(input))
+					throw new TypeError('Inspection query options must be an object')
+				// Capture caller-owned arrays before this scope's asynchronous admission.
+				// The backend remains responsible for validating analysis options.
+				const query = {
+					...input,
+					...(Array.isArray(input.include) ? { include: input.include.slice() } : {}),
+					...(Array.isArray(input.partPath) ? { partPath: input.partPath.slice() } : {}),
+				}
+				const querySignal = input.signal
+					? AbortSignal.any([controller.signal, input.signal])
+					: controller.signal
+				return (implementation ? queued : run)(
+					async (): Promise<
+						Result<
+							Inspection<InspectionPluginReport<readonly InspectionPluginSection[]>>,
+							ScriptInspectionError
+						>
+					> => {
+						querySignal.throwIfAborted()
+						if ('application' in query)
+							return Result.err({
+								code: 'invalid_input',
+								message:
+									'A script query uses its execution target application; use openProject() to select another application.',
+								context: {},
+							})
+						// Constructor evidence is checked against the original Host, without
+						// projecting its status inventory or holding its commit lock during IO.
+						if (implementation)
+							await coordinator.readCommitted(({ catalog }) => assertImplementation(catalog), {
+								signal: querySignal,
+							})
+						if (!inspection)
+							return Result.err({
+								code: 'inspection_unavailable' as const,
+								message: 'This execution target has no source inspection backend.',
+								reason: {
+									code: 'inspection_backend_unavailable',
+									message:
+										'Use openProject() in the source workspace, or install a source backend on this target. Control declarations and build artifacts are not author source.',
+								},
+							})
+						const result = await inspection(node.definition, {
+							...query,
+							signal: querySignal,
+						})
+						if (result.isErr()) {
+							if (result.error.code === 'aborted' && querySignal.aborted)
+								return Result.err(runError(querySignal.reason, querySignal))
+							return result
+						}
+						return Result.ok(
+							Object.freeze({
+								...result.value,
+								source: Object.freeze({
+									...result.value.source,
+									environment: 'execution-target' as const,
+								}),
+							}),
+						)
+					},
+					(error) =>
+						querySignal.aborted && error === querySignal.reason
+							? runError(error, querySignal)
+							: targetError(error),
+				)
+			},
 			status: () =>
 				queued(
 					() =>
@@ -501,22 +586,33 @@ export function createScriptScope(
 	const sdk = Object.freeze({
 		plugin,
 		plugins: Object.freeze({
-			list: () =>
-				queued(
-					() =>
-						coordinator.readCommitted(
-							(view) =>
-								Result.ok(
-									Object.freeze({
-										nodes: hostPluginStatusOverviewFromView(statusView(view)).statuses,
-										catalogRevision: view.catalog.revision,
-										runtimeStateRevision: view.runtimeState.revision,
-									}),
-								),
-							admission,
-						),
-					operationError,
-				),
+			list: (input?: ScriptPluginListOptions) => {
+				let query: ReturnType<typeof captureScriptPluginListOptions> | undefined
+				let queryError: unknown
+				try {
+					query = captureScriptPluginListOptions(input)
+				} catch (error) {
+					queryError = error
+				}
+				return queued(() => {
+					// Keep invalid-input rejection in the same tracked operation and
+					// preserve closed-scope admission without retaining caller objects.
+					if (!query) throw queryError
+					const captured = query
+					return coordinator.readCommitted(
+						(view) =>
+							scriptPluginList(
+								coordinator,
+								{
+									...statusView(view),
+									runtimeStateRevision: view.runtimeState.revision,
+								},
+								captured,
+							),
+						admission,
+					)
+				}, operationError)
+			},
 		}),
 		policy: Object.freeze({
 			get: () =>

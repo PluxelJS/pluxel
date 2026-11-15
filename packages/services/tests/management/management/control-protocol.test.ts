@@ -571,6 +571,27 @@ describe('runtime web control protocol', () => {
 		expect(requirePluginHostCoordinator(host.ctx).catalogSnapshot().byDefinition.size).toBe(1)
 	})
 
+	it('preserves a portable unchanged rejection for malformed auto-start options', async () => {
+		await using host = await createServiceInternalTestHarness({ workbench: false })
+		host.add(ManagedPlugin)
+		await host.commit()
+		const rpc = new RuntimeManagementTargetImpl(host.ctx)
+		const revision = requireHostStateStore(host.ctx).managedRevision()
+		const result = await rpc.setPluginAutoStartDto(
+			[{ address: ManagedPlugin.nodeAddress(), autoStart: true }],
+			{ expectedManagedRevision: 42 },
+		)
+		expect(parsePluginControlBatchResult(JSON.parse(JSON.stringify(result)))).toEqual({
+			ok: false,
+			status: 'rejected',
+			code: 'invalid_input',
+			state: 'unchanged',
+			error: 'Invalid managed input options',
+			results: [],
+		})
+		expect(requireHostStateStore(host.ctx).managedRevision()).toBe(revision)
+	})
+
 	it('returns closed invalid-input results for every Plugin RPC boundary', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 

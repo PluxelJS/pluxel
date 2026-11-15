@@ -75,9 +75,9 @@ export default (async (sdk, run) => {
 
 ## 插件、策略、更新与日志
 
-`plugins.list()` 返回一次发现快照，成功值为 `{ nodes, catalogRevision, runtimeStateRevision }`。`nodes` 提供节点地址、期望与实际状态、诊断和最近更新；两个 revision 分别描述已接纳的定义集合与运行意图。`sdk.plugin(Provider.nodeAddress())` 固定默认节点，`Provider.nodeAddress(id)` 选择已声明的 fork，随后通过引用的 `status/start/stop/restart` 操作节点。启停成功值为应用报告；报告存在生命周期或协调问题时返回 `lifecycle_failed`，错误携带完整 `report`，保留已提交的变化。生成地址保留的类型关联还提供 `instance()`，成功值直接是本次运行的业务实例视图，方法与资源寿命见[实例调用](./plugin-control.md#调用原插件实例)。
+`plugins.list(options?)` 返回有界发现页，成功值为 `{ nodes, catalogRevision, runtimeStateRevision, nextCursor }`。`nodes` 提供节点地址、期望与实际状态、诊断和最近更新；两个 revision 分别描述已接纳的定义集合与运行意图。按 package / definition 定向查询及分页规则见[动态发现](./plugin-control.md#动态安装后的发现与操作)。`sdk.plugin(Provider.nodeAddress())` 固定默认节点，`Provider.nodeAddress(id)` 选择已声明的 fork，随后通过引用的 `status/start/stop/restart` 操作节点。同一引用的 `inspect()` 用于[查询作者源码](./inspection.md)，目标需要提供源码后端。启停成功值为应用报告；报告存在生命周期或协调问题时返回 `lifecycle_failed`，错误携带完整 `report`，保留已提交的变化。生成地址保留的类型关联还提供 `instance()`，成功值直接是本次运行的业务实例视图，方法与资源寿命见[实例调用](./plugin-control.md#调用原插件实例)。
 
-包管理器动态新增的插件在 Host 接纳后同样出现在列表中，尚未启动也能发现。对成功值的 `nodes` 用普通数组 `filter` 按包入口、具名导出与 fork 筛选，再将完整节点地址传给 `sdk.plugin()`。尚无类型时，先同步当前材料再编写强类型业务调用；流程与 class import 的使用条件见[动态安装后的发现与操作](./plugin-control.md#动态安装后的发现与操作)。
+包管理器动态新增的插件在 Host 接纳后同样可发现，尚未启动也能查询。默认通过 `sdk.plugins.list({ packageName })` 定向发现包，已知完整 definition 时传 `{ definition }`；按页的 `nextCursor` 继续查询，再按节点的 default/fork 选择，将返回的完整 `address` 直接交给 `sdk.plugin()`。已有地址无需先列举。分页、材料同步与 class import 的使用条件见[动态安装后的发现与操作](./plugin-control.md#动态安装后的发现与操作)。
 
 `policy.get/validate/patch/reset` 管理 Host 执行策略，修改使用相同的 `expectedManagedRevision` 条件。策略结果会区分已保存策略与需要重建 Host 才采用的设置。`updates.latest()` 读取 Host 最近一次更新报告，没有记录时返回 `null`。
 

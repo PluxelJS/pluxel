@@ -13,6 +13,7 @@ const execFile = promisify(execFileCallback)
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 const UNSELECTED_BACKEND_LOAD_PATTERN =
 	/\/node_modules\/(?:@logtape\/(?:file|pretty)|capnweb|@pluxel\/workbench)(?:\/|$)|\/management(?:\/|[-.])/
+const BARE_CONSOLE_SERVICE_LOAD_PATTERN = /\/node_modules\/@pluxel\/services(?:\/|$)/
 const UNSELECTED_SQL_LOAD_PATTERN =
 	/\/node_modules\/(?:drizzle-(?:orm|kit)|pg(?:-pool)?|@electric-sql\/pglite)(?:\/|$)/
 
@@ -20,9 +21,19 @@ it('does not confuse a pnpm peer suffix with a loaded optional module', () => {
 	const packageUrl =
 		'file:///tmp/node_modules/.pnpm/@pluxel+services@file+services.tgz_capnweb@0.12.0/node_modules/@pluxel/services/dist/vault.mjs'
 	expect(UNSELECTED_BACKEND_LOAD_PATTERN.test(packageUrl)).toBe(false)
+	expect(BARE_CONSOLE_SERVICE_LOAD_PATTERN.test(packageUrl)).toBe(true)
+	const bareConsoleUrl =
+		'file:///tmp/node_modules/.pnpm/@pluxel+host@file+host.tgz_capnweb@0.12.0/node_modules/@pluxel/host/dist/index.mjs'
+	expect(UNSELECTED_BACKEND_LOAD_PATTERN.test(bareConsoleUrl)).toBe(false)
+	expect(BARE_CONSOLE_SERVICE_LOAD_PATTERN.test(bareConsoleUrl)).toBe(false)
 	expect(
 		UNSELECTED_BACKEND_LOAD_PATTERN.test(
 			'file:///tmp/node_modules/.pnpm/capnweb@0.12.0/node_modules/capnweb/dist/index.js',
+		),
+	).toBe(true)
+	expect(
+		UNSELECTED_BACKEND_LOAD_PATTERN.test(
+			'file:///tmp/node_modules/.pnpm/@pluxel+workbench@file+workbench.tgz/node_modules/@pluxel/workbench/dist/server.mjs',
 		),
 	).toBe(true)
 	expect(
@@ -1017,20 +1028,24 @@ const bareConsoleConsumer = `
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 const hook = registerHooks({ load(url, context, next) {
- if (/@pluxel[+/](?:services|workbench)|capnweb/.test(url)) {
+ if (${UNSELECTED_BACKEND_LOAD_PATTERN}.test(url) || ${BARE_CONSOLE_SERVICE_LOAD_PATTERN}.test(url)) {
   throw new Error('Bare development console loaded an optional service: ' + url)
  }
  return next(url, context)
 } })
 const { createHost } = await import('@pluxel/host')
-const { createScriptScope } = await import('@pluxel/host/agent')
+const { createScriptScope } = await import('@pluxel/host/agent/runtime')
 const host = await createHost({ plugins: [] })
 await host.start()
 const scope = createScriptScope({ ctx: host.ctx })
 try {
  assert.equal(host.ctx, host.ctx)
  assert.equal(typeof host.ctx.logger.info, 'function')
- assert.deepEqual((await scope.sdk.plugins.list()).unwrap(), [])
+ const page = (await scope.sdk.plugins.list()).unwrap()
+ assert.deepEqual(page.nodes, [])
+ assert.equal(page.nextCursor, null)
+ assert.equal(typeof page.catalogRevision, 'number')
+ assert.equal(typeof page.runtimeStateRevision, 'number')
  const missing = { definition: { entry: { kind: 'package-root', packageName: '@test/missing' }, exportName: 'Missing' }, variant: 'default' }
  assert.equal((await scope.sdk.plugin(missing).config.get()).isErr(), true)
 } finally {

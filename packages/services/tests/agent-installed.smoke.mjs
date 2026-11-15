@@ -327,7 +327,7 @@ async function main() {
 		const queried = await cli(['result', first.receipt])
 		assert.equal(queried.run.runId, first.run.runId)
 		assert.equal(queried.run.requestHash, first.run.requestHash)
-		await writeFile(join(author, 'failure.ts'), failure)
+		await writeFile(join(author, 'failure.ts'), failure(counter[0].definition))
 		const failed = await cli(['run', 'failure.ts', '--endpoint', ready.endpoint], 1)
 		assert.equal(failed.run.state, 'failed')
 		assert.equal(failed.run.phase, 'execute')
@@ -335,10 +335,15 @@ async function main() {
 			failed.run.error.stack.includes(`${join(author, 'failure.ts')}:5:`),
 			failed.run.error.stack,
 		)
-		await writeFile(join(author, 'query.ts'), query)
+		await writeFile(join(author, 'query.ts'), query(counter[0].definition))
 		const afterFailure = await cli(['run', 'query.ts', '--endpoint', ready.endpoint])
 		assert.equal(afterFailure.run.value.status, 'ok')
 		assert.equal(afterFailure.run.value.value.config.count, 11)
+		assert.equal(afterFailure.run.value.value.inspection.code, 'inspection_unavailable')
+		assert.equal(
+			afterFailure.run.value.value.inspection.reason.code,
+			'inspection_backend_unavailable',
+		)
 		await writeFile(join(author, 'wait.ts'), wait)
 		const waiting = await cli([
 			'run',
@@ -471,14 +476,23 @@ export default (async sdk=>{
  return Result.ok({moduleRuns:++moduleRuns,changed:changed.value,conflict:conflict.error,logs:logs.value,business,calls:instance.value.calls,actual:actual.value,lifecycle:lifecycle.value})
 }) satisfies Script
 `
-const failure = `import type {Script} from '@pluxel/host/agent'
+const failure = (definition) => `import type {Script} from '@pluxel/host/agent'
 export default (async sdk=>{
- const listed=await sdk.plugins.list();if(listed.isErr())return listed;const node=listed.value.nodes.find(node=>node.displayName==='Installed counter')!.address
+ const listed=await sdk.plugins.list({definition:${JSON.stringify(definition)}});if(listed.isErr())return listed;const node=listed.value.nodes.find(node=>node.address.variant==='default')!.address
  const saved=await sdk.plugin(node).config.patch({set:{count:11}});if(saved.isErr())return saved
  throw new Error('author failed after committing')
 }) satisfies Script
 `
-const query = `import type {Script} from '@pluxel/host/agent';export default(async sdk=>{const listed=await sdk.plugins.list();if(listed.isErr())return listed;const node=listed.value.nodes.find(node=>node.displayName==='Installed counter')!.address;return sdk.plugin(node).config.get()}) satisfies Script`
+const query = (definition) => `import type {Script} from '@pluxel/host/agent'
+import {Result} from '@pluxel/core/better-result'
+export default(async sdk=>{
+ const listed=await sdk.plugins.list({definition:${JSON.stringify(definition)}});if(listed.isErr())return listed
+ const node=listed.value.nodes.find(node=>node.address.variant==='default');if(!node)throw new Error('Missing discovered Counter')
+ const selected=sdk.plugin(node.address)
+ const config=await selected.config.get();if(config.isErr())return config
+ const inspection=await selected.inspect()
+ return Result.ok({...config.value,inspection:inspection.isErr()?inspection.error:inspection.value})
+}) satisfies Script`
 const wait = `import type {Script} from '@pluxel/host/agent';export default(async sdk=>{const marked=await sdk.logs.mark();if(marked.isErr())return marked;return sdk.logs.wait(marked.value,{timeoutMs:120000,filter:{category:'not-emitted'}})}) satisfies Script`
 
 await main()

@@ -20,8 +20,7 @@ import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
 import { setPluginAutoStarts } from '../pluginStatusActions'
 import { describePluginControlBatchFailure } from '../pluginControlBatchPresentation'
 import { usePluginOverview } from '../pluginOverview'
-import { canWritePluginState, type PluginOverview } from '../pluginOverviewModel'
-import { managementQueryKeys } from '../../managementQuery'
+import { canWritePluginState } from '../pluginOverviewModel'
 import { runtimeErrorMessage, useRuntimeManagementClient } from '../../../runtime'
 import {
 	EMPTY_OVERVIEW,
@@ -338,9 +337,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 					batch.map(({ address }) => ({ address, autoStart })),
 					statePolicy.managedRevision,
 				)
-				const undoRevision = queryClient.getQueryData<PluginOverview>(
-					managementQueryKeys.pluginOverview(),
-				)?.statePolicy.managedRevision
+				const undoRevision = result.managedRevision
 				if (result.ok === false) {
 					notifyAndRecord(
 						describePluginControlBatchFailure(
@@ -364,7 +361,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 										void (async () => {
 											setBulkBusy(true)
 											try {
-												if (!undoRevision) throw new Error('运行策略尚未重新加载，无法恢复')
+												if (!undoRevision) throw new Error('原操作未返回策略版本，无法恢复')
 												const undoResult = await setPluginAutoStarts(
 													management,
 													queryClient,

@@ -75,12 +75,11 @@ type LoadedPackage = { pkg?: WorkspacePackage; semantic: InspectedPluginPackage 
 export async function openProject(openOptions: OpenProjectOptions): Promise<ProjectInspection> {
 	validateObject(openOptions, ['root', 'signal'])
 	const selection = { ...openOptions }
-	if (typeof selection.root !== 'string' || !selection.root.trim())
-		invalid('root must be a non-empty path')
+	const declaredRoot = resolveInspectionRoot(selection.root)
 	checkSignal(selection.signal)
 	let root: string
 	try {
-		root = await realpath(resolve(selection.root))
+		root = await realpath(declaredRoot)
 		await discoverPackages(root, { signal: selection.signal })
 	} catch (cause) {
 		checkSignal(selection.signal)
@@ -135,6 +134,11 @@ export async function openProject(openOptions: OpenProjectOptions): Promise<Proj
 						root,
 						revision: snapshot.revision(),
 						data,
+						source: {
+							content: 'current-disk' as const,
+							environment: 'query-process' as const,
+							runtimeMatch: 'unverified' as const,
+						},
 					}
 					if (Buffer.byteLength(JSON.stringify(result)) > MAX_OUTPUT_BYTES) {
 						throw new InspectionError(
@@ -264,8 +268,13 @@ export async function openProject(openOptions: OpenProjectOptions): Promise<Proj
 						`The selected source does not declare ${address.exportName} at the requested Plugin address.`,
 						{ context: { reference: reference(address) } },
 					)
-				const expanded = occurrences(loaded.semantic, definition, snapshot)
-				if (!expanded.value.some((item) => samePath(item.path, partPath))) {
+				const needsOccurrences =
+					partPath.length > 0 ||
+					include.some((name) => name === 'parts' || name === 'config' || name === 'dependencies')
+				const expanded = needsOccurrences
+					? occurrences(loaded.semantic, definition, snapshot)
+					: { value: [], gaps: [] }
+				if (partPath.length > 0 && !expanded.value.some((item) => samePath(item.path, partPath))) {
 					if (expanded.gaps.length > 0)
 						throw new InspectionError(
 							'analysis_unavailable',
@@ -710,7 +719,14 @@ class Snapshot {
 	}
 }
 
-function copyApplication(
+/** @internal Shared by offline scopes and the Host source-backend binding. */
+export function resolveInspectionRoot(root: string): string {
+	if (typeof root !== 'string' || !root.trim()) invalid('root must be a non-empty path')
+	return resolve(root)
+}
+
+/** @internal Snapshot the same validated application selection before asynchronous admission. */
+export function copyApplication(
 	input: InspectionApplicationSelection | undefined,
 ): InspectionApplicationSelection | undefined {
 	if (input === undefined) return undefined
@@ -848,7 +864,10 @@ function summary(
 function reference(definition: PluginDefinitionAddress): string {
 	return formatPluginNodeReference({ definition, variant: 'default' })
 }
-function definitionTarget(target: PluginDefinitionAddress | string): PluginDefinitionAddress {
+/** @internal Shared target validation and immutable identity snapshot for source queries. */
+export function definitionTarget(
+	target: PluginDefinitionAddress | string,
+): PluginDefinitionAddress {
 	try {
 		if (typeof target !== 'string') return parsePluginDefinitionAddress(target)
 		const node = parsePluginNodeReference(target)

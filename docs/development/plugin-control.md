@@ -60,7 +60,7 @@ const { config } = counter
 const { get, patch } = config
 ```
 
-引用提供 `address`、`status()`、`start()`、`stop()` 和 `restart()`。选择 fork 使用 `Counter.nodeAddress('east')`，同样交给 `sdk.plugin()`。
+引用提供 `address`、`status()`、`start()`、`stop()` 和 `restart()`。同一引用的 `inspect()` 按 definition [定位作者源码](./inspection.md)，源码可用性由目标环境决定。选择 fork 使用 `Counter.nodeAddress('east')`，同样交给 `sdk.plugin()`。
 
 `sdk.plugin(counter.address)` 保留原有类型与调用证据，可以在另一个 run 中重新选择。新引用的寿命属于新 run，保存地址不会延长旧引用或实例的寿命。
 
@@ -94,26 +94,24 @@ const { get, patch } = config
 
 [包管理器](../plugins/package-manager.md)将安装结果发布到配置的目录来源。Vite 接纳相应 HMR 批次后，新 definition 进入当前 catalog；Native 运行时按其 `next-start` 规则在下次启动加载。安装回执、Host 接纳和插件启动分别核对。
 
-使用 `sdk.plugins.list()` 读取 `{ nodes, catalogRevision, runtimeStateRevision }` 快照，再用普通数组 `filter` 缩小候选。两个 revision 分别描述 catalog 与运行状态；跨调用关联同步材料时核对 catalog revision，变化后重新读取。列表包括已接纳但尚未启动的 default 节点、已配置的 forks，以及仍被配置引用的不可用节点。以下脚本查找指定包的可用插件：
+使用 `sdk.plugins.list({ packageName })` 定向发现包中的节点，已知完整 definition 时使用 `{ definition }`；已有节点地址则直接 `sdk.plugin(address)`。成功值为 `{ nodes, catalogRevision, runtimeStateRevision, nextCursor }`。列表包括已接纳但尚未启动的 default 节点、已配置的 forks，以及仍被配置引用的不可用节点。以下脚本返回指定包的一页可用插件：
 
 ```ts
 import type { Script } from '@pluxel/host/agent'
 
 export default (async (sdk) => {
-	const nodes = await sdk.plugins.list()
-	if (nodes.isErr()) return nodes
-	return nodes.value.nodes.filter(({ address, availability }) => {
-		const { entry } = address.definition
-		return (
-			availability === 'available' &&
-			entry.kind !== 'source-entry' &&
-			entry.packageName === '@acme/pluxel-plugin-counter'
-		)
-	})
+	const page = await sdk.plugins.list({ packageName: '@acme/pluxel-plugin-counter' })
+	if (page.isErr()) return page
+	return {
+		...page.value,
+		nodes: page.value.nodes.filter(({ availability }) => availability === 'available'),
+	}
 }) satisfies Script
 ```
 
-筛选在目标 Host 的脚本内执行，客户端收到脚本返回的结果。一个包可以提供多个具名插件，每个 definition 也可以有多个节点；继续按完整入口、`exportName` 和 `variant` / `forkId` 选择。对选定节点调用 `sdk.plugin(node.address)` 即可读配置、启停；运行状态为 stopped 时也可发现它。业务实例需要先启动节点。
+每页默认 50 项，`limit` 最大 200；未指定筛选的 `list()` 同样只返回一页。将非空 `nextCursor` 原样交给相同查询的下一次 `list({ ..., cursor })`，直到返回 null。cursor 可以在同一 Host 的后续 run 中继续，不保留资源；Host 被替换、查询、catalog/runtime revision 或节点身份序列变化时返回 `cursor_stale`，从第一页重查。每页重新读取当前运行状态，跨页不是一个 Host 事务，不缓存先前页的状态。两个 revision 保持各自领域含义；跨调用关联同步材料时核对 catalog revision，变化后重新读取。
+
+一个包可以提供多个同名导出入口，每个 definition 也可以有多个节点；按完整 `definition` 和 `variant` / `forkId` 选择，不能只按展示名判断。对选定节点调用 `sdk.plugin(node.address)` 即可查询声明、读配置或启停；运行状态为 stopped 时也可发现它。业务实例需要先启动节点。
 
 要查看安装清单，读取 PackageManagerPlugin 原生 `snapshot()` 的 `packages`。Host 列表以插件节点为单位，安装包可以包含零个或多个插件；`execution.kind === 'vite'` 且 `execution.origin === 'source'` 表示 Vite 动态来源，也包含其他目录来源。
 

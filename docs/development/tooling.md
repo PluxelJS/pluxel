@@ -14,7 +14,8 @@ Pluxel CLI（`@pluxel/cli`）是贯穿工作区初始化、代码生成、构建
 - **数据库迁移维护**：`pluxel database generate/check/rebase`（见 [数据库开发](../plugin-development/database.md)）
 - **应用发行物打包与校验**：`pluxel distribution create/inspect/verify`
 - **发布 npm 包并同步市场**：`pluxel publish --webhook`
-- **开发控制台与 HMR 批次管理**：`pluxel dev status/hmr/run/result/cancel`（见 [开发控制台](./dev-console.md)）
+- **开发控制台与 HMR 批次管理**：`pluxel dev status/instances/hmr/run`；凭原 receipt 查询和取消使用 `pluxel script result/cancel`（见 [开发控制台](./dev-console.md)）
+- **从插件地址查询作者源码**：项目脚本使用 `sdk.plugin(nodeAddress).inspect()`；离线工作区查询见 [Inspection](./inspection.md)
 - **本地多仓联调管理**：`pluxel source register/list/unregister/doctor/build/install`
 - **工作区依赖治理与 Catalog 同步**：`pluxel pncat add/remove/migrate/clean` 与 `pluxel workspace sync`
 

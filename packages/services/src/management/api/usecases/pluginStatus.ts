@@ -16,6 +16,7 @@ import {
 	HostPolicyMutationRejectedError,
 	type HostPluginGraphExclusiveSession,
 	requirePluginHostCoordinator,
+	requireHostStateStore,
 	hostStatePatch,
 	projectPluginApplyReport,
 	pluginLifecycleUpdate,
@@ -148,9 +149,15 @@ export async function setAutoStart(
 					Promise.resolve(mutationFailure(address, error)),
 				)
 			}
-			return runBatch(parsed.items, ({ address, autoStart }) =>
+			const result = await runBatch(parsed.items, ({ address, autoStart }) =>
 				setOneAutoStart(ctx, address, autoStart, session),
 			)
+			// Capture the managed-policy token before releasing the batch's exclusive admission.
+			// A later catalog refresh can already include another client's policy write.
+			return Object.freeze({
+				...result,
+				managedRevision: requireHostStateStore(ctx).managedRevision(),
+			})
 		},
 		options,
 	)

@@ -10,6 +10,7 @@
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
 | 工作区工具、提交检查、开发服务                   | [工作区工具链](docs/development/workspace-toolchain.md)；检查涉及的 mise.toml、vite.config.ts、hk.pkl、pitchfork.toml 与已有服务    |
 | 插件业务、配置、日志                             | [插件开发](docs/plugin-development/index.md)选择目标主题                                                                            |
+| 插件发现、声明与源码位置                         | [源码查询](docs/development/inspection.md)；已有 SDK 用 `sdk.plugin(nodeAddress).inspect()`，离线用 `openProject()`                 |
 | 应用装配、部署、服务扩展                         | [Host 配置](docs/host/configuration.md)对应章节，扩展再读 host/services                                                             |
 | Workbench 导航、布局或视觉                       | [交互设计](engineering/WORKBENCH_DESIGN.md)、[Frontend](engineering/FRONTEND.md)                                                    |
 | 文档编写与组织                                   | [文档职责](engineering/DOCUMENTATION.md)                                                                                            |
@@ -19,7 +20,7 @@
 | 在线操作                                         | [开发控制台](docs/development/dev-console.md)                                                                                       |
 | 隔离回归                                         | [插件测试](docs/plugin-development/testing.md)；测试设施内部读[工程测试](engineering/TESTING.md)                                    |
 
-先满足本任务必读约束，链接按相关性展开，未变化的文档不重读。明确修改点、契约、所有者、调用方和验证方式后开始实现；事实冲突或未知跨域影响再补查。普通查找用 `rg` 与 exports；inspect 用于声明与应用绑定，不代替任意 import 分析。
+先满足本任务必读约束，链接按相关性展开，未变化的文档不重读。明确修改点、契约、所有者、调用方和验证方式后开始实现；事实冲突或未知跨域影响再补查。普通查找用 `rg` 与 exports；inspect 查询声明与应用绑定，源码位置属于执行查询的环境，当前磁盘与运行接纳版本的关系见源码查询指南。
 
 ## 仓库约束
 

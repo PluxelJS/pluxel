@@ -4,15 +4,23 @@ import { openLocalWorkbenchEntry, WorkbenchHost } from '@pluxel/workbench/server
 import { consumeWorkbenchValue, readWorkbenchLayout } from '@pluxel/workbench/client'
 import { RpcStub } from 'capnweb'
 import { BotWorkspacePlugin } from '../src/bot-lab/BotWorkspacePlugin'
-import { DiscordBotPlugin } from '../src/bot-lab/BotSources'
+import { TelegramBotPlugin, DiscordBotPlugin, WeComBotPlugin } from '../src/bot-lab/BotSources'
 import { BotWorkspaceWorkbench } from '../src/bot-lab/BotWorkspace.workbench'
 
 const principal = { provider: 'development-console', subject: 'bot-lab-validation' }
 
 /** Read the real aggregator, provider lifecycles, and target-scoped publications. */
 export default (async (sdk) => {
-	const plugins = await sdk.plugins.list()
-	if (plugins.isErr()) return plugins
+	const providers = []
+	for (const address of [
+		TelegramBotPlugin.nodeAddress(),
+		DiscordBotPlugin.nodeAddress(),
+		WeComBotPlugin.nodeAddress(),
+	]) {
+		const provider = await sdk.plugin(address).status()
+		if (provider.isErr()) return provider
+		if (provider.value) providers.push(provider.value)
+	}
 	const workspace = sdk.plugin(BotWorkspacePlugin.nodeAddress())
 	const status = await workspace.status()
 	if (status.isErr()) return status
@@ -26,11 +34,7 @@ export default (async (sdk) => {
 		const layout = await readWorkbenchLayout(target, { target: owner.address })
 		return Result.ok({
 			owner,
-			providers: plugins.value.nodes.filter((plugin) =>
-				['TelegramBotPlugin', 'DiscordBotPlugin', 'WeComBotPlugin'].includes(
-					plugin.rootExportName ?? '',
-				),
-			),
+			providers,
 			snapshot: instance.value.snapshot(),
 			entries: layout.entries.map(({ descriptor, placement }) => ({
 				key: descriptor.key,

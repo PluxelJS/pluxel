@@ -61,6 +61,7 @@ describe('create-pluxel', () => {
 			'host/src/app.ts',
 			'host/vite.config.ts',
 			'host/web/vite.config.ts',
+			'host/web/dev/inspect.ts',
 			'host/web/src/client/main.tsx',
 		]) {
 			assert.equal(

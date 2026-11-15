@@ -156,6 +156,7 @@ export async function startProjectScriptServer(options: {
 					capabilities: [
 						'plugins',
 						'plugin',
+						'plugin.inspect',
 						'plugin.instance',
 						'plugin.config',
 						'policy',

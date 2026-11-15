@@ -52,6 +52,7 @@ async function fixture() {
 	const host = { ctx: application.ctx, epoch: 'first' }
 	const attachment = await attachProjectScripts({
 		server: { config: { root } } as ViteDevServer,
+		applicationEntry: file,
 		getHost: () => ({ ...host }),
 		prepare: async () => {},
 	})

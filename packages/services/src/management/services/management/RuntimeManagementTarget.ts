@@ -614,6 +614,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 				ok: false,
 				status: 'rejected',
 				code: 'invalid_input',
+				state: 'unchanged',
 				error: 'Invalid managed input options',
 				results: [],
 			}

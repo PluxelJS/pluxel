@@ -12,7 +12,7 @@ description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联�
 1. 分别克隆消费应用仓库与 Pluxel 框架源码仓库。
 2. 在 Pluxel 仓库根目录下构建 CLI：
    ```sh
-   vp run @pluxel/cli#build
+   vp run @pluxel/cli#compile
    ```
 3. 将构建生成的 `packages/cli/bin/pluxel.mjs` 通过符号链接加入系统 PATH 或作为全局指令调用。
 
@@ -54,6 +54,8 @@ pluxel source doctor
 
 - `source install` 会在消费工程中生成专用的 `.pnpmfile.cjs` 与 `.pluxel/` 覆盖目录，将外部依赖自动指向本地源码的构建输出。
 - 该覆盖文件属于本地调试资产，需加入 `.gitignore`。
+
+`source doctor` 检查已声明的源码接线与开发资源；构建产物更新由 `source build` 完成。定位插件声明使用[源码查询](./inspection.md)，地址与查询结果中的工作区共同确定源码来源。
 
 <span id="何时重新安装或构建"></span>
 

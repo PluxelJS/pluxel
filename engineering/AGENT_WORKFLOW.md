@@ -35,6 +35,10 @@ Host 持有插件图、配置来源和原始输入、版本、运行意图及生
 
 作者入口只导出类型。可移植 runtime 入口的依赖闭包不包含 Node builtin、Vite、Services、编译器或平台加载器。transport 和 socket 分别从叶子入口选择。无官方 Services 的已启动 Host 可以直接使用 `createScriptScope({ ctx, signal })`。
 
+`sdk.plugin(address).inspect()` 的数据与请求类型由 Host 作者入口声明，`ScriptInspectionBackend` 从 runtime 入口提供宿主接线合同。`createScriptScope` / `executeHostScript` 借用可选 `inspection` 后端，按同一 scope 接纳、传递合并 signal 并排空查询；它们不关闭后端所属 Host。`createNodeScriptOwner` 将显式选择的同一后端转交执行内核；未提供后端返回 `inspection_unavailable`。Vite 固定本实例 application 后安装 Rolldown 的 `createInspectionBackend`；Node/远端默认不安装编译器。分析实现、源码解析与离线资源继续由 [Toolchain](TOOLCHAIN.md#offline-plugin-inspection) 拥有。
+
+源码查询只使用 definition，default/fork 共用声明，不读取或投影全局运行状态。class 地址仅在短 committed read 中核对原实现，文件 IO 在锁外进行。返回 source 明示 `current-disk`、`execution-target` 与 `runtimeMatch: unverified`；源码 revision 不能充当运行版本证明。生成控制材料的兼容性仍由原领域操作检查。
+
 ## scope 的接纳和结算
 
 `createScriptScope` 借用原 Host 和本次 signal，返回 SDK、`assertOpen`、`abort`、`dispose` 和版本 `snapshot`，并实现 `AsyncDisposable`。`Symbol.asyncDispose` 与 `dispose()` 使用同一个幂等结算 Promise，供 `await using` 或显式关闭使用。`sdk.plugin(nodeAddress)` 同步选择并检查 scope，其余 Host 操作在 scope 中接纳并跟踪 Promise；缓存的工厂、引用和配置方法同样检查是否关闭。scope 不拥有 Host，也不释放 root Context。引用的类型关联与生成声明由 [Plugin Control](PLUGIN_CONTROL.md#typed-配置与实例)维护。
@@ -44,6 +48,8 @@ Host 持有插件图、配置来源和原始输入、版本、运行意图及生
 `snapshot()` 在 scope 关闭后仍可读取 Host 版本，供结算后的 `revisions.after` 使用。它包含 catalog/runtime state 的 revision，以及配置/策略各自的 managed revision。版本差异提供核对线索，单步结果仍以领域报告为准。
 
 SDK 的日志方法复用 Core Logging 的 stream、cursor、retention、gap 和等待订阅。`streams()` 只列出已配置历史流；`mark()` 可以创建尚未写入的已配置空流；缺少后端返回明确能力诊断。读取单批最多 10000 条，等待必须指定有限 timeout。scope 不新建 Logging sink，也不接管生产者寿命。
+
+`plugins.list` 复用 Host status 的身份枚举与状态投影，先按 package / 完整 definition 过滤、分页，再投影选中节点。默认 50、最大 200。cursor 绑定 coordinator 寿命、查询、catalog/runtime revision 和身份序列，允许同一 Host 的后续 run 接续；没有跨查询缓存。这些输入变化返回 `cursor_stale`，调用方从第一页重新读取；每页状态仍按当次 committed view 投影。
 
 开发扩展从同一 scope 添加 Context 借用。源码 class 通过 `sdk.plugin(Constructor.nodeAddress())` 接入原成员视图，精确实现证据随地址保留，身份校验和生命周期变更属于同一个 committed 操作，见 [Dev Console](DEV_CONSOLE.md#操作-api-与资源)。原生资源由创建它的脚本按原协议释放。
 

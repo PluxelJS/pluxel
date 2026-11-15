@@ -17,6 +17,13 @@ import type {
 	ScriptInstanceError,
 	ScriptOperationError,
 	ScriptLogError,
+	Inspection,
+	InspectionPluginReport,
+	InspectionPluginSection,
+	InspectionSection,
+	InspectionSectionData,
+	ScriptInspectionError,
+	ScriptInspectionOptions,
 } from '@pluxel/host/agent'
 import type { HostConfigMutation, HostPluginConfigResultOk } from '@pluxel/host'
 import * as v from 'valibot'
@@ -454,6 +461,48 @@ expectTypeOf<Parameters<ScriptSdk['logs']['wait']>[1]>().toEqualTypeOf<
 >()
 // @ts-expect-error The existing finite log wait deadline stays required.
 void sdk.logs.wait(cursor, { filter: { plugin: Counter.nodeAddress() } })
+
+const declarationOnly = await counterRef.inspect()
+expectTypeOf(declarationOnly).toEqualTypeOf<
+	Result<Inspection<InspectionPluginReport<readonly []>>, ScriptInspectionError>
+>()
+if (declarationOnly.isOk()) {
+	expectTypeOf(declarationOnly.value.data.summary.declaration.file).toEqualTypeOf<string>()
+	// @ts-expect-error The lightweight default has no unrequested sections.
+	void declarationOnly.value.data.sections.config
+}
+const { inspect } = counterRef
+const configAndParts = await inspect({ include: ['config', 'parts'], partPath: ['worker'] })
+expectTypeOf(configAndParts).toEqualTypeOf<
+	Result<Inspection<InspectionPluginReport<readonly ['config', 'parts']>>, ScriptInspectionError>
+>()
+if (configAndParts.isOk()) {
+	expectTypeOf(configAndParts.value.data.sections.config).toEqualTypeOf<
+		InspectionSection<InspectionSectionData['config']>
+	>()
+	// @ts-expect-error Requested sections stay distinct from unrequested application inputs.
+	void configAndParts.value.data.sections.inputs
+}
+declare const dynamicSections: readonly InspectionPluginSection[]
+const dynamicInspection = await inspect({ include: dynamicSections })
+if (dynamicInspection.isOk())
+	expectTypeOf(dynamicInspection.value.data.sections.parts).toEqualTypeOf<
+		InspectionSection<InspectionSectionData['parts']> | undefined
+	>()
+declare const optionalSections: ScriptInspectionOptions & { include?: readonly ['config'] }
+const optionalInspection = await inspect(optionalSections)
+if (optionalInspection.isOk())
+	expectTypeOf(optionalInspection.value.data.sections.config).toEqualTypeOf<
+		InspectionSection<InspectionSectionData['config']> | undefined
+	>()
+expectTypeOf(sdk.plugin(address).inspect).toEqualTypeOf<typeof inspect>()
+expectTypeOf(sdk.plugin(CounterPlugin.nodeAddress()).inspect).toEqualTypeOf<typeof inspect>()
+expectTypeOf(sdk.plugin(NoConfig.nodeAddress()).inspect).toEqualTypeOf<typeof inspect>()
+void selectedFork.inspect({ include: ['inputs'], signal: new AbortController().signal })
+// @ts-expect-error The execution target fixes its application; a caller cannot redirect it.
+void inspect({ application: { root: '/other', entry: 'app.ts' } })
+// @ts-expect-error Reuse compiler section names instead of adding parallel inspection options.
+void inspect({ include: ['schemas'] })
 
 export default (async (api, run) => {
 	run.signal.throwIfAborted()

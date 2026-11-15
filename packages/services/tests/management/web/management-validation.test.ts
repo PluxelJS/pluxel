@@ -345,6 +345,13 @@ describe('management protocol validation', () => {
 			const batch = summarizePluginControlBatch(results)
 			expect(batch).toEqual({ ok, status, results })
 			expect(parsePluginControlBatchResult(JSON.parse(JSON.stringify(batch)))).toEqual(batch)
+			const versioned = { ...batch, managedRevision: 'policy:test:7' }
+			expect(parsePluginControlBatchResult(JSON.parse(JSON.stringify(versioned)))).toEqual(
+				versioned,
+			)
+			expect(() => parsePluginControlBatchResult({ ...batch, managedRevision: 7 })).toThrow(
+				RuntimeProtocolValidationError,
+			)
 			for (const wrong of [
 				'applied',
 				'applied-with-issues',

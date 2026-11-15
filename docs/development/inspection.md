@@ -1,115 +1,115 @@
 ---
 title: 查询插件源码
-description: 用 TypeScript 定位插件、Part、配置声明与应用输入，帮助 coding agent 找到修改位置和验证入口。
+description: 从标准插件地址定位声明、Part、Schema、依赖和应用输入，区分目标环境的磁盘源码与已接纳运行版本。
 ---
 
-在修改或重构插件前，可以通过 `@pluxel/rolldown/inspect` 提供的静态代码分析接口，快速获取工作区内所有插件、Part 组成结构、配置项定义及宿主环境变量绑定。查询过程基于 AST 静态分析，直接输出纯 JSON 数据与精确的源码位置（文件绝对路径及行列号），无需启动应用或执行实际业务代码。
+已有 Script SDK 时，使用 `sdk.plugin(nodeAddress).inspect()`。它按地址中的 definition 查询作者声明，默认只返回 summary 和声明文件、行列；default 与 fork 指向同一份声明。生成控制入口、当前源码 class 和动态发现的地址使用相同写法。
 
-## 场景速查
+尚无地址时，通过 `sdk.plugins.list({ packageName })` 取得有界发现页，再把所选 `node.address` 直接交给 `sdk.plugin()`。分页、按完整 definition 筛选与同步类型材料见[动态发现](./plugin-control.md#动态安装后的发现与操作)。
 
-| 查询目标                       | 推荐调用方式                                                          |
-| :----------------------------- | :-------------------------------------------------------------------- |
-| 查询某个特定 npm 包内的插件    | `plugins({ packageName })` 获取定义后，调用 `plugin()` 深入分析       |
-| 查询具体插件的完整结构         | `plugin(reference, { include: ['parts', 'config', 'dependencies'] })` |
-| 根据文件反查归属插件           | `file(path)`，返回引用了该文件的插件及 Part 列表                      |
-| 定位宿主环境变量与配置文件映射 | `plugin(..., { application, include: ['inputs', 'config'] })`         |
-| 浏览工作区项目概览             | `overview()` 列出所有子包与可用脚本                                   |
+## 从插件地址定位源码
 
-## 查询子包中的插件定义
+在所选 Vite root 的脚本目录中编写普通项目脚本：
 
-在工程中创建 `dev/inspect.mts`：
+```ts no-twoslash
+import type { ProjectScript } from '@pluxel/host-vite/project'
+import { TodoPlugin } from '@example/todo-plugin'
+
+export default (async (sdk) => {
+	const report = await sdk.plugin(TodoPlugin.nodeAddress()).inspect()
+	if (report.isErr()) return report
+	return report.value
+}) satisfies ProjectScript
+```
+
+```sh
+pluxel dev status
+pluxel dev run host/web/dev/inspect.ts
+```
+
+Vite 为同一个 ScriptSdk / ProjectSdk 安装源码后端，固定所选实例的 Vite root 与实际 application entry。查询复用离线静态分析器，不求值项目模块、Schema 或应用工厂。脚本本身仍由现有控制台加载、检查和执行，选择 profile、保存 receipt 与 HMR 流程见[开发控制台](./dev-console.md)。
+
+`report.value` 包含 `root`、`revision`、`data.summary`、`data.sections` 与 `source`：
+
+```ts no-twoslash
+const { file, start, end } = report.value.data.summary.declaration
+// start/end: { line, column }；均从 1 开始，column 按 UTF-16 计数，end 不包含在范围内。
+// 文件由拥有该环境的编辑器或 agent 打开；inspect 只读，不打开编辑器。
+```
+
+`source.content: 'current-disk'` 表示本次实际读取的磁盘内容；`source.environment: 'execution-target'` 表示路径属于执行目标进程。服务端绝对路径需要在服务端工作区中使用，不能当成客户端可编辑文件。离线查询使用 `environment: 'query-process'`，路径属于运行查询脚本的环境。`root` 是该次查询固定的观察根目录，源码可以来自其解析到的其他工作区或安装包。
+
+`source.runtimeMatch: 'unverified'` 明确表示尚未核对运行版本。`revision` 标识观察到的源码及解析选择；catalog revision、managed revision 与 generation 各有自己的含义。HMR 暂停后磁盘可以领先于运行实例。项目脚本在存在未应用更新时返回 `hmr_pending`；这时可离线查询磁盘，完成修改和检查后再 apply、核对报告并重新查询。查询过程中已读取的文件发生变化会返回 `source_changed`。
+
+作者源码通过正式 package source conditions 或 canonical source-space 解析。`.d.ts` 控制声明和普通构建 JavaScript 不会被当成作者源码；缺少可用源码时保留具体诊断。远程与静态部署默认未安装源码后端，返回 `inspection_unavailable`，其 reason 为 `inspection_backend_unavailable`。同步控制材料提供类型和调用证据，源码查询仍需要独立的作者材料。
+
+## 按需查询 Part、Schema、依赖和应用输入
+
+扩展查询沿用同一引用的 `include`、`partPath` 和 `signal`：
+
+```ts no-twoslash
+const selected = sdk.plugin(TodoPlugin.nodeAddress())
+const report = await selected.inspect({
+	include: ['parts', 'config', 'dependencies', 'inputs', 'checks'],
+})
+if (report.isErr()) return report
+const config = report.value.data.sections.config
+if (config.status === 'unavailable') return config
+return config.value.declarations
+```
+
+- `parts` 返回 occurrence 路径、Part 声明和挂载位置。
+- `config` 返回 Plugin / Part 配置字段、Schema 使用与定义位置，不执行默认值或转换。
+- `dependencies` 返回 required / optional definition 地址、provider 关系和声明来源。
+- `inputs` 返回所选应用的 config 表达式和 env/file bindings，不读取部署值。fork binding 保留 forkId；内容属于整个 definition。
+- `checks` 返回所属 package 声明的 scripts，查询不会执行这些命令。
+
+`partPath: ['delivery', 'retry']` 缩小 parts、config 和 dependency origins；依赖全集及 inputs 仍描述整个 Plugin。Section 的 `complete` 表示请求范围内分析完整，`partial` 保留可用值与 `gaps`，`unavailable` 保留 `reason`。未知表达式不能解释成空列表或不存在。
+
+SDK 返回共享 Better Result。已知分析失败保留原 `code`、`message`、`context`；section gaps 和 unavailable 数据原样返回。旧 class 的实现证据在 HMR 替换后返回 `stale_target`，重新导入当前 class；动态身份可继续查询当前磁盘。长查询接受 signal，scope 关闭会撤回接纳并等待已接纳的查询及其资源结算。关闭后的调用返回 `scope_closed`，取消返回 `cancelled`；未知实现缺陷继续 reject。
+
+## 应用无法启动、跨工作区和文件反查
+
+没有可用 Host，或需要显式选择另一个 application、发现工作区声明、反查文件时，使用独立的 `@pluxel/rolldown/inspect`。它直接运行在 Node 环境，应用或 Schema 即使抛错也无需执行：
 
 ```ts no-twoslash
 import { openProject } from '@pluxel/rolldown/inspect'
 
 await using project = await openProject({ root: '/workspace/my-app' })
-
-// 查询指定包中的插件导出
-const plugins = await project.plugins({ packageName: '@example/mail' })
-console.log(JSON.stringify(plugins, null, 2))
-```
-
-直接通过 Node.js 执行：
-
-```sh
-node dev/inspect.mts
-```
-
-- `openProject` 会自动解析 `pnpm-workspace.yaml` 中的子包成员列表。
-- `plugins()` 会返回指定包暴露的具体 Plugin 类名与抽象依赖定义。
-
-## 提取插件全量元数据
-
-获取到插件定义后，可一次性提取其 Part 拓扑、配置项 Schema 与外部依赖关系：
-
-```ts no-twoslash
-if (plugins.data.status !== 'unavailable') {
-	const selected = plugins.data.value.items.find((p) => p.exportName === 'MailPlugin')
-	if (selected) {
-		const report = await project.plugin(selected.definition, {
-			include: ['parts', 'config', 'dependencies', 'checks'],
-		})
-		console.log(JSON.stringify(report, null, 2))
-	}
-}
-```
-
-各 Section 数据内容说明：
-
-- `parts`：按挂载路径展开的所有 Part 实例、类声明代码位置及依赖；
-- `config`：插件及各 Part 声明的配置字段、Schema 表达式及其原始定义位置；
-- `dependencies`：当前插件必需（required）与可选（optional）的外部插件依赖列表；
-- `checks`：该包在 `package.json` 中配置的构建、测试与类型检查 scripts；
-- `inputs`：宿主应用中针对该插件配置的环境变量映射（Env Bindings）与配置文件路径（需指定 `application`）。
-
-若仅需分析某个深层 Part，可通过 `partPath` 进行精准过滤：
-
-```ts no-twoslash
-const report = await project.plugin('package:@example/mail::MailPlugin', {
-	partPath: ['delivery', 'retry'],
-	include: ['config', 'dependencies'],
-})
-```
-
-## 定位宿主应用的输入与环境映射
-
-通过传入宿主应用的入口配置，可静态追踪该插件在具体应用中的环境变量与配置参数绑定：
-
-```ts no-twoslash
-const report = await project.plugin('package:@example/mail::MailPlugin', {
+const plugins = await project.plugins({ packageName: '@example/mail', limit: 50 })
+if (plugins.data.status === 'unavailable') throw new Error(plugins.data.reason.message)
+const selected = plugins.data.value.items.find(
+	(p) => p.definition.entry.kind === 'package-root' && p.exportName === 'MailPlugin',
+)
+if (!selected) throw new Error('MailPlugin was not found in this page')
+const report = await project.plugin(selected.definition, {
+	include: ['config', 'inputs'],
 	application: { root: 'host', entry: 'src/app.ts' },
-	include: ['config', 'inputs', 'checks'],
 })
-
-const inputs = report.data.sections.inputs
-if (inputs.status === 'complete' || inputs.status === 'partial') {
-	console.log('配置字段位置:', inputs.value.config)
-	console.log('环境变量/文件绑定:', inputs.value.bindings)
-}
+console.log(JSON.stringify(report, null, 2))
 ```
 
-- `bindings`：返回每项环境映射的声明代码行、对应的环境变量名称（如 `SMTP_PORT`）或本地配置文件路径。
+保存为 `dev/inspect.mts` 后运行 `node dev/inspect.mts`。发现结果中的完整 `definition` 直接用于后续查询；同名导出按完整 entry 区分。已知地址时直接传 definition，省去发现步骤。
 
-## 根据文件反查关联插件
+`openProject({ root })` 固定观察工作区。每次查询读取当前磁盘并创建新的 resolver，不保留跨查询缓存。`application` 固定该次查询的解析来源；package 从其 entry 上下文解析，source-space 使用显式 `sourceSpaces` 映射。source-entry 和 `inputs` 查询要求显式 application；纯 package 查询省略它时使用观察工作区。离线解析使用原生 resolver 与正式源码条件，自定义 Vite alias/hook 不能据此推断。
 
-已知某份配置文件或工具代码时，可通过 `file()` 反查属于哪些插件：
+`project.plugins({ packageName, limit, cursor })`、`overview({ limit, cursor })` 与 `file(path, { limit, cursor })` 默认每页 50，最多 200。继续读取 `nextCursor`，源码或查询改变后旧 cursor 返回 `cursor_stale`。`overview()` 同时给出 package scripts；`file('plugins/mail/src/schema.ts')` 在公开 Plugin 声明范围内反查 declaration、Part 和 Schema 归属。它们不扩大到任意 import 影响分析。
+
+独立 API 以 `InspectionError` 报告查询级失败；SDK 后端只在其边界转换一次 Result。调用方通过 `await using` 关闭离线 scope；关闭拒绝新查询并排空已接纳工作。它不拥有 Host 或应用资源。
+
+自定义同进程 Host 确实持有作者源码时，可以在原 Node 执行 owner 中显式安装同一后端。以下代码接在现有 Host 启动之后，owner 借用 Host，并在释放时排空自己的运行：
 
 ```ts no-twoslash
-const owners = await project.file('plugins/mail/src/retry-config.ts')
-console.log(JSON.stringify(owners, null, 2))
+import { createNodeScriptOwner } from '@pluxel/host/agent/node'
+import { createInspectionBackend } from '@pluxel/rolldown/inspect'
+
+await using owner = createNodeScriptOwner({
+	ctx: host.ctx,
+	inspection: createInspectionBackend({
+		root: '/workspace/my-app',
+		application: { root: 'host', entry: 'src/app.ts' },
+	}),
+})
 ```
 
-返回包含该文件的 Plugin 声明、Part 声明或共享配置 Schema。
-
-<span id="读取结果"></span>
-<span id="读取结果和处理变化"></span>
-
-## 结果状态与数据契约
-
-返回的 `Inspection` 数据对象中包含 `root`、`revision` 与 `data`：
-
-- `status: 'complete'`：在当前解析范围内完整提取了所有静态元数据；
-- `status: 'partial'`：已提取部分可用事实，并在 `gaps` 中列出由于动态表达式或外部模块无法静态分析的节点；
-- `status: 'unavailable'`：无法完成该 section 的分析，具体原因记录在 `reason` 字段中。
-
-源码位置均采用绝对路径，行号与列号从 1 开始计数。每次调用均实时重新解析最新代码，修改代码后再次调用即可获得最新结果。
+后端也可作为 `createScriptScope` 或 `executeHostScript` 的 `inspection` 输入，每次查询拥有并释放独立的离线 scope。可移植的 `@pluxel/host/agent` / runtime 本身不加载编译器、Vite 或文件系统；部署 Management 的默认 Node owner 继续不安装源码后端。

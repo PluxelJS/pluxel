@@ -1,7 +1,9 @@
 import { mkdir, symlink, writeFile } from 'node:fs/promises'
 import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
+import { parsePluginDefinitionReference } from '@pluxel/core'
 import {
+	createInspectionBackend,
 	openProject,
 	type InspectionSection,
 	type InspectionSourceLocation,
@@ -74,6 +76,106 @@ async function packageFixture() {
 }
 
 describe('application-aware public Plugin inspection', () => {
+	it('binds a read-only source backend to one application and fixes each admitted query', async () => {
+		await using fixture = await packageFixture()
+		const selection = { root: 'host', entry: 'a.ts' }
+		const backend = createInspectionBackend({ root: fixture.path, application: selection })
+		selection.entry = 'b.ts'
+		const target = parsePluginDefinitionReference(reference)
+		const summary = await backend(target, {})
+		if (summary.isErr()) throw new Error(JSON.stringify(summary.error))
+		expect(summary.value.data.summary.declaration.file).toBe(
+			fixture.getPath('installed/mail/src/index.ts'),
+		)
+		expect(summary.value.data.sections).toEqual({})
+		expect(summary.value.source).toEqual({
+			content: 'current-disk',
+			environment: 'query-process',
+			runtimeMatch: 'unverified',
+		})
+
+		const include: ('parts' | 'config' | 'inputs')[] = ['parts', 'config', 'inputs']
+		const partPath = ['retry']
+		const pending = backend(target, { include, partPath })
+		include.splice(0, include.length, 'inputs')
+		partPath[0] = 'missing'
+		const expanded = await pending
+		if (expanded.isErr()) throw new Error(JSON.stringify(expanded.error))
+		const { sections, summary: declaration } = expanded.value.data
+		expect(Object.keys(sections).sort()).toEqual(['config', 'inputs', 'parts'])
+		expect(selectedText(plugin, declaration.declaration)).toContain('class MailPlugin')
+		const parts = available(sections.parts!)
+		expect(parts.occurrences.map((part) => part.partPath)).toEqual([['retry']])
+		expect(selectedText(plugin, parts.occurrences[0]!.declaration)).toContain('class Retry')
+		const configs = available(sections.config!).declarations
+		expect(configs.map((item) => item.partPath)).toEqual([['retry']])
+		expect(configs[0]!.schema.declaration?.file).toBe(
+			fixture.getPath('installed/mail/src/index.ts'),
+		)
+		expect(selectedText(plugin, configs[0]!.schema.declaration!)).toContain(
+			'SCHEMA_MUST_NOT_EXECUTE',
+		)
+		expect(sections.inputs!.status).toBe('complete')
+		const inputs = available(sections.inputs!)
+		expect(inputs.application.entry).toBe(fixture.getPath('host/a.ts'))
+		expect(inputs.bindings.map((binding) => binding.source)).toEqual([
+			expect.objectContaining({ kind: 'env', name: 'MAIL_A' }),
+			expect.objectContaining({ kind: 'file', path: './private/config.json' }),
+		])
+		expect(selectedText(application('@fixture/mail', 'MAIL_A'), inputs.config!)).toBe(
+			'makeRecords()',
+		)
+	})
+
+	it('keeps backend cancellation and application diagnostics and rejects build-only material', async () => {
+		await using fixture = await packageFixture()
+		expect(() =>
+			createInspectionBackend({ root: '', application: { root: 'host', entry: 'a.ts' } }),
+		).toThrow(expect.objectContaining({ code: 'invalid_input' }))
+		const backend = createInspectionBackend({
+			root: fixture.path,
+			application: { root: 'host', entry: 'a.ts' },
+		})
+		const target = parsePluginDefinitionReference(reference)
+		const overridden = await backend(target, {
+			// @ts-expect-error JavaScript callers cannot redirect a target's source environment.
+			application: { root: 'host', entry: 'b.ts' },
+		})
+		if (overridden.isOk()) throw new Error('Expected the bound application to reject an override')
+		expect(overridden.error).toMatchObject({
+			code: 'invalid_input',
+			message: expect.stringContaining('execution target application'),
+			context: {},
+		})
+		const cancelled = await backend(target, { signal: AbortSignal.abort(new Error('stop query')) })
+		if (cancelled.isOk()) throw new Error('Expected an aborted query to fail')
+		expect(cancelled.error.code).toBe('aborted')
+
+		await mkdir(fixture.getPath('installed/mail/dist'), { recursive: true })
+		await Promise.all([
+			writeFile(
+				fixture.getPath('installed/mail/package.json'),
+				JSON.stringify({
+					name: '@fixture/mail',
+					type: 'module',
+					exports: { '.': { types: './dist/index.d.ts', default: './dist/index.js' } },
+				}),
+			),
+			writeFile(fixture.getPath('installed/mail/dist/index.js'), plugin),
+			writeFile(
+				fixture.getPath('installed/mail/dist/index.d.ts'),
+				`import { BasePlugin } from '@pluxel/core'; export declare class MailPlugin extends BasePlugin {}`,
+			),
+		])
+		const unavailable = await backend(target, { include: ['config'] })
+		if (unavailable.isOk()) throw new Error('Expected build-only material to lack author source')
+		expect(unavailable.error).toMatchObject({
+			code: 'analysis_unavailable',
+			message: expect.stringContaining('a public export must expose executable source'),
+			context: {},
+		})
+	})
+
 	it('resolves from the application, isolates entries, and locates inputs without executing source', async () => {
 		await using fixture = await packageFixture()
 		await using project = await openProject({ root: fixture.path })

@@ -98,7 +98,7 @@ Host 在准备完成后订阅文档变化并补读一次，追平服务准备期
 
 control-plane patch/reset/field mutation 与 fork/catalog mutation 共用 Host coordinator exclusive queue。可选 expectedManagedRevision 在同一队列内先与本 Host、本领域的原始保存版本比较，冲突先于任何副作用。managedRevision 只随原始保存输入改变，与 desired/applied revision 分开；只改被遮盖的保存值不推进目标 revision、不通知 listener。
 
-Management catalog.statePolicy 在同一已提交视图中附上 policy 的 managedRevision；Workbench 原有自动启动、依赖和 fork 动作使用这份显示基线。自动启动批次在一次 exclusive session 中先检查令牌，再逐项提交并同步投影每项 control，不递归接纳队列，也不让第一项写入使自己的后续项冲突。保留原有逐项部分成功契约。
+Management catalog.statePolicy 在同一已提交视图中附上 policy 的 managedRevision；Workbench 原有自动启动、依赖和 fork 动作使用这份显示基线。自动启动批次在一次 exclusive session 中先检查令牌，再逐项提交并同步投影每项 control，不递归接纳队列，也不让第一项写入使自己的后续项冲突。批次返回前在同一独占边界从 HostStateStore 读取最终 managedRevision；Workbench 撤销固定使用原操作返回的令牌，不能从后续列表刷新或 runtimeStateRevision 推断。生命周期批次及准入前拒绝不提供此令牌；令牌本身不证明持久化或生命周期成功，保留原有逐项部分成功和 unknown 契约。
 
 顺序固定为 validate once → 暂存原始候选和 normalized immutable snapshot → flush 原始记录 → 发布已确认输入/output → notify addressed running generation。stage 仅是 Host 私有事务，flush 失败时未确认输入和 output 都不能被 Core generation 观察。第一次 schema validation 的 output 是唯一 pre-persistence authority；写入后不得再次执行可能非确定或 throw 的 schema。无 effective input 或 definition 变化的 get/validate 复用已验证 output；查询不为了展示 defaults 再次运行 schema。generation notification
 仍核对当前 definition facts，失败归入 `saved-not-applied`。validated snapshot 同时绑定 config record revision 与

@@ -464,7 +464,7 @@ export type PluginControlMutationResult =
 	| PluginControlMutationSuccess
 	| PluginControlMutationFailure
 /** Actions are serialized. Any uncertain item makes the batch unknown; inspect all results before retrying. */
-export type PluginControlBatchResult =
+export type PluginControlBatchResult = (
 	| Readonly<{ ok: true; status: 'applied'; results: readonly PluginControlMutationSuccess[] }>
 	| Readonly<{
 			ok: false
@@ -479,6 +479,15 @@ export type PluginControlBatchResult =
 			error: string
 			results: readonly []
 	  }>
+) &
+	Readonly<{
+		/**
+		 * Managed-policy revision observed before the admitted auto-start batch releases its
+		 * exclusive boundary. Absent for lifecycle batches or admission/input rejection.
+		 * This is a CAS token, not proof of persistence or lifecycle completion; retain all results.
+		 */
+		managedRevision?: string
+	}>
 export type PluginDependencyKind = 'plugin' | 'abstract'
 
 /** A complete manual layout; `sections: null` clears all manual choices and recomputes defaults. */
