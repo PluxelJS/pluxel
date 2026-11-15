@@ -1,13 +1,10 @@
-import { verifyScriptReceipt } from '../script/receipt'
-import { createHash, randomUUID } from 'node:crypto'
 import { lstat, open, readdir, realpath } from 'node:fs/promises'
 import type { Stats } from 'node:fs'
 import { createConnection } from 'node:net'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
-import { setTimeout as delay } from 'node:timers/promises'
+import { dirname, resolve, isAbsolute } from 'node:path'
+import { checkAbort } from './signal'
 import {
 	SCRIPT_PROTOCOL,
-	scriptRequestHash,
 	type ScriptSubmission,
 	type ScriptControlSubmission,
 	type PluginControlManifestRequest,
@@ -23,8 +20,6 @@ import { openScriptSocketSession } from '@pluxel/host/internal/agent/socket'
 const PROTOCOL = SCRIPT_PROTOCOL
 const MAX_JSON_BYTES = 1024 * 1024
 const MAX_INSTANCES = 128
-const terminalStates = new Set(['succeeded', 'failed', 'cancelled'])
-const runStates = new Set(['queued', 'preparing', 'running', 'cancelling', ...terminalStates])
 
 export interface DevInstance {
 	protocol: number
@@ -40,16 +35,6 @@ export interface DevInstance {
 	urlOutput?: readonly string[]
 	hmr?: Readonly<Record<string, unknown>>
 	application?: Readonly<{ state: 'ready' | 'updating' | 'unavailable'; latestUpdate: unknown }>
-}
-
-export interface DevRunSnapshot {
-	root: string
-	runId: string
-	instanceId: string
-	requestHash: string
-	state: string
-	submittedAt: string
-	[key: string]: unknown
 }
 
 export type DevErrorContext = Readonly<{ root?: string; instanceId?: string; serviceId?: string }>
@@ -84,16 +69,16 @@ export class DevClientError extends Error {
 
 function diagnosticHint(code: string, runId?: string): string | undefined {
 	if (code === 'outcome_unknown' || (code === 'dev_unavailable' && runId)) {
-		return 'Read the retained result with script result using the receipt before submitting again.'
+		return 'Call getScriptResult(receipt) before submitting again.'
 	}
 	if (code === 'ambiguous_instance')
-		return 'Choose one candidate instanceId and pass --instance with the same --root.'
+		return 'Choose one candidate instanceId and set target.instance with the same root.'
 	if (code === 'dev_unavailable')
-		return 'Use dev instances with the intended --root to check which development consoles are running.'
+		return 'Use listHosts({ root }) to check which development consoles are running.'
 	if (code === 'protocol_mismatch')
-		return 'Use matching CLI and dev-host package versions. If a runId is present, check its retained result before submitting again.'
+		return 'Use matching client and dev-host package versions. If a runId is present, check its retained result before submitting again.'
 	if (code === 'invalid_input' || code === 'input_too_large')
-		return 'Check the command arguments and JSON input; dev run --help describes the accepted options.'
+		return 'Check the operation options and JSON input.'
 	if (code === 'source_changed')
 		return 'Review the current source file, then explicitly submit it as a new run.'
 	if (code === 'run_not_found' || code === 'result_expired')
@@ -270,7 +255,9 @@ export async function discoverDevInstances(root: string): Promise<DevInstance[]>
 export async function connectDevInstance(
 	instance: DevInstance,
 	timeoutMs = 5000,
+	signal?: AbortSignal,
 ): Promise<ScriptControlClient> {
+	checkAbort(signal)
 	if (process.platform !== 'win32') {
 		try {
 			checkPrivate(await lstat(dirname(instance.socketPath)))
@@ -285,7 +272,10 @@ export async function connectDevInstance(
 	const socket = createConnection(instance.socketPath)
 	const session = openScriptSocketSession<ScriptConnectionTarget>(socket)
 	let timer: ReturnType<typeof setTimeout> | undefined
+	const cancel = () => session.close()
+	signal?.addEventListener('abort', cancel, { once: true })
 	try {
+		checkAbort(signal)
 		const control = await Promise.race([
 			connectScriptControl(
 				session.remote,
@@ -312,6 +302,7 @@ export async function connectDevInstance(
 			[Symbol.dispose]() {
 				if (closed) return
 				closed = true
+				signal?.removeEventListener('abort', cancel)
 				try {
 					control[Symbol.dispose]()
 				} finally {
@@ -320,7 +311,9 @@ export async function connectDevInstance(
 			},
 		})
 	} catch (error) {
+		signal?.removeEventListener('abort', cancel)
 		session.close()
+		checkAbort(signal)
 		throw withDevContext(error, { root: instance.root, instanceId: instance.instanceId })
 	} finally {
 		clearTimeout(timer)
@@ -343,15 +336,16 @@ export function publicInstance(instance: DevInstance) {
 	}
 }
 
-export async function liveDevInstances(root: string): Promise<DevInstance[]> {
+export async function liveDevInstances(root: string, signal?: AbortSignal): Promise<DevInstance[]> {
 	const instances = await discoverDevInstances(root)
 	const live: DevInstance[] = []
 	// Probe in small batches so stale records cannot serialize dozens of timeouts.
 	for (let offset = 0; offset < instances.length; offset += 8) {
 		const results = await Promise.allSettled(
 			instances.slice(offset, offset + 8).map(async (instance) => {
-				using control = await connectDevInstance(instance, 1000)
+				using control = await connectDevInstance(instance, 1000, signal)
 				const value = await control.describe()
+				checkAbort(signal)
 				if (
 					!record(value) ||
 					value.instanceId !== instance.instanceId ||
@@ -389,6 +383,7 @@ export async function liveDevInstances(root: string): Promise<DevInstance[]> {
 				})
 			}),
 		)
+		checkAbort(signal)
 		for (const result of results) {
 			if (result.status === 'fulfilled') live.push(result.value)
 			else if (
@@ -402,6 +397,7 @@ export async function liveDevInstances(root: string): Promise<DevInstance[]> {
 }
 
 export async function selectDevInstance(options: {
+	signal?: AbortSignal
 	root: string
 	instance?: string
 	serviceId?: string
@@ -417,7 +413,8 @@ export async function selectDevInstance(options: {
 	}
 	let instances: DevInstance[]
 	try {
-		const live = await liveDevInstances(root)
+		const live = await liveDevInstances(root, options.signal)
+		checkAbort(options.signal)
 		instances = live.filter((instance) => matchesDevInstance(instance, options))
 	} catch (error) {
 		throw withDevContext(error, context)
@@ -441,7 +438,7 @@ export async function selectDevInstance(options: {
 			'No running development console was found in the selected project.',
 			{
 				context,
-				hint: 'Start the project with pluxel dev, or start Vite with scripts enabled and select its --root.',
+				hint: 'Start the project with pluxel dev, or start Vite with scripts enabled and select its root.',
 			},
 		)
 	if (instances.length !== 1)
@@ -451,7 +448,7 @@ export async function selectDevInstance(options: {
 			{
 				context,
 				candidates: instances.map(publicInstance),
-				hint: 'Select the intended running console with --instance; Pluxel does not guess between processes sharing a Vite root.',
+				hint: 'Select the intended running console with target.instance; Pluxel does not guess between processes sharing a Vite root.',
 			},
 		)
 	return instances[0]!
@@ -475,141 +472,4 @@ export function matchesDevInstance(
 		(selection.profile === undefined || instance.profile === selection.profile) &&
 		(selection.projectRoot === undefined || instance.project === selection.projectRoot)
 	)
-}
-
-export function parseRunSnapshot(
-	value: unknown,
-	instance: DevInstance,
-	runId: string,
-): DevRunSnapshot {
-	if (
-		!record(value) ||
-		value.runId !== runId ||
-		value.instanceId !== instance.instanceId ||
-		typeof value.state !== 'string' ||
-		!runStates.has(value.state) ||
-		typeof value.requestHash !== 'string' ||
-		!/^[a-f0-9]{64}$/.test(value.requestHash) ||
-		typeof value.submittedAt !== 'string'
-	) {
-		throw new DevClientError(
-			'protocol_mismatch',
-			'Invalid run snapshot returned by development console',
-			{ runId, context: { root: instance.root, instanceId: instance.instanceId } },
-		)
-	}
-	return { ...value, root: instance.root } as DevRunSnapshot
-}
-
-type DevOperationOptions = {
-	instance: DevInstance
-	timeoutMs: number
-	detach: boolean
-	onPrepared?(snapshot: DevRunSnapshot): void
-	onAccepted?(snapshot: DevRunSnapshot): void
-}
-
-function validateTimeout(timeoutMs: number): void {
-	if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000)
-		fail('invalid_input', '--timeout must be an integer from 1 to 300000 milliseconds')
-}
-
-export async function runDevFile(
-	options: DevOperationOptions & {
-		file: string
-		exportName: string
-		input?: unknown
-	},
-): Promise<DevRunSnapshot> {
-	validateTimeout(options.timeoutMs)
-	const instance = options.instance
-	try {
-		const file = await realpath(resolve(options.file))
-		const path = relative(instance.root, file)
-		if (path === '..' || path.startsWith('../') || path.startsWith('..\\') || isAbsolute(path))
-			fail('invalid_input', 'Script must be inside the selected project root')
-		const sourceHash = createHash('sha256')
-			.update(await readBoundedFile(file))
-			.digest('hex')
-		return await submitDevOperation(options, {
-			code: { kind: 'project', file, sourceHash, exportName: options.exportName },
-			input: options.input,
-		})
-	} catch (error) {
-		throw withDevContext(error, {
-			root: instance.root,
-			instanceId: instance.instanceId,
-			serviceId: instance.serviceId,
-		})
-	}
-}
-
-export async function controlDevHmr(
-	options: DevOperationOptions & {
-		action: string
-	},
-): Promise<DevRunSnapshot> {
-	validateTimeout(options.timeoutMs)
-	if (options.action !== 'pause' && options.action !== 'apply' && options.action !== 'resume')
-		fail('invalid_input', 'Expected HMR action pause, apply or resume')
-	return submitDevOperation(options, { action: options.action })
-}
-
-/** One admission, then read only the same instance and run; transport failure never replays. */
-async function submitDevOperation(
-	options: DevOperationOptions,
-	payload: Record<string, unknown>,
-): Promise<DevRunSnapshot> {
-	const instance = options.instance
-	const runId = randomUUID()
-	const input = { ...payload, runId, timeoutMs: options.timeoutMs } as
-		| ScriptSubmission
-		| ScriptControlSubmission
-	const requestHash = await scriptRequestHash(input)
-	options.onPrepared?.({
-		root: instance.root,
-		runId,
-		instanceId: instance.instanceId,
-		state: 'submitting',
-		submittedAt: new Date().toISOString(),
-		requestHash,
-	})
-	let sent = false
-	try {
-		using control = await connectDevInstance(instance)
-		sent = true
-		let snapshot = parseRunSnapshot(
-			await ('code' in input ? control.submit(input) : control.control(input)),
-			instance,
-			runId,
-		)
-		verifyScriptReceipt(snapshot, { instanceId: instance.instanceId, runId, requestHash })
-		options.onAccepted?.(snapshot)
-		if (options.detach) return snapshot
-		const waitUntil = Date.now() + options.timeoutMs + 5000
-		while (!terminalStates.has(snapshot.state) && Date.now() < waitUntil) {
-			await delay(100)
-			snapshot = parseRunSnapshot(await control.result(runId), instance, runId)
-			verifyScriptReceipt(snapshot, { instanceId: instance.instanceId, runId, requestHash })
-		}
-		return snapshot
-	} catch (error) {
-		const domainCode =
-			error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
-				? error.code
-				: undefined
-		throw new DevClientError(
-			domainCode ?? (sent ? 'outcome_unknown' : 'dev_unavailable'),
-			error instanceof Error ? error.message : String(error),
-			{
-				requestHash,
-				runId,
-				context: {
-					root: instance.root,
-					instanceId: instance.instanceId,
-					serviceId: instance.serviceId,
-				},
-			},
-		)
-	}
 }

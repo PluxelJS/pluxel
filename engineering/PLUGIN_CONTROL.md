@@ -4,16 +4,16 @@
 
 ## 所有者与输入
 
-| 所有者        | 入口                                                                                                                                       | 职责                                                            |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| Host          | [`control-manifest.ts`](../packages/host/src/control-manifest.ts)                                                                          | 格式、规范编码、文件验证和标准地址提供者渲染的唯一协议实现      |
-| Rolldown      | [`control/`](../packages/rolldown/src/control/index.ts)                                                                                    | 原 semantic facts、固定 TypeScript 程序、声明闭包与配置源码描述 |
-| Host catalog  | [`catalog.ts`](../packages/host/src/catalog.ts)                                                                                            | 随候选接纳不可变的 control 附件，区分 available 和 unavailable  |
-| Native loader | [`control-material.node.ts`](../packages/host/src/control-material.node.ts)、[`loaded-modules.ts`](../packages/host/src/loaded-modules.ts) | 从实际加载的 owner/root 绑定材料，保持 constructor 的第一次记录 |
-| Vite          | [`control.ts`](../packages/host-vite/src/control.ts)、[`host-vite.ts`](../packages/host-vite/src/host-vite.ts)                             | 比对真实求值输入、参与原更新批次与 type-only 依赖失效           |
-| Script SDK    | [`control.ts`](../packages/host/src/agent/control.ts)、[`sdk.ts`](../packages/host/src/agent/sdk.ts)                                       | typed target、事务内配置检查和同进程实例视图                    |
-| 材料读取      | [`materials.ts`](../packages/host/src/agent/materials.ts)                                                                                  | 从 committed catalog 取得有界快照，通过原认证连接提供分块读取   |
-| CLI           | [`sync.ts`](../packages/cli/src/script/sync.ts)                                                                                            | 完整下载、验证和工具目录的原子发布                              |
+| 所有者           | 入口                                                                                                                                       | 职责                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| Host             | [`control-manifest.ts`](../packages/host/src/control-manifest.ts)                                                                          | 格式、规范编码、文件验证和标准地址提供者渲染的唯一协议实现      |
+| Rolldown         | [`control/`](../packages/rolldown/src/control/index.ts)                                                                                    | 原 semantic facts、固定 TypeScript 程序、声明闭包与配置源码描述 |
+| Host catalog     | [`catalog.ts`](../packages/host/src/catalog.ts)                                                                                            | 随候选接纳不可变的 control 附件，区分 available 和 unavailable  |
+| Native loader    | [`control-material.node.ts`](../packages/host/src/control-material.node.ts)、[`loaded-modules.ts`](../packages/host/src/loaded-modules.ts) | 从实际加载的 owner/root 绑定材料，保持 constructor 的第一次记录 |
+| Vite             | [`control.ts`](../packages/host-vite/src/control.ts)、[`host-vite.ts`](../packages/host-vite/src/host-vite.ts)                             | 比对真实求值输入、参与原更新批次与 type-only 依赖失效           |
+| Script SDK       | [`control.ts`](../packages/host/src/agent/control.ts)、[`sdk.ts`](../packages/host/src/agent/sdk.ts)                                       | typed target、事务内配置检查和同进程实例视图                    |
+| 材料读取         | [`materials.ts`](../packages/host/src/agent/materials.ts)                                                                                  | 从 committed catalog 取得有界快照，通过原认证连接提供分块读取   |
+| Agent SDK 客户端 | [`materials.ts`](../packages/agent-sdk/src/client/materials.ts)                                                                            | 完整下载、验证和工具目录的原子发布                              |
 
 Core 拥有规范身份和与精确地址值绑定的通用证据注册，不解释 Host 控制格式。class 与生成入口都提供 `definitionAddress()`、`nodeAddress()` 和 `nodeAddress(forkId)`。SDK 只接收完整 node address；调用证据不进入 equality、route 或持久化 key。
 
@@ -99,7 +99,7 @@ CLI 的 `script sync` 和 `dev sync` 使用同一实现。完整验证后写入 
 | 受检输入与真实 Vite 缓存版本                                | [`environment-inputs.test.ts`](../packages/host-vite/tests/environment-inputs.test.ts)、[`dev-console-attachment.test.ts`](../packages/host-vite/tests/dev-console-attachment.test.ts) |
 | 独立安装作者、TLS 管理认证、无源码接收端、同步与调用        | [`agent-installed.smoke.mjs`](../packages/services/tests/agent-installed.smoke.mjs)                                                                                                    |
 | 类型入口、原子快照切换与 package exports 竞争               | [`script-inputs.test.ts`](../packages/rolldown/tests/script-inputs.test.ts)                                                                                                            |
-| 同步导出稳定性、完整验证与作者目录冲突                      | [`script-sync.test.ts`](../packages/cli/tests/script-sync.test.ts)                                                                                                                     |
+| 同步导出稳定性、完整验证与作者目录冲突                      | [`script-sync.test.ts`](../packages/agent-sdk/tests/script-sync.test.ts)                                                                                                               |
 | 开发和发布导出、作者定制与连续构建幂等                      | [`plugin-build.test.ts`](../packages/rolldown/tests/plugin-build.test.ts)                                                                                                              |
 | 真实 HMR、独立插件摘要、相同源码与全部 generation 释放      | [`hmr-control.test.ts`](../packages/host-vite/tests/hmr-control.test.ts)、[`module-bytes.test.ts`](../packages/host-vite/tests/module-bytes.test.ts)                                   |
 | Result 编码、预期失败、未知异常与取消排空                   | [`agent-runtime.test.ts`](../packages/host/tests/agent-runtime.test.ts)、[`agent-sdk.test.ts`](../packages/host/tests/agent-sdk.test.ts)                                               |

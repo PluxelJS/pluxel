@@ -4,8 +4,8 @@ import {
 	type ScriptTargetDescription,
 } from '@pluxel/host/internal/agent/transport'
 import { ScriptExecutionError } from '@pluxel/host/internal/agent/runtime'
-import { connectRuntimeTarget, type Credentials } from './session'
-export { readScriptCredentials } from './session'
+import { connectRuntimeTarget } from './remote'
+import type { HostCredentials } from './contracts'
 
 export interface ScriptConnection extends Disposable {
 	readonly control: ScriptControlClient
@@ -14,7 +14,12 @@ export interface ScriptConnection extends Disposable {
 
 /** Execution requires its separate grant; read-only Management does not. */
 export async function connectScriptTarget(
-	options: Readonly<{ endpoint: string; credentials?: Credentials; instanceId?: string }>,
+	options: Readonly<{
+		endpoint: string
+		credentials?: HostCredentials
+		instanceId?: string
+		signal?: AbortSignal
+	}>,
 ): Promise<ScriptConnection> {
 	const connection = await connectRuntimeTarget(options)
 	let control: ScriptControlClient | undefined

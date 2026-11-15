@@ -1147,6 +1147,15 @@ importers:
       '@pluxel/rolldown':
         specifier: workspace:^
         version: link:../rolldown
+      '@pluxel/services':
+        specifier: workspace:^
+        version: link:../services
+      capnweb:
+        specifier: catalog:prod
+        version: 0.12.0
+      crossws:
+        specifier: catalog:prod
+        version: 0.4.17(srvx@1.0.8)
     devDependencies:
       '@pluxel/core':
         specifier: workspace:*
@@ -1199,18 +1208,12 @@ importers:
       '@clack/prompts':
         specifier: catalog:prod
         version: 1.8.1
+      '@pluxel/agent-sdk':
+        specifier: workspace:^
+        version: link:../agent-sdk
       '@pluxel/host':
         specifier: workspace:^
         version: link:../host
-      '@pluxel/services':
-        specifier: workspace:^
-        version: link:../services
-      capnweb:
-        specifier: catalog:prod
-        version: 0.12.0
-      crossws:
-        specifier: catalog:prod
-        version: 0.4.17(srvx@1.0.8)
       gunshi:
         specifier: catalog:prod
         version: 0.37.3
@@ -1239,12 +1242,12 @@ importers:
       '@pluxel-internal/pncat':
         specifier: workspace:*
         version: link:../../vendor/pncat
-      '@pluxel/agent-sdk':
-        specifier: workspace:*
-        version: link:../agent-sdk
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
+      '@pluxel/services':
+        specifier: workspace:*
+        version: link:../services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test

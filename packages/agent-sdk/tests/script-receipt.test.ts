@@ -6,7 +6,7 @@ import {
 	encodeScriptReceipt,
 	verifyScriptReceipt,
 	type ScriptReceipt,
-} from '../src/script/receipt'
+} from '../src/client/receipt'
 
 const prefix = 'pluxel-script-v3.'
 const identity = { instanceId: 'instance_1', runId: 'run-2', requestHash: 'a'.repeat(64) }

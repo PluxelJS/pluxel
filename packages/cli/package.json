@@ -43,10 +43,8 @@
 	},
 	"dependencies": {
 		"@clack/prompts": "catalog:prod",
+		"@pluxel/agent-sdk": "workspace:^",
 		"@pluxel/host": "workspace:^",
-		"@pluxel/services": "workspace:^",
-		"capnweb": "catalog:prod",
-		"crossws": "catalog:prod",
 		"gunshi": "catalog:prod",
 		"jsonc-parser": "catalog:prod",
 		"package-manager-detector": "catalog:prod",
@@ -58,8 +56,8 @@
 	},
 	"devDependencies": {
 		"@pluxel-internal/pncat": "workspace:*",
-		"@pluxel/agent-sdk": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/picomatch": "catalog:types",
 		"@types/semver": "catalog:types",

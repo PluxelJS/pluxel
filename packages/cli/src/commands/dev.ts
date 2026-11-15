@@ -11,29 +11,20 @@ import {
 	devRunDefinition,
 } from '../command-manifest'
 import {
+	requireDevScripts,
+	resolveDevProject,
+	resolveDevSelection,
 	DevClientError,
-	controlDevHmr,
-	liveDevInstances,
-	matchesDevInstance,
+	type DevInstance,
 	parseInput,
-	publicInstance,
 	readBoundedFile,
-	runDevFile,
 	selectDevInstance,
 	withDevContext,
-	type DevInstance,
-	type DevRunSnapshot,
-} from '../dev/client'
-import {
-	connectDevProject,
-	readDevService,
-	requireDevScripts,
-	resolveDevSelection,
-	startDevService,
-} from '../dev/project'
+} from '@pluxel/agent-sdk/internal/client'
+import { readDevService, startDevService } from '../dev/project'
 import { validateCommandOptions } from '../command-options'
 import { runDevCommand } from '../dev/process'
-import { encodeScriptReceipt } from '../script/receipt'
+import { HostClientError, listHosts, runScript, controlHmr } from '@pluxel/agent-sdk/client'
 import { printFailure, printRun, printRunProgress, printValue } from '../script/output'
 
 type DevCommandContext = Pick<
@@ -61,28 +52,6 @@ function terminalUrl(line: string): string {
 	)
 }
 
-function runReceipt(instance: DevInstance, runId: string, requestHash: string): string {
-	return encodeScriptReceipt({
-		version: 3,
-		connection: { kind: 'local', root: instance.root, serviceId: instance.serviceId },
-		instanceId: instance.instanceId,
-		runId,
-		requestHash,
-	})
-}
-
-function runResult(instance: DevInstance, snapshot: DevRunSnapshot) {
-	const { root: _root, ...run } = snapshot
-	return { receipt: runReceipt(instance, snapshot.runId, snapshot.requestHash), run }
-}
-
-function printAccepted(instance: DevInstance, snapshot: DevRunSnapshot): void {
-	printRunProgress(
-		snapshot.state === 'submitting' ? 'prepared' : 'accepted',
-		runReceipt(instance, snapshot.runId, snapshot.requestHash),
-	)
-}
-
 async function printResult<T>(
 	ctx: DevCommandContext,
 	action: () => Promise<T>,
@@ -92,30 +61,21 @@ async function printResult<T>(
 		validateCommandOptions(ctx)
 		print(await action())
 	} catch (error) {
+		if (error instanceof HostClientError) {
+			printFailure(ctx.log, error.failure, error.receipt)
+			return
+		}
 		const failure = withDevContext(error, {})
 		const context = failure.context
-		const receipt =
-			failure.runId && failure.requestHash && context?.root && context.instanceId
-				? encodeScriptReceipt({
-						version: 3,
-						connection: { kind: 'local', root: context.root, serviceId: context.serviceId },
-						instanceId: context.instanceId,
-						runId: failure.runId,
-						requestHash: failure.requestHash,
-					})
-				: undefined
-		printFailure(
-			ctx.log,
-			{
-				code: failure.code,
-				message: failure.message.slice(0, 8192),
-				...(failure.runId ? { runId: failure.runId } : {}),
-				...(context && Object.keys(context).length > 0 ? { context } : {}),
-				...(failure.hint ? { hint: failure.hint } : {}),
-				...(failure.candidates ? { candidates: failure.candidates } : {}),
-			},
-			receipt,
-		)
+
+		printFailure(ctx.log, {
+			code: failure.code,
+			message: failure.message.slice(0, 8192),
+			...(failure.runId ? { runId: failure.runId } : {}),
+			...(context && Object.keys(context).length > 0 ? { context } : {}),
+			...(failure.hint ? { hint: failure.hint } : {}),
+			...(failure.candidates ? { candidates: failure.candidates } : {}),
+		})
 	}
 }
 
@@ -217,12 +177,14 @@ export const devInstancesCommand = define({
 	...devInstancesDefinition,
 	async run(ctx) {
 		await printResult(ctx, async () => {
-			const selection = await resolveDevSelection(ctx.values as ArgValues<typeof devCommonArgs>)
-			requireDevScripts(selection.project)
-			const instances = await liveDevInstances(selection.root)
-			return instances
-				.filter((instance) => matchesDevInstance(instance, selection))
-				.map(publicInstance)
+			const values = ctx.values as ArgValues<typeof devCommonArgs>
+			const project = await resolveDevProject(values)
+			const discovery = await listHosts({
+				root: values.root ?? project.workspace,
+				profile: values.profile,
+				instance: values.instance,
+			})
+			return discovery.instances
 		})
 	},
 })
@@ -242,14 +204,11 @@ export const devStatusCommand = define({
 					service: await readDevService(selection.project),
 				}
 			}
-			const live = await liveDevInstances(selection.root)
-			const instances = live.filter((instance) => matchesDevInstance(instance, selection))
-			return {
-				...(selection.project ? { workspace: selection.project.workspace } : {}),
-				...(selection.project.profile ? { profile: selection.project.profile } : {}),
-				root: selection.root,
-				instances: instances.map(publicInstance),
-			}
+			return listHosts({
+				root: selection.project.profile ? selection.project.workspace : selection.root,
+				profile: selection.project.profile,
+				instance: selection.instance,
+			})
 		})
 	},
 })
@@ -269,18 +228,21 @@ export const devRunCommand = define({
 						: await readBoundedFile(values['input-file'])
 				const source = buffer === undefined ? values.input : buffer.toString('utf8')
 				const input = source === undefined ? undefined : parseInput(source)
-				const instance = await connectDevProject(values)
-				const result = await runDevFile({
-					instance,
+				const project = await resolveDevProject(values)
+				return runScript({
+					target: {
+						root: values.root ?? project.workspace,
+						profile: values.profile,
+						instance: values.instance,
+					},
 					file: values.file,
 					exportName: values.export,
 					input,
 					timeoutMs: Number(values.timeout),
 					detach: values.detach,
-					onPrepared: (snapshot) => printAccepted(instance, snapshot),
-					onAccepted: (snapshot) => printAccepted(instance, snapshot),
+					onPrepared: (receipt) => printRunProgress('prepared', receipt),
+					onAccepted: ({ receipt }) => printRunProgress('accepted', receipt),
 				})
-				return runResult(instance, result)
 			},
 			(value) => printRun(ctx.log, value.receipt, value.run, values.detach),
 		)
@@ -294,16 +256,21 @@ export const devHmrCommand = define({
 		await printResult(
 			ctx,
 			async () => {
-				const instance = await connectDevProject(values)
-				const result = await controlDevHmr({
-					instance,
+				if (values.action !== 'pause' && values.action !== 'apply' && values.action !== 'resume')
+					throw new DevClientError('invalid_input', 'Expected HMR action pause, apply or resume')
+				const project = await resolveDevProject(values)
+				return controlHmr({
+					target: {
+						root: values.root ?? project.workspace,
+						profile: values.profile,
+						instance: values.instance,
+					},
 					action: values.action,
 					timeoutMs: Number(values.timeout),
 					detach: values.detach,
-					onPrepared: (snapshot) => printAccepted(instance, snapshot),
-					onAccepted: (snapshot) => printAccepted(instance, snapshot),
+					onPrepared: (receipt) => printRunProgress('prepared', receipt),
+					onAccepted: ({ receipt }) => printRunProgress('accepted', receipt),
 				})
-				return runResult(instance, result)
 			},
 			(value) => printRun(ctx.log, value.receipt, value.run, values.detach),
 		)

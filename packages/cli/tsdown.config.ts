@@ -13,7 +13,8 @@ export default defineConfig({
 		neverBundle: [
 			'@pluxel/host',
 			'@pluxel/host/*',
-			'capnweb',
+			'@pluxel/agent-sdk',
+			'@pluxel/agent-sdk/*',
 			'@pluxel/core',
 			'@pluxel/core/*',
 			'@pluxel/rolldown',
@@ -23,11 +24,7 @@ export default defineConfig({
 		],
 		// pncat owns catalog mutation and ships inside both Git and npm CLIs.
 		// Its transitive implementation is bundled; optional Pluxel owners stay external.
-		alwaysBundle: [
-			'semver',
-			/^@pluxel\/services\/management\/session$/,
-			/^@pluxel-internal\/pncat(?:\/|$)/,
-		],
+		alwaysBundle: ['semver', /^@pluxel-internal\/pncat(?:\/|$)/],
 		onlyBundle: false,
 	},
 	dts: {

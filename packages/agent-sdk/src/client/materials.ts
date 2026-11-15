@@ -1,3 +1,4 @@
+import { checkAbort } from './signal'
 import { randomUUID, createHash } from 'node:crypto'
 import {
 	lstat,
@@ -58,14 +59,25 @@ const failure = (code: string, message: string) => new ScriptExecutionError(code
 
 /** Download an immutable snapshot completely before changing the tool-owned import pointer. */
 export async function syncPluginControl(
-	options: Readonly<{ source: ControlMaterialSource; out: string }>,
+	options: Readonly<{ source: ControlMaterialSource; out: string; signal?: AbortSignal }>,
 ): Promise<ControlSyncResult> {
-	const first = parsePluginControlManifestIndex(await options.source.manifest())
+	checkAbort(options.signal)
+	const transport: ControlMaterialSource = {
+		manifest: async (input) => {
+			checkAbort(options.signal)
+			return options.source.manifest(input)
+		},
+		file: async (input) => {
+			checkAbort(options.signal)
+			return options.source.file(input)
+		},
+	}
+	const first = parsePluginControlManifestIndex(await transport.manifest())
 	const selection = [...first.definitions]
 	let offset = first.nextOffset
 	while (offset !== null) {
 		const page = parsePluginControlManifestIndex(
-			await options.source.manifest({ transfer: first.transfer, offset }),
+			await transport.manifest({ transfer: first.transfer, offset }),
 		)
 		if (
 			page.transfer !== first.transfer ||
@@ -92,7 +104,7 @@ export async function syncPluginControl(
 	>()
 	for (const item of first.materials) {
 		const manifestText = await download(
-			options.source,
+			transport,
 			item.snapshot,
 			'manifest.json',
 			item.manifestSize,
@@ -111,7 +123,7 @@ export async function syncPluginControl(
 		const files: Record<string, string> = Object.create(null)
 		files['manifest.json'] = manifestText
 		for (const file of manifest.files)
-			files[file.path] = await download(options.source, item.snapshot, file.path, file.size)
+			files[file.path] = await download(transport, item.snapshot, file.path, file.size)
 		await verifyPluginControlMaterial(manifest, files)
 		materials.set(item.snapshot, { manifest, files })
 	}
@@ -205,7 +217,7 @@ export async function syncPluginControl(
 
 	const unsigned = {
 		format: 2 as const,
-		compiler: '@pluxel/cli/control-sync/2',
+		compiler: '@pluxel/agent-sdk/control-sync/2',
 		definitions: exports.map(({ definition, exportName, module, contracts, source }) => ({
 			definition,
 			exportName,
@@ -225,6 +237,8 @@ export async function syncPluginControl(
 	files['manifest.json'] = `${encodeControlData(manifest)}\n`
 	await verifyPluginControlMaterial(manifest, files)
 	const out = resolve(options.out)
+	checkAbort(options.signal)
+	// Publication settles atomically once started, including when the caller aborts.
 	await installSnapshot(out, manifest.snapshot, files)
 	return Object.freeze({
 		out,

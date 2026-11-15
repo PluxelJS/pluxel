@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/agent-sdk",
 	"version": "1.1.0",
-	"description": "Host operations and standalone source queries for Pluxel agents.",
+	"description": "Source queries, in-process Host operations and Node clients for Pluxel agents.",
 	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
@@ -14,9 +14,17 @@
 	],
 	"type": "module",
 	"exports": {
+		"./client": {
+			"@pluxel/source": "./src/client.ts",
+			"default": "./dist/client.mjs"
+		},
 		"./host": {
 			"@pluxel/source": "./src/host.ts",
 			"default": "./dist/host.mjs"
+		},
+		"./internal/client": {
+			"@pluxel/source": "./src/internal-client.ts",
+			"default": "./dist/internal/client.mjs"
 		},
 		"./source": {
 			"@pluxel/source": "./src/source.ts",
@@ -26,7 +34,9 @@
 	},
 	"publishConfig": {
 		"exports": {
+			"./client": "./dist/client.mjs",
 			"./host": "./dist/host.mjs",
+			"./internal/client": "./dist/internal/client.mjs",
 			"./source": "./dist/source.mjs",
 			"./package.json": "./package.json"
 		},
@@ -39,7 +49,10 @@
 	},
 	"dependencies": {
 		"@pluxel/host": "workspace:^",
-		"@pluxel/rolldown": "workspace:^"
+		"@pluxel/rolldown": "workspace:^",
+		"@pluxel/services": "workspace:^",
+		"capnweb": "catalog:prod",
+		"crossws": "catalog:prod"
 	},
 	"devDependencies": {
 		"@pluxel/core": "workspace:*",

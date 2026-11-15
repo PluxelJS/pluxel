@@ -6,6 +6,27 @@ import { expect, it } from 'vitest'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const execute = promisify(execFile)
 
+it('imports the published client from Node without CLI, compiler or remote authentication', async () => {
+	const { stdout } = await execute(
+		process.execPath,
+		[
+			'--input-type=module',
+			'-e',
+			`
+  import { registerHooks } from 'node:module'
+  registerHooks({ resolve(specifier, context, next) {
+   if (['@pluxel/cli', '@pluxel/rolldown', '@pluxel/services'].some(name => specifier === name || specifier.startsWith(name + '/'))) throw new Error('Client eagerly loaded ' + specifier)
+   return next(specifier, context)
+  } })
+  const { listHosts, runScript, getScriptResult, cancelScript, syncPluginControl, controlHmr } = await import('@pluxel/agent-sdk/client')
+  console.log(JSON.stringify([listHosts, runScript, getScriptResult, cancelScript, syncPluginControl, controlHmr].every(fn => typeof fn === 'function')))
+ `,
+		],
+		{ cwd: root },
+	)
+	expect(stdout.trim()).toBe('true')
+})
+
 it('imports the published Host entry without the source compiler', async () => {
 	const { stdout } = await execute(
 		process.execPath,

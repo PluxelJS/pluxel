@@ -1,6 +1,6 @@
 ---
 title: Host 自动化脚本
-description: 使用普通 TypeScript 读取配置、计算、条件修改、核对采用，并通过 CLI 提交与查询运行。
+description: 使用普通 TypeScript 读取配置、计算、条件修改、核对采用，通过 Node 客户端或 CLI 提交与查询运行。
 ---
 
 脚本导出一个普通函数。执行器传入 `ScriptSdk` 与本次运行的 `{ id, input, signal }`。`sdk.plugin(nodeAddress)` 同步选择插件节点；异步控制操作统一返回 `Promise<Result<T, E>>`，直接使用目标 Host 的实现。单次操作可以直接返回：
@@ -117,10 +117,12 @@ export default (async (sdk) => {
 
 ## 向 Node 应用提交
 
-在作者项目直接安装 CLI、Core、脚本类型和编译器，使用 Node 24 或更新版本：
+程序调用使用 [`@pluxel/agent-sdk/client`](./agent-sdk.md#从-node-连接现有-host) 的 `runScript`、`getScriptResult` 和 `cancelScript`，可直接运行普通 Node 文件。以下 CLI 命令使用同一客户端实现。
+
+在作者项目安装所用依赖，使用 Node 24 或更新版本：
 
 ```sh
-pnpm add -D @pluxel/cli @pluxel/core @pluxel/host @pluxel/rolldown typescript
+pnpm add -D @pluxel/cli @pluxel/agent-sdk @pluxel/core @pluxel/host typescript
 ```
 
 目标应用使用官方管理服务时显式开启脚本执行，例如现有应用装配中的：

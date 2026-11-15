@@ -6,19 +6,19 @@
 
 ## 按任务读取
 
-| 任务                                             | 必读入口                                                                                                                            |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| 工作区工具、提交检查、开发服务                   | [工作区工具链](docs/development/workspace-toolchain.md)；检查涉及的 mise.toml、vite.config.ts、hk.pkl、pitchfork.toml 与已有服务    |
-| 插件业务、配置、日志                             | [插件开发](docs/plugin-development/index.md)选择目标主题                                                                            |
-| 插件发现、声明与源码位置                         | [Agent SDK](docs/development/agent-sdk.md)；普通函数从 `@pluxel/agent-sdk/source` 查询，Host 操作从 `/host` 选择                    |
-| 应用装配、部署、服务扩展                         | [Host 配置](docs/host/configuration.md)对应章节，扩展再读 host/services                                                             |
-| Workbench 导航、布局或视觉                       | [交互设计](engineering/WORKBENCH_DESIGN.md)、[Frontend](engineering/FRONTEND.md)                                                    |
-| 文档编写与组织                                   | [文档职责](engineering/DOCUMENTATION.md)                                                                                            |
-| 框架、Context、生命周期、工具链或包边界          | [工程原则](engineering/DESIGN_PRINCIPLES.md)、[系统边界](engineering/PLUGIN_SYSTEM.md)，再从[工程索引](engineering/README.md)选领域 |
-| 公共 API、配置、类型、错误、扩展点或资源生命周期 | [API 设计规则](.agents/rules/library-api-design.md)的执行方式、硬约束及对应规则；检查 exports 与真实调用方                          |
-| 本地 Plugin 可恢复失败                           | [Better Result](docs/plugin-development/better-result.md)；保留原生 SDK、判定、回执和生命周期失败契约                               |
-| 在线操作                                         | [开发控制台](docs/development/dev-console.md)                                                                                       |
-| 隔离回归                                         | [插件测试](docs/plugin-development/testing.md)；测试设施内部读[工程测试](engineering/TESTING.md)                                    |
+| 任务                                             | 必读入口                                                                                                                                            |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 工作区工具、提交检查、开发服务                   | [工作区工具链](docs/development/workspace-toolchain.md)；检查涉及的 mise.toml、vite.config.ts、hk.pkl、pitchfork.toml 与已有服务                    |
+| 插件业务、配置、日志                             | [插件开发](docs/plugin-development/index.md)选择目标主题                                                                                            |
+| 插件发现、声明与源码位置                         | [Agent SDK](docs/development/agent-sdk.md)；普通函数从 `@pluxel/agent-sdk/source` 查询，进程内 Host 操作从 `/host` 选择，外部 Node 调用用 `/client` |
+| 应用装配、部署、服务扩展                         | [Host 配置](docs/host/configuration.md)对应章节，扩展再读 host/services                                                                             |
+| Workbench 导航、布局或视觉                       | [交互设计](engineering/WORKBENCH_DESIGN.md)、[Frontend](engineering/FRONTEND.md)                                                                    |
+| 文档编写与组织                                   | [文档职责](engineering/DOCUMENTATION.md)                                                                                                            |
+| 框架、Context、生命周期、工具链或包边界          | [工程原则](engineering/DESIGN_PRINCIPLES.md)、[系统边界](engineering/PLUGIN_SYSTEM.md)，再从[工程索引](engineering/README.md)选领域                 |
+| 公共 API、配置、类型、错误、扩展点或资源生命周期 | [API 设计规则](.agents/rules/library-api-design.md)的执行方式、硬约束及对应规则；检查 exports 与真实调用方                                          |
+| 本地 Plugin 可恢复失败                           | [Better Result](docs/plugin-development/better-result.md)；保留原生 SDK、判定、回执和生命周期失败契约                                               |
+| 在线操作                                         | [开发控制台](docs/development/dev-console.md)                                                                                                       |
+| 隔离回归                                         | [插件测试](docs/plugin-development/testing.md)；测试设施内部读[工程测试](engineering/TESTING.md)                                                    |
 
 先满足本任务必读约束，链接按相关性展开，未变化的文档不重读。明确修改点、契约、所有者、调用方和验证方式后开始实现；事实冲突或未知跨域影响再补查。普通查找用 `rg` 与 exports；inspect 查询声明与应用绑定，源码位置属于执行查询的环境，当前磁盘与运行接纳版本的关系见源码查询指南。
 

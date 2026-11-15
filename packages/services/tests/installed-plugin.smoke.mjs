@@ -1,32 +1,12 @@
-// Built-artifact boundary: run after building Host, Host-vite and Rolldown.
-import { mkdtemp, writeFile, mkdir, symlink, rm, readFile } from 'node:fs/promises'
+// Built-artifact boundary: run after building Agent SDK and its dependency closure.
+import { mkdtemp, writeFile, mkdir, symlink, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createRequire, registerHooks, stripTypeScriptTypes } from 'node:module'
+import { createRequire } from 'node:module'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
-const clientUrl = new URL('../../cli/src/dev/client.ts', import.meta.url)
-const clientSource = await readFile(clientUrl, 'utf8')
-// Keep the real module URL so the client's public package imports use the CLI's dependencies.
-const clientLoader = registerHooks({
-	load(url, context, nextLoad) {
-		if (url === clientUrl.href)
-			return {
-				format: 'module',
-				source: stripTypeScriptTypes(clientSource, { mode: 'transform' }),
-				shortCircuit: true,
-			}
-		return nextLoad(url, context)
-	},
-})
-let client
-try {
-	client = await import(clientUrl.href)
-} finally {
-	clientLoader.deregister()
-}
-const { discoverDevInstances, runDevFile, selectDevInstance } = client
+import { listHosts, runScript } from '@pluxel/agent-sdk/client'
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 const require = createRequire(join(workspace, 'packages/host-vite/package.json'))
 const { createServer } = await import(pathToFileURL(require.resolve('vite')).href)
@@ -41,6 +21,11 @@ await mkdir(join(root, 'node_modules/@test/installed'), { recursive: true })
 await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
 await symlink(join(workspace, 'packages/core'), join(root, 'node_modules/@pluxel/core'), 'dir')
 await symlink(join(workspace, 'packages/host'), join(root, 'node_modules/@pluxel/host'), 'dir')
+await symlink(
+	join(workspace, 'packages/agent-sdk'),
+	join(root, 'node_modules/@pluxel/agent-sdk'),
+	'dir',
+)
 await symlink(
 	join(workspace, 'packages/services'),
 	join(root, 'node_modules/@pluxel/services'),
@@ -177,25 +162,29 @@ try {
 	})
 	assert.equal(fallback.status, 200)
 	assert.equal(await fallback.text(), 'native-body')
-	const instance = await selectDevInstance({ root })
+	const { instances } = await listHosts({ root })
+	assert.equal(instances.length, 1)
+	const instance = instances[0]
 	const consoleFile = join(root, 'inspect.ts')
 	await writeFile(
 		consoleFile,
 		"import type { Script } from '@pluxel/agent-sdk/host'; export default ((sdk) => sdk.plugins.list()) satisfies Script",
 	)
 	const inspect = () =>
-		runDevFile({
-			instance,
+		runScript({
+			target: { root, instance: instance.instanceId },
 			file: consoleFile,
 			exportName: 'default',
 			timeoutMs: 5000,
 			detach: false,
-		})
+		}).then(({ run }) => run)
 	const initial = await inspect()
 	assert.equal(initial.state, 'succeeded', JSON.stringify(initial))
 	assert.equal(initial.value.status, 'ok', JSON.stringify(initial.value))
 	assert.ok(
-		initial.value.value.some((plugin) => plugin.address.definition.exportName === 'Installed'),
+		initial.value.value.nodes.some(
+			(plugin) => plugin.address.definition.exportName === 'Installed',
+		),
 	)
 	const latestUpdate = () =>
 		readHostRecentUpdates(globalThis.__installedHostSmokeContext)?.latestUpdate()
@@ -231,7 +220,7 @@ try {
 	assert.equal(upgraded.value.status, 'ok', JSON.stringify(upgraded.value))
 	assert.equal(latestUpdate()?.sequence, acceptedUpgradeSequence, 'late bytes already consumed')
 	assert.equal(globalThis.__installedHostSmoke.filter((entry) => entry === 'two').length, 1)
-	const upgradedPlugin = upgraded.value.value.find(
+	const upgradedPlugin = upgraded.value.value.nodes.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/installed',
 	)
 	assert.equal(upgradedPlugin.recentUpdate.batch.outcome, 'applied')
@@ -308,7 +297,7 @@ try {
 	assert.equal(typedInspection.state, 'succeeded', JSON.stringify(typedInspection))
 	assert.equal(typedInspection.value.status, 'ok', JSON.stringify(typedInspection.value))
 	assert.equal(typedInspection.hostEpoch, initial.hostEpoch, 'Plugin HMR keeps the Host')
-	const typedPlugin = typedInspection.value.value.find(
+	const typedPlugin = typedInspection.value.value.nodes.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/typed',
 	)
 	assert.deepEqual(typedPlugin.execution, {
@@ -324,7 +313,7 @@ try {
 	const removedTyped = await inspect()
 	assert.equal(removedTyped.state, 'succeeded', JSON.stringify(removedTyped))
 	assert.equal(removedTyped.value.status, 'ok', JSON.stringify(removedTyped.value))
-	const withdrawn = removedTyped.value.value.find(
+	const withdrawn = removedTyped.value.value.nodes.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/typed',
 	)
 	assert.equal(withdrawn.availability, 'unavailable')
@@ -367,7 +356,7 @@ try {
 	assert.equal(replaced.state, 'succeeded', JSON.stringify(replaced))
 	assert.equal(replaced.value.status, 'ok', JSON.stringify(replaced.value))
 	assert.notEqual(replaced.hostEpoch, initial.hostEpoch)
-	const restoredPlugin = replaced.value.value.find(
+	const restoredPlugin = replaced.value.value.nodes.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/fixed',
 	)
 	assert.equal(restoredPlugin.recentUpdate.batch.outcome, 'applied')
@@ -377,7 +366,8 @@ try {
 	)
 	await server.close()
 	server = undefined
-	assert.deepEqual(await discoverDevInstances(root), [])
+	const closedDiscovery = await listHosts({ root })
+	assert.deepEqual(closedDiscovery.instances, [])
 	const expected = [
 		'service:one',
 		'fixed',

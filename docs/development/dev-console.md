@@ -7,6 +7,8 @@ description: 在当前 Vite 模块图中执行普通 TypeScript，访问真实�
 
 源码定位使用 `@pluxel/agent-sdk/source` 的普通函数，直接运行 Node；声明、Part、Schema 和应用输入的查询见[源码查询](./inspection.md)。
 
+程序调用从 [`@pluxel/agent-sdk/client`](./agent-sdk.md#从-node-连接现有-host) 使用 `listHosts`、`runScript`、`controlHmr` 和原 receipt 查询。以下 CLI 命令使用相同实现；服务启动仍由项目配置与 Pitchfork 管理。
+
 ## 推荐工作流程
 
 ```sh

@@ -27,7 +27,7 @@ import type {
 
 声明生成要求相关模块的公开类型可被 TypeScript 命名。若插件与应用工厂在同一文件，工厂返回具体服务类导致 `TS2883` / `TS4094`，为回调声明 `: HostApplication` 或 `: Promise<HostApplication>` 返回类型。这样应用保持明确的公开返回类型，插件成员继续保留自身的完整声明。
 
-对运行中的应用，可以通过现有认证连接读取它已接纳的材料：
+对运行中的应用，可以通过现有认证连接读取它已接纳的材料。程序调用使用 [`syncPluginControl({ target, out })`](./agent-sdk.md#从-node-连接现有-host)，下面的 CLI 命令使用同一实现：
 
 ```sh
 # 使用 dev status 已选择的 profile；有多个匹配实例时再加 --instance。

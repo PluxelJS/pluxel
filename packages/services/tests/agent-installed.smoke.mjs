@@ -359,6 +359,44 @@ async function main() {
 			await delay(25)
 		}
 		assert.equal(cancelled.run.state, 'cancelled')
+		// Plain Node consumes the installed SDK; CLI is only another caller of these operations.
+		await writeFile(
+			join(author, 'client.mjs'),
+			`
+import assert from 'node:assert/strict'
+import {readFile, writeFile} from 'node:fs/promises'
+import {setTimeout as delay} from 'node:timers/promises'
+import {registerHooks} from 'node:module'
+registerHooks({resolve(specifier, context, next) {
+ if(specifier === '@pluxel/cli' || specifier.startsWith('@pluxel/cli/')) throw new Error('SDK loaded CLI')
+ return next(specifier, context)
+}})
+const {syncPluginControl, runScript, getScriptResult, cancelScript} = await import('@pluxel/agent-sdk/client')
+const credentials = JSON.parse(await readFile('credentials.json','utf8'))
+const target = {endpoint:process.argv[2],credentials}
+const materials = await syncPluginControl({target,out:'sdk-control'})
+assert.equal(materials.definitions.length, ${synchronized.definitions.length})
+const completed = await runScript({target,file:'query.ts',onPrepared:receipt=>writeFile('sdk-receipt',receipt,{flag:'wx',mode:0o600})})
+assert.equal(completed.receipt,await readFile('sdk-receipt','utf8'))
+assert.equal(completed.run.state,'succeeded')
+assert.equal(completed.run.value.value.config.count,11)
+assert.equal((await getScriptResult(completed.receipt,{credentials})).run.runId,completed.run.runId)
+const waiting = await runScript({target,file:'wait.ts',detach:true,timeoutMs:120000})
+let cancelled = await cancelScript(waiting.receipt,{credentials})
+for(let attempt=0;attempt<20 && cancelled.run.state==='cancelling';attempt++) {
+ await delay(25)
+ cancelled=await getScriptResult(waiting.receipt,{credentials})
+}
+assert.equal(cancelled.run.state,'cancelled')
+console.log('INSTALLED_AGENT_SDK_NODE_OK')
+`,
+		)
+		const direct = await execFile(process.execPath, ['client.mjs', ready.endpoint], {
+			cwd: author,
+			env: { ...environment, ...cliEnvironment },
+			timeout: 60_000,
+		})
+		assert.equal(direct.stdout.trim(), 'INSTALLED_AGENT_SDK_NODE_OK')
 		let denied
 		try {
 			await execFile(

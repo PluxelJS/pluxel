@@ -1,3 +1,4 @@
+import { runScript, controlHmr, getScriptResult, HostClientError } from '@pluxel/agent-sdk/client'
 import { createHash } from 'node:crypto'
 import { chmod, rm, symlink, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -6,20 +7,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { devCommand } from '../src/commands/dev'
 import { scriptCommand } from '../src/commands/script'
 import { normalizeDevArgs } from '../src/command-manifest'
-import { decodeScriptReceipt, encodeScriptReceipt } from '../src/script/receipt'
 import {
+	decodeScriptReceipt,
+	encodeScriptReceipt,
 	DevClientError,
 	connectDevInstance,
-	controlDevHmr,
 	discoverDevInstances,
 	liveDevInstances,
 	parseInput,
-	parseRunSnapshot,
 	publicInstance,
-	runDevFile,
 	selectDevInstance,
-} from '../src/dev/client'
-import { createDevFixture } from './helpers/dev-fixture'
+} from '@pluxel/agent-sdk/internal/client'
+import { createDevFixture } from '../../agent-sdk/tests/helpers/dev-fixture'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -106,26 +105,28 @@ describe('development control through native Capn Web', () => {
 		const { root, instance, requests } = await fixture()
 		const file = await script(root)
 		const events: string[] = []
-		const result = await runDevFile({
-			instance,
+		const result = await runScript({
+			target: { root: instance.root, instance: instance.instanceId },
 			file,
 			exportName: 'default',
 			input: { count: 3 },
 			timeoutMs: 500,
 			detach: false,
-			onPrepared(snapshot) {
-				events.push(snapshot.state)
+			onPrepared(receipt) {
+				const snapshot = decodeScriptReceipt(receipt)
+				events.push('prepared')
 				expect(snapshot.requestHash).toMatch(/^[a-f0-9]{64}$/)
 				expect(requests.some((request) => request.method === 'submit')).toBe(false)
 			},
-			onAccepted: () => events.push('accepted'),
-		})
+			onAccepted: () => {
+				events.push('accepted')
+			},
+		}).then(({ run }) => run)
 		expect(result).toMatchObject({
 			state: 'succeeded',
-			root,
 			value: { input: { count: 3 }, exportName: 'default' },
 		})
-		expect(events).toEqual(['submitting', 'accepted'])
+		expect(events).toEqual(['prepared', 'accepted'])
 		const submissions = requests.filter((request) => request.method === 'submit')
 		expect(submissions).toHaveLength(1)
 		expect(submissions[0]?.input).toMatchObject({
@@ -151,30 +152,29 @@ describe('development control through native Capn Web', () => {
 				return { changed: true }
 			},
 		})
-		const failure = await runDevFile({
-			instance,
+		const failure = await runScript({
+			target: { root: instance.root, instance: instance.instanceId },
 			file: await script(root),
 			exportName: 'default',
 			timeoutMs: 1000,
 			detach: false,
-		}).then(
-			() => {
-				throw new Error('Expected a lost response')
-			},
-			(error: unknown) => error as { code: string; runId: string; requestHash: string },
-		)
-		expect(failure).toMatchObject({
-			code: 'outcome_unknown',
-			runId: expect.any(String),
-			requestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
 		})
-		expect(await executor.settled(failure.runId, instance.instanceId)).toMatchObject({
+			.then(({ run }) => run)
+			.then(
+				() => {
+					throw new Error('Expected a lost response')
+				},
+				(error: unknown) => error as HostClientError,
+			)
+		expect(failure).toMatchObject({ code: 'outcome_unknown', receipt: expect.any(String) })
+		const original = decodeScriptReceipt(failure.receipt!)
+		expect(await executor.settled(original.runId, instance.instanceId)).toMatchObject({
 			state: 'succeeded',
 			value: { changed: true },
 		})
-		using connection = await connectDevInstance(instance)
-		expect(await connection.result(failure.runId)).toMatchObject({
-			runId: failure.runId,
+		const recovered = await getScriptResult(failure.receipt!)
+		expect(recovered.run).toMatchObject({
+			runId: original.runId,
 			state: 'succeeded',
 		})
 		expect(requests.filter((request) => request.method === 'submit')).toHaveLength(1)
@@ -191,13 +191,13 @@ describe('development control through native Capn Web', () => {
 			},
 		})
 		try {
-			const accepted = await runDevFile({
-				instance,
+			const accepted = await runScript({
+				target: { root: instance.root, instance: instance.instanceId },
 				file: await script(root),
 				exportName: 'default',
 				timeoutMs: 1000,
 				detach: true,
-			})
+			}).then(({ run }) => run)
 			await entered.promise
 			using connection = await connectDevInstance(instance)
 			expect(await connection.cancel(accepted.runId)).toMatchObject({ state: 'cancelling' })
@@ -211,14 +211,19 @@ describe('development control through native Capn Web', () => {
 			release.resolve()
 		}
 	})
-	it.each(['pause', 'apply', 'resume'])(
+	it.each(['pause', 'apply', 'resume'] as const)(
 		'controls %s without a ready application or project module',
 		async (action) => {
 			const { instance, requests } = await fixture({
 				metadata: { application: { state: 'unavailable', latestUpdate: null } },
 			})
 			expect(
-				await controlDevHmr({ instance, action, timeoutMs: 500, detach: false }),
+				await controlHmr({
+					target: { root: instance.root, instance: instance.instanceId },
+					action,
+					timeoutMs: 500,
+					detach: false,
+				}).then(({ run }) => run),
 			).toMatchObject({ kind: 'hmr', state: 'succeeded', value: { action } })
 			expect(requests.filter((request) => request.method === 'control')).toHaveLength(1)
 			expect(requests.some((request) => request.method === 'submit')).toBe(false)
@@ -237,15 +242,20 @@ describe('development control through native Capn Web', () => {
 			},
 		})
 		try {
-			const running = runDevFile({
-				instance,
+			const running = runScript({
+				target: { root: instance.root, instance: instance.instanceId },
 				file: await script(root),
 				exportName: 'default',
 				timeoutMs: 1000,
 				detach: false,
-			})
+			}).then(({ run }) => run)
 			expect(
-				await controlDevHmr({ instance, action: 'apply', timeoutMs: 1000, detach: false }),
+				await controlHmr({
+					target: { root: instance.root, instance: instance.instanceId },
+					action: 'apply',
+					timeoutMs: 1000,
+					detach: false,
+				}).then(({ run }) => run),
 			).toMatchObject({ state: 'succeeded' })
 			expect(await running).toMatchObject({ state: 'succeeded', value: 'updated' })
 		} finally {
@@ -254,13 +264,13 @@ describe('development control through native Capn Web', () => {
 	})
 	it('pins result and cancel receipts to the original instance after a new instance appears', async () => {
 		const first = await fixture()
-		const accepted = await runDevFile({
-			instance: first.instance,
+		const accepted = await runScript({
+			target: { root: first.instance.root, instance: first.instance.instanceId },
 			file: await script(first.root),
 			exportName: 'default',
 			timeoutMs: 500,
 			detach: false,
-		})
+		}).then(({ run }) => run)
 		const token = encodeScriptReceipt({
 			version: 3,
 			connection: { kind: 'local', root: first.instance.root, serviceId: first.instance.serviceId },
@@ -289,7 +299,7 @@ describe('development control through native Capn Web', () => {
 				error: {
 					code: 'dev_unavailable',
 					receipt: token,
-					hint: expect.stringContaining('script result'),
+					hint: expect.stringContaining('original instance'),
 					context: { root: first.root, instanceId: first.instance.instanceId },
 				},
 			})
@@ -340,13 +350,13 @@ describe('development control through native Capn Web', () => {
 		const linked = resolve(first.root, 'linked.ts')
 		await symlink(await script(outside.root), linked)
 		await expect(
-			runDevFile({
-				instance: first.instance,
+			runScript({
+				target: { root: first.instance.root, instance: first.instance.instanceId },
 				file: linked,
 				exportName: 'default',
 				timeoutMs: 500,
 				detach: false,
-			}),
+			}).then(({ run }) => run),
 		).rejects.toMatchObject({ code: 'invalid_input' })
 		expect(first.requests.some((request) => request.method === 'submit')).toBe(false)
 	})
@@ -359,12 +369,5 @@ describe('development control through native Capn Web', () => {
 			'['.repeat(65) + '0' + ']'.repeat(65),
 		])
 			expect(() => parseInput(value)).toThrow(DevClientError)
-		expect(() =>
-			parseRunSnapshot(
-				{ state: 'succeeded' },
-				{ instanceId: 'expected', root: '/' } as never,
-				'run',
-			),
-		).toThrow(expect.objectContaining({ code: 'protocol_mismatch' }))
 	})
 })

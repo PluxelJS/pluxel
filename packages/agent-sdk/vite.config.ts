@@ -7,7 +7,7 @@ export default defineConfig({
 		tasks: repositoryTasks({
 			compile: {
 				command: 'vp pack',
-				dependsOn: ['@pluxel/host#compile', '@pluxel/rolldown#compile'],
+				dependsOn: ['@pluxel/host#compile', '@pluxel/rolldown#compile', '@pluxel/services#compile'],
 				cache: { output: ['dist/**'] },
 			},
 			'check-types': 'tsc --noEmit --pretty false',

@@ -1,14 +1,10 @@
+import { runScript, controlHmr } from '@pluxel/agent-sdk/client'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { startProjectScriptServer } from '../src/console/server'
-import {
-	controlDevHmr,
-	connectDevInstance,
-	runDevFile,
-	selectDevInstance,
-} from '../../cli/src/dev/client'
+import { connectDevInstance, selectDevInstance } from '@pluxel/agent-sdk/internal/client'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -38,10 +34,14 @@ describe('dev console wire interoperability', () => {
 		const instance = await selectDevInstance({ root })
 		using client = await connectDevInstance(instance)
 		expect(instance.hmr).toEqual(hmr)
-		for (const action of ['pause', 'apply', 'resume']) {
-			const result = await controlDevHmr({ instance, action, timeoutMs: 1000, detach: false })
+		for (const action of ['pause', 'apply', 'resume'] as const) {
+			const result = await controlHmr({
+				target: { root: instance.root, instance: instance.instanceId },
+				action,
+				timeoutMs: 1000,
+				detach: false,
+			}).then(({ run }) => run)
 			expect(result).toMatchObject({
-				root,
 				kind: 'hmr',
 				action,
 				state: 'succeeded',
@@ -81,35 +81,34 @@ describe('dev console wire interoperability', () => {
 		const instance = await selectDevInstance({ root })
 		using client = await connectDevInstance(instance)
 		expect(instance.instanceId).toBe(server.instance.instanceId)
-		const first = await runDevFile({
-			instance,
+		const first = await runScript({
+			target: { root: instance.root, instance: instance.instanceId },
 			file,
 			exportName: 'default',
 			input: { count: 3 },
 			timeoutMs: 1000,
 			detach: false,
-		})
+		}).then(({ run }) => run)
 		expect(first).toMatchObject({
-			root: instance.root,
 			instanceId: instance.instanceId,
 			state: 'succeeded',
 			value: { calls: 1, input: { count: 3 } },
 		})
-		const second = await runDevFile({
-			instance,
+		const second = await runScript({
+			target: { root: instance.root, instance: instance.instanceId },
 			file,
 			exportName: 'default',
 			timeoutMs: 1000,
 			detach: false,
-		})
+		}).then(({ run }) => run)
 		expect(second).toMatchObject({ state: 'succeeded', value: { calls: 2 } })
-		const waiting = await runDevFile({
-			instance,
+		const waiting = await runScript({
+			target: { root: instance.root, instance: instance.instanceId },
 			file,
 			exportName: 'wait',
 			timeoutMs: 1000,
 			detach: true,
-		})
+		}).then(({ run }) => run)
 		expect(await client.cancel(waiting.runId)).toMatchObject({
 			state: 'cancelling',
 		})

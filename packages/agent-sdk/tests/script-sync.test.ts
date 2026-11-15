@@ -2,7 +2,6 @@ import { mkdtemp, mkdir, readFile, readlink, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { cli as gunshiCli } from 'gunshi'
 import {
 	controlSha256,
 	encodeControlData,
@@ -14,10 +13,9 @@ import {
 	type PluginControlMaterialsSnapshot,
 } from '@pluxel/host/internal/agent/runtime'
 import { compileScript } from '@pluxel/rolldown/scripts'
-import { syncPluginControl } from '../src/script/sync'
+import { syncPluginControl as writePluginControl } from '../src/client/materials'
+import { syncPluginControl } from '@pluxel/agent-sdk/client'
 import { createDevFixture } from './helpers/dev-fixture'
-import { devCommand } from '../src/commands/dev'
-import { normalizeDevArgs } from '../src/command-manifest'
 
 const directories: string[] = []
 const pendingCompilations = new Set<ReturnType<typeof compileScript>>()
@@ -113,7 +111,7 @@ it('groups one canonical entry and reports exceptional export aliases without am
 		definitions: fixtures.flatMap((item) => item.snapshot.definitions),
 		unavailable: [],
 	}))
-	const result = await syncPluginControl({ source, out: join(fixtures[0].directory, 'grouped') })
+	const result = await writePluginControl({ source, out: join(fixtures[0].directory, 'grouped') })
 	expect(new Set(result.definitions.map((entry) => entry.module)).size).toBe(1)
 	expect(
 		result.definitions.find((entry) => entry.definition.exportName === 'Counter')?.exportName,
@@ -149,7 +147,7 @@ it('keeps long source-entry identities within material path budgets and reports 
 		},
 	})
 	using original = sourcePlugin.reader
-	const result = await syncPluginControl({
+	const result = await writePluginControl({
 		source: original,
 		out: join(sourcePlugin.directory, 'long-source'),
 	})
@@ -163,7 +161,7 @@ it('keeps long source-entry identities within material path budgets and reports 
 		definitions: [],
 		unavailable: [sourcePlugin.snapshot.definitions[0].definition],
 	}))
-	const empty = await syncPluginControl({
+	const empty = await writePluginControl({
 		source: unavailable,
 		out: join(sourcePlugin.directory, 'unavailable'),
 	})
@@ -186,7 +184,7 @@ it('keeps canonical imports stable when material aliases and the set of same-nam
 		unavailable: [],
 	}))
 	const out = join(original.directory, 'stable')
-	const first = await syncPluginControl({ source: together, out })
+	const first = await writePluginControl({ source: together, out })
 	const selected = first.definitions.find(
 		(entry) =>
 			encodeControlData(entry.definition) ===
@@ -202,7 +200,7 @@ it('keeps canonical imports stable when material aliases and the set of same-nam
 
 	const renamed = await fixture()
 	using renamedReader = renamed.reader
-	const next = await syncPluginControl({ source: renamedReader, out })
+	const next = await writePluginControl({ source: renamedReader, out })
 	expect(next.definitions).toHaveLength(1)
 	expect(next.definitions[0]).toEqual(selected)
 	expect(next.snapshot).not.toBe(first.snapshot)
@@ -217,7 +215,7 @@ it('publishes verified entry modules atomically and compiles imports through the
 	const { directory, reader } = await fixture()
 	using source = reader
 	const out = join(directory, 'control')
-	const first = await syncPluginControl({ source, out })
+	const first = await writePluginControl({ source, out })
 	expect(first).not.toHaveProperty('entry')
 	expect(first.definitions[0].module).toMatch(/\/current\/entries\/[a-f0-9]{64}\/index\.mjs$/)
 	expect(first.definitions).toHaveLength(1)
@@ -237,7 +235,7 @@ it('publishes verified entry modules atomically and compiles imports through the
 			first.definitions[0].module.slice(join(out, 'current').length + 1).replace(/\.mjs$/, '.d.mts')
 		],
 	).toContain(`CounterConfigDeclaration as ${first.definitions[0].exportName}ConfigDeclaration`)
-	await expect(syncPluginControl({ source, out })).resolves.toMatchObject({
+	await expect(writePluginControl({ source, out })).resolves.toMatchObject({
 		snapshot: first.snapshot,
 		out: first.out,
 	})
@@ -291,20 +289,20 @@ it('rejects corrupted or mixed chunks before publishing and preserves author fil
 			data: Buffer.from('corrupt').toString('base64'),
 		}),
 	}
-	await expect(syncPluginControl({ source: corrupt, out })).rejects.toMatchObject({
+	await expect(writePluginControl({ source: corrupt, out })).rejects.toMatchObject({
 		code: 'protocol_mismatch',
 	})
 	await expect(readFile(join(out, 'current/index.mjs'))).rejects.toMatchObject({ code: 'ENOENT' })
 	await mkdir(out)
 	await writeFile(join(out, 'author.ts'), 'author content')
-	await expect(syncPluginControl({ source, out })).rejects.toMatchObject({
+	await expect(writePluginControl({ source, out })).rejects.toMatchObject({
 		code: 'control_sync_conflict',
 	})
 	expect(await readFile(join(out, 'author.ts'), 'utf8')).toBe('author content')
 	const owned = join(directory, 'owned')
-	const installed = await syncPluginControl({ source, out: owned })
+	const installed = await writePluginControl({ source, out: owned })
 	await writeFile(installed.definitions[0].module, '// author edited immutable file')
-	await expect(syncPluginControl({ source, out: owned })).rejects.toMatchObject({
+	await expect(writePluginControl({ source, out: owned })).rejects.toMatchObject({
 		code: 'control_sync_conflict',
 	})
 	expect(await readFile(installed.definitions[0].module, 'utf8')).toBe(
@@ -312,29 +310,21 @@ it('rejects corrupted or mixed chunks before publishing and preserves author fil
 	)
 })
 
-it('runs dev sync through the existing owner selection and authenticated local control methods', async () => {
+it('synchronizes through the public client using the original owner and authenticated local control methods', async () => {
 	const { snapshot, reader } = await fixture()
 	using _source = reader
 	const dev = await createDevFixture({ materials: async () => snapshot })
-	const output: string[] = []
-	vi.spyOn(console, 'log').mockImplementation((value) => output.push(String(value)))
 	try {
-		await gunshiCli(
-			normalizeDevArgs(['dev', 'sync', '--root', dev.root]),
-			{ run() {} },
-			{ subCommands: { dev: devCommand } },
-		)
-		expect(process.exitCode ?? 0).toBe(0)
-		const result = JSON.parse(output.at(-1)!)
-		expect(result).toMatchObject({
-			ok: true,
-			value: {
-				out: join(dev.root, '.pluxel/control'),
-				catalogRevision: 3,
-				definitions: [{ exportName: 'Counter', module: expect.any(String) }],
-			},
+		const result = await syncPluginControl({
+			target: { root: dev.root },
+			out: join(dev.root, '.pluxel/control'),
 		})
-		expect(await readFile(result.value.definitions[0].module, 'utf8')).toContain('synced-counter')
+		expect(result).toMatchObject({
+			out: join(dev.root, '.pluxel/control'),
+			catalogRevision: 3,
+			definitions: [{ exportName: 'Counter', module: expect.any(String) }],
+		})
+		expect(await readFile(result.definitions[0].module, 'utf8')).toContain('synced-counter')
 		expect(dev.requests.map((request) => request.method)).toContain('materials')
 		expect(dev.requests.map((request) => request.method)).toContain('materialFile')
 		expect(dev.requests.map((request) => request.method)).not.toContain('submit')

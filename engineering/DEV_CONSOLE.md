@@ -49,7 +49,7 @@ pause/apply/resume 由 Vite 批次调度器执行，不加载项目模块，不�
 - `packages/host-vite/src/project.ts`、`project-sdk.ts`：开发扩展。
 - `src/console/attachment.ts`、`source.ts`：ModuleRunner、源码摘要、依赖观察和 Host epoch。
 - `src/console/server.ts`、`discovery.ts`：私有连接认证及发现；共享 target 与 carrier 位于 Host agent 子入口。
-- `packages/cli/src/dev/client.ts`、`src/script/receipt.ts`、`src/commands/script.ts`：普通 Promise client、归属选择、统一回执与原 owner 查询。
+- `packages/agent-sdk/src/client/operations.ts`、`dev.ts`、`receipt.ts`：普通 Promise client、归属选择、统一回执与原 owner 查询。
 - Host-vite project-sdk/server/client/attachment tests：无 Services 真实 Host、fork、过期 constructor、native Cap’n Web、摘要与权限。
 - `tests/hmr-control.smoke.mjs`：真实 Vite watcher、共享 constructor 身份、暂停批次、失败修复、重复更新、Host replacement 和初始应用失败时的独立控制。
 - `tests/initial-source-recovery.smoke.mjs`：初始源码失败后的真实恢复。

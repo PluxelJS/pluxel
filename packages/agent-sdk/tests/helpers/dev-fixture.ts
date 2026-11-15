@@ -18,7 +18,7 @@ import {
 	type ScriptControlResponse,
 } from '@pluxel/host/internal/agent/transport'
 import { openScriptSocketSession } from '@pluxel/host/internal/agent/socket'
-import { publicInstance, type DevInstance } from '../../src/dev/client'
+import { publicInstance, type DevInstance } from '@pluxel/agent-sdk/internal/client'
 
 export async function createDevFixture(
 	options: Readonly<{
@@ -29,6 +29,7 @@ export async function createDevFixture(
 		control?(action: 'pause' | 'apply' | 'resume', run: RunExecution): Promise<unknown>
 		materials?(): Promise<PluginControlMaterialsSnapshot>
 		dropAdmissionResponse?: boolean
+		beforeDescribe?(): Promise<void>
 	}> = {},
 ) {
 	const temporary = await mkdtemp(resolve(tmpdir(), 'px-capn-'))
@@ -83,8 +84,9 @@ export async function createDevFixture(
 						error: { code: 'unauthorized', message: 'Invalid fixture credentials' },
 					}
 				class Control extends RpcTarget implements ScriptControlTarget {
-					describe(input: unknown) {
+					async describe(input: unknown) {
 						requests.push({ method: 'describe', input })
+						await options.beforeDescribe?.()
 						return target.describe(input)
 					}
 					async submit(input: unknown) {

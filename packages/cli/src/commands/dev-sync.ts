@@ -2,9 +2,8 @@ import { resolve } from 'node:path'
 import { define, type ArgValues } from 'gunshi'
 import { devSyncArgs, devSyncDefinition } from '../command-manifest'
 import { validateCommandOptions } from '../command-options'
-import { connectDevProject } from '../dev/project'
-import { connectDevInstance } from '../dev/client'
-import { syncPluginControl } from '../script/sync'
+import { resolveDevSelection } from '@pluxel/agent-sdk/internal/client'
+import { syncPluginControl, HostClientError } from '@pluxel/agent-sdk/client'
 import { scriptFailure } from '@pluxel/host/internal/agent/runtime'
 import { printFailure, printValue } from '../script/output'
 
@@ -14,19 +13,24 @@ export const devSyncCommand = define({
 		try {
 			validateCommandOptions(ctx)
 			const values = ctx.values as ArgValues<typeof devSyncArgs>
-			const instance = await connectDevProject(values)
-			using connection = await connectDevInstance(instance)
-			const out = values.out ? resolve(values.out) : resolve(instance.root, '.pluxel/control')
+			const selection = await resolveDevSelection(values)
+			const out = values.out ? resolve(values.out) : resolve(selection.root, '.pluxel/control')
 			const value = await syncPluginControl({
-				source: {
-					manifest: (input) => connection.materials(input),
-					file: (input) => connection.materialFile(input),
+				target: {
+					root: values.root ?? selection.project.workspace,
+					profile: values.profile,
+					instance: values.instance,
 				},
 				out,
 			})
 			printValue(ctx.log, value)
 		} catch (error) {
-			printFailure(ctx.log, scriptFailure(error, 'control_sync_failed'))
+			printFailure(
+				ctx.log,
+				error instanceof HostClientError
+					? error.failure
+					: scriptFailure(error, 'control_sync_failed'),
+			)
 		}
 	},
 })

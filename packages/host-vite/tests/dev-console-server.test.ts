@@ -17,7 +17,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { openScriptSocketSession } from '@pluxel/host/internal/agent/socket'
 import type { ScriptConnectionTarget } from '@pluxel/host/internal/agent/transport'
 import { SCRIPT_ARTIFACT_FORMAT, type ScriptSubmission } from '@pluxel/host/internal/agent/runtime'
-import { connectDevInstance, selectDevInstance } from '../../cli/src/dev/client'
+import { connectDevInstance, selectDevInstance } from '@pluxel/agent-sdk/internal/client'
 import { startProjectScriptServer } from '../src/console/server'
 
 const cleanup: Array<() => Promise<void>> = []

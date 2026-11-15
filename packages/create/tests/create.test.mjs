@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import { repositoryPackages, isPublishablePackage } from '../../../scripts/repository-packages.mjs'
-import { resolveDevProject } from '../../cli/src/dev/project'
+import { resolveDevProject } from '@pluxel/agent-sdk/internal/client'
 
 const packageRoot = resolve(import.meta.dirname, '..')
 const bin = resolve(packageRoot, 'dist/create.mjs')

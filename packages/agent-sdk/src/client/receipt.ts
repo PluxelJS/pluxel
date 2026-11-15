@@ -79,22 +79,13 @@ function validate(value: unknown): ScriptReceipt {
 	} else if (connection.kind === 'remote') {
 		if (!text(connection.endpoint, 4096) || 'root' in connection || 'serviceId' in connection)
 			invalid()
-		let endpoint: URL
+		let endpoint: string
 		try {
-			endpoint = new URL(connection.endpoint)
+			endpoint = parseRemoteEndpoint(connection.endpoint)
 		} catch {
 			invalid()
 		}
-		if (
-			!['http:', 'https:', 'ws:', 'wss:'].includes(endpoint.protocol) ||
-			endpoint.username ||
-			endpoint.password ||
-			endpoint.search ||
-			endpoint.hash ||
-			(endpoint.pathname !== '/' && endpoint.pathname !== '/__pluxel/runtime/session')
-		)
-			invalid()
-		target = { kind: 'remote', endpoint: endpoint.href }
+		target = { kind: 'remote', endpoint }
 	} else invalid()
 	return {
 		version: 3,
@@ -103,6 +94,32 @@ function validate(value: unknown): ScriptReceipt {
 		runId: input.runId,
 		requestHash: input.requestHash,
 	}
+}
+
+export function parseRemoteEndpoint(value: string): string {
+	const invalidEndpoint = (): never => {
+		throw new ScriptExecutionError(
+			'invalid_input',
+			'endpoint must be an HTTP(S) or WS(S) origin or /__pluxel/runtime/session URL, without userinfo, query or fragment',
+		)
+	}
+	if (!text(value, 4096)) invalidEndpoint()
+	let endpoint: URL
+	try {
+		endpoint = new URL(value)
+	} catch {
+		invalidEndpoint()
+	}
+	if (
+		!['http:', 'https:', 'ws:', 'wss:'].includes(endpoint.protocol) ||
+		endpoint.username ||
+		endpoint.password ||
+		endpoint.search ||
+		endpoint.hash ||
+		(endpoint.pathname !== '/' && endpoint.pathname !== '/__pluxel/runtime/session')
+	)
+		invalidEndpoint()
+	return endpoint.href
 }
 
 function serialize(receipt: ScriptReceipt): string {

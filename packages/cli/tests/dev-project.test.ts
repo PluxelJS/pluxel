@@ -1,15 +1,17 @@
+import { readDevService, startDevService } from '../src/dev/project'
+import { cli as gunshiCli } from 'gunshi'
+import { devCommand } from '../src/commands/dev'
+import { normalizeDevArgs } from '../src/command-manifest'
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createDevFixture } from './helpers/dev-fixture'
+import { createDevFixture } from '../../agent-sdk/tests/helpers/dev-fixture'
 import {
 	connectDevProject,
-	readDevService,
 	resolveDevSelection,
 	resolveDevProject,
-	startDevService,
-} from '../src/dev/project'
+} from '@pluxel/agent-sdk/internal/client'
 
 const cleanup: Array<() => Promise<void>> = []
 
@@ -409,6 +411,32 @@ it('isolates nested and outer declarations with the same profile name and Vite r
 	const outer = await consoleInstance(project.web, undefined, undefined, 'app', 'app', project.root)
 	const inner = await consoleInstance(project.web, undefined, undefined, 'app', 'app', project.web)
 	vi.stubEnv('PATH', '')
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((value) => {
+		output.push(String(value))
+	})
+	vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+	const file = resolve(project.web, 'task.ts')
+	await writeFile(file, 'export default () => null')
+	for (const args of [['status'], ['instances'], ['run', file], ['hmr', 'pause']]) {
+		await gunshiCli(
+			normalizeDevArgs(['dev', ...args, '--root', project.root]),
+			{ run() {} },
+			{ subCommands: { dev: devCommand } },
+		)
+		const result = JSON.parse(output.pop()!)
+		expect(result.ok).toBe(true)
+		const instances =
+			args[0] === 'status'
+				? result.value.instances
+				: args[0] === 'instances'
+					? result.value
+					: undefined
+		const owners = instances
+			? instances.map((item: { instanceId: string }) => item.instanceId)
+			: [result.value.run.instanceId]
+		expect(owners).toEqual([outer.instance.instanceId])
+	}
 	expect(await connectDevProject({ root: project.root })).toEqual(outer.instance)
 	expect(await connectDevProject({ root: project.web })).toEqual(inner.instance)
 	await expect(

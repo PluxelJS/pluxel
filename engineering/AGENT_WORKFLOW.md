@@ -5,7 +5,8 @@
 ## 所有者和调用路径
 
 ```text
-CLI / 编辑器
+CLI / 编辑器 / Node 程序
+  → @pluxel/agent-sdk/client：发现、编译、连接、提交与原 receipt 恢复
   → 跨进程 Cap’n Web 控制 target：describe / submit / result / cancel / control
   → ScriptExecutor：接纳、队列、身份、取消、结果保留
       ├─ Vite：ModuleRunner 加载目标项目模块
@@ -24,6 +25,7 @@ Host 持有插件图、配置来源和原始输入、版本、运行意图及生
 
 | 入口                                    | 所属职责                                                                       |
 | --------------------------------------- | ------------------------------------------------------------------------------ |
+| `@pluxel/agent-sdk/client`              | 外部 Node 调用方；CLI 仅转换参数、凭据文件、输出和退出码                       |
 | `@pluxel/agent-sdk/host`                | 作者使用的 SDK、地址关联与结果类型                                             |
 | `@pluxel/host/internal/agent/runtime`   | 框架执行内核、材料读取与输入输出协议                                           |
 | `@pluxel/host/internal/agent/node`      | 显式启用的可信 Node 工厂加载器与 Host 执行所有者                               |
@@ -37,7 +39,15 @@ Host 持有插件图、配置来源和原始输入、版本、运行意图及生
 
 生成控制声明引用 Host 内部类型所有者 `@pluxel/host/internal/agent-types`，沿用控制模块已有的 Host 依赖；作者从 `/host` 导入相同类型，插件包无需因此引入源码编译器。
 
-源码工具从 `@pluxel/agent-sdk/source` 直接调用，不经过 Script、SDK、Host、receipt 或 Vite console。类型、实现和资源归属由 [Toolchain](TOOLCHAIN.md#offline-plugin-inspection) 维护；运行节点的 `address.definition` 可直接交给源码查询。`@pluxel/agent-sdk/host` 发布 Host SDK 类型和 `createScriptScope`，两条入口通过标准地址互通，各自保持依赖边界。
+源码工具从 `@pluxel/agent-sdk/source` 直接调用，不经过 Script、SDK、Host、receipt 或 Vite console。类型、实现和资源归属由 [Toolchain](TOOLCHAIN.md#offline-plugin-inspection) 维护；运行节点的 `address.definition` 可直接交给源码查询。`@pluxel/agent-sdk/host` 发布 Host SDK 类型和 `createScriptScope`，源码与 Host 入口通过标准地址互通，各自保持依赖边界。
+
+## 外部客户端
+
+[`packages/agent-sdk/src/client/`](../packages/agent-sdk/src/client/) 拥有发现与 profile 选择、远端认证接线、材料同步、统一提交/等待和 receipt 编解码。`operations.ts` 是普通函数入口，`dev.ts` / `remote.ts` 分别适配本地 socket 与 Services session；两条载体复用 Host transport 的校验和快照，不复制运行协议。调用方输入先复制，连接在每次调用结束时关闭。
+
+`onPrepared` 在发送前被等待；接纳响应丢失仍保留原 receipt，不重试提交。`signal` 中断客户端 IO，不撤销 Host 工作；真正取消只能交给原 executor。receipt 查询固定原连接位置、实例和请求摘要。材料下载可取消，进入原子安装后完成结算，不把已发布结果报告成未发生。公开契约与最短调用见 [Agent SDK](../docs/development/agent-sdk.md)。
+
+SDK 的依赖方向为 Host 协议、Rolldown 编译器与 Services 认证客户端；没有 CLI 依赖。`/client` 按需加载远端认证和上传编译；`/host` 保持可移植。CLI 的进程启动代码通过内部 `/internal/client` 复用 profile 与实例元数据，Pitchfork 子进程仍由 CLI 管理。内部入口不是另一个作者 API。
 
 ## scope 的接纳和结算
 
@@ -110,11 +120,12 @@ Vite 控制 owner 随开发实例存活，其私有本地连接认证独立于�
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 直接 SDK                    | [`agent-sdk.test.ts`](../packages/host/tests/agent-sdk.test.ts)：无 Services Host，读取/计算/CAS/实际采用、来源与遮盖、只读、持久化确认失败、保存后采用失败、启停失败、取消排空、真实日志范围与订阅释放 |
 | 作者类型                    | [`agent-sdk.typecheck.ts`](../packages/host/tests/agent-sdk.typecheck.ts)：稳定节点地址、版本条件、日志有限等待和普通 Script 类型推导                                                                   |
+| 外部 Node 客户端            | [`client.test.ts`](../packages/agent-sdk/tests/client.test.ts)、[`entrypoints.test.ts`](../packages/agent-sdk/tests/entrypoints.test.ts)：输入快照、提交前持久化、中断、取消结算、原 receipt 与入口隔离 |
 | 通用执行器                  | [`agent-runtime.test.ts`](../packages/host/tests/agent-runtime.test.ts)：身份、结果编码、有界保留、失败和取消结算                                                                                       |
 | Node 加载                   | [`agent-node.test.ts`](../packages/host/tests/agent-node.test.ts)：实际制品加载、真实 Host、模块重复运行、原源码堆栈和关闭                                                                              |
 | 脚本编译                    | [`scripts.test.ts`](../packages/rolldown/tests/scripts.test.ts)：真实 TypeScript 与 Rolldown、计算依赖、拒绝的运行时 import 和 source map                                                               |
 | 可移植入口与 Workers 最小桥 | [`agent-portability.test.ts`](../packages/host/tests/agent-portability.test.ts)，范围见下                                                                                                               |
-| Vite、CLI 与部署接收端      | [Dev Console](DEV_CONSOLE.md) 和各包 integration / installed smoke；交付门禁需包含真实 CLI→认证→无源码、无编译器的 Node 应用                                                                            |
+| Vite、CLI 与部署接收端      | [Dev Console](DEV_CONSOLE.md) 和各包 integration / installed smoke；交付门禁需包含真实 SDK/CLI→认证→无源码、无编译器的 Node 应用                                                                        |
 
 交付验收及已知限制由 [Plugin Control](PLUGIN_CONTROL.md#验证入口)维护；具体历史执行记录由 Git 保留。
 

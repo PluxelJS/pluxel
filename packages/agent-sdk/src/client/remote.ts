@@ -1,4 +1,3 @@
-import { open } from 'node:fs/promises'
 import NodeWebSocket from 'crossws/websocket'
 import {
 	createRuntimeSessionClient,
@@ -14,7 +13,8 @@ import type { RpcStub } from 'capnweb'
 import type { ScriptControlTarget } from '@pluxel/host/internal/agent/transport'
 import { ScriptExecutionError } from '@pluxel/host/internal/agent/runtime'
 
-export type Credentials = Readonly<{ password?: string; code?: string; cookie?: string }>
+import type { HostCredentials } from './contracts'
+import { checkAbort } from './signal'
 const HeaderWebSocket = NodeWebSocket as typeof NodeWebSocket & {
 	new (url: string, protocols: string[], options: { headers: Record<string, string> }): WebSocket
 }
@@ -25,56 +25,15 @@ export interface RuntimeTargetConnection extends Disposable {
 	readonly execution?: RpcStub<ScriptControlTarget>
 }
 
-export async function readScriptCredentials(file?: string): Promise<Credentials> {
-	if (!file) return {}
-	await using handle = await open(file, 'r')
-	const stat = await handle.stat()
-	if (!stat.isFile())
-		throw new ScriptExecutionError('invalid_credentials', 'Credential file must be a regular file')
-	const bytes = Buffer.alloc(16 * 1024 + 1)
-	let size = 0
-	while (size < bytes.length) {
-		const part = await handle.read(bytes, size, bytes.length - size, null)
-		if (!part.bytesRead) break
-		size += part.bytesRead
-	}
-	if (size > 16 * 1024)
-		throw new ScriptExecutionError('invalid_credentials', 'Credential file exceeds 16 KiB')
-	let value: unknown
-	try {
-		value = JSON.parse(bytes.subarray(0, size).toString('utf8'))
-	} catch {
-		throw new ScriptExecutionError('invalid_credentials', 'Credential file must contain valid JSON')
-	}
-	if (!value || typeof value !== 'object' || Array.isArray(value))
-		throw new ScriptExecutionError(
-			'invalid_credentials',
-			'Credential file must be an object with password, code or cookie',
-		)
-	const entries = Object.entries(value)
-	if (
-		entries.some(
-			([key, item]) =>
-				!['password', 'code', 'cookie'].includes(key) ||
-				typeof item !== 'string' ||
-				!item ||
-				item.length > 4096,
-		)
-	)
-		throw new ScriptExecutionError(
-			'invalid_credentials',
-			'Credential file contains an unknown field or invalid credential',
-		)
-	return value as Credentials
-}
-
 /** No reconnection or resubmission; reconnecting callers must retain and check the original owner. */
 export async function connectRuntimeTarget(
 	options: Readonly<{
 		endpoint: string
-		credentials?: Credentials
+		credentials?: HostCredentials
+		signal?: AbortSignal
 	}>,
 ): Promise<RuntimeTargetConnection> {
+	checkAbort(options.signal)
 	const endpoint = new URL(options.endpoint)
 	const origin = new URL(endpoint)
 	origin.protocol =
@@ -91,7 +50,11 @@ export async function connectRuntimeTarget(
 			}),
 	})
 
+	const close = () => session[Symbol.dispose]()
+	options.signal?.addEventListener('abort', close, { once: true })
+
 	try {
+		checkAbort(options.signal)
 		let bootstrap = await session.bootstrap(() => {})
 		if (bootstrap.kind === 'authentication-required') {
 			const authentication = bootstrap.authentication
@@ -104,14 +67,14 @@ export async function connectRuntimeTarget(
 				if (Object.values(input)[0] === undefined)
 					throw new ScriptExecutionError(
 						'credentials_required',
-						`Authentication requires ${step.challenge.kind}; supply --credentials-file`,
+						`Authentication requires ${step.challenge.kind}; supply credentials`,
 					)
 				step = await readRuntimeAuthenticationStep(authentication.submitDto(input))
 			}
 			if (step.kind === 'navigate')
 				throw new ScriptExecutionError(
 					'browser_authentication_required',
-					`Authenticate using ${new URL(step.path, origin).href}, then supply the session cookie in --credentials-file`,
+					`Authenticate using ${new URL(step.path, origin).href}, then supply the session cookie in credentials.cookie`,
 				)
 			if (step.kind !== 'authenticated')
 				throw new ScriptExecutionError(
@@ -132,11 +95,14 @@ export async function connectRuntimeTarget(
 			description,
 			execution: bootstrap.execution,
 			[Symbol.dispose]() {
+				options.signal?.removeEventListener('abort', close)
 				session[Symbol.dispose]()
 			},
 		}
 	} catch (error) {
+		options.signal?.removeEventListener('abort', close)
 		session[Symbol.dispose]()
+		checkAbort(options.signal)
 		throw error
 	}
 }

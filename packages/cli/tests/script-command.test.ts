@@ -6,17 +6,17 @@ import {
 	scriptRequestHash,
 	type ScriptSubmission,
 } from '@pluxel/host/internal/agent/runtime'
-import { decodeScriptReceipt, encodeScriptReceipt, type ScriptReceipt } from '../src/script/receipt'
+import {
+	decodeScriptReceipt,
+	encodeScriptReceipt,
+	type ScriptReceipt,
+} from '@pluxel/agent-sdk/internal/client'
 import { scriptCommand } from '../src/commands/script'
 
 const mocks = vi.hoisted(() => ({ connect: vi.fn(), compile: vi.fn(), credentials: vi.fn() }))
-vi.mock('../src/script/client', () => ({
-	connectScriptTarget: mocks.connect,
-	readScriptCredentials: mocks.credentials,
-}))
-vi.mock('../src/capability-loader', () => ({
-	loadOfficialCapability: async () => ({ compileScript: mocks.compile }),
-}))
+vi.mock('../../agent-sdk/src/client/execution', () => ({ connectScriptTarget: mocks.connect }))
+vi.mock('../src/script/credentials', () => ({ readScriptCredentials: mocks.credentials }))
+vi.mock('@pluxel/rolldown/scripts', () => ({ compileScript: mocks.compile }))
 
 const original: ScriptReceipt = {
 	version: 3,
@@ -135,7 +135,8 @@ it.each(['result', 'cancel'])(
 		expect(mocks.connect).toHaveBeenCalledWith({
 			endpoint: 'https://host.test/',
 			instanceId: original.instanceId,
-			credentials: {},
+			credentials: undefined,
+			signal: undefined,
 		})
 		expect(mocks.compile).not.toHaveBeenCalled()
 	},
