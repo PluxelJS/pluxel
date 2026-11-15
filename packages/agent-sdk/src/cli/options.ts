@@ -1,10 +1,9 @@
 import type { CommandContext } from 'gunshi'
-import { ScriptExecutionError } from '@pluxel/host/internal/agent/runtime'
 
 /** Reject ignored flags and excess positionals before an operational command opens its target. */
-export function validateCommandOptions(
+export async function validateCommandOptions(
 	ctx: Pick<CommandContext, 'args' | 'tokens' | 'positionals' | 'commandPath'>,
-): void {
+): Promise<void> {
 	const allowed = new Set(['help', 'version'])
 	const short = new Set(['h', 'v'])
 	for (const [name, argument] of Object.entries(ctx.args)) {
@@ -16,18 +15,22 @@ export function validateCommandOptions(
 	for (const token of ctx.tokens) {
 		if (token.kind !== 'option') continue
 		const names = token.rawName?.startsWith('--') ? allowed : short
-		if (!token.name || !names.has(token.name))
+		if (!token.name || !names.has(token.name)) {
+			const { ScriptExecutionError } = await import('@pluxel/host/internal/agent/runtime')
 			throw new ScriptExecutionError(
 				'invalid_input',
 				`Unknown ${ctx.commandPath[0] ?? 'command'} option ${token.rawName ?? token.name ?? '(unnamed)'}`,
 			)
+		}
 	}
 	const declared = Object.values(ctx.args).filter(
 		(argument) => argument.type === 'positional',
 	).length
-	if (ctx.positionals.length > ctx.commandPath.length + declared)
+	if (ctx.positionals.length > ctx.commandPath.length + declared) {
+		const { ScriptExecutionError } = await import('@pluxel/host/internal/agent/runtime')
 		throw new ScriptExecutionError(
 			'invalid_input',
 			'Unexpected argument; check the selected command’s --help',
 		)
+	}
 }

@@ -1,6 +1,6 @@
 import { open } from 'node:fs/promises'
 import { ScriptExecutionError } from '@pluxel/host/internal/agent/runtime'
-import type { HostCredentials } from '@pluxel/agent-sdk/client'
+import type { HostCredentials } from '../client'
 export async function readScriptCredentials(file?: string): Promise<HostCredentials> {
 	if (!file) return {}
 	await using handle = await open(file, 'r')

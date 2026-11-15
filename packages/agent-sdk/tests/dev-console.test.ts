@@ -2,14 +2,16 @@ import { runScript, controlHmr, getScriptResult, HostClientError } from '@pluxel
 import { createHash } from 'node:crypto'
 import { chmod, rm, symlink, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { cli as gunshiCli } from 'gunshi'
+import { cli as gunshiCli, define } from 'gunshi'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { devCommand } from '../src/commands/dev'
-import { scriptCommand } from '../src/commands/script'
-import { normalizeDevArgs } from '../src/command-manifest'
 import {
-	decodeScriptReceipt,
-	encodeScriptReceipt,
+	scriptCommand,
+	normalizeDevArgs,
+	devCommonArgs,
+	devSubCommands,
+} from '@pluxel/agent-sdk/internal/cli'
+const devCommand = define({ name: 'dev', args: devCommonArgs, subCommands: devSubCommands })
+import {
 	DevClientError,
 	connectDevInstance,
 	discoverDevInstances,
@@ -17,8 +19,9 @@ import {
 	parseInput,
 	publicInstance,
 	selectDevInstance,
-} from '@pluxel/agent-sdk/internal/client'
-import { createDevFixture } from '../../agent-sdk/tests/helpers/dev-fixture'
+} from '../src/client/dev'
+import { decodeScriptReceipt, encodeScriptReceipt } from '../src/client/receipt'
+import { createDevFixture } from './helpers/dev-fixture'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {

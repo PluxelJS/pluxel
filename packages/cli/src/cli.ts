@@ -8,31 +8,30 @@ import {
 	devCommandDefinition,
 	distributionCommandDefinition,
 	docsCommandDefinition,
-	isControlCommandPath,
 	newCommandDefinition,
-	normalizeDevArgs,
 	publishCommandDefinition,
 	sourceCommandDefinition,
-	scriptCommandDefinition,
 	workspaceCommandDefinition,
 } from './command-manifest'
-import { printFailure } from './script/output'
+import {
+	scriptCommand,
+	normalizeDevArgs,
+	isControlCommandPath,
+	printCommandFailure,
+} from '@pluxel/agent-sdk/internal/cli'
 
 const commands = new Map<string, SubCommandable>([
-	[
-		'script',
-		lazy(
-			() => import('./commands/script').then((module) => module.scriptCommand),
-			scriptCommandDefinition,
-		),
-	],
+	['script', scriptCommand],
 	[
 		'pncat',
 		define({ name: 'pncat', description: 'Run the bundled pncat CLI with its native arguments' }),
 	],
 	[
 		'dev',
-		lazy(() => import('./commands/dev').then((module) => module.devCommand), devCommandDefinition),
+		lazy(
+			() => (ctx) => import('./commands/dev').then((module) => module.devCommand.run!(ctx)),
+			devCommandDefinition,
+		),
 	],
 	[
 		'docs',
@@ -125,11 +124,7 @@ async function main() {
 			},
 			async onErrorCommand(ctx, error) {
 				if (!isControlCommandPath(ctx.commandPath) || ctx.values.help || ctx.values.version) return
-				const { scriptFailure } = await import('@pluxel/host/internal/agent/runtime')
-				printFailure(
-					ctx.log,
-					scriptFailure(error, error === ctx.validationError ? 'invalid_input' : 'command_failed'),
-				)
+				await printCommandFailure(ctx.log, error, error === ctx.validationError)
 				failureReported = true
 			},
 		})

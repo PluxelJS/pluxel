@@ -5,7 +5,7 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 
 # Pluxel 开发
 
-先读项目 `AGENTS.md`、目标包 scripts 与已安装版本。已知文件或符号直接查源码；通过 `@pluxel/agent-sdk/source` 的普通函数定位声明、Part、配置和应用绑定，直接使用 Node。进程内 Host 操作用 `@pluxel/agent-sdk/host`，外部 Node 操作用 `/client` 普通函数。只展开本次任务所需章节。
+先读项目 `AGENTS.md`、目标包 scripts 与已安装版本。已知文件或符号直接查源码；通过 `@pluxel/agent-sdk/source` 的普通函数定位声明、Part、配置和应用绑定，直接使用 Node。进程内 Host 操作用 `@pluxel/agent-sdk/host`，外部 Node 操作用 `/client` 普通函数。终端命令由唯一 `pluxel` 入口提供，选择与所有权见 `development/agent-sdk.md` 的「终端命令」。只展开本次任务所需章节。
 
 ## 入口与职责
 

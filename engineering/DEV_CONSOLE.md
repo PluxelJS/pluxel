@@ -10,7 +10,7 @@
 
 ## 提交与执行
 
-CLI 生成原 run ID 和请求摘要，发送前输出统一 v3 receipt，随后用同一 Cap’n Web target 提交。查询与取消统一由 `script result/cancel` 按原回执选择连接；本地回执保存原 root、instanceId、serviceId 和请求摘要。Unix carrier 使用上游 RpcTransport/RpcSession，长度前缀只负责 framing、字节预算、背压与关闭。旧 JSON 命令分发与 reader 已删除。
+Agent SDK 客户端生成原 run ID 和请求摘要，终端适配在发送前输出统一 v3 receipt，随后用同一 Cap’n Web target 提交。查询与取消统一由 `script result/cancel` 按原回执选择连接；本地回执保存原 root、instanceId、serviceId 和请求摘要。Unix carrier 使用上游 RpcTransport/RpcSession，长度前缀只负责 framing、字节预算、背压与关闭。旧 JSON 命令分发与 reader 已删除。
 
 发现仍使用 `.pluxel/dev-console`，目录 0700、描述文件 0600、短临时 socket 父目录 0700。连接先检查 protocol、instanceId 和 nonce，再授予共享控制 target；nonce/socket 不进入 receipt 或公开状态。profile/project/Pitchfork qualified serviceId 在启动时捕获，并与 root、instanceId 共同验证归属。发现与执行不调用 Pitchfork。
 

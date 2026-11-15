@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { printFailure, printRun, printRunProgress } from '../src/script/output'
+import { printFailure, printRun, printRunProgress } from '../src/cli/output'
 
 afterEach(() => {
 	process.exitCode = 0

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, it } from 'vitest'
 import { repositoryPackages, isPublishablePackage } from '../../../scripts/repository-packages.mjs'
-import { resolveDevProject } from '@pluxel/agent-sdk/internal/client'
+import { resolveDevSelection } from '@pluxel/agent-sdk/internal/client'
 
 const packageRoot = resolve(import.meta.dirname, '..')
 const bin = resolve(packageRoot, 'dist/create.mjs')
@@ -40,11 +40,11 @@ describe('create-pluxel', () => {
 		const manifest = JSON.parse(await readFile(resolve(generated, 'package.json'), 'utf8'))
 		assert.equal(manifest.name, undefined)
 		assert.equal(manifest.private, true)
-		const managed = await resolveDevProject({ root: generated })
+		const { project: managed } = await resolveDevSelection({ root: generated })
 		assert.equal(managed.profile, 'app')
 		assert.equal(managed.pitchfork, 'app')
 		assert.equal(managed.root, resolve(generated, 'host/web'))
-		const foreground = await resolveDevProject({ root: generated, profile: 'local' })
+		const { project: foreground } = await resolveDevSelection({ root: generated, profile: 'local' })
 		assert.equal(foreground.root, managed.root)
 		assert.equal(foreground.command, 'vp run @example/host#dev:server')
 		assert.equal(manifest.scripts['dev:local'], 'pluxel dev --profile local')

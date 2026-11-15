@@ -4,6 +4,7 @@ export default defineConfig({
 		host: './src/host.ts',
 		source: './src/source.ts',
 		client: './src/client.ts',
+		'internal/cli': './src/internal-cli.ts',
 		'internal/client': './src/internal-client.ts',
 	},
 	exports: { devExports: '@pluxel/source' },

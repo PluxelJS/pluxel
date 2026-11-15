@@ -1,16 +1,16 @@
 import { define, type ArgValues } from 'gunshi'
-import { scriptSyncArgs, scriptSyncDefinition } from '../command-manifest'
-import { validateCommandOptions } from '../command-options'
-import { readScriptCredentials } from '../script/credentials'
-import { syncPluginControl, HostClientError } from '@pluxel/agent-sdk/client'
+import { scriptSyncArgs, scriptSyncDefinition } from './manifest'
+import { validateCommandOptions } from './options'
+import { readScriptCredentials } from './credentials'
+import { syncPluginControl, HostClientError } from '../client'
 import { scriptFailure } from '@pluxel/host/internal/agent/runtime'
-import { printFailure, printValue } from '../script/output'
+import { printFailure, printValue } from './output'
 
 export const scriptSyncCommand = define({
 	...scriptSyncDefinition,
 	async run(ctx) {
 		try {
-			validateCommandOptions(ctx)
+			await validateCommandOptions(ctx)
 			const values = ctx.values as ArgValues<typeof scriptSyncArgs>
 			printValue(
 				ctx.log,

@@ -44,7 +44,6 @@
 	"dependencies": {
 		"@clack/prompts": "catalog:prod",
 		"@pluxel/agent-sdk": "workspace:^",
-		"@pluxel/host": "workspace:^",
 		"gunshi": "catalog:prod",
 		"jsonc-parser": "catalog:prod",
 		"package-manager-detector": "catalog:prod",

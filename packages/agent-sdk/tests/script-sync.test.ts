@@ -2,6 +2,8 @@ import { mkdtemp, mkdir, readFile, readlink, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
+import { cli, define } from 'gunshi'
+import { devCommonArgs, devSubCommands, normalizeDevArgs } from '@pluxel/agent-sdk/internal/cli'
 import {
 	controlSha256,
 	encodeControlData,
@@ -329,6 +331,41 @@ it('synchronizes through the public client using the original owner and authenti
 		expect(dev.requests.map((request) => request.method)).toContain('materialFile')
 		expect(dev.requests.map((request) => request.method)).not.toContain('submit')
 		expect(dev.requests.map((request) => request.method)).not.toContain('control')
+	} finally {
+		await dev.close()
+	}
+})
+
+it('synchronizes through the SDK terminal adapter using the selected Vite root default and explicit output', async () => {
+	const { snapshot, reader } = await fixture()
+	using _source = reader
+	const dev = await createDevFixture({ materials: async () => snapshot })
+	const output: string[] = []
+	vi.spyOn(console, 'log').mockImplementation((text) => output.push(String(text)))
+	const command = define({ name: 'dev', args: devCommonArgs, subCommands: devSubCommands })
+	try {
+		for (const explicit of [false, true]) {
+			const out = join(dev.root, explicit ? 'explicit-control' : '.pluxel/control')
+			await cli(
+				normalizeDevArgs(['dev', 'sync', '--root', dev.root, ...(explicit ? ['--out', out] : [])]),
+				{ run() {} },
+				{ subCommands: { dev: command } },
+			)
+			expect(output).toHaveLength(1)
+			const value = JSON.parse(output.pop()!)
+			expect(value).toMatchObject({
+				ok: true,
+				value: {
+					out,
+					catalogRevision: 3,
+					definitions: [{ exportName: 'Counter', module: expect.any(String) }],
+				},
+			})
+			expect(await readFile(value.value.definitions[0].module, 'utf8')).toContain('synced-counter')
+		}
+		expect(dev.requests.some((request) => ['submit', 'control'].includes(request.method))).toBe(
+			false,
+		)
 	} finally {
 		await dev.close()
 	}

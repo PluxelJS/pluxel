@@ -16,4 +16,4 @@ Host 发现保留有界分页和身份清单复用。源码查询保留输入快
 
 Host 内核与载体使用 `@pluxel/host/internal/agent*`，源码实现从 `@pluxel/rolldown/internal/agent` 发布给作者包。旧作者导出不保留 alias。模板、CLI 生成说明、skill 和示例统一迁移到对应的公共入口。
 
-CLI 的客户端实现和相关协议/材料测试移入 Agent SDK；CLI 保留参数、终端输出、凭据文件和进程启动。删除原 dev/script 的双重提交与等待实现，以及安装验证中加载 CLI TypeScript 私有文件的特殊 loader。客户端边界见 [Agent Workflow](AGENT_WORKFLOW.md#外部客户端)。
+Agent SDK 同时拥有客户端函数和官方命令终端适配，CLI 保留唯一 executable、领域挂载与服务进程管理。协议、材料与命令主体测试随所有者维护，CLI 验证真实挂载；内部导出和按需加载边界见 [Agent Workflow](AGENT_WORKFLOW.md#终端适配与命令挂载)。

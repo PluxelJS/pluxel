@@ -18,7 +18,7 @@ import {
 	type ScriptControlResponse,
 } from '@pluxel/host/internal/agent/transport'
 import { openScriptSocketSession } from '@pluxel/host/internal/agent/socket'
-import { publicInstance, type DevInstance } from '@pluxel/agent-sdk/internal/client'
+import { publicInstance, type DevInstance } from '../../src/client/dev'
 
 export async function createDevFixture(
 	options: Readonly<{

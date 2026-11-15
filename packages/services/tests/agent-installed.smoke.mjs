@@ -368,7 +368,7 @@ import {readFile, writeFile} from 'node:fs/promises'
 import {setTimeout as delay} from 'node:timers/promises'
 import {registerHooks} from 'node:module'
 registerHooks({resolve(specifier, context, next) {
- if(specifier === '@pluxel/cli' || specifier.startsWith('@pluxel/cli/')) throw new Error('SDK loaded CLI')
+ if(specifier === 'gunshi' || specifier.startsWith('gunshi/') || specifier === '@pluxel/cli' || specifier.startsWith('@pluxel/cli/')) throw new Error('SDK loaded terminal adapter')
  return next(specifier, context)
 }})
 const {syncPluginControl, runScript, getScriptResult, cancelScript} = await import('@pluxel/agent-sdk/client')

@@ -1,36 +1,25 @@
 import { type ArgValues, type CommandContext, define } from 'gunshi'
 import { styleText } from 'node:util'
+import { devCommandDefinition, devStatusDefinition } from '../command-manifest'
 import {
-	devCommandDefinition,
 	devCommonArgs,
-	devHmrArgs,
-	devHmrDefinition,
-	devInstancesDefinition,
-	devStatusDefinition,
-	devRunArgs,
-	devRunDefinition,
-} from '../command-manifest'
+	validateCommandOptions,
+	printDevFailure,
+	printValue,
+} from '@pluxel/agent-sdk/internal/cli'
 import {
 	requireDevScripts,
-	resolveDevProject,
 	resolveDevSelection,
 	DevClientError,
 	type DevInstance,
-	parseInput,
-	readBoundedFile,
 	selectDevInstance,
 	withDevContext,
 } from '@pluxel/agent-sdk/internal/client'
+import { listHosts } from '@pluxel/agent-sdk/client'
 import { readDevService, startDevService } from '../dev/project'
-import { validateCommandOptions } from '../command-options'
 import { runDevCommand } from '../dev/process'
-import { HostClientError, listHosts, runScript, controlHmr } from '@pluxel/agent-sdk/client'
-import { printFailure, printRun, printRunProgress, printValue } from '../script/output'
 
-type DevCommandContext = Pick<
-	CommandContext,
-	'args' | 'tokens' | 'log' | 'positionals' | 'commandPath'
->
+type DevCommandContext = Pick<CommandContext, 'log'>
 
 function printDevHeading(
 	ctx: DevCommandContext,
@@ -52,38 +41,11 @@ function terminalUrl(line: string): string {
 	)
 }
 
-async function printResult<T>(
-	ctx: DevCommandContext,
-	action: () => Promise<T>,
-	print: (value: T) => void = (value) => printValue(ctx.log, value),
-) {
-	try {
-		validateCommandOptions(ctx)
-		print(await action())
-	} catch (error) {
-		if (error instanceof HostClientError) {
-			printFailure(ctx.log, error.failure, error.receipt)
-			return
-		}
-		const failure = withDevContext(error, {})
-		const context = failure.context
-
-		printFailure(ctx.log, {
-			code: failure.code,
-			message: failure.message.slice(0, 8192),
-			...(failure.runId ? { runId: failure.runId } : {}),
-			...(context && Object.keys(context).length > 0 ? { context } : {}),
-			...(failure.hint ? { hint: failure.hint } : {}),
-			...(failure.candidates ? { candidates: failure.candidates } : {}),
-		})
-	}
-}
-
 export const devCommand = define({
 	...devCommandDefinition,
 	async run(ctx) {
 		try {
-			validateCommandOptions(ctx)
+			await validateCommandOptions(ctx)
 			const selection = await resolveDevSelection(ctx.values as ArgValues<typeof devCommonArgs>)
 			const project = selection.project
 			if (selection.instance !== undefined) requireDevScripts(project)
@@ -173,106 +135,33 @@ export const devCommand = define({
 	},
 })
 
-export const devInstancesCommand = define({
-	...devInstancesDefinition,
-	async run(ctx) {
-		await printResult(ctx, async () => {
-			const values = ctx.values as ArgValues<typeof devCommonArgs>
-			const project = await resolveDevProject(values)
-			const discovery = await listHosts({
-				root: values.root ?? project.workspace,
-				profile: values.profile,
-				instance: values.instance,
-			})
-			return discovery.instances
-		})
-	},
-})
-
 export const devStatusCommand = define({
 	...devStatusDefinition,
 	async run(ctx) {
-		await printResult(ctx, async () => {
+		try {
+			await validateCommandOptions(ctx)
 			const selection = await resolveDevSelection(ctx.values as ArgValues<typeof devCommonArgs>)
 			if (selection.project.scripts === false) {
 				if (selection.instance !== undefined) requireDevScripts(selection.project)
-				return {
+				printValue(ctx.log, {
 					workspace: selection.project.workspace,
 					profile: selection.project.profile,
 					root: selection.root,
 					scripts: false,
 					service: await readDevService(selection.project),
-				}
+				})
+				return
 			}
-			return listHosts({
-				root: selection.project.profile ? selection.project.workspace : selection.root,
-				profile: selection.project.profile,
-				instance: selection.instance,
-			})
-		})
-	},
-})
-
-export const devRunCommand = define({
-	...devRunDefinition,
-	async run(ctx) {
-		const values = ctx.values as ArgValues<typeof devRunArgs>
-		await printResult(
-			ctx,
-			async () => {
-				if (values.input !== undefined && values['input-file'] !== undefined)
-					throw new DevClientError('invalid_input', 'Use either --input or --input-file')
-				const buffer =
-					values['input-file'] === undefined
-						? undefined
-						: await readBoundedFile(values['input-file'])
-				const source = buffer === undefined ? values.input : buffer.toString('utf8')
-				const input = source === undefined ? undefined : parseInput(source)
-				const project = await resolveDevProject(values)
-				return runScript({
-					target: {
-						root: values.root ?? project.workspace,
-						profile: values.profile,
-						instance: values.instance,
-					},
-					file: values.file,
-					exportName: values.export,
-					input,
-					timeoutMs: Number(values.timeout),
-					detach: values.detach,
-					onPrepared: (receipt) => printRunProgress('prepared', receipt),
-					onAccepted: ({ receipt }) => printRunProgress('accepted', receipt),
-				})
-			},
-			(value) => printRun(ctx.log, value.receipt, value.run, values.detach),
-		)
-	},
-})
-
-export const devHmrCommand = define({
-	...devHmrDefinition,
-	async run(ctx) {
-		const values = ctx.values as ArgValues<typeof devHmrArgs>
-		await printResult(
-			ctx,
-			async () => {
-				if (values.action !== 'pause' && values.action !== 'apply' && values.action !== 'resume')
-					throw new DevClientError('invalid_input', 'Expected HMR action pause, apply or resume')
-				const project = await resolveDevProject(values)
-				return controlHmr({
-					target: {
-						root: values.root ?? project.workspace,
-						profile: values.profile,
-						instance: values.instance,
-					},
-					action: values.action,
-					timeoutMs: Number(values.timeout),
-					detach: values.detach,
-					onPrepared: (receipt) => printRunProgress('prepared', receipt),
-					onAccepted: ({ receipt }) => printRunProgress('accepted', receipt),
-				})
-			},
-			(value) => printRun(ctx.log, value.receipt, value.run, values.detach),
-		)
+			printValue(
+				ctx.log,
+				await listHosts({
+					root: selection.project.profile ? selection.project.workspace : selection.root,
+					profile: selection.project.profile,
+					instance: selection.instance,
+				}),
+			)
+		} catch (error) {
+			await printDevFailure(ctx.log, error)
+		}
 	},
 })

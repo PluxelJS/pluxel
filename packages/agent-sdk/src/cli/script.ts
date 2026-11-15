@@ -1,19 +1,18 @@
 import { writeFile } from 'node:fs/promises'
 import { define, type ArgValues } from 'gunshi'
 import {
-	scriptCommandDefinition,
 	scriptRunDefinition,
 	scriptRunArgs,
 	scriptResultDefinition,
 	scriptCancelDefinition,
 	scriptReceiptArgs,
-} from '../command-manifest'
-import { validateCommandOptions } from '../command-options'
-import { runScript, getScriptResult, cancelScript, HostClientError } from '@pluxel/agent-sdk/client'
+} from './manifest'
+import { validateCommandOptions } from './options'
+import { runScript, getScriptResult, cancelScript, HostClientError } from '../client'
 import { ScriptExecutionError, scriptFailure } from '@pluxel/host/internal/agent/runtime'
-import { parseInput, readBoundedFile } from '@pluxel/agent-sdk/internal/client'
-import { readScriptCredentials } from '../script/credentials'
-import { printFailure, printRun, printRunProgress } from '../script/output'
+import { parseInput, readBoundedFile } from '../client/dev'
+import { readScriptCredentials } from './credentials'
+import { printFailure, printRun, printRunProgress } from './output'
 
 type RunValues = ArgValues<typeof scriptRunArgs>
 type ReceiptValues = ArgValues<typeof scriptReceiptArgs>
@@ -22,7 +21,7 @@ export const scriptRunCommand = define({
 	...scriptRunDefinition,
 	async run(ctx) {
 		try {
-			validateCommandOptions(ctx)
+			await validateCommandOptions(ctx)
 			const values = ctx.values as RunValues
 			if (values.input !== undefined && values['input-file'] !== undefined)
 				throw new ScriptExecutionError('invalid_input', 'Use one of --input and --input-file')
@@ -69,7 +68,7 @@ function receiptCommand(
 		async run(ctx) {
 			const values = ctx.values as ReceiptValues
 			try {
-				validateCommandOptions(ctx)
+				await validateCommandOptions(ctx)
 				const options = values['credentials-file']
 					? { credentials: await readScriptCredentials(values['credentials-file']) }
 					: {}
@@ -87,4 +86,3 @@ function receiptCommand(
 }
 export const scriptResultCommand = receiptCommand(scriptResultDefinition, getScriptResult)
 export const scriptCancelCommand = receiptCommand(scriptCancelDefinition, cancelScript)
-export const scriptCommand = define({ ...scriptCommandDefinition, run() {} })

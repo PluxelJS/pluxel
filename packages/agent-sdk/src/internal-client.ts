@@ -1,4 +1,9 @@
-/** CLI process integration and protocol tests. Author operations use /client. */
-export * from './client/dev'
-export * from './client/project'
-export * from './client/receipt'
+/** CLI service integration and native console protocol tests. Author operations use /client. */
+export {
+	DevClientError,
+	selectDevInstance,
+	connectDevInstance,
+	withDevContext,
+	type DevInstance,
+} from './client/dev'
+export { requireDevScripts, resolveDevSelection, type DevProject } from './client/project'

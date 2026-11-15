@@ -1156,6 +1156,9 @@ importers:
       crossws:
         specifier: catalog:prod
         version: 0.4.17(srvx@1.0.8)
+      gunshi:
+        specifier: catalog:prod
+        version: 0.37.3
     devDependencies:
       '@pluxel/core':
         specifier: workspace:*
@@ -1211,9 +1214,6 @@ importers:
       '@pluxel/agent-sdk':
         specifier: workspace:^
         version: link:../agent-sdk
-      '@pluxel/host':
-        specifier: workspace:^
-        version: link:../host
       gunshi:
         specifier: catalog:prod
         version: 0.37.3

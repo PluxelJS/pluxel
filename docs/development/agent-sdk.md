@@ -11,7 +11,13 @@ description: 按执行位置选择源码查询、进程内 Host 操作或外部 
 | `@pluxel/agent-sdk/host`   | 已启动的 Host 内部   | `Script`、`ScriptSdk`、`createScriptScope`                                                     |
 | `@pluxel/agent-sdk/client` | 外部 Node 程序       | `listHosts`、`runScript`、`controlHmr`、`getScriptResult`、`cancelScript`、`syncPluginControl` |
 
-包要求 Node 24 或更新版本，不提供混合根入口。源码查询和客户端函数直接用 `node tool.mjs` 调用；CLI 的 `dev` / `script` 命令是客户端函数的终端适配。代码调用无需启动 CLI，也不需要额外的 client 会话或脚本包装。
+包要求 Node 24 或更新版本，不提供混合根入口。源码查询和客户端函数直接用 `node tool.mjs` 调用；终端命令的选择见下节。代码调用无需启动 CLI，也不需要额外的 client 会话或脚本包装。
+
+## 终端命令
+
+`@pluxel/cli` 提供唯一的 `pluxel` 可执行入口，按需挂载 Agent SDK 拥有的 `script run/result/cancel/sync` 和 `dev instances/run/hmr/sync`。SDK 统一维护这些命令的帮助、参数、输入与凭据文件、receipt 保存、JSON 与进度输出和退出码。安装 SDK 本身只提供库，不增加可执行命令。
+
+`pluxel dev` 的服务启动、复用和前台进程仍由 CLI 管理。`dev status` 对 Host 复用 SDK 发现，对 `scripts: false` 服务查询 Pitchfork；两者都不会启动服务。命令用法见[自动化脚本](./scripts.md)与[开发控制台](./dev-console.md)，普通 Node 程序直接使用下文的函数入口。
 
 ## 查询源码
 

@@ -11,8 +11,6 @@ export default defineConfig({
 	// @pluxel/rolldown as a published toolchain package instead of vendoring it.
 	deps: {
 		neverBundle: [
-			'@pluxel/host',
-			'@pluxel/host/*',
 			'@pluxel/agent-sdk',
 			'@pluxel/agent-sdk/*',
 			'@pluxel/core',

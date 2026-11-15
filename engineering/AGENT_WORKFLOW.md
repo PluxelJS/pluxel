@@ -5,7 +5,8 @@
 ## 所有者和调用路径
 
 ```text
-CLI / 编辑器 / Node 程序
+pluxel → @pluxel/agent-sdk/internal/cli（参数、文件与终端适配）
+编辑器 / Node 程序
   → @pluxel/agent-sdk/client：发现、编译、连接、提交与原 receipt 恢复
   → 跨进程 Cap’n Web 控制 target：describe / submit / result / cancel / control
   → ScriptExecutor：接纳、队列、身份、取消、结果保留
@@ -25,7 +26,8 @@ Host 持有插件图、配置来源和原始输入、版本、运行意图及生
 
 | 入口                                    | 所属职责                                                                       |
 | --------------------------------------- | ------------------------------------------------------------------------------ |
-| `@pluxel/agent-sdk/client`              | 外部 Node 调用方；CLI 仅转换参数、凭据文件、输出和退出码                       |
+| `@pluxel/agent-sdk/client`              | 外部 Node 调用方与 SDK 自身的终端适配                                          |
+| `@pluxel/agent-sdk/internal/cli`        | 官方 CLI 的命令目录、参数与校验、文件读写、进度/结果/错误和退出码              |
 | `@pluxel/agent-sdk/host`                | 作者使用的 SDK、地址关联与结果类型                                             |
 | `@pluxel/host/internal/agent/runtime`   | 框架执行内核、材料读取与输入输出协议                                           |
 | `@pluxel/host/internal/agent/node`      | 显式启用的可信 Node 工厂加载器与 Host 执行所有者                               |
@@ -48,6 +50,16 @@ Host 持有插件图、配置来源和原始输入、版本、运行意图及生
 `onPrepared` 在发送前被等待；接纳响应丢失仍保留原 receipt，不重试提交。`signal` 中断客户端 IO，不撤销 Host 工作；真正取消只能交给原 executor。receipt 查询固定原连接位置、实例和请求摘要。材料下载可取消，进入原子安装后完成结算，不把已发布结果报告成未发生。公开契约与最短调用见 [Agent SDK](../docs/development/agent-sdk.md)。
 
 SDK 的依赖方向为 Host 协议、Rolldown 编译器与 Services 认证客户端；没有 CLI 依赖。`/client` 按需加载远端认证和上传编译；`/host` 保持可移植。CLI 的进程启动代码通过内部 `/internal/client` 复用 profile 与实例元数据，Pitchfork 子进程仍由 CLI 管理。内部入口不是另一个作者 API。
+
+## 终端适配与命令挂载
+
+[`packages/agent-sdk/src/cli/`](../packages/agent-sdk/src/cli/) 拥有 `script run/result/cancel/sync`、`dev instances/run/hmr/sync` 的完整终端适配；命令只调用原 `/client` 函数。`manifest.ts` 保存参数、帮助、默认值与 Gunshi lazy children，`options.ts` 只维护一份未知选项和多余位置参数检查；CLI 保留的 dev 入口也复用此检查。`output.ts` 拥有 JSON、prepared/accepted、失败诊断和退出码；CLI 的解析失败与 service status 共享该呈现。
+
+`/internal/cli` 只导出官方挂载和上述共享呈现实际使用的符号。加载目录仅加载 Gunshi 和轻量元数据，Gunshi 在帮助路径也会解析所选 lazy loader，因此 loader 返回执行回调，到实际 run 才导入命令主体；失败依赖也按需加载。`/source`、`/host`、`/client` 不导入终端适配，不写终端、不修改 `process.exitCode`。SDK 不持有服务启动，也不引用 CLI 的源码、测试或制品。
+
+`@pluxel/cli` 保留唯一 executable、总命令树与其他领域命令。`dev` 的前台进程与 Pitchfork 管理仍属于 CLI；`dev status` 在 CLI 判断服务类型，Host 分支调用 `listHosts`，`scripts: false` 分支查询原生 Pitchfork 状态。`/internal/client` 显式导出 CLI 服务路径所需的项目选择、实例选择、错误上下文及类型；Host-vite 原生控制台协议测试仍使用其 `connectDevInstance`，Create 的生成项目测试复用项目选择。其余未消费的发现/连接 helper、receipt codec 与文件解析不再从内部入口导出。
+
+命令主体测试位于 Agent SDK 的 `script-command`、`script-output`、`credentials`、`dev-console` 和 `dev-project` tests；CLI 的 `agent-commands` / `launcher` tests 从真实 executable 验证挂载、帮助、参数路由、服务状态和单一 JSON 输出。独立安装验收仍由 Services 的 `agent-installed` smoke 覆盖 SDK/CLI、真实认证、上传执行与原 receipt 恢复。
 
 ## scope 的接纳和结算
 
