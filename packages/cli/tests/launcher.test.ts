@@ -76,8 +76,19 @@ describe('pluxel bin launcher', () => {
 		['script', 'sync'],
 		['dev', 'run'],
 		['dev', 'hmr'],
+		['dev', 'instances', '--root'],
+		['dev', 'status', '--root'],
+		['dev', 'instances', '--profile'],
+		['dev', 'status', '--profile'],
+		['dev', 'instances', '--instance'],
+		['dev', 'status', '--instance'],
+		['dev', 'run', '--root'],
 		['script', 'run', 'task.ts', '--endpoint', 'https://host.test/', '--unknown'],
 		['script', 'result', 'not-a-receipt', '--unknown'],
+		['dev', 'instances', '--unknown'],
+		['dev', 'status', '--unknown'],
+		['dev', 'instances', 'unexpected'],
+		['dev', 'status', 'unexpected'],
 		['dev', 'run', 'task.ts', '--unknown'],
 		['dev', 'hmr', 'pause', '--unknown'],
 		['dev', 'sync', '--unknown'],
@@ -95,6 +106,8 @@ describe('pluxel bin launcher', () => {
 	it.each([
 		['script', 'run', '--help'],
 		['script', 'result', '--help'],
+		['dev', 'instances', '--help'],
+		['dev', 'status', '--help'],
 		['dev', 'hmr', '--help'],
 		['docs', '--help'],
 	])('preserves rendered help for arguments %j', async (...argv) => {
@@ -105,8 +118,11 @@ describe('pluxel bin launcher', () => {
 		expect(() => JSON.parse(result.stdout)).toThrow(SyntaxError)
 	})
 
-	it('preserves non-control validation output', async () => {
-		const result = await runNode([await releaseBin(), 'source', 'unregister'], tmpdir())
+	it.each([
+		['source', 'unregister'],
+		['dev', '--root'],
+	])('preserves non-control validation output for %j', async (...argv) => {
+		const result = await runNode([await releaseBin(), ...argv], tmpdir())
 		expect(result.code).toBe(1)
 		expect(result.stderr).not.toBe('')
 		expect(() => JSON.parse(result.stdout)).toThrow(SyntaxError)

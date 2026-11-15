@@ -254,6 +254,8 @@ const controlCommandPaths = new Set([
 	'script result',
 	'script cancel',
 	'script sync',
+	'dev instances',
+	'dev status',
 	'dev run',
 	'dev hmr',
 	'dev sync',

@@ -25,6 +25,8 @@ vp exec pluxel script cancel RECEIPT
 
 CLI 与 Vite 通过私有 Unix socket 上的 Cap’n Web 连接。发现目录和 socket 受当前用户文件权限保护；Vite 的公共 HTTP listener 不提供脚本执行。`dev status/instances/run/hmr` 查询现有实例，`pluxel dev` 才负责启动或复用配置的开发服务。
 
+`dev status/instances/run/hmr/sync` 的参数缺失、未知选项和多余位置参数统一在 stdout 输出单个 `{ ok: false, error: { code: 'invalid_input', message } }`，退出码为 `1`，stderr 不输出额外文本诊断。`--help` 保持普通帮助文本。
+
 <span id="hmr-批次控制"></span>
 
 ## HMR 批次控制
