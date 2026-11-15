@@ -98,11 +98,13 @@ export async function setup(
 	try {
 		await host.commit((change) => {
 			change.catalog.add([PlaywrightPlugin, InvoicePlugin, Consumer])
-			change.start(PlaywrightPlugin, { initialConfig: { endpoint: 'http://127.0.0.1:9222' } })
-			change.start(InvoicePlugin, { initialConfig: config })
-			change.start(Consumer)
+			change.start(PlaywrightPlugin.nodeAddress(), {
+				initialConfig: { endpoint: 'http://127.0.0.1:9222' },
+			})
+			change.start(InvoicePlugin.nodeAddress(), { initialConfig: config })
+			change.start(Consumer.nodeAddress())
 		})
-		return { host, consumer: host.require(Consumer), newContext }
+		return { host, consumer: host.require(Consumer.nodeAddress()), newContext }
 	} catch (error) {
 		await host.dispose()
 		throw error

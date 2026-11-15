@@ -71,7 +71,7 @@ describe('PluginPart runtime capabilities', () => {
 		{
 			await using host = await createServiceInternalTestHost({ workbench: true })
 
-			await host.start(CapabilityOwner)
+			await host.start(CapabilityOwner.nodeAddress())
 			expect(partCommands).toBe(repeatedPartCommands)
 			expect(partCommands).not.toBe(ownerCommands)
 			expect(partElysia).toBe(repeatedPartElysia)
@@ -98,7 +98,7 @@ describe('PluginPart runtime capabilities', () => {
 		{
 			await using host = await createServiceInternalTestHost({ workbench: false })
 
-			await host.start(ConfiguredOwner)
+			await host.start(ConfiguredOwner.nodeAddress())
 			const address = ConfiguredOwner.nodeAddress()
 			const definition = requirePluginHostCoordinator(host.ctx)
 				.catalogSnapshot()

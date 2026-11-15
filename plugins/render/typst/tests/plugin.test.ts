@@ -51,7 +51,11 @@ async function fixture() {
 	try {
 		await host.commit((change) => {
 			change.catalog.add([FontsPlugin, TypstPlugin, TypstConsumer])
-			change.start([FontsPlugin, TypstPlugin, TypstConsumer])
+			change.start([
+				FontsPlugin.nodeAddress(),
+				TypstPlugin.nodeAddress(),
+				TypstConsumer.nodeAddress(),
+			])
 		})
 		return host
 	} catch (cause) {
@@ -110,7 +114,11 @@ describe('TypstPlugin real host and worker', () => {
 			await host
 				.commit((change) => {
 					change.catalog.add([FontsPlugin, TypstPlugin, TypstConsumer])
-					change.start([FontsPlugin, TypstPlugin, TypstConsumer])
+					change.start([
+						FontsPlugin.nodeAddress(),
+						TypstPlugin.nodeAddress(),
+						TypstConsumer.nodeAddress(),
+					])
 				})
 				.catch((cause: unknown) => {
 					if (cause instanceof PluginLifecycleAssertionError)
@@ -120,7 +128,7 @@ describe('TypstPlugin real host and worker', () => {
 						)
 					throw cause
 				})
-			const consumer = host.require(TypstConsumer)
+			const consumer = host.require(TypstConsumer.nodeAddress())
 			expect(consumer.fonts.portableFonts.fonts).toHaveLength(1)
 			const typst = consumer.typst
 			await using session = await typst.open(source)
@@ -138,7 +146,9 @@ describe('TypstPlugin real host and worker', () => {
 					},
 				}),
 			).rejects.toMatchObject({ code: 'LIMIT_EXCEEDED' })
-			const patched = await host.config.patch(TypstPlugin, { set: { maxSessions: 3 } })
+			const patched = await host.config.patch(TypstPlugin.nodeAddress(), {
+				set: { maxSessions: 3 },
+			})
 			expect(patched).toMatchObject({
 				ok: true,
 				managedInput: { maxSessions: 3 },
@@ -155,7 +165,7 @@ describe('TypstPlugin real host and worker', () => {
 		const source = await template()
 		const disk = join(source.root, 'value.json')
 		await writeFile(disk, '{"n":2}')
-		await using session = await host.require(TypstConsumer).typst.open(source)
+		await using session = await host.require(TypstConsumer.nodeAddress()).typst.open(source)
 		const first = await session.update({
 			files: { ...files, '/inputs/b.json': { kind: 'file', path: disk } },
 		})
@@ -185,7 +195,9 @@ describe('TypstPlugin real host and worker', () => {
 
 	it('serializes updates while an accepted PDF export retains its revision', async () => {
 		await using host = await fixture()
-		await using session = await host.require(TypstConsumer).typst.open(await template())
+		await using session = await host
+			.require(TypstConsumer.nodeAddress())
+			.typst.open(await template())
 		const first = await session.update({ files })
 		const expected = await session.exportPdf(first.revision)
 		const exporting = session.exportPdf(first.revision)
@@ -200,7 +212,7 @@ describe('TypstPlugin real host and worker', () => {
 
 	it('await using closes sessions, releases capacity, and rejects cached handles', async () => {
 		await using host = await fixture()
-		const typst = host.require(TypstConsumer).typst
+		const typst = host.require(TypstConsumer.nodeAddress()).typst
 		let cached!: TypstSession
 		{
 			await using session = await typst.open(await template())
@@ -218,9 +230,11 @@ describe('TypstPlugin real host and worker', () => {
 		'closes cached sessions when the %s stops',
 		async (owner) => {
 			await using host = await fixture()
-			const session = await host.require(TypstConsumer).typst.open(await template())
+			const session = await host.require(TypstConsumer.nodeAddress()).typst.open(await template())
 			await session.update({ files })
-			await host.stop(owner === 'consumer' ? TypstConsumer : TypstPlugin)
+			await host.stop(
+				owner === 'consumer' ? TypstConsumer.nodeAddress() : TypstPlugin.nodeAddress(),
+			)
 			await expect(session.update({ files })).rejects.toMatchObject({ code: 'CLOSED' })
 			await session.dispose()
 		},
@@ -234,7 +248,7 @@ describe('TypstPlugin real host and worker', () => {
 		// Session resources must be checked independently of other files' concurrent workers.
 		for (const key of ['TMPDIR', 'TEMP', 'TMP']) vi.stubEnv(key, temporaryRoot)
 		try {
-			const session = await host.require(TypstConsumer).typst.open(await template())
+			const session = await host.require(TypstConsumer.nodeAddress()).typst.open(await template())
 			const first = session.update({ files })
 			const controller = new AbortController()
 			const reason = new Error('cancel queued document')
@@ -266,7 +280,7 @@ describe('TypstPlugin real host and worker', () => {
 			for (let i = 0; i < 64; i++) await file.write(chunk)
 			await file.write('"}')
 		}
-		await using session = await host.require(TypstConsumer).typst.open(
+		await using session = await host.require(TypstConsumer.nodeAddress()).typst.open(
 			await template(`
  #let data = json("/inputs/large.json")
  #assert(data.payload.len() == ${payloadBytes})
@@ -318,7 +332,7 @@ it('replaces template sources and removes deleted imports in the same native ses
 	await using host = await fixture()
 	const source = await template('#include "shared.typ"')
 	await writeFile(join(source.root, 'shared.typ'), 'Before')
-	await using session = await host.require(TypstConsumer).typst.open(source)
+	await using session = await host.require(TypstConsumer.nodeAddress()).typst.open(source)
 	const first = await session.update({ files: {} })
 	await writeFile(join(source.root, 'shared.typ'), 'After shared theme edit')
 	const changed = await session.update({ template: source, files: {} })
@@ -337,7 +351,7 @@ it('replaces template sources and removes deleted imports in the same native ses
 
 it('preserves timeout reason, closes the interrupted native session and can reopen', async () => {
 	await using host = await fixture()
-	const typst = host.require(TypstConsumer).typst
+	const typst = host.require(TypstConsumer.nodeAddress()).typst
 	await using interrupted = await typst.open(await template('#for i in range(100000) { [x] }'))
 	await expect(interrupted.update({ files: {}, timeoutMs: 50 })).rejects.toMatchObject({
 		name: 'TimeoutError',

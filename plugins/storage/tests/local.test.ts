@@ -218,7 +218,7 @@ describe('S3Plugin local backend', () => {
 				services: standardServices(),
 			})
 
-			await host.start(S3Plugin, {
+			await host.start(S3Plugin.nodeAddress(), {
 				initialConfig: {
 					buckets: [
 						{
@@ -233,11 +233,11 @@ describe('S3Plugin local backend', () => {
 					],
 				},
 			})
-			await host.start(LocalS3Consumer)
-			const capability = host.require(LocalS3Consumer).s3
+			await host.start(LocalS3Consumer.nodeAddress())
+			const capability = host.require(LocalS3Consumer.nodeAddress()).s3
 			const bucket = capability.bucket()
 			const client = bucket.client
-			await host.stop(S3Plugin)
+			await host.stop(S3Plugin.nodeAddress())
 			expect(() => bucket.client).toThrow('Plugin owner stopped')
 			await expect(client.bucketExists()).rejects.toBeInstanceOf(S3NotRunningError)
 		}
@@ -256,7 +256,7 @@ async function withLocalS3(rootDir: string, run: (s3: S3) => void | Promise<void
 			services: standardServices(),
 		})
 
-		await host.start(S3Plugin, {
+		await host.start(S3Plugin.nodeAddress(), {
 			initialConfig: {
 				buckets: [
 					{
@@ -271,7 +271,7 @@ async function withLocalS3(rootDir: string, run: (s3: S3) => void | Promise<void
 				],
 			},
 		})
-		await host.start(LocalS3Consumer)
-		await run(host.require(LocalS3Consumer).s3)
+		await host.start(LocalS3Consumer.nodeAddress())
+		await run(host.require(LocalS3Consumer.nodeAddress()).s3)
 	}
 }

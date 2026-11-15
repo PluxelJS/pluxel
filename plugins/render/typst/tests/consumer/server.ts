@@ -173,8 +173,12 @@ export function consumerCompiler(options: Readonly<{ publicOrigin?: string }> = 
 					],
 				})
 				// This is an isolated browser acceptance host, accessed only through public test APIs.
-				await host.start(FontsPlugin, { initialConfig: { files, maxFontBytes: 32 * 1024 * 1024 } })
-				typst = await host.start(TypstPlugin, { initialConfig: { maxSessions: maxClients } })
+				await host.start(FontsPlugin.nodeAddress(), {
+					initialConfig: { files, maxFontBytes: 32 * 1024 * 1024 },
+				})
+				typst = await host.start(TypstPlugin.nodeAddress(), {
+					initialConfig: { maxSessions: maxClients },
+				})
 				documents = createDocumentService({
 					typst,
 					directory: join(directory, 'documents'),

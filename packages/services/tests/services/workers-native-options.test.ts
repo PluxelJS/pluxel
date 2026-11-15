@@ -31,7 +31,7 @@ it('uses native env, execArgv, argv, name, workerData and resource limits', asyn
 	native.argv.push('changed argument')
 	native.resourceLimits.maxOldGenerationSizeMb = 96
 	await using host = await createTestHost({ services: [nodeModules(), service] })
-	const consumer = await host.start(Consumer)
+	const consumer = await host.start(Consumer.nodeAddress())
 	expect(await consumer.observe()).toMatchObject({
 		value: 'configured',
 		execArgv: ['--no-warnings'],
@@ -48,7 +48,7 @@ it('preserves native SHARE_ENV instead of cloning or serializing it', async () =
 		await using host = await createTestHost({
 			services: [nodeModules(), workers({ maxThreads: 1, worker: { env: SHARE_ENV } })],
 		})
-		const consumer = await host.start(Consumer)
+		const consumer = await host.start(Consumer.nodeAddress())
 		expect(await consumer.observe({ envKey, writeValue: 'written by worker' })).toMatchObject({
 			value: 'written by worker',
 		})
@@ -81,7 +81,7 @@ it.each([null, false, 3, 'worker', []])(
 it('retains native creation failures and releases task admission for queued work and shutdown', async () => {
 	const service = workers({ maxThreads: 1, worker: { execArgv: ['--max-old-space-size=32'] } })
 	await using host = await createTestHost({ services: [nodeModules(), service] })
-	const consumer = await host.start(Consumer)
+	const consumer = await host.start(Consumer.nodeAddress())
 	const attempts = await Promise.allSettled([consumer.observe(), consumer.observe()])
 	for (const attempt of attempts) {
 		expect(attempt).toMatchObject({
@@ -89,5 +89,5 @@ it('retains native creation failures and releases task admission for queued work
 			reason: { code: 'TASK_FAILED', cause: { code: 'ERR_WORKER_INVALID_EXEC_ARGV' } },
 		})
 	}
-	await host.stop(Consumer)
+	await host.stop(Consumer.nodeAddress())
 })

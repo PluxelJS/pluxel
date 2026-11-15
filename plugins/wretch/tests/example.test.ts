@@ -26,8 +26,8 @@ describe('WretchExamplePlugin', () => {
 			await using host = await createTestHost({
 				services: standardServices(),
 			})
-			await host.start(WretchPlugin, { catalog: [WretchExamplePlugin] })
-			await host.start(WretchExamplePlugin, {
+			await host.start(WretchPlugin.nodeAddress(), { catalog: [WretchExamplePlugin] })
+			await host.start(WretchExamplePlugin.nodeAddress(), {
 				initialConfig: {
 					baseUrl: 'https://example.test/api',
 					inspectPath: '/inspect-me',
@@ -35,7 +35,9 @@ describe('WretchExamplePlugin', () => {
 				},
 			})
 
-			await expect(host.require(WretchExamplePlugin).inspect()).resolves.toMatchObject({
+			await expect(
+				host.require(WretchExamplePlugin.nodeAddress()).inspect(),
+			).resolves.toMatchObject({
 				url: 'https://example.test/api/inspect-me',
 				headers: {
 					accept: 'application/json',
@@ -67,11 +69,11 @@ describe('WretchExamplePlugin', () => {
 		await using host = await createTestHost({
 			services: standardServices(),
 		})
-		await host.start(WretchPlugin, { catalog: [WretchExamplePlugin] })
-		const customerPlugin = await host.start(WretchExamplePlugin, {
+		await host.start(WretchPlugin.nodeAddress(), { catalog: [WretchExamplePlugin] })
+		const customerPlugin = await host.start(WretchExamplePlugin.nodeAddress(), {
 			initialConfig: { baseUrl: 'https://example.test/api', retryAttempts: 0 },
 		})
-		await host.start(CustomerHttpConsumer)
+		await host.start(CustomerHttpConsumer.nodeAddress())
 
 		const found = await customerPlugin.findCustomer('alice')
 		expect(Result.isError(found)).toBe(false)
@@ -117,15 +119,15 @@ describe('WretchExamplePlugin', () => {
 				workbench: true,
 				services: standardServices(),
 			})
-			await host.start(WretchPlugin, { catalog: [WretchExamplePlugin] })
-			await host.start(WretchExamplePlugin)
+			await host.start(WretchPlugin.nodeAddress(), { catalog: [WretchExamplePlugin] })
+			await host.start(WretchExamplePlugin.nodeAddress())
 
-			expect(host.isRunning(WretchPlugin)).toBe(true)
-			expect(host.isRunning(WretchExamplePlugin)).toBe(true)
+			expect(host.isRunning(WretchPlugin.nodeAddress())).toBe(true)
+			expect(host.isRunning(WretchExamplePlugin.nodeAddress())).toBe(true)
 
 			using settings = await openWretchSettings(
 				host,
-				WretchExamplePlugin,
+				WretchExamplePlugin.nodeAddress(),
 				WretchExampleWorkbench.http,
 			)
 			expect(settings).toMatchObject({

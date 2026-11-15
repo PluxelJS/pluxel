@@ -111,6 +111,8 @@ export default (async (sdk) => {
 
 `logs.read(cursor, { limit, filter })` 立即读取，成功值的新 `cursor` 可用于下一批。`wait` 的 `timeoutMs` 必填，范围为 1–300000；到时返回当前读取结果，取消返回 `Err` 并移除订阅。每批默认 100 条，最多 10000 条。
 
+读取选项直接使用 `@pluxel/core/logging` 的 `LogReadOptions`；`filter.plugin` 接受完整节点地址，`wait` 在相同选项上要求 `timeoutMs`。
+
 日志流重置、替换或超过保留窗口时返回明确的 `epoch_mismatch`、`stream_replaced` 或 `from_too_old` 等结果；调用方决定从哪里重新开始。缺少 Logging 或历史存储会给出 `logging_unavailable` / `store_unavailable` 诊断，SDK 不安装新存储。日志窗口内也可以存在其他并发操作产生的记录。
 
 ## 向 Node 应用提交

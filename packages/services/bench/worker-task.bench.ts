@@ -45,7 +45,7 @@ let worker!: WorkerTaskBenchmark
 
 beforeAll(async () => {
 	lowerTestPlugin(WorkerTaskBenchmark)
-	worker = await host.start(WorkerTaskBenchmark)
+	worker = await host.start(WorkerTaskBenchmark.nodeAddress())
 	await worker.run(new Uint8Array(1))
 })
 

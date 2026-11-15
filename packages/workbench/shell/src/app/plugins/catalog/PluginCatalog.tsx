@@ -18,6 +18,7 @@ import { notifyAndRecord } from '../../notifications/notifyBridge'
 import { RouterLinkAdapter } from '../../router/RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
 import { setPluginAutoStarts } from '../pluginStatusActions'
+import { describePluginControlBatchFailure } from '../pluginControlBatchPresentation'
 import { usePluginOverview } from '../pluginOverview'
 import { canWritePluginState, type PluginOverview } from '../pluginOverviewModel'
 import { managementQueryKeys } from '../../managementQuery'
@@ -331,7 +332,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 			)
 			setBulkBusy(true)
 			try {
-				const results = await setPluginAutoStarts(
+				const result = await setPluginAutoStarts(
 					management,
 					queryClient,
 					batch.map(({ address }) => ({ address, autoStart })),
@@ -340,24 +341,14 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 				const undoRevision = queryClient.getQueryData<PluginOverview>(
 					managementQueryKeys.pluginOverview(),
 				)?.statePolicy.managedRevision
-				const failed = results.filter((result) => result.ok === false)
-				if (failed.length > 0) {
-					notifyAndRecord({
-						title: failed.every((result) => result.code === 'lifecycle_failed')
-							? '自动启动策略已应用，运行协调存在问题'
-							: failed.some((result) => result.code === 'persistence_failed')
-								? '自动启动策略应用结果待核对'
-								: '自动启动策略未全部应用',
-						message: failed
-							.map((result) => {
-								const name =
-									displayNameByAddress.get(pluginNodeIndexKey(result.address)) ?? 'Plugin'
-								return `${name}：${result.code === 'lifecycle_failed' ? '策略已应用；' : ''}${result.error}`
-							})
-							.join('\n'),
-						color: 'red',
-						diagnosticText: JSON.stringify(failed, null, 2),
-					})
+				if (result.ok === false) {
+					notifyAndRecord(
+						describePluginControlBatchFailure(
+							'auto-start',
+							result,
+							(address) => displayNameByAddress.get(pluginNodeIndexKey(address)) ?? 'Plugin',
+						),
+					)
 				} else {
 					notifyAndRecord({
 						title: autoStart ? '已批量开启自动启动' : '已批量关闭自动启动',
@@ -374,7 +365,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 											setBulkBusy(true)
 											try {
 												if (!undoRevision) throw new Error('运行策略尚未重新加载，无法恢复')
-												const undoResults = await setPluginAutoStarts(
+												const undoResult = await setPluginAutoStarts(
 													management,
 													queryClient,
 													batch.map(({ address, autoStart: previousAutoStart }) => ({
@@ -383,30 +374,21 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 													})),
 													undoRevision,
 												)
-												const undoFailed = undoResults.filter((result) => result.ok === false)
-												if (undoFailed.length > 0) {
-													notifyAndRecord({
-														title: undoFailed.every((result) => result.code === 'lifecycle_failed')
-															? '原策略已恢复，运行协调存在问题'
-															: undoFailed.some((result) => result.code === 'persistence_failed')
-																? '策略恢复结果待核对'
-																: '策略未全部恢复',
-														message: undoFailed
-															.map((result) => {
-																const name =
-																	displayNameByAddress.get(pluginNodeIndexKey(result.address)) ??
-																	'Plugin'
-																return `${name}：${result.code === 'lifecycle_failed' ? '原策略已恢复；' : ''}${result.error}`
-															})
-															.join('\n'),
-														color: 'red',
-														diagnosticText: JSON.stringify(undoFailed, null, 2),
-													})
+												if (undoResult.ok === false) {
+													notifyAndRecord(
+														describePluginControlBatchFailure(
+															'restore-auto-start',
+															undoResult,
+															(address) =>
+																displayNameByAddress.get(pluginNodeIndexKey(address)) ?? 'Plugin',
+														),
+													)
 												} else {
 													notifyAndRecord({
 														title: '已恢复原策略',
 														message: `${batch.length} 个 Plugin 的自动启动策略已恢复`,
 														color: 'green',
+														diagnosticText: JSON.stringify(undoResult, null, 2),
 													})
 												}
 											} catch (error: unknown) {
@@ -426,6 +408,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 							</Group>
 						),
 						color: 'green',
+						diagnosticText: JSON.stringify(result, null, 2),
 						autoClose: 5000,
 					})
 				}

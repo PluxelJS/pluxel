@@ -64,7 +64,7 @@ export class AssetsPlugin extends BasePlugin {
 ```ts no-twoslash
 import { S3Plugin } from '@pluxel/plugin-storage'
 
-await host.start(S3Plugin, {
+await host.start(S3Plugin.nodeAddress(), {
 	initialConfig: {
 		buckets: [
 			{
@@ -79,7 +79,7 @@ await host.start(S3Plugin, {
 		],
 	},
 })
-await host.start(AssetsPlugin)
+await host.start(AssetsPlugin.nodeAddress())
 ```
 
 本地后端特性：
@@ -93,7 +93,7 @@ await host.start(AssetsPlugin)
 针对公开公开资源的 S3 或兼容存储（如 R2、MinIO），可配置 `anonymous` 模式：
 
 ```ts no-twoslash
-await host.start(S3Plugin, {
+await host.start(S3Plugin.nodeAddress(), {
 	initialConfig: {
 		buckets: [
 			{
@@ -132,7 +132,7 @@ const credentials = {
 然后在 S3 配置中通过 Vault 引用：
 
 ```ts no-twoslash
-await host.start(S3Plugin, {
+await host.start(S3Plugin.nodeAddress(), {
 	initialConfig: {
 		buckets: [
 			{

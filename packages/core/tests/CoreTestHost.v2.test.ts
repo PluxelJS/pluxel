@@ -1,10 +1,10 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
+import { parsePluginNodeAddress } from '@pluxel/core'
 import {
 	BasePlugin,
 	Plugin,
 	PluginLifecycleAssertionError,
 	createCoreTestHost,
-	definePluginFork,
 	type CorePluginTestChange,
 	type CoreTestHost,
 } from '@pluxel/core/internal/test'
@@ -94,25 +94,28 @@ class V2Slow extends BasePlugin {
 describe('createCoreTestHost()', () => {
 	it('immediately adds single and batch targets and returns exact running instances', async () => {
 		await using host = createCoreTestHost()
-		const configured = await host.add(V2Configured, { initialConfig: { value: 7 } })
+		const configured = await host.add(V2Configured.nodeAddress(), { initialConfig: { value: 7 } })
 		expect(configured.config).toEqual({ value: 7 })
 
-		const [provider, consumer] = await host.add([V2Provider, V2Consumer])
+		const [provider, consumer] = await host.add([
+			V2Provider.nodeAddress(),
+			V2Consumer.nodeAddress(),
+		])
 		expect(consumer.provider.ctx.pluginInfo.nodeAddress).toEqual(
 			provider.ctx.pluginInfo.nodeAddress,
 		)
-		expect(host.require(V2Provider)).toBe(provider)
-		expect(host.isRunning(V2Consumer)).toBe(true)
+		expect(host.require(V2Provider.nodeAddress())).toBe(provider)
+		expect(host.isRunning(V2Consumer.nodeAddress())).toBe(true)
 
-		const same = await host.add(V2Provider)
+		const same = await host.add(V2Provider.nodeAddress())
 		expect(same).toBe(provider)
 	})
 
-	it('supports immutable fork refs and keeps fork generations isolated', async () => {
+	it('supports immutable fork addresses and keeps fork generations isolated', async () => {
 		await using host = createCoreTestHost()
-		const East = definePluginFork(V2Provider, 'east')
-		const West = definePluginFork(V2Provider, 'west')
-		const [defaultProvider, east, west] = await host.add([V2Provider, East, West])
+		const East = V2Provider.nodeAddress('east')
+		const West = V2Provider.nodeAddress('west')
+		const [defaultProvider, east, west] = await host.add([V2Provider.nodeAddress(), East, West])
 
 		expect(Object.isFrozen(East)).toBe(true)
 		expect(east.constructor).toBe(V2Provider)
@@ -121,21 +124,107 @@ describe('createCoreTestHost()', () => {
 		expect(east.ctx.pluginInfo.nodeAddress).toMatchObject({ variant: 'fork', forkId: 'east' })
 	})
 
+	it('requires original source evidence when a target installs an implementation', async () => {
+		await using host = createCoreTestHost()
+		const original = V2Provider.nodeAddress('isolated')
+		const plain = parsePluginNodeAddress(original)
+		for (const target of [V2Provider, plain, JSON.parse(JSON.stringify(original))]) {
+			await expect(host.add(target as never)).rejects.toThrow(
+				/original concrete Plugin class nodeAddress/,
+			)
+		}
+		for (const target of [{ ...original }, Object.assign({}, original)]) {
+			await expect(host.add(target)).rejects.toThrow(/copied or detached/)
+		}
+		const foreignRegistryPath = '../src/internal/plugin-address-evidence?test-copy'
+		const foreign = (await import(
+			foreignRegistryPath
+		)) as typeof import('../src/internal/plugin-address-evidence')
+		const foreignAddress = foreign.createPluginNodeAddressEvidence(original, {
+			kind: 'constructor',
+			implementation: V2Provider,
+		})
+		await expect(host.add(foreignAddress)).rejects.toThrow(/copied or detached/)
+		expect(host.isRunning(original)).toBe(false)
+		const instance = await host.add(original)
+		expect(instance.constructor).toBe(V2Provider)
+	})
+
+	it.each([undefined, 'east'])(
+		'rejects conflicting implementation evidence when adding the same node twice (%s)',
+		async (forkId) => {
+			await using host = createCoreTestHost()
+			class Replacement extends V2Provider {}
+			lowerTestReplacement(V2Provider, Replacement, { plugin: { forkable: true } })
+			await expect(
+				host.commit((change) => {
+					change.add(V2Provider.nodeAddress(forkId))
+					change.add(Replacement.nodeAddress(forkId))
+				}),
+			).rejects.toThrow(/Conflicting add.*different implementations/)
+			expect(host.isRunning(V2Provider.nodeAddress(forkId))).toBe(false)
+			await host.commit((change) => {
+				change.add(V2Provider.nodeAddress(forkId))
+				change.add(V2Provider.nodeAddress(forkId))
+			})
+			expect(host.require(V2Provider.nodeAddress(forkId)).constructor).toBe(V2Provider)
+		},
+	)
+
+	it('compares repeated fork overrides by identity and exact implementation evidence', async () => {
+		await using host = createCoreTestHost()
+		await host.commit((change) => {
+			change.add([
+				V2Provider.nodeAddress(),
+				V2Provider.nodeAddress('east'),
+				V2Consumer.nodeAddress(),
+			])
+			for (let index = 0; index < 2; index++) {
+				change.dependencies.setOverride({
+					consumer: V2Consumer.nodeAddress(),
+					requirement: V2Provider,
+					provider: V2Provider.nodeAddress('east'),
+				})
+			}
+		})
+		expect(host.require(V2Consumer.nodeAddress()).provider.ctx.pluginInfo.nodeAddress).toEqual(
+			parsePluginNodeAddress(V2Provider.nodeAddress('east')),
+		)
+		class Replacement extends V2Provider {}
+		lowerTestReplacement(V2Provider, Replacement, { plugin: { forkable: true } })
+		await expect(
+			host.commit((change) => {
+				change.dependencies.setOverride({
+					consumer: V2Consumer.nodeAddress(),
+					requirement: V2Provider,
+					provider: V2Provider.nodeAddress('east'),
+				})
+				change.dependencies.setOverride({
+					consumer: V2Consumer.nodeAddress(),
+					requirement: V2Provider,
+					provider: Replacement.nodeAddress('east'),
+				})
+			}),
+		).rejects.toThrow(/Conflicting dependencies.setOverride/)
+	})
+
 	it('accepts abstract definition tokens as dependency requirements', async () => {
 		await using host = createCoreTestHost()
 		await host.commit((change) => {
-			change.add([V2AbstractImplementation, V2AbstractConsumer])
+			change.add([V2AbstractImplementation.nodeAddress(), V2AbstractConsumer.nodeAddress()])
 			change.dependencies.setDefault({
 				requirement: V2AbstractProvider,
 				provider: V2AbstractImplementation,
 			})
 		})
-		expect(host.require(V2AbstractConsumer).provider.value).toBe('abstract-implementation')
+		expect(host.require(V2AbstractConsumer.nodeAddress()).provider.value).toBe(
+			'abstract-implementation',
+		)
 	})
 
 	it('returns a frozen slot-free lifecycle failure summary', async () => {
 		await using host = createCoreTestHost()
-		const failure = await host.commitExpectFail((change) => change.add(V2Failure))
+		const failure = await host.commitExpectFail((change) => change.add(V2Failure.nodeAddress()))
 
 		expect(failure.lifecycleReport.ok).toBe(false)
 		expect(failure.lifecycleReport.issues).toHaveLength(1)
@@ -156,7 +245,7 @@ describe('createCoreTestHost()', () => {
 
 	it('preserves strict failure diagnostics in PluginLifecycleAssertionError', async () => {
 		await using host = createCoreTestHost()
-		const error = await host.add(V2Failure).catch((cause: unknown) => cause)
+		const error = await host.add(V2Failure.nodeAddress()).catch((cause: unknown) => cause)
 
 		expect(error).toBeInstanceOf(PluginLifecycleAssertionError)
 		expect(error).toMatchObject({
@@ -174,32 +263,34 @@ describe('createCoreTestHost()', () => {
 
 		await expect(
 			host.commit((async (change: CorePluginTestChange) => {
-				change.add(V2Independent)
+				change.add(V2Independent.nodeAddress())
 			}) as never),
 		).rejects.toThrow(/must be synchronous/i)
-		expect(host.isRunning(V2Independent)).toBe(false)
+		expect(host.isRunning(V2Independent.nodeAddress())).toBe(false)
 
 		await expect(host.commit(() => undefined)).rejects.toThrow(/at least one change/i)
 		await expect(
 			host.commit((change) => {
-				change.add(V2Independent)
-				change.remove(V2Independent)
+				change.add(V2Independent.nodeAddress())
+				change.remove(V2Independent.nodeAddress())
 			}),
 		).rejects.toThrow(/conflicting/i)
 
 		await host.commit((change) => {
 			escaped = change
-			change.add(V2Independent)
+			change.add(V2Independent.nodeAddress())
 		})
-		expect(() => escaped!.restart(V2Independent)).toThrow(/cannot escape/i)
+		expect(() => escaped!.restart(V2Independent.nodeAddress())).toThrow(/cannot escape/i)
 	})
 
 	it('fails concurrent mutation/query and lets disposal wait for admitted mutation', async () => {
 		const host = createCoreTestHost({ plugins: { startTimeoutMs: 1_000 } })
 		resetSlowStart()
-		const pending = host.add(V2Slow)
-		expect(() => host.isRunning(V2Slow)).toThrow(/in progress/i)
-		await expect(host.add(V2Independent)).rejects.toThrow(/literal batch|commit\(callback\)/i)
+		const pending = host.add(V2Slow.nodeAddress())
+		expect(() => host.isRunning(V2Slow.nodeAddress())).toThrow(/in progress/i)
+		await expect(host.add(V2Independent.nodeAddress())).rejects.toThrow(
+			/literal batch|commit\(callback\)/i,
+		)
 		await slowStarted
 
 		const firstDispose = host.dispose()
@@ -208,15 +299,15 @@ describe('createCoreTestHost()', () => {
 		releaseSlowStart?.()
 		await pending
 		await firstDispose
-		expect(() => host.isRunning(V2Slow)).toThrow(/closing or closed/i)
-		await expect(host.add(V2Independent)).rejects.toThrow(/closing or closed/i)
+		expect(() => host.isRunning(V2Slow.nodeAddress())).toThrow(/closing or closed/i)
+		await expect(host.add(V2Independent.nodeAddress())).rejects.toThrow(/closing or closed/i)
 	})
 
-	it('restarts explicitly and stale-rejects old constructors and fork refs after replacement', async () => {
+	it('restarts explicitly and stale-rejects old source addresses after replacement', async () => {
 		await using host = createCoreTestHost()
-		const EastV1 = definePluginFork(V2Provider, 'east-replacement')
-		const [first, firstEast] = await host.add([V2Provider, EastV1])
-		const restarted = await host.restart(V2Provider)
+		const EastV1 = V2Provider.nodeAddress('east-replacement')
+		const [first, firstEast] = await host.add([V2Provider.nodeAddress(), EastV1])
+		const restarted = await host.restart(V2Provider.nodeAddress())
 		expect(restarted).not.toBe(first)
 
 		class V2ProviderReplacement extends BasePlugin {
@@ -227,28 +318,36 @@ describe('createCoreTestHost()', () => {
 		})
 		await host.replaceDefinition(V2Provider, V2ProviderReplacement)
 
-		expect(() => host.require(V2Provider)).toThrow(/stale plugin target/i)
+		expect(() => host.require(V2Provider.nodeAddress())).toThrow(/stale plugin target/i)
 		expect(() => host.require(EastV1)).toThrow(/stale plugin target/i)
-		const EastV2 = definePluginFork(V2ProviderReplacement, 'east-replacement')
+		const EastV2 = V2ProviderReplacement.nodeAddress('east-replacement')
 		expect(host.require(EastV2)).not.toBe(firstEast)
 		expect(host.require(EastV2)).toBeInstanceOf(V2ProviderReplacement)
 	})
 })
 
 async function compileOnlyCoreTestHostContract(host: CoreTestHost): Promise<void> {
-	const single = await host.add(V2Provider)
+	// @ts-expect-error Node selection uses an original source address, not a constructor.
+	await host.add(V2Provider)
+	// @ts-expect-error Portable identity alone cannot install an implementation.
+	await host.add(parsePluginNodeAddress(V2Provider.nodeAddress()))
+	const single = await host.add(V2Provider.nodeAddress())
 	expectTypeOf(single).toEqualTypeOf<V2Provider>()
 
-	const East = definePluginFork(V2Provider, 'compile-east')
-	const tuple = await host.add([V2Provider, East, V2Independent] as const)
+	const East = V2Provider.nodeAddress('compile-east')
+	const tuple = await host.add([
+		V2Provider.nodeAddress(),
+		East,
+		V2Independent.nodeAddress(),
+	] as const)
 	expectTypeOf(tuple).toEqualTypeOf<readonly [V2Provider, V2Provider, V2Independent]>()
 
-	await host.commit((change) => change.add(V2Provider))
+	await host.commit((change) => change.add(V2Provider.nodeAddress()))
 	await host.commit((change) => {
-		change.add(V2Provider)
+		change.add(V2Provider.nodeAddress())
 	})
 	await host.commit((change) => {
-		change.add([V2AbstractImplementation, V2AbstractConsumer])
+		change.add([V2AbstractImplementation.nodeAddress(), V2AbstractConsumer.nodeAddress()])
 		change.dependencies.setDefault({
 			requirement: V2AbstractProvider,
 			provider: V2AbstractImplementation,
@@ -256,11 +355,13 @@ async function compileOnlyCoreTestHostContract(host: CoreTestHost): Promise<void
 	})
 
 	// @ts-expect-error Async callbacks cannot satisfy the synchronous undefined-return contract.
-	await host.commit(async (change) => change.add(V2Provider))
+	await host.commit(async (change) => change.add(V2Provider.nodeAddress()))
 	// @ts-expect-error A callback cannot return an arbitrary value.
 	await host.commit((_change) => 1)
 	// @ts-expect-error Batch add intentionally has no heterogeneous initialConfig map.
-	await host.add([V2Provider, V2Independent], { initialConfig: { value: 1 } })
+	await host.add([V2Provider.nodeAddress(), V2Independent.nodeAddress()], {
+		initialConfig: { value: 1 },
+	})
 	await host.commit((change) =>
 		change.dependencies.setDefault({
 			requirement: V2Provider,
@@ -275,7 +376,7 @@ async function compileOnlyCoreTestHostContract(host: CoreTestHost): Promise<void
 			provider: V2AbstractProvider,
 		}),
 	)
-	// @ts-expect-error Definition replacement accepts constructors, not fork refs.
+	// @ts-expect-error Definition replacement accepts constructors, not fork addresses.
 	await host.replaceDefinition(East, V2Provider)
 	// @ts-expect-error Public author hosts do not expose root Context authority.
 	void host.ctx

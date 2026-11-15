@@ -1,14 +1,13 @@
 import type { ServiceTestHost, ServiceTestHostOptions } from '@pluxel/services/internal/test'
 import type { WorkbenchTestDriver } from '@pluxel/workbench/test'
 
-export { definePluginFork, PluginLifecycleAssertionError } from '@pluxel/core/internal/test'
+export { PluginLifecycleAssertionError } from '@pluxel/core/internal/test'
 export type {
 	DependencyOverrideInput,
 	DependencyOverrideTarget,
 	ProviderDefaultInput,
 	PluginInitialConfigOptions,
 	LifecycleFailureCommitSummary,
-	PluginForkRef,
 	PluginInstanceFor,
 	PluginInstances,
 	PluginLifecycleAssertionOperation,

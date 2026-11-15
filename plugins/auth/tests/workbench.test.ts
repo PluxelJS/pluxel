@@ -12,7 +12,7 @@ const LOCAL_RECOVERY = Object.freeze({ provider: 'local', subject: 'local' })
 
 function openSetup(host: TestHost<true>, principal: WorkbenchPrincipal = LOCAL_RECOVERY) {
 	return host.workbench.open({
-		target: AuthPlugin,
+		target: AuthPlugin.nodeAddress(),
 		entry: AuthWorkbench.setup,
 		principal,
 		location: '/auth/setup',
@@ -27,7 +27,7 @@ describe('Auth Workbench credential setup', () => {
 				services: [...standardServices(), vault()],
 			})
 
-			await host.start(AuthPlugin, {
+			await host.start(AuthPlugin.nodeAddress(), {
 				initialConfig: { mode: { type: 'password' } },
 			})
 
@@ -72,7 +72,7 @@ describe('Auth Workbench credential setup', () => {
 				services: [...standardServices(), vault()],
 			})
 
-			await host.start(AuthPlugin, {
+			await host.start(AuthPlugin.nodeAddress(), {
 				initialConfig: { mode: { type: 'password' } },
 			})
 
@@ -97,7 +97,7 @@ describe('Auth Workbench credential setup', () => {
 				services: [...standardServices(), vault()],
 			})
 
-			await host.start(AuthPlugin, {
+			await host.start(AuthPlugin.nodeAddress(), {
 				initialConfig: { mode: { type: 'password-totp' } },
 			})
 
@@ -131,7 +131,7 @@ describe('Auth Workbench credential setup', () => {
 				services: [...standardServices(), vault()],
 			})
 
-			await host.start(AuthPlugin, {
+			await host.start(AuthPlugin.nodeAddress(), {
 				initialConfig: {
 					mode: {
 						type: 'oidc',
@@ -164,7 +164,7 @@ describe('Auth Workbench credential setup', () => {
 				services: standardServices(),
 			})
 
-			await host.start(AuthPlugin, {
+			await host.start(AuthPlugin.nodeAddress(), {
 				initialConfig: {
 					mode: {
 						type: 'oidc',

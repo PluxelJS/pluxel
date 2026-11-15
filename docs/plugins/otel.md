@@ -29,21 +29,21 @@ envBinding(OtelPlugin.nodeAddress(), {
 默认情况下，`OtelPlugin` 会启用三种 OTLP 信号并关闭 Prometheus：
 
 ```ts no-twoslash
-await host.start(OtelPlugin, {
+await host.start(OtelPlugin.nodeAddress(), {
 	catalog: [CatalogPlugin],
 	initialConfig: {
 		otlp: ['metrics', 'traces', 'logs'],
 		prometheus: false,
 	},
 })
-await host.start(CatalogPlugin)
+await host.start(CatalogPlugin.nodeAddress())
 ```
 
 按需定制导出组合：
 
 ```ts no-twoslash
 // 仅导出 Traces 和 Logs，并开启 Prometheus 指标抓取接口
-await host.start(OtelPlugin, {
+await host.start(OtelPlugin.nodeAddress(), {
 	initialConfig: {
 		otlp: ['traces', 'logs'],
 		prometheus: { path: '/metrics' },
@@ -51,7 +51,7 @@ await host.start(OtelPlugin, {
 })
 
 // 仅开启 Prometheus 抓取
-await host.start(OtelPlugin, {
+await host.start(OtelPlugin.nodeAddress(), {
 	initialConfig: {
 		otlp: [],
 		prometheus: {},

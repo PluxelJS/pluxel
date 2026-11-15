@@ -12,9 +12,9 @@ describe('PluginWithUI Workbench observer', () => {
 			workbench: true,
 			services: standardServices(),
 		})
-		await host.start(PluginWithUI)
+		await host.start(PluginWithUI.nodeAddress())
 		using opened = await host.workbench.open({
-			target: PluginWithUI,
+			target: PluginWithUI.nodeAddress(),
 			entry: PluginWithUIWorkbench.overview,
 			principal,
 		})

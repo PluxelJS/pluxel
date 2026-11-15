@@ -3,8 +3,8 @@ import type {
 	PluginNodeAddress,
 	PluginDefaultNodeAddress,
 	PluginForkNodeAddress,
+	PluginInstanceNodeAddress,
 } from '@pluxel/core'
-import type { LogFilter, LogReadOptions } from '@pluxel/core/logging'
 
 type RawConfig = Readonly<Record<string, unknown>>
 declare const pluginTypes: unique symbol
@@ -53,9 +53,23 @@ type TypesOf<T extends PluginTypedNodeAddress> = T[typeof pluginTypes] extends {
 
 export type PluginConfigInput<T extends PluginTypedNodeAddress> = TypesOf<T>['input']
 export type PluginConfigOutput<T extends PluginTypedNodeAddress> = TypesOf<T>['output']
-export type PluginInstance<T extends PluginTypedNodeAddress> = [TypesOf<T>] extends [never]
-	? object
-	: TypesOf<T>['instance']
+/** @internal The common execution evidence admitted by the public instance selector. */
+export type PluginAddressEvidence<T extends PluginNodeAddress> = T extends PluginTypedNodeAddress
+	? Readonly<{
+			kind: 'control'
+			target: T
+			instance: [TypesOf<T>] extends [never] ? object : TypesOf<T>['instance']
+		}>
+	: T extends PluginInstanceNodeAddress<infer S>
+		? Readonly<{ kind: 'constructor'; target: T; instance: S }>
+		: never
+
+/** Instance declared by a source or generated address; every union branch must retain evidence. */
+export type PluginInstance<T extends PluginNodeAddress> = [T] extends [
+	PluginAddressEvidence<T>['target'],
+]
+	? PluginAddressEvidence<T>['instance']
+	: never
 
 type ConfigAssociation<T extends PluginTypedNodeAddress> =
 	TypesOf<T> extends infer S
@@ -84,7 +98,3 @@ type HasNoConfig<T extends PluginTypedNodeAddress> = [TypesOf<T>] extends [never
 /** Internal admission: every possible target must declare configuration. */
 export type ConfiguredPlugin<T extends PluginTypedNodeAddress> =
 	true extends HasNoConfig<T> ? never : unknown
-
-/** Logging uses the original node-address filter shape. */
-export type ScriptLogReadOptions = Omit<LogReadOptions, 'filter'> &
-	Readonly<{ filter?: Omit<LogFilter, 'plugin'> & Readonly<{ plugin?: PluginNodeAddress }> }>

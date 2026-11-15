@@ -31,17 +31,17 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 			})
 
 			await host.commit((change) => {
-				change.start(RedisPlugin, {
+				change.start(RedisPlugin.nodeAddress(), {
 					initialConfig: { connections: [{ id: 'default', url: redisUrl! }] },
 				})
-				change.start(RedisRatesBackendPlugin, {
+				change.start(RedisRatesBackendPlugin.nodeAddress(), {
 					initialConfig: { keyPrefix: prefix },
 				})
-				change.start(RatesPlugin)
-				change.start(IntegrationConsumer)
+				change.start(RatesPlugin.nodeAddress())
+				change.start(IntegrationConsumer.nodeAddress())
 			})
-			const consumer = host.require(IntegrationConsumer)
-			const redis = host.require(RedisPlugin).connection()
+			const consumer = host.require(IntegrationConsumer.nodeAddress())
+			const redis = host.require(RedisPlugin.nodeAddress()).connection()
 				.client as unknown as IntegrationRedisClient
 			try {
 				for (const policy of algorithms) {
@@ -95,7 +95,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 					remaining: 0,
 				})
 
-				const backend = host.require(RedisRatesBackendPlugin)
+				const backend = host.require(RedisRatesBackendPlugin.nodeAddress())
 				const fixed = Object.freeze({
 					algorithm: 'fixed-window',
 					limit: 2,

@@ -24,9 +24,9 @@ it('opens a Workbench entry with HTTP and fixed Core storage', async () => {
 		workbench: true,
 		services: [elysia()],
 	})
-	await host.start(WorkbenchLeaseFixture)
+	await host.start(WorkbenchLeaseFixture.nodeAddress())
 	using opened = await host.workbench.open({
-		target: WorkbenchLeaseFixture,
+		target: WorkbenchLeaseFixture.nodeAddress(),
 		entry: WorkbenchLeaseDefinition.lease,
 		principal: { provider: 'test', subject: 'minimal-workbench-host' },
 	})
@@ -41,9 +41,9 @@ it('reports and closes a leaked public Workbench lease during host disposal', as
 	})
 	let disposalAttempted = false
 	try {
-		await host.start(WorkbenchLeaseFixture)
+		await host.start(WorkbenchLeaseFixture.nodeAddress())
 		const entry = {
-			target: WorkbenchLeaseFixture,
+			target: WorkbenchLeaseFixture.nodeAddress(),
 			entry: WorkbenchLeaseDefinition.lease,
 			principal: { provider: 'test', subject: 'runtime-test-host' },
 		}
@@ -71,7 +71,7 @@ it('reports and closes a leaked public Workbench lease during host disposal', as
 		}
 		// Only this intentionally unclosed lease may appear in the disposal report.
 		const opened = await host.workbench.open({
-			target: WorkbenchLeaseFixture,
+			target: WorkbenchLeaseFixture.nodeAddress(),
 			entry: WorkbenchLeaseDefinition.lease,
 			principal: { provider: 'test', subject: 'runtime-test-host' },
 		})
@@ -93,7 +93,7 @@ it('reports and closes a leaked public Workbench lease during host disposal', as
 		expect(() => opened[Symbol.dispose]()).not.toThrow()
 		await expect(
 			host.workbench.open({
-				target: WorkbenchLeaseFixture,
+				target: WorkbenchLeaseFixture.nodeAddress(),
 				entry: WorkbenchLeaseDefinition.lease,
 				principal: { provider: 'test', subject: 'runtime-test-host' },
 			}),

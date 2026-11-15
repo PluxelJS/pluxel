@@ -6,34 +6,23 @@ import type {
 } from '../plugins/runtime/plugin-service/LifecycleReport'
 import type { PluginService } from '../plugins/runtime/PluginService'
 import type { PluginConstructor } from '../plugins/types'
+import { readPluginNodeAddressEvidence } from '../internal/plugin-address-evidence'
 import {
 	formatPluginNodeReference,
 	isPluginNodeSlot,
 	parsePluginNodeAddress,
 	pluginDefinitionAddressEqual,
 	type PluginNodeAddress,
+	type PluginInstanceNodeAddress,
 } from '../plugins/runtime/identity'
-
-const pluginForkRefBrand: unique symbol = Symbol('pluxel.plugin-test-fork-ref')
 
 export type RawPluginConfig = Readonly<Record<string, unknown>>
 
-/** Immutable, host-independent reference to one fork of a concrete Plugin definition. */
-export interface PluginForkRef<TPlugin extends PluginConstructor = PluginConstructor> {
-	readonly plugin: TPlugin
-	readonly forkId: string
-	readonly [pluginForkRefBrand]: TPlugin
-}
+/** Original source-class address; the exact value supplies its implementation to the test host. */
+export type PluginTestTarget = PluginInstanceNodeAddress<any>
 
-export type PluginTestTarget<TPlugin extends PluginConstructor = PluginConstructor> =
-	| TPlugin
-	| PluginForkRef<TPlugin>
-
-export type PluginInstanceFor<TTarget extends PluginTestTarget> = TTarget extends PluginConstructor
-	? InstanceType<TTarget>
-	: TTarget extends PluginForkRef<infer TPlugin>
-		? InstanceType<TPlugin>
-		: never
+export type PluginInstanceFor<TTarget extends PluginTestTarget> =
+	TTarget extends PluginInstanceNodeAddress<infer S> ? S : never
 
 export type PluginInstances<TTargets extends readonly PluginTestTarget[]> = {
 	readonly [Index in keyof TTargets]: TTargets[Index] extends PluginTestTarget
@@ -103,56 +92,37 @@ export class PluginLifecycleAssertionError extends Error {
 	}
 }
 
-/** Validate a fork id through Core's canonical identity codec without touching host state. */
-export function definePluginFork<TPlugin extends PluginConstructor>(
-	plugin: TPlugin,
-	forkId: string,
-): PluginForkRef<TPlugin> {
-	const definition = plugin.nodeAddress().definition
-	const address = parsePluginNodeAddress({ definition, variant: 'fork', forkId })
-	return Object.freeze({
-		plugin,
-		forkId: address.variant === 'fork' ? address.forkId : forkId,
-		[pluginForkRefBrand]: plugin,
-	})
-}
-
-export type ResolvedPluginTestTarget<TPlugin extends PluginConstructor = PluginConstructor> =
-	Readonly<{
-		implementation: TPlugin
-		address: PluginNodeAddress
-	}>
+export type ResolvedPluginTestTarget = Readonly<{
+	implementation: PluginConstructor
+	address: PluginNodeAddress
+}>
 
 /** @internal Shared target normalization for Core- and Runtime-owned test hosts. */
-export function resolvePluginTestTarget<TTarget extends PluginTestTarget>(
-	target: TTarget,
-): ResolvedPluginTestTarget<
-	TTarget extends PluginConstructor
-		? TTarget
-		: TTarget extends PluginForkRef<infer TPlugin>
-			? TPlugin
-			: never
-> {
-	if (typeof target === 'function') {
-		return Object.freeze({
-			implementation: target,
-			address: target.nodeAddress(),
-		}) as never
-	}
-	if (!target || typeof target !== 'object' || !(pluginForkRefBrand in target)) {
+export function resolvePluginTestTarget(target: PluginTestTarget): ResolvedPluginTestTarget {
+	const evidence = readPluginNodeAddressEvidence(target)
+	if (
+		!evidence ||
+		typeof evidence !== 'object' ||
+		!('kind' in evidence) ||
+		evidence.kind !== 'constructor' ||
+		!('implementation' in evidence) ||
+		typeof evidence.implementation !== 'function'
+	) {
 		throw new TypeError(
-			'[pluxel/test] Plugin target must be a lowered concrete Plugin constructor or definePluginFork() result',
+			'[pluxel/test] Plugin target requires an original concrete Plugin class nodeAddress() value',
 		)
 	}
-	const implementation = target[pluginForkRefBrand]
-	if (implementation !== target.plugin) {
-		throw new TypeError('[pluxel/test] Plugin fork reference has an invalid implementation brand')
+	const implementation = evidence.implementation as PluginConstructor
+	const address = parsePluginNodeAddress(target)
+	if (!pluginDefinitionAddressEqual(address.definition, implementation.definitionAddress())) {
+		throw new TypeError(
+			'[pluxel/test] Plugin address and implementation evidence must identify the same definition',
+		)
 	}
-	const definition = implementation.nodeAddress().definition
 	return Object.freeze({
 		implementation,
-		address: parsePluginNodeAddress({ definition, variant: 'fork', forkId: target.forkId }),
-	}) as never
+		address,
+	})
 }
 
 export type AssertPluginTestTargetCurrentOptions = Readonly<{
@@ -160,7 +130,7 @@ export type AssertPluginTestTargetCurrentOptions = Readonly<{
 	allowAbsent?: boolean
 }>
 
-/** @internal Reject constructor/ref values bound to an implementation replaced in this host. */
+/** @internal Reject source addresses bound to an implementation replaced in this host. */
 export function assertPluginTestTargetCurrent(
 	registry: PluginService,
 	target: PluginTestTarget,
@@ -176,7 +146,7 @@ export function assertPluginTestTargetCurrent(
 	}
 	if (implementation !== resolved.implementation) {
 		throw new Error(
-			`[pluxel/test] Stale Plugin target ${formatPluginTestTarget(target)}; rebuild the constructor or fork ref from the current replacement implementation`,
+			`[pluxel/test] Stale Plugin target ${formatPluginTestTarget(target)}; obtain nodeAddress() from the current replacement implementation`,
 		)
 	}
 	return resolved.address

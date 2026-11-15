@@ -21,12 +21,12 @@ async function fixture(options: { typst?: boolean; config?: RawPluginConfig } = 
 	const host = await createTestHost({ services: [nodeModules(), workers()] })
 	await host.commit((change) => {
 		change.catalog.add([TakumiPlugin, TakumiMarkdownPlugin, Consumer])
-		if (options.config) change.config.seed(TakumiMarkdownPlugin, options.config)
+		if (options.config) change.config.seed(TakumiMarkdownPlugin.nodeAddress(), options.config)
 		if (options.typst) {
 			change.catalog.add([FontsPlugin, TypstPlugin])
-			change.start(TypstPlugin)
+			change.start(TypstPlugin.nodeAddress())
 		}
-		change.start(Consumer)
+		change.start(Consumer.nodeAddress())
 	})
 	return host
 }
@@ -34,25 +34,25 @@ async function fixture(options: { typst?: boolean; config?: RawPluginConfig } = 
 describe('optional Typst math in Markdown', () => {
 	it('keeps ordinary Markdown when Typst is unavailable, then enables math and withdraws it with its provider', async () => {
 		await using host = await fixture()
-		const plain = host.require(Consumer).markdown.createRenderer()
+		const plain = host.require(Consumer.nodeAddress()).markdown.createRenderer()
 		const source = '$#let unsafe = 1$'
 		const output = await plain.render(source, { width: 96, height: 48 })
 		expect(output.byteLength).toBeGreaterThan(0)
 		await host.commit((change) => change.catalog.add([FontsPlugin, TypstPlugin]))
 		const notStarted = await plain.render(source, { width: 96, height: 48 })
 		expect(notStarted.byteLength).toBeGreaterThan(0)
-		await host.commit((change) => change.start(TypstPlugin))
+		await host.commit((change) => change.start(TypstPlugin.nodeAddress()))
 		expect(() => plain.render('Old renderer')).toThrow('Plugin owner stopped')
-		const withMath = host.require(Consumer).markdown.createRenderer()
+		const withMath = host.require(Consumer.nodeAddress()).markdown.createRenderer()
 		await expect(withMath.render(source)).rejects.toMatchObject({
 			name: 'MarkdownError',
 			code: 'FORMULA_INVALID',
 		})
 		const compiled = await withMath.render('$x^2$', { width: 96, height: 48 })
 		expect(compiled.byteLength).toBeGreaterThan(0)
-		await host.commit((change) => change.stop(TypstPlugin))
+		await host.commit((change) => change.stop(TypstPlugin.nodeAddress()))
 		expect(() => withMath.render('$x$')).toThrow('Plugin owner stopped')
-		await using restored = host.require(Consumer).markdown.createRenderer()
+		await using restored = host.require(Consumer.nodeAddress()).markdown.createRenderer()
 		const restoredOutput = await restored.render(source, { width: 96, height: 48 })
 		expect(restoredOutput.byteLength).toBeGreaterThan(0)
 	})
@@ -60,7 +60,7 @@ describe('optional Typst math in Markdown', () => {
 	it('uses the same default renderer for inline/display math and trusted extensions', async () => {
 		await using host = await fixture({ typst: true })
 		let generatedImages = 0
-		await using renderer = host.require(Consumer).markdown.createRenderer({
+		await using renderer = host.require(Consumer.nodeAddress()).markdown.createRenderer({
 			extensions: [
 				{
 					name: 'observe-math',
@@ -110,7 +110,7 @@ describe('optional Typst math in Markdown', () => {
 			await using host = await fixture({ typst: true })
 			const dimensions: { width: number; height: number }[] = []
 			let resolvedTheme: string | undefined
-			await using renderer = host.require(Consumer).markdown.createRenderer({
+			await using renderer = host.require(Consumer.nodeAddress()).markdown.createRenderer({
 				theme: 'dark',
 				extensions: [
 					{
@@ -192,7 +192,7 @@ describe('optional Typst math in Markdown', () => {
 		{ config: { maxTotalSvgBytes: 1 }, source: '$x$', code: 'SVG_TOO_LARGE' },
 	])('enforces math budget $config', async ({ config, source, code }) => {
 		await using host = await fixture({ typst: true, config: { math: config } })
-		await using renderer = host.require(Consumer).markdown.createRenderer()
+		await using renderer = host.require(Consumer.nodeAddress()).markdown.createRenderer()
 		await expect(renderer.render(source, { width: 96, height: 48 })).rejects.toMatchObject({
 			name: 'MarkdownError',
 			code,
@@ -206,7 +206,7 @@ describe('optional Typst math in Markdown', () => {
 			entered = resolve
 		})
 		let aborted = false
-		const renderer = host.require(Consumer).markdown.createRenderer({
+		const renderer = host.require(Consumer.nodeAddress()).markdown.createRenderer({
 			extensions: [
 				{
 					name: 'pending-extension',
@@ -229,7 +229,7 @@ describe('optional Typst math in Markdown', () => {
 		})
 		const pending = renderer.render('$x$').catch((cause: unknown) => cause)
 		await started
-		await host.commit((change) => change.stop(TypstPlugin))
+		await host.commit((change) => change.stop(TypstPlugin.nodeAddress()))
 		expect(aborted).toBe(true)
 		expect(await pending).toMatchObject({ code: 'NOT_RUNNING' })
 		expect(() => renderer.render('$x$')).toThrow('Plugin owner stopped')

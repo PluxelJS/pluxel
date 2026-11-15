@@ -92,8 +92,8 @@ await using host = await createServiceInternalTestHost({
   workbench: true,
   services: [...standardServices(), vault()],
 })
-await host.start(VaultAdminPlugin)
-const backend = host.require(VaultAdminPlugin).ctx.root.require(WorkbenchHost)
+await host.start(VaultAdminPlugin.nodeAddress())
+const backend = host.require(VaultAdminPlugin.nodeAddress()).ctx.root.require(WorkbenchHost)
 const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
 await once(server, 'listening')
 server.on('connection', socket => {

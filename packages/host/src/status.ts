@@ -57,17 +57,21 @@ export type HostPluginCatalogEntry = Readonly<{
 	rootExportName: string
 }>
 
-export type HostPluginStatusSnapshot = HostPluginCatalogEntry & {
+export type HostPluginControlSnapshot = {
 	autoStart: boolean
 	sessionIntent: PluginSessionIntent
 	desiredState: 'running' | 'stopped'
 	activationReason: PluginActivationReason | null
 	lifecycleState: 'running' | 'stopped'
-	availability: HostPluginAvailability
-	issues: readonly HostPluginStatusIssue[]
-	execution: PluginExecutionSnapshot
-	recentUpdate: PluginRecentUpdateSnapshot | null
 }
+
+export type HostPluginStatusSnapshot = HostPluginCatalogEntry &
+	HostPluginControlSnapshot & {
+		availability: HostPluginAvailability
+		issues: readonly HostPluginStatusIssue[]
+		execution: PluginExecutionSnapshot
+		recentUpdate: PluginRecentUpdateSnapshot | null
+	}
 
 export type HostPluginStatusOverview = {
 	statuses: HostPluginStatusSnapshot[]
@@ -80,18 +84,23 @@ export interface PluginRecentUpdateRead {
 	resolveRecentUpdate(address: PluginNodeAddress): PluginRecentUpdateSnapshot | null
 }
 
-/** @internal Fixed inputs shared by status and dependency-graph projection. */
-export type HostPluginStatusProjectionView = Readonly<{
+/** @internal Native identity and control facts, without display diagnostics or recent updates. */
+export type HostPluginControlProjectionView = Readonly<{
 	catalog: PluginCatalogSnapshot
 	state: HostStateSnapshot
-	reconciliation: readonly PluginReconciliationIssue[]
-	lifecycleIssues?: readonly import('./diagnostics').HostPluginLifecycleDiagnostic[]
 	sessionIntents: ReadonlyMap<string, HostPluginSessionEntry>
 	desiredControl: ReadonlyMap<string, HostPluginDesiredControl>
 	coreNodes: readonly PluginNodeAddress[]
 	runningNodeKeys: ReadonlySet<string>
-	recentUpdate: PluginRecentUpdateRead | undefined
 }>
+
+/** @internal Fixed inputs shared by status and dependency-graph projection. */
+export type HostPluginStatusProjectionView = HostPluginControlProjectionView &
+	Readonly<{
+		reconciliation: readonly PluginReconciliationIssue[]
+		lifecycleIssues?: readonly import('./diagnostics').HostPluginLifecycleDiagnostic[]
+		recentUpdate: PluginRecentUpdateRead | undefined
+	}>
 
 function createHostPluginStatusProjectionFromView(
 	view: HostPluginStatusProjectionView,
@@ -160,10 +169,6 @@ function projectHostPluginStatus(
 		pluginDefinitionIndexKey(entry.address.definition),
 	)
 	const nodeKey = pluginNodeIndexKey(entry.address)
-	const autoStart = projection.stateIndex.autoStartKeys.has(nodeKey)
-	const sessionIntent = projection.sessionIntents.get(nodeKey)?.intent ?? 'inherit'
-	const activationReason = projection.desiredControl.get(nodeKey)?.activationReason ?? null
-	const lifecycleState = projection.runningNodeKeys.has(nodeKey) ? 'running' : 'stopped'
 	const available =
 		!!definition &&
 		(entry.address.variant === 'default' ||
@@ -203,11 +208,7 @@ function projectHostPluginStatus(
 	const recentUpdate = projection.recentUpdate?.resolveRecentUpdate(entry.address) ?? null
 	return {
 		...entry,
-		autoStart,
-		sessionIntent,
-		desiredState: activationReason === null ? 'stopped' : 'running',
-		activationReason,
-		lifecycleState,
+		...projectHostPluginControl(projection, nodeKey),
 		availability: available ? 'available' : 'unavailable',
 		issues: Object.freeze(issues),
 		execution: definition?.provenance.execution ?? UNREPORTED_PLUGIN_EXECUTION,
@@ -218,6 +219,23 @@ function projectHostPluginStatus(
 						recentUpdate,
 						`Recent update for ${pluginNodeIndexKey(entry.address)}`,
 					),
+	}
+}
+
+function projectHostPluginControl(
+	view: Pick<
+		HostPluginControlProjectionView,
+		'state' | 'sessionIntents' | 'desiredControl' | 'runningNodeKeys'
+	>,
+	nodeKey: string,
+): HostPluginControlSnapshot {
+	const activationReason = view.desiredControl.get(nodeKey)?.activationReason ?? null
+	return {
+		autoStart: hostStateReadIndex(view.state).autoStartKeys.has(nodeKey),
+		sessionIntent: view.sessionIntents.get(nodeKey)?.intent ?? 'inherit',
+		desiredState: activationReason === null ? 'stopped' : 'running',
+		activationReason,
+		lifecycleState: view.runningNodeKeys.has(nodeKey) ? 'running' : 'stopped',
 	}
 }
 
@@ -269,6 +287,28 @@ export function hostPluginStatusFromView(
 	view: HostPluginStatusProjectionView,
 	address: PluginNodeAddress,
 ): HostPluginStatusSnapshot | null {
+	const entry = hostPluginCatalogEntryFromView(view, address)
+	return entry
+		? projectHostPluginStatus(
+				entry,
+				createHostPluginStatusProjectionFromView(view, pluginNodeIndexKey(entry.address)),
+			)
+		: null
+}
+
+/** @internal Read a mutation receipt's control state without presentation inventory or diagnostics. */
+export function hostPluginControlFromView(
+	view: HostPluginControlProjectionView,
+	address: PluginNodeAddress,
+): HostPluginControlSnapshot | null {
+	const entry = hostPluginCatalogEntryFromView(view, address)
+	return entry ? projectHostPluginControl(view, pluginNodeIndexKey(entry.address)) : null
+}
+
+function hostPluginCatalogEntryFromView(
+	view: HostPluginControlProjectionView,
+	address: PluginNodeAddress,
+): HostPluginCatalogEntry | null {
 	const selectedAddress = parsePluginNodeAddress(address)
 	const key = pluginNodeIndexKey(selectedAddress)
 	const definition = view.catalog.byDefinition.get(
@@ -291,16 +331,13 @@ export function hostPluginStatusFromView(
 		)
 	)
 		return null
-	return projectHostPluginStatus(
-		{
-			address: selectedAddress,
-			displayName: declared
-				? definition.candidate.declaration.displayName
-				: selectedAddress.definition.exportName,
-			rootExportName: selectedAddress.definition.exportName,
-		},
-		createHostPluginStatusProjectionFromView(view, key),
-	)
+	return {
+		address: selectedAddress,
+		displayName: declared
+			? definition.candidate.declaration.displayName
+			: selectedAddress.definition.exportName,
+		rootExportName: selectedAddress.definition.exportName,
+	}
 }
 
 /** @internal Projects status exclusively from one coordinator-pinned committed view. */

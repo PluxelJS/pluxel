@@ -65,11 +65,11 @@ async function withPersistentCache(
 		runtime: { zenfs: storage, documents: { config: false } },
 	})
 	await host.commit((change) => {
-		change.start(MemoryCacheBackendPlugin)
-		change.start(CachePlugin)
-		change.start(PersistentCacheConsumer)
+		change.start(MemoryCacheBackendPlugin.nodeAddress())
+		change.start(CachePlugin.nodeAddress())
+		change.start(PersistentCacheConsumer.nodeAddress())
 	})
-	await fn(host.require(PersistentCacheConsumer).cache)
+	await fn(host.require(PersistentCacheConsumer.nodeAddress()).cache)
 }
 
 describe('MemoryCacheBackendPlugin persistence', () => {
@@ -178,7 +178,7 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 			services: standardServices(),
 		})
 		const failure = await host.commitExpectFail((change) => {
-			change.start(MemoryCacheBackendPlugin, {
+			change.start(MemoryCacheBackendPlugin.nodeAddress(), {
 				initialConfig: { maxEntries: 10, persistence: { mode: 'durable', flushIntervalMs: 1_000 } },
 			})
 		})
@@ -220,7 +220,7 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 			runtime: { zenfs: instrumented, documents: { config: false, state: false } },
 		})
 		const failure = await host.commitExpectFail((change) => {
-			change.start(MemoryCacheBackendPlugin, {
+			change.start(MemoryCacheBackendPlugin.nodeAddress(), {
 				initialConfig: { maxEntries: 10, persistence: { mode: 'durable', flushIntervalMs: 1_000 } },
 			})
 		})

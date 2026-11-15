@@ -30,7 +30,7 @@ describe('NodeModuleService', () => {
 
 		lowerTestPlugin(NodeModuleFailure)
 		const failure = await host.commitExpectFail((change) => {
-			change.start(NodeModuleFailure)
+			change.start(NodeModuleFailure.nodeAddress())
 		})
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
@@ -39,7 +39,7 @@ describe('NodeModuleService', () => {
 				message: expect.stringContaining('node build failed'),
 			}),
 		)
-		expect(host.isRunning(NodeModuleFailure)).toBe(false)
+		expect(host.isRunning(NodeModuleFailure.nodeAddress())).toBe(false)
 	})
 
 	it('retains the setup failure when its source cleanup also fails', async () => {
@@ -67,7 +67,9 @@ describe('NodeModuleService', () => {
 			}
 		}
 		lowerTestPlugin(NodeModuleSetupAndCleanupFailure)
-		await host.commitExpectFail((change) => change.start(NodeModuleSetupAndCleanupFailure))
+		await host.commitExpectFail((change) =>
+			change.start(NodeModuleSetupAndCleanupFailure.nodeAddress()),
+		)
 		expect(caught).toBeInstanceOf(AggregateError)
 		expect((caught as AggregateError).cause).toBe(setupFailure)
 		expect((caught as AggregateError).errors).toEqual([setupFailure, cleanupFailure])
@@ -99,8 +101,8 @@ describe('NodeModuleService', () => {
 		}
 
 		lowerTestPlugin(NodeModuleConsumer)
-		await host.start(NodeModuleConsumer)
-		expect(host.isRunning(NodeModuleConsumer)).toBe(true)
+		await host.start(NodeModuleConsumer.nodeAddress())
+		expect(host.isRunning(NodeModuleConsumer.nodeAddress())).toBe(true)
 		await publish(new URL('file:///cache/task-b.mjs'))
 		await publish(new URL('file:///cache/bad.mjs'))
 		expect(events).toEqual([
@@ -154,7 +156,7 @@ describe('NodeModuleService', () => {
 		}
 
 		lowerTestPlugin(PendingNodeModuleConsumer)
-		await host.start(PendingNodeModuleConsumer)
+		await host.start(PendingNodeModuleConsumer.nodeAddress())
 		const pendingUpdate = Promise.resolve(publish(new URL('file:///cache/next.mjs')))
 		await didStartSetup
 
@@ -214,7 +216,7 @@ describe('NodeModuleService', () => {
 			}
 		}
 		lowerTestPlugin(FailedSourceDetach)
-		await host.start(FailedSourceDetach)
+		await host.start(FailedSourceDetach.nodeAddress())
 		const update = Promise.resolve(publish(new URL('file:///cache/next.mjs')))
 		await ready
 		const stopping = host.commitExpectFail((change) => change.catalog.remove(FailedSourceDetach))
@@ -256,8 +258,8 @@ describe('NodeModuleService', () => {
 			}
 		}
 		lowerTestPlugin(PackagedNodeModule)
-		await host.start(PackagedNodeModule)
-		expect(host.isRunning(PackagedNodeModule)).toBe(true)
+		await host.start(PackagedNodeModule.nodeAddress())
+		expect(host.isRunning(PackagedNodeModule.nodeAddress())).toBe(true)
 		expect(received?.href).toBe(
 			pathToFileURL(`${fixture.path}/artifacts/node/node-fixture.mjs`).href,
 		)

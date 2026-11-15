@@ -113,8 +113,8 @@ beforeEach(() => {
 describe('@pluxel/plugin-redis', () => {
 	it('demonstrates a domain Result for GET absence while preserving empty values and command failures', async () => {
 		await using host = await createTestHost()
-		await host.start([RedisPlugin, DraftsPlugin])
-		const drafts = host.require(DraftsPlugin)
+		await host.start([RedisPlugin.nodeAddress(), DraftsPlugin.nodeAddress()])
+		const drafts = host.require(DraftsPlugin.nodeAddress())
 		redisMock.client.get.mockResolvedValueOnce('').mockResolvedValueOnce(null)
 		const empty = await drafts.read('empty')
 		expect(empty.unwrap()).toBe('')
@@ -125,7 +125,7 @@ describe('@pluxel/plugin-redis', () => {
 		const offline = new Error('connection lost')
 		redisMock.client.get.mockRejectedValueOnce(offline)
 		await expect(drafts.read('offline')).rejects.toBe(offline)
-		await host.stop(RedisPlugin)
+		await host.stop(RedisPlugin.nodeAddress())
 		await expect(drafts.read('stopped')).rejects.toThrow(Error)
 	})
 
@@ -135,9 +135,9 @@ describe('@pluxel/plugin-redis', () => {
 				services: standardServices(),
 			})
 
-			await host.start([RedisPlugin, RedisConsumer])
+			await host.start([RedisPlugin.nodeAddress(), RedisConsumer.nodeAddress()])
 
-			const consumer = host.require(RedisConsumer)
+			const consumer = host.require(RedisConsumer.nodeAddress())
 			const handle = consumer.redis.connection()
 			expect(handle.client).toBe(redisMock.client)
 			expect(redisMock.createClient).toHaveBeenCalledWith(
@@ -145,7 +145,7 @@ describe('@pluxel/plugin-redis', () => {
 					url: 'redis://127.0.0.1:6379',
 					database: 0,
 					name: `pluxel:${formatPluginNodeReference(
-						host.require(RedisPlugin).ctx.pluginInfo.nodeAddress,
+						host.require(RedisPlugin.nodeAddress()).ctx.pluginInfo.nodeAddress,
 					)}:default`,
 					commandsQueueMaxLength: 10_000,
 					disableOfflineQueue: true,
@@ -154,7 +154,7 @@ describe('@pluxel/plugin-redis', () => {
 			expect(redisMock.client.on).toHaveBeenCalledTimes(1)
 			expect(redisMock.client.on).toHaveBeenCalledWith('error', expect.any(Function))
 
-			await host.stop(RedisPlugin)
+			await host.stop(RedisPlugin.nodeAddress())
 			expect(redisMock.client.close).toHaveBeenCalledOnce()
 			expect(() => handle.client).toThrow('Plugin owner stopped')
 		}
@@ -167,10 +167,10 @@ describe('@pluxel/plugin-redis', () => {
 				services: standardServices(),
 			})
 
-			await host.start(RedisPlugin)
+			await host.start(RedisPlugin.nodeAddress())
 
 			using opened = await host.workbench.open({
-				target: RedisPlugin,
+				target: RedisPlugin.nodeAddress(),
 				entry: RedisWorkbench.connections,
 				principal: { provider: 'local', subject: 'operator' },
 			})
@@ -268,7 +268,7 @@ describe('@pluxel/plugin-redis', () => {
 			})
 
 			await host.commit((change) => {
-				change.start(RedisPlugin, {
+				change.start(RedisPlugin.nodeAddress(), {
 					initialConfig: {
 						connections: [
 							{ id: 'east', url: 'redis://east.example:6379', database: 1 },
@@ -276,23 +276,28 @@ describe('@pluxel/plugin-redis', () => {
 						],
 					},
 				})
-				change.start(RedisConsumerA)
-				change.start(RedisConsumerB)
+				change.start(RedisConsumerA.nodeAddress())
+				change.start(RedisConsumerB.nodeAddress())
 			})
-			const eastConnection = host.require(RedisConsumerA).redis.connection('east')
-			const westConnection = host.require(RedisConsumerB).redis.connection('west')
+			const eastConnection = host.require(RedisConsumerA.nodeAddress()).redis.connection('east')
+			const westConnection = host.require(RedisConsumerB.nodeAddress()).redis.connection('west')
 			expect(eastConnection.client).toBe(east.client)
 			expect(westConnection.client).toBe(west.client)
-			expect(host.require(RedisConsumerA).redis.connection('east')).toBe(eastConnection)
-			expect(host.require(RedisConsumerA).redis.connectionIds()).toEqual(['east', 'west'])
-			expect(() => host.require(RedisConsumerA).redis.connection('missing')).toThrowError(
-				expect.objectContaining({ code: 'REDIS_CONNECTION_NOT_FOUND' }),
+			expect(host.require(RedisConsumerA.nodeAddress()).redis.connection('east')).toBe(
+				eastConnection,
 			)
+			expect(host.require(RedisConsumerA.nodeAddress()).redis.connectionIds()).toEqual([
+				'east',
+				'west',
+			])
+			expect(() =>
+				host.require(RedisConsumerA.nodeAddress()).redis.connection('missing'),
+			).toThrowError(expect.objectContaining({ code: 'REDIS_CONNECTION_NOT_FOUND' }))
 			expect(redisMock.createClient.mock.calls).toEqual([
 				[expect.objectContaining({ url: 'redis://east.example:6379', database: 1 })],
 				[expect.objectContaining({ url: 'redis://west.example:6379', database: 2 })],
 			])
-			await host.stop(RedisConsumerA)
+			await host.stop(RedisConsumerA.nodeAddress())
 			expect(east.client.close).not.toHaveBeenCalled()
 			expect(() => eastConnection.client).toThrow('Plugin owner stopped')
 			expect(west.client.close).not.toHaveBeenCalled()
@@ -309,9 +314,9 @@ describe('@pluxel/plugin-redis', () => {
 			})
 
 			const failure = await host.commitExpectFail((change) => {
-				change.start(RedisPlugin)
+				change.start(RedisPlugin.nodeAddress())
 			})
-			expect(host.isRunning(RedisPlugin)).toBe(false)
+			expect(host.isRunning(RedisPlugin.nodeAddress())).toBe(false)
 			expect(redisMock.client.destroy).toHaveBeenCalledOnce()
 			expect(failure.lifecycleReport.issues).toContainEqual(
 				expect.objectContaining({

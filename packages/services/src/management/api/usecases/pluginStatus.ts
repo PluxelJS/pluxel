@@ -1,5 +1,6 @@
 import {
 	parsePluginNodeAddress,
+	pluginNodeIndexKey,
 	type CommitSummary,
 	type Context,
 	type PluginNodeAddress,
@@ -17,6 +18,8 @@ import {
 	requirePluginHostCoordinator,
 	hostStatePatch,
 	projectPluginApplyReport,
+	pluginLifecycleUpdate,
+	hostPluginControlFromView,
 } from '@pluxel/host/internal'
 import { pluginApplyReportOutcome } from '@pluxel/host/internal/protocol'
 import type {
@@ -28,7 +31,6 @@ import type {
 	PluginLifecycleCommand,
 	PluginLifecycleCommandBatchItem,
 } from '../../web/protocol'
-import { pluginStatus, pluginStatusFromView } from './plugins'
 import { summarizePluginControlBatch } from '../../web/control-batch'
 
 const MAX_CONTROL_BATCH_ITEMS = 1_000
@@ -41,20 +43,33 @@ const INHERITED_STOPPED_CONTROL: PluginControlSnapshot = Object.freeze({
 })
 
 function controlOf(
-	status: Awaited<ReturnType<typeof pluginStatus>>,
+	control: PluginControlSnapshot | null,
 	disappeared?: PluginControlSnapshot,
 ): PluginControlSnapshot {
-	if (!status) {
+	if (!control) {
 		if (disappeared) return disappeared
 		throw new Error('[runtime:control] applied Plugin node disappeared from projection')
 	}
-	return {
-		autoStart: status.autoStart,
-		sessionIntent: status.sessionIntent,
-		desiredState: status.desiredState,
-		activationReason: status.activationReason,
-		lifecycleState: status.lifecycleState,
-	}
+	return control
+}
+
+function readPluginControl(
+	session: HostPluginGraphExclusiveSession<CommitSummary>,
+	address: PluginNodeAddress,
+): PluginControlSnapshot | null {
+	return session.readCommitted((view) =>
+		hostPluginControlFromView(
+			{
+				catalog: view.catalog,
+				state: view.runtimeState.state,
+				sessionIntents: view.sessionIntents,
+				desiredControl: view.desiredControl,
+				coreNodes: view.coreAdjacency.nodes,
+				runningNodeKeys: new Set(view.runningNodes.map(pluginNodeIndexKey)),
+			},
+			address,
+		),
+	)
 }
 
 async function setOneAutoStart(
@@ -67,9 +82,7 @@ async function setOneAutoStart(
 		// Enabling is admitted against the pinned catalog inside the coordinator so a stale or
 		// otherwise absent address receives the precise node_unavailable contract. Disabling an
 		// unknown address remains a query-level not-found instead of becoming a successful no-op.
-		const readStatus = () =>
-			session.readCommitted((view) => pluginStatusFromView(ctx, view, address))
-		if (!readStatus() && !autoStart) return notFound(address)
+		if (!readPluginControl(session, address) && !autoStart) return notFound(address)
 		const report = await session.update({
 			statePatch: hostStatePatch({ type: 'set-auto-start', node: address, autoStart }),
 			reason: 'plugin-auto-start-set',
@@ -78,7 +91,10 @@ async function setOneAutoStart(
 		return mutationReport(
 			address,
 			projectPluginApplyReport(ctx, report),
-			controlOf(readStatus(), autoStart ? undefined : INHERITED_STOPPED_CONTROL),
+			controlOf(
+				readPluginControl(session, address),
+				autoStart ? undefined : INHERITED_STOPPED_CONTROL,
+			),
 		)
 	} catch (error) {
 		return mutationFailure(address, error)
@@ -92,21 +108,23 @@ async function runLifecycleCommand(
 	options?: HostOperationOptions,
 ): Promise<PluginControlMutationResult> {
 	try {
-		if (!(await pluginStatus(ctx, address, options))) return notFound(address)
-		const coordinator = requirePluginHostCoordinator(ctx)
-		const report =
-			command === 'start'
-				? await coordinator.startNode(address, undefined, options)
-				: command === 'stop'
-					? await coordinator.stopNode(address, undefined, options)
-					: await coordinator.restartNode(address, undefined, options)
-		return mutationReport(
-			address,
-			projectPluginApplyReport(ctx, report),
-			controlOf(
-				await pluginStatus(ctx, address),
-				command === 'stop' ? INHERITED_STOPPED_CONTROL : undefined,
-			),
+		return await requirePluginHostCoordinator(ctx).runExclusive(
+			`plugin-${command}`,
+			async (session) => {
+				if (!readPluginControl(session, address)) return notFound(address)
+				const report = await session.update(
+					pluginLifecycleUpdate(command, address, `plugin-${command}`),
+				)
+				return mutationReport(
+					address,
+					projectPluginApplyReport(ctx, report),
+					controlOf(
+						readPluginControl(session, address),
+						command === 'stop' ? INHERITED_STOPPED_CONTROL : undefined,
+					),
+				)
+			},
+			options,
 		)
 	} catch (error) {
 		return mutationFailure(address, error)
@@ -145,7 +163,7 @@ export async function applyLifecycleCommands(
 ): Promise<PluginControlBatchResult> {
 	const parsed = parseLifecycleItems(input)
 	if (parsed.ok === false) return rejectedBatch(parsed.error)
-	return await runBatch(parsed.items, ({ address, command }) =>
+	return runBatch(parsed.items, ({ address, command }) =>
 		runLifecycleCommand(ctx, address, command, options),
 	)
 }

@@ -28,7 +28,7 @@ async function fixture() {
 	})
 	await host.commit((change) => {
 		change.catalog.add([TakumiPlugin, Consumer])
-		change.start(Consumer)
+		change.start(Consumer.nodeAddress())
 	})
 	return host
 }
@@ -36,7 +36,7 @@ async function fixture() {
 describe('Takumi shared Workers', () => {
 	it('renders native HTML, Node, SVG and animation through the official task artifact', async () => {
 		await using host = await fixture()
-		const { takumi } = host.require(Consumer)
+		const { takumi } = host.require(Consumer.nodeAddress())
 		const html = '<div style="width:100%;height:100%;background:#123456"></div>'
 		const options = { width: 80, height: 40, emoji: 'from-font' as const }
 		expect(await takumi.renderSvgInWorker(html, options)).toBe(
@@ -67,7 +67,7 @@ describe('Takumi shared Workers', () => {
 
 	it('shares native resources across independent task bundles while keeping React in each bundle', async () => {
 		await using host = await fixture()
-		const consumer = host.require(Consumer)
+		const consumer = host.require(Consumer.nodeAddress())
 		const first = await consumer.probe('a')
 		const second = await consumer.probe('a')
 		const other = await consumer.probe('b')
@@ -83,7 +83,7 @@ describe('Takumi shared Workers', () => {
 
 	it('keeps the main loop responsive, rejects excess work, and aborts queued work without parsing', async () => {
 		await using host = await fixture()
-		const consumer = host.require(Consumer)
+		const consumer = host.require(Consumer.nodeAddress())
 		const gate = new Int32Array(new SharedArrayBuffer(12))
 		const blocked = consumer.probe('a', { gate })
 		try {
@@ -111,7 +111,7 @@ describe('Takumi shared Workers', () => {
 
 	it('retires a cancelled task thread before accepting replacement work', async () => {
 		await using host = await fixture()
-		const consumer = host.require(Consumer)
+		const consumer = host.require(Consumer.nodeAddress())
 		const first = await consumer.probe('a')
 		const gate = new Int32Array(new SharedArrayBuffer(12))
 		const controller = new AbortController()
@@ -134,7 +134,7 @@ describe('Takumi shared Workers', () => {
 
 	it('rejects local-only options and main-thread use of the Worker leaf', async () => {
 		await using host = await fixture()
-		const { takumi } = host.require(Consumer)
+		const { takumi } = host.require(Consumer.nodeAddress())
 		await expect(takumi.renderInWorker('<div/>', { renderer: {} } as never)).rejects.toThrow(
 			'worker-local template',
 		)

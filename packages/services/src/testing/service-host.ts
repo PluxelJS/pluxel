@@ -5,6 +5,7 @@ import {
 	type CommitSummary,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
+	type PluginForkNodeAddress,
 	type RootContext,
 } from '@pluxel/core'
 import {
@@ -25,7 +26,6 @@ import {
 	type DependencyOverrideTarget,
 	type LifecycleFailureCommitSummary,
 	type PluginConstructor,
-	type PluginForkRef,
 	type PluginInitialConfigOptions,
 	type PluginInstanceFor,
 	type PluginInstances,
@@ -86,11 +86,11 @@ export interface ServicePluginTestChange {
 		remove(plugins: PluginConstructor | readonly PluginConstructor[]): undefined
 	}
 	readonly forks: {
-		ensure<TPlugin extends PluginConstructor>(
-			target: PluginForkRef<TPlugin>,
+		ensure(
+			target: PluginTestTarget & PluginForkNodeAddress,
 			options?: PluginInitialConfigOptions,
 		): undefined
-		remove<TPlugin extends PluginConstructor>(target: PluginForkRef<TPlugin>): undefined
+		remove(target: PluginTestTarget & PluginForkNodeAddress): undefined
 	}
 	readonly config: {
 		seed(target: PluginTestTarget, value: RawPluginConfig): undefined
@@ -335,7 +335,8 @@ function createChange(
 
 	const replaceDefinition = (current: PluginConstructor, next: PluginConstructor): undefined => {
 		authority.recordCommand('change.replaceDefinition()')
-		const currentResolved = resolvePluginTestTarget(current)
+		const currentTarget = current.nodeAddress()
+		const currentResolved = resolvePluginTestTarget(currentTarget)
 		const candidate = consumePluginDefinitionCandidate(next)
 		if (
 			!pluginDefinitionAddressEqual(
@@ -355,7 +356,7 @@ function createChange(
 			throw conflictError('replaceDefinition', current, 'two different replacements')
 		}
 		plan.replacements.set(key, Object.freeze({ current, next, definition, candidate }))
-		plan.targets.set(pluginNodeIndexKey(currentResolved.address), current)
+		plan.targets.set(pluginNodeIndexKey(currentResolved.address), currentTarget)
 		return undefined
 	}
 
@@ -381,14 +382,14 @@ function createChange(
 		return undefined
 	}
 
-	const forkEnsure = <TPlugin extends PluginConstructor>(
-		target: PluginForkRef<TPlugin>,
+	const forkEnsure = (
+		target: PluginTestTarget & PluginForkNodeAddress,
 		options: PluginInitialConfigOptions = {},
 	): undefined => {
 		authority.recordCommand('change.forks.ensure()')
 		const command = recordTarget(target)
 		if (command.address.variant !== 'fork') {
-			throw new TypeError('[pluxel/test] forks.ensure() requires definePluginFork()')
+			throw new TypeError('[pluxel/test] forks.ensure() requires a fork nodeAddress() value')
 		}
 		const key = pluginNodeIndexKey(command.address)
 		if (plan.forkRemoves.has(key)) throw conflictError('forks.ensure/forks.remove', target)
@@ -398,13 +399,11 @@ function createChange(
 		return undefined
 	}
 
-	const forkRemove = <TPlugin extends PluginConstructor>(
-		target: PluginForkRef<TPlugin>,
-	): undefined => {
+	const forkRemove = (target: PluginTestTarget & PluginForkNodeAddress): undefined => {
 		authority.recordCommand('change.forks.remove()')
 		const command = recordTarget(target)
 		if (command.address.variant !== 'fork') {
-			throw new TypeError('[pluxel/test] forks.remove() requires definePluginFork()')
+			throw new TypeError('[pluxel/test] forks.remove() requires a fork nodeAddress() value')
 		}
 		const key = pluginNodeIndexKey(command.address)
 		if (plan.forkEnsures.has(key)) throw conflictError('forks.ensure/forks.remove', target)
@@ -426,8 +425,9 @@ function createChange(
 			throw conflictError('dependencies.setDefault', input.requirement)
 		}
 		plan.defaults.set(key, Object.freeze({ kind: 'set', ...input }))
-		const provider = resolvePluginTestTarget(input.provider)
-		plan.targets.set(pluginNodeIndexKey(provider.address), input.provider)
+		const target = input.provider.nodeAddress()
+		const provider = resolvePluginTestTarget(target)
+		plan.targets.set(pluginNodeIndexKey(provider.address), target)
 		return undefined
 	}
 
@@ -747,12 +747,16 @@ async function createServiceHostWorld(
 			(change) => change.replaceDefinition(current, next),
 			(commit) => {
 				assertStrict('replaceDefinition', commit)
-				const definition = resolvePluginTestTarget(next).address.definition
+				const definition = next.definitionAddress()
 				const replacement = coordinator
 					.catalogSnapshot()
 					.byDefinition.get(pluginDefinitionIndexKey(definition))
 				if (replacement?.candidate.implementation !== next) {
-					throw new PluginLifecycleAssertionError('replaceDefinition', [current], commit.summary)
+					throw new PluginLifecycleAssertionError(
+						'replaceDefinition',
+						[current.nodeAddress()],
+						commit.summary,
+					)
 				}
 			},
 		)
@@ -976,7 +980,7 @@ function validatePlan(
 	}
 	for (const command of plan.defaults.values()) {
 		if (command.kind === 'set') {
-			assertAvailable('dependencies.setDefault', targetCommand(command.provider))
+			assertAvailable('dependencies.setDefault', targetCommand(command.provider.nodeAddress()))
 		}
 	}
 	for (const command of plan.overrides.values()) {
@@ -1055,7 +1059,7 @@ function statePatchOperations(plan: ServiceDraftPlan): HostStatePatchOperation[]
 		operations.push({
 			type: 'set-provider-default',
 			token: command.requirement.definitionAddress(),
-			provider: command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
+			provider: command.kind === 'set' ? command.provider.nodeAddress() : null,
 		})
 	}
 	for (const command of plan.overrides.values()) {
@@ -1296,7 +1300,7 @@ function invalidTarget(operation: string, target: unknown, detail: string): Erro
 
 function staleTarget(target: unknown): Error {
 	return new Error(
-		`[pluxel/test] Stale Plugin target ${targetLabel(target)}; rebuild the constructor or fork ref from the current replacement implementation`,
+		`[pluxel/test] Stale Plugin target ${targetLabel(target)}; obtain nodeAddress() from the current replacement implementation`,
 	)
 }
 
@@ -1310,9 +1314,9 @@ function conflictError(
 
 function targetLabel(target: unknown): string {
 	if (typeof target === 'function') return target.name || '<anonymous>'
-	if (target && typeof target === 'object' && 'plugin' in target && 'forkId' in target) {
-		const value = target as { plugin: { name?: string }; forkId: string }
-		return `${value.plugin.name || '<anonymous>'}#${value.forkId}`
+	if (target && typeof target === 'object' && 'definition' in target && 'variant' in target) {
+		const address = target as PluginNodeAddress
+		return `${address.definition.exportName}${address.variant === 'fork' ? `#${address.forkId}` : ''}`
 	}
 	return '<target>'
 }

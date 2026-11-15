@@ -13,6 +13,8 @@
 
 `workbench/PluginNavigation.tsx` 将 `PluginCatalog` 放入插件管理左工具区；中央 `/plugins` 索引只显示选择提示。不要重建简化列表并丢失现有分组、DnD 和多选，也不要在中央同时渲染第二套管理目录。业务应用的左侧只显示当前 owner 已打开的独立插件面板。
 
+`pluginStatusActions.ts` 原样保留 Management 的完整批次回执，按其 `status` 刷新 read model。顶层输入拒绝直接显示服务端错误；逐项执行回执仍须与请求数量对应，错数会刷新状态并报告协议错误。单项、批量与恢复操作共用 `pluginControlBatchPresentation.ts` 呈现拒绝、部分应用、协调问题和未知结果，诊断保留整份回执；未知结果不自动重试。
+
 `workbench/PluginTools.tsx` 只组合右侧官方信息与最近日志；扩展列表和顶部查找共享当前 owner 的声明及 `session.openPanel(entry)` 打开路径，扩展内容使用独立原生标签。关闭/恢复与 owner 切换由 workspace session 拥有，管理页面不维护第二份面板状态。日志读取、摘要和策略由 `../log_viewer/` 的 `useLogStream`、`LogPreview`、`LogsPage` 与 `LogPolicyPopover` 分别拥有；“查看完整日志”显式打开带 canonical reference 筛选的独立日志文档，不替换当前配置页。
 
 目录提示不能成为滚动遮挡层。`CatalogHints` 统一抑制滚动中的 tooltip，`CatalogTooltip` 只提供必要短提示；完整详情通过明确操作进入。筛选、折叠和虚拟化变更需同时检查多选与批量操作的目标范围。

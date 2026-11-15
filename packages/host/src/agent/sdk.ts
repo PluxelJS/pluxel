@@ -51,7 +51,6 @@ import {
 import type { HostConfigStore } from '../config-store'
 import type { HostPolicyField, HostPolicyInput } from '../policy'
 import type { ScriptPlugin, ScriptSdk } from './sdk-types'
-import type { ScriptLogReadOptions } from './control'
 import { normalizePluginTarget } from './control-target'
 import { createPluginInstanceView } from './instance-view'
 import {
@@ -274,7 +273,7 @@ export function createScriptScope(
 		runningNodeKeys: new Set(view.runningNodes.map(pluginNodeIndexKey)),
 		recentUpdate: readHostRecentUpdates(ctx),
 	})
-	const logOptions = (input?: ScriptLogReadOptions): LogReadOptions | undefined => {
+	const logOptions = (input?: LogReadOptions): LogReadOptions | undefined => {
 		if (input === undefined) return undefined
 		const { filter, ...readOptions } = input
 		if (filter === undefined) return readOptions
@@ -584,12 +583,12 @@ export function createScriptScope(
 						)
 					return Result.ok(markLogs(manager, streamId))
 				}, logError),
-			read: (cursor: LogCursor, input?: ScriptLogReadOptions) =>
+			read: (cursor: LogCursor, input?: LogReadOptions) =>
 				run(() => {
 					assertReadOptions(input)
 					return scriptLogResult(readLogs(logging(), cursor, logOptions(input)))
 				}, logError),
-			wait: (cursor: LogCursor, input: ScriptLogReadOptions & Readonly<{ timeoutMs: number }>) =>
+			wait: (cursor: LogCursor, input: LogReadOptions & Readonly<{ timeoutMs: number }>) =>
 				run(async () => {
 					assertReadOptions(input)
 					if (

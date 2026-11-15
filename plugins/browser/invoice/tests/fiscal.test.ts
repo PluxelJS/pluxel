@@ -31,11 +31,13 @@ async function setup(initialConfig: { timeoutMs?: number; maxConcurrent?: number
 	try {
 		await host.commit((change) => {
 			change.catalog.add([PlaywrightPlugin, InvoicePlugin, Consumer])
-			change.start(PlaywrightPlugin, { initialConfig: { endpoint: 'http://127.0.0.1:9222' } })
-			change.start(InvoicePlugin, { initialConfig })
-			change.start(Consumer)
+			change.start(PlaywrightPlugin.nodeAddress(), {
+				initialConfig: { endpoint: 'http://127.0.0.1:9222' },
+			})
+			change.start(InvoicePlugin.nodeAddress(), { initialConfig })
+			change.start(Consumer.nodeAddress())
 		})
-		return { host, browser, consumer: host.require(Consumer) }
+		return { host, browser, consumer: host.require(Consumer.nodeAddress()) }
 	} catch (error) {
 		await host.dispose()
 		throw error
@@ -248,7 +250,7 @@ describe('InvoicePlugin through real host and DOM-backed external browser fixtur
 		await entered.promise
 		await expect(consumer.verify()).rejects.toMatchObject({ code: 'BUSY' })
 		await expect(
-			host.require(InvoicePlugin).verify({
+			host.require(InvoicePlugin.nodeAddress()).verify({
 				kind: 'digital-tax',
 				number: '12345678901234567890',
 				issueDate: '2026-10-14',
@@ -300,7 +302,7 @@ describe('InvoicePlugin through real host and DOM-backed external browser fixtur
 				(error: unknown) => ({ error }),
 			)
 			await entered.promise
-			await host.stop(stopped)
+			await host.stop(stopped.nodeAddress())
 			expect(await outcome).toMatchObject({ error: { code: 'NOT_RUNNING' } })
 			expect(browser.contexts[0].closed).toBe(true)
 		},

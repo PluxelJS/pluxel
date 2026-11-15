@@ -102,16 +102,16 @@ const initialConfig = { endpoint: 'ws://127.0.0.1:9222' }
 
 it('accepts native connection options through an inherited provider without a placeholder endpoint', async () => {
 	await using host = await createTestHost()
-	await host.start(NativeConnector)
-	const consumer = await host.start(Consumer)
+	await host.start(NativeConnector.nodeAddress())
+	const consumer = await host.start(Consumer.nodeAddress())
 	const context = await consumer.open()
 	expect(sdk.nativeConnect).toHaveBeenCalledWith('wss://native.invalid/browser', nativeOptions)
 	expect(sdk.connect).not.toHaveBeenCalled()
 	expect(browser.newContext).toHaveBeenCalledWith({ locale: 'zh-CN' })
-	await host.stop(Consumer)
+	await host.stop(Consumer.nodeAddress())
 	expect(context.close).toHaveBeenCalledOnce()
 	expect(browser.close).not.toHaveBeenCalled()
-	await host.stop(NativeConnector)
+	await host.stop(NativeConnector.nodeAddress())
 	expect(browser.close).toHaveBeenCalledOnce()
 	expect(browser.defaultContext.close).not.toHaveBeenCalled()
 	expect(browser.listenerCount('disconnected')).toBe(0)
@@ -122,9 +122,11 @@ it('reports a custom connection failure without trying the default preset', asyn
 	nativeAcquire = async () => {
 		throw new Error('Custom native connection failed')
 	}
-	const report = await host.commitExpectFail((change) => change.start(NativeConnector))
+	const report = await host.commitExpectFail((change) =>
+		change.start(NativeConnector.nodeAddress()),
+	)
 	expect(JSON.stringify(report.lifecycleReport)).toContain('Custom native connection failed')
-	expect(host.isRunning(NativeConnector)).toBe(false)
+	expect(host.isRunning(NativeConnector.nodeAddress())).toBe(false)
 	expect(sdk.connect).not.toHaveBeenCalled()
 	expect(sdk.nativeConnect).not.toHaveBeenCalled()
 	expect(browser.close).not.toHaveBeenCalled()
@@ -138,13 +140,15 @@ it('releases its native connection after partial listener registration fails', a
 		add(event, listener)
 		throw failure
 	})
-	const report = await host.commitExpectFail((change) => change.start(NativeConnector))
+	const report = await host.commitExpectFail((change) =>
+		change.start(NativeConnector.nodeAddress()),
+	)
 	expect(report.lifecycleReport).toMatchObject({
 		issues: [{ error: { name: 'Error', message: failure.message } }],
 	})
 	expect(browser.close).toHaveBeenCalledOnce()
 	expect(browser.listenerCount('disconnected')).toBe(0)
-	expect(host.isRunning(NativeConnector)).toBe(false)
+	expect(host.isRunning(NativeConnector.nodeAddress())).toBe(false)
 })
 
 it('attempts every setup rollback and preserves listener registration and cleanup failures', async () => {
@@ -157,7 +161,9 @@ it('attempts every setup rollback and preserves listener registration and cleanu
 		throw new Error('Listener removal failed')
 	})
 	browser.close.mockRejectedValueOnce(new Error('Browser close failed'))
-	const report = await host.commitExpectFail((change) => change.start(NativeConnector))
+	const report = await host.commitExpectFail((change) =>
+		change.start(NativeConnector.nodeAddress()),
+	)
 	expect(report.lifecycleReport).toMatchObject({
 		issues: [{ error: { name: 'AggregateError', cause: failure.message } }],
 	})
@@ -167,20 +173,22 @@ it('attempts every setup rollback and preserves listener registration and cleanu
 	expect(message).toContain('Browser close failed')
 	expect(detach).toHaveBeenCalledOnce()
 	expect(browser.close).toHaveBeenCalledOnce()
-	expect(host.isRunning(NativeConnector)).toBe(false)
+	expect(host.isRunning(NativeConnector.nodeAddress())).toBe(false)
 })
 
 it('preserves effects registration failure if closing its acquired native connection also fails', async () => {
 	await using host = await createTestHost()
 	browser.close.mockRejectedValueOnce(new Error('Browser close failed'))
-	const report = await host.commitExpectFail((change) => change.start(DisposedConnector))
+	const report = await host.commitExpectFail((change) =>
+		change.start(DisposedConnector.nodeAddress()),
+	)
 	expect(report.lifecycleReport).toMatchObject({
 		issues: [{ error: { name: 'AggregateError', cause: 'Effects service is disposed' } }],
 	})
 	expect(report.lifecycleReport.issues[0]?.message).toContain('Browser close failed')
 	expect(browser.close).toHaveBeenCalledOnce()
 	expect(browser.listenerCount('disconnected')).toBe(0)
-	expect(host.isRunning(DisposedConnector)).toBe(false)
+	expect(host.isRunning(DisposedConnector.nodeAddress())).toBe(false)
 })
 
 it('closes a native connection that arrives after its generation timed out', async () => {
@@ -191,7 +199,9 @@ it('closes a native connection that arrives after its generation timed out', asy
 		entered.resolve(signal)
 		return connected.promise
 	}
-	const starting = host.commitExpectFail((change) => change.start(SlowNativeConnector))
+	const starting = host.commitExpectFail((change) =>
+		change.start(SlowNativeConnector.nodeAddress()),
+	)
 	try {
 		const signal = await entered.promise
 		const report = await starting
@@ -199,7 +209,7 @@ it('closes a native connection that arrives after its generation timed out', asy
 		expect(signal.aborted).toBe(true)
 		connected.resolve(browser.native())
 		await vi.waitFor(() => expect(browser.close).toHaveBeenCalledOnce())
-		expect(host.isRunning(SlowNativeConnector)).toBe(false)
+		expect(host.isRunning(SlowNativeConnector.nodeAddress())).toBe(false)
 		expect(browser.listenerCount('disconnected')).toBe(0)
 	} finally {
 		connected.resolve(browser.native())
@@ -209,7 +219,9 @@ it('closes a native connection that arrives after its generation timed out', asy
 
 it('requires a connection source before the default preset calls the SDK', async () => {
 	await using host = await createTestHost()
-	const report = await host.commitExpectFail((change) => change.start(PlaywrightPlugin))
+	const report = await host.commitExpectFail((change) =>
+		change.start(PlaywrightPlugin.nodeAddress()),
+	)
 	expect(report.lifecycleReport).toMatchObject({
 		issues: [{ phase: 'config', kind: 'config-failed' }],
 	})
@@ -221,8 +233,10 @@ it.each(['cdp', 'playwright'] as const)(
 	'connects via %s and closes only owned contexts on caller stop',
 	async (protocol) => {
 		await using host = await createTestHost()
-		await host.start(PlaywrightPlugin, { initialConfig: { ...initialConfig, protocol } })
-		const consumer = await host.start(Consumer)
+		await host.start(PlaywrightPlugin.nodeAddress(), {
+			initialConfig: { ...initialConfig, protocol },
+		})
+		const consumer = await host.start(Consumer.nodeAddress())
 		const context = await consumer.open()
 		const selected = protocol === 'cdp' ? sdk.connect : sdk.nativeConnect
 		const other = protocol === 'cdp' ? sdk.nativeConnect : sdk.connect
@@ -234,11 +248,11 @@ it.each(['cdp', 'playwright'] as const)(
 		expect(other).not.toHaveBeenCalled()
 		expect(browser.newContext).toHaveBeenCalledWith({ locale: 'zh-CN' })
 		expect(context).toBeInstanceOf(TestContext)
-		await host.stop(Consumer)
+		await host.stop(Consumer.nodeAddress())
 		expect(context.close).toHaveBeenCalledOnce()
 		expect(browser.close).not.toHaveBeenCalled()
 		expect(browser.defaultContext.close).not.toHaveBeenCalled()
-		await host.stop(PlaywrightPlugin)
+		await host.stop(PlaywrightPlugin.nodeAddress())
 		expect(browser.close).toHaveBeenCalledOnce()
 		expect(browser.defaultContext.close).not.toHaveBeenCalled()
 	},
@@ -246,16 +260,16 @@ it.each(['cdp', 'playwright'] as const)(
 
 it('releases manually closed contexts without closing them again', async () => {
 	await using host = await createTestHost()
-	const connector = await host.start(PlaywrightPlugin, { initialConfig })
+	const connector = await host.start(PlaywrightPlugin.nodeAddress(), { initialConfig })
 	const context = await connector.newContext()
 	await context.close()
-	await host.stop(PlaywrightPlugin)
+	await host.stop(PlaywrightPlugin.nodeAddress())
 	expect(context.close).toHaveBeenCalledOnce()
 })
 
 it('preserves unknown SDK acquisition errors', async () => {
 	await using host = await createTestHost()
-	const connector = await host.start(PlaywrightPlugin, { initialConfig })
+	const connector = await host.start(PlaywrightPlugin.nodeAddress(), { initialConfig })
 	const failure = new Error('native SDK defect')
 	browser.newContext.mockRejectedValueOnce(failure)
 	await expect(connector.newContext()).rejects.toBe(failure)
@@ -263,7 +277,7 @@ it('preserves unknown SDK acquisition errors', async () => {
 
 it('rejects after disconnection and requires explicit restart', async () => {
 	await using host = await createTestHost()
-	const connector = await host.start(PlaywrightPlugin, { initialConfig })
+	const connector = await host.start(PlaywrightPlugin.nodeAddress(), { initialConfig })
 	browser.connected = false
 	browser.emit('disconnected')
 	await expect(connector.newContext()).rejects.toBeInstanceOf(PlaywrightNotRunningError)
@@ -273,7 +287,7 @@ it('rejects after disconnection and requires explicit restart', async () => {
 
 it('rejects aborted acquisition promptly and closes the late native context', async () => {
 	await using host = await createTestHost()
-	const connector = await host.start(PlaywrightPlugin, { initialConfig })
+	const connector = await host.start(PlaywrightPlugin.nodeAddress(), { initialConfig })
 	const deferred = Promise.withResolvers<BrowserContext>()
 	browser.newContext.mockReturnValueOnce(deferred.promise)
 	const abort = new AbortController()
@@ -288,8 +302,8 @@ it('rejects aborted acquisition promptly and closes the late native context', as
 
 it('drains a late acquisition when the consumer stops', async () => {
 	await using host = await createTestHost()
-	await host.start(PlaywrightPlugin, { initialConfig })
-	const consumer = await host.start(Consumer)
+	await host.start(PlaywrightPlugin.nodeAddress(), { initialConfig })
+	const consumer = await host.start(Consumer.nodeAddress())
 	const deferred = Promise.withResolvers<BrowserContext>()
 	browser.newContext.mockReturnValueOnce(deferred.promise)
 	const pending = consumer.open()
@@ -297,7 +311,7 @@ it('drains a late acquisition when the consumer stops', async () => {
 		(): undefined => undefined,
 		(error: unknown) => error,
 	)
-	const stopping = host.stop(Consumer)
+	const stopping = host.stop(Consumer.nodeAddress())
 	expect(await rejection).toBeInstanceOf(PlaywrightNotRunningError)
 	const late = new TestContext()
 	deferred.resolve(late.native())
@@ -308,7 +322,7 @@ it('drains a late acquisition when the consumer stops', async () => {
 
 it('disconnects before draining provider-owned pending SDK requests', async () => {
 	await using host = await createTestHost()
-	const connector = await host.start(PlaywrightPlugin, { initialConfig })
+	const connector = await host.start(PlaywrightPlugin.nodeAddress(), { initialConfig })
 	const deferred = Promise.withResolvers<BrowserContext>()
 	browser.newContext.mockReturnValueOnce(deferred.promise)
 	browser.close.mockImplementationOnce(async () => {
@@ -321,7 +335,7 @@ it('disconnects before draining provider-owned pending SDK requests', async () =
 		(): undefined => undefined,
 		(error: unknown) => error,
 	)
-	await host.stop(PlaywrightPlugin)
+	await host.stop(PlaywrightPlugin.nodeAddress())
 	expect(await rejection).toBeInstanceOf(PlaywrightNotRunningError)
 	expect(browser.close).toHaveBeenCalledOnce()
 })
@@ -330,12 +344,12 @@ it('reports initialization failure without the endpoint from the native error', 
 	await using host = await createTestHost()
 	sdk.connect.mockRejectedValueOnce(new Error('ws://internal.invalid/?token=super-secret'))
 	const failure = await host.commitExpectFail((change) =>
-		change.start(PlaywrightPlugin, { initialConfig }),
+		change.start(PlaywrightPlugin.nodeAddress(), { initialConfig }),
 	)
 	expect(failure.lifecycleReport.issues).toContainEqual(
 		expect.objectContaining({ kind: 'start-failed' }),
 	)
-	expect(host.isRunning(PlaywrightPlugin)).toBe(false)
+	expect(host.isRunning(PlaywrightPlugin.nodeAddress())).toBe(false)
 	expect(browser.newContext).not.toHaveBeenCalled()
 })
 
@@ -363,7 +377,7 @@ it('rolls back an acquired but disconnected browser during initialization', asyn
 	await using host = await createTestHost()
 	browser.connected = false
 	const failure = await host.commitExpectFail((change) =>
-		change.start(PlaywrightPlugin, { initialConfig }),
+		change.start(PlaywrightPlugin.nodeAddress(), { initialConfig }),
 	)
 	expect(failure.lifecycleReport.issues).toContainEqual(
 		expect.objectContaining({ kind: 'start-failed' }),
@@ -430,7 +444,7 @@ it.each(['cdp', 'playwright'] as const)(
 it('fails safely when Vault is configured but the selected connection record is absent', async () => {
 	await using host = await createTestHost({ services: [vault({ backend: 'bindings' })] })
 	const result = await host.commitExpectFail((change) => {
-		change.start(PlaywrightPlugin, { initialConfig: { connectionKey: 'missing' } })
+		change.start(PlaywrightPlugin.nodeAddress(), { initialConfig: { connectionKey: 'missing' } })
 	})
 	expect(JSON.stringify(result.lifecycleReport)).toContain('missing or invalid')
 	expect(sdk.connect).not.toHaveBeenCalled()
@@ -442,7 +456,7 @@ it('does not retain connection secrets in lifecycle diagnostics', async () => {
 		new Error('Failed ws://remote/?token=super-secret with Authorization=secret-header'),
 	)
 	const result = await host.commitExpectFail((change) => {
-		change.start(PlaywrightPlugin, { initialConfig })
+		change.start(PlaywrightPlugin.nodeAddress(), { initialConfig })
 	})
 	const report = JSON.stringify(result.lifecycleReport)
 	expect(report).toContain('CDP connection failed')
@@ -452,8 +466,8 @@ it('does not retain connection secrets in lifecycle diagnostics', async () => {
 
 it('reports late cleanup failure after cancellation instead of silently losing the resource', async () => {
 	await using host = await createTestHost()
-	await host.start(PlaywrightPlugin, { initialConfig })
-	const consumer = await host.start(Consumer)
+	await host.start(PlaywrightPlugin.nodeAddress(), { initialConfig })
+	const consumer = await host.start(Consumer.nodeAddress())
 	const deferred = Promise.withResolvers<BrowserContext>()
 	browser.newContext.mockReturnValueOnce(deferred.promise)
 	const abort = new AbortController()
@@ -464,14 +478,14 @@ it('reports late cleanup failure after cancellation instead of silently losing t
 	late.close.mockRejectedValueOnce(new Error('remote context disposal failed'))
 	deferred.resolve(late.native())
 	await vi.waitFor(() => expect(late.close).toHaveBeenCalledOnce())
-	const report = await host.commitExpectFail((change) => change.stop(Consumer))
+	const report = await host.commitExpectFail((change) => change.stop(Consumer.nodeAddress()))
 	expect(JSON.stringify(report.lifecycleReport)).toContain('Playwright context cleanup failed')
 })
 
 it('still drains pending acquisitions when an existing context fails to close', async () => {
 	await using host = await createTestHost()
-	await host.start(PlaywrightPlugin, { initialConfig })
-	const consumer = await host.start(Consumer)
+	await host.start(PlaywrightPlugin.nodeAddress(), { initialConfig })
+	const consumer = await host.start(Consumer.nodeAddress())
 	const context = (await consumer.open()) as unknown as TestContext
 	context.close.mockRejectedValueOnce(new Error('existing close failed'))
 	const deferred = Promise.withResolvers<BrowserContext>()
@@ -481,7 +495,7 @@ it('still drains pending acquisitions when an existing context fails to close', 
 		(): undefined => undefined,
 		(error: unknown) => error,
 	)
-	const stopping = host.commitExpectFail((change) => change.stop(Consumer))
+	const stopping = host.commitExpectFail((change) => change.stop(Consumer.nodeAddress()))
 	expect(await rejected).toBeInstanceOf(PlaywrightNotRunningError)
 	const late = new TestContext()
 	deferred.resolve(late.native())
@@ -505,7 +519,9 @@ it('reports native protocol failure safely without retrying CDP', async () => {
 	await using host = await createTestHost()
 	sdk.nativeConnect.mockRejectedValueOnce(new Error('428 ws://remote/?token=secret-version-token'))
 	const result = await host.commitExpectFail((change) => {
-		change.start(PlaywrightPlugin, { initialConfig: { ...initialConfig, protocol: 'playwright' } })
+		change.start(PlaywrightPlugin.nodeAddress(), {
+			initialConfig: { ...initialConfig, protocol: 'playwright' },
+		})
 	})
 	const report = JSON.stringify(result.lifecycleReport)
 	expect(report).toContain('matching client/server major.minor versions')

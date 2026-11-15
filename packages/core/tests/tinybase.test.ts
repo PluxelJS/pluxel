@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile, mkdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'
-import { createCoreTestHost, definePluginFork, getCoreTestHostContext } from '../src/internal-test'
+import { createCoreTestHost, getCoreTestHostContext } from '../src/internal-test'
 import { createStore, type Store } from 'tinybase'
 import { createQueries } from 'tinybase/queries'
 import * as v from 'valibot'
@@ -88,17 +88,17 @@ const storage = (prefix: string) => ({
 describe('Core-managed native TinyBase', () => {
 	it('keeps fixed capabilities on the provider generation through Parts, forks and dependency calls', async () => {
 		await using host = createCoreTestHost()
-		const east = definePluginFork(StateOwner, 'east-owner')
+		const east = StateOwner.nodeAddress('east-owner')
 		await host.commit((change) => {
-			change.add([StateOwner, east, StateCaller])
+			change.add([StateOwner.nodeAddress(), east, StateCaller.nodeAddress()])
 			change.dependencies.setOverride({
-				consumer: StateCaller,
+				consumer: StateCaller.nodeAddress(),
 				requirement: StateOwner,
 				provider: east,
 			})
 		})
 		const provider = host.require(east)
-		const caller = host.require(StateCaller)
+		const caller = host.require(StateCaller.nodeAddress())
 		const direct = await provider.handles()
 		const forwarded = await caller.provider.handles()
 		expect(forwarded.state).toBe(direct.state)
@@ -107,16 +107,16 @@ describe('Core-managed native TinyBase', () => {
 		expect(forwarded.caller).toEqual(caller.ctx.pluginInfo.nodeAddress)
 		expect(await provider.part.files()).toBe(direct.directory)
 		expect(await provider.part.open()).toBe(provider.store)
-		expect(direct.state).not.toBe(host.require(StateOwner).state)
-		const defaultHandles = await host.require(StateOwner).handles()
+		expect(direct.state).not.toBe(host.require(StateOwner.nodeAddress()).state)
+		const defaultHandles = await host.require(StateOwner.nodeAddress()).handles()
 		expect(direct.directory).not.toBe(defaultHandles.directory)
 	})
 
 	it('preserves the native instance and Queries; Parts share one recovery and forks isolate data', async () => {
 		const prefix = await directory()
-		const east = definePluginFork(StateOwner, 'east')
+		const east = StateOwner.nodeAddress('east')
 		await using host = await createCoreTestHost({ zenfs: storage(prefix) })
-		const owner = await host.add(StateOwner)
+		const owner = await host.add(StateOwner.nodeAddress())
 		expect(await owner.state.open(owner.store)).toBe(owner.store)
 		expect(await owner.part.open()).toBe(owner.store)
 		const opened = await Promise.all([owner.state.open(), owner.state.open()])
@@ -134,11 +134,11 @@ describe('Core-managed native TinyBase', () => {
 		await owner.state.flush()
 		await host.add(east)
 		expect(host.require(east).store.getRowIds('items')).toEqual([])
-		await host.restart(StateOwner)
-		expect(host.require(StateOwner).store.getCell('items', 'a', 'value')).toBe(4)
+		await host.restart(StateOwner.nodeAddress())
+		expect(host.require(StateOwner.nodeAddress()).store.getCell('items', 'a', 'value')).toBe(4)
 		await expect(owner.state.flush()).rejects.toThrow(Error)
 		owner.store.setValue('stale', 'must not persist')
-		await host.require(StateOwner).state.flush()
+		await host.require(StateOwner.nodeAddress()).state.flush()
 		expect(await readFile(nodeFile(prefix), 'utf8')).not.toContain('must not persist')
 	})
 
@@ -146,13 +146,13 @@ describe('Core-managed native TinyBase', () => {
 		const prefix = await directory()
 		{
 			await using host = await createCoreTestHost({ zenfs: storage(prefix) })
-			const owner = await host.add(StateOwner)
+			const owner = await host.add(StateOwner.nodeAddress())
 			owner.store.setContent([{}, {}])
 			await owner.state.flush()
 		}
 		{
 			await using host = await createCoreTestHost({ zenfs: storage(prefix) })
-			const owner = await host.add(StateOwner)
+			const owner = await host.add(StateOwner.nodeAddress())
 			expect(owner.store.getContent()).toEqual([{}, {}])
 		}
 	})
@@ -162,14 +162,14 @@ describe('Core-managed native TinyBase', () => {
 		{
 			await using host = await createCoreTestHost({ zenfs: storage(prefix) })
 			await host.commitExpectFail((change) =>
-				change.add(StateOwner, { initialConfig: { fail: true } }),
+				change.add(StateOwner.nodeAddress(), { initialConfig: { fail: true } }),
 			)
 			await expect(stat(nodeFile(prefix))).rejects.toMatchObject({ code: 'ENOENT' })
 		}
 		{
 			await using host = await createCoreTestHost({ zenfs: storage(prefix) })
 			await host.commitExpectFail((change) =>
-				change.add(StateOwner, { initialConfig: { fail: true, flushInInit: true } }),
+				change.add(StateOwner.nodeAddress(), { initialConfig: { fail: true, flushInInit: true } }),
 			)
 			expect(JSON.parse(await readFile(nodeFile(prefix), 'utf8')).content).toEqual([
 				{},
@@ -200,7 +200,7 @@ describe('Core-managed native TinyBase', () => {
 		]) {
 			await writeFile(nodeFile(prefix), text)
 			await using host = await createCoreTestHost({ zenfs: storage(prefix) })
-			await host.commitExpectFail((change) => change.add(StateOwner))
+			await host.commitExpectFail((change) => change.add(StateOwner.nodeAddress()))
 			expect(await readFile(nodeFile(prefix), 'utf8')).toBe(text)
 		}
 	})
@@ -221,7 +221,7 @@ describe('Core-managed native TinyBase', () => {
 			const text = encodeSnapshot(identity, [content[0], content[1]], 8 * 1024 * 1024)
 			await writeFile(file, text)
 			await using host = await createCoreTestHost({ zenfs: storage(prefix) })
-			await host.commitExpectFail((change) => change.add(SchemaOwner))
+			await host.commitExpectFail((change) => change.add(SchemaOwner.nodeAddress()))
 			expect(await readFile(file, 'utf8')).toBe(text)
 		}
 	})
@@ -229,7 +229,7 @@ describe('Core-managed native TinyBase', () => {
 	it('rejects an unfinished transaction at flush and never saves a partial native transaction', async () => {
 		const prefix = await directory()
 		await using host = await createCoreTestHost({ zenfs: storage(prefix) })
-		const owner = await host.add(StateOwner)
+		const owner = await host.add(StateOwner.nodeAddress())
 		await owner.state.flush()
 		owner.store.startTransaction().setValue('partial', true)
 		await expect(owner.state.flush()).rejects.toMatchObject({ code: 'TRANSACTION_ACTIVE' })
@@ -242,7 +242,7 @@ describe('Core-managed native TinyBase', () => {
 	it('captures a ready flush before a transaction starts later in the same tick', async () => {
 		const prefix = await directory()
 		await using host = await createCoreTestHost({ zenfs: storage(prefix) })
-		const owner = await host.add(StateOwner)
+		const owner = await host.add(StateOwner.nodeAddress())
 		await owner.state.flush()
 		owner.store.setValue('complete', 1)
 		const confirmed = owner.state.flush()
@@ -291,7 +291,7 @@ describe('Core-managed native TinyBase', () => {
 		await using host = await createCoreTestHost({
 			zenfs: { mounts: { '/': { backend: Passthrough, fs: native, prefix } } },
 		})
-		const owner = await host.add(StateOwner)
+		const owner = await host.add(StateOwner.nodeAddress())
 		await owner.state.flush()
 		try {
 			gate = true
@@ -336,7 +336,7 @@ describe('Core-managed native TinyBase', () => {
 		const host = await createCoreTestHost({
 			zenfs: { mounts: { '/': { backend: Passthrough, fs: native, prefix } } },
 		})
-		const owner = await host.add(StateOwner)
+		const owner = await host.add(StateOwner.nodeAddress())
 		await owner.state.flush()
 		fail = true
 		owner.store.setValue('candidate', true)
@@ -360,7 +360,7 @@ describe('Core-managed native TinyBase', () => {
 				},
 			},
 		})
-		const owner = await host.add(StateOwner)
+		const owner = await host.add(StateOwner.nodeAddress())
 		owner.store.setValue('title', 'saved')
 		await owner.state.flush()
 		const documents = requireHostDocuments(getCoreTestHostContext(host), 'config')
@@ -391,7 +391,7 @@ describe('Core-managed native TinyBase', () => {
 		await using readonly = await createCoreTestHost({
 			zenfs: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix, readOnly: true } } },
 		})
-		await readonly.commitExpectFail((change) => change.add(StateOwner))
+		await readonly.commitExpectFail((change) => change.add(StateOwner.nodeAddress()))
 	})
 
 	it('serializes complete Host document updates and publishes only confirmed candidates', async () => {
@@ -434,7 +434,7 @@ describe('Core-managed native TinyBase', () => {
 	it('uses the fixed InMemory default and allocates no Store for plugins that never open', async () => {
 		const host = createCoreTestHost()
 		try {
-			const unused = await host.add(UnusedOwner)
+			const unused = await host.add(UnusedOwner.nodeAddress())
 			expect(unused.ctx.fs).toBeTypeOf('function')
 			expect(unused.ctx.tinybase).toBeDefined()
 			expect(requireTinyBaseHost(getCoreTestHostContext(host)).status()).toEqual([])

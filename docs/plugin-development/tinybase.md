@@ -66,7 +66,7 @@ import { expect, it } from 'vitest'
 
 it('能够保存并读取偏好状态', async () => {
 	await using host = await createTestHost()
-	const preferences = await host.start(PreferencesPlugin)
+	const preferences = await host.start(PreferencesPlugin.nodeAddress())
 
 	expect(preferences.getTheme()).toBe('system')
 

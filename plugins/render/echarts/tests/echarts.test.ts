@@ -37,8 +37,9 @@ async function startEChartsFixture(
 	]
 	await host.commit((change) => {
 		change.catalog.add(plugins)
-		if (options.config !== undefined) change.config.seed(EChartsPlugin, options.config)
-		change.start(plugins)
+		if (options.config !== undefined)
+			change.config.seed(EChartsPlugin.nodeAddress(), options.config)
+		change.start(plugins.map((plugin) => plugin.nodeAddress()))
 	})
 }
 
@@ -52,7 +53,7 @@ describe('EChartsPlugin', () => {
 			],
 		})
 		await startEChartsFixture(host)
-		const charts = host.require(EChartsTestConsumer).echarts
+		const charts = host.require(EChartsTestConsumer.nodeAddress()).echarts
 		const input = { option: {}, width: 32, height: 32 }
 		const [first, second, third] = await Promise.all([
 			renderChart(charts, input),
@@ -68,7 +69,7 @@ describe('EChartsPlugin', () => {
 		await expect(
 			renderChart(charts, { ...input, signal: AbortSignal.abort(aborted) }),
 		).rejects.toBe(aborted)
-		await host.stop(EChartsTestConsumer)
+		await host.stop(EChartsTestConsumer.nodeAddress())
 		await expect(renderChart(charts, input)).rejects.toThrow(Error)
 	}, 30_000)
 
@@ -78,7 +79,9 @@ describe('EChartsPlugin', () => {
 		})
 
 		await startEChartsFixture(host)
-		expect(host.require(EChartsTestConsumer).echarts.defaultFont.family.length).toBeGreaterThan(0)
+		expect(
+			host.require(EChartsTestConsumer.nodeAddress()).echarts.defaultFont.family.length,
+		).toBeGreaterThan(0)
 	})
 
 	it('rejects invalid theme values before they become caller-owned state', async () => {
@@ -87,7 +90,7 @@ describe('EChartsPlugin', () => {
 		})
 
 		await startEChartsFixture(host, { config: { maxThemeNodes: 2 } })
-		const echarts = host.require(EChartsTestConsumer).echarts
+		const echarts = host.require(EChartsTestConsumer.nodeAddress()).echarts
 		expect(() =>
 			echarts.registerTheme({ name: 'too-many-values', theme: { color: ['red'] } }),
 		).toThrow(expect.objectContaining({ code: 'THEME_TOO_LARGE' }))
@@ -114,8 +117,8 @@ describe('EChartsPlugin', () => {
 			config: { maxTotalThemes: 1 },
 			otherConsumer: true,
 		})
-		const first = host.require(EChartsTestConsumer).echarts
-		const second = host.require(EChartsOtherConsumer).echarts
+		const first = host.require(EChartsTestConsumer.nodeAddress()).echarts
+		const second = host.require(EChartsOtherConsumer.nodeAddress()).echarts
 		const registration = first.registerTheme({ name: 'first', theme: {} })
 
 		expect(() => second.registerTheme({ name: 'second', theme: {} })).toThrow(
@@ -135,8 +138,8 @@ describe('EChartsPlugin', () => {
 			config: { maxTotalThemes: 2, maxTotalThemeBytes: 20 },
 			otherConsumer: true,
 		})
-		const first = host.require(EChartsTestConsumer).echarts
-		const second = host.require(EChartsOtherConsumer).echarts
+		const first = host.require(EChartsTestConsumer.nodeAddress()).echarts
+		const second = host.require(EChartsOtherConsumer.nodeAddress()).echarts
 		const registration = first.registerTheme({
 			name: 'first',
 			theme: { a: '1234567890' },
@@ -145,7 +148,7 @@ describe('EChartsPlugin', () => {
 		expect(() => second.registerTheme({ name: 'second', theme: { a: '1234567890' } })).toThrow(
 			expect.objectContaining({ code: 'THEME_LIMIT_EXCEEDED' }),
 		)
-		await host.stop(EChartsTestConsumer)
+		await host.stop(EChartsTestConsumer.nodeAddress())
 		expect(registration.active).toBe(false)
 		const replacement = second.registerTheme({
 			name: 'second',
@@ -160,8 +163,8 @@ describe('EChartsPlugin', () => {
 		})
 
 		await startEChartsFixture(host, { otherConsumer: true })
-		const capability = host.require(EChartsTestConsumer).echarts
-		const other = host.require(EChartsOtherConsumer).echarts
+		const capability = host.require(EChartsTestConsumer.nodeAddress()).echarts
+		const other = host.require(EChartsOtherConsumer.nodeAddress()).echarts
 		const registration = capability.registerTheme({
 			name: 'reporting',
 			theme: { color: ['#2563eb'], textStyle: { fontWeight: 500 } },
@@ -183,7 +186,7 @@ describe('EChartsPlugin', () => {
 			name: 'ephemeral',
 			theme: { color: ['#16a34a'] },
 		})
-		await host.stop(EChartsTestConsumer)
+		await host.stop(EChartsTestConsumer.nodeAddress())
 
 		expect(ephemeral.active).toBe(false)
 		expect(() => capability.themes).toThrow('Plugin owner stopped')
@@ -196,10 +199,14 @@ describe('EChartsPlugin', () => {
 			services: standardServices(),
 		})
 
-		await host.start([FontsPlugin, CanvasPlugin, EChartsPlugin])
+		await host.start([
+			FontsPlugin.nodeAddress(),
+			CanvasPlugin.nodeAddress(),
+			EChartsPlugin.nodeAddress(),
+		])
 
 		using selection = await host.workbench.open({
-			target: EChartsPlugin,
+			target: EChartsPlugin.nodeAddress(),
 			entry: EChartsWorkbench.fonts,
 			principal: { provider: 'test', subject: 'echarts-tests' },
 		})
@@ -209,7 +216,7 @@ describe('EChartsPlugin', () => {
 			federatedViewRef: { expose: './views/selection' },
 		})
 		expect(await selection.provider.snapshotDto()).toMatchObject({
-			defaultFont: host.require(EChartsPlugin).defaultFont,
+			defaultFont: host.require(EChartsPlugin.nodeAddress()).defaultFont,
 			families: expect.any(Array),
 		})
 	})

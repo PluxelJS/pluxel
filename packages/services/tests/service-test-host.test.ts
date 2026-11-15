@@ -1,8 +1,9 @@
 import { Commands } from '@pluxel/services/commands'
 import { ElysiaApp, elysia } from '@pluxel/services/elysia'
-import { pluginDefinitionIndexKey, BasePlugin, Plugin } from '@pluxel/core'
+import { pluginDefinitionIndexKey, parsePluginNodeAddress, BasePlugin, Plugin } from '@pluxel/core'
+import { createPluginControlReference } from '@pluxel/host/internal/control-reference'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
-import { definePluginFork, createTestHost } from '@pluxel/test'
+import { createTestHost } from '@pluxel/test'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
@@ -34,6 +35,13 @@ class DependencyConsumer extends BasePlugin {
 @Plugin({ displayName: 'Forkable fixture', forkable: true })
 class ForkableFixture extends BasePlugin {}
 
+@Plugin()
+class ForkConsumer extends BasePlugin {
+	constructor(readonly dependency: ForkableFixture) {
+		super()
+	}
+}
+
 @Plugin({ displayName: 'Replacement v1' })
 class ReplacementV1 extends BasePlugin {
 	readonly version: number = 1
@@ -62,9 +70,71 @@ class SeedFixture extends BasePlugin {
 }
 
 describe('service test host', () => {
+	it('requires source implementation evidence rather than generated or portable addresses', async () => {
+		await using host = await createTestHost()
+		const source = ForkableFixture.nodeAddress('east')
+		const generated = createPluginControlReference({
+			format: 2,
+			definition: ForkableFixture.definitionAddress(),
+			contracts: { config: null, instance: `sha256:${'a'.repeat(64)}` },
+		})
+		for (const target of [
+			generated.nodeAddress(),
+			generated.nodeAddress('east'),
+			parsePluginNodeAddress(source),
+			JSON.parse(JSON.stringify(source)),
+		]) {
+			await expect(host.start(target as never)).rejects.toThrow(
+				/original concrete Plugin class nodeAddress/,
+			)
+		}
+		expect(host.isRunning(source)).toBe(false)
+		const instance = await host.start(source)
+		expect(instance.constructor).toBe(ForkableFixture)
+	})
+
+	it('accepts repeated equal fork overrides while rejecting different implementation evidence', async () => {
+		await using host = await createTestHost()
+		await host.commit((change) => {
+			change.start([
+				ForkableFixture.nodeAddress(),
+				ForkableFixture.nodeAddress('east'),
+				ForkConsumer.nodeAddress(),
+			])
+			for (let index = 0; index < 2; index++) {
+				change.dependencies.setOverride({
+					consumer: ForkConsumer.nodeAddress(),
+					requirement: ForkableFixture,
+					provider: ForkableFixture.nodeAddress('east'),
+				})
+			}
+		})
+		expect(host.require(ForkConsumer.nodeAddress()).dependency.ctx.pluginInfo.nodeAddress).toEqual(
+			parsePluginNodeAddress(ForkableFixture.nodeAddress('east')),
+		)
+		class Replacement extends ForkableFixture {}
+		lowerTestReplacement(ForkableFixture, Replacement, { plugin: { forkable: true } })
+		await expect(
+			host.commit((change) => {
+				change.dependencies.setOverride({
+					consumer: ForkConsumer.nodeAddress(),
+					requirement: ForkableFixture,
+					provider: ForkableFixture.nodeAddress('east'),
+				})
+				change.dependencies.setOverride({
+					consumer: ForkConsumer.nodeAddress(),
+					requirement: ForkableFixture,
+					provider: Replacement.nodeAddress('east'),
+				})
+			}),
+		).rejects.toThrow(/Conflicting dependencies.setOverride/)
+	})
+
 	it('persists initialConfig as raw input while publishing normalized config and schema defaults', async () => {
 		await using host = await createServiceInternalTestHost({ services: [] })
-		const instance = await host.start(SeedFixture, { initialConfig: { text: ' seeded ' } })
+		const instance = await host.start(SeedFixture.nodeAddress(), {
+			initialConfig: { text: ' seeded ' },
+		})
 		expect(instance.config).toEqual({ text: 'seeded', fallback: 'default' })
 		const saved = await requireHostDocuments(host.ctx, 'config').getText('config.json')
 		expect(JSON.parse(saved!).json).toMatchObject({
@@ -74,12 +144,12 @@ describe('service test host', () => {
 
 	it('uses the explicit service list without adding default services', async () => {
 		await using bare = await createTestHost({ services: [] })
-		await bare.start(PublicFixture)
-		expect(bare.isRunning(PublicFixture)).toBe(true)
+		await bare.start(PublicFixture.nodeAddress())
+		expect(bare.isRunning(PublicFixture.nodeAddress())).toBe(true)
 		expect(() => bare.commands.list()).toThrow(/commands/i)
 
 		await using httpOnly = await createTestHost({ services: [elysia()] })
-		await httpOnly.start(HttpOnlyFixture)
+		await httpOnly.start(HttpOnlyFixture.nodeAddress())
 		const response = await httpOnly.http.fetch(new URL('/test-composition', httpOnly.http.origin))
 		expect(await response.text()).toBe('http-only')
 		expect(() => httpOnly.commands.list()).toThrow(/commands/i)
@@ -99,25 +169,25 @@ describe('service test host', () => {
 		expect(host[Symbol.asyncDispose]).toBeTypeOf('function')
 		expect(host.http.origin).toBe('http://local.test')
 
-		const consumer = await host.start(DependencyConsumer, {
+		const consumer = await host.start(DependencyConsumer.nodeAddress(), {
 			catalog: [RequiredDependency],
 		})
 		expect(consumer).toBeInstanceOf(DependencyConsumer)
 		expect(consumer.dependency).toBeInstanceOf(RequiredDependency)
-		expect(host.require(DependencyConsumer)).toBe(consumer)
-		expect(host.isRunning(RequiredDependency)).toBe(true)
+		expect(host.require(DependencyConsumer.nodeAddress())).toBe(consumer)
+		expect(host.isRunning(RequiredDependency.nodeAddress())).toBe(true)
 	})
 
 	it('stops and restarts immediately without changing durable auto-start policy', async () => {
 		await using host = await createServiceInternalTestHost()
 
-		const first = await host.start(PublicFixture)
+		const first = await host.start(PublicFixture.nodeAddress())
 		expect(host.stateStore.snapshot().autoStart).toEqual([])
-		await host.stop(PublicFixture)
-		expect(host.isRunning(PublicFixture)).toBe(false)
-		const second = await host.start(PublicFixture)
+		await host.stop(PublicFixture.nodeAddress())
+		expect(host.isRunning(PublicFixture.nodeAddress())).toBe(false)
+		const second = await host.start(PublicFixture.nodeAddress())
 		expect(second).not.toBe(first)
-		const third = await host.restart(PublicFixture)
+		const third = await host.restart(PublicFixture.nodeAddress())
 		expect(third).not.toBe(second)
 		expect(host.stateStore.snapshot().autoStart).toEqual([])
 	})
@@ -125,10 +195,10 @@ describe('service test host', () => {
 	it('rejects an implicit catalog change on an already-running high-frequency start', async () => {
 		await using host = await createServiceInternalTestHost()
 
-		await host.start(PublicFixture)
-		await expect(host.start(PublicFixture, { catalog: [SupportingFixture] })).rejects.toThrow(
-			/already-running.*host\.commit/i,
-		)
+		await host.start(PublicFixture.nodeAddress())
+		await expect(
+			host.start(PublicFixture.nodeAddress(), { catalog: [SupportingFixture] }),
+		).rejects.toThrow(/already-running.*host\.commit/i)
 		const key = pluginDefinitionIndexKey(host.coordinator.catalogSnapshot().entries[0]!.address)
 		expect(
 			host.coordinator
@@ -153,12 +223,12 @@ describe('service test host', () => {
 			escaped = change
 			change.catalog.add(PublicFixture)
 		})
-		expect(() => escaped!.stop(PublicFixture)).toThrow(/cannot escape/i)
+		expect(() => escaped!.stop(PublicFixture.nodeAddress())).toThrow(/cannot escape/i)
 	})
 
 	it('requires durable fork removal to be the only callback command', async () => {
 		await using host = await createTestHost()
-		const fork = definePluginFork(ForkableFixture, 'east')
+		const fork = ForkableFixture.nodeAddress('east')
 
 		await host.start(fork)
 		await expect(
@@ -182,17 +252,19 @@ describe('service test host', () => {
 		)
 		await using host = await createTestHost()
 
-		await host.start(ReplacementV1)
+		await host.start(ReplacementV1.nodeAddress())
 		await host.replaceDefinition(ReplacementV1, ReplacementV2)
-		expect(host.require(ReplacementV2).version).toBe(2)
-		expect(() => host.isRunning(ReplacementV1)).toThrow(/stale/i)
+		expect(host.require(ReplacementV2.nodeAddress()).version).toBe(2)
+		expect(() => host.isRunning(ReplacementV1.nodeAddress())).toThrow(/stale/i)
 	})
 
 	it('drains an expected lifecycle failure and accepts the next operation after its requested intent is cleared', async () => {
 		await using host = await createTestHost()
 		rollbackCleanup.mockClear()
 
-		const failure = await host.commitExpectFail((change) => change.start(RollbackFixture))
+		const failure = await host.commitExpectFail((change) =>
+			change.start(RollbackFixture.nodeAddress()),
+		)
 
 		expect(failure.lifecycleReport.issues).toHaveLength(1)
 		expect(failure.lifecycleReport.issues[0]).toMatchObject({
@@ -200,11 +272,11 @@ describe('service test host', () => {
 			message: 'expected public host rollback',
 		})
 		expect(rollbackCleanup).toHaveBeenCalledOnce()
-		expect(host.isRunning(RollbackFixture)).toBe(false)
+		expect(host.isRunning(RollbackFixture.nodeAddress())).toBe(false)
 
-		await host.stop(RollbackFixture)
-		await host.start(PublicFixture)
-		expect(host.isRunning(PublicFixture)).toBe(true)
+		await host.stop(RollbackFixture.nodeAddress())
+		await host.start(PublicFixture.nodeAddress())
+		expect(host.isRunning(PublicFixture.nodeAddress())).toBe(true)
 	})
 
 	it('shares concurrent disposal settlement and rejects later operations', async () => {
@@ -212,7 +284,7 @@ describe('service test host', () => {
 		const first = host.dispose()
 		const second = host.dispose()
 		expect(second).toBe(first)
-		await expect(host.start(PublicFixture)).rejects.toThrow(/closing or closed/i)
+		await expect(host.start(PublicFixture.nodeAddress())).rejects.toThrow(/closing or closed/i)
 		await expect(host.http.fetch('/probe')).rejects.toThrow(/closing or closed/i)
 		await first
 	})
@@ -221,6 +293,6 @@ describe('service test host', () => {
 it('uses an explicit service list without silently installing defaults', async () => {
 	await using host = await createServiceInternalTestHost({ services: [] })
 	expect(() => host.ctx.require(Commands)).toThrow('does not install')
-	await host.start(PublicFixture)
-	expect(host.isRunning(PublicFixture)).toBe(true)
+	await host.start(PublicFixture.nodeAddress())
+	expect(host.isRunning(PublicFixture.nodeAddress())).toBe(true)
 })

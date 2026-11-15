@@ -6,7 +6,7 @@ import {
 } from '@pluxel/core/internal/plugin-address-evidence'
 import { requirePluginService } from '@pluxel/core/internal'
 import { expect, it } from 'vitest'
-import { createCoreTestHost, definePluginFork } from '../src/internal-test'
+import { createCoreTestHost } from '../src/internal-test'
 
 let constructions = 0
 abstract class AddressToken extends BasePlugin {}
@@ -37,9 +37,9 @@ it('projects lowered default and fork addresses before any instance exists', asy
 	expect(Object.isFrozen(fork)).toBe(true)
 	expect(formatPluginNodeReference(fork)).toContain('east')
 	await using host = createCoreTestHost()
-	const instance = await host.add(AddressOwner)
+	const instance = await host.add(AddressOwner.nodeAddress())
 	expect(instance.ctx.pluginInfo.nodeAddress).toEqual(parsePluginNodeAddress(defaultNode))
-	const forkInstance = await host.add(definePluginFork(AddressOwner, 'east'))
+	const forkInstance = await host.add(AddressOwner.nodeAddress('east'))
 	expect(forkInstance.ctx.pluginInfo.nodeAddress).toEqual(parsePluginNodeAddress(fork))
 	const runtime = requirePluginService(instance.ctx)
 	const adjacency = runtime.readCommittedDependencyAdjacency()

@@ -28,8 +28,8 @@ async function startWretchFixture(
 ): Promise<void> {
 	await host.commit((change) => {
 		change.catalog.add(plugins)
-		if (initialConfig !== undefined) change.config.seed(WretchPlugin, initialConfig)
-		change.start(plugins)
+		if (initialConfig !== undefined) change.config.seed(WretchPlugin.nodeAddress(), initialConfig)
+		change.start(plugins.map((plugin) => plugin.nodeAddress()))
 	})
 }
 
@@ -77,11 +77,11 @@ describe('WretchPlugin', () => {
 			services: standardServices(),
 		})
 		await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
-		using aSettings = await openWretchSettings(host, ConsumerA)
-		using lateSettings = await openWretchSettings(host, ConsumerLateSettings)
+		using aSettings = await openWretchSettings(host, ConsumerA.nodeAddress())
+		using lateSettings = await openWretchSettings(host, ConsumerLateSettings.nodeAddress())
 		await aSettings.api.updateDto({ headers: { 'X-Owner': 'a' } })
 		await lateSettings.api.updateDto({ headers: { 'X-Owner': 'late' } })
-		const store = await host.require(WretchPlugin).ctx.tinybase.open()
+		const store = await host.require(WretchPlugin.nodeAddress()).ctx.tinybase.open()
 		const rows = Object.entries(store.getTable('consumerSettings'))
 		expect(rows).toHaveLength(2)
 		for (const [id, row] of rows) {
@@ -92,7 +92,7 @@ describe('WretchPlugin', () => {
 			).toContainEqual(parsePluginNodeAddress(JSON.parse(String(row.owner))))
 		}
 		// The provider owns this table; enabling it never opens either consumer's business Store.
-		const consumerStore = await host.require(ConsumerA).ctx.tinybase.open()
+		const consumerStore = await host.require(ConsumerA.nodeAddress()).ctx.tinybase.open()
 		expect(consumerStore.getContent()).toEqual([{}, {}])
 	})
 
@@ -104,7 +104,7 @@ describe('WretchPlugin', () => {
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
-			using settings = await openWretchSettings(host, ConsumerA)
+			using settings = await openWretchSettings(host, ConsumerA.nodeAddress())
 
 			const headersOnly = await consumeWorkbenchValue(
 				settings.api.updateDto({ headers: { 'X-Mode': 'headers' } }),
@@ -139,9 +139,9 @@ describe('WretchPlugin', () => {
 			services: standardServices(),
 		})
 		await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
-		using settings = await openWretchSettings(host, ConsumerA)
+		using settings = await openWretchSettings(host, ConsumerA.nodeAddress())
 		await settings.api.updateDto({ headers: {} })
-		const tinybase = host.require(WretchPlugin).ctx.tinybase
+		const tinybase = host.require(WretchPlugin.nodeAddress()).ctx.tinybase
 		const store = await tinybase.open()
 		const id = store.getRowIds('consumerSettings')[0]!
 		store.setCell(
@@ -151,9 +151,9 @@ describe('WretchPlugin', () => {
 			JSON.stringify(ConsumerLateSettings.nodeAddress()),
 		)
 		await tinybase.flush()
-		await host.stop(WretchPlugin)
+		await host.stop(WretchPlugin.nodeAddress())
 		const failure = await host.commitExpectFail((change) => {
-			change.start([WretchPlugin, ConsumerA])
+			change.start([WretchPlugin.nodeAddress(), ConsumerA.nodeAddress()])
 		})
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
@@ -172,18 +172,21 @@ describe('WretchPlugin', () => {
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerB])
 
-			const a = await host.require(ConsumerA).client.get('/users').json<{
+			const a = await host.require(ConsumerA.nodeAddress()).client.get('/users').json<{
 				url: string
 				consumer: string
 			}>()
-			const b = await host.require(ConsumerB).client.post({ ok: true }, '/events').json<{
-				url: string
-				consumer: string
-			}>()
+			const b = await host
+				.require(ConsumerB.nodeAddress())
+				.client.post({ ok: true }, '/events')
+				.json<{
+					url: string
+					consumer: string
+				}>()
 
 			expect(a).toEqual({ url: 'https://a.example/api/users', consumer: 'a' })
 			expect(b).toEqual({ url: 'https://b.example/v1/events', consumer: 'b' })
-			expect(host.require(WretchPlugin).client._url).toBe('')
+			expect(host.require(WretchPlugin.nodeAddress()).client._url).toBe('')
 		}
 	})
 
@@ -204,9 +207,9 @@ describe('WretchPlugin', () => {
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
-			const consumer = host.require(ConsumerA)
+			const consumer = host.require(ConsumerA.nodeAddress())
 			const client = consumer.client
-			using settings = await openWretchSettings(host, ConsumerA)
+			using settings = await openWretchSettings(host, ConsumerA.nodeAddress())
 
 			await settings.api.updateDto({
 				headers: { 'Accept-Language': 'zh-HK', 'X-Consumer': 'managed' },
@@ -220,10 +223,10 @@ describe('WretchPlugin', () => {
 				hasProxyDispatcher: true,
 			})
 
-			await host.stop(ConsumerA)
-			await host.start(ConsumerA)
+			await host.stop(ConsumerA.nodeAddress())
+			await host.start(ConsumerA.nodeAddress())
 
-			using restarted = await openWretchSettings(host, ConsumerA)
+			using restarted = await openWretchSettings(host, ConsumerA.nodeAddress())
 			const restartedSnapshot = await restarted.api.snapshotDto()
 			expect(restartedSnapshot.settings).toMatchObject({
 				headers: { 'accept-language': 'zh-HK', 'x-consumer': 'managed' },
@@ -241,7 +244,7 @@ describe('WretchPlugin', () => {
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], { timeoutMs: 1_000 })
-			using settings = await openWretchSettings(host, ConsumerA)
+			using settings = await openWretchSettings(host, ConsumerA.nodeAddress())
 
 			await expect(
 				settings.api.updateDto({ headers: {}, proxyUrl: 'http://user:pass@proxy.example' }),
@@ -283,8 +286,8 @@ describe('WretchPlugin', () => {
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerLateSettings])
 
-			const consumer = host.require(ConsumerLateSettings)
-			using settings = await openWretchSettings(host, ConsumerLateSettings)
+			const consumer = host.require(ConsumerLateSettings.nodeAddress())
+			using settings = await openWretchSettings(host, ConsumerLateSettings.nodeAddress())
 			await settings.api.updateDto({
 				headers: { 'Accept-Language': 'zh-HK' },
 			})
@@ -303,13 +306,13 @@ describe('WretchPlugin', () => {
 		await startWretchFixture(host, [WretchPlugin, ConsumerB])
 		const pending = gatedSettingsLoad()
 		try {
-			const http = host.require(ConsumerB).http
+			const http = host.require(ConsumerB.nodeAddress()).http
 			const first = http.enableManagedSettings()
 			const second = http.enableManagedSettings()
 			await waitFor(() => expect(pending.reads()).toBe(1))
 			pending.release()
 			await Promise.all([first, second])
-			using settings = await openWretchSettings(host, ConsumerB)
+			using settings = await openWretchSettings(host, ConsumerB.nodeAddress())
 			const snapshot = await settings.api.snapshotDto()
 			expect(snapshot.settings.headers).toEqual({})
 		} finally {
@@ -325,14 +328,16 @@ describe('WretchPlugin', () => {
 		await startWretchFixture(host, [WretchPlugin, ConsumerB])
 		const pending = gatedSettingsLoad()
 		try {
-			const stale = host.require(ConsumerB).http.enableManagedSettings()
+			const stale = host.require(ConsumerB.nodeAddress()).http.enableManagedSettings()
 			await waitFor(() => expect(pending.reads()).toBe(1))
-			const restart = host.restart(WretchPlugin)
+			const restart = host.restart(WretchPlugin.nodeAddress())
 			pending.release()
 			await restart
 			await expect(stale).resolves.toBeUndefined()
-			await host.restart(WretchPlugin)
-			await expect(host.require(ConsumerB).http.enableManagedSettings()).resolves.toBeUndefined()
+			await host.restart(WretchPlugin.nodeAddress())
+			await expect(
+				host.require(ConsumerB.nodeAddress()).http.enableManagedSettings(),
+			).resolves.toBeUndefined()
 			expect(pending.reads()).toBe(2)
 		} finally {
 			pending.release()
@@ -357,9 +362,9 @@ describe('WretchPlugin', () => {
 				allowedOrigins: ['https://allowed.example'],
 			})
 
-			await expect(host.require(ConsumerA).client.get('/blocked').json()).rejects.toThrow(
-				'origin is not allowed',
-			)
+			await expect(
+				host.require(ConsumerA.nodeAddress()).client.get('/blocked').json(),
+			).rejects.toThrow('origin is not allowed')
 			expect(called).toBe(false)
 		}
 	})
@@ -382,7 +387,7 @@ describe('WretchPlugin', () => {
 				maxQueuedRequests: 1,
 			})
 
-			const client = host.require(ConsumerA).client
+			const client = host.require(ConsumerA.nodeAddress()).client
 			const first = client.get('/one').json()
 			const second = client.get('/two').json()
 			const third = client.get('/three').json()
@@ -411,19 +416,21 @@ describe('WretchPlugin', () => {
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerB])
 
-			const callerClient = host.require(ConsumerB).client
-			await host.stop(ConsumerB)
+			const callerClient = host.require(ConsumerB.nodeAddress()).client
+			await host.stop(ConsumerB.nodeAddress())
 			await expect(
 				Promise.resolve().then(() => callerClient.get('/stale-caller').json()),
 			).rejects.toThrow('stopped or replaced plugin generation')
 
-			await host.start(ConsumerB)
-			const providerClient = host.require(ConsumerB).client
-			await host.restart(WretchPlugin)
+			await host.start(ConsumerB.nodeAddress())
+			const providerClient = host.require(ConsumerB.nodeAddress()).client
+			await host.restart(WretchPlugin.nodeAddress())
 			await expect(
 				Promise.resolve().then(() => providerClient.get('/stale-provider').json()),
 			).rejects.toThrow('stopped or replaced plugin generation')
-			await expect(host.require(ConsumerB).client.get('/current').json()).resolves.toEqual({
+			await expect(
+				host.require(ConsumerB.nodeAddress()).client.get('/current').json(),
+			).resolves.toEqual({
 				ok: true,
 			})
 			expect(calls).toBe(1)
@@ -439,9 +446,9 @@ describe('WretchPlugin', () => {
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 
-			using settings = await openWretchSettings(host, ConsumerA)
+			using settings = await openWretchSettings(host, ConsumerA.nodeAddress())
 			const commands = settings.api
-			await host.stop(ConsumerA)
+			await host.stop(ConsumerA.nodeAddress())
 
 			await expect(commands.snapshotDto()).rejects.toThrow('stopped or replaced plugin generation')
 			await expect(commands.updateDto({ headers: {} })).rejects.toThrow(
@@ -459,9 +466,9 @@ describe('WretchPlugin', () => {
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 
-			const settings = await openWretchSettings(host, ConsumerA)
+			const settings = await openWretchSettings(host, ConsumerA.nodeAddress())
 			const api = settings.api
-			using independentSettings = await openWretchSettings(host, ConsumerA)
+			using independentSettings = await openWretchSettings(host, ConsumerA.nodeAddress())
 			expect(independentSettings.api).not.toBe(api)
 			settings[Symbol.dispose]()
 
@@ -483,13 +490,13 @@ describe('WretchPlugin', () => {
 
 				await startWretchFixture(host, [WretchPlugin, ConsumerA])
 
-				using settings = await openWretchSettings(host, ConsumerA)
+				using settings = await openWretchSettings(host, ConsumerA.nodeAddress())
 				await settings.api.updateDto({
 					headers: {},
 					proxyUrl: 'http://proxy.example:8080',
 				})
 				const before = close.mock.calls.length
-				await host.restart(WretchPlugin)
+				await host.restart(WretchPlugin.nodeAddress())
 				expect(close.mock.calls.length).toBeGreaterThan(before)
 			}
 		} finally {
@@ -519,7 +526,7 @@ describe('WretchPlugin', () => {
 				maxQueuedRequests: 1,
 			})
 
-			const client = host.require(ConsumerA).client
+			const client = host.require(ConsumerA.nodeAddress()).client
 			const first = client
 				.get('/active')
 				.json()
@@ -536,7 +543,7 @@ describe('WretchPlugin', () => {
 					(error: unknown) => error,
 				)
 
-			await host.stop(WretchPlugin)
+			await host.stop(WretchPlugin.nodeAddress())
 			const [activeError, queuedError] = await Promise.all([first, queued])
 			expect(activeError).toMatchObject({
 				message: expect.stringContaining('stopped or replaced plugin generation'),
@@ -586,7 +593,9 @@ describe('WretchPlugin', () => {
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], { timeoutMs: 5 })
 
-			await expect(host.require(ConsumerA).client.get('/slow').json()).rejects.toMatchObject({
+			await expect(
+				host.require(ConsumerA.nodeAddress()).client.get('/slow').json(),
+			).rejects.toMatchObject({
 				name: 'TimeoutError',
 			})
 		}

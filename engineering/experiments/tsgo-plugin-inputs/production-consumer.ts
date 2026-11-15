@@ -1,5 +1,7 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, type PluginNodeAddress } from '@pluxel/core'
+import type { LogReadOptions } from '@pluxel/core/logging'
 import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
+import type { PluginDescriptor, PluginInstance, ScriptSdk } from '@pluxel/host/agent'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import * as v from 'valibot'
 
@@ -21,6 +23,36 @@ export class ExamplePlugin extends BasePlugin {
 		return this.settings.payload
 	}
 }
+
+type Equal<Left, Right> =
+	(<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2 ? true : false
+type Assert<Value extends true> = Value
+const sourceAddress = ExamplePlugin.nodeAddress()
+type SourceAddress = typeof sourceAddress
+type GeneratedInstance = { preview(): string }
+declare const generated: PluginDescriptor<
+	{ enabled: boolean },
+	{ enabled: boolean },
+	GeneratedInstance
+>
+type GeneratedAddress = ReturnType<typeof generated.nodeAddress>
+
+/** Exercise the published declaration associations without workspace source conditions. */
+export type ControlTypeChecks = readonly [
+	Assert<Equal<PluginInstance<SourceAddress>, ExamplePlugin>>,
+	Assert<Equal<PluginInstance<GeneratedAddress>, GeneratedInstance>>,
+	Assert<
+		Equal<PluginInstance<SourceAddress | GeneratedAddress>, ExamplePlugin | GeneratedInstance>
+	>,
+	Assert<Equal<PluginInstance<SourceAddress | PluginNodeAddress>, never>>,
+	Assert<Equal<Parameters<ScriptSdk['logs']['read']>[1], LogReadOptions | undefined>>,
+	Assert<
+		Equal<
+			Parameters<ScriptSdk['logs']['wait']>[1],
+			LogReadOptions & Readonly<{ timeoutMs: number }>
+		>
+	>,
+]
 
 const input: StandardSchemaV1.InferInput<typeof ExampleConfig> = {
 	payload: { raw: '42' },

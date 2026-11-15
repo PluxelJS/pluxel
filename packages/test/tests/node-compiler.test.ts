@@ -38,7 +38,7 @@ describe('test host Node source compiler', () => {
 		let artifact: URL
 		{
 			await using host = await createTestHost({ services: [nodeModules(), workers()] })
-			const plugin = await host.start(NodeConsumer)
+			const plugin = await host.start(NodeConsumer.nodeAddress())
 			const result = await plugin.run(21)
 			expect(result.value).toBe(42)
 			expect(result.threadId).toBeGreaterThan(0)
@@ -51,7 +51,10 @@ describe('test host Node source compiler', () => {
 	it('isolates concurrent hosts and keeps the surviving host usable', async () => {
 		await using first = await createTestHost({ services: [nodeModules(), workers()] })
 		await using second = await createTestHost({ services: [nodeModules(), workers()] })
-		const [a, b] = await Promise.all([first.start(NodeConsumer), second.start(NodeConsumer)])
+		const [a, b] = await Promise.all([
+			first.start(NodeConsumer.nodeAddress()),
+			second.start(NodeConsumer.nodeAddress()),
+		])
 		const [aUrl, bUrl] = await Promise.all([a.artifact(), b.artifact()])
 		expect(aUrl.href).not.toBe(bUrl.href)
 		await first.dispose()
@@ -63,7 +66,7 @@ describe('test host Node source compiler', () => {
 	it('reports a failed compilation and can still compile a valid entry', async () => {
 		await using fixture = await createDiskFixture({ 'broken.ts': 'export default = ;' })
 		await using host = await createTestHost({ services: [nodeModules()] })
-		const plugin = await host.start(NodeConsumer)
+		const plugin = await host.start(NodeConsumer.nodeAddress())
 		const broken = defineNodeModule(pathToFileURL(fixture.getPath('owner.ts')), './broken.ts')
 		await expect(plugin.artifact(broken)).rejects.toThrow(Error)
 		const url = await plugin.artifact()
@@ -84,7 +87,7 @@ describe('test host Node source compiler', () => {
 				'ready',
 			]) as ReturnType<typeof defineNodeModule>
 			await using host = await createTestHost({ services: [nodeModules(options)] })
-			const plugin = await host.start(NodeConsumer)
+			const plugin = await host.start(NodeConsumer.nodeAddress())
 			const artifact = await plugin.artifact(packaged)
 			expect(artifact.href).toBe(pathToFileURL(fixture.getPath('ready.mjs')).href)
 			await expect(plugin.artifact()).rejects.toThrow(/no packaged artifact/)
@@ -93,7 +96,7 @@ describe('test host Node source compiler', () => {
 
 	it('does not install Node services for a bare host', async () => {
 		await using host = await createTestHost()
-		const plugin = await host.start(NodeConsumer)
+		const plugin = await host.start(NodeConsumer.nodeAddress())
 		expect(plugin.capabilities()).toEqual({ nodeModules: false, workers: false })
 	})
 })

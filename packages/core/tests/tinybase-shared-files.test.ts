@@ -56,10 +56,10 @@ async function fixture(plugin: PluginConstructor = SharedState) {
 it('reloads a shared file into the same native Store and Queries without writing it back', async () => {
 	const { zenfs, file } = await fixture()
 	await using writer = createCoreTestHost({ zenfs })
-	const source = await writer.add(SharedState)
+	const source = await writer.add(SharedState.nodeAddress())
 	await source.state.flush()
 	await using reader = createCoreTestHost({ zenfs })
-	const target = await reader.add(SharedState)
+	const target = await reader.add(SharedState.nodeAddress())
 	const store = target.store
 	const queries = createQueries(store).setQueryDefinition('items', 'items', ({ select }) =>
 		select('name'),
@@ -85,7 +85,7 @@ it('reloads a shared file into the same native Store and Queries without writing
 it('validates an external snapshot against the live native schema before notifying listeners', async () => {
 	const { zenfs, file } = await fixture(SchemaState)
 	await using host = createCoreTestHost({ zenfs })
-	const owner = await host.add(SchemaState)
+	const owner = await host.add(SchemaState.nodeAddress())
 	await owner.state.flush()
 	const runtime = requireTinyBaseHost(getCoreTestHostContext(host))
 	const changes: unknown[] = []
@@ -116,7 +116,7 @@ it('validates an external snapshot against the live native schema before notifyi
 it('clears a transient read error when the same file becomes readable again', async () => {
 	const { zenfs } = await fixture()
 	await using host = createCoreTestHost({ zenfs })
-	const owner = await host.add(SharedState)
+	const owner = await host.add(SharedState.nodeAddress())
 	await owner.state.flush()
 	const ctx = getCoreTestHostContext(host)
 	const runtime = requireTinyBaseHost(ctx)
@@ -138,7 +138,7 @@ it('clears a transient read error when the same file becomes readable again', as
 it('keeps saving local changes after an observer throws during external loading', async () => {
 	const { zenfs, file } = await fixture()
 	await using host = createCoreTestHost({ zenfs })
-	const owner = await host.add(SharedState)
+	const owner = await host.add(SharedState.nodeAddress())
 	await owner.state.flush()
 	const runtime = requireTinyBaseHost(getCoreTestHostContext(host))
 	const listener = owner.store.addValueListener('title', () => {
@@ -164,7 +164,7 @@ it('keeps saving local changes after an observer throws during external loading'
 it('observes native writes from another process and reports malformed updates without replacing them', async () => {
 	const { zenfs, file } = await fixture()
 	await using host = createCoreTestHost({ zenfs })
-	const owner = await host.add(SharedState)
+	const owner = await host.add(SharedState.nodeAddress())
 	await owner.state.flush()
 	await promisify(execFile)(process.execPath, [
 		'--input-type=module',

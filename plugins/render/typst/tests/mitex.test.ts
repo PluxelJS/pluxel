@@ -117,7 +117,7 @@ it('renders the same LaTeX and cross-file references in WASM using only explicit
 			],
 		},
 	})
-	const typst = await host.start(TypstPlugin)
+	const typst = await host.start(TypstPlugin.nodeAddress())
 	const source = template
 	const files = Object.fromEntries(
 		Object.entries(documentFiles()).map(([path, content]) => [`/${path}`, content]),

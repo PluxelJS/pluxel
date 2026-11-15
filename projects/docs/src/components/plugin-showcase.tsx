@@ -90,7 +90,7 @@ import { StatusPlugin } from '../src/status'
 
 it('运行完整的 Plugin graph', async () => {
   await using host = await createTestHost()
-  const [plugin] = await host.start([StatusPlugin])
+  const [plugin] = await host.start([StatusPlugin.nodeAddress()])
   expect(plugin.status()).toEqual({ ready: true, label: 'ready' })
 })
 

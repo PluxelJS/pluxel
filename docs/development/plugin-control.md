@@ -66,6 +66,8 @@ const { get, patch } = config
 
 源码 class 地址提供原实例类型与动态 `config`，配置字段为未知数据。生成入口提供精确的配置输入／输出类型；已知无配置的插件不开放 `config`。
 
+通用工具可从 `@pluxel/host/agent` 导入 `PluginInstance<TAddress>`，同时提取源码地址和生成地址关联的实例类型。先保存 `const node = Counter.nodeAddress()`，再用 `PluginInstance<typeof node>` 提取具体实例。`PluginConfigInput<TAddress>`、`PluginConfigOutput<TAddress>` 继续用于生成地址，保留 Schema 输入与输出的对应关系。
+
 | 地址来源                           | 使用位置                     | 类型信息                              |
 | ---------------------------------- | ---------------------------- | ------------------------------------- |
 | 生成入口的 `nodeAddress()`         | 上传脚本和 Vite 项目脚本     | 配置输入/输出、声明源码和业务实例类型 |

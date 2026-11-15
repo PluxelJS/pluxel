@@ -55,7 +55,11 @@ Management 安装认证、状态投影和 RPC session；Workbench 安装内容/p
 
 Host 的 `pluginApplyReportOutcome()` 统一判定操作报告的完成结果。持久化未知、生命周期或协调问题，以及无问题的完成分别保留准确结论与原报告；Script 只转换为 Better Result，Management 只转换为其 DTO。管理生命周期失败仍交付操作后的 control 与完整 report，Workbench 刷新状态并展示其中的诊断。配置、策略与 fork 删除继续保留各自的保存、采用和排空结果。Services 的 `web/control-batch.ts` 唯一归约批量摘要，执行与 wire 校验共用；任何持久化未知项使整体返回 `unknown`，保留全部逐项结果。
 
-`status.ts` 分开维护节点枚举和单节点状态投影。列表枚举已接纳的 default、已配置的 forks 及仍被策略或运行状态引用的节点，精确读取按完整地址定位后使用同一个投影器。Services 的 label 消歧只读取节点身份和显示名，单节点查询无需构造并排序所有运行状态。所有读取来自同一 committed view，每次查询都观察当前诊断与 recent update。对应回归为 `status-projection.test.ts`。
+`status.ts` 分开维护节点枚举和单节点状态投影。列表枚举已接纳的 default、已配置的 forks 及仍被策略或运行状态引用的节点，精确读取按完整地址定位后使用同一个投影器。控制回执复用相同节点存在性与 control 投影，不为标签、诊断或 recent update 构造展示状态。所有展示读取来自同一 committed view，每次查询都观察当前诊断与 recent update。对应回归为 `status-projection.test.ts`。
+
+Management 生命周期命令的存在性校验、原生 `session.update(pluginLifecycleUpdate(...))` 和回执 control 投影属于同一次 `runExclusive`，避免随后排队的 stop 改写先前 start 的回执。批量仍逐项排队；每项开始时检查取消，已接纳项结算后，取消可阻止下一项。auto-start 批量继续使用原有的整批 CAS 独占边界，不把生命周期批次扩展成原子事务。
+
+Services 的 label 消歧缓存由 root 持有当前一份目录，先比较 catalog、state、sessionIntents、desiredControl 及 applied.nodes 的对象身份；命中后直接查地址，不枚举完整目录，也不为比较 shape 创建数组或 Map。Core adjacency 每次读取会创建新数组，因此不作为缓存证据；Core committed membership 由 Host applied.nodes 固定，其与 Core 节点同集的不变量由依赖图投影验证。新目录、fork 增删、显示名 replacement、session 引用与有效图变化使缓存失效；纯查询、配置写入和只重启已有 generation 可以复用标签。运行状态、诊断和 recent update 不缓存。
 
 ### 状态投影测量
 
@@ -72,6 +76,18 @@ Core 与 Host 构建完成后，在工作区运行 `mise exec -- node packages/h
 热索引以已发布的 `HostStateSnapshot` 对象为 WeakMap key；`HostStateStore.versionedSnapshot()` 连续读取复用同一对象，只有有效策略提交后才重建。新 state 的冷索引仍遍历 auto-start 与 forks，创建两个 Set、按 definition 聚合 forkId 的 Map 及数组；其成本由 `coldExact` 单列，不能算作恒定时间读取。
 
 这些数值只比较同一 committed view 的状态投影，排除协调排队、Core 图读取、诊断收集和 RPC。真实 SDK 每次 `readCommitted` 仍枚举并排序 Core adjacency 的节点和边、筛选运行节点，再构建运行 key 集合；精确投影还会检查当前 reconciliation 和 lifecycle issues。大量尚未启动的配置 fork 通常不进入 Core 图，本次优化消除了对它们重复创建和排序 status 的成本，不承诺完整 SDK 跨请求 O(1)。
+
+Management 的实际读取入口另用 `mise exec -- node packages/services/bench/management-status.bench.mjs` 测量，需先构建 Core、Host 和 Services。该脚本仅消费 dist，通过真实 `RuntimeManagementTargetImpl.pluginStatusDto()` 完成协调排队、Core 读取和 DTO 校验；不包含 RPC 连接、网络传输或序列化。每个 8、1,000、10,000 停止 fork 场景使用新 Host：首次调用建立标签目录，之后预热 5 次，再测 20 个样本、每样本 100 次顺序读取。计时外包装当前 session/desired Map 实例的 `values()`，验证冷目录共调用 2 次、热查询为 0；包装在 `finally` 中恢复。这些计数表示目录扫描入口，不代表对象分配量。首次目录创建仍遍历全部身份、建立标签 Map，新的 state 也可能构建 Host 读取索引，不能把首次请求算作热路径。
+
+2026-11-15 在本机 Node `v24.22.2` 上执行该入口，得到以下热查询耗时。三个场景的首次目录 iterator 调用均为 2，热查询均为 0。
+
+| 停止的配置 forks | 热 DTO 查询均值 | 热 DTO 查询中位数 |
+| ---------------- | --------------- | ----------------- |
+| 8                | 0.0288 ms       | 0.0276 ms         |
+| 1,000            | 0.0289 ms       | 0.0216 ms         |
+| 10,000           | 0.0243 ms       | 0.0221 ms         |
+
+`packages/services/tests/management/management/plugin-status-read.test.ts` 在同一真实 DTO 入口保护冷暖扫描次数、完整状态一致性，以及 fork、同名消歧、replacement、session-only 引用和 Core 成员变化的失效。`control-protocol.test.ts` 保护并发回执与逐项取消，并用会抛错的 recent update reader 验证控制回执不借道展示投影。
 
 ## 资源边界与验证入口
 

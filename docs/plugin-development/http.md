@@ -161,7 +161,7 @@ it('能够正确响应 HTTP 请求', async () => {
 		services: [elysia()],
 	})
 
-	await host.start(OrdersPlugin)
+	await host.start(OrdersPlugin.nodeAddress())
 
 	// 使用内置的轻量 fetch 客户端
 	const res = await host.http.fetch(new URL('/health', host.http.origin))

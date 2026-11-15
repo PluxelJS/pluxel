@@ -260,16 +260,16 @@ describe('Core-owned filesystem', () => {
 		await using second = await createCoreTestHost({
 			zenfs: { mounts: { '/': { backend: InMemory } } },
 		})
-		const owner = await first.add(FileOwner)
+		const owner = await first.add(FileOwner.nodeAddress())
 		const getDirectory = owner.directory
 		const directory = await getDirectory()
 		await writeFileAtomic(directory, 'document', 'PRESERVE')
 		expect(await owner.filesPart.readDocument()).toBe('PRESERVE')
-		const other = await second.add(FileOwner)
+		const other = await second.add(FileOwner.nodeAddress())
 		const otherDirectory = await other.directory()
 		await expect(otherDirectory.readFile('document')).rejects.toMatchObject({ code: 'ENOENT' })
-		await first.remove(FileOwner)
-		const restarted = await first.add(FileOwner)
+		await first.remove(FileOwner.nodeAddress())
+		const restarted = await first.add(FileOwner.nodeAddress())
 		expect(await restarted.directory()).toBe(directory)
 		expect(await restarted.filesPart.readDocument()).toBe('PRESERVE')
 		expect(await directory.readFile('document', 'utf8')).toBe('PRESERVE')

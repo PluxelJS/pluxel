@@ -6,7 +6,7 @@ describe('AuditPlugin', () => {
 	it('runs without optional services', async () => {
 		await using host = await createTestHost()
 
-		const audit = await host.start(AuditPlugin)
+		const audit = await host.start(AuditPlugin.nodeAddress())
 		audit.record('example event')
 		expect(audit.entries().map((entry) => entry.message)).toEqual(['example event'])
 	})

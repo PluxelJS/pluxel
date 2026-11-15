@@ -10,6 +10,7 @@ import type { PluginRecentUpdateSnapshot } from '../src/execution'
 import {
 	hostPluginStatusFromView,
 	hostPluginStatusOverviewFromView,
+	hostPluginControlFromView,
 	type HostPluginStatusProjectionView,
 } from '../src/status'
 
@@ -57,6 +58,44 @@ function fixture(forkCount = 3): HostPluginStatusProjectionView {
 }
 
 describe('Host exact node status', () => {
+	it('projects receipt control from the same native facts without reading presentation inputs', () => {
+		const initial = fixture()
+		const address = node('fork-1')
+		const key = pluginNodeIndexKey(address)
+		const view: HostPluginStatusProjectionView = {
+			...initial,
+			sessionIntents: new Map([[key, { address, intent: 'run' }]]),
+			desiredControl: new Map([[key, { address, activationReason: 'session' }]]),
+			runningNodeKeys: new Set([key]),
+		}
+		for (const status of hostPluginStatusOverviewFromView(view).statuses) {
+			expect(hostPluginControlFromView(view, status.address)).toEqual({
+				autoStart: status.autoStart,
+				sessionIntent: status.sessionIntent,
+				desiredState: status.desiredState,
+				activationReason: status.activationReason,
+				lifecycleState: status.lifecycleState,
+			})
+		}
+		const guarded = {
+			...view,
+			get reconciliation(): never {
+				throw new Error('Receipt read reconciliation diagnostics')
+			},
+			get lifecycleIssues(): never {
+				throw new Error('Receipt read lifecycle diagnostics')
+			},
+			get recentUpdate(): never {
+				throw new Error('Receipt read recent updates')
+			},
+		}
+		expect(hostPluginControlFromView(guarded, address)).toMatchObject({
+			sessionIntent: 'run',
+			lifecycleState: 'running',
+		})
+		expect(hostPluginControlFromView(guarded, node('unknown'))).toBeNull()
+	})
+
 	it('matches overview for stopped, running and unavailable policy-referenced nodes', () => {
 		const initial = fixture()
 		const address = node('fork-1')

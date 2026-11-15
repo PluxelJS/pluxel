@@ -1,6 +1,7 @@
 /** Compile-only consumption of the actual public SDK export. */
 import { BasePlugin, PluginPart, type PluginNodeAddress } from '@pluxel/core'
 import { Result } from '@pluxel/core/better-result'
+import type { LogReadOptions } from '@pluxel/core/logging'
 import type {
 	PluginDescriptor,
 	PluginConfigInput,
@@ -336,19 +337,26 @@ const sourceChoice =
 	Math.random() > 0.5 ? CounterPlugin.nodeAddress() : OtherSourcePlugin.nodeAddress()
 const sourceInstance = Result.unwrap(await sdk.plugin(sourceChoice).instance())
 expectTypeOf(sourceInstance).toEqualTypeOf<CounterPlugin | OtherSourcePlugin>()
+expectTypeOf<PluginInstance<typeof sourceChoice>>().toEqualTypeOf<typeof sourceInstance>()
+const sourceCounterAddress = CounterPlugin.nodeAddress()
+expectTypeOf<PluginInstance<typeof sourceCounterAddress>>().toEqualTypeOf<CounterPlugin>()
 expectTypeOf(sdk.plugin(sourceChoice).config).toEqualTypeOf<ScriptPluginConfig>()
-const sourceRef = sdk.plugin(CounterPlugin.nodeAddress())
+const sourceRef = sdk.plugin(sourceCounterAddress)
 expectTypeOf(sourceRef.config).toEqualTypeOf<ScriptPluginConfig>()
 expectTypeOf(sdk.plugin(sourceRef.address)).toEqualTypeOf<typeof sourceRef>()
 void sourceRef.config.patch({ set: { count: 3 } })
 const controlOrSource = Math.random() > 0.5 ? Counter.nodeAddress() : CounterPlugin.nodeAddress()
 const controlOrSourceInstance = Result.unwrap(await sdk.plugin(controlOrSource).instance())
 expectTypeOf(controlOrSourceInstance).toEqualTypeOf<CounterPlugin>()
+expectTypeOf<PluginInstance<typeof controlOrSource>>().toEqualTypeOf<
+	typeof controlOrSourceInstance
+>()
 // @ts-expect-error Mixed evidence retains instance access but requires narrowing for configuration.
 void sdk.plugin(controlOrSource).config
 type RawOrControl = PluginNodeAddress | ReturnType<typeof Counter.nodeAddress>
 declare const rawOrControl: RawOrControl
 const rawOrControlRef = sdk.plugin<RawOrControl>(rawOrControl)
+expectTypeOf<PluginInstance<RawOrControl>>().toBeNever()
 // @ts-expect-error A union with a plain address has no common instance evidence.
 void rawOrControlRef.instance()
 // @ts-expect-error Plain and typed branches require narrowing or explicit identity normalization.
@@ -356,6 +364,8 @@ void rawOrControlRef.config
 type RawOrSource = PluginNodeAddress | ReturnType<typeof CounterPlugin.nodeAddress>
 declare const rawOrSource: RawOrSource
 const rawOrSourceRef = sdk.plugin<RawOrSource>(rawOrSource)
+expectTypeOf<PluginInstance<RawOrSource>>().toBeNever()
+expectTypeOf<PluginInstance<PluginNodeAddress>>().toBeNever()
 // @ts-expect-error Source evidence cannot make a plain address acquire instance access.
 void rawOrSourceRef.instance()
 expectTypeOf(rawOrSourceRef.config).toEqualTypeOf<ScriptPluginConfig>()
@@ -435,6 +445,13 @@ if (logResult.isErr()) expectTypeOf(logResult.error.message).toEqualTypeOf<strin
 void sdk.logs.read(cursor, { filter: { plugin: fork.address } })
 void sdk.logs.read(cursor, { filter: { plugin: Counter.nodeAddress() } })
 void sdk.logs.read(cursor, { filter: { plugin: address } })
+const nativeLogOptions: LogReadOptions = { filter: { plugin: Counter.nodeAddress() } }
+void sdk.logs.read(cursor, nativeLogOptions)
+void sdk.logs.wait(cursor, { ...nativeLogOptions, timeoutMs: 100 })
+expectTypeOf<Parameters<ScriptSdk['logs']['read']>[1]>().toEqualTypeOf<LogReadOptions | undefined>()
+expectTypeOf<Parameters<ScriptSdk['logs']['wait']>[1]>().toEqualTypeOf<
+	LogReadOptions & Readonly<{ timeoutMs: number }>
+>()
 // @ts-expect-error The existing finite log wait deadline stays required.
 void sdk.logs.wait(cursor, { filter: { plugin: Counter.nodeAddress() } })
 

@@ -175,10 +175,10 @@ class NativeConsumer extends BasePlugin {
 describe('native OpenTelemetry providers', () => {
 	it('uses the same abstract dependency for the native provider and default preset', async () => {
 		await using host = await createTestHost({ services: standardServices(), workbench: true })
-		await host.start(NativeOtel, { catalog: [NativeConsumer] })
-		await host.start(NativeConsumer)
-		const otel = host.require(NativeOtel)
-		const consumer = host.require(NativeConsumer)
+		await host.start(NativeOtel.nodeAddress(), { catalog: [NativeConsumer] })
+		await host.start(NativeConsumer.nodeAddress())
+		const otel = host.require(NativeOtel.nodeAddress())
+		const consumer = host.require(NativeConsumer.nodeAddress())
 		const scope = formatPluginNodeReference(consumer.ctx.pluginInfo.nodeAddress)
 		expect(consumer.otel instanceof NativeOtel).toBe(true)
 		expect(consumer.otel.meter).toBe(consumer.otel.meter)
@@ -186,7 +186,7 @@ describe('native OpenTelemetry providers', () => {
 		await consumer.record()
 
 		using opened = await host.workbench.open({
-			target: NativeOtel,
+			target: NativeOtel.nodeAddress(),
 			entry: OtelWorkbench.operations,
 			principal: { provider: 'local', subject: 'local' },
 		})
@@ -236,26 +236,26 @@ describe('native OpenTelemetry providers', () => {
 			vi.spyOn(exporter, 'shutdown'),
 		)
 		opened[Symbol.dispose]()
-		await host.stop(NativeOtel)
+		await host.stop(NativeOtel.nodeAddress())
 		for (const shutdown of shutdowns) expect(shutdown).toHaveBeenCalledTimes(1)
 		expect(() => consumer.otel.meter).toThrow('stopped')
 
 		await using defaultHost = await createTestHost({ services: standardServices() })
-		await defaultHost.start(OtelPlugin, {
+		await defaultHost.start(OtelPlugin.nodeAddress(), {
 			catalog: [NativeConsumer],
 			initialConfig: { otlp: [], prometheus: {} },
 		})
-		await defaultHost.start(NativeConsumer)
-		expect(defaultHost.require(NativeConsumer).otel instanceof OtelPlugin).toBe(true)
+		await defaultHost.start(NativeConsumer.nodeAddress())
+		expect(defaultHost.require(NativeConsumer.nodeAddress()).otel instanceof OtelPlugin).toBe(true)
 	})
 
 	it('reports actual provider presence without inferring outputs from a saved preset', async () => {
 		await using host = await createTestHost({ services: standardServices(), workbench: true })
-		await host.start(TracesOnly)
-		expect(() => host.require(TracesOnly).meter).toThrow('metrics signal is disabled')
-		expect(() => host.require(TracesOnly).logger).toThrow('logs signal is disabled')
+		await host.start(TracesOnly.nodeAddress())
+		expect(() => host.require(TracesOnly.nodeAddress()).meter).toThrow('metrics signal is disabled')
+		expect(() => host.require(TracesOnly.nodeAddress()).logger).toThrow('logs signal is disabled')
 		using opened = await host.workbench.open({
-			target: TracesOnly,
+			target: TracesOnly.nodeAddress(),
 			entry: OtelWorkbench.operations,
 			principal: { provider: 'local', subject: 'local' },
 		})
@@ -274,14 +274,14 @@ describe('native OpenTelemetry providers', () => {
 
 	it('reports native flush and shutdown failures while attempting the other providers', async () => {
 		await using host = await createTestHost({ services: standardServices(), workbench: true })
-		await host.start(NativeOtel)
-		const providers = host.require(NativeOtel).providers
+		await host.start(NativeOtel.nodeAddress())
+		const providers = host.require(NativeOtel.nodeAddress()).providers
 		const flushFailure = new Error('native trace flush failed')
 		vi.spyOn(providers.tracerProvider!, 'forceFlush').mockRejectedValueOnce(flushFailure)
 		const metricFlush = vi.spyOn(providers.meterProvider!, 'forceFlush')
 		const logFlush = vi.spyOn(providers.loggerProvider!, 'forceFlush')
 		using opened = await host.workbench.open({
-			target: NativeOtel,
+			target: NativeOtel.nodeAddress(),
 			entry: OtelWorkbench.operations,
 			principal: { provider: 'local', subject: 'local' },
 		})
@@ -296,7 +296,7 @@ describe('native OpenTelemetry providers', () => {
 		})
 		const metricShutdown = vi.spyOn(providers.meterProvider!, 'shutdown')
 		const logShutdown = vi.spyOn(providers.loggerProvider!, 'shutdown')
-		const failed = await host.commitExpectFail((change) => change.stop(NativeOtel))
+		const failed = await host.commitExpectFail((change) => change.stop(NativeOtel.nodeAddress()))
 		expect(failed.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
 				phase: 'drain',
@@ -310,7 +310,7 @@ describe('native OpenTelemetry providers', () => {
 
 	it('rejects an empty native provider result', async () => {
 		await using host = await createTestHost()
-		const failure = await host.commitExpectFail((change) => change.start(EmptyOtel))
+		const failure = await host.commitExpectFail((change) => change.start(EmptyOtel.nodeAddress()))
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({ message: expect.stringContaining('at least one native provider') }),
 		)
@@ -318,7 +318,9 @@ describe('native OpenTelemetry providers', () => {
 
 	it('closes handed-off native providers when later generation initialization fails', async () => {
 		await using host = await createTestHost()
-		const failure = await host.commitExpectFail((change) => change.start(InitFailureOtel))
+		const failure = await host.commitExpectFail((change) =>
+			change.start(InitFailureOtel.nodeAddress()),
+		)
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
 				message: 'application init failed after provider handoff',
@@ -338,8 +340,8 @@ describe('native OpenTelemetry providers', () => {
 		try {
 			await using host = await createTestHost()
 			const failure = await host.commitExpectFail((change) => {
-				change.config.seed(OtelPlugin, { otlp: [], prometheus: {} })
-				change.start(OtelPlugin)
+				change.config.seed(OtelPlugin.nodeAddress(), { otlp: [], prometheus: {} })
+				change.start(OtelPlugin.nodeAddress())
 			})
 			const start = failure.lifecycleReport.issues.find((issue) => issue.phase === 'start')
 			expect(start?.error?.name).toBe('AggregateError')

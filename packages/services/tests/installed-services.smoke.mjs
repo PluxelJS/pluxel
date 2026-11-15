@@ -1110,7 +1110,7 @@ __setPluginDefinition(Owner, {
 })
 const host = await createTestHost({ services: [nodeModules(), workers()] })
 try {
- const owner = await host.start(Owner)
+ const owner = await host.start(Owner.nodeAddress())
  assert.equal(await owner.runTask(), 42)
  await owner.inspectArtifact()
  await access(artifact)

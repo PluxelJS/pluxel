@@ -12,7 +12,7 @@ describe('AuthPlugin lifecycle', () => {
 				management: true,
 			})
 
-			await host.start(AuthPlugin, {
+			await host.start(AuthPlugin.nodeAddress(), {
 				initialConfig: { mode: { type: 'password' } },
 			})
 			expect(await host.ctx.adminAccess?.describe()).toEqual({
@@ -24,7 +24,7 @@ describe('AuthPlugin lifecycle', () => {
 					ready: false,
 				},
 			})
-			await host.stop(AuthPlugin)
+			await host.stop(AuthPlugin.nodeAddress())
 			expect(await host.ctx.adminAccess?.describe()).toEqual({
 				policy: 'provider-or-local-recovery',
 				provider: null,
@@ -36,7 +36,7 @@ describe('AuthPlugin lifecycle', () => {
 		{
 			await using host = await createServiceInternalTestHost({ management: true })
 
-			await host.start(AuthPlugin, {
+			await host.start(AuthPlugin.nodeAddress(), {
 				initialConfig: {
 					mode: {
 						type: 'oidc',

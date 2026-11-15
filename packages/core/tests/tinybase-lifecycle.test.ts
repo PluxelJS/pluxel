@@ -10,7 +10,7 @@ import { createQueries } from 'tinybase/queries'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InMemory, Passthrough } from '../src/fs'
 import { pluginNodePhysicalKey } from '../src/internal/plugin-address'
-import { createCoreTestHost, definePluginFork, getCoreTestHostContext } from '../src/internal-test'
+import { createCoreTestHost, getCoreTestHostContext } from '../src/internal-test'
 import { requireTinyBaseHost } from '../src/internal/storage'
 import { encodeSnapshot } from '../src/tinybase/codec'
 
@@ -77,7 +77,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 			await using host = await createCoreTestHost({
 				zenfs: { mounts: { '/': { backend: InMemory } } },
 			})
-			const owner = await host.add(HandleOwner)
+			const owner = await host.add(HandleOwner.nodeAddress())
 			// @ts-expect-error Deliberately exercise invalid JavaScript callers without widening the public contract.
 			await expect(owner.state.open(input)).rejects.toMatchObject({ code: 'INVALID_STORE' })
 			expect(createStore).not.toHaveBeenCalled()
@@ -93,7 +93,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 			await using host = await createCoreTestHost({
 				zenfs: { mounts: { '/': { backend: InMemory } } },
 			})
-			const owner = await host.add(HandleOwner)
+			const owner = await host.add(HandleOwner.nodeAddress())
 			const store = attachment === 'mergeable' ? createMergeableStore() : createStore()
 			let cleanup: () => void | Promise<void> = () => {}
 			if (attachment === 'listener') {
@@ -145,15 +145,15 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 		await using host = await createCoreTestHost({
 			zenfs: { mounts: { '/': { backend: InMemory } } },
 		})
-		const owner = await host.add(HandleOwner)
+		const owner = await host.add(HandleOwner.nodeAddress())
 		const store = createStore()
 		await owner.state.open(store)
-		const fork = definePluginFork(HandleOwner, 'other')
+		const fork = HandleOwner.nodeAddress('other')
 		const other = await host.add(fork)
 		await expect(other.state.open(store)).rejects.toMatchObject({ code: 'STORE_IN_USE' })
-		await host.remove(HandleOwner)
+		await host.remove(HandleOwner.nodeAddress())
 		expect(Object.values(store.getListenerStats()).every((count) => count === 0)).toBe(true)
-		const replacement = await host.add(HandleOwner)
+		const replacement = await host.add(HandleOwner.nodeAddress())
 		await expect(replacement.state.open(store)).rejects.toMatchObject({ code: 'STORE_IN_USE' })
 		await replacement.state.open()
 		await replacement.state.flush()
@@ -164,12 +164,12 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 		await using host = await createCoreTestHost({
 			zenfs: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
 		})
-		const owner = await host.add(HandleOwner)
+		const owner = await host.add(HandleOwner.nodeAddress())
 		expect(owner.state).toBeDefined()
 		expect(createStore).not.toHaveBeenCalled()
 		expect(requireTinyBaseHost(getCoreTestHostContext(host)).status()).toEqual([])
 		await expect(stat(nodeFile(prefix, HandleOwner))).rejects.toMatchObject({ code: 'ENOENT' })
-		await host.remove(HandleOwner)
+		await host.remove(HandleOwner.nodeAddress())
 		expect(createStore).not.toHaveBeenCalled()
 		expect(requireTinyBaseHost(getCoreTestHostContext(host)).status()).toEqual([])
 	})
@@ -200,7 +200,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 			await using host = await createCoreTestHost({
 				zenfs: { mounts: { '/': { backend: Passthrough, fs: native, prefix } } },
 			})
-			const owner = await host.add(ownerClass)
+			const owner = await host.add(ownerClass.nodeAddress())
 			expect(requireTinyBaseHost(getCoreTestHostContext(host)).status()).toEqual([])
 			const state = owner instanceof HandleOwner ? owner.state : owner.state()
 			const store = createStore().setValue('value', 'initial')
@@ -250,7 +250,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 			await using host = await createCoreTestHost({
 				zenfs: { mounts: { '/': { backend: Passthrough, fs: native, prefix } } },
 			})
-			const owner = await host.add(HandleOwner)
+			const owner = await host.add(HandleOwner.nodeAddress())
 			const store: Store = createStore().setValue('seed', 'unpublished candidate')
 			const opening = owner.state.open(store)
 			void opening.catch(() => {})
@@ -268,7 +268,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 			try {
 				await entered.promise
 				let stopped = false
-				stopping = target === 'Plugin' ? host.remove(HandleOwner) : host.dispose()
+				stopping = target === 'Plugin' ? host.remove(HandleOwner.nodeAddress()) : host.dispose()
 				void stopping.then((): undefined => {
 					stopped = true
 					return undefined
@@ -292,7 +292,7 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 				await using reopened = await createCoreTestHost({
 					zenfs: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
 				})
-				const replacement = await reopened.add(HandleOwner)
+				const replacement = await reopened.add(HandleOwner.nodeAddress())
 				const restored = await replacement.state.open()
 				expect(restored.getValue('value')).toBe(backing === 'existing' ? 'confirmed' : undefined)
 				expect(restored.getValue('seed')).toBeUndefined()

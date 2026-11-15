@@ -24,8 +24,8 @@ const fontPath = [
 describe('Fonts deployment without Workbench', () => {
 	it('runs its core capability and saves preferences with no services', async () => {
 		await using host = await createTestHost({ services: [] })
-		await host.start(FontsPlugin, { initialConfig: { defaultFamily: 'serif' } })
-		const fonts = host.require(FontsPlugin)
+		await host.start(FontsPlugin.nodeAddress(), { initialConfig: { defaultFamily: 'serif' } })
+		const fonts = host.require(FontsPlugin.nodeAddress())
 		expect(fonts.ctx.workbench).toBeUndefined()
 		expect(fonts.ctx.fs).toBeTypeOf('function')
 		expect(fonts.defaultFont).toMatchObject({ family: 'serif', source: 'config' })
@@ -72,8 +72,8 @@ describe('Fonts deployment without Workbench', () => {
 					policy: resolved.policy,
 					runtime: resolved.runtime,
 				})
-				await host.start(FontsPlugin)
-				let fonts = host.require(FontsPlugin)
+				await host.start(FontsPlugin.nodeAddress())
+				let fonts = host.require(FontsPlugin.nodeAddress())
 				expect(fonts.ctx.workbench).toBeUndefined()
 				expect(fonts.defaultFont).toMatchObject({ family: 'serif', source: 'config' })
 				expect(fonts.portableFonts.fonts).toHaveLength(1)
@@ -81,9 +81,9 @@ describe('Fonts deployment without Workbench', () => {
 				expect(resource.family).toBeUndefined()
 				const bytes = await fonts.readPortableFont(resource.id)
 				expect(bytes.byteLength).toBe(resource.byteLength)
-				await host.stop(FontsPlugin)
-				await host.start(FontsPlugin)
-				fonts = host.require(FontsPlugin)
+				await host.stop(FontsPlugin.nodeAddress())
+				await host.start(FontsPlugin.nodeAddress())
+				fonts = host.require(FontsPlugin.nodeAddress())
 				expect(fonts.portableFonts.fonts).toHaveLength(1)
 				await expect(fonts.readPortableFont(resource.id)).resolves.toHaveLength(resource.byteLength)
 			} finally {
@@ -98,7 +98,7 @@ describe('Fonts deployment without Workbench', () => {
 			await using host = await createTestHost({ services: [] })
 			const failure = await host.commitExpectFail((change) => {
 				change.catalog.add([FontsPlugin])
-				change.start(FontsPlugin, {
+				change.start(FontsPlugin.nodeAddress(), {
 					initialConfig: { files: [fontPath!, join(tmpdir(), crypto.randomUUID(), 'missing.ttf')] },
 				})
 			})
@@ -109,11 +109,11 @@ describe('Fonts deployment without Workbench', () => {
 					message: expect.stringContaining('Cannot read configured font file'),
 				}),
 			)
-			expect(host.isRunning(FontsPlugin)).toBe(false)
-			const result = await host.config.patch(FontsPlugin, { set: { files: [] } })
+			expect(host.isRunning(FontsPlugin.nodeAddress())).toBe(false)
+			const result = await host.config.patch(FontsPlugin.nodeAddress(), { set: { files: [] } })
 			expect(result.ok).toBe(true)
-			await host.start(FontsPlugin)
-			expect(host.require(FontsPlugin).portableFonts.fonts).toEqual([])
+			await host.start(FontsPlugin.nodeAddress())
+			expect(host.require(FontsPlugin.nodeAddress()).portableFonts.fonts).toEqual([])
 		},
 	)
 })

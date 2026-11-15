@@ -96,18 +96,18 @@ describe('@pluxel/plugin-redis rates backend', () => {
 			})
 
 			await host.commit((change) => {
-				change.start(FakeRatesRedisPlugin)
-				change.start(RedisRatesBackendPlugin, {
+				change.start(FakeRatesRedisPlugin.nodeAddress())
+				change.start(RedisRatesBackendPlugin.nodeAddress(), {
 					initialConfig: {
 						connectionId: 'rates',
 						keyPrefix: 'pluxel:{rates}:',
 					},
 				})
-				change.start(RatesPlugin)
-				change.start(RedisRatesConsumer)
+				change.start(RatesPlugin.nodeAddress())
+				change.start(RedisRatesConsumer.nodeAddress())
 			})
-			const consumer = host.require(RedisRatesConsumer)
-			const redis = host.require(FakeRatesRedisPlugin).fake
+			const consumer = host.require(RedisRatesConsumer.nodeAddress())
+			const redis = host.require(FakeRatesRedisPlugin.nodeAddress()).fake
 			let slidingLogSource = ''
 
 			for (const policy of policies) {
@@ -137,7 +137,7 @@ describe('@pluxel/plugin-redis rates backend', () => {
 			expect(slidingLogSource).toContain("'(' .. cutoff, '+inf', 'WITHSCORES'")
 			expect(redis.evalShaCalls).toHaveLength(4)
 			expect(redis.evalCalls).toHaveLength(4)
-			expect(host.require(FakeRatesRedisPlugin).selectedIds).toEqual(['rates'])
+			expect(host.require(FakeRatesRedisPlugin.nodeAddress()).selectedIds).toEqual(['rates'])
 		}
 	})
 
@@ -148,13 +148,15 @@ describe('@pluxel/plugin-redis rates backend', () => {
 			})
 
 			await host.start([
-				FakeRatesRedisPlugin,
-				RedisRatesBackendPlugin,
-				RatesPlugin,
-				RedisRatesConsumer,
+				FakeRatesRedisPlugin.nodeAddress(),
+				RedisRatesBackendPlugin.nodeAddress(),
+				RatesPlugin.nodeAddress(),
+				RedisRatesConsumer.nodeAddress(),
 			])
-			const limiter = host.require(RedisRatesConsumer).rates.use('stable', policies[0]!)
-			const redis = host.require(FakeRatesRedisPlugin).fake
+			const limiter = host
+				.require(RedisRatesConsumer.nodeAddress())
+				.rates.use('stable', policies[0]!)
+			const redis = host.require(FakeRatesRedisPlugin.nodeAddress()).fake
 			await limiter.consume('first')
 			redis.reply = [0, 0, 250, 5_001_000]
 			expect(await limiter.consume('second')).toEqual({
@@ -177,13 +179,15 @@ describe('@pluxel/plugin-redis rates backend', () => {
 			})
 
 			await host.start([
-				FakeRatesRedisPlugin,
-				RedisRatesBackendPlugin,
-				RatesPlugin,
-				RedisRatesConsumer,
+				FakeRatesRedisPlugin.nodeAddress(),
+				RedisRatesBackendPlugin.nodeAddress(),
+				RatesPlugin.nodeAddress(),
+				RedisRatesConsumer.nodeAddress(),
 			])
-			const limiter = host.require(RedisRatesConsumer).rates.use('conflict', policies[1]!)
-			const redis = host.require(FakeRatesRedisPlugin).fake
+			const limiter = host
+				.require(RedisRatesConsumer.nodeAddress())
+				.rates.use('conflict', policies[1]!)
+			const redis = host.require(FakeRatesRedisPlugin.nodeAddress()).fake
 			redis.reply = [-1, 'token-bucket', 10, 60_000, 20]
 			await expect(limiter.consume('user')).rejects.toMatchObject({
 				code: 'RATES_POLICY_CONFLICT',

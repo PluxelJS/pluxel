@@ -40,7 +40,7 @@ it('runs WASM through Pluxel, recovers source errors, and restarts without nativ
 			],
 		},
 	})
-	const typst = await host.start(TypstPlugin)
+	const typst = await host.start(TypstPlugin.nodeAddress())
 	const rendering = typst.renderSvg(source)
 	await expect(typst.renderSvg(source)).rejects.toMatchObject({ code: 'BUSY' })
 	const svg = new TextDecoder().decode(await rendering)
@@ -90,9 +90,9 @@ it('runs WASM through Pluxel, recovers source errors, and restarts without nativ
 		code: 'COMPILE_FAILED',
 	})
 	expect(await typst.renderSvg(source)).toEqual(await rendering)
-	await host.stop(TypstPlugin)
+	await host.stop(TypstPlugin.nodeAddress())
 	await expect(typst.renderSvg(source)).rejects.toMatchObject({ code: 'CLOSED' })
-	const restarted = await host.start(TypstPlugin)
+	const restarted = await host.start(TypstPlugin.nodeAddress())
 	expect(new TextDecoder().decode(await restarted.renderSvg(source))).toContain('<svg')
 	expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([...assets.keys(), ...assets.keys()])
 }, 30_000)

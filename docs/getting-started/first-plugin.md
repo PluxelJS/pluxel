@@ -89,7 +89,7 @@ it('能够正确读取配置，并在停止后销毁定时器', async () => {
 		await using host = await createTestHost()
 
 		// 启动待测插件，并传入自定义初始配置
-		const plugin = await host.start(StatusPlugin, {
+		const plugin = await host.start(StatusPlugin.nodeAddress(), {
 			initialConfig: { label: 'healthy', intervalMs: 1_000 },
 		})
 
@@ -101,7 +101,7 @@ it('能够正确读取配置，并在停止后销毁定时器', async () => {
 		expect(plugin.snapshot().samples).toBe(1)
 
 		// 停止插件
-		await host.stop(StatusPlugin)
+		await host.stop(StatusPlugin.nodeAddress())
 
 		// 再次推进时间，确认后台定时器已彻底停止
 		vi.advanceTimersByTime(1_000)

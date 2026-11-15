@@ -9,6 +9,7 @@ import { resolveContextCapability } from '@pluxel/core/host'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { NodeElysiaApplicationCarrier } from '../../../packages/services/src/elysia/node'
 import { RUNTIME_SESSION_PATH, type RuntimeSessionRoot } from '@pluxel/services/management/session'
+import { RUNTIME_MANAGEMENT_PROTOCOL_MAJOR } from '@pluxel/services/management/protocol'
 import NodeWebSocket from 'crossws/websocket'
 import { describe, expect, it } from 'vitest'
 import { CredentialStore } from '../src/credentials.ts'
@@ -76,7 +77,7 @@ describe('official authentication vNext Runtime integration', () => {
 			const management = await ready.management.describeDto()
 			try {
 				expect(management).toMatchObject({
-					protocol: { name: 'pluxel.management', major: 11 },
+					protocol: { name: 'pluxel.management', major: RUNTIME_MANAGEMENT_PROTOCOL_MAJOR },
 					workbench: { enabled: false },
 				})
 			} finally {
@@ -97,7 +98,9 @@ describe('official authentication vNext Runtime integration', () => {
 				(): void => undefined,
 			)
 			await withRuntimeSessionTimeout(stopped, 'authentication provider self-stop')
-			await expect.poll(() => fixture.host.isRunning(AuthPlugin), { timeout: 3_000 }).toBe(false)
+			await expect
+				.poll(() => fixture.host.isRunning(AuthPlugin.nodeAddress()), { timeout: 3_000 })
+				.toBe(false)
 		} finally {
 			disposeRpcValue(ready)
 			connection.root[Symbol.dispose]()
@@ -114,11 +117,11 @@ describe('official authentication vNext Runtime integration', () => {
 			},
 			{ requestAddress: peerAddress },
 		)
-		await host.start(AuthPlugin, {
+		await host.start(AuthPlugin.nodeAddress(), {
 			initialConfig: { mode: { type: 'password' } },
 		})
 
-		const initial = host.require(AuthPlugin)
+		const initial = host.require(AuthPlugin.nodeAddress())
 		expect(await host.ctx.adminAccess?.describe()).toMatchObject({
 			provider: { method: 'password', ready: false },
 		})
@@ -131,8 +134,8 @@ describe('official authentication vNext Runtime integration', () => {
 			password: await hashPassword(PASSWORD),
 		})
 
-		await host.stop(AuthPlugin)
-		await host.start(AuthPlugin)
+		await host.stop(AuthPlugin.nodeAddress())
+		await host.start(AuthPlugin.nodeAddress())
 		expect(await host.ctx.adminAccess?.describe()).toMatchObject({
 			provider: { method: 'password', ready: true },
 		})
@@ -183,7 +186,7 @@ describe('official authentication vNext Runtime integration', () => {
 			{ management: true },
 			{ requestAddress: peerAddress },
 		)
-		await host.start(AuthPlugin, {
+		await host.start(AuthPlugin.nodeAddress(), {
 			initialConfig: {
 				mode: {
 					type: 'oidc',
@@ -254,7 +257,7 @@ class AuthRuntimeSessionCarrierFixture implements AsyncDisposable {
 	}
 
 	async start(): Promise<void> {
-		const initial = await this.host.start(AuthPlugin, {
+		const initial = await this.host.start(AuthPlugin.nodeAddress(), {
 			initialConfig: { mode: { type: 'password' } },
 		})
 		const store = new CredentialStore(initial.ctx.vault)
@@ -265,8 +268,8 @@ class AuthRuntimeSessionCarrierFixture implements AsyncDisposable {
 			normalizedUsername: 'admin',
 			password: await hashPassword(PASSWORD),
 		})
-		await this.host.stop(AuthPlugin)
-		await this.host.start(AuthPlugin)
+		await this.host.stop(AuthPlugin.nodeAddress())
+		await this.host.start(AuthPlugin.nodeAddress())
 		this.server.listen(0, '127.0.0.1')
 		await once(this.server, 'listening')
 		this.listening = true

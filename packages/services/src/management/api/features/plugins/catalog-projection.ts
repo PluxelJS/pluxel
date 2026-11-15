@@ -8,7 +8,6 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import {
-	readHostPluginStatusOverview,
 	hostPluginStatusOverviewFromView,
 	hostPluginStatusFromView,
 	hostPluginCatalogEntriesFromView,
@@ -16,6 +15,7 @@ import {
 	type HostPluginStatusOverview,
 	type HostPluginStatusProjectionView,
 	type HostPluginStatusSnapshot,
+	type HostPluginGraphCommittedView,
 } from '@pluxel/host/internal'
 
 export { buildPluginNodeLabels, type PluginNodeLabel } from '@pluxel/core'
@@ -36,7 +36,11 @@ export type PluginCatalogProjection = Readonly<{
 }>
 
 type PluginCatalogStaticProjection = Readonly<{
-	shape: readonly Readonly<{ nodeKey: string; displayName: string }>[]
+	catalog: PluginCatalogProjectionView['catalog']
+	state: PluginCatalogProjectionView['state']
+	sessionIntents: PluginCatalogProjectionView['sessionIntents']
+	desiredControl: PluginCatalogProjectionView['desiredControl']
+	appliedNodes: HostPluginGraphCommittedView['applied']['nodes']
 	byAddress: ReadonlyMap<
 		string,
 		Readonly<{
@@ -48,37 +52,38 @@ type PluginCatalogStaticProjection = Readonly<{
 	>
 }>
 
-const staticProjectionByRoot = new WeakMap<PlxContext, PluginCatalogStaticProjection>()
+/** Core returns fresh adjacency arrays; its committed membership is owned by the applied map. */
+export type PluginCatalogProjectionView = HostPluginStatusProjectionView &
+	Pick<HostPluginGraphCommittedView, 'applied'>
 
-export async function projectPluginCatalog(pCtx: PlxContext): Promise<PluginCatalogProjection> {
-	return projectPluginCatalogOverview(pCtx.root, await readHostPluginStatusOverview(pCtx))
-}
+const staticProjectionByRoot = new WeakMap<PlxContext, PluginCatalogStaticProjection>()
 
 /** @internal Projects the catalog from one coordinator-pinned committed view. */
 export function projectPluginCatalogFromView(
 	root: PlxContext,
-	view: HostPluginStatusProjectionView,
+	view: PluginCatalogProjectionView,
 ): PluginCatalogProjection {
-	return projectPluginCatalogOverview(root, hostPluginStatusOverviewFromView(view))
+	return projectPluginCatalogOverview(root, view, hostPluginStatusOverviewFromView(view))
 }
 
 /** One runtime projection; the label inventory contains identity and display names only. */
 export function projectPluginStatusFromView(
 	root: PlxContext,
-	view: HostPluginStatusProjectionView,
+	view: PluginCatalogProjectionView,
 	address: PluginNodeAddress,
 ): PluginCatalogProjectionEntry | null {
 	const status = hostPluginStatusFromView(view, address)
 	if (!status) return null
-	const labels = staticPluginCatalogProjection(root, hostPluginCatalogEntriesFromView(view))
+	const labels = staticPluginCatalogProjection(root, view)
 	return { ...status, ...labels.byAddress.get(pluginNodeIndexKey(address))! }
 }
 
 function projectPluginCatalogOverview(
 	root: PlxContext,
+	view: PluginCatalogProjectionView,
 	overview: HostPluginStatusOverview,
 ): PluginCatalogProjection {
-	const projected = staticPluginCatalogProjection(root, overview.statuses)
+	const projected = staticPluginCatalogProjection(root, view, overview.statuses)
 	const entries = overview.statuses.map((entry) => ({
 		...entry,
 		...projected.byAddress.get(pluginNodeIndexKey(entry.address))!,
@@ -93,27 +98,27 @@ function projectPluginCatalogOverview(
 
 function staticPluginCatalogProjection(
 	root: PlxContext,
-	statuses: readonly HostPluginCatalogEntry[],
+	view: PluginCatalogProjectionView,
+	statuses?: readonly HostPluginCatalogEntry[],
 ): PluginCatalogStaticProjection {
-	const shape = statuses.map(({ address, displayName }) => ({
-		nodeKey: pluginNodeIndexKey(address),
-		displayName,
-	}))
 	const cached = staticProjectionByRoot.get(root)
-	const names = new Map(shape.map(({ nodeKey, displayName }) => [nodeKey, displayName]))
 	if (
 		cached &&
-		cached.shape.length === shape.length &&
-		cached.shape.every((entry) => names.get(entry.nodeKey) === entry.displayName)
+		cached.catalog === view.catalog &&
+		cached.state === view.state &&
+		cached.sessionIntents === view.sessionIntents &&
+		cached.desiredControl === view.desiredControl &&
+		cached.appliedNodes === view.applied.nodes
 	) {
 		return cached
 	}
 
+	const inventory = statuses ?? hostPluginCatalogEntriesFromView(view)
 	const labels = buildPluginNodeLabels(
-		statuses.map(({ address, displayName }) => ({ nodeAddress: address, displayName })),
+		inventory.map(({ address, displayName }) => ({ nodeAddress: address, displayName })),
 	)
 	const byAddress = new Map(
-		statuses.map(({ address }) => {
+		inventory.map(({ address }) => {
 			const nodeKey = pluginNodeIndexKey(address)
 			return [
 				nodeKey,
@@ -126,7 +131,14 @@ function staticPluginCatalogProjection(
 			] as const
 		}),
 	)
-	const projection = Object.freeze({ shape: Object.freeze(shape), byAddress })
+	const projection = Object.freeze({
+		catalog: view.catalog,
+		state: view.state,
+		sessionIntents: view.sessionIntents,
+		desiredControl: view.desiredControl,
+		appliedNodes: view.applied.nodes,
+		byAddress,
+	})
 	staticProjectionByRoot.set(root, projection)
 	return projection
 }

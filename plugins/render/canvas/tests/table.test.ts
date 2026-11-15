@@ -21,7 +21,7 @@ async function startCanvasFixture(
 ): Promise<void> {
 	await host.commit((change) => {
 		change.catalog.add(plugins)
-		change.start(plugins)
+		change.start(plugins.map((plugin) => plugin.nodeAddress()))
 	})
 }
 
@@ -31,7 +31,7 @@ describe('Canvas table tools', () => {
 			services: standardServices(),
 		})
 		await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTableConsumer])
-		const canvas = host.require(CanvasTableConsumer).canvas
+		const canvas = host.require(CanvasTableConsumer.nodeAddress()).canvas
 		const font = `14px ${canvas.defaultFont.cssFamily}`
 		const table = layoutTable({
 			x: 8,
@@ -101,7 +101,7 @@ describe('Canvas table tools', () => {
 			services: standardServices(),
 		})
 		await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTableConsumer])
-		const snapshot = host.require(CanvasTableConsumer).canvas.workerSnapshot
+		const snapshot = host.require(CanvasTableConsumer.nodeAddress()).canvas.workerSnapshot
 		const workerCanvas = createCanvasWorkerAdapter(structuredClone(snapshot))
 		const workerText = createCanvasWorkerTextLayout(structuredClone(snapshot))
 		try {

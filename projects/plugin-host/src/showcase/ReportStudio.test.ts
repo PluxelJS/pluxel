@@ -56,46 +56,46 @@ describe('ReportStudioPlugin', () => {
 				WretchPlugin,
 				OtelPlugin,
 			])
-			change.config.seed(S3Plugin, {
+			change.config.seed(S3Plugin.nodeAddress(), {
 				buckets: [
 					localStorageConfig('drafts', storageRoot, 'drafts'),
 					localStorageConfig('releases', storageRoot, 'releases'),
 				],
 			})
-			change.config.seed(OtelPlugin, {
+			change.config.seed(OtelPlugin.nodeAddress(), {
 				otlp: [],
 				prometheus: { path: '/showcase/metrics' },
 			})
 
 			change.dependencies.setOverride({
-				consumer: CachePlugin,
+				consumer: CachePlugin.nodeAddress(),
 				requirement: CacheBackend,
-				provider: MemoryCacheBackendPlugin,
+				provider: MemoryCacheBackendPlugin.nodeAddress(),
 			})
 			change.dependencies.setOverride({
-				consumer: RatesPlugin,
+				consumer: RatesPlugin.nodeAddress(),
 				requirement: RatesBackend,
-				provider: MemoryRatesBackendPlugin,
+				provider: MemoryRatesBackendPlugin.nodeAddress(),
 			})
 			change.dependencies.setOverride({
-				consumer: ReportStudioPlugin,
+				consumer: ReportStudioPlugin.nodeAddress(),
 				requirement: Cache,
-				provider: CachePlugin,
+				provider: CachePlugin.nodeAddress(),
 			})
 			change.dependencies.setOverride({
-				consumer: ReportStudioPlugin,
+				consumer: ReportStudioPlugin.nodeAddress(),
 				requirement: Rates,
-				provider: RatesPlugin,
+				provider: RatesPlugin.nodeAddress(),
 			})
 			change.dependencies.setOverride({
-				consumer: ReportStudioPlugin,
+				consumer: ReportStudioPlugin.nodeAddress(),
 				requirement: S3,
-				provider: S3Plugin,
+				provider: S3Plugin.nodeAddress(),
 			})
-			change.start(ReportStudioPlugin)
+			change.start(ReportStudioPlugin.nodeAddress())
 		})
 
-		const studio = host.require(ReportStudioPlugin)
+		const studio = host.require(ReportStudioPlugin.nodeAddress())
 		const subscribe = studio.subscribe.bind(studio)
 		const releasePanelSubscriptions = vi.fn()
 		const subscriptionSpy = vi.spyOn(studio, 'subscribe').mockImplementation((listener) => {
@@ -109,12 +109,12 @@ describe('ReportStudioPlugin', () => {
 		})
 		const principal = { provider: 'test', subject: 'report-panels' }
 		using statusPanel = await host.workbench.open({
-			target: ReportStudioPlugin,
+			target: ReportStudioPlugin.nodeAddress(),
 			entry: ReportStudioWorkbench.studioStatus,
 			principal,
 		})
 		using artifactsPanel = await host.workbench.open({
-			target: ReportStudioPlugin,
+			target: ReportStudioPlugin.nodeAddress(),
 			entry: ReportStudioWorkbench.studioArtifacts,
 			principal,
 		})
@@ -129,7 +129,7 @@ describe('ReportStudioPlugin', () => {
 			data: { artifacts: [] },
 		})
 		using studioView = await host.workbench.open({
-			target: ReportStudioPlugin,
+			target: ReportStudioPlugin.nodeAddress(),
 			entry: ReportStudioWorkbench.studio,
 			location: '/architecture-lab',
 			principal,
@@ -158,7 +158,7 @@ describe('ReportStudioPlugin', () => {
 		artifactsPanel[Symbol.dispose]()
 		expect(releasePanelSubscriptions).toHaveBeenCalledTimes(2)
 		subscriptionSpy.mockRestore()
-		const storage = host.require(S3Plugin)
+		const storage = host.require(S3Plugin.nodeAddress())
 		expect(await storage.bucket('drafts').client.getObject(first.objectKey)).not.toBeNull()
 		expect(
 			await storage.bucket('releases').client.getObject(`releases/${first.id}.png`),

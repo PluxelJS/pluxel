@@ -15,9 +15,18 @@ import {
 import { pluginApplyReportOutcome } from '@pluxel/host/internal/protocol'
 import { RuntimeManagementTargetImpl } from '../../../src/management/services/management/RuntimeManagementTarget.ts'
 import type { PluginApplyReport } from '../../../src/management/web/protocol.ts'
+import { bindManagementHostOptions } from '../../../src/management/host-options.ts'
 
 @Plugin()
 class ManagedPlugin extends BasePlugin {}
+
+let admittedStart: (() => Promise<void>) | undefined
+@Plugin()
+class AdmissionManagedPlugin extends BasePlugin {
+	override async init() {
+		await admittedStart?.()
+	}
+}
 
 let recoverableFailure = true
 @Plugin()
@@ -57,6 +66,130 @@ class ManagedDirectConsumer extends BasePlugin {
 }
 
 describe('runtime web control protocol', () => {
+	it('pins each concurrent lifecycle receipt to its own completed operation', async () => {
+		await using host = await createServiceInternalTestHarness({ services: [], workbench: false })
+		host.add(ManagedPlugin)
+		await host.commit()
+		const address = host.cfg(ManagedPlugin).owner
+		const rpc = new RuntimeManagementTargetImpl(host.ctx)
+		const entered = Promise.withResolvers<void>()
+		const release = Promise.withResolvers<void>()
+		const blocker = requirePluginHostCoordinator(host.ctx).runExclusive(
+			'test-hold-before-concurrent-control',
+			async () => {
+				entered.resolve()
+				await release.promise
+			},
+		)
+		await entered.promise
+		const starting = rpc.applyPluginLifecycleCommandsDto([{ address, command: 'start' }])
+		const stopping = rpc.applyPluginLifecycleCommandsDto([{ address, command: 'stop' }])
+		release.resolve()
+		await blocker
+		const [started, stopped] = await Promise.all([starting, stopping])
+		expect(started).toMatchObject({
+			ok: true,
+			results: [
+				{
+					address,
+					ok: true,
+					report: { core: { summary: { pluginChanges: { added: [address] } } } },
+					control: { sessionIntent: 'run', desiredState: 'running', lifecycleState: 'running' },
+				},
+			],
+		})
+		expect(stopped).toMatchObject({
+			ok: true,
+			results: [
+				{
+					address,
+					ok: true,
+					report: { core: { summary: { pluginChanges: { removed: [address] } } } },
+					control: { sessionIntent: 'inherit', desiredState: 'stopped', lifecycleState: 'stopped' },
+				},
+			],
+		})
+		expect(await rpc.pluginStatusDto(address)).toMatchObject({
+			ok: true,
+			value: { lifecycleState: 'stopped' },
+		})
+	})
+
+	it('does not read presentation inventory or recent updates for control batch receipts', async () => {
+		await using host = await createServiceInternalTestHarness({ services: [], workbench: false })
+		host.add(ManagedPlugin)
+		await host.commit()
+		const address = host.cfg(ManagedPlugin).owner
+		const rpc = new RuntimeManagementTargetImpl(host.ctx)
+		const view = await requirePluginHostCoordinator(host.ctx).readCommitted((value) => value)
+		const sessionEntries = vi.spyOn(view.sessionIntents, 'values')
+		const desiredEntries = vi.spyOn(view.desiredControl, 'values')
+		const resolveRecentUpdate = vi.fn(() => {
+			throw new Error('Control receipt requested presentation diagnostics')
+		})
+		const unbind = bindManagementHostOptions(host.ctx, { recentUpdate: { resolveRecentUpdate } })
+		try {
+			expect(
+				await rpc.applyPluginLifecycleCommandsDto([
+					{ address, command: 'start' },
+					{ address, command: 'restart' },
+					{ address, command: 'stop' },
+				]),
+			).toMatchObject({
+				ok: true,
+				results: [
+					{ ok: true, control: { lifecycleState: 'running' } },
+					{ ok: true, control: { lifecycleState: 'running' } },
+					{ ok: true, control: { lifecycleState: 'stopped' } },
+				],
+			})
+			expect(await rpc.setPluginAutoStartDto([{ address, autoStart: true }])).toMatchObject({
+				ok: true,
+				results: [{ ok: true, control: { autoStart: true, lifecycleState: 'stopped' } }],
+			})
+			expect(sessionEntries).not.toHaveBeenCalled()
+			expect(desiredEntries).not.toHaveBeenCalled()
+			expect(resolveRecentUpdate).not.toHaveBeenCalled()
+		} finally {
+			unbind()
+			sessionEntries.mockRestore()
+			desiredEntries.mockRestore()
+		}
+	})
+
+	it('finishes an admitted item but rejects the next batch item after cancellation', async () => {
+		await using host = await createServiceInternalTestHarness({ services: [], workbench: false })
+		host.add(AdmissionManagedPlugin)
+		await host.commit()
+		const address = host.cfg(AdmissionManagedPlugin).owner
+		const controller = new AbortController()
+		const entered = Promise.withResolvers<void>()
+		const release = Promise.withResolvers<void>()
+		admittedStart = async () => {
+			entered.resolve()
+			await release.promise
+		}
+		try {
+			const running = applyLifecycleCommands(
+				host.ctx,
+				[
+					{ address, command: 'start' },
+					{ address, command: 'stop' },
+				],
+				{ signal: controller.signal },
+			)
+			await entered.promise
+			const reason = new Error('caller cancelled the remaining batch')
+			controller.abort(reason)
+			release.resolve()
+			await expect(running).rejects.toBe(reason)
+			expect(host.isRunning(AdmissionManagedPlugin)).toBe(true)
+		} finally {
+			release.resolve()
+			admittedStart = undefined
+		}
+	})
+
 	it('retains startup diagnostics across unrelated commits and clears them after recovery', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 		recoverableFailure = true

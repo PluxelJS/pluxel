@@ -1,6 +1,6 @@
-import type { PluginNodeAddress, PluginInstanceNodeAddress } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 import type { Result } from '@pluxel/core/better-result'
-import type { LogCursor, LogStreamMeta } from '@pluxel/core/logging'
+import type { LogCursor, LogReadOptions, LogStreamMeta } from '@pluxel/core/logging'
 import type { HostConfigMutation } from '../config'
 import type { HostOperationOptions } from '../coordinator'
 import type { PluginApplyReportSnapshot } from '../apply-report'
@@ -25,9 +25,9 @@ import type {
 	PluginConfigInput,
 	PluginConfigOutput,
 	PluginInstance,
+	PluginAddressEvidence,
 	ConfiguredPlugin,
 	SinglePluginConfig,
-	ScriptLogReadOptions,
 } from './control'
 
 /** Explicit input and cooperative cancellation for one script invocation. */
@@ -113,22 +113,14 @@ type TypedPluginOperations<T extends PluginTypedNodeAddress> = {
 				: ScriptPluginConfig<PluginConfigInput<T>, PluginConfigOutput<T>>
 		})
 
-type AddressEvidence<T extends PluginNodeAddress> = T extends PluginTypedNodeAddress
-	? Readonly<{ kind: 'control'; target: T; instance: PluginInstance<T> }>
-	: T extends PluginInstanceNodeAddress<infer S>
-		? Readonly<{ kind: 'constructor'; target: T; instance: S }>
-		: never
-
 type AddressOperations<T extends PluginNodeAddress> = [T] extends [PluginTypedNodeAddress]
 	? TypedPluginOperations<T>
-	: ([T] extends [AddressEvidence<T>['target']]
+	: ([T] extends [PluginAddressEvidence<T>['target']]
 			? {
-					readonly instance: () => Promise<
-						Result<AddressEvidence<T>['instance'], ScriptInstanceError>
-					>
+					readonly instance: () => Promise<Result<PluginInstance<T>, ScriptInstanceError>>
 				}
 			: unknown) &
-			([Extract<AddressEvidence<T>, { kind: 'control' }>] extends [never]
+			([Extract<PluginAddressEvidence<T>, { kind: 'control' }>] extends [never]
 				? { readonly config: ScriptPluginConfig }
 				: unknown)
 
@@ -205,7 +197,7 @@ export interface ScriptSdk {
 		/** Preserves reset, replacement and retention-gap errors. @defaultValue limit 100 */
 		readonly read: (
 			cursor: LogCursor,
-			options?: ScriptLogReadOptions,
+			options?: LogReadOptions,
 		) => Promise<Result<ScriptLogSnapshot, ScriptLogError>>
 		/**
 		 * Wait at most timeoutMs (1..300000) for a matching batch. Timeout returns an empty
@@ -213,7 +205,7 @@ export interface ScriptSdk {
 		 */
 		readonly wait: (
 			cursor: LogCursor,
-			options: ScriptLogReadOptions & Readonly<{ timeoutMs: number }>,
+			options: LogReadOptions & Readonly<{ timeoutMs: number }>,
 		) => Promise<Result<ScriptLogSnapshot, ScriptLogError>>
 	}
 }

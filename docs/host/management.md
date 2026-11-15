@@ -51,6 +51,10 @@ CLI 凭据从 `--credentials-file` 的 JSON 文件读取：密码模式用 `{ "p
 
 生命周期命令的 `ok: true, status: 'applied'` 表示 Host 已完成本次操作，协调和生命周期报告均没有问题。遇到启动失败、依赖阻塞或停止排空错误时，管理接口返回 `ok: false, code: 'lifecycle_failed', status: 'applied-with-issues'`，同时保留完整 `report` 和操作后的 `control`。已经提交的修改继续有效，调用方应依据报告和当前状态决定下一步。
 
-批量命令依次执行。全部完成但存在生命周期问题时返回 `applied-with-issues`；部分操作完成、部分未应用时返回 `partially-applied`。结构或目标拒绝保留 `state: 'unchanged'`，持久化确认失败保留 `state: 'unknown'`。只要一项结果未知，批量顶层即返回 `ok: false, status: 'unknown'`，同时保留全部逐项结果；全部已知且均未应用时才返回 `rejected`。收到未知结果后先读取业务状态，避免重投已经发生的写入。
+批量命令依次执行。每个生命周期命令的校验、执行与回执状态投影共用同一次 Host 独占操作，回执中的 `control` 表示该命令结算时的状态；随后操作仍可改变现场。生命周期批次逐项接纳，取消不会撤销已经接纳的项，并可阻止后续项。
+
+每批接受 1–1000 项。批次输入不合法时，顶层返回 `code: 'invalid_input', status: 'rejected', state: 'unchanged'`、具体 `error` 和空 `results`。调用方应保留完整批次回执，先处理顶层拒绝，再读取逐项结果。
+
+全部完成但存在生命周期问题时返回 `applied-with-issues`；部分操作完成、部分未应用时返回 `partially-applied`。目标拒绝保留 `state: 'unchanged'`，持久化确认失败保留 `state: 'unknown'`。只要一项结果未知，批量顶层即返回 `ok: false, status: 'unknown'`，同时保留全部逐项结果；全部已知且均未应用时才返回 `rejected`。收到未知结果后先读取业务状态，避免重投已经发生的写入。
 
 脚本 SDK 的 Better Result 使用相同的 Host 完成判定。配置保存的 `persistence`、`application` 和 desired/applied revision 继续分别描述保存与运行采用，完整处理示例见[自动化脚本](../development/scripts.md)。

@@ -462,7 +462,6 @@ export async function withCoreInternalTestContext<T>(
 export {
 	createCoreTestHost,
 	getCoreTestHostContext,
-	definePluginFork,
 	PluginLifecycleAssertionError,
 } from './internal-test-host'
 export type {
@@ -475,7 +474,6 @@ export type {
 	ProviderDefaultInput,
 	PluginInitialConfigOptions,
 	LifecycleFailureCommitSummary,
-	PluginForkRef,
 	PluginInstanceFor,
 	PluginInstances,
 	PluginLifecycleAssertionOperation,

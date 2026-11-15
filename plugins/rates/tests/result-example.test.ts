@@ -11,8 +11,12 @@ import { MessagingPlugin } from './fixtures/result-consumer.ts'
 
 it('turns deny into a recoverable Result without delivering the denied message', async () => {
 	await using host = await createTestHost()
-	await host.start([MemoryRatesBackendPlugin, RatesPlugin, MessagingPlugin])
-	const messages = host.require(MessagingPlugin)
+	await host.start([
+		MemoryRatesBackendPlugin.nodeAddress(),
+		RatesPlugin.nodeAddress(),
+		MessagingPlugin.nodeAddress(),
+	])
+	const messages = host.require(MessagingPlugin.nodeAddress())
 	for (let i = 0; i < 100; i++) {
 		const sent = await messages.send('tenant', 'alice')
 		expect(sent.isOk()).toBe(true)
@@ -37,8 +41,12 @@ class OfflineRates extends RatesBackend {
 
 it('keeps backend failure distinct from quota denial', async () => {
 	await using host = await createTestHost()
-	await host.start([OfflineRates, RatesPlugin, MessagingPlugin])
-	const messages = host.require(MessagingPlugin)
+	await host.start([
+		OfflineRates.nodeAddress(),
+		RatesPlugin.nodeAddress(),
+		MessagingPlugin.nodeAddress(),
+	])
+	const messages = host.require(MessagingPlugin.nodeAddress())
 	await expect(messages.send('tenant', 'alice')).rejects.toMatchObject({
 		code: 'RATES_UNAVAILABLE',
 	})

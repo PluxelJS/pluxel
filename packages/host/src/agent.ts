@@ -28,5 +28,4 @@ export type {
 	PluginConfigInput,
 	PluginConfigOutput,
 	PluginInstance,
-	ScriptLogReadOptions,
 } from './agent/control'

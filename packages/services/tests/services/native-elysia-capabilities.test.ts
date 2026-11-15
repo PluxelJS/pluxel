@@ -73,7 +73,7 @@ describe('native Elysia authoring capability', () => {
 		{
 			await using host = await createTestHost({ services: [elysia()] })
 
-			await host.start(NativeElysiaCapabilities)
+			await host.start(NativeElysiaCapabilities.nodeAddress())
 
 			await expect(
 				host.http
@@ -132,7 +132,7 @@ describe('native Elysia authoring capability', () => {
 		{
 			await using host = await createTestHost({ services: [elysia()] })
 
-			await host.start([NativeElysiaIsolationA, NativeElysiaIsolationB])
+			await host.start([NativeElysiaIsolationA.nodeAddress(), NativeElysiaIsolationB.nodeAddress()])
 
 			await expect(
 				host.http

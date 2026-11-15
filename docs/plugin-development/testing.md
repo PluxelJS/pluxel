@@ -53,12 +53,12 @@ it('能够启动插件并调用其方法', async () => {
 	await using host = await createTestHost()
 
 	// 启动插件并获取实例
-	const counter = await host.start(CounterPlugin)
+	const counter = await host.start(CounterPlugin.nodeAddress())
 	expect(counter.increment()).toBe(1)
 
 	// 停止插件
-	await host.stop(CounterPlugin)
-	expect(host.isRunning(CounterPlugin)).toBe(false)
+	await host.stop(CounterPlugin.nodeAddress())
+	expect(host.isRunning(CounterPlugin.nodeAddress())).toBe(false)
 })
 ```
 
@@ -79,7 +79,7 @@ import { createTestHost } from '@pluxel/test'
 import { elysia } from '@pluxel/services/elysia'
 
 await using host = await createTestHost({ services: [elysia()] })
-await host.start(HealthPlugin)
+await host.start(HealthPlugin.nodeAddress())
 
 // 通过内置的 host.http.fetch 直接发起请求
 const response = await host.http.fetch(new URL('/health', host.http.origin))
@@ -99,14 +99,18 @@ await using host = await createTestHost({
 
 ## 测试宿主核心 API
 
-| 操作                                                    | 说明                                   |
-| ------------------------------------------------------- | -------------------------------------- |
-| `await host.start(PluginClass, options?)`               | 启动目标插件并等待就绪，返回强类型实例 |
-| `await host.start([PluginA, PluginB])`                  | 一次性启动多个插件，返回实例元组       |
-| `await host.stop(PluginClass)`                          | 停止指定插件并触发其资源清理回调       |
-| `await host.restart(PluginClass)`                       | 重启插件并返回新实例                   |
-| `host.isRunning(PluginClass)`                           | 检查插件当前是否处于运行状态           |
-| `await host.config.patch(PluginClass, { set, remove })` | 在运行时修改插件配置并验证热更新       |
+节点操作统一使用源码 class 生成的原地址，例如 `const node = CounterPlugin.nodeAddress()`；fork 使用 `CounterPlugin.nodeAddress('east')`。可以缓存地址，`start()`、`require()` 和 `restart()` 从地址保留准确实例类型。
+
+`catalog.add()`、`replaceDefinition()` 和全局 provider default 继续接收 constructor，用于声明可装配实现。测试节点地址携带原 constructor 的精确证据；JSON、显式 `parsePluginNodeAddress()` 得到的纯身份和生成控制入口地址不能提供测试装配实现。复制的地址、其他 Core 副本的证据和已被替换的实现都会明确失败。
+
+| 操作                                             | 说明                                   |
+| ------------------------------------------------ | -------------------------------------- |
+| `await host.start(node, options?)`               | 启动目标插件并等待就绪，返回强类型实例 |
+| `await host.start([first, second])`              | 一次性启动多个插件，返回实例元组       |
+| `await host.stop(node)`                          | 停止指定插件并触发其资源清理回调       |
+| `await host.restart(node)`                       | 重启插件并返回新实例                   |
+| `host.isRunning(node)`                           | 检查插件当前是否处于运行状态           |
+| `await host.config.patch(node, { set, remove })` | 在运行时修改插件配置并验证热更新       |
 
 ## 初始配置与运行时配置更新
 
@@ -115,7 +119,7 @@ await using host = await createTestHost({
 在启动插件时，可通过 `initialConfig` 传入初始配置数据：
 
 ```ts no-twoslash
-const worker = await host.start(WorkerPlugin, {
+const worker = await host.start(WorkerPlugin.nodeAddress(), {
 	initialConfig: {
 		endpoint: 'https://api.example.test',
 		concurrency: 2,
@@ -128,7 +132,7 @@ const worker = await host.start(WorkerPlugin, {
 当插件已经处于运行状态时，使用 `host.config.patch` 模拟外部配置保存与热应用：
 
 ```ts no-twoslash
-const result = await host.config.patch(WorkerPlugin, {
+const result = await host.config.patch(WorkerPlugin.nodeAddress(), {
 	set: {
 		endpoint: 'https://api.example.test',
 		concurrency: 8,
@@ -144,15 +148,17 @@ expect(result).toMatchObject({ ok: true, application: 'applied' })
 为了验证上游异常或依赖缺失时插件能够按预期阻塞，可以使用 `host.commitExpectFail()`：
 
 ```ts no-twoslash
+import { parsePluginNodeAddress } from '@pluxel/core'
+
 const failure = await host.commitExpectFail((change) => {
 	// 启动一个依赖了故障提供方的消费插件
-	change.start(ConsumerPlugin, { catalog: [BrokenProviderPlugin] })
+	change.start(ConsumerPlugin.nodeAddress(), { catalog: [BrokenProviderPlugin] })
 })
 
 // 断言故障提供方报错
 expect(failure.lifecycleReport.issues).toContainEqual(
 	expect.objectContaining({
-		plugin: BrokenProviderPlugin.nodeAddress(),
+		plugin: parsePluginNodeAddress(BrokenProviderPlugin.nodeAddress()),
 		kind: 'start-failed',
 	}),
 )
@@ -160,9 +166,9 @@ expect(failure.lifecycleReport.issues).toContainEqual(
 // 断言下游消费插件被正常阻塞
 expect(failure.lifecycleReport.issues).toContainEqual(
 	expect.objectContaining({
-		plugin: ConsumerPlugin.nodeAddress(),
+		plugin: parsePluginNodeAddress(ConsumerPlugin.nodeAddress()),
 		kind: 'dependency-blocked',
-		blockedBy: BrokenProviderPlugin.nodeAddress(),
+		blockedBy: parsePluginNodeAddress(BrokenProviderPlugin.nodeAddress()),
 	}),
 )
 ```
@@ -183,17 +189,15 @@ await host.commit((change) => {
 		provider: MockStoragePlugin,
 	})
 
-	change.start(ConsumerPlugin)
+	change.start(ConsumerPlugin.nodeAddress())
 })
 ```
 
-测试支持多实例分叉的插件时，可以使用 `definePluginFork()`：
+测试分叉节点时，同样通过源码 class 的 `nodeAddress(forkId)` 选择：
 
 ```ts no-twoslash
-import { definePluginFork } from '@pluxel/test'
-
-const East = definePluginFork(RegionPlugin, 'east')
-const West = definePluginFork(RegionPlugin, 'west')
+const East = RegionPlugin.nodeAddress('east')
+const West = RegionPlugin.nodeAddress('west')
 
 await host.commit((change) => {
 	change.start(East, { initialConfig: { region: 'east' } })

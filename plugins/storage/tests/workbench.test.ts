@@ -17,7 +17,7 @@ const RECOVERY = Object.freeze({ provider: 'local', subject: 'local' })
 const ADMIN = Object.freeze({ provider: '@pluxel/plugin-auth', subject: 'local:admin' })
 
 async function startVaultS3(host: TestHost<true>): Promise<void> {
-	await host.start(S3Plugin, {
+	await host.start(S3Plugin.nodeAddress(), {
 		initialConfig: {
 			buckets: [
 				{
@@ -32,14 +32,14 @@ async function startVaultS3(host: TestHost<true>): Promise<void> {
 		},
 	})
 	await host
-		.require(S3Plugin)
+		.require(S3Plugin.nodeAddress())
 		.ctx.vault!.kv({ namespace: REFERENCE.namespace })
 		.set(REFERENCE.key, {
 			accessKeyId: 'old-access-key',
 			secretAccessKey: 'old-secret-key',
 		})
-	await host.stop(S3Plugin)
-	await host.config.patch(S3Plugin, {
+	await host.stop(S3Plugin.nodeAddress())
+	await host.config.patch(S3Plugin.nodeAddress(), {
 		set: {
 			buckets: [
 				{
@@ -57,12 +57,12 @@ async function startVaultS3(host: TestHost<true>): Promise<void> {
 			],
 		},
 	})
-	await host.start(S3Plugin)
+	await host.start(S3Plugin.nodeAddress())
 }
 
 function openCredentials(host: TestHost<true>, principal: WorkbenchPrincipal) {
 	return host.workbench.open({
-		target: S3Plugin,
+		target: S3Plugin.nodeAddress(),
 		entry: S3Workbench.buckets,
 		principal,
 		location: '/storage/s3',
@@ -162,7 +162,7 @@ describe('S3 Workbench credential rotation', () => {
 			expect(serializedResult).not.toContain(replacement.secretAccessKey)
 			await expect(
 				host
-					.require(S3Plugin)
+					.require(S3Plugin.nodeAddress())
 					.ctx.vault!.kv({ namespace: REFERENCE.namespace })
 					.get(REFERENCE.key)
 					.then((snapshot) => snapshot.value),
@@ -217,7 +217,7 @@ describe('S3 Workbench credential rotation', () => {
 			})
 			await expect(
 				host
-					.require(S3Plugin)
+					.require(S3Plugin.nodeAddress())
 					.ctx.vault!.kv({ namespace: REFERENCE.namespace })
 					.get(REFERENCE.key)
 					.then((snapshot) => snapshot.value),
@@ -226,7 +226,7 @@ describe('S3 Workbench credential rotation', () => {
 				secretAccessKey: 'old-secret-key',
 			})
 
-			await host.stop(S3Plugin)
+			await host.stop(S3Plugin.nodeAddress())
 			await expect(opened.root.runDto('rotate', replacement)).resolves.toMatchObject({
 				action: { ok: false, code: 'invalid_input' },
 			})
@@ -240,7 +240,7 @@ describe('S3 Workbench credential rotation', () => {
 				services: standardServices(),
 			})
 
-			await host.start(S3Plugin)
+			await host.start(S3Plugin.nodeAddress())
 			using opened = await openCredentials(host, ADMIN)
 			await expect(opened.root.subscribeDto(contentObserver())).resolves.toMatchObject({
 				data: {
@@ -270,7 +270,7 @@ describe('S3 Workbench credential rotation', () => {
 				services: standardServices(),
 			})
 
-			await host.start(S3Plugin, {
+			await host.start(S3Plugin.nodeAddress(), {
 				initialConfig: {
 					buckets: [
 						{

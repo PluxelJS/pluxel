@@ -49,13 +49,13 @@ describe('OtelPlugin', () => {
 			await using host = await createTestHost({
 				services: standardServices(),
 			})
-			await host.start(OtelPlugin, {
+			await host.start(OtelPlugin.nodeAddress(), {
 				catalog: [Consumer],
 				initialConfig: { otlp: [], prometheus: { path: '/metrics' } },
 			})
-			await host.start(Consumer)
+			await host.start(Consumer.nodeAddress())
 
-			const consumer = host.require(Consumer)
+			const consumer = host.require(Consumer.nodeAddress())
 			expect(consumer.meters[0]).toBe(consumer.meters[1])
 			consumer.record()
 

@@ -123,7 +123,7 @@ describe('PackageManagerPlugin', () => {
 				})
 
 			const failure = await host.commitExpectFail((change) => {
-				change.start(PackageManagerPlugin, {
+				change.start(PackageManagerPlugin.nodeAddress(), {
 					initialConfig: {
 						rootDir: managedRoot,
 						ignoreScripts: true,
@@ -140,7 +140,7 @@ describe('PackageManagerPlugin', () => {
 					message: expect.stringMatching(/Plugin source|Plugin sources/),
 				}),
 			)
-			expect(host.isRunning(PackageManagerPlugin)).toBe(false)
+			expect(host.isRunning(PackageManagerPlugin.nodeAddress())).toBe(false)
 			expect(existsSync(managedRoot)).toBe(false)
 			expect(host.commands.list().some(({ name }) => name === 'package.install')).toBe(false)
 			expect(host.commands.list().some(({ name }) => name === 'package.remove')).toBe(false)
@@ -162,7 +162,7 @@ describe('PackageManagerPlugin', () => {
 				}),
 			],
 		})
-		await host.start(PackageManagerPlugin, {
+		await host.start(PackageManagerPlugin.nodeAddress(), {
 			initialConfig: { rootDir: managedRoot, minimumReleaseAgeMinutes: 0 },
 		})
 		expect(existsSync(resolve(managedRoot, 'entries'))).toBe(true)
