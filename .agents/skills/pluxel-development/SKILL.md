@@ -68,6 +68,6 @@ vp run pluxel dev run projects/plugin-host/dev/inspect.ts
 - 配置、Plugin 方法/生命周期、Workbench RPC 和业务日志都通过现有控制台；每次取得当前 handle，await 操作，释放自建资源，不重开应用数据库。
 - SDK 异步控制返回 `Promise<Result<T, E>>`，用普通 await 和 `isErr()` 提前返回；构造或组合 Result 时从 `@pluxel/core/better-result` 导入。原插件业务方法保留自身签名，完整用法见 `development/scripts.md`。
 - 检查退出码、run state、领域结果、apply report 和相关日志。配置保存或 CLI 成功不等于运行实例已采用修改。
-- 保存 `receipt`；超时或 `outcome_unknown` 先用 `script result RECEIPT` 查询，取消用 `script cancel RECEIPT`。两者不附带目标参数，始终绑定原实例；不因重启而重投写操作，取消不回滚已提交变更。
+- 执行前通过 `--receipt-file FILE` 保存原 receipt；超时或 `outcome_unknown` 先用 `script result --receipt-file FILE` 查询，取消用 `script cancel --receipt-file FILE`。文件规则见 `development/scripts.md` 的「保存和恢复 receipt」。两者不附带目标参数，始终绑定原实例；不因重启而重投写操作，取消不回滚已提交变更。
 
 按改动风险运行目标 scripts 和相应隔离/在线验证；不要为纯函数测试启动应用，也不通过关闭 lowering 或 lint 让检查通过。交付说明实际结果及未验证边界，用法变化同步所属文档。

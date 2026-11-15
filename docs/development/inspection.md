@@ -3,7 +3,7 @@ title: 查询插件源码
 description: 通过 @pluxel/agent-sdk/source 的普通函数发现插件、定位声明、Part、Schema、依赖和应用输入。
 ---
 
-`@pluxel/agent-sdk/source` 提供普通异步函数。安装依赖后，用 Node 即可查询磁盘源码；查询不启动 Host、不加载项目模块、不执行应用工厂或 Schema。运行中的应用操作使用 [`@pluxel/agent-sdk/host`](./agent-sdk.md)。
+`@pluxel/agent-sdk/source` 提供普通异步函数。安装依赖后，用 Node 即可查询磁盘源码；查询不启动 Host、不加载项目模块、不执行应用工厂或 Schema。运行中的应用操作按执行位置选择 [Host SDK 或外部客户端](./agent-sdk.md)。
 
 ## 直接定位声明
 

@@ -1,4 +1,3 @@
-import { writeFile } from 'node:fs/promises'
 import { define, type ArgValues } from 'gunshi'
 import {
 	scriptRunDefinition,
@@ -12,6 +11,7 @@ import { runScript, getScriptResult, cancelScript, HostClientError } from '../cl
 import { ScriptExecutionError, scriptFailure } from '@pluxel/host/internal/agent/runtime'
 import { parseInput, readBoundedFile } from '../client/dev'
 import { readScriptCredentials } from './credentials'
+import { readReceipt, savePreparedReceipt } from './receipt'
 import { printFailure, printRun, printRunProgress } from './output'
 
 type RunValues = ArgValues<typeof scriptRunArgs>
@@ -39,11 +39,7 @@ export const scriptRunCommand = define({
 				input: inputText === undefined ? undefined : parseInput(inputText),
 				timeoutMs: Number(values.timeout),
 				detach: values.detach,
-				onPrepared: async (receipt) => {
-					if (values['receipt-file'])
-						await writeFile(values['receipt-file'], receipt + '\n', { mode: 0o600, flag: 'wx' })
-					printRunProgress('prepared', receipt)
-				},
+				onPrepared: (receipt) => savePreparedReceipt(receipt, values['receipt-file']),
 				onAccepted: ({ receipt }) => printRunProgress('accepted', receipt),
 			})
 			printRun(ctx.log, result.receipt, result.run, values.detach)
@@ -67,18 +63,20 @@ function receiptCommand(
 		...definition,
 		async run(ctx) {
 			const values = ctx.values as ReceiptValues
+			let receipt = values.receipt
 			try {
 				await validateCommandOptions(ctx)
+				receipt = await readReceipt(values.receipt, values['receipt-file'])
 				const options = values['credentials-file']
 					? { credentials: await readScriptCredentials(values['credentials-file']) }
 					: {}
-				const result = await operation(values.receipt, options)
+				const result = await operation(receipt, options)
 				printRun(ctx.log, result.receipt, result.run)
 			} catch (error) {
 				printFailure(
 					ctx.log,
 					error instanceof HostClientError ? error.failure : scriptFailure(error, 'query_failed'),
-					error instanceof HostClientError ? error.receipt : values.receipt,
+					error instanceof HostClientError ? error.receipt : receipt,
 				)
 			}
 		},

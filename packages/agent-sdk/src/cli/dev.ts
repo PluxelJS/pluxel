@@ -12,6 +12,7 @@ import { resolveDevProject } from '../client/project'
 import { listHosts, runScript, controlHmr } from '../client'
 import { validateCommandOptions } from './options'
 import { printDevFailure, printRun, printRunProgress, printValue } from './output'
+import { savePreparedReceipt } from './receipt'
 
 type DevCommandContext = Pick<
 	CommandContext,
@@ -74,7 +75,7 @@ export const devRunCommand = define({
 					input,
 					timeoutMs: Number(values.timeout),
 					detach: values.detach,
-					onPrepared: (receipt) => printRunProgress('prepared', receipt),
+					onPrepared: (receipt) => savePreparedReceipt(receipt, values['receipt-file']),
 					onAccepted: ({ receipt }) => printRunProgress('accepted', receipt),
 				})
 			},
@@ -102,7 +103,7 @@ export const devHmrCommand = define({
 					action: values.action,
 					timeoutMs: Number(values.timeout),
 					detach: values.detach,
-					onPrepared: (receipt) => printRunProgress('prepared', receipt),
+					onPrepared: (receipt) => savePreparedReceipt(receipt, values['receipt-file']),
 					onAccepted: ({ receipt }) => printRunProgress('accepted', receipt),
 				})
 			},

@@ -1,6 +1,6 @@
 import { runScript, controlHmr, getScriptResult, HostClientError } from '@pluxel/agent-sdk/client'
 import { createHash } from 'node:crypto'
-import { chmod, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { cli as gunshiCli, define } from 'gunshi'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -282,9 +282,13 @@ describe('development control through native Capn Web', () => {
 			requestHash: accepted.requestHash as string,
 		})
 		const second = await fixture({ root: first.root })
+		const receiptFile = resolve(first.root, 'original.receipt')
+		await writeFile(receiptFile, token + '\n')
 		for (const command of ['result', 'cancel']) {
 			const output: string[] = []
-			await cli(['script', command, token], { log: (value) => output.push(String(value)) })
+			await cli(['script', command, '--receipt-file', receiptFile], {
+				log: (value) => output.push(String(value)),
+			})
 			expect(JSON.parse(output[0]!)).toMatchObject({
 				ok: true,
 				value: {
@@ -296,7 +300,9 @@ describe('development control through native Capn Web', () => {
 		await rm(first.record)
 		for (const command of ['result', 'cancel']) {
 			const output: string[] = []
-			await cli(['script', command, token], { log: (value) => output.push(String(value)) })
+			await cli(['script', command, '--receipt-file', receiptFile], {
+				log: (value) => output.push(String(value)),
+			})
 			expect(JSON.parse(output[0]!)).toMatchObject({
 				ok: false,
 				error: {
@@ -336,6 +342,100 @@ describe('development control through native Capn Web', () => {
 		})
 		expect(events[0]?.receipt).toBe(result.value.receipt)
 		expect(output[0]).not.toContain(instance.nonce)
+	})
+	it.each(['run', 'hmr'])('persists a private receipt before executing dev %s', async (command) => {
+		let receiptFile = ''
+		const readSaved = () => readFile(receiptFile, 'utf8')
+		const { root, instance, requests } = await fixture({ execute: readSaved, control: readSaved })
+		receiptFile = resolve(root, 'operation.receipt')
+		const output: string[] = []
+		const events: Record<string, unknown>[] = []
+		const submitted: boolean[] = []
+		vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+			const event = JSON.parse(String(chunk))
+			events.push(event)
+			submitted.push(requests.some(({ method }) => method === 'submit' || method === 'control'))
+			return true
+		})
+		const args = command === 'run' ? ['run', await script(root)] : ['hmr', 'pause']
+		await cli([...args, '--root', root, '--receipt-file', receiptFile], {
+			log: (value) => output.push(String(value)),
+		})
+		expect(output).toHaveLength(1)
+		const result = JSON.parse(output[0]!)
+		expect(result).toMatchObject({
+			ok: true,
+			value: { run: { state: 'succeeded', value: result.value.receipt + '\n' } },
+		})
+		expect(events).toEqual([
+			{ stage: 'prepared', receipt: result.value.receipt },
+			{ stage: 'accepted', receipt: result.value.receipt },
+		])
+		expect(decodeScriptReceipt(result.value.receipt)).toMatchObject({
+			instanceId: instance.instanceId,
+			requestHash: result.value.run.requestHash,
+		})
+		expect(submitted).toEqual([false, true])
+		expect(process.exitCode).toBe(0)
+	})
+	it.each(['run', 'hmr'])(
+		'does not submit dev %s when receipt persistence fails',
+		async (command) => {
+			const { root, instance, requests } = await fixture()
+			const receiptFile = resolve(root, 'operation.receipt')
+			await writeFile(receiptFile, 'previous receipt')
+			const progress = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+			const output: string[] = []
+			const args = command === 'run' ? ['run', await script(root)] : ['hmr', 'pause']
+			await cli([...args, '--root', root, '--receipt-file', receiptFile], {
+				log: (value) => output.push(String(value)),
+			})
+			expect(output).toHaveLength(1)
+			const failure = JSON.parse(output[0]!)
+			expect(failure).toMatchObject({
+				ok: false,
+				error: { code: 'EEXIST', receipt: expect.any(String) },
+			})
+			expect(decodeScriptReceipt(failure.error.receipt)).toMatchObject({
+				instanceId: instance.instanceId,
+			})
+			expect(await readFile(receiptFile, 'utf8')).toBe('previous receipt')
+			expect(requests.some(({ method }) => method === 'submit' || method === 'control')).toBe(false)
+			expect(progress).not.toHaveBeenCalled()
+			expect(process.exitCode).toBe(1)
+		},
+	)
+	it('recovers a saved receipt after a lost local admission response without resubmitting', async () => {
+		const { root, instance, executor, requests } = await fixture({ dropAdmissionResponse: true })
+		const receiptFile = resolve(root, 'operation.receipt')
+		const progress = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+		const output: string[] = []
+		await cli(['run', await script(root), '--root', root, '--receipt-file', receiptFile], {
+			log: (value) => output.push(String(value)),
+		})
+		const failure = JSON.parse(output[0]!)
+		expect(failure).toMatchObject({
+			ok: false,
+			error: { code: 'outcome_unknown', hint: expect.stringContaining('pluxel script result') },
+		})
+		const saved = await readFile(receiptFile, 'utf8')
+		const receipt = saved.slice(0, -1)
+		expect(failure.error.receipt).toBe(receipt)
+		expect(progress).toHaveBeenCalledExactlyOnceWith(
+			JSON.stringify({ stage: 'prepared', receipt }) + '\n',
+		)
+		const original = decodeScriptReceipt(receipt)
+		await executor.settled(original.runId, instance.instanceId)
+		output.length = 0
+		await cli(['script', 'result', '--receipt-file', receiptFile], {
+			log: (value) => output.push(String(value)),
+		})
+		expect(JSON.parse(output[0]!)).toMatchObject({
+			ok: true,
+			value: { receipt, run: { runId: original.runId, state: 'succeeded' } },
+		})
+		expect(requests.filter(({ method }) => method === 'submit')).toHaveLength(1)
+		expect(process.exitCode).toBe(0)
 	})
 	it('rejects an input-file conflict before connecting', async () => {
 		const { root, requests } = await fixture()

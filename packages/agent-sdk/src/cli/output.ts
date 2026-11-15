@@ -9,7 +9,21 @@ export function printValue(log: Log, value: unknown): void {
 }
 
 export function printFailure(log: Log, error: object, receipt?: string): void {
-	log(JSON.stringify({ ok: false, error: { ...error, ...(receipt ? { receipt } : {}) } }))
+	let hint: string | undefined
+	if ('code' in error) {
+		if (error.code === 'ambiguous_instance')
+			hint =
+				'Choose a candidates[].instanceId and pass --instance ID with the same --root and --profile.'
+		else if (error.code === 'outcome_unknown')
+			hint =
+				'Use pluxel script result RECEIPT or pluxel script result --receipt-file FILE to check the original run; do not resubmit against a replacement instance.'
+	}
+	log(
+		JSON.stringify({
+			ok: false,
+			error: { ...error, ...(hint ? { hint } : {}), ...(receipt ? { receipt } : {}) },
+		}),
+	)
 	process.exitCode = 1
 }
 

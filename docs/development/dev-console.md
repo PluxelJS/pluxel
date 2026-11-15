@@ -13,19 +13,23 @@ description: 在当前 Vite 模块图中执行普通 TypeScript，访问真实�
 
 ```sh
 vp exec pluxel dev status
-vp exec pluxel dev run host/web/dev/inspect.ts
+vp exec pluxel dev run host/web/dev/inspect.ts --receipt-file inspect.receipt
 ```
 
 先确认 profile、Vite root、instanceId 与 `application.state`。修改运行中应用的多个文件前暂停 HMR，完成检查后 apply 并核对应用报告与实际行为。命令在 stderr 先输出 `{ stage: 'prepared', receipt }`，接纳后输出 `{ stage: 'accepted', receipt }`；stdout 保留一个最终 `{ ok: true, value: { receipt, run } }` JSON。命令失败使用 `{ ok: false, error }`，已准备的 receipt 保留在 error 中。保存 receipt，后续查询和取消始终定位原实例。
 
 ```sh
-vp exec pluxel script result RECEIPT
-vp exec pluxel script cancel RECEIPT
+vp exec pluxel script result --receipt-file inspect.receipt
+vp exec pluxel script cancel --receipt-file inspect.receipt
 ```
+
+`dev run` 和 `dev hmr` 都可在提交前保存 receipt，文件路径相对终端当前目录。创建、失败与恢复规则统一见[保存和恢复 receipt](./scripts.md#保存和恢复-receipt)。
 
 CLI 与 Vite 通过私有 Unix socket 上的 Cap’n Web 连接。发现目录和 socket 受当前用户文件权限保护；Vite 的公共 HTTP listener 不提供脚本执行。`dev status/instances/run/hmr` 查询现有实例，`pluxel dev` 才负责启动或复用配置的开发服务。
 
 `dev status/instances/run/hmr/sync` 的参数缺失、未知选项和多余位置参数统一在 stdout 输出单个 `{ ok: false, error: { code: 'invalid_input', message } }`，退出码为 `1`，stderr 不输出额外文本诊断。`--help` 保持普通帮助文本。
+
+未知 `dev` 子命令同样返回 `invalid_input` JSON。多个实例时，错误列出 `candidates` 并提示使用 `--instance`；保持原 `--root` 和 `--profile`，不要自动选第一个实例。提交结果不确定时，提示使用原 receipt 的查询命令，不建议重新提交。
 
 <span id="hmr-批次控制"></span>
 

@@ -149,14 +149,20 @@ pnpm exec pluxel script run ./scripts/scale.ts \
 
 `--input-file FILE` 可替代 `--input`。默认调用 `default` 导出，具名函数用 `--export NAME`。作者侧先进行 TypeScript 检查和打包，上传 JS 工厂与源码映射。经清单验证的生成地址提供者和普通计算依赖可随脚本打包。生成提供者的标准工厂与 `@pluxel/core/better-result` 使用目标框架的受控共享绑定。其余框架运行时、Node builtin、原生扩展和运行时动态 import 在上传模式中拒绝。异步工作放入导出函数，工厂顶层同步初始化。需要项目模块或 Context 时使用 Vite 项目模式。
 
-CLI 在首次提交前向 stderr 输出 `{ stage: 'prepared', receipt }`，收到接纳后输出 `{ stage: 'accepted', receipt }`。`--receipt-file` 在上传前以 `0600` 新建文件，父目录需已存在，同名文件不会覆盖。run、result 和 cancel 的 stdout 返回单个 `{ ok: true, value: { receipt, run } }` JSON；编译、连接或查询失败时返回 `{ ok: false, error: { code, message, receipt? } }`。dev 与 script 的 sync 同样使用 `{ ok, value/error }`，成功值的 `definitions` 提供每个插件的准确 `module` 和 `exportName`，见[控制材料同步](./plugin-control.md#取得控制入口)。默认等待结算，`--detach` 在接纳后返回；`--timeout` 默认为 30000，最大 300000 毫秒，包含排队与加载时间。
+run、result 和 cancel 的 stdout 返回单个 `{ ok: true, value: { receipt, run } }` JSON；编译、连接或查询失败时返回 `{ ok: false, error: { code, message, receipt? } }`。dev 与 script 的 sync 同样使用 `{ ok, value/error }`，成功值的 `definitions` 提供每个插件的准确 `module` 和 `exportName`，见[控制材料同步](./plugin-control.md#取得控制入口)。`script` 缺少子命令、拼错子命令或含未知选项时也返回单个 `invalid_input` JSON，退出码为 `1`；通过 `pluxel script --help` 查看命令。默认等待结算，`--detach` 在接纳后返回；`--timeout` 默认为 30000，最大 300000 毫秒，包含排队与加载时间。
 
-查询和取消传入原 receipt token：
+### 保存和恢复 receipt
+
+`script run`、`dev run` 和 `dev hmr` 均支持 `--receipt-file FILE`。CLI 在首次提交前以 `0600` 新建文件，写入完成后才向 stderr 输出 `{ stage: 'prepared', receipt }`；收到接纳后输出 `{ stage: 'accepted', receipt }`。路径相对终端当前目录，父目录需已存在，每次新操作使用新文件名；同名文件不会覆盖，写入失败不会提交操作。
+
+查询和取消直接读取保存的文件，避免复制长 token：
 
 ```sh
-pnpm exec pluxel script result "$(cat ./receipts/scale.receipt)" --credentials-file ./admin.json
-pnpm exec pluxel script cancel "$(cat ./receipts/scale.receipt)" --credentials-file ./admin.json
+pnpm exec pluxel script result --receipt-file ./receipts/scale.receipt --credentials-file ./admin.json
+pnpm exec pluxel script cancel --receipt-file ./receipts/scale.receipt --credentials-file ./admin.json
 ```
+
+也可将原 receipt token 作为唯一位置参数传入；它与 `--receipt-file` 必须且只能选择一个。文件只包含一个完整 token，可带一个末尾换行，不接受 JSON 包装、额外空白或多行内容；错误文件不会触发连接。
 
 上传与 Vite 项目执行共享 `pluxel-script-v3` receipt。它记录原执行实例、run ID、请求摘要及连接方式：远程保存 endpoint，本地保存 Vite root 和可选 serviceId。所有运行统一用 `script result/cancel` 查询或取消，本地 receipt 使用原控制台认证，省略 `--credentials-file`；远程权限由重新认证的原主体决定。断线后可查询原运行；receipt 本身不授予权限。接纳响应丢失时先查询原 receipt，避免再次提交产生新任务。执行实例关闭或结果过期会明确报错，CLI 会核对原实例与摘要。
 

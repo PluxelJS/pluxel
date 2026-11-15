@@ -71,6 +71,26 @@ it('does not submit when persisting the prepared receipt fails', async () => {
 	})
 })
 
+it('keeps Node instance-selection diagnostics while refusing ambiguous targets', async () => {
+	const first = await fixture()
+	const second = await fixture({ root: first.root })
+	await expect(runScript({ target: { root: first.root }, file: first.file })).rejects.toMatchObject(
+		{
+			code: 'ambiguous_instance',
+			failure: {
+				hint: expect.stringContaining('target.instance'),
+				candidates: expect.arrayContaining([
+					expect.objectContaining({ instanceId: first.instance.instanceId }),
+					expect.objectContaining({ instanceId: second.instance.instanceId }),
+				]),
+			},
+		},
+	)
+	expect([...first.requests, ...second.requests].some(({ method }) => method === 'submit')).toBe(
+		false,
+	)
+})
+
 it('stops client waiting while retaining the original run and never cancels or resubmits it', async () => {
 	const release = Promise.withResolvers<void>()
 	const started = Promise.withResolvers<void>()

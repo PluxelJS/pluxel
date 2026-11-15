@@ -115,7 +115,7 @@ async function main() {
 			onBeforeCommand(ctx) {
 				// Run before Gunshi's global decorator renders validation errors on stdout.
 				if (
-					isControlCommandPath(ctx.commandPath) &&
+					isControlCommandPath(ctx.commandPath, ctx.validationError) &&
 					!ctx.values.help &&
 					!ctx.values.version &&
 					ctx.validationError
@@ -123,7 +123,12 @@ async function main() {
 					throw ctx.validationError
 			},
 			async onErrorCommand(ctx, error) {
-				if (!isControlCommandPath(ctx.commandPath) || ctx.values.help || ctx.values.version) return
+				if (
+					!isControlCommandPath(ctx.commandPath, ctx.validationError) ||
+					ctx.values.help ||
+					ctx.values.version
+				)
+					return
 				await printCommandFailure(ctx.log, error, error === ctx.validationError)
 				failureReported = true
 			},

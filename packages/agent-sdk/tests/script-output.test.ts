@@ -41,7 +41,31 @@ it('retains the original receipt on errors and uses one progress protocol', () =
 		{ stage: 'accepted', receipt: 'original' },
 	])
 	expect(output.map((text) => JSON.parse(text))).toEqual([
-		{ ok: false, error: { code: 'outcome_unknown', message: 'Disconnected', receipt: 'original' } },
+		{
+			ok: false,
+			error: {
+				code: 'outcome_unknown',
+				message: 'Disconnected',
+				receipt: 'original',
+				hint: expect.stringContaining('pluxel script result --receipt-file FILE'),
+			},
+		},
 	])
+	expect(process.exitCode).toBe(1)
+})
+
+it('presents terminal instance selection without changing the SDK failure', () => {
+	const failure = Object.freeze({
+		code: 'ambiguous_instance',
+		message: 'Multiple instances',
+		hint: 'Set target.instance',
+		candidates: [{ instanceId: 'first' }, { instanceId: 'second' }],
+	})
+	const output: string[] = []
+	printFailure((text) => output.push(text), failure)
+	expect(output.map((text) => JSON.parse(text))).toEqual([
+		{ ok: false, error: { ...failure, hint: expect.stringContaining('--instance ID') } },
+	])
+	expect(failure.hint).toBe('Set target.instance')
 	expect(process.exitCode).toBe(1)
 })

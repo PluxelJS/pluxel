@@ -68,14 +68,22 @@ async function releaseBin() {
 
 describe('pluxel bin launcher', () => {
 	it.each([
+		['script'],
+		['script', '--unknown'],
+		['script', 'unknown'],
 		['script', 'run'],
 		['script', 'run', 'task.ts'],
 		['script', 'run', '--endpoint', 'https://host.test/'],
 		['script', 'result'],
 		['script', 'cancel'],
+		['script', 'result', '--receipt-file'],
+		['script', 'cancel', '--receipt-file'],
 		['script', 'sync'],
 		['dev', 'run'],
 		['dev', 'hmr'],
+		['dev', 'statuz'],
+		['dev', '--profile', 'app', 'statuz'],
+		['dev', '--', 'statuz'],
 		['dev', 'instances', '--root'],
 		['dev', 'status', '--root'],
 		['dev', 'instances', '--profile'],
@@ -83,6 +91,8 @@ describe('pluxel bin launcher', () => {
 		['dev', 'instances', '--instance'],
 		['dev', 'status', '--instance'],
 		['dev', 'run', '--root'],
+		['dev', 'run', 'task.ts', '--receipt-file'],
+		['dev', 'hmr', 'pause', '--receipt-file'],
 		['script', 'run', 'task.ts', '--endpoint', 'https://host.test/', '--unknown'],
 		['script', 'result', 'not-a-receipt', '--unknown'],
 		['dev', 'instances', '--unknown'],
@@ -104,6 +114,7 @@ describe('pluxel bin launcher', () => {
 	})
 
 	it.each([
+		['script', '--help'],
 		['script', 'run', '--help'],
 		['script', 'result', '--help'],
 		['dev', 'instances', '--help'],

@@ -1,4 +1,4 @@
-import { define, lazy, type SubCommandable } from 'gunshi'
+import { define, isCommandNotFoundError, lazy, type SubCommandable } from 'gunshi'
 
 // Gunshi resolves selected lazy loaders even for help; import command bodies only when run.
 
@@ -8,6 +8,11 @@ export const scriptConnectionArgs = {
 		description: 'Private JSON file containing password, code or session cookie',
 	},
 } as const
+const receiptFileArg = {
+	type: 'string',
+	description: 'Save the original receipt to a new private file before submitting the operation',
+} as const
+
 export const scriptRunArgs = {
 	...scriptConnectionArgs,
 	file: {
@@ -33,17 +38,18 @@ export const scriptRunArgs = {
 		default: false,
 		description: 'Return after admission without waiting for settlement',
 	},
-	'receipt-file': {
-		type: 'string',
-		description: 'Save the original request receipt before submitting code',
-	},
+	'receipt-file': receiptFileArg,
 } as const
 export const scriptReceiptArgs = {
 	...scriptConnectionArgs,
 	receipt: {
 		type: 'positional',
-		required: true,
+		required: false,
 		description: 'Complete receipt returned by script run, dev run or dev hmr',
+	},
+	'receipt-file': {
+		type: 'string',
+		description: 'Read the original receipt from this file instead of the positional receipt',
 	},
 } as const
 export const scriptRunDefinition = {
@@ -115,7 +121,16 @@ export const scriptCommand = define({
 			),
 		],
 	]),
-	run() {},
+	async run(ctx) {
+		const { validateCommandOptions } = await import('./options')
+		const { printCommandFailure } = await import('./output')
+		try {
+			await validateCommandOptions(ctx)
+			throw new Error('Choose a script command; use pluxel script --help')
+		} catch (error) {
+			await printCommandFailure(ctx.log, error, true)
+		}
+	},
 })
 
 export const devCommonArgs = {
@@ -163,6 +178,7 @@ export const devInstancesDefinition = {
 
 const devExecutionArgs = {
 	detach: { type: 'boolean', default: false, description: 'Return the receipt without waiting' },
+	'receipt-file': receiptFileArg,
 	timeout: {
 		type: 'string',
 		default: '30000',
@@ -248,18 +264,15 @@ export const devSubCommands = new Map<string, SubCommandable>([
 	],
 ])
 
-/** Exact operational paths that promise one final control JSON envelope. */
-const controlCommandPaths = new Set([
-	'script run',
-	'script result',
-	'script cancel',
-	'script sync',
-	'dev instances',
-	'dev status',
-	'dev run',
-	'dev hmr',
-	'dev sync',
-])
-
-export const isControlCommandPath = (path: readonly string[]): boolean =>
-	controlCommandPaths.has(path.join(' '))
+/** The script family and mounted dev operations promise one final control JSON envelope. */
+export function isControlCommandPath(path: readonly string[], validationError?: unknown): boolean {
+	if (path[0] === 'script') return true
+	if (path[0] !== 'dev') return false
+	if (path.length === 1) {
+		const errors =
+			validationError instanceof AggregateError ? validationError.errors : [validationError]
+		return errors.some(isCommandNotFoundError)
+	}
+	// Status is mounted by CLI because it also queries services without a script Host.
+	return path.length === 2 && (path[1] === 'status' || devSubCommands.has(path[1]!))
+}

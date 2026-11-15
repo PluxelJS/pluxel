@@ -306,7 +306,15 @@ async function main() {
 		const synchronizedAgain = await cli(['sync', '--endpoint', ready.endpoint, '--out', 'control'])
 		assert.equal(synchronizedAgain.snapshot, synchronized.snapshot)
 		await writeFile(join(author, 'task.ts'), controlImport + task)
-		const first = await cli(['run', 'task.ts', '--endpoint', ready.endpoint])
+		const first = await cli([
+			'run',
+			'task.ts',
+			'--endpoint',
+			ready.endpoint,
+			'--receipt-file',
+			'first.receipt',
+		])
+		assert.equal(await readFile(join(author, 'first.receipt'), 'utf8'), first.receipt + '\n')
 		assert.equal(first.run.state, 'succeeded')
 		assert.equal(first.run.value.status, 'ok')
 		const firstValue = first.run.value.value
@@ -325,7 +333,7 @@ async function main() {
 		assert.equal(second.run.value.value.actual.config.count, 8)
 		assert.deepEqual(second.run.value.value.business, { calls: 3, count: 8 })
 		// A new authenticated connection queries the original receipt; no source re-delivery occurs.
-		const queried = await cli(['result', first.receipt])
+		const queried = await cli(['result', '--receipt-file', 'first.receipt'])
 		assert.equal(queried.run.runId, first.run.runId)
 		assert.equal(queried.run.requestHash, first.run.requestHash)
 		await writeFile(join(author, 'failure.ts'), failure(counter[0].definition))
@@ -349,12 +357,14 @@ async function main() {
 			'--detach',
 			'--timeout',
 			'120000',
+			'--receipt-file',
+			'waiting.receipt',
 		])
 		assert.ok(!['failed', 'cancelled', 'succeeded'].includes(waiting.run.state))
-		await cli(['cancel', waiting.receipt], null)
+		await cli(['cancel', '--receipt-file', 'waiting.receipt'], null)
 		let cancelled
 		for (let attempt = 0; attempt < 20; attempt++) {
-			cancelled = await cli(['result', waiting.receipt], null)
+			cancelled = await cli(['result', '--receipt-file', 'waiting.receipt'], null)
 			if (['succeeded', 'failed', 'cancelled'].includes(cancelled.run.state)) break
 			await delay(25)
 		}

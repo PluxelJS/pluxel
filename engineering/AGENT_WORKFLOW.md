@@ -59,6 +59,8 @@ SDK 的依赖方向为 Host 协议、Rolldown 编译器与 Services 认证客户
 
 `@pluxel/cli` 保留唯一 executable、总命令树与其他领域命令。`dev` 的前台进程与 Pitchfork 管理仍属于 CLI；`dev status` 在 CLI 判断服务类型，Host 分支调用 `listHosts`，`scripts: false` 分支查询原生 Pitchfork 状态。`/internal/client` 显式导出 CLI 服务路径所需的项目选择、实例选择、错误上下文及类型；Host-vite 原生控制台协议测试仍使用其 `connectDevInstance`，Create 的生成项目测试复用项目选择。其余未消费的发现/连接 helper、receipt codec 与文件解析不再从内部入口导出。
 
+`receipt.ts` 统一处理命令侧的提交前保存与有界文件读取，复用客户端的 token 上限和校验；它不改变 `/client` 的 receipt 语义。文件规则与恢复用法只在[自动化脚本](../docs/development/scripts.md#保存和恢复-receipt)维护。
+
 命令主体测试位于 Agent SDK 的 `script-command`、`script-output`、`credentials`、`dev-console` 和 `dev-project` tests；CLI 的 `agent-commands` / `launcher` tests 从真实 executable 验证挂载、帮助、参数路由、服务状态和单一 JSON 输出。独立安装验收仍由 Services 的 `agent-installed` smoke 覆盖 SDK/CLI、真实认证、上传执行与原 receipt 恢复。
 
 ## scope 的接纳和结算

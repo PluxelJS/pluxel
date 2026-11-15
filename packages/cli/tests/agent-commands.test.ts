@@ -81,7 +81,17 @@ it('mounts SDK commands on the executable and preserves nested profile routing, 
 		['run', file, '--input', '{"count":4}'],
 		['hmr', 'pause'],
 	]) {
-		const result = await run(web, ['dev', '--root', root, '--profile', 'app', ...args])
+		const receiptFile = `${args[0]}.receipt`
+		const result = await run(web, [
+			'dev',
+			'--root',
+			root,
+			'--profile',
+			'app',
+			...args,
+			'--receipt-file',
+			receiptFile,
+		])
 		expect(result.code).toBe(0)
 		const output = JSON.parse(result.stdout)
 		expect(output.ok).toBe(true)
@@ -97,8 +107,12 @@ it('mounts SDK commands on the executable and preserves nested profile routing, 
 			{ stage: 'prepared', receipt: output.value.receipt },
 			{ stage: 'accepted', receipt: output.value.receipt },
 		])
-		const queried = await run(web, ['script', 'result', output.value.receipt])
-		expect(JSON.parse(queried.stdout).value.run).toEqual(output.value.run)
+		expect(await readFile(join(web, receiptFile), 'utf8')).toBe(output.value.receipt + '\n')
+		for (const command of ['result', 'cancel']) {
+			const queried = await run(web, ['script', command, '--receipt-file', receiptFile])
+			expect({ code: queried.code, stderr: queried.stderr }).toEqual({ code: 0, stderr: '' })
+			expect(JSON.parse(queried.stdout)).toEqual({ ok: true, value: output.value })
+		}
 	}
 	const submission = outer.requests.find((request) => request.method === 'submit')
 	expect(submission?.input).toMatchObject({
@@ -109,6 +123,46 @@ it('mounts SDK commands on the executable and preserves nested profile routing, 
 	expect(inner.requests.some((request) => !['connect', 'describe'].includes(request.method))).toBe(
 		false,
 	)
+})
+
+it('reports candidate instances as terminal options and requires explicit selection', async () => {
+	const { root, web } = await project()
+	const outer = await createDevFixture({ root: web, metadata: { project: root, profile: 'app' } })
+	const another = await createDevFixture({ root: web, metadata: { project: root, profile: 'app' } })
+	cleanup.push(
+		() => outer.close(),
+		() => another.close(),
+	)
+	const file = join(web, 'task.ts')
+	await writeFile(file, 'export default () => null')
+	const ambiguous = await run(web, ['dev', 'run', file, '--root', root, '--profile', 'app'])
+	expect({ code: ambiguous.code, stderr: ambiguous.stderr }).toEqual({ code: 1, stderr: '' })
+	const failure = JSON.parse(ambiguous.stdout)
+	expect(failure).toMatchObject({
+		ok: false,
+		error: { code: 'ambiguous_instance', hint: expect.stringContaining('--instance ID') },
+	})
+	expect(
+		failure.error.candidates.map((item: { instanceId: string }) => item.instanceId).sort(),
+	).toEqual([outer.instance.instanceId, another.instance.instanceId].sort())
+	expect(outer.requests.some(({ method }) => method === 'submit')).toBe(false)
+	expect(another.requests.some(({ method }) => method === 'submit')).toBe(false)
+	const selected = await run(web, [
+		'dev',
+		'run',
+		file,
+		'--root',
+		root,
+		'--profile',
+		'app',
+		'--instance',
+		another.instance.instanceId,
+	])
+	expect(selected.code).toBe(0)
+	expect(JSON.parse(selected.stdout)).toMatchObject({
+		ok: true,
+		value: { run: { instanceId: another.instance.instanceId, state: 'succeeded' } },
+	})
 })
 
 it('keeps service-only status in CLI and rejects SDK operations before calling Pitchfork', async () => {

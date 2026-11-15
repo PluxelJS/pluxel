@@ -2,7 +2,7 @@ import { isAbsolute } from 'node:path'
 import { ScriptExecutionError } from '@pluxel/host/internal/agent/runtime'
 
 const PREFIX = 'pluxel-script-v3.'
-const MAX_TOKEN_LENGTH = 16 * 1024
+export const MAX_TOKEN_LENGTH = 16 * 1024
 const MAX_PAYLOAD_BYTES = 8 * 1024
 const ID = /^[a-zA-Z0-9_-]{1,128}$/
 

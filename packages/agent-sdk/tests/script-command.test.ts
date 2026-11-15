@@ -9,7 +9,12 @@ import {
 	scriptRequestHash,
 	type ScriptSubmission,
 } from '@pluxel/host/internal/agent/runtime'
-import { decodeScriptReceipt, encodeScriptReceipt, type ScriptReceipt } from '../src/client/receipt'
+import {
+	decodeScriptReceipt,
+	encodeScriptReceipt,
+	MAX_TOKEN_LENGTH,
+	type ScriptReceipt,
+} from '../src/client/receipt'
 import { scriptCommand } from '@pluxel/agent-sdk/internal/cli'
 
 const mocks = vi.hoisted(() => ({ connect: vi.fn(), compile: vi.fn() }))
@@ -153,6 +158,76 @@ it('rejects target override flags and unavailable original owners without replay
 	const [gone] = await command(['result', receipt])
 	expect(gone).toMatchObject({ ok: false, error: { code: 'instance_mismatch', receipt } })
 	expect(mocks.compile).not.toHaveBeenCalled()
+})
+
+it.each(['result', 'cancel'])(
+	'reads a saved receipt for %s and authenticates only at its original owner',
+	async (method) => {
+		const file = await files()
+		const receipt = encodeScriptReceipt(original)
+		await writeFile(file.credentials, '{"password":"private-value"}')
+		const run = { ...original, state: 'succeeded' }
+		const query = vi.fn(async () => run)
+		mocks.connect.mockResolvedValue(connection({ [method]: query }))
+		for (const ending of ['', '\n', '\r\n']) {
+			await writeFile(file.receipt, receipt + ending)
+			const output = await command([
+				method,
+				'--receipt-file',
+				file.receipt,
+				'--credentials-file',
+				file.credentials,
+			])
+			expect(output).toEqual([{ ok: true, value: { receipt, run } }])
+			expect(process.exitCode).toBe(0)
+		}
+		expect(mocks.connect).toHaveBeenCalledWith({
+			endpoint: 'https://host.test/',
+			instanceId: original.instanceId,
+			credentials: { password: 'private-value' },
+			signal: undefined,
+		})
+		expect(query).toHaveBeenCalledTimes(3)
+		expect(query).toHaveBeenCalledWith(original.runId)
+		expect(mocks.compile).not.toHaveBeenCalled()
+		expect(events).toEqual([])
+	},
+)
+
+it.each([
+	['missing', 'ENOENT'],
+	['directory', 'invalid_input'],
+	['empty', 'invalid_receipt'],
+	['json', 'invalid_receipt'],
+	['whitespace', 'invalid_receipt'],
+	['multiple', 'invalid_receipt'],
+	['large', 'input_too_large'],
+	['conflict', 'invalid_input'],
+	['absent', 'invalid_input'],
+])('rejects %s receipt input before authentication or connection', async (kind, code) => {
+	const file = await files()
+	const receipt = encodeScriptReceipt(original)
+	const contents: Record<string, string> = {
+		empty: '',
+		json: JSON.stringify({ receipt }),
+		whitespace: receipt + ' \n',
+		multiple: receipt + '\n\n',
+		large: 'x'.repeat(MAX_TOKEN_LENGTH + 3),
+		conflict: receipt,
+	}
+	if (Object.hasOwn(contents, kind)) await writeFile(file.receipt, contents[kind]!)
+	const path = kind === 'directory' ? join(file.receipt, '..') : file.receipt
+	for (const method of ['result', 'cancel']) {
+		const args = kind === 'absent' ? [] : ['--receipt-file', path]
+		if (kind === 'conflict') args.push(receipt)
+		const output = await command([method, ...args, '--credentials-file', file.credentials])
+		expect(output).toHaveLength(1)
+		expect(output[0]).toMatchObject({ ok: false, error: { code } })
+		expect(process.exitCode).toBe(1)
+	}
+	expect(mocks.connect).not.toHaveBeenCalled()
+	expect(mocks.compile).not.toHaveBeenCalled()
+	expect(events).toEqual([])
 })
 
 async function files() {
