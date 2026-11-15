@@ -32,7 +32,15 @@ description: 用 mise 固定工具、hk 执行提交检查、Pitchfork 管理开
 
 - 静态检查：`vp check`
 - 自动修复代码格式与可修复 Lint：`vp check --fix`
-- 完整门禁验证（包含类型、代码规范、测试与全量构建）：`vp run verify`
+- 本仓库完整门禁（包含类型、代码规范、测试与全量构建）：`mise exec -- vp run --concurrency-limit=1 workspace:verify`
+
+并发限制应直接传给执行 `workspace:verify` 的任务运行器。外层 `verify` package script 会再启动任务运行器，外层并发参数不会自动传入。
+
+### 编辑器测试发现
+
+本仓库在 `.vscode/settings.json` 使用 [Vitest 扩展的 `configSearchPatternExclude`](https://github.com/vitest-dev/vscode#workspace-configurations)，排除构建产物、生成的 `fs-fixture-*` 目录和 CLI/Create 模板中的配置，同时保留扩展原有的依赖目录排除规则。模板与独立生成项目的行为由仓库集成测试验证。
+
+构建或测试会复制、替换和删除这些目录；把它们发现成独立的编辑器测试项目会不断启动额外进程。修改配置后在 Testing 视图使用 **Refresh Tests**，核对项目列表与资源占用；完整门禁继续使用上述任务入口。
 
 <span id="下游迁移到-vite-task"></span>
 

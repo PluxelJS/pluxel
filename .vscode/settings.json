@@ -29,5 +29,6 @@
 	},
 	"oxc.disableNestedConfig": true,
 	"oxc.fmt.disableNestedConfig": true,
+	"vitest.configSearchPatternExclude": "{**/node_modules/**,**/vendor/**,**/.*/**,**/*.d.ts,**/dist/**,**/fs-fixture-*/**,packages/create/template/**,packages/cli/templates/**}",
 	"editor.formatOnSaveMode": "file"
 }
