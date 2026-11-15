@@ -28,8 +28,13 @@ void get()
 void patch({ set: { count: 1 } })
 // @ts-expect-error A descriptor retains its actual configuration input.
 void patch({ set: { count: 'one' } })
-// @ts-expect-error Constructors do not encode schema input/output associations.
-void counter.config
+void counter.config.patch({ set: { count: 2 } })
+const sourceConfig = await counter.config.get()
+if (sourceConfig.isOk()) {
+	// @ts-expect-error Source addresses provide dynamic configuration, without a schema output association.
+	const count: number = sourceConfig.value.config.count
+	void count
+}
 void sdk.plugin(address).config.get()
 // @ts-expect-error An address alone carries no concrete instance type.
 void sdk.plugin(address).instance()

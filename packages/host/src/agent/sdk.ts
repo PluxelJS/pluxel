@@ -306,7 +306,7 @@ export function createScriptScope(
 	// admission remain in the original coordinator for every operation.
 	const select = (selected: ReturnType<typeof normalizePluginTarget>): unknown => {
 		assertOpen()
-		const { node, descriptor, implementation } = selected
+		const { address, node, descriptor, implementation } = selected
 		const assertImplementation = (catalog: PluginCatalogSnapshot) => {
 			if (!implementation) return
 			const entry = pluginCatalogEntry(catalog, node.definition)
@@ -468,7 +468,7 @@ export function createScriptScope(
 				),
 		})
 		return Object.freeze({
-			address: node,
+			address,
 			status: () =>
 				queued(
 					() =>

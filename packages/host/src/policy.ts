@@ -8,6 +8,7 @@ import {
 } from '@pluxel/core'
 
 export type HostStateSnapshot = Readonly<{
+	/** Complete node identities from source classes, generated providers or discovery. Does not load implementations. */
 	autoStart: readonly PluginNodeAddress[]
 	forks: readonly PluginForkNodeAddress[]
 	providerDefaults: readonly HostProviderDefaultState[]

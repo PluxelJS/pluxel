@@ -23,13 +23,13 @@ import type {
 	PluginAutoStartBatchItem,
 	PluginControlBatchResult,
 	PluginControlMutationResult,
-	PluginControlMutationSuccess,
 	PluginControlSnapshot,
 	PluginApplyReport,
 	PluginLifecycleCommand,
 	PluginLifecycleCommandBatchItem,
 } from '../../web/protocol'
 import { pluginStatus, pluginStatusFromView } from './plugins'
+import { summarizePluginControlBatch } from '../../web/control-batch'
 
 const MAX_CONTROL_BATCH_ITEMS = 1_000
 const INHERITED_STOPPED_CONTROL: PluginControlSnapshot = Object.freeze({
@@ -154,21 +154,9 @@ async function runBatch<T>(
 	items: readonly T[],
 	run: (item: T) => Promise<PluginControlMutationResult>,
 ): Promise<PluginControlBatchResult> {
-	if (items.length === 0) return { ok: true, status: 'applied', results: [] }
 	const results: PluginControlMutationResult[] = []
 	for (const item of items) results.push(await run(item))
-	const successes = results.filter((result): result is PluginControlMutationSuccess => result.ok)
-	if (successes.length === results.length)
-		return { ok: true, status: 'applied', results: successes }
-	return {
-		ok: false,
-		status: results.every((result) => result.ok === true || result.code === 'lifecycle_failed')
-			? 'applied-with-issues'
-			: results.some((result) => result.ok === true || result.code === 'lifecycle_failed')
-				? 'partially-applied'
-				: 'rejected',
-		results,
-	}
+	return summarizePluginControlBatch(results)
 }
 
 function mutationReport(

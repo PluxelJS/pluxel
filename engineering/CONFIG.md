@@ -70,11 +70,11 @@ Core 的 `createCoreContextHost({ createConfigService })` 只允许在固定 CON
 和 deployment facts；resolver 每次 host startup 重新执行，可选择 services、config、policy、HTTP、
 logging、profile 和 Workbench policy。
 
-应用通过 `envBindings` / `fileBindings` 显式选取插件输入。`envBinding(owner, inputs)` / `fileBinding(owner, inputs)` 的 owner 接受 constructor 或 canonical node address；config schema 必须与 `configs.use()` metadata 中的同一对象一致，Vault 根 schema 声明 KV key 到记录的 shape。绑定 helper 从 schema input 推导 mapping / 文件记录 key，不从 Plugin 的静态字段推断。schema 定义只有一份，插件内部仍可使用任意普通 private 配置字段。
+应用通过 `envBindings` / `fileBindings` 显式选取插件输入。`envBinding(owner, inputs)` / `fileBinding(owner, inputs)` 的 owner 使用完整 canonical node address；config schema 必须与 `configs.use()` metadata 中的同一对象一致，Vault 根 schema 声明 KV key 到记录的 shape。绑定 helper 从 schema input 推导 mapping / 文件记录 key，不从 Plugin 的静态字段推断。schema 定义只有一份，插件内部仍可使用任意普通 private 配置字段。
 
 Host 从本次不可变 `startup.env` 解析环境映射，fileBindings 的 JSON 路径相对 `startup.root`。Host 不隐式解析整个环境配置 snapshot。来源元数据只包含路径、kind/name 和 readonly，不包含值。具体 mapping 与 Vault 规则见[用户配置文档](../docs/plugin-development/configuration.md)。
 
-本次声明按 `config.records → fileBindings.config → envBindings.config` 合成，后者覆盖同路径。每个 owner 的 mode 按 record.mode → config.mode → declared-first 确定：declared-first 为声明优先，saved-first 为保存优先，declared-only 忽略保存输入；缺少部分最后由 schema 决定。default/fork 互不继承值或 mode，Part 属于 owning node 的聚合输入。mode-only record 合法，重复 owner 或 mode/config 同时缺失拒绝。constructor 在快照时 lower 为 canonical default address；地址声明不加载代码、创建 fork 或启动节点。
+本次声明按 `config.records → fileBindings.config → envBindings.config` 合成，后者覆盖同路径。每个 owner 的 mode 按 record.mode → config.mode → declared-first 确定：declared-first 为声明优先，saved-first 为保存优先，declared-only 忽略保存输入；缺少部分最后由 schema 决定。default/fork 互不继承值或 mode，Part 属于 owning node 的聚合输入。mode-only record 合法，重复 owner 或 mode/config 同时缺失拒绝。class、生成入口与动态发现提供的地址使用同一身份规则。Host 在快照时保留纯身份，按 catalog 中的当前实现解析；地址声明不加载代码、创建 fork 或启动节点。
 
 每个来源先接受无行为、可移植的原始树；普通对象递归合并，数组/tuple 原子替换。只对最终 effective input 执行完整 schema。被遮盖的原始值仅证明结构合法，取消遮盖或 definition 变化时重新验证。env/file 不形成管理写锁；模式、文档写权限与授权独立。schema defaults/transform output、声明和 env 都不反写原始保存输入。来源证明位于内部 WeakMap，作者字段不能伪造，source facts 与 shadowedPaths 在同一协调查询投影。
 

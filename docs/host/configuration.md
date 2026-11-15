@@ -128,6 +128,23 @@ export default defineHostApplication(async (startup) => {
 - **`prepare`**：在插件启动前执行的应用级准备工作（如准备基础目录、校验底层前置依赖）。
 - **`launch`**：在所有插件成功进入运行状态后执行，通常用于绑定并开启 Web 物理监听。
 
+### 插件装配与地址选择
+
+`plugins` 与 `sources` 提供实现，进入同一个 catalog。其他配置按完整地址选择 catalog 中的插件，沿用脚本 SDK 的身份规则：
+
+| 配置位置                                         | 输入                                                                          | 作用                             |
+| ------------------------------------------------ | ----------------------------------------------------------------------------- | -------------------------------- |
+| `plugins`                                        | 已导入的 Plugin class                                                         | 注册实现，供开发和静态构建使用   |
+| `sources`                                        | 文件或目录声明                                                                | 发现并加载实现，加入同一 catalog |
+| `policy.autoStart`                               | 完整 node address                                                             | 声明自动启动节点                 |
+| `policy.forks`                                   | `Plugin.nodeAddress('east')` 等 fork address                                  | 声明可用的 fork                  |
+| `config.records[].owner`、env/file binding owner | 完整 node address                                                             | 选择节点配置                     |
+| provider default / dependency override           | requirement 的 `definitionAddress()`、provider 与 consumer 的 `nodeAddress()` | 选择依赖关系                     |
+
+源码 class、生成控制入口与动态发现返回的地址可以用于同一节点配置。名称只用于展示，实际选择包含 canonical entry、具名导出及 default/fork。静态构建或动态加载不会为同一入口另造身份。
+
+当前 Host 的节点通过 `sdk.plugins.list()` 发现，包括可用但尚未启动的节点；按完整入口选择后复用它的 `address`。取得有类型的控制入口使用 `dev sync` / `script sync` 返回的准确模块与导出名，见[插件发现与控制](../development/plugin-control.md#动态安装后的发现与操作)。配置声明保存地址的身份字段，采用 catalog 中的当前实现。
+
 ---
 
 <span id="vite-开发"></span>
@@ -166,9 +183,10 @@ export default defineConfig({
 
 ## 动态来源
 
-如果需要在应用运行期间自动扫描并加载指定目录下的插件，可以配置 `sources`：
+用 `sources` 声明插件入口文件或目录。Vite 持续观察入口变化；原生生产启动器在启动时读取一次快照，之后的发布在下次启动采用：
 
 ```ts no-twoslash
+import { defineHostApplication } from '@pluxel/host'
 import { pluginSource } from '@pluxel/host/sources'
 
 export default defineHostApplication(() => ({
@@ -183,7 +201,24 @@ export default defineHostApplication(() => ({
 }))
 ```
 
-目录中的新插件在被保存或移除时，宿主会自动更新可用插件目录。
+发现入口使插件可用，启动仍由 `policy.autoStart` 或显式操作决定。生成控制入口可以提前声明目标，无需在应用模块里导入插件实现。例如，已发布入口位于 `managed-plugins/entries` 时：
+
+```ts no-twoslash
+import { defineHostApplication } from '@pluxel/host'
+import { pluginSource } from '@pluxel/host/sources'
+import { Counter } from '@acme/pluxel-plugin-counter/control'
+
+export default defineHostApplication(() => ({
+	plugins: [],
+	sources: [
+		pluginSource({ kind: 'directory', path: './managed-plugins/entries', include: ['*.mjs'] }),
+	],
+	policy: { autoStart: [Counter.nodeAddress()] },
+	config: { records: [{ owner: Counter.nodeAddress(), config: { count: 2 } }] },
+}))
+```
+
+控制入口只提供地址与声明；`sources` 负责加载实现。目标尚未发现时，状态报告为 unavailable，地址配置不会触发安装或导入。生产启动的默认就绪检查要求所有预期运行节点已运行；允许等待后续发布的应用需通过 `acceptStartup` 明确选择启动策略。
 
 ---
 
@@ -339,16 +374,16 @@ Workbench 编辑原始保存输入，Host 查询同时返回 `managedInput`、�
 
 `policy.mode` 按字段分别设置上述三种模式，省略的字段使用 `declared-first`。
 
-| 字段                  | 含义                                             |
-| --------------------- | ------------------------------------------------ |
-| `autoStart`           | 自动启动节点，可使用 constructor 或 node address |
-| `forks`               | 已声明的 canonical fork addresses                |
-| `providerDefaults`    | 抽象依赖的默认 provider                          |
-| `dependencyOverrides` | 指定 consumer 的 provider 选择                   |
-| `startTimeoutMs`      | Plugin 启动期限                                  |
-| `drainTimeoutMs`      | 已接纳操作的排空期限                             |
-| `startConcurrency`    | Plugin 启动并发数                                |
-| `stopConcurrency`     | Plugin 停止并发数                                |
+| 字段                  | 含义                                  |
+| --------------------- | ------------------------------------- |
+| `autoStart`           | 自动启动节点，只使用完整 node address |
+| `forks`               | 已声明的 canonical fork addresses     |
+| `providerDefaults`    | 抽象依赖的默认 provider               |
+| `dependencyOverrides` | 指定 consumer 的 provider 选择        |
+| `startTimeoutMs`      | Plugin 启动期限                       |
+| `drainTimeoutMs`      | 已接纳操作的排空期限                  |
+| `startConcurrency`    | Plugin 启动并发数                     |
+| `stopConcurrency`     | Plugin 停止并发数                     |
 
 前四个列表整项选择，显式 `[]` 是空列表，省略才继承。后四项执行参数在创建 Plugin 服务前确定；运行中保存新目标会报告 `requires-host-recreation`，需要重建 Host 才能采用，单独重启 Plugin 不改变本次 Host 的执行参数。管理动作若被声明遮盖而无法生效，会在副作用前以 `policy_shadowed` 拒绝。
 

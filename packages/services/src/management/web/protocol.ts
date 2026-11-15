@@ -20,7 +20,7 @@ export type {
 } from '@pluxel/host/internal/protocol'
 export type { VaultKeyPair } from '../../vault'
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 11 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 12 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',
@@ -463,12 +463,12 @@ export type PluginControlMutationFailure =
 export type PluginControlMutationResult =
 	| PluginControlMutationSuccess
 	| PluginControlMutationFailure
-/** Actions are serialized and may partially apply before a later item fails. */
+/** Actions are serialized. Any uncertain item makes the batch unknown; inspect all results before retrying. */
 export type PluginControlBatchResult =
 	| Readonly<{ ok: true; status: 'applied'; results: readonly PluginControlMutationSuccess[] }>
 	| Readonly<{
 			ok: false
-			status: 'applied-with-issues' | 'partially-applied' | 'rejected'
+			status: 'unknown' | 'applied-with-issues' | 'partially-applied' | 'rejected'
 			results: readonly PluginControlMutationResult[]
 	  }>
 	| Readonly<{

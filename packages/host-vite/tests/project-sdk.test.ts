@@ -19,7 +19,7 @@ it('borrows real instances and root without Services and closes cached extension
 	const sdk = createProjectSdk(host.ctx, scope)
 	const select = sdk.plugin
 	const counter = select(Counter.nodeAddress())
-	expect(counter.address).toEqual(parsePluginNodeAddress(Counter.nodeAddress()))
+	expect(counter.address).toBe(Counter.nodeAddress())
 	const erasedAddress: PluginNodeAddress = Counter.nodeAddress()
 	await expect(select(erasedAddress).config.get()).resolves.toMatchObject({
 		status: 'error',
@@ -51,7 +51,7 @@ it('borrows real instances and root without Services and closes cached extension
 	const next = createScriptScope({ ctx: host.ctx })
 	try {
 		const nextSdk = createProjectSdk(host.ctx, next)
-		const nextCounter = nextSdk.plugin(Counter.nodeAddress())
+		const nextCounter = nextSdk.plugin(counter.address)
 		const nextBorrowed = await nextCounter.instance()
 		const current = nextBorrowed.unwrap()
 		expect(current.count).toBe(4)
@@ -74,7 +74,9 @@ it('resolves existing typed forks', async () => {
 		const sdk = createProjectSdk(host.ctx, scope)
 		expect(await host.forks.ensure(Counter.nodeAddress('east'))).toMatchObject({ ok: true })
 		const counter = sdk.plugin(Counter.nodeAddress('east'))
-		expect(counter.address).toEqual(parsePluginNodeAddress(Counter.nodeAddress('east')))
+		expect(parsePluginNodeAddress(counter.address)).toEqual(
+			parsePluginNodeAddress(Counter.nodeAddress('east')),
+		)
 		const started = await counter.start()
 		started.unwrap()
 		const borrowed = await counter.instance()
@@ -104,9 +106,10 @@ it('rejects an imported constructor superseded by the actual catalog', async () 
 	const scope = createScriptScope({ ctx: host.ctx })
 	try {
 		const sdk = createProjectSdk(host.ctx, scope)
-		const { start, stop, status, restart, instance } = sdk.plugin(Replaceable.nodeAddress())
-		const erasedAddress: PluginNodeAddress = Replaceable.nodeAddress()
-		const { get, validate, patch, reset } = sdk.plugin(erasedAddress).config
+		const selected = sdk.plugin(Replaceable.nodeAddress())
+		const { start, stop, status, restart, instance } = selected
+		const reselected = sdk.plugin(selected.address)
+		const { get, validate, patch, reset } = selected.config
 		const initialConfig = await get()
 		expect(initialConfig.unwrap()).toMatchObject({ config: { count: 2 } })
 		const started = await start()
@@ -122,6 +125,9 @@ it('rejects an imported constructor superseded by the actual catalog', async () 
 			() => validate({ set: { count: 3 } }),
 			() => patch({ set: { count: 3 } }),
 			reset,
+			reselected.instance,
+			reselected.config.get,
+			() => reselected.config.patch({ set: { count: 3 } }),
 		])
 			await expect(operation()).resolves.toMatchObject({
 				status: 'error',

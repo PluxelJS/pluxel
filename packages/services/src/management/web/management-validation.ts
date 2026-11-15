@@ -5,6 +5,7 @@ import type {
 	HostPolicyField,
 	HostStateConfigurationSnapshot,
 } from '@pluxel/host'
+import { summarizePluginControlBatch } from './control-batch'
 import {
 	comparePluginDefinitionAddress,
 	comparePluginNodeAddress,
@@ -673,24 +674,6 @@ export function parseRemoveForkResult(input: unknown): RemoveForkResult {
 /** Validate and deep-freeze a Plugin control batch result, including partial application. */
 export function parsePluginControlBatchResult(input: unknown): PluginControlBatchResult {
 	const value = rootRecord(input, 'plugin control batch result')
-	if (value.ok === true) {
-		shape(value, ['ok', 'status', 'results'], [], 'plugin control batch result')
-		literal(value.status, ['applied'], 'plugin control batch result.status')
-		const results = array(value.results, 'plugin control batch result.results').map((item, index) =>
-			controlMutationSuccess(item, `plugin control batch result.results[${index}]`),
-		)
-		return Object.freeze({
-			ok: true,
-			status: 'applied',
-			results: Object.freeze(results) as PluginControlMutationSuccess[],
-		})
-	}
-	if (value.ok !== false) fail('plugin control batch result.ok must be boolean')
-	const status = literal(
-		value.status,
-		['applied-with-issues', 'partially-applied', 'rejected'],
-		'plugin control batch result.status',
-	)
 	if (Object.hasOwn(value, 'code')) {
 		shape(
 			value,
@@ -698,9 +681,8 @@ export function parsePluginControlBatchResult(input: unknown): PluginControlBatc
 			[],
 			'plugin control batch result',
 		)
-		if (status !== 'rejected') {
-			fail('plugin control batch result with code must have rejected status')
-		}
+		if (value.ok !== false) fail('invalid-input control batch result.ok must be false')
+		literal(value.status, ['rejected'], 'plugin control batch result.status')
 		literal(value.code, ['invalid_input'], 'plugin control batch result.code')
 		literal(value.state, ['unchanged'], 'plugin control batch result.state')
 		if (array(value.results, 'plugin control batch result.results').length > 0) {
@@ -719,24 +701,12 @@ export function parsePluginControlBatchResult(input: unknown): PluginControlBatc
 	const results = array(value.results, 'plugin control batch result.results').map((item, index) =>
 		controlMutationResult(item, `plugin control batch result.results[${index}]`),
 	)
-	const applied = (result: PluginControlMutationResult) =>
-		result.ok === true || result.code === 'lifecycle_failed'
-	if (status === 'applied-with-issues') {
-		if (!results.every(applied) || !results.some((result) => !result.ok))
-			fail(
-				'applied-with-issues control batch must contain only applied results and lifecycle issues',
-			)
-	} else if (status === 'partially-applied') {
-		if (!results.some(applied) || !results.some((result) => !applied(result)))
-			fail('partially-applied control batch must contain applied and unapplied results')
-	} else if (results.some(applied)) {
-		fail('rejected control batch must not contain applied results')
-	}
-	return Object.freeze({
-		ok: false,
-		status,
-		results: Object.freeze(results) as PluginControlMutationResult[],
-	}) as PluginControlBatchResult
+	const batch = summarizePluginControlBatch(results)
+	if (value.ok !== batch.ok || value.status !== batch.status)
+		fail(
+			`plugin control batch summary must match its results (ok: ${batch.ok}, status: ${batch.status})`,
+		)
+	return batch
 }
 
 /** Validate and deep-freeze the current logging policy snapshot. */

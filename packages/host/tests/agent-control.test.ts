@@ -121,6 +121,9 @@ it('keeps JSON identities dynamic and refuses copied typed address evidence', as
 		})
 		expect(Result.unwrap(await dynamic.config.get())).toMatchObject({ config: { count: 2 } })
 		const original = Result.unwrap(await scope.sdk.plugin(address).instance())
+		const selected = scope.sdk.plugin(address)
+		expect(selected.address).toBe(address)
+		expect(Result.unwrap(await scope.sdk.plugin(selected.address).instance())).toBe(original)
 		expect(original.add(1)).toBe(3)
 		const snapshot = Result.unwrap(await scope.sdk.plugins.list())
 		expect(snapshot).toMatchObject({
@@ -152,6 +155,12 @@ it('retains config behavior and control checks after ordinary address type erasu
 		})
 		const changedAddress: PluginNodeAddress = changed.nodeAddress()
 		await expect(scope.sdk.plugin(changedAddress).config.get()).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'control_contract_mismatch' },
+		})
+		await expect(
+			scope.sdk.plugin(scope.sdk.plugin(changedAddress).address).config.get(),
+		).resolves.toMatchObject({
 			status: 'error',
 			error: { code: 'control_contract_mismatch' },
 		})
@@ -193,9 +202,15 @@ it('selects immutable targets and replaces forks without materializing nodes or 
 		descriptorData.contracts.config = wrongHash
 		descriptorData.contracts.instance = wrongHash
 		dynamicAddress.definition.exportName = 'Changed'
-		expect(selected.address).toEqual(parsePluginNodeAddress(Counter.nodeAddress('east')))
-		expect(west.address).toEqual(parsePluginNodeAddress(Counter.nodeAddress('west')))
+		expect(parsePluginNodeAddress(selected.address)).toEqual(
+			parsePluginNodeAddress(Counter.nodeAddress('east')),
+		)
+		expect(parsePluginNodeAddress(west.address)).toEqual(
+			parsePluginNodeAddress(Counter.nodeAddress('west')),
+		)
 		expect(dynamic.address).toEqual(parsePluginNodeAddress(Counter.nodeAddress()))
+		expect(Object.isFrozen(dynamic.address)).toBe(true)
+		expect(Object.isFrozen(dynamic.address.definition)).toBe(true)
 		expect(Result.unwrap(await scope.sdk.plugins.list())).toEqual(before)
 		expect(requirePluginService(host.ctx).isRunning(Counter.nodeAddress('east'))).toBe(false)
 		expect(requirePluginService(host.ctx).isRunning(Counter.nodeAddress('west'))).toBe(false)

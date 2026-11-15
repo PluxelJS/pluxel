@@ -117,18 +117,23 @@ void widenedInput
 const { plugin } = sdk
 // @ts-expect-error Import Better Result from its own module when constructing a result.
 void sdk.Result
-const counterRef = plugin(Counter.nodeAddress())
+const counterAddress = Counter.nodeAddress()
+const counterRef = plugin(counterAddress)
 // @ts-expect-error Selectors accept node addresses, never descriptor objects.
 plugin(Counter)
 // @ts-expect-error Fork selection belongs to the address provider.
 void counterRef.fork
-expectTypeOf(counterRef).toEqualTypeOf<ScriptPlugin<ReturnType<typeof Counter.nodeAddress>>>()
+expectTypeOf(counterRef).toEqualTypeOf<ScriptPlugin<typeof counterAddress>>()
 expectTypeOf(counterRef.config).toEqualTypeOf<ScriptPluginConfig<CounterInput, CounterOutput>>()
-expectTypeOf(counterRef.address).toEqualTypeOf<PluginNodeAddress>()
+expectTypeOf(counterRef.address).toExtend<typeof counterAddress>()
+expectTypeOf(counterAddress).toExtend<typeof counterRef.address>()
+expectTypeOf(counterRef.address.variant).toEqualTypeOf<'default'>()
+expectTypeOf(plugin(counterRef.address)).toEqualTypeOf<typeof counterRef>()
 // @ts-expect-error A selector's captured address is readonly.
 counterRef.address = address
 const { instance: borrow, config: counterConfig } = counterRef
 const selectedFork = plugin(Counter.nodeAddress('east'))
+expectTypeOf(selectedFork.address.variant).toEqualTypeOf<'fork'>()
 expectTypeOf(selectedFork.config).toEqualTypeOf<ScriptPluginConfig<CounterInput, CounterOutput>>()
 const { get, validate, patch, reset } = counterConfig
 void patch({ set: { step: 2 } })
@@ -317,6 +322,8 @@ void sdk.plugin(erasedTarget).config.get()
 void sdk.plugin(erasedTarget).config
 // @ts-expect-error Known no-config descriptors have no config property.
 void sdk.plugin(NoConfig.nodeAddress()).config
+// @ts-expect-error Reselecting a known no-config address cannot enable dynamic configuration.
+void sdk.plugin(sdk.plugin(NoConfig.nodeAddress()).address).config
 const other = Result.unwrap(await sdk.plugin(NoConfig.nodeAddress()).instance())
 expectTypeOf(other.title()).toEqualTypeOf<string>()
 
@@ -329,8 +336,11 @@ const sourceChoice =
 	Math.random() > 0.5 ? CounterPlugin.nodeAddress() : OtherSourcePlugin.nodeAddress()
 const sourceInstance = Result.unwrap(await sdk.plugin(sourceChoice).instance())
 expectTypeOf(sourceInstance).toEqualTypeOf<CounterPlugin | OtherSourcePlugin>()
-// @ts-expect-error Source constructor unions do not invent configuration associations.
-void sdk.plugin(sourceChoice).config
+expectTypeOf(sdk.plugin(sourceChoice).config).toEqualTypeOf<ScriptPluginConfig>()
+const sourceRef = sdk.plugin(CounterPlugin.nodeAddress())
+expectTypeOf(sourceRef.config).toEqualTypeOf<ScriptPluginConfig>()
+expectTypeOf(sdk.plugin(sourceRef.address)).toEqualTypeOf<typeof sourceRef>()
+void sourceRef.config.patch({ set: { count: 3 } })
 const controlOrSource = Math.random() > 0.5 ? Counter.nodeAddress() : CounterPlugin.nodeAddress()
 const controlOrSourceInstance = Result.unwrap(await sdk.plugin(controlOrSource).instance())
 expectTypeOf(controlOrSourceInstance).toEqualTypeOf<CounterPlugin>()
@@ -348,10 +358,23 @@ declare const rawOrSource: RawOrSource
 const rawOrSourceRef = sdk.plugin<RawOrSource>(rawOrSource)
 // @ts-expect-error Source evidence cannot make a plain address acquire instance access.
 void rawOrSourceRef.instance()
-// @ts-expect-error A source address branch does not declare configuration.
-void rawOrSourceRef.config
+expectTypeOf(rawOrSourceRef.config).toEqualTypeOf<ScriptPluginConfig>()
 const erasedNode: PluginNodeAddress = CounterPlugin.nodeAddress()
 expectTypeOf(sdk.plugin(erasedNode).config).toEqualTypeOf<ScriptPluginConfig>()
+
+const mutableAddress = {
+	definition: {
+		entry: { kind: 'package-root' as const, packageName: '@example/worker' },
+		exportName: 'Worker',
+	},
+	variant: 'default' as const,
+}
+const captured = sdk.plugin(mutableAddress)
+// @ts-expect-error A captured identity is immutable even when its input is mutable.
+captured.address.definition.exportName = 'Changed'
+// @ts-expect-error Nested entry fields also describe the frozen snapshot.
+captured.address.definition.entry.packageName = '@example/changed'
+mutableAddress.definition.exportName = 'AuthorOwned'
 
 interface ThenInstance {
 	then(resolve: (value: string) => void): void

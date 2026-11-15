@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { PluginStatusSnapshot } from '../../../src/management/web/protocol'
+import type {
+	PluginStatusSnapshot,
+	PluginControlMutationResult,
+	PluginControlSnapshot,
+} from '../../../src/management/web/protocol'
+import { summarizePluginControlBatch } from '../../../src/management/web/control-batch'
 import {
 	parseConfigResult,
 	parseConfigState,
@@ -284,6 +289,78 @@ describe('management protocol validation', () => {
 			revision: 3,
 			persistence: 'dirty',
 		})
+	})
+
+	it('preserves uncertain batches and rejects summaries that contradict individual results', () => {
+		const control: PluginControlSnapshot = {
+			autoStart: false,
+			sessionIntent: 'inherit',
+			desiredState: 'stopped',
+			activationReason: null,
+			lifecycleState: 'stopped',
+		} as const
+		const applied = { address, ok: true, status: 'applied', report, control } as const
+		const rejected = {
+			address,
+			ok: false,
+			code: 'start_unavailable',
+			state: 'unchanged',
+			error: 'unavailable',
+		} as const
+		const uncertain = {
+			address,
+			ok: false,
+			code: 'persistence_failed',
+			state: 'unknown',
+			error: 'unconfirmed write',
+		} as const
+		const issue = {
+			address,
+			ok: false,
+			code: 'lifecycle_failed',
+			status: 'applied-with-issues',
+			error: 'missing consumer',
+			control,
+			report: {
+				...report,
+				reconciliation: [
+					{ kind: 'consumer_unavailable', consumer: address, message: 'missing consumer' },
+				],
+			},
+		} as const
+		const cases: readonly [PluginControlMutationResult[], boolean, string][] = [
+			[[], true, 'applied'],
+			[[applied], true, 'applied'],
+			[[issue], false, 'applied-with-issues'],
+			[[applied, issue], false, 'applied-with-issues'],
+			[[applied, rejected], false, 'partially-applied'],
+			[[issue, rejected], false, 'partially-applied'],
+			[[rejected], false, 'rejected'],
+			[[uncertain], false, 'unknown'],
+			[[applied, uncertain], false, 'unknown'],
+			[[rejected, uncertain], false, 'unknown'],
+			[[issue, uncertain], false, 'unknown'],
+		]
+		for (const [results, ok, status] of cases) {
+			const batch = summarizePluginControlBatch(results)
+			expect(batch).toEqual({ ok, status, results })
+			expect(parsePluginControlBatchResult(JSON.parse(JSON.stringify(batch)))).toEqual(batch)
+			for (const wrong of [
+				'applied',
+				'applied-with-issues',
+				'partially-applied',
+				'rejected',
+				'unknown',
+			]) {
+				if (wrong === status) continue
+				expect(() => parsePluginControlBatchResult({ ...batch, status: wrong })).toThrow(
+					RuntimeProtocolValidationError,
+				)
+			}
+			expect(() => parsePluginControlBatchResult({ ...batch, ok: !ok })).toThrow(
+				RuntimeProtocolValidationError,
+			)
+		}
 	})
 
 	it('validates portable execution diagnostics without exposing physical module identity', () => {
@@ -594,7 +671,7 @@ describe('management protocol validation', () => {
 					},
 				],
 			}),
-		).toThrow(/applied and unapplied results/)
+		).toThrow(RuntimeProtocolValidationError)
 	})
 
 	it('requires a closed state write policy with distinct recognized override fields', () => {

@@ -93,14 +93,14 @@ Core 的 browser-safe internal address-evidence 叶子入口维护一个 WeakMap
 工厂每次创建独立值，不能按相同 definition 覆盖已有证据。class 的默认地址按 constructor 缓存，fork 地址在投影时创建。
 
 证据地址的字符串字段与普通地址完全相同。内部可枚举 symbol 只携带冻结的标记，equality、index、reference、route 和 JSON 编码均使用身份字段。
-SDK 在规范化前读取证据，随后仍在 committed lookup 或配置事务中验证当前实现和摘要。HMR 后，旧 class 地址继续指向旧 constructor 的要求；相同地址的新 class 不能替它更新证据。
+SDK 在规范化前读取证据，随后仍在 committed lookup 或配置事务中验证当前实现和摘要。引用的 `.address` 保留原证据地址与类型，重新选择不降级；普通动态输入则捕获为不可变身份快照。HMR 后，旧 class 地址继续指向旧 constructor 的要求；相同地址的新 class 不能替它更新证据。
 
 JSON 往返与显式 `parsePluginNodeAddress()` 得到普通地址，适合持久化和动态管理。它们提供未知字段的配置与生命周期操作，业务实例访问要求原 class 或控制入口生成的地址。
 Host 脚本的 JSON 边界也可直接编码原厂地址，输出相同的纯身份字段；唯一投影所有者、拒绝规则和预算见 [Agent Workflow](AGENT_WORKFLOW.md)。
 将 JSON 值断言成原地址类型不会恢复证据：实例请求明确失败，配置仍按动态地址执行，没有该断言声称的类型或历史摘要保证。
 spread 和 `Object.assign` 会复制内部标记，却不会复制 WeakMap 注册，选择时明确拒绝这类分离的证据。
 不同 Core 副本共用标记的 symbol key，但各自持有私有 WeakMap；外来证据也按分离证据拒绝，不按 definition 共享或补全调用权限。
-源码 class 的地址保留实例类型；配置的完整输入、输出和 Part 声明由生成控制入口提供，具体用法见[插件控制](../docs/development/plugin-control.md)。
+源码 class 的地址保留实例类型并提供未知字段的动态配置；配置的完整输入、输出和 Part 声明由生成控制入口提供，具体用法见[插件控制](../docs/development/plugin-control.md)。
 
 ## Entry canonicalization
 

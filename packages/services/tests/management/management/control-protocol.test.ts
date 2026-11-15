@@ -136,7 +136,7 @@ describe('runtime web control protocol', () => {
 		const persistenceFailure = await rpc.setPluginAutoStartDto([{ address, autoStart: true }])
 		expect(persistenceFailure).toMatchObject({
 			ok: false,
-			status: 'rejected',
+			status: 'unknown',
 			results: [
 				{
 					address,
@@ -147,6 +147,9 @@ describe('runtime web control protocol', () => {
 			],
 		})
 		expect(() => serialize(persistenceFailure)).not.toThrow()
+		expect(parsePluginControlBatchResult(JSON.parse(JSON.stringify(persistenceFailure)))).toEqual(
+			persistenceFailure,
+		)
 		stateStore.commitVersioned = commitVersioned
 	})
 

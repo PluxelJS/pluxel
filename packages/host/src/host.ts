@@ -28,6 +28,7 @@ import type {
 	PluginDefinitionAddress,
 	RootContext,
 } from '@pluxel/core'
+import { PluginLoweringError } from '@pluxel/core/toolchain'
 import {
 	closeOwnerInvocations,
 	createCorePluginExecutionBinding,
@@ -79,7 +80,7 @@ type ValidateHostServices<TServices extends readonly HostService[]> = ValidateCo
 type HostBaseOptions<TServices extends readonly HostService[] = readonly HostService[]> = Readonly<{
 	/** Positive service list, fixed before root creation. Omitted means no additional services. */
 	services?: TServices & ValidateHostServices<TServices>
-	/** Explicit definition catalog. A definition is activated only by state.autoStart or startNode. */
+	/** Loaded Plugin constructors for the catalog. Select their nodes separately with policy.autoStart or startNode. */
 	plugins: readonly PluginConstructor[]
 	/** Diagnostic identity; independent of product branding. */
 	name?: string
@@ -97,6 +98,7 @@ export type HostApplication = Omit<HostBaseOptions, 'vaultBindings'> &
 		/** Explicit config overlays and complete read-only Vault records. */
 		envBindings?: readonly HostEnvironmentBinding[]
 		fileBindings?: readonly HostFileBinding[]
+		/** Discover implementations into the same catalog as plugins; addresses alone never load code. */
 		sources?: readonly PluginSource[]
 		prepare?(input: {
 			host: PluginHost
@@ -518,10 +520,17 @@ function catalog(
 ): PluginCatalogSnapshot {
 	return createPluginCatalogSnapshot(
 		revision,
-		plugins.map((plugin) => ({
-			candidate: consumePluginDefinitionCandidate(plugin),
-			provenance: ctx ? readHostCatalogProvenance(ctx, plugin) : undefined,
-		})),
+		plugins.map((plugin, index) => {
+			if (typeof plugin !== 'function')
+				throw new PluginLoweringError(
+					'plugin_declaration_invalid',
+					`[host] plugins[${index}] must be a Plugin constructor; supply implementations through plugins or application sources, and use nodeAddress() in policy/config targets`,
+				)
+			return {
+				candidate: consumePluginDefinitionCandidate(plugin),
+				provenance: ctx ? readHostCatalogProvenance(ctx, plugin) : undefined,
+			}
+		}),
 	)
 }
 

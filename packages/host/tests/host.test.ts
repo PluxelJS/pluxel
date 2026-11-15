@@ -10,6 +10,21 @@ import { createHost } from '../src/index'
 import { requireHostStateStore } from '../src/host'
 
 describe('Core-only Host', () => {
+	it('rejects identity addresses where a Plugin implementation is required', async () => {
+		const address = {
+			definition: {
+				entry: { kind: 'package-root', packageName: '@test/selection' },
+				exportName: 'Selected',
+			},
+			variant: 'default',
+		} as const
+		await expect(
+			createHost({
+				// @ts-expect-error Node selection cannot supply a Plugin implementation.
+				plugins: [address],
+			}),
+		).rejects.toThrow('plugins[0] must be a Plugin constructor')
+	})
 	it('captures catalog inputs before awaiting initial startup', async () => {
 		@Plugin()
 		class Selected extends BasePlugin {}

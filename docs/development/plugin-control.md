@@ -60,17 +60,21 @@ const { config } = counter
 const { get, patch } = config
 ```
 
-引用提供 `address`、`status()`、`start()`、`stop()` 和 `restart()`。生成入口的地址还提供 `instance()`，有配置时提供准确推导的 `config`。选择 fork 使用 `Counter.nodeAddress('east')`，同样交给 `sdk.plugin()`。
+引用提供 `address`、`status()`、`start()`、`stop()` 和 `restart()`。选择 fork 使用 `Counter.nodeAddress('east')`，同样交给 `sdk.plugin()`。
 
-| 地址来源                           | 使用位置                     | 类型信息                                      |
-| ---------------------------------- | ---------------------------- | --------------------------------------------- |
-| 生成入口的 `nodeAddress()`         | 上传脚本和 Vite 项目脚本     | 配置输入/输出、声明源码和业务实例类型         |
-| 原 Plugin class 的 `nodeAddress()` | 同一 Vite 模块图中的项目脚本 | 原 class 实例类型；完整配置类型由生成入口提供 |
-| 运行时发现的 `node.address`        | 上传脚本和 Vite 项目脚本     | 动态配置与生命周期                            |
+`sdk.plugin(counter.address)` 保留原有类型与调用证据，可以在另一个 run 中重新选择。新引用的寿命属于新 run，保存地址不会延长旧引用或实例的寿命。
+
+源码 class 地址提供原实例类型与动态 `config`，配置字段为未知数据。生成入口提供精确的配置输入／输出类型；已知无配置的插件不开放 `config`。
+
+| 地址来源                           | 使用位置                     | 类型信息                              |
+| ---------------------------------- | ---------------------------- | ------------------------------------- |
+| 生成入口的 `nodeAddress()`         | 上传脚本和 Vite 项目脚本     | 配置输入/输出、声明源码和业务实例类型 |
+| 原 Plugin class 的 `nodeAddress()` | 同一 Vite 模块图中的项目脚本 | 原 class 实例类型、未知字段的动态配置 |
+| 运行时发现的 `node.address`        | 上传脚本和 Vite 项目脚本     | 动态配置与生命周期                    |
 
 直接 import class 时，脚本和 Host 必须使用同一个已加载的 constructor。包管理器的独立安装目录可能与项目 `node_modules` 中的副本不同。HMR 后旧 class 地址返回 `stale_target`，重新导入当前实现再取得地址。class 的使用条件由目标 Vite 模块图决定，见[项目脚本](./dev-console.md)。
 
-类型与运行时证据绑定到原始不可变地址。直接传递、保存变量和选择 fork 都保留它；spread / `Object.assign` 后的副本会明确报错。JSON 往返和 `parsePluginNodeAddress()` 得到普通身份地址，用于动态管理；实例调用需要重新从原提供者取得地址。TypeScript 断言无法恢复实例能力。
+类型与运行时证据绑定到原始不可变地址。直接传递、保存变量、引用的 `.address` 和选择 fork 都保留它；spread / `Object.assign` 后的副本会明确报错。JSON 往返和 `parsePluginNodeAddress()` 得到普通身份地址，用于动态管理；实例调用需要重新从原提供者取得地址。TypeScript 断言无法恢复实例能力。
 
 脚本直接返回原地址、把它放入普通对象或 Result 时，执行器也只交付纯身份，接收方不会得到调用证据。地址提供者和原地址对象可以跨 run 持有；SDK 引用与实例视图仍属于各自的 run。
 

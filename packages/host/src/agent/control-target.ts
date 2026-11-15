@@ -9,20 +9,21 @@ import { parsePluginControlDescriptor, type PluginControlDescriptorData } from '
 
 /** Capture evidence before normalizing identity; never restore it by looking up a definition. */
 export function normalizePluginTarget(target: PluginNodeAddress): Readonly<{
+	address: PluginNodeAddress
 	node: PluginNodeAddress
 	descriptor?: PluginControlDescriptorData
 	implementation?: PluginConstructor
 }> {
 	const evidence = readPluginNodeAddressEvidence(target)
 	const node = parsePluginNodeAddress(target)
-	if (evidence === undefined) return Object.freeze({ node })
+	if (evidence === undefined) return Object.freeze({ address: node, node })
 	if (!evidence || typeof evidence !== 'object' || !('kind' in evidence))
 		throw new TypeError('Unrecognized Plugin address evidence')
 	if (evidence.kind === 'control' && 'descriptor' in evidence) {
 		const descriptor = parsePluginControlDescriptor(evidence.descriptor)
 		if (!pluginDefinitionAddressEqual(node.definition, descriptor.definition))
 			throw new TypeError('Plugin address and control evidence must identify the same definition')
-		return Object.freeze({ node, descriptor })
+		return Object.freeze({ address: target, node, descriptor })
 	}
 	if (
 		evidence.kind === 'constructor' &&
@@ -34,7 +35,7 @@ export function normalizePluginTarget(target: PluginNodeAddress): Readonly<{
 			throw new TypeError(
 				'Plugin address and constructor evidence must identify the same definition',
 			)
-		return Object.freeze({ node, implementation })
+		return Object.freeze({ address: target, node, implementation })
 	}
 	throw new TypeError('Unrecognized Plugin address evidence')
 }

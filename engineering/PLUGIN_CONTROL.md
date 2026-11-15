@@ -59,7 +59,7 @@ Vite 在候选准备时核对 `ModuleRunner.evaluatedModules` 中实际缓存代
 
 SDK 在地址规范化之前读取并固定证据，然后交给原 Host coordinator。普通地址只提供动态管理。枚举 symbol 中的 opaque token 用于检测 spread / Object.assign 后的副本，只有弱注册表里的原对象有效；JSON 或显式 parse 得到纯身份，实例访问返回 `control_evidence_missing`。地址与提供者可以跨 run 保存，SDK 引用和实例视图仍受本次 run 限制。
 
-引用统一提供 status、start、stop、restart。生成地址提供 instance；已声明配置时还提供 `ScriptPluginConfig<I, O>`。配置参数不再重复目标，也不重新推导输入类型。配置函数使用 readonly 函数属性，提取、赋值或注解后仍保持输入约束。配置不同的联合只开放 get，无配置或已擦除类型关联的描述符不开放 config；动态地址保留原未知配置操作且不开放业务 instance。已知调用方、public exports、文档及生成项目入口统一使用这一形态。
+引用统一提供 status、start、stop、restart。生成地址提供 instance；已声明配置时还提供 `ScriptPluginConfig<I, O>`。配置参数不再重复目标，也不重新推导输入类型。配置函数使用 readonly 函数属性，提取、赋值或注解后仍保持输入约束。配置不同的联合只开放 get，无配置或已擦除类型关联的描述符不开放 config；源码 class 地址提供原实例类型与未知字段的动态配置；普通动态地址提供动态配置而不开放业务 instance。引用的 address 保留输入地址的类型与证据，跨引用或 run 重新选择仍执行原检查。已知调用方、public exports、文档及生成项目入口统一使用这一形态。
 
 SDK 工厂、引用和配置方法均由闭包持有目标，不依赖调用 receiver。选择先检查 scope；异步操作统一返回 `Promise<Result<T, E>>`，继续走原 run/queued 准入和排空。已知失败在被跟踪的 Promise 结算前转换为 Err，避免排空时误记 cleanup failure。未知异常继续 reject。配置、策略和日志结果在 `sdk-results.ts` 去除原 `ok` 后分流，保持所有来源、修订、持久化和采用信息；start/stop/restart 报告含协调或 lifecycle 问题时返回携带 report 的 Err。引用可以在 restart 后重新取得当前 generation 的实例，旧业务 view 仍然失效。Node/Vite describe 声明 plugin、plugin.config 和 plugin.instance 能力。
 
@@ -77,7 +77,7 @@ SDK 工厂、引用和配置方法均由闭包持有目标，不依赖调用 rec
 
 ## 同步与脚本输入
 
-Management major 11 的 `plugins.control-materials` 与 Vite 本地控制 target 复用原连接。材料读取独立于脚本执行开关，`scripts: false` 不初始化执行器。一次读取固定 committed catalog 及被选中的 definitions；CLI 保留已验证的原始材料和声明闭包，按 canonical entry 分组的同步模块只导出被选中且已接纳的定义。
+Management major 12 的 `plugins.control-materials` 与 Vite 本地控制 target 复用原连接。材料读取独立于脚本执行开关，`scripts: false` 不初始化执行器。一次读取固定 committed catalog 及被选中的 definitions；CLI 保留已验证的原始材料和声明闭包，按 canonical entry 分组的同步模块只导出被选中且已接纳的定义。
 
 每连接缓存最长 5 分钟、128 份材料、总量 64 MiB。索引分页列出定义，文件以 32 KiB UTF-8/base64 分块，保持现有 DTO/frame 预算。过期读取返回 `control_snapshot_expired`，由调用方重新开始同步。
 

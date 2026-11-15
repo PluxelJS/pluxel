@@ -84,7 +84,7 @@ vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"测试待�
 
 自定义目录结构时，让脚本目录继承自己的 Host 配置。前端继续使用其原配置。
 
-`sdk.plugin(Constructor.nodeAddress())` 的状态、生命周期和实例获取都在同一 committed 操作内核对 constructor 身份。HMR 替换实现后，原引用返回 `stale_target`；重新 import 当前实现再选择。同一实现 restart 后可用原引用重新取得新 generation，旧实例视图失效。fork 使用 `Constructor.nodeAddress('east')`，它保留相同实现证据，选择不会物化节点。引用和原业务成员的寿命见[实例调用](./plugin-control.md#调用原插件实例)。
+`sdk.plugin(Constructor.nodeAddress())` 的状态、生命周期、动态配置和实例获取都在同一 committed 操作内核对 constructor 身份。HMR 替换实现后，原引用返回 `stale_target`；重新 import 当前实现再选择。同一实现 restart 后可用原引用重新取得新 generation，旧实例视图失效。fork 使用 `Constructor.nodeAddress('east')`，它保留相同实现证据，选择不会物化节点。引用和原业务成员的寿命见[实例调用](./plugin-control.md#调用原插件实例)。
 
 源码 class 的地址保留实例签名与精确实现证据。Schema 输入、输出及 Part 配置树由生成控制入口的地址关联，因此 class 地址提供管理与实例操作，配置使用生成提供者的地址。动态发现得到的普通节点地址提供未知字段的配置操作，由脚本自行检查。
 

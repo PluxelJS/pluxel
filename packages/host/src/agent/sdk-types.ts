@@ -71,9 +71,20 @@ export interface ScriptPluginConfig<
 	) => Promise<Result<ScriptConfigSnapshot<O>, ScriptConfigError>>
 }
 
-interface ScriptPluginOperations {
-	/** Frozen address selected by this reference; suitable for native log filters. */
-	readonly address: PluginNodeAddress
+/** Freeze identity fields while retaining the declaration-only configuration and instance associations. */
+type SelectedAddress<T extends PluginNodeAddress> = {
+	readonly [K in keyof T]: K extends 'definition'
+		? {
+				readonly [D in keyof T['definition']]: D extends 'entry'
+					? Readonly<T['definition'][D]>
+					: T['definition'][D]
+			}
+		: T[K]
+}
+
+interface ScriptPluginOperations<T extends PluginNodeAddress> {
+	/** Immutable selection; retains the input's types and evidence when selected again. */
+	readonly address: SelectedAddress<T>
 	/** Read current state, or null when this node is absent. */
 	readonly status: () => Promise<
 		Result<HostPluginStatusSnapshot | null, ScriptOperationError | ScriptTargetError>
@@ -103,34 +114,36 @@ type TypedPluginOperations<T extends PluginTypedNodeAddress> = {
 		})
 
 type AddressEvidence<T extends PluginNodeAddress> = T extends PluginTypedNodeAddress
-	? Readonly<{ target: T; instance: PluginInstance<T> }>
+	? Readonly<{ kind: 'control'; target: T; instance: PluginInstance<T> }>
 	: T extends PluginInstanceNodeAddress<infer S>
-		? Readonly<{ target: T; instance: S }>
+		? Readonly<{ kind: 'constructor'; target: T; instance: S }>
 		: never
 
 type AddressOperations<T extends PluginNodeAddress> = [T] extends [PluginTypedNodeAddress]
 	? TypedPluginOperations<T>
-	: [T] extends [AddressEvidence<T>['target']]
-		? {
-				readonly instance: () => Promise<
-					Result<AddressEvidence<T>['instance'], ScriptInstanceError>
-				>
-			}
-		: [AddressEvidence<T>] extends [never]
-			? { readonly config: ScriptPluginConfig }
-			: unknown
+	: ([T] extends [AddressEvidence<T>['target']]
+			? {
+					readonly instance: () => Promise<
+						Result<AddressEvidence<T>['instance'], ScriptInstanceError>
+					>
+				}
+			: unknown) &
+			([Extract<AddressEvidence<T>, { kind: 'control' }>] extends [never]
+				? { readonly config: ScriptPluginConfig }
+				: unknown)
 
 /**
  * Immutable, run-scoped selection of one Plugin node. It holds an address and the
  * descriptor contracts, while each operation resolves current committed Host state.
  * All control functions are safe to extract. Closing the run revokes their admission.
  * Generated addresses provide typed configuration and business instance access;
- * source class addresses retain their original instance type. Plain discovered
- * addresses provide configuration with unknown fields. Mixed address kinds require
- * narrowing; typed configuration unions permit writes only with one schema association.
+ * source class addresses retain their original instance type. Source class and plain
+ * discovered addresses provide configuration with unknown fields. Mixing generated and
+ * other address kinds requires narrowing; typed configuration unions permit writes only
+ * with one schema association.
  */
-export type ScriptPlugin<T extends PluginNodeAddress = PluginNodeAddress> = ScriptPluginOperations &
-	AddressOperations<T>
+export type ScriptPlugin<T extends PluginNodeAddress = PluginNodeAddress> =
+	ScriptPluginOperations<T> & AddressOperations<T>
 
 /** One committed discovery snapshot. Revisions retain their separate domain meanings. */
 export type ScriptPluginSnapshot = Readonly<{

@@ -28,6 +28,7 @@ Host 从协调队列末尾取得已应用 provider-default bindings，在同一 
 
 应用每次启动执行配置工厂，取得完整 name/plugins/sources/policy/config/services/runtime；来源、服务、插件选择和输入值在异步 binding 读取前捕获，服务声明复制能力与依赖集合，借用句柄保持身份。`createHost()` 仅接收 Host 正式字段，执行入口显式投影，不依赖忽略额外应用字段。`prepare` 在服务与开发附件准备好后、插件启动前执行。
 生产启动由内部 `application-start.ts` 维护唯一顺序：prepare → host.start 与服务结算 → acceptStartup → launch。默认消费 Host status 中的有效运行意图，任何 desiredState=running 而 lifecycleState 非 running 的节点都拒绝启动；应用 callback 可显式接受降级。拒绝保留 report/status，异常和清理异常保留因果链，所有失败仍调用既有 host.close，不建立另一套 graph 或资源容器。launch 只在判定通过后发布生产入口；Vite 不执行 acceptStartup/launch，保留自己的 listener、更新与局部失败诊断。
+固定 `plugins` 接收实现，`sources` 接收发现声明，二者进入同一 catalog。policy/config/binding 统一接收 canonical 地址，生成控制入口也能提前声明动态节点；配置不携带 SDK 调用证据，不触发代码加载。
 Host 不改变进程 cwd。入口与来源锚定 startup root，环境通过 startup 显式传递。`envBindings`/`fileBindings` 显式选择输入，与 config.records 共同构成本次声明；逐 node 的 mode 决定声明与保存输入的取值规则。模式、写入权限、跨启动保留与 generation 采用分别表达，唯一求值链由 [Config](CONFIG.md#static-startup-config) 维护。runtime 只保留四项原生设施与 documents 接线。
 
 Vite、生产 launcher 共用 Host 应用解析。工厂 identity 变化时重新求值完整配置并替换 Host，固定插件 import 更新也可能使工厂失效。工厂求值失败保留旧 Host。动态来源更新若工厂未变，则复用本次配置并提交 catalog。替换失败可用最后成功声明创建 fresh Host 补偿，但不能复活旧 generation。
@@ -52,7 +53,7 @@ Carrier metadata 的 `url` 保留物理监听事实；launcher 显式提供的 `
 Management 安装认证、状态投影和 RPC session；Workbench 安装内容/publication、页面和交互能力。它们共享 Host coordinator，不保存第二份插件运行状态。业务 HTTP 不自动继承 Management 认证。`managementHttp()` 唯一持有管理 endpoint；`workbenchHttp()` 只拥有 Shell fallback。preset 通过既有 bindings 组合 Workbench session/artifact handler，并用 `requires: { workbench: WorkbenchHost }` 声明准备顺序。
 `managementCommands()` 把插件查询和 lifecycle 命令发布到显式安装的 Commands catalog；它是独立接入，不能让通用 Commands 服务隐式安装管理面。
 
-Host 的 `pluginApplyReportOutcome()` 统一判定操作报告的完成结果。持久化未知、生命周期或协调问题，以及无问题的完成分别保留准确结论与原报告；Script 只转换为 Better Result，Management 只转换为其 DTO。管理生命周期失败仍交付操作后的 control 与完整 report，Workbench 刷新状态并展示其中的诊断。配置、策略与 fork 删除继续保留各自的保存、采用和排空结果。
+Host 的 `pluginApplyReportOutcome()` 统一判定操作报告的完成结果。持久化未知、生命周期或协调问题，以及无问题的完成分别保留准确结论与原报告；Script 只转换为 Better Result，Management 只转换为其 DTO。管理生命周期失败仍交付操作后的 control 与完整 report，Workbench 刷新状态并展示其中的诊断。配置、策略与 fork 删除继续保留各自的保存、采用和排空结果。Services 的 `web/control-batch.ts` 唯一归约批量摘要，执行与 wire 校验共用；任何持久化未知项使整体返回 `unknown`，保留全部逐项结果。
 
 `status.ts` 分开维护节点枚举和单节点状态投影。列表枚举已接纳的 default、已配置的 forks 及仍被策略或运行状态引用的节点，精确读取按完整地址定位后使用同一个投影器。Services 的 label 消歧只读取节点身份和显示名，单节点查询无需构造并排序所有运行状态。所有读取来自同一 committed view，每次查询都观察当前诊断与 recent update。对应回归为 `status-projection.test.ts`。
 

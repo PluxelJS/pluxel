@@ -11,6 +11,7 @@ import * as v from 'valibot'
 import { expect, it } from 'vitest'
 import { createHost, envBinding, fileBinding, resolveHostApplication } from '../src/index'
 import { createDocumentStorage } from './helpers/document-storage'
+import { renderPluginDescriptors } from '../src/control-manifest'
 
 const DeploymentConfig = v.object({
 	value: v.string(),
@@ -234,6 +235,22 @@ it('applies global and exact-node modes to a later directory publication with mu
 			absent: packageNode('Later', 'absent'),
 		}
 		await writeFile(
+			join(root, 'control.mjs'),
+			renderPluginDescriptors(
+				[nodes.later, nodes.separate].map(({ definition }) => ({
+					exportName: definition.exportName,
+					descriptor: {
+						format: 2,
+						definition,
+						contracts: {
+							config: `sha256:${'a'.repeat(64)}`,
+							instance: `sha256:${'b'.repeat(64)}`,
+						},
+					},
+				})),
+			),
+		)
+		await writeFile(
 			join(root, 'package/index.mjs'),
 			`import { BasePlugin, Plugin } from '@pluxel/core';
 import { __setPluginDefinition, __setPluginConfig } from '@pluxel/core/toolchain';
@@ -252,13 +269,14 @@ export { Later, Separate };
 		)
 		await writeFile(
 			join(root, 'app.mjs'),
-			`export default ({bindings}) => ({
+			`import {Later,Separate} from './control.mjs';
+export default ({bindings}) => ({
  plugins:[], sources:[{kind:'directory',path:'entries',include:['*.mjs']}],
- policy:{forks:[${JSON.stringify(nodes.east)}],autoStart:[],mode:{autoStart:'declared-only'}},
+ policy:{forks:[Later.nodeAddress('east')],autoStart:bindings.activate?[Later.nodeAddress()]:[],mode:{autoStart:'declared-only'}},
  config:{mode:'saved-first',records:[
-  {owner:${JSON.stringify(nodes.separate)},mode:'declared-only',config:{value:'declared-separate'}},
-  {owner:${JSON.stringify(nodes.east)},mode:'declared-first',config:{value:'declared-east'}},
-  {owner:${JSON.stringify(nodes.absent)},mode:'declared-only',config:{value:'never-materialized'}}
+  {owner:Separate.nodeAddress(),mode:'declared-only',config:{value:'declared-separate'}},
+  {owner:Later.nodeAddress('east'),mode:'declared-first',config:{value:'declared-east'}},
+  {owner:Later.nodeAddress('absent'),mode:'declared-only',config:{value:'never-materialized'}}
  ]},
  runtime:{documents:{state:false,config:{storage:()=>bindings.storage}}}
 });`,
@@ -287,10 +305,17 @@ try {
  await writeFile(root+'/entries/published.mjs',"export {Later,Separate} from '../package/index.mjs'");
  assert.equal(initial.catalog().entries.length,0,'native source publications take effect at the next Host');
 } finally {await initial.close()}
-const host=await runHostApplication('app.mjs',options);
+const host=await runHostApplication('app.mjs',{startup:{...options.startup,bindings:{storage,activate:true}}});
 try {
  assert.equal(globalThis.configLayerModuleLoads,1);
  assert.equal(host.catalog().entries.length,2);
+ assert.equal(requirePluginService(host.ctx).isRunning(nodes.later),true,'generated startup address selects the discovered implementation');
+ const {createScriptScope}=await import('@pluxel/host/agent/runtime');
+ await using scope=createScriptScope({ctx:host.ctx});
+ const discovered=(await scope.sdk.plugins.list()).unwrap().nodes.find(node=>node.address.definition.exportName==='Later'&&node.address.variant==='default');
+ assert.ok(discovered);
+ assert.deepEqual(discovered.address,nodes.later);
+ assert.equal((await scope.sdk.plugin(discovered.address).config.get()).unwrap().config.value,'saved-Later');
  for (const [owner,mode,value] of [[nodes.later,'saved-first','saved-Later'],[nodes.separate,'declared-only','declared-separate'],[nodes.east,'declared-first','declared-east']]) {
   const result=await host.config.get(owner);
   assert.equal(result.ok,true);assert.equal(result.mode,mode);assert.equal(result.config.value,value);

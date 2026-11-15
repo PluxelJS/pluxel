@@ -79,7 +79,8 @@ it('generates real Plugin declarations, compiles an author script and uploads it
 import type { Script } from '@pluxel/host/agent'
 import { DeliveryCounter } from './control/${entry.module}'
 export default (async (sdk, run) => {
-  const selected = sdk.plugin(DeliveryCounter.nodeAddress())
+  const address = sdk.plugin(DeliveryCounter.nodeAddress()).address
+  const selected = sdk.plugin(address)
   const { get, patch } = selected.config
   const before = await get()
   if (before.isErr()) return before
