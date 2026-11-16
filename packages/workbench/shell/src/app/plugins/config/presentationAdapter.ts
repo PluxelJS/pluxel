@@ -14,11 +14,11 @@ export function buildEditableConfigPatch(
 	candidate: Record<string, unknown>,
 	current: Record<string, unknown>,
 ): Record<string, unknown> {
-	const output: Record<string, unknown> = Object.create(null)
+	const output: Record<string, unknown> = {}
 	for (const field of fields) {
 		if (!field.name) continue
 		const projected = editableValue(field, candidate[field.name], current[field.name])
-		if (projected.editable) output[field.name] = projected.value
+		if (projected.editable) setOwn(output, field.name, projected.value)
 	}
 	return output
 }
@@ -34,22 +34,30 @@ function editableValue(
 	if (node.kind !== 'object') return { editable: true, value: candidate }
 	const candidateRecord = plainRecord(candidate)
 	const currentRecord = plainRecord(current)
-	const output: Record<string, unknown> = Object.create(null)
+	const output: Record<string, unknown> = {}
 	let editable = false
 	for (const child of node.fields) {
 		if (!child.name) continue
 		const projected = editableValue(child, candidateRecord[child.name], currentRecord[child.name])
 		if (!projected.editable) continue
 		editable = true
-		output[child.name] = projected.value
+		setOwn(output, child.name, projected.value)
 	}
 	return editable ? { editable: true, value: output } : { editable: false }
+}
+
+/**
+ * Patches are sent over capnweb, which only serializes plain objects (a null-prototype object is
+ * rejected as "Cannot serialize value"), so records are plain and keys are defined, not assigned.
+ */
+function setOwn(target: Record<string, unknown>, key: string, value: unknown): void {
+	Object.defineProperty(target, key, { value, enumerable: true, configurable: true, writable: true })
 }
 
 function plainRecord(input: unknown): Record<string, unknown> {
 	return input && typeof input === 'object' && !Array.isArray(input)
 		? (input as Record<string, unknown>)
-		: Object.create(null)
+		: {}
 }
 
 /** Mark only controlled paths readonly; object siblings remain independently editable. */
