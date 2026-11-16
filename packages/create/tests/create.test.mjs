@@ -38,6 +38,11 @@ describe('create-pluxel', () => {
 		assert.equal(governance.code, 0, governance.stderr)
 		assert.match(await readFile(resolve(generated, '.gitignore'), 'utf8'), /node_modules\//)
 		const manifest = JSON.parse(await readFile(resolve(generated, 'package.json'), 'utf8'))
+		const repositoryManifest = JSON.parse(
+			await readFile(resolve(packageRoot, '../../package.json'), 'utf8'),
+		)
+		assert.equal(manifest.packageManager, repositoryManifest.packageManager)
+		assert.equal(manifest.scripts['hooks:install'], 'hk install')
 		assert.equal(manifest.name, undefined)
 		assert.equal(manifest.private, true)
 		const { project: managed } = await resolveDevSelection({ root: generated })
@@ -70,7 +75,7 @@ describe('create-pluxel', () => {
 				`${file} must reach the generated workspace unchanged`,
 			)
 		}
-		assert.match(result.stdout, /mise trust/)
+		assert.match(result.stdout, /vp install/)
 		assert.match(result.stdout, /vp run setup/)
 		assert.match(result.stdout, /vp run dev/)
 

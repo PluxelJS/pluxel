@@ -1,4 +1,4 @@
-// Run after building Core and Host: mise exec -- node packages/host/bench/discovery.bench.mjs
+// Run after building Core and Host: vp exec node packages/host/bench/discovery.bench.mjs
 import { equal } from 'node:assert/strict'
 import { performance } from 'node:perf_hooks'
 import { BasePlugin, Plugin } from '../../core/dist/index.mjs'

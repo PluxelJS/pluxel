@@ -22,7 +22,7 @@ import {
 	workspaceSetupDefinition,
 	workspaceSyncDefinition,
 } from '../command-manifest'
-import { detectPm, runPackageManager } from '../utils/pm'
+import { installDependencies } from '../utils/pm'
 import {
 	readWorkspaceCandidates,
 	type WorkspaceCandidate,
@@ -281,9 +281,8 @@ function reportMutation(
 }
 
 async function installWorkspaceDeps(root: string, log: (...args: unknown[]) => void) {
-	const pm = await detectPm(root)
-	log(`\n→ Running ${pm} install to sync workspaces...`)
-	await runPackageManager(pm, ['install'], root)
+	log('\n→ Running vp install to sync workspaces...')
+	await installDependencies(root)
 }
 
 function inferName(repo: string) {

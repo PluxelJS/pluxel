@@ -31,7 +31,7 @@
 
 ## 服务与在线操作
 
-mise 管工具、环境和 PATH，package scripts 管操作入口，Vite Task 管依赖与缓存，hk 管检查，Pitchfork 管托管进程；不再定义 mise tasks，可选 enter hook 仅触发已有只读诊断。
+仓库、应用脚手架和插件模板遵循[统一命令入口](docs/development/workspace-toolchain.md#统一命令入口)：依赖管理使用 `vp`，项目命令使用 `vp exec` 和 `vp run`。新增或修改模板时同步 README、AGENTS、安装行为与完成提示，工具版本与仓库基线一致。package scripts 管操作入口，Vite Task 管依赖与缓存，hk 管检查，Pitchfork 管托管进程。`mise.toml` 仅提供工具安装与版本固定，Vite+ 使用官方 GitHub 发布的原生全局 CLI。
 
 修改服务前检查配置与状态，优先用 Pitchfork 原生 start/stop/restart/status/list/logs/wait；添加后台进程、端口扫描、重试、轮询或生命周期脚本前，查[工作区指南](docs/development/workspace-toolchain.md)链接的官方能力和已安装 CLI 帮助。并行 worktree 隔离 namespace 与数据目录，只操作本任务所属服务。
 

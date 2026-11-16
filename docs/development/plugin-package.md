@@ -94,7 +94,7 @@ vite.config.ts         全包任务调度（Vite Task）
 
 ## 构建与发布检查清单
 
-在执行 `npm publish` 或 `pluxel publish` 之前，执行以下验证步骤：
+在执行 `vp pm publish` 或 `vp exec pluxel publish` 之前，执行以下验证步骤：
 
 ```sh
 # 1. 运行完整代码门禁

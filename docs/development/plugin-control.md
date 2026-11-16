@@ -31,10 +31,10 @@ import type {
 
 ```sh
 # 使用 dev status 已选择的 profile；有多个匹配实例时再加 --instance。
-pluxel dev sync --profile app
+vp exec pluxel dev sync --profile app
 
 # 部署应用沿用 Management 管理认证，读取无需开启 scripts。
-pluxel script sync --endpoint https://app.example.com \
+vp exec pluxel script sync --endpoint https://app.example.com \
   --credentials-file ./admin.json --out .pluxel/control
 ```
 

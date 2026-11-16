@@ -33,6 +33,7 @@ it('links one upstream source, preserves project instructions and is repeatable'
 	setupDevelopmentWorkspace(root)
 	expect(readFileSync(resolve(root, 'AGENTS.md'), 'utf8')).toBe(agents)
 	expect(agents).toContain('Keep data.')
+	expect(agents).toContain('docs/pluxel/development/workspace-toolchain.md#统一命令入口')
 	for (const topic of ['inspection', 'scripts', 'dev-console', 'plugin-control'])
 		expect(agents).toContain(`docs/pluxel/development/${topic}.md`)
 	expect(realpathSync(resolve(root, 'docs/pluxel'))).toBe(resolve(developmentSource().root, 'docs'))

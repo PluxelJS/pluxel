@@ -8,7 +8,7 @@ description: 使用 WretchPlugin 派生安全、不可变的 HTTP 客户端，�
 ## 安装依赖
 
 ```sh
-pnpm add @pluxel/plugin-wretch
+vp add @pluxel/plugin-wretch
 ```
 
 <span id="第一个-http-consumer"></span>

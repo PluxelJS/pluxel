@@ -28,7 +28,7 @@ export const newCommandArgs = {
 	},
 	pm: {
 		type: 'enum',
-		description: 'Package manager (auto-detect by default)',
+		description: 'Package manager override (must match template requirements)',
 		choices: ['pnpm', 'npm', 'yarn', 'bun'],
 	},
 	force: { type: 'boolean', description: 'Overwrite existing files', default: false },

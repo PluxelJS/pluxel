@@ -18,7 +18,7 @@ does not fetch packages or initialize a separate JavaScript converter.
 Regenerate the checked-in resource map from the verified archive:
 
 ```sh
-mise exec -- node plugins/render/typst/vendor/mitex/generate.mjs
+vp exec node plugins/render/typst/vendor/mitex/generate.mjs
 ```
 
 This maintainer operation requires network access and `tar`; normal builds do

@@ -28,9 +28,13 @@ The skill routes development, service diagnostics and live operations to the rel
 
 ## Develop
 
+Prepare the global Vite+ CLI, Node.js 24+ and hk as described in the
+[workspace guide](https://github.com/PluxelJS/pluxel/blob/main/docs/development/workspace-toolchain.md).
+This plugin follows the same `vp` commands as Pluxel application starters. Vite+ reads
+`packageManager` to select and install the pinned package manager; `mise.toml` offers
+optional pinned tool installation.
+
 ```sh
-mise trust
-mise install
 vp install
 vp run setup
 # Once the project is a Git repository:
@@ -43,4 +47,4 @@ the production plugin build. Core is a peer dependency; build and test tooling s
 development dependencies. `pnpm-workspace.yaml` owns their shared compatible ranges through the
 catalog and explicitly allows the esbuild install script required by the toolchain.
 
-This standalone plugin has no development service. For live operations, use the consuming application’s `pluxel.dev` configuration with `pluxel dev status/run --root <app-project>` and use `--profile <name>` to override its default (or to resolve several profiles without a default). Use `--instance <id>` when several live instances match that profile; the console does not require Pitchfork. The development skill explains when to use the application console instead of isolated plugin tests, and how to pause and apply HMR batches while editing a running consumer.
+This standalone plugin has no development service. For live operations, use the consuming application’s `pluxel.dev` configuration with `vp exec pluxel dev status/run --root <app-project>` and use `--profile <name>` to override its default (or to resolve several profiles without a default). Use `--instance <id>` when several live instances match that profile; the console does not require Pitchfork. The development skill explains when to use the application console instead of isolated plugin tests, and how to pause and apply HMR batches while editing a running consumer.

@@ -1,9 +1,9 @@
 ---
 title: 工作区工具链
-description: 用 mise 固定工具、hk 执行提交检查、Pitchfork 管理开发服务，保持应用操作与进程管理边界清晰。
+description: 用 Vite+ 统一安装与执行、hk 执行提交检查、Pitchfork 管理开发服务。
 ---
 
-官方 Monorepo 与 `@pluxel/create` 脚手架默认集成了 mise、Vite+、hk 与 Pitchfork 作为统一的本地开发工具链。本页介绍工具链各组件的分工、构建与测试任务调度、服务管理及排障方法。
+官方 Monorepo 与 `@pluxel/create` 脚手架使用 Vite+ 统一依赖安装、命令执行与任务调度，hk 管理提交检查，Pitchfork 管理开发服务。`mise.toml` 提供工具安装与版本固定。
 
 <span id="每个工具维护什么"></span>
 
@@ -11,12 +11,32 @@ description: 用 mise 固定工具、hk 执行提交检查、Pitchfork 管理开
 
 | 配置文件 / 工具            | 职责说明                                                                              |
 | :------------------------- | :------------------------------------------------------------------------------------ |
-| `mise.toml`                | 统一固定 Node.js、pnpm、Vite+、hk 与 Pitchfork 版本，配置环境变量和 PATH              |
+| `mise.toml`                | 提供 Node.js、pnpm、Vite+、hk 与 Pitchfork 的工具版本，供 mise 安装时采用             |
 | `vite.config.ts`           | 声明 Vite+ 任务图（Run Tasks）、打包规范（Pack）、代码检查（Lint）与格式化（Fmt）规则 |
 | `pitchfork.toml`           | 声明后台长驻服务、启动命令、代理端口与就绪检查条件                                    |
 | `hk.pkl`                   | 声明基于 Pkl 的 Git 提交前检查（Pre-commit Hooks）与自动化修复指令                    |
 | `package.json` / Vite Task | 管理 npm 依赖与标准操作脚本；Vite Task 负责任务依赖图拓扑与增量执行缓存               |
 | Pluxel Dev Console         | 运行期交互控制台：控制 HMR 批次、动态执行脚本、修改插件配置并查询运行时日志           |
+
+## 统一命令入口
+
+仓库、`vp create @pluxel` 生成的应用、`pluxel new` 生成的插件和团队自定义模板，统一使用全局 `vp` 作为依赖管理与项目命令入口。
+
+| 操作                   | 命令                                                                                  |
+| :--------------------- | :------------------------------------------------------------------------------------ |
+| 创建应用               | `vp create @pluxel my-app`                                                            |
+| 首次生成独立插件       | `vp dlx @pluxel/cli@1 new --name @acme/orders`                                        |
+| 安装依赖               | `vp install`；CI 使用 `vp install --frozen-lockfile`                                  |
+| 添加、移除或更新依赖   | `vp add`、`vp remove`、`vp update`                                                    |
+| 执行项目脚本与任务     | `vp run <task>`，例如 `vp run verify`                                                 |
+| 执行项目工具或开发脚本 | `vp exec <command>`，例如 `vp exec pluxel dev status`、`vp exec node dev/inspect.mjs` |
+| 检查、测试与库构建     | `vp check`、`vp test run`、`vp pack`                                                  |
+
+Vite+ 根据 `package.json` 的 `packageManager` 选择并安装包管理器版本。本仓库和内置模板使用 pnpm，继续由 `pnpm-workspace.yaml` 与 `pnpm-lock.yaml` 维护 workspace、catalog 和锁定结果。全局 `vp` 将构建、检查和测试交给项目本地的 `vite-plus` 版本。
+
+使用 catalog 的项目通过 `vp exec pluxel pncat add <package>` 添加依赖，再运行 `vp install`。在 Pluxel 源码仓库根目录调用 CLI 使用 `vp run pluxel <command>`。package scripts 和 Vite Task 内可直接调用已安装的工具，例如 `pluxel workspace setup`、`node scripts/deploy.mjs`；外部仍通过 `vp run` 进入。
+
+mise 提供可选的工具安装与版本固定，项目执行使用上面的 `vp` 命令。hk 和 Pitchfork 保留各自的原生管理命令。pnpm store 查询、npm 账号与发布权限等专用操作按对应工具的接口执行。
 
 <span id="构建检查与任务图"></span>
 
@@ -32,7 +52,7 @@ description: 用 mise 固定工具、hk 执行提交检查、Pitchfork 管理开
 
 - 静态检查：`vp check`
 - 自动修复代码格式与可修复 Lint：`vp check --fix`
-- 本仓库完整门禁（包含类型、代码规范、测试与全量构建）：`mise exec -- vp run --concurrency-limit=1 workspace:verify`
+- 本仓库完整门禁（包含类型、代码规范、测试与全量构建）：`vp run --concurrency-limit=1 workspace:verify`
 
 并发限制应直接传给执行 `workspace:verify` 的任务运行器。外层 `verify` package script 会再启动任务运行器，外层并发参数不会自动传入。
 
@@ -80,14 +100,29 @@ export default defineConfig({
 
 ## 准备本地开发环境
 
-初次克隆仓库后，按以下步骤初始化工具链：
+全局 `vp` 应能在项目目录之外执行，生成器会进入新目录安装依赖。通过 mise 安装时，可用 `mise use --global github:voidzero-dev/vite-plus@1.4.0` 准备全局 CLI，或将其原生可执行文件目录加入 PATH。
+
+`mise.toml` 固定 Node.js、pnpm、Vite+、hk 与 Pitchfork；Vite+ 使用 `github:voidzero-dev/vite-plus` 从官方发布安装原生全局 CLI。可用 mise 安装这些工具：
 
 ```sh
 mise trust
 mise install
-mise exec -- vp install --frozen-lockfile
+```
+
+也可以通过[官方安装方式](https://viteplus.dev/guide/global-cli)准备全局 Vite+，再安装所需的 hk 与 Pitchfork。让 Vite+ 管理包管理器后，它会按项目声明下载所需版本，Node.js 可以继续使用系统中已有的安装：
+
+```sh
+vp env on pm
+```
+
+工具位于 PATH 后，在仓库根目录安装依赖并查看任务：
+
+```sh
+vp install --frozen-lockfile
 vp run
 ```
+
+[`vp env`](https://viteplus.dev/guide/env) 可管理 Node.js 和包管理器，也可选择使用系统中已有的工具。项目的 `vite-plus` 依赖固定构建工具链版本。Git hooks 通过 `vp run hooks:install` 安装，Pitchfork 直接执行配置中的 `vp run` 服务任务。
 
 常用验证命令：
 

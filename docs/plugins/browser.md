@@ -8,7 +8,7 @@ description: 连接外部 Chromium 或 Playwright 服务端，在隔离的浏览
 ## 安装依赖
 
 ```sh
-pnpm add @pluxel/plugin-playwright
+vp add @pluxel/plugin-playwright
 ```
 
 ## 连接方式与配置

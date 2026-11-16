@@ -18,9 +18,9 @@ Git launcher 加载 dist 前核对 CLI 的 src、bin、构建 scripts、manifest
 
 `pluxel new` 的唯一流程为 source → acquire → validate → answers → byte plan → materialize → optional install。Bare name 只解析 bundled plugin template，local source 须显式路径；无 remote fallback。`pluxel-template.jsonc` 只声明 identity、包管理器与 prompts。仅 `.tpl` 支持固定插值，其余文件按字节复制；不接受任意代码、命令、循环或 symlink。
 
-Byte plan 在写入前完成 UTF-8/token/path/portable collision/目标检查，持有最终 bytes。Materializer 不重读模板；`--force` 只覆盖 plan 已确认的精确 existing files，每文件 temp+rename，不承诺整个目录 rollback。Bundled template 默认 install，local template 仅显式 `--install` 才执行包管理器。
+Byte plan 在写入前完成 UTF-8/token/path/portable collision/目标检查，持有最终 bytes。Materializer 不重读模板；`--force` 只覆盖 plan 已确认的精确 existing files，每文件 temp+rename，不承诺整个目录 rollback。Bundled template 默认通过 `vp install` 安装依赖，local template 仅显式 `--install` 才安装。Vite+ 拥有包管理器选择；模板种类约束或显式 `--pm` 通过其原生 `VP_PACKAGE_MANAGER` 输入传入，同种类时保留生成 manifest 中的完整版本声明。
 
-Starter 的 Host package 拥有唯一 Vite 配置、应用与构建，独立 Web package 只拥有浏览器代码；mise 固定工具与环境，hk 拥有 Git hooks 和文件检查，Pitchfork 拥有开发进程、端口和反代，Vite+ 拥有构建、检查与包任务图和缓存。
+Starter 的 Host package 拥有唯一 Vite 配置、应用与构建，独立 Web package 只拥有浏览器代码；Vite+ 统一依赖安装、命令执行、构建、检查与包任务图和缓存，hk 拥有 Git hooks 和文件检查，Pitchfork 拥有开发进程、端口和反代，mise 仅提供工具安装与版本固定。应用、插件与自定义模板的 README、AGENTS 和完成提示遵循[统一命令入口](../docs/development/workspace-toolchain.md#统一命令入口)。
 
 `package.json` 的 `pluxel.dev` 直接以名称声明 profiles。每个 profile 的 `root` 默认声明目录，显式值必须解析为该目录内的真实 Vite root；`command` 与 `pitchfork` 必须且只能选择一个。一个 package 可以声明多个 profile，共用或分别使用 Vite root；显式 `--profile` 优先，其次选择 `pluxel.dev.default`，最后选择唯一 profile。`default` 是保留字段，必须引用已声明名称。
 
@@ -62,7 +62,7 @@ machine registry 和 package link。source package 若包含 consumer root 会�
 overlay，并通过 Corepack 尊重精确的 `packageManager` 版本，所以被下游编排不会改写出另一份 lockfile。根 bootstrap 与
 `.pluxel/` 一样由 CLI 管理并被 Git 忽略；workspace governance 只在它存在时验证 canonical 内容。
 
-首次安装由独立的全局或 `pnpm dlx` CLI 直接执行标准 `pluxel source` 命令：操作者用 `source register`
+首次安装由独立的全局或 `vp dlx` CLI 直接执行标准 `pluxel source` 命令：操作者用 `source register`
 登记其他 checkout，再在 consumer 中运行 `source install`。源码运行的 CLI 根据自身模块 realpath、最近 CLI package 与 Pluxel workspace/Git 标记自动发现核心 checkout；CLI owning checkout 优先于同 identity 的 registry 记录，并自动进入 Pluxel 源码闭包。发现结果不落盘，`source list` 显示来源，`source unregister` 只删除显式登记。CLI 不从 cwd、目录邻接、父仓库
 或同机其他 checkout 猜测 repository identity。不得把首次 bootstrap 放进 consumer 的 pnpm script：pnpm 可能在
 执行 script 前先做 dependency-status install，此时 source overlay 尚未生成，会把私有 source package 错误解析到

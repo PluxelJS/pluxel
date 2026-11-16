@@ -11,14 +11,12 @@ vp create @pluxel my-workspace --no-install
 
 ## 生成的工作区
 
-模板是 `@example/*` monorepo：独立 `host/web` 包、一份宿主 Vite 配置、一份支持可选动态来源的应用声明、同源 Todo API、测试与构建治理。`mise.toml` 固定工具版本与环境，package scripts 提供操作入口，`hk.pkl` 管理检查与 Git hooks，`pitchfork.toml` 管理开发服务、端口分配与就绪检查。应用与 Workbench 共用一个 Vite listener。
+模板是 `@example/*` monorepo：独立 `host/web` 包、一份宿主 Vite 配置、一份支持可选动态来源的应用声明、同源 Todo API、测试与构建治理。Vite+ 统一安装、执行与任务调度，package scripts 提供操作入口，`hk.pkl` 管理检查与 Git hooks，`pitchfork.toml` 管理开发服务、端口分配与就绪检查。`mise.toml` 提供工具安装与版本固定。应用与 Workbench 共用一个 Vite listener。
 
-生成后运行：
+准备好全局 Vite+、Node.js 24+ 与 Pitchfork 后运行，安装方式见[工作区工具链](../../docs/development/workspace-toolchain.md)：
 
 ```sh
 cd my-workspace
-mise trust
-mise install
 vp install
 vp run setup
 vp run dev

@@ -22,5 +22,5 @@ Independent applications consume a framework checkout through
 generate the canonical standalone monorepo:
 
 ```sh
-pnpm create @pluxel my-workspace
+vp create @pluxel my-workspace
 ```

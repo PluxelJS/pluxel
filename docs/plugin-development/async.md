@@ -48,7 +48,7 @@ async function getArticle(id: string) {
 ## 安装与文档
 
 ```sh
-npm install @pluxel/async
+vp add @pluxel/async
 ```
 
 更多高级参数与组合模式，可查阅包内的详细使用指南：

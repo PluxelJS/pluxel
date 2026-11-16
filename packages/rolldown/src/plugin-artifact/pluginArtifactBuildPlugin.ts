@@ -371,7 +371,7 @@ async function loadWorkbenchUiBuildTools(): Promise<typeof import('../vite/workb
 		return await import('../vite/workbench-ui.ts')
 	} catch (error) {
 		throw new Error(
-			'[workbench-ui] building a declared UI requires Vite. Install it in the plugin package with `pnpm add -D vite`.',
+			'[workbench-ui] building a declared UI requires Vite. Install it in the plugin package with `vp add -D vite`.',
 			{ cause: error },
 		)
 	}

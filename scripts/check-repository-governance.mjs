@@ -61,7 +61,7 @@ const pnpmLock = await readFile(resolve(root, 'pnpm-lock.yaml'), 'utf8')
 for (const [tool, requiredMajor] of [
 	['node', 24],
 	['pnpm', 11],
-	['viteplus', 1],
+	['"github:voidzero-dev/vite-plus"', 1],
 	['hk', 2],
 	['pitchfork', 2],
 ]) {
@@ -121,7 +121,9 @@ if (
 		'React and ReactDOM must pin the same exact stable version for the precompiled Workbench MF shared contract; ranges can install a version different from the published assets',
 	)
 }
-const vitePlusVersion = /^viteplus\s*=\s*["']([^"']+)["']/m.exec(miseConfig)?.[1]
+const vitePlusVersion = /^"github:voidzero-dev\/vite-plus"\s*=\s*["']([^"']+)["']/m.exec(
+	miseConfig,
+)?.[1]
 if (
 	workspace.catalogs?.build?.['vite-plus'] !== vitePlusVersion ||
 	workspace.peerDependencyRules?.allowedVersions?.vite !== vitePlusVersion ||
@@ -129,7 +131,7 @@ if (
 	workspace.overrides?.['vite@*'] !== `npm:@voidzero-dev/vite-plus-core@${vitePlusVersion}`
 ) {
 	errors.push(
-		'mise viteplus, the vite-plus catalog, Vite Core aliases and peer allowance must pin the same version',
+		'mise Vite+, the vite-plus catalog, Vite Core aliases and peer allowance must pin the same version',
 	)
 }
 const workspacePatterns = new Set(workspace.packages)

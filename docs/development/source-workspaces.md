@@ -39,17 +39,17 @@ React 等 peer dependency 也可以列入 `singletons`。工具只检查本次�
 
 ```sh
 # 注册本地代码路径
-pluxel source register /path/to/local/pluxel
-pluxel source register /path/to/local/chatbot
+vp exec pluxel source register /path/to/local/pluxel
+vp exec pluxel source register /path/to/local/chatbot
 
 # 查看已注册的源码仓库列表
-pluxel source list
+vp exec pluxel source list
 
 # 生成本地模块 Overlay 映射并安装依赖
-pluxel source install
+vp exec pluxel source install
 
 # 检查跨仓联调环境配置
-pluxel source doctor
+vp exec pluxel source doctor
 ```
 
 - `source install` 会在消费工程中生成专用的 `.pnpmfile.cjs` 与 `.pluxel/` 覆盖目录，将外部依赖自动指向本地源码的构建输出。
@@ -73,7 +73,7 @@ pluxel source doctor
 
 ```sh
 # 针对源码联调工程
-pluxel source install
+vp exec pluxel source install
 
 # 针对普通 npm 安装工程
 vp exec pluxel workspace setup
@@ -90,16 +90,16 @@ Pluxel 推荐使用 pnpm Catalog 统一约束第三方依赖版本，避免多�
 
 ```sh
 # 自动迁移 package.json 中的第三方裸版本至 catalog
-pluxel pncat migrate --yes --no-install
+vp exec pluxel pncat migrate --yes --no-install
 
 # 将工作区 catalog 版本与官方政策对齐
-pluxel workspace sync
+vp exec pluxel workspace sync
 
 # 安装依赖并生成锁文件
 vp install
 
 # 检查当前依赖是否符合规范
-pluxel workspace sync --check
+vp exec pluxel workspace sync --check
 ```
 
 - `pncat.config.ts`：定义依赖的分组（如 `runtime`、`test`、`tooling`）与归类规则。

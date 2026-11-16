@@ -167,7 +167,7 @@ TinyBase 子路径保持原样解析；它不进入全局 shared-package 列表�
 
 CI 直接调用原生聚合任务并指定并发数，上传实际执行任务、缓存命中与日志；缓存目录为当前 checkout 的 `node_modules/.vite/task-cache`。缓存输入必须包含影响产物的配置和环境，不能依赖暖缓存留下的文件。
 
-仓库工具版本由 `mise.toml` 拥有。验证入口固定 `PNPM_CONFIG_PM_ON_FAIL=ignore` 与准确的 `PNPM_CONFIG_WORKSPACE_DIR`，任务透传这些执行上下文，避免 vendor 子工作区的上游 `packageManager` 字段切换 pnpm，或 workspace 文件改变当前安装图。这不禁用依赖检查；跨仓库 source 执行重新绑定到当前 checkout。
+仓库、应用脚手架与插件模板的命令遵循[工作区工具链](../docs/development/workspace-toolchain.md#统一命令入口)。`package.json#packageManager` 声明包管理器版本，Vite+ 负责选择与执行；`mise.toml` 提供匹配版本的工具安装。CI 设置 `PNPM_CONFIG_PM_ON_FAIL=ignore`，共享任务透传已有的 pnpm 执行上下文；跨仓库 source 操作将 `PNPM_CONFIG_WORKSPACE_DIR` 绑定到当前 checkout，保持各自安装图独立。
 
 | 检查所有者                                | 负责的事实                                                                  |
 | ----------------------------------------- | --------------------------------------------------------------------------- |

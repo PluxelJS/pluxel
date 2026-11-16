@@ -10,7 +10,7 @@
 		"fix": "vp check --fix",
 		"verify": "vp run workspace:verify",
 		"setup": "pluxel workspace setup",
-		"hooks:install": "hk install --mise",
+		"hooks:install": "hk install",
 		"dev:status": "pluxel dev status",
 		"dev:logs": "pitchfork logs app --follow",
 		"dev:stop": "pitchfork stop app"

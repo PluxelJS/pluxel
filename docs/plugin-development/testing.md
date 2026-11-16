@@ -10,7 +10,7 @@ Pluxel 提供了专门的测试工具库 `@pluxel/test`。通过 `createTestHost
 在插件项目中安装测试依赖：
 
 ```sh
-pnpm add -D @pluxel/test @pluxel/core vitest@5.0.5 vite-plus
+vp add -D @pluxel/test @pluxel/core vitest@5.0.5 vite-plus
 ```
 
 在插件根目录创建 `vitest.config.ts`：

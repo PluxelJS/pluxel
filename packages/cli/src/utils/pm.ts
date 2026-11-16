@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'pathe'
 import { type AgentName, detect as detectAgent, getUserAgent } from 'package-manager-detector'
 import { CLI_DEFAULTS } from '../config'
 
@@ -25,23 +27,29 @@ export async function detectPm(
 	return fallback
 }
 
-export function runPackageManager(pm: PM, args: string[], cwd: string) {
+export async function installDependencies(cwd: string, pm?: PM): Promise<void> {
+	const env = { ...process.env }
+	if (pm) {
+		const manifest = JSON.parse(await readFile(resolve(cwd, 'package.json'), 'utf8')) as {
+			packageManager?: unknown
+		}
+		const declared = manifest.packageManager
+		env.VP_PACKAGE_MANAGER =
+			typeof declared === 'string' && declared.startsWith(`${pm}@`) ? declared : `${pm}@latest`
+	}
 	return new Promise<void>((resolvePromise, reject) => {
-		const child = spawn(pm, args, {
+		const child = spawn('vp', ['install'], {
 			stdio: 'inherit',
 			cwd,
+			env,
 			shell: process.platform === 'win32',
 		})
 		child.once('error', reject)
 		child.once('exit', (code) => {
 			if (code === 0) resolvePromise()
-			else reject(new Error(`${pm} ${args.join(' ')} failed`))
+			else reject(new Error(`vp install failed in ${cwd} (${code})`))
 		})
 	})
-}
-
-export function formatPackageScriptCommand(pm: PM, script: string): string {
-	return pm === 'npm' || pm === 'bun' ? `${pm} run ${script}` : `${pm} ${script}`
 }
 
 function normalizeAgent(agent: AgentName | null): PM | undefined {

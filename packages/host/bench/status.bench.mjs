@@ -1,5 +1,5 @@
 // Run from the workspace after building Core and Host:
-// mise exec -- node packages/host/bench/status.bench.mjs
+// vp exec node packages/host/bench/status.bench.mjs
 import { deepStrictEqual } from 'node:assert/strict'
 import { performance } from 'node:perf_hooks'
 import { pluginNodeAddressEqual } from '../../core/dist/index.mjs'

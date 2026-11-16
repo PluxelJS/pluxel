@@ -34,7 +34,7 @@ rejected startup. No SQL or resource preparation happens at build time.
 Run from `packages/rolldown` after the affected SDK packages have been built:
 
 ```sh
-mise exec -- vp test run tests/headless-delivery.test.ts
+vp test run tests/headless-delivery.test.ts
 ```
 
 To exercise the same receiver in an installed container runtime, explicitly
@@ -42,7 +42,7 @@ select an image with Node 24 and compatible native libraries:
 
 ```sh
 PLUXEL_HEADLESS_IMAGE=docker.io/library/node:24-bookworm-slim \
-  mise exec -- vp test run tests/headless-delivery.test.ts
+  vp test run tests/headless-delivery.test.ts
 ```
 
 The container has no network, mounts the delivery read-only, and writes databases

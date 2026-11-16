@@ -1,5 +1,7 @@
 import { describe, expect, it, onTestFinished } from 'vitest'
+import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
+import { delimiter } from 'node:path'
 import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
 import fs from 'node:fs'
@@ -14,7 +16,6 @@ import { authorizePlanOverwrite, compileScaffoldPlan } from '../src/scaffold/pla
 import { collectTemplateAnswers } from '../src/scaffold/prompts'
 import { renderTemplateValue } from '../src/scaffold/render'
 import { parseTemplateSource } from '../src/scaffold/source'
-import { formatPackageScriptCommand } from '../src/utils/pm'
 import { resolveWorkspaceRoot } from '../src/scaffold/workspace'
 
 async function generateTemplate(params: {
@@ -54,7 +55,7 @@ describe('scaffold name helpers', () => {
 })
 
 describe('scaffold command inputs', () => {
-	it('validates destinations, source syntax, and package-manager guidance', () => {
+	it('validates destinations and source syntax', () => {
 		expect(resolveScaffoldDestinationInput(undefined)).toBeUndefined()
 		expect(resolveScaffoldDestinationInput([])).toBeUndefined()
 		expect(resolveScaffoldDestinationInput(['apps'])).toBe('apps')
@@ -71,10 +72,6 @@ describe('scaffold command inputs', () => {
 			path: '/workspace/templates/custom',
 		})
 		expect(() => parseTemplateSource('gh:acme/template')).toThrow('Unsupported template source')
-		expect(formatPackageScriptCommand('pnpm', 'verify')).toBe('pnpm verify')
-		expect(formatPackageScriptCommand('yarn', 'verify')).toBe('yarn verify')
-		expect(formatPackageScriptCommand('npm', 'verify')).toBe('npm run verify')
-		expect(formatPackageScriptCommand('bun', 'verify')).toBe('bun run verify')
 	})
 
 	it('derives install trust defaults after resolving template provenance', () => {
@@ -123,6 +120,99 @@ describe('scaffold command inputs', () => {
 		).toMatchObject({ install: true })
 	})
 })
+
+describe('scaffold installation', () => {
+	it('installs the bundled plugin through Vite+ with its exact pin and prints project tasks', async () => {
+		const { root, result, calls } = await runScaffold(['--name', '@acme/orders'])
+		expect(result).toMatchObject({ code: 0, stderr: '' })
+		const manifest = JSON.parse(fs.readFileSync(resolve(root, 'orders/package.json'), 'utf8'))
+		expect(calls()).toEqual([
+			{ args: ['install'], cwd: resolve(root, 'orders'), manager: manifest.packageManager },
+		])
+		expect(result.stdout).toContain('vp run setup')
+		expect(result.stdout).toContain('vp run verify')
+	})
+
+	it('preserves an explicit local template package-manager version through Vite+', async () => {
+		const { root, result, calls } = await runScaffold(
+			['--name', 'orders', '--template', './custom', '--pm', 'npm', '--install'],
+			{
+				'custom/pluxel-template.jsonc': JSON.stringify({ schemaVersion: 1, id: 'custom' }),
+				'custom/package.json': JSON.stringify({ packageManager: 'npm@11.16.0' }),
+			},
+		)
+		expect(result).toMatchObject({ code: 0, stderr: '' })
+		expect(calls()).toEqual([
+			{ args: ['install'], cwd: resolve(root, 'orders'), manager: 'npm@11.16.0' },
+		])
+		expect(result.stdout).toContain('vp run')
+		expect(result.stdout).not.toContain('vp run setup')
+	})
+
+	it('retains generated files and reports a failed Vite+ installation', async () => {
+		const { root, result } = await runScaffold(['--name', 'orders'], {}, 9)
+		expect(result.code).not.toBe(0)
+		expect(result.stderr).toContain('Generated files remain in place')
+		expect(fs.existsSync(resolve(root, 'orders/package.json'))).toBe(true)
+		expect(result.stdout).not.toContain('vp run verify')
+	})
+})
+
+async function runScaffold(args: string[], files: Record<string, string> = {}, installCode = 0) {
+	const root = fs.mkdtempSync(resolve(tmpdir(), 'pluxel-scaffold-install-'))
+	onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }))
+	for (const [path, contents] of Object.entries(files)) {
+		const target = resolve(root, path)
+		fs.mkdirSync(resolve(target, '..'), { recursive: true })
+		fs.writeFileSync(target, contents)
+	}
+	const tools = resolve(root, 'tools')
+	fs.mkdirSync(tools)
+	const callPath = resolve(root, 'vp-calls.jsonl')
+	fs.writeFileSync(callPath, '')
+	fs.writeFileSync(
+		resolve(tools, 'vp'),
+		`#!${process.execPath}
+const fs = require('node:fs')
+fs.appendFileSync(${JSON.stringify(callPath)}, JSON.stringify({args: process.argv.slice(2), cwd: process.cwd(), manager: process.env.VP_PACKAGE_MANAGER}) + '\\n')
+process.exitCode = ${installCode}
+`,
+		{ mode: 0o700 },
+	)
+	fs.writeFileSync(resolve(tools, 'pnpm'), `#!${process.execPath}\nprocess.exit(99)\n`, {
+		mode: 0o700,
+	})
+	const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>(
+		(accept, reject) => {
+			const child = spawn(
+				process.execPath,
+				[resolve(import.meta.dirname, '../bin/pluxel.mjs'), 'new', ...args],
+				{
+					cwd: root,
+					stdio: ['ignore', 'pipe', 'pipe'],
+					env: { ...process.env, PATH: `${tools}${delimiter}${process.env.PATH ?? ''}` },
+				},
+			)
+			let stdout = ''
+			let stderr = ''
+			child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk))
+			child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk))
+			child.once('error', reject)
+			child.once('close', (code) => accept({ code, stdout, stderr }))
+		},
+	)
+	return {
+		root,
+		result,
+		calls: () =>
+			fs
+				.readFileSync(callPath, 'utf8')
+				.trim()
+				.split('\n')
+				.filter(Boolean)
+				.map((line) => JSON.parse(line)),
+	}
+}
 
 describe('scaffold template rendering', () => {
 	it('strictly validates manifests and rejects legacy template contracts', async () => {
@@ -350,7 +440,12 @@ describe('scaffold template rendering', () => {
 			String(fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8')),
 		) as Record<string, any>
 		expect(manifest.name).toBe('pluxel-plugin-hello-world')
+		const repositoryManifest = JSON.parse(
+			fs.readFileSync(resolve(import.meta.dirname, '../../../package.json'), 'utf8'),
+		)
+		expect(manifest.packageManager).toBe(repositoryManifest.packageManager)
 		expect(manifest.scripts.build).toBe('vp run compile')
+		expect(manifest.scripts['hooks:install']).toBe('hk install')
 		for (const name of [
 			'vite.config.ts',
 			'oxlint.config.ts',

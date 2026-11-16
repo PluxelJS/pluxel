@@ -1,5 +1,5 @@
 // Run after building Core, Host and Services:
-// mise exec -- node packages/services/bench/management-status.bench.mjs
+// vp exec node packages/services/bench/management-status.bench.mjs
 import { deepStrictEqual, equal } from 'node:assert/strict'
 import { performance } from 'node:perf_hooks'
 import { BasePlugin, Plugin } from '../../core/dist/index.mjs'

@@ -108,18 +108,17 @@ npm trusted publisher 绑定 `PluxelJS/pluxel` 和 `.github/workflows/release.ym
 不保存长期 `NPM_TOKEN`。私有 GitHub repository 同样支持 OIDC，但 npm provenance 仅支持公开 repository；
 Release workflow 按 repository visibility 开关 provenance。
 
-首次设置需要 npm package write 权限、账号已启用 2FA，以及交互式 npm 登录。使用 mise 安装的工具链：
-使用 `mise exec -- npm --version` 核对 npm 版本，满足 `npm trust` 所需的 npm 11.15.0+。不要使用旧的全局 npm，
+首次设置需要 npm package write 权限、账号已启用 2FA，以及交互式 npm 登录。
+使用 `vp exec npm --version` 核对 npm 版本，满足 `npm trust` 所需的 npm 11.15.0+。不要使用旧版 npm，
 也不要使用 bypass-2FA granular token 配置信任。
 
 首次整批初始化，或同时包含既有包和新包的全量发布，可使用仓库的批量初始化脚本。它要求当前 Tegami publish lock 覆盖全部公开包；本仓库由上述统一版本策略生成同一目标版本。在已完成 version 的发布准备提交上运行，不要从尚未 version 的开发提交运行。
 
 ```sh
-mise install
-mise exec -- vp install --frozen-lockfile
-mise exec -- npm login
-mise exec -- node scripts/prepare-npm-publishing.mts
-mise exec -- node scripts/prepare-npm-publishing.mts --apply
+vp install --frozen-lockfile
+vp exec npm login
+vp exec node scripts/prepare-npm-publishing.mts
+vp exec node scripts/prepare-npm-publishing.mts --apply
 ```
 
 默认只预览。`--apply` 先确认 npm 登录，再通过 Tegami `npm pretrust` 为缺失的包发布

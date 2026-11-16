@@ -17,7 +17,7 @@ icon: Blocks
 在项目根目录下通过包管理器添加依赖：
 
 ```sh
-pnpm add @pluxel/plugin-wretch
+vp add @pluxel/plugin-wretch
 ```
 
 如果你的项目使用 pnpm catalog 统一管理版本，也可以运行：

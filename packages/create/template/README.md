@@ -9,11 +9,11 @@ Coding agents: read [AGENTS.md](./AGENTS.md), then use the
 The skill routes development, service diagnostics and live operations to the relevant tools and documentation.
 
 Start with the [current upstream Pluxel documentation](https://github.com/PluxelJS/pluxel/blob/main/docs/index.md),
-or find source inspection, live operations and tests with `vp exec pluxel docs development/index.md`, then run:
+or find source inspection, live operations and tests with `vp exec pluxel docs development/index.md`.
+Prepare the global Vite+ CLI, Node.js 24+, hk and Pitchfork as described in the
+[workspace guide](https://github.com/PluxelJS/pluxel/blob/main/docs/development/workspace-toolchain.md), then run:
 
 ```sh
-mise trust
-mise install
 vp install
 vp run setup
 # In an initialized Git repository:
@@ -21,13 +21,17 @@ vp run hooks:install
 vp run dev
 ```
 
+Application starters and standalone plugin templates share the same `vp` command convention.
+Use `vp install` for dependencies, `vp run` for project tasks and `vp exec` for project tools.
+Vite+ reads `packageManager` to select and install the pinned package manager.
+
 `vp run dev` starts or reuses the Pitchfork service and prints the running Vite application and Workbench URLs on every invocation. The `package.json` setting `pluxel.dev.default` selects `app`, declared as `{ "root": "host/web", "pitchfork": "app" }`. The `local` profile runs the same root in the foreground through `vp run dev:local`. Startup verifies service ownership through the enabled console and does not restart an existing service. Other projects can use a foreground `command` instead of `pitchfork`; Pluxel console operations do not require Pitchfork.
 
 Use `vp exec pluxel dev status` to inspect the Vite instance and application, and `vp exec pluxel dev run host/web/dev/check.ts` to execute a console script inside that root. Neither command calls Pitchfork or starts a stopped service. One package may declare several profiles, using the same or different Vite roots; an explicit `--profile <name>` takes precedence over `pluxel.dev.default`, then a sole profile is selected automatically. The default must name an existing profile. Cross-directory calls use `--root <project-path>` to find the configuration. If several live instances match the profile, select `--instance <id>`; this cannot bypass profile ownership. Save the returned `receipt` for `script result <receipt>` or `script cancel <receipt>`: it remains bound to the original process after a restart. See the [console guide](https://github.com/PluxelJS/pluxel/blob/main/docs/development/dev-console.md) for scripts, foreground commands and direct Vite connections.
 
 For continuous or multi-file edits while the application is running, use the console guide's HMR batch workflow: `dev hmr pause`, edit and check, then `dev hmr apply` and verify the result. Failed updates remain paused; use `dev hmr resume` only after verification if the original mode was auto. These commands use the same profile and instance selection as `dev run`.
 
-Run `node dev/inspect.mjs` to locate the example Plugin, Parts, Schema and application bindings directly from local source. This uses `@pluxel/agent-sdk/source` and works before starting the app. See the [source query guide](https://github.com/PluxelJS/pluxel/blob/main/docs/development/inspection.md).
+Run `vp exec node dev/inspect.mjs` to locate the example Plugin, Parts, Schema and application bindings directly from local source. This uses `@pluxel/agent-sdk/source` and works before starting the app. See the [source query guide](https://github.com/PluxelJS/pluxel/blob/main/docs/development/inspection.md).
 
 The host declares its fixed Plugin catalog and optional sources in `host/src/app.ts`.
 Vite development and production execution consume that same `defineHostApplication(factory)` declaration.
@@ -70,9 +74,9 @@ Pitchfork owns process lifetime. Set `PLUXEL_WORKBENCH=false` in `pitchfork.loca
 under `[daemons.app.env]` and restart `app` to disable Workbench locally.
 The `app` and `local` profiles are alternative ways to run the same application and share its default data directory. Profiles separate console routing, not data. Run `pitchfork stop app` before `vp run dev:local` when using the same data; for concurrent processes, explicitly set a distinct `PLUXEL_DATA_ROOT` for each.
 
-For foreground debugging with console access, use `vp run dev:local`. The supplied `local` profile runs `vp run @example/host#dev:server` and the CLI binds the foreground process automatically. Use `pluxel dev status --profile local` and `pluxel dev run <script> --profile local` for that instance; Ctrl+C stops it.
+For foreground debugging with console access, use `vp run dev:local`. The supplied `local` profile runs `vp run @example/host#dev:server` and the CLI binds the foreground process automatically. Use `vp exec pluxel dev status --profile local` and `vp exec pluxel dev run <script> --profile local` for that instance; Ctrl+C stops it.
 
-`mise.toml` pins Node, pnpm, Vite+, hk and Pitchfork. `hk.pkl` owns changed-file linting and
+`mise.toml` provides pinned tool installation, including the native global Vite+ CLI from GitHub releases. Vite+ selects the package manager, installs dependencies and runs project commands and tasks. `hk.pkl` owns changed-file linting and
 formatting (`hk check` / `hk fix`); install its Git hooks explicitly after
 `git init`. Full workspace checks remain `vp run verify`, also used in CI.
 
@@ -127,5 +131,5 @@ This runs governance checks, formatting, Pluxel Oxlint rules, type checking, tes
 application build. To create a real publishable plugin package alongside the examples, use:
 
 ```sh
-pluxel new --name @your-scope/your-plugin plugins
+vp exec pluxel new --name @your-scope/your-plugin plugins
 ```

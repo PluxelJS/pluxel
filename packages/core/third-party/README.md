@@ -30,8 +30,8 @@ To rebuild, use the [Pluxel repository](https://github.com/PluxelJS/pluxel), the
 `packages/core/tsdown.config.ts` and these patch files:
 
 ```sh
-mise exec -- pnpm install --frozen-lockfile
-mise exec -- vp run @pluxel/core#compile
+vp install --frozen-lockfile
+vp run @pluxel/core#compile
 ```
 
 The fixed upstream npm tarballs above plus the patches reproduce the modified dependency source;

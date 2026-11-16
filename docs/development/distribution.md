@@ -60,7 +60,7 @@ export default defineConfig({
 在受控的 CI/CD 发布流水线中，可通过私钥对生成的清单进行 DSSE 签名，并在部署端进行公钥验证：
 
 ```sh
-pluxel distribution verify ./dist \
+vp exec pluxel distribution verify ./dist \
 	--key ./release-issuer.ed25519.pub.pem \
 	--report ../reports/verification.json
 ```
@@ -74,15 +74,15 @@ pluxel distribution verify ./dist \
 
 ```sh
 # 写入发行标记
-pluxel distribution mark ./dist \
+vp exec pluxel distribution mark ./dist \
 	--claims ../private/release-claims.json \
 	--record-out ../private/delivery-record.json
 
 # 生成最终清单
-pluxel distribution create ./dist
+vp exec pluxel distribution create ./dist
 
 # 在接收端验证标记与交付记录的匹配度
-pluxel distribution correlate ./dist \
+vp exec pluxel distribution correlate ./dist \
 	--delivery-record ../private/delivery-record.json
 ```
 

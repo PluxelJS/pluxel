@@ -10,7 +10,7 @@ description: 使用 @pluxel/context 为 standalone host 组合固定、严格惰
 ## 安装与引入
 
 ```sh package-install
-npx nypm add @pluxel/context
+vp add @pluxel/context
 ```
 
 ## 作用域（Scope）类型

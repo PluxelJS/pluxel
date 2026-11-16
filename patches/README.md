@@ -30,11 +30,11 @@
 在 `packages/services` 目录执行：
 
 ```sh
-mise exec -- vp test run tests/zenfs.test.ts tests/zenfs-store.test.ts tests/fs.test.ts
-mise exec -- vp run check-types
-mise exec -- vp run check-zenfs-browser
+vp test run tests/zenfs.test.ts tests/zenfs-store.test.ts tests/fs.test.ts
+vp run check-types
+vp run check-zenfs-browser
 # 先构建，再检查真实 tarball；不使用工作区 source 条件。
-mise exec -- vp test run --config tests/installed.config.mts -t 'ships the patched filesystem'
+vp test run --config tests/installed.config.mts -t 'ships the patched filesystem'
 ```
 
 浏览器入口连接现有 `PLAYWRIGHT_WS_ENDPOINT`，缺省 `ws://127.0.0.1:3000`；只关闭自己的 context 并断开连接，不安装、启动或关闭共享浏览器。HTML 与浏览器 bundle 由 Playwright route 交付，无额外开发服务；该 task 禁用缓存。

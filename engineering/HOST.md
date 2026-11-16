@@ -63,7 +63,7 @@ Services 的 label 消歧缓存由 root 持有当前一份目录，先比较 cat
 
 ### 状态投影测量
 
-Core 与 Host 构建完成后，在工作区运行 `mise exec -- node packages/host/bench/status.bench.mjs`。基准仅导入 `dist`，先核对精确读取与 overview/find 完整结果相同，再为 8、1,000、10,000 个停止的配置 fork 各测 20 个样本，每项至少预热 5 次。输出 JSON 分开记录热状态索引的 overview/find、精确读取，以及新 state identity 的首次精确读取；冷路径在计时外准备不可变输入，只测索引构建和投影。
+Core 与 Host 构建完成后，在工作区运行 `vp exec node packages/host/bench/status.bench.mjs`。基准仅导入 `dist`，先核对精确读取与 overview/find 完整结果相同，再为 8、1,000、10,000 个停止的配置 fork 各测 20 个样本，每项至少预热 5 次。输出 JSON 分开记录热状态索引的 overview/find、精确读取，以及新 state identity 的首次精确读取；冷路径在计时外准备不可变输入，只测索引构建和投影。
 
 2026-11-15 本机 Node 24.22.2 的一次原生投影测量如下，时间为每次调用的均值。计数在计时外记录，sort 观察在 `finally` 中恢复。投影对象数只计算返回的 status 对象，不代表全部对象或净堆分配。
 
@@ -77,7 +77,7 @@ Core 与 Host 构建完成后，在工作区运行 `mise exec -- node packages/h
 
 这些数值只比较同一 committed view 的状态投影，排除协调排队、Core 图读取、诊断收集和 RPC。真实 SDK 每次 `readCommitted` 仍枚举并排序 Core adjacency 的节点和边、筛选运行节点，再构建运行 key 集合；精确投影还会检查当前 reconciliation 和 lifecycle issues。大量尚未启动的配置 fork 通常不进入 Core 图，本次优化消除了对它们重复创建和排序 status 的成本，不承诺完整 SDK 跨请求 O(1)。
 
-Management 的实际读取入口另用 `mise exec -- node packages/services/bench/management-status.bench.mjs` 测量，需先构建 Core、Host 和 Services。该脚本仅消费 dist，通过真实 `RuntimeManagementTargetImpl.pluginStatusDto()` 完成协调排队、Core 读取和 DTO 校验；不包含 RPC 连接、网络传输或序列化。每个 8、1,000、10,000 停止 fork 场景使用新 Host：首次调用建立标签目录，之后预热 5 次，再测 20 个样本、每样本 100 次顺序读取。计时外包装当前 session/desired Map 实例的 `values()`，验证冷目录共调用 2 次、热查询为 0；包装在 `finally` 中恢复。这些计数表示目录扫描入口，不代表对象分配量。首次目录创建仍遍历全部身份、建立标签 Map，新的 state 也可能构建 Host 读取索引，不能把首次请求算作热路径。
+Management 的实际读取入口另用 `vp exec node packages/services/bench/management-status.bench.mjs` 测量，需先构建 Core、Host 和 Services。该脚本仅消费 dist，通过真实 `RuntimeManagementTargetImpl.pluginStatusDto()` 完成协调排队、Core 读取和 DTO 校验；不包含 RPC 连接、网络传输或序列化。每个 8、1,000、10,000 停止 fork 场景使用新 Host：首次调用建立标签目录，之后预热 5 次，再测 20 个样本、每样本 100 次顺序读取。计时外包装当前 session/desired Map 实例的 `values()`，验证冷目录共调用 2 次、热查询为 0；包装在 `finally` 中恢复。这些计数表示目录扫描入口，不代表对象分配量。首次目录创建仍遍历全部身份、建立标签 Map，新的 state 也可能构建 Host 读取索引，不能把首次请求算作热路径。
 
 2026-11-15 在本机 Node `v24.22.2` 上执行该入口，得到以下热查询耗时。三个场景的首次目录 iterator 调用均为 2，热查询均为 0。
 

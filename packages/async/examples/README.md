@@ -7,7 +7,7 @@
 在本仓库的 `packages/async` 目录，Node 24+：
 
 ```sh
-pnpm examples
+vp run examples
 ```
 
 命令先构建包，再运行 [run.ts](./run.ts)。示例完全本地运行，不访问外部服务。正常结束码为 0；错误会打印并以非零结束码退出。
@@ -16,7 +16,7 @@ pnpm examples
 
 ## 可选 Pacer 组合
 
-在本仓库的包目录运行 `pnpm examples:pacer`。外部项目需另外安装 `@tanstack/pacer@0.22.0`，复制 `pacer-run.ts` 与 `pacer-shared-reads.ts` 后运行 `node examples/pacer-run.ts`。这是当前验证的版本，不承诺其他版本契约相同。
+在本仓库的包目录运行 `vp run examples:pacer`。外部项目需另外安装 `@tanstack/pacer@0.22.0`，复制 `pacer-run.ts` 与 `pacer-shared-reads.ts` 后运行 `node examples/pacer-run.ts`。这是当前验证的版本，不承诺其他版本契约相同。
 
 Pacer 仅作为本仓库开发依赖，不是 async 的运行依赖。普通 examples 命令不加载它。示例没有远程 IO：同 key 的两次读取共享一次工作，另一 key 显式返回 rate-limited；一个订阅者取消后另一个得到 A，最终关闭会清理窗口计时器。
 

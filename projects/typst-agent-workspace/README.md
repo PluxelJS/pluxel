@@ -9,18 +9,18 @@ Pluxel Typst 源码编辑的独立文件消费者。正文直接保存在 `.typ`
 在仓库根目录构建，再进入消费者目录：
 
 ```sh
-mise exec -- vp run @pluxel-example/typst-agent-workspace#compile
+vp run @pluxel-example/typst-agent-workspace#compile
 cd projects/typst-agent-workspace
-mise exec -- vp run report check workspace
-mise exec -- vp run report init my-report
+vp run report check workspace
+vp run report init my-report
 ```
 
 `workspace/` 已从上一轮实际接纳的本地报告一次转换，保留原正文、数据、表格和位于行动建议的 figure；可直接编译。`init` 复制到一个必须不存在的新目录；随后让 Agent 阅读该目录 `AGENTS.md` 并直接修改 `.typ` 和允许的 JSON。复制已有报告使用 `report copy <目录> <新目录>`。
 
 ```sh
 export TYPST_FONT_FILES='["/run/host/fonts/noto-cjk/NotoSerifCJK-Regular.ttc"]'
-mise exec -- vp run report render my-report
-mise exec -- vp run report rename-label my-report fig:revenue fig:sales
+vp run report render my-report
+vp run report rename-label my-report fig:revenue fig:sales
 ```
 
 字体路径按本机安装修改，须包含中文字体。`render` 的结果目录包含每次输入源码快照、每次成功的 PDF/PNG/navigation，以及独立的 `compile.json` 回执。源码不因编译而更改。`check` 检查语法、静态引用和 sales 数据 schema；它不能代替实际 Typst 编译。
@@ -54,10 +54,10 @@ mise exec -- vp run report rename-label my-report fig:revenue fig:sales
 ## 验证与证据
 
 ```sh
-mise exec -- vp run typecheck
+vp run typecheck
 # 使用上面的 TYPST_FONT_FILES；省略时会明确跳过唯一 native 用例。
-mise exec -- vp run test
-mise exec -- node scripts/source-evidence.mjs
+vp run test
+vp exec node scripts/source-evidence.mjs
 ```
 
 回归包含真实无 DOM Tiptap 中文编辑、题注、跨文件引用、全项目撤销/重做、静态 figure 移动、复制内部引用、重开、无操作字节保真、无效草稿、跨文件失败无部分保存，以及外部冲突。同一个 native 会话依次编译初始、仅 JSON 更新、无效源码与修复后的快照，检查真实 PNG 变化与失败修订身份。

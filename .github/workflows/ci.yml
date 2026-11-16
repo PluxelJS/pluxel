@@ -62,7 +62,7 @@ jobs:
 
       - name: Resolve pnpm store
         id: pnpm-store
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+        run: echo "path=$(vp exec pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - name: Restore pnpm store
         id: pnpm-store-cache
@@ -80,7 +80,7 @@ jobs:
         run: vp install --frozen-lockfile
 
       - name: Install Chromium for browser and Worker storage tests
-        run: pnpm --filter @pluxel/host exec playwright-core install --with-deps --only-shell chromium
+        run: vp exec --filter @pluxel/host playwright-core install --with-deps --only-shell chromium
 
       - name: Restore Vite task cache
         id: task-cache

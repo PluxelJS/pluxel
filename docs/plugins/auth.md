@@ -8,7 +8,7 @@ description: 为 Workbench 工作台与 Management 管理接口提供 OIDC 单�
 ## 安装与快速配置
 
 ```sh
-pnpm add @pluxel/plugin-auth
+vp add @pluxel/plugin-auth
 ```
 
 在应用入口中注册 `AuthPlugin` 并设置认证模式：

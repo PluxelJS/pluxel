@@ -7,8 +7,8 @@ This consumer reads ordinary `.typ`, JSON and resource files through the built p
 From the workspace root:
 
 ```sh
-mise exec -- vp run @pluxel/plugin-typst#compile
-mise exec -- pitchfork start typst
+vp run @pluxel/plugin-typst#compile
+vp exec pitchfork start typst
 ```
 
 Open the registered `http://typst.pluxel.localhost:8088` URL. The Vite consumer uses built package entries. Rebuild after changing the package; page code uses the existing Vite server. The server's compiler is an explicitly isolated public `@pluxel/test` host, not an accessor into a running application. The file-workspace consumer separately demonstrates ordinary Host constructor injection.
@@ -51,7 +51,7 @@ Use the user's existing Playwright WebSocket service; this driver never launches
 
 ```sh
 cd plugins/render/typst
-mise exec -- node tests/consumer/source-check.mjs
+vp exec node tests/consumer/source-check.mjs
 ```
 
 Optional environment variables: `PLAYWRIGHT_WS_ENDPOINT`, `PLUXEL_TYPST_URL`, `TYPST_SOURCE_EVIDENCE`. The driver validates native import edits/insertion/module links, byte-preserving no-op save, actual Chinese selection/input, `@` completion, rich caption and cross-file label rename, unknown inline source repair, JSON-only changes, invalid source preservation/stale preview/recovery, and save/reopen. `preview-navigation.mjs` clicks real SVG and editor text in both directions, checks the actual native rectangle/page, focus and visibility, repeats the same caret click, toggles following and checks automatic following after compilation and undo. Theme checks switch system preferences and explicit host overrides without reloading, measure key UI text contrast, and capture light/dark desktop views, floating forms and source/template inputs. Preview paper stays white. It writes screenshots and JSON results, and explicitly releases only its page's native sessions before closing the shared remote browser connection.
@@ -66,15 +66,15 @@ Optional environment variables: `PLAYWRIGHT_WS_ENDPOINT`, `PLUXEL_TYPST_URL`, `T
 
 `workspace-check.mjs` checks native temporary-tab reuse, edited-tab retention and floating draft preservation when opening another file, creates and edits actual chapter files, includes them through path completion into the complete main document, checks project history, validates rejected paths, and saves/reloads the ordinary files. It also drags native tabs into a split and back and verifies unchanged source bytes.
 
-`document-check.mjs` opens the chapter tool in the shared page and exercises actual keyboard/menu/chapter actions, verifies native PNG changes, actual editor/preview clicks in both directions, repeated caret clicks, desktop resize, preview chapter/figure links, changed reference display policy, moved chapter destinations, concurrent typing during a request, table/formula editing, reference navigation, chapter creation/history/order and save/close/reload with a new lease. It also switches between a retained source draft and document edits, verifies one layout and a shared preview group, and checks that source drafts do not block document saving or PDF. It inspects delivered same-origin response bytes before browser fulfillment, semantic JSON, DOM, storage, actual text/HTML clipboard, errors and private raw reads; it captures desktop light/dark views and downloads the real PDF. Run it with `mise exec -- node plugins/render/typst/tests/consumer/document-check.mjs`. The focused `typst-document-project` and `typst-document-native` regressions check byte-preserving admission, protected content, atomic chapter history and long content continuing onto more pages with correct native reference destinations.
+`document-check.mjs` opens the chapter tool in the shared page and exercises actual keyboard/menu/chapter actions, verifies native PNG changes, actual editor/preview clicks in both directions, repeated caret clicks, desktop resize, preview chapter/figure links, changed reference display policy, moved chapter destinations, concurrent typing during a request, table/formula editing, reference navigation, chapter creation/history/order and save/close/reload with a new lease. It also switches between a retained source draft and document edits, verifies one layout and a shared preview group, and checks that source drafts do not block document saving or PDF. It inspects delivered same-origin response bytes before browser fulfillment, semantic JSON, DOM, storage, actual text/HTML clipboard, errors and private raw reads; it captures desktop light/dark views and downloads the real PDF. Run it with `vp exec node plugins/render/typst/tests/consumer/document-check.mjs`. The focused `typst-document-project` and `typst-document-native` regressions check byte-preserving admission, protected content, atomic chapter history and long content continuing onto more pages with correct native reference destinations.
 
 Model and native rendering regressions live in `tests/typst-source-*.test.ts`; selection UI, preview, session, resource and WASM tests remain independent. The previous region-JSON and Markdown candidate drivers were retired with their implementation, not retained as a second body pipeline. Source tests cover their remaining report capabilities.
 
 ## Isolated package acceptance
 
 ```sh
-mise exec -- vp run @pluxel/plugin-typst#compile
-mise exec -- node plugins/render/typst/tests/consumer.mjs
+vp run @pluxel/plugin-typst#compile
+vp exec node plugins/render/typst/tests/consumer.mjs
 ```
 
 `acceptance.ts` stages actual dist/native files outside the workspace, expands publish exports and checks phased dependency boundaries, strict declarations, Node/Web source projection, a real headless Editor, React bundling and real native output. It explicitly installs peer dependencies with `npm --legacy-peer-deps --ignore-scripts`; it does not claim registry publishing or every package manager's default peer resolution. The package remains private.

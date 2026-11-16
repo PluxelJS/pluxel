@@ -12,6 +12,8 @@ description: 从零构建一个包含业务方法、Valibot 配置校验、结�
 
 ## 初始化插件包
 
+准备[工作区工具链](../development/workspace-toolchain.md#准备-checkout)中的全局 Vite+ 与 Node.js 24+。插件模板与应用脚手架采用相同的 `vp` 命令约定。
+
 在终端中执行以下命令生成一个插件模板并安装基础开发依赖：
 
 ```sh

@@ -122,7 +122,7 @@ export default (async (sdk) => {
 在作者项目安装所用依赖，使用 Node 24 或更新版本：
 
 ```sh
-pnpm add -D @pluxel/cli @pluxel/agent-sdk @pluxel/core @pluxel/host typescript
+vp add -D @pluxel/cli @pluxel/agent-sdk @pluxel/core @pluxel/host typescript
 ```
 
 目标应用使用官方管理服务时显式开启脚本执行，例如现有应用装配中的：
@@ -140,7 +140,7 @@ const services = await servicesPreset(startup, { workbench: false, scripts: true
 
 ```sh
 mkdir -p receipts
-pnpm exec pluxel script run ./scripts/scale.ts \
+vp exec pluxel script run ./scripts/scale.ts \
   --endpoint https://app.example.com \
   --credentials-file ./admin.json \
   --input '{"factor":2}' \
@@ -158,8 +158,8 @@ run、result 和 cancel 的 stdout 返回单个 `{ ok: true, value: { receipt, r
 查询和取消直接读取保存的文件，避免复制长 token：
 
 ```sh
-pnpm exec pluxel script result --receipt-file ./receipts/scale.receipt --credentials-file ./admin.json
-pnpm exec pluxel script cancel --receipt-file ./receipts/scale.receipt --credentials-file ./admin.json
+vp exec pluxel script result --receipt-file ./receipts/scale.receipt --credentials-file ./admin.json
+vp exec pluxel script cancel --receipt-file ./receipts/scale.receipt --credentials-file ./admin.json
 ```
 
 也可将原 receipt token 作为唯一位置参数传入；它与 `--receipt-file` 必须且只能选择一个。文件只包含一个完整 token，可带一个末尾换行，不接受 JSON 包装、额外空白或多行内容；错误文件不会触发连接。

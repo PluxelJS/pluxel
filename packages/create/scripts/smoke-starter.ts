@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { createServer } from 'node:net'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { requestDocument } from './smoke-navigation.mjs'
 import { parse } from 'yaml'
@@ -15,6 +15,9 @@ import {
 } from '../../../scripts/repository-packages.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
+const repositoryManifest = JSON.parse(
+	await readFile(resolve(repositoryRoot, 'package.json'), 'utf8'),
+)
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'pluxel-create-smoke-'))
 const tarballRoot = resolve(temporaryRoot, 'tarballs')
 const installRoot = resolve(temporaryRoot, 'create-install')
@@ -87,7 +90,7 @@ async function installPackedCreate(root: string, tarball: string): Promise<void>
 	await mkdir(root, { recursive: true })
 	await writeFile(
 		resolve(root, 'package.json'),
-		`${JSON.stringify({ name: 'create-pluxel-smoke', private: true, packageManager: 'pnpm@11.28.6', dependencies: { '@pluxel/create': tarball } }, null, 2)}\n`,
+		`${JSON.stringify({ name: 'create-pluxel-smoke', private: true, packageManager: repositoryManifest.packageManager, dependencies: { '@pluxel/create': tarball } }, null, 2)}\n`,
 	)
 	await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
 	await runVp(['install', '--no-frozen-lockfile'], root)
@@ -512,10 +515,7 @@ async function runVp(
 	cwd: string,
 	environment: Record<string, string> = {},
 ): Promise<void> {
-	await runProcess('vp', args, cwd, {
-		...environment,
-		PATH: `${resolve(cwd, 'node_modules/.bin')}${delimiter}${process.env.PATH ?? ''}`,
-	})
+	await runProcess('vp', args, cwd, environment)
 }
 
 async function runVpCapture(args: string[], cwd: string): Promise<string> {
@@ -527,10 +527,7 @@ async function runProcessCapture(command: string, args: string[], cwd: string): 
 		const child = spawn(command, args, {
 			cwd,
 			stdio: ['ignore', 'pipe', 'pipe'],
-			env: {
-				...process.env,
-				PATH: `${resolve(cwd, 'node_modules/.bin')}${delimiter}${process.env.PATH ?? ''}`,
-			},
+			env: process.env,
 		})
 		let stdout = ''
 		let stderr = ''

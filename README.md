@@ -64,7 +64,7 @@ export class BillingPlugin extends BasePlugin {
 - [插件开发指南](./docs/plugin-development/index.md)：依赖模型、事件系统、日志输出、配置与隔离测试。
 - [宿主配置](./docs/host/configuration.md)：应用入口定义、环境变量绑定、存储挂载与生产打包。
 - [Workbench 工作台](./docs/workbench/index.md)：为插件配置可视化管理界面与业务视图。
-- [开发工具链](./docs/development/workspace-toolchain.md)：本地开发环境、mise 工具链与 Pitchfork 服务管理。
+- [开发工具链](./docs/development/workspace-toolchain.md)：Vite+ 安装、执行与任务、Git hooks 与 Pitchfork 服务管理。
 - [包索引矩阵](./docs/reference/package-matrix.md)：查看所有官方包的导入入口与公开状态。
 
 ## 开源许可

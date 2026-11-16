@@ -11,7 +11,7 @@
 - `host/src/app.ts` 是开发与生产共用的应用声明；可选 `sources` 扩展固定 catalog。默认 modules 构建与原生 `start.mjs` 只在启动接纳预编译来源；开发 Vite 持续更新。生产 Vite 使用独立 `vite.runtime.config.ts` 与 `start-vite.mjs`，加载同一 compiled factory。
 - 生产 listener 与 `publicDir` 由应用 `launch` 显式选择；启动意图通过判定后才执行，关闭统一使用 Host。Vite 自己持有 listener，不执行应用 `acceptStartup` 或 `launch`。
 - 浏览器 React/Vite 代码位于 `host/web/`；Node catalog、配置和路由策略位于 `host/`；共享中立逻辑位于 `packages/`。
-- 源码查询从 `@pluxel/agent-sdk/source` 导入普通函数，运行 `node dev/inspect.mjs`。本应用使用 `application: { root: 'host', entry: 'src/app.ts' }`；用法见 `vp exec pluxel docs development/inspection.md`。进程内 Host 操作入口为 `@pluxel/agent-sdk/host`，外部 Node 程序通过 `/client` 发现、执行和查询原 receipt。
+- 源码查询从 `@pluxel/agent-sdk/source` 导入普通函数，运行 `vp exec node dev/inspect.mjs`。本应用使用 `application: { root: 'host', entry: 'src/app.ts' }`；用法见 `vp exec pluxel docs development/inspection.md`。进程内 Host 操作入口为 `@pluxel/agent-sdk/host`，外部 Node 程序通过 `/client` 发现、执行和查询原 receipt。
 - 修改 `plugins/`、公共契约、Host 配置或 lint / fmt 规则前，按开发指南确认对应契约。应用装配见 `vp exec pluxel docs host/configuration.md`。
 - 完成后运行 `vp run verify`；不得无理由绕过 Pluxel lint 规则。
 
@@ -19,7 +19,7 @@
 
 ## 工作区工具与服务
 
-先读 `docs/pluxel/development/workspace-toolchain.md`（或 `vp exec pluxel docs development/workspace-toolchain.md`）。`mise.toml` 只配置工具版本、环境和 PATH，package scripts 提供项目操作入口，Vite+ 执行任务图、打包、lint 和格式化，`hk.pkl` 定义检查，`pitchfork.toml` 声明 `app` 服务。首次运行 `mise trust`、`mise install`、`vp install`、`vp run setup`；已有 Git 仓库再运行 `vp run hooks:install`。
+先读 `docs/pluxel/development/workspace-toolchain.md`（或 `vp exec pluxel docs development/workspace-toolchain.md`）。Vite+ 统一依赖安装、命令执行与任务图，package scripts 提供项目操作入口，`hk.pkl` 定义检查，`pitchfork.toml` 声明 `app` 服务；`mise.toml` 仅提供可选的工具安装与版本固定。命令约定与应用、插件及团队模板共同遵循工作区工具链指南。准备好工具后运行 `vp install`、`vp run setup`；已有 Git 仓库再运行 `vp run hooks:install`。
 
 修改服务前先读现有配置、运行 `pitchfork list` 和 `pitchfork status app`，按需查询 `pitchfork <command> --help` 与官方文档。用 `vp run dev` 启动或复用并显示当前应用与 Workbench 地址（项目 CLI 的 `dev`；`package.json` 中 `pluxel.dev.default` 选择 `app`，`pluxel.dev.app` 声明 `root: host/web` 与 `pitchfork: app`）；用原生 stop、restart、logs 管理，不手写后台进程、端口探测、轮询或 supervisor。命名空间默认由目录决定，保留 Git worktree 隔离。Vite 已拥有 HMR，不重复配置进程级源码 watch。
 
