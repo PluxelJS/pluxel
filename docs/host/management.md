@@ -57,4 +57,4 @@ CLI 凭据从 `--credentials-file` 的 JSON 文件读取：密码模式用 `{ "p
 
 全部完成但存在生命周期问题时返回 `applied-with-issues`；部分操作完成、部分未应用时返回 `partially-applied`。目标拒绝保留 `state: 'unchanged'`，持久化确认失败保留 `state: 'unknown'`。只要一项结果未知，批量顶层即返回 `ok: false, status: 'unknown'`，同时保留全部逐项结果；全部已知且均未应用时才返回 `rejected`。收到未知结果后先读取业务状态，避免重投已经发生的写入。
 
-脚本 SDK 的 Better Result 使用相同的 Host 完成判定。配置保存的 `persistence`、`application` 和 desired/applied revision 继续分别描述保存与运行采用，完整处理示例见[自动化脚本](../development/scripts.md)。
+脚本 SDK 使用相同的 Host 完成判定，成功直接返回报告，失败通过 `ScriptError.details` 保留原领域信息。配置保存的 `persistence`、`application` 和 desired/applied revision 继续分别描述保存与运行采用，完整处理示例见[自动化脚本](../development/scripts.md)。

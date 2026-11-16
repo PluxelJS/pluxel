@@ -3,10 +3,11 @@ import {
 	DetachedPluginNodeAddressError,
 	readPluginNodeAddressEvidence,
 } from '@pluxel/core/internal/plugin-address-evidence'
+import { ScriptError, type ScriptErrorDetails } from './sdk-outcomes'
 
 /** Script control and artifact versions are independent from application/Plugin ABI. */
 export const SCRIPT_PROTOCOL = 2 as const
-export const SCRIPT_ARTIFACT_FORMAT = 'pluxel-js-factory/3' as const
+export const SCRIPT_ARTIFACT_FORMAT = 'pluxel-js-factory/4' as const
 export const SCRIPT_VALUE_BYTES = 1024 * 1024
 export const SCRIPT_DEFAULT_TIMEOUT = 30_000
 export const SCRIPT_MAX_TIMEOUT = 300_000
@@ -25,9 +26,9 @@ export type ScriptProjectCode = Readonly<{
 	exportName: string
 }>
 /**
- * Function body returning module exports. Format 3 receives two parameters:
- * `__pluxel_script_better_result` and `__pluxel_script_control`, bound to the
- * receiver's shared Better Result and verified control-reference namespaces.
+ * Function body returning module exports. Format 4 receives three parameters:
+ * `__pluxel_script_better_result`, `__pluxel_script_control` and `__pluxel_script_host`,
+ * bound to the receiver's Better Result, control-reference and public Host SDK namespaces.
  * Ordinary computation dependencies are
  * bundled into the body; the source map describes this body without a wrapper prefix.
  */
@@ -58,6 +59,8 @@ export type ScriptPhase = 'admission' | 'load' | 'execute' | 'encode' | 'cleanup
 export type ScriptFailure = Readonly<{
 	code: string
 	message: string
+	/** Expected SDK failure facts, including persistence state and complete domain reports. */
+	details?: ScriptErrorDetails
 	stack?: string
 	hint?: string
 	context?: JsonValue
@@ -116,9 +119,23 @@ export function scriptFailure(
 		...(diagnostics?.context === undefined ? {} : { context: snapshotJson(diagnostics.context) }),
 	}
 	if (error instanceof Error) {
+		let message =
+			error instanceof ScriptError ? error.details.message.slice(0, 4096) : failureMessage(error)
+		let failureDetails: ScriptErrorDetails | undefined
+		if (error instanceof ScriptError) {
+			try {
+				failureDetails = snapshotJson(error.details) as ScriptErrorDetails
+			} catch (encodingError) {
+				// Invalid custom details must not prevent the execution owner from settling.
+				const reason =
+					encodingError instanceof Error ? failureMessage(encodingError) : 'Invalid JSON'
+				message = `${message} | Failure details could not be encoded: ${reason}`.slice(0, 4096)
+			}
+		}
 		return {
 			code: 'code' in error && typeof error.code === 'string' ? error.code : fallback,
-			message: failureMessage(error),
+			message,
+			...(failureDetails === undefined ? {} : { details: failureDetails }),
 			...(error.stack ? { stack: error.stack.slice(0, 16_384) } : {}),
 			...details,
 		}

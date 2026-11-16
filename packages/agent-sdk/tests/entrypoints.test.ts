@@ -39,8 +39,10 @@ it('imports the published Host entry without the source compiler', async () => {
    if (['gunshi', '@pluxel/cli', '@pluxel/rolldown', '@pluxel/services'].some(name => specifier === name || specifier.startsWith(name + '/'))) throw new Error('Host entry loaded the compiler')
    return next(specifier, context)
   } })
-  const { createScriptScope } = await import('@pluxel/agent-sdk/host')
-  console.log(typeof createScriptScope)
+  const api = await import('@pluxel/agent-sdk/host')
+  const owner = await import('@pluxel/host/internal/agent/host')
+  if (Object.keys(api).join() !== Object.keys(owner).join() || api.ScriptError !== owner.ScriptError || api.createScriptScope !== owner.createScriptScope) throw new Error('Host SDK namespace lost its receiver identity')
+  console.log(typeof api.createScriptScope)
  `,
 		],
 		{ cwd: root },

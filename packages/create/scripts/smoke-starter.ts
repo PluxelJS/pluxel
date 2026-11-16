@@ -228,21 +228,18 @@ async function verifyViteApplication(root: string): Promise<void> {
 	await writeFile(
 		statusFile,
 		[
-			"import type { ProjectScript } from '@pluxel/host-vite/project'",
-			"import { Result } from '@pluxel/core/better-result'",
+			"import type { Script } from '@pluxel/agent-sdk/host'",
 			"import { examplePlugins } from '../../src/policy'",
 			"import { VaultAdminPlugin } from '@pluxel/services/plugins'",
 			'export default (async (sdk) => {',
 			'  const running: boolean[] = []',
 			'  for (const plugin of examplePlugins) {',
 			'    const status = await sdk.plugin(plugin.nodeAddress()).status()',
-			'    if (status.isErr()) return status',
-			"    running.push(status.value?.lifecycleState === 'running')",
+			"    running.push(status?.lifecycleState === 'running')",
 			'  }',
 			'  const vault = await sdk.plugin(VaultAdminPlugin.nodeAddress()).status()',
-			'  if (vault.isErr()) return vault',
-			'  return Result.ok({ running, vaultArtifact: vault.value?.execution.artifact.kind })',
-			'}) satisfies ProjectScript',
+			'  return { running, vaultArtifact: vault?.execution.artifact.kind }',
+			'}) satisfies Script',
 		].join('\n'),
 	)
 	const port = await reservePort()
@@ -314,10 +311,9 @@ async function verifyViteApplication(root: string): Promise<void> {
 		if (
 			!status.ok ||
 			status.value.run.state !== 'succeeded' ||
-			status.value.run.value.status !== 'ok' ||
-			status.value.run.value.value.running.length !== 4 ||
-			status.value.run.value.value.vaultArtifact !== 'built-module' ||
-			status.value.run.value.value.running.some((running: boolean) => !running)
+			status.value.run.value.running.length !== 4 ||
+			status.value.run.value.vaultArtifact !== 'built-module' ||
+			status.value.run.value.running.some((running: boolean) => !running)
 		) {
 			throw new Error(`Starter Plugin admission failed: ${JSON.stringify(status)}`)
 		}

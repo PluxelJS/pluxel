@@ -8,7 +8,7 @@ description: 按执行位置选择源码查询、进程内 Host 操作或外部 
 | 入口                       | 执行环境             | 调用                                                                                           |
 | -------------------------- | -------------------- | ---------------------------------------------------------------------------------------------- |
 | `@pluxel/agent-sdk/source` | Node，可读取项目源码 | `inspectPlugin`、`listPlugins`、`inspectFile`、`inspectProject`                                |
-| `@pluxel/agent-sdk/host`   | 已启动的 Host 内部   | `Script`、`ScriptSdk`、`createScriptScope`                                                     |
+| `@pluxel/agent-sdk/host`   | 已启动的 Host 内部   | `Script`、`ScriptSdk`、`ScriptError`、`createScriptScope`                                      |
 | `@pluxel/agent-sdk/client` | 外部 Node 程序       | `listHosts`、`runScript`、`controlHmr`、`getScriptResult`、`cancelScript`、`syncPluginControl` |
 
 包要求 Node 24 或更新版本，不提供混合根入口。源码查询和客户端函数直接用 `node tool.mjs` 调用；终端命令的选择见下节。代码调用无需启动 CLI，也不需要额外的 client 会话或脚本包装。
@@ -25,15 +25,14 @@ description: 按执行位置选择源码查询、进程内 Host 操作或外部 
 
 ## 操作进程内的 Host
 
-`/host` 导出 `Script`、`ScriptSdk` 与控制类型。执行器向 [Script](./scripts.md) 注入 SDK；Vite 项目脚本使用 `@pluxel/host-vite/project` 的 `ProjectScript`，增加当前模块图和 Context 访问，见[开发控制台](./dev-console.md)。持有现成 Host 的进程也可以直接借用它：
+`/host` 为 Node 和 Vite 脚本导出同一个 `Script`、`ScriptSdk` 和 `ScriptError`。执行器注入 SDK，控制操作成功直接返回值、失败抛错；`sdk.ctx.require(Token)` 借用应用已安装的能力，缺失时按原 Context 规则抛错。Vite 负责从当前模块图加载项目与能力 token，见[开发控制台](./dev-console.md)。持有现成 Host 的进程也可以直接借用它：
 
 ```ts no-twoslash
 import { createScriptScope } from '@pluxel/agent-sdk/host'
 
 await using scope = createScriptScope({ ctx: host.ctx })
 const status = await scope.sdk.plugin(nodeAddress).status()
-if (status.isErr()) throw new Error(status.error.message)
-console.log(status.value)
+console.log(status)
 ```
 
 scope 关闭时排空已接纳的操作，Host 的寿命由创建者管理。`/host` 的运行依赖不包含 Node、Services 或编译器。

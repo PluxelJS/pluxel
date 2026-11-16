@@ -50,6 +50,10 @@ function scriptFactory(code: string, program: Program, filename: string) {
 			'@pluxel/host/internal/control-reference',
 			{ local: fresh('__pluxel_script_control'), input: '__pluxel_script_control' },
 		],
+		[
+			'@pluxel/agent-sdk/host',
+			{ local: fresh('__pluxel_script_host'), input: '__pluxel_script_host' },
+		],
 	])
 	const used = new Map<string, string>()
 	const merge = fresh('__pluxel_script_export_star')
@@ -250,9 +254,12 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 	const imports: Plugin = {
 		name: 'pluxel-script-imports',
 		async resolveId(source, importer) {
-			// Format 3 binds the public Result and verified control-provider template to receiver modules.
-			// It never reads or bundles an author's separate Better Result runtime.
-			if (importer && source === '@pluxel/core/better-result') return { id: source, external: true }
+			// Shared runtime values keep receiver identity, including ScriptError in catch clauses.
+			if (
+				importer &&
+				(source === '@pluxel/core/better-result' || source === '@pluxel/agent-sdk/host')
+			)
+				return { id: source, external: true }
 			if (
 				importer &&
 				source === '@pluxel/host/internal/control-reference' &&
@@ -265,7 +272,7 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 					if (resolved && (await findControl(resolved.id)) !== undefined) return resolved
 				}
 				rejectImport(
-					`Upload scripts cannot import ${JSON.stringify(source)}. Use type-only SDK imports, @pluxel/core/better-result, or a Vite project script for real application objects.`,
+					`Upload scripts cannot import ${JSON.stringify(source)}. Use @pluxel/agent-sdk/host, @pluxel/core/better-result, or a Vite project script for real application objects.`,
 				)
 			}
 			return null
@@ -338,6 +345,7 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 			chunk.imports.some(
 				(specifier) =>
 					specifier !== '@pluxel/core/better-result' &&
+					specifier !== '@pluxel/agent-sdk/host' &&
 					specifier !== '@pluxel/host/internal/control-reference',
 			) ||
 			chunk.dynamicImports.length > 0
@@ -368,7 +376,7 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 		}
 		return {
 			kind: 'artifact',
-			format: 'pluxel-js-factory/3',
+			format: 'pluxel-js-factory/4',
 			code,
 			sourceHash: createHash('sha256').update(code).digest('hex'),
 			exportName,

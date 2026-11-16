@@ -1,5 +1,4 @@
-import type { PluginNodeAddress } from '@pluxel/core'
-import type { Result } from '@pluxel/core/better-result'
+import type { PluginNodeAddress, RootContext } from '@pluxel/core'
 import type { LogCursor, LogReadOptions, LogStreamMeta } from '@pluxel/core/logging'
 import type { HostConfigMutation } from '../config'
 import type { HostOperationOptions } from '../coordinator'
@@ -7,24 +6,8 @@ import type { PluginApplyReportSnapshot } from '../apply-report'
 import type { HostPluginStatusSnapshot } from '../status'
 import type { HostPolicyField, HostPolicyInput } from '../policy'
 import type { RuntimeUpdateSnapshot } from '../execution'
-import type {
-	ScriptRunError,
-	ScriptOperationError,
-	ScriptTargetError,
-	ScriptConfigSnapshot,
-	ScriptConfigError,
-	ScriptPolicySnapshot,
-	ScriptPolicyError,
-	ScriptInstanceError,
-	ScriptLifecycleError,
-	ScriptLogSnapshot,
-	ScriptLogError,
-} from './sdk-results'
-import type {
-	ScriptPluginListOptions,
-	ScriptPluginSnapshot,
-	ScriptPluginListError,
-} from './discovery'
+import type { ScriptConfigSnapshot, ScriptPolicySnapshot, ScriptLogSnapshot } from './sdk-outcomes'
+import type { ScriptPluginListOptions, ScriptPluginSnapshot } from './discovery'
 export type {
 	ScriptPluginListOptions,
 	ScriptPluginSnapshot,
@@ -54,18 +37,16 @@ export type Script = (sdk: ScriptSdk, run: ScriptContext) => unknown | Promise<u
 /**
  * Configuration for one selected Plugin node. Methods capture their target and can
  * be destructured without binding `this`. Await business calls before using them.
- * Expected failures use Better Result. Unknown defects and invalid argument shapes reject.
+ * Control failures throw ScriptError with domain details; invalid arguments and unknown defects retain their original errors.
  */
 export interface ScriptPluginConfig<
 	I = Readonly<Record<string, unknown>>,
 	O extends object = Readonly<Record<string, unknown>>,
 > {
 	/** Includes raw input, sources, revision and desired/applied configuration facts. */
-	readonly get: () => Promise<Result<ScriptConfigSnapshot<O>, ScriptConfigError>>
+	readonly get: () => Promise<ScriptConfigSnapshot<O>>
 	/** Preview validation; application still describes the currently adopted configuration. */
-	readonly validate: (
-		change: HostConfigMutation<I>,
-	) => Promise<Result<ScriptConfigSnapshot<O>, ScriptConfigError>>
+	readonly validate: (change: HostConfigMutation<I>) => Promise<ScriptConfigSnapshot<O>>
 	/**
 	 * Save managed input and report its adoption. Use expectedManagedRevision for CAS;
 	 * inspect the domain result and application report before continuing.
@@ -73,12 +54,12 @@ export interface ScriptPluginConfig<
 	readonly patch: (
 		change: HostConfigMutation<I>,
 		options?: HostOperationOptions,
-	) => Promise<Result<ScriptConfigSnapshot<O>, ScriptConfigError>>
+	) => Promise<ScriptConfigSnapshot<O>>
 	/** Omitted paths reset all managed input; an empty list changes nothing. */
 	readonly reset: (
 		paths?: readonly (readonly string[])[],
 		options?: HostOperationOptions,
-	) => Promise<Result<ScriptConfigSnapshot<O>, ScriptConfigError>>
+	) => Promise<ScriptConfigSnapshot<O>>
 }
 
 /** Freeze identity fields while retaining the declaration-only configuration and instance associations. */
@@ -96,24 +77,22 @@ interface ScriptPluginOperations<T extends PluginNodeAddress> {
 	/** Immutable selection; retains the input's types and evidence when selected again. */
 	readonly address: SelectedAddress<T>
 	/** Read current state, or null when this node is absent. */
-	readonly status: () => Promise<
-		Result<HostPluginStatusSnapshot | null, ScriptOperationError | ScriptTargetError>
-	>
+	readonly status: () => Promise<HostPluginStatusSnapshot | null>
 	/** Start this node and return the actual lifecycle report. */
-	readonly start: () => Promise<Result<PluginApplyReportSnapshot, ScriptLifecycleError>>
+	readonly start: () => Promise<PluginApplyReportSnapshot>
 	/** Stop this node after draining accepted generation work. */
-	readonly stop: () => Promise<Result<PluginApplyReportSnapshot, ScriptLifecycleError>>
+	readonly stop: () => Promise<PluginApplyReportSnapshot>
 	/** Restart this node; previously borrowed business instance views become stale. */
-	readonly restart: () => Promise<Result<PluginApplyReportSnapshot, ScriptLifecycleError>>
+	readonly restart: () => Promise<PluginApplyReportSnapshot>
 }
 
 type TypedPluginOperations<T extends PluginTypedNodeAddress> = {
 	/**
-	 * Borrow the current generation without starting it. Result safely delivers Plugins
-	 * with a `then` member. Reacquire after restart; public members preserve the
+	 * Borrow the current generation without starting it. The { instance } envelope safely
+	 * delivers Plugins with a business `then` member. Reacquire after restart; public members preserve the
 	 * original class signatures, property mutability and JavaScript receiver behavior.
 	 */
-	readonly instance: () => Promise<Result<PluginInstance<T>, ScriptInstanceError>>
+	readonly instance: () => Promise<Readonly<{ instance: PluginInstance<T> }>>
 } & (ConfiguredPlugin<T> extends never
 	? unknown
 	: {
@@ -127,7 +106,7 @@ type AddressOperations<T extends PluginNodeAddress> = [T] extends [PluginTypedNo
 	? TypedPluginOperations<T>
 	: ([T] extends [PluginAddressEvidence<T>['target']]
 			? {
-					readonly instance: () => Promise<Result<PluginInstance<T>, ScriptInstanceError>>
+					readonly instance: () => Promise<Readonly<{ instance: PluginInstance<T> }>>
 				}
 			: unknown) &
 			([Extract<PluginAddressEvidence<T>, { kind: 'control' }>] extends [never]
@@ -148,20 +127,24 @@ export type ScriptPlugin<T extends PluginNodeAddress = PluginNodeAddress> =
 	ScriptPluginOperations<T> & AddressOperations<T>
 
 /**
- * Host operations return promises of the shared Better Result; Plugin address selection
- * is synchronous. Closing the run denies new calls and waits for accepted work;
+ * Host operations return values and throw ScriptError on control failures; Plugin address
+ * selection is synchronous. Closing the run denies new calls and waits for accepted work;
  * it does not undo mutations.
  * Management values are snapshots. Business instance views admit each member access
  * in this scope and execute on the original provider object. Await business work
  * before the script finishes; nested resources retain their original ownership.
  */
 export interface ScriptSdk {
+	/** Borrow this Host's native RootContext. Missing capabilities throw from require().
+	 * Read within this run; resources obtained from services retain their original ownership.
+	 */
+	readonly ctx: RootContext
 	/**
 	 * Select a Plugin synchronously, without reading Host state or starting it. Captures
 	 * a validated target snapshot. The selector and all reference methods can be cached
 	 * within this run without binding `this`; a closed run rejects further selection.
-	 * Malformed targets and closed runs throw synchronously. Async expected failures
-	 * return Err; unknown implementation defects reject. Detached address evidence is rejected before normalization.
+	 * Malformed targets and closed runs throw synchronously. Async control failures
+	 * reject with ScriptError; unknown implementation defects retain their original errors. Detached address evidence is rejected before normalization.
 	 *
 	 * @example
 	 * const plugin = sdk.plugin
@@ -171,46 +154,37 @@ export interface ScriptSdk {
 	readonly plugin: <const T extends PluginNodeAddress>(target: T) => ScriptPlugin<T>
 	readonly plugins: {
 		/** Discover one bounded page; reuse nextCursor while this Host and its revisions are unchanged. */
-		readonly list: (
-			options?: ScriptPluginListOptions,
-		) => Promise<Result<ScriptPluginSnapshot, ScriptPluginListError>>
+		readonly list: (options?: ScriptPluginListOptions) => Promise<ScriptPluginSnapshot>
 	}
 	readonly policy: {
-		readonly get: () => Promise<Result<ScriptPolicySnapshot, ScriptPolicyError>>
-		readonly validate: (
-			values: HostPolicyInput,
-		) => Promise<Result<ScriptPolicySnapshot, ScriptPolicyError>>
+		readonly get: () => Promise<ScriptPolicySnapshot>
+		readonly validate: (values: HostPolicyInput) => Promise<ScriptPolicySnapshot>
 		readonly patch: (
 			values: HostPolicyInput,
 			options?: HostOperationOptions,
-		) => Promise<Result<ScriptPolicySnapshot, ScriptPolicyError>>
+		) => Promise<ScriptPolicySnapshot>
 		readonly reset: (
 			keys?: readonly HostPolicyField[],
 			options?: HostOperationOptions,
-		) => Promise<Result<ScriptPolicySnapshot, ScriptPolicyError>>
+		) => Promise<ScriptPolicySnapshot>
 	}
 	readonly updates: {
-		readonly latest: () => Promise<Result<RuntimeUpdateSnapshot | null, ScriptRunError>>
+		readonly latest: () => Promise<RuntimeUpdateSnapshot | null>
 	}
 	readonly logs: {
 		/** Configured history streams, including empty streams. Does not add a sink. */
-		readonly streams: () => Promise<
-			Result<Readonly<{ rootId: string; streams: readonly LogStreamMeta[] }>, ScriptLogError>
-		>
+		readonly streams: () => Promise<Readonly<{ rootId: string; streams: readonly LogStreamMeta[] }>>
 		/** Mark the stream end. @defaultValue streamId "default" */
-		readonly mark: (streamId?: string) => Promise<Result<LogCursor, ScriptLogError>>
+		readonly mark: (streamId?: string) => Promise<LogCursor>
 		/** Preserves reset, replacement and retention-gap errors. @defaultValue limit 100 */
-		readonly read: (
-			cursor: LogCursor,
-			options?: LogReadOptions,
-		) => Promise<Result<ScriptLogSnapshot, ScriptLogError>>
+		readonly read: (cursor: LogCursor, options?: LogReadOptions) => Promise<ScriptLogSnapshot>
 		/**
 		 * Wait at most timeoutMs (1..300000) for a matching batch. Timeout returns an empty
-		 * read; cancellation returns Err and releases the subscription. Maximum limit 10000.
+		 * read; cancellation throws ScriptError and releases the subscription. Maximum limit 10000.
 		 */
 		readonly wait: (
 			cursor: LogCursor,
 			options: LogReadOptions & Readonly<{ timeoutMs: number }>,
-		) => Promise<Result<ScriptLogSnapshot, ScriptLogError>>
+		) => Promise<ScriptLogSnapshot>
 	}
 }

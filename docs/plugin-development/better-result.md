@@ -9,7 +9,7 @@ Pluxel 核心在 `@pluxel/core/better-result` 子路径下直接导出了 [Bette
 
 跨插件公开 Result 实例时，提供方和调用方使用同一子入口，通过 `@pluxel/core` peer 共享所选版本，无需额外声明 `better-result` peer。Core peer 范围应包含所用子入口和 API 的最低版本；只导入 Core 主入口不会加载 Better Result。独立安装的双包 ESM/CJS 消费与对象身份检查见 [Core 发行回归](https://github.com/PluxelJS/pluxel/blob/main/packages/core/tests/installed-result.smoke.mjs)。
 
-本地业务方法按恢复需要选择 Result；SDK 原生返回值、部分成功回执及配置的保存/采用状态继续使用各自协议。Host 的[脚本 SDK](../development/scripts.md)在控制边界统一返回 `Promise<Result<T, E>>`，保留原报告与持久化、采用信息。需要构造或组合 Result 时同样从 `@pluxel/core/better-result` 导入。`Plugin.init()` 无法提供能力时仍按生命周期约定失败。
+本地业务方法按恢复需要选择 Result；SDK 原生返回值、部分成功回执及配置的保存/采用状态继续使用各自协议。Host 的[脚本 SDK](../development/scripts.md)成功直接返回值，失败抛出保留领域报告的 `ScriptError`。脚本默认用普通 await 中断失败步骤；原生业务方法自行选择 Result，脚本按该方法的签名处理。只有需要把可恢复失败作为业务值传递、汇总或组合时才使用 Result，从 `@pluxel/core/better-result` 导入。`Plugin.init()` 无法提供能力时仍按生命周期约定失败。
 
 ## 场景选型：何时使用 Result
 

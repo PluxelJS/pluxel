@@ -5,7 +5,6 @@ import {
 	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
 } from '@pluxel/core'
-import { Result } from '@pluxel/core/better-result'
 import { hash } from 'ohash'
 import {
 	hostPluginCatalogEntriesFromView,
@@ -15,7 +14,7 @@ import {
 	type HostPluginCatalogEntry,
 } from '../status'
 import type { HostPluginGraphCommittedView } from '../coordinator'
-import type { ScriptOperationError } from './sdk-results'
+import { ScriptError, type ScriptOperationError } from './sdk-outcomes'
 
 /** Query input is captured at list() invocation. Both identity filters may be combined. */
 export interface ScriptPluginListOptions {
@@ -68,7 +67,7 @@ export function scriptPluginList(
 	owner: object,
 	view: ScriptPluginDiscoveryView,
 	query: ReturnType<typeof captureScriptPluginListOptions> = captureScriptPluginListOptions(),
-): Result<ScriptPluginSnapshot, Extract<ScriptPluginListError, { code: 'cursor_stale' }>> {
+): ScriptPluginSnapshot {
 	const cursor = query.cursor === undefined ? undefined : parseCursor(query.cursor)
 	let state = owners.get(owner)
 	if (!state) {
@@ -116,24 +115,20 @@ export function scriptPluginList(
 	let offset = 0
 	if (cursor !== undefined) {
 		if (cursor[1] !== signature)
-			return Result.err(
-				Object.freeze({
-					code: 'cursor_stale',
-					message: 'Discovery Host or query inputs changed; request the first page again.',
-				}),
-			)
+			throw new ScriptError({
+				code: 'cursor_stale',
+				message: 'Discovery Host or query inputs changed; request the first page again.',
+			})
 		offset = cursor[2]
 		if (offset > entries.length) throw new TypeError('Invalid plugin discovery cursor offset')
 	}
 	const end = Math.min(offset + query.limit, entries.length)
-	return Result.ok(
-		Object.freeze({
-			nodes: Object.freeze(hostPluginStatusesFromView(view, entries.slice(offset, end))),
-			catalogRevision: view.catalog.revision,
-			runtimeStateRevision: view.runtimeStateRevision,
-			nextCursor: end < entries.length ? JSON.stringify([1, signature, end]) : null,
-		}),
-	)
+	return Object.freeze({
+		nodes: Object.freeze(hostPluginStatusesFromView(view, entries.slice(offset, end))),
+		catalogRevision: view.catalog.revision,
+		runtimeStateRevision: view.runtimeStateRevision,
+		nextCursor: end < entries.length ? JSON.stringify([1, signature, end]) : null,
+	})
 }
 
 /** @internal Capture and validate caller-owned query input before asynchronous admission. */

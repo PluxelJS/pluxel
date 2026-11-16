@@ -58,7 +58,7 @@ pitchfork logs <service> --since 5min -n 100 --no-pager
 
 ## 在线操作与交付
 
-执行前读控制台指南，用同一 profile 核对 `application.state` 和 `latestUpdate`，在其 Vite root 内写普通 `(sdk, run) => … satisfies ProjectScript` TypeScript 函数，类型从 `@pluxel/host-vite/project` 导入。文件参数相对终端当前目录，`--root` 不改变文件基准。源码仓库已有只读入口：
+执行前读控制台指南，用同一 profile 核对 `application.state` 和 `latestUpdate`，在其 Vite root 内写普通 `(sdk, run) => … satisfies Script` TypeScript 函数，类型统一从 `@pluxel/agent-sdk/host` 导入。文件参数相对终端当前目录，`--root` 不改变文件基准。源码仓库已有只读入口：
 
 ```sh
 vp run pluxel dev status
@@ -66,7 +66,7 @@ vp run pluxel dev run projects/plugin-host/dev/inspect.ts
 ```
 
 - 配置、Plugin 方法/生命周期、Workbench RPC 和业务日志都通过现有控制台；每次取得当前 handle，await 操作，释放自建资源，不重开应用数据库。
-- SDK 异步控制返回 `Promise<Result<T, E>>`，用普通 await 和 `isErr()` 提前返回；构造或组合 Result 时从 `@pluxel/core/better-result` 导入。原插件业务方法保留自身签名，完整用法见 `development/scripts.md`。
+- SDK 控制操作成功直接返回值，失败抛出 `ScriptError`；普通 await 会中断后续步骤，只在任务需要恢复时 catch 并检查 `error.details.code`。通过 `const { instance } = await plugin.instance()` 借用业务实例，`sdk.ctx.require(Token)` 使用当前 RootContext 的能力。原插件业务方法保留自身签名与失败协议，完整用法见 `development/scripts.md`。
 - 检查退出码、run state、领域结果、apply report 和相关日志。配置保存或 CLI 成功不等于运行实例已采用修改。
 - 执行前通过 `--receipt-file FILE` 保存原 receipt；超时或 `outcome_unknown` 先用 `script result --receipt-file FILE` 查询，取消用 `script cancel --receipt-file FILE`。文件规则见 `development/scripts.md` 的「保存和恢复 receipt」。两者不附带目标参数，始终绑定原实例；不因重启而重投写操作，取消不回滚已提交变更。
 

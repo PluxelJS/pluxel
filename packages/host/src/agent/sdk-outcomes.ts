@@ -1,4 +1,3 @@
-import { Result } from '@pluxel/core/better-result'
 import type { PluginNodeAddress } from '@pluxel/core'
 import type { LogReadResult } from '@pluxel/core/logging'
 import type {
@@ -10,10 +9,11 @@ import type { HostPolicyResult } from '../policy-management'
 import type { PluginApplyReportSnapshot } from '../apply-report'
 import type { PluginReconciliationIssue } from '../reconcile'
 import { pluginApplyReportOutcome } from '../report-protocol'
+import type { ScriptPluginListError } from './discovery'
 
 type WithoutOk<T> = T extends unknown ? Readonly<Omit<T, 'ok'>> : never
 
-/** Expected run admission failures. Unknown implementation defects still reject. */
+/** Expected run admission failure details. Unknown implementation defects retain their original error. */
 export type ScriptRunError = Readonly<{
 	code: 'scope_closed' | 'cancelled'
 	message: string
@@ -105,32 +105,54 @@ export type ScriptLogError =
 			message: string
 	  }>
 
-/** Project exactly one existing domain result at the SDK boundary. */
-export function scriptConfigResult<O extends object>(
+/** Expected control failure facts. Each domain retains its original discriminant and reports. */
+export type ScriptErrorDetails =
+	| ScriptConfigError
+	| ScriptPolicyError
+	| ScriptInstanceError
+	| ScriptLifecycleError
+	| ScriptLogError
+	| ScriptPluginListError
+
+/** One throwing contract for SDK control operations, in-process and in execution receipts. */
+export class ScriptError extends Error {
+	readonly details: ScriptErrorDetails
+
+	constructor(details: ScriptErrorDetails, options?: ErrorOptions) {
+		super(details.message, options)
+		this.name = 'ScriptError'
+		this.details = Object.freeze({ ...details })
+	}
+
+	get code(): ScriptErrorDetails['code'] {
+		return this.details.code
+	}
+}
+
+/** Project one existing domain outcome; failures keep all facts on ScriptError.details. */
+export function scriptConfigSnapshot<O extends object>(
 	input: HostPluginConfigResult<PluginApplyReportSnapshot, O>,
-): Result<ScriptConfigSnapshot<O>, WithoutOk<HostPluginConfigResultErr>> {
+): ScriptConfigSnapshot<O> {
 	if (input.ok === false) {
 		const { ok: _ok, ...error } = input
-		return Result.err(Object.freeze(error))
+		throw new ScriptError(error)
 	}
 	const { ok: _ok, ...value } = input
-	return Result.ok(Object.freeze(value))
+	return Object.freeze(value)
 }
 
-export function scriptPolicyResult(
+export function scriptPolicySnapshot(
 	input: HostPolicyResult<PluginApplyReportSnapshot>,
-): Result<ScriptPolicySnapshot, WithoutOk<Extract<HostPolicyResult, { ok: false }>>> {
+): ScriptPolicySnapshot {
 	if (input.ok === false) {
 		const { ok: _ok, ...error } = input
-		return Result.err(Object.freeze(error))
+		throw new ScriptError(error)
 	}
 	const { ok: _ok, ...value } = input
-	return Result.ok(Object.freeze(value))
+	return Object.freeze(value)
 }
 
-export function scriptLogResult(
-	input: LogReadResult,
-): Result<ScriptLogSnapshot, ScriptLogReadError> {
+export function scriptLogSnapshot(input: LogReadResult): ScriptLogSnapshot {
 	if (input.ok === false) {
 		const { ok: _ok, ...error } = input
 		const messages = {
@@ -141,35 +163,26 @@ export function scriptLogResult(
 			from_too_old: 'Log cursor precedes the retained history',
 			invalid: 'Log range is invalid',
 		}
-		return Result.err(
-			Object.freeze({
-				...error,
-				message: ('message' in error ? error.message : undefined) ?? messages[error.code],
-			}),
-		)
+		throw new ScriptError({
+			...error,
+			message: ('message' in error ? error.message : undefined) ?? messages[error.code],
+		})
 	}
 	const { ok: _ok, ...value } = input
-	return Result.ok(Object.freeze(value))
+	return Object.freeze(value)
 }
 
-export function scriptLifecycleResult(
+export function scriptLifecycleReport(
 	report: PluginApplyReportSnapshot,
-): Result<
-	PluginApplyReportSnapshot,
-	Extract<ScriptLifecycleError, { code: 'lifecycle_failed' | 'persistence_failed' }>
-> {
+): PluginApplyReportSnapshot {
 	const outcome = pluginApplyReportOutcome(report)
-	if (outcome.status === 'applied') return Result.ok(outcome.report)
+	if (outcome.status === 'applied') return outcome.report
 	if (outcome.status === 'persistence_failed')
-		return Result.err(
-			Object.freeze({
-				code: outcome.status,
-				message: outcome.message,
-				state: outcome.state,
-				report: outcome.report,
-			}),
-		)
-	return Result.err(
-		Object.freeze({ code: outcome.status, message: outcome.message, report: outcome.report }),
-	)
+		throw new ScriptError({
+			code: outcome.status,
+			message: outcome.message,
+			state: outcome.state,
+			report: outcome.report,
+		})
+	throw new ScriptError({ code: outcome.status, message: outcome.message, report: outcome.report })
 }

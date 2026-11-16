@@ -2,7 +2,6 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BasePlugin, Plugin, type PluginNodeAddress } from '@pluxel/core'
-import { Result } from '@pluxel/core/better-result'
 import { compileScript } from '@pluxel/rolldown/scripts'
 import { Miniflare, Response as WorkerResponse } from 'miniflare'
 import { build } from 'vite-plus'
@@ -119,20 +118,20 @@ import * as sharedBetterResult from '@pluxel/core/better-result'
 const { Result } = sharedBetterResult
 let moduleInvocations = 0
 export const namespace = () => sharedBetterResult
-export default ((sdk, run) => Result.gen(async function* () {
+export default (async (sdk, run) => {
   run.signal.throwIfAborted()
-  const nodes = yield* Result.await(sdk.plugins.list())
+  const nodes = await sdk.plugins.list()
   const { get, patch } = sdk.plugin(nodes.nodes[0].address).config
-  const before = yield* Result.await(get())
+  const before = await get()
   const values = [before.config.count]
   let next = 0
   for (const value of values) {
     if (typeof value === 'number') next += value * 2
   }
-  const changed = yield* Result.await(patch({ set: { count: next } }, { expectedManagedRevision: before.managedRevision }))
-  const actual = yield* Result.await(get())
+  const changed = await patch({ set: { count: next } }, { expectedManagedRevision: before.managedRevision })
+  const actual = await get()
   return Result.ok({ moduleInvocations: ++moduleInvocations, changed, actual, runtime: navigator.userAgent })
-})) satisfies Script
+}) satisfies Script
 `,
 		)
 		const artifact = await compileScript({ file })
@@ -168,17 +167,6 @@ export { sharedBetterResult }
 		)
 		expect(resultChunks).toHaveLength(1)
 		expect(resultChunks[0]!.imports).toEqual([])
-		const jsonPayload = {
-			'~standard': {
-				version: 1 as const,
-				vendor: 'workerd-test-bridge',
-				validate: (input: unknown) => ({ value: snapshotJson(input) }),
-			},
-		}
-		const bridgeCodec = Result.codec({
-			serialize: { ok: jsonPayload, err: jsonPayload },
-			deserialize: { ok: jsonPayload, err: jsonPayload },
-		})
 		const dynamic = `
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import { codec, sharedBetterResult } from './result.js'
@@ -186,13 +174,13 @@ function loadModule(__pluxel_script_better_result) { ${artifact.code} }
 export default class Task extends WorkerEntrypoint {
   async run(input) {
     const sdk = {
-      plugins: { list: async () => codec.deserializeUnsafe(await this.env.HOST.listPlugins()) },
+      plugins: { list: async () => this.env.HOST.listPlugins() },
       // This test bridge supplies only the two calls exercised by this task.
       plugin: (node) => ({
         address: node,
         config: {
-          get: async () => codec.deserializeUnsafe(await this.env.HOST.getConfig(node)),
-          patch: async (change, options) => codec.deserializeUnsafe(await this.env.HOST.patchConfig(node, change, options)),
+          get: async () => this.env.HOST.getConfig(node),
+          patch: async (change, options) => this.env.HOST.patchConfig(node, change, options),
         },
       }),
     }
@@ -245,18 +233,14 @@ export default {
 									}
 									switch (input.operation) {
 										case 'plugins':
-											return WorkerResponse.json(
-												bridgeCodec.serializeUnsafe(await scope.sdk.plugins.list()),
-											)
+											return WorkerResponse.json(snapshotJson(await scope.sdk.plugins.list()))
 										case 'get':
 											return WorkerResponse.json(
-												bridgeCodec.serializeUnsafe(
-													await scope.sdk.plugin(input.node).config.get(),
-												),
+												snapshotJson(await scope.sdk.plugin(input.node).config.get()),
 											)
 										case 'patch':
 											return WorkerResponse.json(
-												bridgeCodec.serializeUnsafe(
+												snapshotJson(
 													await scope.sdk
 														.plugin(input.node)
 														.config.patch(input.change, input.options),

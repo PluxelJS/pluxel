@@ -19,8 +19,7 @@ void patch({ set: { concurrency: 'unknown external input' } })
 // @ts-expect-error Node references have no second fork selector.
 void dynamic.fork
 const dynamicResult = await get()
-if (dynamicResult.isOk())
-	expectTypeOf(dynamicResult.value.config.concurrency).toEqualTypeOf<unknown>()
+expectTypeOf(dynamicResult.config.concurrency).toEqualTypeOf<unknown>()
 
 void sdk
 	.plugin(node)
@@ -36,17 +35,12 @@ export default (async (api, run) => {
 	run.signal.throwIfAborted()
 	const results = []
 	const plugins = await api.plugins.list()
-	if (plugins.isErr()) return plugins
-	for (const entry of plugins.value.nodes) {
+	for (const entry of plugins.nodes) {
 		const current = await api.plugin(entry.address).config.get()
-		if (current.isErr()) {
-			results.push(current.error)
-			continue
-		}
 		results.push({
 			node: entry.address,
-			sources: current.value.sources,
-			revision: current.value.managedRevision,
+			sources: current.sources,
+			revision: current.managedRevision,
 		})
 	}
 	return results

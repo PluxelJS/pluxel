@@ -12,7 +12,6 @@ import {
 	type ScriptScope,
 	type RunExecution,
 } from '@pluxel/host/internal/agent/runtime'
-import { createProjectSdk } from '../project-sdk'
 import {
 	collectHostImportFiles,
 	collectHostEvaluatedInputs,
@@ -203,10 +202,9 @@ export async function attachProjectScripts(
 						id: input.runId,
 						input: input.input,
 						script: execute as Parameters<typeof executeHostScript>[0]['script'],
-						extendSdk(scope) {
+						onScope(scope) {
 							borrowed = scope
 							scopes.add(scope)
-							return createProjectSdk(host.ctx, scope)
 						},
 					},
 					run,

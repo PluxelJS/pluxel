@@ -23,10 +23,6 @@
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
 		},
-		"./project": {
-			"@pluxel/source": "./src/project.ts",
-			"default": "./dist/project.mjs"
-		},
 		"./run": {
 			"@pluxel/source": "./src/run.ts",
 			"default": "./dist/run.mjs"
@@ -37,7 +33,6 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./internal": "./dist/internal.mjs",
-			"./project": "./dist/project.mjs",
 			"./run": "./dist/run.mjs",
 			"./package.json": "./package.json"
 		},

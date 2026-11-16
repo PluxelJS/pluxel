@@ -42,7 +42,7 @@ it('compiles ordinary typed modules to fresh portable factories and executes aga
 import {twice} from './helper'
 let executions = 0
 export default (async(sdk,run) => {
-  const plugins = (await sdk.plugins.list()).unwrap()
+  const plugins = await sdk.plugins.list()
   const values = []
   for (const value of [1,2,3]) if (value > 1) values.push(twice(value))
   return {executions:++executions, values, plugins:plugins.nodes.length, input:run.input}
@@ -52,7 +52,7 @@ export default (async(sdk,run) => {
 	const artifact = await compileScript({ file: resolve(files.directory, 'script.ts') })
 	expect(artifact).toMatchObject({
 		kind: 'artifact',
-		format: 'pluxel-js-factory/3',
+		format: 'pluxel-js-factory/4',
 		exportName: 'default',
 		sourceHash: expect.stringMatching(/^[a-f0-9]{64}$/),
 		sourceMap: expect.any(String),
@@ -87,14 +87,16 @@ const proto = () => 'safe proto export'
 export {proto as __proto__}
 export default (async(sdk,run) => {
   const plugins = await sdk.plugins.list()
-  if (plugins.isErr()) return plugins
   if (run.input === 'reject') return Result.err({code:'expected_rejection',message:'Domain result'})
-  return Result.ok({count:plugins.value.nodes.length,sharedIdentity:plugins instanceof Ok,canonicalReexport:reexported.Result===Result,authorLocal:__pluxel_script_better_result})
+  return Result.ok({count:plugins.nodes.length,sharedIdentity:Result.ok(plugins) instanceof Ok,canonicalReexport:reexported.Result===Result,authorLocal:__pluxel_script_better_result})
 }) satisfies Script
-export const composed = ((sdk) => Result.gen(async function* () {
-  const plugins = yield* Result.await(sdk.plugins.list())
-  return Result.ok(plugins.nodes.length)
-})) satisfies Script
+export const composed = (async (sdk) => {
+  const plugins = await sdk.plugins.list()
+  return Result.gen(function* () {
+    const count = yield* Result.ok(plugins.nodes.length)
+    return Result.ok(count)
+  })
+}) satisfies Script
 `,
 		'shared.ts': "export {Result} from '@pluxel/core/better-result'",
 	})
@@ -147,6 +149,64 @@ export const composed = ((sdk) => Result.gen(async function* () {
 	expect(await owner.executor.settled('proto-export', 'admin:alice')).toMatchObject({
 		state: 'succeeded',
 		value: 'safe proto export',
+	})
+})
+
+it('shares Host SDK errors across upload compilation and preserves failure details in receipts', async () => {
+	await using files = await fixture({
+		'script.ts': `import {ScriptError, type Script} from '@pluxel/agent-sdk/host'
+export default (async (sdk) => {
+  try {
+    await sdk.logs.mark()
+    throw new Error('Expected missing Logging')
+  } catch (error) {
+    if (!(error instanceof ScriptError)) throw error
+    const plugins = await sdk.plugins.list()
+    return {failure:error.details, count:plugins.nodes.length, nativeContext:typeof sdk.ctx.require === 'function'}
+  }
+}) satisfies Script
+export const fail = (async (sdk) => {
+  await sdk.logs.mark()
+  throw new Error('Control failure must interrupt execution')
+}) satisfies Script
+export const uncertain = (() => {
+  throw new ScriptError({code:'persistence_failed',message:'Write outcome unknown',state:'unknown'})
+}) satisfies Script
+`,
+	})
+	const artifact = await compileScript({ file: resolve(files.directory, 'script.ts') })
+	expect(artifact.code).toContain('__pluxel_script_host')
+	expect(artifact.code).not.toContain('class ScriptError')
+	await using host = await createHost({
+		plugins: [],
+		runtime: { documents: { config: false, state: false } },
+	})
+	await host.start()
+	await using owner = createNodeScriptOwner({ ctx: host.ctx })
+	await owner.executor.submit({ runId: 'recover', code: artifact }, 'admin:alice')
+	expect(await owner.executor.settled('recover', 'admin:alice')).toMatchObject({
+		state: 'succeeded',
+		value: { failure: { code: 'logging_unavailable' }, count: 0, nativeContext: true },
+	})
+	await owner.executor.submit(
+		{ runId: 'fail', code: { ...artifact, exportName: 'fail' } },
+		'admin:alice',
+	)
+	expect(await owner.executor.settled('fail', 'admin:alice')).toMatchObject({
+		state: 'failed',
+		phase: 'execute',
+		error: { code: 'logging_unavailable', details: { code: 'logging_unavailable' } },
+	})
+	await owner.executor.submit(
+		{ runId: 'uncertain', code: { ...artifact, exportName: 'uncertain' } },
+		'admin:alice',
+	)
+	expect(await owner.executor.settled('uncertain', 'admin:alice')).toMatchObject({
+		state: 'failed',
+		error: {
+			code: 'persistence_failed',
+			details: { code: 'persistence_failed', state: 'unknown', message: 'Write outcome unknown' },
+		},
 	})
 })
 

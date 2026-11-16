@@ -1039,15 +1039,15 @@ const host = await createHost({ plugins: [] })
 await host.start()
 const scope = createScriptScope({ ctx: host.ctx })
 try {
- assert.equal(host.ctx, host.ctx)
+ assert.equal(scope.sdk.ctx, host.ctx)
  assert.equal(typeof host.ctx.logger.info, 'function')
- const page = (await scope.sdk.plugins.list()).unwrap()
+ const page = await scope.sdk.plugins.list()
  assert.deepEqual(page.nodes, [])
  assert.equal(page.nextCursor, null)
  assert.equal(typeof page.catalogRevision, 'number')
  assert.equal(typeof page.runtimeStateRevision, 'number')
  const missing = { definition: { entry: { kind: 'package-root', packageName: '@test/missing' }, exportName: 'Missing' }, variant: 'default' }
- assert.equal((await scope.sdk.plugin(missing).config.get()).isErr(), true)
+ await assert.rejects(scope.sdk.plugin(missing).config.get(), { name: 'ScriptError', code: 'node_unavailable' })
 } finally {
  await scope.dispose()
  await host.close()

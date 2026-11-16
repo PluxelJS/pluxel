@@ -19,14 +19,13 @@ operations and report projections as Management; reads retain sources, saved and
 applied versions, conflicts, and partial failure details. Bounded log reads and
 waits follow the run's cancellation and resource lifetime.
 
-Replace `@pluxel/host-vite/console` and its definition helper with type-only
-`ProjectScript` and `ProjectSdk` at `@pluxel/host-vite/project`. Use
-`sdk.plugin(Constructor)` for current project implementations and `sdk.dev.ctx`
-for borrowed Context capabilities. Async controls return the shared Better Result;
-use ordinary `await` and `isErr()` for expected failures. Import its constructors
-from `@pluxel/core/better-result` when needed. Rename the Vite and development profile execution option to
-`scripts`; the prior option and JSON command protocol are removed. Templates,
-project scripts and generated agent instructions use these entries.
+Scripts use the shared `Script` type from `@pluxel/agent-sdk/host` in both
+loading modes. Select current implementations with
+`sdk.plugin(Constructor.nodeAddress())`, and borrow native Context capabilities
+through `sdk.ctx.require(Token)`. Control operations return successful values
+directly and throw `ScriptError` with complete domain details. The Vite and
+profile execution option is `scripts`; templates, real project scripts and
+generated agent instructions follow this contract.
 
 ## Compile on the client and query the original execution owner
 

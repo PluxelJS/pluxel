@@ -33,7 +33,7 @@ async function artifact(code: string): Promise<ScriptArtifact> {
 	const body = `const {Result} = __pluxel_script_better_result;\n${code}`
 	return {
 		kind: 'artifact',
-		format: 'pluxel-js-factory/3',
+		format: 'pluxel-js-factory/4',
 		code: body,
 		sourceHash: await hashScriptSource(body),
 		exportName: 'default',
@@ -53,13 +53,10 @@ it('executes a portable task on a real Host and creates fresh module locals on e
 return {default: async (sdk, run) => {
   const selected = sdk.plugin(run.input);
   const before = await selected.config.get();
-  if (before.isErr()) return before;
-  const count = before.value.config.count * 2;
-  const changed = await selected.config.patch({set: {count}}, {expectedManagedRevision: before.value.managedRevision});
-  if (changed.isErr()) return changed;
+  const count = before.config.count * 2;
+  const changed = await selected.config.patch({set: {count}}, {expectedManagedRevision: before.managedRevision});
   const actual = await selected.config.get();
-  if (actual.isErr()) return actual;
-  return Result.ok({runs: ++runs, changed: changed.value, actual: actual.value});
+  return {runs: ++runs, changed, actual};
 }};`)
 	for (const [id, expected] of [
 		['first', 4],
@@ -74,12 +71,9 @@ return {default: async (sdk, run) => {
 			state: 'succeeded',
 			hostEpoch: owner.hostEpoch,
 			value: {
-				status: 'ok',
-				value: {
-					runs: 1,
-					changed: { application: 'applied' },
-					actual: { config: { count: expected } },
-				},
+				runs: 1,
+				changed: { application: 'applied' },
+				actual: { config: { count: expected } },
 			},
 			revisions: {
 				before: { configManagedRevision: expect.any(String) },
@@ -138,7 +132,7 @@ it('retains the original unknown defect in a native Result.gen failure receipt',
 	await host.start()
 	await using owner = createNodeScriptOwner({ ctx: host.ctx })
 	const code = await artifact(`return {default: sdk => Result.gen(async function* () {
-  yield* await sdk.plugins.list();
+  await sdk.plugins.list();
   throw new Error("counter storage is unavailable");
 })};`)
 	await owner.executor.submit({ runId: 'generator-defect', code }, subject)

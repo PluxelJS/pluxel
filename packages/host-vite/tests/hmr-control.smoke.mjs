@@ -235,7 +235,7 @@ export default defineHostApplication(() => ({
 	}
 	try {
 		await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
-		for (const name of ['host', 'core', 'host-vite'])
+		for (const name of ['host', 'core', 'host-vite', 'agent-sdk'])
 			await symlink(
 				join(workspace, 'packages', name),
 				join(root, 'node_modules/@pluxel', name),
@@ -285,33 +285,42 @@ export const metrics = (globalThis as unknown as Record<string, FixtureMetrics>)
 		await writeFile(artifactFile, 'initial')
 		await writeFile(
 			join(root, 'inspect.ts'),
-			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { Probe } from './entries/probe-0.entry.ts'; export default (async (sdk) => { const selected = await sdk.plugin(Probe.nodeAddress()).instance(); if (selected.isErr()) return selected; return selected.value.value }) satisfies ProjectScript",
+			"import type { Script } from '@pluxel/agent-sdk/host'; import { Probe } from './entries/probe-0.entry.ts'; export default (async (sdk) => { const { instance } = await sdk.plugin(Probe.nodeAddress()).instance(); return instance.value }) satisfies Script",
 		)
 		await writeFile(join(root, 'fresh.ts'), await readFile(join(root, 'inspect.ts')))
 		await writeFile(
+			join(root, 'recover.ts'),
+			`import { ScriptError, type Script } from '@pluxel/agent-sdk/host';
+export default (async (sdk) => {
+ try { await sdk.logs.mark(); throw new Error('Expected missing Logging'); }
+ catch (error) {
+  if (!(error instanceof ScriptError)) throw error;
+  return { failure: error.details, count: (await sdk.plugins.list()).nodes.length, nativeContext: typeof sdk.ctx.require === 'function' };
+ }
+}) satisfies Script;`,
+		)
+		await writeFile(
 			join(root, 'status.ts'),
-			"import type { ProjectScript } from '@pluxel/host-vite/project'; export default (async (sdk) => { const listed = await sdk.plugins.list(); if (listed.isErr()) return listed; return listed.value.nodes }) satisfies ProjectScript",
+			"import type { Script } from '@pluxel/agent-sdk/host'; export default (async (sdk) => { const listed = await sdk.plugins.list(); return listed.nodes }) satisfies Script",
 		)
 		await writeFile(
 			join(root, 'save.ts'),
-			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { metrics } from './metrics.ts'; import { Probe } from './entries/probe-0.entry.ts'; export default (() => { metrics.savedConstructor = Probe; return true }) satisfies ProjectScript",
+			"import type { Script } from '@pluxel/agent-sdk/host'; import { metrics } from './metrics.ts'; import { Probe } from './entries/probe-0.entry.ts'; export default (() => { metrics.savedConstructor = Probe; return true }) satisfies Script",
 		)
 		await writeFile(
 			join(root, 'stale.ts'),
-			"import type { ProjectScript } from '@pluxel/host-vite/project'; import { metrics } from './metrics.ts'; export default ((sdk) => { if (!metrics.savedConstructor) throw new Error('Missing saved constructor'); return sdk.plugin(metrics.savedConstructor.nodeAddress()).instance() }) satisfies ProjectScript",
+			"import type { Script } from '@pluxel/agent-sdk/host'; import { metrics } from './metrics.ts'; export default ((sdk) => { if (!metrics.savedConstructor) throw new Error('Missing saved constructor'); return sdk.plugin(metrics.savedConstructor.nodeAddress()).instance() }) satisfies Script",
 		)
 		await writeFile(
 			join(root, 'locate.ts'),
 			`
-import type { ProjectScript } from '@pluxel/host-vite/project';
+import type { Script } from '@pluxel/agent-sdk/host';
 import { Probe } from './entries/probe-0.entry.ts';
 export default (async (sdk) => {
  const discovered = await sdk.plugins.list({ definition: Probe.definitionAddress() });
- if (discovered.isErr()) return discovered;
  const page = await sdk.plugins.list({ limit: 200 });
- if (page.isErr()) return page;
- return { discovered: discovered.value, nodes: page.value.nodes };
-}) satisfies ProjectScript;
+ return { discovered, nodes: page.nodes };
+}) satisfies Script;
 `,
 		)
 		await Promise.all(
@@ -449,6 +458,10 @@ await scenario(
 		const initialRead = await script()
 		assert.equal(initialRead.state, 'succeeded', JSON.stringify(initialRead))
 		assert.equal(initialRead.value, 0)
+		const recovered = await script('recover.ts')
+		assert.equal(recovered.value.failure.code, 'logging_unavailable')
+		assert.equal(recovered.value.count, count)
+		assert.equal(recovered.value.nativeContext, true)
 		const initialLocation = await locate()
 		assert.equal(initialLocation.discovered.nodes.length, 1)
 		assert.equal(initialLocation.discovered.nextCursor, null)
@@ -556,10 +569,9 @@ await scenario(
 			count + 1,
 			'source queries must reuse the live module graph',
 		)
-		const staleRead = await script('stale.ts')
-		assert.equal(staleRead.state, 'succeeded')
-		assert.equal(staleRead.value.status, 'error')
-		assert.equal(staleRead.value.error.code, 'stale_target')
+		const staleRead = await script('stale.ts', 'failed')
+		assert.equal(staleRead.error.code, 'stale_target')
+		assert.equal(staleRead.error.details.code, 'stale_target')
 		const staleLocation = await inspectPlugin(address(0).definition, {
 			root,
 			application: { root, entry: 'app.ts' },

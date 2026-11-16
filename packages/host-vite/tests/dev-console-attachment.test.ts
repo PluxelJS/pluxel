@@ -3,7 +3,6 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { createHost } from '@pluxel/host'
-import { Result } from '@pluxel/core/better-result'
 import type { ViteDevServer } from 'vite'
 import { afterEach, expect, it, vi } from 'vitest'
 import { attachProjectScripts } from '../src/console/attachment'
@@ -84,16 +83,16 @@ it('executes against a Host without official services or configured logging', as
 	const current = await fixture()
 	mocked.script.mockImplementation(async (sdk, run) => {
 		const plugins = await sdk.plugins.list()
-		if (plugins.isErr()) return plugins
-		return Result.ok({
-			plugins: plugins.value.nodes,
-			logger: typeof sdk.dev.ctx.logger.info,
+		return {
+			plugins: plugins.nodes,
+			logger: typeof sdk.ctx.logger.info,
 			signal: run.signal === current.run.signal,
-		})
+		}
 	})
 	expect(await current.execute()).toEqual({
-		status: 'ok',
-		value: { plugins: [], logger: 'function', signal: true },
+		plugins: [],
+		logger: 'function',
+		signal: true,
 	})
 	expect(current.run.revision).toHaveBeenCalledTimes(2)
 })

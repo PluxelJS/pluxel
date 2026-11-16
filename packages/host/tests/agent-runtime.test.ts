@@ -6,6 +6,7 @@ import { createPluginControlReference } from '../src/control-reference'
 import {
 	ScriptExecutor,
 	ScriptExecutionError,
+	ScriptError,
 	scriptFailure,
 	snapshotJson,
 	type ScriptSubmission,
@@ -37,6 +38,30 @@ function deferred<T = void>() {
 }
 
 describe('script execution owner', () => {
+	it('settles invalid custom SDK error details with an explicit encoding diagnostic', async () => {
+		await using executor = new ScriptExecutor({
+			instanceId: 'owner',
+			async execute() {
+				throw new ScriptError({
+					code: 'persistence_failed',
+					state: 'unknown',
+					message: 'Write outcome unknown',
+					// Simulate a custom caller violating the failure DTO contract.
+					report: new Date() as never,
+				})
+			},
+		})
+		await executor.submit(input('invalid-details'), subject)
+		const result = await executor.settled('invalid-details', subject)
+		expect(result).toMatchObject({
+			state: 'failed',
+			error: {
+				code: 'persistence_failed',
+				message: expect.stringContaining('Failure details could not be encoded'),
+			},
+		})
+		expect(result).not.toHaveProperty('error.details')
+	})
 	it('rejects oversized or nonportable input before execution with input diagnostics', async () => {
 		const execute = vi.fn(async () => null)
 		await using executor = new ScriptExecutor({ instanceId: 'owner', execute })
@@ -190,7 +215,7 @@ describe('script execution owner', () => {
 			code: 'run_not_found',
 		})
 	})
-	it.each(['none', 'finally', 'using'] as const)(
+	it.each(['none', 'finally', 'using', 'scope_closed', 'cancelled', 'lookalike'] as const)(
 		'retains timeout and actual %s failure until code settles',
 		async (failure) => {
 			const entered = deferred(),
@@ -203,6 +228,10 @@ describe('script execution owner', () => {
 					entered.resolve()
 					await release.promise
 					run.phase('cleanup')
+					if (failure === 'scope_closed' || failure === 'cancelled')
+						throw new ScriptError({ code: failure, message: 'Controlled cancellation' })
+					if (failure === 'lookalike')
+						throw Object.assign(new Error('resource cleanup failed'), { code: 'scope_closed' })
 					if (failure === 'finally') throw new Error('resource cleanup failed')
 					if (failure === 'using') {
 						using resource = {
@@ -230,8 +259,9 @@ describe('script execution owner', () => {
 				const expectedFailure = {
 					executionError: { message: expect.stringContaining('resource cleanup failed') },
 				}
-				expect(result).toMatchObject(failure === 'none' ? {} : expectedFailure)
-				expect('executionError' in result).toBe(failure !== 'none')
+				const independentFailure = ['finally', 'using', 'lookalike'].includes(failure)
+				expect(result).toMatchObject(independentFailure ? expectedFailure : {})
+				expect('executionError' in result).toBe(independentFailure)
 			} finally {
 				release.resolve()
 				await executor.close()

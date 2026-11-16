@@ -4,7 +4,6 @@ import {
 	type PluginNodeAddress,
 	type RootContext,
 } from '@pluxel/core'
-import { Result } from '@pluxel/core/better-result'
 import {
 	getPluginGenerationContext,
 	requirePluginGenerationInfo,
@@ -66,32 +65,18 @@ import {
 } from '../catalog'
 import { ScriptExecutionError } from './protocol'
 import {
-	scriptConfigResult,
-	scriptPolicyResult,
-	scriptLifecycleResult,
-	scriptLogResult,
+	scriptConfigSnapshot,
+	scriptPolicySnapshot,
+	scriptLifecycleReport,
+	scriptLogSnapshot,
+	type ScriptErrorDetails,
 	type ScriptRunError,
-	type ScriptOperationError,
 	type ScriptControlError,
 	type ScriptTargetError,
 	type ScriptInstanceError,
 	type ScriptLifecycleError,
-	type ScriptLogError,
-} from './sdk-results'
-
-export class ScriptScopeError extends Error {
-	constructor(
-		readonly code:
-			| 'scope_closed'
-			| 'logging_unavailable'
-			| 'store_unavailable'
-			| 'borrowed_generation_conflict',
-		message: string,
-	) {
-		super(message)
-		this.name = 'ScriptScopeError'
-	}
-}
+	ScriptError,
+} from './sdk-outcomes'
 
 export type ScriptRevisions = Readonly<{
 	catalogRevision: number
@@ -102,7 +87,7 @@ export type ScriptRevisions = Readonly<{
 
 export interface ScriptScope extends AsyncDisposable {
 	readonly sdk: ScriptSdk
-	/** Guard trusted in-process extensions at the same run admission boundary. */
+	/** Guard trusted in-process access at the same run admission boundary. */
 	assertOpen(): void
 	/** Close admission and signal cooperative cancellation; accepted operations still settle. */
 	abort(reason?: unknown): void
@@ -142,7 +127,7 @@ export function createScriptScope(
 	if (signal?.aborted) externalAbort()
 	const assertOpen = () => {
 		if (controller.signal.aborted)
-			throw new ScriptScopeError('scope_closed', 'Script run is closing or closed')
+			throw new ScriptError({ code: 'scope_closed', message: 'Script run is closing or closed' })
 	}
 	const track = (task: Promise<unknown>) => {
 		pending.add(task)
@@ -157,27 +142,20 @@ export function createScriptScope(
 			(operationSignal?.aborted && error === operationSignal.reason)
 		)
 			return Object.freeze({ code: 'cancelled', message: 'Script operation was cancelled' })
-		if (error instanceof ScriptScopeError && error.code === 'scope_closed')
-			return Object.freeze({ code: error.code, message: error.message })
 		throw error
 	}
-	const operationError = (error: unknown): ScriptOperationError => {
-		if (error instanceof ScriptScopeError && error.code === 'borrowed_generation_conflict')
+	const controlError = (error: unknown): ScriptRunError | ScriptControlError => {
+		if (error instanceof PluginControlError)
 			return Object.freeze({ code: error.code, message: error.message })
 		return runError(error)
 	}
-	const controlError = (error: unknown): ScriptOperationError | ScriptControlError => {
-		if (error instanceof PluginControlError)
-			return Object.freeze({ code: error.code, message: error.message })
-		return operationError(error)
-	}
-	const targetError = (error: unknown): ScriptOperationError | ScriptTargetError => {
+	const targetError = (error: unknown): ScriptRunError | ScriptTargetError => {
 		if (
 			error instanceof ScriptExecutionError &&
 			(error.code === 'target_unavailable' || error.code === 'stale_target')
 		)
 			return Object.freeze({ code: error.code, message: error.message })
-		return operationError(error)
+		return runError(error)
 	}
 	const instanceError = (error: unknown): ScriptInstanceError => {
 		if (error instanceof ScriptExecutionError && error.code === 'plugin_not_running')
@@ -210,40 +188,39 @@ export function createScriptScope(
 			})
 		return targetError(error)
 	}
-	const logError = (error: unknown): ScriptLogError => {
-		if (
-			error instanceof ScriptScopeError &&
-			(error.code === 'logging_unavailable' || error.code === 'store_unavailable')
-		)
-			return Object.freeze({ code: error.code, message: error.message })
-		return runError(error)
-	}
-	const run = <T, E, F>(
-		work: () => Result<T, E> | Promise<Result<T, E>>,
-		failure: (error: unknown) => F,
-	): Promise<Result<T, E | F | ScriptRunError>> => {
+	const run = <T>(
+		work: () => T | Promise<T>,
+		failure: (error: unknown) => ScriptErrorDetails,
+		operationSignal?: AbortSignal,
+	): Promise<T> => {
 		try {
 			assertOpen()
 		} catch (error) {
-			return Promise.resolve().then(() => Result.err(failure(error)))
+			return Promise.reject(error)
 		}
 		const task = Promise.resolve()
 			.then(() => {
 				assertOpen()
 				return work()
 			})
-			.catch((error: unknown) =>
-				// Cancellation is identified by the admitted signal's exact reason,
-				// before that reason can be mistaken for a domain error class.
-				Result.err(
-					controller.signal.aborted && error === controller.signal.reason
-						? runError(error)
-						: failure(error),
-				),
-			)
-		// Track the final Result promise. Expected failures must not become cleanup
-		// failures while this run is draining already accepted work.
-		track(task)
+			.catch((error: unknown) => {
+				// An admitted signal's exact reason takes precedence over its error class.
+				if (
+					(controller.signal.aborted && error === controller.signal.reason) ||
+					(operationSignal?.aborted && error === operationSignal.reason)
+				)
+					throw new ScriptError(runError(error, operationSignal))
+				if (error instanceof ScriptError) throw error
+				// A normalizer rethrows unknown defects instead of relabeling them.
+				throw new ScriptError(failure(error), { cause: error })
+			})
+		// Expected control failures belong to the caller. Draining them must not turn
+		// a caught failure into a second cleanup error. Unknown defects still surface.
+		track(
+			task.catch((error: unknown) => {
+				if (!(error instanceof ScriptError)) throw error
+			}),
+		)
 		return task
 	}
 	const admission = { signal: controller.signal }
@@ -253,23 +230,28 @@ export function createScriptScope(
 	})
 	// A coordinator update may already be waiting for an admitted business call.
 	// Queueing a Host read from that call would make both operations wait for each other.
-	const queued = <T, E, F>(
-		work: () => Result<T, E> | Promise<Result<T, E>>,
-		failure: (error: unknown) => F,
-	): Promise<Result<T, E | F | ScriptRunError>> =>
-		run(async () => {
-			if (activeCalls > 0)
-				throw new ScriptScopeError(
-					'borrowed_generation_conflict',
-					'Await active business member calls before using queued Host operations',
-				)
-			queuedCalls++
-			try {
-				return await work()
-			} finally {
-				queuedCalls--
-			}
-		}, failure)
+	const queued = <T>(
+		work: () => T | Promise<T>,
+		failure: (error: unknown) => ScriptErrorDetails,
+		operationSignal?: AbortSignal,
+	): Promise<T> =>
+		run(
+			async () => {
+				if (activeCalls > 0)
+					throw new ScriptError({
+						code: 'borrowed_generation_conflict',
+						message: 'Await active business member calls before using queued Host operations',
+					})
+				queuedCalls++
+				try {
+					return await work()
+				} finally {
+					queuedCalls--
+				}
+			},
+			failure,
+			operationSignal,
+		)
 	const statusView = (view: HostPluginGraphCommittedView) => ({
 		catalog: view.catalog,
 		state: view.runtimeState.state,
@@ -296,10 +278,11 @@ export function createScriptScope(
 	}
 	const logging = (): RuntimeLogging => {
 		if (!ctx.logging)
-			throw new ScriptScopeError(
-				'logging_unavailable',
-				'This Host has no Logging capability; configure runtime.logtape with a history sink to read logs',
-			)
+			throw new ScriptError({
+				code: 'logging_unavailable',
+				message:
+					'This Host has no Logging capability; configure runtime.logtape with a history sink to read logs',
+			})
 		return ctx.require(Logging)
 	}
 	const assertReadOptions = (input?: Pick<LogReadOptions, 'limit'>) => {
@@ -341,7 +324,7 @@ export function createScriptScope(
 							admission,
 						)
 					: await coordinator[`${action}Node`](node, reason, admission)
-				return scriptLifecycleResult(projectPluginApplyReport(ctx, report))
+				return scriptLifecycleReport(projectPluginApplyReport(ctx, report))
 			}, lifecycleError)
 		const borrowInstance =
 			descriptor || implementation
@@ -376,10 +359,11 @@ export function createScriptScope(
 										assertOpen: () => {
 											assertOpen()
 											if (queuedCalls > 0)
-												throw new ScriptScopeError(
-													'borrowed_generation_conflict',
-													'Await pending Host operations before accessing Plugin instance members',
-												)
+												throw new ScriptError({
+													code: 'borrowed_generation_conflict',
+													message:
+														'Await pending Host operations before accessing Plugin instance members',
+												})
 										},
 										track,
 										unwrap,
@@ -395,7 +379,7 @@ export function createScriptScope(
 								}
 								// Wrap before returning through any promise: a Plugin's own
 								// `then` member is a business member, never an await protocol.
-								return Result.ok(view)
+								return Object.freeze({ instance: view })
 							}, admission)
 						}, instanceError)
 				: undefined
@@ -403,7 +387,7 @@ export function createScriptScope(
 			get: () =>
 				queued(
 					async () =>
-						scriptConfigResult(
+						scriptConfigSnapshot(
 							projectPluginConfigResult(
 								ctx,
 								await pluginConfigGet(
@@ -419,7 +403,7 @@ export function createScriptScope(
 			validate: (change: HostConfigMutation) =>
 				queued(
 					async () =>
-						scriptConfigResult(
+						scriptConfigSnapshot(
 							projectPluginConfigResult(
 								ctx,
 								await pluginConfigValidate(
@@ -436,7 +420,7 @@ export function createScriptScope(
 			patch: (change: HostConfigMutation, input?: HostOperationOptions) =>
 				queued(
 					async () =>
-						scriptConfigResult(
+						scriptConfigSnapshot(
 							projectPluginConfigResult(
 								ctx,
 								await pluginConfigPatch(
@@ -448,15 +432,13 @@ export function createScriptScope(
 								),
 							),
 						),
-					(error) =>
-						input?.signal?.aborted && error === input.signal.reason
-							? runError(error, input.signal)
-							: controlError(error),
+					controlError,
+					input?.signal,
 				),
 			reset: (paths?: readonly (readonly string[])[], input?: HostOperationOptions) =>
 				queued(
 					async () =>
-						scriptConfigResult(
+						scriptConfigSnapshot(
 							projectPluginConfigResult(
 								ctx,
 								await pluginConfigReset(
@@ -468,10 +450,8 @@ export function createScriptScope(
 								),
 							),
 						),
-					(error) =>
-						input?.signal?.aborted && error === input.signal.reason
-							? runError(error, input.signal)
-							: controlError(error),
+					controlError,
+					input?.signal,
 				),
 		})
 		return Object.freeze({
@@ -481,7 +461,7 @@ export function createScriptScope(
 					() =>
 						coordinator.readCommitted((view) => {
 							assertImplementation(view.catalog)
-							return Result.ok(hostPluginStatusFromView(statusView(view), node))
+							return hostPluginStatusFromView(statusView(view), node)
 						}, admission),
 					targetError,
 				),
@@ -507,6 +487,10 @@ export function createScriptScope(
 		return select(normalizePluginTarget(target)) as ScriptPlugin<T>
 	}
 	const sdk = Object.freeze({
+		get ctx() {
+			assertOpen()
+			return ctx
+		},
 		plugin,
 		plugins: Object.freeze({
 			list: (input?: ScriptPluginListOptions) => {
@@ -535,49 +519,45 @@ export function createScriptScope(
 							),
 						admission,
 					)
-				}, operationError)
+				}, runError)
 			},
 		}),
 		policy: Object.freeze({
 			get: () =>
 				queued(
-					async () => scriptPolicyResult(projectHostPolicyResult(ctx, await policy.get(admission))),
-					operationError,
+					async () =>
+						scriptPolicySnapshot(projectHostPolicyResult(ctx, await policy.get(admission))),
+					runError,
 				),
 			validate: (values: HostPolicyInput) =>
 				queued(
 					async () =>
-						scriptPolicyResult(
+						scriptPolicySnapshot(
 							projectHostPolicyResult(ctx, await policy.validate(values, admission)),
 						),
-					operationError,
+					runError,
 				),
 			patch: (values: HostPolicyInput, input?: HostOperationOptions) =>
 				queued(
 					async () =>
-						scriptPolicyResult(
+						scriptPolicySnapshot(
 							projectHostPolicyResult(ctx, await policy.patch(values, mutationOptions(input))),
 						),
-					(error) =>
-						input?.signal?.aborted && error === input.signal.reason
-							? runError(error, input.signal)
-							: operationError(error),
+					runError,
+					input?.signal,
 				),
 			reset: (keys?: readonly HostPolicyField[], input?: HostOperationOptions) =>
 				queued(
 					async () =>
-						scriptPolicyResult(
+						scriptPolicySnapshot(
 							projectHostPolicyResult(ctx, await policy.reset(keys, mutationOptions(input))),
 						),
-					(error) =>
-						input?.signal?.aborted && error === input.signal.reason
-							? runError(error, input.signal)
-							: operationError(error),
+					runError,
+					input?.signal,
 				),
 		}),
 		updates: Object.freeze({
-			latest: () =>
-				run(() => Result.ok(readHostRecentUpdates(ctx)?.latestUpdate?.() ?? null), runError),
+			latest: () => run(() => readHostRecentUpdates(ctx)?.latestUpdate?.() ?? null, runError),
 		}),
 		logs: Object.freeze({
 			streams: () =>
@@ -585,11 +565,11 @@ export function createScriptScope(
 					const manager = logging()
 					for (const stream of manager.resolved.streams) markLogs(manager, stream.streamId)
 					manager.flushStores()
-					return Result.ok({
+					return {
 						rootId: manager.resolved.root.id,
 						streams: manager.stores.list().map((store) => store.meta()),
-					})
-				}, logError),
+					}
+				}, runError),
 			mark: (streamId = 'default') =>
 				run(() => {
 					const manager = logging()
@@ -597,17 +577,17 @@ export function createScriptScope(
 						!manager.stores.get(streamId) &&
 						!manager.resolved.streams.some((stream) => stream.streamId === streamId)
 					)
-						throw new ScriptScopeError(
-							'store_unavailable',
-							`No history store is configured for stream ${streamId}`,
-						)
-					return Result.ok(markLogs(manager, streamId))
-				}, logError),
+						throw new ScriptError({
+							code: 'store_unavailable',
+							message: `No history store is configured for stream ${streamId}`,
+						})
+					return markLogs(manager, streamId)
+				}, runError),
 			read: (cursor: LogCursor, input?: LogReadOptions) =>
 				run(() => {
 					assertReadOptions(input)
-					return scriptLogResult(readLogs(logging(), cursor, logOptions(input)))
-				}, logError),
+					return scriptLogSnapshot(readLogs(logging(), cursor, logOptions(input)))
+				}, runError),
 			wait: (cursor: LogCursor, input: LogReadOptions & Readonly<{ timeoutMs: number }>) =>
 				run(async () => {
 					assertReadOptions(input)
@@ -622,7 +602,7 @@ export function createScriptScope(
 					const expired = new Error('Log wait deadline reached')
 					const timer = setTimeout(() => timeout.abort(expired), input.timeoutMs)
 					try {
-						return scriptLogResult(
+						return scriptLogSnapshot(
 							await waitForLogs(manager, cursor, {
 								...logOptions(input),
 								signal: AbortSignal.any([controller.signal, timeout.signal]),
@@ -630,12 +610,12 @@ export function createScriptScope(
 						)
 					} catch (error) {
 						if (timeout.signal.aborted && !controller.signal.aborted && error === expired)
-							return scriptLogResult(readLogs(manager, cursor, logOptions(input)))
+							return scriptLogSnapshot(readLogs(manager, cursor, logOptions(input)))
 						throw error
 					} finally {
 						clearTimeout(timer)
 					}
-				}, logError),
+				}, runError),
 		}),
 	}) satisfies ScriptSdk
 	const dispose = () => {

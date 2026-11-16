@@ -1,9 +1,8 @@
-import type { ProjectScript } from '@pluxel/host-vite/project'
+import type { Script } from '@pluxel/agent-sdk/host'
 import { ReportStudioPlugin } from '../src/showcase/ReportStudio'
 
 /** Current class selection for browser acceptance; generated descriptors provide schema I/O. */
-export default ((sdk) =>
-	sdk.plugin(ReportStudioPlugin.nodeAddress()).config.get()) satisfies ProjectScript
+export default ((sdk) => sdk.plugin(ReportStudioPlugin.nodeAddress()).config.get()) satisfies Script
 
 /** Restore only the field changed by explicit --save browser acceptance. */
 export const restoreOutboundPath = ((sdk, run) => {
@@ -23,4 +22,4 @@ export const restoreOutboundPath = ((sdk, run) => {
 			? { set: { outboundPath: 'value' in input ? input.value : undefined } }
 			: { remove: [['outboundPath']] },
 	)
-}) satisfies ProjectScript
+}) satisfies Script

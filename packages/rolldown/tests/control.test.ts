@@ -806,7 +806,7 @@ void enabled
 import type {CounterInstance,CounterConfigInput,CounterConfigOutput} from './index.mjs'
 import type { ScriptSdk } from '@pluxel/agent-sdk/host'
 declare const sdk:ScriptSdk
-const counter=(await sdk.plugin(Counter.nodeAddress()).instance()).unwrap()
+const {instance:counter}=await sdk.plugin(Counter.nodeAddress()).instance()
 const same:CounterInstance=counter.same(counter)
 const self:CounterInstance=counter.self()
 counter.part.owner().same(counter)

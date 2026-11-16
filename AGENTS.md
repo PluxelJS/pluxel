@@ -45,7 +45,7 @@
 
 profile 选择、日志命令、服务就绪与应用 ready 的区别由 skill 和指南说明。隔离 test host 不能证明在线状态。
 
-项目脚本使用普通 TypeScript 导出函数与 `satisfies ProjectScript`（`@pluxel/host-vite/project`），通过 `sdk.plugin(Plugin.nodeAddress())` 选择当前模块图中的插件，`sdk.dev.ctx` 借用当前 RootContext。通用脚本类型为 `Script`（`@pluxel/agent-sdk/host`）。调用与失败处理见[自动化脚本](docs/development/scripts.md)，插件地址与生成类型见[插件控制](docs/development/plugin-control.md)。配置修改后核对领域报告与实际采用。
+Node 与 Vite 项目脚本统一使用普通 TypeScript 导出函数和 `satisfies Script`（`@pluxel/agent-sdk/host`）。通过 `sdk.plugin(Plugin.nodeAddress())` 选择插件，`const { instance } = await plugin.instance()` 借用业务实例，`sdk.ctx.require(Token)` 使用当前 RootContext 的能力。SDK 控制操作成功直接返回值，失败抛出保留领域信息的 `ScriptError`；只在需要恢复时 catch，原插件业务方法保留自己的返回协议。调用与失败处理见[自动化脚本](docs/development/scripts.md)，插件地址与生成类型见[插件控制](docs/development/plugin-control.md)。配置修改后核对领域报告与实际采用。
 
 ## 完成变更
 

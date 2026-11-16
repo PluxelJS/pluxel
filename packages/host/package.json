@@ -39,6 +39,10 @@
 			"@pluxel/source": "./src/agent.ts",
 			"default": "./dist/internal/agent-types.mjs"
 		},
+		"./internal/agent/host": {
+			"@pluxel/source": "./src/agent-host.ts",
+			"default": "./dist/internal/agent/host.mjs"
+		},
 		"./internal/agent/node": {
 			"@pluxel/source": "./src/agent/node.ts",
 			"default": "./dist/internal/agent/node.mjs"
@@ -85,6 +89,7 @@
 			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/agent-types": "./dist/internal/agent-types.mjs",
+			"./internal/agent/host": "./dist/internal/agent/host.mjs",
 			"./internal/agent/node": "./dist/internal/agent/node.mjs",
 			"./internal/agent/runtime": "./dist/internal/agent/runtime.mjs",
 			"./internal/agent/socket": "./dist/internal/agent/socket.mjs",

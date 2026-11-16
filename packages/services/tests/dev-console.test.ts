@@ -1,7 +1,6 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
-import { type Script } from '@pluxel/agent-sdk/host'
-import { createScriptScope } from '@pluxel/host/internal/agent/runtime'
+import { createScriptScope, type Script } from '@pluxel/agent-sdk/host'
 import { elysia, ElysiaApp } from '@pluxel/services/elysia'
 import { ElysiaRuntime } from '@pluxel/services/internal'
 import { Commands, commands } from '@pluxel/services/commands'
@@ -21,24 +20,23 @@ it('uses installed service tokens alongside the portable SDK without a console p
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx, signal: controller.signal })
 	try {
-		const started = await scope.sdk.plugin(Health.nodeAddress()).start()
-		expect(started.isOk()).toBe(true)
-		const script: Script = async (_sdk, run) => {
-			const server = host.ctx.require(ElysiaRuntime)
+		await scope.sdk.plugin(Health.nodeAddress()).start()
+		const script: Script = async (sdk, run) => {
+			const server = sdk.ctx.require(ElysiaRuntime)
 			const response = await server.fetch(
 				new Request('http://local.dev/health', { signal: run.signal }),
 			)
 			return {
 				status: response.status,
 				body: await response.json(),
-				commands: host.ctx.require(Commands).list(),
+				commands: sdk.ctx.require(Commands).list(),
 			}
 		}
 		expect(
 			await script(scope.sdk, { id: 'test', input: undefined, signal: controller.signal }),
 		).toEqual({ status: 200, body: { ok: true }, commands: [] })
 		// @ts-expect-error Root Context cannot access owner-only HTTP routes.
-		expect(() => host.ctx.require(ElysiaApp)).toThrow(
+		expect(() => scope.sdk.ctx.require(ElysiaApp)).toThrow(
 			expect.objectContaining({ code: 'CONTEXT_CAPABILITY_ACCESS_DENIED' }),
 		)
 	} finally {
@@ -62,8 +60,8 @@ it('passes run cancellation explicitly to a service without a console proxy', as
 			}),
 	)
 	try {
-		const script: Script = (_sdk, run) =>
-			host.ctx.require(Commands).execute('pending', {}, { signal: run.signal })
+		const script: Script = (sdk, run) =>
+			sdk.ctx.require(Commands).execute('pending', {}, { signal: run.signal })
 		const pending = script(scope.sdk, { id: 'test', input: undefined, signal: controller.signal })
 		expect(await entered.promise).toBe(controller.signal)
 		controller.abort()

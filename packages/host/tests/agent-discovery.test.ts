@@ -6,7 +6,6 @@ import {
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { Result } from '@pluxel/core/better-result'
 import type { ConcretePluginDefinitionCandidate } from '@pluxel/core/internal'
 import { expect, it, vi } from 'vitest'
 import { createPluginCatalogSnapshot } from '../src/catalog'
@@ -87,38 +86,32 @@ it('keeps same-name entries distinct and projects only the bounded requested ide
 	const view = fixture(250)
 	const resolveRecentUpdate = vi.fn(() => null)
 	const observed = { ...view, recentUpdate: { resolveRecentUpdate } }
-	const first = Result.unwrap(scriptPluginList(owner, observed))
+	const first = scriptPluginList(owner, observed)
 	expect(first.nodes).toHaveLength(50)
 	expect(first.nextCursor).not.toBeNull()
 	expect(resolveRecentUpdate).toHaveBeenCalledTimes(50)
-	const scoped = Result.unwrap(
-		scriptPluginList(
-			owner,
-			observed,
-			captureScriptPluginListOptions({ packageName: '@fixture/discovery', limit: 200 }),
-		),
+	const scoped = scriptPluginList(
+		owner,
+		observed,
+		captureScriptPluginListOptions({ packageName: '@fixture/discovery', limit: 200 }),
 	)
 	expect(scoped.nodes).toHaveLength(200)
 	expect(
 		scoped.nodes.every(({ address }) => address.definition.entry.kind !== 'source-entry'),
 	).toBe(true)
-	const subpath = Result.unwrap(
-		scriptPluginList(
-			owner,
-			observed,
-			captureScriptPluginListOptions({ definition: subpathDefinition }),
-		),
+	const subpath = scriptPluginList(
+		owner,
+		observed,
+		captureScriptPluginListOptions({ definition: subpathDefinition }),
 	)
 	expect(subpath.nodes.map(({ address }) => address)).toEqual([node(subpathDefinition)])
 	expect(subpath.nextCursor).toBeNull()
 	expect(subpath.nodes[0]?.displayName).toBe('Shared display label')
 	expect(
-		Result.unwrap(
-			scriptPluginList(
-				owner,
-				observed,
-				captureScriptPluginListOptions({ definition: sourceDefinition }),
-			),
+		scriptPluginList(
+			owner,
+			observed,
+			captureScriptPluginListOptions({ definition: sourceDefinition }),
 		).nodes.map(({ address }) => address),
 	).toEqual([node(sourceDefinition)])
 })
@@ -131,12 +124,10 @@ it('uses the existing exact-definition index without enumerating unrelated catal
 			throw new Error('Exact definition discovery enumerated unrelated catalog definitions')
 		},
 	}
-	const result = Result.unwrap(
-		scriptPluginList(
-			{},
-			{ ...view, catalog },
-			captureScriptPluginListOptions({ definition: rootDefinition }),
-		),
+	const result = scriptPluginList(
+		{},
+		{ ...view, catalog },
+		captureScriptPluginListOptions({ definition: rootDefinition }),
 	)
 	expect(result.nodes).toHaveLength(5)
 	expect(
@@ -154,33 +145,25 @@ it('continues detached cursors without caching status, and rejects changed owner
 	const owner = {}
 	const initial = fixture()
 	const expected = hostPluginStatusOverviewFromView(initial).statuses
-	const first = Result.unwrap(
-		scriptPluginList(owner, initial, captureScriptPluginListOptions({ limit: 2 })),
+	const first = scriptPluginList(owner, initial, captureScriptPluginListOptions({ limit: 2 }))
+	const second = scriptPluginList(
+		owner,
+		initial,
+		captureScriptPluginListOptions({ limit: 2, cursor: first.nextCursor! }),
 	)
-	const second = Result.unwrap(
-		scriptPluginList(
-			owner,
-			initial,
-			captureScriptPluginListOptions({ limit: 2, cursor: first.nextCursor! }),
-		),
-	)
-	const third = Result.unwrap(
-		scriptPluginList(
-			owner,
-			initial,
-			captureScriptPluginListOptions({ limit: 200, cursor: second.nextCursor! }),
-		),
+	const third = scriptPluginList(
+		owner,
+		initial,
+		captureScriptPluginListOptions({ limit: 200, cursor: second.nextCursor! }),
 	)
 	expect([...first.nodes, ...second.nodes, ...third.nodes]).toEqual(expected)
 	expect(third.nextCursor).toBeNull()
 	const selected = second.nodes[0]!.address
 	const runningView = { ...initial, runningNodeKeys: new Set([pluginNodeIndexKey(selected)]) }
-	const current = Result.unwrap(
-		scriptPluginList(
-			owner,
-			runningView,
-			captureScriptPluginListOptions({ limit: 2, cursor: first.nextCursor! }),
-		),
+	const current = scriptPluginList(
+		owner,
+		runningView,
+		captureScriptPluginListOptions({ limit: 2, cursor: first.nextCursor! }),
 	)
 	expect(current.nodes[0]).toMatchObject({ address: selected, lifecycleState: 'running' })
 	for (const [nextOwner, view, options] of [
@@ -190,16 +173,17 @@ it('continues detached cursors without caching status, and rejects changed owner
 		[owner, initial, { definition: rootDefinition }],
 		[owner, initial, { packageName: '@fixture/discovery' }],
 	] as const)
-		expect(
+		expect(() =>
 			scriptPluginList(
 				nextOwner,
 				view,
 				captureScriptPluginListOptions({ ...options, cursor: first.nextCursor! }),
 			),
-		).toMatchObject({
-			status: 'error',
-			error: { code: 'cursor_stale' },
-		})
+		).toThrow(
+			expect.objectContaining({
+				details: expect.objectContaining({ code: 'cursor_stale' }),
+			}),
+		)
 })
 
 it('rejects malformed limits and cursors instead of silently normalizing queries', () => {
@@ -229,23 +213,23 @@ it('reuses identity enumeration across pages while reading current lifecycle and
 			},
 		},
 	}
-	const first = Result.unwrap(scriptPluginList(owner, view))
-	const second = Result.unwrap(
-		scriptPluginList(owner, view, captureScriptPluginListOptions({ cursor: first.nextCursor! })),
+	const first = scriptPluginList(owner, view)
+	const second = scriptPluginList(
+		owner,
+		view,
+		captureScriptPluginListOptions({ cursor: first.nextCursor! }),
 	)
 	expect(readEntries).toHaveBeenCalledOnce()
 	const selected = second.nodes[0]!.address
 	const resolveRecentUpdate = vi.fn(() => null)
-	const observed = Result.unwrap(
-		scriptPluginList(
-			owner,
-			{
-				...view,
-				runningNodeKeys: new Set([pluginNodeIndexKey(selected)]),
-				recentUpdate: { resolveRecentUpdate },
-			},
-			captureScriptPluginListOptions({ cursor: first.nextCursor! }),
-		),
+	const observed = scriptPluginList(
+		owner,
+		{
+			...view,
+			runningNodeKeys: new Set([pluginNodeIndexKey(selected)]),
+			recentUpdate: { resolveRecentUpdate },
+		},
+		captureScriptPluginListOptions({ cursor: first.nextCursor! }),
 	)
 	expect(observed.nodes[0]).toMatchObject({ address: selected, lifecycleState: 'running' })
 	expect(resolveRecentUpdate).toHaveBeenCalledTimes(50)
@@ -257,9 +241,7 @@ it.each(['policy', 'session', 'desired', 'core'] as const)(
 	(source) => {
 		const owner = {}
 		const initial = fixture()
-		const first = Result.unwrap(
-			scriptPluginList(owner, initial, captureScriptPluginListOptions({ limit: 2 })),
-		)
+		const first = scriptPluginList(owner, initial, captureScriptPluginListOptions({ limit: 2 }))
 		const address = { definition: rootDefinition, variant: 'fork', forkId: 'new-member' } as const
 		const key = pluginNodeIndexKey(address)
 		const view: ScriptPluginDiscoveryView =
@@ -273,13 +255,14 @@ it.each(['policy', 'session', 'desired', 'core'] as const)(
 								desiredControl: new Map([[key, { address, activationReason: 'session' }]]),
 							}
 						: { ...initial, coreNodes: [address], appliedNodes: new Map() }
-		expect(
+		expect(() =>
 			scriptPluginList(owner, view, captureScriptPluginListOptions({ cursor: first.nextCursor! })),
-		).toMatchObject({
-			status: 'error',
-			error: { code: 'cursor_stale' },
-		})
-		const current = Result.unwrap(scriptPluginList(owner, view))
+		).toThrow(
+			expect.objectContaining({
+				details: expect.objectContaining({ code: 'cursor_stale' }),
+			}),
+		)
+		const current = scriptPluginList(owner, view)
 		expect(current.nodes.some((entry) => pluginNodeIndexKey(entry.address) === key)).toBe(true)
 	},
 )
@@ -311,7 +294,7 @@ it('captures caller-owned filters before admission and rejects the original inva
 	query.packageName = '@fixture/missing'
 	query.limit = 200
 	query.cursor = 'invalid'
-	const page = Result.unwrap(await pending)
+	const page = await pending
 	expect(page.nodes).toHaveLength(1)
 	expect(page.nodes[0]?.address.definition).toEqual(original)
 	expect(page.nextCursor).not.toBeNull()
@@ -330,32 +313,30 @@ it('paginates across script scopes on one real Host and feeds discovered address
 	})
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
-	const first = Result.unwrap(
-		await scope.sdk.plugins.list({ definition: Discoverable.definitionAddress(), limit: 1 }),
-	)
+	const first = await scope.sdk.plugins.list({
+		definition: Discoverable.definitionAddress(),
+		limit: 1,
+	})
 	expect(first.nodes).toHaveLength(1)
 	expect(first.nextCursor).not.toBeNull()
 	await scope.dispose()
 	await using next = createScriptScope({ ctx: host.ctx })
-	const second = Result.unwrap(
-		await next.sdk.plugins.list({
-			definition: Discoverable.definitionAddress(),
-			limit: 1,
-			cursor: first.nextCursor!,
-		}),
-	)
+	const second = await next.sdk.plugins.list({
+		definition: Discoverable.definitionAddress(),
+		limit: 1,
+		cursor: first.nextCursor!,
+	})
 	expect(second.nodes).toHaveLength(1)
 	expect(second.nextCursor).toBeNull()
 	expect(second.nodes[0]?.address).not.toEqual(first.nodes[0]?.address)
 	for (const discovered of [...first.nodes, ...second.nodes]) {
 		const selected = next.sdk.plugin(discovered.address)
-		expect(Result.unwrap(await selected.status())).toMatchObject({
+		expect(await selected.status()).toMatchObject({
 			address: discovered.address,
 			availability: 'available',
 		})
 	}
-	await expect(scope.sdk.plugins.list()).resolves.toMatchObject({
-		status: 'error',
-		error: { code: 'scope_closed' },
+	await expect(scope.sdk.plugins.list()).rejects.toMatchObject({
+		details: { code: 'scope_closed' },
 	})
 })

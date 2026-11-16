@@ -4,6 +4,7 @@ import { compileFunction } from 'node:vm'
 import type { RootContext } from '@pluxel/core'
 import * as sharedBetterResult from '@pluxel/core/better-result'
 import * as sharedControl from '../control-reference'
+import * as sharedHost from '../agent-host'
 import { executeHostScript } from './execute'
 import { ScriptExecutor } from './runtime'
 import { ScriptExecutionError, type ScriptArtifact } from './protocol'
@@ -49,11 +50,11 @@ export function createNodeScriptOwner(
 				// Each call creates fresh module locals in the existing realm; no ESM cache entries accumulate.
 				const exports: unknown = compileFunction(
 					artifact.code,
-					['__pluxel_script_better_result', '__pluxel_script_control'],
+					['__pluxel_script_better_result', '__pluxel_script_control', '__pluxel_script_host'],
 					{
 						filename,
 					},
-				)(sharedBetterResult, sharedControl)
+				)(sharedBetterResult, sharedControl, sharedHost)
 				if (!exports || (typeof exports !== 'object' && typeof exports !== 'function'))
 					throw new ScriptExecutionError(
 						'artifact_invalid',

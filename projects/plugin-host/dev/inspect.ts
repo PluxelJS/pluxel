@@ -1,12 +1,11 @@
-import type { ProjectScript } from '@pluxel/host-vite/project'
-import { Result } from '@pluxel/core/better-result'
+import type { Script } from '@pluxel/agent-sdk/host'
 import { Logging } from '@pluxel/core/logging'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 
 export default ((sdk) => {
 	return sdk.plugins.list()
-}) satisfies ProjectScript
+}) satisfies Script
 
 /** Check the application's HTTP endpoints and logs. Input: { origin: 'http://localhost:5173' }. */
 export const health = (async (sdk, run) => {
@@ -45,14 +44,13 @@ export const health = (async (sdk, run) => {
 		request.once('error', reject)
 		request.end()
 	})
-	const logging = sdk.dev.ctx.require(Logging)
+	const logging = sdk.ctx.require(Logging)
 	logging.flushStores()
 	const plugins = await sdk.plugins.list()
-	if (plugins.isErr()) return plugins
-	return Result.ok({
-		plugins: plugins.value,
+	return {
+		plugins,
 		showcase: { status: status.status, body: await status.text() },
 		workbench: { status: shellStatus },
 		logs: logging.stores.get('default')?.tailWindow(30) ?? [],
-	})
-}) satisfies ProjectScript
+	}
+}) satisfies Script

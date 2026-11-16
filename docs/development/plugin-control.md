@@ -74,21 +74,21 @@ const { get, patch } = config
 | 原 Plugin class 的 `nodeAddress()` | 同一 Vite 模块图中的项目脚本 | 原 class 实例类型、未知字段的动态配置 |
 | 运行时发现的 `node.address`        | 上传脚本和 Vite 项目脚本     | 动态配置与生命周期                    |
 
-直接 import class 时，脚本和 Host 必须使用同一个已加载的 constructor。包管理器的独立安装目录可能与项目 `node_modules` 中的副本不同。HMR 后旧 class 地址返回 `stale_target`，重新导入当前实现再取得地址。class 的使用条件由目标 Vite 模块图决定，见[项目脚本](./dev-console.md)。
+直接 import class 时，脚本和 Host 必须使用同一个已加载的 constructor。包管理器的独立安装目录可能与项目 `node_modules` 中的副本不同。HMR 后旧 class 地址抛出 `stale_target`，重新导入当前实现再取得地址。class 的使用条件由目标 Vite 模块图决定，见[项目脚本](./dev-console.md)。
 
 类型与运行时证据绑定到原始不可变地址。直接传递、保存变量、引用的 `.address` 和选择 fork 都保留它；spread / `Object.assign` 后的副本会明确报错。JSON 往返和 `parsePluginNodeAddress()` 得到普通身份地址，用于动态管理；实例调用需要重新从原提供者取得地址。TypeScript 断言无法恢复实例能力。
 
 脚本直接返回原地址、把它放入普通对象或 Result 时，执行器也只交付纯身份，接收方不会得到调用证据。地址提供者和原地址对象可以跨 run 持有；SDK 引用与实例视图仍属于各自的 run。
 
-异步控制操作返回 `Promise<Result<T, E>>`，可以直接作为脚本返回值。多步调用使用 async/await，在 `isErr()` 分支提前返回，从 `value` 读取成功值。配置、日志和策略的原领域结果在 SDK 边界转换一次，保留原字段并去掉重复的 `ok` 标记。完整用法和失败处理见[自动化脚本](./scripts.md)。
+异步控制操作成功直接返回值，失败抛出 `ScriptError`；多步调用使用普通 async/await。配置、日志和策略保留原领域字段，去掉重复的 `ok` 标记。完整用法和需要恢复时的失败处理见[自动化脚本](./scripts.md)。
 
-引用的使用期限由本次 run 管理。每次操作读取当前 Host 状态，重启后可以用同一引用重新取得业务实例；旧实例视图会失效。run 关闭后，缓存的 SDK 选择工厂同步抛错，异步控制方法返回 `scope_closed` 的 `Err`。原插件业务方法仍遵守自身的返回类型和 JavaScript `this` 约定。
+引用的使用期限由本次 run 管理。每次操作读取当前 Host 状态，重启后可以用同一引用重新取得业务实例；旧实例视图会失效。run 关闭后，缓存的 SDK 选择工厂同步抛错，异步控制方法抛出 `scope_closed`。原插件业务方法仍遵守自身的返回类型和 JavaScript `this` 约定。
 
 ## 地址、契约摘要与升级
 
 描述符通过规范地址定位插件。独立包的 definition 由包名、公开入口和具名导出组成；本地应用的入口由逻辑 source space 与源码路径表示，同样按具名导出区分 definition。node 地址再区分 default 或具体 `forkId`。构建产物保留这些地址，安装目录、npm 版本和本次构建摘要不进入插件身份。跨应用的同名地址由目标连接与执行实例区分。
 
-配置和实例摘要用于检查脚本声明与当前实现的兼容性，材料 `snapshot` 标识一组文件。升级可保持地址；摘要失配的类型化配置或实例操作返回 `control_contract_mismatch`，重新同步并检查脚本后再操作。选择具体二进制版本由包管理器的安装选择负责。
+配置和实例摘要用于检查脚本声明与当前实现的兼容性，材料 `snapshot` 标识一组文件。升级可保持地址；摘要失配的类型化配置或实例操作抛出 `control_contract_mismatch`，重新同步并检查脚本后再操作。选择具体二进制版本由包管理器的安装选择负责。
 
 ## 动态安装后的发现与操作
 
@@ -101,15 +101,14 @@ import type { Script } from '@pluxel/agent-sdk/host'
 
 export default (async (sdk) => {
 	const page = await sdk.plugins.list({ packageName: '@acme/pluxel-plugin-counter' })
-	if (page.isErr()) return page
 	return {
-		...page.value,
-		nodes: page.value.nodes.filter(({ availability }) => availability === 'available'),
+		...page,
+		nodes: page.nodes.filter(({ availability }) => availability === 'available'),
 	}
 }) satisfies Script
 ```
 
-每页默认 50 项，`limit` 最大 200；未指定筛选的 `list()` 同样只返回一页。将非空 `nextCursor` 原样交给相同查询的下一次 `list({ ..., cursor })`，直到返回 null。cursor 可以在同一 Host 的后续 run 中继续，不保留资源；Host 被替换、查询、catalog/runtime revision 或节点身份序列变化时返回 `cursor_stale`，从第一页重查。每页重新读取当前运行状态，跨页不是一个 Host 事务，不缓存先前页的状态。两个 revision 保持各自领域含义；跨调用关联同步材料时核对 catalog revision，变化后重新读取。
+每页默认 50 项，`limit` 最大 200；未指定筛选的 `list()` 同样只返回一页。将非空 `nextCursor` 原样交给相同查询的下一次 `list({ ..., cursor })`，直到返回 null。cursor 可以在同一 Host 的后续 run 中继续，不保留资源；Host 被替换、查询、catalog/runtime revision 或节点身份序列变化时抛出 `cursor_stale`，从第一页重查。每页重新读取当前运行状态，跨页不是一个 Host 事务，不缓存先前页的状态。两个 revision 保持各自领域含义；跨调用关联同步材料时核对 catalog revision，变化后重新读取。
 
 一个包可以提供多个同名导出入口，每个 definition 也可以有多个节点；按完整 `definition` 和 `variant` / `forkId` 选择，不能只按展示名判断。对选定节点调用 `sdk.plugin(node.address)` 即可查询声明、读配置或启停；运行状态为 stopped 时也可发现它。业务实例需要先启动节点。
 
@@ -148,12 +147,10 @@ import { Counter } from '@acme/pluxel-plugin-counter/control'
 export default (async ({ plugin }) => {
 	const { get, patch } = plugin(Counter.nodeAddress()).config
 	const before = await get()
-	if (before.isErr()) return before
-	const changed = await patch(
-		{ set: { count: before.value.config.count * 2 } },
-		{ expectedManagedRevision: before.value.managedRevision },
+	await patch(
+		{ set: { count: before.config.count * 2 } },
+		{ expectedManagedRevision: before.managedRevision },
 	)
-	if (changed.isErr()) return changed
 	return get()
 }) satisfies Script
 ```
@@ -171,14 +168,13 @@ import type { Script } from '@pluxel/agent-sdk/host'
 import { Counter } from '@acme/pluxel-plugin-counter/control'
 
 export default (async ({ plugin }) => {
-	const instance = await plugin(Counter.nodeAddress()).instance()
-	if (instance.isErr()) return instance
-	const changed = await instance.value.increment(3)
-	return { changed, calls: instance.value.calls }
+	const { instance } = await plugin(Counter.nodeAddress()).instance()
+	const changed = await instance.increment(3)
+	return { changed, calls: instance.calls }
 }) satisfies Script
 ```
 
-`counter.instance()` 要求节点已经运行，获取时不会启动它。`Result` 的成功值直接是实例，带有 `then` 成员的插件也能安全交付。未运行、目标失效和控制摘要不匹配等错误在返回类型中明确列出。实例保留原 class 的公共成员类型和可写性，私有与 protected 成员沿用 TypeScript 的可见性。通过原始地址选择的引用只有管理操作，业务实例访问需要生成入口的原始地址；Vite 项目还可以使用当前 class 的原始地址，见[项目脚本](./dev-console.md#编写可交互的开发脚本)。
+`counter.instance()` 要求节点已经运行，获取时不会启动它。异步借用返回 `{ instance }`，防止 Promise 探测插件自己的业务 `then` 成员；解构后直接调用原 API。未运行、目标失效和控制摘要不匹配时抛出 `ScriptError`，通过 `error.details.code` 区分。实例保留原 class 的公共成员类型和可写性，私有与 protected 成员沿用 TypeScript 的可见性。通过原始地址选择的引用只有管理操作，业务实例访问需要生成入口的原始地址；Vite 项目还可以使用当前 class 的原始地址，见[项目脚本](./dev-console.md#编写可交互的开发脚本)。
 
 实例视图限定在本次运行内，对象身份不同于原 provider；同一次运行内重复获取会复用视图。成员访问检查当前 scope 和 provider 的接纳状态，方法在原 provider 上执行，同步返回保持同步；标准 Promise 返回保持原对象并参与运行和 generation 的排空。重启后重新获取实例，缓存的旧成员调用会失败。
 
@@ -197,6 +193,6 @@ const tenant = sdk.plugin(Counter.nodeAddress('tenant-a'))
 
 `forkId` 沿用 Core 的非空标识规则。动态发现继续使用列表中的完整地址。日志使用原生过滤字段，例如 `{ filter: { plugin: tenant.address } }`。
 
-typed 配置调用检查配置摘要，实例获取检查实例摘要。材料过期返回 `control_contract_mismatch`，在调用前重新同步并检查脚本。缺失材料返回 `control_material_unavailable`。执行前可从 `describe.capabilities` 确认 `plugin.instance` 能力；当前 Node、Vite 后端提供同进程实例访问。材料读取权限与脚本执行权限分别判断。
+typed 配置调用检查配置摘要，实例获取检查实例摘要。材料过期抛出 `control_contract_mismatch`，在调用前重新同步并检查脚本。缺失材料抛出 `control_material_unavailable`。执行前可从 `describe.capabilities` 确认 `plugin.instance` 能力；当前 Node、Vite 后端提供同进程实例访问。材料读取权限与脚本执行权限分别判断。
 
 Vite 在原更新批次接纳候选后提供对应材料。修改源码时按[HMR 批次控制](./dev-console.md#hmr-批次控制)执行，成功 apply 后重新同步；未接纳源码不会成为在线描述符。上传与项目脚本都检查真实输入，拒绝声明与执行内容不一致的组合。提交、查询和取消仍使用原 [receipt](./scripts.md#向-node-应用提交)。

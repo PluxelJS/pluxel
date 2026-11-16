@@ -73,21 +73,21 @@ async function consoleRun(exportName, file = 'workbench.ts', input) {
 		.trim()
 		.split('\n')
 		.map((line) => JSON.parse(line))
-		.find((event) => event.event === 'accepted')
+		.find((event) => event.stage === 'accepted')
 	assert.ok(accepted?.receipt, 'The dev console preserves the original accepted receipt')
 	assert.equal(result.ok, true, JSON.stringify(result))
-	assert.equal(result.value.state, 'succeeded', JSON.stringify(result.value))
-	assert.equal(result.value.value.status, 'ok', JSON.stringify(result.value.value))
+	const { run } = result.value
+	assert.equal(run.state, 'succeeded', JSON.stringify(run))
 	receipt.console ??= []
 	receipt.console.push({
 		exportName,
 		receipt: accepted.receipt,
-		runId: result.value.runId,
-		hostEpoch: result.value.hostEpoch,
-		revisions: result.value.revisions,
-		value: result.value.value,
+		runId: run.runId,
+		hostEpoch: run.hostEpoch,
+		revisions: run.revisions,
+		value: run.value,
 	})
-	return result.value.value.value
+	return run.value
 }
 async function check(name, run) {
 	await run()

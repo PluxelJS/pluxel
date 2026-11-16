@@ -10,16 +10,16 @@ packages:
 
 # Import Better Result and keep script workflows ordinary
 
-Remove `sdk.Result`. Control operations retain their native
-`Promise<Result<Value, Error>>` contract. Scripts use ordinary `await`, narrow
-expected failures with `isErr()`, and can return an existing control result or
-plain JSON without constructing a new Result.
+Business Result constructors and optional composition come from
+`@pluxel/core/better-result`. SDK controls directly return successful values and
+throw `ScriptError`; ordinary scripts return plain JSON. The SDK does not expose
+a second Result namespace.
 
-When constructors or optional composition are needed, import them from
-`@pluxel/core/better-result`. Uploaded factory format 2 binds that exact entry to
-the receiver's shared module, preserving native Result identity without bundling
-another runtime. Format 1 is explicitly rejected; compile uploaded scripts again.
-Other framework runtime imports and separate Better Result copies remain rejected.
+Uploaded factory format 4 binds the canonical Better Result, verified control
+factory and public Host SDK namespaces to the receiver. Native Result and
+ScriptError identities remain shared without bundling another framework runtime.
+Older factories are rejected; recompile uploaded scripts. Other framework runtime
+imports and separate Better Result copies remain rejected.
 The compiler converts standard ESM declarations into its own strict factory,
 preserving namespace identity and source maps without bundler interop helpers.
 

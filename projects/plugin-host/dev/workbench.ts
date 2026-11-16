@@ -1,9 +1,8 @@
-import type { ProjectScript } from '@pluxel/host-vite/project'
+import type { Script } from '@pluxel/agent-sdk/host'
 import { openLocalWorkbenchEntry, WorkbenchHost } from '@pluxel/workbench/server'
 import { consumeWorkbenchValue, readWorkbenchLayout } from '@pluxel/workbench/client'
 import { RpcStub } from 'capnweb'
 import { formatPluginNodeRoute } from '@pluxel/core'
-import { Result } from '@pluxel/core/better-result'
 import { ReportStudioPlugin } from '../src/showcase/ReportStudio'
 import { ReportStudioWorkbench } from '../src/showcase/ReportStudio.workbench'
 import { PackageManagerPlugin } from '@pluxel/plugin-package-manager'
@@ -12,23 +11,21 @@ const principal = { provider: 'development-console', subject: 'workbench-migrati
 
 /** Read real publications and exercise a bounded, explicitly owned RPC activation. */
 export default (async (sdk, run) => {
-	const status = await sdk.plugin(ReportStudioPlugin.nodeAddress()).status()
-	if (status.isErr()) return status
-	const studio = status.value
+	const studio = await sdk.plugin(ReportStudioPlugin.nodeAddress()).status()
 	if (!studio) throw new Error('ReportStudioPlugin is not registered')
-	const session = sdk.dev.ctx.require(WorkbenchHost).createSession(principal, () => {})
+	const session = sdk.ctx.require(WorkbenchHost).createSession(principal, () => {})
 	try {
 		using target = new RpcStub(session.target)
 		const layout = await readWorkbenchLayout(target, { target: null })
 		const targetLayout = await readWorkbenchLayout(target, { target: studio.address })
-		using opened = await openLocalWorkbenchEntry(sdk.dev.ctx, {
+		using opened = await openLocalWorkbenchEntry(sdk.ctx, {
 			target: studio.address,
 			entry: ReportStudioWorkbench.studio,
 			principal,
 			location: '/architecture-lab',
 			signal: run.signal,
 		})
-		return Result.ok({
+		return {
 			studio,
 			studioRoute: formatPluginNodeRoute(studio.address),
 			layout: {
@@ -53,36 +50,31 @@ export default (async (sdk, run) => {
 				producer: opened.federatedViewRef.producer,
 			},
 			snapshot: await consumeWorkbenchValue(opened.api.snapshotDto(), 'Report Studio snapshot'),
-		})
+		}
 	} finally {
 		session.dispose()
 	}
-}) satisfies ProjectScript
+}) satisfies Script
 
 /** Stop/restart are explicit online operations, used to verify browser epoch invalidation. */
 export const stopStudio = (async (sdk) => {
 	const { stop, status } = sdk.plugin(ReportStudioPlugin.nodeAddress())
 	const report = await stop()
-	if (report.isErr()) return report
 	const current = await status()
-	if (current.isErr()) return current
-	return Result.ok({ report: report.value, current: current.value })
-}) satisfies ProjectScript
+	return { report, current }
+}) satisfies Script
 export const startStudio = (async (sdk) => {
 	const { start, status } = sdk.plugin(ReportStudioPlugin.nodeAddress())
 	const report = await start()
-	if (report.isErr()) return report
 	const current = await status()
-	if (current.isErr()) return current
-	return Result.ok({ report: report.value, current: current.value })
-}) satisfies ProjectScript
+	return { report, current }
+}) satisfies Script
 
 /** Compare authoritative package snapshots before/after browser-only input drafts. */
 export const packageManagerSnapshot = (async (sdk) => {
-	const manager = await sdk.plugin(PackageManagerPlugin.nodeAddress()).instance()
-	if (manager.isErr()) return manager
-	return Result.ok(manager.value.snapshot())
-}) satisfies ProjectScript
+	const { instance } = await sdk.plugin(PackageManagerPlugin.nodeAddress()).instance()
+	return instance.snapshot()
+}) satisfies Script
 
 /** Render through the current Workbench publication, keeping online operations on this console. */
 export const renderReport = (async (sdk, run) => {
@@ -100,7 +92,7 @@ export const renderReport = (async (sdk, run) => {
 	const { SHOWCASE_ENGINES } = await import('../src/showcase/ReportStudio.contracts')
 	const engine = SHOWCASE_ENGINES.find((candidate) => candidate === input.engine)
 	if (!engine) throw new TypeError('Unknown rendering engine')
-	using opened = await openLocalWorkbenchEntry(sdk.dev.ctx, {
+	using opened = await openLocalWorkbenchEntry(sdk.ctx, {
 		target: ReportStudioPlugin.nodeAddress(),
 		entry: ReportStudioWorkbench.studio,
 		principal,
@@ -111,4 +103,4 @@ export const renderReport = (async (sdk, run) => {
 		opened.api.generateDto({ title: input.title, engine }),
 		'Report Studio artifact',
 	)
-}) satisfies ProjectScript
+}) satisfies Script

@@ -16,6 +16,7 @@ import {
 	type ScriptRunSnapshot,
 	type ScriptPhase,
 } from './protocol'
+import { ScriptError } from './sdk-outcomes'
 
 export type RunExecution = Readonly<{
 	signal: AbortSignal
@@ -324,7 +325,12 @@ export class ScriptExecutor implements AsyncDisposable {
 				finishedAt: new Date().toISOString(),
 				phase,
 				error: scriptFailure(run.controller.signal.aborted ? run.controller.signal.reason : error),
-				...(run.controller.signal.aborted && error !== run.controller.signal.reason
+				...(run.controller.signal.aborted &&
+				error !== run.controller.signal.reason &&
+				!(
+					error instanceof ScriptError &&
+					(error.code === 'scope_closed' || error.code === 'cancelled')
+				)
 					? { executionError: scriptFailure(error) }
 					: {}),
 			}

@@ -3,7 +3,7 @@ title: Vite 项目脚本与 HMR
 description: 在当前 Vite 模块图中执行普通 TypeScript，访问真实插件和 Context，并控制源码更新批次。
 ---
 
-项目脚本由目标 Vite 的现有 ModuleRunner 加载。它与应用共享 Plugin constructor、能力 token 和模块身份。配置、插件、策略与日志使用 [Script SDK](./scripts.md)，异步控制操作统一返回 Better Result。`sdk.plugin(Constructor.nodeAddress())` 按当前实现选择节点，并通过 `.instance()` 借用受守卫的实例；通过 `pluxel dev sync` 取得[控制类型与配置源码描述](./plugin-control.md)后，生成提供者的 `.nodeAddress()` 通过同一入口提供准确配置类型。脱离 Vite 的部署使用同一 SDK 的上传执行。
+项目脚本由目标 Vite 的现有 ModuleRunner 加载。它与应用共享 Plugin constructor、能力 token 和模块身份。配置、插件、策略与日志使用 [Script SDK](./scripts.md)，异步控制操作成功直接返回值，失败抛出 `ScriptError`。`sdk.plugin(Constructor.nodeAddress())` 按当前实现选择节点，并通过 `.instance()` 借用受守卫的实例；通过 `pluxel dev sync` 取得[控制类型与配置源码描述](./plugin-control.md)后，生成提供者的 `.nodeAddress()` 通过同一入口提供准确配置类型。脱离 Vite 的部署使用同一 SDK 的上传执行。
 
 源码定位使用 `@pluxel/agent-sdk/source` 的普通函数，直接运行 Node；声明、Part、Schema 和应用输入的查询见[源码查询](./inspection.md)。
 
@@ -54,26 +54,23 @@ HMR 控制属于 Vite 实例，在应用启动失败或 Host replacement 期间�
 在目标 Vite root 内创建 `dev/inspect.ts`。以下示例使用应用自己的 TodoPlugin；`snapshot()`、`add()` 是该插件公开的业务方法。
 
 ```ts no-twoslash
-import type { ProjectScript } from '@pluxel/host-vite/project'
+import type { Script } from '@pluxel/agent-sdk/host'
 import { TodoPlugin } from '@example/todo-plugin'
 
 export default (async ({ plugin }) => {
 	const todo = plugin(TodoPlugin.nodeAddress())
 	const status = await todo.status()
-	if (status.isErr()) return status
-	const instance = await todo.instance()
-	if (instance.isErr()) return instance
-	return { status: status.value, todos: instance.value.snapshot() }
-}) satisfies ProjectScript
+	const { instance } = await todo.instance()
+	return { status, todos: instance.snapshot() }
+}) satisfies Script
 
 export const add = (async (sdk, run) => {
 	const title = run.input
 	if (typeof title !== 'string') throw new TypeError('Expected a todo title')
 	run.signal.throwIfAborted()
-	const instance = await sdk.plugin(TodoPlugin.nodeAddress()).instance()
-	if (instance.isErr()) return instance
-	return instance.value.add(title)
-}) satisfies ProjectScript
+	const { instance } = await sdk.plugin(TodoPlugin.nodeAddress()).instance()
+	return instance.add(title)
+}) satisfies Script
 ```
 
 ```sh
@@ -81,7 +78,7 @@ vp exec pluxel dev run host/web/dev/inspect.ts
 vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"测试待办事项"'
 ```
 
-`ProjectScript` 使用普通函数与 `satisfies`；输入从 unknown 校验。`Provider.nodeAddress(id?)` 取得默认节点或 fork 地址，`sdk.plugin(address)` 同步选择目标，异步操作返回 `Promise<Result<T, E>>`。脚本按[自动化脚本](./scripts.md)的方式处理 Result，需要构造时从 `@pluxel/core/better-result` 导入。源码屏障结算后，执行器完成 TypeScript 检查并核对真实缓存模块的原始输入，声明或源码变化时会明确失败。返回 JSON 或共享的顶层 Result，由执行边界编码；实例、Context、函数和其他运行句柄留在目标进程。
+项目与上传脚本统一使用 `Script` 和 `satisfies`；输入从 unknown 校验。`Provider.nodeAddress(id?)` 取得默认节点或 fork 地址，`sdk.plugin(address)` 同步选择目标。成功值直接使用，默认让异常中断后续步骤，需要恢复时按[自动化脚本](./scripts.md#失败取消和释放)捕获。源码屏障结算后，执行器完成 TypeScript 检查并核对真实缓存模块的原始输入，声明或源码变化时会明确失败。返回 JSON 或共享的顶层 Result，由执行边界编码；实例、Context、函数和其他运行句柄留在目标进程。
 
 脚本采用所在目录最近的 `tsconfig.json`，其模块解析条件应与 Host 一致。前端配置常清空 `customConditions`，从插件发行声明读取类型；服务端 Vite 使用 `@pluxel/hmr` 加载源码时，这两种输入会被源码守卫拒绝。官方 starter 为服务端脚本提供 `host/web/dev/tsconfig.json`，继承 Host 的 Node、源码条件和装饰器配置：
 
@@ -94,47 +91,43 @@ vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"测试待�
 
 自定义目录结构时，让脚本目录继承自己的 Host 配置。前端继续使用其原配置。
 
-`sdk.plugin(Constructor.nodeAddress())` 的状态、生命周期、动态配置和实例获取都在同一 committed 操作内核对 constructor 身份。HMR 替换实现后，原引用返回 `stale_target`；重新 import 当前实现再选择。同一实现 restart 后可用原引用重新取得新 generation，旧实例视图失效。fork 使用 `Constructor.nodeAddress('east')`，它保留相同实现证据，选择不会物化节点。引用和原业务成员的寿命见[实例调用](./plugin-control.md#调用原插件实例)。
+`sdk.plugin(Constructor.nodeAddress())` 的状态、生命周期、动态配置和实例获取都在同一 committed 操作内核对 constructor 身份。HMR 替换实现后，原引用抛出 `stale_target`；重新 import 当前实现再选择。同一实现 restart 后可用原引用重新取得新 generation，旧实例视图失效。fork 使用 `Constructor.nodeAddress('east')`，它保留相同实现证据，选择不会物化节点。引用和原业务成员的寿命见[实例调用](./plugin-control.md#调用原插件实例)。
 
 源码 class 的地址保留实例签名与精确实现证据，配置使用未知字段的动态类型。生成控制入口额外关联 Schema 输入、输出及 Part 配置树；需要准确字段类型时使用生成提供者的地址。动态发现得到的普通节点地址同样提供动态配置操作，由脚本自行检查。
 
-通过 `sdk.dev.ctx.require(Token)` 访问应用已安装的能力。脚本借用 root，自己创建的订阅、RPC lease 和原生资源由脚本通过 `using`、`await using` 或 `try/finally` 释放；直接业务调用显式传递 `run.signal` 并 await 结算。通用 SDK 接纳的操作由执行内核跟踪并排空。
+Node 与 Vite 脚本都通过 `sdk.ctx.require(Token)` 访问当前 Host 已安装的能力，缺少能力时直接抛错。Vite 负责把项目 import 的 token 和应用保持在同一模块图。脚本借用 root，自己创建的订阅、RPC lease 和原生资源由脚本通过 `using`、`await using` 或 `try/finally` 释放；直接业务调用显式传递 `run.signal` 并 await 结算。通用 SDK 接纳的操作由执行内核跟踪并排空。
 
 <span id="编辑配置"></span>
 
 ## 在线查看与更新插件配置
 
 ```ts no-twoslash
-import type { ProjectScript } from '@pluxel/host-vite/project'
+import type { Script } from '@pluxel/agent-sdk/host'
 import { TodoPlugin } from '@example/todo-plugin/control'
 
 export const increaseLimit = (async ({ plugin }) => {
 	const todo = plugin(TodoPlugin.nodeAddress())
 	const { get, patch } = todo.config
 	const current = await get()
-	if (current.isErr()) return current
-	const limit = current.value.config.limit
+	const limit = current.config.limit
 	const changed = await patch(
 		{ set: { limit: limit + 1 } },
-		{ expectedManagedRevision: current.value.managedRevision },
+		{ expectedManagedRevision: current.managedRevision },
 	)
-	if (changed.isErr()) return changed
 	const currentConfig = await get()
-	if (currentConfig.isErr()) return currentConfig
-	const instance = await todo.instance()
-	if (instance.isErr()) return instance
+	const { instance } = await todo.instance()
 	return {
-		persistence: changed.value.persistence,
-		application: changed.value.application,
-		current: currentConfig.value,
-		actual: instance.value.config.limit,
+		persistence: changed.persistence,
+		application: changed.application,
+		current: currentConfig,
+		actual: instance.config.limit,
 	}
-}) satisfies ProjectScript
+}) satisfies Script
 ```
 
 `config` 是经过 Schema 计算的期望输出，修改只提交 managed input 的变更字段。查询还提供来源、遮盖路径和 managed revision。保存确认、desired 接纳和 generation 实际采用分别检查；详见 [SDK 配置操作](./scripts.md)与[配置指南](../plugin-development/configuration.md)。
 
-日志用 `sdk.logs.mark()`、`read()`、`wait()`，与插件启停使用同一 SDK。没有历史 store 时会返回能力诊断，执行器不会自行安装日志 backend。日志 cursor 保留 epoch、retention 和 gap 含义。
+日志用 `sdk.logs.mark()`、`read()`、`wait()`，与插件启停使用同一 SDK。没有历史 store 时会抛出能力诊断，执行器不会自行安装日志 backend。日志 cursor 保留 epoch、retention 和 gap 含义。
 
 <span id="项目入口与启动方式"></span>
 
@@ -168,6 +161,6 @@ export default defineConfig({ plugins: host({ entry: './app.ts', scripts: true }
 
 ## 失败、取消与恢复
 
-脚本返回 SDK 的 `Err` 时，run 仍可成功交付领域结果；未知异常形成执行失败。已提交修改继续保留。取消、编码、清理和原 receipt 查询规则由[自动化脚本](./scripts.md#失败取消和释放)维护。
+SDK 控制操作的未捕获异常形成执行失败，领域细节保留在 `run.error.details`；原业务返回值继续遵循自己的协议。已提交修改继续保留。取消、编码、清理和原 receipt 查询规则由[自动化脚本](./scripts.md#失败取消和释放)维护。
 
 输入、返回值和单个源码文件各有 1 MiB 预算，结果保留最近 100 项且总计不超过 16 MiB。结果过期后仍保留有界接纳身份，旧 ID 不会再次执行。源码变化会明确报 `source_changed`；检查当前源码后再作新的显式提交。

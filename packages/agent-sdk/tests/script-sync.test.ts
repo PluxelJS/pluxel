@@ -268,7 +268,7 @@ it('publishes verified entry modules atomically and compiles imports through the
 	}
 	await writeFile(
 		script,
-		`import type {Script} from '@pluxel/agent-sdk/host';\nimport {Result} from '@pluxel/core/better-result';\nimport {${first.definitions[0].exportName} as Counter} from '${first.definitions[0].module}';\nexport default (async (sdk) => { const select=sdk.plugin; const counter=select(Counter.nodeAddress()); const {get,patch}=counter.config; const before=await get(); if(before.isErr())return before; const result=await patch({set:{step:2}},{expectedManagedRevision:before.value.managedRevision}); if(result.isErr())return result; const instance=await counter.instance(); if(instance.isErr())return instance; return Result.ok({result:result.value,count:instance.value.add(2)}) }) satisfies Script;\n`,
+		`import type {Script} from '@pluxel/agent-sdk/host';\nimport {${first.definitions[0].exportName} as Counter} from '${first.definitions[0].module}';\nexport default (async (sdk) => { const select=sdk.plugin; const counter=select(Counter.nodeAddress()); const {get,patch}=counter.config; const before=await get(); const result=await patch({set:{step:2}},{expectedManagedRevision:before.managedRevision}); const {instance}=await counter.instance(); return {result,count:instance.add(2)} }) satisfies Script;\n`,
 	)
 	const artifact = await compile()
 	expect(artifact.code).toContain('synced-counter')

@@ -4,7 +4,7 @@
 
 ## Ownership 与包边界
 
-`host({ entry, scripts: true })` 选择私有本地脚本通道。`@pluxel/host-vite/project` 只有 ProjectScript/ProjectSdk 与引用类型；源码 class 与生成控制入口都通过 `nodeAddress(id?)` 提供节点地址，Host-vite 使用同一个 `sdk.plugin(address)`，Context 从 `dev.ctx` 借用。异步控制操作复用 Host ScriptScope 的 `Promise<Result<T, E>>`；需要构造或组合结果时按普通项目 import 使用 `@pluxel/core/better-result`。开发通道不依赖官方 Services、Management 或 Workbench。
+`host({ entry, scripts: true })` 选择私有本地脚本通道。项目脚本使用 `@pluxel/agent-sdk/host` 的同一个 `Script` 和 `ScriptSdk`，Host-vite 只拥有装载与更新。源码 class 与生成控制入口都通过 `nodeAddress(id?)` 提供节点地址，Host SDK 提供 `sdk.plugin(address)` 与 `sdk.ctx`。控制操作成功直接返回值，失败抛出保留领域信息的 `ScriptError`。开发通道不依赖官方 Services、Management 或 Workbench。
 
 现有 `pluxel` environment 的唯一 ModuleRunner 加载项目源码。Host-vite 不创建第二个 Host、database、logger 或执行队列。ScriptExecutor 来自 Host，项目和上传执行共享接纳、主体、预算、去重、取消与结果结算；HMR 使用同一内核的独立 lane。
 
@@ -36,21 +36,21 @@ pause/apply/resume 由 Vite 批次调度器执行，不加载项目模块，不�
 
 ## 操作 API 与资源
 
-`createProjectSdk(ctx, scope)` 只添加 `dev.ctx` 借用，选择器直接复用原 ScriptSdk。class 的 `nodeAddress(id?)` 把精确 constructor 证据绑定到不可变地址，Host SDK 在规范化前读取并固定证据，沿原 Host 队列与成员视图执行。状态与实例获取在 committed read 内验证实现身份；生命周期通过同一 exclusive session 验证并提交，共用 coordinator 的 `pluginLifecycleUpdate` 请求构造。候选更替无法插入校验与执行之间。已缓存 constructor 引用在 HMR 替换后返回 `stale_target`，fork 同样保留这个前提。
+`executeHostScript` 在 Node 和 Vite 中创建同一 ScriptScope，不存在 Vite SDK 扩展。Context 借用、实例视图及控制操作均由 Host 的同一实现维护。class 的 `nodeAddress(id?)` 把精确 constructor 证据绑定到不可变地址，Host SDK 在规范化前读取并固定证据，沿原 Host 队列与成员视图执行。状态与实例获取在 committed read 内验证实现身份；生命周期通过同一 exclusive session 验证并提交，共用 coordinator 的 `pluginLifecycleUpdate` 请求构造。候选更替无法插入校验与执行之间。已缓存 constructor 引用在 HMR 替换后抛出 `stale_target`，fork 同样保留这个前提。
 
-源码 class 的地址提供完整实例类型，Schema input/output 与 Part 配置关联由生成控制入口的地址提供。class 地址引用不提供 config；动态发现的普通节点地址使用未知字段的配置操作。所有实例视图都服从同一 run/generation 准入和排空。Root Context 及原业务返回的嵌套资源继续遵守各自所有权。
+源码 class 的地址提供完整实例类型，Schema input/output 与 Part 配置关联由生成控制入口的地址提供。class 地址引用提供未知字段的动态 config；动态发现的普通节点地址使用未知字段的配置操作。所有实例视图都服从同一 run/generation 准入和排空。Root Context 及原业务返回的嵌套资源继续遵守各自所有权。
 
-`executeHostScript` 拥有统一的函数执行、关闭 admission、排空 SDK 操作与 before/after revision 读取；after 包含排空期间真实完成的变更。开发扩展直接业务调用和原生资源仍由作者 await、传递取消与释放。Host replacement abort 原脚本并 drain 已跟踪工作后才释放旧 root；未协作脚本不能强制终止。
+`executeHostScript` 拥有统一的函数执行、关闭 admission、排空 SDK 操作与 before/after revision 读取；after 包含排空期间真实完成的变更。Context 的直接业务调用和原生资源仍由作者 await、传递取消与释放。Host replacement abort 原脚本并 drain 已跟踪工作后才释放旧 root；未协作脚本不能强制终止。
 
 日志通过基础 SDK 的 Core Logging API 读取有界范围，或通过明确 import 的服务 token 使用原生 API。Vite 共享模块的 global console 属于应用进程，执行器不改写它来捕获逐 run 输出。
 
 ## 实现与验证入口
 
-- `packages/host-vite/src/project.ts`、`project-sdk.ts`：开发扩展。
+- `packages/host/src/agent/sdk.ts`、`sdk-types.ts`：Node/Vite 共用的控制、Context 借用和类型。
 - `src/console/attachment.ts`、`source.ts`：ModuleRunner、源码摘要、依赖观察和 Host epoch。
 - `src/console/server.ts`、`discovery.ts`：私有连接认证及发现；共享 target 与 carrier 位于 Host agent 子入口。
 - `packages/agent-sdk/src/client/operations.ts`、`dev.ts`、`receipt.ts`：普通 Promise client、归属选择、统一回执与原 owner 查询。
-- Host-vite project-sdk/server/client/attachment tests：无 Services 真实 Host、fork、过期 constructor、native Cap’n Web、摘要与权限。
+- Host SDK 与 Host-vite server/client/attachment tests：无 Services 真实 Host、fork、过期 constructor、native Cap’n Web、摘要与权限。
 - `tests/hmr-control.smoke.mjs`：真实 Vite watcher、共享 constructor 身份、暂停批次、失败修复、重复更新、Host replacement 和初始应用失败时的独立控制。
 - `tests/initial-source-recovery.smoke.mjs`：初始源码失败后的真实恢复。
 

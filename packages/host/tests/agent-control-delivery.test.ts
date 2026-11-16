@@ -83,28 +83,23 @@ export default (async (sdk, run) => {
   const selected = sdk.plugin(address)
   const { get, patch } = selected.config
   const before = await get()
-  if (before.isErr()) return before
-  const changed = await patch({ set: { count: 12 } }, { expectedManagedRevision: before.value.managedRevision })
-  if (changed.isErr() || changed.value.application !== 'applied') return changed
-  const instance = await selected.instance()
-  if (instance.isErr()) return instance
-  const added = await instance.value.addAsync(5, run.signal)
-  return { changed: changed.value, added, observed: instance.value.count }
+  const changed = await patch({ set: { count: 12 } }, { expectedManagedRevision: before.managedRevision })
+  if (changed.application !== 'applied') return changed
+  const { instance } = await selected.instance()
+  const added = await instance.addAsync(5, run.signal)
+  return { changed: changed, added, observed: instance.count }
 }) satisfies Script
 export const selectedAddress = (() => DeliveryCounter.nodeAddress()) satisfies Script
 export const encodeFailure = (async (sdk) => {
-  const instance = await sdk.plugin(DeliveryCounter.nodeAddress()).instance()
-  if (instance.isErr()) return instance
-  instance.value.add(3)
-  return instance.value
+  const { instance } = await sdk.plugin(DeliveryCounter.nodeAddress()).instance()
+  instance.add(3)
+  return instance
 }) satisfies Script
 export const shortCircuit = (async (sdk) => {
   const selected = sdk.plugin(DeliveryCounter.nodeAddress())
   const changed = await selected.config.patch({ set: { count: 999 } }, { expectedManagedRevision: 'stale revision' })
-  if (changed.isErr()) return changed
-  const instance = await selected.instance()
-  if (instance.isErr()) return instance
-  return instance.value.add(1000)
+  const { instance } = await selected.instance()
+  return instance.add(1000)
 }) satisfies Script
 `,
 		)
@@ -200,8 +195,12 @@ export const shortCircuit = (async (sdk) => {
 		expect(
 			await owner.executor.settled('generated-short-circuit', 'control-delivery'),
 		).toMatchObject({
-			state: 'succeeded',
-			value: { status: 'error', error: { code: 'revision_conflict', state: 'unchanged' } },
+			state: 'failed',
+			phase: 'execute',
+			error: {
+				code: 'revision_conflict',
+				details: { code: 'revision_conflict', state: 'unchanged' },
+			},
 		})
 		expect(requirePluginService(host.ctx).getInstance(DeliveryCounter.nodeAddress())).toMatchObject(
 			{ count: 20 },

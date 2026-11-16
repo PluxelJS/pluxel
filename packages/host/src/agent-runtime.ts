@@ -17,10 +17,10 @@ export {
 } from './agent/materials'
 export {
 	createScriptScope,
-	ScriptScopeError,
+	ScriptError,
 	type ScriptScope,
 	type ScriptRevisions,
-} from './agent/sdk'
+} from './agent-host'
 export {
 	SCRIPT_PROTOCOL,
 	SCRIPT_ARTIFACT_FORMAT,

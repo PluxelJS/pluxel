@@ -57,17 +57,17 @@ Vite 在候选准备时核对 `ModuleRunner.evaluatedModules` 中实际缓存代
 
 `PluginDescriptor<I, O, S>` 的 `nodeAddress()` 返回带不变类型关联的 `PluginControlNodeAddress<I, O, S>`。标准工厂深度冻结身份，并通过 Core 的弱注册表将摘要绑定到这一个值。class 地址持有精确 constructor，生成地址持有原声明摘要；同地址的新版本不会覆盖旧证据。
 
-SDK 在地址规范化之前读取并固定证据，然后交给原 Host coordinator。普通地址只提供动态管理。枚举 symbol 中的 opaque token 用于检测 spread / Object.assign 后的副本，只有弱注册表里的原对象有效；JSON 或显式 parse 得到纯身份，实例访问返回 `control_evidence_missing`。地址与提供者可以跨 run 保存，SDK 引用和实例视图仍受本次 run 限制。
+SDK 在地址规范化之前读取并固定证据，然后交给原 Host coordinator。普通地址只提供动态管理。枚举 symbol 中的 opaque token 用于检测 spread / Object.assign 后的副本，只有弱注册表里的原对象有效；JSON 或显式 parse 得到纯身份，实例访问抛出 `control_evidence_missing`。地址与提供者可以跨 run 保存，SDK 引用和实例视图仍受本次 run 限制。
 
 引用统一提供 status、start、stop、restart。生成地址提供 instance；已声明配置时还提供 `ScriptPluginConfig<I, O>`。配置参数不再重复目标，也不重新推导输入类型。配置函数使用 readonly 函数属性，提取、赋值或注解后仍保持输入约束。配置不同的联合只开放 get，无配置或已擦除类型关联的描述符不开放 config；源码 class 地址提供原实例类型与未知字段的动态配置；普通动态地址提供动态配置而不开放业务 instance。引用的 address 保留输入地址的类型与证据，跨引用或 run 重新选择仍执行原检查。已知调用方、public exports、文档及生成项目入口统一使用这一形态。
 
-SDK 工厂、引用和配置方法均由闭包持有目标，不依赖调用 receiver。选择先检查 scope；异步操作统一返回 `Promise<Result<T, E>>`，继续走原 run/queued 准入和排空。已知失败在被跟踪的 Promise 结算前转换为 Err，避免排空时误记 cleanup failure。未知异常继续 reject。配置、策略和日志结果在 `sdk-results.ts` 去除原 `ok` 后分流，保持所有来源、修订、持久化和采用信息；start/stop/restart 报告含协调或 lifecycle 问题时返回携带 report 的 Err。引用可以在 restart 后重新取得当前 generation 的实例，旧业务 view 仍然失效。Node/Vite describe 声明 plugin、plugin.config 和 plugin.instance 能力。
+SDK 工厂、引用和配置方法均由闭包持有目标，不依赖调用 receiver。选择先检查 scope；异步操作成功直接返回值，已知失败抛出 `ScriptError`，继续走原 run/queued 准入和排空。错误的 `details` 保留完整领域联合，未知异常保持原对象。配置、策略和日志快照去掉原 `ok`，保持所有来源、修订、持久化和采用信息；start/stop/restart 报告含协调或 lifecycle 问题时抛出携带 report 的错误。引用可以在 restart 后重新取得当前 generation 的实例，旧业务 view 仍然失效。Node/Vite describe 声明 plugin、plugin.config 和 plugin.instance 能力。
 
 配置摘要在原 lookup/transaction 内检查，保留原 CAS 的错误顺序，并在 Schema 执行和持久化之前拒绝失配。没有先检查、再第二次排队写入的窗口。原 Host/Workbench 协议继续使用其领域结果，Script SDK 只在自己的返回边界投影；preview 不保存。公开错误按操作区分，持久化失败的 unknown 和保存后未采用的 application 状态保持原义。
 
-实例获取通过 committed read，核对 descriptor、当前实现和真实 generation。回调在任何 Promise 接触业务实例之前创建 `Result.ok(view)`，以 Result 的成功值直接交付实例，避免 Promise 同化读取作者的 then。成员视图在本次 scope 缓存，每次方法/get/set 进入原 owner invocation，原 provider 作为调用 receiver；方法提取及显式 call 保留 JavaScript 的 this 行为，已识别的同 scope 直接实例参数可解包。当前 constructor 地址通过同一 scope 接入，规则见 [Dev Console](DEV_CONSOLE.md#操作-api-与资源)。
+实例获取通过 committed read，核对 descriptor、当前实现和真实 generation。回调在任何 Promise 接触业务实例之前创建冻结的 `{ instance: view }`，调用方解构取得实例，避免 Promise 同化读取作者的 then。成员视图在本次 scope 缓存，每次方法/get/set 进入原 owner invocation，原 provider 作为调用 receiver；方法提取及显式 call 保留 JavaScript 的 this 行为，已识别的同 scope 直接实例参数可解包。当前 constructor 地址通过同一 scope 接入，规则见 [Dev Console](DEV_CONSOLE.md#操作-api-与资源)。
 
-调用方用提供者的 nodeAddress 选定 default 或 fork，再使用一个 SDK 操作入口；控制方法可以直接提取，已有 SDK Result 可以直接返回。多步任务使用普通 async/await，检查 `isErr()` 并提前返回；需要构造或组合结果时从 `@pluxel/core/better-result` 导入。类型和原始 JSDoc 继续提供配置与业务信息。上传共享绑定和结果交付由 [Agent workflow](AGENT_WORKFLOW.md)维护。
+调用方用提供者的 nodeAddress 选定 default 或 fork，再使用一个 SDK 操作入口；控制方法可以直接提取。多步任务使用普通 async/await，默认抛错中断，只在任务需要恢复时捕获 `ScriptError` 并按 `details.code` 分支。原业务方法的返回协议继续由提供方维护。类型和原始 JSDoc 继续提供配置与业务信息。上传共享绑定和结果交付由 [Agent workflow](AGENT_WORKFLOW.md)维护。
 
 标准 native Promise 保持原返回对象，由旁路 reaction 跟踪至结算；同步调用保持同步。scope 和 generation 等待已接纳工作。自定义 thenable、流、迭代器与嵌套返回资源遵守业务协议，视图不递归改写它们。本 realm 可识别的 native Promise 若 species 异常，明确抛出原异常；无法识别的自定义协议不提供自动跟踪保证。
 
@@ -85,7 +85,7 @@ CLI 的 `script sync` 和 `dev sync` 使用同一实现。完整验证后写入 
 
 材料完整性不证明作者安装的外部类型与生成环境相同。package 模式引用原包的公共声明，closure 模式保留公开外部包引用；这些本地声明会固定为本次脚本输入，但不与生成时的依赖声明逐项比对。作者须提供匹配版本；Host 的摘要检查只核对描述符与已接纳实现，不核验作者侧这些外部声明。
 
-上传编译和 Vite 项目检查使用 native TypeScript 的固定输入读取器。读取器固定文件内容、缺失结果与目录 realpath，原子切换 current 后同一次编译仍读取原快照。纯控制入口必须通过完整清单和内容验证才允许进入上传工厂，并在检查结束后核对 TypeScript 实际使用了对应的声明文件；package exports 在两阶段切换会明确失败。上传格式 `pluxel-js-factory/3` 为 Core Better Result 和已验证控制模板提供两个固定共享绑定，其余框架运行时 import 继续拒绝。Vite 在原源码屏障后检查类型，加载仍由原 ModuleRunner 完成，并将实际缓存输入与受检输入比较；失败不会调用脚本导出函数。请求身份与 receipt 继续使用原协议，检查所得读集属于本次加载证据。
+上传编译和 Vite 项目检查使用 native TypeScript 的固定输入读取器。读取器固定文件内容、缺失结果与目录 realpath，原子切换 current 后同一次编译仍读取原快照。纯控制入口必须通过完整清单和内容验证才允许进入上传工厂，并在检查结束后核对 TypeScript 实际使用了对应的声明文件；package exports 在两阶段切换会明确失败。上传格式 `pluxel-js-factory/4` 为 Core Better Result、已验证控制模板与 `@pluxel/agent-sdk/host` 的公开运行时导出提供三个固定共享绑定，保留 Result、地址调用证据和 `ScriptError` 的目标进程身份；其余框架运行时 import 继续拒绝。Vite 在原源码屏障后检查类型，加载仍由原 ModuleRunner 完成，并将实际缓存输入与受检输入比较；失败不会调用脚本导出函数。请求身份与 receipt 继续使用原协议，检查所得读集属于本次加载证据。
 
 ## 验证入口
 
@@ -116,7 +116,7 @@ CLI 的 `script sync` 和 `dev sync` 使用同一实现。完整验证后写入 
 交付验收沿用上表入口，关键检查包括：
 
 - native 声明真实消费、配置表达式与 Part、JSDoc、名义关系、泛型、联合和无配置输入约束；注释变化更新材料快照，兼容性摘要保持对应规则。
-- Result 的短路、JSON 编码及完整字节预算，未知异常与预期 Err 的区分，带业务 `then` 的实例交付，以及取消、队列和 generation 工作的真实排空。
+- SDK 失败抛错中断、结构化领域报告、可选业务 Result 的 JSON 编码及完整字节预算，未知异常的保留，带业务 `then` 的实例交付，以及取消、队列和 generation 工作的真实排空。
 - 编译器与真实 workerd 的共享 namespace 身份；标准 ESM 转工厂后的严格模式、同名变量隔离、特殊导出与重导出，以及原文件、原行号的错误定位。旧工厂格式明确拒绝。
 - 独立 tarball 作者通过 TLS 认证同步并提交脚本，接收端无源码和编译器；核对 CAS、配置实际采用、业务方法与属性、原 receipt 和资源释放。
 - 正式 exports 与材料完整性、连续构建和重复同步稳定性；真实 watcher 的暂停、apply、失败修复与 Host replacement；Create 生成项目的 native、Vite 与部署交付。

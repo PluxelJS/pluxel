@@ -1,5 +1,4 @@
-import type { ProjectScript } from '@pluxel/host-vite/project'
-import { Result } from '@pluxel/core/better-result'
+import type { Script } from '@pluxel/agent-sdk/host'
 import { openLocalWorkbenchEntry, WorkbenchHost } from '@pluxel/workbench/server'
 import { consumeWorkbenchValue, readWorkbenchLayout } from '@pluxel/workbench/client'
 import { RpcStub } from 'capnweb'
@@ -18,33 +17,29 @@ export default (async (sdk) => {
 		WeComBotPlugin.nodeAddress(),
 	]) {
 		const provider = await sdk.plugin(address).status()
-		if (provider.isErr()) return provider
-		if (provider.value) providers.push(provider.value)
+		if (provider) providers.push(provider)
 	}
 	const workspace = sdk.plugin(BotWorkspacePlugin.nodeAddress())
-	const status = await workspace.status()
-	if (status.isErr()) return status
-	const owner = status.value
+	const owner = await workspace.status()
 	if (!owner) throw new Error('BotWorkspacePlugin is not registered')
-	const instance = await workspace.instance()
-	if (instance.isErr()) return instance
-	const session = sdk.dev.ctx.require(WorkbenchHost).createSession(principal, () => {})
+	const { instance } = await workspace.instance()
+	const session = sdk.ctx.require(WorkbenchHost).createSession(principal, () => {})
 	try {
 		using target = new RpcStub(session.target)
 		const layout = await readWorkbenchLayout(target, { target: owner.address })
-		return Result.ok({
+		return {
 			owner,
 			providers,
-			snapshot: instance.value.snapshot(),
+			snapshot: instance.snapshot(),
 			entries: layout.entries.map(({ descriptor, placement }) => ({
 				key: descriptor.key,
 				placement,
 			})),
-		})
+		}
 	} finally {
 		session.dispose()
 	}
-}) satisfies ProjectScript
+}) satisfies Script
 
 /** Exercise the actual entity-scoped Workbench API, never a frontend-owned mock store. */
 export const saveInstructions = (async (sdk, run) => {
@@ -54,14 +49,11 @@ export const saveInstructions = (async (sdk, run) => {
 	const record = input as Record<string, unknown>
 	if (typeof record.instructions !== 'string') throw new TypeError('Expected instructions string')
 	const workspace = sdk.plugin(BotWorkspacePlugin.nodeAddress())
-	const instance = await workspace.instance()
-	if (instance.isErr()) return instance
-	const identity = instance.value.identity(record.source, record.id)
-	const status = await workspace.status()
-	if (status.isErr()) return status
-	const owner = status.value
+	const { instance } = await workspace.instance()
+	const identity = instance.identity(record.source, record.id)
+	const owner = await workspace.status()
 	if (!owner) throw new Error('BotWorkspacePlugin is not registered')
-	using opened = await openLocalWorkbenchEntry(sdk.dev.ctx, {
+	using opened = await openLocalWorkbenchEntry(sdk.ctx, {
 		target: owner.address,
 		entry: BotWorkspaceWorkbench.bot,
 		principal,
@@ -74,34 +66,20 @@ export const saveInstructions = (async (sdk, run) => {
 		'Bot save result',
 	)
 	const after = await consumeWorkbenchValue(opened.api.snapshotDto(), 'Bot after save')
-	return Result.ok({ result, before, after })
-}) satisfies ProjectScript
+	return { result, before, after }
+}) satisfies Script
 
 export const stopDiscord = (async (sdk) => {
 	const { stop, status } = sdk.plugin(DiscordBotPlugin.nodeAddress())
 	const report = await stop()
-	if (report.isErr()) return report
 	const current = await status()
-	if (current.isErr()) return current
-	const workspace = await sdk.plugin(BotWorkspacePlugin.nodeAddress()).instance()
-	if (workspace.isErr()) return workspace
-	return Result.ok({
-		report: report.value,
-		current: current.value,
-		snapshot: workspace.value.snapshot(),
-	})
-}) satisfies ProjectScript
+	const { instance } = await sdk.plugin(BotWorkspacePlugin.nodeAddress()).instance()
+	return { report, current, snapshot: instance.snapshot() }
+}) satisfies Script
 export const startDiscord = (async (sdk) => {
 	const { start, status } = sdk.plugin(DiscordBotPlugin.nodeAddress())
 	const report = await start()
-	if (report.isErr()) return report
 	const current = await status()
-	if (current.isErr()) return current
-	const workspace = await sdk.plugin(BotWorkspacePlugin.nodeAddress()).instance()
-	if (workspace.isErr()) return workspace
-	return Result.ok({
-		report: report.value,
-		current: current.value,
-		snapshot: workspace.value.snapshot(),
-	})
-}) satisfies ProjectScript
+	const { instance } = await sdk.plugin(BotWorkspacePlugin.nodeAddress()).instance()
+	return { report, current, snapshot: instance.snapshot() }
+}) satisfies Script

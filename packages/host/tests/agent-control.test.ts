@@ -1,12 +1,11 @@
 import { BasePlugin, Plugin, parsePluginNodeAddress, type PluginNodeAddress } from '@pluxel/core'
-import { Result } from '@pluxel/core/better-result'
 import { CorePluginGraphVerificationError, requirePluginService } from '@pluxel/core/internal'
 import { runInNewContext } from 'node:vm'
 import { expect, it, vi } from 'vitest'
 import { createHost, HostStatePersistenceError, PluginGraphRejectedError } from '../src'
 import { requirePluginHostCoordinator, setHostCatalogProvenance } from '../src/internal'
 import type { PluginDescriptor } from '../src/agent'
-import { createScriptScope } from '../src/agent-runtime'
+import { createScriptScope, ScriptError } from '../src/agent-runtime'
 import { createPluginControlReference } from '../src/control-reference'
 import { PluginControlError } from '../src/catalog'
 
@@ -102,7 +101,7 @@ async function setup() {
 	)
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
-	Result.unwrap(await scope.sdk.plugin(Counter.nodeAddress()).start())
+	await scope.sdk.plugin(Counter.nodeAddress()).start()
 	return { host, scope }
 }
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
@@ -115,17 +114,17 @@ it('keeps JSON identities dynamic and refuses copied typed address evidence', as
 			expect(() => scope.sdk.plugin(copied)).toThrow('copied or detached')
 		const serialized = JSON.parse(JSON.stringify(address)) as typeof address
 		const dynamic = scope.sdk.plugin(serialized)
-		await expect(dynamic.instance()).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'control_evidence_missing' },
+		await expect(dynamic.instance()).rejects.toMatchObject({
+			details: { code: 'control_evidence_missing' },
 		})
-		expect(Result.unwrap(await dynamic.config.get())).toMatchObject({ config: { count: 2 } })
-		const original = Result.unwrap(await scope.sdk.plugin(address).instance())
+		expect(await dynamic.config.get()).toMatchObject({ config: { count: 2 } })
+		const { instance: original } = await scope.sdk.plugin(address).instance()
 		const selected = scope.sdk.plugin(address)
 		expect(selected.address).toBe(address)
-		expect(Result.unwrap(await scope.sdk.plugin(selected.address).instance())).toBe(original)
+		const { instance: reselected } = await scope.sdk.plugin(selected.address).instance()
+		expect(reselected).toBe(original)
 		expect(original.add(1)).toBe(3)
-		const snapshot = Result.unwrap(await scope.sdk.plugins.list())
+		const snapshot = await scope.sdk.plugins.list()
 		expect(snapshot).toMatchObject({
 			catalogRevision: expect.any(Number),
 			runtimeStateRevision: expect.any(Number),
@@ -141,11 +140,11 @@ it('retains config behavior and control checks after ordinary address type erasu
 	const { host, scope } = await setup()
 	try {
 		const sourceAddress: PluginNodeAddress = Counter.nodeAddress()
-		expect(Result.unwrap(await scope.sdk.plugin(sourceAddress).config.get())).toMatchObject({
+		expect(await scope.sdk.plugin(sourceAddress).config.get()).toMatchObject({
 			config: { count: 2 },
 		})
 		const controlAddress: PluginNodeAddress = CounterDescriptor.nodeAddress()
-		expect(Result.unwrap(await scope.sdk.plugin(controlAddress).config.get())).toMatchObject({
+		expect(await scope.sdk.plugin(controlAddress).config.get()).toMatchObject({
 			config: { count: 2 },
 		})
 		const changed = createPluginControlReference({
@@ -154,15 +153,13 @@ it('retains config behavior and control checks after ordinary address type erasu
 			contracts: { config: wrongHash, instance: instanceHash },
 		})
 		const changedAddress: PluginNodeAddress = changed.nodeAddress()
-		await expect(scope.sdk.plugin(changedAddress).config.get()).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'control_contract_mismatch' },
+		await expect(scope.sdk.plugin(changedAddress).config.get()).rejects.toMatchObject({
+			details: { code: 'control_contract_mismatch' },
 		})
 		await expect(
 			scope.sdk.plugin(scope.sdk.plugin(changedAddress).address).config.get(),
-		).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'control_contract_mismatch' },
+		).rejects.toMatchObject({
+			details: { code: 'control_contract_mismatch' },
 		})
 	} finally {
 		await scope.dispose()
@@ -174,7 +171,7 @@ it('selects immutable targets and replaces forks without materializing nodes or 
 	const { host, scope } = await setup()
 	try {
 		const { plugin } = scope.sdk
-		const before = Result.unwrap(await scope.sdk.plugins.list())
+		const before = await scope.sdk.plugins.list()
 		const descriptorData = {
 			format: 2 as const,
 			definition: {
@@ -211,27 +208,27 @@ it('selects immutable targets and replaces forks without materializing nodes or 
 		expect(dynamic.address).toEqual(parsePluginNodeAddress(Counter.nodeAddress()))
 		expect(Object.isFrozen(dynamic.address)).toBe(true)
 		expect(Object.isFrozen(dynamic.address.definition)).toBe(true)
-		expect(Result.unwrap(await scope.sdk.plugins.list())).toEqual(before)
+		expect(await scope.sdk.plugins.list()).toEqual(before)
 		expect(requirePluginService(host.ctx).isRunning(Counter.nodeAddress('east'))).toBe(false)
 		expect(requirePluginService(host.ctx).isRunning(Counter.nodeAddress('west'))).toBe(false)
 		expect(await host.forks.ensure(Counter.nodeAddress('east'))).toMatchObject({ ok: true })
-		Result.unwrap(await start())
-		expect(Result.unwrap(await status())).toMatchObject({ lifecycleState: 'running' })
-		const borrowed = Result.unwrap(await instance())
+		await start()
+		expect(await status()).toMatchObject({ lifecycleState: 'running' })
+		const { instance: borrowed } = await instance()
 		expect(borrowed.count).toBe(2)
 		const { get, validate, patch, reset } = config
-		expect(Result.unwrap(await get())).toMatchObject({ config: { count: 2 } })
-		expect(Result.unwrap(await validate({ set: { count: 5 } }))).toMatchObject({
+		expect(await get()).toMatchObject({ config: { count: 2 } })
+		expect(await validate({ set: { count: 5 } })).toMatchObject({
 			config: { count: 5 },
 		})
-		expect(Result.unwrap(await patch({ set: { count: 8 } }))).toMatchObject({
+		expect(await patch({ set: { count: 8 } })).toMatchObject({
 			config: { count: 8 },
 		})
-		expect(Result.unwrap(await get())).toMatchObject({ config: { count: 8 } })
-		expect(Result.unwrap(await dynamic.config.get())).toMatchObject({ config: { count: 2 } })
-		expect(Result.unwrap(await reset())).toMatchObject({ config: { count: 2 } })
-		Result.unwrap(await stop())
-		expect(Result.unwrap(await status())).toMatchObject({ lifecycleState: 'stopped' })
+		expect(await get()).toMatchObject({ config: { count: 8 } })
+		expect(await dynamic.config.get()).toMatchObject({ config: { count: 2 } })
+		expect(await reset()).toMatchObject({ config: { count: 2 } })
+		await stop()
+		expect(await status()).toMatchObject({ lifecycleState: 'stopped' })
 		expect(requirePluginService(host.ctx).isRunning(Counter.nodeAddress())).toBe(true)
 	} finally {
 		await scope.dispose()
@@ -246,11 +243,11 @@ it('refreshes a current generation through the same ref and closes cached select
 		const ref = plugin(CounterDescriptor.nodeAddress())
 		const { status, start, stop, restart, instance, config } = ref
 		const { get, validate, patch, reset } = config
-		const first = Result.unwrap(await instance())
+		const { instance: first } = await instance()
 		expect(first.add(10)).toBe(12)
-		Result.unwrap(await restart())
+		await restart()
 		expect(() => first.add(1)).toThrow(/owner stopped/i)
-		const current = Result.unwrap(await instance())
+		const { instance: current } = await instance()
 		expect(Object.is(current, first)).toBe(false)
 		expect(current.add(1)).toBe(3)
 		await scope.dispose()
@@ -268,9 +265,8 @@ it('refreshes a current generation through the same ref and closes cached select
 			reset,
 		]
 		for (const call of calls)
-			await expect(call()).resolves.toMatchObject({
-				status: 'error',
-				error: { code: 'scope_closed' },
+			await expect(call()).rejects.toMatchObject({
+				details: { code: 'scope_closed' },
 			})
 		expect(() => current.add(1)).toThrow(/closing or closed/)
 	} finally {
@@ -279,14 +275,13 @@ it('refreshes a current generation through the same ref and closes cached select
 	}
 })
 
-it('drains an admitted expected failure as Result without reporting a cleanup rejection', async () => {
+it('drains an admitted expected failure without reporting a second cleanup rejection', async () => {
 	const { host, scope } = await setup()
 	try {
 		const accepted = scope.sdk.plugins.list()
 		const disposal = scope.dispose()
-		await expect(accepted).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'scope_closed' },
+		await expect(accepted).rejects.toMatchObject({
+			details: { code: 'scope_closed' },
 		})
 		await expect(disposal).resolves.toBeUndefined()
 	} finally {
@@ -295,24 +290,41 @@ it('drains an admitted expected failure as Result without reporting a cleanup re
 	}
 })
 
-it('returns operation cancellation separately from closing the run and leaves the original config unchanged', async () => {
-	const { host, scope } = await setup()
-	try {
-		const selected = scope.sdk.plugin(CounterDescriptor.nodeAddress())
-		const before = Result.unwrap(await selected.config.get())
-		const signal = AbortSignal.abort(new Error('cancel this mutation'))
-		await expect(selected.config.patch({ set: { count: 99 } }, { signal })).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'cancelled' },
-		})
-		const after = Result.unwrap(await selected.config.get())
-		expect(after.config).toEqual(before.config)
-		expect(after.managedRevision).toBe(before.managedRevision)
-	} finally {
-		await scope.dispose()
-		await host.close()
-	}
-})
+it.each([
+	new Error('cancel this mutation'),
+	new ScriptError({
+		code: 'persistence_failed',
+		state: 'unknown',
+		message: 'cancel this mutation',
+	}),
+])(
+	'classifies operation cancellation before its reason class (%s) without changing Host state',
+	async (reason) => {
+		const { host, scope } = await setup()
+		try {
+			const selected = scope.sdk.plugin(CounterDescriptor.nodeAddress())
+			const before = await selected.config.get()
+			const policyBefore = await scope.sdk.policy.get()
+			const signal = AbortSignal.abort(reason)
+			for (const operation of [
+				() => selected.config.patch({ set: { count: 99 } }, { signal }),
+				() => selected.config.reset(undefined, { signal }),
+				() => scope.sdk.policy.patch({ startConcurrency: 2 }, { signal }),
+				() => scope.sdk.policy.reset(undefined, { signal }),
+			])
+				await expect(operation()).rejects.toMatchObject({
+					details: { code: 'cancelled' },
+				})
+			const after = await selected.config.get()
+			expect(after.config).toEqual(before.config)
+			expect(after.managedRevision).toBe(before.managedRevision)
+			expect(await scope.sdk.policy.get()).toEqual(policyBefore)
+		} finally {
+			await scope.dispose()
+			await host.close()
+		}
+	},
+)
 
 it('classifies a queued cancellation by signal identity before a known control error and drains cleanly', async () => {
 	const { host, scope } = await setup()
@@ -333,14 +345,12 @@ it('classifies a queued cancellation by signal identity before a known control e
 		const disposal = scope.dispose()
 		gate.resolve()
 		await blocker
-		await expect(accepted).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'cancelled' },
+		await expect(accepted).rejects.toMatchObject({
+			details: { code: 'cancelled' },
 		})
 		await expect(disposal).resolves.toBeUndefined()
-		await expect(get()).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'scope_closed' },
+		await expect(get()).rejects.toMatchObject({
+			details: { code: 'scope_closed' },
 		})
 	} finally {
 		gate.resolve()
@@ -359,7 +369,7 @@ it.each(['validate', 'patch', 'reset'] as const)(
 		let blocker: Promise<unknown> | undefined
 		let restore: (() => void) | undefined
 		try {
-			const before = Result.unwrap(await scope.sdk.policy.patch({ startTimeoutMs: 4000 }))
+			const before = await scope.sdk.policy.patch({ startTimeoutMs: 4000 })
 			const coordinator = requirePluginHostCoordinator(host.ctx)
 			blocker = coordinator.runExclusive('cancel-policy-blocker', () => gate.promise)
 			const enqueued =
@@ -377,9 +387,8 @@ it.each(['validate', 'patch', 'reset'] as const)(
 			const disposal = scope.dispose()
 			gate.resolve()
 			await blocker
-			await expect(accepted).resolves.toMatchObject({
-				status: 'error',
-				error: { code: 'cancelled' },
+			await expect(accepted).rejects.toMatchObject({
+				details: { code: 'cancelled' },
 			})
 			await expect(disposal).resolves.toBeUndefined()
 			expect(await host.policy.get()).toMatchObject({
@@ -411,16 +420,16 @@ it('retains a known Core graph rejection cause in the lifecycle error without re
 	const failure = vi.spyOn(coordinator, 'restartNode').mockRejectedValueOnce(rejected)
 	try {
 		const original = requirePluginService(host.ctx).getInstance(Counter.nodeAddress())
-		const result = await scope.sdk.plugin(CounterDescriptor.nodeAddress()).restart()
-		expect(result).toMatchObject({
-			status: 'error',
-			error: {
-				code: 'graph_rejected',
-				state: 'unchanged',
-				issues: [],
-				message: expect.stringContaining(detail),
+		await expect(scope.sdk.plugin(CounterDescriptor.nodeAddress()).restart()).rejects.toMatchObject(
+			{
+				details: {
+					code: 'graph_rejected',
+					state: 'unchanged',
+					issues: [],
+					message: expect.stringContaining(detail),
+				},
 			},
-		})
+		)
 		expect(requirePluginService(host.ctx).getInstance(Counter.nodeAddress())).toBe(original)
 	} finally {
 		failure.mockRestore()
@@ -437,14 +446,11 @@ it('checks only the contract used by an operation, preserving original config an
 			definition: Counter.definitionAddress(),
 			contracts: { config: configHash, instance: wrongHash },
 		}) as unknown as typeof CounterDescriptor
-		expect(
-			Result.unwrap(await scope.sdk.plugin(wrongInstance.nodeAddress()).config.get()),
-		).toMatchObject({
+		expect(await scope.sdk.plugin(wrongInstance.nodeAddress()).config.get()).toMatchObject({
 			config: { count: 2 },
 		})
-		await expect(scope.sdk.plugin(wrongInstance.nodeAddress()).instance()).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'control_contract_mismatch' },
+		await expect(scope.sdk.plugin(wrongInstance.nodeAddress()).instance()).rejects.toMatchObject({
+			details: { code: 'control_contract_mismatch' },
 		})
 		const wrongConfig = createPluginControlReference({
 			format: 2,
@@ -453,31 +459,23 @@ it('checks only the contract used by an operation, preserving original config an
 		}) as unknown as typeof CounterDescriptor
 		await expect(
 			scope.sdk.plugin(wrongConfig.nodeAddress()).config.patch({ set: { count: 8 } }),
-		).resolves.toMatchObject({ status: 'error', error: { code: 'control_contract_mismatch' } })
-		expect(Result.unwrap(await scope.sdk.plugin(wrongConfig.nodeAddress()).status())).toMatchObject(
-			{
-				lifecycleState: 'running',
-			},
-		)
-		expect(
-			Result.unwrap(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).config.get()),
-		).toMatchObject({
+		).rejects.toMatchObject({ details: { code: 'control_contract_mismatch' } })
+		expect(await scope.sdk.plugin(wrongConfig.nodeAddress()).status()).toMatchObject({
+			lifecycleState: 'running',
+		})
+		expect(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).config.get()).toMatchObject({
 			config: { count: 2 },
 		})
-		const borrowed = Result.unwrap(await scope.sdk.plugin(wrongConfig.nodeAddress()).instance())
+		const { instance: borrowed } = await scope.sdk.plugin(wrongConfig.nodeAddress()).instance()
 		expect(borrowed.count).toBe(2)
-		const preview = Result.unwrap(
-			await scope.sdk
-				.plugin(CounterDescriptor.nodeAddress())
-				.config.validate({ set: { count: 9 } }),
-		)
+		const preview = await scope.sdk
+			.plugin(CounterDescriptor.nodeAddress())
+			.config.validate({ set: { count: 9 } })
 		expect(preview).toMatchObject({
 			config: { count: 9 },
 			persistence: { status: 'unchanged' },
 		})
-		expect(
-			Result.unwrap(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).config.get()),
-		).toMatchObject({
+		expect(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).config.get()).toMatchObject({
 			config: { count: 2 },
 		})
 	} finally {
@@ -491,18 +489,16 @@ it('reports committed control preparation failures through ordinary SDK status i
 	try {
 		for (const reason of ['analysis_failed', 'source_changed', 'missing'] as const) {
 			const message = `control ${reason}: fixture input cannot be represented`
-			const previousStatus = Result.unwrap(
-				await scope.sdk.plugin(CounterDescriptor.nodeAddress()).status(),
-			)
+			const previousStatus = await scope.sdk.plugin(CounterDescriptor.nodeAddress()).status()
 			setHostCatalogProvenance(
 				host.ctx,
 				new Map([[Counter, { control: { state: 'unavailable', reason, message } }]]),
 			)
-			expect(
-				Result.unwrap(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).status()),
-			).toEqual(previousStatus)
+			expect(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).status()).toEqual(
+				previousStatus,
+			)
 			await host.updateCatalog([Counter])
-			const status = Result.unwrap(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).status())
+			const status = await scope.sdk.plugin(CounterDescriptor.nodeAddress()).status()
 			expect(status).toMatchObject({ availability: 'available', lifecycleState: 'running' })
 			const issue = {
 				id: expect.stringContaining(`:${reason}`),
@@ -510,7 +506,7 @@ it('reports committed control preparation failures through ordinary SDK status i
 				message,
 			}
 			expect(status?.issues).toEqual(reason === 'missing' ? [] : [issue])
-			const plugins = Result.unwrap(await scope.sdk.plugins.list())
+			const plugins = await scope.sdk.plugins.list()
 			expect(
 				plugins.nodes.find((entry) => entry.address.definition.exportName === 'Counter')?.issues,
 			).toEqual(status?.issues)
@@ -531,16 +527,14 @@ it('reports committed control preparation failures through ordinary SDK status i
 			]),
 		)
 		await host.updateCatalog([Counter])
-		expect(
-			Result.unwrap(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).status()),
-		).toMatchObject({
+		expect(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).status()).toMatchObject({
 			availability: 'available',
 			lifecycleState: 'running',
 			issues: [],
 		})
-		const borrowed = Result.unwrap(
-			await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance(),
-		)
+		const { instance: borrowed } = await scope.sdk
+			.plugin(CounterDescriptor.nodeAddress())
+			.instance()
 		expect(borrowed.count).toBe(2)
 	} finally {
 		await scope.dispose()
@@ -552,9 +546,7 @@ it('admits actual instance members, preserves JavaScript receivers and never pro
 	const { host, scope } = await setup()
 	try {
 		thenReads = 0
-		const instance = Result.unwrap(
-			await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance(),
-		)
+		const { instance } = await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance()
 		const raw = requirePluginService(host.ctx).getInstance(Counter.nodeAddress())
 		expect(instance).not.toBe(raw)
 		expect(thenReads).toBe(0)
@@ -621,14 +613,11 @@ it('checks typed configuration against the catalog actually admitted on the orig
 		gate.resolve()
 		await barrier
 		await replacement
-		expect(await mutation).toMatchObject({
-			status: 'error',
-			error: { code: 'control_contract_mismatch' },
+		await expect(mutation).rejects.toMatchObject({
+			details: { code: 'control_contract_mismatch' },
 		})
 		expect(
-			Result.unwrap(
-				await scope.sdk.plugin(parsePluginNodeAddress(Counter.nodeAddress())).config.get(),
-			),
+			await scope.sdk.plugin(parsePluginNodeAddress(Counter.nodeAddress())).config.get(),
 		).toMatchObject({
 			config: { count: 2 },
 		})
@@ -641,9 +630,7 @@ it('checks typed configuration against the catalog actually admitted on the orig
 it('preserves native Promise subclasses and leaves lazy business thenables untouched', async () => {
 	const { host, scope } = await setup()
 	try {
-		const instance = Result.unwrap(
-			await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance(),
-		)
+		const { instance } = await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance()
 		let calls = 0
 		const lazy = {
 			// Admission must preserve a lazy business thenable without invoking it.
@@ -662,18 +649,15 @@ it('preserves native Promise subclasses and leaves lazy business thenables untou
 		expect(instance.returnValue(native)).toBe(native)
 		await expect(
 			scope.sdk.plugin(CounterDescriptor.nodeAddress()).config.get(),
-		).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'borrowed_generation_conflict' },
+		).rejects.toMatchObject({
+			details: { code: 'borrowed_generation_conflict' },
 		})
 		resolve(9)
 		expect(await native).toBe(9)
 		const foreign = runInNewContext('Promise.resolve(13)') as Promise<number>
 		expect(instance.returnValue(foreign)).toBe(foreign)
 		expect(await foreign).toBe(13)
-		expect(
-			Result.unwrap(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).config.get()),
-		).toMatchObject({
+		expect(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).config.get()).toMatchObject({
 			config: { count: 2 },
 		})
 	} finally {
@@ -686,9 +670,7 @@ it('reports unsupported native Promise species without silently accepting or lea
 	const { host, scope } = await setup()
 	let settle!: () => void
 	try {
-		const instance = Result.unwrap(
-			await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance(),
-		)
+		const { instance } = await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance()
 		const failure = new Error('custom species cannot create a reaction')
 		class BrokenResult extends Promise<void> {
 			static get [Symbol.species](): PromiseConstructor {
@@ -699,9 +681,7 @@ it('reports unsupported native Promise species without silently accepting or lea
 			settle = resolve
 		})
 		expect(() => instance.returnValue(original)).toThrow(failure)
-		expect(
-			Result.unwrap(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).config.get()),
-		).toMatchObject({
+		expect(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).config.get()).toMatchObject({
 			config: { count: 2 },
 		})
 		settle()
@@ -717,22 +697,19 @@ it('rejects Promise.all queue/member cycles without leaving the provider admitte
 	const { host, scope } = await setup()
 	const gate = Promise.withResolvers<void>()
 	try {
-		const instance = Result.unwrap(
-			await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance(),
-		)
+		const { instance } = await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance()
 		const management = scope.sdk.plugin(CounterDescriptor.nodeAddress()).config.get()
 		const business = instance.after(gate.promise)
 		const combined = Promise.all([management, business])
-		await expect(management).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'borrowed_generation_conflict' },
+		await expect(management).rejects.toMatchObject({
+			details: { code: 'borrowed_generation_conflict' },
 		})
 		gate.resolve()
-		const outcomes = await combined
-		expect(outcomes[1]).toBe(2)
-		expect(
-			Result.unwrap(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).config.get()),
-		).toMatchObject({
+		await expect(combined).rejects.toMatchObject({
+			details: { code: 'borrowed_generation_conflict' },
+		})
+		expect(await business).toBe(2)
+		expect(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).config.get()).toMatchObject({
 			config: { count: 2 },
 		})
 	} finally {
@@ -746,30 +723,25 @@ it('holds provider cleanup until a native Promise settles and rejects cyclic que
 	const { host, scope } = await setup()
 	try {
 		cleanups = 0
-		const instance = Result.unwrap(
-			await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance(),
-		)
+		const { instance } = await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance()
 		const gate = Promise.withResolvers<void>()
 		const pending = instance.after(gate.promise)
 		await expect(
 			scope.sdk.plugin(CounterDescriptor.nodeAddress()).config.get(),
-		).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'borrowed_generation_conflict' },
+		).rejects.toMatchObject({
+			details: { code: 'borrowed_generation_conflict' },
 		})
-		await expect(
-			scope.sdk.plugin(CounterDescriptor.nodeAddress()).restart(),
-		).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'borrowed_generation_conflict' },
-		})
+		await expect(scope.sdk.plugin(CounterDescriptor.nodeAddress()).restart()).rejects.toMatchObject(
+			{
+				details: { code: 'borrowed_generation_conflict' },
+			},
+		)
 		const otherScope = createScriptScope({ ctx: host.ctx })
 		let restarted = false
 		const restart = otherScope.sdk
 			.plugin(CounterDescriptor.nodeAddress())
 			.restart()
-			.then((outcome): void => {
-				Result.unwrap(outcome)
+			.then((): void => {
 				restarted = true
 				return undefined
 			})
@@ -781,7 +753,7 @@ it('holds provider cleanup until a native Promise settles and rejects cyclic que
 		await restart
 		expect(cleanups).toBe(1)
 		expect(() => instance.add(1)).toThrow(/owner stopped/i)
-		const next = Result.unwrap(await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance())
+		const { instance: next } = await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance()
 		expect(next.add(1)).toBe(3)
 		await otherScope.dispose()
 	} finally {
@@ -812,9 +784,7 @@ it('rejects member admission behind an already queued Host read instead of deadl
 	const otherScope = createScriptScope({ ctx: host.ctx })
 	const gate = Promise.withResolvers<void>()
 	try {
-		const instance = Result.unwrap(
-			await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance(),
-		)
+		const { instance } = await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance()
 		const barrier = requirePluginHostCoordinator(host.ctx).runExclusive(
 			'reverse-cycle-barrier',
 			() => gate.promise,
@@ -828,8 +798,8 @@ it('rejects member admission behind an already queued Host read instead of deadl
 		)
 		gate.resolve()
 		await barrier
-		Result.unwrap(await restart)
-		expect(Result.unwrap(await management)).toMatchObject({ config: { count: 2 } })
+		await restart
+		expect(await management).toMatchObject({ config: { count: 2 } })
 	} finally {
 		gate.resolve()
 		await scope.dispose()
@@ -841,12 +811,10 @@ it('rejects member admission behind an already queued Host read instead of deadl
 it('rejects a member callback queued read and drains unawaited native Promise members on scope close', async () => {
 	const { host, scope } = await setup()
 	try {
-		const instance = Result.unwrap(
-			await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance(),
-		)
+		const { instance } = await scope.sdk.plugin(CounterDescriptor.nodeAddress()).instance()
 		await expect(
 			instance.callback(() => scope.sdk.plugin(CounterDescriptor.nodeAddress()).config.get()),
-		).resolves.toMatchObject({ status: 'error', error: { code: 'borrowed_generation_conflict' } })
+		).rejects.toMatchObject({ details: { code: 'borrowed_generation_conflict' } })
 		const gate = Promise.withResolvers<void>()
 		const result = instance.after(gate.promise)
 		let disposed = false

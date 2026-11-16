@@ -6,7 +6,7 @@
 | ---------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------- |
 | 发现定义、定位声明/Part/Schema、依赖和文件归属 | `/source` 的 inspectPlugin/listPlugins/inspectFile/inspectProject | Rolldown 静态分析器与查询快照                            |
 | 配置、实例、生命周期、运行节点发现和日志       | `/host` 的 ScriptSdk；同进程通过 createScriptScope 借用 Host      | Host SDK、coordinator 与 Core                            |
-| Vite 当前模块图与 Context                      | ProjectScript / ProjectSdk                                        | Host-vite，在 Host SDK 上增加实例访问                    |
+| 当前 Context 与实例借用                        | `/host` 的同一个 Script / ScriptSdk，`sdk.ctx` 与 plugin.instance | Host scope；Vite 只装载当前项目模块图                    |
 | 外部发现、执行、HMR 和控制材料同步             | `/client` 的 listHosts/runScript/controlHmr/syncPluginControl     | Agent SDK 客户端；复用 Rolldown compiler、Host materials |
 | 查询/取消已提交操作                            | `/client` 的 getScriptResult/cancelScript，传原 receipt           | Agent SDK receipt 路由、原 executor 与 transport owner   |
 

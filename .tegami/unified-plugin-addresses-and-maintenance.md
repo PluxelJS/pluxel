@@ -38,7 +38,7 @@ Script JSON encoding projects original registered addresses to identity, includi
 nested values and Result payloads, without exporting their execution evidence.
 
 Upgrade control materials to format 2 and uploaded factories to
-`pluxel-js-factory/3`; rebuild materials and recompile uploads. Generated modules
+`pluxel-js-factory/4`; rebuild materials and recompile uploads. Generated modules
 use the verified standard Host address factory without loading Plugin code.
 Control publishers declare a compatible Host peer, optional when only their
 control entry requires it. Builds reject missing or nested runtime Host

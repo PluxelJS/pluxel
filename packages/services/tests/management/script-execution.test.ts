@@ -291,7 +291,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			})
 			const node = ScriptCounter.nodeAddress()
 			const change = await artifact(
-				`const select = sdk.plugin; const counter = select(run.input); const {get, patch} = counter.config; const before = await get(); if (before.isErr()) return before; return patch({set:{count: before.value.config.count + 1}}, {expectedManagedRevision:before.value.managedRevision});`,
+				`const select = sdk.plugin; const counter = select(run.input); const {get, patch} = counter.config; const before = await get(); return patch({set:{count: before.config.count + 1}}, {expectedManagedRevision:before.managedRevision});`,
 			)
 			const submitted = { runId: randomUUID(), code: change, input: node }
 			const accepted = await first.control.submit(submitted)
@@ -301,7 +301,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			})
 			expect(await settled(first.control, submitted.runId)).toMatchObject({
 				state: 'succeeded',
-				value: { status: 'ok', value: { config: { count: 3 }, application: 'applied' } },
+				value: { config: { count: 3 }, application: 'applied' },
 			})
 			await expect(first.control.submit({ ...submitted, input: null })).rejects.toMatchObject({
 				code: 'request_conflict',
@@ -331,14 +331,14 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			}
 			await reconnected.control.submit(conflict)
 			expect(await settled(reconnected.control, conflict.runId)).toMatchObject({
-				state: 'succeeded',
-				value: { status: 'error', error: { code: 'revision_conflict' } },
+				state: 'failed',
+				error: { code: 'revision_conflict', details: { code: 'revision_conflict' } },
 			})
 			const partial = {
 				runId: randomUUID(),
 				input: node,
 				code: await artifact(
-					`const saved = await sdk.plugin(run.input).config.patch({set:{count:8}}); if(saved.isErr()) return saved; throw new Error('after persisted change');`,
+					`await sdk.plugin(run.input).config.patch({set:{count:8}}); throw new Error('after persisted change');`,
 				),
 			}
 			await reconnected.control.submit(partial)
@@ -355,7 +355,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			const file = join(directory, 'task.ts')
 			await writeFile(
 				file,
-				`import type { Script } from '@pluxel/agent-sdk/host';\nimport { Result } from '@pluxel/core/better-result';\nexport default (async (sdk) => { const plugins = await sdk.plugins.list(); if (plugins.isErr()) return plugins; return Result.ok({plugins: plugins.value.nodes.map(p => p.displayName)}) }) satisfies Script;\n`,
+				`import type { Script } from '@pluxel/agent-sdk/host';\nimport { Result } from '@pluxel/core/better-result';\nexport default (async (sdk) => { const plugins = await sdk.plugins.list(); return Result.ok({plugins: plugins.nodes.map(p => p.displayName)}) }) satisfies Script;\n`,
 			)
 			const cli = resolve(import.meta.dirname, '../../../cli/dist/cli.mjs')
 			const result = await execute(

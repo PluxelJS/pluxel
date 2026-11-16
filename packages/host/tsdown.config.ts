@@ -4,6 +4,7 @@ export default defineConfig({
 	exports: { devExports: '@pluxel/source' },
 	entry: {
 		'internal/agent-types': './src/agent.ts',
+		'internal/agent/host': './src/agent-host.ts',
 		'internal/agent/runtime': './src/agent-runtime.ts',
 		'internal/agent/socket': './src/agent/socket.ts',
 		'internal/agent/transport': './src/agent/transport.ts',

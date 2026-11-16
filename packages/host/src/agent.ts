@@ -22,7 +22,8 @@ export type {
 	ScriptLifecycleError,
 	ScriptLogSnapshot,
 	ScriptLogError,
-} from './agent/sdk-results'
+	ScriptErrorDetails,
+} from './agent/sdk-outcomes'
 export type {
 	PluginDescriptor,
 	PluginControlNodeAddress,

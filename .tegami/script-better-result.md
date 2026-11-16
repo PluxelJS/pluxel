@@ -7,25 +7,18 @@ packages:
   '@pluxel/cli': patch
 ---
 
-# Compose script controls with one shared Better Result
+# Preserve native business Result values at the script return boundary
 
-All asynchronous Script SDK controls return `Promise<Result<Value, Error>>`.
-Use ordinary `await` and `isErr()` to handle expected failures, and return an
-existing control result directly. Import `Result` from
-`@pluxel/core/better-result` when constructing a new result or choosing optional
-generator composition. Each control operation has one entry; no parallel
-throwing, safe, or compatibility methods are retained. Configuration, policy,
-and log domain results are projected once, with their redundant `ok` fields
-removed while retaining validation details, revisions, persistence uncertainty,
-and adoption reports. Lifecycle failures carry the complete report, including
-effects that already committed. Expected scope, cancellation, target, and
-control-contract failures are typed Err values; unknown implementation defects
-continue to reject.
+Script SDK controls use ordinary `await`, return successful values directly, and
+throw `ScriptError` on expected failures. Configuration, policy, and log results
+are projected once without a redundant success flag; failures preserve revisions,
+persistence uncertainty, validation details and complete reports. Recover only
+where the task needs to handle a failure. Plugin business methods retain their
+own return types and errors, including native Better Result.
 
-`plugin().instance()` delivers the Plugin directly as its Ok value. The Result
-is constructed inside the committed read, protecting Plugins with their own
-`then` business member without another instance envelope. Original business
-methods retain their signatures, receiver behavior, results, and exceptions.
+`plugin().instance()` returns `{ instance }` from the committed read. This protects
+Plugins with a business `then` member and preserves original method signatures,
+receiver behavior, results, and exceptions.
 
 The script return boundary encodes actual shared Ok/Err instances through the
 native Result codec. Plain JSON results remain plain JSON. Domain Err results
@@ -37,13 +30,12 @@ direct or indirect copies of the Better Result runtime are rejected.
 
 # Use one Plugin selector in Vite and uploaded scripts
 
-Vite extends `sdk.plugin()` to accept a current Plugin constructor. Each
-operation checks that implementation in the same committed read or exclusive
-lifecycle session. Cached references fail explicitly after HMR replaces their
-implementation. Remove `dev.address`, `dev.instance`, and object-shaped fork
-targets; use reference `.fork(id)` and retain `dev.ctx` for Context borrowing.
-Constructors preserve instance types; generated descriptors supply accurate
-Schema input/output types. Explicit node addresses retain dynamic configuration.
+Select `sdk.plugin(Provider.nodeAddress())` or `Provider.nodeAddress(id)` for a
+fork. The same SDK checks current source implementation identity in committed
+reads and lifecycle sessions; cached source references fail explicitly after
+HMR replaces their implementation. Source classes retain instance types;
+generated providers also supply precise Schema input/output types. Native
+Context access uses the common `sdk.ctx` property.
 
-Migrate real project scripts, installed consumers, browser validation callers,
-templates, CLI-generated instructions, and public guidance together.
+Real project scripts, installed consumers, browser validation callers, templates,
+CLI-generated instructions, and public guidance use this same contract.

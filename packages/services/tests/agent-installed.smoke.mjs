@@ -316,8 +316,7 @@ async function main() {
 		])
 		assert.equal(await readFile(join(author, 'first.receipt'), 'utf8'), first.receipt + '\n')
 		assert.equal(first.run.state, 'succeeded')
-		assert.equal(first.run.value.status, 'ok')
-		const firstValue = first.run.value.value
+		const firstValue = first.run.value
 		assert.equal(firstValue.moduleRuns, 1)
 		assert.equal(firstValue.actual.config.count, 4)
 		assert.deepEqual(firstValue.business, { calls: 3, count: 4 })
@@ -328,10 +327,10 @@ async function main() {
 		assert.ok(firstValue.logs.lines.length > 0)
 		assert.equal(firstValue.lifecycle.lifecycleState, 'running')
 		const second = await cli(['run', 'task.ts', '--endpoint', ready.endpoint])
-		assert.equal(second.run.value.status, 'ok')
-		assert.equal(second.run.value.value.moduleRuns, 1)
-		assert.equal(second.run.value.value.actual.config.count, 8)
-		assert.deepEqual(second.run.value.value.business, { calls: 3, count: 8 })
+		assert.equal(second.run.state, 'succeeded')
+		assert.equal(second.run.value.moduleRuns, 1)
+		assert.equal(second.run.value.actual.config.count, 8)
+		assert.deepEqual(second.run.value.business, { calls: 3, count: 8 })
 		// A new authenticated connection queries the original receipt; no source re-delivery occurs.
 		const queried = await cli(['result', '--receipt-file', 'first.receipt'])
 		assert.equal(queried.run.runId, first.run.runId)
@@ -346,8 +345,8 @@ async function main() {
 		)
 		await writeFile(join(author, 'query.ts'), query(counter[0].definition))
 		const afterFailure = await cli(['run', 'query.ts', '--endpoint', ready.endpoint])
-		assert.equal(afterFailure.run.value.status, 'ok')
-		assert.equal(afterFailure.run.value.value.config.count, 11)
+		assert.equal(afterFailure.run.state, 'succeeded')
+		assert.equal(afterFailure.run.value.config.count, 11)
 		await writeFile(join(author, 'wait.ts'), wait)
 		const waiting = await cli([
 			'run',
@@ -389,7 +388,7 @@ assert.equal(materials.definitions.length, ${synchronized.definitions.length})
 const completed = await runScript({target,file:'query.ts',onPrepared:receipt=>writeFile('sdk-receipt',receipt,{flag:'wx',mode:0o600})})
 assert.equal(completed.receipt,await readFile('sdk-receipt','utf8'))
 assert.equal(completed.run.state,'succeeded')
-assert.equal(completed.run.value.value.config.count,11)
+assert.equal(completed.run.value.config.count,11)
 assert.equal((await getScriptResult(completed.receipt,{credentials})).run.runId,completed.run.runId)
 const waiting = await runScript({target,file:'wait.ts',detach:true,timeoutMs:120000})
 let cancelled = await cancelScript(waiting.receipt,{credentials})
@@ -495,47 +494,50 @@ export default defineHostApplication((startup):HostApplication=>({
  launch:async({host})=>{const listener=await listenElysia(host,{hostname:startup.env.AGENT_SMOKE_HOST,port:0,tls:{key:await readFile('tls.key','utf8'),cert:await readFile('tls.crt','utf8')}});process.stdout.write(JSON.stringify({stage:'ready',endpoint:'https://'+listener.address.host+':'+listener.address.port})+'\\n')},
 }))
 `
-const task = `import type {Script} from '@pluxel/agent-sdk/host'
-import {Result} from '@pluxel/core/better-result'
+const task = `import {ScriptError, type Script} from '@pluxel/agent-sdk/host'
 let moduleRuns=0
 export default (async sdk=>{
  const select=sdk.plugin
  const counter=select(Counter.nodeAddress())
  const {get,patch}=counter.config
  const {stop,start,restart,status,instance:borrow}=counter
- const before=await get();if(before.isErr())return before
- const count=[before.value.config.count].map(value=>value*2)[0]
- const changed=await patch({set:{count}},{expectedManagedRevision:before.value.managedRevision});if(changed.isErr())return changed
- const conflict=await patch({set:{count:999}},{expectedManagedRevision:before.value.managedRevision})
- if(conflict.isOk())throw new Error('Expected a revision conflict')
- const cursor=await sdk.logs.mark();if(cursor.isErr())return cursor
- const stopped=await stop();if(stopped.isErr())return stopped
- const started=await start();if(started.isErr())return started
- const restarted=await restart();if(restarted.isErr())return restarted
- const logs=await sdk.logs.read(cursor.value,{filter:{plugin:Counter.nodeAddress()},limit:20});if(logs.isErr())return logs
- const instance=await borrow();if(instance.isErr())return instance
- const business=await instance.value.increment(3)
- const actual=await get();if(actual.isErr())return actual
- const lifecycle=await status();if(lifecycle.isErr())return lifecycle
- return Result.ok({moduleRuns:++moduleRuns,changed:changed.value,conflict:conflict.error,logs:logs.value,business,calls:instance.value.calls,actual:actual.value,lifecycle:lifecycle.value})
+ const before=await get()
+ const count=[before.config.count].map(value=>value*2)[0]
+ const changed=await patch({set:{count}},{expectedManagedRevision:before.managedRevision})
+ let conflict: ScriptError['details']
+ try {
+  await patch({set:{count:999}},{expectedManagedRevision:before.managedRevision})
+  throw new Error('Expected a revision conflict')
+ } catch (error) {
+  if (!(error instanceof ScriptError) || error.details.code !== 'revision_conflict') throw error
+  conflict=error.details
+ }
+ const cursor=await sdk.logs.mark()
+ await stop()
+ await start()
+ await restart()
+ const logs=await sdk.logs.read(cursor,{filter:{plugin:Counter.nodeAddress()},limit:20})
+ const {instance}=await borrow()
+ const business=await instance.increment(3)
+ const actual=await get()
+ const lifecycle=await status()
+ return {moduleRuns:++moduleRuns,changed,conflict,logs,business,calls:instance.calls,actual,lifecycle}
 }) satisfies Script
 `
 const failure = (definition) => `import type {Script} from '@pluxel/agent-sdk/host'
 export default (async sdk=>{
- const listed=await sdk.plugins.list({definition:${JSON.stringify(definition)}});if(listed.isErr())return listed;const node=listed.value.nodes.find(node=>node.address.variant==='default')!.address
- const saved=await sdk.plugin(node).config.patch({set:{count:11}});if(saved.isErr())return saved
+ const listed=await sdk.plugins.list({definition:${JSON.stringify(definition)}});const node=listed.nodes.find(node=>node.address.variant==='default')!.address
+ await sdk.plugin(node).config.patch({set:{count:11}})
  throw new Error('author failed after committing')
 }) satisfies Script
 `
 const query = (definition) => `import type {Script} from '@pluxel/agent-sdk/host'
-import {Result} from '@pluxel/core/better-result'
 export default(async sdk=>{
- const listed=await sdk.plugins.list({definition:${JSON.stringify(definition)}});if(listed.isErr())return listed
- const node=listed.value.nodes.find(node=>node.address.variant==='default');if(!node)throw new Error('Missing discovered Counter')
+ const listed=await sdk.plugins.list({definition:${JSON.stringify(definition)}})
+ const node=listed.nodes.find(node=>node.address.variant==='default');if(!node)throw new Error('Missing discovered Counter')
  const selected=sdk.plugin(node.address)
- const config=await selected.config.get();if(config.isErr())return config
- return Result.ok(config.value)
+ return selected.config.get()
 }) satisfies Script`
-const wait = `import type {Script} from '@pluxel/agent-sdk/host';export default(async sdk=>{const marked=await sdk.logs.mark();if(marked.isErr())return marked;return sdk.logs.wait(marked.value,{timeoutMs:120000,filter:{category:'not-emitted'}})}) satisfies Script`
+const wait = `import type {Script} from '@pluxel/agent-sdk/host';export default(async sdk=>{const marked=await sdk.logs.mark();return sdk.logs.wait(marked,{timeoutMs:120000,filter:{category:'not-emitted'}})}) satisfies Script`
 
 await main()

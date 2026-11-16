@@ -1,9 +1,9 @@
 import { BasePlugin, Plugin, parsePluginNodeAddress, type PluginNodeAddress } from '@pluxel/core'
-import { createHost } from '@pluxel/host'
-import { createScriptScope } from '@pluxel/host/internal/agent/runtime'
+import { createHost } from '../src/index'
+import { createScriptScope } from '../src/agent-runtime'
+import { Logging } from '@pluxel/core/logging'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { expect, it } from 'vitest'
-import { createProjectSdk } from '../src/project-sdk'
 
 let generation = 0
 @Plugin({ forkable: true })
@@ -12,55 +12,50 @@ class Counter extends BasePlugin {
 	count = 0
 }
 
-it('borrows real instances and root without Services and closes cached extension methods with the run', async () => {
+it('borrows the same root and closes its admission with the shared script scope', async () => {
 	await using host = await createHost({ plugins: [Counter] })
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
-	const sdk = createProjectSdk(host.ctx, scope)
+	const sdk = scope.sdk
 	const select = sdk.plugin
 	const counter = select(Counter.nodeAddress())
 	expect(counter.address).toBe(Counter.nodeAddress())
 	const erasedAddress: PluginNodeAddress = Counter.nodeAddress()
-	await expect(select(erasedAddress).config.get()).resolves.toMatchObject({
-		status: 'error',
-		error: { code: 'config_not_found' },
+	await expect(select(erasedAddress).config.get()).rejects.toMatchObject({
+		details: { code: 'config_not_found' },
 	})
-	expect(Object.keys(sdk.dev)).toEqual(['ctx'])
+	expect(() => sdk.ctx.require(Logging)).toThrow('does not install core.logging')
 	const { start, status, instance } = counter
-	const started = await start()
-	started.unwrap()
+	await start()
 	const borrowed = await instance()
-	const first = borrowed.unwrap()
+	const first = borrowed.instance
 	const firstGeneration = first.generation
 	first.count = 4
-	expect(sdk.dev.ctx).toBe(host.ctx)
+	expect(sdk.ctx).toBe(host.ctx)
 	await scope.dispose()
-	await expect(status()).resolves.toMatchObject({
-		status: 'error',
-		error: { code: 'scope_closed' },
+	await expect(status()).rejects.toMatchObject({
+		details: { code: 'scope_closed' },
 	})
-	await expect(instance()).resolves.toMatchObject({
-		status: 'error',
-		error: { code: 'scope_closed' },
+	await expect(instance()).rejects.toMatchObject({
+		details: { code: 'scope_closed' },
 	})
 	expect(() => first.count).toThrow(expect.objectContaining({ code: 'scope_closed' }))
 	expect(() => select(Counter.nodeAddress())).toThrow(
 		expect.objectContaining({ code: 'scope_closed' }),
 	)
-	expect(() => sdk.dev.ctx).toThrow(expect.objectContaining({ code: 'scope_closed' }))
+	expect(() => sdk.ctx).toThrow(expect.objectContaining({ code: 'scope_closed' }))
 	const next = createScriptScope({ ctx: host.ctx })
 	try {
-		const nextSdk = createProjectSdk(host.ctx, next)
+		const nextSdk = next.sdk
 		const nextCounter = nextSdk.plugin(counter.address)
 		const nextBorrowed = await nextCounter.instance()
-		const current = nextBorrowed.unwrap()
+		const current = nextBorrowed.instance
 		expect(current.count).toBe(4)
 		expect(current.generation).toBe(firstGeneration)
 		const { restart } = nextCounter
-		const restarted = await restart()
-		restarted.unwrap()
+		await restart()
 		const replaced = await nextCounter.instance()
-		expect(replaced.unwrap().generation).not.toBe(firstGeneration)
+		expect(replaced.instance.generation).not.toBe(firstGeneration)
 	} finally {
 		await next.dispose()
 	}
@@ -71,18 +66,17 @@ it('resolves existing typed forks', async () => {
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
 	try {
-		const sdk = createProjectSdk(host.ctx, scope)
+		const sdk = scope.sdk
 		expect(await host.forks.ensure(Counter.nodeAddress('east'))).toMatchObject({ ok: true })
 		const counter = sdk.plugin(Counter.nodeAddress('east'))
 		expect(parsePluginNodeAddress(counter.address)).toEqual(
 			parsePluginNodeAddress(Counter.nodeAddress('east')),
 		)
-		const started = await counter.start()
-		started.unwrap()
+		await counter.start()
 		const borrowed = await counter.instance()
-		expect(borrowed.unwrap()).toBeInstanceOf(Counter)
+		expect(borrowed.instance).toBeInstanceOf(Counter)
 		const status = await counter.status()
-		expect(status.unwrap()).toMatchObject({
+		expect(status).toMatchObject({
 			lifecycleState: 'running',
 		})
 	} finally {
@@ -95,7 +89,7 @@ class Replaceable extends BasePlugin {
 	readonly config = this.configs.use({
 		'~standard': {
 			version: 1 as const,
-			vendor: 'project-sdk-test',
+			vendor: 'agent-source-test',
 			validate: () => ({ value: { count: 2 } }),
 		},
 	})
@@ -105,15 +99,14 @@ it('rejects an imported constructor superseded by the actual catalog', async () 
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
 	try {
-		const sdk = createProjectSdk(host.ctx, scope)
+		const sdk = scope.sdk
 		const selected = sdk.plugin(Replaceable.nodeAddress())
 		const { start, stop, status, restart, instance } = selected
 		const reselected = sdk.plugin(selected.address)
 		const { get, validate, patch, reset } = selected.config
 		const initialConfig = await get()
-		expect(initialConfig.unwrap()).toMatchObject({ config: { count: 2 } })
-		const started = await start()
-		started.unwrap()
+		expect(initialConfig).toMatchObject({ config: { count: 2 } })
+		await start()
 		await host.updateCatalog([lowerTestReplacement(Replaceable, class extends Replaceable {})])
 		for (const operation of [
 			status,
@@ -129,21 +122,18 @@ it('rejects an imported constructor superseded by the actual catalog', async () 
 			reselected.config.get,
 			() => reselected.config.patch({ set: { count: 3 } }),
 		])
-			await expect(operation()).resolves.toMatchObject({
-				status: 'error',
-				error: { code: 'stale_target' },
+			await expect(operation()).rejects.toMatchObject({
+				details: { code: 'stale_target' },
 			})
-		await expect(sdk.plugin(Replaceable.nodeAddress()).instance()).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'stale_target' },
+		await expect(sdk.plugin(Replaceable.nodeAddress()).instance()).rejects.toMatchObject({
+			details: { code: 'stale_target' },
 		})
 		const oldClassAddress: PluginNodeAddress = Replaceable.nodeAddress()
-		await expect(sdk.plugin(oldClassAddress).config.get()).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'stale_target' },
+		await expect(sdk.plugin(oldClassAddress).config.get()).rejects.toMatchObject({
+			details: { code: 'stale_target' },
 		})
 		const current = await sdk.plugin(parsePluginNodeAddress(Replaceable.nodeAddress())).status()
-		expect(current.unwrap()).toMatchObject({
+		expect(current).toMatchObject({
 			lifecycleState: 'running',
 		})
 	} finally {

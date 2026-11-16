@@ -1,6 +1,6 @@
 import type { RootContext } from '@pluxel/core'
 import { createScriptScope, type ScriptScope } from './sdk'
-import type { Script, ScriptSdk } from './sdk-types'
+import type { Script } from './sdk-types'
 import type { RunExecution } from './runtime'
 import { snapshotScriptResult } from './result-codec'
 
@@ -11,7 +11,7 @@ export async function executeHostScript(
 		id: string
 		input?: unknown
 		script: Script
-		extendSdk?(scope: ScriptScope): ScriptSdk
+		onScope?(scope: ScriptScope): void
 	}>,
 	run: RunExecution,
 ): Promise<unknown> {
@@ -23,11 +23,12 @@ export async function executeHostScript(
 	let failure: unknown
 	let failed = false
 	try {
+		options.onScope?.(scope)
 		run.revision('before', await scope.snapshot())
 		run.signal.throwIfAborted()
 		run.phase('execute')
 		result = await options.script(
-			options.extendSdk?.(scope) ?? scope.sdk,
+			scope.sdk,
 			Object.freeze({ id: options.id, input: options.input, signal: run.signal }),
 		)
 	} catch (error) {
