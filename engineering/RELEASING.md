@@ -20,9 +20,9 @@ Pluxel 使用 Tegami 管理公开包版本、Version Packages PR、npm 发布锁
 - Plugin package 对 Core、服务和 required provider 一律使用 peer dependency，避免宿主图出现重复 Plugin identity；
 - workspace 普通依赖变化只为公开 dependent 产生 patch bump，private dependent 不进入发布计划。
 
-## 记录变化
+## 发布说明格式
 
-用户可见的公开包变化通过 `vp run tegami` 创建 `.tegami/*.md`，也可以按以下格式手工编写：
+Tegami 从 `.tegami/*.md` 读取公开包的 bump 和 Markdown 说明，一份文件可以覆盖多个包：
 
 ```md
 ---
@@ -36,8 +36,7 @@ packages:
 Explain the observable behavior and any migration requirement.
 ```
 
-内部重构、测试和文档变更不需要空 changelog。不要手工修改 package versions、内部依赖版本或
-`.tegami/publish-lock.yaml`。
+package versions、内部依赖版本和 `.tegami/publish-lock.yaml` 由 Tegami 生成。
 
 `.tegami/` 只保存开源发布线中尚未 version 的变化。开源前的开发记录保留在 Git 历史和当前设计文档中，
 不复制为 Tegami changelog，也不参与首次公开发行的版本计算。1.0.0 只保留一条首发说明和覆盖全部公开包的发布锁，不携带开发期日志；成功发布后由 Tegami 清理 pending lock。submodule 和 vendor workspace 拥有独立的
@@ -45,7 +44,7 @@ Explain the observable behavior and any migration requirement.
 
 ## 自动流程
 
-1. Pull request CI 的 `governance:check` 解析全部 pending changelog，并验证计划中只有允许发布的公开包。
+1. Pull request CI 的 `governance:check` 校验已有 pending changelog，并验证计划中只有允许发布的公开包。
 2. 变更合并到 `main` 后，CI 完成 `workspace:ci` 的检查，范围见[GitHub Actions](../docs/development/workspace-toolchain.md#github-actions)。
 3. `.github/workflows/release.yml` 由成功 CI 的 `workflow_run` 触发并执行 `vp run tegami ci`。
 4. 有 pending changelog 时，Tegami 更新 versions、package changelogs 和 lockfile，并创建或更新
@@ -72,7 +71,7 @@ gh workflow run release.yml --ref main
 
 手动触发仍要求当前 `main` 的同一提交已有成功的 CI **push** run；没有通过时会明确报错，不会绕过检查。
 它执行同一个 `vp run tegami ci`：已有 publish lock 时发布，有 pending changelog 时更新版本 PR，没有待处理内容时不发布。
-开发提交和 changelog 可以持续积累在版本 PR 中，由维护者合并版本 PR 决定发布时机。
+维护者合并版本 PR 决定发布时机。
 
 自动触发的 Release 显示 skipped 时，先查看对应 CI：失败、取消或非 push run 都不会发布；仓库是否公开不影响这一检查。
 修复 CI 后，新的成功 main push run 会自动触发 Release。若只是 npm 信任或发布阶段失败，可在初始化完成后手动重试当前 main。

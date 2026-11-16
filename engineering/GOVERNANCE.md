@@ -223,4 +223,4 @@ module、export key 或首次启用 author options。
 
 实现、公开 exports、已知调用方与测试应表达同一契约。公开行为更新 `docs/`，内部边界更新所属工程文档；通用方法留在 `.agents/rules/`。package README 只提供入口和最短示例，不另定义插件模型或测试规则。当前文档不维护旧 API 教程，历史由 Git 保存；已落地 proposal 删除对应部分。
 
-合并前运行 `vp run verify` 并检查旧符号与链接。公开包的用户可见变化添加 Tegami changelog，不手改版本与 publish lock；版本 PR 和发布流程见 [RELEASING](RELEASING.md)。
+合并前运行 `vp run verify` 并检查旧符号与链接。版本 PR 和发布流程见 [RELEASING](RELEASING.md)。
