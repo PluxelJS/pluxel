@@ -1,4 +1,4 @@
-import { EffectsService, pluginNodeAddressEqual, type PluginConstructor } from '@pluxel/core'
+import { pluginNodeAddressEqual, type PluginConstructor } from '@pluxel/core'
 import {
 	recordLoadedApplicationPlugins,
 	readLoadedPluginModule,
@@ -366,9 +366,7 @@ export async function runHostApplication(
 			sources: resolved.sources ?? [],
 			updates: 'next-start',
 		})
-		host.ctx
-			.service(EffectsService)
-			.defer(() => loader.close(), { tag: 'NativeSourceLoader', phase: 'shutdown' })
+		host.ctx.effects.defer(() => loader.close(), { tag: 'NativeSourceLoader', phase: 'shutdown' })
 	} catch (error) {
 		try {
 			const [cleanup] = await Promise.allSettled([host?.close()])

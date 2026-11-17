@@ -1,4 +1,4 @@
-import { LoggerService, pluginDefinitionIndexKey, type PluginConstructor } from '@pluxel/core'
+import { pluginDefinitionIndexKey, type PluginConstructor } from '@pluxel/core'
 import { hostViteProfile, type HostViteProfile } from './profile'
 import { installHostViteShutdown } from './internal/host-session'
 import { createHostDependencyWatch } from './dependency-watch'
@@ -142,7 +142,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 	const epochs = new WeakMap<PluginHost, string>()
 	const attachments = new WeakMap<PluginHost, Awaited<ReturnType<typeof attachHostVitePlugins>>>()
 	const diagnostics = createHostDiagnostics(
-		() => (closing ? undefined : active?.ctx.service(LoggerService)),
+		() => (closing ? undefined : active?.ctx.logger),
 		createViteDiagnostics(() => server.config.logger),
 	)
 	const recovery = new ViteApplicationRecovery(diagnostics)

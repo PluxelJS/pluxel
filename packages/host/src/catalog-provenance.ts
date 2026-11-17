@@ -1,4 +1,4 @@
-import { EffectsService, type PluginConstructor, type RootContext } from '@pluxel/core'
+import { type PluginConstructor, type RootContext } from '@pluxel/core'
 import type { PluginCatalogProvenance } from './catalog'
 import { clonePluginExecutionSnapshot } from './execution'
 
@@ -24,7 +24,7 @@ export function setHostCatalogProvenance(
 		),
 	)
 	if (!bindings.has(ctx))
-		ctx.service(EffectsService).defer(
+		ctx.effects.defer(
 			() => {
 				bindings.delete(ctx)
 			},

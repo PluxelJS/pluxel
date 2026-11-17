@@ -23,13 +23,13 @@ plugin debug   ["pluxel", "debug", rootId, "plugin", ...v1NodeRouteSegments, ...
 
 ## ContextLogger
 
-`LoggerService` 按 Plugin Context 隔离，首次读 ctx.service(LoggerService) 才创建 view，不共享可变 current Context。六个 level method 在 prototype，category 和 LogTape view 各创建一次；getDebugChannel 不维护 topic cache，长期复用由 caller 保存返回值。
+`LoggerService` 是 `ctx.logger` 的内部实现，按 Plugin Context 隔离，首次读取才创建 view，不共享可变 current Context。六个 level method 在 prototype，category 和 LogTape view 各创建一次；getDebugChannel 不维护 topic cache，长期复用由 caller 保存返回值。
 
 root WeakMap 保持稳定 identity，配置前创建的 logger 在安装后继续使用它。author facade 不捕获 caller stack；当前 manager guard 拒绝 foreign/retired root。实现位于 `packages/core/src/logger/LoggerService.ts`。
 
 ## RuntimeLogging lifecycle
 
-`runtime.logtape` 接收原生 Config、同步 root factory 或 `{ input, options }`。可选 `logtape(nativeConfig, options)` helper 捕获相同声明，无品牌准入。省略配置不安装 manager，ctx.service(LoggerService) 仍可调用；silent manager 显式使用 `logtape({ sinks: {}, loggers: [] })`。
+`runtime.logtape` 接收原生 Config、同步 root factory 或 `{ input, options }`。可选 `logtape(nativeConfig, options)` helper 捕获相同声明，无品牌准入。省略配置不安装 manager，ctx.logger 仍可调用；silent manager 显式使用 `logtape({ sinks: {}, loggers: [] })`。
 
 ```text
 root/logger identity → Core prepare 安装 LogTape → 恢复 policy
@@ -98,17 +98,17 @@ guard 不做 caller capture、properties 求值、snapshot、序列化或 IO；�
 
 ## Package boundaries
 
-| 入口                | 所有内容                                                          |
-| ------------------- | ----------------------------------------------------------------- |
-| `@pluxel/core`      | ContextLogger、LoggerService、category identity、纯 Plugin labels |
-| `/config`           | logtape/zenfs 代码配置 helper                                     |
-| `/logging`          | Logging 服务声明、manager、policy、stores/query                   |
-| `/logging/protocol` | browser-safe DTO/filter                                           |
-| `/logging/internal` | 安装、active owner binding、framework helper                      |
-| `/logging/pretty`   | 可选 console 展示                                                 |
-| Host/Services       | 应用 lifecycle、Management 投影                                   |
+| 入口                | 所有内容                                           |
+| ------------------- | -------------------------------------------------- |
+| `@pluxel/core`      | ContextLogger、category identity、纯 Plugin labels |
+| `/config`           | logtape/zenfs 代码配置 helper                      |
+| `/logging`          | 日志运行时类型、policy、stores/query               |
+| `/logging/protocol` | browser-safe DTO/filter                            |
+| `/logging/internal` | 安装、active owner binding、framework helper       |
+| `/logging/pretty`   | 可选 console 展示                                  |
+| Host/Services       | 应用 lifecycle、Management 投影                    |
 
-配置 helper 不依赖 Host/Services；Management 读取既有 manager。protocol 不加载后端，pretty 为独立叶入口，file 输出直接使用 @logtape/file。公开 Logging 服务由根 Context 读取，manager 创建和 binding 留在 internal。
+配置 helper 不依赖 Host/Services；Management 读取既有 manager。protocol 不加载后端，pretty 为独立叶入口，file 输出直接使用 @logtape/file。已配置的日志运行时通过 `root.logging` 读取，manager 创建和 binding 留在 internal。
 
 关键代码为 Core `logger/{LoggerService,categories}.ts`、`logging/{logging,policy,sink,store}.ts`；管理投影为 Services `management/services/management/RuntimeManagementTarget.ts`。
 
@@ -120,6 +120,6 @@ guard 不做 caller capture、properties 求值、snapshot、序列化或 IO；�
 
 ## Trusted development scripts
 
-Script SDK 的 sdk.logs 委托本领域 markLogs/readLogs/waitForLogs；也可经 `sdk.ctx.service(Logging)` 访问 manager。开启 scripts 不增加 manager/store。
+Script SDK 的 sdk.logs 委托本领域 markLogs/readLogs/waitForLogs；配置存在时也可经 `sdk.ctx.logging` 访问 manager。开启 scripts 不增加 manager/store。
 
 JSON cursor 固定 rootId、streamId、bootId、epoch，保留 retention/gap，Host replacement 不延续旧 cursor。wait 要求 caller signal，完成/取消即撤销订阅，不拥有生产者。执行生命周期见 [Dev Console](DEV_CONSOLE.md)。

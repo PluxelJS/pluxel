@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, EffectsService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import type { ExampleResponse, ThemeVersion } from './protocol'
 
 // The docs Vite transform compiles the color query as a second version of this same entry.
@@ -13,7 +13,7 @@ export class ThemePlugin extends BasePlugin {
 			type: 'lifecycle',
 			message: `ThemePlugin ${this.version} 已启动。`,
 		} satisfies ExampleResponse)
-		this.ctx.service(EffectsService).defer(() => {
+		this.ctx.effects.defer(() => {
 			postMessage({
 				type: 'lifecycle',
 				message: `ThemePlugin ${this.version} 已停止。`,

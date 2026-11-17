@@ -1,26 +1,39 @@
 import { createCoreContextHost, installOwnerViewService } from '../src/host'
-import { LoggerService, EffectsService, type Context, type RootContext } from '../src'
+import { type Context, type RootContext } from '../src'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { createCallerContextView, createGenerationContext } from '../src/context/context-factory'
 import { createCoreRootContext } from '../src/context/core-plan'
+import {
+	getInstalledServiceDefinitions,
+	requireConfigService,
+	requirePluginService,
+} from '../src/internal'
+import { ConfigService } from '../src/services/config/ConfigService'
 abstract class ExampleService {}
 interface ExampleService {
 	readonly owner: Context
 }
 
 describe('Core Context integration', () => {
-	it('installs lazy Core services on the immutable root', () => {
+	it('provides fixed Core facilities outside the extension service registry', () => {
 		const root = createCoreRootContext({ name: 'core-integration' })
 		const scope = createGenerationContext(root, 'scope')
 		expect(root.name).toBe('core-integration')
-		expect(scope.service(LoggerService)).toBe(scope.service(LoggerService))
-		expect(scope.service(EffectsService)).toBe(scope.service(EffectsService))
+		expect(scope.logger).toBe(scope.logger)
+		expect(scope.effects).toBe(scope.effects)
+		expect(scope.logger).not.toBe(root.logger)
+		expect(scope.effects).not.toBe(root.effects)
 		expect(Object.isExtensible(root)).toBe(false)
-		expect('logger' in scope).toBe(false)
+		expect('logger' in scope).toBe(true)
+		expect(scope.events).toBe(scope.events)
+		expect(scope.events.ctx).toBe(scope)
+		expect(scope.events).not.toBe(root.events)
+		expect(getInstalledServiceDefinitions(root)).toEqual([])
+		expect(getInstalledServiceDefinitions(scope)).toEqual([])
 		expect('require' in scope).toBe(false)
 	})
 
-	it('shares generation services while preserving dependency caller ownership', () => {
+	it('shares generation facilities while preserving dependency caller ownership', () => {
 		const root = createCoreRootContext({ name: 'caller-core' })
 		const provider = createGenerationContext(root, 'provider')
 		const firstCaller = createGenerationContext(root, 'first-caller')
@@ -30,8 +43,60 @@ describe('Core Context integration', () => {
 		expect(firstView.caller).toBe(firstCaller)
 		expect(secondView.caller).toBe(secondCaller)
 		expect(firstView).not.toBe(secondView)
-		expect(firstView.service(EffectsService)).toBe(provider.service(EffectsService))
-		expect(secondView.service(EffectsService)).toBe(provider.service(EffectsService))
+		expect(firstView.effects).toBe(provider.effects)
+		expect(secondView.effects).toBe(provider.effects)
+		expect(firstView.logger).toBe(provider.logger)
+		expect(secondView.logger).toBe(provider.logger)
+		expect(firstView.events.ctx).toBe(firstView)
+		expect(secondView.events.ctx).toBe(secondView)
+		expect(firstView.events).not.toBe(secondView.events)
+	})
+
+	it('captures lazy factories before caller mutation and isolates their instances per root', async () => {
+		let configCreations = 0
+		let lifecycleCreations = 0
+		const config = {
+			createConfigService(root: RootContext) {
+				configCreations++
+				return new ConfigService(root)
+			},
+			createLifecycleHooks() {
+				lifecycleCreations++
+				return {}
+			},
+		}
+		const host = createCoreContextHost(config)
+		config.createConfigService = () => {
+			throw new Error('mutated configuration factory')
+		}
+		config.createLifecycleHooks = () => {
+			throw new Error('mutated lifecycle factory')
+		}
+		const first = host.createRoot('first')
+		const second = host.createRoot('second')
+		try {
+			expect(configCreations).toBe(0)
+			expect(lifecycleCreations).toBe(0)
+			expect(requireConfigService(first)).toBe(requireConfigService(first))
+			expect(requirePluginService(first)).toBe(requirePluginService(first))
+			expect(configCreations).toBe(1)
+			expect(lifecycleCreations).toBe(1)
+			expect(requireConfigService(second)).not.toBe(requireConfigService(first))
+			expect(requirePluginService(second)).not.toBe(requirePluginService(first))
+			expect(configCreations).toBe(2)
+			expect(lifecycleCreations).toBe(2)
+		} finally {
+			await Promise.all([first.effects.dispose(), second.effects.dispose()])
+		}
+	})
+
+	it('rejects an invalid lifecycle factory result instead of adopting empty hooks', async () => {
+		const root = createCoreContextHost({ createLifecycleHooks: () => null as never }).createRoot()
+		try {
+			expect(() => requirePluginService(root)).toThrow(TypeError)
+		} finally {
+			await root.effects.dispose()
+		}
 	})
 
 	it('binds owner views to their Context and rejects duplicate service installations', () => {
@@ -48,6 +113,7 @@ describe('Core Context integration', () => {
 		const part = host.createChild(provider, 'part')
 		const caller = host.createScope(root, 'caller')
 		const view = createCallerContextView(provider, caller)
+		expect(getInstalledServiceDefinitions(root)).toEqual([ExampleService])
 		expect(provider.service(ExampleService).owner).toBe(provider)
 		expect(part.service(ExampleService).owner).toBe(part)
 		expect(view.service(ExampleService).owner).toBe(view)

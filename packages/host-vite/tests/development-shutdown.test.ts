@@ -15,11 +15,11 @@ it('lets a development connection owner observe Host drain before releasing borr
 		)
 		await writeFile(
 			resolve(root, 'app.mjs'),
-			`import {EffectsService} from '@pluxel/core';
+			`;
 export default startup => ({
  plugins: [],
  prepare({host}) {
-  host.ctx.service(EffectsService).defer(() => { startup.bindings.write('HOST_DRAINED'); throw new Error('OWNED_CLOSE_FAILED') })
+  host.ctx.effects.defer(() => { startup.bindings.write('HOST_DRAINED'); throw new Error('OWNED_CLOSE_FAILED') })
  }
 })`,
 		)

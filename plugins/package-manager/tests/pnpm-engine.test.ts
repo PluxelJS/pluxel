@@ -158,13 +158,12 @@ export { Dynamic }
 			script,
 			`
 import { runHostApplication } from ${JSON.stringify(new URL('dist/index.mjs', hostManifest).href)}
-import { LoggerService } from ${JSON.stringify(new URL('dist/index.mjs', coreManifest).href)}
 import { requirePluginService } from ${JSON.stringify(new URL('dist/internal.mjs', coreManifest).href)}
 const addresses = ${JSON.stringify(names.map(address))}
 const host = await runHostApplication('app.mjs', { startup: { root: ${JSON.stringify(root)}, mode: 'production', env: {}, bindings: {} } })
 const service = requirePluginService(host.ctx)
 const errors = []
-host.ctx.service(LoggerService).error = (message, properties) => errors.push([message, String(properties?.error)])
+host.ctx.logger.error = (message, properties) => errors.push([message, String(properties?.error)])
 const report = () => process.send({ running: addresses.map(address => service.isRunning(address)), errors })
 process.on('message', async message => { if (message === 'query') report(); else { await host.close(); process.disconnect() } })
 report()

@@ -56,7 +56,13 @@ return {default: async (sdk, run) => {
   const count = before.config.count * 2;
   const changed = await selected.config.patch({set: {count}}, {expectedManagedRevision: before.managedRevision});
   const actual = await selected.config.get();
-  return {runs: ++runs, changed, actual};
+  const context = await selected.context();
+  sdk.ctx.logger.info('Node script uses Core built-ins');
+  const fs = await context.fs();
+  await fs.writeFile('node-script.txt', String(count));
+  const output = {runs: ++runs, changed, actual, root: context.root === sdk.ctx, file: await fs.readFile('node-script.txt', 'utf8'), effectsReleased: false};
+  sdk.ctx.effects.defer(() => { output.effectsReleased = true; });
+  return output;
 }};`)
 	for (const [id, expected] of [
 		['first', 4],
@@ -72,6 +78,9 @@ return {default: async (sdk, run) => {
 			hostEpoch: owner.hostEpoch,
 			value: {
 				runs: 1,
+				root: true,
+				file: String(expected),
+				effectsReleased: true,
 				changed: { application: 'applied' },
 				actual: { config: { count: expected } },
 			},

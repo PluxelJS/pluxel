@@ -2,7 +2,7 @@
 // - 你需要“抽象能力 token + 多个 provider 实现”
 // - 你不想让 consumer 依赖某个具体插件类
 
-import { BasePlugin, formatPluginNodeReference, Plugin, LoggerService } from '@pluxel/core'
+import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/core'
 
 export abstract class DemoClock extends BasePlugin {
 	abstract now(): number
@@ -22,7 +22,7 @@ export class DemoClockSystem extends DemoClock {
 	}
 
 	private logReady() {
-		this.ctx.service(LoggerService).info('ready', {
+		this.ctx.logger.info('ready', {
 			address: formatPluginNodeReference(this.ctx.pluginInfo.nodeAddress),
 		})
 	}
@@ -42,7 +42,7 @@ export class DemoClockFixed extends DemoClock {
 	}
 
 	private logReady() {
-		this.ctx.service(LoggerService).info('ready', {
+		this.ctx.logger.info('ready', {
 			address: formatPluginNodeReference(this.ctx.pluginInfo.nodeAddress),
 			fixed: this.format(this.fixed),
 		})
@@ -56,7 +56,7 @@ export class DemoClockConsumer extends BasePlugin {
 	}
 
 	override init(): void {
-		this.ctx.service(LoggerService).info('injected base provider', {
+		this.ctx.logger.info('injected base provider', {
 			consumer: formatPluginNodeReference(this.ctx.pluginInfo.nodeAddress),
 			provider: formatPluginNodeReference(this.clock.ctx.pluginInfo.nodeAddress),
 			now: this.clock.format(),

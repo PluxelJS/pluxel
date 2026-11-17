@@ -1,4 +1,4 @@
-import { EffectsService, BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	createHost,
@@ -29,7 +29,7 @@ describe('production application startup', () => {
 				plugins: [Healthy, Failing],
 				policy: { autoStart: [Healthy.nodeAddress(), Failing.nodeAddress()] },
 				prepare({ host }) {
-					host.ctx.service(EffectsService).defer(close)
+					host.ctx.effects.defer(close)
 				},
 				launch,
 			})),
@@ -58,7 +58,7 @@ describe('production application startup', () => {
 				policy: { autoStart: [Healthy.nodeAddress(), Failing.nodeAddress()] },
 				prepare({ host }) {
 					order.push('prepare')
-					host.ctx.service(EffectsService).defer(() => {
+					host.ctx.effects.defer(() => {
 						order.push('close')
 					})
 				},
@@ -141,7 +141,7 @@ describe('production application startup', () => {
 			defineHostApplication(() => ({
 				plugins: [],
 				prepare({ host }) {
-					host.ctx.service(EffectsService).defer(() => {
+					host.ctx.effects.defer(() => {
 						throw cleanupFailure
 					})
 				},
@@ -177,8 +177,8 @@ describe('production application startup', () => {
 				defineHostApplication(() => ({
 					plugins: [],
 					prepare({ host }) {
-						host.ctx.service(EffectsService).defer(closed, { phase: 'final' })
-						host.ctx.service(EffectsService).defer(() => {
+						host.ctx.effects.defer(closed, { phase: 'final' })
+						host.ctx.effects.defer(() => {
 							throw cleanupFailure
 						})
 						if (stage === 'prepare') fail()

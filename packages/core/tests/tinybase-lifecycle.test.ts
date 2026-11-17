@@ -1,4 +1,3 @@
-import { TinyBaseService } from '../src/tinybase/types'
 import * as nativeFs from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -22,7 +21,7 @@ vi.mock('tinybase', async (importOriginal) => {
 
 @Plugin({ forkable: true })
 class HandleOwner extends BasePlugin {
-	readonly state = this.ctx.service(TinyBaseService)
+	readonly state = this.ctx.tinybase
 	admission() {
 		return enterOwnerInvocation(this.ctx)
 	}
@@ -31,7 +30,7 @@ class HandleOwner extends BasePlugin {
 @Plugin()
 class LazyOwner extends BasePlugin {
 	state() {
-		return this.ctx.service(TinyBaseService)
+		return this.ctx.tinybase
 	}
 }
 

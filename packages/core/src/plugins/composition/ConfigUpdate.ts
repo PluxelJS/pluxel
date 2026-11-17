@@ -1,4 +1,3 @@
-import { LoggerService } from '../../logger/LoggerService'
 import type { Context } from '../../context/Context'
 import { enterOwnerInvocation } from '../../internal/owner-invocations'
 import type { ConfigUpdateListener } from './PluginConfigs'
@@ -169,7 +168,7 @@ export async function notifyPluginConfigGeneration(
 			if (lease.signal.aborted) return Object.freeze({ status: 'generation_changed' })
 		} catch (error) {
 			if (lease.signal.aborted) return Object.freeze({ status: 'generation_changed' })
-			item.field.ctx.service(LoggerService).error('Plugin config update listener failed', { error })
+			item.field.ctx.logger.error('Plugin config update listener failed', { error })
 			return Object.freeze({ status: 'listener_failed', path: item.field.path })
 		} finally {
 			lease.dispose()

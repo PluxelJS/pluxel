@@ -107,12 +107,7 @@
 			"import": "./dist/toolchain.mjs",
 			"require": "./dist/toolchain.cjs"
 		},
-		"./package.json": "./package.json",
-		"./control": {
-			"types": "./dist/control/index.d.mts",
-			"import": "./dist/control/index.mjs",
-			"default": "./dist/control/index.mjs"
-		}
+		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"exports": {
@@ -188,12 +183,7 @@
 				"import": "./dist/toolchain.mjs",
 				"require": "./dist/toolchain.cjs"
 			},
-			"./package.json": "./package.json",
-			"./control": {
-				"types": "./dist/control/index.d.mts",
-				"import": "./dist/control/index.mjs",
-				"default": "./dist/control/index.mjs"
-			}
+			"./package.json": "./package.json"
 		},
 		"access": "public"
 	},
@@ -263,7 +253,6 @@
 		"utilium": "3.10.0"
 	},
 	"pluxel": {
-		"control": "./dist/control/manifest.json",
 		"tinybase": "10.0.1"
 	}
 }

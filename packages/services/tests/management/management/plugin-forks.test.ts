@@ -2,7 +2,7 @@ import { requireFs, pluginNodePhysicalKey } from '@pluxel/core/internal'
 import { requireHostStateStore, isPluginAutoStartEnabled, listForkIds } from '@pluxel/host/internal'
 import { standardServices } from '@pluxel/services'
 import { logtape } from '@pluxel/core/config'
-import { parsePluginNodeAddress, pluginNodeAddressEqual, EffectsService } from '@pluxel/core'
+import { parsePluginNodeAddress, pluginNodeAddressEqual } from '@pluxel/core'
 import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
@@ -15,7 +15,6 @@ import { RpcStub } from 'capnweb'
 import { createRuntimeManagementClient } from '../../../src/management/web/client'
 import { RuntimeManagementTargetImpl } from '../../../src/management/services/management/RuntimeManagementTarget.ts'
 import {
-	Logging,
 	createPluginLogPolicyStore,
 	parsePluginLogPolicySnapshot,
 	type PluginLogPolicySnapshot,
@@ -51,7 +50,7 @@ class FailingForkProvider extends BasePlugin {
 @Plugin({ forkable: true })
 class DrainFailureForkProvider extends BasePlugin {
 	override init(): void {
-		this.ctx.service(EffectsService).defer(() => {
+		this.ctx.effects.defer(() => {
 			throw new Error('fork drain failed')
 		})
 	}
@@ -503,7 +502,7 @@ describe('Plugin fork control plane', () => {
 				}),
 			},
 		})
-		const logging = host.ctx.service(Logging)
+		const logging = host.ctx.logging!
 		hosts.push(host)
 
 		host.add(ForkProvider)

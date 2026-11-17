@@ -36,7 +36,7 @@ JSON 只有被公开类型引用才进入声明；配置引用原文进入源码
 
 ## Service 声明与材料
 
-Service 与 Plugin definition 共用 canonical entry + exportName 身份规则，服务没有node/fork地址。服务直接以普通/abstract class声明；安装点与 `ctx.service` 的具名导入由semantic pass定位原导出并绑定身份，`defineServiceRef<T>()` 生成指向同一身份的optional引用。Core内建声明在Core bootstrap前绑定，原生工厂引用不重复绑定。服务安装集合由固定Context plan拥有，不伪装成Plugin catalog节点。
+Service 与 Plugin definition 共用 canonical entry + exportName 身份规则，服务没有node/fork地址。服务直接以普通/abstract class声明；安装点与 `ctx.service` 的具名导入由semantic pass定位原导出并绑定身份，`defineServiceRef<T>()` 生成指向同一身份的optional引用。包显式提供 `@pluxel/source` 声明入口时，声明证明从该入口读取，不以 Vite 运行时 bundle 的解析结果替代。服务安装集合由固定Context plan拥有，不伪装成Plugin catalog节点。Core 的 logger、effects、events、FS、TinyBase 和日志运行时直接由 Context 提供，不生成 Service 声明或控制材料。
 
 manifest format 3 以 `services` 独立记录服务definition、access和API contract。生成入口导出required `ServiceDefinition<FooInstance, Access>`与原生Instance类型；Script的optional helper只接受已校验入口的FooInstance类型。required/optional引用都在receiver realm构造，由SDK定位当前已安装声明并校验contract，返回原生API的受守卫借用视图。服务构造与业务异常不归并为缺失。
 

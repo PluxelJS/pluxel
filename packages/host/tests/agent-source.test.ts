@@ -1,7 +1,6 @@
 import { BasePlugin, Plugin, parsePluginNodeAddress, type PluginNodeAddress } from '@pluxel/core'
 import { createHost } from '../src/index'
 import { createScriptScope } from '../src/agent-runtime'
-import { Logging } from '@pluxel/core/logging'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { expect, it } from 'vitest'
 
@@ -24,9 +23,7 @@ it('borrows the same root and closes its admission with the shared script scope'
 	await expect(select(erasedAddress).config.get()).rejects.toMatchObject({
 		details: { code: 'config_not_found' },
 	})
-	expect(() => sdk.ctx.service(Logging)).toThrow(
-		expect.objectContaining({ code: 'CONTEXT_SERVICE_MISSING' }),
-	)
+	expect(sdk.ctx.logging).toBeUndefined()
 	const { start, status, instance } = counter
 	await start()
 	const borrowed = await instance()
@@ -34,7 +31,7 @@ it('borrows the same root and closes its admission with the shared script scope'
 	const firstGeneration = first.generation
 	first.count = 4
 	expect(sdk.ctx).toBe(sdk.ctx)
-	expect(Object.keys(sdk.ctx)).toEqual(['service'])
+	expect(Reflect.ownKeys(sdk.ctx)).toContain('logger')
 	await scope.dispose()
 	await expect(status()).rejects.toMatchObject({
 		details: { code: 'scope_closed' },

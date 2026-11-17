@@ -4,7 +4,7 @@ import initCompiler, {
 } from '@myriaddreamin/typst-ts-web-compiler'
 import initRenderer, { TypstRenderer } from '@myriaddreamin/typst-ts-renderer'
 import type { DiagnosticsData } from '@myriaddreamin/typst.ts/compiler'
-import { BasePlugin, Plugin, EffectsService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import * as v from 'valibot'
 import { TypstError } from './errors.ts'
 
@@ -78,7 +78,7 @@ export class TypstPlugin extends BasePlugin {
 			throw cause
 		}
 		const generation: Generation = { active: true, compiler, renderer }
-		this.ctx.service(EffectsService).defer(
+		this.ctx.effects.defer(
 			async () => {
 				generation.active = false
 				if (this.generation === generation) this.generation = undefined

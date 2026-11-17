@@ -1,4 +1,3 @@
-import { EffectsService } from '@pluxel/core'
 import { Commands, type CommandMount, type MountedCommand } from '@pluxel/services/commands'
 import {
 	defineCommand,
@@ -73,7 +72,7 @@ describe('carrier command handlers', () => {
 				super()
 			}
 			override init() {
-				this.ctx.service(EffectsService).defer(() => {
+				this.ctx.effects.defer(() => {
 					cleaned = true
 				})
 				this.carrier.publish(readCommand())

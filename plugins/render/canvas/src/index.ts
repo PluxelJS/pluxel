@@ -19,7 +19,7 @@ import {
 	type SvgCanvas,
 } from '@napi-rs/canvas'
 import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/plugin-fonts'
-import { BasePlugin, Plugin, type Context, EffectsService, defineServiceRef } from '@pluxel/core'
+import { BasePlugin, Plugin, type Context, defineServiceRef } from '@pluxel/core'
 import { CanvasConfig, type CanvasPluginConfig } from './config.ts'
 import {
 	CanvasError,
@@ -103,7 +103,7 @@ export class CanvasPlugin extends BasePlugin {
 		})
 		this.workerPolicy = undefined
 		this.generation = generation
-		this.ctx.service(EffectsService).defer(
+		this.ctx.effects.defer(
 			async () => {
 				const reason = new CanvasError(
 					'NOT_RUNNING',
@@ -273,7 +273,7 @@ export class CanvasPlugin extends BasePlugin {
 		this.leases.add(lease)
 		this.leasesByOwner.set(owner, lease)
 		try {
-			owner.service(EffectsService).defer(() => this.closeLease(lease), { tag: 'canvas-caller' })
+			owner.effects.defer(() => this.closeLease(lease), { tag: 'canvas-caller' })
 		} catch (cause) {
 			this.closeLease(lease)
 			throw new CanvasError('NOT_RUNNING', 'Canvas caller is stopped or being replaced', { cause })

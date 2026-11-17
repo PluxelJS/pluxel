@@ -73,7 +73,7 @@ Core 对 Context 与 [Eventure](../vendor/eventure/UPSTREAM.md)的复用是构�
 
 Workbench fixed singleton set 由 host 安装并由 MF build contract 精确锁定：React/ReactDOM 及实际 subpath、Mantine core/hooks、MF React Bridge、Workbench 根、`/client`、`/react`、`/internal/react`。Plugin UI 把自己 import 的 React/Mantine 声明为 peer，独立开发时配 dev 副本。query-core 仅为 renderer owner 内部实现。每个使用 Drizzle 的包直接声明 drizzle-orm；只在确需共享身份的公开边界使用 peer。
 
-Host 互操作按具体能力接纳：Workbench target/基础库使用精确 capnweb peer；交换原生 Store 的 TinyBase 消费者使用精确 tinybase peer，开发均配同版 dev 副本。Core 拥有 TinyBase 的精确普通 dependency；只调用 `ctx.service(TinyBaseService).open()` 无需另装。升级 TinyBase 时同步 Core、共享消费者和制品事实。
+Host 互操作按具体能力接纳：Workbench target/基础库使用精确 capnweb peer；交换原生 Store 的 TinyBase 消费者使用精确 tinybase peer，开发均配同版 dev 副本。Core 拥有 TinyBase 的精确普通 dependency；只调用 `ctx.tinybase.open()` 无需另装。升级 TinyBase 时同步 Core、共享消费者和制品事实。
 
 `@pluxel/host/internal/shared-runtime` 是 Node metadata 叶子，拥有 manifest、catalog、版本和接纳检查，不加载 Core/Services/Workbench runtime。构建生成 `pluxel.workbenchCapnweb` / `pluxel.tinybase`；Vite、静态应用与 native 动态来源先核验声明及实际安装，再绑定同版解析。TinyBase 子路径按原名解析；应用私有副本与无关依赖保持隔离，普通 import 本身不构成互操作声明。
 

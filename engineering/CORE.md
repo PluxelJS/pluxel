@@ -14,7 +14,9 @@ catalog 来源、配置层合并与保存策略由 Host 拥有；HTTP、RPC 等�
 
 ## Context service kernel
 
-`createContextHost()` 将 `services` 编译为固定服务集合。required 声明直接使用普通 class 或 abstract class；`defineServiceRef<T>()` 是指向同一声明的 optional 引用，由源码工具链从具名导入生成。Pluxel 的跨编译身份来自 canonical entry + exportName，standalone kernel 也可直接以声明对象作为进程内 key。没有手写 service ID、property projection 或运行期安装入口。
+Core 直接提供固定的 `ctx.logger`、`ctx.effects`、`ctx.events`，Plugin Context 另有 `ctx.fs()` 与 `ctx.tinybase`；配置日志后，根 Context 提供 `root.logging`。这些内建能力由 Core 构造、缓存并管理生命周期，不进入 service 安装集合或服务控制材料。
+
+Core 的组合入口是 `createCoreContextHost()`：它固定内建能力，并将应用选择的 `services` 交给 Context kernel 编译。Vault、Database、HTTP、Workbench 等由应用显式安装，插件通过 `ctx.service()` 声明对它们的依赖。required 声明直接使用普通 class 或 abstract class；`defineServiceRef<T>()` 是指向同一声明的 optional 引用，由源码工具链从具名导入生成。Pluxel 的跨编译身份来自 canonical entry + exportName，standalone kernel 也可直接以声明对象作为进程内 key。没有手写 service ID、property projection 或运行期安装入口。
 
 `ctx.service(Declaration)` 返回 T，未安装抛出 `ContextServiceMissingError`；`ctx.service(ref)` 返回 T | undefined，仅缺失返回 undefined。声明与安装访问权限都要通过校验，access、construction、stale contract 错误不能被可选引用吞掉。
 
@@ -28,7 +30,7 @@ Core 将 kernel 缓存范围映射到 Plugin 生命周期：
 
 `all`、`root`、`owner` 表达访问约束，root 安装始终额外要求真实根 Context。声明的 `static readonly access` 提供类型约束，安装器固定运行期约束。创建 host/root/scope/child 不调用服务工厂；首次 `ctx.service()` 才同步构造，成功值按 scope 缓存。服务查找先按声明 key 选择预编译 resolver，再读取 dense array slot；kernel 不接管异步 IO 或资源关闭。`overrides` 只在创建 host 时替换同一声明、scope 和 access，不改变已编译集合。
 
-factory closure 捕获本 host 已解析、冻结的输入，Context 不暴露 host config。caller view 共享 provider root/generation backing，独立缓存 owner view 并固定 readonly caller pin；caller 不是 containment parent。PluginPart 在 child Context 的首次解析前，以 construction-only 内部初始化绑定该 Part 的 Effects 子作用域和带 partPath 的 Logger；caller view 继承这些绑定。初始化不能增加安装项或修改访问权限，普通业务 API 不暴露此入口。
+factory closure 捕获本 host 已解析、冻结的输入，Context 不暴露 host config。caller view 共享 provider root/generation backing，独立缓存 owner view 并固定 readonly caller pin；caller 不是 containment parent。PluginPart 的 child Context 直接持有该 Part 的 effects 子作用域和带 partPath 的 logger，caller view 保留这些归属。内建能力的构造由 Core 负责，服务安装集合与访问权限始终固定。
 
 Core effects/commit hooks 管理固定 FS/TinyBase：首次文件操作准备 IO，generation publication 开启自动保存，最终先关闭日志、再关闭 TinyBase、最后关闭 FS。Host 自动等待 `prepareCoreContext(root)`；Core-only 嵌入者在启动 Plugin 前显式等待它。Host config/state 文档在 Plugin admission 前恢复，显式服务使用自己的 prepare 阶段。
 
@@ -94,13 +96,13 @@ semantic pass 拒绝以下 Plugin inheritance 成员：
 
 ## 内部组成与事件
 
-普通拆分用 class/function，单组 cleanup 用 `ctx.service(EffectsService).scope()`；同时需要 config slice、owner-bound service 或嵌套组成时使用 `PluginPart`。独立启停、失败传播、replacement 或治理使用 Plugin。
+普通拆分用 class/function，单组 cleanup 用 `ctx.effects.scope()`；同时需要 config slice、owner-bound service 或嵌套组成时使用 `PluginPart`。独立启停、失败传播、replacement 或治理使用 Plugin。
 
 Part 是 generation-local containment。definition 保留各 occurrence 的 direct requirement 顺序，owner graph 对 root/Part requirements 去重；provider override 作用于全部 occurrence。Part 没有独立 selection、blocked 或 running 状态。
 
 module-private occurrence state 保存 child Context、immediate host、partPath 和 DSL runtime。Context shape 不增加归属字段。Part 的 `ctx/host/parts/plugins/configs` 与 BasePlugin 的组成 DSL 只对 subclass 可见，`BasePlugin.ctx` 保留 public caller/inspection 用途。owner-view 按 Part Context 惰性缓存，scope service 保持 owning Plugin generation backing，root service 保留根访问限制。dependency facade 向 provider 传播 caller scope 和 partPath。Part constructor/init/cleanup 失败归入 owner lifecycle report 并带 partPath；teardown 关闭全部 Part admission，统一 drain generation effects。
 
-固定 dependency 事件使用具名 `EvtChannel` 属性；无需 graph dependency 的广播使用 module-augmented `ctx.service(EventsService)`，订阅绑定 owner effects。Core lifecycle/route invalidation 使用专门内部 subscription。
+固定 dependency 事件使用具名 `EvtChannel` 属性；无需 graph dependency 的广播使用 module-augmented `ctx.events`，订阅绑定 owner effects。Core lifecycle/route invalidation 使用专门内部 subscription。
 
 ## 实现入口
 

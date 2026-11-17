@@ -3,6 +3,8 @@ import {
 	pluginNodeIndexKey,
 	type PluginNodeAddress,
 	type Context,
+	type PluginContext,
+	type EffectsScope,
 	type ServiceDefinition,
 	type ServiceRef,
 	type RootContext,
@@ -16,11 +18,9 @@ import {
 	readServiceDefinition,
 	getServiceDefinitionKey,
 	resolveInstalledServiceDefinition,
-	createServiceRef,
 	assertOwnerInvocationOpen,
 } from '@pluxel/core/internal'
 import {
-	Logging,
 	markLogs,
 	readLogs,
 	waitForLogs,
@@ -57,7 +57,7 @@ import {
 } from '../coordinator'
 import type { HostConfigStore } from '../config-store'
 import type { HostPolicyField, HostPolicyInput } from '../policy'
-import type { ScriptPlugin, ScriptSdk, ScriptServiceContext } from './sdk-types'
+import type { ScriptPlugin, ScriptSdk } from './sdk-types'
 import {
 	captureScriptPluginListOptions,
 	scriptPluginList,
@@ -115,11 +115,9 @@ export function createScriptScope(
 	const { ctx, signal } = options
 	const coordinator = requirePluginHostCoordinator(ctx)
 	const state = requireHostStateStore(ctx)
-	const loggingRef = createServiceRef(Logging)
 	const policy = createHostPolicy(ctx, state)
 	const controller = new AbortController()
 	const pending = new Set<Promise<unknown>>()
-	const views = new WeakMap<object, object>()
 	const originals = new WeakMap<object, object>()
 	const unwrap = (value: unknown): unknown =>
 		value !== null && (typeof value === 'object' || typeof value === 'function')
@@ -286,12 +284,12 @@ export function createScriptScope(
 		}
 	}
 	const logging = (): RuntimeLogging => {
-		const installed = ctx.service(loggingRef)
+		const installed = ctx.logging
 		if (installed === undefined)
 			throw new ScriptError({
 				code: 'logging_unavailable',
 				message:
-					'This Host has no Logging service; configure runtime.logtape with a history sink to read logs',
+					'This Host has no logging runtime; configure runtime.logtape with a history sink to read logs',
 			})
 		return installed
 	}
@@ -302,20 +300,95 @@ export function createScriptScope(
 		)
 			throw new RangeError('Log read limit must be an integer from 1 to 10000')
 	}
-	const serviceViews = new WeakMap<Context, WeakMap<object, object>>()
-	const contexts = new WeakMap<Context, ScriptServiceContext>()
-	const contextView = (owner: Context): ScriptServiceContext => {
+	const ownedEffects: EffectsScope[] = []
+	const contextValues = new WeakMap<Context, WeakMap<object, object>>()
+	const contexts = new WeakMap<Context, Context>()
+	const assertContextOpen = (owner: Context) => {
+		assertOpen()
+		if (queuedCalls > 0)
+			throw new ScriptError({
+				code: 'borrowed_generation_conflict',
+				message: 'Await pending Host operations before accessing Context capabilities',
+			})
+		assertOwnerInvocationOpen(owner)
+	}
+	const projectContext = (owner: Context, value: unknown): unknown => {
+		if (value === owner) return contextView(owner)
+		if (value === owner.root) return contextView(owner.root)
+		if (value !== undefined && (value === owner.parent || value === owner.caller))
+			return contextView(value as Context)
+		return value
+	}
+	const borrow = <T>(owner: Context, value: T): T => {
+		if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return value
+		let owned = contextValues.get(owner)
+		if (!owned) {
+			owned = new WeakMap()
+			contextValues.set(owner, owned)
+		}
+		const cached = owned.get(value)
+		if (cached) return cached as T
+		const borrowed = createBorrowedValueView(value, owner, {
+			signal: controller.signal,
+			assertOpen: () => assertContextOpen(owner),
+			track,
+			unwrap,
+			project: (result) => projectContext(owner, result),
+			begin: () => {
+				activeCalls++
+			},
+			end: () => {
+				activeCalls--
+			},
+		})
+		owned.set(value, borrowed)
+		originals.set(borrowed, value)
+		return borrowed as T
+	}
+	const contextView = <T extends Context>(owner: T): T => {
 		const cached = contexts.get(owner)
-		if (cached) return cached
-		const view = Object.freeze({
+		if (cached) return cached as T
+		let effects: EffectsScope | undefined
+		const view = {
+			get name() {
+				assertContextOpen(owner)
+				return owner.name
+			},
+			get root() {
+				assertContextOpen(owner)
+				return contextView(owner.root)
+			},
+			get parent() {
+				assertContextOpen(owner)
+				return owner.parent && contextView(owner.parent)
+			},
+			get caller() {
+				assertContextOpen(owner)
+				return owner.caller && contextView(owner.caller)
+			},
+			get pluginInfo() {
+				assertContextOpen(owner)
+				return owner.pluginInfo
+			},
+			get logger() {
+				assertContextOpen(owner)
+				return borrow(owner, owner.logger)
+			},
+			get events() {
+				assertContextOpen(owner)
+				return borrow(owner, owner.events)
+			},
+			get effects() {
+				assertContextOpen(owner)
+				if (!effects) {
+					effects = owner.effects.scope({ tag: 'Script' })
+					ownedEffects.push(effects)
+				}
+				return borrow(owner, effects)
+			},
+			[Symbol.toStringTag]: 'PluxelContext',
 			service: (target: ServiceDefinition<unknown> | ServiceRef<unknown>): unknown => {
-				assertOpen()
-				if (queuedCalls > 0)
-					throw new ScriptError({
-						code: 'borrowed_generation_conflict',
-						message: 'Await pending Host operations before accessing services',
-					})
-				assertOwnerInvocationOpen(owner)
+				assertContextOpen(owner)
 				const expected = readServiceDefinition(target)
 				const installed = resolveInstalledServiceDefinition(owner, getServiceDefinitionKey(target))
 				if (installed && expected.contract) {
@@ -331,42 +404,40 @@ export function createScriptScope(
 							message: 'The service control contract does not match the installed declaration',
 						})
 				}
-				const value = owner.service(target as ServiceDefinition<unknown>)
-				if (value === null || (typeof value !== 'object' && typeof value !== 'function'))
-					return value
-				let owned = serviceViews.get(owner)
-				if (!owned) {
-					owned = new WeakMap()
-					serviceViews.set(owner, owned)
-				}
-				const existing = owned.get(value)
-				if (existing) return existing
-				const borrowed = createBorrowedValueView(value, owner, {
-					signal: controller.signal,
-					assertOpen: () => {
-						assertOpen()
-						if (queuedCalls > 0)
-							throw new ScriptError({
-								code: 'borrowed_generation_conflict',
-								message: 'Await pending Host operations before accessing service members',
-							})
-					},
-					track,
-					unwrap,
-					begin: () => {
-						activeCalls++
-					},
-					end: () => {
-						activeCalls--
-					},
-				})
-				owned.set(value, borrowed)
-				originals.set(borrowed, value)
-				return borrowed
+				return borrow(owner, owner.service(target as ServiceDefinition<unknown>))
 			},
-		}) as ScriptServiceContext
-		contexts.set(owner, view)
-		return view
+		}
+
+		// Match Core's non-enumerable Context fields; inspecting a view must not
+		// eagerly read borrowed capabilities or traverse stale generation getters.
+		for (const key of Reflect.ownKeys(view)) Object.defineProperty(view, key, { enumerable: false })
+		if (Object.is(owner, owner.root)) {
+			Object.defineProperty(view, 'logging', {
+				get: () => {
+					assertContextOpen(owner)
+					return borrow(owner, owner.root.logging)
+				},
+			})
+		} else if (owner.pluginInfo) {
+			Object.defineProperties(view, {
+				fs: {
+					get: () => {
+						assertContextOpen(owner)
+						return borrow(owner, (owner as unknown as PluginContext).fs)
+					},
+				},
+				tinybase: {
+					get: () => {
+						assertContextOpen(owner)
+						return borrow(owner, (owner as unknown as PluginContext).tinybase)
+					},
+				},
+			})
+		}
+		Object.freeze(view)
+		contexts.set(owner, view as unknown as Context)
+		originals.set(view, owner)
+		return view as unknown as T
 	}
 
 	// A reference owns only a validated target snapshot. Host state and generation
@@ -429,31 +500,7 @@ export function createScriptScope(
 										'stale_target',
 										'Running Plugin generation differs from the committed candidate',
 									)
-								let view = views.get(instance)
-								if (!view) {
-									view = createBorrowedValueView(instance, getPluginGenerationContext(instance), {
-										signal: controller.signal,
-										assertOpen: () => {
-											assertOpen()
-											if (queuedCalls > 0)
-												throw new ScriptError({
-													code: 'borrowed_generation_conflict',
-													message:
-														'Await pending Host operations before accessing Plugin instance members',
-												})
-										},
-										track,
-										unwrap,
-										begin: () => {
-											activeCalls++
-										},
-										end: () => {
-											activeCalls--
-										},
-									})
-									views.set(instance, view)
-									originals.set(view, instance)
-								}
+								const view = borrow(getPluginGenerationContext(instance), instance)
 								// Wrap before returning through any promise: a Plugin's own
 								// `then` member is a business member, never an await protocol.
 								return Object.freeze({ instance: view })
@@ -564,7 +611,7 @@ export function createScriptScope(
 									'stale_target',
 									'Running generation differs from the committed candidate',
 								)
-							return contextView(owner)
+							return contextView(owner as unknown as PluginContext)
 						}, admission),
 					instanceError,
 				),
@@ -725,8 +772,10 @@ export function createScriptScope(
 		if (disposal) return disposal
 		abort()
 		signal?.removeEventListener('abort', externalAbort)
-		disposal = Promise.allSettled(pending).then((results): void => {
-			const errors = results.flatMap((result) =>
+		disposal = Promise.allSettled(pending).then(async (results): Promise<void> => {
+			// Accepted acquisitions and transactions must settle before their resources close.
+			const cleanup = await Promise.allSettled(ownedEffects.map((effects) => effects.dispose()))
+			const errors = [...results, ...cleanup].flatMap((result) =>
 				result.status === 'rejected' ? [result.reason] : [],
 			)
 			if (errors.length > 0)

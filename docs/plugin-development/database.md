@@ -5,6 +5,8 @@ description: 使用 Drizzle ORM 定义插件专属数据表，支持托管数据
 
 当插件需要复杂的 SQL 查询、唯一性约束、外键或关系型事务时，可使用 `@pluxel/services/database` 提供的数据库扩展服务。Pluxel 统一基于 PostgreSQL 方言与 [Drizzle ORM](https://orm.drizzle.team/) 组织表结构，由宿主决定底层运行于正式的 PostgreSQL 还是轻量的内存/嵌入式 PGlite。
 
+Host 须[安装 `database({ backend })` 并选择驱动](../host/configuration.md#数据库服务后端选择)；`standardServices()` 和 `servicesPreset()` 均不包含 Database。
+
 ## 两种数据管理模式
 
 | 模式                                      | 适用场景                                                 | 数据归属与隔离                                 |

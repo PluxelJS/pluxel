@@ -1,4 +1,4 @@
-import { EffectsService, BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { describe, expect, it } from 'vitest'
 import {
@@ -84,7 +84,7 @@ describe('Core-only Host', () => {
 			static stops = 0
 			init() {
 				LifecyclePlugin.starts++
-				this.ctx.service(EffectsService).defer(() => {
+				this.ctx.effects.defer(() => {
 					LifecyclePlugin.stops++
 				})
 			}
@@ -143,7 +143,7 @@ describe('Core-only Host', () => {
 		class Original extends BasePlugin {
 			init() {
 				events.push('original')
-				this.ctx.service(EffectsService).defer(() => {
+				this.ctx.effects.defer(() => {
 					events.push('stop original')
 				})
 			}
@@ -159,7 +159,7 @@ describe('Core-only Host', () => {
 		class Replacement extends BasePlugin {
 			init() {
 				events.push('replacement')
-				this.ctx.service(EffectsService).defer(() => {
+				this.ctx.effects.defer(() => {
 					events.push('stop replacement')
 				})
 			}

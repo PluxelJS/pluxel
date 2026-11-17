@@ -2,7 +2,7 @@
 
 Core 提供两条语义不同的事件路径：
 
-- `ctx.service(EventsService)` 是每 root 共享的 ambient bus，事件表通过 `@pluxel/core` module augmentation 扩展；每个 Context owner
+- `ctx.events` 是每 root 共享的 ambient bus，事件表通过 `@pluxel/core` module augmentation 扩展；每个 Context owner
   持有普通 service view，订阅绑定自己的 effects。
 - `EvtChannel` 是 Plugin 公开属性上的具名 capability，适合 dependency edge 上的显式协议；consumer 订阅绑定 caller effects。
 

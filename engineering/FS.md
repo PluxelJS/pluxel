@@ -1,6 +1,6 @@
 # Host 文件系统
 
-Core 固定提供 `ctx.service(Fs)()`，返回所属 Plugin node 目录的 ZenFS promises API。Part 共用 owner 目录，root 不提供 Plugin 业务目录。公开调用见[插件文件存储](../docs/plugin-development/fs.md)，装配见 [Host 后端选择](../docs/host/configuration.md#选择文件后端)。
+Core 固定提供 `ctx.fs()`，返回所属 Plugin node 目录的 ZenFS promises API。Part 共用 owner 目录，root 不提供 Plugin 业务目录。公开调用见[插件文件存储](../docs/plugin-development/fs.md)，装配见 [Host 后端选择](../docs/host/configuration.md#选择文件后端)。
 
 ## 唯一接线与准备
 
@@ -14,7 +14,7 @@ mount 接受原生 Backend、BackendConfiguration 和已打开 FileSystem，支�
 
 取得 API/内部 document factory 不执行 IO。首次异步操作共享准备任务，失败固定为原 rejected 结果。快照不改写调用方 nested config。Passthrough prefix 由应用创建，Core 不猜测宿主目录。portable 入口不静态加载 Node/浏览器持久后端，也不依赖 Host/Services。
 
-`durableMounts` 是应用对已声明 mount 的跨重开持久性断言，默认 `[]`；它不从 backend 名称推断，也不增加 fsync 或 writer 协调。`ready(requirement?)` 检查整棵挂载，`directory(path, requirement?)` / `ctx.service(Fs)(requirement?)` 只检查目标目录实际覆盖的 mount/submount。未声明 durable 的覆盖 mount 使持久要求以 ENOTSUP 失败，实际 readOnly/no_write 使 writable 要求以 EROFS 失败。attributes 在准备后检查，实际操作仍执行原生限制；无关只读挂载不阻挡目标写入。
+`durableMounts` 是应用对已声明 mount 的跨重开持久性断言，默认 `[]`；它不从 backend 名称推断，也不增加 fsync 或 writer 协调。`ready(requirement?)` 检查整棵挂载，`directory(path, requirement?)` / `ctx.fs(requirement?)` 只检查目标目录实际覆盖的 mount/submount。未声明 durable 的覆盖 mount 使持久要求以 ENOTSUP 失败，实际 readOnly/no_write 使 writable 要求以 EROFS 失败。attributes 在准备后检查，实际操作仍执行原生限制；无关只读挂载不阻挡目标写入。
 
 ## 创建、借用与失败回收
 

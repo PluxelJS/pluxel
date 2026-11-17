@@ -1,5 +1,5 @@
 import type { Workbench } from '@pluxel/workbench'
-import { BasePlugin, Plugin, LoggerService, defineServiceRef } from '@pluxel/core'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import { assertWorkbenchDto, createWorkbenchWatch } from '@pluxel/workbench/server'
 import { RpcTarget } from 'capnweb'
 import { BotWorkspaceWorkbench } from './BotWorkspace.workbench'
@@ -205,7 +205,7 @@ export class BotWorkspacePlugin extends BasePlugin {
 			if (!bot || item.id === bot) state.revisions.set(item.id, this.revision)
 		this.events.unshift({ source, bot, at: new Date().toISOString(), message })
 		this.events.splice(40)
-		this.ctx.service(LoggerService).info(message, { source, bot })
+		this.ctx.logger.info(message, { source, bot })
 		for (const listener of Array.from(this.listeners)) listener(this.revision)
 	}
 }

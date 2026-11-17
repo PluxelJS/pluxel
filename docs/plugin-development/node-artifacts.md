@@ -26,7 +26,7 @@ export default defineHostApplication(() => ({
 使用 `defineNodeModule()` 将辅助代码编译为自包含的单文件 Node ESM：
 
 ```ts twoslash
-import { BasePlugin, Plugin, LoggerService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { NodeModules, defineNodeModule } from '@pluxel/services/node'
 
 // 1. 声明独立模块入口（相对于当前文件）
@@ -38,7 +38,7 @@ export class RulesPlugin extends BasePlugin {
 		// 2. 加载模块并在当前插件作用域中执行初始化
 		await this.ctx.service(NodeModules).use(rulesModule, async (url) => {
 			const mod = await import(url.href)
-			return mod.setup({ logger: this.ctx.service(LoggerService) })
+			return mod.setup({ logger: this.ctx.logger })
 		})
 	}
 }

@@ -1,5 +1,4 @@
 import type { Script } from '@pluxel/agent-sdk/host'
-import { Logging } from '@pluxel/core/logging'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 
@@ -44,7 +43,8 @@ export const health = (async (sdk, run) => {
 		request.once('error', reject)
 		request.end()
 	})
-	const logging = sdk.ctx.service(Logging)
+	const logging = sdk.ctx.logging
+	if (!logging) throw new Error('health requires runtime.logtape')
 	logging.flushStores()
 	const plugins = await sdk.plugins.list()
 	return {

@@ -34,13 +34,13 @@ pause/apply/resume 直接调用 [HMR 调度器](HMR.md#开发批次调度)，独
 
 ## 操作 API 与资源
 
-Node/Vite 都由 `executeHostScript` 创建、关闭和排空同一 `ScriptScope`。`sdk.ctx` 提供 run-scoped 根服务访问视图；`await sdk.plugin(address).context()` 捕获 running generation 的 owner 服务视图。两者都只有 `service` 方法，服务值使用守卫 view 保持原生 API，缺失、访问和契约错误保留原义；直接业务调用与原生资源由脚本 await、传递取消和释放。
+Node/Vite 都由 `executeHostScript` 创建、关闭和排空同一 `ScriptScope`。`sdk.ctx` 提供 run-scoped 根 Context 视图；`await sdk.plugin(address).context()` 捕获 running generation 的 Plugin Context 视图。内建能力直接使用固定属性，应用安装的服务通过 `service` 读取；借用值使用守卫 view 保持原生 API，缺失、访问和契约错误保留原义。直接业务调用与原生资源由脚本 await、传递取消和释放。
 
 class 的 `nodeAddress(id?)` 在不可变地址上绑定精确 constructor。SDK 在规范化前固定证据；status/instance 在 committed read 中校验，生命周期在同一 exclusive session 内校验并提交，使用 coordinator 的 `pluginLifecycleUpdate`。校验与执行之间不能插入候选更替，缓存的旧 constructor（含 fork）在 replacement 后仍为 stale。
 
 class 地址提供完整实例类型和动态配置；生成控制入口额外关联 Schema input/output 与 Part 配置。两者复用相同 run/generation 准入和成员视图，见 [Plugin Control](PLUGIN_CONTROL.md#typed-配置与实例)。SDK 控制成功直接返回值，失败抛出保留领域报告的 `ScriptError`。
 
-结算后读取的 `revisions.after` 包含排空期间完成的变更。replacement 先 abort 原脚本并 drain 跟踪工作，再释放旧 root；同进程中无法强制终止不协作脚本。日志复用 Core Logging 的有界读取，或由显式服务声明 提供原生 API；共享模块的 global console 属于应用进程。
+结算后读取的 `revisions.after` 包含排空期间完成的变更。replacement 先 abort 原脚本并 drain 跟踪工作，再释放旧 root；同进程中无法强制终止不协作脚本。日志复用 Core Logging 的有界读取，或直接使用 `sdk.ctx.logger`；共享模块的 global console 属于应用进程。
 
 ## 实现与验证入口
 

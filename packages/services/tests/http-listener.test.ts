@@ -1,7 +1,7 @@
 import { resolveContextService } from '@pluxel/core/internal'
 import { createHost } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
-import { BasePlugin, Plugin, EffectsService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 import { websocket } from 'elysia/websocket'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
@@ -268,7 +268,7 @@ it('preserves listener startup failure and Host cleanup failure while releasing 
 	const listener = await listenElysia(occupied, { hostname: '127.0.0.1', port: 0 })
 	const host = await createHost({ plugins: [], services: [elysia()] })
 	const cleanupFailure = new Error('cleanup probe')
-	host.ctx.service(EffectsService).defer(() => {
+	host.ctx.effects.defer(() => {
 		throw cleanupFailure
 	})
 	try {

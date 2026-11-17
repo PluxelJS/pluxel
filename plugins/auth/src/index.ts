@@ -9,7 +9,7 @@ import type {
 	ManagementAuthenticationProviderSession,
 	ManagementAuthenticationProviderStep,
 } from '@pluxel/services/management/access'
-import { BasePlugin, Plugin, EffectsService, defineServiceRef } from '@pluxel/core'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import {
 	authenticatedSession,
 	FixedAuthenticationSession,
@@ -100,7 +100,7 @@ export class AuthPlugin extends BasePlugin {
 		if (mode.type === 'oidc') this.oidc = new OidcClient(mode, () => this.oidcSecret)
 
 		this.active = true
-		this.ctx.service(EffectsService).defer(
+		this.ctx.effects.defer(
 			() => {
 				this.active = false
 				this.revokeSessions()
@@ -113,7 +113,7 @@ export class AuthPlugin extends BasePlugin {
 			},
 			{ tag: 'auth-generation', phase: 'shutdown' },
 		)
-		this.ctx.service(EffectsService).defer(
+		this.ctx.effects.defer(
 			await store.watch(async () => {
 				if (!this.active) return
 				const [account, oidc] = await Promise.all([store.loadAccount(), store.loadOidcSecret()])

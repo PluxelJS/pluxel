@@ -9,7 +9,6 @@ import {
 	EvtChannel,
 	formatPluginNodeReference,
 	Plugin,
-	LoggerService,
 } from '@pluxel/core'
 
 export type TickPayload = {
@@ -24,14 +23,14 @@ class PluginLogger {
 	constructor(private readonly plugin: BasePlugin) {}
 
 	info(message: string, extra?: Record<string, unknown>) {
-		this.plugin.ctx.service(LoggerService).info(message, {
+		this.plugin.ctx.logger.info(message, {
 			plugin: formatPluginNodeReference(this.plugin.ctx.pluginInfo.nodeAddress),
 			...extra,
 		})
 	}
 
 	debug(message: string, extra?: Record<string, unknown>) {
-		this.plugin.ctx.service(LoggerService).debug(message, {
+		this.plugin.ctx.logger.debug(message, {
 			plugin: formatPluginNodeReference(this.plugin.ctx.pluginInfo.nodeAddress),
 			...extra,
 		})

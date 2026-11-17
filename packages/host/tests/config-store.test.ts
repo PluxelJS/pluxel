@@ -1,4 +1,4 @@
-import { EffectsService, type PluginNodeAddress } from '@pluxel/core'
+import { type PluginNodeAddress } from '@pluxel/core'
 import { createCoreContextHost } from '@pluxel/core/host'
 import { SuperJSON } from 'superjson'
 import { expect, it } from 'vitest'
@@ -38,7 +38,7 @@ it.each(['declared-only', 'declared-first', 'saved-first'] as const)(
 			expect(() => store.patchConfig(owner, { value: 'x' })).toThrow(/readonly/)
 			expect(await storage.getText('config.json')).toBe(body)
 		} finally {
-			await ctx.service(EffectsService).dispose()
+			await ctx.effects.dispose()
 		}
 	},
 )
@@ -56,7 +56,7 @@ it.each([false, true])('does not create an absent document (readonly=%s)', async
 		expect(store.composeConfig(owner)).toEqual({ value: 'declared' })
 		expect(await storage.stat('config.json')).toBeUndefined()
 	} finally {
-		await ctx.service(EffectsService).dispose()
+		await ctx.effects.dispose()
 	}
 })
 it.each([
@@ -73,7 +73,7 @@ it.each([
 		await expect(store.ready).rejects.toThrow(/Existing document unchanged/)
 		expect(await storage.getText('config.json')).toBe(body)
 	} finally {
-		await ctx.service(EffectsService).dispose()
+		await ctx.effects.dispose()
 	}
 })
 it.each([

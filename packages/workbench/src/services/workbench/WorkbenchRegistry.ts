@@ -1,6 +1,4 @@
 import {
-	LoggerService,
-	EffectsService,
 	BasePlugin,
 	parsePluginNodeAddress,
 	pluginNodeIndexKey,
@@ -203,7 +201,7 @@ export class WorkbenchRegistry {
 		)
 
 		try {
-			owner.service(EffectsService).defer(() => this.withdraw(publication))
+			owner.effects.defer(() => this.withdraw(publication))
 		} catch (error) {
 			this.withdraw(publication)
 			throw error
@@ -318,7 +316,7 @@ export class WorkbenchRegistry {
 				}
 				const root = new WorkbenchContentTarget(
 					candidate.entry.contract,
-					candidate.target.owner.service(LoggerService),
+					candidate.target.owner.logger,
 					(reason) => lease.abort(reason),
 				)
 				lease.reserve(root)
@@ -450,7 +448,7 @@ export class WorkbenchRegistry {
 						? 'reused_target'
 						: 'factory_failed'
 			const diagnosticId = randomUUID()
-			candidate.target.owner.service(LoggerService).error('Workbench entry factory failed', {
+			candidate.target.owner.logger.error('Workbench entry factory failed', {
 				error,
 				diagnosticId,
 				code,

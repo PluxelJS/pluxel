@@ -18,11 +18,8 @@ import {
 	EffectsDisposedError,
 	type EffectsMeta,
 	type EffectsScope,
-	EffectsService,
 } from '../../services/effects/EffectsService'
 import { inheritPinnedPluginInfo } from './context-projection'
-import { initializeContextServiceValues } from '@pluxel/context/internal'
-import { LoggerService } from '../../logger/LoggerService'
 import { EFFECTS_CHILD_SCOPE } from '../../internal/effects-child-scope'
 import { EFFECTS_PART_PATH } from '../../internal/effects-part-path'
 
@@ -64,22 +61,20 @@ function releasePartConstructionFrame(frame: PartConstructionFrame, cause?: unkn
 
 function createPartContext(parent: Context, path: PartPath): Context {
 	const key = path.at(-1)!
-	const ctx = createOwnerContext(parent, `${parent.name}.${key}`)
-	inheritPinnedPluginInfo(ctx, parent)
-	const factory = parent.service(EffectsService) as unknown as ChildScopeFactory
+	const factory = parent.effects as unknown as ChildScopeFactory
 	const createScope = factory[EFFECTS_CHILD_SCOPE]
 	if (typeof createScope !== 'function') {
-		throw new TypeError('[pluxel/core] Effects service cannot create an owner-bound child scope')
+		throw new TypeError('[pluxel/core] Effects scope cannot create an owner-bound child scope')
 	}
-	const effects = createScope.call(factory, ctx, {
-		tag: `part:${path.join('.')}`,
-		[EFFECTS_PART_PATH]: path,
-	} as EffectsMeta)
-	const logger = parent.service(LoggerService).with({ partPath: path.join('.') })
-	initializeContextServiceValues(ctx, [
-		[EffectsService, effects],
-		[LoggerService, logger],
-	])
+	const ctx = createOwnerContext(parent, `${parent.name}.${key}`, (owner) => ({
+		effects: createScope.call(factory, owner, {
+			tag: `part:${path.join('.')}`,
+			[EFFECTS_PART_PATH]: path,
+		} as EffectsMeta),
+		logger: parent.logger.with({ partPath: path.join('.') }),
+	}))
+	inheritPinnedPluginInfo(ctx, parent)
+	Object.preventExtensions(ctx)
 	pluginPartContexts.add(ctx)
 	return ctx
 }
@@ -339,7 +334,7 @@ async function startPluginPart(part: PluginPart<any, any>, signal: AbortSignal):
 	openConfigUpdateRegistrationWindow(state.ctx)
 	try {
 		try {
-			await adoptPartCleanup(state.ctx.service(EffectsService), await init.call(part, signal))
+			await adoptPartCleanup(state.ctx.effects, await init.call(part, signal))
 		} catch (error) {
 			if (error instanceof PluginPartInitError) throw error
 			throw new PluginPartInitError(state.path, error)

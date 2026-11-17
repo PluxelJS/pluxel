@@ -1,5 +1,4 @@
 import {
-	EffectsService,
 	BasePlugin,
 	Plugin,
 	parsePluginNodeAddress,
@@ -51,14 +50,14 @@ describe('Host policy persistence and selection', () => {
 				application: 'requires-host-recreation',
 			})
 		} finally {
-			await store.ctx.service(EffectsService).dispose()
+			await store.ctx.effects.dispose()
 		}
 		const reopened = new HostStateStore(createCoreContextHost().createRoot(), {}, { storage })
 		try {
 			await reopened.ready
 			expect(reopened.executionSnapshot().startTimeoutMs).toBe(12_000)
 		} finally {
-			await reopened.ctx.service(EffectsService).dispose()
+			await reopened.ctx.effects.dispose()
 		}
 	})
 
@@ -91,7 +90,7 @@ describe('Host policy persistence and selection', () => {
 				await storage.put('state.json', SuperJSON.stringify({ version: 7, autoStart: [] }))
 				expect(store.snapshot().autoStart).toEqual(expected)
 			} finally {
-				await store.ctx.service(EffectsService).dispose()
+				await store.ctx.effects.dispose()
 			}
 		},
 	)
@@ -117,7 +116,7 @@ describe('Host policy persistence and selection', () => {
 				shadowedFields: ['autoStart'],
 			})
 		} finally {
-			await store.ctx.service(EffectsService).dispose()
+			await store.ctx.effects.dispose()
 		}
 	})
 
@@ -140,7 +139,7 @@ describe('Host policy persistence and selection', () => {
 			await store.commitVersioned(0, candidate)
 			expect(store.managedSnapshot().forks).toBeUndefined()
 		} finally {
-			await store.ctx.service(EffectsService).dispose()
+			await store.ctx.effects.dispose()
 		}
 	})
 
@@ -160,7 +159,7 @@ describe('Host policy persistence and selection', () => {
 			})
 			expect(put).not.toHaveBeenCalled()
 		} finally {
-			await store.ctx.service(EffectsService).dispose()
+			await store.ctx.effects.dispose()
 		}
 	})
 
@@ -186,7 +185,7 @@ describe('Host policy persistence and selection', () => {
 			expect(storage.documents.get('state.json')).toBe(text)
 			expect(store.isReady).toBe(false)
 		} finally {
-			await store.ctx.service(EffectsService).dispose()
+			await store.ctx.effects.dispose()
 		}
 	})
 
@@ -204,7 +203,7 @@ describe('Host policy persistence and selection', () => {
 		try {
 			await expect(store.ready).rejects.toThrow('absent from policy.forks')
 		} finally {
-			await store.ctx.service(EffectsService).dispose()
+			await store.ctx.effects.dispose()
 		}
 	})
 
@@ -233,7 +232,7 @@ describe('Host policy persistence and selection', () => {
 				code: 'runtime_state_revision_conflict',
 			})
 		} finally {
-			await store.ctx.service(EffectsService).dispose()
+			await store.ctx.effects.dispose()
 		}
 	})
 

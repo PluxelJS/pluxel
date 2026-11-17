@@ -1,14 +1,9 @@
-import { EffectsService } from '../src/services/effects/EffectsService'
-import { type PluginNodeAddress, type RootContext } from '@pluxel/core'
+import { type PluginNodeAddress } from '@pluxel/core'
+import { createCoreContextHost } from '@pluxel/core/host'
 import {
-	createContextHost,
-	installRootService,
-	PluginConfigService,
 	consumePluginDefinitionCandidate,
-	createCoreContextInstallations,
 	PluginSlotRegistry,
 	requirePluginService,
-	resolveCoreRootInputs,
 } from '@pluxel/core/internal'
 import { BasePlugin, Plugin, withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { describe, expect, it, vi } from 'vitest'
@@ -48,21 +43,15 @@ function definitionInternalsOf(registry: object) {
 
 describe('PluginService read cost model', () => {
 	it('keeps ConfigService lazy across configless lifecycle and teardown', async () => {
-		const inputs = resolveCoreRootInputs({ name: 'configless-cost-model' })
 		let configServiceCreations = 0
-		const host = createContextHost({
+		const host = createCoreContextHost({
 			name: 'configless-cost-model',
-			services: createCoreContextInstallations(inputs),
-			overrides: [
-				installRootService(PluginConfigService, {
-					create: () => {
-						configServiceCreations += 1
-						throw new Error('ConfigService must remain lazy for configless Plugins')
-					},
-				}),
-			],
+			createConfigService: () => {
+				configServiceCreations += 1
+				throw new Error('ConfigService must remain lazy for configless Plugins')
+			},
 		})
-		const root = host.createRoot(inputs.name) as RootContext
+		const root = host.createRoot()
 		try {
 			const plugins = requirePluginService(root)
 			const address = ConfiglessTeardown.nodeAddress()
@@ -78,7 +67,7 @@ describe('PluginService read cost model', () => {
 			expect(removed.ok).toBe(true)
 			expect(configServiceCreations).toBe(0)
 		} finally {
-			await root.service(EffectsService).dispose()
+			await root.effects.dispose()
 		}
 	})
 

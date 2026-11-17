@@ -514,7 +514,7 @@ console.log('INSTALLED_AGENT_SDK_NODE_OK')
 
 const application = `
 import {readFile} from 'node:fs/promises'
-import { BasePlugin, Plugin, EffectsService, LoggerService, defineServiceRef } from '@pluxel/core'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import {logtape} from '@pluxel/core/config'
 import {defineHostApplication,defineHostService,type HostApplication} from '@pluxel/host'
 import type {HostVaultBindings} from '@pluxel/host/bindings'
@@ -535,7 +535,7 @@ export class Counter extends BasePlugin {
  readonly config=this.configs.use(Schema)
  calls=0
  async increment(by:number){await Promise.resolve();this.calls+=by;return {calls:this.calls,count:this.config.count}}
- protected init(){this.ctx.service(ElysiaApp).get('/installed-service',()=>this.calls);this.ctx.service(LoggerService).info('installed counter started');this.configs.onUpdate(this.config,({desired})=>{this.ctx.service(LoggerService).info('adopted {count}',{count:desired.count})})}
+ protected init(){this.ctx.service(ElysiaApp).get('/installed-service',()=>this.calls);this.ctx.logger.info('installed counter started');this.configs.onUpdate(this.config,({desired})=>{this.ctx.logger.info('adopted {count}',{count:desired.count})})}
 }
 export class Tally {
  private count=0
@@ -557,7 +557,7 @@ export default defineHostApplication((startup):HostApplication=>({
  services:[applicationServices(),elysia(),vault({backend:'bindings'}),managementAccess(),management(),managementHttp({scripts:true})],
  runtime:{documents:{config:false,state:false},logtape:logtape(({createRuntimeLogSink})=>({sinks:{history:createRuntimeLogSink({windowLines:100})},loggers:[{category:['pluxel'],lowestLevel:'trace',sinks:['history']},{category:['logtape','meta'],lowestLevel:'fatal',sinks:[]}]}))},
  policy:{autoStart:[ScriptCliAuthentication.nodeAddress(),Counter.nodeAddress()]},
- prepare:({host})=>{if(host.ctx.service(HostVaultRef)===undefined)throw new Error('Missing native HostVaultBindings service');host.ctx.service(EffectsService).defer(()=>{process.stdout.write(JSON.stringify({stage:'closed',authentication:scriptTestAuthentication})+'\\n')},{tag:'AgentSmokeShutdown',phase:'shutdown'})},
+ prepare:({host})=>{if(host.ctx.service(HostVaultRef)===undefined)throw new Error('Missing native HostVaultBindings service');host.ctx.effects.defer(()=>{process.stdout.write(JSON.stringify({stage:'closed',authentication:scriptTestAuthentication})+'\\n')},{tag:'AgentSmokeShutdown',phase:'shutdown'})},
  launch:async({host})=>{const listener=await listenElysia(host,{hostname:startup.env.AGENT_SMOKE_HOST,port:0,tls:{key:await readFile('tls.key','utf8'),cert:await readFile('tls.crt','utf8')}});process.stdout.write(JSON.stringify({stage:'ready',endpoint:'https://'+listener.address.host+':'+listener.address.port})+'\\n')},
 }))
 `

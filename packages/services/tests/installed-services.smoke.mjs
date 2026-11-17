@@ -587,7 +587,7 @@ import assert from 'node:assert/strict'
 import * as nativeFs from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { BasePlugin, Plugin, Fs, LoggerService, TinyBaseService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
 import { createHost } from '@pluxel/host'
 import { Passthrough } from '@pluxel/core/fs'
@@ -600,8 +600,8 @@ await nativeFs.promises.mkdir(prefix,{recursive:true})
 let owner
 class Owner extends BasePlugin {
  async init() {
-  this.state = this.ctx.service(TinyBaseService)
-  assert.equal(this.state, this.ctx.service(TinyBaseService))
+  this.state = this.ctx.tinybase
+  assert.equal(this.state, this.ctx.tinybase)
   this.supplied = createStore()
    .setTablesSchema({ items: { name: { type: 'string' }, count: { type: 'number' } } })
    .setValues({ seed: 'first-open' })
@@ -669,13 +669,13 @@ console.log('ISOLATED_TINYBASE_STORE_REOPEN_FLUSH_OK')
 `
 
 const tinybaseTypeConsumer = `
-import { TinyBaseService, type PluginContext, type RootContext, type TinyBaseStatus } from '@pluxel/core'
+import { type PluginContext, type RootContext, type TinyBaseStatus } from '@pluxel/core'
 import { requireTinyBaseHost, requireHostDocuments } from '@pluxel/core/internal'
 import { createStore, type Store } from 'tinybase'
 import { createStore as createSchemaStore } from 'tinybase/with-schemas'
 import { createQueries } from 'tinybase/queries/with-schemas'
 export async function consumer(ctx: PluginContext) {
- const state = ctx.service(TinyBaseService)
+ const state = ctx.tinybase
  const ordinary: Store = await state.open()
  const tagged = Object.assign(createStore(), { authorTag: 'preserved' as const })
  const tag: 'preserved' = (await state.open(tagged)).authorTag
@@ -727,7 +727,7 @@ const fsTypeConsumer = `
 import * as nativeFs from 'node:fs'
 import {createHost} from '@pluxel/host/browser'
 import {logtape,zenfs,type LogTapeConfig} from '@pluxel/core/config'
-import {Logging,type RuntimeLogging} from '@pluxel/core/logging'
+import { type RuntimeLogging } from '@pluxel/core/logging'
 import {InMemory,Passthrough,type FsPromises,type FsConfig} from '@pluxel/core/fs'
 import {requireFs} from '@pluxel/core/internal'
 import {IndexedDB} from '@pluxel/core/fs/browser'
@@ -740,7 +740,7 @@ const logger:LogTapeConfig=logtape({
  loggers:[{category:['pluxel'],sinks:['capture'],lowestLevel:'trace'},{category:['logtape','meta'],lowestLevel:null}],
 })
 const host=await createHost({plugins:[],runtime:{logtape:logger,zenfs:zenfs({ mounts: { '/': {backend:InMemory} } })}})
-const logging:RuntimeLogging=host.ctx.service(Logging)
+const logging:RuntimeLogging=host.ctx.logging!
 await logging.flush()
 const io:FsPromises=await requireFs(host.ctx).directory('documents')
 const bytes:Uint8Array=await io.readFile('value')
@@ -759,18 +759,16 @@ const hooks = registerHooks({ load(url, context, next) {
 } })
 const { createHost } = await import('@pluxel/host')
 const { logtape, zenfs } = await import('@pluxel/core/config')
-const { Logging } = await import('@pluxel/core/logging')
-const { BasePlugin, Plugin, Fs, TinyBaseService, LoggerService } = await import('@pluxel/core')
+const { BasePlugin, Plugin } = await import('@pluxel/core')
 const { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } = await import('@pluxel/core/toolchain')
 const { InMemory, Passthrough, writeFileAtomic } = await import('@pluxel/core/fs')
-const { requireFs, createServiceRef } = await import('@pluxel/core/internal')
-const LoggingRef = createServiceRef(Logging)
+const { requireFs } = await import('@pluxel/core/internal')
 const views = new Map()
 class Owner extends BasePlugin {
  async init() {
-  assert.equal(typeof this.ctx.service(Fs), 'function')
-  assert.ok(this.ctx.service(TinyBaseService))
-  views.set(this.ctx.pluginInfo.nodeAddress.definition.exportName, await this.ctx.service(Fs)())
+  assert.equal(typeof this.ctx.fs, 'function')
+  assert.ok(this.ctx.tinybase)
+  views.set(this.ctx.pluginInfo.nodeAddress.definition.exportName, await this.ctx.fs())
  }
 }
 class First extends Owner {}
@@ -781,8 +779,8 @@ for (const type of [First,Second]) {
 }
 const first = await createHost({plugins:[First,Second]})
 const second = await createHost({plugins:[]})
-assert.equal(first.ctx.service(LoggingRef),undefined)
-assert.equal(second.ctx.service(LoggingRef),undefined)
+assert.equal(first.ctx.logging,undefined)
+assert.equal(second.ctx.logging,undefined)
 let owned
 try {
  for (const type of [First,Second]) await first.startNode({definition:{entry:{kind:'package-root',packageName:'independent-service-consumer'},exportName:type.name},variant:'default'})
@@ -847,9 +845,9 @@ const logger=logtape({
 })
 assert.deepEqual(events,[])
 const logged=await createHost({plugins:[],runtime:{logtape:logger,zenfs:zenfs()}})
-const logging=logged.ctx.service(Logging)
+const logging=logged.ctx.logging
 try {
- logged.ctx.service(LoggerService).info('ISOLATED_CONFIG_NATIVE_SINK')
+ logged.ctx.logger.info('ISOLATED_CONFIG_NATIVE_SINK')
  await logging.flush()
  assert.ok(records.some(record=>record.rawMessage==='ISOLATED_CONFIG_NATIVE_SINK'))
  assert.deepEqual(events,['drain'])
@@ -917,7 +915,7 @@ import { standardServices } from '@pluxel/services'
 const baseServices = standardServices()
 void baseServices
 import { createHost } from '@pluxel/host'
-import { BasePlugin, Fs, defineServiceRef, type Context } from '@pluxel/core'
+import { BasePlugin, defineServiceRef, type Context } from '@pluxel/core'
 import { Passthrough, type FsPromises, type FsConfig } from '@pluxel/core/fs'
 import { IndexedDB } from '@pluxel/core/fs/browser'
 import * as nativeFs from 'node:fs'
@@ -943,7 +941,7 @@ class Consumer extends BasePlugin {
  init() {
   const optional: VaultStorageApi | undefined = this.ctx.service(VaultRef)
   const owned: VaultStorageApi = this.ctx.service(Vault)
-  const ownerIo: Promise<FsPromises> = this.ctx.service(Fs)({ writable: true })
+  const ownerIo: Promise<FsPromises> = this.ctx.fs({ writable: true })
   void ownerIo
   void optional; void owned
  }
@@ -1052,14 +1050,13 @@ const hook = registerHooks({ load(url, context, next) {
  return next(url, context)
 } })
 const { createHost } = await import('@pluxel/host')
-const { LoggerService } = await import('@pluxel/core')
 const { createScriptScope } = await import('@pluxel/host/internal/agent/runtime')
 const host = await createHost({ plugins: [] })
 await host.start()
 const scope = createScriptScope({ ctx: host.ctx })
 try {
- assert.equal(typeof scope.sdk.ctx.service(LoggerService).info, 'function')
- assert.equal(typeof host.ctx.service(LoggerService).info, 'function')
+ assert.equal(typeof scope.sdk.ctx.logger.info, 'function')
+ assert.equal(typeof host.ctx.logger.info, 'function')
  const page = await scope.sdk.plugins.list()
  assert.deepEqual(page.nodes, [])
  assert.equal(page.nextCursor, null)

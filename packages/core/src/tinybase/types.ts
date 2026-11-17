@@ -3,9 +3,6 @@ import type { Store } from 'tinybase'
 import type { OptionalSchemas, Store as SchemaStore } from 'tinybase/with-schemas'
 
 /** A Plugin generation's single native Store. Parts and dependency views share this handle. */
-export abstract class TinyBaseService {
-	static readonly access = 'owner' as const
-}
 export interface TinyBaseService {
 	/** Restore before use. A supplied Store must be fresh, ordinary and have no listeners or open transaction. */
 	open(): Promise<Store>
@@ -31,9 +28,6 @@ export type TinyBaseStatus = Readonly<{
 }>
 
 /** Host-only diagnostics. It never exposes a Plugin's mutable Store. */
-export abstract class TinyBaseHostService {
-	static readonly access = 'root' as const
-}
 export interface TinyBaseHostService {
 	status(): readonly TinyBaseStatus[]
 	/** Stop the Plugin first. Retry the retained snapshot or discard it and inspect the actual backing. */

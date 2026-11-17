@@ -162,6 +162,8 @@ describe('generation-bound Plugin caller facade', () => {
 			expect(facades.configs).toBeDefined()
 
 			const callerContext = consumer.provider.inspectContext()
+			expect(Object.isExtensible(raw.ctx)).toBe(false)
+			expect(Object.isExtensible(callerContext)).toBe(false)
 			expect(Object.hasOwn(callerContext, 'pluginInfo')).toBe(true)
 			expect(callerContext.pluginInfo).toBe(raw.ctx.pluginInfo)
 			expect(callerContext.caller).toBe(consumer.ctx)

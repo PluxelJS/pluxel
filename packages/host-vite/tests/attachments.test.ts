@@ -9,7 +9,7 @@ import {
 async function attach(attachments: HostViteAttachment[], cleanups: Array<() => unknown> = []) {
 	return attachHostVitePlugins(
 		{
-			ctx: { service: () => ({ defer: (cleanup: () => unknown) => cleanups.push(cleanup) }) },
+			ctx: { effects: { defer: (cleanup: () => unknown) => cleanups.push(cleanup) } },
 		} as never,
 		{
 			config: {

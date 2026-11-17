@@ -4,7 +4,6 @@ import {
 	resolveContextService,
 } from '@pluxel/core/internal'
 import {
-	EffectsService,
 	type EffectsScope,
 	type RootContext,
 	type PluginNodeAddress,
@@ -152,7 +151,7 @@ export async function prepareHostServices(
 	if (nodeMetadataServices.has(ctx))
 		throw new Error('[host] services are already prepared for this root')
 	nodeMetadataServices.set(ctx, services)
-	ctx.service(EffectsService).defer(
+	ctx.effects.defer(
 		() => {
 			nodeMetadataServices.delete(ctx)
 		},
@@ -162,7 +161,7 @@ export async function prepareHostServices(
 		const dependencies = Object.create(null) as Record<string, unknown>
 		for (const [name, definition] of Object.entries(service.requires ?? {}))
 			dependencies[name] = resolveContextService(ctx, definition)
-		const effects = ctx.service(EffectsService).scope({ tag: service.name })
+		const effects = ctx.effects.scope({ tag: service.name })
 		await service.prepare?.({ ctx, effects, plugins, dependencies: Object.freeze(dependencies) })
 	}
 }

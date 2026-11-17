@@ -1,7 +1,6 @@
-import { LoggerService, BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { logtape } from '@pluxel/core/config'
-import { createServiceRef, requirePluginService } from '@pluxel/core/internal'
-import { Logging } from '@pluxel/core/logging'
+import { requirePluginService } from '@pluxel/core/internal'
 import { expect, it, vi } from 'vitest'
 import { createHost } from '../src/index'
 import type { Script } from '../src/agent'
@@ -28,7 +27,7 @@ class Counter extends BasePlugin {
 	readonly config = this.configs.use(schema)
 	count = 2
 	init() {
-		this.ctx.service(LoggerService).info('counter started')
+		this.ctx.logger.info('counter started')
 		this.configs.onUpdate(this.config, ({ desired }) => {
 			this.count = desired.count
 		})
@@ -495,10 +494,10 @@ it('reads real bounded logging streams, waits with a deadline and preserves rete
 			filter: { category: 'pluxel.runtime.*' },
 		})
 		await Promise.resolve()
-		host.ctx.service(LoggerService).info('new diagnostic')
-		host.ctx.service(Logging).flushStores()
+		host.ctx.logger.info('new diagnostic')
+		host.ctx.logging!.flushStores()
 		expect(await waiting).toMatchObject({ lines: [{ msg: 'new diagnostic' }] })
-		for (let i = 0; i < 5; i++) host.ctx.service(LoggerService).info('retained {i}', { i })
+		for (let i = 0; i < 5; i++) host.ctx.logger.info('retained {i}', { i })
 		await expect(scope.sdk.logs.read(cursor)).rejects.toMatchObject({
 			details: { code: 'from_too_old' },
 		})
@@ -506,12 +505,12 @@ it('reads real bounded logging streams, waits with a deadline and preserves rete
 		const after = await scope.sdk.logs.mark()
 		const pending = scope.sdk.logs.wait(after, { timeoutMs: 1000 })
 		await Promise.resolve()
-		expect(host.ctx.service(Logging).stores.get('default')!.subscriberCount).toBe(1)
+		expect(host.ctx.logging!.stores.get('default')!.subscriberCount).toBe(1)
 		scope.abort(new Error('cancel log wait'))
 		await expect(pending).rejects.toMatchObject({
 			details: { code: 'cancelled' },
 		})
-		expect(host.ctx.service(Logging).stores.get('default')!.subscriberCount).toBe(0)
+		expect(host.ctx.logging!.stores.get('default')!.subscriberCount).toBe(0)
 	} finally {
 		await scope.dispose()
 	}
@@ -524,7 +523,7 @@ it('reports missing history capabilities without installing a logging backend', 
 		await expect(scope.sdk.logs.streams()).rejects.toMatchObject({
 			details: { code: 'logging_unavailable' },
 		})
-		expect(host.ctx.service(createServiceRef(Logging))).toBeUndefined()
+		expect(host.ctx.logging).toBeUndefined()
 	} finally {
 		await scope.dispose()
 	}
@@ -540,7 +539,7 @@ it('reports missing history capabilities without installing a logging backend', 
 		await expect(noHistory.sdk.logs.mark()).rejects.toMatchObject({
 			details: { code: 'store_unavailable' },
 		})
-		expect(logs.ctx.service(Logging).stores.list()).toEqual([])
+		expect(logs.ctx.logging!.stores.list()).toEqual([])
 	} finally {
 		await noHistory.dispose()
 	}

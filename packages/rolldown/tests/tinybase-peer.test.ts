@@ -90,8 +90,8 @@ it.each([
 
 it.each([
 	"export { BasePlugin } from '@pluxel/core'",
-	"import { TinyBaseService } from '@pluxel/core'; export const open = ctx => ctx.service(TinyBaseService).open()",
-	"import type { TinyBaseService } from '@pluxel/core'; export const result = 1",
+	'export const open = ctx => ctx.tinybase.open()',
+	'export const result = 1',
 	"export { createStore } from 'tinybase'",
 ])(
 	'does not invent upstream interoperability from fixed Core APIs or private imports: %s',

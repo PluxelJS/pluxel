@@ -1,18 +1,9 @@
-import { TinyBaseService } from '../src/tinybase/types'
-import { Fs } from '../src/context/core-capabilities'
-import { EffectsService } from '../src/services/effects/EffectsService'
 import * as nativeFs from 'node:fs'
 import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-	BasePlugin,
-	Plugin,
-	PluginPart,
-	ContextServiceAccessError,
-	encodePluginNodeAddressBytes,
-} from '@pluxel/core'
+import { BasePlugin, Plugin, PluginPart, encodePluginNodeAddressBytes } from '@pluxel/core'
 import { createCoreTestHost, getCoreTestHostContext } from '../src/internal-test'
 import { requireFs, requireHostDocuments } from '../src/internal/storage'
 import { boundContexts } from '@zenfs/core'
@@ -34,14 +25,14 @@ afterEach(async () => {
 
 class FilePart extends PluginPart<FileOwner> {
 	async readDocument() {
-		const directory = await this.ctx.service(Fs)()
+		const directory = await this.ctx.fs()
 		return directory.readFile('document', 'utf8')
 	}
 }
 
 @Plugin()
 class FileOwner extends BasePlugin {
-	readonly directory = this.ctx.service(Fs)
+	readonly directory = this.ctx.fs
 	readonly filesPart = this.parts.use(FilePart)
 }
 
@@ -200,9 +191,11 @@ describe('Core-owned filesystem', () => {
 		const state = filesystem.documents('host/state')
 		expect(calls).toEqual([])
 		// @ts-expect-error A Core root has no Plugin directory.
-		expect(() => root.service(Fs)).toThrow(ContextServiceAccessError)
+		expect(root.fs).toBeUndefined()
 		// @ts-expect-error A Core root has no Plugin Store bridge.
-		expect(() => root.service(TinyBaseService)).toThrow(ContextServiceAccessError)
+		expect(root.tinybase).toBeUndefined()
+		expect('fs' in root).toBe(false)
+		expect('tinybase' in root).toBe(false)
 		await Promise.all([config.getText('missing'), state.getText('missing'), filesystem.ready()])
 		expect(calls).toEqual(['open'])
 		const first = await filesystem.directory('services/example')
@@ -381,7 +374,7 @@ describe('Core-owned filesystem', () => {
 		const root = getCoreTestHostContext(host)
 		const filesystem = requireFs(root)
 		const directory = await filesystem.directory('services/final')
-		root.service(EffectsService).defer(() => writeFileAtomic(directory, 'last', 'FINAL'))
+		root.effects.defer(() => writeFileAtomic(directory, 'last', 'FINAL'))
 		await host.dispose()
 		expect(await readFile(join(prefix, 'services/final/last'), 'utf8')).toBe('FINAL')
 		await expect(directory.readFile('last')).rejects.toMatchObject({ code: 'EBADF' })

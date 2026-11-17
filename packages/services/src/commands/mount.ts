@@ -1,4 +1,4 @@
-import { LoggerService, EffectsService, type Context as CoreContext } from '@pluxel/core'
+import { type Context as CoreContext } from '@pluxel/core'
 import {
 	CommandError,
 	Result,
@@ -83,7 +83,7 @@ class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> 
 
 	start(): this {
 		try {
-			this.providerOwner.service(EffectsService).defer(() => this.close(), { tag: 'CommandMount' })
+			this.providerOwner.effects.defer(() => this.close(), { tag: 'CommandMount' })
 		} catch (error) {
 			this.state = 'withdrawn'
 			throw error
@@ -191,11 +191,9 @@ class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> 
 		}
 
 		try {
-			record.guard = publicationOwner
-				.service(EffectsService)
-				.defer(() => this.withdraw(record, false), {
-					tag: `CommandMount:${snapshot.name}`,
-				})
+			record.guard = publicationOwner.effects.defer(() => this.withdraw(record, false), {
+				tag: `CommandMount:${snapshot.name}`,
+			})
 			this.bindings.add(record)
 			if (this.state !== 'active') {
 				throw new CommandError('ABORTED', 'Command mount unavailable')
@@ -426,7 +424,7 @@ class CommandMountImpl<Ctx extends CommandContext> implements CommandMount<Ctx> 
 
 	private reportCleanupFailure(message: string, error: unknown, command: string): void {
 		try {
-			this.providerOwner.service(LoggerService).error(message, { error, command })
+			this.providerOwner.logger.error(message, { error, command })
 		} catch {
 			// Cleanup remains no-throw even if a diagnostics sink itself is broken.
 		}

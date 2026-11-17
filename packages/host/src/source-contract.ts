@@ -1,4 +1,4 @@
-import { EffectsService, type Context } from '@pluxel/core'
+import { type Context } from '@pluxel/core'
 import { isAbsolute, relative, resolve } from 'node:path'
 import picomatch from 'picomatch'
 
@@ -104,7 +104,7 @@ export function installPluginSources(
 			updates: options.updates,
 		}),
 	)
-	ctx.root.service(EffectsService).defer(
+	ctx.root.effects.defer(
 		() => {
 			sourcesByRoot.delete(ctx.root)
 		},

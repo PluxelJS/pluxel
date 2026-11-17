@@ -5,6 +5,8 @@ description: 在插件中集成 Elysia 2 路由、Webhook 与 WebSocket，实现
 
 在 Pluxel 插件中对外提供 Web 接口非常便捷：通过在 `init()` 钩子中调用 `this.ctx.service(ElysiaApp)`，即可直接使用原生的 [Elysia](https://elysiajs.com/) 实例定义路由。宿主在启动时负责监听端口并将请求分发至对应插件，当插件停止或热重载时，相关路由会自动安全注销。
 
+Host 须安装 `elysia()`；`standardServices()` 和 `servicesPreset()` 均包含它，见 [Host 服务组合](../host/services.md)。
+
 ## 最小路由
 
 在插件中挂载 HTTP 接口的典型示例：
@@ -38,17 +40,12 @@ export class OrdersPlugin extends BasePlugin {
 > 声明的路由路径即为最终对外暴露的 URL 路径。如果需要统一的路由前缀，建议使用 Elysia 的 `.group()` 组织：
 >
 > ```ts
+> import { ElysiaApp } from '@pluxel/services/elysia'
 >
-> ```
-
-import { ElysiaApp } from '@pluxel/services/elysia'
-
 > this.ctx.service(ElysiaApp).group('/api/v1', (app) => app.get('/orders', () => this.listOrders()))
->
 > ```
 >
 > 注意：`/__pluxel` 为框架管理面板的保留前缀，插件不可占用。
-> ```
 
 ## 直接使用 Elysia 能力
 
@@ -83,14 +80,14 @@ this.ctx.service(ElysiaApp).post(
 
 ```ts no-twoslash
 import { ElysiaApp } from '@pluxel/services/elysia'
-import { LoggerService } from '@pluxel/core'
+
 this.ctx
 	.service(ElysiaApp)
 	.onRequest(({ request }) => {
-		this.ctx.service(LoggerService).debug('Incoming request', { url: request.url })
+		this.ctx.logger.debug('Incoming request', { url: request.url })
 	})
 	.onError(({ error, code }) => {
-		this.ctx.service(LoggerService).error('Request error', { code, error })
+		this.ctx.logger.error('Request error', { code, error })
 	})
 ```
 

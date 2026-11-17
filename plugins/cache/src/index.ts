@@ -7,9 +7,6 @@ import {
 	type PluginNodeAddress,
 	BasePlugin,
 	Plugin,
-	EffectsService,
-	Fs,
-	LoggerService,
 } from '@pluxel/core'
 import { createHash } from 'node:crypto'
 import { deserialize, serialize } from 'node:v8'
@@ -300,7 +297,7 @@ type Resolved = {
 	bucket: Bucket
 }
 
-type OwnerContext = Pick<Context, 'service'> & {
+type OwnerContext = Pick<Context, 'effects'> & {
 	readonly pluginInfo: {
 		readonly nodeSlot: object
 		readonly nodeAddress: PluginNodeAddress
@@ -655,7 +652,7 @@ export class CachePlugin extends Cache {
 
 	protected override init(): void {
 		this.runtime.active = true
-		this.ctx.service(EffectsService).defer(
+		this.ctx.effects.defer(
 			() => {
 				this.runtime.active = false
 				for (const registration of this.runtime.registrations) {
@@ -726,7 +723,7 @@ export class CachePlugin extends Cache {
 		this.runtime.owners.set(context, owner)
 		const cleanupOwner = owner
 		try {
-			context.service(EffectsService).defer(() => this.releaseOwner(cleanupOwner), {
+			context.effects.defer(() => this.releaseOwner(cleanupOwner), {
 				tag: 'cache-bindings',
 				phase: 'shutdown',
 			})
@@ -885,37 +882,36 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 
 	protected override async init(): Promise<void> {
 		this.prepareStart()
-		this.ctx.service(EffectsService).defer(() => this.cleanup(), { tag: 'memory-cache-backend' })
+		this.ctx.effects.defer(() => this.cleanup(), { tag: 'memory-cache-backend' })
 		try {
 			this.getState()
 			this.holder.persistenceMode = this.config.persistence.mode
 			if (this.holder.persistenceMode === 'off') return
 
 			if (this.holder.persistenceMode === 'durable') {
-				this.holder.storage = await this.ctx.service(Fs)({ durable: true, writable: true })
+				this.holder.storage = await this.ctx.fs({ durable: true, writable: true })
 				this.holder.persistenceWritable = true
 			} else {
 				try {
-					this.holder.storage = await this.ctx.service(Fs)({ durable: true })
+					this.holder.storage = await this.ctx.fs({ durable: true })
 				} catch (error) {
 					if (!hasErrno(error, 'ENOTSUP')) throw error
-					this.ctx
-						.service(LoggerService)
-						.warn(
-							'Memory cache best-effort persistence is using ephemeral storage and will not survive a process restart',
-						)
-					this.holder.storage = await this.ctx.service(Fs)()
+					this.ctx.logger.warn(
+						'Memory cache best-effort persistence is using ephemeral storage and will not survive a process restart',
+					)
+					this.holder.storage = await this.ctx.fs()
 				}
 				try {
-					await this.ctx.service(Fs)({ writable: true })
+					await this.ctx.fs({ writable: true })
 					this.holder.persistenceWritable = true
 				} catch (error) {
 					if (!hasErrno(error, 'EROFS')) throw error
-					this.ctx
-						.service(LoggerService)
-						.warn('Memory cache persistence is not writable; restoring without saving updates', {
+					this.ctx.logger.warn(
+						'Memory cache persistence is not writable; restoring without saving updates',
+						{
 							error,
-						})
+						},
+					)
 				}
 			}
 
@@ -1027,11 +1023,9 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 					cause: error,
 				})
 			}
-			this.ctx
-				.service(LoggerService)
-				.warn('Memory cache snapshot could not be restored; starting empty', {
-					error,
-				})
+			this.ctx.logger.warn('Memory cache snapshot could not be restored; starting empty', {
+				error,
+			})
 			this.holder.serializedValues.clear()
 			clearEntries(this.getState().bucket)
 			this.requestSnapshot()
@@ -1045,7 +1039,7 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 		this.holder.flushTimer = setTimeout(() => {
 			this.holder.flushTimer = undefined
 			void this.flushSnapshot().catch((error) => {
-				this.ctx.service(LoggerService).error('Memory cache snapshot flush failed', { error })
+				this.ctx.logger.error('Memory cache snapshot flush failed', { error })
 			})
 		}, this.config.persistence.flushIntervalMs)
 		unrefTimer(this.holder.flushTimer)
@@ -1086,9 +1080,7 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 				this.holder.savedRevision = revision
 			} catch (error) {
 				if (this.holder.persistenceMode === 'durable') throw error
-				this.ctx
-					.service(LoggerService)
-					.warn('Memory cache best-effort snapshot could not be saved', { error })
+				this.ctx.logger.warn('Memory cache best-effort snapshot could not be saved', { error })
 				return
 			}
 		}

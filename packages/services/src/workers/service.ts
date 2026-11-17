@@ -1,4 +1,4 @@
-import { EffectsService, type Context as CoreContext } from '@pluxel/core'
+import { type Context as CoreContext } from '@pluxel/core'
 import { availableParallelism, cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { pinOwnerContext } from '../internal/owner-view'
@@ -100,7 +100,7 @@ export class WorkerTaskService {
 				queuedTasks: 0,
 				shuttingDown: false,
 			}
-			ctx.service(EffectsService).defer(() => this.shutdownRoot(), {
+			ctx.effects.defer(() => this.shutdownRoot(), {
 				tag: 'WorkerTasks',
 				phase: 'shutdown',
 			})
@@ -326,7 +326,7 @@ export class WorkerTaskService {
 		}
 		state.owners.set(owner, lease)
 		try {
-			owner.service(EffectsService).defer(() => this.closeOwner(state, lease), {
+			owner.effects.defer(() => this.closeOwner(state, lease), {
 				tag: 'WorkerTaskOwner',
 				phase: 'shutdown',
 			})

@@ -1,4 +1,3 @@
-import { EffectsService } from '../../services/effects/EffectsService'
 import type { Context, PluginContext } from '../../context/Context'
 import { closeConsumerInvocations, closeOwnerInvocations } from '../../internal/owner-invocations'
 import { createErr, createOk } from 'option-t/plain_result'
@@ -549,7 +548,7 @@ export class PluginDefinitions {
 					...[...partContexts].map((ctx) => closeOwnerInvocations(ctx)),
 				])
 				try {
-					await pluginContext.service(EffectsService).dispose()
+					await pluginContext.effects.dispose()
 				} finally {
 					await Promise.all([
 						closeConsumerInvocations(pluginContext),
@@ -904,6 +903,7 @@ function installPluginGenerationInfo(
 			...(definition.config === undefined ? {} : { config: definition.config }),
 		}),
 	)
+	Object.preventExtensions(ctx)
 }
 
 function invalidDeclaration(nodeKey: object, message: string): GraphBuildError {

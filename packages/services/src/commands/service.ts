@@ -1,4 +1,4 @@
-import { EffectsService, type Context as CoreContext } from '@pluxel/core'
+import { type Context as CoreContext } from '@pluxel/core'
 import {
 	Result,
 	createCommandRegistry,
@@ -78,7 +78,7 @@ export class CommandsService {
 
 		let guard: { cancel(): void }
 		try {
-			guard = owner.service(EffectsService).defer(cleanup, { tag: `Command:${registration.name}` })
+			guard = owner.effects.defer(cleanup, { tag: `Command:${registration.name}` })
 		} catch (error) {
 			cleanup()
 			throw error

@@ -35,12 +35,11 @@ description: 使用 Context 的 effects 机制管理插件初始化、后台任�
 在 `init()` 阶段创建长期持有的外部资源时，应当就近注册对应的释放函数。
 
 ```ts no-twoslash
-import { EffectsService } from '@pluxel/core'
 protected override async init(signal: AbortSignal) {
 	const client = createDatabaseClient(this.config)
 
 	// 1. 建立资源后立即登记清理
-	this.ctx.service(EffectsService).defer(() => client.close(), { tag: 'database-client' })
+	this.ctx.effects.defer(() => client.close(), { tag: 'database-client' })
 
 	// 2. 执行异步连接（支持 AbortSignal 取消）
 	await client.connect({ signal })
@@ -49,12 +48,12 @@ protected override async init(signal: AbortSignal) {
 
 ### 常用清理原语
 
-| API                                 | 用途                                                | 示例                                                                     |
-| ----------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------ |
-| `effects.defer(fn)`                 | 登记一个清理函数                                    | `this.ctx.service(EffectsService).defer(() => clearInterval(timer))`     |
-| `effects.own(disposable)`           | 托管实现了 `[Symbol.dispose]` 或 `dispose()` 的对象 | `this.ctx.service(EffectsService).own(fileWatcher)`                      |
-| `effects.acquire(acquire, release)` | 声明配对的资源获取与释放逻辑                        | `this.ctx.service(EffectsService).acquire(() => lock(), () => unlock())` |
-| `effects.scope(meta)`               | 为辅助子逻辑创建独立的子作用域                      | 创建拥有局部清理范围的独立作用域                                         |
+| API                                 | 用途                                                | 示例                                                     |
+| ----------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| `effects.defer(fn)`                 | 登记一个清理函数                                    | `this.ctx.effects.defer(() => clearInterval(timer))`     |
+| `effects.own(disposable)`           | 托管实现了 `[Symbol.dispose]` 或 `dispose()` 的对象 | `this.ctx.effects.own(fileWatcher)`                      |
+| `effects.acquire(acquire, release)` | 声明配对的资源获取与释放逻辑                        | `this.ctx.effects.acquire(() => lock(), () => unlock())` |
+| `effects.scope(meta)`               | 为辅助子逻辑创建独立的子作用域                      | 创建拥有局部清理范围的独立作用域                         |
 
 ### 支持直接返回清理函数
 
@@ -75,7 +74,6 @@ protected override init() {
 2. **等待在途任务完成**：等待正在执行的异步操作结束，避免新旧实例在交替时产生数据并发冲突。
 
 ```ts no-twoslash
-import { EffectsService } from '@pluxel/core'
 protected override async init(signal: AbortSignal) {
 	let running = true
 	const workerPromise = (async () => {
@@ -84,7 +82,7 @@ protected override async init(signal: AbortSignal) {
 		}
 	})()
 
-	this.ctx.service(EffectsService).defer(async () => {
+	this.ctx.effects.defer(async () => {
 		running = false
 		await workerPromise // 等待当前处理中的批次退出
 	}, { tag: 'queue-worker' })

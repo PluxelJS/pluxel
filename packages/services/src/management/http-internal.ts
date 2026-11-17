@@ -1,5 +1,5 @@
 import { resolveContextService } from '@pluxel/core/internal'
-import { LoggerService, type RootContext, type EffectsScope } from '@pluxel/core'
+import { type RootContext, type EffectsScope } from '@pluxel/core'
 import { enterOwnerInvocation } from '@pluxel/core/host'
 import { ElysiaRuntime } from '../elysia/runtime'
 import type { ElysiaApplicationCarrier } from '../elysia/elysia-application-carrier'
@@ -29,8 +29,7 @@ export async function attachManagementHttp(
 		...scripts,
 		...options.bindings?.(ctx),
 		onError:
-			options.onError ??
-			((error) => ctx.service(LoggerService).error('Management operation failed', { error })),
+			options.onError ?? ((error) => ctx.logger.error('Management operation failed', { error })),
 	})
 	// Subscribe to root admission closure without retaining a root invocation across the session.
 	const rootLease = enterOwnerInvocation(ctx)

@@ -14,7 +14,7 @@ export default ((sdk, run) => {
 }) satisfies Script
 ```
 
-远程 Node 应用接收作者侧编译的 JavaScript 制品，应用机器只需运行时。已知插件使用[生成的控制入口](./plugin-control.md)，可直接推导配置类型并调用实际实例的方法。Node 和 Vite 脚本使用同一个 `Script` 类型和 `ScriptSdk`，通过 `sdk.ctx.service(Service)` 借用当前根服务视图。Vite 项目脚本可以 import 当前模块图中的项目模块与服务声明，见[开发控制台](./dev-console.md)。
+远程 Node 应用接收作者侧编译的 JavaScript 制品，应用机器只需运行时。已知插件使用[生成的控制入口](./plugin-control.md)，可直接推导配置类型并调用实际实例的方法。Node 和 Vite 脚本使用同一个 `Script` 类型和 `ScriptSdk`，通过 `sdk.ctx` 使用内建 Context 能力，通过 `sdk.ctx.service(Service)` 借用应用安装的服务。Vite 项目脚本可以 import 当前模块图中的项目模块与服务声明，见[开发控制台](./dev-console.md)。
 
 按目标选择执行方式，脚本函数保持相同：
 
@@ -118,7 +118,9 @@ export default (async (sdk) => {
 
 ## 借用已安装的服务
 
-所有服务都通过 `service(...)` 读取。`sdk.ctx` 是当前 run 的根服务访问视图，只提供 `service`，不交付原始 RootContext。直接导入服务声明或生成的服务描述符表示必需依赖；缺失时抛出 `ContextServiceMissingError`。可选依赖用 `defineServiceRef<T>()` 取得引用，仅未安装时返回 `undefined`，访问拒绝、构造失败和契约失配继续抛出。
+`sdk.ctx` 是当前 run 的根 Context 视图，内建能力直接通过 `sdk.ctx.logger`、`sdk.ctx.effects`、`sdk.ctx.events` 使用；应用配置日志后可读取 `sdk.ctx.logging`。这些能力无需服务声明或生成材料。SDK 视图的 `effects` 管理本次 run 登记的资源，run 关闭时自动释放；显式 dispose 该 scope 也不会关闭 Host 或插件。
+
+Vault、Commands 等由应用安装的服务通过 `service(...)` 读取。直接导入服务声明或生成的服务描述符表示必需依赖；缺失时抛出 `ContextServiceMissingError`。可选依赖用 `defineServiceRef<T>()` 取得引用，仅未安装时返回 `undefined`，访问拒绝、构造失败和契约失配继续抛出。
 
 上传脚本从生成的 `./control` 或同步模块导入服务值与对应的 `FooInstance` 类型，不加载本地服务实现：
 
@@ -132,6 +134,7 @@ const CommandsRef = defineServiceRef<CommandsInstance>()
 export default ((sdk) => {
 	const required = sdk.ctx.service(Commands)
 	const optional = sdk.ctx.service(CommandsRef)
+	sdk.ctx.logger.info('Inspecting installed commands')
 	return { sameService: required === optional, commands: required.list() }
 }) satisfies Script
 ```
@@ -154,7 +157,7 @@ export default (async (sdk) => {
 }) satisfies Script
 ```
 
-`context()` 捕获当前 running generation，不会启动节点。返回视图仍只提供 `service`，服务保持原生 API；run 关闭或该 generation 被停止、重启、替换后，旧视图与已借用服务失效，重新调用 `context()` 取得新 generation。`sdk.ctx` 允许根访问，节点 Context 允许 owner 访问，两者都保留安装权限。脚本自己创建的订阅、RPC lease 和其他资源仍须按原 API 释放。
+`context()` 捕获当前 running generation，不会启动节点。返回的 Plugin Context 直接提供 `logger`、`effects`、`events`、`fs()` 和 `tinybase`，应用安装的服务继续通过 `service` 读取，各项能力保持原生 API。run 关闭或该 generation 被停止、重启、替换后，旧视图与已借用能力失效，重新调用 `context()` 取得新 generation。`sdk.ctx` 允许根访问，节点 Context 允许 owner 访问，两者都保留安装权限。脚本自己创建的订阅、RPC lease 和其他资源仍须按原 API 释放。
 
 ## 向 Node 应用提交
 

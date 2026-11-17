@@ -4,7 +4,7 @@ import { Commands } from '@pluxel/services/commands'
 import { resolve } from 'node:path'
 import { defineCommand, Result } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
-import { BasePlugin, Plugin, EffectsService, defineServiceRef } from '@pluxel/core'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { RpcTarget } from 'capnweb'
@@ -120,10 +120,10 @@ export class PackageManagerPlugin extends BasePlugin {
 			sourceUpdates: source.updates,
 			signal,
 		})
-		this.ctx.service(EffectsService).defer(() => store.close())
+		this.ctx.effects.defer(() => store.close())
 		await store.initialize()
 		this.store = store
-		this.ctx.service(EffectsService).defer(() => {
+		this.ctx.effects.defer(() => {
 			if (this.store === store) this.store = undefined
 		})
 

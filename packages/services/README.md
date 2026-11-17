@@ -4,7 +4,7 @@
 
 根入口的 `standardServices()` 组合 Elysia、Commands、Node artifacts 和 Workers，不加载 Management 或 Workbench 后端。官方完整应用组合使用 `@pluxel/services/preset`，Vite 附件组合使用 `@pluxel/services/vite`；应用构建统一使用 `@pluxel/rolldown` 的 `pluxel()`。自定义宿主逐项选择服务与 `/elysia/vite`、`/node/vite` 附件。Node 与 Vite 使用同一个 `@pluxel/agent-sdk/host` Script SDK，Host-vite 负责当前项目模块图的装载与更新。通过 `managementHttp({ scripts: true })` 显式启用 Node 上传执行，见[自动化脚本](../../docs/development/scripts.md)。
 
-FS 与 TinyBase 是 Core 固定能力，通过 `ctx.service(Fs)()` 与 `ctx.service(TinyBaseService)` 使用；后端在 Host 的 `runtime.zenfs` 中选择一次，TinyBase 预算在 `runtime.tinybase` 中设置。Core 安装其精确 TinyBase 版本；只有直接导入原生 Store、Queries 等参与托管互操作的插件声明同版 peer 与 devDependency，见[插件包](../../docs/development/plugin-package.md)。
+FS 与 TinyBase 是 Core 固定能力，通过 `ctx.fs()` 与 `ctx.tinybase` 使用；后端在 Host 的 `runtime.zenfs` 中选择一次，TinyBase 预算在 `runtime.tinybase` 中设置。Core 安装其精确 TinyBase 版本；只有直接导入原生 Store、Queries 等参与托管互操作的插件声明同版 peer 与 devDependency，见[插件包](../../docs/development/plugin-package.md)。
 
 ```ts
 import { zenfs } from '@pluxel/core/config'
@@ -45,7 +45,7 @@ try {
 
 Plugin 基于 `@pluxel/core`，固定拥有[文件存储](../../docs/plugin-development/fs.md)与[状态 Store](../../docs/plugin-development/tinybase.md)能力；通过 `ctx.service(Vault)` 或 `ctx.service(Commands)` 读取必需能力；可选集成通过 `defineServiceRef<Service>()` 取得引用，再调用 `ctx.service(ref)`。服务目录类型不表示所有 Host 已安装该服务。
 
-`this.ctx.service(LoggerService)` 由 Core 始终提供，服务声明 `LoggerService` 从 `@pluxel/core` 导入；应用通过 `runtime.logtape: logtape(nativeConfig, options)`（`@pluxel/core/config`）配置输出、过滤和日志存储，宿主查询从 `@pluxel/core/logging` 读取；省略 `runtime.logtape` 不安装进程日志配置。
+`this.ctx.logger` 由 Core 始终提供，无需导入服务声明；应用通过 `runtime.logtape: logtape(nativeConfig, options)`（`@pluxel/core/config`）配置输出、过滤和日志存储，宿主通过 `root.logging` 查询运行时；省略 `runtime.logtape` 不安装进程日志配置。
 
 完整用法与生命周期约束见 [组合 Host 服务](https://github.com/PluxelJS/pluxel/blob/main/docs/host/services.md)。
 

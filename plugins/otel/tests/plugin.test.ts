@@ -1,4 +1,4 @@
-import { formatPluginNodeReference, BasePlugin, Plugin, EffectsService } from '@pluxel/core'
+import { formatPluginNodeReference, BasePlugin, Plugin } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
 import {
@@ -31,7 +31,7 @@ class Consumer extends BasePlugin {
 		const workers = meter.createObservableGauge('workers.active')
 		const observeWorkers: ObservableCallback = (result) => result.observe(2, { region: 'hk' })
 		workers.addCallback(observeWorkers)
-		this.ctx.service(EffectsService).defer(() => workers.removeCallback(observeWorkers))
+		this.ctx.effects.defer(() => workers.removeCallback(observeWorkers))
 	}
 
 	record(): void {

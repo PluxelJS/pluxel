@@ -46,7 +46,7 @@ export type {
 	RuntimeLoggingState,
 } from './logging'
 
-export { Logging, type LoggingOptions } from './service'
+export type { LoggingOptions } from './service'
 export {
 	markLogs,
 	readLogs,

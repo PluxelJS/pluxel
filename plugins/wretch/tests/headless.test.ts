@@ -4,7 +4,7 @@ import * as nativeFs from 'node:fs'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BasePlugin, Plugin, Fs, defineServiceRef } from '@pluxel/core'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { Passthrough } from '@pluxel/core/fs'
 import { expect, it } from 'vitest'
@@ -20,7 +20,7 @@ class StatelessHttpConsumer extends BasePlugin {
 		super()
 	}
 	async init() {
-		expect(this.ctx.service(Fs)).toBeTypeOf('function')
+		expect(this.ctx.fs).toBeTypeOf('function')
 		expect(this.ctx.service(WorkbenchRef)).toBeUndefined()
 		await this.http.enableManagedSettings()
 		await this.http.updateManagedSettings({ headers: {} })

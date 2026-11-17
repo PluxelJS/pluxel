@@ -1,14 +1,7 @@
 import type { Workbench } from '@pluxel/workbench'
 import { ElysiaApp } from '@pluxel/services/elysia'
 import type { Logger, Meter, Tracer } from '@opentelemetry/api'
-import {
-	BasePlugin,
-	formatPluginNodeReference,
-	Plugin,
-	EffectsService,
-	LoggerService,
-	defineServiceRef,
-} from '@pluxel/core'
+import { BasePlugin, formatPluginNodeReference, Plugin, defineServiceRef } from '@pluxel/core'
 import { OtelConfig, type OtelSignal } from './config.ts'
 import { safeErrorType } from './diagnostics.ts'
 import type { OtlpExportState } from './otlp.ts'
@@ -68,7 +61,7 @@ export abstract class Otel extends BasePlugin {
 		const runtime = await createRuntimeFromProviders(providers)
 		this.runtime = runtime
 		try {
-			this.ctx.service(EffectsService).defer(() => this.disposeRuntime(runtime), { tag: 'Otel' })
+			this.ctx.effects.defer(() => this.disposeRuntime(runtime), { tag: 'Otel' })
 			if (runtime.prometheus && runtime.prometheusPath !== undefined) {
 				this.mountPrometheus(runtime.prometheus, runtime.prometheusPath)
 				this.prometheusPath = runtime.prometheusPath
@@ -238,7 +231,7 @@ export abstract class Otel extends BasePlugin {
 
 	private info(message: string): void {
 		try {
-			this.ctx.service(LoggerService).info(message)
+			this.ctx.logger.info(message)
 		} catch {
 			// Diagnostics cannot affect telemetry or application code.
 		}
@@ -246,7 +239,7 @@ export abstract class Otel extends BasePlugin {
 
 	private warn(message: string, properties: Readonly<Record<string, unknown>>): void {
 		try {
-			this.ctx.service(LoggerService).warn(message, properties)
+			this.ctx.logger.warn(message, properties)
 		} catch {
 			// Diagnostics cannot affect telemetry or application code.
 		}

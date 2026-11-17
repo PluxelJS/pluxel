@@ -12,10 +12,10 @@ root 安装每 root 一份，仅 root 可直接读取；scope 安装与 child �
 
 ## 所有权
 
-Context shape 和安装计划固定，不提供运行时注册或安装。Part 的 logger/effects 等既有 owner 值通过 framework internal 的 construction-only `initializeContextServiceValues` 绑定：只允许首次任何服务解析前一次初始化，必须引用已经安装的服务，不能改变访问范围。caller Context view 继承该固定归属，其他 owner-view cache 仍独立。
+Context shape 和安装计划固定，不提供运行时注册或安装。Core 在该内核之上构造固定的 logger、effects、events 等 Context 属性，内核不把这些能力注册为服务，也不保存 Part 的内建能力覆盖值。caller Context view 共享原 scope 的服务 backing，owner-view cache 保持独立。
 
 共享 backend 不通过可变 ctx 表示调用者；owner facade 可缓存并跨 await 使用。Context 不管理资源，Host 和 Plugin generation 的原有生命周期负责准备、排空与释放。
 
 ## 验证
 
-测试覆盖 root/scope/child/view、Host/root 隔离、必需/可选查找、身份冲突、访问控制、构造失败与重试、owner backing、显式替换和初始化值。`bench/context.bench.ts` 分开记录服务热读取、owner 首次读取和计划/Context 创建成本；historical comparison 仅作历史算法对比，不提供兼容入口。
+测试覆盖 root/scope/child/view、Host/root 隔离、必需/可选查找、身份冲突、访问控制、构造失败与重试、owner backing 和显式替换。`bench/context.bench.ts` 分开记录服务热读取、owner 首次读取和计划/Context 创建成本；historical comparison 仅作历史算法对比，不提供兼容入口。

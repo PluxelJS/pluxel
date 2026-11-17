@@ -41,7 +41,7 @@ describe('LoggerService', () => {
 	it('binds runtime identity to the configured root', () =>
 		withCoreInternalTestContext(
 			(ctx) => {
-				ctx.service(LoggerService).info('hello', { id: 1 })
+				ctx.logger.info('hello', { id: 1 })
 				const record = records.find((item) => item.rawMessage === 'hello')
 				expect(record?.category).toEqual(['pluxel', 'runtime', getContextLoggerRootId(ctx)])
 				expect(record?.properties).toMatchObject({ context: 'core-test', id: 1 })
@@ -54,7 +54,7 @@ describe('LoggerService', () => {
 			(root) => {
 				const ctx = createGenerationContext(root, 'plugin-test')
 				installLoggerTestPluginInfo(ctx)
-				ctx.service(LoggerService).warn('warn message')
+				ctx.logger.warn('warn message')
 				const record = records.find((item) => item.rawMessage === 'warn message')
 				expect(record?.category).toEqual([
 					'pluxel',
@@ -94,7 +94,7 @@ describe('LoggerService', () => {
 			(root) => {
 				const ctx = createGenerationContext(root, 'plugin-test')
 				installLoggerTestPluginInfo(ctx)
-				ctx.service(LoggerService).getDebugChannel('hmr:cache').debug('cache probe')
+				ctx.logger.getDebugChannel('hmr:cache').debug('cache probe')
 				const record = records.find((item) => item.rawMessage === 'cache probe')
 				expect(record?.category).toEqual([
 					'pluxel',

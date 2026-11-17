@@ -10,16 +10,16 @@ description: 使用内建的 TinyBase Store 保存用户偏好与轻量业务记
 >
 > - **应用静态/环境配置**：使用 [`this.configs.use()`](./configuration.md)；
 > - **私密密钥与密码**：使用 [Vault 凭据服务](./vault.md)；
-> - **用户轻量状态与偏好**：使用本文介绍的 `ctx.service(TinyBaseService)`；
+> - **用户轻量状态与偏好**：使用本文介绍的 `ctx.tinybase`；
 > - **大型关系型数据与高频事务**：使用 [SQL 数据库服务](./database.md)。
 
 ## 打开并使用原生 Store
 
-在插件的 `init()` 阶段，通过 `this.ctx.service(TinyBaseService).open()` 打开托管的 Store：
+在插件的 `init()` 阶段，通过 `this.ctx.tinybase.open()` 打开托管的 Store：
 
 ```ts twoslash
 // @filename: preferences.ts
-import { BasePlugin, Plugin, TinyBaseService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createStore, type Store } from 'tinybase'
 import * as v from 'valibot'
 
@@ -27,7 +27,7 @@ const Preference = v.object({ theme: v.picklist(['system', 'light', 'dark']) })
 
 @Plugin({ displayName: 'Preferences' })
 export class PreferencesPlugin extends BasePlugin {
-	private readonly state = this.ctx.service(TinyBaseService)
+	private readonly state = this.ctx.tinybase
 	private store!: Store
 
 	protected override async init(): Promise<void> {

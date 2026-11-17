@@ -16,7 +16,7 @@ Core 直接装配时立即绑定执行配置；Host 的内部延迟绑定保持 
 
 每项 service effects 在准备失败或 Host close 时释放；Plugin effects 随 generation 释放。关闭先停止 admission、排空协调操作和 Plugin，再按依赖逆序释放服务。所有清理都会执行，错误聚合。`close()` 和 `Symbol.asyncDispose` 共用幂等任务及失败结果。Host 在 Core shutdown transaction 中先撤销当前 provider-default bindings，再删除节点，保留持久 policy。
 
-service access 区分 `all`、真实 Plugin/Part `owner` 和真实 `root`。`ctx.service(Service)` 保留 missing/access/construction 错误。`ctx.root` 是受信任代码可持有的真实根引用；内部 graph authority token 留在 framework 入口。
+service access 区分 `all`、真实 Plugin/Part `owner` 和真实 `root`。`ctx.service(Service)` 保留 missing/access/construction 错误。`ctx.root` 是受信任代码可持有的真实根引用；内部 graph/config/storage authority 留在 framework 入口，Core 固定能力通过 Context 属性提供，见 [Core](CORE.md#context-service-kernel)。
 
 `standardServices()` 安装 HTTP、Commands、Node artifacts、Workers；`servicesPreset(startup, options)` 增加 Vault、Management、管理命令及可选 Workbench。Core 的 `runtime.logtape`、`runtime.zenfs` 分别选择日志与文件后端。Database 单独安装，见 [Database](DATABASE.md)。未选择的服务不创建 backend、watcher、compiler、route 或状态。关闭 Workbench 后，业务服务和显式 `managementHttp()` 继续运行。
 

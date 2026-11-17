@@ -3,7 +3,7 @@ title: 组合 Context host
 description: 使用 @pluxel/context 组合固定、严格惰性的服务与作用域。
 ---
 
-`@pluxel/context` 是同步、宿主中立的 Context 内核，负责固定服务集合、访问权限与作用域缓存。普通 Pluxel 插件直接使用宿主提供的 Context；应用安装服务见 [Host 服务](../host/services.md)。
+`@pluxel/context` 是同步、宿主中立的 Context 内核，负责固定服务集合、访问权限与作用域缓存。Core 在它之上提供 `ctx.logger`、`ctx.effects` 等内建属性，普通 Pluxel 插件直接使用宿主提供的 Context；应用安装服务见 [Host 服务](../host/services.md)。
 
 ## 安装与引入
 

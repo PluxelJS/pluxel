@@ -7,7 +7,6 @@ import {
 	parsePluginNodeAddress,
 	BasePlugin,
 	Plugin,
-	EffectsService,
 	defineServiceRef,
 } from '@pluxel/core'
 import { createPluginControlReference } from '@pluxel/host/internal/control-reference'
@@ -64,7 +63,7 @@ const rollbackCleanup = vi.fn()
 @Plugin({ displayName: 'Rollback fixture' })
 class RollbackFixture extends BasePlugin {
 	protected override init(): void {
-		this.ctx.service(EffectsService).defer(rollbackCleanup)
+		this.ctx.effects.defer(rollbackCleanup)
 		throw new Error('expected public host rollback')
 	}
 }

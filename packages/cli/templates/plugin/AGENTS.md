@@ -18,7 +18,7 @@
 
 消费应用运行时，跨文件或连续修改按指南的「HMR 批次控制」使用 `dev hmr pause` → 修改与检查 → `dev hmr apply` → 验证。失败保持暂停；成功且原本 auto 才恢复，不为独立插件测试另起应用。
 
-项目和上传脚本统一使用 `satisfies Script`（`@pluxel/agent-sdk/host`），通过 `sdk.ctx.service(Service)` 借用服务。控制操作直接 `await` 成功值，失败抛 `ScriptError`；业务实例用 `const { instance } = await plugin.instance()` 借用。调用、失败恢复和资源释放见 `vp exec pluxel docs development/scripts.md`，项目模块与 HMR 操作见 `vp exec pluxel docs development/dev-console.md`。配置修改后核对保存结果与实际采用。
+项目和上传脚本统一使用 `satisfies Script`（`@pluxel/agent-sdk/host`），通过 `sdk.ctx` 使用内建能力，通过 `sdk.ctx.service(Service)` 借用应用安装的服务。控制操作直接 `await` 成功值，失败抛 `ScriptError`；业务实例用 `const { instance } = await plugin.instance()` 借用。调用、失败恢复和资源释放见 `vp exec pluxel docs development/scripts.md`，项目模块与 HMR 操作见 `vp exec pluxel docs development/dev-console.md`。配置修改后核对保存结果与实际采用。
 
 插件地址、控制材料同步、配置类型和业务实例调用见 `vp exec pluxel docs development/plugin-control.md`。完整调用由这些随 CLI 交付的指南维护。
 
@@ -26,7 +26,7 @@
 
 ## 持久状态与原生依赖
 
-配置继续使用 `configs.use()`。配置之外的有界状态通过固定的 `ctx.service(TinyBaseService).open()` 取得每个 Plugin node 唯一的托管 Store；原生 API 和类型直接从 `tinybase` 与上游子路径导入。持久位置、恢复和保存归 Host，不在插件管理 Persister 或另写 JSON 设置。密钥留在 Vault，大文件通过固定的 `ctx.service(Fs)()` 保存；后端只在 Host 的 `runtime.zenfs` 中选择。
+配置继续使用 `configs.use()`。配置之外的有界状态通过固定的 `ctx.tinybase.open()` 取得每个 Plugin node 唯一的托管 Store；原生 API 和类型直接从 `tinybase` 与上游子路径导入。持久位置、恢复和保存归 Host，不在插件管理 Persister 或另写 JSON 设置。密钥留在 Vault，大文件通过固定的 `ctx.fs()` 保存；后端只在 Host 的 `runtime.zenfs` 中选择。
 
 共享托管 Store 的包使用 catalog 所选的精确 `tinybase` peer 与同版 dev dependency；Core 内建精确 TinyBase runtime；应用仅在直接使用原生 TinyBase 时声明自己的 dependency。`pluxel build` 生成 `pluxel.tinybase` 接纳事实，不手写标记或使用全局 override。仅使用配置的包不需要新增 TinyBase import。独立私有 Store 保留普通依赖与自身解析；开始交换宿主托管 Store 后再进入共享契约。完整用法见 `vp exec pluxel docs development/plugin-package.md`。
 

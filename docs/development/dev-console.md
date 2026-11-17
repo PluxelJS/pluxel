@@ -97,7 +97,7 @@ vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"测试待�
 
 源码 class 的地址保留实例签名与精确实现证据，配置使用未知字段的动态类型。生成控制入口额外关联 Schema 输入、输出及 Part 配置树；需要准确字段类型时使用生成提供者的地址。动态发现得到的普通节点地址同样提供动态配置操作，由脚本自行检查。
 
-Node 与 Vite 脚本都通过 `sdk.ctx.service(Service)` 访问根服务，通过 `await sdk.plugin(address).context()` 借用已运行节点的 owner 服务视图。视图只提供 `service`，不会交付原始 Context。必需、可选引用和声明契约见[服务访问](./scripts.md#借用已安装的服务)。Vite 负责把导入的服务声明与应用保持在同一模块图。自己创建的订阅、RPC lease 和原生资源由脚本通过 `using`、`await using` 或 `try/finally` 释放；直接业务调用显式传递 `run.signal` 并 await 结算。通用 SDK 接纳的操作由执行内核跟踪并排空。
+Node 与 Vite 脚本都通过 `sdk.ctx` 使用根 Context 的内建能力，通过 `await sdk.plugin(address).context()` 借用已运行节点的 Plugin Context；应用安装的服务用各自视图的 `service(Service)` 读取。视图固定本次 run 和 generation 的接纳范围，不交付原始 Context。内建属性、必需/可选服务引用和声明契约见[服务访问](./scripts.md#借用已安装的服务)。Vite 负责把导入的服务声明与应用保持在同一模块图。自己创建的订阅、RPC lease 和原生资源由脚本通过 `using`、`await using` 或 `try/finally` 释放；直接业务调用显式传递 `run.signal` 并 await 结算。通用 SDK 接纳的操作由执行内核跟踪并排空。
 
 <span id="编辑配置"></span>
 

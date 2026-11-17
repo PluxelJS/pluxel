@@ -2,8 +2,7 @@ import {
 	formatPluginNodeReference,
 	type Context as PluxelContext,
 	type PluginNodeAddress,
-	EffectsService,
-	LoggerService,
+	type ContextLogger,
 } from '@pluxel/core'
 import { pinOwnerContext } from '../../../internal'
 
@@ -32,7 +31,7 @@ type ActiveValidator = {
 
 export class InternalApiValidationService {
 	private readonly validators: Set<ActiveValidator>
-	private readonly logger: LoggerService
+	private readonly logger: ContextLogger
 
 	constructor(
 		public readonly ctx: PluxelContext,
@@ -45,7 +44,7 @@ export class InternalApiValidationService {
 			return
 		}
 		this.validators = new Set()
-		this.logger = ctx.service(LoggerService)
+		this.logger = ctx.logger
 		this.validators.add({
 			owner: null,
 			removeFromScope: () => {},
@@ -89,7 +88,7 @@ export class InternalApiValidationService {
 			removeFromScope: () => {},
 		}
 
-		const guard = this.ctx.service(EffectsService).defer(() => this.remove(active))
+		const guard = this.ctx.effects.defer(() => this.remove(active))
 		active.removeFromScope = () => guard.cancel()
 		this.validators.add(active)
 

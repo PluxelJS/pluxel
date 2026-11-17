@@ -12,9 +12,12 @@ export function createBorrowedValueView(
 		end(): void
 		track(task: Promise<unknown>): void
 		unwrap(value: unknown): unknown
+		/** Project Context properties onto the same run-scoped view without wrapping native business results. */
+		project?(value: unknown): unknown
 	}>,
 ): object {
 	const methods = new Map<PropertyKey, { original: Function; wrapped: Function }>()
+	const project = (value: unknown) => (options.project ? options.project(value) : value)
 	let view: object
 	const invoke = (work: () => unknown): unknown => {
 		options.assertOpen()
@@ -96,9 +99,10 @@ export function createBorrowedValueView(
 			) as object
 		},
 		get(_target, key, receiver) {
-			const value = invoke(() =>
+			const original = invoke(() =>
 				Reflect.get(raw, key, receiver === view ? raw : options.unwrap(receiver)),
 			)
+			const value = project(original)
 			if (typeof value !== 'function') return value
 			const cached = methods.get(key)
 			if (cached?.original === value) return cached.wrapped
@@ -163,7 +167,7 @@ export function createBorrowedValueView(
 								descriptor.get === undefined
 									? undefined
 									: function (this: unknown) {
-											return invoke(() => Reflect.get(raw, key, options.unwrap(this)))
+											return project(invoke(() => Reflect.get(raw, key, options.unwrap(this))))
 										},
 							set:
 								descriptor.set === undefined

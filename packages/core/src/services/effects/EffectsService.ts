@@ -1,4 +1,3 @@
-import { LoggerService } from '../../logger/LoggerService'
 import type { Context as PluxelContext } from '../../context/Context'
 import { pinOwnerContext } from '../../context/owner-view'
 import { EFFECTS_CHILD_SCOPE } from '../../internal/effects-child-scope'
@@ -280,7 +279,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 			try {
 				await release(value)
 			} catch (releaseError) {
-				this.ctx.service(LoggerService).error('effects acquire release error', {
+				this.ctx.logger.error('effects acquire release error', {
 					error: releaseError,
 					tag: meta?.tag,
 				})
@@ -293,7 +292,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 	scope(meta?: EffectsMeta, opts?: RegisterOpts, ownerCtx: PluxelContext = this.ctx): EffectsScope {
 		this.assertRegisterAllowed(opts)
 		// Child scopes are owned by default so parent disposal propagates.
-		return new EffectsScopeImpl(ownerCtx, { parent: this, meta, registerOpts: opts })
+		return new EffectsService(ownerCtx, { parent: this, meta, registerOpts: opts })
 	}
 
 	async transaction<R>(fn: (tx: Effects) => R | Promise<R>, parent?: TransactionState): Promise<R> {
@@ -528,7 +527,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 									| null
 							)?.[EFFECTS_PART_PATH]
 							errors.push(partPath ? attachErrorPartPath(error, partPath) : error)
-							this.ctx.service(LoggerService).error('effects dispose error', {
+							this.ctx.logger.error('effects dispose error', {
 								error,
 								tag: meta?.tag,
 								phase: PHASES[pIdx],
@@ -548,7 +547,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 	}
 }
 
-class EffectsScopeImpl implements EffectsScope {
+export class EffectsService implements EffectsScope {
 	protected readonly impl: EffectsImpl
 	constructor(
 		public readonly ctx: PluxelContext,
@@ -584,11 +583,5 @@ class EffectsScopeImpl implements EffectsScope {
 
 	[Symbol.asyncDispose](): Promise<void> {
 		return this.dispose()
-	}
-}
-
-export class EffectsService extends EffectsScopeImpl {
-	constructor(ctx: PluxelContext, _cfg: unknown) {
-		super(ctx)
 	}
 }

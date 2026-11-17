@@ -1,4 +1,3 @@
-import { TinyBaseService } from '../src/tinybase/types'
 import * as nativeFs from 'node:fs'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
@@ -16,7 +15,7 @@ import { requireFs, requireTinyBaseHost } from '../src/internal/storage'
 
 @Plugin()
 class SharedState extends BasePlugin {
-	readonly state = this.ctx.service(TinyBaseService)
+	readonly state = this.ctx.tinybase
 	store!: Store
 	protected override async init() {
 		this.store = await this.state.open(createStore().setValues({ title: 'initial' }))
@@ -25,7 +24,7 @@ class SharedState extends BasePlugin {
 
 @Plugin()
 class SchemaState extends BasePlugin {
-	readonly state = this.ctx.service(TinyBaseService)
+	readonly state = this.ctx.tinybase
 	store!: Store
 	protected override async init() {
 		this.store = await this.state.open(

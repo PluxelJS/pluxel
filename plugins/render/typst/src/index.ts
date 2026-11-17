@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, EffectsService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { NodeModules, defineNodeModule } from '@pluxel/services/node'
 import { Workers, defineWorkerTask } from '@pluxel/services/workers'
@@ -46,7 +46,7 @@ export class TypstPlugin extends BasePlugin {
 			svg: new Set(),
 		}
 		this.generation = generation
-		this.ctx.service(EffectsService).defer(
+		this.ctx.effects.defer(
 			async () => {
 				generation.active = false
 				generation.controller.abort(new TypstError('CLOSED', 'TypstPlugin generation stopped'))
@@ -95,7 +95,7 @@ export class TypstPlugin extends BasePlugin {
 			const maxOutputBytes = Math.min(requestedOutputBytes, this.config.maxOutputBytes)
 			operation.signal.throwIfAborted()
 			const owner = this.ctx.caller ?? this.ctx
-			cleanup = owner.service(EffectsService).defer(
+			cleanup = owner.effects.defer(
 				async () => {
 					controller.abort(new TypstError('CLOSED', 'Typst SVG caller stopped'))
 					await pending?.catch(() => {})
@@ -154,9 +154,7 @@ export class TypstPlugin extends BasePlugin {
 		)
 		generation.sessions.add(session)
 		try {
-			ownerCleanup = owner
-				.service(EffectsService)
-				.defer(() => session.dispose(), { tag: 'typst-session' })
+			ownerCleanup = owner.effects.defer(() => session.dispose(), { tag: 'typst-session' })
 			await session.initialize(template, (signal) => this.readFonts(signal), options)
 			if (!generation.active) throw new TypstError('CLOSED', 'Typst generation stopped during open')
 			return session

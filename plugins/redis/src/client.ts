@@ -4,8 +4,6 @@ import {
 	formatPluginNodeReference,
 	Plugin,
 	type Context,
-	EffectsService,
-	LoggerService,
 	defineServiceRef,
 } from '@pluxel/core'
 import * as f from 'valibot-form'
@@ -211,7 +209,7 @@ export class RedisPlugin extends Redis {
 
 		this.active = true
 		try {
-			this.ctx.service(EffectsService).defer(() => this.deactivate(), {
+			this.ctx.effects.defer(() => this.deactivate(), {
 				tag: 'RedisConnectionCatalog',
 				phase: 'shutdown',
 			})
@@ -246,9 +244,7 @@ export class RedisPlugin extends Redis {
 		let disposed = false
 		const onError = (error: Error): void => {
 			if (disposed) return
-			this.ctx
-				.service(LoggerService)
-				.error('Redis client error', { connectionId: config.id, error })
+			this.ctx.logger.error('Redis client error', { connectionId: config.id, error })
 			if (!state.workbench) return
 			state.workbench.recentErrorType = safeErrorType(error)
 			this.notifyWorkbenchDataChanged()
@@ -269,7 +265,7 @@ export class RedisPlugin extends Redis {
 				} catch {}
 			}
 		}
-		this.ctx.service(EffectsService).defer(dispose, { tag: `RedisClient:${config.id}` })
+		this.ctx.effects.defer(dispose, { tag: `RedisClient:${config.id}` })
 
 		const abort = (): void => client.destroy()
 		signal.addEventListener('abort', abort, { once: true })
@@ -291,7 +287,7 @@ export class RedisPlugin extends Redis {
 			client.on('ready', connectionChanged)
 			client.on('reconnecting', connectionChanged)
 			client.on('end', connectionChanged)
-			this.ctx.service(EffectsService).defer(
+			this.ctx.effects.defer(
 				() => {
 					client.off('ready', connectionChanged)
 					client.off('reconnecting', connectionChanged)
@@ -393,7 +389,7 @@ export class RedisPlugin extends Redis {
 		this.activeOwners.add(owner)
 		const cleanupOwner = owner
 		try {
-			context.service(EffectsService).defer(() => this.releaseOwner(cleanupOwner), {
+			context.effects.defer(() => this.releaseOwner(cleanupOwner), {
 				tag: 'RedisConnections',
 				phase: 'shutdown',
 			})

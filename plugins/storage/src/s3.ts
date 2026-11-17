@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { type Context, Plugin, EffectsService, defineServiceRef } from '@pluxel/core'
+import { type Context, Plugin, defineServiceRef } from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 
@@ -313,7 +313,7 @@ export class S3Plugin extends S3 {
 
 		this.active = true
 		try {
-			this.ctx.service(EffectsService).defer(() => this.deactivate(), {
+			this.ctx.effects.defer(() => this.deactivate(), {
 				tag: 'S3BucketCatalog',
 				phase: 'shutdown',
 			})
@@ -466,7 +466,7 @@ export class S3Plugin extends S3 {
 			await disposeClient()
 		}
 		try {
-			this.ctx.service(EffectsService).defer(dispose, { tag })
+			this.ctx.effects.defer(dispose, { tag })
 			this.states.set(config.id, state)
 		} catch (error) {
 			await dispose()
@@ -582,7 +582,7 @@ export class S3Plugin extends S3 {
 		this.activeOwners.add(owner)
 		const cleanupOwner = owner
 		try {
-			context.service(EffectsService).defer(() => this.releaseOwner(cleanupOwner), {
+			context.effects.defer(() => this.releaseOwner(cleanupOwner), {
 				tag: 'S3Buckets',
 				phase: 'shutdown',
 			})

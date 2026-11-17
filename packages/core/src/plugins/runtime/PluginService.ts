@@ -1,4 +1,3 @@
-import { LoggerService } from '../../logger/LoggerService'
 import type { Context as PluxelContext, PluginContext } from '../../context/Context'
 import { pinOwnerContext } from '../../context/owner-view'
 import { createGenerationContext } from '../../context/context-factory'
@@ -221,7 +220,7 @@ export class PluginService {
 		this.watcherRegistry = new InstanceWatcherRegistry(
 			(graph, address) => this.resolveGraphKey(graph, address),
 			(node) => this.getRunningRuntimeInstance(node),
-			(error) => this.ctx.service(LoggerService).error('Plugin instance watcher error', { error }),
+			(error) => this.ctx.logger.error('Plugin instance watcher error', { error }),
 		)
 	}
 
@@ -1436,7 +1435,7 @@ export class PluginService {
 			try {
 				listener(publicSummary)
 			} catch (error) {
-				this.ctx.service(LoggerService).error('Plugin commit listener failed', { error })
+				this.ctx.logger.error('Plugin commit listener failed', { error })
 			}
 		}
 		return publicSummary
@@ -1460,7 +1459,7 @@ export class PluginService {
 				try {
 					listener(successor)
 				} catch (error) {
-					this.ctx.service(LoggerService).error('Plugin commit listener failed', { error })
+					this.ctx.logger.error('Plugin commit listener failed', { error })
 				}
 			}
 		})

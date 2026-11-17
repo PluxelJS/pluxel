@@ -5,6 +5,8 @@ description: 在插件中安全存储 API Key、Token 与私密凭证，支持�
 
 对于需要长期存储 API Key、OAuth 访问令牌、私钥或用户凭证的场景，Pluxel 提供了专用的 `Vault` 服务。普通应用配置保存在标准配置 Schema 中，而私密敏感数据则交由 Vault 执行加密存储与隔离访问。
 
+Host 须安装 `vault()`；`servicesPreset()` 已包含它，`standardServices()` 需单独添加，见 [Host 服务组合](../host/services.md)。
+
 每个插件只能访问属于自身命名空间的 Vault 记录，确保私密数据不会被其他插件越权窥探。
 
 ## 存取私密记录
@@ -63,16 +65,16 @@ await kv.batch((tx) => {
 
 ```ts
 import { Vault } from '@pluxel/services/vault'
-import { LoggerService, EffectsService } from '@pluxel/core'
+
 const kv = this.ctx.service(Vault).kv()
 
 // 订阅特定 Key 的变更，返回注销函数
 const subscription = await kv.watch('primary-token', (snapshot) => {
-	this.ctx.service(LoggerService).info('Credential updated', { revision: snapshot.revision })
+	this.ctx.logger.info('Credential updated', { revision: snapshot.revision })
 })
 
 // 插件停止时自动释放
-this.ctx.service(EffectsService).defer(() => subscription.dispose())
+this.ctx.effects.defer(() => subscription.dispose())
 ```
 
 ## 小型加密二进制存储（Blobs）

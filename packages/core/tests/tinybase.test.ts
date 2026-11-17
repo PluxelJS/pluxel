@@ -1,5 +1,3 @@
-import { TinyBaseService } from '../src/tinybase/types'
-import { Fs } from '../src/context/core-capabilities'
 import * as nativeFs from 'node:fs'
 import { mkdtemp, readFile, writeFile, mkdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -29,10 +27,10 @@ afterEach(async () => {
 
 class StatePart extends PluginPart<StateOwner> {
 	open() {
-		return this.ctx.service(TinyBaseService).open()
+		return this.ctx.tinybase.open()
 	}
 	files() {
-		return this.ctx.service(Fs)()
+		return this.ctx.fs()
 	}
 }
 const StateConfig = v.object({
@@ -42,13 +40,13 @@ const StateConfig = v.object({
 @Plugin({ forkable: true })
 class StateOwner extends BasePlugin {
 	private readonly config = this.configs.use(StateConfig)
-	readonly state = this.ctx.service(TinyBaseService)
+	readonly state = this.ctx.tinybase
 	readonly part = this.parts.use(StatePart)
 	store!: Store
 	async handles() {
 		return {
-			state: this.ctx.service(TinyBaseService),
-			directory: await this.ctx.service(Fs)(),
+			state: this.ctx.tinybase,
+			directory: await this.ctx.fs(),
 			node: this.ctx.pluginInfo.nodeAddress,
 			caller: this.ctx.caller?.pluginInfo?.nodeAddress,
 		}
@@ -73,7 +71,7 @@ class UnusedOwner extends BasePlugin {}
 @Plugin()
 class SchemaOwner extends BasePlugin {
 	protected override async init(): Promise<void> {
-		await this.ctx.service(TinyBaseService).open(
+		await this.ctx.tinybase.open(
 			createStore().setValuesSchema({
 				known: { type: 'string', default: 'new default' },
 			}),
@@ -437,8 +435,8 @@ describe('Core-managed native TinyBase', () => {
 		const host = createCoreTestHost()
 		try {
 			const unused = await host.add(UnusedOwner.nodeAddress())
-			expect(unused.ctx.service(Fs)).toBeTypeOf('function')
-			expect(unused.ctx.service(TinyBaseService)).toBeDefined()
+			expect(unused.ctx.fs).toBeTypeOf('function')
+			expect(unused.ctx.tinybase).toBeDefined()
 			expect(requireTinyBaseHost(getCoreTestHostContext(host)).status()).toEqual([])
 		} finally {
 			await host.dispose()

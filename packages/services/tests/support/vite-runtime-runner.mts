@@ -1,6 +1,6 @@
 import { ElysiaRuntime } from '@pluxel/services/internal'
 import assert from 'node:assert/strict'
-import { readFile, unlink, writeFile } from 'node:fs/promises'
+import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import {
 	formatPluginNodeReference,
 	pluginNodeAddressEqual,
@@ -164,7 +164,7 @@ try {
 	}
 
 	await invokeHotUpdate(routePlugin, pluginPath, () =>
-		writeFile(pluginPath, pluginSource('v2', true)),
+		publishSource(pluginPath, pluginSource('v2', true)),
 	)
 	const replacementInstances = [address, east, west].map((node) =>
 		currentPlugins().getInstance(node),
@@ -209,7 +209,7 @@ try {
 	const originalBuiltPlugin = await readFile(builtPluginPath, 'utf8')
 	await assert.rejects(() =>
 		invokeHotUpdate(routePlugin, builtPluginPath, () =>
-			writeFile(builtPluginPath, 'export const invalidBuiltPlugin ='),
+			publishSource(builtPluginPath, 'export const invalidBuiltPlugin ='),
 		),
 	)
 	const statusesAfterBuiltFailureOverview = await readHostPluginStatusOverview(currentHost().ctx)
@@ -233,8 +233,8 @@ try {
 		invokeHotUpdate(routePlugin, pluginPath, async () => {
 			// Keep the replacement invalid while restoring the other dependency: no intermediate
 			// valid candidate may replace the Host and close its still-running sockets.
-			await writeFile(pluginPath, 'export const invalidReplacement =')
-			await writeFile(builtPluginPath, originalBuiltPlugin)
+			await publishSource(pluginPath, 'export const invalidReplacement =')
+			await publishSource(builtPluginPath, originalBuiltPlugin)
 		}),
 	)
 	const retainedStatusOverview = await readHostPluginStatusOverview(currentHost().ctx)
@@ -261,7 +261,7 @@ try {
 
 	// A valid source edit after evaluation failure must activate without a Start command.
 	await invokeHotUpdate(routePlugin, pluginPath, () =>
-		writeFile(pluginPath, pluginSource('syntax-fixed', true)),
+		publishSource(pluginPath, pluginSource('syntax-fixed', true)),
 	)
 	assert.equal(currentPlugins().isRunning(address), true)
 	assert.equal(
@@ -272,7 +272,7 @@ try {
 	// Init failure happens after the old dependency closure has stopped. Healthy siblings run,
 	// and a later source edit must recover both provider and required consumer automatically.
 	await invokeHotUpdate(routePlugin, pluginPath, () =>
-		writeFile(pluginPath, pluginSource('init-broken', true, true)),
+		publishSource(pluginPath, pluginSource('init-broken', true, true)),
 	)
 	assert.equal(currentPlugins().isRunning(partProviderAddress), false)
 	assert.equal(currentPlugins().isRunning(partOwnerAddress), false)
@@ -301,7 +301,7 @@ try {
 		'init-broken',
 	)
 	await invokeHotUpdate(routePlugin, pluginPath, () =>
-		writeFile(pluginPath, pluginSource('v2', true)),
+		publishSource(pluginPath, pluginSource('v2', true)),
 	)
 	assert.equal(currentPlugins().isRunning(partProviderAddress), true)
 	assert.equal(currentPlugins().isRunning(partOwnerAddress), true)
@@ -330,7 +330,7 @@ try {
 	const removableSocketClosed = removableSocket.closed
 
 	await invokeHotUpdate(routePlugin, pluginPath, () =>
-		writeFile(pluginPath, pluginSource('removed', false)),
+		publishSource(pluginPath, pluginSource('removed', false)),
 	)
 	assert.deepEqual(
 		[address, east, west].map((node) => currentPlugins().getInstance(node)),
@@ -351,7 +351,7 @@ try {
 	assert.deepEqual(await removableSocketClosed, { code: 1012, reason: 'Service Restart' })
 
 	await invokeHotUpdate(routePlugin, pluginPath, () =>
-		writeFile(pluginPath, pluginSource('v3', true)),
+		publishSource(pluginPath, pluginSource('v3', true)),
 	)
 	assert.equal(currentPlugins().isRunning(address), true)
 	assert.equal(
@@ -379,7 +379,7 @@ try {
 	await assert.rejects(
 		() =>
 			invokeHotUpdate(routePlugin, entryPath, () =>
-				writeFile(
+				publishSource(
 					entryPath,
 					originalEntry.replace(
 						'export default defineHostApplication(() => {',
@@ -400,7 +400,7 @@ try {
 	)
 	assert.notEqual(failingEntry, originalEntry)
 	await assert.rejects(
-		() => invokeHotUpdate(routePlugin, entryPath, () => writeFile(entryPath, failingEntry)),
+		() => invokeHotUpdate(routePlugin, entryPath, () => publishSource(entryPath, failingEntry)),
 		/replacement prepare failed/,
 	)
 	const compensatedHost = host
@@ -424,7 +424,7 @@ try {
 		'v3',
 	)
 
-	await invokeHotUpdate(routePlugin, entryPath, () => writeFile(entryPath, originalEntry))
+	await invokeHotUpdate(routePlugin, entryPath, () => publishSource(entryPath, originalEntry))
 	const replacementHost = host
 	assert.ok(replacementHost, 'valid application did not replace the compensated host')
 	assert.notEqual(replacementHost, compensatedHost)
@@ -439,7 +439,9 @@ try {
 	)
 
 	await Promise.all([
-		invokeHotUpdate(routePlugin, pluginPath, () => writeFile(pluginPath, pluginSource('v4', true))),
+		invokeHotUpdate(routePlugin, pluginPath, () =>
+			publishSource(pluginPath, pluginSource('v4', true)),
+		),
 		// Both observers are installed before the write; duplicate hooks still share one batch.
 		invokeHotUpdate(routePlugin, pluginPath, () => Promise.resolve()),
 	])
@@ -492,7 +494,7 @@ try {
 			assert.deepEqual(status?.recentUpdate, previous.recentUpdate)
 		}
 	} finally {
-		await writeFile(pluginPath, originalSourcePlugin)
+		await publishSource(pluginPath, originalSourcePlugin)
 	}
 } finally {
 	for (const socket of sockets) {
@@ -501,6 +503,13 @@ try {
 	await server.close()
 }
 assert.equal(currentPlugins().isRunning(address), false)
+
+// The dependency watcher can reload before a direct writeFile finishes truncating and writing.
+async function publishSource(file: string, source: string): Promise<void> {
+	const temporary = `${file}.${crypto.randomUUID()}.tmp`
+	await writeFile(temporary, source, { flag: 'wx' })
+	await rename(temporary, file)
+}
 
 async function invokeHotUpdate(
 	route: VitePlugin,
@@ -556,7 +565,7 @@ async function invokeHotUpdate(
 		observed.push({ elapsedMs: performance.now() - started, snapshot })
 		if (observed.length > 12) observed.shift()
 		if (!snapshot || snapshot.sequence <= previousSequence || snapshot.state !== 'settled') return
-		if (snapshot.error) settled.reject(new Error(snapshot.error.message))
+		if (snapshot.error) settled.reject(new Error(snapshot.error.message, { cause: snapshot.error }))
 		else settled.resolve()
 	})
 	try {
@@ -644,7 +653,7 @@ async function openWebSocket(url: string): Promise<{
 
 function pluginSource(version: string, available: boolean, failProvider = false): string {
 	return [
-		"import { BasePlugin, Plugin, PluginPart, Fs } from '@pluxel/core'; import * as v from 'valibot'; import { ElysiaApp } from '@pluxel/services/elysia'",
+		"import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'; import * as v from 'valibot'; import { ElysiaApp } from '@pluxel/services/elysia'",
 		"import { websocket } from 'elysia/websocket'",
 		"import { writeFileAtomic } from '@pluxel/core/fs'",
 		"import { BuiltStatic } from '@fixture/vite-built'",
@@ -655,7 +664,7 @@ function pluginSource(version: string, available: boolean, failProvider = false)
 		`  readonly version = ${JSON.stringify(version)}`,
 		"  configuredLabel = ''",
 		"  storedFsValue = ''",
-		`  protected override async init() { const files = await this.ctx.service(Fs)(); try { this.storedFsValue = await files.readFile('marker', 'utf8') } catch (error) { if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error; const address = this.ctx.pluginInfo.nodeAddress; this.storedFsValue = ${JSON.stringify(version)} + ':' + (address.variant === 'fork' ? address.forkId : 'default'); await writeFileAtomic(files, 'marker', this.storedFsValue) }; this.configuredLabel = this.settings.label; if (this.ctx.pluginInfo.nodeAddress.variant === 'default') this.ctx.service(ElysiaApp).use(websocket()).get('/vite-static/version', () => ${JSON.stringify(version)}).ws('/vite-static/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
+		`  protected override async init() { const files = await this.ctx.fs(); try { this.storedFsValue = await files.readFile('marker', 'utf8') } catch (error) { if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error; const address = this.ctx.pluginInfo.nodeAddress; this.storedFsValue = ${JSON.stringify(version)} + ':' + (address.variant === 'fork' ? address.forkId : 'default'); await writeFileAtomic(files, 'marker', this.storedFsValue) }; this.configuredLabel = this.settings.label; if (this.ctx.pluginInfo.nodeAddress.variant === 'default') this.ctx.service(ElysiaApp).use(websocket()).get('/vite-static/version', () => ${JSON.stringify(version)}).ws('/vite-static/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
 		'}',
 		"export const ConfiguredPluginConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		'@Plugin()',

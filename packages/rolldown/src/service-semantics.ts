@@ -372,36 +372,39 @@ export async function lowerServiceModule(options: {
 					Object.keys(owner.manifest.exports).some((entry) => entry.startsWith('.'))
 						? readSourceExportEntries(owner.manifest.exports, owner.root, error, false).get(subpath)
 						: undefined
-				if (!authored) {
-					const material = await readServicePackageMaterial(owner, options.controlContracts)
-					const types = await serviceTypeEntry(owner, subpath)
-					const imported = types && (await origin(types, binding.imported))
-					if (!material && imported) return canonical(imported, owner)
-					if (material && imported) {
-						const matches = []
-						for (const service of material.manifest.services) {
-							const entry = service.definition.entry
-							if (entry.kind === 'source-entry' || entry.packageName !== owner.manifest.name)
-								continue
-							const declaration = await serviceTypeEntry(
-								owner,
-								entry.kind === 'package-root' ? '.' : entry.subpath,
-							)
-							const found =
-								declaration && (await origin(declaration, service.definition.exportName))
-							if (found && key(found.id, found.name) === key(imported.id, imported.name))
-								matches.push(service)
-						}
-						if (matches.length !== 1)
-							error(
-								`[pluxel:service] ${binding.source}#${binding.imported} requires one verified public service declaration`,
-							)
-						return { definition: matches[0]!.definition, access: matches[0]!.access }
-					}
-					return error(
-						`[pluxel:service] ${binding.source}#${binding.imported} requires verified public service material and native declarations`,
-					)
+				if (authored) {
+					// Runtime resolution may pin compiled singletons; source exports prove declarations.
+					const found = await origin(authored, binding.imported)
+					return found
+						? canonical(found)
+						: error(`[pluxel:service] cannot prove ${binding.source}#${binding.imported}`)
 				}
+				const material = await readServicePackageMaterial(owner, options.controlContracts)
+				const types = await serviceTypeEntry(owner, subpath)
+				const imported = types && (await origin(types, binding.imported))
+				if (!material && imported) return canonical(imported, owner)
+				if (material && imported) {
+					const matches = []
+					for (const service of material.manifest.services) {
+						const entry = service.definition.entry
+						if (entry.kind === 'source-entry' || entry.packageName !== owner.manifest.name) continue
+						const declaration = await serviceTypeEntry(
+							owner,
+							entry.kind === 'package-root' ? '.' : entry.subpath,
+						)
+						const found = declaration && (await origin(declaration, service.definition.exportName))
+						if (found && key(found.id, found.name) === key(imported.id, imported.name))
+							matches.push(service)
+					}
+					if (matches.length !== 1)
+						error(
+							`[pluxel:service] ${binding.source}#${binding.imported} requires one verified public service declaration`,
+						)
+					return { definition: matches[0]!.definition, access: matches[0]!.access }
+				}
+				return error(
+					`[pluxel:service] ${binding.source}#${binding.imported} requires verified public service material and native declarations`,
+				)
 			}
 		}
 		const file = await resolveImport(binding.source)

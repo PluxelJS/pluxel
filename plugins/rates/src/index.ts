@@ -6,7 +6,6 @@ import {
 	Plugin,
 	pluginNodeAddressEqual,
 	type PluginNodeAddress,
-	EffectsService,
 } from '@pluxel/core'
 import { createHash } from 'node:crypto'
 import * as v from 'valibot'
@@ -78,7 +77,7 @@ export abstract class Rates extends BasePlugin implements RatesBinding {
 	abstract use(name: string, policy: RatePolicy): RateLimiter
 }
 
-type OwnerContext = Pick<Context, 'service'> & {
+type OwnerContext = Pick<Context, 'effects'> & {
 	readonly pluginInfo: {
 		readonly nodeSlot: object
 		readonly nodeAddress: PluginNodeAddress
@@ -123,7 +122,7 @@ export class RatesPlugin extends Rates {
 
 	protected override init(): void {
 		this.runtime.active = true
-		this.ctx.service(EffectsService).defer(
+		this.ctx.effects.defer(
 			() => {
 				this.runtime.active = false
 				for (const registration of this.runtime.registrations) {
@@ -162,7 +161,7 @@ export class RatesPlugin extends Rates {
 		this.runtime.owners.set(context, owner)
 		const cleanupOwner = owner
 		try {
-			context.service(EffectsService).defer(() => this.releaseOwner(cleanupOwner), {
+			context.effects.defer(() => this.releaseOwner(cleanupOwner), {
 				tag: 'rates-bindings',
 				phase: 'shutdown',
 			})

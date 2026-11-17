@@ -1,4 +1,3 @@
-import { EffectsService } from '../../src/services/effects/EffectsService'
 import { requireConfigService } from '@pluxel/core/internal'
 import type { Bench, FnOptions } from 'tinybench'
 import { TASK, type TaskName } from './catalog.ts'
@@ -51,12 +50,9 @@ function steadyTask(
 		const current = state
 		state = undefined
 		if (!isBenchHost(current)) return
-		void current.ctx
-			.service(EffectsService)
-			.dispose()
-			.catch(() => {
-				/* best-effort cleanup */
-			})
+		void current.ctx.effects.dispose().catch(() => {
+			/* best-effort cleanup */
+		})
 	}
 	cleanups.push(dispose)
 
@@ -103,7 +99,7 @@ function coldTask(bench: Bench, name: TaskName, run: (update: Update) => void) {
 			update?.rollback()
 			throw error
 		} finally {
-			await host?.ctx.service(EffectsService).dispose()
+			await host?.ctx.effects.dispose()
 		}
 	})
 }

@@ -6,9 +6,7 @@ import {
 	type Context,
 	BasePlugin,
 	Plugin,
-	TinyBaseService,
-	EffectsService,
-	Fs,
+	type TinyBaseService,
 	defineServiceRef,
 } from '@pluxel/core'
 
@@ -246,13 +244,13 @@ export class FontsPlugin extends BasePlugin {
 			)
 		}
 		this.lifecycleRevision += 1
-		const storage = await this.ctx.service(Fs)()
+		const storage = await this.ctx.fs()
 		const systemFamilies = new Set(GlobalFonts.families.map(({ family }) => family))
 		const configuredDefaultFamily =
 			this.config.defaultFamily === undefined
 				? undefined
 				: normalizeFamily(this.config.defaultFamily)
-		const tinybase = this.ctx.service(TinyBaseService)
+		const tinybase = this.ctx.tinybase
 		const store = await tinybase.open()
 		const preferredFamily = loadDefaultFamily(store)
 		this.defaults.systemFamilies.clear()
@@ -274,7 +272,7 @@ export class FontsPlugin extends BasePlugin {
 		})
 		this.generation = generation
 		this.running = true
-		this.ctx.service(EffectsService).defer(
+		this.ctx.effects.defer(
 			async () => {
 				const stopped = new FontsError(
 					'NOT_RUNNING',
@@ -855,7 +853,7 @@ export class FontsPlugin extends BasePlugin {
 		}
 		ownerRegistrations.add(registration)
 		try {
-			owner.service(EffectsService).defer(release, {
+			owner.effects.defer(release, {
 				tag: 'font-registration',
 			})
 		} catch (cause) {
@@ -923,9 +921,7 @@ export class FontsPlugin extends BasePlugin {
 		this.leases.add(lease)
 		this.ownerLeases.set(owner, lease)
 		try {
-			owner
-				.service(EffectsService)
-				.defer(() => this.closeOwnerLease(lease), { tag: 'fonts-caller' })
+			owner.effects.defer(() => this.closeOwnerLease(lease), { tag: 'fonts-caller' })
 		} catch (cause) {
 			this.closeOwnerLease(lease)
 			throw new FontsError('NOT_RUNNING', 'Font owner is stopped or being replaced', { cause })

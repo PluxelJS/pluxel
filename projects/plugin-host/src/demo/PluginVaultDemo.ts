@@ -2,7 +2,7 @@
 // - 你要在插件里做共享加密持久化
 // - 你想看结构化 KV snapshot、原子更新和 blobs 的最小组合
 
-import { BasePlugin, Plugin, LoggerService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { Vault, type VaultKvHandle } from '@pluxel/services/vault'
 
 const KV_TOKEN = 'demo.token'
@@ -28,7 +28,7 @@ export class PluginVaultDemo extends BasePlugin {
 
 		const token = await kv.get(KV_TOKEN)
 		const profile = await kv.get(KV_PROFILE)
-		this.ctx.service(LoggerService).info('Vault demo ready', {
+		this.ctx.logger.info('Vault demo ready', {
 			tokenPresent: token.exists,
 			profile: profile.value,
 			blob: await notes.readText(),

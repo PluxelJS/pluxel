@@ -126,7 +126,7 @@ self.onmessage = async () => {
 }, 60_000)
 
 const fixture = `
-import { BasePlugin, Plugin, Fs, TinyBaseService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { requireTinyBaseHost } from '@pluxel/core/internal'
 import { writeFileAtomic } from '@pluxel/core/fs'
 import { IndexedDB } from '@pluxel/core/fs/browser'
@@ -137,8 +137,8 @@ let running
 class Owner extends BasePlugin {
  readonly config = this.configs.use(v.object({ label: v.optional(v.pipe(v.string(), v.trim()), 'initial') }))
  async init() {
-  this.store = await this.ctx.service(TinyBaseService).open()
-  this.files = await this.ctx.service(Fs)()
+  this.store = await this.ctx.tinybase.open()
+  this.files = await this.ctx.fs()
   running = this
  }
 }
@@ -153,7 +153,7 @@ export async function run() {
   if (!patched.ok) throw new Error(patched.message)
   await host.startNode(owner)
   running.store.setValue('value',42)
-  await running.ctx.service(TinyBaseService).flush()
+  await running.ctx.tinybase.flush()
   await writeFileAtomic(running.files,'owner.txt','OWNER-FILE')
   const staleStore = running.store, staleFiles = running.files
   await host.close()

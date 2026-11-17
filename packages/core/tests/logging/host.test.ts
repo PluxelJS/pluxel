@@ -1,5 +1,3 @@
-import { Logging } from '@pluxel/core/logging'
-import { LoggerService } from '../../src/logger/LoggerService'
 import { requireHostDocuments, requireFs } from '@pluxel/core/internal'
 import * as nativeFs from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -24,7 +22,7 @@ import {
 @Plugin({ forkable: true })
 class LoggedOwner extends BasePlugin {
 	init() {
-		this.ctx.service(LoggerService).info('owner started')
+		this.ctx.logger.info('owner started')
 	}
 }
 const plan: RuntimeLoggingInput = ({ createRuntimeLogSink }) => ({
@@ -43,17 +41,17 @@ it('creates a fresh owner for each Host and rejects records from a retired root'
 		loggers: [{ category: ['pluxel', 'runtime'], sinks: ['native'] }],
 	})
 	const first = await createHost({ plugins: [], runtime: { logtape: declaration }, services: [] })
-	const oldLogger = first.ctx.service(LoggerService)
-	const oldId = first.ctx.service(Logging).resolved.root.id
+	const oldLogger = first.ctx.logger
+	const oldId = first.ctx.logging!.resolved.root.id
 	await first.close()
 	const second = await createHost({ plugins: [], runtime: { logtape: declaration }, services: [] })
 	try {
-		expect(second.ctx.service(Logging).resolved.root.id).not.toBe(oldId)
+		expect(second.ctx.logging!.resolved.root.id).not.toBe(oldId)
 		oldLogger.info('retired root')
-		second.ctx.service(LoggerService).info('current root')
+		second.ctx.logger.info('current root')
 		expect(records.some((record) => record.message.join('') === 'retired root')).toBe(false)
 		expect(records.some((record) => record.message.join('') === 'current root')).toBe(true)
-		expect(second.ctx.service(Logging).describe().diagnostics.wrongRootRecords).toBe(1)
+		expect(second.ctx.logging!.describe().diagnostics.wrongRootRecords).toBe(1)
 	} finally {
 		await second.close()
 	}
@@ -62,17 +60,17 @@ it('creates a fresh owner for each Host and rejects records from a retired root'
 it('bounds log cursors to their Host and stream, and releases waits on delivery, reset and abort', async () => {
 	const host = await createHost({ plugins: [], runtime: { logtape: logtape(plan) }, services: [] })
 	try {
-		const manager = host.ctx.service(Logging)
+		const manager = host.ctx.logging!
 		const empty = markLogs(manager)
 		expect(readLogs(manager, empty)).toMatchObject({ ok: true, lines: [] })
 		expect(() => markLogs(manager, 'not-configured')).toThrow('Log store is not installed')
-		host.ctx.service(LoggerService).info('before mark')
+		host.ctx.logger.info('before mark')
 		const cursor = markLogs(manager)
 		const store = manager.stores.get('default')!
 		const controller = new AbortController()
 		const pending = waitForLogs(manager, cursor, { signal: controller.signal })
 		expect(store.subscriberCount).toBe(1)
-		host.ctx.service(LoggerService).info('after mark')
+		host.ctx.logger.info('after mark')
 		const delivered = await pending
 		expect(delivered.ok && delivered.lines.map((line) => line.msg)).toEqual(['after mark'])
 		expect(store.subscriberCount).toBe(0)
@@ -123,7 +121,7 @@ it('binds the Core identity and retries durable fork policy cleanup through the 
 		},
 		services: [],
 	})
-	const manager = host.ctx.service(Logging)
+	const manager = host.ctx.logging!
 	try {
 		expect(manager.resolved.root.id).toBe(getContextLoggerRootId(host.ctx))
 		await expect(
@@ -180,7 +178,7 @@ it('restores TinyBase policy documents, flushes before FS final closure and keep
 			services: [],
 		})
 		try {
-			first.ctx.service(Logging).policy.setPluginLevel(owner, 'debug')
+			first.ctx.logging!.policy.setPluginLevel(owner, 'debug')
 		} finally {
 			await first.close()
 		}
@@ -205,8 +203,8 @@ it('restores TinyBase policy documents, flushes before FS final closure and keep
 			services: [],
 		})
 		try {
-			expect(second.ctx.service(Logging).policy.snapshot().overrides).toEqual([])
-			second.ctx.service(Logging).policy.setDefaultLevel('warning')
+			expect(second.ctx.logging!.policy.snapshot().overrides).toEqual([])
+			second.ctx.logging!.policy.setDefaultLevel('warning')
 		} finally {
 			await second.close()
 		}
@@ -216,10 +214,8 @@ it('restores TinyBase policy documents, flushes before FS final closure and keep
 			services: [],
 		})
 		try {
-			expect(reopened.ctx.service(Logging).policy.snapshot().overrides).toEqual([
-				{ owner, level: 'debug' },
-			])
-			expect(reopened.ctx.service(Logging).policy.snapshot().defaultLevel).toBe('info')
+			expect(reopened.ctx.logging!.policy.snapshot().overrides).toEqual([{ owner, level: 'debug' }])
+			expect(reopened.ctx.logging!.policy.snapshot().defaultLevel).toBe('info')
 		} finally {
 			await reopened.close()
 		}

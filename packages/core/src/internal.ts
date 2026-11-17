@@ -45,7 +45,6 @@ export {
 } from '@pluxel/context'
 export {
 	resolveContextService,
-	initializeContextServiceValues,
 	getServiceDefinitionKey,
 	getServiceDefinitionAccess,
 	getInstalledServiceDefinitions,
@@ -62,12 +61,7 @@ export {
 export { createGenerationContext, createOwnerContext } from './context/context-factory'
 export { getPluginGenerationContext } from './plugins/composition/BasePlugin'
 export { isPluginPartContext } from './plugins/composition/PluginPart'
-export {
-	createCoreContextInstallations,
-	createCoreRootContext,
-	resolveCoreRootInputs,
-	type CoreRootInputs,
-} from './context/core-plan'
+export { createCoreRootContext } from './context/core-plan'
 export {
 	checkPluginDecorator,
 	consumePluginDefinitionCandidate,
@@ -113,7 +107,3 @@ export { immutableConfigRecord } from './services/config/immutable'
 
 export { createCorePluginExecutionBinding } from './context/plugin-execution'
 export { DEFAULT_PLUGIN_EXECUTION } from './plugins/runtime/PluginService'
-
-export { PluginConfigService, PluginRuntimeService } from './context/core-capabilities'
-export { LoggerService } from './logger/LoggerService'
-export { EffectsService } from './services/effects/EffectsService'

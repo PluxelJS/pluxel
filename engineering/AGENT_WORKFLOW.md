@@ -55,7 +55,11 @@ CLI 通过 `/internal/client` 复用项目/profile/实例选择及错误上下�
 
 `executeHostScript` 在函数结束后关闭接纳、排空 SDK 工作，再读取 `revisions.after`。未捕获异常进入运行错误，清理异常单列 `cleanupError`。取消以 signal 原始 reason 的严格相等优先分类：先关闭接纳、传递 signal、释放日志订阅，再等待已接纳写入和生命周期操作真实结算。终态保留取消及同期 `executionError`，不把已提交操作报告成未发生。
 
-`snapshot()` 关闭后仍可读取 catalog/runtime revision 与 config/policy managed revision。具体采用结果以领域报告为准。`sdk.ctx` getter 与缓存的 `service` 方法都检查 scope，返回只有 `service` 的根访问视图；`plugin.context()` 在 committed read 中捕获 running generation，返回 owner 访问视图。required 声明/optional ref 使用同一安装身份，只有optional缺失返回undefined；生成描述符额外核对已接纳声明契约。服务成员借用视图检查run/generation admission并保持原API，失效后重新借用。直接业务调用和创建的资源由脚本 await、传递取消并释放。源码 constructor 的精确证据与实例视图见 [Dev Console](DEV_CONSOLE.md#操作-api-与资源)。
+`snapshot()` 关闭后仍可读取 catalog/runtime revision 与 config/policy managed revision。具体采用结果以领域报告为准。
+
+`sdk.ctx` 返回受本次 run 控制的 `RootContext` 视图，直接使用 `logger`、`effects`、`events` 和可选 `logging`；`plugin.context()` 在 committed read 中捕获 running generation，返回带 `fs()`、`tinybase` 和 `pluginInfo` 的 `PluginContext` 视图。固定属性与缓存的能力方法都检查 run/generation admission；`root`、`parent`、`caller` 和业务实例的 `ctx` 继续返回受控视图。每个 run 与 Context 惰性创建自己的 effects 子 scope，run 关闭时释放登记资源，不能借此 dispose root 或 Plugin generation。
+
+内建能力不参与 service 注册或控制材料。显式安装的扩展服务继续通过 `service` 读取；required 声明与 optional ref 使用同一安装身份，只有 optional 缺失返回 undefined，生成描述符额外核对已接纳声明契约。服务成员借用视图检查 run/generation admission 并保持原 API，失效后重新借用。业务方法返回的资源保持原所有权，由脚本 await、传递取消并释放。源码 constructor 的精确证据与实例视图见 [Dev Console](DEV_CONSOLE.md#操作-api-与资源)。
 
 日志复用 Core 的 stream、cursor、retention、gap 和订阅：`streams()` 只列已配置历史流，`mark()` 可建立已配置空流，缺后端明确失败；单批最多 10000 条，等待必须有有限 timeout。
 

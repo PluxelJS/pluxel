@@ -1,6 +1,6 @@
 import { normalizeTodoTitle, type TodoItem } from '@example/domain'
 import { type AuditPlugin } from '@example/audit-plugin'
-import { BasePlugin, definePluginRef, Plugin, TinyBaseService } from '@pluxel/core'
+import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'
 import { createStore, type Store } from 'tinybase'
 import * as v from 'valibot'
 
@@ -35,7 +35,7 @@ export class TodoPlugin extends BasePlugin {
 				title: normalizeTodoTitle(this.config.seedTitle),
 				completed: false,
 			})
-		const store = await this.ctx.service(TinyBaseService).open(initial)
+		const store = await this.ctx.tinybase.open(initial)
 		validateTodos(store)
 		this.store = store
 		this.plugins.use(Audit, (audit) => {

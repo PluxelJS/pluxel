@@ -104,7 +104,7 @@ export class BillingPlugin extends BasePlugin {
 在 Pluxel 中，插件的每一次实例化运行称为一个生命周期周期（Generation）。每次启动、热重载或依赖实例替换，都会创建新实例并终结旧周期。
 
 ```ts
-import { BasePlugin, Plugin, EffectsService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Worker' })
 export class WorkerPlugin extends BasePlugin {
@@ -112,7 +112,7 @@ export class WorkerPlugin extends BasePlugin {
 		const timer = setInterval(() => console.log('heartbeat'), 5_000)
 
 		// 注册清理回调，插件停止或重载时由框架自动执行
-		this.ctx.service(EffectsService).defer(() => clearInterval(timer))
+		this.ctx.effects.defer(() => clearInterval(timer))
 	}
 }
 ```

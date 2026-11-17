@@ -270,13 +270,12 @@ it('preserves standalone handler and listener startup failures when Host cleanup
 		await writeFile(
 			join(root, 'app.ts'),
 			`import {defineHostApplication} from '@pluxel/host';
-import {EffectsService} from '@pluxel/core';
 import {resolveHostEnv} from '@pluxel/host/environment';
 import {elysia,createElysiaHandler} from '@pluxel/services/elysia';
 import {listenElysia} from '@pluxel/services/elysia/node';
 export default defineHostApplication(startup=>({
  plugins:[],services:startup.env.PROBE_LISTENER==='1'?[elysia()]:[],
- prepare({host}){host.ctx.service(EffectsService).defer(()=>{throw new Error('STANDALONE_CLEANUP_PROBE')},{phase:'shutdown'})},
+ prepare({host}){host.ctx.effects.defer(()=>{throw new Error('STANDALONE_CLEANUP_PROBE')},{phase:'shutdown'})},
  async launch({host}) {
   if(startup.env.PROBE_LISTENER!=='1') {createElysiaHandler(host);return}
   const env=resolveHostEnv(startup.env);

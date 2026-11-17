@@ -3,7 +3,9 @@ title: Host 服务组合与扩展
 description: 使用官方服务预设快速搭建生产服务，或按需挑选服务与编写自定义服务扩展。
 ---
 
-宿主（Host）除了托管插件的依赖图之外，还可以为插件提供统一的外部基础设施服务（如 HTTP、指令、文件存储、Vault 凭据和 Workbench 管理面板）。
+宿主（Host）除了托管插件的依赖图之外，还可以为插件提供统一的外部基础设施服务，如 HTTP、指令、Vault 凭据和 Workbench 管理面板。
+
+Core 的 Context 直接提供 `ctx.logger`、`ctx.effects` 和 `ctx.events`；Plugin Context 另有 `ctx.fs()` 与 `ctx.tinybase`，配置日志后的根 Context 另有 `root.logging`。这些内建能力无需导入服务声明或加入 `services`。应用通过 `runtime.zenfs` 选择文件后端，通过 `runtime.logtape` 配置日志；服务扩展用于插件需要显式依赖的其他能力。
 
 你可以直接使用官方推荐的 `servicesPreset()` 开箱组合，也可以根据特定需求按需挑选服务甚至编写自定义服务。
 
@@ -29,6 +31,8 @@ export default defineHostApplication(async (startup) => ({
 - **Vault 密钥服务**：提供加密的敏感凭据存储；
 - **Worker 线程池与 Node 模块加载器**：支持后台计算任务；
 - **Workbench 管理后台**：提供位于 `/__pluxel/workbench` 的可视化插件管理与调试页面。
+
+Database 由应用[单独安装并选择驱动](./configuration.md#数据库服务后端选择)，不包含在预设中。
 
 <span id="初始侧栏入口"></span>
 
@@ -139,4 +143,4 @@ export class OptionalWorkbenchPlugin extends BasePlugin {
 
 服务身份由工具链根据声明的规范入口与具名导出生成。导出名、包或入口改变会改变身份；显示名称和任意字符串不参与匹配。服务没有 fork、独立启动状态或 Plugin 依赖图节点，它提供由 Host 固定安装并管理生命周期的原生能力；需要独立启停、替换传播或插件治理时使用 Plugin。
 
-进程内脚本通过 `sdk.ctx.service(...)` 读取根服务；先 `const ctx = await sdk.plugin(address).context()` 再 `ctx.service(...)` 借用运行代的 owner 服务，远端编译通过生成类型与契约校验连接目标应用，见 [Agent SDK](../development/agent-sdk.md)。
+进程内脚本通过 `sdk.ctx` 使用内建能力，通过 `sdk.ctx.service(...)` 读取根服务；先 `const ctx = await sdk.plugin(address).context()` 再 `ctx.service(...)` 借用运行代的 owner 服务。远端编译只为应用安装的服务生成类型与契约材料，见 [Agent SDK](../development/agent-sdk.md)。

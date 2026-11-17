@@ -1,6 +1,6 @@
 # Host 托管 TinyBase 状态
 
-Core 固定提供 `ctx.service(TinyBaseService)`，托管 Plugin Store 的恢复、writer、快照和撤回。公开用法见[插件状态](../docs/plugin-development/tinybase.md)，文件后端见 [FS](FS.md)，Host config/state 由 [Config](CONFIG.md) 维护。
+Core 固定提供 `ctx.tinybase`，托管 Plugin Store 的恢复、writer、快照和撤回。公开用法见[插件状态](../docs/plugin-development/tinybase.md)，文件后端见 [FS](FS.md)，Host config/state 由 [Config](CONFIG.md) 维护。
 
 ## 所有者与依赖
 
@@ -62,7 +62,7 @@ fs/observe 定期读取快照，经身份、格式、预算及 native schema 保
 
 ## Host 文档边界
 
-config/state、Logging policy、Management layout 使用 `services/host/<namespace>/<key>` 普通文档，不创建 TinyBase Store。TinyBaseHostService 只提供 Plugin writer 的 status/recover，status 不包含 Host namespace。
+config/state、Logging policy、Management layout 使用 `services/host/<namespace>/<key>` 普通文档，不创建 TinyBase Store。Core 内部的 TinyBase host 视图只提供 Plugin writer 的 status/recover，status 不包含 Host namespace；该视图不作为插件服务注册。
 
 ## 故障与显式恢复
 

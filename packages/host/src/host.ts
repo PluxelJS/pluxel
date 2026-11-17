@@ -19,7 +19,6 @@ import {
 	type HostPluginConfig,
 } from './config'
 import {
-	EffectsService,
 	type Context,
 	type PluginConstructor,
 	type PluginNodeAddress,
@@ -86,7 +85,7 @@ export type HostApplication = Omit<HostBaseOptions, 'vaultBindings'> &
 		acceptStartup?(
 			input: import('./application-start').HostApplicationStartup,
 		): boolean | Promise<boolean>
-		/** Publish the production entry point after startup is accepted. Register resources with host.ctx.service(EffectsService). */
+		/** Publish the production entry point after startup is accepted. Register resources with host.ctx.effects. */
 		launch?(input: {
 			host: PluginHost
 			startup: import('./application').HostStartupContext
@@ -193,7 +192,7 @@ export async function createHost(options: HostOptions): Promise<PluginHost> {
 		configStorageOptions = configStorage
 		const state = new HostStateStore(ctx, options.policy, stateStorage)
 		hostStateStores.set(ctx, state)
-		ctx.service(EffectsService).defer(
+		ctx.effects.defer(
 			() => {
 				hostStateStores.delete(ctx)
 			},
@@ -222,7 +221,7 @@ export async function createHost(options: HostOptions): Promise<PluginHost> {
 			failures.push(cleanupError)
 		}
 		try {
-			await ctx.service(EffectsService).dispose()
+			await ctx.effects.dispose()
 		} catch (cleanupError) {
 			failures.push(cleanupError)
 		}
@@ -340,7 +339,7 @@ function createPreparedHost(
 				failures.push(error)
 			}
 			try {
-				await ctx.service(EffectsService).dispose()
+				await ctx.effects.dispose()
 			} catch (error) {
 				failures.push(error)
 			}

@@ -47,7 +47,7 @@ await writeFile(join(typedRoot, 'src/version.ts'), "export const version: string
 await writeFile(
 	join(typedRoot, 'src/index.ts'),
 	`
-import { BasePlugin, Plugin, EffectsService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { ElysiaApp } from '@pluxel/services/elysia'
 import { version } from './version'
 @Plugin()
@@ -55,7 +55,7 @@ export class Typed extends BasePlugin {
  init() {
   this.ctx.service(ElysiaApp).get('/typed', () => version)
   globalThis.__typedHostSmoke.push(version)
-  this.ctx.service(EffectsService).defer(() => { globalThis.__typedHostSmoke.push('-' + version) })
+  this.ctx.effects.defer(() => { globalThis.__typedHostSmoke.push('-' + version) })
  }
 }
 `,
@@ -82,7 +82,7 @@ const fixedDefinition = {
 	exportName: 'Installed',
 }
 const installed = (value, identity = definition) =>
-	`import {BasePlugin,Plugin,EffectsService} from '@pluxel/core';import {ElysiaApp} from '@pluxel/services/elysia';import {__setPluginDefinition} from '@pluxel/core/toolchain';export class Installed extends BasePlugin {init(){this.ctx.service(ElysiaApp).get('/installed/${value}',()=> '${value}');globalThis.__installedHostSmoke.push('${value}');this.ctx.service(EffectsService).defer(()=>{globalThis.__installedHostSmoke.push('-${value}')})}}Plugin()(Installed);__setPluginDefinition(Installed,{abiVersion:2,kind:'plugin',definition:${JSON.stringify(identity)}});`
+	`import { BasePlugin, Plugin } from '@pluxel/core';import {ElysiaApp} from '@pluxel/services/elysia';import {__setPluginDefinition} from '@pluxel/core/toolchain';export class Installed extends BasePlugin {init(){this.ctx.service(ElysiaApp).get('/installed/${value}',()=> '${value}');globalThis.__installedHostSmoke.push('${value}');this.ctx.effects.defer(()=>{globalThis.__installedHostSmoke.push('-${value}')})}}Plugin()(Installed);__setPluginDefinition(Installed,{abiVersion:2,kind:'plugin',definition:${JSON.stringify(identity)}});`
 await writeFile(join(root, 'node_modules/@test/installed/index.mjs'), installed('one'))
 await writeFile(join(root, 'fixed.mjs'), installed('fixed', fixedDefinition))
 const serviceSource = (

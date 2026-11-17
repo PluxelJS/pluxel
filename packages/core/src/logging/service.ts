@@ -10,12 +10,6 @@ import type { PluginLogPolicyStore } from './policy'
 import { assertRuntimeLoggingOptions } from './validation'
 import { createPluginLogPolicyStore } from './storage'
 
-/** The root's fixed logging capability; Plugins retain only their scoped ContextLogger. */
-export abstract class Logging {
-	static readonly access = 'root' as const
-}
-export interface Logging extends RuntimeLogging {}
-
 export type LoggingOptions = Readonly<
 	RuntimeLoggingOptions & {
 		/** Borrow a policy store instead of Core documents. This factory performs no IO. */

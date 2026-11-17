@@ -1,4 +1,3 @@
-import { EffectsService } from '../src/services/effects/EffectsService'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { BasePlugin, Plugin, withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -38,7 +37,7 @@ class InflightUpdatePlugin extends BasePlugin {
 	override async init(): Promise<void> {
 		applied.push(this.config.value ?? 0)
 		lifecycleEvents.push('provider:start')
-		this.ctx.service(EffectsService).defer(() => {
+		this.ctx.effects.defer(() => {
 			lifecycleEvents.push('provider:cleanup')
 		})
 		if (this.config.value !== 1) return

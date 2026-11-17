@@ -1,4 +1,3 @@
-import { LoggerService } from '@pluxel/core'
 import { createHash } from 'node:crypto'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -85,7 +84,7 @@ it('executes against a Host without official services or configured logging', as
 		const plugins = await sdk.plugins.list()
 		return {
 			plugins: plugins.nodes,
-			logger: typeof sdk.ctx.service(LoggerService).info,
+			logger: typeof sdk.ctx.logger.info,
 			signal: run.signal === current.run.signal,
 		}
 	})

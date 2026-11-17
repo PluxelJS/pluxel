@@ -17,7 +17,7 @@ for (const stage of ['service', 'application']) {
 			join(root, 'app.mjs'),
 			stage === 'service'
 				? `export default () => ({plugins:[],services:[{name:'vault',provides:[],prepare({effects}){${prepare}}}]})`
-				: `import {EffectsService} from '@pluxel/core';export default () => ({plugins:[],prepare({host}){const effects=host.ctx.service(EffectsService);${prepare}}})`,
+				: `export default () => ({plugins:[],prepare({host}){const effects=host.ctx.effects;${prepare}}})`,
 		)
 		await writeFile(
 			join(root, 'vite.config.mjs'),

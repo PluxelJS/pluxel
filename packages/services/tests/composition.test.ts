@@ -11,7 +11,6 @@ import { Commands, commands } from '../src/commands'
 import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import { installOwnerViewService } from '@pluxel/core/host'
 import { createHost, defineHostService } from '@pluxel/host'
-import { Logging } from '@pluxel/core/logging'
 import { Management } from '@pluxel/services/management/service'
 import { parseVaultAdminState } from '@pluxel/services/management/internal/test'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -70,7 +69,7 @@ describe('independently composed official and external services', () => {
 				services: services.toReversed(),
 				runtime: { logtape: logtape() },
 			})
-			const logging = resolveContextService(host.ctx, Logging)
+			const logging = host.ctx.logging!
 			try {
 				expect(logging.state).toBe('installed')
 				expect(resolveContextService(host.ctx, Management)).toBeDefined()

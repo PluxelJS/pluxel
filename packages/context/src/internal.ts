@@ -1,6 +1,5 @@
 export {
 	resolveContextService,
-	initializeContextServiceValues,
 	bindServiceIdentity,
 	createServiceReference,
 	createServiceRef,

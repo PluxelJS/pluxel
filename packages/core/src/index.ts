@@ -1,8 +1,13 @@
 export type { Context, CoreHostConfig, PluginContext, RootContext } from './context/Context'
 export type { ContextLogger } from './logger/LoggerService'
 export { TinyBaseError } from './tinybase/error'
-export { TinyBaseService, TinyBaseHostService } from './tinybase/types'
-export type { TinyBaseOptions, TinyBaseIdentity, TinyBaseStatus } from './tinybase/types'
+export type {
+	TinyBaseService,
+	TinyBaseHostService,
+	TinyBaseOptions,
+	TinyBaseIdentity,
+	TinyBaseStatus,
+} from './tinybase/types'
 export type { HostDocumentStorage } from './storage/documents'
 
 export {
@@ -87,7 +92,7 @@ export type {
 } from './plugins'
 
 export { EvtChannel } from './services'
-export type { Events, EventsServiceConfig, EventsWhenGuard } from './services'
+export type { Events, EventsService, EventsServiceConfig, EventsWhenGuard } from './services'
 export type { Cleanup, DisposableLike, Effects, EffectsScope } from './services'
 
 export {
@@ -98,7 +103,3 @@ export {
 
 export { defineServiceRef } from './services/definition'
 export type { ServiceDefinitionAddress } from './services/definition'
-export { LoggerService } from './logger/LoggerService'
-export { EffectsService } from './services/effects/EffectsService'
-export { EventsService } from './services/events/EventsService'
-export { Fs } from './context/core-capabilities'

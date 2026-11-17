@@ -9,18 +9,18 @@
 
 ## 最小原语
 
-- `ctx.service(EffectsService).defer(cleanup, meta?) -> Guard`
+- `ctx.effects.defer(cleanup, meta?) -> Guard`
   - 登记一个 cleanup（函数可返回 Promise）
-- `ctx.service(EffectsService).own(disposable, meta?) -> Guard`
+- `ctx.effects.own(disposable, meta?) -> Guard`
   - 登记一个 `dispose()` 资源对象（可返回 Promise）
-- `await ctx.service(EffectsService).acquire(acquire, release, meta?) -> T`
+- `await ctx.effects.acquire(acquire, release, meta?) -> T`
   - 准入检查后获取资源并登记 release；获取期间 scope/tx 撤回时等待 best-effort release 后 rethrow
 
 ## 结构化能力
 
-- `ctx.service(EffectsService).scope(meta?) -> EffectsScope`
+- `ctx.effects.scope(meta?) -> EffectsScope`
   - 创建子作用域（默认自动被父作用域纳管）
-- `await ctx.service(EffectsService).transaction(async (tx) => ...)`
+- `await ctx.effects.transaction(async (tx) => ...)`
   - 事务：成功保留登记，失败只回收属于本事务的资源；嵌套事务从活动 tx 开始，同级并发拒绝
 
 ## 托管异步工作
@@ -30,13 +30,13 @@ EffectsService 不发布全局 lifetime signal。后台任务应返回一个拥�
 
 ```ts
 const worker = startWorker()
-ctx.service(EffectsService).own(worker, { tag: 'worker' })
+ctx.effects.own(worker, { tag: 'worker' })
 ```
 
 如果现有对象使用 `cancel()`，直接登记可等待 cleanup：
 
 ```ts
-ctx.service(EffectsService).defer(() => task.cancel(), { tag: 'task' })
+ctx.effects.defer(() => task.cancel(), { tag: 'task' })
 ```
 
 底层 API 只有 `AbortSignal` 时，由资源实现持有局部 `AbortController`，在自己的 `dispose()` 中 `abort()` 后等待

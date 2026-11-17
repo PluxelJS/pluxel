@@ -1,4 +1,4 @@
-import { BasePlugin, type Context, Plugin, EffectsService } from '@pluxel/core'
+import { BasePlugin, type Context, Plugin } from '@pluxel/core'
 import { Vault } from '@pluxel/services/vault'
 import {
 	chromium,
@@ -44,7 +44,7 @@ export abstract class Playwright extends BasePlugin {
 		}
 		try {
 			browser.on('disconnected', disconnected)
-			this.ctx.service(EffectsService).defer(
+			this.ctx.effects.defer(
 				async () => {
 					this.active = false
 					for (const owner of this.activeOwners)
@@ -166,7 +166,7 @@ export abstract class Playwright extends BasePlugin {
 		this.activeOwners.add(owner)
 		try {
 			if (context !== this.ctx) {
-				context.service(EffectsService).defer(() => this.closeOwner(owner), {
+				context.effects.defer(() => this.closeOwner(owner), {
 					tag: 'playwright-contexts',
 					phase: 'shutdown',
 				})

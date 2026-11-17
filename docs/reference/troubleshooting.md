@@ -72,7 +72,7 @@ description: 按构建、依赖图、配置、生命周期和宿主边界定位 
 
 在插件销毁或重载时遗留资源：
 
-- **解决方案**：在插件或 Part 中创建的长连接、定时器（`setInterval`）或后台工作任务，应使用 `this.ctx.service(EffectsService).defer(() => clearInterval(id))` 进行登记，或者在 `init()` 返回清理回调函数。
+- **解决方案**：在插件或 Part 中创建的长连接、定时器（`setInterval`）或后台工作任务，应使用 `this.ctx.effects.defer(() => clearInterval(id))` 进行登记，或者在 `init()` 返回清理回调函数。
 
 ## HTTP 返回 404
 

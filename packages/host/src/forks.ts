@@ -1,6 +1,5 @@
 import { removeHostNodeMetadata } from './services'
 import { clearLoggingPolicy } from '@pluxel/core/logging/internal'
-import { Logging } from '@pluxel/core/logging'
 import { HostPolicyRevisionConflictError, HostPolicyMutationRejectedError } from './state-store'
 import { HostStateMutationRejectedError } from './mutation'
 import { hostStatePatch } from './state'
@@ -12,7 +11,7 @@ import {
 	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { createServiceRef, requireConfigService, requirePluginService } from '@pluxel/core/internal'
+import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
 import {
 	PluginGraphRejectedError,
 	HostStatePersistenceError,
@@ -181,7 +180,7 @@ export async function removeFork(
 				} catch (error) {
 					throw new ForkMetadataPersistenceError('services', error)
 				}
-				const logging = ctx.root.service(createServiceRef(Logging))
+				const logging = ctx.root.logging
 				if (logging !== undefined) {
 					try {
 						await clearLoggingPolicy(logging, node)

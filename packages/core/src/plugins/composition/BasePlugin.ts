@@ -4,7 +4,6 @@ import {
 	EffectsDisposedError,
 	type Cleanup,
 	type DisposableLike,
-	EffectsService,
 } from '../../services/effects/EffectsService'
 import type { PluginConstructor } from '../types'
 import type {
@@ -128,8 +127,8 @@ function lateCleanupError(cause: unknown): Error {
 async function adoptCleanup(ctx: Context, resource: PluginCleanup): Promise<void> {
 	if (resource === undefined) return
 	try {
-		if (typeof resource === 'function') ctx.service(EffectsService).defer(resource)
-		else if (isDisposable(resource)) ctx.service(EffectsService).own(resource)
+		if (typeof resource === 'function') ctx.effects.defer(resource)
+		else if (isDisposable(resource)) ctx.effects.own(resource)
 		else throw new TypeError('[pluxel/core] Plugin init() returned an invalid cleanup resource')
 	} catch (error) {
 		if (!(error instanceof EffectsDisposedError)) throw error
@@ -301,7 +300,7 @@ export function getPluginLifecycleAdapter<P extends BasePlugin>(
 		drain: async () => {
 			await Promise.all([closeOwnerInvocations(ctx), closePluginPartInvocations(state.parts)])
 			try {
-				await ctx.service(EffectsService).dispose()
+				await ctx.effects.dispose()
 			} finally {
 				await Promise.all([
 					closeConsumerInvocations(ctx),

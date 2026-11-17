@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, EffectsService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { Playwright } from '@pluxel/plugin-playwright'
 import { Vault } from '@pluxel/services/vault'
 import type { BrowserContext } from 'playwright-core'
@@ -52,7 +52,7 @@ export class InvoicePlugin extends BasePlugin {
 	protected override async init() {
 		const generation: Generation = { active: true, calls: new Map() }
 		this.generation = generation
-		this.ctx.service(EffectsService).defer(
+		this.ctx.effects.defer(
 			async () => {
 				generation.active = false
 				for (const controller of generation.calls.keys())
@@ -143,7 +143,7 @@ export class InvoicePlugin extends BasePlugin {
 			: controller.signal
 		let task: Promise<T> | undefined
 		const owner = this.ctx.caller ?? this.ctx
-		const cleanup = owner.service(EffectsService).defer(
+		const cleanup = owner.effects.defer(
 			async () => {
 				controller.abort(new InvoiceError('NOT_RUNNING', 'Invoice caller stopped'))
 				await task?.then(

@@ -1,4 +1,3 @@
-import { EffectsService } from '../src/services/effects/EffectsService'
 import { describe, expect, it } from 'vitest'
 import { createCoreContextHost } from '../src/host'
 import { createCorePluginExecutionBinding, requirePluginService } from '../src/internal'
@@ -15,7 +14,7 @@ it('binds execution exactly once before the fixed PluginService is acquired', as
 		expect(() => executionBinding.bind({})).toThrow('already bound')
 		expect(requirePluginService(root)).toBe(requirePluginService(root))
 	} finally {
-		await root.service(EffectsService).dispose()
+		await root.effects.dispose()
 	}
 })
 

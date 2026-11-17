@@ -2,7 +2,7 @@
 // - 你需要一个 Plugin 只声明一次完整 object schema
 // - 你想把内部模块的配置归入 owner Plugin，而不是创建独立配置命名空间
 
-import { BasePlugin, Plugin, LoggerService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 
@@ -48,6 +48,6 @@ export class PluginCompositionConfigDemo extends BasePlugin {
 	readonly config = this.configs.use(PluginConfig)
 
 	override init(): void {
-		this.ctx.service(LoggerService).info('plugin composition config demo', this.config)
+		this.ctx.logger.info('plugin composition config demo', this.config)
 	}
 }

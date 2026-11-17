@@ -10,7 +10,6 @@ import type {
 	PluginTypedNodeAddress,
 	Script,
 	ScriptSdk,
-	ScriptServiceContext,
 	ScriptPlugin,
 	ScriptPluginConfig,
 	ScriptConfigSnapshot,
@@ -282,7 +281,12 @@ expectTypeOf(result).toEqualTypeOf<
 >()
 // @ts-expect-error Success has no duplicate domain discriminator.
 void result.ok
-expectTypeOf(sdk.ctx).toEqualTypeOf<ScriptServiceContext<'all' | 'root'>>()
+expectTypeOf(sdk.ctx).toEqualTypeOf<import('@pluxel/core').RootContext>()
+expectTypeOf(sdk.ctx.logger).toEqualTypeOf<import('@pluxel/core').ContextLogger>()
+expectTypeOf(sdk.ctx.effects).toEqualTypeOf<import('@pluxel/core').EffectsScope>()
+expectTypeOf(sdk.ctx.logging).toEqualTypeOf<
+	import('@pluxel/core/logging').RuntimeLogging | undefined
+>()
 abstract class SharedService {
 	abstract value: number
 }
@@ -290,6 +294,16 @@ declare const optionalService: ServiceRef<SharedService>
 expectTypeOf(sdk.ctx.service(SharedService)).toEqualTypeOf<SharedService>()
 expectTypeOf(sdk.ctx.service(optionalService)).toEqualTypeOf<SharedService | undefined>()
 declare const untypedServiceOwner: PluginNodeAddress
+const ownerContext = await sdk.plugin(untypedServiceOwner).context()
+expectTypeOf(ownerContext).toEqualTypeOf<import('@pluxel/core').PluginContext>()
+expectTypeOf(ownerContext.fs).toEqualTypeOf<import('@pluxel/core').PluginContext['fs']>()
+expectTypeOf(ownerContext.tinybase).toEqualTypeOf<
+	import('@pluxel/core').PluginContext['tinybase']
+>()
+// @ts-expect-error Runtime logging is owned by the root.
+void ownerContext.logging
+// @ts-expect-error Plugin data access requires a Plugin owner.
+void sdk.ctx.fs
 expectTypeOf(
 	(await sdk.plugin(untypedServiceOwner).context()).service(SharedService),
 ).toEqualTypeOf<SharedService>()

@@ -1,4 +1,3 @@
-import { EffectsService } from '../src/services/effects/EffectsService'
 import {
 	BasePlugin,
 	Plugin,
@@ -67,7 +66,7 @@ describe('late init settlement', () => {
 				const registry = requirePluginService(host.ctx)
 				const publications: unknown[] = []
 				const unsubscribe = registry.subscribeCommitted((published) => publications.push(published))
-				host.ctx.service(EffectsService).defer(unsubscribe)
+				host.ctx.effects.defer(unsubscribe)
 				host.add(LateInitPlugin)
 				const summary = await host.commitAllowFail()
 				rejectLateInit(new Error('late init boom'))

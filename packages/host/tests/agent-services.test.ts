@@ -4,6 +4,7 @@ import {
 	createServiceRef,
 	createServiceReference,
 	readServiceDefinition,
+	requirePluginService,
 	setServiceControlContract,
 } from '@pluxel/core/internal'
 import { __defineServiceRef } from '@pluxel/core/toolchain'
@@ -106,7 +107,7 @@ it('uses one accessor for required and optional native declarations and preserve
 		expect.objectContaining({ code: 'CONTEXT_SERVICE_MISSING' }),
 	)
 	expect(() => ctx.service(createServiceRef(BrokenService))).toThrow(defect)
-	expect(Object.keys(ctx)).toEqual(['service'])
+	expect(Reflect.ownKeys(ctx)).toContain('logger')
 })
 
 it('resolves verified required descriptors and optional refs by canonical identity before construction', async () => {
@@ -304,4 +305,175 @@ it('requires accepted owner service work to settle before queued Host operations
 	expect(await accepted).toBe('settled')
 	await plugin.restart()
 	expect(() => service.hold()).toThrow('Plugin owner stopped')
+})
+
+it('borrows Core built-ins directly and projects instance and owner Contexts onto the run', async () => {
+	await using host = await createHost({ plugins: [ServiceOwner] })
+	await host.start()
+	const scope = createScriptScope({ ctx: host.ctx })
+	const root = scope.sdk.ctx
+	const plugin = scope.sdk.plugin(ServiceOwner.nodeAddress())
+	await plugin.start()
+	const context = await plugin.context()
+	const { instance } = await plugin.instance()
+	expect(root.root).toBe(root)
+	expect(root.logging).toBeUndefined()
+	expect(Object.prototype.toString.call(root)).toBe('[object PluxelContext]')
+	expect(context.root).toBe(root)
+	expect(context.pluginInfo.nodeAddress).toEqual(parsePluginNodeAddress(ServiceOwner.nodeAddress()))
+	expect(instance.ctx).toBe(context)
+	expect(Object.getOwnPropertyDescriptor(context, 'logger')?.enumerable).toBe(false)
+	expect(Object.getOwnPropertyDescriptor(context, 'logger')?.get?.call(context)).toBe(
+		context.logger,
+	)
+	expect(context.events.ctx).toBe(context)
+	expect(context.logger).toBe(context.logger)
+	root.logger.info('script root is available')
+	const fs = await context.fs()
+	await fs.writeFile('script.txt', 'script data')
+	expect(await fs.readFile('script.txt', 'utf8')).toBe('script data')
+	const store = await context.tinybase.open()
+	store.setValue('script', 42)
+	await context.tinybase.flush()
+	expect(store.getValue('script')).toBe(42)
+	const oldFs = context.fs
+	const oldLogger = context.logger
+	const oldInfo = oldLogger.info
+	await plugin.restart()
+	expect(() => oldFs()).toThrow('Plugin owner stopped')
+	expect(() => Reflect.apply(oldInfo, oldLogger, ['stale'])).toThrow('Plugin owner stopped')
+	expect(() => context.root).toThrow('Plugin owner stopped')
+	expect(Object.prototype.toString.call(context)).toBe('[object PluxelContext]')
+	const next = await plugin.context()
+	expect(next).not.toBe(context)
+	const nextEvents = next.events
+	await scope.dispose()
+	expect(() => root.name).toThrow(expect.objectContaining({ code: 'scope_closed' }))
+	expect(() => nextEvents.ctx).toThrow(expect.objectContaining({ code: 'scope_closed' }))
+	expect(() => next.root).toThrow(expect.objectContaining({ code: 'scope_closed' }))
+})
+
+it('owns script effects in child scopes and leaves the borrowed root and generation running', async () => {
+	await using host = await createHost({ plugins: [ServiceOwner] })
+	await host.start()
+	const scope = createScriptScope({ ctx: host.ctx })
+	const plugin = scope.sdk.plugin(ServiceOwner.nodeAddress())
+	await plugin.start()
+	const context = await plugin.context()
+	const native = requirePluginService(host.ctx).getInstance(ServiceOwner.nodeAddress())!
+	let rootClosed = false
+	let generationClosed = false
+	let rootReleased = false
+	let ownerReleased = false
+	host.ctx.effects.defer(() => {
+		rootClosed = true
+	})
+	native.ctx.effects.defer(() => {
+		generationClosed = true
+	})
+	scope.sdk.ctx.effects.defer(() => {
+		rootReleased = true
+	})
+	context.effects.defer(() => {
+		ownerReleased = true
+	})
+	await context.effects.dispose()
+	expect(ownerReleased).toBe(true)
+	expect(generationClosed).toBe(false)
+	expect(rootReleased).toBe(false)
+	expect(rootClosed).toBe(false)
+	const status = await plugin.status()
+	expect(status?.lifecycleState).toBe('running')
+	await scope.dispose()
+	expect(rootReleased).toBe(true)
+	expect(generationClosed).toBe(false)
+	expect(rootClosed).toBe(false)
+	expect(requirePluginService(host.ctx).isRunning(ServiceOwner.nodeAddress())).toBe(true)
+	await host.close()
+	expect(generationClosed).toBe(true)
+	expect(rootClosed).toBe(true)
+})
+
+it('settles an admitted acquisition before releasing its run-owned resource', async () => {
+	await using host = await createHost({ plugins: [] })
+	await host.start()
+	const scope = createScriptScope({ ctx: host.ctx })
+	const gate = Promise.withResolvers<object>()
+	const resource = {}
+	let released: object | undefined
+	const accepted = scope.sdk.ctx.effects.acquire(
+		() => gate.promise,
+		(value) => {
+			released = value
+		},
+	)
+	const closing = scope.dispose()
+	const settled = Promise.allSettled([accepted, closing])
+	gate.resolve(resource)
+	expect(await settled).toEqual([
+		{ status: 'fulfilled', value: resource },
+		{ status: 'fulfilled', value: undefined },
+	])
+	expect(released).toBe(resource)
+})
+
+it('lets an admitted effects transaction finish registering resources before run cleanup', async () => {
+	await using host = await createHost({ plugins: [] })
+	await host.start()
+	const scope = createScriptScope({ ctx: host.ctx })
+	const gate = Promise.withResolvers<void>()
+	const released: string[] = []
+	const accepted = scope.sdk.ctx.effects.transaction(async (tx) => {
+		tx.defer(() => {
+			released.push('first')
+		})
+		await gate.promise
+		expect(released).toEqual([])
+		tx.defer(() => {
+			released.push('second')
+		})
+		return 'settled'
+	})
+	const settled = Promise.allSettled([accepted, scope.dispose()])
+	gate.resolve()
+	expect(await settled).toEqual([
+		{ status: 'fulfilled', value: 'settled' },
+		{ status: 'fulfilled', value: undefined },
+	])
+	expect(released).toEqual(['second', 'first'])
+})
+
+it('releases run effects after accepted work fails and preserves both failures', async () => {
+	const host = await createHost({ plugins: [] })
+	await host.start()
+	try {
+		const scope = createScriptScope({ ctx: host.ctx })
+		const gate = Promise.withResolvers<object>()
+		const workFailure = new Error('acquisition failed')
+		const cleanupFailure = new Error('cleanup failed')
+		let released = false
+		const effects = scope.sdk.ctx.effects
+		effects.defer(() => {
+			released = true
+			throw cleanupFailure
+		})
+		const accepted = effects.acquire(
+			() => gate.promise,
+			() => {},
+		)
+		const settled = Promise.allSettled([accepted, scope.dispose()])
+		gate.reject(workFailure)
+		const [work, closing] = await settled
+		expect(work).toEqual({ status: 'rejected', reason: workFailure })
+		expect(released).toBe(true)
+		expect(closing).toEqual({
+			status: 'rejected',
+			reason: expect.objectContaining({
+				errors: [workFailure, expect.objectContaining({ errors: [cleanupFailure] })],
+			}),
+		})
+	} finally {
+		// The parent scope retains the child's cleanup failure for Host shutdown too.
+		await expect(host.close()).rejects.toBeInstanceOf(AggregateError)
+	}
 })

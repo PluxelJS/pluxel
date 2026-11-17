@@ -1,4 +1,4 @@
-import { pluginDefinitionIndexKey, LoggerService } from '@pluxel/core'
+import { pluginDefinitionIndexKey } from '@pluxel/core'
 import { readLoadedWorkbenchArtifacts } from '../src/services/workbench/loaded-artifacts'
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile, rm } from 'node:fs/promises'
@@ -458,7 +458,7 @@ describe('PluginArtifactCompiler', () => {
 		})
 		const host = createCoreInternalTestHost()
 		const { federation, coordinator, producerStatus } = createWorkbenchStores(host)
-		const infoLog = vi.spyOn(host.ctx.service(LoggerService), 'info')
+		const infoLog = vi.spyOn(host.ctx.logger, 'info')
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
 			{ coordinator, producerStatus },
@@ -566,7 +566,7 @@ describe('PluginArtifactCompiler', () => {
 		})
 		const host = createCoreInternalTestHost()
 		const { coordinator } = createWorkbenchStores(host)
-		const infoLog = vi.spyOn(host.ctx.service(LoggerService), 'info')
+		const infoLog = vi.spyOn(host.ctx.logger, 'info')
 		const options = {
 			cacheDir: fixture.getPath('.pluxel/artifacts'),
 			packageMode: 'development',
@@ -616,7 +616,7 @@ describe('PluginArtifactCompiler', () => {
 		})
 		const host = createCoreInternalTestHost()
 		const { federation, coordinator, producerStatus } = createWorkbenchStores(host)
-		const errorLog = vi.spyOn(host.ctx.service(LoggerService), 'error')
+		const errorLog = vi.spyOn(host.ctx.logger, 'error')
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
 			{ coordinator, producerStatus },

@@ -1,5 +1,4 @@
-import { Logging, type RuntimeLogging } from '@pluxel/core/logging'
-import { LoggerService } from '../../src/logger/LoggerService'
+import { type RuntimeLogging } from '@pluxel/core/logging'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -242,10 +241,8 @@ it('evaluates the bounded-store factory at preparation and prevents later sink c
 	try {
 		expect(factories).toBe(1)
 		expect(() => lateCreate!()).toThrow('during logging configuration')
-		host.ctx.service(LoggerService).info('stored natively')
-		expect(host.ctx.service(Logging).stores.get('default')?.tailWindow(1)[0]?.msg).toBe(
-			'stored natively',
-		)
+		host.ctx.logger.info('stored natively')
+		expect(host.ctx.logging!.stores.get('default')?.tailWindow(1)[0]?.msg).toBe('stored natively')
 	} finally {
 		await host.close()
 	}

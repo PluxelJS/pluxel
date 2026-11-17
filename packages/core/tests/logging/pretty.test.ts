@@ -1,4 +1,3 @@
-import { LoggerService } from '../../src/logger/LoggerService'
 import type { LogRecord } from '@logtape/logtape'
 import { debugLogCategory, pluginLogCategory } from '@pluxel/core/logger'
 import { describe, expect, it } from 'vitest'
@@ -98,7 +97,7 @@ describe('runtime pretty console sink', () => {
 			},
 		})
 		try {
-			host.ctx.service(LoggerService).info('buffered until drain')
+			host.ctx.logger.info('buffered until drain')
 			expect(lines).toEqual([])
 		} finally {
 			await host.close()

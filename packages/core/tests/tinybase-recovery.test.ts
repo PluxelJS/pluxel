@@ -1,4 +1,3 @@
-import { TinyBaseService } from '../src/tinybase/types'
 import * as nativeFs from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -15,7 +14,7 @@ import type { StoreWriter } from '../src/tinybase/writer'
 
 @Plugin()
 class RecoverOwner extends BasePlugin {
-	readonly state = this.ctx.service(TinyBaseService)
+	readonly state = this.ctx.tinybase
 	store!: Store
 	protected override async init(): Promise<void> {
 		this.store = await this.state.open()

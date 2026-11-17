@@ -1,4 +1,4 @@
-import { EffectsService, type Context as PluxelContext, type PluginContext } from '@pluxel/core'
+import { type EffectsScope, type Context as PluxelContext, type PluginContext } from '@pluxel/core'
 import { providerStepSnapshot, readRecord, boundedText, assertExactKeys } from './authentication'
 import { enterOwnerInvocation, requirePluginService } from '@pluxel/core/internal'
 
@@ -440,9 +440,9 @@ export class AdminAccessService {
 			this.registrations.delete(registration)
 			withdrawn.abort(new Error('Management authentication provider was withdrawn'))
 		}
-		let guard: ReturnType<EffectsService['defer']>
+		let guard: ReturnType<EffectsScope['defer']>
 		try {
-			guard = owner.service(EffectsService).defer(cleanup, { tag: 'ManagementAccessProvider' })
+			guard = owner.effects.defer(cleanup, { tag: 'ManagementAccessProvider' })
 		} catch (error) {
 			cleanup()
 			throw error

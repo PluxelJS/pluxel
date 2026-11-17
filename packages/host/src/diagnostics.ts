@@ -1,6 +1,4 @@
 import {
-	LoggerService,
-	EffectsService,
 	pluginNodeIndexKey,
 	formatPluginNodeReference,
 	type Context,
@@ -47,7 +45,7 @@ export function installHostPluginDiagnostics(ctx: Context): void {
 			const issues = failed.get(key) ?? []
 			issues.push(Object.freeze({ plugin: address, kind: issue.kind, message: issue.message }))
 			failed.set(key, issues)
-			root.service(LoggerService).error('Plugin lifecycle operation failed', {
+			root.logger.error('Plugin lifecycle operation failed', {
 				pluginReference: formatPluginNodeReference(address),
 				phase: issue.phase,
 				kind: issue.kind,
@@ -57,7 +55,7 @@ export function installHostPluginDiagnostics(ctx: Context): void {
 		}
 		for (const [key, issues] of failed) if (nodes.has(key)) retained.set(key, Object.freeze(issues))
 	})
-	root.service(EffectsService).defer(
+	root.effects.defer(
 		() => {
 			unsubscribe()
 			lifecycleIssues.delete(root)

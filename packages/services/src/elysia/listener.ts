@@ -1,5 +1,4 @@
 import { resolveContextService } from '@pluxel/core/internal'
-import { EffectsService } from '@pluxel/core'
 import type { Server as NodeHttpServer, IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { resolve } from 'node:path'
@@ -114,7 +113,7 @@ export async function listenElysia(host: PluginHost, options: ListenElysiaOption
 		startup = enterOwnerInvocation(host.ctx)
 		const ownerSignal = startup.signal
 		ownerSignal.addEventListener('abort', stopAccepting, { once: true })
-		host.ctx.service(EffectsService).defer(dispose, { tag: 'ElysiaListener', phase: 'shutdown' })
+		host.ctx.effects.defer(dispose, { tag: 'ElysiaListener', phase: 'shutdown' })
 		owned = true
 		server = serve({
 			...serverOptions,

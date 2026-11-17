@@ -20,7 +20,6 @@ import {
 	getInstalledServiceDefinitions,
 	resolveInstalledServiceDefinition,
 	getServiceDefinitionKey,
-	initializeContextServiceValues,
 } from '../src/internal'
 
 abstract class Value {
@@ -118,88 +117,6 @@ describe('Context services', () => {
 		expect(a.service(OwnerValue)).not.toBe(b.service(OwnerValue))
 		expect(a.service(OwnerValue).owner).toBe(a)
 		expect(b.service(OwnerValue).owner).toBe(b)
-	})
-	it('keeps construction-time owner values fixed across views without changing sibling or scope caches', () => {
-		let ownerFactories = 0
-		const host = createContextHost({
-			name: 'construction',
-			services: [
-				installScopeService(ScopeValue, { create: (scope) => ({ scope }) }),
-				installOwnerViewService(OwnerValue, {
-					createRoot: () => ({}),
-					createView: (backing, owner) => {
-						ownerFactories++
-						return { backing, owner }
-					},
-				}),
-			],
-		})
-		const scope = host.createScope(host.createRoot(), 'scope')
-		const part = host.createChild(scope, 'part'),
-			sibling = host.createChild(scope, 'sibling')
-		const fixed = { backing: {}, owner: part }
-		initializeContextServiceValues(part, [[OwnerValue, fixed]])
-		const view = createContextView(part)
-		expect(part.service(OwnerValue)).toBe(fixed)
-		expect(part.service(createServiceRef(OwnerValue))).toBe(fixed)
-		expect(resolveContextService(part, OwnerValue)).toBe(fixed)
-		expect(view.service(OwnerValue)).toBe(fixed)
-		expect(sibling.service(OwnerValue)).not.toBe(fixed)
-		expect(part.service(ScopeValue)).toBe(sibling.service(ScopeValue))
-		expect(ownerFactories).toBe(1)
-		expect(() => initializeContextServiceValues(part, [[OwnerValue, fixed]])).toThrow(
-			'once before service resolution',
-		)
-	})
-	it('validates construction-time bindings atomically and preserves installed access', () => {
-		abstract class RootOnly {
-			static readonly access = 'root'
-			abstract readonly value: number
-		}
-		const host = createContextHost({
-			name: 'bindings',
-			services: [
-				installRootService(RootOnly, { create: () => ({ value: 1 }) }),
-				installOwnerViewService(Value, {
-					createRoot: () => ({}),
-					createView: () => ({ value: 2 }),
-				}),
-			],
-		})
-		const root = host.createRoot(),
-			owner = host.createScope(root, 'owner')
-		expect(() =>
-			initializeContextServiceValues(owner, [
-				[Value, { value: 7 }],
-				[ScopeValue, {}],
-			]),
-		).toThrow(ContextServiceMissingError)
-		expect(() => initializeContextServiceValues(owner, [[Value, undefined]])).toThrow(
-			'cannot be undefined',
-		)
-		expect(() =>
-			initializeContextServiceValues(owner, [
-				[Value, {}],
-				[Value, {}],
-			]),
-		).toThrow('more than once')
-		initializeContextServiceValues(owner, [
-			[Value, { value: 3 }],
-			[RootOnly, { value: 4 }],
-		])
-		expect(owner.service(Value).value).toBe(3)
-		expect(() => owner.service(RootOnly as never)).toThrow(ContextServiceAccessError)
-		expect(root.service(RootOnly).value).toBe(1)
-		const late = host.createScope(root, 'late')
-		late.service(Value)
-		expect(() => initializeContextServiceValues(late, [[Value, { value: 5 }]])).toThrow(
-			'once before service resolution',
-		)
-		const missing = host.createScope(root, 'missing')
-		expect(missing.service(createServiceRef(ScopeValue))).toBeUndefined()
-		expect(() => initializeContextServiceValues(missing, [])).toThrow(
-			'once before service resolution',
-		)
 	})
 	it('unifies required and optional references through the bound canonical identity', () => {
 		abstract class Native {

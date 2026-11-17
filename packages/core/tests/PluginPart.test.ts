@@ -1,4 +1,3 @@
-import { EffectsService } from '../src/services/effects/EffectsService'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import {
 	BasePlugin,
@@ -60,7 +59,7 @@ class LeafPart extends PluginPart<BranchPart> {
 
 	protected override init() {
 		trace.push(`leaf:init:${this.config.leafValue}`)
-		this.ctx.service(EffectsService).defer(() => {
+		this.ctx.effects.defer(() => {
 			trace.push('leaf:cleanup')
 		})
 	}
@@ -118,7 +117,7 @@ let failureTrace: string[] = []
 class FailingPart extends PluginPart<FailingOwner> {
 	protected override init() {
 		failureTrace.push('part:init')
-		this.ctx.service(EffectsService).defer(() => {
+		this.ctx.effects.defer(() => {
 			failureTrace.push('part:cleanup')
 		})
 		throw new Error('part startup failed')
@@ -458,6 +457,7 @@ describe('owner-bound PluginPart', () => {
 			await host.start(OwnerPlugin)
 
 			const owner = host.require(OwnerPlugin)
+			expect(Object.isExtensible(owner.ctx)).toBe(false)
 			expect(owner.branch.immediateHostForTest()).toBe(owner)
 			expect(owner.branch.leaf.immediateHostForTest()).toBe(owner.branch)
 			const partContexts = [
@@ -465,6 +465,7 @@ describe('owner-bound PluginPart', () => {
 				pluginPartContextOf(owner.branch.leaf),
 			]
 			for (const partContext of partContexts) {
+				expect(Object.isExtensible(partContext)).toBe(false)
 				expect(Object.hasOwn(partContext, 'partInfo')).toBe(false)
 				expect(Object.hasOwn(partContext, 'pluginInfo')).toBe(true)
 				expect(partContext.pluginInfo).toBe(owner.ctx.pluginInfo)
@@ -506,8 +507,8 @@ describe('owner-bound PluginPart', () => {
 			expect(owner.first).toBeInstanceOf(RepeatedPart)
 			expect(owner.second).toBeInstanceOf(RepeatedPart)
 			expect(owner.first).not.toBe(owner.second)
-			expect(pluginPartContextOf(owner.first).service(EffectsService)).not.toBe(
-				pluginPartContextOf(owner.second).service(EffectsService),
+			expect(pluginPartContextOf(owner.first).effects).not.toBe(
+				pluginPartContextOf(owner.second).effects,
 			)
 		})
 	})

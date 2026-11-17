@@ -1,4 +1,3 @@
-import { EffectsService } from '../src/services/effects/EffectsService'
 import { BasePlugin, Plugin, withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { requirePluginService } from '@pluxel/core/internal'
 import { describe, expect, it } from 'vitest'
@@ -24,7 +23,7 @@ describe('Core Plugin transaction fail-safe', () => {
 			const unsubscribe = registry.subscribeCommitted((summary) => {
 				published = summary
 			})
-			host.ctx.service(EffectsService).defer(unsubscribe)
+			host.ctx.effects.defer(unsubscribe)
 			host.add(TransactionRecoveryPlugin)
 			await host.commit({
 				onGraphCommitted: () => {

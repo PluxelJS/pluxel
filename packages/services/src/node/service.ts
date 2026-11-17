@@ -1,11 +1,6 @@
 import { stat } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
-import {
-	pluginDefinitionIndexKey,
-	type Context as CoreContext,
-	EffectsService,
-	LoggerService,
-} from '@pluxel/core'
+import { pluginDefinitionIndexKey, type Context as CoreContext } from '@pluxel/core'
 import { pinOwnerContext } from '../internal/owner-view'
 import {
 	readNodeModuleDeclaration,
@@ -74,7 +69,7 @@ export class NodeModuleService {
 			throw new TypeError('[pluxel/runtime] nodeModules.use() requires a setup callback')
 		}
 		const lease: ConsumerLease = { active: true, generation: 0 }
-		const guard = this.ctx.service(EffectsService).defer(() => this.disposeLease(lease), {
+		const guard = this.ctx.effects.defer(() => this.disposeLease(lease), {
 			tag: 'NodeModule',
 		})
 		try {
@@ -243,6 +238,6 @@ export class NodeModuleService {
 	}
 
 	private reportUpdateError(error: unknown): void {
-		this.ctx.service(LoggerService).error('failed to update Node module consumer', { error })
+		this.ctx.logger.error('failed to update Node module consumer', { error })
 	}
 }

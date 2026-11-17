@@ -1,4 +1,4 @@
-import { EffectsService, type RootContext } from '@pluxel/core'
+import { type RootContext } from '@pluxel/core'
 import { installRootService } from '@pluxel/core/host'
 import { requireConfigService } from '@pluxel/core/internal'
 import { describe, expect, it } from 'vitest'
@@ -38,7 +38,7 @@ function documentService(events: string[]) {
 			installRootService(Documents, {
 				create(root) {
 					events.push('constructed')
-					root.service(EffectsService).defer(
+					root.effects.defer(
 						() => {
 							closed = true
 							events.push('closed')
@@ -264,7 +264,7 @@ describe('Host root document factories', () => {
 					documents: {
 						config: {
 							storage(root) {
-								root.service(EffectsService).defer(() => {
+								root.effects.defer(() => {
 									throw cleanupFailure
 								})
 								return root.service(Documents).config

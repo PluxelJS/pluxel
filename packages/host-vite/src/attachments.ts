@@ -1,4 +1,4 @@
-import { EffectsService, type PluginDefinitionAddress, type PluginConstructor } from '@pluxel/core'
+import { type PluginDefinitionAddress, type PluginConstructor } from '@pluxel/core'
 import type { HostViteProfile } from './profile'
 import type { PluginHost, HostStartupContext } from '@pluxel/host'
 import type { PluginSourceVitePipeline } from '@pluxel/rolldown/vite'
@@ -93,7 +93,7 @@ export async function attachHostVitePlugins(
 		if (disposeCallback) {
 			const dispose = () => disposeCallback.call(attachment)
 			try {
-				host.ctx.service(EffectsService).defer(dispose)
+				host.ctx.effects.defer(dispose)
 			} catch (error) {
 				try {
 					await dispose()
@@ -130,7 +130,7 @@ export async function attachHostVitePlugins(
 		// The invalid callback has already begun work. Supervise it immediately and drain it
 		// with its creating Host, preserving a later rejection instead of leaking or awaiting commit.
 		void settled.catch(() => {})
-		host.ctx.service(EffectsService).defer(() => settled, { tag, phase: 'shutdown' })
+		host.ctx.effects.defer(() => settled, { tag, phase: 'shutdown' })
 	}
 	return Object.freeze({
 		tracks: (file: string) =>

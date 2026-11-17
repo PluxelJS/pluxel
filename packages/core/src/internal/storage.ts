@@ -1,12 +1,10 @@
 import type { HostDocumentStorage } from '../storage/documents'
-import { resolveContextService } from '@pluxel/context/internal'
+import { requireCoreRuntime } from '../context/core-context'
 import type { RootContext } from '../context/Context'
-import { FsService } from '../fs/service'
-import { TinyBaseHostService } from '../tinybase/types'
 
 /** @internal Borrow this root's fixed runtime data filesystem. */
 export function requireFs(root: RootContext) {
-	return resolveContextService(root, FsService)
+	return requireCoreRuntime(root).fs
 }
 
 /** @internal Borrow ordinary Host documents from their readable, domain-owned directory. */
@@ -18,5 +16,5 @@ export function requireHostDocuments(root: RootContext, namespace: string): Host
 
 /** @internal Plugin Store status and explicit writer recovery. */
 export function requireTinyBaseHost(root: RootContext) {
-	return resolveContextService(root, TinyBaseHostService)
+	return requireCoreRuntime(root).tinybase
 }

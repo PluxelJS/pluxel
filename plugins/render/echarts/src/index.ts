@@ -2,7 +2,7 @@ import type { Workbench } from '@pluxel/workbench'
 import { Workers, defineWorkerTask, WorkerTaskError } from '@pluxel/services/workers'
 import { CanvasPlugin } from '@pluxel/plugin-canvas'
 import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/plugin-fonts'
-import { BasePlugin, Plugin, type Context, EffectsService, defineServiceRef } from '@pluxel/core'
+import { BasePlugin, Plugin, type Context, defineServiceRef } from '@pluxel/core'
 
 import type { EChartsOption, SetOptionOpts } from 'echarts'
 import { EChartsConfig, type EChartsPluginConfig } from './config.ts'
@@ -159,7 +159,7 @@ export class EChartsPlugin extends BasePlugin {
 			themeBudget: { count: 0, bytes: 0 },
 		})
 		this.generation = generation
-		this.ctx.service(EffectsService).defer(
+		this.ctx.effects.defer(
 			() => {
 				if (this.generation === generation) this.generation = undefined
 				for (const lease of this.leases) {
@@ -455,7 +455,7 @@ export class EChartsPlugin extends BasePlugin {
 		this.leases.add(lease)
 		this.leasesByOwner.set(owner, lease)
 		try {
-			owner.service(EffectsService).defer(() => this.closeLease(lease), { tag: 'echarts-caller' })
+			owner.effects.defer(() => this.closeLease(lease), { tag: 'echarts-caller' })
 		} catch (cause) {
 			this.closeLease(lease)
 			throw new EChartsError('NOT_RUNNING', 'ECharts caller is stopped or being replaced', {

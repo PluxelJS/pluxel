@@ -130,8 +130,6 @@ type CompiledPlan = Readonly<{
 	definitions: readonly AnyDefinition[]
 }>
 type ContextState = {
-	serviceValues?: ReadonlyMap<ServiceKey, unknown>
-	servicesRead?: boolean
 	readonly plan: CompiledPlan
 	readonly root: RootContext
 	readonly scope: Context
@@ -166,7 +164,6 @@ class ContextImpl {
 	service<T>(target: ServiceDefinition<T, ServiceAccess> | ServiceRef<T>): T | undefined {
 		const ctx = this as unknown as Context
 		const state = readState(ctx)
-		state.servicesRead = true
 		const reference = readTarget(target)
 		assertAccess(state, ctx, reference.access, describeTarget(target))
 		const installed = state.plan.services.get(reference.key)
@@ -181,11 +178,7 @@ class ContextImpl {
 			describeTarget(installed.definition),
 			installed.scope,
 		)
-		return (
-			state.serviceValues?.has(reference.key)
-				? state.serviceValues.get(reference.key)
-				: installed.resolve(state, ctx)
-		) as T
+		return installed.resolve(state, ctx) as T
 	}
 	get root(): RootContext {
 		return this.#state!.root
@@ -289,15 +282,10 @@ export function resolveContextService<T>(
 	definition: ServiceDefinition<T, ServiceAccess>,
 ): T {
 	const state = readState(ctx)
-	state.servicesRead = true
 	const target = readRequired(definition)
 	const installed = state.plan.services.get(target.key)
 	if (!installed) throw new ContextServiceMissingError(describeTarget(definition), state.plan.name)
-	return (
-		state.serviceValues?.has(target.key)
-			? state.serviceValues.get(target.key)
-			: installed.resolve(state, ctx)
-	) as T
+	return installed.resolve(state, ctx) as T
 }
 export function createContextHost<const TServices extends readonly ServiceInstallation[]>(
 	options: ContextHostOptions<TServices>,
@@ -432,33 +420,8 @@ export function createContextView(source: Context): Context {
 		rootValues: state.rootValues,
 		scopeValues: state.scopeValues,
 		ownerValues: EMPTY_OWNER_VALUES,
-		...(state.serviceValues ? { serviceValues: state.serviceValues } : {}),
 	})
 	return ctx
-}
-
-/** Construction-only owner values; the installed service set and access remain immutable. */
-export function initializeContextServiceValues(
-	ctx: Context,
-	values: readonly (readonly [AnyDefinition, unknown])[],
-): void {
-	const state = readState(ctx)
-	if (state.servicesRead || state.serviceValues)
-		throw new TypeError(
-			'[pluxel/context] Context service values must be initialized once before service resolution',
-		)
-	const initialized = new Map<ServiceKey, unknown>()
-	for (const [definition, value] of values) {
-		const { key } = readRequired(definition)
-		if (!state.plan.services.has(key))
-			throw new ContextServiceMissingError(describeTarget(definition), state.plan.name)
-		if (initialized.has(key))
-			throw new TypeError('[pluxel/context] Context service value is initialized more than once')
-		if (value === undefined)
-			throw new TypeError('[pluxel/context] Context service value cannot be undefined')
-		initialized.set(key, value)
-	}
-	state.serviceValues = initialized
 }
 
 /** Framework binding: a stable identity supplements a declaration's process-local object key. */

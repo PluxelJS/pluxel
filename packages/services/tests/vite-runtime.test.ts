@@ -119,7 +119,7 @@ describe('static Vite runtime', () => {
 
 function pluginSource(version: string, available: boolean): string {
 	return [
-		"import { BasePlugin, Plugin, PluginPart, Fs } from '@pluxel/core'; import * as v from 'valibot'; import { ElysiaApp } from '@pluxel/services/elysia'",
+		"import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'; import * as v from 'valibot'; import { ElysiaApp } from '@pluxel/services/elysia'",
 		"import { websocket } from 'elysia/websocket'",
 		"import { writeFileAtomic } from '@pluxel/core/fs'",
 		"import { BuiltStatic } from '@fixture/vite-built'",
@@ -130,7 +130,7 @@ function pluginSource(version: string, available: boolean): string {
 		`  readonly version = ${JSON.stringify(version)}`,
 		"  configuredLabel = ''",
 		"  storedFsValue = ''",
-		`  protected override async init() { const files = await this.ctx.service(Fs)(); try { this.storedFsValue = await files.readFile('marker', 'utf8') } catch (error) { if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error; const address = this.ctx.pluginInfo.nodeAddress; this.storedFsValue = ${JSON.stringify(version)} + ':' + (address.variant === 'fork' ? address.forkId : 'default'); await writeFileAtomic(files, 'marker', this.storedFsValue) }; this.configuredLabel = this.settings.label; if (this.ctx.pluginInfo.nodeAddress.variant === 'default') this.ctx.service(ElysiaApp).use(websocket()).get('/vite-static/version', () => ${JSON.stringify(version)}).ws('/vite-static/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
+		`  protected override async init() { const files = await this.ctx.fs(); try { this.storedFsValue = await files.readFile('marker', 'utf8') } catch (error) { if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error; const address = this.ctx.pluginInfo.nodeAddress; this.storedFsValue = ${JSON.stringify(version)} + ':' + (address.variant === 'fork' ? address.forkId : 'default'); await writeFileAtomic(files, 'marker', this.storedFsValue) }; this.configuredLabel = this.settings.label; if (this.ctx.pluginInfo.nodeAddress.variant === 'default') this.ctx.service(ElysiaApp).use(websocket()).get('/vite-static/version', () => ${JSON.stringify(version)}).ws('/vite-static/socket', { open(socket) { socket.send(${JSON.stringify(version)}) } }) }`,
 		'}',
 		"export const ConfiguredPluginConfig = v.object({ label: v.optional(v.string(), 'default') })",
 		'@Plugin()',

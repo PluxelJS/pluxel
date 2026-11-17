@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import * as contracts from '../../core/src/internal/control-manifest'
-import { pluginDefinitionIndexKey } from '../../core/src/plugins/runtime/identity'
+import * as contracts from '@pluxel/core/internal/control-manifest'
+import { pluginDefinitionIndexKey } from '@pluxel/core'
 import MagicString from 'magic-string'
 import type { TsdownPlugin } from 'vite-plus/pack'
 import { generateControl } from './control/generate'
@@ -10,11 +10,9 @@ import {
 	type ServiceSemanticDefinition,
 } from './service-semantics'
 
-/** Bootstrap-safe integration for packages that define the framework's own services. */
+/** Build declarations and control materials for packages that install application services. */
 export function createServiceBuildPlugin(options: {
 	root: string
-	/** Core overrides the shared binder import with its own local source during bootstrap. */
-	runtime?: string
 	controlDirectory?: string
 }): TsdownPlugin {
 	const sources = new Map<string, string>(),
@@ -62,9 +60,7 @@ export function createServiceBuildPlugin(options: {
 					: undefined,
 				lowered.hasRefs ? '__defineServiceRef as __pluxelDefineServiceRef' : undefined,
 			].filter(Boolean)
-			output.prepend(
-				`import { ${imports.join(', ')} } from ${JSON.stringify(options.runtime ?? '@pluxel/core/toolchain')};\n`,
-			)
+			output.prepend(`import { ${imports.join(', ')} } from '@pluxel/core/toolchain';\n`)
 			return { code: output.toString(), map: output.generateMap({ hires: true }) }
 		},
 		generateBundle: {

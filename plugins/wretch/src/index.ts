@@ -2,14 +2,13 @@ import type { Workbench } from '@pluxel/workbench'
 import { assertWorkbenchDto } from '@pluxel/workbench/server'
 import {
 	parsePluginNodeAddress,
-	TinyBaseService,
+	type TinyBaseService,
 	pluginNodeAddressEqual,
 	pluginNodeIndexKey,
 	type Context,
 	type PluginNodeAddress,
 	BasePlugin,
 	Plugin,
-	EffectsService,
 	defineServiceRef,
 } from '@pluxel/core'
 
@@ -54,8 +53,8 @@ export class WretchPlugin extends BasePlugin {
 	override init(): void {
 		const policy = createOutboundPolicy(this.config)
 		this.policy = policy
-		this.storageState.service = this.ctx.service(TinyBaseService)
-		this.ctx.service(EffectsService).defer(
+		this.storageState.service = this.ctx.tinybase
+		this.ctx.effects.defer(
 			async () => {
 				policy.dispose()
 				if (this.policy === policy) {
@@ -176,7 +175,7 @@ export class WretchPlugin extends BasePlugin {
 		const lease: ClientLease = { active: true, controller: new AbortController() }
 		clients.set(owner, lease)
 		try {
-			owner.service(EffectsService).defer(
+			owner.effects.defer(
 				() => {
 					if (!lease.active) return
 					lease.controller.abort(stoppedClientError())
@@ -201,7 +200,7 @@ export class WretchPlugin extends BasePlugin {
 		// Own the pending read before I/O so shutdown also drains admitted initialization.
 		let cleanup
 		try {
-			cleanup = owner.service(EffectsService).defer(
+			cleanup = owner.effects.defer(
 				async () => {
 					const state = await initialization?.catch((): undefined => undefined)
 					if (!state) return

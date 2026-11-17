@@ -10,7 +10,7 @@ description: 使用 Valibot Schema 统一定义插件配置的类型推导、默
 在插件类中使用 `this.configs.use()` 传入 Valibot Schema：
 
 ```ts twoslash
-import { BasePlugin, Plugin, LoggerService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import * as v from 'valibot'
 
 // 1. 定义配置 Schema
@@ -25,9 +25,7 @@ export class WorkerPlugin extends BasePlugin {
 
 	protected override init() {
 		// 3. 读取配置项
-		this.ctx
-			.service(LoggerService)
-			.info('Worker initialized', { concurrency: this.config.concurrency })
+		this.ctx.logger.info('Worker initialized', { concurrency: this.config.concurrency })
 	}
 }
 ```

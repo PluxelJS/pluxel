@@ -3,20 +3,20 @@ title: 插件日志：结构化输出与最佳实践
 description: 使用 Context 的 logger 记录带属性的结构化日志，由宿主统一管理日志级别与输出汇聚。
 ---
 
-在插件中，推荐通过 Core 提供的 `this.ctx.service(LoggerService)` 记录日志。框架会自动为日志附加当前插件的身份（名称、实例分叉等），并配合 LogTape 实现高性能的结构化输出与按需过滤。
+在插件中，推荐通过 Core 提供的 `this.ctx.logger` 记录日志。框架会自动为日志附加当前插件的身份（名称、实例分叉等），并配合 LogTape 实现高性能的结构化输出与按需过滤。
 
 ## 基础写法
 
-在插件方法中直接调用 `this.ctx.service(LoggerService)` 的级别方法：
+在插件方法中直接调用 `this.ctx.logger` 的级别方法：
 
 ```ts twoslash
-import { BasePlugin, Plugin, LoggerService } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 
 @Plugin({ displayName: 'Worker' })
 export class WorkerPlugin extends BasePlugin {
 	start(endpoint: string, concurrency: number): void {
 		// 输出日志：稳定消息文本 + 结构化属性对象
-		this.ctx.service(LoggerService).info('Worker started', {
+		this.ctx.logger.info('Worker started', {
 			endpoint,
 			concurrency,
 		})
@@ -31,11 +31,10 @@ export class WorkerPlugin extends BasePlugin {
 捕获错误并打日志时，建议将原始 `Error` 对象作为结构化字段传入：
 
 ```ts no-twoslash
-import { LoggerService } from '@pluxel/core'
 try {
 	await this.syncCatalog()
 } catch (error: unknown) {
-	this.ctx.service(LoggerService).error('Catalog sync failed', {
+	this.ctx.logger.error('Catalog sync failed', {
 		error,
 		catalogId,
 	})
@@ -61,11 +60,10 @@ LogTape 支持多种调用风格，可根据场景灵活选用：
 如果某些调试日志包含高开销的计算（如遍历大对象生成摘要），而该级别的日志在生产环境中通常被关闭，可以使用 `@logtape/logtape` 的 `lazy()` 包装函数：
 
 ```ts no-twoslash
-import { LoggerService } from '@pluxel/core'
 import { lazy } from '@logtape/logtape'
 
 // 仅在 debug 日志实际开启并输出时，才会执行包装函数
-this.ctx.service(LoggerService).debug('Queue snapshot', {
+this.ctx.logger.debug('Queue snapshot', {
 	queueSize: queue.length,
 	summary: lazy(() => summarizeLargeQueue(queue)),
 })
@@ -78,8 +76,7 @@ this.ctx.service(LoggerService).debug('Queue snapshot', {
 为特定操作或子模块附加固定属性时，可使用 `.with()` 派生新的 Logger 实例：
 
 ```ts no-twoslash
-import { LoggerService } from '@pluxel/core'
-const jobLogger = this.ctx.service(LoggerService).with({
+const jobLogger = this.ctx.logger.with({
 	jobId: 'job_456',
 	module: 'extractor',
 })
@@ -95,9 +92,8 @@ jobLogger.info('Task finished', { exitCode: 0 })
 如果插件有高频的底层探针日志（如缓存命中排查、HMR 链路跟踪），但平时不想污染普通的 debug 输出，可以创建专用的 Debug Channel：
 
 ```ts no-twoslash
-import { LoggerService } from '@pluxel/core'
 export class CachePlugin extends BasePlugin {
-	private readonly cacheDebug = this.ctx.service(LoggerService).getDebugChannel('cache:lookup')
+	private readonly cacheDebug = this.ctx.logger.getDebugChannel('cache:lookup')
 
 	get(key: string) {
 		this.cacheDebug.debug('Cache query', { key })

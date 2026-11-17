@@ -158,6 +158,45 @@ const optional = defineServiceRef<SelectedClock>()
 	})
 }
 
+it('proves opted-in source declarations when the runtime resolver selects a bundled native entry', async () => {
+	const files = publishedFiles(materialFor())
+	files[`${packagePath}/package.json`] = JSON.stringify({
+		name: packageName,
+		type: 'module',
+		exports: {
+			'.': { '@pluxel/source': './src/index.ts', default: './dist/index.mjs' },
+		},
+		pluxel: { control: './dist/control/manifest.json' },
+	})
+	files[`${packagePath}/src/index.ts`] = "export { Clock } from './token.ts'\n"
+	files[`${packagePath}/src/token.ts`] =
+		"export abstract class Clock { static readonly access = 'owner' as const }\n"
+	files[`${packagePath}/dist/index.mjs`] =
+		"throw new Error('NATIVE_IMPLEMENTATION_EXECUTED'); import { t as Clock } from './token.mjs'; export { Clock }\n"
+	files[`${packagePath}/dist/token.mjs`] =
+		"var Clock = class { static access = 'owner' }; export { Clock as t }\n"
+	await using fixture = await createFixture(files)
+	const result = await lowerServiceModule({
+		id: resolve(fixture.path, 'entry.ts'),
+		code: `import { defineServiceRef } from '@pluxel/core'
+import type { Clock } from ${JSON.stringify(packageName)}
+const optional = defineServiceRef<Clock>()
+`,
+		resolve: async () => resolve(fixture.path, packagePath, 'dist/index.mjs'),
+		controlContracts,
+		canonicalSourceEntry: async () => {
+			throw new Error('Service must retain its package identity')
+		},
+		error: (message) => {
+			throw new Error(message)
+		},
+	})
+	expect(result.replacements).toHaveLength(1)
+	expect(result.replacements[0]!.text).toBe(
+		`__pluxelDefineServiceRef(${JSON.stringify({ format: 1, definition, access: 'owner' })})`,
+	)
+})
+
 it.each(['all', 'owner', 'root'] as const)(
 	'proves published native declaration aliases with %s access without evaluating the implementation',
 	async (access) => {

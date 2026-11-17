@@ -4,7 +4,7 @@ import { generateControl } from './generate'
 import { inspectPluginSource } from '../rolldown/plugins/pluginSemanticsPlugin'
 import { extractConfigDeclarationFacts } from '../rolldown/plugins/configSourcePlugin'
 
-/** Plugin analysis is deliberately outside the Core service bootstrap dependency graph. */
+/** Add Plugin source analysis to the shared control material generator. */
 export function generatePluginControl(
 	options: Omit<Parameters<typeof generateControl>[0], 'pluginAnalysis' | 'contracts'>,
 ) {

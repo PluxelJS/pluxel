@@ -1,35 +1,24 @@
-import { LoggerService } from '../../src/logger/LoggerService'
-import { EffectsService } from '../../src/services/effects/EffectsService'
 import { mkdtemp, rm } from 'node:fs/promises'
 import * as nodeFs from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
 import { configure, getConfig, reset, type Config, type LogRecord } from '@logtape/logtape'
-import { BasePlugin, Plugin, type RootContext, defineServiceRef } from '@pluxel/core'
+import { BasePlugin, Plugin, type RootContext } from '@pluxel/core'
 import { logtape, zenfs } from '@pluxel/core/config'
 import { Passthrough } from '@pluxel/core/fs'
 import { createCoreContextHost, prepareCoreContext } from '@pluxel/core/host'
 import { requireHostDocuments } from '@pluxel/core/internal'
-import {
-	Logging,
-	createPluginLogPolicyStore,
-	parsePluginLogPolicySnapshot,
-} from '@pluxel/core/logging'
+import { createPluginLogPolicyStore, parsePluginLogPolicySnapshot } from '@pluxel/core/logging'
 import { createHost, defineHostService } from '@pluxel/host'
 import { expect, it } from 'vitest'
 
-const LoggingRef = defineServiceRef<Logging>()
 @Plugin()
 class LifecycleLogger extends BasePlugin {
 	init() {
-		this.ctx.service(LoggerService).info('plugin init')
-		this.ctx
-			.service(EffectsService)
-			.defer(() => this.ctx.service(LoggerService).info('plugin runtime'), { phase: 'runtime' })
-		this.ctx
-			.service(EffectsService)
-			.defer(() => this.ctx.service(LoggerService).info('plugin final'), { phase: 'final' })
+		this.ctx.logger.info('plugin init')
+		this.ctx.effects.defer(() => this.ctx.logger.info('plugin runtime'), { phase: 'runtime' })
+		this.ctx.effects.defer(() => this.ctx.logger.info('plugin final'), { phase: 'final' })
 	}
 }
 
@@ -51,16 +40,17 @@ it('prepares Core-only logging once and disposes its native resources with the r
 	})
 	const root: RootContext = shape.createRoot()
 	try {
-		expect(root.service(Logging)).toBe(root.service(LoggingRef))
+		expect(root.logging).toBeDefined()
+		expect(root.logging).toBe(root.logging)
 		expect(factories).toBe(0)
 		expect(getConfig()).toBeNull()
 		await Promise.all([prepareCoreContext(root), prepareCoreContext(root)])
 		await prepareCoreContext(root)
 		expect(factories).toBe(1)
-		root.service(LoggerService).info('Core-only prepared')
+		root.logger.info('Core-only prepared')
 		expect(records.some((record) => record.message.join('') === 'Core-only prepared')).toBe(true)
 	} finally {
-		await root.service(EffectsService).dispose()
+		await root.effects.dispose()
 	}
 	expect(disposals).toBe(1)
 	expect(getConfig()).toBeNull()
@@ -101,7 +91,7 @@ it.each(['resolved', 'rejected'] as const)(
 				},
 			),
 		}).createRoot()
-		const manager = root.service(Logging)
+		const manager = root.logging!
 		const initialLevel = manager.policy.snapshot().defaultLevel
 		const preparation = prepareCoreContext(root).then(
 			() => ({ ok: true as const }),
@@ -109,7 +99,7 @@ it.each(['resolved', 'rejected'] as const)(
 		)
 		await pendingLoad
 		let closed = false
-		const closing = root.service(EffectsService).dispose()
+		const closing = root.effects.dispose()
 		void closing.then(
 			(): undefined => {
 				closed = true
@@ -205,16 +195,16 @@ it('keeps logging through service and Plugin cleanup, and commits policy before 
 					name: 'LoggingLifecycleProbe',
 					provides: [],
 					prepare({ ctx, effects }) {
-						ctx.service(LoggerService).info('service prepare')
-						effects.defer(() => ctx.service(LoggerService).info('service runtime'), {
+						ctx.logger.info('service prepare')
+						effects.defer(() => ctx.logger.info('service runtime'), {
 							phase: 'runtime',
 						})
-						effects.defer(() => ctx.service(LoggerService).info('service final'), {
+						effects.defer(() => ctx.logger.info('service final'), {
 							phase: 'final',
 						})
-						ctx.service(EffectsService).defer(
+						ctx.effects.defer(
 							() => {
-								ctx.service(LoggerService).info('root final')
+								ctx.logger.info('root final')
 								finalReached()
 							},
 							{ phase: 'final' },
@@ -224,7 +214,7 @@ it('keeps logging through service and Plugin cleanup, and commits policy before 
 			],
 		})
 		await host.startNode(LifecycleLogger.nodeAddress())
-		host.ctx.service(Logging).policy.setDefaultLevel('debug')
+		host.ctx.logging!.policy.setDefaultLevel('debug')
 		const closing = host.close()
 		try {
 			await Promise.all([pendingPolicy, pendingFinal])
@@ -269,7 +259,7 @@ it('leaves an existing native configuration untouched when logging is omitted', 
 	try {
 		const host = await createHost({ plugins: [], services: [] })
 		try {
-			expect(host.ctx.service(LoggingRef)).toBeUndefined()
+			expect(host.ctx.logging).toBeUndefined()
 			expect(getConfig()).toBe(foreign)
 		} finally {
 			await host.close()
