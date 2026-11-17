@@ -30,7 +30,7 @@ afterEach(async () => {
 })
 
 function filesystem(config: FsConfig) {
-	const host = createCoreTestHost({ storage: config })
+	const host = createCoreTestHost({ zenfs: config })
 	return { host, fs: requireFs(getCoreTestHostContext(host)) }
 }
 

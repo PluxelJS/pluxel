@@ -15,7 +15,7 @@ import { EditorUi, Icon, ToolButton, allowedMark, allowedNode, canEdit } from '.
 import { blockTypes, convertBlock, type BlockType } from './insert-commands'
 import { ColorTools, FontTools, TypographyTools } from './typography'
 import { selectionAlignment, selectionBlockType } from './selection-format'
-import { sourceSync } from './source-editor'
+import { sourceSync } from './editor-transactions'
 import { TypstTableStyleControls } from './table-style-controls'
 import { selectedTable, tableActions } from './table-menu'
 import { LinkMenu } from './link-menu'

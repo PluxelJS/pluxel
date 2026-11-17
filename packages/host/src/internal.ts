@@ -13,7 +13,6 @@ export { collectPluginModuleExports } from './module'
 export { planHostServices, prepareHostServices, createHostServiceLifecycle } from './services'
 export {
 	lookupPluginConfig,
-	mutatePluginConfig,
 	pluginConfigGet,
 	pluginConfigValidate,
 	pluginConfigPatch,
@@ -21,7 +20,15 @@ export {
 	readHostConfigState,
 } from './config'
 export { HostConfigStore, type PluginConfigFile } from './config-store'
-export { HostStateStore, canonicalHostStateSnapshot, type HostStateFile } from './state-store'
+export {
+	HostStateStore,
+	HostPolicyRevisionConflictError,
+	HostPolicyMutationRejectedError,
+	canonicalHostStateSnapshot,
+	type HostStateFile,
+} from './state-store'
+export type { HostStateConfigurationSnapshot } from './state-store'
+export { createHostPolicy } from './policy-management'
 export { coercePluginConfigRecords, mergeConfigRecords } from './config-records'
 
 export * from './state-helpers'
@@ -53,3 +60,4 @@ export {
 	recordLoadedHostApplication,
 	readLoadedHostApplicationModule,
 } from './loaded-modules'
+export { startHostApplication } from './application-start'

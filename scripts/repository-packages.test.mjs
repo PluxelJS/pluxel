@@ -137,7 +137,7 @@ describe('repository package policy', () => {
 			'@scope/internal',
 			'workspace',
 			'eventure',
-			'@worksplit/core',
+			'@worksplit/split-view',
 			'@pluxel-internal/pncat',
 			'unknown-fixture',
 			'literalXname',

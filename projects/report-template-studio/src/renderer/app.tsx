@@ -124,7 +124,7 @@ function ProjectWorkspace({
 			.finally(() => setBusy(false))
 	}
 	const switchProject = async () => {
-		if (!(await session.closeDocuments())) return
+		if (!(await session.closeWorkspace())) return
 		try {
 			await session.dispose()
 			onSwitch()
@@ -313,7 +313,7 @@ function ProjectWorkspace({
 							</Alert>
 						)}
 						<Workbench
-							workbench={workbench}
+							instance={workbench}
 							className="studio-workbench"
 							native={{ realtimeResize: true }}
 							empty={
@@ -348,6 +348,26 @@ export function App() {
 	const [recentMenu, setRecentMenu] = useState<string | null>(null)
 	const [session, setSession] = useState<StudioSession | null>(null)
 	const openProject = (project: ProjectSummary) => setSession(new StudioSession(project))
+	useEffect(
+		() =>
+			window.studio?.onBeforeClose?.(async () => {
+				if (!session) return true
+				try {
+					if (!(await session.closeWorkspace())) return false
+					try {
+						await session.dispose()
+					} catch (cause) {
+						// The approved workspace has ended; cleanup failure cannot veto it again.
+						session.report(cause)
+					}
+					return true
+				} catch (cause) {
+					session.report(cause)
+					return false
+				}
+			}),
+		[session],
+	)
 	const [name, setName] = useState('新的报表项目')
 	const [error, setError] = useState('')
 	const [busy, setBusy] = useState(false)

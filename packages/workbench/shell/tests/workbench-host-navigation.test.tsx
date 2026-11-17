@@ -136,12 +136,15 @@ beforeEach(() => {
 		updates: { follow: vi.fn(async () => ({ [Symbol.dispose]: vi.fn() })) },
 		catalog: { snapshot: vi.fn(), updateLayout: vi.fn() },
 		plugins: { status: vi.fn(), setAutoStart: vi.fn(), applyLifecycleCommands: vi.fn() },
+		policy: { get: vi.fn(), validate: vi.fn(), patch: vi.fn(), reset: vi.fn() },
 		config: {
-			status: vi.fn(async () => ({ version: null, readonly: false })),
+			status: vi.fn(async () => ({ readonly: false })),
 			presentation: vi.fn(),
 			get: vi.fn(),
 			patch: vi.fn(),
 			patchField: vi.fn(),
+			validate: vi.fn(),
+			reset: vi.fn(),
 		},
 		dependencies: {
 			graph: vi.fn(),
@@ -361,9 +364,8 @@ describe('Plugin host navigation through the authenticated native App', () => {
 		expect(workspace.workbench.getActiveDocument()!.href).toBe(`${prefix}/accounts/east%20account`)
 		expect(location.pathname).toBe(`${prefix}/accounts/east%20account`)
 		expect(fixture.hosts.at(-1)!.facade.document!.params).toEqual({ id: 'east account' })
-		// The shared splat Route has no static title: native navigation keeps the
-		// document's prior presentation after releasing the View's temporary override.
-		expect(workspace.workbench.getActiveDocument()!.title).toBe(original.title)
+		// The new route's automatic title replaces the released View controller's title.
+		expect(workspace.workbench.getActiveDocument()!.title).toBe('account')
 		expect(host.active).toBe(false)
 	})
 
@@ -475,7 +477,7 @@ describe('Plugin host navigation through the authenticated native App', () => {
 			const original = workspace.workbench.getActiveDocument()!
 			await act(async () => {
 				const result = await workspace.workbench.close(original.id)
-				expect(result).toMatchObject({ status: 'closed', cleanupErrors: [] })
+				expect(result).toMatchObject({ status: 'applied', cleanupErrors: [] })
 			})
 			expect(host.active).toBe(false)
 			expect(() => {

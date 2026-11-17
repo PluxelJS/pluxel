@@ -1,10 +1,5 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
-import {
-	Plugin,
-	pluginDefinitionAddressOf,
-	type PluginConstructor,
-	type PluginOptions,
-} from '@pluxel/core'
+import { Plugin, type PluginConstructor, type PluginOptions } from '@pluxel/core'
 import {
 	__setPluginConfig,
 	__setPluginDefinition,
@@ -35,9 +30,9 @@ export function lowerTestReplacement<T extends PluginConstructor>(
 	__setPluginDefinition(replacement, {
 		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 		kind: 'plugin',
-		definition: pluginDefinitionAddressOf(previous),
-		constructorRequires: options.requires?.map(pluginDefinitionAddressOf),
-		optional: options.optional?.map(pluginDefinitionAddressOf),
+		definition: previous.definitionAddress(),
+		constructorRequires: options.requires?.map((plugin) => plugin.definitionAddress()),
+		optional: options.optional?.map((plugin) => plugin.definitionAddress()),
 	})
 	if (options.config) {
 		__setPluginConfig(replacement, {

@@ -30,8 +30,8 @@ For continuous or multi-file edits while the application is running, use the con
 The host declares its fixed Plugin catalog and optional sources in `host/src/app.ts`.
 Vite development and production execution consume that same `defineHostApplication(factory)` declaration.
 The application factory returns an explicit service list; `servicesPreset()` from `@pluxel/services/preset` combines base services,
-Vault, Management and optional Workbench. Core logging is selected explicitly with `config.logger: logtape()`
-from `@pluxel/core/config`; storage uses `config.storage: zenfs(...)` from the same entry.
+Vault, Management and optional Workbench. Core logging is selected explicitly with `runtime.logtape: logtape()`
+from `@pluxel/core/config`; storage uses `runtime.zenfs: zenfs(...)` from the same entry.
 The preset does not configure logging or storage. `host/web/` is an independent private workspace package
 for browser-only React source and frontend dependencies; `host/` owns the Vite and Pluxel application
 configuration, installs the workspace Plugins and serves the page and Plugin routes on
@@ -83,7 +83,8 @@ The declaration validates and freezes data. Native startup accepts one snapshot;
 `vp run build` emits modules delivery: `host/dist/app.mjs` exports the factory and product, package dependencies
 remain installed, and each example Plugin builds its public `dist/index.mjs` before the host. Local
 Plugin/Node/Workbench artifacts are compiled. `vp run @example/host#start`
-runs `host/start.mjs` in native Node and serves the compiled SPA and Workbench Shell. Publish sources before
+runs `host/start.mjs` in native Node. The application `launch` callback opens the listener after startup is accepted
+and explicitly selects the compiled SPA directory; Workbench serves its own Shell. Publish sources before
 starting a fresh process to accept their new versions. The launcher binds before evaluating business imports;
 do not preload the application or its dependency graph. The host declares every package in the official
 shared list directly so binding does not depend on workspace hoisting.

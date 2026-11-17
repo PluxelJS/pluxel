@@ -1,0 +1,394 @@
+{
+	"id": "26fefd6f-9e6f-4fcf-a665-af2e968a506a",
+	"prevId": "0a22f2e7-7e70-4eec-98b4-5b6b86f221d5",
+	"version": "6",
+	"dialect": "sqlite",
+	"tables": {
+		"audits": {
+			"name": "audits",
+			"columns": {
+				"id": {
+					"name": "id",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"registry": {
+					"name": "registry",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false,
+					"default": "'https://registry.npmjs.org'"
+				},
+				"name": {
+					"name": "name",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"action": {
+					"name": "action",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"revision": {
+					"name": "revision",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"changes": {
+					"name": "changes",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"at": {
+					"name": "at",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				}
+			},
+			"indexes": {
+				"audit_package": {
+					"name": "audit_package",
+					"columns": ["registry", "name", "at"],
+					"isUnique": false
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"checkConstraints": {}
+		},
+		"notifications": {
+			"name": "notifications",
+			"columns": {
+				"id": {
+					"name": "id",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"registry": {
+					"name": "registry",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false,
+					"default": "'https://registry.npmjs.org'"
+				},
+				"name": {
+					"name": "name",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"version": {
+					"name": "version",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"status": {
+					"name": "status",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false,
+					"default": "'pending'"
+				},
+				"attempts": {
+					"name": "attempts",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false,
+					"default": 0
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"updated_at": {
+					"name": "updated_at",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"next_attempt_at": {
+					"name": "next_attempt_at",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"lease_token": {
+					"name": "lease_token",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"lease_until": {
+					"name": "lease_until",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"code": {
+					"name": "code",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"diagnostic": {
+					"name": "diagnostic",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				}
+			},
+			"indexes": {
+				"notification_coordinate": {
+					"name": "notification_coordinate",
+					"columns": ["registry", "name", "version"],
+					"isUnique": true
+				},
+				"notification_schedule": {
+					"name": "notification_schedule",
+					"columns": ["status", "next_attempt_at"],
+					"isUnique": false
+				},
+				"notification_retention": {
+					"name": "notification_retention",
+					"columns": ["updated_at"],
+					"isUnique": false
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"checkConstraints": {}
+		},
+		"packages": {
+			"name": "packages",
+			"columns": {
+				"registry": {
+					"name": "registry",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false,
+					"default": "'https://registry.npmjs.org'"
+				},
+				"name": {
+					"name": "name",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"description": {
+					"name": "description",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"dist_tags": {
+					"name": "dist_tags",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"observed_at": {
+					"name": "observed_at",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"hidden": {
+					"name": "hidden",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false,
+					"default": false
+				},
+				"revision": {
+					"name": "revision",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false,
+					"default": 1
+				},
+				"official": {
+					"name": "official",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false,
+					"default": false
+				},
+				"category": {
+					"name": "category",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"tags": {
+					"name": "tags",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false,
+					"default": "'[]'"
+				}
+			},
+			"indexes": {
+				"package_browse": {
+					"name": "package_browse",
+					"columns": ["hidden", "name", "registry"],
+					"isUnique": false
+				},
+				"package_category": {
+					"name": "package_category",
+					"columns": ["category", "official"],
+					"isUnique": false
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {
+				"packages_registry_name_pk": {
+					"columns": ["registry", "name"],
+					"name": "packages_registry_name_pk"
+				}
+			},
+			"uniqueConstraints": {},
+			"checkConstraints": {}
+		},
+		"releases": {
+			"name": "releases",
+			"columns": {
+				"registry": {
+					"name": "registry",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false,
+					"default": "'https://registry.npmjs.org'"
+				},
+				"name": {
+					"name": "name",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"version": {
+					"name": "version",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"tarball": {
+					"name": "tarball",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"integrity": {
+					"name": "integrity",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"checked_at": {
+					"name": "checked_at",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"provenance": {
+					"name": "provenance",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"peer_dependencies": {
+					"name": "peer_dependencies",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"plugin_packages": {
+					"name": "plugin_packages",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {
+				"releases_registry_name_packages_registry_name_fk": {
+					"name": "releases_registry_name_packages_registry_name_fk",
+					"tableFrom": "releases",
+					"columnsFrom": ["registry", "name"],
+					"tableTo": "packages",
+					"columnsTo": ["registry", "name"],
+					"onUpdate": "no action",
+					"onDelete": "no action"
+				}
+			},
+			"compositePrimaryKeys": {
+				"releases_registry_name_version_pk": {
+					"columns": ["registry", "name", "version"],
+					"name": "releases_registry_name_version_pk"
+				}
+			},
+			"uniqueConstraints": {},
+			"checkConstraints": {}
+		}
+	},
+	"views": {},
+	"enums": {},
+	"_meta": {
+		"columns": {},
+		"schemas": {},
+		"tables": {}
+	},
+	"internal": {
+		"indexes": {}
+	}
+}

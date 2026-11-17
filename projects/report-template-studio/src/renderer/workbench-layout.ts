@@ -1,13 +1,9 @@
-import type { OpenDocumentOptions, WorkbenchDocument } from '@worksplit/react'
+import type { ContainerInfo, Destination, DocumentInfo } from '@worksplit/react'
 import {
 	DockLocation,
 	type IGlobalAttributes,
-	type IJsonBorderNode,
 	type IJsonModel,
-	type IJsonRowNode,
-	type IJsonTabGroupNode,
 	type IJsonTabNode,
-	type IJsonTabSetNode,
 } from 'flexlayout-react'
 
 export const studioLayoutGlobal: IGlobalAttributes = {
@@ -24,7 +20,7 @@ export const assistantTab: IJsonTabNode = {
 	type: 'tab',
 	id: 'assistant',
 	name: 'AI 助手',
-	component: 'worksplit.tool',
+	component: 'studio.assistant',
 	enableClose: true,
 	enableDrag: true,
 	enableScrollbars: false,
@@ -59,51 +55,31 @@ export function createStudioLayout(): IJsonModel {
 	}
 }
 
-export function editorGroups(row: IJsonRowNode): IJsonTabSetNode[] {
-	return (row.children ?? []).flatMap((child) =>
-		child.type === 'row' ? editorGroups(child as IJsonRowNode) : [child as IJsonTabSetNode],
-	)
-}
-
 type DocumentKind = 'file' | 'form' | 'preview'
 
+/** Preserve the user's existing editor/preview grouping; create a neighboring group only when needed. */
 export function documentTarget(
 	kind: DocumentKind,
-	layout: IJsonModel,
-	documents: readonly WorkbenchDocument[],
-	activeGroupId: string | null,
-): Pick<OpenDocumentOptions, 'target' | 'location'> {
-	const groups = editorGroups(layout.layout)
+	containers: readonly ContainerInfo[],
+	documents: readonly DocumentInfo[],
+	activeContainerId: string | null,
+): Destination | undefined {
+	const groups = containers.filter((container) => container.kind === 'tabset')
 	const related = documents.filter(
 		(document) =>
 			(new URL(document.href, 'https://studio.invalid').pathname === '/preview') ===
 			(kind === 'preview'),
 	)
 	const existing =
-		related.find((document) => document.containerId === activeGroupId) ?? related.at(-1)
-	if (existing) return { target: existing.containerId }
-	const empty = groups.find((group) => !group.children?.length)
-	if (empty) return { target: empty.id }
-	const reference = groups.find((group) => group.id === activeGroupId) ?? groups[0]
-	return {
-		target: reference?.id,
-		location: kind === 'preview' ? DockLocation.RIGHT : DockLocation.LEFT,
-	}
-}
-
-/** Presence lookup only; Worksplit owns expansion, selection and focus. */
-export function findTool(layout: IJsonModel, id: string): IJsonTabNode | undefined {
-	const find = (
-		node: IJsonRowNode | IJsonTabSetNode | IJsonBorderNode | IJsonTabGroupNode | IJsonTabNode,
-	): IJsonTabNode | undefined => {
-		if (node.type === 'tab') {
-			const tab = node as IJsonTabNode
-			return tab.id === id ? tab : undefined
-		}
-		for (const child of ('children' in node ? node.children : []) ?? []) {
-			const found = find(child)
-			if (found) return found
-		}
-	}
-	return find(layout.layout) ?? (layout.borders ?? []).map(find).find(Boolean)
+		related.find((document) => document.containerId === activeContainerId) ?? related.at(-1)
+	if (existing?.containerId) return { target: existing.containerId, location: DockLocation.CENTER }
+	const empty = groups.find((group) => group.tabIds.length === 0)
+	if (empty) return { target: empty.id, location: DockLocation.CENTER }
+	const reference = groups.find((group) => group.id === activeContainerId) ?? groups[0]
+	return reference
+		? {
+				target: reference.id,
+				location: kind === 'preview' ? DockLocation.RIGHT : DockLocation.LEFT,
+			}
+		: undefined
 }

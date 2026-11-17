@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { requirePluginService } from '@pluxel/core/internal'
-import {
-	BasePlugin,
-	Plugin,
-	pluginNodeAddressOf,
-	withCoreInternalTestHost,
-} from '@pluxel/core/internal/test'
+import { BasePlugin, Plugin, withCoreInternalTestHost } from '@pluxel/core/internal/test'
 
 let observedSequence = 0
 
@@ -20,7 +15,7 @@ describe('PluginService watchInstance()', () => {
 			const registry = requirePluginService(host.ctx)
 			observedSequence = 0
 			const seen: Array<number | undefined> = []
-			const node = registry.internNodeAddress(pluginNodeAddressOf(ObservedPlugin))
+			const node = registry.internNodeAddress(ObservedPlugin.nodeAddress())
 			const off = registry.watchInstance(node, (instance) =>
 				seen.push((instance as ObservedPlugin | undefined)?.sequence),
 			)

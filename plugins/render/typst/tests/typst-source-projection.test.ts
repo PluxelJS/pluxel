@@ -392,7 +392,9 @@ describe('source projection and localized edits', () => {
 			'#import "x.typ": *\n#figure([未知])',
 		]) {
 			const p = project(source)
-			expect(all(p.document).filter((node) => node.type === 'typstSource')).toHaveLength(2)
+			expect(
+				all(p.document).find((node) => node.attrs?.source === source.split('\n')[1])?.type,
+			).toBe('typstSource')
 		}
 	})
 	it('does not index labels/references manufactured by closures or loops', () => {
@@ -550,6 +552,69 @@ describe('source projection and localized edits', () => {
 		expect(updated).toContain('caption: auto')
 		expect(updated).toContain('"\\\\frac{1}{2}"')
 		expect(parse(updated).errors).toEqual([])
+	})
+	it('constructs edited reference policies at their source positions and retains editable labels', () => {
+		const state = createTypstSourceProject({
+			files: {
+				'main.typ': '= Target <sec:target>',
+				'refs.typ': '#import "lib/pluxel.typ" as report\nSee @sec:target here.',
+				'lib/pluxel.typ': typstSourceLibrary,
+			},
+		})
+		let projection = state.open('refs.typ')
+		let document = structuredClone(projection.document)
+		all(document).find((node) => node.type === 'reference')!.attrs!.showCaption = false
+		document.content!.push({
+			type: 'paragraph',
+			content: [{ type: 'reference', attrs: { target: 'sec:target', showCaption: true } }],
+		})
+		expect(state.edit({ projection, document }).ok).toBe(true)
+		projection = state.open('refs.typ')
+		expect(projection.source).toContain(
+			'#metadata((__pluxel_reference: true, target: <sec:target>, show-caption: false))',
+		)
+		expect(projection.source).toContain(
+			'#metadata((__pluxel_reference: true, target: <sec:target>, show-caption: true))',
+		)
+		expect(all(projection.document).filter((node) => node.type === 'reference')).toHaveLength(2)
+		expect(projection.references.map(({ label, syntax }) => ({ label, syntax }))).toEqual([
+			{ label: 'sec:target', syntax: 'label' },
+			{ label: 'sec:target', syntax: 'label' },
+		])
+		document = structuredClone(projection.document)
+		const references = all(document).filter((node) => node.type === 'reference')
+		references[0]!.attrs!.showCaption = true
+		references[1]!.attrs!.showCaption = null
+		expect(state.edit({ projection, document }).ok).toBe(true)
+		expect(state.open('refs.typ').source).toContain('show-caption: auto')
+		expect(
+			state.renameLabel({ baseRevision: state.revision, from: 'sec:target', to: 'sec:renamed' }).ok,
+		).toBe(true)
+		projection = state.open('refs.typ')
+		expect(projection.references.every(({ label }) => label === 'sec:renamed')).toBe(true)
+		expect(
+			all(projection.document)
+				.filter((node) => node.type === 'reference')
+				.map((node) => node.attrs),
+		).toEqual([
+			{ target: 'sec:renamed', showCaption: true },
+			{ target: 'sec:renamed', showCaption: null },
+		])
+	})
+	it('keeps unrelated, computed and shadowed metadata as authored source', () => {
+		for (const source of [
+			'#metadata((__pluxel_reference: false, target: <x>, show-caption: true))',
+			'#metadata((__pluxel_reference: true, target: <x>, show-caption: true, extra: 1))',
+			'#metadata((__pluxel_reference: true, target: if true { <x> } else { <y> }, show-caption: true))',
+			'#let metadata(value) = [Custom]\n#metadata((__pluxel_reference: true, target: <x>, show-caption: true))',
+		]) {
+			const projection = project(source)
+			expect(all(projection.document).some((node) => node.type === 'reference')).toBe(false)
+			expect(prepareTypstSourceEdit(projection, structuredClone(projection.document))).toEqual({
+				ok: true,
+				value: [],
+			})
+		}
 	})
 	it('derives component controls from declared literal props and keeps JSON a separate binding', () => {
 		const source =

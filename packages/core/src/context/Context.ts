@@ -27,7 +27,7 @@ export interface Context extends BaseContext<RootContext>, Readonly<Partial<Cont
 /** Host root with Core and host-owned root capabilities. */
 export interface RootContext
 	extends Context, BaseRootContext<RootContext>, Readonly<Partial<RootContextServices>> {
-	/** The single Core logging runtime, present only when config.logger is declared. */
+	/** The single Core logging runtime, present only when config.logtape is declared. */
 	readonly logging?: RuntimeLogging
 }
 
@@ -43,12 +43,12 @@ export interface PluginContext extends Context {
 /** Public configuration shared by Core-based host constructors. */
 export interface CoreHostConfig {
 	name?: string
-	/** Native LogTape configuration declared with logtape() from @pluxel/core/config. */
-	logger?: LogTapeConfig
+	/** Native LogTape configuration or root factory, optionally with framework policy options. */
+	logtape?: LogTapeConfig
 	events?: EventsServiceConfig
 	plugins?: PluginServiceConfig
 	/** Native ZenFS mounts shared by Plugin files and state. Omitted means an isolated InMemory root. */
-	storage?: FsConfig
-	/** Snapshot policy; the backend is selected once through storage. */
+	zenfs?: FsConfig
+	/** Snapshot policy; the backend is selected once through zenfs. */
 	tinybase?: TinyBaseOptions
 }

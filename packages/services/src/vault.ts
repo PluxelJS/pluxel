@@ -46,6 +46,10 @@ export function vault(config: VaultServiceConfig = {}) {
 			effects.defer(() => service.managedVault().flush(), { tag: 'VaultFlush', phase: 'shutdown' })
 			const admin = new VaultAdminService(ctx, service)
 			await admin.prepare()
+			effects.defer(await service.managedVault().observeChanges(), {
+				tag: 'VaultFileObservation',
+				phase: 'shutdown',
+			})
 			prepared.set(ctx, { vault: service, admin })
 			effects.defer(
 				() => {

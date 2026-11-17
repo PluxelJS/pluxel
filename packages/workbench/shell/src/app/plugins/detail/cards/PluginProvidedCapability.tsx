@@ -13,10 +13,14 @@ import {
 } from '../../../../runtime'
 import { notifyAndRecord } from '../../../notifications/notifyBridge'
 import { usePluginScope } from '../context'
+import { usePluginOverview } from '../../pluginOverview'
+import { canWritePluginState } from '../../pluginOverviewModel'
 import { managementQueryKeys } from '../../../managementQuery'
 
 export function usePluginProviderPolicy(refresh: () => Promise<void>) {
 	const { owner } = usePluginScope()
+	const statePolicy = usePluginOverview().overview?.statePolicy
+	const canChangeDefault = canWritePluginState(statePolicy, 'providerDefaults')
 	const ownerKey = pluginNodeIndexKey(owner)
 	const management = useRuntimeManagementClient()
 	const policyQuery = useQuery<PluginProviderPolicyInfo | null>({
@@ -59,10 +63,14 @@ export function usePluginProviderPolicy(refresh: () => Promise<void>) {
 	const updatePolicy = useMutation({
 		mutationKey: ['management', 'dependencies', 'set-provider-policy', ownerKey],
 		mutationFn: async (provider: PluginNodeAddress | null) => {
-			const result = await management.dependencies.setProviderPolicyDefault({
-				policyOwner: owner,
-				provider,
-			})
+			if (!statePolicy) throw new Error('运行策略尚未加载')
+			const result = await management.dependencies.setProviderPolicyDefault(
+				{
+					policyOwner: owner,
+					provider,
+				},
+				{ expectedManagedRevision: statePolicy.managedRevision },
+			)
 			if (result.ok === false) {
 				throw new Error(result.error || result.code || '操作失败')
 			}
@@ -91,17 +99,25 @@ export function usePluginProviderPolicy(refresh: () => Promise<void>) {
 
 	const handleChange = useCallback(
 		(value: string | null) => {
-			if (!policy || pending) return
+			if (!policy || pending || !canChangeDefault) return
 			const provider: PluginNodeAddress | null = value
 				? (optionsByKey.get(value)?.address ?? null)
 				: null
 			if (value && !provider) return
 			updatePolicy.mutate(provider)
 		},
-		[optionsByKey, pending, policy, updatePolicy],
+		[canChangeDefault, optionsByKey, pending, policy, updatePolicy],
 	)
 
-	return { policy, loading, pending, selectData, handleChange, error: policyQuery.error }
+	return {
+		policy,
+		loading,
+		pending,
+		canChangeDefault,
+		selectData,
+		handleChange,
+		error: policyQuery.error,
+	}
 }
 
 export function PluginProvidedCapability({
@@ -109,7 +125,7 @@ export function PluginProvidedCapability({
 }: {
 	control: ReturnType<typeof usePluginProviderPolicy>
 }) {
-	const { policy, loading, pending, selectData, handleChange, error } = control
+	const { policy, loading, pending, canChangeDefault, selectData, handleChange, error } = control
 	if (!policy && !loading && !error) return null
 	const tokenLabel = policy ? formatPluginDefinitionReference(policy.token) : undefined
 	return (
@@ -145,11 +161,15 @@ export function PluginProvidedCapability({
 						<Select
 							size="xs"
 							label="全局默认实现"
-							description="影响所有依赖此能力且未单独指定实现的插件。"
+							description={
+								canChangeDefault
+									? '影响所有依赖此能力且未单独指定实现的插件。'
+									: '默认实现策略由宿主声明控制或只读。'
+							}
 							data={selectData}
 							value={policy.defaultProvider ? pluginNodeIndexKey(policy.defaultProvider) : null}
 							onChange={handleChange}
-							disabled={loading || pending}
+							disabled={loading || pending || !canChangeDefault}
 							clearable
 							searchable
 							placeholder="未设置"

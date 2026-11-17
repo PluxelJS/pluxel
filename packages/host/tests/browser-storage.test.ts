@@ -105,7 +105,7 @@ self.onmessage = async () => {
 				}, chunk.code)
 				for (const result of [windowResult, workerResult])
 					expect(result).toMatchObject({
-						beforeStart: { stores: 0, label: ' persisted ', application: 'deferred' },
+						beforeStart: { stores: 0, label: 'persisted', application: 'deferred' },
 						reopened: { label: 'persisted', value: 42, file: 'OWNER-FILE' },
 						closed: 'EBADF',
 						stalePersisted: false,
@@ -126,7 +126,7 @@ self.onmessage = async () => {
 }, 60_000)
 
 const fixture = `
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { requireTinyBaseHost } from '@pluxel/core/internal'
 import { writeFileAtomic } from '@pluxel/core/fs'
 import { IndexedDB } from '@pluxel/core/fs/browser'
@@ -144,12 +144,12 @@ class Owner extends BasePlugin {
 }
 export async function run() {
  const storeName = 'pluxel-built-in-' + crypto.randomUUID()
- const owner = pluginNodeAddressOf(Owner)
- const options = { plugins:[Owner], config:{ storage:{ mounts: { '/': { backend:IndexedDB, storeName } }, durableMounts: ['/'] } }, state:{ mode:'memory' } }
+ const owner = Owner.nodeAddress()
+ const options = { plugins:[Owner], runtime:{ zenfs:{ mounts: { '/': { backend:IndexedDB, storeName } }, durableMounts: ['/'] }, documents:{state:false} } }
  let host
  try {
   host = await createHost(options)
-  const patched = await host.config.patch(owner, {label:' persisted '})
+  const patched = await host.config.patch(owner, {set:{label:' persisted '}})
   if (!patched.ok) throw new Error(patched.message)
   await host.startNode(owner)
   running.store.setValue('value',42)

@@ -1,0 +1,316 @@
+{
+	"version": "6",
+	"dialect": "sqlite",
+	"id": "a763f161-b46f-4eed-b80f-8a8f4be3205b",
+	"prevId": "00000000-0000-0000-0000-000000000000",
+	"tables": {
+		"audits": {
+			"name": "audits",
+			"columns": {
+				"id": {
+					"name": "id",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"name": {
+					"name": "name",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"action": {
+					"name": "action",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"revision": {
+					"name": "revision",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"at": {
+					"name": "at",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				}
+			},
+			"indexes": {
+				"audit_package": {
+					"name": "audit_package",
+					"columns": ["name", "at"],
+					"isUnique": false
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"checkConstraints": {}
+		},
+		"notifications": {
+			"name": "notifications",
+			"columns": {
+				"id": {
+					"name": "id",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"name": {
+					"name": "name",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"version": {
+					"name": "version",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"status": {
+					"name": "status",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false,
+					"default": "'pending'"
+				},
+				"attempts": {
+					"name": "attempts",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false,
+					"default": 0
+				},
+				"created_at": {
+					"name": "created_at",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"updated_at": {
+					"name": "updated_at",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"next_attempt_at": {
+					"name": "next_attempt_at",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"lease_token": {
+					"name": "lease_token",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"lease_until": {
+					"name": "lease_until",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"code": {
+					"name": "code",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"diagnostic": {
+					"name": "diagnostic",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				}
+			},
+			"indexes": {
+				"notification_coordinate": {
+					"name": "notification_coordinate",
+					"columns": ["name", "version"],
+					"isUnique": true
+				},
+				"notification_schedule": {
+					"name": "notification_schedule",
+					"columns": ["status", "next_attempt_at"],
+					"isUnique": false
+				},
+				"notification_retention": {
+					"name": "notification_retention",
+					"columns": ["updated_at"],
+					"isUnique": false
+				}
+			},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"checkConstraints": {}
+		},
+		"packages": {
+			"name": "packages",
+			"columns": {
+				"name": {
+					"name": "name",
+					"type": "text",
+					"primaryKey": true,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"description": {
+					"name": "description",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": false,
+					"autoincrement": false
+				},
+				"dist_tags": {
+					"name": "dist_tags",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"observed_at": {
+					"name": "observed_at",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"hidden": {
+					"name": "hidden",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false,
+					"default": false
+				},
+				"revision": {
+					"name": "revision",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false,
+					"default": 1
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {},
+			"compositePrimaryKeys": {},
+			"uniqueConstraints": {},
+			"checkConstraints": {}
+		},
+		"releases": {
+			"name": "releases",
+			"columns": {
+				"name": {
+					"name": "name",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"version": {
+					"name": "version",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"tarball": {
+					"name": "tarball",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"integrity": {
+					"name": "integrity",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"checked_at": {
+					"name": "checked_at",
+					"type": "integer",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"provenance": {
+					"name": "provenance",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"peer_dependencies": {
+					"name": "peer_dependencies",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				},
+				"plugin_packages": {
+					"name": "plugin_packages",
+					"type": "text",
+					"primaryKey": false,
+					"notNull": true,
+					"autoincrement": false
+				}
+			},
+			"indexes": {},
+			"foreignKeys": {
+				"releases_name_packages_name_fk": {
+					"name": "releases_name_packages_name_fk",
+					"tableFrom": "releases",
+					"tableTo": "packages",
+					"columnsFrom": ["name"],
+					"columnsTo": ["name"],
+					"onDelete": "no action",
+					"onUpdate": "no action"
+				}
+			},
+			"compositePrimaryKeys": {
+				"releases_name_version_pk": {
+					"columns": ["name", "version"],
+					"name": "releases_name_version_pk"
+				}
+			},
+			"uniqueConstraints": {},
+			"checkConstraints": {}
+		}
+	},
+	"views": {},
+	"enums": {},
+	"_meta": {
+		"schemas": {},
+		"tables": {},
+		"columns": {}
+	},
+	"internal": {
+		"indexes": {}
+	}
+}

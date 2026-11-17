@@ -125,6 +125,10 @@ function imageSize(value: unknown): string {
 	return `${value * 0.75}pt`
 }
 
+function importBinding(attrs: NonNullable<JSONContent['attrs']>): string {
+	return attrs.items != null ? `: ${attrs.items}` : attrs.alias != null ? ` as ${attrs.alias}` : ''
+}
+
 function wrap(content: string, mark: Mark): string {
 	switch (mark.type) {
 		case 'bold':
@@ -233,9 +237,13 @@ function serializeNode(node: JSONContent, indent = '', libraryAlias?: string): s
 					throw new Error(
 						'Import lib/pluxel.typ as a module before inserting a reference caption policy',
 					)
-				return `#${libraryAlias}.reference(<${target}>, caption: ${node.attrs.showCaption})`
+				// Construct the metadata at the call site so native navigation retains
+				// this reference's source span instead of the library helper's body.
+				return `#metadata((__pluxel_reference: true, target: <${target}>, show-caption: ${node.attrs.showCaption}))`
 			}
-			return `@${target}`
+			// A native label continues through adjacent letters, including Chinese.
+			// Terminate it without adding visible whitespace or changing its supplement.
+			return `@${target}/**/`
 		}
 		case 'inlineMath':
 		case 'blockMath': {
@@ -248,6 +256,10 @@ function serializeNode(node: JSONContent, indent = '', libraryAlias?: string): s
 				throw new Error('This declared source call requires its authored source')
 			return node.attrs.source
 		}
+		case 'typstImport':
+			return `#import ${string(node.attrs!.module)}${importBinding(node.attrs!)}`
+		case 'typstInclude':
+			return `#include ${string(node.attrs!.module)}`
 		case 'table': {
 			const rows = node.content ?? []
 			const count = Math.max(
@@ -304,6 +316,13 @@ export function prepareTypstSourceEdit(
 	const patch = (range: TypstSourceRange, text: string) => {
 		if (!text.isWellFormed()) throw new Error('Edited text contains an unpaired UTF-16 surrogate')
 		if (raw(range) !== text) patches.push({ path: projection.path, ...range, text })
+	}
+	const hasComments = (range: TypstSourceRange) => {
+		const visit = (node: typeof projection.parsed.cst): boolean => {
+			if (node.range[1] <= range.from || node.range[0] >= range.to) return false
+			return ['LineComment', 'BlockComment'].includes(node.kind) || node.children.some(visit)
+		}
+		return visit(projection.parsed.cst)
 	}
 	let failed: TypstSourceRange = { from: 0, to: projection.parsed.cst.range[1] }
 	const reject = (origin: TypstSourceNodeOrigin, message: string): never => {
@@ -672,13 +691,7 @@ export function prepareTypstSourceEdit(
 				from = Math.min(from, wrapper.from)
 				to = Math.max(to, wrapper.to)
 			}
-			const commentInRange = (node: typeof projection.parsed.cst): boolean => {
-				if (node.range[1] <= from || node.range[0] >= to) return false
-				return (
-					['LineComment', 'BlockComment'].includes(node.kind) || node.children.some(commentInRange)
-				)
-			}
-			if (commentInRange(projection.parsed.cst))
+			if (hasComments({ from, to }))
 				reject(owner, 'This format change crosses preserved comments; edit each side separately')
 			const adjusted = inserted.map((node) => ({
 				...node,
@@ -1122,6 +1135,39 @@ export function prepareTypstSourceEdit(
 			patch(origin, String(next.attrs?.source ?? ''))
 			return
 		}
+		if (before.type === 'typstInclude') {
+			if (!equal(before.attrs?.source, next.attrs?.source))
+				reject(origin, 'Include source is derived; edit its module attribute')
+			if (!equal(before.attrs?.module, next.attrs?.module))
+				patch(origin.attributeRanges!.module!, string(next.attrs!.module))
+			return
+		}
+		if (before.type === 'typstImport') {
+			if (!equal(before.attrs?.source, next.attrs?.source))
+				reject(origin, 'Import source is derived; edit its module or binding attributes')
+			if (!equal(before.attrs?.module, next.attrs?.module))
+				patch(origin.attributeRanges!.module!, string(next.attrs!.module))
+			const oldAttrs = before.attrs!,
+				newAttrs = next.attrs!
+			const aliasChanged = !equal(oldAttrs.alias, newAttrs.alias)
+			const itemsChanged = !equal(oldAttrs.items, newAttrs.items)
+			if (aliasChanged || itemsChanged) {
+				if (oldAttrs.alias != null && newAttrs.alias != null && !itemsChanged) {
+					patch(origin.attributeRanges!.alias!, newAttrs.alias)
+				} else if (oldAttrs.items != null && newAttrs.items != null && !aliasChanged) {
+					const range = origin.attributeRanges!.items!
+					if (hasComments(range))
+						reject(origin, 'Changing these import items would discard comments; edit their source')
+					patch(range, newAttrs.items)
+				} else {
+					const range = origin.attributeRanges!.binding!
+					if (hasComments(range))
+						reject(origin, 'Changing this import binding would discard comments; edit its source')
+					patch(range, importBinding(newAttrs))
+				}
+			}
+			return
+		}
 		if (before.type === 'typstComponent') {
 			const declaration = projection.components?.find(
 				(value) => value.module === before.attrs?.module && value.name === before.attrs?.name,
@@ -1133,26 +1179,24 @@ export function prepareTypstSourceEdit(
 					reject(origin, `Edit component ${key} through its source or authoritative JSON file`)
 			const oldProps = before.attrs?.props ?? {},
 				nextProps = next.attrs?.props ?? {},
-				added: string[] = []
+				changes: Record<string, string | null> = {}
 			for (const name of new Set([...Object.keys(oldProps), ...Object.keys(nextProps)])) {
 				if (equal(oldProps[name], nextProps[name])) continue
 				const definition = declaration!.parameters[name],
 					value = nextProps[name]
+				if (definition && !Object.hasOwn(nextProps, name)) {
+					changes[name] = null
+					continue
+				}
 				if (
 					!definition ||
 					typeof value !== definition.type ||
 					(typeof value === 'number' && !Number.isFinite(value))
 				)
 					reject(origin, `Invalid ${name} component parameter`)
-				const range = origin.call!.parameters[name]
-				if (range) patch(range, string(value))
-				else added.push(`${name}: ${string(value)}`)
+				changes[name] = string(value)
 			}
-			if (added.length > 0)
-				patch(
-					{ from: origin.call!.insertAt, to: origin.call!.insertAt },
-					`${origin.call!.insertPrefix ?? ', '}${added.join(', ')}${origin.call!.insertSuffix ?? ''}`,
-				)
+			changeCallParameters(origin, changes)
 			return
 		}
 		const oldAttrs = nodeAttributes(before),
@@ -1282,6 +1326,8 @@ export function prepareTypstSourceEdit(
 		typstInlineSource: ['source', 'role'],
 		typstField: ['file', 'path', 'source'],
 		typstComponent: ['module', 'name', 'label', 'parameters', 'props', 'binding', 'source'],
+		typstImport: ['module', 'alias', 'items', 'source'],
+		typstInclude: ['module', 'source'],
 	}
 	const allowedMarkAttrs: Record<string, readonly string[]> = {
 		bold: [],
@@ -1299,6 +1345,25 @@ export function prepareTypstSourceEdit(
 			throw new Error('Node attributes must be an object')
 		for (const key of Object.keys(node.attrs ?? {}))
 			if (!allowed.includes(key)) throw new Error(`Unsupported ${node.type} attribute ${key}`)
+		if (node.type === 'typstInclude') {
+			const attrs = node.attrs ?? {}
+			if (typeof attrs.module !== 'string' || !attrs.module || !attrs.module.isWellFormed())
+				throw new Error('Include module must be a nonempty string')
+			if (attrs.source != null && typeof attrs.source !== 'string')
+				throw new Error('Include source must be derived text')
+		}
+		if (node.type === 'typstImport') {
+			const attrs = node.attrs ?? {}
+			if (typeof attrs.module !== 'string' || !attrs.module || !attrs.module.isWellFormed())
+				throw new Error('Import module must be a nonempty string')
+			for (const name of ['alias', 'items'])
+				if (attrs[name] != null && (typeof attrs[name] !== 'string' || !attrs[name].trim()))
+					throw new Error(`Import ${name} must be a nonempty string or null`)
+			if (attrs.alias != null && attrs.items != null)
+				throw new Error('Choose a module alias or imported items')
+			if (attrs.source != null && typeof attrs.source !== 'string')
+				throw new Error('Import source must be derived text')
+		}
 		if (node.type === 'image') {
 			if (typeof node.attrs?.src !== 'string' || !node.attrs.src)
 				throw new Error('Images require a source path')
@@ -1360,7 +1425,9 @@ export function prepareTypstSourceEdit(
 			return projection.origins.some(
 				(other, previous) =>
 					previous !== index &&
-					(other.fixed || other.original.type === 'typstSource') &&
+					(other.fixed ||
+						other.original.type === 'typstSource' ||
+						other.original.type === 'typstInclude') &&
 					equal(other.original, node),
 			)
 		})

@@ -65,7 +65,7 @@ Constructor dependency facade 固定 provider generation 和 caller Context。Pa
 
 ## 服务、来源与宿主策略
 
-Core 固定提供 FS 与 TinyBase，日志输出通过 `config.logger` 选择；`standardServices()` 组合 HTTP、Commands、NodeModules 与 Workers；`servicesPreset()` 再选择 Vault、Management、管理命令及可选 Workbench。Database 由应用单独选择。安装顺序与 root/service/generation 资源边界见 [HOST](HOST.md)。
+Core 固定提供 FS 与 TinyBase，日志输出通过 `runtime.logtape` 选择；`standardServices()` 组合 HTTP、Commands、NodeModules 与 Workers；`servicesPreset()` 再选择 Vault、Management、管理命令及可选 Workbench。Database 由应用单独选择。安装顺序与 root/service/generation 资源边界见 [HOST](HOST.md)。
 
 固定 imports 与动态来源共用应用声明、catalog 和运行意图。动态来源只发布/删除普通 ESM entry；Package Manager 是显式安装的普通 Plugin，自己拥有 acquisition、registry、安装状态和 UI。生产来源加载与开发 HMR 各有边界，不能从“支持动态来源”推断“支持生产热替换”。
 

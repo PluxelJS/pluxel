@@ -17,7 +17,7 @@ import { TypstPlugin } from '@pluxel/plugin-typst'
 import { WretchPlugin } from '@pluxel/plugin-wretch'
 import { ReportStudioPlugin } from './ReportStudio'
 
-export { createHostConfigRecords, createHostRuntimeState, product, s3StorageNode } from './policy'
+export { createHostConfigRecords, createHostPolicy, product, s3StorageNode } from './policy'
 
 export const hostPlugins = [
 	BotWorkspacePlugin,

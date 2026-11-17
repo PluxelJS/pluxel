@@ -339,28 +339,35 @@ Studio 最多保留四个活跃文档会话。仅修改表单输入时复用模�
 
 ## Renderer 所有权
 
-[workbench-session.tsx](src/renderer/workbench-session.tsx) 的 `StudioSession` 持有一个项目的 Worksplit 与 `WorkspaceController`，协调保存、批量关闭和文件操作回执；[app.tsx](src/renderer/app.tsx) 负责外壳交互。[workbench-routes.tsx](src/renderer/workbench-routes.tsx) 拥有路由定义和业务路径投影，[workbench-layout.ts](src/renderer/workbench-layout.ts) 只维护原生布局初值与业务放置策略。[editor-lifecycle.ts](src/renderer/editor-lifecycle.ts) 将共享资源的 dirty/revision/save 交给 `useWorkbenchContent(lifecycle)`；关闭修订包含项目、路径、编辑类型和现有草稿修订，防止另一编辑器复用旧批准。[panes.tsx](src/renderer/panes.tsx) 通过原生 `useEffect` 启动 `content.effect(({ defer }) => defer(workspace.retainDocument(entry)))`，在关闭时释放此视图的使用权。共享草稿仍由 workspace 持有，视图释放不会丢弃未保存修改。
+[workbench-session.tsx](src/renderer/workbench-session.tsx) 的 `StudioSession` 持有一个项目的 Worksplit 与 `WorkspaceController`，拥有会话创建、`start`、受保护的 `closeWorkspace` 和最终 `dispose`；[app.tsx](src/renderer/app.tsx) 绑定 Workbench 视图。[workbench-routes.tsx](src/renderer/workbench-routes.tsx) 拥有路由定义、业务路径投影及持续的内容 controller；它从 Router 的已接纳位置确定资源，在切到只读预览时显式声明 `leave: null`。[editor-lifecycle.ts](src/renderer/editor-lifecycle.ts) 将共享资源的未保存事实、保存和批准 token 交给 `useContentController`；保存期间出现新编辑会拒绝这次离开，批准之后通过 `request.defer` 持有该请求的编辑暂停直到原生导航与重定向结束。共享资源的重叠请求各自持有暂停引用。
 
-会话从打开项目的用户操作创建；启动和释放各结算一次。关闭顺序为内容资源、项目资源，React effect 重放保留原实例。工具激活使用 Worksplit `activate`，移动和重新插入直接提交原生 Actions。业务文件状态与布局树分别只有一个所有者，不维护第二份可写标签状态。
+[panes.tsx](src/renderer/panes.tsx) 只用 `useContent()` 借用 handle，通过 React effect 启动 `content.runEffect(({ defer }) => defer(workspace.retainDocument(entry)))`，关闭时释放此视图的使用权。共享草稿仍由 workspace 持有，视图释放不会丢弃未保存修改。内容标题归持续 controller；布局、标签与工具是否存在直接查询原生 Model 和容器，不为普通查询序列化快照。标签默认右键和键盘菜单由 Worksplit 提供，工具移动和重新插入通过原生 Actions 提交并消费真实回执。
+
+会话从打开项目的用户操作创建，启动和释放各结算一次。窗口正常关闭和项目切换先完成 `closeWorkspace` 的全部保护，随后结算内容清理、释放项目资源；离开被拒绝或提交前失败时保留项目与草稿，开发壳重启也遵守同一批准。批准关闭后的资源清理异常会报告错误，仍完成窗口关闭或项目切换。`beforeunload` 保留同步保护，覆盖待确认写入和正文锁。React effect 重放保留原会话实例。
+
+[workbench-layout.ts](src/renderer/workbench-layout.ts) 只维护原生布局初值与业务放置选择：编辑与预览遵循用户当前的分组，必要时才创建相邻组；相邻预览用 `reveal`，同组打开用 `activate`。普通打开采用新版默认 `reuse: "preserve"`，文件操作失败后的恢复使用 `reuse: "new"` 保留重复实例数量；空容器首标签正常激活，其余恢复标签在后台创建，最后激活原资源。Studio 的“预览”是报表内容类型，当前不使用 Worksplit 的临时 preview 标签，不接入工作区浏览器 history 或布局快照持久化，也不使用独立 SplitView。原生依赖的精确版本和完整补丁由根工作区维护，build/start/dev 会执行公开安装检查；迁移边界见 [Frontend](../../engineering/FRONTEND.md)。
 
 ## 验证
 
 ```sh
 vp run @report-template-studio/app#check-discovery
-vp run @report-template-studio/app#compile
 vp run @report-template-studio/app#check-types
 vp run @report-template-studio/app#check-tests
+vp run @report-template-studio/app#compile
 vp run @report-template-studio/app#test:runtime
 vp run @report-template-studio/app#test:desktop
+vp run @report-template-studio/app#test:worksplit
 ```
 
 `check-discovery` 只依赖 Node 和当前系统，验证私有发现目录与 descriptor 的权限，不需要先构建框架或原生编译器。CI 短测试包含同一测试文件；Windows ACL 分支需在 Windows 本地执行。已有不安全目录明确拒绝，不自动改写 ACL，PowerShell 失败保留底层 cause。
 
-其余检查首次先 build，公开入口的类型来自实际 `dist/` 声明。此次常驻服务重构的实施位置、消费者迁移、真实边界证据及未验证项见 [实施报告](IMPLEMENTATION_REPORT.md)。
+类型和单元测试会先构建公开入口的实际 `dist/` 声明；完成这些检查后执行 `compile` 准备 renderer，再运行生产宿主验收，不要在验收运行时并发重建 `dist/`。此次常驻服务重构的实施位置、消费者迁移、真实边界证据及未验证项见 [实施报告](IMPLEMENTATION_REPORT.md)。
 
 测试覆盖真实目录、外部改动与并发冲突、ZIP 往返和失败清理、默认值合并、跨目录 Vite HMR、运行器限制、官方 Typst/PDF、Pi 真实文件工具与会话生命周期。生产 `test:runtime` 在导入运行入口前禁止 TCP/HTTP `net.Server.listen`，仅允许本机 IPC。它从构建后的公开 client export 在另一个 Node 进程发现、认证、编译并读取 PNG/PDF，验证重连、原生源码定位及真实多页标题目录。默认使用当前项目 `dist/`；设置 `STUDIO_APP_ROOT` 为发布目录中的 `resources/app` 可执行同一检查，使用发布包自己的依赖、字体、原生库和 QuickJS。此检查在目标平台本地构建或打包后执行。
 
-桌面验收使用隔离 profile 和真实 Electron preload/IPC，只将系统文件选择器替换为指定临时路径；脚本请求 1440×900 窗口，实际 viewport 由显示环境决定并记录在结果中，产物在 `test-results/`。`STUDIO_EXECUTABLE` 可指向独立包执行同一套验收。Linux 默认沿用当前显示环境，也可显式设置 `STUDIO_OZONE_PLATFORM=wayland`。受限容器中若 Electron 系统沙箱无法启动，可显式设置 `STUDIO_DISABLE_SANDBOX=1`。这些变量只由 `tests/desktop.mjs` 读取，不改变产品 renderer sandbox 或显示配置；`STUDIO_SCREENSHOTS` 可指定证据目录。
+桌面验收使用隔离 profile 和真实 Electron preload/IPC，只将系统文件选择器替换为指定临时路径；脚本请求 1440×900 窗口，实际 viewport 由显示环境决定并记录在结果中，产物在 `test-results/`。`STUDIO_EXECUTABLE` 可指向独立包执行同一套验收。Linux 默认沿用当前显示环境，也可显式设置 `STUDIO_OZONE_PLATFORM=wayland`。受限容器中若 Electron 系统沙箱无法启动，可显式设置 `STUDIO_DISABLE_SANDBOX=1`。这些变量只影响验收进程，不改变产品 renderer sandbox 或显示配置；`STUDIO_SCREENSHOTS` 可指定证据目录。
+
+`test:worksplit` 在构建后的真实 Electron 窗口验证 Worksplit 默认菜单复制、键盘菜单分屏、鼠标拖动合并、窄窗格与独立滚动、共享输入保存失败时整批关闭拒绝，以及正常窗口关闭后的资源结算。它使用独立的临时项目和 profile，截图与操作结果默认保存到 `test-results/worksplit/`；不是库测试或替代宿主的页面夹具。
 
 完整桌面验收还会操作整份报表重载的原生确认弹窗。本机 Electron 44.9.0 的 Ozone headless 未能完成该弹窗，独立确认探针同样失败；含此路径的完整验收使用现有 Wayland 显示环境。不要把无弹窗的 headless 检查视为完整桌面通过。
 

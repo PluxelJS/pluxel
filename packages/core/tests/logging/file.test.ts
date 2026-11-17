@@ -16,8 +16,8 @@ it('uses the upstream formatter for bigint and circular values and flushes on di
 		})
 		const host = await createHost({
 			plugins: [],
-			config: {
-				logger: logtape({
+			runtime: {
+				logtape: logtape({
 					sinks: { file: sink },
 					loggers: [{ category: ['pluxel', 'runtime'], sinks: ['file'] }],
 				}),

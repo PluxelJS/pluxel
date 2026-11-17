@@ -1,16 +1,53 @@
+import type { HostInputMode } from './input-mode'
 import {
 	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
+	type PluginConstructor,
 	type PluginDefinitionAddress,
+	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 
 export type HostStateSnapshot = Readonly<{
 	autoStart: readonly PluginNodeAddress[]
-	forks: readonly HostForkState[]
+	forks: readonly PluginForkNodeAddress[]
 	providerDefaults: readonly HostProviderDefaultState[]
 	dependencyOverrides: readonly HostDependencyOverrideState[]
 }>
+
+export type HostExecutionPolicy = Readonly<{
+	startTimeoutMs: number
+	drainTimeoutMs: number
+	startConcurrency: number
+	stopConcurrency: number
+}>
+export type HostPolicyValues = HostStateSnapshot & HostExecutionPolicy
+export type HostPolicyField = keyof HostPolicyValues
+export type HostExecutionPolicyField = keyof HostExecutionPolicy
+export type HostPolicyInput = Readonly<Partial<HostPolicyValues>>
+export type HostPolicyModes = Readonly<Partial<Record<HostPolicyField, HostInputMode>>>
+export type HostPolicyOptions = Readonly<
+	Omit<HostPolicyInput, 'autoStart'> & {
+		autoStart?: readonly (PluginConstructor | PluginNodeAddress)[]
+		mode?: HostPolicyModes
+	}
+>
+export const HOST_GRAPH_POLICY_FIELDS = [
+	'autoStart',
+	'forks',
+	'providerDefaults',
+	'dependencyOverrides',
+] as const
+export const HOST_EXECUTION_POLICY_FIELDS = [
+	'startTimeoutMs',
+	'drainTimeoutMs',
+	'startConcurrency',
+	'stopConcurrency',
+] as const
+export const HOST_POLICY_FIELDS = [
+	...HOST_GRAPH_POLICY_FIELDS,
+	...HOST_EXECUTION_POLICY_FIELDS,
+] as const
 
 export type HostStateVersionedSnapshot = Readonly<{
 	revision: number
@@ -31,15 +68,12 @@ export class HostStateRevisionConflictError extends Error {
 
 export type HostStateDraft = {
 	autoStart: PluginNodeAddress[]
-	forks: HostForkState[]
+	forks: PluginForkNodeAddress[]
 	providerDefaults: HostProviderDefaultState[]
 	dependencyOverrides: HostDependencyOverrideState[]
 }
 
-export type HostForkState = {
-	definition: PluginDefinitionAddress
-	forkIds: readonly string[]
-}
+export type HostForkState = PluginForkNodeAddress
 
 export type HostProviderDefaultState = {
 	token: PluginDefinitionAddress
@@ -60,13 +94,8 @@ export function freezeTrustedHostStateSnapshot(
 		autoStart: Object.freeze(sortByKey(draft.autoStart.map(freezeNodeAddress), pluginNodeIndexKey)),
 		forks: Object.freeze(
 			sortByKey(
-				draft.forks.map((entry) =>
-					Object.freeze({
-						definition: freezeDefinitionAddress(entry.definition),
-						forkIds: Object.freeze([...entry.forkIds].sort()),
-					}),
-				),
-				(entry) => pluginDefinitionIndexKey(entry.definition),
+				draft.forks.map((node) => freezeNodeAddress(node)),
+				pluginNodeIndexKey,
 			),
 		),
 		providerDefaults: Object.freeze(
@@ -119,6 +148,8 @@ function freezeDefinitionAddress(definition: PluginDefinitionAddress): PluginDef
 	}) as PluginDefinitionAddress
 }
 
+function freezeNodeAddress(node: PluginForkNodeAddress): PluginForkNodeAddress
+function freezeNodeAddress(node: PluginNodeAddress): PluginNodeAddress
 function freezeNodeAddress(node: PluginNodeAddress): PluginNodeAddress {
 	return Object.freeze(
 		node.variant === 'default'

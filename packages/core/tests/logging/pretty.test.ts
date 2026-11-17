@@ -89,8 +89,8 @@ describe('runtime pretty console sink', () => {
 		const host = await createHost({
 			plugins: [],
 			services: [],
-			config: {
-				logger: logtape({
+			runtime: {
+				logtape: logtape({
 					sinks: { native: sink },
 					loggers: [{ category: ['pluxel', 'runtime'], sinks: ['native'] }],
 				}),

@@ -9,11 +9,14 @@ export default defineConfig({
 			'check-tests': {
 				command: 'vp test run',
 				dependsOn: [
+					'compile',
 					{
 						task: 'compile',
 						from: ['dependencies', 'devDependencies', 'peerDependencies'],
 					},
 				],
+				// Container bind mounts must see the caller's temporary directory too.
+				cache: { env: ['PLUXEL_HEADLESS_IMAGE', 'TMPDIR'] },
 			},
 			compile: {
 				command: 'vp pack',
@@ -25,6 +28,7 @@ export default defineConfig({
 						'packages/host/src/shared-runtime.ts',
 						'packages/workbench/src/workbench/shared-transport.ts',
 						'packages/workbench/src/workbench/definition.ts',
+						'!packages/rolldown/dist/**',
 					].map((pattern) => ({ pattern, base: 'workspace' as const })),
 					output: ['dist/**'],
 				},

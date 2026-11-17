@@ -5,7 +5,7 @@ import { enterOwnerInvocation } from '@pluxel/core/host'
 import { pinOwnerContext } from '../internal/owner-view'
 import { basename, join } from 'pathe'
 import { writeFileAtomic, type FsPromises } from '@pluxel/core/fs'
-import { pluginNodePhysicalKey } from '@pluxel/core/internal'
+import { observeFile, pluginNodePhysicalKey } from '@pluxel/core/internal'
 import { recordSecurityEvent } from '../internal/security'
 import {
 	type VaultAdminState,
@@ -57,7 +57,6 @@ type VaultRuntimePhase = 'sealed' | 'unlocking' | 'ready' | 'blocked' | 'error'
 type VaultRuntimeStatus = {
 	phase: VaultRuntimePhase
 	present: boolean
-	dirty: boolean
 	lastError?: VaultStatusError
 }
 
@@ -94,9 +93,6 @@ type MountCacheState =
 			dek: Uint8Array
 			snapshot: VaultSnapshot
 			unlockSource: VaultUnlockSource
-			dirty: boolean
-			timer: ReturnType<typeof setTimeout> | null
-			flushPromise: Promise<void> | null
 	  }
 
 type ManagedVault = {
@@ -104,6 +100,7 @@ type ManagedVault = {
 	blobs: (options?: VaultNamespaceOptions) => VaultBlobsHandle
 	namespace: (name?: string) => VaultNamespace
 	flush: () => Promise<void>
+	observeChanges: () => Promise<() => Promise<void>>
 	unlock: () => Promise<VaultAdminState>
 	describe: () => Promise<VaultAdminState>
 	rekey: () => Promise<void>
@@ -123,7 +120,6 @@ type MountCacheEntry = {
 	state: MountCacheState
 	status: {
 		phase: VaultRuntimePhase
-		dirty: boolean
 		lastError?: VaultStatusError
 	}
 }
@@ -171,7 +167,6 @@ function sameStatusState(
 ): boolean {
 	return (
 		left.phase === right.phase &&
-		left.dirty === right.dirty &&
 		left.lastError?.code === right.lastError?.code &&
 		left.lastError?.message === right.lastError?.message
 	)
@@ -671,7 +666,7 @@ function createMountCacheEntry(): MountCacheEntry {
 		overlays: new Map(),
 		watchers: new Map(),
 		state: { status: 'locked' },
-		status: { phase: 'sealed', dirty: false },
+		status: { phase: 'sealed' },
 	}
 }
 
@@ -693,7 +688,6 @@ async function toRuntimeStatus(
 	return {
 		phase: entry.status.phase,
 		present: await isMountPresent(store, runtime),
-		dirty: entry.status.dirty,
 		lastError: cloneStatusError(entry.status.lastError),
 	}
 }
@@ -706,11 +700,9 @@ function updateStatus(
 ): void {
 	const next: MountCacheEntry['status'] = {
 		phase: patch.phase ?? entry.status.phase,
-		dirty: patch.dirty ?? entry.status.dirty,
-		lastError:
-			patch.lastError !== undefined
-				? cloneStatusError(patch.lastError)
-				: cloneStatusError(entry.status.lastError),
+		lastError: Object.hasOwn(patch, 'lastError')
+			? cloneStatusError(patch.lastError)
+			: cloneStatusError(entry.status.lastError),
 	}
 	if (sameStatusState(entry.status, next)) return
 	entry.status = next
@@ -745,7 +737,6 @@ function setStatusFailure(
 ): void {
 	updateStatus(store, runtime, entry, {
 		phase: toFailurePhase(error),
-		dirty: false,
 		lastError: toStatusError(error),
 	})
 }
@@ -810,24 +801,6 @@ async function createDeployKeyPair(): Promise<VaultKeyPair> {
 	}
 }
 
-async function flushUnlockedState(
-	store: FsPromises | undefined,
-	runtime: MountRuntime,
-	state: Extract<MountCacheState, { status: 'unlocked' }>,
-) {
-	if (!state.dirty) return
-	const ciphertext = await aesEncrypt(state.dek, serializeSnapshot(state.snapshot))
-	await writeFileAtomic(requireVaultFs(store), runtime.statePath, ciphertext)
-	state.dirty = false
-}
-
-function clearTimer(state: Extract<MountCacheState, { status: 'unlocked' }>) {
-	if (state.timer) {
-		clearTimeout(state.timer)
-		state.timer = null
-	}
-}
-
 function cloneNamespaceState(state?: VaultSnapshot['namespaces'][string]) {
 	return cloneJson(state ?? { kv: {}, revisions: {} })
 }
@@ -867,9 +840,6 @@ export class VaultService {
 				dek: new Uint8Array(),
 				snapshot: createEmptySnapshot(),
 				unlockSource: 'host',
-				dirty: false,
-				timer: null,
-				flushPromise: null,
 			}
 		return new VaultService(ctx, backing)
 	}
@@ -924,20 +894,15 @@ export class VaultService {
 			dek: Uint8Array,
 			snapshot: VaultSnapshot,
 			unlockSource: VaultUnlockSource = 'host',
-			dirty = false,
 		): Extract<MountCacheState, { status: 'unlocked' }> => {
 			entry.state = {
 				status: 'unlocked',
 				dek,
 				snapshot,
 				unlockSource,
-				dirty,
-				timer: null,
-				flushPromise: null,
 			}
 			updateStatus(store, runtime, entry, {
 				phase: 'ready',
-				dirty,
 				lastError: undefined,
 			})
 			return entry.state
@@ -950,12 +915,12 @@ export class VaultService {
 			} = {},
 		) => {
 			if (entry.state.status === 'unlocked') return entry.state
-			updateStatus(store, runtime, entry, { phase: 'unlocking', dirty: false })
+			updateStatus(store, runtime, entry, { phase: 'unlocking' })
 			const loaded = await loadMountState(store, runtime, {
 				includeDeployIdentity: options.includeDeployIdentity,
 			})
 			if (!loaded) {
-				updateStatus(store, runtime, entry, { phase: 'sealed', dirty: false, lastError: undefined })
+				updateStatus(store, runtime, entry, { phase: 'sealed', lastError: undefined })
 				return undefined
 			}
 			return finalizeUnlockedState(loaded.dek, loaded.snapshot, options.source)
@@ -964,7 +929,6 @@ export class VaultService {
 		const resetAutoUnlockStatus = () => {
 			updateStatus(store, runtime, entry, {
 				phase: 'sealed',
-				dirty: false,
 				lastError: undefined,
 			})
 		}
@@ -1027,6 +991,72 @@ export class VaultService {
 			)
 		}
 
+		const notify = (namespace: string, snapshot: VaultRecordSnapshot) => {
+			if (entry.overlays.get(namespace)?.has(snapshot.key)) return
+			for (const observer of entry.watchers.get(namespace) ?? []) {
+				if (observer.prefix ? snapshot.key.startsWith(observer.key) : snapshot.key === observer.key)
+					observer.notify(snapshot)
+			}
+		}
+
+		const reload = async (): Promise<Uint8Array> => {
+			const changes: { namespace: string; snapshot: VaultRecordSnapshot }[] = []
+			const loaded = await entry.lock.run(async () => {
+				const state = requireUnlockedState()
+				// Reread inside the lock so a queued reload cannot restore bytes predating a local commit.
+				const bytes = await readVaultBytes(store, runtime.statePath)
+				if (!bytes)
+					throw new VaultError(
+						'INVALID_FORMAT',
+						'Vault snapshot is missing from an existing mount.',
+					)
+				const snapshot = parseSnapshot(await aesDecrypt(state.dek, bytes))
+				const namespaces = new Set([
+					...Object.keys(state.snapshot.namespaces),
+					...Object.keys(snapshot.namespaces),
+				])
+				for (const namespace of namespaces) {
+					const before = state.snapshot.namespaces[namespace]
+					const after = snapshot.namespaces[namespace]
+					for (const key of new Set([
+						...Object.keys(before?.revisions ?? {}),
+						...Object.keys(after?.revisions ?? {}),
+					])) {
+						const next = recordSnapshot(after, key, true)
+						if (JSON.stringify(recordSnapshot(before, key, true)) !== JSON.stringify(next))
+							changes.push({ namespace, snapshot: next })
+					}
+				}
+				state.snapshot = snapshot
+				updateStatus(store, runtime, entry, { phase: 'ready', lastError: undefined })
+				return bytes
+			})
+			for (const change of changes) notify(change.namespace, change.snapshot)
+			return loaded
+		}
+
+		const observeChanges = async () => {
+			if (ctx !== ctx.root)
+				throw new VaultError('ACCESS_DENIED', 'Vault file observation requires the root Context.')
+			if (runtime.backend === 'bindings') return async () => {}
+			const read = () => readVaultBytes(store, runtime.statePath)
+			// Reconcile the exact baseline before listening, including writes during service preparation.
+			const initial = await reload()
+			return observeFile(
+				read,
+				initial,
+				async () => {
+					await reload()
+				},
+				(error) => {
+					setStatusFailure(store, runtime, entry, error)
+					ctx.logger.error('Vault snapshot reload failed; retaining the last valid snapshot', {
+						error,
+					})
+				},
+			)
+		}
+
 		const mutateNamespace = async <T>(
 			namespace: string,
 			run: (next: VaultSnapshot['namespaces'][string]) => Promise<T>,
@@ -1059,13 +1089,7 @@ export class VaultService {
 					return transactionResult
 				}),
 			)
-			for (const snapshot of changed)
-				for (const observer of entry.watchers.get(namespace) ?? []) {
-					if (
-						observer.prefix ? snapshot.key.startsWith(observer.key) : observer.key === snapshot.key
-					)
-						observer.notify(snapshot)
-				}
+			for (const snapshot of changed) notify(namespace, snapshot)
 			return result
 		}
 
@@ -1084,10 +1108,9 @@ export class VaultService {
 			)
 		}
 
-		const readDek = async (createIfMissing: boolean) => {
+		const readDek = async () => {
 			return await entry.lock.run(async () => {
 				try {
-					void createIfMissing
 					if (runtime.backend === 'bindings')
 						throw new VaultError('READ_ONLY', 'Vault has no blob backend.')
 					return requireUnlockedState().dek
@@ -1098,35 +1121,13 @@ export class VaultService {
 			})
 		}
 
-		const flush = async () => {
-			await entry.lock.run(async () => {
-				if (entry.state.status !== 'unlocked') return
-				clearTimer(entry.state)
-				if (entry.state.flushPromise) await entry.state.flushPromise
-				entry.state.flushPromise = flushUnlockedState(store, runtime, entry.state)
-					.then((): undefined => {
-						updateStatus(store, runtime, entry, {
-							phase: 'ready',
-							dirty: false,
-							lastError: undefined,
-						})
-						return undefined
-					})
-					.catch((error) => {
-						setStatusFailure(store, runtime, entry, error)
-						throw error
-					})
-					.finally(() => {
-						if (entry.state.status === 'unlocked') entry.state.flushPromise = null
-					})
-				await entry.state.flushPromise
-			})
-		}
+		// KV and blob mutations save before resolving; flush only drains the local KV queue.
+		const flush = () => entry.lock.run(async () => {})
 
 		const sealForRuntime = async () => {
 			await flush()
 			entry.state = { status: 'locked' }
-			updateStatus(store, runtime, entry, { phase: 'sealed', dirty: false, lastError: undefined })
+			updateStatus(store, runtime, entry, { phase: 'sealed', lastError: undefined })
 		}
 
 		const rewriteEnvelope = async (deployRecipientsOverride?: string[]) => {
@@ -1309,7 +1310,9 @@ export class VaultService {
 			) => {
 				let closed = false
 				let running = false
-				const revisions = new Map(initial.map((snapshot) => [snapshot.key, snapshot.revision]))
+				const snapshots = new Map(
+					initial.map((snapshot) => [snapshot.key, JSON.stringify(snapshot)]),
+				)
 				const pending = new Map<string, VaultRecordSnapshot>()
 				const observers = entry.watchers.get(namespace) ?? new Set()
 				entry.watchers.set(namespace, observers)
@@ -1345,8 +1348,9 @@ export class VaultService {
 					key,
 					prefix,
 					notify(value: VaultRecordSnapshot) {
-						if (closed || value.revision <= (revisions.get(value.key) ?? -1)) return
-						revisions.set(value.key, value.revision)
+						const encoded = JSON.stringify(value)
+						if (closed || snapshots.get(value.key) === encoded) return
+						snapshots.set(value.key, encoded)
 						pending.set(value.key, value)
 						schedule()
 					},
@@ -1412,7 +1416,7 @@ export class VaultService {
 					const path = blobPath(runtime, namespace, name)
 					const readBytes = () =>
 						runVaultOperation(ctx, async () => {
-							const dek = await readDek(false)
+							const dek = await readDek()
 							const encrypted = await readVaultBytes(store, path)
 							return encrypted ? await aesDecrypt(dek, encrypted) : undefined
 						})
@@ -1420,7 +1424,7 @@ export class VaultService {
 					return {
 						exists: () =>
 							runVaultOperation(ctx, async () => {
-								await readDek(false)
+								await readDek()
 								return await vaultFileExists(store, path)
 							}),
 						readBytes,
@@ -1430,7 +1434,7 @@ export class VaultService {
 						},
 						writeBytes: (bytes: Uint8Array) =>
 							runVaultOperation(ctx, async () => {
-								const dek = await readDek(true)
+								const dek = await readDek()
 								if (!dek) throw new VaultError('INVALID_CONFIG', 'Failed to create vault key.')
 								await writeFileAtomic(requireVaultFs(store), path, await aesEncrypt(dek, bytes))
 							}),
@@ -1439,7 +1443,7 @@ export class VaultService {
 								await writeFileAtomic(
 									requireVaultFs(store),
 									path,
-									await aesEncrypt((await readDek(true))!, textEncode(text)),
+									await aesEncrypt((await readDek())!, textEncode(text)),
 								)
 							}),
 						remove: () =>
@@ -1538,11 +1542,15 @@ export class VaultService {
 						const dek = await createMountKey(store, runtime, undefined, {
 							createHostIdentity: true,
 						})
-						const state = finalizeUnlockedState(dek, createEmptySnapshot(), 'host', true)
-						await flushUnlockedState(store, runtime, state)
+						const snapshot = createEmptySnapshot()
+						await writeFileAtomic(
+							requireVaultFs(store),
+							runtime.statePath,
+							await aesEncrypt(dek, serializeSnapshot(snapshot)),
+						)
+						finalizeUnlockedState(dek, snapshot)
 						updateStatus(store, runtime, entry, {
 							phase: 'ready',
-							dirty: false,
 							lastError: undefined,
 						})
 					})
@@ -1667,6 +1675,7 @@ export class VaultService {
 			namespace: namespaceHandle,
 			unlock,
 			flush,
+			observeChanges,
 			rekey,
 			preflight,
 			sealForRuntime,

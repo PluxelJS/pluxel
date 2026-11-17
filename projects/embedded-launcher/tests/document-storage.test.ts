@@ -2,6 +2,7 @@ import type { Json, NativeTransport } from '@embedded-launcher/sdk'
 import { expect, it } from 'vitest'
 import { createSession } from '../src/execution/session'
 import { documentStorage } from '../src/execution/storage'
+import { Calculator } from '../src/plugins/calculator'
 
 it('waits for the native commit receipt before resolving a document write', async () => {
 	const entered = Promise.withResolvers<void>()
@@ -66,8 +67,9 @@ it('rejects foreign document keys before calling native storage', async () => {
 	expect(requests).toBe(0)
 })
 
-it('binds borrowed native document storage through the application factories', async () => {
+it('writes borrowed native documents only for explicit management changes', async () => {
 	const documents = new Map<string, string>()
+	const writes: string[] = []
 	let connectionClosed = false
 	const transport = {
 		async request(method: string, params: Json): Promise<Json> {
@@ -75,6 +77,7 @@ it('binds borrowed native document storage through the application factories', a
 			if (method === 'storage.read') return { document: documents.get(key) ?? null }
 			if (method === 'storage.write') {
 				documents.set(key, document)
+				writes.push(key)
 				return { committed: true }
 			}
 			return { accepted: true }
@@ -83,18 +86,43 @@ it('binds borrowed native document storage through the application factories', a
 			connectionClosed = true
 		},
 	}
-	const session = createSession(transport, {
-		configStorage: documentStorage(transport, 'config'),
-		stateStorage: documentStorage(transport, 'state'),
-	})
+	const session = createSession(
+		transport,
+		{
+			configStorage: documentStorage(transport, 'config'),
+			stateStorage: documentStorage(transport, 'state'),
+		},
+		[Calculator],
+	)
+	let id = 0
+	const rpc = async (method: string, params = {}) =>
+		JSON.parse(await session.dispatch(JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params })))
 	try {
-		const response = JSON.parse(
-			await session.dispatch(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'host.status' })),
-		)
-		expect(response).toMatchObject({ result: { summary: { total: 0 } } })
+		expect(await rpc('host.status')).toMatchObject({ result: { summary: { total: 1 } } })
+		expect(await rpc('host.startNode', { plugin: 'Calculator' })).toMatchObject({
+			result: { status: { summary: { running: 1 } } },
+		})
+		expect(await rpc('host.configGet', { plugin: 'Calculator' })).toMatchObject({
+			result: { ok: true, managedInput: null, effectiveInput: {}, config: { precision: 10 } },
+		})
+		expect(documents.size).toBe(0)
+		expect(writes).toEqual([])
+		expect(
+			await rpc('host.config', { plugin: 'Calculator', patch: { set: { precision: 3 } } }),
+		).toMatchObject({
+			result: { ok: true, persistence: { status: 'confirmed' }, config: { precision: 3 } },
+		})
+		expect([...documents.keys()]).toEqual(['config'])
+		expect(writes).toEqual(['config'])
+		const configDocument = documents.get('config')
+		expect(await rpc('host.autostart', { plugin: 'Calculator', autoStart: true })).toMatchObject({
+			result: { report: { persistence: { status: 'confirmed' } } },
+		})
+		expect([...documents.keys()].sort()).toEqual(['config', 'state'])
+		expect(documents.get('config')).toBe(configDocument)
 	} finally {
 		await session.close()
 	}
-	expect([...documents.keys()].sort()).toEqual(['config', 'state'])
+	expect(writes).toEqual(['config', 'state'])
 	expect(connectionClosed).toBe(false)
 })

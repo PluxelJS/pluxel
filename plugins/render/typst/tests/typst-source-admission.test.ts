@@ -3,10 +3,47 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { describe, expect, it } from 'vitest'
 import { createTypstSourceProject } from '../src/source/node.js'
 import type { TypstSourceDiagnostic } from '../src/source/types.js'
-import { createTypstSourceEditor, sourceSync } from '../src/tiptap/source-editor.js'
+import { createTypstSourceEditor } from '../src/tiptap/source-editor.js'
+import { sourceSync } from '../src/tiptap/editor-transactions.js'
 
 /** Different editor plugins are independent receivers of the source synchronization transaction. */
 describe('source editor admission boundaries', () => {
+	it('keeps inserted native references separate from adjacent Chinese and Latin text across later edits', () => {
+		for (const trailing of ['后续正文', 'followingText', '123tail', '-continued', ':details']) {
+			const source = '= Target <target>\n\nOriginal\n'
+			const project = createTypstSourceProject({ files: { 'main.typ': source } })
+			const editor = createTypstSourceEditor({ project, path: 'main.typ' })
+			try {
+				expect(
+					editor.commands.insertContentAt(editor.state.doc.content.size - 1, [
+						{ type: 'reference', attrs: { target: 'target' } },
+						{ type: 'text', text: trailing },
+					]),
+				).toBe(true)
+				const paragraph = project.open('main.typ').document.content!.at(-1)!
+				expect(paragraph.content).toEqual([
+					{ type: 'text', text: 'Original' },
+					{ type: 'reference', attrs: { target: 'target', showCaption: null } },
+					{ type: 'text', text: trailing },
+				])
+				expect(
+					editor.commands.insertContentAt(editor.state.doc.content.size - 1, {
+						type: 'text',
+						text: '继续',
+					}),
+				).toBe(true)
+				expect(project.open('main.typ').document.content!.at(-1)!.content!.at(-1)!.text).toBe(
+					`${trailing}继续`,
+				)
+				expect(editor.commands.undo()).toBe(true)
+				expect(editor.commands.undo()).toBe(true)
+				expect(project.snapshot().files['main.typ']).toBe(source)
+			} finally {
+				editor.destroy()
+			}
+		}
+	})
+
 	it('commits a normal edit even when another extension attaches synchronization metadata', () => {
 		const project = createTypstSourceProject({ files: { 'main.typ': 'Human' } })
 		const editor = createTypstSourceEditor({ project, path: 'main.typ' })

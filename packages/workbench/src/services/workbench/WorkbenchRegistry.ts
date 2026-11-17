@@ -324,7 +324,6 @@ export class WorkbenchRegistry {
 					principal,
 					params: candidate.params,
 					signal: lease.signal,
-					...(candidate.entry.contract.data.size === 0 ? {} : { dataChanged: root.dataChanged }),
 				})
 				const factory = candidate.entry.factory
 				const pending = Promise.resolve().then(() => factory(context as never))
@@ -716,7 +715,7 @@ export class WorkbenchRegistry {
 			for (const entry of publication.entries.values()) {
 				if (entry.kind === 'attachment') continue
 				const placement = entry.metadata.placement
-				if (placement.kind !== 'route') continue
+				if (placement.kind === 'panel') continue
 				const layoutEntry = this.layoutEntry(publication, entry)
 				if (layoutEntry) entries.push(layoutEntry)
 			}

@@ -3,6 +3,7 @@ import { closeHistory } from '@tiptap/pm/history'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { Transaction } from '@tiptap/pm/state'
 import { allowedNode, canEdit, type EditorUiContext, type IconName } from './editor-ui'
+import { sourceAdmission, type SourceAdmissionReceipt } from './editor-transactions'
 
 /** Host insertion actions appear in both the insert menu and slash search.
  * Compose native commands without run(), focus(), dispatch or other side effects;
@@ -95,9 +96,47 @@ export function isInsertionBoundary(doc: ProseMirrorNode, at: number): boolean {
 	)
 }
 
-export interface InsertEntry extends TypstSlashCommand {
+interface CommandEntry extends TypstSlashCommand {
 	icon: IconName
-	group: '段落' | '内容' | '数据字段' | '模板组件'
+	group: '段落' | '内容' | '数据字段' | '内容组件' | '文件引用'
+	input?: never
+}
+
+export type InsertEntry =
+	| CommandEntry
+	| (Omit<TypstSlashCommand, 'command'> & {
+			icon: IconName
+			group: '文件引用'
+			input: 'import' | 'include'
+	  })
+
+type InsertionTarget = { from: number; to: number } | LocalInsertionTarget
+
+function isCurrentInsertionTarget(editor: Editor, target?: InsertionTarget): boolean {
+	if (!target) return true
+	if ('at' in target)
+		return target.doc === editor.state.doc && isInsertionBoundary(target.doc, target.at)
+	return (
+		Number.isSafeInteger(target.from) &&
+		Number.isSafeInteger(target.to) &&
+		target.from >= 0 &&
+		target.to > target.from &&
+		target.to <= editor.state.doc.content.size
+	)
+}
+
+/** Input actions are available without preparing a fictitious command or opening their form. */
+export function canInsertEntry(
+	editor: Editor,
+	ui: EditorUiContext,
+	entry: InsertEntry,
+	target?: InsertionTarget,
+): boolean {
+	return entry.input
+		? canEdit(editor, ui) &&
+				Boolean(ui.renderSourceFileInput) &&
+				isCurrentInsertionTarget(editor, target)
+		: Boolean(prepareInsertion(editor, ui, entry, target))
 }
 
 export interface TableSize {
@@ -109,7 +148,7 @@ export interface TableSize {
 // Interactive creation stays bounded; native table commands retain their own full API.
 export const tableSizeLimits = { rows: 50, cols: 20 } as const
 
-export function tableEntry(size: TableSize): InsertEntry | undefined {
+export function tableEntry(size: TableSize): CommandEntry | undefined {
 	if (
 		!Number.isInteger(size.rows) ||
 		size.rows < 1 ||
@@ -220,7 +259,9 @@ export function insertEntries(
 		entries.push({
 			id: 'reference',
 			title: '交叉引用',
-			description: '输入 @ 搜索图、表或公式',
+			description: ui.documentReferences
+				? '输入 @ 搜索章节、图、表或公式'
+				: '输入 @ 搜索图、表或公式',
 			keywords: ['reference', '引用'],
 			icon: 'link',
 			group: '内容',
@@ -268,23 +309,13 @@ export function matchesInsertion(
 export function prepareInsertion(
 	editor: Editor,
 	ui: EditorUiContext,
-	entry: TypstSlashCommand,
-	target?: { from: number; to: number } | LocalInsertionTarget,
+	entry: TypstSlashCommand | InsertEntry,
+	target?: InsertionTarget,
 ): Transaction | undefined {
-	if (!canEdit(editor, ui)) return undefined
+	if (!('command' in entry) || !canEdit(editor, ui) || !isCurrentInsertionTarget(editor, target))
+		return undefined
 	const local = target && 'at' in target ? target : undefined
 	const range = target && 'from' in target ? target : undefined
-	if (local && (local.doc !== editor.state.doc || !isInsertionBoundary(local.doc, local.at)))
-		return undefined
-	if (
-		range &&
-		(!Number.isSafeInteger(range.from) ||
-			!Number.isSafeInteger(range.to) ||
-			range.from < 0 ||
-			range.to <= range.from ||
-			range.to > editor.state.doc.content.size)
-	)
-		return undefined
 	let transaction: Transaction | undefined
 	const manager = new CommandManager({ editor, state: editor.state })
 	const chain = manager.chain().command(({ tr }) => {
@@ -307,4 +338,13 @@ export function prepareInsertion(
 	if (ui.validateDocument)
 		return ui.validateDocument(transaction.doc.toJSON()) ? transaction.scrollIntoView() : undefined
 	return transaction.scrollIntoView()
+}
+
+/** Confirm the actual receiver outcome after source admission and synchronous projection refresh. */
+export function dispatchInsertion(editor: Editor, transaction: Transaction): boolean {
+	editor.view.dispatch(transaction)
+	const receipt = transaction.getMeta(sourceAdmission) as SourceAdmissionReceipt | undefined
+	return receipt
+		? receipt.accepted && editor.state.doc.eq(receipt.doc)
+		: editor.state.doc.eq(transaction.doc)
 }

@@ -31,6 +31,10 @@ export function FloatingMenu({
 		const window = document.defaultView!
 		function position() {
 			if (!ref.current || editor.isDestroyed) return
+			if (editor.view.dom.getClientRects().length === 0) {
+				setPoint(null)
+				return
+			}
 			const target = reference()
 			const { width, height } = ref.current.getBoundingClientRect()
 			const left = Math.max(8, Math.min(target.left, window.innerWidth - width - 8))
@@ -44,6 +48,7 @@ export function FloatingMenu({
 		}
 		position()
 		const observer = new ResizeObserver(position)
+		observer.observe(editor.view.dom)
 		if (ref.current) observer.observe(ref.current)
 		document.addEventListener('scroll', position, true)
 		window.addEventListener('resize', position)

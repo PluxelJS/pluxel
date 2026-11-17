@@ -134,7 +134,7 @@ explicit service access and recovery. Scripts import `DevConsole` from `@pluxel/
 ## Boundary
 
 - `src/app.ts` owns fixed Plugins, mutable sources, service configuration and startup policy.
-- `src/app.ts` uses `servicesPreset()` from `@pluxel/services/preset` for the official service set and optional Workbench; Core logging and storage are explicit `config.logger` / `config.storage` declarations from `@pluxel/core/config`.
+- `src/app.ts` uses `servicesPreset()` from `@pluxel/services/preset` for the official service set and optional Workbench; Core logging and storage are explicit `runtime.logtape` / `runtime.zenfs` declarations from `@pluxel/core/config`.
 - `vite.config.ts` uses `vitePreset()` from `@pluxel/services/vite`; it combines the shared development driver with attachments for installed official services.
 - `tsdown.config.ts` uses `pluxel({ delivery: 'modules' })` from `@pluxel/rolldown`; package imports and compiled Node/Workbench artifacts are preserved.
 - Managed entries and Package Manager's data share the explicitly configured application-local directory.

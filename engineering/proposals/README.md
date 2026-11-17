@@ -13,9 +13,15 @@
 
 研究与必要决策记录：
 
+- [Host 配置重构：决策与验收](HOST_CONFIGURATION_LAYERS.md)：已实施，根仓库及三个 local-projects 的完整门禁通过；保留身份/mode、原始输入事务和执行绑定决策，以及六条验收路径、线上检查和数据迁移证据。当前 API 见正式 Host/Config 文档。
+
+- [Typst 内容创作与私有排版边界](TYPST_AUTHORING_BOUNDARIES.md)：待实施的整体重构提案；分离源码创作与 JSON 正文权威，明确私有模板/数据/资产边界、agent 协作提交和无兼容迁移。
+
+- [插件分发与市场基础](plugin-distribution/README.md)：以 Drizzle ORM + SQLite 和 Cloudflare Workers/D1 为目标，设计在线运营配置、增量目录与按需 API，再细化发布标准、消费端市场插件和两类安装；独立于 legacy 分发实现，尚未实施。
+
 - [`TINYBASE_PLUGIN_STATE.md`](TINYBASE_PLUGIN_STATE.md)：已实施状态重构的必要决策与剩余验收边界；当前契约见 [TinyBase](../TINYBASE.md) 与 [Database](../DATABASE.md)，逐包结论及实际验证见[迁移记录](../TINYBASE_MIGRATION.md)。
 
-- [Worksplit API 精进决策](../../vendor/split-like-vscode/refactor/API_REFINEMENT_PROPOSAL.md)：2026-11-01 复核契约已实施，统一内容 hook 与资源 effect 并迁移全部已知消费者；当前边界见 [Frontend](../FRONTEND.md)，新验证及实际范围见[实施验收](../../vendor/split-like-vscode/refactor/API_REFINEMENT_VALIDATION.md)。
+- Worksplit 的旧 API 精进提案已由新版会话契约替代；当前所有权见 [Frontend](../FRONTEND.md)，采用版本与实际宿主结果见 [Worksplit 迁移记录](../WORKSPLIT_MIGRATION.md)。
 
 - [`ZENFS_FS_REFACTOR.md`](ZENFS_FS_REFACTOR.md)：ZenFS FS 重构的实施决策与验收记录；当前用法和资源契约见正式 FS 文档。
 

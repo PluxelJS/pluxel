@@ -5,7 +5,6 @@ export interface CliDefaults {
 	publish: {
 		access: string
 		marketBaseUrl: string
-		oidcTokenEnv: string
 	}
 	packageManager: {
 		fallback: 'pnpm' | 'npm' | 'yarn' | 'bun'
@@ -22,7 +21,6 @@ export const CLI_DEFAULTS: CliDefaults = {
 	publish: {
 		access: 'public',
 		marketBaseUrl: 'https://market.pluxel.dev',
-		oidcTokenEnv: 'PLUXEL_OIDC_TOKEN',
 	},
 	packageManager: {
 		fallback: 'pnpm',

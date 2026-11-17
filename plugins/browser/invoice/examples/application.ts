@@ -1,4 +1,3 @@
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication, envBinding, type HostApplicationFactory } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
 import { PlaywrightConfig, PlaywrightPlugin } from '@pluxel/plugin-playwright'
@@ -8,11 +7,18 @@ import { InvoiceConsumer } from './consumer.ts'
 const application: HostApplicationFactory = defineHostApplication((startup) => ({
 	plugins: [PlaywrightPlugin, InvoicePlugin, InvoiceConsumer],
 	services: [vault({ backend: 'bindings' })],
-	state: { initial: { autoStart: [pluginNodeAddressOf(InvoiceConsumer)] } },
-	configRecords: {
-		initial: [
+	envBindings: [
+		envBinding(PlaywrightPlugin, {
+			config: { schema: PlaywrightConfig, mapping: { endpoint: 'BROWSER_ENDPOINT' } },
+		}),
+		envBinding(InvoicePlugin, {
+			vault: { schema: InvoiceVaultSchema, mapping: { primary: { apiKey: 'INVOICE_VLM_KEY' } } },
+		}),
+	],
+	config: {
+		records: [
 			{
-				owner: pluginNodeAddressOf(InvoicePlugin),
+				owner: InvoicePlugin.nodeAddress(),
 				config: {
 					vlm: {
 						endpoint: startup.env.INVOICE_VLM_ENDPOINT,
@@ -24,14 +30,7 @@ const application: HostApplicationFactory = defineHostApplication((startup) => (
 			},
 		],
 	},
-	envBindings: [
-		envBinding(PlaywrightPlugin, {
-			config: { schema: PlaywrightConfig, mapping: { endpoint: 'BROWSER_ENDPOINT' } },
-		}),
-		envBinding(InvoicePlugin, {
-			vault: { schema: InvoiceVaultSchema, mapping: { primary: { apiKey: 'INVOICE_VLM_KEY' } } },
-		}),
-	],
+	policy: { autoStart: [InvoiceConsumer.nodeAddress()] },
 }))
 
 export default application

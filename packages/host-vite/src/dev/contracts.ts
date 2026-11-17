@@ -4,8 +4,14 @@ import type {
 	HostPluginConfigResult,
 	PluginApplyReportSnapshot,
 	RuntimeUpdateSnapshot,
-	HostConfigMutationOptions,
 	HostConfigState,
+	HostConfigSource,
+	HostConfigMutation,
+	HostInputMode,
+	HostOperationOptions,
+	HostPolicyInput,
+	HostPolicyField,
+	HostPolicyResult,
 } from '@pluxel/host'
 
 /** Current concrete implementation; fork references do not create a fork. */
@@ -19,6 +25,18 @@ export type DevPluginInstance<T extends DevTypedPluginTarget> = T extends Plugin
 		? InstanceType<P>
 		: never
 export type DevScript = (dev: DevConsole) => unknown | Promise<unknown>
+
+export type DevConfigInspection = Readonly<{
+	mode: HostInputMode
+	readonly: boolean
+	externalReload: boolean
+	managedInput: Readonly<Record<string, unknown>> | null
+	managedRevision: string
+	shadowedPaths: readonly (readonly string[])[]
+	declared: Readonly<Record<string, unknown>>
+	effectiveInput: Readonly<Record<string, unknown>>
+	sources: readonly HostConfigSource[]
+}>
 
 /** Infer the execution context and preserve the callback return type; does not execute it. */
 export function defineDevConsole<T extends DevScript>(script: T): T {
@@ -58,22 +76,36 @@ export interface DevConsole {
 		require<T extends DevTypedPluginTarget>(target: T): DevPluginInstance<T>
 	}
 	readonly config: {
+		/** Raw saved input and its effective runtime projection, without writing either. */
+		inspect(target: DevPluginTarget): Promise<DevConfigInspection>
 		status(): HostConfigState
 		get(target: DevPluginTarget): Promise<HostPluginConfigResult<PluginApplyReportSnapshot>>
 		validate(
 			target: DevPluginTarget,
-			patch: Readonly<Record<string, unknown>>,
+			change: HostConfigMutation,
 		): Promise<HostPluginConfigResult<PluginApplyReportSnapshot>>
 		patch(
 			target: DevPluginTarget,
-			patch: Readonly<Record<string, unknown>>,
-			options?: Pick<HostConfigMutationOptions, 'expected'>,
+			change: HostConfigMutation,
+			options?: HostOperationOptions,
 		): Promise<HostPluginConfigResult<PluginApplyReportSnapshot>>
-		/** Omitted or empty keys resets every saved top-level field. */
+		/** Clears saved paths to restore inheritance; an empty list changes nothing. */
 		reset(
 			target: DevPluginTarget,
-			keys?: readonly string[],
-			options?: Pick<HostConfigMutationOptions, 'expected'>,
+			paths?: readonly (readonly string[])[],
+			options?: HostOperationOptions,
 		): Promise<HostPluginConfigResult<PluginApplyReportSnapshot>>
+	}
+	readonly policy: {
+		get(): Promise<HostPolicyResult<PluginApplyReportSnapshot>>
+		validate(values: HostPolicyInput): Promise<HostPolicyResult<PluginApplyReportSnapshot>>
+		patch(
+			values: HostPolicyInput,
+			options?: HostOperationOptions,
+		): Promise<HostPolicyResult<PluginApplyReportSnapshot>>
+		reset(
+			keys?: readonly HostPolicyField[],
+			options?: HostOperationOptions,
+		): Promise<HostPolicyResult<PluginApplyReportSnapshot>>
 	}
 }

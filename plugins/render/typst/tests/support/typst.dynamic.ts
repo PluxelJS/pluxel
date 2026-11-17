@@ -1,5 +1,4 @@
 import { FontsPlugin } from '@pluxel/plugin-fonts'
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { defineHostApplication } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
 import { TypstPlugin } from '@pluxel/plugin-typst'
@@ -10,7 +9,7 @@ const plugins = [FontsPlugin, TypstPlugin, TypstDynamicProbePlugin] as const
 export default defineHostApplication(() => ({
 	name: 'typst-document-fixture',
 	plugins,
-	configRecords: { mode: 'memory' },
-	state: { mode: 'memory', initial: { autoStart: plugins.map(pluginNodeAddressOf) } },
 	services: standardServices(),
+	policy: { autoStart: plugins.map((plugin) => plugin.nodeAddress()) },
+	runtime: { documents: { config: false, state: false } },
 }))

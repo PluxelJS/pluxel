@@ -40,7 +40,7 @@ export function captureBlockTarget(editor: Editor, position?: number): BlockTarg
 	if (position === undefined && !selection.empty && topLevelPosition(doc, selection.to - 1) !== pos)
 		return undefined
 	const node = doc.nodeAt(pos)
-	if (!node?.isBlock || node.type.name === 'typstSource') return undefined
+	if (!node?.isBlock || ['typstSource', 'documentBlock'].includes(node.type.name)) return undefined
 	return { pos, node, doc }
 }
 

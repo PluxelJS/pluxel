@@ -4,14 +4,18 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { closeHistory } from '@tiptap/pm/history'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import type { TypstReferenceTarget } from './types.js'
+import './document-commands.js'
 
-const figureBodies = new Set(['image', 'table', 'typstComponent', 'typstSource'])
+const figureBodies = new Set(['image', 'table', 'typstComponent', 'typstSource', 'documentBlock'])
 export const isReferenceObject = (name: string): boolean =>
 	name === 'figure' || name === 'blockMath'
 export const validReferenceLabel = (value: unknown): value is string =>
 	typeof value === 'string' && /^[\p{L}\p{N}][\p{L}\p{M}\p{N}_:.-]{0,127}$/u.test(value)
 
-export function referenceKind(name: string, bodyName?: string): TypstReferenceTarget['kind'] {
+export function referenceKind(
+	name: string,
+	bodyName?: string,
+): Exclude<TypstReferenceTarget['kind'], 'heading'> {
 	return name === 'blockMath' ? 'equation' : bodyName === 'table' ? 'table' : 'figure'
 }
 
@@ -36,25 +40,6 @@ function allocateIdentity(
 
 function canChange(_name: string, props: Parameters<Command>[0]): boolean {
 	return props.editor.isEditable && !props.editor.view.composing
-}
-
-declare module '@tiptap/core' {
-	interface Commands<ReturnType> {
-		typstFigure: {
-			insertTypstFigure: (options: {
-				body: JSONContent
-				caption?: JSONContent[]
-				label?: string
-			}) => ReturnType
-			/** Wrap the block at this native position without changing its content or identity. */
-			wrapTypstFigure: (position: number, caption?: JSONContent[]) => ReturnType
-			duplicateTypstFigure: (position: number) => ReturnType
-		}
-		typstDocument: {
-			insertTypstReference: (target: string) => ReturnType
-			duplicateTypstBlockMath: (position: number) => ReturnType
-		}
-	}
 }
 
 /** Editable caption is a child of its figure, never an independent paragraph. */
@@ -120,18 +105,24 @@ export const TypstFigure = Node.create({
 			insertTypstFigure: (options) => (props) => {
 				if (!canChange(this.name, props) || !figureBodies.has(options.body.type!)) return false
 				const id = allocateIdentity(props.tr.doc, !!props.dispatch)
+				const nativeLabel = Boolean(props.state.schema.nodes[this.name]!.spec.attrs?.label)
 				const content: JSONContent = {
 					type: this.name,
 					attrs: {
 						id,
-						label: options.label ?? labelFor({ type: this.name, content: [options.body] }, id),
+						...(nativeLabel
+							? {
+									label:
+										options.label ?? labelFor({ type: this.name, content: [options.body] }, id),
+								}
+							: {}),
 					},
 					content: [
 						structuredClone(options.body),
 						{ type: 'figureCaption', content: structuredClone(options.caption ?? []) },
 					],
 				}
-				if (!validReferenceLabel(content.attrs!.label)) return false
+				if (nativeLabel && !validReferenceLabel(content.attrs!.label)) return false
 				try {
 					props.state.schema.nodeFromJSON(content).check()
 				} catch {
@@ -161,7 +152,12 @@ export const TypstFigure = Node.create({
 					const id = allocateIdentity(props.tr.doc, !!props.dispatch)
 					const json: JSONContent = {
 						type: this.name,
-						attrs: { id, label: labelFor({ type: this.name, content: [body.toJSON()] }, id) },
+						attrs: {
+							id,
+							...(props.state.schema.nodes[this.name]!.spec.attrs?.label
+								? { label: labelFor({ type: this.name, content: [body.toJSON()] }, id) }
+								: {}),
+						},
 						content: [body.toJSON(), { type: 'figureCaption', content: structuredClone(caption) }],
 					}
 					let figure: ProseMirrorNode
@@ -210,7 +206,13 @@ export const TypstBlockMath = BlockMath.extend({
 				if (props.dispatch) closeHistory(props.tr)
 				return props.commands.insertContentAt(options.pos ?? props.state.selection.from, {
 					type: this.name,
-					attrs: { latex: options.latex, id, label: `eq:${id}` },
+					attrs: {
+						latex: options.latex,
+						id,
+						...(props.state.schema.nodes[this.name]!.spec.attrs?.label
+							? { label: `eq:${id}` }
+							: {}),
+					},
 				})
 			},
 		}

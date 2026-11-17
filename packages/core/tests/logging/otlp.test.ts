@@ -7,7 +7,7 @@ import {
 	LoggerProvider,
 	type ReadableLogRecord,
 } from '@opentelemetry/sdk-logs'
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost, defineHostService } from '@pluxel/host'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
@@ -87,11 +87,11 @@ it.each([
 		try {
 			const host = await createHost({
 				plugins: [RemoteLoggedOwner],
-				config: { logger: logtape(plan(sink)) },
+				runtime: { logtape: logtape(plan(sink)) },
 				services: [],
 			})
 			try {
-				await host.startNode(pluginNodeAddressOf(RemoteLoggedOwner))
+				await host.startNode(RemoteLoggedOwner.nodeAddress())
 				host.ctx.logger.debug('filtered runtime debug')
 				host.ctx.logger.error('remote failure', { error: new Error('fixture failure') })
 				expect(requests).toHaveLength(0)
@@ -134,7 +134,7 @@ it('disposes the native sink once when a later Host service fails to prepare', a
 		await expect(
 			createHost({
 				plugins: [],
-				config: { logger: logtape(plan(sink)) },
+				runtime: { logtape: logtape(plan(sink)) },
 				services: [
 					defineHostService({
 						name: 'FailAfterLogging',

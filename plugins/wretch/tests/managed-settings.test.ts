@@ -1,4 +1,3 @@
-import { pluginNodeAddressOf } from '@pluxel/core'
 import { createStore } from 'tinybase'
 import type { Dispatcher } from 'undici'
 import { describe, expect, it, vi } from 'vitest'
@@ -15,8 +14,8 @@ describe('provider managed-settings commits', () => {
 			.mockImplementationOnce(() => gate)
 			.mockResolvedValue(undefined)
 		const managed = new ManagedSettingsStore(store, flush)
-		const a = await managed.load(pluginNodeAddressOf(ConsumerA))
-		const b = await managed.load(pluginNodeAddressOf(ConsumerB))
+		const a = await managed.load(ConsumerA.nodeAddress())
+		const b = await managed.load(ConsumerB.nodeAddress())
 		const first = managed.replace(a, { headers: { 'X-Owner': 'a' } })
 		const second = managed.replace(b, { headers: { 'X-Owner': 'b' } })
 		let loaded = false
@@ -52,8 +51,8 @@ describe('provider managed-settings commits', () => {
 		const failure = new Error('backing save failed')
 		const flush = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValue(failure)
 		const managed = new ManagedSettingsStore(store, flush)
-		const a = await managed.load(pluginNodeAddressOf(ConsumerA))
-		const b = await managed.load(pluginNodeAddressOf(ConsumerB))
+		const a = await managed.load(ConsumerA.nodeAddress())
+		const b = await managed.load(ConsumerB.nodeAddress())
 		await managed.replace(a, { headers: { 'X-Mode': 'confirmed' } })
 		await expect(managed.replace(a, { headers: { 'X-Mode': 'candidate' } })).rejects.toBe(failure)
 		expect(a.current.headers).toEqual({ 'x-mode': 'confirmed' })
@@ -68,7 +67,7 @@ describe('provider managed-settings commits', () => {
 	it('reports cleanup failure after the saved replacement has already become applied', async () => {
 		const flush = vi.fn().mockResolvedValue(undefined)
 		const managed = new ManagedSettingsStore(createStore(), flush)
-		const state = await managed.load(pluginNodeAddressOf(ConsumerA))
+		const state = await managed.load(ConsumerA.nodeAddress())
 		const failure = new Error('old dispatcher close failed')
 		state.dispatcher = { close: vi.fn().mockRejectedValue(failure) } as unknown as Dispatcher
 		await expect(

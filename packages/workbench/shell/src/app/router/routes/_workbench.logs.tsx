@@ -4,7 +4,13 @@ import { validateLogsSearch } from '../logsSearch'
 
 export const Route = createFileRoute('/_workbench/logs')({
 	validateSearch: validateLogsSearch,
-	staticData: { worksplit: { title: '日志', identitySearch: ['plugin'] } },
+	staticData: {
+		worksplit: {
+			title: '日志',
+			documentKey: ({ search }) =>
+				JSON.stringify(['logs', 'plugin' in search ? search.plugin : null]),
+		},
+	},
 	component: LogsRoute,
 })
 

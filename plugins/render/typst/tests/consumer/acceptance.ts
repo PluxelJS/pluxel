@@ -190,7 +190,8 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 						target: 'ES2023',
 						module: browser ? 'ESNext' : 'NodeNext',
 						moduleResolution: browser ? 'Bundler' : 'NodeNext',
-						lib: ['ES2024', 'DOM', 'DOM.Iterable', 'ESNext.Disposable'],
+						// Built Core filesystem stats expose Temporal.Instant.
+						lib: ['ES2024', 'DOM', 'DOM.Iterable', 'ESNext.Disposable', 'ESNext.Temporal'],
 						types: ['node', ...(browser ? ['vite/client'] : [])],
 						strict: true,
 						experimentalDecorators: true,
@@ -221,8 +222,14 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 		)
 		await command(process.execPath, ['absent.mjs'], directory, log)
 	}
-	async function consumerBuild(input: string, outDir: string) {
+	async function consumerBuild(input: string, outDir: string, semanticOnly = false) {
 		const modules: string[] = []
+		const semanticForbidden =
+			/@r4ai(?:\/|$)|typst_ast.*\.wasm|@pluxel\/plugin-typst(?:$|\/source(?:\/|$)|\/document$)|\/(?:src|dist)\/source(?:\/|[.-])|\/src\/document\/project\.|\/dist\/(?:document|index|worker|native-binding)\.mjs|node:/i
+		function semanticModule(id: string) {
+			if (semanticOnly)
+				assert.ok(!semanticForbidden.test(id), `Source/server module in semantic browser: ${id}`)
+		}
 		await build({
 			configFile: false,
 			root: app,
@@ -231,6 +238,12 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 			plugins: [
 				{
 					name: 'consumer-module-evidence',
+					resolveId(id) {
+						semanticModule(id)
+					},
+					load(id) {
+						semanticModule(id)
+					},
 					generateBundle(_options, bundle) {
 						for (const chunk of Object.values(bundle))
 							if (chunk.type === 'chunk') modules.push(...Object.keys(chunk.modules))
@@ -239,6 +252,7 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 			],
 		})
 		for (const id of modules) {
+			semanticModule(id)
 			assert.ok(!id.startsWith(workspace), `Consumer resolved a workspace source: ${id}`)
 			assert.ok(
 				!/(?:@pluxel\/(?:core|services|workbench)|monaco|electron|typst-ts-node-compiler|node:)/i.test(
@@ -351,6 +365,39 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 	stages.push(
 		'Source Node and Web parser run without Tiptap/React; WASM copied asset resolves; projections match and no-op retains every source byte',
 	)
+	await writeFile(
+		join(app, 'document.mjs'),
+		`
+ import assert from 'node:assert/strict'; import {readFile,writeFile} from 'node:fs/promises';
+ ${importGuard(['@tiptap', 'react', 'react-dom', 'modern-monaco', 'electron'])}
+ const {createTypstSourceProject}=await import('@pluxel/plugin-typst/source');
+ const {createTypstDocumentProject}=await import('@pluxel/plugin-typst/document');
+ const files=JSON.parse(await readFile('files.json','utf8'));
+ const source=createTypstSourceProject({files});
+ const documents=[{id:'analysis',title:'分析',path:'sections/analysis.typ'},{id:'actions',title:'行动',path:'sections/actions.typ'}];
+ const project=createTypstDocumentProject({project:source,documents});
+ const before=project.view();
+ const safe=view=>{const wire=JSON.stringify(view);for(const secret of ['sections/','.typ','#upper','fig:revenue','eq:model','"path":','"source":','"label":'])assert.ok(!wire.includes(secret),'Private source escaped semantic view: '+secret);const visit=node=>{assert.ok(!node.type.startsWith('typst'));for(const child of node.content??[])visit(child)};for(const body of view.documents)visit(body.document)};
+ safe(before);assert.equal(before.documents.length,2);
+ for(const body of before.documents)assert.equal(project.edit({baseRevision:source.revision,id:body.id,document:body.document}).ok,true);
+ assert.deepEqual({...source.snapshot().files},files);
+ const body=structuredClone(project.view().documents.find(body=>body.id==='analysis'));
+ const replace=node=>{if(node.type==='text')node.text=node.text.replace('初始中文正文','独立文档验收');for(const child of node.content??[])replace(child)};
+ replace(body.document);
+ const changed=project.edit({baseRevision:source.revision,id:body.id,document:body.document});
+ assert.equal(changed.ok,true);safe(changed.value);
+ assert.equal(source.snapshot().files['sections/analysis.typ'],files['sections/analysis.typ'].replace('初始中文正文','独立文档验收'));
+ assert.equal(project.edit({baseRevision:before.revision,id:body.id,document:body.document}).ok,false);
+ const reopened=createTypstDocumentProject({project:createTypstSourceProject({files:source.snapshot().files}),documents});
+ safe(reopened.view());assert.match(JSON.stringify(reopened.view().documents),/独立文档验收/);
+ await writeFile('document-view.json',JSON.stringify(changed.value));
+ hooks.deregister();
+ `,
+	)
+	await command(process.execPath, ['document.mjs'], app, log)
+	stages.push(
+		'Built server document project runs without Tiptap/React; semantic no-op, Chinese writeback, stale rejection, reopen and private-source exclusion cross the public package boundary',
+	)
 
 	const pluginManifest = await manifest(join(packageRoot, 'package.json'))
 	for (const name of Object.keys(pluginManifest.peerDependencies).filter(
@@ -384,7 +431,31 @@ it('consumes isolated built source, editor, browser and native artifacts', async
  void [browserProject,createTypstSourceLibrary]; editor.destroy();
  `,
 	)
-	await checkTypes(['source-check.mts'])
+	await writeFile(
+		join(app, 'document-check.mts'),
+		`
+ import {createTypstSourceProject} from '@pluxel/plugin-typst/source';
+ import {createTypstDocumentProject,type TypstDocumentProject,type TypstDocumentSnapshot,type TypstDocumentNavigation,type TypstDocumentPreviewData,type TypstDocumentSelection,type TypstDocumentResult} from '@pluxel/plugin-typst/document';
+ const source=createTypstSourceProject({files:{'private/body.typ':'正文'}});
+ const project:TypstDocumentProject=createTypstDocumentProject({project:source,documents:[{id:'body',title:'正文',path:'private/body.typ',label:'private-heading'}]});
+ const view:TypstDocumentSnapshot=project.view();
+ const body=view.documents[0]!;
+ const edited:TypstDocumentResult<TypstDocumentSnapshot>=project.edit({baseRevision:view.revision,id:body.id,document:body.document});
+ function compiled(navigation:Parameters<TypstDocumentProject['navigation']>[0]['navigation']){
+  const result:TypstDocumentResult<TypstDocumentNavigation>=project.navigation({revision:source.revision,navigation});
+  if(!result.ok)return result.issues.map(issue=>issue.message);
+  const preview:TypstDocumentPreviewData={...result.value,pages:result.value.pages.map(page=>({...page,url:'/authenticated-page/'+page.page}))};
+  const selection:TypstDocumentSelection={documentId:body.id,position:1,explicit:true};
+  return {preview,selection,location:view.references[0]?.location};
+ }
+ // @ts-expect-error Semantic snapshots do not publish their source files.
+ view.files;
+ // @ts-expect-error Semantic document locations have no source path.
+ view.references[0]?.location?.path;
+ void [compiled,edited];
+ `,
+	)
+	await checkTypes(['source-check.mts', 'document-check.mts'])
 	await writeFile(
 		join(app, 'node-without-dom.mjs'),
 		`
@@ -453,6 +524,35 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 	await writeFile(join(app, 'react-example.tsx'), reactExample)
 	await checkTypes(['main.tsx', 'react-example.tsx'], true)
 	await consumerBuild('index.html', 'dist')
+	await cp(join(app, 'document-view.json'), join(app, 'public/document-view.json'))
+	await writeFile(
+		join(app, 'document.tsx'),
+		`
+ import {useState} from 'react';import {createRoot} from 'react-dom/client';
+ import {TypstDocumentEditor} from '@pluxel/plugin-typst/tiptap/document/react';
+ import {TypstDocumentPreview,type TypstDocumentSelection,type TypstDocumentPreviewData} from '@pluxel/plugin-typst/document/react';
+ import type {TypstDocumentSnapshot} from '@pluxel/plugin-typst/document';
+ import '@pluxel/plugin-typst/tiptap/style.css';
+ const view=await fetch('/document-view.json').then(response=>response.json()) as TypstDocumentSnapshot;
+ const body=view.documents[0]!;
+ function App(){
+  const [content,setContent]=useState(body.document);
+  const [selection,setSelection]=useState<TypstDocumentSelection>({documentId:body.id,position:1});
+  const [preview]=useState<TypstDocumentPreviewData|null>(null);
+  return <main><TypstDocumentEditor content={content} onChange={setContent} references={view.references} onSelection={position=>setSelection({documentId:body.id,position})} onReveal={position=>setSelection({documentId:body.id,position,explicit:true})} onReference={(documentId,position)=>setSelection({documentId,position,explicit:true})}/><TypstDocumentPreview preview={preview} revision={view.revision} selection={selection} onSelect={location=>setSelection(location)}/></main>;
+ }
+ createRoot(document.getElementById('app')!).render(<App/>);
+ `,
+	)
+	await writeFile(
+		join(app, 'document.html'),
+		'<!doctype html><html><head><meta charset="utf-8"></head><body><div id="app"></div><script type="module" src="/document.tsx"></script></body></html>',
+	)
+	await checkTypes(['document.tsx'], true)
+	await consumerBuild('document.html', 'document-dist', true)
+	stages.push(
+		'Built semantic document editor and preview strict-check and production-build together using the server safe snapshot; import hooks and module evidence reject source parsers, WASM and Node/server exports',
+	)
 	const installedRoot = await realpath(join(app, 'node_modules/@pluxel/plugin-typst'))
 	assert.ok(!installedRoot.startsWith(workspace))
 	const installedFiles = await readdir(installedRoot)
@@ -564,8 +664,9 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 			() => window.acceptance.project.snapshot().files['sections/actions.typ'],
 		)
 		await component.getByRole('button', { name: '编辑参数', exact: true }).click()
-		await component.getByRole('textbox', { name: '指标标题', exact: true }).fill('浏览器插入指标')
-		await component.getByRole('button', { name: '应用参数', exact: true }).click()
+		const parameters = page.getByRole('dialog', { name: '验收指标卡设置', exact: true })
+		await parameters.getByRole('textbox', { name: '指标标题', exact: true }).fill('浏览器插入指标')
+		await parameters.getByRole('button', { name: '应用参数', exact: true }).click()
 		await page.waitForFunction(() =>
 			window.acceptance.project
 				.snapshot()
@@ -583,8 +684,9 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 		await field.waitFor()
 		assert.match((await field.textContent()) ?? '', /120/)
 		await field.getByRole('button').click()
-		await field.getByRole('textbox', { name: 'JSON data/sales.json', exact: true }).fill('180')
-		await field.getByRole('button', { name: '保存 JSON', exact: true }).click()
+		const fieldDialog = page.getByRole('dialog', { name: '字段 · total', exact: true })
+		await fieldDialog.getByRole('spinbutton', { name: '字段值 total', exact: true }).fill('180')
+		await fieldDialog.getByRole('button', { name: '保存 JSON', exact: true }).click()
 		await page.waitForFunction(
 			() =>
 				JSON.parse(window.acceptance.project.snapshot().files['data/sales.json'] as string)

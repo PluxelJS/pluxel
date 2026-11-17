@@ -1,6 +1,6 @@
 import type { HostViteProfile } from './profile'
 import type { PluginDefinitionAddress, PluginConstructor } from '@pluxel/core'
-import type { PluginHost } from '@pluxel/host'
+import type { PluginHost, HostStartupContext } from '@pluxel/host'
 import type { PluginSourceVitePipeline } from '@pluxel/rolldown/vite'
 import type { ViteDevServer } from 'vite'
 
@@ -39,6 +39,7 @@ export type HostVitePluginApi = Readonly<{
 				host: PluginHost
 				server: ViteDevServer
 				/** Owned by the execution entry, including package selection and artifact strictness. */
+				startup: HostStartupContext
 				profile: HostViteProfile
 				semantics: PluginSourceVitePipeline['semantics']
 				/** Exact evaluated modules and selected definitions for this candidate. */
@@ -58,6 +59,7 @@ export async function attachHostVitePlugins(
 	semantics: PluginSourceVitePipeline['semantics'],
 	initialCatalog: HostViteCatalog,
 	profile: HostViteProfile,
+	startup: HostStartupContext,
 ): Promise<
 	Readonly<{
 		tracks(file: string): boolean
@@ -70,7 +72,14 @@ export async function attachHostVitePlugins(
 		if (!api) continue
 		if (typeof api.attach !== 'function')
 			throw new TypeError(`[host-vite] ${plugin.name}: api.pluxelHost.attach must be a function`)
-		const result = await api.attach({ host, server, semantics, catalog: initialCatalog, profile })
+		const result = await api.attach({
+			host,
+			server,
+			semantics,
+			catalog: initialCatalog,
+			profile,
+			startup,
+		})
 		if (result === undefined) continue
 		const attachment = typeof result === 'function' ? { dispose: result } : result
 		if (!attachment || typeof attachment !== 'object') {

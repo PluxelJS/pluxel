@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import type { Store } from 'tinybase'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Passthrough } from '../src/fs'
@@ -50,7 +50,7 @@ async function backing() {
 		file: join(
 			prefix,
 			'services/tinybase/nodes',
-			`${pluginNodePhysicalKey(pluginNodeAddressOf(RecoverOwner))}.json`,
+			`${pluginNodePhysicalKey(RecoverOwner.nodeAddress())}.json`,
 		),
 		intercept: (operation?: () => Promise<void>) => {
 			beforeWrite = operation
@@ -63,7 +63,7 @@ describe('TinyBase retained writer recovery', () => {
 	it('single-flights retry, blocks replacement until confirmation, and prevents retired recovery writes', async () => {
 		const disk = await backing()
 		await using host = await createCoreTestHost({
-			storage: { mounts: { '/': { backend: Passthrough, fs: disk.native, prefix: disk.prefix } } },
+			zenfs: { mounts: { '/': { backend: Passthrough, fs: disk.native, prefix: disk.prefix } } },
 		})
 		const manager = requireTinyBaseHost(getCoreTestHostContext(host))
 		const owner = await host.add(RecoverOwner)
@@ -74,13 +74,13 @@ describe('TinyBase retained writer recovery', () => {
 		})
 		owner.store.setValue('candidate', 'retained')
 		await expect(owner.state.flush()).rejects.toMatchObject({ code: 'SAVE_FAILED' })
-		await expect(manager.recover(pluginNodeAddressOf(RecoverOwner), 'retry')).rejects.toMatchObject(
-			{ code: 'WRITER_BLOCKED' },
-		)
+		await expect(manager.recover(RecoverOwner.nodeAddress(), 'retry')).rejects.toMatchObject({
+			code: 'WRITER_BLOCKED',
+		})
 		await host.commitExpectFail((change) => change.remove(RecoverOwner))
 		expect(host.isRunning(RecoverOwner)).toBe(false)
 		await host.commitExpectFail((change) => change.add(RecoverOwner))
-		await expect(manager.recover(pluginNodeAddressOf(RecoverOwner), 'retry')).rejects.toThrow(
+		await expect(manager.recover(RecoverOwner.nodeAddress(), 'retry')).rejects.toThrow(
 			'write rejected',
 		)
 		expect(manager.status()).toMatchObject([{ phase: 'faulted', outcome: 'unknown' }])
@@ -90,14 +90,14 @@ describe('TinyBase retained writer recovery', () => {
 			entered.resolve()
 			await release.promise
 		})
-		const first = manager.recover(pluginNodeAddressOf(RecoverOwner), 'retry')
-		const second = manager.recover(pluginNodeAddressOf(RecoverOwner), 'retry')
+		const first = manager.recover(RecoverOwner.nodeAddress(), 'retry')
+		const second = manager.recover(RecoverOwner.nodeAddress(), 'retry')
 		try {
 			await entered.promise
 			expect(disk.writes()).toBe(savedWrites + 3)
-			await expect(
-				manager.recover(pluginNodeAddressOf(RecoverOwner), 'discard'),
-			).rejects.toMatchObject({ code: 'WRITER_BLOCKED' })
+			await expect(manager.recover(RecoverOwner.nodeAddress(), 'discard')).rejects.toMatchObject({
+				code: 'WRITER_BLOCKED',
+			})
 			await host.commitExpectFail((change) => change.add(RecoverOwner))
 		} finally {
 			release.resolve()
@@ -122,7 +122,7 @@ describe('TinyBase retained writer recovery', () => {
 	it('discard validates the actual backing and releases ownership without saving the failed candidate', async () => {
 		const disk = await backing()
 		await using host = await createCoreTestHost({
-			storage: { mounts: { '/': { backend: Passthrough, fs: disk.native, prefix: disk.prefix } } },
+			zenfs: { mounts: { '/': { backend: Passthrough, fs: disk.native, prefix: disk.prefix } } },
 		})
 		const manager = requireTinyBaseHost(getCoreTestHostContext(host))
 		const owner = await host.add(RecoverOwner)
@@ -137,13 +137,11 @@ describe('TinyBase retained writer recovery', () => {
 		await host.commitExpectFail((change) => change.remove(RecoverOwner))
 		const failedWrites = disk.writes()
 		await writeFile(disk.file, '{broken')
-		await expect(manager.recover(pluginNodeAddressOf(RecoverOwner), 'discard')).rejects.toThrow(
-			/JSON/,
-		)
+		await expect(manager.recover(RecoverOwner.nodeAddress(), 'discard')).rejects.toThrow(/JSON/)
 		await host.commitExpectFail((change) => change.add(RecoverOwner))
 		expect(await readFile(disk.file, 'utf8')).toBe('{broken')
 		await writeFile(disk.file, confirmed)
-		await manager.recover(pluginNodeAddressOf(RecoverOwner), 'discard')
+		await manager.recover(RecoverOwner.nodeAddress(), 'discard')
 		expect(disk.writes()).toBe(failedWrites)
 		disk.intercept()
 		const replacement = await host.add(RecoverOwner)
@@ -156,7 +154,7 @@ describe('TinyBase retained writer recovery', () => {
 		async (fault) => {
 			const disk = await backing()
 			const host = await createCoreTestHost({
-				storage: {
+				zenfs: {
 					mounts: { '/': { backend: Passthrough, fs: disk.native, prefix: disk.prefix } },
 				},
 				tinybase: { maxSnapshotBytes: 1024 },

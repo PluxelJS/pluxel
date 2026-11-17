@@ -5,13 +5,14 @@ use reflexo_typst::{EntryReader, TypstDocument, TypstSystemWorld};
 use serde::Serialize;
 use std::collections::HashMap;
 use typst::{
-    World,
-    introspection::{Location, Tag},
+    introspection::{Introspector, Location, Tag},
     layout::{Abs, Frame, FrameItem, Point, Transform},
+    model::Destination,
     syntax::{
-        Source, Span, SyntaxKind,
         ast::{self, AstNode},
+        Source, Span, SyntaxKind,
     },
+    World,
 };
 
 const LIMIT: usize = 200_000;
@@ -38,8 +39,10 @@ struct NavigationPoint {
 
 struct Collector<'a> {
     world: &'a TypstSystemWorld,
+    introspector: &'a Introspector,
     cache: HashMap<Span, Option<SourceEntry>>,
     points: Vec<NavigationPoint>,
+    links: Vec<serde_json::Value>,
     exceeded: bool,
     // Locatable inline content can cross frame groups, lines, and pages.
     owners: Vec<(Location, Span)>,
@@ -175,6 +178,32 @@ fn position(src: &Source, offset: usize) -> (usize, usize) {
     let start = src.lines().line_to_byte(line).unwrap_or(0);
     (line + 1, text[start..offset].encode_utf16().count() + 1)
 }
+
+fn bounds(transform: Transform, min: Point, max: Point) -> Option<(f64, f64, f64, f64)> {
+    let corners = [min, Point::new(max.x, min.y), max, Point::new(min.x, max.y)]
+        .map(|p| p.transform(transform));
+    let x = corners
+        .iter()
+        .map(|p| p.x.to_pt())
+        .fold(f64::INFINITY, f64::min);
+    let y = corners
+        .iter()
+        .map(|p| p.y.to_pt())
+        .fold(f64::INFINITY, f64::min);
+    let right = corners
+        .iter()
+        .map(|p| p.x.to_pt())
+        .fold(f64::NEG_INFINITY, f64::max);
+    let bottom = corners
+        .iter()
+        .map(|p| p.y.to_pt())
+        .fold(f64::NEG_INFINITY, f64::max);
+    [x, y, right, bottom]
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some((x, y, right - x, bottom - y))
+}
+
 impl Collector<'_> {
     fn push(
         &mut self,
@@ -252,27 +281,9 @@ impl Collector<'_> {
         let (start, end) = precise.unwrap_or((range.start, range.end));
         let (line, column) = position(source, start);
         let (end_line, end_column) = position(source, end);
-        let corners = [min, Point::new(max.x, min.y), max, Point::new(min.x, max.y)]
-            .map(|p| p.transform(transform));
-        let x = corners
-            .iter()
-            .map(|p| p.x.to_pt())
-            .fold(f64::INFINITY, f64::min);
-        let y = corners
-            .iter()
-            .map(|p| p.y.to_pt())
-            .fold(f64::INFINITY, f64::min);
-        let right = corners
-            .iter()
-            .map(|p| p.x.to_pt())
-            .fold(f64::NEG_INFINITY, f64::max);
-        let bottom = corners
-            .iter()
-            .map(|p| p.y.to_pt())
-            .fold(f64::NEG_INFINITY, f64::max);
-        if ![x, y, right, bottom].iter().all(|x| x.is_finite()) {
+        let Some((x, y, width, height)) = bounds(transform, min, max) else {
             return;
-        }
+        };
         if self.points.len() == LIMIT {
             self.exceeded = true;
             return;
@@ -288,8 +299,8 @@ impl Collector<'_> {
             page,
             x,
             y,
-            width: (right - x).max(0.5),
-            height: (bottom - y).max(0.5),
+            width: width.max(0.5),
+            height: height.max(0.5),
         });
     }
     fn frame(&mut self, frame: &Frame, page: usize, transform: Transform) {
@@ -330,6 +341,29 @@ impl Collector<'_> {
                     let bbox = shape.geometry.bbox();
                     self.push(*span, None, page, t, bbox.min, bbox.max);
                 }
+                FrameItem::Link(destination, size) => {
+                    let Some((x, y, width, height)) = bounds(t, Point::zero(), size.to_point())
+                    else {
+                        continue;
+                    };
+                    if self.links.len() == LIMIT {
+                        self.exceeded = true;
+                        return;
+                    }
+                    let target = match destination {
+                        Destination::Url(url) => {
+                            serde_json::json!({"kind":"url","url":url.as_str()})
+                        }
+                        Destination::Position(pos) => {
+                            serde_json::json!({"kind":"position","page":pos.page.get(),"x":pos.point.x.to_pt(),"y":pos.point.y.to_pt()})
+                        }
+                        Destination::Location(location) => {
+                            let pos = self.introspector.position(*location);
+                            serde_json::json!({"kind":"position","page":pos.page.get(),"x":pos.point.x.to_pt(),"y":pos.point.y.to_pt()})
+                        }
+                    };
+                    self.links.push(serde_json::json!({"page":page,"x":x,"y":y,"width":width,"height":height,"target":target}));
+                }
                 FrameItem::Tag(tag) => match tag {
                     Tag::Start(elem, _)
                         if matches!(elem.elem().name(), "equation" | "ref" | "metadata") =>
@@ -355,7 +389,6 @@ impl Collector<'_> {
                     }
                     _ => {}
                 },
-                _ => {}
             }
         }
     }
@@ -366,10 +399,13 @@ impl NodeTypstDocument {
     #[napi]
     pub fn navigation(&self) -> napi::Result<serde_json::Value> {
         let world = &self.graph.snap.world;
+        let introspector = self.doc.introspector();
         let mut collector = Collector {
             world,
+            introspector,
             cache: HashMap::new(),
             points: vec![],
+            links: vec![],
             exceeded: false,
             owners: vec![],
         };
@@ -380,8 +416,21 @@ impl NodeTypstDocument {
         }
         if collector.exceeded {
             return Err(napi::Error::from_reason(
-                "Source navigation exceeds the 200000 point limit",
+                "Navigation exceeds the 200000 point or link limit",
             ));
+        }
+        let mut targets = vec![];
+        for elem in introspector.all() {
+            let (Some(label), Some(location)) = (elem.label(), elem.location()) else {
+                continue;
+            };
+            if targets.len() == LIMIT {
+                return Err(napi::Error::from_reason(
+                    "Navigation exceeds the 200000 target limit",
+                ));
+            }
+            let pos = introspector.position(location);
+            targets.push(serde_json::json!({"label":label.resolve().to_string(),"page":pos.page.get(),"x":pos.point.x.to_pt(),"y":pos.point.y.to_pt()}));
         }
         let mut outline = vec![];
         {
@@ -413,6 +462,8 @@ impl NodeTypstDocument {
             TypstDocument::Paged(doc) => doc.pages.iter().enumerate().map(|(index,page)| serde_json::json!({"page":index+1,"width":page.frame.width().to_pt(),"height":page.frame.height().to_pt()})).collect::<Vec<_>>(),
             _ => vec![],
         };
-        Ok(serde_json::json!({"points":collector.points,"outline":outline,"pages":pages}))
+        Ok(
+            serde_json::json!({"points":collector.points,"outline":outline,"pages":pages,"targets":targets,"links":collector.links}),
+        )
     }
 }

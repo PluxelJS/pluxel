@@ -13,8 +13,6 @@ export default defineConfig({
 		neverBundle: [
 			'@pluxel/core',
 			'@pluxel/core/*',
-			'@pluxel/market',
-			'@pluxel/market/*',
 			'@pluxel/rolldown',
 			'@pluxel/rolldown/*',
 			'rolldown',

@@ -1,7 +1,7 @@
 import { defineContextCapability } from '@pluxel/context'
 import type { RootContext } from '../context/Context'
 import type { PluginNodeAddress } from '../plugins/runtime/identity'
-import { requireTinyBaseHost } from '../internal/storage'
+import { requireHostDocuments } from '../internal/storage'
 import {
 	bindContextRuntimeLogging,
 	type RuntimeLogging,
@@ -47,7 +47,7 @@ export async function prepareContextRuntimeLogging(
 	try {
 		const store = options.policyStore
 			? options.policyStore(root)
-			: createPluginLogPolicyStore(requireTinyBaseHost(root).documents('logging'))
+			: createPluginLogPolicyStore(requireHostDocuments(root, 'logging'))
 		if (!store || typeof store.load !== 'function' || typeof store.save !== 'function')
 			throw new TypeError('[core.logtape] policyStore factory must return a policy store')
 		await manager.install()

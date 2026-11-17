@@ -73,7 +73,12 @@ export default defineConfig({
 					command: 'cross-env DEBUG= DOCS_TWOSLASH_MODE=production fumapress build',
 					dependsOn: ['prepare:docs'],
 					cache: {
-						input: ['docs/**'].map((pattern) => ({ pattern, base: 'workspace' as const })),
+						input: [
+							{ pattern: 'docs/**', base: 'workspace' },
+							'!dist/**',
+							'!.source/**',
+							'!.vercel/output/**',
+						],
 						output: ['dist/**', '.source/**', '.vercel/output/**'],
 						env: ['VERCEL*'],
 					},
@@ -94,6 +99,7 @@ export default defineConfig({
 					'@pluxel/core#compile',
 					'@pluxel/host#compile',
 					'@pluxel/services#compile',
+					'@pluxel/plugin-takumi-markdown#compile',
 					// Browser examples consume the source/parser WASM exports, without the native addon.
 					'@pluxel/plugin-typst#compile-lib',
 					'valibot-form#compile',

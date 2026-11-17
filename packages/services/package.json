@@ -214,6 +214,7 @@
 	},
 	"devDependencies": {
 		"@electric-sql/pglite": "catalog:prod",
+		"@libsql/client": "catalog:backend",
 		"@logtape/logtape": "catalog:prod",
 		"@mantine/core": "catalog:frontend",
 		"@pluxel/commands": "workspace:*",
@@ -257,6 +258,9 @@
 		"vite": ">=8.2.2 <9"
 	},
 	"peerDependenciesMeta": {
+		"@pluxel/commands": {
+			"optional": true
+		},
 		"@electric-sql/pglite": {
 			"optional": true
 		},

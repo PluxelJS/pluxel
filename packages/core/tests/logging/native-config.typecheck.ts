@@ -31,12 +31,18 @@ const bounded: RuntimeLoggingInput = ({ rootId, createRuntimeLogSink }) => ({
 })
 
 export const nativeLoggingExamples = [
+	native,
+	bounded,
+	{ input: native, options },
 	logtape(),
 	logtape(native, options),
 	logtape(bounded),
 ] satisfies LogTapeConfig[]
 
-export const coreConfiguration = { logger: logtape(native, options) } satisfies CoreHostConfig
+export const coreConfiguration = { logtape: logtape(native, options) } satisfies CoreHostConfig
+
+export const nativeCoreConfiguration = { logtape: native } satisfies CoreHostConfig
+export const factoryCoreConfiguration = { logtape: bounded } satisfies CoreHostConfig
 
 logtape({
 	sinks: {

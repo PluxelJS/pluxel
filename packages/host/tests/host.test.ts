@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, pluginDefinitionAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { describe, expect, it } from 'vitest'
 import {
@@ -81,12 +81,12 @@ describe('Core-only Host', () => {
 				entry: { kind: 'package-root', packageName: '@test/host' },
 				exportName: 'LifecyclePlugin',
 			},
-			provides: pluginDefinitionAddressOf(LifecycleBackend),
+			provides: LifecycleBackend.definitionAddress(),
 		})
 		const host = await createHost({ plugins: [LifecyclePlugin] })
 		const state = requireHostStateStore(host.ctx)
 		const address = {
-			definition: pluginDefinitionAddressOf(LifecyclePlugin),
+			definition: LifecyclePlugin.definitionAddress(),
 			variant: 'default' as const,
 		}
 		try {
@@ -117,10 +117,8 @@ describe('Core-only Host', () => {
 		}
 		expect(LifecyclePlugin.stops).toBe(2)
 		expect(requirePluginService(host.ctx).readCommittedDependencyAdjacency().nodes).toEqual([])
-		// Shutdown withdraws only live bindings; next startup retains its desired provider policy.
-		expect(state.snapshot().providerDefaults).toEqual([
-			{ token: pluginDefinitionAddressOf(LifecycleBackend), provider: address },
-		])
+		// Inferred provider selection belongs to the effective graph, never durable state.
+		expect(state.snapshot().providerDefaults).toEqual([])
 		await expect(host.close()).resolves.toBeUndefined()
 		await expect(host.startNode(address)).rejects.toThrow('closed')
 	})
@@ -154,15 +152,13 @@ describe('Core-only Host', () => {
 		lowerTestReplacement(Original, Replacement)
 		const host = await createHost({
 			plugins: [Original],
-			state: {
-				initial: {
-					autoStart: [{ definition: pluginDefinitionAddressOf(Original), variant: 'default' }],
-				},
-			},
+			policy: { autoStart: [{ definition: Original.definitionAddress(), variant: 'default' }] },
 		})
 		try {
 			await host.start()
-			await expect(host.updateCatalog([null as never])).rejects.toThrow(TypeError)
+			await expect(host.updateCatalog([null as never])).rejects.toMatchObject({
+				code: 'plugin_declaration_invalid',
+			})
 			expect(events).toEqual(['original'])
 			await host.updateCatalog([Replacement])
 			expect(events).toEqual(['original', 'stop original', 'replacement'])

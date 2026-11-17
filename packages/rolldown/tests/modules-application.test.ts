@@ -48,7 +48,7 @@ async function setOutputPermissions(directory: string, writable: boolean): Promi
 
 it('rejects standalone-only and removed options in JavaScript modules calls', () => {
 	for (const [options, message] of [
-		[{ delivery: 'modules', launcher: 'node' }, 'standalone-only launcher'],
+		[{ delivery: 'modules', launcher: 'node' }, 'unsupported launcher'],
 		[{ delivery: 'modules', residualDependencies: [] }, 'standalone-only residualDependencies'],
 		[{ delivery: 'modules', sourceFrameworks: true }, 'unsupported sourceFrameworks'],
 		[{ delivery: 'modules', variant: 'dynamic' }, 'variant must be'],
@@ -336,14 +336,14 @@ const task=defineWorkerTask<number,{value:number,url:string}>(import.meta.url,'.
 		await writeFile(
 			resolve(application, 'src/app.ts'),
 			`import {defineHostApplication} from '@pluxel/host';
-import {pluginNodeAddressOf} from '@pluxel/core';
+
 import {servicesPreset} from '@pluxel/services/preset';
 import {External} from 'fixture-worker-owner';
 import {Local} from './local';
 export default defineHostApplication(async startup=>({
  plugins:[External,Local],
  services:await servicesPreset(startup,{workbench:false,vault:{backend:'bindings'}}),
- state:{mode:'memory',initial:{autoStart:[pluginNodeAddressOf(External),pluginNodeAddressOf(Local)]}},
+ runtime:{documents:{state:false}},policy:{autoStart:[External,Local]},
 }))`,
 		)
 		await writeFile(
@@ -454,7 +454,7 @@ it('preserves public and private identities, named product, minified artifacts a
 		)
 		await writeFile(
 			resolve(root, 'src/app.ts'),
-			`import {defineHostApplication} from '@pluxel/host'; import {pluginNodeAddressOf} from '@pluxel/core'; import {standardServices} from '@pluxel/services'; import {Public} from './public'; import {Feature} from './feature'; import {Private} from './private'; export const product={title:'Modules probe'}; export default defineHostApplication(()=>({plugins:[Public,Feature,Private],services:standardServices(),state:{mode:'memory',initial:{autoStart:[pluginNodeAddressOf(Private)]}},prepare({host,startup}){startup.bindings.capture?.(host)}}))`,
+			`import {defineHostApplication} from '@pluxel/host';  import {standardServices} from '@pluxel/services'; import {Public} from './public'; import {Feature} from './feature'; import {Private} from './private'; export const product={title:'Modules probe'}; export default defineHostApplication(()=>({plugins:[Public,Feature,Private],services:standardServices(),runtime:{documents:{state:false}},policy:{autoStart:[Private]},prepare({host,startup}){startup.bindings.capture?.(host)}}))`,
 		)
 		await writeFile(
 			resolve(root, 'build.mts'),
@@ -501,7 +501,7 @@ it('preserves public and private identities, named product, minified artifacts a
 			`import {vitePreset} from '@pluxel/services/vite'; export default {logLevel:'error',cacheDir:'.vite',plugins:[...vitePreset({entry:'relocated/app.mjs',bindings:{capture:host=>{globalThis.__modulesHost=host}}}),{name:'fixture:modules-server',configureServer(server){globalThis.__modulesServer=server}}]}`,
 		)
 		await setOutputPermissions(deployed, false)
-		const shared = `const {default:assert}=await import('node:assert/strict'); const {pluginDefinitionAddressOf}=await import('@pluxel/core'); const app=await import(${JSON.stringify(pathToFileURL(resolve(deployed, 'app.mjs')).href)}); assert.equal(app.product.title,'Modules probe'); const startup={root:${JSON.stringify(root)},mode:'production',env:{},bindings:{}}; const declared=await app.default(startup); const [pub,feature,local]=declared.plugins; assert.deepEqual(pluginDefinitionAddressOf(pub),{entry:{kind:'package-root',packageName:'@fixture/modules'},exportName:'Public'}); assert.deepEqual(pluginDefinitionAddressOf(feature),{entry:{kind:'package-subpath',packageName:'@fixture/modules',subpath:'./feature'},exportName:'Feature'}); assert.equal(pluginDefinitionAddressOf(local).entry.kind,'source-entry'); assert.equal((await import(${JSON.stringify(pathToFileURL(resolve(deployed, 'index.mjs')).href)})).Public,pub);`
+		const shared = `const {default:assert}=await import('node:assert/strict'); const app=await import(${JSON.stringify(pathToFileURL(resolve(deployed, 'app.mjs')).href)}); assert.equal(app.product.title,'Modules probe'); const startup={root:${JSON.stringify(root)},mode:'production',env:{},bindings:{}}; const declared=await app.default(startup); const [pub,feature,local]=declared.plugins; assert.deepEqual(pub.definitionAddress(),{entry:{kind:'package-root',packageName:'@fixture/modules'},exportName:'Public'}); assert.deepEqual(feature.definitionAddress(),{entry:{kind:'package-subpath',packageName:'@fixture/modules',subpath:'./feature'},exportName:'Feature'}); assert.equal(local.definitionAddress().entry.kind,'source-entry'); assert.equal((await import(${JSON.stringify(pathToFileURL(resolve(deployed, 'index.mjs')).href)})).Public,pub);`
 		const native = await promisify(execFile)(
 			process.execPath,
 			[

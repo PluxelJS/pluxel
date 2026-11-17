@@ -32,13 +32,14 @@
 	},
 	"scripts": {
 		"build": "vp run compile",
-		"start": "electron .",
+		"start": "node ../../scripts/check-worksplit-native.mjs . && electron .",
 		"dev": "node scripts/dev.mjs",
 		"test": "vp run check-tests",
 		"test:discovery": "vp run check-discovery",
 		"typecheck": "vp run check-types",
 		"package": "node scripts/package.mjs",
 		"test:desktop": "node tests/desktop.mjs",
+		"test:worksplit": "node tests/worksplit-desktop.mjs",
 		"test:desktop-recovery": "node tests/desktop-recovery.mjs",
 		"test:runtime": "node tests/runtime.mjs"
 	},
@@ -63,7 +64,6 @@
 		"@streamdown/code": "catalog:frontend",
 		"@tabler/icons-react": "catalog:icons",
 		"@tanstack/react-form": "catalog:frontend",
-		"@tanstack/react-hotkeys": "catalog:frontend",
 		"@tanstack/react-router": "catalog:frontend",
 		"@tanstack/react-store": "catalog:frontend",
 		"@tiptap/core": "catalog:frontend",

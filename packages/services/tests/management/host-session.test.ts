@@ -9,7 +9,7 @@ import NodeWebSocket from 'crossws/websocket'
 import nodeAdapter from 'crossws/adapters/node'
 import { getWebSocketHooks, setWebSocketHooks } from 'crossws'
 import { newWebSocketRpcSession } from 'capnweb'
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { expect, it, vi } from 'vitest'
@@ -101,7 +101,7 @@ it('serves a real authenticated socket for a Core Host and leaves it alive when 
 		const client = createRuntimeManagementClient(boot.management)
 		expect(await client.describe()).toMatchObject({ workbench: { enabled: false } })
 		expect(await client.catalog.snapshot()).toMatchObject({ summary: { total: 1, running: 0 } })
-		const address = pluginNodeAddressOf(ManagedWorker)
+		const address = ManagedWorker.nodeAddress()
 		const started = await client.plugins.applyLifecycleCommands([{ address, command: 'start' }])
 		expect(started.ok).toBe(true)
 		expect(await host.status()).toMatchObject({ statuses: [{ lifecycleState: 'running' }] })

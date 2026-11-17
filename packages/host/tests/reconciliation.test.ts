@@ -1,9 +1,9 @@
 import {
-	pluginDefinitionAddressEqual,
 	pluginDefinitionIndexKey,
 	pluginNodeAddressEqual,
 	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
+	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import { type ConcretePluginDefinitionCandidate } from '@pluxel/core/internal'
@@ -21,16 +21,22 @@ import {
 	type HostStateSnapshot,
 } from '@pluxel/host/internal'
 import { describe, expect, it, vi } from 'vitest'
+import { createCoreContextHost } from '@pluxel/core/host'
+import { HostStateStore } from '../src/state-store'
+import { createDocumentStorage } from './helpers/document-storage'
 
 const definition = (name: string): PluginDefinitionAddress => ({
 	entry: { kind: 'package-root', packageName: `@test/${name.toLowerCase()}` },
 	exportName: `${name}Plugin`,
 })
 
-const node = (address: PluginDefinitionAddress, forkId?: string): PluginNodeAddress =>
-	forkId
+function node(address: PluginDefinitionAddress, forkId: string): PluginForkNodeAddress
+function node(address: PluginDefinitionAddress): PluginNodeAddress
+function node(address: PluginDefinitionAddress, forkId?: string): PluginNodeAddress {
+	return forkId
 		? { definition: address, variant: 'fork', forkId }
 		: { definition: address, variant: 'default' }
+}
 
 function candidate(
 	address: PluginDefinitionAddress,
@@ -107,7 +113,7 @@ describe('Host Plugin reconciliation', () => {
 		expect(addressReads).toBeLessThan(count * 20)
 	})
 
-	it('infers an abstract default deterministically and persists it before graph apply', () => {
+	it('infers an abstract default deterministically for the effective graph', () => {
 		const Token = definition('Token')
 		const ProviderA = definition('ProviderA')
 		const ProviderB = definition('ProviderB')
@@ -127,12 +133,10 @@ describe('Host Plugin reconciliation', () => {
 		})
 
 		expect(plan.blocked).toEqual([])
-		expect(plan.statePatch?.operations).toHaveLength(1)
-		const inferred = plan.statePatch?.operations[0]
-		expect(inferred?.type).toBe('set-provider-default')
-		if (inferred?.type !== 'set-provider-default') throw new Error('expected inferred default')
-		expect(pluginDefinitionAddressEqual(inferred.token, Token)).toBe(true)
-		expect(pluginNodeAddressEqual(inferred.provider!, a)).toBe(true)
+		expect(plan.applied.providerDefaults.get(pluginDefinitionIndexKey(Token))).toEqual({
+			token: Token,
+			provider: a,
+		})
 		expect(
 			plan.coreOperations.filter((operation) => operation.type === 'materialize-node'),
 		).toHaveLength(3)
@@ -160,7 +164,6 @@ describe('Host Plugin reconciliation', () => {
 			runtimeStateRevision: 1,
 		})
 
-		expect(plan.statePatch).toBeUndefined()
 		expect(plan.blocked).toEqual([])
 		expect([...plan.applied.nodes.values()].map((entry) => entry.address)).toEqual(
 			expect.arrayContaining([a, b, consumer]),
@@ -222,7 +225,7 @@ describe('Host Plugin reconciliation', () => {
 			catalog,
 			runtimeState: state({
 				autoStart: [fork, consumer],
-				forks: [{ definition: Provider, forkIds: ['queue'] }],
+				forks: [{ definition: Provider, variant: 'fork', forkId: 'queue' }],
 				dependencyOverrides: [
 					{
 						consumerAddress: consumer,
@@ -252,7 +255,7 @@ describe('Host Plugin reconciliation', () => {
 		])
 		const plan = reconcilePluginGraph({
 			catalog,
-			runtimeState: state({ forks: [{ definition: Provider, forkIds: ['cold'] }] }),
+			runtimeState: state({ forks: [{ definition: Provider, variant: 'fork', forkId: 'cold' }] }),
 			runtimeStateRevision: 1,
 		})
 
@@ -282,7 +285,7 @@ describe('Host Plugin reconciliation', () => {
 		const next = candidate(Provider, { forkable: true })
 		const runtimeState = state({
 			autoStart: [node(Provider), node(Provider, 'east')],
-			forks: [{ definition: Provider, forkIds: ['east'] }],
+			forks: [{ definition: Provider, variant: 'fork', forkId: 'east' }],
 		})
 		const firstCatalog = createPluginCatalogSnapshot(1, [{ candidate: first }])
 		const firstPlan = reconcilePluginGraph({
@@ -308,7 +311,9 @@ describe('Host Plugin reconciliation', () => {
 
 	it('rejects a live forkability contraction but reports it as blocked on cold boot', () => {
 		const Provider = definition('Provider')
-		const runtimeState = state({ forks: [{ definition: Provider, forkIds: ['east'] }] })
+		const runtimeState = state({
+			forks: [{ definition: Provider, variant: 'fork', forkId: 'east' }],
+		})
 		const previous = createPluginCatalogSnapshot(1, [
 			{ candidate: candidate(Provider, { forkable: true }) },
 		])
@@ -369,7 +374,7 @@ describe('Host Plugin reconciliation', () => {
 			catalog: next,
 			runtimeState: state({
 				autoStart: [consumer],
-				forks: [{ definition: Provider, forkIds: ['cold'] }],
+				forks: [{ definition: Provider, variant: 'fork', forkId: 'cold' }],
 				dependencyOverrides: [
 					{
 						consumerAddress: consumer,
@@ -475,7 +480,6 @@ describe('Host Plugin reconciliation', () => {
 			applied,
 		})
 
-		expect(unavailable.statePatch).toBeUndefined()
 		expect(unavailable.blocked.map((issue) => issue.kind)).toContain('provider_unavailable')
 		expect(catalogTransitionRejections({ previous, next: unlinked, plan: unavailable })).toEqual([])
 		expect(
@@ -495,7 +499,6 @@ describe('Host Plugin reconciliation', () => {
 			applied: unavailable.applied,
 		})
 		expect(recovered.blocked).toEqual([])
-		expect(recovered.statePatch).toBeUndefined()
 		expect(
 			recovered.coreOperations
 				.filter((operation) => operation.type === 'materialize-node')
@@ -864,7 +867,7 @@ describe('Host pinned mutation admission', () => {
 		const fork = node(Provider, 'retained')
 		const consumer = node(Consumer)
 		const store = memoryStateStore(
-			state({ forks: [{ definition: Provider, forkIds: ['retained'] }] }),
+			state({ forks: [{ definition: Provider, variant: 'fork', forkId: 'retained' }] }),
 		)
 		const coordinator = new PluginHostCoordinator(
 			store,
@@ -907,7 +910,7 @@ describe('Host pinned mutation admission', () => {
 			)
 		})
 		const snapshot = store.versionedSnapshot().state
-		expect(snapshot.forks).toEqual([{ definition: Provider, forkIds: ['retained'] }])
+		expect(snapshot.forks).toEqual([{ definition: Provider, variant: 'fork', forkId: 'retained' }])
 		expect(snapshot.dependencyOverrides).toHaveLength(1)
 		expect(metadataCleanups).toBe(0)
 	})
@@ -920,7 +923,7 @@ describe('Host pinned mutation admission', () => {
 		const store = memoryStateStore(
 			state({
 				autoStart: [fork],
-				forks: [{ definition: Provider, forkIds: ['exclusive'] }],
+				forks: [{ definition: Provider, variant: 'fork', forkId: 'exclusive' }],
 			}),
 		)
 		const coordinator = new PluginHostCoordinator(
@@ -1017,14 +1020,165 @@ describe('Host pinned mutation admission', () => {
 	})
 })
 
+describe('Declared policy authority at the coordinator boundary', () => {
+	it('rejects changed shadowed targets but permits satisfied commands and session intent', async () => {
+		const Provider = definition('LockedProvider')
+		const provider = node(Provider)
+		const store = new HostStateStore(createCoreContextHost().createRoot(), {
+			autoStart: [provider],
+		})
+		const coordinator = new PluginHostCoordinator(
+			store,
+			coreDriver(async ({ onGraphCommitted }) => {
+				onGraphCommitted()
+				return 'committed'
+			}),
+		)
+		try {
+			await coordinator.reconcileStartup(
+				createPluginCatalogSnapshot(1, [{ candidate: candidate(Provider) }]),
+			)
+			const unchanged = await coordinator.updateRuntimeState(
+				hostStatePatch({ type: 'set-auto-start', node: provider, autoStart: true }),
+			)
+			expect(unchanged.persistence.status).toBe('unchanged')
+			await expect(
+				coordinator.updateRuntimeState(
+					hostStatePatch({ type: 'set-auto-start', node: provider, autoStart: false }),
+				),
+			).rejects.toMatchObject({ code: 'policy_shadowed' })
+			await coordinator.stopNode(provider)
+			expect(coordinator.desiredControlSnapshot().has(pluginNodeIndexKey(provider))).toBe(false)
+			await coordinator.startNode(provider)
+			expect(coordinator.desiredControlSnapshot().has(pluginNodeIndexKey(provider))).toBe(true)
+			expect(store.managedSnapshot()).toEqual({})
+		} finally {
+			await coordinator.dispose()
+			await store.ctx.effects.dispose()
+		}
+	})
+
+	it.each([false, true])(
+		'never saves inferred provider policy (readOnly: %s)',
+		async (readOnly) => {
+			const Token = definition('InferredToken'),
+				ProviderA = definition('InferredA'),
+				ProviderB = definition('InferredB'),
+				Consumer = definition('InferredConsumer')
+			const backend = createDocumentStorage()
+			const put = vi.spyOn(backend, 'put')
+			const store = new HostStateStore(
+				createCoreContextHost().createRoot(),
+				{ autoStart: [node(Consumer)] },
+				{ storage: backend, readOnly },
+			)
+			const coordinator = new PluginHostCoordinator(
+				store,
+				coreDriver(async ({ onGraphCommitted }) => {
+					onGraphCommitted()
+					return 'committed'
+				}),
+			)
+			try {
+				await coordinator.reconcileStartup(
+					createPluginCatalogSnapshot(1, [
+						{ candidate: candidate(ProviderA, { provides: Token }) },
+						{ candidate: candidate(ProviderB, { provides: Token }) },
+						{ candidate: candidate(Consumer, { requires: [Token] }) },
+					]),
+				)
+				expect(coordinator.desiredControlSnapshot().has(pluginNodeIndexKey(node(ProviderA)))).toBe(
+					true,
+				)
+				await coordinator.updateCatalog(
+					createPluginCatalogSnapshot(2, [
+						{ candidate: candidate(ProviderB, { provides: Token }) },
+						{ candidate: candidate(Consumer, { requires: [Token] }) },
+					]),
+				)
+				expect(coordinator.desiredControlSnapshot().has(pluginNodeIndexKey(node(ProviderB)))).toBe(
+					true,
+				)
+				expect(store.managedSnapshot()).toEqual({})
+				expect(put).not.toHaveBeenCalled()
+			} finally {
+				await coordinator.dispose()
+				await store.ctx.effects.dispose()
+			}
+		},
+	)
+
+	it('saves only the changed column and retains declared fork provenance', async () => {
+		const Provider = definition('OverlayProvider'),
+			Consumer = definition('OverlayConsumer')
+		const fork = node(Provider, 'declared'),
+			consumer = node(Consumer)
+		const backend = createDocumentStorage()
+		const store = new HostStateStore(
+			createCoreContextHost().createRoot(),
+			{ forks: [fork] },
+			{ storage: backend },
+		)
+		const coordinator = new PluginHostCoordinator(
+			store,
+			coreDriver(async ({ onGraphCommitted }) => {
+				onGraphCommitted()
+				return 'committed'
+			}),
+		)
+		try {
+			await coordinator.reconcileStartup(
+				createPluginCatalogSnapshot(1, [
+					{ candidate: candidate(Provider, { forkable: true }) },
+					{ candidate: candidate(Consumer, { requires: [Provider] }) },
+				]),
+			)
+			const report = await coordinator.updateRuntimeState(
+				hostStatePatch({
+					type: 'set-dependency-override',
+					consumer,
+					requirement: Provider,
+					provider: fork,
+				}),
+			)
+			expect(report.writtenFields).toEqual(['dependencyOverrides'])
+			expect(store.managedSnapshot().forks).toBeUndefined()
+			expect(store.snapshot().forks).toEqual([fork])
+			const reopened = new HostStateStore(
+				createCoreContextHost().createRoot(),
+				{ forks: [fork] },
+				{ storage: backend },
+			)
+			try {
+				await reopened.ready
+				expect(reopened.snapshot().dependencyOverrides).toEqual(
+					store.managedSnapshot().dependencyOverrides,
+				)
+			} finally {
+				await reopened.ctx.effects.dispose()
+			}
+		} finally {
+			await coordinator.dispose()
+			await store.ctx.effects.dispose()
+		}
+	})
+})
+
 function memoryStateStore(initial: HostStateSnapshot): HostStateCoordinatorStore {
 	let current = { revision: 0, state: initial }
 	return {
 		ready: Promise.resolve(),
 		versionedSnapshot: () => current,
+		managedSnapshot: () => current.state,
+		prepareAction: (patch) => applyHostStatePatch(current.state, patch),
+		assertManagedRevision() {},
+		persistence: (changed) =>
+			changed ? { status: 'confirmed', retention: 'session' } : { status: 'unchanged' },
+		effectiveSnapshot: (saved) => ({ ...initial, ...saved }),
+		assertPatchMutable() {},
 		commitVersioned: async (expectedRevision, next) => {
 			if (expectedRevision !== current.revision) throw new Error('unexpected revision conflict')
-			current = { revision: current.revision + 1, state: next }
+			current = { revision: current.revision + 1, state: { ...initial, ...next } }
 			return current
 		},
 	}

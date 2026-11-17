@@ -71,6 +71,7 @@ function App() {
 			<TypstSourceEditor
 				project={project}
 				path={path}
+				editableFields={[{ file: 'data/sales.json', path: ['total'] }]}
 				onIssues={(issues) => setMessage(issues.map((issue) => issue.message).join('\n'))}
 			/>
 		</main>

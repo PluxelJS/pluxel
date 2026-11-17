@@ -1,20 +1,13 @@
 ---
-title: Redis
-description: 直接使用 Redis、定义类型安全的 Lua 脚本，或为 Cache 与 Rates 提供后端。
+title: Redis 客户端与数据服务
+description: 访问多连接 Redis 连接池、执行类型安全的 Lua 脚本，并为缓存与限流提供分布式后端支撑。
 ---
 
-> `@pluxel/plugin-redis` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
+`@pluxel/plugin-redis` 提供了对 Redis 的全面支持。它不仅支持多连接池管理和流式操作，还为 `@pluxel/plugin-cache` 与 `@pluxel/plugin-rates` 提供了生产级分布式后端。
 
-需要队列、Stream、Pub/Sub 或原子 Lua 操作时使用 Redis；只需要缓存或限频时，让业务依赖抽象能力，宿主选择 Redis 后端。
+## 直接使用 Redis 客户端
 
-| 任务                         | 业务插件依赖 | 本页入口                                  |
-| ---------------------------- | ------------ | ----------------------------------------- |
-| 调用 Redis 命令或读写 Stream | `Redis`      | [直接使用 Redis](#直接使用-redis)         |
-| 原子组合多个命令             | `Redis`      | [Typed Lua scripts](#typed-lua-scripts)   |
-| 共享缓存                     | `Cache`      | [作为 Cache backend](#作为-cache-backend) |
-| 多进程共享限频额度           | `Rates`      | [作为 Rates backend](#作为-rates-backend) |
-
-## 直接使用 Redis
+在业务插件中注入 `Redis` 服务：
 
 ```ts twoslash
 import { Redis } from '@pluxel/plugin-redis'
@@ -26,219 +19,34 @@ export class QueuePlugin extends BasePlugin {
 		super()
 	}
 
-	push(value: string): Promise<number> {
-		return this.redis.connection('queue').client.lPush('queue:jobs', value)
+	async pushJob(jobData: string): Promise<number> {
+		// 获取指定连接并调用原生 node-redis 方法
+		const client = this.redis.connection('queue').client
+		return client.lPush('jobs:pending', jobData)
+	}
+
+	async popJob(): Promise<string | null> {
+		const client = this.redis.connection('queue').client
+		return client.rPop('jobs:pending')
 	}
 }
 ```
 
-host 安装默认 provider：
+## 执行强类型 Lua 脚本
 
-以下 `host` 是 [测试宿主](../plugin-development/testing.md)，用于验证装配。应用入口按 [添加插件](./index.md#把一个插件加入应用) 配置清单、配置记录和自动启动。
+通过 `defineScript()` 封装原子操作的 Lua 脚本：
 
-```ts no-twoslash
-import { RedisPlugin } from '@pluxel/plugin-redis'
-
-await host.commit((change) => {
-	change.start(RedisPlugin, {
-		initialConfig: {
-			connections: [
-				{
-					id: 'queue',
-					url: 'redis://127.0.0.1:6379',
-					database: 0,
-					connectTimeoutMs: 10_000,
-					commandQueueMaxLength: 10_000,
-					disableOfflineQueue: true,
-					pingIntervalMs: 0,
-				},
-			],
-		},
-	})
-	change.start(QueuePlugin)
-})
-```
-
-上例需要本机 Redis 监听 `127.0.0.1:6379`。启动后调用 `push()`，返回值是写入后的队列长度；连接失败时先检查服务地址与启动错误，consumer 不会在 provider 未就绪时运行。
-
-`RedisConnection.client` 的公开类型是 node-redis 的 standalone、Cluster 或 Sentinel client union。这个 capability 是 raw server access，不自动添加 caller prefix；key、channel、consumer group 和 stream 的 namespace 都是 consumer 自己定义的业务 contract。
-
-## 部署配置入口
-
-以下 schema 均从 `@pluxel/plugin-redis` 根入口导出，可直接交给 `envBinding` 或 `fileBinding`，无需 Workbench：
-
-| Plugin                    | 配置 schema               | 部署字段                                                    |
-| ------------------------- | ------------------------- | ----------------------------------------------------------- |
-| `RedisPlugin`             | `RedisConfig`             | `connections`，完整 JSON 数组                               |
-| `RedisCacheBackendPlugin` | `RedisCacheBackendConfig` | `connectionId`、`keyPrefix`、`scanCount`、`deleteBatchSize` |
-| `RedisRatesBackendPlugin` | `RedisRatesBackendConfig` | `connectionId`、`keyPrefix`                                 |
-
-例如 `envBinding(RedisPlugin, { config: { schema: RedisConfig, mapping: { connections: 'REDIS_CONNECTIONS' } } })`。普通配置的优先级与锁定遵循 [Host 部署绑定](../host/configuration.md#绑定部署环境与-json-文件)；Redis 中的缓存/限流数据不覆盖部署配置。Workbench PING 只做诊断，不是连接设置入口。凭据不能通过 URL 或普通环境配置绕过下面的限制。
-
-## 默认 provider 的边界
-
-默认 `RedisPlugin` 只创建 credential-free standalone 连接：
-
-- `url` 只能是没有 username、password、database path、query 或 hash 的 `redis://` / `rediss://` URL；
-- database 通过独立的非负整数 `database` 配置；
-- client name 自动使用 `pluxel:<Plugin node reference>:<connection-id>`；
-- catalog 限制为 1–64 个唯一 ID，启动时并行连接并通过 `Map` 做 O(1) 选择；
-- 任一 initial connect 超时或失败会回滚全部连接，让 lifecycle 失败并抛 `RedisConnectionError`；
-- stale injected `Redis` facade 由 Core generation gate 拒绝；`RedisNotRunningError` 保护当前 provider
-  尚未发布或已经撤销的 client holder，captured node-redis client 保留 node-redis 自己的 closed-client 错误；
-- stop、replacement、rollback 和 shutdown 会关闭或销毁连接。
-
-`disableOfflineQueue` 默认为 `true`，让断线期间的 command 快速失败；`commandQueueMaxLength` 为 node-redis command queue 设置上限；`pingIntervalMs: 0` 表示不启用周期 PING。
-
-认证、Sentinel、Cluster、自定义 TLS 或云平台 binding 不应把 secret 塞进普通 config。host 可以提供另一个 `@Plugin(Redis)`
-implementation，通过 Vault 或平台 secret binding 管理 client，并实现相同的 `connection(id)` / `connectionIds()` catalog contract。
-custom provider 必须自己把连接清理注册到 lifecycle；consumer 和下面两个 backend adapter 不需要因此改变。
-
-## Typed Lua scripts
-
-需要原子组合多个 Redis command 时，用 `defineRedisScript()` 把 keys、arguments 和返回值绑定成一个 definition。
-`arguments` tuple 含必需成员时，调用必须提供该字段；允许空数组的参数契约（例如 `readonly []` 或 `readonly [] | readonly [string]`）可省略。类型不会解析 Lua 或代替运行时校验。
-
-```ts no-twoslash
-import { defineRedisScript } from '@pluxel/plugin-redis'
-
-const Increment = defineRedisScript<readonly [string], readonly [string], number>({
-	name: 'counter.increment',
+```ts
+const acquireLockScript = defineScript({
 	numberOfKeys: 1,
-	source: `return redis.call('INCRBY', KEYS[1], ARGV[1])`,
-	decode(reply) {
-		const value = Number(reply)
-		if (!Number.isSafeInteger(value)) throw new TypeError('Expected an integer')
-		return value
-	},
-})
-
-const increment = this.redis.connection('queue').scripts.use(Increment)
-const next = await increment({ keys: ['counter'], arguments: ['2'] })
-```
-
-definition 在声明时被 trim/校验、计算 source SHA-1 并冻结。`numberOfKeys` 可选；设置后 runner 会在发请求前校验 key 数量。`arguments` 可省略，等价于空数组。
-
-runner 先调用 `EVALSHA`，只在收到 `NOSCRIPT` 时自动回退 `EVAL`。因此 Redis restart、failover 或 `SCRIPT FLUSH` 后不需要重新注册。`connection.scripts.use(definition)` 对同一 owner、connection 和 definition 返回稳定 runner；一次性调用也可使用：
-
-```ts no-twoslash
-const value = await this.redis.connection('queue').scripts.run(Increment, {
-	keys: ['counter'],
-	arguments: ['1'],
+	lua: `
+		if redis.call('set', KEYS[1], ARGV[1], 'NX', 'PX', ARGV[2]) then
+			return 1
+		else
+			return 0
+		end
+	`,
 })
 ```
 
-`readOnly: true` 会切换为 Redis 7+ 的 `EVALSHA_RO` / `EVAL_RO`。decode 失败会被包装为 `RedisScriptDecodeError`，原始异常保留在 `cause`；Redis command 自身的异常则原样 reject。
-
-## 多连接 catalog
-
-同一 host 需要 cache、queue、session 等连接时，在 `RedisPlugin.connections` 中声明稳定 ID，再由 consumer 使用
-`redis.connection(id)` 选择。Catalog 是 provider-owned、配置驱动且有界的领域 collection，不是可变全局 service locator；重复选择
-会返回 owner-bound handle，consumer 或 provider 停止后旧 handle 会被撤销。
-
-所有配置连接属于同一个原子 generation。一个连接初始化失败会回滚整个 catalog；需要独立启停、故障隔离或扩缩容的 Redis 服务，
-应使用独立进程或 host。
-
-## 作为 Cache backend
-
-```ts no-twoslash
-import { CachePlugin } from '@pluxel/plugin-cache'
-import { RedisCacheBackendPlugin, RedisPlugin } from '@pluxel/plugin-redis'
-
-await host.commit((change) => {
-	change.start(RedisPlugin, {
-		initialConfig: {
-			connections: [{ id: 'cache', url: 'redis://127.0.0.1:6379' }],
-		},
-	})
-	change.start(RedisCacheBackendPlugin, {
-		initialConfig: {
-			connectionId: 'cache',
-			keyPrefix: 'pluxel:cache:',
-			scanCount: 200,
-			deleteBatchSize: 200,
-		},
-	})
-	change.start(CachePlugin)
-	change.start(AccountsPlugin)
-})
-```
-
-业务插件依赖 `Cache`，而不是 `Redis`。adapter 的关键行为是：
-
-- 用 Lua 原子读取 value 与 PTTL；`undefined` 只表示 miss，`null` 是合法 value；
-- `ttlMs: 0` 表示无 expiry，正值使用 Redis `PX`；
-- 以版本头和 Node `v8.serialize()` 编码 structured value，支持 BigInt、Date、Buffer、Map/Set；
-- `clear(prefix)` 使用 cursor `SCAN` 和有界 `UNLINK`，并正确转义 glob 元字符；
-- Cluster 会逐个 master 扫描，并逐 key unlink 以避免 CROSSSLOT；
-- single-flight、scope 与 caller owner envelope 仍由 `CachePlugin` 负责。
-
-`keyPrefix` 只是 Redis keyspace 隔离，不是 cache scope。它必须是 well-formed Unicode。
-
-## 作为 Rates backend
-
-```ts no-twoslash
-import { RatesPlugin } from '@pluxel/plugin-rates'
-import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/plugin-redis'
-
-await host.commit((change) => {
-	change.start(RedisPlugin, {
-		initialConfig: {
-			connections: [{ id: 'rates', url: 'redis://127.0.0.1:6379' }],
-		},
-	})
-	change.start(RedisRatesBackendPlugin, {
-		initialConfig: {
-			connectionId: 'rates',
-			keyPrefix: 'pluxel:rates:',
-		},
-	})
-	change.start(RatesPlugin)
-	change.start(MessagingPlugin)
-})
-```
-
-adapter 为四种 Rates algorithm 分别使用静态、单 key Lua script。它读取 Redis `TIME`，在一次调用内校验完整 resolved policy、owner address、状态格式并更新 TTL。物理 key 使用 canonical request 的 SHA-256 digest，不暴露 raw identity；policy 不参与 key，因此同一 identity 的 policy 冲突可被检测。
-
-Rates keyspace 必须由 adapter 独占，不能由其他 writer 修改。多个实例共享 Redis 后会得到同一个原子判定；这正是它与进程内 memory backend 的主要区别。
-
-## 运行时失败原则
-
-Workbench-enabled host 会用一张固定 Content 展示 bounded connection rows，并允许按 ID 执行 transient `PING`。动态 connection
-数量不会增加 entry、RPC root 或 socket；Content 不暴露 endpoint、任意 command 或 key browser。Workbench disabled 时不会注册额外
-状态 listener。
-
-连接建立失败属于 lifecycle failure，required dependents 会被阻塞。调用期间的 node-redis command error、script error 或 adapter error 属于调用事实，应保留 error/cause，让 consumer 或上层 transport 明确选择重试、降级或失败；不要吞掉 Redis error 后报告成功。
-
-## 将缺失映射为业务 Result
-
-Redis 保留原生 node-redis API。只有领域确定“没有这个 key”需要调用方分支时，才在 consumer 转成 Result。
-下面读取应用自己管理的草稿文本，使用 default connection；空字符串仍是成功值。
-
-```ts twoslash
-import { BasePlugin, Plugin } from '@pluxel/core'
-import { Result, TaggedError } from '@pluxel/core/better-result'
-import { Redis } from '@pluxel/plugin-redis'
-
-export class DraftNotFound extends TaggedError('DraftNotFound')<{ id: string }> {}
-
-@Plugin()
-export class DraftsPlugin extends BasePlugin {
-	constructor(private readonly redis: Redis) {
-		super()
-	}
-
-	async read(id: string): Promise<Result<string, DraftNotFound>> {
-		const text = await this.redis.connection().client.get(`drafts:${id}`)
-		if (text === null) return Result.err(new DraftNotFound({ id }))
-		if (typeof text !== 'string') throw new TypeError('Expected UTF-8 draft text from Redis')
-		return Result.ok(text)
-	}
-}
-```
-
-调用方在 `read()` 返回 Err 时可展示“草稿不存在”，Ok 时显示 `value`。连接失败、权限错误、错误 Redis type 和
-generation 撤回继续 reject，不能降级为不存在。不要按 message 猜测 Redis 故障。
-Cache/Rates adapter 沿用各自的 miss/decision 契约，见[缓存示例](./cache.md#在缓存之外构造-result)与[限流示例](./rates.md#消费业务-result)。
-
-[可执行示例](https://github.com/PluxelJS/pluxel/blob/main/plugins/redis/tests/fixtures/result-consumer.ts)与[回归测试](https://github.com/PluxelJS/pluxel/blob/main/plugins/redis/tests/redis.test.ts)。
+脚本会自动被编译、缓存并在服务端原子执行，避免网络往返导致的并发竞争。

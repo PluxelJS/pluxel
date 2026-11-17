@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createOwnerContext } from '@pluxel/core/internal'
 import {
-	pluginDefinitionAddressOf,
 	pluginNodeAddressEqual,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
@@ -40,7 +39,7 @@ describe('runtime host-owned graph state', () => {
 		class Orphan extends BasePlugin {}
 		lowerTestPlugin(Orphan)
 		await using host = await createServiceInternalTestHarness()
-		const base = node(pluginDefinitionAddressOf(Orphan))
+		const base = node(Orphan.definitionAddress())
 		const fork = host.fork(Orphan, 'stopped')
 
 		host.cfg(Orphan).setAutoStart(true)

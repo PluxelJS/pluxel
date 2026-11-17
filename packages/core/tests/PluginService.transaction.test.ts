@@ -1,9 +1,4 @@
-import {
-	BasePlugin,
-	Plugin,
-	pluginNodeAddressOf,
-	withCoreInternalTestHost,
-} from '@pluxel/core/internal/test'
+import { BasePlugin, Plugin, withCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { requirePluginService } from '@pluxel/core/internal'
 import { describe, expect, it } from 'vitest'
 
@@ -33,7 +28,7 @@ describe('Core Plugin transaction fail-safe', () => {
 			await host.commit({
 				onGraphCommitted: () => {
 					confirmations++
-					expect(registry.isMaterialized(pluginNodeAddressOf(TransactionRecoveryPlugin))).toBe(true)
+					expect(registry.isMaterialized(TransactionRecoveryPlugin.nodeAddress())).toBe(true)
 					expect(registry.lastCommit).toBeUndefined()
 				},
 			})

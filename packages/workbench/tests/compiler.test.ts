@@ -295,6 +295,7 @@ describe('PluginArtifactCompiler', () => {
 				cacheDir: fixture.getPath('cache'),
 			}).api!.pluxelHost.attach({
 				profile: 'development',
+				startup: { root: fixture.getPath(), mode: 'development', env: {}, bindings: {} },
 				host,
 				catalog,
 				semantics: semantics as never,

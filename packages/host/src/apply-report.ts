@@ -10,6 +10,8 @@ import {
 import { requirePluginService } from '@pluxel/core/internal'
 import type { PluginApplyReport } from './coordinator'
 import type { PluginReconciliationIssue } from './reconcile'
+import type { HostPolicyField } from './policy'
+import type { HostPersistenceResult } from './persistence'
 export type PluginApplyLifecycleErrorInfo = Readonly<{
 	name: string
 	message: string
@@ -44,6 +46,8 @@ export type PluginApplyCommitSummary = Readonly<{
 
 /** Address-only control-plane report safe to serialize to browser and worker realms. */
 export type PluginApplyReportSnapshot = Readonly<{
+	persistence: HostPersistenceResult
+	writtenFields: readonly HostPolicyField[]
 	catalogRevision: number
 	runtimeStateRevision: number
 	reconciliation: readonly PluginReconciliationIssue[]
@@ -60,6 +64,8 @@ export function projectPluginApplyReport(
 	const plugins = requirePluginService(ctx)
 	const summary = report.core.status === 'committed' ? report.core.summary : undefined
 	return Object.freeze({
+		persistence: report.persistence,
+		writtenFields: report.writtenFields,
 		catalogRevision: report.catalogRevision,
 		runtimeStateRevision: report.runtimeStateRevision,
 		reconciliation: Object.freeze(report.reconciliation.map(projectReconciliationIssue)),

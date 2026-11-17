@@ -55,7 +55,7 @@ category builders/parser 位于：
 
 ## RuntimeLogging lifecycle
 
-应用在 `config.logger` 中使用 `@pluxel/core/config` 的 `logtape(nativeConfig, options)`。helper 只验证并捕获声明，不执行 IO；Core 用唯一 root identity 创建 manager。省略 logger 不安装 manager 或进程 LogTape 配置。
+应用在 `runtime.logtape` 直接传原生 Config 或同步 root factory，也可传 `{ input, options }` 表达框架 policy 选项。`logtape()` 是可选预设，`logtape(nativeConfig, options)` 捕获同一声明；没有品牌准入检查。Core 用唯一 root identity 创建 manager。省略 logtape 不安装 manager 或进程 LogTape 配置。
 
 ```text
 1. 创建 root 与其固定 logger identity
@@ -69,7 +69,7 @@ category builders/parser 位于：
 
 生产 Host 自动等待 Core 准备；直接通过 `@pluxel/core/host` 创建 root 的嵌入者，在启动 Plugin 前先 `await prepareCoreContext(root)`。日志安装、关闭和 policy 都归 Core，不再作为 Services descriptor 安装。Core root 创建到 prepare 完成之前的日志不承诺被此 sink 捕获。
 
-需要 silent manager 时显式配置 `logtape({ sinks: {}, loggers: [] })`；省略 `config.logger` 不安装该 manager，仍可调用 `ctx.logger`。
+需要 silent manager 时显式配置 `logtape({ sinks: {}, loggers: [] })`；省略 `runtime.logtape` 不安装该 manager，仍可调用 `ctx.logger`。
 
 `RuntimeLogging` 拒绝已有 foreign LogTape config，不静默复用或重置其他 owner 的配置。
 
@@ -79,7 +79,7 @@ category builders/parser 位于：
 
 Pluxel 的独立设置只位于 `LoggingOptions`：profile、初始 Plugin policy、debug topics、policy load failure 与可选借用的 policy store。同步 config factory 额外获得 `rootId` 和 `createRuntimeLogSink()`，其唯一职责是把有界 Workbench sink 绑定当前 manager 的 registry/flush 生命周期；factory 在 prepare 中求值一次，返回值仍是完整原生 Config。helper 不能在 factory 返回后继续创建 sink。
 
-`logtape()` 的可选默认预设提供易读 console 与有界 store，默认 profile 为 `pluxel`。应用在 `config.logger` 中选择它；`servicesPreset()` 只返回服务清单，不安装日志。自定义配置完整替换默认输出。Node file、JSON、OTel、redaction、stream 与异步组合均直接使用相应上游 sink/formatter。
+`logtape()` 的可选默认预设提供易读 console 与有界 store，默认 profile 为 `pluxel`。应用在 `runtime.logtape` 中选择它；`servicesPreset()` 只返回服务清单，不安装日志。自定义配置完整替换默认输出。Node file、JSON、OTel、redaction、stream 与异步组合均直接使用相应上游 sink/formatter。
 
 ### Identity guard and native inheritance
 
@@ -123,7 +123,7 @@ mutation 规则：
 - 最多 100,000 个 overrides；每个 owner address 都经过严格 schema validation 和 canonical key 编码；
 - `off` 使用专用 numeric rank，不在热路径使用 nullable/string comparison。
 
-`logtape(nativeConfig, { policyStore })` 的 policyStore 接收同步 `(root: RootContext) => PluginLogPolicyStore` factory，在 Core 日志准备中解析一次；省略时使用 `requireTinyBaseHost(root).documents('logging')`。Logging 借用文档存储，不关闭后端；confirmed read view、失败阻断与 final 排空由 [TinyBase](TINYBASE.md)维护，物理后端仍归 FS。Host 删除 fork 在同一 exclusive queue 中清理 Core 日志 policy，再清理服务元数据；policy flush 失败保留 fork。writer 故障须关闭检查实际 backing 后恢复。reader/writer 只接受 v3 structured owner；其他版本直接拒绝，不做 owner 转换或写回。
+`logtape(nativeConfig, { policyStore })` 的 policyStore 接收同步 `(root: RootContext) => PluginLogPolicyStore` factory，在 Core 日志准备中解析一次；省略时使用 `requireHostDocuments(root, 'logging')`。Logging 借用文档存储，不关闭后端；policy candidate 与失败回执由 Logging 维护，普通文档与 final 排空由 [FS](FS.md)维护，路径为 `services/host/logging/plugin-policy/<profile>.json`。Host 删除 fork 在同一 exclusive queue 中清理 Core 日志 policy，再清理服务元数据；policy flush 失败保留 fork。writer 故障须关闭检查实际 backing 后恢复。reader/writer 只接受 v3 structured owner；其他版本直接拒绝，不做 owner 转换或写回。
 
 ## Debug topics
 
@@ -197,7 +197,7 @@ error summary。它不是新的 author-facing LogRecord。
 ```
 
 Core 拥有日志安装、sink、policy 持久化、store 与 query；配置 helper 不依赖 Host 或 Services。Management 从 Core 读取同一个 manager，不能重新安装日志。浏览器协议入口只承载 DTO/filter，不加载 Node 文件 sink 或日志安装后端。pretty 是独立可选叶入口，不经 internal 引入；文件输出直接使用 `@logtape/file`，没有框架 file wrapper。
-公共输出通过 `config.logger: logtape(...)` 选择，宿主通过 `Logging` capability 访问当前 owner；manager 创建、active owner 查询与 Context binding 仅属于 `/logging/internal` 框架入口。旧 Services 三个日志入口不保留兼容别名。
+公共输出通过 `runtime.logtape: logtape(...)` 选择，宿主通过 `Logging` capability 访问当前 owner；manager 创建、active owner 查询与 Context binding 仅属于 `/logging/internal` 框架入口。旧 Services 三个日志入口不保留兼容别名。
 
 关键实现入口：
 

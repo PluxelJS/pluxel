@@ -144,7 +144,7 @@ function panelId(entry: WorkbenchLayoutEntry) {
 	return panelTabId(identity.owner, identity.key)
 }
 function border(session: WorkspaceSession, region: Region) {
-	return Model.fromJson(session.workbench.getLayout()).getNodeById(`border_${region}`) as BorderNode
+	return session.workbench.model.getNodeById(`border_${region}`) as BorderNode
 }
 function renderedKeys(container: HTMLElement) {
 	return [...container.querySelectorAll('[data-panel-key]')].map((node) =>
@@ -162,11 +162,17 @@ async function fixture() {
 }
 async function open(session: WorkspaceSession, entry: WorkbenchLayoutEntry) {
 	await act(async () => session.openPanel(entry))
+	console.log(
+		'PANEL_DEBUG',
+		session.workbench.getActiveDocument()?.id,
+		[...session.documents].map(([id, state]) => [id, state.plugin]),
+		session.workbench.model.getBorderSet().toJson(),
+	)
 }
 async function close(session: WorkspaceSession, entry: WorkbenchLayoutEntry) {
 	await act(async () => {
 		const closed = await session.workbench.close(panelId(entry))
-		expect(closed.status).toBe('closed')
+		expect(closed.status).toBe('applied')
 		await session.syncWorkspacePanels()
 	})
 }
@@ -180,7 +186,7 @@ describe('independent native plugin panel tabs', () => {
 		const rendered = await renderWorkspace(
 			session,
 			<Workbench
-				workbench={session.workbench}
+				instance={session.workbench}
 				native={{
 					onRenderTab: (node) => {
 						live = node.getModel()
@@ -207,7 +213,7 @@ describe('independent native plugin panel tabs', () => {
 		expect(save).not.toHaveBeenCalled()
 		expect(change).not.toHaveBeenCalled()
 		expect(model.getNodeById(tab.id!)).toBeUndefined()
-		session.workbench.snapshot()
+		session.workbench.createSnapshot()
 		expect(save).toHaveBeenCalledOnce()
 		model.removeChangeListener(change)
 	})
@@ -306,8 +312,11 @@ describe('independent native plugin panel tabs', () => {
 		await open(session, closed)
 		await close(session, closed)
 		await open(session, kept)
-		const restored = new WorkspaceSession({ snapshot: session.workbench.snapshot() })
+		const restored = new WorkspaceSession({ snapshot: session.workbench.createSnapshot() })
 		sessions.push(restored)
+		await act(async () => {
+			await restored.start('/logs', false)
+		})
 		const id = restored.workbench.getDocuments()[0]!.id
 		await setOwner(restored, id, east)
 		expect(restored.isPanelOpen(kept)).toBe(true)
@@ -357,7 +366,7 @@ describe('independent native plugin panel tabs', () => {
 			const entry = panel('one', 'bottom')
 			await open(session, entry)
 			if (corruption !== 'live-region') await setOwner(session, id, west)
-			const snapshot = structuredClone(session.workbench.snapshot())
+			const snapshot = structuredClone(session.workbench.createSnapshot())
 			const bottom = snapshot.layout.borders!.find((item) => item.location === 'bottom')!
 			if (corruption === 'live-region') {
 				const misplaced = bottom.children!.pop()!
@@ -375,7 +384,7 @@ describe('independent native plugin panel tabs', () => {
 			expect(JSON.stringify(snapshot)).toBe(before)
 		},
 	)
-	it('reset writes an empty default layout with no archived owner panels', async () => {
+	it('reset removes the saved layout so the next host startup uses defaults without archived owner panels', async () => {
 		const { session, id } = await fixture()
 		await open(session, panel('one', 'bottom'))
 		await setOwner(session, id, west)
@@ -386,10 +395,8 @@ describe('independent native plugin panel tabs', () => {
 			expect(await session.resetLayout()).toBe(true)
 		})
 		expect(assign).toHaveBeenCalledWith(session.basepath)
-		const snapshot = session.storage.readSnapshot()
-		expect(JSON.stringify(snapshot)).not.toContain('plugin-panel:')
-		expect(JSON.stringify(snapshot)).not.toContain('panelArchives')
-		const restored = new WorkspaceSession({ snapshot })
+		expect(session.storage.readSnapshot()).toBeUndefined()
+		const restored = new WorkspaceSession()
 		sessions.push(restored)
 		expect(restored.workbench.getDocuments()).toHaveLength(0)
 		expect(border(restored, 'bottom').getChildren()).toHaveLength(0)

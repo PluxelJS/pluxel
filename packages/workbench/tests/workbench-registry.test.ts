@@ -1,4 +1,4 @@
-import { pluginNodeAddressOf, type Context } from '@pluxel/core'
+import { type Context } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { workbenchFederationExpose, workbenchFederationProducerName } from '@pluxel/core/federation'
 import { RpcTarget, type RpcStub } from 'capnweb'
@@ -136,16 +136,37 @@ class ContentPlugin extends BasePlugin {
 let contentCount = 0
 let contentChanged: (() => void) | undefined
 let contentSignal: AbortSignal | undefined
+let contentSubscriptions = 0
+let contentUnsubscribed = 0
 
 @Plugin({ displayName: 'Interactive Content' })
 class InteractiveContentPlugin extends BasePlugin {
+	factoryGate?: Promise<void>
+	failFactory = false
+	failSubscribe = false
+	loadCalls = 0
+
 	protected override init() {
 		this.ctx.workbench?.publish(InteractiveContentWorkbench, {
-			interactive: ({ dataChanged, signal }) => {
-				contentChanged = dataChanged
+			interactive: async ({ signal }) => {
 				contentSignal = signal
+				if (this.factoryGate) await this.factoryGate
+				if (this.failFactory) throw new Error('Content factory failed')
 				return {
-					load: () => ({ status: { count: contentCount } }),
+					subscribe: (changed) => {
+						if (this.failSubscribe) throw new Error('Content subscription failed')
+						contentSubscriptions += 1
+						contentChanged = changed
+						return {
+							[Symbol.dispose]: () => {
+								contentUnsubscribed += 1
+							},
+						}
+					},
+					load: () => {
+						this.loadCalls += 1
+						return { status: { count: contentCount } }
+					},
 					actions: {
 						refresh: () => {
 							contentCount += 1
@@ -317,13 +338,13 @@ describe('Workbench vNext publication', () => {
 		host.start(LocalPlugin)
 		await host.commit()
 		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
-		const target = pluginNodeAddressOf(PanelPlugin)
+		const target = PanelPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 		expect(layout.entries).toHaveLength(3)
 		expect(layout.entries.every((entry) => entry.placement.kind === 'panel')).toBe(true)
 		expect(
 			session.target
-				.layoutDto({ target: pluginNodeAddressOf(LocalPlugin) })
+				.layoutDto({ target: LocalPlugin.nodeAddress() })
 				.entries.every((entry) => entry.placement.kind !== 'panel'),
 		).toBe(true)
 		let inspector: SettingsTarget | undefined
@@ -337,7 +358,7 @@ describe('Workbench vNext publication', () => {
 				code: 'target_unavailable',
 			})
 			await expect(
-				session.target.openEntry({ ...input, target: pluginNodeAddressOf(LocalPlugin) }),
+				session.target.openEntry({ ...input, target: LocalPlugin.nodeAddress() }),
 			).resolves.toEqual({
 				ok: false,
 				code: 'target_unavailable',
@@ -371,9 +392,7 @@ describe('Workbench vNext publication', () => {
 		host.start(NoPublicationPlugin)
 		await host.commit()
 
-		const instance = requirePluginService(host.ctx).getInstance(
-			pluginNodeAddressOf(NoPublicationPlugin),
-		)
+		const instance = requirePluginService(host.ctx).getInstance(NoPublicationPlugin.nodeAddress())
 		if (!instance) throw new Error('NoPublicationPlugin did not start')
 		const registry = requireWorkbench(host.ctx).registry as unknown as {
 			publish(owner: Context, definition: unknown, ...bindings: unknown[]): void
@@ -392,7 +411,7 @@ describe('Workbench vNext publication', () => {
 
 		const backend = requireWorkbench(host.ctx)
 		const session = backend.createSession(localPrincipal, () => {})
-		const target = pluginNodeAddressOf(ContentPlugin)
+		const target = ContentPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 		expect(layout.entries).toHaveLength(1)
 		const entry = layout.entries[0]!
@@ -425,6 +444,8 @@ describe('Workbench vNext publication', () => {
 	})
 
 	it('opens interactive Content on one framework root and releases its lifetime lease', async () => {
+		const subscriptionsBefore = contentSubscriptions
+		const disposedBefore = contentUnsubscribed
 		contentCount = 0
 		contentChanged = undefined
 		contentSignal = undefined
@@ -434,7 +455,7 @@ describe('Workbench vNext publication', () => {
 		await host.commit()
 
 		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
-		const target = pluginNodeAddressOf(InteractiveContentPlugin)
+		const target = InteractiveContentPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 		const entry = layout.entries[0]!
 		const opened = await session.target.openEntry({
@@ -446,6 +467,9 @@ describe('Workbench vNext publication', () => {
 		if (!opened.ok || opened.value.kind !== 'content' || opened.value.mode !== 'interactive') {
 			throw new Error('interactive Content open failed')
 		}
+		expect(contentSubscriptions - subscriptionsBefore).toBe(1)
+		const owner = requirePluginService(host.ctx).getInstance(target) as InteractiveContentPlugin
+		expect(owner.loadCalls).toBe(0)
 		expect(opened.value.presentation.slots.map((slot) => slot.key)).toEqual(['refresh', 'status'])
 		const updates: unknown[] = []
 		const disposeObserver = vi.fn()
@@ -479,9 +503,105 @@ describe('Workbench vNext publication', () => {
 		if (!(opened.value.root instanceof WorkbenchContentTarget))
 			throw new Error('expected local Content root')
 		opened.value.root[Symbol.dispose]()
+		expect(contentUnsubscribed - disposedBefore).toBe(1)
 		expect(contentSignal?.aborted).toBe(true)
 		expect(disposeObserver).toHaveBeenCalledTimes(1)
 		session.dispose()
+		expect(contentUnsubscribed - disposedBefore).toBe(1)
+	})
+
+	it.each(['session', 'provider'] as const)(
+		'releases every Content subscription once on %s closure',
+		async (boundary) => {
+			const subscriptionsBefore = contentSubscriptions
+			const disposedBefore = contentUnsubscribed
+			await using host = await createServiceInternalTestHarness({ workbench: true })
+			host.add(InteractiveContentPlugin)
+			host.start(InteractiveContentPlugin)
+			await host.commit()
+			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+			const target = InteractiveContentPlugin.nodeAddress()
+			const layout = session.target.layoutDto({ target })
+			for (let index = 0; index < 2; index += 1) {
+				await expect(
+					session.target.openEntry({
+						layoutRevision: layout.revision,
+						target,
+						descriptor: layout.entries[0]!.descriptor,
+					}),
+				).resolves.toMatchObject({ ok: true })
+			}
+			expect(contentSubscriptions - subscriptionsBefore).toBe(2)
+			if (boundary === 'provider') {
+				host.stop(InteractiveContentPlugin)
+				await host.commit()
+			} else session.dispose()
+			expect(contentSignal?.aborted).toBe(true)
+			expect(contentUnsubscribed - disposedBefore).toBe(2)
+			session.dispose()
+			expect(contentUnsubscribed - disposedBefore).toBe(2)
+		},
+	)
+
+	it.each(['factory', 'subscription'] as const)(
+		'does not retain an open when Content %s creation fails',
+		async (stage) => {
+			const subscriptionsBefore = contentSubscriptions
+			await using host = await createServiceInternalTestHarness({ workbench: true })
+			host.add(InteractiveContentPlugin)
+			host.start(InteractiveContentPlugin)
+			await host.commit()
+			const target = InteractiveContentPlugin.nodeAddress()
+			const owner = requirePluginService(host.ctx).getInstance(target) as InteractiveContentPlugin
+			if (stage === 'factory') owner.failFactory = true
+			else owner.failSubscribe = true
+			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+			const layout = session.target.layoutDto({ target })
+			const input = {
+				layoutRevision: layout.revision,
+				target,
+				descriptor: layout.entries[0]!.descriptor,
+			}
+			await expect(session.target.openEntry(input)).resolves.toMatchObject({
+				ok: false,
+				code: 'factory_failed',
+			})
+			expect(contentSignal?.aborted).toBe(true)
+			expect(contentSubscriptions).toBe(subscriptionsBefore)
+			expect(owner.loadCalls).toBe(0)
+			owner.failFactory = false
+			owner.failSubscribe = false
+			await expect(session.target.openEntry(input)).resolves.toMatchObject({ ok: true })
+			session.dispose()
+		},
+	)
+
+	it('does not subscribe a Content factory result that arrives after the session closes', async () => {
+		const subscriptionsBefore = contentSubscriptions
+		contentSignal = undefined
+		await using host = await createServiceInternalTestHarness({ workbench: true })
+		host.add(InteractiveContentPlugin)
+		host.start(InteractiveContentPlugin)
+		await host.commit()
+		const target = InteractiveContentPlugin.nodeAddress()
+		const owner = requirePluginService(host.ctx).getInstance(target) as InteractiveContentPlugin
+		const gate = Promise.withResolvers<void>()
+		owner.factoryGate = gate.promise
+		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+		const layout = session.target.layoutDto({ target })
+		const opening = session.target.openEntry({
+			layoutRevision: layout.revision,
+			target,
+			descriptor: layout.entries[0]!.descriptor,
+		})
+		await vi.waitFor(() => expect(contentSignal).toBeDefined())
+		session.dispose()
+		await expect(opening).resolves.toMatchObject({ ok: false, code: 'target_unavailable' })
+		gate.resolve()
+		await gate.promise
+		await Promise.resolve()
+		expect(contentSubscriptions).toBe(subscriptionsBefore)
+		expect(owner.loadCalls).toBe(0)
 	})
 
 	it('aborts the Content lifetime and releases opened quota when an observer rejects', async () => {
@@ -494,7 +614,7 @@ describe('Workbench vNext publication', () => {
 		await host.commit()
 
 		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
-		const target = pluginNodeAddressOf(InteractiveContentPlugin)
+		const target = InteractiveContentPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 		const input = {
 			layoutRevision: layout.revision,
@@ -534,7 +654,7 @@ describe('Workbench vNext publication', () => {
 		await host.commit()
 
 		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
-		const target = pluginNodeAddressOf(InteractiveContentPlugin)
+		const target = InteractiveContentPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 		const opened = await session.target.openEntry({
 			layoutRevision: layout.revision,
@@ -577,10 +697,11 @@ describe('Workbench vNext publication', () => {
 		const session = backend.createSession(localPrincipal, () => {
 			invalidated = true
 		})
-		const target = pluginNodeAddressOf(LocalPlugin)
+		const target = LocalPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 
 		expect(layout.entries).toHaveLength(1)
+		expect(session.target.layoutDto({ target: null }).entries).toEqual(layout.entries)
 		expect(localFactoryCalls).toBe(0)
 		expect(layout.entries[0]).not.toHaveProperty('api')
 
@@ -608,7 +729,7 @@ describe('Workbench vNext publication', () => {
 		host.start(LocalPlugin)
 		await host.commit()
 
-		const target = pluginNodeAddressOf(LocalPlugin)
+		const target = LocalPlugin.nodeAddress()
 		const instance = requirePluginService(host.ctx).getInstance(target)
 		if (!instance) throw new Error('LocalPlugin did not start')
 		const artifacts = mutableWorkbenchArtifactLookup()
@@ -646,7 +767,7 @@ describe('Workbench vNext publication', () => {
 		host.start(LocalPlugin)
 		await host.commit()
 
-		const target = pluginNodeAddressOf(LocalPlugin)
+		const target = LocalPlugin.nodeAddress()
 		const instance = requirePluginService(host.ctx).getInstance(target)
 		if (!instance) throw new Error('LocalPlugin did not start')
 		const artifacts = mutableWorkbenchArtifactLookup()
@@ -728,7 +849,7 @@ describe('Workbench vNext publication', () => {
 		host.start(LocalPlugin)
 		await host.commit()
 
-		const target = pluginNodeAddressOf(LocalPlugin)
+		const target = LocalPlugin.nodeAddress()
 		const instance = requirePluginService(host.ctx).getInstance(target)
 		if (!instance) throw new Error('LocalPlugin did not start')
 		const pendingOnlyBackend = new WorkbenchBackend(
@@ -778,7 +899,7 @@ describe('Workbench vNext publication', () => {
 		await host.commit()
 		try {
 			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
-			const target = pluginNodeAddressOf(ReusedTargetPlugin)
+			const target = ReusedTargetPlugin.nodeAddress()
 			const layout = session.target.layoutDto({ target })
 			await expect(
 				session.target.openEntry({
@@ -811,7 +932,7 @@ describe('Workbench vNext publication', () => {
 		try {
 			const backend = requireWorkbench(host.ctx)
 			const session = backend.createSession(localPrincipal, () => {})
-			const target = pluginNodeAddressOf(ReusedTargetPlugin)
+			const target = ReusedTargetPlugin.nodeAddress()
 			const layout = session.target.layoutDto({ target })
 			const input = {
 				layoutRevision: layout.revision,
@@ -853,7 +974,7 @@ describe('Workbench vNext publication', () => {
 
 		try {
 			const backend = requireWorkbench(host.ctx)
-			const target = pluginNodeAddressOf(ReusedTargetPlugin)
+			const target = ReusedTargetPlugin.nodeAddress()
 			const firstSession = backend.createSession(localPrincipal, () => {})
 			const firstLayout = firstSession.target.layoutDto({ target })
 			const first = await firstSession.target.openEntry({
@@ -909,7 +1030,7 @@ describe('Workbench vNext publication', () => {
 		try {
 			const backend = requireWorkbench(host.ctx)
 			const session = backend.createSession(localPrincipal, () => {})
-			const target = pluginNodeAddressOf(LateFactoryPlugin)
+			const target = LateFactoryPlugin.nodeAddress()
 			const layout = session.target.layoutDto({ target })
 			const opening = session.target.openEntry({
 				layoutRevision: layout.revision,
@@ -949,7 +1070,7 @@ describe('Workbench vNext publication', () => {
 		try {
 			const backend = requireWorkbench(host.ctx)
 			const session = backend.createSession(localPrincipal, () => {})
-			const target = pluginNodeAddressOf(LateFactoryPlugin)
+			const target = LateFactoryPlugin.nodeAddress()
 			const layout = session.target.layoutDto({ target })
 			vi.useFakeTimers()
 			fakeTimers = true
@@ -1002,7 +1123,7 @@ describe('Workbench vNext publication', () => {
 		await host.commit()
 		const backend = requireWorkbench(host.ctx)
 		const session = backend.createSession(localPrincipal, () => {})
-		const target = pluginNodeAddressOf(RoutedPlugin)
+		const target = RoutedPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 		// Global routing includes parameterized routes that do not enter navigation.
 		expect(session.target.layoutDto({ target: null }).entries).toEqual(layout.entries)
@@ -1033,8 +1154,8 @@ describe('Workbench vNext publication', () => {
 		await host.commit()
 		const backend = requireWorkbench(host.ctx)
 		const session = backend.createSession(localPrincipal, () => {})
-		const layoutA = session.target.layoutDto({ target: pluginNodeAddressOf(SharedRoutePluginA) })
-		const layoutB = session.target.layoutDto({ target: pluginNodeAddressOf(SharedRoutePluginB) })
+		const layoutA = session.target.layoutDto({ target: SharedRoutePluginA.nodeAddress() })
+		const layoutB = session.target.layoutDto({ target: SharedRoutePluginB.nodeAddress() })
 		expect(layoutA.entries[0]?.placement).toMatchObject({ path: '/settings' })
 		expect(layoutB.entries[0]?.placement).toMatchObject({ path: '/settings' })
 		expect(session.target.layoutDto({ target: null }).entries).toEqual(
@@ -1052,7 +1173,7 @@ describe('Workbench vNext publication', () => {
 		await host.commit()
 		const backend = requireWorkbench(host.ctx)
 		const session = backend.createSession(localPrincipal, () => {})
-		const target = pluginNodeAddressOf(ConsumerPlugin)
+		const target = ConsumerPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 		expect(layout.entries).toHaveLength(1)
 		expect(layout.entries[0]!.descriptor).toMatchObject({
@@ -1084,7 +1205,7 @@ describe('Workbench vNext publication', () => {
 		const session = backend.createSession(localPrincipal, (cause) => {
 			invalidation = cause
 		})
-		const target = pluginNodeAddressOf(LocalPlugin)
+		const target = LocalPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 		const result = await session.target.openEntry({
 			layoutRevision: layout.revision,

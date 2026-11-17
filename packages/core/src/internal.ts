@@ -30,7 +30,8 @@ export {
 } from './plugins/runtime/PluginDefinitions'
 export { requireConfigService } from './internal/config-service'
 export { requirePluginService } from './internal/plugin-service'
-export { requireFs, requireTinyBaseHost } from './internal/storage'
+export { requireFs, requireHostDocuments, requireTinyBaseHost } from './internal/storage'
+export { observeFile } from './fs/observe'
 export { pluginNodePhysicalKey } from './internal/plugin-address'
 export {
 	createContextHost,
@@ -97,3 +98,6 @@ export {
 	type WorkbenchContentTableRow,
 } from './internal/workbench-content-artifact'
 export { immutableConfigRecord } from './services/config/immutable'
+
+export { createCorePluginExecutionBinding } from './context/plugin-execution'
+export { DEFAULT_PLUGIN_EXECUTION } from './plugins/runtime/PluginService'

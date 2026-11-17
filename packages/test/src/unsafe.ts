@@ -6,13 +6,7 @@
  * These exist only for cases where you are explicitly testing lowered definition/config facts.
  */
 
-import {
-	Plugin,
-	pluginDefinitionAddressOf,
-	type PluginConstructor,
-	type PluginOptions,
-	type PluginToken,
-} from '@pluxel/core'
+import { Plugin, type PluginConstructor, type PluginOptions, type PluginToken } from '@pluxel/core'
 import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
 
 export type LowerTestReplacementOptions = Readonly<{
@@ -43,12 +37,10 @@ export function lowerTestReplacement<T extends PluginConstructor>(
 	__setPluginDefinition(replacement, {
 		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 		kind: 'plugin',
-		definition: pluginDefinitionAddressOf(previous),
-		constructorRequires: options.requires?.map(pluginDefinitionAddressOf),
-		optional: options.optional?.map(pluginDefinitionAddressOf),
-		...(options.provides === undefined
-			? {}
-			: { provides: pluginDefinitionAddressOf(options.provides) }),
+		definition: previous.definitionAddress(),
+		constructorRequires: options.requires?.map((plugin) => plugin.definitionAddress()),
+		optional: options.optional?.map((plugin) => plugin.definitionAddress()),
+		...(options.provides === undefined ? {} : { provides: options.provides.definitionAddress() }),
 	})
 	return replacement
 }

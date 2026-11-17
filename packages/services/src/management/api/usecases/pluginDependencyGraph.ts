@@ -87,9 +87,13 @@ export function projectPluginDependencyGraph(
 			binding.provider,
 		]),
 	)
-	const forkIdsByDefinition = new Map<string, readonly string[]>()
+	const forkIdsByDefinition = new Map<string, string[]>()
 	for (const family of view.runtimeState.state.forks) {
-		forkIdsByDefinition.set(pluginDefinitionIndexKey(family.definition), family.forkIds)
+		if (family.variant !== 'fork') continue
+		const key = pluginDefinitionIndexKey(family.definition)
+		const ids = forkIdsByDefinition.get(key) ?? []
+		ids.push(family.forkId)
+		forkIdsByDefinition.set(key, ids)
 	}
 
 	const edges: PluginDependencyGraphEdge[] = []

@@ -1,0 +1,15 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "plugin-market-spike",
+	"main": "src/worker.ts",
+	"compatibility_date": "2026-11-03",
+	"workers_dev": false,
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "market-spike",
+			"database_id": "00000000-0000-0000-0000-000000000001",
+			"migrations_dir": "migrations",
+		},
+	],
+}

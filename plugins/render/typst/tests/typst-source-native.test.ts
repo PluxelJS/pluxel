@@ -9,7 +9,9 @@ import { createTypstSourceProject } from '../src/source/node.js'
 import { createTypstSourceLibrary } from '../src/source/library.js'
 import { createTypstSourceEditor } from '../src/tiptap/source-editor.js'
 import runTypst, { renderTypstPage } from '../src/worker.ts'
-import { loadNativeCompiler } from '../src/native-binding.ts'
+import { loadNativeCompiler, type NavigationDocument } from '../src/native-binding.ts'
+import { findTypstEditorPosition } from '../src/source/positions.ts'
+import type { TypstPagePosition } from '../src/preview-contract.ts'
 
 const bindingPath = fileURLToPath(new URL('../native/compiler.node', import.meta.url))
 const maxOutputBytes = 8_000_000
@@ -34,6 +36,115 @@ function compile(root: string, revision: number, fontPaths?: string[]) {
 }
 const png = (revision: number) =>
 	Buffer.from(renderTypstPage({ kind: 'render', revision, page: 1, scale: 1, maxOutputBytes }).data)
+
+it('extracts real label positions and native link bounds for generated headings, read-only targets and later pages', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'typst-native-destinations-'))
+	const fontPaths = ['DejaVu Sans', 'DejaVu Math TeX Gyre'].map((family) =>
+		execFileSync('fc-match', ['-f', '%{file}', family], { encoding: 'utf8' }),
+	)
+	try {
+		await save(root, {
+			'main.typ': `#set page(width: 360pt, height: 240pt, margin: 20pt)
+#set text(font: "DejaVu Sans", lang: "en")
+#set heading(numbering: "1.")
+#set math.equation(numbering: "(1)")
+#for (id, path) in (("alpha", "alpha.typ"), ("beta", "beta.typ")) {
+  [#heading("Shared title")#label("chapter-" + id)]
+  include path
+  pagebreak()
+}
+#include "inputs/fixed.typ"
+#context [
+  #metadata(query(selector(heading).or(figure).or(math.equation)).map(it => {
+    let pos = it.location().position()
+    (label: str(it.label), page: pos.page, x: pos.x / 1pt, y: pos.y / 1pt)
+  })) <navigation-oracle>
+]`,
+			'alpha.typ': `= Shared title <body-alpha>
+Read-only @fixed-target, @figure-a, @table-a and @equation-a.
+
+#link("https://example.com/typst")[External]
+#link((page: 2, x: 31pt, y: 47pt))[Position]
+#rotate(90deg, origin: top + left)[#link("https://example.com/rotated")[#box(width: 30pt, height: 8pt)]]`,
+			'beta.typ': `= Shared title <body-beta>
+Back to @chapter-alpha.
+#link("custom:destination")[Custom scheme]`,
+			'inputs/fixed.typ': `= Fixed annex <fixed-target>
+#figure(rect(width: 20pt, height: 20pt), caption: [Picture]) <figure-a>
+#pagebreak()
+#figure(table(columns: 1, [Cell]), caption: [Grid]) <table-a>
+$ a = b $ <equation-a>`,
+		})
+		const compiler = loadNativeCompiler(bindingPath).create({
+			workspace: root,
+			fontArgs: [{ fontPaths }],
+		})
+		const compiled = compiler.compile({ mainFilePath: join(root, 'main.typ') })
+		expect(compiled.result).toBeDefined()
+		const document = compiled.result! as NavigationDocument
+		const navigation = document.navigation()
+		const oracle = compiler.query(document, {
+			selector: '<navigation-oracle>',
+			field: 'value',
+		}) as (TypstPagePosition & { label: string })[][]
+		expect(oracle).toHaveLength(1)
+		expect(oracle[0]).toHaveLength(8)
+		for (const expected of oracle[0]!)
+			expect(navigation.targets.find((target) => target.label === expected.label)).toEqual(expected)
+		expect(navigation.outline.filter((heading) => heading.title === 'Shared title')).toHaveLength(4)
+		for (const [id, page] of [
+			['alpha', 1],
+			['beta', 2],
+		] as const) {
+			const chapter = navigation.targets.find((target) => target.label === `chapter-${id}`)!
+			const body = navigation.targets.find((target) => target.label === `body-${id}`)!
+			expect(chapter.page).toBe(page)
+			expect(body.page).toBe(page)
+			expect(body.y).toBeGreaterThan(chapter.y)
+		}
+		expect(navigation.targets.find((target) => target.label === 'fixed-target')!.page).toBe(3)
+		expect(navigation.targets.find((target) => target.label === 'table-a')!.page).toBe(4)
+		expect(navigation.targets.find((target) => target.label === 'equation-a')!.page).toBe(4)
+		expect(navigation.points.some((point) => point.path.startsWith('inputs/'))).toBe(false)
+		for (const label of ['fixed-target', 'figure-a', 'table-a', 'equation-a', 'chapter-alpha']) {
+			const { page, x, y } = navigation.targets.find((target) => target.label === label)!
+			expect(navigation.links).toContainEqual(
+				expect.objectContaining({ target: { kind: 'position', page, x, y } }),
+			)
+		}
+		expect(navigation.links).toContainEqual(
+			expect.objectContaining({ target: { kind: 'position', page: 2, x: 31, y: 47 } }),
+		)
+		for (const url of ['https://example.com/typst', 'custom:destination'])
+			expect(navigation.links).toContainEqual(
+				expect.objectContaining({ target: { kind: 'url', url } }),
+			)
+		const rotated = navigation.links.filter(
+			(link) => link.target.kind === 'url' && link.target.url === 'https://example.com/rotated',
+		)
+		expect(rotated).toHaveLength(1)
+		expect(rotated[0]!.width).toBeCloseTo(8, 8)
+		expect(rotated[0]!.height).toBeCloseTo(30, 8)
+		const svgDestinations = [
+			...compiler.svg(document).matchAll(/handleTypstLocation\(this, ([^)]+)\)/g),
+		].map((match) => match[1]!.split(',').map(Number))
+		const internal = navigation.links.filter((link) => link.target.kind === 'position')
+		expect(internal).toHaveLength(svgDestinations.length)
+		for (const [page, x, y] of svgDestinations)
+			expect(
+				internal.some(
+					({ target }) =>
+						target.kind === 'position' &&
+						target.page === page &&
+						// Native SVG serializes destinations with five decimal places.
+						Math.abs(target.x - x!) < 1e-5 &&
+						Math.abs(target.y - y!) < 1e-5,
+				),
+			).toBe(true)
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+}, 30_000)
 
 it('compiles an authored empty paragraph and keeps subsequent typing before its neighboring table', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'typst-source-empty-par-'))
@@ -185,6 +296,70 @@ it('renders source-native merged table appearances, including open sides against
 		}
 		expect(gridOracle!.equals(openSides!)).toBe(true)
 		expect(issues).toEqual([])
+	} finally {
+		editor.destroy()
+		await rm(root, { recursive: true, force: true })
+	}
+}, 30_000)
+
+it('attributes generated reference policies and reused captions to each caller instead of the helper file', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'typst-source-reference-navigation-'))
+	const project = createTypstSourceProject({
+		files: {
+			...(await createTypstSourceLibrary()),
+			'main.typ':
+				'#import "lib/pluxel.typ" as report\n#show: report.document\n#set text(font: "DejaVu Sans", lang: "en")\n#set page(width: 400pt, height: auto)\n#figure(rect(width: 50pt, height: 20pt), caption: [Original caption]) <fig:target>\n#include "refs.typ"',
+			'refs.typ':
+				'#import "lib/pluxel.typ" as report\nFirst @fig:target after.\n\nSecond @fig:target after.',
+		},
+	})
+	let editor = createTypstSourceEditor({ project, path: 'refs.typ' })
+	try {
+		const positions: number[] = []
+		editor.state.doc.descendants((node, position) => {
+			if (node.type.name === 'reference') positions.push(position)
+		})
+		for (const [index, position] of positions.entries()) {
+			editor.commands.setNodeSelection(position)
+			expect(editor.commands.updateAttributes('reference', { showCaption: index === 1 })).toBe(true)
+		}
+		editor.destroy()
+		editor = createTypstSourceEditor({ project, path: 'refs.typ' })
+		await save(root, project.snapshot().files)
+		const compiled = compile(root, 1)
+		const projection = project.open('refs.typ')
+		const referencePoints = positions.map((position) =>
+			compiled.navigation.points.filter(
+				(point) => findTypstEditorPosition({ projection, sourcePosition: point }) === position,
+			),
+		)
+		expect(referencePoints[0]!.length).toBeGreaterThan(0)
+		expect(referencePoints[1]!.length).toBeGreaterThan(referencePoints[0]!.length + 10)
+		for (const points of referencePoints)
+			for (const point of points) {
+				const source = projection.source.split('\n')[point.line - 1]!
+				expect(source.slice(point.column - 1, point.endColumn - 1)).toMatch(
+					/^metadata\(\(__pluxel_reference: true, target: <fig:target>, show-caption: (true|false)\)\)$/,
+				)
+			}
+		expect(compiled.navigation.points.some((point) => point.path.startsWith('lib/'))).toBe(false)
+		expect(
+			compiled.navigation.points.some((point) => point.path === 'main.typ' && point.line === 5),
+		).toBe(true)
+		for (const position of positions) {
+			editor.commands.setNodeSelection(position)
+			expect(editor.commands.updateAttributes('reference', { showCaption: true })).toBe(true)
+		}
+		await save(root, project.snapshot().files)
+		const updated = compile(root, 2)
+		const current = project.open('refs.typ')
+		for (const position of positions)
+			expect(
+				updated.navigation.points.filter(
+					(point) =>
+						findTypstEditorPosition({ projection: current, sourcePosition: point }) === position,
+				).length,
+			).toBeGreaterThan(referencePoints[0]!.length + 10)
 	} finally {
 		editor.destroy()
 		await rm(root, { recursive: true, force: true })

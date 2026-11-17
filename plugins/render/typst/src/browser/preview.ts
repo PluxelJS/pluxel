@@ -17,6 +17,9 @@ export type {
 	TypstPreview,
 	TypstNavigation,
 	TypstNavigationPoint,
+	TypstNavigationTarget,
+	TypstNavigationLink,
+	TypstPagePosition,
 	TypstOutlineItem,
 	TypstPage,
 } from '../preview-contract.js'

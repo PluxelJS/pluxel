@@ -6,7 +6,7 @@ import {
 	pluginNodeIndexKey,
 } from '@pluxel/core'
 import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
-import { useWorkbenchContent, useWorkbenchState } from '@worksplit/react'
+import { useContent, useWorkbenchState } from '@worksplit/react'
 import { useSyncExternalStore } from 'react'
 import type { IJsonTabNode } from 'flexlayout-react'
 import {
@@ -52,7 +52,7 @@ export function panelTab(entry: WorkbenchLayoutEntry): IJsonTabNode {
 		type: 'tab',
 		id: panelTabId(identity.owner, identity.key),
 		name: entry.placement.label,
-		component: 'worksplit.tool',
+		component: 'pluxel.plugin-panel',
 		config: { pluginPanel: identity },
 		enableClose: true,
 		enableDrag: true,
@@ -63,15 +63,14 @@ export function panelTab(entry: WorkbenchLayoutEntry): IJsonTabNode {
 		minHeight: 0,
 	}
 }
-export function resolvePanelTool(tab: IJsonTabNode) {
+export function resolvePanelTool(definitionKey: string, tab: Readonly<IJsonTabNode>) {
+	if (definitionKey !== 'pluxel.plugin-panel') return undefined
 	const identity = readPanelIdentity(tab)
-	return identity
-		? { id: tab.id!, render: () => <PluginPanel identity={identity} id={tab.id!} /> }
-		: undefined
+	return identity ? { render: () => <PluginPanel identity={identity} id={tab.id!} /> } : undefined
 }
 const EMPTY_PARAMS = Object.freeze({})
 function PluginPanel({ identity, id }: { identity: PanelIdentity; id: string }) {
-	const content = useWorkbenchContent()
+	const content = useContent()
 	const session = useWorkspaceSession()
 	useSyncExternalStore(session.subscribeContentState, session.getContentRevision)
 	const activeId = useWorkbenchState(session.workbench, (state) => state.activeDocumentId)

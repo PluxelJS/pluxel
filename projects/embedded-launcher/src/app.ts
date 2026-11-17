@@ -3,13 +3,8 @@ import {
 	type HostApplication,
 	type PluginHost,
 	type HostDocumentStorage,
-	type HostStateStoreOptions,
 } from '@pluxel/host'
-import {
-	parsePluginNodeReference,
-	pluginDefinitionAddressOf,
-	type PluginConstructor,
-} from '@pluxel/core'
+import { parsePluginNodeReference, type PluginConstructor } from '@pluxel/core'
 import { pluginSource } from '@pluxel/host/sources'
 import { commands } from '@pluxel/services/commands'
 import {
@@ -40,16 +35,15 @@ export default defineHostApplication(({ bindings }): HostApplication => {
 	if (!execution.transport || typeof execution.transport.request !== 'function')
 		throw new TypeError('Launcher transport binding required')
 	const available = execution.plugins
-		? new Set(execution.plugins.map((plugin) => pluginDefinitionAddressOf(plugin).exportName))
+		? new Set(execution.plugins.map((plugin) => plugin.definitionAddress().exportName))
 		: undefined
 	const autoStart = defaultNames
 		.filter((name) => !available || available.has(name))
 		.map((name) => parsePluginNodeReference(`package:@embedded-launcher/app/plugins::${name}`))
 	const { stateStorage, configStorage } = execution
-	let state: HostStateStoreOptions = { initial: { autoStart } }
-	if (stateStorage) state = { initial: { autoStart }, storage: () => stateStorage }
 	return {
 		plugins: execution.plugins ?? [],
+		policy: { autoStart, mode: { autoStart: 'saved-first' } },
 		...(execution.plugins
 			? {}
 			: { sources: [pluginSource({ kind: 'file', path: 'src/plugins/index.ts' })] }),
@@ -62,8 +56,6 @@ export default defineHostApplication(({ bindings }): HostApplication => {
 			desktop(execution.transport, true),
 			cli(),
 		],
-		state,
-		...(configStorage ? { configRecords: { storage: () => configStorage } } : {}),
 		prepare({ host }: { host: PluginHost }) {
 			const control = createControl(host)
 			const lease = host.ctx.require(LauncherControl).lease
@@ -75,6 +67,12 @@ export default defineHostApplication(({ bindings }): HostApplication => {
 				},
 				{ tag: 'Execution Host binding' },
 			)
+		},
+		runtime: {
+			documents: {
+				...(stateStorage ? { state: { storage: () => stateStorage } } : {}),
+				...(configStorage ? { config: { storage: () => configStorage } } : {}),
+			},
 		},
 	}
 })

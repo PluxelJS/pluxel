@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
 import { expect, it } from 'vitest'
@@ -43,12 +43,6 @@ it('uses two successive Pluxel generations without stopping the external browser
 		const application = defineHostApplication(() => ({
 			plugins: [PlaywrightPlugin, ExternalBrowserSmoke],
 			services: [vault({ backend: 'bindings' })],
-			state: { initial: { autoStart: [pluginNodeAddressOf(ExternalBrowserSmoke)] } },
-			configRecords: {
-				initial: [
-					{ owner: pluginNodeAddressOf(PlaywrightPlugin), config: { connectionKey: 'primary' } },
-				],
-			},
 			envBindings: [
 				envBinding(PlaywrightPlugin, {
 					config: { schema: PlaywrightConfig, mapping: { protocol: 'BROWSER_PROTOCOL' } },
@@ -58,6 +52,10 @@ it('uses two successive Pluxel generations without stopping the external browser
 					},
 				}),
 			],
+			config: {
+				records: [{ owner: PlaywrightPlugin.nodeAddress(), config: { connectionKey: 'primary' } }],
+			},
+			policy: { autoStart: [ExternalBrowserSmoke.nodeAddress()] },
 		}))
 		const resolved = await resolveHostApplication(application, {
 			root: process.cwd(),
@@ -72,10 +70,11 @@ it('uses two successive Pluxel generations without stopping the external browser
 		const host = await createHost({
 			plugins: resolved.plugins,
 			services: resolved.services,
-			state: resolved.state,
-			config: resolved.config,
-			configRecords: resolved.configRecords,
 			vaultBindings: resolved.vaultBindings,
+			name: resolved.name,
+			config: resolved.config,
+			policy: resolved.policy,
+			runtime: resolved.runtime,
 		})
 		try {
 			await host.start()

@@ -3,8 +3,6 @@ import { BasePlugin } from '../src/plugins/composition/BasePlugin'
 import { Plugin } from '../src/plugins/decorators/PluginDecorator'
 import {
 	checkPluginDecorator,
-	pluginDefinitionAddressOf,
-	pluginNodeAddressOf,
 	type PluginDefinitionLoweringPayload,
 } from '../src/plugins/runtime/definition'
 import { consumePluginDefinitionCandidate } from '../src/internal'
@@ -144,8 +142,8 @@ describe('Plugin lowering ABI v2', () => {
 		expect(Object.isFrozen(candidate.declaration)).toBe(true)
 		expect(Object.isFrozen(candidate.declaration.parts)).toBe(true)
 		expect(Object.isFrozen(candidate.declaration.parts[0])).toBe(true)
-		expect(pluginDefinitionAddressOf(CacheToken)).toEqual(address('CacheToken'))
-		expect(pluginNodeAddressOf(CachePlugin)).toMatchObject({ variant: 'default' })
+		expect(CacheToken.definitionAddress()).toEqual(address('CacheToken'))
+		expect(CachePlugin.nodeAddress()).toMatchObject({ variant: 'default' })
 		expect(checkPluginDecorator(CachePlugin)).toBe(true)
 
 		expect(consumePluginDefinitionCandidate(CachePlugin)).toBe(candidate)

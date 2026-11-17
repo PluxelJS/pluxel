@@ -6,69 +6,121 @@ import {
 	useLayoutEffect,
 	useMemo,
 	useState,
+	useRef,
+	useSyncExternalStore,
 	type ReactNode,
 } from 'react'
 import { type PluginNodeAddress } from '@pluxel/core'
 import {
-	useWorkbenchContent,
-	type WorkbenchContent,
-	type WorkbenchContentLifecycle,
+	useContent,
+	useContentController,
+	useWorkbenchState,
+	type ContentHandle,
+	type LeaveState,
+	type LeaveRequest,
+	type LeaveDecision,
 } from '@worksplit/react'
-import { openConfirmModal } from '@mantine/modals'
+import { openConfirmModal, closeModal } from '@mantine/modals'
 import { useWorkspaceSession, useOptionalWorkspaceSession } from './workspaceContext'
 
-/** Business facts belong to this content instance, independent of its native docking location. */
+/** Editing facts stay in the form/remote owner; the persistent document binds one controller. */
+export interface DocumentEditor {
+	getState(): LeaveState
+	isWritePending(): boolean
+	save?(): void | Promise<void>
+}
 export class WorkbenchDocumentState {
 	navigate?: AnyRouter['navigate']
 	workspace?: 'plugins' | 'apps'
 	plugin?: PluginNodeAddress
 	pluginEntry?: string
-	editor?: WorkbenchContentLifecycle
-	remoteDirty = false
-	private revisionOwner?: WorkbenchContentLifecycle
+	title?: string
+	remoteTitle?: { owner: object; value: string }
+	private currentEditor?: DocumentEditor
 	private ownerRevision = 0
-	readCloseRevision = () => {
-		if (this.revisionOwner !== this.editor) {
-			this.revisionOwner = this.editor
-			this.ownerRevision++
-		}
-		const revision = this.editor?.getCloseRevision?.()
-		return `${this.ownerRevision}:${typeof revision}:${revision}`
+	private remoteRevision = 0
+	private dirty = false
+	set editor(value: DocumentEditor | undefined) {
+		if (value !== this.currentEditor) this.ownerRevision++
+		this.currentEditor = value
 	}
-	isDirty = () => this.remoteDirty || Boolean(this.editor?.isDirty?.())
+	get editor() {
+		return this.currentEditor
+	}
+	set remoteDirty(value: boolean) {
+		this.dirty = value
+		this.remoteRevision++
+	}
+	get remoteDirty() {
+		return this.dirty
+	}
+	getState = (): LeaveState => ({
+		hasUnsavedChanges: this.isDirty(),
+		token: JSON.stringify([this.ownerRevision, this.remoteRevision, this.editor?.getState().token]),
+	})
+	isDirty = () => this.remoteDirty || Boolean(this.editor?.getState().hasUnsavedChanges)
+	blocksUnload = () => this.isDirty() || Boolean(this.editor?.isWritePending())
 
-	async beforeLeave(): Promise<boolean> {
-		if (!this.isDirty()) return true
+	async decide(request: LeaveRequest): Promise<LeaveDecision> {
+		// Search/hash state belongs to the same editable resource.
+		if (
+			request.reason === 'navigate' &&
+			request.from.pathname === request.to.pathname &&
+			new URLSearchParams(request.from.searchStr).get('entry') ===
+				new URLSearchParams(request.to.searchStr).get('entry')
+		)
+			return { decision: 'allow', token: this.getState().token }
+		if (this.editor?.isWritePending()) return { decision: 'deny', reason: '配置写入尚未确认' }
 		const editor = this.editor
-		const revision = editor?.getCloseRevision?.()
-		const choice = await new Promise<'save' | 'discard' | 'cancel'>((resolve) => {
-			openConfirmModal({
-				title: '此文档有未保存的更改',
-				children: editor?.save
-					? '保存成功后继续，或取消并保留输入。'
-					: '继续会放弃此文档的未保存更改。',
-				labels: {
-					confirm: editor?.save ? '保存并继续' : '放弃更改并继续',
-					cancel: '保留文档',
-				},
-				onConfirm: () => resolve(editor?.save ? 'save' : 'discard'),
-				onCancel: () => resolve('cancel'),
-				onClose: () => resolve('cancel'),
+		const token = request.state.token
+		if (this.isDirty()) {
+			const choice = await new Promise<'save' | 'discard' | 'cancel'>((resolve) => {
+				if (request.signal.aborted) {
+					resolve('cancel')
+					return
+				}
+				let settled = false
+				let modal: string | undefined
+				const finish = (answer: 'save' | 'discard' | 'cancel') => {
+					if (settled) return
+					settled = true
+					request.signal.removeEventListener('abort', cancel)
+					if (modal) closeModal(modal)
+					resolve(answer)
+				}
+				const cancel = () => finish('cancel')
+				request.signal.addEventListener('abort', cancel, { once: true })
+				modal = openConfirmModal({
+					title: '此文档有未保存的更改',
+					returnFocus: false,
+					children: editor?.save
+						? '保存成功后继续，或取消并保留输入。'
+						: '继续会放弃此文档的未保存更改。',
+					labels: { confirm: editor?.save ? '保存并继续' : '放弃更改并继续', cancel: '保留文档' },
+					onConfirm: () => finish(editor?.save ? 'save' : 'discard'),
+					onCancel: cancel,
+					onClose: cancel,
+				})
 			})
-		})
-		if (choice === 'cancel') return false
-		if (choice === 'save') {
-			await editor?.save?.()
-			return this.editor === editor && !this.isDirty()
+			if (
+				choice === 'cancel' ||
+				request.signal.aborted ||
+				this.editor !== editor ||
+				this.getState().token !== token
+			)
+				return { decision: 'deny' }
+			if (choice === 'save') {
+				await editor?.save?.()
+				if (this.editor !== editor || this.blocksUnload()) return { decision: 'deny' }
+			}
 		}
-		return this.editor === editor && revision === editor?.getCloseRevision?.()
+		return { decision: 'allow', token: this.getState().token }
 	}
 }
-
 const DocumentContext = createContext<{
 	id: string
 	state: WorkbenchDocumentState
-	content: WorkbenchContent
+	content: ContentHandle
 } | null>(null)
 export function useOptionalWorkbenchDocument() {
 	return useContext(DocumentContext)
@@ -77,29 +129,61 @@ export function useOptionalWorkbenchDocument() {
 export function WorkbenchDocumentRoot({ children }: { children: ReactNode }) {
 	const session = useWorkspaceSession()
 	const [state] = useState(() => new WorkbenchDocumentState())
-	const content = useWorkbenchContent({
-		isDirty: state.isDirty,
-		get getCloseRevision() {
-			return state.remoteDirty || !state.editor?.getCloseRevision
-				? undefined
-				: state.readCloseRevision
-		},
-		beforeLeave: async (reason, context) => {
-			// Search/hash changes preserve this content's editable resource.
-			if (reason === 'navigate' && context.from && context.to) {
-				const from = new URL(context.from, 'http://workbench.local')
-				const to = new URL(context.to, from)
-				if (
-					from.pathname === to.pathname &&
-					from.searchParams.get('entry') === to.searchParams.get('entry')
+	const content = useContent()
+	const root = useRef<HTMLDivElement>(null)
+	const pauses = useRef(0)
+	useSyncExternalStore(session.subscribeContentState, session.getContentRevision)
+	const href = useWorkbenchState(
+		session.workbench,
+		() => session.workbench.getDocument(content.id)?.href,
+	)
+	const openingTitle = useWorkbenchState(session.workbench, () => {
+		const document = session.workbench.getDocument(content.id)
+		const title: unknown = document?.node.getConfig()?.pluxelTitle
+		if (title === undefined) return undefined
+		if (
+			!title ||
+			typeof title !== 'object' ||
+			!('href' in title) ||
+			typeof title.href !== 'string' ||
+			!('value' in title) ||
+			typeof title.value !== 'string'
+		)
+			throw new Error('文档标题配置无效')
+		return title.href === document?.href ? title.value : undefined
+	})
+	useContentController({
+		title:
+			state.remoteTitle?.value ??
+			state.title ??
+			openingTitle ??
+			(href ? session.resolveTitle?.(href) : undefined),
+		leave:
+			state.editor || state.remoteDirty
+				? {
+						getState: state.getState,
+						decide: async (request) => {
+							const decision = await state.decide(request)
+							if (decision.decision === 'allow' && !request.signal.aborted) {
+								// Keep the accepted old page inert until the native Router settles, including loaders.
+								pauses.current++
+								if (root.current) root.current.inert = true
+								request.defer(() => {
+									pauses.current--
+									if (root.current) root.current.inert = pauses.current > 0
+								})
+							}
+							return decision
+						},
+					}
+				: null,
+		save: () => state.editor?.save?.(),
+		focus: () =>
+			root.current
+				?.querySelector<HTMLElement>(
+					'input:not(:disabled), textarea:not(:disabled), [contenteditable="true"]',
 				)
-					return true
-			}
-			return state.beforeLeave()
-		},
-		save: async () => {
-			await state.editor?.save?.()
-		},
+				?.focus(),
 	})
 	useEffect(() => {
 		session.documents.set(content.id, state)
@@ -110,7 +194,13 @@ export function WorkbenchDocumentRoot({ children }: { children: ReactNode }) {
 		}
 	}, [content.id, session, state])
 	const value = useMemo(() => ({ id: content.id, state, content }), [content, state])
-	return <DocumentContext.Provider value={value}>{children}</DocumentContext.Provider>
+	return (
+		<DocumentContext.Provider value={value}>
+			<div ref={root} style={{ height: '100%', minHeight: 0 }}>
+				{children}
+			</div>
+		</DocumentContext.Provider>
+	)
 }
 
 /** Built-in catalogs can own a workspace before an individual plugin is selected or loaded. */

@@ -1,7 +1,7 @@
-import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { HostService, HostStartupContext } from '@pluxel/host'
 import type { ProductDescriptor } from './management/product-contract'
+import type { WorkbenchShortcut } from '@pluxel/workbench/service'
 import { standardServices } from './index'
 import { vault, type VaultServiceConfig } from './vault'
 
@@ -15,39 +15,24 @@ export async function servicesPreset(
 		product?: ProductDescriptor
 		/** Include the Workbench UI at /__pluxel/workbench. @default true */
 		workbench?: boolean
+		/** Initial user-removable sidebar shortcuts; declarations never control root placement. */
+		initialShortcuts?: readonly WorkbenchShortcut[]
 	}>,
 ): Promise<HostService[]> {
 	if (!options || typeof options !== 'object' || Array.isArray(options))
 		throw new TypeError('[services/preset] options must be an object')
 	for (const key of Object.keys(options)) {
-		if (!['vault', 'product', 'workbench'].includes(key))
+		if (!['vault', 'product', 'workbench', 'initialShortcuts'].includes(key))
 			throw new TypeError(`[services/preset] Unknown option options.${key}`)
 	}
 	if (options.workbench !== undefined && typeof options.workbench !== 'boolean')
 		throw new TypeError('[services/preset] options.workbench must be a boolean')
 	const withWorkbench = options.workbench ?? true
 	const deployment = startup.deployment
-	let nodeModules: { root: string } | undefined
-	if (deployment) {
-		const manifestPath = resolve(deployment.root, 'pluxel-deployment.json')
-		const manifest: unknown = JSON.parse(await readFile(manifestPath, 'utf8'))
-		if (
-			!manifest ||
-			typeof manifest !== 'object' ||
-			Array.isArray(manifest) ||
-			!('version' in manifest) ||
-			manifest.version !== 1 ||
-			!('kind' in manifest) ||
-			(manifest.kind !== 'pluxel-static-application' &&
-				manifest.kind !== 'pluxel-modules-application')
-		) {
-			throw new TypeError(
-				`[services/preset] Invalid application deployment manifest: ${manifestPath}`,
-			)
-		}
-		if (manifest.kind === 'pluxel-static-application')
-			nodeModules = { root: resolve(deployment.root, 'artifacts/node') }
-	}
+	const nodeModules =
+		deployment?.delivery === 'standalone'
+			? { root: resolve(deployment.root, 'artifacts/node') }
+			: undefined
 	const [{ managementAccess }, { management }, { managementCommands }, { managementHttp }] =
 		await Promise.all([
 			import('./management/access'),
@@ -101,6 +86,7 @@ export async function servicesPreset(
 			? [
 					workbench.workbenchService({
 						product: options.product,
+						initialShortcuts: options.initialShortcuts,
 						artifacts: deployment ? { root: resolve(deployment.root, 'workbench') } : undefined,
 					}),
 					workbench.workbenchHttp({

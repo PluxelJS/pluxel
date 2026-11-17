@@ -1,10 +1,17 @@
 import type { Context, PluginContext } from '../context/Context'
 import { enterOwnerInvocation } from '../internal/owner-invocations'
 import type { HostDocumentStorage } from '../storage/documents'
-import { createStore, type Content, type Store } from 'tinybase'
+import {
+	createStore,
+	type Content,
+	type Store,
+	type TablesSchema,
+	type ValuesSchema,
+} from 'tinybase'
 import type { OptionalSchemas, Store as SchemaStore } from 'tinybase/with-schemas'
 import { decodeSnapshot, encodeSnapshot, sameContent } from './codec'
 import { TinyBaseError } from './error'
+import { observeFile } from '../fs/observe'
 import type { TinyBaseIdentity, TinyBaseService, TinyBaseStatus } from './types'
 
 type Snapshot = { revision: number; content: Content; text: string }
@@ -31,6 +38,10 @@ export class StoreWriter implements TinyBaseService {
 	private recovered = false
 	private outcome: 'confirmed' | 'unknown' = 'confirmed'
 	private scheduled = false
+	private loading = false
+	private initialText?: string
+	private stopObserving?: () => Promise<void>
+	private reloadError?: unknown
 
 	constructor(
 		readonly ctx: PluginContext,
@@ -114,6 +125,7 @@ export class StoreWriter implements TinyBaseService {
 		this.published = true
 		if (this.last) this.enqueue(this.last)
 		this.schedule()
+		if (this.last) this.observe()
 	}
 
 	status(): TinyBaseStatus {
@@ -135,7 +147,7 @@ export class StoreWriter implements TinyBaseService {
 				this.saving?.revision ??
 				(this.last && this.last.revision > this.savedRevision ? this.last.revision : undefined),
 			outcome: this.outcome,
-			...(this.fault ? { error: this.fault } : {}),
+			...(this.fault || this.reloadError ? { error: this.fault ?? this.reloadError } : {}),
 		})
 	}
 
@@ -186,6 +198,7 @@ export class StoreWriter implements TinyBaseService {
 	private async restore(store: Store, signal: AbortSignal): Promise<Store> {
 		try {
 			const text = await this.documents.getText(this.file)
+			this.initialText = text
 			// A withdrawn acquisition must not publish a snapshot or enable autosave.
 			signal.throwIfAborted()
 			if (text !== undefined) {
@@ -204,7 +217,7 @@ export class StoreWriter implements TinyBaseService {
 				}),
 				store.addDidFinishTransactionListener(() => {
 					this.transaction = false
-					if (this.closing || this.fault) return
+					if (this.closing || this.fault || this.loading) return
 					try {
 						const content = store.getContent()
 						if (sameContent(content, this.last!.content)) return
@@ -222,6 +235,7 @@ export class StoreWriter implements TinyBaseService {
 			if (this.published) {
 				this.enqueue(this.last)
 				this.schedule()
+				this.observe()
 			}
 			return store
 		} catch (cause) {
@@ -241,6 +255,66 @@ export class StoreWriter implements TinyBaseService {
 			content,
 			text: encodeSnapshot(this.identity, content, this.maxBytes),
 		}
+	}
+
+	private observe(): void {
+		if (this.stopObserving || this.closing) return
+		let readRevision = this.revision
+		this.stopObserving = observeFile(
+			() => {
+				readRevision = this.revision
+				return this.documents.getText(this.file)
+			},
+			this.initialText,
+			(text) => {
+				if (this.closing || this.fault) return true
+				if (this.transaction || this.inFlight || this.pending || readRevision !== this.revision)
+					return false
+				const content: Content =
+					text === undefined ? [{}, {}] : decodeSnapshot(text, this.identity, this.maxBytes)
+				const store = this.store!
+				const candidate = createStore()
+				if (store.hasTablesSchema())
+					candidate.setTablesSchema(JSON.parse(store.getTablesSchemaJson()) as TablesSchema)
+				if (store.hasValuesSchema())
+					candidate.setValuesSchema(JSON.parse(store.getValuesSchemaJson()) as ValuesSchema)
+				candidate.setContent(content)
+				if (!sameContent(content, candidate.getContent()))
+					throw this.error(
+						'SNAPSHOT_INVALID',
+						'External Content does not match the native schema; source data has been preserved.',
+					)
+				this.reloadError = undefined
+				if (sameContent(content, store.getContent())) return true
+				this.revision++
+				this.savedRevision = this.revision
+				this.loading = true
+				let listenerFailed = false
+				let listenerError: unknown
+				try {
+					store.setContent(content)
+				} catch (error) {
+					listenerFailed = true
+					listenerError = error
+				} finally {
+					this.loading = false
+				}
+				// Listener-authored mutations are local writes; loading the file itself never writes back.
+				if (!sameContent(content, store.getContent())) this.revision++
+				this.last = this.snapshot()
+				this.enqueue(this.last)
+				this.schedule()
+				if (listenerFailed) throw listenerError
+				return true
+			},
+			(error) => {
+				this.reloadError = error
+				this.ctx.logger.error('Cannot reload TinyBase file for {owner}', {
+					owner: this.identity,
+					error,
+				})
+			},
+		)
 	}
 
 	private enqueue(snapshot: Snapshot): void {
@@ -304,6 +378,7 @@ export class StoreWriter implements TinyBaseService {
 		this.closing = true
 		this.disposal = (async () => {
 			try {
+				await this.stopObserving?.()
 				await this.opening?.catch((): undefined => undefined)
 				for (const id of this.listenerIds.splice(0)) this.store!.delListener(id)
 				await this.inFlight?.catch((): undefined => undefined)

@@ -1,23 +1,16 @@
 import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { PackageManagerWorkbench } from '../workbench.ts'
+import { createPackageManagerResources } from './package-manager.resources.ts'
 
+export type { PrepareInstallInput } from './package-manager.resources.ts'
 export const managerScope = createWorkbenchRenderer(PackageManagerWorkbench.manager)
-
-export const packageManagerSnapshotQuery = managerScope.query(({ api }) => ({
-	queryKey: ['package-manager', 'snapshot'] as const,
-	queryFn: () => api.snapshotDto(),
-}))
-
-export const installPackagesMutation = managerScope.mutation(({ api }) => ({
-	mutationFn: (specs: readonly string[]) => api.installDto(specs),
-	workbench: {
-		invalidates: [packageManagerSnapshotQuery],
-	},
-}))
-
-export const removePackagesMutation = managerScope.mutation(({ api }) => ({
-	mutationFn: (names: readonly string[]) => api.removeDto(names),
-	workbench: {
-		invalidates: [packageManagerSnapshotQuery],
-	},
-}))
+export const {
+	packageManagerSnapshotQuery,
+	prepareInstallMutation,
+	confirmInstallMutation,
+	marketPackagesQuery,
+	marketPackageQuery,
+	marketReleaseQuery,
+	marketReleasesQuery,
+	removePackagesMutation,
+} = createPackageManagerResources(managerScope)

@@ -19,6 +19,8 @@ import { RouterLinkAdapter } from '../../router/RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
 import { setPluginAutoStarts } from '../pluginStatusActions'
 import { usePluginOverview } from '../pluginOverview'
+import { canWritePluginState, type PluginOverview } from '../pluginOverviewModel'
+import { managementQueryKeys } from '../../managementQuery'
 import { runtimeErrorMessage, useRuntimeManagementClient } from '../../../runtime'
 import {
 	EMPTY_OVERVIEW,
@@ -163,6 +165,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 	const [organizerResetToken, setOrganizerResetToken] = useState(0)
 
 	const overviewState = usePluginOverview()
+	const canChangeAutoStart = canWritePluginState(overviewState.overview?.statePolicy, 'autoStart')
 	const refetchOverview = overviewState.refetch
 
 	const overview = useMemo<OverviewSnapshot>(() => {
@@ -316,7 +319,8 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 
 	const handleBulkAutoStart = useCallback(
 		async (autoStart: boolean) => {
-			if (selectedIds.length === 0) return
+			const statePolicy = overviewState.overview?.statePolicy
+			if (selectedIds.length === 0 || !canChangeAutoStart || !statePolicy) return
 			const batch = selectedIds.map((id) => {
 				const status = overview.statuses[id]
 				if (!status) throw new Error(`Unknown catalog plugin id: ${id}`)
@@ -331,7 +335,11 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 					management,
 					queryClient,
 					batch.map(({ address }) => ({ address, autoStart })),
+					statePolicy.managedRevision,
 				)
+				const undoRevision = queryClient.getQueryData<PluginOverview>(
+					managementQueryKeys.pluginOverview(),
+				)?.statePolicy.managedRevision
 				const failed = results.filter((r) => !r.ok)
 				if (failed.length > 0) {
 					notifyAndRecord({
@@ -358,6 +366,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 										void (async () => {
 											setBulkBusy(true)
 											try {
+												if (!undoRevision) throw new Error('运行策略尚未重新加载，无法恢复')
 												const undoResults = await setPluginAutoStarts(
 													management,
 													queryClient,
@@ -365,6 +374,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 														address,
 														autoStart: previousAutoStart,
 													})),
+													undoRevision,
 												)
 												const undoFailed = undoResults.filter((result) => !result.ok)
 												if (undoFailed.length > 0) {
@@ -416,7 +426,14 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 				setBulkBusy(false)
 			}
 		},
-		[management, selectedIds, overview.statuses, queryClient],
+		[
+			canChangeAutoStart,
+			management,
+			selectedIds,
+			overview.statuses,
+			overviewState.overview?.statePolicy,
+			queryClient,
+		],
 	)
 
 	const handleBulkAction = useCallback(
@@ -562,7 +579,12 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 				</div>
 
 				{selectedIds.length > 0 ? (
-					<BulkActionsBar count={selectedIds.length} busy={bulkBusy} onAction={handleBulkAction} />
+					<BulkActionsBar
+						count={selectedIds.length}
+						busy={bulkBusy}
+						canChangeAutoStart={canChangeAutoStart}
+						onAction={handleBulkAction}
+					/>
 				) : null}
 
 				<Box className="plx-pluginCatalog__body">

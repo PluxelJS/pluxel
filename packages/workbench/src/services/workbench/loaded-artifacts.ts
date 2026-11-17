@@ -1,11 +1,7 @@
 import { readLoadedPluginModule, installedPackageFacts } from '@pluxel/host/internal'
 import { readFile, realpath } from 'node:fs/promises'
 import { dirname, resolve, isAbsolute, relative } from 'pathe'
-import {
-	pluginDefinitionIndexKey,
-	pluginDefinitionAddressOf,
-	type PluginConstructor,
-} from '@pluxel/core'
+import { pluginDefinitionIndexKey, type PluginConstructor } from '@pluxel/core'
 import { WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE } from '@pluxel/core/federation'
 import type { WorkbenchArtifactBatchCandidate } from './WorkbenchArtifactCoordinator'
 import { readPackagedWorkbenchCandidates } from './packaged-artifact'
@@ -110,7 +106,7 @@ export async function readNativeWorkbenchArtifacts(
 		const loaded = readLoadedPluginModule(plugin)
 		if (!loaded) continue
 		const definitions = modules.get(loaded.module) ?? new Set<string>()
-		definitions.add(pluginDefinitionIndexKey(pluginDefinitionAddressOf(plugin)))
+		definitions.add(pluginDefinitionIndexKey(plugin.definitionAddress()))
 		modules.set(loaded.module, definitions)
 	}
 	const selected = new Set<string>()

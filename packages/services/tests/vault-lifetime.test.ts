@@ -1,5 +1,5 @@
 import { requireFs, enterOwnerInvocation } from '@pluxel/core/internal'
-import { BasePlugin, Plugin, pluginNodeAddressOf, type Context } from '@pluxel/core'
+import { BasePlugin, Plugin, type Context } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
 import { afterEach, expect, it, vi } from 'vitest'
 import * as nativeFs from 'node:fs'
@@ -44,7 +44,7 @@ it('drains an accepted transaction before generation stop and rejects retained K
 	const entered = Promise.withResolvers<void>()
 	const release = Promise.withResolvers<void>()
 	try {
-		const owner = pluginNodeAddressOf(VaultOwner)
+		const owner = VaultOwner.nodeAddress()
 		await host.startNode(owner)
 		const kv = ownerVault.kv()
 		const blob = ownerVault.blobs().open('cached')
@@ -95,13 +95,13 @@ it('keeps complete blob IO admitted through Host close, then flushes the final s
 	const release = Promise.withResolvers<void>()
 	const events: string[] = []
 	const config = {
-		storage: {
+		zenfs: {
 			mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 			durableMounts: ['/'],
 		},
 	}
 	const services = [vault()]
-	const host = await createHost({ plugins: [], config, services })
+	const host = await createHost({ plugins: [], services, runtime: { ...config } })
 	const directory = await requireFs(host.ctx).directory('services/vault')
 	const rename = directory.rename
 	vi.spyOn(directory, 'rename').mockImplementation(async (from, to) => {
@@ -139,7 +139,7 @@ it('keeps complete blob IO admitted through Host close, then flushes the final s
 		release.resolve()
 		await host.close()
 	}
-	const reopened = await createHost({ plugins: [], config, services })
+	const reopened = await createHost({ plugins: [], services, runtime: { ...config } })
 	try {
 		const storage = reopened.ctx.require(Vault)
 		await expect(storage.kv().get('final')).resolves.toMatchObject({ value: 'persisted' })

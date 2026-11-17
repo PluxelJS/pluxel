@@ -1,10 +1,10 @@
-import { createWorkbench, type NavigationResult } from '@worksplit/react'
+import { createWorkbench, type OpenResult, type OpenOptions } from '@worksplit/react'
 import { Actions, DockLocation } from 'flexlayout-react'
 import type { ProjectSummary } from '../shared/contracts'
 import { api } from './api'
 import { AssistantPanel } from './assistant'
 import { WorkspaceController, useWorkspaceState } from './workspace'
-import { assistantTab, createStudioLayout, documentTarget, findTool } from './workbench-layout'
+import { assistantTab, createStudioLayout, documentTarget } from './workbench-layout'
 import { createStudioRouter, studioDocument, type StudioDocument } from './workbench-routes'
 
 /** One project owns business state and one Worksplit instance. Shell components borrow them. */
@@ -19,13 +19,53 @@ export class StudioSession {
 
 	constructor(readonly project: ProjectSummary) {
 		const workspace = (this.workspace = new WorkspaceController(project))
+		const basis = () =>
+			JSON.stringify([
+				[...workspace.files].map(([path, file]) => [
+					path,
+					file.token,
+					file.external,
+					!!file.missing,
+				]),
+				[...workspace.documents].map(([entry, document]) => [
+					entry,
+					document.inputToken,
+					document.inputEpoch,
+				]),
+			])
+		const leaveState = () => ({
+			hasUnsavedChanges: workspace.isDirty(),
+			token: JSON.stringify([
+				basis(),
+				[...workspace.files.values()].map((file) => file.saving),
+				[...workspace.documents.values()].map((document) => [
+					document.inputSaving,
+					document.bodyLocked,
+					!!document.inputConflict,
+				]),
+			]),
+		})
 		this.workbench = createWorkbench({
 			workspaceId: project.id,
-			home: '/',
-			homeMode: 'empty',
+			home: { href: '/', mode: 'empty' },
 			createRouter: createStudioRouter,
-			layout: createStudioLayout(),
-			tools: [{ id: 'assistant', render: () => <AssistantTool workspace={workspace} /> }],
+			initial: { layout: createStudioLayout() },
+			workspaceLeave: {
+				getState: leaveState,
+				async decide(request) {
+					const reviewed = basis()
+					await Promise.all([
+						...[...workspace.files.keys()].map((path) => workspace.save(path)),
+						...[...workspace.documents.keys()].map((entry) => workspace.saveInput(entry)),
+					])
+					if (request.signal.aborted || basis() !== reviewed || workspace.isDirty())
+						return { decision: 'deny' }
+					for (const path of new Set([...workspace.files.keys(), ...workspace.documents.keys()]))
+						request.defer(workspace.pauseEditing(path))
+					return { decision: 'allow', token: leaveState().token }
+				},
+			},
+			tools: { 'studio.assistant': { render: () => <AssistantTool workspace={workspace} /> } },
 			onIssue: ({ code, id, error }) =>
 				this.report(
 					new Error(`${code}${id ? ` (${id})` : ''}: ${String(error)}`, { cause: error }),
@@ -33,7 +73,7 @@ export class StudioSession {
 		})
 		this.disconnectSource = workspace.connectSourceNavigation(async (path) => {
 			const result = await this.open('file', path)
-			return result.status === 'committed'
+			return result.status === 'applied'
 		})
 	}
 
@@ -45,9 +85,9 @@ export class StudioSession {
 	start(): Promise<void> {
 		return (this.starting ??= (async () => {
 			if (this.closed) throw new Error('项目已关闭')
-			const result = await this.workbench.start('/')
+			const result = await this.workbench.start({ href: '/' })
 			if (result.status === 'failed') throw result.error
-			if (this.closed || (result.status !== 'empty' && result.status !== 'committed')) return
+			if (this.closed || result.status !== 'applied') return
 			this.workspace.start()
 			if (!(await this.workspace.refresh())) return
 			const first = this.workspace.tree?.documents[0]
@@ -67,9 +107,8 @@ export class StudioSession {
 		this.disconnectSource()
 		return (this.disposing = (async () => {
 			try {
-				const errors = await this.workbench.dispose()
-				if (errors.length > 0)
-					throw new AggregateError(errors, '项目内容已关闭，但部分资源释放失败')
+				const result = await this.workbench.dispose()
+				this.check(result, '项目内容已关闭，但部分资源释放失败')
 			} finally {
 				this.workspace.dispose()
 			}
@@ -79,79 +118,73 @@ export class StudioSession {
 	async open(
 		kind: StudioDocument['kind'],
 		path: string,
-		options: { newInstance?: boolean; background?: boolean } = {},
-	): Promise<NavigationResult> {
+		options: Omit<OpenOptions, 'destination' | 'preview'> = {},
+	): Promise<OpenResult> {
 		// Startup's default report cannot replace an explicit request that is still loading.
 		this.documentRequested = true
-		const { workbench, workspace } = this
-		const target = documentTarget(
+		const { workbench } = this
+		const destination = documentTarget(
 			kind,
-			workbench.getLayout(),
+			workbench.getContainers(),
 			workbench.getDocuments(),
-			workbench.getEditingContext().activeGroupId,
+			workbench.getContext().activeContainerId,
 		)
-		const active = workbench.getActiveDocument()
-		const placement = {
-			...target,
-			...options,
-			preserveFocus:
-				!options.background &&
-				kind === 'preview' &&
-				Boolean(active && (target.location !== undefined || target.target !== active.containerId)),
-		}
+		const source = options.source ?? workbench.getActiveDocument()?.handle
+		const sourceContainer = source && workbench.getContent(source.id)?.containerId
+		const canReveal =
+			kind === 'preview' &&
+			source &&
+			destination &&
+			(destination.location !== DockLocation.CENTER || destination.target !== sourceContainer) &&
+			!workbench.model.getMaximizedTabset()
+		const presentation = options.presentation ?? (canReveal ? 'reveal' : 'activate')
+		const placement = { destination, source, ...options, presentation }
 		const result =
 			kind === 'file'
 				? await workbench.open({ to: '/file', search: { path } }, placement)
 				: kind === 'form'
 					? await workbench.open({ to: '/form', search: { entry: path } }, placement)
 					: await workbench.open({ to: '/preview', search: { entry: path } }, placement)
-		if (result.status === 'failed') throw result.error
-		if (result.status === 'committed') {
-			const renamed = await workbench.dispatch(
-				Actions.renameTab(
-					result.document.id,
-					`${kind === 'preview' ? '预览 · ' : ''}${kind === 'file' ? path.split('/').at(-1) : (workspace.documents.get(path)?.result?.name ?? path.split('/').at(-1)?.replace(/\.ts$/, ''))}`,
-				),
-			)
-			if (renamed.status !== 'applied') {
-				if (!workbench.getDocument(result.document.id)) return { status: 'superseded' }
-				throw new Error('文档已打开，但标签标题未能更新')
-			}
-		}
+		this.check(result, '文档已打开，但部分内容资源释放失败')
 		return result
 	}
 
 	async openReport(path: string): Promise<void> {
 		const result = await this.open('form', path)
-		if (result.status !== 'committed') return
+		if (
+			result.status !== 'applied' ||
+			result.value.presentation !== 'activate' ||
+			this.workbench.getActiveDocument()?.id !== result.value.document.id
+		)
+			return
 		this.workspace.preferPreview(path)
-		await this.open('preview', path)
+		await this.open('preview', path, { source: result.value.document.handle })
 	}
 
 	async showAssistant(dock?: 'bottom' | 'right') {
 		const { workbench } = this
-		if (!dock && workbench.activate('assistant')) return
-		const layout = workbench.getLayout()
+		if (!dock && workbench.getContent('assistant')) {
+			this.check(await workbench.activate('assistant'), 'AI 助手激活失败')
+			return
+		}
 		const destination = dock ?? 'bottom'
-		if (!layout.borders?.some((border) => border.location === destination))
+		if (!workbench.getContainers().some((container) => container.id === `border_${destination}`))
 			throw new Error(`当前布局没有 ${destination} 停靠区`)
-		const action = findTool(layout, 'assistant')
+		const action = workbench.getContent('assistant')
 			? Actions.moveNode('assistant', `border_${destination}`, DockLocation.CENTER, -1, true)
 			: Actions.addTab({ ...assistantTab }, `border_${destination}`, DockLocation.CENTER, -1, true)
 		const result = await workbench.dispatch(action)
 		if (result.status !== 'applied') throw new Error('AI 助手停靠操作未被接纳')
-		workbench.activate('assistant')
+		this.check(await workbench.activate('assistant'), 'AI 助手激活失败')
 	}
 
 	async closeDocuments(
 		ids = this.workbench.getDocuments().map((document) => document.id),
 	): Promise<boolean> {
 		if (ids.length === 0) return true
-		const result = await this.workbench.dispatch(
-			Actions.group(ids.map((id) => Actions.deleteTab(id))),
-		)
+		const result = await this.workbench.close(ids)
 		if (result.status === 'failed') throw result.error
-		if (result.status !== 'closed') return false
+		if (result.status !== 'applied') return false
 		if (result.cleanupErrors.length > 0)
 			throw new AggregateError(result.cleanupErrors, '标签已关闭，但部分资源释放失败')
 		return true
@@ -160,8 +193,25 @@ export class StudioSession {
 	async closeAssistant() {
 		const result = await this.workbench.close('assistant')
 		if (result.status === 'failed') throw result.error
-		if (result.status === 'closed' && result.cleanupErrors.length > 0)
+		if (result.status === 'applied' && result.cleanupErrors.length > 0)
 			throw new AggregateError(result.cleanupErrors, 'AI 助手已关闭，但部分资源释放失败')
+	}
+
+	private check(
+		result: { status: string; error?: unknown; cleanupErrors?: readonly unknown[] },
+		message: string,
+	) {
+		if (result.status === 'failed') throw result.error
+		if (result.cleanupErrors?.length) throw new AggregateError(result.cleanupErrors, message)
+	}
+
+	async closeWorkspace(): Promise<boolean> {
+		const result = await this.workbench.closeWorkspace()
+		if (result.status === 'failed') throw result.error
+		if (result.status !== 'applied') return false
+		if (result.cleanupErrors.length > 0)
+			this.report(new AggregateError(result.cleanupErrors, '项目已关闭，但部分内容资源释放失败'))
+		return true
 	}
 
 	async exportProject() {
@@ -207,15 +257,21 @@ export class StudioSession {
 						: destination + tab.path.slice(path.length)
 					: tab.path
 				try {
-					const result = await this.open(tab.kind, next, { newInstance: true, background: true })
-					if (result.status !== 'committed')
+					const canOpenInBackground = workbench
+						.getContainers()
+						.some((container) => container.kind === 'tabset' && container.selectedId)
+					const result = await this.open(tab.kind, next, {
+						reuse: 'new',
+						presentation: canOpenInBackground ? 'background' : 'activate',
+					})
+					if (result.status !== 'applied')
 						throw new Error(`重新打开 ${next} 未完成：${result.status}`)
-					if (tab.id === active) activeId = result.document.id
+					if (tab.id === active) activeId = result.value.document.id
 				} catch (error) {
 					errors.push(error)
 				}
 			}
-			if (activeId) workbench.activate(activeId)
+			if (activeId) this.check(await workbench.activate(activeId), '文件已重新打开，但激活失败')
 			return errors
 		}
 		try {

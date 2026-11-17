@@ -1,5 +1,5 @@
 import * as nativeFs from 'node:fs'
-import { mkdtemp, readFile, rm, stat, writeFile, type FileHandle } from 'node:fs/promises'
+import { mkdtemp, readFile, rename, rm, stat, writeFile, type FileHandle } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -135,6 +135,34 @@ describe('ZenFS dependency admission', () => {
 		expect(reads).toBeGreaterThan(1)
 		expect(writes).toBeGreaterThan(1)
 	})
+
+	it.each(['async', 'sync'] as const)(
+		'never rewrites an externally replaced file when closing a %s reader',
+		async (mode) => {
+			const prefix = await temporaryDirectory()
+			const path = join(prefix, 'document')
+			await writeFile(path, 'old-long-value')
+			const backing = await resolveMountConfig({ backend: Passthrough, fs: nativeFs, prefix })
+			const bound = context(backing)
+			const reader =
+				mode === 'async'
+					? await bound.fs.promises.open('document', 'r')
+					: bound.fs.openSync('document', 'r')
+			try {
+				const buffer = new Uint8Array(14)
+				if (typeof reader === 'number') bound.fs.readSync(reader, buffer)
+				else await reader.read(buffer)
+				await writeFile(`${path}.replacement`, 'new')
+				await rename(`${path}.replacement`, path)
+			} finally {
+				if (typeof reader === 'number') bound.fs.closeSync(reader)
+				else await reader.close()
+			}
+			expect(await readFile(path, 'utf8')).toBe('new')
+			const current = await stat(path)
+			expect(current.size).toBe(3)
+		},
+	)
 
 	it('uses file offsets for synchronous short IO and applies zero-length truncation', async () => {
 		const prefix = await temporaryDirectory()

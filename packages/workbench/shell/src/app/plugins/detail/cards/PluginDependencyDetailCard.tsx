@@ -535,7 +535,7 @@ function DependencyImplementationControl({
 					label="当前插件使用"
 					data={selection.data}
 					value={selection.value}
-					disabled={consumerOverridePending || createPending}
+					disabled={consumerOverridePending || createPending || !controls.canChangeConsumerOverride}
 					searchable
 					allowDeselect={false}
 					comboboxProps={{ withinPortal: true }}
@@ -570,7 +570,12 @@ function DependencyImplementationControl({
 					<ActionIcon
 						size="sm"
 						variant="light"
-						disabled={consumerOverridePending || createPending || row.options.length === 0}
+						disabled={
+							consumerOverridePending ||
+							createPending ||
+							row.options.length === 0 ||
+							!controls.canCreateFork
+						}
 						onClick={createFork}
 						aria-label={`为 ${row.requirement.exportName} 创建 Fork`}
 					>

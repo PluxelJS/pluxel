@@ -4,12 +4,11 @@ import {
 	requireHostStateStore,
 } from '@pluxel/host/internal'
 import {
-	pluginDefinitionAddressOf,
 	pluginDefinitionIndexKey,
-	pluginNodeAddressOf,
 	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
+	type PluginForkNodeAddress,
 } from '@pluxel/core'
 import { requirePluginService, type ConcretePluginDefinitionCandidate } from '@pluxel/core/internal'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
@@ -61,7 +60,7 @@ describe('Plugin dependency graph read model', () => {
 	it('projects direct, inactive-fork, effective, and zero-intern facts', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
-		const DirectProviderDefinition = pluginDefinitionAddressOf(DirectProvider)
+		const DirectProviderDefinition = DirectProvider.definitionAddress()
 		host.add([DirectProvider, DirectConsumer])
 		const inactiveFork = host.fork(DirectConsumer, 'inactive')
 		host.cfg(DirectProvider).setAutoStart(true)
@@ -81,14 +80,13 @@ describe('Plugin dependency graph read model', () => {
 		const effective = new Map(
 			graph.nodes.map((entry) => [pluginNodeIndexKey(entry.status.address), entry.effective]),
 		)
-		expect(effective.get(pluginNodeIndexKey(pluginNodeAddressOf(DirectProvider)))).toBe(true)
-		expect(effective.get(pluginNodeIndexKey(pluginNodeAddressOf(DirectConsumer)))).toBe(true)
+		expect(effective.get(pluginNodeIndexKey(DirectProvider.nodeAddress()))).toBe(true)
+		expect(effective.get(pluginNodeIndexKey(DirectConsumer.nodeAddress()))).toBe(true)
 		expect(effective.get(pluginNodeIndexKey(inactiveFork))).toBe(false)
 
 		const directDefault = graph.edges.find(
 			(edge) =>
-				pluginNodeIndexKey(edge.consumer) ===
-					pluginNodeIndexKey(pluginNodeAddressOf(DirectConsumer)) &&
+				pluginNodeIndexKey(edge.consumer) === pluginNodeIndexKey(DirectConsumer.nodeAddress()) &&
 				pluginDefinitionIndexKey(edge.requirement) ===
 					pluginDefinitionIndexKey(DirectProviderDefinition),
 		)
@@ -100,8 +98,7 @@ describe('Plugin dependency graph read model', () => {
 		expect(
 			graph.edges.filter(
 				(edge) =>
-					pluginNodeIndexKey(edge.consumer) ===
-						pluginNodeIndexKey(pluginNodeAddressOf(DirectConsumer)) &&
+					pluginNodeIndexKey(edge.consumer) === pluginNodeIndexKey(DirectConsumer.nodeAddress()) &&
 					pluginDefinitionIndexKey(edge.requirement) ===
 						pluginDefinitionIndexKey(DirectProviderDefinition),
 			),
@@ -130,7 +127,7 @@ describe('Plugin dependency graph read model', () => {
 		const provider = graph.nodes.find(
 			(node) =>
 				pluginNodeIndexKey(node.status.address) ===
-				pluginNodeIndexKey(pluginNodeAddressOf(FailingProvider)),
+				pluginNodeIndexKey(FailingProvider.nodeAddress()),
 		)
 		expect(provider).toMatchObject({
 			effective: true,
@@ -169,13 +166,7 @@ describe('Plugin dependency graph read model', () => {
 		const orphan = graphNode(Orphan)
 		const state = Object.freeze({
 			autoStart: Object.freeze([orphan]),
-			forks: Object.freeze([
-				Object.freeze({ definition: Consumer, forkIds: Object.freeze(['cold']) }),
-				Object.freeze({
-					definition: InvalidForkConsumer,
-					forkIds: Object.freeze(['invalid']),
-				}),
-			]),
+			forks: Object.freeze([consumerFork, invalidFork]),
 			providerDefaults: Object.freeze([Object.freeze({ token: AbstractDefault, provider })]),
 			dependencyOverrides: Object.freeze([
 				Object.freeze({
@@ -289,7 +280,7 @@ describe('Plugin dependency graph read model', () => {
 	it('returns graph_rejected with unchanged policy and graph for a cycle mutation', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
-		const CycleTokenDefinition = pluginDefinitionAddressOf(CycleToken)
+		const CycleTokenDefinition = CycleToken.definitionAddress()
 		host.add([CycleConsumer, CycleProvider, SafeProvider])
 		host.cfg(CycleConsumer).setAutoStart(true)
 		host.start(CycleConsumer)
@@ -297,16 +288,16 @@ describe('Plugin dependency graph read model', () => {
 		host.start(CycleProvider)
 		host.cfg(SafeProvider).setAutoStart(true)
 		host.start(SafeProvider)
-		host.override(CycleConsumer, CycleTokenDefinition, pluginNodeAddressOf(SafeProvider))
+		host.override(CycleConsumer, CycleTokenDefinition, SafeProvider.nodeAddress())
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
 		const before = await rpc.pluginDependencyGraphDto()
 
 		await expect(
 			rpc.setPluginConsumerOverrideDto({
-				consumer: pluginNodeAddressOf(CycleConsumer),
+				consumer: CycleConsumer.nodeAddress(),
 				requirement: CycleTokenDefinition,
-				provider: pluginNodeAddressOf(CycleProvider),
+				provider: CycleProvider.nodeAddress(),
 			}),
 		).resolves.toMatchObject({
 			ok: false,
@@ -314,7 +305,7 @@ describe('Plugin dependency graph read model', () => {
 			state: 'unchanged',
 		})
 		expect(requireHostStateStore(host.ctx).snapshot().dependencyOverrides).toEqual([
-			expect.objectContaining({ providerAddress: pluginNodeAddressOf(SafeProvider) }),
+			expect.objectContaining({ providerAddress: SafeProvider.nodeAddress() }),
 		])
 		expect(await rpc.pluginDependencyGraphDto()).toEqual(before)
 	})
@@ -327,6 +318,8 @@ function graphDefinition(name: string): PluginDefinitionAddress {
 	})
 }
 
+function graphNode(definition: PluginDefinitionAddress, forkId: string): PluginForkNodeAddress
+function graphNode(definition: PluginDefinitionAddress): PluginNodeAddress
 function graphNode(definition: PluginDefinitionAddress, forkId?: string): PluginNodeAddress {
 	return forkId
 		? Object.freeze({ definition, variant: 'fork' as const, forkId })

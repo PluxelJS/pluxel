@@ -30,6 +30,7 @@ it('rejects explicit source compilation when the host owns packaged artifact con
 		await expect(
 			nodeArtifacts().api!.pluxelHost.attach({
 				host,
+				startup: { root: process.cwd(), mode: 'test', env: {}, bindings: {} },
 				catalog: { plugins: [], modules: [], definitions: [] },
 				get server(): never {
 					throw new Error('packaged artifacts must not access the Vite server')

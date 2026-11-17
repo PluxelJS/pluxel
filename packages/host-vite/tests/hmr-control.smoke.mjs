@@ -68,7 +68,7 @@ import { pluginSource } from '@pluxel/host/sources';
 export default defineHostApplication(() => ({
 	plugins: [],
 	sources: [pluginSource({kind:'directory',path:'./entries',include:['*.entry.mjs']})],
-	state: { initial: { autoStart: ${JSON.stringify(Array.from({ length: count }, (_, index) => address(index)))} } },
+	policy: { autoStart: ${JSON.stringify(Array.from({ length: count }, (_, index) => address(index)))} },
 	prepare() { globalThis[${JSON.stringify(key)}].prepared.push(${version}); }
 }));
 `
@@ -412,10 +412,15 @@ await scenario(
 				return status.hmr.pending.files === count
 			}, 'all burst files must be admitted')
 			assert.equal(metrics.evaluations.length, beforeEvaluations + cycle * count)
-			const batch = await control('apply')
-			assert.equal(batch.hmr.pending.files, 0)
-			assert.equal(batch.hmr.running, false)
-			assert.equal(batch.application.latestUpdate.sequence, beforeSequence + cycle + 1)
+			// Independent filesystem observers can report the same writes during apply.
+			// Consume those later notifications explicitly; they must not evaluate or commit again.
+			await until(async () => {
+				const batch = await control('apply')
+				assert.equal(batch.hmr.running, false)
+				assert.equal(batch.application.latestUpdate.sequence, beforeSequence + cycle + 1)
+				assert.equal(metrics.evaluations.length, beforeEvaluations + (cycle + 1) * count)
+				return batch.hmr.pending.files === 0 && !batch.hmr.pending.full
+			}, 'duplicate source notifications must settle without another candidate')
 			const { heapUsed, rss } = process.memoryUsage()
 			memory.push({ cycle, heapUsed, rss })
 		}

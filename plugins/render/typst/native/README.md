@@ -1,6 +1,6 @@
 # Typst native navigation binding
 
-This directory owns a small patch to the Typst 0.7 Node binding. `NodeTypstDocument.navigation()` extracts source ranges, page coordinates and heading positions from the **same compiled document** used for vector/PDF export. It neither compiles a second document nor starts a server. The remaining upstream API is unchanged.
+This directory owns a small patch to the Typst 0.7 Node binding. `NodeTypstDocument.navigation()` extracts source ranges, page coordinates, heading and label positions, and link destinations from the **same compiled document** used for vector/PDF export. It neither compiles a second document nor starts a server. The remaining upstream API is unchanged.
 
 `source_map.rs` implements navigation and physical page metadata; `page_render.rs` renders retained pages to PNG with Typst’s native rasterizer. `compiler.patch` only registers that module and adds its direct Typst, typst-render and tiny-skia dependencies (including the lockfile entry). Upstream is pinned to `Myriad-Dreamin/typst.ts` commit `0501ced21131dccc68d12c5602cdb20909a52541`; dependencies use its committed Cargo lockfile. Upstream licenses remain in the downloaded source checkout.
 
@@ -23,7 +23,7 @@ Do not commit native binaries, build caches or machine-specific stamps. Build lo
 
 ## Navigation contract
 
-The returned JSON has `points`, `outline` and `pages` arrays. Source paths are slash-separated relative paths inside the compiler workspace; package and outside-workspace sources are excluded, as are generated `inputs/` files. Callers should additionally restrict navigation to files present in their workspace snapshot.
+The returned JSON has required `points`, `outline`, `pages`, `targets` and `links` arrays. Source paths in `points` are slash-separated relative paths inside the compiler workspace; package and outside-workspace sources are excluded, as are generated `inputs/` files. Callers should additionally restrict source navigation to files present in their workspace snapshot.
 
 Point source ranges use **1-based lines and UTF-16 columns**, with exclusive end positions. Page numbers are 1-based. `x`, `y`, `width`, `height` use Typst points in page coordinates. Nested group transforms are applied to all four corners and reported as axis-aligned bounds. Text uses glyph advance bounds; images and shapes use their layout geometry. These are navigation hit areas, not pixel-accurate glyph outlines. Generated content without a resolvable source span has no point. One source expression can produce multiple points/pages.
 
@@ -31,7 +31,15 @@ Native equation, reference and metadata Tag boundaries retain the owning content
 
 Literal text offsets are decoded UTF-8 offsets, not offsets into a function name. The collector maps supported string escapes back to their original source bytes, then reports UTF-16 columns. Direct text spans are checked against the glyph text. Ligatures retain their full source cluster. Computed expressions or text transformed without character provenance retain the whole expression range instead of an invented character offset. Multiline `raw("…")` and tab expansion lose unique offsets upstream; generated editor code blocks use raw backtick syntax to retain distinct line spans. Tabs and other upstream transformations can still fall back to the owning span.
 
-The mapping has a hard limit of 200,000 points. Exceeding it throws an explicit error; a partial mapping is never returned as success. Outline entries contain the compiler's heading title, level and page position.
+Outline entries contain the compiler's heading title, level and page position. `pages` contains each physical page's number, width and height in points.
+
+`targets` contains `{ label, page, x, y }` for every labelled, located element in the compiled document's introspector, including generated headings, figures, equations and content without an exposed source point. Label names have no angle brackets. Each occurrence is retained; consumers that require a unique label must reject ambiguity explicitly. Positions come directly from the finalized introspector, independently of heading titles, outline order and source glyphs.
+
+`links` contains `{ page, x, y, width, height, target }` for each native `FrameItem::Link`. Its bounds use the frame's actual rectangle and accumulated group transforms, including rotation. One logical link can produce multiple rectangles. A native Location destination is resolved through the same introspector; Location and Position destinations both become `{ kind: 'position', page, x, y }`. URL destinations become `{ kind: 'url', url }`, preserving the authored URL and scheme. The host owns which URLs it allows users to open. No SVG parsing is involved in collecting either array.
+
+Label names and source paths are native authoring data. A host exposing a document without source access must project these results into its own permitted document identities and positions before sending them to the browser.
+
+Each of `points`, `targets` and `links` has a hard limit of 200,000 entries. Exceeding any limit throws an explicit error; a partial mapping is never returned as success.
 
 ## Retained page images
 

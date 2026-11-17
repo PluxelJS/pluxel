@@ -1,9 +1,4 @@
-import {
-	BasePlugin,
-	createCoreTestHost,
-	Plugin,
-	pluginDefinitionAddressOf,
-} from '@pluxel/core/internal/test'
+import { BasePlugin, createCoreTestHost, Plugin } from '@pluxel/core/internal/test'
 import {
 	__setPluginDefinition,
 	lowerTestReplacement,
@@ -35,9 +30,7 @@ lowerTestReplacement(OriginalPlugin, ReplacementPlugin)
 
 describe('@pluxel/test/unsafe', () => {
 	it('lowers an explicit test replacement as a new evaluation of the target definition', async () => {
-		expect(pluginDefinitionAddressOf(ReplacementPlugin)).toEqual(
-			pluginDefinitionAddressOf(OriginalPlugin),
-		)
+		expect(ReplacementPlugin.definitionAddress()).toEqual(OriginalPlugin.definitionAddress())
 
 		await using host = createCoreTestHost()
 		await host.add(OriginalPlugin)

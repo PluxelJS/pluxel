@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { resolveContextCapability } from '@pluxel/core/host'
 import { createHost } from '@pluxel/host'
 import { expect, it } from 'vitest'
@@ -25,16 +25,16 @@ it('publishes and withdraws business routes through the standalone Host commit w
 		const request = () => new Request('http://localhost/hello')
 		const absent = await server.fetch(request())
 		expect(absent.status).toBe(404)
-		await host.startNode(pluginNodeAddressOf(Routes))
+		await host.startNode(Routes.nodeAddress())
 		const published = await server.fetch(request())
 		expect(await published.text()).toBe('hello')
-		await host.startNode(pluginNodeAddressOf(ConflictingRoutes))
+		await host.startNode(ConflictingRoutes.nodeAddress())
 		const conflict = await server.fetch(request())
 		expect(await conflict.text()).toBe('hello')
 		expect('adminAccess' in host.ctx).toBe(false)
 		expect('workbench' in host.ctx).toBe(false)
-		await host.stopNode(pluginNodeAddressOf(ConflictingRoutes))
-		await host.stopNode(pluginNodeAddressOf(Routes))
+		await host.stopNode(ConflictingRoutes.nodeAddress())
+		await host.stopNode(Routes.nodeAddress())
 		const withdrawn = await server.fetch(request())
 		expect(withdrawn.status).toBe(404)
 	} finally {

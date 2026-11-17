@@ -3,12 +3,11 @@ import type {
 	ConfigPresentationBranchFieldV1,
 	ConfigPresentationFieldMetaV1,
 	ConfigPresentationFieldV1,
-	ConfigPresentationPlanV1,
-	RuntimeJsonObject,
+	ConfigPresentationPlanV2,
 	RuntimeJsonValue,
 } from '../../web/protocol'
 import {
-	parseConfigPresentationPlanV1,
+	parseConfigPresentationPlanV2,
 	parseFormPresentationFields,
 	parseRuntimePortableData,
 } from '../../web/validation'
@@ -17,25 +16,21 @@ type ConfigPresentationSectionInput = Readonly<{
 	path: readonly string[]
 	fieldName: string
 	schema: unknown
-	defaults: Record<string, unknown>
 }>
 
 /** Compile server-owned schema facts into the versioned browser presentation DTO. */
-export function compileConfigPresentationPlanV1(input: {
+export function compileConfigPresentationPlanV2(input: {
 	fieldName: string
 	schema: unknown
-	defaults: Record<string, unknown>
 	sections: readonly ConfigPresentationSectionInput[]
-}): ConfigPresentationPlanV1 {
-	return parseConfigPresentationPlanV1({
-		version: 1,
+}): ConfigPresentationPlanV2 {
+	return parseConfigPresentationPlanV2({
+		version: 2,
 		fieldName: input.fieldName,
-		defaults: jsonRecord(input.defaults, 'config defaults'),
 		fields: projectConfigFields(input.schema, input.fieldName),
 		sections: input.sections.map((section) => ({
 			path: section.path,
 			fieldName: section.fieldName,
-			defaults: jsonRecord(section.defaults, `config defaults at ${section.path.join('.')}`),
 			fields: projectConfigFields(section.schema, section.fieldName),
 		})),
 	})
@@ -427,14 +422,6 @@ function projectMeta(meta: FieldMeta): ConfigPresentationFieldMetaV1 {
 		...defined('readOnly', meta.readOnly),
 		...defined('hidden', meta.hidden),
 	}
-}
-
-function jsonRecord(input: unknown, label: string): RuntimeJsonObject {
-	const value = parseRuntimePortableData(input, label)
-	if (!value || typeof value !== 'object' || Array.isArray(value)) {
-		throw new TypeError(`${label} must be a JSON object`)
-	}
-	return value as RuntimeJsonObject
 }
 
 function defined<const K extends string, T>(key: K, value: T | undefined): {} | Record<K, T> {

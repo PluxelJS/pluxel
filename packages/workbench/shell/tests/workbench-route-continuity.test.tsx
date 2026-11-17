@@ -11,7 +11,7 @@ import {
 	useRouter,
 	type AnyRouter,
 } from '@tanstack/react-router'
-import { Actions, DockLocation, Model } from 'flexlayout-react'
+import { Actions, DockLocation } from 'flexlayout-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Workbench } from '@worksplit/react'
 import { WorkspaceSession } from '../src/app/workbench/session'
@@ -172,14 +172,14 @@ describe('native Workbench route continuity', () => {
 			const original = workspace.workbench.getDocument(logs)!
 			await act(async () => {
 				await workspace.workbench.dispatch(
-					Actions.moveNode(logs, original.containerId, DockLocation.RIGHT, -1),
+					Actions.moveNode(logs, original.containerId!, DockLocation.RIGHT, -1),
 				)
 			})
 			expect(container.querySelector(`main[data-document-id="${logs}"]`)).toBe(logsPage)
 			expect(input.value).toBe('unsaved log filter')
 			expect(logsPage.scrollTop).toBe(153)
-			const model = Model.fromJson(workspace.workbench.getLayout())
-			expect(model.getNodeById(logs)?.getParent()?.getId()).not.toBe(original.containerId)
+			const model = workspace.workbench.model
+			expect(model.getNodeById(logs)?.getParent()?.getId()).not.toBe(original.containerId!)
 			await act(async () => {
 				await workspace.workbench.dispatch(Actions.addTabToNewGroup(logs, 'Diagnostics', '#3366cc'))
 				await workspace.workbench.dispatch(Actions.setTabPinned(logs, true))
@@ -215,7 +215,7 @@ describe('native Workbench route continuity', () => {
 		expect(probes.routers.get(copy)).not.toBe(probes.routers.get(first))
 		await act(async () => {
 			const result = await workspace.workbench.close(copy)
-			expect(result.status).toBe('closed')
+			expect(result.status).toBe('applied')
 		})
 		expect(workspace.workbench.getDocuments()).toHaveLength(1)
 		expect(input.value).toBe('first draft')
@@ -251,7 +251,7 @@ describe('native Workbench route continuity', () => {
 		})
 		const toolInput = container.querySelector<HTMLInputElement>('[aria-label="入口搜索"]')!
 		await act(async () => toolInput.focus())
-		expect(workspace.workbench.getEditingContext().focusedArea).toBe('tool')
+		expect(workspace.workbench.getContext().focusedContentId).toBe('navigation')
 		expect(workspace.workbench.getActiveDocument()?.id).toBe(first.id)
 		expect(window.location.pathname + window.location.search + window.location.hash).toBe(
 			'/__pluxel/workbench/logs?filter=warn#tail',
@@ -268,7 +268,7 @@ describe('native Workbench route continuity', () => {
 		const view = (colorScheme: 'light' | 'dark') => (
 			<StrictMode>
 				<WorkspaceProviders session={workspace} colorScheme={colorScheme}>
-					<Workbench workbench={workspace.workbench} />
+					<Workbench instance={workspace.workbench} />
 				</WorkspaceProviders>
 			</StrictMode>
 		)

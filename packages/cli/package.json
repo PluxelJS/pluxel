@@ -54,7 +54,6 @@
 	},
 	"devDependencies": {
 		"@pluxel-internal/pncat": "workspace:*",
-		"@pluxel/market": "catalog:dev",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/picomatch": "catalog:types",
@@ -64,14 +63,10 @@
 		"vite-plus": "catalog:build"
 	},
 	"peerDependencies": {
-		"@pluxel/market": "catalog:peer",
 		"@pluxel/rolldown": "workspace:^",
 		"vite-plus": "catalog:build"
 	},
 	"peerDependenciesMeta": {
-		"@pluxel/market": {
-			"optional": true
-		},
 		"@pluxel/rolldown": {
 			"optional": true
 		},

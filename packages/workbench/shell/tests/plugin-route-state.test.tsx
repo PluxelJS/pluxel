@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { Actions, BorderNode, DockLocation, Model, TabNode } from 'flexlayout-react'
+import { Actions, BorderNode, DockLocation, TabNode } from 'flexlayout-react'
 import { formatPluginNodeRoute } from '@pluxel/core'
 import { act, useEffect, useState, useMemo } from 'react'
 import type { Root } from 'react-dom/client'
@@ -278,24 +278,24 @@ describe('plugin state within native documents', () => {
 
 	it('keeps fixed native tool nodes and rejects closing or moving them into documents', async () => {
 		const { workspace } = await mount()
-		const initial = Model.fromJson(workspace.workbench.getLayout())
+		const initial = workspace.workbench.model
 		const inspector = initial.getNodeById('plugin-inspector') as TabNode
 		expect(inspector.getParent()!.getId()).toBe('border_right')
 		expect(inspector.isEnableClose()).toBe(false)
 		expect(inspector.isEnableDrag()).toBe(false)
 		expect((initial.getNodeById('border_bottom') as BorderNode).getChildren()).toHaveLength(0)
 		const first = await openDocument(workspace, `/plugins/${firstRoute}`)
-		const documentContainer = workspace.workbench.getDocument(first)!.containerId
+		const documentContainer = workspace.workbench.getDocument(first)!.containerId!
 		for (const id of ['navigation', 'plugin-inspector']) {
 			await act(async () => {
 				expect(await workspace.workbench.dispatch(Actions.deleteTab(id))).toMatchObject({
-					status: 'rejected',
+					status: 'denied',
 				})
 				expect(
 					await workspace.workbench.dispatch(
 						Actions.moveNode(id, documentContainer, DockLocation.CENTER, -1),
 					),
-				).toMatchObject({ status: 'rejected' })
+				).toMatchObject({ status: 'denied' })
 			})
 		}
 		for (const target of ['border_bottom', 'border_left', 'border_right']) {
@@ -304,14 +304,12 @@ describe('plugin state within native documents', () => {
 					await workspace.workbench.dispatch(
 						Actions.moveNode(first, target, DockLocation.CENTER, -1),
 					),
-				).toMatchObject({ status: 'rejected' })
+				).toMatchObject({ status: 'denied' })
 			})
 		}
 		expect(workspace.workbench.getDocument(first)?.containerId).toBe(documentContainer)
 		expect(
-			(Model.fromJson(workspace.workbench.getLayout()).getNodeById('plugin-inspector') as TabNode)
-				.getParent()!
-				.getId(),
+			(workspace.workbench.model.getNodeById('plugin-inspector') as TabNode).getParent()!.getId(),
 		).toBe('border_right')
 	})
 
@@ -331,8 +329,7 @@ describe('plugin state within native documents', () => {
 			await workspace.workbench.dispatch(Actions.adjustBorderSplit('border_right', 400))
 			await workspace.toggleBorder('right')
 		})
-		const right = () =>
-			Model.fromJson(workspace.workbench.getLayout()).getNodeById('border_right') as BorderNode
+		const right = () => workspace.workbench.model.getNodeById('border_right') as BorderNode
 		expect(right().isShowing()).toBe(true)
 		expect(right().getSelected()).toBe(-1)
 		expect(right().getSize()).toBe(400)
@@ -349,8 +346,7 @@ describe('plugin state within native documents', () => {
 		const { workspace, container } = await mount()
 		const first = await openDocument(workspace, `/plugins/${firstRoute}`)
 		await act(async () => workspace.syncWorkspacePanels())
-		const right = () =>
-			Model.fromJson(workspace.workbench.getLayout()).getNodeById('border_right') as BorderNode
+		const right = () => workspace.workbench.model.getNodeById('border_right') as BorderNode
 		expect(right().isShowing()).toBe(true)
 		expect(right().getSelected()).toBe(-1)
 		await act(async () => workspace.toggleBorder('right'))
@@ -364,11 +360,9 @@ describe('plugin state within native documents', () => {
 		expect(workspace.panelAvailable('right')).toBe(false)
 		expect(workspace.panelAvailable('bottom')).toBe(false)
 		expect(right().isShowing()).toBe(false)
-		expect(
-			(
-				Model.fromJson(workspace.workbench.getLayout()).getNodeById('border_bottom') as BorderNode
-			).isShowing(),
-		).toBe(false)
+		expect((workspace.workbench.model.getNodeById('border_bottom') as BorderNode).isShowing()).toBe(
+			false,
+		)
 		await act(async () => {
 			await workspace.toggleBorder('right')
 		})
@@ -384,7 +378,7 @@ describe('plugin state within native documents', () => {
 	it('keeps the right log preview while central documents are maximized', async () => {
 		const { workspace, container } = await mount()
 		await openDocument(workspace, `/plugins/${firstRoute}`)
-		const documentContainer = workspace.workbench.getActiveDocument()!.containerId
+		const documentContainer = workspace.workbench.getActiveDocument()!.containerId!
 		const logs = () => container.querySelector('[data-testid="scoped-log"]')?.textContent
 		await act(async () => workspace.toggleBorder('right'))
 		await act(async () => {
@@ -394,9 +388,9 @@ describe('plugin state within native documents', () => {
 		})
 		expect(logs()).toBe(firstRoute)
 		await act(async () => {
-			expect(await workspace.workbench.dispatch(Actions.maximizeToggle(documentContainer))).toEqual(
-				{ status: 'applied' },
-			)
+			expect(
+				await workspace.workbench.dispatch(Actions.maximizeToggle(documentContainer)),
+			).toMatchObject({ status: 'applied' })
 		})
 		expect(logs()).toBe(firstRoute)
 		await act(async () => {

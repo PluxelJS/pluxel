@@ -39,6 +39,11 @@ import {
 import { registerSourceCheckout } from '../src/source/registry'
 import { scanSourceWorkspace, sourcePackageNeedsBuild } from '../src/source/workspace'
 
+vi.mock('node:fs/promises', async (original) => {
+	const actual = await original<typeof import('node:fs/promises')>()
+	return { ...actual, readdir: vi.fn(actual.readdir) }
+})
+
 // These fixture repositories model a release CLI with explicitly registered sources.
 vi.mock('../src/source/registry', async (original) => {
 	const actual = await original<typeof import('../src/source/registry')>()
@@ -117,6 +122,31 @@ describe('source workspace configuration', () => {
 })
 
 describe('source workspace membership', () => {
+	it('does not traverse artifact trees outside declared workspace branches', async () => {
+		const root = await createTemporaryRoot()
+		await writeJson(resolve(root, 'package.json'), { name: 'root' })
+		await writeJson(resolve(root, 'host/package.json'), { name: 'host' })
+		await writeJson(resolve(root, 'packages/active/package.json'), { name: 'active' })
+		await writeJson(resolve(root, 'packages/excluded/package.json'), { name: 'excluded' })
+		await writeJson(resolve(root, 'vendor/one/react/package.json'), { name: 'react' })
+		await writeJson(resolve(root, 'artifacts/deep/package.json'), { name: 'artifact' })
+		await writeFile(
+			resolve(root, 'pnpm-workspace.yaml'),
+			"packages:\n  - host\n  - packages/*\n  - '!packages/excluded'\n  - vendor/{one,two}/react\n",
+		)
+		vi.mocked(readdir).mockClear()
+		const scanned = await scanSourceWorkspace(root)
+		expect(scanned.packages.map((pkg) => pkg.name).sort()).toEqual([
+			'active',
+			'host',
+			'react',
+			'root',
+		])
+		expect(vi.mocked(readdir).mock.calls.map(([directory]) => directory)).not.toContain(
+			resolve(root, 'artifacts'),
+		)
+	})
+
 	it('keeps catalog-only pnpm workspaces at the root package', async () => {
 		const root = await createTemporaryRoot()
 		await writeJson(resolve(root, 'package.json'), { name: 'root' })

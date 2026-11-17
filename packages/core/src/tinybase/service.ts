@@ -2,11 +2,8 @@ import { pluginNodeIndexKey, type PluginNodeAddress } from '../plugins/runtime/i
 import type { Context, PluginContext, RootContext } from '../context/Context'
 import type { CorePluginLifecycleHooks } from '../plugins/runtime/plugin-service/HostLifecycle'
 import type { HostDocumentStorage } from '../storage/documents'
-import { sha256 } from '@noble/hashes/sha2.js'
-import { bytesToHex } from '@noble/hashes/utils.js'
 import type { FsService } from '../fs/service'
 import { pluginNodePhysicalKey } from '../internal/plugin-address'
-import { HostDocuments } from './documents'
 import { TinyBaseError } from './error'
 import { StoreWriter, runOperation } from './writer'
 import type { TinyBaseHostService, TinyBaseService, TinyBaseStatus } from './types'
@@ -16,9 +13,7 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 	private readonly owners = new WeakMap<Context, StoreWriter>()
 	private readonly published = new WeakSet<Context>()
 	private readonly writers = new Map<string, StoreWriter>()
-	private readonly namespaces = new Map<string, HostDocuments>()
 	private readonly nodeBacking: HostDocumentStorage
-	private readonly hostBacking: HostDocumentStorage
 	private closed = false
 
 	constructor(
@@ -26,8 +21,7 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 		private readonly fs: FsService,
 		private readonly maxBytes: number,
 	) {
-		this.nodeBacking = fs.documents('services/tinybase/nodes')
-		this.hostBacking = fs.documents('services/tinybase/host')
+		this.nodeBacking = fs.documents('services/tinybase/nodes', maxBytes)
 		this.lifecycle = {
 			prepareCommit: ({ started }) => {
 				for (const ctx of started) this.owners.get(ctx)?.preparePublication()
@@ -52,10 +46,11 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 			writer = new StoreWriter(
 				ctx as PluginContext,
 				{
-					...this.nodeBacking,
+					put: (file, text) => this.nodeBacking.put(file, text),
+					stat: (file) => this.nodeBacking.stat(file),
 					getText: async (file) => {
 						// open() is a writable capability even when this particular file already exists.
-						await this.fs.ready({ writable: true })
+						await this.fs.directory('services/tinybase/nodes', { writable: true })
 						return this.nodeBacking.getText(file)
 					},
 				},
@@ -82,23 +77,8 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 		return writer
 	}
 
-	documents(namespace: string): HostDocumentStorage {
-		this.assertOpen()
-		if (typeof namespace !== 'string' || namespace.length === 0 || namespace.length > 1024)
-			throw new TypeError('[core.tinybase] Host namespace must contain 1 to 1024 characters.')
-		let documents = this.namespaces.get(namespace)
-		if (!documents) {
-			const file = `${bytesToHex(sha256(new TextEncoder().encode(namespace)))}.json`
-			documents = new HostDocuments(namespace, this.hostBacking, file, this.maxBytes, () =>
-				this.fs.ready({ writable: true }),
-			)
-			this.namespaces.set(namespace, documents)
-		}
-		return documents
-	}
-
 	status(): readonly TinyBaseStatus[] {
-		return [...this.writers.values(), ...this.namespaces.values()].map((writer) => writer.status())
+		return [...this.writers.values()].map((writer) => writer.status())
 	}
 
 	recover(node: PluginNodeAddress, action: 'retry' | 'discard'): Promise<void> {
@@ -118,17 +98,8 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 		})
 	}
 
-	private async close(): Promise<void> {
+	private close(): void {
 		this.closed = true
-		const results = await Promise.allSettled(
-			[...this.namespaces.values()].map((documents) => documents.close()),
-		)
-		const errors = results.flatMap((result) =>
-			result.status === 'rejected' ? [result.reason] : [],
-		)
-		// A Plugin's own final cleanup reports its failed writer. Do not retry or suppress that fault here.
-		if (errors.length > 0)
-			throw new AggregateError(errors, 'Failed to drain TinyBase Host documents')
 	}
 
 	private assertOpen(): void {

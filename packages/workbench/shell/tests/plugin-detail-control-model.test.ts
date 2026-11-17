@@ -244,6 +244,8 @@ function applyReport(
 	}>,
 ) {
 	return {
+		persistence: { status: 'unchanged' as const },
+		writtenFields: [],
 		catalogRevision: 1,
 		runtimeStateRevision: 1,
 		reconciliation: [],

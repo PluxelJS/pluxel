@@ -1,4 +1,4 @@
-import { pluginNodeAddressOf, BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { envBinding, defineHostApplication, resolveHostApplication, createHost } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
@@ -95,15 +95,6 @@ describe('S3Plugin remote backend', () => {
 		const application = defineHostApplication(() => ({
 			plugins: [S3Plugin],
 			services: [vault({ backend: 'bindings' })],
-			state: { initial: { autoStart: [pluginNodeAddressOf(S3Plugin)] } },
-			configRecords: {
-				initial: [
-					{
-						owner: pluginNodeAddressOf(S3Plugin),
-						config: remoteConfig({ type: 'vault', key: 'primary' }),
-					},
-				],
-			},
 			envBindings: [
 				envBinding(S3Plugin, {
 					vault: {
@@ -114,6 +105,15 @@ describe('S3Plugin remote backend', () => {
 					},
 				}),
 			],
+			config: {
+				records: [
+					{
+						owner: S3Plugin.nodeAddress(),
+						config: remoteConfig({ type: 'vault', key: 'primary' }),
+					},
+				],
+			},
+			policy: { autoStart: [S3Plugin.nodeAddress()] },
 		}))
 		const startup = {
 			root: process.cwd(),
@@ -125,10 +125,11 @@ describe('S3Plugin remote backend', () => {
 		const host = await createHost({
 			plugins: resolved.plugins,
 			services: resolved.services,
-			state: resolved.state,
-			config: resolved.config,
-			configRecords: resolved.configRecords,
 			vaultBindings: resolved.vaultBindings,
+			name: resolved.name,
+			config: resolved.config,
+			policy: resolved.policy,
+			runtime: resolved.runtime,
 		})
 		try {
 			await host.start()
@@ -145,8 +146,8 @@ describe('S3Plugin remote backend', () => {
 			resolveHostApplication(application, {
 				...startup,
 				env: { S3_ACCESS_KEY: 'env-access' },
-			}).then(({ plugins, services, state, config, configRecords, vaultBindings }) =>
-				createHost({ plugins, services, state, config, configRecords, vaultBindings }),
+			}).then(({ name, plugins, services, runtime, vaultBindings }) =>
+				createHost({ plugins, services, vaultBindings, name, runtime }),
 			),
 		).rejects.toThrow('S3_SECRET_KEY')
 	})
@@ -164,14 +165,13 @@ describe('S3Plugin remote backend', () => {
 			})
 
 			await host.stop(S3Plugin)
-			await host.config.patch(
-				S3Plugin,
-				remoteConfig({
+			await host.config.patch(S3Plugin, {
+				set: remoteConfig({
 					type: 'vault',
 					key: 'assets.s3',
 					namespace: 'shared-secrets',
 				}),
-			)
+			})
 			await host.start(S3Plugin)
 			await host.start(S3Consumer)
 			expect(s3Mock.configs.at(-1)).toMatchObject({
@@ -243,7 +243,7 @@ describe('S3Plugin remote backend', () => {
 			expect(host.isRunning(S3Plugin)).toBe(false)
 			expect(failure.lifecycleReport.issues).toContainEqual(
 				expect.objectContaining({
-					plugin: pluginNodeAddressOf(S3Plugin),
+					plugin: S3Plugin.nodeAddress(),
 					kind: 'start-failed',
 				}),
 			)

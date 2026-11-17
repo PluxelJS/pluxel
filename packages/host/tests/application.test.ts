@@ -58,7 +58,7 @@ export default async ({env,bindings}) => {
 				[
 					'--input-type=module',
 					'-e',
-					`import assert from 'node:assert/strict'; const {runHostApplication}=await import(${JSON.stringify(new URL('../dist/index.mjs', import.meta.url).href)}); const events=[];const startup={root:${JSON.stringify(root)},mode:'test',env:{VALUE:'one'},bindings:{events}};const host=await runHostApplication(${JSON.stringify(entry)},{startup});await host.close();await assert.rejects(runHostApplication(${JSON.stringify(entry)},{startup:{...startup,env:{VALUE:'fail'}}}),/application prerequisite failed/);console.log(JSON.stringify(events))`,
+					`import assert from 'node:assert/strict'; const {runHostApplication}=await import(${JSON.stringify(new URL('../dist/index.mjs', import.meta.url).href)}); const events=[];const startup={root:${JSON.stringify(root)},mode:'test',env:{VALUE:'one'},bindings:{events}};{await using host=await runHostApplication(${JSON.stringify(entry)},{startup});}await assert.rejects(runHostApplication(${JSON.stringify(entry)},{startup:{...startup,env:{VALUE:'fail'}}}),/application prerequisite failed/);console.log(JSON.stringify(events))`,
 				],
 				{ timeout: 10000 },
 			)
@@ -81,7 +81,12 @@ export default async ({env,bindings}) => {
 			...startup,
 			env: { VALUE: 'first' },
 			bindings: { handle },
-			deployment: { root: '/first', target: 'node' as const, variant: 'headless' as const },
+			deployment: {
+				root: '/first',
+				target: 'node' as const,
+				variant: 'headless' as const,
+				delivery: 'standalone' as const,
+			},
 		}
 		const seen: HostStartupContext[] = []
 		let release!: () => void
@@ -134,7 +139,7 @@ export default async ({env,bindings}) => {
 			plugins: [] as [],
 			services: [original],
 			sources: [{ kind: 'directory' as const, path: 'selected', include: ['*.mjs'] }],
-			state: { mode: 'memory' as const, initial: { autoStart: [] as [] } },
+			policy: { autoStart: [] as [], startTimeoutMs: 1500 },
 		}
 		const application = defineHostApplication(() => {
 			// Mutate after the factory result is received, while input resolution yields.
@@ -142,7 +147,7 @@ export default async ({env,bindings}) => {
 				queueMicrotask(() => {
 					declaration.services[0] = changed
 					declaration.sources[0]!.path = 'changed'
-					Object.assign(declaration.state, { mode: 'readonly' })
+					Object.assign(declaration.policy, { startTimeoutMs: 2000 })
 				}),
 			)
 			return declaration
@@ -150,7 +155,7 @@ export default async ({env,bindings}) => {
 		const resolved = await resolveHostApplication(application, startup)
 		expect(resolved.services?.[0]?.name).toBe('selected')
 		expect(resolved.sources?.[0]?.path).toBe('selected')
-		expect(resolved.state?.mode).toBe('memory')
+		expect(resolved.policy?.startTimeoutMs).toBe(1500)
 	})
 
 	it('propagates factory rejection before service preparation', async () => {
@@ -170,6 +175,13 @@ export default async ({env,bindings}) => {
 		[(): undefined => undefined, 'must be an object'],
 		[() => ({ plugins: [] as const, configure() {} }), 'unsupported "configure"'],
 		[() => ({ plugins: [] as const, services: {} }), 'services must be an array'],
+		[() => ({ plugins: [] as const, acceptStartup: true }), 'acceptStartup must be a function'],
+		[() => ({ plugins: [] as const, launch: {} }), 'launch must be a function'],
+		[() => ({ plugins: [] as const, state: {} }), 'unsupported "state"'],
+		[() => ({ plugins: [] as const, configRecords: {} }), 'unsupported "configRecords"'],
+		[() => ({ plugins: [] as const, runtime: { storage: {} } }), 'unsupported "storage"'],
+		[() => ({ plugins: [] as const, policy: { initial: {} } }), 'unsupported'],
+		[() => ({ plugins: [] as const, config: { base: [] as const } }), 'unsupported'],
 	])('rejects invalid JavaScript declarations at the boundary', async (application, message) => {
 		await expect(
 			resolveHostApplication(application as unknown as HostApplicationFactory, startup),

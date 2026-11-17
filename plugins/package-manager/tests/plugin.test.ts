@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { commands } from '@pluxel/services/commands'
 import { pluginSource } from '@pluxel/host/sources'
@@ -21,7 +21,23 @@ class HeadlessPackageConsumer extends BasePlugin {
 	}
 	async init() {
 		expect(this.ctx.workbench).toBeUndefined()
-		expect(await this.packages.snapshot()).toMatchObject({ rootDir: headlessRoot, packages: [] })
+		expect(await this.packages.snapshot()).toMatchObject({
+			rootDir: headlessRoot,
+			packages: [],
+			markets: [],
+			sourceUpdates: 'next-start',
+		})
+		expect(
+			await this.packages.prepareInstall(['https://example.invalid/plugin.tgz']),
+		).toMatchObject({ ok: false, failed: [{ code: 'INVALID_SPEC' }] })
+		expect(await this.packages.confirmInstall('expired-plan')).toMatchObject({
+			ok: false,
+			failed: [{ code: 'INVALID_PLAN' }],
+		})
+		expect(await this.packages.marketPackages('unknown')).toMatchObject({
+			ok: false,
+			error: { code: 'UNKNOWN_MARKET' },
+		})
 		const rejected = await this.packages.install(['https://example.invalid/plugin.tgz'])
 		expect(rejected.ok).toBe(false)
 		expect(rejected.failed[0]?.code).toBe('INVALID_SPEC')
@@ -40,7 +56,6 @@ describe('PackageManagerPlugin', () => {
 		const application = defineHostApplication(() => ({
 			plugins: [PackageManagerPlugin, HeadlessPackageConsumer],
 			services: [commands()],
-			state: { initial: { autoStart: [pluginNodeAddressOf(HeadlessPackageConsumer)] } },
 			envBindings: [
 				envBinding(PackageManagerPlugin, {
 					config: {
@@ -49,6 +64,7 @@ describe('PackageManagerPlugin', () => {
 					},
 				}),
 			],
+			policy: { autoStart: [HeadlessPackageConsumer.nodeAddress()] },
 		}))
 		const resolved = await resolveHostApplication(application, {
 			root,
@@ -59,9 +75,10 @@ describe('PackageManagerPlugin', () => {
 		const host = await createHost({
 			plugins: resolved.plugins,
 			services: resolved.services,
-			state: resolved.state,
+			name: resolved.name,
 			config: resolved.config,
-			configRecords: resolved.configRecords,
+			policy: resolved.policy,
+			runtime: resolved.runtime,
 		})
 		try {
 			// This file tests Host source integration: native/Vite loaders install the same declaration.
@@ -118,7 +135,7 @@ describe('PackageManagerPlugin', () => {
 
 			expect(failure.lifecycleReport.issues).toContainEqual(
 				expect.objectContaining({
-					plugin: pluginNodeAddressOf(PackageManagerPlugin),
+					plugin: PackageManagerPlugin.nodeAddress(),
 					kind: 'start-failed',
 					message: expect.stringMatching(/Plugin source|Plugin sources/),
 				}),

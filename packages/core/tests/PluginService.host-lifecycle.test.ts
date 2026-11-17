@@ -11,7 +11,6 @@ import {
 	definePluginRef,
 	Plugin,
 	PluginPart,
-	pluginNodeAddressOf,
 	createCoreInternalTestHost,
 	type CoreInternalTestHostOptions,
 	assertPluginLifecycleIssue,
@@ -195,7 +194,7 @@ describe('Core host lifecycle seams', () => {
 					finalizeGeneration: ({ ctx, operation, signal }) => {
 						expect(signal.aborted).toBe(false)
 						finalizerOperation = operation
-						expect(ctx.pluginInfo.nodeAddress).toEqual(pluginNodeAddressOf(OrderedPlugin))
+						expect(ctx.pluginInfo.nodeAddress).toEqual(OrderedPlugin.nodeAddress())
 						expect(registry.isRunning(OrderedPlugin)).toBe(false)
 						lifecycleTrace.push('host:finalize')
 					},
@@ -221,7 +220,7 @@ describe('Core host lifecycle seams', () => {
 		expect('settleGenerations' in host.ctx).toBe(false)
 		expect('prepareCommit' in host.ctx).toBe(false)
 		expect('publishCommit' in host.ctx).toBe(false)
-		const node = registry.internNodeAddress(pluginNodeAddressOf(OrderedPlugin))
+		const node = registry.internNodeAddress(OrderedPlugin.nodeAddress())
 		const unwatch = registry.watchInstance(node, (instance) => {
 			if (instance) lifecycleTrace.push('watcher')
 		})
@@ -426,7 +425,7 @@ describe('Core host lifecycle seams', () => {
 		expect(completions).toEqual(['B:complete', 'A:failed'])
 		expect(settled).toEqual([['ParallelFinalizerB']])
 		expect(publication.started.map((ctx) => ctx.pluginInfo.nodeAddress)).toEqual([
-			pluginNodeAddressOf(ParallelFinalizerB),
+			ParallelFinalizerB.nodeAddress(),
 		])
 		expect(publication.failed).toEqual([
 			requirePluginService(host.ctx).resolvePluginNode(ParallelFinalizerA),
@@ -525,7 +524,7 @@ describe('Core host lifecycle seams', () => {
 							}
 							queued = registry.afterCurrentCommit(async () => {
 								const update = registry.beginUpdate({ reason: 'queued-restart' })
-								update.restartNode(pluginNodeAddressOf(OrderedPlugin))
+								update.restartNode(OrderedPlugin.nodeAddress())
 								const result = await update.commit()
 								if (result.ok === false) throw result.err
 							})
@@ -612,7 +611,7 @@ describe('Core host lifecycle seams', () => {
 		const summaries: unknown[] = []
 		const instances: unknown[] = []
 		registry.subscribeCommitted((summary) => summaries.push(summary))
-		const node = registry.internNodeAddress(pluginNodeAddressOf(OrderedPlugin))
+		const node = registry.internNodeAddress(OrderedPlugin.nodeAddress())
 		registry.watchInstance(node, (instance) => instances.push(instance))
 
 		host.add(OrderedPlugin)

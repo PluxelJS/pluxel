@@ -67,6 +67,8 @@ const result: PreviewResult = {
 		format: 'vector',
 		data: new Uint8Array(),
 		navigation: {
+			targets: [],
+			links: [],
 			pages: Array.from({ length: 5 }, (_, index) => ({
 				page: index + 1,
 				width: 595,

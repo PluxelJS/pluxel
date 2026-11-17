@@ -236,10 +236,7 @@ export function hostPluginStatusOverviewFromView(
 			add({ definition: declaration.address, variant: 'fork', forkId }, declaration.displayName)
 		}
 	}
-	for (const family of state.forks) {
-		for (const forkId of family.forkIds)
-			add({ definition: family.definition, variant: 'fork', forkId })
-	}
+	for (const address of state.forks) add(address)
 	for (const address of state.autoStart) add(address)
 	for (const entry of projection.sessionIntents.values()) add(entry.address)
 	for (const entry of projection.desiredControl.values()) add(entry.address)

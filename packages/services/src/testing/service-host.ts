@@ -1,6 +1,5 @@
 import {
 	pluginDefinitionAddressEqual,
-	pluginDefinitionAddressOf,
 	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
 	type CommitSummary,
@@ -53,6 +52,7 @@ import {
 	type HostStatePatchOperation,
 	requireHostStateStore,
 	type HostStateStore,
+	type HostConfigStore,
 } from '@pluxel/host/internal'
 import { type ServiceInternalTestHostOptions } from './options'
 
@@ -194,6 +194,7 @@ type PreparedSeed = Readonly<{
 	address: PluginNodeAddress
 	authority: NonNullable<ConcretePluginDefinitionCandidate['declaration']['config']>
 	value: Readonly<Record<string, unknown>>
+	managed: Readonly<Record<string, unknown>>
 }>
 
 type RawCommit = Readonly<{
@@ -419,7 +420,7 @@ function createChange(
 
 	const setDefault = (input: ProviderDefaultInput): undefined => {
 		authority.recordCommand('change.dependencies.setDefault()')
-		const key = pluginDefinitionIndexKey(pluginDefinitionAddressOf(input.requirement))
+		const key = pluginDefinitionIndexKey(input.requirement.definitionAddress())
 		const previous = plan.defaults.get(key)
 		if (previous && (previous.kind !== 'set' || previous.provider !== input.provider)) {
 			throw conflictError('dependencies.setDefault', input.requirement)
@@ -432,7 +433,7 @@ function createChange(
 
 	const clearDefault = (requirement: PluginToken): undefined => {
 		authority.recordCommand('change.dependencies.clearDefault()')
-		const key = pluginDefinitionIndexKey(pluginDefinitionAddressOf(requirement))
+		const key = pluginDefinitionIndexKey(requirement.definitionAddress())
 		const previous = plan.defaults.get(key)
 		if (previous && previous.kind !== 'clear') {
 			throw conflictError('dependencies.setDefault/clearDefault', requirement)
@@ -443,7 +444,7 @@ function createChange(
 
 	const overrideKey = (input: DependencyOverrideTarget): string => {
 		const consumer = resolvePluginTestTarget(input.consumer).address
-		return `${pluginNodeIndexKey(consumer)}\0${pluginDefinitionIndexKey(pluginDefinitionAddressOf(input.requirement))}`
+		return `${pluginNodeIndexKey(consumer)}\0${pluginDefinitionIndexKey(input.requirement.definitionAddress())}`
 	}
 
 	const setOverride = (input: DependencyOverrideInput): undefined => {
@@ -503,7 +504,7 @@ async function createServiceHostWorld(
 	const application = await createServiceTestApplication(config, rootOptions)
 	const ctx = application.ctx
 	const pluginService = requirePluginService(ctx)
-	const configService = requireConfigService(ctx)
+	const configService = requireConfigService(ctx) as HostConfigStore
 	const stateStore = requireHostStateStore(ctx)
 	const coordinator = requirePluginHostCoordinator(ctx)
 	const enteredLifecycle = new Set<string>()
@@ -542,11 +543,7 @@ async function createServiceHostWorld(
 		const command = [...plan.forkRemoves.values()][0]!
 		const address = command.address
 		if (address.variant !== 'fork') throw new TypeError('[pluxel/test] invalid fork removal target')
-		const result = await removeFork(
-			ctx,
-			Object.freeze({ definition: address.definition, variant: 'default' }),
-			address.forkId,
-		)
+		const result = await removeFork(ctx, address)
 		if (result.ok === false) {
 			throw Object.assign(
 				new Error(`[pluxel/test] forks.remove() failed: ${result.message}`),
@@ -567,102 +564,95 @@ async function createServiceHostWorld(
 		assertForkRemoveExclusive(plan)
 		if (plan.forkRemoves.size > 0) return commitForkRemoval(plan)
 
-		const catalog = buildCatalog(plan, coordinator)
-		validatePlan(plan, catalog.entries, pluginService, stateStore)
-		if (
-			options.rejectRunningStartCatalogChange &&
-			catalog.snapshot &&
-			[...plan.starts.values()].some(({ address }) => pluginService.isRunning(address))
-		) {
-			throw new Error(
-				'[pluxel/test] start() cannot change catalog availability for an already-running target; use host.commit(change => ...) explicitly',
-			)
-		}
-		const seeds = await prepareSeeds(
-			plan,
-			catalog.entries,
-			configService,
-			enteredLifecycle,
-			configuredTargets,
-		)
-		const tickets: Array<
-			Readonly<{
-				key: string
-				ticket: ReturnType<typeof configService.stageValidatedConfig>
-			}>
-		> = []
-		for (const seed of seeds) {
-			tickets.push(
-				Object.freeze({
-					key: seed.key,
-					ticket: configService.stageValidatedConfig({
-						owner: seed.address,
-						authority: seed.authority,
-						expectedRevision: configService.getConfigRevision(seed.address),
-						value: seed.value,
-					}),
-				}),
-			)
-		}
-		if (tickets.length > 0) {
-			await configService.flush()
-			for (const item of tickets) {
-				configService.confirmValidatedConfig(item.ticket)
-				configuredTargets.add(item.key)
+		return coordinator.runExclusive('service-test', async (session) => {
+			const catalog = buildCatalog(plan, coordinator)
+			validatePlan(plan, catalog.entries, pluginService, stateStore)
+			if (
+				options.rejectRunningStartCatalogChange &&
+				catalog.snapshot &&
+				[...plan.starts.values()].some(({ address }) => pluginService.isRunning(address))
+			) {
+				throw new Error(
+					'[pluxel/test] start() cannot change catalog availability for an already-running target; use host.commit(change => ...) explicitly',
+				)
 			}
-		}
-
-		const stateOperations = statePatchOperations(plan)
-		let report: PluginApplyReport<CommitSummary>
-		try {
-			report = await coordinator.update({
-				...(catalog.snapshot ? { catalog: catalog.snapshot } : {}),
-				...(stateOperations.length > 0 ? { statePatch: hostStatePatch(...stateOperations) } : {}),
-				...(plan.starts.size > 0 || plan.stops.size > 0
-					? {
-							lifecycleCommands: [
-								...Array.from(plan.starts.values(), ({ address }) => ({
-									address,
-									desiredState: 'running' as const,
-								})),
-								...Array.from(plan.stops.values(), ({ address }) => ({
-									address,
-									desiredState: 'stopped' as const,
-								})),
-							],
-						}
-					: {}),
-				...(plan.starts.size > 0
-					? { retryStartNodes: Array.from(plan.starts.values(), ({ address }) => address) }
-					: {}),
-				...(plan.restarts.size > 0
-					? { restartNodes: Array.from(plan.restarts.values(), ({ address }) => address) }
-					: {}),
-				reason: 'service-test',
-				mode: firstCommit ? 'cold-boot' : 'live',
-			})
-		} catch (error) {
-			if (isPreCommitRejection(error)) {
-				await rollbackSeeds(seeds, configService, configuredTargets)
+			const seeds = await prepareSeeds(
+				plan,
+				catalog.entries,
+				configService,
+				enteredLifecycle,
+				configuredTargets,
+			)
+			for (const seed of seeds) {
+				const ticket = configService.stageManagedConfig({
+					owner: seed.address,
+					authority: seed.authority,
+					expectedRevision: configService.getConfigRevision(seed.address),
+					value: seed.value,
+					managed: seed.managed,
+				})
+				try {
+					await configService.flush()
+					configService.confirmManagedConfig(ticket)
+				} catch (error) {
+					configService.discardManagedConfig(ticket)
+					throw error
+				}
+				configuredTargets.add(seed.key)
 			}
-			throw error
-		}
 
-		firstCommit = false
-		for (const command of plan.starts.values()) {
-			enteredLifecycle.add(pluginNodeIndexKey(command.address))
-		}
-		for (const node of pluginService.readCommittedDependencyAdjacency().nodes) {
-			enteredLifecycle.add(pluginNodeIndexKey(node))
-		}
-		if (report.reconciliation.length > 0 && report.core.status === 'unchanged') {
-			throw new PluginGraphRejectedError(report.reconciliation)
-		}
-		const summary =
-			report.core.status === 'committed'
-				? projectPluginTestCommitSummary(report.core.summary, pluginService)
-				: EMPTY_TEST_SUMMARY
-		return Object.freeze({ summary, targets: Object.freeze([...plan.targets.values()]) })
+			const stateOperations = statePatchOperations(plan)
+			let report: PluginApplyReport<CommitSummary>
+			try {
+				report = await session.update({
+					...(catalog.snapshot ? { catalog: catalog.snapshot } : {}),
+					...(stateOperations.length > 0 ? { statePatch: hostStatePatch(...stateOperations) } : {}),
+					...(plan.starts.size > 0 || plan.stops.size > 0
+						? {
+								lifecycleCommands: [
+									...Array.from(plan.starts.values(), ({ address }) => ({
+										address,
+										desiredState: 'running' as const,
+									})),
+									...Array.from(plan.stops.values(), ({ address }) => ({
+										address,
+										desiredState: 'stopped' as const,
+									})),
+								],
+							}
+						: {}),
+					...(plan.starts.size > 0
+						? { retryStartNodes: Array.from(plan.starts.values(), ({ address }) => address) }
+						: {}),
+					...(plan.restarts.size > 0
+						? { restartNodes: Array.from(plan.restarts.values(), ({ address }) => address) }
+						: {}),
+					reason: 'service-test',
+					mode: firstCommit ? 'cold-boot' : 'live',
+				})
+			} catch (error) {
+				if (isPreCommitRejection(error)) {
+					await rollbackSeeds(seeds, configService, configuredTargets)
+				}
+				throw error
+			}
+
+			firstCommit = false
+			for (const command of plan.starts.values()) {
+				enteredLifecycle.add(pluginNodeIndexKey(command.address))
+			}
+			for (const node of pluginService.readCommittedDependencyAdjacency().nodes) {
+				enteredLifecycle.add(pluginNodeIndexKey(node))
+			}
+			if (report.reconciliation.length > 0 && report.core.status === 'unchanged') {
+				throw new PluginGraphRejectedError(report.reconciliation)
+			}
+			const summary =
+				report.core.status === 'committed'
+					? projectPluginTestCommitSummary(report.core.summary, pluginService)
+					: EMPTY_TEST_SUMMARY
+			return Object.freeze({ summary, targets: Object.freeze([...plan.targets.values()]) })
+		})
 	}
 
 	const assertStrict = (
@@ -1000,7 +990,7 @@ function validatePlan(
 async function prepareSeeds(
 	plan: ServiceDraftPlan,
 	entries: ReadonlyMap<string, PluginCatalogEntryInput>,
-	configService: ReturnType<typeof requireConfigService>,
+	configService: HostConfigStore,
 	enteredLifecycle: ReadonlySet<string>,
 	configuredTargets: ReadonlySet<string>,
 ): Promise<readonly PreparedSeed[]> {
@@ -1024,7 +1014,10 @@ async function prepareSeeds(
 		}
 		let normalized: Readonly<Record<string, unknown>> | undefined
 		for (const value of seed.values) {
-			const validation = await validateConfigRecord(authority.schema, value)
+			const validation = await validateConfigRecord(
+				authority.schema,
+				configService.composeConfig(resolved.address, value),
+			)
 			if (validation.ok === false) {
 				throw Object.assign(new Error('[pluxel/test] initial Plugin config validation failed'), {
 					code: 'validation_failed',
@@ -1042,6 +1035,7 @@ async function prepareSeeds(
 				address: resolved.address,
 				authority,
 				value: normalized!,
+				managed: seed.values.at(-1)!,
 			}),
 		)
 	}
@@ -1061,7 +1055,7 @@ function statePatchOperations(plan: ServiceDraftPlan): HostStatePatchOperation[]
 	for (const command of plan.defaults.values()) {
 		operations.push({
 			type: 'set-provider-default',
-			token: pluginDefinitionAddressOf(command.requirement),
+			token: command.requirement.definitionAddress(),
 			provider: command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
 		})
 	}
@@ -1069,7 +1063,7 @@ function statePatchOperations(plan: ServiceDraftPlan): HostStatePatchOperation[]
 		operations.push({
 			type: 'set-dependency-override',
 			consumer: resolvePluginTestTarget(command.consumer).address,
-			requirement: pluginDefinitionAddressOf(command.requirement),
+			requirement: command.requirement.definitionAddress(),
 			provider: command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
 		})
 	}
@@ -1098,11 +1092,11 @@ function assertForkRemoveExclusive(plan: ServiceDraftPlan): void {
 
 async function rollbackSeeds(
 	seeds: readonly PreparedSeed[],
-	configService: ReturnType<typeof requireConfigService>,
+	configService: HostConfigStore,
 	configuredTargets: Set<string>,
 ): Promise<void> {
 	for (const seed of seeds) {
-		configService.deleteConfig(seed.address)
+		await configService.deleteManagedConfig(seed.address)
 		configuredTargets.delete(seed.key)
 	}
 	await configService.flush()
@@ -1122,12 +1116,14 @@ function forkExists(
 	address: Extract<PluginNodeAddress, { variant: 'fork' }>,
 ): boolean {
 	const key = pluginDefinitionIndexKey(address.definition)
-	return (
-		store
-			.snapshot()
-			.forks.find((entry) => pluginDefinitionIndexKey(entry.definition) === key)
-			?.forkIds.includes(address.forkId) === true
-	)
+	return store
+		.snapshot()
+		.forks.some(
+			(entry) =>
+				entry.variant === 'fork' &&
+				pluginDefinitionIndexKey(entry.definition) === key &&
+				entry.forkId === address.forkId,
+		)
 }
 
 function targetCommand(target: PluginTestTarget): TargetCommand {

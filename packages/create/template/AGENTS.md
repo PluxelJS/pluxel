@@ -9,6 +9,7 @@
 ## 本项目位置与检查
 
 - `host/src/app.ts` 是开发与生产共用的应用声明；可选 `sources` 扩展固定 catalog。默认 modules 构建与原生 `start.mjs` 只在启动接纳预编译来源；开发 Vite 持续更新。生产 Vite 使用独立 `vite.runtime.config.ts` 与 `start-vite.mjs`，加载同一 compiled factory。
+- 生产 listener 与 `publicDir` 由应用 `launch` 显式选择；启动意图通过判定后才执行，关闭统一使用 Host。Vite 自己持有 listener，不执行应用 `acceptStartup` 或 `launch`。
 - 浏览器 React/Vite 代码位于 `host/web/`；Node catalog、配置和路由策略位于 `host/`；共享中立逻辑位于 `packages/`。
 - inspect 选择本应用时使用 workspace-relative `application: { root: 'host', entry: 'src/app.ts' }`。
 - 修改 `plugins/`、公共契约、Host 配置或 lint / fmt 规则前，按开发指南确认对应契约。应用装配见 `vp exec pluxel docs host/configuration.md`。
@@ -38,6 +39,6 @@
 
 ## 持久状态与原生依赖
 
-配置继续使用 `configs.use()`。配置之外的有界状态通过固定的 `ctx.tinybase.open()` 取得每个 Plugin node 唯一的托管 Store；原生 API 和类型直接从 `tinybase` 与上游子路径导入。持久位置、恢复和保存归 Host，不在插件管理 Persister 或另写 JSON 设置。密钥留在 Vault，大文件通过固定的 `ctx.fs()` 保存；后端在 Host 的 `config.storage: zenfs(...)` 中选择；日志输出在 `config.logger: logtape(...)` 中选择，两者都从 `@pluxel/core/config` 导入，不加入服务清单。
+配置继续使用 `configs.use()`。配置之外的有界状态通过固定的 `ctx.tinybase.open()` 取得每个 Plugin node 唯一的托管 Store；原生 API 和类型直接从 `tinybase` 与上游子路径导入。持久位置、恢复和保存归 Host，不在插件管理 Persister 或另写 JSON 设置。密钥留在 Vault，大文件通过固定的 `ctx.fs()` 保存；后端在 Host 的 `runtime.zenfs: zenfs(...)` 中选择；日志输出在 `runtime.logtape: logtape(...)` 中选择，两个可选 helper 都从 `@pluxel/core/config` 导入，原生配置可直接输入，不加入服务清单。
 
 共享托管 Store 的包使用 catalog 所选的精确 `tinybase` peer 与同版 dev dependency；Core 内建精确 TinyBase runtime；应用仅在直接使用原生 TinyBase 时声明自己的 dependency。`pluxel build` 生成 `pluxel.tinybase` 接纳事实，不手写标记或使用全局 override。仅使用配置的包不需要新增 TinyBase import。独立私有 Store 保留普通依赖与自身解析；开始交换宿主托管 Store 后再进入共享契约。完整用法见 `vp exec pluxel docs development/plugin-package.md`。

@@ -6,8 +6,6 @@ import {
 	BasePlugin,
 	pluginDefinitionAddressEqual,
 	pluginNodeAddressEqual,
-	pluginDefinitionAddressOf,
-	pluginNodeAddressOf,
 	type CommitSummary,
 	type PluginConstructor,
 	type PluginDefinitionAddress,
@@ -53,8 +51,6 @@ export {
 	isPluginLifecycleBlockedIssue,
 	isPluginLifecycleDrainErrorIssue,
 	isPluginLifecycleNotStartedIssue,
-	pluginDefinitionAddressOf,
-	pluginNodeAddressOf,
 } from './index'
 export { checkPluginDecorator }
 export type {
@@ -163,7 +159,7 @@ function normalizeConfig(config: CoreHostConfig): CoreHostConfig {
 }
 
 function targetAddress(target: AnyTarget): PluginNodeAddress {
-	return typeof target === 'function' ? pluginNodeAddressOf(target) : parsePluginNodeAddress(target)
+	return typeof target === 'function' ? target.nodeAddress() : parsePluginNodeAddress(target)
 }
 
 function assertCommitResult(
@@ -274,7 +270,7 @@ export function createCoreInternalTestHost(
 	const candidateFor = (Plugin: PluginConstructor) => consumePluginDefinitionCandidate(Plugin)
 
 	const addOne = (Plugin: PluginConstructor) => {
-		currentUpdate().materializeNode(pluginNodeAddressOf(Plugin), candidateFor(Plugin))
+		currentUpdate().materializeNode(Plugin.nodeAddress(), candidateFor(Plugin))
 	}
 	function add(Plugin: PluginConstructor): CoreInternalTestHost
 	function add(Plugins: readonly PluginConstructor[]): CoreInternalTestHost
@@ -355,7 +351,7 @@ export function createCoreInternalTestHost(
 			return host
 		},
 		fork: (Plugin, forkId) => {
-			const defaultAddress = pluginNodeAddressOf(Plugin)
+			const defaultAddress = Plugin.nodeAddress()
 			const address = parsePluginNodeAddress({
 				definition: defaultAddress.definition,
 				variant: 'fork',
@@ -367,7 +363,7 @@ export function createCoreInternalTestHost(
 		override: (consumer, requirement, provider) => {
 			currentUpdate().setDependencyOverride(
 				targetAddress(consumer),
-				typeof requirement === 'function' ? pluginDefinitionAddressOf(requirement) : requirement,
+				typeof requirement === 'function' ? requirement.definitionAddress() : requirement,
 				provider,
 			)
 			return host

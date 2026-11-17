@@ -246,7 +246,6 @@ export async function renderSnapshots(
 	}
 	await writeFile(join(job, 'requests.json'), json(requests))
 	const { createHost } = await import('@pluxel/host')
-	const { pluginNodeAddressOf } = await import('@pluxel/core')
 	const { FontsPlugin } = await import('@pluxel/plugin-fonts')
 	const { TypstPlugin } = await import('@pluxel/plugin-typst')
 	const { nodeModules } = await import('@pluxel/services/node')
@@ -261,16 +260,16 @@ export async function renderSnapshots(
 				),
 			}),
 		],
-		configRecords: {
-			initial: [
+		config: {
+			records: [
 				{
-					owner: pluginNodeAddressOf(FontsPlugin),
+					owner: FontsPlugin.nodeAddress(),
 					config: { files: fonts, maxFontBytes: 64 * 1024 * 1024 },
 				},
-				{ owner: pluginNodeAddressOf(ReportRenderPlugin), config: { job, entry } },
+				{ owner: ReportRenderPlugin.nodeAddress(), config: { job, entry } },
 			],
 		},
-		state: { initial: { autoStart: [pluginNodeAddressOf(ReportRenderPlugin)] } },
+		policy: { autoStart: [ReportRenderPlugin.nodeAddress()] },
 	})
 	try {
 		const report = await host.start()

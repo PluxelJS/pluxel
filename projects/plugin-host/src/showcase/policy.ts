@@ -4,7 +4,7 @@ import {
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { type HostStateSnapshot } from '@pluxel/host'
+import { type HostPolicyInput } from '@pluxel/host'
 import { defineProduct } from '@pluxel/services/management/product'
 
 export const product = defineProduct({
@@ -58,7 +58,7 @@ const bootSafeOfficialPlugins = Object.freeze([
 	typstPlugin,
 ])
 
-export function createHostRuntimeState(): Partial<HostStateSnapshot> {
+export function createHostPolicy(): HostPolicyInput {
 	return {
 		autoStart: [
 			...bootSafeOfficialPlugins,

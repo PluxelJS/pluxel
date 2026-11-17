@@ -1,16 +1,28 @@
-import { createContext } from 'react'
+import { createContext, type ReactNode } from 'react'
 import type { Editor, JSONContent } from '@tiptap/core'
 import type { Transaction } from '@tiptap/pm/state'
 import type { TypstReferenceTarget } from './types'
+import type { TypstDocumentLocation, TypstDocumentReference } from '../document/types.js'
 import type { InsertEntry, TypstSlashCommand } from './insert-commands'
 import { shortcutProps, type Shortcut } from './shortcuts'
+
+/** Shared controls accept native source targets and source-free document references. */
+export type EditorReferenceTarget =
+	| TypstReferenceTarget
+	| {
+			label: string
+			title: string
+			kind: TypstDocumentReference['kind']
+			location?: TypstDocumentLocation
+	  }
 
 export interface EditorUiContext {
 	validateDocument?: (document: JSONContent) => boolean
 	prepareDuplicate?: (editor: Editor, position: number) => Transaction | undefined
-	onReference?: (path: string, position: number) => void
-	/** Source projects provide their static native-label index, including other files. */
-	referenceTargets?: () => TypstReferenceTarget[]
+	onReference?: (documentId: string, position: number) => void
+	referenceTargets?: () => EditorReferenceTarget[]
+	/** Semantic document views resolve opaque IDs to titles and never expose source labels. */
+	documentReferences?: boolean
 	onReveal?: (position: number) => void
 	composing: boolean
 	editable: boolean
@@ -18,6 +30,11 @@ export interface EditorUiContext {
 	slashCommands: readonly TypstSlashCommand[]
 	/** Derived source calls share the existing menu, slash and native admission path. */
 	sourceEntries?: (query: string) => readonly InsertEntry[]
+	renderSourceFileInput?(
+		kind: 'import' | 'include',
+		onInsert: (entry: TypstSlashCommand) => boolean,
+		onCancel: () => void,
+	): ReactNode
 }
 
 const emptyFonts: readonly string[] = []

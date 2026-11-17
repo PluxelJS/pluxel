@@ -79,7 +79,7 @@ CLI 同时移除 consumer 进程的 `COREPACK_ROOT` 标记，让独立 checkout 
 每次 checkout 子进程同时将 `PNPM_CONFIG_WORKSPACE_DIR` 重设为自己的根，使嵌套成员脚本仍使用所属 catalog，禁止继承 consumer 的工作区根。
 
 该能力不改变 pnpm workspace membership，也不合并独立仓库 lockfile/release。现有 `pluxel workspace`
-仍只管理一个仓库内部的 workspace patterns，成员声明只写入 `pnpm-workspace.yaml`。缺失声明的单包项目只包含根 package；添加成员前需创建 pnpm workspace 文件。发现时坏清单与目录读取错误会中止操作，`workspace scan` 记录的候选目录仍需显式加入成员清单。它同样不复用 dynamic source producer：后者拥有 runtime
+仍只管理一个仓库内部的 workspace patterns，成员声明只写入 `pnpm-workspace.yaml`。缺失声明的单包项目只包含根 package；添加成员前需创建 pnpm workspace 文件。source 发现按正向 glob 的固定前缀裁掉无关目录树，扫描上限仍适用于可能包含成员的分支；无关制品目录不消耗该预算。发现时坏清单与目录读取错误会中止操作，`workspace scan` 记录的候选目录仍需显式加入成员清单。它同样不复用 dynamic source producer：后者拥有 runtime
 file entry publication，`pluxel source` 只发生在开发期 package resolution/build。
 
 ## 实现与验证

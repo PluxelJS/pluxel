@@ -19,18 +19,18 @@ const readIndexes = new WeakMap<HostStateSnapshot, HostStateReadIndex>()
 export function hostStateReadIndex(state: HostStateSnapshot): HostStateReadIndex {
 	const cached = readIndexes.get(state)
 	if (cached) return cached
+	const forkIdsByDefinition = new Map<string, string[]>()
+	for (const node of state.forks) {
+		if (node.variant !== 'fork') continue
+		const key = pluginDefinitionIndexKey(node.definition)
+		const ids = forkIdsByDefinition.get(key) ?? []
+		ids.push(node.forkId)
+		forkIdsByDefinition.set(key, ids)
+	}
 	const index: HostStateReadIndex = Object.freeze({
 		autoStartKeys: new Set(state.autoStart.map(pluginNodeIndexKey)),
-		forkIdsByDefinition: new Map(
-			state.forks.map((entry) => [pluginDefinitionIndexKey(entry.definition), entry.forkIds]),
-		),
-		forkNodeKeys: new Set(
-			state.forks.flatMap((entry) =>
-				entry.forkIds.map((forkId) =>
-					pluginNodeIndexKey({ definition: entry.definition, variant: 'fork', forkId }),
-				),
-			),
-		),
+		forkIdsByDefinition,
+		forkNodeKeys: new Set(state.forks.map(pluginNodeIndexKey)),
 	})
 	readIndexes.set(state, index)
 	return index

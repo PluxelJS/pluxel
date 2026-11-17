@@ -160,6 +160,7 @@ async function findWorkspaceManifestPaths(root: string, patterns: string[]) {
 		.map((pattern) => pattern.slice(1))
 	if (positives.length === 0) return []
 	const include = picomatch(positives, { dot: true })
+	const bases = positives.map((pattern) => normalizeRelative(picomatch.scan(pattern).base))
 	const exclude = negatives.length > 0 ? picomatch(negatives, { dot: true }) : undefined
 	const found: string[] = []
 	const pending = [root]
@@ -176,7 +177,20 @@ async function findWorkspaceManifestPaths(root: string, patterns: string[]) {
 		const entries = await readdir(current, { withFileTypes: true })
 		for (const entry of entries) {
 			if (entry.isDirectory()) {
-				if (!IGNORED_DIRECTORY_NAMES.has(entry.name)) pending.push(resolve(current, entry.name))
+				if (IGNORED_DIRECTORY_NAMES.has(entry.name)) continue
+				const child = resolve(current, entry.name)
+				const directory = normalizeRelative(relative(root, child))
+				if (
+					bases.some(
+						(base) =>
+							!base ||
+							base === directory ||
+							base.startsWith(`${directory}/`) ||
+							directory.startsWith(`${base}/`),
+					)
+				) {
+					pending.push(child)
+				}
 				continue
 			}
 			if (!entry.isFile() || entry.name !== 'package.json') continue

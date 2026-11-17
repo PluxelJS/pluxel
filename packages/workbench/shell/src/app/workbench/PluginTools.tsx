@@ -9,7 +9,7 @@ import { usePluginDetail } from '../plugins/detail/usePluginDetail'
 import { PluginRuntimeSummaryCard } from '../plugins/detail/cards/PluginRuntimeSummaryCard'
 import { PluginDependencyDetailCard } from '../plugins/detail/cards/PluginDependencyDetailCard'
 import { LogPolicyPopover } from '../log_viewer/LogPolicyPopover'
-import { Actions, Model, TabNode } from 'flexlayout-react'
+import { Actions, TabNode } from 'flexlayout-react'
 import { PluginPanelDirectory } from './PluginPanelDirectory'
 import { useWorkspaceSession } from './workspaceContext'
 import { useWorkbenchNavigation } from './context'
@@ -23,7 +23,7 @@ export function PluginTool() {
 		session.isToolVisible('plugin-inspector'),
 	)
 	const selected = useWorkbenchState(session.workbench, () => {
-		const node = Model.fromJson(session.workbench.getLayout()).getNodeById('plugin-inspector')
+		const node = session.workbench.model.getNodeById('plugin-inspector')
 		return node instanceof TabNode && node.getConfig()?.panelView === 'logs' ? 'logs' : 'builtin'
 	})
 	const owner = activeId ? session.documents.get(activeId)?.plugin : undefined
@@ -40,9 +40,7 @@ export function PluginTool() {
 			className="plx-plugin-region"
 			onChange={(value) => {
 				if (!value) return
-				const node = Model.fromJson(session.workbench.getLayout()).getNodeById(
-					'plugin-inspector',
-				) as TabNode
+				const node = session.workbench.model.getNodeById('plugin-inspector') as TabNode
 				void session.workbench
 					.dispatch(
 						Actions.updateNodeAttributes('plugin-inspector', {

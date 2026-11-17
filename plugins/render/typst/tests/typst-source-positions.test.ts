@@ -4,6 +4,7 @@ import {
 	findTypstEditorPosition,
 	findTypstSourcePosition,
 } from '../src/source/node'
+import { typstSourceLibrary } from '../src/source/library.js'
 
 it('maps UTF-8 source spans, native UTF-16 columns and editor positions without splitting Unicode', () => {
 	const source = '// 注释\r\n\r\n中文😀é和\\*转义。\r\n'
@@ -47,4 +48,30 @@ it('maps UTF-8 source spans, native UTF-16 columns and editor positions without 
 	).toBeUndefined()
 	expect(projection).not.toHaveProperty('parsed')
 	expect(projection).not.toHaveProperty('origins')
+})
+
+it('locates expression atoms inside the native span after the markup hash', () => {
+	const source =
+		'#import "lib/pluxel.typ" as report\n公司：#report.field(json("data.json"), ("company",))。\n\n#upper("q3")\n'
+	const projection = createTypstSourceProject({
+		files: {
+			'body.typ': source,
+			'lib/pluxel.typ': typstSourceLibrary,
+			'data.json': '{"company":"公司"}',
+		},
+	}).open('body.typ')
+	for (const expression of ['report.field', 'upper']) {
+		const offset = source.indexOf(`#${expression}`)
+		const byte = new TextEncoder().encode(source.slice(0, offset)).length
+		const atom = projection.mapping.find((entry) => entry.kind !== 'text' && entry.from === byte)!
+		expect(atom).toBeDefined()
+		const lines = source.slice(0, offset + 1).split('\n')
+		const position = findTypstSourcePosition({ projection, position: atom.position })!
+		expect(position).toEqual({
+			path: 'body.typ',
+			line: lines.length,
+			column: lines.at(-1)!.length + 1,
+		})
+		expect(findTypstEditorPosition({ projection, sourcePosition: position })).toBe(atom.position)
+	}
 })

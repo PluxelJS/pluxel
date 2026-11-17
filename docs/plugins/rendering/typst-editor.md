@@ -3,27 +3,24 @@ title: Typst 源码编辑
 description: 人与 Agent 共同编辑普通 Typst 文件；Tiptap 负责结构化视图，JSON 保存业务数据。
 ---
 
-`.typ` 文件是正文权威。人通过 Tiptap 修改段落、样式、表格、图题和引用，Agent 直接修改同一份源码；JSON 数据与图片分别保存为普通文件。编辑器的 JSON、解析树和位置索引都能从源码重建。最终排版仍由 Typst 编译器决定。
+在 Pluxel 中，`.typ` 源码文件始终是文档内容的唯一事实来源。用户可以通过基于 Tiptap 的可视化富文本界面直观修改段落、格式、表格与图题；AI Agent 或自动化流程也可以直接读写底层源码。复杂的业务参数和表格数据则由单独的 JSON 文件存储，编辑器的解析树与位置索引均可随时从源码完整重建。
 
-本页维护编辑和源码事务。编译、字体、会话、资源预算与预览见 [Typst](./typst.md)。本包当前是 workspace 内的 private 包。
+## 模块子入口与职责划分
 
-## 入口与安装
+| 子入口                               | 运行环境与职责                                                  |
+| :----------------------------------- | :-------------------------------------------------------------- |
+| `.`（包根）、`/template`、`/browser` | 服务端编译、文档模板定义与矢量预览组件；无需编辑器依赖          |
+| `/source`                            | Node.js 服务端环境下的源码工程与事务管理                        |
+| `/source/browser`                    | 浏览器环境下的源码工程；异步加载语法解析器 WebAssembly 模块     |
+| `/source/parser.wasm`                | 语法解析器 WASM 二进制文件资源入口                              |
+| `/tiptap`                            | 原生核心编辑器工厂 `createTypstSourceEditor`（支持无 DOM 模式） |
+| `/tiptap/react`                      | React 界面组件 `TypstSourceEditor` 及配套工具栏                 |
+| `/tiptap/document/react`             | 针对受控业务模式的文档编辑器组件（无需接触原始 Typst 源码）     |
+| `/document`                          | 服务端安全文档工程：提供只读投影、编辑准入与语义级导航          |
 
-| 入口                          | 使用环境与职责                                     |
-| ----------------------------- | -------------------------------------------------- |
-| 包根、`/template`、`/browser` | 编译、文档定义、预览；无需编辑器或 parser          |
-| `/source`                     | Node 源码项目与事务                                |
-| `/source/browser`             | 浏览器源码项目；异步初始化匹配 parser WASM         |
-| `/source/parser.wasm`         | 浏览器 bundler 的 WASM 资源入口                    |
-| `/source/library`             | 创建可保存到项目中的 LaTeX、引用和字段 helper 文件 |
-| `/tiptap`                     | 原生 `createTypstSourceEditor`，包括无 DOM 用法    |
-| `/tiptap/react`               | `TypstSourceEditor` 与共用编辑控件                 |
+## 快速上手：在 React 中嵌入富文本编辑器
 
-按包的 optional peer 清单安装所选 Tiptap/React 依赖，Tiptap 各包使用同一版本。CSS 显式导入 `@pluxel/plugin-typst/tiptap/style.css`，其中包含公式预览样式。只编译或预览的应用不需要这些依赖。
-
-## 最小 React 接入
-
-以下是浏览器入口；`files` 应来自宿主读取的普通项目文件。创建 project 一次，各文件视图共享它，切换文件不用复制另一份正文。
+在前端项目中引入样式与解析器，直接挂载 `TypstSourceEditor`：
 
 ```tsx
 import { createRoot } from 'react-dom/client'
@@ -33,159 +30,152 @@ import parserWasm from '@pluxel/plugin-typst/source/parser.wasm?url'
 import '@pluxel/plugin-typst/tiptap/style.css'
 
 async function mount(element: HTMLElement) {
+	// 初始化浏览器源码工程
 	const project = await createTypstSourceProject({
 		parserWasm,
-		files: { 'main.typ': '= 季度报告\n\n请填写分析。\n' },
+		files: {
+			'main.typ': '= 季度业务复盘\n\n请在下方补充各部门进展。\n',
+		},
 	})
+
 	const root = createRoot(element)
 	root.render(<TypstSourceEditor project={project} path="main.typ" />)
-	return { project, dispose: () => root.unmount() }
+
+	return {
+		project,
+		dispose: () => root.unmount(),
+	}
 }
 
-mount(document.getElementById('root')!).catch((error) => {
-	document.getElementById('root')!.textContent = String(error)
-})
+mount(document.getElementById('root')!)
 ```
 
-`project.snapshot()` 返回当前 `{ revision, files }`，宿主只持久化这些普通文件。`subscribe` 在接纳后同步通知；异步磁盘保存、外部 watch、编译节流由宿主处理。`toolbar={false}` 可关闭常驻栏；`onEditor` 提供真实 Editor，`onIssues` 交付拒绝原因，`onReference(path, position)` 让宿主打开跨文件目标。
+- `project.snapshot()` 可获取当前所有文件的最新版本与内容快照，用于提交持久化存储。
+- 通过 `project.subscribe()` 可监听变更事件，实现实时的草稿自动保存或编译预览联动。
 
-## 原生编辑器
+## 服务端与无 DOM 环境下的原生编辑器
 
-Node 入口无需浏览器 WASM 参数。无 DOM 编辑使用同一套投影、准入和项目历史：
+在 Node.js 环境或自动化测试中，无需加载 DOM 即可直接使用 `createTypstSourceEditor` 执行结构化内容修改：
 
 ```ts
 import { createTypstSourceProject } from '@pluxel/plugin-typst/source'
 import { createTypstSourceEditor } from '@pluxel/plugin-typst/tiptap'
 
-const project = createTypstSourceProject({ files: { 'main.typ': '原始分析。\n' } })
+const project = createTypstSourceProject({
+	files: { 'main.typ': '初始内容分析。\n' },
+})
+
 const editor = createTypstSourceEditor({
 	project,
 	path: 'main.typ',
 	onIssues: (issues) => {
-		if (issues.length) console.error(issues)
+		if (issues.length) console.warn('编辑问题:', issues)
 	},
 })
+
 try {
-	editor.commands.insertContentAt(1, { type: 'text', text: '已核实：' })
+	// 在第一行后插入结构化节点
+	editor.commands.insertContentAt(1, { type: 'text', text: '【已复核】' })
+
+	// 获取修改后的真实 Typst 源码
 	console.log(project.snapshot().files['main.typ'])
 } finally {
 	editor.destroy()
 }
 ```
 
-`editor.getJSON()` 是派生结果，不应保存为正文。结构化编辑无法保留未知语义时拒绝该操作，原文不变；React 界面提供就地源码编辑。项目 `undo/redo` 同时撤销一笔事务涉及的全部文件，Editor 的撤销命令使用该历史。
+<span id="用户不接触源码的文档编辑"></span>
 
-无 DOM 调用传入原生 `JSONContent`，如上面的文本节点。字符串形式的 `insertContent` / `insertContentAt` 会走 HTML 解析，需要浏览器 DOM。
+## 面向终端用户的安全受控文档编辑
 
-## Agent 与源码事务
+在许多企业应用场景中，排版模板由设计人员维护，业务填报人员仅需填写指定的正文或表格，不应直接接触或破坏底层的 Typst 宏与版式定义。
 
-补丁的 `from/to` 是**基线文件的 UTF-8 字节偏移**，不是 JavaScript 字符索引或编辑器位置。每批绑定 `baseRevision`，全部检查通过才接纳：
+此时可以使用 `/document` 提供的文档投影系统：
+
+```ts
+import { createTypstSourceProject } from '@pluxel/plugin-typst/source'
+import { createTypstDocumentProject } from '@pluxel/plugin-typst/document'
+
+// 1. 服务端加载完整工程，声明哪些文件允许用户修改
+const project = createTypstSourceProject({
+	files: {
+		'main.typ': '#set page("a4")\n#include "body.typ"\n',
+		'body.typ': '= 项目概述 <intro>\n\n请在此处输入正文。\n',
+	},
+	writablePaths: ['body.typ'],
+})
+
+// 2. 将特定文件抽象为可编辑的语义文档
+const documents = createTypstDocumentProject({
+	project,
+	documents: [{ id: 'body', title: '正文部分', path: 'body.typ' }],
+})
+
+// 3. 生成向前端暴露的轻量文档视图（不泄露服务端文件路径）
+const view = documents.view()
+
+// 4. 接收前端回传的富文本变更并应用修改
+const result = documents.edit({
+	baseRevision: view.revision,
+	id: 'body',
+	document: view.documents[0]!.document,
+})
+
+if (!result.ok) {
+	console.error('修改校验未通过:', result.issues)
+}
+```
+
+- 前端仅需引入轻量的 `TypstDocumentEditor`，无需在浏览器端解析语法或加载 WASM。
+- 服务端会校验修订号与字段权限，确保用户操作不会破坏未授权的章节或宏指令。
+
+## Agent 源码事务与增量补丁
+
+Agent 或外部后台可以通过基于字节范围的精确补丁（Patches）进行协同修改：
 
 ```ts
 const baseline = project.snapshot()
-const source = baseline.files['main.typ']
-if (typeof source !== 'string') throw new Error('Expected text source')
 const result = project.apply({
 	baseRevision: baseline.revision,
-	patches: [{ path: 'main.typ', from: 0, to: 0, text: '// 已复核\n' }],
-})
-if (!result.ok) console.error(result.issues)
-```
-
-`writablePaths` 可以限制已有可写文件。外部 Agent 改动由宿主读取完整文件快照后调用 `replace({ baseRevision, files })`；它重建视图并清空旧历史。旧修订操作返回 `CONFLICT`，不会按过期范围覆盖新文件。存储层仍需自己的磁盘 CAS 和原子提交；内存修订不代替外部文件锁。
-
-允许保存暂时无效的 Typst，诊断包含文件、源码范围和修订。不要把“已保存”写成“编译成功”；保留上次成功预览时显示其源码修订，并停用过期定位。修复原文后，同一项目与编译会话可以继续使用。
-
-文件中已有语法错误时，仍可编辑能确认的其他段落；结构化事务不能触碰未修复的错误范围或引入新错误。遇到拒绝先查看 `onIssues`，再通过源码入口修复，不要反复提交旧投影。
-
-## 结构化支持与源码入口
-
-| 内容                                             | 编辑方式                                 |
-| ------------------------------------------------ | ---------------------------------------- |
-| 段落、标题、列表、链接、常见文字样式、对齐、代码 | 原生编辑器操作，局部回写                 |
-| 手工表格、合并单元格、多段单元格、表格外观       | 原生表格工具；保留未修改的参数与单元格   |
-| 图片、figure、富文本题注                         | 图与题注作为同一结构，模板负责编号与版式 |
-| 模板组件、JSON 字段                              | 显式参数或真实数据源控件                 |
-| 未知内联表达式                                   | 原位源码节点，不吞掉两侧文字             |
-| 未知块、循环、复杂调用                           | 保留源码，显式源码编辑                   |
-| `let/import/set/show`、不能确认的语法            | 保留顺序与作用域；不能任意重排           |
-
-无需在富文本界面模拟模板 `set/show` 的外观。无法确认的 builtin shadow、计算属性与动态语法保留源码；不求值后固化成可写正文。无操作打开/保存不改原字节，局部编辑不会把整个文件格式化。
-
-例如，同文案但不同底色的表格单元格仍各自保留参数；合并或重排若无法确定这些参数的归属，会明确拒绝。修改完整链接的地址保留其内部强调与注释；局部选区不能把共享的未知链接结构拆成猜测出的新源码。
-
-## 图表、公式与交叉引用
-
-原生源码是引用事实：
-
-```typst
-#figure(image("../assets/revenue.svg"), caption: [季度营收 *对比*。]) <fig:revenue>
-
-详见 @fig:revenue。
-```
-
-输入 `@` 可搜索项目内确认的图、表、公式标签。figure 的 label 输入修改会原子更新已确认的跨文件引用；`project.renameLabel` 提供同一操作。静态未命中可能是文献引用或动态 label，UI 显示未确认，编译器给出最终诊断。
-
-`project.move({baseRevision,path,label,toPath,at})` 移动确认目标及题注；`project.copy({baseRevision,path,from,to,toPath,at})` 复制完整顶层块，分配无冲突 label，只重绑副本内部引用。范围都是 UTF-8。涉及未知作用域、无法确认的依赖或不允许写的文件时明确失败，不能把保留字节视作允许任意程序移动。
-
-LaTeX 与原生 Typst 数学语法是两种语言。原生 `$...$` 保留原式；已有 LaTeX 能力使用显式 helper，文件先由宿主生成并持久化：
-
-```ts
-import { createTypstSourceLibrary } from '@pluxel/plugin-typst/source/library'
-const libraryFiles = await createTypstSourceLibrary()
-// 将 libraryFiles 的每个 path/text 保存进同一个项目，再送入编译快照。
-```
-
-```typst
-#import "lib/pluxel.typ" as report
-#show: report.document
-#set math.equation(numbering: "(1)")
-
-#report.latex("E = mc^2", block: true) <eq:energy>
-
-#report.reference(<eq:energy>, caption: auto)
-```
-
-引用显示对应 `caption: auto`（跟随模板）、`false`（不附题注）、`true`（编号与题注）。`false` 保留 Typst 模板的 supplement，如“图 1”，不保证只输出数字。helper 对题注内自引用、互引用使用短引用以终止展开。修改 helper 文件本身会使原有语义识别失效，此时调用保留为源码。
-
-## 模板与 JSON 数据
-
-普通 `include/import` 组合文件；一个文件被多次 include 时，编辑的是共享源文件。项目相对路径允许规范化后仍在 root 内的 `../`。无需在编辑器保存另一份依赖图。
-
-声明组件绑定真实 module/export，支持字符串、数值、布尔 literal 参数。`data` 指定 JSON 参数名，值仍由该 JSON 文件拥有：
-
-```ts
-const project = createTypstSourceProject({
-	files,
-	components: [
+	patches: [
 		{
-			module: 'template/blocks.typ',
-			name: 'metrics',
-			label: '指标卡',
-			parameters: { title: { type: 'string', label: '标题' } },
-			data: 'data',
+			path: 'main.typ',
+			from: 0,
+			to: 0,
+			text: '// 由 Agent 于 2026-11-05 校验\n',
 		},
 	],
 })
+
+if (!result.ok) {
+	console.error('补丁冲突或权限错误:', result.issues)
+}
 ```
 
-```typst
-#import "../template/blocks.typ": metrics
-#metrics(data: json("../data/sales.json"), title: "本季指标")
-```
+- 补丁的 `from` 和 `to` 使用基线文件的 UTF-8 字节偏移。
+- 只有基线版本匹配且所有检查通过时，事务才会原子生效并生成新的修订版本。
 
-参数控件只改调用参数；数据控件改 `data/sales.json`。字段可写为 `#report.field(json("../data/sales.json"), ("company",))`。业务 schema 校验由数据所有者负责；未确认的计算参数和动态绑定保留源码，不伪装成可编辑静态值。
+## 结构化富文本能力与映射规则
 
-“插入”菜单和 `/` 命令从 `project.components` 的只读声明及当前 JSON 文件生成候选。组件选项明确显示绑定文件，字段选项显示文件与路径；一次操作将普通 import 与调用写入同一源码事务，一次撤销即可移除。参数采用模板默认值，随后可编辑。缺少 helper、JSON 无效或当前位置的作用域改变了绑定含义时，插入明确失败，原文不变。
+编辑器针对主流 Typst 语法提供了开箱即用的可视化操作支持：
 
-字段目录在打开或搜索时生成，每次列出前 100 个匹配字段；继续细化搜索可访问大型数组后部的路径。MiTeX 自带的 WASM JSON 资源不作为业务字段枚举。
+| 语法结构                           | 交互体验                                          | 源码回写规则                                             |
+| :--------------------------------- | :------------------------------------------------ | :------------------------------------------------------- |
+| 段落、标题、列表、加粗、斜体、代码 | 原生富文本输入体验                                | 回写为对应的 Markdown/Typst 常用符号（`*`、`_`、`=` 等） |
+| 手工排版表格                       | 支持增删行/列、合并单元格、边框背景调节           | 回写为标准的 `#table(...)` 语法                          |
+| 图片与图题（Figure）               | 统一的图片插入控件，支持编辑 Caption              | 回写为 `#figure(image(...), caption: [...]) <label>`     |
+| 数学公式                           | 支持行内公式与独立块公式，提供即时渲染预览        | 回写为原生 `$ ... $` 语法                                |
+| 交叉引用（References）             | 键入 `@` 自动补全当前工程中已声明的图表与章节标签 | 回写为 `@label` 语法                                     |
+| 章节包含（Include）                | 树状章节卡片，可调整顺序或跳转子文件              | 回写为 `#include "..."`                                  |
 
-## 编译与预览定位
+<span id="编译与预览定位"></span>
 
-编译完整源文件树。更新已有 session 时，`update({ template: { root, entry }, files: {} })` 可替换普通项目树；`files` 始终是完整输入表，不是增量 patch，遗漏项会移除。不要每次按键重建 Host 或编译器。纯数据改动会重算真实图表，分析正文保持原文。
+## 源码与预览的双向位置同步
 
-源码 revision 每次接纳改变；session revision 只在成功编译后改变。宿主把二者关联，保存、编译、显示分别报告。
+为提供类似 Overleaf 或现代文档编辑器的流畅体验，系统提供了高精度的双向光标跟随机制：
 
-`findTypstEditorPosition({ projection, sourcePosition })` 接受 native 的 **1-based UTF-16** 行列；`findTypstSourcePosition({ projection, position })` 接受 ProseMirror 位置。只对同一当前修订使用映射。compiler 诊断则是 0-based UTF-16，需要先换算；未知源码通常只能定位到所属源节点。
+1. **从源码跳转预览**：
+   在编辑器光标变动时，调用 `findTypstSourcePosition` 将当前光标位置转换为 Typst 源码位置，并通过 `TypstPreviewView.revealSource()` 在预览面板中高亮并滚动到对应区域。
 
-可复跑示例与真实 PDF/浏览器证据见 [源码工作区](https://github.com/PluxelJS/pluxel/tree/main/projects/typst-agent-workspace)。浏览器体验页由 `mise exec -- pitchfork start typst` 启动；源文件选择、JSON 数据、源码修复、保存重开和 PDF 都使用上述公开能力。
+2. **从预览跳转源码**：
+   在预览面板中点击任意文本或图表时，预览组件将命中点的物理坐标转换为行列信息，通过 `findTypstEditorPosition` 转换为 ProseMirror 节点位置，并调用 `editor.commands.focus(position)` 聚焦选区。

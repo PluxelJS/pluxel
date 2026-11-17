@@ -23,10 +23,6 @@ test('standalone deployment root supplies Node artifacts and the default Workben
 	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-services-'))
 	let host: Awaited<ReturnType<typeof createHost>> | undefined
 	try {
-		await writeFile(
-			resolve(root, 'pluxel-deployment.json'),
-			JSON.stringify({ version: 1, kind: 'pluxel-static-application' }),
-		)
 		await mkdir(resolve(root, 'workbench/public/.vite'), { recursive: true })
 		await mkdir(resolve(root, 'workbench/public/assets'), { recursive: true })
 		await mkdir(resolve(root, 'artifacts/node'), { recursive: true })
@@ -47,7 +43,7 @@ test('standalone deployment root supplies Node artifacts and the default Workben
 			services: await servicesPreset(
 				{
 					...startup,
-					deployment: { root, target: 'node', variant: 'workbench' },
+					deployment: { root, target: 'node', delivery: 'standalone', variant: 'workbench' },
 				},
 				{},
 			),
@@ -79,24 +75,20 @@ test('standalone deployment root supplies Node artifacts and the default Workben
 	}
 })
 
-test.each([
-	null,
-	[],
-	{ version: 2, kind: 'pluxel-static-application' },
-	{ version: 1, kind: 'unknown-application' },
-])('rejects an invalid deployment manifest: %j', async (manifest) => {
-	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-services-invalid-deployment-'))
-	try {
-		await writeFile(resolve(root, 'pluxel-deployment.json'), JSON.stringify(manifest))
-		await expect(
-			servicesPreset(
-				{ ...startup, deployment: { root, target: 'node', variant: 'headless' } },
+test.each(['standalone', 'modules'] as const)(
+	'uses admitted %s delivery without rereading deployment manifests',
+	async (delivery) => {
+		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-services-deployment-'))
+		try {
+			await writeFile(resolve(root, 'pluxel-deployment.json'), '{malformed external replacement')
+			const services = await servicesPreset(
+				{ ...startup, deployment: { root, target: 'node', delivery, variant: 'headless' } },
 				{ workbench: false },
-			),
-		).rejects.toThrow(
-			`Invalid application deployment manifest: ${resolve(root, 'pluxel-deployment.json')}`,
-		)
-	} finally {
-		await rm(root, { recursive: true, force: true })
-	}
-})
+			)
+			expect(services.length).toBeGreaterThan(0)
+			expect(services.some((service) => service.name === 'Workbench')).toBe(false)
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	},
+)

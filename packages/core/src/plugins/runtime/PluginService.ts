@@ -91,6 +91,14 @@ export type PluginServiceConfig = {
 	stopConcurrency?: number
 }
 
+/** @internal Authoritative default execution parameters. */
+export const DEFAULT_PLUGIN_EXECUTION = Object.freeze({
+	startTimeoutMs: 1500,
+	drainTimeoutMs: 3000,
+	startConcurrency: 8,
+	stopConcurrency: 1,
+})
+
 type RuntimeUpdateCommitResult =
 	| { ok: true; val: { graph: PluginGraph; delta: CommitExecutionDelta } }
 	| { ok: false; err: unknown }
@@ -113,10 +121,6 @@ export type CommittedPluginDependencyAdjacency = Readonly<{
 	optional: readonly CommittedPluginDependencyEdge[]
 }>
 
-const DEFAULT_START_TIMEOUT_MS = 1_500
-const DEFAULT_DRAIN_TIMEOUT_MS = 3_000
-const DEFAULT_START_CONCURRENCY = 8
-const DEFAULT_STOP_CONCURRENCY = 1
 const RUNTIME_UPDATE_ALREADY_ACTIVE_MESSAGE =
 	'Cannot begin a Core Plugin update while another update is active'
 const RUNTIME_UPDATE_PENDING_DRAFT_MESSAGE =
@@ -198,10 +202,10 @@ export class PluginService {
 		lifecycleHooks: CorePluginLifecycleHooks = EMPTY_CORE_PLUGIN_LIFECYCLE_HOOKS,
 	) {
 		pinOwnerContext(this, ctx)
-		this.startTimeoutMs = config.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS
-		this.drainTimeoutMs = config.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS
-		this.startConcurrency = config.startConcurrency ?? DEFAULT_START_CONCURRENCY
-		this.stopConcurrency = config.stopConcurrency ?? DEFAULT_STOP_CONCURRENCY
+		this.startTimeoutMs = config.startTimeoutMs ?? DEFAULT_PLUGIN_EXECUTION.startTimeoutMs
+		this.drainTimeoutMs = config.drainTimeoutMs ?? DEFAULT_PLUGIN_EXECUTION.drainTimeoutMs
+		this.startConcurrency = config.startConcurrency ?? DEFAULT_PLUGIN_EXECUTION.startConcurrency
+		this.stopConcurrency = config.stopConcurrency ?? DEFAULT_PLUGIN_EXECUTION.stopConcurrency
 		this.lifecycleHooks = freezeCorePluginLifecycleHooks(lifecycleHooks)
 		this.definitions = new PluginDefinitions(() => this.createPluginContext())
 		this.lifecycleManager = new LifecycleManager(

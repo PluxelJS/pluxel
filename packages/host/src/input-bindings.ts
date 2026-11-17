@@ -1,14 +1,14 @@
 import {
 	InputBindingError,
-	declaredConfigBindings,
 	fail,
 	record,
 	schema,
 	configSchema,
+	configBindingProof,
 	type InputSchema,
 } from './input-binding-contract'
 import {
-	pluginNodeAddressOf,
+	parsePluginNodeAddress,
 	pluginNodeIndexKey,
 	type PluginConstructor,
 	type PluginNodeAddress,
@@ -19,11 +19,14 @@ import { projectRawInput, type Schema } from 'valibot-form'
 import type { HostApplication } from './host'
 import type { HostStartupContext } from './application'
 import type { HostVaultBindingRecord } from './bindings'
+import { configLeafPaths, configPathsOverlap } from './config-paths'
+import { snapshotConfigInput, type ConfigBindingProof } from './config-records'
 
 type Source = Readonly<{ path: readonly string[]; kind: 'env'; name: string }>
 export type ResolvedInputBindings = Readonly<{
-	base: readonly PluginConfigRecordSnapshot[]
-	baseSources: readonly {
+	bindings: readonly ConfigBindingProof[]
+	records: readonly PluginConfigRecordSnapshot[]
+	declarationSources: readonly {
 		owner: PluginNodeAddress
 		path: readonly string[]
 		kind: 'file'
@@ -49,6 +52,13 @@ function envelope(
 		if (!property.enumerable || !('value' in property))
 			fail(`[host] ${label} must contain data properties`)
 	}
+}
+function validateNamespace(namespace: unknown): void {
+	if (
+		namespace !== undefined &&
+		(typeof namespace !== 'string' || !namespace || namespace.includes('\0'))
+	)
+		fail('[host] Invalid Vault namespace')
 }
 function dataEntries(value: unknown, label: string): [string, unknown][] {
 	if (!record(value)) fail(`[host] ${label} must be a plain object`)
@@ -208,36 +218,51 @@ export async function resolveInputBindings(
 	application: HostApplication,
 	startup: HostStartupContext,
 ): Promise<ResolvedInputBindings> {
-	const base: PluginConfigRecordSnapshot[] = []
-	const baseSources: ResolvedInputBindings['baseSources'][number][] = []
+	const records: PluginConfigRecordSnapshot[] = []
+	const declarationSources: ResolvedInputBindings['declarationSources'][number][] = []
 	const overlays: ResolvedInputBindings['overlays'][number][] = []
 	const vaultBindings: HostVaultBindingRecord[] = []
 	const seen = new Set<string>()
-	const target = (plugin: PluginConstructor, kind: string, namespace = '', key = '') => {
-		if (typeof plugin !== 'function')
-			fail('[host] Input bindings require an explicit Plugin constructor')
-		const owner = pluginNodeAddressOf(plugin)
+	const bindings: ConfigBindingProof[] = []
+	const configTargets = new Map<string, (readonly string[])[]>()
+	const target = (
+		plugin: PluginConstructor | PluginNodeAddress,
+		kind: string,
+		namespace = '',
+		key = '',
+	) => {
+		const owner = parsePluginNodeAddress(
+			typeof plugin === 'function' ? plugin.nodeAddress() : plugin,
+		)
 		const identity = JSON.stringify([pluginNodeIndexKey(owner), kind, namespace, key])
 		if (seen.has(identity)) fail('[host] An input target cannot have multiple source bindings')
 		seen.add(identity)
 		return owner
 	}
+	const checkPaths = (
+		owner: PluginNodeAddress,
+		layer: string,
+		paths: readonly (readonly string[])[],
+	) => {
+		const key = `${pluginNodeIndexKey(owner)}:${layer}`
+		const previous = configTargets.get(key) ?? []
+		for (const path of paths) {
+			if (previous.some((other) => configPathsOverlap(other, path)))
+				fail('[host] A config source layer contains overlapping binding paths')
+			previous.push(path)
+		}
+		configTargets.set(key, previous)
+	}
 	for (const binding of [...(application.fileBindings ?? []), ...(application.envBindings ?? [])]) {
 		if (!record(binding)) fail('[host] Input bindings must be plain objects')
 		for (const key of Reflect.ownKeys(binding)) {
-			if (typeof key !== 'string' || !['plugin', 'namespace', 'config', 'vault'].includes(key))
+			if (typeof key !== 'string' || !['plugin', 'config', 'vault'].includes(key))
 				fail('[host] Unsupported input binding field')
 			const property = Object.getOwnPropertyDescriptor(binding, key)!
 			if (!property.enumerable || !('value' in property))
 				fail('[host] Bindings must contain data properties')
 		}
-		if (
-			binding.namespace !== undefined &&
-			(typeof binding.namespace !== 'string' ||
-				!binding.namespace ||
-				binding.namespace.includes('\0'))
-		)
-			fail('[host] Invalid Vault namespace')
+
 		if (binding.vault !== undefined && !record(binding.vault))
 			fail('[host] Vault bindings must be record mappings')
 		if (binding.config === undefined && binding.vault === undefined)
@@ -249,17 +274,21 @@ export async function resolveInputBindings(
 		if (binding.config !== undefined)
 			envelope(binding.config, ['schema', 'path'], 'Config file binding')
 		if (binding.vault !== undefined) {
-			envelope(binding.vault, ['schema', 'paths'], 'Vault file binding')
+			envelope(binding.vault, ['schema', 'paths', 'namespace'], 'Vault file binding')
+			validateNamespace(binding.vault.namespace)
 			if (!record(binding.vault.paths) || Reflect.ownKeys(binding.vault.paths).length === 0)
 				fail('[host] Vault file paths must enumerate at least one record')
 			schema(binding.vault.schema, 'Vault binding schema')
 		}
 		return {
-			plugin: binding.plugin,
-			namespace: binding.namespace,
+			plugin:
+				typeof binding.plugin === 'function'
+					? binding.plugin
+					: parsePluginNodeAddress(binding.plugin),
 			config: binding.config && { ...binding.config },
 			vault: binding.vault && {
 				schema: binding.vault.schema,
+				namespace: binding.vault.namespace,
 				paths: dataEntries(binding.vault.paths, 'Vault file paths'),
 			},
 		}
@@ -268,20 +297,24 @@ export async function resolveInputBindings(
 		if (binding.config !== undefined)
 			envelope(binding.config, ['schema', 'mapping'], 'Config environment binding')
 		if (binding.vault !== undefined) {
-			envelope(binding.vault, ['schema', 'mapping'], 'Vault environment binding')
+			envelope(binding.vault, ['schema', 'mapping', 'namespace'], 'Vault environment binding')
+			validateNamespace(binding.vault.namespace)
 			if (!record(binding.vault.mapping) || Reflect.ownKeys(binding.vault.mapping).length === 0)
 				fail('[host] Vault mapping must enumerate at least one record')
 			schema(binding.vault.schema, 'Vault binding schema')
 		}
 		return {
-			plugin: binding.plugin,
-			namespace: binding.namespace,
+			plugin:
+				typeof binding.plugin === 'function'
+					? binding.plugin
+					: parsePluginNodeAddress(binding.plugin),
 			config: binding.config && {
 				schema: binding.config.schema,
 				mapping: leaves(binding.config.mapping),
 			},
 			vault: binding.vault && {
 				schema: binding.vault.schema,
+				namespace: binding.vault.namespace,
 				mapping: dataEntries(binding.vault.mapping, 'Vault record mappings').map(
 					([key, mapping]) => {
 						if (mapping === undefined) fail('[host] Vault environment bindings must name inputs')
@@ -293,30 +326,36 @@ export async function resolveInputBindings(
 	})
 	for (const binding of fileBindings) {
 		if (binding.config !== undefined) {
-			configSchema(binding.plugin, schema(binding.config.schema, 'Config binding schema'))
-			const owner = target(binding.plugin, 'config-file')
+			configSchema(
+				binding.plugin,
+				schema(binding.config.schema, 'Config binding schema'),
+				application.plugins,
+			)
+			const owner = parsePluginNodeAddress(
+				typeof binding.plugin === 'function' ? binding.plugin.nodeAddress() : binding.plugin,
+			)
 			const value = await readJson(binding.config.path, startup.root)
 			if (!record(value))
 				throw new InputBindingError('INVALID_INPUT', '[host] A config file must contain an object')
-			base.push({ owner, config: value })
-			const fileSource: ResolvedInputBindings['baseSources'][number] = {
-				owner,
-				path: [],
-				kind: 'file',
-				name: binding.config.path,
-			}
-			declaredConfigBindings.add(fileSource)
-			baseSources.push(fileSource)
+			const config = snapshotConfigInput(value)
+			const paths = configLeafPaths(config)
+			checkPaths(owner, 'file', paths)
+			bindings.push(
+				configBindingProof(binding.plugin, binding.config.schema, [[]], application.plugins),
+			)
+			records.push({ owner, config })
+			for (const path of paths)
+				declarationSources.push({ owner, path, kind: 'file', name: binding.config.path })
 		}
 		for (const [key, path] of binding.vault?.paths ?? []) {
-			const owner = target(binding.plugin, 'vault', binding.namespace, key)
+			const owner = target(binding.plugin, 'vault', binding.vault?.namespace, key)
 			if (typeof path !== 'string') fail('[host] Vault file bindings must name JSON files')
 			const declared = binding.vault!.schema
 			const raw = await readJson(path, startup.root)
 			const entry: HostVaultBindingRecord = {
 				owner,
 				key,
-				namespace: binding.namespace,
+				namespace: binding.vault?.namespace,
 				source: 'file',
 				value: await validateVault(declared, key, raw),
 			}
@@ -325,9 +364,28 @@ export async function resolveInputBindings(
 	}
 	for (const binding of envBindings) {
 		if (binding.config !== undefined) {
-			const owner = target(binding.plugin, 'config-env')
+			const owner = parsePluginNodeAddress(
+				typeof binding.plugin === 'function' ? binding.plugin.nodeAddress() : binding.plugin,
+			)
+			checkPaths(
+				owner,
+				'env',
+				binding.config.mapping.map((leaf) => leaf.path),
+			)
+			bindings.push(
+				configBindingProof(
+					binding.plugin,
+					binding.config.schema,
+					binding.config.mapping.map((leaf) => leaf.path),
+					application.plugins,
+				),
+			)
 			const decoded = decode(
-				configSchema(binding.plugin, schema(binding.config.schema, 'Config binding schema')),
+				configSchema(
+					binding.plugin,
+					schema(binding.config.schema, 'Config binding schema'),
+					application.plugins,
+				),
 				binding.config.mapping,
 				startup.env,
 				false,
@@ -338,26 +396,29 @@ export async function resolveInputBindings(
 					'[host] A config environment binding must produce an object',
 				)
 			if (decoded.sources.length > 0) {
-				const overlay = { owner, config: decoded.value, sources: decoded.sources }
-				declaredConfigBindings.add(overlay)
+				const overlay = {
+					owner,
+					config: snapshotConfigInput(decoded.value),
+					sources: decoded.sources,
+				}
 				overlays.push(overlay)
 			}
 		}
 		for (const [key, mapping] of binding.vault?.mapping ?? []) {
-			const owner = target(binding.plugin, 'vault', binding.namespace, key)
+			const owner = target(binding.plugin, 'vault', binding.vault?.namespace, key)
 			const declared = binding.vault!.schema
 			const decoded = decode(vaultRecordSchema(declared, key), mapping, startup.env, true)
 			const entry: HostVaultBindingRecord = {
 				owner,
 				key,
-				namespace: binding.namespace,
+				namespace: binding.vault?.namespace,
 				source: 'env',
 				value: await validateVault(declared, key, decoded.value),
 			}
 			vaultBindings.push(entry)
 		}
 	}
-	return { base, baseSources, overlays, vaultBindings }
+	return { records, declarationSources, overlays, vaultBindings, bindings }
 }
 
 export { InputBindingError } from './input-binding-contract'

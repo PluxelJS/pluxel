@@ -107,6 +107,6 @@ memory-only consumer 仍不安装 node-redis。adapter 源码是本包内唯一�
 Workbench 继续用 host-owned dependency selection 选择 Redis provider。默认 standalone provider另外发布一张固定
 host-rendered Content，以 bounded rows 读取全部 connection state，并提供一个按 ID 选择、带有界 transient payload 的原生 `PING`
 action。动态连接数量不改变 Workbench definition、entry 或 socket。状态变化复用既有 Workbench Cap'n Web session 调用
-`dataChanged()`；Content 不复制 endpoint 持久配置，不保留 payload，也不暴露
+binding `subscribe(changed)` 中登记的 latest-state callback；Content 不复制 endpoint 持久配置，不保留 payload，也不暴露
 credential、任意 Redis command 或 key browser。Workbench disabled 时不注册额外 Redis event listener，且不影响 Redis
 capability 或 lifecycle。

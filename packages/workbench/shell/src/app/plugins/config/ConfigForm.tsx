@@ -1,18 +1,17 @@
-import type { HostConfigVersion } from '@pluxel/host'
-import { makePathArray } from '@tanstack/react-form'
 import { Box, ScrollArea, Text } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
 import { type PluginNodeAddress } from '@pluxel/core'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { type FieldNode } from 'valibot-form'
+import type { ConfigPatch } from '@pluxel/services/management/client'
 
 import { useRuntimeManagementClient } from '../../../runtime'
 import { PLUGIN_DETAIL_HOTKEYS } from '../../workbench/shortcuts'
 import { ConfigTabContent } from './ConfigTab'
 import { useConfigForms, type ConfigSectionForm, type ConfigFormState } from './useConfigForms'
 import { ConfigActionDock } from './components/ConfigActionDock'
-import { buildEditableConfigPatch } from './presentationAdapter'
-import { type PluginConfigSection } from './usePluginConfig'
+import { buildEditableConfigPatch, editableConfigPaths } from './presentationAdapter'
+import { type PluginConfigSection, type PluginConfigSnapshot } from './usePluginConfig'
 import { useConfigSave } from './useConfigSave'
 import { mapConfigValidationErrors, mountedFieldNames } from '../../forms/serverValidation'
 import { useOptionalWorkbenchDocument } from '../../workbench/document'
@@ -29,10 +28,7 @@ type ConfigFormProps = {
 	owner: PluginNodeAddress
 	displayName: string
 	fields: readonly FieldNode[]
-	version: HostConfigVersion | null
-	readonly: boolean
-	savedConfig: Record<string, unknown>
-	defaults: Record<string, unknown>
+	snapshot: PluginConfigSnapshot
 	active?: boolean
 	onDirtyChange?: (dirty: boolean) => void
 	sections?: readonly PluginConfigSection[]
@@ -43,7 +39,6 @@ type SectionItem = {
 	label: string
 	path: readonly string[]
 	fields: readonly FieldNode[]
-	defaultValue: Record<string, unknown>
 	savedValue: Record<string, unknown>
 	initialValue: Record<string, unknown>
 }
@@ -63,39 +58,37 @@ function ConfigFormInstance({
 	owner,
 	displayName,
 	fields,
-	savedConfig,
-	version,
-	readonly: readOnly,
-	defaults,
+	snapshot,
 	active = true,
 	onDirtyChange,
 	sections,
 }: ConfigFormProps & { sections: readonly PluginConfigSection[] }) {
 	const management = useRuntimeManagementClient()
+	const readOnly = snapshot.readonly
+	const [editingRevision, setEditingRevision] = useState(snapshot.managedRevision)
 	const document = useOptionalWorkbenchDocument()
 	const workspace = useOptionalWorkspaceSession()
 	const { mutateAsync: saveConfig, isPending: saving, variables } = useConfigSave({ owner })
 	const savingRef = useRef(false)
-	const versionRef = useRef(version)
+	const saveRevision = useRef(0)
 	const visibleSections = useMemo<readonly PluginConfigSection[]>(
-		() => (sections.length > 0 ? sections : [{ path: [], fields, defaults, fieldName: '' }]),
-		[defaults, fields, sections],
+		() => (sections.length > 0 ? sections : [{ path: [], fields, fieldName: '' }]),
+		[fields, sections],
 	)
 	const sectionItems = useMemo<SectionItem[]>(
 		() =>
 			visibleSections.map((section) => {
-				const savedValue = recordAtPath(savedConfig, section.path)
+				const savedValue = recordAtPath(snapshot.managedInput ?? {}, section.path)
 				return {
 					key: sectionKey(section.path),
 					label: sectionLabel(section.path),
 					path: section.path,
 					fields: section.fields,
-					defaultValue: section.defaults,
 					savedValue,
-					initialValue: { ...section.defaults, ...savedValue },
+					initialValue: savedValue,
 				}
 			}),
-		[savedConfig, visibleSections],
+		[snapshot.managedInput, visibleSections],
 	)
 	const [activeKey, setActiveKey] = useState(sectionItems[0]?.key ?? '')
 	const { formStates, forms, registerForm } = useConfigForms()
@@ -106,11 +99,10 @@ function ConfigFormInstance({
 	}, [activeKey, sectionItems])
 
 	const dirtySections = sectionItems.filter((section) => formStates[section.key]?.dirty)
-	useEffect(() => {
-		// Background reads must not silently attach a newer version to an older draft.
-		if (dirtySections.length === 0 && !saving) versionRef.current = version
-	}, [dirtySections.length, saving, version])
 	const dirtyLabels = dirtySections.map((section) => section.label)
+	useEffect(() => {
+		if (dirtySections.length === 0) setEditingRevision(snapshot.managedRevision)
+	}, [dirtySections.length, snapshot.managedRevision])
 	const activeSection = sectionItems.find((section) => section.key === activeKey) ?? sectionItems[0]
 	const resolvedActiveKey = activeSection?.key ?? ''
 	const activeState = formStates[resolvedActiveKey] ?? EMPTY_FORM_STATE
@@ -142,24 +134,57 @@ function ConfigFormInstance({
 		bridge.reset(activeSection.initialValue)
 	}, [activeSection, activeState.submitting, forms, resolvedActiveKey, saving])
 
-	const resetToDefaults = useCallback(() => {
-		if (activeState.submitting || saving) return
+	const restoreInheritance = useCallback(async () => {
+		if (readOnly || savingRef.current || activeState.submitting || !activeSection) return
 		const bridge = forms.get()[resolvedActiveKey]
-		if (!bridge || !activeSection) return
-		// Restoring defaults replaces the editable draft as a whole.
-		bridge.form.setErrorMap({ onServer: { fields: {} } } as never)
-		const editableDefaults = buildEditableConfigPatch(
-			activeSection.fields,
-			activeSection.defaultValue,
-			activeSection.initialValue,
-		)
-		for (const [key, value] of Object.entries(editableDefaults)) {
-			// Defaults contain literal root keys, not TanStack path expressions.
-			const parsed = makePathArray(key)
-			if (!key || parsed.length !== 1 || parsed[0] !== key) continue
-			bridge.form.setFieldValue(key, value)
+		if (!bridge) return
+		const submitted = bridge.form.state.values
+		const paths = editableConfigPaths(activeSection.fields, activeSection.path)
+		if (paths.length === 0) return
+		savingRef.current = true
+		saveRevision.current++
+		try {
+			await saveConfig({
+				request: () =>
+					management.config.reset(owner, paths, { expectedManagedRevision: editingRevision }),
+				all: false,
+				sectionCount: 1,
+				onValidation: (errors) => {
+					if (bridge.form.state.values === submitted)
+						bridge.form.setErrorMap({
+							onServer: mapConfigValidationErrors(
+								errors,
+								mountedFieldNames(bridge.form),
+								activeSection.path,
+							),
+						} as never)
+				},
+				onSaved: (result) => {
+					setEditingRevision(result.managedRevision)
+					if (forms.get()[resolvedActiveKey]?.form === bridge.form)
+						bridge.acceptSaved(
+							recordAtPath(result.managedInput ?? {}, activeSection.path),
+							submitted,
+						)
+				},
+			})
+		} catch {
+			// The mutation owns failure feedback; keep the draft until confirmed.
+		} finally {
+			savingRef.current = false
+			saveRevision.current++
 		}
-	}, [activeSection, activeState.submitting, forms, resolvedActiveKey, saving])
+	}, [
+		activeSection,
+		activeState.submitting,
+		editingRevision,
+		forms,
+		management.config,
+		owner,
+		readOnly,
+		resolvedActiveKey,
+		saveConfig,
+	])
 
 	// Both native section submits and the save-all action enter the same transaction.
 	const save = useCallback(
@@ -176,24 +201,22 @@ function ConfigFormInstance({
 				return
 			// Native submits compete for the synchronous guard; save-all waits for their validation.
 			if (key === undefined && submitted.some(({ state }) => state.isSubmitting)) return
-			const patches = dirty.map(({ section, state }) => ({
+			const patches = dirty.map(({ section, bridge, state }) => ({
 				section,
-				patch: buildEditableConfigPatch(section.fields, state.values, section.savedValue),
+				patch: buildEditableConfigPatch(section.fields, state.values, bridge.baseline),
 			}))
 			const patch = buildCombinedConfigPatch(patches)
-			if (Object.keys(patch).length === 0) return
+			if (!patch.set && !patch.remove?.length) return
 			const unchanged = () =>
 				targets.every(
 					({ section, bridge, state }) =>
 						forms.get()[section.key]?.form === bridge.form &&
 						bridge.form.state.values === state.values,
 				)
-			const expected = versionRef.current
 			const request = () =>
-				expected
-					? management.config.patch(owner, patch, expected)
-					: management.config.patch(owner, patch)
+				management.config.patch(owner, patch, { expectedManagedRevision: editingRevision })
 			savingRef.current = true
+			saveRevision.current++
 			for (const { bridge } of targets)
 				bridge.form.setErrorMap({ onServer: { fields: {} } } as never)
 			try {
@@ -212,10 +235,14 @@ function ConfigFormInstance({
 								),
 							} as never)
 					},
-					onSaved: (savedVersion) => {
-						versionRef.current = savedVersion
+					onSaved: (result) => {
+						setEditingRevision(result.managedRevision)
 						for (const { section, bridge, state } of dirty) {
-							if (forms.get()[section.key]?.form === bridge.form) bridge.acceptSaved(state.values)
+							if (forms.get()[section.key]?.form === bridge.form)
+								bridge.acceptSaved(
+									recordAtPath(result.managedInput ?? {}, section.path),
+									state.values,
+								)
 						}
 					},
 				})
@@ -223,19 +250,20 @@ function ConfigFormInstance({
 				// The mutation owns transport failure recovery and notification.
 			} finally {
 				savingRef.current = false
+				saveRevision.current++
 			}
 		},
-		[forms, management, owner, readOnly, saveConfig, sectionItems],
+		[editingRevision, forms, management, owner, readOnly, saveConfig, sectionItems],
 	)
 	const saveAll = useCallback(() => save(), [save])
 	const saveRef = useRef(saveAll)
 	saveRef.current = saveAll
-	const lifecycle = useMemo(() => {
+	const editor = useMemo(() => {
 		let facts: readonly unknown[] = []
 		let revision = 0
 		return {
-			isDirty: () => Object.values(forms.get()).some(({ form }) => form.state.isDirty),
-			getCloseRevision: () => {
+			isWritePending: () => savingRef.current,
+			getState: () => {
 				// Immutable form values and registered form identities are the editing
 				// facts; keep a stable aggregate only while every actual fact is equal.
 				const current = Object.entries(forms.get()).flatMap(([key, { form }]) => [
@@ -250,20 +278,23 @@ function ConfigFormInstance({
 					facts = current
 					revision++
 				}
-				return revision
+				return {
+					hasUnsavedChanges: Object.values(forms.get()).some(({ form }) => form.state.isDirty),
+					token: `${revision}:${saveRevision.current}`,
+				}
 			},
 			save: () => saveRef.current(),
 		}
 	}, [forms])
 	useEffect(() => {
 		if (!document) return
-		document.state.editor = lifecycle
+		document.state.editor = editor
 		workspace?.notifyContentState()
 		return () => {
-			if (document.state.editor === lifecycle) document.state.editor = undefined
+			if (document.state.editor === editor) document.state.editor = undefined
 			workspace?.notifyContentState()
 		}
-	}, [document, lifecycle, workspace])
+	}, [document, editor, workspace])
 	useEffect(() => {
 		workspace?.notifyContentState()
 	}, [dirtySections.length, workspace])
@@ -305,6 +336,19 @@ function ConfigFormInstance({
 					当前宿主的配置只读。
 				</Text>
 			) : null}
+			{!snapshot.ok ? (
+				<Text size="sm" c="red">
+					当前有效配置未通过校验：{snapshot.message}。请修改保存输入后重新提交。
+				</Text>
+			) : null}
+			{snapshot.shadowedPaths.length > 0 ? (
+				<Text size="sm" c="dimmed">
+					部分保存值被应用声明覆盖；修改这些值不会立即改变当前生效配置。
+				</Text>
+			) : null}
+			<Text size="xs" c="dimmed">
+				表单编辑保存输入。未设置的字段继续继承声明或插件默认值。
+			</Text>
 			{active ? (
 				<Box className="plx-pluginWorkbench__configToolbar">
 					<ConfigActionDock
@@ -323,7 +367,7 @@ function ConfigFormInstance({
 						onSubmitCurrent={submitCurrent}
 						onSubmitAll={() => void saveAll()}
 						onResetCurrent={resetCurrent}
-						onResetDefaults={resetToDefaults}
+						onRestoreInheritance={() => void restoreInheritance()}
 					/>
 				</Box>
 			) : null}
@@ -381,7 +425,6 @@ function ConfigSectionPane({
 				displayName={displayName}
 				fields={section.fields}
 				savedValue={section.savedValue}
-				defaultValue={section.defaultValue}
 				path={section.path}
 				showToc={active}
 				scrollHost={scrollHost}
@@ -408,26 +451,18 @@ function recordAtPath(record: Record<string, unknown>, path: readonly string[]) 
 }
 
 function buildCombinedConfigPatch(
-	submissions: readonly { section: SectionItem; patch: Record<string, unknown> }[],
-): Record<string, unknown> {
-	const candidate: Record<string, unknown> = {}
-	const changedRootKeys = new Set<string>()
-
-	for (const { section, patch: editablePatch } of submissions) {
-		if (section.path.length === 0) {
-			for (const [key, value] of Object.entries(editablePatch)) {
-				candidate[key] = value
-				changedRootKeys.add(key)
-			}
-			continue
-		}
-
-		const target = ensureRecordAtPath(candidate, section.path)
-		Object.assign(target, editablePatch)
-		changedRootKeys.add(section.path[0]!)
+	submissions: readonly { section: SectionItem; patch: ConfigPatch }[],
+): ConfigPatch {
+	const set: Record<string, unknown> = {}
+	const remove: (readonly string[])[] = []
+	for (const { section, patch } of submissions) {
+		if (patch.set) Object.assign(ensureRecordAtPath(set, section.path), patch.set)
+		for (const path of patch.remove ?? []) remove.push([...section.path, ...path])
 	}
-
-	return Object.fromEntries([...changedRootKeys].map((key) => [key, candidate[key]]))
+	return {
+		...(Object.keys(set).length > 0 ? { set } : {}),
+		...(remove.length > 0 ? { remove } : {}),
+	}
 }
 
 function ensureRecordAtPath(root: Record<string, unknown>, path: readonly string[]) {

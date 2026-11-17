@@ -1,7 +1,6 @@
 import {
 	BasePlugin,
 	Plugin,
-	pluginNodeAddressOf,
 	type Context,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
@@ -86,7 +85,7 @@ function createIndependent(index: number): {
 		definition: independentDefinition,
 	})
 	return {
-		address: pluginNodeAddressOf(Independent),
+		address: Independent.nodeAddress(),
 		candidate: consumePluginDefinitionCandidate(Independent),
 	}
 }
@@ -413,7 +412,7 @@ async function runSize(forks: number): Promise<Row> {
 async function fixedFamilyReplacement(background: number) {
 	const ctx = createCoreRootContext({ name: `fork-cost-background-${background}` })
 	const registry = requirePluginService(ctx)
-	const target = pluginNodeAddressOf(ForkCostProviderV1)
+	const target = ForkCostProviderV1.nodeAddress()
 	const initial = registry.beginUpdate({ reason: `fixed-family-setup-${background}` })
 	initial.materializeNode(target, candidateV1)
 	for (let index = 0; index < background; index++) {

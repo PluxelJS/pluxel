@@ -40,20 +40,22 @@ async function startVaultS3(host: TestHost<true>): Promise<void> {
 		})
 	await host.stop(S3Plugin)
 	await host.config.patch(S3Plugin, {
-		buckets: [
-			{
-				id: 'assets',
-				backend: {
-					type: 'remote',
-					endpoint: 'https://bucket.s3.example.com',
-					region: 'auto',
-					credentials: REFERENCE,
-					requestSizeInBytes: 8 * 1024 * 1024,
-					requestAbortTimeout: 30_000,
-					minPartSize: 8 * 1024 * 1024,
+		set: {
+			buckets: [
+				{
+					id: 'assets',
+					backend: {
+						type: 'remote',
+						endpoint: 'https://bucket.s3.example.com',
+						region: 'auto',
+						credentials: REFERENCE,
+						requestSizeInBytes: 8 * 1024 * 1024,
+						requestAbortTimeout: 30_000,
+						minPartSize: 8 * 1024 * 1024,
+					},
 				},
-			},
-		],
+			],
+		},
 	})
 	await host.start(S3Plugin)
 }

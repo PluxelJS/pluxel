@@ -1,4 +1,4 @@
-import type { PluginHost } from '@pluxel/host'
+import type { HostConfigMutation, PluginHost } from '@pluxel/host'
 import { Commands } from '@pluxel/services/commands'
 import {
 	Observations,
@@ -51,10 +51,16 @@ export function createControl(host: PluginHost) {
 			case 'host.configGet':
 				return host.config.get(await address(params.plugin))
 			case 'host.config':
-				return host.config.patch(
-					await address(params.plugin),
-					params.patch as Record<string, unknown>,
+				if (
+					params.expectedManagedRevision != null &&
+					typeof params.expectedManagedRevision !== 'string'
 				)
+					throw new TypeError('expectedManagedRevision must be a string')
+				return host.config.patch(await address(params.plugin), params.patch as HostConfigMutation, {
+					expectedManagedRevision: (params.expectedManagedRevision ?? undefined) as
+						| string
+						| undefined,
+				})
 			case 'host.configReset':
 				return host.config.reset(await address(params.plugin))
 			case 'command.execute':
@@ -75,7 +81,7 @@ export function createControl(host: PluginHost) {
 					commands = await address('CalculatorCommands')
 				const before = await command('1 / 3')
 				if (!before.ok) throw new Error(`Initial command failed: ${JSON.stringify(before)}`)
-				const configured = await host.config.patch(calculator, { precision: 3 })
+				const configured = await host.config.patch(calculator, { set: { precision: 3 } })
 				if (!configured.ok || configured.application !== 'applied')
 					throw new Error(`Config not applied: ${JSON.stringify(configured)}`)
 				const after = await command('1 / 3')

@@ -130,7 +130,7 @@ const checkInstalledBrowserFs = async (root) => {
 		const bootstrap = await page.evaluate(`${load}.then((runtime) => runtime.corruptConfig())`)
 		expect(bootstrap).toMatchObject({
 			cause: 'SyntaxError',
-			closed: 'CLOSED',
+			closed: 'EBADF',
 			text: '{broken',
 			unchanged: true,
 		})
@@ -359,7 +359,7 @@ const borrowed=await native.InMemory.create({label:'borrowed-native'});
 await borrowed.ready();
 let created=0;
 const backend={...native.InMemory,name:'NativeCustom',create(options){created++;return native.InMemory.create(options)}};
-const host=await createHost({plugins:[],config:{storage:zenfs({mounts:{
+const host=await createHost({plugins:[],runtime:{zenfs:zenfs({mounts:{
  '/':borrowed,
  '/custom':{backend,label:'owned-custom'},
  '/nested':{backend:native.CopyOnWrite,readable:{backend:native.InMemory},writable:{backend:native.InMemory}},
@@ -373,7 +373,7 @@ try {
  await nested.writeFile('value','NESTED-NATIVE-BACKEND');
  assert.equal(await nested.readFile('value','utf8'),'NESTED-NATIVE-BACKEND');
 } finally {await host.close()}
-const reopened=await createHost({plugins:[],config:{storage:zenfs({mounts:{'/':borrowed}})}});
+const reopened=await createHost({plugins:[],runtime:{zenfs:zenfs({mounts:{'/':borrowed}})}});
 try {await (await requireFs(reopened.ctx).directory('still-open')).writeFile('value','BORROWED')}
 finally {await reopened.close()}
 console.log('EXTERNAL_NATIVE_ZENFS_OK');
@@ -559,12 +559,12 @@ import assert from 'node:assert/strict'
 import * as nativeFs from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
 import { createHost } from '@pluxel/host'
 import { Passthrough } from '@pluxel/core/fs'
 import { zenfs } from '@pluxel/core/config'
-import { requireTinyBaseHost } from '@pluxel/core/internal'
+import { requireTinyBaseHost, requireHostDocuments } from '@pluxel/core/internal'
 import { createStore } from 'tinybase/with-schemas'
 import { createQueries } from 'tinybase/queries'
 const prefix = fileURLToPath(new URL('./state/', import.meta.url))
@@ -590,8 +590,8 @@ __setPluginDefinition(Owner, {
  definition: { entry: { kind: 'package-root', packageName: 'independent-tinybase-consumer' }, exportName: 'Owner' },
 })
 async function open() {
- const host = await createHost({ plugins: [Owner], config: { storage: zenfs({ mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } }, durableMounts: ['/'] }) } })
- const started = await host.startNode(pluginNodeAddressOf(Owner))
+ const host = await createHost({ plugins: [Owner], runtime: { zenfs: zenfs({ mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } }, durableMounts: ['/'] }) } })
+ const started = await host.startNode(Owner.nodeAddress())
  assert.equal(started.core.status, 'committed')
  assert.equal(started.core.summary.lifecycleReport.ok, true)
  return host
@@ -617,7 +617,7 @@ try {
  const snapshot = JSON.parse(await readFile(prefix + '/services/tinybase/nodes/' + files[0], 'utf8'))
  assert.equal(snapshot.formatVersion, 1)
  assert.equal(JSON.stringify(snapshot.content), JSON.stringify(owner.store.getContent()))
- await manager.documents('private').put('config.json', '{"profile":"confirmed"}')
+ await requireHostDocuments(host.ctx, 'private').put('config.json', '{"profile":"confirmed"}')
 } finally { await host.close() }
 await assert.rejects(owner.state.flush())
 firstStore.setValue('stale', 'must-not-persist')
@@ -627,7 +627,7 @@ try {
  assert.deepEqual({ ...owner.store.getRow('items', 'kept') }, { name: 'confirmed', count: 3 })
  assert.equal(owner.store.getValue('enabled'), true)
  assert.equal(owner.store.hasValue('stale'), false)
- assert.equal(await requireTinyBaseHost(host.ctx).documents('private').getText('config.json'), '{"profile":"confirmed"}')
+ assert.equal(await requireHostDocuments(host.ctx, 'private').getText('config.json'), '{"profile":"confirmed"}')
  owner.store.setContent([{}, {}])
  await owner.state.flush()
 } finally { await host.close() }
@@ -642,7 +642,7 @@ console.log('ISOLATED_TINYBASE_STORE_REOPEN_FLUSH_OK')
 
 const tinybaseTypeConsumer = `
 import type { PluginContext, RootContext, TinyBaseStatus } from '@pluxel/core'
-import { requireTinyBaseHost } from '@pluxel/core/internal'
+import { requireTinyBaseHost, requireHostDocuments } from '@pluxel/core/internal'
 import { createStore, type Store } from 'tinybase'
 import { createStore as createSchemaStore } from 'tinybase/with-schemas'
 import { createQueries } from 'tinybase/queries/with-schemas'
@@ -711,7 +711,7 @@ const logger:LogTapeConfig=logtape({
  sinks:{capture(record){const category:readonly string[]=record.category;void category}},
  loggers:[{category:['pluxel'],sinks:['capture'],lowestLevel:'trace'},{category:['logtape','meta'],lowestLevel:null}],
 })
-const host=await createHost({plugins:[],config:{logger,storage:zenfs({ mounts: { '/': {backend:InMemory} } })}})
+const host=await createHost({plugins:[],runtime:{logtape:logger,zenfs:zenfs({ mounts: { '/': {backend:InMemory} } })}})
 const logging:RuntimeLogging=host.ctx.require(Logging)
 await logging.flush()
 const io:FsPromises=await requireFs(host.ctx).directory('documents')
@@ -775,7 +775,7 @@ const shortened = {...nativeFs,promises:{...nativeFs.promises,async open(...args
  handle.write=(buffer,offset,length,position)=>{writes++;return write(buffer,offset,Math.min(length,2),position)}
  return handle
 }}}
-let node = await createHost({plugins:[],config:{storage:zenfs({ mounts: { '/': {backend:Passthrough,fs:shortened,prefix} }, durableMounts: ['/'] })}})
+let node = await createHost({plugins:[],runtime:{zenfs:zenfs({ mounts: { '/': {backend:Passthrough,fs:shortened,prefix} }, durableMounts: ['/'] })}})
 try {
  const io=await requireFs(node.ctx).directory('documents',{durable:true,writable:true})
  await writeFileAtomic(io,'value','NEW-CONTENT')
@@ -790,7 +790,7 @@ try {
  assert.deepEqual(Array.from(await io.readFile('binary')),[0,1,255])
  assert.ok(reads>1 && writes>1)
 } finally {await node.close()}
-node=await createHost({plugins:[],config:{storage:zenfs({ mounts: { '/': {backend:Passthrough,fs:nativeFs,prefix} }, readOnly: true, durableMounts: ['/'] })}})
+node=await createHost({plugins:[],runtime:{zenfs:zenfs({ mounts: { '/': {backend:Passthrough,fs:nativeFs,prefix} }, readOnly: true, durableMounts: ['/'] })}})
 try {
  const io=await requireFs(node.ctx).directory('documents')
  await assert.rejects(io.writeFile('binary','CHANGED'),{code:'EROFS'})
@@ -799,7 +799,7 @@ try {
 } finally {await node.close()}
 let created=false
 const external = {...InMemory,name:'CustomMemory',create(options){created=true;return InMemory.create(options)}}
-const custom = await createHost({plugins:[],config:{storage:zenfs({mounts:{'/':{backend:external,name:'native-custom'}}})}})
+const custom = await createHost({plugins:[],runtime:{zenfs:zenfs({mounts:{'/':{backend:external,name:'native-custom'}}})}})
 try {
  assert.equal(created,true)
  const io=await requireFs(custom.ctx).directory('custom')
@@ -817,7 +817,7 @@ const logger=logtape({
  loggers:[{category:['pluxel'],sinks:['capture'],lowestLevel:'trace'},{category:['logtape','meta'],lowestLevel:null}],
 })
 assert.deepEqual(events,[])
-const logged=await createHost({plugins:[],config:{logger,storage:zenfs()}})
+const logged=await createHost({plugins:[],runtime:{logtape:logger,zenfs:zenfs()}})
 const logging=logged.ctx.require(Logging)
 try {
  logged.ctx.logger.info('ISOLATED_CONFIG_NATIVE_SINK')

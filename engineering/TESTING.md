@@ -27,7 +27,7 @@ carrier、browser 和 deployment 行为仍要在各自真实边界验证。
 
 选择无显式制品来源的 Node 服务后，组合层接入正式按需源码编译器并拥有其关闭；显式制品来源保留制品消费路径。Vitest 插件只作用于 Vitest 模块图，不会隐式流入独立 Node 制品构建。领域 driver 与 compiler 仍由各自 package 维护，组合层负责接线和测试寿命。
 
-`@pluxel/test` 显式声明 Services 等安装依赖；生产 Host/Core 不反向依赖它。安装依赖与初始化可选服务分开，不用 optional peer 或动态 import 吞错伪造 API 可用性。`config`、`state`、`configRecords` 复用 Core/Host 契约，默认 Core FS 使用 InMemory，Plugin 不需安装存储服务；持久化测试通过 `config.storage` 选择后端。
+`@pluxel/test` 显式声明 Services 等安装依赖；生产 Host/Core 不反向依赖它。安装依赖与初始化可选服务分开，不用 optional peer 或动态 import 吞错伪造 API 可用性。`name` 与 `runtime` 复用生产 Host 契约；顶层 `policy`、`config` 使用相同输入选择规则，`runtime.documents` 控制文档读写能力，默认 Core FS 使用 InMemory，Plugin 不需安装存储服务；持久化测试通过 `runtime.zenfs` 选择后端。
 
 事务 draft 只负责测试断言、目标校验与同步回调作用域；catalog、状态修改、配置应用与 graph commit 仍由 Host 唯一 authority 执行。
 测试 HTTP 与 Workbench driver 拥有本次测试打开的响应 body、RPC handle 和 lease；泄漏会在关闭时报告，所有清理仍然执行。
@@ -64,13 +64,21 @@ SSR 条件会进入 Vitest worker 的 Node `--conditions`。不能把 `import` �
 
 任务缓存位于当前 checkout 的 `node_modules/.vite/task-cache`。不同 worktree 保持独立本地缓存，CI 按 workflow 的缓存键复用该目录。
 
+`repositoryTasks` 默认将任务声明的 output 从自动 input 跟踪中排除，冷 checkout 缺少旧产物时仍能恢复缓存。
+显式 input 接管过滤规则，须排除当前任务的生成目录，保留依赖包产物、前一构建阶段的输出与需要读写的真实输入。
+Vite Task 的否定 glob 优先于肯定 glob，不能靠在否定规则后追加路径重新纳入输入。
+任务分阶段展开后再调用 `repositoryTasks`，避免继承另一阶段的排除范围。
+治理检查用真实 `vp run` 验证产物恢复、源码变更、依赖产物变更、分阶段构建与输出目录中保留的输入。
+
 不同产物的命令各自声明 task 与 output，再用依赖连接。Vite Task 会将 `&&` 命令拆为独立缓存步骤；生成 CSS 的步骤不能共用后续打包的 `dist/**` 输出，否则缓存恢复会覆盖或叠回旧构建产物。
 
 嵌套 vendor workspace 的 Vitest 5 文件模块缓存按最近的 lockfile 失效，而实际依赖由外层安装。根依赖或补丁更新后若仍加载旧依赖，用原生 `vp run --ignore-depends-on --no-cache @worksplit/react#check-tests --clearCache` 清理所属测试缓存，再执行正常测试；不删除服务数据或复制第二份依赖安装。
 
+Worksplit 的 `react`、独立 `split-view` 和 demo 是根 workspace 成员，不再接入 `@worksplit/core`。原生 Router/history/FlexLayout 的完整补丁由根 pnpm `patchedDependencies` 应用，正文只维护在 vendor。`vp run worksplit:native:check` 在当前源码构建后，调用制品内的只读安装检查验证 Shell、Typst 和 Studio 的实际依赖、唯一实例及全部补丁文件；各消费者 build/dev 入口也在执行前检查。这个原生依赖证据不替代各宿主的导航、草稿、关闭和布局验收，支持版本和补丁移除条件见 [Worksplit 原生支持](../vendor/split-like-vscode/docs/navigation-support.md)。
+
 消费本包发布制品的测试任务必须显式依赖本包 `build`，不能只依赖 依赖包的 `build` 或依赖暖缓存碰巧留下的文件。Package Manager 的不可变安装测试与维护者 Host 的 native/production-Vite smoke 都遵守这一顺序；测试子进程失败或超时也必须被回收。
 
-文档构建与开发服务共用原生 `prepare:docs` 任务，准备 Core、Host、Services、valibot-form、Typst 浏览器库与 Playground 类型资源；Typst 只运行 `compile-lib`，Core 的构建边负责准备 Context、Eventure 的声明。Twoslash 使用源码条件验证示例，仍需准备没有这些源码条件的依赖声明。完整文档构建由 Vite Task 缓存，不另存只以示例代码为键的 Twoslash 类型结果，避免 API 变化或缺失声明被旧结果掩盖。
+文档构建与开发服务共用原生 `prepare:docs` 任务，准备 Core、Host、Services、valibot-form、Typst 浏览器库、Takumi Markdown 与 Playground 类型资源；Typst 只运行 `compile-lib`，Takumi Markdown 的 `compile` 同样只依赖 Typst 库产物，Core 的构建边负责准备 Context、Eventure 的声明。Twoslash 使用源码条件验证示例，仍需准备没有这些源码条件的依赖声明；示例直接导入的包必须声明在文档项目依赖中。完整文档构建由 Vite Task 缓存，不另存只以示例代码为键的 Twoslash 类型结果，避免 API 变化或缺失声明被旧结果掩盖。
 
 文档 `/examples` 在浏览器 Worker 中组合真实 Host 与 Typst WASM Plugin。`vp run pluxel-docs#test:examples --url <Examples URL>` 对已运行的文档开发服务或生产构建执行浏览器验收，通过 `ws://127.0.0.1:3000` 连接已有 Playwright 服务，开启 loopback 转发以访问本地文档。用户提供其他服务时可用 `--ws` 或 `PLAYWRIGHT_WS_ENDPOINT` 指定地址，`--artifacts` 指定截图目录；脚本不安装或启动浏览器，只清理自己的 context 并断开连接，不关闭共享服务。首次运行将真实 WASM 二进制请求延迟两秒，确认冷启动不会被原先的 1.5 秒默认预算中断，首次编译后移除拦截。页面验收检查顶栏 Examples 位于 Playground 后并带图标、桌面编辑区靠上且占主要视口、Typst 与插件热替换两个入口持续可见。通过真实入口切换示例，确认同一个 Worker、正文与撤销历史保留，预览点击会返回 Typst 编辑器；日志按需展开。验收覆盖打开页面与修改内容后的自动编译，离线修改 main.typ 页宽后确认 SVG 尺寸实际增大，通过真实点击和 DOM selection 检查共享编辑器的标题、格式与表格、正文/预览双向块定位，以及旧预览保留但跳转禁用、恢复后按新版本定位。断网切换简洁版 → 彩色版 → 简洁版时，检查真实 catalog 报告中 ThemePlugin 替换、ReportPlugin 重启、TypstPlugin 保留，SVG 随实现改变，同一个 Worker 不重复请求 WASM/字体，正文与撤销/重做历史保留；另检查中文 SVG、模板语法错误与恢复、停止/重启、手机切换与热替换操作、无页面横向溢出及无源码 POST。截图保留桌面和手机的实际视口、独立热替换视图及桌面深色主题。CI 的 `@pluxel/plugin-typst#check-wasm` 是更短的真实 WASM/lifecycle 回归，不能替代此页面验收。
 

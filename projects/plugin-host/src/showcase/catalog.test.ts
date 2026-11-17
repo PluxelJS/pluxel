@@ -1,17 +1,13 @@
 import { Cache, CacheBackend, CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/plugin-cache'
 import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@pluxel/plugin-rates'
 import { RedisCacheBackendPlugin, RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/plugin-redis'
-import {
-	pluginDefinitionAddressOf,
-	pluginNodeAddressEqual,
-	pluginNodeAddressOf,
-} from '@pluxel/core'
+import { pluginNodeAddressEqual } from '@pluxel/core'
 import { S3 } from '@pluxel/plugin-storage'
 import { describe, expect, it } from 'vitest'
 import {
 	createHostConfigRecords,
 	hostPlugins,
-	createHostRuntimeState,
+	createHostPolicy,
 	redisBackedPlugins,
 	s3StorageNode,
 } from './catalog'
@@ -19,12 +15,12 @@ import { ReportStudioPlugin } from './ReportStudio'
 
 describe('plugin-host catalog', () => {
 	it('selects safe in-memory implementations without auto-starting Redis', () => {
-		const state = createHostRuntimeState()
+		const state = createHostPolicy()
 		const autoStart = state.autoStart ?? []
 		for (const plugin of redisBackedPlugins) {
-			expect(
-				autoStart.some((node) => pluginNodeAddressEqual(node, pluginNodeAddressOf(plugin))),
-			).toBe(false)
+			expect(autoStart.some((node) => pluginNodeAddressEqual(node, plugin.nodeAddress()))).toBe(
+				false,
+			)
 		}
 		expect(redisBackedPlugins).toEqual([
 			RedisPlugin,
@@ -34,27 +30,27 @@ describe('plugin-host catalog', () => {
 		expect(state.providerDefaults).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					token: pluginDefinitionAddressOf(Cache),
-					provider: pluginNodeAddressOf(CachePlugin),
+					token: Cache.definitionAddress(),
+					provider: CachePlugin.nodeAddress(),
 				}),
 				expect.objectContaining({
-					token: pluginDefinitionAddressOf(CacheBackend),
-					provider: pluginNodeAddressOf(MemoryCacheBackendPlugin),
+					token: CacheBackend.definitionAddress(),
+					provider: MemoryCacheBackendPlugin.nodeAddress(),
 				}),
 				expect.objectContaining({
-					token: pluginDefinitionAddressOf(Rates),
-					provider: pluginNodeAddressOf(RatesPlugin),
+					token: Rates.definitionAddress(),
+					provider: RatesPlugin.nodeAddress(),
 				}),
 				expect.objectContaining({
-					token: pluginDefinitionAddressOf(RatesBackend),
-					provider: pluginNodeAddressOf(MemoryRatesBackendPlugin),
+					token: RatesBackend.definitionAddress(),
+					provider: MemoryRatesBackendPlugin.nodeAddress(),
 				}),
 			]),
 		)
 	})
 
 	it('prepares one S3 provider with isolated draft and release buckets', () => {
-		const state = createHostRuntimeState()
+		const state = createHostPolicy()
 		expect(state.forks).toBeUndefined()
 		expect(
 			state.autoStart?.filter((node) => pluginNodeAddressEqual(node, s3StorageNode)),
@@ -63,7 +59,7 @@ describe('plugin-host catalog', () => {
 		expect(state.providerDefaults).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					token: pluginDefinitionAddressOf(S3),
+					token: S3.definitionAddress(),
 					provider: s3StorageNode,
 				}),
 			]),

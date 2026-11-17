@@ -1,4 +1,4 @@
-import { pluginNodeAddressOf, type PluginNodeAddress, type RootContext } from '@pluxel/core'
+import { type PluginNodeAddress, type RootContext } from '@pluxel/core'
 import {
 	createContextHost,
 	installRootCapability,
@@ -64,7 +64,7 @@ describe('PluginService read cost model', () => {
 		const root = host.createRoot(inputs.name) as RootContext
 		try {
 			const plugins = requirePluginService(root)
-			const address = pluginNodeAddressOf(ConfiglessTeardown)
+			const address = ConfiglessTeardown.nodeAddress()
 			const candidate = consumePluginDefinitionCandidate(ConfiglessTeardown)
 			const add = plugins.beginUpdate({ reason: 'configless-cost-model-add' })
 			add.materializeNode(address, candidate)
@@ -121,7 +121,7 @@ describe('PluginService read cost model', () => {
 	it('does not intern absent nodes through reads or rejected planning mutations', async () => {
 		await withCoreInternalTestHost(async (host) => {
 			const registry = requirePluginService(host.ctx)
-			const defaultAddress = pluginNodeAddressOf(QueryTarget)
+			const defaultAddress = QueryTarget.nodeAddress()
 			const orphan = Object.freeze({
 				definition: defaultAddress.definition,
 				variant: 'fork' as const,

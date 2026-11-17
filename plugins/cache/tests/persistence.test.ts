@@ -2,7 +2,7 @@ import * as nativeFs from 'node:fs'
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pluginNodeAddressOf, BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { standardServices } from '@pluxel/services'
 import { Passthrough, type FsConfig } from '@pluxel/core/fs'
@@ -50,12 +50,11 @@ async function withPersistentCache(
 		...(options.flushIntervalMs === undefined ? {} : { flushIntervalMs: options.flushIntervalMs }),
 	}
 	await using host = await createTestHost({
-		config: { storage },
 		services: standardServices(),
-		configRecords: {
-			initial: [
+		config: {
+			records: [
 				{
-					owner: pluginNodeAddressOf(MemoryCacheBackendPlugin),
+					owner: MemoryCacheBackendPlugin.nodeAddress(),
 					config: {
 						...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }),
 						persistence,
@@ -63,6 +62,7 @@ async function withPersistentCache(
 				},
 			],
 		},
+		runtime: { zenfs: storage, documents: { config: false } },
 	})
 	await host.commit((change) => {
 		change.start(MemoryCacheBackendPlugin)
@@ -184,7 +184,7 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 		})
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
-				plugin: pluginNodeAddressOf(MemoryCacheBackendPlugin),
+				plugin: MemoryCacheBackendPlugin.nodeAddress(),
 				kind: 'start-failed',
 				message: expect.stringMatching(/durable|ephemeral/i),
 			}),
@@ -216,8 +216,8 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 			},
 		}
 		await using host = await createTestHost({
-			config: { storage: instrumented },
 			services: standardServices(),
+			runtime: { zenfs: instrumented, documents: { config: false, state: false } },
 		})
 		const failure = await host.commitExpectFail((change) => {
 			change.start(MemoryCacheBackendPlugin, {
@@ -226,7 +226,7 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 		})
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({
-				plugin: pluginNodeAddressOf(MemoryCacheBackendPlugin),
+				plugin: MemoryCacheBackendPlugin.nodeAddress(),
 				kind: 'start-failed',
 				message: expect.stringContaining('could not be restored'),
 			}),

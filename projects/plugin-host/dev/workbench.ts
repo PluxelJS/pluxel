@@ -2,7 +2,7 @@ import { defineDevConsole } from '@pluxel/host-vite/console'
 import { openLocalWorkbenchEntry, WorkbenchHost } from '@pluxel/workbench/server'
 import { consumeWorkbenchValue, readWorkbenchLayout } from '@pluxel/workbench/client'
 import { RpcStub } from 'capnweb'
-import { formatPluginNodeRoute, pluginNodeAddressOf } from '@pluxel/core'
+import { formatPluginNodeRoute } from '@pluxel/core'
 import { ReportStudioPlugin } from '../src/showcase/ReportStudio'
 import { ReportStudioWorkbench } from '../src/showcase/ReportStudio.workbench'
 import { PackageManagerPlugin } from '@pluxel/plugin-package-manager'
@@ -89,7 +89,7 @@ export const renderReport = defineDevConsole(async (dev) => {
 	const engine = SHOWCASE_ENGINES.find((candidate) => candidate === input.engine)
 	if (!engine) throw new TypeError('Unknown rendering engine')
 	using opened = await openLocalWorkbenchEntry(dev.ctx, {
-		target: pluginNodeAddressOf(ReportStudioPlugin),
+		target: ReportStudioPlugin.nodeAddress(),
 		entry: ReportStudioWorkbench.studio,
 		principal,
 		location: '/architecture-lab',

@@ -24,6 +24,8 @@ import type {
 	WorkbenchContentRoot,
 } from './client-protocol.ts'
 import { parseWorkbenchContentPresentation } from './client-validation.ts'
+import { readWorkbenchShortcuts } from './shortcuts.ts'
+export { readWorkbenchShortcuts } from './shortcuts.ts'
 import { readWorkbenchIcon, readWorkbenchRoutePath, type WorkbenchPlacement } from './definition.ts'
 import {
 	createWorkbenchOpenedContentHandle,
@@ -279,7 +281,13 @@ export function createRemoteValue<Value>(options: RemoteValueOptions<Value>): Re
 }
 
 function parseWorkbenchLayout(input: unknown): WorkbenchLayout {
-	const record = readExactRecord(input, 'layout', ['profile', 'revision', 'target', 'entries'])
+	const record = readExactRecord(input, 'layout', [
+		'profile',
+		'revision',
+		'target',
+		'entries',
+		'initialShortcuts',
+	])
 	if (record.profile !== 1) malformed('layout profile is unsupported')
 	if (!Array.isArray(record.entries)) malformed('layout entries must be an array')
 	const entries = record.entries.map((entry, index) =>
@@ -290,6 +298,9 @@ function parseWorkbenchLayout(input: unknown): WorkbenchLayout {
 		revision: readRevision(record.revision, 'layout.revision'),
 		target: record.target === null ? null : parseLayoutTarget(record.target, 'layout.target'),
 		entries: Object.freeze(entries),
+		...(record.initialShortcuts === undefined
+			? {}
+			: { initialShortcuts: readWorkbenchShortcuts(record.initialShortcuts) }),
 	})
 }
 
@@ -773,6 +784,7 @@ export type {
 	WorkbenchReadyFederatedLayoutEntry,
 	WorkbenchUnavailableFederatedLayoutEntry,
 	WorkbenchLayout,
+	WorkbenchShortcut,
 	WorkbenchLayoutEntry,
 	WorkbenchLayoutInput,
 	WorkbenchLayoutTarget,

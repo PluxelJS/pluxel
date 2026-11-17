@@ -1,40 +1,11 @@
 import type { JSONContent } from '@tiptap/core'
 import type { TypstSourceProject } from '../source/state-types.js'
 import { typstSourceLibrary } from '../source/library.js'
-import { matchesInsertion, type InsertEntry } from './insert-commands.js'
+import { matchesInsertion, type InsertEntry, type TypstSlashCommand } from './insert-commands.js'
+import { relativePath, sourceLiteral } from './source-paths.js'
 
 const decode = (value: string | Uint8Array) =>
 	typeof value === 'string' ? value : new TextDecoder('utf-8', { fatal: true }).decode(value)
-function relative(from: string, to: string): string {
-	const base = from.split('/').slice(0, -1),
-		target = to.split('/')
-	while (base.length > 0 && target.length > 0 && base[0] === target[0]) {
-		base.shift()
-		target.shift()
-	}
-	return [...base.map(() => '..'), ...target].join('/')
-}
-function literal(value: string | number): string {
-	if (typeof value === 'number') return String(value)
-	if (!value.isWellFormed()) throw new Error('字段路径含无效 Unicode')
-	let text = '"'
-	for (const character of value) {
-		const code = character.codePointAt(0)!
-		text +=
-			character === '"' || character === '\\'
-				? `\\${character}`
-				: character === '\n'
-					? '\\n'
-					: character === '\r'
-						? '\\r'
-						: character === '\t'
-							? '\\t'
-							: code < 0x20 || code === 0x7f
-								? `\\u{${code.toString(16)}}`
-								: character
-	}
-	return text + '"'
-}
 
 /** The catalog is derived from ordinary files and the project's one declaration list. */
 export function sourceInsertEntries(
@@ -70,22 +41,45 @@ export function sourceInsertEntries(
 		suffix = 1
 	// This is a conservative absence check, never a parser or a rewrite of existing imports.
 	while (projection.source.includes(alias)) alias = `pluxelInserted${++suffix}`
+	const importNode = (module: string): JSONContent => ({
+		type: 'typstImport',
+		attrs: {
+			module: relativePath(path, module),
+			alias,
+			items: null,
+			source: `#import ${sourceLiteral(relativePath(path, module))} as ${alias}`,
+		},
+	})
 	const command =
-		(module: string, node: JSONContent): InsertEntry['command'] =>
+		(module: string, node: JSONContent): TypstSlashCommand['command'] =>
 		(chain) =>
 			chain
 				.command(() => project.revision === snapshot.revision)
 				.insertContent(node)
 				.command(({ tr, state }) => {
-					tr.insert(
-						0,
-						state.schema.node('typstSource', {
-							source: `#import ${literal(relative(path, module))} as ${alias}`,
-							role: 'environment',
-						}),
-					)
+					tr.insert(0, state.schema.nodeFromJSON(importNode(module)))
 					return true
 				})
+	const modules: InsertEntry[] = [
+		{
+			id: 'source-import',
+			input: 'import',
+			title: '导入模块…',
+			description: '输入 .typ 路径，使用其中的定义',
+			keywords: ['import', '导入', '模块', '路径'],
+			icon: 'code',
+			group: '文件引用',
+		},
+		{
+			id: 'source-include',
+			input: 'include',
+			title: '插入章节…',
+			description: '输入 .typ 路径，将正文拼入当前位置',
+			keywords: ['include', '章节', '文件', '路径'],
+			icon: 'text',
+			group: '文件引用',
+		},
+	]
 	for (const component of project.components) {
 		if (
 			!Object.hasOwn(snapshot.files, component.module) ||
@@ -98,15 +92,15 @@ export function sourceInsertEntries(
 		if (component.data && json.length === 0)
 			problems.push(`${component.label}：请先添加可解析的 JSON 文件，再明确选择数据绑定。`)
 		for (const selected of component.data ? json : [undefined]) {
-			const resource = selected && relative(path, selected.file)
-			const source = `#${alias}.${component.name}(${selected ? `${component.data}: json(${literal(resource!)})` : ''})`
+			const resource = selected && relativePath(path, selected.file)
+			const source = `#${alias}.${component.name}(${selected ? `${component.data}: json(${sourceLiteral(resource!)})` : ''})`
 			components.push({
 				id: `component:${component.module}:${component.name}:${selected?.file ?? ''}`,
 				title: selected ? `${component.label} · ${selected.file}` : component.label,
-				description: `${component.module} · ${component.name}；参数使用模板默认，可在插入后编辑`,
+				description: `${component.module} · ${component.name}；参数使用组件默认，可在插入后编辑`,
 				keywords: ['component', '组件', component.module, component.name, selected?.file ?? ''],
 				icon: 'code',
-				group: '模板组件',
+				group: '内容组件',
 				command: command(component.module, {
 					type: 'typstComponent',
 					attrs: {
@@ -129,14 +123,16 @@ export function sourceInsertEntries(
 	return {
 		problems,
 		entries(query) {
-			const entries = components.filter((entry) => matchesInsertion(entry, query)).slice(0, 100)
+			const entries = [...components, ...modules]
+				.filter((entry) => matchesInsertion(entry, query))
+				.slice(0, 100)
 			if (!library || entries.length === 100) return entries
 			for (const { file, value: rootValue } of json) {
 				for (const { value, keys } of scalarFields(rootValue)) {
 					const title = `${file} · ${keys.join('.') || '整个值'}`
 					const keywords = ['field', '字段', file, ...keys.map(String)]
 					if (!matchesInsertion({ title, keywords }, query)) continue
-					const source = `#${alias}.field(json(${literal(relative(path, file))}), (${keys.map(literal).join(', ')}${keys.length > 0 ? ',' : ''}))`
+					const source = `#${alias}.field(json(${sourceLiteral(relativePath(path, file))}), (${keys.map(sourceLiteral).join(', ')}${keys.length > 0 ? ',' : ''}))`
 					entries.push({
 						id: `field:${file}:${JSON.stringify(keys)}`,
 						title,

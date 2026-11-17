@@ -24,7 +24,7 @@ const sessions: DocumentSession[] = []
 const output = (): TypstWorkerOutput => ({
 	ok: true,
 	vector: new Uint8Array([1]),
-	navigation: { points: [], outline: [], pages: [] },
+	navigation: { points: [], outline: [], pages: [], targets: [], links: [] },
 	pdf: new Uint8Array([2, 3]),
 	diagnostics: [],
 })

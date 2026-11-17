@@ -1,10 +1,10 @@
 # 官方配置型状态迁移清单
 
-本页记录官方消费者的数据语义、存储所有者与回归入口。Core 内建持久化契约由 [TinyBase](TINYBASE.md) 与 [FS](FS.md) 维护；部署配置及其复制仍由 [Config](CONFIG.md) 的 saved layer 管理，插件不得复制配置表。清单覆盖 `pnpm-workspace.yaml` 的 `plugins/*`、`plugins/*/*` 共 16 个包，以及 Services 官方插件、生成模板和演示应用；第三方 vendor 不算官方插件。2026-10-31 的验证记录对应原 Service 版本；2026-11-01 的内建与配置同步复验单独记录，不将历史 API 当作当前用法。
+本页记录官方消费者的数据语义、存储所有者与回归入口。Core 内建持久化契约由 [TinyBase](TINYBASE.md) 与 [FS](FS.md) 维护；部署配置的合成与外部文件接纳仍由 [Config](CONFIG.md) 的 saved layer 管理，插件不得复制配置表。清单覆盖 `pnpm-workspace.yaml` 的 `plugins/*`、`plugins/*/*` 共 16 个包，以及 Services 官方插件、生成模板和演示应用；第三方 vendor 不算官方插件。2026-10-31 的验证记录对应原 Service 版本；2026-11-01 的内建与配置同步复验单独记录，不将历史 API 当作当前用法。
 
 ## 16 个官方插件包
 
-“Host 配置”表示保留该包的 `configs.use()` schema，通过 Host 私有 TinyBase 文档存储保存 saved layer，不新增插件 Store 或 TinyBase 依赖。下表的测试文件是验证入口；实际执行结果统一记在本页末尾，源码盘点不代替运行证据。
+“Host 配置”表示保留该包的 `configs.use()` schema，通过 Core FS 普通文档存储保存原始管理记录，不新增插件 Store 或 TinyBase 依赖。下表的测试文件是验证入口；实际执行结果统一记在本页末尾，源码盘点不代替运行证据。
 
 | 包与源码                                                                                      | 配置型状态与目标                                                                                                                                   | 保留的数据及理由                                                                                                                                                                                                                                         | 回归入口                                                                                                                                  |
 | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -32,7 +32,7 @@ Wretch 的 provider Store 在领域内部承载候选，consumer 的 `current` �
 | 消费者                                                 | 配置型数据与所有者                                                                                                                                       | 保留范围与验证入口                                                                                                                                          |
 | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/services/src/plugins/vault/VaultAdminPlugin` | 只发布 Vault 管理界面，没有独立普通状态                                                                                                                  | 秘密、revision 和 rotation 仍归 Vault；服务 Vault 测试与 Workbench 回归                                                                                     |
-| Host config/state                                      | saved config、自动启动/依赖选择等 Host 文档 → Host 私有 TinyBase namespace                                                                               | Core records、revision 和 validate/save/apply 继续是权威；Host config/state 测试                                                                            |
+| Host config/state                                      | saved config、自动启动/依赖选择等 Host 普通文档 → Core FS 的 services/host 目录                                                                          | Core records、revision 和 validate/save/apply 继续是权威；Host config/state 测试                                                                            |
 | Services management layout                             | 原 `services/management/plugin-groups.json` → Host 私有文档 namespace                                                                                    | 分组与排序是普通管理偏好；保留候选保存后发布及 revision 检查；layout service 测试                                                                           |
 | Core logging policy                                    | 原 `services/logging/plugin-policy/<profile>.json` → Host 私有文档 namespace                                                                             | 级别/owner override 是设置；日志记录、sink 与事件顺序继续归 logging 领域；policy/storage 测试                                                               |
 | `@pluxel/create` Todo template                         | `TodoConfig` → Host 配置；有界 Todo items 使用示例 Plugin 的原生 `todos` 表和 `initialized`/`nextId` Values，缺失 backing 才使用初值                     | Audit 示例是事件记录；不伪装成最新状态快照。业务方法保持同步，Host autosave/关闭排空；初始 seed 不伪造 audit mutation                                       |
@@ -43,11 +43,17 @@ Wretch 的 provider Store 在领域内部承载候选，consumer 的 `current` �
 
 Todo 和 Bot 来源均已切换原生状态；其余仅使用配置或临时资源的例子保持原模型。Bot 同步 mutation 的成功提示为“已更新”，不承诺该调用已确认持久化；关闭 Host 时由 Core 内建 writer 排空。
 
+## 当前共享文件契约（2026-11-02）
+
+TinyBase、Host 配置和 Vault 使用实际文件后端保存并重新加载外部变化，不维护独立的配置复制协议。并发完整快照写入可能覆盖更新，不提供跨实例版本检查、事务、选主或合并；需要这些保证的数据使用数据库。Host 配置使用 v4、state 使用 v6 普通文档；Plugin TinyBase envelope 保持 format 1，Vault 保持 version 2。当前实现与验证入口分别由 [TinyBase](TINYBASE.md)、[Config](CONFIG.md) 和 [Host](HOST.md) 维护。
+
+以下有日期的执行记录属于当时实现，不代表已移除的配置复制协议或旧公共 API 仍受支持，也不能替代本轮外部文件重载的验证。
+
 ## Core 内建与配置复制复验（2026-11-01）
 
 本轮在 `7b9b544d` 的状态迁移上调整实现所有者，删除 Services 的 FS/TinyBase 工厂、token、可选 Context augmentation 和发布子路径。Core、官方 Host 与隔离 test host 使用同一固定能力；Plugin、Part、fork 与依赖调用视图通过 `ctx.fs()`、`ctx.tinybase` 访问所属 Plugin generation。`@pluxel/context` 保留同步 kernel，不增加 IO 或异步关闭协议。
 
-运行时数据后端只通过 `CoreHostConfig.storage`（官方 Host 的 `config.storage`）选择一次，默认 InMemory，Node 选择 Passthrough，浏览器与 Web Worker 独立选择 IndexedDB。Core 拥有 FS、原子保存、TinyBase writer/codec、Host 私有确认文档与关闭排空。Host 默认保存 config/state，继续拥有配置合成、校验、saved-layer 提交与运行策略；Logging policy、Management layout 和 Vault 分别保留领域协议。源码发现、原生模块解析、包安装、build artifacts、SQL driver 与原生 SDK IO 仍使用其原接口。物理 `services/tinybase` key、owner 地址及 format 1 不因包迁移改变。
+运行时数据后端只通过 `CoreHostConfig.zenfs`（官方 Host 的 `runtime.zenfs`）选择一次，默认 InMemory，Node 选择 Passthrough，浏览器与 Web Worker 独立选择 IndexedDB。Core 拥有 FS、原子保存、Plugin TinyBase writer/codec、Host 普通文档与关闭排空。Host 默认保存 config/state，继续拥有配置合成、校验、saved-layer 提交与运行策略；Logging policy、Management layout 和 Vault 分别保留领域协议。源码发现、原生模块解析、包安装、build artifacts、SQL driver 与原生 SDK IO 仍使用其原接口。Plugin 的 `services/tinybase/nodes` key、owner 地址及 format 1 不因包迁移改变。Host 普通文档使用 `services/host/<namespace>/<key>`，不再套 TinyBase envelope；配置 v4 与运行策略 v6 需显式转换本地数据，不提供兼容 reader。
 
 TinyBase 精确 runtime 依赖归 Core。只使用配置或固定 `open()` 的插件不增加 TinyBase 依赖；与托管原生 Store/Queries 互操作的插件声明同版 peer/dev。原生 Node、Host-vite 和静态构建以同一 Core 版本事实接纳后绑定原模块；应用或库的私有副本保持独立。
 

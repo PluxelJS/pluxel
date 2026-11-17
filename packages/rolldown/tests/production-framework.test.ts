@@ -27,6 +27,11 @@ it('relocates a traced native library in the Pluxel namespace without external f
 				join(root, 'node_modules/@pluxel', name),
 				'dir',
 			)
+		await symlink(
+			fileURLToPath(new URL('../node_modules/valibot/', import.meta.url)),
+			join(root, 'node_modules/valibot'),
+			'dir',
+		)
 		await mkdir(join(library, 'dist'), { recursive: true })
 		await symlink(library, join(root, 'node_modules/@pluxel/native-fixture'), 'dir')
 		await writeFile(
@@ -45,12 +50,31 @@ it('relocates a traced native library in the Pluxel namespace without external f
 		await writeFile(join(library, 'runtime.asset'), 'RESIDUAL_NATIVE_LAYOUT_OK')
 		await writeFile(
 			join(root, 'app.ts'),
-			"import native from '@pluxel/native-fixture'; import { defineHostApplication } from '@pluxel/host'; export default defineHostApplication(() => ({ plugins: [], prepare() { if(native !== 'RESIDUAL_NATIVE_LAYOUT_OK') throw new Error('Native library layout changed'); console.log(native) } }))",
+			`import native from '@pluxel/native-fixture';
+import {BasePlugin,Plugin} from '@pluxel/core';
+import {defineHostApplication} from '@pluxel/host';
+import * as v from 'valibot';
+@Plugin()
+class Probe extends BasePlugin {
+ private readonly config = this.configs.use(v.object({answer:v.number()}));
+ protected init(){if(this.config.answer!==42) throw new Error('Standalone config was lost'); console.log('STANDALONE_CONFIG_AND_AUTOSTART_OK')}
+}
+export default defineHostApplication(() => ({
+ plugins:[Probe],
+ policy:{autoStart:[Probe],startTimeoutMs:12345},
+ config:{records:[{owner:Probe,config:{answer:42}}]},
+ async prepare({host}) {
+  const policy=await host.policy.get();
+  if(!policy.ok || policy.effective.startTimeoutMs!==12345) throw new Error('Standalone execution policy was lost');
+  if(native!=='RESIDUAL_NATIVE_LAYOUT_OK') throw new Error('Native library layout changed');
+  console.log(native);
+ }
+}))`,
 		)
 		const buildScript = join(root, 'build.mts')
 		await writeFile(
 			buildScript,
-			`import {build} from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'app.ts',plugins:[pluxel({delivery:'standalone',variant:'headless',launcher:'host',lint:false,residualDependencies:{packages:['@pluxel/native-fixture']}})],config:false})`,
+			`import {build} from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'app.ts',plugins:[pluxel({delivery:'standalone',variant:'headless',lint:false,residualDependencies:{packages:['@pluxel/native-fixture']}})],config:false})`,
 		)
 		await promisify(execFile)(
 			process.execPath,
@@ -72,6 +96,7 @@ it('relocates a traced native library in the Pluxel namespace without external f
 			{ cwd: deployed, timeout: 30000 },
 		)
 		expect(child.stdout).toContain('RESIDUAL_NATIVE_LAYOUT_OK')
+		expect(child.stdout).toContain('STANDALONE_CONFIG_AND_AUTOSTART_OK')
 		expect(child.stdout).toContain('STANDALONE_RESIDUAL_CLOSED')
 	} finally {
 		await rm(temporary, { recursive: true, force: true })
@@ -152,7 +177,7 @@ Plugin()(Dynamic); __setPluginDefinition(Dynamic,{abiVersion:2,kind:'plugin',def
 			`import {pluginSource} from '@pluxel/host/sources';
 import {Commands} from '@pluxel/services/commands';
 import {standardServices} from '@pluxel/services';
-import {BasePlugin,Plugin,pluginNodeAddressOf} from '@pluxel/core';
+import {BasePlugin,Plugin} from '@pluxel/core';
 import {Workers,defineWorkerTask} from '@pluxel/services/workers';
 import {resolve} from 'node:path';
 const task = defineWorkerTask<number,number>(import.meta.url, './task.ts');
@@ -165,7 +190,7 @@ class FrozenWorker extends BasePlugin {
  }
 }
 import {defineHostApplication} from '@pluxel/host';
-export default defineHostApplication(() => ({name:'production-bridge', plugins:[FrozenWorker],sources:[pluginSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkCommands=Commands},services:standardServices(),state:{initial:{autoStart:[pluginNodeAddressOf(FrozenWorker),${JSON.stringify(address)}]}}}))
+export default defineHostApplication(() => ({name:'production-bridge', plugins:[FrozenWorker],sources:[pluginSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkCommands=Commands},services:standardServices(),policy:{autoStart:[FrozenWorker,${JSON.stringify(address)}]}}))
 `,
 		)
 		const buildScript = join(root, 'build.mts')
@@ -234,7 +259,19 @@ it('preserves standalone handler and listener startup failures when Host cleanup
 		)
 		await writeFile(
 			join(root, 'app.ts'),
-			`import {defineHostApplication} from '@pluxel/host'; import {elysia} from '@pluxel/services/elysia'; export default defineHostApplication(startup=>({plugins:[],services:startup.env.PROBE_LISTENER==='1'?[elysia()]:[],prepare({host}){host.ctx.effects.defer(()=>{throw new Error('STANDALONE_CLEANUP_PROBE')},{phase:'shutdown'})}}))`,
+			`import {defineHostApplication} from '@pluxel/host';
+import {resolveHostEnv} from '@pluxel/host/environment';
+import {elysia,createElysiaHandler} from '@pluxel/services/elysia';
+import {listenElysia} from '@pluxel/services/elysia/node';
+export default defineHostApplication(startup=>({
+ plugins:[],services:startup.env.PROBE_LISTENER==='1'?[elysia()]:[],
+ prepare({host}){host.ctx.effects.defer(()=>{throw new Error('STANDALONE_CLEANUP_PROBE')},{phase:'shutdown'})},
+ async launch({host}) {
+  if(startup.env.PROBE_LISTENER!=='1') {createElysiaHandler(host);return}
+  const env=resolveHostEnv(startup.env);
+  await listenElysia(host,{hostname:env.hostBind,port:env.hostPort});
+ }
+}))`,
 		)
 		const buildScript = join(root, 'build.mts')
 		await writeFile(
@@ -258,8 +295,8 @@ const errors=error=>error instanceof AggregateError?error.errors.flatMap(errors)
 await assert.rejects(import(${JSON.stringify(pathToFileURL(join(root, 'dist/app.mjs')).href)}),error=>{
  assert(error instanceof AggregateError,error.stack);
  assert.equal(error.cause,error.errors[0]);
- ${listener ? "assert(error.errors[0] instanceof AggregateError); assert.equal(error.errors[0].cause,error.errors[0].errors[0]); assert.equal(error.errors[0].cause.code,'EADDRINUSE'); assert(errors(error.errors[0].errors[1]).some(error=>error.message==='STANDALONE_CLEANUP_PROBE'))" : "assert.equal(error.errors[0].code,'CONTEXT_CAPABILITY_MISSING'); assert.match(error.errors[0].capability,/elysia/i)"};
- assert(errors(error.errors[1]).some(error=>error.message==='STANDALONE_CLEANUP_PROBE'));
+ ${listener ? "assert(errors(error).some(error=>error.code==='EADDRINUSE'))" : "const missing=errors(error).find(error=>error.code==='CONTEXT_CAPABILITY_MISSING'); assert(missing); assert.match(missing.capability,/elysia/i)"};
+ assert(errors(error).some(error=>error.message==='STANDALONE_CLEANUP_PROBE'));
  return true;
 });
 console.log('STANDALONE_STARTUP_AND_CLEANUP_OK');

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core'
-import { createWorkbench, Workbench } from '@worksplit/react'
+import { createWorkbench, Workbench, useContentController } from '@worksplit/react'
 import { Actions } from 'flexlayout-react'
 import { createContext, StrictMode, useContext } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,6 +10,7 @@ import { FilePane } from '../src/renderer/panes'
 import { WorkspaceController } from '../src/renderer/workspace'
 import { WorkspaceContext } from '../src/renderer/workspace-context'
 import { createStudioRouter } from '../src/renderer/workbench-routes'
+import { editorLifecycle } from '../src/renderer/editor-lifecycle'
 import { StudioSession } from '../src/renderer/workbench-session'
 
 vi.mock('../src/renderer/code-editor', () => ({ CodeEditor: () => <div>Code editor</div> }))
@@ -92,12 +93,12 @@ describe('Studio panes with real Worksplit content ownership', () => {
 	it('releases each view once across React replay and retains shared output until the last view closes', async () => {
 		const { session, document } = setup()
 		const releases = observeRetains(session.workspace)
-		await session.workbench.start('/')
+		await session.workbench.start({ href: '/' })
 		render(
 			<StrictMode>
 				<MantineProvider>
 					<WorkspaceContext.Provider value={session.workspace}>
-						<Workbench workbench={session.workbench} />
+						<Workbench instance={session.workbench} />
 					</WorkspaceContext.Provider>
 				</MantineProvider>
 			</StrictMode>,
@@ -118,7 +119,7 @@ describe('Studio panes with real Worksplit content ownership', () => {
 			.find((candidate) => candidate.href.startsWith('/preview'))!
 		await act(async () => {
 			expect(await session.workbench.close(form.id)).toMatchObject({
-				status: 'closed',
+				status: 'applied',
 				cleanupErrors: [],
 			})
 		})
@@ -126,7 +127,7 @@ describe('Studio panes with real Worksplit content ownership', () => {
 		expect(releases.filter((release) => release.mock.calls.length === 0)).toHaveLength(1)
 		await act(async () => {
 			expect(await session.workbench.close(preview.id)).toMatchObject({
-				status: 'closed',
+				status: 'applied',
 				cleanupErrors: [],
 			})
 		})
@@ -142,11 +143,11 @@ describe('Studio panes with real Worksplit content ownership', () => {
 		document.data = { title: 'Unsaved shared draft' }
 		vi.mocked(api.setInput).mockRejectedValueOnce(new Error('Disk full'))
 		const releases = observeRetains(session.workspace)
-		await session.workbench.start('/')
+		await session.workbench.start({ href: '/' })
 		render(
 			<MantineProvider>
 				<WorkspaceContext.Provider value={session.workspace}>
-					<Workbench workbench={session.workbench} />
+					<Workbench instance={session.workbench} />
 				</WorkspaceContext.Provider>
 			</MantineProvider>,
 		)
@@ -160,7 +161,7 @@ describe('Studio panes with real Worksplit content ownership', () => {
 			.find((candidate) => candidate.href.startsWith('/form'))!
 		await act(async () => {
 			expect(await session.workbench.close(form.id)).toEqual({
-				status: 'rejected',
+				status: 'denied',
 				reason: 'decision',
 			})
 		})
@@ -199,26 +200,31 @@ describe('Studio panes with real Worksplit content ownership', () => {
 			return { path, content, version: 'v2' }
 		})
 		const Target = createContext('first.typ')
+		function OwnedFile({ path }: { path: string }) {
+			useContentController(editorLifecycle(workspace, path, 'file'))
+			return <FilePane path={path} />
+		}
 		function FirstPane() {
-			return <FilePane path={useContext(Target)} />
+			return <OwnedFile path={useContext(Target)} />
 		}
 		const workbench = createWorkbench({
 			createRouter: createStudioRouter,
-			home: '/',
-			homeMode: 'empty',
-			layout: {
+			home: { href: '/', mode: 'empty' },
+			initial: {
 				layout: {
-					type: 'row',
-					children: ['first', 'last'].map((id) => ({
-						type: 'tabset',
-						children: [{ type: 'tab', id, component: 'worksplit.tool', name: id }],
-					})),
+					layout: {
+						type: 'row',
+						children: ['first', 'last'].map((id) => ({
+							type: 'tabset',
+							children: [{ type: 'tab', id, component: id, name: id }],
+						})),
+					},
 				},
 			},
-			tools: [
-				{ id: 'first', render: () => <FirstPane /> },
-				{ id: 'last', render: () => <FilePane path="last.typ" /> },
-			],
+			tools: {
+				first: { render: () => <FirstPane /> },
+				last: { render: () => <OwnedFile path="last.typ" /> },
+			},
 		})
 		disposals.push(async () => {
 			await workbench.dispose()
@@ -228,11 +234,12 @@ describe('Studio panes with real Worksplit content ownership', () => {
 			<MantineProvider>
 				<WorkspaceContext.Provider value={currentWorkspace}>
 					<Target.Provider value={path}>
-						<Workbench workbench={workbench} />
+						<Workbench instance={workbench} />
 					</Target.Provider>
 				</WorkspaceContext.Provider>
 			</MantineProvider>
 		)
+		await workbench.start()
 		const rendered = render(view('first.typ', workspace))
 		let closing!: ReturnType<typeof workbench.dispatch>
 		await act(async () => {
@@ -245,9 +252,11 @@ describe('Studio panes with real Worksplit content ownership', () => {
 		rendered.rerender(view('replacement.typ', workspace))
 		await act(async () => {
 			finishLast()
-			expect(await closing).toMatchObject({ status: 'rejected', reason: 'changed' })
+			expect(await closing).toMatchObject({ status: 'denied', reason: 'state-changed' })
 		})
-		expect(workbench.getLayout().layout.children).toHaveLength(2)
+		expect(
+			workbench.getContainers().filter((container) => container.kind === 'tabset'),
+		).toHaveLength(2)
 		expect(workspace.files.get('replacement.typ')?.dirty).toBe(true)
 	})
 })

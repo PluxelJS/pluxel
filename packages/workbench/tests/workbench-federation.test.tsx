@@ -355,7 +355,6 @@ it('borrows management operations only for the opened View lifetime', async () =
 		describe: vi.fn(),
 		catalog: unused,
 		plugins: unused,
-		config: unused,
 		dependencies: unused,
 		forks: unused,
 		logging: unused,
@@ -370,6 +369,8 @@ it('borrows management operations only for the opened View lifetime', async () =
 			},
 		},
 		[Symbol.dispose]: sessionDispose,
+		config: unused,
+		policy: unused,
 	} as unknown as WorkbenchManagementOperations
 	const host = createWorkbenchViewHost({
 		locale: 'en',
@@ -379,12 +380,16 @@ it('borrows management operations only for the opened View lifetime', async () =
 		management,
 	})
 	const cached = host.facade.management!.security.vault
+	const configValidate = host.facade.management!.config.validate
+	const policyPatch = host.facade.management!.policy.patch
 	const detached = cached.ensureHostKey
 	const accepted = detached()
 	expect(accepted).toBe(pending)
 	host[Symbol.dispose]()
 	expect(() => cached.ensureHostKey()).toThrow(/closed/i)
 	expect(() => detached()).toThrow(/closed/i)
+	expect(() => configValidate({} as never, {})).toThrow(/closed/i)
+	expect(() => policyPatch({})).toThrow(/closed/i)
 	finish({ publicKey: 'age1-example' })
 	await expect(accepted).resolves.toEqual({ publicKey: 'age1-example' })
 	expect(ensureHostKey).toHaveBeenCalledTimes(1)

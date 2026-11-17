@@ -10,11 +10,11 @@ const composed = {
 	mounts: { '/': native, '/tmp': InMemory },
 	durableMounts: ['/'],
 } satisfies FsConfig
-const core = { storage: composed } satisfies CoreHostConfig
+const core = { zenfs: composed } satisfies CoreHostConfig
 void core
 
 const prepared = zenfs(composed)
-const configured = { storage: prepared } satisfies CoreHostConfig
+const configured = { zenfs: prepared } satisfies CoreHostConfig
 const exact = zenfs<{ '/': typeof Passthrough }>({ mounts: { '/': native } })
 const inferred = zenfs({ mounts: { '/': InMemory, '/data': native } })
 const empty = zenfs()

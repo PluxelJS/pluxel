@@ -9,7 +9,7 @@ import type {
 	WorkbenchPublishBindings,
 	WorkbenchPrincipal,
 } from '../workbench/definition.ts'
-import type { WorkbenchSessionApi } from '../workbench/client-protocol.ts'
+import type { WorkbenchSessionApi, WorkbenchShortcut } from '../workbench/client-protocol.ts'
 import {
 	WorkbenchArtifactService,
 	type WorkbenchArtifactLookup,
@@ -101,12 +101,17 @@ export class WorkbenchBackend {
 		let active = true
 		let unsubscribeRegistry = (): void => {}
 		let unsubscribeArtifacts = (): void => {}
-		const target = new WorkbenchSessionTarget(this.registry, identity, () => {
-			if (!active) return
-			active = false
-			unsubscribeRegistry()
-			unsubscribeArtifacts()
-		})
+		const target = new WorkbenchSessionTarget(
+			this.registry,
+			identity,
+			() => {
+				if (!active) return
+				active = false
+				unsubscribeRegistry()
+				unsubscribeArtifacts()
+			},
+			this.options.initialShortcuts ?? [],
+		)
 		const expire = (cause: Error) => {
 			if (!active) return
 			expireWorkbenchSession(target, cause)
@@ -135,6 +140,8 @@ export class WorkbenchBackend {
 export type WorkbenchInstallOptions = Readonly<{
 	product?: ProductDescriptor | null
 	artifacts?: Readonly<{ root?: string }>
+	/** Used once when the browser workspace has no sidebar preference. Users may remove every shortcut. */
+	initialShortcuts?: readonly WorkbenchShortcut[]
 }>
 
 /** @internal */

@@ -1,7 +1,11 @@
 import { resolveContextCapability } from '@pluxel/core/host'
 import { CatalogLayout } from '../../../token'
 import { pluginDefinitionIndexKey, type Context } from '@pluxel/core'
-import { type HostOperationOptions, requirePluginHostCoordinator } from '@pluxel/host/internal'
+import {
+	type HostOperationOptions,
+	requirePluginHostCoordinator,
+	requireHostStateStore,
+} from '@pluxel/host/internal'
 import type {
 	PluginCatalogLayoutInput,
 	PluginCatalogSection,
@@ -56,7 +60,23 @@ async function readPinnedCatalog(ctx: Context, options?: HostOperationOptions) {
 				...(declaration?.provides === undefined ? {} : { provides: declaration.provides }),
 			})
 		})
-		return Object.freeze({ projection, layoutEntries: Object.freeze(layoutEntries) })
+		const policy = requireHostStateStore(ctx).configurationSnapshot()
+		const overriddenFields = (
+			['autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'] as const
+		).filter(
+			(field) =>
+				policy.mode[field] === 'declared-only' ||
+				(policy.mode[field] === 'declared-first' && policy.sources[field] === 'declared'),
+		)
+		return Object.freeze({
+			projection,
+			layoutEntries: Object.freeze(layoutEntries),
+			statePolicy: Object.freeze({
+				readonly: policy.readonly,
+				managedRevision: policy.managedRevision,
+				overriddenFields: Object.freeze(overriddenFields),
+			}),
+		})
 	}, options)
 }
 
@@ -66,6 +86,7 @@ function toSnapshot(
 ): PluginCatalogSnapshot {
 	return Object.freeze({
 		plugins: Object.freeze(pinned.projection.entries.map(portablePluginStatus)),
+		statePolicy: pinned.statePolicy,
 		sections: Object.freeze(sections.map(toSection)),
 		summary: pinned.projection.summary,
 	})

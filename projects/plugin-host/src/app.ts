@@ -3,6 +3,7 @@ import { pluginSource } from '@pluxel/host/sources'
 import { defineHostApplication } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { servicesPreset } from '@pluxel/services/preset'
+import { listenElysia } from '@pluxel/services/elysia/node'
 import { Passthrough } from '@pluxel/core/fs'
 import { logtape, zenfs } from '@pluxel/core/config'
 
@@ -10,7 +11,7 @@ import { resolve } from 'pathe'
 import { hostPlugins } from './showcase/catalog'
 import {
 	createHostConfigRecords,
-	createHostRuntimeState,
+	createHostPolicy,
 	packageManagerNode,
 	product,
 } from './showcase/policy'
@@ -26,15 +27,6 @@ export default defineHostApplication(async (startup) => {
 	return {
 		name: 'pluxel-architecture-lab',
 		plugins: hostPlugins,
-		// Development starts compile the official Node artifacts on the same lifecycle path.
-		config: {
-			logger: logtape(),
-			plugins: { startTimeoutMs: 30_000 },
-			storage: zenfs({
-				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-				durableMounts: ['/'],
-			}),
-		},
 		sources: [
 			pluginSource({
 				kind: 'directory',
@@ -45,15 +37,34 @@ export default defineHostApplication(async (startup) => {
 		services: await servicesPreset(startup, {
 			product,
 			workbench: environment.workbench ?? true,
+			initialShortcuts: [{ target: packageManagerNode, entryKey: 'marketplace' }],
 		}),
-		configRecords: {
-			initial: [
+		async launch({ host }) {
+			await listenElysia(host, {
+				hostname: environment.hostBind,
+				port: environment.hostPort,
+				publicOrigin: environment.publicOrigin,
+				publicDir: resolve(startup.deployment?.root ?? startup.root, 'public'),
+			})
+		},
+		config: {
+			mode: 'saved-first',
+			records: [
 				...createHostConfigRecords(resolve(dataRoot, 'showcase/s3')),
 				{ owner: packageManagerNode, config: { rootDir: managedPackagesRoot } },
 			],
 		},
-		state: {
-			initial: createHostRuntimeState(),
+		policy: {
+			startTimeoutMs: 30_000,
+			mode: { autoStart: 'saved-first', providerDefaults: 'saved-first' },
+			...createHostPolicy(),
+		},
+		runtime: {
+			logtape: logtape(),
+			zenfs: zenfs({
+				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+				durableMounts: ['/'],
+			}),
 		},
 	}
 })

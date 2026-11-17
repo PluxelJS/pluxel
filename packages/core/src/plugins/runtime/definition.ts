@@ -341,7 +341,7 @@ function validateProviderMarker(
 	}
 }
 
-/** Address-only author/host projection; it never materializes a node or reads candidate metadata. */
+/** Private canonical projection for author methods and Core graph lookups; no node is materialized. */
 export function pluginDefinitionAddressOf(ctor: PluginToken): PluginDefinitionAddress {
 	const facts = addressByConstructor.get(ctor)
 	if (!facts) {
@@ -352,8 +352,8 @@ export function pluginDefinitionAddressOf(ctor: PluginToken): PluginDefinitionAd
 	return facts.definition
 }
 
-/** Default-node projection from a lowered concrete implementation. */
-export function pluginNodeAddressOf(ctor: PluginConstructor): PluginNodeAddress {
+/** Resolve a lowered concrete implementation to its default or named fork node. */
+export function pluginNodeAddressOf(ctor: PluginToken, forkId?: string): PluginNodeAddress {
 	const facts = addressByConstructor.get(ctor)
 	if (!facts) {
 		missingPluginDeclaration(
@@ -363,7 +363,9 @@ export function pluginNodeAddressOf(ctor: PluginConstructor): PluginNodeAddress 
 	if (facts.kind !== 'plugin') {
 		invalidPluginDeclaration('[pluxel/core] Abstract Plugin tokens do not have node addresses')
 	}
-	return facts.defaultNode
+	return forkId === undefined
+		? facts.defaultNode
+		: parsePluginNodeAddress({ definition: facts.definition, variant: 'fork', forkId })
 }
 
 function mergeOptionalDefinitions(
@@ -545,8 +547,8 @@ async function validateConfigNode(
 		}
 		try {
 			const ownResult = await node.own.schema['~standard'].validate(ownInput)
-			if (!('value' in ownResult)) {
-				for (const issue of ownResult.issues) {
+			if (!('value' in ownResult) || ownResult.issues !== undefined) {
+				for (const issue of ownResult.issues ?? []) {
 					issues.push({ ...issue, path: [...node.path, ...(issue.path ?? [])] })
 				}
 			} else if (
@@ -574,7 +576,8 @@ async function validateConfigNode(
 			continue
 		}
 		const childResult = await validateConfigNode(child.node, record[child.key])
-		if (!('value' in childResult)) issues.push(...childResult.issues)
+		if (!('value' in childResult) || childResult.issues !== undefined)
+			issues.push(...(childResult.issues ?? []))
 		else output[child.key] = childResult.value
 	}
 	return issues.length > 0 ? { issues: Object.freeze(issues) } : { value: Object.freeze(output) }

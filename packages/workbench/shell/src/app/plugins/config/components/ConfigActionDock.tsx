@@ -21,7 +21,7 @@ export function ConfigActionDock({
 	onSubmitCurrent,
 	onSubmitAll,
 	onResetCurrent,
-	onResetDefaults,
+	onRestoreInheritance,
 }: {
 	activeKey: string
 	activeLabel: string
@@ -35,7 +35,7 @@ export function ConfigActionDock({
 	onSubmitCurrent: () => void
 	onSubmitAll: () => void
 	onResetCurrent: () => void
-	onResetDefaults: () => void
+	onRestoreInheritance: () => void
 }) {
 	const saving = savingScope !== undefined
 	const dirtyCount = dirtyLabels.length
@@ -107,10 +107,10 @@ export function ConfigActionDock({
 					size="xs"
 					variant="subtle"
 					leftSection={<IconRestore size={14} />}
-					onClick={onResetDefaults}
+					onClick={onRestoreInheritance}
 					disabled={activeState.submitting || saving}
 				>
-					恢复默认
+					恢复继承
 				</Button>
 				<Button
 					type="button"

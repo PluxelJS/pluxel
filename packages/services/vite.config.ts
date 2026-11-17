@@ -16,6 +16,8 @@ export default defineConfig({
 						'packages/workbench/package.json',
 						'packages/workbench/tsconfig.json',
 						'packages/workbench/src/**',
+						'!packages/services/dist/**',
+						'!packages/services/public/**',
 					].map((pattern) => ({ pattern, base: 'workspace' as const })),
 				},
 			},

@@ -71,10 +71,11 @@ export function findTypstSourcePosition({
 		)
 	const found = entries[0]
 	if (!found) return
-	const byte = found.kind === 'text' && position === found.endPosition ? found.to : found.from
-	const prefix = new TextDecoder('utf-8', { fatal: true }).decode(
-		new TextEncoder().encode(projection.source).subarray(0, byte),
-	)
+	let byte = found.kind === 'text' && position === found.endPosition ? found.to : found.from
+	const bytes = new TextEncoder().encode(projection.source)
+	// Typst attributes a markup call to its expression, excluding the leading # token.
+	if (bytes[byte] === 35 && (found.kind !== 'text' || position === found.endPosition)) byte += 1
+	const prefix = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, byte))
 	const lines = prefix.split('\n')
 	return { path: projection.path, line: lines.length, column: lines.at(-1)!.length + 1 }
 }

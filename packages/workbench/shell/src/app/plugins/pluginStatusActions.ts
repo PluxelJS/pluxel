@@ -5,8 +5,12 @@ import { refreshPluginReadModels } from './pluginReadModels'
 
 export type PluginLifecycleCommand = 'start' | 'stop' | 'restart'
 
-function shouldRefreshControlResult(result: { ok: boolean; state?: string }): boolean {
-	return result.ok || result.state === 'unknown'
+function shouldRefreshControlResult(result: {
+	ok: boolean
+	state?: string
+	code?: string
+}): boolean {
+	return result.ok || result.state === 'unknown' || result.code === 'revision_conflict'
 }
 
 async function alignControlReadModels(
@@ -20,11 +24,12 @@ export async function setPluginAutoStarts(
 	client: RuntimeManagementClient,
 	queryClient: QueryClient,
 	actions: readonly Readonly<{ address: PluginNodeAddress; autoStart: boolean }>[],
+	expectedManagedRevision: string,
 ) {
 	if (actions.length === 0) return []
 	let payload: Awaited<ReturnType<RuntimeManagementClient['plugins']['setAutoStart']>>
 	try {
-		payload = await client.plugins.setAutoStart(actions)
+		payload = await client.plugins.setAutoStart(actions, { expectedManagedRevision })
 	} catch (error) {
 		await refreshPluginReadModels(queryClient)
 		throw error
@@ -42,8 +47,14 @@ export async function setPluginAutoStart(
 	queryClient: QueryClient,
 	address: PluginNodeAddress,
 	autoStart: boolean,
+	expectedManagedRevision: string,
 ) {
-	const results = await setPluginAutoStarts(client, queryClient, [{ address, autoStart }])
+	const results = await setPluginAutoStarts(
+		client,
+		queryClient,
+		[{ address, autoStart }],
+		expectedManagedRevision,
+	)
 	const first = results[0]
 	if (!first) throw new Error('运行时未返回自动启动策略结果')
 	return first

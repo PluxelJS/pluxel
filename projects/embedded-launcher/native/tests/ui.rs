@@ -83,7 +83,7 @@ fn read_receipts_do_not_release_management_write_or_replace_a_draft() {
     model.update(Action::Precision("7".into()));
     model.update(Action::Reply(
         config,
-        Ok(json!({"ok":true,"saved":false,"application":"applied","config":{"precision":10}})),
+        Ok(json!({"ok":true,"persistence":{"status":"unchanged"},"managedRevision":"config:baseline","application":"applied","config":{"precision":10}})),
     ));
     assert_eq!(model.precision, "7");
     assert!(model.update(Action::SavePrecision).is_none());
@@ -92,7 +92,7 @@ fn read_receipts_do_not_release_management_write_or_replace_a_draft() {
         Ok(json!({"status":{"statuses":[],"summary":{}},"report":{}})),
     ));
     assert_eq!(
-        model.update(Action::SavePrecision).unwrap().params["patch"]["precision"],
+        model.update(Action::SavePrecision).unwrap().params["patch"]["set"]["precision"],
         7
     );
 }
@@ -212,7 +212,7 @@ fn plugin_controls_and_failed_config_display_host_facts() {
     assert_eq!(config.method, "host.configGet");
     model.update(Action::Reply(
         config,
-        Ok(json!({"ok":true,"saved":false,"application":"applied","config":{"precision":10}})),
+        Ok(json!({"ok":true,"persistence":{"status":"unchanged"},"managedRevision":"config:baseline","application":"applied","config":{"precision":10}})),
     ));
     assert_eq!(model.precision, "10");
     let mut ui = Simulator::with_settings(settings(), model.view());
@@ -230,7 +230,8 @@ fn plugin_controls_and_failed_config_display_host_facts() {
     model.update(Action::Precision("99".into()));
     let request = model.update(Action::SavePrecision).unwrap();
     assert_eq!(request.kind, ReplyKind::Config);
-    assert_eq!(request.params["patch"]["precision"], 99);
+    assert_eq!(request.params["patch"]["set"]["precision"], 99);
+    assert_eq!(request.params["expectedManagedRevision"], "config:baseline");
     model.update(Action::Reply(
         request,
         Ok(json!({"ok":false,"message":"Precision must be between 1 and 15","state":"unchanged"})),

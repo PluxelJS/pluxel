@@ -13,7 +13,7 @@ const metadata = Object.freeze({
 	ready: true as const,
 	protocol: Object.freeze({
 		name: 'pluxel.management' as const,
-		major: 7 as const,
+		major: 9 as const,
 		capabilities: RUNTIME_MANAGEMENT_CAPABILITIES,
 	}),
 	application: Object.freeze({ product: null }),
@@ -45,6 +45,11 @@ describe('injected Runtime Management client', () => {
 			pluginCatalogDto: vi.fn(async () => ({
 				plugins: [],
 				sections: [],
+				statePolicy: {
+					readonly: false,
+					managedRevision: 'policy:test:0',
+					overriddenFields: [] as const,
+				},
 				summary: { total: 0, running: 0, stopped: 0, autoStart: 0 },
 			})),
 			updatePluginCatalogLayoutDto: vi.fn(async () => ({ ok: true, sections: [] })),
@@ -79,6 +84,11 @@ describe('injected Runtime Management client', () => {
 		await expect(client.catalog.snapshot()).resolves.toEqual({
 			plugins: [],
 			sections: [],
+			statePolicy: {
+				readonly: false,
+				managedRevision: 'policy:test:0',
+				overriddenFields: [] as const,
+			},
 			summary: { total: 0, running: 0, stopped: 0, autoStart: 0 },
 		})
 		await expect(client.catalog.updateLayout({ sections: [] })).resolves.toEqual({
@@ -149,6 +159,11 @@ it('reads a real local RPC result and releases its envelope without retaining tr
 			return {
 				plugins: [] as unknown[],
 				sections: [] as unknown[],
+				statePolicy: {
+					readonly: false,
+					managedRevision: 'policy:test:0',
+					overriddenFields: [] as const,
+				},
 				summary: { total: 0, running: 0, stopped: 0, autoStart: 0 },
 			}
 		}
@@ -181,6 +196,11 @@ it('releases result envelopes after validation success or failure without invoki
 	const result = {
 		plugins: [] as unknown[],
 		sections: [] as unknown[],
+		statePolicy: {
+			readonly: false,
+			managedRevision: 'policy:test:0',
+			overriddenFields: [] as const,
+		},
 		summary: { total: 0, running: 0, stopped: 0, autoStart: 0 },
 		[Symbol.dispose]: dispose,
 	}

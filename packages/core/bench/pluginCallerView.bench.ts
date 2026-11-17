@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, pluginNodeAddressOf, type PluginDefinitionAddress } from '@pluxel/core'
+import { BasePlugin, Plugin, type PluginDefinitionAddress } from '@pluxel/core'
 import { consumePluginDefinitionCandidate, requirePluginService } from '@pluxel/core/internal'
 import { createCoreInternalTestContext } from '@pluxel/core/internal/test'
 import { __definePluginRef, __setPluginDefinition } from '@pluxel/core/toolchain'
@@ -81,21 +81,19 @@ const ctx = benchmarkContext.ctx
 const registry = requirePluginService(ctx)
 const update = registry.beginUpdate({ reason: 'core-caller-view-benchmark' })
 update.materializeNode(
-	pluginNodeAddressOf(CallerViewBenchProvider),
+	CallerViewBenchProvider.nodeAddress(),
 	consumePluginDefinitionCandidate(CallerViewBenchProvider),
 )
 update.materializeNode(
-	pluginNodeAddressOf(CallerViewBenchConsumer),
+	CallerViewBenchConsumer.nodeAddress(),
 	consumePluginDefinitionCandidate(CallerViewBenchConsumer),
 )
 const committed = await update.commit()
 if (committed.ok === false) throw committed.err
 
-const raw = registry.getInstance(
-	pluginNodeAddressOf(CallerViewBenchProvider),
-) as CallerViewBenchProvider
+const raw = registry.getInstance(CallerViewBenchProvider.nodeAddress()) as CallerViewBenchProvider
 const consumer = registry.getInstance(
-	pluginNodeAddressOf(CallerViewBenchConsumer),
+	CallerViewBenchConsumer.nodeAddress(),
 ) as CallerViewBenchConsumer
 const facade = consumer.provider
 const rawBoundRead = raw.read.bind(raw)
@@ -193,7 +191,7 @@ try {
 	console.log(`Caller-view benchmark sink: ${sink}`)
 } finally {
 	const shutdown = registry.beginUpdate({ reason: 'core-caller-view-benchmark-shutdown' })
-	shutdown.dematerializeNode(pluginNodeAddressOf(CallerViewBenchProvider))
+	shutdown.dematerializeNode(CallerViewBenchProvider.nodeAddress())
 	await shutdown.commit()
 	await benchmarkContext.dispose()
 }

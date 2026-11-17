@@ -1,17 +1,11 @@
 import * as nativeFs from 'node:fs'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-	BasePlugin,
-	Plugin,
-	PluginPart,
-	encodePluginNodeAddressBytes,
-	pluginNodeAddressOf,
-} from '@pluxel/core'
+import { BasePlugin, Plugin, PluginPart, encodePluginNodeAddressBytes } from '@pluxel/core'
 import { createCoreTestHost, getCoreTestHostContext } from '../src/internal-test'
-import { requireFs } from '../src/internal/storage'
+import { requireFs, requireHostDocuments } from '../src/internal/storage'
 import { boundContexts } from '@zenfs/core'
 import { caches } from '@zenfs/core/vfs/vcache.js'
 import { InMemory, Passthrough, writeFileAtomic, type FsConfig } from '../src/fs'
@@ -43,6 +37,106 @@ class FileOwner extends BasePlugin {
 }
 
 describe('Core-owned filesystem', () => {
+	it('stores ordinary Host files and observes every accessed key only while subscribed', async () => {
+		const prefix = await temporaryDirectory()
+		await using host = createCoreTestHost({
+			zenfs: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
+			tinybase: { maxSnapshotBytes: 1 },
+		})
+		const documents = requireHostDocuments(getCoreTestHostContext(host), 'logging')
+		const timers = vi.spyOn(globalThis, 'setInterval')
+		await Promise.all([
+			documents.put('plugin-policy/first.json', '{"first":true}'),
+			documents.put('plugin-policy/second.json', '{"second":true}'),
+		])
+		expect(await documents.getText('plugin-policy/first.json')).toBe('{"first":true}')
+		expect(timers).not.toHaveBeenCalled()
+		const path = join(prefix, 'services/host/logging/plugin-policy')
+		expect(await readFile(join(path, 'first.json'), 'utf8')).toBe('{"first":true}')
+		const notifications = vi.fn()
+		const stop = documents.subscribe!(notifications)
+		try {
+			await writeFile(join(path, 'first.json'), 'changed first')
+			await expect.poll(() => notifications.mock.calls.length).toBeGreaterThan(0)
+			expect(await documents.getText('plugin-policy/first.json')).toBe('changed first')
+			notifications.mockClear()
+			await rm(join(path, 'second.json'))
+			await expect.poll(() => notifications.mock.calls.length).toBeGreaterThan(0)
+			expect(await documents.getText('plugin-policy/second.json')).toBeUndefined()
+		} finally {
+			stop()
+		}
+		const reads = vi.spyOn(
+			await requireFs(getCoreTestHostContext(host)).directory('services/host/logging'),
+			'readFile',
+		)
+		await new Promise((resolve) => setTimeout(resolve, 300))
+		expect(reads).not.toHaveBeenCalled()
+	})
+
+	it('rejects new document adapters while draining an admitted commit before filesystem closure', async () => {
+		const prefix = await temporaryDirectory()
+		let entered!: () => void
+		let release!: () => void
+		const started = new Promise<void>((resolve) => {
+			entered = resolve
+		})
+		const allowed = new Promise<void>((resolve) => {
+			release = resolve
+		})
+		const native = {
+			...nativeFs,
+			promises: {
+				...nativeFs.promises,
+				async rename(from: nativeFs.PathLike, to: nativeFs.PathLike) {
+					entered()
+					await allowed
+					return nativeFs.promises.rename(from, to)
+				},
+			},
+		}
+		const host = createCoreTestHost({
+			zenfs: { mounts: { '/': { backend: Passthrough, fs: native, prefix } } },
+		})
+		const documents = requireHostDocuments(getCoreTestHostContext(host), 'config')
+		const put = documents.put('config.json', 'complete')
+		await started
+		let closed = false
+		const close = host.dispose().then((): void => {
+			closed = true
+			return undefined
+		})
+		try {
+			await vi.waitFor(() => {
+				expect(closed).toBe(false)
+				expect(() => requireHostDocuments(getCoreTestHostContext(host), 'logging')).toThrow(
+					'closed',
+				)
+			})
+		} finally {
+			release()
+			await Promise.all([put, close])
+		}
+		expect(await readFile(join(prefix, 'services/host/config/config.json'), 'utf8')).toBe(
+			'complete',
+		)
+		expect(() => documents.put('later.json', '')).toThrow('closed')
+	})
+
+	it('preserves atomic document errors and enforces its byte limit before replacing files', async () => {
+		await using host = createCoreTestHost()
+		const fs = requireFs(getCoreTestHostContext(host))
+		const documents = fs.documents('bounded', 4)
+		await documents.put('value', 'old')
+		expect(() => documents.put('value', '文字')).toThrow('4 UTF-8 bytes')
+		const directory = await fs.directory('bounded')
+		const failure = Object.assign(new Error('replacement failed'), { code: 'EIO' })
+		vi.spyOn(directory, 'rename').mockRejectedValueOnce(failure)
+		await expect(documents.put('value', 'new')).rejects.toBe(failure)
+		expect(await documents.getText('value')).toBe('old')
+		await directory.writeFile('value', 'oversized')
+		await expect(documents.getText('value')).rejects.toThrow('4 UTF-8 bytes')
+	})
 	it('rejects malformed declarations and requirements instead of applying truthy defaults', async () => {
 		for (const config of [
 			null,
@@ -58,8 +152,8 @@ describe('Core-owned filesystem', () => {
 			{ resolveFullWalk: true },
 			{ onlySyncOnClose: true },
 		])
-			expect(() => createCoreTestHost({ storage: config } as never)).toThrow(TypeError)
-		const host = await createCoreTestHost({ storage: { mounts: { '/': { backend: InMemory } } } })
+			expect(() => createCoreTestHost({ zenfs: config } as never)).toThrow(TypeError)
+		const host = await createCoreTestHost({ zenfs: { mounts: { '/': { backend: InMemory } } } })
 		try {
 			const invalidRequirements: readonly unknown[] = [
 				true,
@@ -89,7 +183,7 @@ describe('Core-owned filesystem', () => {
 			},
 		}
 		await using host = createCoreTestHost({
-			storage: { mounts: { '/': { backend, fs: nativeFs, prefix } } },
+			zenfs: { mounts: { '/': { backend, fs: nativeFs, prefix } } },
 		})
 		const root = getCoreTestHostContext(host)
 		const filesystem = requireFs(root)
@@ -120,7 +214,7 @@ describe('Core-owned filesystem', () => {
 			},
 		}
 		const host = createCoreTestHost({
-			storage: { mounts: { '/': { backend, fs: nativeFs, prefix: await temporaryDirectory() } } },
+			zenfs: { mounts: { '/': { backend, fs: nativeFs, prefix: await temporaryDirectory() } } },
 		})
 		const filesystem = requireFs(getCoreTestHostContext(host))
 		const documents = filesystem.documents('host/config')
@@ -145,7 +239,7 @@ describe('Core-owned filesystem', () => {
 		await nativeFs.promises.mkdir(join(prefix, 'host/config'), { recursive: true })
 		await nativeFs.promises.writeFile(path, '{broken', { mode: 0o600 })
 		const host = createCoreTestHost({
-			storage: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
+			zenfs: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
 		})
 		const filesystem = requireFs(getCoreTestHostContext(host))
 		try {
@@ -161,10 +255,10 @@ describe('Core-owned filesystem', () => {
 
 	it('keeps each Host independent and gives Plugins a stable directory through restart', async () => {
 		await using first = await createCoreTestHost({
-			storage: { mounts: { '/': { backend: InMemory } } },
+			zenfs: { mounts: { '/': { backend: InMemory } } },
 		})
 		await using second = await createCoreTestHost({
-			storage: { mounts: { '/': { backend: InMemory } } },
+			zenfs: { mounts: { '/': { backend: InMemory } } },
 		})
 		const owner = await first.add(FileOwner)
 		const getDirectory = owner.directory
@@ -182,7 +276,7 @@ describe('Core-owned filesystem', () => {
 	})
 
 	it('preserves canonical address bytes and fork identity in portable physical keys', () => {
-		const address = pluginNodeAddressOf(FileOwner)
+		const address = FileOwner.nodeAddress()
 		const fork = { ...address, variant: 'fork' as const, forkId: 'example' }
 		for (const node of [address, fork])
 			expect(pluginNodePhysicalKey(node)).toBe(
@@ -200,7 +294,7 @@ describe('Core-owned filesystem', () => {
 					'/': mode === 'memory' ? InMemory : { backend: Passthrough, fs: nativeFs, prefix },
 				},
 			}
-			const host = await createCoreTestHost({ storage: config })
+			const host = await createCoreTestHost({ zenfs: config })
 			try {
 				const directory = await requireFs(getCoreTestHostContext(host)).directory('documents')
 				await writeFileAtomic(directory, 'document', 'OLD')
@@ -217,7 +311,7 @@ describe('Core-owned filesystem', () => {
 	)
 
 	it('retains the primary failure when temporary-file cleanup also fails', async () => {
-		const host = await createCoreTestHost({ storage: { mounts: { '/': { backend: InMemory } } } })
+		const host = await createCoreTestHost({ zenfs: { mounts: { '/': { backend: InMemory } } } })
 		try {
 			const directory = await requireFs(getCoreTestHostContext(host)).directory('documents')
 			await writeFileAtomic(directory, 'document', 'OLD')
@@ -237,7 +331,7 @@ describe('Core-owned filesystem', () => {
 	})
 
 	it('requires durability honestly and rejects writes on a readonly native backend', async () => {
-		const memory = await createCoreTestHost({ storage: { mounts: { '/': { backend: InMemory } } } })
+		const memory = await createCoreTestHost({ zenfs: { mounts: { '/': { backend: InMemory } } } })
 		try {
 			await expect(
 				requireFs(getCoreTestHostContext(memory)).ready({ durable: true }),
@@ -249,13 +343,13 @@ describe('Core-owned filesystem', () => {
 		}
 		const prefix = await temporaryDirectory()
 		const config = { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } } as const
-		const writable = await createCoreTestHost({ storage: config })
+		const writable = await createCoreTestHost({ zenfs: config })
 		await requireFs(getCoreTestHostContext(writable))
 			.documents('host/config')
 			.put('settings.json', 'OLD')
 		await writable.dispose()
 		const readonly = await createCoreTestHost({
-			storage: { ...config, readOnly: true },
+			zenfs: { ...config, readOnly: true },
 		})
 		try {
 			const documents = requireFs(getCoreTestHostContext(readonly)).documents('host/config')
@@ -273,7 +367,7 @@ describe('Core-owned filesystem', () => {
 	it('flushes runtime work before final disposal and rejects further use of borrowed directories', async () => {
 		const prefix = await temporaryDirectory()
 		const host = createCoreTestHost({
-			storage: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
+			zenfs: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
 		})
 		const root = getCoreTestHostContext(host)
 		const filesystem = requireFs(root)
@@ -287,7 +381,7 @@ describe('Core-owned filesystem', () => {
 	it('releases owned contexts, handles and caches after repeated Host creation', async () => {
 		const before = { contexts: boundContexts.size, caches: caches.size }
 		for (let index = 0; index < 10; index++) {
-			const host = await createCoreTestHost({ storage: { mounts: { '/': { backend: InMemory } } } })
+			const host = await createCoreTestHost({ zenfs: { mounts: { '/': { backend: InMemory } } } })
 			const directory = await requireFs(getCoreTestHostContext(host)).directory('services/owned')
 			const handle = await directory.open('pending', 'w+')
 			await handle.writeFile(`pending-${index}`)

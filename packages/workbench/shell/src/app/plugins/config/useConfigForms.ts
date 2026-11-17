@@ -10,8 +10,9 @@ export type ConfigFormState = {
 
 export type ConfigSectionForm = {
 	form: ReturnType<typeof useAutoFormCtx>['form']
+	baseline: Record<string, unknown>
 	reset: (values?: Record<string, unknown>) => void
-	acceptSaved: (values: Record<string, unknown>) => void
+	acceptSaved: (values: Record<string, unknown>, submitted: Record<string, unknown>) => void
 }
 
 /** TanStack tracks the registered form stores; React reads only the action dock's flags. */

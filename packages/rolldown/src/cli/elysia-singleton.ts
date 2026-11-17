@@ -1,21 +1,14 @@
 import { readFile } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'pathe'
-import type { Plugin, ResolvedId } from 'rolldown'
+import type { Plugin, PluginContext, ResolvedId } from 'rolldown'
 
 const SERVICES_PACKAGE_MANIFEST = '@pluxel/services/package.json'
 const ELYSIA_PACKAGE_MANIFEST = 'elysia/package.json'
 const STATIC_ELYSIA_WIRING_ID = 'pluxel:static-elysia-wiring'
 const RESOLVED_STATIC_ELYSIA_WIRING_ID = `\0${STATIC_ELYSIA_WIRING_ID}`
-const TYPEBOX_RUNTIME_SPECIFIERS = new Set([
-	'typebox/compile',
-	'typebox/schema',
-	'typebox/system',
-	'typebox/type',
-	'typebox/value',
-])
-const EXACT_MIRROR_SPECIFIER = 'exact-mirror'
+const STATIC_ELYSIA_ENTRY_PREFIX = '\0pluxel:static-elysia-entry:'
 const STATIC_ELYSIA_RESOLVE_FILTER =
-	/^(?:pluxel:static-elysia-wiring|elysia(?:\/[^?#]+)?|typebox\/(?:compile|schema|system|type|value)|exact-mirror)$/
+	/^(?:pluxel:static-elysia-wiring|(?:elysia|typebox|exact-mirror)(?:\/[^?#]+)?)$/
 
 /**
  * Resolves every public Elysia runtime entry through the copy owned by Pluxel HTTP.
@@ -25,50 +18,39 @@ const STATIC_ELYSIA_RESOLVE_FILTER =
  * one Elysia identity for its application, adapters, schemas and WebSocket capability.
  */
 export function staticElysiaSingletonPlugin(cwd: string): Plugin {
-	let servicesManifest = ''
-	let elysiaManifest = ''
-	let publicSpecifiers = new Set<string>()
+	let installation: Promise<ElysiaInstallation | undefined> | undefined
 	const canonicalResolutions = new Map<string, Promise<ResolvedId>>()
+	const resolveInstallation = (context: PluginContext) =>
+		(installation ??= findElysiaInstallation(context, cwd))
 
 	return {
 		name: 'pluxel:static-elysia-singleton',
-		async buildStart() {
+		buildStart() {
+			installation = undefined
 			canonicalResolutions.clear()
-			const applicationManifest = resolve(cwd, 'package.json')
-			const runtime = await this.resolve(SERVICES_PACKAGE_MANIFEST, applicationManifest, {
-				skipSelf: true,
-			})
-			servicesManifest = requireAbsoluteResolution(
-				this,
-				runtime,
-				SERVICES_PACKAGE_MANIFEST,
-				applicationManifest,
-			)
-
-			const elysia = await this.resolve(ELYSIA_PACKAGE_MANIFEST, servicesManifest, {
-				skipSelf: true,
-			})
-			elysiaManifest = requireAbsoluteResolution(
-				this,
-				elysia,
-				ELYSIA_PACKAGE_MANIFEST,
-				servicesManifest,
-			)
-			publicSpecifiers = readPublicElysiaSpecifiers(
-				JSON.parse(await readFile(elysiaManifest, 'utf8')) as unknown,
-			)
-			if (!publicSpecifiers.has('elysia')) {
-				this.error('[static-application] host Elysia package does not export its root entry')
-			}
 		},
 		resolveId: {
 			filter: { id: STATIC_ELYSIA_RESOLVE_FILTER },
-			handler(id, _importer, options) {
+			async handler(id, importer, options) {
 				if (id === STATIC_ELYSIA_WIRING_ID) return RESOLVED_STATIC_ELYSIA_WIRING_ID
-				const canonicalImporter = publicSpecifiers.has(id)
-					? servicesManifest
-					: TYPEBOX_RUNTIME_SPECIFIERS.has(id) || id === EXACT_MIRROR_SPECIFIER
-						? elysiaManifest
+				if (id === ELYSIA_PACKAGE_MANIFEST) return null
+				const runtime = await resolveInstallation(this)
+				if (!runtime) {
+					if (id === 'elysia' || id.startsWith('elysia/'))
+						this.error(
+							`[static-application] Cannot resolve Elysia owned by ${SERVICES_PACKAGE_MANIFEST} from ${cwd}`,
+						)
+					// Standalone TypeBox users do not require the optional HTTP installation.
+					return null
+				}
+				const publicEntry = runtime.publicSpecifiers.has(id)
+				const canonicalImporter = publicEntry
+					? runtime.servicesManifest
+					: id === 'typebox' ||
+						  id.startsWith('typebox/') ||
+						  id === 'exact-mirror' ||
+						  id.startsWith('exact-mirror/')
+						? runtime.elysiaManifest
 						: null
 				if (!canonicalImporter) return null
 
@@ -83,14 +65,60 @@ export function staticElysiaSingletonPlugin(cwd: string): Plugin {
 					})
 					canonicalResolutions.set(id, resolution)
 				}
-				return resolution
+				const canonical = await resolution
+				if (!publicEntry || importer === RESOLVED_STATIC_ELYSIA_WIRING_ID) return canonical
+				return { id: `${STATIC_ELYSIA_ENTRY_PREFIX}${canonical.id}`, moduleSideEffects: true }
 			},
 		},
-		load(id) {
-			if (id !== RESOLVED_STATIC_ELYSIA_WIRING_ID) return null
-			return buildStaticElysiaWiring()
+		async load(id) {
+			if (id === RESOLVED_STATIC_ELYSIA_WIRING_ID) return buildStaticElysiaWiring()
+			if (!id.startsWith(STATIC_ELYSIA_ENTRY_PREFIX)) return null
+			const entry = id.slice(STATIC_ELYSIA_ENTRY_PREFIX.length)
+			const module = await this.load({ id: entry })
+			// Import ordering belongs to this Elysia entry, including dynamic imports.
+			// Read the real module's exports rather than inventing a default on subpaths.
+			return `import ${JSON.stringify(STATIC_ELYSIA_WIRING_ID)}\nexport * from ${JSON.stringify(entry)}\n${module.exports.includes('default') ? `export { default } from ${JSON.stringify(entry)}` : ''}`
 		},
 	}
+}
+
+type ElysiaInstallation = {
+	servicesManifest: string
+	elysiaManifest: string
+	publicSpecifiers: ReadonlySet<string>
+}
+
+async function findElysiaInstallation(
+	context: PluginContext,
+	cwd: string,
+): Promise<ElysiaInstallation | undefined> {
+	const applicationManifest = resolve(cwd, 'package.json')
+	const services = await context.resolve(SERVICES_PACKAGE_MANIFEST, applicationManifest, {
+		skipSelf: true,
+	})
+	if (!services) return undefined
+	const servicesManifest = requireAbsoluteResolution(
+		context,
+		services,
+		SERVICES_PACKAGE_MANIFEST,
+		applicationManifest,
+	)
+	const elysia = await context.resolve(ELYSIA_PACKAGE_MANIFEST, servicesManifest, {
+		skipSelf: true,
+	})
+	if (!elysia) return undefined
+	const elysiaManifest = requireAbsoluteResolution(
+		context,
+		elysia,
+		ELYSIA_PACKAGE_MANIFEST,
+		servicesManifest,
+	)
+	const publicSpecifiers = readPublicElysiaSpecifiers(
+		JSON.parse(await readFile(elysiaManifest, 'utf8')) as unknown,
+	)
+	if (!publicSpecifiers.has('elysia'))
+		context.error('[static-application] host Elysia package does not export its root entry')
+	return { servicesManifest, elysiaManifest, publicSpecifiers }
 }
 
 function buildStaticElysiaWiring(): string {

@@ -6,10 +6,10 @@ import {
 	context,
 	propagation,
 	ROOT_CONTEXT,
+	SeverityNumber,
 	trace,
 	type ObservableCallback,
 } from '@opentelemetry/api'
-import { SeverityNumber } from '@opentelemetry/api-logs'
 import type { ExportResult } from '@opentelemetry/core'
 import type { LogRecordExporter, ReadableLogRecord } from '@opentelemetry/sdk-logs'
 import {
@@ -17,7 +17,7 @@ import {
 	type PushMetricExporter,
 	type ResourceMetrics,
 } from '@opentelemetry/sdk-metrics'
-import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base'
+import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace'
 import { test } from 'vitest'
 import { createOtlpMetricReader, type OtlpExportState } from '../src/otlp.ts'
 import { createOtelRuntime } from '../src/sdk.ts'
@@ -99,6 +99,45 @@ const testEnv = {
 	OTEL_BSP_SCHEDULE_DELAY: '300000',
 	OTEL_BLRP_SCHEDULE_DELAY: '300000',
 } as const
+
+test.each([
+	['always_off', undefined, false],
+	['always_on', undefined, true],
+	['traceidratio', '0', false],
+	['traceidratio', '1', true],
+	['parentbased_always_off', undefined, false],
+	['parentbased_always_on', undefined, true],
+	['parentbased_traceidratio', '0', false],
+	['parentbased_traceidratio', '1', true],
+] as const)(
+	'applies %s sampler environment settings with argument %s to the native provider',
+	async (sampler, argument, recording) => {
+		const spans = new CapturingSpanExporter()
+		const runtime = await createOtelRuntime(
+			{
+				rootName: 'sampler-root',
+				otlp: ['traces'],
+				prometheus: false,
+				onOtlpExportState: () => {},
+			},
+			{
+				env: { ...testEnv, OTEL_TRACES_SAMPLER: sampler, OTEL_TRACES_SAMPLER_ARG: argument },
+				exporterFactories: { traces: () => spans },
+			},
+		)
+		try {
+			const span = runtime
+				.getTracer('SamplerConsumer')
+				.startSpan('sampled-operation', {}, ROOT_CONTEXT)
+			assert.equal(span.isRecording(), recording)
+			span.end()
+			await runtime.forceFlush()
+			assert.equal(spans.exports.flat().length, recording ? 1 : 0)
+		} finally {
+			await runtime.shutdown()
+		}
+	},
+)
 
 test('exports native metrics, traces, and logs with caller scopes and trace correlation', async () => {
 	const metrics = new CapturingMetricExporter()

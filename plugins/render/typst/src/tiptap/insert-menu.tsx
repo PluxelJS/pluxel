@@ -17,18 +17,31 @@ import { EditorUi, Icon, canEdit } from './editor-ui'
 import { FloatingMenu } from './floating-menu'
 import { TableSizeForm } from './table-size-form'
 import {
+	findPendingSourceInput,
+	focusOpenSourcePanel,
+	preserveSourceButtonFocus,
+} from './source-controls'
+import {
 	insertEntries,
 	isInsertionBoundary,
+	canInsertEntry,
 	matchesInsertion,
 	prepareInsertion,
+	dispatchInsertion,
 	tableEntry,
 	type InsertEntry,
 	type LocalInsertionTarget,
+	type TypstSlashCommand,
 } from './insert-commands'
 
-interface TableTarget {
+interface InputTarget {
+	kind: 'table' | 'import' | 'include'
 	doc: ProseMirrorNode
 	selection: Selection
+}
+
+function hasUnappliedInput(popup: RefObject<HTMLDivElement | null>): boolean {
+	return Boolean(popup.current?.querySelector('[data-typst-unapplied]'))
 }
 
 /** Non-modal insertion popups leave Tab native and release themselves on window blur. */
@@ -58,26 +71,40 @@ function useInsertionKeyboard({
 			composing = false
 		}
 		const keydown = (event: KeyboardEvent) => {
+			const inside = element.contains(event.target as Node)
 			if (
-				event.key !== 'Escape' ||
 				event.defaultPrevented ||
 				event.isComposing ||
 				composing ||
-				!element.contains(event.target as Node)
+				(!inside &&
+					(event.key !== 'Escape' ||
+						!hasUnappliedInput(popup) ||
+						(event.target as Element).closest?.('[role="dialog"]')))
 			)
 				return
-			event.preventDefault()
-			event.stopPropagation()
-			callbacks.current.onCancel()
+			if (event.key === 'Escape') {
+				event.preventDefault()
+				event.stopPropagation()
+				callbacks.current.onCancel()
+			} else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+				const form = element.querySelector('form')
+				if (form) {
+					event.preventDefault()
+					event.stopPropagation()
+					form.requestSubmit()
+				}
+			}
 		}
 		const blur = () => callbacks.current.onBlur()
 		element.addEventListener('compositionstart', start)
 		element.addEventListener('compositionend', end)
+		element.addEventListener('mousedown', preserveSourceButtonFocus)
 		document.addEventListener('keydown', keydown)
 		window.addEventListener('blur', blur)
 		return () => {
 			element.removeEventListener('compositionstart', start)
 			element.removeEventListener('compositionend', end)
+			element.removeEventListener('mousedown', preserveSourceButtonFocus)
 			document.removeEventListener('keydown', keydown)
 			window.removeEventListener('blur', blur)
 		}
@@ -183,7 +210,7 @@ export function InsertMenu({
 	const [open, setOpen] = useState(false)
 	const [query, setQuery] = useState('')
 	const [choice, setChoice] = useState(0)
-	const [table, setTable] = useState<TableTarget>()
+	const [input, setInput] = useState<InputTarget>()
 	const container = useRef<HTMLDivElement>(null)
 	const popup = useRef<HTMLDivElement>(null)
 	const trigger = useRef<HTMLButtonElement>(null)
@@ -194,29 +221,39 @@ export function InsertMenu({
 	openChange.current = onOpenChange
 	const enabled =
 		canEdit(editor, ui) && (at === undefined || isInsertionBoundary(editor.state.doc, at))
+	const dirty = Boolean(input && hasUnappliedInput(popup))
 	const visible =
 		open &&
-		enabled &&
-		(!target.current || target.current.doc === editor.state.doc) &&
-		(!table ||
-			(table.doc === editor.state.doc &&
-				(Boolean(target.current) || table.selection.eq(editor.state.selection))))
+		!editor.isDestroyed &&
+		(dirty ||
+			(enabled &&
+				(!target.current || target.current.doc === editor.state.doc) &&
+				(!input ||
+					(input.doc === editor.state.doc &&
+						(Boolean(target.current) || input.selection.eq(editor.state.selection))))))
 	const entries = useMemo(
 		() =>
 			visible
 				? insertEntries(editor, ui, target.current, query).filter(
 						(entry) =>
-							matchesInsertion(entry, query) && prepareInsertion(editor, ui, entry, target.current),
+							matchesInsertion(entry, query) && canInsertEntry(editor, ui, entry, target.current),
 					)
 				: [],
 		[editor, editor.state, ui, visible, query],
 	)
 	const active = Math.min(choice, entries.length - 1)
-	useInsertionKeyboard({ visible, popup, onCancel: cancel, onBlur: () => setOpen(false) })
+	useInsertionKeyboard({
+		visible,
+		popup,
+		onCancel: cancel,
+		onBlur: () => {
+			if (!hasUnappliedInput(popup)) setOpen(false)
+		},
+	})
 	useLayoutEffect(() => {
 		if (!visible) {
 			setOpen(false)
-			setTable(undefined)
+			setInput(undefined)
 		}
 		openChange.current?.(visible)
 		return () => {
@@ -224,19 +261,22 @@ export function InsertMenu({
 		}
 	}, [visible])
 	useLayoutEffect(() => {
-		if (table && popup.current?.style.visibility === 'visible')
-			rows.current?.focus({ preventScroll: true })
-	}, [table])
+		if (input && popup.current?.style.visibility === 'visible')
+			popup.current
+				.querySelector<HTMLElement>('input:not(:disabled)')
+				?.focus({ preventScroll: true })
+	}, [input])
 	useEffect(() => {
 		if (!visible) return
 		const dom = editor.view.dom
 		const document = dom.ownerDocument
 		const observer = new ResizeObserver(() => {
-			if (dom.getClientRects().length === 0) setOpen(false)
+			if (!hasUnappliedInput(popup) && dom.getClientRects().length === 0) setOpen(false)
 		})
 		observer.observe(dom)
 		const outside = (event: Event) => {
 			if (
+				!hasUnappliedInput(popup) &&
 				!container.current?.contains(event.target as Node) &&
 				!popup.current?.contains(event.target as Node)
 			)
@@ -251,22 +291,48 @@ export function InsertMenu({
 		}
 	}, [editor, visible])
 	function select(entry: InsertEntry) {
-		if (entry.id === 'table') {
-			setTable({ doc: editor.state.doc, selection: editor.state.selection })
+		if (entry.input || entry.id === 'table') {
+			setInput({
+				kind: entry.input ?? 'table',
+				doc: editor.state.doc,
+				selection: editor.state.selection,
+			})
 			return
 		}
 		const transaction = prepareInsertion(editor, ui, entry, target.current)
 		if (!transaction) return
-		editor.view.dispatch(transaction)
+		if (!dispatchInsertion(editor, transaction)) return
 		setOpen(false)
 		editor.view.focus()
 	}
+	function insert(entry: TypstSlashCommand): boolean {
+		if (
+			!input ||
+			input.doc !== editor.state.doc ||
+			(!target.current && !input.selection.eq(editor.state.selection))
+		)
+			return false
+		if (
+			target.current &&
+			(target.current.doc !== editor.state.doc ||
+				!isInsertionBoundary(editor.state.doc, target.current.at))
+		)
+			return false
+		// Imports belong at file scope; a block-local placeholder would add unrelated body content.
+		const position = input.kind === 'import' ? undefined : target.current
+		const transaction = prepareInsertion(editor, ui, entry, position)
+		if (!transaction) return false
+		if (!dispatchInsertion(editor, transaction)) return false
+		setOpen(false)
+		editor.view.focus()
+		return true
+	}
 	function show() {
-		if (!enabled) return
+		if (!enabled || focusOpenSourcePanel(trigger.current) || hasUnappliedInput(popup)) return
 		target.current = at === undefined ? undefined : { at, doc: editor.state.doc }
 		setQuery('')
 		setChoice(0)
-		setTable(undefined)
+		setInput(undefined)
 		setOpen(true)
 	}
 	function cancel() {
@@ -287,7 +353,11 @@ export function InsertMenu({
 				aria-controls={visible ? `${id}-dialog` : undefined}
 				disabled={!enabled}
 				onMouseDown={(event) => event.preventDefault()}
-				onClick={() => (visible ? setOpen(false) : show())}
+				onClick={() => {
+					if (!visible) show()
+					else if (!hasUnappliedInput(popup)) setOpen(false)
+					else focusOpenSourcePanel(trigger.current)
+				}}
 				onKeyDown={(event) => {
 					if (event.key === 'ArrowDown') {
 						event.preventDefault()
@@ -302,36 +372,33 @@ export function InsertMenu({
 				<FloatingMenu
 					editor={editor}
 					elementRef={popup}
-					onReady={() => (table ? rows : search).current?.focus({ preventScroll: true })}
+					onReady={() =>
+						input
+							? popup.current
+									?.querySelector<HTMLElement>('input:not(:disabled)')
+									?.focus({ preventScroll: true })
+							: search.current?.focus({ preventScroll: true })
+					}
 					reference={() => trigger.current!.getBoundingClientRect()}
 					className="typst-insert-popover"
 				>
 					<div
 						id={`${id}-dialog`}
-						role={table ? undefined : 'dialog'}
-						aria-label={table ? undefined : '插入内容'}
+						role={input ? undefined : 'dialog'}
+						aria-label={input ? undefined : '插入内容'}
 					>
-						{table ? (
+						{input?.kind === 'table' ? (
 							<TableSizeForm
 								editor={editor}
 								inputRef={rows}
 								onCancel={cancel}
 								onInsert={(size) => {
-									if (
-										table.doc !== editor.state.doc ||
-										(!target.current && !table.selection.eq(editor.state.selection))
-									)
-										return false
 									const entry = tableEntry(size)
-									const transaction = entry && prepareInsertion(editor, ui, entry, target.current)
-									if (!transaction) return false
-									editor.view.dispatch(transaction)
-									if (!editor.state.doc.eq(transaction.doc)) return false
-									setOpen(false)
-									editor.view.focus()
-									return true
+									return Boolean(entry && insert(entry))
 								}}
 							/>
+						) : input ? (
+							ui.renderSourceFileInput?.(input.kind, insert, cancel)
 						) : (
 							<>
 								<input
@@ -403,14 +470,14 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 	const ui = useContext(EditorUi)
 	const id = useId()
 	const [choice, setChoice] = useState({ key: '', index: 0 })
-	const [table, setTable] = useState<
-		TableTarget & {
+	const [input, setInput] = useState<
+		InputTarget & {
 			range: { from: number; to: number }
 			point: { left: number; top: number; bottom: number }
 		}
 	>()
-	const tableRef = useRef(table)
-	tableRef.current = table
+	const inputRef = useRef(input)
+	inputRef.current = input
 	const popup = useRef<HTMLDivElement>(null)
 	const rows = useRef<HTMLInputElement>(null)
 	const [dismissed, setDismissed] = useState<number | null>(null)
@@ -419,61 +486,82 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 	latest.current = ui
 	const choiceRef = useRef(choice)
 	choiceRef.current = choice
-	const range = canEdit(editor, ui) ? slashRange(editor) : undefined
+	const pending = findPendingSourceInput(editor.view.dom.ownerDocument)
+	const range =
+		canEdit(editor, ui) && (!pending || popup.current?.contains(pending))
+			? slashRange(editor)
+			: undefined
 	const key = range ? `${range.from}:${range.query}` : ''
 	const entries = useMemo(
 		() =>
 			range
 				? insertEntries(editor, ui, undefined, range.query).filter(
 						(entry) =>
-							matchesInsertion(entry, range.query) && prepareInsertion(editor, ui, entry, range),
+							matchesInsertion(entry, range.query) && canInsertEntry(editor, ui, entry, range),
 					)
 				: [],
 		[editor, editor.state, ui, key],
 	)
 	const active = Math.min(choice.key === key ? choice.index : 0, entries.length - 1)
-	const visible = range && dismissed !== range.from && !table
-	const tableVisible = Boolean(
-		table &&
-		canEdit(editor, ui) &&
-		table.doc === editor.state.doc &&
-		table.selection.eq(editor.state.selection),
+	const visible = range && dismissed !== range.from && !input
+	const inputVisible = Boolean(
+		input &&
+		!editor.isDestroyed &&
+		(hasUnappliedInput(popup) ||
+			(canEdit(editor, ui) &&
+				input.doc === editor.state.doc &&
+				input.selection.eq(editor.state.selection))),
 	)
-	function cancelTable() {
-		if (!table) return
-		dismissedRef.current = table.range.from
-		setDismissed(table.range.from)
-		setTable(undefined)
+	function cancelInput() {
+		if (!input) return
+		dismissedRef.current = input.range.from
+		setDismissed(input.range.from)
+		setInput(undefined)
 		editor.view.focus()
 	}
 	useInsertionKeyboard({
-		visible: tableVisible,
+		visible: inputVisible,
 		popup,
-		onCancel: cancelTable,
-		onBlur: () => setTable(undefined),
+		onCancel: cancelInput,
+		onBlur: () => {
+			if (!hasUnappliedInput(popup)) setInput(undefined)
+		},
 	})
-	function openTable(target: { from: number; to: number }) {
+	function openInput(kind: InputTarget['kind'], target: { from: number; to: number }) {
+		if (focusOpenSourcePanel(editor.view.dom)) return
 		const start = editor.view.coordsAtPos(target.from)
 		const end = editor.view.coordsAtPos(target.to)
-		setTable({
+		setInput({
+			kind,
 			doc: editor.state.doc,
 			selection: editor.state.selection,
 			range: target,
 			point: { left: start.left, top: start.top, bottom: end.bottom },
 		})
 	}
+	function insert(entry: TypstSlashCommand): boolean {
+		if (!input || input.doc !== editor.state.doc || !input.selection.eq(editor.state.selection))
+			return false
+		const transaction = prepareInsertion(editor, ui, entry, input.range)
+		if (!transaction) return false
+		if (!dispatchInsertion(editor, transaction)) return false
+		setInput(undefined)
+		editor.view.focus()
+		return true
+	}
 	useEffect(() => {
-		if (table && !tableVisible) setTable(undefined)
-	}, [table, tableVisible])
+		if (input && !inputVisible) setInput(undefined)
+	}, [input, inputVisible])
 	useEffect(() => {
-		if (!tableVisible) return
+		if (!inputVisible) return
 		const dom = editor.view.dom
 		const document = dom.ownerDocument
 		const outside = (event: Event) => {
-			if (!popup.current?.contains(event.target as Node)) setTable(undefined)
+			if (!hasUnappliedInput(popup) && !popup.current?.contains(event.target as Node))
+				setInput(undefined)
 		}
 		const observer = new ResizeObserver(() => {
-			if (dom.getClientRects().length === 0) setTable(undefined)
+			if (!hasUnappliedInput(popup) && dom.getClientRects().length === 0) setInput(undefined)
 		})
 		observer.observe(dom)
 		document.addEventListener('pointerdown', outside, true)
@@ -486,7 +574,7 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 			document.removeEventListener('focusin', outside)
 			document.removeEventListener('scroll', outside, true)
 		}
-	}, [editor, tableVisible])
+	}, [editor, inputVisible])
 	useEffect(() => {
 		if (!range) {
 			dismissedRef.current = null
@@ -501,7 +589,8 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 				props: {
 					handleKeyDown(_view, event) {
 						const current = latest.current
-						if (!canEdit(editor, current) || event.isComposing || tableRef.current) return false
+						if (!canEdit(editor, current) || event.isComposing || inputRef.current) return false
+						if (findPendingSourceInput(editor.view.dom.ownerDocument)) return false
 						const target = slashRange(editor)
 						if (!target || dismissedRef.current === target.from) return false
 						if (event.key === 'Escape') {
@@ -513,7 +602,7 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 						const items = insertEntries(editor, current, undefined, target.query).filter(
 							(entry) =>
 								matchesInsertion(entry, target.query) &&
-								prepareInsertion(editor, current, entry, target),
+								canInsertEntry(editor, current, entry, target),
 						)
 						if (items.length === 0) return event.key !== 'Enter'
 						const currentKey = `${target.from}:${target.query}`
@@ -522,12 +611,12 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 								? Math.min(choiceRef.current.index, items.length - 1)
 								: 0
 						if (event.key === 'Enter') {
-							if (items[index]!.id === 'table') {
-								openTable(target)
+							if (items[index]!.input || items[index]!.id === 'table') {
+								openInput(items[index]!.input ?? 'table', target)
 								return true
 							}
 							const transaction = prepareInsertion(editor, current, items[index]!, target)
-							if (transaction) editor.view.dispatch(transaction)
+							if (transaction) dispatchInsertion(editor, transaction)
 							return true
 						}
 						const next = (index + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length
@@ -553,34 +642,34 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 			dom.removeAttribute('aria-activedescendant')
 		}
 	}, [editor, visible, id, active])
-	if (table && tableVisible)
+	if (input && inputVisible)
 		return (
 			<FloatingMenu
-				key="table"
+				key="input"
 				editor={editor}
 				elementRef={popup}
-				reference={() => table.point}
+				reference={() => input.point}
 				className="typst-insert-popover"
-				onReady={() => rows.current?.focus({ preventScroll: true })}
+				onReady={() =>
+					popup.current
+						?.querySelector<HTMLElement>('input:not(:disabled)')
+						?.focus({ preventScroll: true })
+				}
 			>
 				<div>
-					<TableSizeForm
-						editor={editor}
-						inputRef={rows}
-						onCancel={cancelTable}
-						onInsert={(size) => {
-							if (table.doc !== editor.state.doc || !table.selection.eq(editor.state.selection))
-								return false
-							const entry = tableEntry(size)
-							const transaction = entry && prepareInsertion(editor, ui, entry, table.range)
-							if (!transaction) return false
-							editor.view.dispatch(transaction)
-							if (!editor.state.doc.eq(transaction.doc)) return false
-							setTable(undefined)
-							editor.view.focus()
-							return true
-						}}
-					/>
+					{input.kind === 'table' ? (
+						<TableSizeForm
+							editor={editor}
+							inputRef={rows}
+							onCancel={cancelInput}
+							onInsert={(size) => {
+								const entry = tableEntry(size)
+								return Boolean(entry && insert(entry))
+							}}
+						/>
+					) : (
+						ui.renderSourceFileInput?.(input.kind, insert, cancelInput)
+					)}
 				</div>
 			</FloatingMenu>
 		)
@@ -606,8 +695,8 @@ export function SlashMenu({ editor }: { editor: Editor }) {
 				onSelect={(entry) => {
 					const current = slashRange(editor)
 					if (!current) return
-					if (entry.id === 'table') {
-						openTable(current)
+					if (entry.input || entry.id === 'table') {
+						openInput(entry.input ?? 'table', current)
 						return
 					}
 					const transaction = prepareInsertion(editor, ui, entry, current)

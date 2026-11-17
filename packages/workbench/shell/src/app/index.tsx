@@ -1,6 +1,6 @@
 import { defaultParseSearch, type RouterHistory, RouterProvider } from '@tanstack/react-router'
 import { pluginNodeAddressEqual } from '@pluxel/core'
-import { Actions, DockLocation, Model, TabGroupNode, TabNode } from 'flexlayout-react'
+import { Actions, DockLocation, TabGroupNode, TabSetNode } from 'flexlayout-react'
 import { Button, Text } from '@mantine/core'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
@@ -14,6 +14,7 @@ import { ProductProvider } from './product'
 import { createAppRouter, readWorkbenchUiBasePath } from './router'
 import { validatePluginDetailSearch } from './router/pluginDetailSearch'
 import { WorkspaceSession } from './workbench/session'
+import type { DestinationResolver } from '@worksplit/react'
 import { WorkspaceSessionProvider } from './workbench/workspaceContext'
 import { WorkspacePersistence, WorkspaceRestoreError } from './workbench/snapshot'
 import { WorkbenchShell } from './workbench/WorkbenchShell'
@@ -87,7 +88,11 @@ function SessionSurface({ bootstrap, workspace: supplied, history, standalone }:
 			surfaceRef.current =
 				standalone || frame === 'standalone'
 					? { router: createAppRouter({ history, uiBasePath: entry.basepath }) }
-					: { workspace: supplied ?? new WorkspaceSession() }
+					: {
+							workspace:
+								supplied ??
+								new WorkspaceSession({ initialShortcuts: snapshot.layout?.initialShortcuts }),
+						}
 		} catch (cause) {
 			surfaceRef.current = { error: cause instanceof Error ? cause : new Error(String(cause)) }
 		}
@@ -106,30 +111,11 @@ function SessionSurface({ bootstrap, workspace: supplied, history, standalone }:
 	useEffect(() => {
 		if (!surface || 'error' in surface) return
 		owner.mounts++
-		if (workspace)
-			void workspace
-				.start(entry.href, !history)
-				.then(async (result) => {
-					if (result.status !== 'committed' || result.reused) return undefined
-					const current = workspace.workbench.getDocument(result.document.id)
-					if (current?.href !== result.document.href || current.title !== result.document.title)
-						return undefined
-					const title = defaultDocumentTitle(
-						publication.current,
-						new URL(result.document.href, location.origin),
-						entry.basepath,
-					)
-					if (!title || title === current.title) return undefined
-					workspace.check(
-						await workspace.workbench.dispatch(
-							Actions.updateNodeAttributes(result.document.id, {
-								name: title,
-							}),
-						),
-					)
-					return undefined
-				})
-				.catch((cause: unknown) => workspace.report(cause))
+		if (workspace) {
+			workspace.resolveTitle = (href) =>
+				defaultDocumentTitle(publication.current, new URL(href, location.origin), entry.basepath)
+			void workspace.start(entry.href, !history).catch((cause: unknown) => workspace.report(cause))
+		}
 		return () => {
 			owner.mounts--
 			queueMicrotask(() => {
@@ -168,81 +154,66 @@ function SessionSurface({ bootstrap, workspace: supplied, history, standalone }:
 					workspace.report(new Error('当前标签页正在准备，请稍后重试'))
 					return
 				}
-				const previous = new URL(active.href, location.origin)
-				const destination = new URL(publicHref, location.origin)
-				const changedPage =
-					previous.pathname !== destination.pathname ||
-					previous.searchParams.get('entry') !== destination.searchParams.get('entry')
 				void navigate({
 					to: path,
 					search: defaultParseSearch(url.search),
 					hash: url.hash.slice(1),
-				})
-					.then(async () => {
-						const current = workspace.workbench.getDocument(active.id)
-						if (!changedPage || current?.href !== publicHref) return undefined
-						const title = defaultDocumentTitle(publication.current, destination, basepath)
-						if (title)
-							workspace.check(
-								await workspace.workbench.dispatch(
-									Actions.updateNodeAttributes(active.id, { name: title }),
-								),
-							)
-						return undefined
-					})
-					.catch((cause: unknown) => workspace.report(cause))
+				}).catch((cause: unknown) => workspace.report(cause))
 				return
 			}
 			const anchor = presentation?.afterDocumentId
 				? workspace.workbench.getDocument(presentation.afterDocumentId)
 				: undefined
-			const target = anchor?.containerId
+			const destination: DestinationResolver | undefined = anchor
+				? ({ model }) => {
+						const node = model.getNodeById(anchor.id)
+						if (node !== anchor.node) return null
+						const sibling = node.getParent() instanceof TabGroupNode ? node.getParent()! : node
+						const container = sibling.getParent()
+						return container instanceof TabSetNode
+							? {
+									target: container.getId(),
+									location: DockLocation.CENTER,
+									index: container.getChildren().indexOf(sibling) + 1,
+								}
+							: null
+					}
+				: undefined
 			void workspace.workbench
 				.open(
 					{ to: path, search: defaultParseSearch(url.search), hash: url.hash.slice(1) },
-					{ newInstance, target },
+					{
+						reuse: newInstance ? 'new' : 'preserve',
+						source: (anchor ?? active)?.handle,
+						destination,
+					},
 				)
 				.then(async (result) => {
 					workspace.check(result)
-					if (result.status !== 'committed') return undefined
-					if (anchor) {
-						const model = Model.fromJson(workspace.workbench.getLayout())
-						const node = model.getNodeById(anchor.id)
-						const sibling = node?.getParent() instanceof TabGroupNode ? node.getParent() : node
-						const parent = sibling?.getParent()
-						if (node instanceof TabNode && parent && parent.getId() === anchor.containerId) {
-							workspace.check(
-								await workspace.workbench.dispatch(
-									Actions.moveNode(
-										result.document.id,
-										parent.getId(),
-										DockLocation.CENTER,
-										parent.getChildren().indexOf(sibling!) + 1,
-									),
-								),
-							)
-						}
-					}
-					const current = workspace.workbench.getDocument(result.document.id)
-					if (current?.href !== result.document.href) return undefined
-					const title =
-						presentation?.title ??
-						(!result.reused && current.title === result.document.title
-							? defaultDocumentTitle(
-									publication.current,
-									new URL(result.document.href, location.origin),
-									basepath,
-								)
-							: undefined)
-					if (!title) return undefined
-					const updated = await workspace.workbench.dispatch(
-						Actions.updateNodeAttributes(result.document.id, {
-							name: title,
-							...(presentation ? { helpText: presentation.meta } : {}),
-						}),
+					if (
+						result.status !== 'applied' ||
+						!presentation ||
+						!workspace.workbench.getDocument(result.value.document.id)
 					)
-					workspace.check(updated)
-					return undefined
+						return
+					return workspace.check(
+						await workspace.workbench.dispatch(
+							Actions.updateNodeAttributes(result.value.document.id, {
+								...(!presentation.afterDocumentId
+									? {
+											config: {
+												...result.value.document.node.getConfig(),
+												pluxelTitle: {
+													href: result.value.document.href,
+													value: presentation.title,
+												},
+											},
+										}
+									: {}),
+								helpText: presentation.meta,
+							}),
+						),
+					)
 				})
 				.catch((cause: unknown) => workspace.report(cause))
 		}

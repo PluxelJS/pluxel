@@ -2,6 +2,20 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { StudioBridge } from '../shared/contracts.ts'
 
 const bridge: StudioBridge = {
+	onBeforeClose(decide) {
+		const request = () => {
+			void decide().then(
+				(allowed) => ipcRenderer.send('studio:close-result', allowed),
+				() => ipcRenderer.send('studio:close-result', false),
+			)
+		}
+		ipcRenderer.on('studio:before-close', request)
+		ipcRenderer.send('studio:close-ready', true)
+		return () => {
+			ipcRenderer.removeListener('studio:before-close', request)
+			ipcRenderer.send('studio:close-ready', false)
+		}
+	},
 	connect: () => ipcRenderer.send('studio:connect'),
 	openProject: () => ipcRenderer.invoke('studio:open-project'),
 	revealInFileManager: (input) => ipcRenderer.invoke('studio:reveal-in-file-manager', input),

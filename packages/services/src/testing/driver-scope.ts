@@ -2,6 +2,7 @@ import { Commands } from '../commands'
 import { type PluginNodeAddress, type RootContext } from '@pluxel/core'
 import { PluginTestOperationGate, type PluginTestTarget } from '@pluxel/core/internal/test'
 import { pluginConfigPatch } from '@pluxel/host/internal'
+import type { HostConfigMutation, HostOperationOptions } from '@pluxel/host'
 import { resolveContextCapability } from '@pluxel/core/host'
 import {
 	type ServiceCommandsTestDriver,
@@ -44,8 +45,10 @@ export function createServiceTestDriverScope<TTarget extends PluginTestTarget>(
 	const bodies = new Set<TrackedBody>()
 
 	const config: ServiceConfigTestDriver<TTarget> = Object.freeze({
-		patch: (target: TTarget, patch: Readonly<Record<string, unknown>>) =>
-			gate.runMutation('config.patch', () => pluginConfigPatch(ctx, resolveTarget(target), patch)),
+		patch: (target: TTarget, patch: HostConfigMutation, operationOptions?: HostOperationOptions) =>
+			gate.runMutation('config.patch', () =>
+				pluginConfigPatch(ctx, resolveTarget(target), patch, operationOptions),
+			),
 	})
 
 	const fetch = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {

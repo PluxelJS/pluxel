@@ -28,6 +28,19 @@ export function repositoryTasks(definitions: Record<string, string | Task>) {
 		const base = defaults[name] ?? {}
 		const baseCache = typeof base.cache === 'object' ? base.cache : {}
 		const overrides = typeof task.cache === 'object' ? task.cache : {}
+		// A task's own outputs must be restorable into a clean checkout. Keep
+		// dependency artifacts tracked. Explicit input rules own their exclusions.
+		const outputInputs: NonNullable<Cache['input']> = []
+		for (const rule of overrides.input ? [] : (overrides.output ?? baseCache.output ?? [])) {
+			if (typeof rule === 'string') {
+				if (!rule.startsWith('!')) outputInputs.push(`!${rule}`)
+			} else if ('pattern' in rule && !rule.pattern.startsWith('!')) {
+				outputInputs.push({
+					...rule,
+					pattern: `!${rule.pattern}`,
+				})
+			}
+		}
 		const cache: Cache | false =
 			task.cache === false
 				? false
@@ -36,6 +49,7 @@ export function repositoryTasks(definitions: Record<string, string | Task>) {
 						...overrides,
 						input: [
 							{ auto: true },
+							...outputInputs,
 							{ pattern: 'tsconfig*.json', base: 'workspace' },
 							...(name === 'check-tests'
 								? [{ pattern: 'oxlint.config.ts', base: 'workspace' as const }]

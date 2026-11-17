@@ -11,7 +11,9 @@ import {
 /** Internal source schema assembly; authored files and source admission own validity. */
 export function createTypstExtensions(options?: { extensions?: Extensions }): Extensions {
 	const optionalBodies = flattenExtensions(options?.extensions ?? [])
-		.filter((extension) => ['typstSource', 'typstComponent'].includes(extension.name))
+		.filter((extension) =>
+			['typstSource', 'typstComponent', 'documentBlock'].includes(extension.name),
+		)
 		.map((extension) => extension.name)
 	return [
 		...createEditorExtensions(),

@@ -11,7 +11,7 @@ const { values } = parseArgs({
 		origin: { type: 'string' },
 		root: { type: 'string' },
 		instance: { type: 'string' },
-		executable: { type: 'string' },
+		'ws-endpoint': { type: 'string' },
 		artifacts: { type: 'string', default: '/tmp/pluxel-workbench-panels-browser' },
 	},
 })
@@ -41,7 +41,7 @@ const receipt = {
 }
 const command = promisify(execFile)
 async function inspect() {
-	const { stdout } = await command(
+	const { stdout, stderr } = await command(
 		process.execPath,
 		[
 			resolve(repository, 'packages/cli/bin/pluxel.mjs'),
@@ -58,7 +58,17 @@ async function inspect() {
 	const result = JSON.parse(stdout)
 	assert.equal(result.ok, true, JSON.stringify(result))
 	assert.equal(result.value.state, 'succeeded', JSON.stringify(result.value))
-	receipt.console.push({ runId: result.value.runId, hostEpoch: result.value.hostEpoch })
+	const accepted = stderr
+		.trim()
+		.split('\n')
+		.map((line) => JSON.parse(line))
+		.find((event) => event.event === 'accepted')
+	assert.ok(accepted?.receipt)
+	receipt.console.push({
+		receipt: accepted.receipt,
+		runId: result.value.runId,
+		hostEpoch: result.value.hostEpoch,
+	})
 	return result.value.value
 }
 async function check(name, run) {
@@ -66,10 +76,10 @@ async function check(name, run) {
 	receipt.checks.push(name)
 	console.log(`PASS ${name}`)
 }
-const browser = await chromium.launch({
-	headless: true,
-	...(values.executable ? { executablePath: values.executable } : {}),
-})
+const browser = await chromium.connect(
+	values['ws-endpoint'] ?? process.env.PLAYWRIGHT_WS_ENDPOINT ?? 'ws://127.0.0.1:3000',
+	{ exposeNetwork: '<loopback>' },
+)
 const context = await browser.newContext({
 	viewport: { width: 1440, height: 1000 },
 	colorScheme: 'light',
@@ -112,11 +122,8 @@ const heading = (region) =>
 async function select(region) {
 	const control = page.getByRole('button', { name: region.control, exact: true })
 	if ((await control.getAttribute('aria-pressed')) !== 'true') await control.click()
-	if (region.region !== 'left')
-		await page
-			.getByRole('tablist', { name: region.list, exact: true })
-			.getByRole('tab', { name: region.label, exact: true })
-			.click()
+	const tab = page.locator('.flexlayout__border_button').filter({ hasText: region.label })
+	if ((await tab.getAttribute('aria-selected')) !== 'true') await tab.click()
 	await expect(heading(region)).toBeVisible()
 }
 try {
@@ -138,6 +145,18 @@ try {
 	await page.goto(origin + basepath + studio.placement.path)
 	await expect(page.getByRole('textbox', { name: 'Report title', exact: true })).toBeVisible()
 	const documentUrl = page.url()
+	// Published panels are opt-in tools. Open them through the real inspector directory.
+	for (const region of regions) {
+		const inspector = page.locator('section[aria-label="当前插件信息"]')
+		if (!(await inspector.isVisible())) {
+			const control = page.getByRole('button', { name: '右侧面板', exact: true })
+			if ((await control.getAttribute('aria-pressed')) !== 'true') await control.click()
+			else await page.locator('.flexlayout__border_button').filter({ hasText: '插件面板' }).click()
+		}
+		await expect(inspector).toBeVisible()
+		await inspector.getByRole('button', { name: `打开 ${region.label}`, exact: true }).click()
+		await expect(heading(region)).toBeVisible()
+	}
 	await check(
 		'three real Content panels render without changing the active document URL',
 		async () => {
@@ -145,10 +164,14 @@ try {
 				await select(region)
 				await expect(page).toHaveURL(documentUrl)
 			}
-			const status = page.getByRole('tabpanel', { name: '渲染状态', exact: true })
+			const status = page
+				.locator('.plx-plugin-region__extension')
+				.filter({ has: heading(regions[1]) })
 			await expect(status).toContainText(before.snapshot.engines.join(' · '))
 			await expect(status).toContainText(before.snapshot.storageProvider)
-			const recent = page.getByRole('tabpanel', { name: '最近产物', exact: true })
+			const recent = page
+				.locator('.plx-plugin-region__extension')
+				.filter({ has: heading(regions[2]) })
 			for (const artifact of before.snapshot.artifacts)
 				await expect(recent).toContainText(artifact.title)
 			await expect(status.locator('.plx-documentOutline')).toBeHidden()
@@ -175,7 +198,7 @@ try {
 				await expect(heading(region)).toHaveCount(0)
 				assert.equal(await original.evaluate((node) => node.isConnected), false)
 				await control.click()
-				await expect(heading(region)).toBeVisible()
+				await select(region)
 				await expect(page).toHaveURL(documentUrl)
 			}
 		},
@@ -188,7 +211,7 @@ try {
 			for (const region of regions) await expect(heading(region)).toHaveCount(0)
 			for (const handle of prior)
 				assert.equal(await handle.evaluate((node) => node.isConnected), false)
-			await page.getByRole('tab', { name: studio.placement.title, exact: true }).click()
+			await page.goBack()
 			await expect(page).toHaveURL(documentUrl)
 			for (const region of regions) await select(region)
 			await page.screenshot({ path: resolve(artifacts, 'panels-returned.png') })
@@ -204,10 +227,11 @@ try {
 			await page.screenshot({ path: resolve(artifacts, 'applications.png') })
 			await page
 				.locator('.plx-workspace-navigation:visible')
-				.getByRole('button', { name: 'Packages', exact: true })
+				.locator('.plx-workspace-navigation__link')
+				.filter({ hasText: 'Packages' })
 				.click()
 			await expect(
-				page.getByRole('heading', { name: 'Managed plugin packages', exact: true }),
+				page.getByRole('heading', { name: 'Plugin packages', exact: true }),
 			).toBeVisible()
 			await expect(page.getByRole('button', { name: '左侧导航', exact: true })).toBeDisabled()
 			await expect(page.getByRole('button', { name: '左侧导航', exact: true })).toHaveAttribute(
@@ -216,11 +240,7 @@ try {
 			)
 			await page.locator('.plx-activity [aria-label="插件管理"]').click()
 			await expect(page).toHaveURL(origin + basepath + '/plugins')
-			await expect(
-				page
-					.locator('.plx-workspace-navigation:visible')
-					.getByRole('button', { name: '插件管理', exact: true }),
-			).toBeVisible()
+			await expect(page.getByRole('textbox', { name: '搜索插件', exact: true })).toBeVisible()
 			await expect(page.getByRole('tab', { name: '插件页面', exact: true })).toHaveCount(0)
 		},
 	)
@@ -241,5 +261,6 @@ try {
 	process.exitCode = 1
 } finally {
 	await writeFile(resolve(artifacts, 'receipt.json'), JSON.stringify(receipt, null, 2) + '\n')
+	await context.close()
 	await browser.close()
 }

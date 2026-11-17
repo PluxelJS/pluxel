@@ -1,0 +1,37 @@
+{
+	"name": "@pluxel-internal/plugin-market-worker-spike",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "vitest run tests/worker.test.ts",
+		"test:provenance": "vitest run probes/provenance.test.ts",
+		"test:crypto": "vitest run probes/crypto.test.ts",
+		"typecheck": "tsc --noEmit",
+		"db:generate": "drizzle-kit generate",
+		"db:migrate:local": "wrangler d1 migrations apply market-spike --local",
+		"build": "wrangler deploy --dry-run --outdir dist"
+	},
+	"dependencies": {
+		"capnweb": "0.12.0",
+		"drizzle-orm": "0.45.4",
+		"semver": "7.8.6",
+		"validate-npm-package-name": "8.0.0"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "5.20261103.1",
+		"@sigstore/bundle": "5.0.0",
+		"@sigstore/protobuf-specs": "0.5.0",
+		"@sigstore/tuf": "5.0.0",
+		"@sigstore/verify": "4.1.2",
+		"@types/node": "26.6.3",
+		"@types/semver": "7.7.1",
+		"@types/validate-npm-package-name": "4.0.2",
+		"drizzle-kit": "0.31.11",
+		"esbuild": "0.28.2",
+		"miniflare": "5.20261103.0-beta",
+		"typescript": "6.0.3",
+		"vitest": "5.1.0",
+		"wrangler": "4.157.0"
+	},
+	"packageManager": "pnpm@11.28.10"
+}

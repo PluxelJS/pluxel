@@ -2,8 +2,6 @@ import {
 	BasePlugin,
 	Plugin,
 	definePluginRef,
-	pluginDefinitionAddressOf,
-	pluginNodeAddressOf,
 	withCoreInternalTestHost,
 } from '@pluxel/core/internal/test'
 import { requirePluginService } from '@pluxel/core/internal'
@@ -119,8 +117,8 @@ describe('static optional Plugin integration', () => {
 
 			const update = registry.beginUpdate({ reason: 'core-test' })
 			update.setProviderDefault(
-				pluginDefinitionAddressOf(AbstractOptionalProvider),
-				pluginNodeAddressOf(ConcreteAbstractOptionalProvider),
+				AbstractOptionalProvider.definitionAddress(),
+				ConcreteAbstractOptionalProvider.nodeAddress(),
 			)
 			const prepared = update.prepare()
 			const result = await prepared.commit()
@@ -130,7 +128,7 @@ describe('static optional Plugin integration', () => {
 			expect(abstractOptionalSetups).toBe(0)
 
 			const cleanup = registry.beginUpdate({ reason: 'core-test' })
-			cleanup.setProviderDefault(pluginDefinitionAddressOf(AbstractOptionalProvider), null)
+			cleanup.setProviderDefault(AbstractOptionalProvider.definitionAddress(), null)
 			const cleanupResult = await cleanup.commit()
 			expect(cleanupResult.ok).toBe(true)
 		})

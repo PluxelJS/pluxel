@@ -13,6 +13,11 @@ export async function createServiceTestApplication(
 	options: ServiceInternalTestHostOptions = {},
 	internal: ServiceInternalTestRootOptions = {},
 ): Promise<PluginHost> {
+	for (const key of Object.keys(options))
+		if (
+			!['name', 'runtime', 'policy', 'config', 'services', 'management', 'workbench'].includes(key)
+		)
+			throw new TypeError(`[pluxel/test] unsupported option ${key}`)
 	const withWorkbench = options.workbench ?? false
 	const withManagement = options.management ?? withWorkbench
 	if (typeof withWorkbench !== 'boolean' || typeof withManagement !== 'boolean') {
@@ -81,9 +86,10 @@ export async function createServiceTestApplication(
 	)
 	return createHost({
 		plugins: [],
-		config: { name: 'test', ...options.config },
 		services,
-		state: options.state,
-		configRecords: options.configRecords,
+		name: options.name ?? 'test',
+		runtime: options.runtime,
+		policy: options.policy,
+		config: options.config,
 	})
 }

@@ -1,29 +1,30 @@
 ---
 packages:
-  '@pluxel/host': minor
+  '@pluxel/core': minor
+  '@pluxel/host': major
   '@pluxel/services': major
-  '@pluxel/workbench': minor
-  '@pluxel/host-vite': minor
-  '@pluxel/rolldown': minor
-  '@pluxel/test': minor
-  '@pluxel/create': patch
+  '@pluxel/workbench': major
+  '@pluxel/host-vite': major
+  '@pluxel/rolldown': major
 ---
 
-# Replicate the Host saved configuration layer
+# Use shared files for saved state
 
-Deployments can configure one fixed writer and authenticated replicas for a scope
-and application artifact. Each atomic config document stores its history, global
-sequence and original SuperJSON saved body together. Writer mutations require the
-version originally read by the caller; stale writes and replica writes are rejected
-before persistence or compound fork cleanup. Management, Workbench and the dev
-console expose and preserve this version without automatically retrying a conflict.
+Remove `configSync`, writer/replica roles, authenticated replication endpoints,
+history/sequence versions, and the corresponding expected-version arguments and
+Management/Workbench version fields. Host saved configuration uses a version 4
+ordinary document. Previous replication documents and TinyBase Host envelopes need
+explicit offline conversion; startup does not silently reinterpret or reset them.
 
-Replicas validate complete candidate snapshots, commit once, then publish normalized
-values and notify running Plugins. Missing fields are deleted; local initial/file/env
-layers remain authoritative. Unknown owners stay deferred until real admission.
-A valid cache permits offline startup; a replica without one waits for first sync.
-Business Stores, Vault, logs, layout, code and runtime policy are not replicated.
+Managed TinyBase Stores and encrypted Vault snapshots reload external file changes.
+Host configuration validates and applies changed saved documents through its normal
+configuration lifecycle. Incoming snapshots are not saved back unchanged; invalid
+updates preserve the last valid in-memory state and report their failure.
 
-Version 4 documents require explicit conversion when enabling replication over
-older data. Network failures retain confirmed state; persistence and application
-failures remain visible and are not silently retried.
+The Host document adapter can optionally subscribe to external namespace changes.
+Shared visibility depends on the actual filesystem backend. Whole-snapshot writes
+may overwrite concurrent changes; cross-instance conditional writes, merging and
+transactions are not provided. Use a database when those guarantees are required.
+
+Vault continues to use Core FS directly. Its record revisions and conditional writes
+remain local to one instance; externally loaded revisions may repeat or decrease.

@@ -33,6 +33,7 @@ export type WorkbenchContentContract = Readonly<{
 
 export type WorkbenchContentRuntimeBinding = Readonly<{
 	load?: () => unknown | Promise<unknown>
+	subscribe?: (changed: () => void) => Disposable
 	actions?: ReadonlyMap<string, WorkbenchContentActionHandler>
 }>
 
@@ -130,6 +131,7 @@ export function validateWorkbenchContentBinding(
 	const expected = [
 		...(contract.actions.size === 0 ? [] : ['actions']),
 		...(contract.data.size === 0 ? [] : ['load']),
+		...(contract.data.size > 0 && Object.hasOwn(binding, 'subscribe') ? ['subscribe'] : []),
 	].sort()
 	const actual = Object.keys(binding).sort()
 	if (!sameStrings(expected, actual)) {
@@ -140,6 +142,10 @@ export function validateWorkbenchContentBinding(
 	const load = binding.load
 	if (contract.data.size > 0 && typeof load !== 'function') {
 		throw new TypeError('[workbench] Content factory load must be a function')
+	}
+	const subscribe = binding.subscribe
+	if (Object.hasOwn(binding, 'subscribe') && typeof subscribe !== 'function') {
+		throw new TypeError('[workbench] Content factory subscribe must be a function')
 	}
 	let actions: ReadonlyMap<string, WorkbenchContentActionHandler> | undefined
 	if (contract.actions.size > 0) {
@@ -160,6 +166,9 @@ export function validateWorkbenchContentBinding(
 	}
 	return Object.freeze({
 		...(load === undefined ? {} : { load: load as () => unknown | Promise<unknown> }),
+		...(subscribe === undefined
+			? {}
+			: { subscribe: subscribe as (changed: () => void) => Disposable }),
 		...(actions === undefined ? {} : { actions }),
 	})
 }

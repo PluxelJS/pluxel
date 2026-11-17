@@ -118,6 +118,7 @@ describe('Workbench UI HTML rendering', () => {
 		try {
 			const detach = await plugin.api!.pluxelHost.attach({
 				profile: 'development',
+				startup: { root: fixture.getPath(), mode: 'development', env: {}, bindings: {} },
 				host,
 				server,
 				semantics: {} as never,

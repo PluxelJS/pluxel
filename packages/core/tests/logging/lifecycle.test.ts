@@ -4,11 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
 import { configure, getConfig, reset, type Config, type LogRecord } from '@logtape/logtape'
-import { BasePlugin, Plugin, pluginNodeAddressOf, type RootContext } from '@pluxel/core'
+import { BasePlugin, Plugin, type RootContext } from '@pluxel/core'
 import { logtape, zenfs } from '@pluxel/core/config'
 import { Passthrough } from '@pluxel/core/fs'
 import { createCoreContextHost, prepareCoreContext } from '@pluxel/core/host'
-import { requireTinyBaseHost } from '@pluxel/core/internal'
+import { requireHostDocuments } from '@pluxel/core/internal'
 import {
 	Logging,
 	createPluginLogPolicyStore,
@@ -36,7 +36,7 @@ it('prepares Core-only logging once and disposes its native resources with the r
 		},
 	})
 	const shape = createCoreContextHost({
-		logger: logtape(() => {
+		logtape: logtape(() => {
 			factories++
 			void prepareCoreContext(root)
 			return { sinks: { native: sink }, loggers: [{ category: ['pluxel'], sinks: ['native'] }] }
@@ -78,7 +78,7 @@ it.each(['resolved', 'rejected'] as const)(
 			},
 		})
 		const root = createCoreContextHost({
-			logger: logtape(
+			logtape: logtape(
 				{ sinks: { native: sink }, loggers: [] },
 				{
 					policyLoadFailure: 'fail',
@@ -170,18 +170,16 @@ it('keeps logging through service and Plugin cleanup, and commits policy before 
 	try {
 		const host = await createHost({
 			plugins: [LifecycleLogger],
-			config: {
-				storage,
-				logger: logtape(
+			runtime: {
+				zenfs: storage,
+				logtape: logtape(
 					{
 						sinks: { native: sink },
 						loggers: [{ category: ['pluxel'], sinks: ['native'], lowestLevel: 'trace' }],
 					},
 					{
 						policyStore(root) {
-							const store = createPluginLogPolicyStore(
-								requireTinyBaseHost(root).documents('logging'),
-							)
+							const store = createPluginLogPolicyStore(requireHostDocuments(root, 'logging'))
 							return {
 								load: store.load,
 								async save(profile, snapshot) {
@@ -214,7 +212,7 @@ it('keeps logging through service and Plugin cleanup, and commits policy before 
 				}),
 			],
 		})
-		await host.startNode(pluginNodeAddressOf(LifecycleLogger))
+		await host.startNode(LifecycleLogger.nodeAddress())
 		host.ctx.logging!.policy.setDefaultLevel('debug')
 		const closing = host.close()
 		try {
@@ -239,11 +237,11 @@ it('keeps logging through service and Plugin cleanup, and commits policy before 
 		for (const event of expected) expect(events.indexOf(event)).toBeLessThan(disposal)
 		expect(events.filter((event) => event === 'native disposed')).toHaveLength(1)
 		expect(getConfig()).toBeNull()
-		const reopened = await createHost({ plugins: [], config: { storage }, services: [] })
+		const reopened = await createHost({ plugins: [], runtime: { zenfs: storage }, services: [] })
 		try {
-			const raw = await requireTinyBaseHost(reopened.ctx)
-				.documents('logging')
-				.getText('plugin-policy/pluxel.json')
+			const raw = await requireHostDocuments(reopened.ctx, 'logging').getText(
+				'plugin-policy/pluxel.json',
+			)
 			expect(parsePluginLogPolicySnapshot(raw!).defaultLevel).toBe('debug')
 		} finally {
 			await reopened.close()
@@ -283,8 +281,8 @@ it('rolls back native resources when strict policy preparation fails before serv
 	await expect(
 		createHost({
 			plugins: [],
-			config: {
-				logger: logtape(
+			runtime: {
+				logtape: logtape(
 					{ sinks: { native: sink }, loggers: [] },
 					{
 						policyLoadFailure: 'fail',

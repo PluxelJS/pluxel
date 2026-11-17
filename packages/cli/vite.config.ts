@@ -2,7 +2,7 @@ import packConfig from './tsdown.config'
 import { defineConfig } from 'vite-plus'
 import { repositoryTasks } from '../../scripts/vite-tasks'
 
-const tasks = repositoryTasks({
+const tasks = {
 	compile: {
 		command: 'vp pack',
 		dependsOn: ['@pluxel/rolldown#compile'],
@@ -83,27 +83,32 @@ const tasks = repositoryTasks({
 		],
 	},
 	'check-types': 'tsc --noEmit --pretty false',
-})
-const compile = tasks.compile!
-const compileCache = typeof compile.cache === 'object' ? compile.cache : {}
+} satisfies Parameters<typeof repositoryTasks>[0]
+const compile = tasks.compile
+const compileCache = compile.cache
 
 export default defineConfig({
 	pack: packConfig,
 	run: {
-		tasks: {
+		tasks: repositoryTasks({
 			...tasks,
 			'compile-code': {
 				...compile,
 				cache: {
 					...compileCache,
+					input: [...compileCache.input, '!dist/**'],
 					output: ['dist/**', '!dist/resources/**', '!dist/source-fingerprint'],
 				},
 			},
 			compile: {
 				command: 'node scripts/copy-development-resources.mjs',
 				dependsOn: ['compile-code'],
-				cache: { ...compileCache, output: ['dist/resources/**', 'dist/source-fingerprint'] },
+				cache: {
+					...compileCache,
+					input: [...compileCache.input, '!dist/resources/**', '!dist/source-fingerprint'],
+					output: ['dist/resources/**', 'dist/source-fingerprint'],
+				},
 			},
-		},
+		}),
 	},
 })

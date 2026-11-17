@@ -2,7 +2,7 @@ import { registerHooks } from 'node:module'
 import { realpath } from 'node:fs/promises'
 import { dirname, extname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { pluginDefinitionAddressOf, type PluginConstructor } from '@pluxel/core'
+import { type PluginConstructor } from '@pluxel/core'
 import { collectPluginModuleExports } from './module'
 import {
 	assertSharedRuntimeAdmission,
@@ -173,7 +173,7 @@ export async function createNativeSourceLoader(options: {
 			const owner = installedPackageFacts(file)
 			if (!owner) continue
 			for (const plugin of collectPluginModuleExports(await import(module))) {
-				const entry = pluginDefinitionAddressOf(plugin).entry
+				const entry = plugin.definitionAddress().entry
 				if (
 					(entry.kind === 'source-entry' &&
 						typeof owner.manifest.pluxel?.artifactRoot === 'string') ||
@@ -206,7 +206,7 @@ export async function createNativeSourceLoader(options: {
 		async recordFixed(plugins: readonly PluginConstructor[]): Promise<void> {
 			for (const plugin of plugins) {
 				if (readLoadedPluginModule(plugin)) continue
-				const definition = pluginDefinitionAddressOf(plugin)
+				const definition = plugin.definitionAddress()
 				if (definition.entry.kind === 'source-entry') continue
 				const specifier =
 					definition.entry.packageName +

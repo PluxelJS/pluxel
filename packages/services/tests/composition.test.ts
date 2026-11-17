@@ -6,7 +6,7 @@ import { ElysiaRuntime } from '@pluxel/services/internal'
 import { defineCommand, Result } from '@pluxel/commands'
 import { obj } from '@pluxel/commands/typebox'
 import { Commands, commands } from '../src/commands'
-import { BasePlugin, Plugin, pluginDefinitionAddressOf } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import {
 	defineContextCapability,
 	installOwnerViewCapability,
@@ -48,7 +48,7 @@ class SearchConsumer extends BasePlugin {
 	}
 }
 const node = (plugin: typeof Credentials | typeof SearchConsumer) => ({
-	definition: pluginDefinitionAddressOf(plugin),
+	definition: plugin.definitionAddress(),
 	variant: 'default' as const,
 })
 
@@ -65,8 +65,8 @@ describe('independently composed official and external services', () => {
 			// Preparation order follows declared capabilities, not the preset's array order.
 			const host = await createHost({
 				plugins: [],
-				config: { logger: logtape() },
 				services: services.toReversed(),
+				runtime: { logtape: logtape() },
 			})
 			const logging = resolveContextCapability(host.ctx, Logging)
 			try {
@@ -122,17 +122,13 @@ describe('independently composed official and external services', () => {
 			},
 		})
 		const config = {
-			storage: {
+			zenfs: {
 				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 				durableMounts: ['/'],
 			},
 		}
 		const plugins = [Credentials, SearchConsumer]
-		const first = await createHost({
-			plugins,
-			config,
-			services: [vault(), search],
-		})
+		const first = await createHost({ plugins, services: [vault(), search], runtime: { ...config } })
 		try {
 			expect('database' in first.ctx).toBe(false)
 			await first.startNode(node(Credentials))
@@ -143,7 +139,7 @@ describe('independently composed official and external services', () => {
 		}
 		expect(events).toEqual(['search closed'])
 		// Reopen the same encrypted storage after shutdown, before any debounce could have run.
-		const reopened = await createHost({ plugins: [], config, services: [vault()] })
+		const reopened = await createHost({ plugins: [], services: [vault()], runtime: { ...config } })
 		try {
 			const state = await reopened.ctx.vaultAdmin!.describe()
 			expect(state).toMatchObject({ present: true, unlocked: true })
@@ -152,7 +148,7 @@ describe('independently composed official and external services', () => {
 			await reopened.close()
 		}
 
-		const second = await createHost({ plugins, config, services: [search] })
+		const second = await createHost({ plugins, services: [search], runtime: { ...config } })
 		try {
 			expect(second.ctx.vault).toBeUndefined()
 			expect(() => second.ctx.require(Vault)).toThrowError(/vault/)
@@ -171,7 +167,7 @@ it('installs an empty command catalog and withdraws Plugin-owned registrations o
 		const catalog = host.ctx.require(Commands)
 		expect(catalog.list()).toEqual([])
 		const address = {
-			definition: pluginDefinitionAddressOf(CommandPublisher),
+			definition: CommandPublisher.definitionAddress(),
 			variant: 'default' as const,
 		}
 		await host.startNode(address)
