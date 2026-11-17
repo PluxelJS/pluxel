@@ -1,73 +1,54 @@
 # Plugin Catalog Groups
 
-Management 拥有插件目录分组；它是管理布局，不是插件能力、生命周期、provider selection 或 Workbench placement。
-用户操作和文档格式见 [`docs/workbench/plugin-groups.md`](../docs/workbench/plugin-groups.md)。
-
-修改自动组规则读 [Automatic grouping](#automatic-grouping)，修改保存/恢复读 [Explicit document](#explicit-document)，修改客户端提交读 [Management protocol](#management-protocol)。所有排序与布局都以 committed definition facts 为输入，不改变运行图。
+Management 将 committed Plugin declarations 投影为管理目录分组。分组只改变管理布局，运行图和 Workbench placement 各自保持独立。用户操作与文件格式见[插件分组](../docs/workbench/plugin-groups.md)。
 
 ## Ownership and projection
 
-- `@Plugin` 和 host route 不声明分类规则。Native/Vite 共用 Management service。
-- Management disabled 不创建 service、不读取或写入分组文档。
-- coordinator 的一次 pinned committed view 同时投影 statuses、summary 和 declaration facts；不读取 unpublished HMR draft。
-- 分类以 definition family 为单位，所有 default/fork node 共用位置。读取 orphan reference 不 intern slot、不创建 Context 或资源。
-- `catalog-groups.ts` 只计算布局；`PluginCatalogLayoutService` 拥有文档校验、串行读写和 persistence IO。
-- section basis 只有 `dependency`、`shared`、`manual`。包名、execution、recentUpdate、running、autoStart 和实时 provider selection
-  不参与自动归类。声明中的 required 包含 reachable Part requirements；optional integration 不参与分类。
+一次 pinned committed view 同时提供 plugins、summary 和 declarations。Native/Vite 共用 Management service；disabled 时不创建 service 或读写文档。
+
+分组以 definition family 为单位，default/fork nodes 共用位置，orphan reference 读取不创建 slot/Context。`catalog-groups.ts` 负责纯布局算法，`PluginCatalogLayoutService` 负责文档验证和串行 IO。
+
+Section basis 只有 `dependency`、`shared`、`manual`。自动分类只使用声明的 required edges，包括 reachable Part requirements；optional integration、实时 provider selection、包名和运行状态不参与。
 
 ## Automatic grouping
 
-人工指定成员和显式 ungrouped 成员先从自动候选集合移除。候选 definition 的 required edge 指向存在的 concrete definition；
-抽象 requirement 指向候选中声明该 `provides` 的全部实现。缺失依赖没有虚构节点，不读取当前选中的 provider。
+人工 group 和显式 ungrouped 成员先移出候选。Required edge 指向已存在 concrete definition，抽象 requirement 指向候选中全部 `provides` 实现，缺失依赖不产生虚构节点。
 
-算法先用非递归 SCC condensation 合并依赖环，再在 DAG 上从没有 consumer 的入口向依赖传播 owner。
-一个 component 只存唯一入口或 shared 标记；来自同一入口的 diamond 不算共享。被不同入口到达的 component 及其下游依赖
-归入共享集合，不能把这些入口合成一个业务组。环的 canonical 最小 definition reference 作为其稳定代表。
+算法用非递归 SCC condensation 合并环，再从 DAG 中没有 consumer 的入口向依赖传播 owner。Component 只记录唯一入口或 shared：同一入口的 diamond 保持专属，不同入口共同到达的 component 及其下游归共享集合，入口本身保持独立。环以 canonical 最小 definition reference 为稳定代表。
 
-业务入口和专属依赖形成一个组，名称来自入口 displayName；共享集合名为“共享依赖”。只有至少两个 definition 的自动集合才
-生成组，单个 definition（即使有多个 fork）保持平铺。空 catalog 返回空 sections；全部无关联时 UI 使用完整的“全部插件”列表。
+入口和专属依赖形成以入口 displayName 命名的组，共享集合名为“共享依赖”。至少两个 definitions 才成组，多个 forks 仍只算一个 definition。空 catalog 返回空 sections，无关联时 UI 展示完整“全部插件”。
 
-图遍历和 owner 传播为 O(V + E)，canonical/reference 和展示排序额外需要 O(V log V)。不为每个入口分别遍历整张依赖图。
-自动结果不落盘、不冻结初次发现的 catalog；新增、移除或 required declaration 更新后在下一次 snapshot 重算。
+遍历与传播为 O(V + E)，reference/展示排序另需 O(V log V)。结果按每次 snapshot 的当前 catalog 重算，无需持久化或逐入口重复遍历。
 
 ## Explicit document
 
-唯一文档是 Core 内部 `requireHostDocuments(root, 'management')` 中的 `plugin-groups.json`，通过 root 私有适配借用同一 FS backing，严格 version 1，保存可读 canonical definition references。
-完整 shape、缺省行为和示例由用户文档定义。无文件与空文档等价；读取不写默认文件。旧布局文件不读取、不迁移。
+`requireHostDocuments(root, 'management')` 提供唯一 `plugin-groups.json`，借用 Core FS backing，经 Host document storage 提交。严格 version 1 保存 canonical definition references。无文件与空文档等价，读取不写默认文件。
 
-人工 group 的 ID、名称、成员顺序和空组独立于当前 catalog 存活。未知但语法有效的 reference 保持休眠；definition 回归时恢复。
-同一 reference 只能出现在一个 group 或 ungrouped 中；任何重复 membership、未知字段、非法 reference 或重复 ID 都拒绝。
-文件最多 2,000,000 个 UTF-16 code units、1000 groups、10000 references。输出格式化为带缩进和末尾换行的 JSON。
+人工 ID、名称、顺序和空组独立于 catalog 存活。未知但有效的 reference 保持休眠，definition 回归时恢复。重复 membership/ID、未知字段和非法 reference 均拒绝。限额为 2,000,000 UTF-16 code units、1000 groups、10000 references；输出带缩进和末尾换行。
 
-service 每次操作读取已确认文档文本，文本未变不重复 parse。读写在同一 host 内串行；修改校验成功才替换 active document。
-磁盘文件无效时请求明确失败，不覆盖文件；修复或恢复默认后下一次请求可成功，不把失败缓存为永久 rejected ready promise。
-文档 `put(key, text)` 通过 [TinyBase](TINYBASE.md) 的串行 candidate/confirm 提交，成功后才发布新内存状态。没有额外 watcher、timer 或平行文件后端。
-外部文件作者应原子替换；多个进程/编辑器之间不承诺锁或 compare-and-swap，完整布局保存采用最后成功写入结果。
+Service 在同一 Host 内串行读取和修改，文本未变不重新 parse。`put(key, text)` 通过 [TinyBase](TINYBASE.md) 的 candidate/confirm 提交，成功才替换 active document。无效磁盘文件保留并明确报错，修复后下次请求可恢复。外部编辑应原子替换；跨进程完整保存采用最后成功写入结果。
 
 ## Management protocol
 
-Protocol major 7：
+Wire 版本由 [`RUNTIME_MANAGEMENT_PROTOCOL_MAJOR`](../packages/services/src/management/web/protocol.ts) 定义。分组接口为：
 
-- `catalog.snapshot()` 返回一次 pinned catalog 的 plugins/summary 和当前解析的 sections。
-- `catalog.updateLayout({ sections })` 提交完整人工布局；section 包含 `sectionId/name/nodes`，允许创建、改名和删除。
-- `catalog.updateLayout({ sections: null })` 清除人工布局并重新计算自动分组。
+- `catalog.snapshot()`：返回同一次 pinned catalog 的 plugins/summary 和当前 sections。
+- `catalog.updateLayout({ sections })`：提交完整人工布局，每项包含 `sectionId/name/nodes`。
+- `catalog.updateLayout({ sections: null })`：清除人工布局，恢复自动分组。
 
-完整布局保存会固定当前显示的组；当前未提交的 node 成为显式 ungrouped。尚未出现的新 definition 继续自动归类。
-存活人工组的 orphan 成员保留；删除组同时删除该组的休眠 membership。新的自动组在首次人工保存时获得人工身份；客户端必须应用
-mutation 返回的 sections，不能假设服务端 ID 与提交值一致。人工文件 key 与 wire section ID 通过可逆编码隔离；client 回传已有
-opaque ID，创建组使用 `manual:` 加 UUID。分组 UI 与文件编辑共享同一份 authority。
+完整保存固定当前显示组，未提交的当前 node 成为显式 ungrouped，未来出现的 definition 继续自动分类。存活人工组保留 orphan，删除组删除其休眠 membership。自动组首次保存后取得人工身份，客户端使用 mutation 返回的 sections。
 
-mutation 拒绝未知 node、重复 node 和把同一 family 的 forks 分散到不同组或部分留在 ungrouped 的输入。
-提交失败仍报告 `persistence_failed / state: unknown`；底层操作也可能在提交后遇到后续失败，客户端需重新读取 authority。
+文件 key 与 wire section ID 通过可逆编码隔离，客户端回传已有 opaque ID，创建组使用 `manual:` + UUID。Mutation 拒绝未知/重复 node、将 family 的 forks 分散到不同组或部分留在 ungrouped 的输入。
+
+提交失败返回 `persistence_failed / state: unknown`。写入可能已发生，客户端重新读取 authority 决定最终状态。UI 和文件编辑共用同一份文档。
 
 ## 实现入口
 
-- `packages/services/src/management/services/management/PluginCatalogLayoutService.ts`：文件 authority、串行操作与失败恢复。
-- `packages/services/src/management/` 下的 catalog projection/grouping：从 pinned view 派生布局。
-- `packages/services/tests/management/plugin-catalog-layout.test.ts` 与 `management/plugin-catalog-groups.test.ts`：存储与纯算法回归。
+- `packages/services/src/management/services/management/PluginCatalogLayoutService.ts`：文档、串行 IO 与失败恢复。
+- 同目录 `catalog-groups.ts`：family 投影和自动分组。
+- `packages/services/tests/management/plugin-catalog-layout.test.ts`：存储、修改与恢复。
+- `packages/services/tests/management/management/plugin-catalog-groups.test.ts`：纯算法；同目录 `plugin-catalog-projection.test.ts`：committed projection。
 
 ## Verification
 
-覆盖纯算法的空集合、无关系插件、链、diamond、共享依赖传播、多个 provider、缺失依赖、环、长链、顺序独立性；
-service 的 disabled、零默认写入、文件 round-trip/live edit、reset、orphan、fork、无效输入、修复恢复、失败写入和串行修改；
-Management portable validation 与 UI 分组操作、服务端 identity 接纳和无分组平铺。
+算法覆盖空集合、无关系、链、diamond、共享传播、多 provider、缺失依赖、环、长链和顺序独立性。Service 覆盖 disabled、零默认写入、round-trip/live edit、reset、orphan/fork、坏文件修复、写入失败与串行修改。Management/UI 覆盖 portable validation、服务端 identity 接纳、分组操作与平铺。

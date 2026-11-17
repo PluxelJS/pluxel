@@ -1,226 +1,112 @@
 # 仓库治理：依赖、导出与验证
 
-修改模块依赖先读[依赖方向](#依赖方向)；移动 package 读 [Workspace 与目录](#workspace-与目录)；修改 manifest 读[依赖与版本](#依赖与版本)；增加入口读[导出](#导出)。仓库验证由 `vp run governance:check` 与 `vp run verify` 拥有，发布流程见 [RELEASING](RELEASING.md)。
+本页维护 workspace、依赖和公开入口规则；执行入口是 `vp run governance:check` 与 `vp run verify`。任务编排见[工作区工具链](../docs/development/workspace-toolchain.md)，发布见 [Releasing](RELEASING.md)。
 
 ## 依赖方向
 
 ```text
-Core <- Host <- Services（基础能力、管理、日志、官方组合）
+Core <- Host <- Services（能力、管理、官方组合）
           ^         ^
           |         +-- Workbench（展示、会话、UI）
           +-- Host-vite <- Services /vite
 Commands <- Services
 ```
 
-箭头从消费者指向提供者；图只画模块职责，不把 npm 包视作严格的分层单位。
-Services 的 `/preset`、`/vite` 拥有官方运行时与 Vite 附件组合，可以选择 Workbench；
-Workbench 只消费 Services 的管理、HTTP 等领域叶子入口，不能反向导入这两个组合入口。
-Services 的管理、日志和基础模块也不能依赖组合入口。Host-vite 只拥有 Vite 执行环境与更新协议，不选择官方服务。
+箭头从消费者指向提供者，描述具体模块职责。Services 的 `/preset`、`/vite` 选择官方组合与可选 Workbench；Workbench 消费 Services 的管理、HTTP 等叶子入口。Services 叶子与 Workbench 都不反向加载组合入口。Host-vite 拥有 Vite 执行和更新协议，服务选择归应用。
 
-包级 `Services ↔ Workbench` 引用表示两个发布单元之间存在不同方向的模块引用，不等于模块初始化循环，
-更不等于生命周期互相拥有。判断时分别检查：具体入口是否读取尚未初始化的值、可选入口是否被无条件加载、
-资源是否由唯一 Host/owner 创建和释放。不能为消除包图中的箭头而创建没有独立职责的新包。
+包级 Services ↔ Workbench 引用需按入口求值、可选依赖加载和资源所有权检查。发布包之间允许不同方向的叶子引用；拆包应有独立职责。必须保持 Context 无 Core/Host/IO/lifecycle、Core host-free、config persistence 归 Host。Host `/sources` 是纯声明，Native 与 Host-vite 消费同一来源契约和 Core lifecycle。
 
-`@pluxel/rolldown` 是 build-time tooling，消费 Core 的 lowering ABI 和 federation contract；
-CLI 按命令可选消费它，Host-vite 消费其编译实现。Core 不通过发布依赖反向引入构建工具。
-`@pluxel/context` 的源码复用和下文的测试依赖是开发图，不是上述发布图的一层。
-
-必须保持：context 不依赖 Core/Host/IO/lifecycle、core host-free；Host 的 `/sources` 提供纯声明，Native 启动扫描与
-Host-vite 持续观察消费同一来源发现契约，来源接入不复制 lifecycle；config persistence 不进入 core。
-CLI 是按命令加载的编排层，不作为 runtime 或 toolchain library API 的转发门面。
+Rolldown 是 build-time tooling，消费 Core lowering ABI 与 federation contract；Host-vite 使用其编译实现，CLI 按命令加载。CLI 负责编排，库 API 由原领域包直接提供。
 
 ## Workspace 与目录
 
-`pnpm-workspace.yaml` 是唯一 workspace 成员和外部版本政策来源；根 `package.json` 不重复
-`workspaces`。目录表达 package 的角色，而不是团队或功能名称：
+`pnpm-workspace.yaml` 是 workspace 成员与外部版本政策的唯一来源，根 manifest 不重复 `workspaces`。
 
-```text
-packages/*              框架库、contract、adapter 与可含配套 /plugins 的服务 package
-plugins/*               可独立装配的具体插件 package
-plugins/<domain>/*      共享明确能力链的具体插件 package
-projects/*              必须随框架一起演进的可运行维护者宿主
-vendor/*                明确纳入的上游源码；不套用第一方目录语义
-```
+| 目录                              | 角色                                                                |
+| --------------------------------- | ------------------------------------------------------------------- |
+| `packages/*`                      | 框架库、contract、adapter、服务包；服务可有显式 `/plugins` 配套入口 |
+| `plugins/*`、`plugins/<domain>/*` | 可独立装配的具体 Plugin package；领域目录只负责分类                 |
+| `projects/*`                      | 必须随框架演进的维护者宿主                                          |
+| `vendor/*`                        | 显式接入的上游源码，遵循其自身目录语义                              |
 
-判断依据是所有权而不是“是否导入 Pluxel”：contract 或 adapter 即使依赖 runtime 类型，只要不声明
-具体 `@Plugin`，仍可位于 `packages/*`；服务包可通过显式 `./plugins` 入口提供配套插件，基础服务入口不反向加载该入口。独立分发的具体插件 package 位于 `plugins/*` 或
-`plugins/<domain>/*`。领域目录只表达仓库分类，不创建隐式依赖、聚合插件或新的公开入口。Pluxel
-仓库内可运行 host 位于 `projects/*`，当前只保留维护者宿主。
-跨运行环境的应用实验维护在独立的 [Pluxel Lab](https://github.com/PluxelJS/lab)，拥有自己的锁文件、CI 和验证记录。
-框架的单元测试、兼容性测试和回归夹具继续由各包维护。
-官方浏览器 Shell 属于 `packages/workbench/shell/`，拥有独立 TypeScript 与 Vitest 配置；它随 Workbench 编译成静态资源，
-不另建 workspace 包。仅用于 Shell 构建的依赖放在 Workbench devDependencies，不扩大 SDK 的安装依赖。产品项目使用独立 workspace；其中可按
-领域需要使用 `platforms/*` 隔离外部平台 capability 与直接 bridge。
+contract/adapter 即使引用 runtime 类型仍可位于 packages；独立具体 Plugin 位于 plugins。服务基础入口保持独立，配套插件从 `/plugins` 选择。框架回归夹具归各包，跨运行环境的应用实验归独立 [Pluxel Lab](https://github.com/PluxelJS/lab)，由其拥有 lockfile、CI 和验收。产品仓库可按需用 `platforms/*` 隔离平台能力与 bridge。
+
+官方 Shell 位于 `packages/workbench/shell/`，拥有 TypeScript 与 Vitest 配置，随 Workbench 编成静态资源。Shell 专用依赖放在 Workbench devDependencies。
 
 ## 依赖与版本
 
-根 package 只负责编排和共享质量工具，不声明 `dependencies`，也不直接依赖任何 workspace package（包括 vendor），
-避免根工具依赖扩大无关任务的输入范围。根工具通过 package script 运行其 owner 的入口。
-pnpm catalog 统一外部依赖的版本政策；每个 workspace 仍必须在自己的 `dependencies`、`devDependencies` 或 `peerDependencies` 中声明
-实际使用的包。hoist 只用于工具兼容和实例去重，不构成依赖声明。
+根 package 只负责编排和共享质量工具，不声明 dependencies，也不直接链接 workspace 包或 vendor。每包声明自身直接依赖，catalog 管版本政策，hoist 只处理工具兼容与实例去重。
 
-- semver-compatible 的第一方实现依赖使用 `workspace:^`，确保开发时链接当前源码，发布后允许同 major
-  的修复和功能版本；只有必须锁定同版本的 wrapper 使用 `workspace:*`。
-- 外部实现依赖使用 `catalog:` 或 `catalog:<name>`，普通发布版本优先 `^`；lockfile 固定实际解析版本。
-  pncat 是新增、更新、迁移、重新分组和清理 catalog 的唯一修改入口；不得分别手改 workspace catalog 与 package 引用。
-  Peer 宽范围表达兼容承诺，不能为统一安装版本而收窄；npm alias 在目标版本范围中使用 `^`。预发布、供应链
-  pin 和确有兼容约束的 selector override 可以保留精确值，理由由所属配置或治理规则维护。
-  Workbench Profile 的 MF Vite/runtime/SDK/React bridge 与 Mantine core/hooks 是精确兼容矩阵，
-  catalog 必须匹配 `packages/core/src/federation.ts`；升级时同步更新矩阵并重建所有 producer。
-  Cap’n Web 的 peer/dev 声明与 Host transport admission 同样要求精确版本，不能替换成兼容范围。
-  `@platformatic/vfs` 暂用 `^0.4.0`：0.5.0 被现有 no-downgrade 发布信任检查拦截，不为升级关闭检查。
-- CLI 生成的独立应用把发布版 `@pluxel/*`、React、工具链等范围放进自己的 catalog；生成的
-  workspace 之间仍逐包声明直接依赖。
-- standalone plugin 模板使用最小单 package pnpm workspace，让 catalog 与 `allowBuilds` 安全政策有明确
-  所有者；发布时 pnpm 把 catalog 引用转换为正常 semver 范围。
-- 独立仓库共同开发未发布源码时使用 `pluxel source`；项目提交 repository identity 和正常
-  catalog/semver，机器 checkout 路径只进入用户 registry 与 `.pluxel/` 代理。不得手写跨仓库 `link:`
-  override 或链接另一个 checkout 的 `node_modules`。
-- peer 表示必须与应用共享的运行时身份或平台兼容边界，例如 Core Context、Host 服务 token、Plugin constructor、
-  React Context 与编译器 lowering ABI。包自身拥有的解析器、文件监视器、查询缓存等实现使用 dependencies。
-  只有类型引用不构成必须使用 peer 的理由；发布声明仍需引用的包可以是 dependencies 或 peer，依据实际兼容与所有权选择，
-  不能直接降为 dev-only。不要按 `@pluxel/` 前缀机械迁移整个依赖表。
-- Plugin package 在源码中使用
-  `workspace:^` 消费可发布的 Core、服务和 provider contract，发布后由 pnpm 转换为各包对应的 semver 范围；本地构建/测试
-  副本同时以 `workspace:*` 放入 `devDependencies`，不得把 provider 放入普通 dependencies 形成第二份
-  Plugin identity。
-- 公开包不得要求 workspace-only provider。私有 provider 只允许作为 `*` optional peer，开发实现用指向同一
-  workspace 实际 package 目录的相对 `link:` devDependency；不承诺 registry 版本，也不自动安装。发布的 JavaScript
-  和 declarations 不得加载或引用该私有模块。无版本私有包的 `workspace:` 开发依赖也会使 pnpm pack 失败；
-  不为打包添加虚构版本、发布私有包或改写运行时依赖。Vite Task 不将 `link:` 纳入 workspace 依赖图，
-  consumer 的构建、测试和类型检查须在所属 `vite.config.ts` 显式依赖该开发 provider 的 `compile` task。
-- 真正隔离在可选入口或条件加载后的集成可以标记 optional peer。optional 只影响安装要求，既不消除架构边，
-  也不允许无条件入口加载缺失的包。`devDependencies` 只承载开发工具、测试夹具和已明确内联的源码；
-  不能用它隐藏发布 JavaScript 或 declarations 仍引用的包。
+| 依赖语义                                | 源码声明                                                                           |
+| --------------------------------------- | ---------------------------------------------------------------------------------- |
+| semver-compatible 第一方实现            | `workspace:^`；确需同版本的 wrapper 才用 `workspace:*`                             |
+| 外部实现                                | `catalog:` / `catalog:<name>`，普通稳定版本优先 `^`，实际解析由 lockfile 固定      |
+| Plugin 的 Core、服务、required provider | 可发布 provider 使用 `workspace:^` peer，并配 `workspace:*` dev 副本               |
+| workspace-only provider                 | `*` optional peer，加指向实际包目录的相对 `link:` dev 副本；发行 JS/声明不可引用它 |
+| 可选集成                                | 仅在独立可选入口或条件加载后声明 optional peer                                     |
+
+peer 表示需要共享的运行时身份或平台兼容边界，如 Context、服务 token、Plugin constructor、React Context 和 lowering ABI。自有解析器、watcher、缓存等实现使用 dependencies；声明文件仍引用的包也须有发布依赖。dev-only 适用于工具、夹具和明确内联的源码。
+
+pncat 拥有 catalog 与引用的新增、更新、分组和清理，避免分别手写 YAML 与 manifest。Peer 范围表达兼容承诺，不能随实现版本统一收窄。npm alias 的目标范围使用 `^`；预发布、供应链 pin 与确有约束的 selector override 可保留精确值。
+
+精确版本的边界包括 Workbench Profile 的 MF Vite/runtime/SDK/React bridge、Mantine core/hooks 和 Cap’n Web peer/dev；矩阵由 `packages/core/src/federation.ts` 与 transport admission 维护，升级时一起更新并重建 producer。`@platformatic/vfs` 当前保留 `^0.4.0`，因为 0.5.0 被 no-downgrade 发布信任检查拒绝。
+
+生成的应用和独立 Plugin 拥有各自最小 pnpm workspace、catalog 与 `allowBuilds` 政策，并逐包声明直接依赖。包发布时 catalog/workspace 引用转换为 semver。未发布源码协作使用 [pluxel source](CLI_WORKSPACES.md)，机器路径由 registry 和 `.pluxel/` 代理管理。
+
+公开包不可要求 workspace-only provider 的 registry 版本，也不可为 pack 虚构版本或发布私有包。Vite Task 不从 `link:` 推导 workspace 构建关系，consumer 须在自己的任务配置声明开发 provider 的 `compile` 前置。
 
 ### pncat 的版本维护边界
 
-[vendored pncat](../vendor/pncat/UPSTREAM.md) 拥有依赖解析、catalog 和 manifest 写入。根仓库使用
-`vp run pncat`（根 Vite Task）运行其源码 CLI；不在根 devDependencies 链接这个 workspace。私有包身份为 `@pluxel-internal/pncat`，避免 source 按包名匹配时覆盖独立仓库的 npm `pncat`。
-`vp run catalog:check` 使用非交互只读计划，漂移时非零退出；`vp run pncat migrate` 调用原生 pncat 显式迁移声明。
-原 pncat add/clean 等能力保留，批量版本政策通过 `@pluxel-internal/pncat/sync` 的 plan/apply API 更新，不借用 add
-制造额外依赖，不复制另一套 YAML 或 manifest writer。
+[vendored pncat](../vendor/pncat/UPSTREAM.md)负责解析和写入。根 `vp run pncat` 运行其源码 CLI；私有包名为 `@pluxel-internal/pncat`，避免 source 按名称覆盖外部 npm pncat。`vp run catalog:check` 是无 registry IO 的只读计划，漂移时非零退出；`vp run pncat migrate` 显式迁移裸版本。批量同步使用 `/sync` plan/apply API，复用同一 writer。
 
-核心 `pnpm-workspace.yaml` 是共用外部版本政策的唯一手维护来源。Pluxel CLI 在 Git 模式读取所属 checkout，
-发行版在构建时交付这份政策的快照；消费仓库同步后仍拥有自己的 catalog、lockfile 和实际直接依赖声明。
-只有已存在的依赖被同步，不把核心的完整依赖表安装进消费项目，也不合并独立仓库成员或 lockfile。
-同名 peer catalog 不作为普通实现版本的权威；多个普通 catalog 对同名包给出不同范围时，先明确统一政策，
-不按顺序或最高版本猜测。
+核心 workspace YAML 拥有共享外部政策。CLI Git 模式读取所属 checkout，发行版携带构建快照；消费仓库继续拥有成员、lockfile 和直接依赖，只同步已有 catalog，不新增依赖或写 package.json。未迁移的裸版本先执行 migrate。多个普通 catalog 对同包冲突时要求显式选择；peer-only catalog 保留范围，共享更新会改变 peer 时报告冲突。核心维护者显式升级自己的兼容承诺时可关闭 peer 保护。
 
-同步只更新已有 catalog，永不写 package.json；未迁移的可治理裸版本要求先执行原生 migrate。Peer-only catalog 保留兼容范围；
-共享 catalog 更新会改变 peer 契约时直接报告冲突，要求显式分离引用。核心维护者显式升级自身兼容承诺时可以关闭这项
-peer 保护。workspace/file/link 等协议不转换成外部 registry 范围。catalog 统一的是声明范围，nominal/private
-类型需要同一物理实例时仍由 source singleton 契约处理；不能用全量传递依赖 override 取代兼容性判断。
-
-只读检查不访问 registry、不安装、不改写文件；显式同步先报告冲突，应用前核对计划输入与成员是否变化。
-同步只写目标 YAML；原生迁移等多文件操作不承诺工作区事务，安装仍是后续步骤。CLI 的 Git/npm 资源与 source 编排归属见
-[CLI 与源码工作区](CLI_WORKSPACES.md)，消费者命令见[源码工作区指南](../docs/development/source-workspaces.md)。
+workspace/file/link 不转换为 registry 范围。catalog 只统一声明，nominal/private 类型需要物理同实例时由 source singleton 管理。只读检查不安装、不写文件；apply 前核对输入与成员变化，只写目标 YAML。原生迁移等多文件操作没有 workspace 事务，安装是后续步骤。消费端操作见[源码工作区指南](../docs/development/source-workspaces.md)。
 
 ### 发布图、构建图与共享身份
 
-发布依赖声明包含 `dependencies`、`optionalDependencies` 和 `peerDependencies`，不要求整个包图无环。
-`governance:check` 保留 Context、Core、Commands、Host 与来源/开发驱动的基础边界，扫描 `packages/`、`plugins/` 和
-`projects/` 源码的实际内部 workspace import（含类型和动态 import）：发布包必须有发布依赖声明，私有项目必须在本包
-声明依赖；缺失时定位到导入文件和清单。它也检查 Workbench、Services 叶子不反向导入 Services 组合入口。
-组合实现只位于 `src/preset.ts`、`src/vite.ts` 与 `src/development/service-development.ts`；
-测试组合位于 `src/testing/` 及两个测试入口。测试和类型探针不算发布源，Core 内联 Context 是明确例外。
-这些规则保护可核对的模块职责，不维护一个第二模块解析器或通用架构分层框架。
+发布图包括 dependencies、optionalDependencies 和 peerDependencies。治理扫描 packages、plugins、projects 的实际内部 import（含 type/dynamic）：公开包须有发布声明，私有项目须有本包声明。Services 组合限于 `src/preset.ts`、`src/vite.ts`、`src/development/service-development.ts`，测试组合归 `src/testing/` 与两个测试入口。测试和类型探针不属于发布源。
 
-构建任务图是另一个问题：测试夹具可能依赖被测框架，Core 的构建也使用官方 toolchain。
-Vite Task 任务必须有可执行的顺序，不能把所有 package dependency 都机械转换成构建前置任务，
-也不能调整发布依赖类型来掩盖任务编排问题。
+构建图显式决定可执行顺序。测试夹具可依赖被测框架，Core 构建也用官方工具链；不将整个 package 图机械转换成 task 前置。
 
-`@pluxel/core` 源码对 `@pluxel/context` 的复用是构建时源码边界：Core 将其声明为 `devDependencies: workspace:*`，并用
-tsdown `alwaysBundle` 内联所有 JavaScript 与 declarations。发布 tarball 不得含外部 `@pluxel/context` import，也不得把它加入
-Core 的 dependencies/peerDependencies/optionalDependencies；直接使用 standalone kernel 的应用才显式安装 `@pluxel/context`。
+Core 对 Context 与 [Eventure](../vendor/eventure/UPSTREAM.md)的复用是构建源码边界：两者以 devDependency 链接，用 tsdown `alwaysBundle` 内联 JS 与声明。Core tarball 中不可留下外部 import 或发布依赖。直接使用 standalone kernel 才安装 `@pluxel/context`；修改 Eventure 同时核对 vendor 回归和 Core 打包消费。
 
-Core 使用 [vendor Eventure](../vendor/eventure/UPSTREAM.md) 的 workspace 源码，也以 `devDependencies: workspace:*`
-声明并用 tsdown `alwaysBundle` 内联 JavaScript 与 declarations。发布的 Core 不依赖 npm `eventure`，其 JS 和
-声明不得留下外部 `eventure` import；Eventure 源码变更要同时验证 vendor 测试与 Core 的打包消费路径。
+Workbench fixed singleton set 由 host 安装并由 MF build contract 精确锁定：React/ReactDOM 及实际 subpath、Mantine core/hooks、MF React Bridge、Workbench 根、`/client`、`/react`、`/internal/react`。Plugin UI 把自己 import 的 React/Mantine 声明为 peer，独立开发时配 dev 副本。query-core 仅为 renderer owner 内部实现。每个使用 Drizzle 的包直接声明 drizzle-orm；只在确需共享身份的公开边界使用 peer。
 
-Workbench fixed singleton set 由 host 直接安装并由 MF build contract 精确锁定：React/ReactDOM 及其实际
-subpaths、`@mantine/core`、`@mantine/hooks`、MF React Bridge、`@pluxel/workbench`、`/client`、`/react` 与
-`@pluxel/workbench/internal/react`。插件 UI 把自己 import 的 React 和 Mantine 声明为 peer，并在需要独立开发时声明
-dev 副本。`@tanstack/query-core` 只是 Workbench renderer owner 的内部实现依赖，不进入 platform shared set。导入 Drizzle schema/query API 的每个 package 都直接声明
-`drizzle-orm`，不能从工作区根或其他 framework 包隐式继承。只有确实要求宿主
-共享 Drizzle 运行时身份的公开边界才改用 peer。
+Host 互操作按具体能力接纳：Workbench target/基础库使用精确 capnweb peer；交换原生 Store 的 TinyBase 消费者使用精确 tinybase peer，开发均配同版 dev 副本。Core 拥有 TinyBase 的精确普通 dependency；只调用 `ctx.tinybase.open()` 无需另装。升级 TinyBase 时同步 Core、共享消费者和制品事实。
 
-Host 互操作依赖按能力事实接纳：Workbench target／基础库使用精确 `capnweb` peer，托管
-TinyBase Store 消费者／交换原生 Store 的基础库使用精确 `tinybase` peer；源码开发安装同版 dev
-副本。TinyBase 的精确普通 dependency 由 Core 维护；只调用 `ctx.tinybase.open()` 的消费者无需直接依赖。Host 为通用脚本控制与 Management、Workbench 选择同一 Cap’n Web 安装；参与方以精确 peer/dev 声明版本。普通原生 import 不代表参加共享边界，独立
-私有库和应用私有副本的版本与解析保持隔离，任意 Core import 也不构成互操作声明。目前
-TinyBase 为 `10.0.1`，升级时同步 Core、共享消费者和制品事实。包作者仍直接导入
-上游 API，不增加框架镜像入口。
-
-`@pluxel/host/internal/shared-runtime` 是仅供框架协作的 Node metadata 叶子，拥有两个已知能力
-共用的 manifest、catalog、精确版本与接纳检查，不导入 Core、Services 或 Workbench 运行时。
-Workbench transport 保留自身语义入口并复用这些检查。构建生成 `pluxel.workbenchCapnweb`／
-`pluxel.tinybase`；Vite、静态应用和原生动态来源先验证原声明与实际安装，再绑定同版多路径。
-TinyBase 子路径保持原样解析；它不进入全局 shared-package 列表，也不重定向私有依赖。
+`@pluxel/host/internal/shared-runtime` 是 Node metadata 叶子，拥有 manifest、catalog、版本和接纳检查，不加载 Core/Services/Workbench runtime。构建生成 `pluxel.workbenchCapnweb` / `pluxel.tinybase`；Vite、静态应用与 native 动态来源先核验声明及实际安装，再绑定同版解析。TinyBase 子路径按原名解析；应用私有副本与无关依赖保持隔离，普通 import 本身不构成互操作声明。
 
 ### 治理与验证
 
-`vp run verify` 委托 `workspace:verify`，本地与 CI 共享该原生依赖图，执行治理、`vp check`、类型检查、测试与构建。
-`workspace:build` 在构建完成后检查源码声明污染，verify 复用这条依赖，不再次执行同一检查。
-各包标准 scripts 委托 `compile`、`check-types`、`check-tests` 等 task；实际命令和依赖图由包内 `vite.config.ts` 维护，
-`scripts/vite-tasks.ts` 只提供共享默认值。根聚合任务显式引用包 task，避免将框架的合法包依赖环误当成构建顺序。
+`vp run verify` 委托 `workspace:verify`，本地与 CI 使用同一任务图。各包 scripts 委托 compile/check-types/check-tests 等任务，具体命令与依赖由本包 `vite.config.ts` 拥有，共享默认由 `scripts/vite-tasks.ts` 提供。`workspace:build` 完成后检查源码声明污染，verify 复用该结果。
 
-CI 直接调用原生聚合任务并指定并发数，上传实际执行任务、缓存命中与日志；缓存目录为当前 checkout 的 `node_modules/.vite/task-cache`。缓存输入必须包含影响产物的配置和环境，不能依赖暖缓存留下的文件。
+CI 以原生聚合任务和显式并发数执行，记录实际任务、缓存命中和日志；缓存位于当前 checkout 的 `node_modules/.vite/task-cache`，输入须涵盖影响产物的配置和环境。命令及工具 pin 见[工作区工具链](../docs/development/workspace-toolchain.md#统一命令入口)。Vite+ 按 `packageManager` 选择包管理器；CI 使用 `PNPM_CONFIG_PM_ON_FAIL=ignore`，任务透传已有 pnpm 上下文，跨仓库 source 将 `PNPM_CONFIG_WORKSPACE_DIR` 绑定当前 checkout。
 
-仓库、应用脚手架与插件模板的命令遵循[工作区工具链](../docs/development/workspace-toolchain.md#统一命令入口)。`package.json#packageManager` 声明包管理器版本，Vite+ 负责选择与执行；`mise.toml` 提供匹配版本的工具安装。CI 设置 `PNPM_CONFIG_PM_ON_FAIL=ignore`，共享任务透传已有的 pnpm 执行上下文；跨仓库 source 操作将 `PNPM_CONFIG_WORKSPACE_DIR` 绑定到当前 checkout，保持各自安装图独立。
+| 所有者                                    | 检查内容                                                      |
+| ----------------------------------------- | ------------------------------------------------------------- |
+| `scripts/repository-packages.mjs`         | 实际 workspace inventory、目录角色、公开包与 Tegami 集合      |
+| `scripts/check-repository-governance.mjs` | catalog、工具 pin、metadata、依赖范围、实际 import 与模块边界 |
+| 包内 `typecheck`                          | 本包源码、测试、benchmark、构建配置与公开类型                 |
+| 包内 `test`                               | Vitest 行为回归，选择方法见 [Testing](TESTING.md)             |
+| `scripts/check-source-declarations.mjs`   | ambient declaration allowlist 与源码污染                      |
 
-| 检查所有者                                | 负责的事实                                                                  |
-| ----------------------------------------- | --------------------------------------------------------------------------- |
-| `scripts/repository-packages.mjs`         | workspace inventory、目录分类、公开包与 Tegami 发布集合                     |
-| `scripts/check-repository-governance.mjs` | workspace/catalog、工具版本、metadata、依赖范围、实际内部 import 与模块边界 |
-| package `typecheck`                       | 本包源码、测试、配置及公开类型；上游 declaration build 不替代本包检查       |
-| package `test`                            | Vitest 行为回归；边界选择见 [TESTING](TESTING.md)                           |
-| `scripts/check-source-declarations.mjs`   | 显式登记的 ambient declarations；生成声明只进入 dist 或可清理缓存           |
+每包声明 typecheck，默认一份 tsconfig 覆盖本包输入。环境或声明构建确需隔离时再拆配置；共享工具由 `scripts/tsconfig.json` 和根 workspace:typecheck 检查。外部环境类型从 `compilerOptions.types` 加载。纯 Node fixture 可以用 Node assert，测试统一由 Vitest 编排。
 
-治理与 Tegami 消费同一份 inventory；成员从 `pnpm-workspace.yaml` 实际声明读取，目录只负责分类，vendor 不套用第一方包政策。
-`.tegami/*.md` 的 bump 目标必须属于 inventory 中的公开包；private 项目不维护发布 bump，失效目标由治理检查拒绝。迁移完成后移除一次性扫描器；不要把历史 API 黑名单、源码片段或旧提案名称变成永久架构概念。当前契约由 exports、编译器和所属边界的行为测试维护。
+生成声明只进入 dist 或可清理缓存；ambient declaration 逐文件登记。源码检查只排除明确的原生依赖 checkout（Typst `native/.build/`、Embedded Launcher `native/vendor/`）。生成项目的 workspace doctor 检查 pnpm major、workspace authority 与 source hook，产品领域规则由消费仓库维护。
 
-各 workspace 必须声明自己的 `typecheck`，默认一份包内 `tsconfig.json` 覆盖源码、测试、benchmark 和构建配置。
-工作区 Vite 任务配置与共享脚本由 `scripts/tsconfig.json` 统一检查，根 `workspace:typecheck` 负责执行。
-不同运行环境或声明构建输入确需隔离时才增加配置，不为测试目录或继承转发单独拆文件。
-共享选项与源码解析边界见 [TypeScript 工具链](TOOLCHAIN.md)。外部环境类型由 `compilerOptions.types` 加载。
-测试统一由 Vitest 编排；纯 Node fixture 可以使用 Node assert，不另设 `node --test` runner。
-
-生成的 workspace 由 `pluxel workspace doctor` 检查 pnpm major、workspace authority 与已激活的 source hook；产品目录和依赖方向由其自身治理脚本拥有。通用 CLI 不推断产品领域规则。
-
-声明检查显式排除原生构建的依赖 checkout（Typst 的 `native/.build/` 和 Embedded Launcher 的 `native/vendor/`），不排除源码内其他同名目录；应用自己手写的 ambient declarations 仍逐文件登记。
+Tegami 与治理共用 inventory。已有 Markdown 的目标必须是公开包；有待发布计划时检查统一版本与新包的初次 major intent。没有发布计划时，日常治理不要求新增发布说明。一次性迁移扫描器在完成后删除，当前边界由 exports 和领域测试维护。
 
 ## 导出
 
-- public export 必须对应稳定用户概念；
-- internal/helper/debug 默认不导出；
-- 入口按稳定领域、运行环境和可选依赖划分，不按实现目录或文件逐项导出；同一依赖边界的重复入口应合并；
-- 包内测试直接使用相对源码路径，不为测试便利增加 package exports；跨包白盒测试使用窄的 `/internal/test`；
-- 框架间协作集中在显式 allowlist 的 `/internal`；只有浏览器 ABI、HTTP 适配等真实依赖边界才拆分 internal 子入口，不使用 wildcard 暴露实现树；
-- 合并入口前核对传递依赖，不能让 browser 入口引入 Node、基础服务引入可选 backend，或生产入口引入开发工具；
-- 不为已删除设计保留兼容 alias；
-- toolchain helper 只能从 toolchain/internal subpath 使用。
+入口按稳定用户概念、环境与可选依赖划分，同一依赖边界的重复入口合并。合并前核对传递加载，保持 browser、基础服务、生产入口各自的环境边界。默认入口使用 allowlist；内部协作使用窄的显式 `/internal`，测试优先相对源码，跨包白盒使用 `/internal/test`。旧设计不留兼容 alias。
 
-`@pluxel/context` 默认入口公开 host composition 所需的 opaque descriptor、scoped installation、`createContextHost()`、
-projection types 与显式 resolve；raw plan/context construction 只从 `/internal` 提供给框架实现，不是稳定第三方入口。
-`ContextHost` 编译后没有 capability mutator，公开 `overrides` 也只能在编译前替换相同 descriptor 且保持 scope/property。
-
-`@pluxel/core` 默认入口使用逐项 allowlist；Host 与服务包不重新导出 Core 作者面。默认入口只承诺 Plugin 作者模型、服务 token 类型与读取错误、结构化 address codec 与 host
-确实消费的 lifecycle result。`PluginService`、slot registry、record reader、construction/lifecycle adapter、coordinator、lowering setter 和 test host
-不得从默认入口可达；opaque slot 最多以 type-only contract 出现。Federation build contract 只从 `@pluxel/core/federation` 消费。
-
-Core 的服务作者组合入口为 `@pluxel/core/host`；Host 在 root 创建前安装固定 descriptor，插件不能追加或替换能力。
-RootContext 的 require 可以读取 root token；owner Context 不能直接读取 root token。持有真实 root 引用代表宿主访问权，这不是代码沙箱。
-默认入口不使用 star barrel 扩张 surface。内部 graph/state helpers 属于 `@pluxel/host/internal`；服务内部实现由各领域包拥有。
-Browser Management 使用 `@pluxel/services/management/client`；Plugin 直接使用 capnweb 与 `@pluxel/workbench`，React 接入位于 Workbench 子入口。
-Generated Bridge ABI 属于 Workbench internal，raw server registry 和 MF Runtime 不进入默认作者 API。
-
-Dynamic source producer 的唯一 low-level public boundary 是 `@pluxel/host/sources` 的声明校验；它不得导入
-Vite、watcher、workspace scanner 或 package manager。固定 catalog 从统一应用声明的 `plugins` 进入，不提供 package、
-module、export key 或首次启用 author options。
+- Context 默认入口提供 descriptor、scoped installation、`createContextHost()`、projection types 与显式 resolve；raw plan/context construction 归 `/internal`。编译后无 capability mutator；编译前 overrides 只能替换同 descriptor 并保持 scope/property。
+- Core 默认入口提供 Plugin 作者模型、服务 token 类型/读取错误、address codec 和 Host 使用的 lifecycle result。slot 最多作为 opaque type；registry、record reader、construction/lifecycle adapter、lowering setter、test host 与 PluginService 归内部。Federation contract 归 `/federation`，服务组合归 `/host`。
+- Host/Services 不重导出 Core 作者面。RootContext 读取 root token，owner Context 不直接读取；持有真实 root 代表宿主访问权，不能当作沙箱。graph/state helper 归 Host internal。
+- Browser Management 归 `@pluxel/services/management/client`。Plugin 直接使用 capnweb/Workbench，React 由 Workbench 子入口提供。Bridge ABI 归 internal，raw registry 与 MF Runtime 不进入作者默认入口。
+- Dynamic source 的 low-level public boundary 是 Host `/sources` 声明校验，保持无 Vite、watcher、scanner 和 package manager。固定 Plugin 从应用 `plugins` 声明进入。
 
 ## 变更与文档
 
-实现、公开 exports、已知调用方与测试应表达同一契约。公开行为更新 `docs/`，内部边界更新所属工程文档；通用方法留在 `.agents/rules/`。package README 只提供入口和最短示例，不另定义插件模型或测试规则。当前文档不维护旧 API 教程，历史由 Git 保存；已落地 proposal 删除对应部分。
-
-合并前运行 `vp run verify` 并检查旧符号与链接。版本 PR 和发布流程见 [RELEASING](RELEASING.md)。
+实现、exports、调用方、测试和示例保持一致。文档归属与写作见 [Documentation](DOCUMENTATION.md)，贡献接纳见 [Contribution Review](CONTRIBUTION_REVIEW.md)。代码集成使用 `vp run verify`；文档整理检查内容、链接与格式。版本 PR 和发布操作见 [Releasing](RELEASING.md)。

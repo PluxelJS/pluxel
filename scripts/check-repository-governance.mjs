@@ -238,19 +238,21 @@ for (const [id, draft] of releaseDraft.getPackageDrafts()) {
 if (plannedVersions.size > 1)
 	errors.push(`Tegami must plan one public version, got ${[...plannedVersions].join(', ')}`)
 
-for (const { manifest } of packagesRequiringInitialMajor(publicPackages)) {
-	if (
-		!releaseDraft
-			.getChangelogs()
-			.some((entry) =>
-				[manifest.name, `npm:${manifest.name}`, 'group:pluxel'].some(
-					(name) => entry.packages.get(name)?.type === 'major',
-				),
+if (plannedPackages.length > 0) {
+	for (const { manifest } of packagesRequiringInitialMajor(publicPackages)) {
+		if (
+			!releaseDraft
+				.getChangelogs()
+				.some((entry) =>
+					[manifest.name, `npm:${manifest.name}`, 'group:pluxel'].some(
+						(name) => entry.packages.get(name)?.type === 'major',
+					),
+				)
+		) {
+			errors.push(
+				`${manifest.name} must have its own major Tegami intent before its initial stable release`,
 			)
-	) {
-		errors.push(
-			`${manifest.name} must have its own major Tegami intent before its initial stable release`,
-		)
+		}
 	}
 }
 

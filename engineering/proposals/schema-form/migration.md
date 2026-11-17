@@ -108,6 +108,6 @@ Services 与 Shell 同步采用公共模型，删除重复映射及旧包 import
 
 实施后更新 `docs/plugin-development/configuration.md`、Workbench 表单说明与 playground、包矩阵、排错文档，以及 `engineering/{CONFIG,UI_LIBRARY,FRONTEND,WORKBENCH}.md` 的相关段落。现有 `docs/workbench/valibot-form.mdx` 页面路径先保留并调整标题与内容，避免无必要的链接迁移；新包 README 承担独立消费者的安装及完整示例。
 
-完成条件是：公开入口与类型可用，实际配置和 Content 路径守约，UI 迁移通过，独立 tarball 可消费，已知引用和正式文档一致，旧实现已删除。完成后将剩余判断移到正式文档，并按 [提案维护规则](../README.md#维护规则) 清理本目录。
+完成条件是：公开入口与类型可用，实际配置和 Content 路径守约，UI 迁移通过，独立 tarball 可消费，已知引用和正式文档一致，旧实现已删除。完成后将剩余判断移到正式文档，并按 [提案维护规则](../README.md#设计与证据) 清理本目录。
 
 本次提案交付只检查文档结构、源码依据、相对链接和 diff；尚未运行上述实现验收，也未修改生产代码。

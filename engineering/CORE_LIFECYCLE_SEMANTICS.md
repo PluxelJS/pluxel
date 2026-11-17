@@ -1,8 +1,6 @@
 # Core Lifecycle Semantics
 
-本文记录 `@pluxel/core` 当前已实现、可测试的 lifecycle 语义。它是维护者语义索引，不是 Plugin 作者 API，也不引入新的 public hook、错误 contract 或配置字段。
-
-权威实现入口仍是 [`CORE.md`](CORE.md) 中列出的 Core runtime 文件；本文只把分散在实现、领域文档和测试中的规则整理成稳定词汇、transition 边界和测试矩阵。
+Core 的 commit、generation 和 effects 按下述状态转换与不变量运行。源码入口见 [Core](CORE.md)，本页集中维护 transition、publication 和对应测试。
 
 ## 抽象状态词汇
 
@@ -15,7 +13,7 @@
 | owner admission         | owner invocation gate 在 generation drain 开始时关闭；新 invocation 被拒绝，已接纳 invocation 收到 abort 并被等待。                                                                      |
 | effect ownership        | `EffectsService` entry 从 registered/active 进入 running cleanup，随后 terminal；重复 dispose 共享 drain 结果，entry cleanup 至多被消费一次。                                            |
 
-这些词汇用于测试和诊断讨论。不要把它们直接暴露为 public enum，也不要要求 Plugin 作者声明这些状态。
+这些词汇用于内部测试与诊断；Plugin 作者使用[公开生命周期接口](../docs/plugin-development/lifecycle.md)。
 
 ## Transition 边界
 

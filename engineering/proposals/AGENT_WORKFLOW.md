@@ -1,31 +1,32 @@
-# Agent 脚本执行的后续方向
+# Agent 执行与控制的后续方向
 
-状态：首轮 SDK、Vite 项目执行、Node 上传执行与共享控制通道已交付。本页仅保留后续方向。当前规则见[脚本执行架构](../AGENT_WORKFLOW.md)，使用方式见[Host 自动化脚本](../../docs/development/scripts.md)和[Vite 项目脚本](../../docs/development/dev-console.md)；实际验证范围由正式架构页维护。
+当前 SDK、Node/Vite 执行、插件实例借用和材料同步见 [Agent Workflow](../AGENT_WORKFLOW.md)与 [Plugin Control](../PLUGIN_CONTROL.md)，公开调用见[自动化脚本](../../docs/development/scripts.md)。以下能力尚未完整交付，分别由真实调用方和部署验收推进。
 
 ## Cloudflare 执行后端
 
-当前已有可移植入口闭包检查，以及本机真实 workerd 的 Dynamic Worker 工厂加载与最小 SDK 能力桥。正式后端需要独立交付平台叶子入口，选择时才加载。脚本工厂嵌入 Dynamic Worker 的静态模块文本，Core Better Result 使用所在 realm 的共享入口，由 Workers RPC 将授权调用送回原 Host。
+既有实验涉及可移植入口闭包、workerd Dynamic Worker 工厂和最小能力桥。正式后端需要独立的平台入口，并按当前统一 SDK 重新验证：异步控制操作成功返回值，失败抛 `ScriptError`；Host 继续拥有配置、生命周期与存储。脚本工厂以静态模块文本装入 Dynamic Worker，授权调用经 Workers RPC 回到原 Host。
 
-第一条部署验收路径为有明确寿命的单次执行：SDK 读配置、普通计算与分支、带版本条件写入、核对实际采用。需要验证取消传播、在途调用排空、能力桥释放、错误映射和部署环境限制。SDK 异步控制操作返回 `Promise<Result<T, E>>`，作者通过普通 async/await 检查结果；Host 保留配置、生命周期与存储的所有权。
+首条部署路径是有明确寿命的单次执行：读配置、普通计算与分支、带版本条件写入、核对实际采用。验收覆盖取消传播、在途调用排空、能力桥释放、错误映射和目标环境限制。D1/KV 适配验证真实提交、读取与传播，采用结果仍由 Host 报告。
 
-后端必须说明 run owner、超时、授权撤回和查询范围。请求所有的执行在所属寿命结束时撤回；跨断线运行与稳定查询需要可路由到原操作的 owner，例如 Durable Object。持久化身份索引、重复提交与结果保留必须一起设计，不能仅将 receipt 存入数据库后宣称任务可恢复。
+后端明确 run owner、超时、授权撤回和查询寿命。请求拥有的执行随请求寿命撤回；跨断线执行需要可路由到原操作的稳定 owner，例如 Durable Object。持久身份、重复提交与结果保留一起设计。
 
-D1/KV 配置与状态适配按真实部署验证提交、读取和传播；完整采用结果继续由 Host 报告。Dynamic Worker 不保存另一份 Host graph，也不创建另一套插件实例。
-
-后端按实际实现声明 `describe.capabilities`。管理能力可以通过受控桥提供；同进程真实实例借用需要 `plugin.instance` 支持，跨 isolate 后端未实现时准确拒绝，不能以 `artifact` 加载能力或异步 RPC 代理代替。插件类型与借用边界由[Plugin Control](../PLUGIN_CONTROL.md)维护。
+`describe.capabilities` 只声明实际提供的能力。管理可经授权桥调用；同进程 `plugin.instance()` 借用真实实例。跨 isolate 的业务调用需显式异步接口，分别定义取消、资源句柄、授权和 provider drain。
 
 ## 远程 Vite 入口
 
-为需要远端项目排障的部署提供显式授权的连接入口，复用现有共享执行 target 和项目加载器。验收必须经过目标 Vite 的真实模块图：项目 import、Plugin/token 身份、当前实例和 Context 保持在目标进程，源码屏障与 HMR pause/apply/resume 仍由原 Vite 实例拥有。
+显式授权的远程入口复用共享执行 target 与项目加载器。目标 Vite 模块图继续拥有项目 import、Plugin/token 身份、实例、Context、源码屏障及 HMR pause/apply/resume。
 
-远程连接位置与开发能力授权分开选择。连接失败时报告原目标状态；保留原 run receipt，不自动切换上传执行或重投新 owner。共享开发进程中的 HMR 控制需要明确多人操作的所有权与可观察状态。
+连接位置与开发权限分别配置。失败报告原目标状态，receipt 查询继续归原 run owner。多人共享开发进程时，需要明确 HMR 控制的操作归属与可观察状态。
 
 ## 离线配置校验与 Vault 部署绑定
 
-从原 Schema 生成可独立求值的校验制品，显式输入配置和环境，避免启动应用或服务。动态定义、环境或 Schema 缺失时说明校验范围；网络及凭据有效性检查作为显式 preflight。
+离线 validator 从原 Schema 生成可独立求值的制品，显式接收配置和环境。缺失动态定义、环境或 Schema 时报告校验范围；网络和凭据检查作为显式 preflight。现有配置源码类型用于理解和静态检查，运行校验由 Host 执行。
 
-Vault 继续拥有凭据值和动态令牌。普通 SDK 查询、计划、receipt 和日志展示引用、可用性与诊断；有授权时才在凭据边界验证实际值。部署绑定与 OAuth 动态记录分别管理，需要重建 Host 的绑定修改保留原生报告。
+Vault 拥有凭据值和动态令牌。SDK 查询、计划、receipt 与日志展示引用及可用性；实际值验证发生在有授权的凭据边界。部署绑定与 OAuth 动态记录分别管理，需要重建 Host 的绑定修改保留原生报告。
 
-## 按真实需求推进的工具
+## 控制材料与维护工具
 
-浏览器脚本编辑器复用现有执行器。持久 scratch 区分纯数据和 generation 句柄；通用 SQL 管理、Windows 私有通道及配置文件编辑各自验证权限、取消和资源边界。它们独立于当前 Node/Vite 执行路径，进入实施前先确定真实调用方与验收任务。
+- 不可变材料快照的自动清理需要当前导入与活动编译的保留依据；现阶段由显式维护清理废弃目录。
+- 外部类型依赖的版本与声明指纹核验需要作者环境协议；当前同步验证交付材料，原包及其类型依赖由作者提供匹配版本。
+- 浏览器脚本编辑器复用现有执行器；持久 scratch 分开处理纯数据与 generation 句柄。
+- 通用 SQL 管理、Windows 私有通道和配置文件编辑分别确定权限、取消、资源寿命与真实验收任务。

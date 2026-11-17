@@ -1,7 +1,6 @@
-# Provider Withdrawal Audit
+# 能力生命周期与撤回
 
-本文记录 owner-bound runtime capability 在 provider withdrawal、generation stop 和 cached handle 场景下的
-当前事实。它是维护者审计入口，不引入统一 public lifecycle hook。
+各能力按自身的 owner、admission 和在途任务语义处理 provider 撤回、generation stop 与缓存 handle。下表说明差异；共同的 graph/generation 顺序见 [Core 生命周期](CORE_LIFECYCLE_SEMANTICS.md)。
 
 ## 审计词汇
 

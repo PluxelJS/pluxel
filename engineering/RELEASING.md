@@ -1,28 +1,20 @@
-# Release Process
+# 发布流程
 
-Pluxel 使用 Tegami 管理公开包版本、Version Packages PR、npm 发布锁、git tags 和 GitHub Releases。
-发布自动化只接受 `main` 的成功 CI push run；可以由 CI 完成自动触发，也可以手动触发。
-普通 pull request 和失败的 CI 不具备发布权限。
+Tegami 管理公开包版本、Version Packages PR、npm publish lock、git tags 与 GitHub Releases。发布自动化接受 `main` 同一提交的成功 CI push run，由 CI 完成事件或手动触发。
 
 ## 版本模型
 
-- 公开包使用 Core 的统一版本线；private、project 和 vendor 不参与。`pluxel` group 的 `syncBump` 只同步 bump 类型，`syncGitTag` 合并 git tag；绝对版本由 `scripts/release-policy.mts` 的原生 Tegami `initDraft` hook 统一计算。
-- 本轮全部公开包和官方 Plugin 统一发布 `1.2.0`。维护者明确选择将本轮破坏性变更纳入这次 minor 发布，原有 `major` intent、breaking change 说明和迁移要求完整保留。这是本轮发布决策，不是以后忽略 semver 的默认规则。
-- 一次性目标由 `.tegami/release-1.2.0.md` 的文件名声明。保留普通 Tegami changelog 的 package bumps 和 Markdown 正文；`release-X.Y.Z.md` 是保留命名，只允许一个严格高于 Core 当前版本的稳定目标。无效、重复、倒退或多个目标会失败，目标记录不得 replay。
-- Tegami 应用 draft 时消费该记录，并生成 manifests、依赖、changelog 和 publish lock；没有手改生成版本或锁。目标只从当前 pending changelog 读取，旧锁中的同名历史记录不会再次固定版本。
-- 后续无显式目标时，根据 pending changelog 的原始意图选择组内最高 bump，从 draft 创建时的 Core 版本计算一次绝对版本，避免逐包写入期间基准漂移。已有稳定包的 `major` 使整组升 major；pre-1.0 新包仍须有自己的初次发布 `major` intent，但此意图只使既有组推进 minor，新包直接加入当次版本线。没有 pending bump 时不创建新的版本计划。
-- 所有 `plugins/` package 使用 `@pluxel/plugin-xxx` 名称；已有公开稳定版本与 Core 对齐，尚未首次发布的 pre-1.0 新包可等待 Tegami 在本轮统一。普通库保留各自名称。
-- `scripts/tegami.mts` 从公开包 inventory 生成排除规则，workspace-only、private、project 和 vendor package 不进入 Tegami graph、版本传播或发布锁；
-- semver-compatible 的第一方实现依赖使用 `workspace:^`，发布后成为对应 package version 的兼容范围；
-- 可发布的第一方 peerDependencies 在源码中使用 `workspace:^`，发布后成为面向消费者的对应 package version 兼容范围；同时以
-  `workspace:*` devDependency 提供仓库内构建和测试实现；workspace-only provider 的 optional peer 与本地开发链接
-  遵循 [治理边界](GOVERNANCE.md#依赖与版本)，不进入发布版本线；
-- Plugin package 对 Core、服务和 required provider 一律使用 peer dependency，避免宿主图出现重复 Plugin identity；
-- workspace 普通依赖变化只为公开 dependent 产生 patch bump，private dependent 不进入发布计划。
+公开包使用 Core 的统一版本线。`pluxel` group 的 `syncBump` 同步 bump 类型，`syncGitTag` 合并 tag；绝对版本由 `scripts/release-policy.mts` 的 Tegami `initDraft` hook 计算。
+
+- 无显式目标时，从原始 pending bump 选择组内最高类型，以 draft 创建时的 Core 版本计算一次目标。稳定包的 major 推进整组 major；pre-1.0 新包须有自身初发 major intent，该意图使既有组推进 minor，新包加入当次版本线。
+- `release-X.Y.Z.md` 是显式稳定目标的保留文件名，只允许一个严格高于 Core 当前版本的目标。记录须是普通有效 changelog，声明 bump 且不能 replay。维护者显式选择目标时仍保留原始 bump 和 breaking/migration 说明。
+- 无 pending bump 时不创建新计划。已消费目标不会从旧 publish lock 再次读取。Tegami 应用 draft 时生成版本、内部依赖、changelog 与 publish lock。
+- 公开集合来自 `scripts/repository-packages.mjs`：packages/plugins 中非 private 包参与，root、project、vendor 与独立 submodule 发布线排除。官方 Plugin 使用 `@pluxel/plugin-xxx`；既有稳定版本与 Core 对齐。
+- 第一方实现与可发布 peer 使用 `workspace:^`，本地 peer 实现配 `workspace:*` devDependency；Plugin provider 使用 peer 维持身份。workspace-only provider 和外部 catalog 规则见 [Governance](GOVERNANCE.md#依赖与版本)。workspace 普通依赖变更只给公开 dependent 传播 patch。
 
 ## 发布说明格式
 
-Tegami 从 `.tegami/*.md` 读取公开包的 bump 和 Markdown 说明，一份文件可以覆盖多个包：
+`.tegami/*.md` 声明公开包 bump 与 Markdown 说明，一份文件可覆盖多个包：
 
 ```md
 ---
@@ -36,82 +28,57 @@ packages:
 Explain the observable behavior and any migration requirement.
 ```
 
-package versions、内部依赖版本和 `.tegami/publish-lock.yaml` 由 Tegami 生成。
-
-`.tegami/` 只保存开源发布线中尚未 version 的变化。开源前的开发记录保留在 Git 历史和当前设计文档中，
-不复制为 Tegami changelog，也不参与首次公开发行的版本计算。1.0.0 只保留一条首发说明和覆盖全部公开包的发布锁，不携带开发期日志；成功发布后由 Tegami 清理 pending lock。submodule 和 vendor workspace 拥有独立的
-仓库与发布历史；根仓库 Tegami 不读取、转换或发布它们的 release metadata。
+package versions、内部依赖版本和 `.tegami/publish-lock.yaml` 由 Tegami 生成。站点和包内已生成 changelog 属于版本记录；pending Markdown 用于下一次 version。
 
 ## 自动流程
 
-1. Pull request CI 的 `governance:check` 校验已有 pending changelog，并验证计划中只有允许发布的公开包。
-2. 变更合并到 `main` 后，CI 完成 `workspace:ci` 的检查，范围见[GitHub Actions](../docs/development/workspace-toolchain.md#github-actions)。
-3. `.github/workflows/release.yml` 由成功 CI 的 `workflow_run` 触发并执行 `vp run tegami ci`。
-4. 有 pending changelog 时，Tegami 更新 versions、package changelogs 和 lockfile，并创建或更新
-   `tegami/version-packages` Version Packages PR；这一步不构建、不发布。
-5. Version Packages PR 合并且 CI 成功后，Tegami 从已提交的 publish lock 发布 npm 包，创建 tags 和
-   GitHub Releases。
+1. PR CI 的 `governance:check` 校验已有 pending metadata、公开目标和版本一致性；有发布计划时检查新包初发 intent。
+2. 合并到 main 后，CI 执行 `workspace:ci`，范围见[工作区工具链](../docs/development/workspace-toolchain.md#github-actions)。
+3. `.github/workflows/release.yml` 接收成功 CI 的 `workflow_run`，执行 `vp run tegami ci`。
+4. 有 pending changelog 时，Tegami 更新 versions、包 changelog 与 lockfile，创建或更新 `tegami/version-packages` PR，此阶段不构建或发布。
+5. 版本 PR 合并且同一提交 CI 成功后，从提交的 publish lock 发布 npm、创建 tags 与 GitHub Releases。
 
-Tegami 使用 `GITHUB_TOKEN` 创建或更新 PR 时，GitHub 将对应的 PR 工作流置为等待批准。维护者审阅生成的
-版本变更后，在 PR 中选择 **Approve workflows to run** 启动检查，再按正常流程合并版本 PR；创建 PR 成功不代表
-PR CI 已经执行。此机制与上面的创建 PR 权限是两层独立检查，见 [GitHub 工作流触发规则](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow)。
+版本 PR 使用 GITHUB_TOKEN 创建时，GitHub 会将其 PR workflows 置为等待批准。维护者审查版本变更，再在 PR 选择 **Approve workflows to run** 并按正常流程合并。见 [GitHub 触发规则](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow)。
 
-publish lock 是发布事实来源。部分包发布失败时保留原 lock，重跑同一 workflow 会跳过已成功的包并继续未完成任务。
-不要删除 pending lock 或通过手工 npm publish 绕过它。
-
-若维护者明确重做一份尚未发布的旧计划，先显式将旧锁中未发布的说明恢复为 pending changelog，保留原正文并审查已移除或更名的包目标，再交给 Tegami 重新生成。`draft()` 只读取 pending Markdown，生成锁时不会自动合并旧锁中的说明；不能直接用新记录覆盖并丢弃旧计划。已经成功发布的内容不能用这种方式撤回。
+publish lock 是执行发布的依据。部分包失败时保留原锁，重跑会跳过成功包并继续剩余任务。重做尚未发布的旧计划时，先显式恢复旧锁中未发布说明为 pending Markdown，保留正文并审查已移除/更名目标，然后由 Tegami 重新生成；draft 不会自动合并旧锁内容。已发布内容保留其原发布记录。
 
 ## 手动发布与重试
 
-在 GitHub Actions → Release → Run workflow 选择 `main`，或运行：
+在 GitHub Actions → Release → Run workflow 选择 main，或运行：
 
 ```sh
 gh workflow run release.yml --ref main
 ```
 
-手动触发仍要求当前 `main` 的同一提交已有成功的 CI **push** run；没有通过时会明确报错，不会绕过检查。
-它执行同一个 `vp run tegami ci`：已有 publish lock 时发布，有 pending changelog 时更新版本 PR，没有待处理内容时不发布。
-维护者合并版本 PR 决定发布时机。
+手动触发同样要求当前 main 提交有成功的 CI push run。`vp run tegami ci` 有 publish lock 时发布，有 pending changelog 时更新版本 PR，无待处理内容时结束。
 
-自动触发的 Release 显示 skipped 时，先查看对应 CI：失败、取消或非 push run 都不会发布；仓库是否公开不影响这一检查。
-修复 CI 后，新的成功 main push run 会自动触发 Release。若只是 npm 信任或发布阶段失败，可在初始化完成后手动重试当前 main。
-旧提交的 Release 在 main 已前进时不会发布，请对当前 main 重新触发。
+Release skipped 先看对应 CI：失败、取消或非 push run 均不会发布。修复后新的成功 main push 会自动触发；npm 信任或发布阶段失败可手动重试当前 main。main 已前进时，旧提交的 Release 不再发布。
 
 ## 发布验证
 
-普通 CI 已完成 `workspace:ci` 的 release metadata、workspace 治理、格式及所选包的 lint、typecheck、build 和测试。Release workflow
-只接受同一 `main` commit 的成功 CI，不重复这些通用检查。发布 job 从锁定依赖安装工具和包，不恢复其他运行
-写入的 mise、pnpm、Vite Task 或 native build cache；CI 仍保留缓存，同一次发布的构建任务也可复用本次生成的
-Vite Task 结果。该边界遵循 [mise-action 的发布工作流指南](https://github.com/jdx/mise-action/tree/v5.2.0#release-workflows)。
+CI 完成治理、release metadata、格式与所选包的 lint/typecheck/build/test。Release 复用同提交成功 CI，只做 package boundary 验证：
 
-真正发布时，Tegami hooks 只执行 package boundary 验证：
+| Hook               | 工作                                                          |
+| ------------------ | ------------------------------------------------------------- |
+| `beforePublishAll` | 从真实 create/CLI tarball 验证生成应用与独立 Plugin；整批一次 |
+| `willPublish`      | 对当前 package 调用 Vite Task compile，由任务图补齐依赖       |
+| 失败重试           | 跳过已发布包，对剩余包发布前重新构建                          |
 
-- `beforePublishAll` 分别从真实 create/CLI tarball 验证 example workspace 与独立插件模板，整批发布只执行一次；
-- `willPublish` 按 Tegami 当前即将发布的 package 调用 Vite Task 构建入口，由 task graph 补齐其构建依赖；
-- 已成功发布的 package 在失败重试时不会重新发布，未完成 package 仍会在发布前单独重建。
+发布 job 从锁定依赖安装，不恢复其他运行写入的 mise、pnpm、Vite Task 或 native build cache。同一次发布内可复用本轮 task 产物，CI 自身继续使用缓存；依据见 [mise-action 发布指南](https://github.com/jdx/mise-action/tree/v5.2.0#release-workflows)。
 
-Release 不安装 Rust 或构建 Typst 原生库。Takumi Markdown 的公开构建只需要 Typst 的 JavaScript、声明与 Plugin reference，依赖 `@pluxel/plugin-typst#compile-lib`；其 native 集成测试、Typst 完整 `build` / `compile` 与 Studio 本地构建仍准备原生库。此拆分不改变 Tegami 的包选择、发布锁或发布 hooks。
+Release 不准备 Rust/Typst 原生库。Takumi Markdown 公开构建依赖 Typst 的 `compile-lib`（JS、声明、Plugin reference）；native 集成测试与 Typst 完整 build/compile 仍准备原生库。
 
 ## 模板发行版本
 
-`@pluxel/create` 和 `@pluxel/cli` 在 Vite+ Pack 的 `build:done` hook 中，复制完成后通过同一构建专用 pncat 同步函数更新
-`dist/template` 与 `dist/templates/plugin` 的 catalog。每个第一方范围来自公开包 inventory 中当前 manifest 的 `^version`，外部依赖遵循工作区 catalog 政策；不修改源码模板、manifest 或 publish lock。
-源码模板中的第一方范围是可读的基线，不能据此推断发行版本。Tegami Version Packages PR 更新 manifest 后，下一次构建自然生成对应范围。
+create/CLI 在 Vite+ Pack `build:done` 复制模板后，共用构建专用 pncat sync 更新 `dist/template` / `dist/templates/plugin` catalog。第一方范围取公开 inventory 当前 manifest 的 `^version`，外部依赖遵循 workspace 政策；源码模板保持可读基线。
 
-两个包的 Vite Task 缓存输入包含同步函数、inventory 与公开包所在目录的 package manifests，CLI 源码指纹也包含模板与这些 manifests，避免版本变更命中旧模板缓存。创建测试验证生成范围与当前公开包版本一致，
-并确认其它 catalog 保持原样；tarball smoke 继续验证真实安装、应用构建和启动，不能仅以本地 tarball overrides 掩盖版本范围问题。
+任务缓存输入含同步函数、inventory 与公开 manifests，CLI 源码指纹也含模板与 manifests。版本 PR 后自然生成新范围。生成测试检查范围，真实 tarball smoke 检查安装、构建与启动。
 
 ## Trusted Publishing
 
-npm trusted publisher 绑定 `PluxelJS/pluxel` 和 `.github/workflows/release.yml`，发布使用 GitHub OIDC，
-不保存长期 `NPM_TOKEN`。私有 GitHub repository 同样支持 OIDC，但 npm provenance 仅支持公开 repository；
-Release workflow 按 repository visibility 开关 provenance。
+npm trusted publisher 绑定 `PluxelJS/pluxel` 与 `.github/workflows/release.yml`，使用 GitHub OIDC。workflow 按仓库 visibility 开关 provenance：公开仓库支持 provenance，私有仓库可用 OIDC。设置需要 package write、账号 2FA 和交互式 npm 登录。
 
-首次设置需要 npm package write 权限、账号已启用 2FA，以及交互式 npm 登录。
-使用 `vp exec npm --version` 核对 npm 版本，满足 `npm trust` 所需的 npm 11.15.0+。不要使用旧版 npm，
-也不要使用 bypass-2FA granular token 配置信任。
-
-首次整批初始化，或同时包含既有包和新包的全量发布，可使用仓库的批量初始化脚本。它要求当前 Tegami publish lock 覆盖全部公开包；本仓库由上述统一版本策略生成同一目标版本。在已完成 version 的发布准备提交上运行，不要从尚未 version 的开发提交运行。
+使用 `vp exec npm --version` 核对 npm 11.15.0+ 的 `npm trust` 支持。在已完成 version 的发布准备提交上初始化；批量脚本要求 publish lock 覆盖全部公开包：
 
 ```sh
 vp install --frozen-lockfile
@@ -120,41 +87,23 @@ vp exec node scripts/prepare-npm-publishing.mts
 vp exec node scripts/prepare-npm-publishing.mts --apply
 ```
 
-默认只预览。`--apply` 先确认 npm 登录，再通过 Tegami `npm pretrust` 为缺失的包发布
-`0.0.0-tegami-trusted-publish-setup` 空占位版本到 `temp` dist-tag；正式版本内容仍由 CI 发布。
-随后脚本检查全部公开包，仅补齐缺少的 `PluxelJS/pluxel` / `release.yml` / 无 environment 限制 / 允许 publish
-的 trusted publisher，并重新读取结果确认。已有正确配置会跳过，其他信任配置不会被自动删除。
+默认预览。apply 确认登录后，用 Tegami npm pretrust 为缺失包发布 `0.0.0-tegami-trusted-publish-setup` 空占位到 temp tag，正式内容由 CI 发布。随后只补齐缺少的 repository/workflow/无 environment 限制/允许 publish 的信任，并重新读取确认。已有正确配置复用，其他信任不自动删除。
 
-账号必须有每个包的 write 权限以及创建 `@pluxel` scope 包的权限。初始化需要交互式 2FA；首次网页验证可选择
-未来 5 分钟跳过重复 2FA，脚本在包之间等待 2 秒。无需逐包打开 npm settings，也不需要给 CI 保存 npm token。
-脚本失败会明确退出；修复登录或权限后重跑，已经创建的占位包及已匹配的信任会被复用。
+账号需要所有目标包的 write 与创建 scope 包权限。初始化交互式 2FA 可选择未来五分钟跳过重复验证，脚本包间等待两秒；失败后修复登录/权限可重跑。使用正常 npm 登录，避免 bypass-2FA granular token。CI 无需长期 NPM_TOKEN。
 
-Tegami 可能更新本地 publish lock，运行后检查并提交这些生成的变更，不要手改 lock。最好在合并发布准备提交前
-完成初始化；若 main 的 Release 已因缺少信任而失败，完成初始化后重跑最新 main 对应的 Release 即可，已成功发布的包会被跳过。
-该脚本要求全量公开包锁；只发布部分包时不能使用它，后续单个新包可以使用 Tegami `npm pretrust` 和 npm `trust` 命令。
+Tegami 可能生成 publish lock 更新，检查后提交。只发布部分包时，单个新包使用 Tegami npm pretrust 与 npm trust。若 main 发布因缺少信任失败，初始化后重跑最新 main 的 Release。
 
 ### GitHub 版本 PR 权限
 
-Version Packages PR 需要两层授权：Release workflow 的 `contents: write`、`pull-requests: write`，以及
-GitHub Settings → Actions → General → Workflow permissions 中的 **Allow GitHub Actions to create and
-approve pull requests**。仓库默认权限可以保持 `read`；它与 job 显式请求的写权限、允许创建 PR 的策略是不同设置。
+创建版本 PR 同时需要 workflow 的 `contents: write` / `pull-requests: write`，以及 Settings → Actions → General 中 **Allow GitHub Actions to create and approve pull requests**。仓库默认可保持 read；组织策略须先允许。开关不可选或 API 返回 409 时由组织所有者调整，job permissions 无法覆盖组织策略。
 
-组织必须先允许这项策略。若仓库开关不可选，或仓库权限 API 返回 `409` 并指出组织禁止创建 PR，由组织所有者在
-组织 Settings → Actions → General 中启用，再核对仓库设置。只修改 workflow 的 `permissions` 无法覆盖组织策略。
-拥有仓库管理员权限时可读取实际设置：
+管理员可检查：
 
 ```sh
 gh api repos/PluxelJS/pluxel/actions/permissions/workflow
 ```
 
-Release 报 `GitHub Actions is not permitted to create or approve pull requests` 时，失败仍在创建版本 PR
-阶段，尚未进入 npm publish。修复 GitHub 策略后重跑当前 `main` 对应的 Release；只有发布阶段报告 npm 信任错误时
-才处理 Trusted Publishing。OIDC 发布仍需要 `id-token: write`。
-
-策略与 token 权限见 [GitHub Actions 设置](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests)。
-
-参考：[npm trusted publishers](https://docs.npmjs.com/trusted-publishers/)、
-[`npm trust` 的权限与批量设置要求](https://docs.npmjs.com/cli/v11/commands/npm-trust)。
+`GitHub Actions is not permitted to create or approve pull requests` 属于版本 PR 创建阶段；修复 GitHub 策略后重跑当前 main。npm 信任错误在实际 publish 阶段处理，OIDC 还需 `id-token: write`。参考 [GitHub Actions 设置](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests)、[npm trusted publishers](https://docs.npmjs.com/trusted-publishers/)、[npm trust](https://docs.npmjs.com/cli/v11/commands/npm-trust)。
 
 ## 本地检查
 
@@ -166,8 +115,4 @@ CI=true vp run @pluxel/create#test:starter
 CI=true vp run @pluxel/cli#test:templates
 ```
 
-`governance:check` 作为 `verify` 的前置步骤，同时验证精确工具版本、workspace 结构、公开 package metadata、
-consumer peer ranges、Tegami draft 和发布集合。模板命令复现整批发布前执行一次的 package boundary smoke，
-不修改版本或发布。公开包判定和 Tegami ignore 都来自共享 repository package inventory：只有
-`packages/*`、`plugins/*` 中未标记 `private` 的包可发布，root、project 和 private package 自动排除。
-治理还会验证官方 Plugin 包名、稳定版本与 Core 对齐、草稿只有一个公开目标版本，以及每个 pre-1.0 新包自身的初次发布 `major` intent；组内传播的 bump 不能代替该包自己的发布记录。
+verify 的治理前置检查工具 pin、workspace、metadata、peer、Tegami 公开集合与有计划时的初发 intent。两个模板命令复现整批发布前的真实消费检查，检查本身不修改版本或发布。
