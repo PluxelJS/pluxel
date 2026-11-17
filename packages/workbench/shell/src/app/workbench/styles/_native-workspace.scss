@@ -336,6 +336,21 @@
 	min-width: 0;
 	width: 100%;
 }
+.plx-workspace-navigation .plx-workspace-navigation__link:focus-visible {
+	background: var(--plx-hover-bg);
+	outline: 1px solid var(--plx-selected-border);
+	outline-offset: -1px;
+}
+.plx-workspace-navigation__shortcut {
+	border: 1px solid var(--plx-border);
+	border-radius: var(--mantine-radius-xs);
+	color: var(--mantine-color-dimmed);
+	font-family: var(--mantine-font-family-monospace);
+	font-size: var(--mantine-font-size-xs);
+	line-height: 1.4;
+	padding: 0 5px;
+	white-space: nowrap;
+}
 
 /* Content-local layout has no docking state or pane protocol. */
 .plx-pluginDocument {

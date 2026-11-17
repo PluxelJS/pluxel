@@ -18,7 +18,7 @@ import {
 	IconPinnedOff,
 } from '@tabler/icons-react'
 import { useWorkbenchState } from '@worksplit/react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { formatPluginNodeRoute } from '@pluxel/core'
 import {
 	readWorkbenchShortcuts,
@@ -30,6 +30,7 @@ import { getWorkbenchDirectoryHref } from '../../workbench/route-directory'
 import { matchWorkbenchRoute } from '../../workbench/routes'
 import { useWorkbenchTargetSnapshot } from '../../workbench/runtime'
 import { usePluginOverview } from '../plugins/pluginOverview'
+import { pluginAttention } from '../plugins/pluginOverviewModel'
 import { useWorkbenchNavigation } from './context'
 
 import { builtinPages } from './navigationItems'
@@ -46,7 +47,44 @@ type PageEntry = WorkbenchLayoutEntry & {
 	placement: Exclude<WorkbenchLayoutEntry['placement'], { kind: 'panel' }>
 }
 
+/** A Shell-owned workspace action listed by the command palette. */
+export type WorkspaceCommand = Readonly<{
+	id: string
+	label: string
+	description: string
+	keywords?: string
+	shortcut?: string
+	disabled?: boolean
+	run(): void
+}>
+
+const NO_COMMANDS: readonly WorkspaceCommand[] = []
+const LINK_SELECTOR = '.plx-workspace-navigation__link:not(:disabled)'
+
+/** Arrow keys move between visible entries in render order; Enter on the query runs the first one. */
+function moveFocus(event: KeyboardEvent, container: HTMLElement) {
+	if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+	const links = [...container.querySelectorAll<HTMLElement>(LINK_SELECTOR)]
+	if (links.length === 0) return
+	const target = event.target as HTMLElement
+	const index = links.indexOf(target)
+	const input = container.querySelector<HTMLElement>('input')
+	event.preventDefault()
+	if (index === -1) {
+		if (target !== input) return
+		links[event.key === 'ArrowDown' ? 0 : links.length - 1]?.focus()
+	} else if (event.key === 'ArrowDown') {
+		links[index + 1]?.focus()
+	} else if (index === 0) {
+		input?.focus()
+	} else {
+		links[index - 1]?.focus()
+	}
+	;(document.activeElement as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest' })
+}
+
 type WorkspaceNavigationProps = {
+	commands?: readonly WorkspaceCommand[]
 	mode?: 'publications' | 'all'
 	activePluginRoute?: string | null
 	activeEntryKey?: string
@@ -80,6 +118,7 @@ function ConnectedNavigation({
 	return <NavigationContent {...props} session={session} panels={panels} />
 }
 function NavigationContent({
+	commands = NO_COMMANDS,
 	onChosen,
 	autofocus = false,
 	onShowNavigation,
@@ -90,6 +129,15 @@ function NavigationContent({
 	session,
 }: WorkspaceNavigationProps & { session?: WorkspaceSession; panels?: PluginPanelDirectoryState }) {
 	const navigation = useWorkbenchNavigation()
+	const container = useRef<HTMLDivElement>(null)
+	useEffect(() => {
+		const element = container.current
+		if (!element) return
+		// Delegated so result rows stay plain buttons; native listener keeps the container non-interactive.
+		const listener = (event: KeyboardEvent) => moveFocus(event, element)
+		element.addEventListener('keydown', listener)
+		return () => element.removeEventListener('keydown', listener)
+	}, [])
 	const snapshot = useWorkbenchTargetSnapshot(null)
 	const plugins = usePluginOverview()
 	const [query, setQuery] = useState('')
@@ -208,6 +256,14 @@ function NavigationContent({
 			.then(() => onChosen?.())
 			.catch((error: unknown) => panels.session.report(error))
 	}
+	const visibleCommands = (mode === 'all' ? commands : []).filter((command) =>
+		matches(`${command.label} ${command.description} ${command.keywords ?? ''} 命令`),
+	)
+	const runCommand = (command: WorkspaceCommand) => {
+		if (command.disabled) return
+		onChosen?.()
+		command.run()
+	}
 	const showTool = Boolean(
 		mode === 'all' && onShowNavigation && matches('插件目录 固定工具 navigation'),
 	)
@@ -265,11 +321,17 @@ function NavigationContent({
 		}
 	}
 	return (
-		<div className="plx-workspace-navigation" data-compact={compact || undefined}>
+		<div ref={container} className="plx-workspace-navigation" data-compact={compact || undefined}>
 			<div className="plx-workspace-navigation__search">
 				<TextInput
 					aria-label="查找工作区入口"
-					placeholder={mode === 'publications' ? '查找应用' : '查找页面或插件入口'}
+					placeholder={
+						mode === 'publications'
+							? '查找应用'
+							: commands.length > 0
+								? '查找页面、插件入口或命令'
+								: '查找页面或插件入口'
+					}
 					leftSection={<IconSearch size={15} />}
 					value={query}
 					onChange={(event) => setQuery(event.currentTarget.value)}
@@ -278,17 +340,11 @@ function NavigationContent({
 					size="xs"
 					onKeyDown={(event) => {
 						if (event.key === 'Enter') {
-							if (showTool) openTool()
-							else if (visibleBuiltins[0]) open(visibleBuiltins[0].href)
-							else if (pluginGroups[0]?.entries[0])
-								open(buildPluginDetailHref(pluginGroups[0].entries[0].address))
-							else if (visibleEntries[0]) openEntry(visibleEntries[0])
-							else {
-								const panel = visiblePanels.find(
-									(entry) => !panelUnavailable(entry, panels?.running ?? false),
-								)
-								if (panel) openPanel(panel)
-							}
+							event.preventDefault()
+							event.currentTarget
+								.closest('.plx-workspace-navigation')
+								?.querySelector<HTMLElement>(LINK_SELECTOR)
+								?.click()
 						} else if (event.key === 'Escape' && query) {
 							event.preventDefault()
 							event.stopPropagation()
@@ -324,6 +380,7 @@ function NavigationContent({
 										key={entry.descriptor.key}
 										variant="subtle"
 										justify="start"
+										className="plx-workspace-navigation__link"
 										disabled={!!unavailable}
 										onClick={() => openPanel(entry)}
 									>
@@ -349,6 +406,23 @@ function NavigationContent({
 							))}
 						</Stack>
 					)}
+					{visibleCommands.length > 0 && (
+						<Stack gap={3} component="section" aria-label="工作区命令">
+							<Text size="xs" c="dimmed" fw={600}>
+								命令
+							</Text>
+							{visibleCommands.map((command) => (
+								<NavigationItem
+									key={command.id}
+									label={command.label}
+									description={command.description}
+									shortcut={command.shortcut}
+									disabled={command.disabled}
+									onOpen={() => runCommand(command)}
+								/>
+							))}
+						</Stack>
+					)}
 					{mode === 'all' && plugins.error && (
 						<Alert color="red" title="插件列表读取失败">
 							{plugins.error}
@@ -369,26 +443,8 @@ function NavigationContent({
 							onToggle={() => toggleGroup(group.key)}
 						>
 							{group.entries.map((plugin) => {
-								const failure = plugin.issues?.find((issue) =>
-									[
-										'resolve-failed',
-										'config-failed',
-										'start-failed',
-										'dependency-blocked',
-										'drain-failed',
-									].includes(issue.code),
-								)
-								const pending =
-									plugin.desiredState === 'running' &&
-									plugin.lifecycleState !== 'running' &&
-									plugin.availability !== 'unavailable'
-								const status = failure
-									? failure.code === 'dependency-blocked'
-										? '依赖阻塞'
-										: '运行异常'
-									: pending
-										? '等待启动'
-										: group.label
+								const attention = pluginAttention(plugin)
+								const status = attention?.label ?? group.label
 								return (
 									<NavigationItem
 										key={plugin.route}
@@ -397,20 +453,10 @@ function NavigationContent({
 										compact={compact}
 										detail={`${plugin.label}
 ${plugin.route}
-${status}${failure ? ` · ${failure.message}` : ''}`}
-										statusTone={
-											failure || plugin.availability === 'unavailable'
-												? 'error'
-												: pending
-													? 'pending'
-													: plugin.lifecycleState
-										}
+${status}${attention?.message ? ` · ${attention.message}` : ''}`}
+										statusTone={attention?.tone ?? plugin.lifecycleState}
 										statusLabel={status}
-										attention={
-											failure || pending || plugin.availability === 'unavailable'
-												? status
-												: undefined
-										}
+										attention={attention ? status : undefined}
 										active={activePluginRoute === plugin.route}
 										onOpen={() => open(buildPluginDetailHref(plugin.address))}
 									/>
@@ -480,6 +526,7 @@ ${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalon
 						visiblePlugins.length === 0 &&
 						visibleEntries.length === 0 &&
 						visiblePanels.length === 0 &&
+						visibleCommands.length === 0 &&
 						!showTool && (
 							<Text c="dimmed" size="sm">
 								没有匹配的入口
@@ -489,7 +536,7 @@ ${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalon
 			</ScrollArea>
 			{!compact && (
 				<Text size="xs" c="dimmed">
-					选择入口，在当前标签页中浏览。
+					↑↓ 选择，Enter 打开入口或执行命令。
 				</Text>
 			)}
 			<Modal
@@ -560,6 +607,8 @@ function NavigationItem({
 	attention,
 	pinned,
 	onTogglePin,
+	shortcut,
+	disabled = false,
 }: {
 	label: string
 	description: string
@@ -573,6 +622,8 @@ function NavigationItem({
 	attention?: string
 	pinned?: boolean
 	onTogglePin?: () => void
+	shortcut?: string
+	disabled?: boolean
 }) {
 	return (
 		<Group gap={2} wrap="nowrap" className="plx-workspace-navigation__item">
@@ -607,7 +658,14 @@ function NavigationItem({
 					justify="start"
 					className="plx-workspace-navigation__link"
 					onClick={onOpen}
-					rightSection={standalone ? <IconArrowUpRight size={14} aria-hidden /> : undefined}
+					disabled={disabled}
+					rightSection={
+						standalone ? (
+							<IconArrowUpRight size={14} aria-hidden />
+						) : shortcut ? (
+							<kbd className="plx-workspace-navigation__shortcut">{shortcut}</kbd>
+						) : undefined
+					}
 				>
 					<span>
 						<Text component="span" size="sm" truncate="end" display="block">
