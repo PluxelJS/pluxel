@@ -1,5 +1,5 @@
 /** Compile-only consumption of the actual public SDK export. */
-import { BasePlugin, PluginPart, type PluginNodeAddress, type RootContext } from '@pluxel/core'
+import { BasePlugin, PluginPart, type PluginNodeAddress, type ServiceRef } from '@pluxel/core'
 import { ScriptError } from '@pluxel/agent-sdk/host'
 import type { LogReadOptions } from '@pluxel/core/logging'
 import type {
@@ -10,6 +10,7 @@ import type {
 	PluginTypedNodeAddress,
 	Script,
 	ScriptSdk,
+	ScriptServiceContext,
 	ScriptPlugin,
 	ScriptPluginConfig,
 	ScriptConfigSnapshot,
@@ -281,7 +282,17 @@ expectTypeOf(result).toEqualTypeOf<
 >()
 // @ts-expect-error Success has no duplicate domain discriminator.
 void result.ok
-expectTypeOf(sdk.ctx).toEqualTypeOf<RootContext>()
+expectTypeOf(sdk.ctx).toEqualTypeOf<ScriptServiceContext<'all' | 'root'>>()
+abstract class SharedService {
+	abstract value: number
+}
+declare const optionalService: ServiceRef<SharedService>
+expectTypeOf(sdk.ctx.service(SharedService)).toEqualTypeOf<SharedService>()
+expectTypeOf(sdk.ctx.service(optionalService)).toEqualTypeOf<SharedService | undefined>()
+declare const untypedServiceOwner: PluginNodeAddress
+expectTypeOf(
+	(await sdk.plugin(untypedServiceOwner).context()).service(SharedService),
+).toEqualTypeOf<SharedService>()
 // @ts-expect-error Only one SDK surface exists in every execution environment.
 void sdk.dev
 

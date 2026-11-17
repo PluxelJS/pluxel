@@ -1,9 +1,10 @@
+import { resolveContextService } from '@pluxel/core/internal'
 import { Commands } from '../commands/token'
 import { type PluginNodeAddress, type RootContext } from '@pluxel/core'
 import { PluginTestOperationGate, type PluginTestTarget } from '@pluxel/core/internal/test'
 import { pluginConfigPatch } from '@pluxel/host/internal'
 import type { HostConfigMutation, HostOperationOptions } from '@pluxel/host'
-import { resolveContextCapability } from '@pluxel/core/host'
+
 import {
 	type ServiceCommandsTestDriver,
 	type ServiceConfigTestDriver,
@@ -56,7 +57,7 @@ export function createServiceTestDriverScope<TTarget extends PluginTestTarget>(
 		const request = normalizeRequest(input, init)
 		const { ElysiaRuntime } = await import('../elysia/runtime')
 		gate.assertAccepting('http.fetch')
-		const response = await resolveContextCapability(ctx, ElysiaRuntime).fetch(request)
+		const response = await resolveContextService(ctx, ElysiaRuntime).fetch(request)
 		try {
 			gate.assertAccepting('http.fetch result')
 		} catch (error) {
@@ -70,11 +71,11 @@ export function createServiceTestDriverScope<TTarget extends PluginTestTarget>(
 	const commands: ServiceCommandsTestDriver = Object.freeze({
 		execute(name: string, input: unknown, context?: import('@pluxel/commands').CommandContext) {
 			gate.assertAccepting('commands.execute')
-			return ctx.require(Commands).execute(name, input, context)
+			return ctx.service(Commands).execute(name, input, context)
 		},
 		list() {
 			gate.assertAccepting('commands.list')
-			return ctx.require(Commands).list()
+			return ctx.service(Commands).list()
 		},
 	})
 

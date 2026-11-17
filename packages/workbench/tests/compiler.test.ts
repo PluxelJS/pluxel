@@ -1,4 +1,4 @@
-import { pluginDefinitionIndexKey } from '@pluxel/core'
+import { pluginDefinitionIndexKey, LoggerService } from '@pluxel/core'
 import { readLoadedWorkbenchArtifacts } from '../src/services/workbench/loaded-artifacts'
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile, rm } from 'node:fs/promises'
@@ -39,7 +39,7 @@ vi.mock('@pluxel/rolldown/vite/workbench-ui', () => ({
 
 import { PluginArtifactCompiler, workbenchArtifacts } from '@pluxel/workbench/vite'
 import { workbenchService } from '@pluxel/workbench/service'
-import { requireWorkbench } from '@pluxel/workbench/server'
+import { WorkbenchHost } from '@pluxel/workbench/server'
 import { createHost } from '@pluxel/host'
 import type { HostViteCatalog, HostViteAttachment } from '@pluxel/host-vite'
 
@@ -307,7 +307,7 @@ describe('PluginArtifactCompiler', () => {
 			}) as Promise<HostViteAttachment>
 		const first = await createHost({ plugins: [], services: [workbenchService()] })
 		const initial = await attach(first)
-		expect(requireWorkbench(first.ctx).artifacts.getCurrent(definition)?.buildRevision).toBe(
+		expect(first.ctx.service(WorkbenchHost).artifacts.getCurrent(definition)?.buildRevision).toBe(
 			accepted.buildRevision,
 		)
 		await initial.dispose!()
@@ -315,16 +315,18 @@ describe('PluginArtifactCompiler', () => {
 		await writeInventory(next)
 		const restored = await createHost({ plugins: [], services: [workbenchService()] })
 		const restoredAttachment = await attach(restored)
-		expect(requireWorkbench(restored.ctx).artifacts.getCurrent(definition)?.buildRevision).toBe(
-			accepted.buildRevision,
-		)
+		expect(
+			restored.ctx.service(WorkbenchHost).artifacts.getCurrent(definition)?.buildRevision,
+		).toBe(accepted.buildRevision)
 		await restoredAttachment.dispose!()
 		await restored.close()
 		await rm(join(root, accepted.producer, accepted.buildRevision), { recursive: true })
 		const unavailable = await createHost({ plugins: [], services: [workbenchService()] })
 		try {
 			await expect(attach(unavailable)).rejects.toThrow(/ENOENT|manifest|artifact/i)
-			expect(requireWorkbench(unavailable.ctx).artifacts.getCurrent(definition)).toBeUndefined()
+			expect(
+				unavailable.ctx.service(WorkbenchHost).artifacts.getCurrent(definition),
+			).toBeUndefined()
 		} finally {
 			await unavailable.close()
 		}
@@ -456,7 +458,7 @@ describe('PluginArtifactCompiler', () => {
 		})
 		const host = createCoreInternalTestHost()
 		const { federation, coordinator, producerStatus } = createWorkbenchStores(host)
-		const infoLog = vi.spyOn(host.ctx.logger, 'info')
+		const infoLog = vi.spyOn(host.ctx.service(LoggerService), 'info')
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
 			{ coordinator, producerStatus },
@@ -564,7 +566,7 @@ describe('PluginArtifactCompiler', () => {
 		})
 		const host = createCoreInternalTestHost()
 		const { coordinator } = createWorkbenchStores(host)
-		const infoLog = vi.spyOn(host.ctx.logger, 'info')
+		const infoLog = vi.spyOn(host.ctx.service(LoggerService), 'info')
 		const options = {
 			cacheDir: fixture.getPath('.pluxel/artifacts'),
 			packageMode: 'development',
@@ -614,7 +616,7 @@ describe('PluginArtifactCompiler', () => {
 		})
 		const host = createCoreInternalTestHost()
 		const { federation, coordinator, producerStatus } = createWorkbenchStores(host)
-		const errorLog = vi.spyOn(host.ctx.logger, 'error')
+		const errorLog = vi.spyOn(host.ctx.service(LoggerService), 'error')
 		const compiler = new PluginArtifactCompiler(
 			host.ctx,
 			{ coordinator, producerStatus },

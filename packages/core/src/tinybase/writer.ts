@@ -1,3 +1,5 @@
+import { LoggerService } from '../logger/LoggerService'
+import { EffectsService } from '../services/effects/EffectsService'
 import type { Context, PluginContext } from '../context/Context'
 import { enterOwnerInvocation } from '../internal/owner-invocations'
 import type { HostDocumentStorage } from '../storage/documents'
@@ -53,7 +55,7 @@ export class StoreWriter implements TinyBaseService {
 	) {
 		this.identity = Object.freeze({ kind: 'plugin', node: ctx.pluginInfo.nodeAddress })
 		// Registration precedes the first open await, including an acquisition that resolves after stop.
-		ctx.effects.defer(() => this.close(), { tag: 'TinyBaseStore', phase: 'final' })
+		ctx.service(EffectsService).defer(() => this.close(), { tag: 'TinyBaseStore', phase: 'final' })
 	}
 
 	open(): Promise<Store>
@@ -309,7 +311,7 @@ export class StoreWriter implements TinyBaseService {
 			},
 			(error) => {
 				this.reloadError = error
-				this.ctx.logger.error('Cannot reload TinyBase file for {owner}', {
+				this.ctx.service(LoggerService).error('Cannot reload TinyBase file for {owner}', {
 					owner: this.identity,
 					error,
 				})
@@ -413,15 +415,17 @@ export class StoreWriter implements TinyBaseService {
 			cause instanceof TinyBaseError
 				? cause
 				: this.error('SNAPSHOT_INVALID', 'Cannot capture a persistable snapshot.', cause)
-		this.ctx.logger.error(
-			'TinyBase writer fault for {owner}; saved revision {savedRevision}, current revision {revision}',
-			{
-				owner: this.identity,
-				savedRevision: this.savedRevision,
-				revision: this.revision,
-				error: this.fault,
-			},
-		)
+		this.ctx
+			.service(LoggerService)
+			.error(
+				'TinyBase writer fault for {owner}; saved revision {savedRevision}, current revision {revision}',
+				{
+					owner: this.identity,
+					savedRevision: this.savedRevision,
+					revision: this.revision,
+					error: this.fault,
+				},
+			)
 	}
 
 	private assertUsable(): void {

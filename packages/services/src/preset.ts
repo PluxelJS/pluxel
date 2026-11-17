@@ -53,11 +53,10 @@ export async function servicesPreset(
 				([
 					{ workbenchService },
 					{ workbenchHttp },
-					{ requireWorkbench, createWorkbenchArtifactHandler, WorkbenchHost },
+					{ createWorkbenchArtifactHandler, WorkbenchHost },
 				]) => ({
 					workbenchService,
 					workbenchHttp,
-					requireWorkbench,
 					createWorkbenchArtifactHandler,
 					WorkbenchHost,
 				}),
@@ -69,7 +68,7 @@ export async function servicesPreset(
 			? {
 					bindings: (ctx) => ({
 						createWorkbench: (principal, invalidate) =>
-							workbench.requireWorkbench(ctx).createSession(principal, invalidate),
+							ctx.service(workbench.WorkbenchHost).createSession(principal, invalidate),
 						artifacts: workbench.createWorkbenchArtifactHandler(ctx),
 					}),
 				}

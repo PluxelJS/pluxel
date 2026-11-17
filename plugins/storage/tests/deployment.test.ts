@@ -1,10 +1,12 @@
+import type { WorkbenchHost } from '@pluxel/workbench/server'
 import { createServer } from 'node:http'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import { envBinding, defineHostApplication, resolveHostApplication, createHost } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
 import { expect, it } from 'vitest'
 import { S3, S3Config, S3VaultSchema, S3Plugin } from '../src/index.ts'
 
+const WorkbenchHostRef = defineServiceRef<WorkbenchHost>()
 @Plugin()
 class DeploymentWriter extends BasePlugin {
 	constructor(private readonly storage: S3) {
@@ -74,7 +76,7 @@ it('signs an S3 write without Workbench using env-backed configuration and Vault
 		})
 		try {
 			await host.start()
-			expect(host.ctx.workbench).toBeUndefined()
+			expect(host.ctx.service(WorkbenchHostRef)).toBeUndefined()
 			const status = await host.status()
 			expect(status.summary.running).toBe(2)
 			expect(requests).toHaveLength(1)

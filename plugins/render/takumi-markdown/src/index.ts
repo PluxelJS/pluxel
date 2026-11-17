@@ -1,4 +1,4 @@
-import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'
+import { BasePlugin, definePluginRef, Plugin, EffectsService } from '@pluxel/core'
 import type { TypstPlugin } from '@pluxel/plugin-typst'
 import {
 	TakumiPlugin,
@@ -158,7 +158,7 @@ export class TakumiMarkdownPlugin extends BasePlugin {
 			pending: new Set(),
 		}
 		this.generation = generation
-		this.ctx.effects.defer(
+		this.ctx.service(EffectsService).defer(
 			async () => {
 				if (this.generation === generation) this.generation = undefined
 				generation.controller.abort(new MarkdownError('NOT_RUNNING', 'Markdown provider stopped'))
@@ -190,7 +190,9 @@ export class TakumiMarkdownPlugin extends BasePlugin {
 			state.controller.abort(new MarkdownError('NOT_RUNNING', 'Markdown renderer was closed'))
 			await Promise.allSettled(state.pending)
 		}
-		cleanup = (this.ctx.caller ?? this.ctx).effects.defer(close, { tag: 'markdown-renderer' })
+		cleanup = (this.ctx.caller ?? this.ctx)
+			.service(EffectsService)
+			.defer(close, { tag: 'markdown-renderer' })
 		return Object.freeze({
 			render: (source: string, input: MarkdownRenderOptions = {}) => {
 				const { theme: _, ...native } = input

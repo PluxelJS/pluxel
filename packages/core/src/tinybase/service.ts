@@ -1,3 +1,4 @@
+import { EffectsService } from '../services/effects/EffectsService'
 import { pluginNodeIndexKey, type PluginNodeAddress } from '../plugins/runtime/identity'
 import type { Context, PluginContext, RootContext } from '../context/Context'
 import type { CorePluginLifecycleHooks } from '../plugins/runtime/plugin-service/HostLifecycle'
@@ -34,7 +35,7 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 				return undefined
 			},
 		}
-		root.effects.defer(() => this.close(), { tag: 'TinyBase', phase: 'final' })
+		root.service(EffectsService).defer(() => this.close(), { tag: 'TinyBase', phase: 'final' })
 	}
 
 	forOwner(ctx: Context): TinyBaseService {

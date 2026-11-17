@@ -4,6 +4,7 @@ import type {
 	ScriptRunSnapshot,
 } from '@pluxel/host/internal/agent/runtime'
 import type { publicInstance } from './dev'
+import type { ControlSyncSelection } from './materials'
 
 export type HostCredentials = Readonly<{ password?: string; code?: string; cookie?: string }>
 export type LocalHostTarget = Readonly<{
@@ -56,7 +57,12 @@ export type HmrControlOptions = OperationOptions &
 		action: ScriptHmrAction
 	}>
 export type ReceiptQueryOptions = Readonly<{ credentials?: HostCredentials; signal?: AbortSignal }>
-export type ControlSyncOptions = Readonly<{ target: HostTarget; out: string; signal?: AbortSignal }>
+export type ControlSyncOptions = Readonly<{
+	target: HostTarget
+	out: string
+	signal?: AbortSignal
+}> &
+	ControlSyncSelection
 export type HostClientFailure = ScriptFailure &
 	Readonly<{
 		runId?: string

@@ -1,3 +1,4 @@
+import { EffectsService } from '../src/services/effects/EffectsService'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import {
 	BasePlugin,
@@ -59,7 +60,7 @@ class LeafPart extends PluginPart<BranchPart> {
 
 	protected override init() {
 		trace.push(`leaf:init:${this.config.leafValue}`)
-		this.ctx.effects.defer(() => {
+		this.ctx.service(EffectsService).defer(() => {
 			trace.push('leaf:cleanup')
 		})
 	}
@@ -117,7 +118,7 @@ let failureTrace: string[] = []
 class FailingPart extends PluginPart<FailingOwner> {
 	protected override init() {
 		failureTrace.push('part:init')
-		this.ctx.effects.defer(() => {
+		this.ctx.service(EffectsService).defer(() => {
 			failureTrace.push('part:cleanup')
 		})
 		throw new Error('part startup failed')
@@ -505,8 +506,8 @@ describe('owner-bound PluginPart', () => {
 			expect(owner.first).toBeInstanceOf(RepeatedPart)
 			expect(owner.second).toBeInstanceOf(RepeatedPart)
 			expect(owner.first).not.toBe(owner.second)
-			expect(pluginPartContextOf(owner.first).effects).not.toBe(
-				pluginPartContextOf(owner.second).effects,
+			expect(pluginPartContextOf(owner.first).service(EffectsService)).not.toBe(
+				pluginPartContextOf(owner.second).service(EffectsService),
 			)
 		})
 	})

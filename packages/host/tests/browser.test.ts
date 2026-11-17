@@ -21,17 +21,17 @@ it('runs the lowered dependency graph and drains it without Node globals', async
 		await writeFile(
 			join(root, 'provider.ts'),
 			`
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, LoggerService, Fs } from '@pluxel/core'
 import { trace } from './trace'
 @Plugin()
 export class Provider extends BasePlugin {
   protected override async init() {
-    const fs = await this.ctx.fs()
+    const fs = await this.ctx.service(Fs)()
     await fs.writeFile('browser.txt', 'browser storage')
-    this.ctx.logger.info('provider started', { storage: await fs.readFile('browser.txt', 'utf8') })
+    this.ctx.service(LoggerService).info('provider started', { storage: await fs.readFile('browser.txt', 'utf8') })
     trace.push('provider started')
     return () => {
-      this.ctx.logger.info('provider closed')
+      this.ctx.service(LoggerService).info('provider closed')
       trace.push('provider closed')
     }
   }
@@ -42,17 +42,17 @@ export class Provider extends BasePlugin {
 		await writeFile(
 			join(root, 'consumer.ts'),
 			`
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, LoggerService } from '@pluxel/core'
 import { Provider } from './provider'
 import { trace } from './trace'
 @Plugin()
 export class Consumer extends BasePlugin {
   constructor(private provider: Provider) { super() }
   protected override init() {
-    this.ctx.logger.info('consumer started')
+    this.ctx.service(LoggerService).info('consumer started')
     trace.push(this.provider.greet())
     return () => {
-      this.ctx.logger.info('consumer closed')
+      this.ctx.service(LoggerService).info('consumer closed')
       trace.push('consumer closed')
     }
   }
@@ -63,6 +63,8 @@ export class Consumer extends BasePlugin {
 			join(root, 'entry.ts'),
 			`
 import { logtape, zenfs } from '@pluxel/core/config'
+import { LoggerService } from '@pluxel/core'
+import { Logging } from '@pluxel/core/logging'
 import { createHost } from '@pluxel/host/browser'
 import { Provider } from './provider'
 import { Consumer } from './consumer'
@@ -105,19 +107,20 @@ export async function run() {
     policy: { autoStart: [consumer] },
     plugins: [Provider, Consumer],
   })
-  const rootId = host.ctx.logging?.resolved.root.id
-  const logging = { initial: host.ctx.logging?.state, final: host.ctx.logging?.state }
+  const manager = host.ctx.service(Logging)
+  const rootId = manager.resolved.root.id
+  const logging = { initial: manager.state, final: manager.state }
   try {
-    host.ctx.logger.info('host prepared')
+    host.ctx.service(LoggerService).info('host prepared')
     const started = await host.start()
     const running = await host.status()
     await host.stopNode(consumer)
     const stopped = await host.status()
     return { started, running, stopped, trace, records, rootId, logging, sinkLifecycle }
   } finally {
-    host.ctx.logger.info('host closing')
+    host.ctx.service(LoggerService).info('host closing')
     await host.close()
-    logging.final = host.ctx.logging?.state
+    logging.final = manager.state
   }
 }
 `,

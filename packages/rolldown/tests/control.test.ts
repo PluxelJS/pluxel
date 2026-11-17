@@ -2,14 +2,14 @@ import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 import { rolldown } from 'rolldown'
 import { build as pack, type TsdownPlugin } from 'vite-plus/pack'
 import { pluginDefinitionIndexKey } from '@pluxel/core'
-import { generatePluginControl } from '../src/control/generate'
+import { generatePluginControl } from '../src/control/generate-plugin'
 import { createPluginControlPlugin } from '../src/control/plugin'
 import { verifyPluginControlMaterial } from '../src/control/manifest'
 import { createPluginSemanticsPlugin } from '../src/rolldown/plugins/pluginSemanticsPlugin'
@@ -139,6 +139,174 @@ async function externalTypesFixture() {
 }
 
 describe('Plugin control compiler', () => {
+	it('keeps inferred type-star contracts in their producer across downstream re-exports', async () => {
+		const directory = await fixture()
+		const producer = await mkdtemp(resolve(tmpdir(), 'pluxel-control-producer-'))
+		fixtures.push(producer)
+		const consumer = resolve(directory, 'node_modules/control-test-consumer')
+		await mkdir(consumer, { recursive: true })
+		await symlink(producer, resolve(directory, 'node_modules/control-test-producer'), 'dir')
+		await writeFile(
+			resolve(producer, 'package.json'),
+			JSON.stringify({
+				name: 'control-test-producer',
+				type: 'module',
+				exports: { '.': './index.ts', './contracts': './contracts.ts' },
+			}),
+		)
+		await writeFile(
+			resolve(consumer, 'package.json'),
+			JSON.stringify({ name: 'control-test-consumer', type: 'module', exports: './index.ts' }),
+		)
+		await writeFile(
+			resolve(consumer, 'index.ts'),
+			'export type * from "control-test-producer/contracts";\n',
+		)
+		await writeFile(
+			resolve(producer, 'contracts.ts'),
+			`export interface Row<T = string> { readonly id: T }
+export class Token { private brand = 0; self(): this { return this } read() { return this.brand } }
+/** @internal */ export interface InternalOnly { secret: true }
+export interface Unused { readonly unused: true }
+`,
+		)
+		await writeFile(
+			resolve(producer, 'functions.ts'),
+			`import type {Row} from './contracts.ts'
+import {Token} from './contracts.ts'
+export function row(): Row<number> { return {id: 1} }
+export function token(): Token { return new Token() }
+`,
+		)
+		const producerSource = `import {row, token} from './functions.ts'
+export type * from './contracts.ts' with {"resolution-mode": "import"}
+// An author identifier must never collide with an emitter-local alias.
+const __pluxelControlType_0 = 1
+export class Repository { row() { return row() } token() { void __pluxelControlType_0; return token() } }
+`
+		await writeFile(resolve(producer, 'index.ts'), producerSource)
+		const counter = resolve(directory, 'counter.ts')
+		await writeFile(
+			counter,
+			`import {BasePlugin, Plugin} from '@pluxel/core'
+import {Repository} from ${JSON.stringify(relative(directory, resolve(producer, 'index.ts')).replaceAll('\\', '/'))}
+import type {Row, Token} from ${JSON.stringify(relative(directory, resolve(producer, 'contracts.ts')).replaceAll('\\', '/'))}
+import type {Row as ConsumerRow} from 'control-test-consumer'
+const keepConsumerInProgram = (row: ConsumerRow) => row
+void keepConsumerInProgram
+@Plugin()
+export class Counter extends BasePlugin {
+ row() { return new Repository().row() }
+ token() { return new Repository().token() }
+ accept(row: Row<number>, token: Token): void { void [row, token] }
+}
+`,
+		)
+		const config = resolve(directory, 'tsconfig.json')
+		const configured = JSON.parse(await readFile(config, 'utf8'))
+		configured.compilerOptions.noUnusedLocals = true
+		configured.compilerOptions.stripInternal = true
+		const originalConfig = JSON.stringify(configured)
+		await writeFile(config, originalConfig)
+		const generation = await generatePluginControl({
+			root: directory,
+			definitions: [{ moduleId: counter, className: 'Counter', definition }],
+		})
+		const declarations = Object.values(generation.files).join('\n')
+		expect(declarations).not.toContain('InternalOnly')
+		expect(await readFile(resolve(producer, 'index.ts'), 'utf8')).toBe(producerSource)
+		expect(await readFile(config, 'utf8')).toBe(originalConfig)
+		const material = resolve(directory, 'material')
+		for (const [path, code] of Object.entries(generation.files)) {
+			const file = resolve(material, path)
+			await mkdir(dirname(file), { recursive: true })
+			await writeFile(file, code)
+		}
+		await rm(producer, { recursive: true })
+		await rm(consumer, { recursive: true })
+		await rm(counter)
+		await writeFile(
+			resolve(material, 'usage.mts'),
+			`import type {CounterInstance} from './index.mjs'
+declare const counter: CounterInstance
+const id: number = counter.row().id
+const token = counter.token()
+const self: typeof token = token.self()
+counter.accept(counter.row(), self)
+// @ts-expect-error The producer's generic Row type remains exact.
+const text: string = counter.row().id
+// @ts-expect-error The producer's private Token identity cannot be forged.
+const forged: typeof token = {self() { return this }, read() { return 0 }}
+void [id, text, self, forged]
+`,
+		)
+		await writeFile(
+			resolve(material, 'tsconfig.json'),
+			JSON.stringify({
+				compilerOptions: {
+					target: 'ES2023',
+					module: 'ESNext',
+					moduleResolution: 'bundler',
+					strict: true,
+					noEmit: true,
+					skipLibCheck: true,
+					types: ['node'],
+					allowImportingTsExtensions: true,
+					customConditions: ['@pluxel/source'],
+				},
+				files: ['usage.mts'],
+			}),
+		)
+		await run(process.execPath, [
+			resolve(dirname(require.resolve('typescript/package.json')), 'bin/tsc'),
+			'--project',
+			material,
+			'--pretty',
+			'false',
+		]).catch((error) => {
+			throw new Error(error.stdout || error.stderr || error.message, { cause: error })
+		})
+	}, 30_000)
+
+	it('keeps native ambiguity errors for conflicting type-star exports', async () => {
+		const directory = await fixture()
+		await writeFile(resolve(directory, 'left.ts'), 'export interface Ambiguous { left: true }\n')
+		await writeFile(resolve(directory, 'right.ts'), 'export interface Ambiguous { right: true }\n')
+		const counter = resolve(directory, 'counter.ts')
+		await writeFile(
+			counter,
+			(await readFile(counter, 'utf8')) +
+				"\nexport type * from './left.ts'\nexport type * from './right.ts'\n",
+		)
+		await expect(
+			generatePluginControl({
+				root: directory,
+				definitions: [{ moduleId: counter, className: 'Counter', definition }],
+			}),
+		).rejects.toThrow(/TS2308/)
+	}, 30_000)
+
+	it('preserves author value import attributes without using them on type imports', async () => {
+		const directory = await fixture()
+		await writeFile(
+			resolve(directory, 'attributes.ts'),
+			'export class AttributeValue { readonly value = 1 }\n',
+		)
+		const counter = resolve(directory, 'counter.ts')
+		const source = `import {BasePlugin, Plugin} from '@pluxel/core'
+import {AttributeValue} from './attributes.ts' with {flavor: 'custom'}
+@Plugin()
+export class Counter extends BasePlugin { attribute(): AttributeValue { return new AttributeValue() } }
+`
+		await writeFile(counter, source)
+		const generation = await generatePluginControl({
+			root: directory,
+			definitions: [{ moduleId: counter, className: 'Counter', definition }],
+		})
+		expect(await readFile(counter, 'utf8')).toBe(source)
+		expect(Object.values(generation.files).join('\n')).toContain('attribute(): AttributeValue;')
+	}, 30_000)
+
 	it('uses the build root compiler environment independently of sorted source ownership', async () => {
 		const directory = await fixture()
 		await writeFile(
@@ -319,7 +487,7 @@ export class Plain extends BasePlugin { readonly value = 1n }`,
 			declaration,
 			'// @ts-expect-error optional dependency\n\n// retained comment\n' + body,
 		)
-		await expect(generate()).resolves.toHaveProperty('format', 2)
+		await expect(generate()).resolves.toHaveProperty('format', 3)
 		await checkOriginal()
 		await writeFile(declaration, ignored)
 		const installed = resolve(directory, 'node_modules/control-test-electron')

@@ -1,3 +1,4 @@
+import { EffectsService } from '../src/services/effects/EffectsService'
 import {
 	createCoreContextInstallations,
 	requirePluginService,
@@ -118,7 +119,7 @@ function createRootFactory(
 		const inputs = resolveCoreRootInputs(config)
 		const contextHost = createContextHost({
 			name: 'core-host-lifecycle-test',
-			capabilities: createCoreContextInstallations(inputs, hooks),
+			services: createCoreContextInstallations(inputs, hooks),
 		})
 		return contextHost.createRoot(inputs.name) as RootContext
 	}
@@ -143,7 +144,7 @@ describe('Core host lifecycle seams', () => {
 			)
 			const registry = requirePluginService(host.ctx)
 			const summaries = vi.fn()
-			host.ctx.effects.defer(registry.subscribeCommitted(summaries))
+			host.ctx.service(EffectsService).defer(registry.subscribeCommitted(summaries))
 			host.add(OrderedPlugin)
 			await host.commit()
 			const first = host.require(OrderedPlugin)
@@ -227,8 +228,8 @@ describe('Core host lifecycle seams', () => {
 			if (instance) lifecycleTrace.push('watcher')
 		})
 		const unsubscribe = registry.subscribeCommitted(() => lifecycleTrace.push('listener'))
-		host.ctx.effects.defer(unwatch)
-		host.ctx.effects.defer(unsubscribe)
+		host.ctx.service(EffectsService).defer(unwatch)
+		host.ctx.service(EffectsService).defer(unsubscribe)
 
 		host.add(OrderedPlugin)
 		await host.commit()
@@ -263,7 +264,7 @@ describe('Core host lifecycle seams', () => {
 				createRootContext: createRootFactory({
 					finalizeGeneration: ({ ctx }) => {
 						lifecycleTrace.push('host:finalize')
-						ctx.effects.defer(() => {
+						ctx.service(EffectsService).defer(() => {
 							lifecycleTrace.push('host:cleanup')
 						})
 						throw new Error('host finalization failed')

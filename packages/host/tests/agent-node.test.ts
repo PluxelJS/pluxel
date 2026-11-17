@@ -33,7 +33,7 @@ async function artifact(code: string): Promise<ScriptArtifact> {
 	const body = `const {Result} = __pluxel_script_better_result;\n${code}`
 	return {
 		kind: 'artifact',
-		format: 'pluxel-js-factory/4',
+		format: 'pluxel-js-factory/5',
 		code: body,
 		sourceHash: await hashScriptSource(body),
 		exportName: 'default',

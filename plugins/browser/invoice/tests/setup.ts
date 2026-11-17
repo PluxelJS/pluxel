@@ -82,9 +82,9 @@ export async function setup(
 	const credentials = defineHostService({
 		name: 'Invoice test credentials',
 		requires: { vault: Vault },
-		capabilities: [],
+		provides: [],
 		async prepare({ ctx }) {
-			await ctx.require(HostVaultBindings).install([
+			await ctx.service(HostVaultBindings).install([
 				{
 					owner: InvoicePlugin.nodeAddress(),
 					key: 'primary',

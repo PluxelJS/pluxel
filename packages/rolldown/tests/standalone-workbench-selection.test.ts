@@ -195,9 +195,11 @@ it('compiles only the selected producer and Content when two Plugins share one s
 			root,
 			'owners.ts',
 			`
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { defineServiceRef, BasePlugin, Plugin } from '@pluxel/core'
 import { workbench } from '@pluxel/workbench'
 import { RpcTarget } from 'capnweb'
+import type { Workbench } from '@pluxel/workbench'
+const WorkbenchRef = defineServiceRef<Workbench>()
 export const SelectedWorkbench = workbench.define({
  settings: workbench.view({ renderer: workbench.entry(import.meta.url, './panel.tsx'), placement: workbench.tab({ label: 'Selected' }) }),
  guide: workbench.content({ document: workbench.markdown(import.meta.url, './guide.md'), placement: workbench.tab({ label: 'Selected guide' }) }),
@@ -208,11 +210,11 @@ export const UnselectedWorkbench = workbench.define({
 })
 @Plugin()
 export class SelectedPlugin extends BasePlugin {
- init() { this.ctx.workbench?.publish(SelectedWorkbench, { settings: () => new RpcTarget() }) }
+ init() { this.ctx.service(WorkbenchRef)?.publish(SelectedWorkbench, { settings: () => new RpcTarget() }) }
 }
 @Plugin()
 export class UnselectedPlugin extends BasePlugin {
- init() { this.ctx.workbench?.publish(UnselectedWorkbench, { settings: () => new RpcTarget() }) }
+ init() { this.ctx.service(WorkbenchRef)?.publish(UnselectedWorkbench, { settings: () => new RpcTarget() }) }
 }
 `,
 		)

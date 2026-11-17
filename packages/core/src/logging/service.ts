@@ -1,4 +1,3 @@
-import { defineContextCapability } from '@pluxel/context'
 import type { RootContext } from '../context/Context'
 import type { PluginNodeAddress } from '../plugins/runtime/identity'
 import { requireHostDocuments } from '../internal/storage'
@@ -12,10 +11,10 @@ import { assertRuntimeLoggingOptions } from './validation'
 import { createPluginLogPolicyStore } from './storage'
 
 /** The root's fixed logging capability; Plugins retain only their scoped ContextLogger. */
-export const Logging = defineContextCapability<RuntimeLogging>('core.logging', {
-	access: 'root',
-	property: 'logging',
-})
+export abstract class Logging {
+	static readonly access = 'root' as const
+}
+export interface Logging extends RuntimeLogging {}
 
 export type LoggingOptions = Readonly<
 	RuntimeLoggingOptions & {

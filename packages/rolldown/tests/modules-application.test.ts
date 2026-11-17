@@ -221,15 +221,17 @@ it('records verified Workbench transport in modules deployments and omits it fro
 		)
 		await writeFile(
 			resolve(root, 'src/owner.ts'),
-			`import { BasePlugin, Plugin } from '@pluxel/core'
+			`import { defineServiceRef, BasePlugin, Plugin } from '@pluxel/core'
 import { workbench } from '@pluxel/workbench'
 import { RpcTarget } from 'capnweb'
+import type { Workbench } from '@pluxel/workbench'
+const WorkbenchRef = defineServiceRef<Workbench>()
 export const OwnerWorkbench = workbench.define({
  panel: workbench.view({ renderer: workbench.entry(import.meta.url, './panel.tsx'), placement: workbench.tab({ label: 'Peer' }) }),
 })
 @Plugin()
 export class Owner extends BasePlugin {
- init() { this.ctx.workbench?.publish(OwnerWorkbench, { panel: () => new RpcTarget() }) }
+ init() { this.ctx.service(WorkbenchRef)?.publish(OwnerWorkbench, { panel: () => new RpcTarget() }) }
 }`,
 		)
 		await writeFile(
@@ -329,7 +331,7 @@ it('uses package-owned workers through servicesPreset after modules deployment r
 import {Workers,defineWorkerTask} from '@pluxel/services/workers';
 const task=defineWorkerTask<number,{value:number,url:string}>(import.meta.url,'./${name}-task.ts');
 @Plugin() export class ${plugin} extends BasePlugin {
- async init(){const result=await this.ctx.require(Workers).run(task,21);process.stdout.write('WORKER_RESULT '+JSON.stringify({owner:'${name}',...result})+'\\n')}
+ async init(){const result=await this.ctx.service(Workers).run(task,21);process.stdout.write('WORKER_RESULT '+JSON.stringify({owner:'${name}',...result})+'\\n')}
 }`,
 			)
 		}
@@ -450,7 +452,7 @@ it('preserves public and private identities, named product, minified artifacts a
 		await writeFile(resolve(root, 'src/task.ts'), 'export default (value: number) => value * 2')
 		await writeFile(
 			resolve(root, 'src/private.ts'),
-			`import {BasePlugin,Plugin} from '@pluxel/core'; import {Workers,defineWorkerTask} from '@pluxel/services/workers'; const task=defineWorkerTask<number,number>(import.meta.url,'./task.ts'); @Plugin() export class Private extends BasePlugin {async init(){const value=await this.ctx.require(Workers).run(task,21);if(value!==42)throw new Error('ARTIFACT_NOT_RELOCATED');console.log('MODULES_WORKER_OK')}}`,
+			`import {BasePlugin,Plugin} from '@pluxel/core'; import {Workers,defineWorkerTask} from '@pluxel/services/workers'; const task=defineWorkerTask<number,number>(import.meta.url,'./task.ts'); @Plugin() export class Private extends BasePlugin {async init(){const value=await this.ctx.service(Workers).run(task,21);if(value!==42)throw new Error('ARTIFACT_NOT_RELOCATED');console.log('MODULES_WORKER_OK')}}`,
 		)
 		await writeFile(
 			resolve(root, 'src/app.ts'),

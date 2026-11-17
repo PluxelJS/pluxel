@@ -569,7 +569,7 @@ function buildHostBootstrap(entry: string, variant: 'headless' | 'workbench'): s
 import application, * as applicationExports from ${JSON.stringify(entry)}
 export * from ${JSON.stringify(entry)}
 import { createHost, resolveHostApplication } from '@pluxel/host'
-import { setHostCatalogProvenance, startHostApplication, recordLoadedHostApplication, readLoadedApplicationControl } from '@pluxel/host/internal'
+import { setHostCatalogProvenance, startHostApplication, recordLoadedHostApplication, readLoadedApplicationControl, loadLoadedApplicationServiceControls } from '@pluxel/host/internal'
 import { readFile } from 'node:fs/promises'
 const reservedExports = ['host', 'ctx', 'start', 'stop'].filter(name => Object.hasOwn(applicationExports, name))
 if (reservedExports.length > 0) throw new TypeError('[pluxel:application] standalone application exports reserved entry names: ' + reservedExports.join(', '))
@@ -581,6 +581,7 @@ export const host = await createHost({
  vaultBindings:resolved.vaultBindings,services:resolved.services,
 })
 try {
+ await loadLoadedApplicationServiceControls(application, host.ctx, import.meta.dirname)
  setHostCatalogProvenance(host.ctx, new Map(resolved.plugins.map(plugin => [plugin, {execution:{kind:'native',origin:'fixed',artifact:{kind:'application-bundle'},update:{kind:'next-start'}},control:readLoadedApplicationControl(application,plugin)}])))
 } catch (error) {
  const [cleanup] = await Promise.allSettled([host.close()])

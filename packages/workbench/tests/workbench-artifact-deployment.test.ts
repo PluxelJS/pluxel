@@ -26,7 +26,7 @@ import * as ReactDom from 'react-dom'
 import { describe, expect, it, vi } from 'vitest'
 
 import { version as runtimeVersion } from '@pluxel/workbench/package.json'
-import { requireWorkbench } from '@pluxel/workbench/server'
+import { WorkbenchHost } from '@pluxel/workbench/server'
 import {
 	WorkbenchArtifactService,
 	WorkbenchArtifactCoordinator,
@@ -389,7 +389,7 @@ describe('WorkbenchArtifactService', () => {
 			await using host = await createServiceInternalTestHarness({ workbench: true })
 
 			await host.commit()
-			const backend = requireWorkbench(host.ctx)
+			const backend = host.ctx.service(WorkbenchHost)
 			const coordinatorEvents = vi.fn()
 			const invalidated = vi.fn()
 			const unsubscribe = backend.artifactCoordinator.subscribe(coordinatorEvents)
@@ -436,7 +436,7 @@ describe('WorkbenchArtifactService', () => {
 			})
 
 			await host.commit()
-			const artifacts = requireWorkbench(host.ctx).artifacts
+			const artifacts = host.ctx.service(WorkbenchHost).artifacts
 			expect(artifacts.getCurrent(definition)).toMatchObject({
 				producer: plan.producer,
 				buildRevision: plan.buildRevision,
@@ -489,7 +489,7 @@ describe('WorkbenchArtifactService', () => {
 			})
 
 			await host.commit()
-			const contentService = requireWorkbench(host.ctx).content
+			const contentService = host.ctx.service(WorkbenchHost).content
 			expect(contentService.getCurrent(definition)).toMatchObject({
 				definitionDigest: contentArtifact.candidate.definitionDigest,
 				digest: contentArtifact.candidate.digest,
@@ -537,7 +537,7 @@ describe('WorkbenchArtifactService', () => {
 				],
 			})
 
-			const backend = requireWorkbench(host.ctx)
+			const backend = host.ctx.service(WorkbenchHost)
 			// Host preparation loads one atomic inventory before any Plugin activation.
 			expect(backend.artifactCoordinator.revision).toBe(1)
 			await host.commit()

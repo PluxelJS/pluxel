@@ -1,3 +1,4 @@
+import { EffectsService } from '../src/services/effects/EffectsService'
 import { describe, expect, it } from 'vitest'
 import { requirePluginService } from '@pluxel/core/internal'
 import {
@@ -27,7 +28,7 @@ class TeardownConsumer extends BasePlugin {
 	override init() {
 		return () => {
 			teardownEvents.push('consumer')
-			this.ctx.effects.defer(() => {
+			this.ctx.service(EffectsService).defer(() => {
 				teardownEvents.push('consumer:reentrant')
 			})
 		}

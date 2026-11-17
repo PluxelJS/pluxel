@@ -1,7 +1,7 @@
 import { SHARE_ENV } from 'node:worker_threads'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { nodeModules } from '@pluxel/services/node'
-import { defineWorkerTask, workers, type WorkersConfig } from '@pluxel/services/workers'
+import { defineWorkerTask, workers, type WorkersConfig, Workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import { expect, it, vi } from 'vitest'
 import type { Input, Output } from './fixtures/worker-native-options'
@@ -12,7 +12,7 @@ const envKey = 'PLUXEL_NATIVE_WORKER_TEST'
 @Plugin()
 class Consumer extends BasePlugin {
 	observe(input: Input = { envKey }) {
-		return this.ctx.workers.run(task, input)
+		return this.ctx.service(Workers).run(task, input)
 	}
 }
 

@@ -18,15 +18,14 @@ import {
 	reloadSavedConfig,
 	type HostPluginConfig,
 } from './config'
-import type {
-	Context,
-	ContextServices,
-	PluginContext,
-	PluginConstructor,
-	PluginNodeAddress,
-	PluginForkNodeAddress,
-	PluginDefinitionAddress,
-	RootContext,
+import {
+	EffectsService,
+	type Context,
+	type PluginConstructor,
+	type PluginNodeAddress,
+	type PluginForkNodeAddress,
+	type PluginDefinitionAddress,
+	type RootContext,
 } from '@pluxel/core'
 import { PluginLoweringError } from '@pluxel/core/toolchain'
 import {
@@ -36,13 +35,7 @@ import {
 	requireConfigService,
 	requirePluginService,
 } from '@pluxel/core/internal'
-import {
-	createCoreContextHost,
-	prepareCoreContext,
-	type RootContextProjection,
-	type ContextCapabilityInstallation,
-	type ValidateContextInstallations,
-} from '@pluxel/core/host'
+import { createCoreContextHost, prepareCoreContext } from '@pluxel/core/host'
 import {
 	planHostServices,
 	prepareHostServices,
@@ -62,24 +55,9 @@ import type { HostPolicyOptions } from './policy'
 import { createHostPolicy, type HostPolicy } from './policy-management'
 import type { PluginSource } from './sources'
 
-type ServiceCapabilities<TServices extends readonly HostService[]> =
-	number extends TServices['length']
-		? readonly ContextCapabilityInstallation[]
-		: TServices extends readonly [
-					infer Head extends HostService,
-					...infer Tail extends readonly HostService[],
-			  ]
-			? readonly [...Head['capabilities'], ...ServiceCapabilities<Tail>]
-			: readonly []
-
-type ValidateHostServices<TServices extends readonly HostService[]> = ValidateContextInstallations<
-	ServiceCapabilities<TServices>,
-	Exclude<keyof PluginContext, keyof ContextServices> | 'constructor' | '__proto__' | 'logging'
->
-
-type HostBaseOptions<TServices extends readonly HostService[] = readonly HostService[]> = Readonly<{
+type HostBaseOptions = Readonly<{
 	/** Positive service list, fixed before root creation. Omitted means no additional services. */
-	services?: TServices & ValidateHostServices<TServices>
+	services?: readonly HostService[]
 	/** Loaded Plugin constructors for the catalog. Select their nodes separately with policy.autoStart or startNode. */
 	plugins: readonly PluginConstructor[]
 	/** Diagnostic identity; independent of product branding. */
@@ -108,20 +86,17 @@ export type HostApplication = Omit<HostBaseOptions, 'vaultBindings'> &
 		acceptStartup?(
 			input: import('./application-start').HostApplicationStartup,
 		): boolean | Promise<boolean>
-		/** Publish the production entry point after startup is accepted. Register resources with host.ctx.effects. */
+		/** Publish the production entry point after startup is accepted. Register resources with host.ctx.service(EffectsService). */
 		launch?(input: {
 			host: PluginHost
 			startup: import('./application').HostStartupContext
 		}): void | Promise<void>
 	}>
 
-export type HostOptions<TServices extends readonly HostService[] = readonly HostService[]> =
-	HostBaseOptions<TServices>
+export type HostOptions = HostBaseOptions
 
-export interface PluginHost<
-	TServices extends readonly HostService[] = readonly HostService[],
-> extends AsyncDisposable {
-	readonly ctx: RootContext & RootContextProjection<ServiceCapabilities<TServices>>
+export interface PluginHost extends AsyncDisposable {
+	readonly ctx: RootContext
 	readonly config: HostPluginConfig
 	readonly policy: HostPolicy
 	/** A snapshot of availability, running intent and lifecycle outcomes from one committed graph. */
@@ -163,9 +138,7 @@ export interface PluginHost<
 }
 
 /** Validate and prepare a fixed service composition. Plugin generations start only through start(). */
-export async function createHost<const TServices extends readonly HostService[] = readonly []>(
-	options: HostOptions<TServices>,
-): Promise<PluginHost<TServices>> {
+export async function createHost(options: HostOptions): Promise<PluginHost> {
 	if (!options || typeof options !== 'object' || Array.isArray(options))
 		throw new TypeError('[host] createHost options must be an object')
 	const fields = new Set([
@@ -206,7 +179,7 @@ export async function createHost<const TServices extends readonly HostService[] 
 		executionBinding,
 		name: options.name,
 		createLifecycleHooks: (ctx) => createHostServiceLifecycle(ctx, services),
-		capabilities: services.flatMap((service) => [...service.capabilities]),
+		services: services.flatMap((service) => [...service.provides]),
 		createConfigService: (ctx) => {
 			if (!configStorageOptions)
 				throw new Error('[host] document storage factories must not read Host config')
@@ -220,7 +193,7 @@ export async function createHost<const TServices extends readonly HostService[] 
 		configStorageOptions = configStorage
 		const state = new HostStateStore(ctx, options.policy, stateStorage)
 		hostStateStores.set(ctx, state)
-		ctx.effects.defer(
+		ctx.service(EffectsService).defer(
 			() => {
 				hostStateStores.delete(ctx)
 			},
@@ -232,7 +205,7 @@ export async function createHost<const TServices extends readonly HostService[] 
 		installPluginHostCoordinator(ctx, { state })
 		await prepareHostServices(ctx, services, fixed)
 		if (options.vaultBindings?.length)
-			await ctx.require(HostVaultBindings).install(options.vaultBindings)
+			await ctx.service(HostVaultBindings).install(options.vaultBindings)
 		const store = requireConfigService(ctx) as HostConfigStore
 		await store.observe(() =>
 			reloadSavedConfig(ctx, () => {
@@ -240,7 +213,7 @@ export async function createHost<const TServices extends readonly HostService[] 
 				return current.revision === 0 ? catalog(0, fixed, ctx) : current
 			}),
 		)
-		return createPreparedHost(options, fixed, ctx) as PluginHost<TServices>
+		return createPreparedHost(options, fixed, ctx) as PluginHost
 	} catch (error) {
 		const failures: unknown[] = [error]
 		try {
@@ -249,7 +222,7 @@ export async function createHost<const TServices extends readonly HostService[] 
 			failures.push(cleanupError)
 		}
 		try {
-			await ctx.effects.dispose()
+			await ctx.service(EffectsService).dispose()
 		} catch (cleanupError) {
 			failures.push(cleanupError)
 		}
@@ -367,7 +340,7 @@ function createPreparedHost(
 				failures.push(error)
 			}
 			try {
-				await ctx.effects.dispose()
+				await ctx.service(EffectsService).dispose()
 			} catch (error) {
 				failures.push(error)
 			}

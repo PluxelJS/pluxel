@@ -1,4 +1,13 @@
-import { BasePlugin, formatPluginNodeReference, Plugin, type Context } from '@pluxel/core'
+import type { Workbench } from '@pluxel/workbench'
+import {
+	BasePlugin,
+	formatPluginNodeReference,
+	Plugin,
+	type Context,
+	EffectsService,
+	LoggerService,
+	defineServiceRef,
+} from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import {
@@ -11,6 +20,7 @@ import { RedisScripts } from './scripts.ts'
 import { isRedisConnectionId } from './validation.ts'
 import { RedisWorkbench, type RedisWorkbenchStatus } from './workbench.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 const MAX_CONNECTIONS = 64
 
 function isCredentialFreeRedisUrl(value: string): boolean {
@@ -201,7 +211,7 @@ export class RedisPlugin extends Redis {
 
 		this.active = true
 		try {
-			this.ctx.effects.defer(() => this.deactivate(), {
+			this.ctx.service(EffectsService).defer(() => this.deactivate(), {
 				tag: 'RedisConnectionCatalog',
 				phase: 'shutdown',
 			})
@@ -226,7 +236,7 @@ export class RedisPlugin extends Redis {
 		const state: RedisConnectionState = {
 			config,
 			client,
-			workbench: this.ctx.workbench
+			workbench: this.ctx.service(WorkbenchRef)
 				? {
 						recentErrorType: null,
 						ping: { state: 'not-run', latencyMs: null, errorType: null },
@@ -236,7 +246,9 @@ export class RedisPlugin extends Redis {
 		let disposed = false
 		const onError = (error: Error): void => {
 			if (disposed) return
-			this.ctx.logger.error('Redis client error', { connectionId: config.id, error })
+			this.ctx
+				.service(LoggerService)
+				.error('Redis client error', { connectionId: config.id, error })
 			if (!state.workbench) return
 			state.workbench.recentErrorType = safeErrorType(error)
 			this.notifyWorkbenchDataChanged()
@@ -257,7 +269,7 @@ export class RedisPlugin extends Redis {
 				} catch {}
 			}
 		}
-		this.ctx.effects.defer(dispose, { tag: `RedisClient:${config.id}` })
+		this.ctx.service(EffectsService).defer(dispose, { tag: `RedisClient:${config.id}` })
 
 		const abort = (): void => client.destroy()
 		signal.addEventListener('abort', abort, { once: true })
@@ -279,7 +291,7 @@ export class RedisPlugin extends Redis {
 			client.on('ready', connectionChanged)
 			client.on('reconnecting', connectionChanged)
 			client.on('end', connectionChanged)
-			this.ctx.effects.defer(
+			this.ctx.service(EffectsService).defer(
 				() => {
 					client.off('ready', connectionChanged)
 					client.off('reconnecting', connectionChanged)
@@ -292,7 +304,7 @@ export class RedisPlugin extends Redis {
 	}
 
 	private publishWorkbench(): void {
-		const workbench = this.ctx.workbench
+		const workbench = this.ctx.service(WorkbenchRef)
 		if (!workbench) return
 		this.workbenchDataListeners = new Set()
 		workbench.publish(RedisWorkbench, {
@@ -381,7 +393,7 @@ export class RedisPlugin extends Redis {
 		this.activeOwners.add(owner)
 		const cleanupOwner = owner
 		try {
-			context.effects.defer(() => this.releaseOwner(cleanupOwner), {
+			context.service(EffectsService).defer(() => this.releaseOwner(cleanupOwner), {
 				tag: 'RedisConnections',
 				phase: 'shutdown',
 			})

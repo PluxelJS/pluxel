@@ -23,7 +23,7 @@ description: 使用 Drizzle ORM 定义插件专属数据表，支持托管数据
 ```ts twoslash
 // @filename: database.ts
 import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
-import { defineDatabase } from '@pluxel/services/database'
+import { defineDatabase, Database } from '@pluxel/services/database'
 
 export const notes = pgTable(
 	'notes',
@@ -50,7 +50,7 @@ export class NotesPlugin extends BasePlugin {
 
 	protected override async init() {
 		// 获取已就绪的数据库句柄
-		this.database = await this.ctx.require(Database).use(NotesDatabase)
+		this.database = await this.ctx.service(Database).use(NotesDatabase)
 	}
 
 	listNotes() {

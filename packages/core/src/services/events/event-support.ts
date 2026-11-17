@@ -1,9 +1,11 @@
+import { EffectsService } from '../effects/EffectsService'
+import { LoggerService } from '../../logger/LoggerService'
 import type { Context } from '../../context/Context'
 import type { EventureOptions, IEventMap } from 'eventure'
 
 export function deferEventCleanup(owner: Context, cleanup: () => void): void {
 	try {
-		owner.effects.defer(cleanup)
+		owner.service(EffectsService).defer(cleanup)
 	} catch (error) {
 		try {
 			cleanup()
@@ -20,6 +22,8 @@ export function withEventLogger<T extends IEventMap<T>>(
 ): EventureOptions<T> {
 	return {
 		...config,
-		logger: ctx.logger.with({ service: 'eventure' }) as unknown as EventureOptions<T>['logger'],
+		logger: ctx
+			.service(LoggerService)
+			.with({ service: 'eventure' }) as unknown as EventureOptions<T>['logger'],
 	}
 }

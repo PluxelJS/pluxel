@@ -60,10 +60,9 @@ async function artifact(body: string): Promise<ScriptArtifact> {
 	}
 }
 async function settled(control: ScriptControlClient, id: string): Promise<ScriptRunSnapshot> {
-	for (let attempt = 0; attempt < 200; attempt++) {
-		const run = await control.result(id)
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const run = await control.result(id, 1000)
 		if (['succeeded', 'failed', 'cancelled'].includes(run.state)) return run
-		await setTimeout(10)
 	}
 	throw new Error('Run did not settle')
 }
@@ -124,7 +123,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 					{
 						control: {
 							state: 'available',
-							format: generation.manifest.format,
+							format: 2,
 							contracts: generation.manifest.definitions[0].contracts,
 							material: generation,
 						},
@@ -279,11 +278,13 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 				backend: 'node',
 				codeKinds: ['artifact'],
 				lifetime: 'host',
-				capabilities: [
+				provides: [
 					'plugins',
 					'plugin',
 					'plugin.instance',
+					'plugin.context',
 					'plugin.config',
+					'ctx.service',
 					'policy',
 					'updates',
 					'logs',

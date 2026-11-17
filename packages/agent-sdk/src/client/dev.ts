@@ -37,7 +37,15 @@ export interface DevInstance {
 	application?: Readonly<{ state: 'ready' | 'updating' | 'unavailable'; latestUpdate: unknown }>
 }
 
-export type DevErrorContext = Readonly<{ root?: string; instanceId?: string; serviceId?: string }>
+export type DevErrorContext = Readonly<{
+	root?: string
+	instanceId?: string
+	serviceId?: string
+	recordFile?: string
+	expectedProtocol?: number
+	/** Null when the record does not contain a finite numeric protocol. */
+	actualProtocol?: number | null
+}>
 type DevErrorDetails = Readonly<{
 	runId?: string
 	requestHash?: string
@@ -115,8 +123,8 @@ function record(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function fail(code: string, message: string): never {
-	throw new DevClientError(code, message)
+function fail(code: string, message: string, details?: DevErrorDetails): never {
+	throw new DevClientError(code, message, details)
 }
 
 function checkPrivate(stat: Stats) {
@@ -174,18 +182,26 @@ export async function resolveDevRoot(root: string): Promise<string> {
 	}
 }
 
-export async function discoverDevInstances(root: string): Promise<DevInstance[]> {
+/** An exact owner reads only its record; unrelated records cannot redirect or block it. */
+export async function discoverDevInstances(
+	root: string,
+	instanceId?: string,
+): Promise<DevInstance[]> {
 	const directory = resolve(root, '.pluxel/dev-console')
+	if (instanceId !== undefined && !/^[a-zA-Z0-9_-]{1,128}$/.test(instanceId))
+		fail('invalid_input', 'instance must be an instanceId returned by development discovery', {
+			context: { root },
+		})
 	let entries: string[]
 	try {
 		const stat = await lstat(directory)
 		if (!stat.isDirectory() || stat.isSymbolicLink())
 			fail('invalid_discovery', 'Discovery must be a regular directory')
 		checkPrivate(stat)
-		entries = await readdir(directory)
+		entries = instanceId === undefined ? await readdir(directory) : [`${instanceId}.json`]
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-		throw error
+		throw withDevContext(error, { root })
 	}
 	const files = entries.filter((entry) => entry.endsWith('.json')).sort()
 	if (files.length > MAX_INSTANCES)
@@ -193,60 +209,76 @@ export async function discoverDevInstances(root: string): Promise<DevInstance[]>
 	const instances: DevInstance[] = []
 	for (const filename of files) {
 		const file = resolve(directory, filename)
-		let stat: Stats
+		const context: DevErrorContext = { root, recordFile: file }
 		try {
-			stat = await lstat(file)
+			let stat: Stats
+			try {
+				stat = await lstat(file)
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+				throw error
+			}
+			if (!stat.isFile() || stat.isSymbolicLink())
+				fail('invalid_discovery', 'Discovery records must be regular files')
+			checkPrivate(stat)
+			let value: unknown
+			try {
+				const buffer = await readBoundedFile(file, 16 * 1024)
+				value = JSON.parse(buffer.toString('utf8'))
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+				if (error instanceof DevClientError) throw error
+				fail('invalid_discovery', `Invalid discovery record: ${filename}`)
+			}
+			if (!record(value))
+				fail('invalid_discovery', 'Development console discovery record must contain an object')
+			if (value.protocol !== PROTOCOL)
+				fail('protocol_mismatch', 'Development console protocol version does not match this CLI', {
+					context: {
+						expectedProtocol: PROTOCOL,
+						actualProtocol:
+							typeof value.protocol === 'number' && Number.isFinite(value.protocol)
+								? value.protocol
+								: null,
+					},
+					hint: 'Use matching client and dev-host package versions. Inspect recordFile and remove that record only after confirming its console has stopped; no discovery record is rewritten automatically.',
+				})
+			if (
+				typeof value.instanceId !== 'string' ||
+				!/^[a-zA-Z0-9_-]{1,128}$/.test(value.instanceId) ||
+				filename !== `${value.instanceId}.json` ||
+				typeof value.nonce !== 'string' ||
+				value.nonce.length < 16 ||
+				value.nonce.length > 256 ||
+				!Number.isSafeInteger(value.pid) ||
+				(value.pid as number) < 1 ||
+				value.root !== root ||
+				typeof value.socketPath !== 'string' ||
+				value.socketPath.length > 512 ||
+				(value.serviceId !== undefined &&
+					(typeof value.serviceId !== 'string' ||
+						value.serviceId.trim() !== value.serviceId ||
+						!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value.serviceId))) ||
+				(value.profile !== undefined &&
+					(typeof value.profile !== 'string' ||
+						!/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(value.profile))) ||
+				(value.profile === undefined) !== (value.project === undefined) ||
+				(value.project !== undefined &&
+					(typeof value.project !== 'string' ||
+						!isAbsolute(value.project) ||
+						// eslint-disable-next-line no-control-regex -- Reject control characters in discovery paths.
+						/[\u0000-\u001f\u007f]/.test(value.project))) ||
+				typeof value.startedAt !== 'string' ||
+				!Number.isFinite(Date.parse(value.startedAt))
+			) {
+				fail('invalid_discovery', `Invalid discovery record: ${filename}`)
+			}
+			if (process.platform !== 'win32' && !isAbsolute(value.socketPath as string))
+				fail('invalid_discovery', 'Socket path must be absolute')
+			instances.push(value as unknown as DevInstance)
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
-			throw error
+			throw withDevContext(error, context)
 		}
-		if (!stat.isFile() || stat.isSymbolicLink())
-			fail('invalid_discovery', 'Discovery records must be regular files')
-		checkPrivate(stat)
-		let value: unknown
-		try {
-			const buffer = await readBoundedFile(file, 16 * 1024)
-			value = JSON.parse(buffer.toString('utf8'))
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
-			if (error instanceof DevClientError) throw error
-			fail('invalid_discovery', `Invalid discovery record: ${filename}`)
-		}
-		if (!record(value) || value.protocol !== PROTOCOL)
-			fail('protocol_mismatch', 'Development console protocol version does not match this CLI')
-		if (
-			typeof value.instanceId !== 'string' ||
-			!/^[a-zA-Z0-9_-]{1,128}$/.test(value.instanceId) ||
-			filename !== `${value.instanceId}.json` ||
-			typeof value.nonce !== 'string' ||
-			value.nonce.length < 16 ||
-			value.nonce.length > 256 ||
-			!Number.isSafeInteger(value.pid) ||
-			(value.pid as number) < 1 ||
-			value.root !== root ||
-			typeof value.socketPath !== 'string' ||
-			value.socketPath.length > 512 ||
-			(value.serviceId !== undefined &&
-				(typeof value.serviceId !== 'string' ||
-					value.serviceId.trim() !== value.serviceId ||
-					!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value.serviceId))) ||
-			(value.profile !== undefined &&
-				(typeof value.profile !== 'string' ||
-					!/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(value.profile))) ||
-			(value.profile === undefined) !== (value.project === undefined) ||
-			(value.project !== undefined &&
-				(typeof value.project !== 'string' ||
-					!isAbsolute(value.project) ||
-					// eslint-disable-next-line no-control-regex -- Reject control characters in discovery paths.
-					/[\u0000-\u001f\u007f]/.test(value.project))) ||
-			typeof value.startedAt !== 'string' ||
-			!Number.isFinite(Date.parse(value.startedAt))
-		) {
-			fail('invalid_discovery', `Invalid discovery record: ${filename}`)
-		}
-		if (process.platform !== 'win32' && !isAbsolute(value.socketPath as string))
-			fail('invalid_discovery', 'Socket path must be absolute')
-		instances.push(value as unknown as DevInstance)
 	}
 	return instances
 }
@@ -294,7 +326,7 @@ export async function connectDevInstance(
 		return Object.freeze({
 			describe: () => control.describe(),
 			submit: (input: ScriptSubmission) => control.submit(input),
-			result: (id: string) => control.result(id),
+			result: (id: string, waitMs?: number) => control.result(id, waitMs),
 			cancel: (id: string) => control.cancel(id),
 			control: (input: ScriptControlSubmission) => control.control(input),
 			materials: (input?: PluginControlManifestRequest) => control.materials(input),
@@ -336,51 +368,63 @@ export function publicInstance(instance: DevInstance) {
 	}
 }
 
-export async function liveDevInstances(root: string, signal?: AbortSignal): Promise<DevInstance[]> {
-	const instances = await discoverDevInstances(root)
+export async function liveDevInstances(
+	root: string,
+	signal?: AbortSignal,
+	instanceId?: string,
+): Promise<DevInstance[]> {
+	const instances = await discoverDevInstances(root, instanceId)
 	const live: DevInstance[] = []
 	// Probe in small batches so stale records cannot serialize dozens of timeouts.
 	for (let offset = 0; offset < instances.length; offset += 8) {
 		const results = await Promise.allSettled(
 			instances.slice(offset, offset + 8).map(async (instance) => {
-				using control = await connectDevInstance(instance, 1000, signal)
-				const value = await control.describe()
-				checkAbort(signal)
-				if (
-					!record(value) ||
-					value.instanceId !== instance.instanceId ||
-					value.root !== root ||
-					value.serviceId !== instance.serviceId ||
-					value.profile !== instance.profile ||
-					value.project !== instance.project
-				)
-					fail('protocol_mismatch', 'Console handshake identity does not match discovery')
-				if (
-					value.urlOutput !== undefined &&
-					(!Array.isArray(value.urlOutput) ||
-						!value.urlOutput.every((line) => typeof line === 'string'))
-				)
-					fail('protocol_mismatch', 'Console URL output is invalid')
-				if (value.hmr !== undefined && !record(value.hmr))
-					fail('protocol_mismatch', 'Console HMR status is invalid')
-				const inspected = Object.assign(
-					{},
-					instance,
-					value.urlOutput === undefined ? {} : { urlOutput: value.urlOutput as string[] },
-					value.hmr === undefined ? {} : { hmr: value.hmr as Record<string, unknown> },
-				)
-				if (value.application === undefined) return inspected
-				if (
-					!record(value.application) ||
-					!['ready', 'updating', 'unavailable'].includes(String(value.application.state))
-				)
-					fail('protocol_mismatch', 'Console application status is invalid')
-				return Object.assign({}, inspected, {
-					application: {
-						state: value.application.state as 'ready' | 'updating' | 'unavailable',
-						latestUpdate: value.application.latestUpdate ?? null,
-					},
-				})
+				try {
+					using control = await connectDevInstance(instance, 1000, signal)
+					const value = await control.describe()
+					checkAbort(signal)
+					if (
+						!record(value) ||
+						value.instanceId !== instance.instanceId ||
+						value.root !== root ||
+						value.serviceId !== instance.serviceId ||
+						value.profile !== instance.profile ||
+						value.project !== instance.project
+					)
+						fail('protocol_mismatch', 'Console handshake identity does not match discovery')
+					if (
+						value.urlOutput !== undefined &&
+						(!Array.isArray(value.urlOutput) ||
+							!value.urlOutput.every((line) => typeof line === 'string'))
+					)
+						fail('protocol_mismatch', 'Console URL output is invalid')
+					if (value.hmr !== undefined && !record(value.hmr))
+						fail('protocol_mismatch', 'Console HMR status is invalid')
+					const inspected = Object.assign(
+						{},
+						instance,
+						value.urlOutput === undefined ? {} : { urlOutput: value.urlOutput as string[] },
+						value.hmr === undefined ? {} : { hmr: value.hmr as Record<string, unknown> },
+					)
+					if (value.application === undefined) return inspected
+					if (
+						!record(value.application) ||
+						!['ready', 'updating', 'unavailable'].includes(String(value.application.state))
+					)
+						fail('protocol_mismatch', 'Console application status is invalid')
+					return Object.assign({}, inspected, {
+						application: {
+							state: value.application.state as 'ready' | 'updating' | 'unavailable',
+							latestUpdate: value.application.latestUpdate ?? null,
+						},
+					})
+				} catch (error) {
+					throw withDevContext(error, {
+						root,
+						instanceId: instance.instanceId,
+						recordFile: resolve(root, '.pluxel/dev-console', `${instance.instanceId}.json`),
+					})
+				}
 			}),
 		)
 		checkAbort(signal)
@@ -413,7 +457,7 @@ export async function selectDevInstance(options: {
 	}
 	let instances: DevInstance[]
 	try {
-		const live = await liveDevInstances(root, options.signal)
+		const live = await liveDevInstances(root, options.signal, options.instance)
 		checkAbort(options.signal)
 		instances = live.filter((instance) => matchesDevInstance(instance, options))
 	} catch (error) {

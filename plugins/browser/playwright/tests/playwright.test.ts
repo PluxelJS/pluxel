@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, EffectsService } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { vault } from '@pluxel/services/vault'
 import { createTestHost } from '@pluxel/test'
@@ -83,7 +83,7 @@ class SlowNativeConnector extends Playwright {
 @Plugin(Playwright)
 class DisposedConnector extends Playwright {
 	protected override async connect(signal: AbortSignal): Promise<Browser> {
-		await this.ctx.effects.dispose()
+		await this.ctx.service(EffectsService).dispose()
 		return await nativeAcquire(signal)
 	}
 }

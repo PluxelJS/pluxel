@@ -21,7 +21,7 @@ function valueCommand(value: string, name = 'example.value.get') {
 describe('CommandsService', () => {
 	it('classifies unreadable trusted context and execution faults as INTERNAL', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
-		const registration = host.ctx.require(Commands).register(valueCommand('ready'))
+		const registration = host.ctx.service(Commands).register(valueCommand('ready'))
 		const signalError = new Error('signal getter failed')
 		const unreadableSignal = Object.defineProperty({}, 'signal', {
 			get() {
@@ -63,7 +63,7 @@ describe('CommandsService', () => {
 		@Plugin({ displayName: 'LongCommandOwner' })
 		class LongCommandOwner extends BasePlugin {
 			override init() {
-				captured = this.ctx.require(Commands).register(
+				captured = this.ctx.service(Commands).register(
 					defineCommand({
 						name: 'owner.long.run',
 						description: 'Run until the owner stops.',
@@ -95,7 +95,7 @@ describe('CommandsService', () => {
 		host.cfg(LongCommandOwner).setAutoStart(true)
 		host.start(LongCommandOwner)
 		await host.commit()
-		const pending = host.ctx.require(Commands).execute('owner.long.run', {})
+		const pending = host.ctx.service(Commands).execute('owner.long.run', {})
 		await didStart
 		host.remove(LongCommandOwner)
 		await host.commit()
@@ -104,7 +104,7 @@ describe('CommandsService', () => {
 		expect(order).toEqual(['abort', 'cleanup'])
 		expect(
 			host.ctx
-				.require(Commands)
+				.service(Commands)
 				.list()
 				.some(({ name }) => name === 'owner.long.run'),
 		).toBe(false)
@@ -122,14 +122,14 @@ describe('CommandsService', () => {
 			services: [...standardServices(), managementCommands()],
 		})
 
-		const prepared = host.ctx.require(Commands).list()
+		const prepared = host.ctx.service(Commands).list()
 		expect(prepared).toHaveLength(6)
 		await host.commit()
 		await host.commit()
-		expect(host.ctx.require(Commands).list()).toEqual(prepared)
+		expect(host.ctx.service(Commands).list()).toEqual(prepared)
 		expect(
 			host.ctx
-				.require(Commands)
+				.service(Commands)
 				.list()
 				.map(({ name }) => name),
 		).toEqual([
@@ -140,7 +140,7 @@ describe('CommandsService', () => {
 			'plugin.status.get',
 			'plugin.stop',
 		])
-		expect(host.ctx.require(Commands).list()).toBe(host.ctx.require(Commands).list())
+		expect(host.ctx.service(Commands).list()).toBe(host.ctx.service(Commands).list())
 	})
 
 	it('accepts package subpath addresses at the management command boundary', async () => {
@@ -156,7 +156,7 @@ describe('CommandsService', () => {
 			variant: 'default',
 		}
 		await expect(
-			host.ctx.require(Commands).execute('plugin.status.get', { address }),
+			host.ctx.service(Commands).execute('plugin.status.get', { address }),
 		).resolves.toMatchObject({
 			status: 'error',
 			error: {
@@ -171,18 +171,18 @@ describe('CommandsService', () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
 		await host.commit()
-		const initial = host.ctx.require(Commands).snapshot()
-		expect(host.ctx.require(Commands).snapshot()).toBe(initial)
-		expect(host.ctx.require(Commands).list()).toBe(initial.descriptors)
+		const initial = host.ctx.service(Commands).snapshot()
+		expect(host.ctx.service(Commands).snapshot()).toBe(initial)
+		expect(host.ctx.service(Commands).list()).toBe(initial.descriptors)
 		const revisions: number[] = []
 		const unsubscribe = host.ctx
-			.require(Commands)
+			.service(Commands)
 			.subscribe((snapshot) => revisions.push(snapshot.revision))
 
 		@Plugin({ displayName: 'ObservedCommandOwner' })
 		class ObservedCommandOwner extends BasePlugin {
 			override init() {
-				this.ctx.require(Commands).register(valueCommand('observed', 'owner.observed.get'))
+				this.ctx.service(Commands).register(valueCommand('observed', 'owner.observed.get'))
 			}
 		}
 
@@ -209,14 +209,14 @@ describe('CommandsService', () => {
 		@Plugin({ displayName: 'CommandOwner' })
 		class CommandOwnerV1 extends BasePlugin {
 			override init() {
-				retained = this.ctx.require(Commands).register(valueCommand('v1'))
+				retained = this.ctx.service(Commands).register(valueCommand('v1'))
 			}
 		}
 
 		@Plugin({ displayName: 'CommandOwner' })
 		class CommandOwnerV2 extends BasePlugin {
 			override init() {
-				this.ctx.require(Commands).register(valueCommand('v2'))
+				this.ctx.service(Commands).register(valueCommand('v2'))
 			}
 		}
 
@@ -227,7 +227,7 @@ describe('CommandsService', () => {
 		host.start(CommandOwnerV1)
 		await host.commit()
 		await expect(
-			host.ctx.require(Commands).execute('example.value.get', {}),
+			host.ctx.service(Commands).execute('example.value.get', {}),
 		).resolves.toMatchObject({
 			status: 'ok',
 			value: {
@@ -238,7 +238,7 @@ describe('CommandsService', () => {
 		host.replace(CommandOwnerV1, CommandOwnerV2)
 		await host.commit()
 		await expect(
-			host.ctx.require(Commands).execute('example.value.get', {}),
+			host.ctx.service(Commands).execute('example.value.get', {}),
 		).resolves.toMatchObject({
 			status: 'ok',
 			value: {
@@ -251,7 +251,7 @@ describe('CommandsService', () => {
 		})
 		retained.dispose()
 		await expect(
-			host.ctx.require(Commands).execute('example.value.get', {}),
+			host.ctx.service(Commands).execute('example.value.get', {}),
 		).resolves.toMatchObject({
 			status: 'ok',
 			value: {
@@ -263,7 +263,7 @@ describe('CommandsService', () => {
 		await host.commit()
 		expect(
 			host.ctx
-				.require(Commands)
+				.service(Commands)
 				.list()
 				.some(({ name }) => name === 'example.value.get'),
 		).toBe(false)
@@ -286,7 +286,7 @@ describe('CommandsService', () => {
 		@Plugin({ displayName: 'ManualCommandOwner' })
 		class ManualCommandOwner extends BasePlugin {
 			override init() {
-				const registration = this.ctx.require(Commands).register(
+				const registration = this.ctx.service(Commands).register(
 					defineCommand({
 						name: 'owner.manual.dispose',
 						description: 'Run until its manual registration is disposed.',
@@ -300,7 +300,7 @@ describe('CommandsService', () => {
 				)
 				captured = registration
 				disposeManual = () => registration[Symbol.dispose]()
-				this.ctx.require(Commands).register(valueCommand('live', 'owner.manual.sibling'))
+				this.ctx.service(Commands).register(valueCommand('live', 'owner.manual.sibling'))
 			}
 		}
 
@@ -315,7 +315,7 @@ describe('CommandsService', () => {
 		disposeManual()
 		expect(
 			host.ctx
-				.require(Commands)
+				.service(Commands)
 				.list()
 				.some(({ name }) => name === 'owner.manual.dispose'),
 		).toBe(false)
@@ -324,7 +324,7 @@ describe('CommandsService', () => {
 			error: { code: 'COMMAND_NOT_FOUND' },
 		})
 		await expect(
-			host.ctx.require(Commands).execute('owner.manual.dispose', {}),
+			host.ctx.service(Commands).execute('owner.manual.dispose', {}),
 		).resolves.toMatchObject({
 			status: 'error',
 			error: {
@@ -332,7 +332,7 @@ describe('CommandsService', () => {
 			},
 		})
 		await expect(
-			host.ctx.require(Commands).execute('owner.manual.sibling', {}),
+			host.ctx.service(Commands).execute('owner.manual.sibling', {}),
 		).resolves.toMatchObject({
 			status: 'ok',
 			value: {
@@ -350,7 +350,7 @@ describe('CommandsService', () => {
 		@Plugin({ displayName: 'BrokenCommandOwner' })
 		class BrokenCommandOwner extends BasePlugin {
 			override init() {
-				this.ctx.require(Commands).register(valueCommand('broken'))
+				this.ctx.service(Commands).register(valueCommand('broken'))
 				throw new Error('startup failed')
 			}
 		}
@@ -364,7 +364,7 @@ describe('CommandsService', () => {
 		expect(host.isRunning(BrokenCommandOwner)).toBe(false)
 		expect(
 			host.ctx
-				.require(Commands)
+				.service(Commands)
 				.list()
 				.some(({ name }) => name === 'example.value.get'),
 		).toBe(false)
@@ -376,7 +376,7 @@ describe('CommandsService', () => {
 		@Plugin({ displayName: 'CommandOwnerA' })
 		class CommandOwnerA extends BasePlugin {
 			override async init() {
-				const commands = this.ctx.require(Commands)
+				const commands = this.ctx.service(Commands)
 				await Promise.resolve()
 				commands.register(valueCommand('a', 'owner.a.get'))
 			}
@@ -385,7 +385,7 @@ describe('CommandsService', () => {
 		@Plugin({ displayName: 'CommandOwnerB' })
 		class CommandOwnerB extends BasePlugin {
 			override async init() {
-				const commands = this.ctx.require(Commands)
+				const commands = this.ctx.service(Commands)
 				await Promise.resolve()
 				commands.register(valueCommand('b', 'owner.b.get'))
 			}
@@ -400,18 +400,18 @@ describe('CommandsService', () => {
 		host.start(CommandOwnerB)
 		await host.commit()
 
-		expect(host.require(CommandOwnerA).ctx.require(Commands)).not.toBe(
-			host.require(CommandOwnerB).ctx.require(Commands),
+		expect(host.require(CommandOwnerA).ctx.service(Commands)).not.toBe(
+			host.require(CommandOwnerB).ctx.service(Commands),
 		)
 		host.remove(CommandOwnerA)
 		await host.commit()
 		expect(
 			host.ctx
-				.require(Commands)
+				.service(Commands)
 				.list()
 				.some(({ name }) => name === 'owner.a.get'),
 		).toBe(false)
-		await expect(host.ctx.require(Commands).execute('owner.b.get', {})).resolves.toMatchObject({
+		await expect(host.ctx.service(Commands).execute('owner.b.get', {})).resolves.toMatchObject({
 			status: 'ok',
 			value: {
 				value: 'b',
@@ -432,7 +432,7 @@ describe('CommandsService', () => {
 		host.add(ManagedPlugin)
 		await host.commit()
 		const address = parsePluginNodeAddress(ManagedPlugin.nodeAddress())
-		const started = await host.ctx.require(Commands).execute('plugin.start', {
+		const started = await host.ctx.service(Commands).execute('plugin.start', {
 			address,
 		})
 		expect(started).toMatchObject({
@@ -448,7 +448,7 @@ describe('CommandsService', () => {
 			},
 		})
 
-		const listed = await host.ctx.require(Commands).execute('plugin.list', {})
+		const listed = await host.ctx.service(Commands).execute('plugin.list', {})
 		expect(listed).toMatchObject({
 			status: 'ok',
 			value: {
@@ -457,7 +457,7 @@ describe('CommandsService', () => {
 			},
 		})
 
-		const stopped = await host.ctx.require(Commands).execute('plugin.stop', {
+		const stopped = await host.ctx.service(Commands).execute('plugin.stop', {
 			address,
 		})
 		expect(stopped).toMatchObject({
@@ -474,7 +474,7 @@ describe('CommandsService', () => {
 		host.remove(ManagedPlugin)
 		await host.commit()
 		await expect(
-			host.ctx.require(Commands).execute('plugin.status.get', { address }),
+			host.ctx.service(Commands).execute('plugin.status.get', { address }),
 		).resolves.toMatchObject({
 			status: 'error',
 			error: { code: 'REJECTED', reason: 'plugin_not_found' },
@@ -518,7 +518,7 @@ describe('CommandsService', () => {
 
 		expect({ providerStarts, consumerStarts }).toEqual({ providerStarts: 1, consumerStarts: 1 })
 		const providerAddress = parsePluginNodeAddress(ManagedProvider.nodeAddress())
-		const restarted = await host.ctx.require(Commands).execute('plugin.restart', {
+		const restarted = await host.ctx.service(Commands).execute('plugin.restart', {
 			address: providerAddress,
 		})
 

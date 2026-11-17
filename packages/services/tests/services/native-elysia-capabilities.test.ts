@@ -11,7 +11,7 @@ const reusableApi = (app: Elysia) =>
 class NativeElysiaCapabilities extends BasePlugin {
 	protected override init(): void {
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.decorate('nativeOwner', 'capabilities')
 			.derive(({ request }) => ({
 				requestMarker: request.headers.get('x-marker') ?? 'missing',
@@ -52,7 +52,7 @@ class NativeElysiaCapabilities extends BasePlugin {
 class NativeElysiaIsolationA extends BasePlugin {
 	protected override init(): void {
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.decorate('isolatedValue', 'a')
 			.get('/native-isolation/a', ({ isolatedValue }) => isolatedValue)
 	}
@@ -62,7 +62,7 @@ class NativeElysiaIsolationA extends BasePlugin {
 class NativeElysiaIsolationB extends BasePlugin {
 	protected override init(): void {
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.decorate('isolatedValue', 'b')
 			.get('/native-isolation/b', ({ isolatedValue }) => isolatedValue)
 	}

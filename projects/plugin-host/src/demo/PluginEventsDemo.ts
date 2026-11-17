@@ -2,7 +2,13 @@
 // - 你需要一个 Plugin 明确拥有事件 channel
 // - 你需要通过 required constructor dependency 消费另一个 Plugin 的事件
 
-import { BasePlugin, EvtChannel, formatPluginNodeReference, Plugin } from '@pluxel/core'
+import {
+	BasePlugin,
+	EvtChannel,
+	formatPluginNodeReference,
+	Plugin,
+	LoggerService,
+} from '@pluxel/core'
 
 type TickEvent = readonly [payload: { from: string; seq: number; at: number }]
 
@@ -34,7 +40,7 @@ export class PluginEventsDeclaredConsumer extends BasePlugin {
 	override init(): void {
 		this.producer.tick.on(({ from, seq }) => {
 			// Avoid spamming info logs in the demo host; enable debug to observe the stream.
-			this.ctx.logger.debug('Declared Events tick', { from, seq })
+			this.ctx.service(LoggerService).debug('Declared Events tick', { from, seq })
 		})
 	}
 }

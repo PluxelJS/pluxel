@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/context",
 	"version": "1.1.0",
-	"description": "Immutable, lazy Context capability hosts for Pluxel",
+	"description": "Immutable, lazy Context service hosts for Pluxel",
 	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",

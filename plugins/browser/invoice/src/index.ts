@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, EffectsService } from '@pluxel/core'
 import { Playwright } from '@pluxel/plugin-playwright'
 import { Vault } from '@pluxel/services/vault'
 import type { BrowserContext } from 'playwright-core'
@@ -52,7 +52,7 @@ export class InvoicePlugin extends BasePlugin {
 	protected override async init() {
 		const generation: Generation = { active: true, calls: new Map() }
 		this.generation = generation
-		this.ctx.effects.defer(
+		this.ctx.service(EffectsService).defer(
 			async () => {
 				generation.active = false
 				for (const controller of generation.calls.keys())
@@ -64,7 +64,7 @@ export class InvoicePlugin extends BasePlugin {
 			{ tag: 'invoice-operations', phase: 'shutdown' },
 		)
 		if (this.config.vlm) {
-			const record = await this.ctx.require(Vault).kv().get(this.config.vlm.credentialKey)
+			const record = await this.ctx.service(Vault).kv().get(this.config.vlm.credentialKey)
 			const parsed = v.safeParse(InvoiceCredentialSchema, record.value)
 			if (!record.exists || !parsed.success)
 				throw new Error('Invoice Vault credential is missing or invalid')
@@ -143,7 +143,7 @@ export class InvoicePlugin extends BasePlugin {
 			: controller.signal
 		let task: Promise<T> | undefined
 		const owner = this.ctx.caller ?? this.ctx
-		const cleanup = owner.effects.defer(
+		const cleanup = owner.service(EffectsService).defer(
 			async () => {
 				controller.abort(new InvoiceError('NOT_RUNNING', 'Invoice caller stopped'))
 				await task?.then(

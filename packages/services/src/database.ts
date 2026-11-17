@@ -1,5 +1,5 @@
-import { installScopeCapability } from '@pluxel/core/host'
-import { defineHostService } from '@pluxel/host'
+import { installScopeService } from '@pluxel/core/host'
+import { defineHostService, type HostService } from '@pluxel/host'
 import { Database } from './database/token'
 import type { DatabaseService, DatabaseBackend } from './database/service'
 export { Database, type DatabaseApi } from './database/token'
@@ -7,15 +7,14 @@ export * from './database/definition'
 export type { DatabaseBackend, DatabaseAdapter } from './database/service'
 
 /** Explicit driver selection; backend loading remains lazy until a Plugin first uses it. */
-export function database(options: { readonly backend: DatabaseBackend }) {
+export function database(options: { readonly backend: DatabaseBackend }): HostService {
 	if (!options || typeof options.backend !== 'function')
 		throw new TypeError('[pluxel/database] provide a database backend factory')
 	const backend = options.backend
 	return defineHostService({
 		name: 'Database',
-		capabilities: [
-			installScopeCapability(Database, {
-				property: 'database',
+		provides: [
+			installScopeService(Database, {
 				create: (owner) => {
 					let service: Promise<DatabaseService> | undefined
 					return Object.freeze({

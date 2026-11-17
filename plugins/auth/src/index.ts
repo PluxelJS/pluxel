@@ -1,12 +1,15 @@
-import {
-	type ManagementAccessPrincipal,
-	type ManagementAccessProvider,
-	type ManagementAccessProviderStatus,
-	type ManagementAccessRequestContext,
-	type ManagementAuthenticationProviderSession,
-	type ManagementAuthenticationProviderStep,
+import type { Workbench } from '@pluxel/workbench'
+import type { Vault } from '@pluxel/services/vault'
+import type {
+	ManagementAccess,
+	ManagementAccessPrincipal,
+	ManagementAccessProvider,
+	ManagementAccessProviderStatus,
+	ManagementAccessRequestContext,
+	ManagementAuthenticationProviderSession,
+	ManagementAuthenticationProviderStep,
 } from '@pluxel/services/management/access'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, EffectsService, defineServiceRef } from '@pluxel/core'
 import {
 	authenticatedSession,
 	FixedAuthenticationSession,
@@ -24,6 +27,9 @@ import { SessionStore } from './sessions.ts'
 import { verifyTotp } from './totp.ts'
 import { AuthWorkbench, type AuthCredentialSetupMode, type AuthSetupSnapshot } from './workbench.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
+const VaultRef = defineServiceRef<Vault>()
+const ManagementAccessRef = defineServiceRef<ManagementAccess>()
 export { AuthConfig } from './config.ts'
 export type { AuthPluginConfig, AuthMode, OidcAuthMode } from './config.ts'
 
@@ -76,7 +82,7 @@ export class AuthPlugin extends BasePlugin {
 	})
 
 	protected override async init(): Promise<void> {
-		const store = new CredentialStore(this.ctx.vault)
+		const store = new CredentialStore(this.ctx.service(VaultRef))
 		this.store = store
 		const mode = this.config.mode
 		const [accountState, oidcState] = await Promise.all([
@@ -94,7 +100,7 @@ export class AuthPlugin extends BasePlugin {
 		if (mode.type === 'oidc') this.oidc = new OidcClient(mode, () => this.oidcSecret)
 
 		this.active = true
-		this.ctx.effects.defer(
+		this.ctx.service(EffectsService).defer(
 			() => {
 				this.active = false
 				this.revokeSessions()
@@ -107,7 +113,7 @@ export class AuthPlugin extends BasePlugin {
 			},
 			{ tag: 'auth-generation', phase: 'shutdown' },
 		)
-		this.ctx.effects.defer(
+		this.ctx.service(EffectsService).defer(
 			await store.watch(async () => {
 				if (!this.active) return
 				const [account, oidc] = await Promise.all([store.loadAccount(), store.loadOidcSecret()])
@@ -134,8 +140,8 @@ export class AuthPlugin extends BasePlugin {
 			}),
 			{ tag: 'auth-vault-observation' },
 		)
-		this.ctx.managementAccess?.provide(this.provider)
-		this.ctx.workbench?.publish(AuthWorkbench, {
+		this.ctx.service(ManagementAccessRef)?.provide(this.provider)
+		this.ctx.service(WorkbenchRef)?.publish(AuthWorkbench, {
 			setup: ({ principal, signal }) =>
 				this.createSetupTarget(principal.provider, principal.subject, signal),
 		})

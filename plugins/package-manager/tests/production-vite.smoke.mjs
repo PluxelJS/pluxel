@@ -269,7 +269,7 @@ try {
 				assert.ok(current(manager))
 				const { WorkbenchHost } = await import('@pluxel/workbench/server')
 				const compiledView = globalThis.__productionHost.ctx
-					.require(WorkbenchHost)
+					.service(WorkbenchHost)
 					.artifacts.getCurrent(manager.definition)
 				assert.ok(compiledView)
 				assert.ok(compiledView.entries.length > 0)

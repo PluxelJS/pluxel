@@ -52,22 +52,22 @@ const artifactRoot = dirname(fileURLToPath(new URL('./fixtures/worker-task.mjs',
 @Plugin()
 class WorkerTaskConsumerA extends BasePlugin {
 	workerView() {
-		return this.ctx.require(Workers)
+		return this.ctx.service(Workers)
 	}
 
 	run(input: TaskInput, signal?: AbortSignal): Promise<TaskOutput> {
-		return this.ctx.require(Workers).run(declaration, input, { signal })
+		return this.ctx.service(Workers).run(declaration, input, { signal })
 	}
 
 	borrow(input: TaskInput): Promise<TaskOutput> {
-		return this.ctx.require(Workers).run(declaration, input, { inputOwnership: 'borrowed' })
+		return this.ctx.service(Workers).run(declaration, input, { inputOwnership: 'borrowed' })
 	}
 
 	prepare(
 		prepare: (signal: AbortSignal) => TaskInput | Promise<TaskInput>,
 		signal?: AbortSignal,
 	): Promise<TaskOutput> {
-		return this.ctx.require(Workers).runPrepared(declaration, prepare, {
+		return this.ctx.service(Workers).runPrepared(declaration, prepare, {
 			signal,
 			inputOwnership: 'borrowed',
 		})
@@ -75,7 +75,7 @@ class WorkerTaskConsumerA extends BasePlugin {
 
 	prepareWithTransfer(): Promise<TaskOutput> {
 		return this.ctx
-			.require(Workers)
+			.service(Workers)
 			.runPrepared(declaration, async () => ({ label: 'invalid', delay: 0 }), {
 				transfer: [],
 			} as never)
@@ -85,18 +85,18 @@ class WorkerTaskConsumerA extends BasePlugin {
 		input: TransferTaskInput,
 		transfer: readonly ArrayBuffer[],
 	): Promise<TransferTaskOutput> {
-		return this.ctx.require(Workers).run(transferDeclaration, input, { transfer })
+		return this.ctx.service(Workers).run(transferDeclaration, input, { transfer })
 	}
 }
 
 @Plugin()
 class WorkerTaskConsumerB extends BasePlugin {
 	workerView() {
-		return this.ctx.require(Workers)
+		return this.ctx.service(Workers)
 	}
 
 	run(input: TaskInput): Promise<TaskOutput> {
-		return this.ctx.require(Workers).run(declaration, input)
+		return this.ctx.service(Workers).run(declaration, input)
 	}
 }
 
@@ -126,7 +126,7 @@ function holdCurrentWorkerTermination(host: ServiceInternalTestHarness): Readonl
 	state: WorkerTaskRootStateProbe
 	release(): void
 }> {
-	const state = (host.ctx.require(Workers) as unknown as { state: WorkerTaskRootStateProbe }).state
+	const state = (host.ctx.service(Workers) as unknown as { state: WorkerTaskRootStateProbe }).state
 	const worker = [...state.pool.slots][0]!.worker
 	const terminate = worker.terminate.bind(worker)
 	let release!: () => void
@@ -157,7 +157,7 @@ describe('WorkerTaskService', () => {
 		host.start(WorkerTaskConsumerB)
 		await host.commit()
 
-		const rootView = host.ctx.require(Workers)
+		const rootView = host.ctx.service(Workers)
 		const a = host.require(WorkerTaskConsumerA)
 		const b = host.require(WorkerTaskConsumerB)
 		const aView = a.workerView()
@@ -176,7 +176,7 @@ describe('WorkerTaskService', () => {
 	it('lazily runs cloneable task data in a worker thread', async () => {
 		await using host = await createWorkerHost({ maxThreads: 1 })
 
-		const rootWorkers = host.ctx.require(Workers) as unknown as {
+		const rootWorkers = host.ctx.service(Workers) as unknown as {
 			state?: { pool?: unknown }
 		}
 		expect(rootWorkers.state?.pool).toBeUndefined()
@@ -341,7 +341,7 @@ describe('WorkerTaskService', () => {
 		})
 		let releaseRoute!: () => void
 		const routeGate = new Promise<void>((resolve) => void (releaseRoute = resolve))
-		const detach = host.ctx.require(NodeModuleHost).attachSourceBinder(async () => {
+		const detach = host.ctx.service(NodeModuleHost).attachSourceBinder(async () => {
 			await routeGate
 			return {
 				url: new URL('./fixtures/worker-task.mjs', import.meta.url),
@@ -630,7 +630,7 @@ describe('WorkerTaskService', () => {
 			const view = host.require(WorkerTaskConsumerA).workerView()
 			await view.run(declaration, { label: 'warm', delay: 0 })
 			const state = (
-				host.ctx.require(Workers) as unknown as {
+				host.ctx.service(Workers) as unknown as {
 					state: {
 						pool: {
 							run: (...args: unknown[]) => { result: Promise<unknown>; settled: Promise<void> }

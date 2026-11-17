@@ -22,7 +22,7 @@ export class EChartsDynamicProbePlugin extends BasePlugin {
 
 	protected override init(): void {
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.get('/__pluxel-test/echarts/render', () => this.render())
 			.get('/__pluxel-test/echarts/error/remote-image', () =>
 				this.errorCode({

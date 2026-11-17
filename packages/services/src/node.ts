@@ -1,10 +1,7 @@
+import { resolveContextService } from '@pluxel/core/internal'
 import { readLoadedNodeArtifacts } from './node/packaged-artifacts'
-import {
-	installOwnerViewCapability,
-	installRootCapability,
-	resolveContextCapability,
-} from '@pluxel/core/host'
-import { defineHostService } from '@pluxel/host'
+import { installOwnerViewService, installRootService } from '@pluxel/core/host'
+import { defineHostService, type HostService } from '@pluxel/host'
 import { NodeModules, NodeModuleHost } from './node/token'
 import { NodeModuleService, type NodeModuleArtifactHostOptions } from './node/service'
 
@@ -18,17 +15,16 @@ export {
 export type { NodeModuleArtifactHostOptions } from './node/service'
 
 /** Install owner-bound Node artifacts. Source compilation is attached separately by development hosts. */
-export function nodeModules(options: NodeModuleArtifactHostOptions = {}) {
+export function nodeModules(options: NodeModuleArtifactHostOptions = {}): HostService {
 	const snapshot = Object.freeze({ ...options })
 	return defineHostService({
 		name: 'Node modules',
-		capabilities: [
-			installRootCapability(NodeModuleHost, {
+		provides: [
+			installRootService(NodeModuleHost, {
 				create: (ctx) => new NodeModuleService(ctx, snapshot),
 			}),
-			installOwnerViewCapability(NodeModules, {
-				property: 'nodeModules',
-				createRoot: (ctx) => resolveContextCapability(ctx, NodeModuleHost),
+			installOwnerViewService(NodeModules, {
+				createRoot: (ctx) => resolveContextService(ctx, NodeModuleHost),
 				createView: (backend, owner) => {
 					const service = backend.forOwner(owner)
 					return Object.freeze({ ctx: owner, use: service.use.bind(service) })
@@ -38,7 +34,7 @@ export function nodeModules(options: NodeModuleArtifactHostOptions = {}) {
 		async prepare({ ctx, plugins }) {
 			if (snapshot.root !== undefined || snapshot.resolve !== undefined) return
 			const artifacts = await readLoadedNodeArtifacts(plugins)
-			resolveContextCapability(ctx, NodeModuleHost).installLoadedArtifacts(artifacts)
+			resolveContextService(ctx, NodeModuleHost).installLoadedArtifacts(artifacts)
 		},
 	})
 }

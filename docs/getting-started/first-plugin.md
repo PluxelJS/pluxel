@@ -8,7 +8,7 @@ description: 从零构建一个包含业务方法、Valibot 配置校验、结�
 1. 使用 `@Plugin()` 装饰器声明插件身份；
 2. 使用 Valibot 定义并注入强类型配置；
 3. 在 `init()` 钩子中启动后台工作并输出日志；
-4. 使用 `ctx.effects.defer()` 登记资源清理回调，确保插件停止时无泄漏。
+4. 使用 `ctx.service(EffectsService).defer()` 登记资源清理回调，确保插件停止时无泄漏。
 
 ## 初始化插件包
 
@@ -33,7 +33,7 @@ vp run verify
 打开 `src/status.ts`，写入以下代码：
 
 ```ts twoslash
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, LoggerService, EffectsService } from '@pluxel/core'
 import * as v from 'valibot'
 
 // 1. 定义配置 Schema：包含默认值与校验规则
@@ -51,14 +51,14 @@ export class StatusPlugin extends BasePlugin {
 
 	// 4. 插件初始化：启动后台采样任务
 	protected override init(): void {
-		this.ctx.logger.info('Status sampler started', { label: this.config.label })
+		this.ctx.service(LoggerService).info('Status sampler started', { label: this.config.label })
 
 		const timer = setInterval(() => {
 			this.samples += 1
 		}, this.config.intervalMs)
 
 		// 5. 登记资源清理：插件卸载、重启或热重载时自动执行
-		this.ctx.effects.defer(() => clearInterval(timer), { tag: 'status-sampler' })
+		this.ctx.service(EffectsService).defer(() => clearInterval(timer), { tag: 'status-sampler' })
 	}
 
 	// 6. 暴露业务方法给调用方
@@ -71,7 +71,7 @@ export class StatusPlugin extends BasePlugin {
 ### 关键设计点
 
 - **配置即契约**：使用 Valibot 的 `v.optional` 表达默认值。业务逻辑中直接读取 `this.config.label`，不需要在代码各处重复编写类似 `?? 'ready'` 的回退逻辑。
-- **副作用就近登记**：在启动定时器的同时，通过 `this.ctx.effects.defer()` 立即注册清理函数。当插件生命周期结束时，框架会严格按序触发释放，避免定时器持续占用系统资源。
+- **副作用就近登记**：在启动定时器的同时，通过 `this.ctx.service(EffectsService).defer()` 立即注册清理函数。当插件生命周期结束时，框架会严格按序触发释放，避免定时器持续占用系统资源。
 
 ## 编写单元测试
 

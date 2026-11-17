@@ -1,6 +1,15 @@
+import type { WorkbenchHost } from '@pluxel/workbench/server'
+import type { Vault, VaultAdmin } from '@pluxel/services/vault'
 import { Commands } from '@pluxel/services/commands'
 import { ElysiaApp, elysia } from '@pluxel/services/elysia'
-import { pluginDefinitionIndexKey, parsePluginNodeAddress, BasePlugin, Plugin } from '@pluxel/core'
+import {
+	pluginDefinitionIndexKey,
+	parsePluginNodeAddress,
+	BasePlugin,
+	Plugin,
+	EffectsService,
+	defineServiceRef,
+} from '@pluxel/core'
 import { createPluginControlReference } from '@pluxel/host/internal/control-reference'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { createTestHost } from '@pluxel/test'
@@ -9,13 +18,16 @@ import { describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
 import { requireHostDocuments } from '@pluxel/core/internal'
 
+const WorkbenchHostRef = defineServiceRef<WorkbenchHost>()
+const VaultRef = defineServiceRef<Vault>()
+const VaultAdminRef = defineServiceRef<VaultAdmin>()
 @Plugin({ displayName: 'Public test host fixture' })
 class PublicFixture extends BasePlugin {}
 
 @Plugin({ displayName: 'HTTP-only test composition' })
 class HttpOnlyFixture extends BasePlugin {
 	protected override init(): void {
-		this.ctx.require(ElysiaApp).get('/test-composition', () => 'http-only')
+		this.ctx.service(ElysiaApp).get('/test-composition', () => 'http-only')
 	}
 }
 
@@ -52,7 +64,7 @@ const rollbackCleanup = vi.fn()
 @Plugin({ displayName: 'Rollback fixture' })
 class RollbackFixture extends BasePlugin {
 	protected override init(): void {
-		this.ctx.effects.defer(rollbackCleanup)
+		this.ctx.service(EffectsService).defer(rollbackCleanup)
 		throw new Error('expected public host rollback')
 	}
 }
@@ -158,9 +170,9 @@ describe('service test host', () => {
 	it('keeps optional Workbench and Vault disabled by default', async () => {
 		await using host = await createServiceInternalTestHost()
 
-		expect(host.ctx.workbench).toBeUndefined()
-		expect(host.ctx.vault).toBeUndefined()
-		expect(host.ctx.vaultAdmin).toBeUndefined()
+		expect(host.ctx.service(WorkbenchHostRef)).toBeUndefined()
+		expect(host.ctx.service(VaultRef)).toBeUndefined()
+		expect(host.ctx.service(VaultAdminRef)).toBeUndefined()
 	})
 
 	it('starts a typed dependency closure without exposing root authority', async () => {
@@ -292,7 +304,7 @@ describe('service test host', () => {
 
 it('uses an explicit service list without silently installing defaults', async () => {
 	await using host = await createServiceInternalTestHost({ services: [] })
-	expect(() => host.ctx.require(Commands)).toThrow('does not install')
+	expect(() => host.ctx.service(Commands)).toThrow('does not install')
 	await host.start(PublicFixture.nodeAddress())
 	expect(host.isRunning(PublicFixture.nodeAddress())).toBe(true)
 })

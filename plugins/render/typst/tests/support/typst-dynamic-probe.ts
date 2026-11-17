@@ -13,7 +13,7 @@ export class TypstDynamicProbePlugin extends BasePlugin {
 
 	protected override init(): void {
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.get('/__pluxel-test/typst/document', () => this.render())
 			.get('/__pluxel-test/typst/svg', async () => {
 				const data = await this.typst.renderSvg('#set page(width: auto, height: auto)\n$x^2$')

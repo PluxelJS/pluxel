@@ -494,7 +494,7 @@ it('catches up external changes made during service preparation after subscribin
 		services: [
 			defineHostService({
 				name: 'external-change',
-				capabilities: [],
+				provides: [],
 				async prepare() {
 					expect(subscribed).toBe(false)
 					await memory.put(

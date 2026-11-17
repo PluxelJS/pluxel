@@ -48,7 +48,7 @@ try {
  const task = defineNodeModule(import.meta.url, './task.ts');
  class Consumer extends BasePlugin {
   async init() {
-   await this.ctx.require(NodeModules).use(task, async url => {
+   await this.ctx.service(NodeModules).use(task, async url => {
     const { value } = await import(/* @vite-ignore */ url.href);
     globalThis.__hostNodeSmoke.push(value);
     return () => { globalThis.__hostNodeSmoke.push(-value) };

@@ -359,7 +359,7 @@ export class ElysiaApplicationDirectory {
 
 	applicationFor(ctx: PluxelContext): Elysia {
 		if (!ctx.pluginInfo) {
-			throw new Error('[pluxel/elysia] ctx.elysia requires a Plugin generation Context')
+			throw new Error('[pluxel/elysia] ctx.service(ElysiaApp) requires a Plugin generation Context')
 		}
 		const owner = ctx as PluginContext
 		let app = this.applications.get(owner)

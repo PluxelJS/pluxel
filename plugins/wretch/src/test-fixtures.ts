@@ -1,10 +1,11 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { type Workbench, workbench } from '@pluxel/workbench'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import * as v from 'valibot'
-import { workbench } from '@pluxel/workbench'
 import type { FetchLike, Wretch } from 'wretch'
 import { WretchPlugin } from './index.ts'
 import { WretchWorkbench } from './workbench.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 let fetchA: FetchLike
 let fetchB: FetchLike
 
@@ -35,7 +36,7 @@ export class ConsumerA extends BasePlugin {
 			.url('https://a.example/api', true)
 			.headers({ Authorization: 'Bearer secret-a', 'X-Consumer': 'a' })
 			.fetchPolyfill(fetchA)
-		this.ctx.workbench?.publish(ConsumerWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(ConsumerWorkbench, {
 			settings: { provider: this.http },
 		})
 	}
@@ -52,7 +53,7 @@ export class ConsumerLateSettings extends BasePlugin {
 	override async init(): Promise<void> {
 		this.client = this.http.client.url('https://late.example/api', true).fetchPolyfill(fetchA)
 		await this.http.enableManagedSettings()
-		this.ctx.workbench?.publish(ConsumerWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(ConsumerWorkbench, {
 			settings: { provider: this.http },
 		})
 	}
@@ -73,7 +74,7 @@ export class ConsumerB extends BasePlugin {
 			.url('https://b.example/v1', true)
 			.headers({ 'X-Consumer': 'b' })
 			.fetchPolyfill(fetchB)
-		this.ctx.workbench?.publish(ConsumerWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(ConsumerWorkbench, {
 			settings: { provider: this.http },
 		})
 	}

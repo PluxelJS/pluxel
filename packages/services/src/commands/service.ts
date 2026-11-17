@@ -1,3 +1,4 @@
+import { EffectsService, type Context as CoreContext } from '@pluxel/core'
 import {
 	Result,
 	createCommandRegistry,
@@ -8,7 +9,6 @@ import {
 	type CommandRegistration,
 	type CommandFailure,
 } from '@pluxel/commands'
-import type { Context as CoreContext } from '@pluxel/core'
 import { enterOwnerInvocation } from '@pluxel/core/internal'
 import { createCommandMount, type CommandMount } from './mount'
 import { pinOwnerContext } from '../internal/owner-view'
@@ -78,7 +78,7 @@ export class CommandsService {
 
 		let guard: { cancel(): void }
 		try {
-			guard = owner.effects.defer(cleanup, { tag: `Command:${registration.name}` })
+			guard = owner.service(EffectsService).defer(cleanup, { tag: `Command:${registration.name}` })
 		} catch (error) {
 			cleanup()
 			throw error

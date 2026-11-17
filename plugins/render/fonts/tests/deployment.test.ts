@@ -1,8 +1,9 @@
+import type { Workbench } from '@pluxel/workbench'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parsePluginNodeAddress } from '@pluxel/core'
+import { parsePluginNodeAddress, Fs, defineServiceRef } from '@pluxel/core'
 import {
 	defineHostApplication,
 	envBinding,
@@ -13,6 +14,7 @@ import { createTestHost } from '@pluxel/test'
 import { describe, expect, it } from 'vitest'
 import { FontsConfig, FontsPlugin } from '../src/index.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 const fontPath = [
 	'/usr/share/fonts/dejavu/DejaVuSans.ttf',
 	'/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
@@ -26,8 +28,8 @@ describe('Fonts deployment without Workbench', () => {
 		await using host = await createTestHost({ services: [] })
 		await host.start(FontsPlugin.nodeAddress(), { initialConfig: { defaultFamily: 'serif' } })
 		const fonts = host.require(FontsPlugin.nodeAddress())
-		expect(fonts.ctx.workbench).toBeUndefined()
-		expect(fonts.ctx.fs).toBeTypeOf('function')
+		expect(fonts.ctx.service(WorkbenchRef)).toBeUndefined()
+		expect(fonts.ctx.service(Fs)).toBeTypeOf('function')
 		expect(fonts.defaultFont).toMatchObject({ family: 'serif', source: 'config' })
 		expect(fonts.portableFonts.fonts).toEqual([])
 		await fonts.setPreferredFamily('monospace')
@@ -74,7 +76,7 @@ describe('Fonts deployment without Workbench', () => {
 				})
 				await host.start(FontsPlugin.nodeAddress())
 				let fonts = host.require(FontsPlugin.nodeAddress())
-				expect(fonts.ctx.workbench).toBeUndefined()
+				expect(fonts.ctx.service(WorkbenchRef)).toBeUndefined()
 				expect(fonts.defaultFont).toMatchObject({ family: 'serif', source: 'config' })
 				expect(fonts.portableFonts.fonts).toHaveLength(1)
 				const resource = fonts.portableFonts.fonts[0]!

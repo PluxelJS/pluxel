@@ -13,12 +13,12 @@ const principal = { provider: 'development-console', subject: 'workbench-migrati
 export default (async (sdk, run) => {
 	const studio = await sdk.plugin(ReportStudioPlugin.nodeAddress()).status()
 	if (!studio) throw new Error('ReportStudioPlugin is not registered')
-	const session = sdk.ctx.require(WorkbenchHost).createSession(principal, () => {})
+	const session = sdk.ctx.service(WorkbenchHost).createSession(principal, () => {})
 	try {
 		using target = new RpcStub(session.target)
 		const layout = await readWorkbenchLayout(target, { target: null })
 		const targetLayout = await readWorkbenchLayout(target, { target: studio.address })
-		using opened = await openLocalWorkbenchEntry(sdk.ctx, {
+		using opened = await openLocalWorkbenchEntry(sdk.ctx.service(WorkbenchHost), {
 			target: studio.address,
 			entry: ReportStudioWorkbench.studio,
 			principal,
@@ -92,7 +92,7 @@ export const renderReport = (async (sdk, run) => {
 	const { SHOWCASE_ENGINES } = await import('../src/showcase/ReportStudio.contracts')
 	const engine = SHOWCASE_ENGINES.find((candidate) => candidate === input.engine)
 	if (!engine) throw new TypeError('Unknown rendering engine')
-	using opened = await openLocalWorkbenchEntry(sdk.ctx, {
+	using opened = await openLocalWorkbenchEntry(sdk.ctx.service(WorkbenchHost), {
 		target: ReportStudioPlugin.nodeAddress(),
 		entry: ReportStudioWorkbench.studio,
 		principal,

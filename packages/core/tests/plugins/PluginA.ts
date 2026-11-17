@@ -1,3 +1,4 @@
+import { LoggerService } from '../../src/logger/LoggerService'
 import { BasePlugin, Plugin, definePluginRef } from '@pluxel/core/internal/test'
 // PluginA.ts
 // PluginA 依赖 PluginB 为必选依赖；PluginC/PluginD 只是运行期附加能力
@@ -17,12 +18,12 @@ export class PluginA extends BasePlugin {
 		this.plugins.use(PluginCRef, (plugin) => plugin.doExampleLog())
 		this.plugins.use(PluginDRef, (plugin) => plugin.doSomethingElse())
 
-		this.ctx.logger.info('PluginA initialized')
+		this.ctx.service(LoggerService).info('PluginA initialized')
 		// 使用必需依赖 PluginB
 		this.pluginB.doSomething()
 	}
 
 	doSomething(): void {
-		this.ctx.logger.info('PluginA doing something...')
+		this.ctx.service(LoggerService).info('PluginA doing something...')
 	}
 }

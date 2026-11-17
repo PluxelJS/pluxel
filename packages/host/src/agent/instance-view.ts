@@ -1,10 +1,10 @@
-import type { BasePlugin } from '@pluxel/core'
-import { getPluginGenerationContext } from '@pluxel/core/internal'
+import type { Context } from '@pluxel/core'
 import { enterOwnerInvocation } from '@pluxel/core/host'
 
 /** Per-run member admission; native values returned by business APIs keep their own lifecycle. */
-export function createPluginInstanceView(
-	raw: BasePlugin,
+export function createBorrowedValueView(
+	raw: object,
+	owner: Context,
 	options: Readonly<{
 		signal: AbortSignal
 		assertOpen(): void
@@ -14,7 +14,6 @@ export function createPluginInstanceView(
 		unwrap(value: unknown): unknown
 	}>,
 ): object {
-	const owner = getPluginGenerationContext(raw)
 	const methods = new Map<PropertyKey, { original: Function; wrapped: Function }>()
 	let view: object
 	const invoke = (work: () => unknown): unknown => {
@@ -75,8 +74,27 @@ export function createPluginInstanceView(
 		}
 	}
 	// A separate extensible shell permits admitted method wrappers even when the
-	// provider has readonly/non-configurable own methods.
-	view = new Proxy(Object.create(Object.getPrototypeOf(raw)), {
+	// provider has readonly/non-configurable own methods. A bound function has no
+	// fixed own prototype/caller/arguments keys that would constrain Proxy reflection.
+	const shell =
+		typeof raw === 'function'
+			? Function.prototype.bind.call(function () {}, undefined)
+			: Object.create(Object.getPrototypeOf(raw))
+	view = new Proxy(shell, {
+		apply(_target, receiver, args) {
+			return invoke(() =>
+				Reflect.apply(raw as Function, options.unwrap(receiver), args.map(options.unwrap)),
+			)
+		},
+		construct(_target, args, newTarget) {
+			return invoke(() =>
+				Reflect.construct(
+					raw as Function,
+					args.map(options.unwrap),
+					newTarget === view ? (raw as Function) : newTarget,
+				),
+			) as object
+		},
 		get(_target, key, receiver) {
 			const value = invoke(() =>
 				Reflect.get(raw, key, receiver === view ? raw : options.unwrap(receiver)),
@@ -87,7 +105,15 @@ export function createPluginInstanceView(
 			const wrapped: Function = new Proxy(value, {
 				apply(_method, callReceiver, args) {
 					return invoke(() =>
-						Reflect.apply(value, options.unwrap(callReceiver), args.map(options.unwrap)),
+						Reflect.apply(
+							value,
+							// A bound callable must keep targeting the admitted view. Binding
+							// the native provider would let the returned function outlive it.
+							typeof raw === 'function' && value === Function.prototype.bind
+								? callReceiver
+								: options.unwrap(callReceiver),
+							args.map(options.unwrap),
+						),
 					)
 				},
 				construct(_constructor, args, newTarget) {
@@ -151,16 +177,16 @@ export function createPluginInstanceView(
 			}) as PropertyDescriptor | undefined
 		},
 		defineProperty() {
-			throw new TypeError('Plugin instance views do not support redefining properties')
+			throw new TypeError('Borrowed value views do not support redefining properties')
 		},
 		deleteProperty() {
-			throw new TypeError('Plugin instance views do not support deleting properties')
+			throw new TypeError('Borrowed value views do not support deleting properties')
 		},
 		preventExtensions() {
-			throw new TypeError('Plugin instance views cannot be frozen')
+			throw new TypeError('Borrowed value views cannot be frozen')
 		},
 		setPrototypeOf() {
-			throw new TypeError('Plugin instance views cannot change prototype')
+			throw new TypeError('Borrowed value views cannot change prototype')
 		},
 	})
 	return view

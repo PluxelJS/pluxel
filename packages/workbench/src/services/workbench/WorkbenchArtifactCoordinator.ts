@@ -3,6 +3,7 @@ import {
 	pluginDefinitionAddressEqual,
 	type Context,
 	type PluginDefinitionAddress,
+	LoggerService,
 } from '@pluxel/core'
 import {
 	WorkbenchArtifactService,
@@ -207,7 +208,9 @@ export class WorkbenchArtifactCoordinator {
 			try {
 				listener(commit)
 			} catch (error) {
-				this.root.logger.error('workbench artifact transaction listener failed', { error })
+				this.root
+					.service(LoggerService)
+					.error('workbench artifact transaction listener failed', { error })
 			}
 		}
 		return commit

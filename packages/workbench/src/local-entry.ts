@@ -1,6 +1,6 @@
-import type { RootContext, PluginNodeAddress } from '@pluxel/core'
+import type { PluginNodeAddress } from '@pluxel/core'
 import { RpcStub, type RpcTarget } from 'capnweb'
-import { requireWorkbench } from './services/workbench'
+import type { WorkbenchHost } from './token'
 import { openWorkbenchEntry, readWorkbenchLayout } from './workbench/client'
 import {
 	readWorkbenchOpenedContentHandle,
@@ -98,12 +98,11 @@ export type OpenedLocalWorkbenchEntry<Entry extends WorkbenchOpenableEntry> =
 
 /** Opens a published entry using a local session. The caller owns the returned disposable handle. */
 export async function openLocalWorkbenchEntry<const Entry extends WorkbenchOpenableEntry>(
-	ctx: RootContext,
+	backend: WorkbenchHost,
 	options: LocalWorkbenchEntryOptions<Entry>,
 ): Promise<OpenedLocalWorkbenchEntry<Entry>> {
 	const { target, signal } = options
 	signal?.throwIfAborted()
-	const backend = requireWorkbench(ctx)
 	const metadata = readWorkbenchDescriptor(options.entry)
 	if (!backend.registry.hasPublishedEntry(target, options.entry)) {
 		throw workbenchSetupError(

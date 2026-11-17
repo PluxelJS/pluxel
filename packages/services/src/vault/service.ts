@@ -1,6 +1,6 @@
 import { Decrypter, Encrypter, generateIdentity, identityToRecipient } from 'age-encryption'
 import { type HostVaultBindingRecord } from '@pluxel/host/bindings'
-import { type Context as PluxelContext } from '@pluxel/core'
+import { type Context as PluxelContext, EffectsService, LoggerService } from '@pluxel/core'
 import { enterOwnerInvocation } from '@pluxel/core/host'
 import { pinOwnerContext } from '../internal/owner-view'
 import { basename, join } from 'pathe'
@@ -1050,9 +1050,11 @@ export class VaultService {
 				},
 				(error) => {
 					setStatusFailure(store, runtime, entry, error)
-					ctx.logger.error('Vault snapshot reload failed; retaining the last valid snapshot', {
-						error,
-					})
+					ctx
+						.service(LoggerService)
+						.error('Vault snapshot reload failed; retaining the last valid snapshot', {
+							error,
+						})
 				},
 			)
 		}
@@ -1356,7 +1358,7 @@ export class VaultService {
 					},
 				}
 				observers.add(observer)
-				ctx.effects.defer(dispose, { tag: 'VaultWatch' })
+				ctx.service(EffectsService).defer(dispose, { tag: 'VaultWatch' })
 				return dispose
 			}
 

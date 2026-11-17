@@ -1,10 +1,11 @@
+import { resolveContextService } from '@pluxel/core/internal'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import { createHost, type HostStartupContext } from '@pluxel/host'
-import { resolveContextCapability } from '@pluxel/core/host'
+
 import { getContextRuntimeLogging } from '@pluxel/core/logging/internal'
 import { ElysiaRuntime } from '@pluxel/services/internal'
 import { createWorkbenchFederationDeploymentInventory } from '@pluxel/core/federation'
@@ -49,14 +50,14 @@ test('standalone deployment root supplies Node artifacts and the default Workben
 			),
 		})
 		expect(getContextRuntimeLogging(host.ctx)).toBeUndefined()
-		const response = await resolveContextCapability(host.ctx, ElysiaRuntime).fetch(
+		const response = await resolveContextService(host.ctx, ElysiaRuntime).fetch(
 			new Request('http://localhost/__pluxel/workbench', { headers: { accept: 'text/html' } }),
 		)
 		expect(response.status).toBe(200)
 		expect(await response.text()).toContain('assets/deployed-shell.js')
 		let artifactPath = ''
 		let cleaned = false
-		await resolveContextCapability(host.ctx, NodeModuleHost).use(
+		await resolveContextService(host.ctx, NodeModuleHost).use(
 			createNodeModuleDeclaration(import.meta.url, './example.ts', 'example', 'defineNodeModule'),
 			(url) => {
 				artifactPath = fileURLToPath(url)

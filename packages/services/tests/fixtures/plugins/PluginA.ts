@@ -1,6 +1,6 @@
 import { ElysiaApp } from '@pluxel/services/elysia'
 import * as v from 'valibot'
-import { BasePlugin, definePluginRef, Plugin } from '@pluxel/core'
+import { BasePlugin, definePluginRef, Plugin, LoggerService } from '@pluxel/core'
 import { TelegramConfig } from './config'
 import { PluginB } from './PluginB'
 import type { PluginC } from './PluginC'
@@ -26,15 +26,15 @@ export class PluginA extends BasePlugin {
 
 		this.pluginB.doSomething()
 		this.plugins.use(PluginCRef, () => {
-			this.ctx.logger.info('PluginA optional dep', { pluginC: true })
+			this.ctx.service(LoggerService).info('PluginA optional dep', { pluginC: true })
 		})
 
-		this.ctx.require(ElysiaApp).get('/a', ({ set }) => {
+		this.ctx.service(ElysiaApp).get('/a', ({ set }) => {
 			set.headers['content-type'] = 'text/html; charset=utf-8'
 			return 'text'
 		})
 	}
 	doSomething(): void {
-		this.ctx.logger.info('PluginA doing somethinga...')
+		this.ctx.service(LoggerService).info('PluginA doing somethinga...')
 	}
 }

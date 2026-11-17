@@ -1,15 +1,9 @@
-import { ContextCapabilityMissingError, type Context } from '@pluxel/core'
-import { resolveContextCapability } from '@pluxel/core/host'
+import type { Context } from '@pluxel/core'
+import { createServiceRef } from '@pluxel/core/internal'
 import { VaultAdmin } from '../vault'
+
+const VaultAdminRef = createServiceRef(VaultAdmin)
+
 export function optionalVaultAdmin(ctx: Context) {
-	try {
-		return resolveContextCapability(ctx.root, VaultAdmin)
-	} catch (error) {
-		if (
-			error instanceof ContextCapabilityMissingError &&
-			error.capability === 'services.vault-admin'
-		)
-			return undefined
-		throw error
-	}
+	return ctx.root.service(VaultAdminRef)
 }

@@ -1,11 +1,12 @@
-import '@pluxel/test'
-
-import { type PluginContext, type RootContext } from '@pluxel/core'
-import { type Elysia } from 'elysia'
+import { ElysiaApp } from '@pluxel/services/elysia'
+import { defineServiceRef, type PluginContext, type RootContext } from '@pluxel/core'
 import { expectTypeOf } from 'vitest'
 
+const ElysiaAppRef = defineServiceRef<ElysiaApp>()
 const pluginCtx = {} as PluginContext
-expectTypeOf(pluginCtx.elysia).toEqualTypeOf<Elysia | undefined>()
+expectTypeOf(pluginCtx.service(ElysiaApp)).toEqualTypeOf<ElysiaApp>()
+expectTypeOf(pluginCtx.service(ElysiaAppRef)).toEqualTypeOf<ElysiaApp | undefined>()
 
 const root = {} as RootContext
-expectTypeOf(root.elysia).toEqualTypeOf<Elysia | undefined>()
+// @ts-expect-error ElysiaApp requires a Plugin owner Context.
+root.service(ElysiaApp)

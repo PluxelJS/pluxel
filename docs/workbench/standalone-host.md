@@ -24,7 +24,7 @@ export default defineHostApplication(() => ({
 }))
 ```
 
-插件代码无需任何修改，继续使用标准的 `this.ctx.workbench?.publish()`。如果宿主没有挂载 `workbenchService()`，可选链 `?.` 会安全跳过，保证业务插件能独立在无头环境下运行。
+插件代码无需任何修改，继续使用标准的 `this.ctx.service(WorkbenchRef)?.publish()`。如果宿主没有挂载 `workbenchService()`，可选链 `?.` 会安全跳过，保证业务插件能独立在无头环境下运行。
 
 ## 配合 Vite 接入开发编译
 

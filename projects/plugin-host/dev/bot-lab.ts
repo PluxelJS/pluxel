@@ -23,7 +23,7 @@ export default (async (sdk) => {
 	const owner = await workspace.status()
 	if (!owner) throw new Error('BotWorkspacePlugin is not registered')
 	const { instance } = await workspace.instance()
-	const session = sdk.ctx.require(WorkbenchHost).createSession(principal, () => {})
+	const session = sdk.ctx.service(WorkbenchHost).createSession(principal, () => {})
 	try {
 		using target = new RpcStub(session.target)
 		const layout = await readWorkbenchLayout(target, { target: owner.address })
@@ -53,7 +53,7 @@ export const saveInstructions = (async (sdk, run) => {
 	const identity = instance.identity(record.source, record.id)
 	const owner = await workspace.status()
 	if (!owner) throw new Error('BotWorkspacePlugin is not registered')
-	using opened = await openLocalWorkbenchEntry(sdk.ctx, {
+	using opened = await openLocalWorkbenchEntry(sdk.ctx.service(WorkbenchHost), {
 		target: owner.address,
 		entry: BotWorkspaceWorkbench.bot,
 		principal,

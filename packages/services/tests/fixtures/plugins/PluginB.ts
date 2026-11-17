@@ -1,5 +1,5 @@
 import * as v from 'valibot'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, LoggerService } from '@pluxel/core'
 
 export const config = v.object({
 	name: v.optional(v.pipe(v.string(), v.hexColor()), '#000000'),
@@ -24,12 +24,12 @@ export class PluginB extends BasePlugin {
 	override init(): void {
 		void this.config
 
-		this.ctx.logger.info('PluginB initialized')
+		this.ctx.service(LoggerService).info('PluginB initialized')
 		throw new Error('a')
 	}
 
 	doSomething(): void {
-		// this.ctx.logger.info(this.ctx.caller, 'call from')
-		this.ctx.logger.info('PluginB doing something...')
+		// this.ctx.service(LoggerService).info(this.ctx.caller, 'call from')
+		this.ctx.service(LoggerService).info('PluginB doing something...')
 	}
 }

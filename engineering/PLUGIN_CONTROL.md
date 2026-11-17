@@ -22,6 +22,8 @@ Core 拥有规范身份和精确地址值的弱证据注册。class/生成入口
 
 `generatePluginControl` 固定 native TypeScript 的源码、声明与设置，在镜像文件系统中 declaration-only emit，不求值插件。Schema 类型见证只用于 emit。分析和 emit 继承作者 target/lib/类型配置及原路径基址；构建使用 tsdownConfigResolved 的配置路径或 false，直接调用的 `tsconfig` 省略时从 root 查找，确无配置才用默认环境。整批程序由构建 owner 选择，临时目录不能增加 DOM globals 或改变 types 解析。
 
+emit 镜像从作者已有 `export type *`、随后已有 import 的模块中，为经 native checker 确认的原导出类型身份追加本地 type-only import，避免较大程序将生产者的推导返回类型写成无法从生产者解析的下游重导出包。见证保留 type-only 模块属性，带属性的普通值 import 保留原生处理；本地别名避开作者标识符，不新增导出或任意跨模块依赖。原星号声明、歧义诊断、stripInternal 和冻结来源检查仍由原路径执行。
+
 实例 S 保留完整 class 声明：继承、private nominal identity、重载、this、泛型、递归关系。手写 Pick 会破坏 `self()`、`same(OriginalClass)` 等关系。`typeImports: 'package'` 引用原公开包，默认 closure 携带本地声明及 ambient roots；两者都保留公开外部类型引用，由作者提供依赖。模式由构建选择，另装原实现的物理声明拥有自己的 nominal identity。
 
 emit 使用 `removeComments: false`，stripInternal 遵循作者配置；descriptor/Instance alias 取原 class Node.jsDoc（含装饰器前注释），成员/继承文档由原生 emitter 保留。配置 I/O 来自 Standard Schema 和 Part 树：input 保留 default 前可选项，output 表达验证/变换结果，无配置为 never。`ConfigDeclaration` 记录表达式、路径、本地源码和可选 documentation，环境引用保持表达式。注释改变材料 snapshot，结构摘要按下节规范化。
@@ -32,9 +34,17 @@ JSON 只有被公开类型引用才进入声明；配置引用原文进入源码
 
 原生 @ts-ignore/@ts-expect-error 允许的可选引用按真实注释和作用行保留，其他缺失引用仍失败。ambient module 取自 native symbol 和原 roots；skipLibCheck 不补齐未解析引用。例如 Elysia 的公开 bun 引用仍需作者安装可选 `@types/bun`。生成器不合成 any/unknown 或空声明掩盖缺失。
 
+## Service 声明与材料
+
+Service 与 Plugin definition 共用 canonical entry + exportName 身份规则，服务没有node/fork地址。服务直接以普通/abstract class声明；安装点与 `ctx.service` 的具名导入由semantic pass定位原导出并绑定身份，`defineServiceRef<T>()` 生成指向同一身份的optional引用。Core内建声明在Core bootstrap前绑定，原生工厂引用不重复绑定。服务安装集合由固定Context plan拥有，不伪装成Plugin catalog节点。
+
+manifest format 3 以 `services` 独立记录服务definition、access和API contract。生成入口导出required `ServiceDefinition<FooInstance, Access>`与原生Instance类型；Script的optional helper只接受已校验入口的FooInstance类型。required/optional引用都在receiver realm构造，由SDK定位当前已安装声明并校验contract，返回原生API的受守卫借用视图。服务构造与业务异常不归并为缺失。
+
+Host材料装载器将已验证material绑定到实际安装声明；同一Host只提供已安装的服务。材料查询和同步分别返回 `definitions` 与 `services`，共用不可变快照验证、筛选和原子current发布。未安装服务不因材料存在而可用。Service不需要Plugin实例typed evidence；选择owner Context仍捕获该节点的当前running generation与撤回规则。
+
 ## 文件与摘要
 
-format 2 材料包含 index.mjs、index.d.mts、声明闭包和 manifest.json。JavaScript 逐字匹配确定性模板，通过 Host `internal/control-reference` 创建冻结地址提供者；清单为每个 definition 指定 module，导出名在模块内唯一。路径限安全相对路径，文件记录 UTF-8 字节数/SHA-256，snapshot 摘要来自规范编码的 unsigned manifest；原 Plugin 实现不进入材料。
+format 3 材料包含 index.mjs、index.d.mts、声明闭包和 manifest.json。JavaScript 逐字匹配确定性模板，通过 Host `internal/control-reference` 创建冻结地址提供者；清单为每个 definition 指定 module，导出名在模块内唯一。路径限安全相对路径，文件记录 UTF-8 字节数/SHA-256，snapshot 摘要来自规范编码的 unsigned manifest；原 Plugin 实现不进入材料。
 
 公开 `./control` 的包显式声明兼容 Host peer。仅控制入口依赖 Host 时可 optional，其他运行入口依赖则 required；control-exports 在 exports 写回和 finalization 前验证。Host 不进入 dependencies/optionalDependencies，构建不推断版本或修补作者依赖。
 
@@ -64,9 +74,9 @@ scope/generation 等待已接纳工作。为避免 provider 与 coordinator 互�
 
 ## 同步与脚本输入
 
-Management major 13 的 plugins.control-materials 与 Vite target 沿原连接读材料，独立于 scripts 开关。读取固定 committed catalog 和所选 definitions；每连接最长缓存 5 分钟、128 份、共 64 MiB，索引分页、文件按 32 KiB UTF-8/base64 分块。过期报 `control_snapshot_expired`，重新同步。
+Management major 13 的 plugins.control-materials 与 Vite target 沿原连接读材料，独立于 scripts 开关。读取固定 committed catalog、已安装服务集合和所选 definitions/services；每连接最长缓存 5 分钟、128 份、共 64 MiB，索引分页、文件按 32 KiB UTF-8/base64 分块。过期报 `control_snapshot_expired`，重新同步。
 
-script sync/dev sync 共用客户端实现，完整验证后写 `.snapshots/<digest>`，再原子切换 current symlink。按 canonical entry 生成稳定模块，只导出所选定义；普通具名导出保留原名，特殊名称冲突在生成时处理，输出 module/exportName 供直接导入。原始材料保留验证后的声明/数据，执行模块由标准模板生成。owner marker、内容和锁检查拒绝覆盖作者文件或被修改快照，旧快照由显式维护清理。
+script sync/dev sync 共用客户端实现；packageName/完整 definition 互斥筛选在连接前校验，收齐索引后只下载选中 snapshot，仍完整验证该 snapshot 的声明闭包。无匹配定义报错且保留 current。验证后写 `.snapshots/<digest>`，再原子切换 current symlink。按 canonical entry 生成稳定模块，只导出所选Plugin/Service定义；普通具名导出保留原名，特殊名称冲突在生成时处理，输出 module/exportName/importStatement 供直接导入。原始材料保留验证后的声明/数据，执行模块由标准模板生成。owner marker、内容和锁检查拒绝覆盖作者文件或被修改快照，旧快照由显式维护清理。
 
 完整性检查不比较作者安装的外部类型与生成环境。package/closure 都可能引用外部声明，作者须提供匹配版本；Host 摘要只核对 descriptor 与已接纳实现。
 

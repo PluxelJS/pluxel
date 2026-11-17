@@ -1,4 +1,5 @@
-import { resolveContextCapability } from '@pluxel/core/host'
+import { resolveContextService } from '@pluxel/core/internal'
+
 import { CatalogLayout } from '../../../token'
 import { pluginDefinitionIndexKey, type Context } from '@pluxel/core'
 import {
@@ -39,7 +40,7 @@ export async function writePluginCatalogLayout(
 }
 
 function requirePluginCatalogLayout(ctx: Context) {
-	const service = resolveContextCapability(ctx.root, CatalogLayout)
+	const service = resolveContextService(ctx.root, CatalogLayout)
 	if (!service) {
 		throw new Error('[pluxel/runtime] Plugin catalog layout requires the management plane')
 	}

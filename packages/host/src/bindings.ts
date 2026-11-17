@@ -1,5 +1,4 @@
 import type { PluginNodeAddress } from '@pluxel/core'
-import { defineContextCapability } from '@pluxel/core/host'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import type { Schema } from 'valibot-form'
 
@@ -88,6 +87,7 @@ export type HostVaultBindingRecord = Readonly<{
 }>
 
 /** Root-only installation boundary. Plugins cannot replace deployment bindings. */
-export const HostVaultBindings = defineContextCapability<{
-	install(records: readonly HostVaultBindingRecord[]): void | Promise<void>
-}>('host.vault-bindings', { access: 'root' })
+export abstract class HostVaultBindings {
+	static readonly access = 'root'
+	abstract install(records: readonly HostVaultBindingRecord[]): void | Promise<void>
+}

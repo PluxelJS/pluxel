@@ -1,39 +1,23 @@
-import type { ContextLogger } from '../logger/LoggerService'
 import type { ConfigService } from '../services/config/ConfigService'
-import type { EffectsScope } from '../services/effects/EffectsService'
-import type { EventsService } from '../services/events/EventsService'
-import { defineContextCapability, type ContextCapability } from '@pluxel/context'
-import type { FsPromises, FsRequirement, FsService } from '../fs/service'
-import type { TinyBaseRuntime } from '../tinybase/service'
-import type { TinyBaseService } from '../tinybase/types'
+import type { PluginService } from '../plugins/runtime/PluginService'
+import type { FsPromises, FsRequirement } from '../fs/service'
 
-export const LOGGER_CAPABILITY: ContextCapability<ContextLogger> =
-	defineContextCapability('core.logger')
-export const EFFECTS_CAPABILITY: ContextCapability<EffectsScope> =
-	defineContextCapability('core.effects')
-export const EVENTS_CAPABILITY: ContextCapability<EventsService> =
-	defineContextCapability('core.events')
-export const CONFIG_SERVICE_CAPABILITY: ContextCapability<ConfigService> =
-	defineContextCapability('core.plugin-config')
+/** A Plugin generation's filesystem directory capability. */
+export abstract class Fs {
+	static readonly access = 'owner' as const
+}
+export interface Fs {
+	(requirement?: FsRequirement): Promise<FsPromises>
+}
 
-// Fixed platform resources remain internal descriptors; Plugin authors use their owner properties.
-export const FS_CAPABILITY = defineContextCapability<FsService>('core.fs', { access: 'root' })
-export const PLUGIN_FS_CAPABILITY = defineContextCapability<
-	(requirement?: FsRequirement) => Promise<FsPromises>
->('core.plugin-fs', { access: 'owner', property: 'fs' })
-export const TINYBASE_HOST_CAPABILITY = defineContextCapability<TinyBaseRuntime>(
-	'core.tinybase.host',
-	{
-		access: 'root',
-	},
-)
-export const TINYBASE_CAPABILITY = defineContextCapability<TinyBaseService>('core.tinybase', {
-	access: 'owner',
-	property: 'tinybase',
-})
+/** Framework-owned configuration authority. */
+export abstract class PluginConfigService {
+	static readonly access = 'root' as const
+}
+export interface PluginConfigService extends ConfigService {}
 
-// PluginService is intentionally represented only by its object identity here. Importing the
-// high-level graph coordinator into the low-level capability module would invert the dependency
-// direction and recreate the composition/runtime cycle this descriptor is meant to break.
-export const PLUGIN_SERVICE_CAPABILITY_IDENTITY: ContextCapability<object> =
-	defineContextCapability('core.plugin-runtime')
+/** A leaf declaration keeps graph implementation imports out of Context assembly. */
+export abstract class PluginRuntimeService {
+	static readonly access = 'root' as const
+}
+export interface PluginRuntimeService extends PluginService {}

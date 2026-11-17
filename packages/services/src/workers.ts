@@ -1,5 +1,5 @@
-import { installOwnerViewCapability } from '@pluxel/core/host'
-import { defineHostService } from '@pluxel/host'
+import { installOwnerViewService } from '@pluxel/core/host'
+import { defineHostService, type HostService } from '@pluxel/host'
 import { NodeModuleHost } from './node/token'
 import { Workers } from './workers/token'
 import { WorkerTaskService } from './workers/service'
@@ -18,7 +18,7 @@ export type {
 } from './workers/declaration'
 
 /** Install one shared worker budget. The Node artifact service must be explicitly installed. */
-export function workers(config: WorkersConfig = {}) {
+export function workers(config: WorkersConfig = {}): HostService {
 	if (!config || typeof config !== 'object' || Array.isArray(config))
 		throw new TypeError('workers() requires a configuration object')
 	const native = config.worker
@@ -48,9 +48,8 @@ export function workers(config: WorkersConfig = {}) {
 	return defineHostService({
 		name: 'Workers',
 		requires: { nodeModules: NodeModuleHost },
-		capabilities: [
-			installOwnerViewCapability(Workers, {
-				property: 'workers',
+		provides: [
+			installOwnerViewService(Workers, {
 				createRoot: (ctx) => new WorkerTaskService(ctx, snapshot),
 				createView: (backend, owner) => backend.forOwner(owner),
 			}),

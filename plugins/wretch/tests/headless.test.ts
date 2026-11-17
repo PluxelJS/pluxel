@@ -1,14 +1,16 @@
+import type { Workbench } from '@pluxel/workbench'
 import { createServer } from 'node:http'
 import * as nativeFs from 'node:fs'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, Fs, defineServiceRef } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { Passthrough } from '@pluxel/core/fs'
 import { expect, it } from 'vitest'
 import { WretchConfig, WretchPlugin } from '../src/index.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 let origin = ''
 let round = 0
 
@@ -18,8 +20,8 @@ class StatelessHttpConsumer extends BasePlugin {
 		super()
 	}
 	async init() {
-		expect(this.ctx.fs).toBeTypeOf('function')
-		expect(this.ctx.workbench).toBeUndefined()
+		expect(this.ctx.service(Fs)).toBeTypeOf('function')
+		expect(this.ctx.service(WorkbenchRef)).toBeUndefined()
 		await this.http.enableManagedSettings()
 		await this.http.updateManagedSettings({ headers: {} })
 		await this.http.resetManagedSettings()
@@ -87,7 +89,7 @@ class HeadlessHttpConsumer extends BasePlugin {
 		super()
 	}
 	async init() {
-		expect(this.ctx.workbench).toBeUndefined()
+		expect(this.ctx.service(WorkbenchRef)).toBeUndefined()
 		await this.http.enableManagedSettings()
 		if (round === 0) {
 			await this.http.updateManagedSettings({ headers: { 'X-Managed': 'saved' }, timeoutMs: 500 })

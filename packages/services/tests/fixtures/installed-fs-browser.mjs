@@ -1,5 +1,5 @@
 import { createHost } from '@pluxel/host/browser'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, Fs } from '@pluxel/core'
 import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
 import { requireFs, requireHostDocuments } from '@pluxel/core/internal'
 import { writeFileAtomic } from '@pluxel/core/fs'
@@ -7,7 +7,7 @@ import { writeFileAtomic } from '@pluxel/core/fs'
 const views = new Map()
 class Owner extends BasePlugin {
 	async init() {
-		views.set(this.ctx.pluginInfo.nodeAddress.definition.exportName, await this.ctx.fs())
+		views.set(this.ctx.pluginInfo.nodeAddress.definition.exportName, await this.ctx.service(Fs)())
 	}
 }
 class First extends Owner {}

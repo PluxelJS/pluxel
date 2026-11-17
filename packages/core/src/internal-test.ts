@@ -1,3 +1,4 @@
+import { EffectsService } from './services/effects/EffectsService'
 import './services/index'
 import { createCoreRootContext } from './context/core-plan'
 import { prepareCoreContext } from './context/core-logging'
@@ -406,7 +407,10 @@ export function createCoreInternalTestHost(
 					await shutdown.commit()
 				}
 			} finally {
-				await ctx.effects.dispose().catch((): undefined => undefined)
+				await ctx
+					.service(EffectsService)
+					.dispose()
+					.catch((): undefined => undefined)
 			}
 		},
 		[Symbol.asyncDispose]: async () => host.dispose(),
@@ -440,7 +444,10 @@ export function createCoreInternalTestContext(
 		root: ctx,
 		dispose: async () => {
 			registry.resetDraft()
-			await ctx.effects.dispose().catch((): undefined => undefined)
+			await ctx
+				.service(EffectsService)
+				.dispose()
+				.catch((): undefined => undefined)
 		},
 	}
 }

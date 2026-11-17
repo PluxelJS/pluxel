@@ -1,5 +1,6 @@
-import type { RootContext, EffectsScope } from '@pluxel/core'
-import { resolveContextCapability, enterOwnerInvocation } from '@pluxel/core/host'
+import { resolveContextService } from '@pluxel/core/internal'
+import { LoggerService, type RootContext, type EffectsScope } from '@pluxel/core'
+import { enterOwnerInvocation } from '@pluxel/core/host'
 import { ElysiaRuntime } from '../elysia/runtime'
 import type { ElysiaApplicationCarrier } from '../elysia/elysia-application-carrier'
 import type { WSConnectionData } from 'elysia/ws'
@@ -23,12 +24,13 @@ export async function attachManagementHttp(
 	const scriptModule = options.scripts === true ? await import('./scripts') : undefined
 	const scripts = scriptModule?.createManagementScripts(ctx, effects)
 	const endpoint = createManagementEndpoint({
-		authentication: resolveContextCapability(ctx, AdminAccess),
+		authentication: resolveContextService(ctx, AdminAccess),
 		createManagement: (session) => createHostManagementTarget(ctx, session),
 		...scripts,
 		...options.bindings?.(ctx),
 		onError:
-			options.onError ?? ((error) => ctx.logger.error('Management operation failed', { error })),
+			options.onError ??
+			((error) => ctx.service(LoggerService).error('Management operation failed', { error })),
 	})
 	// Subscribe to root admission closure without retaining a root invocation across the session.
 	const rootLease = enterOwnerInvocation(ctx)
@@ -42,7 +44,7 @@ export async function attachManagementHttp(
 		},
 		{ tag: 'ManagementEndpoint', phase: 'shutdown' },
 	)
-	const http = resolveContextCapability(ctx, ElysiaRuntime)
+	const http = resolveContextService(ctx, ElysiaRuntime)
 	for (const prefix of ['/__pluxel/runtime', '/__pluxel/admin-access']) {
 		const unmount = http.mountEndpoint({
 			prefix,

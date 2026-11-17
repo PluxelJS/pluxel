@@ -46,10 +46,11 @@ describe('shared Host application startup', () => {
 		await writeFile(
 			entry,
 			`import {defineHostService} from '@pluxel/host';
-import {defineContextCapability,installRootCapability} from '@pluxel/core/host';
+import {installRootService} from '@pluxel/core/host';
+export class ApplicationResource {}
 export default async ({env,bindings}) => {
  const events=bindings.events; events.push('factory:'+env.VALUE); await Promise.resolve();
- return {plugins:[],services:[defineHostService({name:'ApplicationResource',capabilities:[installRootCapability(defineContextCapability('ApplicationResource'),{create:()=>env.VALUE})],prepare({effects}){events.push('prepare:'+env.VALUE);effects.defer(()=>events.push('close:'+env.VALUE))}})],prepare({startup}){if(startup.env.VALUE==='fail')throw new Error('application prerequisite failed')}};
+ return {plugins:[],services:[defineHostService({name:'ApplicationResource',provides:[installRootService(ApplicationResource,{create:()=>env.VALUE})],prepare({effects}){events.push('prepare:'+env.VALUE);effects.defer(()=>events.push('close:'+env.VALUE))}})],prepare({startup}){if(startup.env.VALUE==='fail')throw new Error('application prerequisite failed')}};
 }`,
 		)
 		try {
@@ -133,8 +134,8 @@ export default async ({env,bindings}) => {
 	})
 
 	it('captures the evaluated declaration before resolving asynchronous bindings', async () => {
-		const original = { name: 'selected', capabilities: [] as const }
-		const changed = { name: 'changed', capabilities: [] as const }
+		const original = { name: 'selected', provides: [] as const }
+		const changed = { name: 'changed', provides: [] as const }
 		const declaration = {
 			plugins: [] as [],
 			services: [original],

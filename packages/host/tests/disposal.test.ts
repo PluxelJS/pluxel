@@ -9,7 +9,7 @@ it('awaits scope-owned Host shutdown and shares cleanup with concurrent close ca
 	let settled = false
 	const service = defineHostService({
 		name: 'scoped-resource',
-		capabilities: [],
+		provides: [],
 		prepare({ effects }) {
 			effects.defer(async () => {
 				cleanups++
@@ -52,7 +52,7 @@ it('preserves body and cleanup failures when a Host leaves its async disposal sc
 			services: [
 				defineHostService({
 					name: 'failed-resource',
-					capabilities: [],
+					provides: [],
 					prepare({ effects }) {
 						effects.defer(() => {
 							events.push('remaining cleanup')

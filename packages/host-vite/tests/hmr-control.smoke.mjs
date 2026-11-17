@@ -83,7 +83,7 @@ export default defineHostApplication(() => ({
 	const material = async () => {
 		using client = await openProjectControl(instance)
 		const index = await client.materials()
-		if (index.unavailableCount) {
+		if (index.definitions.length !== count) {
 			const status = await script('status.ts')
 			assert.fail(
 				JSON.stringify({
@@ -295,7 +295,7 @@ export default (async (sdk) => {
  try { await sdk.logs.mark(); throw new Error('Expected missing Logging'); }
  catch (error) {
   if (!(error instanceof ScriptError)) throw error;
-  return { failure: error.details, count: (await sdk.plugins.list()).nodes.length, nativeContext: typeof sdk.ctx.require === 'function' };
+  return { failure: error.details, count: (await sdk.plugins.list()).nodes.length, nativeContext: typeof sdk.ctx.service === 'function' };
  }
 }) satisfies Script;`,
 		)

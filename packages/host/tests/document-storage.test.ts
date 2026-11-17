@@ -1,10 +1,16 @@
-import type { RootContext } from '@pluxel/core'
-import { defineContextCapability, installRootCapability } from '@pluxel/core/host'
+import { EffectsService, type RootContext } from '@pluxel/core'
+import { installRootService } from '@pluxel/core/host'
 import { requireConfigService } from '@pluxel/core/internal'
 import { describe, expect, it } from 'vitest'
-import { createHost, defineHostService } from '../src/index'
+import { createHost, defineHostService, type HostDocumentStorage } from '../src/index'
 import { createDocumentStorage } from './helpers/document-storage'
 import { assertResolvedHostStoreStorage } from '../src/document-storage'
+
+export abstract class Documents {
+	static readonly access = 'root'
+	abstract readonly config: HostDocumentStorage
+	abstract readonly state: HostDocumentStorage
+}
 
 function documentService(events: string[]) {
 	let closed = false
@@ -26,17 +32,13 @@ function documentService(events: string[]) {
 	}
 	const config = tracked()
 	const state = tracked()
-	const Documents = defineContextCapability<{ config: typeof config; state: typeof state }>(
-		'host-test.documents',
-		{ access: 'root' },
-	)
 	const service = defineHostService({
 		name: 'host-test.documents',
-		capabilities: [
-			installRootCapability(Documents, {
+		provides: [
+			installRootService(Documents, {
 				create(root) {
 					events.push('constructed')
-					root.effects.defer(
+					root.service(EffectsService).defer(
 						() => {
 							closed = true
 							events.push('closed')
@@ -51,7 +53,7 @@ function documentService(events: string[]) {
 			events.push('prepared')
 		},
 	})
-	return { Documents, service, config, state }
+	return { service, config, state }
 }
 
 describe('Host root document factories', () => {
@@ -85,7 +87,7 @@ describe('Host root document factories', () => {
 	it('resolves both factories once before document IO and flushes runtime work before root final', async () => {
 		const events: string[] = []
 		const roots: RootContext[] = []
-		const { Documents, service, config, state } = documentService(events)
+		const { service, config, state } = documentService(events)
 		const flushingService = defineHostService({
 			...service,
 			prepare({ effects }) {
@@ -106,14 +108,14 @@ describe('Host root document factories', () => {
 						storage(root) {
 							roots.push(root)
 							events.push('config factory')
-							return root.require(Documents).config
+							return root.service(Documents).config
 						},
 					},
 					state: {
 						storage(root) {
 							roots.push(root)
 							events.push('state factory')
-							return root.require(Documents).state
+							return root.service(Documents).state
 						},
 					},
 				},
@@ -146,14 +148,14 @@ describe('Host root document factories', () => {
 		'rejects $name before either store starts IO and still releases root resources',
 		async ({ result }) => {
 			const events: string[] = []
-			const { Documents, service } = documentService(events)
+			const { service } = documentService(events)
 			await expect(
 				createHost({
 					plugins: [],
 					services: [service],
 					runtime: {
 						documents: {
-							config: { storage: (root) => root.require(Documents).config },
+							config: { storage: (root) => root.service(Documents).config },
 							state: { storage: result as never },
 						},
 					},
@@ -166,7 +168,7 @@ describe('Host root document factories', () => {
 	it('cleans resources acquired by a throwing factory and retains its original failure', async () => {
 		const events: string[] = []
 		const failure = new Error('Document binding failed')
-		const { Documents, service } = documentService(events)
+		const { service } = documentService(events)
 		await expect(
 			createHost({
 				plugins: [],
@@ -175,7 +177,7 @@ describe('Host root document factories', () => {
 					documents: {
 						config: {
 							storage(root) {
-								root.require(Documents)
+								root.service(Documents)
 								throw failure
 							},
 						},
@@ -191,7 +193,7 @@ describe('Host root document factories', () => {
 		async (stage) => {
 			const events: string[] = []
 			const failure = new Error(`${stage} failed`)
-			const { Documents, service, config } = documentService(events)
+			const { service, config } = documentService(events)
 			if (stage === 'read')
 				config.getText = async () => {
 					throw failure
@@ -207,7 +209,7 @@ describe('Host root document factories', () => {
 				createHost({
 					plugins: [],
 					services: [hostService],
-					runtime: { documents: { config: { storage: (root) => root.require(Documents).config } } },
+					runtime: { documents: { config: { storage: (root) => root.service(Documents).config } } },
 				}),
 			).rejects.toBe(failure)
 			expect(events.at(-1)).toBe('closed')
@@ -218,7 +220,7 @@ describe('Host root document factories', () => {
 		const events: string[] = []
 		const entered = Promise.withResolvers<void>()
 		const release = Promise.withResolvers<void>()
-		const { Documents, service, state, config } = documentService(events)
+		const { service, state, config } = documentService(events)
 		const failure = new Error('config read rejected')
 		config.getText = async () => {
 			throw failure
@@ -234,8 +236,8 @@ describe('Host root document factories', () => {
 			services: [service],
 			runtime: {
 				documents: {
-					config: { storage: (root) => root.require(Documents).config },
-					state: { storage: (root) => root.require(Documents).state },
+					config: { storage: (root) => root.service(Documents).config },
+					state: { storage: (root) => root.service(Documents).state },
 				},
 			},
 		})
@@ -250,7 +252,7 @@ describe('Host root document factories', () => {
 		const events: string[] = []
 		const failure = new Error('Document read failed')
 		const cleanupFailure = new Error('Runtime cleanup failed')
-		const { Documents, service, config } = documentService(events)
+		const { service, config } = documentService(events)
 		config.getText = async () => {
 			throw failure
 		}
@@ -262,10 +264,10 @@ describe('Host root document factories', () => {
 					documents: {
 						config: {
 							storage(root) {
-								root.effects.defer(() => {
+								root.service(EffectsService).defer(() => {
 									throw cleanupFailure
 								})
-								return root.require(Documents).config
+								return root.service(Documents).config
 							},
 						},
 					},
@@ -280,18 +282,18 @@ describe('Host root document factories', () => {
 
 	it('rejects access to Host config while document factories are being resolved', async () => {
 		const events: string[] = []
-		const { Documents, service } = documentService(events)
+		const { service } = documentService(events)
 		await expect(
 			createHost({
 				plugins: [],
 				services: [service],
 				runtime: {
 					documents: {
-						config: { storage: (root) => root.require(Documents).config },
+						config: { storage: (root) => root.service(Documents).config },
 						state: {
 							storage(root) {
 								requireConfigService(root)
-								return root.require(Documents).state
+								return root.service(Documents).state
 							},
 						},
 					},

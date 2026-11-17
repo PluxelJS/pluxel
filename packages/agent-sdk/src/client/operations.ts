@@ -2,7 +2,6 @@ import { checkAbort } from './signal'
 import { createHash, randomUUID } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
-import { setTimeout as delay } from 'node:timers/promises'
 import {
 	SCRIPT_DEFAULT_TIMEOUT,
 	SCRIPT_MAX_TIMEOUT,
@@ -35,6 +34,7 @@ import {
 } from './receipt'
 import {
 	syncPluginControl as writePluginControl,
+	parseControlSyncSelection,
 	type ControlMaterialSource,
 	type ControlSyncResult,
 } from './materials'
@@ -164,7 +164,7 @@ export async function listHosts(
 		checkAbort(cancellation)
 		const selection = await resolveDevSelection(selected)
 		requireDevScripts(selection.project)
-		const live = await liveDevInstances(selection.root, cancellation)
+		const live = await liveDevInstances(selection.root, cancellation, selection.instance)
 		checkAbort(cancellation)
 		return {
 			workspace: selection.project.workspace,
@@ -271,8 +271,10 @@ async function execute(
 			const deadline = Date.now() + options.timeoutMs + 5000
 			while (!options.detach && !isScriptFinished(run) && Date.now() < deadline) {
 				checkAbort(options.signal)
-				await delay(100, undefined, { signal: options.signal })
-				run = await connection.control.result(request.runId)
+				run = await connection.control.result(
+					request.runId,
+					Math.max(0, Math.min(1000, deadline - Date.now())),
+				)
 				verifyScriptReceipt(run, request)
 			}
 			return { receipt, run }
@@ -304,7 +306,9 @@ export async function runScript(input: ScriptRunOptions): Promise<ScriptRunResul
 			data = input.input === undefined ? undefined : snapshotJson(input.input)
 		} catch (cause) {
 			if (cause instanceof ScriptExecutionError && cause.code === 'result_too_large')
-				throw new ScriptExecutionError('input_too_large', cause.message)
+				throw new ScriptExecutionError('input_too_large', cause.message, { context: cause.context })
+			if (cause instanceof ScriptExecutionError && cause.code === 'result_not_serializable')
+				throw new ScriptExecutionError('invalid_input', cause.message, { context: cause.context })
 			throw cause
 		}
 		return await execute(options, async (root) => {
@@ -404,8 +408,9 @@ export function cancelScript(
 
 export async function syncPluginControl(input: ControlSyncOptions): Promise<ControlSyncResult> {
 	try {
-		object(input, ['target', 'out', 'signal'])
+		object(input, ['target', 'out', 'signal', 'packageName', 'definition'])
 		const selected = target(input.target)
+		const selection = parseControlSyncSelection(input)
 		const cancellation = signal(input.signal)
 		text(input.out, 'out')
 		const out = resolve(input.out)
@@ -443,7 +448,7 @@ export async function syncPluginControl(input: ControlSyncOptions): Promise<Cont
 			}
 		}
 		return await connected(open, cancellation, (connection) =>
-			writePluginControl({ source: connection.source, out, signal: cancellation }),
+			writePluginControl({ source: connection.source, out, ...selection, signal: cancellation }),
 		)
 	} catch (cause) {
 		throw failure(cause, 'control_sync_failed')

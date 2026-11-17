@@ -1,14 +1,15 @@
+import { type Workbench, workbench } from '@pluxel/workbench'
 import { ElysiaApp } from '@pluxel/services/elysia'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import { Result, TaggedError } from '@pluxel/core/better-result'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
-import { workbench } from '@pluxel/workbench'
 import type { Wretch } from 'wretch'
 import { retry } from 'wretch/middlewares'
 import { WretchPlugin } from '../../src/index.ts'
 import { WretchWorkbench } from '../../src/workbench.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 const CustomerSchema = v.object({ id: v.string(), name: v.string() })
 type Customer = v.InferOutput<typeof CustomerSchema>
 
@@ -73,8 +74,8 @@ export class WretchExamplePlugin extends BasePlugin {
 		}
 		this.api = api
 
-		this.ctx.require(ElysiaApp).get('/wretch-example/inspect', () => this.inspect())
-		this.ctx.workbench?.publish(WretchExampleWorkbench, {
+		this.ctx.service(ElysiaApp).get('/wretch-example/inspect', () => this.inspect())
+		this.ctx.service(WorkbenchRef)?.publish(WretchExampleWorkbench, {
 			http: { provider: this.http },
 		})
 	}

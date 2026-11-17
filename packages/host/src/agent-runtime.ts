@@ -41,6 +41,7 @@ export {
 	type ScriptControlSubmission,
 	type ScriptHmrAction,
 	type ScriptPhase,
+	type ScriptDiagnostic,
 	type ScriptFailure,
 	type ScriptRunSnapshot,
 } from './agent/protocol'

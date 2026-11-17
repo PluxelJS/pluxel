@@ -108,7 +108,7 @@ resource 是 `defaultResource()` 与显式环境 attributes 的 merge；`service
 
 - 不提供 `measure()`、decorator、RED wrapper、固定 instruments 或 attribute registry；
 - 不自动 instrument runtime、HTTP、database 或业务 Plugin；
-- 不把 `ctx.logger` 悄悄桥接到 logs signal；Core 的 LogTape 输出仍由 `runtime.logtape` 配置拥有；
+- 不把 `ctx.service(LoggerService)` 悄悄桥接到 logs signal；Core 的 LogTape 输出仍由 `runtime.logtape` 配置拥有；
 - 默认预设不添加 durable queue、backend routing、dashboard 或 alerting；原生 hook 可组合多个 SDK readers/processors/exporters；
 - 不支持 OTLP Profiles：当前 SDK 依赖没有对应 profiles API、SDK/exporter package。
 

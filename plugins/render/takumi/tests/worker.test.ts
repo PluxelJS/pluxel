@@ -17,7 +17,7 @@ class Consumer extends BasePlugin {
 	}
 	probe(task: 'a' | 'b', input: ProbeInput = {}, signal?: AbortSignal) {
 		return this.ctx
-			.require(Workers)
+			.service(Workers)
 			.run(task === 'a' ? a : b, input, { settlement: 'execution', signal })
 	}
 }

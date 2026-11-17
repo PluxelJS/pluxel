@@ -6,46 +6,55 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { version } from 'typescript'
-import { API, DiagnosticCategory, SymbolFlags, type Project } from 'typescript/unstable/sync'
+import {
+	API,
+	DiagnosticCategory,
+	SymbolFlags,
+	type Project,
+	type Symbol as NativeSymbol,
+} from 'typescript/unstable/sync'
 import {
 	CommentDirectiveType,
 	createScanner,
 	ScriptKind,
 	SyntaxKind,
 	type ClassDeclaration,
+	type ExportDeclaration,
+	type Identifier,
+	type ImportDeclaration,
 	type Node,
 	type SourceFile,
 	type StringLiteral,
 	type VariableDeclaration,
 } from 'typescript/unstable/ast'
 import { parseSync } from 'oxc-parser'
-import { pluginDefinitionIndexKey, type PluginDefinitionAddress } from '@pluxel/core'
-import {
-	inspectPluginSource,
-	type InspectedSemanticOwner,
-} from '../rolldown/plugins/pluginSemanticsPlugin.ts'
-import {
-	extractConfigDeclarationFacts,
-	type ConfigDeclarationFact,
-} from '../rolldown/plugins/configSourcePlugin.ts'
+import type { PluginDefinitionAddress } from '@pluxel/core'
+import type { InspectedSemanticOwner } from '../rolldown/plugins/pluginSemanticsPlugin.ts'
+import type { ConfigDeclarationFact } from '../rolldown/plugins/configSourcePlugin.ts'
 import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils.ts'
-import {
-	controlSha256,
-	encodeControlData,
-	isControlExportName,
-	renderPluginDescriptors,
-	verifyPluginControlMaterial,
-	type PluginControlManifest,
-} from './manifest.ts'
+import type { PluginControlManifest } from '@pluxel/core/internal/control-manifest'
+
+type CompilerContracts = Pick<
+	typeof import('@pluxel/core/internal/control-manifest'),
+	| 'encodeControlData'
+	| 'isControlExportName'
+	| 'renderPluginDescriptors'
+	| 'verifyPluginControlMaterial'
+> & {
+	pluginDefinitionIndexKey: (typeof import('@pluxel/core'))['pluginDefinitionIndexKey']
+	controlSha256(content: string | Uint8Array): string
+}
 
 export type PluginControlSource = Readonly<{
 	moduleId: string
 	className: string
 	definition: PluginDefinitionAddress
 }>
+export type ServiceControlSource = PluginControlSource &
+	Readonly<{ access: 'all' | 'root' | 'owner' }>
 
 export type PluginControlGeneration = Readonly<{
-	format: 2
+	format: 3
 	snapshot: string
 	manifest: PluginControlManifest
 	files: Readonly<Record<string, string>>
@@ -76,9 +85,11 @@ type ConfigShape = { input: string; output: string; sources: ConfigSource[] }
  * Analyze without evaluation, then run the installed native declaration emitter over a frozen
  * physical copy of that exact TypeScript program. No project source or package entry is loaded.
  */
-export async function generatePluginControl(options: {
+export async function generateControl(options: {
+	contracts: CompilerContracts
 	root: string
 	definitions: readonly PluginControlSource[]
+	services?: readonly ServiceControlSource[]
 	/** Compiler project owned by the build root; false selects the explicit no-project defaults. */
 	tsconfig?: string | false
 	/** Exact preprocessed source seen by the semantic pass; keyed by physical module id. */
@@ -86,9 +97,38 @@ export async function generatePluginControl(options: {
 	/** Standalone application materials carry declarations; package SDKs may anchor installed public types. */
 	typeImports?: 'closure' | 'package'
 	signal?: AbortSignal
+	pluginAnalysis?: readonly [
+		Pick<typeof import('../rolldown/plugins/pluginSemanticsPlugin.ts'), 'inspectPluginSource'>,
+		Pick<
+			typeof import('../rolldown/plugins/configSourcePlugin.ts'),
+			'extractConfigDeclarationFacts'
+		>,
+	]
 }): Promise<PluginControlGeneration> {
+	const {
+		pluginDefinitionIndexKey,
+		controlSha256,
+		encodeControlData,
+		isControlExportName,
+		renderPluginDescriptors,
+		verifyPluginControlMaterial,
+	} = options.contracts
 	const root = realpathSync(resolve(options.root))
-	const definitions = [...options.definitions].sort((a, b) =>
+	const definitions = [
+		...options.definitions.map(({ moduleId, className, definition }) => ({
+			moduleId,
+			className,
+			definition,
+			kind: 'plugin' as const,
+		})),
+		...(options.services ?? []).map(({ moduleId, className, definition, access }) => ({
+			moduleId,
+			className,
+			definition,
+			access,
+			kind: 'service' as const,
+		})),
+	].sort((a, b) =>
 		pluginDefinitionIndexKey(a.definition).localeCompare(pluginDefinitionIndexKey(b.definition)),
 	)
 	const temporary = await mkdtemp(resolve(tmpdir(), 'pluxel-control-'))
@@ -149,8 +189,10 @@ export async function generatePluginControl(options: {
 		const owners = new Map<string, InspectedSemanticOwner>()
 		const configs = new Map<string, ConfigDeclarationFact>()
 		const helpers = new Map<string, string>()
+		const pluginAnalysis = options.pluginAnalysis
 		for (const source of definitions) {
-			const inspected = await inspectPluginSource({
+			if (source.kind === 'service') continue
+			const inspected = await pluginAnalysis![0].inspectPluginSource({
 				moduleId: moduleFile(source.moduleId),
 				root,
 				readSource: async (path) => read(path) ?? fail(`Source disappeared: ${path}`),
@@ -162,8 +204,12 @@ export async function generatePluginControl(options: {
 				const ast =
 					parseStandaloneWithLang(item.code, item.id) ??
 					fail(`Cannot parse config source ${item.id}`)
-				for (const fact of extractConfigDeclarationFacts(ast, item.code, item.id, fail)
-					.declarations) {
+				for (const fact of pluginAnalysis![1].extractConfigDeclarationFacts(
+					ast,
+					item.code,
+					item.id,
+					fail,
+				).declarations) {
 					const key = `${item.id}#${fact.className}`
 					configs.set(key, fact)
 					helpers.set(key, `__pluxelControlSchema_${fact.className}`)
@@ -282,6 +328,7 @@ export async function generatePluginControl(options: {
 				names,
 				jsonFiles,
 				captured,
+				localTypeImports: localTypeImports(project, names),
 				realpaths,
 				typeRoots: project.compilerOptions.typeRoots,
 				customConditions: project.compilerOptions.customConditions,
@@ -433,11 +480,15 @@ export async function generatePluginControl(options: {
 					(path) =>
 						`/// <reference path=${JSON.stringify(`./${declarationPaths.get(path)!}`)} />\n`,
 				),
-				"import type { PluginDescriptor } from '@pluxel/host/internal/agent-types'\n",
+				...(options.definitions.length > 0
+					? ["import type { PluginDescriptor } from '@pluxel/host/internal/agent-types'\n"]
+					: []),
+				"import type { ServiceDefinition } from '@pluxel/core'\n",
 				"type __ControlInput<S extends { readonly '~standard': { readonly types?: { readonly input: unknown; readonly output: unknown } } }> = NonNullable<S['~standard']['types']>['input']\ntype __ControlOutput<S extends { readonly '~standard': { readonly types?: { readonly input: unknown; readonly output: unknown } } }> = NonNullable<S['~standard']['types']>['output']\n",
 			]
 			const exported = new Set<string>(['PluginDescriptor', '__ControlInput', '__ControlOutput'])
 			const manifestDefinitions: PluginControlManifest['definitions'][number][] = []
+			const manifestServices: PluginControlManifest['services'][number][] = []
 			for (const source of definitions) {
 				options.signal?.throwIfAborted()
 				const file =
@@ -454,15 +505,18 @@ export async function generatePluginControl(options: {
 					.getPropertiesOfType(instance)
 					.map((symbol) => symbol.name)
 					.sort()
-				const shape = configTree(
-					project,
-					owners,
-					configs,
-					helpers,
-					`${file.fileName}#${source.className}`,
-					[],
-					identify,
-				)
+				const shape =
+					source.kind === 'service'
+						? undefined
+						: configTree(
+								project,
+								owners,
+								configs,
+								helpers,
+								`${file.fileName}#${source.className}`,
+								[],
+								identify,
+							)
 				let exportName = isControlExportName(source.definition.exportName)
 					? source.definition.exportName
 					: `Plugin_${controlSha256(pluginDefinitionIndexKey(source.definition)).slice(0, 16)}`
@@ -499,6 +553,27 @@ export async function generatePluginControl(options: {
 					? rewriteImports(shape.output, file.fileName, 'index.d.mts', true)
 					: 'never'
 				const classDocumentation = originalDocumentation(klass)
+				if (source.kind === 'service') {
+					declarations.push(
+						`${classDocumentation}export type ${exportName}Instance = __${exportName}Class\n`,
+						`${classDocumentation}export declare const ${exportName}: ServiceDefinition<${exportName}Instance, ${JSON.stringify(source.access)}>\n`,
+					)
+					const instanceInputs = declarationGraph.closure([file.fileName])
+					definitionInputs[pluginDefinitionIndexKey(source.definition)] = Object.freeze(
+						[...new Set([...instanceInputs, ...sharedMetadata])].sort(),
+					)
+					manifestServices.push(
+						Object.freeze({
+							definition: source.definition,
+							module: 'index.mjs',
+							exportName,
+							access: source.access,
+							contract: `sha256:${controlSha256(encodeControlData({ environment: { format: 1, compiler: `typescript@${version}`, strictNullChecks: project.compilerOptions.strictNullChecks ?? false }, access: source.access, keys, declarations: declarationContract(instanceInputs) }))}`,
+							source: identify(file.fileName),
+						}),
+					)
+					continue
+				}
 				const configDocumentation =
 					shape?.sources
 						.filter((item) => item.documentation)
@@ -596,11 +671,21 @@ export async function generatePluginControl(options: {
 					exportName: entry.exportName,
 					descriptor: { format: 2, definition: entry.definition, contracts: entry.contracts },
 				})),
+				manifestServices.map((entry) => ({
+					exportName: entry.exportName,
+					descriptor: {
+						format: 1,
+						definition: entry.definition,
+						contract: entry.contract,
+						access: entry.access,
+					},
+				})),
 			)
 			const unsigned = {
-				format: 2 as const,
+				format: 3 as const,
 				compiler: `typescript@${version}`,
 				definitions: manifestDefinitions,
+				services: manifestServices,
 				files: Object.entries(materials)
 					.sort(([a], [b]) => a.localeCompare(b))
 					.map(([path, text]) => ({
@@ -623,7 +708,7 @@ export async function generatePluginControl(options: {
 				inputs[path] = controlSha256(content)
 			}
 			return Object.freeze({
-				format: 2,
+				format: 3,
 				snapshot: manifest.snapshot,
 				manifest,
 				files: Object.freeze(materials),
@@ -677,53 +762,163 @@ function createDeclarationGraph(
 		)
 			shared.add(path)
 	}
-	const edges = new Map<string, ReadonlySet<string>>()
+	type Dependencies = { targets: readonly Node[]; witnesses: ReadonlySet<string> }
+	const edges = new Map<string, Dependencies>()
 	const directives = new Map<string, ReadonlySet<number>>()
-	const dependencies = (path: string): ReadonlySet<string> => {
-		const cached = edges.get(path)
+	const key = (node: Node): string => `${node.getSourceFile().fileName}:${node.pos}:${node.end}`
+	const topLevel = (node: Node): Node => {
+		while (node.parent && node.parent.kind !== SyntaxKind.SourceFile) node = node.parent
+		return node
+	}
+	const resolveModule = (imported: Node): readonly Node[] => {
+		const file = imported.getSourceFile()
+		let symbol = project.checker.getSymbolAtLocation(imported)
+		if (symbol && symbol.flags & SymbolFlags.Alias)
+			symbol = project.checker.getAliasedSymbol(symbol)
+		const resolved =
+			symbol?.declarations?.flatMap((handle) => {
+				const node = handle.resolve()
+				return node ? [node] : []
+			}) ?? []
+		if (resolved.length > 0) return resolved
+		if (imported.kind === SyntaxKind.StringLiteral) {
+			const specifier = (imported as StringLiteral).text
+			if (!specifier.startsWith('.') && !isAbsolute(specifier)) {
+				let lines = directives.get(file.fileName)
+				if (!lines) {
+					lines = commentDirectiveLines(file)
+					directives.set(file.fileName, lines)
+				}
+				if (isImportSuppressed(file, imported, lines)) return []
+			}
+		}
+		return fail(
+			`Cannot resolve emitted declaration import ${imported.getText(file)} in ${file.fileName}`,
+		)
+	}
+	const symbolEdges = new Map<number, Dependencies>()
+	const fromSymbol = (initial: NativeSymbol): Dependencies => {
+		const cached = symbolEdges.get(initial.id)
 		if (cached) return cached
-		const file = files.get(path) ?? fail(`Native declaration graph omitted ${path}`)
+		let symbol: NativeSymbol | undefined = initial
+		const witnesses = new Set<string>(),
+			aliases = new Set<number>()
+		const fallback: Node[] = []
+		while (symbol && symbol.flags & SymbolFlags.Alias && !aliases.has(symbol.id)) {
+			aliases.add(symbol.id)
+			for (const handle of symbol.declarations ?? []) {
+				const declaration = handle.resolve()
+				if (!declaration) continue
+				const owner = topLevel(declaration)
+				const imported =
+					owner.kind === SyntaxKind.ImportDeclaration
+						? (owner as ImportDeclaration).moduleSpecifier
+						: owner.kind === SyntaxKind.ExportDeclaration
+							? (owner as ExportDeclaration).moduleSpecifier
+							: undefined
+				if (!imported) continue
+				const modules = resolveModule(imported)
+				for (const module of modules) witnesses.add(module.getSourceFile().fileName)
+				fallback.push(...modules)
+			}
+			symbol = project.checker.getImmediateAliasedSymbol(symbol)
+		}
+		const targets =
+			symbol?.declarations?.flatMap((handle) => {
+				const node = handle.resolve()
+				return node ? [topLevel(node)] : []
+			}) ?? []
+		// Native stripInternal can leave a name unbound within a resolved module.
+		// Its unchanged native declaration remains the contract, as before.
+		const result = { targets: targets.length > 0 ? targets : fallback, witnesses }
+		symbolEdges.set(initial.id, result)
+		return result
+	}
+	const dependencies = (node: Node): Dependencies => {
+		const identity = key(node),
+			cached = edges.get(identity)
+		if (cached) return cached
+		const file = node.getSourceFile(),
+			path = file.fileName
 		if (!declarations.has(path))
 			fail(`Native declaration graph introduced an unfrozen input: ${path}`)
-		const targets = new Set<string>()
-		for (const imported of file.imports) {
-			let symbol = project.checker.getSymbolAtLocation(imported)
-			if (symbol && symbol.flags & SymbolFlags.Alias)
-				symbol = project.checker.getAliasedSymbol(symbol)
-			const resolved =
-				symbol?.declarations
-					?.map((handle) => handle.resolve()?.getSourceFile().fileName)
-					.filter((target): target is string => target !== undefined) ?? []
-			if (resolved.length === 0) {
-				if (imported.kind === SyntaxKind.StringLiteral) {
-					const specifier = (imported as StringLiteral).text
-					if (!specifier.startsWith('.') && !isAbsolute(specifier)) {
-						let lines = directives.get(path)
-						if (!lines) {
-							lines = commentDirectiveLines(file)
-							directives.set(path, lines)
-						}
-						if (isImportSuppressed(file, imported, lines)) continue
-					}
-				}
-				fail(`Cannot resolve emitted declaration import ${imported.getText(file)} in ${path}`)
+		const targets: Node[] = [],
+			witnesses = new Set<string>()
+		const addSymbol = (symbol: NativeSymbol | undefined) => {
+			if (!symbol) return
+			const resolved = fromSymbol(symbol)
+			for (const witness of resolved.witnesses) witnesses.add(witness)
+			for (const target of resolved.targets) {
+				if (
+					target.getSourceFile().fileName === path &&
+					target.pos >= node.pos &&
+					target.end <= node.end
+				)
+					continue
+				if (project.program.isSourceFileDefaultLibrary(target.getSourceFile())) continue
+				targets.push(target)
 			}
-			for (const target of resolved) targets.add(target)
 		}
-		for (const reference of file.referencedFiles)
-			targets.add(resolve(dirname(path), reference.fileName))
-		edges.set(path, targets)
-		return targets
+		for (const imported of file.imports) {
+			if (
+				node.kind !== SyntaxKind.SourceFile &&
+				(imported.pos < node.pos || imported.end > node.end)
+			)
+				continue
+			const parent = imported.parent
+			let bindings: readonly Node[] | undefined
+			if (parent.kind === SyntaxKind.ImportDeclaration) {
+				const clause = (parent as ImportDeclaration).importClause
+				if (clause && clause.namedBindings?.kind !== SyntaxKind.NamespaceImport)
+					bindings = [
+						...(clause.name ? [clause.name] : []),
+						...(clause.namedBindings?.elements.map((binding) => binding.name) ?? []),
+					]
+			} else if (parent.kind === SyntaxKind.ExportDeclaration) {
+				const clause = (parent as ExportDeclaration).exportClause
+				if (clause?.kind === SyntaxKind.NamedExports)
+					bindings = clause.elements.map((binding) => binding.name)
+			}
+			if (bindings?.length) {
+				for (const module of resolveModule(imported)) witnesses.add(module.getSourceFile().fileName)
+				for (const binding of bindings) addSymbol(project.checker.getSymbolAtLocation(binding))
+			} else targets.push(...resolveModule(imported))
+		}
+		if (node.kind === SyntaxKind.SourceFile) {
+			for (const reference of file.referencedFiles) {
+				const target = resolve(dirname(path), reference.fileName)
+				targets.push(files.get(target) ?? fail(`Native declaration graph omitted ${target}`))
+			}
+		} else {
+			// Traverse only this native named declaration. Other declarations sharing its
+			// module cannot introduce optional drivers or unrelated public API into the hash.
+			const visit = (child: Node): void => {
+				if (child.kind === SyntaxKind.Identifier)
+					addSymbol(project.checker.getSymbolAtLocation(child))
+				child.forEachChild(visit)
+			}
+			visit(node)
+		}
+		const result = { targets, witnesses }
+		edges.set(identity, result)
+		return result
 	}
 	return {
 		closure(roots: readonly string[]): ReadonlySet<string> {
-			const selected = new Set<string>()
-			const pending = [...shared, ...roots]
+			const selected = new Set<string>(),
+				expanded = new Set<string>()
+			const pending: Node[] = [...shared, ...roots].map(
+				(path) => files.get(path) ?? fail(`Native declaration graph omitted ${path}`),
+			)
 			while (pending.length > 0) {
-				const path = pending.pop()!
-				if (selected.has(path)) continue
-				selected.add(path)
-				for (const dependency of dependencies(path)) pending.push(dependency)
+				const node = pending.pop()!,
+					identity = key(node)
+				if (expanded.has(identity)) continue
+				expanded.add(identity)
+				selected.add(node.getSourceFile().fileName)
+				const { targets, witnesses } = dependencies(node)
+				for (const witness of witnesses) selected.add(witness)
+				pending.push(...targets)
 			}
 			return selected
 		},
@@ -981,6 +1176,86 @@ function findConfig(file: string): string | undefined {
 	}
 }
 
+/** Give native inference a local spelling for identities from existing author module edges.
+ * Otherwise a larger program can emit an inferred producer result through a downstream
+ * re-exporting package that the producer cannot resolve. Only the frozen emit mirror changes;
+ * original stars remain intact so native export ambiguity and stripInternal still apply.
+ */
+function localTypeImports(project: Project, names: readonly string[]): ReadonlyMap<string, string> {
+	const imports = new Map<string, string>()
+	const originalSymbol = (symbol: NativeSymbol) =>
+		symbol.flags & SymbolFlags.Alias ? project.checker.getAliasedSymbol(symbol) : symbol
+	for (const path of names) {
+		if (!/\.[cm]?tsx?$/.test(path) || /\.d\.[cm]?ts$/.test(path)) continue
+		const file = project.program.getSourceFile(path)!
+		const stars = file.statements.filter(
+			(node): node is ExportDeclaration =>
+				node.kind === SyntaxKind.ExportDeclaration &&
+				(node as ExportDeclaration).isTypeOnly &&
+				!(node as ExportDeclaration).exportClause &&
+				(node as ExportDeclaration).moduleSpecifier?.kind === SyntaxKind.StringLiteral,
+		)
+		const imported = file.statements.filter(
+			(node): node is ImportDeclaration =>
+				node.kind === SyntaxKind.ImportDeclaration &&
+				!!(node as ImportDeclaration).importClause &&
+				(!(node as ImportDeclaration).attributes ||
+					(node as ImportDeclaration).importClause!.phaseModifier === SyntaxKind.TypeKeyword) &&
+				(node as ImportDeclaration).moduleSpecifier.kind === SyntaxKind.StringLiteral,
+		)
+		const references = [...stars, ...imported]
+		if (references.length === 0) continue
+		const module = project.checker.getSymbolAtLocation(file)
+		if (!module) continue // Native emit reports malformed author modules.
+		const exported = new Map(
+			project.checker
+				.getExportsOfModule(module)
+				.map((symbol) => [symbol.name, originalSymbol(symbol)]),
+		)
+		const identifiers = new Set<string>()
+		const visit = (node: Node) => {
+			if (node.kind === SyntaxKind.Identifier) identifiers.add((node as Identifier).text)
+			node.forEachChild(visit)
+		}
+		visit(file)
+		let next = 0
+		const seen = new Set<number>(),
+			lines: string[] = []
+		for (const source of references) {
+			const target = project.checker.getSymbolAtLocation(source.moduleSpecifier!)
+			if (!target) continue
+			const bindings: string[] = []
+			for (const symbol of [...project.checker.getExportsOfModule(target)].sort((a, b) =>
+				a.name.localeCompare(b.name),
+			)) {
+				if (symbol.name === 'default' || symbol.name === 'export=') continue
+				const original = originalSymbol(symbol)
+				if (
+					project.checker.isUnknownSymbol(original) ||
+					seen.has(original.id) ||
+					!(original.flags & (SymbolFlags.Type | SymbolFlags.Namespace)) ||
+					(source.kind === SyntaxKind.ExportDeclaration &&
+						exported.get(symbol.name)?.id !== original.id)
+				)
+					continue
+				let alias: string
+				do {
+					alias = `__pluxelControlType_${next++}`
+				} while (identifiers.has(alias))
+				identifiers.add(alias)
+				seen.add(original.id)
+				bindings.push(`${JSON.stringify(symbol.name)} as ${alias}`)
+			}
+			if (bindings.length > 0)
+				lines.push(
+					`import type { ${bindings.join(', ')} } from ${source.moduleSpecifier!.getText(file)}${source.attributes ? ` ${source.attributes.getText(file)}` : ''};`,
+				)
+		}
+		if (lines.length > 0) imports.set(path, `\n${lines.join('\n')}\n`)
+	}
+	return imports
+}
+
 async function emitDeclarations(options: {
 	temporary: string
 	root: string
@@ -989,6 +1264,7 @@ async function emitDeclarations(options: {
 	names: readonly string[]
 	jsonFiles: ReadonlySet<string>
 	captured: ReadonlyMap<string, string>
+	localTypeImports: ReadonlyMap<string, string>
 	realpaths: ReadonlyMap<string, string>
 	typeRoots?: readonly string[]
 	customConditions?: readonly string[]
@@ -1000,7 +1276,7 @@ async function emitDeclarations(options: {
 	for (const [path, content] of options.captured) {
 		const target = mirrorPath(path)
 		await mkdir(dirname(target), { recursive: true })
-		await writeFile(target, content)
+		await writeFile(target, content + (options.localTypeImports.get(path) ?? ''))
 	}
 	for (const [path, actual] of options.realpaths) {
 		if (path === actual || existsSync(mirrorPath(path))) continue

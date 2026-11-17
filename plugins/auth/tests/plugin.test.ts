@@ -1,3 +1,4 @@
+import { AdminAccess } from '@pluxel/services/management/access'
 import { vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
@@ -15,7 +16,7 @@ describe('AuthPlugin lifecycle', () => {
 			await host.start(AuthPlugin.nodeAddress(), {
 				initialConfig: { mode: { type: 'password' } },
 			})
-			expect(await host.ctx.adminAccess?.describe()).toEqual({
+			expect(await host.ctx.service(AdminAccess)?.describe()).toEqual({
 				policy: 'provider-or-local-recovery',
 				provider: {
 					id: '@pluxel/plugin-auth',
@@ -25,7 +26,7 @@ describe('AuthPlugin lifecycle', () => {
 				},
 			})
 			await host.stop(AuthPlugin.nodeAddress())
-			expect(await host.ctx.adminAccess?.describe()).toEqual({
+			expect(await host.ctx.service(AdminAccess)?.describe()).toEqual({
 				policy: 'provider-or-local-recovery',
 				provider: null,
 			})
@@ -47,7 +48,7 @@ describe('AuthPlugin lifecycle', () => {
 					},
 				},
 			})
-			expect(await host.ctx.adminAccess?.describe()).toMatchObject({
+			expect(await host.ctx.service(AdminAccess)?.describe()).toMatchObject({
 				provider: { method: 'oidc', ready: true },
 			})
 		}

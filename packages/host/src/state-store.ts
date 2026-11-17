@@ -1,4 +1,5 @@
 import {
+	EffectsService,
 	type Context as PluxelContext,
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
@@ -98,7 +99,7 @@ export class HostStateStore {
 		this.modes = resolveModes(mode)
 		assertResolvedHostStoreStorage(documents)
 		this.retention = documents.retention ?? (documents.storage ? 'unknown' : 'session')
-		ctx.effects.defer(() => this.dispose(), { tag: 'HostStateStore' })
+		ctx.service(EffectsService).defer(() => this.dispose(), { tag: 'HostStateStore' })
 		const finish = () => {
 			this.refresh()
 			this.appliedExecution = executionValues(this.effective)

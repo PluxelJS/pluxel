@@ -1,6 +1,10 @@
+import {
+	EffectsService,
+	type Cleanup,
+	type DisposableLike,
+} from '../../services/effects/EffectsService'
 import type { Context } from '../../context/Context'
 import { requirePluginService } from '../../internal/plugin-service'
-import type { Cleanup, DisposableLike } from '../../services/effects/EffectsService'
 import { isPluginRef, type PluginRef } from '../runtime/definition'
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
@@ -40,8 +44,8 @@ export class OptionalPluginBindings {
 		if (isPromiseLike(resource)) {
 			throw new TypeError('[pluxel/core] plugins.use() setup must be synchronous')
 		}
-		if (typeof resource === 'function') this.ctx.effects.defer(resource)
-		else if (isDisposable(resource)) this.ctx.effects.own(resource)
+		if (typeof resource === 'function') this.ctx.service(EffectsService).defer(resource)
+		else if (isDisposable(resource)) this.ctx.service(EffectsService).own(resource)
 		else if (resource !== undefined) {
 			throw new TypeError('[pluxel/core] plugins.use() setup returned an invalid resource')
 		}

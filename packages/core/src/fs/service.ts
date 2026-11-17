@@ -1,3 +1,5 @@
+import { LoggerService } from '../logger/LoggerService'
+import { EffectsService } from '../services/effects/EffectsService'
 import type { RootContext } from '../context/Context'
 import type { HostDocumentStorage } from '../storage/documents'
 import { InMemory, type BoundContext } from '@zenfs/core'
@@ -30,6 +32,7 @@ const MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 
 /** One Host owns preparation, bound directories and final backend closure. */
 export class FsService {
+	static readonly access = 'root' as const
 	private readyPromise?: Promise<BoundContext>
 	private mounts?: FsMounts
 	private readonly directories = new Map<string, Promise<BoundContext>>()
@@ -41,7 +44,7 @@ export class FsService {
 		private readonly root: RootContext,
 		private readonly config: ResolvedFsConfig,
 	) {
-		root.effects.defer(() => this.dispose(), { tag: 'Fs', phase: 'final' })
+		root.service(EffectsService).defer(() => this.dispose(), { tag: 'Fs', phase: 'final' })
 	}
 
 	async ready(requirement?: FsRequirement): Promise<void> {
@@ -81,7 +84,9 @@ export class FsService {
 				(requirement) => this.directory(path, requirement),
 				maxBytes,
 				(error, key) =>
-					this.root.logger.error('Cannot observe Host document {path}/{key}', { path, key, error }),
+					this.root
+						.service(LoggerService)
+						.error('Cannot observe Host document {path}/{key}', { path, key, error }),
 			)
 			this.documentDirectories.set(path, documents)
 		}

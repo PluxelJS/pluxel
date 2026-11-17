@@ -14,6 +14,8 @@ Host-vite 负责在项目模块图中加载脚本、等待源码更新并绑定�
 
 实例描述位于 `.pluxel/dev-console`：目录权限 0700、文件 0600，短 socket 的临时父目录也是 0700。握手验证 protocol、instanceId、nonce 后授予共享控制 target；nonce/socket 不进入 receipt 或公开状态。启动时捕获 project/profile/Pitchfork qualified serviceId，连接时连同 root 和实例核对归属。发现和执行直接使用这些记录。
 
+默认发现严格报告坏记录与版本失配，用 root/recordFile/expectedProtocol/actualProtocol 提供可审查诊断，不自动删除。显式 instance 和原 receipt 在验证目录权限后只读取目标记录，仍完整检查文件权限、归属和握手；无关记录不阻断精确目标。
+
 项目请求包含文件、exportName 和 SHA-256。接纳前验证 realpath、源码预算与摘要；入口须位于 Vite root 内，并排除 node_modules、.git、.pluxel。`ModuleRunner` 合法加载的 workspace 依赖可以在 root 外。类型检查沿用最近的 TypeScript 配置和原生解析规则；starter 的服务端脚本继承 Host 配置，见[脚本布局](../docs/development/dev-console.md#编写可交互的开发脚本)。
 
 ## Vite 更新与执行边界
@@ -32,13 +34,13 @@ pause/apply/resume 直接调用 [HMR 调度器](HMR.md#开发批次调度)，独
 
 ## 操作 API 与资源
 
-Node/Vite 都由 `executeHostScript` 创建、关闭和排空同一 `ScriptScope`。`sdk.ctx` 交付当前 RootContext，`require(Token)` 保留原值和原异常；直接业务调用与原生资源由脚本 await、传递取消和释放。
+Node/Vite 都由 `executeHostScript` 创建、关闭和排空同一 `ScriptScope`。`sdk.ctx` 提供 run-scoped 根服务访问视图；`await sdk.plugin(address).context()` 捕获 running generation 的 owner 服务视图。两者都只有 `service` 方法，服务值使用守卫 view 保持原生 API，缺失、访问和契约错误保留原义；直接业务调用与原生资源由脚本 await、传递取消和释放。
 
 class 的 `nodeAddress(id?)` 在不可变地址上绑定精确 constructor。SDK 在规范化前固定证据；status/instance 在 committed read 中校验，生命周期在同一 exclusive session 内校验并提交，使用 coordinator 的 `pluginLifecycleUpdate`。校验与执行之间不能插入候选更替，缓存的旧 constructor（含 fork）在 replacement 后仍为 stale。
 
 class 地址提供完整实例类型和动态配置；生成控制入口额外关联 Schema input/output 与 Part 配置。两者复用相同 run/generation 准入和成员视图，见 [Plugin Control](PLUGIN_CONTROL.md#typed-配置与实例)。SDK 控制成功直接返回值，失败抛出保留领域报告的 `ScriptError`。
 
-结算后读取的 `revisions.after` 包含排空期间完成的变更。replacement 先 abort 原脚本并 drain 跟踪工作，再释放旧 root；同进程中无法强制终止不协作脚本。日志复用 Core Logging 的有界读取，或由显式服务 token 提供原生 API；共享模块的 global console 属于应用进程。
+结算后读取的 `revisions.after` 包含排空期间完成的变更。replacement 先 abort 原脚本并 drain 跟踪工作，再释放旧 root；同进程中无法强制终止不协作脚本。日志复用 Core Logging 的有界读取，或由显式服务声明 提供原生 API；共享模块的 global console 属于应用进程。
 
 ## 实现与验证入口
 

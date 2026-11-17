@@ -12,7 +12,7 @@ export class CustomerHttpConsumer extends BasePlugin {
 
 	override init(): void {
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.get('/wretch-example/customers/:id', ({ params }) => this.customerDto(params.id))
 	}
 

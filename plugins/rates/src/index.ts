@@ -1,12 +1,14 @@
-import { createHash } from 'node:crypto'
 import {
+	type Context,
 	BasePlugin,
 	encodePluginNodeAddressBytes,
 	parsePluginNodeAddress,
 	Plugin,
 	pluginNodeAddressEqual,
 	type PluginNodeAddress,
+	EffectsService,
 } from '@pluxel/core'
+import { createHash } from 'node:crypto'
 import * as v from 'valibot'
 import { RatesBackend, type RatesBackendConsumeRequest } from './backend.ts'
 import {
@@ -76,19 +78,13 @@ export abstract class Rates extends BasePlugin implements RatesBinding {
 	abstract use(name: string, policy: RatePolicy): RateLimiter
 }
 
-type EffectGuard = { readonly active: boolean }
-type OwnerContext = {
+type OwnerContext = Pick<Context, 'service'> & {
 	readonly pluginInfo: {
 		readonly nodeSlot: object
 		readonly nodeAddress: PluginNodeAddress
 	}
-	readonly effects: {
-		defer(
-			cleanup: () => void,
-			meta?: { tag?: string; phase?: 'shutdown' | 'runtime' | 'final' },
-		): EffectGuard
-	}
 }
+
 type OwnerState = {
 	active: boolean
 	readonly context: OwnerContext
@@ -127,7 +123,7 @@ export class RatesPlugin extends Rates {
 
 	protected override init(): void {
 		this.runtime.active = true
-		this.ctx.effects.defer(
+		this.ctx.service(EffectsService).defer(
 			() => {
 				this.runtime.active = false
 				for (const registration of this.runtime.registrations) {
@@ -166,7 +162,7 @@ export class RatesPlugin extends Rates {
 		this.runtime.owners.set(context, owner)
 		const cleanupOwner = owner
 		try {
-			context.effects.defer(() => this.releaseOwner(cleanupOwner), {
+			context.service(EffectsService).defer(() => this.releaseOwner(cleanupOwner), {
 				tag: 'rates-bindings',
 				phase: 'shutdown',
 			})

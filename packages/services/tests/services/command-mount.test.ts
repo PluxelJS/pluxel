@@ -37,7 +37,7 @@ function carrierProviderClass() {
 		private readonly routes = new Map<string, MountedCommand>()
 
 		override init(): void {
-			this.mount = this.ctx.require(Commands).createMount<CarrierCommandContext>()
+			this.mount = this.ctx.service(Commands).createMount<CarrierCommandContext>()
 		}
 
 		register<I, O>(command: DirectCommand<I, O, CarrierCommandContext>): Registration {
@@ -71,7 +71,7 @@ function carrierProviderClass() {
 describe('CommandMount', () => {
 	it('classifies an unreadable trusted context as INTERNAL', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
-		const mount = host.ctx.require(Commands).createMount()
+		const mount = host.ctx.service(Commands).createMount()
 		let installed!: Command<{}, { value: string }>
 		mount.bind(valueCommand('ready', 'mount.context.get'), {
 			install: (owned) => {
@@ -98,8 +98,8 @@ describe('CommandMount', () => {
 	it('linearizes publication after install and pins one exact command implementation', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
-		const rootSnapshot = host.ctx.require(Commands).snapshot()
-		const mount = host.ctx.require(Commands).createMount()
+		const rootSnapshot = host.ctx.service(Commands).snapshot()
+		const mount = host.ctx.service(Commands).createMount()
 		const original = valueCommand('original', 'mount.snapshot.get')
 		const replacement = valueCommand('replacement', 'mount.snapshot.get')
 		const mutable = {
@@ -123,7 +123,7 @@ describe('CommandMount', () => {
 			status: 'error',
 			error: { code: 'COMMAND_NOT_FOUND' },
 		})
-		expect(host.ctx.require(Commands).snapshot()).toBe(rootSnapshot)
+		expect(host.ctx.service(Commands).snapshot()).toBe(rootSnapshot)
 		expect(installed.descriptor.description).toBe(original.descriptor.description)
 		await expect(installed.execute({})).resolves.toMatchObject({
 			status: 'ok',
@@ -198,7 +198,7 @@ describe('CommandMount', () => {
 	it('preserves a hand-authored command receiver while pinning its execute function', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
-		const mount = host.ctx.require(Commands).createMount()
+		const mount = host.ctx.service(Commands).createMount()
 		const descriptor = valueCommand('descriptor', 'mount.receiver.get').descriptor
 		const command = {
 			name: descriptor.name,
@@ -226,7 +226,7 @@ describe('CommandMount', () => {
 	it('normalizes every admission rejection to ABORTED', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
-		const mount = host.ctx.require(Commands).createMount()
+		const mount = host.ctx.service(Commands).createMount()
 		let retained!: Command<unknown, { value: string }>
 		mount.bind(valueCommand('active', 'mount.admission.abort'), {
 			install: (owned) => {
@@ -385,7 +385,7 @@ describe('CommandMount', () => {
 		@Plugin({ displayName: 'Provider-owned mount' })
 		class ProviderOwnedMount extends BasePlugin {
 			override init(): void {
-				const mount = this.ctx.require(Commands).createMount()
+				const mount = this.ctx.service(Commands).createMount()
 				mount.bind(
 					defineCommand({
 						name: 'mount.provider.long',
@@ -509,7 +509,7 @@ describe('CommandMount', () => {
 			private readonly routes = new Map<string, MountedCommand>()
 
 			override init(): void {
-				this.mount = this.ctx.require(Commands).createMount<CarrierCommandContext>()
+				this.mount = this.ctx.service(Commands).createMount<CarrierCommandContext>()
 			}
 
 			register<I, O>(command: DirectCommand<I, O, CarrierCommandContext>): Registration {
@@ -584,7 +584,7 @@ describe('CommandMount', () => {
 	it('manual disposal is no-throw, exactly once, and does not cancel admitted work', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
-		const mount = host.ctx.require(Commands).createMount()
+		const mount = host.ctx.service(Commands).createMount()
 		const started = Promise.withResolvers<void>()
 		const release = Promise.withResolvers<void>()
 		let cleanupCalls = 0
@@ -634,7 +634,7 @@ describe('CommandMount', () => {
 		@Plugin({ displayName: 'Failing mount owner' })
 		class FailingMountOwner extends BasePlugin {
 			override init(): void {
-				const mount = this.ctx.require(Commands).createMount()
+				const mount = this.ctx.service(Commands).createMount()
 				for (const name of ['mount.rollback.first', 'mount.rollback.second']) {
 					mount.bind(valueCommand(name, name), {
 						install: (owned) => ({
@@ -660,7 +660,7 @@ describe('CommandMount', () => {
 	it('rejects asynchronous installers and consumes every late outcome', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
-		const mount = host.ctx.require(Commands).createMount()
+		const mount = host.ctx.service(Commands).createMount()
 		let lateCleanupCalls = 0
 		let thenReads = 0
 		const lateRegistration = {

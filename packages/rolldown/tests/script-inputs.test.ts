@@ -99,9 +99,10 @@ it('rejects package exports switching the checker to another control declaration
 			'index.d.mts': 'export declare const Counter: {readonly format:2}',
 		}
 		const unsigned = {
-			format: 2,
+			format: 3,
 			compiler: 'script-input-test',
 			definitions,
+			services: [] as const,
 			files: Object.entries(contents).map(([path, content]) => ({
 				path,
 				size: Buffer.byteLength(content),

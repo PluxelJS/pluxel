@@ -1,9 +1,13 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { lowerServiceModule, type ServiceSemanticDefinition } from '../../service-semantics'
+export type { ServiceSemanticDefinition } from '../../service-semantics'
 import MagicString from 'magic-string'
 import { readSourceCondition, readSourceExportEntries } from '../../source-exports'
 import { createReadStream } from 'node:fs'
 import { readFile as readSourceFile, realpath } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
+import picomatch from 'picomatch'
+import * as serviceControlContracts from '@pluxel/core/internal/control-manifest'
 import {
 	parsePluginDefinitionAddress,
 	pluginDefinitionIndexKey,
@@ -148,6 +152,7 @@ type BuiltPluginDefinition = Pick<PluginSemanticDefinition, 'className' | 'defin
 type ArtifactGenerationState = {
 	status: 'active' | 'committed' | 'rolled-back'
 	definitionsByModule: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>
+	serviceDefinitionsByModule: Map<string, readonly ServiceSemanticDefinition[]>
 	builtDefinitionsByModule: Map<string, ReadonlyMap<string, BuiltPluginDefinition>>
 	sourceContents: Map<string, string>
 	/** Ambient versions captured with the candidate view when the generation began. */
@@ -173,6 +178,8 @@ export type PluginSemanticsCollector = {
 	definitions(): readonly PluginSemanticDefinition[]
 	/** Concrete source declarations and bytes from the same semantic generation. */
 	sourceDefinitions(): readonly (PluginSemanticDefinition & Readonly<{ moduleId: string }>)[]
+	/** Public service declarations selected by the Host's fixed installation plan. */
+	serviceDefinitions(): readonly ServiceSemanticDefinition[]
 	sourceContents(): ReadonlyMap<string, string>
 	/** Resolves a lexical constructor binding using collected source or lowering ABI facts. */
 	definitionForBinding(moduleId: string, local: string): PluginDefinitionAddress | undefined
@@ -304,9 +311,12 @@ export function createPluginSemanticsPlugin(
 		'**/*.cjs',
 	])
 	const exclude = normalizePatterns(options.exclude, ['**/*.d.*'])
+	const includedPluginModule = picomatch(include, { dot: true })
+	const excludedPluginModule = picomatch(exclude, { dot: true })
 	const sourceRoot = resolve(options.root ?? process.cwd())
 	const workbenchLowering = createWorkbenchSemanticLowering(sourceRoot)
 	const definitionsByModule = new Map<string, ReadonlyMap<string, PluginSemanticDefinition>>()
+	const serviceDefinitionsByModule = new Map<string, readonly ServiceSemanticDefinition[]>()
 	const builtDefinitionsByModule = new Map<string, ReadonlyMap<string, BuiltPluginDefinition>>()
 	const sourceContents = new Map<string, string>()
 	const artifactModuleVersions = new Map<string, number>()
@@ -345,13 +355,19 @@ export function createPluginSemanticsPlugin(
 
 	const currentArtifactFacts = (): Readonly<{
 		definitionsByModule: ReadonlyMap<string, ReadonlyMap<string, PluginSemanticDefinition>>
+		serviceDefinitionsByModule: Map<string, readonly ServiceSemanticDefinition[]>
 		builtDefinitionsByModule: ReadonlyMap<string, ReadonlyMap<string, BuiltPluginDefinition>>
 		sourceContents: Map<string, string>
 	}> => {
 		const generation = artifactGenerationContext.getStore()
 		return generation === activeArtifactGeneration && generation?.status === 'active'
 			? generation
-			: { definitionsByModule, builtDefinitionsByModule, sourceContents }
+			: {
+					definitionsByModule,
+					serviceDefinitionsByModule,
+					builtDefinitionsByModule,
+					sourceContents,
+				}
 	}
 
 	const currentWorkbench = (): WorkbenchSemanticLowering => {
@@ -369,6 +385,7 @@ export function createPluginSemanticsPlugin(
 			if (!update.remove()) return
 		} else currentWorkbench().remove(id)
 		currentArtifactFacts().sourceContents.delete(semanticModuleKey(id))
+		currentArtifactFacts().serviceDefinitionsByModule.delete(semanticModuleKey(id))
 		mutateArtifactModuleFacts(id, (definitions, builtDefinitions) =>
 			clearArtifactModuleFacts(definitions, builtDefinitions, id),
 		)
@@ -385,6 +402,7 @@ export function createPluginSemanticsPlugin(
 			}
 			workbenchLowering.reset()
 			definitionsByModule.clear()
+			serviceDefinitionsByModule.clear()
 			builtDefinitionsByModule.clear()
 			sourceContents.clear()
 			artifactModuleVersions.clear()
@@ -410,11 +428,50 @@ export function createPluginSemanticsPlugin(
 		},
 		transform: {
 			filter: {
-				id: { include, exclude },
+				id: { include: ['**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'], exclude: ['**/*.d.*'] },
 			},
 			async handler(code, rawId) {
 				const id = stripQuery(rawId)
 				currentArtifactFacts().sourceContents.set(semanticModuleKey(id), code)
+				if (!includedPluginModule(id) || excludedPluginModule(id)) {
+					if (
+						!/\b(?:defineServiceRef|installRootService|installScopeService|installOwnerViewService)\b/.test(
+							code,
+						)
+					)
+						return null
+					resolvedSourceSpaces ??= resolveSourceSpaces(sourceRoot, options.sourceSpaces)
+					const lowered = await lowerServiceModule({
+						code,
+						id,
+						resolve: async (source) => {
+							const resolved = await this.resolve(source, id, { skipSelf: true })
+							return resolved?.id
+						},
+						readSource: (path) => readFile(path, 'utf8'),
+						canonicalSourceEntry: async (path) =>
+							canonicalSourceEntry(path, await resolvedSourceSpaces!, sourceFileRealpaths),
+						controlContracts: serviceControlContracts,
+						error: (message) => this.error(message),
+					})
+					currentArtifactFacts().serviceDefinitionsByModule.set(
+						semanticModuleKey(id),
+						lowered.services,
+					)
+					if (lowered.replacements.length === 0) return null
+					const output = new MagicString(code)
+					for (const replacement of lowered.replacements)
+						output.overwrite(replacement.start, replacement.end, replacement.text)
+					const imports = [
+						lowered.hasDefinitions
+							? '__defineServiceDefinition as __pluxelDefineServiceDefinition'
+							: undefined,
+						lowered.hasRefs ? '__defineServiceRef as __pluxelDefineServiceRef' : undefined,
+					].filter(Boolean)
+					output.prepend(`import { ${imports.join(', ')} } from '@pluxel/core/toolchain';\n`)
+					return { code: output.toString(), map: output.generateMap({ hires: true }) }
+				}
+
 				// Reserve before any asynchronous provenance/resolution work, not just collect().
 				const update = currentWorkbench().beginUpdate(id)
 				const mightContainBuiltFacts = code.includes('__setPluginDefinition')
@@ -482,6 +539,10 @@ export function createPluginSemanticsPlugin(
 						return resolved?.id ? stripQuery(resolved.id) : undefined
 					},
 				})
+				currentArtifactFacts().serviceDefinitionsByModule.set(
+					semanticModuleKey(id),
+					result.services,
+				)
 
 				const accepted = await update.collect({
 					id,
@@ -540,6 +601,17 @@ export function createPluginSemanticsPlugin(
 			[...currentArtifactFacts().definitionsByModule].flatMap(([moduleId, definitions]) =>
 				[...definitions.values()].map((definition) => Object.assign({}, definition, { moduleId })),
 			),
+		serviceDefinitions: () => {
+			const definitions = new Map<string, ServiceSemanticDefinition>()
+			for (const sources of currentArtifactFacts().serviceDefinitionsByModule.values())
+				for (const source of sources)
+					if (
+						source.definition.entry.kind !== 'source-entry' ||
+						source.definition.entry.sourceSpace !== 'package'
+					)
+						definitions.set(pluginDefinitionIndexKey(source.definition), source)
+			return [...definitions.values()]
+		},
 		sourceContents: () => new Map(currentArtifactFacts().sourceContents),
 		definitionForBinding: (moduleId, local) => {
 			const facts = currentArtifactFacts()
@@ -578,6 +650,7 @@ export function createPluginSemanticsPlugin(
 			const generation: ArtifactGenerationState = {
 				status: 'active',
 				definitionsByModule: new Map(definitionsByModule),
+				serviceDefinitionsByModule: new Map(serviceDefinitionsByModule),
 				builtDefinitionsByModule: new Map(builtDefinitionsByModule),
 				sourceContents: new Map(sourceContents),
 				baseVersions: new Map(artifactModuleVersions),
@@ -610,6 +683,9 @@ export function createPluginSemanticsPlugin(
 						moduleKey,
 					)
 					const source = generation.sourceContents.get(moduleKey)
+					const services = generation.serviceDefinitionsByModule.get(moduleKey)
+					if (services === undefined) serviceDefinitionsByModule.delete(moduleKey)
+					else serviceDefinitionsByModule.set(moduleKey, services)
 					if (source === undefined) sourceContents.delete(moduleKey)
 					else sourceContents.set(moduleKey, source)
 					artifactModuleVersions.set(moduleKey, baseVersion + 1)
@@ -1272,12 +1348,24 @@ async function lowerModule(options: SemanticModuleOptions) {
 		partRequired,
 		partOptional,
 	} = await analyzeSemanticModule(options)
+	const serviceLowering = await lowerServiceModule({
+		code: options.code,
+		id: options.id,
+		resolve: options.resolve,
+		readSource: (path) => readFile(path, 'utf8'),
+		canonicalSourceEntry: async (path) =>
+			canonicalSourceEntry(path, await options.sourceSpaces, options.sourceFileRealpaths),
+		controlContracts: serviceControlContracts,
+		error: options.error,
+	})
 	const replacements: Replacement[] = refs.map(({ start, end, definition }) => ({
 		start,
 		end,
 		text: `__pluxelDefinePluginRef(${JSON.stringify({ abiVersion: PLUGIN_LOWERING_ABI_VERSION, definition })})`,
 	}))
 	const transformed = new MagicString(options.code)
+	for (const replacement of serviceLowering.replacements)
+		transformed.overwrite(replacement.start, replacement.end, replacement.text)
 	for (const replacement of replacements)
 		transformed.overwrite(replacement.start, replacement.end, replacement.text)
 	if (
@@ -1285,9 +1373,14 @@ async function lowerModule(options: SemanticModuleOptions) {
 		replacements.length > 0 ||
 		partOwners.length > 0 ||
 		partRequired.length > 0 ||
-		partOptional.length > 0
+		partOptional.length > 0 ||
+		serviceLowering.replacements.length > 0
 	) {
 		const imports = [
+			serviceLowering.hasDefinitions
+				? '__defineServiceDefinition as __pluxelDefineServiceDefinition'
+				: undefined,
+			serviceLowering.hasRefs ? '__defineServiceRef as __pluxelDefineServiceRef' : undefined,
 			definitions.length > 0 ? '__setPluginDefinition as __pluxelSetPluginDefinition' : undefined,
 			replacements.length > 0 ? '__definePluginRef as __pluxelDefinePluginRef' : undefined,
 			partOwners.length > 0 ? '__setPluginParts as __pluxelSetPluginParts' : undefined,
@@ -1346,6 +1439,7 @@ async function lowerModule(options: SemanticModuleOptions) {
 		definitions,
 		dependencyInventory,
 		requiredSources,
+		services: serviceLowering.services,
 	}
 }
 
@@ -1461,7 +1555,9 @@ function analyzeModule(ast: Program): ModuleAnalysis {
 	for (const statement of ast.body ?? []) {
 		const node = statement as unknown as AstNode
 		if (node.type === 'ClassDeclaration') registerClass(node)
-		if (node.type === 'VariableDeclaration') collectPluginRefs(node, imports, refs, false)
+		if (node.type === 'VariableDeclaration') {
+			collectPluginRefs(node, imports, refs, false)
+		}
 		if (node.type === 'ExportAllDeclaration') {
 			const source = readLiteralString(node.source)
 			if (source && node.exportKind !== 'type') exportAll.push(source)
@@ -1517,6 +1613,7 @@ function analyzeModule(ast: Program): ModuleAnalysis {
 			)
 		}
 	})
+
 	return { ast, imports, classes, exports, exportAll, refs, exportedRefs }
 }
 
@@ -2517,7 +2614,7 @@ function simpleTypeReference(value: unknown): string | undefined {
 }
 
 function semanticHint(code: string): boolean {
-	return /\b(?:Plugin|PluginPart|BasePlugin|definePluginRef)\b|\.(?:plugins|parts)\.use\s*\(/.test(
+	return /\b(?:Plugin|PluginPart|BasePlugin|definePluginRef|defineServiceRef|installRootService|installScopeService|installOwnerViewService)\b|\.(?:plugins|parts)\.use\s*\(/.test(
 		code,
 	)
 }

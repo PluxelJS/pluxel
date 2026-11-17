@@ -1,5 +1,5 @@
+import { EffectsService, type Context, type CommitSummary } from '@pluxel/core'
 import { installHostPluginDiagnostics } from './diagnostics'
-import type { Context, CommitSummary } from '@pluxel/core'
 import { PluginHostCoordinator, type HostStateCoordinatorStore } from './coordinator'
 import { corePluginGraphDriver } from './driver'
 import { HostStateStore } from './state-store'
@@ -19,7 +19,7 @@ export function installPluginHostCoordinator(
 	)
 	installHostPluginDiagnostics(root)
 	coordinators.set(root, coordinator)
-	root.effects.defer(
+	root.service(EffectsService).defer(
 		async () => {
 			await coordinator.dispose()
 			coordinators.delete(root)

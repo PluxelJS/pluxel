@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, LoggerService } from '@pluxel/core'
 import * as v from 'valibot'
 
 const MessageConfig = v.object({
@@ -14,6 +14,6 @@ export class {{className}}Plugin extends BasePlugin {
 	}
 
 	protected override init(): void {
-		this.ctx.logger.info('{{className}}Plugin ready', { message: this.config.message })
+		this.ctx.service(LoggerService).info('{{className}}Plugin ready', { message: this.config.message })
 	}
 }

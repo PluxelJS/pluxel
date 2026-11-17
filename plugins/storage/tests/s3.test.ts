@@ -1,7 +1,7 @@
 import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { envBinding, defineHostApplication, resolveHostApplication, createHost } from '@pluxel/host'
-import { vault } from '@pluxel/services/vault'
+import { vault, Vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -163,7 +163,8 @@ describe('S3Plugin remote backend', () => {
 			})
 			await host
 				.require(S3Plugin.nodeAddress())
-				.ctx.vault!.kv({ namespace: 'shared-secrets' })
+				.ctx.service(Vault)
+				.kv({ namespace: 'shared-secrets' })
 				.set('assets.s3', {
 					accessKeyId: 'access-id',
 					secretAccessKey: 'secret-value',
@@ -186,7 +187,10 @@ describe('S3Plugin remote backend', () => {
 			const consumer = host.require(S3Consumer.nodeAddress())
 			const handle = consumer.s3.bucket()
 			const previous = handle.client
-			const kv = host.require(S3Plugin.nodeAddress()).ctx.vault!.kv({ namespace: 'shared-secrets' })
+			const kv = host
+				.require(S3Plugin.nodeAddress())
+				.ctx.service(Vault)
+				.kv({ namespace: 'shared-secrets' })
 			await kv.set('assets.s3', { accessKeyId: 'rotated-id', secretAccessKey: 'rotated-secret' })
 			await vi.waitFor(() => expect(handle.client).not.toBe(previous))
 			expect(s3Mock.configs.at(-1)).toMatchObject({

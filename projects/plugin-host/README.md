@@ -129,7 +129,7 @@ previous operations. The default `inspect.ts` export returns current Plugin stat
 the real showcase and Workbench HTTP routes and returns bounded logs; set `origin` to the address reported by the selected instance.
 
 Follow the [development console guide](../../docs/development/dev-console.md) for typed config,
-explicit service access and recovery. Node and Vite scripts use `satisfies Script` from `@pluxel/agent-sdk/host`. SDK control operations return values directly and throw `ScriptError` on failure. Use `sdk.ctx.require(Token)` for services and `const { instance } = await plugin.instance()` for Plugin business methods; pass `run.signal` and release resources created by the script. The shared SDK is documented in [Host scripts](../../docs/development/scripts.md). Isolated regressions continue to use the test host.
+explicit service access and recovery. Node and Vite scripts use `satisfies Script` from `@pluxel/agent-sdk/host`. SDK control operations return values directly and throw `ScriptError` on failure. Use `sdk.ctx.service(Token)` for services and `const { instance } = await plugin.instance()` for Plugin business methods; pass `run.signal` and release resources created by the script. The shared SDK is documented in [Host scripts](../../docs/development/scripts.md). Isolated regressions continue to use the test host.
 
 ## Boundary
 

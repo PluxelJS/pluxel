@@ -213,10 +213,35 @@ export class ScriptExecutor implements AsyncDisposable {
 		}
 		return run.snapshot
 	}
-	async settled(runId: string, subject: string): Promise<ScriptRunSnapshot> {
+	async settled(
+		runId: string,
+		subject: string,
+		options?: Readonly<{ timeoutMs: number; signal: AbortSignal }>,
+	): Promise<ScriptRunSnapshot> {
 		this.assertSubject(runId, subject)
 		const run = this.runs.get(runId)
-		if (run) await run.done
+		if (run && !isScriptFinished(run.snapshot)) {
+			if (!options) await run.done
+			else {
+				options.signal.throwIfAborted()
+				let timer: ReturnType<typeof setTimeout> | undefined
+				let abort: (() => void) | undefined
+				try {
+					await Promise.race([
+						run.done,
+						new Promise<void>((resolve, reject) => {
+							timer = setTimeout(resolve, options.timeoutMs)
+							abort = () => reject(options.signal.reason)
+							options.signal.addEventListener('abort', abort, { once: true })
+							if (options.signal.aborted) abort()
+						}),
+					])
+				} finally {
+					clearTimeout(timer)
+					if (abort) options.signal.removeEventListener('abort', abort)
+				}
+			}
+		}
 		return this.result(runId, subject)
 	}
 	abortScripts(reason: string): void {
@@ -485,9 +510,9 @@ export async function validateScriptSubmission(input: ScriptSubmission): Promise
 		if (input.input !== undefined) acceptedInput = snapshotJson(input.input)
 	} catch (error) {
 		if (error instanceof ScriptExecutionError && error.code === 'result_too_large')
-			throw new ScriptExecutionError('input_too_large', error.message)
+			throw new ScriptExecutionError('input_too_large', error.message, { context: error.context })
 		if (error instanceof ScriptExecutionError && error.code === 'result_not_serializable')
-			throw new ScriptExecutionError('invalid_input', error.message)
+			throw new ScriptExecutionError('invalid_input', error.message, { context: error.context })
 		throw error
 	}
 	const request: ScriptSubmission = {

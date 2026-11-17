@@ -1,3 +1,4 @@
+import { resolveContextService } from '@pluxel/core/internal'
 import { elysia } from '@pluxel/services/elysia'
 import { ElysiaRuntime } from '@pluxel/services/internal'
 import { NodeElysiaApplicationCarrier } from '../../src/elysia/node'
@@ -11,7 +12,7 @@ import { getWebSocketHooks, setWebSocketHooks } from 'crossws'
 import { newWebSocketRpcSession } from 'capnweb'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { createHost } from '@pluxel/host'
-import { resolveContextCapability } from '@pluxel/core/host'
+
 import { expect, it, vi } from 'vitest'
 import { requirePluginHostCoordinator } from '@pluxel/host/internal'
 import { RuntimeManagementTargetImpl } from '../../src/management/services/management/RuntimeManagementTarget'
@@ -36,7 +37,7 @@ it('serves a real authenticated socket for a Core Host and leaves it alive when 
 	})
 	await host.start()
 	const endpoint = createManagementEndpoint({
-		authentication: resolveContextCapability(host.ctx, AdminAccess),
+		authentication: resolveContextService(host.ctx, AdminAccess),
 		createManagement: (session) => createHostManagementTarget(host.ctx, session),
 		onError: (error) => {
 			throw error
@@ -155,7 +156,7 @@ it.each([undefined, 'http://bot-new-omni.localhost:1355', 'https://bot-new-omni.
 			services: [elysia(), managementAccess(), management(), managementHttp()],
 		})
 		await host.start()
-		const boundary = resolveContextCapability(host.ctx, ElysiaRuntime)
+		const boundary = resolveContextService(host.ctx, ElysiaRuntime)
 		const unmountShell = boundary.mountFallback({
 			matchesRequest: (request) => new URL(request.url).pathname === '/shell',
 			fetch: async (request) =>

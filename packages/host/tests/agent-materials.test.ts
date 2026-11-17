@@ -47,11 +47,12 @@ async function snapshot(
 		})),
 	)
 	const unsigned = {
-		format: 2 as const,
+		format: 3 as const,
 		compiler: 'material-reader-test',
 		definitions: [
 			{ definition, module: 'index.mjs', exportName: 'Counter', contracts, source: 'index.d.mts' },
 		],
+		services: [] as const,
 		files: entries,
 	}
 	const manifest: PluginControlManifest = {
@@ -63,6 +64,8 @@ async function snapshot(
 		catalogRevision: 7,
 		materials: [{ snapshot: manifest.snapshot, manifest, files }],
 		definitions: [{ definition, snapshot: manifest.snapshot, exportName: 'Counter' }],
+		services: [],
+		unavailableServices: [],
 		unavailable: [],
 	}
 }

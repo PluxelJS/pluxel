@@ -49,7 +49,7 @@ class SamplerPlugin extends BasePlugin {
     const timer = setInterval(() => this.sample(), 1_000)
 
     // 登记到当前 generation：停止、回滚或 HMR 时统一回收
-    this.ctx.effects.defer(
+    this.ctx.service(EffectsService).defer(
       () => clearInterval(timer),
       { tag: 'sampler' },
     )
@@ -63,7 +63,7 @@ class SamplerPlugin extends BasePlugin {
 		status: 'generation → 统一回收',
 	},
 	{
-		code: `import { BasePlugin, Plugin } from '@pluxel/core'
+		code: `import { BasePlugin, Plugin, EffectsService } from '@pluxel/core'
 import * as v from 'valibot'
 
 const StatusConfig = v.object({

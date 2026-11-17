@@ -3,7 +3,7 @@ title: Vite 项目脚本与 HMR
 description: 在当前 Vite 模块图中执行普通 TypeScript，访问真实插件和 Context，并控制源码更新批次。
 ---
 
-项目脚本由目标 Vite 的现有 ModuleRunner 加载。它与应用共享 Plugin constructor、能力 token 和模块身份。配置、插件、策略与日志使用 [Script SDK](./scripts.md)，异步控制操作成功直接返回值，失败抛出 `ScriptError`。`sdk.plugin(Constructor.nodeAddress())` 按当前实现选择节点，并通过 `.instance()` 借用受守卫的实例；通过 `pluxel dev sync` 取得[控制类型与配置源码描述](./plugin-control.md)后，生成提供者的 `.nodeAddress()` 通过同一入口提供准确配置类型。脱离 Vite 的部署使用同一 SDK 的上传执行。
+项目脚本由目标 Vite 的现有 ModuleRunner 加载。它与应用共享 Plugin constructor、服务声明和模块身份。配置、插件、策略与日志使用 [Script SDK](./scripts.md)，异步控制操作成功直接返回值，失败抛出 `ScriptError`。`sdk.plugin(Constructor.nodeAddress())` 按当前实现选择节点，并通过 `.instance()` 借用受守卫的实例；通过 `pluxel dev sync` 取得[控制类型与配置源码描述](./plugin-control.md)后，生成提供者的 `.nodeAddress()` 通过同一入口提供准确配置类型。脱离 Vite 的部署使用同一 SDK 的上传执行。
 
 源码定位使用 `@pluxel/agent-sdk/source` 的普通函数，直接运行 Node；声明、Part、Schema 和应用输入的查询见[源码查询](./inspection.md)。
 
@@ -30,6 +30,8 @@ CLI 与 Vite 通过私有 Unix socket 上的 Cap’n Web 连接。发现目录�
 `dev status/instances/run/hmr/sync` 的参数缺失、未知选项和多余位置参数统一在 stdout 输出单个 `{ ok: false, error: { code: 'invalid_input', message } }`，退出码为 `1`，stderr 不输出额外文本诊断。`--help` 保持普通帮助文本。
 
 未知 `dev` 子命令同样返回 `invalid_input` JSON。多个实例时，错误列出 `candidates` 并提示使用 `--instance`；保持原 `--root` 和 `--profile`，不要自动选第一个实例。提交结果不确定时，提示使用原 receipt 的查询命令，不建议重新提交。
+
+发现记录损坏或版本不匹配时，错误 `context` 包含 `root`、`recordFile`，协议错误另含 `expectedProtocol` / `actualProtocol`。默认发现会报告这些记录；已知 `--instance` 或原 receipt 只读取目标记录，无关坏记录不阻断它。核对路径与进程后可显式清理已废弃记录；客户端不自动删除。客户端与目标使用同一版本的脚本控制协议。
 
 <span id="hmr-批次控制"></span>
 
@@ -95,7 +97,7 @@ vp exec pluxel dev run host/web/dev/inspect.ts --export add --input '"测试待�
 
 源码 class 的地址保留实例签名与精确实现证据，配置使用未知字段的动态类型。生成控制入口额外关联 Schema 输入、输出及 Part 配置树；需要准确字段类型时使用生成提供者的地址。动态发现得到的普通节点地址同样提供动态配置操作，由脚本自行检查。
 
-Node 与 Vite 脚本都通过 `sdk.ctx.require(Token)` 访问当前 Host 已安装的能力，缺少能力时直接抛错。Vite 负责把项目 import 的 token 和应用保持在同一模块图。脚本借用 root，自己创建的订阅、RPC lease 和原生资源由脚本通过 `using`、`await using` 或 `try/finally` 释放；直接业务调用显式传递 `run.signal` 并 await 结算。通用 SDK 接纳的操作由执行内核跟踪并排空。
+Node 与 Vite 脚本都通过 `sdk.ctx.service(Service)` 访问根服务，通过 `await sdk.plugin(address).context()` 借用已运行节点的 owner 服务视图。视图只提供 `service`，不会交付原始 Context。必需、可选引用和声明契约见[服务访问](./scripts.md#借用已安装的服务)。Vite 负责把导入的服务声明与应用保持在同一模块图。自己创建的订阅、RPC lease 和原生资源由脚本通过 `using`、`await using` 或 `try/finally` 释放；直接业务调用显式传递 `run.signal` 并 await 结算。通用 SDK 接纳的操作由执行内核跟踪并排空。
 
 <span id="编辑配置"></span>
 

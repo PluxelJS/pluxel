@@ -1,9 +1,15 @@
 import { createHash } from 'node:crypto'
-import { pluginDefinitionIndexKey, type PluginConstructor } from '@pluxel/core'
-import { readLoadedPluginModule, type PluginControlMetadata } from '@pluxel/host/internal'
+import { pluginDefinitionIndexKey, type PluginConstructor, type RootContext } from '@pluxel/core'
+import {
+	readLoadedPluginModule,
+	setServiceControlMaterial,
+	type PluginControlMetadata,
+	type ServiceControlMaterial,
+} from '@pluxel/host/internal'
 import { generatePluginControl } from '@pluxel/rolldown/control'
 import type { PluginSourceVitePipeline } from '@pluxel/rolldown/vite'
 import { normalizePath, type ViteDevServer } from 'vite'
+import { getInstalledServiceDefinitions, readServiceDefinition } from '@pluxel/core/internal'
 import { collectHostEvaluatedInputs } from './environment'
 
 export type HostPluginControls = Readonly<{
@@ -11,6 +17,7 @@ export type HostPluginControls = Readonly<{
 	dependencies: ReadonlySet<string>
 	owners: ReadonlyMap<string, ReadonlySet<string>>
 	implementations: ReadonlyMap<string, PluginConstructor>
+	serviceMaterial?: ServiceControlMaterial
 }>
 
 export const emptyHostPluginControls = (): HostPluginControls => ({
@@ -37,6 +44,8 @@ export async function prepareHostPluginControls(options: {
 			(source) =>
 				source.kind === 'plugin' && selected.has(pluginDefinitionIndexKey(source.definition)),
 		)
+	const services = options.semantics.serviceDefinitions()
+	const allSources = [...sources, ...services]
 	const metadata = new Map<string, PluginControlMetadata>()
 	const implementations = new Map(
 		options.plugins.map((plugin) => [pluginDefinitionIndexKey(plugin.definitionAddress()), plugin]),
@@ -45,18 +54,19 @@ export async function prepareHostPluginControls(options: {
 		const loaded = readLoadedPluginModule(plugin)
 		if (loaded) metadata.set(pluginDefinitionIndexKey(plugin.definitionAddress()), loaded.control)
 	}
-	if (sources.length === 0)
+	if (allSources.length === 0)
 		return { metadata, dependencies: new Set(), owners: new Map(), implementations }
 	try {
 		const generation = await generatePluginControl({
 			root: options.server.config.root,
 			definitions: sources,
+			services,
 			sources: options.semantics.sourceContents(),
 		})
 		// Directory/file sources are independent ModuleRunner roots. Their constructors need
 		// the same evidence as Plugins imported directly by the application factory.
 		const evaluated = new Map<string, string>()
-		for (const root of new Set([options.entry, ...sources.map((source) => source.moduleId)])) {
+		for (const root of new Set([options.entry, ...allSources.map((source) => source.moduleId)])) {
 			for (const [path, content] of collectHostEvaluatedInputs(options.server, root)) {
 				if (evaluated.has(path) && evaluated.get(path) !== content)
 					throw new Error(`source_changed: evaluated roots contain different inputs for ${path}`)
@@ -64,7 +74,7 @@ export async function prepareHostPluginControls(options: {
 			}
 		}
 		const hash = (content: string) => createHash('sha256').update(content).digest('hex')
-		for (const source of sources) {
+		for (const source of allSources) {
 			const actual = evaluated.get(normalizePath(source.moduleId))
 			if (actual === undefined || hash(actual) !== generation.inputs[source.moduleId])
 				throw new Error(
@@ -101,7 +111,7 @@ export async function prepareHostPluginControls(options: {
 			)
 		}
 		const owners = new Map<string, Set<string>>()
-		for (const source of sources) {
+		for (const source of allSources) {
 			const owner = normalizePath(source.moduleId)
 			for (const input of generation.definitionInputs[
 				pluginDefinitionIndexKey(source.definition)
@@ -114,7 +124,13 @@ export async function prepareHostPluginControls(options: {
 			}
 		}
 		const dependencies = new Set(owners.keys())
-		return { metadata, dependencies, owners, implementations }
+		return {
+			metadata,
+			dependencies,
+			owners,
+			implementations,
+			...(services.length > 0 ? { serviceMaterial: material } : {}),
+		}
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
 		for (const source of sources)
@@ -132,5 +148,25 @@ export async function prepareHostPluginControls(options: {
 			owners: options.previous.owners,
 			implementations,
 		}
+	}
+}
+
+/** The evaluated Host's fixed plan selects which source declarations receive materials. */
+export function installHostServiceControls(ctx: RootContext, controls: HostPluginControls): void {
+	const material = controls.serviceMaterial
+	if (!material) return
+	for (const target of getInstalledServiceDefinitions(ctx)) {
+		const metadata = readServiceDefinition(target)
+		if (!metadata.definition) continue
+		const key = pluginDefinitionIndexKey(metadata.definition)
+		const entry = material.manifest.services.find(
+			(candidate) => pluginDefinitionIndexKey(candidate.definition) === key,
+		)
+		if (!entry) continue
+		if (metadata.contract && metadata.contract !== entry.contract)
+			throw new Error(
+				`source_changed: service declaration changed without implementation replacement: ${key}`,
+			)
+		setServiceControlMaterial(target, material)
 	}
 }

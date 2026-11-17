@@ -1,7 +1,31 @@
 import { readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { API, DiagnosticCategory, type Diagnostic } from 'typescript/unstable/async'
+import {
+	API,
+	DiagnosticCategory,
+	SignatureKind,
+	SymbolFlags,
+	TypeFlags,
+	type Diagnostic,
+} from 'typescript/unstable/async'
+import type { ScriptDiagnostic } from '@pluxel/host/internal/agent/runtime'
+
+export class ScriptTypecheckError extends Error {
+	constructor(readonly diagnostics: readonly ScriptDiagnostic[]) {
+		super(
+			diagnostics
+				.map((item) => {
+					const location = item.file
+						? `${item.file}${item.line === undefined ? '' : `:${item.line}:${item.column}`}`
+						: 'TypeScript'
+					return `${location}: TS${item.code}: ${item.message}`
+				})
+				.join('\n'),
+		)
+		this.name = 'ScriptTypecheckError'
+	}
+}
 
 /** One compile owns the bytes read by both the native checker and Rolldown. */
 export class ScriptInputs {
@@ -81,7 +105,7 @@ export class ScriptInputs {
 		}
 	}
 
-	async check(file: string): Promise<void> {
+	async check(file: string, exportName?: string): Promise<void> {
 		let directory = dirname(file)
 		let parentConfig: string | undefined
 		for (;;) {
@@ -151,7 +175,25 @@ export class ScriptInputs {
 					.flat()
 					.filter((item) => item.category === DiagnosticCategory.Error)
 				if (diagnostics.length > 0)
-					throw new Error(diagnostics.map((diagnostic) => this.diagnostic(diagnostic)).join('\n'))
+					throw new ScriptTypecheckError(
+						diagnostics.map((diagnostic) => this.diagnostic(diagnostic)),
+					)
+				if (exportName !== undefined) {
+					const source = await project.program.getSourceFile(file)
+					const module = source && (await project.checker.getSymbolAtLocation(source))
+					let selected =
+						module && (await project.checker.getMemberInModuleExports(module, exportName))
+					if (!selected) throw new Error(`Module ${file} does not export ${exportName}`)
+					if (selected.flags & SymbolFlags.Alias)
+						selected = await project.checker.getAliasedSymbol(selected)
+					const type = await project.checker.getTypeOfSymbol(selected)
+					// Unknown and union values remain the execution boundary's responsibility.
+					if (type && !(type.flags & (TypeFlags.Any | TypeFlags.Unknown | TypeFlags.Union))) {
+						const signatures = await project.checker.getSignaturesOfType(type, SignatureKind.Call)
+						if (signatures.length === 0)
+							throw new Error(`Selected script export ${exportName} must be a function`)
+					}
+				}
 				const checkedFiles = await project.program.getSourceFileNames()
 				const checked = new Set(checkedFiles.map((path) => this.canonical(path)))
 				for (const required of this.requiredCheckedFiles)
@@ -168,13 +210,25 @@ export class ScriptInputs {
 		}
 	}
 
-	private diagnostic(diagnostic: Diagnostic): string {
+	private diagnostic(diagnostic: Diagnostic): ScriptDiagnostic {
 		const file = diagnostic.fileName
-		const prefix = file
-			? `${file}:${(this.read(file)?.slice(0, diagnostic.pos).match(/\n/g)?.length ?? 0) + 1}`
-			: 'TypeScript'
+		const content = file && this.read(file)
+		const prefix =
+			typeof content === 'string' && diagnostic.pos >= 0
+				? content.slice(0, diagnostic.pos)
+				: undefined
 		const detail = (item: Diagnostic): string =>
 			[item.text, ...(item.messageChain ?? []).map(detail)].join('\n')
-		return `${prefix}: TS${diagnostic.code}: ${detail(diagnostic)}`
+		return {
+			...(file === undefined ? {} : { file }),
+			...(prefix === undefined
+				? {}
+				: {
+						line: (prefix.match(/\n/g)?.length ?? 0) + 1,
+						column: prefix.length - prefix.lastIndexOf('\n'),
+					}),
+			code: diagnostic.code,
+			message: detail(diagnostic),
+		}
 	}
 }

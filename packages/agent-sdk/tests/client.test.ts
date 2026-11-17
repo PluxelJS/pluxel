@@ -1,10 +1,12 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
+import { ScriptExecutionError } from '@pluxel/host/internal/agent/runtime'
 import {
 	runScript,
 	getScriptResult,
 	cancelScript,
+	syncPluginControl,
 	listHosts,
 	HostClientError,
 } from '@pluxel/agent-sdk/client'
@@ -22,6 +24,66 @@ async function fixture(options: Parameters<typeof createDevFixture>[0] = {}) {
 	await writeFile(file, 'export default () => null')
 	return { ...dev, file, target: { root: dev.root, instance: dev.instance.instanceId } }
 }
+
+it('waits for settlement in one bounded result request and wakes when execution finishes', async () => {
+	const release = Promise.withResolvers<void>()
+	const dev = await fixture({
+		execute: async () => {
+			await release.promise
+			return { completed: true }
+		},
+	})
+	const pending = runScript({ target: dev.target, file: dev.file })
+	try {
+		await vi.waitFor(() => {
+			expect(dev.requests.filter(({ method }) => method === 'result')).toEqual([
+				{
+					method: 'result',
+					input: expect.objectContaining({ waitMs: 1000 }),
+				},
+			])
+		})
+		release.resolve()
+		const result = await pending
+		expect(result.run).toMatchObject({ state: 'succeeded', value: { completed: true } })
+		expect(dev.requests.filter(({ method }) => method === 'result')).toHaveLength(1)
+	} finally {
+		release.resolve()
+		await pending.catch(() => {})
+	}
+})
+
+it('retains structured failure facts through a socket response and the public client', async () => {
+	const facts = {
+		hint: 'Check the selected declaration',
+		context: { path: '$.items[0].handle', valueKind: 'class instance' },
+		diagnostics: [
+			{ file: '/author/task.ts', line: 3, column: 7, code: 2551, message: 'Unknown member' },
+		],
+	}
+	const dev = await fixture({
+		materials: async () => {
+			throw new ScriptExecutionError('typecheck_failed', 'Check failed', facts)
+		},
+	})
+	await expect(
+		syncPluginControl({ target: dev.target, out: join(dev.root, 'control') }),
+	).rejects.toMatchObject({
+		code: 'typecheck_failed',
+		failure: facts,
+	})
+})
+
+it('reports the invalid input location before connecting or preparing a receipt', async () => {
+	const dev = await fixture()
+	await expect(
+		runScript({ target: dev.target, file: dev.file, input: { payload: { count: 1n } } }),
+	).rejects.toMatchObject({
+		code: 'invalid_input',
+		failure: { context: { path: '$.payload.count', valueKind: 'bigint' } },
+	})
+	expect(dev.requests).toHaveLength(0)
+})
 
 it('captures options and persists the receipt before admitting one operation', async () => {
 	const dev = await fixture()

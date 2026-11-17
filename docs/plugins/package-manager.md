@@ -165,13 +165,13 @@ if (!installed.ok) {
 import { Commands } from '@pluxel/services/commands'
 
 // 直接安装
-const installed = await ctx.require(Commands).execute('package.install', {
+const installed = await ctx.service(Commands).execute('package.install', {
 	specs: ['@acme/example-plugin@^2.0.0'],
 })
 if (installed.isErr()) throw new Error(installed.error.message)
 
 // 卸载插件
-const removed = await ctx.require(Commands).execute('package.remove', {
+const removed = await ctx.service(Commands).execute('package.remove', {
 	specs: ['@acme/example-plugin'],
 })
 if (removed.isErr()) throw new Error(removed.error.message)

@@ -43,7 +43,7 @@ function rootIdFor(ctx: PluxelContext, config?: LoggerServiceConfig): string {
 /** Host logging adapters bind to the exact identity already used by the root logger. */
 export function getContextLoggerRootId(ctx: PluxelContext): string {
 	const root = ctx.root
-	void root.logger
+	void root.service(LoggerService)
 	const id = contextLoggerRootIds.get(root)
 	if (!id) throw new Error('[core/logger] root logger did not establish an identity')
 	return id

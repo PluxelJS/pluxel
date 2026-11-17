@@ -416,6 +416,6 @@ function compiledPlugin(name: string, version: string, dependsOnP: boolean): str
  version='${version}';
  late(){ return late() }
  resource(){ return resource() }
- ${name === 'fixture-p' ? '' : `${dependsOnP ? 'constructor(provider){super();this.provider=provider};' : ''} plain=plain; async init(){ this.workerValue=await this.ctx.require(Workers).run(task,null); this.ctx.require(ElysiaApp).use(websocket()).get('/${exportName.toLowerCase()}',()=>this.version).ws('/${exportName.toLowerCase()}/socket',{open:socket=>socket.send(this.version)}) }`}
+ ${name === 'fixture-p' ? '' : `${dependsOnP ? 'constructor(provider){super();this.provider=provider};' : ''} plain=plain; async init(){ this.workerValue=await this.ctx.service(Workers).run(task,null); this.ctx.service(ElysiaApp).use(websocket()).get('/${exportName.toLowerCase()}',()=>this.version).ws('/${exportName.toLowerCase()}/socket',{open:socket=>socket.send(this.version)}) }`}
  }; Plugin()(${exportName}); __setPluginDefinition(${exportName},{abiVersion:2,kind:'plugin',definition:${JSON.stringify(definition)},constructorRequires:${JSON.stringify(dependsOnP ? [provider] : [])}}); export {${exportName}};`
 }

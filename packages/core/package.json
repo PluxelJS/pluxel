@@ -57,6 +57,11 @@
 			"import": "./dist/internal.mjs",
 			"require": "./dist/internal.cjs"
 		},
+		"./internal/control-manifest": {
+			"@pluxel/source": "./src/internal/control-manifest.ts",
+			"import": "./dist/internal/control-manifest.mjs",
+			"require": "./dist/internal/control-manifest.cjs"
+		},
 		"./internal/plugin-address-evidence": {
 			"@pluxel/source": "./src/internal/plugin-address-evidence.ts",
 			"import": "./dist/internal/plugin-address-evidence.mjs",
@@ -102,7 +107,12 @@
 			"import": "./dist/toolchain.mjs",
 			"require": "./dist/toolchain.cjs"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
+		}
 	},
 	"publishConfig": {
 		"exports": {
@@ -137,6 +147,10 @@
 			"./internal": {
 				"import": "./dist/internal.mjs",
 				"require": "./dist/internal.cjs"
+			},
+			"./internal/control-manifest": {
+				"import": "./dist/internal/control-manifest.mjs",
+				"require": "./dist/internal/control-manifest.cjs"
 			},
 			"./internal/plugin-address-evidence": {
 				"import": "./dist/internal/plugin-address-evidence.mjs",
@@ -174,7 +188,12 @@
 				"import": "./dist/toolchain.mjs",
 				"require": "./dist/toolchain.cjs"
 			},
-			"./package.json": "./package.json"
+			"./package.json": "./package.json",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
 		},
 		"access": "public"
 	},
@@ -244,6 +263,7 @@
 		"utilium": "3.10.0"
 	},
 	"pluxel": {
+		"control": "./dist/control/manifest.json",
 		"tinybase": "10.0.1"
 	}
 }

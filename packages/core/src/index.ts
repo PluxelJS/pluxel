@@ -1,27 +1,17 @@
-export type {
-	Context,
-	ContextServices,
-	RootContextServices,
-	CoreHostConfig,
-	PluginContext,
-	RootContext,
-} from './context/Context'
+export type { Context, CoreHostConfig, PluginContext, RootContext } from './context/Context'
 export type { ContextLogger } from './logger/LoggerService'
 export { TinyBaseError } from './tinybase/error'
-export type {
-	TinyBaseService,
-	TinyBaseHostService,
-	TinyBaseOptions,
-	TinyBaseIdentity,
-	TinyBaseStatus,
-} from './tinybase/types'
+export { TinyBaseService, TinyBaseHostService } from './tinybase/types'
+export type { TinyBaseOptions, TinyBaseIdentity, TinyBaseStatus } from './tinybase/types'
 export type { HostDocumentStorage } from './storage/documents'
 
 export {
-	ContextCapabilityMissingError,
-	ContextCapabilityAccessError,
-	type ContextCapabilityAccess,
-	type ContextCapability,
+	ContextServiceMissingError,
+	ContextServiceAccessError,
+	type ServiceAccess,
+	type ServiceClass,
+	type ServiceDefinition,
+	type ServiceRef,
 } from '@pluxel/context'
 
 export { BasePlugin, OptionalPluginBindings, PluginConfigs, PluginPart } from './plugins'
@@ -97,7 +87,7 @@ export type {
 } from './plugins'
 
 export { EvtChannel } from './services'
-export type { Events, EventsService, EventsServiceConfig, EventsWhenGuard } from './services'
+export type { Events, EventsServiceConfig, EventsWhenGuard } from './services'
 export type { Cleanup, DisposableLike, Effects, EffectsScope } from './services'
 
 export {
@@ -105,3 +95,10 @@ export {
 	formatPluginNodeStandaloneLabel,
 	type PluginNodeLabel,
 } from './plugins/runtime/plugin-label'
+
+export { defineServiceRef } from './services/definition'
+export type { ServiceDefinitionAddress } from './services/definition'
+export { LoggerService } from './logger/LoggerService'
+export { EffectsService } from './services/effects/EffectsService'
+export { EventsService } from './services/events/EventsService'
+export { Fs } from './context/core-capabilities'

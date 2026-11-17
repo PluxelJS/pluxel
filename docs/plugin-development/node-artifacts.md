@@ -26,7 +26,7 @@ export default defineHostApplication(() => ({
 使用 `defineNodeModule()` 将辅助代码编译为自包含的单文件 Node ESM：
 
 ```ts twoslash
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, LoggerService } from '@pluxel/core'
 import { NodeModules, defineNodeModule } from '@pluxel/services/node'
 
 // 1. 声明独立模块入口（相对于当前文件）
@@ -36,9 +36,9 @@ const rulesModule = defineNodeModule(import.meta.url, './rules-entry.ts')
 export class RulesPlugin extends BasePlugin {
 	protected override async init() {
 		// 2. 加载模块并在当前插件作用域中执行初始化
-		await this.ctx.require(NodeModules).use(rulesModule, async (url) => {
+		await this.ctx.service(NodeModules).use(rulesModule, async (url) => {
 			const mod = await import(url.href)
-			return mod.setup({ logger: this.ctx.logger })
+			return mod.setup({ logger: this.ctx.service(LoggerService) })
 		})
 	}
 }
@@ -74,7 +74,7 @@ const sumTask = defineWorkerTask<SumInput, SumOutput>(import.meta.url, './sum-wo
 export class ReportsPlugin extends BasePlugin {
 	calculate(values: number[], signal?: AbortSignal) {
 		// 2. 将任务分派给线程池执行，支持 AbortSignal 取消
-		return this.ctx.require(Workers).run(sumTask, { values }, { signal })
+		return this.ctx.service(Workers).run(sumTask, { values }, { signal })
 	}
 }
 ```

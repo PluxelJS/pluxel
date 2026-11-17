@@ -119,11 +119,11 @@ it('freezes a Host-only application without evaluating its async factory and run
 			join(root, 'app.ts'),
 			`
 import { defineHostApplication, defineHostService } from '@pluxel/host';
-import { defineContextCapability, installRootCapability } from '@pluxel/core/host';
-const Selected = defineContextCapability('Selected');
+import { installRootService } from '@pluxel/core/host';
+export class Selected { constructor(readonly value: string) {} }
 export default defineHostApplication(async ({env}) => {
   if (env.APPLICATION_STAGE !== 'run') throw new Error('FACTORY_EXECUTED_DURING_BUILD');
-  return { plugins: [], services: [defineHostService({name:'Selected',capabilities:[installRootCapability(Selected,{create:()=>env.APPLICATION_VALUE})],prepare({effects}) { process.stdout.write('SERVICE_READY:'+env.APPLICATION_VALUE+'\\n'); effects.defer(()=>{process.stdout.write('SERVICE_CLOSED\\n')}) }})] };
+  return { plugins: [], services: [defineHostService({name:'Selected',provides:[installRootService(Selected,{create:()=>new Selected(env.APPLICATION_VALUE ?? '')})],prepare({effects}) { process.stdout.write('SERVICE_READY:'+env.APPLICATION_VALUE+'\\n'); effects.defer(()=>{process.stdout.write('SERVICE_CLOSED\\n')}) }})] };
 });`,
 		)
 		const script = join(root, 'build.mts')
@@ -266,12 +266,12 @@ it('delivers an application-owned fetch export after launch without opening a li
 			`
 import { BasePlugin, Plugin } from '@pluxel/core';
 import { defineHostApplication } from '@pluxel/host';
-import { elysia, createElysiaHandler } from '@pluxel/services/elysia';
+import { ElysiaApp, elysia, createElysiaHandler } from '@pluxel/services/elysia';
 import { t } from 'elysia';
 @Plugin()
 class Echo extends BasePlugin {
  protected init() {
-  const router = this.ctx.elysia;
+  const router = this.ctx.service(ElysiaApp);
   if (!router) throw new Error('Elysia service is not installed');
   router.get('/echo', {query:t.Object({message:t.String()})}, ({query}) => query.message);
  }

@@ -72,10 +72,10 @@ description: 按构建、依赖图、配置、生命周期和宿主边界定位 
 
 在插件销毁或重载时遗留资源：
 
-- **解决方案**：在插件或 Part 中创建的长连接、定时器（`setInterval`）或后台工作任务，应使用 `this.ctx.effects.defer(() => clearInterval(id))` 进行登记，或者在 `init()` 返回清理回调函数。
+- **解决方案**：在插件或 Part 中创建的长连接、定时器（`setInterval`）或后台工作任务，应使用 `this.ctx.service(EffectsService).defer(() => clearInterval(id))` 进行登记，或者在 `init()` 返回清理回调函数。
 
 ## HTTP 返回 404
 
-1. **路由声明时机**：插件的路由必须在构造函数或 `init()` 生命周期阶段声明在 `this.ctx.require(ElysiaApp)` 上。在服务完成初始化并开始对外监听后动态追加的路由将无法被生效识别。
+1. **路由声明时机**：插件的路由必须在构造函数或 `init()` 生命周期阶段声明在 `this.ctx.service(ElysiaApp)` 上。在服务完成初始化并开始对外监听后动态追加的路由将无法被生效识别。
 2. **路由路径**：Elysia 中声明的路径即为最终请求路径，框架不会自动拼接插件名作为前缀。
 3. **保留路径冲突**：`/__pluxel` 为系统控制台与管理端点预留命名空间，业务路由请勿以此为前缀。

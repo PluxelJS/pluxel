@@ -55,17 +55,18 @@ export default defineConfig({ lint })
 | `configs-use-no-redefault`                       | 默认值应集中在 Schema 中定义，避免逻辑分散        | 移除二次回退（如 `?? 'default'`），在 Schema 中指定默认值 |
 | `configs-use-single-object-schema`               | 插件仅支持挂载单个配置 Schema 对象                | 将多个配置项合并为一个顶层 Object Schema                  |
 | `plugin-no-process-exit`                         | 插件内部禁止随意调用 `process.exit()`             | 抛出带有明确原因的异常，交由宿主生命周期处理              |
-| `no-direct-logtape-get-logger`                   | 日志器需保持与插件 Context 绑定的所有权           | 使用当前插件上下文的 `this.ctx.logger`                    |
+| `no-direct-logtape-get-logger`                   | 日志器需保持与插件 Context 绑定的所有权           | 使用当前插件上下文的 `this.ctx.service(LoggerService)`    |
 
 ## 日志错误记录规范
 
 在捕获异常并记录日志时，建议将错误对象作为属性传递，便于日志收集平台保留完整的堆栈信息与错误类型：
 
 ```ts no-twoslash
+import { LoggerService } from '@pluxel/core'
 try {
 	await sync()
 } catch (error) {
-	this.ctx.logger.error('同步数据失败', { error })
+	this.ctx.service(LoggerService).error('同步数据失败', { error })
 }
 ```
 

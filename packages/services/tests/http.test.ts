@@ -1,27 +1,33 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
-import { resolveContextCapability } from '@pluxel/core/host'
+import { resolveContextService } from '@pluxel/core/internal'
+import type { AdminAccess } from '@pluxel/services/management/access'
+import type { WorkbenchHost } from '@pluxel/workbench/server'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
+
 import { createHost } from '@pluxel/host'
 import { expect, it } from 'vitest'
 import { ElysiaApp, elysia } from '../src/elysia'
 import { ElysiaRuntime } from '@pluxel/services/internal'
 
+const AdminAccessRef = defineServiceRef<AdminAccess>()
+const WorkbenchHostRef = defineServiceRef<WorkbenchHost>()
+
 @Plugin()
 class Routes extends BasePlugin {
 	init() {
-		this.ctx.require(ElysiaApp).get('/hello', () => 'hello')
+		this.ctx.service(ElysiaApp).get('/hello', () => 'hello')
 	}
 }
 @Plugin()
 class ConflictingRoutes extends BasePlugin {
 	init() {
-		this.ctx.require(ElysiaApp).get('/hello', () => 'conflict')
+		this.ctx.service(ElysiaApp).get('/hello', () => 'conflict')
 	}
 }
 
 it('publishes and withdraws business routes through the standalone Host commit without management', async () => {
 	const host = await createHost({ plugins: [Routes, ConflictingRoutes], services: [elysia()] })
 	try {
-		const server = resolveContextCapability(host.ctx, ElysiaRuntime)
+		const server = resolveContextService(host.ctx, ElysiaRuntime)
 		const request = () => new Request('http://localhost/hello')
 		const absent = await server.fetch(request())
 		expect(absent.status).toBe(404)
@@ -31,8 +37,8 @@ it('publishes and withdraws business routes through the standalone Host commit w
 		await host.startNode(ConflictingRoutes.nodeAddress())
 		const conflict = await server.fetch(request())
 		expect(await conflict.text()).toBe('hello')
-		expect('adminAccess' in host.ctx).toBe(false)
-		expect('workbench' in host.ctx).toBe(false)
+		expect(host.ctx.service(AdminAccessRef)).toBeUndefined()
+		expect(host.ctx.service(WorkbenchHostRef)).toBeUndefined()
 		await host.stopNode(ConflictingRoutes.nodeAddress())
 		await host.stopNode(Routes.nodeAddress())
 		const withdrawn = await server.fetch(request())
@@ -44,7 +50,7 @@ it('publishes and withdraws business routes through the standalone Host commit w
 
 it('aborts admitted endpoints on Host close and preserves carrier ingress identity', async () => {
 	const host = await createHost({ plugins: [], services: [elysia()] })
-	const server = resolveContextCapability(host.ctx, ElysiaRuntime)
+	const server = resolveContextService(host.ctx, ElysiaRuntime)
 	const ingress = new Request('http://localhost/endpoint', { method: 'POST', body: 'payload' })
 	let received!: Request
 	let release!: () => void
@@ -114,7 +120,7 @@ it('aborts admitted endpoints on Host close and preserves carrier ingress identi
 
 it('forwards client abort to an admitted endpoint', async () => {
 	const host = await createHost({ plugins: [], services: [elysia()] })
-	const server = resolveContextCapability(host.ctx, ElysiaRuntime)
+	const server = resolveContextService(host.ctx, ElysiaRuntime)
 	const abort = new AbortController()
 	let received!: AbortSignal
 	server.mountEndpoint({

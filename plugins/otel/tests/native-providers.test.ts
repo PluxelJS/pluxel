@@ -1,5 +1,7 @@
-import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/core'
+import type { Workbench } from '@pluxel/workbench'
+import { BasePlugin, formatPluginNodeReference, Plugin, defineServiceRef } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
+import { ElysiaApp } from '@pluxel/services/elysia'
 import { createTestHost } from '@pluxel/test'
 import { SeverityNumber } from '@opentelemetry/api'
 import { resourceFromAttributes } from '@opentelemetry/resources'
@@ -27,6 +29,7 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 import { Otel, OtelPlugin, OtelWorkbench, type OtelProviders } from '../src/index.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 @Plugin(Otel)
 class NativeOtel extends Otel {
 	readonly metrics = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE)
@@ -38,7 +41,7 @@ class NativeOtel extends Otel {
 
 	protected override async init(): Promise<void> {
 		await super.init()
-		this.ctx.workbench?.publish(OtelWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(OtelWorkbench, {
 			operations: () => this.workbenchOperations(),
 		})
 	}
@@ -104,7 +107,7 @@ class NativeOtel extends Otel {
 class TracesOnly extends Otel {
 	protected override async init(): Promise<void> {
 		await super.init()
-		this.ctx.workbench?.publish(OtelWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(OtelWorkbench, {
 			operations: () => this.workbenchOperations(),
 		})
 	}
@@ -346,7 +349,7 @@ describe('native OpenTelemetry providers', () => {
 			const start = failure.lifecycleReport.issues.find((issue) => issue.phase === 'start')
 			expect(start?.error?.name).toBe('AggregateError')
 			expect(start?.message).toContain('OpenTelemetry initialization and cleanup failed')
-			expect(start?.message).toContain('does not install services.elysia')
+			expect(start?.message).toContain(`does not install ${ElysiaApp.name}`)
 			expect(start?.message).toContain('native cleanup failed after route registration')
 			expect(closing).toHaveBeenCalledTimes(1)
 		} finally {

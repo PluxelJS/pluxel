@@ -1,3 +1,5 @@
+import { resolveContextService } from '@pluxel/core/internal'
+import { EffectsService } from '@pluxel/core'
 import type { Server as NodeHttpServer, IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { resolve } from 'node:path'
@@ -5,11 +7,7 @@ import { serve } from 'srvx/node'
 import type { ServerOptions } from 'srvx'
 import { dispatchElysiaRequest } from './dispatch'
 import type { PluginHost } from '@pluxel/host'
-import {
-	enterOwnerInvocation,
-	resolveContextCapability,
-	type OwnerInvocationLease,
-} from '@pluxel/core/host'
+import { enterOwnerInvocation, type OwnerInvocationLease } from '@pluxel/core/host'
 import { ElysiaRuntime } from './runtime'
 import { NodeElysiaApplicationCarrier } from './node'
 
@@ -46,7 +44,7 @@ export async function listenElysia(host: PluginHost, options: ListenElysiaOption
 				'[host] listenElysia requires TCP; use createElysiaHandler with srvx for IPC transports',
 			)
 	const { publicDir: inputPublicDir, publicOrigin: inputPublicOrigin, ...serverOptions } = options
-	const http = resolveContextCapability(host.ctx, ElysiaRuntime)
+	const http = resolveContextService(host.ctx, ElysiaRuntime)
 	const hostname = serverOptions.hostname ?? '0.0.0.0'
 	const port = serverOptions.port ?? 3000
 	const publicOrigin = resolvePublicOrigin(inputPublicOrigin)
@@ -116,7 +114,7 @@ export async function listenElysia(host: PluginHost, options: ListenElysiaOption
 		startup = enterOwnerInvocation(host.ctx)
 		const ownerSignal = startup.signal
 		ownerSignal.addEventListener('abort', stopAccepting, { once: true })
-		host.ctx.effects.defer(dispose, { tag: 'ElysiaListener', phase: 'shutdown' })
+		host.ctx.service(EffectsService).defer(dispose, { tag: 'ElysiaListener', phase: 'shutdown' })
 		owned = true
 		server = serve({
 			...serverOptions,

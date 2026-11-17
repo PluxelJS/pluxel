@@ -5,6 +5,7 @@ import {
 	pluginDefinitionIndexKey,
 	type Context,
 	type PluginDefinitionAddress,
+	LoggerService,
 } from '@pluxel/core'
 import {
 	WORKBENCH_CONTENT_ARTIFACT_FILE,
@@ -272,7 +273,9 @@ export class WorkbenchContentArtifactService {
 				try {
 					listener(commit)
 				} catch (error) {
-					this.root.logger.error('workbench Content artifact commit listener failed', { error })
+					this.root
+						.service(LoggerService)
+						.error('workbench Content artifact commit listener failed', { error })
 				}
 			}
 		}

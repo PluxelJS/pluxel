@@ -1,5 +1,13 @@
+import type { Workbench } from '@pluxel/workbench'
 import { InMemory, Passthrough, writeFileAtomic } from '@pluxel/core/fs'
-import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
+import {
+	BasePlugin,
+	Plugin,
+	parsePluginNodeAddress,
+	Fs,
+	TinyBaseService,
+	defineServiceRef,
+} from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { standardServices } from '@pluxel/services'
 import * as nativeFs from 'node:fs'
@@ -12,6 +20,7 @@ import { FontsError, FontsPlugin, type FontRegistration } from '../src/index.ts'
 import { FontsTestWorkbench, openFontsManager, openFontSelection } from './workbench-helpers.ts'
 import { registerBrandFont } from './fixtures/result-consumer.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 @Plugin()
 class FontsTestConsumer extends BasePlugin {
 	constructor(readonly fonts: FontsPlugin) {
@@ -19,7 +28,7 @@ class FontsTestConsumer extends BasePlugin {
 	}
 
 	override init(): void {
-		this.ctx.workbench?.publish(FontsTestWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(FontsTestWorkbench, {
 			fonts: { provider: this.fonts },
 		})
 	}
@@ -94,7 +103,7 @@ describe('FontsPlugin', () => {
 					fonts.families.some(({ family }) => family === fonts.defaultFont.family),
 			).toBe(true)
 			expect(host.isRunning(FontsPlugin.nodeAddress())).toBe(true)
-			expect(fonts.ctx.workbench).toBeUndefined()
+			expect(fonts.ctx.service(WorkbenchRef)).toBeUndefined()
 		}
 	})
 
@@ -457,7 +466,7 @@ describe('FontsPlugin', () => {
 					services: standardServices(),
 				})
 				await host.start(FontsPlugin.nodeAddress())
-				const storage = await host.require(FontsPlugin.nodeAddress()).ctx.fs!()
+				const storage = await host.require(FontsPlugin.nodeAddress()).ctx.service(Fs)()
 				await host.stop(FontsPlugin.nodeAddress())
 				await writeFileAtomic(storage, key, value)
 
@@ -484,7 +493,7 @@ describe('FontsPlugin', () => {
 			services: standardServices(),
 		})
 		await host.start(FontsPlugin.nodeAddress())
-		const state = host.require(FontsPlugin.nodeAddress()).ctx.tinybase
+		const state = host.require(FontsPlugin.nodeAddress()).ctx.service(TinyBaseService)
 		const store = await state.open()
 		store.setValue('defaultFamily', true)
 		await state.flush()
@@ -507,7 +516,7 @@ describe('FontsPlugin', () => {
 		await host.start(FontsPlugin.nodeAddress())
 		let fonts = host.require(FontsPlugin.nodeAddress())
 		await fonts.setPreferredFamily('monospace')
-		const store = await fonts.ctx.tinybase.open()
+		const store = await fonts.ctx.service(TinyBaseService).open()
 		expect(store.getValue('defaultFamily')).toBe('monospace')
 		await host.restart(FontsPlugin.nodeAddress())
 		fonts = host.require(FontsPlugin.nodeAddress())
@@ -516,7 +525,7 @@ describe('FontsPlugin', () => {
 		await host.restart(FontsPlugin.nodeAddress())
 		fonts = host.require(FontsPlugin.nodeAddress())
 		expect(fonts.defaultFont.preferredFamily).toBeUndefined()
-		const restored = await fonts.ctx.tinybase.open()
+		const restored = await fonts.ctx.service(TinyBaseService).open()
 		expect(restored.hasValue('defaultFamily')).toBe(false)
 	})
 
@@ -552,7 +561,7 @@ describe('FontsPlugin', () => {
 		})
 		const fonts = await host.start(FontsPlugin.nodeAddress())
 		await fonts.setPreferredFamily('serif')
-		const store = await fonts.ctx.tinybase.open()
+		const store = await fonts.ctx.service(TinyBaseService).open()
 		fail = true
 		await expect(fonts.setPreferredFamily('monospace')).rejects.toMatchObject({
 			code: 'SAVE_FAILED',

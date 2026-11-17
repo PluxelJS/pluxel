@@ -21,7 +21,7 @@ let ownerVault: VaultStorageApi
 class VaultOwner extends BasePlugin {
 	init() {
 		ownerContext = this.ctx
-		ownerVault = this.ctx.require(Vault)
+		ownerVault = this.ctx.service(Vault)
 	}
 }
 
@@ -115,7 +115,7 @@ it('keeps complete blob IO admitted through Host close, then flushes the final s
 			if (String(to).endsWith('state.enc')) events.push('snapshot flushed')
 		}
 	})
-	const rootVault = host.ctx.require(Vault)
+	const rootVault = host.ctx.service(Vault)
 	const blob = rootVault.blobs().open('root-blob')
 	try {
 		await rootVault.kv().set('final', 'persisted')
@@ -141,7 +141,7 @@ it('keeps complete blob IO admitted through Host close, then flushes the final s
 	}
 	const reopened = await createHost({ plugins: [], services, runtime: { ...config } })
 	try {
-		const storage = reopened.ctx.require(Vault)
+		const storage = reopened.ctx.service(Vault)
 		await expect(storage.kv().get('final')).resolves.toMatchObject({ value: 'persisted' })
 		await expect(storage.blobs().open('root-blob').readText()).resolves.toBe('payload')
 	} finally {

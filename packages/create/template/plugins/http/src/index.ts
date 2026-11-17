@@ -19,7 +19,7 @@ export class HttpPlugin extends BasePlugin {
 	}
 
 	protected override init(): void {
-		this.ctx.require(ElysiaApp).group('/api/example', (app) =>
+		this.ctx.service(ElysiaApp).group('/api/example', (app) =>
 			app
 				.get('/todos', () => this.todos.snapshot())
 				.post(

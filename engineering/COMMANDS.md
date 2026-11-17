@@ -4,7 +4,7 @@
 
 ## Root publication
 
-`@pluxel/services/commands` 的 `commands()` 安装空 root registry。Plugin 经 `ctx.require(Commands)` 取得 owner view；list、snapshot、subscription 和 execute 委托同一 registry。
+`@pluxel/services/commands` 的 `commands()` 安装空 root registry。Plugin 经 `ctx.service(Commands)` 取得 owner view；list、snapshot、subscription 和 execute 委托同一 registry。
 
 `register()` 返回 typed command handle 和 disposer，并把撤销登记到 owner effects。handle 固定本次 publication，撤销后永久失效；动态名称调用跟随当前目录。执行返回 `Result<T, CommandFailure>` 并持有 owner invocation gate。generation stop 关闭 admission、abort 合成 signal、等待调用退出，再 drain effects。手动 dispose 只撤销 publication，已接纳调用与 sibling admission 继续结算。
 

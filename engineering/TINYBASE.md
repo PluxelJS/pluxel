@@ -1,6 +1,6 @@
 # Host 托管 TinyBase 状态
 
-Core 固定提供 `PluginContext.tinybase`，托管 Plugin Store 的恢复、writer、快照和撤回。公开用法见[插件状态](../docs/plugin-development/tinybase.md)，文件后端见 [FS](FS.md)，Host config/state 由 [Config](CONFIG.md) 维护。
+Core 固定提供 `ctx.service(TinyBaseService)`，托管 Plugin Store 的恢复、writer、快照和撤回。公开用法见[插件状态](../docs/plugin-development/tinybase.md)，文件后端见 [FS](FS.md)，Host config/state 由 [Config](CONFIG.md) 维护。
 
 ## 所有者与依赖
 

@@ -1,3 +1,4 @@
+import { EffectsService } from '../../services/effects/EffectsService'
 import type { Context, PluginContext } from '../../context/Context'
 import { closeConsumerInvocations, closeOwnerInvocations } from '../../internal/owner-invocations'
 import { createErr, createOk } from 'option-t/plain_result'
@@ -548,7 +549,7 @@ export class PluginDefinitions {
 					...[...partContexts].map((ctx) => closeOwnerInvocations(ctx)),
 				])
 				try {
-					await pluginContext.effects.dispose()
+					await pluginContext.service(EffectsService).dispose()
 				} finally {
 					await Promise.all([
 						closeConsumerInvocations(pluginContext),

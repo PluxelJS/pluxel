@@ -1,3 +1,10 @@
+import {
+	Logging,
+	type LoggingOptions,
+	type PluginLogPolicySnapshot,
+	type RuntimeLoggingInput,
+} from '@pluxel/core/logging'
+import { LoggerService } from '../../src/logger/LoggerService'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { getConfig, type Config, type LogRecord } from '@logtape/logtape'
 import { describe, expect, it } from 'vitest'
@@ -5,11 +12,6 @@ import { logtape } from '@pluxel/core/config'
 import { resolveLogTapeConfig } from '../../src/config/logtape'
 import { createCoreTestHost, getCoreTestHostContext } from '../../src/internal-test'
 import { prepareCoreContext } from '@pluxel/core/host'
-import type {
-	LoggingOptions,
-	PluginLogPolicySnapshot,
-	RuntimeLoggingInput,
-} from '@pluxel/core/logging'
 
 describe('Core native LogTape declarations', () => {
 	it('accepts native configs and structural factory declarations without a helper brand', async () => {
@@ -25,7 +27,7 @@ describe('Core native LogTape declarations', () => {
 		{
 			await using host = await createCoreTestHost({ logtape: native })
 			await prepareCoreContext(getCoreTestHostContext(host))
-			getCoreTestHostContext(host).logger.info('native input')
+			getCoreTestHostContext(host).service(LoggerService).info('native input')
 			expect(records.map((record) => record.message.join(''))).toEqual(['native input'])
 		}
 		let calls = 0
@@ -46,9 +48,11 @@ describe('Core native LogTape declarations', () => {
 			})
 			const root = getCoreTestHostContext(host)
 			await prepareCoreContext(root)
-			root.logger.info('factory input')
+			root.service(LoggerService).info('factory input')
 			expect(calls).toBe(1)
-			expect(root.logging!.stores.get('default')!.tailWindow(1)[0]?.msg).toBe('factory input')
+			expect(root.service(Logging).stores.get('default')!.tailWindow(1)[0]?.msg).toBe(
+				'factory input',
+			)
 		}
 		expect(getConfig()).toBeNull()
 	})

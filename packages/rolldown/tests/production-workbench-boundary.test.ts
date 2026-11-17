@@ -80,7 +80,7 @@ export default defineHostApplication(() => ({
  services: [workbenchService()],
  sources: [pluginSource({ kind: 'directory', path: ${JSON.stringify(join(root, 'mutable/entries'))}, include: ['*.mjs'] })],
  prepare: ({ host }) => {
-  const session = host.ctx.require(WorkbenchHost).createSession({ provider: 'probe', subject: 'reader' }, () => {})
+  const session = host.ctx.service(WorkbenchHost).createSession({ provider: 'probe', subject: 'reader' }, () => {})
   globalThis.__hostRpcTarget = Object.getPrototypeOf(session.target.constructor)
   session.dispose()
  },

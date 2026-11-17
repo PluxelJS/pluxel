@@ -1,7 +1,9 @@
+import { EffectsService, pluginNodeAddressEqual, type PluginConstructor } from '@pluxel/core'
 import {
 	recordLoadedApplicationPlugins,
 	readLoadedPluginModule,
 	readLoadedApplicationControl,
+	loadLoadedApplicationServiceControls,
 } from './loaded-modules'
 import { snapshotHostRuntime } from './runtime'
 import { snapshotHostPolicy } from './state-store'
@@ -26,7 +28,6 @@ import { discoverPluginSources } from './source-discovery'
 import { installPluginSources, pluginSource } from './source-contract'
 import { setHostCatalogProvenance } from './catalog-provenance'
 import type { PluginCatalogProvenance } from './catalog'
-import { pluginNodeAddressEqual, type PluginConstructor } from '@pluxel/core'
 import { createHost, type HostApplication, type HostOptions, type PluginHost } from './host'
 import { startHostApplication } from './application-start'
 export { prepareHostApplication } from './application-start'
@@ -358,13 +359,16 @@ export async function runHostApplication(
 			vaultBindings: resolved.vaultBindings,
 			services: resolved.services,
 		})
+		await loadLoadedApplicationServiceControls(application, host.ctx, resolved.startup.root)
 		setHostCatalogProvenance(host.ctx, facts)
 		installPluginSources(host.ctx, {
 			root: resolved.startup.root,
 			sources: resolved.sources ?? [],
 			updates: 'next-start',
 		})
-		host.ctx.effects.defer(() => loader.close(), { tag: 'NativeSourceLoader', phase: 'shutdown' })
+		host.ctx
+			.service(EffectsService)
+			.defer(() => loader.close(), { tag: 'NativeSourceLoader', phase: 'shutdown' })
 	} catch (error) {
 		try {
 			const [cleanup] = await Promise.allSettled([host?.close()])

@@ -1,7 +1,16 @@
+import type { Workbench } from '@pluxel/workbench'
 import { open } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { GlobalFonts, type FontKey } from '@napi-rs/canvas'
-import { type Context, BasePlugin, Plugin, type TinyBaseService } from '@pluxel/core'
+import {
+	type Context,
+	BasePlugin,
+	Plugin,
+	TinyBaseService,
+	EffectsService,
+	Fs,
+	defineServiceRef,
+} from '@pluxel/core'
 
 import { writeFileAtomic, type FsPromises } from '@pluxel/core/fs'
 import { type Store } from 'tinybase'
@@ -29,6 +38,7 @@ import {
 	type ManagedFontSnapshot,
 } from './workbench-contracts.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 const DEFAULT_FAMILY_VALUE = 'defaultFamily'
 const MANAGED_ID = /^[A-Za-z0-9_-]{43}$/
 const MAX_FILE_NAME_LENGTH = 255
@@ -236,13 +246,13 @@ export class FontsPlugin extends BasePlugin {
 			)
 		}
 		this.lifecycleRevision += 1
-		const storage = await this.ctx.fs()
+		const storage = await this.ctx.service(Fs)()
 		const systemFamilies = new Set(GlobalFonts.families.map(({ family }) => family))
 		const configuredDefaultFamily =
 			this.config.defaultFamily === undefined
 				? undefined
 				: normalizeFamily(this.config.defaultFamily)
-		const tinybase = this.ctx.tinybase
+		const tinybase = this.ctx.service(TinyBaseService)
 		const store = await tinybase.open()
 		const preferredFamily = loadDefaultFamily(store)
 		this.defaults.systemFamilies.clear()
@@ -264,7 +274,7 @@ export class FontsPlugin extends BasePlugin {
 		})
 		this.generation = generation
 		this.running = true
-		this.ctx.effects.defer(
+		this.ctx.service(EffectsService).defer(
 			async () => {
 				const stopped = new FontsError(
 					'NOT_RUNNING',
@@ -331,7 +341,7 @@ export class FontsPlugin extends BasePlugin {
 			this.registerBytes(this.ctx, data, id, undefined, false)
 		}
 		this.managed = await this.initializeManagedFonts(storage)
-		this.ctx.workbench?.publish(FontsWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(FontsWorkbench, {
 			manager: () => this.createWorkbenchManager(),
 			selection: () => this.createSelectionTarget(),
 		})
@@ -845,7 +855,7 @@ export class FontsPlugin extends BasePlugin {
 		}
 		ownerRegistrations.add(registration)
 		try {
-			owner.effects.defer(release, {
+			owner.service(EffectsService).defer(release, {
 				tag: 'font-registration',
 			})
 		} catch (cause) {
@@ -913,7 +923,9 @@ export class FontsPlugin extends BasePlugin {
 		this.leases.add(lease)
 		this.ownerLeases.set(owner, lease)
 		try {
-			owner.effects.defer(() => this.closeOwnerLease(lease), { tag: 'fonts-caller' })
+			owner
+				.service(EffectsService)
+				.defer(() => this.closeOwnerLease(lease), { tag: 'fonts-caller' })
 		} catch (cause) {
 			this.closeOwnerLease(lease)
 			throw new FontsError('NOT_RUNNING', 'Font owner is stopped or being replaced', { cause })

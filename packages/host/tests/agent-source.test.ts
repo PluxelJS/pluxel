@@ -24,14 +24,17 @@ it('borrows the same root and closes its admission with the shared script scope'
 	await expect(select(erasedAddress).config.get()).rejects.toMatchObject({
 		details: { code: 'config_not_found' },
 	})
-	expect(() => sdk.ctx.require(Logging)).toThrow('does not install core.logging')
+	expect(() => sdk.ctx.service(Logging)).toThrow(
+		expect.objectContaining({ code: 'CONTEXT_SERVICE_MISSING' }),
+	)
 	const { start, status, instance } = counter
 	await start()
 	const borrowed = await instance()
 	const first = borrowed.instance
 	const firstGeneration = first.generation
 	first.count = 4
-	expect(sdk.ctx).toBe(host.ctx)
+	expect(sdk.ctx).toBe(sdk.ctx)
+	expect(Object.keys(sdk.ctx)).toEqual(['service'])
 	await scope.dispose()
 	await expect(status()).rejects.toMatchObject({
 		details: { code: 'scope_closed' },

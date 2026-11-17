@@ -6,8 +6,8 @@ import {
 import { ScriptError, type ScriptErrorDetails } from './sdk-outcomes'
 
 /** Script control and artifact versions are independent from application/Plugin ABI. */
-export const SCRIPT_PROTOCOL = 2 as const
-export const SCRIPT_ARTIFACT_FORMAT = 'pluxel-js-factory/4' as const
+export const SCRIPT_PROTOCOL = 4 as const
+export const SCRIPT_ARTIFACT_FORMAT = 'pluxel-js-factory/5' as const
 export const SCRIPT_VALUE_BYTES = 1024 * 1024
 export const SCRIPT_DEFAULT_TIMEOUT = 30_000
 export const SCRIPT_MAX_TIMEOUT = 300_000
@@ -26,7 +26,7 @@ export type ScriptProjectCode = Readonly<{
 	exportName: string
 }>
 /**
- * Function body returning module exports. Format 4 receives three parameters:
+ * Function body returning module exports. Format 5 receives three parameters:
  * `__pluxel_script_better_result`, `__pluxel_script_control` and `__pluxel_script_host`,
  * bound to the receiver's Better Result, control-reference and public Host SDK namespaces.
  * Ordinary computation dependencies are
@@ -56,6 +56,14 @@ export type ScriptControlSubmission = Readonly<{
 	timeoutMs?: number
 }>
 export type ScriptPhase = 'admission' | 'load' | 'execute' | 'encode' | 'cleanup'
+/** Native TypeScript diagnostic; source positions are one-based UTF-16 coordinates. */
+export type ScriptDiagnostic = Readonly<{
+	file?: string
+	line?: number
+	column?: number
+	code: number
+	message: string
+}>
 export type ScriptFailure = Readonly<{
 	code: string
 	message: string
@@ -64,6 +72,7 @@ export type ScriptFailure = Readonly<{
 	stack?: string
 	hint?: string
 	context?: JsonValue
+	diagnostics?: readonly ScriptDiagnostic[]
 }>
 type ScriptMetadata = Readonly<{
 	runId: string
@@ -100,12 +109,22 @@ export type ScriptRunSnapshot = ScriptMetadata &
 	)
 
 export class ScriptExecutionError extends Error {
+	readonly details?: ScriptErrorDetails
+	readonly hint?: string
+	readonly context?: JsonValue
+	readonly diagnostics?: readonly ScriptDiagnostic[]
+
 	constructor(
 		readonly code: string,
 		message: string,
+		options: Pick<ScriptFailure, 'details' | 'hint' | 'context' | 'diagnostics'> = {},
 	) {
 		super(message)
 		this.name = 'ScriptExecutionError'
+		this.details = options.details
+		this.hint = options.hint
+		this.context = options.context
+		this.diagnostics = options.diagnostics
 	}
 }
 
@@ -122,9 +141,13 @@ export function scriptFailure(
 		let message =
 			error instanceof ScriptError ? error.details.message.slice(0, 4096) : failureMessage(error)
 		let failureDetails: ScriptErrorDetails | undefined
-		if (error instanceof ScriptError) {
+		const originalDetails =
+			error instanceof ScriptError || error instanceof ScriptExecutionError
+				? error.details
+				: undefined
+		if (originalDetails !== undefined) {
 			try {
-				failureDetails = snapshotJson(error.details) as ScriptErrorDetails
+				failureDetails = snapshotJson(originalDetails) as ScriptErrorDetails
 			} catch (encodingError) {
 				// Invalid custom details must not prevent the execution owner from settling.
 				const reason =
@@ -132,11 +155,27 @@ export function scriptFailure(
 				message = `${message} | Failure details could not be encoded: ${reason}`.slice(0, 4096)
 			}
 		}
+		let context: JsonValue | undefined
+		if (error instanceof ScriptExecutionError && error.context !== undefined) {
+			try {
+				context = snapshotJson(error.context)
+			} catch (encodingError) {
+				const reason =
+					encodingError instanceof Error ? failureMessage(encodingError) : 'Invalid JSON'
+				message = `${message} | Failure context could not be encoded: ${reason}`.slice(0, 4096)
+			}
+		}
+		const compilerDiagnostics = failureDiagnostics(ownData(error, 'diagnostics'))
 		return {
 			code: 'code' in error && typeof error.code === 'string' ? error.code : fallback,
 			message,
 			...(failureDetails === undefined ? {} : { details: failureDetails }),
 			...(error.stack ? { stack: error.stack.slice(0, 16_384) } : {}),
+			...(error instanceof ScriptExecutionError && error.hint !== undefined
+				? { hint: error.hint.slice(0, 4096) }
+				: {}),
+			...(context === undefined ? {} : { context }),
+			...(compilerDiagnostics.length === 0 ? {} : { diagnostics: compilerDiagnostics }),
 			...details,
 		}
 	}
@@ -147,13 +186,40 @@ export function scriptFailure(
 	}
 }
 
+function ownData(value: object, key: string): unknown {
+	const descriptor = Object.getOwnPropertyDescriptor(value, key)
+	return descriptor && 'value' in descriptor ? descriptor.value : undefined
+}
+
+/** Preserve compiler facts without evaluating arbitrary Error or diagnostic accessors. */
+function failureDiagnostics(value: unknown): readonly ScriptDiagnostic[] {
+	if (!Array.isArray(value)) return []
+	const diagnostics: ScriptDiagnostic[] = []
+	for (let index = 0; index < Math.min(value.length, 100); index++) {
+		const item = ownData(value, String(index))
+		if (!item || typeof item !== 'object') continue
+		const code = ownData(item, 'code')
+		const message = ownData(item, 'message')
+		if (typeof code !== 'number' || !Number.isInteger(code) || typeof message !== 'string') continue
+		const file = ownData(item, 'file')
+		const line = ownData(item, 'line')
+		const column = ownData(item, 'column')
+		diagnostics.push({
+			code,
+			message: message.slice(0, 4096),
+			...(typeof file === 'string' ? { file: file.slice(0, 4096) } : {}),
+			...(typeof line === 'number' && Number.isSafeInteger(line) && line > 0 ? { line } : {}),
+			...(typeof column === 'number' && Number.isSafeInteger(column) && column > 0
+				? { column }
+				: {}),
+		})
+	}
+	return diagnostics
+}
+
 function failureMessage(error: Error): string {
 	const seen = new Set<Error>()
 	let remaining = 16
-	const ownData = (value: object, key: string): unknown => {
-		const descriptor = Object.getOwnPropertyDescriptor(value, key)
-		return descriptor && 'value' in descriptor ? descriptor.value : undefined
-	}
 	const read = (value: unknown, depth: number): string => {
 		if (remaining-- <= 0) return '[error limit]'
 		if (!(value instanceof Error))
@@ -202,6 +268,17 @@ export function snapshotJson(
 	const active = new Set<object>()
 	let nodes = 0
 	let bytes = 0
+	const propertyPath = (path: string, key: string): string =>
+		/^[A-Za-z_$][\w$]*$/.test(key) ? `${path}.${key}` : `${path}[${JSON.stringify(key)}]`
+	const unsupported = (path: string, valueKind: string, message: string): never => {
+		throw new ScriptExecutionError(
+			'result_not_serializable',
+			`${message} at ${path} (${valueKind})`,
+			{
+				context: { path, valueKind },
+			},
+		)
+	}
 	const charge = (size: number) => {
 		bytes += size
 		if (bytes > maxBytes)
@@ -210,7 +287,7 @@ export function snapshotJson(
 				`JSON value exceeds ${maxBytes === SCRIPT_VALUE_BYTES ? '1 MiB' : `${maxBytes} bytes`}`,
 			)
 	}
-	const visit = (input: unknown, depth: number): JsonValue => {
+	const visit = (input: unknown, depth: number, path: string): JsonValue => {
 		if (++nodes > maxNodes || depth > maxDepth)
 			throw new ScriptExecutionError(
 				'result_too_large',
@@ -233,18 +310,17 @@ export function snapshotJson(
 			return input
 		}
 		if (typeof input !== 'object')
-			throw new ScriptExecutionError(
-				'result_not_serializable',
+			return unsupported(
+				path,
+				typeof input === 'number' ? 'non-finite number' : typeof input,
 				'Return JSON data; functions, symbols, BigInt and non-finite numbers are unsupported',
 			)
 		const array = Array.isArray(input)
-		if (
-			!array &&
-			Object.getPrototypeOf(input) !== Object.prototype &&
-			Object.getPrototypeOf(input) !== null
-		)
-			throw new ScriptExecutionError(
-				'result_not_serializable',
+		const prototype = array ? null : Object.getPrototypeOf(input)
+		if (!array && prototype !== Object.prototype && prototype !== null)
+			return unsupported(
+				path,
+				'class instance',
 				'Return a plain JSON projection, not a class instance or capability',
 			)
 		// Only the original frozen value can shed execution evidence at this DTO
@@ -255,11 +331,10 @@ export function snapshotJson(
 				identity = parsePluginNodeAddress(input)
 		} catch (error) {
 			if (!(error instanceof DetachedPluginNodeAddressError)) throw error
-			throw new ScriptExecutionError('result_not_serializable', error.message)
+			return unsupported(path, 'detached plugin address', error.message)
 		}
 		const data = identity ?? input
-		if (active.has(data))
-			throw new ScriptExecutionError('result_not_serializable', 'Circular JSON result')
+		if (active.has(data)) return unsupported(path, 'circular reference', 'Circular JSON result')
 		active.add(data)
 		charge(2)
 		try {
@@ -268,14 +343,12 @@ export function snapshotJson(
 					throw new ScriptExecutionError('result_too_large', 'JSON array exceeds the node limit')
 				const result: JsonValue[] = []
 				for (let index = 0; index < data.length; index++) {
+					const itemPath = `${path}[${index}]`
 					const descriptor = Object.getOwnPropertyDescriptor(data, String(index))
 					if (descriptor && !('value' in descriptor))
-						throw new ScriptExecutionError(
-							'result_not_serializable',
-							'JSON accessors are unsupported',
-						)
+						return unsupported(itemPath, 'accessor', 'JSON accessors are unsupported')
 					charge(1)
-					result.push(visit(descriptor?.value, depth + 1))
+					result.push(visit(descriptor?.value, depth + 1, itemPath))
 				}
 				return result
 			}
@@ -283,15 +356,19 @@ export function snapshotJson(
 			for (const key of Reflect.ownKeys(data)) {
 				const descriptor = Object.getOwnPropertyDescriptor(data, key)!
 				if (!descriptor.enumerable) continue
-				if (typeof key !== 'string' || !('value' in descriptor))
-					throw new ScriptExecutionError(
-						'result_not_serializable',
-						'JSON symbols and accessors are unsupported',
+				if (typeof key !== 'string')
+					return unsupported(
+						`${path}[${String(key)}]`,
+						'symbol key',
+						'JSON symbols are unsupported',
 					)
+				const itemPath = propertyPath(path, key)
+				if (!('value' in descriptor))
+					return unsupported(itemPath, 'accessor', 'JSON accessors are unsupported')
 				if (descriptor.value === undefined) continue
 				charge(scriptByteLength(JSON.stringify(key)) + 2)
 				Object.defineProperty(result, key, {
-					value: visit(descriptor.value, depth + 1),
+					value: visit(descriptor.value, depth + 1, itemPath),
 					enumerable: true,
 					configurable: true,
 					writable: true,
@@ -302,7 +379,7 @@ export function snapshotJson(
 			active.delete(data)
 		}
 	}
-	return visit(value, 0)
+	return visit(value, 0, '$')
 }
 
 export async function hashScriptSource(source: string): Promise<string> {

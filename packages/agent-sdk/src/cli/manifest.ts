@@ -57,8 +57,19 @@ export const scriptRunDefinition = {
 	description: 'Compile and execute a trusted script on an explicitly enabled Host',
 	args: scriptRunArgs,
 } as const
+const controlSyncSelectionArgs = {
+	'package-name': {
+		type: 'string',
+		description: 'Synchronize only definitions from this exact npm package (including subpaths)',
+	},
+	definition: {
+		type: 'string',
+		description: 'Synchronize one canonical definition reference; excludes --package-name',
+	},
+} as const
 export const scriptSyncArgs = {
 	...scriptConnectionArgs,
+	...controlSyncSelectionArgs,
 	endpoint: {
 		type: 'string',
 		required: true,
@@ -68,12 +79,12 @@ export const scriptSyncArgs = {
 		type: 'string',
 		default: '.pluxel/control',
 		description:
-			'Tool-owned Plugin contract directory; import each definition using its returned module path',
+			'Tool-owned Plugin and service contract directory; import each definition using its returned module path',
 	},
 } as const
 export const scriptSyncDefinition = {
 	name: 'sync',
-	description: 'Download and verify committed Plugin contracts without enabling code execution',
+	description: 'Download and verify Plugin and service contracts without enabling code execution',
 	args: scriptSyncArgs,
 } as const
 export const scriptResultDefinition = {
@@ -221,6 +232,7 @@ export const devRunDefinition = {
 } as const
 export const devSyncArgs = {
 	...devCommonArgs,
+	...controlSyncSelectionArgs,
 	out: {
 		type: 'string',
 		description:
@@ -229,7 +241,7 @@ export const devSyncArgs = {
 } as const
 export const devSyncDefinition = {
 	name: 'sync',
-	description: 'Download committed Plugin contracts from the selected development console',
+	description: 'Download Plugin and service contracts from the selected development console',
 	args: devSyncArgs,
 } as const
 

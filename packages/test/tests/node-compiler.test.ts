@@ -1,12 +1,15 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
-import { defineNodeModule, nodeModules } from '@pluxel/services/node'
-import { defineWorkerTask, workers } from '@pluxel/services/workers'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
+import { defineNodeModule, nodeModules, NodeModules } from '@pluxel/services/node'
+import { defineWorkerTask, workers, Workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { existsSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
+
+const NodeModulesRef = defineServiceRef<NodeModules>()
+const WorkersRef = defineServiceRef<Workers>()
 
 const worker = defineWorkerTask<{ value: number }, { value: number; threadId: number }>(
 	import.meta.url,
@@ -17,19 +20,22 @@ const nodeEntry = defineNodeModule(import.meta.url, './fixtures/node-worker.ts')
 @Plugin()
 class NodeConsumer extends BasePlugin {
 	capabilities() {
-		return { nodeModules: 'nodeModules' in this.ctx, workers: 'workers' in this.ctx }
+		return {
+			nodeModules: Boolean(this.ctx.service(NodeModulesRef)),
+			workers: Boolean(this.ctx.service(WorkersRef)),
+		}
 	}
 
 	async artifact(declaration = nodeEntry) {
 		let artifact: URL | undefined
-		await this.ctx.nodeModules.use(declaration, (url) => {
+		await this.ctx.service(NodeModules).use(declaration, (url) => {
 			artifact = url
 		})
 		return artifact!
 	}
 
 	run(value: number) {
-		return this.ctx.workers.run(worker, { value })
+		return this.ctx.service(Workers).run(worker, { value })
 	}
 }
 

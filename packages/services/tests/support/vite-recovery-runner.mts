@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { requirePluginService } from '@pluxel/core/internal'
 import { readHostPluginStatusOverview, readHostRecentUpdates } from '@pluxel/host/internal'
-import { requireWorkbench } from '@pluxel/workbench/server'
+import { WorkbenchHost } from '@pluxel/workbench/server'
 import type { PluginHost } from '@pluxel/host'
 import { createServer, createLogger } from 'vite'
 import { vitePreset } from '@pluxel/services/vite'
@@ -38,13 +38,14 @@ await writeFile(
 	resolve(root, 'src/index.ts'),
 	`
 import { BasePlugin, Plugin } from '@pluxel/core'
+import { Workbench } from '@pluxel/workbench'
 import { UI, version, fail } from './workbench'
 @Plugin()
 export class Owner extends BasePlugin {
   readonly version = version
   protected override init() {
     if (fail) throw new Error('intentional Workbench owner init failure')
-    this.ctx.workbench.publish(UI, { page: () => ({ load: () => ({ status: {} }) }) })
+    this.ctx.service(Workbench).publish(UI, { page: () => ({ load: () => ({ status: {} }) }) })
   }
 }
 export { Dependent } from './dependent'
@@ -111,7 +112,7 @@ try {
 	const dependent = initialStatus.statuses.find(
 		(item) => item.address.definition.exportName === 'Dependent',
 	)!.address
-	const backend = () => requireWorkbench(host!.ctx)
+	const backend = () => host!.ctx.service(WorkbenchHost)
 	const healthy = async (version: string) => {
 		const entry = backend().registry.getLayout(owner).entries[0]
 		assert.ok(entry, JSON.stringify(await host!.status()))
@@ -297,5 +298,6 @@ async function eventually(check: () => void | Promise<void>): Promise<void> {
 function renderer(marker: string): string {
 	return `import { useWorkbench } from '@pluxel/workbench/react'
 import { UI } from './workbench'
+
 export default function Renderer() { useWorkbench(UI.page); return ${JSON.stringify(marker)} }\n`
 }

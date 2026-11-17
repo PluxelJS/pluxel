@@ -1,16 +1,18 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import type { Workbench } from '@pluxel/workbench'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { createElysiaHandler, elysia } from '@pluxel/services/elysia'
 import { expect, it } from 'vitest'
 import { Otel, OtelConfig, OtelPlugin } from '../src/index.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 @Plugin()
 class HeadlessMeter extends BasePlugin {
 	constructor(private readonly otel: Otel) {
 		super()
 	}
 	init() {
-		expect(this.ctx.workbench).toBeUndefined()
+		expect(this.ctx.service(WorkbenchRef)).toBeUndefined()
 		this.otel.meter.createCounter('headless.orders').add(3)
 		expect(() => this.otel.tracer).toThrow('disabled')
 	}

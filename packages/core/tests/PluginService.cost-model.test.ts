@@ -1,8 +1,9 @@
+import { EffectsService } from '../src/services/effects/EffectsService'
 import { type PluginNodeAddress, type RootContext } from '@pluxel/core'
 import {
 	createContextHost,
-	installRootCapability,
-	CONFIG_SERVICE_CAPABILITY,
+	installRootService,
+	PluginConfigService,
 	consumePluginDefinitionCandidate,
 	createCoreContextInstallations,
 	PluginSlotRegistry,
@@ -51,9 +52,9 @@ describe('PluginService read cost model', () => {
 		let configServiceCreations = 0
 		const host = createContextHost({
 			name: 'configless-cost-model',
-			capabilities: createCoreContextInstallations(inputs),
+			services: createCoreContextInstallations(inputs),
 			overrides: [
-				installRootCapability(CONFIG_SERVICE_CAPABILITY, {
+				installRootService(PluginConfigService, {
 					create: () => {
 						configServiceCreations += 1
 						throw new Error('ConfigService must remain lazy for configless Plugins')
@@ -77,7 +78,7 @@ describe('PluginService read cost model', () => {
 			expect(removed.ok).toBe(true)
 			expect(configServiceCreations).toBe(0)
 		} finally {
-			await root.effects.dispose()
+			await root.service(EffectsService).dispose()
 		}
 	})
 

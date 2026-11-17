@@ -1,4 +1,12 @@
-import { runScript, controlHmr, getScriptResult, HostClientError } from '@pluxel/agent-sdk/client'
+import {
+	runScript,
+	controlHmr,
+	getScriptResult,
+	cancelScript,
+	listHosts,
+	HostClientError,
+} from '@pluxel/agent-sdk/client'
+import { SCRIPT_PROTOCOL } from '@pluxel/host/internal/agent/runtime'
 import { createHash } from 'node:crypto'
 import { chmod, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -82,6 +90,80 @@ describe('development control through native Capn Web', () => {
 			await selectDevInstance({ root: first.root, instance: second.instance.instanceId }),
 		).toEqual(second.instance)
 	})
+	it('reports the exact incompatible record and safe protocol facts through the public client', async () => {
+		const { root, directory } = await fixture()
+		const recordFile = resolve(directory, 'obsolete.json')
+		await writeFile(
+			recordFile,
+			JSON.stringify({
+				protocol: SCRIPT_PROTOCOL - 1,
+				nonce: 'private-nonce',
+				socketPath: 'private-socket',
+			}),
+			{ mode: 0o600 },
+		)
+		const error = await listHosts({ root }).catch((cause) => cause)
+		expect(error).toBeInstanceOf(HostClientError)
+		expect(error).toMatchObject({
+			code: 'protocol_mismatch',
+			failure: {
+				context: {
+					root,
+					recordFile,
+					expectedProtocol: SCRIPT_PROTOCOL,
+					actualProtocol: SCRIPT_PROTOCOL - 1,
+				},
+				hint: expect.stringContaining('confirming its console has stopped'),
+			},
+		})
+		expect(JSON.stringify(error.failure)).not.toContain('private-nonce')
+		expect(JSON.stringify(error.failure)).not.toContain('private-socket')
+		const output: string[] = []
+		await cli(['instances', '--root', root], { log: (value) => output.push(value) })
+		expect(output.map((value) => JSON.parse(value))).toMatchObject([
+			{ ok: false, error: { code: 'protocol_mismatch', context: error.failure.context } },
+		])
+	})
+	it('reads only the explicitly selected owner for execution and original receipt recovery', async () => {
+		const { root, directory, instance } = await fixture()
+		await writeFile(resolve(directory, 'obsolete.json'), '{', { mode: 0o600 })
+		const file = await script(root)
+		const { receipt, run } = await runScript({
+			target: { root, instance: instance.instanceId },
+			file,
+		})
+		expect(run).toMatchObject({ state: 'succeeded', instanceId: instance.instanceId })
+		const queried = await getScriptResult(receipt)
+		const cancelled = await cancelScript(receipt)
+		expect(queried.run).toEqual(run)
+		expect(cancelled.run).toEqual(run)
+		await expect(discoverDevInstances(root)).rejects.toMatchObject({
+			code: 'invalid_discovery',
+			context: { root, recordFile: resolve(directory, 'obsolete.json') },
+		})
+	})
+	it('validates the selected record instead of bypassing its protocol or escaping the directory', async () => {
+		const { root, instance, record } = await fixture()
+		await writeFile(record, JSON.stringify({ protocol: 'private-invalid-protocol' }))
+		const error = await selectDevInstance({ root, instance: instance.instanceId }).catch(
+			(cause) => cause,
+		)
+		expect(error).toMatchObject({
+			code: 'protocol_mismatch',
+			context: {
+				root,
+				instanceId: instance.instanceId,
+				recordFile: record,
+				expectedProtocol: SCRIPT_PROTOCOL,
+				actualProtocol: null,
+			},
+		})
+		expect(JSON.stringify(error)).not.toContain('private-invalid-protocol')
+		await expect(selectDevInstance({ root, instance: '../outside' })).rejects.toMatchObject({
+			code: 'invalid_input',
+			context: { root },
+		})
+	})
 	it('rejects wrong credentials before granting an execution target', async () => {
 		const { instance, executor } = await fixture()
 		await expect(connectDevInstance({ ...instance, nonce: 'wrong' })).rejects.toMatchObject({
@@ -102,6 +184,32 @@ describe('development control through native Capn Web', () => {
 			await chmod(record, 0o600)
 			await symlink(record, resolve(directory, 'other.json'))
 			await expect(discoverDevInstances(root)).rejects.toMatchObject({ code: 'invalid_discovery' })
+		},
+	)
+	it.skipIf(process.platform === 'win32')(
+		'keeps directory and selected-record permission checks for exact owners',
+		async () => {
+			const { root, directory, record, instance } = await fixture()
+			try {
+				await chmod(directory, 0o755)
+				await expect(
+					selectDevInstance({ root, instance: instance.instanceId }),
+				).rejects.toMatchObject({
+					code: 'discovery_permissions',
+					context: { root },
+				})
+				await chmod(directory, 0o700)
+				await chmod(record, 0o644)
+				await expect(
+					selectDevInstance({ root, instance: instance.instanceId }),
+				).rejects.toMatchObject({
+					code: 'discovery_permissions',
+					context: { root, recordFile: record },
+				})
+			} finally {
+				await chmod(directory, 0o700)
+				await chmod(record, 0o600)
+			}
 		},
 	)
 	it('submits source hash and explicit input once, then queries the retained result', async () => {
@@ -133,7 +241,7 @@ describe('development control through native Capn Web', () => {
 		const submissions = requests.filter((request) => request.method === 'submit')
 		expect(submissions).toHaveLength(1)
 		expect(submissions[0]?.input).toMatchObject({
-			protocol: 2,
+			protocol: SCRIPT_PROTOCOL,
 			instanceId: instance.instanceId,
 			code: {
 				kind: 'project',

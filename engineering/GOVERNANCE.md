@@ -45,7 +45,7 @@ contract/adapter 即使引用 runtime 类型仍可位于 packages；独立具体
 | workspace-only provider                 | `*` optional peer，加指向实际包目录的相对 `link:` dev 副本；发行 JS/声明不可引用它 |
 | 可选集成                                | 仅在独立可选入口或条件加载后声明 optional peer                                     |
 
-peer 表示需要共享的运行时身份或平台兼容边界，如 Context、服务 token、Plugin constructor、React Context 和 lowering ABI。自有解析器、watcher、缓存等实现使用 dependencies；声明文件仍引用的包也须有发布依赖。dev-only 适用于工具、夹具和明确内联的源码。
+peer 表示需要共享的运行时身份或平台兼容边界，如 Context、服务声明、Plugin constructor、React Context 和 lowering ABI。自有解析器、watcher、缓存等实现使用 dependencies；声明文件仍引用的包也须有发布依赖。dev-only 适用于工具、夹具和明确内联的源码。
 
 pncat 拥有 catalog 与引用的新增、更新、分组和清理，避免分别手写 YAML 与 manifest。Peer 范围表达兼容承诺，不能随实现版本统一收窄。npm alias 的目标范围使用 `^`；预发布、供应链 pin 与确有约束的 selector override 可保留精确值。
 
@@ -73,7 +73,7 @@ Core 对 Context 与 [Eventure](../vendor/eventure/UPSTREAM.md)的复用是构�
 
 Workbench fixed singleton set 由 host 安装并由 MF build contract 精确锁定：React/ReactDOM 及实际 subpath、Mantine core/hooks、MF React Bridge、Workbench 根、`/client`、`/react`、`/internal/react`。Plugin UI 把自己 import 的 React/Mantine 声明为 peer，独立开发时配 dev 副本。query-core 仅为 renderer owner 内部实现。每个使用 Drizzle 的包直接声明 drizzle-orm；只在确需共享身份的公开边界使用 peer。
 
-Host 互操作按具体能力接纳：Workbench target/基础库使用精确 capnweb peer；交换原生 Store 的 TinyBase 消费者使用精确 tinybase peer，开发均配同版 dev 副本。Core 拥有 TinyBase 的精确普通 dependency；只调用 `ctx.tinybase.open()` 无需另装。升级 TinyBase 时同步 Core、共享消费者和制品事实。
+Host 互操作按具体能力接纳：Workbench target/基础库使用精确 capnweb peer；交换原生 Store 的 TinyBase 消费者使用精确 tinybase peer，开发均配同版 dev 副本。Core 拥有 TinyBase 的精确普通 dependency；只调用 `ctx.service(TinyBaseService).open()` 无需另装。升级 TinyBase 时同步 Core、共享消费者和制品事实。
 
 `@pluxel/host/internal/shared-runtime` 是 Node metadata 叶子，拥有 manifest、catalog、版本和接纳检查，不加载 Core/Services/Workbench runtime。构建生成 `pluxel.workbenchCapnweb` / `pluxel.tinybase`；Vite、静态应用与 native 动态来源先核验声明及实际安装，再绑定同版解析。TinyBase 子路径按原名解析；应用私有副本与无关依赖保持隔离，普通 import 本身不构成互操作声明。
 
@@ -101,9 +101,9 @@ Tegami 与治理共用 inventory。已有 Markdown 的目标必须是公开包�
 
 入口按稳定用户概念、环境与可选依赖划分，同一依赖边界的重复入口合并。合并前核对传递加载，保持 browser、基础服务、生产入口各自的环境边界。默认入口使用 allowlist；内部协作使用窄的显式 `/internal`，测试优先相对源码，跨包白盒使用 `/internal/test`。旧设计不留兼容 alias。
 
-- Context 默认入口提供 descriptor、scoped installation、`createContextHost()`、projection types 与显式 resolve；raw plan/context construction 归 `/internal`。编译后无 capability mutator；编译前 overrides 只能替换同 descriptor 并保持 scope/property。
-- Core 默认入口提供 Plugin 作者模型、服务 token 类型/读取错误、address codec 和 Host 使用的 lifecycle result。slot 最多作为 opaque type；registry、record reader、construction/lifecycle adapter、lowering setter、test host 与 PluginService 归内部。Federation contract 归 `/federation`，服务组合归 `/host`。
-- Host/Services 不重导出 Core 作者面。RootContext 读取 root token，owner Context 不直接读取；持有真实 root 代表宿主访问权，不能当作沙箱。graph/state helper 归 Host internal。
+- Context 默认入口提供服务声明与可选引用类型、安装器、`createContextHost()` 和唯一读取入口 `ctx.service()`；raw plan/context construction、identity binding 与 framework resolve 归 `/internal`。服务集合在创建 host 时固定；overrides 只能替换已有声明并保持 scope/access。
+- Core 默认入口提供 Plugin 作者模型、服务声明/可选引用与读取错误、address codec 和 Host 使用的 lifecycle result。slot 最多作为 opaque type；registry、record reader、construction/lifecycle adapter、lowering setter、test host 与 PluginService 归内部。Federation contract 归 `/federation`，服务组合归 `/host`。
+- Host/Services 不重导出 Core 作者面。RootContext 读取 root 服务声明，owner Context 不直接读取；持有真实 root 代表宿主访问权，不能当作沙箱。graph/state helper 归 Host internal。
 - Browser Management 归 `@pluxel/services/management/client`。Plugin 直接使用 capnweb/Workbench，React 由 Workbench 子入口提供。Bridge ABI 归 internal，raw registry 与 MF Runtime 不进入作者默认入口。
 - Dynamic source 的 low-level public boundary 是 Host `/sources` 声明校验，保持无 Vite、watcher、scanner 和 package manager。固定 Plugin 从应用 `plugins` 声明进入。
 

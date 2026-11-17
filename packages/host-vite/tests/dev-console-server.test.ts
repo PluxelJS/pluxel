@@ -16,7 +16,11 @@ import { dirname, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { openScriptSocketSession } from '@pluxel/host/internal/agent/socket'
 import type { ScriptConnectionTarget } from '@pluxel/host/internal/agent/transport'
-import { SCRIPT_ARTIFACT_FORMAT, type ScriptSubmission } from '@pluxel/host/internal/agent/runtime'
+import {
+	SCRIPT_PROTOCOL,
+	SCRIPT_ARTIFACT_FORMAT,
+	type ScriptSubmission,
+} from '@pluxel/host/internal/agent/runtime'
 import { connectDevInstance, selectDevInstance } from '@pluxel/agent-sdk/internal/client'
 import { startProjectScriptServer } from '../src/console/server'
 
@@ -89,7 +93,7 @@ it('captures startup provenance, protects discovery, and keeps credentials out o
 		),
 	)
 	expect(descriptor).toMatchObject({
-		protocol: 2,
+		protocol: SCRIPT_PROTOCOL,
 		serviceId: 'fixture/server',
 		profile: 'app',
 		project: root,
@@ -110,7 +114,9 @@ it('captures startup provenance, protects discovery, and keeps credentials out o
 			'plugins',
 			'plugin',
 			'plugin.instance',
+			'plugin.context',
 			'plugin.config',
+			'ctx.service',
 			'policy',
 			'updates',
 			'logs',

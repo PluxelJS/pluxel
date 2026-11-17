@@ -1,4 +1,5 @@
 import { workbenchFederationExpose, workbenchFederationProducerName } from '@pluxel/core/federation'
+import type { HostService } from '@pluxel/host'
 import { WorkbenchBackend } from '../services/workbench'
 import { createWorkbenchService } from '../installation'
 import type { WorkbenchArtifactLookup } from '../services/workbench/WorkbenchArtifactService'
@@ -9,7 +10,7 @@ import {
 	type WorkbenchMarkdownDocument,
 } from '../workbench/definition'
 
-export function testWorkbenchService() {
+export function testWorkbenchService(): HostService {
 	return createWorkbenchService(
 		{},
 		(root, options) =>

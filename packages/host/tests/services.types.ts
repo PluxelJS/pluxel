@@ -1,15 +1,16 @@
-import { defineContextCapability, installRootCapability } from '@pluxel/core/host'
-import { createHost, defineHostService, type HostDocumentStorage } from '../src/index'
+import { createHost, type HostDocumentStorage } from '../src/index'
 
-/** Compile-only contract: declaration tuples reject provable duplicate properties. */
-export function checkHostServiceTypes() {
-	const Provider = defineContextCapability<number>('typecheck.provider')
-	const provider = defineHostService({
-		name: 'provider',
-		capabilities: [installRootCapability(Provider, { property: 'provider', create: () => 1 })],
-	})
-	// @ts-expect-error A tuple with duplicate projected properties is rejected before runtime.
-	void createHost({ plugins: [], services: [provider, provider] })
+/** Compile-only contract: one accessor preserves required and optional service results. */
+export function checkHostServiceTypes(
+	host: import('../src/index').PluginHost,
+	optional: import('@pluxel/core').ServiceRef<{ id: number }>,
+) {
+	abstract class Provider {
+		abstract id: number
+	}
+	const required: { id: number } = host.ctx.service(Provider)
+	const maybe: { id: number } | undefined = host.ctx.service(optional)
+	return { required, maybe }
 }
 
 /** Compile-only contract: Host storage is a synchronous root binding and commits are always atomic. */

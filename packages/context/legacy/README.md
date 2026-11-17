@@ -1,7 +1,7 @@
 # Pre-1.0 Context snapshot
 
 This directory preserves the last complete implementation of the Context service registry used
-before the immutable capability-host kernel. The snapshot comes from commit `8b06c75d`.
+before the immutable host kernel. The snapshot comes from commit `8b06c75d`.
 
 The source retains the historical behavior as a performance reference. Its retired API is not part
 of the package's normal regression suite; current contracts are tested in `../tests/`.
@@ -31,7 +31,7 @@ access.
 - `prepareServices()` materialized Services marked `eager` and invoked their optional `prepare()`.
 
 The current kernel replaces those runtime choices with a host-compiled immutable shape and explicit
-`root`, `scope`, and `owner-view` capability lifetimes. In particular, owner views retain a stable
+`root`, `scope`, and `owner-view` service lifetimes. In particular, owner views retain a stable
 owner instead of rebinding a shared object's `ctx` field.
 
 ## Performance reference
@@ -53,6 +53,6 @@ owner views without saying so.
 
 The expected result is a tradeoff, not a universal win: the old globally mutable, monomorphic cached
 getter can be faster because it performs less validation and offers weaker owner semantics. The
-current getter spends a few additional nanoseconds to use private plan state and stable per-owner
-views, while current child/scope creation avoids the old selective-isolation mapping overlays. Keep
+current service lookup validates the receiver and access before resolving a declaration through
+private plan state and stable per-owner views. Current child/scope creation avoids the old selective-isolation mapping overlays. Keep
 both sides visible when evaluating future kernel changes.

@@ -91,6 +91,9 @@ const baselineRules: RuleMap = {
 	'typescript/no-unnecessary-type-conversion': 'off',
 	'typescript/no-unnecessary-type-parameters': 'off',
 	'typescript/no-unsafe-enum-comparison': 'off',
+	// Service declarations merge an abstract class with the installed native API.
+	// Installers provide the value; the declaration class is never constructed.
+	'typescript/no-unsafe-declaration-merging': 'off',
 	'typescript/no-unsafe-type-assertion': 'off',
 	'typescript/no-unsafe-unary-minus': 'off',
 	'typescript/no-useless-default-assignment': 'off',

@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 import { define, type ArgValues } from 'gunshi'
 import { devSyncArgs, devSyncDefinition } from './manifest'
 import { validateCommandOptions } from './options'
+import { parseControlSyncArgs } from './control-sync'
 import { resolveDevSelection } from '../client/project'
 import { syncPluginControl, HostClientError } from '../client'
 import { scriptFailure } from '@pluxel/host/internal/agent/runtime'
@@ -13,9 +14,11 @@ export const devSyncCommand = define({
 		try {
 			await validateCommandOptions(ctx)
 			const values = ctx.values as ArgValues<typeof devSyncArgs>
+			const selectionArgs = parseControlSyncArgs(values)
 			const selection = await resolveDevSelection(values)
 			const out = values.out ? resolve(values.out) : resolve(selection.root, '.pluxel/control')
 			const value = await syncPluginControl({
+				...selectionArgs,
 				target: {
 					root: values.root ?? selection.project.workspace,
 					profile: values.profile,

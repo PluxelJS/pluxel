@@ -1,3 +1,5 @@
+import { resolveContextService } from '@pluxel/core/internal'
+import type { WorkbenchHost } from '@pluxel/workbench/server'
 import { Passthrough } from '@pluxel/core/fs'
 import { logtape } from '@pluxel/core/config'
 import { servicesPreset } from '@pluxel/services/preset'
@@ -6,12 +8,8 @@ import { ElysiaRuntime } from '@pluxel/services/internal'
 import { defineCommand, Result } from '@pluxel/commands'
 import { obj } from '@pluxel/commands/typebox'
 import { Commands, commands } from '../src/commands'
-import { BasePlugin, Plugin } from '@pluxel/core'
-import {
-	defineContextCapability,
-	installOwnerViewCapability,
-	resolveContextCapability,
-} from '@pluxel/core/host'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
+import { installOwnerViewService } from '@pluxel/core/host'
 import { createHost, defineHostService } from '@pluxel/host'
 import { Logging } from '@pluxel/core/logging'
 import { Management } from '@pluxel/services/management/service'
@@ -23,18 +21,22 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Vault, VaultAdmin, vault } from '../src/vault'
 
+const VaultRef = defineServiceRef<Vault>()
+const WorkbenchHostRef = defineServiceRef<WorkbenchHost>()
 const directories: string[] = []
 afterEach(async () => {
 	await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })))
 })
-
-const Search = defineContextCapability<{ query(): string }>('example.search')
+export abstract class Search {}
+export interface Search {
+	query(): string
+}
 const observations: string[] = []
 
 @Plugin()
 class Credentials extends BasePlugin {
 	async init() {
-		const storage = this.ctx.require(Vault).kv()
+		const storage = this.ctx.service(Vault).kv()
 		await storage.set('credential', 'secret')
 		observations.push(
 			(await storage.get<string>('credential').then((snapshot) => snapshot.value)) ?? '',
@@ -44,7 +46,7 @@ class Credentials extends BasePlugin {
 @Plugin()
 class SearchConsumer extends BasePlugin {
 	init() {
-		observations.push(this.ctx.require(Search).query())
+		observations.push(this.ctx.service(Search).query())
 	}
 }
 const node = (plugin: typeof Credentials | typeof SearchConsumer) => ({
@@ -62,20 +64,20 @@ describe('independently composed official and external services', () => {
 					workbench,
 				},
 			)
-			// Preparation order follows declared capabilities, not the preset's array order.
+			// Preparation order follows declared services, not the preset's array order.
 			const host = await createHost({
 				plugins: [],
 				services: services.toReversed(),
 				runtime: { logtape: logtape() },
 			})
-			const logging = resolveContextCapability(host.ctx, Logging)
+			const logging = resolveContextService(host.ctx, Logging)
 			try {
 				expect(logging.state).toBe('installed')
-				expect(resolveContextCapability(host.ctx, Management)).toBeDefined()
-				const vaultState = await resolveContextCapability(host.ctx, VaultAdmin).describe()
+				expect(resolveContextService(host.ctx, Management)).toBeDefined()
+				const vaultState = await resolveContextService(host.ctx, VaultAdmin).describe()
 				expect(parseVaultAdminState(vaultState)).toEqual(vaultState)
 				await host.start()
-				const server = host.ctx.require(ElysiaRuntime)
+				const server = host.ctx.service(ElysiaRuntime)
 				const missing = new Request('http://local.dev/missing')
 				expect(server.matchesRequest(missing)).toBe(false)
 				const missingResponse = await createElysiaHandler(host)(missing)
@@ -87,7 +89,7 @@ describe('independently composed official and external services', () => {
 				expect(server.matchesWebSocketRoute(request)).toBe(true)
 				const handshake = await server.fetch(new Request(request.url))
 				expect(handshake.status).toBe(400)
-				expect('workbench' in host.ctx).toBe(workbench)
+				expect(Boolean(host.ctx.service(WorkbenchHostRef))).toBe(workbench)
 				const page = new Request('http://local.dev/__pluxel/workbench', {
 					headers: { accept: 'text/html' },
 				})
@@ -109,8 +111,8 @@ describe('independently composed official and external services', () => {
 		const events: string[] = []
 		const search = defineHostService({
 			name: 'Example Search',
-			capabilities: [
-				installOwnerViewCapability(Search, {
+			provides: [
+				installOwnerViewService(Search, {
 					createRoot: () => ({}),
 					createView: (_root, owner) => ({ query: () => owner.pluginInfo!.displayName }),
 				}),
@@ -130,7 +132,6 @@ describe('independently composed official and external services', () => {
 		const plugins = [Credentials, SearchConsumer]
 		const first = await createHost({ plugins, services: [vault(), search], runtime: { ...config } })
 		try {
-			expect('database' in first.ctx).toBe(false)
 			await first.startNode(node(Credentials))
 			await first.startNode(node(SearchConsumer))
 			expect(observations).toEqual(['secret', 'SearchConsumer'])
@@ -141,7 +142,7 @@ describe('independently composed official and external services', () => {
 		// Reopen the same encrypted storage after shutdown, before any debounce could have run.
 		const reopened = await createHost({ plugins: [], services: [vault()], runtime: { ...config } })
 		try {
-			const state = await reopened.ctx.vaultAdmin!.describe()
+			const state = await reopened.ctx.service(VaultAdmin).describe()
 			expect(state).toMatchObject({ present: true, unlocked: true })
 			expect(state.namespaces?.some((namespace) => namespace.kvKeys === 1)).toBe(true)
 		} finally {
@@ -150,8 +151,8 @@ describe('independently composed official and external services', () => {
 
 		const second = await createHost({ plugins, services: [search], runtime: { ...config } })
 		try {
-			expect(second.ctx.vault).toBeUndefined()
-			expect(() => second.ctx.require(Vault)).toThrowError(/vault/)
+			expect(second.ctx.service(VaultRef)).toBeUndefined()
+			expect(() => second.ctx.service(Vault)).toThrowError(/Vault/)
 			await second.startNode(node(Credentials))
 			await second.startNode(node(SearchConsumer))
 			expect(observations).toEqual(['secret', 'SearchConsumer', 'SearchConsumer'])
@@ -164,7 +165,7 @@ describe('independently composed official and external services', () => {
 it('installs an empty command catalog and withdraws Plugin-owned registrations on stop', async () => {
 	const host = await createHost({ plugins: [CommandPublisher], services: [commands()] })
 	try {
-		const catalog = host.ctx.require(Commands)
+		const catalog = host.ctx.service(Commands)
 		expect(catalog.list()).toEqual([])
 		const address = {
 			definition: CommandPublisher.definitionAddress(),
@@ -189,7 +190,7 @@ it('installs an empty command catalog and withdraws Plugin-owned registrations o
 @Plugin()
 class CommandPublisher extends BasePlugin {
 	init() {
-		this.ctx.require(Commands).register(
+		this.ctx.service(Commands).register(
 			defineCommand({
 				name: 'example.read',
 				description: 'Read a fixture value',

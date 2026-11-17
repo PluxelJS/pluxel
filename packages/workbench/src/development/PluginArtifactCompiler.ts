@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { pluginDefinitionIndexKey, type Context } from '@pluxel/core'
+import { pluginDefinitionIndexKey, type Context, LoggerService } from '@pluxel/core'
 import {
 	type WorkbenchArtifactBatchCommit,
 	type WorkbenchArtifactCandidate,
@@ -159,7 +159,7 @@ export class PluginArtifactCompiler {
 	private async prepareStrictWorkbenchArtifacts(
 		input: WorkbenchArtifactCompilations,
 	): Promise<PreparedWorkbenchArtifacts> {
-		this.requireWorkbenchCoordinator()
+		this.WorkbenchHostCoordinator()
 		const definitions = groupWorkbenchCompilations(input)
 		const materialized = await Promise.all(
 			[...definitions.entries()].map(async ([key, compilation]) => {
@@ -181,7 +181,7 @@ export class PluginArtifactCompiler {
 	private async prepareDevelopmentWorkbenchArtifacts(
 		input: WorkbenchArtifactCompilations,
 	): Promise<PreparedWorkbenchArtifacts> {
-		this.requireWorkbenchCoordinator()
+		this.WorkbenchHostCoordinator()
 		const definitions = groupWorkbenchCompilations(input)
 		const materialized = await Promise.all(
 			[...definitions.entries()].map(async ([key, compilation]) => {
@@ -210,13 +210,15 @@ export class PluginArtifactCompiler {
 								logFailure: false,
 							})
 						} catch (error) {
-							this.ctx.logger.warn('Workbench {definition}: cached producer is stale', {
-								definition: compilation.producer.plan.definition.exportName,
-								revision: compilation.producer.plan.buildRevision.slice(0, 8),
-								producer: compilation.producer.plan.producer,
-								buildRevision: compilation.producer.plan.buildRevision,
-								error,
-							})
+							this.ctx
+								.service(LoggerService)
+								.warn('Workbench {definition}: cached producer is stale', {
+									definition: compilation.producer.plan.definition.exportName,
+									revision: compilation.producer.plan.buildRevision.slice(0, 8),
+									producer: compilation.producer.plan.producer,
+									buildRevision: compilation.producer.plan.buildRevision,
+									error,
+								})
 						}
 					}
 				}
@@ -265,7 +267,7 @@ export class PluginArtifactCompiler {
 		)
 	}
 
-	private requireWorkbenchCoordinator(): PluginArtifactCompilerWorkbenchCoordinator {
+	private WorkbenchHostCoordinator(): PluginArtifactCompilerWorkbenchCoordinator {
 		const coordinator = this.coordinator
 		if (!coordinator) throw new Error('[host-vite] Workbench compiler is not attached')
 		return coordinator
@@ -291,7 +293,7 @@ export class PluginArtifactCompiler {
 			withdrawnDefinitions: readonly WorkbenchFederationProducerPlan['definition'][],
 		) => void,
 	): Promise<PreparedWorkbenchArtifacts> {
-		const coordinator = this.requireWorkbenchCoordinator()
+		const coordinator = this.WorkbenchHostCoordinator()
 		const desired = new Map(this.committedWorkbenchDefinitions)
 		for (const [key, compilation] of definitions) desired.set(key, compilation.definition)
 		const prepared = await Promise.all(
@@ -317,7 +319,7 @@ export class PluginArtifactCompiler {
 					this.committedWorkbenchDefinitions.set(key, compilation.definition)
 				onCommitted?.(epoch, withdrawn)
 				void this.cleanupWorkbenchCandidates(candidates.values()).catch((error) => {
-					this.ctx.logger.warn('Workbench artifact cache cleanup failed', { error })
+					this.ctx.service(LoggerService).warn('Workbench artifact cache cleanup failed', { error })
 				})
 				return commits
 			},
@@ -362,7 +364,7 @@ export class PluginArtifactCompiler {
 		producer: WorkbenchProducerCompilation
 		content?: WorkbenchContentArtifactCandidate
 	}): void {
-		const coordinator = this.requireWorkbenchCoordinator()
+		const coordinator = this.WorkbenchHostCoordinator()
 		const root = resolveProducerRoot(input.producer.root)
 		const policy = this.workbenchProducerTypeAssets()
 		const taskKey = `${input.epoch}\0${input.key}\0${producerTaskKey(input.producer.plan, root, policy)}`
@@ -387,7 +389,7 @@ export class PluginArtifactCompiler {
 		})()
 			.catch((error) => {
 				if (this.signal.signal.aborted || input.epoch !== this.workbenchPublicationEpoch) return
-				this.ctx.logger.error('Workbench {definition}: background publish failed', {
+				this.ctx.service(LoggerService).error('Workbench {definition}: background publish failed', {
 					definition: input.definition.exportName,
 					revision: input.producer.plan.buildRevision.slice(0, 8),
 					producer: input.producer.plan.producer,
@@ -453,7 +455,7 @@ export class PluginArtifactCompiler {
 			buildRevision: plan.buildRevision,
 		}
 		if (!artifactWasPresent) {
-			this.ctx.logger.info('Workbench {definition}: build start', logFacts)
+			this.ctx.service(LoggerService).info('Workbench {definition}: build start', logFacts)
 		}
 		try {
 			const { buildWorkbenchFederationProducer } =
@@ -480,10 +482,12 @@ export class PluginArtifactCompiler {
 					options.repairStaleCache !== false &&
 					isImmutableProducerMismatch(error)
 				) {
-					this.ctx.logger.warn('Workbench {definition}: discarding stale producer cache', {
-						...logFacts,
-						error,
-					})
+					this.ctx
+						.service(LoggerService)
+						.warn('Workbench {definition}: discarding stale producer cache', {
+							...logFacts,
+							error,
+						})
 					await rm(outDir, { recursive: true, force: true })
 					cacheResult = 'built'
 					await build()
@@ -493,16 +497,18 @@ export class PluginArtifactCompiler {
 			}
 		} catch (error) {
 			if (!this.signal.signal.aborted && options.logFailure !== false) {
-				this.ctx.logger.error('Workbench {definition}: failed after {durationMs} ms', {
-					...logFacts,
-					durationMs: Math.round(performance.now() - startedAt),
-					error,
-				})
+				this.ctx
+					.service(LoggerService)
+					.error('Workbench {definition}: failed after {durationMs} ms', {
+						...logFacts,
+						durationMs: Math.round(performance.now() - startedAt),
+						error,
+					})
 			}
 			throw error
 		}
 		if (this.signal.signal.aborted) throw this.signal.signal.reason
-		this.ctx.logger.info('Workbench {definition}: {cache} in {durationMs} ms', {
+		this.ctx.service(LoggerService).info('Workbench {definition}: {cache} in {durationMs} ms', {
 			...logFacts,
 			cache: cacheResult,
 			durationMs: Math.round(performance.now() - startedAt),
@@ -588,7 +594,7 @@ export class PluginArtifactCompiler {
 			}
 		}
 		await Promise.all(tasks).catch((error) => {
-			this.ctx.logger.warn('failed to clean Workbench artifact cache', { error })
+			this.ctx.service(LoggerService).warn('failed to clean Workbench artifact cache', { error })
 		})
 	}
 

@@ -43,6 +43,7 @@ export type PluginSourceVitePipeline = Readonly<{
 		| 'snapshot'
 		| 'definitions'
 		| 'sourceDefinitions'
+		| 'serviceDefinitions'
 		| 'sourceContents'
 		| 'classifyDefinitionArtifact'
 		| 'beginArtifactGeneration'
@@ -194,6 +195,7 @@ export function createPluginSourceVitePipeline(
 		snapshot: () => requireCollector().snapshot(),
 		definitions: () => requireCollector().definitions(),
 		sourceDefinitions: () => requireCollector().sourceDefinitions(),
+		serviceDefinitions: () => requireCollector().serviceDefinitions(),
 		sourceContents: () => requireCollector().sourceContents(),
 		classifyDefinitionArtifact: (
 			...args: Parameters<PluginSemanticsCollector['classifyDefinitionArtifact']>

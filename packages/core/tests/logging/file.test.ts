@@ -1,3 +1,4 @@
+import { LoggerService } from '../../src/logger/LoggerService'
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -27,7 +28,7 @@ it('uses the upstream formatter for bigint and circular values and flushes on di
 		const value: { count: bigint; self?: unknown } = { count: 2n }
 		value.self = value
 		try {
-			host.ctx.logger.info('value {value}', { value })
+			host.ctx.service(LoggerService).info('value {value}', { value })
 		} finally {
 			await host.close()
 		}

@@ -1,3 +1,4 @@
+import { LoggerService } from '@pluxel/core'
 import { createHash } from 'node:crypto'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -39,11 +40,10 @@ afterEach(async () => {
 	mocked.inputs.clear()
 })
 
-async function fixture() {
+async function fixture(source = 'export default () => null') {
 	const root = await mkdtemp(resolve(tmpdir(), 'px-console-scope-'))
 	cleanup.push(() => rm(root, { recursive: true, force: true }))
 	const file = resolve(root, 'script.ts')
-	const source = 'export default () => null'
 	await writeFile(file, source)
 	mocked.inputs.set(file, source)
 	const application = await createHost({ plugins: [] })
@@ -85,7 +85,7 @@ it('executes against a Host without official services or configured logging', as
 		const plugins = await sdk.plugins.list()
 		return {
 			plugins: plugins.nodes,
-			logger: typeof sdk.ctx.logger.info,
+			logger: typeof sdk.ctx.service(LoggerService).info,
 			signal: run.signal === current.run.signal,
 		}
 	})
@@ -118,5 +118,15 @@ it('rejects a cached module whose original source differs from the checked input
 	for (const path of mocked.inputs.keys())
 		mocked.inputs.set(path, 'export default () => "old cached version"')
 	await expect(current.execute()).rejects.toMatchObject({ code: 'source_changed' })
+	expect(mocked.script).not.toHaveBeenCalled()
+})
+
+it('rejects a selected noncallable export before loading or executing its project module', async () => {
+	const current = await fixture('export default 42')
+	await expect(current.execute()).rejects.toMatchObject({
+		code: 'typecheck_failed',
+		message: expect.stringContaining('must be a function'),
+	})
+	expect(mocked.load).not.toHaveBeenCalled()
 	expect(mocked.script).not.toHaveBeenCalled()
 })

@@ -10,7 +10,7 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 ## 入口与职责
 
 - 在项目根调用 CLI：下游用 `vp exec pluxel …`，Pluxel 源码仓库用 `vp run pluxel …`。首次 checkout 或启动器报告 CLI 过期时，先运行 `vp run @pluxel/cli#compile`。
-- Plugin/Part 拥有业务与声明；Host 拥有装配、配置输入和服务安装；Vite 拥有开发期执行与 HMR。Core 自带 `events/logger/effects`、`ctx.fs()` 和 `ctx.tinybase`；应用通过 `runtime.zenfs: zenfs(...)` 选择数据后端、通过 `runtime.logtape: logtape(...)` 选择日志输出，两个可选 helper 都从 `@pluxel/core/config` 导入，原生配置可直接输入；Host 默认接入私有配置/状态文档。Database、Vault、Workbench 等服务由应用安装；托管 SQL 从 Services 子入口接入并使用原生 Drizzle，应用也可自管连接。
+- Plugin/Part 拥有业务与声明；Host 拥有装配、配置输入和服务安装；Vite 拥有开发期执行与 HMR。Core 自带 `events/logger/effects`、`ctx.service(Fs)()` 和 `ctx.service(TinyBaseService)`；应用通过 `runtime.zenfs: zenfs(...)` 选择数据后端、通过 `runtime.logtape: logtape(...)` 选择日志输出，两个可选 helper 都从 `@pluxel/core/config` 导入，原生配置可直接输入；Host 默认接入私有配置/状态文档。Database、Vault、Workbench 等服务由应用安装；托管 SQL 从 Services 子入口接入并使用原生 Drizzle，应用也可自管连接。
 - 默认工作区用 `vp install` 安装依赖、`vp exec` 执行命令、`vp run` 执行 package scripts 与任务图；全局 CLI 按 `packageManager` 选择包管理器，项目本地 Vite+ 管构建工具与缓存，hk 管提交检查，Pitchfork 管托管进程；`mise.toml` 仅提供工具安装与版本固定。Pluxel 也支持前台命令和手动 Vite。
 
 正文优先读项目 `docs/pluxel/`，源码仓库则读 `docs/`；下表路径相对该目录。`pluxel docs <path>` 输出当前来源正文。入口缺失或源码来源不明时读 `development/source-workspaces.md`，按 Git/npm 接入方式修复，不复制另一版本文档。
@@ -66,7 +66,7 @@ vp run pluxel dev run projects/plugin-host/dev/inspect.ts
 ```
 
 - 配置、Plugin 方法/生命周期、Workbench RPC 和业务日志都通过现有控制台；每次取得当前 handle，await 操作，释放自建资源，不重开应用数据库。
-- SDK 控制操作成功直接返回值，失败抛出 `ScriptError`；普通 await 会中断后续步骤，只在任务需要恢复时 catch 并检查 `error.details.code`。通过 `const { instance } = await plugin.instance()` 借用业务实例，`sdk.ctx.require(Token)` 使用当前 RootContext 的能力。原插件业务方法保留自身签名与失败协议，完整用法见 `development/scripts.md`。
+- SDK 控制操作成功直接返回值，失败抛出 `ScriptError`；普通 await 会中断后续步骤，只在任务需要恢复时 catch 并检查 `error.details.code`。通过 `const { instance } = await plugin.instance()` 借用业务实例，`sdk.ctx.service(Service)` 使用当前 run 的根服务视图。原插件业务方法保留自身签名与失败协议，完整用法见 `development/scripts.md`。
 - 检查退出码、run state、领域结果、apply report 和相关日志。配置保存或 CLI 成功不等于运行实例已采用修改。
 - 执行前通过 `--receipt-file FILE` 保存原 receipt；超时或 `outcome_unknown` 先用 `script result --receipt-file FILE` 查询，取消用 `script cancel --receipt-file FILE`。文件规则见 `development/scripts.md` 的「保存和恢复 receipt」。两者不附带目标参数，始终绑定原实例；不因重启而重投写操作，取消不回滚已提交变更。
 

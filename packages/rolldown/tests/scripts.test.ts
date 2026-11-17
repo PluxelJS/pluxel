@@ -6,7 +6,8 @@ import * as sharedBetterResult from '@pluxel/core/better-result'
 import { expect, it } from 'vitest'
 import { createHost } from '@pluxel/host'
 import { createNodeScriptOwner } from '@pluxel/host/internal/agent/node'
-import { compileScript } from '../src/scripts'
+import { scriptFailure } from '@pluxel/host/internal/agent/runtime'
+import { checkProjectScript, compileScript, ScriptCompileError } from '../src/scripts'
 
 async function fixture(files: Record<string, string>) {
 	const directory = await mkdtemp(resolve(tmpdir(), 'pluxel-script-fixture-'))
@@ -35,6 +36,73 @@ async function fixture(files: Record<string, string>) {
 	return { directory, [Symbol.asyncDispose]: () => rm(directory, { recursive: true, force: true }) }
 }
 
+it('preserves actionable native diagnostics through compilation and failure projection', async () => {
+	const wrongLine = '  return /* 🧭 */ sdk.plguins.list()'
+	await using files = await fixture({
+		'script.ts': [
+			"import type { Script } from '@pluxel/agent-sdk/host'",
+			'export default (async (sdk) => {',
+			wrongLine,
+			'}) satisfies Script',
+		].join('\r\n'),
+	})
+	const file = resolve(files.directory, 'script.ts')
+	for (const check of [
+		() => compileScript({ file }),
+		() => checkProjectScript({ file, exportName: 'default' }),
+	]) {
+		let failure: unknown
+		try {
+			await check()
+		} catch (error) {
+			failure = error
+		}
+		expect(failure).toBeInstanceOf(ScriptCompileError)
+		expect(failure).toMatchObject({
+			code: 'typecheck_failed',
+			cause: expect.any(Error),
+			diagnostics: [
+				{
+					file,
+					line: 3,
+					column: wrongLine.indexOf('plguins') + 1,
+					code: 2551,
+					message: expect.stringContaining('plguins'),
+				},
+			],
+		})
+		expect(scriptFailure(failure)).toMatchObject({
+			code: 'typecheck_failed',
+			diagnostics: (failure as ScriptCompileError).diagnostics,
+		})
+	}
+})
+
+it('rejects definitely non-callable selected exports while allowing aliases and unknown values', async () => {
+	await using files = await fixture({
+		'constant.ts': 'export default 42',
+		'mixed.ts': 'export default () => 1; export const wrong = {count:1}',
+		'alias.ts': "export {default} from './mixed'",
+		'unknown.ts': 'const script: unknown = () => 1; export default script',
+	})
+	await expect(
+		compileScript({ file: resolve(files.directory, 'constant.ts') }),
+	).rejects.toMatchObject({
+		code: 'typecheck_failed',
+		message: expect.stringContaining('Selected script export default must be a function'),
+	})
+	await expect(
+		checkProjectScript({ file: resolve(files.directory, 'mixed.ts'), exportName: 'wrong' }),
+	).rejects.toMatchObject({
+		code: 'typecheck_failed',
+		message: expect.stringContaining('Selected script export wrong must be a function'),
+	})
+	for (const name of ['alias.ts', 'unknown.ts'])
+		await expect(compileScript({ file: resolve(files.directory, name) })).resolves.toMatchObject({
+			kind: 'artifact',
+		})
+})
+
 it('compiles ordinary typed modules to fresh portable factories and executes against a real Host', async () => {
 	await using files = await fixture({
 		'helper.ts': 'export const twice = (value:number) => value * 2',
@@ -52,7 +120,7 @@ export default (async(sdk,run) => {
 	const artifact = await compileScript({ file: resolve(files.directory, 'script.ts') })
 	expect(artifact).toMatchObject({
 		kind: 'artifact',
-		format: 'pluxel-js-factory/4',
+		format: 'pluxel-js-factory/5',
 		exportName: 'default',
 		sourceHash: expect.stringMatching(/^[a-f0-9]{64}$/),
 		sourceMap: expect.any(String),
@@ -162,7 +230,7 @@ export default (async (sdk) => {
   } catch (error) {
     if (!(error instanceof ScriptError)) throw error
     const plugins = await sdk.plugins.list()
-    return {failure:error.details, count:plugins.nodes.length, nativeContext:typeof sdk.ctx.require === 'function'}
+    return {failure:error.details, count:plugins.nodes.length, nativeContext:typeof sdk.ctx.service === 'function'}
   }
 }) satisfies Script
 export const fail = (async (sdk) => {

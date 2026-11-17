@@ -14,7 +14,16 @@ export default ((sdk, run) => {
 }) satisfies Script
 ```
 
-远程 Node 应用接收作者侧编译的 JavaScript 制品，应用机器只需运行时。已知插件使用[生成的控制入口](./plugin-control.md)，可直接推导配置类型并调用实际实例的方法。Node 和 Vite 脚本使用同一个 `Script` 类型和 `ScriptSdk`，通过 `sdk.ctx` 借用当前 RootContext。Vite 项目脚本可以 import 当前模块图中的项目模块与能力 token，见[开发控制台](./dev-console.md)。
+远程 Node 应用接收作者侧编译的 JavaScript 制品，应用机器只需运行时。已知插件使用[生成的控制入口](./plugin-control.md)，可直接推导配置类型并调用实际实例的方法。Node 和 Vite 脚本使用同一个 `Script` 类型和 `ScriptSdk`，通过 `sdk.ctx.service(Service)` 借用当前根服务视图。Vite 项目脚本可以 import 当前模块图中的项目模块与服务声明，见[开发控制台](./dev-console.md)。
+
+按目标选择执行方式，脚本函数保持相同：
+
+| 目标             | 命令                                                 | 类型与模块来源                                                                        |
+| ---------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| 当前开发应用     | `pluxel dev run ./dev/task.ts`                       | 当前 Vite 模块图；可直接导入项目 class 与服务声明                                     |
+| 已部署 Node 应用 | `pluxel script run ./scripts/task.ts --endpoint URL` | 作者侧检查并上传；使用包的 `./control` 或[同步材料](./plugin-control.md#取得控制入口) |
+
+Node 每次执行重新初始化上传模块的局部变量；Vite 复用模块缓存，顶层状态可能跨 run 保留。将业务工作放在导出函数中，每次从参数取得 SDK；只在当前 run 中使用 SDK 引用与实例视图。
 
 多步操作使用普通 async/await，直接使用成功值。默认让异常中断后续步骤；只有任务能恢复时才写 `catch`。脚本返回普通 JSON，原插件业务方法保留自己的返回值与失败协议。需要组合业务 Result 时，从 `@pluxel/core/better-result` 导入，见 [Better Result](../plugin-development/better-result.md#组合多个可能失败的步骤resultgen)。
 
@@ -107,6 +116,46 @@ export default (async (sdk) => {
 
 日志流重置、替换或超过保留窗口时抛出明确的 `epoch_mismatch`、`stream_replaced` 或 `from_too_old` 等错误；调用方决定从哪里重新开始。缺少 Logging 或历史存储会给出 `logging_unavailable` / `store_unavailable` 诊断，SDK 不安装新存储。日志窗口内也可以存在其他并发操作产生的记录。
 
+## 借用已安装的服务
+
+所有服务都通过 `service(...)` 读取。`sdk.ctx` 是当前 run 的根服务访问视图，只提供 `service`，不交付原始 RootContext。直接导入服务声明或生成的服务描述符表示必需依赖；缺失时抛出 `ContextServiceMissingError`。可选依赖用 `defineServiceRef<T>()` 取得引用，仅未安装时返回 `undefined`，访问拒绝、构造失败和契约失配继续抛出。
+
+上传脚本从生成的 `./control` 或同步模块导入服务值与对应的 `FooInstance` 类型，不加载本地服务实现：
+
+```ts
+import type { Script } from '@pluxel/agent-sdk/host'
+import { defineServiceRef } from '@pluxel/core'
+import { Commands, type CommandsInstance } from '@pluxel/services/control'
+
+const CommandsRef = defineServiceRef<CommandsInstance>()
+
+export default ((sdk) => {
+	const required = sdk.ctx.service(Commands)
+	const optional = sdk.ctx.service(CommandsRef)
+	return { sameService: required === optional, commands: required.list() }
+}) satisfies Script
+```
+
+上例要求目标应用安装 Commands。`Commands` 和 `CommandsRef` 定位同一声明、同一服务，`defineServiceRef` 不生成另一份定义。同步输出的 `services` 包含实际模块、导出名和 `importStatement`；名称冲突时使用该输出的名字。Vite 项目脚本可以直接导入当前模块图中的服务 class，并用 `defineServiceRef<Service>()` 表达可选集成。
+
+服务使用与 Plugin definition 相同的规范入口和具名导出规则，但没有节点地址、fork 或独立启停。远端按服务声明身份定位接收端已安装的服务，再核对生成的 API 契约摘要；本地实现对象、安装路径、包版本和材料 snapshot 都不是服务身份。服务未安装时不会自动创建或安装 provider，声明契约失配时重新同步并检查脚本。
+
+需要 Plugin owner 服务时，先借用一个已运行节点的 Context：
+
+```ts
+import type { Script } from '@pluxel/agent-sdk/host'
+import { ElysiaApp } from '@pluxel/services/control'
+import { QueuePlugin } from '@acme/pluxel-plugin-queue/control'
+
+export default (async (sdk) => {
+	const ctx = await sdk.plugin(QueuePlugin.nodeAddress()).context()
+	const app = ctx.service(ElysiaApp)
+	return { routes: app.routes.length }
+}) satisfies Script
+```
+
+`context()` 捕获当前 running generation，不会启动节点。返回视图仍只提供 `service`，服务保持原生 API；run 关闭或该 generation 被停止、重启、替换后，旧视图与已借用服务失效，重新调用 `context()` 取得新 generation。`sdk.ctx` 允许根访问，节点 Context 允许 owner 访问，两者都保留安装权限。脚本自己创建的订阅、RPC lease 和其他资源仍须按原 API 释放。
+
 ## 向 Node 应用提交
 
 程序调用使用 [`@pluxel/agent-sdk/client`](./agent-sdk.md#从-node-连接现有-host) 的 `runScript`、`getScriptResult` 和 `cancelScript`，可直接运行普通 Node 文件。以下 CLI 命令使用同一客户端实现。
@@ -139,9 +188,11 @@ vp exec pluxel script run ./scripts/scale.ts \
   --receipt-file ./receipts/scale.receipt
 ```
 
-`--input-file FILE` 可替代 `--input`。默认调用 `default` 导出，具名函数用 `--export NAME`。作者侧先进行 TypeScript 检查和打包，上传 JS 工厂与源码映射。经清单验证的生成地址提供者和普通计算依赖可随脚本打包。生成提供者的标准工厂、`@pluxel/agent-sdk/host` 的运行时导出与 `@pluxel/core/better-result` 使用目标框架的受控共享绑定；捕获 `ScriptError` 时沿用目标进程的类身份。其余框架运行时、Node builtin、原生扩展和运行时动态 import 在上传模式中拒绝。异步工作放入导出函数，工厂顶层同步初始化。需要 import 项目模块或能力 token 时使用 Vite 项目模式。
+`--input-file FILE` 可替代 `--input`。默认调用 `default` 导出，具名函数用 `--export NAME`。作者侧先进行 TypeScript 检查和打包，上传 JS 工厂与源码映射。经清单验证的生成插件地址、服务描述符和普通计算依赖可随脚本打包。生成提供者的标准工厂、`@pluxel/agent-sdk/host` 的运行时导出与 `@pluxel/core/better-result` 使用目标框架的受控共享绑定；捕获 `ScriptError` 时沿用目标进程的类身份。其余框架运行时、Node builtin、原生扩展和运行时动态 import 在上传模式中拒绝。异步工作放入导出函数，工厂顶层同步初始化。需要直接 import 项目模块或服务实现时使用 Vite 项目模式。
 
-run、result 和 cancel 的 stdout 返回单个 `{ ok: true, value: { receipt, run } }` JSON；编译、连接或查询失败时返回 `{ ok: false, error: { code, message, receipt? } }`。dev 与 script 的 sync 同样使用 `{ ok, value/error }`，成功值的 `definitions` 提供每个插件的准确 `module` 和 `exportName`，见[控制材料同步](./plugin-control.md#取得控制入口)。`script` 缺少子命令、拼错子命令或含未知选项时也返回单个 `invalid_input` JSON，退出码为 `1`；通过 `pluxel script --help` 查看命令。默认等待结算，`--detach` 在接纳后返回；`--timeout` 默认为 30000，最大 300000 毫秒，包含排队与加载时间。
+run、result 和 cancel 的 stdout 返回单个 `{ ok: true, value: { receipt, run } }` JSON；编译、连接或查询失败时返回 `{ ok: false, error: { code, message, receipt?, diagnostics?, context? } }`。dev 与 script 的 sync 同样使用 `{ ok, value/error }`，成功值的 `definitions` 与 `services` 提供可复制的 `importStatement`，见[控制材料同步](./plugin-control.md#取得控制入口)。`script` 缺少子命令、拼错子命令或含未知选项时也返回单个 `invalid_input` JSON，退出码为 `1`；通过 `pluxel script --help` 查看命令。默认等待结算，`--detach` 在接纳后返回；`--timeout` 默认为 30000，最大 300000 毫秒，包含排队与加载时间。
+
+TypeScript 检查失败的 `error.diagnostics` 保留 `{ file?, line?, column?, code, message }`，行列从 1 开始。静态确定不可调用的导出会在检查时拒绝，动态类型由执行时核验；业务输入仍由函数按任务校验，JSON 可移植性检查不替代业务 Schema。
 
 ### 保存和恢复 receipt
 
@@ -189,13 +240,15 @@ export default (async (sdk) => {
 }) satisfies Script
 ```
 
-`sdk.ctx.require(Token)` 返回原生能力，缺少能力时沿用 Context 的抛错行为。插件自己的业务 Result、异常和资源协议保持原样。
+服务访问与缺失、权限和契约错误见[借用已安装的服务](#借用已安装的服务)。插件自己的业务 Result、异常和资源协议保持原样。
 
 `sdk.plugin()` 同步选择目标，错误参数或关闭的 run 同步抛错。提供者的 `definitionAddress()`、`nodeAddress()` 和 `nodeAddress(id)` 只生成地址，不查询或启动插件。异步操作的错误参数形状、无效数值和未知实现缺陷仍可 reject；原业务方法保持自己的返回类型、异常和资源协议。加载、执行、结果编码或清理失败形成 `failed`，带有阶段和错误，清理错误另存 `cleanupError`。
 
 如果原业务方法返回共享 Better Result，脚本可以显式处理它，也可以作为顶层业务结果返回。执行边界用原生 `Result.codec` 编码为 `{ status: 'ok', value }` 或 `{ status: 'error', error }`；业务 `Err` 留在成功运行的 `run.value` 内，由调用方判断。识别依据是共享库实例，普通 JSON 的同名字段不改变执行语义。Result payload 使用相同的 JSON 约束；嵌套 Result、业务 Error/TaggedError 和资源句柄由作者显式投影，执行器不会调用任意 `toJSON`。
 
 脚本的每个 Host 操作独立提交。前几步已成功而后一步失败时，原修改继续有效。执行器不自动回滚或重放；需要批量逐项处理时，用普通循环和任务明确需要的 `try/catch` 收集结果。普通返回值和 Result payload 均须为 JSON 数据，实例、Context、函数、循环引用、BigInt 或带 getter 的对象会在编码阶段失败。输入与结果分别限 1 MiB，结果保留有界；需要后续访问的对象返回业务 ID。
+
+编码错误的 `context.path` 指出失败位置（例如 `$.items[2].handle`），`context.valueKind` 表示值类别；共享 Result 从 `$.value` 或 `$.error` 标记 payload。检查该位置并显式投影成数据后再提交，已有修改仍需按原 receipt 核对。
 
 取消先传递 `run.signal` 并关闭新的 SDK 调用，状态可保持 `cancelling`，直到已接纳的 Host 操作和脚本真正结算。Node 和 Vite 都使用协作取消；自定义等待应监听 signal，同步死循环无法由同一事件循环的 timer 强制中断。已发生的修改保持原结果，终态保留执行错误与前后版本以便核对。
 

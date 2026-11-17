@@ -1,11 +1,11 @@
 import { join } from 'node:path'
-import { defineHostApplication } from '@pluxel/host'
+import { defineHostApplication, type HostApplicationFactory } from '@pluxel/host'
 import { elysia } from '@pluxel/services/elysia'
 import { listenElysia } from '@pluxel/services/elysia/node'
 import { prepareDatabase } from './database.js'
 import { PdfHttpPlugin, QueryHttpPlugin } from './plugins.js'
 
-export default defineHostApplication((startup) => ({
+export default defineHostApplication<HostApplicationFactory>((startup) => ({
 	name: 'headless-documents',
 	plugins: [QueryHttpPlugin, PdfHttpPlugin],
 	services: [elysia()],

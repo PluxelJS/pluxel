@@ -62,8 +62,13 @@ export {
 export {
 	readLoadedPluginModule,
 	readLoadedApplicationControl,
+	loadLoadedApplicationServiceControls,
 	recordLoadedPluginModule,
 	recordLoadedHostApplication,
 	readLoadedHostApplicationModule,
 } from './loaded-modules'
 export { startHostApplication } from './application-start'
+
+export { setServiceControlMaterial, type ServiceControlMaterial } from './service-control'
+
+export { loadNativeHostServiceControls } from './control-material.node'

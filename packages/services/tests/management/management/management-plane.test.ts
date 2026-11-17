@@ -1,3 +1,7 @@
+import type { WorkbenchHost } from '@pluxel/workbench/server'
+import { defineServiceRef } from '@pluxel/core'
+import { CatalogLayout, Management } from '@pluxel/services/management/service'
+import { AdminAccess } from '@pluxel/services/management/access'
 import { standardServices } from '@pluxel/services'
 import { vault } from '@pluxel/services/vault'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
@@ -8,14 +12,18 @@ import { RuntimeManagementService } from '../../../src/management/services/Runti
 import { RuntimeManagementTargetImpl } from '../../../src/management/services/management/RuntimeManagementTarget.ts'
 import { RUNTIME_SESSION_PATH } from '../../../src/management/web/session/protocol.ts'
 
+const WorkbenchHostRef = defineServiceRef<WorkbenchHost>()
+const AdminAccessRef = defineServiceRef<AdminAccess>()
+const ManagementRef = defineServiceRef<Management>()
+const CatalogLayoutRef = defineServiceRef<CatalogLayout>()
 describe('runtime Management plane installation', () => {
-	it('installs headless Management as a capability with no dynamic HTTP API', async () => {
+	it('installs headless Management as a service with no dynamic HTTP API', async () => {
 		await using host = await createServiceInternalTestHost({ workbench: false, management: true })
 
-		expect(host.ctx.workbench).toBeUndefined()
-		expect(host.ctx.root.adminAccess).toBeDefined()
-		expect(host.ctx.root.runtimeManagement).toBeDefined()
-		expect(host.ctx.root.pluginCatalogLayout).toBeDefined()
+		expect(host.ctx.service(WorkbenchHostRef)).toBeUndefined()
+		expect(host.ctx.root.service(AdminAccess)).toBeDefined()
+		expect(host.ctx.root.service(Management)).toBeDefined()
+		expect(host.ctx.root.service(CatalogLayout)).toBeDefined()
 
 		const target = new RuntimeManagementTargetImpl(host.ctx)
 		expect(target.describeDto()).toMatchObject({
@@ -71,9 +79,9 @@ describe('runtime Management plane installation', () => {
 	it('allocates no Management endpoint or backend when Management and Workbench are disabled', async () => {
 		await using host = await createServiceInternalTestHost({ workbench: false })
 
-		expect(host.ctx.root.adminAccess).toBeUndefined()
-		expect(host.ctx.root.runtimeManagement).toBeUndefined()
-		expect(host.ctx.root.pluginCatalogLayout).toBeUndefined()
+		expect(host.ctx.root.service(AdminAccessRef)).toBeUndefined()
+		expect(host.ctx.root.service(ManagementRef)).toBeUndefined()
+		expect(host.ctx.root.service(CatalogLayoutRef)).toBeUndefined()
 		const response = await host.http.fetch(
 			new Request(`http://runtime.test${RUNTIME_SESSION_PATH}`, {
 				headers: { connection: 'upgrade', upgrade: 'websocket' },

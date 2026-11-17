@@ -1,7 +1,7 @@
 import { type RootContext } from '@pluxel/core'
-import { installOwnerViewCapability, installRootCapability } from '@pluxel/core/host'
+import { installOwnerViewService, installRootService } from '@pluxel/core/host'
 import { requireFs } from '@pluxel/core/internal'
-import { defineHostService } from '@pluxel/host'
+import { defineHostService, type HostService } from '@pluxel/host'
 import { HostVaultBindings } from '@pluxel/host/bindings'
 import { Vault, VaultAdmin } from './vault/token'
 import type { VaultService, VaultAdminService } from './vault/service'
@@ -12,7 +12,7 @@ export { VaultError } from './vault/error'
 export type * from './vault/types'
 
 /** Install owner-scoped Vault. Bindings-only mode does not open storage or create keys. */
-export function vault(config: VaultServiceConfig = {}) {
+export function vault(config: VaultServiceConfig = {}): HostService {
 	const snapshot = Object.freeze({ ...config })
 	const prepared = new WeakMap<RootContext, { vault: VaultService; admin: VaultAdminService }>()
 	const backing = (ctx: RootContext) => {
@@ -22,17 +22,15 @@ export function vault(config: VaultServiceConfig = {}) {
 	}
 	return defineHostService({
 		name: 'Vault',
-		capabilities: [
-			installOwnerViewCapability(Vault, {
-				property: 'vault',
+		provides: [
+			installOwnerViewService(Vault, {
 				createRoot: (ctx) => backing(ctx as RootContext).vault,
 				createView: (root, owner) => root.forOwner(owner),
 			}),
-			installRootCapability(VaultAdmin, {
-				property: 'vaultAdmin',
+			installRootService(VaultAdmin, {
 				create: (ctx) => backing(ctx as RootContext).admin,
 			}),
-			installRootCapability(HostVaultBindings, {
+			installRootService(HostVaultBindings, {
 				create: (ctx) => ({
 					install: (records) => backing(ctx as RootContext).vault.installBindings(records),
 				}),

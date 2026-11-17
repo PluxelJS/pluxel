@@ -1,3 +1,5 @@
+import { LoggerService } from '../../logger/LoggerService'
+import { EffectsService } from '../effects/EffectsService'
 import { describe, expect, it } from 'vitest'
 import {
 	BasePlugin,
@@ -5,7 +7,7 @@ import {
 	Plugin,
 	type CoreHostConfig,
 	type Events,
-	type EventsService,
+	EventsService,
 } from '@pluxel/core'
 import { resolveCoreRootInputs } from '@pluxel/core/internal'
 import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
@@ -28,7 +30,7 @@ class ChannelOwner extends BasePlugin {
 	readonly changed = new EvtChannel<[value: string]>(this.ctx)
 
 	listenAmbient(seen: string[]) {
-		this.ctx.events.on('test:ambient-changed', (value) => seen.push(value))
+		this.ctx.service(EventsService).on('test:ambient-changed', (value) => seen.push(value))
 	}
 }
 
@@ -61,10 +63,15 @@ class AmbientListener extends BasePlugin {
 	boundEvents?: EventsService
 
 	override init() {
-		this.boundEvents = this.ctx.events
-		this.ctx.events.on('test:ambient-changed', (value) => this.seen.push(value))
-		this.ctx.events.when('test:ambient-changed').once((value) => this.seenOnce.push(value))
-		this.ctx.events.onAt('test:ambient-changed', { at: 0 }, (value) => this.seenAt.push(value))
+		this.boundEvents = this.ctx.service(EventsService)
+		this.ctx.service(EventsService).on('test:ambient-changed', (value) => this.seen.push(value))
+		this.ctx
+			.service(EventsService)
+			.when('test:ambient-changed')
+			.once((value) => this.seenOnce.push(value))
+		this.ctx
+			.service(EventsService)
+			.onAt('test:ambient-changed', { at: 0 }, (value) => this.seenAt.push(value))
 	}
 }
 
@@ -76,10 +83,10 @@ describe('event boundaries', () => {
 			const owner = host.require(ChannelOwner)
 			const consumer = host.require(ChannelConsumer)
 			expect(() => {
-				;(owner.ctx.effects as unknown as { ctx: unknown }).ctx = consumer.ctx
+				;(owner.ctx.service(EffectsService) as unknown as { ctx: unknown }).ctx = consumer.ctx
 			}).toThrow(TypeError)
 			expect(() => {
-				;(owner.ctx.logger as unknown as { ctx: unknown }).ctx = consumer.ctx
+				;(owner.ctx.service(LoggerService) as unknown as { ctx: unknown }).ctx = consumer.ctx
 			}).toThrow(TypeError)
 			expect(Object.isExtensible(consumer.boundChannel!)).toBe(false)
 			expect(consumer.boundChannel!.ctx).toBe(owner.ctx)
@@ -90,7 +97,7 @@ describe('event boundaries', () => {
 				configurable: false,
 			})
 			owner.changed.emit('a')
-			owner.ctx.events.emit('test:ambient-changed', 'ambient-a')
+			owner.ctx.service(EventsService).emit('test:ambient-changed', 'ambient-a')
 			expect(consumer.seen).toEqual(['a'])
 			expect(consumer.seenOnce).toEqual(['a'])
 			expect(consumer.seenAt).toEqual(['a'])
@@ -103,7 +110,7 @@ describe('event boundaries', () => {
 			expect(() => consumer.boundChannel!.when().once(() => undefined)).toThrow(/disposed/i)
 			expect(owner.changed.count()).toBe(listenerCount)
 			owner.changed.emit('b')
-			owner.ctx.events.emit('test:ambient-changed', 'ambient-b')
+			owner.ctx.service(EventsService).emit('test:ambient-changed', 'ambient-b')
 			expect(consumer.seen).toEqual(['a'])
 			expect(consumer.seenOnce).toEqual(['a'])
 			expect(consumer.seenAt).toEqual(['a'])
@@ -129,25 +136,25 @@ describe('event boundaries', () => {
 			const publisher = host.require(ChannelOwner)
 			const listener = host.require(AmbientListener)
 
-			expect(host.ctx.events).not.toBe(publisher.ctx.events)
-			expect(host.ctx.events.ctx).toBe(host.ctx)
-			expect(listener.boundEvents).toBe(listener.ctx.events)
-			expect(listener.ctx.events).not.toBe(publisher.ctx.events)
-			expect(listener.ctx.events.ctx).toBe(listener.ctx)
-			expect(Object.isExtensible(listener.ctx.events)).toBe(false)
-			publisher.ctx.events.emit('test:ambient-changed', 'a')
+			expect(host.ctx.service(EventsService)).not.toBe(publisher.ctx.service(EventsService))
+			expect(host.ctx.service(EventsService).ctx).toBe(host.ctx)
+			expect(listener.boundEvents).toBe(listener.ctx.service(EventsService))
+			expect(listener.ctx.service(EventsService)).not.toBe(publisher.ctx.service(EventsService))
+			expect(listener.ctx.service(EventsService).ctx).toBe(listener.ctx)
+			expect(Object.isExtensible(listener.ctx.service(EventsService))).toBe(false)
+			publisher.ctx.service(EventsService).emit('test:ambient-changed', 'a')
 			expect(listener.seen).toEqual(['a'])
 			expect(listener.seenOnce).toEqual(['a'])
 			expect(listener.seenAt).toEqual(['a'])
 			const manuallyRemoved: string[] = []
-			const unsubscribe = listener.ctx.events.on('test:ambient-changed', (value) =>
-				manuallyRemoved.push(value),
-			)
+			const unsubscribe = listener.ctx
+				.service(EventsService)
+				.on('test:ambient-changed', (value) => manuallyRemoved.push(value))
 			unsubscribe()
-			publisher.ctx.events.emit('test:ambient-changed', 'after-unsubscribe')
+			publisher.ctx.service(EventsService).emit('test:ambient-changed', 'after-unsubscribe')
 			expect(manuallyRemoved).toEqual([])
 
-			const pending = listener.ctx.events.waitFor('test:ambient-changed')
+			const pending = listener.ctx.service(EventsService).waitFor('test:ambient-changed')
 			const cancelled = pending.then(
 				() => {
 					throw new Error('waitFor should be cancelled when its owner stops')
@@ -164,7 +171,7 @@ describe('event boundaries', () => {
 			expect(() => listener.boundEvents!.on('test:ambient-changed', (): void => undefined)).toThrow(
 				/disposed/i,
 			)
-			publisher.ctx.events.emit('test:ambient-changed', 'b')
+			publisher.ctx.service(EventsService).emit('test:ambient-changed', 'b')
 			expect(listener.seen).toEqual(['a', 'after-unsubscribe'])
 			expect(listener.seenAt).toEqual(['a', 'after-unsubscribe'])
 		})

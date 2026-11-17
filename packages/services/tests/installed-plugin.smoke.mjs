@@ -47,15 +47,15 @@ await writeFile(join(typedRoot, 'src/version.ts'), "export const version: string
 await writeFile(
 	join(typedRoot, 'src/index.ts'),
 	`
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, EffectsService } from '@pluxel/core'
 import { ElysiaApp } from '@pluxel/services/elysia'
 import { version } from './version'
 @Plugin()
 export class Typed extends BasePlugin {
  init() {
-  this.ctx.require(ElysiaApp).get('/typed', () => version)
+  this.ctx.service(ElysiaApp).get('/typed', () => version)
   globalThis.__typedHostSmoke.push(version)
-  this.ctx.effects.defer(() => { globalThis.__typedHostSmoke.push('-' + version) })
+  this.ctx.service(EffectsService).defer(() => { globalThis.__typedHostSmoke.push('-' + version) })
  }
 }
 `,
@@ -82,15 +82,15 @@ const fixedDefinition = {
 	exportName: 'Installed',
 }
 const installed = (value, identity = definition) =>
-	`import {BasePlugin,Plugin} from '@pluxel/core';import {ElysiaApp} from '@pluxel/services/elysia';import {__setPluginDefinition} from '@pluxel/core/toolchain';export class Installed extends BasePlugin {init(){this.ctx.require(ElysiaApp).get('/installed/${value}',()=> '${value}');globalThis.__installedHostSmoke.push('${value}');this.ctx.effects.defer(()=>{globalThis.__installedHostSmoke.push('-${value}')})}}Plugin()(Installed);__setPluginDefinition(Installed,{abiVersion:2,kind:'plugin',definition:${JSON.stringify(identity)}});`
+	`import {BasePlugin,Plugin,EffectsService} from '@pluxel/core';import {ElysiaApp} from '@pluxel/services/elysia';import {__setPluginDefinition} from '@pluxel/core/toolchain';export class Installed extends BasePlugin {init(){this.ctx.service(ElysiaApp).get('/installed/${value}',()=> '${value}');globalThis.__installedHostSmoke.push('${value}');this.ctx.service(EffectsService).defer(()=>{globalThis.__installedHostSmoke.push('-${value}')})}}Plugin()(Installed);__setPluginDefinition(Installed,{abiVersion:2,kind:'plugin',definition:${JSON.stringify(identity)}});`
 await writeFile(join(root, 'node_modules/@test/installed/index.mjs'), installed('one'))
 await writeFile(join(root, 'fixed.mjs'), installed('fixed', fixedDefinition))
 const serviceSource = (
 	revision,
 	fail = false,
-) => `import { elysia } from '@pluxel/services/elysia'; import { ElysiaRuntime } from '@pluxel/services/internal';import {defineContextCapability,installRootCapability,resolveContextCapability} from '@pluxel/core/host';
-const token=defineContextCapability('fixture.service');
-export const services=[elysia(),{name:'fixture.service',capabilities:[installRootCapability(token,{create:()=>({revision:'${revision}'})})],async prepare({effects,ctx}){effects.defer(resolveContextCapability(ctx,ElysiaRuntime).mountFallback({matchesRequest:r=>new URL(r.url).pathname==='/native-copy',fetch:async r=>new Response(await new Request(r).text())}));globalThis.__installedHostSmokeContext=ctx;await Promise.resolve();globalThis.__installedHostSmoke.push('service:${revision}');effects.defer(()=>globalThis.__installedHostSmoke.push('-service:${revision}'));${fail ? "throw new Error('service preparation rejected')" : ''}}}];`
+) => `import { elysia } from '@pluxel/services/elysia'; import { ElysiaRuntime } from '@pluxel/services/internal';import {installRootService} from '@pluxel/core/host';import {resolveContextService} from '@pluxel/core/internal';
+export class FixtureService {};
+export const services=[elysia(),{name:'fixture.service',provides:[installRootService(FixtureService,{create:()=>({revision:'${revision}'})})],async prepare({effects,ctx}){effects.defer(resolveContextService(ctx,ElysiaRuntime).mountFallback({matchesRequest:r=>new URL(r.url).pathname==='/native-copy',fetch:async r=>new Response(await new Request(r).text())}));globalThis.__installedHostSmokeContext=ctx;await Promise.resolve();globalThis.__installedHostSmoke.push('service:${revision}');effects.defer(()=>globalThis.__installedHostSmoke.push('-service:${revision}'));${fail ? "throw new Error('service preparation rejected')" : ''}}}];`
 await writeFile(join(root, 'services.mjs'), serviceSource('one'))
 await writeFile(
 	join(root, 'app.ts'),
@@ -180,11 +180,8 @@ try {
 		}).then(({ run }) => run)
 	const initial = await inspect()
 	assert.equal(initial.state, 'succeeded', JSON.stringify(initial))
-	assert.equal(initial.value.status, 'ok', JSON.stringify(initial.value))
 	assert.ok(
-		initial.value.value.nodes.some(
-			(plugin) => plugin.address.definition.exportName === 'Installed',
-		),
+		initial.value.nodes.some((plugin) => plugin.address.definition.exportName === 'Installed'),
 	)
 	const latestUpdate = () =>
 		readHostRecentUpdates(globalThis.__installedHostSmokeContext)?.latestUpdate()
@@ -217,10 +214,9 @@ try {
 	// Console preparation drains the existing Host driver before taking this snapshot.
 	const upgraded = await inspect()
 	assert.equal(upgraded.state, 'succeeded', JSON.stringify(upgraded))
-	assert.equal(upgraded.value.status, 'ok', JSON.stringify(upgraded.value))
 	assert.equal(latestUpdate()?.sequence, acceptedUpgradeSequence, 'late bytes already consumed')
 	assert.equal(globalThis.__installedHostSmoke.filter((entry) => entry === 'two').length, 1)
-	const upgradedPlugin = upgraded.value.value.nodes.find(
+	const upgradedPlugin = upgraded.value.nodes.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/installed',
 	)
 	assert.equal(upgradedPlugin.recentUpdate.batch.outcome, 'applied')
@@ -295,9 +291,8 @@ try {
 	assert.equal(await typedUpdatedResponse.text(), 'ts-two')
 	const typedInspection = await inspect()
 	assert.equal(typedInspection.state, 'succeeded', JSON.stringify(typedInspection))
-	assert.equal(typedInspection.value.status, 'ok', JSON.stringify(typedInspection.value))
 	assert.equal(typedInspection.hostEpoch, initial.hostEpoch, 'Plugin HMR keeps the Host')
-	const typedPlugin = typedInspection.value.value.nodes.find(
+	const typedPlugin = typedInspection.value.nodes.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/typed',
 	)
 	assert.deepEqual(typedPlugin.execution, {
@@ -312,8 +307,7 @@ try {
 	assert.equal(typedRemovedResponse.status, 404)
 	const removedTyped = await inspect()
 	assert.equal(removedTyped.state, 'succeeded', JSON.stringify(removedTyped))
-	assert.equal(removedTyped.value.status, 'ok', JSON.stringify(removedTyped.value))
-	const withdrawn = removedTyped.value.value.nodes.find(
+	const withdrawn = removedTyped.value.nodes.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/typed',
 	)
 	assert.equal(withdrawn.availability, 'unavailable')
@@ -354,9 +348,8 @@ try {
 	assert.equal(await updatedResponse.text(), 'fixed')
 	const replaced = await inspect()
 	assert.equal(replaced.state, 'succeeded', JSON.stringify(replaced))
-	assert.equal(replaced.value.status, 'ok', JSON.stringify(replaced.value))
 	assert.notEqual(replaced.hostEpoch, initial.hostEpoch)
-	const restoredPlugin = replaced.value.value.nodes.find(
+	const restoredPlugin = replaced.value.nodes.find(
 		(plugin) => plugin.address.definition.entry.packageName === '@test/fixed',
 	)
 	assert.equal(restoredPlugin.recentUpdate.batch.outcome, 'applied')

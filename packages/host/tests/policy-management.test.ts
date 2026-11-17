@@ -91,7 +91,7 @@ describe('Host public policy management', () => {
 			services: [
 				defineHostService({
 					name: 'ExecutionProbe',
-					capabilities: [],
+					provides: [],
 					prepare({ ctx }) {
 						requirePluginService(ctx)
 						prepared = true

@@ -1,10 +1,11 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
-import { workbench } from '@pluxel/workbench'
+import { type Workbench, workbench } from '@pluxel/workbench'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { elysia } from '@pluxel/services/elysia'
 import { WorkbenchOpenedContentHandle } from '@pluxel/workbench/internal'
 import { expect, it, vi } from 'vitest'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 const WorkbenchLeaseDefinition = workbench.define({
 	lease: workbench.content({
 		document: workbench.markdown(import.meta.url, './fixtures/test-host-lease.md'),
@@ -15,7 +16,7 @@ const WorkbenchLeaseDefinition = workbench.define({
 @Plugin({ displayName: 'Workbench lease fixture' })
 class WorkbenchLeaseFixture extends BasePlugin {
 	protected override init(): void {
-		this.ctx.workbench?.publish(WorkbenchLeaseDefinition)
+		this.ctx.service(WorkbenchRef)?.publish(WorkbenchLeaseDefinition)
 	}
 }
 

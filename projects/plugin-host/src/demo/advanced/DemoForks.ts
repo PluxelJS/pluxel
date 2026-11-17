@@ -2,12 +2,12 @@
 // - 你需要同一个插件的多个运行实例
 // - 你要看 consumer 如何依赖某个 fork
 
-import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/core'
+import { BasePlugin, formatPluginNodeReference, Plugin, LoggerService } from '@pluxel/core'
 
 @Plugin({ forkable: true })
 export class DemoWorker extends BasePlugin {
 	override init(): void {
-		this.ctx.logger.info('ready', {
+		this.ctx.service(LoggerService).info('ready', {
 			address: formatPluginNodeReference(this.ctx.pluginInfo.nodeAddress),
 		})
 	}
@@ -24,7 +24,7 @@ export class DemoWorkerConsumer extends BasePlugin {
 	}
 
 	override init(): void {
-		this.ctx.logger.info('worker result', {
+		this.ctx.service(LoggerService).info('worker result', {
 			consumer: formatPluginNodeReference(this.ctx.pluginInfo.nodeAddress),
 			worker: formatPluginNodeReference(this.worker.ctx.pluginInfo.nodeAddress),
 			out: this.worker.work('hello fork'),

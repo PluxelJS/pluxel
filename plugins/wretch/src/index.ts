@@ -1,13 +1,16 @@
+import type { Workbench } from '@pluxel/workbench'
 import { assertWorkbenchDto } from '@pluxel/workbench/server'
 import {
 	parsePluginNodeAddress,
-	type TinyBaseService,
+	TinyBaseService,
 	pluginNodeAddressEqual,
 	pluginNodeIndexKey,
 	type Context,
 	type PluginNodeAddress,
 	BasePlugin,
 	Plugin,
+	EffectsService,
+	defineServiceRef,
 } from '@pluxel/core'
 
 import { RpcTarget } from 'capnweb'
@@ -22,6 +25,7 @@ import {
 	type WretchSettingsApi,
 } from './workbench.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 type ClientLease = {
 	active: boolean
 	readonly controller: AbortController
@@ -50,8 +54,8 @@ export class WretchPlugin extends BasePlugin {
 	override init(): void {
 		const policy = createOutboundPolicy(this.config)
 		this.policy = policy
-		this.storageState.service = this.ctx.tinybase
-		this.ctx.effects.defer(
+		this.storageState.service = this.ctx.service(TinyBaseService)
+		this.ctx.service(EffectsService).defer(
 			async () => {
 				policy.dispose()
 				if (this.policy === policy) {
@@ -65,7 +69,7 @@ export class WretchPlugin extends BasePlugin {
 			},
 			{ tag: 'wretch-policy' },
 		)
-		this.ctx.workbench?.publish(WretchWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(WretchWorkbench, {
 			settings: async ({ consumer, signal }) =>
 				createSettingsTarget(
 					this.managedByNode,
@@ -172,7 +176,7 @@ export class WretchPlugin extends BasePlugin {
 		const lease: ClientLease = { active: true, controller: new AbortController() }
 		clients.set(owner, lease)
 		try {
-			owner.effects.defer(
+			owner.service(EffectsService).defer(
 				() => {
 					if (!lease.active) return
 					lease.controller.abort(stoppedClientError())
@@ -197,7 +201,7 @@ export class WretchPlugin extends BasePlugin {
 		// Own the pending read before I/O so shutdown also drains admitted initialization.
 		let cleanup
 		try {
-			cleanup = owner.effects.defer(
+			cleanup = owner.service(EffectsService).defer(
 				async () => {
 					const state = await initialization?.catch((): undefined => undefined)
 					if (!state) return

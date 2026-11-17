@@ -22,3 +22,10 @@ export {
 	type PluginPartRequiresLoweringPayload,
 	type PluginPartsLoweringPayload,
 } from './plugins/runtime/part-definition.ts'
+
+export {
+	__defineServiceDefinition,
+	__defineServiceRef,
+	type ServiceDefinitionLoweringPayload,
+	type ServiceRefLoweringPayload,
+} from './services/definition'

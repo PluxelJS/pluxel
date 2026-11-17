@@ -56,11 +56,13 @@ export function createManagementScripts(
 					codeKinds: ['artifact'],
 					hostEpoch: owner.hostEpoch,
 					lifetime: 'host',
-					capabilities: [
+					provides: [
 						'plugins',
 						'plugin',
 						'plugin.instance',
+						'plugin.context',
 						'plugin.config',
+						'ctx.service',
 						'policy',
 						'updates',
 						'logs',

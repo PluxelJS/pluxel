@@ -1,7 +1,8 @@
+import { resolveContextService } from '@pluxel/core/internal'
 import { createHost } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
-import { BasePlugin, Plugin } from '@pluxel/core'
-import { resolveContextCapability } from '@pluxel/core/host'
+import { BasePlugin, Plugin, EffectsService } from '@pluxel/core'
+
 import { websocket } from 'elysia/websocket'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -18,7 +19,7 @@ import { listenElysia } from '@pluxel/services/elysia/node'
 class ListenerSocketProbe extends BasePlugin {
 	protected override init() {
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.use(websocket())
 			.ws('/probe/socket', {
 				message(socket, message) {
@@ -34,7 +35,7 @@ let cancelDocumentStream: ((reason: unknown) => void) | undefined
 class ListenerHttpProbe extends BasePlugin {
 	protected override init() {
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.get(
 				'/documents/missing',
 				() =>
@@ -66,7 +67,7 @@ it('preserves handled 404 responses before considering application assets', asyn
 	await writeFile(join(publicDir, 'index.html'), '<main>application</main>')
 	const host = await createHost({ plugins: [ListenerHttpProbe], services: [elysia()] })
 	try {
-		const http = resolveContextCapability(host.ctx, ElysiaRuntime)
+		const http = resolveContextService(host.ctx, ElysiaRuntime)
 		http.mountEndpoint({
 			prefix: '/endpoint',
 			matchesWebSocketRoute: () => false,
@@ -147,7 +148,7 @@ it.each([false, true])(
 		const host = await createHost({ plugins: [ListenerSocketProbe], services: [elysia()] })
 		const fallbackFetch = vi.fn(async () => new Response('shell'))
 		if (fallback) {
-			host.ctx.require(ElysiaRuntime).mountFallback({
+			host.ctx.service(ElysiaRuntime).mountFallback({
 				matchesRequest: () => true,
 				fetch: fallbackFetch,
 			})
@@ -267,7 +268,7 @@ it('preserves listener startup failure and Host cleanup failure while releasing 
 	const listener = await listenElysia(occupied, { hostname: '127.0.0.1', port: 0 })
 	const host = await createHost({ plugins: [], services: [elysia()] })
 	const cleanupFailure = new Error('cleanup probe')
-	host.ctx.effects.defer(() => {
+	host.ctx.service(EffectsService).defer(() => {
 		throw cleanupFailure
 	})
 	try {
@@ -292,7 +293,7 @@ it('binds Node request metadata and propagates client disconnect before closing 
 	const host = await createHost({ plugins: [], services: [elysia()] })
 	const entered = Promise.withResolvers<void>()
 	const aborted = Promise.withResolvers<void>()
-	resolveContextCapability(host.ctx, ElysiaRuntime).mountEndpoint({
+	resolveContextService(host.ctx, ElysiaRuntime).mountEndpoint({
 		prefix: '/probe',
 		matchesWebSocketRoute: () => false,
 		async fetch(request, carrier) {
@@ -338,7 +339,7 @@ it('binds Node request metadata and propagates client disconnect before closing 
 it('propagates disconnect after a streaming response has started', async () => {
 	const host = await createHost({ plugins: [], services: [elysia()] })
 	const aborted = Promise.withResolvers<{ aborted: boolean; reason: unknown }>()
-	resolveContextCapability(host.ctx, ElysiaRuntime).mountEndpoint({
+	resolveContextService(host.ctx, ElysiaRuntime).mountEndpoint({
 		prefix: '/stream',
 		matchesWebSocketRoute: () => false,
 		async fetch(request) {
@@ -466,7 +467,7 @@ it('uses the listener owner’s selected environment snapshot', async () => {
 
 it('exposes the trusted public origin without replacing physical listener metadata', async () => {
 	const host = await createHost({ plugins: [], services: [elysia()] })
-	resolveContextCapability(host.ctx, ElysiaRuntime).mountEndpoint({
+	resolveContextService(host.ctx, ElysiaRuntime).mountEndpoint({
 		prefix: '/metadata',
 		matchesWebSocketRoute: () => false,
 		async fetch(_request, carrier) {
@@ -501,7 +502,7 @@ it('exposes the trusted public origin without replacing physical listener metada
 
 it('preserves native srvx plugins, middleware, proxy handling and Node server options', async () => {
 	const host = await createHost({ plugins: [], services: [elysia()] })
-	resolveContextCapability(host.ctx, ElysiaRuntime).mountEndpoint({
+	resolveContextService(host.ctx, ElysiaRuntime).mountEndpoint({
 		prefix: '/native',
 		matchesWebSocketRoute: () => false,
 		async fetch(request) {
@@ -546,7 +547,7 @@ it('preserves native srvx plugins, middleware, proxy handling and Node server op
 
 it('uses the native body limit and error handler without replacing their error contract', async () => {
 	const host = await createHost({ plugins: [], services: [elysia()] })
-	resolveContextCapability(host.ctx, ElysiaRuntime).mountEndpoint({
+	resolveContextService(host.ctx, ElysiaRuntime).mountEndpoint({
 		prefix: '/body',
 		matchesWebSocketRoute: () => false,
 		async fetch(request) {

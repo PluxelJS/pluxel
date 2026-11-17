@@ -14,7 +14,7 @@ export class TypstDynamicProbePlugin extends BasePlugin {
 	protected override init(): void {
 		this.renderer = this.markdown.createRenderer()
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.get('/__pluxel-test/typst/render', () => this.render())
 			.get('/__pluxel-test/typst/error/unsafe', () => this.unsafeFormula())
 	}

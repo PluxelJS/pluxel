@@ -39,7 +39,7 @@ export interface EventsWhenGuard<D extends EventDescriptor> {
 	many(times: number, listener: EventListener<D>): Unsubscribe
 	manyFront(times: number, listener: EventListener<D>): Unsubscribe
 }
-
+export abstract class EventsService {}
 export interface EventsService {
 	readonly ctx: PluxelContext
 	on<K extends keyof Events>(

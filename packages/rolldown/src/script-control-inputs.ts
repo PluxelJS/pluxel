@@ -10,6 +10,12 @@ export async function readScriptControlModule(
 	inputs: ScriptInputs,
 	id: string,
 ): Promise<string | undefined> {
+	const material = await readScriptControlMaterial(inputs, id)
+	return material?.code
+}
+
+/** The exact verified entry also supplies service contracts for erased type-only references. */
+export async function readScriptControlMaterial(inputs: ScriptInputs, id: string) {
 	if (!isAbsolute(id) || !id.endsWith('.mjs')) return undefined
 	let directory = dirname(id)
 	while (true) {
@@ -24,7 +30,11 @@ export async function readScriptControlModule(
 			if (data && typeof data === 'object' && 'compiler' in data && 'definitions' in data) {
 				const manifest = parsePluginControlManifest(data)
 				const module = relative(directory, id).split(sep).join('/')
-				if (!manifest.definitions.some((definition) => definition.module === module))
+				if (
+					![...manifest.definitions, ...manifest.services].some(
+						(definition) => definition.module === module,
+					)
+				)
 					return undefined
 				const files: Record<string, string> = { 'manifest.json': raw }
 				for (const file of manifest.files) {
@@ -33,7 +43,7 @@ export async function readScriptControlModule(
 					files[file.path] = content
 				}
 				await verifyPluginControlMaterial(manifest, files)
-				return files[module]
+				return { code: files[module], manifest, module }
 			}
 		}
 		const parent = dirname(directory)

@@ -17,14 +17,14 @@ describe('NodeModuleService', () => {
 	it('makes the first build/setup failure fail plugin startup', async () => {
 		await using host = await createServiceInternalTestHost({ workbench: false })
 
-		host.ctx.require(NodeModuleHost).attachSourceBinder(async () => {
+		host.ctx.service(NodeModuleHost).attachSourceBinder(async () => {
 			throw new Error('node build failed')
 		})
 
 		@Plugin({ displayName: 'NodeModuleFailure' })
 		class NodeModuleFailure extends BasePlugin {
 			override async init() {
-				await this.ctx.require(NodeModules).use(declaration, (): undefined => undefined)
+				await this.ctx.service(NodeModules).use(declaration, (): undefined => undefined)
 			}
 		}
 
@@ -47,7 +47,7 @@ describe('NodeModuleService', () => {
 		const setupFailure = new Error('consumer setup failed')
 		const cleanupFailure = new Error('source cleanup failed')
 		let caught: unknown
-		host.ctx.require(NodeModuleHost).attachSourceBinder(async () => ({
+		host.ctx.service(NodeModuleHost).attachSourceBinder(async () => ({
 			url: new URL('file:///cache/task.mjs'),
 			dispose() {
 				throw cleanupFailure
@@ -57,7 +57,7 @@ describe('NodeModuleService', () => {
 		class NodeModuleSetupAndCleanupFailure extends BasePlugin {
 			override async init() {
 				try {
-					await this.ctx.require(NodeModules).use(declaration, () => {
+					await this.ctx.service(NodeModules).use(declaration, () => {
 						throw setupFailure
 					})
 				} catch (error) {
@@ -80,7 +80,7 @@ describe('NodeModuleService', () => {
 
 		let publish!: (url: URL) => void | Promise<void>
 		let sourceDisposals = 0
-		host.ctx.require(NodeModuleHost).attachSourceBinder(async (_declaration, onUpdate) => {
+		host.ctx.service(NodeModuleHost).attachSourceBinder(async (_declaration, onUpdate) => {
 			publish = onUpdate
 			return {
 				url: new URL('file:///cache/task-a.mjs'),
@@ -92,7 +92,7 @@ describe('NodeModuleService', () => {
 		@Plugin({ displayName: 'NodeModuleConsumer' })
 		class NodeModuleConsumer extends BasePlugin {
 			override async init() {
-				await this.ctx.require(NodeModules).use(declaration, async (url) => {
+				await this.ctx.service(NodeModules).use(declaration, async (url) => {
 					events.push(`setup:${url.pathname}`)
 					if (url.pathname.endsWith('bad.mjs')) throw new Error('bad setup')
 					return () => void events.push(`cleanup:${url.pathname}`)
@@ -129,7 +129,7 @@ describe('NodeModuleService', () => {
 		const didDisposeSource = new Promise<void>((resolve) => (sourceDisposed = resolve))
 		const events: string[] = []
 		const detach = host.ctx
-			.require(NodeModuleHost)
+			.service(NodeModuleHost)
 			.attachSourceBinder(async (_declaration, onUpdate) => {
 				publish = onUpdate
 				return {
@@ -144,7 +144,7 @@ describe('NodeModuleService', () => {
 		@Plugin({ displayName: 'PendingNodeModuleConsumer' })
 		class PendingNodeModuleConsumer extends BasePlugin {
 			override async init() {
-				await this.ctx.require(NodeModules).use(declaration, async (url) => {
+				await this.ctx.service(NodeModules).use(declaration, async (url) => {
 					events.push(`setup:${url.pathname}`)
 					if (url.pathname.endsWith('/next.mjs')) {
 						setupStarted()
@@ -193,7 +193,7 @@ describe('NodeModuleService', () => {
 		const pending = new Promise<void>((resolve) => (release = resolve))
 		const ready = new Promise<void>((resolve) => (started = resolve))
 		const events: string[] = []
-		host.ctx.require(NodeModuleHost).attachSourceBinder(async (_declaration, onUpdate) => {
+		host.ctx.service(NodeModuleHost).attachSourceBinder(async (_declaration, onUpdate) => {
 			publish = onUpdate
 			return {
 				url: new URL('file:///cache/initial.mjs'),
@@ -206,7 +206,7 @@ describe('NodeModuleService', () => {
 		@Plugin({ displayName: 'FailedSourceDetach' })
 		class FailedSourceDetach extends BasePlugin {
 			override async init() {
-				await this.ctx.require(NodeModules).use(declaration, async (url) => {
+				await this.ctx.service(NodeModules).use(declaration, async (url) => {
 					if (url.pathname.endsWith('/next.mjs')) {
 						started()
 						await pending
@@ -254,7 +254,7 @@ describe('NodeModuleService', () => {
 		@Plugin({ displayName: 'PackagedNodeModule' })
 		class PackagedNodeModule extends BasePlugin {
 			override async init() {
-				await this.ctx.require(NodeModules).use(lowered, (url) => void (received = url))
+				await this.ctx.service(NodeModules).use(lowered, (url) => void (received = url))
 			}
 		}
 		lowerTestPlugin(PackagedNodeModule)

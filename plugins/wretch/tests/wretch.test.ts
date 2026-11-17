@@ -1,4 +1,4 @@
-import { parsePluginNodeAddress, type PluginConstructor } from '@pluxel/core'
+import { parsePluginNodeAddress, type PluginConstructor, TinyBaseService } from '@pluxel/core'
 import { createTestHost, type TestHost, type RawPluginConfig } from '@pluxel/test'
 import { standardServices } from '@pluxel/services'
 import * as v from 'valibot'
@@ -81,7 +81,7 @@ describe('WretchPlugin', () => {
 		using lateSettings = await openWretchSettings(host, ConsumerLateSettings.nodeAddress())
 		await aSettings.api.updateDto({ headers: { 'X-Owner': 'a' } })
 		await lateSettings.api.updateDto({ headers: { 'X-Owner': 'late' } })
-		const store = await host.require(WretchPlugin.nodeAddress()).ctx.tinybase.open()
+		const store = await host.require(WretchPlugin.nodeAddress()).ctx.service(TinyBaseService).open()
 		const rows = Object.entries(store.getTable('consumerSettings'))
 		expect(rows).toHaveLength(2)
 		for (const [id, row] of rows) {
@@ -92,7 +92,10 @@ describe('WretchPlugin', () => {
 			).toContainEqual(parsePluginNodeAddress(JSON.parse(String(row.owner))))
 		}
 		// The provider owns this table; enabling it never opens either consumer's business Store.
-		const consumerStore = await host.require(ConsumerA.nodeAddress()).ctx.tinybase.open()
+		const consumerStore = await host
+			.require(ConsumerA.nodeAddress())
+			.ctx.service(TinyBaseService)
+			.open()
 		expect(consumerStore.getContent()).toEqual([{}, {}])
 	})
 
@@ -141,7 +144,7 @@ describe('WretchPlugin', () => {
 		await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
 		using settings = await openWretchSettings(host, ConsumerA.nodeAddress())
 		await settings.api.updateDto({ headers: {} })
-		const tinybase = host.require(WretchPlugin.nodeAddress()).ctx.tinybase
+		const tinybase = host.require(WretchPlugin.nodeAddress()).ctx.service(TinyBaseService)
 		const store = await tinybase.open()
 		const id = store.getRowIds('consumerSettings')[0]!
 		store.setCell(

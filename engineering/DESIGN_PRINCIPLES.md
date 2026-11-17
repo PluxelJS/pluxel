@@ -34,7 +34,7 @@ Plugin 身份由 canonical entry 与唯一 root named export 确定；required e
 
 已知成员优先用普通对象、class 或预编译 descriptor。开放成员或 type-erased RPC 等场景可使用 Proxy，取舍须保持反射、identity、调试和生命周期语义。
 
-Context shape 编译后固定，Host 在 root 创建前组合服务。每个 Plugin generation 对应一个 kernel scope；Part child 与 dependency caller view 共用 backing，分别拥有 owner-view cache。Plugin 不能追加 capability。
+Context shape 编译后固定，Host 在 root 创建前组合服务。每个 Plugin generation 对应一个 kernel scope；Part child 与 dependency caller view 共用 backing，分别拥有 owner-view cache。Plugin 不能追加服务安装。
 
 ## 生命周期只发布真实结果
 
@@ -46,7 +46,7 @@ provider 先启动、后停止；required failure 只阻塞 dependent closure。
 
 ## 可选能力关闭即无运行成本
 
-关闭的 capability 不安装 Context property，也不创建 backend、compiler、watcher、route、transport 或持久状态。optional callback 未执行时，Plugin 仍能完成核心生命周期；业务 API 和状态独立于可选 Workbench。
+关闭的可选服务不加入 Context 安装集合，也不创建 backend、compiler、watcher、route、transport 或持久状态。optional callback 未执行时，Plugin 仍能完成核心生命周期；业务 API 和状态独立于可选 Workbench。
 
 启用 Workbench 时遵守固定 Cap’n Web/WebSocket、MF2 Manifest/Snapshot 与 React Bridge 规则。Content-only definition 走无 renderer、零 MF 路径，详见 [Workbench](WORKBENCH.md)。
 

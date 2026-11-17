@@ -12,6 +12,7 @@ description: 使用官方服务预设快速搭建生产服务，或按需挑选�
 官方提供的 `servicesPreset()` 会根据当前应用配置，返回完整的运行时服务列表：
 
 ```ts
+import { defineHostApplication } from '@pluxel/host'
 import { servicesPreset } from '@pluxel/services/preset'
 
 export default defineHostApplication(async (startup) => ({
@@ -50,6 +51,7 @@ services: await servicesPreset(startup, {
 如果不希望包含 Workbench 前端界面（例如纯后台无头服务），可以使用 `@pluxel/services` 导出的 `standardServices()`：
 
 ```ts
+import { defineHostApplication } from '@pluxel/host'
 import { standardServices } from '@pluxel/services'
 
 export default defineHostApplication(() => ({
@@ -59,26 +61,82 @@ export default defineHostApplication(() => ({
 
 ## 自定义服务扩展
 
-在 Pluxel 中，服务也是强类型的依赖提供方。你可以使用 `defineHostService()` 封装自己的全局服务：
+服务声明使用普通导出的 class 或 abstract class。实现与声明相同时可以直接使用 class；原生对象或第三方 API 可以用 abstract class 与 interface 合并表达类型，无需包装实例。
 
 ```ts
-import { defineHostService } from '@pluxel/host'
+import { defineHostService, type HostService } from '@pluxel/host'
+import { installOwnerViewService } from '@pluxel/core/host'
 
-export class MetricsServiceToken {}
+export class Counters {
+	private readonly values = new Map<string, number>()
 
-export function myMetricsService() {
+	increment(name: string) {
+		this.values.set(name, (this.values.get(name) ?? 0) + 1)
+	}
+
+	read(name: string) {
+		return this.values.get(name) ?? 0
+	}
+	clear() {
+		this.values.clear()
+	}
+}
+
+export function counters(): HostService {
 	return defineHostService({
-		token: MetricsServiceToken,
-		async setup(ctx) {
-			const client = createMetricsClient()
-
-			// 注册释放逻辑，宿主关闭时自动断开
-			ctx.effects.defer(() => client.disconnect())
-
-			return client
+		name: 'Counters',
+		provides: [
+			installOwnerViewService(Counters, {
+				createRoot: () => new Counters(),
+				createView: (counters) => counters,
+			}),
+		],
+		prepare({ ctx, effects }) {
+			effects.defer(() => ctx.service(Counters).clear())
 		},
 	})
 }
 ```
 
-在插件中，即可通过 `this.ctx.require(MetricsServiceToken)` 直接获取已就绪的客户端实例。
+将 `counters()` 加入应用 `services` 后，插件通过 `this.ctx.service(Counters).increment('requests')` 使用已安装服务。Host 在接纳插件前执行 `prepare`，关闭或准备失败时释放登记到 `effects` 的资源。安装器工厂保持同步惰性；异步连接与 IO 放在 `prepare` 中，取得资源后立即登记释放。
+
+HostService 的 `name` 用于诊断，`provides` 声明固定安装集合，`requires` 用直接导入的服务声明表达准备顺序：
+
+```ts
+const reporting = defineHostService({
+	name: 'Reporting',
+	provides: [],
+	requires: { counters: Counters },
+	prepare({ dependencies }) {
+		dependencies.counters.increment('reporting.ready')
+	},
+})
+```
+
+缺少 provider、重复安装或准备依赖成环会在装配时失败；`requires` 不会自动安装服务。服务实例的缓存范围可选 root、scope 或 owner-view，访问权限可选 all、root 或 owner，详见 [Context host](../reference/context-hosts.md)。
+
+## 必需服务与可选集成
+
+`ctx.service(Service)` 直接返回必需服务，未安装时抛出 `ContextServiceMissingError`。可选集成使用导入的服务类型创建引用：
+
+```ts
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
+import type { Workbench } from '@pluxel/workbench'
+
+const WorkbenchRef = defineServiceRef<Workbench>()
+
+@Plugin()
+export class OptionalWorkbenchPlugin extends BasePlugin {
+	protected override init() {
+		const workbench = this.ctx.service(WorkbenchRef)
+		if (!workbench) return
+		// 使用 workbench 发布插件自己的界面。
+	}
+}
+```
+
+引用仅在服务未安装时返回 `undefined`；访问限制、构造失败及身份契约错误继续抛出。`defineServiceRef` 可省略：必需服务直接导入声明，不需要另一种定义写法。两种入口都只通过 `ctx.service` 解析。
+
+服务身份由工具链根据声明的规范入口与具名导出生成。导出名、包或入口改变会改变身份；显示名称和任意字符串不参与匹配。服务没有 fork、独立启动状态或 Plugin 依赖图节点，它提供由 Host 固定安装并管理生命周期的原生能力；需要独立启停、替换传播或插件治理时使用 Plugin。
+
+进程内脚本通过 `sdk.ctx.service(...)` 读取根服务；先 `const ctx = await sdk.plugin(address).context()` 再 `ctx.service(...)` 借用运行代的 owner 服务，远端编译通过生成类型与契约校验连接目标应用，见 [Agent SDK](../development/agent-sdk.md)。

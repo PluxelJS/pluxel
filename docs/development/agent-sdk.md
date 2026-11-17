@@ -25,7 +25,7 @@ description: 按执行位置选择源码查询、进程内 Host 操作或外部 
 
 ## 操作进程内的 Host
 
-`/host` 为 Node 和 Vite 脚本导出同一个 `Script`、`ScriptSdk` 和 `ScriptError`。执行器注入 SDK，控制操作成功直接返回值、失败抛错；`sdk.ctx.require(Token)` 借用应用已安装的能力，缺失时按原 Context 规则抛错。Vite 负责从当前模块图加载项目与能力 token，见[开发控制台](./dev-console.md)。持有现成 Host 的进程也可以直接借用它：
+`/host` 为 Node 和 Vite 脚本导出同一个 `Script`、`ScriptSdk` 和 `ScriptError`。执行器注入 SDK，控制操作成功直接返回值、失败抛错；`sdk.ctx` 是只有 `service(...)` 的根服务访问视图。`sdk.ctx.service(Service)` 借用已安装服务；`const ctx = await sdk.plugin(address).context()` 借用当前运行代的 owner 服务视图。必需声明、可选 ref、远端生成材料与失效规则见[借用已安装的服务](./scripts.md#借用已安装的服务)。Vite 从当前模块图加载服务声明，见[开发控制台](./dev-console.md)。持有现成 Host 的进程也可以直接借用它：
 
 ```ts no-twoslash
 import { createScriptScope } from '@pluxel/agent-sdk/host'
@@ -44,7 +44,7 @@ scope 关闭时排空已接纳的操作，Host 的寿命由创建者管理。`/h
 - 本地 `{ root, profile?, instance? }`：从 `root` 查找项目已有的 `pluxel.dev` 配置，选择匹配的 Vite 实例；没有实例时返回错误，不启动服务。
 - 远端 `{ endpoint, credentials? }`：连接显式 endpoint，沿用 Management 认证。`credentials` 接收 `password`、`code` 或已有的 `cookie`；凭据文件由调用方读取。
 
-本地发现返回 `{ workspace, root, profile?, instances }`。多个匹配实例时，执行操作要求明确选择 `instance`；返回的实例信息不包含控制台 nonce 或 socket 路径。
+本地发现返回 `{ workspace, root, profile?, instances }`。多个匹配实例时，执行操作要求明确选择 `instance`；返回的实例信息不包含控制台 nonce 或 socket 路径。坏记录或协议不匹配会明确失败，`failure.context` 提供记录路径与期望/实际协议；已知 `instance` 和原 receipt 只读取所属记录，仍验证目录权限与目标握手。
 
 ```js
 import { listHosts } from '@pluxel/agent-sdk/client'
@@ -94,4 +94,4 @@ console.log(cancelled.run)
 
 各客户端函数支持 `signal`。中断会关闭客户端连接、停止等待，已接纳的任务仍由 Host 管理；需要取消任务时显式调用 `cancelScript`。调用方回调的 IO 由调用方管理。控制材料发布在原子安装开始前响应取消，开始安装后完成发布并返回实际结果。
 
-`controlHmr({ target, action: 'pause' | 'apply' | 'resume' })` 仅接受本地目标，与执行共享 timeout、detach、receipt 和回调契约；仍需核对 [HMR 与应用报告](./dev-console.md#hmr-批次控制)。`syncPluginControl({ target, out })` 要求显式输出目录，返回可导入的准确模块与导出名；远端只需材料读取权限，无需脚本执行权限，详见[控制材料](./plugin-control.md#取得控制入口)。
+`controlHmr({ target, action: 'pause' | 'apply' | 'resume' })` 仅接受本地目标，与执行共享 timeout、detach、receipt 和回调契约；仍需核对 [HMR 与应用报告](./dev-console.md#hmr-批次控制)。`syncPluginControl({ target, out, packageName?, definition? })` 要求显式输出目录，两个筛选条件互斥，均省略则同步全部。返回的定义包含准确模块、导出名与可复制 `importStatement`；远端只需材料读取权限，无需脚本执行权限，详见[控制材料](./plugin-control.md#取得控制入口)。

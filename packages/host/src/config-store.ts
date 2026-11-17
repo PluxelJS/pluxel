@@ -1,4 +1,6 @@
 import {
+	LoggerService,
+	EffectsService,
 	pluginNodeAddressEqual,
 	pluginNodeIndexKey,
 	type Context,
@@ -82,7 +84,7 @@ export class HostConfigStore extends ConfigService {
 		this.options = snapshotHostConfig(options)
 		this.retention = documents.retention ?? (documents.storage ? 'unknown' : 'session')
 		if (documents.storage) this.setReadyTask(this.load())
-		ctx.effects.defer(() => this.dispose(), { tag: 'HostConfigStore' })
+		ctx.service(EffectsService).defer(() => this.dispose(), { tag: 'HostConfigStore' })
 	}
 	get isReadonly(): boolean {
 		return this.documents.readOnly ?? false
@@ -365,7 +367,8 @@ export class HostConfigStore extends ConfigService {
 			try {
 				await reload()
 			} catch (error) {
-				if (!this.disposed) this.ctx.logger.error('ConfigService external reload failed', { error })
+				if (!this.disposed)
+					this.ctx.service(LoggerService).error('ConfigService external reload failed', { error })
 			}
 		}
 		this.unsubscribe = this.documents.storage.subscribe?.(() => {

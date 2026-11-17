@@ -5,23 +5,23 @@ description: 使用 Core 内建的事件机制在插件间传递异步通知，�
 
 事件系统常用于插件之间的解耦通知。Pluxel 核心提供了两种事件机制：
 
-1. **全局广播（`ctx.events`）**：适用于松耦合的宿主内事件广播，无需强绑定特定的事件提供方。
+1. **全局广播（`ctx.service(EventsService)`）**：适用于松耦合的宿主内事件广播，无需强绑定特定的事件提供方。
 2. **提供方通道（`EvtChannel`）**：适用于特定插件暴露的强类型公开事件，消费方需要依赖该插件。
 
 ## 场景选型
 
-| 场景                                             | 推荐方案     | 机制说明                                   |
-| ------------------------------------------------ | ------------ | ------------------------------------------ |
-| 松耦合状态通知（如用户登出、全局配置重载）       | `ctx.events` | 全局广播，任意插件均可监听或发布           |
-| 特定插件的生命期事件（如支付成功、文件导出完成） | `EvtChannel` | 挂载在提供方插件上，消费方需声明依赖该插件 |
-| 带有明确返回值或需要等待处理结果的操作           | 直接方法调用 | 优先通过构造函数依赖直接调用对方的方法     |
+| 场景                                             | 推荐方案                     | 机制说明                                   |
+| ------------------------------------------------ | ---------------------------- | ------------------------------------------ |
+| 松耦合状态通知（如用户登出、全局配置重载）       | `ctx.service(EventsService)` | 全局广播，任意插件均可监听或发布           |
+| 特定插件的生命期事件（如支付成功、文件导出完成） | `EvtChannel`                 | 挂载在提供方插件上，消费方需声明依赖该插件 |
+| 带有明确返回值或需要等待处理结果的操作           | 直接方法调用                 | 优先通过构造函数依赖直接调用对方的方法     |
 
-## 全局广播（`ctx.events`）
+## 全局广播（`ctx.service(EventsService)`）
 
 全局广播适用于没有固定依赖关系的通知。通过扩展 `@pluxel/core` 的 `Events` 接口，可以为事件提供全方位的 TypeScript 类型推导：
 
 ```ts twoslash
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, LoggerService, EventsService } from '@pluxel/core'
 
 // 1. 扩展全局事件字典类型
 declare module '@pluxel/core' {
@@ -34,8 +34,8 @@ declare module '@pluxel/core' {
 export class CatalogObserverPlugin extends BasePlugin {
 	protected override init() {
 		// 2. 监听全局事件（订阅随插件生命周期自动回收）
-		this.ctx.events.on('catalog:invalidated', (catalogId) => {
-			this.ctx.logger.info('Catalog invalidated', { catalogId })
+		this.ctx.service(EventsService).on('catalog:invalidated', (catalogId) => {
+			this.ctx.service(LoggerService).info('Catalog invalidated', { catalogId })
 		})
 	}
 }
@@ -44,10 +44,11 @@ export class CatalogObserverPlugin extends BasePlugin {
 发布事件非常简单：
 
 ```ts no-twoslash
-this.ctx.events.emit('catalog:invalidated', 'cat_123')
+import { EventsService } from '@pluxel/core'
+this.ctx.service(EventsService).emit('catalog:invalidated', 'cat_123')
 ```
 
-通过 `this.ctx.events.on()` 注册的监听器会自动登记到当前插件的作用域中，当插件停止或热重载时，监听器会自动注销。
+通过 `this.ctx.service(EventsService).on()` 注册的监听器会自动登记到当前插件的作用域中，当插件停止或热重载时，监听器会自动注销。
 
 ## 提供方通道（`EvtChannel`）
 
@@ -87,7 +88,7 @@ export class InvoiceProjectionPlugin extends BasePlugin {
 
 ## 异步派发与结果等待
 
-无论使用 `ctx.events` 还是 `EvtChannel`，都提供了以下三种派发方式：
+无论使用 `ctx.service(EventsService)` 还是 `EvtChannel`，都提供了以下三种派发方式：
 
 - **`emit(...)`**：同步触发并立即返回监听器总数，适合不需要等待异步结果的“发后即忘”广播。
 - **`await emitAll(...)`**：等待所有监听器执行完毕。若任一监听器抛出异常或 Promise reject，将立即向上抛错。
@@ -95,11 +96,12 @@ export class InvoiceProjectionPlugin extends BasePlugin {
 
 ```ts no-twoslash
 // 在业务操作中等待所有下游监听完成
+import { LoggerService } from '@pluxel/core'
 const outcomes = await this.events.invoicePaid.emitSettled(invoice, signal)
 
 for (const outcome of outcomes) {
 	if (outcome.status === 'rejected') {
-		this.ctx.logger.error('Invoice handler failed', {
+		this.ctx.service(LoggerService).error('Invoice handler failed', {
 			invoiceId: invoice.id,
 			error: outcome.reason,
 		})

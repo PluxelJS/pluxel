@@ -1,5 +1,6 @@
+import { resolveContextService } from '@pluxel/core/internal'
 import { validateRuntimePortableData } from '../../web/validation'
-import { resolveContextCapability } from '@pluxel/core/host'
+
 import { Management } from '../../token'
 import { AdminAccess } from '../../access'
 import { optionalVaultAdmin } from '../../vault'
@@ -166,7 +167,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 
 	describeDto(): RuntimeMeta {
 		this.signal?.throwIfAborted()
-		const management = resolveContextCapability(this.ctx.root, Management)
+		const management = resolveContextService(this.ctx.root, Management)
 		if (!management) throw new Error('Runtime Management is unavailable')
 		return checkedDto(management.describe())
 	}
@@ -711,7 +712,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 
 	async securityOverviewDto(): Promise<SecurityOverview> {
 		this.signal?.throwIfAborted()
-		const adminAccess = resolveContextCapability(this.ctx.root, AdminAccess)
+		const adminAccess = resolveContextService(this.ctx.root, AdminAccess)
 		if (!adminAccess) throw new Error('Runtime Management authentication is unavailable')
 		const vault = optionalVaultAdmin(this.ctx)
 		return checkedDto(

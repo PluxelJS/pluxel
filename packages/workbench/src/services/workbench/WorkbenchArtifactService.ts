@@ -5,6 +5,7 @@ import {
 	pluginDefinitionIndexKey,
 	type Context,
 	type PluginDefinitionAddress,
+	LoggerService,
 } from '@pluxel/core'
 import {
 	WORKBENCH_FEDERATION_MANIFEST_FILE,
@@ -333,7 +334,9 @@ export class WorkbenchArtifactService {
 				try {
 					listener(commit)
 				} catch (error) {
-					this.root.logger.error('workbench artifact commit listener failed', { error })
+					this.root
+						.service(LoggerService)
+						.error('workbench artifact commit listener failed', { error })
 				}
 			}
 		}

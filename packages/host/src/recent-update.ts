@@ -1,4 +1,5 @@
 import {
+	EffectsService,
 	formatPluginNodeReference,
 	pluginDefinitionIndexKey,
 	type CommitSummary,
@@ -223,7 +224,7 @@ export function installHostRecentUpdates(ctx: Context, reader: PluginRecentUpdat
 	const root = ctx.root
 	if (readers.has(root)) throw new Error('[host] recent updates are already installed')
 	readers.set(root, reader)
-	root.effects.defer(
+	root.service(EffectsService).defer(
 		() => {
 			readers.delete(root)
 		},

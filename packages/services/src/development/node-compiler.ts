@@ -1,4 +1,4 @@
-import type { Context } from '@pluxel/core'
+import { LoggerService, type Context } from '@pluxel/core'
 import { readNodeModuleDeclaration } from '../node/declaration'
 import type { NodeModuleSourceSubscription } from '../node/service'
 import type { NodeModuleDeclaration } from '../node'
@@ -238,7 +238,7 @@ export class NodeArtifactCompiler {
 				}
 			} catch (error) {
 				if (initial && !entry.activeUrl) throw error
-				this.ctx.logger.error('failed to rebuild Node module', {
+				this.ctx.service(LoggerService).error('failed to rebuild Node module', {
 					artifactKey: entry.key,
 					consumers: entry.listeners.size,
 					error,
@@ -247,7 +247,7 @@ export class NodeArtifactCompiler {
 					try {
 						listener.onError(error)
 					} catch (listenerError) {
-						this.ctx.logger.error('failed to report Node module rebuild error', {
+						this.ctx.service(LoggerService).error('failed to report Node module rebuild error', {
 							artifactKey: entry.key,
 							listenerError,
 						})
@@ -285,7 +285,7 @@ export class NodeArtifactCompiler {
 			if (!entry.active) return
 			entry.dirty = true
 			void this.compileNodeEntry(entry, false).catch((error) => {
-				this.ctx.logger.error('failed to schedule Node module rebuild', {
+				this.ctx.service(LoggerService).error('failed to schedule Node module rebuild', {
 					artifactKey: entry.key,
 					error,
 				})

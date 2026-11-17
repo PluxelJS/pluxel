@@ -1,5 +1,6 @@
 import { getContextRuntimeLogging } from '@pluxel/core/logging/internal'
 import type { Context } from '@pluxel/core'
+import { optionalVaultAdmin } from '../vault'
 import type { HostApplicationMeta } from '../product-contract'
 import { describePluxelPlatform } from '../platform-host'
 import {
@@ -21,7 +22,7 @@ export class RuntimeManagementService {
 			service: 'pluxel-runtime',
 			ready: true,
 			protocol: protocolDescriptor(
-				'vaultAdmin' in this.root.root,
+				optionalVaultAdmin(this.root) !== undefined,
 				getContextRuntimeLogging(this.root) !== undefined,
 			),
 			application: this.application,

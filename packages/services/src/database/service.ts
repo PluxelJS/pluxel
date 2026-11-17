@@ -1,6 +1,11 @@
 import { enterOwnerInvocation } from '@pluxel/core/host'
 import { createHash, randomUUID } from 'node:crypto'
-import { formatPluginNodeReference, type Context as CoreContext } from '@pluxel/core'
+import {
+	formatPluginNodeReference,
+	type Context as CoreContext,
+	EffectsService,
+	LoggerService,
+} from '@pluxel/core'
 import { getTableName, is, sql } from 'drizzle-orm'
 import { PgTable, type PgDatabase } from 'drizzle-orm/pg-core'
 import type { PgQueryResultHKT } from 'drizzle-orm/pg-core/session'
@@ -175,7 +180,7 @@ class DatabaseCoordinator {
 		private readonly root: CoreContext,
 		private readonly options: DatabaseServiceHostOptions,
 	) {
-		root.effects.defer(() => this.dispose(), { tag: 'DatabaseCoordinator' })
+		root.service(EffectsService).defer(() => this.dispose(), { tag: 'DatabaseCoordinator' })
 	}
 
 	async acquire<Definition extends DatabaseDefinition>(
@@ -555,7 +560,9 @@ class DatabaseCoordinator {
 
 	private adapter(): Promise<DatabaseAdapter> {
 		this.adapterTask ??= this.options.backend((error) => {
-			this.root.logger.error('database PostgreSQL pool connection failed', { error })
+			this.root
+				.service(LoggerService)
+				.error('database PostgreSQL pool connection failed', { error })
 		})
 		return this.adapterTask
 	}
@@ -580,7 +587,7 @@ class DatabaseCoordinator {
 	}
 
 	private report(error: unknown): void {
-		this.root.logger.error('database outbox dispatcher failed', { error })
+		this.root.service(LoggerService).error('database outbox dispatcher failed', { error })
 	}
 }
 
@@ -595,7 +602,7 @@ class OwnerDatabaseHandle<
 		private readonly owner: CoreContext,
 		private readonly instance: PreparedDatabaseInstance,
 	) {
-		owner.effects.defer(() => this.dispose(), { tag: 'PluginDatabase' })
+		owner.service(EffectsService).defer(() => this.dispose(), { tag: 'PluginDatabase' })
 	}
 
 	read<Result>(callback: (db: any) => Result | Promise<Result>): Promise<Result> {

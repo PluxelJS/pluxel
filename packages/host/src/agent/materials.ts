@@ -1,3 +1,4 @@
+import { readHostServiceControls } from '../service-control'
 import {
 	parsePluginDefinitionAddress,
 	pluginDefinitionIndexKey,
@@ -32,6 +33,12 @@ export type PluginControlMaterialsSnapshot = Readonly<{
 		snapshot: string
 		exportName: string
 	}>[]
+	services: readonly Readonly<{
+		definition: PluginDefinitionAddress
+		snapshot: string
+		exportName: string
+	}>[]
+	unavailableServices: readonly PluginDefinitionAddress[]
 	unavailable: readonly PluginDefinitionAddress[]
 }>
 
@@ -108,8 +115,77 @@ export async function readPluginControlMaterials(
 			Object.freeze({ snapshot: material.snapshot, manifest, files: material.files }),
 		)
 	}
+	const serviceDefinitions: PluginControlMaterialsSnapshot['services'][number][] = []
+	const unavailableServices: PluginDefinitionAddress[] = []
+	const installedServices = readHostServiceControls(ctx)
+	if (catalog.entries.length + installedServices.length > 4096)
+		throw new ScriptExecutionError(
+			'control_material_limit',
+			'Control material selection exceeds 4096 definitions',
+		)
+	for (const installed of installedServices) {
+		options?.signal?.throwIfAborted()
+		if (!installed.material) {
+			unavailableServices.push(installed.definition)
+			continue
+		}
+		const material = installed.material
+		const manifest = parsePluginControlManifest(material.manifest)
+		const declaration = manifest.services.find(
+			(item) =>
+				pluginDefinitionIndexKey(item.definition) ===
+				pluginDefinitionIndexKey(installed.definition),
+		)
+		if (
+			!declaration ||
+			material.snapshot !== manifest.snapshot ||
+			declaration.contract !== installed.contract
+		)
+			throw new ScriptExecutionError(
+				'control_contract_mismatch',
+				'Service control material does not match its installed declaration',
+			)
+		serviceDefinitions.push(
+			Object.freeze({
+				definition: installed.definition,
+				snapshot: material.snapshot,
+				exportName: declaration.exportName,
+			}),
+		)
+		const previous = materials.get(material.snapshot)
+		if (previous) {
+			if (
+				encodeControlData(previous.manifest) !== encodeControlData(manifest) ||
+				encodeControlData(previous.files) !== encodeControlData(material.files)
+			)
+				throw new ScriptExecutionError(
+					'control_contract_mismatch',
+					'One service material snapshot has inconsistent contents',
+				)
+			continue
+		}
+		bytes +=
+			manifest.files.reduce((sum, file) => sum + file.size, 0) +
+			encoder.encode(material.files['manifest.json'] ?? '').byteLength
+		if (
+			materials.size >= MAX_MATERIALS ||
+			bytes > MAX_BYTES ||
+			definitions.length + serviceDefinitions.length > 4096
+		)
+			throw new ScriptExecutionError(
+				'control_material_limit',
+				'Service control materials exceed the transfer budget',
+			)
+		await verifyPluginControlMaterial(manifest, material.files)
+		materials.set(
+			material.snapshot,
+			Object.freeze({ snapshot: material.snapshot, manifest, files: material.files }),
+		)
+	}
 	options?.signal?.throwIfAborted()
 	return Object.freeze({
+		services: Object.freeze(serviceDefinitions),
+		unavailableServices: Object.freeze(unavailableServices),
 		catalogRevision: catalog.revision,
 		materials: Object.freeze([...materials.values()]),
 		definitions: Object.freeze(definitions),
@@ -125,6 +201,7 @@ export type PluginControlManifestIndex = Readonly<{
 	unavailableCount: number
 	materials: readonly Readonly<{ snapshot: string; manifestSize: number }>[]
 	definitions: PluginControlMaterialsSnapshot['definitions']
+	services: PluginControlMaterialsSnapshot['services']
 	nextOffset: number | null
 }>
 export type PluginControlManifestRequest = Readonly<{ transfer: string; offset: number }>
@@ -158,8 +235,9 @@ export function createPluginControlMaterialReader(
 	let expiryTimer: ReturnType<typeof setTimeout> | undefined
 	let closed = false
 	let transfer = ''
-	let index: Omit<PluginControlManifestIndex, 'definitions' | 'nextOffset'> | undefined
+	let index: Omit<PluginControlManifestIndex, 'definitions' | 'services' | 'nextOffset'> | undefined
 	let definitions: PluginControlMaterialsSnapshot['definitions'] = []
+	let services: PluginControlMaterialsSnapshot['services'] = []
 	const clear = () => {
 		if (expiryTimer !== undefined) clearTimeout(expiryTimer)
 		expiryTimer = undefined
@@ -167,6 +245,23 @@ export function createPluginControlMaterialReader(
 		expiresAt = 0
 		index = undefined
 		definitions = []
+		services = []
+	}
+	const page = (offset: number) => {
+		const total = definitions.length + services.length
+		const end = Math.min(offset + 16, total)
+		return {
+			definitions: Object.freeze(
+				definitions.slice(Math.min(offset, definitions.length), Math.min(end, definitions.length)),
+			),
+			services: Object.freeze(
+				services.slice(
+					Math.max(0, offset - definitions.length),
+					Math.max(0, end - definitions.length),
+				),
+			),
+			nextOffset: end < total ? end : null,
+		}
 	}
 	const assertOpen = () => {
 		options.signal?.throwIfAborted()
@@ -185,21 +280,22 @@ export function createPluginControlMaterialReader(
 						'control_snapshot_expired',
 						'The material index has expired; start synchronization again',
 					)
-				if (request.offset > definitions.length)
+				if (request.offset > definitions.length + services.length)
 					throw new ScriptExecutionError(
 						'invalid_request',
 						'Material index offset exceeds its size',
 					)
-				const end = Math.min(request.offset + 16, definitions.length)
 				return Object.freeze({
 					...index,
-					definitions: Object.freeze(definitions.slice(request.offset, end)),
-					nextOffset: end < definitions.length ? end : null,
+					...page(request.offset),
 				})
 			}
 			const value = await read()
 			assertOpen()
-			if (value.materials.length > MAX_MATERIALS || value.definitions.length > 4096)
+			if (
+				value.materials.length > MAX_MATERIALS ||
+				value.definitions.length + value.services.length > 4096
+			)
 				throw new ScriptExecutionError(
 					'control_material_limit',
 					'Too many control material snapshots',
@@ -219,6 +315,7 @@ export function createPluginControlMaterialReader(
 			expiryTimer = setTimeout(clear, PLUGIN_CONTROL_CACHE_MS)
 			transfer = crypto.randomUUID()
 			definitions = value.definitions
+			services = value.services
 			const materials = value.materials.map((material) => {
 				cache.set(material.snapshot, {
 					files: material.files,
@@ -234,13 +331,12 @@ export function createPluginControlMaterialReader(
 				transfer,
 				catalogRevision: value.catalogRevision,
 				expiresAt,
-				unavailableCount: value.unavailable.length,
+				unavailableCount: value.unavailable.length + value.unavailableServices.length,
 				materials: Object.freeze(materials),
 			})
 			return Object.freeze({
 				...index,
-				definitions: Object.freeze(definitions.slice(0, 16)),
-				nextOffset: definitions.length > 16 ? 16 : null,
+				...page(0),
 			})
 		},
 		file(input: unknown) {
@@ -331,6 +427,7 @@ export function parsePluginControlManifestIndex(input: unknown): PluginControlMa
 		'unavailableCount',
 		'materials',
 		'definitions',
+		'services',
 		'nextOffset',
 	])
 	if (
@@ -342,7 +439,8 @@ export function parsePluginControlManifestIndex(input: unknown): PluginControlMa
 		!Array.isArray(value.materials) ||
 		value.materials.length > MAX_MATERIALS ||
 		!Array.isArray(value.definitions) ||
-		value.definitions.length > 16 ||
+		!Array.isArray(value.services) ||
+		value.definitions.length + value.services.length > 16 ||
 		(value.nextOffset !== null && !integer(value.nextOffset))
 	)
 		throw new ScriptExecutionError('protocol_mismatch', 'Invalid control material index')
@@ -362,7 +460,7 @@ export function parsePluginControlManifestIndex(input: unknown): PluginControlMa
 		snapshots.add(material.snapshot)
 		return Object.freeze({ snapshot: material.snapshot, manifestSize: material.manifestSize })
 	})
-	const definitions = value.definitions.map((rawSelection) => {
+	const parseSelection = (rawSelection: unknown) => {
 		const entry = record(rawSelection, ['definition', 'snapshot', 'exportName'])
 		if (
 			!digest(entry.snapshot) ||
@@ -376,8 +474,11 @@ export function parsePluginControlManifestIndex(input: unknown): PluginControlMa
 			snapshot: entry.snapshot,
 			exportName: entry.exportName,
 		})
-	})
+	}
+	const definitions = value.definitions.map(parseSelection)
+	const services = value.services.map(parseSelection)
 	return Object.freeze({
+		services: Object.freeze(services),
 		transfer: value.transfer,
 		catalogRevision: value.catalogRevision,
 		expiresAt: value.expiresAt,

@@ -14,5 +14,5 @@ root export, and fork when present. Immutable category projections are weakly ca
 
 The runtime launcher owns LogTape installation, sinks, routing, dynamic plugin policy, persistence,
 and shutdown. Its policy persistence writer is version 3: overrides are `{ owner, level }[]` records whose
-`owner` is a validated `PluginNodeAddress`. Plugins should use `ctx.logger` and
-`ctx.logger.getDebugChannel(topic)` only.
+`owner` is a validated `PluginNodeAddress`. Plugins should use `ctx.service(LoggerService)` and
+`ctx.service(LoggerService).getDebugChannel(topic)` only.

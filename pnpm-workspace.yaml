@@ -413,7 +413,8 @@ catalogs:
     p-map: ^7.1.1
     p-memoize: ^9.0.0
     p-retry: ^9.0.0
-    vitest: 5.1.0
+    # Match the Vitest runtime bundled with vite-plus 1.4.0.
+    vitest: 5.0.5
     ws: ^8.22.1
     zod: 4.6.7
   types:

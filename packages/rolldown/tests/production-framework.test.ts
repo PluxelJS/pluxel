@@ -175,7 +175,7 @@ it('preserves native modules and shared framework identity with installed module
 import {BasePlugin,Plugin} from '@pluxel/core';
 import {__setPluginDefinition} from '@pluxel/core/toolchain';
 import {Commands} from '@pluxel/services/commands';
-class Dynamic extends BasePlugin { init(){ if (!Array.isArray(this.ctx.require(Commands).list())) throw new Error('MISSING_COMMANDS'); if (Commands !== globalThis.__frameworkCommands) throw new Error('COMMANDS_IDENTITY_MISMATCH'); process.stdout.write('DYNAMIC_STARTED\\n') } }
+class Dynamic extends BasePlugin { init(){ if (!Array.isArray(this.ctx.service(Commands).list())) throw new Error('MISSING_COMMANDS'); if (Commands !== globalThis.__frameworkCommands) throw new Error('COMMANDS_IDENTITY_MISMATCH'); process.stdout.write('DYNAMIC_STARTED\\n') } }
 Plugin()(Dynamic); __setPluginDefinition(Dynamic,{abiVersion:2,kind:'plugin',definition:${JSON.stringify(address.definition)}}); export {Dynamic};
 `,
 		)
@@ -194,7 +194,7 @@ const task = defineWorkerTask<number,number>(import.meta.url, './task.ts');
 @Plugin()
 class FrozenWorker extends BasePlugin {
  async init() {
-  const value = await this.ctx.require(Workers).run(task,21);
+  const value = await this.ctx.service(Workers).run(task,21);
   if(value !== 42) throw new Error('WRONG_WORKER_RESULT');
   process.stdout.write('FROZEN_WORKER_OK\\n');
  }
@@ -270,12 +270,13 @@ it('preserves standalone handler and listener startup failures when Host cleanup
 		await writeFile(
 			join(root, 'app.ts'),
 			`import {defineHostApplication} from '@pluxel/host';
+import {EffectsService} from '@pluxel/core';
 import {resolveHostEnv} from '@pluxel/host/environment';
 import {elysia,createElysiaHandler} from '@pluxel/services/elysia';
 import {listenElysia} from '@pluxel/services/elysia/node';
 export default defineHostApplication(startup=>({
  plugins:[],services:startup.env.PROBE_LISTENER==='1'?[elysia()]:[],
- prepare({host}){host.ctx.effects.defer(()=>{throw new Error('STANDALONE_CLEANUP_PROBE')},{phase:'shutdown'})},
+ prepare({host}){host.ctx.service(EffectsService).defer(()=>{throw new Error('STANDALONE_CLEANUP_PROBE')},{phase:'shutdown'})},
  async launch({host}) {
   if(startup.env.PROBE_LISTENER!=='1') {createElysiaHandler(host);return}
   const env=resolveHostEnv(startup.env);
@@ -305,7 +306,7 @@ const errors=error=>error instanceof AggregateError?error.errors.flatMap(errors)
 await assert.rejects(import(${JSON.stringify(pathToFileURL(join(root, 'dist/app.mjs')).href)}),error=>{
  assert(error instanceof AggregateError,error.stack);
  assert.equal(error.cause,error.errors[0]);
- ${listener ? "assert(errors(error).some(error=>error.code==='EADDRINUSE'))" : "const missing=errors(error).find(error=>error.code==='CONTEXT_CAPABILITY_MISSING'); assert(missing); assert.match(missing.capability,/elysia/i)"};
+ ${listener ? "assert(errors(error).some(error=>error.code==='EADDRINUSE'))" : "const missing=errors(error).find(error=>error.code==='CONTEXT_SERVICE_MISSING'); assert(missing); assert.equal(missing.name,'ContextServiceMissingError')"};
  assert(errors(error).some(error=>error.message==='STANDALONE_CLEANUP_PROBE'));
  return true;
 });

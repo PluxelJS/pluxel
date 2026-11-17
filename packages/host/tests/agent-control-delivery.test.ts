@@ -112,7 +112,7 @@ export const shortCircuit = (async (sdk) => {
 			executor: owner.executor,
 			subject: 'control-delivery',
 			assertAuthorized() {},
-			describe: () => ({ capabilities: ['plugin.instance'] }),
+			describe: () => ({ provides: ['plugin.instance'] }),
 		})
 		const request = { runId: 'generated-control-operation', code: artifact }
 		const receipt = {

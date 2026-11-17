@@ -5,9 +5,10 @@ import { dirname, isAbsolute, resolve } from 'node:path'
 import { rolldown, type Plugin } from 'rolldown'
 import MagicString from 'magic-string'
 import type { BindingPattern, ModuleExportName, Program } from 'oxc-parser'
-import type { ScriptArtifact } from '@pluxel/host/internal/agent/runtime'
-import { ScriptInputs } from './script-inputs'
+import type { ScriptArtifact, ScriptDiagnostic } from '@pluxel/host/internal/agent/runtime'
+import { ScriptInputs, ScriptTypecheckError } from './script-inputs'
 import { readScriptControlModule } from './script-control-inputs'
+import { lowerScriptServiceRefs } from './script-service-refs'
 
 export type ScriptCompileOptions = Readonly<{
 	/** Ordinary TS/JS module. Compilation never evaluates it or the application factory. */
@@ -18,6 +19,8 @@ export type ScriptCompileOptions = Readonly<{
 	signal?: AbortSignal
 }>
 export class ScriptCompileError extends Error {
+	readonly diagnostics?: readonly ScriptDiagnostic[]
+
 	constructor(
 		readonly code:
 			| 'typecheck_failed'
@@ -26,10 +29,11 @@ export class ScriptCompileError extends Error {
 			| 'export_not_found'
 			| 'source_too_large',
 		message: string,
-		options?: ErrorOptions,
+		options?: ErrorOptions & Readonly<{ diagnostics?: readonly ScriptDiagnostic[] }>,
 	) {
 		super(message, options)
 		this.name = 'ScriptCompileError'
+		this.diagnostics = options?.diagnostics
 	}
 }
 
@@ -197,6 +201,7 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 	options.signal?.throwIfAborted()
 	const inputs = new ScriptInputs(options.signal)
 	const controls = new Map<string, string>()
+	const serviceRefModules = new Set<string>()
 	const findControl = async (id: string): Promise<string | undefined> => {
 		if (controls.has(id)) return controls.get(id)
 		const code = await readScriptControlModule(inputs, id)
@@ -263,7 +268,7 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 			if (
 				importer &&
 				source === '@pluxel/host/internal/control-reference' &&
-				controls.has(importer)
+				(controls.has(importer) || serviceRefModules.has(importer))
 			)
 				return { id: source, external: true }
 			if (importer && forbidden(source)) {
@@ -276,6 +281,20 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 				)
 			}
 			return null
+		},
+		async transform(code, id) {
+			const lowered = await lowerScriptServiceRefs({
+				code,
+				id,
+				inputs,
+				resolve: async (source) => {
+					const resolved = await this.resolve(source, id, { skipSelf: true })
+					return resolved?.id
+				},
+			})
+			if (lowered === undefined) return null
+			serviceRefModules.add(id)
+			return { code: lowered, map: null }
 		},
 		resolveDynamicImport(_source, importer) {
 			rejectImport(
@@ -365,18 +384,21 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 				'Compiled script or source map exceeds 1 MiB',
 			)
 		try {
-			await inputs.check(file)
+			await inputs.check(file, exportName)
 		} catch (cause) {
 			if (options.signal?.aborted) throw options.signal.reason
 			throw new ScriptCompileError(
 				'typecheck_failed',
 				cause instanceof Error ? cause.message : String(cause),
-				{ cause },
+				{
+					cause,
+					...(cause instanceof ScriptTypecheckError ? { diagnostics: cause.diagnostics } : {}),
+				},
 			)
 		}
 		return {
 			kind: 'artifact',
-			format: 'pluxel-js-factory/4',
+			format: 'pluxel-js-factory/5',
 			code,
 			sourceHash: createHash('sha256').update(code).digest('hex'),
 			exportName,
@@ -397,17 +419,16 @@ export async function compileScript(options: ScriptCompileOptions): Promise<Scri
 
 /** Native type checking for a Vite project; loading remains owned by its existing ModuleRunner. */
 export async function checkProjectScript(
-	options: Readonly<{ file: string; signal?: AbortSignal }>,
+	options: Readonly<{ file: string; exportName?: string; signal?: AbortSignal }>,
 ): Promise<
 	Readonly<{
 		inputs: ReadonlyMap<string, string>
-		digest: string
 	}>
 > {
 	const file = await realpath(resolve(options.file))
 	const inputs = new ScriptInputs(options.signal)
 	try {
-		await inputs.check(file)
+		await inputs.check(file, options.exportName)
 		for (const path of inputs.snapshot().keys())
 			if (path.endsWith('/index.d.mts'))
 				await readScriptControlModule(inputs, path.slice(0, -'.d.mts'.length) + '.mjs')
@@ -416,17 +437,11 @@ export async function checkProjectScript(
 		throw new ScriptCompileError(
 			'typecheck_failed',
 			cause instanceof Error ? cause.message : String(cause),
-			{ cause },
+			{
+				cause,
+				...(cause instanceof ScriptTypecheckError ? { diagnostics: cause.diagnostics } : {}),
+			},
 		)
 	}
-	const captured = inputs.snapshot()
-	const digest = createHash('sha256')
-	for (const [path, content] of [...captured].sort(([a], [b]) => a.localeCompare(b))) {
-		digest
-			.update(path)
-			.update('\0')
-			.update(createHash('sha256').update(content).digest())
-			.update('\0')
-	}
-	return Object.freeze({ inputs: captured, digest: digest.digest('hex') })
+	return Object.freeze({ inputs: inputs.snapshot() })
 }

@@ -89,6 +89,7 @@ function createPipeline(
 				root: options.root,
 				semantics,
 				typeImports: 'packageMetadata' in options ? 'package' : 'closure',
+				bundleServices: options.node?.nativeDependencyRoot !== undefined,
 			}),
 			pluginArtifactBuildPlugin({
 				root: options.root,

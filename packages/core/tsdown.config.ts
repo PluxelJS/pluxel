@@ -1,6 +1,7 @@
+import { createServiceBuildPlugin } from '../rolldown/src/service-build'
 import { defineConfig } from 'vite-plus/pack'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 const require = createRequire(import.meta.url)
 const zenfsRequire = createRequire(require.resolve('@zenfs/core'))
@@ -34,6 +35,12 @@ const transformOptions = {
 }
 
 export default defineConfig({
+	plugins: [
+		createServiceBuildPlugin({
+			root: import.meta.dirname,
+			runtime: resolve(import.meta.dirname, 'src/services/definition.ts'),
+		}),
+	],
 	deps: {
 		onlyBundle: [
 			'option-t',
@@ -52,6 +59,14 @@ export default defineConfig({
 	},
 	alias: { buffer: require.resolve('buffer/') },
 	exports: {
+		customExports(exports) {
+			exports['./control'] = {
+				types: './dist/control/index.d.mts',
+				import: './dist/control/index.mjs',
+				default: './dist/control/index.mjs',
+			}
+			return exports
+		},
 		devExports: '@pluxel/source',
 	},
 	entry: {
@@ -63,6 +78,7 @@ export default defineConfig({
 		federation: 'src/federation.ts',
 		internal: 'src/internal.ts',
 		'internal/plugin-address-evidence': 'src/internal/plugin-address-evidence.ts',
+		'internal/control-manifest': 'src/internal/control-manifest.ts',
 		'internal/test': 'src/internal-test.ts',
 		index: 'src/index.ts',
 		host: 'src/host.ts',
@@ -74,6 +90,7 @@ export default defineConfig({
 		'fs/browser': 'src/fs/browser.ts',
 	},
 	dts: {
+		tsconfig: './tsconfig.build.json',
 		// Context declarations are bundled from workspace source outside Core's tsconfig root.
 		eager: true,
 		sourcemap: true,

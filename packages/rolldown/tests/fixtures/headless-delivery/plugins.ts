@@ -12,7 +12,7 @@ export class QueryHttpPlugin extends BasePlugin {
 	protected override init() {
 		const database = databaseFor(this.ctx)
 		if (this.config.fail) throw new Error('Query capability failed to initialize')
-		this.ctx.require(ElysiaApp).get('/query', async () => {
+		this.ctx.service(ElysiaApp).get('/query', async () => {
 			const result = await database.client.execute('SELECT 6 * 7 AS answer')
 			return result.rows[0]
 		})
@@ -24,7 +24,7 @@ export class PdfHttpPlugin extends BasePlugin {
 	protected override init() {
 		const database = databaseFor(this.ctx)
 		const pending = new Set<Promise<void>>()
-		this.ctx.require(ElysiaApp).get('/documents/:name', async ({ params, request }) => {
+		this.ctx.service(ElysiaApp).get('/documents/:name', async ({ params, request }) => {
 			const result = await database.client.execute({
 				sql: 'SELECT path FROM documents WHERE name = ?',
 				args: [params.name],

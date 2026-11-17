@@ -77,11 +77,12 @@ it('preserves startup and cleanup failures while draining resources and releasin
 		await writeFile(join(root, 'late.mjs'), 'export const value=42')
 		await writeFile(
 			join(root, 'app.mjs'),
-			`export const unused=import.meta.resolve('./late.mjs');
+			`import {EffectsService} from '@pluxel/core';
+export const unused=import.meta.resolve('./late.mjs');
 export default () => ({plugins:[],runtime:{documents:{state:false}},prepare({host,startup}){
  const {cleanup,failure,cleanupFailure}=startup.bindings;
- host.ctx.effects.defer(()=>cleanup.push('final'),{phase:'final'});
- host.ctx.effects.defer(()=>{cleanup.push('shutdown');if(cleanupFailure)throw cleanupFailure},{phase:'shutdown'});
+ host.ctx.service(EffectsService).defer(()=>cleanup.push('final'),{phase:'final'});
+ host.ctx.service(EffectsService).defer(()=>{cleanup.push('shutdown');if(cleanupFailure)throw cleanupFailure},{phase:'shutdown'});
  throw failure;
 }})`,
 		)

@@ -1,13 +1,13 @@
-import { parsePluginNodeAddress, type Context } from '@pluxel/core'
+import { type Workbench, workbench } from '@pluxel/workbench'
+import { parsePluginNodeAddress, type Context, defineServiceRef } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { workbenchFederationExpose, workbenchFederationProducerName } from '@pluxel/core/federation'
 import { RpcTarget, type RpcStub } from 'capnweb'
-import { workbench } from '@pluxel/workbench'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import { describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
-import { requireWorkbench, WorkbenchBackend } from '@pluxel/workbench/server'
+import { WorkbenchHost, WorkbenchBackend } from '@pluxel/workbench/server'
 import {
 	WorkbenchContentTarget,
 	type WorkbenchArtifactLookup,
@@ -15,6 +15,7 @@ import {
 } from '@pluxel/workbench/internal'
 import type { WorkbenchContentObserver } from '@pluxel/workbench/client'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 interface SettingsApi extends RpcTarget {
 	snapshot(): Readonly<{ enabled: boolean }>
 }
@@ -117,7 +118,7 @@ class SettingsTarget extends RpcTarget implements SettingsApi {
 @Plugin({ displayName: 'Local' })
 class LocalPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.workbench?.publish(LocalWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(LocalWorkbench, {
 			settings: ({ signal }) => {
 				localFactoryCalls += 1
 				return new SettingsTarget(signal)
@@ -129,7 +130,7 @@ class LocalPlugin extends BasePlugin {
 @Plugin({ displayName: 'Content' })
 class ContentPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.workbench?.publish(ContentWorkbench)
+		this.ctx.service(WorkbenchRef)?.publish(ContentWorkbench)
 	}
 }
 
@@ -147,7 +148,7 @@ class InteractiveContentPlugin extends BasePlugin {
 	loadCalls = 0
 
 	protected override init() {
-		this.ctx.workbench?.publish(InteractiveContentWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(InteractiveContentWorkbench, {
 			interactive: async ({ signal }) => {
 				contentSignal = signal
 				if (this.factoryGate) await this.factoryGate
@@ -206,7 +207,7 @@ let reusedFactoryStarted: PromiseWithResolvers<void> | undefined
 @Plugin({ displayName: 'Reused target' })
 class ReusedTargetPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.workbench?.publish(LocalWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(LocalWorkbench, {
 			settings: ({ signal }) => {
 				if (reusedFactory) {
 					reusedFactoryStarted?.resolve()
@@ -226,7 +227,7 @@ let lateFactorySignal: AbortSignal | undefined
 @Plugin({ displayName: 'Late factory' })
 class LateFactoryPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.workbench?.publish(LocalWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(LocalWorkbench, {
 			settings: ({ signal }) => {
 				lateFactorySignal = signal
 				lateFactoryStarted?.resolve()
@@ -242,7 +243,7 @@ let routedParams: Readonly<Record<string, string>> | undefined
 @Plugin({ displayName: 'Routed' })
 class RoutedPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.workbench?.publish(RoutedWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(RoutedWorkbench, {
 			account: ({ params, signal }) => {
 				routedParams = params
 				return new SettingsTarget(signal)
@@ -254,7 +255,7 @@ class RoutedPlugin extends BasePlugin {
 @Plugin({ displayName: 'Shared route A' })
 class SharedRoutePluginA extends BasePlugin {
 	protected override init() {
-		this.ctx.workbench?.publish(SharedRouteWorkbenchA, {
+		this.ctx.service(WorkbenchRef)?.publish(SharedRouteWorkbenchA, {
 			settings: ({ signal }) => new SettingsTarget(signal),
 		})
 	}
@@ -263,7 +264,7 @@ class SharedRoutePluginA extends BasePlugin {
 @Plugin({ displayName: 'Shared route B' })
 class SharedRoutePluginB extends BasePlugin {
 	protected override init() {
-		this.ctx.workbench?.publish(SharedRouteWorkbenchB, {
+		this.ctx.service(WorkbenchRef)?.publish(SharedRouteWorkbenchB, {
 			settings: ({ signal }) => new SettingsTarget(signal),
 		})
 	}
@@ -290,7 +291,7 @@ let attachmentConsumerNode: unknown
 @Plugin({ displayName: 'Provider' })
 class ProviderPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.workbench?.publish(ProviderWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(ProviderWorkbench, {
 			picker: ({ consumer }) => {
 				attachmentConsumerNode = consumer.node
 				return new CatalogTarget(consumer.node.definition.exportName)
@@ -306,7 +307,7 @@ class ConsumerPlugin extends BasePlugin {
 	}
 
 	protected override init() {
-		this.ctx.workbench?.publish(ConsumerWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(ConsumerWorkbench, {
 			fonts: {
 				provider: this.provider,
 				consumer: () => new SelectionTarget(),
@@ -322,7 +323,7 @@ class PanelPlugin extends BasePlugin {
 	}
 
 	protected override init() {
-		this.ctx.workbench?.publish(PanelWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(PanelWorkbench, {
 			inspector: ({ signal }) => new SettingsTarget(signal),
 			fonts: { provider: this.provider, consumer: () => new SelectionTarget() },
 		})
@@ -337,7 +338,7 @@ describe('Workbench vNext publication', () => {
 		host.start(PanelPlugin)
 		host.start(LocalPlugin)
 		await host.commit()
-		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+		const session = host.ctx.service(WorkbenchHost).createSession(localPrincipal, () => {})
 		const target = PanelPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 		expect(layout.entries).toHaveLength(3)
@@ -394,7 +395,7 @@ describe('Workbench vNext publication', () => {
 
 		const instance = requirePluginService(host.ctx).getInstance(NoPublicationPlugin.nodeAddress())
 		if (!instance) throw new Error('NoPublicationPlugin did not start')
-		const registry = requireWorkbench(host.ctx).registry as unknown as {
+		const registry = host.ctx.service(WorkbenchHost).registry as unknown as {
 			publish(owner: Context, definition: unknown, ...bindings: unknown[]): void
 		}
 
@@ -409,7 +410,7 @@ describe('Workbench vNext publication', () => {
 		host.start(ContentPlugin)
 		await host.commit()
 
-		const backend = requireWorkbench(host.ctx)
+		const backend = host.ctx.service(WorkbenchHost)
 		const session = backend.createSession(localPrincipal, () => {})
 		const target = ContentPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
@@ -454,7 +455,7 @@ describe('Workbench vNext publication', () => {
 		host.start(InteractiveContentPlugin)
 		await host.commit()
 
-		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+		const session = host.ctx.service(WorkbenchHost).createSession(localPrincipal, () => {})
 		const target = InteractiveContentPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 		const entry = layout.entries[0]!
@@ -519,7 +520,7 @@ describe('Workbench vNext publication', () => {
 			host.add(InteractiveContentPlugin)
 			host.start(InteractiveContentPlugin)
 			await host.commit()
-			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+			const session = host.ctx.service(WorkbenchHost).createSession(localPrincipal, () => {})
 			const target = InteractiveContentPlugin.nodeAddress()
 			const layout = session.target.layoutDto({ target })
 			for (let index = 0; index < 2; index += 1) {
@@ -555,7 +556,7 @@ describe('Workbench vNext publication', () => {
 			const owner = requirePluginService(host.ctx).getInstance(target) as InteractiveContentPlugin
 			if (stage === 'factory') owner.failFactory = true
 			else owner.failSubscribe = true
-			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+			const session = host.ctx.service(WorkbenchHost).createSession(localPrincipal, () => {})
 			const layout = session.target.layoutDto({ target })
 			const input = {
 				layoutRevision: layout.revision,
@@ -587,7 +588,7 @@ describe('Workbench vNext publication', () => {
 		const owner = requirePluginService(host.ctx).getInstance(target) as InteractiveContentPlugin
 		const gate = Promise.withResolvers<void>()
 		owner.factoryGate = gate.promise
-		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+		const session = host.ctx.service(WorkbenchHost).createSession(localPrincipal, () => {})
 		const layout = session.target.layoutDto({ target })
 		const opening = session.target.openEntry({
 			layoutRevision: layout.revision,
@@ -613,7 +614,7 @@ describe('Workbench vNext publication', () => {
 		host.start(InteractiveContentPlugin)
 		await host.commit()
 
-		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+		const session = host.ctx.service(WorkbenchHost).createSession(localPrincipal, () => {})
 		const target = InteractiveContentPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 		const input = {
@@ -653,7 +654,7 @@ describe('Workbench vNext publication', () => {
 		host.start(InteractiveContentPlugin)
 		await host.commit()
 
-		const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+		const session = host.ctx.service(WorkbenchHost).createSession(localPrincipal, () => {})
 		const target = InteractiveContentPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
 		const opened = await session.target.openEntry({
@@ -692,7 +693,7 @@ describe('Workbench vNext publication', () => {
 		host.start(LocalPlugin)
 		await host.commit()
 
-		const backend = requireWorkbench(host.ctx)
+		const backend = host.ctx.service(WorkbenchHost)
 		let invalidated = false
 		const session = backend.createSession(localPrincipal, () => {
 			invalidated = true
@@ -898,7 +899,7 @@ describe('Workbench vNext publication', () => {
 		host.start(ReusedTargetPlugin)
 		await host.commit()
 		try {
-			const session = requireWorkbench(host.ctx).createSession(localPrincipal, () => {})
+			const session = host.ctx.service(WorkbenchHost).createSession(localPrincipal, () => {})
 			const target = ReusedTargetPlugin.nodeAddress()
 			const layout = session.target.layoutDto({ target })
 			await expect(
@@ -930,7 +931,7 @@ describe('Workbench vNext publication', () => {
 		await host.commit()
 
 		try {
-			const backend = requireWorkbench(host.ctx)
+			const backend = host.ctx.service(WorkbenchHost)
 			const session = backend.createSession(localPrincipal, () => {})
 			const target = ReusedTargetPlugin.nodeAddress()
 			const layout = session.target.layoutDto({ target })
@@ -973,7 +974,7 @@ describe('Workbench vNext publication', () => {
 		await host.commit()
 
 		try {
-			const backend = requireWorkbench(host.ctx)
+			const backend = host.ctx.service(WorkbenchHost)
 			const target = ReusedTargetPlugin.nodeAddress()
 			const firstSession = backend.createSession(localPrincipal, () => {})
 			const firstLayout = firstSession.target.layoutDto({ target })
@@ -1028,7 +1029,7 @@ describe('Workbench vNext publication', () => {
 		let resolvedTarget: SettingsTarget | undefined
 
 		try {
-			const backend = requireWorkbench(host.ctx)
+			const backend = host.ctx.service(WorkbenchHost)
 			const session = backend.createSession(localPrincipal, () => {})
 			const target = LateFactoryPlugin.nodeAddress()
 			const layout = session.target.layoutDto({ target })
@@ -1068,7 +1069,7 @@ describe('Workbench vNext publication', () => {
 		let resolvedTarget: SettingsTarget | undefined
 
 		try {
-			const backend = requireWorkbench(host.ctx)
+			const backend = host.ctx.service(WorkbenchHost)
 			const session = backend.createSession(localPrincipal, () => {})
 			const target = LateFactoryPlugin.nodeAddress()
 			const layout = session.target.layoutDto({ target })
@@ -1121,7 +1122,7 @@ describe('Workbench vNext publication', () => {
 		host.add(RoutedPlugin)
 		host.start(RoutedPlugin)
 		await host.commit()
-		const backend = requireWorkbench(host.ctx)
+		const backend = host.ctx.service(WorkbenchHost)
 		const session = backend.createSession(localPrincipal, () => {})
 		const target = RoutedPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
@@ -1152,7 +1153,7 @@ describe('Workbench vNext publication', () => {
 		host.start(SharedRoutePluginA)
 		host.start(SharedRoutePluginB)
 		await host.commit()
-		const backend = requireWorkbench(host.ctx)
+		const backend = host.ctx.service(WorkbenchHost)
 		const session = backend.createSession(localPrincipal, () => {})
 		const layoutA = session.target.layoutDto({ target: SharedRoutePluginA.nodeAddress() })
 		const layoutB = session.target.layoutDto({ target: SharedRoutePluginB.nodeAddress() })
@@ -1171,7 +1172,7 @@ describe('Workbench vNext publication', () => {
 		host.start(ProviderPlugin)
 		host.start(ConsumerPlugin)
 		await host.commit()
-		const backend = requireWorkbench(host.ctx)
+		const backend = host.ctx.service(WorkbenchHost)
 		const session = backend.createSession(localPrincipal, () => {})
 		const target = ConsumerPlugin.nodeAddress()
 		const layout = session.target.layoutDto({ target })
@@ -1200,7 +1201,7 @@ describe('Workbench vNext publication', () => {
 		host.add(LocalPlugin)
 		host.start(LocalPlugin)
 		await host.commit()
-		const backend = requireWorkbench(host.ctx)
+		const backend = host.ctx.service(WorkbenchHost)
 		let invalidation: Error | undefined
 		const session = backend.createSession(localPrincipal, (cause) => {
 			invalidation = cause

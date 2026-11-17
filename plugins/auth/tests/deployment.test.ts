@@ -1,3 +1,5 @@
+import type { WorkbenchHost } from '@pluxel/workbench/server'
+import { defineServiceRef } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { AdminAccess, managementAccess } from '@pluxel/services/management/access'
 import { vault } from '@pluxel/services/vault'
@@ -5,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { AuthConfig, AuthPlugin, AuthVaultSchema } from '../src/index.ts'
 import { hashPassword } from '../src/password.ts'
 
+const WorkbenchHostRef = defineServiceRef<WorkbenchHost>()
 describe('Auth headless deployment', () => {
 	it.each(['password', 'oidc'] as const)(
 		'starts ready with %s credentials from a Vault binding and no Workbench',
@@ -61,12 +64,12 @@ describe('Auth headless deployment', () => {
 			})
 			try {
 				await host.start()
-				expect(host.ctx.workbench).toBeUndefined()
+				expect(host.ctx.service(WorkbenchHostRef)).toBeUndefined()
 				const config = await host.config.get(AuthPlugin.nodeAddress())
 				expect(config).toMatchObject({ ok: true, config: { mode: modeConfig } })
 				expect(JSON.stringify(config)).not.toContain('deployment-client-secret')
 				expect(JSON.stringify(config)).not.toContain('"password":')
-				expect(await host.ctx.require(AdminAccess).describe()).toMatchObject({
+				expect(await host.ctx.service(AdminAccess).describe()).toMatchObject({
 					provider: { method: mode, ready: true },
 				})
 			} finally {

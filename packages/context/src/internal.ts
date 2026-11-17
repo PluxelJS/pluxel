@@ -1,8 +1,20 @@
 export {
+	resolveContextService,
+	initializeContextServiceValues,
+	bindServiceIdentity,
+	createServiceReference,
+	createServiceRef,
+	getServiceDefinitionKey,
+	getServiceDefinitionAccess,
+	isServiceRef,
+	getInstalledServiceDefinitions,
+	resolveInstalledServiceDefinition,
+	getInstalledServiceAccess,
 	createChildContext,
 	createContextPlan,
 	createContextView,
 	createRootContext,
 	createScopeContext,
 	type ContextPlan,
-} from './kernel'
+	type ServiceKey,
+} from './kernel.ts'

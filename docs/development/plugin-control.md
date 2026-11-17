@@ -31,23 +31,32 @@ import type {
 
 ```sh
 # 使用 dev status 已选择的 profile；有多个匹配实例时再加 --instance。
-vp exec pluxel dev sync --profile app
+vp exec pluxel dev sync --profile app --package-name @acme/pluxel-plugin-counter
 
 # 部署应用沿用 Management 管理认证，读取无需开启 scripts。
 vp exec pluxel script sync --endpoint https://app.example.com \
-  --credentials-file ./admin.json --out .pluxel/control
+  --credentials-file ./admin.json --out .pluxel/control \
+  --definition 'package:@acme/pluxel-plugin-counter::Counter'
 ```
 
-`dev sync` 默认写入所选 Vite root 的 `.pluxel/control`。部署同步的默认目录相对于当前工作目录。两种同步命令均在 `{ ok: true, value }` 的 `value` 中返回 `out`、`snapshot`、`catalogRevision`、`unavailableCount` 和 `definitions`。每项 definition 都包含完整地址、实际 `exportName` 和可导入的 `module` 路径。同步按权威入口生成稳定模块，同一入口的插件共享模块，普通具名导出沿用原名。不同包的同名插件通过模块路径区分。使用返回的准确 `module` 与 `exportName` 导入；特殊导出名或类型名冲突的实际名称也以该输出为准：
+`--package-name` 选择一个包，`--definition` 接受完整的标准定义引用，两者互斥，省略则同步全部。程序调用传 `packageName` 或标准 `definition` 地址。筛选先于文件下载；每份选中材料仍完整验证声明闭包。无匹配定义抛出 `control_definition_not_found`，不切换 `current`。
+
+`dev sync` 默认写入所选 Vite root 的 `.pluxel/control`。部署同步的默认目录相对于当前工作目录。两种同步命令均在 `{ ok: true, value }` 的 `value` 中返回 `out`、`snapshot`、`catalogRevision`、`unavailableCount` 、`definitions` 和 `services`。两张列表的每项 definition 都包含完整地址、实际 `exportName`、可导入的 `module` 路径和可复制的 `importStatement`。同步按权威入口生成稳定模块，同一入口的插件共享模块，普通具名导出沿用原名。不同包的同名插件通过模块路径区分。复制返回的 `importStatement`，或按脚本位置将其中的绝对模块路径改为相对路径；特殊导出名或类型名冲突的实际名称也以该输出为准：
 
 ```ts
 // 使用 sync 实际返回的 module；下面的目录摘要仅展示路径形式。
 import { Counter } from '../.pluxel/control/current/entries/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/index.mjs'
 ```
 
-同步先验证完整清单和每个文件，再原子切换 `current`。已有快照继续保留，当前导入不会看到半份材料。输出目录由工具管理；目录内已有作者文件或快照被修改时会报冲突。使用新目录或显式清理已经确认废弃的生成目录后再同步。
+同步先验证完整索引和选中材料的每个文件，再原子切换 `current`。筛选后的 `current` 只暴露本次选中的 Plugin 与已安装 Service 定义；已有脚本需要其他定义时，同步全部或使用独立输出目录。已有快照继续保留，当前导入不会看到半份材料。输出目录由工具管理；目录内已有作者文件或快照被修改时会报冲突。使用新目录或显式清理已经确认废弃的生成目录后再同步。
 
-同步模块只导出当前 catalog 已接纳的定义；底层声明闭包按已验证的原材料保留。`unavailableCount` 表示缺失、分析失败等尚不能提供材料的定义数量。已知分析失败或源码失配的原因显示在插件 `status()` 和全局 `plugins.list()` 的 `issues` 中；应用的配置读取和生命周期操作仍可通过动态地址进行。
+输出的完整路径须可被 TypeScript/Rolldown 导入：包含 `?`，或 POSIX 文件名中包含反斜线时，在下载前报 `invalid_input`；空格、引号与 `#` 可正常转义。
+
+同步模块只导出当前 catalog 已接纳的 Plugin 与目标 Host 已安装的 Service 中被选中的定义；底层声明闭包按已验证的原材料保留。`unavailableCount` 是整个 catalog 中无法提供材料的 Plugin 数量与已安装 Service 中无法提供材料的声明数量之和，不随筛选缩小。没有公开可加载控制材料的内部服务也会计入此数，不能据此推断有多少插件失败。
+
+插件的分析失败或源码失配原因显示在 `status()` 和 `plugins.list()` 的 `issues` 中，配置与生命周期操作仍可通过动态地址进行。服务没有插件节点，其材料缺失不出现在插件状态中；需核对该服务的公开导出与应用装载的控制材料。
+
+服务控制入口同样随材料提供，导出必需服务描述符与 `FooInstance` 类型；服务没有节点地址与 fork。服务访问、可选引用和声明匹配见[借用已安装的服务](./scripts.md#借用已安装的服务)。
 
 ## 选择插件与复用引用
 
@@ -114,7 +123,7 @@ export default (async (sdk) => {
 
 要查看安装清单，读取 PackageManagerPlugin 原生 `snapshot()` 的 `packages`。Host 列表以插件节点为单位，安装包可以包含零个或多个插件；`execution.kind === 'vite'` 且 `execution.origin === 'source'` 表示 Vite 动态来源，也包含其他目录来源。
 
-首次安装且作者尚无类型时，分两次编写脚本：先安装并确认 Host 接纳，然后执行 `dev sync` 或 `script sync`，从实际返回的 `module` / `exportName` 导入新描述符，再调用 `sdk.plugin(Descriptor.nodeAddress()).instance()`。TypeScript 在执行前检查，首次发现的未知类型通过这次同步提供。作者已有匹配版本的包控制入口时，可以直接使用它的描述符。同步读取当前 catalog，Vite 的后续动态来源同样参与。
+首次安装且作者尚无类型时，分两次编写脚本：先安装并确认 Host 接纳，然后执行 `dev sync` 或 `script sync`，按包或 definition 筛选并复制返回的 `importStatement`，再调用 `sdk.plugin(Descriptor.nodeAddress()).instance()`。TypeScript 在执行前检查，首次发现的未知类型通过这次同步提供。作者已有匹配版本的包控制入口时，可以直接使用它的描述符。同步读取当前 catalog，Vite 的后续动态来源同样参与。
 
 包缺少合法控制材料时，同步结果会报告 `unavailableCount`；此时仍可按地址进行动态配置与生命周期管理。生成材料中的公开外部类型依赖仍需在作者环境提供匹配版本。
 

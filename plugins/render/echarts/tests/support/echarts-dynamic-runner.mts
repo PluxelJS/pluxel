@@ -1,13 +1,35 @@
 import assert from 'node:assert/strict'
+import type { PluginHost } from '@pluxel/host'
+import type { HostVitePluginApi } from '@pluxel/host-vite'
 import { vitePreset } from '@pluxel/services/vite'
-import { createServer } from 'vite'
+import { createLogger, createServer } from 'vite'
 
 const entry = process.env.PLUXEL_ECHARTS_DYNAMIC_ENTRY
 assert.ok(entry, 'missing PLUXEL_ECHARTS_DYNAMIC_ENTRY')
 
+const startupErrors: string[] = []
+const logger = createLogger('silent')
+logger.error = (message, details) => {
+	if (startupErrors.length < 8)
+		startupErrors.push(`${message}: ${String(details?.error ?? '')}`.slice(0, 4096))
+}
+let applicationHost: PluginHost | undefined
 const server = await createServer({
 	configFile: false,
-	plugins: [vitePreset({ entry })],
+	plugins: [
+		vitePreset({ entry }),
+		{
+			name: 'echarts-dynamic-startup-observer',
+			api: {
+				pluxelHost: {
+					attach({ host }) {
+						applicationHost = host
+					},
+				},
+			} satisfies HostVitePluginApi,
+		},
+	],
+	customLogger: logger,
 	server: { host: '127.0.0.1', port: 0 },
 	logLevel: 'silent',
 })
@@ -16,6 +38,16 @@ await using runtime = {
 	origin: server.resolvedUrls!.local[0]!,
 	[Symbol.asyncDispose]: () => server.close(),
 }
+assert.ok(applicationHost, startupErrors.join('\n') || 'ECharts application did not initialize')
+const startup = await applicationHost.status()
+const probe = startup.statuses.find(
+	(status) => status.address.definition.exportName === 'EChartsDynamicProbePlugin',
+)
+assert.equal(
+	probe?.lifecycleState,
+	'running',
+	JSON.stringify({ errors: startupErrors, statuses: startup.statuses }),
+)
 const rendered = await fetch(new URL('/__pluxel-test/echarts/render', runtime.origin))
 assert.equal(rendered.status, 200)
 assert.equal(rendered.headers.get('content-type'), 'image/png')

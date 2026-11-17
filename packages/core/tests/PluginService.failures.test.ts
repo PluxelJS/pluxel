@@ -1,3 +1,4 @@
+import { EffectsService } from '../src/services/effects/EffectsService'
 import { describe, expect, it } from 'vitest'
 import { requirePluginService } from '@pluxel/core/internal'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
@@ -45,7 +46,7 @@ class IndependentPlugin extends BasePlugin {
 class ConstructionRollbackFailure extends BasePlugin {
 	constructor() {
 		super()
-		this.ctx.effects.defer(() => {
+		this.ctx.service(EffectsService).defer(() => {
 			throw new Error('construction cleanup boom')
 		})
 		throw new Error('construction boom')
@@ -71,7 +72,7 @@ class ConfigRollbackFailure extends BasePlugin {
 	constructor() {
 		super()
 		const construction = ++configRollbackConstructions
-		this.ctx.effects.defer(() => {
+		this.ctx.service(EffectsService).defer(() => {
 			if (construction === 1) throw new Error('config cleanup boom')
 		})
 	}
@@ -80,7 +81,7 @@ class ConfigRollbackFailure extends BasePlugin {
 @Plugin({ displayName: 'INIT-ROLLBACK-FAILURE' })
 class InitRollbackFailure extends BasePlugin {
 	override init(): void {
-		this.ctx.effects.defer(() => {
+		this.ctx.service(EffectsService).defer(() => {
 			throw new Error('init cleanup boom')
 		})
 		throw new Error('init boom')
@@ -160,7 +161,7 @@ describe('PluginService failure reporting', () => {
 			const unsubscribe = registry.subscribeCommitted((summary) => {
 				committed.push(summary)
 			})
-			host.ctx.effects.defer(unsubscribe)
+			host.ctx.service(EffectsService).defer(unsubscribe)
 
 			host.add(StrictFailPlugin)
 			await expect(host.commit()).rejects.toThrow(/failed to start/)

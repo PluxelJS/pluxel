@@ -1,3 +1,4 @@
+import { TinyBaseService } from '@pluxel/core'
 import { AuditPlugin } from '@example/audit-plugin'
 import { TodoPlugin } from '@example/todo-plugin'
 import { createTestHost } from '@pluxel/test'
@@ -56,7 +57,7 @@ describe('TodoPlugin', () => {
 	it('rejects corrupted restored rows before exposing Todo methods', async () => {
 		await using host = await createTestHost({ services: [] })
 		const todos = await host.start(TodoPlugin.nodeAddress())
-		const state = todos.ctx.tinybase
+		const state = todos.ctx.service(TinyBaseService)
 		const store = await state.open()
 		store.setCell('todos', 'todo-1', 'completed', 'invalid')
 		await state.flush()
@@ -70,7 +71,7 @@ describe('TodoPlugin', () => {
 	it('does not replace a valid empty snapshot with its initial seed', async () => {
 		await using host = await createTestHost({ services: [] })
 		const todos = await host.start(TodoPlugin.nodeAddress())
-		const state = todos.ctx.tinybase
+		const state = todos.ctx.service(TinyBaseService)
 		;(await state.open()).setContent([{}, {}])
 		await state.flush()
 		await host.restart(TodoPlugin.nodeAddress())

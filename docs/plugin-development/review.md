@@ -8,7 +8,7 @@ description: 在提交插件代码前，核对依赖声明、配置 Schema、资
 ## 1. 依赖与生命周期
 
 - [ ] 必需依赖是否已在构造函数中以强类型参数声明，且对应的提供方包已添加到 `package.json` 的依赖中？
-- [ ] 在 `init()` 阶段创建的外部资源（定时器、外部监听、Worker 任务）是否均已通过 `this.ctx.effects.defer()` 登记了清理逻辑？
+- [ ] 在 `init()` 阶段创建的外部资源（定时器、外部监听、Worker 任务）是否均已通过 `this.ctx.service(EffectsService).defer()` 登记了清理逻辑？
 - [ ] 插件在经历停止或重启后，是否能够干净退出且无悬挂的后台 Promise？
 
 ## 2. 配置与校验

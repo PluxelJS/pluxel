@@ -18,7 +18,7 @@ const patterns = [
 		title: '读取配置',
 	},
 	{
-		code: 'this.ctx.effects.defer(() => clearInterval(timer))',
+		code: 'this.ctx.service(EffectsService).defer(() => clearInterval(timer))',
 		description: '创建资源后立即登记释放函数；停止、替换和启动回滚都会执行。',
 		href: '/docs/plugin-development/lifecycle',
 		icon: Boxes,

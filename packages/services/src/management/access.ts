@@ -1,23 +1,15 @@
+import { resolveContextService } from '@pluxel/core/internal'
 import type { RootContext, Context } from '@pluxel/core'
-import {
-	defineContextCapability,
-	resolveContextCapability,
-	installOwnerViewCapability,
-	installRootCapability,
-	type ContextCapability,
-} from '@pluxel/core/host'
-import { defineHostService } from '@pluxel/host'
+import { installOwnerViewService, installRootService } from '@pluxel/core/host'
+import { defineHostService, type HostService } from '@pluxel/host'
 import { AdminAccessService } from './services/admin-access/AdminAccessService'
 import { ManagementAccessService } from './services/admin-access/ManagementAccessService'
-
-export const ManagementAccess: ContextCapability<ManagementAccessService> = defineContextCapability(
-	'management.access',
-	{ access: 'all', property: 'managementAccess' },
-)
-export const AdminAccess: ContextCapability<AdminAccessService, 'root'> = defineContextCapability(
-	'management.authentication',
-	{ access: 'root', property: 'adminAccess' },
-)
+export abstract class ManagementAccess {}
+export interface ManagementAccess extends ManagementAccessService {}
+export abstract class AdminAccess {
+	static readonly access = 'root' as const
+}
+export interface AdminAccess extends AdminAccessService {}
 export type * from './services/admin-access/types'
 export type {
 	AdminAuthenticationSession,
@@ -25,36 +17,22 @@ export type {
 } from './services/admin-access/AdminAccessService'
 
 /** Installs authentication authority and owner-bound provider registration, without opening an endpoint. */
-export function managementAccess() {
+export function managementAccess(): HostService {
 	return defineHostService({
 		name: 'ManagementAccess',
-		capabilities: [
-			installRootCapability(AdminAccess, {
-				property: 'adminAccess',
+		provides: [
+			installRootService(AdminAccess, {
 				create: (ctx) => new AdminAccessService(ctx as RootContext),
 			}),
-			installOwnerViewCapability(ManagementAccess, {
-				property: 'managementAccess',
+			installOwnerViewService(ManagementAccess, {
 				createRoot: (ctx) =>
-					new ManagementAccessService(
-						ctx as RootContext,
-						resolveContextCapability(ctx, AdminAccess),
-					),
+					new ManagementAccessService(ctx as RootContext, resolveContextService(ctx, AdminAccess)),
 				createView: (root, owner) =>
 					new ManagementAccessService(
 						owner as Context,
-						resolveContextCapability(root.ctx.root, AdminAccess),
+						resolveContextService(root.ctx.root, AdminAccess),
 					),
 			}),
 		],
 	})
-}
-
-declare module '@pluxel/core' {
-	interface ContextServices {
-		readonly managementAccess: ManagementAccessService
-	}
-	interface RootContextServices {
-		readonly adminAccess: AdminAccessService
-	}
 }

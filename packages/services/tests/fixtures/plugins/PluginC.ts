@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, LoggerService } from '@pluxel/core'
 import { test1 } from './testconfig'
 
 @Plugin({ displayName: 'Plugin C' })
@@ -7,6 +7,6 @@ export class PluginC extends BasePlugin {
 	override init(): void {
 		void this.test1
 
-		this.ctx.logger.info('PluginC initialized')
+		this.ctx.service(LoggerService).info('PluginC initialized')
 	}
 }

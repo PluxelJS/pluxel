@@ -1,3 +1,4 @@
+import type { Workbench } from '@pluxel/workbench'
 import { assertWorkbenchDto, createWorkbenchWatch } from '@pluxel/workbench/server'
 import { ElysiaApp } from '@pluxel/services/elysia'
 import { Commands } from '@pluxel/services/commands'
@@ -10,7 +11,13 @@ import { Type, obj } from '@pluxel/commands/typebox'
 import { EChartsPlugin } from '@pluxel/plugin-echarts'
 import { Otel } from '@pluxel/plugin-otel'
 import { Rates, type RateDecision, type RateLimiter } from '@pluxel/plugin-rates'
-import { BasePlugin, EvtChannel, formatPluginNodeReference, Plugin } from '@pluxel/core'
+import {
+	BasePlugin,
+	EvtChannel,
+	formatPluginNodeReference,
+	Plugin,
+	defineServiceRef,
+} from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { RpcTarget } from 'capnweb'
@@ -31,6 +38,7 @@ import {
 	type ShowcaseSnapshot,
 } from './ReportStudio.workbench'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 const MAX_ARTIFACTS = 8
 const MAX_TITLE_LENGTH = 80
 const WIDTH = 720
@@ -134,7 +142,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		this.renderCounter = meter.createCounter('showcase.report.generated', { unit: '{report}' })
 		this.renderDuration = meter.createHistogram('showcase.report.duration', { unit: 'ms' })
 
-		this.ctx.require(Commands).register(
+		this.ctx.service(Commands).register(
 			defineCommand({
 				name: 'showcase.report.generate',
 				description: 'Render, cache and publish one Report Studio preview.',
@@ -148,7 +156,7 @@ export class ReportStudioPlugin extends BasePlugin {
 				},
 			}),
 		)
-		this.ctx.require(Commands).register(
+		this.ctx.service(Commands).register(
 			defineCommand({
 				name: 'showcase.cache.clear',
 				description: 'Clear the Report Studio caller-owned preview cache.',
@@ -161,7 +169,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		)
 
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.get('/showcase/status', () => compactSnapshot(this.snapshot()))
 			.post('/showcase/generate/:engine/:title', async ({ params }) =>
 				pickCommandArtifact(
@@ -184,7 +192,7 @@ export class ReportStudioPlugin extends BasePlugin {
 				return new Response(data, { headers: { 'content-type': artifact.mediaType } })
 			})
 
-		this.ctx.workbench?.publish(ReportStudioWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(ReportStudioWorkbench, {
 			studio: ({ signal }) => new ReportStudioTarget(this, signal),
 			studioStatus: () => ({
 				subscribe: (changed) => this.subscribe(changed),
@@ -423,7 +431,7 @@ $$
 			// The font snapshot belongs to this generation and is never mutated. Borrow it until
 			// execution settles, avoiding an extra admission-time copy of the shared font bytes.
 			data: await this.ctx
-				.require(Workers)
+				.service(Workers)
 				.run(
 					renderTask,
 					{ title, engine, fonts },

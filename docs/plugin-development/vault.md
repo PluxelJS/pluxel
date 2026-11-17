@@ -9,7 +9,7 @@ description: 在插件中安全存储 API Key、Token 与私密凭证，支持�
 
 ## 存取私密记录
 
-在插件中通过 `this.ctx.require(Vault).kv()` 访问当前插件的键值存储：
+在插件中通过 `this.ctx.service(Vault).kv()` 访问当前插件的键值存储：
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/core'
@@ -18,7 +18,7 @@ import { Vault } from '@pluxel/services/vault'
 @Plugin()
 export class AuthServicePlugin extends BasePlugin {
 	async updateToken(newToken: string): Promise<void> {
-		const kv = this.ctx.require(Vault).kv()
+		const kv = this.ctx.service(Vault).kv()
 
 		// 1. 读取已有记录及其版本号
 		const current = await kv.get<{ token: string }>('primary-token')
@@ -28,7 +28,7 @@ export class AuthServicePlugin extends BasePlugin {
 	}
 
 	async getToken(): Promise<string | undefined> {
-		const kv = this.ctx.require(Vault).kv()
+		const kv = this.ctx.service(Vault).kv()
 		const record = await kv.get<{ token: string }>('primary-token')
 		return record.exists ? record.value?.token : undefined
 	}
@@ -45,7 +45,8 @@ export class AuthServicePlugin extends BasePlugin {
 支持在同一个插件命名空间内原子性更新多条凭据：
 
 ```ts
-const kv = this.ctx.require(Vault).kv()
+import { Vault } from '@pluxel/services/vault'
+const kv = this.ctx.service(Vault).kv()
 
 await kv.batch((tx) => {
 	const current = tx.get('account')
@@ -61,15 +62,17 @@ await kv.batch((tx) => {
 当后台刷新 Token 或外部环境更新了密钥文件时，可通过 `watch` 实时响应：
 
 ```ts
-const kv = this.ctx.require(Vault).kv()
+import { Vault } from '@pluxel/services/vault'
+import { LoggerService, EffectsService } from '@pluxel/core'
+const kv = this.ctx.service(Vault).kv()
 
 // 订阅特定 Key 的变更，返回注销函数
 const subscription = await kv.watch('primary-token', (snapshot) => {
-	this.ctx.logger.info('Credential updated', { revision: snapshot.revision })
+	this.ctx.service(LoggerService).info('Credential updated', { revision: snapshot.revision })
 })
 
 // 插件停止时自动释放
-this.ctx.effects.defer(() => subscription.dispose())
+this.ctx.service(EffectsService).defer(() => subscription.dispose())
 ```
 
 ## 小型加密二进制存储（Blobs）
@@ -77,7 +80,8 @@ this.ctx.effects.defer(() => subscription.dispose())
 如果需要加密保存私钥证书（`.pem`）或证书链文件，可以使用 Vault 提供的 `blobs()` 接口：
 
 ```ts
-const blob = this.ctx.require(Vault).blobs().open('client-certificate')
+import { Vault } from '@pluxel/services/vault'
+const blob = this.ctx.service(Vault).blobs().open('client-certificate')
 await blob.writeBytes(certBytes)
 
 const savedBytes = await blob.readBytes()

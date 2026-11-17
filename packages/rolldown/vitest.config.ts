@@ -10,8 +10,8 @@ export default defineConfig({
 		},
 	},
 	test: {
-		// Each integration file can spawn native builds and MF producers.
-		maxWorkers: 2,
+		// Each integration file can own native compilers and MF builds; bound peak memory.
+		maxWorkers: 1,
 		// Integration tests build real MF artifacts; upstream otherwise skips its Vite plugin.
 		env: { MFE_VITE_NO_TEST_ENV_CHECK: 'true' },
 		include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],

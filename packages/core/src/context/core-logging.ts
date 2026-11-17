@@ -1,9 +1,16 @@
+import { createServiceRef } from '@pluxel/context/internal'
+import {
+	Logging,
+	disposeContextRuntimeLogging,
+	prepareContextRuntimeLogging,
+} from '../logging/service'
+import { EffectsService } from '../services/effects/EffectsService'
 import type { RootContext } from './Context'
 import type { ResolvedLogTapeConfig } from '../config/logtape'
 import { requireFs } from '../internal/storage'
 import { createContextRuntimeLogging, type RuntimeLogging } from '../logging/logging'
-import { disposeContextRuntimeLogging, prepareContextRuntimeLogging } from '../logging/service'
 
+const LoggingRef = createServiceRef(Logging)
 const preparations = new WeakMap<
 	RootContext,
 	{
@@ -23,7 +30,7 @@ export function createCoreLoggingRuntime(
 	requireFs(root)
 	const manager = createContextRuntimeLogging(root, config.input, config.options)
 	preparations.set(root, { manager, config })
-	root.effects.defer(() => disposeContextRuntimeLogging(root, manager), {
+	root.service(EffectsService).defer(() => disposeContextRuntimeLogging(root, manager), {
 		tag: 'LogTape',
 		phase: 'final',
 	})
@@ -36,7 +43,7 @@ export function createCoreLoggingRuntime(
  * leave the process-global LogTape installation untouched.
  */
 export async function prepareCoreContext(root: RootContext): Promise<void> {
-	if (!root.logging) return
+	if (!root.service(LoggingRef)) return
 	const preparation = preparations.get(root)
 	if (!preparation) throw new Error('[core] logging must be owned by this Core root')
 	if (preparation.manager.state === 'disposing' || preparation.manager.state === 'disposed')

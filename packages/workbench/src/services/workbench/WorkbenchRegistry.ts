@@ -1,5 +1,6 @@
-import { randomUUID } from 'node:crypto'
 import {
+	LoggerService,
+	EffectsService,
 	BasePlugin,
 	parsePluginNodeAddress,
 	pluginNodeIndexKey,
@@ -8,6 +9,7 @@ import {
 	type PluginNodeAddress,
 	type PluginNodeSlot,
 } from '@pluxel/core'
+import { randomUUID } from 'node:crypto'
 import {
 	parseWorkbenchDeclarationIdentity,
 	parseWorkbenchOpenableIdentity,
@@ -201,7 +203,7 @@ export class WorkbenchRegistry {
 		)
 
 		try {
-			owner.effects.defer(() => this.withdraw(publication))
+			owner.service(EffectsService).defer(() => this.withdraw(publication))
 		} catch (error) {
 			this.withdraw(publication)
 			throw error
@@ -316,7 +318,7 @@ export class WorkbenchRegistry {
 				}
 				const root = new WorkbenchContentTarget(
 					candidate.entry.contract,
-					candidate.target.owner.logger,
+					candidate.target.owner.service(LoggerService),
 					(reason) => lease.abort(reason),
 				)
 				lease.reserve(root)
@@ -448,7 +450,7 @@ export class WorkbenchRegistry {
 						? 'reused_target'
 						: 'factory_failed'
 			const diagnosticId = randomUUID()
-			candidate.target.owner.logger.error('Workbench entry factory failed', {
+			candidate.target.owner.service(LoggerService).error('Workbench entry factory failed', {
 				error,
 				diagnosticId,
 				code,

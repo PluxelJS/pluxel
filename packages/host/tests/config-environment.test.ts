@@ -175,7 +175,7 @@ it('validates a complete Vault record, rejects partial deployment inputs, and re
 				runtime,
 			}),
 		),
-	).rejects.toThrow(/host.vault-bindings/)
+	).rejects.toMatchObject({ code: 'CONTEXT_SERVICE_MISSING' })
 })
 
 it('reads config declarations and whole Vault records from explicit JSON files', async () => {
@@ -245,7 +245,7 @@ it('infers heterogeneous async binding arrays without const assertions', async (
 it('keeps the Host Vault contract across plugin replacement without repeating transforms', async () => {
 	const { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } = await import('@pluxel/test/unsafe')
 	const { defineHostService } = await import('../src/services')
-	const { installRootCapability } = await import('@pluxel/core/host')
+	const { installRootService } = await import('@pluxel/core/host')
 	const { HostVaultBindings } = await import('../src/bindings')
 	let validations = 0
 	const tokenSchema = v.pipe(
@@ -271,8 +271,8 @@ it('keeps the Host Vault contract across plugin replacement without repeating tr
 	let installed: unknown
 	const service = defineHostService({
 		name: 'TestBindings',
-		capabilities: [
-			installRootCapability(HostVaultBindings, {
+		provides: [
+			installRootService(HostVaultBindings, {
 				create: () => ({
 					install(records) {
 						installed = records

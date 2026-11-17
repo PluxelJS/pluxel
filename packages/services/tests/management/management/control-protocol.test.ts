@@ -1,4 +1,4 @@
-import { parsePluginNodeAddress } from '@pluxel/core'
+import { parsePluginNodeAddress, LoggerService } from '@pluxel/core'
 import { requirePluginHostCoordinator, requireHostStateStore } from '@pluxel/host/internal'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
@@ -193,7 +193,7 @@ describe('runtime web control protocol', () => {
 	it('retains startup diagnostics across unrelated commits and clears them after recovery', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 		recoverableFailure = true
-		const logged = vi.spyOn(host.ctx.logger, 'error')
+		const logged = vi.spyOn(host.ctx.service(LoggerService), 'error')
 
 		host.add(RecoverablePlugin)
 		host.add(ManagedPlugin)

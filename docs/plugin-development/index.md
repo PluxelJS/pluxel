@@ -10,10 +10,10 @@ description: 掌握 Pluxel 插件的核心模型、依赖注入、生命周期�
 无论开发何种业务插件，以下几项基础设施始终开箱即用，无需额外配置或安装宿主服务：
 
 - **[依赖与拓扑](./model.md)**：通过构造函数参数直接注入必需依赖；通过 `definePluginRef` 接入可选依赖，构建清晰的拓扑图。
-- **[生命周期与清理](./lifecycle.md)**：通过 `init()` 钩子启动后台任务，使用 `ctx.effects.defer()` 登记资源释放回调，确保热重载与退出时无泄漏。
+- **[生命周期与清理](./lifecycle.md)**：通过 `init()` 钩子启动后台任务，使用 `ctx.service(EffectsService).defer()` 登记资源释放回调，确保热重载与退出时无泄漏。
 - **[配置模型](./configuration.md)**：使用 Valibot Schema 统一定义配置类型、默认值、运行时校验与 Workbench 管理表单。
-- **[事件通知](./events.md)**：利用 `ctx.events` 广播或订阅跨插件事件，松耦合串联业务流程。
-- **[结构化日志](./logging.md)**：使用 `ctx.logger` 输出携带上下文的结构化日志，方便本地调试与运维排查。
+- **[事件通知](./events.md)**：利用 `ctx.service(EventsService)` 广播或订阅跨插件事件，松耦合串联业务流程。
+- **[结构化日志](./logging.md)**：使用 `ctx.service(LoggerService)` 输出携带上下文的结构化日志，方便本地调试与运维排查。
 - **[拆分内部逻辑（PluginPart）](./parts.md)**：对于逻辑庞大的插件，使用 `PluginPart` 拆分子模块与局部配置，随父插件统一启停。
 - **[插件测试](./testing.md)**：借助 `@pluxel/test` 在纯内存测试宿主中进行端到端隔离验证。
 

@@ -25,6 +25,11 @@ import {
 } from './materials'
 
 export const SCRIPT_CONTROL_PROTOCOL = SCRIPT_PROTOCOL
+const CONTROL_RESPONSE_LIMITS = {
+	bytes: 4 * SCRIPT_VALUE_BYTES,
+	depth: 68,
+	nodes: 100_128,
+}
 export type ScriptTargetDescription = Readonly<{
 	protocol: typeof SCRIPT_PROTOCOL
 	instanceId: string
@@ -59,7 +64,7 @@ export async function connectScriptControl(
 	const response = await endpoint.connect(credentials)
 	try {
 		if (response.ok === false)
-			throw new ScriptExecutionError(response.error.code, response.error.message)
+			throw restoreControlFailure(snapshotJson(response.error, CONTROL_RESPONSE_LIMITS))
 		if (response.ok !== true || !response.value || typeof response.value.dup !== 'function')
 			throw new ScriptExecutionError('protocol_mismatch', 'Invalid script connection response')
 		return createScriptControlClient(response.value.dup(), options)
@@ -83,13 +88,13 @@ export type ScriptControlTargetOptions = Readonly<{
 /** Connection disposal revokes this reference; runs remain owned by the executor. */
 export function createScriptControlTarget(
 	options: ScriptControlTargetOptions,
-): ScriptControlTarget {
+): ScriptControlTarget & Disposable {
 	return new ScriptControlTargetImpl(options)
 }
 
 class ScriptControlTargetImpl extends RpcTarget implements ScriptControlTarget {
 	readonly #options: ScriptControlTargetOptions
-	#active = true
+	readonly #lifetime = new AbortController()
 	readonly #materials?: PluginControlMaterialReader
 	constructor(options: ScriptControlTargetOptions) {
 		super()
@@ -99,7 +104,7 @@ class ScriptControlTargetImpl extends RpcTarget implements ScriptControlTarget {
 			: undefined
 	}
 	#check(input: unknown, keys: readonly string[], discovery = false): Record<string, unknown> {
-		if (!this.#active)
+		if (this.#lifetime.signal.aborted)
 			throw new ScriptExecutionError('unauthorized', 'Script control session is closed')
 		this.#options.assertAuthorized()
 		if (!isRecord(input) || Object.keys(input).some((key) => !keys.includes(key)))
@@ -170,9 +175,30 @@ class ScriptControlTargetImpl extends RpcTarget implements ScriptControlTarget {
 		})
 	}
 	result(input: unknown) {
-		return this.#respond(() => {
-			const value = this.#check(input, ['protocol', 'instanceId', 'runId'])
-			return this.#options.executor.result(runId(value), this.#options.subject)
+		return this.#respond(async () => {
+			const fields = ['protocol', 'instanceId', 'runId', 'waitMs']
+			const value = this.#check(input, fields)
+			const id = runId(value)
+			const waitMs = value.waitMs === undefined ? 0 : value.waitMs
+			if (
+				typeof waitMs !== 'number' ||
+				!Number.isSafeInteger(waitMs) ||
+				waitMs < 0 ||
+				waitMs > 1000
+			)
+				throw new ScriptExecutionError(
+					'invalid_request',
+					'Result waitMs must be an integer from 0 to 1000',
+				)
+			const result =
+				waitMs === 0
+					? this.#options.executor.result(id, this.#options.subject)
+					: await this.#options.executor.settled(id, this.#options.subject, {
+							timeoutMs: waitMs,
+							signal: this.#lifetime.signal,
+						})
+			this.#check(input, fields)
+			return result
 		})
 	}
 	cancel(input: unknown) {
@@ -217,7 +243,9 @@ class ScriptControlTargetImpl extends RpcTarget implements ScriptControlTarget {
 		})
 	}
 	[Symbol.dispose](): void {
-		this.#active = false
+		this.#lifetime.abort(
+			new ScriptExecutionError('session_closed', 'Script control session is closed'),
+		)
 		this.#materials?.[Symbol.dispose]()
 	}
 }
@@ -225,7 +253,8 @@ class ScriptControlTargetImpl extends RpcTarget implements ScriptControlTarget {
 export interface ScriptControlClient extends Disposable {
 	describe(): Promise<ScriptTargetDescription>
 	submit(input: ScriptSubmission): Promise<ScriptRunSnapshot>
-	result(runId: string): Promise<ScriptRunSnapshot>
+	/** Wait up to waitMs (0..1000) for settlement; omission reads immediately. */
+	result(runId: string, waitMs?: number): Promise<ScriptRunSnapshot>
 	cancel(runId: string): Promise<ScriptRunSnapshot>
 	control(input: ScriptControlSubmission): Promise<ScriptRunSnapshot>
 	materials(input?: PluginControlManifestRequest): Promise<PluginControlManifestIndex>
@@ -270,7 +299,8 @@ export function createScriptControlClient(
 	return Object.freeze({
 		describe,
 		submit: (input: ScriptSubmission) => call('submit', input),
-		result: (id: string) => call('result', { runId: id }),
+		result: (id: string, waitMs?: number) =>
+			call('result', { runId: id, ...(waitMs === undefined ? {} : { waitMs }) }),
 		cancel: (id: string) => call('cancel', { runId: id }),
 		control: (input: ScriptControlSubmission) => call('control', input),
 		materials: async (page?: PluginControlManifestRequest) => {
@@ -305,28 +335,54 @@ function consumeControlResponse(response: unknown): JsonValue {
 		)
 			throw new ScriptExecutionError('protocol_mismatch', 'Invalid script response lifetime')
 		// A valid result still fits when its run metadata and response envelope are added.
-		const plain = snapshotJson(response, {
-			bytes: 4 * SCRIPT_VALUE_BYTES,
-			depth: 68,
-			nodes: 100_128,
-		})
+		const plain = snapshotJson(response, CONTROL_RESPONSE_LIMITS)
 		if (!isRecord(plain))
 			throw new ScriptExecutionError('protocol_mismatch', 'Invalid script response')
 		if (plain.ok === true && 'value' in plain) return plain.value as JsonValue
-		if (
-			plain.ok === false &&
-			isRecord(plain.error) &&
-			typeof plain.error.code === 'string' &&
-			typeof plain.error.message === 'string'
-		) {
-			const error = new ScriptExecutionError(plain.error.code, plain.error.message)
-			if (typeof plain.error.stack === 'string') error.stack = plain.error.stack
-			throw error
-		}
+		if (plain.ok === false) throw restoreControlFailure(plain.error)
 		throw new ScriptExecutionError('protocol_mismatch', 'Invalid script response envelope')
 	} finally {
 		if (typeof dispose === 'function') dispose.call(response)
 	}
+}
+
+/** The caller supplies a budgeted JSON snapshot, never author objects or RPC capabilities. */
+function restoreControlFailure(value: unknown): ScriptExecutionError {
+	if (
+		!isRecord(value) ||
+		typeof value.code !== 'string' ||
+		typeof value.message !== 'string' ||
+		(value.hint !== undefined && typeof value.hint !== 'string') ||
+		(value.stack !== undefined && typeof value.stack !== 'string') ||
+		// Domains own their reports; this boundary validates only the common failure envelope.
+		(value.details !== undefined &&
+			(!isRecord(value.details) ||
+				typeof value.details.code !== 'string' ||
+				typeof value.details.message !== 'string')) ||
+		(value.diagnostics !== undefined &&
+			(!Array.isArray(value.diagnostics) ||
+				!value.diagnostics.every(
+					(item) =>
+						isRecord(item) &&
+						typeof item.code === 'number' &&
+						Number.isInteger(item.code) &&
+						typeof item.message === 'string' &&
+						(item.file === undefined || typeof item.file === 'string') &&
+						(item.line === undefined ||
+							(typeof item.line === 'number' &&
+								Number.isSafeInteger(item.line) &&
+								item.line > 0)) &&
+						(item.column === undefined ||
+							(typeof item.column === 'number' &&
+								Number.isSafeInteger(item.column) &&
+								item.column > 0)),
+				)))
+	)
+		throw new ScriptExecutionError('protocol_mismatch', 'Invalid script failure response')
+	const failure = value as unknown as ScriptFailure
+	const error = new ScriptExecutionError(failure.code, failure.message, failure)
+	if (failure.stack !== undefined) error.stack = failure.stack
+	return error
 }
 
 export function parseScriptRunSnapshot(value: unknown, instanceId: string): ScriptRunSnapshot {

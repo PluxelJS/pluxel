@@ -10,6 +10,6 @@
 - `PluginHttpRoutesDemo`：常驻业务 HTTP；不为文档额外制造 Workbench 抽象。
 - `PluginHttpWorkerDemo`：typed task + root shared worker pool + HMR/static artifact。
 
-Workbench 插件每代至多调用一次 `ctx.workbench.publish(definition, bindings)`。每次打开 View 都返回新的
+Workbench 插件每代至多调用一次 `ctx.service(Workbench).publish(definition, bindings)`。每次打开 View 都返回新的
 `RpcTarget`；普通 snapshot/watch renderer 通过 descriptor-bound scope 声明 query/mutation，只有 capability、progress/cancel
 等高级协议才直接使用 exact descriptor 的低层 `useWorkbench()`。状态读取和订阅仍由插件 API 自己定义。

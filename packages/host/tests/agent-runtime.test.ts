@@ -69,8 +69,11 @@ describe('script execution owner', () => {
 			executor.submit(input('large', { input: 'x'.repeat(1024 * 1024) }), subject),
 		).rejects.toMatchObject({ code: 'input_too_large' })
 		await expect(
-			executor.submit(input('behavior', { input: new Date() as never }), subject),
-		).rejects.toMatchObject({ code: 'invalid_input' })
+			executor.submit(input('behavior', { input: { items: [new Date()] } as never }), subject),
+		).rejects.toMatchObject({
+			code: 'invalid_input',
+			context: { path: '$.items[0]', valueKind: 'class instance' },
+		})
 		expect(execute).not.toHaveBeenCalled()
 	})
 	it('rechecks authorization after asynchronous hashing and before committing admission', async () => {
@@ -324,6 +327,110 @@ describe('script execution owner', () => {
 })
 
 describe('portable result encoding', () => {
+	it('reports exact JSON paths and value categories without evaluating author behavior', () => {
+		const getter = vi.fn(() => 1)
+		const accessor = Object.defineProperty({}, 'count', { enumerable: true, get: getter })
+		const domain = new Date()
+		const toJSON = vi.spyOn(domain, 'toJSON')
+		const circular: Record<string, unknown> = {}
+		circular.parent = circular
+		const cases = [
+			{
+				encode: () => snapshotJson({ items: [{ 'metric.value': 1n }] }),
+				path: '$.items[0]["metric.value"]',
+				valueKind: 'bigint',
+			},
+			{
+				encode: () => snapshotScriptResult(Result.err({ entries: [{ count: 1n }] })),
+				path: '$.error.entries[0].count',
+				valueKind: 'bigint',
+			},
+			{
+				encode: () => snapshotScriptResult(Result.ok({ box: accessor })),
+				path: '$.value.box.count',
+				valueKind: 'accessor',
+			},
+			{
+				encode: () => snapshotJson({ record: { createdAt: domain } }),
+				path: '$.record.createdAt',
+				valueKind: 'class instance',
+			},
+			{
+				encode: () => snapshotJson({ selected: circular }),
+				path: '$.selected.parent',
+				valueKind: 'circular reference',
+			},
+			{
+				encode: () => snapshotJson({ meta: { [Symbol('hidden')]: true } }),
+				path: '$.meta[Symbol(hidden)]',
+				valueKind: 'symbol key',
+			},
+		]
+		for (const { encode, path, valueKind } of cases) {
+			let failure: unknown
+			try {
+				encode()
+			} catch (error) {
+				failure = error
+			}
+			expect(failure).toMatchObject({
+				code: 'result_not_serializable',
+				message: expect.stringContaining(path),
+				context: { path, valueKind },
+			})
+			expect(scriptFailure(failure)).toMatchObject({
+				code: 'result_not_serializable',
+				context: { path, valueKind },
+			})
+		}
+		expect(getter).not.toHaveBeenCalled()
+		expect(toJSON).not.toHaveBeenCalled()
+	})
+
+	it('retains known receiver error fields and bounds compiler diagnostics without reading accessors', () => {
+		const context = { path: '$.items[1].id', valueKind: 'bigint' }
+		const diagnostic = {
+			file: '/project/script.ts',
+			line: 3,
+			column: 4,
+			code: 2551,
+			message: 'Typo',
+		}
+		const receiver = new ScriptExecutionError('typecheck_failed', 'Check failed', {
+			context,
+			hint: 'Correct the selected field',
+			diagnostics: Array.from({ length: 101 }, () => diagnostic),
+		})
+		const projected = scriptFailure(receiver)
+		expect(projected).toMatchObject({
+			code: 'typecheck_failed',
+			context,
+			hint: 'Correct the selected field',
+		})
+		expect(projected.diagnostics).toHaveLength(100)
+		expect(projected.diagnostics?.[0]).toEqual(diagnostic)
+		context.path = 'changed after projection'
+		diagnostic.message = 'changed after projection'
+		expect(projected.context).toEqual({ path: '$.items[1].id', valueKind: 'bigint' })
+		expect(projected.diagnostics?.[0]?.message).toBe('Typo')
+		const details = {
+			code: 'persistence_failed' as const,
+			message: 'Write outcome is unknown',
+			state: 'unknown' as const,
+		}
+		expect(
+			scriptFailure(new ScriptExecutionError(details.code, details.message, { details })),
+		).toMatchObject({
+			details,
+		})
+		const getter = vi.fn(() => [diagnostic])
+		const accessor = Object.defineProperty(new Error('Do not inspect behavior'), 'diagnostics', {
+			get: getter,
+		})
+		expect(scriptFailure(accessor)).not.toHaveProperty('diagnostics')
+		expect(getter).not.toHaveBeenCalled()
+	})
+
 	it('settles a failed receipt without reading accessors in nested Error metadata', async () => {
 		const getter = vi.fn(() => {
 			throw new Error('Error metadata getter must not run')

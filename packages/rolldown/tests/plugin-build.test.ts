@@ -178,6 +178,7 @@ export declare function Plugin(options?:unknown):ClassDecorator
 		'node_modules/capnweb/index.d.ts':
 			'export declare class RpcTarget { [Symbol.dispose](): void }\n',
 		'node_modules/@pluxel/workbench/index.js': `
+export class Workbench { static access = 'owner' }
 export const workbench = Object.freeze({
 	entry: (_base, path) => ({ path }),
 	view: (value) => value,
@@ -186,6 +187,10 @@ export const workbench = Object.freeze({
 })
 `,
 		'node_modules/@pluxel/workbench/index.d.ts': `
+export declare class Workbench {
+	static readonly access: 'owner'
+	publish(definition: unknown, bindings?: unknown): void
+}
 export declare const workbench: {
 	entry(base: string, path: string): Readonly<{ path: string }>
 	view<Api>(value: Record<string, unknown>): unknown
@@ -253,7 +258,7 @@ export function createWorkbenchBridge(identity, Renderer) {
 		'src/index.ts': [
 			"import { BasePlugin, Plugin } from '@pluxel/core'",
 			"import { RpcTarget } from 'capnweb'",
-			"import { workbench } from '@pluxel/workbench'",
+			"import { Workbench, workbench } from '@pluxel/workbench'",
 			'',
 			"const first = workbench.entry(import.meta.url, './ui/index.ts')",
 			"const second = workbench.entry(import.meta.url, './ui/second.ts')",
@@ -265,7 +270,7 @@ export function createWorkbenchBridge(identity, Renderer) {
 			"@Plugin({ displayName: 'RuntimeUiFixturePlugin' })",
 			'export class RuntimeUiFixturePlugin extends BasePlugin {',
 			'\tinit() {',
-			'\t\tthis.ctx.workbench.publish(DemoWorkbench, {',
+			'\t\tthis.ctx.service(Workbench).publish(DemoWorkbench, {',
 			'\t\t\tfirst: () => new RpcTarget(),',
 			'\t\t\tsecond: () => new RpcTarget(),',
 			'\t\t})',
@@ -575,7 +580,7 @@ describe('plugin package build', () => {
 			})
 
 			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
-			expect(output).toContain('this.ctx.workbench.publish')
+			expect(output).toContain('this.ctx.service(Workbench).publish')
 			expect(output).toContain('@pluxel/workbench')
 			expect(output).not.toContain('__PLUXEL_UI_ONLY_MARKER__')
 			expect(output).not.toContain('__PLUXEL_SECOND_UI_ONLY_MARKER__')

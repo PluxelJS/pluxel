@@ -12,11 +12,11 @@ Host 拥有服务安装、应用启动、catalog、运行意图和资源关闭�
 2. 创建唯一 root，解析文档 factory，读取保存输入，组合八项 policy，一次绑定四项执行参数。
 3. 创建 PluginService/coordinator，按 `requires` 顺序准备服务。
 
-Core 直接装配时立即绑定执行配置；Host 的内部延迟绑定保持 Context shape 不变。同步 capability factory 惰性构造 view，异步资源通常由 `prepare({ ctx, dependencies, effects })` 获取。内建 FS/TinyBase 首次操作共享准备任务，独立于服务顺序。准备失败沿同一个 root 清理路径，保留原错误和清理错误。
+Core 直接装配时立即绑定执行配置；Host 的内部延迟绑定保持 Context shape 不变。同步 service factory 惰性构造 view，异步资源通常由 `prepare({ ctx, dependencies, effects })` 获取。内建 FS/TinyBase 首次操作共享准备任务，独立于服务顺序。准备失败沿同一个 root 清理路径，保留原错误和清理错误。
 
 每项 service effects 在准备失败或 Host close 时释放；Plugin effects 随 generation 释放。关闭先停止 admission、排空协调操作和 Plugin，再按依赖逆序释放服务。所有清理都会执行，错误聚合。`close()` 和 `Symbol.asyncDispose` 共用幂等任务及失败结果。Host 在 Core shutdown transaction 中先撤销当前 provider-default bindings，再删除节点，保留持久 policy。
 
-capability access 区分 `all`、真实 Plugin/Part `owner` 和真实 `root`。`ctx.require(Token)` 保留 missing/access/construction 错误。`ctx.root` 是受信任代码可持有的真实根引用；内部 graph authority token 留在 framework 入口。
+service access 区分 `all`、真实 Plugin/Part `owner` 和真实 `root`。`ctx.service(Service)` 保留 missing/access/construction 错误。`ctx.root` 是受信任代码可持有的真实根引用；内部 graph authority token 留在 framework 入口。
 
 `standardServices()` 安装 HTTP、Commands、Node artifacts、Workers；`servicesPreset(startup, options)` 增加 Vault、Management、管理命令及可选 Workbench。Core 的 `runtime.logtape`、`runtime.zenfs` 分别选择日志与文件后端。Database 单独安装，见 [Database](DATABASE.md)。未选择的服务不创建 backend、watcher、compiler、route 或状态。关闭 Workbench 后，业务服务和显式 `managementHttp()` 继续运行。
 
@@ -40,7 +40,7 @@ prepare → host.start / 服务结算 → acceptStartup → launch
 
 Vite 和生产 launcher 共用应用解析。工厂 identity 变化时重新求值并替换 Host，固定 import 更新也可使工厂失效；求值失败保留旧 Host。工厂未变的动态来源更新复用当前配置、提交 catalog。replacement 失败可用最后成功声明创建 fresh Host 补偿，旧 generation 保持退役。Host-vite 是唯一开发驱动；Services/Workbench 分别拥有自己的附件，database lowering 属于工具插件。
 
-modules launcher 在全新 Node 进程、业务闭包首次求值前，调用 `runHostApplication(entry, { startup, sharedPackages })`：先建立共享绑定，再求值工厂和 imports。standalone bootstrap 已内联闭包，无需再次发现模块。两者完成 Host/附件接线后共用 `startHostApplication`。应用在自身闭包静态导入 HTTP 服务并在 launch 调用，保持 Host 与 service token identity 一致。构建 variant 只选择资源交付方式；原生启动的求值前提见[生产构建](../docs/host/configuration.md#生产构建)。
+modules launcher 在全新 Node 进程、业务闭包首次求值前，调用 `runHostApplication(entry, { startup, sharedPackages })`：先建立共享绑定，再求值工厂和 imports。standalone bootstrap 已内联闭包，无需再次发现模块。两者完成 Host/附件接线后共用 `startHostApplication`。应用在自身闭包静态导入 HTTP 服务并在 launch 调用，保持 Host 与 服务声明身份 一致。构建 variant 只选择资源交付方式；原生启动的求值前提见[生产构建](../docs/host/configuration.md#生产构建)。
 
 native loader 在本 scope 复用通过 owner/exports/ABI 检查的 namespace，新模块继续检查；失败或 owner 未确认时不缓存成功。共享包版本准入读取实际 manifest，不用跨 Host manifest cache。pending namespace 集合属于 loader；成功 entry 的累计闭包以本次 URL 顺序数组和前缀长度表示，后续加载不延长旧 entry 的范围，关闭后冻结数组供 Node cache 保留。
 
@@ -94,7 +94,7 @@ Host 文档默认借用 Core FS，`runtime.documents` 每域 false 禁用 IO，r
 
 Worker caller result 与底层 execution settlement 分开；`settlement: 'execution'` 等到线程可复用或退出再发布结果，供调用方清理文件等资源。
 
-Services 的可选 backend 和运行环境按叶入口隔离，`/internal` 只提供 framework owner/security helpers，`/internal/test` 提供白盒设施，driver 通过 package imports 私有加载。包内实现直接相对导入，不为单 consumer 增加 token/resolve 转发层。
+Services 的可选 backend 和运行环境按叶入口隔离，`/internal` 只提供 framework owner/security helpers，`/internal/test` 提供白盒设施，driver 通过 package imports 私有加载。包内实现直接相对导入，不为单 consumer 增加 服务声明/resolve 转发层。
 
 Node srvx/Vite 接线已有覆盖；Bun、Deno、Worker adapter、published Elysia peer admission 和工作区外下游迁移需各自验证。发行验证使用独立安装制品，在线状态从现有 [Dev Console](DEV_CONSOLE.md) 观察。
 

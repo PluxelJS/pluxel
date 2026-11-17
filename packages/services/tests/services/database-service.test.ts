@@ -203,7 +203,7 @@ describe('DatabaseService', () => {
 			class QueuedDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(definition.database)
+					this.db = await this.ctx.service(Database).use(definition.database)
 				}
 			}
 
@@ -249,7 +249,7 @@ describe('DatabaseService', () => {
 			class CachedDatabaseHandlePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(definition.database)
+					this.db = await this.ctx.service(Database).use(definition.database)
 				}
 			}
 
@@ -282,7 +282,7 @@ describe('DatabaseService', () => {
 			class DatabaseLeft extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(definition.database)
+					this.db = await this.ctx.service(Database).use(definition.database)
 					await this.db.transaction((tx) =>
 						tx.insert(definition.items).values({ id: 'item', value: 'left' }),
 					)
@@ -293,7 +293,7 @@ describe('DatabaseService', () => {
 			class DatabaseRight extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(definition.database)
+					this.db = await this.ctx.service(Database).use(definition.database)
 					await this.db.transaction((tx) =>
 						tx.insert(definition.items).values({ id: 'item', value: 'right' }),
 					)
@@ -328,7 +328,7 @@ describe('DatabaseService', () => {
 			class ReadOnlyDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(definition.database)
+					this.db = await this.ctx.service(Database).use(definition.database)
 				}
 			}
 
@@ -360,7 +360,7 @@ describe('DatabaseService', () => {
 		@Plugin({ displayName: 'DisabledDatabasePlugin' })
 		class DisabledDatabasePlugin extends BasePlugin {
 			override async init() {
-				await this.ctx.require(Database).use(definition.database)
+				await this.ctx.service(Database).use(definition.database)
 			}
 		}
 		lowerTestPlugin(DisabledDatabasePlugin)
@@ -387,7 +387,7 @@ describe('DatabaseService', () => {
 				class FirstProcessPlugin extends BasePlugin {
 					db!: PluginDatabaseHandle<typeof definition.database>
 					override async init() {
-						this.db = await this.ctx.require(Database).use(definition.database)
+						this.db = await this.ctx.service(Database).use(definition.database)
 						await this.db.transaction((tx) =>
 							tx.insert(definition.items).values({ id: 'kept', value: 'persisted' }),
 						)
@@ -410,7 +410,7 @@ describe('DatabaseService', () => {
 			class SecondProcessPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(definition.database)
+					this.db = await this.ctx.service(Database).use(definition.database)
 				}
 			}
 			lowerTestPlugin(SecondProcessPlugin, { id: 'PersistentDatabasePlugin' })
@@ -443,7 +443,7 @@ describe('DatabaseService', () => {
 			@Plugin({ displayName: 'DefaultPersistenceDatabasePlugin' })
 			class DefaultPersistenceDatabasePlugin extends BasePlugin {
 				override async init() {
-					await this.ctx.require(Database).use(definition.database)
+					await this.ctx.service(Database).use(definition.database)
 				}
 			}
 			lowerTestPlugin(DefaultPersistenceDatabasePlugin)
@@ -467,7 +467,7 @@ describe('DatabaseService', () => {
 			class InitialPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof initial.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(initial.database)
+					this.db = await this.ctx.service(Database).use(initial.database)
 					await this.db.transaction((tx) =>
 						tx.insert(initial.items).values({ id: 'kept', value: 'before' }),
 					)
@@ -486,7 +486,7 @@ describe('DatabaseService', () => {
 			class UpgradedPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof upgraded.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(upgraded.database)
+					this.db = await this.ctx.service(Database).use(upgraded.database)
 				}
 			}
 			lowerTestPlugin(UpgradedPlugin, { id: 'IncrementalDatabasePlugin' })
@@ -513,7 +513,7 @@ describe('DatabaseService', () => {
 			class FirstRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof first.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(first.database)
+					this.db = await this.ctx.service(Database).use(first.database)
 					await this.db.transaction((tx) =>
 						tx.insert(first.items).values({ id: 'old', value: 'archived' }),
 					)
@@ -532,7 +532,7 @@ describe('DatabaseService', () => {
 			class SecondRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof second.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(second.database)
+					this.db = await this.ctx.service(Database).use(second.database)
 				}
 			}
 			lowerTestPlugin(SecondRelease, { id: 'RebasedDatabasePlugin' })
@@ -560,7 +560,7 @@ describe('DatabaseService', () => {
 			class InitialPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof initial.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(initial.database)
+					this.db = await this.ctx.service(Database).use(initial.database)
 					await this.db.transaction((tx) =>
 						tx.insert(initial.items).values({ id: 'kept', value: 'same-schema' }),
 					)
@@ -579,7 +579,7 @@ describe('DatabaseService', () => {
 			class RebuiltPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof rebuilt.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(rebuilt.database)
+					this.db = await this.ctx.service(Database).use(rebuilt.database)
 				}
 			}
 			lowerTestPlugin(RebuiltPlugin, { id: 'ResetDatabasePlugin' })
@@ -606,7 +606,7 @@ describe('DatabaseService', () => {
 			class StableRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof stable.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(stable.database)
+					this.db = await this.ctx.service(Database).use(stable.database)
 					await this.db.transaction((tx) =>
 						tx.insert(stable.items).values({ id: 'kept', value: 'durable' }),
 					)
@@ -624,7 +624,7 @@ describe('DatabaseService', () => {
 			@Plugin({ displayName: 'AtomicReplacementPlugin' })
 			class BrokenRelease extends BasePlugin {
 				override async init() {
-					await this.ctx.require(Database).use(invalid.database)
+					await this.ctx.service(Database).use(invalid.database)
 				}
 			}
 			lowerTestPlugin(BrokenRelease, { id: 'AtomicReplacementPlugin' })
@@ -639,7 +639,7 @@ describe('DatabaseService', () => {
 			class RecoveredRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof stable.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(stable.database)
+					this.db = await this.ctx.service(Database).use(stable.database)
 				}
 			}
 			lowerTestPlugin(RecoveredRelease, { id: 'AtomicReplacementPlugin' })
@@ -665,7 +665,7 @@ describe('DatabaseService', () => {
 			class RollbackDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(definition.database)
+					this.db = await this.ctx.service(Database).use(definition.database)
 				}
 			}
 			lowerTestPlugin(RollbackDatabasePlugin)

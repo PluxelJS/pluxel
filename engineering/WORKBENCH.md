@@ -4,7 +4,7 @@ Workbench 将 Plugin 已有的业务能力发布为 Content、View 和 Attachmen
 
 ## 平台边界
 
-Workbench 是可选 Host 服务。关闭时不安装 Context property、backend、compiler、route 或 transport，业务 Plugin 继续运行。
+Workbench 是可选 Host 服务。关闭时不安装服务，也不创建 backend、compiler、route 或 transport，业务 Plugin 继续运行。
 
 | 路径       | 用途与所有者                                                                                         |
 | ---------- | ---------------------------------------------------------------------------------------------------- |

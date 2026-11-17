@@ -1,4 +1,4 @@
-import type { PluginNodeAddress, RootContext } from '@pluxel/core'
+import type { PluginNodeAddress, ServiceAccess, ServiceDefinition, ServiceRef } from '@pluxel/core'
 import type { LogCursor, LogReadOptions, LogStreamMeta } from '@pluxel/core/logging'
 import type { HostConfigMutation } from '../config'
 import type { HostOperationOptions } from '../coordinator'
@@ -73,11 +73,19 @@ type SelectedAddress<T extends PluginNodeAddress> = {
 		: T[K]
 }
 
+/** A run-scoped service accessor. Returned values retain the selected Context's ownership. */
+export interface ScriptServiceContext<TAccess extends ServiceAccess = ServiceAccess> {
+	service<T>(definition: ServiceDefinition<T, TAccess>): T
+	service<T>(ref: ServiceRef<T>): T | undefined
+}
+
 interface ScriptPluginOperations<T extends PluginNodeAddress> {
 	/** Immutable selection; retains the input's types and evidence when selected again. */
 	readonly address: SelectedAddress<T>
 	/** Read current state, or null when this node is absent. */
 	readonly status: () => Promise<HostPluginStatusSnapshot | null>
+	/** Borrow the current running generation; reacquire after restart or replacement. */
+	readonly context: () => Promise<ScriptServiceContext<'all' | 'owner'>>
 	/** Start this node and return the actual lifecycle report. */
 	readonly start: () => Promise<PluginApplyReportSnapshot>
 	/** Stop this node after draining accepted generation work. */
@@ -135,10 +143,8 @@ export type ScriptPlugin<T extends PluginNodeAddress = PluginNodeAddress> =
  * before the script finishes; nested resources retain their original ownership.
  */
 export interface ScriptSdk {
-	/** Borrow this Host's native RootContext. Missing capabilities throw from require().
-	 * Read within this run; resources obtained from services retain their original ownership.
-	 */
-	readonly ctx: RootContext
+	/** Root service access for this run. Optional refs return undefined only when absent. */
+	readonly ctx: ScriptServiceContext<'all' | 'root'>
 	/**
 	 * Select a Plugin synchronously, without reading Host state or starting it. Captures
 	 * a validated target snapshot. The selector and all reference methods can be cached

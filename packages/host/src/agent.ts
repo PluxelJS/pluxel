@@ -3,6 +3,7 @@ export type {
 	Script,
 	ScriptSdk,
 	ScriptContext,
+	ScriptServiceContext,
 	ScriptPlugin,
 	ScriptPluginConfig,
 	ScriptPluginSnapshot,

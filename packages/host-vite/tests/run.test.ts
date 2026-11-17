@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -25,6 +25,11 @@ it('owns startup failure cleanup and rejects conflicting production configuratio
 			`import {host} from ${JSON.stringify(entry)}; ${extra}; export default {logLevel:'silent',plugins:${expression}}`,
 		)
 	try {
+		await symlink(
+			resolve(import.meta.dirname, '../node_modules'),
+			resolve(root, 'node_modules'),
+			'dir',
+		)
 		await writeFile(
 			resolve(root, 'app.mjs'),
 			'export default () => ({plugins:[],runtime:{documents:{state:false}}})',
@@ -54,7 +59,7 @@ it('owns startup failure cleanup and rejects conflicting production configuratio
 		await config('[host({entry:"app.mjs"})]')
 		await writeFile(
 			resolve(root, 'app.mjs'),
-			'export default () => ({plugins:[],runtime:{documents:{state:false}},prepare({host}){host.ctx.effects.defer(()=>console.log("DRAINED"));throw new Error("STARTUP_REJECTED")}})',
+			'import {EffectsService} from "@pluxel/core";export default () => ({plugins:[],runtime:{documents:{state:false}},prepare({host}){host.ctx.service(EffectsService).defer(()=>console.log("DRAINED"));throw new Error("STARTUP_REJECTED")}})',
 		)
 		await expect(run()).rejects.toMatchObject({
 			stdout: expect.stringContaining('DRAINED'),
@@ -68,6 +73,11 @@ it('owns startup failure cleanup and rejects conflicting production configuratio
 it('reports Host and plugin shutdown failures while draining remaining resources', async () => {
 	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-vite-shutdown-'))
 	try {
+		await symlink(
+			resolve(import.meta.dirname, '../node_modules'),
+			resolve(root, 'node_modules'),
+			'dir',
+		)
 		await writeFile(
 			resolve(root, 'vite.config.mjs'),
 			`import {host} from ${JSON.stringify(new URL('../dist/index.mjs', import.meta.url).href)};
@@ -81,9 +91,10 @@ export default {logLevel:'silent',plugins:[host({entry:'app.mjs'}),{
 		)
 		await writeFile(
 			resolve(root, 'app.mjs'),
-			`export default (startup)=>({plugins:[],runtime:{documents:{state:false}},prepare({host}){
- host.ctx.effects.defer(()=>console.log('HOST_DRAINED_AFTER_FAILURE'));
- host.ctx.effects.defer(()=>{console.log('HOST_DRAINED_FAILURE');throw new Error('HOST_CLOSE_FAILED')});
+			`import {EffectsService} from '@pluxel/core';
+export default (startup)=>({plugins:[],runtime:{documents:{state:false}},prepare({host}){
+ host.ctx.service(EffectsService).defer(()=>console.log('HOST_DRAINED_AFTER_FAILURE'));
+ host.ctx.service(EffectsService).defer(()=>{console.log('HOST_DRAINED_FAILURE');throw new Error('HOST_CLOSE_FAILED')});
  if(startup.env.FAIL_STARTUP==='yes')throw new Error('STARTUP_FAILED');
 }})`,
 		)
@@ -129,6 +140,11 @@ it.each(['abort', 'close'] as const)(
 	async (action) => {
 		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-vite-startup-abort-'))
 		try {
+			await symlink(
+				resolve(import.meta.dirname, '../node_modules'),
+				resolve(root, 'node_modules'),
+				'dir',
+			)
 			await writeFile(
 				resolve(root, 'vite.config.mjs'),
 				`import {host} from ${JSON.stringify(new URL('../dist/index.mjs', import.meta.url).href)};
@@ -139,8 +155,9 @@ export default {logLevel:'silent',plugins}`,
 			)
 			await writeFile(
 				resolve(root, 'app.mjs'),
-				`if(process.env.SHOULD_EVALUATE!=='yes')throw new Error('ABORTED_APPLICATION_EVALUATED');
-export default()=>({plugins:[],runtime:{documents:{state:false}},prepare({host}){host.ctx.effects.defer(()=>console.log('APP_DRAINED'))}})`,
+				`import {EffectsService} from '@pluxel/core';
+if(process.env.SHOULD_EVALUATE!=='yes')throw new Error('ABORTED_APPLICATION_EVALUATED');
+export default()=>({plugins:[],runtime:{documents:{state:false}},prepare({host}){host.ctx.service(EffectsService).defer(()=>console.log('APP_DRAINED'))}})`,
 			)
 			const result = await promisify(execFile)(
 				process.execPath,

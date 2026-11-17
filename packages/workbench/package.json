@@ -78,7 +78,12 @@
 			"@pluxel/source": "./src/vite.ts",
 			"default": "./dist/vite.mjs"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
+		}
 	},
 	"publishConfig": {
 		"exports": {
@@ -98,7 +103,12 @@
 			"./shell": "./dist/shell.mjs",
 			"./test": "./dist/test.mjs",
 			"./vite": "./dist/vite.mjs",
-			"./package.json": "./package.json"
+			"./package.json": "./package.json",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
 		},
 		"access": "public"
 	},
@@ -186,5 +196,8 @@
 		"vite": {
 			"optional": true
 		}
+	},
+	"pluxel": {
+		"control": "./dist/control/manifest.json"
 	}
 }

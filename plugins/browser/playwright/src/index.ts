@@ -1,4 +1,4 @@
-import { BasePlugin, type Context, Plugin } from '@pluxel/core'
+import { BasePlugin, type Context, Plugin, EffectsService } from '@pluxel/core'
 import { Vault } from '@pluxel/services/vault'
 import {
 	chromium,
@@ -44,7 +44,7 @@ export abstract class Playwright extends BasePlugin {
 		}
 		try {
 			browser.on('disconnected', disconnected)
-			this.ctx.effects.defer(
+			this.ctx.service(EffectsService).defer(
 				async () => {
 					this.active = false
 					for (const owner of this.activeOwners)
@@ -166,7 +166,7 @@ export abstract class Playwright extends BasePlugin {
 		this.activeOwners.add(owner)
 		try {
 			if (context !== this.ctx) {
-				context.effects.defer(() => this.closeOwner(owner), {
+				context.service(EffectsService).defer(() => this.closeOwner(owner), {
 					tag: 'playwright-contexts',
 					phase: 'shutdown',
 				})
@@ -206,7 +206,7 @@ export class PlaywrightPlugin extends Playwright {
 	protected override async connect(signal: AbortSignal): Promise<Browser> {
 		let connection: v.InferOutput<typeof PlaywrightConnectionSchema>
 		if (this.config.connectionKey !== undefined) {
-			const record = await this.ctx.require(Vault).kv().get(this.config.connectionKey)
+			const record = await this.ctx.service(Vault).kv().get(this.config.connectionKey)
 			const parsed = v.safeParse(PlaywrightConnectionSchema, record.value)
 			if (!record.exists || !parsed.success)
 				throw new Error('Playwright Vault connection record is missing or invalid')

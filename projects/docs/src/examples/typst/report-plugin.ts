@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, EffectsService } from '@pluxel/core'
 import { TypstPlugin } from '@pluxel/plugin-typst/wasm'
 import type { ExampleRequest, ExampleResponse } from './protocol'
 import { generateExample } from './generate'
@@ -26,7 +26,7 @@ export class ReportPlugin extends BasePlugin {
 			void this.compile(event.data)
 		}
 		addEventListener('message', listener)
-		this.ctx.effects.defer(() => {
+		this.ctx.service(EffectsService).defer(() => {
 			removeEventListener('message', listener)
 			send({
 				type: 'lifecycle',

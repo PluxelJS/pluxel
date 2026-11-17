@@ -1,4 +1,5 @@
 import {
+	EffectsService,
 	pluginDefinitionIndexKey,
 	pluginNodeAddressEqual,
 	pluginNodeIndexKey,
@@ -1053,7 +1054,7 @@ describe('Declared policy authority at the coordinator boundary', () => {
 			expect(store.managedSnapshot()).toEqual({})
 		} finally {
 			await coordinator.dispose()
-			await store.ctx.effects.dispose()
+			await store.ctx.service(EffectsService).dispose()
 		}
 	})
 
@@ -1102,7 +1103,7 @@ describe('Declared policy authority at the coordinator boundary', () => {
 				expect(put).not.toHaveBeenCalled()
 			} finally {
 				await coordinator.dispose()
-				await store.ctx.effects.dispose()
+				await store.ctx.service(EffectsService).dispose()
 			}
 		},
 	)
@@ -1154,11 +1155,11 @@ describe('Declared policy authority at the coordinator boundary', () => {
 					store.managedSnapshot().dependencyOverrides,
 				)
 			} finally {
-				await reopened.ctx.effects.dispose()
+				await reopened.ctx.service(EffectsService).dispose()
 			}
 		} finally {
 			await coordinator.dispose()
-			await store.ctx.effects.dispose()
+			await store.ctx.service(EffectsService).dispose()
 		}
 	})
 })

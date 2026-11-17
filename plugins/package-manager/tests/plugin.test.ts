@@ -1,8 +1,9 @@
+import type { Workbench } from '@pluxel/workbench'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress, defineServiceRef } from '@pluxel/core'
 import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { commands } from '@pluxel/services/commands'
 import { pluginSource } from '@pluxel/host/sources'
@@ -11,6 +12,7 @@ import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PackageManagerConfig, PackageManagerPlugin } from '../src/index.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 const roots: string[] = []
 
 let headlessRoot = ''
@@ -20,7 +22,7 @@ class HeadlessPackageConsumer extends BasePlugin {
 		super()
 	}
 	async init() {
-		expect(this.ctx.workbench).toBeUndefined()
+		expect(this.ctx.service(WorkbenchRef)).toBeUndefined()
 		expect(await this.packages.snapshot()).toMatchObject({
 			rootDir: headlessRoot,
 			packages: [],

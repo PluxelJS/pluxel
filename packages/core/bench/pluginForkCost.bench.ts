@@ -1,3 +1,4 @@
+import { EffectsService } from '../src/services/effects/EffectsService'
 import {
 	BasePlugin,
 	Plugin,
@@ -348,7 +349,7 @@ async function runHost(
 	}
 
 	const disposeMs = await elapsedAsyncMs(async () => {
-		await ctx.effects.dispose()
+		await ctx.service(EffectsService).dispose()
 	})
 
 	return {
@@ -439,7 +440,7 @@ async function fixedFamilyReplacement(background: number) {
 		shutdown.dematerializeNode(backgroundNodes[index]!.address, { cascadeDependents: false })
 	}
 	requireOk(await shutdown.commit())
-	await ctx.effects.dispose()
+	await ctx.service(EffectsService).dispose()
 	return {
 		background,
 		meanMs: samples.reduce((sum, sample) => sum + sample, 0) / samples.length,

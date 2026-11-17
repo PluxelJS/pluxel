@@ -1,3 +1,4 @@
+import { TinyBaseService } from '@pluxel/core'
 import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
 import { describe, expect, it, vi } from 'vitest'
@@ -147,11 +148,17 @@ describe('Bot workspace real plugin contributions', () => {
 		expect(
 			workspace.update(identity, { running: false, expectedRevision: edited.revision }, 'running'),
 		).toEqual({ ok: true })
-		const store = await host.require(TelegramBotPlugin.nodeAddress()).ctx.tinybase.open()
+		const store = await host
+			.require(TelegramBotPlugin.nodeAddress())
+			.ctx.service(TinyBaseService)
+			.open()
 		expect(store.getTable('bots')).toEqual({
 			support: { instructions: 'Remember Telegram', running: false },
 		})
-		const discord = await host.require(DiscordBotPlugin.nodeAddress()).ctx.tinybase.open()
+		const discord = await host
+			.require(DiscordBotPlugin.nodeAddress())
+			.ctx.service(TinyBaseService)
+			.open()
 		expect(discord.getContent()).toEqual([{}, {}])
 		await host.restart(TelegramBotPlugin.nodeAddress())
 		expect(workspace.detail(identity)).toMatchObject({
@@ -167,7 +174,7 @@ describe('Bot workspace real plugin contributions', () => {
 
 	it('fails a source with malformed saved preferences before publishing a replacement contribution', async () => {
 		await using host = await start()
-		const state = host.require(TelegramBotPlugin.nodeAddress()).ctx.tinybase
+		const state = host.require(TelegramBotPlugin.nodeAddress()).ctx.service(TinyBaseService)
 		const store = await state.open()
 		store.setRow('bots', 'support', { instructions: 'valid instructions', running: 'invalid' })
 		await state.flush()

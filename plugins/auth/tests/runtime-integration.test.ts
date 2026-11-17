@@ -1,11 +1,14 @@
-import { vault } from '@pluxel/services/vault'
+import { resolveContextService } from '@pluxel/core/internal'
+import { defineServiceRef } from '@pluxel/core'
+import { type Vault, vault } from '@pluxel/services/vault'
+import { AdminAccess } from '@pluxel/services/management/access'
 import { standardServices } from '@pluxel/services'
 import { once } from 'node:events'
 import { createServer, type Server } from 'node:http'
 import { type AddressInfo } from 'node:net'
 import { newWebSocketRpcSession, type RpcStub } from 'capnweb'
 import { ElysiaRuntime, type ElysiaApplicationCarrier } from '@pluxel/services/internal'
-import { resolveContextCapability } from '@pluxel/core/host'
+
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { NodeElysiaApplicationCarrier } from '../../../packages/services/src/elysia/node'
 import { RUNTIME_SESSION_PATH, type RuntimeSessionRoot } from '@pluxel/services/management/session'
@@ -16,6 +19,7 @@ import { CredentialStore } from '../src/credentials.ts'
 import { AuthPlugin } from '../src/index.ts'
 import { hashPassword } from '../src/password.ts'
 
+const VaultRef = defineServiceRef<Vault>()
 const ORIGIN = 'https://runtime.test:3000'
 const COOKIE_COMMIT_PATH = '/__pluxel/admin-access/cookie/commit'
 const PASSWORD = 'correct horse battery staple'
@@ -122,10 +126,10 @@ describe('official authentication vNext Runtime integration', () => {
 		})
 
 		const initial = host.require(AuthPlugin.nodeAddress())
-		expect(await host.ctx.adminAccess?.describe()).toMatchObject({
+		expect(await host.ctx.service(AdminAccess)?.describe()).toMatchObject({
 			provider: { method: 'password', ready: false },
 		})
-		const store = new CredentialStore(initial.ctx.vault)
+		const store = new CredentialStore(initial.ctx.service(VaultRef))
 		await store.saveAccount({
 			version: 1,
 			type: 'local-account',
@@ -136,11 +140,11 @@ describe('official authentication vNext Runtime integration', () => {
 
 		await host.stop(AuthPlugin.nodeAddress())
 		await host.start(AuthPlugin.nodeAddress())
-		expect(await host.ctx.adminAccess?.describe()).toMatchObject({
+		expect(await host.ctx.service(AdminAccess)?.describe()).toMatchObject({
 			provider: { method: 'password', ready: true },
 		})
 
-		const adminAccess = host.ctx.adminAccess
+		const adminAccess = host.ctx.service(AdminAccess)
 		if (!adminAccess) throw new Error('Expected Management access service')
 		const authentication = await adminAccess.openSession(remoteRequest('/'), false, true)
 		await expect(authentication.state()).resolves.toEqual({
@@ -198,7 +202,7 @@ describe('official authentication vNext Runtime integration', () => {
 			},
 		})
 
-		const adminAccess = host.ctx.adminAccess
+		const adminAccess = host.ctx.service(AdminAccess)
 		if (!adminAccess) throw new Error('Expected Management access service')
 		const authentication = await adminAccess.openSession(remoteRequest('/'), false, true)
 		await expect(authentication.state()).resolves.toEqual({
@@ -219,7 +223,7 @@ class AuthRuntimeSessionCarrierFixture implements AsyncDisposable {
 	private listening = false
 
 	constructor(readonly host: Awaited<ReturnType<typeof createServiceInternalTestHost>>) {
-		const http = resolveContextCapability(this.host.ctx, ElysiaRuntime)
+		const http = resolveContextService(this.host.ctx, ElysiaRuntime)
 		this.server = createServer((_request, response) => response.writeHead(404).end('Not Found'))
 		this.carrier = new NodeElysiaApplicationCarrier({
 			fetch: (request) => this.host.http.fetch(request),
@@ -260,7 +264,7 @@ class AuthRuntimeSessionCarrierFixture implements AsyncDisposable {
 		const initial = await this.host.start(AuthPlugin.nodeAddress(), {
 			initialConfig: { mode: { type: 'password' } },
 		})
-		const store = new CredentialStore(initial.ctx.vault)
+		const store = new CredentialStore(initial.ctx.service(VaultRef))
 		await store.saveAccount({
 			version: 1,
 			type: 'local-account',

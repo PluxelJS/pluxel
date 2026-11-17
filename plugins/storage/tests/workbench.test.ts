@@ -1,5 +1,5 @@
 import { createTestHost, type TestHost } from '@pluxel/test'
-import { vault } from '@pluxel/services/vault'
+import { vault, Vault } from '@pluxel/services/vault'
 import { standardServices } from '@pluxel/services'
 import { type WorkbenchPrincipal } from '@pluxel/workbench'
 import { type WorkbenchContentObserver } from '@pluxel/workbench/client'
@@ -33,7 +33,8 @@ async function startVaultS3(host: TestHost<true>): Promise<void> {
 	})
 	await host
 		.require(S3Plugin.nodeAddress())
-		.ctx.vault!.kv({ namespace: REFERENCE.namespace })
+		.ctx.service(Vault)
+		.kv({ namespace: REFERENCE.namespace })
 		.set(REFERENCE.key, {
 			accessKeyId: 'old-access-key',
 			secretAccessKey: 'old-secret-key',
@@ -163,7 +164,8 @@ describe('S3 Workbench credential rotation', () => {
 			await expect(
 				host
 					.require(S3Plugin.nodeAddress())
-					.ctx.vault!.kv({ namespace: REFERENCE.namespace })
+					.ctx.service(Vault)
+					.kv({ namespace: REFERENCE.namespace })
 					.get(REFERENCE.key)
 					.then((snapshot) => snapshot.value),
 			).resolves.toEqual({
@@ -218,7 +220,8 @@ describe('S3 Workbench credential rotation', () => {
 			await expect(
 				host
 					.require(S3Plugin.nodeAddress())
-					.ctx.vault!.kv({ namespace: REFERENCE.namespace })
+					.ctx.service(Vault)
+					.kv({ namespace: REFERENCE.namespace })
 					.get(REFERENCE.key)
 					.then((snapshot) => snapshot.value),
 			).resolves.toEqual({

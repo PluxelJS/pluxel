@@ -10,11 +10,11 @@ import { expect, it, vi } from 'vitest'
 @Plugin()
 class Health extends BasePlugin {
 	init() {
-		this.ctx.require(ElysiaApp).get('/health', () => ({ ok: true }))
+		this.ctx.service(ElysiaApp).get('/health', () => ({ ok: true }))
 	}
 }
 
-it('uses installed service tokens alongside the portable SDK without a console proxy', async () => {
+it('uses installed service declarations through the portable SDK', async () => {
 	const host = await createHost({ plugins: [Health], services: [elysia(), commands()] })
 	const controller = new AbortController()
 	await host.start()
@@ -22,22 +22,22 @@ it('uses installed service tokens alongside the portable SDK without a console p
 	try {
 		await scope.sdk.plugin(Health.nodeAddress()).start()
 		const script: Script = async (sdk, run) => {
-			const server = sdk.ctx.require(ElysiaRuntime)
+			const server = sdk.ctx.service(ElysiaRuntime)
 			const response = await server.fetch(
 				new Request('http://local.dev/health', { signal: run.signal }),
 			)
 			return {
 				status: response.status,
 				body: await response.json(),
-				commands: sdk.ctx.require(Commands).list(),
+				commands: sdk.ctx.service(Commands).list(),
 			}
 		}
 		expect(
 			await script(scope.sdk, { id: 'test', input: undefined, signal: controller.signal }),
 		).toEqual({ status: 200, body: { ok: true }, commands: [] })
 		// @ts-expect-error Root Context cannot access owner-only HTTP routes.
-		expect(() => scope.sdk.ctx.require(ElysiaApp)).toThrow(
-			expect.objectContaining({ code: 'CONTEXT_CAPABILITY_ACCESS_DENIED' }),
+		expect(() => scope.sdk.ctx.service(ElysiaApp)).toThrow(
+			expect.objectContaining({ code: 'CONTEXT_SERVICE_ACCESS_DENIED' }),
 		)
 	} finally {
 		await scope.dispose()
@@ -45,13 +45,13 @@ it('uses installed service tokens alongside the portable SDK without a console p
 	}
 })
 
-it('passes run cancellation explicitly to a service without a console proxy', async () => {
+it('passes run cancellation explicitly to a borrowed service', async () => {
 	const host = await createHost({ plugins: [], services: [commands()] })
 	const controller = new AbortController()
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx, signal: controller.signal })
 	const entered = Promise.withResolvers<AbortSignal>()
-	vi.spyOn(host.ctx.require(Commands), 'execute').mockImplementation(
+	vi.spyOn(host.ctx.service(Commands), 'execute').mockImplementation(
 		(_name, _input, context) =>
 			new Promise((resolve) => {
 				const signal = context!.signal!
@@ -61,7 +61,7 @@ it('passes run cancellation explicitly to a service without a console proxy', as
 	)
 	try {
 		const script: Script = (sdk, run) =>
-			sdk.ctx.require(Commands).execute('pending', {}, { signal: run.signal })
+			sdk.ctx.service(Commands).execute('pending', {}, { signal: run.signal })
 		const pending = script(scope.sdk, { id: 'test', input: undefined, signal: controller.signal })
 		expect(await entered.promise).toBe(controller.signal)
 		controller.abort()

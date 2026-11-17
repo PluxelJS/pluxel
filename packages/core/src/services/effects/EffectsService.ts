@@ -1,3 +1,4 @@
+import { LoggerService } from '../../logger/LoggerService'
 import type { Context as PluxelContext } from '../../context/Context'
 import { pinOwnerContext } from '../../context/owner-view'
 import { EFFECTS_CHILD_SCOPE } from '../../internal/effects-child-scope'
@@ -279,7 +280,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 			try {
 				await release(value)
 			} catch (releaseError) {
-				this.ctx.logger.error('effects acquire release error', {
+				this.ctx.service(LoggerService).error('effects acquire release error', {
 					error: releaseError,
 					tag: meta?.tag,
 				})
@@ -527,7 +528,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 									| null
 							)?.[EFFECTS_PART_PATH]
 							errors.push(partPath ? attachErrorPartPath(error, partPath) : error)
-							this.ctx.logger.error('effects dispose error', {
+							this.ctx.service(LoggerService).error('effects dispose error', {
 								error,
 								tag: meta?.tag,
 								phase: PHASES[pIdx],

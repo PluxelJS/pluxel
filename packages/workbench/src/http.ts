@@ -9,7 +9,7 @@ export function workbenchHttp(options: WorkbenchShellOptions = {}): HostService<
 	const snapshot = Object.freeze({ ...options })
 	return defineHostService({
 		name: 'WorkbenchHTTP',
-		capabilities: [],
+		provides: [],
 		requires: { elysia: ElysiaRuntime, workbench: WorkbenchHost },
 		prepare: ({ ctx, dependencies, effects }) => {
 			const mounted = mountWorkbenchShell(ctx, snapshot)

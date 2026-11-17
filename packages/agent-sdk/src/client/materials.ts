@@ -13,7 +13,8 @@ import {
 	symlink,
 	writeFile,
 } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
+import { parsePluginDefinitionAddress, parsePluginEntryAddress } from '@pluxel/core'
 import {
 	isControlExportName,
 	encodeControlData,
@@ -40,28 +41,77 @@ export interface ControlMaterialSource {
 	manifest(input?: PluginControlManifestRequest): Promise<PluginControlManifestIndex>
 	file(input: PluginControlFileRequest): PluginControlFileChunk | Promise<PluginControlFileChunk>
 }
+/** Omit both fields to synchronize all committed definitions. */
+export type ControlSyncSelection = Readonly<
+	| {
+			/** Exact npm package name, including definitions from its subpaths. */
+			packageName?: string
+			definition?: never
+	  }
+	| {
+			packageName?: never
+			/** One exact standard definition address, including source-entry definitions. */
+			definition?: PluginDefinitionAddress
+	  }
+>
 export type ControlSyncResult = Readonly<{
 	out: string
 	snapshot: string
 	catalogRevision: number
 	unavailableCount: number
-	definitions: readonly Readonly<{
-		definition: PluginDefinitionAddress
-		exportName: string
-		module: string
-	}>[]
+	definitions: readonly ControlSyncExport[]
+	services: readonly ControlSyncExport[]
+}>
+type ControlSyncExport = Readonly<{
+	definition: PluginDefinitionAddress
+	exportName: string
+	module: string
+	/** Complete import using this module path and generated export name. */
+	importStatement: string
 }>
 const MAX_BYTES = 64 * 1024 * 1024
 const OWNER_FILE = '.pluxel-control-owner.json'
-const OWNER_CONTENT = '{"format":"pluxel-control-sync/2"}\n'
+const OWNER_CONTENT = '{"format":"pluxel-control-sync/3"}\n'
 const sha256 = (content: string | Uint8Array) => createHash('sha256').update(content).digest('hex')
 const failure = (code: string, message: string) => new ScriptExecutionError(code, message)
 
+/** Validate and fix the optional selection before opening a target or downloading material. */
+export function parseControlSyncSelection(
+	input: Readonly<{ packageName?: unknown; definition?: unknown }>,
+): ControlSyncSelection {
+	const { packageName, definition } = input
+	if (packageName !== undefined && definition !== undefined)
+		throw failure('invalid_input', 'Choose packageName or definition for control synchronization')
+	try {
+		if (definition !== undefined)
+			return Object.freeze({ definition: parsePluginDefinitionAddress(definition) })
+		if (packageName !== undefined) {
+			if (typeof packageName !== 'string') throw new TypeError('packageName must be a string')
+			parsePluginEntryAddress({ kind: 'package-root', packageName })
+			return Object.freeze({ packageName })
+		}
+		return Object.freeze({})
+	} catch (error) {
+		throw failure(
+			'invalid_input',
+			error instanceof Error ? error.message : 'Invalid control synchronization selection',
+		)
+	}
+}
+
 /** Download an immutable snapshot completely before changing the tool-owned import pointer. */
 export async function syncPluginControl(
-	options: Readonly<{ source: ControlMaterialSource; out: string; signal?: AbortSignal }>,
+	options: ControlSyncSelection &
+		Readonly<{ source: ControlMaterialSource; out: string; signal?: AbortSignal }>,
 ): Promise<ControlSyncResult> {
 	checkAbort(options.signal)
+	const out = resolve(options.out)
+	if (out.includes('?') || (sep === '/' && out.includes('\\')))
+		throw failure(
+			'invalid_input',
+			'TypeScript/Rolldown cannot import control modules from an output path containing ? or a POSIX backslash',
+		)
+	const requested = parseControlSyncSelection(options)
 	const transport: ControlMaterialSource = {
 		manifest: async (input) => {
 			checkAbort(options.signal)
@@ -73,7 +123,8 @@ export async function syncPluginControl(
 		},
 	}
 	const first = parsePluginControlManifestIndex(await transport.manifest())
-	const selection = [...first.definitions]
+	const index = [...first.definitions]
+	const serviceIndex = [...first.services]
 	let offset = first.nextOffset
 	while (offset !== null) {
 		const page = parsePluginControlManifestIndex(
@@ -91,18 +142,39 @@ export async function syncPluginControl(
 				'control_contract_mismatch',
 				'The control material index changed during synchronization',
 			)
-		selection.push(...page.definitions)
-		if (selection.length > 4096)
+		index.push(...page.definitions)
+		serviceIndex.push(...page.services)
+		if (index.length + serviceIndex.length > 4096)
 			throw failure('control_material_limit', 'The control definition index exceeds 4096 entries')
 		offset = page.nextOffset
 	}
-	let total = first.materials.reduce((sum, item) => sum + item.manifestSize, 0)
+	const requestedDefinition = requested.definition && definitionKey(requested.definition)
+	const matches = ({ definition }: { definition: PluginDefinitionAddress }) =>
+		requestedDefinition !== undefined
+			? definitionKey(definition) === requestedDefinition
+			: requested.packageName !== undefined
+				? definition.entry.kind !== 'source-entry' &&
+					definition.entry.packageName === requested.packageName
+				: true
+	const selection = index.filter(matches)
+	const serviceSelection = serviceIndex.filter(matches)
+	if (
+		selection.length + serviceSelection.length === 0 &&
+		(requested.packageName !== undefined || requested.definition !== undefined)
+	)
+		throw failure(
+			'control_definition_not_found',
+			'No committed control material matches the selected definition or package',
+		)
+	const needed = new Set([...selection, ...serviceSelection].map(({ snapshot }) => snapshot))
+	const snapshots = first.materials.filter(({ snapshot }) => needed.has(snapshot))
+	let total = snapshots.reduce((sum, item) => sum + item.manifestSize, 0)
 	if (total > MAX_BYTES) throw failure('control_material_limit', 'Control manifests exceed 64 MiB')
 	const materials = new Map<
 		string,
 		{ manifest: PluginControlManifest; files: Record<string, string> }
 	>()
-	for (const item of first.materials) {
+	for (const item of snapshots) {
 		const manifestText = await download(
 			transport,
 			item.snapshot,
@@ -141,16 +213,43 @@ export async function syncPluginControl(
 	const selected = new Set<string>()
 	const entryKeys = new Map<string, string>()
 	const namesByModule = new Map<string, Set<string>>()
+	const layout = (definition: PluginDefinitionAddress, kind: 'Plugin' | 'Service') => {
+		const key = definitionKey(definition)
+		const selectedKey = `${kind}:${key}`
+		if (selected.has(selectedKey))
+			throw failure(
+				'control_contract_mismatch',
+				`A committed ${kind} definition appears more than once`,
+			)
+		selected.add(selectedKey)
+		const entryKey = encodeControlData(definition.entry)
+		const digest = sha256(entryKey)
+		if (entryKeys.has(digest) && entryKeys.get(digest) !== entryKey)
+			throw failure(
+				'control_contract_mismatch',
+				'Canonical entries collide in the generated module layout',
+			)
+		entryKeys.set(digest, entryKey)
+		const module = `entries/${digest}/index.mjs`
+		let names = namesByModule.get(module)
+		if (!names) namesByModule.set(module, (names = new Set()))
+		const suffixes =
+			kind === 'Plugin'
+				? ['ConfigDeclaration', 'ConfigInput', 'ConfigOutput', 'Instance']
+				: ['Instance']
+		const family = (name: string) => [name, ...suffixes.map((suffix) => `${name}${suffix}`)]
+		let exportName = definition.exportName
+		if (!isControlExportName(exportName) || family(exportName).some((name) => names.has(name)))
+			exportName = `${kind}_${sha256(key)}`
+		if (family(exportName).some((name) => names.has(name)))
+			throw failure('control_contract_mismatch', 'Control exports collide in one canonical entry')
+		for (const name of family(exportName)) names.add(name)
+		return { exportName, module }
+	}
 	const exports = selection
 		.sort((left, right) => compare(definitionKey(left.definition), definitionKey(right.definition)))
 		.map((entry) => {
 			const key = definitionKey(entry.definition)
-			if (selected.has(key))
-				throw failure(
-					'control_contract_mismatch',
-					'A committed Plugin definition appears more than once',
-				)
-			selected.add(key)
 			const material = materials.get(entry.snapshot)
 			const definition = material?.manifest.definitions.find(
 				(item) => definitionKey(item.definition) === key && item.exportName === entry.exportName,
@@ -160,32 +259,7 @@ export async function syncPluginControl(
 					'control_contract_mismatch',
 					'The selected Plugin definition is absent from its material snapshot',
 				)
-			const entryKey = encodeControlData(entry.definition.entry)
-			const digest = sha256(entryKey)
-			if (entryKeys.has(digest) && entryKeys.get(digest) !== entryKey)
-				throw failure(
-					'control_contract_mismatch',
-					'Canonical Plugin entries collide in the generated module layout',
-				)
-			entryKeys.set(digest, entryKey)
-			const module = `entries/${digest}/index.mjs`
-			let names = namesByModule.get(module)
-			if (!names) namesByModule.set(module, (names = new Set()))
-			const family = (name: string) => [
-				name,
-				...['ConfigDeclaration', 'ConfigInput', 'ConfigOutput', 'Instance'].map(
-					(suffix) => `${name}${suffix}`,
-				),
-			]
-			let exportName = entry.definition.exportName
-			if (!isControlExportName(exportName) || family(exportName).some((name) => names.has(name)))
-				exportName = `Plugin_${sha256(key)}`
-			if (family(exportName).some((name) => names.has(name)))
-				throw failure(
-					'control_contract_mismatch',
-					'Plugin control exports collide in one canonical entry',
-				)
-			for (const name of family(exportName)) names.add(name)
+			const { exportName, module } = layout(entry.definition, 'Plugin')
 			return {
 				definition: entry.definition,
 				exportName,
@@ -197,27 +271,72 @@ export async function syncPluginControl(
 				snapshot: entry.snapshot,
 			}
 		})
+	const serviceExports = serviceSelection
+		.sort((left, right) => compare(definitionKey(left.definition), definitionKey(right.definition)))
+		.map((entry) => {
+			const key = definitionKey(entry.definition)
+			const material = materials.get(entry.snapshot)
+			const service = material?.manifest.services.find(
+				(item) => definitionKey(item.definition) === key && item.exportName === entry.exportName,
+			)
+			if (!service)
+				throw failure(
+					'control_contract_mismatch',
+					'The selected service definition is absent from its material snapshot',
+				)
+			const { exportName, module } = layout(entry.definition, 'Service')
+			return {
+				definition: entry.definition,
+				exportName,
+				module,
+				contract: service.contract,
+				access: service.access,
+				source: `materials/${entry.snapshot.slice(7)}/${service.module.replace(/\.mjs$/, '.d.mts')}`,
+				originalModule: service.module,
+				originalExport: entry.exportName,
+				snapshot: entry.snapshot,
+			}
+		})
 	for (const module of namesByModule.keys()) {
 		const definitions = exports.filter((entry) => entry.module === module)
+		const services = serviceExports.filter((entry) => entry.module === module)
 		files[module] = renderPluginDescriptors(
 			definitions.map((entry) => ({
 				exportName: entry.exportName,
 				descriptor: { format: 2, definition: entry.definition, contracts: entry.contracts },
 			})),
+			services.map((entry) => ({
+				exportName: entry.exportName,
+				descriptor: {
+					format: 1,
+					definition: entry.definition,
+					contract: entry.contract,
+					access: entry.access,
+				},
+			})),
 		)
-		files[module.replace(/\.mjs$/, '.d.mts')] = definitions
-			.map((entry) => {
-				const path = JSON.stringify(
-					`../../materials/${entry.snapshot.slice(7)}/${entry.originalModule}`,
-				)
-				return `export { ${entry.originalExport} as ${entry.exportName} } from ${path};\nexport type { ${['ConfigDeclaration', 'ConfigInput', 'ConfigOutput', 'Instance'].map((suffix) => `${entry.originalExport}${suffix} as ${entry.exportName}${suffix}`).join(', ')} } from ${path};\n`
-			})
-			.join('')
+		files[module.replace(/\.mjs$/, '.d.mts')] =
+			definitions
+				.map((entry) => {
+					const path = JSON.stringify(
+						`../../materials/${entry.snapshot.slice(7)}/${entry.originalModule}`,
+					)
+					return `export { ${entry.originalExport} as ${entry.exportName} } from ${path};\nexport type { ${['ConfigDeclaration', 'ConfigInput', 'ConfigOutput', 'Instance'].map((suffix) => `${entry.originalExport}${suffix} as ${entry.exportName}${suffix}`).join(', ')} } from ${path};\n`
+				})
+				.join('') +
+			services
+				.map((entry) => {
+					const path = JSON.stringify(
+						`../../materials/${entry.snapshot.slice(7)}/${entry.originalModule}`,
+					)
+					return `export { ${entry.originalExport} as ${entry.exportName} } from ${path};\nexport type { ${entry.originalExport}Instance as ${entry.exportName}Instance } from ${path};\n`
+				})
+				.join('')
 	}
 
 	const unsigned = {
-		format: 2 as const,
-		compiler: '@pluxel/agent-sdk/control-sync/2',
+		format: 3 as const,
+		compiler: '@pluxel/agent-sdk/control-sync/3',
 		definitions: exports.map(({ definition, exportName, module, contracts, source }) => ({
 			definition,
 			exportName,
@@ -225,6 +344,16 @@ export async function syncPluginControl(
 			contracts,
 			source,
 		})),
+		services: serviceExports.map(
+			({ definition, exportName, module, contract, access, source }) => ({
+				definition,
+				exportName,
+				module,
+				contract,
+				access,
+				source,
+			}),
+		),
 		files: Object.entries(files)
 			.sort(([a], [b]) => compare(a, b))
 			.map(([path, content]) => ({
@@ -236,20 +365,30 @@ export async function syncPluginControl(
 	const manifest = { ...unsigned, snapshot: `sha256:${sha256(encodeControlData(unsigned))}` }
 	files['manifest.json'] = `${encodeControlData(manifest)}\n`
 	await verifyPluginControlMaterial(manifest, files)
-	const out = resolve(options.out)
 	checkAbort(options.signal)
 	// Publication settles atomically once started, including when the caller aborts.
 	await installSnapshot(out, manifest.snapshot, files)
+	const resultExports = (
+		entries: readonly { definition: PluginDefinitionAddress; exportName: string; module: string }[],
+	) =>
+		Object.freeze(
+			entries.map(({ definition, exportName, module }) => {
+				const path = join(out, 'current', module)
+				return Object.freeze({
+					definition,
+					exportName,
+					module: path,
+					importStatement: `import { ${exportName} } from ${JSON.stringify(path)};`,
+				})
+			}),
+		)
 	return Object.freeze({
 		out,
 		snapshot: manifest.snapshot,
 		catalogRevision: first.catalogRevision,
 		unavailableCount: first.unavailableCount,
-		definitions: Object.freeze(
-			exports.map(({ definition, exportName, module }) =>
-				Object.freeze({ definition, exportName, module: join(out, 'current', module) }),
-			),
-		),
+		definitions: resultExports(exports),
+		services: resultExports(serviceExports),
 	})
 }
 

@@ -1,4 +1,5 @@
 export {
+	assertOwnerInvocationOpen,
 	closeOwnerInvocations,
 	enterOwnerInvocation,
 	type OwnerInvocationLease,
@@ -35,25 +36,36 @@ export { observeFile } from './fs/observe'
 export { pluginNodePhysicalKey } from './internal/plugin-address'
 export {
 	createContextHost,
-	defineContextCapability,
-	installOwnerViewCapability,
-	installRootCapability,
-	installScopeCapability,
-	resolveContextCapability,
-	type ContextCapability,
-	type ContextCapabilityInstallation,
+	installOwnerViewService,
+	installRootService,
+	installScopeService,
+	getServiceInstallationDefinition,
+	type ServiceDefinition,
+	type ServiceInstallation,
 } from '@pluxel/context'
+export {
+	resolveContextService,
+	initializeContextServiceValues,
+	getServiceDefinitionKey,
+	getServiceDefinitionAccess,
+	getInstalledServiceDefinitions,
+	resolveInstalledServiceDefinition,
+	getInstalledServiceAccess,
+	createServiceRef,
+	type ServiceKey,
+} from '@pluxel/context/internal'
+export {
+	readServiceDefinition,
+	createServiceReference,
+	setServiceControlContract,
+} from './services/definition'
 export { createGenerationContext, createOwnerContext } from './context/context-factory'
 export { getPluginGenerationContext } from './plugins/composition/BasePlugin'
 export { isPluginPartContext } from './plugins/composition/PluginPart'
 export {
-	CONFIG_SERVICE_CAPABILITY,
 	createCoreContextInstallations,
 	createCoreRootContext,
 	resolveCoreRootInputs,
-	EFFECTS_CAPABILITY,
-	LOGGER_CAPABILITY,
-	PLUGIN_SERVICE_CAPABILITY,
 	type CoreRootInputs,
 } from './context/core-plan'
 export {
@@ -101,3 +113,7 @@ export { immutableConfigRecord } from './services/config/immutable'
 
 export { createCorePluginExecutionBinding } from './context/plugin-execution'
 export { DEFAULT_PLUGIN_EXECUTION } from './plugins/runtime/PluginService'
+
+export { PluginConfigService, PluginRuntimeService } from './context/core-capabilities'
+export { LoggerService } from './logger/LoggerService'
+export { EffectsService } from './services/effects/EffectsService'

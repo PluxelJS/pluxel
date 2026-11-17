@@ -53,6 +53,7 @@ export default defineConfig({
 	},
 	copy: ['schemas'],
 	dts: {
+		tsconfig: './tsconfig.build.json',
 		sourcemap: true,
 		eager: true,
 	},

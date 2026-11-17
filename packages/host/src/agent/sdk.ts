@@ -2,6 +2,9 @@ import {
 	parsePluginNodeAddress,
 	pluginNodeIndexKey,
 	type PluginNodeAddress,
+	type Context,
+	type ServiceDefinition,
+	type ServiceRef,
 	type RootContext,
 } from '@pluxel/core'
 import {
@@ -10,6 +13,11 @@ import {
 	requirePluginService,
 	requireConfigService,
 	CorePluginGraphVerificationError,
+	readServiceDefinition,
+	getServiceDefinitionKey,
+	resolveInstalledServiceDefinition,
+	createServiceRef,
+	assertOwnerInvocationOpen,
 } from '@pluxel/core/internal'
 import {
 	Logging,
@@ -49,14 +57,14 @@ import {
 } from '../coordinator'
 import type { HostConfigStore } from '../config-store'
 import type { HostPolicyField, HostPolicyInput } from '../policy'
-import type { ScriptPlugin, ScriptSdk } from './sdk-types'
+import type { ScriptPlugin, ScriptSdk, ScriptServiceContext } from './sdk-types'
 import {
 	captureScriptPluginListOptions,
 	scriptPluginList,
 	type ScriptPluginListOptions,
 } from './discovery'
 import { normalizePluginTarget } from './control-target'
-import { createPluginInstanceView } from './instance-view'
+import { createBorrowedValueView } from './instance-view'
 import {
 	assertPluginControlContract,
 	pluginCatalogEntry,
@@ -107,6 +115,7 @@ export function createScriptScope(
 	const { ctx, signal } = options
 	const coordinator = requirePluginHostCoordinator(ctx)
 	const state = requireHostStateStore(ctx)
+	const loggingRef = createServiceRef(Logging)
 	const policy = createHostPolicy(ctx, state)
 	const controller = new AbortController()
 	const pending = new Set<Promise<unknown>>()
@@ -277,13 +286,14 @@ export function createScriptScope(
 		}
 	}
 	const logging = (): RuntimeLogging => {
-		if (!ctx.logging)
+		const installed = ctx.service(loggingRef)
+		if (installed === undefined)
 			throw new ScriptError({
 				code: 'logging_unavailable',
 				message:
-					'This Host has no Logging capability; configure runtime.logtape with a history sink to read logs',
+					'This Host has no Logging service; configure runtime.logtape with a history sink to read logs',
 			})
-		return ctx.require(Logging)
+		return installed
 	}
 	const assertReadOptions = (input?: Pick<LogReadOptions, 'limit'>) => {
 		if (
@@ -292,6 +302,73 @@ export function createScriptScope(
 		)
 			throw new RangeError('Log read limit must be an integer from 1 to 10000')
 	}
+	const serviceViews = new WeakMap<Context, WeakMap<object, object>>()
+	const contexts = new WeakMap<Context, ScriptServiceContext>()
+	const contextView = (owner: Context): ScriptServiceContext => {
+		const cached = contexts.get(owner)
+		if (cached) return cached
+		const view = Object.freeze({
+			service: (target: ServiceDefinition<unknown> | ServiceRef<unknown>): unknown => {
+				assertOpen()
+				if (queuedCalls > 0)
+					throw new ScriptError({
+						code: 'borrowed_generation_conflict',
+						message: 'Await pending Host operations before accessing services',
+					})
+				assertOwnerInvocationOpen(owner)
+				const expected = readServiceDefinition(target)
+				const installed = resolveInstalledServiceDefinition(owner, getServiceDefinitionKey(target))
+				if (installed && expected.contract) {
+					const actual = readServiceDefinition(installed).contract
+					if (!actual)
+						throw new ScriptError({
+							code: 'control_material_unavailable',
+							message: 'The installed service has no accepted control contract',
+						})
+					if (actual !== expected.contract)
+						throw new ScriptError({
+							code: 'control_contract_mismatch',
+							message: 'The service control contract does not match the installed declaration',
+						})
+				}
+				const value = owner.service(target as ServiceDefinition<unknown>)
+				if (value === null || (typeof value !== 'object' && typeof value !== 'function'))
+					return value
+				let owned = serviceViews.get(owner)
+				if (!owned) {
+					owned = new WeakMap()
+					serviceViews.set(owner, owned)
+				}
+				const existing = owned.get(value)
+				if (existing) return existing
+				const borrowed = createBorrowedValueView(value, owner, {
+					signal: controller.signal,
+					assertOpen: () => {
+						assertOpen()
+						if (queuedCalls > 0)
+							throw new ScriptError({
+								code: 'borrowed_generation_conflict',
+								message: 'Await pending Host operations before accessing service members',
+							})
+					},
+					track,
+					unwrap,
+					begin: () => {
+						activeCalls++
+					},
+					end: () => {
+						activeCalls--
+					},
+				})
+				owned.set(value, borrowed)
+				originals.set(borrowed, value)
+				return borrowed
+			},
+		}) as ScriptServiceContext
+		contexts.set(owner, view)
+		return view
+	}
+
 	// A reference owns only a validated target snapshot. Host state and generation
 	// admission remain in the original coordinator for every operation.
 	const select = (selected: ReturnType<typeof normalizePluginTarget>): unknown => {
@@ -354,7 +431,7 @@ export function createScriptScope(
 									)
 								let view = views.get(instance)
 								if (!view) {
-									view = createPluginInstanceView(instance, {
+									view = createBorrowedValueView(instance, getPluginGenerationContext(instance), {
 										signal: controller.signal,
 										assertOpen: () => {
 											assertOpen()
@@ -465,6 +542,32 @@ export function createScriptScope(
 						}, admission),
 					targetError,
 				),
+			context: () =>
+				queued(
+					() =>
+						coordinator.readCommitted(({ catalog }) => {
+							assertImplementation(catalog)
+							const entry = pluginCatalogEntry(catalog, node.definition)
+							if (!entry)
+								throw new ScriptExecutionError(
+									'target_unavailable',
+									'Plugin definition is absent from the current catalog',
+								)
+							const instance = requirePluginService(ctx).getInstance(node)
+							if (!instance)
+								throw new ScriptExecutionError('plugin_not_running', 'Plugin node is not running')
+							const owner = getPluginGenerationContext(instance)
+							if (
+								requirePluginGenerationInfo(owner).implementation !== entry.candidate.implementation
+							)
+								throw new ScriptExecutionError(
+									'stale_target',
+									'Running generation differs from the committed candidate',
+								)
+							return contextView(owner)
+						}, admission),
+					instanceError,
+				),
 			start: () => lifecycle('start'),
 			stop: () => lifecycle('stop'),
 			restart: () => lifecycle('restart'),
@@ -489,7 +592,7 @@ export function createScriptScope(
 	const sdk = Object.freeze({
 		get ctx() {
 			assertOpen()
-			return ctx
+			return contextView(ctx)
 		},
 		plugin,
 		plugins: Object.freeze({

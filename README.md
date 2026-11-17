@@ -26,7 +26,7 @@ Pluxel 借鉴了 [Cordis v3](https://github.com/cordiverse/cordis) 与 [Koishi](
 ## 快速浏览
 
 ```ts
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, EffectsService, LoggerService } from '@pluxel/core'
 import { AccountsPlugin } from '@acme/accounts'
 import * as v from 'valibot'
 
@@ -46,12 +46,14 @@ export class BillingPlugin extends BasePlugin {
 	protected override init() {
 		// 2. 创建长期运行的资源，随插件生命周期自动回收
 		const timer = setInterval(() => this.sync(), 60_000)
-		this.ctx.effects.defer(() => clearInterval(timer))
+		this.ctx.service(EffectsService).defer(() => clearInterval(timer))
 	}
 
 	private sync() {
 		const list = this.accounts.listInvoices()
-		this.ctx.logger.info('Synced invoices', { count: list.length, currency: this.config.currency })
+		this.ctx
+			.service(LoggerService)
+			.info('Synced invoices', { count: list.length, currency: this.config.currency })
 	}
 }
 ```

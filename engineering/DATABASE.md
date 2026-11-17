@@ -6,7 +6,7 @@
 
 Plugin 用 `pgTable()` 定义 schema，再用 `defineDatabase({ schema })` 声明 evolution policy 和 migration。definition 不携带 owner；每个 Plugin 最多使用一个 definition。
 
-`init()` 中的 `ctx.require(Database).use(definition)` 绑定当前 Context owner、准备 migration，返回仅含 `read(callback)` 与 `transaction(callback)` 的 handle。共享 definition 只共享结构。作者不取得 driver、pool、长期 session、physical schema 或独立 commit API。
+`init()` 中的 `ctx.service(Database).use(definition)` 绑定当前 Context owner、准备 migration，返回仅含 `read(callback)` 与 `transaction(callback)` 的 handle。共享 definition 只共享结构。作者不取得 driver、pool、长期 session、physical schema 或独立 commit API。
 
 每个 owner 的 immutable database instance 拥有独立 physical schema 和 NOLOGIN role，registry 只标记一个 active instance。handle 固定绑定取得时的 instance；每次 operation 在 transaction 内确认它仍 active，并设置 role、`search_path` 和 statement/lock/idle timeout。`read()` 同时设置 read-only。这些限制防止误接线；Plugin 仍与 Host 同进程。
 
@@ -14,7 +14,7 @@ Plugin 用 `pgTable()` 定义 schema，再用 `defineDatabase({ schema })` 声�
 
 ## Backend ownership
 
-`database({ backend })` 接收 lazy adapter factory。开发和测试使用 `@pluxel/services/database/pglite`，部署使用 `/database/postgres`；通用入口不加载 driver，两个工厂互不引用，Services 只声明 optional peers。未安装能力时，`ctx.require(Database)` 抛出标准缺失错误。
+`database({ backend })` 接收 lazy adapter factory。开发和测试使用 `@pluxel/services/database/pglite`，部署使用 `/database/postgres`；通用入口不加载 driver，两个工厂互不引用，Services 只声明 optional peers。未安装能力时，`ctx.service(Database)` 抛出标准缺失错误。
 
 内置工厂保留原生 `pg.PoolConfig | Pool`、`PGliteOptions | PGlite`。配置创建的资源归 Host，传入实例仅借用；adapter 关闭会移除自己安装的 PostgreSQL error listener，保留借用实例和其他 listener。借用资源须存活到所有 Host 排空，期间保持 pool 并发上限不变。自定义 `DatabaseBackend` / `DatabaseAdapter` 沿用同一 owner、migration 和 drain 流程，由 factory 明确 adapter 的关闭语义。
 
@@ -57,7 +57,7 @@ acquire 与缓存 handle 的 read/transaction 都进入 Core root/owner invocati
 
 ## Host composition 与实现归属
 
-`@pluxel/services/database` 拥有 definition、Database token、owner handle、scheduler、migration/outbox coordinator；`database({ backend })` 安装 owner-only capability。应用负责选择并安装 driver。schema artifact 编译归 Rolldown，见 [Toolchain](TOOLCHAIN.md#database-migrations)。
+`@pluxel/services/database` 拥有 definition、Database 服务声明、owner handle、scheduler、migration/outbox coordinator；`database({ backend })` 安装 owner 服务。应用负责选择并安装 driver。schema artifact 编译归 Rolldown，见 [Toolchain](TOOLCHAIN.md#database-migrations)。
 
 ## 实现与验证
 

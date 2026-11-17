@@ -1,3 +1,4 @@
+import { LoggerService } from '../../src/logger/LoggerService'
 import { getOpenTelemetrySink } from '@logtape/otel'
 import { OTLPLogExporter as HttpLogExporter } from '@opentelemetry/exporter-logs-otlp-http'
 import { OTLPLogExporter as ProtobufLogExporter } from '@opentelemetry/exporter-logs-otlp-proto'
@@ -18,8 +19,8 @@ import { logtape } from '@pluxel/core/config'
 @Plugin()
 class RemoteLoggedOwner extends BasePlugin {
 	init() {
-		this.ctx.logger.info('plugin started', { orderId: 'order-42' })
-		return () => this.ctx.logger.info('plugin stopped')
+		this.ctx.service(LoggerService).info('plugin started', { orderId: 'order-42' })
+		return () => this.ctx.service(LoggerService).info('plugin stopped')
 	}
 }
 
@@ -92,8 +93,10 @@ it.each([
 			})
 			try {
 				await host.startNode(RemoteLoggedOwner.nodeAddress())
-				host.ctx.logger.debug('filtered runtime debug')
-				host.ctx.logger.error('remote failure', { error: new Error('fixture failure') })
+				host.ctx.service(LoggerService).debug('filtered runtime debug')
+				host.ctx
+					.service(LoggerService)
+					.error('remote failure', { error: new Error('fixture failure') })
 				expect(requests).toHaveLength(0)
 			} finally {
 				await host.close()
@@ -138,7 +141,7 @@ it('disposes the native sink once when a later Host service fails to prepare', a
 				services: [
 					defineHostService({
 						name: 'FailAfterLogging',
-						capabilities: [],
+						provides: [],
 						prepare() {
 							throw new Error('fixture prepare failed')
 						},

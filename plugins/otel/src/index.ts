@@ -1,6 +1,14 @@
+import type { Workbench } from '@pluxel/workbench'
 import { ElysiaApp } from '@pluxel/services/elysia'
 import type { Logger, Meter, Tracer } from '@opentelemetry/api'
-import { BasePlugin, formatPluginNodeReference, Plugin } from '@pluxel/core'
+import {
+	BasePlugin,
+	formatPluginNodeReference,
+	Plugin,
+	EffectsService,
+	LoggerService,
+	defineServiceRef,
+} from '@pluxel/core'
 import { OtelConfig, type OtelSignal } from './config.ts'
 import { safeErrorType } from './diagnostics.ts'
 import type { OtlpExportState } from './otlp.ts'
@@ -8,6 +16,7 @@ import type { PrometheusPullReader } from './prometheus.ts'
 import type { OtelProviders, OtelRuntime } from './sdk.ts'
 import { OtelWorkbench, type OtelWorkbenchStatus } from './workbench.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 export { OtelConfig } from './config.ts'
 export type { OtelPluginConfig, OtelSignal } from './config.ts'
 export type { OtelProviders } from './sdk.ts'
@@ -59,7 +68,7 @@ export abstract class Otel extends BasePlugin {
 		const runtime = await createRuntimeFromProviders(providers)
 		this.runtime = runtime
 		try {
-			this.ctx.effects.defer(() => this.disposeRuntime(runtime), { tag: 'Otel' })
+			this.ctx.service(EffectsService).defer(() => this.disposeRuntime(runtime), { tag: 'Otel' })
 			if (runtime.prometheus && runtime.prometheusPath !== undefined) {
 				this.mountPrometheus(runtime.prometheus, runtime.prometheusPath)
 				this.prometheusPath = runtime.prometheusPath
@@ -156,7 +165,7 @@ export abstract class Otel extends BasePlugin {
 	}
 
 	private mountPrometheus(reader: PrometheusPullReader, path: string): void {
-		this.ctx.require(ElysiaApp).get(path, () => this.scrapePrometheus(reader))
+		this.ctx.service(ElysiaApp).get(path, () => this.scrapePrometheus(reader))
 	}
 
 	private async scrapePrometheus(reader: PrometheusPullReader): Promise<Response> {
@@ -229,7 +238,7 @@ export abstract class Otel extends BasePlugin {
 
 	private info(message: string): void {
 		try {
-			this.ctx.logger.info(message)
+			this.ctx.service(LoggerService).info(message)
 		} catch {
 			// Diagnostics cannot affect telemetry or application code.
 		}
@@ -237,7 +246,7 @@ export abstract class Otel extends BasePlugin {
 
 	private warn(message: string, properties: Readonly<Record<string, unknown>>): void {
 		try {
-			this.ctx.logger.warn(message, properties)
+			this.ctx.service(LoggerService).warn(message, properties)
 		} catch {
 			// Diagnostics cannot affect telemetry or application code.
 		}
@@ -251,7 +260,7 @@ export class OtelPlugin extends Otel {
 
 	protected override async init(): Promise<void> {
 		await super.init()
-		this.ctx.workbench?.publish(OtelWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(OtelWorkbench, {
 			operations: () => this.workbenchOperations(),
 		})
 	}

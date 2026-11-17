@@ -14,6 +14,7 @@ import {
 	requirePluginService,
 	type ConcretePluginDefinitionCandidate,
 	type PluginService,
+	resolveContextService,
 } from '@pluxel/core/internal'
 import {
 	collectPluginLifecycleNotStarted,
@@ -22,7 +23,7 @@ import {
 	type PluginNodeHandle,
 } from '@pluxel/core/internal/test'
 import { type ServiceInternalTestHostOptions } from './options'
-import { resolveContextCapability } from '@pluxel/core/host'
+
 import {
 	applyHostStatePatch,
 	createPluginCatalogSnapshot,
@@ -346,7 +347,7 @@ export async function createServiceInternalTestHarness(
 		stateStore,
 		fetch: async (request: Request): Promise<Response> => {
 			const { ElysiaRuntime } = await import('../elysia/runtime')
-			return resolveContextCapability(ctx, ElysiaRuntime).fetch(request)
+			return resolveContextService(ctx, ElysiaRuntime).fetch(request)
 		},
 		add,
 		remove,

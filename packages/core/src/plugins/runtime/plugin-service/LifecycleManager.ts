@@ -1,3 +1,4 @@
+import { LoggerService } from '../../../logger/LoggerService'
 // lifecycleManager.ts
 // Lifecycle slot + actor orchestration for plugins.
 // Extracted from PluginService to keep commit logic readable while preserving
@@ -67,7 +68,7 @@ export class LifecycleManager {
 		ref.subscribe({
 			error: (err) => {
 				const label = formatPluginNodeReference(this.slots.nodeAddress(id))
-				this.ctx.logger.error('actor {actor} unhandled error', {
+				this.ctx.service(LoggerService).error('actor {actor} unhandled error', {
 					actor: label,
 					error: err,
 				})

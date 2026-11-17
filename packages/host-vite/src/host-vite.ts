@@ -1,9 +1,9 @@
+import { LoggerService, pluginDefinitionIndexKey, type PluginConstructor } from '@pluxel/core'
 import { hostViteProfile, type HostViteProfile } from './profile'
 import { installHostViteShutdown } from './internal/host-session'
 import { createHostDependencyWatch } from './dependency-watch'
 import { createHostModuleBytes } from './module-bytes'
 import { checkDevelopmentWorkspace } from './workspace-setup'
-import { pluginDefinitionIndexKey, type PluginConstructor } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { randomUUID } from 'node:crypto'
 import type { ProjectScriptsAttachment } from './console/attachment'
@@ -20,6 +20,7 @@ import {
 } from '@pluxel/host'
 import {
 	updateHostCatalog,
+	loadNativeHostServiceControls,
 	installPluginSources,
 	setHostCatalogProvenance,
 	installedPackageFacts,
@@ -63,7 +64,12 @@ import {
 } from './environment'
 import { hostSingletons } from './singletons'
 import { attachHostVitePlugins, type HostViteCandidate, type HostViteCatalog } from './attachments'
-import { emptyHostPluginControls, prepareHostPluginControls } from './control'
+import {
+	emptyHostPluginControls,
+	prepareHostPluginControls,
+	installHostServiceControls,
+	type HostPluginControls,
+} from './control'
 
 export type HostViteOptions = Readonly<{
 	/** Application module default-exporting defineHostApplication(factory). Relative to Vite root. */
@@ -136,7 +142,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 	const epochs = new WeakMap<PluginHost, string>()
 	const attachments = new WeakMap<PluginHost, Awaited<ReturnType<typeof attachHostVitePlugins>>>()
 	const diagnostics = createHostDiagnostics(
-		() => (closing ? undefined : active?.ctx.logger),
+		() => (closing ? undefined : active?.ctx.service(LoggerService)),
 		createViteDiagnostics(() => server.config.logger),
 	)
 	const recovery = new ViteApplicationRecovery(diagnostics)
@@ -147,6 +153,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 		declaration: ResolvedHostApplication,
 		facts: ReadonlyMap<PluginConstructor, PluginCatalogProvenance>,
 		catalog: HostViteCatalog,
+		candidateControls: HostPluginControls,
 	): Promise<PluginHost> => {
 		const instance = await createHost({
 			name: declaration.name,
@@ -158,6 +165,8 @@ export function host(options: HostViteOptions): PluginOption[] {
 			runtime: declaration.runtime,
 		})
 		try {
+			installHostServiceControls(instance.ctx, candidateControls)
+			await loadNativeHostServiceControls(instance.ctx, server.config.root)
 			setHostCatalogProvenance(instance.ctx, facts)
 			installHostRecentUpdates(instance.ctx, recentUpdates)
 			installPluginSources(instance.ctx, {
@@ -418,7 +427,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 					try {
 						await previousHost?.close()
 						if (closing) throw new HostViteClosedError()
-						nextHost = await create(next, nextProvenance, nextCatalog)
+						nextHost = await create(next, nextProvenance, nextCatalog, nextControls)
 						if (closing) throw new HostViteClosedError()
 						lifecycle = await nextHost.start()
 					} catch (error) {
@@ -429,6 +438,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 					accepted = true
 				} else {
 					try {
+						installHostServiceControls(active!.ctx, nextControls)
 						setHostCatalogProvenance(active!.ctx, nextProvenance)
 						recentUpdates.updatePhase('artifacts')
 						artifactCandidate = await attachments.get(active!)?.prepareCandidate(nextCatalog)
@@ -494,7 +504,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 						compensation.startup,
 					)
 					const restoredApplication = { ...restoredFixed, plugins: compensation.plugins }
-					restoredHost = await create(restoredApplication, provenance, acceptedCatalog!)
+					restoredHost = await create(restoredApplication, provenance, acceptedCatalog!, controls)
 					if (closing) throw new HostViteClosedError()
 					lifecycle = await restoredHost.start()
 					active = restoredHost

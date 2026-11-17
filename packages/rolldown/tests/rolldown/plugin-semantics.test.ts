@@ -401,7 +401,7 @@ describe('plugin semantic lowering', () => {
 		function contentPlugin(className: string): string {
 			return `
 				import { BasePlugin, Plugin } from '@pluxel/core'
-				import { workbench } from '@pluxel/workbench'
+				import { Workbench, workbench } from '@pluxel/workbench'
 				export const pages = workbench.define({
 					guide: workbench.content({
 						document: workbench.markdown(import.meta.url, './guide.md'),
@@ -409,7 +409,7 @@ describe('plugin semantic lowering', () => {
 					}),
 				})
 				@Plugin() export class ${className} extends BasePlugin {
-					init() { this.ctx.workbench.publish(pages) }
+					init() { this.ctx.service(Workbench).publish(pages) }
 				}
 			`
 		}

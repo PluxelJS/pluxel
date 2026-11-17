@@ -9,7 +9,11 @@ import { resolve, relative, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { HostApplicationFactory } from './application'
 import { installedPackageFacts, type InstalledPackageFacts } from './shared-packages'
-import { readApplicationPluginControl, readLoadedPluginControl } from './control-material.node.ts'
+import {
+	loadNativeHostServiceControls,
+	readApplicationPluginControl,
+	readLoadedPluginControl,
+} from './control-material.node.ts'
 import type { PluginControlMetadata } from './catalog'
 
 const owners = new WeakMap<
@@ -152,4 +156,14 @@ export function recordLoadedApplicationPlugins(
 		if (definitions.has(pluginDefinitionIndexKey(definition)))
 			recordLoadedPluginModule(plugin, module, owner)
 	}
+}
+
+/** Accept installed services from this exact generated factory's recorded output owner. */
+export async function loadLoadedApplicationServiceControls(
+	factory: HostApplicationFactory,
+	ctx: import('@pluxel/core').RootContext,
+	root: string,
+): Promise<void> {
+	const application = applications.get(factory)
+	await loadNativeHostServiceControls(ctx, root, application)
 }

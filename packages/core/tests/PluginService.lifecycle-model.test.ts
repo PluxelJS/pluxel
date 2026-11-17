@@ -1,3 +1,4 @@
+import { EffectsService } from '../src/services/effects/EffectsService'
 import {
 	BasePlugin,
 	Plugin,
@@ -66,7 +67,7 @@ class LifecycleModelProvider extends BasePlugin {
 	readonly generation = nextGeneration('provider')
 
 	override init(): void {
-		this.ctx.effects.defer(ownEffect('provider'))
+		this.ctx.service(EffectsService).defer(ownEffect('provider'))
 		if (providerShouldFail) throw new Error('model provider failed')
 	}
 }
@@ -84,7 +85,7 @@ class LifecycleModelRequiredConsumer extends BasePlugin {
 	}
 
 	override init(): void {
-		this.ctx.effects.defer(ownEffect('required'))
+		this.ctx.service(EffectsService).defer(ownEffect('required'))
 	}
 }
 
@@ -93,7 +94,7 @@ class LifecycleModelOptionalConsumer extends BasePlugin {
 	readonly generation = nextGeneration('optional')
 
 	override init(): void {
-		this.ctx.effects.defer(ownEffect('optional'))
+		this.ctx.service(EffectsService).defer(ownEffect('optional'))
 		this.plugins.use(LifecycleModelProviderRef, (provider) => {
 			optionalProviderGenerations.push(provider.generation)
 			return ownEffect('optional-integration')
@@ -106,7 +107,7 @@ class LifecycleModelIndependent extends BasePlugin {
 	readonly generation = nextGeneration('independent')
 
 	override init(): void {
-		this.ctx.effects.defer(ownEffect('independent'))
+		this.ctx.service(EffectsService).defer(ownEffect('independent'))
 	}
 }
 

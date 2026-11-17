@@ -2,33 +2,27 @@ import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
 import { buildPluxelFrontendResolveConditions } from '../src/workspace/vite.ts'
 
-type CoreContextPublicEntry = Readonly<{
-	createCoreContextHost(
-		options: Readonly<{ name: string; capabilities: readonly unknown[] }>,
-	): Readonly<{
-		createRoot(): unknown
-	}>
-}>
+type CoreContextPublicEntry = Pick<typeof import('@pluxel/core/host'), 'createCoreContextHost'>
+type CoreContextInternalEntry = Pick<
+	typeof import('@pluxel/core/internal'),
+	'installRootService' | 'resolveContextService'
+>
 
-type CoreContextInternalEntry = Readonly<{
-	defineContextCapability(description: string): unknown
-	installRootCapability(capability: unknown, options: Readonly<{ create(): unknown }>): unknown
-	resolveContextCapability(ctx: unknown, capability: unknown): unknown
-}>
-
-function resolveCoreContextCapability(
+function resolveCoreContextService(
 	publicEntry: CoreContextPublicEntry,
 	internalEntry: CoreContextInternalEntry,
-): unknown {
-	const capability = internalEntry.defineContextCapability('packaging.shared-context-kernel')
-	const installation = internalEntry.installRootCapability(capability, {
-		create: () => 'shared',
+): string {
+	class SharedService {
+		readonly value = 'shared'
+	}
+	const installation = internalEntry.installRootService(SharedService, {
+		create: () => new SharedService(),
 	})
 	const host = publicEntry.createCoreContextHost({
 		name: 'packaging-shared-kernel',
-		capabilities: [installation],
+		services: [installation],
 	})
-	return internalEntry.resolveContextCapability(host.createRoot(), capability)
+	return internalEntry.resolveContextService(host.createRoot(), SharedService).value
 }
 
 describe('built package entry behavior', () => {
@@ -37,13 +31,13 @@ describe('built package entry behavior', () => {
 		const internalEntry = await import(
 			new URL('../../core/dist/internal.mjs', import.meta.url).href
 		)
-		expect(resolveCoreContextCapability(publicEntry, internalEntry)).toBe('shared')
+		expect(resolveCoreContextService(publicEntry, internalEntry)).toBe('shared')
 	})
 
 	it('shares the Context kernel between Core public and internal CommonJS entries', () => {
 		const require = createRequire(import.meta.url)
 		expect(
-			resolveCoreContextCapability(
+			resolveCoreContextService(
 				require('../../core/dist/host.cjs'),
 				require('../../core/dist/internal.cjs'),
 			),

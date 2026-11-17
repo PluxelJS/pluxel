@@ -1,3 +1,4 @@
+import { EffectsService } from './services/effects/EffectsService'
 import './services/index'
 import { createCoreRootContext } from './context/core-plan'
 import { prepareCoreContext } from './context/core-logging'
@@ -618,7 +619,7 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 				failures.push(error)
 			}
 			try {
-				await root.effects.dispose()
+				await root.service(EffectsService).dispose()
 			} catch (error) {
 				failures.push(error)
 			}

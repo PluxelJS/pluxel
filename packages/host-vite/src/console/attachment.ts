@@ -137,7 +137,11 @@ export async function attachProjectScripts(
 			if ((await sourceHash(file)) !== code.sourceHash)
 				throw new ScriptExecutionError('source_changed', 'Script changed while preparing execution')
 			options.assertApplied?.()
-			const checked = await checkProjectScript({ file, signal: run.signal })
+			const checked = await checkProjectScript({
+				file,
+				exportName: code.exportName,
+				signal: run.signal,
+			})
 			const checkedEntry = checked.inputs.get(file)
 			if (
 				checkedEntry === undefined ||

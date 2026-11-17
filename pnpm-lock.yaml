@@ -1023,8 +1023,8 @@ catalogs:
       specifier: ^9.0.0
       version: 9.0.0
     vitest:
-      specifier: 5.1.0
-      version: 5.1.0
+      specifier: 5.0.5
+      version: 5.0.5
     ws:
       specifier: ^8.22.1
       version: 8.22.1
@@ -1131,16 +1131,19 @@ importers:
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
       yaml:
         specifier: catalog:dev
         version: 2.9.1
 
   packages/agent-sdk:
     dependencies:
+      '@pluxel/core':
+        specifier: workspace:^
+        version: link:../core
       '@pluxel/host':
         specifier: workspace:^
         version: link:../host
@@ -1160,15 +1163,12 @@ importers:
         specifier: catalog:prod
         version: 0.37.3
     devDependencies:
-      '@pluxel/core':
-        specifier: workspace:*
-        version: link:../core
       '@types/node':
         specifier: catalog:types
         version: 26.6.6
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
   packages/async:
     devDependencies:
@@ -1201,10 +1201,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   packages/cli:
     dependencies:
@@ -1265,7 +1265,7 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
   packages/commands:
     dependencies:
@@ -1293,7 +1293,7 @@ importers:
         version: 0.12.0
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
   packages/context:
     devDependencies:
@@ -1305,7 +1305,7 @@ importers:
         version: 6.2.3
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
   packages/core:
     dependencies:
@@ -1405,7 +1405,7 @@ importers:
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
   packages/create:
     devDependencies:
@@ -1423,10 +1423,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
       yaml:
         specifier: catalog:prod
         version: 2.9.1
@@ -1493,7 +1493,7 @@ importers:
         version: 1.5.0(typescript@7.0.2)
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
   packages/host-vite:
     dependencies:
@@ -1539,7 +1539,7 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
   packages/rolldown:
     dependencies:
@@ -1588,12 +1588,15 @@ importers:
       oxc-resolver:
         specifier: catalog:prod
         version: 11.24.2
+      picomatch:
+        specifier: catalog:prod
+        version: 4.0.7
       typescript:
         specifier: catalog:prod
         version: 7.0.2
       unplugin-macros:
         specifier: catalog:build
-        version: 0.23.4(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(esbuild@0.28.2)(rolldown@1.2.16)(unrun@0.3.1)(vitest@5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0)))(webpack@5.109.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.32))
+        version: 0.23.4(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(esbuild@0.28.2)(rolldown@1.2.16)(unrun@0.3.1)(vitest@5.0.5)(webpack@5.109.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.32))
       unplugin-preprocessor-directives:
         specifier: catalog:build
         version: 1.2.0(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(esbuild@0.28.2)(webpack@5.109.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.32))
@@ -1611,7 +1614,7 @@ importers:
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       yaml:
         specifier: catalog:prod
         version: 2.9.1
@@ -1643,6 +1646,9 @@ importers:
       '@types/mdast':
         specifier: catalog:types
         version: 4.0.4
+      '@types/picomatch':
+        specifier: catalog:types
+        version: 4.0.3
       fdir:
         specifier: catalog:dev
         version: 6.5.0(picomatch@4.0.7)
@@ -1772,7 +1778,7 @@ importers:
         version: 1.5.0(typescript@7.0.2)
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
   packages/test:
     dependencies:
@@ -1800,10 +1806,10 @@ importers:
         version: 2.16.0
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   packages/valibot-form:
     dependencies:
@@ -1861,7 +1867,7 @@ importers:
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
   packages/workbench:
     dependencies:
@@ -2003,7 +2009,7 @@ importers:
         version: link:../valibot-form
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       ws:
         specifier: catalog:test
         version: 8.22.1
@@ -2073,10 +2079,10 @@ importers:
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   plugins/browser/invoice:
     dependencies:
@@ -2116,10 +2122,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   plugins/browser/playwright:
     dependencies:
@@ -2153,10 +2159,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   plugins/cache:
     dependencies:
@@ -2190,10 +2196,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   plugins/otel:
     dependencies:
@@ -2287,10 +2293,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   plugins/package-manager:
     dependencies:
@@ -2378,10 +2384,10 @@ importers:
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   plugins/rates:
     dependencies:
@@ -2412,10 +2418,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   plugins/redis:
     dependencies:
@@ -2461,10 +2467,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   plugins/render/canvas:
     dependencies:
@@ -2510,10 +2516,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   plugins/render/echarts:
     dependencies:
@@ -2568,10 +2574,10 @@ importers:
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   plugins/render/fonts:
     dependencies:
@@ -2638,10 +2644,10 @@ importers:
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   plugins/render/takumi:
     dependencies:
@@ -2684,10 +2690,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   plugins/render/takumi-markdown:
     dependencies:
@@ -2748,10 +2754,10 @@ importers:
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   plugins/render/typst:
     dependencies:
@@ -2896,10 +2902,10 @@ importers:
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
       y-protocols:
         specifier: catalog:frontend
         version: 1.0.7(yjs@13.6.33)
@@ -2948,10 +2954,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   plugins/wretch:
     dependencies:
@@ -3021,10 +3027,10 @@ importers:
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   projects/docs:
     dependencies:
@@ -3229,10 +3235,10 @@ importers:
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
       waku:
         specifier: 1.0.0-rc.4
         version: 1.0.0-rc.4(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(react-dom@19.3.1(react@19.3.1))(react-server-dom-webpack@19.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(webpack@5.109.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.32)))(react@19.3.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
@@ -3389,10 +3395,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   projects/plugin-market:
     dependencies:
@@ -3462,10 +3468,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
       wrangler:
         specifier: catalog:dev
         version: 4.157.0(@cloudflare/workers-types@5.20261103.1)(@types/node@26.6.6)
@@ -3531,7 +3537,7 @@ importers:
         version: 1.5.0(typescript@7.0.2)
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
   vendor/eventure:
     devDependencies:
@@ -3543,10 +3549,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   vendor/pncat:
     dependencies:
@@ -3619,10 +3625,10 @@ importers:
         version: 7.0.2
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   vendor/split-like-vscode/packages/demo:
     dependencies:
@@ -3665,7 +3671,7 @@ importers:
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
   vendor/split-like-vscode/packages/react:
     dependencies:
@@ -3711,7 +3717,7 @@ importers:
         version: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
   vendor/split-like-vscode/packages/split-view:
     devDependencies:
@@ -3735,7 +3741,7 @@ importers:
         version: 19.3.1(react@19.3.1)
       vite-plus:
         specifier: catalog:build
-        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+        version: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
 packages:
 
@@ -7637,6 +7643,7 @@ packages:
 
   '@tiptap/y-tiptap@3.0.12':
     resolution: {integrity: sha512-MlmBpmm4xiRDZmk4hiwnjScOrUtiEBYwqeJBvrDil30Eq1GqrZEox1mciBpOnnpfN731fH07OPeGS7uHryPX0g==}
+    deprecated: Persistent position migrations can cause excessive collaborative document growth. Upgrade all collaborating clients to 3.1.0 or later.
     peerDependencies:
       prosemirror-model: ^1.7.1
       prosemirror-state: ^1.2.3
@@ -8042,17 +8049,6 @@ packages:
       vite:
         optional: true
 
-  '@vitest/mocker@5.1.0':
-    resolution: {integrity: sha512-5umB9/jlWcqVS6fsrFmv5Gdnpu6wAUio/lEOwAmvB7v+lFo/IW2B9FhAD0p19GCULTgMzLCdUmuCDCnAzWgppQ==}
-    peerDependencies:
-      msw: ^2.4.9 || ^3.0.0
-      vite: ^6.0.0 || ^7.0.0 || ^8.0.0
-    peerDependenciesMeta:
-      msw:
-        optional: true
-      vite:
-        optional: true
-
   '@vitest/pretty-format@5.0.5':
     resolution: {integrity: sha512-24sSdIlMA9DVPXnYiB9siwU0bTd887Y9jX3+vabztCSsvHwo7ipvJ/a2L3Rljw8+2rK1f5fCj3h5U9I/Jsqgbw==}
 
@@ -8061,9 +8057,6 @@ packages:
 
   '@vitest/spy@5.0.5':
     resolution: {integrity: sha512-lwJRExuH417257Q5wv9QYugN9IMJkoxcrKrYxGPQkBzl7wlNpTUxD/5yNX4ESKVUIShKPgkGchYPFMWOOk0wzw==}
-
-  '@vitest/spy@5.1.0':
-    resolution: {integrity: sha512-2DPO5OMHWKrBngC+fCmTQqemNF0gidRhp3lxbBmRhW+M1XJrfgPpqNqWVevXtn2f2ufD5ZaR1B6B641aAlcX5A==}
 
   '@vitest/ui@5.0.5':
     resolution: {integrity: sha512-dCoGUOdgmCaSB2g+WQ/spPCBkytAWdNUkFSXY4z+eYp2d8JEOY8v0uDRaJTG9qf/kTlTVZ4CuYMYMz/f1HS/qQ==}
@@ -11582,47 +11575,6 @@ packages:
       '@vitest/coverage-istanbul': 5.0.5
       '@vitest/coverage-v8': 5.0.5
       '@vitest/ui': 5.0.5
-      happy-dom: '*'
-      jsdom: '*'
-      vite: ^6.4.0 || ^7.0.0 || ^8.0.0
-    peerDependenciesMeta:
-      '@edge-runtime/vm':
-        optional: true
-      '@opentelemetry/api':
-        optional: true
-      '@types/node':
-        optional: true
-      '@vitest/browser-playwright':
-        optional: true
-      '@vitest/browser-preview':
-        optional: true
-      '@vitest/browser-webdriverio':
-        optional: true
-      '@vitest/coverage-istanbul':
-        optional: true
-      '@vitest/coverage-v8':
-        optional: true
-      '@vitest/ui':
-        optional: true
-      happy-dom:
-        optional: true
-      jsdom:
-        optional: true
-
-  vitest@5.1.0:
-    resolution: {integrity: sha512-MzmNFnrwa8v8lF1bLxw3UJ4EREwVOVb75VqJZmUDRjJ6EluK/x9th7qTbaeDk41WxE1GxWqmTXcdsfobfH5sOA==}
-    engines: {node: ^22.12.0 || ^24.0.0 || >=26.0.0}
-    hasBin: true
-    peerDependencies:
-      '@edge-runtime/vm': '*'
-      '@opentelemetry/api': ^1.9.0
-      '@types/node': ^22.0.0 || >=24.0.0
-      '@vitest/browser-playwright': 5.1.0
-      '@vitest/browser-preview': 5.1.0
-      '@vitest/browser-webdriverio': ^5.0.0-beta.5 || >=5.0.0
-      '@vitest/coverage-istanbul': 5.1.0
-      '@vitest/coverage-v8': 5.1.0
-      '@vitest/ui': 5.1.0
       happy-dom: '*'
       jsdom: '*'
       vite: ^6.4.0 || ^7.0.0 || ^8.0.0
@@ -15324,7 +15276,7 @@ snapshots:
       '@testing-library/dom': 10.4.2
       '@testing-library/user-event': 14.6.8(@testing-library/dom@10.4.2)
       '@vitest/browser': 5.0.5(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(vitest@5.0.5)
-      vitest: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+      vitest: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
     transitivePeerDependencies:
       - bufferutil
       - msw
@@ -15341,7 +15293,7 @@ snapshots:
       pngjs: 7.0.0
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+      vitest: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
       ws: 8.22.1
     transitivePeerDependencies:
       - bufferutil
@@ -15353,15 +15305,6 @@ snapshots:
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       '@vitest/spy': 5.0.5
-      estree-walker: 3.0.3
-      magic-string: 1.4.5
-    optionalDependencies:
-      vite: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
-
-  '@vitest/mocker@5.1.0(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))':
-    dependencies:
-      '@jridgewell/trace-mapping': 0.3.31
-      '@vitest/spy': 5.1.0
       estree-walker: 3.0.3
       magic-string: 1.4.5
     optionalDependencies:
@@ -15380,8 +15323,6 @@ snapshots:
 
   '@vitest/spy@5.0.5': {}
 
-  '@vitest/spy@5.1.0': {}
-
   '@vitest/ui@5.0.5(vitest@5.0.5)':
     dependencies:
       '@vitest/utils': 5.0.5
@@ -15390,7 +15331,7 @@ snapshots:
       pathe: 2.0.3
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+      vitest: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
 
   '@vitest/utils@5.0.5':
     dependencies:
@@ -17776,7 +17717,7 @@ snapshots:
       '@oxc-resolver/binding-win32-arm64-msvc': 11.24.2
       '@oxc-resolver/binding-win32-x64-msvc': 11.24.2
 
-  oxfmt@0.74.0(vite-plus@1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)):
+  oxfmt@0.74.0(vite-plus@1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)):
     dependencies:
       tinypool: 2.2.0
     optionalDependencies:
@@ -17799,7 +17740,7 @@ snapshots:
       '@oxfmt/binding-win32-arm64-msvc': 0.74.0
       '@oxfmt/binding-win32-ia32-msvc': 0.74.0
       '@oxfmt/binding-win32-x64-msvc': 0.74.0
-      vite-plus: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+      vite-plus: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
   oxlint-tsgolint@7.0.2004:
     optionalDependencies:
@@ -17810,7 +17751,7 @@ snapshots:
       '@oxlint-tsgolint/win32-arm64': 7.0.2004
       '@oxlint-tsgolint/win32-x64': 7.0.2004
 
-  oxlint@1.89.0(oxlint-tsgolint@7.0.2004)(vite-plus@1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)):
+  oxlint@1.89.0(oxlint-tsgolint@7.0.2004)(vite-plus@1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)):
     optionalDependencies:
       '@oxlint/binding-android-arm-eabi': 1.89.0
       '@oxlint/binding-android-arm64': 1.89.0
@@ -17832,7 +17773,7 @@ snapshots:
       '@oxlint/binding-win32-ia32-msvc': 1.89.0
       '@oxlint/binding-win32-x64-msvc': 1.89.0
       oxlint-tsgolint: 7.0.2004
-      vite-plus: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
+      vite-plus: 1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)
 
   p-limit@4.0.0:
     dependencies:
@@ -19126,7 +19067,7 @@ snapshots:
 
   unpipe@1.0.0: {}
 
-  unplugin-macros@0.23.4(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(esbuild@0.28.2)(rolldown@1.2.16)(unrun@0.3.1)(vitest@5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0)))(webpack@5.109.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.32)):
+  unplugin-macros@0.23.4(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(esbuild@0.28.2)(rolldown@1.2.16)(unrun@0.3.1)(vitest@5.0.5)(webpack@5.109.2(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.32)):
     dependencies:
       import-without-cache: 0.4.1
       magic-string-ast: 2.1.1
@@ -19137,7 +19078,7 @@ snapshots:
       yuku-parser: 0.19.0
     optionalDependencies:
       unrun: 0.3.1
-      vitest: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+      vitest: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
     transitivePeerDependencies:
       - '@farmfe/core'
       - '@rsbuild/core'
@@ -19244,7 +19185,7 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
 
-  vite-plus@1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1):
+  vite-plus@1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1):
     dependencies:
       '@oxc-project/runtime': 0.155.0
       '@oxc-project/types': 0.155.0
@@ -19256,11 +19197,11 @@ snapshots:
       '@vitest/snapshot': 5.0.5
       '@vitest/spy': 5.0.5
       '@vitest/utils': 5.0.5
-      oxfmt: 0.74.0(vite-plus@1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))
-      oxlint: 1.89.0(oxlint-tsgolint@7.0.2004)(vite-plus@1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))
+      oxfmt: 0.74.0(vite-plus@1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))
+      oxlint: 1.89.0(oxlint-tsgolint@7.0.2004)(vite-plus@1.4.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/ui@5.0.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(playwright@1.64.1)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))
       oxlint-tsgolint: 7.0.2004
       vite: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
-      vitest: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
+      vitest: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0))
     optionalDependencies:
       '@voidzero-dev/vite-plus-darwin-arm64': 1.4.0
       '@voidzero-dev/vite-plus-darwin-x64': 1.4.0
@@ -19310,7 +19251,7 @@ snapshots:
     optionalDependencies:
       vite: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
 
-  vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0)):
+  vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0)):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/mocker': 5.0.5(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))
@@ -19330,30 +19271,7 @@ snapshots:
       '@opentelemetry/api': 1.10.0
       '@types/node': 26.6.6
       '@vitest/browser-preview': 5.0.5(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(vitest@5.0.5)
-      jsdom: 30.1.3(@noble/hashes@2.4.0)
-    transitivePeerDependencies:
-      - msw
-
-  vitest@5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(jsdom@30.1.3(@noble/hashes@2.4.0)):
-    dependencies:
-      '@types/chai': 5.2.3
-      '@vitest/mocker': 5.1.0(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))
-      chai: 6.3.0
-      es-module-lexer: 2.3.2
-      expect-type: 1.4.0
-      magic-string: 1.4.5
-      obug: 3.0.0
-      picomatch: 4.0.7
-      std-env: 4.3.0
-      tinybench: 6.2.3
-      tinyexec: 1.3.1
-      tinyglobby: 0.2.17
-      vite: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1)'
-      why-is-node-running: 3.2.1
-    optionalDependencies:
-      '@opentelemetry/api': 1.10.0
-      '@types/node': 26.6.6
-      '@vitest/browser-preview': 5.0.5(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(sass-embedded@1.107.1)(sass@1.107.1)(sugarss@5.0.2(postcss@8.5.32))(terser@5.50.0)(tsx@4.23.15)(typescript@7.0.2)(unrun@0.3.1)(yaml@2.9.1))(vitest@5.0.5)
+      '@vitest/ui': 5.0.5(vitest@5.0.5)
       jsdom: 30.1.3(@noble/hashes@2.4.0)
     transitivePeerDependencies:
       - msw

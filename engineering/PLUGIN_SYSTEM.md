@@ -39,9 +39,9 @@ required dependency 只写 constructor，工具链从 root import provenance 生
 
 Part occurrence 有 config/diagnostic path，没有独立 node、override 或 lifecycle。Part 对外只暴露业务 API，不暴露 root owner、Context attribution path 或 service locator。每个具体 Plugin/Part 最多一个 `configs.use(ObjectSchema)` field；Part schema 按 occurrence path 聚合为同一 Plugin record。
 
-Host 在 root 创建前固定 Context 服务集合；Plugin 不安装 capability。Core 固定提供 logger、effects、events、配置事实与 FS/TinyBase，其他服务由应用显式组合。`ctx.events` 是可经 module augmentation 扩展的 host 广播；沿 dependency edge 的固定协议使用具名 `EvtChannel` 属性。事件类型声明本身不建立 graph dependency。
+Host 在 root 创建前固定 Context 服务集合；Plugin 不安装 capability。Core 固定提供 logger、effects、events、配置事实与 FS/TinyBase，其他服务由应用显式组合。`ctx.service(EventsService)` 是可经 module augmentation 扩展的 host 广播；沿 dependency edge 的固定协议使用具名 `EvtChannel` 属性。事件类型声明本身不建立 graph dependency。
 
-Workbench 通过可选 `ctx.workbench?.publish()` 接入。业务 Plugin 不依赖 UI 是否安装；页面 API 使用 fresh Cap’n Web `RpcTarget`，Attachment 的 API/renderer 由 provider 拥有、placement 由 consumer 拥有。
+Workbench 通过可选 `ctx.service(WorkbenchRef)?.publish()` 接入。业务 Plugin 不依赖 UI 是否安装；页面 API 使用 fresh Cap’n Web `RpcTarget`，Attachment 的 API/renderer 由 provider 拥有、placement 由 consumer 拥有。
 
 ## 从声明到运行：三个不同对象
 

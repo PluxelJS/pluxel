@@ -34,7 +34,7 @@ let handle!: PluginDatabaseHandle<typeof definition>
 @Plugin({ startTimeoutMs: 15_000 })
 class Owner extends BasePlugin {
 	async init() {
-		handle = await this.ctx.require(Database).use(definition)
+		handle = await this.ctx.service(Database).use(definition)
 	}
 }
 

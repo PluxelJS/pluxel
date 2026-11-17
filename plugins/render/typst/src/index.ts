@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, EffectsService } from '@pluxel/core'
 import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { NodeModules, defineNodeModule } from '@pluxel/services/node'
 import { Workers, defineWorkerTask } from '@pluxel/services/workers'
@@ -46,7 +46,7 @@ export class TypstPlugin extends BasePlugin {
 			svg: new Set(),
 		}
 		this.generation = generation
-		this.ctx.effects.defer(
+		this.ctx.service(EffectsService).defer(
 			async () => {
 				generation.active = false
 				generation.controller.abort(new TypstError('CLOSED', 'TypstPlugin generation stopped'))
@@ -64,7 +64,7 @@ export class TypstPlugin extends BasePlugin {
 			},
 			{ tag: 'typst-generation' },
 		)
-		await this.ctx.require(NodeModules).use(compilerModule, (url) => {
+		await this.ctx.service(NodeModules).use(compilerModule, (url) => {
 			this.workerUrl = url
 			return async () => {
 				await Promise.all([...generation.sessions].map((session) => session.dispose()))
@@ -95,14 +95,14 @@ export class TypstPlugin extends BasePlugin {
 			const maxOutputBytes = Math.min(requestedOutputBytes, this.config.maxOutputBytes)
 			operation.signal.throwIfAborted()
 			const owner = this.ctx.caller ?? this.ctx
-			cleanup = owner.effects.defer(
+			cleanup = owner.service(EffectsService).defer(
 				async () => {
 					controller.abort(new TypstError('CLOSED', 'Typst SVG caller stopped'))
 					await pending?.catch(() => {})
 				},
 				{ tag: 'typst-svg' },
 			)
-			pending = this.ctx.require(Workers).runPrepared(
+			pending = this.ctx.service(Workers).runPrepared(
 				svgTask,
 				async (signal) => {
 					await assertSourceBytes(source, this.config.maxInputBytes, signal)
@@ -154,7 +154,9 @@ export class TypstPlugin extends BasePlugin {
 		)
 		generation.sessions.add(session)
 		try {
-			ownerCleanup = owner.effects.defer(() => session.dispose(), { tag: 'typst-session' })
+			ownerCleanup = owner
+				.service(EffectsService)
+				.defer(() => session.dispose(), { tag: 'typst-session' })
 			await session.initialize(template, (signal) => this.readFonts(signal), options)
 			if (!generation.active) throw new TypstError('CLOSED', 'Typst generation stopped during open')
 			return session

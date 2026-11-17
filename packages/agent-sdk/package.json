@@ -53,6 +53,7 @@
 		"test": "vp run check-tests"
 	},
 	"dependencies": {
+		"@pluxel/core": "workspace:^",
 		"@pluxel/host": "workspace:^",
 		"@pluxel/rolldown": "workspace:^",
 		"@pluxel/services": "workspace:^",
@@ -61,7 +62,6 @@
 		"gunshi": "catalog:prod"
 	},
 	"devDependencies": {
-		"@pluxel/core": "workspace:*",
 		"@types/node": "catalog:types",
 		"vite-plus": "catalog:build"
 	},

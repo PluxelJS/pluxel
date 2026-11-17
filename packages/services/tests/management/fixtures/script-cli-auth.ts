@@ -1,10 +1,12 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import '@pluxel/services/management/access'
 import type {
 	ManagementAccessRegistration,
 	ManagementAuthenticationProviderStep,
+	ManagementAccess,
 } from '@pluxel/services/management/access'
 
+const ManagementAccessRef = defineServiceRef<ManagementAccess>()
 export const SCRIPT_TEST_PASSWORD = 'local-test-script-password'
 export const SCRIPT_TEST_OTHER_PASSWORD = 'other-test-script-password'
 export let scriptTestAuthorization = new AbortController()
@@ -21,7 +23,7 @@ export const scriptTestAuthentication = { opened: 0, submitted: 0, disposed: 0 }
 @Plugin()
 export class ScriptCliAuthentication extends BasePlugin {
 	protected override init(): void {
-		const access = this.ctx.managementAccess
+		const access = this.ctx.service(ManagementAccessRef)
 		if (!access) throw new Error('Management access service is required')
 		scriptTestProvider.registration = access.provide({
 			status: () => ({

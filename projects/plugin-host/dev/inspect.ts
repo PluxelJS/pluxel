@@ -44,7 +44,7 @@ export const health = (async (sdk, run) => {
 		request.once('error', reject)
 		request.end()
 	})
-	const logging = sdk.ctx.require(Logging)
+	const logging = sdk.ctx.service(Logging)
 	logging.flushStores()
 	const plugins = await sdk.plugins.list()
 	return {

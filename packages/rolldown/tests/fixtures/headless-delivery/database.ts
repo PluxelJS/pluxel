@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createClient, type Client } from '@libsql/client'
-import type { Context } from '@pluxel/core'
+import { EffectsService, type Context } from '@pluxel/core'
 
 interface ApplicationDatabase {
 	readonly client: Client
@@ -21,7 +21,7 @@ export async function prepareDatabase(ctx: Context, directory: string): Promise<
 		appendFileSync(join(directory, 'events.log'), event + '\n')
 		console.log(`EVENT ${event}`)
 	}
-	root.effects.defer(
+	root.service(EffectsService).defer(
 		() => {
 			databases.delete(root)
 			client.close()

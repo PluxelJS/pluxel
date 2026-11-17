@@ -23,7 +23,7 @@
 
 constructor 仅用于 catalog.add/remove、replaceDefinition、全局 provider default 等实现声明；override 的 consumer/provider 用源码节点地址，重复按 identity+精确实现判断。raw graph harness 的白盒 constructor 装配属于内部测试。
 
-`workbench: true` 增加 Management、测试 backend 和本地 RPC driver，需显式 HTTP，与 `management: false` 冲突。关闭 Workbench 不初始化 backend；HTTP/commands driver 调真实已安装服务，缺失失败。token 模块与 installer 分离，使无服务 Host 不加载可选 Commands runtime。
+`workbench: true` 增加 Management、测试 backend 和本地 RPC driver，需显式 HTTP，与 `management: false` 冲突。关闭 Workbench 不初始化 backend；HTTP/commands driver 调真实已安装服务，缺失失败。服务声明与 installer 分离，使无服务 Host 不加载可选 Commands runtime。
 
 无显式产物来源的 Node 服务接正式按需源码 compiler，组合层拥有其关闭；显式 artifact source 保持制品路径。Vitest plugin 只影响 test module graph，独立 Node artifact 自己编译。test 包声明实际安装依赖，生产包不依赖 test。
 

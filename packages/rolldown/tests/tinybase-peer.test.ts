@@ -90,7 +90,7 @@ it.each([
 
 it.each([
 	"export { BasePlugin } from '@pluxel/core'",
-	'export const open = ctx => ctx.tinybase.open()',
+	"import { TinyBaseService } from '@pluxel/core'; export const open = ctx => ctx.service(TinyBaseService).open()",
 	"import type { TinyBaseService } from '@pluxel/core'; export const result = 1",
 	"export { createStore } from 'tinybase'",
 ])(

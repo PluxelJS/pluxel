@@ -1,6 +1,7 @@
+export { generatePluginControl } from './generate-plugin.ts'
 export {
-	generatePluginControl,
 	type PluginControlGeneration,
 	type PluginControlSource,
+	type ServiceControlSource,
 } from './generate.ts'
 export { createPluginControlPlugin, type PluginControlPluginOptions } from './plugin.ts'

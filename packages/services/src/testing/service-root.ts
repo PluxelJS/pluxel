@@ -1,10 +1,10 @@
-import { type RootCapabilityInstallation } from '@pluxel/core/host'
+import { type RootServiceInstallation } from '@pluxel/core/host'
 import { createHost, defineHostService, type PluginHost, type HostService } from '@pluxel/host'
 import { type ServiceInternalTestHostOptions } from './options'
 
 export type ServiceInternalTestRootOptions = Readonly<{
-	/** Framework test-only installation of capabilities before the root is created. */
-	capabilities?: readonly RootCapabilityInstallation<unknown, undefined>[]
+	/** Framework test-only installation of provides before the root is created. */
+	provides?: readonly RootServiceInstallation<unknown>[]
 	/** Simulated physical peer for in-process Management HTTP tests. Defaults to loopback. */
 	requestAddress?: (request: Request) => Readonly<{ address: string }> | null
 }>
@@ -50,8 +50,8 @@ export async function createServiceTestApplication(
 	services.push(
 		defineHostService({
 			name: 'Service test transport',
-			requires: withManagement ? { http: ElysiaRuntime } : {},
-			capabilities: internal.capabilities ?? [],
+			requires: ElysiaRuntime ? { http: ElysiaRuntime } : {},
+			provides: internal.provides ?? [],
 			async prepare({ ctx, effects }) {
 				if (!withManagement) return
 				const { attachManagementHttp } = await import('../management/http-internal')
@@ -63,7 +63,7 @@ export async function createServiceTestApplication(
 						? {
 								bindings: () => ({
 									createWorkbench: (principal, identity) =>
-										workbench!.requireWorkbench(ctx).createSession(principal, identity),
+										ctx.service(workbench!.WorkbenchHost).createSession(principal, identity),
 									artifacts: workbench!.createWorkbenchArtifactHandler(ctx),
 								}),
 							}

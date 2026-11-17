@@ -1,6 +1,7 @@
+import { resolveContextService } from '@pluxel/core/internal'
 import { ElysiaApp } from '@pluxel/services/elysia'
 import { ElysiaRuntime, type ElysiaApplicationCarrier } from '@pluxel/services/internal'
-import { resolveContextCapability } from '@pluxel/core/host'
+
 import {
 	assertPluginLifecycleIssue,
 	BasePlugin,
@@ -18,8 +19,8 @@ let partApplication: Elysia | undefined
 
 class NativeApplicationPart extends PluginPart<NativeApplicationPlugin> {
 	protected override init() {
-		partApplication = this.ctx.require(ElysiaApp)
-		this.ctx.require(ElysiaApp).get('/native/part', () => 'part')
+		partApplication = this.ctx.service(ElysiaApp)
+		this.ctx.service(ElysiaApp).get('/native/part', () => 'part')
 	}
 }
 
@@ -28,29 +29,29 @@ class NativeApplicationPlugin extends BasePlugin {
 	readonly part = this.parts.use(NativeApplicationPart)
 
 	protected override init() {
-		ownerApplication = this.ctx.require(ElysiaApp)
-		this.ctx.require(ElysiaApp).get('/native/hello', () => 'hello')
+		ownerApplication = this.ctx.service(ElysiaApp)
+		this.ctx.service(ElysiaApp).get('/native/hello', () => 'hello')
 	}
 }
 
 @Plugin({ displayName: 'Reserved native Elysia route' })
 class ReservedNativeApplicationPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.require(ElysiaApp).get('/__pluxel/hijack', () => 'invalid')
+		this.ctx.service(ElysiaApp).get('/__pluxel/hijack', () => 'invalid')
 	}
 }
 
 @Plugin({ displayName: 'Native route conflict A' })
 class NativeRouteConflictA extends BasePlugin {
 	protected override init() {
-		this.ctx.require(ElysiaApp).get('/native/conflict', () => 'a')
+		this.ctx.service(ElysiaApp).get('/native/conflict', () => 'a')
 	}
 }
 
 @Plugin({ displayName: 'Native route conflict B' })
 class NativeRouteConflictB extends BasePlugin {
 	protected override init() {
-		this.ctx.require(ElysiaApp).get('/native/conflict', () => 'b')
+		this.ctx.service(ElysiaApp).get('/native/conflict', () => 'b')
 	}
 }
 
@@ -58,7 +59,7 @@ class NativeRouteConflictB extends BasePlugin {
 class NativeExactRouteSemantics extends BasePlugin {
 	protected override init() {
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.get('/native/exact', () => 'plain')
 			.get('/native/exact/', () => 'trailing')
 	}
@@ -67,28 +68,28 @@ class NativeExactRouteSemantics extends BasePlugin {
 @Plugin({ displayName: 'Native empty route path' })
 class NativeEmptyRoutePath extends BasePlugin {
 	protected override init() {
-		this.ctx.require(ElysiaApp).get('', () => 'empty-root')
+		this.ctx.service(ElysiaApp).get('', () => 'empty-root')
 	}
 }
 
 @Plugin({ displayName: 'Native slash route path' })
 class NativeSlashRoutePath extends BasePlugin {
 	protected override init() {
-		this.ctx.require(ElysiaApp).get('/', () => 'slash-root')
+		this.ctx.service(ElysiaApp).get('/', () => 'slash-root')
 	}
 }
 
 @Plugin({ displayName: 'Native wildcard precedence' })
 class NativeWildcardRoute extends BasePlugin {
 	protected override init() {
-		this.ctx.require(ElysiaApp).all('/native/precedence', () => 'wildcard')
+		this.ctx.service(ElysiaApp).all('/native/precedence', () => 'wildcard')
 	}
 }
 
 @Plugin({ displayName: 'Native concrete precedence' })
 class NativeConcreteRoute extends BasePlugin {
 	protected override init() {
-		this.ctx.require(ElysiaApp).get('/native/precedence', () => 'concrete')
+		this.ctx.service(ElysiaApp).get('/native/precedence', () => 'concrete')
 	}
 }
 
@@ -96,7 +97,7 @@ class NativeConcreteRoute extends BasePlugin {
 class NativeReservedWildcard extends BasePlugin {
 	protected override init() {
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.use(websocket())
 			.all('/*', () => 'business-wildcard')
 			.ws('/*', { message() {} })
@@ -108,15 +109,15 @@ let lifecycleApplication: Elysia | undefined
 @Plugin({ displayName: 'Native physical lifecycle guard' })
 class NativePhysicalLifecycleGuard extends BasePlugin {
 	protected override init() {
-		lifecycleApplication = this.ctx.require(ElysiaApp)
-		this.ctx.require(ElysiaApp).get('/native/server-id', ({ server }) => server?.id ?? 'missing')
+		lifecycleApplication = this.ctx.service(ElysiaApp)
+		this.ctx.service(ElysiaApp).get('/native/server-id', ({ server }) => server?.id ?? 'missing')
 	}
 }
 
 @Plugin({ displayName: 'Native unsupported Elysia lifecycle hook' })
 class NativeUnsupportedLifecycleHook extends BasePlugin {
 	protected override init() {
-		this.ctx.require(ElysiaApp).onStop((): undefined => undefined)
+		this.ctx.service(ElysiaApp).onStop((): undefined => undefined)
 	}
 }
 
@@ -125,7 +126,7 @@ let streamAborted: (() => void) | undefined
 @Plugin({ displayName: 'Native streaming route' })
 class NativeStreamingApplicationPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.require(ElysiaApp).get(
+		this.ctx.service(ElysiaApp).get(
 			'/native/stream',
 			({ request }) =>
 				new ReadableStream<Uint8Array>({
@@ -155,8 +156,8 @@ describe('native generation Elysia application', () => {
 			host.add(NativeApplicationPlugin).start(NativeApplicationPlugin)
 			await host.commit()
 
-			expect(resolveContextCapability(host.ctx, ElysiaRuntime).fetch).toBe(
-				resolveContextCapability(host.ctx, ElysiaRuntime).fetch,
+			expect(resolveContextService(host.ctx, ElysiaRuntime).fetch).toBe(
+				resolveContextService(host.ctx, ElysiaRuntime).fetch,
 			)
 			expect(ownerApplication).toBeInstanceOf(Elysia)
 			expect(partApplication).toBe(ownerApplication)
@@ -306,7 +307,7 @@ describe('native generation Elysia application', () => {
 				pending: () => 0,
 				requestIP: () => ({ address: '127.0.0.1', port: 1, family: 'IPv4' }),
 			}
-			const detach = resolveContextCapability(host.ctx, ElysiaRuntime).attachApplicationCarrier(
+			const detach = resolveContextService(host.ctx, ElysiaRuntime).attachApplicationCarrier(
 				carrier,
 			)
 			try {
@@ -361,7 +362,7 @@ describe('native generation Elysia application', () => {
 				pending: () => 0,
 				requestIP: () => null,
 			}
-			const detach = resolveContextCapability(host.ctx, ElysiaRuntime).attachApplicationCarrier(
+			const detach = resolveContextService(host.ctx, ElysiaRuntime).attachApplicationCarrier(
 				carrier,
 			)
 			const observedUrl = server!.url

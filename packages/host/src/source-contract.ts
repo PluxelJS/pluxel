@@ -1,6 +1,6 @@
+import { EffectsService, type Context } from '@pluxel/core'
 import { isAbsolute, relative, resolve } from 'node:path'
 import picomatch from 'picomatch'
-import type { Context } from '@pluxel/core'
 
 const normalizePath = (path: string): string => path.replaceAll('\\', '/')
 
@@ -104,7 +104,7 @@ export function installPluginSources(
 			updates: options.updates,
 		}),
 	)
-	ctx.root.effects.defer(
+	ctx.root.service(EffectsService).defer(
 		() => {
 			sourcesByRoot.delete(ctx.root)
 		},

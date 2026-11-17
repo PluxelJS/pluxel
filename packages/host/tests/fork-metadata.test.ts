@@ -1,10 +1,12 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { defineContextCapability, installRootCapability } from '@pluxel/core/host'
+import { installRootService } from '@pluxel/core/host'
 import { expect, it } from 'vitest'
 import { createHost, defineHostService } from '../src/index'
 
 @Plugin({ forkable: true })
 class ForkOwner extends BasePlugin {}
+
+export abstract class Metadata {}
 
 it('rejects non-fork and malformed addresses without creating nodes or deleting metadata', async () => {
 	let metadataRemovals = 0
@@ -13,7 +15,7 @@ it('rejects non-fork and malformed addresses without creating nodes or deleting 
 		services: [
 			defineHostService({
 				name: 'Metadata',
-				capabilities: [],
+				provides: [],
 				removeNodeMetadata() {
 					metadataRemovals++
 				},
@@ -46,13 +48,12 @@ it('rejects non-fork and malformed addresses without creating nodes or deleting 
 it('retains a stopped fork after service metadata cleanup fails and retries before removing its policy', async () => {
 	let fail = true
 	let attempts = 0
-	const Metadata = defineContextCapability<object>('test.metadata')
 	const host = await createHost({
 		plugins: [ForkOwner],
 		services: [
 			defineHostService({
 				name: 'Metadata',
-				capabilities: [installRootCapability(Metadata, { create: () => ({}) })],
+				provides: [installRootService(Metadata, { create: () => ({}) })],
 				removeNodeMetadata() {
 					attempts++
 					if (fail) throw new Error('storage unavailable')
@@ -92,7 +93,7 @@ it('rejects declared fork policy writes before stopping or deleting metadata', a
 		services: [
 			defineHostService({
 				name: 'Metadata',
-				capabilities: [],
+				provides: [],
 				removeNodeMetadata() {
 					metadataRemovals++
 				},

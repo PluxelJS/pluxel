@@ -23,3 +23,21 @@ void getScriptResult('receipt', { target: { root: '.' } })
 void controlHmr({ target: { endpoint: 'https://host.test' }, action: 'apply' })
 // @ts-expect-error Material publication requires an explicit destination.
 void syncPluginControl({ target })
+
+void syncPluginControl({ target, out: '.pluxel/control', packageName: '@acme/plugin' }).then(
+	(result) => {
+		const statement: string | undefined = result.definitions[0]?.importStatement
+		const serviceStatement: string | undefined = result.services[0]?.importStatement
+		void [statement, serviceStatement]
+	},
+)
+// @ts-expect-error A material sync selects either a package or a complete definition.
+void syncPluginControl({
+	target,
+	out: '.pluxel/control',
+	packageName: '@acme/plugin',
+	definition: {
+		entry: { kind: 'package-root', packageName: '@acme/plugin' },
+		exportName: 'Counter',
+	},
+})
