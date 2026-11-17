@@ -2,12 +2,12 @@
 	display: flex;
 	flex: 1;
 	flex-direction: column;
-	gap: 10px;
+	gap: 12px;
 	height: 100%;
 	min-height: 0;
 	min-width: 0;
 	overflow: hidden;
-	padding: 10px;
+	padding: var(--plx-page-padding);
 }
 
 .plx-pluginGraphState {
@@ -18,8 +18,8 @@
 	padding: 24px;
 }
 
+/* The toolbar sits directly on the page; only the graph canvas is framed. */
 .plx-pluginGraphToolbar {
-	background: color-mix(in srgb, var(--mantine-color-body) 97%, var(--mantine-color-blue-0));
 	flex: 0 0 auto;
 }
 
@@ -33,7 +33,7 @@
 	left: 0;
 	max-height: 280px;
 	overflow-y: auto;
-	padding: 4px;
+	padding: 6px;
 	position: absolute;
 	right: 0;
 	top: calc(100% + 4px);
@@ -64,9 +64,9 @@
 }
 
 .plx-pluginGraphRelations {
-	background: var(--plx-surface-canvas, var(--mantine-color-body));
-	border: 1px solid var(--plx-border, var(--mantine-color-default-border));
-	border-radius: 8px;
+	background: var(--mantine-color-body);
+	border: 1px solid var(--plx-border);
+	border-radius: var(--mantine-radius-md);
 	height: 100%;
 	min-width: 0;
 	display: flex;
@@ -77,19 +77,19 @@
 
 .plx-pluginGraphRelations__header {
 	align-items: center;
-	background: color-mix(in srgb, var(--mantine-color-body) 96%, var(--mantine-color-gray-1));
-	border-bottom: 1px solid var(--mantine-color-default-border);
+	background: var(--plx-raised);
+	border-bottom: 1px solid var(--plx-border);
 	display: flex;
 	gap: 12px;
 	justify-content: space-between;
 	min-height: 46px;
-	padding: 8px 12px;
+	padding: 10px 14px;
 }
 
 .plx-pluginGraphRelations__header > div:first-child {
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
+	gap: 4px;
 	min-width: 0;
 }
 
@@ -100,14 +100,14 @@
 
 .plx-pluginGraphRelations__header span {
 	color: var(--mantine-color-dimmed);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 }
 
 .plx-pluginGraphHeaderActions {
 	align-items: center;
 	display: flex;
 	flex: 0 0 auto;
-	gap: 7px;
+	gap: 8px;
 }
 
 .plx-pluginGraphLegend {
@@ -119,8 +119,8 @@
 .plx-pluginGraphLegend > span {
 	align-items: center;
 	display: inline-flex;
-	font-size: 10px;
-	gap: 5px;
+	font-size: var(--mantine-font-size-xs);
+	gap: 6px;
 	white-space: nowrap;
 }
 
@@ -139,16 +139,16 @@
 	appearance: none;
 	background: var(--mantine-color-body);
 	border: 1px solid var(--mantine-color-default-border);
-	border-radius: 6px;
+	border-radius: var(--mantine-radius-sm);
 	color: var(--mantine-color-dimmed);
 	cursor: pointer;
 	display: inline-flex;
 	font-family: inherit;
-	font-size: 11px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 600;
-	gap: 6px;
-	height: 30px;
-	padding: 0 9px;
+	gap: 8px;
+	height: 34px;
+	padding: 0 12px;
 }
 
 .plx-pluginGraphUnconnectedToggle:hover,
@@ -171,10 +171,10 @@
 	align-items: center;
 	background: var(--mantine-color-body);
 	border: 1px solid var(--mantine-color-default-border);
-	border-radius: 6px;
+	border-radius: var(--mantine-radius-sm);
 	display: flex;
 	flex: 0 0 auto;
-	height: 30px;
+	height: 34px;
 	overflow: hidden;
 }
 
@@ -189,7 +189,7 @@
 	height: 100%;
 	justify-content: center;
 	padding: 0;
-	width: 30px;
+	width: 34px;
 }
 
 .plx-pluginGraphZoom button:hover:not(:disabled),
@@ -224,7 +224,7 @@
 	display: flex;
 	flex: 1;
 	flex-direction: column;
-	gap: 5px;
+	gap: 6px;
 	justify-content: center;
 	min-height: 180px;
 	padding: 24px;
@@ -241,7 +241,7 @@
 }
 
 .plx-pluginGraphViewport {
-	background-color: var(--plx-surface-canvas, var(--mantine-color-body));
+	background-color: var(--mantine-color-body);
 	background-image: radial-gradient(
 		circle,
 		color-mix(in srgb, var(--mantine-color-dimmed) 24%, transparent) 0.8px,
@@ -278,9 +278,9 @@
 }
 
 .plx-pluginGraphComponent {
-	background: color-mix(in srgb, var(--mantine-color-gray-0) 22%, transparent);
+	background: color-mix(in srgb, var(--mantine-color-text) 4%, transparent);
 	border: 1px dashed color-mix(in srgb, var(--mantine-color-default-border) 68%, transparent);
-	border-radius: 12px;
+	border-radius: var(--mantine-radius-sm);
 	box-sizing: border-box;
 	pointer-events: none;
 	position: absolute;
@@ -294,13 +294,13 @@
 .plx-pluginGraphComponent > span {
 	background: var(--mantine-color-body);
 	border: 1px solid var(--mantine-color-default-border);
-	border-radius: 999px;
+	border-radius: var(--mantine-radius-sm);
 	color: var(--mantine-color-dimmed);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 600;
 	left: 14px;
 	line-height: 20px;
-	padding: 0 9px;
+	padding: 0 12px;
 	position: absolute;
 	top: -10px;
 }
@@ -380,7 +380,7 @@
 .plx-pluginGraphEdge__label {
 	fill: var(--mantine-color-dimmed);
 	font-family: var(--mantine-font-family);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 650;
 	opacity: 0;
 	pointer-events: none;
@@ -411,14 +411,15 @@
 	appearance: none;
 	background: var(--mantine-color-body);
 	border: 1px solid var(--mantine-color-default-border);
-	border-radius: 10px;
+	border-radius: var(--mantine-radius-sm);
 	box-sizing: border-box;
 	color: var(--mantine-color-text);
 	cursor: pointer;
 	display: flex;
 	flex-direction: column;
 	font-family: inherit;
-	gap: 6px;
+	/* Three fixed rows fit the 84px layout height (PLUGIN_GRAPH_NODE_HEIGHT); none may shrink. */
+	gap: 4px;
 	height: 84px;
 	justify-content: center;
 	padding: 10px 12px 10px 15px;
@@ -431,15 +432,22 @@
 	width: 220px;
 }
 
-.plx-pluginGraphNode::before {
-	background: var(--mantine-color-gray-5);
-	border-radius: 999px;
-	bottom: 10px;
-	content: '';
-	left: 5px;
-	position: absolute;
-	top: 10px;
-	width: 3px;
+/* State is carried by the status dot and label; abnormal states also tint the node border.
+   No inner edge bar against the rounded node. */
+.plx-pluginGraphNode[data-state='attention'] {
+	border-color: color-mix(
+		in srgb,
+		var(--mantine-color-yellow-6) 60%,
+		var(--mantine-color-default-border)
+	);
+}
+.plx-pluginGraphNode[data-state='unavailable'],
+.plx-pluginGraphNode[data-state='missing'] {
+	border-color: color-mix(
+		in srgb,
+		var(--mantine-color-red-6) 60%,
+		var(--mantine-color-default-border)
+	);
 }
 
 .plx-pluginGraphNode:hover {
@@ -493,15 +501,19 @@
 	display: flex;
 }
 
+.plx-pluginGraphNode > * {
+	flex-shrink: 0;
+}
+
 .plx-pluginGraphNode__heading,
 .plx-pluginGraphNode__state {
-	gap: 7px;
+	gap: 8px;
 	justify-content: space-between;
 	min-width: 0;
 }
 
 .plx-pluginGraphNode__label {
-	font-size: 13px;
+	font-size: var(--mantine-font-size-sm);
 	font-weight: 700;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -512,13 +524,13 @@
 	align-items: center;
 	display: inline-flex;
 	flex: 0 0 auto;
-	gap: 4px;
+	gap: 6px;
 }
 
 .plx-pluginGraphNode__reference {
 	color: var(--mantine-color-dimmed);
 	font-family: var(--mantine-font-family-monospace);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -526,11 +538,11 @@
 
 .plx-pluginGraphNode__state {
 	color: var(--mantine-color-dimmed);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 }
 
 .plx-pluginGraphNode__state > span:first-child {
-	gap: 5px;
+	gap: 6px;
 }
 
 .plx-pluginGraphNode__state i {
@@ -545,20 +557,8 @@
 	background: var(--mantine-color-green-6);
 }
 
-.plx-pluginGraphNode[data-state='running']::before {
-	background: var(--mantine-color-green-6);
-}
-
 .plx-pluginGraphNode[data-state='attention'] .plx-pluginGraphNode__state i {
 	background: var(--mantine-color-yellow-6);
-}
-
-.plx-pluginGraphNode[data-state='attention']::before {
-	background: var(--mantine-color-yellow-6);
-}
-
-.plx-pluginGraphNode[data-state='stopped']::before {
-	background: var(--mantine-color-gray-5);
 }
 
 .plx-pluginGraphNode[data-state='unavailable'] .plx-pluginGraphNode__state i,
@@ -566,13 +566,8 @@
 	background: var(--mantine-color-red-6);
 }
 
-.plx-pluginGraphNode[data-state='unavailable']::before,
-.plx-pluginGraphNode[data-state='missing']::before {
-	background: var(--mantine-color-red-6);
-}
-
 .plx-pluginGraphNode[data-compact='true'] {
-	gap: 5px;
+	gap: 6px;
 	height: 68px;
 	min-width: 0;
 	position: relative;
@@ -582,7 +577,7 @@
 .plx-pluginGraphUnconnectedPanel {
 	background: var(--mantine-color-body);
 	border: 1px solid var(--mantine-color-default-border);
-	border-radius: 8px;
+	border-radius: var(--mantine-radius-sm);
 	bottom: 12px;
 	box-shadow: var(--mantine-shadow-lg);
 	display: flex;
@@ -608,7 +603,7 @@
 .plx-pluginGraphUnconnectedPanel__heading > div {
 	display: flex;
 	flex-direction: column;
-	gap: 3px;
+	gap: 4px;
 	min-width: 0;
 }
 
@@ -618,7 +613,7 @@
 
 .plx-pluginGraphUnconnectedPanel__heading span {
 	color: var(--mantine-color-dimmed);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 }
 
 .plx-pluginGraphUnconnectedPanel__heading button {
@@ -626,14 +621,14 @@
 	appearance: none;
 	background: transparent;
 	border: 0;
-	border-radius: 5px;
+	border-radius: var(--mantine-radius-sm);
 	color: var(--mantine-color-dimmed);
 	cursor: pointer;
 	display: inline-flex;
-	height: 28px;
+	height: 32px;
 	justify-content: center;
 	padding: 0;
-	width: 28px;
+	width: 32px;
 }
 
 .plx-pluginGraphUnconnectedPanel__heading button:hover {
@@ -648,13 +643,13 @@
 .plx-pluginGraphUnconnectedPanel__search {
 	align-items: center;
 	border: 1px solid var(--mantine-color-default-border);
-	border-radius: 6px;
+	border-radius: var(--mantine-radius-sm);
 	color: var(--mantine-color-dimmed);
 	display: flex;
 	flex: 0 0 auto;
-	gap: 7px;
+	gap: 8px;
 	margin: 10px 10px 3px;
-	padding: 0 9px;
+	padding: 0 12px;
 }
 
 .plx-pluginGraphUnconnectedPanel__search:focus-within {
@@ -667,8 +662,8 @@
 	border: 0;
 	color: var(--mantine-color-text);
 	font-family: inherit;
-	font-size: 11px;
-	height: 34px;
+	font-size: var(--mantine-font-size-xs);
+	height: 40px;
 	min-width: 0;
 	outline: none;
 	width: 100%;
@@ -678,7 +673,7 @@
 	display: flex;
 	flex: 1;
 	flex-direction: column;
-	gap: 7px;
+	gap: 8px;
 	min-height: 0;
 	overflow: auto;
 	padding: 7px 10px 10px;

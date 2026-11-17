@@ -1,14 +1,5 @@
-import {
-	Alert,
-	Badge,
-	Button,
-	Group,
-	Loader,
-	MantineProvider,
-	SimpleGrid,
-	Stack,
-	Text,
-} from '@mantine/core'
+import { Alert, Badge, Button, Group, Loader, SimpleGrid, Stack, Text } from '@mantine/core'
+import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 import { useEffect, useRef, useState } from 'react'
 import type { VaultKeyPair } from '@pluxel/services/vault'
 import { overviewQuery, securityOf, vaultScope } from './scope.ts'
@@ -75,7 +66,7 @@ function VaultPage() {
 		row.namespace.toLowerCase().includes(search.trim().toLowerCase()),
 	)
 	return (
-		<Stack p="sm">
+		<Stack p="lg">
 			<Group justify="space-between">
 				<Group>
 					<Badge color={vault.unlocked ? 'green' : 'orange'}>
@@ -117,9 +108,9 @@ function VaultPage() {
 function Page() {
 	const { host } = vaultScope.useWorkbench()
 	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
+		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
 			<VaultPage />
-		</MantineProvider>
+		</WorkbenchMantineProvider>
 	)
 }
 export default vaultScope.render(Page)

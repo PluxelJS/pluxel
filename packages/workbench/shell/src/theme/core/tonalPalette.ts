@@ -3,10 +3,13 @@ import {
 	CorePalette,
 	Hct,
 	SchemeTonalSpot,
+	TonalPalette,
 	argbFromHex,
 	hexFromArgb,
-	type TonalPalette,
 } from '@material/material-color-utilities'
+
+/** Chroma ceiling shared by accents and status colours so no hue outshouts the neutral UI. */
+export const PLX_MAX_CHROMA = 36
 
 export type PlxMaterialMode = 'light' | 'dark'
 export type PlxMaterialPaletteKey = 'a1' | 'a2' | 'a3' | 'n1' | 'n2' | 'error'
@@ -72,8 +75,15 @@ export function createMantinePaletteFromSeed(
 	seedHex: string,
 	paletteKey: PlxMaterialPaletteKey = 'a1',
 ): MantineColorsTuple {
+	if (paletteKey === 'a1') return createMantinePaletteFromTonalPalette(mutedTonalPalette(seedHex))
 	const core = CorePalette.of(argbFromHex(seedHex))
 	return createMantinePaletteFromTonalPalette(core[paletteKey])
+}
+
+/** Seed hue at a capped chroma: keeps the colour identity but matches the calm graphite UI. */
+export function mutedTonalPalette(seedHex: string, maxChroma = PLX_MAX_CHROMA): TonalPalette {
+	const hct = Hct.fromInt(argbFromHex(seedHex))
+	return TonalPalette.fromHueAndChroma(hct.hue, Math.min(hct.chroma, maxChroma))
 }
 
 export function createMaterialThemeSource(seedHex: string) {

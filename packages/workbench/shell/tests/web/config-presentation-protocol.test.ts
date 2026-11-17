@@ -289,6 +289,10 @@ describe('Workbench presentation adapter', () => {
 			remove: [['title'], ['nested', 'name']],
 		})
 		expect(fields.find((field) => field.name === 'opaqueList')?.meta.readOnly).toBe(true)
+		// capnweb refuses null-prototype objects ("Cannot serialize value"), so a patch must be plain.
+		expect(Object.getPrototypeOf(patch)).toBe(Object.prototype)
+		expect(Object.getPrototypeOf(patch.set)).toBe(Object.prototype)
+		expect(Object.getPrototypeOf(patch.set?.nested)).toBe(Object.prototype)
 	})
 })
 

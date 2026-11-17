@@ -131,7 +131,7 @@ describe('native Shell interaction contracts', () => {
 			afterDocumentId: first,
 		})
 		expect(document.querySelector('[role="dialog"]')).toBeNull()
-		await click(container.querySelector('[aria-label="查找所有工作区入口"]')!)
+		await click(container.querySelector('[aria-label="打开命令面板"]')!)
 		await appear('[aria-label="入口搜索"]')
 		expect(document.querySelector('[aria-label="入口搜索"]')).not.toBeNull()
 	})
@@ -270,10 +270,11 @@ describe('native Shell interaction contracts', () => {
 		expect(tab(container, logs).querySelector('[aria-label="未保存的更改"]')).not.toBeNull()
 		expect(input.value).toBe('keep this draft')
 		await act(async () => input.focus())
-		const search = await pressKey(input, 'p', { ctrlKey: true, code: 'KeyP' })
+		// Mod+K is the command palette shortcut; Mod+P stays bound to the same dialog.
+		const search = await pressKey(input, 'k', { ctrlKey: true, code: 'KeyK' })
 		expect(search.defaultPrevented).toBe(true)
 		await appear('[role="dialog"]')
-		expect(document.querySelector('[role="dialog"]')?.textContent).toContain('查找工作区入口')
+		expect(document.querySelector('[role="dialog"]')?.textContent).toContain('命令面板')
 		expect(document.activeElement?.getAttribute('aria-label')).toBe('入口搜索')
 	})
 

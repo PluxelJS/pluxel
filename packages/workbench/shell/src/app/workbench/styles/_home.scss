@@ -13,9 +13,9 @@
 
 .plx-home__hero {
 	align-items: stretch;
-	background: var(--plx-surface-strong);
+	background: var(--plx-raised);
 	border: 1px solid var(--plx-border);
-	border-radius: 10px;
+	border-radius: var(--mantine-radius-md);
 	display: grid;
 	gap: clamp(20px, 3vw, 44px);
 	grid-template-columns: minmax(320px, 1fr) minmax(420px, 0.9fr);
@@ -29,8 +29,8 @@
 
 .plx-home__eyebrow,
 .plx-home__sectionKicker {
-	color: var(--plx-accent-strong);
-	font-size: 11px;
+	color: var(--mantine-primary-color-light-color);
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 800;
 	letter-spacing: 0.11em;
 	line-height: 1.2;
@@ -38,7 +38,7 @@
 }
 
 .plx-home__title {
-	font-size: clamp(26px, 3vw, 36px);
+	font-size: var(--mantine-h1-font-size);
 	font-weight: 720;
 	letter-spacing: -0.035em;
 	line-height: 1.1;
@@ -46,8 +46,8 @@
 }
 
 .plx-home__description {
-	color: var(--plx-text-muted);
-	font-size: 15px;
+	color: var(--mantine-color-dimmed);
+	font-size: var(--mantine-font-size-md);
 	line-height: 1.55;
 	margin-top: 9px;
 	max-width: 620px;
@@ -61,10 +61,10 @@
 }
 
 .plx-home__platformNotice {
-	font-size: 12px;
+	font-size: var(--mantine-font-size-xs);
 	line-height: 1.45;
 	max-width: 680px;
-	padding: 8px 10px;
+	padding: 10px 12px;
 }
 
 .plx-home__heroActions {
@@ -78,9 +78,9 @@
 }
 
 .plx-home__metric {
-	background: var(--plx-surface-muted);
+	background: var(--plx-raised);
 	border: 1px solid var(--plx-border);
-	border-radius: 8px;
+	border-radius: var(--mantine-radius-md);
 	display: flex;
 	flex-direction: column;
 	justify-content: space-between;
@@ -92,18 +92,26 @@
 	border-color: color-mix(in srgb, var(--mantine-color-teal-6) 42%, var(--plx-border));
 }
 
+.plx-home__metric[data-tone='attention'] {
+	border-color: color-mix(in srgb, var(--mantine-color-red-6) 42%, var(--plx-border));
+}
+
+.plx-home__metric[data-tone='attention'] .plx-home__metricValue {
+	color: var(--mantine-color-red-light-color);
+}
+
 .plx-home__metric[data-tone='auto-start'] {
 	border-color: color-mix(in srgb, var(--mantine-color-blue-6) 36%, var(--plx-border));
 }
 
 .plx-home__metricLabel {
-	color: var(--plx-text-muted);
-	font-size: 11px;
+	color: var(--mantine-color-dimmed);
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 650;
 }
 
 .plx-home__metricValue {
-	font-size: 25px;
+	font-size: var(--mantine-font-size-xl);
 	font-weight: 750;
 	letter-spacing: -0.03em;
 	line-height: 1;
@@ -117,7 +125,7 @@
 }
 
 .plx-home__sectionTitle {
-	font-size: 20px;
+	font-size: var(--mantine-font-size-xl);
 	letter-spacing: -0.02em;
 	line-height: 1.2;
 	margin-top: 4px;
@@ -125,7 +133,7 @@
 
 .plx-home__workspaceCard {
 	align-items: start;
-	background: var(--plx-surface-strong);
+	background: var(--plx-raised);
 	color: inherit;
 	display: flex;
 	gap: 12px;
@@ -141,18 +149,17 @@
 
 .plx-home__workspaceCard:hover,
 .plx-home__workspaceCard:focus-visible {
-	background: color-mix(in srgb, var(--plx-surface-strong) 82%, var(--plx-accent-soft) 18%);
+	background: color-mix(in srgb, var(--plx-raised) 82%, var(--mantine-primary-color-light) 18%);
 	border-color: var(--plx-selected-border);
-	box-shadow: 0 10px 26px color-mix(in srgb, var(--plx-text) 6%, transparent);
 	outline: none;
 	transform: translateY(-2px);
 }
 
 .plx-home__workspaceIcon {
 	align-items: center;
-	background: var(--plx-accent-soft);
-	border-radius: 10px;
-	color: var(--plx-accent-strong);
+	background: var(--mantine-primary-color-light);
+	border-radius: var(--mantine-radius-sm);
+	color: var(--mantine-primary-color-light-color);
 	display: flex;
 	flex: 0 0 40px;
 	height: 40px;
@@ -164,7 +171,7 @@
 	display: flex;
 	flex: 1;
 	flex-direction: column;
-	gap: 5px;
+	gap: 6px;
 	min-width: 0;
 }
 
@@ -184,8 +191,8 @@
 }
 
 .plx-home__workspaceMeta {
-	color: var(--plx-text-muted);
-	font-size: 10px;
+	color: var(--mantine-color-dimmed);
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 800;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
@@ -196,7 +203,7 @@
 }
 
 .plx-home__allLink {
-	color: var(--plx-accent-strong);
+	color: var(--mantine-primary-color-light-color);
 	font-weight: 650;
 	text-decoration: none;
 }
@@ -207,9 +214,9 @@
 }
 
 .plx-home__queue {
-	background: var(--plx-surface-strong);
+	background: var(--plx-raised);
 	border: 1px solid var(--plx-border);
-	border-radius: 8px;
+	border-radius: var(--mantine-radius-md);
 	display: flex;
 	flex-direction: column;
 	min-height: 176px;
@@ -221,7 +228,7 @@
 	border-bottom: 1px solid var(--plx-border);
 	display: flex;
 	justify-content: space-between;
-	padding: 9px 12px;
+	padding: 10px 14px;
 }
 
 .plx-home__queueBody {
@@ -234,10 +241,10 @@
 	align-items: center;
 	color: inherit;
 	display: grid;
-	font-size: 12px;
-	gap: 9px;
+	font-size: var(--mantine-font-size-xs);
+	gap: 12px;
 	grid-template-columns: 8px minmax(0, 1fr) auto 16px;
-	min-height: 34px;
+	min-height: 40px;
 	padding: 5px 12px;
 	text-decoration: none;
 }
@@ -248,13 +255,13 @@
 
 .plx-home__queueRow:hover,
 .plx-home__queueRow:focus-visible {
-	background: var(--plx-surface-muted);
+	background: var(--plx-raised);
 	outline: none;
 }
 
 .plx-home__statusDot {
-	background: var(--plx-text-muted);
-	border-radius: 999px;
+	background: var(--mantine-color-dimmed);
+	border-radius: var(--mantine-radius-sm);
 	height: 7px;
 	width: 7px;
 }
@@ -267,7 +274,8 @@
 	background: var(--mantine-color-yellow-6);
 }
 
-.plx-home__statusDot[data-status='unavailable'] {
+.plx-home__statusDot[data-status='unavailable'],
+.plx-home__statusDot[data-status='error'] {
 	background: var(--mantine-color-red-6);
 }
 
@@ -279,17 +287,99 @@
 }
 
 .plx-home__queueStatus {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 }
 
 .plx-home__queueEmpty {
 	align-items: center;
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	display: flex;
 	flex: 1;
-	font-size: 12px;
+	font-size: var(--mantine-font-size-xs);
 	justify-content: center;
 	padding: 24px;
+}
+
+.plx-home__attention {
+	background: var(--plx-raised);
+	border: 1px solid var(--plx-border);
+	border-radius: var(--mantine-radius-md);
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	overflow: hidden;
+}
+
+.plx-home__updateProblem {
+	border-bottom: 1px solid var(--plx-border);
+	border-radius: 0;
+}
+
+.plx-home__updateError {
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}
+
+.plx-home__attention > .mantine-Alert-root:not(.plx-home__updateProblem) {
+	border-radius: 0;
+}
+
+.plx-home__attentionState {
+	color: var(--mantine-color-dimmed);
+	padding: 16px 14px;
+}
+
+.plx-home__attentionState[data-tone='ok'] {
+	color: var(--mantine-color-teal-light-color);
+}
+
+.plx-home__attentionList {
+	display: flex;
+	flex-direction: column;
+}
+
+.plx-home__attentionRow {
+	align-items: center;
+	color: inherit;
+	display: grid;
+	font-size: var(--mantine-font-size-xs);
+	gap: 12px;
+	grid-template-columns: 8px minmax(96px, 220px) auto minmax(0, 1fr) 16px;
+	min-height: 40px;
+	padding: 5px 12px;
+	text-decoration: none;
+}
+
+.plx-home__attentionRow + .plx-home__attentionRow {
+	border-top: 1px solid color-mix(in srgb, var(--plx-border) 68%, transparent);
+}
+
+.plx-home__attentionRow:hover,
+.plx-home__attentionRow:focus-visible {
+	background: var(--plx-hover-bg);
+	outline: none;
+}
+
+.plx-home__attentionName {
+	font-weight: 650;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-home__attentionMessage {
+	color: var(--mantine-color-dimmed);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-home__attentionMore {
+	border-top: 1px solid color-mix(in srgb, var(--plx-border) 68%, transparent);
+	color: var(--mantine-primary-color-light-color);
+	font-size: var(--mantine-font-size-xs);
+	padding: 10px 14px;
+	text-decoration: none;
 }
 
 @include mantine.smaller-than(md) {
@@ -311,11 +401,11 @@
 	}
 
 	.plx-home__title {
-		font-size: 27px;
+		font-size: var(--mantine-font-size-xl);
 	}
 
 	.plx-home__description {
-		font-size: 14px;
+		font-size: var(--mantine-font-size-md);
 		line-height: 1.65;
 	}
 
@@ -330,6 +420,14 @@
 
 	.plx-home__workspaceCard {
 		min-height: 96px;
+	}
+
+	.plx-home__attentionRow {
+		grid-template-columns: 8px minmax(0, 1fr) auto 16px;
+	}
+
+	.plx-home__attentionMessage {
+		display: none;
 	}
 }
 

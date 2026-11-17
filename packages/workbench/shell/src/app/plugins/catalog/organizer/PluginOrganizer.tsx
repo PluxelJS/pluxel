@@ -75,7 +75,8 @@ type Props = {
 }
 
 const COMPACT_UNGROUPED_MAX_ITEMS = 2
-const COMPACT_UNGROUPED_CHROME_HEIGHT = 38
+// Card border (2) + card padding (12) + section header with its margin (34), plus slack.
+const COMPACT_UNGROUPED_CHROME_HEIGHT = 50
 const MIN_SECTION_HEIGHT = 72
 
 const groupsEqual = (a: GroupConfig[], b: GroupConfig[]) => {
@@ -463,7 +464,7 @@ export function PluginOrganizer({
 				style={{
 					display: 'grid',
 					gridTemplateRows: organizerGridRows,
-					gap: 4,
+					gap: 8,
 					minHeight: 0,
 					height: '100%',
 					...style,
@@ -475,9 +476,10 @@ export function PluginOrganizer({
 				{/* 默认显示未分组；无分组时即为完整插件列表。 */}
 				<Card
 					className="plx-pluginCatalog__sectionCard"
+					bg="transparent"
 					shadow="none"
 					radius="sm"
-					p={0}
+					p={6}
 					style={{
 						minWidth: 0,
 						minHeight: 0,
@@ -488,10 +490,11 @@ export function PluginOrganizer({
 				>
 					<div className="plx-pluginCatalog__sectionHeader">
 						<div className="plx-pluginCatalog__sectionHeading">
-							<Text className="plx-pluginCatalog__sectionTitle">
+							<Text size="xs" className="plx-pluginCatalog__sectionTitle">
 								{showFlatResults ? '筛选结果' : groups.length > 0 ? '未分组' : '全部插件'}
 							</Text>
 							<Text
+								size="xs"
 								className="plx-pluginCatalog__sectionMetric"
 								title={
 									showFlatResults
@@ -615,9 +618,10 @@ export function PluginOrganizer({
 				{groups.length > 0 && !showFlatResults ? (
 					<Card
 						className="plx-pluginCatalog__sectionCard"
+						bg="transparent"
 						shadow="none"
 						radius="sm"
-						p={0}
+						p={6}
 						style={{
 							minHeight: 0,
 							minWidth: 0,
@@ -629,8 +633,10 @@ export function PluginOrganizer({
 						<Stack gap={2} style={{ minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
 							<div className="plx-pluginCatalog__sectionHeader">
 								<div className="plx-pluginCatalog__sectionHeading">
-									<Text className="plx-pluginCatalog__sectionTitle">插件分类</Text>
-									<Text className="plx-pluginCatalog__sectionMetric">
+									<Text size="xs" className="plx-pluginCatalog__sectionTitle">
+										插件分类
+									</Text>
+									<Text size="xs" className="plx-pluginCatalog__sectionMetric">
 										{visibleGroups.length} 个
 									</Text>
 								</div>

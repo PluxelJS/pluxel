@@ -64,8 +64,8 @@ export function SecurityAuditScreen() {
 	const failures = events.filter((event) => event.status === 'failure').length
 
 	return (
-		<Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>
-			<Paper withBorder p="sm" radius="sm">
+		<Stack gap="md" p="var(--plx-page-padding)" style={{ flex: 1, minHeight: 0 }}>
+			<Paper withBorder p="sm">
 				<Group justify="space-between" align="center" wrap="wrap" gap="xs">
 					<Group gap={6} wrap="wrap">
 						<Badge variant="light" color="gray">
@@ -87,7 +87,7 @@ export function SecurityAuditScreen() {
 				</Group>
 			</Paper>
 
-			<Paper withBorder p="sm" radius="sm" style={{ flex: 1, minHeight: 0 }}>
+			<Paper withBorder p="sm" style={{ flex: 1, minHeight: 0 }}>
 				{events.length === 0 ? (
 					<EmptyState title="暂无事件" description="安全事件会显示在这里。" minHeight="100%" />
 				) : (

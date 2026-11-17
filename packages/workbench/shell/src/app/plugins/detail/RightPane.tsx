@@ -62,9 +62,11 @@ export function RightPane({ config }: { config: PluginConfigState }) {
 			/>
 		)
 	return (
-		<Stack gap="sm" h="100%" p="sm" style={{ minHeight: 0 }}>
+		<Stack gap="md" h="100%" p="var(--plx-page-padding)" style={{ minHeight: 0 }}>
 			<Group justify="space-between">
-				<Text fw={600}>{pluginLabel}</Text>
+				<Text fw={600} size="lg">
+					{pluginLabel}
+				</Text>
 				<ActionBar active={active} />
 			</Group>
 			{entries.length > 0 && (

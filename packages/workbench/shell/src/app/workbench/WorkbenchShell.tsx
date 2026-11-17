@@ -13,12 +13,14 @@ import {
 	Stack,
 	Text,
 	Tooltip,
+	useComputedColorScheme,
+	useMantineColorScheme,
 } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
 import { useHotkeys } from '@tanstack/react-hotkeys'
 import {
 	IconBell,
-	IconPlus,
+	IconCopyPlus,
 	IconDots,
 	IconFile,
 	IconInfoCircle,
@@ -38,7 +40,7 @@ import { useWorkbenchNavigation } from './context'
 import { ActivityRail } from './ActivityRail'
 import { useWorkbenchTargetSnapshot } from '../../workbench/runtime'
 import { useWorkspaceSession } from './workspaceContext'
-import { WorkspaceNavigation } from './WorkspaceNavigation'
+import { WorkspaceNavigation, type WorkspaceCommand } from './WorkspaceNavigation'
 import { useNativeMenus } from './nativeMenus'
 import { WORKBENCH_HOTKEYS, WORKBENCH_HOTKEY_LABELS, WORKBENCH_SHORTCUT_ITEMS } from './shortcuts'
 import { WorkbenchUpdateStatus } from './shell/WorkbenchUpdateStatus'
@@ -58,6 +60,8 @@ export function WorkbenchShell() {
 	}, [])
 	const [helpOpen, setHelpOpen] = useState(false)
 	const [pending, setPending] = useState(false)
+	const { setColorScheme } = useMantineColorScheme()
+	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const menu = useNativeMenus(session)
 	const count = useWorkbenchState(session.workbench, () => session.workbench.getDocuments().length)
 	const activeDocumentId = useWorkbenchState(session.workbench, (state) => state.activeDocumentId)
@@ -149,6 +153,11 @@ export function WorkbenchShell() {
 	useHotkeys(
 		[
 			{
+				hotkey: WORKBENCH_HOTKEYS.commandPalette,
+				callback: showSearch,
+				options: { target: document, ignoreInputs: false },
+			},
+			{
 				hotkey: WORKBENCH_HOTKEYS.focusSearch,
 				callback: showSearch,
 				options: { target: document, ignoreInputs: false },
@@ -202,7 +211,7 @@ export function WorkbenchShell() {
 								})
 							}}
 						>
-							<IconPlus size={14} />
+							<IconCopyPlus size={14} />
 						</ActionIcon>,
 					)
 				const dirty = session.documents.get(node.getId())?.isDirty()
@@ -241,6 +250,73 @@ export function WorkbenchShell() {
 					.finally(() => setPending(false))
 			},
 		})
+	const resetLayout = () => {
+		setPending(true)
+		void session
+			.resetLayout()
+			.catch((error: unknown) => session.report(error))
+			.finally(() => setPending(false))
+	}
+	const sideLabels = { left: '左侧导航', right: '右侧面板', bottom: '底部面板' } as const
+	const commands: WorkspaceCommand[] = [
+		...(['left', 'right', 'bottom'] as const).map((side): WorkspaceCommand => ({
+			id: `toggle-${side}`,
+			label: `${borderVisible(side) ? '收起' : '显示'}${sideLabels[side]}`,
+			description: '布局',
+			keywords: 'panel sidebar 面板 侧栏',
+			shortcut: side === 'left' ? WORKBENCH_HOTKEY_LABELS.showNavigation : undefined,
+			disabled: !session.panelAvailable(side),
+			run: () => toggleBorder(side),
+		})),
+		{
+			id: 'close-active',
+			label: '关闭活动文档',
+			description: '文档',
+			keywords: 'close tab 标签',
+			shortcut: WORKBENCH_HOTKEY_LABELS.closeActiveTab,
+			disabled: !count || pending,
+			run: closeActive,
+		},
+		{
+			id: 'maximize',
+			label: '最大化或还原活动容器',
+			description: '布局',
+			keywords: 'maximize 全屏',
+			shortcut: WORKBENCH_HOTKEY_LABELS.maximize,
+			disabled: !activeGroup || activeGroup.startsWith('border_'),
+			run: maximize,
+		},
+		{
+			id: 'close-all',
+			label: '关闭所有文档',
+			description: '文档 · 保留布局，需确认',
+			keywords: 'close all tabs 标签',
+			disabled: !count || pending,
+			run: closeDocuments,
+		},
+		{
+			id: 'reset-layout',
+			label: '恢复默认布局',
+			description: '布局 · 关闭文档并重新载入',
+			keywords: 'reset layout 重置',
+			disabled: pending,
+			run: resetLayout,
+		},
+		{
+			id: 'color-scheme',
+			label: colorScheme === 'dark' ? '切换到浅色模式' : '切换到深色模式',
+			description: '外观',
+			keywords: 'theme dark light 主题 明暗',
+			run: () => setColorScheme(colorScheme === 'dark' ? 'light' : 'dark'),
+		},
+		{
+			id: 'shortcuts',
+			label: '键盘操作',
+			description: '帮助',
+			keywords: 'keyboard shortcuts 快捷键',
+			run: () => setHelpOpen(true),
+		},
+	]
 	return (
 		<div
 			className={`plx-workspace${unifiedNavigation ? ' plx-workspace--unified-navigation' : ''}`}
@@ -248,29 +324,31 @@ export function WorkbenchShell() {
 			tabIndex={-1}
 		>
 			<header className="plx-workspace__toolbar">
-				<Group gap={4} wrap="nowrap" className="plx-workspace__primary">
+				<Group gap="sm" wrap="nowrap" className="plx-workspace__primary">
 					<Text fw={650} size="sm" className="plx-workspace__brand" truncate="end">
 						{product?.displayName ?? 'Pluxel'}
 					</Text>
 					<Button
-						variant="subtle"
-						size="compact-xs"
-						leftSection={<IconSearch size={14} />}
+						variant="default"
+						size="compact-sm"
+						leftSection={<IconSearch size={15} />}
 						onClick={showSearch}
-						aria-label="查找所有工作区入口"
+						aria-label="打开命令面板"
 						className="plx-workspace__search-button"
 					>
 						<span className="plx-workspace__search-label">
-							查找入口 <kbd>{WORKBENCH_HOTKEY_LABELS.focusSearch}</kbd>
+							查找或执行命令 <kbd>{WORKBENCH_HOTKEY_LABELS.commandPalette}</kbd>
 						</span>
 					</Button>
 					<Menu position="bottom-start" shadow="md" width={265}>
 						<Menu.Target>
 							<Button
-								size="compact-xs"
+								size="compact-sm"
 								variant="subtle"
-								rightSection={<IconDots size={14} />}
+								color="gray"
+								rightSection={<IconDots size={16} />}
 								disabled={pending}
+								className="plx-workspace__workspace-menu"
 							>
 								工作区
 							</Button>
@@ -297,22 +375,12 @@ export function WorkbenchShell() {
 							<Menu.Item color="red" disabled={!count} onClick={closeDocuments}>
 								关闭所有文档（保留布局）
 							</Menu.Item>
-							<Menu.Item
-								onClick={() => {
-									setPending(true)
-									void session
-										.resetLayout()
-										.catch((error: unknown) => session.report(error))
-										.finally(() => setPending(false))
-								}}
-							>
-								恢复默认布局（关闭文档并重新载入）
-							</Menu.Item>
+							<Menu.Item onClick={resetLayout}>恢复默认布局（关闭文档并重新载入）</Menu.Item>
 						</Menu.Dropdown>
 					</Menu>
 				</Group>
 				<Group
-					gap={4}
+					gap="xs"
 					wrap="nowrap"
 					className="plx-workspace__layout-controls"
 					aria-label="布局控制"
@@ -328,6 +396,7 @@ export function WorkbenchShell() {
 							<ActionIcon
 								size="sm"
 								variant={borderVisible(side) ? 'light' : 'subtle'}
+								color={borderVisible(side) ? 'brand' : 'gray'}
 								aria-label={label}
 								aria-pressed={borderVisible(side)}
 								disabled={!session.panelAvailable(side)}
@@ -338,7 +407,7 @@ export function WorkbenchShell() {
 						</Tooltip>
 					))}
 				</Group>
-				<Group gap={4} wrap="nowrap" ml="auto" className="plx-workspace__utilities">
+				<Group gap="xs" wrap="nowrap" ml="auto" className="plx-workspace__utilities">
 					<WorkbenchUpdateStatus />
 					<NotificationHistory />
 					<Tooltip label="认证与安全">
@@ -394,12 +463,13 @@ export function WorkbenchShell() {
 			<Modal
 				opened={searchOpen}
 				onClose={() => setSearchOpen(false)}
-				title="查找工作区入口"
+				title="命令面板"
 				size="lg"
 				centered
 			>
 				<div className="plx-workspace__search">
 					<WorkspaceNavigation
+						commands={commands}
 						autofocus
 						onChosen={() => setSearchOpen(false)}
 						onShowNavigation={showNavigation}
@@ -423,7 +493,7 @@ export function WorkbenchShell() {
 						</Group>
 					))}
 					<Text c="dimmed" size="xs">
-						工作区命令忽略文本输入；查找入口可在输入时使用。箭头键遵循原生标签和菜单的焦点规则。
+						工作区命令忽略文本输入；命令面板可在输入时打开。箭头键遵循原生标签和菜单的焦点规则。
 					</Text>
 				</Stack>
 			</Modal>

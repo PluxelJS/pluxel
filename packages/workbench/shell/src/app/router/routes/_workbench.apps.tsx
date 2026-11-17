@@ -4,7 +4,7 @@ import { WorkspaceNavigation } from '../../workbench/WorkspaceNavigation'
 
 function AppsRoute() {
 	return (
-		<Stack h="100%" mih={0} p="md" gap="sm">
+		<Stack h="100%" mih={0} p="var(--plx-page-padding)" gap="md">
 			<Title order={2} size="h4">
 				应用
 			</Title>

@@ -2,6 +2,7 @@ import { formatForDisplay } from '@tanstack/react-hotkeys'
 
 export const WORKBENCH_HOTKEYS = {
 	showNavigation: 'Mod+B',
+	commandPalette: 'Mod+K',
 	focusSearch: 'Mod+P',
 	closeActiveTab: 'Mod+W',
 	prevTab: 'Mod+Shift+[BracketLeft]',
@@ -11,6 +12,7 @@ export const WORKBENCH_HOTKEYS = {
 
 export const WORKBENCH_HOTKEY_LABELS = {
 	showNavigation: formatForDisplay(WORKBENCH_HOTKEYS.showNavigation),
+	commandPalette: formatForDisplay(WORKBENCH_HOTKEYS.commandPalette),
 	focusSearch: formatForDisplay(WORKBENCH_HOTKEYS.focusSearch),
 	closeActiveTab: formatForDisplay(WORKBENCH_HOTKEYS.closeActiveTab),
 	prevTab: formatForDisplay(WORKBENCH_HOTKEYS.prevTab),
@@ -19,7 +21,11 @@ export const WORKBENCH_HOTKEY_LABELS = {
 }
 
 export const WORKBENCH_SHORTCUT_ITEMS = [
-	[WORKBENCH_HOTKEY_LABELS.focusSearch, '查找所有页面与插件入口'],
+	[
+		`${WORKBENCH_HOTKEY_LABELS.commandPalette} / ${WORKBENCH_HOTKEY_LABELS.focusSearch}`,
+		'打开命令面板：查找页面、插件入口与工作区命令',
+	],
+	['↑ / ↓', '在命令面板结果间移动；Enter 执行所选项'],
 	[WORKBENCH_HOTKEY_LABELS.showNavigation, '显示或收起左侧导航'],
 	[WORKBENCH_HOTKEY_LABELS.closeActiveTab, '关闭活动文档（遵守固定与未保存保护）'],
 	[WORKBENCH_HOTKEY_LABELS.prevTab, '按原生布局顺序激活上一个文档'],

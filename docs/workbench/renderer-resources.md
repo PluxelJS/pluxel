@@ -90,3 +90,30 @@ export const ordersQuery = overviewScope.query(({ api }) => ({
 ## UI 组件库支持（Mantine）
 
 Workbench Shell 原生预置了 [Mantine](https://mantine.dev/)（v7）设计体系与常用组件。在插件的 React 组件中，你可以直接导入并使用 Mantine 的基础排版、按钮、表格与模态框组件，组件样式会自动契合 Workbench 的整体深浅色主题风格。
+
+每个 renderer 都是独立的 React root，Shell 的私有 Provider 不会跨 root 继承。Mantine renderer 在自己的 root 内使用
+`WorkbenchMantineProvider`，与 Shell 共享尺寸、字体、颜色名称和组件默认值：
+
+```tsx
+import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
+
+export function OrdersPage() {
+	const { host } = overviewScope.useWorkbench()
+	return (
+		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
+			<OrdersContent />
+		</WorkbenchMantineProvider>
+	)
+}
+```
+
+Shell 不给 renderer 容器加内边距，画布类页面可以铺满。普通页面与 Shell 页面对齐：路由文档的最外层用 `p="lg"`，
+左、右、底部 panel 用 `p="sm"`。
+
+`@mantine/core`、`@mantine/hooks` 与 `@pluxel/workbench/mantine` 是 Workbench 固定的 MF2 singleton shared，组件和
+hooks 在一个 document 内只加载一份。Mantine 基础 CSS 与 CSS 变量由 Shell 统一提供：强调色、表面和明暗跟随用户的
+外观设置。`WorkbenchMantineProvider` 因此不输出 CSS 变量和全局 class；直接使用默认 `MantineProvider` 会在
+`:root` 写入第二套变量，覆盖 Shell 外观。renderer 不应再次导入 `@mantine/core/styles.css`，producer build 会直接拒绝这种重复。
+
+隔离测试没有 Shell 提供变量时，用 `<MantineProvider theme={workbenchTheme}>` 渲染组件。`host.colorScheme` 是可移植的宿主
+外观事实，不暴露 Shell 私有 Provider。其他 UI library 仍由 producer 自己打包并管理 Provider/CSS。

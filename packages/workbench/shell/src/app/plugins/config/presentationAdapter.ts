@@ -9,7 +9,7 @@ export function buildEditableConfigPatch(
 	candidate: Record<string, unknown>,
 	current: Record<string, unknown>,
 ): HostConfigMutation {
-	const set: Record<string, unknown> = Object.create(null)
+	const set: Record<string, unknown> = {}
 	const remove: string[][] = []
 	const visit = (
 		nodes: readonly FieldNode[],
@@ -62,11 +62,19 @@ function editable(node: FieldNode): boolean {
 function write(root: Record<string, unknown>, path: readonly string[], value: unknown) {
 	let cursor = root
 	for (const key of path.slice(0, -1)) {
-		const next = isRecord(cursor[key]) ? cursor[key] : Object.create(null)
-		cursor[key] = next
+		const existing = Object.hasOwn(cursor, key) ? cursor[key] : undefined
+		const next = isRecord(existing) ? existing : {}
+		setOwn(cursor, key, next)
 		cursor = next
 	}
-	cursor[path.at(-1)!] = value
+	setOwn(cursor, path.at(-1)!, value)
+}
+/**
+ * Patches are sent over capnweb, which only serializes plain objects (a null-prototype object is
+ * rejected as "Cannot serialize value"), so records are plain and keys are defined, not assigned.
+ */
+function setOwn(target: Record<string, unknown>, key: string, value: unknown): void {
+	Object.defineProperty(target, key, { value, enumerable: true, configurable: true, writable: true })
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === 'object' && !Array.isArray(value)

@@ -11,7 +11,7 @@ import {
 	stripAnsi,
 } from './logFormatting'
 
-export const LOG_ROW_HEIGHT = 24
+export const LOG_ROW_HEIGHT = 28
 export interface LogRowProps {
 	line: RuntimeLogLine
 	preview?: boolean

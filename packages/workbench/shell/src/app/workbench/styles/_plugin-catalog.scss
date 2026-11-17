@@ -3,14 +3,14 @@
 	flex: 1;
 	min-height: 0;
 	min-width: 0;
-	padding: 3px;
+	padding: var(--plx-panel-padding);
 }
 
 .plx-pluginCatalog {
 	display: flex;
 	flex: 1;
 	flex-direction: column;
-	gap: 4px;
+	gap: 6px;
 	height: 100%;
 	min-height: 0;
 	min-width: 0;
@@ -18,13 +18,12 @@
 
 .plx-pluginCatalog__header {
 	align-items: center;
-	border-bottom: 1px solid var(--plx-border);
 	display: flex;
-	gap: 6px;
+	gap: 8px;
 	justify-content: space-between;
 	margin: -4px -4px 0;
 	min-width: 0;
-	padding: 4px 8px;
+	padding: 6px 10px;
 }
 
 .plx-pluginCatalog__titleLine {
@@ -32,25 +31,25 @@
 	display: flex;
 	flex: 1;
 	flex-wrap: nowrap;
-	gap: 5px;
+	gap: 6px;
 	min-width: 0;
 }
 
 .plx-pluginCatalog__eyebrow {
 	color: var(--mantine-color-dimmed);
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 600;
 }
 .plx-pluginCatalog__title {
 	color: var(--mantine-color-text);
-	font-size: 14px;
+	font-size: var(--mantine-font-size-md);
 	font-weight: 650;
 }
 
 .plx-pluginCatalog__titleCount {
-	color: var(--plx-text-muted);
+	color: var(--mantine-color-dimmed);
 	flex: 0 0 auto;
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	font-variant-numeric: tabular-nums;
 	font-weight: 600;
 	line-height: 1;
@@ -60,21 +59,21 @@
 	align-items: center;
 	display: inline-flex;
 	flex: 0 0 auto;
-	gap: 4px;
+	gap: 6px;
 }
 
 .plx-pluginCatalog__helpButton {
 	align-items: center;
-	background: color-mix(in srgb, var(--plx-surface-muted) 84%, transparent);
-	border: 1px solid color-mix(in srgb, var(--plx-border) 76%, transparent);
-	border-radius: 8px;
-	color: var(--plx-text-muted);
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: var(--mantine-radius-sm);
+	color: var(--mantine-color-dimmed);
 	cursor: pointer;
 	display: inline-flex;
-	font-size: 10px;
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 700;
-	gap: 4px;
-	height: 24px;
+	gap: 6px;
+	height: 30px;
 	line-height: 1;
 	padding: 0 7px;
 	white-space: nowrap;
@@ -82,16 +81,15 @@
 
 .plx-pluginCatalog__helpButton:hover,
 .plx-pluginCatalog__helpButton:focus-visible {
-	background: var(--plx-surface-strong);
-	border-color: var(--plx-border-strong);
-	color: var(--plx-text);
+	background: var(--plx-hover-bg);
+	color: var(--mantine-color-text);
 	outline: none;
 }
 
 .plx-pluginCatalog__toolbar {
 	display: flex;
 	flex-direction: column;
-	gap: 4px;
+	gap: 6px;
 }
 
 .plx-pluginCatalog__body {
@@ -102,11 +100,9 @@
 	min-width: 0;
 }
 
+/* Sections sit directly on the canvas (`bg="transparent"`); grouping comes from headings and spacing. */
 .plx-pluginCatalog__sectionCard {
-	background: var(--plx-surface);
-	border: 1px solid color-mix(in srgb, var(--plx-border) 80%, transparent);
-	border-radius: 8px;
-	box-shadow: none;
+	border: 0;
 }
 
 .plx-pluginCatalog__sectionHeader {
@@ -115,27 +111,30 @@
 	gap: 8px;
 	justify-content: space-between;
 	margin-bottom: 4px;
+	min-height: 28px;
 	min-width: 0;
+	/* Same inline inset as catalog rows, so headings line up with row content. */
+	padding: 2px 4px 0 10px;
 }
 
 .plx-pluginCatalog__sectionActions {
 	align-items: center;
 	display: inline-flex;
 	flex-wrap: wrap;
-	gap: 4px;
+	gap: 6px;
 	justify-content: flex-end;
 }
 
 .plx-pluginCatalog__sectionHeading {
 	align-items: baseline;
 	display: inline-flex;
-	gap: 6px;
+	gap: 8px;
 	min-width: 0;
 }
 
 .plx-pluginCatalog__sectionTitle {
-	color: var(--plx-text);
-	font-size: 11px;
+	color: var(--mantine-color-text);
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 700;
 	letter-spacing: 0.04em;
 	line-height: 1.2;
@@ -143,8 +142,8 @@
 }
 
 .plx-pluginCatalog__sectionMetric {
-	color: var(--plx-text-muted);
-	font-size: 10px;
+	color: var(--mantine-color-dimmed);
+	font-size: var(--mantine-font-size-xs);
 	font-weight: 600;
 	line-height: 1;
 	white-space: nowrap;
@@ -152,12 +151,16 @@
 
 .plx-pluginCatalog__bulkBar {
 	align-items: center;
-	background: color-mix(in srgb, var(--plx-accent-soft) 24%, var(--plx-surface) 76%);
+	background: color-mix(
+		in srgb,
+		var(--mantine-primary-color-light) 24%,
+		var(--mantine-color-body) 76%
+	);
 	border: 1px solid color-mix(in srgb, var(--plx-selected-border) 76%, var(--plx-border) 24%);
-	border-radius: 8px;
+	border-radius: var(--mantine-radius-sm);
 	box-shadow: none;
 	display: flex;
-	gap: 6px;
+	gap: 8px;
 	justify-content: space-between;
 	padding: 3px 6px;
 }
@@ -181,6 +184,7 @@
 }
 
 .plx-pluginCatalog__executionIndicator > span {
+	/* A fixed 1px corner keeps the rotated square a diamond at any theme radius. */
 	border-radius: 1px;
 	transform: rotate(45deg);
 }
@@ -193,8 +197,8 @@
 	align-items: center;
 	background: transparent;
 	border: 1px solid color-mix(in srgb, var(--plx-border) 84%, transparent);
-	border-radius: 999px;
-	color: var(--plx-text-muted);
+	border-radius: var(--mantine-radius-sm);
+	color: var(--mantine-color-dimmed);
 	display: inline-flex;
 	height: 18px;
 	justify-content: center;
@@ -210,15 +214,15 @@
 .plx-pluginCatalog__rowSelector:hover,
 .plx-pluginCatalog__rowSelector:focus-visible {
 	border-color: var(--plx-selected-border);
-	color: var(--plx-text);
+	color: var(--mantine-color-text);
 	outline: none;
 	transform: scale(1.03);
 }
 
 .plx-pluginCatalog__rowSelector[data-selected='true'] {
-	background: var(--plx-accent);
-	border-color: var(--plx-accent);
-	color: var(--plx-accent-contrast);
+	background: var(--mantine-primary-color-filled);
+	border-color: var(--mantine-primary-color-filled);
+	color: var(--mantine-primary-color-contrast);
 }
 
 .plx-pluginCatalog__row[data-focused='true'] {

@@ -58,7 +58,13 @@ vi.mock('../src/app/plugins/pluginOverview', () => ({
 		hasSnapshot: true,
 		overview: {
 			status: {
-				statuses: fixture.nodes.map((address) => ({ address, lifecycleState: 'running' })),
+				statuses: fixture.nodes.map((address) => ({
+					address,
+					lifecycleState: 'running',
+					desiredState: 'running',
+					availability: 'available',
+					issues: [],
+				})),
 			},
 		},
 	}),
@@ -258,7 +264,7 @@ describe('authenticated App surface ownership', () => {
 		const probe = [...fixture.probes.values()][0]!
 		const workspace = probe.workspace!
 		await act(async () => {
-			container.querySelector<HTMLButtonElement>('[aria-label="查找所有工作区入口"]')!.click()
+			container.querySelector<HTMLButtonElement>('[aria-label="打开命令面板"]')!.click()
 		})
 		const href = `${buildPluginDetailHref(labeled.target.node)}?entry=preview`
 		const button = [

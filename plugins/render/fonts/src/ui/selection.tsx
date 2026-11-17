@@ -1,4 +1,4 @@
-import { MantineProvider } from '@mantine/core'
+import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 import { FontSelectionContent } from './index.tsx'
 import { fontSelectionQuery, selectionScope, setPreferredFontMutation } from './selection.scope.ts'
 
@@ -7,7 +7,7 @@ function FontSelectionPanel() {
 	const selection = fontSelectionQuery.useQuery()
 	const setPreferredFont = setPreferredFontMutation.useMutation()
 	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
+		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
 			<FontSelectionContent
 				snapshot={selection.data}
 				loading={selection.isPending || selection.isFetching}
@@ -28,7 +28,7 @@ function FontSelectionPanel() {
 					setPreferredFont.mutate(family)
 				}}
 			/>
-		</MantineProvider>
+		</WorkbenchMantineProvider>
 	)
 }
 

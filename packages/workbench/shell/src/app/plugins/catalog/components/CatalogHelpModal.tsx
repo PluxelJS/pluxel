@@ -19,14 +19,7 @@ const searchTokens = [
 
 export function CatalogHelpModal({ opened, onClose }: CatalogHelpModalProps) {
 	return (
-		<Modal
-			opened={opened}
-			onClose={onClose}
-			title="插件列表快捷操作"
-			centered
-			size="lg"
-			radius="sm"
-		>
+		<Modal opened={opened} onClose={onClose} title="插件列表快捷操作" centered size="lg">
 			<Stack gap="md">
 				<Stack gap="xs">
 					<Text fw={700} size="sm">

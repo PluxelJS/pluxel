@@ -72,10 +72,6 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 	)
 
 	const currentPreset = presets.find((preset) => preset.key === accentKey) ?? presets[0]
-	const panelStyle = {
-		background: 'var(--plx-panel-bg)',
-		border: '1px solid var(--plx-panel-border-strong)',
-	} as const
 	const schemeControl = (
 		<Box>
 			<Text size="xs" c="dimmed" mb={6}>
@@ -136,29 +132,20 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 
 	if (compact) {
 		return (
-			<Popover
-				withArrow
-				shadow="md"
-				position="right"
-				offset={10}
-				opened={opened}
-				onChange={setOpened}
-			>
+			<Popover position="bottom-end" offset={6} trapFocus opened={opened} onChange={setOpened}>
 				<Popover.Target>
-					<Tooltip label="主题设置" position="right" openDelay={300}>
+					<Tooltip label="主题设置" openDelay={300} disabled={opened}>
 						<ActionIcon
-							variant="light"
-							size="lg"
-							radius="xl"
-							style={{ alignSelf: 'center' }}
+							size="sm"
 							aria-label="主题设置"
+							aria-expanded={opened}
 							onClick={() => setOpened((value) => !value)}
 						>
-							<IconPalette size={18} stroke={1.8} />
+							<IconPalette size={16} stroke={1.8} />
 						</ActionIcon>
 					</Tooltip>
 				</Popover.Target>
-				<Popover.Dropdown p="sm" style={panelStyle}>
+				<Popover.Dropdown p="sm" w={292}>
 					<Stack gap="sm">
 						<Group justify="space-between" align="center">
 							<Group gap="xs">
@@ -179,7 +166,7 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 	}
 
 	return (
-		<Paper radius="lg" px="md" py="sm" style={panelStyle}>
+		<Paper withBorder px="md" py="sm">
 			<Stack gap="sm">
 				<Group
 					justify="space-between"

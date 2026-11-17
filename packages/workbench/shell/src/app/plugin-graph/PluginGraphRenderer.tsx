@@ -32,6 +32,7 @@ import {
 } from './pluginGraphModel'
 
 const MIN_ZOOM = 0.2
+const MIN_FIT_ZOOM = 0.72
 const MAX_ZOOM = 2
 const ZOOM_FACTOR = 1.16
 const KEYBOARD_PAN_STEP = 48
@@ -78,14 +79,17 @@ export function PluginGraphRenderer({
 		if (!viewportSize) return { x: 0, y: 0, zoom: 1 }
 		const availableWidth = Math.max(viewportSize.width - 48, 1)
 		const availableHeight = Math.max(viewportSize.height - 48, 1)
+		// Fitting never shrinks labels below legibility; a larger graph starts at its top-left corner.
 		const zoom = clamp(
 			Math.min(availableWidth / layout.width, availableHeight / layout.height),
-			MIN_ZOOM,
+			MIN_FIT_ZOOM,
 			1,
 		)
+		const centered = (available: number, size: number) =>
+			size * zoom <= available - 48 ? (available - size * zoom) / 2 : 24
 		return Object.freeze({
-			x: (viewportSize.width - layout.width * zoom) / 2,
-			y: (viewportSize.height - layout.height * zoom) / 2,
+			x: centered(viewportSize.width, layout.width),
+			y: centered(viewportSize.height, layout.height),
 			zoom,
 		})
 	}, [layout.height, layout.width, viewportSize])

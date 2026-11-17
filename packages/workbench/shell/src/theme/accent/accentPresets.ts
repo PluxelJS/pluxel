@@ -16,6 +16,11 @@ export interface AccentPreset extends AccentPresetDefinition {
 /** 颜色预设 - 使用 Material tonal palette 生成完整色阶 */
 const ACCENT_PRESET_DEFINITIONS: AccentPresetDefinition[] = [
 	{
+		key: 'graphite',
+		name: '石墨蓝',
+		color: '#5aa2ee',
+	},
+	{
 		key: 'sage',
 		name: '鼠尾草',
 		color: '#7b907c',
@@ -90,7 +95,7 @@ export const ACCENT_PRESETS: AccentPreset[] = ACCENT_PRESET_DEFINITIONS.map((pre
 const ACCENT_PRESET_MAP = new Map(ACCENT_PRESETS.map((preset) => [preset.key, preset] as const))
 
 /** 默认主题色 key */
-export const DEFAULT_ACCENT_KEY = 'sage'
+export const DEFAULT_ACCENT_KEY = 'graphite'
 
 /** 根据 key 获取颜色预设 */
 export function getAccentPreset(key: string): AccentPreset {

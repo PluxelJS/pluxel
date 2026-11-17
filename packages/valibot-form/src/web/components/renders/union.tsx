@@ -145,14 +145,7 @@ function buildNextValue(args: {
 
 function renderEmptyBranch() {
 	return (
-		<Card
-			withBorder
-			p="md"
-			style={{
-				backgroundColor: 'var(--plx-panel-bg-muted, var(--mantine-color-default-hover))',
-				borderColor: 'var(--plx-panel-border, var(--mantine-color-default-border))',
-			}}
-		>
+		<Card withBorder p="md" bg="var(--mantine-color-default-hover)">
 			<Text size="sm" c="dimmed" ta="center">
 				此选项无需额外配置
 			</Text>

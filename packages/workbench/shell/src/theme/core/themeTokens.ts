@@ -1,126 +1,71 @@
-import type { MantineColorsTuple } from '@mantine/core'
-
 export type PlxThemeMode = 'light' | 'dark'
 
+/**
+ * Linear-style neutral layers. Chrome sits on `canvas`; documents float on `surface`
+ * (`--mantine-color-body`); `raised` marks inset summaries inside a document.
+ */
 export type PlxNeutralFoundation = {
-	bg: string
-	bgAlt: string
+	canvas: string
 	surface: string
-	surfaceStrong: string
-	surfaceMuted: string
+	raised: string
+	raisedHover: string
 	text: string
 	textMuted: string
+	/** Hairline between areas and around the document panel. */
 	border: string
+	/** Control and card outline (`--mantine-color-default-border`). */
 	borderStrong: string
-}
-
-export type PlxFixedLevels = {
-	info: string
-	warning: string
-	error: string
-	fatal: string
-}
-
-export type PlxLogSurfaceFoundation = {
-	panelBg: string
-	panelHeaderBg: string
-	listBg: string
-	buttonBg: string
-	inputBg: string
-	trace: string
-}
-
-export const PLX_MANTINE_COLORS = {
-	black: '#101416',
-	white: '#fcfdfb',
-	dark: [
-		'#edf2f7',
-		'#d7dee6',
-		'#abb6c2',
-		'#84919d',
-		'#49535d',
-		'#313940',
-		'#252c33',
-		'#1b2127',
-		'#161b20',
-		'#11161a',
-	] as MantineColorsTuple,
-	teal: [
-		'#edf9f4',
-		'#d7f1e6',
-		'#b0e0cb',
-		'#84cfad',
-		'#5bbd90',
-		'#3aa775',
-		'#2d845d',
-		'#23684a',
-		'#1c523b',
-		'#173f2f',
-	] as MantineColorsTuple,
 }
 
 export const PLX_NEUTRAL_FOUNDATIONS: Record<PlxThemeMode, PlxNeutralFoundation> = {
 	dark: {
-		bg: '#111519',
-		bgAlt: '#171c21',
-		surface: '#1e242a',
-		surfaceStrong: '#272e35',
-		surfaceMuted: '#1b2127',
-		text: '#e6eaee',
-		textMuted: '#adb6c0',
-		border: 'rgba(164, 176, 188, 0.22)',
-		borderStrong: 'rgba(164, 176, 188, 0.34)',
+		canvas: '#0e0f11',
+		surface: '#151619',
+		raised: '#1b1c20',
+		raisedHover: '#222327',
+		text: '#e4e5e9',
+		textMuted: '#8b909a',
+		border: '#222327',
+		borderStrong: '#2e3035',
 	},
 	light: {
-		bg: '#e9eef3',
-		bgAlt: '#f1f4f7',
+		canvas: '#f1f2f4',
 		surface: '#ffffff',
-		surfaceStrong: '#ffffff',
-		surfaceMuted: '#edf1f4',
-		text: '#1a2027',
-		textMuted: '#5d6975',
-		border: 'rgba(85, 103, 122, 0.22)',
-		borderStrong: 'rgba(85, 103, 122, 0.32)',
+		raised: '#f7f8f9',
+		raisedHover: '#eef0f2',
+		text: '#1b1e24',
+		textMuted: '#646a75',
+		border: '#e4e6e9',
+		borderStrong: '#d6d9de',
 	},
+}
+
+/** State overlays are translucent so they read the same on canvas and on surface. */
+export const PLX_STATE_INK: Record<PlxThemeMode, string> = {
+	dark: '#ffffff',
+	light: '#141923',
+}
+
+export type PlxFixedLevels = {
+	trace: string
+	info: string
+	warning: string
+	fatal: string
 }
 
 export const PLX_FIXED_LEVELS: Record<PlxThemeMode, PlxFixedLevels> = {
 	dark: {
+		trace: '#666b74',
 		info: '#7dbb9a',
 		warning: '#d8ac64',
-		error: '#e7a59d',
 		fatal: '#c1a8ea',
 	},
 	light: {
+		trace: '#8b909a',
 		info: '#2f7b63',
 		warning: '#a77434',
-		error: '#c9584c',
 		fatal: '#7557a3',
 	},
-}
-
-export const PLX_LOG_SURFACES: Record<PlxThemeMode, PlxLogSurfaceFoundation> = {
-	dark: {
-		panelBg: '#15191d',
-		panelHeaderBg: '#1a1f24',
-		listBg: '#101316',
-		buttonBg: '#1b2025',
-		inputBg: '#0f1316',
-		trace: '#8f9aa4',
-	},
-	light: {
-		panelBg: '#ffffff',
-		panelHeaderBg: '#f6f8fa',
-		listBg: '#fcfdff',
-		buttonBg: '#f1f4f7',
-		inputBg: '#ffffff',
-		trace: '#66727d',
-	},
-}
-
-export const PLX_APP_SHADOWS: Record<PlxThemeMode, string> = {
-	dark: '0 14px 30px rgba(2, 6, 23, 0.24)',
-	light: '0 8px 22px rgba(15, 23, 42, 0.04)',
 }
 
 export const PLX_LOG_ANSI16: Record<PlxThemeMode, readonly string[]> = {

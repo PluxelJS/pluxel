@@ -21,10 +21,10 @@ export function DroppableContainer({
 			ref={setNodeRef}
 			data-droppable-id={String(id)}
 			style={{
-				outline: isOver ? '1px dashed var(--plx-accent)' : undefined,
+				outline: isOver ? '1px dashed var(--mantine-primary-color-filled)' : undefined,
 				outlineOffset: isOver ? -1 : undefined,
-				background: isOver ? 'var(--plx-accent-soft)' : undefined,
-				borderRadius: 8,
+				background: isOver ? 'var(--mantine-primary-color-light)' : undefined,
+				borderRadius: 'var(--mantine-radius-sm)',
 				minHeight: minDropHeight,
 				...style,
 			}}

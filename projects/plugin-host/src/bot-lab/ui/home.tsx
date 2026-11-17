@@ -1,23 +1,13 @@
-import {
-	Alert,
-	Badge,
-	Card,
-	Group,
-	Loader,
-	MantineProvider,
-	SimpleGrid,
-	Stack,
-	Text,
-	Title,
-} from '@mantine/core'
+import { Alert, Badge, Card, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core'
+import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 import { homeScope, homeSnapshot } from './home.scope'
 
 function Home() {
 	const { host } = homeScope.useWorkbench()
 	const query = homeSnapshot.useQuery()
 	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
-			<Stack p="md" gap="md">
+		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
+			<Stack p="lg" gap="md">
 				<Group justify="space-between">
 					<Title order={2} size="h3">
 						机器人工作区
@@ -77,7 +67,7 @@ function Home() {
 					</Stack>
 				</Card>
 			</Stack>
-		</MantineProvider>
+		</WorkbenchMantineProvider>
 	)
 }
 export default homeScope.render(Home)

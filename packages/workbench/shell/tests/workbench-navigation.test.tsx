@@ -7,7 +7,10 @@ import { formatPluginNodeRoute, type PluginNodeAddress } from '@pluxel/core'
 import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkbenchNavigationProvider } from '../src/app/workbench/context'
-import { WorkspaceNavigation } from '../src/app/workbench/WorkspaceNavigation'
+import {
+	WorkspaceNavigation,
+	type WorkspaceCommand,
+} from '../src/app/workbench/WorkspaceNavigation'
 import {
 	compileWorkbenchSnapshot,
 	type WorkbenchTargetSnapshot,
@@ -27,18 +30,27 @@ vi.mock('../src/app/plugins/pluginOverview', () => ({
 						route: formatPluginNodeRoute(owner),
 						label: 'Accounts East config',
 						lifecycleState: 'running',
+						desiredState: 'running',
+						availability: 'available',
+						issues: [],
 					},
 					{
 						address: { ...owner, variant: 'fork', forkId: 'west' },
 						route: formatPluginNodeRoute({ ...owner, variant: 'fork', forkId: 'west' }),
 						label: 'Accounts West config',
 						lifecycleState: 'stopped',
+						desiredState: 'stopped',
+						availability: 'available',
+						issues: [],
 					},
 					{
 						address: { ...owner, variant: 'fork', forkId: 'north' },
 						route: formatPluginNodeRoute({ ...owner, variant: 'fork', forkId: 'north' }),
 						label: 'Accounts North config',
 						lifecycleState: 'running',
+						desiredState: 'running',
+						availability: 'available',
+						issues: [],
 					},
 				],
 			},
@@ -124,7 +136,9 @@ async function renderNavigation(
 	mode?: 'publications' | 'all',
 	activePluginRoute?: string,
 	activeEntryKey?: string,
+	commands?: readonly WorkspaceCommand[],
 ) {
+	const chosen = vi.fn()
 	const navigate = vi.fn()
 	const openTab = vi.fn()
 	const showNavigation = vi.fn()
@@ -140,12 +154,14 @@ async function renderNavigation(
 						activePluginRoute={activePluginRoute}
 						activeEntryKey={activeEntryKey}
 						onShowNavigation={showNavigation}
+						commands={commands}
+						onChosen={chosen}
 					/>
 				</WorkbenchNavigationProvider>
 			</MantineProvider>,
 		),
 	)
-	return { container, navigate, openTab, showNavigation }
+	return { container, navigate, openTab, showNavigation, chosen }
 }
 function button(label: string, exact = false) {
 	const result = [...document.querySelectorAll<HTMLButtonElement>('button')].find((element) =>
@@ -319,5 +335,52 @@ describe('workspace entry discovery', () => {
 		)
 		expect(showNavigation).toHaveBeenCalledOnce()
 		expect(navigate).not.toHaveBeenCalled()
+	})
+
+	it('lists workspace commands, runs the first match on Enter and moves focus with arrow keys', async () => {
+		const close = vi.fn()
+		const reset = vi.fn()
+		const commands: WorkspaceCommand[] = [
+			{ id: 'close', label: '关闭活动文档', description: '文档', shortcut: 'Ctrl+W', run: close },
+			{ id: 'disabled', label: '关闭所有文档', description: '文档', disabled: true, run: vi.fn() },
+			{ id: 'reset', label: '恢复默认布局', description: '布局', keywords: 'reset', run: reset },
+		]
+		const { container, navigate, chosen } = await renderNavigation(
+			undefined,
+			undefined,
+			undefined,
+			commands,
+		)
+		expect(container.querySelector('[aria-label="工作区命令"]')?.textContent).toContain('Ctrl+W')
+		const query = container.querySelector<HTMLInputElement>('[aria-label="查找工作区入口"]')!
+		await input(query, 'reset')
+		await act(async () =>
+			query.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })),
+		)
+		expect(reset).toHaveBeenCalledOnce()
+		expect(chosen).toHaveBeenCalledOnce()
+		expect(navigate).not.toHaveBeenCalled()
+
+		await input(query, '关闭')
+		expect(button('关闭所有文档').disabled).toBe(true)
+		const down = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })
+		await act(async () => query.dispatchEvent(down))
+		expect(down.defaultPrevented).toBe(true)
+		expect(document.activeElement).toBe(button('关闭活动文档'))
+		await act(async () =>
+			document.activeElement!.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+			),
+		)
+		// Disabled commands are skipped; the focus stays on the last enabled entry.
+		expect(document.activeElement).toBe(button('关闭活动文档'))
+		await act(async () =>
+			document.activeElement!.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }),
+			),
+		)
+		expect(document.activeElement).toBe(query)
+		await click(button('关闭所有文档'))
+		expect(close).not.toHaveBeenCalled()
 	})
 })

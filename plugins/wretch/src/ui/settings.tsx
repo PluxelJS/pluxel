@@ -3,7 +3,6 @@ import {
 	Button,
 	Card,
 	Group,
-	MantineProvider,
 	NumberInput,
 	Stack,
 	Table,
@@ -11,6 +10,7 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
+import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 import { IconDeviceFloppy, IconPlus, IconRestore, IconTrash } from '@tabler/icons-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { WretchManagedSettingsSnapshot } from '../workbench-contracts.ts'
@@ -134,7 +134,7 @@ function WretchSettingsPanel() {
 	}
 
 	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
+		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
 			<Stack gap="md" p="md">
 				<Stack gap={2}>
 					<Title order={4}>HTTP 设置</Title>
@@ -275,7 +275,7 @@ function WretchSettingsPanel() {
 					</Button>
 				</Group>
 			</Stack>
-		</MantineProvider>
+		</WorkbenchMantineProvider>
 	)
 }
 

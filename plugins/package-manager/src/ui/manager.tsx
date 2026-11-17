@@ -6,7 +6,6 @@ import {
 	Code,
 	Group,
 	Loader,
-	MantineProvider,
 	Stack,
 	Table,
 	Tabs,
@@ -14,6 +13,7 @@ import {
 	Textarea,
 	Title,
 } from '@mantine/core'
+import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 import { IconDownload, IconRefresh, IconTrash } from '@tabler/icons-react'
 import { useState } from 'react'
 import type { PackageInstallPlan, PackageMutationResult } from '../contracts.ts'
@@ -76,8 +76,8 @@ export function Manager() {
 	}
 
 	return (
-		<MantineProvider forceColorScheme={host.colorScheme}>
-			<Stack gap="md" p="md">
+		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
+			<Stack gap="md" p="lg">
 				<Group justify="space-between" align="flex-start">
 					<Stack gap={2}>
 						<Title order={3}>Plugin packages</Title>
@@ -310,7 +310,7 @@ export function Manager() {
 					</Tabs.Panel>
 				</Tabs>
 			</Stack>
-		</MantineProvider>
+		</WorkbenchMantineProvider>
 	)
 }
 

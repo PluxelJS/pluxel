@@ -126,7 +126,7 @@ export function PluginGraphScreen({ pathname }: { pathname: string }) {
 
 	return (
 		<div className="plx-pluginGraphPage">
-			<Paper withBorder radius="sm" p="sm" className="plx-pluginGraphToolbar">
+			<Box className="plx-pluginGraphToolbar">
 				<Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
 					<Stack gap={4}>
 						<Group gap="xs" wrap="wrap">
@@ -208,7 +208,7 @@ export function PluginGraphScreen({ pathname }: { pathname: string }) {
 						</Paper>
 					) : null}
 				</Box>
-			</Paper>
+			</Box>
 
 			{graphState.error ? (
 				<Alert color="yellow" icon={<IconAlertTriangle size={17} />}>
@@ -393,7 +393,6 @@ function InspectorShell({
 		<Paper
 			component="aside"
 			withBorder
-			radius="sm"
 			p="sm"
 			className="plx-pluginGraphInspector"
 			aria-label={`依赖图检查器：${title}`}
@@ -419,7 +418,7 @@ function InspectorRelation({
 	node?: PluginGraphVisualModel['nodes'][number]
 }) {
 	return (
-		<Paper withBorder radius="sm" p="xs">
+		<Paper p="xs" bg="var(--plx-raised)">
 			<Text size="sm" fw={600}>
 				{label}
 			</Text>

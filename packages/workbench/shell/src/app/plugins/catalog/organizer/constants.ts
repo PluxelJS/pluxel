@@ -8,9 +8,9 @@ export type RowDensity = {
 }
 
 export const DENSITY: Record<Density, RowDensity> = {
-	comfortable: { rowH: 38, px: 10, py: 8, font: 'sm' },
-	compact: { rowH: 30, px: 8, py: 4, font: 'xs' },
-	ultra: { rowH: 22, px: 6, py: 1, font: 'xs' },
+	comfortable: { rowH: 40, px: 12, py: 8, font: 'sm' },
+	compact: { rowH: 34, px: 10, py: 6, font: 'sm' },
+	ultra: { rowH: 28, px: 8, py: 2, font: 'xs' },
 }
 
 export const FILTERED_FLAT_VIRTUALIZE_THRESHOLD = 300

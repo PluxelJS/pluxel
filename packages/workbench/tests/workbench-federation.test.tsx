@@ -154,6 +154,7 @@ describe('Workbench Federation activation', () => {
 				'@pluxel/workbench/internal/react',
 				'@pluxel/workbench',
 				'@pluxel/workbench/client',
+				'@pluxel/workbench/mantine',
 				'@pluxel/workbench/react',
 				'react',
 				'react-dom',
