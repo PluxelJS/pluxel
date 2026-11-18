@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
-import { vault } from '@pluxel/services/vault'
+import { defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
+import { createResolvedHost } from '@pluxel/host/internal'
 import { createTestHost } from '@pluxel/test'
 import type {
 	Browser,
@@ -192,7 +192,7 @@ it('preserves effects registration failure if closing its acquired native connec
 })
 
 it('closes a native connection that arrives after its generation timed out', async () => {
-	await using host = await createTestHost({ policy: { drainTimeoutMs: 20 } })
+	await using host = await createTestHost({ policy: { execution: { drainTimeoutMs: 20 } } })
 	const entered = Promise.withResolvers<AbortSignal>()
 	const connected = Promise.withResolvers<Browser>()
 	nativeAcquire = (signal) => {
@@ -390,25 +390,22 @@ it.each(['cdp', 'playwright'] as const)(
 	'loads a %s connection through real Vault env bindings without Workbench',
 	async (protocol) => {
 		const application = defineHostApplication(() => ({
-			plugins: [PlaywrightPlugin],
-			services: [vault({ backend: 'bindings' })],
-			envBindings: [
-				envBinding(PlaywrightPlugin.nodeAddress(), {
-					vault: {
-						schema: PlaywrightVaultSchema,
-						mapping: { primary: { endpoint: 'BROWSER_ENDPOINT', headers: 'BROWSER_HEADERS' } },
-					},
-				}),
+			plugins: [
+				{
+					plugin: PlaywrightPlugin,
+					autoStart: true,
+					config: { connectionKey: 'primary', protocol },
+					envBindings: [
+						envBinding({
+							vault: {
+								schema: PlaywrightVaultSchema,
+								mapping: { primary: { endpoint: 'BROWSER_ENDPOINT', headers: 'BROWSER_HEADERS' } },
+							},
+						}),
+					],
+				},
 			],
-			config: {
-				records: [
-					{
-						owner: PlaywrightPlugin.nodeAddress(),
-						config: { connectionKey: 'primary', protocol },
-					},
-				],
-			},
-			policy: { autoStart: [PlaywrightPlugin.nodeAddress()] },
+			coreConfig: { vault: { backend: 'bindings' } },
 		}))
 		const endpoint = 'wss://browser.invalid/?token=super-secret'
 		const headers = { Authorization: 'Bearer secret-header' }
@@ -418,15 +415,7 @@ it.each(['cdp', 'playwright'] as const)(
 			bindings: {},
 			env: { BROWSER_ENDPOINT: endpoint, BROWSER_HEADERS: JSON.stringify(headers) },
 		})
-		const host = await createHost({
-			plugins: resolved.plugins,
-			services: resolved.services,
-			vaultBindings: resolved.vaultBindings,
-			name: resolved.name,
-			config: resolved.config,
-			policy: resolved.policy,
-			runtime: resolved.runtime,
-		})
+		const host = await createResolvedHost(resolved)
 		try {
 			await host.start()
 			const status = await host.status()
@@ -442,7 +431,7 @@ it.each(['cdp', 'playwright'] as const)(
 )
 
 it('fails safely when Vault is configured but the selected connection record is absent', async () => {
-	await using host = await createTestHost({ services: [vault({ backend: 'bindings' })] })
+	await using host = await createTestHost({ coreConfig: { vault: { backend: 'bindings' } } })
 	const result = await host.commitExpectFail((change) => {
 		change.start(PlaywrightPlugin.nodeAddress(), { initialConfig: { connectionKey: 'missing' } })
 	})
@@ -531,25 +520,22 @@ it('reports native protocol failure safely without retrying CDP', async () => {
 
 it('validates a Vault endpoint against the selected native protocol before connecting', async () => {
 	const application = defineHostApplication(() => ({
-		plugins: [PlaywrightPlugin],
-		services: [vault({ backend: 'bindings' })],
-		envBindings: [
-			envBinding(PlaywrightPlugin.nodeAddress(), {
-				vault: {
-					schema: PlaywrightVaultSchema,
-					mapping: { primary: { endpoint: 'BROWSER_ENDPOINT' } },
-				},
-			}),
+		plugins: [
+			{
+				plugin: PlaywrightPlugin,
+				autoStart: true,
+				config: { connectionKey: 'primary', protocol: 'playwright' },
+				envBindings: [
+					envBinding({
+						vault: {
+							schema: PlaywrightVaultSchema,
+							mapping: { primary: { endpoint: 'BROWSER_ENDPOINT' } },
+						},
+					}),
+				],
+			},
 		],
-		config: {
-			records: [
-				{
-					owner: PlaywrightPlugin.nodeAddress(),
-					config: { connectionKey: 'primary', protocol: 'playwright' },
-				},
-			],
-		},
-		policy: { autoStart: [PlaywrightPlugin.nodeAddress()] },
+		coreConfig: { vault: { backend: 'bindings' } },
 	}))
 	const resolved = await resolveHostApplication(application, {
 		root: process.cwd(),
@@ -557,15 +543,7 @@ it('validates a Vault endpoint against the selected native protocol before conne
 		bindings: {},
 		env: { BROWSER_ENDPOINT: 'https://browser.invalid/?token=secret-endpoint' },
 	})
-	const host = await createHost({
-		plugins: resolved.plugins,
-		services: resolved.services,
-		vaultBindings: resolved.vaultBindings,
-		name: resolved.name,
-		config: resolved.config,
-		policy: resolved.policy,
-		runtime: resolved.runtime,
-	})
+	const host = await createResolvedHost(resolved)
 	try {
 		await host.start()
 		const status = await host.status()

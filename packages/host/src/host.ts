@@ -1,10 +1,4 @@
 import { validateInputBindingCandidates } from './input-binding-contract'
-import {
-	HostVaultBindings,
-	type HostVaultBindingRecord,
-	type HostEnvironmentBinding,
-	type HostFileBinding,
-} from './bindings'
 import { readHostCatalogProvenance } from './catalog-provenance'
 import { readHostPluginStatusOverview, type HostPluginStatusOverview } from './status'
 import { ensureFork, removeFork, type ForkEnsureResult, type ForkRemoveResult } from './forks'
@@ -19,6 +13,7 @@ import {
 	type HostPluginConfig,
 } from './config'
 import {
+	formatPluginNodeReference,
 	type Context,
 	type PluginConstructor,
 	type PluginNodeAddress,
@@ -33,49 +28,38 @@ import {
 	consumePluginDefinitionCandidate,
 	requireConfigService,
 	requirePluginService,
+	requireVaultHost,
+	snapshotVaultBindings,
 } from '@pluxel/core/internal'
 import { createCoreContextHost, prepareCoreContext } from '@pluxel/core/host'
+import { planHostServices, prepareHostServices, createHostServiceLifecycle } from './services'
 import {
-	planHostServices,
-	prepareHostServices,
-	createHostServiceLifecycle,
-	type HostService,
-} from './services'
-import { createPluginCatalogSnapshot, type PluginCatalogSnapshot } from './catalog'
+	createPluginCatalogSnapshot,
+	pluginCatalogEntry,
+	type PluginCatalogSnapshot,
+} from './catalog'
 import type { PluginApplyReport, HostOperationOptions } from './coordinator'
 import { installPluginHostCoordinator, requirePluginHostCoordinator } from './install'
-import { snapshotHostPolicy, HostStateStore } from './state-store'
+import { HostStateStore } from './state-store'
 import { resolveHostStoreStorage } from './document-storage'
 import { HostConfigStore } from './config-store'
-import { snapshotHostRuntime, type HostRuntimeOptions } from './runtime'
-export type { HostRuntimeOptions } from './runtime'
-import { snapshotHostConfig, type HostConfigOptions } from './config-records'
-import type { HostPolicyOptions } from './policy'
+import { assertDataObject } from './config-records'
 import { createHostPolicy, type HostPolicy } from './policy-management'
 import type { PluginSource } from './sources'
+import {
+	HOST_DECLARATION_FIELDS,
+	snapshotHostDeclarations,
+	type HostDeclarations,
+	type HostOptions,
+	type ResolvedHostOptions,
+} from './node-declarations'
 
-type HostBaseOptions = Readonly<{
-	/** Positive service list, fixed before root creation. Omitted means no additional services. */
-	services?: readonly HostService[]
-	/** Loaded Plugin constructors for the catalog. Select their nodes separately with policy.autoStart or startNode. */
-	plugins: readonly PluginConstructor[]
-	/** Diagnostic identity; independent of product branding. */
-	name?: string
-	/** Fixed facilities and persisted declarations for this Host. */
-	runtime?: HostRuntimeOptions
-	policy?: HostPolicyOptions
-	config?: HostConfigOptions
-	/** Resolved deployment records installed before Plugin admission. */
-	vaultBindings?: readonly HostVaultBindingRecord[]
-}>
+export type { HostOptions } from './node-declarations'
 
 /** Complete configuration returned by an application factory for one fresh Host. */
-export type HostApplication = Omit<HostBaseOptions, 'vaultBindings'> &
+export type HostApplication = HostDeclarations &
 	Readonly<{
-		/** Explicit config overlays and complete read-only Vault records. */
-		envBindings?: readonly HostEnvironmentBinding[]
-		fileBindings?: readonly HostFileBinding[]
-		/** Discover implementations into the same catalog as plugins; addresses alone never load code. */
+		/** Discover implementations into the same catalog as the directly selected constructors. */
 		sources?: readonly PluginSource[]
 		prepare?(input: {
 			host: PluginHost
@@ -91,8 +75,6 @@ export type HostApplication = Omit<HostBaseOptions, 'vaultBindings'> &
 			startup: import('./application').HostStartupContext
 		}): void | Promise<void>
 	}>
-
-export type HostOptions = HostBaseOptions
 
 export interface PluginHost extends AsyncDisposable {
 	readonly ctx: RootContext
@@ -138,59 +120,48 @@ export interface PluginHost extends AsyncDisposable {
 
 /** Validate and prepare a fixed service composition. Plugin generations start only through start(). */
 export async function createHost(options: HostOptions): Promise<PluginHost> {
-	if (!options || typeof options !== 'object' || Array.isArray(options))
-		throw new TypeError('[host] createHost options must be an object')
-	const fields = new Set([
-		'plugins',
-		'services',
-		'name',
-		'runtime',
-		'policy',
-		'config',
-		'vaultBindings',
-	])
-	for (const key of Object.keys(options))
-		if (!fields.has(key)) throw new TypeError(`[host] createHost includes unsupported "${key}"`)
-	if (!Array.isArray(options.plugins)) throw new TypeError('[host] plugins must be an array')
-	if (options.services !== undefined && !Array.isArray(options.services))
-		throw new TypeError('[host] services must be an array')
-	// Capture the selected option containers before validation or storage introduces an await.
-	// Borrowed storage, callbacks and capability handles retain their original identity.
-	if (options.name !== undefined && (typeof options.name !== 'string' || !options.name.trim()))
-		throw new TypeError('[host] name must be a non-empty string')
-	options = {
-		...options,
-		runtime: snapshotHostRuntime(options.runtime),
-		policy: snapshotHostPolicy(options.policy),
-		config: snapshotHostConfig(options.config),
-		...(options.vaultBindings ? { vaultBindings: [...options.vaultBindings] } : {}),
-	}
-	const { documents, ...coreOptions } = options.runtime!
-	const configOptions = options.config!
-	const executionBinding = createCorePluginExecutionBinding()
+	assertDataObject(options, 'createHost options', [...HOST_DECLARATION_FIELDS, 'vaultBindings'])
+	const declaration = snapshotHostDeclarations(options)
+	if (declaration.bindings.envBindings.length > 0 || declaration.bindings.fileBindings.length > 0)
+		throw new TypeError(
+			'[host] envBindings and fileBindings require an application startup context',
+		)
+	return createResolvedHost({
+		...declaration.options,
+		...(options.vaultBindings === undefined
+			? {}
+			: { vaultBindings: snapshotVaultBindings(options.vaultBindings) }),
+	})
+}
+
+/** @internal Prepare the already captured declaration and its selected catalog. */
+export async function createResolvedHost(options: ResolvedHostOptions): Promise<PluginHost> {
+	const executionBinding = createCorePluginExecutionBinding(options.nodeStartTimeoutMs)
 	const fixed = [...options.plugins]
-	catalog(1, fixed) // Admit explicit definitions before creating any root resources.
+	assertDeclaredForks(catalog(1, fixed), options.declaredNodes)
 	const services = planHostServices(options.services ?? [])
 	await validateInputBindingCandidates(fixed, options)
 	let configStorageOptions: ConstructorParameters<typeof HostConfigStore>[2] | undefined
-	const shape = createCoreContextHost({
-		...coreOptions,
-		executionBinding,
-		name: options.name,
-		createLifecycleHooks: (ctx) => createHostServiceLifecycle(ctx, services),
-		services: services.flatMap((service) => [...service.provides]),
-		createConfigService: (ctx) => {
-			if (!configStorageOptions)
-				throw new Error('[host] document storage factories must not read Host config')
-			return new HostConfigStore(ctx, configOptions, configStorageOptions)
+	const shape = createCoreContextHost(
+		{
+			executionBinding,
+			name: options.name,
+			createLifecycleHooks: (ctx) => createHostServiceLifecycle(ctx, services),
+			services: services.flatMap((service) => [...service.provides]),
+			createConfigService: (ctx) => {
+				if (!configStorageOptions)
+					throw new Error('[host] document storage factories must not read Host config')
+				return new HostConfigStore(ctx, options.config, configStorageOptions)
+			},
 		},
-	})
+		options.coreConfig,
+	)
 	const ctx = shape.createRoot(options.name)
 	try {
-		const configStorage = resolveHostStoreStorage(documents?.config, ctx, 'config')
-		const stateStorage = resolveHostStoreStorage(documents?.state, ctx, 'state')
+		const configStorage = resolveHostStoreStorage(options.config.document, ctx, 'config')
+		const stateStorage = resolveHostStoreStorage(options.policy.document, ctx, 'state')
 		configStorageOptions = configStorage
-		const state = new HostStateStore(ctx, options.policy, stateStorage)
+		const state = new HostStateStore(ctx, options.policy, stateStorage, options.declaredNodes)
 		hostStateStores.set(ctx, state)
 		ctx.effects.defer(
 			() => {
@@ -202,9 +173,8 @@ export async function createHost(options: HostOptions): Promise<PluginHost> {
 		executionBinding.bind(state.executionSnapshot())
 		await prepareCoreContext(ctx)
 		installPluginHostCoordinator(ctx, { state })
+		if (options.vaultBindings?.length) requireVaultHost(ctx).installBindings(options.vaultBindings)
 		await prepareHostServices(ctx, services, fixed)
-		if (options.vaultBindings?.length)
-			await ctx.service(HostVaultBindings).install(options.vaultBindings)
 		const store = requireConfigService(ctx) as HostConfigStore
 		await store.observe(() =>
 			reloadSavedConfig(ctx, () => {
@@ -233,7 +203,7 @@ export async function createHost(options: HostOptions): Promise<PluginHost> {
 }
 
 function createPreparedHost(
-	options: HostOptions,
+	options: ResolvedHostOptions,
 	fixed: readonly PluginConstructor[],
 	ctx: RootContext,
 ): PluginHost {
@@ -270,8 +240,10 @@ function createPreparedHost(
 		const operation = async () => {
 			assertOpen()
 			await validateInputBindingCandidates(next, options)
+			const nextCatalog = catalog(++revision, next, ctx)
+			assertDeclaredForks(nextCatalog, options.declaredNodes)
 			const report = await coordinator.update({
-				catalog: catalog(++revision, next, ctx),
+				catalog: nextCatalog,
 				reason: 'catalog-update',
 				onGraphCommitted: committed,
 			})
@@ -483,6 +455,18 @@ function createPreparedHost(
 		close,
 		[Symbol.asyncDispose]: close,
 	})
+}
+
+function assertDeclaredForks(
+	snapshot: PluginCatalogSnapshot,
+	nodes: readonly PluginNodeAddress[],
+): void {
+	for (const node of nodes) {
+		if (node.variant !== 'fork') continue
+		const entry = pluginCatalogEntry(snapshot, node.definition)
+		if (entry && !entry.candidate.declaration.forkable)
+			throw new TypeError(`[host] ${formatPluginNodeReference(node)} requires a forkable Plugin`)
+	}
 }
 
 function catalog(

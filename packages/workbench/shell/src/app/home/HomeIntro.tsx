@@ -28,6 +28,7 @@ import { usePluginOverview, type PluginStatusEntry } from '../plugins/pluginOver
 import { pluginAttention, type PluginAttention } from '../plugins/pluginOverviewModel'
 import { useRuntimeMeta } from '../product'
 import { useRuntimeUpdates } from '../runtimeUpdates'
+import { HostExecutionPolicy } from './HostExecutionPolicy'
 
 type WorkspaceLink = {
 	title: string
@@ -108,6 +109,9 @@ export function HomeIntro() {
 						<Button component={RouterLinkAdapter} to="/logs" variant="default">
 							查看实时日志
 						</Button>
+						{runtimeMeta?.protocol.capabilities.includes('host.policy') ? (
+							<HostExecutionPolicy />
+						) : null}
 					</Group>
 				</div>
 

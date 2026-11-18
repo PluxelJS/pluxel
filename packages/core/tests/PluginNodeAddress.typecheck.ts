@@ -16,7 +16,7 @@ declare const forkId: string | undefined
 export const defaultNode: PluginDefaultNodeAddress = concrete.nodeAddress()
 export const forkNode: PluginForkNodeAddress = concrete.nodeAddress('east')
 export const maybeFork: PluginNodeAddress = concrete.nodeAddress(forkId)
-export const definition: PluginDefinitionAddress = token.definitionAddress()
+export const definition: PluginDefinitionAddress = token.address()
 
 class Concrete extends BasePlugin {
 	readonly count = 1
@@ -33,7 +33,7 @@ export const typedMaybeFork: PluginInstanceNodeAddress<Concrete> = Concrete.node
 export const wrongInstance: PluginInstanceNodeAddress<{ other(): void }> = Concrete.nodeAddress()
 
 abstract class Capability extends BasePlugin {}
-export const capability: PluginDefinitionAddress = Capability.definitionAddress()
+export const capability: PluginDefinitionAddress = Capability.address()
 
 // @ts-expect-error An omitted fork id describes a default node, never a fork.
 export const invalidFork: PluginForkNodeAddress = concrete.nodeAddress()

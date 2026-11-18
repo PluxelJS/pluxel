@@ -43,8 +43,17 @@ const subject = 'admin:alice'
 
 it('executes a portable task on a real Host and creates fresh module locals on every run', async () => {
 	await using host = await createHost({
-		plugins: [Counter],
-		runtime: { documents: { config: false, state: false } },
+		plugins: [
+			{
+				plugin: Counter,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	await host.start()
 	await host.startNode(Counter.nodeAddress())
@@ -110,7 +119,12 @@ return {default: async (sdk, run) => {
 it('retains domain Err as a successful script value while defects and invalid payloads fail in their phase', async () => {
 	await using host = await createHost({
 		plugins: [],
-		runtime: { documents: { config: false, state: false } },
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	await host.start()
 	await using owner = createNodeScriptOwner({ ctx: host.ctx })
@@ -136,7 +150,12 @@ it('retains domain Err as a successful script value while defects and invalid pa
 it('retains the original unknown defect in a native Result.gen failure receipt', async () => {
 	await using host = await createHost({
 		plugins: [],
-		runtime: { documents: { config: false, state: false } },
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	await host.start()
 	await using owner = createNodeScriptOwner({ ctx: host.ctx })
@@ -158,8 +177,17 @@ it('retains the original unknown defect in a native Result.gen failure receipt',
 
 it('preserves committed Host changes and versions after an execution or result-encoding failure', async () => {
 	await using host = await createHost({
-		plugins: [Counter],
-		runtime: { documents: { config: false, state: false } },
+		plugins: [
+			{
+				plugin: Counter,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	await host.start()
 	await host.startNode(Counter.nodeAddress())
@@ -197,8 +225,17 @@ it('cancellation closes new SDK admission while an accepted mutation settles on 
 		release = resolve
 	})
 	await using host = await createHost({
-		plugins: [Counter],
-		runtime: { documents: { config: false, state: false } },
+		plugins: [
+			{
+				plugin: Counter,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	await host.start()
 	await host.startNode(Counter.nodeAddress())

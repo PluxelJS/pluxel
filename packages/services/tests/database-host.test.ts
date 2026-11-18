@@ -47,7 +47,7 @@ it.each(['owned', 'borrowed'] as const)(
 		let nativeClient: PGlite | undefined
 		const backend = pglite(borrowedClient ?? { dataDir: 'memory://' })
 		const host = await createHost({
-			plugins: [Owner],
+			plugins: [{ plugin: Owner }],
 			services: [
 				database({
 					backend: async (onError) => {

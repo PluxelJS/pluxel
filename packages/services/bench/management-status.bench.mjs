@@ -80,7 +80,7 @@ process.stdout.write(
 )
 
 for (const forkCount of [8, 1_000, 10_000]) {
-	const definition = StatusProvider.definitionAddress()
+	const definition = StatusProvider.address()
 	const forks = Array.from({ length: forkCount }, (_, index) => ({
 		definition,
 		variant: 'fork',
@@ -89,7 +89,9 @@ for (const forkCount of [8, 1_000, 10_000]) {
 	await using host = await createServiceInternalTestHarness({
 		services: [],
 		workbench: false,
-		policy: { forks },
+		pluginNodes: [
+			{ definition, forks: Object.fromEntries(forks.map(({ forkId }) => [forkId, {}])) },
+		],
 	})
 	host.add(StatusProvider)
 	await host.commit()

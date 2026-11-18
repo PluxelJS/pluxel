@@ -20,8 +20,8 @@ configs.use(ObjectSchema) / owned PluginPart declarations
 
 | 接入              | 当前入口与资源 owner                                                                                                                                                    |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ZenFS             | `runtime.zenfs: zenfs(...)` 快照原生 mount 声明，Core 拥有创建的 backend、隔离 mount table，传入 FileSystem 只借用；[FS](FS.md)                                         |
-| LogTape           | `runtime.logtape: logtape(...)` 接收原生 Config/同步 root factory，Core 拥有安装、身份、policy、排空；[Logging](LOGGING.md)                                             |
+| ZenFS             | `coreConfig.zenfs` 快照原生 mount 声明，Core 拥有创建的 backend、隔离 mount table，传入 FileSystem 只借用；[FS](FS.md)                                                  |
+| LogTape           | `coreConfig.logtape` 接收原生 Config/同步 root factory，Core 拥有安装、身份、policy、排空；[Logging](LOGGING.md)                                                        |
 | PostgreSQL/PGlite | 原生 driver 配置或借用实例，Database 拥有 owner schema、migration 和 scheduler；[Database](DATABASE.md)                                                                 |
 | OpenTelemetry     | `Otel` 接收原生 providers，`OtelPlugin` 提供可保存预设，generation 拥有交付 providers 的 flush/shutdown；[OTel](../docs/plugins/otel.md)                                |
 | Playwright        | 原生连接 hook 保留 connect/connectOverCDP 参数，Plugin 拥有连接、caller 拥有 BrowserContext、部署者拥有浏览器进程；[Browser](../docs/plugins/browser.md)                |
@@ -62,23 +62,34 @@ Host-vite 与 Management 委托同一 Host 用例。共享 report 投影将 Slot
 
 ## 存储与创建边界
 
-顶层 `config` 声明 node 输入/mode，`policy` 声明八项策略/mode；`runtime` 只选择 zenfs/logtape/tinybase/events 和 documents 接线。`runtime.documents.config/state` 各接受 false 或 `{ readOnly?, storage? }`。false 关闭该域 IO/订阅，readOnly 拒绝本实例管理写入，均不改变输入选择模式。
+节点条目提供输入与 mode。`config.document` 和 `policy.document` 各接受 `false` 或 `{ readOnly?, storage? }`。`false` 关闭该域 IO 和订阅，`readOnly` 拒绝本实例管理写入。输入优先级单独选择。
 
-storage 是同步 `(root: RootContext) => HostDocumentStorage`，在唯一 root 创建后、IO 前各求值一次。factory 只接线，不执行 IO、不访问尚未准备的 Plugin/config，也不返回 Promise。`HostDocumentStorage` 的目录、原子 put、订阅和借用关闭边界由 [FS](FS.md#host-文档与关闭) 维护；默认借用 `services/host/<namespace>/<key>`，应用只需在 runtime.zenfs 选择一次 backend。
+storage 是同步 `(root: RootContext) => HostDocumentStorage`，在唯一 root 创建后、IO 前各求值一次。factory 只接线，不执行 IO、不访问尚未准备的 Plugin/config，也不返回 Promise。`HostDocumentStorage` 的目录、原子 put、订阅和借用关闭边界由 [FS](FS.md#host-文档与关闭) 维护；默认借用 `services/host/<namespace>/<key>`，应用只需在 coreConfig.zenfs 选择一次 backend。
 
-`HostConfigStore` 继承 CoreConfigService，但分别持有 declaration/saved input 和已校验 output；`HostStateStore` 持有 policy input、effective value、revision。config 仅接受 SuperJSON v4，state 仅接受 v7。缺失文档不写入声明或默认种子；明确 mutation 才保存稀疏原始记录。内容摘要去重，发布等待保存确认，坏格式保留原文件。
+`HostConfigStore` 继承 CoreConfigService，但分别持有 declaration/saved input 和已校验 output；`HostStateStore` 持有 policy input、effective value、revision。config 仅接受 SuperJSON v4，state 仅接受 v8。缺失文档不写入声明或默认种子；明确 mutation 才保存稀疏原始记录。内容摘要去重，发布等待保存确认，坏格式保留原文件。
 
 `createCoreContextHost({ createConfigService })` 只允许在固定 CONFIG_SERVICE 惰性 factory 位置创建服务。Host 读取 stores、组合 policy，一次绑定 PluginService 执行参数，再准备 coordinator 和服务。失败/关闭沿[同一 Host 资源路径](HOST.md#服务与资源)，先排空协调操作，再排空 store 写入并聚合错误。
+
+### v7 运行策略迁移
+
+将旧工厂返回的 `policy` 按原样导出为 JSON，放在 `{ "policy": { ... } }` 中。可附加 `nodes` 数组，将其他需要核对的节点地址纳入比较。构建 Host 后，在仓库根目录预览转换。
+
+```sh
+vp run @pluxel/host#compile
+vp exec node packages/host/scripts/migrate-policy-v7.mjs --policy author.json --state state.json
+```
+
+报告的 `declaration` 提供逐节点代码选项，将已有固定实现的选项合入对应 `plugins` 条目。`comparison` 和 `global` 逐项比对采用结果，`adjustments` 列出为保留旧遮盖语义而修改的保存选择。核对报告及 `futureKeys` 后，停下写入该文档的旧 Host，以相同命令附加 `--write`。工具在 `unresolved` 为空且目标文件仍为本次读取的内容时原子替换文档。
 
 ## Static startup config
 
 每次启动重新执行 `HostApplicationFactory(startup)`。startup 提供 mode、root、env、platform bindings 和 deployment facts，工厂据此选择完整应用。
 
-`envBinding(owner, inputs)` / `fileBinding(owner, inputs)` 显式选取 config/Vault 输入。owner 是 canonical node address；config schema 必须与 configs.use metadata 为同一对象，helper 从 schema input 推导 mapping/key，Vault 根 schema 描述 KV key 到记录的 shape。
+`envBinding(inputs)` 和 `fileBinding(inputs)` 显式选取 config/Vault 输入。Host 从条目所在节点取得 canonical owner。config schema 与 `configs.use()` 的 metadata 为同一个对象，helper 从 schema input 推导 mapping/key。Vault 根 schema 定义 KV key 到记录的 shape。
 
-Host 从不可变 startup.env 解析 env，JSON 文件路径相对 startup.root。来源 metadata 只含路径、kind/name、readonly，不含值。声明按 `config.records → fileBindings.config → envBindings.config` 合成，后者覆盖同路径。
+Host 从不可变 startup.env 解析 env，JSON 文件路径相对 startup.root。来源 metadata 只含路径、kind/name、readonly，不含值。声明按 `节点.config → fileBindings.config → envBindings.config` 合成，后者覆盖同路径。
 
-每个 node mode 按 `record.mode → config.mode → declared-first` 选择：
+每个 node mode 按 `节点.configMode → config.mode → inputMode → declared-first` 选择：
 
 | mode           | 选择规则               |
 | -------------- | ---------------------- |
@@ -86,15 +97,15 @@ Host 从不可变 startup.env 解析 env，JSON 文件路径相对 startup.root�
 | saved-first    | 保存输入优先，声明补缺 |
 | declared-only  | 只用声明               |
 
-default/fork 独立选择值和 mode，Part 属于 owner 聚合输入。mode-only record 合法；重复 owner、mode/config 均缺失会拒绝。地址在快照时保留纯身份，按当前 catalog 解析，不触发加载、fork 创建或启动。
+fork 省略代码 `config` 时以默认节点的代码数据为起点，显式空对象从空输入开始。其他节点字段、保存值和校验结果分别归属各自节点。按地址声明可以先于实现接纳，Host 保留输入并投影 unavailable。Part 归入所在节点的聚合输入。
 
 原始来源先通过可移植数据树校验；普通对象递归合并，array/tuple 整项替换。只有最终 effective input 执行完整 schema。被遮盖值仅验证结构，在取消遮盖或 definition 改变时重新验证。env/file 不建立管理写锁，mode、权限、文档 readOnly 独立。来源证明保存在内部 WeakMap，与 shadowedPaths 在同一协调查询投影。
 
 `patch/validate({ set?, remove? })` 先按 string[] 路径删除 saved fields，再递归合并 set，最后校验一次。`reset(owner)` 删除保存记录，带 paths 时只删指定嵌套字段，`[]` 只读。reset 恢复继承；路径非空、有界、安全、互不重叠，array 不允许按 index 删除。Core mutation 不能绕过 Host 事务。
 
-policy 的四个图列表整项选择：显式空数组是值，省略才继承。四个执行参数采用同样 mode，各来源独立校验数值。管理编辑可保存被遮盖输入；承诺实际动作的单项命令在副作用前拒绝 policy_shadowed，并以 writtenFields 描述整列接管。forks 保存 canonical address，目录推导的 provider defaults 只属于当前 graph。执行参数在本 Host 固定，新保存目标以 requires-host-recreation 报告，见[八项策略](../docs/host/configuration.md#八项运行策略)。
+Host 按节点选择自动启动与 fork 可用性，按 consumer 和 requirement 选择 provider override。保存输入分别用 `false` 或 `null` 表达禁用或清除。原始 `patch` 按键写入，`reset` 删除目标，批量撤销可同时写入先前记录并删除原先缺失的键。有效策略再投影为协调器所需的启动根、可用 fork 和依赖覆盖，并核验 fork 引用。应用的 provider defaults 整项选择，execution 独立选择各字段。节点级 `policyMode` 优先于 `policy.modes[field]`、`policy.mode` 和 `inputMode`。原始策略编辑可以保存被遮盖值。要求实际生效的命令在副作用前报告 `policy_shadowed`。已保存但待切换的执行参数以 `requires-host-recreation` 报告。
 
-Vault 绑定在服务准备后、Plugin admission 前通过 root-only HostVaultBindings 安装。动态 candidate 接纳前验证 config metadata 和已声明路径，失败保留 catalog。Vault 根 schema 是 Host 固定部署输入，只在首次解析校验；Plugin replacement 不重跑 transform。更改 Vault schema/来源需重建 Host，私有 KV 业务校验仍归 Plugin。命名子空间使用 vault.namespace。
+Host 在 Plugin admission 前通过 Core 的内部注入边界安装已校验的 Vault 部署记录。动态 candidate 接纳前验证 config metadata 和已声明路径，失败保留 catalog。Vault 根 schema 是 Host 固定部署输入，只在首次解析校验；Plugin replacement 不重跑 transform。更改 Vault schema/来源需重建 Host，私有 KV 业务校验仍归 Plugin。命名子空间使用 vault.namespace。
 
 ## 外部保存配置
 
@@ -123,7 +134,7 @@ stage 对外不可见。flush 失败不发布候选，返回 persistence_failed/
 
 persistence 独立报告 unchanged、confirmed（session/declared-durable/unknown retention）或 unknown。Plugin 拥有业务状态、外部资源、幂等与 cleanup，listener 已发生的副作用不会自动回滚。HostStateStore 同 revision 复用 immutable snapshot；readonly 读取既有文档，不创建缺失文件或修复坏文件。
 
-Management catalog.statePolicy 附带同一 committed view 的 managedRevision。auto-start batch 在一次 exclusive session 检查基线，再逐项提交/投影，最后返回最终令牌；Workbench 撤销使用原操作令牌，不从刷新列表或 runtimeStateRevision 推断。生命周期 batch/准入前拒绝不提供该令牌；批量仍保留逐项部分成功和 unknown。
+Management catalog.statePolicy 附带同一 committed view 的 managedRevision。auto-start batch 在一次 exclusive session 检查基线，再逐项提交/投影，最后返回最终令牌；Workbench 撤销使用原操作令牌恢复修改前的原始输入。生命周期 batch/准入前拒绝不提供该令牌；批量仍保留逐项部分成功和 unknown。
 
 ## Running generation notification
 
@@ -137,7 +148,7 @@ reject 停止后续通知，保留 framework-confirmed fields/revision，Plugin 
 
 RPC 从 unknown 校验 owner、mutation descriptor 和 fieldPath。原始树拒绝 accessor/class、稀疏数组、非有限数值、undefined/symbol、循环及危险键；fieldPath 非空、有界、安全。结构失败为 invalid_input，schema validation_failed 保留完整原始输入；未知 schema/programming error 继续 reject，不能按 message 猜分类。
 
-Core revision cache 按 owner 索引；Host 原始记录选择随记录数增长，完整文档重写 O(B)。每次明确 mutation 等待自身确认，不后台 debounce 或重试。FS 普通文档预算为 8 MiB，独立于 TinyBase；无界 config/fork 规模需改变存储实现。
+Core revision cache 按 owner 索引；Host 按节点索引代码声明，完整文档重写 O(B)。每次明确 mutation 等待自身确认，不后台 debounce 或重试。FS 普通文档预算为 8 MiB，独立于 TinyBase；无界 config/fork 规模需改变存储实现。
 
 ## Toolchain metadata
 

@@ -106,7 +106,7 @@ export async function readNativeWorkbenchArtifacts(
 		const loaded = readLoadedPluginModule(plugin)
 		if (!loaded) continue
 		const definitions = modules.get(loaded.module) ?? new Set<string>()
-		definitions.add(pluginDefinitionIndexKey(plugin.definitionAddress()))
+		definitions.add(pluginDefinitionIndexKey(plugin.address()))
 		modules.set(loaded.module, definitions)
 	}
 	const selected = new Set<string>()

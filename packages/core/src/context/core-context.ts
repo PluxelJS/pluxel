@@ -10,6 +10,7 @@ import type { ConfigService } from '../services/config/ConfigService'
 import type { PluginService } from '../plugins/runtime/PluginService'
 import type { FsService, FsPromises, FsRequirement } from '../fs/service'
 import type { TinyBaseRuntime } from '../tinybase/service'
+import type { VaultRuntime } from '../vault/runtime'
 import type { RuntimeLogging } from '../logging/logging'
 import { pluginNodePhysicalKey } from '../internal/plugin-address'
 
@@ -19,6 +20,7 @@ export interface CoreRuntime {
 	readonly plugins: PluginService
 	readonly fs: FsService
 	readonly tinybase: TinyBaseRuntime
+	readonly vault: VaultRuntime
 	readonly events: ReturnType<typeof createEventsBackend>
 	readonly logging: RuntimeLogging | undefined
 }
@@ -80,6 +82,11 @@ const pluginProperties: PropertyDescriptorMap = {
 			const directory = `plugins/${pluginNodePhysicalKey(address)}`
 			const filesystem = requireCoreRuntime(this).fs
 			return (state.fs = (requirement) => filesystem.directory(directory, requirement))
+		},
+	},
+	vault: {
+		get(this: Context) {
+			return requireCoreRuntime(this).vault.forOwner(stateOf(this).scope)
 		},
 	},
 	tinybase: {

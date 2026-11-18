@@ -31,7 +31,7 @@ export type TestHostOptions<TWorkbench extends boolean = boolean> = Omit<
 	'services' | 'management'
 > &
 	Readonly<{
-		/** Complete service list. Defaults to []; no implicit standardServices installation. */
+		/** Complete service list. Defaults to []; no implicit service installation. */
 		services?: ServiceTestHostOptions['services']
 		/** Defaults to workbench's value. Explicit false conflicts with workbench: true. */
 		management?: boolean

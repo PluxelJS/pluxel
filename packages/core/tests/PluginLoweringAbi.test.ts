@@ -142,7 +142,7 @@ describe('Plugin lowering ABI v2', () => {
 		expect(Object.isFrozen(candidate.declaration)).toBe(true)
 		expect(Object.isFrozen(candidate.declaration.parts)).toBe(true)
 		expect(Object.isFrozen(candidate.declaration.parts[0])).toBe(true)
-		expect(CacheToken.definitionAddress()).toEqual(address('CacheToken'))
+		expect(CacheToken.address()).toEqual(address('CacheToken'))
 		expect(CachePlugin.nodeAddress()).toMatchObject({ variant: 'default' })
 		expect(checkPluginDecorator(CachePlugin)).toBe(true)
 

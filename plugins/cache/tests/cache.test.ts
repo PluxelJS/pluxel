@@ -1,5 +1,8 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { createTestHost, type TestHost } from '@pluxel/test'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -16,7 +19,7 @@ import {
 } from '../src/index.ts'
 
 async function createHost(): Promise<TestHost> {
-	return await createTestHost({ services: standardServices() })
+	return await createTestHost({ services: [elysia(), commands(), nodeModules(), workers()] })
 }
 
 type User = { id: string; name: string }

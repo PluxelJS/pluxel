@@ -10,23 +10,26 @@ describe('static config environment production watch', () => {
 		await using fixture = await createFixture({
 			'schema.ts': schemaSource('First endpoint.'),
 			'plugin.ts': `
+				import { envBinding } from '@pluxel/host'
 				import { DemoConfig } from './schema'
 				export { DemoConfig } from './schema'
 				export class DemoPlugin {
 
 					readonly settings = this.configs.use(DemoConfig)
 				}
-				export const plugins = [DemoPlugin] as const
+				export const plugins = [{
+					plugin: DemoPlugin,
+					envBindings: [
+						envBinding({ config: { schema: DemoConfig, mapping: { endpoint: 'APP_ENDPOINT' } } }),
+					],
+				}] as const
 			`,
 			'entry.ts': `
-import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
-				import { DemoConfig, DemoPlugin, plugins } from './plugin'
+import { defineHostApplication } from '@pluxel/host'
+				import { plugins } from './plugin'
 				export default defineHostApplication(() => ({
 					name: 'watch-fixture',
 					plugins,
-					envBindings: [
-						envBinding(DemoPlugin.nodeAddress(), { config: { schema: DemoConfig, mapping: { endpoint: 'APP_ENDPOINT' } } }),
-					],
 				}))
 			`,
 		})

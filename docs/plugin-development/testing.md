@@ -67,10 +67,11 @@ it('能够启动插件并调用其方法', async () => {
 - `services`：挂载测试所需的服务列表（默认为 `[]`）。
 - `workbench`：设为 `true` 时启用 Workbench 测试环境驱动。
 - `policy` / `config`：传入自定义的初始策略或插件初始配置。
+- `vaultBindings`：使用与 Host 相同的部署记录格式，向指定插件注入只读凭据；后端通过 `coreConfig.vault` 选择。
 
 ## 按需挂载测试服务
 
-如果被测插件依赖 HTTP 路由或 Vault 密钥服务，可以在创建测试宿主时传入对应的服务工厂：
+被测插件需要 HTTP 等可选基础设施时，在创建测试宿主时传入对应的单项服务工厂。FS、TinyBase 与 Vault 是内建能力，无需安装：
 
 ### 测试 HTTP 插件
 
@@ -86,16 +87,29 @@ const response = await host.http.fetch(new URL('/health', host.http.origin))
 expect(await response.json()).toEqual({ ok: true })
 ```
 
-### 测试常用服务组合与 Vault
+### 测试单项服务与凭据
 
 ```ts no-twoslash
-import { standardServices } from '@pluxel/services'
-import { vault } from '@pluxel/services/vault'
+import { createTestHost } from '@pluxel/test'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { CredentialsPlugin } from './credentials-plugin'
 
 await using host = await createTestHost({
-	services: [...standardServices(), vault()],
+	services: [elysia(), commands()],
+	coreConfig: { vault: { backend: 'bindings' } },
+	vaultBindings: [
+		{
+			owner: CredentialsPlugin.nodeAddress(),
+			key: 'primary',
+			value: { token: 'test-token' },
+			source: 'env',
+		},
+	],
 })
 ```
+
+插件通过 `ctx.vault` 访问自己的凭据空间。`bindings` 后端只读，没有绑定的记录返回 `exists: false`；需要验证加密持久化或解锁状态时，选择加密后端并通过相应管理操作建立测试前置状态，见 [Vault](./vault.md)。
 
 ## 测试宿主核心 API
 

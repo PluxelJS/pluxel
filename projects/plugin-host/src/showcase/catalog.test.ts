@@ -1,92 +1,64 @@
 import { Cache, CacheBackend, CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/plugin-cache'
 import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@pluxel/plugin-rates'
 import { RedisCacheBackendPlugin, RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/plugin-redis'
-import { parsePluginNodeAddress, pluginNodeAddressEqual } from '@pluxel/core'
-import { S3 } from '@pluxel/plugin-storage'
-import { describe, expect, it } from 'vitest'
-import {
-	createHostConfigRecords,
-	hostPlugins,
-	createHostPolicy,
-	redisBackedPlugins,
-	s3StorageNode,
-} from './catalog'
+import { S3, S3Plugin } from '@pluxel/plugin-storage'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { beforeAll, describe, expect, it } from 'vitest'
+import application from '../app'
 import { ReportStudioPlugin } from './ReportStudio'
+
+let declaration: Awaited<ReturnType<typeof application>>
+beforeAll(async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-showcase-catalog-'))
+	try {
+		declaration = await application({
+			root,
+			mode: 'test',
+			env: { PLUXEL_WORKBENCH: 'false', PLUXEL_DATA_ROOT: root },
+			bindings: {},
+		})
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})
 
 describe('plugin-host catalog', () => {
 	it('selects safe in-memory implementations without auto-starting Redis', () => {
-		const state = createHostPolicy()
-		const autoStart = state.autoStart ?? []
-		for (const plugin of redisBackedPlugins) {
-			expect(autoStart.some((node) => pluginNodeAddressEqual(node, plugin.nodeAddress()))).toBe(
-				false,
-			)
+		for (const plugin of [RedisPlugin, RedisCacheBackendPlugin, RedisRatesBackendPlugin]) {
+			const entry = declaration.plugins?.find((candidate) => candidate.plugin === plugin)
+			expect(entry).toBeDefined()
+			expect(entry?.autoStart).toBeUndefined()
 		}
-		expect(redisBackedPlugins).toEqual([
-			RedisPlugin,
-			RedisCacheBackendPlugin,
-			RedisRatesBackendPlugin,
-		])
-		expect(state.providerDefaults).toEqual(
+		expect(declaration.policy?.providerDefaults).toEqual(
 			expect.arrayContaining([
-				expect.objectContaining({
-					token: Cache.definitionAddress(),
-					provider: parsePluginNodeAddress(CachePlugin.nodeAddress()),
-				}),
-				expect.objectContaining({
-					token: CacheBackend.definitionAddress(),
-					provider: parsePluginNodeAddress(MemoryCacheBackendPlugin.nodeAddress()),
-				}),
-				expect.objectContaining({
-					token: Rates.definitionAddress(),
-					provider: parsePluginNodeAddress(RatesPlugin.nodeAddress()),
-				}),
-				expect.objectContaining({
-					token: RatesBackend.definitionAddress(),
-					provider: parsePluginNodeAddress(MemoryRatesBackendPlugin.nodeAddress()),
-				}),
+				{ token: Cache.address(), provider: CachePlugin.nodeAddress() },
+				{ token: CacheBackend.address(), provider: MemoryCacheBackendPlugin.nodeAddress() },
+				{ token: Rates.address(), provider: RatesPlugin.nodeAddress() },
+				{ token: RatesBackend.address(), provider: MemoryRatesBackendPlugin.nodeAddress() },
 			]),
 		)
 	})
 
 	it('prepares one S3 provider with isolated draft and release buckets', () => {
-		const state = createHostPolicy()
-		expect(state.forks).toBeUndefined()
+		expect(declaration.policy?.providerDefaults).toContainEqual({
+			token: S3.address(),
+			provider: S3Plugin.nodeAddress(),
+		})
+		const s3 = declaration.plugins?.filter((entry) => entry.plugin === S3Plugin)
+		expect(s3).toHaveLength(1)
+		expect(s3?.[0]).toMatchObject({
+			autoStart: true,
+			config: {
+				buckets: [
+					{ id: 'drafts', backend: { bucketName: 'draft-previews' } },
+					{ id: 'releases', backend: { bucketName: 'released-reports' } },
+				],
+			},
+		})
 		expect(
-			state.autoStart?.filter((node) => pluginNodeAddressEqual(node, s3StorageNode)),
+			declaration.plugins?.filter((entry) => entry.plugin === ReportStudioPlugin),
 		).toHaveLength(1)
-		expect(state.dependencyOverrides).toBeUndefined()
-		expect(state.providerDefaults).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					token: S3.definitionAddress(),
-					provider: s3StorageNode,
-				}),
-			]),
-		)
-
-		const records = createHostConfigRecords()
-		expect(records).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					owner: s3StorageNode,
-					config: expect.objectContaining({
-						buckets: [
-							expect.objectContaining({
-								id: 'drafts',
-								backend: expect.objectContaining({ bucketName: 'draft-previews' }),
-							}),
-							expect.objectContaining({
-								id: 'releases',
-								backend: expect.objectContaining({ bucketName: 'released-reports' }),
-							}),
-						],
-					}),
-				}),
-			]),
-		)
-		expect(hostPlugins.filter((plugin) => plugin === ReportStudioPlugin)).toEqual([
-			ReportStudioPlugin,
-		])
 	})
 })

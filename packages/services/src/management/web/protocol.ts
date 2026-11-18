@@ -1,4 +1,7 @@
-import type { PluginApplyReportSnapshot as PluginApplyReport } from '@pluxel/host'
+import type {
+	HostStateConfigurationSnapshot,
+	PluginApplyReportSnapshot as PluginApplyReport,
+} from '@pluxel/host'
 /** Versioned, framework-neutral management protocol types shared by clients and servers. */
 import {
 	type PluginDefinitionAddress,
@@ -18,9 +21,9 @@ export type {
 	PluginUpdateBatchSnapshot,
 	PluginUpdateLifecycleIssue,
 } from '@pluxel/host/internal/protocol'
-export type { VaultKeyPair } from '../../vault'
+export type { VaultKeyPair } from '@pluxel/core/vault'
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 13 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 14 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',
@@ -110,12 +113,18 @@ export type PluginCatalogSection = Readonly<{
 	nodes: readonly PluginNodeAddress[]
 }>
 
-export type PluginStatePolicy = Readonly<{
-	readonly: boolean
-	managedRevision: string
-	/** Graph columns that an immediate management action cannot change under the declaration rule. */
-	overriddenFields: readonly ('autoStart' | 'forks' | 'providerDefaults' | 'dependencyOverrides')[]
-}>
+export type PluginStatePolicy = Pick<
+	HostStateConfigurationSnapshot,
+	'readonly' | 'managedRevision' | 'nodeModes' | 'selections'
+> &
+	Readonly<{
+		mode: Pick<
+			HostStateConfigurationSnapshot['mode'],
+			'autoStart' | 'forks' | 'providerDefaults' | 'dependencyOverrides'
+		>
+		providerDefaultsSource: HostStateConfigurationSnapshot['sources']['providerDefaults']
+		providerDefaultsShadowed: boolean
+	}>
 
 export type PluginCatalogSnapshot = Readonly<{
 	statePolicy: PluginStatePolicy

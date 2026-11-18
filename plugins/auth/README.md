@@ -13,4 +13,4 @@ vp add @pluxel/plugin-auth
 - [用法、配置与验证](../../docs/plugins/auth.md)
 - [维护约束](DESIGN.md)
 
-宿主需安装 Management；password、TOTP 和 confidential OIDC 还需要 Vault。
+宿主需安装 Management；password、TOTP 和 confidential OIDC 使用 Core 内建 `ctx.vault`，对应凭据须已解锁或通过部署绑定提供。

@@ -1,6 +1,7 @@
 import type { PluginCatalogSnapshot } from '@pluxel/services/management/client'
 import { describe, expect, it } from 'vitest'
-import { buildPluginOverview, canWritePluginState } from '../src/app/plugins/pluginOverviewModel'
+import { buildPluginOverview, readPluginPolicyTarget } from '../src/app/plugins/pluginOverviewModel'
+import { controlCatalog, controlNode } from './pluginControlFixtures'
 
 const address = {
 	definition: {
@@ -43,7 +44,7 @@ const catalog = {
 			nodes: [address],
 		},
 	],
-	statePolicy: { readonly: false, managedRevision: 'policy:test:0', overriddenFields: [] },
+	statePolicy: controlCatalog().statePolicy,
 	summary: { total: 1, running: 1, stopped: 0, autoStart: 1 },
 } satisfies PluginCatalogSnapshot
 
@@ -63,32 +64,50 @@ describe('plugin overview projection', () => {
 	})
 })
 
-it('keeps unrelated state operations writable and locks every field used by composed fork operations', () => {
+it('locks only the addressed policy target and applies node modes to absent choices', () => {
+	const other = controlNode('Other')
 	const policy = {
-		readonly: false,
-		managedRevision: 'policy:test:0',
-		overriddenFields: ['providerDefaults'],
-	} as const
-	expect(canWritePluginState(policy, 'providerDefaults')).toBe(false)
-	expect(canWritePluginState(policy, 'autoStart')).toBe(true)
-	expect(canWritePluginState(policy, 'forks', 'autoStart', 'dependencyOverrides')).toBe(true)
-	expect(
-		canWritePluginState(
+		...controlCatalog().statePolicy,
+		providerDefaultsSource: 'declared',
+		nodeModes: [{ node: other, mode: 'declared-only' }],
+		selections: [
 			{
-				readonly: false,
-				managedRevision: 'policy:test:0',
-				overriddenFields: ['dependencyOverrides'],
+				target: {
+					field: 'dependencyOverrides',
+					consumerAddress: address,
+					requirementAddress: other.definition,
+				},
+				mode: 'declared-first',
+				source: 'declared',
+				shadowed: true,
 			},
-			'forks',
-			'autoStart',
-			'dependencyOverrides',
-		),
-	).toBe(false)
+		],
+	} as const
+	expect(readPluginPolicyTarget(policy, 'providerDefaults')?.canWrite).toBe(false)
+	expect(readPluginPolicyTarget(policy, { field: 'autoStart', node: address })?.canWrite).toBe(true)
+	expect(readPluginPolicyTarget(policy, { field: 'autoStart', node: other })).toEqual({
+		mode: 'declared-only',
+		source: 'default',
+		shadowed: false,
+		canWrite: false,
+	})
 	expect(
-		canWritePluginState(
-			{ readonly: true, managedRevision: 'policy:test:0', overriddenFields: [] },
-			'autoStart',
-		),
+		readPluginPolicyTarget(policy, {
+			field: 'dependencyOverrides',
+			consumerAddress: address,
+			requirementAddress: other.definition,
+		}),
+	).toMatchObject({ source: 'declared', shadowed: true, canWrite: false })
+	expect(
+		readPluginPolicyTarget(policy, {
+			field: 'dependencyOverrides',
+			consumerAddress: address,
+			requirementAddress: address.definition,
+		})?.canWrite,
+	).toBe(true)
+	expect(
+		readPluginPolicyTarget({ ...policy, readonly: true }, { field: 'autoStart', node: address })
+			?.canWrite,
 	).toBe(false)
-	expect(canWritePluginState(undefined, 'autoStart')).toBe(false)
+	expect(readPluginPolicyTarget(undefined, 'providerDefaults')).toBeUndefined()
 })

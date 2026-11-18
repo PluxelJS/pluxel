@@ -33,8 +33,7 @@ type VaultSchemaMapping<S extends Schema> = Readonly<{
 }>
 
 /** Explicit schema-bearing deployment inputs. Use envBinding for schema-derived completion. */
-export type HostEnvironmentBinding<P extends PluginNodeAddress = PluginNodeAddress> = Readonly<{
-	plugin: P
+export type HostEnvironmentBinding = Readonly<{
 	config?: Readonly<{ schema: Schema; mapping: InputMapping }>
 	vault?: Readonly<{
 		namespace?: string
@@ -42,8 +41,7 @@ export type HostEnvironmentBinding<P extends PluginNodeAddress = PluginNodeAddre
 		mapping: Readonly<Record<string, InputMapping | undefined>>
 	}>
 }>
-export type HostFileBinding<P extends PluginNodeAddress = PluginNodeAddress> = Readonly<{
-	plugin: P
+export type HostFileBinding = Readonly<{
 	config?: Readonly<{ schema: Schema; path: string }>
 	vault?: Readonly<{
 		namespace?: string
@@ -53,19 +51,17 @@ export type HostFileBinding<P extends PluginNodeAddress = PluginNodeAddress> = R
 }>
 
 /** Select environment inputs from one imported config schema and one deployment Vault root schema. */
-export function envBinding<P extends PluginNodeAddress, C extends Schema, V extends Schema>(
-	plugin: P,
+export function envBinding<C extends Schema, V extends Schema>(
 	inputs: Readonly<{
 		config?: SchemaMapping<C>
 		vault?: VaultSchemaMapping<V>
 	}>,
-): HostEnvironmentBinding<P> {
-	return { plugin, ...inputs } as HostEnvironmentBinding<P>
+): HostEnvironmentBinding {
+	return inputs as HostEnvironmentBinding
 }
 
 /** JSON files provide config declaration values and complete Vault records. */
-export function fileBinding<P extends PluginNodeAddress, C extends Schema, V extends Schema>(
-	plugin: P,
+export function fileBinding<C extends Schema, V extends Schema>(
 	inputs: Readonly<{
 		config?: Readonly<{ schema: C; path: string }>
 		vault?: Readonly<{
@@ -74,20 +70,11 @@ export function fileBinding<P extends PluginNodeAddress, C extends Schema, V ext
 			paths: { readonly [K in keyof StandardSchemaV1.InferInput<V>]?: string }
 		}>
 	}>,
-): HostFileBinding<P> {
-	return { plugin, ...inputs }
+): HostFileBinding {
+	return inputs
 }
 
-export type HostVaultBindingRecord = Readonly<{
-	owner: PluginNodeAddress
-	namespace?: string
-	key: string
-	value: unknown
-	source: 'env' | 'file'
+export type OwnedInputBindings = Readonly<{
+	envBindings: readonly (HostEnvironmentBinding & { plugin: PluginNodeAddress })[]
+	fileBindings: readonly (HostFileBinding & { plugin: PluginNodeAddress })[]
 }>
-
-/** Root-only installation boundary. Plugins cannot replace deployment bindings. */
-export abstract class HostVaultBindings {
-	static readonly access = 'root'
-	abstract install(records: readonly HostVaultBindingRecord[]): void | Promise<void>
-}

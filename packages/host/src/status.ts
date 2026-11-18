@@ -88,6 +88,7 @@ export interface PluginRecentUpdateRead {
 /** @internal Native identity and control facts, without display diagnostics or recent updates. */
 export type HostPluginControlProjectionView = Readonly<{
 	catalog: PluginCatalogSnapshot
+	declaredNodes?: ReadonlyMap<string, PluginNodeAddress>
 	state: HostStateSnapshot
 	sessionIntents: ReadonlyMap<string, HostPluginSessionEntry>
 	desiredControl: ReadonlyMap<string, HostPluginDesiredControl>
@@ -177,7 +178,7 @@ function projectHostPluginStatus(
 				projection.stateIndex.forkNodeKeys.has(nodeKey)))
 	const indexedIssues = projection.issuesByNode.get(nodeKey)
 	const issues: HostPluginStatusIssue[] = indexedIssues ? [...indexedIssues] : []
-	if (!available && issues.length === 0) {
+	if (!definition && issues.length === 0) {
 		issues.push(
 			Object.freeze({
 				id: `definition_unavailable:${nodeKey}`,
@@ -247,6 +248,7 @@ export async function readHostPluginStatusOverview(
 	return await requirePluginHostCoordinator(ctx).readCommitted((view) =>
 		hostPluginStatusOverviewFromView({
 			catalog: view.catalog,
+			declaredNodes: view.declaredNodes,
 			state: view.runtimeState.state,
 			reconciliation: view.reconciliation,
 			lifecycleIssues: readHostPluginLifecycleIssues(ctx),
@@ -269,6 +271,7 @@ export async function readHostPluginStatus(
 		hostPluginStatusFromView(
 			{
 				catalog: view.catalog,
+				declaredNodes: view.declaredNodes,
 				state: view.runtimeState.state,
 				reconciliation: view.reconciliation,
 				lifecycleIssues: readHostPluginLifecycleIssues(ctx),
@@ -324,6 +327,7 @@ function hostPluginCatalogEntryFromView(
 	const matches = (candidate: PluginNodeAddress) => pluginNodeIndexKey(candidate) === key
 	if (
 		!declared &&
+		!view.declaredNodes?.has(key) &&
 		!stateIndex.forkNodeKeys.has(key) &&
 		!stateIndex.autoStartKeys.has(key) &&
 		!view.sessionIntents.has(key) &&
@@ -420,6 +424,7 @@ export function hostPluginCatalogEntriesFromView(
 		}
 	}
 	for (const address of state.forks) add(address)
+	for (const address of view.declaredNodes?.values() ?? []) add(address)
 	for (const address of state.autoStart) add(address)
 	for (const entry of view.sessionIntents.values()) add(entry.address)
 	for (const entry of view.desiredControl.values()) add(entry.address)

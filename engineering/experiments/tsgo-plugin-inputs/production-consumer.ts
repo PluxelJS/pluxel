@@ -83,58 +83,62 @@ void invalidInput
 void invalidOutput
 
 export default defineHostApplication(async () => ({
-	plugins: [ExamplePlugin],
-	envBindings: [
-		envBinding(ExamplePlugin.nodeAddress(), {
-			config: {
-				schema: ExampleConfig,
-				mapping: {
-					payload: { raw: 'RAW' },
-					transport: { endpoint: 'ENDPOINT' },
-					labels: 'LABELS',
-					options: 'OPTIONS',
-				},
-			},
-		}),
-		envBinding(ExamplePlugin.nodeAddress(), {
-			vault: { schema: ExampleCredentials, mapping: { credentials: { token: 'TOKEN' } } },
-		}),
-	],
-	fileBindings: [
-		fileBinding(ExamplePlugin.nodeAddress(), {
-			config: { schema: ExampleConfig, path: './config.json' },
-			vault: { schema: ExampleCredentials, paths: { credentials: './credential.json' } },
-		}),
+	plugins: [
+		{
+			plugin: ExamplePlugin,
+			envBindings: [
+				envBinding({
+					config: {
+						schema: ExampleConfig,
+						mapping: {
+							payload: { raw: 'RAW' },
+							transport: { endpoint: 'ENDPOINT' },
+							labels: 'LABELS',
+							options: 'OPTIONS',
+						},
+					},
+				}),
+				envBinding({
+					vault: { schema: ExampleCredentials, mapping: { credentials: { token: 'TOKEN' } } },
+				}),
+			],
+			fileBindings: [
+				fileBinding({
+					config: { schema: ExampleConfig, path: './config.json' },
+					vault: { schema: ExampleCredentials, paths: { credentials: './credential.json' } },
+				}),
+			],
+		},
 	],
 }))
 
-envBinding(ExamplePlugin.nodeAddress(), {
+envBinding({
 	// @ts-expect-error Unknown configuration property cannot widen the schema.
 	config: { schema: ExampleConfig, mapping: { missing: 'BAD' } },
 })
-envBinding(ExamplePlugin.nodeAddress(), {
+envBinding({
 	// @ts-expect-error Mapping follows input object rather than transformed number.
 	config: { schema: ExampleConfig, mapping: { payload: { length: 'BAD' } } },
 })
-envBinding(ExamplePlugin.nodeAddress(), {
+envBinding({
 	// @ts-expect-error Arrays are whole JSON inputs.
 	config: { schema: ExampleConfig, mapping: { labels: { zero: 'BAD' } } },
 })
-envBinding(ExamplePlugin.nodeAddress(), {
+envBinding({
 	// @ts-expect-error Dynamic records below the root are whole JSON inputs.
 	config: { schema: ExampleConfig, mapping: { options: { arbitrary: 'BAD' } } },
 })
-envBinding(ExamplePlugin.nodeAddress(), {
+envBinding({
 	// @ts-expect-error Vault root keys are schema-checked.
 	vault: { schema: ExampleCredentials, mapping: { wrongKey: 'BAD' } },
 })
-envBinding(ExamplePlugin.nodeAddress(), {
+envBinding({
 	// @ts-expect-error Vault record fields are schema-checked.
 	vault: { schema: ExampleCredentials, mapping: { credentials: { password: 'BAD' } } },
 })
 // @ts-expect-error Vault root cannot become one JSON binding.
-envBinding(ExamplePlugin.nodeAddress(), { vault: { schema: ExampleCredentials, mapping: 'BAD' } })
-fileBinding(ExamplePlugin.nodeAddress(), {
+envBinding({ vault: { schema: ExampleCredentials, mapping: 'BAD' } })
+fileBinding({
 	// @ts-expect-error File paths must use declared Vault record keys.
 	vault: { schema: ExampleCredentials, paths: { wrongKey: './bad.json' } },
 })

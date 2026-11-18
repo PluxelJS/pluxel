@@ -61,8 +61,8 @@ it.each(['application import', 'independent source'])(
 			await importHostModule(server, entry)
 			const first = await importHostModule<{ Owner: PluginConstructor }>(server, owner)
 			const firstSibling = await importHostModule<{ Sibling: PluginConstructor }>(server, sibling)
-			const key = pluginDefinitionIndexKey(first.Owner.definitionAddress())
-			const siblingKey = pluginDefinitionIndexKey(firstSibling.Sibling.definitionAddress())
+			const key = pluginDefinitionIndexKey(first.Owner.address())
+			const siblingKey = pluginDefinitionIndexKey(firstSibling.Sibling.address())
 			const prepared = await prepareHostPluginControls({
 				server,
 				entry,

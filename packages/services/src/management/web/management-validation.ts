@@ -1,5 +1,7 @@
 import type {
 	HostConfigState,
+	HostInputMode,
+	HostNodePolicyTarget,
 	HostPolicyInput,
 	HostPolicyValues,
 	HostPolicyField,
@@ -60,6 +62,7 @@ import {
 	type PluginStatusIssue,
 	type PluginStatusQueryResult,
 	type PluginStatusSnapshot,
+	type PluginStatePolicy,
 	type RemoveForkResult,
 	type RuntimeJsonObject,
 	type RuntimeJsonValue,
@@ -71,6 +74,8 @@ import {
 	parseHostPersistenceResult,
 	pluginApplyReportOutcome,
 	HOST_POLICY_FIELDS,
+	HOST_GLOBAL_POLICY_FIELDS,
+	HOST_GRAPH_POLICY_FIELDS,
 	HOST_EXECUTION_POLICY_FIELDS,
 	clonePluginExecutionSnapshot,
 	clonePluginRecentUpdateSnapshot,
@@ -114,32 +119,38 @@ export function parsePluginCatalogSnapshot(input: unknown): PluginCatalogSnapsho
 	const policy = object(value.statePolicy, 'plugin catalog.statePolicy')
 	shape(
 		policy,
-		['readonly', 'managedRevision', 'overriddenFields'],
+		[
+			'readonly',
+			'managedRevision',
+			'mode',
+			'providerDefaultsSource',
+			'providerDefaultsShadowed',
+			'nodeModes',
+			'selections',
+		],
 		[],
 		'plugin catalog.statePolicy',
 	)
-	const readonly = boolean(policy.readonly, 'plugin catalog.statePolicy.readonly')
-	const overriddenFields = array(
-		policy.overriddenFields,
-		'plugin catalog.statePolicy.overriddenFields',
-	).map((field) =>
-		literal(
-			field,
-			['autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'],
-			'plugin catalog.statePolicy.overriddenFields',
-		),
-	)
-	if (new Set(overriddenFields).size !== overriddenFields.length)
-		fail('plugin catalog.statePolicy.overriddenFields contains duplicates')
+	const mode = policyModes(policy.mode, HOST_GRAPH_POLICY_FIELDS, 'plugin catalog.statePolicy.mode')
 	return Object.freeze({
 		plugins: Object.freeze(plugins),
 		statePolicy: Object.freeze({
-			readonly,
+			readonly: boolean(policy.readonly, 'plugin catalog.statePolicy.readonly'),
 			managedRevision: revisionToken(
 				policy.managedRevision,
 				'plugin catalog.statePolicy.managedRevision',
 			),
-			overriddenFields: Object.freeze(overriddenFields),
+			mode,
+			providerDefaultsSource: literal(
+				policy.providerDefaultsSource,
+				POLICY_SOURCES,
+				'plugin catalog.statePolicy.providerDefaultsSource',
+			),
+			providerDefaultsShadowed: boolean(
+				policy.providerDefaultsShadowed,
+				'plugin catalog.statePolicy.providerDefaultsShadowed',
+			),
+			...policyNodeMetadata(policy, mode, 'plugin catalog.statePolicy'),
 		}),
 		sections: Object.freeze(sections),
 		summary: Object.freeze({ total, running, stopped, autoStart }),
@@ -332,6 +343,8 @@ export function parsePolicyResult(input: unknown): PolicyResult {
 			'mode',
 			'sources',
 			'shadowedFields',
+			'nodeModes',
+			'selections',
 			'managedRevision',
 			'appliedExecution',
 			'pendingExecutionFields',
@@ -341,23 +354,14 @@ export function parsePolicyResult(input: unknown): PolicyResult {
 		['report'],
 		'policy result',
 	)
-	const mode = object(value.mode, 'policy result.mode')
+	const mode = policyModes(value.mode, HOST_POLICY_FIELDS, 'policy result.mode')
 	const sources = object(value.sources, 'policy result.sources')
-	shape(mode, HOST_POLICY_FIELDS, [], 'policy result.mode')
-	shape(sources, HOST_POLICY_FIELDS, [], 'policy result.sources')
-	const parsedMode = Object.freeze(
-		Object.fromEntries(
-			HOST_POLICY_FIELDS.map((field) => [
-				field,
-				literal(mode[field], INPUT_MODES, `policy result.mode.${field}`),
-			]),
-		),
-	) as HostStateConfigurationSnapshot['mode']
+	shape(sources, HOST_GLOBAL_POLICY_FIELDS, [], 'policy result.sources')
 	const parsedSources = Object.freeze(
 		Object.fromEntries(
-			HOST_POLICY_FIELDS.map((field) => [
+			HOST_GLOBAL_POLICY_FIELDS.map((field) => [
 				field,
-				literal(sources[field], ['declared', 'saved', 'default'], `policy result.sources.${field}`),
+				literal(sources[field], POLICY_SOURCES, `policy result.sources.${field}`),
 			]),
 		),
 	) as HostStateConfigurationSnapshot['sources']
@@ -398,13 +402,14 @@ export function parsePolicyResult(input: unknown): PolicyResult {
 		readonly: boolean(value.readonly, 'policy result.readonly'),
 		managedInput: policyValues(value.managedInput, 'policy result.managedInput', false),
 		effective,
-		mode: parsedMode,
+		mode,
 		sources: parsedSources,
 		shadowedFields: policyFields(
 			value.shadowedFields,
-			HOST_POLICY_FIELDS,
+			HOST_GLOBAL_POLICY_FIELDS,
 			'policy result.shadowedFields',
 		),
+		...policyNodeMetadata(value, mode, 'policy result'),
 		managedRevision: revisionToken(value.managedRevision, 'policy result.managedRevision'),
 		appliedExecution,
 		pendingExecutionFields,
@@ -414,6 +419,88 @@ export function parsePolicyResult(input: unknown): PolicyResult {
 			? {}
 			: { report: pluginApplyReport(value.report, 'policy result.report') }),
 	})
+}
+
+const POLICY_SOURCES = ['declared', 'saved', 'default'] as const
+
+function policyModes<const Field extends HostPolicyField>(
+	input: unknown,
+	fields: readonly Field[],
+	label: string,
+): Readonly<Record<Field, HostInputMode>> {
+	const value = object(input, label)
+	shape(value, fields, [], label)
+	return Object.freeze(
+		Object.fromEntries(
+			fields.map((field) => [field, literal(value[field], INPUT_MODES, `${label}.${field}`)]),
+		),
+	) as Readonly<Record<Field, HostInputMode>>
+}
+
+function policyNodeMetadata(
+	input: Record<string, unknown>,
+	modes: PluginStatePolicy['mode'],
+	label: string,
+): Pick<PluginStatePolicy, 'nodeModes' | 'selections'> {
+	const byNode = new Map<string, HostInputMode>()
+	const nodeModes = array(input.nodeModes, `${label}.nodeModes`).map((raw, index) => {
+		const at = `${label}.nodeModes[${index}]`
+		const item = object(raw, at)
+		shape(item, ['node', 'mode'], [], at)
+		const node = nodeAddress(item.node, `${at}.node`)
+		const key = pluginNodeIndexKey(node)
+		if (byNode.has(key)) fail(`${label}.nodeModes contains a duplicate node`)
+		const mode = literal(item.mode, INPUT_MODES, `${at}.mode`)
+		byNode.set(key, mode)
+		return Object.freeze({ node, mode })
+	})
+	const targetKeys = new Set<string>()
+	const selections = array(input.selections, `${label}.selections`).map((raw, index) => {
+		const at = `${label}.selections[${index}]`
+		const item = object(raw, at)
+		shape(item, ['target', 'mode', 'source', 'shadowed'], [], at)
+		const target = policyNodeTarget(item.target, `${at}.target`)
+		const nodeKey = pluginNodeIndexKey('node' in target ? target.node : target.consumerAddress)
+		const key =
+			'requirementAddress' in target
+				? `${target.field}:${nodeKey}:${pluginDefinitionIndexKey(target.requirementAddress)}`
+				: `${target.field}:${nodeKey}`
+		if (targetKeys.has(key)) fail(`${label}.selections contains a duplicate target`)
+		targetKeys.add(key)
+		const mode = literal(item.mode, INPUT_MODES, `${at}.mode`)
+		if (mode !== (byNode.get(nodeKey) ?? modes[target.field]))
+			fail(`${at}.mode does not match the target policy`)
+		const source = literal(item.source, POLICY_SOURCES, `${at}.source`)
+		const shadowed = boolean(item.shadowed, `${at}.shadowed`)
+		if (source === 'saved' && (shadowed || mode === 'declared-only'))
+			fail(`${at} has an inconsistent saved selection`)
+		return Object.freeze({ target, mode, source, shadowed })
+	})
+	return { nodeModes: Object.freeze(nodeModes), selections: Object.freeze(selections) }
+}
+
+function policyNodeTarget(input: unknown, label: string): HostNodePolicyTarget {
+	const value = object(input, label)
+	const field = literal(
+		value.field,
+		['autoStart', 'forks', 'dependencyOverrides'],
+		`${label}.field`,
+	)
+	if (field === 'dependencyOverrides') {
+		shape(value, ['field', 'consumerAddress', 'requirementAddress'], [], label)
+		return Object.freeze({
+			field,
+			consumerAddress: nodeAddress(value.consumerAddress, `${label}.consumerAddress`),
+			requirementAddress: definitionAddress(
+				value.requirementAddress,
+				`${label}.requirementAddress`,
+			),
+		})
+	}
+	shape(value, ['field', 'node'], [], label)
+	return field === 'forks'
+		? Object.freeze({ field, node: forkAddress(value.node, `${label}.node`) })
+		: Object.freeze({ field, node: nodeAddress(value.node, `${label}.node`) })
 }
 
 function revisionToken(input: unknown, label: string): string {
@@ -438,7 +525,11 @@ function policyNumber(input: unknown, field: string, label: string): number {
 }
 function policyValues(input: unknown, label: string, complete: true): HostPolicyValues
 function policyValues(input: unknown, label: string, complete: false): HostPolicyInput
-function policyValues(input: unknown, label: string, complete: boolean): HostPolicyInput {
+function policyValues(
+	input: unknown,
+	label: string,
+	complete: boolean,
+): HostPolicyInput | HostPolicyValues {
 	const value = object(input, label)
 	shape(value, complete ? HOST_POLICY_FIELDS : [], complete ? [] : HOST_POLICY_FIELDS, label)
 	const result: Record<string, unknown> = {}
@@ -456,10 +547,20 @@ function policyValues(input: unknown, label: string, complete: boolean): HostPol
 				let parsed: unknown
 				let key: string
 				if (field === 'autoStart' || field === 'forks') {
-					const node = nodeAddress(raw, entryLabel)
-					if (field === 'forks' && node.variant !== 'fork')
-						fail(`${entryLabel} requires a fork node`)
-					parsed = node
+					const setting = field === 'autoStart' ? 'autoStart' : 'deploy'
+					const entry = complete ? undefined : object(raw, entryLabel)
+					if (entry) shape(entry, ['node', setting], [], entryLabel)
+					const identity = entry ? entry.node : raw
+					const node =
+						field === 'forks'
+							? forkAddress(identity, entryLabel)
+							: nodeAddress(identity, entryLabel)
+					parsed = entry
+						? Object.freeze({
+								node,
+								[setting]: boolean(entry[setting], `${entryLabel}.${setting}`),
+							})
+						: node
 					key = pluginNodeIndexKey(node)
 				} else if (field === 'providerDefaults') {
 					const entry = object(raw, entryLabel)
@@ -484,7 +585,10 @@ function policyValues(input: unknown, label: string, complete: boolean): HostPol
 					parsed = Object.freeze({
 						consumerAddress,
 						requirementAddress,
-						providerAddress: nodeAddress(entry.providerAddress, `${entryLabel}.providerAddress`),
+						providerAddress:
+							!complete && entry.providerAddress === null
+								? null
+								: nodeAddress(entry.providerAddress, `${entryLabel}.providerAddress`),
 					})
 					key = `${pluginNodeIndexKey(consumerAddress)}:${pluginDefinitionIndexKey(requirementAddress)}`
 				}
@@ -494,7 +598,7 @@ function policyValues(input: unknown, label: string, complete: boolean): HostPol
 			}),
 		)
 	}
-	return Object.freeze(result) as HostPolicyInput
+	return Object.freeze(result) as HostPolicyInput | HostPolicyValues
 }
 
 /** Validate and deep-freeze a config presentation query result. */
@@ -1786,14 +1890,7 @@ export function parseSecurityOverview(input: unknown): SecurityOverview {
 	const value = rootRecord(input, 'security overview')
 	shape(value, ['adminAccess', 'vault'], [], 'security overview')
 	const vault = object(value.vault, 'security overview.vault')
-	if (vault.enabled === false) {
-		shape(vault, ['enabled'], [], 'security overview.vault')
-		return Object.freeze({
-			adminAccess: adminAccessOverview(value.adminAccess, 'security overview.adminAccess'),
-			vault: Object.freeze({ enabled: false as const }),
-		})
-	}
-	if (vault.enabled !== true) fail('security overview.vault.enabled must be boolean')
+	if (vault.enabled !== true) fail('security overview.vault.enabled must be true')
 	shape(vault, ['enabled', 'state'], [], 'security overview.vault')
 	return Object.freeze({
 		adminAccess: adminAccessOverview(value.adminAccess, 'security overview.adminAccess'),
@@ -2143,6 +2240,12 @@ function nodeAddress(input: unknown, label: string): PluginNodeAddress {
 
 function nullableNodeAddress(input: unknown, label: string): PluginNodeAddress | null {
 	return input === null ? null : nodeAddress(input, label)
+}
+
+function forkAddress(input: unknown, label: string) {
+	const node = nodeAddress(input, label)
+	if (node.variant !== 'fork') fail(`${label} requires a fork node`)
+	return node
 }
 
 function definitionAddress(input: unknown, label: string): PluginDefinitionAddress {

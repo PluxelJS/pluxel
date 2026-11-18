@@ -54,7 +54,6 @@
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"typescript": "catalog:dev",
 		"vite-plus": "catalog:build",
@@ -62,8 +61,7 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
-		"@pluxel/host": "workspace:^",
-		"@pluxel/services": "workspace:^"
+		"@pluxel/host": "workspace:^"
 	},
 	"peerDependenciesMeta": {
 		"@pluxel/host": {

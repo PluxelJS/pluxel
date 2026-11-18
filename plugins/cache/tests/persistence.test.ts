@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { Passthrough, type FsConfig } from '@pluxel/core/fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Cache, CachePlugin, MemoryCacheBackendPlugin } from '../src/index.ts'
@@ -50,22 +53,17 @@ async function withPersistentCache(
 		...(options.flushIntervalMs === undefined ? {} : { flushIntervalMs: options.flushIntervalMs }),
 	}
 	await using host = await createTestHost({
-		services: standardServices(),
-		config: {
-			records: [
-				{
-					owner: MemoryCacheBackendPlugin.nodeAddress(),
-					config: {
-						...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }),
-						persistence,
-					},
-				},
-			],
-		},
-		runtime: { zenfs: storage, documents: { config: false } },
+		services: [elysia(), commands(), nodeModules(), workers()],
+		coreConfig: { zenfs: storage },
+		config: { document: false },
 	})
 	await host.commit((change) => {
-		change.start(MemoryCacheBackendPlugin.nodeAddress())
+		change.start(MemoryCacheBackendPlugin.nodeAddress(), {
+			initialConfig: {
+				...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }),
+				persistence,
+			},
+		})
 		change.start(CachePlugin.nodeAddress())
 		change.start(PersistentCacheConsumer.nodeAddress())
 	})
@@ -175,7 +173,7 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 
 	it('fails lifecycle honestly when durable storage is unavailable', async () => {
 		await using host = await createTestHost({
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 		const failure = await host.commitExpectFail((change) => {
 			change.start(MemoryCacheBackendPlugin.nodeAddress(), {
@@ -216,8 +214,10 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 			},
 		}
 		await using host = await createTestHost({
-			services: standardServices(),
-			runtime: { zenfs: instrumented, documents: { config: false, state: false } },
+			services: [elysia(), commands(), nodeModules(), workers()],
+			coreConfig: { zenfs: instrumented },
+			config: { document: false },
+			policy: { document: false },
 		})
 		const failure = await host.commitExpectFail((change) => {
 			change.start(MemoryCacheBackendPlugin.nodeAddress(), {

@@ -62,7 +62,6 @@ export class Consumer extends BasePlugin {
 		await writeFile(
 			join(root, 'entry.ts'),
 			`
-import { logtape, zenfs } from '@pluxel/core/config'
 import { createHost } from '@pluxel/host/browser'
 import { Provider } from './provider'
 import { Consumer } from './consumer'
@@ -72,39 +71,43 @@ export async function run() {
   const sinkLifecycle: string[] = []
   const consumer = Consumer.nodeAddress()
   const host = await createHost({
-    runtime: {
-      zenfs: zenfs(),
-      logtape: logtape({
-        sinks: {
-          capture: Object.assign(
-            (record: {
-              category: readonly string[]
-              message: readonly unknown[]
-              properties: Readonly<Record<string, unknown>>
-            }) => {
-              records.push({
-                category: [...record.category],
-                message: record.message.join(''),
-                storage: record.properties.storage,
-              })
-            },
-            {
-              async drain() { sinkLifecycle.push('drained') },
-              async [Symbol.asyncDispose ?? Symbol.for('Symbol.asyncDispose')]() {
-                sinkLifecycle.push('disposed')
-              },
-            },
-          ),
+    plugins: [
+        {
+            plugin: Provider
         },
-        loggers: [
-          { category: ['pluxel'], lowestLevel: 'trace', sinks: ['capture'] },
-          { category: ['logtape', 'meta'], lowestLevel: 'fatal', sinks: [] },
-        ],
-      }),
-    },
-    policy: { autoStart: [consumer] },
-    plugins: [Provider, Consumer],
-  })
+        {
+            plugin: Consumer,
+            autoStart: true
+        }
+    ],
+    coreConfig: {
+        zenfs: {},
+        logtape: {
+            sinks: {
+                capture: Object.assign((record: {
+                    category: readonly string[];
+                    message: readonly unknown[];
+                    properties: Readonly<Record<string, unknown>>;
+                }) => {
+                    records.push({
+                        category: [...record.category],
+                        message: record.message.join(''),
+                        storage: record.properties.storage,
+                    });
+                }, {
+                    async drain() { sinkLifecycle.push('drained'); },
+                    async [Symbol.asyncDispose ?? Symbol.for('Symbol.asyncDispose')]() {
+                        sinkLifecycle.push('disposed');
+                    },
+                }),
+            },
+            loggers: [
+                { category: ['pluxel'], lowestLevel: 'trace', sinks: ['capture'] },
+                { category: ['logtape', 'meta'], lowestLevel: 'fatal', sinks: [] },
+            ],
+        }
+    }
+})
   const manager = host.ctx.logging
   const rootId = manager.resolved.root.id
   const logging = { initial: manager.state, final: manager.state }
@@ -147,8 +150,8 @@ export async function run() {
 		const code = chunks[0]!.code
 		expect(code).not.toContain('__vite-browser-external')
 		const modules = chunks.flatMap((chunk) => Object.keys(chunk.modules))
-		for (const name of ['logtape', 'zenfs']) {
-			expect(modules.some((id) => id.endsWith(`/core/src/config/${name}.ts`))).toBe(true)
+		for (const name of ['logging', 'fs']) {
+			expect(modules.some((id) => id.endsWith(`/core/src/${name}/config.ts`))).toBe(true)
 		}
 		expect(
 			modules.filter((id) =>

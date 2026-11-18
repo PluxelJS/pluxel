@@ -1,6 +1,6 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
-import { vault } from '@pluxel/services/vault'
+import { defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
+import { createResolvedHost } from '@pluxel/host/internal'
 import { expect, it } from 'vitest'
 import {
 	PlaywrightConfig,
@@ -41,21 +41,26 @@ it('uses two successive Pluxel generations without stopping the external browser
 	observations.length = 0
 	for (let run = 0; run < 2; run++) {
 		const application = defineHostApplication(() => ({
-			plugins: [PlaywrightPlugin, ExternalBrowserSmoke],
-			services: [vault({ backend: 'bindings' })],
-			envBindings: [
-				envBinding(PlaywrightPlugin.nodeAddress(), {
-					config: { schema: PlaywrightConfig, mapping: { protocol: 'BROWSER_PROTOCOL' } },
-					vault: {
-						schema: PlaywrightVaultSchema,
-						mapping: { primary: { endpoint: 'BROWSER_ENDPOINT', headers: 'BROWSER_HEADERS' } },
-					},
-				}),
+			plugins: [
+				{
+					plugin: PlaywrightPlugin,
+					config: { connectionKey: 'primary' },
+					envBindings: [
+						envBinding({
+							config: { schema: PlaywrightConfig, mapping: { protocol: 'BROWSER_PROTOCOL' } },
+							vault: {
+								schema: PlaywrightVaultSchema,
+								mapping: { primary: { endpoint: 'BROWSER_ENDPOINT', headers: 'BROWSER_HEADERS' } },
+							},
+						}),
+					],
+				},
+				{
+					plugin: ExternalBrowserSmoke,
+					autoStart: true,
+				},
 			],
-			config: {
-				records: [{ owner: PlaywrightPlugin.nodeAddress(), config: { connectionKey: 'primary' } }],
-			},
-			policy: { autoStart: [ExternalBrowserSmoke.nodeAddress()] },
+			coreConfig: { vault: { backend: 'bindings' } },
 		}))
 		const resolved = await resolveHostApplication(application, {
 			root: process.cwd(),
@@ -67,15 +72,7 @@ it('uses two successive Pluxel generations without stopping the external browser
 				BROWSER_HEADERS: process.env.PLUXEL_BROWSER_HEADERS ?? '{}',
 			},
 		})
-		const host = await createHost({
-			plugins: resolved.plugins,
-			services: resolved.services,
-			vaultBindings: resolved.vaultBindings,
-			name: resolved.name,
-			config: resolved.config,
-			policy: resolved.policy,
-			runtime: resolved.runtime,
-		})
+		const host = await createResolvedHost(resolved)
 		try {
 			await host.start()
 			const status = await host.status()

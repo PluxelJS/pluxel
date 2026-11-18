@@ -1,7 +1,7 @@
 import { Badge, Button, Group, Paper, Stack, Table, Text, Textarea, TextInput } from '@mantine/core'
 import { IconKey } from '@tabler/icons-react'
 import type { VaultSnapshot, SecurityBusyKey } from './model.ts'
-import type { VaultKeyPair } from '@pluxel/services/vault'
+import type { VaultKeyPair } from '@pluxel/core/vault'
 const panelStyle = {
 	display: 'flex',
 	flexDirection: 'column' as const,

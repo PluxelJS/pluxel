@@ -1,4 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
+import { parsePluginNodeAddress } from '@pluxel/core'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
 import { RpcStub } from 'capnweb'
 import * as v from 'valibot'
@@ -64,7 +65,7 @@ it('guards existing policy actions with the displayed revision and keeps batch s
 	).toMatchObject({ ok: false, results: [conflict] })
 	expect(
 		await client.dependencies.setConsumerOverride(
-			{ consumer, requirement: ProviderToken.definitionAddress(), provider },
+			{ consumer, requirement: ProviderToken.address(), provider },
 			stale,
 		),
 	).toMatchObject(conflict)
@@ -114,24 +115,87 @@ it('rejects bulk undo after another client changes the policy and preserves that
 	// The refresh can legitimately observe the later client's version before undo is offered.
 	const refreshed = await client.catalog.snapshot()
 	expect(refreshed.statePolicy.managedRevision).toBe(later.managedRevision)
-	const undo = await client.plugins.setAutoStart(
-		[owner, provider].map((address) => ({ address, autoStart: false })),
+	const undo = await client.policy.patch(
+		{ reset: [owner, provider].map((node) => ({ field: 'autoStart', node })) },
 		{ expectedManagedRevision: batch.managedRevision },
 	)
 	expect(undo).toMatchObject({
 		ok: false,
-		status: 'rejected',
-		results: [owner, provider].map((address) => ({
-			address,
-			ok: false,
-			code: 'revision_conflict',
-			state: 'unchanged',
-		})),
+		code: 'revision_conflict',
+		state: 'unchanged',
 	})
 	expect(await client.policy.get()).toMatchObject({
 		ok: true,
 		managedRevision: later.managedRevision,
-		managedInput: { autoStart: [provider] },
+		managedInput: {
+			autoStart: [
+				{ node: parsePluginNodeAddress(owner), autoStart: false },
+				{ node: parsePluginNodeAddress(provider), autoStart: true },
+			],
+		},
+	})
+})
+
+it('projects each target and atomically restores explicit and inherited choices over RPC', async () => {
+	const owner = ManagedOwner.nodeAddress()
+	const provider = ManagedProvider.nodeAddress()
+	await using host = await createServiceInternalTestHarness({
+		workbench: false,
+		management: true,
+		policy: { mode: 'saved-first' },
+		pluginNodes: [
+			{ definition: ManagedOwner.address(), policyMode: 'declared-first', autoStart: false },
+		],
+	})
+	host.add([ManagedOwner, ManagedProvider])
+	await host.commit()
+	using remote = new RpcStub(new RuntimeManagementTargetImpl(host.ctx))
+	const client = createRuntimeManagementClient(remote)
+	const baseline = await client.policy.patch({ autoStart: [{ node: provider, autoStart: false }] })
+	if (baseline.ok === false) throw new Error(baseline.message)
+	const changed = await client.policy.patch(
+		{
+			autoStart: [
+				{ node: owner, autoStart: true },
+				{ node: provider, autoStart: true },
+			],
+		},
+		{ expectedManagedRevision: baseline.managedRevision },
+	)
+	if (changed.ok === false) throw new Error(changed.message)
+	const catalog = await client.catalog.snapshot()
+	expect(catalog.statePolicy).toMatchObject({
+		nodeModes: [{ node: owner, mode: 'declared-first' }],
+		selections: [
+			{
+				target: { field: 'autoStart', node: owner },
+				mode: 'declared-first',
+				source: 'declared',
+				shadowed: true,
+			},
+			{
+				target: { field: 'autoStart', node: provider },
+				mode: 'saved-first',
+				source: 'saved',
+				shadowed: false,
+			},
+		],
+	})
+	expect(
+		catalog.plugins.filter(({ autoStart }) => autoStart).map(({ address }) => address),
+	).toEqual([parsePluginNodeAddress(provider)])
+	const restored = await client.policy.patch(
+		{
+			autoStart: [{ node: provider, autoStart: false }],
+			reset: [{ field: 'autoStart', node: owner }],
+		},
+		{ expectedManagedRevision: changed.managedRevision },
+	)
+	expect(restored).toMatchObject({
+		ok: true,
+		managedInput: { autoStart: [{ node: provider, autoStart: false }] },
+		effective: { autoStart: [] },
+		selections: [{ shadowed: false }, { shadowed: false }],
 	})
 })
 
@@ -148,7 +212,8 @@ it('transports policy and config previews, atomic writes, resets and domain-spec
 		throw new Error('Expected initial input snapshots')
 	expect(policy.managedInput).toEqual({})
 	expect(config.managedInput).toBeNull()
-	const preview = await client.policy.validate({ startTimeoutMs: 2100, autoStart: [owner] })
+	const autoStart = [{ node: owner, autoStart: true }]
+	const preview = await client.policy.validate({ startTimeoutMs: 2100, autoStart })
 	expect(preview).toMatchObject({
 		ok: true,
 		persistence: { status: 'unchanged' },
@@ -160,7 +225,7 @@ it('transports policy and config previews, atomic writes, resets and domain-spec
 		managedInput: {},
 	})
 	const applied = await client.policy.patch(
-		{ autoStart: [owner], startTimeoutMs: 2100 },
+		{ autoStart, startTimeoutMs: 2100 },
 		{ expectedManagedRevision: policy.managedRevision },
 	)
 	expect(applied).toMatchObject({
@@ -179,7 +244,9 @@ it('transports policy and config previews, atomic writes, resets and domain-spec
 	).resolves.toMatchObject({ ok: true })
 	expect(host.isRunning(owner)).toBe(true)
 	await expect(
-		client.policy.reset(['autoStart'], { expectedManagedRevision: policy.managedRevision }),
+		client.policy.reset([{ field: 'autoStart', node: owner }], {
+			expectedManagedRevision: policy.managedRevision,
+		}),
 	).resolves.toMatchObject({ ok: false, code: 'revision_conflict', state: 'unchanged' })
 	if (applied.ok === false) throw new Error(applied.message)
 	await expect(

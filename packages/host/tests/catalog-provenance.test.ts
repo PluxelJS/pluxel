@@ -35,7 +35,13 @@ it('snapshots route execution facts only with accepted catalogs and releases the
 			update: { kind: 'host-reload' },
 		},
 	}
-	const host = await createHost({ plugins: [Original] })
+	const host = await createHost({
+		plugins: [
+			{
+				plugin: Original,
+			},
+		],
+	})
 	try {
 		const input = new Map([[Original, source]])
 		setHostCatalogProvenance(host.ctx, input)

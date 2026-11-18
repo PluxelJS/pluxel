@@ -48,8 +48,17 @@ class Transformed extends BasePlugin {
 it('validates raw edits, confirms running notifications, resets inheritance and closes admission', async () => {
 	const owner = ConfigOwner.nodeAddress()
 	const host = await createHost({
-		plugins: [ConfigOwner],
-		runtime: { documents: { config: false, state: false } },
+		plugins: [
+			{
+				plugin: ConfigOwner,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	try {
 		await expect(host.config.validate(owner, { set: { value: 42 } })).resolves.toMatchObject({
@@ -108,17 +117,29 @@ it('separates per-node modes, declared fallback and missing document input', asy
 		}),
 	)
 	const host = await createHost({
-		plugins: [ConfigOwner],
-		policy: { forks: [east, west] },
+		plugins: [
+			{
+				plugin: ConfigOwner,
+				config: { value: 'declared' },
+				forks: {
+					east: {
+						config: { value: 'east' },
+						configMode: 'saved-first',
+					},
+					west: {
+						config: { value: 'west' },
+						configMode: 'declared-first',
+					},
+				},
+			},
+		],
+		policy: {
+			document: false,
+		},
 		config: {
 			mode: 'declared-only',
-			records: [
-				{ owner: ConfigOwner.nodeAddress(), config: { value: 'declared' } },
-				{ owner: east, mode: 'saved-first', config: { value: 'east' } },
-				{ owner: west, mode: 'declared-first', config: { value: 'west' } },
-			],
+			document: { storage: () => storage },
 		},
-		runtime: { documents: { config: { storage: () => storage }, state: false } },
 	})
 	try {
 		expect(await host.config.get(owner)).toMatchObject({
@@ -150,9 +171,18 @@ it('does not seed documents and saves hidden raw values without changing desired
 		},
 	}
 	const host = await createHost({
-		plugins: [ConfigOwner],
-		config: { records: [{ owner, config: { value: 'declaration' } }] },
-		runtime: { documents: { config: { storage: () => borrowed }, state: false } },
+		plugins: [
+			{
+				plugin: ConfigOwner,
+				config: { value: 'declaration' },
+			},
+		],
+		config: {
+			document: { storage: () => borrowed },
+		},
+		policy: {
+			document: false,
+		},
 	})
 	try {
 		const first = await host.config.get(owner)
@@ -197,9 +227,19 @@ it('does not seed documents and saves hidden raw values without changing desired
 		await host.close()
 	}
 	const reopened = await createHost({
-		plugins: [ConfigOwner],
-		config: { mode: 'saved-first', records: [{ owner, config: { value: 'fallback' } }] },
-		runtime: { documents: { config: { storage: () => storage }, state: false } },
+		plugins: [
+			{
+				plugin: ConfigOwner,
+				config: { value: 'fallback' },
+			},
+		],
+		config: {
+			mode: 'saved-first',
+			document: { storage: () => storage },
+		},
+		policy: {
+			document: false,
+		},
 	})
 	try {
 		await expect(reopened.config.get(owner)).resolves.toMatchObject({
@@ -216,9 +256,18 @@ it('does not seed documents and saves hidden raw values without changing desired
 it('performs branch replacement atomically and prunes removed paths', async () => {
 	const node = Branch.nodeAddress()
 	const host = await createHost({
-		plugins: [Branch],
-		config: { mode: 'saved-first' },
-		runtime: { documents: { config: false, state: false } },
+		plugins: [
+			{
+				plugin: Branch,
+			},
+		],
+		config: {
+			mode: 'saved-first',
+			document: false,
+		},
+		policy: {
+			document: false,
+		},
 	})
 	try {
 		await expect(
@@ -266,9 +315,18 @@ it('retains the confirmed generation and raw revision when document completion i
 		},
 	}
 	const host = await createHost({
-		plugins: [ConfigOwner],
-		policy: { autoStart: [ConfigOwner.nodeAddress()] },
-		runtime: { documents: { config: { storage: () => borrowed }, state: false } },
+		plugins: [
+			{
+				plugin: ConfigOwner,
+				autoStart: true,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: { storage: () => borrowed },
+		},
 	})
 	try {
 		await host.config.patch(owner, { set: { value: 'confirmed' } })
@@ -302,9 +360,18 @@ it('reuses transformed output for reads and hidden saves', async () => {
 	transformations = 0
 	const node = Transformed.nodeAddress()
 	const host = await createHost({
-		plugins: [Transformed],
-		config: { records: [{ owner: Transformed.nodeAddress(), config: { value: 'raw' } }] },
-		runtime: { documents: { config: false, state: false } },
+		plugins: [
+			{
+				plugin: Transformed,
+				config: { value: 'raw' },
+			},
+		],
+		config: {
+			document: false,
+		},
+		policy: {
+			document: false,
+		},
 	})
 	try {
 		expect(await host.config.get(node)).toMatchObject({ config: { value: 'raw!' } })
@@ -324,9 +391,19 @@ it('reuses transformed output for reads and hidden saves', async () => {
 it('readOnly constrains management writes independently of mode', async () => {
 	const owner = ConfigOwner.nodeAddress()
 	const host = await createHost({
-		plugins: [ConfigOwner],
-		config: { mode: 'declared-only', records: [{ owner, config: { value: 'declared' } }] },
-		runtime: { documents: { config: { readOnly: true }, state: false } },
+		plugins: [
+			{
+				plugin: ConfigOwner,
+				config: { value: 'declared' },
+			},
+		],
+		config: {
+			mode: 'declared-only',
+			document: { readOnly: true },
+		},
+		policy: {
+			document: false,
+		},
 	})
 	try {
 		expect(await host.config.get(owner)).toMatchObject({
@@ -349,8 +426,17 @@ it('readOnly constrains management writes independently of mode', async () => {
 it('checks competing editors inside the queue and preserves explicit empty input on a no-op reset', async () => {
 	const owner = ConfigOwner.nodeAddress()
 	const host = await createHost({
-		plugins: [ConfigOwner],
-		runtime: { documents: { config: false, state: false } },
+		plugins: [
+			{
+				plugin: ConfigOwner,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	try {
 		const initial = await host.config.patch(owner, { set: {} })
@@ -393,18 +479,22 @@ it('reports only accepted raw facts when repairing invalid input fails to persis
 		SuperJSON.stringify({ version: 4, plugins: [{ owner, config: { value: 123 } }] }),
 	)
 	await using host = await createHost({
-		plugins: [ConfigOwner],
-		runtime: {
-			documents: {
-				state: false,
-				config: {
-					storage: () => ({
-						...storage,
-						put: async () => {
-							throw new Error('write unavailable')
-						},
-					}),
-				},
+		plugins: [
+			{
+				plugin: ConfigOwner,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: {
+				storage: () => ({
+					...storage,
+					put: async () => {
+						throw new Error('write unavailable')
+					},
+				}),
 			},
 		},
 	})
@@ -433,7 +523,13 @@ it('reports only accepted raw facts when repairing invalid input fails to persis
 it('rejects canceled queued writes while allowing an already admitted operation to settle', async () => {
 	const { requirePluginHostCoordinator } = await import('../src/internal')
 	const { pluginConfigPatch } = await import('../src/config')
-	const host = await createHost({ plugins: [ConfigOwner] })
+	const host = await createHost({
+		plugins: [
+			{
+				plugin: ConfigOwner,
+			},
+		],
+	})
 	const started = Promise.withResolvers<void>()
 	const release = Promise.withResolvers<void>()
 	const admittedSignal = new AbortController()
@@ -488,9 +584,16 @@ it('catches up external changes made during service preparation after subscribin
 		},
 	}
 	const host = await createHost({
-		plugins: [ConfigOwner],
-		config: { mode: 'saved-first', records: [{ owner, config: { value: 'initial' } }] },
-		runtime: { documents: { config: { storage: () => storage }, state: false } },
+		plugins: [
+			{
+				plugin: ConfigOwner,
+				config: { value: 'initial' },
+			},
+		],
+		config: {
+			mode: 'saved-first',
+			document: { storage: () => storage },
+		},
 		services: [
 			defineHostService({
 				name: 'external-change',
@@ -507,6 +610,9 @@ it('catches up external changes made during service preparation after subscribin
 				},
 			}),
 		],
+		policy: {
+			document: false,
+		},
 	})
 	try {
 		expect(subscribed).toBe(true)

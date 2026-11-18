@@ -209,7 +209,7 @@ it.each([undefined, null, 0, 1, 'true', {}])(
 it('rejects asynchronous tracks and preserves its rejection through Host cleanup', async () => {
 	const failure = new Error('ASYNCHRONOUS_TRACKS_FAILED')
 	const release = Promise.withResolvers<void>()
-	const host = await createHost({ plugins: [], runtime: { documents: { state: false } } })
+	const host = await createHost({ plugins: [], policy: { document: false } })
 	try {
 		const controller = await attachHostVitePlugins(
 			host,

@@ -27,11 +27,6 @@
 			"import": "./dist/better-result.mjs",
 			"require": "./dist/better-result.cjs"
 		},
-		"./config": {
-			"@pluxel/source": "./src/config.ts",
-			"import": "./dist/config.mjs",
-			"require": "./dist/config.cjs"
-		},
 		"./federation": {
 			"@pluxel/source": "./src/federation.ts",
 			"import": "./dist/federation.mjs",
@@ -107,6 +102,11 @@
 			"import": "./dist/toolchain.mjs",
 			"require": "./dist/toolchain.cjs"
 		},
+		"./vault": {
+			"@pluxel/source": "./src/vault.ts",
+			"import": "./dist/vault.mjs",
+			"require": "./dist/vault.cjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
@@ -118,10 +118,6 @@
 			"./better-result": {
 				"import": "./dist/better-result.mjs",
 				"require": "./dist/better-result.cjs"
-			},
-			"./config": {
-				"import": "./dist/config.mjs",
-				"require": "./dist/config.cjs"
 			},
 			"./federation": {
 				"import": "./dist/federation.mjs",
@@ -183,6 +179,10 @@
 				"import": "./dist/toolchain.mjs",
 				"require": "./dist/toolchain.cjs"
 			},
+			"./vault": {
+				"import": "./dist/vault.mjs",
+				"require": "./dist/vault.cjs"
+			},
 			"./package.json": "./package.json"
 		},
 		"access": "public"
@@ -204,6 +204,7 @@
 		"@logtape/pretty": "catalog:prod",
 		"@standard-schema/spec": "catalog:prod",
 		"@types/node": "catalog:types",
+		"age-encryption": "catalog:prod",
 		"better-result": "catalog:prod",
 		"pathe": "catalog:node",
 		"std-env": "catalog:prod",

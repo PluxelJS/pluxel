@@ -1,13 +1,15 @@
+import { validateKey, namespaceFrom, blobPath } from './paths'
+import { cloneJson, freezeJson } from './value'
 import { Decrypter, Encrypter, generateIdentity, identityToRecipient } from 'age-encryption'
-import { type HostVaultBindingRecord } from '@pluxel/host/bindings'
-import { type Context as PluxelContext } from '@pluxel/core'
-import { enterOwnerInvocation } from '@pluxel/core/host'
-import { pinOwnerContext } from '../internal/owner-view'
-import { basename, join } from 'pathe'
-import { writeFileAtomic, type FsPromises } from '@pluxel/core/fs'
-import { observeFile, pluginNodePhysicalKey } from '@pluxel/core/internal'
+import { type Context as PluxelContext } from '../context/Context'
+import { join } from 'pathe'
+import { writeFileAtomic } from '../fs/atomic'
+import type { FsPromises } from '../fs/service'
+import { observeFile } from '../fs/observe'
+import { pluginNodePhysicalKey } from '../internal/plugin-address'
 import { recordSecurityEvent } from '../internal/security'
 import {
+	type VaultBindingRecord,
 	type VaultAdminState,
 	type VaultBlobHandle,
 	type VaultBlobsHandle,
@@ -25,22 +27,8 @@ import {
 	type VaultUnlockSource,
 } from './types'
 
-/** Keep the complete operation admitted through owner stop and Host resource shutdown. */
-async function runVaultOperation<T>(ctx: PluxelContext, run: () => Promise<T>): Promise<T> {
-	const rootLease = enterOwnerInvocation(ctx.root)
-	try {
-		const ownerLease = ctx === ctx.root ? undefined : enterOwnerInvocation(ctx)
-		try {
-			return await run()
-		} finally {
-			ownerLease?.dispose()
-		}
-	} finally {
-		rootLease.dispose()
-	}
-}
+import { runVaultOperation } from './operation'
 
-export { VaultError } from './error'
 import { VaultError } from './error'
 
 type MountRuntime = {
@@ -105,7 +93,6 @@ type ManagedVault = {
 	describe: () => Promise<VaultAdminState>
 	rekey: () => Promise<void>
 	ensureHostKey: () => Promise<string>
-	sealForRuntime: () => Promise<void>
 	setDeployRecipients: (recipients: string[]) => Promise<VaultAdminState>
 	preflight: () => Promise<VaultAdminState>
 }
@@ -180,11 +167,6 @@ function textDecode(input: Uint8Array): string {
 	return new TextDecoder().decode(input)
 }
 
-function normalizeSegment(input: string): string {
-	const trimmed = input || 'default'
-	return basename(trimmed).replaceAll(/[^A-Za-z0-9._-]/g, '_')
-}
-
 function missingFile(error: unknown): boolean {
 	return !!error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT'
 }
@@ -229,64 +211,6 @@ async function listVaultNames(fs: FsPromises | undefined, path: string): Promise
 	}
 }
 
-function cloneJson<T>(value: T): T {
-	const seen = new Set<object>()
-	const copy = (input: unknown): unknown => {
-		if (input === null || typeof input === 'string' || typeof input === 'boolean') return input
-		if (typeof input === 'number' && Number.isFinite(input)) return input
-		if (!input || typeof input !== 'object' || seen.has(input))
-			throw new VaultError('INVALID_FORMAT', 'Vault values must be finite acyclic JSON data.')
-		const prototype = Object.getPrototypeOf(input)
-		if (
-			Object.getOwnPropertySymbols(input).length > 0 ||
-			(Array.isArray(input) && Object.keys(input).length !== input.length)
-		)
-			throw new VaultError(
-				'INVALID_FORMAT',
-				'Vault values cannot contain symbols or sparse arrays.',
-			)
-		if (!Array.isArray(input) && prototype !== Object.prototype && prototype !== null)
-			throw new VaultError('INVALID_FORMAT', 'Vault values must be plain JSON data.')
-		seen.add(input)
-		try {
-			const output: Record<string, unknown> | unknown[] = Array.isArray(input)
-				? []
-				: Object.create(null)
-			for (const key of Object.keys(input)) {
-				const descriptor = Object.getOwnPropertyDescriptor(input, key)!
-				if (!('value' in descriptor))
-					throw new VaultError('INVALID_FORMAT', 'Vault values cannot contain accessors.')
-				Object.defineProperty(output, key, {
-					value: copy(descriptor.value),
-					enumerable: true,
-					writable: true,
-					configurable: true,
-				})
-			}
-			return output
-		} finally {
-			seen.delete(input)
-		}
-	}
-	return copy(value) as T
-}
-function freezeJson<T>(input: T): T {
-	if (input && typeof input === 'object') {
-		for (const child of Object.values(input)) freezeJson(child)
-		Object.freeze(input)
-	}
-	return input
-}
-function validateKey(key: string): void {
-	if (
-		typeof key !== 'string' ||
-		key.length === 0 ||
-		key.length > 512 ||
-		[...key].some((character) => character.charCodeAt(0) < 32) ||
-		['__proto__', 'prototype', 'constructor'].includes(key)
-	)
-		throw new VaultError('INVALID_CONFIG', 'Invalid Vault record key.')
-}
 function recordSnapshot(
 	state: VaultSnapshot['namespaces'][string] | undefined,
 	key: string,
@@ -317,8 +241,10 @@ function randomBytes(size: number): Uint8Array {
 	return out
 }
 
-function toCryptoBuffer(bytes: Uint8Array): BufferSource {
-	return bytes as unknown as BufferSource
+function toCryptoBuffer(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+	return bytes.buffer instanceof ArrayBuffer
+		? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+		: Uint8Array.from(bytes)
 }
 
 async function aesEncrypt(keyBytes: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array> {
@@ -741,14 +667,6 @@ function setStatusFailure(
 	})
 }
 
-function namespaceFrom(ctx: PluxelContext, options?: VaultNamespaceOptions): string {
-	const address = ctx.pluginInfo?.nodeAddress
-	const base = address ? `plugin-${pluginNodePhysicalKey(address)}` : 'default'
-	if (options?.namespace === undefined) return base
-	validateKey(options.namespace)
-	return address ? `${base}~${encodeURIComponent(options.namespace)}` : options.namespace
-}
-
 async function loadMountState(
 	store: FsPromises | undefined,
 	runtime: MountRuntime,
@@ -805,10 +723,6 @@ function cloneNamespaceState(state?: VaultSnapshot['namespaces'][string]) {
 	return cloneJson(state ?? { kv: {}, revisions: {} })
 }
 
-function blobPath(runtime: MountRuntime, namespace: string, name: string): string {
-	return join(runtime.blobsDir, namespace, `${normalizeSegment(name)}.blob`)
-}
-
 /**
  * Shared encrypted vault mount service.
  *
@@ -825,7 +739,7 @@ export class VaultService {
 		public readonly ctx: PluxelContext,
 		private readonly backing: VaultRootBacking,
 	) {
-		pinOwnerContext(this, ctx)
+		Object.defineProperty(this, 'ctx', { value: ctx, writable: false, configurable: false })
 	}
 
 	static create(
@@ -849,12 +763,8 @@ export class VaultService {
 		return owner === this.ctx ? this : new VaultService(owner, this.backing)
 	}
 
-	isBindingsOnly(): boolean {
-		return this.backing.runtime.backend === 'bindings'
-	}
-
 	/** Host-only bootstrap boundary; never exposed through the owner storage facade. */
-	installBindings(records: readonly HostVaultBindingRecord[]): void {
+	installBindings(records: readonly VaultBindingRecord[]): void {
 		if (this.ctx !== this.ctx.root)
 			throw new VaultError('ACCESS_DENIED', 'Vault bindings require the root Context.')
 		const pending = new Map<string, Map<string, VaultRecordSnapshot>>()
@@ -987,7 +897,7 @@ export class VaultService {
 			if (isUnlockedState(entry.state)) return entry.state
 			throw new VaultError(
 				'ACCESS_DENIED',
-				`Vault mount "${SHARED_MOUNT}" is not prepared; the host must complete Context capability preparation before plugin startup.`,
+				`Vault mount "${SHARED_MOUNT}" is locked; supply matching unlock material through the Host configuration or Vault administration.`,
 			)
 		}
 
@@ -1062,33 +972,31 @@ export class VaultService {
 			run: (next: VaultSnapshot['namespaces'][string]) => Promise<T>,
 		): Promise<T> => {
 			const changed: VaultRecordSnapshot[] = []
-			const result = await runVaultOperation(ctx, () =>
-				entry.lock.run(async () => {
-					if (runtime.backend === 'bindings')
-						throw new VaultError('READ_ONLY', 'Vault has no writable backend.')
-					const state = requireUnlockedState()
-					const previous = state.snapshot.namespaces[namespace]
-					const next = cloneNamespaceState(previous)
-					const transactionResult = await run(next)
-					for (const key of Object.keys(next.revisions)) {
-						if (next.revisions[key] !== previous?.revisions[key])
-							changed.push(recordSnapshot(next, key, true))
-					}
-					if (changed.length === 0) return transactionResult
-					const snapshot: VaultSnapshot = {
-						...state.snapshot,
-						namespaces: { ...state.snapshot.namespaces, [namespace]: next },
-					}
-					// Only publish after the encrypted atomic replace is confirmed.
-					await writeFileAtomic(
-						requireVaultFs(store),
-						runtime.statePath,
-						await aesEncrypt(state.dek, serializeSnapshot(snapshot)),
-					)
-					state.snapshot = snapshot
-					return transactionResult
-				}),
-			)
+			const result = await entry.lock.run(async () => {
+				if (runtime.backend === 'bindings')
+					throw new VaultError('READ_ONLY', 'Vault has no writable backend.')
+				const state = requireUnlockedState()
+				const previous = state.snapshot.namespaces[namespace]
+				const next = cloneNamespaceState(previous)
+				const transactionResult = await run(next)
+				for (const key of Object.keys(next.revisions)) {
+					if (next.revisions[key] !== previous?.revisions[key])
+						changed.push(recordSnapshot(next, key, true))
+				}
+				if (changed.length === 0) return transactionResult
+				const snapshot: VaultSnapshot = {
+					...state.snapshot,
+					namespaces: { ...state.snapshot.namespaces, [namespace]: next },
+				}
+				// Only publish after the encrypted atomic replace is confirmed.
+				await writeFileAtomic(
+					requireVaultFs(store),
+					runtime.statePath,
+					await aesEncrypt(state.dek, serializeSnapshot(snapshot)),
+				)
+				state.snapshot = snapshot
+				return transactionResult
+			})
 			for (const snapshot of changed) notify(namespace, snapshot)
 			return result
 		}
@@ -1096,16 +1004,14 @@ export class VaultService {
 		const readSnapshot = async <T>(
 			run: (snapshot: VaultSnapshot) => T | Promise<T>,
 		): Promise<T> => {
-			return await runVaultOperation(ctx, () =>
-				entry.lock.run(async () => {
-					try {
-						return await run(requireUnlockedState().snapshot)
-					} catch (error) {
-						setStatusFailure(store, runtime, entry, error)
-						throw error
-					}
-				}),
-			)
+			return await entry.lock.run(async () => {
+				try {
+					return await run(requireUnlockedState().snapshot)
+				} catch (error) {
+					setStatusFailure(store, runtime, entry, error)
+					throw error
+				}
+			})
 		}
 
 		const readDek = async () => {
@@ -1123,12 +1029,6 @@ export class VaultService {
 
 		// KV and blob mutations save before resolving; flush only drains the local KV queue.
 		const flush = () => entry.lock.run(async () => {})
-
-		const sealForRuntime = async () => {
-			await flush()
-			entry.state = { status: 'locked' }
-			updateStatus(store, runtime, entry, { phase: 'sealed', lastError: undefined })
-		}
 
 		const rewriteEnvelope = async (deployRecipientsOverride?: string[]) => {
 			if (!isUnlockedState(entry.state) && !(await isMountPresent(store, runtime))) {
@@ -1414,61 +1314,55 @@ export class VaultService {
 			return {
 				open: (name: string): VaultBlobHandle => {
 					const path = blobPath(runtime, namespace, name)
-					const readBytes = () =>
-						runVaultOperation(ctx, async () => {
-							const dek = await readDek()
-							const encrypted = await readVaultBytes(store, path)
-							return encrypted ? await aesDecrypt(dek, encrypted) : undefined
-						})
+					const readBytes = async () => {
+						const dek = await readDek()
+						const encrypted = await readVaultBytes(store, path)
+						return encrypted ? await aesDecrypt(dek, encrypted) : undefined
+					}
 
 					return {
-						exists: () =>
-							runVaultOperation(ctx, async () => {
-								await readDek()
-								return await vaultFileExists(store, path)
-							}),
+						exists: async () => {
+							await readDek()
+							return await vaultFileExists(store, path)
+						},
 						readBytes,
 						readText: async () => {
 							const bytes = await readBytes()
 							return bytes ? textDecode(bytes) : undefined
 						},
-						writeBytes: (bytes: Uint8Array) =>
-							runVaultOperation(ctx, async () => {
-								const dek = await readDek()
-								if (!dek) throw new VaultError('INVALID_CONFIG', 'Failed to create vault key.')
-								await writeFileAtomic(requireVaultFs(store), path, await aesEncrypt(dek, bytes))
-							}),
-						writeText: (text: string) =>
-							runVaultOperation(ctx, async () => {
-								await writeFileAtomic(
-									requireVaultFs(store),
-									path,
-									await aesEncrypt((await readDek())!, textEncode(text)),
-								)
-							}),
-						remove: () =>
-							runVaultOperation(ctx, async () => {
-								if (await vaultFileExists(store, path)) await requireVaultFs(store).unlink(path)
-							}),
+						writeBytes: async (bytes: Uint8Array) => {
+							const dek = await readDek()
+							if (!dek) throw new VaultError('INVALID_CONFIG', 'Failed to create vault key.')
+							await writeFileAtomic(requireVaultFs(store), path, await aesEncrypt(dek, bytes))
+						},
+						writeText: async (text: string) => {
+							await writeFileAtomic(
+								requireVaultFs(store),
+								path,
+								await aesEncrypt((await readDek())!, textEncode(text)),
+							)
+						},
+						remove: async () => {
+							if (await vaultFileExists(store, path)) await requireVaultFs(store).unlink(path)
+						},
 						describe: () => ({ path }),
 					}
 				},
-				list: () =>
-					runVaultOperation(ctx, async () => {
-						await entry.lock.run(async () => {
-							try {
-								requireUnlockedState()
-							} catch (error) {
-								setStatusFailure(store, runtime, entry, error)
-								throw error
-							}
-						})
-						const blobNames = await listVaultNames(store, join(runtime.blobsDir, namespace))
-						return blobNames
-							.filter((blobName) => blobName.endsWith('.blob'))
-							.map((blobName) => blobName.slice(0, -'.blob'.length))
-							.sort()
-					}),
+				list: async () => {
+					await entry.lock.run(async () => {
+						try {
+							requireUnlockedState()
+						} catch (error) {
+							setStatusFailure(store, runtime, entry, error)
+							throw error
+						}
+					})
+					const blobNames = await listVaultNames(store, join(runtime.blobsDir, namespace))
+					return blobNames
+						.filter((blobName) => blobName.endsWith('.blob'))
+						.map((blobName) => blobName.slice(0, -'.blob'.length))
+						.sort()
+				},
 			}
 		}
 
@@ -1618,16 +1512,7 @@ export class VaultService {
 		const unlock = async (): Promise<VaultAdminState> => {
 			if (runtime.backend === 'bindings') return describe()
 			try {
-				if (!(await isMountPresent(store, runtime))) {
-					recordSecurityEvent(ctx, {
-						area: 'vault',
-						action: 'unlock',
-						status: 'info',
-						mount: SHARED_MOUNT,
-						message: `Vault mount "${SHARED_MOUNT}" is absent; nothing to unlock.`,
-					})
-					return await describe()
-				}
+				if (!(await isMountPresent(store, runtime))) return preflight()
 
 				await entry.lock.run(async () => {
 					if (isUnlockedState(entry.state)) return
@@ -1678,7 +1563,6 @@ export class VaultService {
 			observeChanges,
 			rekey,
 			preflight,
-			sealForRuntime,
 			setDeployRecipients: async (recipients: string[]) => {
 				const nextRecipients = normalizeRecipients(recipients)
 				if (await isMountPresent(store, runtime)) {
@@ -1726,65 +1610,12 @@ export class VaultService {
 	}
 
 	flush(): Promise<void> {
-		return runVaultOperation(this.ctx, () => this.managedVault().flush())
+		return this.managedVault().flush()
 	}
 
 	/** @internal Root admin projection reuses the immutable mount runtime inputs. */
 	generateDeployKey(): Promise<VaultKeyPair> {
-		return runVaultOperation(this.ctx, () => createDeployKeyPair())
-	}
-
-	/** @internal */
-	async sealMountForTesting(): Promise<void> {
-		await this.managedVault().sealForRuntime()
-	}
-}
-
-export class VaultAdminService {
-	constructor(
-		public readonly ctx: PluxelContext,
-		private readonly vault: VaultService,
-	) {
-		pinOwnerContext(this, ctx)
-	}
-
-	private managedVault(): ManagedVault {
-		return this.vault.managedVault()
-	}
-
-	preflight(): Promise<VaultAdminState> {
-		return runVaultOperation(this.ctx, () => this.managedVault().preflight())
-	}
-
-	async prepare(): Promise<VaultAdminState> {
-		if (this.vault.isBindingsOnly()) return this.describe()
-		const state = await this.describe()
-		if (!state.present && !state.hostIdentityPresent) await this.ensureHostKey()
-		return this.preflight()
-	}
-
-	describe(): Promise<VaultAdminState> {
-		return runVaultOperation(this.ctx, () => this.managedVault().describe())
-	}
-
-	unlock(): Promise<VaultAdminState> {
-		return runVaultOperation(this.ctx, () => this.managedVault().unlock())
-	}
-
-	rekey(): Promise<void> {
-		return runVaultOperation(this.ctx, () => this.managedVault().rekey())
-	}
-
-	ensureHostKey(): Promise<string> {
-		return runVaultOperation(this.ctx, () => this.managedVault().ensureHostKey())
-	}
-
-	setDeployRecipients(recipients: string[]): Promise<VaultAdminState> {
-		return runVaultOperation(this.ctx, () => this.managedVault().setDeployRecipients(recipients))
-	}
-
-	generateDeployKey(): Promise<VaultKeyPair> {
-		return this.vault.generateDeployKey()
+		return createDeployKeyPair()
 	}
 }
 

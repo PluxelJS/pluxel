@@ -7,13 +7,18 @@ import {
 	configBindingProof,
 	type InputSchema,
 } from './input-binding-contract'
-import { parsePluginNodeAddress, pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
+import {
+	parsePluginNodeAddress,
+	pluginNodeIndexKey,
+	type PluginConstructor,
+	type PluginNodeAddress,
+} from '@pluxel/core'
 import type { PluginConfigRecordSnapshot } from '@pluxel/core/services'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { projectRawInput, type Schema } from 'valibot-form'
-import type { HostApplication } from './host'
+import type { OwnedInputBindings } from './bindings'
 import type { HostStartupContext } from './application'
-import type { HostVaultBindingRecord } from './bindings'
+import type { VaultBindingRecord } from '@pluxel/core/vault'
 import { configLeafPaths, configPathsOverlap } from './config-paths'
 import { snapshotConfigInput, type ConfigBindingProof } from './config-records'
 
@@ -32,7 +37,7 @@ export type ResolvedInputBindings = Readonly<{
 		config: Readonly<Record<string, unknown>>
 		sources: readonly Source[]
 	}[]
-	vaultBindings: readonly HostVaultBindingRecord[]
+	vaultBindings: readonly VaultBindingRecord[]
 }>
 
 function envelope(
@@ -210,13 +215,13 @@ async function readJson(path: string, root: string): Promise<unknown> {
 }
 /** Evaluate explicitly declared sources only. Errors never include decoded values. */
 export async function resolveInputBindings(
-	application: HostApplication,
+	application: OwnedInputBindings & { plugins: readonly PluginConstructor[] },
 	startup: HostStartupContext,
 ): Promise<ResolvedInputBindings> {
 	const records: PluginConfigRecordSnapshot[] = []
 	const declarationSources: ResolvedInputBindings['declarationSources'][number][] = []
 	const overlays: ResolvedInputBindings['overlays'][number][] = []
-	const vaultBindings: HostVaultBindingRecord[] = []
+	const vaultBindings: VaultBindingRecord[] = []
 	const seen = new Set<string>()
 	const bindings: ConfigBindingProof[] = []
 	const configTargets = new Map<string, (readonly string[])[]>()
@@ -332,7 +337,7 @@ export async function resolveInputBindings(
 			if (typeof path !== 'string') fail('[host] Vault file bindings must name JSON files')
 			const declared = binding.vault!.schema
 			const raw = await readJson(path, startup.root)
-			const entry: HostVaultBindingRecord = {
+			const entry: VaultBindingRecord = {
 				owner,
 				key,
 				namespace: binding.vault?.namespace,
@@ -386,7 +391,7 @@ export async function resolveInputBindings(
 			const owner = target(binding.plugin, 'vault', binding.vault?.namespace, key)
 			const declared = binding.vault!.schema
 			const decoded = decode(vaultRecordSchema(declared, key), mapping, startup.env, true)
-			const entry: HostVaultBindingRecord = {
+			const entry: VaultBindingRecord = {
 				owner,
 				key,
 				namespace: binding.vault?.namespace,

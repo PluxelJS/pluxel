@@ -52,6 +52,7 @@ try {
 	const destination = resolve(process.cwd(), options.directory)
 	await createProject(assets, destination)
 	console.info(`\nCreated the Pluxel example workspace at ${destination}`)
+	console.info('Application configuration: host/src/app.ts')
 	console.info('Current Pluxel documentation: vp exec pluxel docs')
 
 	if (options.install) {

@@ -2,6 +2,8 @@
 
 import { ActionIcon, Box, Group, Skeleton, Stack } from '@mantine/core'
 import { pluginNodeIndexKey } from '@pluxel/core'
+import type { HostAutoStartChoice, HostPolicyResetTarget } from '@pluxel/host'
+import { pluginApplyReportOutcome } from '@pluxel/host/internal/protocol'
 import {
 	IconCornerUpLeft,
 	IconKeyboard,
@@ -20,7 +22,8 @@ import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
 import { setPluginAutoStarts } from '../pluginStatusActions'
 import { describePluginControlBatchFailure } from '../pluginControlBatchPresentation'
 import { usePluginOverview } from '../pluginOverview'
-import { canWritePluginState } from '../pluginOverviewModel'
+import { readPluginPolicyTarget } from '../pluginOverviewModel'
+import { refreshPluginReadModels } from '../pluginReadModels'
 import { runtimeErrorMessage, useRuntimeManagementClient } from '../../../runtime'
 import {
 	EMPTY_OVERVIEW,
@@ -165,7 +168,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 	const [organizerResetToken, setOrganizerResetToken] = useState(0)
 
 	const overviewState = usePluginOverview()
-	const canChangeAutoStart = canWritePluginState(overviewState.overview?.statePolicy, 'autoStart')
+	const statePolicy = overviewState.overview?.statePolicy
 	const refetchOverview = overviewState.refetch
 
 	const overview = useMemo<OverviewSnapshot>(() => {
@@ -184,6 +187,13 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 		overviewState.overview?.status?.statuses,
 		overviewState.overview?.status?.summary,
 	])
+	const canChangeAutoStart = selectedIds.every((id) => {
+		const status = overview.statuses[id]
+		return (
+			status &&
+			readPluginPolicyTarget(statePolicy, { field: 'autoStart', node: status.address })?.canWrite
+		)
+	})
 
 	useEffect(() => {
 		if (draftGroups) {
@@ -319,7 +329,6 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 
 	const handleBulkAutoStart = useCallback(
 		async (autoStart: boolean) => {
-			const statePolicy = overviewState.overview?.statePolicy
 			if (selectedIds.length === 0 || !canChangeAutoStart || !statePolicy) return
 			const batch = selectedIds.map((id) => {
 				const status = overview.statuses[id]
@@ -329,6 +338,15 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 			const displayNameByAddress = new Map(
 				batch.map((status) => [pluginNodeIndexKey(status.address), status.name ?? status.id]),
 			)
+			const previous: HostAutoStartChoice[] = []
+			const reset: HostPolicyResetTarget[] = []
+			for (const { address, autoStart: previousAutoStart } of batch) {
+				const target = { field: 'autoStart' as const, node: address }
+				// In a writable target, a saved record always supplies the effective value.
+				if (readPluginPolicyTarget(statePolicy, target)?.source === 'saved')
+					previous.push({ node: address, autoStart: previousAutoStart })
+				else reset.push(target)
+			}
 			setBulkBusy(true)
 			try {
 				const result = await setPluginAutoStarts(
@@ -362,30 +380,37 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 											setBulkBusy(true)
 											try {
 												if (!undoRevision) throw new Error('原操作未返回策略版本，无法恢复')
-												const undoResult = await setPluginAutoStarts(
-													management,
-													queryClient,
-													batch.map(({ address, autoStart: previousAutoStart }) => ({
-														address,
-														autoStart: previousAutoStart,
-													})),
-													undoRevision,
+												const undoResult = await management.policy.patch(
+													{ autoStart: previous, reset },
+													{ expectedManagedRevision: undoRevision },
 												)
+												const diagnosticText = JSON.stringify(undoResult, null, 2)
 												if (undoResult.ok === false) {
-													notifyAndRecord(
-														describePluginControlBatchFailure(
-															'restore-auto-start',
-															undoResult,
-															(address) =>
-																displayNameByAddress.get(pluginNodeIndexKey(address)) ?? 'Plugin',
-														),
-													)
-												} else {
 													notifyAndRecord({
-														title: '已恢复原策略',
-														message: `${batch.length} 个 Plugin 的自动启动策略已恢复`,
-														color: 'green',
-														diagnosticText: JSON.stringify(undoResult, null, 2),
+														title:
+															undoResult.state === 'unknown'
+																? '策略恢复结果待核对'
+																: '策略恢复被拒绝',
+														message: undoResult.message,
+														color: undoResult.state === 'unknown' ? 'yellow' : 'red',
+														autoClose: false,
+														diagnosticText,
+													})
+												} else {
+													const outcome = undoResult.report
+														? pluginApplyReportOutcome(undoResult.report)
+														: undefined
+													const appliedWithIssues =
+														outcome !== undefined && outcome.status !== 'applied'
+													notifyAndRecord({
+														title: appliedWithIssues
+															? '原策略已恢复，运行协调存在问题'
+															: '已恢复原策略',
+														message: appliedWithIssues
+															? outcome.message
+															: `${batch.length} 个 Plugin 的自动启动策略已恢复`,
+														color: appliedWithIssues ? 'red' : 'green',
+														diagnosticText,
 													})
 												}
 											} catch (error: unknown) {
@@ -395,6 +420,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 													color: 'red',
 												})
 											} finally {
+												await refreshPluginReadModels(queryClient)
 												setBulkBusy(false)
 											}
 										})()
@@ -419,14 +445,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 				setBulkBusy(false)
 			}
 		},
-		[
-			canChangeAutoStart,
-			management,
-			selectedIds,
-			overview.statuses,
-			overviewState.overview?.statePolicy,
-			queryClient,
-		],
+		[canChangeAutoStart, management, selectedIds, overview.statuses, statePolicy, queryClient],
 	)
 
 	const handleBulkAction = useCallback(

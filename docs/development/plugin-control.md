@@ -3,7 +3,7 @@ title: 插件控制类型与实例调用
 description: 使用构建生成的插件描述符、配置源码声明和实例类型，编写可检查的 Host 脚本。
 ---
 
-插件构建会生成独立的 `control` 入口。入口里的值是冻结的地址提供者，提供 `definitionAddress()` 和 `nodeAddress(forkId?)`。它们携带构建绑定的类型与校验信息，类型文件保留原 class 的方法、属性、继承、重载与泛型。脚本通过 `sdk.plugin(Descriptor.nodeAddress())` 选择插件，再使用同一个引用读取配置、启停节点或调用业务实例。
+插件构建会生成独立的 `control` 入口。入口里的值是冻结的地址提供者，提供 `address()` 和 `nodeAddress(forkId?)`。它们携带构建绑定的类型与校验信息，类型文件保留原 class 的方法、属性、继承、重载与泛型。脚本通过 `sdk.plugin(Descriptor.nodeAddress())` 选择插件，再使用同一个引用读取配置、启停节点或调用业务实例。
 
 ## 取得控制入口
 

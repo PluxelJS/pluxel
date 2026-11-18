@@ -250,7 +250,8 @@ export default (async sdk => sdk.ctx.service(Search)?.query('optional') ?? 'miss
 	await using host = await createHost({
 		plugins: [],
 		services: [installation],
-		runtime: { documents: { config: false, state: false } },
+		config: { document: false },
+		policy: { document: false },
 	})
 	await host.start()
 	await using owner = createNodeScriptOwner({ ctx: host.ctx })
@@ -265,7 +266,8 @@ export default (async sdk => sdk.ctx.service(Search)?.query('optional') ?? 'miss
 	expect(readServiceDefinition(NativeSearch).optional).toBe(false)
 	await using empty = await createHost({
 		plugins: [],
-		runtime: { documents: { config: false, state: false } },
+		config: { document: false },
+		policy: { document: false },
 	})
 	await empty.start()
 	await using emptyOwner = createNodeScriptOwner({ ctx: empty.ctx })

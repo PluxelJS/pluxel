@@ -78,6 +78,8 @@ describe('create-pluxel', () => {
 		assert.match(result.stdout, /vp install/)
 		assert.match(result.stdout, /vp run setup/)
 		assert.match(result.stdout, /vp run dev/)
+		assert.match(result.stdout, /Application configuration: host\/src\/app\.ts/)
+		await assert.rejects(lstat(resolve(generated, 'host/src/policy.ts')), { code: 'ENOENT' })
 
 		assert.match(
 			await readFile(resolve(generated, 'README.md'), 'utf8'),

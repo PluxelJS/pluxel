@@ -120,7 +120,7 @@ export default (async (sdk) => {
 
 `sdk.ctx` 是当前 run 的根 Context 视图，内建能力直接通过 `sdk.ctx.logger`、`sdk.ctx.effects`、`sdk.ctx.events` 使用；应用配置日志后可读取 `sdk.ctx.logging`。这些能力无需服务声明或生成材料。SDK 视图的 `effects` 管理本次 run 登记的资源，run 关闭时自动释放；显式 dispose 该 scope 也不会关闭 Host 或插件。
 
-Vault、Commands 等由应用安装的服务通过 `service(...)` 读取。直接导入服务声明或生成的服务描述符表示必需依赖；缺失时抛出 `ContextServiceMissingError`。可选依赖用 `defineServiceRef<T>()` 取得引用，仅未安装时返回 `undefined`，访问拒绝、构造失败和契约失配继续抛出。
+Commands 等由应用安装的服务通过 `service(...)` 读取。直接导入服务声明或生成的服务描述符表示必需依赖；缺失时抛出 `ContextServiceMissingError`。可选依赖用 `defineServiceRef<T>()` 取得引用，仅未安装时返回 `undefined`，访问拒绝、构造失败和契约失配继续抛出。
 
 上传脚本从生成的 `./control` 或同步模块导入服务值与对应的 `FooInstance` 类型，不加载本地服务实现：
 
@@ -157,7 +157,7 @@ export default (async (sdk) => {
 }) satisfies Script
 ```
 
-`context()` 捕获当前 running generation，不会启动节点。返回的 Plugin Context 直接提供 `logger`、`effects`、`events`、`fs()` 和 `tinybase`，应用安装的服务继续通过 `service` 读取，各项能力保持原生 API。run 关闭或该 generation 被停止、重启、替换后，旧视图与已借用能力失效，重新调用 `context()` 取得新 generation。`sdk.ctx` 允许根访问，节点 Context 允许 owner 访问，两者都保留安装权限。脚本自己创建的订阅、RPC lease 和其他资源仍须按原 API 释放。
+`context()` 捕获当前 running generation，不会启动节点。返回的 Plugin Context 直接提供 `logger`、`effects`、`events`、`fs()`、`tinybase` 和 `vault`，应用安装的服务继续通过 `service` 读取，各项能力保持原生 API。run 关闭或该 generation 被停止、重启、替换后，旧视图与已借用能力失效，重新调用 `context()` 取得新 generation。`sdk.ctx` 允许根访问，节点 Context 允许 owner 访问，两者都保留安装权限。脚本自己创建的订阅、RPC lease 和其他资源仍须按原 API 释放。
 
 ## 向 Node 应用提交
 
@@ -175,7 +175,10 @@ vp add -D @pluxel/cli @pluxel/agent-sdk @pluxel/core @pluxel/host typescript
 import { servicesPreset } from '@pluxel/services/preset'
 
 // 在 defineHostApplication 的 startup 回调中
-const services = await servicesPreset(startup, { workbench: false, scripts: true })
+const services = await servicesPreset(startup, {
+	workbench: false,
+	managementHttp: { scripts: true },
+})
 ```
 
 手动组合管理服务则使用 `managementHttp({ scripts: true })`，其余认证与管理服务装配见 [Management](../host/management.md)。默认关闭执行能力。开启它授予管理员在目标 Node 进程内执行受信任代码的权限；Node 模块工厂使用同进程加载，拥有进程级 JavaScript 能力。启用此选项的应用负责信任提交者。
@@ -245,7 +248,7 @@ export default (async (sdk) => {
 
 服务访问与缺失、权限和契约错误见[借用已安装的服务](#借用已安装的服务)。插件自己的业务 Result、异常和资源协议保持原样。
 
-`sdk.plugin()` 同步选择目标，错误参数或关闭的 run 同步抛错。提供者的 `definitionAddress()`、`nodeAddress()` 和 `nodeAddress(id)` 只生成地址，不查询或启动插件。异步操作的错误参数形状、无效数值和未知实现缺陷仍可 reject；原业务方法保持自己的返回类型、异常和资源协议。加载、执行、结果编码或清理失败形成 `failed`，带有阶段和错误，清理错误另存 `cleanupError`。
+`sdk.plugin()` 同步选择目标，错误参数或关闭的 run 同步抛错。提供者的 `address()`、`nodeAddress()` 和 `nodeAddress(id)` 只生成地址，不查询或启动插件。异步操作的错误参数形状、无效数值和未知实现缺陷仍可 reject；原业务方法保持自己的返回类型、异常和资源协议。加载、执行、结果编码或清理失败形成 `failed`，带有阶段和错误，清理错误另存 `cleanupError`。
 
 如果原业务方法返回共享 Better Result，脚本可以显式处理它，也可以作为顶层业务结果返回。执行边界用原生 `Result.codec` 编码为 `{ status: 'ok', value }` 或 `{ status: 'error', error }`；业务 `Err` 留在成功运行的 `run.value` 内，由调用方判断。识别依据是共享库实例，普通 JSON 的同名字段不改变执行语义。Result payload 使用相同的 JSON 约束；嵌套 Result、业务 Error/TaggedError 和资源句柄由作者显式投影，执行器不会调用任意 `toJSON`。
 

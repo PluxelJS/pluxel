@@ -67,14 +67,21 @@ export class Probe extends BasePlugin {
 `
 	const app = (version) => `
 import { defineHostApplication } from '@pluxel/host';
-import { pluginSource } from '@pluxel/host/sources';
+import { resolve } from 'node:path';
 import { metrics } from './metrics.ts';
-export default defineHostApplication(() => ({
-	plugins: [],
-	sources: [pluginSource({kind:'directory',path:'./entries',include:['*.entry.ts']})],
-	policy: { autoStart: ${JSON.stringify(Array.from({ length: count }, (_, index) => address(index)))} },
-	prepare() { metrics.prepared.push(${version}); }
-}));
+export default defineHostApplication(({ root }) => {
+	const directories = ['entries'].map(directory => resolve(root, directory));
+	return {
+		sources: directories.map(directory => ({ directory, include: ['*.entry.ts'] })),
+		pluginNodes: ${JSON.stringify(
+			Array.from({ length: count }, (_, index) => ({
+				definition: address(index).definition,
+				autoStart: true,
+			})),
+		)},
+		prepare() { metrics.prepared.push(${version}); }
+	};
+});
 `
 	const inspect = async () => {
 		using client = await openProjectControl(instance)
@@ -317,7 +324,7 @@ export default (async (sdk) => {
 import type { Script } from '@pluxel/agent-sdk/host';
 import { Probe } from './entries/probe-0.entry.ts';
 export default (async (sdk) => {
- const discovered = await sdk.plugins.list({ definition: Probe.definitionAddress() });
+ const discovered = await sdk.plugins.list({ definition: Probe.address() });
  const page = await sdk.plugins.list({ limit: 200 });
  return { discovered, nodes: page.nodes };
 }) satisfies Script;

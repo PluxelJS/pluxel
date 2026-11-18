@@ -790,7 +790,7 @@ describe('owner-bound PluginPart', () => {
 				resolveLatePartInit()
 				await vi.waitFor(() => expect(latePartCleanups).toBe(1))
 			},
-			{ plugins: { drainTimeoutMs: 20 } },
+			{ execution: { drainTimeoutMs: 20 } },
 		)
 	})
 })

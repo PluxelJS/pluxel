@@ -419,7 +419,7 @@ function createChange(
 
 	const setDefault = (input: ProviderDefaultInput): undefined => {
 		authority.recordCommand('change.dependencies.setDefault()')
-		const key = pluginDefinitionIndexKey(input.requirement.definitionAddress())
+		const key = pluginDefinitionIndexKey(input.requirement.address())
 		const previous = plan.defaults.get(key)
 		if (previous && (previous.kind !== 'set' || previous.provider !== input.provider)) {
 			throw conflictError('dependencies.setDefault', input.requirement)
@@ -433,7 +433,7 @@ function createChange(
 
 	const clearDefault = (requirement: PluginToken): undefined => {
 		authority.recordCommand('change.dependencies.clearDefault()')
-		const key = pluginDefinitionIndexKey(requirement.definitionAddress())
+		const key = pluginDefinitionIndexKey(requirement.address())
 		const previous = plan.defaults.get(key)
 		if (previous && previous.kind !== 'clear') {
 			throw conflictError('dependencies.setDefault/clearDefault', requirement)
@@ -444,7 +444,7 @@ function createChange(
 
 	const overrideKey = (input: DependencyOverrideTarget): string => {
 		const consumer = resolvePluginTestTarget(input.consumer).address
-		return `${pluginNodeIndexKey(consumer)}\0${pluginDefinitionIndexKey(input.requirement.definitionAddress())}`
+		return `${pluginNodeIndexKey(consumer)}\0${pluginDefinitionIndexKey(input.requirement.address())}`
 	}
 
 	const setOverride = (input: DependencyOverrideInput): undefined => {
@@ -747,7 +747,7 @@ async function createServiceHostWorld(
 			(change) => change.replaceDefinition(current, next),
 			(commit) => {
 				assertStrict('replaceDefinition', commit)
-				const definition = next.definitionAddress()
+				const definition = next.address()
 				const replacement = coordinator
 					.catalogSnapshot()
 					.byDefinition.get(pluginDefinitionIndexKey(definition))
@@ -1058,7 +1058,7 @@ function statePatchOperations(plan: ServiceDraftPlan): HostStatePatchOperation[]
 	for (const command of plan.defaults.values()) {
 		operations.push({
 			type: 'set-provider-default',
-			token: command.requirement.definitionAddress(),
+			token: command.requirement.address(),
 			provider: command.kind === 'set' ? command.provider.nodeAddress() : null,
 		})
 	}
@@ -1066,7 +1066,7 @@ function statePatchOperations(plan: ServiceDraftPlan): HostStatePatchOperation[]
 		operations.push({
 			type: 'set-dependency-override',
 			consumer: resolvePluginTestTarget(command.consumer).address,
-			requirement: command.requirement.definitionAddress(),
+			requirement: command.requirement.address(),
 			provider: command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
 		})
 	}

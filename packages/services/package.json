@@ -13,7 +13,6 @@
 		"!**/*.map"
 	],
 	"type": "module",
-	"types": "./dist/index.d.mts",
 	"imports": {
 		"#pluxel/database-driver/pglite": {
 			"@pluxel/source": "./src/database/adapters/pglite.ts",
@@ -25,10 +24,6 @@
 		}
 	},
 	"exports": {
-		".": {
-			"@pluxel/source": "./src/index.ts",
-			"default": "./dist/index.mjs"
-		},
 		"./commands": {
 			"@pluxel/source": "./src/commands.ts",
 			"default": "./dist/commands.mjs"
@@ -137,10 +132,6 @@
 			"@pluxel/source": "./src/sources.ts",
 			"default": "./dist/sources.mjs"
 		},
-		"./vault": {
-			"@pluxel/source": "./src/vault.ts",
-			"default": "./dist/vault.mjs"
-		},
 		"./vite": {
 			"@pluxel/source": "./src/vite.ts",
 			"default": "./dist/vite.mjs"
@@ -162,7 +153,6 @@
 			"#pluxel/database-driver/postgres": "./dist/internal/database/postgres.mjs"
 		},
 		"exports": {
-			".": "./dist/index.mjs",
 			"./commands": "./dist/commands.mjs",
 			"./database": "./dist/database.mjs",
 			"./database/pglite": "./dist/database/pglite.mjs",
@@ -190,7 +180,6 @@
 			"./plugins": "./dist/plugins.mjs",
 			"./preset": "./dist/preset.mjs",
 			"./sources": "./dist/sources.mjs",
-			"./vault": "./dist/vault.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./workers": "./dist/workers.mjs",
 			"./package.json": "./package.json",
@@ -213,7 +202,6 @@
 	"dependencies": {
 		"@types/node": "catalog:types",
 		"@types/pg": "catalog:types",
-		"age-encryption": "catalog:prod",
 		"chokidar": "catalog:node",
 		"crossws": "catalog:prod",
 		"drizzle-orm": "catalog:backend",
@@ -238,6 +226,7 @@
 		"@tabler/icons-react": "catalog:icons",
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
+		"age-encryption": "catalog:prod",
 		"capnweb": "catalog:prod",
 		"elysia": "catalog:prod",
 		"fs-fixture": "catalog:dev",

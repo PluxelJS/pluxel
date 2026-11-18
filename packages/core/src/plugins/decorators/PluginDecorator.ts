@@ -1,6 +1,7 @@
 import { BasePlugin } from '../composition/BasePlugin'
 import type { PluginToken, SubclassOf } from '../types'
 import { registerPluginMarker } from './marker'
+import { assertStartTimeoutMs } from '../../context/plugin-execution'
 
 export interface PluginOptions {
 	readonly displayName?: string
@@ -28,12 +29,8 @@ function validateOptions(input: PluginOptions | undefined): PluginOptions {
 		throw new TypeError('[pluxel/core] @Plugin displayName must be a non-empty string literal')
 	}
 	const startTimeoutMs = input.startTimeoutMs
-	if (
-		startTimeoutMs !== undefined &&
-		(!Number.isFinite(startTimeoutMs) || !Number.isInteger(startTimeoutMs) || startTimeoutMs <= 0)
-	) {
-		throw new TypeError('[pluxel/core] @Plugin startTimeoutMs must be a positive finite integer')
-	}
+	if (startTimeoutMs !== undefined)
+		assertStartTimeoutMs(startTimeoutMs, '[pluxel/core] @Plugin startTimeoutMs')
 	const forkable = input.forkable
 	if (forkable !== undefined && forkable !== true) {
 		throw new TypeError('[pluxel/core] @Plugin forkable must be the literal true')

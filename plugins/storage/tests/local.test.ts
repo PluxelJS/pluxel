@@ -1,4 +1,7 @@
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -215,7 +218,7 @@ describe('S3Plugin local backend', () => {
 		const root = await temporaryRoot()
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(S3Plugin.nodeAddress(), {
@@ -253,7 +256,7 @@ async function temporaryRoot(): Promise<string> {
 async function withLocalS3(rootDir: string, run: (s3: S3) => void | Promise<void>): Promise<void> {
 	{
 		await using host = await createTestHost({
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 
 		await host.start(S3Plugin.nodeAddress(), {

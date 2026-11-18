@@ -75,7 +75,7 @@ host.fetch(new URL('/probe', host.http.origin))
 host.commands.createMount()
 // @ts-expect-error Workbench is absent unless explicitly enabled.
 host.workbench
-// @ts-expect-error Service installation uses an explicit list, not a second product configuration.
+// @ts-expect-error Vault is built in; its backend configuration belongs under coreConfig.vault.
 await createTestHost({ vault: {} })
 
 void (null as unknown as Single)

@@ -272,13 +272,24 @@ class Discoverable extends BasePlugin {}
 
 it('captures caller-owned filters before admission and rejects the original invalid query asynchronously', async () => {
 	await using host = await createHost({
-		plugins: [Discoverable],
-		policy: { forks: [Discoverable.nodeAddress('east')] },
-		runtime: { documents: { config: false, state: false } },
+		plugins: [
+			{
+				plugin: Discoverable,
+				forks: {
+					east: {},
+				},
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	await host.start()
 	await using scope = createScriptScope({ ctx: host.ctx })
-	const original = Discoverable.definitionAddress()
+	const original = Discoverable.address()
 	const definition = { entry: { ...original.entry }, exportName: original.exportName }
 	const query = {
 		definition,
@@ -307,14 +318,25 @@ it('captures caller-owned filters before admission and rejects the original inva
 
 it('paginates across script scopes on one real Host and feeds discovered addresses directly to selection', async () => {
 	await using host = await createHost({
-		plugins: [Discoverable],
-		policy: { forks: [Discoverable.nodeAddress('east')] },
-		runtime: { documents: { config: false, state: false } },
+		plugins: [
+			{
+				plugin: Discoverable,
+				forks: {
+					east: {},
+				},
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
 	const first = await scope.sdk.plugins.list({
-		definition: Discoverable.definitionAddress(),
+		definition: Discoverable.address(),
 		limit: 1,
 	})
 	expect(first.nodes).toHaveLength(1)
@@ -322,7 +344,7 @@ it('paginates across script scopes on one real Host and feeds discovered address
 	await scope.dispose()
 	await using next = createScriptScope({ ctx: host.ctx })
 	const second = await next.sdk.plugins.list({
-		definition: Discoverable.definitionAddress(),
+		definition: Discoverable.address(),
 		limit: 1,
 		cursor: first.nextCursor!,
 	})

@@ -38,7 +38,7 @@ export function recordLoadedPluginModule(
 		Object.freeze({
 			module,
 			package: owner,
-			control: readLoadedPluginControl(owner, plugin.definitionAddress()),
+			control: readLoadedPluginControl(owner, plugin.address()),
 		}),
 	)
 }
@@ -98,11 +98,7 @@ export function recordLoadedApplicationPlugins(
 			if (!application.controls.has(plugin))
 				application.controls.set(
 					plugin,
-					readApplicationPluginControl(
-						module,
-						application.controlManifest,
-						plugin.definitionAddress(),
-					),
+					readApplicationPluginControl(module, application.controlManifest, plugin.address()),
 				)
 		return
 	}
@@ -152,7 +148,7 @@ export function recordLoadedApplicationPlugins(
 	if (!files.has(realpathSync(module)))
 		throw new TypeError('[host] loaded application entry is absent from its modules inventory')
 	for (const plugin of plugins) {
-		const definition = plugin.definitionAddress()
+		const definition = plugin.address()
 		if (definitions.has(pluginDefinitionIndexKey(definition)))
 			recordLoadedPluginModule(plugin, module, owner)
 	}

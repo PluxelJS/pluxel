@@ -10,7 +10,7 @@
 
 pluxel({ delivery }) 默认 standalone；modules 保留真实包边界和目录来源。delivery 与 headless/workbench variant 独立，创建插件时校验并复制选项，后续修改原对象不影响异步构建。managedDatabaseDrivers/residualDependencies 只用于 standalone；生产启动由应用 launch 选择。
 
-modules 复用共享 pipeline，不执行工厂。相对模块和 `package.json`#imports 指向的本地模块参与编译，外部 #imports/bare import 保持真实 package boundary，public source export 输出对应 ESM entry。app.mjs 默认导出应用工厂并保留 product/named exports，启动显式调用 `runHostApplication`。自定义 entryFileNames 需保持 .mjs；exports/server entry 来自真实 chunk。共享 parser 校验 application/bindings，静态 catalog 限制只用于 standalone。
+modules 复用共享 pipeline，不执行工厂。相对模块和 `package.json`#imports 指向的本地模块参与编译，外部 #imports/bare import 保持真实 package boundary，public source export 输出对应 ESM entry。app.mjs 默认导出应用工厂并保留 product/named exports，启动显式调用 `runHostApplication`。自定义 entryFileNames 需保持 .mjs；exports/server entry 来自真实 chunk。共享解析器读取应用的节点声明和绑定以生成环境模板，启动时以工厂计算的 `sources` 发现 Node ESM 入口。
 
 manifest 声明 `artifactRoot`、Node/Workbench 能力和 modules 版本；`pluxel-modules.json` 记录本包编译的 definition、chunk/SHA-256。Native 在工厂解析时验证文件、边界与摘要，按实际已求值 owner 为本地 source-entry 绑定输出，canonical identity 保持原值。能力声明的 inventory 缺失/损坏则失败，运行期不回源码编译。
 
@@ -20,7 +20,7 @@ manifest 声明 `artifactRoot`、Node/Workbench 能力和 modules 版本；`plux
 
 standalone 由 pluxel() 在普通 tsdown entry/output 上生成 platform bootstrap。bootstrap 加载应用、装配 Host、绑定 provenance 后调用共享 `startHostApplication`，导出 host/ctx/start/stop 和应用显式 named exports。保留名冲突（含 alias/export *）在启动时检查 namespace，并在读取 deployment/求值工厂前拒绝。HTTP fetch/address/publicDir 由应用选择；prepare/start/close 逻辑仍归 Host。
 
-freezer 接受直接默认导出的 `defineHostApplication`(factory)，factory 为同步/异步函数表达式，以直接对象或块中唯一无条件顶层 return 返回对象，返回对象无 spread。plugins 为直接数组或模块级 const/imported 数组，不依赖 startup 分支或任意函数求值。standalone 拒绝 sources，目录来源使用 modules。
+freezer 接受直接默认导出的 `defineHostApplication(factory)`，工厂为同步或异步函数表达式，以对象字面量或块中唯一无条件顶层 return 返回对象，返回对象无 spread。构建从 `plugins` 的 `{ plugin: Constructor, … }` 条目读取固定闭包，支持直接数组和模块级导入数组。构造器是可解析的直接类标识符，节点的业务配置和 Core 设施选项由工厂在运行期决定。省略 `plugins` 表示空闭包。standalone 接受省略的 `sources` 或直接的空数组。需要动态来源的应用选择 modules。
 
 静态数组在模块求值、工厂及 helper/callback 中须保持成员不变。检查器拒绝明显赋值、删除、mutator、别名和向 helper 传数组，允许 map/slice 等读取；跨模块副作用和 callback 仍由作者保持该约束，检查范围限可判定语法。
 
@@ -32,9 +32,9 @@ HTTP 真正进入闭包才配置 Elysia：从 Services HTTP 的 manifest 读取 
 
 ### 环境绑定与无求值投影
 
-validator 解析直接 `envBindings` 数组，每项使用 Host `envBinding`(Plugin.nodeAddress(), { config?, vault?, namespace? })，Plugin 为静态 catalog 直接标识符。config/vault 显式提供 schema/mapping，mapping 是环境名字符串或 direct object tree。Vault 顶层为完整 record，可映射一个 JSON 变量或多个字段。
+模板解析器沿 `plugins`、`pluginNodes` 和每项的 `forks` 取得节点身份，读取节点的直接 `envBindings` 数组。每项使用 Host `envBinding({ config?, vault? })`，由它所在的默认节点或 fork 决定地址。地址预置项可用结构化地址字面量或直接的控制引用 `Plugin.address()`，绑定随实际实现接纳核验。config 与 vault 各自提供 schema 和 mapping，mapping 是环境名字符串或对象字面量树。Vault 以完整 record 为单位，每条 record 可映射一个 JSON 变量或多个字段。
 
-`.env.example` 仅输出名称、input type、schema 描述，构建不读取环境/凭据/fileBindings JSON。应用或 mapping 的 spread、computed/duplicate property、非 portable 环境名拒绝。Host 启动负责读取、解码和最终校验，优先级与 env 只读见 [Config](CONFIG.md)。
+`.env.example` 仅输出名称、input type 和 schema 描述。节点声明、fork 表和 mapping 使用可静态读取的结构，无法确定的表达式和非 portable 环境名会报告源码位置。环境变量、文件和凭据由 Host 启动时读取、解码和校验。优先级与注入规则见 [Config](CONFIG.md)。
 
 projector 复用 config source resolver，将显式 schema 还原成封闭 Valibot DSL，再调用 valibot-form 的 raw-input projector。它不执行工厂、模块副作用、validation/transform/default getter；不能安全还原/推导 transport 则失败。
 

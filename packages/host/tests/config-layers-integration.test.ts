@@ -10,6 +10,7 @@ import { SuperJSON } from 'superjson'
 import * as v from 'valibot'
 import { expect, it } from 'vitest'
 import { createHost, envBinding, fileBinding, resolveHostApplication } from '../src/index'
+import { createResolvedHost } from '../src/host'
 import { createDocumentStorage } from './helpers/document-storage'
 import { renderPluginDescriptors } from '../src/control-manifest'
 
@@ -45,46 +46,45 @@ it.each(['declared-only', 'declared-first', 'saved-first'] as const)(
 			let writes = 0
 			const resolved = await resolveHostApplication(
 				() => ({
-					plugins: [DeploymentOwner],
-					policy: { forks: [owner] },
+					plugins: [
+						{
+							plugin: DeploymentOwner,
+							forks: {
+								deployment: {
+									config: { value: 'code', codeOnly: 'from-code' },
+									configMode: mode,
+									fileBindings: [
+										fileBinding({ config: { schema: DeploymentConfig, path: 'deployment.json' } }),
+									],
+									envBindings: [
+										envBinding({
+											config: {
+												schema: DeploymentConfig,
+												mapping: { value: 'VALUE', envOnly: 'ENV_ONLY' },
+											},
+										}),
+									],
+								},
+							},
+						},
+					],
+					policy: { document: false },
 					config: {
 						mode: 'declared-only',
-						records: [{ owner, mode, config: { value: 'code', codeOnly: 'from-code' } }],
-					},
-					fileBindings: [
-						fileBinding(owner, { config: { schema: DeploymentConfig, path: 'deployment.json' } }),
-					],
-					envBindings: [
-						envBinding(owner, {
-							config: {
-								schema: DeploymentConfig,
-								mapping: { value: 'VALUE', envOnly: 'ENV_ONLY' },
-							},
-						}),
-					],
-					runtime: {
-						documents: {
-							state: false,
-							config: {
-								storage: () => ({
-									...storage,
-									async put(key, value) {
-										writes++
-										await storage.put(key, value)
-									},
-								}),
-							},
+						document: {
+							storage: () => ({
+								...storage,
+								async put(key, value) {
+									writes++
+									await storage.put(key, value)
+								},
+							}),
 						},
 					},
 				}),
 				{ root, mode: 'test', env: { VALUE: 'environment', ENV_ONLY: 'from-env' }, bindings: {} },
 			)
-			await using host = await createHost({
-				plugins: resolved.plugins,
-				policy: resolved.policy,
-				config: resolved.config,
-				runtime: resolved.runtime,
-			})
+			await using host = await createResolvedHost(resolved)
 			await host.startNode(owner)
 			const result = await host.config.get(owner)
 			expect(result).toMatchObject({
@@ -164,15 +164,24 @@ it('selects and validates Part subtrees within each default or fork owner record
 		}),
 	)
 	await using host = await createHost({
-		plugins: [PartOwner],
-		policy: { forks: [fork] },
-		config: {
-			records: [
-				{ owner: PartOwner.nodeAddress(), config: { part: { value: 'declared-default' } } },
-				{ owner: fork, mode: 'saved-first', config: { part: { value: 'declared-fork' } } },
-			],
+		plugins: [
+			{
+				plugin: PartOwner,
+				config: { part: { value: 'declared-default' } },
+				forks: {
+					tenant: {
+						config: { part: { value: 'declared-fork' } },
+						configMode: 'saved-first',
+					},
+				},
+			},
+		],
+		policy: {
+			document: false,
 		},
-		runtime: { documents: { state: false, config: { storage: () => storage } } },
+		config: {
+			document: { storage: () => storage },
+		},
 	})
 	await host.startNode(owner)
 	await host.startNode(fork)
@@ -271,14 +280,16 @@ export { Later, Separate };
 			join(root, 'app.mjs'),
 			`import {Later,Separate} from './control.mjs';
 export default ({bindings}) => ({
- plugins:[], sources:[{kind:'directory',path:'entries',include:['*.mjs']}],
- policy:{forks:[Later.nodeAddress('east')],autoStart:bindings.activate?[Later.nodeAddress()]:[],mode:{autoStart:'declared-only'}},
- config:{mode:'saved-first',records:[
-  {owner:Separate.nodeAddress(),mode:'declared-only',config:{value:'declared-separate'}},
-  {owner:Later.nodeAddress('east'),mode:'declared-first',config:{value:'declared-east'}},
-  {owner:Later.nodeAddress('absent'),mode:'declared-only',config:{value:'never-materialized'}}
- ]},
- runtime:{documents:{state:false,config:{storage:()=>bindings.storage}}}
+ sources:[{directory:'entries',include:['*.mjs']}],
+ pluginNodes:[
+  {definition:Later.address(),autoStart:Boolean(bindings.activate),forks:{
+   east:{configMode:'declared-first',config:{value:'declared-east'}},
+   absent:{deploy:false,configMode:'declared-only',config:{value:'never-materialized'}}
+  }},
+  {definition:Separate.address(),configMode:'declared-only',config:{value:'declared-separate'}}
+ ],
+ config:{mode:'saved-first',document:{storage:()=>bindings.storage}},
+ policy:{document:false,modes:{autoStart:'declared-only'}}
 });`,
 		)
 		const result = await promisify(execFile)(
@@ -329,8 +340,9 @@ try {
  assert.deepEqual((await host.policy.get()).managedInput,{},'declared-only does not persist session intent');
  assert.equal(writes,0,'loading and reading must not seed managed records');
  const {Later}=await import(root+'/package/index.mjs');
- await assert.rejects(createHost({plugins:[Later],config:{records:[{owner:Later.nodeAddress(),config:{value:'duplicate'}},{owner:nodes.later,mode:'saved-first'}]}}),/duplicates a Plugin node owner/);
- await assert.rejects(createHost({plugins:[Later],config:{records:[{owner:Later,config:{value:'constructor'}}]}}),/Plugin node address must be an object/);
+ await assert.rejects(createHost({plugins:[{plugin:Later}],pluginNodes:[{definition:nodes.later.definition}]}),
+  error=>error.message.includes('pluginNodes[0] duplicates plugins[0]'));
+ await assert.rejects(createHost({pluginNodes:[{definition:Later,config:{value:'constructor'}}]}),/must be a Plugin definition address/);
  console.log('CONFIG_LAYERS_NATIVE_OK');
 } finally {await host.close()}
 `,

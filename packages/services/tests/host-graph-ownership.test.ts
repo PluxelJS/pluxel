@@ -39,7 +39,7 @@ describe('runtime host-owned graph state', () => {
 		class Orphan extends BasePlugin {}
 		lowerTestPlugin(Orphan)
 		await using host = await createServiceInternalTestHarness()
-		const base = node(Orphan.definitionAddress())
+		const base = node(Orphan.address())
 		const fork = host.fork(Orphan, 'stopped')
 
 		host.cfg(Orphan).setAutoStart(true)

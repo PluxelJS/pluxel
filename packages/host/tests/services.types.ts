@@ -15,25 +15,15 @@ export function checkHostServiceTypes(
 
 /** Compile-only contract: Host storage is a synchronous root binding and commits are always atomic. */
 export function checkHostDocumentStorageTypes(storage: HostDocumentStorage) {
-	void createHost({
-		plugins: [],
-		runtime: { documents: { state: { storage: () => storage, readOnly: true } } },
-	})
-	void createHost({
-		plugins: [],
-		runtime: { documents: { config: { readOnly: true }, state: { readOnly: true } } },
-	})
-	void createHost({ plugins: [], runtime: { documents: { config: {}, state: {} } } })
-	void createHost({ plugins: [], runtime: { documents: { config: false, state: false } } })
+	void createHost({ policy: { document: { storage: () => storage, readOnly: true } } })
+	void createHost({ config: { document: { readOnly: true } } })
+	void createHost({ policy: { document: {} }, config: { document: false } })
 	// @ts-expect-error A borrowed storage object must be bound through the root factory.
-	void createHost({ plugins: [], runtime: { documents: { state: { storage } } } })
-	void createHost({
-		plugins: [],
-		// @ts-expect-error Document factories return a namespace synchronously.
-		runtime: { documents: { config: { storage: async () => storage } } },
-	})
-	// @ts-expect-error Documents cannot be enabled with an ambiguous boolean.
-	void createHost({ plugins: [], runtime: { documents: { state: true } } })
+	void createHost({ policy: { document: { storage } } })
+	// @ts-expect-error Document factories must return storage synchronously.
+	void createHost({ config: { document: { storage: async () => storage } } })
+	// @ts-expect-error Document IO is enabled by default.
+	void createHost({ policy: { document: true } })
 	// @ts-expect-error Document commits do not offer a non-atomic mode.
 	void storage.put('config.json', '{}', { atomic: false })
 }

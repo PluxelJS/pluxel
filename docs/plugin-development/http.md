@@ -5,7 +5,7 @@ description: 在插件中集成 Elysia 2 路由、Webhook 与 WebSocket，实现
 
 在 Pluxel 插件中对外提供 Web 接口非常便捷：通过在 `init()` 钩子中调用 `this.ctx.service(ElysiaApp)`，即可直接使用原生的 [Elysia](https://elysiajs.com/) 实例定义路由。宿主在启动时负责监听端口并将请求分发至对应插件，当插件停止或热重载时，相关路由会自动安全注销。
 
-Host 须安装 `elysia()`；`standardServices()` 和 `servicesPreset()` 均包含它，见 [Host 服务组合](../host/services.md)。
+Host 须安装 `elysia()`；`servicesPreset()` 包含它，见 [Host 服务组合](../host/services.md)。
 
 ## 最小路由
 

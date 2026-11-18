@@ -157,7 +157,20 @@ export function controlCatalog(
 	return {
 		plugins,
 		sections: [],
-		statePolicy: { readonly: false, managedRevision, overriddenFields: [] },
+		statePolicy: {
+			readonly: false,
+			managedRevision,
+			mode: {
+				autoStart: 'declared-first',
+				forks: 'declared-first',
+				dependencyOverrides: 'declared-first',
+				providerDefaults: 'declared-first',
+			},
+			nodeModes: [],
+			selections: [],
+			providerDefaultsSource: 'default',
+			providerDefaultsShadowed: false,
+		},
 		summary: {
 			total: plugins.length,
 			running: plugins.filter((plugin) => plugin.lifecycleState === 'running').length,

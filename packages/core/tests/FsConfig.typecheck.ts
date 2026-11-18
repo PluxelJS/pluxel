@@ -1,6 +1,6 @@
 import { InMemory, Passthrough, type FsConfig, type BackendConfiguration } from '../src/fs'
 import type { CoreHostConfig } from '../src/host'
-import { zenfs } from '../src/config/zenfs'
+import { snapshotFsConfig } from '../src/fs/config'
 import * as fs from 'node:fs'
 
 const native = { backend: Passthrough, fs, prefix: '/data' } satisfies BackendConfiguration<
@@ -13,19 +13,10 @@ const composed = {
 const core = { zenfs: composed } satisfies CoreHostConfig
 void core
 
-const prepared = zenfs(composed)
+const prepared = snapshotFsConfig(composed)
 const configured = { zenfs: prepared } satisfies CoreHostConfig
-const exact = zenfs<{ '/': typeof Passthrough }>({ mounts: { '/': native } })
-const inferred = zenfs({ mounts: { '/': InMemory, '/data': native } })
-const empty = zenfs()
-void [configured, exact, inferred, empty]
-
-// @ts-expect-error A known backend's required native options are checked before preparation.
-zenfs<{ '/': typeof Passthrough }>({ mounts: { '/': { backend: Passthrough } } })
-// @ts-expect-error Global policy is not a per-Core storage setting.
-zenfs({ disableAccessChecks: true })
-// @ts-expect-error Backend options belong to native mount declarations.
-zenfs({ backend: InMemory })
+const exact = { mounts: { '/': native } } satisfies FsConfig<{ '/': typeof Passthrough }>
+void [configured, exact]
 // @ts-expect-error A declaration snapshot has an immutable mount table.
 prepared.mounts['/'] = InMemory
 // @ts-expect-error Durable mount declarations are immutable in a snapshot.

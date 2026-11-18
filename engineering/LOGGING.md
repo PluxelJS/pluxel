@@ -4,7 +4,9 @@ Core 拥有日志安装、身份、动态 policy 和 bounded store，Management/
 
 ## 模型
 
-`RuntimeLogging` 拥有 rootId、LogTape configuration、plugin policy、debug matcher、持久化和 stores；`ContextLogger` 固定 Context identity/properties 并委托 LogTape。
+`root.logging` 的公开 `RuntimeLogging` 是稳定的根级管理视图，提供 policy、stores、有界读取、状态诊断和 flush。`ContextLogger` 固定 Context identity/properties 并委托 LogTape。声明 Core 的 `logtape` 字段时，根 Context 提供这个管理视图。
+
+Core 内部的 `RuntimeLoggingManager` 拥有 rootId、LogTape configuration、debug matcher、policy 持久化和 stores 的生命周期。根级管理视图是冻结对象，类型与运行时都不包含 `install()`、`initializePolicy()`、`dispose()` 或 Context binding；安装和关闭由 Core 执行。
 
 进程同时只允许一个 active logging root。重复安装或 foreign LogTape configuration 会拒绝，失败候选保留原 owner。active-root filter 拒绝旧 Context/错误 rootId 的记录。Host 关闭负责 flush/dispose。
 
@@ -29,7 +31,7 @@ root WeakMap 保持稳定 identity，配置前创建的 logger 在安装后继�
 
 ## RuntimeLogging lifecycle
 
-`runtime.logtape` 接收原生 Config、同步 root factory 或 `{ input, options }`。可选 `logtape(nativeConfig, options)` helper 捕获相同声明，无品牌准入。省略配置不安装 manager，ctx.logger 仍可调用；silent manager 显式使用 `logtape({ sinks: {}, loggers: [] })`。
+应用的 `coreConfig.logtape` 和直接 Core 的 `logtape` 接收同一 `LogTapeConfig`。`{}` 和 `{ options }` 选择 Core 日志预设。原生 Config、同步 root factory 或 `{ input, options }` 提供完整原生配置。省略此字段时可以调用 `ctx.logger`。要保留日志管理并关闭全部输出，可以传入 `{ sinks: {}, loggers: [] }`。
 
 ```text
 root/logger identity → Core prepare 安装 LogTape → 恢复 policy
@@ -45,7 +47,7 @@ Host 自动等待 Core prepare；Core-only 嵌入者启动 Plugin 前等待 `pre
 
 同步 config factory 在 prepare 求值一次，额外取得 rootId 和 createRuntimeLogSink()；后者只在 factory 执行期创建绑定本 manager 的 bounded sink。
 
-`logtape()` preset 提供易读 console、有界 store，默认 profile 为 pluxel；console 过滤 info，store 接收 trace。servicesPreset 不安装日志。自定义配置完整替换预设，file/JSON/OTel/redaction/stream 使用上游 sink/formatter。未选择 store 时不分配 registry，显式访问 stores 才惰性创建。
+Core 日志预设通过 console 输出 `info` 及以上的记录，有界 store 记录 `trace` 及以上的记录，默认 profile 为 `pluxel`。自定义配置完整替换预设。文件、JSON、OTel、脱敏与流式输出直接采用上游 sink 和 formatter。选择 store 或访问 `root.logging.stores` 时惰性创建 store registry。
 
 ### Identity guard and native inheritance
 
@@ -57,7 +59,7 @@ guard 仅处理 pluxel/runtime、pluxel/plugins、pluxel/debug：校验身份、
 
 ### Resource ownership
 
-RuntimeLogging 拒绝 `reset: true`，防止接管 foreign owner；其他原生字段保留，引用、重复 category 等错误由原生 ConfigError 报告。
+内部 manager 拒绝 `reset: true`，防止接管 foreign owner；其他原生字段保留，引用、重复 category 等错误由原生 ConfigError 报告。
 
 flush() 保存 bounded store/policy 并调用 native drain()，仅 Drainable sink 参与。dispose 等待在途安装，包括 config factory 内重入关闭，然后 flush/reset。flush/drain 失败仍继续释放全部同步/异步 sink/filter，错误聚合。关闭期间持有 owner 并拒绝重装，只有全局 configuration 仍为自己安装的对象才 reset；foreign replacement 报错并保留它。并发 dispose 共用 Promise。
 
@@ -102,13 +104,13 @@ guard 不做 caller capture、properties 求值、snapshot、序列化或 IO；�
 | ------------------- | -------------------------------------------------- |
 | `@pluxel/core`      | ContextLogger、category identity、纯 Plugin labels |
 | `/config`           | logtape/zenfs 代码配置 helper                      |
-| `/logging`          | 日志运行时类型、policy、stores/query               |
+| `/logging`          | 根级管理接口、policy、stores/query                 |
 | `/logging/protocol` | browser-safe DTO/filter                            |
 | `/logging/internal` | 安装、active owner binding、framework helper       |
 | `/logging/pretty`   | 可选 console 展示                                  |
 | Host/Services       | 应用 lifecycle、Management 投影                    |
 
-配置 helper 不依赖 Host/Services；Management 读取既有 manager。protocol 不加载后端，pretty 为独立叶入口，file 输出直接使用 @logtape/file。已配置的日志运行时通过 `root.logging` 读取，manager 创建和 binding 留在 internal。
+配置 helper 不依赖 Host/Services；Management 读取既有管理视图。protocol 不加载后端，pretty 为独立叶入口，file 输出直接使用 @logtape/file。已配置的日志管理接口通过 `root.logging` 读取，manager 类型、创建、安装、关闭和 binding 留在 internal。
 
 关键代码为 Core `logger/{LoggerService,categories}.ts`、`logging/{logging,policy,sink,store}.ts`；管理投影为 Services `management/services/management/RuntimeManagementTarget.ts`。
 
@@ -120,6 +122,6 @@ guard 不做 caller capture、properties 求值、snapshot、序列化或 IO；�
 
 ## Trusted development scripts
 
-Script SDK 的 sdk.logs 委托本领域 markLogs/readLogs/waitForLogs；配置存在时也可经 `sdk.ctx.logging` 访问 manager。开启 scripts 不增加 manager/store。
+Script SDK 的 sdk.logs 委托本领域 markLogs/readLogs/waitForLogs；配置存在时也可经 `sdk.ctx.logging` 访问同一管理视图。开启 scripts 不增加 manager/store。
 
 JSON cursor 固定 rootId、streamId、bootId、epoch，保留 retention/gap，Host replacement 不延续旧 cursor。wait 要求 caller signal，完成/取消即撤销订阅，不拥有生产者。执行生命周期见 [Dev Console](DEV_CONSOLE.md)。

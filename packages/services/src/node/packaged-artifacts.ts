@@ -62,7 +62,7 @@ export async function readLoadedNodeArtifacts(
 			artifacts = files
 			inventories.set(directory, files)
 		}
-		owners.set(pluginDefinitionIndexKey(plugin.definitionAddress()), artifacts)
+		owners.set(pluginDefinitionIndexKey(plugin.address()), artifacts)
 	}
 	return owners
 }

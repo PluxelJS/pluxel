@@ -6,19 +6,21 @@ const normalizePath = (path: string): string => path.replaceAll('\\', '/')
 
 export type PluginSource =
 	| Readonly<{
-			kind: 'file'
 			/** Absolute path, or a path resolved relative to the application root. */
-			path: string
+			file: string
+			directory?: never
+			include?: never
 	  }>
 	| Readonly<{
-			kind: 'directory'
 			/** Absolute path, or a path resolved relative to the application root. */
-			path: string
+			directory: string
+			file?: never
 			/** Positive entry globs relative to this directory; traversal and negation are rejected. */
 			include: readonly string[]
 	  }>
 
-export function assertPluginSourceDeclaration(value: unknown): asserts value is PluginSource {
+/** @internal Validate and detach a discovery declaration before using it. */
+export function snapshotPluginSource(value: unknown): PluginSource {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		throw new TypeError('[host/sources] each source must be an object')
 	}
@@ -31,26 +33,24 @@ export function assertPluginSourceDeclaration(value: unknown): asserts value is 
 			throw new TypeError('[host/sources] source must contain only enumerable data fields')
 	}
 	const source = value as Record<string, unknown>
-	if (source.kind !== 'file' && source.kind !== 'directory') {
-		throw new TypeError('[host/sources] source.kind must be "file" or "directory"')
-	}
-	if (typeof source.path !== 'string' || !source.path.trim() || source.path.includes('\0')) {
-		throw new TypeError('[host/sources] source.path must be a non-empty string')
-	}
-	const allowed =
-		source.kind === 'directory' ? new Set(['kind', 'path', 'include']) : new Set(['kind', 'path'])
-	const unknown = Object.keys(source).filter((key) => !allowed.has(key))
-	if (unknown.length > 0) {
-		throw new Error(
-			`[host/sources] source includes unsupported ${unknown.map((key) => `"${key}"`).join(', ')}`,
-		)
-	}
-	if (source.kind === 'directory') {
-		if (!Array.isArray(source.include) || source.include.length === 0) {
-			throw new TypeError('[host/sources] directory source.include must be a non-empty array')
-		}
-		for (const pattern of source.include) normalizeSourcePattern(pattern)
-	}
+	const file = Object.hasOwn(source, 'file')
+	const directory = Object.hasOwn(source, 'directory')
+	if (file === directory)
+		throw new TypeError('[host/sources] each source must specify exactly one of file or directory')
+	const field = file ? 'file' : 'directory'
+	const path = source[field]
+	if (typeof path !== 'string' || !path.trim() || path.includes('\0'))
+		throw new TypeError(`[host/sources] source.${field} must be a non-empty string`)
+	for (const key of Object.keys(source))
+		if (key !== field && !(directory && key === 'include'))
+			throw new TypeError(`[host/sources] ${field} source includes unsupported "${key}"`)
+	if (file) return Object.freeze({ file: path.trim() })
+	if (!Array.isArray(source.include) || source.include.length === 0)
+		throw new TypeError('[host/sources] directory source.include must be a non-empty array')
+	return Object.freeze({
+		directory: path.trim(),
+		include: Object.freeze(Array.from(source.include, normalizeSourcePattern)),
+	})
 }
 
 function normalizeSourcePattern(value: unknown): string {
@@ -100,7 +100,7 @@ export function installPluginSources(
 		ctx.root,
 		Object.freeze({
 			root: options.root,
-			sources: Object.freeze(options.sources.map(pluginSource)),
+			sources: Object.freeze(options.sources.map(snapshotPluginSource)),
 			updates: options.updates,
 		}),
 	)
@@ -117,31 +117,37 @@ export function requirePluginSource(
 	ctx: Context,
 	requirement: PluginSource,
 ): Readonly<{ updates: 'next-start' | 'live' }> {
-	assertPluginSourceDeclaration(requirement)
+	const required = snapshotPluginSource(requirement)
 	const config = sourcesByRoot.get(ctx.root)
 	if (!config || config.sources.length === 0) throw new PluginSourceRequiredError('SOURCE_REQUIRED')
 	if (
-		!config.sources.some((source) => pluginSourceCovers({ source, root: config.root, requirement }))
+		!config.sources.some((source) =>
+			pluginSourceCovers({ source, root: config.root, requirement: required }),
+		)
 	)
 		throw new PluginSourceRequiredError('SOURCE_NOT_DECLARED')
 	return Object.freeze({ updates: config.updates })
 }
 
-/** Validate, copy and freeze one file/directory declaration. Creation starts no IO. */
-export function pluginSource(declaration: PluginSource): PluginSource {
-	assertPluginSourceDeclaration(declaration)
-	return declaration.kind === 'file'
-		? Object.freeze({ kind: 'file', path: declaration.path.trim() })
-		: Object.freeze({
-				kind: 'directory',
-				path: declaration.path.trim(),
-				include: Object.freeze(declaration.include.map(normalizeSourcePattern)),
-			})
-}
-
 /** @internal Structural source identity, independent of execution and object identity. */
 export function pluginSourceKey(source: PluginSource): string {
-	return JSON.stringify(pluginSource(source))
+	return JSON.stringify(source)
+}
+
+/** @internal Match entry paths against one validated declaration. */
+export function pluginSourceMatcher(source: PluginSource, root: string): (file: string) => boolean {
+	if (source.file !== undefined) {
+		const path = normalizePath(resolve(root, source.file))
+		return (file) => normalizePath(resolve(root, file)) === path
+	}
+	const directory = resolve(root, source.directory)
+	const match = picomatch([...source.include], { dot: true })
+	return (file) => {
+		const name = normalizePath(relative(directory, resolve(root, file)))
+		return (
+			name !== '' && !isAbsolute(name) && name !== '..' && !name.startsWith('../') && match(name)
+		)
+	}
 }
 
 /** @internal Shared matching rules for native discovery, Vite observation and producers. */
@@ -154,22 +160,11 @@ export function pluginSourceCovers({
 	root: string
 	requirement: PluginSource
 }): boolean {
-	const path = normalizePath(resolve(root, source.path))
-	const requested = normalizePath(resolve(root, requirement.path))
-	if (source.kind === 'file') return requirement.kind === 'file' && path === requested
-	if (requirement.kind === 'file') {
-		const name = normalizePath(relative(path, requested))
-		return (
-			name !== '' &&
-			!isAbsolute(name) &&
-			name !== '..' &&
-			!name.startsWith('../') &&
-			picomatch([...source.include], { dot: true })(name)
-		)
-	}
-	const patterns = new Set(source.include.map(normalizePath))
+	if (requirement.file !== undefined) return pluginSourceMatcher(source, root)(requirement.file)
+	if (source.directory === undefined) return false
+	const patterns = new Set(source.include)
 	return (
-		path === requested &&
-		requirement.include.every((pattern) => patterns.has(normalizePath(pattern)))
+		resolve(root, source.directory) === resolve(root, requirement.directory) &&
+		requirement.include.every((pattern) => patterns.has(pattern))
 	)
 }

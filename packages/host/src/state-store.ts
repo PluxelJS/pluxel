@@ -1,59 +1,63 @@
-import {
-	type Context as PluxelContext,
-	parsePluginDefinitionAddress,
-	parsePluginNodeAddress,
-	pluginDefinitionIndexKey,
-	pluginNodeIndexKey,
-	type PluginDefinitionAddress,
-	type PluginForkNodeAddress,
-	type PluginNodeAddress,
-} from '@pluxel/core'
+import { pluginNodeIndexKey, type Context, type PluginNodeAddress } from '@pluxel/core'
 import { DEFAULT_PLUGIN_EXECUTION } from '@pluxel/core/internal'
-import { readPluginNodeAddressEvidence } from '@pluxel/core/internal/plugin-address-evidence'
 import { SuperJSON } from 'superjson'
 import { HostStateMutationRejectedError } from './mutation'
 import { applyHostStatePatch, type HostStatePatch } from './state'
 import {
-	type HostStateSnapshot,
-	type HostStateVersionedSnapshot,
 	HostStateRevisionConflictError,
-	type HostProviderDefaultState,
-	type HostDependencyOverrideState,
 	freezeTrustedHostStateSnapshot,
 	HOST_POLICY_FIELDS,
 	HOST_GRAPH_POLICY_FIELDS,
+	HOST_GLOBAL_POLICY_FIELDS,
 	HOST_EXECUTION_POLICY_FIELDS,
+	type HostStateSnapshot,
+	type HostStateVersionedSnapshot,
 	type HostPolicyInput,
-	type HostPolicyOptions,
-	type HostPolicyModes,
 	type HostPolicyValues,
 	type HostPolicyField,
+	type HostGlobalPolicyField,
+	type HostNodePolicyMode,
+	type HostNodePolicyTarget,
 	type HostExecutionPolicy,
 	type HostExecutionPolicyField,
 } from './policy'
 import {
+	HostPolicyInputError,
+	canonicalHostPolicyInput,
+	indexChoices,
+	nodePolicyKey,
+	snapshotHostPolicy,
+	sortChoices,
+	type ResolvedHostPolicy,
+} from './policy-input'
+import {
 	assertResolvedHostStoreStorage,
 	type ResolvedHostStoreStorageOptions,
 } from './document-storage'
-import { parseHostInputMode, selectHostInput, type HostInputMode } from './input-mode'
+import { hostInputSource, type HostInputMode, type HostInputSource } from './input-mode'
 import type { HostPersistenceRetention, HostPersistenceResult } from './persistence'
 
-export type HostStateFile = Readonly<{ version: 7 }> & HostPolicyInput
+export type HostStateFile = Readonly<{ version: 8 }> & HostPolicyInput
+export type HostNodePolicySelection = Readonly<{
+	target: HostNodePolicyTarget
+	mode: HostInputMode
+	source: HostInputSource
+	shadowed: boolean
+}>
 export type HostStateConfigurationSnapshot = Readonly<{
 	readonly: boolean
 	managedInput: HostPolicyInput
 	effective: HostPolicyValues
 	mode: Readonly<Record<HostPolicyField, HostInputMode>>
-	sources: Readonly<Record<HostPolicyField, 'declared' | 'saved' | 'default'>>
-	shadowedFields: readonly HostPolicyField[]
+	sources: Readonly<Record<HostGlobalPolicyField, HostInputSource>>
+	shadowedFields: readonly HostGlobalPolicyField[]
+	nodeModes: readonly HostNodePolicyMode[]
+	selections: readonly HostNodePolicySelection[]
 	managedRevision: string
 	appliedExecution: HostExecutionPolicy
 	pendingExecutionFields: readonly HostExecutionPolicyField[]
 	application: 'applied' | 'requires-host-recreation'
 }>
-
-/** @internal Invalid author or managed policy input, distinct from arbitrary runtime failures. */
-export class HostPolicyInputError extends TypeError {}
 
 export class HostPolicyRevisionConflictError extends Error {
 	readonly code = 'revision_conflict' as const
@@ -72,13 +76,14 @@ export class HostPolicyMutationRejectedError extends Error {
 
 export class HostStateStore {
 	readonly ready: Promise<void>
+	readonly declaredNodes: ReadonlyMap<string, PluginNodeAddress>
 	isReady = false
 	private managed: HostPolicyInput = Object.freeze({})
 	private revision = 0
 	private readonly identity = crypto.randomUUID()
-	private readonly declared: HostPolicyInput
-	private readonly modes: Readonly<Record<HostPolicyField, HostInputMode>>
+	private readonly nodeModes: ReadonlyMap<string, HostNodePolicyMode>
 	private effective!: HostPolicyValues
+	private configuration?: HostStateConfigurationSnapshot
 	private graph!: HostStateSnapshot
 	private versioned!: HostStateVersionedSnapshot
 	private appliedExecution!: HostExecutionPolicy
@@ -88,14 +93,13 @@ export class HostStateStore {
 	readonly retention: HostPersistenceRetention
 
 	constructor(
-		readonly ctx: PluxelContext,
-		options: HostPolicyOptions = {},
+		readonly ctx: Context,
+		private readonly options: ResolvedHostPolicy = snapshotHostPolicy(),
 		private readonly documents: ResolvedHostStoreStorageOptions = {},
+		declaredNodes: readonly PluginNodeAddress[] = [],
 	) {
-		const captured = snapshotHostPolicy(options)
-		const { mode, ...declared } = captured
-		this.declared = canonicalHostPolicyInput(declared)
-		this.modes = resolveModes(mode)
+		this.nodeModes = indexChoices(options.nodeModes)
+		this.declaredNodes = new Map(declaredNodes.map((node) => [pluginNodeIndexKey(node), node]))
 		assertResolvedHostStoreStorage(documents)
 		this.retention = documents.retention ?? (documents.storage ? 'unknown' : 'session')
 		ctx.effects.defer(() => this.dispose(), { tag: 'HostStateStore' })
@@ -127,48 +131,113 @@ export class HostStateStore {
 			throw new HostPolicyRevisionConflictError(this.managedRevision())
 	}
 
-	policyValues(input: HostPolicyInput): HostPolicyValues {
-		const values = Object.fromEntries(
-			HOST_POLICY_FIELDS.map((field) => [
-				field,
-				selectHostInput<HostPolicyValues[HostPolicyField]>(
-					this.modes[field],
-					this.declared[field],
-					input[field],
-					POLICY_DEFAULTS[field],
-				),
-			]),
-		) as HostPolicyValues
-		assertPolicyGraphReferences(values)
-		return Object.freeze(values)
+	private policyValues(
+		saved: HostPolicyInput,
+		selections?: HostNodePolicySelection[],
+	): HostPolicyValues {
+		const declared = this.options.declared
+		const graph = freezeTrustedHostStateSnapshot({
+			autoStart: this.resolveNodeChoices(
+				declared.autoStart,
+				saved.autoStart,
+				({ node }) => ({ field: 'autoStart', node }),
+				selections,
+			).flatMap(({ node, autoStart }) => (autoStart ? [node] : [])),
+			forks: this.resolveNodeChoices(
+				declared.forks,
+				saved.forks,
+				({ node }) => ({ field: 'forks', node }),
+				selections,
+			).flatMap(({ node, deploy }) => (deploy ? [node] : [])),
+			dependencyOverrides: this.resolveNodeChoices(
+				declared.dependencyOverrides,
+				saved.dependencyOverrides,
+				({ consumerAddress, requirementAddress }) => ({
+					field: 'dependencyOverrides',
+					consumerAddress,
+					requirementAddress,
+				}),
+				selections,
+			).flatMap(({ consumerAddress, requirementAddress, providerAddress }) =>
+				providerAddress === null ? [] : [{ consumerAddress, requirementAddress, providerAddress }],
+			),
+			providerDefaults: this.globalChoice(saved, 'providerDefaults'),
+		})
+		const execution = Object.fromEntries(
+			HOST_EXECUTION_POLICY_FIELDS.map((field) => [field, this.globalChoice(saved, field)]),
+		) as HostExecutionPolicy
+		return Object.freeze({ ...graph, ...execution })
 	}
+
+	private resolveNodeChoices<T extends Parameters<typeof nodePolicyKey>[0]>(
+		declared: readonly T[] | undefined,
+		saved: readonly T[] | undefined,
+		targetOf: (item: T) => HostNodePolicyTarget,
+		selections: HostNodePolicySelection[] | undefined,
+	): T[] {
+		const declaredByKey = indexChoices(declared)
+		const savedByKey = indexChoices(saved)
+		const keys = new Set([...declaredByKey.keys(), ...savedByKey.keys()])
+		const chosen: T[] = []
+		for (const key of keys) {
+			const declaredChoice = declaredByKey.get(key)
+			const managedChoice = savedByKey.get(key)
+			const target = targetOf((declaredChoice ?? managedChoice)!)
+			const mode =
+				this.nodeModes.get(
+					pluginNodeIndexKey('node' in target ? target.node : target.consumerAddress),
+				)?.mode ?? this.options.mode[target.field]
+			const source = hostInputSource(mode, declaredChoice, managedChoice)
+			const selection =
+				source === 'declared' ? declaredChoice : source === 'saved' ? managedChoice : undefined
+			if (selection !== undefined) chosen.push(selection)
+			if (selections)
+				selections.push(
+					Object.freeze({
+						target: Object.freeze(target),
+						mode,
+						source,
+						shadowed: managedChoice !== undefined && source !== 'saved',
+					}),
+				)
+		}
+		return chosen
+	}
+
+	private globalChoice<K extends HostGlobalPolicyField>(
+		saved: HostPolicyInput,
+		field: K,
+	): HostPolicyValues[K] {
+		const declaredValue = this.options.declared[field]
+		const savedValue = saved[field]
+		const source = hostInputSource(this.options.mode[field], declaredValue, savedValue)
+		return (
+			source === 'declared'
+				? declaredValue
+				: source === 'saved'
+					? savedValue
+					: POLICY_DEFAULTS[field]
+		) as HostPolicyValues[K]
+	}
+
 	effectiveSnapshot(input: HostPolicyInput): HostStateSnapshot {
-		return canonicalHostStateSnapshot(this.policyValues(input))
+		if (input === this.managed) return this.graph
+		const graph = graphState(this.policyValues(input))
+		assertPolicyGraphReferences(graph)
+		return graph
 	}
+
 	configurationSnapshot(input = this.managed): HostStateConfigurationSnapshot {
-		const effective = input === this.managed ? this.effective : this.policyValues(input)
+		if (input === this.managed && this.configuration) return this.configuration
+		const selections: HostNodePolicySelection[] = []
+		const effective = this.policyValues(input, selections)
+		assertPolicyGraphReferences(effective)
 		const sources = Object.freeze(
 			Object.fromEntries(
-				HOST_POLICY_FIELDS.map((field) => {
-					const mode = this.modes[field]
-					const source =
-						mode === 'declared-only'
-							? this.declared[field] === undefined
-								? 'default'
-								: 'declared'
-							: mode === 'saved-first'
-								? input[field] !== undefined
-									? 'saved'
-									: this.declared[field] !== undefined
-										? 'declared'
-										: 'default'
-								: this.declared[field] !== undefined
-									? 'declared'
-									: input[field] !== undefined
-										? 'saved'
-										: 'default'
-					return [field, source]
-				}),
+				HOST_GLOBAL_POLICY_FIELDS.map((field) => [
+					field,
+					hostInputSource(this.options.mode[field], this.options.declared[field], input[field]),
+				]),
 			),
 		) as HostStateConfigurationSnapshot['sources']
 		const pendingExecutionFields = Object.freeze(
@@ -176,47 +245,55 @@ export class HostStateStore {
 				(field) => effective[field] !== this.appliedExecution[field],
 			),
 		)
-		return Object.freeze({
+		const configuration: HostStateConfigurationSnapshot = Object.freeze({
 			readonly: this.documents.readOnly ?? false,
 			managedInput: input,
 			effective,
-			mode: this.modes,
+			mode: this.options.mode,
 			sources,
 			shadowedFields: Object.freeze(
-				HOST_POLICY_FIELDS.filter(
+				HOST_GLOBAL_POLICY_FIELDS.filter(
 					(field) => input[field] !== undefined && sources[field] !== 'saved',
 				),
+			),
+			nodeModes: this.options.nodeModes,
+			selections: sortChoices(
+				selections,
+				({ target }) => `${target.field}:${nodePolicyKey(target)}`,
 			),
 			managedRevision: this.managedRevision(),
 			appliedExecution: this.appliedExecution,
 			pendingExecutionFields,
 			application: pendingExecutionFields.length > 0 ? 'requires-host-recreation' : 'applied',
 		})
+		if (input === this.managed) this.configuration = configuration
+		return configuration
 	}
 
-	/** Commands target effective columns; only actual changes materialize managed columns. */
+	/** Apply a command to its raw choice keys and admit the intended effective graph. */
 	prepareAction(patch: HostStatePatch | undefined): HostPolicyInput {
 		if (!patch || patch.operations.length === 0) return this.managed
 		const target = applyHostStatePatch(this.graph, patch)
-		const fields = HOST_GRAPH_POLICY_FIELDS.filter(
-			(field) => !equalValue(target[field], this.graph[field]),
+		const input = applyManagedPolicyAction(
+			this.managed,
+			this.options.declared,
+			this.graph,
+			target,
+			patch,
 		)
-		if (fields.length === 0) return this.managed
-		this.assertMutable()
-		const input = canonicalHostPolicyInput({
-			...this.managed,
-			...Object.fromEntries(fields.map((field) => [field, target[field]])),
-		})
 		const effective = this.policyValues(input)
-		for (const field of fields)
-			if (!equalValue(effective[field], target[field]))
-				throw new HostStateMutationRejectedError(
-					Object.freeze({
-						code: 'policy_shadowed',
-						field,
-						message: `policy.${field} is controlled by its ${this.modes[field]} declaration; change the declaration or mode before this action`,
-					}),
-				)
+		const shadowed = HOST_GRAPH_POLICY_FIELDS.find(
+			(field) => !equalValue(effective[field], target[field]),
+		)
+		if (shadowed !== undefined)
+			throw new HostStateMutationRejectedError(
+				Object.freeze({
+					code: 'policy_shadowed',
+					field: shadowed,
+					message: `policy.${shadowed} is controlled by a declaration; change the declaration or its mode before this action`,
+				}),
+			)
+		if (!hostPolicyInputEqual(input, this.managed)) this.assertMutable()
 		return input
 	}
 	assertPatchMutable(patch: HostStatePatch | undefined): void {
@@ -241,13 +318,13 @@ export class HostStateStore {
 		if (expectedRevision !== this.revision)
 			throw new HostStateRevisionConflictError(expectedRevision, this.revision)
 		const normalized = canonicalHostPolicyInput(input)
-		this.policyValues(normalized)
+		this.effectiveSnapshot(normalized)
 		if (hostPolicyInputEqual(this.managed, normalized)) return this.versioned
 		const commit = (async () => {
 			if (this.documents.storage)
 				await this.documents.storage.put(
 					'state.json',
-					SuperJSON.stringify({ version: 7, ...normalized } satisfies HostStateFile),
+					SuperJSON.stringify({ version: 8, ...normalized } satisfies HostStateFile),
 				)
 			this.managed = normalized
 			this.revision++
@@ -269,8 +346,10 @@ export class HostStateStore {
 		})())
 	}
 	private refresh(): void {
+		this.configuration = undefined
 		this.effective = this.policyValues(this.managed)
-		this.graph = canonicalHostStateSnapshot(this.effective)
+		this.graph = graphState(this.effective)
+		assertPolicyGraphReferences(this.graph)
 		this.versioned = Object.freeze({ revision: this.revision, state: this.graph })
 	}
 	private async loadFromDisk(): Promise<void> {
@@ -278,9 +357,12 @@ export class HostStateStore {
 		if (text === undefined) return
 		try {
 			const raw = SuperJSON.parse(text) as Record<string, unknown>
-			assertPolicyRecord(raw, ['version', ...HOST_POLICY_FIELDS], 'persisted policy')
-			if (raw.version !== 7)
-				throw invalidState(`unsupported persisted state version: ${String(raw.version)}`)
+			if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+				throw new HostPolicyInputError('[host] persisted policy must be an object')
+			if (raw.version !== 8)
+				throw new HostPolicyInputError(
+					`[host] unsupported persisted state version: ${String(raw.version)}`,
+				)
 			const { version: _, ...input } = raw
 			this.managed = canonicalHostPolicyInput(input as HostPolicyInput, false)
 			this.revision++
@@ -293,103 +375,20 @@ export class HostStateStore {
 	}
 }
 
-const EMPTY_GRAPH = Object.freeze({
-	autoStart: [],
-	forks: [],
-	providerDefaults: [],
-	dependencyOverrides: [],
-})
-const POLICY_DEFAULTS: HostPolicyValues = Object.freeze({
-	...EMPTY_GRAPH,
+const POLICY_DEFAULTS = Object.freeze({
+	providerDefaults: Object.freeze([]),
 	...DEFAULT_PLUGIN_EXECUTION,
-})
+}) satisfies Pick<HostPolicyValues, HostGlobalPolicyField>
 
-export function snapshotHostPolicy(
-	input: HostPolicyOptions = {},
-): HostPolicyInput & Readonly<{ mode?: HostPolicyModes }> {
-	assertPolicyRecord(input, [...HOST_POLICY_FIELDS, 'mode'], 'policy')
-	const { mode, autoStart, ...values } = input
-	const declared = canonicalHostPolicyInput({
-		...values,
-		...(autoStart === undefined
-			? {}
-			: { autoStart: snapshotPolicyArray(autoStart, 'policy.autoStart') }),
-	})
-	return Object.freeze({ ...declared, ...(mode === undefined ? {} : { mode: resolveModes(mode) }) })
+function graphState({
+	autoStart,
+	forks,
+	providerDefaults,
+	dependencyOverrides,
+}: HostPolicyValues): HostStateSnapshot {
+	return Object.freeze({ autoStart, forks, providerDefaults, dependencyOverrides })
 }
-/** @internal Capture portable sequence structure before reading any element. */
-export function snapshotPolicyArray<T>(input: readonly T[], label: string): readonly T[] {
-	if (!Array.isArray(input)) throw new HostPolicyInputError(`[host] ${label} must be an array`)
-	const descriptors = Object.getOwnPropertyDescriptors(input)
-	for (const key of Reflect.ownKeys(descriptors)) {
-		if (key === 'length') continue
-		if (typeof key !== 'string' || !/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= input.length)
-			throw new HostPolicyInputError(`[host] ${label} cannot contain additional properties`)
-		const descriptor = descriptors[key]!
-		if (!descriptor.enumerable || !('value' in descriptor))
-			throw new HostPolicyInputError(`[host] ${label} requires enumerable data properties`)
-	}
-	const output: T[] = []
-	for (let index = 0; index < input.length; index++) {
-		const descriptor = descriptors[String(index)]
-		if (!descriptor) throw new HostPolicyInputError(`[host] ${label} must be a dense array`)
-		output.push(descriptor.value as T)
-	}
-	return Object.freeze(output)
-}
-function resolveModes(
-	input: HostPolicyModes = {},
-): Readonly<Record<HostPolicyField, HostInputMode>> {
-	assertPolicyRecord(input, HOST_POLICY_FIELDS, 'policy.mode')
-	return Object.freeze(
-		Object.fromEntries(
-			HOST_POLICY_FIELDS.map((field) => [
-				field,
-				parseHostInputMode(input[field], `policy.mode.${field}`),
-			]),
-		),
-	) as Readonly<Record<HostPolicyField, HostInputMode>>
-}
-export function canonicalHostPolicyInput(
-	input: HostPolicyInput,
-	optionalUndefined = true,
-): HostPolicyInput {
-	assertPolicyRecord(input, HOST_POLICY_FIELDS, 'policy input')
-	const entries = Object.entries(input).filter(
-		([, value]) => !(optionalUndefined && value === undefined),
-	)
-	const supplied = Object.fromEntries(entries)
-	assertPortablePolicy(supplied)
-	const graph = canonicalHostStateSnapshot({ ...EMPTY_GRAPH, ...supplied } as HostStateSnapshot)
-	const output: Record<string, unknown> = {}
-	for (const field of HOST_POLICY_FIELDS) {
-		if (!Object.hasOwn(supplied, field)) continue
-		const value = supplied[field]
-		if ((HOST_GRAPH_POLICY_FIELDS as readonly string[]).includes(field))
-			output[field] = graph[field as keyof HostStateSnapshot]
-		else {
-			const max = field.endsWith('TimeoutMs') ? 2_147_483_647 : Number.MAX_SAFE_INTEGER
-			if (!Number.isSafeInteger(value) || (value as number) <= 0 || (value as number) > max)
-				throw new HostPolicyInputError(
-					`[host] policy.${field} must be an integer between 1 and ${max}`,
-				)
-			output[field] = value
-		}
-	}
-	return Object.freeze(output)
-}
-export function hostPolicyInputEqual(left: HostPolicyInput, right: HostPolicyInput): boolean {
-	return equalValue(left, right)
-}
-export function changedPolicyFields(
-	left: HostPolicyInput,
-	right: HostPolicyInput,
-): readonly HostPolicyField[] {
-	return Object.freeze(HOST_POLICY_FIELDS.filter((field) => !equalValue(left[field], right[field])))
-}
-function equalValue(left: unknown, right: unknown): boolean {
-	return JSON.stringify(left) === JSON.stringify(right)
-}
+
 function executionValues(values: HostPolicyValues): HostExecutionPolicy {
 	return Object.freeze(
 		Object.fromEntries(HOST_EXECUTION_POLICY_FIELDS.map((field) => [field, values[field]])),
@@ -398,7 +397,7 @@ function executionValues(values: HostPolicyValues): HostExecutionPolicy {
 
 export function assertPolicyGraphReferences(state: HostStateSnapshot): void {
 	const forks = new Set(state.forks.map(pluginNodeIndexKey))
-	const assertNode = (node: PluginNodeAddress, field: string) => {
+	const assertNode = (node: HostStateSnapshot['autoStart'][number], field: string) => {
 		if (node.variant === 'fork' && !forks.has(pluginNodeIndexKey(node)))
 			throw new HostPolicyInputError(
 				`[host] policy.${field} references a fork absent from policy.forks`,
@@ -411,204 +410,90 @@ export function assertPolicyGraphReferences(state: HostStateSnapshot): void {
 		assertNode(item.providerAddress, 'dependencyOverrides')
 	}
 }
-export function canonicalHostStateSnapshot(state: HostStateSnapshot): HostStateSnapshot {
-	for (const field of HOST_GRAPH_POLICY_FIELDS)
-		if (!Array.isArray(state[field])) throw invalidState(`${field} must be an array`)
-	return freezeTrustedHostStateSnapshot({
-		autoStart: parseUniqueNodes(state.autoStart, 'autoStart'),
-		forks: parseForks(state.forks, 'forks'),
-		providerDefaults: parseProviderDefaults(state.providerDefaults, 'providerDefaults'),
-		dependencyOverrides: parseDependencyOverrides(state.dependencyOverrides, 'dependencyOverrides'),
+
+export function hostPolicyInputEqual(left: HostPolicyInput, right: HostPolicyInput): boolean {
+	return equalValue(left, right)
+}
+export function changedPolicyFields(
+	left: HostPolicyInput,
+	right: HostPolicyInput,
+): readonly HostPolicyField[] {
+	return Object.freeze(HOST_POLICY_FIELDS.filter((field) => !equalValue(left[field], right[field])))
+}
+function equalValue(left: unknown, right: unknown): boolean {
+	return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function applyManagedPolicyAction(
+	current: HostPolicyInput,
+	declared: HostPolicyInput,
+	previous: HostStateSnapshot,
+	target: HostStateSnapshot,
+	patch: HostStatePatch,
+): HostPolicyInput {
+	const autoStart = indexChoices(current.autoStart)
+	const forks = indexChoices(current.forks)
+	const dependencyOverrides = indexChoices(current.dependencyOverrides)
+	const declaredAutoStart = indexChoices(declared.autoStart)
+	const declaredOverrides = indexChoices(declared.dependencyOverrides)
+	const deployed = new Set(previous.forks.map(pluginNodeIndexKey))
+	const started = new Set(previous.autoStart.map(pluginNodeIndexKey))
+	for (const operation of patch.operations) {
+		switch (operation.type) {
+			case 'set-auto-start': {
+				const key = pluginNodeIndexKey(operation.node)
+				if (
+					started.has(key) === operation.autoStart &&
+					(autoStart.has(key) || declaredAutoStart.has(key))
+				)
+					break
+				autoStart.set(key, { node: operation.node, autoStart: operation.autoStart })
+				if (operation.autoStart) started.add(key)
+				else started.delete(key)
+				break
+			}
+			case 'ensure-fork': {
+				const key = pluginNodeIndexKey(operation.node)
+				if (!deployed.has(key)) forks.set(key, { node: operation.node, deploy: true })
+				deployed.add(key)
+				break
+			}
+			case 'remove-fork': {
+				const key = pluginNodeIndexKey(operation.node)
+				if (deployed.delete(key)) forks.set(key, { node: operation.node, deploy: false })
+				break
+			}
+			case 'set-dependency-override': {
+				const choice = {
+					consumerAddress: operation.consumer,
+					requirementAddress: operation.requirement,
+					providerAddress: operation.provider,
+				}
+				dependencyOverrides.set(nodePolicyKey(choice), choice)
+				break
+			}
+			case 'remove-node-policy': {
+				const key = pluginNodeIndexKey(operation.node)
+				if (operation.node.variant === 'fork' && !deployed.has(key)) break
+				autoStart.delete(key)
+				if (declaredAutoStart.get(key)?.autoStart === true)
+					autoStart.set(key, { node: operation.node, autoStart: false })
+				for (const [id, choice] of dependencyOverrides)
+					if (pluginNodeIndexKey(choice.consumerAddress) === key) dependencyOverrides.delete(id)
+				for (const [id, choice] of declaredOverrides)
+					if (choice.providerAddress !== null && pluginNodeIndexKey(choice.consumerAddress) === key)
+						dependencyOverrides.set(id, { ...choice, providerAddress: null })
+				break
+			}
+		}
+	}
+	return canonicalHostPolicyInput({
+		...current,
+		autoStart: [...autoStart.values()],
+		forks: [...forks.values()],
+		dependencyOverrides: [...dependencyOverrides.values()],
+		...(!equalValue(previous.providerDefaults, target.providerDefaults)
+			? { providerDefaults: target.providerDefaults }
+			: {}),
 	})
-}
-function assertPolicyRecord(
-	value: unknown,
-	keys: readonly string[],
-	label: string,
-): asserts value is Record<string, unknown> {
-	if (
-		!value ||
-		typeof value !== 'object' ||
-		Array.isArray(value) ||
-		![Object.prototype, null].includes(Object.getPrototypeOf(value))
-	)
-		throw new HostPolicyInputError(`[host] ${label} must be a plain object`)
-	for (const key of Reflect.ownKeys(value)) {
-		if (typeof key !== 'string' || !keys.includes(key))
-			throw new HostPolicyInputError(`[host] ${label} includes unsupported ${String(key)}`)
-		if (!Object.getOwnPropertyDescriptor(value, key)!.enumerable)
-			throw new HostPolicyInputError(`[host] ${label} cannot contain hidden fields`)
-		if (!('value' in Object.getOwnPropertyDescriptor(value, key)!))
-			throw new HostPolicyInputError(`[host] ${label} cannot contain accessors`)
-	}
-}
-function assertPortablePolicy(value: unknown, seen = new Set<object>()): void {
-	if (
-		value === null ||
-		typeof value === 'string' ||
-		typeof value === 'boolean' ||
-		(typeof value === 'number' && Number.isFinite(value))
-	)
-		return
-	if (value && typeof value === 'object') {
-		let evidence: unknown
-		try {
-			evidence = readPluginNodeAddressEvidence(value as PluginNodeAddress)
-		} catch (cause) {
-			throw new HostPolicyInputError('[host] Plugin address evidence was copied or detached', {
-				cause,
-			})
-		}
-		if (evidence !== undefined) {
-			assertPortablePolicy(parsePluginNodeAddress(value), seen)
-			return
-		}
-	}
-	if (
-		!value ||
-		typeof value !== 'object' ||
-		seen.has(value) ||
-		(!Array.isArray(value) && ![Object.prototype, null].includes(Object.getPrototypeOf(value)))
-	)
-		throw new HostPolicyInputError('[host] policy input must be a portable data tree')
-	seen.add(value)
-	for (const key of Reflect.ownKeys(value)) {
-		if (Array.isArray(value) && key === 'length') continue
-		if (typeof key !== 'string' || ['__proto__', 'prototype', 'constructor'].includes(key))
-			throw new HostPolicyInputError('[host] unsafe policy input key')
-		if (Array.isArray(value) && (!/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length))
-			throw new HostPolicyInputError('[host] policy arrays cannot contain additional properties')
-		const descriptor = Object.getOwnPropertyDescriptor(value, key)!
-		if (!descriptor.enumerable)
-			throw new HostPolicyInputError('[host] policy input cannot contain hidden fields')
-		if (!('value' in descriptor))
-			throw new HostPolicyInputError('[host] policy input cannot contain accessors')
-		assertPortablePolicy(descriptor.value, seen)
-	}
-	if (Array.isArray(value) && Object.keys(value).length !== value.length)
-		throw new HostPolicyInputError('[host] policy arrays must be dense')
-	seen.delete(value)
-}
-function parseUniqueNodes(input: readonly unknown[], at: string): PluginNodeAddress[] {
-	const out: PluginNodeAddress[] = []
-	const seen = new Set<string>()
-	for (let i = 0; i < input.length; i++) {
-		const node = parseNode(input[i], `${at}[${i}]`)
-		const key = pluginNodeIndexKey(node)
-		if (seen.has(key)) {
-			throw invalidState(`${at}[${i}] duplicates an earlier node`)
-		}
-		seen.add(key)
-		out.push(node)
-	}
-	return out.sort((left, right) =>
-		pluginNodeIndexKey(left).localeCompare(pluginNodeIndexKey(right)),
-	)
-}
-
-function parseForks(input: readonly unknown[], at: string): PluginForkNodeAddress[] {
-	return parseUniqueNodes(input, at).map((node) => {
-		if (node.variant !== 'fork') throw invalidState(`${at} must contain only fork node addresses`)
-		return node
-	})
-}
-
-function parseProviderDefaults(input: readonly unknown[], at: string): HostProviderDefaultState[] {
-	const out: HostProviderDefaultState[] = []
-	const seen = new Set<string>()
-	for (let i = 0; i < input.length; i++) {
-		const raw = closedRecord(input[i], `${at}[${i}]`, ['token', 'provider'])
-		const token = parseDefinition(raw.token, `${at}[${i}].token`)
-		const provider = parseNode(raw.provider, `${at}[${i}].provider`)
-		const key = pluginDefinitionIndexKey(token)
-		if (seen.has(key)) {
-			throw invalidState(`${at}[${i}] duplicates a provider token`)
-		}
-		seen.add(key)
-		out.push({ token, provider })
-	}
-	return out.sort((left, right) =>
-		pluginDefinitionIndexKey(left.token).localeCompare(pluginDefinitionIndexKey(right.token)),
-	)
-}
-
-function parseDependencyOverrides(
-	input: readonly unknown[],
-	at: string,
-): HostDependencyOverrideState[] {
-	const out: HostDependencyOverrideState[] = []
-	const seen = new Set<string>()
-	for (let i = 0; i < input.length; i++) {
-		const raw = closedRecord(input[i], `${at}[${i}]`, [
-			'consumerAddress',
-			'requirementAddress',
-			'providerAddress',
-		])
-		const consumerAddress = parseNode(raw.consumerAddress, `${at}[${i}].consumerAddress`)
-		const requirementAddress = parseDefinition(
-			raw.requirementAddress,
-			`${at}[${i}].requirementAddress`,
-		)
-		const providerAddress = parseNode(raw.providerAddress, `${at}[${i}].providerAddress`)
-		const key = `${pluginNodeIndexKey(consumerAddress)}:${pluginDefinitionIndexKey(requirementAddress)}`
-		if (seen.has(key)) {
-			throw invalidState(`${at}[${i}] duplicates a consumer requirement`)
-		}
-		seen.add(key)
-		out.push({ consumerAddress, requirementAddress, providerAddress })
-	}
-	return out.sort((left, right) => {
-		const leftKey = `${pluginNodeIndexKey(left.consumerAddress)}:${pluginDefinitionIndexKey(left.requirementAddress)}`
-		const rightKey = `${pluginNodeIndexKey(right.consumerAddress)}:${pluginDefinitionIndexKey(right.requirementAddress)}`
-		return leftKey.localeCompare(rightKey)
-	})
-}
-
-function parseDefinition(value: unknown, at: string): PluginDefinitionAddress {
-	try {
-		return parsePluginDefinitionAddress(value)
-	} catch (error) {
-		throw invalidState(`${at}: ${error instanceof Error ? error.message : String(error)}`)
-	}
-}
-
-function parseNode(value: unknown, at: string): PluginNodeAddress {
-	try {
-		return parsePluginNodeAddress(value)
-	} catch (error) {
-		throw invalidState(`${at}: ${error instanceof Error ? error.message : String(error)}`)
-	}
-}
-
-function closedRecord(
-	value: unknown,
-	at: string,
-	keys: readonly string[],
-): Record<string, unknown> {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) {
-		throw invalidState(`${at} must be an object`)
-	}
-	const record = value as Record<string, unknown>
-	assertClosedRecord(record, keys, at)
-	return record
-}
-
-function assertClosedRecord(
-	record: object,
-	keys: readonly string[],
-	at: string,
-	requireAll = true,
-): void {
-	const expected = new Set(keys)
-	for (const key of Object.keys(record)) {
-		if (!expected.has(key)) throw invalidState(`${at} has unknown field ${key}`)
-	}
-	if (!requireAll) return
-	for (const key of keys) {
-		if (!Object.hasOwn(record, key)) throw invalidState(`${at} is missing field ${key}`)
-	}
-}
-
-function invalidState(message: string): Error {
-	return new HostPolicyInputError(`[HostStateStore] ${message}`)
 }

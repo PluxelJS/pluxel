@@ -54,7 +54,6 @@
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
 		"@pluxel/plugin-playwright": "workspace:*",
-		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/jsdom": "catalog:types",
 		"jsdom": "catalog:dev",
@@ -65,8 +64,7 @@
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
 		"@pluxel/host": "workspace:^",
-		"@pluxel/plugin-playwright": "workspace:^",
-		"@pluxel/services": "workspace:^"
+		"@pluxel/plugin-playwright": "workspace:^"
 	},
 	"peerDependenciesMeta": {
 		"@pluxel/host": {

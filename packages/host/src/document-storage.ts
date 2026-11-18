@@ -8,11 +8,6 @@ export type HostDocumentOptions = Readonly<{
 	/** Called once after root creation and before document IO; the returned namespace is borrowed. */
 	storage?: (root: RootContext) => HostDocumentStorage
 }>
-export type HostDocumentFacilities = Readonly<{
-	config?: false | HostDocumentOptions
-	state?: false | HostDocumentOptions
-}>
-
 /** @internal Absence of storage means session input without document IO. */
 export type ResolvedHostStoreStorageOptions = Readonly<{
 	storage?: HostDocumentStorage
@@ -20,19 +15,13 @@ export type ResolvedHostStoreStorageOptions = Readonly<{
 	retention?: HostPersistenceRetention
 }>
 
-export function snapshotHostDocuments(input: HostDocumentFacilities = {}): HostDocumentFacilities {
-	assertRecord(input, ['config', 'state'], 'runtime.documents')
-	return Object.freeze(
-		Object.fromEntries(
-			Object.entries(input)
-				.filter(([, value]) => value !== undefined)
-				.map(([key, value]) => {
-					if (value === false) return [key, false]
-					assertHostDocumentOptions(value, `runtime.documents.${key}`)
-					return [key, Object.freeze({ ...value })]
-				}),
-		),
-	)
+export function snapshotHostDocument(
+	input: false | HostDocumentOptions | undefined,
+	label: string,
+): false | HostDocumentOptions | undefined {
+	if (input === undefined || input === false) return input
+	assertHostDocumentOptions(input, label)
+	return Object.freeze({ ...input })
 }
 
 function assertHostDocumentOptions(options: HostDocumentOptions, label: string): void {
@@ -49,7 +38,6 @@ export function resolveHostStoreStorage(
 	namespace: 'config' | 'state',
 ): ResolvedHostStoreStorageOptions {
 	if (options === false) return Object.freeze({ readOnly: false, retention: 'session' })
-	assertHostDocumentOptions(options ?? {}, `runtime.documents.${namespace}`)
 	if (options?.storage === undefined)
 		return Object.freeze({
 			storage: requireHostDocuments(root, namespace),

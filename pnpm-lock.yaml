@@ -1321,6 +1321,9 @@ importers:
       '@types/node':
         specifier: catalog:types
         version: 26.6.6
+      age-encryption:
+        specifier: catalog:prod
+        version: 0.3.1
       better-result:
         specifier: catalog:prod
         version: 3.0.1
@@ -1673,9 +1676,6 @@ importers:
       '@types/pg':
         specifier: catalog:types
         version: 8.23.1
-      age-encryption:
-        specifier: catalog:prod
-        version: 0.3.1
       chokidar:
         specifier: catalog:node
         version: 6.0.0
@@ -1746,6 +1746,9 @@ importers:
       '@types/react-dom':
         specifier: catalog:types
         version: 19.3.0(@types/react@19.3.0)
+      age-encryption:
+        specifier: catalog:prod
+        version: 0.3.1
       capnweb:
         specifier: catalog:prod
         version: 0.12.0
@@ -2105,9 +2108,6 @@ importers:
       '@pluxel/plugin-playwright':
         specifier: workspace:*
         version: link:../playwright
-      '@pluxel/services':
-        specifier: workspace:*
-        version: link:../../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../../packages/test
@@ -2148,9 +2148,6 @@ importers:
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../../../packages/rolldown
-      '@pluxel/services':
-        specifier: workspace:*
-        version: link:../../../packages/services
       '@pluxel/test':
         specifier: workspace:*
         version: link:../../../packages/test

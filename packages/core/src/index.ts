@@ -1,4 +1,11 @@
-export type { Context, CoreHostConfig, PluginContext, RootContext } from './context/Context'
+export type {
+	Context,
+	CoreFacilitiesConfig,
+	CoreHostConfig,
+	PluginContext,
+	RootContext,
+} from './context/Context'
+export type { CoreExecutionConfig } from './context/plugin-execution'
 export type { ContextLogger } from './logger/LoggerService'
 export { TinyBaseError } from './tinybase/error'
 export type {

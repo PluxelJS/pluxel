@@ -9,15 +9,9 @@ description: 连接插件市场，或直接通过受控 pnpm 环境安装与更�
 
 ## 宿主装配
 
-在宿主配置中启用包管理器需要配置四个关键项：
-
-1. 在 `plugins` 列表中声明 `PackageManagerPlugin`；
-2. 在 `sources` 中注册对应的受管插件入口目录；
-3. 在 `policy.autoStart` 中将其加入随宿主自启列表；
-4. 在 `config.records` 中配置管理路径与安全规则。
+在 `plugins` 中给 `PackageManagerPlugin` 声明启动意图和管理目录，再用 `sources` 接纳该目录发布的入口。
 
 ```ts no-twoslash
-import { zenfs } from '@pluxel/core/config'
 import { resolve } from 'node:path'
 import * as nativeFs from 'node:fs'
 import { defineHostApplication } from '@pluxel/host'
@@ -25,9 +19,6 @@ import { servicesPreset } from '@pluxel/services/preset'
 import { Passthrough } from '@pluxel/core/fs'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { PackageManagerPlugin } from '@pluxel/plugin-package-manager'
-import { pluginSource } from '@pluxel/host/sources'
-
-const packageManagerNode = PackageManagerPlugin.nodeAddress()
 
 export default defineHostApplication(async (startup) => {
 	const dataRoot = resolve(
@@ -40,34 +31,25 @@ export default defineHostApplication(async (startup) => {
 
 	return {
 		name: 'managed-plugins',
-		plugins: [PackageManagerPlugin],
-		sources: [
-			pluginSource({
-				kind: 'directory',
-				path: resolve(managedPackagesRoot, 'entries'),
-				include: ['*.mjs'],
-			}),
-		],
-		services: await servicesPreset(startup, {}),
-		policy: { autoStart: [packageManagerNode] },
-		config: {
-			records: [
-				{
-					owner: packageManagerNode,
-					config: {
-						rootDir: managedPackagesRoot,
-						ignoreScripts: true,
-						allowBuilds: [],
-						minimumReleaseAgeMinutes: 1_440,
-					},
+		plugins: [
+			{
+				plugin: PackageManagerPlugin,
+				autoStart: true,
+				config: {
+					rootDir: managedPackagesRoot,
+					ignoreScripts: true,
+					allowBuilds: [],
+					minimumReleaseAgeMinutes: 1_440,
 				},
-			],
-		},
-		runtime: {
-			zenfs: zenfs({
+			},
+		],
+		sources: [{ directory: resolve(managedPackagesRoot, 'entries'), include: ['*.mjs'] }],
+		services: await servicesPreset(startup),
+		coreConfig: {
+			zenfs: {
 				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 				durableMounts: ['/'],
-			}),
+			},
 		},
 	}
 })
@@ -85,13 +67,13 @@ export default defineHostApplication(async (startup) => {
 | `minimumReleaseAgeMinutes` | `number` (`1440`)                    | 拒绝安装发布时间少于指定分钟数的包（默认 24 小时，防范供应链投毒） |
 | `markets`                  | `Array<{ id, url }>` (`[]`)          | 远程插件市场连接端点列表                                           |
 
-通过 `envBinding` 将配置项与环境变量绑定：
+在包管理器节点的 `envBindings` 中加入：
 
 ```ts no-twoslash
 import { envBinding } from '@pluxel/host'
-import { PackageManagerPlugin, PackageManagerConfig } from '@pluxel/plugin-package-manager'
+import { PackageManagerConfig } from '@pluxel/plugin-package-manager'
 
-envBinding(PackageManagerPlugin.nodeAddress(), {
+envBinding({
 	config: {
 		schema: PackageManagerConfig,
 		mapping: {

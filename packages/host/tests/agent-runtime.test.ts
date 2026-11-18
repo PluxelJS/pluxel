@@ -580,7 +580,7 @@ describe('portable result encoding', () => {
 	it('projects original class and generated node addresses as portable identities at any payload depth', () => {
 		const generated = createPluginControlReference({
 			format: 2,
-			definition: JsonAddressOwner.definitionAddress(),
+			definition: JsonAddressOwner.address(),
 			contracts: { config: null, instance: `sha256:${'a'.repeat(64)}` },
 		})
 		for (const address of [

@@ -74,12 +74,21 @@ async function snapshot(
 class MaterialPlugin extends BasePlugin {}
 
 it('reads the committed candidate material and ignores uncommitted route provenance changes', async () => {
-	const source = await snapshot(false, MaterialPlugin.definitionAddress())
+	const source = await snapshot(false, MaterialPlugin.address())
 	const material = source.materials[0]
 	const contracts = material.manifest.definitions[0].contracts
 	await using host = await createHost({
-		plugins: [MaterialPlugin],
-		runtime: { documents: { config: false, state: false } },
+		plugins: [
+			{
+				plugin: MaterialPlugin,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	setHostCatalogProvenance(
 		host.ctx,
@@ -102,7 +111,7 @@ it('reads the committed candidate material and ignores uncommitted route provena
 	expect(await readPluginControlMaterials(host.ctx)).toMatchObject({
 		materials: [],
 		definitions: [],
-		unavailable: [MaterialPlugin.definitionAddress()],
+		unavailable: [MaterialPlugin.address()],
 	})
 	setHostCatalogProvenance(
 		host.ctx,

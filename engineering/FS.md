@@ -4,7 +4,7 @@ Core 固定提供 `ctx.fs()`，返回所属 Plugin node 目录的 ZenFS promises
 
 ## 唯一接线与准备
 
-`CoreHostConfig.zenfs?: FsConfig` 是唯一后端输入。`runtime.zenfs: zenfs(nativeConfig)` 同步验证/快照原生声明，正规化 mount key，并在缺少根挂载时补 InMemory；不创建 backend 或执行 IO。省略配置时每个 Core 拥有独立内存根。
+应用的 `coreConfig.zenfs` 和直接 Core 的 `zenfs` 使用 `FsConfig` 接收原生 ZenFS 声明。Core 同步校验并快照输入，正规化 mount key，在缺少根挂载时选用 InMemory。访问文件系统时才准备后端。省略配置时每个 Core 拥有独立内存根。
 
 mount 接受原生 Backend、BackendConfiguration 和已打开 FileSystem，支持多挂载及 nested backend options。`@pluxel/core/fs` 提供 InMemory、Passthrough、配置类型和原子保存；IndexedDB 从 `/fs/browser` 导入。外部 backend 以方法、attributes、uuid 的结构接纳，原生 checkOptions 继续校验自身参数。需要编译期精确校验时使用 `BackendConfiguration<typeof Backend>` 或 `FsConfig<{ '/': typeof Backend }>`。
 
@@ -37,11 +37,11 @@ physicalKey 为 canonical node bytes 的完整 SHA-256，包含 fork，排除 ge
 
 ## Host 文档与关闭
 
-`requireHostDocuments(root, namespace)` 默认借出 config/state 文档。同步 root factory 可接入已有 storage，`runtime.documents.<domain>: false` 禁用该域 IO。
+`requireHostDocuments(root, namespace)` 默认借出 config/state 文档。`config.document` 和 `policy.document` 接受同步 root factory，也可分别设为 `false` 以关闭文档 IO。
 
 Core 定义 `HostDocumentStorage`，Host 原名 re-export：getText、put、stat 和可选 subscribe。put 等待完整原子提交；仅真正缺失返回 undefined，坏内容保留原文件。普通文档单文件预算为 UTF-8 8 MiB，TinyBase snapshot 自有预算。原子写失败可能已发生提交，领域 owner 决定后续发布/恢复。
 
-Vault 通过 requireFs 使用自身目录，Logging/Management 借用普通文档。Host 与 Services 先排空各自操作，Core final 再关闭日志、TinyBase writers、FS 文档和 backend。首次 subscribe 才观察已访问 key，新 key 加入同一订阅，最后一次取消停止观察；普通 read 不启动观察。关闭等待在途观察和全部已接纳读写，构造/prepare 失败也走同一清理路径。
+内建 Vault 通过 requireFs 按需使用自身目录，Logging/Management 借用普通文档。Host 与 Services 先排空各自操作；Core 在关闭文件系统前完成 Vault 的观察释放与 flush、日志和 TinyBase writers 的结算，最后关闭 FS 文档和 backend。首次 subscribe 才观察已访问 key，新 key 加入同一订阅，最后一次取消停止观察；普通 read 不启动观察。关闭等待在途观察和全部已接纳读写，构造/prepare 失败也走同一清理路径。
 
 caller 等待自己的文件操作，并释放 FileHandle、watcher、任务；原生 promises API 没有 generation Proxy，关闭后不能继续使用借用对象。
 

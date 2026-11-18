@@ -88,6 +88,7 @@ export type CorePluginDependencyAdjacency = Readonly<{
 
 export interface HostStateCoordinatorStore {
 	readonly ready: Promise<void>
+	readonly declaredNodes?: ReadonlyMap<string, PluginNodeAddress>
 	versionedSnapshot(): HostStateVersionedSnapshot
 	managedSnapshot(): HostPolicyInput
 	effectiveSnapshot(saved: HostPolicyInput): HostStateSnapshot
@@ -192,6 +193,7 @@ export interface HostPluginGraphExclusiveSession<TSummary = unknown> {
 /** Fixed process-local facts captured after all earlier graph transactions have settled. */
 export type HostPluginGraphCommittedView = Readonly<{
 	catalog: PluginCatalogSnapshot
+	declaredNodes?: ReadonlyMap<string, PluginNodeAddress>
 	runtimeState: HostStateVersionedSnapshot
 	reconciliation: readonly PluginReconciliationIssue[]
 	sessionIntents: ReadonlyMap<string, HostPluginSessionEntry>
@@ -398,6 +400,7 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		const value = read(
 			Object.freeze({
 				catalog: this.catalog,
+				declaredNodes: this.runtimeState.declaredNodes,
 				runtimeState: this.runtimeState.versionedSnapshot(),
 				reconciliation: this.reconciliation,
 				sessionIntents: this.sessionIntents,

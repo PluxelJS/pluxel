@@ -1,6 +1,8 @@
 import { createTestHost, type TestHost } from '@pluxel/test'
-import { vault } from '@pluxel/services/vault'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { type WorkbenchPrincipal } from '@pluxel/workbench'
 import { describe, expect, it } from 'vitest'
 import { AuthPlugin } from '../src/index.ts'
@@ -24,7 +26,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices(), vault()],
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(AuthPlugin.nodeAddress(), {
@@ -69,7 +71,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices(), vault()],
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(AuthPlugin.nodeAddress(), {
@@ -94,7 +96,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices(), vault()],
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(AuthPlugin.nodeAddress(), {
@@ -128,7 +130,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices(), vault()],
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(AuthPlugin.nodeAddress(), {
@@ -161,7 +163,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(AuthPlugin.nodeAddress(), {

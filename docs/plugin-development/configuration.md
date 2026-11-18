@@ -161,4 +161,4 @@ class SearchPlugin extends BasePlugin {
 
 ## 敏感信息说明
 
-普通的配置项会被宿主配置系统和 Workbench 界面读取，因此请勿在常规配置中明文存储数据库密码、个人令牌或私钥。对于此类机密凭据，请配合使用 [Vault 凭证服务](./vault.md)。
+普通的配置项会被宿主配置系统和 Workbench 界面读取，因此请勿在常规配置中明文存储数据库密码、个人令牌或私钥。对于此类机密凭据，请配合使用 [Vault 凭据能力](./vault.md)。

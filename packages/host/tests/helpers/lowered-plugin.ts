@@ -19,7 +19,7 @@ export function lowerTestPlugin(
 	options: LowerTestPluginOptions = {},
 ): PluginConstructor {
 	try {
-		Plugin.definitionAddress()
+		Plugin.address()
 		return Plugin
 	} catch (error) {
 		if (!(error instanceof PluginLoweringError) || error.code !== 'plugin_declaration_missing') {
@@ -34,7 +34,7 @@ export function lowerTestPlugin(
 			entry: { kind: 'source-entry', sourceSpace: 'app', path: `pluxel-test:${id}` },
 			exportName: 'Plugin',
 		},
-		constructorRequires: options.requires?.map((plugin) => plugin.definitionAddress()),
+		constructorRequires: options.requires?.map((plugin) => plugin.address()),
 	})
 	return Plugin
 }

@@ -36,7 +36,7 @@ describe('shared Host application startup', () => {
 		defineHostApplication(() => ({ plugins: [], typo: true }))
 		// @ts-expect-error Unknown async result fields are rejected as well.
 		defineHostApplication(async () => ({ plugins: [], configure() {} }))
-		// @ts-expect-error The factory must return a complete application.
+		// A service-only application can omit the plugin catalog.
 		defineHostApplication(async () => ({ services: [] }))
 	})
 
@@ -139,24 +139,24 @@ export default async ({env,bindings}) => {
 		const declaration = {
 			plugins: [] as [],
 			services: [original],
-			sources: [{ kind: 'directory' as const, path: 'selected', include: ['*.mjs'] }],
-			policy: { autoStart: [] as [], startTimeoutMs: 1500 },
+			sources: [{ directory: 'selected', include: ['*.mjs'] }],
+			policy: { execution: { startTimeoutMs: 1500 } },
 		}
 		const application = defineHostApplication(() => {
 			// Mutate after the factory result is received, while input resolution yields.
 			queueMicrotask(() =>
 				queueMicrotask(() => {
 					declaration.services[0] = changed
-					declaration.sources[0]!.path = 'changed'
-					Object.assign(declaration.policy, { startTimeoutMs: 2000 })
+					declaration.sources[0]!.directory = 'changed'
+					declaration.policy.execution.startTimeoutMs = 2000
 				}),
 			)
 			return declaration
 		})
 		const resolved = await resolveHostApplication(application, startup)
 		expect(resolved.services?.[0]?.name).toBe('selected')
-		expect(resolved.sources?.[0]?.path).toBe('selected')
-		expect(resolved.policy?.startTimeoutMs).toBe(1500)
+		expect(resolved.sources[0]).toMatchObject({ directory: 'selected' })
+		expect(resolved.policy.declared.startTimeoutMs).toBe(1500)
 	})
 
 	it('propagates factory rejection before service preparation', async () => {
@@ -173,14 +173,14 @@ export default async ({env,bindings}) => {
 
 	it.each([
 		[{ plugins: [] }, 'must be a factory'],
-		[(): undefined => undefined, 'must be an object'],
+		[(): undefined => undefined, 'must be a plain object'],
 		[() => ({ plugins: [] as const, configure() {} }), 'unsupported "configure"'],
 		[() => ({ plugins: [] as const, services: {} }), 'services must be an array'],
 		[() => ({ plugins: [] as const, acceptStartup: true }), 'acceptStartup must be a function'],
 		[() => ({ plugins: [] as const, launch: {} }), 'launch must be a function'],
 		[() => ({ plugins: [] as const, state: {} }), 'unsupported "state"'],
 		[() => ({ plugins: [] as const, configRecords: {} }), 'unsupported "configRecords"'],
-		[() => ({ plugins: [] as const, runtime: { storage: {} } }), 'unsupported "storage"'],
+		[() => ({ plugins: [] as const, runtime: { storage: {} } }), 'unsupported "runtime"'],
 		[() => ({ plugins: [] as const, policy: { initial: {} } }), 'unsupported'],
 		[() => ({ plugins: [] as const, config: { base: [] as const } }), 'unsupported'],
 	])('rejects invalid JavaScript declarations at the boundary', async (application, message) => {

@@ -20,8 +20,17 @@ it('generates real Plugin declarations, compiles an author script and uploads it
 	await mkdir(join(hostRoot, '.tmp'), { recursive: true })
 	const directory = await mkdtemp(join(hostRoot, '.tmp/control-delivery-'))
 	const host = await createHost({
-		plugins: [DeliveryCounter],
-		runtime: { documents: { state: false, config: false } },
+		plugins: [
+			{
+				plugin: DeliveryCounter,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	let owner: ReturnType<typeof createNodeScriptOwner> | undefined
 	try {
@@ -31,7 +40,7 @@ it('generates real Plugin declarations, compiles an author script and uploads it
 				{
 					moduleId: pluginFile,
 					className: 'DeliveryCounter',
-					definition: DeliveryCounter.definitionAddress(),
+					definition: DeliveryCounter.address(),
 				},
 			],
 		})

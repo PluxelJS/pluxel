@@ -2,31 +2,38 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { pluginSource } from '../../src/sources'
-import { pluginSourceCovers } from '../../src/source-contract'
+import { pluginSourceCovers, snapshotPluginSource } from '../../src/source-contract'
 import { discoverPluginSources } from '../../src/source-discovery'
 
 it('snapshots declarations and rejects traversal before opening IO', () => {
 	const include = ['*.mjs']
-	const source = pluginSource({ kind: 'directory', path: 'entries', include })
+	const source = snapshotPluginSource({ directory: 'entries', include })
 	include.push('*.js')
 	expect(
 		pluginSourceCovers({
 			source,
 			root: '/app',
-			requirement: { kind: 'file', path: '/app/entries/plugin.mjs' },
+			requirement: { file: '/app/entries/plugin.mjs' },
 		}),
 	).toBe(true)
 	expect(
 		pluginSourceCovers({
 			source,
 			root: '/app',
-			requirement: { kind: 'file', path: '/app/entries/plugin.js' },
+			requirement: { file: '/app/entries/plugin.js' },
 		}),
 	).toBe(false)
-	expect(() => pluginSource({ kind: 'directory', path: 'entries', include: ['../*.mjs'] })).toThrow(
+	expect(() => snapshotPluginSource({ directory: 'entries', include: ['../*.mjs'] })).toThrow(
 		'must stay inside their directory',
 	)
+})
+
+it.each([
+	[{ file: './feed.mjs', directory: './feed', include: ['*.mjs'] }, 'exactly one'],
+	[{ file: './feed.mjs', include: ['*.mjs'] }, 'unsupported "include"'],
+	[{ directory: './feed', include: [] }, 'must be a non-empty array'],
+])('rejects invalid source %j before discovery', (source, message) => {
+	expect(() => snapshotPluginSource(source)).toThrow(message)
 })
 
 it('rejects explicit and matching file links, including dangling links, before admitting entries', async () => {
@@ -40,10 +47,10 @@ it('rejects explicit and matching file links, including dangling links, before a
 		await symlink(join(root, 'target.mjs'), join(entries, 'linked.mjs'))
 		await symlink(join(root, 'missing.mjs'), join(entries, 'dangling.mjs'))
 		const cases = [
-			{ kind: 'file', path: join(root, 'file.mjs') },
-			{ kind: 'directory', path: join(root, 'directory'), include: ['*.mjs'] },
-			{ kind: 'directory', path: entries, include: ['linked.mjs'] },
-			{ kind: 'directory', path: entries, include: ['dangling.mjs'] },
+			{ file: join(root, 'file.mjs') },
+			{ directory: join(root, 'directory'), include: ['*.mjs'] },
+			{ directory: entries, include: ['linked.mjs'] },
+			{ directory: entries, include: ['dangling.mjs'] },
 		] as const
 		const failures = ['file.mjs', 'directory', 'entries/linked.mjs', 'entries/dangling.mjs']
 		for (const [index, source] of cases.entries())
@@ -72,15 +79,15 @@ it('resolves parent aliases, deduplicates physical files, and never traverses ne
 		const files = await discoverPluginSources({
 			root,
 			sources: [
-				{ kind: 'directory', path: join(alias, 'entries'), include: ['**/*'] },
-				{ kind: 'file', path: join(entries, 'plugin.mjs') },
+				{ directory: join(alias, 'entries'), include: ['**/*'] },
+				{ file: join(entries, 'plugin.mjs') },
 			],
 		})
 		expect(files).toEqual([join(entries, 'plugin.mjs')])
 		expect(
 			await discoverPluginSources({
 				root: alias,
-				sources: [{ kind: 'directory', path: 'entries', include: ['**/*'] }],
+				sources: [{ directory: 'entries', include: ['**/*'] }],
 			}),
 		).toEqual(files)
 	} finally {

@@ -1,6 +1,8 @@
 import { AdminAccess } from '@pluxel/services/management/access'
-import { vault } from '@pluxel/services/vault'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { describe, expect, it } from 'vitest'
 import { AuthPlugin } from '../src/index.ts'
@@ -9,7 +11,7 @@ describe('AuthPlugin lifecycle', () => {
 	it('runs in setup-required state and revokes its generation on stop', async () => {
 		{
 			await using host = await createServiceInternalTestHost({
-				services: [...standardServices(), vault()],
+				services: [elysia(), commands(), nodeModules(), workers()],
 				management: true,
 			})
 
@@ -33,7 +35,7 @@ describe('AuthPlugin lifecycle', () => {
 		}
 	})
 
-	it('runs public OIDC without Vault', async () => {
+	it('runs public OIDC without accessing credential storage', async () => {
 		{
 			await using host = await createServiceInternalTestHost({ management: true })
 

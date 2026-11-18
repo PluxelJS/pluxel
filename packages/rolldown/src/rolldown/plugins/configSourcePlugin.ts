@@ -74,6 +74,11 @@ export type ConfigSourceSymbol = {
 	readonly local: string
 }
 
+type ConfigSourceArray = {
+	readonly module: ConfigSchemaModule
+	readonly node: AstNode
+}
+
 export type ConfigSchemaSourceResolver = {
 	/** Resolve local/imported schema references without normalizing or evaluating source. */
 	renderResolved(module: ConfigSchemaModule, expression: AstNode): Promise<string>
@@ -82,10 +87,10 @@ export type ConfigSchemaSourceResolver = {
 		module: ConfigSchemaModule,
 		expression: AstNode,
 	): Promise<ConfigSourceSymbol | undefined>
-	resolveArraySymbols(
+	resolveArray(
 		module: ConfigSchemaModule,
 		expression: AstNode,
-	): Promise<readonly ConfigSourceSymbol[] | undefined>
+	): Promise<ConfigSourceArray | undefined>
 }
 
 const AUTHORING_PACKAGES = new Set(['@pluxel/core', '@pluxel/core/internal/test'])
@@ -458,18 +463,11 @@ export function createConfigSchemaSourceResolver(
 		return module.locals.has(name) ? { moduleId: module.id, local: name } : undefined
 	}
 
-	const sameSymbolArrays = (
-		left: readonly ConfigSourceSymbol[],
-		right: readonly ConfigSourceSymbol[],
-	): boolean =>
-		left.length === right.length &&
-		left.every((symbol, index) => symbolKey(symbol) === symbolKey(right[index]!))
-
-	const resolveExportArraySymbols = async (
+	const resolveExportArray = async (
 		module: ConfigSchemaModule,
 		name: string,
 		seen: Set<string>,
-	): Promise<readonly ConfigSourceSymbol[] | undefined> => {
+	): Promise<ConfigSourceArray | undefined> => {
 		const key = `${module.id}#array-export:${name}`
 		if (seen.has(key)) return undefined
 		seen.add(key)
@@ -477,17 +475,21 @@ export function createConfigSchemaSourceResolver(
 			const target = module.exports.get(name)
 			if (target) {
 				if (target.kind === 'local') {
-					return resolveLocalArraySymbols(module, target.local, seen)
+					return await resolveLocalArray(module, target.local, seen)
 				}
 				const next = await resolveModule(target.source, module.id)
-				return next ? resolveExportArraySymbols(next, target.imported, seen) : undefined
+				return next ? await resolveExportArray(next, target.imported, seen) : undefined
 			}
-			let found: readonly ConfigSourceSymbol[] | undefined
+			let found: ConfigSourceArray | undefined
 			for (const source of module.exportAll) {
 				const next = await resolveModule(source, module.id)
-				const candidate = next ? await resolveExportArraySymbols(next, name, seen) : undefined
+				const candidate = next ? await resolveExportArray(next, name, seen) : undefined
 				if (!candidate) continue
-				if (found && !sameSymbolArrays(found, candidate)) return undefined
+				if (
+					found &&
+					(found.module.id !== candidate.module.id || found.node.start !== candidate.node.start)
+				)
+					return undefined
 				found = candidate
 			}
 			return found
@@ -496,40 +498,37 @@ export function createConfigSchemaSourceResolver(
 		}
 	}
 
-	const resolveLocalArraySymbols = async (
+	const resolveLocalArray = async (
 		module: ConfigSchemaModule,
 		name: string,
 		seen: Set<string>,
-	): Promise<readonly ConfigSourceSymbol[] | undefined> => {
-		const declaration = module.declarations.get(name)
-		if (declaration) return resolveArrayExpressionSymbols(module, declaration, seen)
-		const binding = module.imports.get(name)
-		if (!binding || binding.namespace) return undefined
-		const target = await resolveModule(binding.source, module.id)
-		return target ? resolveExportArraySymbols(target, binding.imported, seen) : undefined
+	): Promise<ConfigSourceArray | undefined> => {
+		const key = `${module.id}#array-local:${name}`
+		if (seen.has(key)) return undefined
+		seen.add(key)
+		try {
+			const declaration = module.declarations.get(name)
+			if (declaration) return await resolveArrayExpression(module, declaration, seen)
+			const binding = module.imports.get(name)
+			if (!binding || binding.namespace) return undefined
+			const target = await resolveModule(binding.source, module.id)
+			return target ? await resolveExportArray(target, binding.imported, seen) : undefined
+		} finally {
+			seen.delete(key)
+		}
 	}
 
-	const resolveArrayExpressionSymbols = async (
+	const resolveArrayExpression = async (
 		module: ConfigSchemaModule,
 		expression: AstNode,
 		seen: Set<string>,
-	): Promise<readonly ConfigSourceSymbol[] | undefined> => {
+	): Promise<ConfigSourceArray | undefined> => {
 		const node = unwrapStaticExpression(expression)
 		if (node.type === 'Identifier') {
 			const name = readIdentifier(node)
-			return name ? resolveLocalArraySymbols(module, name, seen) : undefined
+			return name ? resolveLocalArray(module, name, seen) : undefined
 		}
-		if (node.type !== 'ArrayExpression') return undefined
-		const symbols: ConfigSourceSymbol[] = []
-		for (const rawElement of arrayOf(node.elements)) {
-			const element = rawElement as AstNode | null
-			if (!element || element.type !== 'Identifier') return undefined
-			const name = readIdentifier(element)
-			const symbol = name ? await resolveLocalSymbol(module, name, seen) : undefined
-			if (!symbol) return undefined
-			symbols.push(symbol)
-		}
-		return symbols
+		return node.type === 'ArrayExpression' ? { module, node } : undefined
 	}
 
 	const renderExport = async (
@@ -675,8 +674,8 @@ export function createConfigSchemaSourceResolver(
 			const name = readIdentifier(expression)
 			return name ? resolveLocalSymbol(module, name, new Set()) : undefined
 		},
-		async resolveArraySymbols(module, expression) {
-			return resolveArrayExpressionSymbols(module, expression, new Set())
+		async resolveArray(module, expression) {
+			return resolveArrayExpression(module, expression, new Set())
 		},
 	}
 }

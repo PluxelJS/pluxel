@@ -551,7 +551,7 @@ describe('host-vite Vite plugin stack', () => {
 			},
 			[
 				"import { addresses } from './state.js'",
-				'export class BasePlugin { static definitionAddress() { const value = addresses.get(this); if (!value) throw new Error("missing address"); return value } }',
+				'export class BasePlugin { static address() { const value = addresses.get(this); if (!value) throw new Error("missing address"); return value } }',
 				'export class PluginPart {}',
 				'export function Plugin() { return (target) => target }',
 			].join('\n'),
@@ -597,7 +597,7 @@ describe('host-vite Vite plugin stack', () => {
 				'class ProviderPart extends PluginPart<PartConsumer> { constructor(readonly provider: Provider) { super() } }',
 				'@Plugin()',
 				'export class PartConsumer extends BasePlugin { readonly first = this.parts.use(ProviderPart); readonly second = this.parts.use(ProviderPart) }',
-				'export function providerDefinition() { return Provider.definitionAddress() }',
+				'export function providerDefinition() { return Provider.address() }',
 				'export function consumerRequires() { return consumePluginDefinitionCandidate(Consumer).declaration.requires }',
 				'export function partConsumerFacts() { return consumePluginDefinitionCandidate(PartConsumer).declaration }',
 				'',

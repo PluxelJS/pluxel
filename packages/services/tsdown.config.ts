@@ -50,7 +50,6 @@ export default defineConfig({
 		'elysia/vite': './src/development/elysia.ts',
 		'node/vite': './src/development/node.ts',
 
-		index: './src/index.ts',
 		internal: './src/internal.ts',
 		'database/pglite': './src/database/pglite.ts',
 		'database/postgres': './src/database/postgres.ts',
@@ -62,7 +61,6 @@ export default defineConfig({
 		node: './src/node.ts',
 		workers: './src/workers.ts',
 		commands: './src/commands.ts',
-		vault: './src/vault.ts',
 	},
 	format: ['esm'],
 	dts: { eager: true },

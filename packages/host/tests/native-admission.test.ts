@@ -39,7 +39,7 @@ it('reuses successful namespace ownership admission, observes late imports and r
 		await writeFile(resolve(owner, 'late.mjs'), lowered('Late'))
 		await writeFile(
 			resolve(root, 'app.mjs'),
-			"export default async startup=>{startup.bindings.capture?.();await import('./owner/late.mjs');return{plugins:[],sources:[{kind:'directory',path:'owner',include:['entry-*.mjs']}],runtime:{documents:{state:false}}}}",
+			"export default async startup=>{startup.bindings.capture?.();await import('./owner/late.mjs');return{plugins:[],sources:[{directory:'owner',include:['entry-*.mjs']}],policy:{document:false}}}",
 		)
 		await writeFile(
 			resolve(root, 'conflict/wrapper.mjs'),
@@ -47,7 +47,7 @@ it('reuses successful namespace ownership admission, observes late imports and r
 		)
 		await writeFile(
 			resolve(root, 'conflict-app.mjs'),
-			"import {Native0} from './owner/entry-0.mjs';export default()=>({plugins:[Native0],sources:[{kind:'file',path:'conflict/wrapper.mjs'}],runtime:{documents:{state:false}}})",
+			"import {Native0} from './owner/entry-0.mjs';export default()=>({plugins:[{plugin:Native0}],sources:[{file:'conflict/wrapper.mjs'}],policy:{document:false}})",
 		)
 		const run = (script: string) =>
 			promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {
@@ -109,7 +109,7 @@ it('admits only lowered native ESM and checks shared installation facts without 
 		const run = async (entry = 'entry.mjs') => {
 			await put(
 				'app.mjs',
-				`export default () => ({plugins:[],sources:[{kind:'file',path:${JSON.stringify(entry)}}],runtime:{documents:{state:false}}})`,
+				`export default () => ({plugins:[],sources:[{file:${JSON.stringify(entry)}}],policy:{document:false}})`,
 			)
 			return promisify(execFile)(
 				process.execPath,
@@ -230,7 +230,7 @@ it('snapshots startup before loading, rejects invalid inputs before evaluation a
 	try {
 		await writeFile(resolve(root, 'never.mjs'), "throw new Error('UNUSED_MODULE_EXECUTED')")
 		await writeFile(resolve(root, 'invalid.mjs'), "throw new Error('INVALID_INPUT_EXECUTED')")
-		const application = `export const unused=import.meta.resolve('./never.mjs'); export default startup=>({plugins:[],runtime:{documents:{state:false}},prepare(){startup.bindings.capture({root:startup.root,value:startup.env.VALUE})}})`
+		const application = `export const unused=import.meta.resolve('./never.mjs'); export default startup=>({plugins:[],policy:{document:false},prepare(){startup.bindings.capture({root:startup.root,value:startup.env.VALUE})}})`
 		await writeFile(resolve(root, 'first.mjs'), application)
 		await writeFile(resolve(root, 'second.mjs'), application)
 		await writeFile(resolve(root, 'preloaded.mjs'), 'export default ()=>({plugins:[]})')

@@ -65,14 +65,13 @@ await writeFile(
 	resolve(root, 'pluxel.static.ts'),
 	`
 import { defineHostApplication } from '@pluxel/host'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'; import { commands } from '@pluxel/services/commands'; import { nodeModules } from '@pluxel/services/node'; import { workers } from '@pluxel/services/workers';
 import { workbenchService } from '@pluxel/workbench/service'
 
 import { Owner, Dependent } from './src/index'
 export default defineHostApplication((startup) => ({
-  name: 'workbench-hmr', plugins: [Owner, Dependent],
-    services: [...standardServices(), workbenchService()],
-    policy: { autoStart: [Owner, Dependent].map((plugin) => plugin.nodeAddress()) },
+  name: 'workbench-hmr', plugins: [{ plugin: Owner, autoStart: true }, { plugin: Dependent, autoStart: true }],
+    services: [elysia(), commands(), nodeModules(), workers(), workbenchService()],
   prepare({ host }) { startup.bindings.capture(host) },
 }))
 `,

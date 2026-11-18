@@ -12,7 +12,13 @@ class Counter extends BasePlugin {
 }
 
 it('borrows the same root and closes its admission with the shared script scope', async () => {
-	await using host = await createHost({ plugins: [Counter] })
+	await using host = await createHost({
+		plugins: [
+			{
+				plugin: Counter,
+			},
+		],
+	})
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
 	const sdk = scope.sdk
@@ -62,7 +68,13 @@ it('borrows the same root and closes its admission with the shared script scope'
 })
 
 it('resolves existing typed forks', async () => {
-	await using host = await createHost({ plugins: [Counter] })
+	await using host = await createHost({
+		plugins: [
+			{
+				plugin: Counter,
+			},
+		],
+	})
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
 	try {
@@ -95,7 +107,13 @@ class Replaceable extends BasePlugin {
 	})
 }
 it('rejects an imported constructor superseded by the actual catalog', async () => {
-	await using host = await createHost({ plugins: [Replaceable] })
+	await using host = await createHost({
+		plugins: [
+			{
+				plugin: Replaceable,
+			},
+		],
+	})
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
 	try {

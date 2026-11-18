@@ -4,6 +4,7 @@ import { requireHostDocuments } from '../internal/storage'
 import {
 	bindContextRuntimeLogging,
 	type RuntimeLogging,
+	type RuntimeLoggingManager,
 	type RuntimeLoggingOptions,
 } from './logging'
 import type { PluginLogPolicyStore } from './policy'
@@ -17,7 +18,7 @@ export type LoggingOptions = Readonly<
 	}
 >
 
-const bindings = new WeakMap<RuntimeLogging, { root: RootContext; unbind(): void }>()
+const bindings = new WeakMap<RuntimeLoggingManager, { root: RootContext; unbind(): void }>()
 
 /** @internal Validate only Pluxel's independent options, never the upstream Config schema. */
 export function assertLoggingOptions(options: unknown): asserts options is LoggingOptions {
@@ -32,7 +33,7 @@ export function assertLoggingOptions(options: unknown): asserts options is Loggi
 /** @internal Core/Host awaits this before service preparation and Plugin admission. */
 export async function prepareContextRuntimeLogging(
 	root: RootContext,
-	manager: RuntimeLogging,
+	manager: RuntimeLoggingManager,
 	options: LoggingOptions = {},
 ): Promise<void> {
 	assertLoggingOptions(options)
@@ -59,7 +60,7 @@ export async function prepareContextRuntimeLogging(
 /** @internal Final logging stage, after Plugin and service teardown and before storage finalization. */
 export async function disposeContextRuntimeLogging(
 	root: RootContext,
-	manager: RuntimeLogging,
+	manager: RuntimeLoggingManager,
 ): Promise<void> {
 	const binding = bindings.get(manager)
 	if (binding) {

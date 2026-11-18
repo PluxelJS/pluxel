@@ -114,7 +114,7 @@ export function resolvePluginTestTarget(target: PluginTestTarget): ResolvedPlugi
 	}
 	const implementation = evidence.implementation as PluginConstructor
 	const address = parsePluginNodeAddress(target)
-	if (!pluginDefinitionAddressEqual(address.definition, implementation.definitionAddress())) {
+	if (!pluginDefinitionAddressEqual(address.definition, implementation.address())) {
 		throw new TypeError(
 			'[pluxel/test] Plugin address and implementation evidence must identify the same definition',
 		)

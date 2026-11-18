@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, expect, it, vi } from 'vitest'
-import { pluginSource } from '@pluxel/host/sources'
+
 import { watchPluginSource } from '../src/sources-watch'
 import { openPluginSources, type PluginSourceChange } from '../src/source-session'
 import { createHostSourceEvaluator } from '../src/application-sources'
@@ -29,7 +29,7 @@ it('coalesces changed entries into bounded directory validation during a burst',
 	const changes: PluginSourceChange[] = []
 	const errors: unknown[] = []
 	const source = await watchPluginSource(
-		{ kind: 'directory', path: directory, include: ['*.mjs'] },
+		{ directory, include: ['*.mjs'] },
 		{
 			root,
 			onChange: (change) => changes.push(change),
@@ -65,7 +65,7 @@ it('forces accepted notifications through entries and reconciles SDK observation
 	const watched = vi.spyOn(FSWatcher.prototype, 'on')
 	try {
 		const source = await watchPluginSource(
-			{ kind: 'directory', path: root, include: ['*.mjs'] },
+			{ directory: root, include: ['*.mjs'] },
 			{
 				root,
 				onChange: (change) => changes.push(change),
@@ -112,7 +112,7 @@ it('retains observed publications after invalid siblings without retrying absent
 	let emitted: ReturnType<typeof vi.spyOn> | undefined
 	try {
 		const source = await watchPluginSource(
-			{ kind: 'directory', path: directory, include: ['*.mjs'] },
+			{ directory, include: ['*.mjs'] },
 			{
 				root,
 				onChange: (change) => changes.push(change),
@@ -169,7 +169,7 @@ it('merges failed observations into an already queued read while newer notificat
 	let emitted: ReturnType<typeof vi.spyOn> | undefined
 	try {
 		const source = await watchPluginSource(
-			{ kind: 'directory', path: root, include: ['*.mjs'] },
+			{ directory: root, include: ['*.mjs'] },
 			{
 				root,
 				onChange: (change) => changes.push(change),
@@ -219,7 +219,7 @@ it('bounds merged failed observations and retains full reconciliation across ano
 	let emitted: ReturnType<typeof vi.spyOn> | undefined
 	try {
 		const source = await watchPluginSource(
-			{ kind: 'directory', path: root, include: ['*.mjs'] },
+			{ directory: root, include: ['*.mjs'] },
 			{
 				root,
 				onChange: (change) => changes.push(change),
@@ -271,7 +271,7 @@ it('keeps reads finite during later notifications and drains validation IO befor
 	const discovery = vi.spyOn(hostInternal, 'discoverPluginSources')
 	try {
 		const source = await watchPluginSource(
-			{ kind: 'directory', path: root, include: ['*.mjs'] },
+			{ directory: root, include: ['*.mjs'] },
 			{
 				root,
 				onChange: (change) => changes.push(change),
@@ -339,7 +339,7 @@ it('validates the completed initial directory without rescanning it for each SDK
 			.getActiveResourcesInfo()
 			.filter((resource) => resource === 'StatWatcher').length
 		const source = await watchPluginSource(
-			{ kind: 'directory', path: entries, include: ['*.mjs'] },
+			{ directory: entries, include: ['*.mjs'] },
 			{
 				root,
 				onChange() {},
@@ -369,7 +369,7 @@ it('validates the completed initial directory without rescanning it for each SDK
 		})
 		await expect(
 			watchPluginSource(
-				{ kind: 'directory', path: entries, include: ['*.mjs'] },
+				{ directory: entries, include: ['*.mjs'] },
 				{ root, onChange() {}, onError() {} },
 			),
 		).rejects.toMatchObject({ code: 'PLUGIN_SOURCE_SYMLINK', file: linked })
@@ -393,10 +393,10 @@ it('rejects linked source roots and matching files, closes other opened sources,
 	await symlink(join(root, 'target.mjs'), join(entries, 'linked.mjs'))
 	await symlink(join(root, 'missing.mjs'), join(entries, 'dangling.mjs'))
 	const sources = [
-		{ kind: 'file', path: join(root, 'file.mjs') },
-		{ kind: 'directory', path: join(root, 'directory'), include: ['*.mjs'] },
-		{ kind: 'directory', path: entries, include: ['linked.mjs'] },
-		{ kind: 'directory', path: entries, include: ['dangling.mjs'] },
+		{ file: join(root, 'file.mjs') },
+		{ directory: join(root, 'directory'), include: ['*.mjs'] },
+		{ directory: entries, include: ['linked.mjs'] },
+		{ directory: entries, include: ['dangling.mjs'] },
 	] as const
 	const failures = ['file.mjs', 'directory', 'entries/linked.mjs', 'entries/dangling.mjs']
 	const callbacks = { root, onChange() {}, onError() {} }
@@ -412,7 +412,7 @@ it('rejects linked source roots and matching files, closes other opened sources,
 	await expect(
 		openPluginSources({
 			...callbacks,
-			sources: [{ kind: 'file', path: join(root, 'target.mjs') }, sources[0]],
+			sources: [{ file: join(root, 'target.mjs') }, sources[0]],
 		}),
 	).rejects.toMatchObject({ code: 'PLUGIN_SOURCE_SYMLINK', file: join(root, 'file.mjs') })
 	expect(
@@ -442,10 +442,7 @@ it('uses one physical source owner through parent aliases and ignores nested dir
 	const errors: unknown[] = []
 	const session = await openPluginSources({
 		root: alias,
-		sources: [
-			{ kind: 'directory', path: 'entries', include: ['**/*'] },
-			{ kind: 'file', path: file },
-		],
+		sources: [{ directory: 'entries', include: ['**/*'] }, { file }],
 		onChange: (change) => changes.push(change),
 		onError: (error) => errors.push(error),
 	})
@@ -482,7 +479,7 @@ it.each(['existing', 'dangling'] as const)(
 			.filter((resource) => resource === 'StatWatcher').length
 		const session = await openPluginSources({
 			root,
-			sources: [{ kind: 'directory', path: entries, include: ['*.mjs'] }],
+			sources: [{ directory: entries, include: ['*.mjs'] }],
 			onChange: (change) => changes.push(change),
 			onError: (error) => errors.push(error),
 		})
@@ -518,10 +515,7 @@ it.each(['existing', 'dangling'] as const)(
 		const closedErrors = [...errors]
 		await rm(path)
 		await symlink(target, path)
-		const next = await watchPluginSource(
-			{ kind: 'file', path: regular },
-			{ root, onChange() {}, onError() {} },
-		)
+		const next = await watchPluginSource({ file: regular }, { root, onChange() {}, onError() {} })
 		cleanups.push(() => next.close())
 		expect(changes).toEqual(closed)
 		expect(errors).toEqual(closedErrors)
@@ -541,7 +535,7 @@ it.each(['existing', 'missing'] as const)(
 		const errors: unknown[] = []
 		const session = await openPluginSources({
 			root,
-			sources: [{ kind: 'directory', path, include: ['*.mjs'] }],
+			sources: [{ directory: path, include: ['*.mjs'] }],
 			onChange() {},
 			onError: (error) => errors.push(error),
 		})
@@ -582,7 +576,7 @@ it('retains an explicit file while a link replaces it and observes its immediate
 	const errors: unknown[] = []
 	const session = await openPluginSources({
 		root,
-		sources: [{ kind: 'file', path }],
+		sources: [{ file: path }],
 		onChange: (change) => changes.push(change),
 		onError: (error) => errors.push(error),
 	})
@@ -609,7 +603,7 @@ it('discovers initial and later publications, filters unrelated files, and stops
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-source-'))
 	cleanups.push(() => rm(root, { recursive: true, force: true }))
 	const path = join(root, 'managed', 'entries')
-	const source = pluginSource({ kind: 'directory', path, include: ['*.mjs'] })
+	const source = { directory: path, include: ['*.mjs'] }
 	const changes: { type: string; path: string }[] = []
 	const errors: unknown[] = []
 	const session = await watchPluginSource(source, {
@@ -673,7 +667,7 @@ it('rejects application reevaluation while a declared source remains invalid and
 		evaluator.evaluate({
 			application: {
 				plugins: [],
-				sources: [{ kind: 'directory', path: entries, include: ['*.mjs'] } as const],
+				sources: [{ directory: entries, include: ['*.mjs'] } as const],
 			},
 			entryFiles: new Set<string>(),
 		})
@@ -714,7 +708,7 @@ export class Foreign extends BasePlugin {}
 Plugin()(Foreign);
 __setPluginDefinition(Foreign, { abiVersion: 2, kind: 'plugin', definition: { entry: { kind: 'source-entry', sourceSpace: 'fixture', path: 'foreign.mjs' }, exportName: 'Foreign' } });`,
 	)
-	const source = { kind: 'directory', path, include: ['*.mjs'] } as const
+	const source = { directory: path, include: ['*.mjs'] } as const
 	const errors: unknown[] = []
 	const changes: PluginSourceChange[] = []
 	const before = process

@@ -1,4 +1,4 @@
-import type { HostConfigState, HostPolicyInput, HostPolicyField } from '@pluxel/host'
+import type { HostConfigState, HostPolicyPatch, HostPolicyResetTarget } from '@pluxel/host'
 import { type RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
 import {
 	type PluginDefinitionAddress,
@@ -36,7 +36,7 @@ import {
 	type RuntimeMeta,
 	type VaultKeyPair,
 } from './protocol'
-import type { VaultAdminState } from '../../vault'
+import type { VaultAdminState } from '@pluxel/core/vault'
 import type {
 	PluginControlManifestIndex,
 	PluginControlManifestRequest,
@@ -89,13 +89,13 @@ export interface RuntimeManagementTarget extends RpcTarget {
 	pluginConfigPresentationDto: (owner: PluginNodeAddress) => Promise<ConfigPresentationResult>
 	configStateDto: () => HostConfigState
 	hostPolicyDto: () => Promise<PolicyResult>
-	validateHostPolicyDto: (values: HostPolicyInput) => Promise<PolicyResult>
+	validateHostPolicyDto: (values: HostPolicyPatch) => Promise<PolicyResult>
 	patchHostPolicyDto: (
-		values: HostPolicyInput,
+		values: HostPolicyPatch,
 		options?: ManagedInputMutationOptions,
 	) => Promise<PolicyResult>
 	resetHostPolicyDto: (
-		keys?: readonly HostPolicyField[],
+		targets?: readonly HostPolicyResetTarget[],
 		options?: ManagedInputMutationOptions,
 	) => Promise<PolicyResult>
 	pluginConfigDto: (owner: PluginNodeAddress) => Promise<ConfigResult>

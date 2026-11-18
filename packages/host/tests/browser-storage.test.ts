@@ -145,7 +145,7 @@ class Owner extends BasePlugin {
 export async function run() {
  const storeName = 'pluxel-built-in-' + crypto.randomUUID()
  const owner = Owner.nodeAddress()
- const options = { plugins:[Owner], runtime:{ zenfs:{ mounts: { '/': { backend:IndexedDB, storeName } }, durableMounts: ['/'] }, documents:{state:false} } }
+ const options = { plugins:[{plugin:Owner}], coreConfig:{ zenfs:{ mounts: { '/': { backend:IndexedDB, storeName } }, durableMounts: ['/'] } }, policy:{document:false} }
  let host
  try {
   host = await createHost(options)

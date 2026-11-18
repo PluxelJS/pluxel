@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { SuperJSON } from 'superjson'
 import { describe, expect, it, vi } from 'vitest'
@@ -19,7 +19,7 @@ describe('Host public policy management', () => {
 	it('preserves cancellation identity when the reason is a recoverable policy error', async () => {
 		await using host = await createHost({
 			plugins: [],
-			runtime: { documents: { state: false } },
+			policy: { document: false },
 		})
 		const before = await host.policy.get()
 		const reason = new HostStatePersistenceError(new Error('caller stopped waiting'))
@@ -36,8 +36,7 @@ describe('Host public policy management', () => {
 	it('previews raw edits, retains shadowed values, resets inheritance and detects stale tokens', async () => {
 		await using host = await createHost({
 			plugins: [],
-			policy: { startConcurrency: 3 },
-			runtime: { documents: { state: false } },
+			policy: { document: false, execution: { startConcurrency: 3 } },
 		})
 		const initial = await host.policy.get()
 		if (initial.ok === false) throw new Error(initial.message)
@@ -78,16 +77,15 @@ describe('Host public policy management', () => {
 
 	it('binds saved execution values before service prepare and changes them only in a new Host', async () => {
 		const storage = createDocumentStorage()
-		await storage.put('state.json', SuperJSON.stringify({ version: 7, startTimeoutMs: 2000 }))
+		await storage.put('state.json', SuperJSON.stringify({ version: 8, startTimeoutMs: 2000 }))
 		let prepared = false
 		const options = {
-			plugins: [Delayed],
+			plugins: [{ plugin: Delayed, autoStart: true }],
 			policy: {
-				autoStart: [Delayed.nodeAddress()],
-				startTimeoutMs: 5,
-				mode: { startTimeoutMs: 'saved-first' as const },
+				document: { storage: () => storage },
+				execution: { startTimeoutMs: 5 },
+				modes: { startTimeoutMs: 'saved-first' as const },
 			},
-			runtime: { documents: { state: { storage: () => storage } } },
 			services: [
 				defineHostService({
 					name: 'ExecutionProbe',
@@ -127,22 +125,29 @@ describe('Host public policy management', () => {
 	})
 
 	it('validates mixed graph columns atomically and preserves running intent when autoStart changes', async () => {
-		await using host = await createHost({ plugins: [Managed] })
+		await using host = await createHost({ plugins: [{ plugin: Managed }] })
 		const node = Managed.nodeAddress(),
 			fork = Managed.nodeAddress('tenant')
 		await host.startNode(node)
-		await expect(host.policy.patch({ autoStart: [fork] })).resolves.toMatchObject({
+		await expect(
+			host.policy.patch({ autoStart: [{ node: fork, autoStart: true }] }),
+		).resolves.toMatchObject({
 			ok: false,
 			code: 'invalid_input',
 		})
 		expect(await host.policy.get()).toMatchObject({ ok: true, managedInput: {} })
-		await expect(host.policy.patch({ autoStart: [node], forks: [fork] })).resolves.toMatchObject({
+		await expect(
+			host.policy.patch({
+				autoStart: [{ node, autoStart: true }],
+				forks: [{ node: fork, deploy: true }],
+			}),
+		).resolves.toMatchObject({
 			ok: true,
 			report: { writtenFields: ['autoStart', 'forks'] },
 		})
-		await host.policy.patch({ autoStart: [] })
+		await host.policy.patch({ autoStart: [{ node, autoStart: false }] })
 		expect(requirePluginService(host.ctx).isRunning(node)).toBe(true)
-		await host.policy.patch({ forks: [] })
+		await host.policy.patch({ forks: [{ node: fork, deploy: false }] })
 		expect(await host.policy.get()).toMatchObject({ ok: true, effective: { forks: [] } })
 	})
 
@@ -150,7 +155,7 @@ describe('Host public policy management', () => {
 		const storage = createDocumentStorage()
 		await using host = await createHost({
 			plugins: [],
-			runtime: { documents: { state: { storage: () => storage } } },
+			policy: { document: { storage: () => storage } },
 		})
 		const initial = await host.policy.get()
 		storage.put = async () => {
@@ -169,7 +174,7 @@ describe('Host public policy management', () => {
 		await using first = await createHost({ plugins: [] })
 		await using second = await createHost({
 			plugins: [],
-			runtime: { documents: { state: { readOnly: true } } },
+			policy: { document: { readOnly: true } },
 		})
 		const snapshot = await first.policy.get()
 		if (snapshot.ok === false) throw new Error(snapshot.message)
@@ -202,4 +207,214 @@ describe('Host public policy management', () => {
 		const abort = AbortSignal.abort(new Error('cancelled'))
 		await expect(first.policy.get({ signal: abort })).rejects.toThrow('cancelled')
 	})
+})
+
+it('persists independent choices and restores missing records in one revision', async () => {
+	const storage = createDocumentStorage()
+	const disabled = parsePluginNodeAddress(Managed.nodeAddress())
+	const savedNode = parsePluginNodeAddress(Delayed.nodeAddress())
+	await storage.put(
+		'state.json',
+		SuperJSON.stringify({
+			version: 8,
+			autoStart: [{ node: savedNode, autoStart: true }],
+		}),
+	)
+	const options = {
+		inputMode: 'saved-first',
+		plugins: [
+			{ plugin: Managed, autoStart: false, policyMode: 'declared-only' },
+			{ plugin: Delayed },
+		],
+		policy: { document: { storage: () => storage } },
+	} as const
+	{
+		await using host = await createHost(options)
+		const before = await host.policy.get()
+		if (before.ok === false) throw new Error(before.message)
+		expect(before.effective.autoStart).toEqual([savedNode])
+		await expect(host.setAutoStart(disabled, true)).rejects.toMatchObject({
+			code: 'policy_shadowed',
+		})
+		expect(await host.policy.get()).toEqual(before)
+		const changed = await host.policy.patch(
+			{
+				autoStart: [
+					{ node: disabled, autoStart: true },
+					{ node: savedNode, autoStart: false },
+				],
+			},
+			{ expectedManagedRevision: before.managedRevision },
+		)
+		if (changed.ok === false) throw new Error(changed.message)
+		expect(changed.effective.autoStart).toEqual([])
+		expect(changed.selections).toEqual(
+			expect.arrayContaining([
+				{
+					target: { field: 'autoStart', node: disabled },
+					mode: 'declared-only',
+					source: 'declared',
+					shadowed: true,
+				},
+				{
+					target: { field: 'autoStart', node: savedNode },
+					mode: 'saved-first',
+					source: 'saved',
+					shadowed: false,
+				},
+			]),
+		)
+		await expect(
+			host.policy.patch(
+				{
+					autoStart: [{ node: savedNode, autoStart: true }],
+					reset: [{ field: 'autoStart', node: disabled }],
+				},
+				{ expectedManagedRevision: changed.managedRevision },
+			),
+		).resolves.toMatchObject({
+			ok: true,
+			managedInput: before.managedInput,
+			effective: before.effective,
+		})
+	}
+	await using reopened = await createHost(options)
+	expect(await reopened.policy.get()).toMatchObject({
+		ok: true,
+		managedInput: { autoStart: [{ node: savedNode, autoStart: true }] },
+		effective: { autoStart: [savedNode] },
+	})
+})
+
+@Plugin({ forkable: true, startTimeoutMs: 10 })
+class TimedFork extends BasePlugin {
+	async init() {
+		await new Promise((resolve) => setTimeout(resolve, 60))
+	}
+}
+
+it('selects a concrete generation timeout per node and per Host before resource preparation', async () => {
+	const defaultNode = parsePluginNodeAddress(TimedFork.nodeAddress())
+	const inherited = parsePluginNodeAddress(TimedFork.nodeAddress('inherited'))
+	const overridden = parsePluginNodeAddress(TimedFork.nodeAddress('overridden'))
+	const delayedNode = parsePluginNodeAddress(Delayed.nodeAddress())
+	const plugins = [
+		{
+			plugin: TimedFork,
+			autoStart: true,
+			startTimeoutMs: 500,
+			forks: {
+				inherited: { autoStart: true },
+				overridden: { autoStart: true, startTimeoutMs: 500 },
+			},
+		},
+		{ plugin: Delayed, autoStart: true },
+	] as const
+	await using first = await createHost({ plugins, policy: { execution: { startTimeoutMs: 15 } } })
+	await using second = await createHost({
+		plugins: [
+			{
+				plugin: TimedFork,
+				autoStart: true,
+				startTimeoutMs: 20,
+				forks: { overridden: { autoStart: true, startTimeoutMs: 500 } },
+			},
+			{ plugin: Delayed, autoStart: true },
+		],
+	})
+	await Promise.all([first.start(), second.start()])
+	const { statuses: firstStatus } = await first.status()
+	const { statuses: secondStatus } = await second.status()
+	expect(firstStatus).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ address: defaultNode, lifecycleState: 'running' }),
+			expect.objectContaining({
+				address: inherited,
+				lifecycleState: 'stopped',
+				issues: expect.arrayContaining([
+					expect.objectContaining({ message: expect.stringContaining('10ms') }),
+				]),
+			}),
+			expect.objectContaining({ address: overridden, lifecycleState: 'running' }),
+			expect.objectContaining({
+				address: delayedNode,
+				lifecycleState: 'stopped',
+				issues: expect.arrayContaining([
+					expect.objectContaining({ message: expect.stringContaining('15ms') }),
+				]),
+			}),
+		]),
+	)
+	expect(secondStatus).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				address: defaultNode,
+				lifecycleState: 'stopped',
+				issues: expect.arrayContaining([
+					expect.objectContaining({ message: expect.stringContaining('20ms') }),
+				]),
+			}),
+			expect.objectContaining({ address: overridden, lifecycleState: 'running' }),
+			expect.objectContaining({ address: delayedNode, lifecycleState: 'running' }),
+		]),
+	)
+	const prepare = vi.fn()
+	await expect(
+		createHost({
+			plugins: [{ plugin: TimedFork, startTimeoutMs: 2_147_483_648 }],
+			services: [defineHostService({ name: 'TimeoutProbe', provides: [], prepare })],
+		}),
+	).rejects.toThrow('plugins[0].startTimeoutMs')
+	expect(prepare).not.toHaveBeenCalled()
+})
+
+@Plugin()
+class ManagedConsumer extends BasePlugin {
+	constructor(readonly provider: Managed) {
+		super()
+	}
+}
+
+it('persists a cleared consumer override and restores the declared provider on reset', async () => {
+	const storage = createDocumentStorage()
+	const consumerAddress = parsePluginNodeAddress(ManagedConsumer.nodeAddress())
+	const requirementAddress = Managed.address()
+	const fork = parsePluginNodeAddress(Managed.nodeAddress('east'))
+	const original = parsePluginNodeAddress(Managed.nodeAddress())
+	const options = {
+		plugins: [
+			{ plugin: Managed, forks: { east: {} } },
+			{
+				plugin: ManagedConsumer,
+				autoStart: true,
+				policyMode: 'saved-first',
+				dependencyOverrides: [{ requirementAddress, providerAddress: fork }],
+			},
+		],
+		policy: { document: { storage: () => storage } },
+	} as const
+	const edges = (host: Awaited<ReturnType<typeof createHost>>) =>
+		requirePluginService(host.ctx).readCommittedDependencyAdjacency().required
+
+	{
+		await using host = await createHost(options)
+		await host.start()
+		expect(edges(host)).toContainEqual({ consumer: consumerAddress, provider: fork })
+		await host.setDependencyOverride(consumerAddress, requirementAddress, null)
+		expect(edges(host)).toContainEqual({ consumer: consumerAddress, provider: original })
+		expect(await host.policy.get()).toMatchObject({
+			ok: true,
+			managedInput: {
+				dependencyOverrides: [{ consumerAddress, requirementAddress, providerAddress: null }],
+			},
+		})
+	}
+
+	await using reopened = await createHost(options)
+	await reopened.start()
+	expect(edges(reopened)).toContainEqual({ consumer: consumerAddress, provider: original })
+	await expect(
+		reopened.policy.reset([{ field: 'dependencyOverrides', consumerAddress, requirementAddress }]),
+	).resolves.toMatchObject({ ok: true, managedInput: {} })
+	expect(edges(reopened)).toContainEqual({ consumer: consumerAddress, provider: fork })
 })

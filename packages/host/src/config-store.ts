@@ -20,7 +20,7 @@ import {
 	mergeRecord,
 	snapshotConfigInput,
 	snapshotHostConfig,
-	type HostConfigOptions,
+	type ResolvedHostConfigOptions,
 } from './config-records'
 import {
 	configLeafPaths,
@@ -58,7 +58,10 @@ export type ManagedConfigTransaction = Readonly<{
 /** Host owns raw inputs; Core owns the sole validated output and generation revisions. */
 export class HostConfigStore extends ConfigService {
 	private readonly file = 'config.json'
-	private readonly options: ReturnType<typeof snapshotHostConfig>
+	private readonly declaredRecords: ReadonlyMap<
+		string,
+		ResolvedHostConfigOptions['records'][number]
+	>
 	private managed: readonly PluginConfigRecordSnapshot[] = []
 	private readonly instance = globalThis.crypto.randomUUID()
 	private managedSequence = 0
@@ -74,12 +77,14 @@ export class HostConfigStore extends ConfigService {
 
 	constructor(
 		ctx: Context,
-		options: HostConfigOptions = {},
+		private readonly options: ResolvedHostConfigOptions = snapshotHostConfig(),
 		private readonly documents: ResolvedHostStoreStorageOptions = {},
 	) {
 		super(ctx)
 		assertResolvedHostStoreStorage(documents)
-		this.options = snapshotHostConfig(options)
+		this.declaredRecords = new Map(
+			options.records.map((record) => [pluginNodeIndexKey(record.owner), record]),
+		)
 		this.retention = documents.retention ?? (documents.storage ? 'unknown' : 'session')
 		if (documents.storage) this.setReadyTask(this.load())
 		ctx.effects.defer(() => this.dispose(), { tag: 'HostConfigStore' })
@@ -94,16 +99,10 @@ export class HostConfigStore extends ConfigService {
 		return `config:${this.instance}:${this.managedSequence}`
 	}
 	getMode(owner: PluginNodeAddress): HostInputMode {
-		return (
-			this.options.records.find((entry) => pluginNodeAddressEqual(entry.owner, owner))?.mode ??
-			this.options.mode
-		)
+		return this.declaredRecords.get(pluginNodeIndexKey(owner))?.mode ?? this.options.mode
 	}
 	getDeclaredConfig(owner: PluginNodeAddress): Record<string, unknown> {
-		return mergeRecord(
-			undefined,
-			this.options.records.find((entry) => pluginNodeAddressEqual(entry.owner, owner))?.config,
-		)
+		return mergeRecord(undefined, this.declaredRecords.get(pluginNodeIndexKey(owner))?.config)
 	}
 	getManagedRecords(): readonly PluginConfigRecordSnapshot[] {
 		return this.managed

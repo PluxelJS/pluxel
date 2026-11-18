@@ -3,6 +3,7 @@ import { mkdtemp, open, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BasePlugin, Plugin } from '@pluxel/core'
+import { requirePluginService } from '@pluxel/core/internal'
 import { FontsConfig, FontsPlugin } from '@pluxel/plugin-fonts'
 import { createTestHost, PluginLifecycleAssertionError } from '@pluxel/test'
 import {
@@ -11,7 +12,9 @@ import {
 	fileBinding,
 	resolveHostApplication,
 } from '@pluxel/host'
+import { createResolvedHost } from '@pluxel/host/internal'
 import { nodeModules } from '@pluxel/services/node'
+import { attachTestNodeCompiler } from '@pluxel/services/internal/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TypstConfig, TypstPlugin, type TypstFiles, type TypstSession } from '../src/index.ts'
 
@@ -75,7 +78,7 @@ afterEach(async () => {
 
 describe('TypstPlugin real host and worker', () => {
 	it.skipIf(!deploymentFont)(
-		'applies file budgets and env overrides without Workbench or Fs',
+		'applies file budgets and env overrides without Workbench',
 		async () => {
 			const source = await template()
 			await writeFile(
@@ -83,20 +86,31 @@ describe('TypstPlugin real host and worker', () => {
 				JSON.stringify({ maxSessions: 2, maxInputBytes: 1024 }),
 			)
 			const application = defineHostApplication(() => ({
-				plugins: [FontsPlugin, TypstPlugin, TypstConsumer],
-				envBindings: [
-					envBinding(FontsPlugin.nodeAddress(), {
-						config: { schema: FontsConfig, mapping: { files: 'FONT_FILES' } },
-					}),
-					envBinding(TypstPlugin.nodeAddress(), {
-						config: { schema: TypstConfig, mapping: { maxSessions: 'TYPST_SESSIONS' } },
-					}),
+				plugins: [
+					{
+						plugin: FontsPlugin,
+						envBindings: [
+							envBinding({
+								config: { schema: FontsConfig, mapping: { files: 'FONT_FILES' } },
+							}),
+						],
+					},
+					{
+						plugin: TypstPlugin,
+						envBindings: [
+							envBinding({
+								config: { schema: TypstConfig, mapping: { maxSessions: 'TYPST_SESSIONS' } },
+							}),
+						],
+						fileBindings: [
+							fileBinding({
+								config: { schema: TypstConfig, path: './typst.json' },
+							}),
+						],
+					},
+					{ plugin: TypstConsumer, autoStart: true },
 				],
-				fileBindings: [
-					fileBinding(TypstPlugin.nodeAddress(), {
-						config: { schema: TypstConfig, path: './typst.json' },
-					}),
-				],
+				services: [nodeModules()],
 			}))
 			const resolved = await resolveHostApplication(application, {
 				root: source.root,
@@ -104,31 +118,18 @@ describe('TypstPlugin real host and worker', () => {
 				env: { TYPST_SESSIONS: '1', FONT_FILES: JSON.stringify([deploymentFont]) },
 				bindings: {},
 			})
-			await using host = await createTestHost({
-				services: [nodeModules()],
-				config: resolved.config,
-				policy: resolved.policy,
-				runtime: resolved.runtime,
-			})
-			const started = performance.now()
-			await host
-				.commit((change) => {
-					change.catalog.add([FontsPlugin, TypstPlugin, TypstConsumer])
-					change.start([
-						FontsPlugin.nodeAddress(),
-						TypstPlugin.nodeAddress(),
-						TypstConsumer.nodeAddress(),
-					])
-				})
-				.catch((cause: unknown) => {
-					if (cause instanceof PluginLifecycleAssertionError)
-						console.error(
-							'Typst configured startup failed',
-							JSON.stringify({ elapsedMs: performance.now() - started, summary: cause.summary }),
-						)
-					throw cause
-				})
-			const consumer = host.require(TypstConsumer.nodeAddress())
+			await using host = await createResolvedHost(resolved)
+			const compiler = await attachTestNodeCompiler(host.ctx)
+			if (compiler)
+				host.ctx.effects.defer(
+					async () => {
+						await compiler[Symbol.asyncDispose]()
+					},
+					{ phase: 'final' },
+				)
+			const report = await host.start()
+			const consumer = requirePluginService(host.ctx).getInstance(TypstConsumer)
+			if (!consumer) throw new Error('Typst configured startup failed', { cause: report })
 			expect(consumer.fonts.portableFonts.fonts).toHaveLength(1)
 			const typst = consumer.typst
 			await using session = await typst.open(source)

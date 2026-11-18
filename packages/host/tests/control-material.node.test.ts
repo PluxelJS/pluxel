@@ -50,7 +50,7 @@ const ownerServiceInstallation = installRootService(OwnerService, {
 async function material(instance: string) {
 	const descriptor = {
 		format: 2 as const,
-		definition: Published.definitionAddress(),
+		definition: Published.address(),
 		contracts: { config: null as null, instance },
 	}
 	const files = {
@@ -147,7 +147,7 @@ it('validates the exact loaded owner and preserves the first constructor control
 		const second = `sha256:${'2'.repeat(64)}`
 		await publish(root, first)
 		const owner = installedPackageFacts(module)!
-		expect(readLoadedPluginControl(owner, Published.definitionAddress())).toMatchObject({
+		expect(readLoadedPluginControl(owner, Published.address())).toMatchObject({
 			state: 'available',
 			contracts: { instance: first },
 		})
@@ -160,7 +160,7 @@ it('validates the exact loaded owner and preserves the first constructor control
 		})
 		await writeFile(resolve(root, 'control/index.mjs'), 'throw new Error("must never execute")\n')
 		expect(
-			readLoadedPluginControl(installedPackageFacts(module)!, Published.definitionAddress()),
+			readLoadedPluginControl(installedPackageFacts(module)!, Published.address()),
 		).toMatchObject({ state: 'unavailable', reason: 'analysis_failed' })
 	} finally {
 		await rm(root, { recursive: true, force: true })
@@ -174,7 +174,7 @@ it('binds standalone materials to the generated factory module without a package
 		await writeFile(module, 'export {}\n')
 		const instance = `sha256:${'3'.repeat(64)}`
 		await publish(root, instance)
-		const factory: HostApplicationFactory = () => ({ plugins: [Published] })
+		const factory: HostApplicationFactory = () => ({ plugins: [{ plugin: Published }] })
 		recordLoadedHostApplication(factory, pathToFileURL(module).href, {
 			controlManifest: './control/manifest.json',
 		})

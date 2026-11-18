@@ -138,8 +138,9 @@ export default defineHostApplication(async startup => {
  process.stdout.write('SELECTION_FACTORY_EVALUATED\\n')
  return {
   name: 'services-selection',
-  plugins: ${selected ? '[VaultAdminPlugin]' : '[]'},
-  services: await servicesPreset(startup, { vault: { backend: 'bindings' }, workbench: true }),
+  plugins: ${selected ? '[{plugin:VaultAdminPlugin}]' : '[]'},
+  services: await servicesPreset(startup),
+  coreConfig: { vault: { backend: 'bindings' } },
   prepare: ({ host }) => { globalThis.__selectionHost = host },
  }
 })
@@ -226,7 +227,7 @@ import { defineHostApplication } from '@pluxel/host'
 import { SelectedPlugin } from './owners.ts'
 export default defineHostApplication(() => {
  process.stdout.write('SELECTION_FACTORY_EVALUATED\\n')
- return { plugins: [SelectedPlugin], prepare: ({ host }) => { globalThis.__selectionHost = host } }
+ return { plugins: [{ plugin: SelectedPlugin }], prepare: ({ host }) => { globalThis.__selectionHost = host } }
 })
 `,
 		)

@@ -25,7 +25,10 @@ class ConflictingRoutes extends BasePlugin {
 }
 
 it('publishes and withdraws business routes through the standalone Host commit without management', async () => {
-	const host = await createHost({ plugins: [Routes, ConflictingRoutes], services: [elysia()] })
+	const host = await createHost({
+		plugins: [{ plugin: Routes }, { plugin: ConflictingRoutes }],
+		services: [elysia()],
+	})
 	try {
 		const server = resolveContextService(host.ctx, ElysiaRuntime)
 		const request = () => new Request('http://localhost/hello')

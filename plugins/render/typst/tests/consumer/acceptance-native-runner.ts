@@ -9,18 +9,12 @@ import { TypstPlugin } from '@pluxel/plugin-typst'
 import { ArtifactConsumer, job } from './acceptance-native.js'
 const packageRoot = dirname(fileURLToPath(import.meta.resolve('@pluxel/plugin-typst/package.json')))
 const host = await createHost({
-	plugins: [FontsPlugin, TypstPlugin, ArtifactConsumer],
+	plugins: [
+		{ plugin: FontsPlugin, config: { files: [job.font], maxFontBytes: 32 * 1024 * 1024 } },
+		{ plugin: TypstPlugin, config: { maxTemplateBytes: 128 * 1024 * 1024 } },
+		{ plugin: ArtifactConsumer, autoStart: true },
+	],
 	services: [nodeModules({ root: join(packageRoot, 'dist/artifacts/node') })],
-	config: {
-		records: [
-			{
-				owner: FontsPlugin.nodeAddress(),
-				config: { files: [job.font], maxFontBytes: 32 * 1024 * 1024 },
-			},
-			{ owner: TypstPlugin.nodeAddress(), config: { maxTemplateBytes: 128 * 1024 * 1024 } },
-		],
-	},
-	policy: { autoStart: [ArtifactConsumer.nodeAddress()] },
 })
 try {
 	await mkdir(job.evidence, { recursive: true })

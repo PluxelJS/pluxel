@@ -56,7 +56,7 @@ import {
 	type HostPluginGraphCommittedView,
 } from '../coordinator'
 import type { HostConfigStore } from '../config-store'
-import type { HostPolicyField, HostPolicyInput } from '../policy'
+import type { HostPolicyPatch, HostPolicyResetTarget } from '../policy'
 import type { ScriptPlugin, ScriptSdk } from './sdk-types'
 import {
 	captureScriptPluginListOptions,
@@ -65,6 +65,8 @@ import {
 } from './discovery'
 import { normalizePluginTarget } from './control-target'
 import { createBorrowedValueView } from './instance-view'
+import { createBorrowedVaultView } from './vault-view'
+import type { VaultStorageApi } from '@pluxel/core/vault'
 import {
 	assertPluginControlContract,
 	pluginCatalogEntry,
@@ -261,6 +263,7 @@ export function createScriptScope(
 		)
 	const statusView = (view: HostPluginGraphCommittedView) => ({
 		catalog: view.catalog,
+		declaredNodes: view.declaredNodes,
 		state: view.runtimeState.state,
 		reconciliation: view.reconciliation,
 		lifecycleIssues: readHostPluginLifecycleIssues(ctx),
@@ -289,7 +292,7 @@ export function createScriptScope(
 			throw new ScriptError({
 				code: 'logging_unavailable',
 				message:
-					'This Host has no logging runtime; configure runtime.logtape with a history sink to read logs',
+					'This Host has no logging runtime. Configure coreConfig.logtape with a history sink to read logs.',
 			})
 		return installed
 	}
@@ -349,6 +352,14 @@ export function createScriptScope(
 		const cached = contexts.get(owner)
 		if (cached) return cached as T
 		let effects: EffectsScope | undefined
+		let vault: VaultStorageApi | undefined
+		const scriptEffects = () => {
+			if (!effects) {
+				effects = owner.effects.scope({ tag: 'Script' })
+				ownedEffects.push(effects)
+			}
+			return effects
+		}
 		const view = {
 			get name() {
 				assertContextOpen(owner)
@@ -380,11 +391,7 @@ export function createScriptScope(
 			},
 			get effects() {
 				assertContextOpen(owner)
-				if (!effects) {
-					effects = owner.effects.scope({ tag: 'Script' })
-					ownedEffects.push(effects)
-				}
-				return borrow(owner, effects)
+				return borrow(owner, scriptEffects())
 			},
 			[Symbol.toStringTag]: 'PluxelContext',
 			service: (target: ServiceDefinition<unknown> | ServiceRef<unknown>): unknown => {
@@ -424,6 +431,15 @@ export function createScriptScope(
 					get: () => {
 						assertContextOpen(owner)
 						return borrow(owner, (owner as unknown as PluginContext).fs)
+					},
+				},
+				vault: {
+					get: () => {
+						assertContextOpen(owner)
+						return (vault ??= createBorrowedVaultView((owner as unknown as PluginContext).vault, {
+							borrow: (value) => borrow(owner, value),
+							defer: (cleanup) => scriptEffects().defer(cleanup, { tag: 'VaultWatch' }),
+						}))
 					},
 				},
 				tinybase: {
@@ -679,7 +695,7 @@ export function createScriptScope(
 						scriptPolicySnapshot(projectHostPolicyResult(ctx, await policy.get(admission))),
 					runError,
 				),
-			validate: (values: HostPolicyInput) =>
+			validate: (values: HostPolicyPatch) =>
 				queued(
 					async () =>
 						scriptPolicySnapshot(
@@ -687,7 +703,7 @@ export function createScriptScope(
 						),
 					runError,
 				),
-			patch: (values: HostPolicyInput, input?: HostOperationOptions) =>
+			patch: (values: HostPolicyPatch, input?: HostOperationOptions) =>
 				queued(
 					async () =>
 						scriptPolicySnapshot(
@@ -696,7 +712,7 @@ export function createScriptScope(
 					runError,
 					input?.signal,
 				),
-			reset: (keys?: readonly HostPolicyField[], input?: HostOperationOptions) =>
+			reset: (keys?: readonly HostPolicyResetTarget[], input?: HostOperationOptions) =>
 				queued(
 					async () =>
 						scriptPolicySnapshot(

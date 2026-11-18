@@ -1,4 +1,7 @@
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import {
 	database as installDatabase,
 	Database,
@@ -170,7 +173,10 @@ describe('DatabaseService', () => {
 		databaseHost = await createServiceInternalTestHarness({
 			workbench: false,
 			services: [
-				...standardServices(),
+				elysia(),
+				commands(),
+				nodeModules(),
+				workers(),
 				installDatabase({ backend: pglite({ dataDir: 'memory://' }) }),
 			],
 		})
@@ -354,7 +360,7 @@ describe('DatabaseService', () => {
 		const definition = databaseFixture()
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 
 		@Plugin({ displayName: 'DisabledDatabasePlugin' })
@@ -380,7 +386,13 @@ describe('DatabaseService', () => {
 			{
 				await using firstHost = await createServiceInternalTestHarness({
 					workbench: false,
-					services: [...standardServices(), installDatabase({ backend: pglite({ dataDir }) })],
+					services: [
+						elysia(),
+						commands(),
+						nodeModules(),
+						workers(),
+						installDatabase({ backend: pglite({ dataDir }) }),
+					],
 				})
 
 				@Plugin({ displayName: 'PersistentDatabasePlugin' })
@@ -403,7 +415,13 @@ describe('DatabaseService', () => {
 
 			await using secondHost = await createServiceInternalTestHarness({
 				workbench: false,
-				services: [...standardServices(), installDatabase({ backend: pglite({ dataDir }) })],
+				services: [
+					elysia(),
+					commands(),
+					nodeModules(),
+					workers(),
+					installDatabase({ backend: pglite({ dataDir }) }),
+				],
 			})
 
 			@Plugin({ displayName: 'PersistentDatabasePlugin' })
@@ -435,7 +453,10 @@ describe('DatabaseService', () => {
 		const host = await createServiceInternalTestHarness({
 			workbench: false,
 			services: [
-				...standardServices(),
+				elysia(),
+				commands(),
+				nodeModules(),
+				workers(),
 				installDatabase({ backend: pglite({ dataDir: join(persistence, 'database') }) }),
 			],
 		})

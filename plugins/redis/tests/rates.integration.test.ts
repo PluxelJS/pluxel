@@ -1,4 +1,7 @@
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import { createHash, randomUUID } from 'node:crypto'
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/plugin-rates'
@@ -27,7 +30,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 		const prefix = `pluxel:test:rates:${randomUUID()}:`
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.commit((change) => {

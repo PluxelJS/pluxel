@@ -1,3 +1,4 @@
+import { graphFromPolicyInput, positivePolicyInput } from './helpers/policy-input'
 import {
 	pluginNodeIndexKey,
 	type PluginDefinitionAddress,
@@ -28,12 +29,12 @@ describe('PluginHostCoordinator committed reads', () => {
 		const store: HostStateCoordinatorStore = {
 			ready: Promise.resolve(),
 			versionedSnapshot: () => versioned,
-			managedSnapshot: () => versioned.state,
-			prepareAction: (patch) => applyHostStatePatch(versioned.state, patch),
+			managedSnapshot: () => positivePolicyInput(versioned.state),
+			prepareAction: (patch) => positivePolicyInput(applyHostStatePatch(versioned.state, patch)),
 			assertManagedRevision() {},
 			persistence: (changed) =>
 				changed ? { status: 'confirmed', retention: 'session' } : { status: 'unchanged' },
-			effectiveSnapshot: (saved) => ({ ...emptyState(), ...saved }),
+			effectiveSnapshot: graphFromPolicyInput,
 			assertPatchMutable() {},
 			commitVersioned: async (expectedRevision, next) => {
 				expect(expectedRevision).toBe(versioned.revision)
@@ -41,7 +42,7 @@ describe('PluginHostCoordinator committed reads', () => {
 				await releasePersistence.promise
 				versioned = Object.freeze({
 					revision: versioned.revision + 1,
-					state: { ...emptyState(), ...next },
+					state: graphFromPolicyInput(next),
 				})
 				return versioned
 			},

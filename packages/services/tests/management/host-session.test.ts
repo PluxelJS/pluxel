@@ -32,7 +32,7 @@ class ManagedWorker extends BasePlugin {}
 
 it('serves a real authenticated socket for a Core Host and leaves it alive when the endpoint closes', async () => {
 	const host = await createHost({
-		plugins: [ManagedWorker],
+		plugins: [{ plugin: ManagedWorker }],
 		services: [managementAccess(), management()],
 	})
 	await host.start()
@@ -152,7 +152,7 @@ it.each([undefined, 'http://bot-new-omni.localhost:1355', 'https://bot-new-omni.
 	'mounts management with public origin %s and withdraws it on Host close',
 	async (publicOrigin) => {
 		const host = await createHost({
-			plugins: [ManagedWorker],
+			plugins: [{ plugin: ManagedWorker }],
 			services: [elysia(), managementAccess(), management(), managementHttp()],
 		})
 		await host.start()

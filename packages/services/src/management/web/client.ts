@@ -1,4 +1,4 @@
-import type { HostConfigState, HostPolicyInput, HostPolicyField } from '@pluxel/host'
+import type { HostConfigState, HostPolicyPatch, HostPolicyResetTarget } from '@pluxel/host'
 import {
 	cloneRuntimeUpdateSnapshot,
 	type RuntimeUpdateSnapshot,
@@ -148,10 +148,10 @@ export type RuntimeManagementClient = Readonly<{
 	}>
 	policy: Readonly<{
 		get(): Promise<PolicyResult>
-		validate(values: HostPolicyInput): Promise<PolicyResult>
-		patch(values: HostPolicyInput, options?: ManagedInputMutationOptions): Promise<PolicyResult>
+		validate(values: HostPolicyPatch): Promise<PolicyResult>
+		patch(values: HostPolicyPatch, options?: ManagedInputMutationOptions): Promise<PolicyResult>
 		reset(
-			keys?: readonly HostPolicyField[],
+			targets?: readonly HostPolicyResetTarget[],
 			options?: ManagedInputMutationOptions,
 		): Promise<PolicyResult>
 	}>
@@ -287,8 +287,8 @@ export function createRuntimeManagementClient(
 			validate: (values) => call((root) => root.validateHostPolicyDto(values), parsePolicyResult),
 			patch: (values, options) =>
 				call((root) => root.patchHostPolicyDto(values, options), parsePolicyResult),
-			reset: (keys, options) =>
-				call((root) => root.resetHostPolicyDto(keys, options), parsePolicyResult),
+			reset: (targets, options) =>
+				call((root) => root.resetHostPolicyDto(targets, options), parsePolicyResult),
 		}),
 		dependencies: Object.freeze({
 			graph: () =>

@@ -4,12 +4,14 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parsePluginNodeAddress, defineServiceRef } from '@pluxel/core'
+import { requirePluginService } from '@pluxel/core/internal'
 import {
 	defineHostApplication,
 	envBinding,
 	fileBinding,
 	resolveHostApplication,
 } from '@pluxel/host'
+import { createResolvedHost } from '@pluxel/host/internal'
 import { createTestHost } from '@pluxel/test'
 import { describe, expect, it } from 'vitest'
 import { FontsConfig, FontsPlugin } from '../src/index.ts'
@@ -47,19 +49,24 @@ describe('Fonts deployment without Workbench', () => {
 			try {
 				await writeFile(join(root, 'fonts.json'), JSON.stringify({ defaultFamily: 'monospace' }))
 				const application = defineHostApplication(() => ({
-					plugins: [FontsPlugin],
-					fileBindings: [
-						fileBinding(FontsPlugin.nodeAddress(), {
-							config: { schema: FontsConfig, path: 'fonts.json' },
-						}),
-					],
-					envBindings: [
-						envBinding(FontsPlugin.nodeAddress(), {
-							config: {
-								schema: FontsConfig,
-								mapping: { files: 'FONT_FILES', defaultFamily: 'FONT_FAMILY' },
-							},
-						}),
+					plugins: [
+						{
+							plugin: FontsPlugin,
+							autoStart: true,
+							envBindings: [
+								envBinding({
+									config: {
+										schema: FontsConfig,
+										mapping: { files: 'FONT_FILES', defaultFamily: 'FONT_FAMILY' },
+									},
+								}),
+							],
+							fileBindings: [
+								fileBinding({
+									config: { schema: FontsConfig, path: 'fonts.json' },
+								}),
+							],
+						},
 					],
 				}))
 				const resolved = await resolveHostApplication(application, {
@@ -68,14 +75,10 @@ describe('Fonts deployment without Workbench', () => {
 					bindings: {},
 					env: { FONT_FILES: JSON.stringify([fontPath, fontPath]), FONT_FAMILY: 'serif' },
 				})
-				await using host = await createTestHost({
-					services: [],
-					config: resolved.config,
-					policy: resolved.policy,
-					runtime: resolved.runtime,
-				})
-				await host.start(FontsPlugin.nodeAddress())
-				let fonts = host.require(FontsPlugin.nodeAddress())
+				await using host = await createResolvedHost(resolved)
+				await host.start()
+				const plugins = requirePluginService(host.ctx)
+				const fonts = plugins.getInstance(FontsPlugin)!
 				expect(fonts.ctx.service(WorkbenchRef)).toBeUndefined()
 				expect(fonts.defaultFont).toMatchObject({ family: 'serif', source: 'config' })
 				expect(fonts.portableFonts.fonts).toHaveLength(1)
@@ -83,11 +86,14 @@ describe('Fonts deployment without Workbench', () => {
 				expect(resource.family).toBeUndefined()
 				const bytes = await fonts.readPortableFont(resource.id)
 				expect(bytes.byteLength).toBe(resource.byteLength)
-				await host.stop(FontsPlugin.nodeAddress())
-				await host.start(FontsPlugin.nodeAddress())
-				fonts = host.require(FontsPlugin.nodeAddress())
-				expect(fonts.portableFonts.fonts).toHaveLength(1)
-				await expect(fonts.readPortableFont(resource.id)).resolves.toHaveLength(resource.byteLength)
+				await host.stopNode(FontsPlugin.nodeAddress())
+				await host.startNode(FontsPlugin.nodeAddress())
+				const restarted = plugins.getInstance(FontsPlugin)!
+				expect(restarted).not.toBe(fonts)
+				expect(restarted.portableFonts.fonts).toHaveLength(1)
+				await expect(restarted.readPortableFont(resource.id)).resolves.toHaveLength(
+					resource.byteLength,
+				)
 			} finally {
 				await rm(root, { recursive: true, force: true })
 			}

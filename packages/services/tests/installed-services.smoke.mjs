@@ -19,7 +19,7 @@ const UNSELECTED_SQL_LOAD_PATTERN =
 
 it('does not confuse a pnpm peer suffix with a loaded optional module', () => {
 	const packageUrl =
-		'file:///tmp/node_modules/.pnpm/@pluxel+services@file+services.tgz_capnweb@0.12.0/node_modules/@pluxel/services/dist/vault.mjs'
+		'file:///tmp/node_modules/.pnpm/@pluxel+services@file+services.tgz_capnweb@0.12.0/node_modules/@pluxel/services/dist/commands.mjs'
 	expect(UNSELECTED_BACKEND_LOAD_PATTERN.test(packageUrl)).toBe(false)
 	expect(BARE_CONSOLE_SERVICE_LOAD_PATTERN.test(packageUrl)).toBe(true)
 	const bareConsoleUrl =
@@ -38,7 +38,7 @@ it('does not confuse a pnpm peer suffix with a loaded optional module', () => {
 	).toBe(true)
 	expect(
 		UNSELECTED_SQL_LOAD_PATTERN.test(
-			'file:///tmp/node_modules/.pnpm/@pluxel+services@file+services.tgz_drizzle-orm@0.45.4_pg@8.23.1/node_modules/@pluxel/services/dist/vault.mjs',
+			'file:///tmp/node_modules/.pnpm/@pluxel+services@file+services.tgz_drizzle-orm@0.45.4_pg@8.23.1/node_modules/@pluxel/services/dist/commands.mjs',
 		),
 	).toBe(false)
 	for (const name of ['drizzle-orm', 'drizzle-kit', 'pg', 'pg-pool', '@electric-sql/pglite']) {
@@ -53,7 +53,7 @@ const run = async (file, args, cwd) => {
 	}
 }
 
-const checkOptionalDeclarations = async (root) => {
+const checkServiceDeclarations = async (root, optional = false) => {
 	const check = (config) =>
 		run(join(workspace, 'node_modules/.bin/tsc'), ['--project', config], root)
 			.then(() => ({ failed: false, diagnostics: [] }))
@@ -83,16 +83,16 @@ const checkOptionalDeclarations = async (root) => {
 	}
 	// capnweb 0.12.0 (also upstream main) spreads a Promise union as a tuple tail.
 	// These two diagnostics remain exact; all other errors must match the pure Elysia import.
-	const upstreamDiagnostics = [333, 469].map(
-		(column) =>
-			`node_modules/.pnpm/capnweb@0.12.0/node_modules/capnweb/dist/index.d.ts(63,${column}): error TS2574: A rest element type must be an array type.`,
-	)
-	expect(declarations.diagnostics).toEqual(
-		declarations.failed ? [...upstreamDiagnostics, ...elysia.diagnostics] : [],
-	)
+	const upstreamDiagnostics = optional
+		? [333, 469].map(
+				(column) =>
+					`node_modules/.pnpm/capnweb@0.12.0/node_modules/capnweb/dist/index.d.ts(63,${column}): error TS2574: A rest element type must be an array type.`,
+			)
+		: []
+	expect(declarations.diagnostics).toEqual([...upstreamDiagnostics, ...elysia.diagnostics])
 	if (declarations.failed)
 		process.stdout.write(
-			'KNOWN_UPSTREAM_DECLARATION_ERRORS: capnweb 0.12.0 TS2574 and pure Elysia import baseline; no additional installed declaration errors\n',
+			`KNOWN_UPSTREAM_DECLARATION_ERRORS: ${optional ? 'capnweb 0.12.0 TS2574 and ' : ''}pure Elysia import baseline; no additional installed declaration errors\n`,
 		)
 }
 
@@ -353,7 +353,6 @@ it('ships the patched filesystem to independent Node and browser consumers with 
 			join(root, 'consumer.ts'),
 			`
 import type {FsConfig, Backend, FileSystem} from '@pluxel/core/fs';
-import {zenfs} from '@pluxel/core/config';
 import {CopyOnWrite, InMemory} from '@zenfs/core';
 import type {BackendConfiguration} from '@zenfs/core';
 const borrowed: FileSystem = await InMemory.create({label:'borrowed-native'});
@@ -367,9 +366,7 @@ const config: FsConfig = {
  mounts:{'/':borrowed,'/custom':{backend,label:'custom'},'/nested':nested},
 };
 const typed: FsConfig<{'/':typeof CopyOnWrite}> = {mounts:{'/':nested}};
-const declaration=zenfs(config);
-const typedDeclaration=zenfs<{'/':typeof CopyOnWrite}>(typed);
-void declaration; void typedDeclaration;
+void config; void typed;
 `,
 		)
 		await run(join(workspace, 'node_modules/.bin/tsc'), ['--project', 'tsconfig.json'], root)
@@ -380,18 +377,17 @@ import assert from 'node:assert/strict';
 import {InMemory} from '@pluxel/core/fs';
 import * as native from '@zenfs/core';
 import {createHost} from '@pluxel/host';
-import {zenfs} from '@pluxel/core/config';
 import {requireFs} from '@pluxel/core/internal';
 assert.notStrictEqual(InMemory,native.InMemory);
 const borrowed=await native.InMemory.create({label:'borrowed-native'});
 await borrowed.ready();
 let created=0;
 const backend={...native.InMemory,name:'NativeCustom',create(options){created++;return native.InMemory.create(options)}};
-const host=await createHost({plugins:[],runtime:{zenfs:zenfs({mounts:{
+const host=await createHost({plugins:[],coreConfig:{zenfs:{mounts:{
  '/':borrowed,
  '/custom':{backend,label:'owned-custom'},
  '/nested':{backend:native.CopyOnWrite,readable:{backend:native.InMemory},writable:{backend:native.InMemory}},
-}})}});
+}}}});
 try {
  const io=await requireFs(host.ctx).directory('custom/data');
  await io.writeFile('value','EXTERNAL-NATIVE-BACKEND');
@@ -401,7 +397,7 @@ try {
  await nested.writeFile('value','NESTED-NATIVE-BACKEND');
  assert.equal(await nested.readFile('value','utf8'),'NESTED-NATIVE-BACKEND');
 } finally {await host.close()}
-const reopened=await createHost({plugins:[],runtime:{zenfs:zenfs({mounts:{'/':borrowed}})}});
+const reopened=await createHost({plugins:[],coreConfig:{zenfs:{mounts:{'/':borrowed}}}});
 try {await (await requireFs(reopened.ctx).directory('still-open')).writeFile('value','BORROWED')}
 finally {await reopened.close()}
 console.log('EXTERNAL_NATIVE_ZENFS_OK');
@@ -480,11 +476,11 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 				files: ['consumer.ts'],
 			}),
 		)
-		await run(join(workspace, 'node_modules/.bin/tsc'), ['--project', 'tsconfig.json'], root)
-		// The same base installation serves explicit, standard, and headless Management compositions.
-		await writeFile(join(root, 'standard.mjs'), standardServicesConsumer)
-		const standardResult = await run(process.execPath, ['standard.mjs'], root)
-		expect(standardResult.stdout).toContain('ISOLATED_STANDARD_SERVICES_OK')
+		await checkServiceDeclarations(root)
+		// Verify explicit service composition and the official headless preset without browser peers.
+		await writeFile(join(root, 'explicit.mjs'), explicitServicesConsumer)
+		const explicitResult = await run(process.execPath, ['explicit.mjs'], root)
+		expect(explicitResult.stdout).toContain('ISOLATED_EXPLICIT_SERVICES_OK')
 		// Management must work before Workbench or browser peers are installed.
 		await writeFile(join(root, 'headless.mjs'), headlessManagementConsumer)
 		const headless = await run(process.execPath, ['headless.mjs'], root)
@@ -561,7 +557,7 @@ it('consumes real service tarballs outside the workspace with isolated declarati
 			JSON.stringify({ ...typeConfig, files: ['consumer.ts', 'headless.ts'] }),
 		)
 		process.stdout.write('ISOLATED_OPTIONAL_SERVICE_RUNTIMES_OK\n')
-		await checkOptionalDeclarations(root)
+		await checkServiceDeclarations(root, true)
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}
@@ -591,7 +587,6 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
 import { createHost } from '@pluxel/host'
 import { Passthrough } from '@pluxel/core/fs'
-import { zenfs } from '@pluxel/core/config'
 import { requireTinyBaseHost, requireHostDocuments } from '@pluxel/core/internal'
 import { createStore } from 'tinybase/with-schemas'
 import { createQueries } from 'tinybase/queries'
@@ -618,7 +613,7 @@ __setPluginDefinition(Owner, {
  definition: { entry: { kind: 'package-root', packageName: 'independent-tinybase-consumer' }, exportName: 'Owner' },
 })
 async function open() {
- const host = await createHost({ plugins: [Owner], runtime: { zenfs: zenfs({ mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } }, durableMounts: ['/'] }) } })
+ const host = await createHost({ plugins: [{ plugin: Owner }], coreConfig: { zenfs: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } }, durableMounts: ['/'] } } })
  const started = await host.startNode(Owner.nodeAddress())
  assert.equal(started.core.status, 'committed')
  assert.equal(started.core.summary.lifecycleReport.ok, true)
@@ -726,8 +721,7 @@ console.log('ISOLATED_TINYBASE_NATIVE_BROWSER_OK')
 const fsTypeConsumer = `
 import * as nativeFs from 'node:fs'
 import {createHost} from '@pluxel/host/browser'
-import {logtape,zenfs,type LogTapeConfig} from '@pluxel/core/config'
-import { type RuntimeLogging } from '@pluxel/core/logging'
+import type { LogTapeConfig, RuntimeLogging } from '@pluxel/core/logging'
 import {InMemory,Passthrough,type FsPromises,type FsConfig} from '@pluxel/core/fs'
 import {requireFs} from '@pluxel/core/internal'
 import {IndexedDB} from '@pluxel/core/fs/browser'
@@ -735,11 +729,11 @@ const nodeConfig={ mounts: { '/': {backend:Passthrough,fs:nativeFs,prefix:'/data
 const browserConfig={ mounts: { '/': {backend:IndexedDB,storeName:'profile'} }, readOnly: true, durableMounts: ['/'] } satisfies FsConfig
 // @ts-expect-error The old single-backend wrapper is not a native mount configuration.
 const legacyConfig:FsConfig={backend:Passthrough}
-const logger:LogTapeConfig=logtape({
+const logger:LogTapeConfig={
  sinks:{capture(record){const category:readonly string[]=record.category;void category}},
  loggers:[{category:['pluxel'],sinks:['capture'],lowestLevel:'trace'},{category:['logtape','meta'],lowestLevel:null}],
-})
-const host=await createHost({plugins:[],runtime:{logtape:logger,zenfs:zenfs({ mounts: { '/': {backend:InMemory} } })}})
+}
+const host=await createHost({plugins:[],coreConfig:{logtape:logger,zenfs:{ mounts: { '/': {backend:InMemory} } }}})
 const logging:RuntimeLogging=host.ctx.logging!
 await logging.flush()
 const io:FsPromises=await requireFs(host.ctx).directory('documents')
@@ -758,7 +752,6 @@ const hooks = registerHooks({ load(url, context, next) {
  return next(url, context)
 } })
 const { createHost } = await import('@pluxel/host')
-const { logtape, zenfs } = await import('@pluxel/core/config')
 const { BasePlugin, Plugin } = await import('@pluxel/core')
 const { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } = await import('@pluxel/core/toolchain')
 const { InMemory, Passthrough, writeFileAtomic } = await import('@pluxel/core/fs')
@@ -777,7 +770,7 @@ for (const type of [First,Second]) {
  Plugin()(type)
  __setPluginDefinition(type,{abiVersion:PLUGIN_LOWERING_ABI_VERSION,kind:'plugin',definition:{entry:{kind:'package-root',packageName:'independent-service-consumer'},exportName:type.name}})
 }
-const first = await createHost({plugins:[First,Second]})
+const first = await createHost({plugins:[{ plugin: First }, { plugin: Second }]})
 const second = await createHost({plugins:[]})
 assert.equal(first.ctx.logging,undefined)
 assert.equal(second.ctx.logging,undefined)
@@ -802,7 +795,7 @@ const shortened = {...nativeFs,promises:{...nativeFs.promises,async open(...args
  handle.write=(buffer,offset,length,position)=>{writes++;return write(buffer,offset,Math.min(length,2),position)}
  return handle
 }}}
-let node = await createHost({plugins:[],runtime:{zenfs:zenfs({ mounts: { '/': {backend:Passthrough,fs:shortened,prefix} }, durableMounts: ['/'] })}})
+let node = await createHost({plugins:[],coreConfig:{zenfs:{ mounts: { '/': {backend:Passthrough,fs:shortened,prefix} }, durableMounts: ['/'] }}})
 try {
  const io=await requireFs(node.ctx).directory('documents',{durable:true,writable:true})
  await writeFileAtomic(io,'value','NEW-CONTENT')
@@ -817,7 +810,7 @@ try {
  assert.deepEqual(Array.from(await io.readFile('binary')),[0,1,255])
  assert.ok(reads>1 && writes>1)
 } finally {await node.close()}
-node=await createHost({plugins:[],runtime:{zenfs:zenfs({ mounts: { '/': {backend:Passthrough,fs:nativeFs,prefix} }, readOnly: true, durableMounts: ['/'] })}})
+node=await createHost({plugins:[],coreConfig:{zenfs:{ mounts: { '/': {backend:Passthrough,fs:nativeFs,prefix} }, readOnly: true, durableMounts: ['/'] }}})
 try {
  const io=await requireFs(node.ctx).directory('documents')
  await assert.rejects(io.writeFile('binary','CHANGED'),{code:'EROFS'})
@@ -826,7 +819,7 @@ try {
 } finally {await node.close()}
 let created=false
 const external = {...InMemory,name:'CustomMemory',create(options){created=true;return InMemory.create(options)}}
-const custom = await createHost({plugins:[],runtime:{zenfs:zenfs({mounts:{'/':{backend:external,name:'native-custom'}}})}})
+const custom = await createHost({plugins:[],coreConfig:{zenfs:{mounts:{'/':{backend:external,name:'native-custom'}}}}})
 try {
  assert.equal(created,true)
  const io=await requireFs(custom.ctx).directory('custom')
@@ -839,12 +832,12 @@ const capture=Object.assign(record=>records.push(record),{
  async drain(){events.push('drain')},
  async [Symbol.asyncDispose](){events.push('close')},
 })
-const logger=logtape({
+const logger={
  sinks:{capture},
  loggers:[{category:['pluxel'],sinks:['capture'],lowestLevel:'trace'},{category:['logtape','meta'],lowestLevel:null}],
-})
+}
 assert.deepEqual(events,[])
-const logged=await createHost({plugins:[],runtime:{logtape:logger,zenfs:zenfs()}})
+const logged=await createHost({plugins:[],coreConfig:{logtape:logger}})
 const logging=logged.ctx.logging
 try {
  logged.ctx.logger.info('ISOLATED_CONFIG_NATIVE_SINK')
@@ -866,29 +859,42 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 const loads = []
 const hooks = registerHooks({ load(url, context, next) { loads.push(url); return next(url, context) } })
-const { Vault, vault } = await import('@pluxel/services/vault')
-const { createServiceRef } = await import('@pluxel/core/internal')
-const VaultRef = createServiceRef(Vault)
-assert.equal(loads.some(url => /age-encryption/.test(url)), false, 'token import must not evaluate encryption backend')
+const { VaultError } = await import('@pluxel/core/vault')
+assert.equal(typeof VaultError, 'function')
+assert.equal(loads.some(url => /age-encryption/.test(url)), false, 'credential contract import must not evaluate encryption backend')
 const { Commands, commands } = await import('@pluxel/services/commands')
 const { createHost } = await import('@pluxel/host')
 const { NodeModules, nodeModules } = await import('@pluxel/services/node')
 const { Workers, workers, defineWorkerTask } = await import('@pluxel/services/workers')
 const { createCoreContextHost, installOwnerViewService } = await import('@pluxel/core/host')
-const { ContextServiceMissingError } = await import('@pluxel/core')
+const { BasePlugin, Plugin } = await import('@pluxel/core')
+const { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } = await import('@pluxel/core/toolchain')
+const ownedVaults = new Map()
+class Credentials extends BasePlugin { init() { ownedVaults.set(this.ctx.root, this.ctx.vault) } }
+Plugin()(Credentials)
+__setPluginDefinition(Credentials, {abiVersion:PLUGIN_LOWERING_ABI_VERSION,kind:'plugin',definition:{entry:{kind:'package-root',packageName:'independent-service-consumer'},exportName:'Credentials'}})
 class OwnerService {}
 const core = createCoreContextHost({ services: [installOwnerViewService(OwnerService, { createRoot: () => ({}), createView: (_, owner) => owner.name })] })
 const coreRoot = core.createRoot()
 assert.equal(core.createScope(coreRoot, 'isolated').service(OwnerService), 'isolated')
-const first = await createHost({ plugins: [], services: [vault(), commands()] })
-const second = await createHost({ plugins: [], services: [] })
+const first = await createHost({ plugins: [{ plugin: Credentials }], services: [commands()] })
+const second = await createHost({ plugins: [{ plugin: Credentials }], services: [] })
 try {
- assert.equal(first.ctx.service(Vault), first.ctx.service(VaultRef))
+ await first.startNode(Credentials.nodeAddress())
+ await second.startNode(Credentials.nodeAddress())
+ const owned = ownedVaults.get(first.ctx)
+ const isolated = ownedVaults.get(second.ctx)
+ assert.ok(owned)
+ assert.ok(isolated)
+ assert.notEqual(owned, isolated)
  assert.deepEqual(first.ctx.service(Commands).list(), [])
- assert.equal(second.ctx.service(VaultRef), undefined)
- assert.throws(() => second.ctx.service(Vault), ContextServiceMissingError)
  assert.equal(loads.some(url => ${UNSELECTED_BACKEND_LOAD_PATTERN}.test(url)), false, 'unselected log sinks, Management and Workbench backends must stay unloaded')
- assert.equal(loads.some(url => /age-encryption/.test(url)), true, 'prepare loads the explicitly selected backend')
+ assert.equal(loads.some(url => /age-encryption/.test(url)), false, 'host creation and owner credential access must leave encryption unloaded')
+ await owned.kv().set('token', 'private')
+ assert.equal((await isolated.kv().get('token')).exists, false)
+ assert.equal((await owned.kv().get('token')).value, 'private')
+ await assert.rejects(owned.kv().set('invalid', undefined), error => error instanceof VaultError && error.code === 'INVALID_FORMAT')
+ assert.equal(loads.some(url => /age-encryption/.test(url)), true, 'first credential operation loads encryption')
  assert.equal(loads.some(url => /(?:@pluxel\\/runtime|\\/pg\\/|pglite)/.test(url)), false)
 } finally {
  const close = first.close()
@@ -911,11 +917,11 @@ finally { await workerHost.close() }
 console.log('ISOLATED_SERVICES_OK')
 `
 const typeConsumer = `
-import { standardServices } from '@pluxel/services'
-const baseServices = standardServices()
+import { elysia } from '@pluxel/services/elysia'
+const baseServices = [elysia(), commands(), nodeModules(), workers()]
 void baseServices
 import { createHost } from '@pluxel/host'
-import { BasePlugin, defineServiceRef, type Context } from '@pluxel/core'
+import { BasePlugin, type PluginContext } from '@pluxel/core'
 import { Passthrough, type FsPromises, type FsConfig } from '@pluxel/core/fs'
 import { IndexedDB } from '@pluxel/core/fs/browser'
 import * as nativeFs from 'node:fs'
@@ -924,35 +930,32 @@ const browserConfig = { mounts: { '/': { backend: IndexedDB, storeName: 'profile
 // @ts-expect-error The old single-backend wrapper is not a native mount configuration.
 const legacyConfig: FsConfig = { backend: Passthrough }
 void nativeConfig; void browserConfig; void legacyConfig
-import { Vault, vault, type VaultStorageApi } from '@pluxel/services/vault'
+import type { VaultStorageApi } from '@pluxel/core/vault'
 import { nodeModules, NodeModules } from '@pluxel/services/node'
 import { workers, Workers, defineWorkerTask } from '@pluxel/services/workers'
 import { Commands, commands, type CommandsService } from '@pluxel/services/commands'
-const VaultRef = defineServiceRef<Vault>()
-const first = await createHost({ plugins: [], services: [vault(), commands()] })
+const first = await createHost({ plugins: [], services: [commands()] })
 const second = await createHost({ plugins: [], services: [] })
-const required: VaultStorageApi = first.ctx.service(Vault)
 
 const commandCatalog: CommandsService = first.ctx.service(Commands)
 const missingCommands: CommandsService = second.ctx.service(Commands)
-// @ts-expect-error Ambient declarations do not install Vault into every Host.
-const absent: VaultStorageApi = second.ctx.service(VaultRef)
+// @ts-expect-error The root does not expose a Plugin-owned credential namespace.
+void first.ctx.vault
 class Consumer extends BasePlugin {
  init() {
-  const optional: VaultStorageApi | undefined = this.ctx.service(VaultRef)
-  const owned: VaultStorageApi = this.ctx.service(Vault)
+  const owned: VaultStorageApi = this.ctx.vault
   const ownerIo: Promise<FsPromises> = this.ctx.fs({ writable: true })
   void ownerIo
-  void optional; void owned
+  void owned
  }
 }
-function ambient(ctx: Context): VaultStorageApi | undefined { return ctx.service(VaultRef) }
+function ambient(ctx: PluginContext): VaultStorageApi { return ctx.vault }
 const workerHost = await createHost({ plugins: [], services: [nodeModules({ root: '/artifacts' }), workers()] })
 const result: number = await workerHost.ctx.service(Workers).run(defineWorkerTask<number, number>(import.meta.url, './task.ts'), 21)
 // @ts-expect-error Plugin-visible Node views have no development source binding authority.
 workerHost.ctx.service(NodeModules).attachSourceBinder(() => {})
 await workerHost.close()
-void result; void required; void absent; void Consumer; void ambient; void commandCatalog; void missingCommands
+void result; void Consumer; void ambient; void commandCatalog; void missingCommands
 await first.close(); await second.close()
 `
 
@@ -1078,10 +1081,8 @@ import { managementHttp } from '@pluxel/services/management/http'
 import { managementAccess } from '@pluxel/services/management/access'
 import * as managementSession from '@pluxel/services/management/session'
 import { createHost as createManagementHost } from '@pluxel/host'
-import { standardServices as managementServices } from '@pluxel/services'
-const headlessHost = await createManagementHost({ plugins: [], services: [
- ...managementServices(), managementAccess(), management(), managementHttp(),
-] })
+import { servicesPreset } from '@pluxel/services/preset'
+const headlessHost = await createManagementHost({ plugins: [], services: await servicesPreset({ root: process.cwd(), mode: 'test', env: {}, bindings: {} }, { workbench: false }) })
 await headlessHost.close()
 void [management, managementHttp, managementAccess, managementSession]
 console.log('ISOLATED_MANAGEMENT_OK')
@@ -1093,22 +1094,24 @@ export type HeadlessSession = RuntimeSessionRoot
 export type HeadlessClient = RuntimeSessionClient
 `
 
-const standardServicesConsumer = `
+const explicitServicesConsumer = `
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 const loads = []
 const hook = registerHooks({ load(url, context, next) { loads.push(url); return next(url, context) } })
 const { createHost } = await import('@pluxel/host')
-const { standardServices } = await import('@pluxel/services')
+const [{ elysia }, { commands }, { nodeModules }, { workers }] = await Promise.all([
+ import('@pluxel/services/elysia'), import('@pluxel/services/commands'), import('@pluxel/services/node'), import('@pluxel/services/workers'),
+])
 const { ElysiaRuntime } = await import('@pluxel/services/internal')
-const standardHost = await createHost({ plugins: [], services: standardServices() })
+const explicitHost = await createHost({ plugins: [], services: [elysia(), commands(), nodeModules(), workers()] })
 try {
- const response = await standardHost.ctx.service(ElysiaRuntime).fetch(new Request('http://local.test/missing'))
+ const response = await explicitHost.ctx.service(ElysiaRuntime).fetch(new Request('http://local.test/missing'))
  assert.equal(response.status, 404)
  await response.body?.cancel()
  assert.equal(loads.some(url => ${UNSELECTED_BACKEND_LOAD_PATTERN}.test(url)), false, 'unselected log sinks, Management and Workbench backends must stay unloaded')
-} finally { await standardHost.close(); hook.deregister() }
-console.log('ISOLATED_STANDARD_SERVICES_OK')
+} finally { await explicitHost.close(); hook.deregister() }
+console.log('ISOLATED_EXPLICIT_SERVICES_OK')
 `
 
 const nodeTestConsumer = `

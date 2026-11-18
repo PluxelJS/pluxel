@@ -1,8 +1,9 @@
 import { resolveContextService } from '@pluxel/core/internal'
-import { defineServiceRef } from '@pluxel/core'
-import { type Vault, vault } from '@pluxel/services/vault'
 import { AdminAccess } from '@pluxel/services/management/access'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { once } from 'node:events'
 import { createServer, type Server } from 'node:http'
 import { type AddressInfo } from 'node:net'
@@ -19,7 +20,6 @@ import { CredentialStore } from '../src/credentials.ts'
 import { AuthPlugin } from '../src/index.ts'
 import { hashPassword } from '../src/password.ts'
 
-const VaultRef = defineServiceRef<Vault>()
 const ORIGIN = 'https://runtime.test:3000'
 const COOKIE_COMMIT_PATH = '/__pluxel/admin-access/cookie/commit'
 const PASSWORD = 'correct horse battery staple'
@@ -39,7 +39,7 @@ describe('official authentication vNext Runtime integration', () => {
 		await using fixture = new AuthRuntimeSessionCarrierFixture(
 			await createServiceInternalTestHost({
 				management: true,
-				services: [...standardServices(), vault()],
+				services: [elysia(), commands(), nodeModules(), workers()],
 			}),
 		)
 
@@ -117,7 +117,7 @@ describe('official authentication vNext Runtime integration', () => {
 		await using host = await createServiceInternalTestHost(
 			{
 				management: true,
-				services: [...standardServices(), vault()],
+				services: [elysia(), commands(), nodeModules(), workers()],
 			},
 			{ requestAddress: peerAddress },
 		)
@@ -129,7 +129,7 @@ describe('official authentication vNext Runtime integration', () => {
 		expect(await host.ctx.service(AdminAccess)?.describe()).toMatchObject({
 			provider: { method: 'password', ready: false },
 		})
-		const store = new CredentialStore(initial.ctx.service(VaultRef))
+		const store = new CredentialStore(initial.ctx.vault)
 		await store.saveAccount({
 			version: 1,
 			type: 'local-account',
@@ -264,7 +264,7 @@ class AuthRuntimeSessionCarrierFixture implements AsyncDisposable {
 		const initial = await this.host.start(AuthPlugin.nodeAddress(), {
 			initialConfig: { mode: { type: 'password' } },
 		})
-		const store = new CredentialStore(initial.ctx.service(VaultRef))
+		const store = new CredentialStore(initial.ctx.vault)
 		await store.saveAccount({
 			version: 1,
 			type: 'local-account',

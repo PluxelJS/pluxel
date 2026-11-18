@@ -248,6 +248,10 @@ function validateOperation(
 		}
 		case 'set-dependency-override': {
 			const key = overrideKey(operation.consumer, operation.requirement)
+			if (operation.provider === null && state.dependencyOverrides.has(key)) {
+				removeOverride(state, key)
+				return
+			}
 			const consumer = requireAvailableNode(
 				catalog,
 				state,

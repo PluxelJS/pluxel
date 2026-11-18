@@ -1,5 +1,8 @@
 import { formatPluginNodeReference, BasePlugin, Plugin } from '@pluxel/core'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/plugin-rates'
 import * as v from 'valibot'
@@ -92,7 +95,7 @@ describe('@pluxel/plugin-redis rates backend', () => {
 	it('selects one server-timed single-key script for each algorithm and digests identity keys', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.commit((change) => {
@@ -144,7 +147,7 @@ describe('@pluxel/plugin-redis rates backend', () => {
 	it('uses EVALSHA after load, recovers from NOSCRIPT once, and decodes deny', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start([
@@ -175,7 +178,7 @@ describe('@pluxel/plugin-redis rates backend', () => {
 	it('preserves structured policy conflicts and rejects corrupt replies', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start([

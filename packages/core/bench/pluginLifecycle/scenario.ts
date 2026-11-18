@@ -68,7 +68,7 @@ function definePlugin(name: string, deps?: readonly PluginFixture[]): PluginFixt
 function pluginFixture(ctor: PluginCtor): PluginFixture {
 	return Object.freeze({
 		ctor,
-		definitionAddress: ctor.definitionAddress(),
+		definitionAddress: ctor.address(),
 		nodeAddress: ctor.nodeAddress(),
 		candidate: consumePluginDefinitionCandidate(ctor),
 	})

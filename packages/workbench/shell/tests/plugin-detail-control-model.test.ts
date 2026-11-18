@@ -198,7 +198,7 @@ describe('plugin detail control presentation', () => {
 					message: 'Discord failed to start',
 					error: {
 						name: 'Error',
-						message: 'DiscordPlugin requires host config vault: {}',
+						message: 'DiscordPlugin requires a Vault record named bot-token',
 						partPath: ['accounts'],
 					},
 				},
@@ -207,8 +207,11 @@ describe('plugin detail control presentation', () => {
 
 		expect(outcome).toMatchObject({
 			title: 'Plugin 启动失败',
-			message: 'Discord：DiscordPlugin requires host config vault: {}（PluginPart：accounts）',
-			diagnosticText: expect.stringContaining('DiscordPlugin requires host config vault'),
+			message:
+				'Discord：DiscordPlugin requires a Vault record named bot-token（PluginPart：accounts）',
+			diagnosticText: expect.stringContaining(
+				'DiscordPlugin requires a Vault record named bot-token',
+			),
 			color: 'red',
 		})
 	})

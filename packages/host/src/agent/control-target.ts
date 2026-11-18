@@ -31,7 +31,7 @@ export function normalizePluginTarget(target: PluginNodeAddress): Readonly<{
 		typeof evidence.implementation === 'function'
 	) {
 		const implementation = evidence.implementation as PluginConstructor
-		if (!pluginDefinitionAddressEqual(node.definition, implementation.definitionAddress()))
+		if (!pluginDefinitionAddressEqual(node.definition, implementation.address()))
 			throw new TypeError(
 				'Plugin address and constructor evidence must identify the same definition',
 			)

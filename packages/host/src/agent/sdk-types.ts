@@ -4,7 +4,7 @@ import type { HostConfigMutation } from '../config'
 import type { HostOperationOptions } from '../coordinator'
 import type { PluginApplyReportSnapshot } from '../apply-report'
 import type { HostPluginStatusSnapshot } from '../status'
-import type { HostPolicyField, HostPolicyInput } from '../policy'
+import type { HostPolicyPatch, HostPolicyResetTarget } from '../policy'
 import type { RuntimeUpdateSnapshot } from '../execution'
 import type { ScriptConfigSnapshot, ScriptPolicySnapshot, ScriptLogSnapshot } from './sdk-outcomes'
 import type { ScriptPluginListOptions, ScriptPluginSnapshot } from './discovery'
@@ -158,13 +158,13 @@ export interface ScriptSdk {
 	}
 	readonly policy: {
 		readonly get: () => Promise<ScriptPolicySnapshot>
-		readonly validate: (values: HostPolicyInput) => Promise<ScriptPolicySnapshot>
+		readonly validate: (values: HostPolicyPatch) => Promise<ScriptPolicySnapshot>
 		readonly patch: (
-			values: HostPolicyInput,
+			values: HostPolicyPatch,
 			options?: HostOperationOptions,
 		) => Promise<ScriptPolicySnapshot>
 		readonly reset: (
-			keys?: readonly HostPolicyField[],
+			keys?: readonly HostPolicyResetTarget[],
 			options?: HostOperationOptions,
 		) => Promise<ScriptPolicySnapshot>
 	}

@@ -146,7 +146,7 @@ async function adoptCleanup(ctx: Context, resource: PluginCleanup): Promise<void
  */
 export abstract class BasePlugin<C extends PluginContext = PluginContext> {
 	/** Reference a lowered Plugin declaration, including abstract capability tokens. */
-	static definitionAddress(): PluginDefinitionAddress {
+	static address(): PluginDefinitionAddress {
 		return pluginDefinitionAddressOf(this)
 	}
 

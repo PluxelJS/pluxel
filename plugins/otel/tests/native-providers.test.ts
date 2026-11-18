@@ -1,7 +1,9 @@
 import type { Workbench } from '@pluxel/workbench'
 import { BasePlugin, formatPluginNodeReference, Plugin, defineServiceRef } from '@pluxel/core'
-import { standardServices } from '@pluxel/services'
-import { ElysiaApp } from '@pluxel/services/elysia'
+import { elysia, ElysiaApp } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import { SeverityNumber } from '@opentelemetry/api'
 import { resourceFromAttributes } from '@opentelemetry/resources'
@@ -177,7 +179,10 @@ class NativeConsumer extends BasePlugin {
 
 describe('native OpenTelemetry providers', () => {
 	it('uses the same abstract dependency for the native provider and default preset', async () => {
-		await using host = await createTestHost({ services: standardServices(), workbench: true })
+		await using host = await createTestHost({
+			services: [elysia(), commands(), nodeModules(), workers()],
+			workbench: true,
+		})
 		await host.start(NativeOtel.nodeAddress(), { catalog: [NativeConsumer] })
 		await host.start(NativeConsumer.nodeAddress())
 		const otel = host.require(NativeOtel.nodeAddress())
@@ -243,7 +248,9 @@ describe('native OpenTelemetry providers', () => {
 		for (const shutdown of shutdowns) expect(shutdown).toHaveBeenCalledTimes(1)
 		expect(() => consumer.otel.meter).toThrow('stopped')
 
-		await using defaultHost = await createTestHost({ services: standardServices() })
+		await using defaultHost = await createTestHost({
+			services: [elysia(), commands(), nodeModules(), workers()],
+		})
 		await defaultHost.start(OtelPlugin.nodeAddress(), {
 			catalog: [NativeConsumer],
 			initialConfig: { otlp: [], prometheus: {} },
@@ -253,7 +260,10 @@ describe('native OpenTelemetry providers', () => {
 	})
 
 	it('reports actual provider presence without inferring outputs from a saved preset', async () => {
-		await using host = await createTestHost({ services: standardServices(), workbench: true })
+		await using host = await createTestHost({
+			services: [elysia(), commands(), nodeModules(), workers()],
+			workbench: true,
+		})
 		await host.start(TracesOnly.nodeAddress())
 		expect(() => host.require(TracesOnly.nodeAddress()).meter).toThrow('metrics signal is disabled')
 		expect(() => host.require(TracesOnly.nodeAddress()).logger).toThrow('logs signal is disabled')
@@ -276,7 +286,10 @@ describe('native OpenTelemetry providers', () => {
 	})
 
 	it('reports native flush and shutdown failures while attempting the other providers', async () => {
-		await using host = await createTestHost({ services: standardServices(), workbench: true })
+		await using host = await createTestHost({
+			services: [elysia(), commands(), nodeModules(), workers()],
+			workbench: true,
+		})
 		await host.start(NativeOtel.nodeAddress())
 		const providers = host.require(NativeOtel.nodeAddress()).providers
 		const flushFailure = new Error('native trace flush failed')

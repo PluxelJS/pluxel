@@ -3,27 +3,28 @@ title: Host 宿主配置教程
 description: 使用 defineHostApplication 统一组装插件、挂载服务、配置存储与构建生产制品。
 ---
 
-在 Pluxel 架构中，**宿主（Host）** 是整个应用的装配中心。它负责维护插件清单、设定启动策略、组装持久化服务，并管理应用从本地开发到生产部署的完整生命周期。
+在 Pluxel 架构中，**宿主（Host）** 是整个应用的装配中心。它负责维护插件声明、启动策略、配置与服务装配，并管理应用从本地开发到生产部署的完整生命周期。
 
 应用入口通常默认导出一个由 `defineHostApplication(factory)` 定义的应用工厂。Vite 本地开发服务器与生产构建流水线直接读取同一个入口，保证开发环境与生产环境行为的一致性。
 
 ## 目录速查
 
-| 配置主题                                            | 核心内容                                                  |
-| --------------------------------------------------- | --------------------------------------------------------- |
-| [原生配置与预设](#原生配置与预设)                   | 原生第三方库（ZenFS、LogTape、Elysia）的直接配置          |
-| [选择服务组合](#选择组合)                           | 官方 `servicesPreset` 与轻量基础服务的选择                |
-| [应用入口配置](#应用入口)                           | `plugins` 清单、`policy.autoStart` 策略与应用生命周期钩子 |
-| [Vite 开发模式](#vite-开发)                         | 开发期间的 HMR 热更新与控制台支持                         |
-| [动态插件来源](#动态来源)                           | 监听本地目录动态装载插件                                  |
-| [环境变量与配置绑定](#绑定部署环境与-json-文件)     | 将系统环境变量映射到插件的 Valibot 配置                   |
-| [文件系统后端](#选择文件后端)                       | 挂载纯内存、本地磁盘或浏览器存储后端                      |
-| [配置与策略持久化](#保存配置和运行策略)             | 配置的 `declared-first`、`saved-first` 模式与热应用机制   |
-| [日志系统配置](#host-logging)                       | 接入 LogTape 控制台与远程传输 Sink                        |
-| [数据库服务装配](#选择-native-postgresql-或-pglite) | 切换本地嵌入式 PGlite 与生产 PostgreSQL 数据库            |
-| [独立轻量 Host](#独立-http-host)                    | 纯脚本或轻量进程中快速创建 Host                           |
-| [浏览器环境 Host](#浏览器-host)                     | 在 Web Worker 或网页中运行插件图                          |
-| [生产构建与启动判定](#生产启动判定)                 | 打包生产静态制品与严格就绪检查                            |
+| 配置主题                                            | 核心内容                                                |
+| --------------------------------------------------- | ------------------------------------------------------- |
+| [原生配置与预设](#原生配置与预设)                   | 原生第三方库（ZenFS、LogTape、Elysia）的直接配置        |
+| [选择服务组合](#选择组合)                           | 官方 `servicesPreset` 与单项服务的选择                  |
+| [应用入口配置](#应用入口)                           | 插件声明、节点配置、启动意图与应用生命周期              |
+| [Vite 开发模式](#vite-开发)                         | 开发期间的 HMR 热更新与控制台支持                       |
+| [动态插件来源](#动态来源)                           | 监听本地目录动态装载插件                                |
+| [环境变量与配置绑定](#绑定部署环境与-json-文件)     | 将系统环境变量映射到插件的 Valibot 配置                 |
+| [文件系统后端](#选择文件后端)                       | 挂载纯内存、本地磁盘或浏览器存储后端                    |
+| [配置与策略持久化](#保存配置和运行策略)             | 配置的 `declared-first`、`saved-first` 模式与热应用机制 |
+| [凭据后端](#部署凭据与-vault-绑定)                  | 配置内建 Vault 的加密后端或只读部署绑定                 |
+| [日志系统配置](#host-logging)                       | 接入 LogTape 控制台与远程传输 Sink                      |
+| [数据库服务装配](#选择-native-postgresql-或-pglite) | 切换本地嵌入式 PGlite 与生产 PostgreSQL 数据库          |
+| [独立轻量 Host](#独立-http-host)                    | 纯脚本或轻量进程中快速创建 Host                         |
+| [浏览器环境 Host](#浏览器-host)                     | 在 Web Worker 或网页中运行插件图                        |
+| [生产构建与启动判定](#生产启动判定)                 | 打包生产静态制品与严格就绪检查                          |
 
 ---
 
@@ -48,9 +49,11 @@ Pluxel 坚持尊重底层优秀生态的原生 API。在宿主配置中，你可
 
 根据项目类型，可在入口中选择预设的服务组合：
 
-- **`servicesPreset()`**：官方服务器推荐组合。开箱包含 HTTP 服务（Elysia）、指令系统（Commands）、Worker 线程池、Node 模块加载器、Vault 凭据存储与 Workbench 可视化管理面板。
-- **`standardServices()`**：无前端管理面板的纯后端基础组合。包含 HTTP、Commands 与 Worker 基础设施。
-- **按需手工组装**：通过 `@pluxel/host` 从零挑选所需服务，保持最小体积。
+- **普通应用**：使用 `servicesPreset(startup, options)`，包含 HTTP（Elysia）、Commands、Worker、Node 模块、管理能力和默认启用的 Workbench。
+- **无界面应用**：使用同一个预设，设置 `workbench: false`，保留管理能力。
+- **定制宿主与隔离测试**：直接组合 `elysia()`、`commands()` 等单项安装器，见 [Host 服务组合](./services.md)。
+
+Vault 是 Core 内建能力，通过 `coreConfig.vault` 配置；Database 继续单独选择后端并安装。
 
 ---
 
@@ -58,43 +61,38 @@ Pluxel 坚持尊重底层优秀生态的原生 API。在宿主配置中，你可
 
 ## 应用入口
 
-在 `src/app.ts` 中通过 `defineHostApplication()` 声明应用。这是应用的权威入口：
+应用入口在 `src/app.ts` 默认导出工厂。每次创建 Host 都用该次的启动环境求值。
 
 ```ts no-twoslash
-import { resolve } from 'node:path'
 import * as nativeFs from 'node:fs'
+import { resolve } from 'node:path'
+import { Passthrough } from '@pluxel/core/fs'
 import { defineHostApplication } from '@pluxel/host'
 import { resolveHostEnv } from '@pluxel/host/environment'
-import { servicesPreset } from '@pluxel/services/preset'
 import { listenElysia } from '@pluxel/services/elysia/node'
-import { Passthrough } from '@pluxel/core/fs'
-import { logtape, zenfs } from '@pluxel/core/config'
+import { servicesPreset } from '@pluxel/services/preset'
 import { TodoPlugin } from '@app/todo'
 
 export default defineHostApplication(async (startup) => {
 	const env = resolveHostEnv(startup.env)
-	const storagePrefix = resolve(startup.root, env.dataRoot, 'fs')
-	await nativeFs.promises.mkdir(storagePrefix, { recursive: true })
+	const root = startup.deployment?.root ?? startup.root
+	const prefix = resolve(root, env.dataRoot, 'fs')
+	await nativeFs.promises.mkdir(prefix, { recursive: true })
 
 	return {
 		name: 'my-app',
-		// 1. 声明本应用包含的插件清单
-		plugins: [TodoPlugin],
-
-		// 2. 声明冷启动时自动启动的插件节点
-		policy: { autoStart: [TodoPlugin.nodeAddress()] },
-
-		// 3. 初始默认配置
-		config: {
-			records: [{ owner: TodoPlugin.nodeAddress(), config: { maxItems: 100 } }],
+		plugins: [{ plugin: TodoPlugin, autoStart: true, config: { maxItems: 100 } }],
+		coreConfig: {
+			logtape: {},
+			vault: { deployIdentity: startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY },
+			zenfs: {
+				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
+				durableMounts: ['/'],
+			},
 		},
-
-		// 4. 挂载官方服务预设（含 HTTP、Vault 与 Workbench）
 		services: await servicesPreset(startup, {
-			workbench: env.workbench ?? true,
+			workbench: env.workbench === false ? false : undefined,
 		}),
-
-		// 5. 启动 HTTP 物理监听
 		async launch({ host }) {
 			await listenElysia(host, {
 				hostname: env.hostBind,
@@ -102,50 +100,54 @@ export default defineHostApplication(async (startup) => {
 				publicOrigin: env.publicOrigin,
 			})
 		},
-
-		// 6. 底层运行时基础设施
-		runtime: {
-			logtape: logtape(),
-			zenfs: zenfs({
-				mounts: {
-					'/': {
-						backend: Passthrough,
-						fs: nativeFs,
-						prefix: storagePrefix,
-					},
-				},
-				durableMounts: ['/'],
-			}),
-		},
 	}
 })
 ```
 
 ### 核心属性说明
 
-- **`plugins`**：提供应用可用的插件代码清单。插件列入此清单表示可用，实际启动顺序由依赖图和启动策略统一管理。
-- **`policy.autoStart`**：列出应用启动时需要主动拉起的插件；它们的依赖项会被框架自动递归拉起。
-- **`prepare`**：在插件启动前执行的应用级准备工作（如准备基础目录、校验底层前置依赖）。
-- **`launch`**：在所有插件成功进入运行状态后执行，通常用于绑定并开启 Web 物理监听。
+| 字段                            | 职责                                                        |
+| ------------------------------- | ----------------------------------------------------------- |
+| `plugins`                       | 固定构造器及其默认节点和 fork 声明                          |
+| `sources`                       | 发现并接纳动态实现                                          |
+| `pluginNodes`                   | 通过定义地址预置动态节点的配置与策略                        |
+| `coreConfig`                    | Core 的 `logtape`、`zenfs`、`tinybase`、`vault` 与 `events` |
+| `services`                      | 额外服务，由官方预设或单项安装器提供                        |
+| `inputMode`、`config`、`policy` | 输入优先级、文档接线与应用级运行策略                        |
+
+`name` 命名应用及根实例。`prepare` 在节点启动前执行，`acceptStartup` 判定启动结果，`launch` 在结果获接受后发布应用。
 
 ### 插件装配与地址选择
 
-`plugins` 与 `sources` 提供实现，进入同一个 catalog。其他配置按完整地址选择 catalog 中的插件，沿用脚本 SDK 的身份规则：
+按定义选择一次实现，默认节点的 `config`、`autoStart`、`configMode`、`policyMode`、`startTimeoutMs`、绑定和 `dependencyOverrides` 均写在同一项。允许 fork 的插件通过 `forks` 表声明额外节点。
 
-| 配置位置                                         | 输入                                                                          | 作用                             |
-| ------------------------------------------------ | ----------------------------------------------------------------------------- | -------------------------------- |
-| `plugins`                                        | 已导入的 Plugin class                                                         | 注册实现，供开发和静态构建使用   |
-| `sources`                                        | 文件或目录声明                                                                | 发现并加载实现，加入同一 catalog |
-| `policy.autoStart`                               | 完整 node address                                                             | 声明自动启动节点                 |
-| `policy.forks`                                   | `Plugin.nodeAddress('east')` 等 fork address                                  | 声明可用的 fork                  |
-| `config.records[].owner`、env/file binding owner | 完整 node address                                                             | 选择节点配置                     |
-| provider default / dependency override           | requirement 的 `definitionAddress()`、provider 与 consumer 的 `nodeAddress()` | 选择依赖关系                     |
+```ts no-twoslash
+import { defineHostApplication } from '@pluxel/host'
+import { QueuePlugin } from './queue'
 
-源码 class、生成控制入口与动态发现返回的地址可以用于同一节点配置。名称只用于展示，实际选择包含 canonical entry、具名导出及 default/fork。静态构建或动态加载不会为同一入口另造身份。
+export default defineHostApplication(() => ({
+	plugins: [
+		{
+			plugin: QueuePlugin,
+			autoStart: true,
+			config: { queue: 'main' },
+			forks: {
+				east: { autoStart: true, config: { queue: 'east' } },
+				standby: {},
+				future: { deploy: false, config: { queue: 'future' } },
+			},
+		},
+	],
+}))
+```
 
-当前 Host 的节点通过 `sdk.plugins.list({ packageName })` 或 `{ definition }` 定向分页发现，包括可用但尚未启动的节点；按页的 `nextCursor` 继续查询，选定后直接复用它的 `address`。已有地址则使用 `sdk.plugin(address)`。分页规则与有类型控制入口的 `dev sync` / `script sync` 用法见[插件发现与控制](../development/plugin-control.md#动态安装后的发现与操作)。配置声明保存地址的身份字段，采用 catalog 中的当前实现。
+`standby` 采用默认节点的代码配置。显式 `config: {}` 从空的代码输入开始。各节点自己解析绑定、保存输入、mode、启动期限和依赖选择。管理端创建的 fork 如无对应代码条目，使用其自己的输入。省略 `deploy` 会声明可用的 fork，`deploy: false` 预置输入，保存策略可以按其 mode 部署该节点。代码只预置的 fork 可以写 `autoStart: false`，必须省略 consumer override。
 
----
+`autoStart: true` 请求宿主启动时主动拉起节点。`false` 只关闭主动启动，依赖仍可拉起它。启动顺序由依赖图决定。
+
+插件类和生成控制引用使用 `address()` 得到定义地址，使用 `nodeAddress()` 或 `nodeAddress('east')` 选择具体节点。应用的 `policy.providerDefaults` 接收 `{ token, provider }`，token 使用抽象插件的定义地址。节点的 consumer override 使用 `{ requirementAddress, providerAddress }`。传入 `null` 恢复正常的 provider 选择。
+
+脚本通过 `sdk.plugins.list({ packageName })` 或 `{ definition }` 定向分页，并把返回的节点地址交给 `sdk.plugin(address)`。详见[插件发现与控制](../development/plugin-control.md#动态安装后的发现与操作)。
 
 <span id="vite-开发"></span>
 
@@ -183,44 +185,29 @@ export default defineConfig({
 
 ## 动态来源
 
-用 `sources` 声明插件入口文件或目录。Vite 持续观察入口变化；原生生产启动器在启动时读取一次快照，之后的发布在下次启动采用：
+用 `sources` 声明入口。精确文件缺失会报错，尚未创建的目录按空匹配处理。目录的 `include` 使用正向 glob。相对路径以应用根目录为起点，工厂可以用启动环境计算绝对路径。
 
 ```ts no-twoslash
-import { defineHostApplication } from '@pluxel/host'
-import { pluginSource } from '@pluxel/host/sources'
-
-export default defineHostApplication(() => ({
-	plugins: [],
-	sources: [
-		pluginSource({
-			kind: 'directory',
-			path: './managed-plugins/entries',
-			include: ['*.mjs'],
-		}),
-	],
-}))
-```
-
-发现入口使插件可用，启动仍由 `policy.autoStart` 或显式操作决定。生成控制入口可以提前声明目标，无需在应用模块里导入插件实现。例如，已发布入口位于 `managed-plugins/entries` 时：
-
-```ts no-twoslash
-import { defineHostApplication } from '@pluxel/host'
-import { pluginSource } from '@pluxel/host/sources'
+import { resolve } from 'node:path'
 import { Counter } from '@acme/pluxel-plugin-counter/control'
+import { defineHostApplication } from '@pluxel/host'
 
-export default defineHostApplication(() => ({
-	plugins: [],
-	sources: [
-		pluginSource({ kind: 'directory', path: './managed-plugins/entries', include: ['*.mjs'] }),
-	],
-	policy: { autoStart: [Counter.nodeAddress()] },
-	config: { records: [{ owner: Counter.nodeAddress(), config: { count: 2 } }] },
-}))
+export default defineHostApplication((startup) => {
+	const root = startup.deployment?.root ?? startup.root
+	const dataRoot = resolve(root, startup.env.PLUXEL_DATA_ROOT ?? '.pluxel')
+	return {
+		sources: [
+			{ file: './entries/local.mjs' },
+			{ directory: resolve(dataRoot, 'managed-plugins', 'entries'), include: ['*.mjs'] },
+		],
+		pluginNodes: [{ definition: Counter.address(), autoStart: true, config: { count: 2 } }],
+	}
+})
 ```
 
-控制入口只提供地址与声明；`sources` 负责加载实现。目标尚未发现时，状态报告为 unavailable，地址配置不会触发安装或导入。生产启动的默认就绪检查要求所有预期运行节点已运行；允许等待后续发布的应用需通过 `acceptStartup` 明确选择启动策略。
+同一定义只写一份代码声明。固定类与发现的实现使用同一 catalog。控制引用提供身份，动态入口加载后才提供实现。预置目标在实现缺失时显示为 unavailable。生产默认要求预期运行的节点已运行，应用可用 `acceptStartup` 判定是否接受等待后续发布的状态。
 
----
+Vite 观察匹配的 TypeScript 和预编译 ESM 入口。Node 原生启动和 modules 交付在启动时发现预编译 `.js` 和 `.mjs`。standalone 构建采用固定清单，`sources` 可以省略或填写 `[]`。
 
 <span id="vite-生产"></span>
 
@@ -270,40 +257,38 @@ process.once('SIGINT', shutdown)
 
 ## 绑定部署环境与 JSON 文件
 
-当部署系统需要通过环境变量或外部 JSON 文件覆盖特定插件的配置时，可以使用 `envBinding` 与 `fileBinding`：
+把 `envBinding(inputs)` 和 `fileBinding(inputs)` 写在要配置的节点下。配置 binding 引用插件 `configs.use()` 使用的同一个 Valibot schema。
 
 ```ts no-twoslash
-import { defineHostApplication, envBinding } from '@pluxel/host'
-import { WorkerPlugin, WorkerConfig } from './WorkerPlugin.ts'
+import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
+import { WorkerPlugin, WorkerConfig } from './WorkerPlugin'
 
 export default defineHostApplication(() => ({
-	name: 'worker-app',
-	plugins: [WorkerPlugin],
-	envBindings: [
-		envBinding(WorkerPlugin.nodeAddress(), {
-			config: {
-				schema: WorkerConfig,
-				mapping: {
-					endpoint: 'WORKER_ENDPOINT',
-					http: {
-						enabled: 'WORKER_HTTP_ENABLED',
-						timeoutMs: 'WORKER_HTTP_TIMEOUT_MS',
-					},
-				},
-			},
-		}),
+	plugins: [
+		{
+			plugin: WorkerPlugin,
+			autoStart: true,
+			fileBindings: [fileBinding({ config: { schema: WorkerConfig, path: 'worker.json' } })],
+			envBindings: [
+				envBinding({
+					config: { schema: WorkerConfig, mapping: { endpoint: 'WORKER_ENDPOINT' } },
+				}),
+			],
+		},
 	],
 }))
 ```
 
-宿主在启动时会读取对应的环境变量，校验是否符合 `WorkerConfig` 的格式要求，并注入到插件中。
+Host 相对应用根目录读 JSON 文件，从 `startup.env` 取显式映射的变量。节点的代码配置先与文件合并，再合并环境输入，最后按节点的 mode 选择保存输入。数组整项替换。
 
 <span id="可选管理页面与服务配套插件"></span>
 <span id="部署凭据"></span>
 
 ### 部署凭据与 Vault 绑定
 
-敏感凭证应当通过 Vault 进行绑定，而不是放置在普通明文配置中。详细配置模式请参考 [Vault 凭据指南](../plugin-development/vault.md)。
+敏感凭证由 Core 内建的 `ctx.vault` 访问，Host 通过 `coreConfig.vault` 选择后端。默认加密后端借用 `coreConfig.zenfs` 的文件系统，首次数据操作按需初始化新库；只使用 `envBindings` / `fileBindings` 提供的只读记录时，可设置 `coreConfig.vault: { backend: 'bindings' }`，不打开加密存储或生成密钥。
+
+应用工厂通过 `deployIdentity: startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY` 显式传入部署私钥。能力存在不表示存储已经解锁或记录存在，具体状态由操作报告。绑定 Schema、命名空间、读写和错误处理见 [Vault 凭据指南](../plugin-development/vault.md)。
 
 ---
 
@@ -311,103 +296,74 @@ export default defineHostApplication(() => ({
 
 ## 选择文件后端
 
-通过 `runtime.zenfs` 挂载文件系统后端：
+在 `coreConfig.zenfs` 写上游 ZenFS 挂载配置。
 
 ```ts
-import { zenfs } from '@pluxel/core/config'
-import { Passthrough, InMemory } from '@pluxel/core/fs'
 import * as nativeFs from 'node:fs'
+import { InMemory, Passthrough, type FsConfig } from '@pluxel/core/fs'
 
-// 生产环境：挂载本地磁盘目录
-zenfs({
+export const zenfs = {
 	mounts: {
 		'/': { backend: Passthrough, fs: nativeFs, prefix: './data/fs' },
 		'/tmp': InMemory,
 	},
-	durableMounts: ['/'], // 标记具备持久化保证的挂载点
-})
+	durableMounts: ['/'],
+} satisfies FsConfig
 ```
 
-- `durableMounts` 用于声明哪些挂载点在重启后依然能够保留数据。依赖持久存储的插件会在启动时核对该声明。
-
----
+`durableMounts` 声明可跨重启保留数据的挂载点。依赖持久存储的插件在启动时核对该声明。
 
 <span id="保存配置和运行策略"></span>
 
 ## 保存配置和运行策略
 
-每个插件节点的配置来源可以指定优先模式（`mode`）：
+应用可以用一个 `inputMode` 设置共同优先级。各域采用最先指定的设置。
 
-- **`declared-first`（默认）**：代码中的显式声明优先生效，其余缺失项继承持久化保存的值；
-- **`saved-first`**：管理后台保存的值优先，缺失项采用代码中的声明；
-- **`declared-only`**：完全忽略外部持久化修改，严格使用代码中声明的值或 Schema 默认值。
+| 输入         | 从高到低的优先级                                                              |
+| ------------ | ----------------------------------------------------------------------------- |
+| 节点业务配置 | `configMode → config.mode → inputMode → declared-first`                       |
+| 节点策略     | `policyMode → policy.modes[field] → policy.mode → inputMode → declared-first` |
+| 应用级策略   | `policy.modes[field] → policy.mode → inputMode → declared-first`              |
 
-顶层 `config.records` 按节点声明输入，`policy` 声明运行策略。例如让管理保存值优先，同时为新安装提供初始声明：
+`declared-first` 采用代码并从保存值补缺。`saved-first` 采用保存值并从代码补缺。`declared-only` 只采用代码。节点配置按叶路径合并，缺失值由 schema 处理。节点的 `policyMode` 同时作用于自动启动、fork 可用性和其作为 consumer 的覆盖。
 
-```ts no-twoslash
-import { defineHostApplication } from '@pluxel/host'
-import { WorkerPlugin } from './worker'
+`config.document` 和 `policy.document` 分别设置文件接线。默认借用 Core FS，保留期取决于 ZenFS mount。`false` 关闭该域 IO，仍可维护会话输入。`{ readOnly: true }` 允许读取并拒绝本实例的管理写入。嵌入应用可用同步 `{ storage: (root) => HostDocumentStorage }` 借用已有存储。缺失文档保留为缺失，坏文档报错并保留文件。
 
-export default defineHostApplication(() => ({
-	plugins: [WorkerPlugin],
-	config: {
-		mode: 'saved-first',
-		records: [{ owner: WorkerPlugin.nodeAddress(), config: { concurrency: 2 } }],
-	},
-	policy: {
-		autoStart: [WorkerPlugin.nodeAddress()],
-		startTimeoutMs: 30_000,
-		mode: { autoStart: 'saved-first' },
-	},
-}))
-```
-
-每条记录的 `owner` 使用完整 node address：`Plugin.nodeAddress()` 表示 default node，`Plugin.nodeAddress('east')` 表示 fork。default 与 fork 的值和 mode 各自独立，Part 的输入仍属于所在 Plugin。mode 按 `record.mode → config.mode → declared-first` 选择；仅声明 `{ owner, mode }` 合法，重复 owner 或同时缺少 mode/config 会报错。记录本身不加载代码、创建 fork 或启动节点。
-
-声明按 `config.records → fileBindings.config → envBindings.config` 合成，后者覆盖同路径，再按 mode 与保存输入组合。普通对象递归合并，数组整项替换。缺失保存文档不会写入声明或 schema 默认值；`reset` 删除保存输入，重新继承声明。env/file 的覆盖与管理写权限分别设置。
-
-Host 默认通过所选文件后端保存 config/state。`runtime.documents.config` 与 `runtime.documents.state` 可分别设为 `false` 关闭该域的文档 IO，或设为 `{ readOnly: true }` 允许读取、拒绝本实例管理写入。嵌入应用可提供同步 `storage: (root) => HostDocumentStorage` 借用已有适配，backend 仍由创建者关闭。跨重开保留取决于[文件后端](#选择文件后端)，默认 InMemory 只保留本次会话。
-
-Workbench 编辑原始保存输入，Host 查询同时返回 `managedInput`、有效输入与校验输出。提交使用 `{ set?, remove? }`，`expectedManagedRevision` 在保存前检查本 Host 的原始输入版本；保存与运行采用分别查看 `persistence` 和 `application`。保存成功后，所有受影响声明的 `onUpdate` 监听器均成功才确认 `applied`；缺少或失败的监听器返回 `saved-not-applied`，保存的目标仍供后续更新或重启使用。只编辑被声明遮盖的保存值不会触发运行更新。
+配置查询返回保存原值、有效输入、来源及校验结果。Workbench 和脚本使用 `patch({ set?, remove? })` 修改保存值，用 `reset` 恢复继承。`expectedManagedRevision` 在写入前检查版本。`persistence` 表示保存阶段，`application` 表示运行采用阶段。保存成功而监听器缺失或失败时返回 `saved-not-applied`。
 
 ### 八项运行策略
 
-`policy.mode` 按字段分别设置上述三种模式，省略的字段使用 `declared-first`。
+| 策略                         | 选择单位                                               |
+| ---------------------------- | ------------------------------------------------------ |
+| `autoStart`                  | 节点。显式 `false` 保留禁用选择                        |
+| `forks`                      | fork 节点。保存条目可选择部署或移除                    |
+| `dependencyOverrides`        | consumer 节点与 requirement 地址。显式 `null` 清除选择 |
+| `providerDefaults`           | 完整列表，显式 `[]` 清空该列表                         |
+| `execution.startTimeoutMs`   | Host 默认启动期限                                      |
+| `execution.drainTimeoutMs`   | Host 排空期限                                          |
+| `execution.startConcurrency` | Host 启动并发预算                                      |
+| `execution.stopConcurrency`  | Host 停止并发预算                                      |
 
-| 字段                  | 含义                                  |
-| --------------------- | ------------------------------------- |
-| `autoStart`           | 自动启动节点，只使用完整 node address |
-| `forks`               | 已声明的 canonical fork addresses     |
-| `providerDefaults`    | 抽象依赖的默认 provider               |
-| `dependencyOverrides` | 指定 consumer 的 provider 选择        |
-| `startTimeoutMs`      | Plugin 启动期限                       |
-| `drainTimeoutMs`      | 已接纳操作的排空期限                  |
-| `startConcurrency`    | Plugin 启动并发数                     |
-| `stopConcurrency`     | Plugin 停止并发数                     |
+代码只给 A 设置自动启动时，B 的保存选择继续按 B 的 mode 生效。原始策略编辑可以保存被遮盖的值，要求实际生效的命令会在副作用前以 `policy_shadowed` 拒绝。`host.policy.reset([{ field: 'autoStart', node }])` 删除一个保存键，恢复继承。fork 的停止与元数据清理由 `host.forks.remove()` 完成。
 
-前四个列表整项选择，显式 `[]` 是空列表，省略才继承。后四项执行参数在创建 Plugin 服务前确定；运行中保存新目标会报告 `requires-host-recreation`，需要重建 Host 才能采用，单独重启 Plugin 不改变本次 Host 的执行参数。管理动作若被声明遮盖而无法生效，会在副作用前以 `policy_shadowed` 拒绝。
-
----
+启动时，每个 generation 依次采用节点的 `startTimeoutMs`、插件 `@Plugin({ startTimeoutMs })`、Host 的 `policy.execution.startTimeoutMs` 和 Core 默认值。显式期限必须是 1 到 2,147,483,647 毫秒的整数。Workbench 保存的 Host 执行参数在重建 Host 时采用，保存结果用 `requires-host-recreation` 标记待采用的参数。
 
 <span id="host-logging"></span>
 
 ## 日志配置（Host Logging）
 
-宿主使用 LogTape 管理全局日志输出。通过 `runtime.logtape` 挂载格式化终端 Sink 或远程推送：
+填写 `coreConfig.logtape: {}` 开启默认控制台和有界日志缓存。`{ options }` 可调整管理选项。原生 LogTape Config 或同步 root factory 提供完整输出配置，可和管理选项一起写成 `{ input, options }`。省略该字段时插件仍使用 `ctx.logger`，配置后 `root.logging` 提供日志策略、缓存、状态和 flush。
 
 ```ts
-import { logtape } from '@pluxel/core/config'
+import type { CoreFacilitiesConfig } from '@pluxel/core'
 import { createRuntimePrettyConsoleSink } from '@pluxel/core/logging/pretty'
 
-export const loggingConfig = logtape({
-	sinks: {
-		console: createRuntimePrettyConsoleSink({
-			timezone: 'local',
-			pretty: { properties: true },
-		}),
+export const coreConfig = {
+	logtape: {
+		sinks: { console: createRuntimePrettyConsoleSink({ timezone: 'local' }) },
+		loggers: [{ category: ['pluxel'], sinks: ['console'], lowestLevel: 'info' }],
 	},
-	loggers: [{ category: ['pluxel'], sinks: ['console'], lowestLevel: 'info' }],
-})
+} satisfies CoreFacilitiesConfig
 ```
 
 <span id="远程输出原生-logtape-sink"></span>
@@ -464,12 +420,13 @@ import { createHost } from '@pluxel/host'
 import { MyWorkerPlugin } from './worker'
 
 await using host = await createHost({
-	plugins: [MyWorkerPlugin],
-	policy: { autoStart: [MyWorkerPlugin.nodeAddress()] },
+	plugins: [{ plugin: MyWorkerPlugin, autoStart: true }],
 })
 
 await host.start()
 ```
+
+`createHost()` 与应用工厂使用相同的节点声明。具有部署输入绑定或文件发现的应用通过应用工厂取得启动上下文。
 
 ---
 

@@ -81,7 +81,7 @@ for (const item of found.data.value.items) {
 - `parts`：occurrence 路径、Part 声明与挂载位置。
 - `config`：Plugin/Part 配置字段、Schema 使用与定义位置。
 - `dependencies`：required/optional definition、provider 关系和声明来源。
-- `inputs`：应用 config 表达式及 env/file bindings 的源码位置，保留 forkId；不读取部署值。
+- `inputs`：目标插件默认节点的 `config` 表达式、各节点的 env/file 绑定和 `forkId` 源码位置。查询仅定位声明，部署值由 Host 读取。
 - `checks`：所属 package 声明的 scripts；查询不会执行命令。
 
 ```js

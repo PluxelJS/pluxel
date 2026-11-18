@@ -1,6 +1,6 @@
 # Core：图、Context 与 generation
 
-`@pluxel/core` 拥有 Plugin definition/node、DI graph、Context 与 generation lifecycle，固定提供 FS 与 TinyBase。通用 Context kernel 来自 `@pluxel/context`，在 Core 发布产物中内联。提交状态转换和失败矩阵见[生命周期语义](CORE_LIFECYCLE_SEMANTICS.md)。
+`@pluxel/core` 拥有 Plugin definition/node、DI graph、Context 与 generation lifecycle，固定提供 FS、TinyBase 与 Vault。通用 Context kernel 来自 `@pluxel/context`，在 Core 发布产物中内联。提交状态转换和失败矩阵见[生命周期语义](CORE_LIFECYCLE_SEMANTICS.md)。
 
 ## 负责
 
@@ -14,9 +14,11 @@ catalog 来源、配置层合并与保存策略由 Host 拥有；HTTP、RPC 等�
 
 ## Context service kernel
 
-Core 直接提供固定的 `ctx.logger`、`ctx.effects`、`ctx.events`，Plugin Context 另有 `ctx.fs()` 与 `ctx.tinybase`；配置日志后，根 Context 提供 `root.logging`。这些内建能力由 Core 构造、缓存并管理生命周期，不进入 service 安装集合或服务控制材料。
+Core 直接提供固定的 `ctx.logger`、`ctx.effects`、`ctx.events`，Plugin Context 另有 `ctx.fs()`、`ctx.tinybase` 与 `ctx.vault`；配置日志后，根 Context 提供 `root.logging`。这些内建能力由 Core 构造、缓存并管理生命周期，不进入 service 安装集合或服务控制材料。
 
-Core 的组合入口是 `createCoreContextHost()`：它固定内建能力，并将应用选择的 `services` 交给 Context kernel 编译。Vault、Database、HTTP、Workbench 等由应用显式安装，插件通过 `ctx.service()` 声明对它们的依赖。required 声明直接使用普通 class 或 abstract class；`defineServiceRef<T>()` 是指向同一声明的 optional 引用，由源码工具链从具名导入生成。Pluxel 的跨编译身份来自 canonical entry + exportName，standalone kernel 也可直接以声明对象作为进程内 key。没有手写 service ID、property projection 或运行期安装入口。
+Core 的组合入口是 `createCoreContextHost()`：它固定内建能力，并将应用选择的 `services` 交给 Context kernel 编译。Database、HTTP、Workbench 等由应用显式安装，插件通过 `ctx.service()` 声明对它们的依赖。required 声明直接使用普通 class 或 abstract class；`defineServiceRef<T>()` 是指向同一声明的 optional 引用，由源码工具链从具名导入生成。Pluxel 的跨编译身份来自 canonical entry + exportName，standalone kernel 也可直接以声明对象作为进程内 key。没有手写 service ID、property projection 或运行期安装入口。
+
+`CoreFacilitiesConfig` 统一声明 LogTape、ZenFS、TinyBase、Vault 与 events。直接创建 Core 时将这些字段和 `name`、`execution` 一起传入。应用 Host 在处理部署输入前调用 Core 校验并快照 `coreConfig`，编译 Context 时使用该快照。配置捕获保留原生 callback 与借用资源的引用，资源获取由各设施的准备阶段负责。
 
 `ctx.service(Declaration)` 返回 T，未安装抛出 `ContextServiceMissingError`；`ctx.service(ref)` 返回 T | undefined，仅缺失返回 undefined。声明与安装访问权限都要通过校验，access、construction、stale contract 错误不能被可选引用吞掉。
 
@@ -32,7 +34,7 @@ Core 将 kernel 缓存范围映射到 Plugin 生命周期：
 
 factory closure 捕获本 host 已解析、冻结的输入，Context 不暴露 host config。caller view 共享 provider root/generation backing，独立缓存 owner view 并固定 readonly caller pin；caller 不是 containment parent。PluginPart 的 child Context 直接持有该 Part 的 effects 子作用域和带 partPath 的 logger，caller view 保留这些归属。内建能力的构造由 Core 负责，服务安装集合与访问权限始终固定。
 
-Core effects/commit hooks 管理固定 FS/TinyBase：首次文件操作准备 IO，generation publication 开启自动保存，最终先关闭日志、再关闭 TinyBase、最后关闭 FS。Host 自动等待 `prepareCoreContext(root)`；Core-only 嵌入者在启动 Plugin 前显式等待它。Host config/state 文档在 Plugin admission 前恢复，显式服务使用自己的 prepare 阶段。
+Core effects/commit hooks 管理固定 FS、TinyBase 与 Vault：首次操作按需准备 IO，generation publication 开启 Store 自动保存；根关闭时排空已接纳操作，先释放上层能力，再关闭文件系统。Host 自动等待 `prepareCoreContext(root)`；Core-only 嵌入者在启动 Plugin 前显式等待它。Host config/state 文档在 Plugin admission 前恢复，显式服务使用自己的 prepare 阶段。
 
 源码通过 `devDependencies: workspace:*` 引用 Context，tsdown `alwaysBundle` 内联 JS 与 declarations。Core 消费者无需另装 Context；standalone Context 用户单独依赖该包。registry 属于 evaluated module instance，Core 内联 kernel 与 standalone kernel 可共存，但 installation、plan 和 Context 不能跨 kernel 传递。开发期同包 identity 由 HMR bridge 保持。
 
@@ -77,6 +79,8 @@ vp run @pluxel/context#bench
 finalizer、settlement、publication、late init 和 effects 的完整顺序见[生命周期语义](CORE_LIFECYCLE_SEMANTICS.md)。Host 发布前先准备完整 immutable state，再同步交换 pointer。
 
 每个 generation actor 拥有 Context、queue 和 subscription，共用紧凑整数转移表，快照和错误使用具名状态。START/STOP 串行接纳；STOP 接纳时立即 abort init 并启动同一 drain。异步效果结算后发布快照，订阅安装期间排队的错误先于稳定启动结果结算。停止的 actor 为终态；restart 创建新 generation。初始已结算 Promise 可共享，排队后的链各自独立。
+
+Core 开始 generation 时先取 Host 按节点声明的 `startTimeoutMs`，再取该代定义元数据中的期限，最后使用已经绑定的 Host 执行期限或 Core 默认值。显式期限为 1 至 2,147,483,647 的整数毫秒。Core 在提交 START 前选定该代期限，生命周期回执记录超时采用的毫秒数。`startConcurrency`、`stopConcurrency` 与 `drainTimeoutMs` 属于整个 Host。
 
 同步 construction stack 向原始 implementation 注入 node Context。default/fork 的 `new.target` 相同。root constructor 只取有序 direct requirements；provider factory 从聚合 graph 建立只读 requirement-to-running-provider map。Part frame 创建 child Context，按其 direct requirements 取 facade，不查询 catalog、加载代码或绕过 committed override。
 

@@ -15,7 +15,7 @@ class Health extends BasePlugin {
 }
 
 it('uses installed service declarations through the portable SDK', async () => {
-	const host = await createHost({ plugins: [Health], services: [elysia(), commands()] })
+	const host = await createHost({ plugins: [{ plugin: Health }], services: [elysia(), commands()] })
 	const controller = new AbortController()
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx, signal: controller.signal })

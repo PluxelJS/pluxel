@@ -13,7 +13,7 @@ Typst 插件依赖宿主安装的底层支撑能力：
 - **持久化文档会话（`open`）**：通过 `NodeModules` 服务加载当前平台编译的原生 Typst 动态库与专用编译 Worker。
 - **字体服务**：通过 `FontsPlugin` 注册和分发排版所需的中英文可移植字体。
 
-使用 `standardServices()` 或 `servicesPreset()` 装配的应用已预置这些基础服务。
+使用 `servicesPreset()` 装配的应用已预置这些基础服务。
 
 ## 直接生成无状态 SVG
 

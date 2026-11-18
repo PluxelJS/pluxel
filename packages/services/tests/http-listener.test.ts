@@ -65,7 +65,7 @@ class ListenerHttpProbe extends BasePlugin {
 it('preserves handled 404 responses before considering application assets', async () => {
 	const publicDir = await mkdtemp(join(tmpdir(), 'pluxel-listener-owned-'))
 	await writeFile(join(publicDir, 'index.html'), '<main>application</main>')
-	const host = await createHost({ plugins: [ListenerHttpProbe], services: [elysia()] })
+	const host = await createHost({ plugins: [{ plugin: ListenerHttpProbe }], services: [elysia()] })
 	try {
 		const http = resolveContextService(host.ctx, ElysiaRuntime)
 		http.mountEndpoint({
@@ -115,7 +115,7 @@ it('preserves handled 404 responses before considering application assets', asyn
 it('cancels a handled 404 stream when its client disconnects with public assets enabled', async () => {
 	const publicDir = await mkdtemp(join(tmpdir(), 'pluxel-listener-stream-'))
 	await writeFile(join(publicDir, 'index.html'), '<main>application</main>')
-	const host = await createHost({ plugins: [ListenerHttpProbe], services: [elysia()] })
+	const host = await createHost({ plugins: [{ plugin: ListenerHttpProbe }], services: [elysia()] })
 	const cancelled = Promise.withResolvers<unknown>()
 	cancelDocumentStream = cancelled.resolve
 	try {
@@ -145,7 +145,10 @@ it('cancels a handled 404 stream when its client disconnects with public assets 
 it.each([false, true])(
 	'upgrades business sockets with a shell fallback enabled: %s',
 	async (fallback) => {
-		const host = await createHost({ plugins: [ListenerSocketProbe], services: [elysia()] })
+		const host = await createHost({
+			plugins: [{ plugin: ListenerSocketProbe }],
+			services: [elysia()],
+		})
 		const fallbackFetch = vi.fn(async () => new Response('shell'))
 		if (fallback) {
 			host.ctx.service(ElysiaRuntime).mountFallback({
@@ -154,7 +157,7 @@ it.each([false, true])(
 			})
 		}
 		await host.startNode({
-			definition: ListenerSocketProbe.definitionAddress(),
+			definition: ListenerSocketProbe.address(),
 			variant: 'default',
 		})
 		const listener = await listenElysia(host, {
@@ -188,9 +191,11 @@ it.each([false, true])(
 
 it('closes its physical listener, stream and WebSocket through the Host lifetime', async () => {
 	const host = await createHost({
-		plugins: [ListenerHttpProbe, ListenerSocketProbe],
+		plugins: [
+			{ plugin: ListenerHttpProbe, autoStart: true },
+			{ plugin: ListenerSocketProbe, autoStart: true },
+		],
 		services: [elysia()],
-		policy: { autoStart: [ListenerHttpProbe.nodeAddress(), ListenerSocketProbe.nodeAddress()] },
 	})
 	const cancelled = Promise.withResolvers<unknown>()
 	cancelDocumentStream = cancelled.resolve

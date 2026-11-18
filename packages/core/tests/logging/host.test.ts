@@ -6,9 +6,9 @@ import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { getContextLoggerRootId } from '@pluxel/core/host'
 import { createHost } from '@pluxel/host'
 import { Passthrough } from '@pluxel/core/fs'
-import { logtape, zenfs } from '@pluxel/core/config'
 import { expect, it } from 'vitest'
-import type { LogRecord } from '@logtape/logtape'
+import type { Config, LogRecord } from '@logtape/logtape'
+import type { LogTapeConfig } from '@pluxel/core/logging'
 import {
 	markLogs,
 	readLogs,
@@ -36,15 +36,23 @@ const plan: RuntimeLoggingInput = ({ createRuntimeLogSink }) => ({
 
 it('creates a fresh owner for each Host and rejects records from a retired root', async () => {
 	const records: LogRecord[] = []
-	const declaration = logtape({
+	const declaration: Config<string, string> = {
 		sinks: { native: (record) => records.push(record) },
 		loggers: [{ category: ['pluxel', 'runtime'], sinks: ['native'] }],
+	}
+	const first = await createHost({
+		plugins: [],
+		coreConfig: { logtape: declaration },
+		services: [],
 	})
-	const first = await createHost({ plugins: [], runtime: { logtape: declaration }, services: [] })
 	const oldLogger = first.ctx.logger
 	const oldId = first.ctx.logging!.resolved.root.id
 	await first.close()
-	const second = await createHost({ plugins: [], runtime: { logtape: declaration }, services: [] })
+	const second = await createHost({
+		plugins: [],
+		coreConfig: { logtape: declaration },
+		services: [],
+	})
 	try {
 		expect(second.ctx.logging!.resolved.root.id).not.toBe(oldId)
 		oldLogger.info('retired root')
@@ -58,7 +66,7 @@ it('creates a fresh owner for each Host and rejects records from a retired root'
 })
 
 it('bounds log cursors to their Host and stream, and releases waits on delivery, reset and abort', async () => {
-	const host = await createHost({ plugins: [], runtime: { logtape: logtape(plan) }, services: [] })
+	const host = await createHost({ plugins: [], coreConfig: { logtape: plan }, services: [] })
 	try {
 		const manager = host.ctx.logging!
 		const empty = markLogs(manager)
@@ -102,22 +110,25 @@ it('binds the Core identity and retries durable fork policy cleanup through the 
 	let failWrite = false
 	const writes: PluginLogPolicySnapshot[] = []
 	const host = await createHost({
-		plugins: [LoggedOwner],
-		runtime: {
-			logtape: logtape(plan, {
-				policyLoadFailure: 'fail',
-				policyStore(root) {
-					const documents = requireFs(root).documents('services/logging')
-					return createPluginLogPolicyStore({
-						getText: (key) => documents.getText(key),
-						async put(key, value) {
-							if (failWrite) throw new Error('policy unavailable')
-							await documents.put(key, value)
-							writes.push(parsePluginLogPolicySnapshot(value))
-						},
-					})
+		plugins: [{ plugin: LoggedOwner }],
+		coreConfig: {
+			logtape: {
+				input: plan,
+				options: {
+					policyLoadFailure: 'fail',
+					policyStore(root) {
+						const documents = requireFs(root).documents('services/logging')
+						return createPluginLogPolicyStore({
+							getText: (key) => documents.getText(key),
+							async put(key, value) {
+								if (failWrite) throw new Error('policy unavailable')
+								await documents.put(key, value)
+								writes.push(parsePluginLogPolicySnapshot(value))
+							},
+						})
+					},
 				},
-			}),
+			},
 		},
 		services: [],
 	})
@@ -125,7 +136,7 @@ it('binds the Core identity and retries durable fork policy cleanup through the 
 	try {
 		expect(manager.resolved.root.id).toBe(getContextLoggerRootId(host.ctx))
 		await expect(
-			createHost({ plugins: [], runtime: { logtape: logtape(plan) }, services: [] }),
+			createHost({ plugins: [], coreConfig: { logtape: plan }, services: [] }),
 		).rejects.toThrow('Another RuntimeLogging instance')
 		const fork = LoggedOwner.nodeAddress('policy')
 		const ensured = await host.forks.ensure(fork, { autoStart: true })
@@ -156,25 +167,27 @@ it('binds the Core identity and retries durable fork policy cleanup through the 
 it('restores TinyBase policy documents, flushes before FS final closure and keeps profiles separate', async () => {
 	const directory = await nativeFs.promises.mkdtemp(join(tmpdir(), 'pluxel-logging-fs-'))
 	let factoryCalls = 0
-	const logger = (profile: string) =>
-		logtape(plan, {
+	const logger = (profile: string): LogTapeConfig => ({
+		input: plan,
+		options: {
 			profile,
 			policyStore(root) {
 				factoryCalls++
 				return createPluginLogPolicyStore(requireHostDocuments(root, 'logging'))
 			},
-		})
+		},
+	})
 	const owner = parsePluginNodeAddress(LoggedOwner.nodeAddress())
 	const config = {
-		zenfs: zenfs({
+		zenfs: {
 			mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix: directory } },
 			durableMounts: ['/'],
-		}),
+		},
 	}
 	try {
 		const first = await createHost({
 			plugins: [],
-			runtime: { ...config, logtape: logger('first') },
+			coreConfig: { ...config, logtape: logger('first') },
 			services: [],
 		})
 		try {
@@ -184,7 +197,7 @@ it('restores TinyBase policy documents, flushes before FS final closure and keep
 		}
 		const inspect = await createHost({
 			plugins: [],
-			runtime: config,
+			coreConfig: config,
 			services: [],
 		})
 		try {
@@ -199,7 +212,7 @@ it('restores TinyBase policy documents, flushes before FS final closure and keep
 		}
 		const second = await createHost({
 			plugins: [],
-			runtime: { ...config, logtape: logger('second') },
+			coreConfig: { ...config, logtape: logger('second') },
 			services: [],
 		})
 		try {
@@ -210,7 +223,7 @@ it('restores TinyBase policy documents, flushes before FS final closure and keep
 		}
 		const reopened = await createHost({
 			plugins: [],
-			runtime: { ...config, logtape: logger('first') },
+			coreConfig: { ...config, logtape: logger('first') },
 			services: [],
 		})
 		try {

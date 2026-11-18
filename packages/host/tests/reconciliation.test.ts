@@ -1,3 +1,5 @@
+import { snapshotHostPolicy } from '../src/policy-input'
+import { graphFromPolicyInput, positivePolicyInput } from './helpers/policy-input'
 import {
 	pluginDefinitionIndexKey,
 	pluginNodeAddressEqual,
@@ -1023,9 +1025,10 @@ describe('Declared policy authority at the coordinator boundary', () => {
 	it('rejects changed shadowed targets but permits satisfied commands and session intent', async () => {
 		const Provider = definition('LockedProvider')
 		const provider = node(Provider)
-		const store = new HostStateStore(createCoreContextHost().createRoot(), {
-			autoStart: [provider],
-		})
+		const store = new HostStateStore(
+			createCoreContextHost().createRoot(),
+			snapshotHostPolicy({}, undefined, { autoStart: [{ node: provider, autoStart: true }] }),
+		)
 		const coordinator = new PluginHostCoordinator(
 			store,
 			coreDriver(async ({ onGraphCommitted }) => {
@@ -1068,7 +1071,9 @@ describe('Declared policy authority at the coordinator boundary', () => {
 			const put = vi.spyOn(backend, 'put')
 			const store = new HostStateStore(
 				createCoreContextHost().createRoot(),
-				{ autoStart: [node(Consumer)] },
+				snapshotHostPolicy({}, undefined, {
+					autoStart: [{ node: node(Consumer), autoStart: true }],
+				}),
 				{ storage: backend, readOnly },
 			)
 			const coordinator = new PluginHostCoordinator(
@@ -1115,7 +1120,7 @@ describe('Declared policy authority at the coordinator boundary', () => {
 		const backend = createDocumentStorage()
 		const store = new HostStateStore(
 			createCoreContextHost().createRoot(),
-			{ forks: [fork] },
+			snapshotHostPolicy({}, undefined, { forks: [{ node: fork, deploy: true }] }),
 			{ storage: backend },
 		)
 		const coordinator = new PluginHostCoordinator(
@@ -1145,7 +1150,7 @@ describe('Declared policy authority at the coordinator boundary', () => {
 			expect(store.snapshot().forks).toEqual([fork])
 			const reopened = new HostStateStore(
 				createCoreContextHost().createRoot(),
-				{ forks: [fork] },
+				snapshotHostPolicy({}, undefined, { forks: [{ node: fork, deploy: true }] }),
 				{ storage: backend },
 			)
 			try {
@@ -1168,16 +1173,16 @@ function memoryStateStore(initial: HostStateSnapshot): HostStateCoordinatorStore
 	return {
 		ready: Promise.resolve(),
 		versionedSnapshot: () => current,
-		managedSnapshot: () => current.state,
-		prepareAction: (patch) => applyHostStatePatch(current.state, patch),
+		managedSnapshot: () => positivePolicyInput(current.state),
+		prepareAction: (patch) => positivePolicyInput(applyHostStatePatch(current.state, patch)),
 		assertManagedRevision() {},
 		persistence: (changed) =>
 			changed ? { status: 'confirmed', retention: 'session' } : { status: 'unchanged' },
-		effectiveSnapshot: (saved) => ({ ...initial, ...saved }),
+		effectiveSnapshot: (saved) => graphFromPolicyInput(saved),
 		assertPatchMutable() {},
 		commitVersioned: async (expectedRevision, next) => {
 			if (expectedRevision !== current.revision) throw new Error('unexpected revision conflict')
-			current = { revision: current.revision + 1, state: { ...initial, ...next } }
+			current = { revision: current.revision + 1, state: graphFromPolicyInput(next) }
 			return current
 		},
 	}

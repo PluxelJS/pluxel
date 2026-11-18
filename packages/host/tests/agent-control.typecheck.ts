@@ -483,7 +483,7 @@ expectTypeOf<Parameters<ScriptSdk['logs']['wait']>[1]>().toEqualTypeOf<
 void sdk.logs.wait(cursor, { filter: { plugin: Counter.nodeAddress() } })
 
 // @ts-expect-error Source queries use @pluxel/agent-sdk/source without a Host.
-void sdk.inspect(Counter.definitionAddress())
+void sdk.inspect(Counter.address())
 
 export default (async (api, run) => {
 	run.signal.throwIfAborted()

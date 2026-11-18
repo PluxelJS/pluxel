@@ -11,7 +11,11 @@ export abstract class Metadata {}
 it('rejects non-fork and malformed addresses without creating nodes or deleting metadata', async () => {
 	let metadataRemovals = 0
 	const host = await createHost({
-		plugins: [ForkOwner],
+		plugins: [
+			{
+				plugin: ForkOwner,
+			},
+		],
 		services: [
 			defineHostService({
 				name: 'Metadata',
@@ -49,7 +53,11 @@ it('retains a stopped fork after service metadata cleanup fails and retries befo
 	let fail = true
 	let attempts = 0
 	const host = await createHost({
-		plugins: [ForkOwner],
+		plugins: [
+			{
+				plugin: ForkOwner,
+			},
+		],
 		services: [
 			defineHostService({
 				name: 'Metadata',
@@ -88,8 +96,17 @@ it('retains a stopped fork after service metadata cleanup fails and retries befo
 it('rejects declared fork policy writes before stopping or deleting metadata', async () => {
 	let metadataRemovals = 0
 	const host = await createHost({
-		plugins: [ForkOwner],
-		policy: { forks: [ForkOwner.nodeAddress('tenant')] },
+		plugins: [
+			{
+				plugin: ForkOwner,
+				forks: {
+					tenant: {},
+				},
+			},
+		],
+		policy: {
+			document: false,
+		},
 		services: [
 			defineHostService({
 				name: 'Metadata',
@@ -99,7 +116,6 @@ it('rejects declared fork policy writes before stopping or deleting metadata', a
 				},
 			}),
 		],
-		runtime: { documents: { state: false } },
 	})
 	try {
 		await expect(host.forks.ensure(ForkOwner.nodeAddress('tenant'))).resolves.toMatchObject({

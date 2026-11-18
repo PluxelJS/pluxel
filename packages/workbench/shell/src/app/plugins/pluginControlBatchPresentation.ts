@@ -2,7 +2,7 @@ import type { PluginNodeAddress } from '@pluxel/core'
 import type { PluginControlBatchResult } from '@pluxel/services/management/client'
 
 type FailedBatch = Extract<PluginControlBatchResult, { ok: false }>
-type Operation = 'auto-start' | 'restore-auto-start' | 'lifecycle'
+type Operation = 'auto-start' | 'lifecycle'
 
 const titles: Record<Operation, Record<FailedBatch['status'], string>> = {
 	'auto-start': {
@@ -10,12 +10,6 @@ const titles: Record<Operation, Record<FailedBatch['status'], string>> = {
 		'applied-with-issues': '自动启动策略已应用，运行协调存在问题',
 		'partially-applied': '自动启动策略部分应用',
 		rejected: '自动启动策略更新被拒绝',
-	},
-	'restore-auto-start': {
-		unknown: '策略恢复结果待核对',
-		'applied-with-issues': '原策略已恢复，运行协调存在问题',
-		'partially-applied': '原策略部分恢复',
-		rejected: '策略恢复被拒绝',
 	},
 	lifecycle: {
 		unknown: '生命周期命令结果待核对',
@@ -38,11 +32,7 @@ export function describePluginControlBatchFailure(
 					.filter((result) => result.ok === false)
 					.map((result) => {
 						const applied =
-							result.code !== 'lifecycle_failed' || operation === 'lifecycle'
-								? ''
-								: operation === 'restore-auto-start'
-									? '原策略已恢复；'
-									: '策略已应用；'
+							result.code === 'lifecycle_failed' && operation === 'auto-start' ? '策略已应用；' : ''
 						return `${labelFor(result.address)}：${applied}${result.error}`
 					})
 					.join('\n')

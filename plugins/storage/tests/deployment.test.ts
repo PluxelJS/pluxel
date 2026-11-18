@@ -1,8 +1,8 @@
 import type { WorkbenchHost } from '@pluxel/workbench/server'
 import { createServer } from 'node:http'
 import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
-import { envBinding, defineHostApplication, resolveHostApplication, createHost } from '@pluxel/host'
-import { vault } from '@pluxel/services/vault'
+import { envBinding, defineHostApplication, resolveHostApplication } from '@pluxel/host'
+import { createResolvedHost } from '@pluxel/host/internal'
 import { expect, it } from 'vitest'
 import { S3, S3Config, S3VaultSchema, S3Plugin } from '../src/index.ts'
 
@@ -32,18 +32,25 @@ it('signs an S3 write without Workbench using env-backed configuration and Vault
 		const address = server.address()
 		if (!address || typeof address === 'string') throw new Error('Missing test listener')
 		const application = defineHostApplication(() => ({
-			plugins: [S3Plugin, DeploymentWriter],
-			services: [vault({ backend: 'bindings' })],
-			envBindings: [
-				envBinding(S3Plugin.nodeAddress(), {
-					config: { schema: S3Config, mapping: { buckets: 'S3_BUCKETS' } },
-					vault: {
-						schema: S3VaultSchema,
-						mapping: { primary: { accessKeyId: 'ACCESS_KEY', secretAccessKey: 'SECRET_KEY' } },
-					},
-				}),
+			plugins: [
+				{
+					plugin: S3Plugin,
+					envBindings: [
+						envBinding({
+							config: { schema: S3Config, mapping: { buckets: 'S3_BUCKETS' } },
+							vault: {
+								schema: S3VaultSchema,
+								mapping: { primary: { accessKeyId: 'ACCESS_KEY', secretAccessKey: 'SECRET_KEY' } },
+							},
+						}),
+					],
+				},
+				{
+					plugin: DeploymentWriter,
+					autoStart: true,
+				},
 			],
-			policy: { autoStart: [DeploymentWriter.nodeAddress()] },
+			coreConfig: { vault: { backend: 'bindings' } },
 		}))
 		const resolved = await resolveHostApplication(application, {
 			root: process.cwd(),
@@ -65,15 +72,7 @@ it('signs an S3 write without Workbench using env-backed configuration and Vault
 				]),
 			},
 		})
-		const host = await createHost({
-			plugins: resolved.plugins,
-			services: resolved.services,
-			vaultBindings: resolved.vaultBindings,
-			name: resolved.name,
-			config: resolved.config,
-			policy: resolved.policy,
-			runtime: resolved.runtime,
-		})
+		const host = await createResolvedHost(resolved)
 		try {
 			await host.start()
 			expect(host.ctx.service(WorkbenchHostRef)).toBeUndefined()

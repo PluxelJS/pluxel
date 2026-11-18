@@ -10,7 +10,7 @@ description: 将特定逻辑编译为独立的 Node ESM 产物，或将 CPU 密�
 
 ## 选择安装能力
 
-在宿主配置中，`standardServices()` 与 `servicesPreset()` 默认已包含 Node 模块与 Worker 服务。如果手动装配宿主，请显式挂载 `nodeModules()` 与 `workers()`：
+在宿主配置中，`servicesPreset()` 默认已包含 Node 模块与 Worker 服务。如果手动装配宿主，请显式挂载 `nodeModules()` 与 `workers()`：
 
 ```ts
 import { nodeModules } from '@pluxel/services/node'

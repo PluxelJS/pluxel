@@ -92,8 +92,17 @@ it('loads the compiled factory in real workerd and bridges ordinary SDK calls to
 	await mkdir(join(hostRoot, '.tmp'), { recursive: true })
 	const directory = await mkdtemp(join(hostRoot, '.tmp/agent-workerd-'))
 	await using host = await createHost({
-		plugins: [WorkerCounter],
-		runtime: { documents: { config: false, state: false } },
+		plugins: [
+			{
+				plugin: WorkerCounter,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	await host.start()
 	await host.startNode(WorkerCounter.nodeAddress())

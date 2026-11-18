@@ -1,5 +1,4 @@
 import { BasePlugin, type Context, Plugin } from '@pluxel/core'
-import { Vault } from '@pluxel/services/vault'
 import {
 	chromium,
 	type Browser,
@@ -206,7 +205,7 @@ export class PlaywrightPlugin extends Playwright {
 	protected override async connect(signal: AbortSignal): Promise<Browser> {
 		let connection: v.InferOutput<typeof PlaywrightConnectionSchema>
 		if (this.config.connectionKey !== undefined) {
-			const record = await this.ctx.service(Vault).kv().get(this.config.connectionKey)
+			const record = await this.ctx.vault.kv().get(this.config.connectionKey)
 			const parsed = v.safeParse(PlaywrightConnectionSchema, record.value)
 			if (!record.exists || !parsed.success)
 				throw new Error('Playwright Vault connection record is missing or invalid')

@@ -3,7 +3,7 @@
 // - 你想看结构化 KV snapshot、原子更新和 blobs 的最小组合
 
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { Vault, type VaultKvHandle } from '@pluxel/services/vault'
+import type { VaultKvHandle } from '@pluxel/core/vault'
 
 const KV_TOKEN = 'demo.token'
 const KV_COUNTER = 'demo.counter'
@@ -12,7 +12,7 @@ const KV_PROFILE = 'demo.profile'
 @Plugin()
 export class PluginVaultDemo extends BasePlugin {
 	override async init() {
-		const vault = this.ctx.service(Vault)
+		const vault = this.ctx.vault
 		const space = vault.namespace()
 		const kv = space.kv()
 		const notes = space.blobs().open('notes')

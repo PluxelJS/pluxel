@@ -345,7 +345,7 @@ describe('runtime web control protocol', () => {
 		const policyOwner = parsePluginNodeAddress(ManagedProvider.nodeAddress())
 		const alternateProvider = parsePluginNodeAddress(ManagedAlternateProvider.nodeAddress())
 		const consumer = parsePluginNodeAddress(ManagedProviderConsumer.nodeAddress())
-		const token = ManagedProviderToken.definitionAddress()
+		const token = ManagedProviderToken.address()
 
 		await expect(rpc.inspectPluginProviderPolicyDto(consumer)).resolves.toEqual({
 			ok: true,
@@ -442,7 +442,7 @@ describe('runtime web control protocol', () => {
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
 		const consumer = parsePluginNodeAddress(ManagedProviderConsumer.nodeAddress())
-		const requirement = ManagedProviderToken.definitionAddress()
+		const requirement = ManagedProviderToken.address()
 
 		const inspection = await rpc.inspectPluginConsumerRequirementsDto(consumer)
 		expect(inspection).toMatchObject({ ok: true, items: [{ requirement }] })
@@ -479,7 +479,7 @@ describe('runtime web control protocol', () => {
 		await expect(
 			rpc.setPluginConsumerOverrideDto({
 				consumer,
-				requirement: ManagedPlugin.definitionAddress(),
+				requirement: ManagedPlugin.address(),
 				provider: null,
 			}),
 		).resolves.toMatchObject({

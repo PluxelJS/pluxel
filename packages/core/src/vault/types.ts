@@ -1,5 +1,7 @@
+import type { PluginNodeAddress } from '../plugins/runtime/identity'
+
 export type VaultServiceConfig = {
-	/** Encrypted persistent KV by default; bindings installs read-only records without storage or keys. */
+	/** Lazily initialized encrypted persistent KV by default; bindings installs read-only records without storage or keys. */
 	backend?: 'encrypted' | 'bindings'
 	/** Explicit age private identity supplied by the application startup factory. */
 	deployIdentity?: string
@@ -124,3 +126,12 @@ export type VaultAdminApi = {
 	setDeployRecipients: (recipients: string[]) => Promise<VaultAdminState>
 	generateDeployKey: () => Promise<VaultKeyPair>
 }
+
+/** Validated deployment records injected by Host before Plugin admission. */
+export type VaultBindingRecord = Readonly<{
+	owner: PluginNodeAddress
+	namespace?: string
+	key: string
+	value: unknown
+	source: 'env' | 'file'
+}>

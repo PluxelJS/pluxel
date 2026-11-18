@@ -1,12 +1,10 @@
-import { pluginNodeAddressEqual, type PluginConstructor } from '@pluxel/core'
+import { pluginNodeIndexKey, type PluginConstructor } from '@pluxel/core'
 import {
 	recordLoadedApplicationPlugins,
 	readLoadedPluginModule,
 	readLoadedApplicationControl,
 	loadLoadedApplicationServiceControls,
 } from './loaded-modules'
-import { snapshotHostRuntime } from './runtime'
-import { snapshotHostPolicy } from './state-store'
 import {
 	configLeafPaths,
 	configPathContains,
@@ -17,18 +15,25 @@ import { dirname, isAbsolute, resolve } from 'node:path'
 import { readFile, realpath } from 'node:fs/promises'
 import { installedPackageFacts } from './shared-packages'
 import {
-	mergeConfigRecords,
-	snapshotHostConfig,
+	mergeRecord,
+	snapshotHostConfigRecords,
+	assertDataObject,
 	attachConfigProvenance,
 	type ConfigDeclarationSource,
 } from './config-records'
 import { resolveInputBindings } from './input-bindings'
 import { createNativeSourceLoader } from './native-source-loader'
 import { discoverPluginSources } from './source-discovery'
-import { installPluginSources, pluginSource } from './source-contract'
+import { installPluginSources, snapshotPluginSource } from './source-contract'
 import { setHostCatalogProvenance } from './catalog-provenance'
 import type { PluginCatalogProvenance } from './catalog'
-import { createHost, type HostApplication, type HostOptions, type PluginHost } from './host'
+import { createResolvedHost, type HostApplication, type PluginHost } from './host'
+import {
+	HOST_DECLARATION_FIELDS,
+	snapshotHostDeclarations,
+	type ResolvedHostOptions,
+} from './node-declarations'
+import { snapshotPolicyArray } from './policy-input'
 import { startHostApplication } from './application-start'
 export { prepareHostApplication } from './application-start'
 
@@ -65,31 +70,16 @@ export function defineHostApplication<const T extends HostApplicationFactory>(
 	return factory
 }
 
-export type ResolvedHostApplication = Omit<HostOptions, 'plugins'> &
+export type ResolvedHostApplication = ResolvedHostOptions &
 	Readonly<{
 		/** Immutable shallow snapshot shared by the factory and prepare callback. */
 		startup: HostStartupContext
-		name?: string
-		plugins: readonly PluginConstructor[]
-		sources?: HostApplication['sources']
+		sources: NonNullable<HostApplication['sources']>
 		prepare?: HostApplication['prepare']
 		acceptStartup?: HostApplication['acceptStartup']
 		launch?: HostApplication['launch']
 	}>
-const fields = new Set([
-	'name',
-	'plugins',
-	'sources',
-	'services',
-	'runtime',
-	'policy',
-	'config',
-	'envBindings',
-	'fileBindings',
-	'prepare',
-	'acceptStartup',
-	'launch',
-])
+const fields = [...HOST_DECLARATION_FIELDS, 'sources', 'prepare', 'acceptStartup', 'launch']
 function record(input: unknown, label: string): Record<string, unknown> {
 	if (!input || typeof input !== 'object' || Array.isArray(input))
 		throw new TypeError(`${label} must be an object`)
@@ -100,21 +90,8 @@ function assertFields(input: Record<string, unknown>, allowed: Set<string>, labe
 		if (!allowed.has(key)) throw new TypeError(`${label} includes unsupported "${key}"`)
 }
 function assertApplicationShape(input: unknown): asserts input is HostApplication {
-	const app = record(input, '[host] Application')
-	assertFields(app, fields, '[host] Application')
-	if (!Array.isArray(app.plugins))
-		throw new TypeError('[host] Application plugins must be an array')
-	if (app.sources !== undefined) {
-		if (!Array.isArray(app.sources))
-			throw new TypeError('[host] Application sources must be an array')
-	}
-	if (app.services !== undefined && !Array.isArray(app.services))
-		throw new TypeError('[host] Application services must be an array')
-	for (const key of ['envBindings', 'fileBindings'])
-		if (app[key] !== undefined && !Array.isArray(app[key]))
-			throw new TypeError(`[host] Application ${key} must be an array`)
-	if (app.name !== undefined && (typeof app.name !== 'string' || !app.name.trim()))
-		throw new TypeError('[host] Application name must be a non-empty string')
+	assertDataObject(input, 'Application', fields)
+	const app = input
 	for (const key of ['prepare', 'acceptStartup', 'launch'])
 		if (app[key] !== undefined && typeof app[key] !== 'function')
 			throw new TypeError(`[host] Application ${key} must be a function`)
@@ -180,95 +157,74 @@ export async function resolveHostApplication(
 	const startup = snapshotStartup(input)
 	const application = await factory(startup)
 	assertApplicationShape(application)
-	recordLoadedApplicationPlugins(factory, application.plugins)
-	const { envBindings, fileBindings, ...declaration } = application
-	const resolved = {
-		...declaration,
-		plugins: [...application.plugins],
-		...(application.sources
-			? { sources: Object.freeze(application.sources.map(pluginSource)) }
-			: {}),
-		...(application.services ? { services: [...application.services] } : {}),
-		runtime: snapshotHostRuntime(application.runtime),
-		config: snapshotHostConfig(application.config),
-		policy: snapshotHostPolicy(application.policy),
+	const { options: resolved, bindings } = snapshotHostDeclarations(application)
+	const sources = Object.freeze(
+		application.sources === undefined
+			? []
+			: snapshotPolicyArray(application.sources, 'sources').map(snapshotPluginSource),
+	)
+	if (startup.deployment?.delivery === 'standalone' && sources.length > 0)
+		throw new TypeError(
+			'[host] Standalone application requires a fixed catalog; omit sources or use []',
+		)
+	recordLoadedApplicationPlugins(factory, resolved.plugins)
+	const { prepare, acceptStartup, launch } = application
+	if (bindings.envBindings.length === 0 && bindings.fileBindings.length === 0)
+		return Object.freeze({ ...resolved, startup, sources, prepare, acceptStartup, launch })
+	const inputs = await resolveInputBindings({ ...bindings, plugins: resolved.plugins }, startup)
+	const records = new Map(
+		resolved.config.records.map((item) => [pluginNodeIndexKey(item.owner), item]),
+	)
+	const fileSources = new Map<string, ConfigDeclarationSource[]>()
+	for (const source of inputs.declarationSources) {
+		const key = pluginNodeIndexKey(source.owner)
+		const current = fileSources.get(key)
+		if (current) current.push(source)
+		else fileSources.set(key, [source])
 	}
-	const inputs = await resolveInputBindings(
-		{
-			...resolved,
-			...(envBindings ? { envBindings: [...envBindings] } : {}),
-			...(fileBindings ? { fileBindings: [...fileBindings] } : {}),
-		},
-		startup,
-	)
-	const merged = mergeConfigRecords(
-		mergeConfigRecords(
-			resolved.config.records.flatMap((item) =>
-				item.config === undefined ? [] : [{ owner: item.owner, config: item.config }],
-			),
-			inputs.records,
-		),
-		inputs.overlays,
-	)
-	const config = snapshotHostConfig({
-		mode: resolved.config.mode,
-		records: [
-			...resolved.config.records.map((item) => ({
-				...item,
-				config: merged.find((entry) => pluginNodeAddressEqual(entry.owner, item.owner))?.config,
-			})),
-			...merged.filter(
-				(entry) =>
-					!resolved.config.records.some((item) => pluginNodeAddressEqual(item.owner, entry.owner)),
-			),
-		],
-	})
-	const sources: ConfigDeclarationSource[] = []
-	const declared = mergeConfigRecords(
-		undefined,
-		resolved.config.records.flatMap((item) =>
-			item.config === undefined ? [] : [{ owner: item.owner, config: item.config }],
-		),
-	)
+	const declarationsByNode = new Map<string, ConfigDeclarationSource[]>()
 	const layers = [
 		...inputs.records.map((entry) => ({
 			entry,
-			sources: inputs.declarationSources.filter((source) =>
-				pluginNodeAddressEqual(source.owner, entry.owner),
-			),
+			sources: fileSources.get(pluginNodeIndexKey(entry.owner)) ?? [],
 		})),
 		...inputs.overlays.map((entry) => ({
 			entry,
 			sources: entry.sources.map((source) => ({ owner: entry.owner, ...source })),
 		})),
 	]
-	for (const layer of layers) {
-		const before = declared.find((entry) =>
-			pluginNodeAddressEqual(entry.owner, layer.entry.owner),
-		)?.config
-		const after = mergeConfigRecords(
-			before === undefined ? [] : [{ owner: layer.entry.owner, config: before }],
-			[layer.entry],
-		)[0]!
-		for (const path of configLeafPaths(layer.entry.config)) {
-			let selected: unknown = after.config
-			for (const key of path) selected = (selected as Record<string, unknown>)[key]
+	for (const { entry, sources: layerSources } of layers) {
+		const key = pluginNodeIndexKey(entry.owner)
+		const previous = records.get(key)
+		const config = mergeRecord(previous?.config, entry.config)
+		const declared = declarationsByNode.get(key) ?? []
+		for (const path of configLeafPaths(entry.config)) {
+			let selected: unknown = config
+			for (const segment of path) selected = (selected as Record<string, unknown>)[segment]
 			if (isConfigObject(selected) && Object.keys(selected).length > 0) continue
-			for (let index = sources.length - 1; index >= 0; index--)
-				if (
-					pluginNodeAddressEqual(sources[index]!.owner, layer.entry.owner) &&
-					configPathsOverlap(sources[index]!.path, path)
-				)
-					sources.splice(index, 1)
-			const source = layer.sources.find((fact) => configPathContains(fact.path, path))
-			if (source) sources.push({ ...source, path: Object.freeze(path) })
+			for (let index = declared.length - 1; index >= 0; index--)
+				if (configPathsOverlap(declared[index]!.path, path)) declared.splice(index, 1)
+			const source = layerSources.find((fact) => configPathContains(fact.path, path))
+			if (source) declared.push({ ...source, path: Object.freeze(path) })
 		}
-		const index = declared.findIndex((entry) => pluginNodeAddressEqual(entry.owner, after.owner))
-		if (index < 0) declared.push(after)
-		else declared[index] = after
+		records.set(key, { owner: entry.owner, mode: previous?.mode, config })
+		declarationsByNode.set(key, declared)
 	}
-	attachConfigProvenance(config, { sources: Object.freeze(sources), bindings: inputs.bindings })
-	return { ...resolved, startup, vaultBindings: inputs.vaultBindings, config }
+	const config = snapshotHostConfigRecords({ ...resolved.config, records: [...records.values()] })
+	attachConfigProvenance(config, {
+		sources: Object.freeze([...declarationsByNode.values()].flat()),
+		bindings: inputs.bindings,
+	})
+	return Object.freeze({
+		...resolved,
+		startup,
+		sources,
+		prepare,
+		acceptStartup,
+		launch,
+		vaultBindings: inputs.vaultBindings,
+		config,
+	})
 }
 /**
  * Start from a fresh Node launcher before importing the application or its business dependency graph.
@@ -350,15 +306,7 @@ export async function runHostApplication(
 						},
 					})
 		}
-		host = await createHost({
-			plugins,
-			name: resolved.name,
-			runtime: resolved.runtime,
-			policy: resolved.policy,
-			config: resolved.config,
-			vaultBindings: resolved.vaultBindings,
-			services: resolved.services,
-		})
+		host = await createResolvedHost({ ...resolved, plugins })
 		await loadLoadedApplicationServiceControls(application, host.ctx, resolved.startup.root)
 		setHostCatalogProvenance(host.ctx, facts)
 		installPluginSources(host.ctx, {

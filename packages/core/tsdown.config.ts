@@ -55,7 +55,6 @@ export default defineConfig({
 		devExports: '@pluxel/source',
 	},
 	entry: {
-		config: 'src/config.ts',
 		logging: 'src/logging.ts',
 		'logging/internal': 'src/logging/internal.ts',
 		'logging/protocol': 'src/logging/protocol.ts',
@@ -71,6 +70,7 @@ export default defineConfig({
 		logger: 'src/logger/index.ts',
 		'better-result': 'src/better-result.ts',
 		toolchain: 'src/toolchain.ts',
+		vault: 'src/vault.ts',
 		fs: 'src/fs.ts',
 		'fs/browser': 'src/fs/browser.ts',
 	},

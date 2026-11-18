@@ -115,10 +115,7 @@ export interface CoreTestHost extends AsyncDisposable {
 	dispose(): Promise<void>
 }
 
-/**
- * Core-only test host configuration. `plugins` tunes the production lifecycle executor; it is not
- * a Plugin constructor catalog. Omitted fields use the same defaults as a Core root.
- */
+/** Core-only test host configuration uses the same facilities and execution as a Core root. */
 export type CoreTestHostConfig = CoreHostConfig
 
 type AddCommand = Readonly<{
@@ -292,8 +289,8 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 
 		const replaceDefinition = (current: PluginConstructor, next: PluginConstructor): undefined => {
 			authority.recordCommand('change.replaceDefinition()')
-			const currentAddress = current.definitionAddress()
-			const nextAddress = next.definitionAddress()
+			const currentAddress = current.address()
+			const nextAddress = next.address()
 			if (!pluginDefinitionAddressEqual(currentAddress, nextAddress)) {
 				throw new TypeError(
 					'[pluxel/test] replaceDefinition() constructors must have the same canonical definition address',
@@ -331,7 +328,7 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 
 		const setDefault = (input: ProviderDefaultInput): undefined => {
 			authority.recordCommand('change.dependencies.setDefault()')
-			const key = pluginDefinitionIndexKey(input.requirement.definitionAddress())
+			const key = pluginDefinitionIndexKey(input.requirement.address())
 			const previous = plan.defaults.get(key)
 			if (previous && (previous.kind !== 'set' || previous.provider !== input.provider)) {
 				throw conflictError('dependencies.setDefault', input.requirement)
@@ -345,7 +342,7 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 
 		const clearDefault = (requirement: PluginToken): undefined => {
 			authority.recordCommand('change.dependencies.clearDefault()')
-			const key = pluginDefinitionIndexKey(requirement.definitionAddress())
+			const key = pluginDefinitionIndexKey(requirement.address())
 			const previous = plan.defaults.get(key)
 			if (previous && previous.kind !== 'clear') {
 				throw conflictError('dependencies.setDefault/clearDefault', requirement)
@@ -356,7 +353,7 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 
 		const overrideKey = (input: DependencyOverrideTarget) => {
 			const consumer = resolvePluginTestTarget(input.consumer).address
-			return `${pluginNodeIndexKey(consumer)}\0${pluginDefinitionIndexKey(input.requirement.definitionAddress())}`
+			return `${pluginNodeIndexKey(consumer)}\0${pluginDefinitionIndexKey(input.requirement.address())}`
 		}
 
 		const setOverride = (input: DependencyOverrideInput): undefined => {
@@ -437,7 +434,7 @@ export function createCoreTestHost(config: CoreTestHostConfig = {}): CoreTestHos
 			if (!committed) throw new Error('[pluxel/test] Core commit completed without a summary')
 			for (const key of plan.adds.keys()) enteredLifecycle.add(key)
 			for (const command of plan.defaults.values()) {
-				const requirement = command.requirement.definitionAddress()
+				const requirement = command.requirement.address()
 				const key = pluginDefinitionIndexKey(requirement)
 				if (command.kind === 'set') explicitProviderDefaults.set(key, requirement)
 				else explicitProviderDefaults.delete(key)
@@ -730,14 +727,14 @@ function applyGraphPlan(
 	}
 	for (const command of plan.defaults.values()) {
 		update.setProviderDefault(
-			command.requirement.definitionAddress(),
+			command.requirement.address(),
 			command.kind === 'set' ? command.provider.nodeAddress() : null,
 		)
 	}
 	for (const command of plan.overrides.values()) {
 		update.setDependencyOverride(
 			resolvePluginTestTarget(command.consumer).address,
-			command.requirement.definitionAddress(),
+			command.requirement.address(),
 			command.kind === 'set' ? resolvePluginTestTarget(command.provider).address : null,
 		)
 	}
@@ -896,7 +893,7 @@ function conflictError(
 ): Error {
 	if (typeof target === 'function') {
 		return new Error(
-			`[pluxel/test] Conflicting ${operation} commands for ${target.definitionAddress().exportName}${detail ? `: ${detail}` : ''}`,
+			`[pluxel/test] Conflicting ${operation} commands for ${target.address().exportName}${detail ? `: ${detail}` : ''}`,
 		)
 	}
 	const resolved = resolvePluginTestTarget(target)

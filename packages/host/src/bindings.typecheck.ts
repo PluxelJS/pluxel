@@ -18,14 +18,14 @@ const vault = v.object({ credentials: v.object({ token: v.string(), expires: v.n
 declare const Plugin: PluginConstructor
 declare const nonValibotSchema: StandardSchemaV1
 
-envBinding(Plugin.nodeAddress(), {
+envBinding({
 	config: {
 		// @ts-expect-error Host input projection requires a Valibot schema.
 		schema: nonValibotSchema,
 		mapping: 'CONFIG',
 	},
 })
-fileBinding(Plugin.nodeAddress(), {
+fileBinding({
 	config: {
 		// @ts-expect-error File bindings also require a Valibot schema.
 		schema: nonValibotSchema,
@@ -34,30 +34,34 @@ fileBinding(Plugin.nodeAddress(), {
 })
 
 defineHostApplication(() => ({
-	plugins: [Plugin],
-	envBindings: [
-		envBinding(Plugin.nodeAddress(), {
-			config: {
-				schema: config,
-				mapping: {
-					nested: { count: 'COUNT' },
-					values: 'VALUES',
-					dynamic: 'DYNAMIC',
-					transformed: { raw: 'RAW' },
-				},
-			},
-			vault: { schema: vault, mapping: { credentials: { token: 'TOKEN', expires: 'EXPIRY' } } },
-		}),
-	],
-	fileBindings: [
-		fileBinding(Plugin.nodeAddress(), {
-			config: { schema: config, path: 'config.json' },
-			vault: { schema: vault, paths: { credentials: 'credential.json' } },
-		}),
+	plugins: [
+		{
+			plugin: Plugin,
+			envBindings: [
+				envBinding({
+					config: {
+						schema: config,
+						mapping: {
+							nested: { count: 'COUNT' },
+							values: 'VALUES',
+							dynamic: 'DYNAMIC',
+							transformed: { raw: 'RAW' },
+						},
+					},
+					vault: { schema: vault, mapping: { credentials: { token: 'TOKEN', expires: 'EXPIRY' } } },
+				}),
+			],
+			fileBindings: [
+				fileBinding({
+					config: { schema: config, path: 'config.json' },
+					vault: { schema: vault, paths: { credentials: 'credential.json' } },
+				}),
+			],
+		},
 	],
 }))
 
-envBinding(Plugin.nodeAddress(), {
+envBinding({
 	config: {
 		schema: config,
 		mapping: {
@@ -66,7 +70,7 @@ envBinding(Plugin.nodeAddress(), {
 		},
 	},
 })
-envBinding(Plugin.nodeAddress(), {
+envBinding({
 	config: {
 		schema: config,
 		mapping: {
@@ -75,7 +79,7 @@ envBinding(Plugin.nodeAddress(), {
 		},
 	},
 })
-envBinding(Plugin.nodeAddress(), {
+envBinding({
 	config: {
 		schema: config,
 		mapping: {
@@ -84,7 +88,7 @@ envBinding(Plugin.nodeAddress(), {
 		},
 	},
 })
-envBinding(Plugin.nodeAddress(), {
+envBinding({
 	config: {
 		schema: config,
 		mapping: {
@@ -95,7 +99,7 @@ envBinding(Plugin.nodeAddress(), {
 		},
 	},
 })
-envBinding(Plugin.nodeAddress(), {
+envBinding({
 	vault: {
 		schema: vault,
 		mapping: {
@@ -106,7 +110,7 @@ envBinding(Plugin.nodeAddress(), {
 		},
 	},
 })
-envBinding(Plugin.nodeAddress(), {
+envBinding({
 	vault: {
 		schema: vault,
 		mapping: {
@@ -115,7 +119,7 @@ envBinding(Plugin.nodeAddress(), {
 		},
 	},
 })
-fileBinding(Plugin.nodeAddress(), {
+fileBinding({
 	vault: {
 		schema: vault,
 		paths: {
@@ -124,7 +128,7 @@ fileBinding(Plugin.nodeAddress(), {
 		},
 	},
 })
-envBinding(Plugin.nodeAddress(), {
+envBinding({
 	vault: {
 		schema: v.record(v.string(), v.object({ token: v.string() })),
 		mapping: { account: { token: 'TOKEN' } },

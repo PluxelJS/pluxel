@@ -1,8 +1,11 @@
 import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
-import { envBinding, defineHostApplication, resolveHostApplication, createHost } from '@pluxel/host'
-import { vault, Vault } from '@pluxel/services/vault'
-import { standardServices } from '@pluxel/services'
+import { envBinding, defineHostApplication, resolveHostApplication } from '@pluxel/host'
+import { createResolvedHost } from '@pluxel/host/internal'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const s3Mock = vi.hoisted(() => {
@@ -93,27 +96,24 @@ describe('S3Plugin remote backend', () => {
 
 	it('starts an environment-only deployment without encrypted storage and fails closed for missing input', async () => {
 		const application = defineHostApplication(() => ({
-			plugins: [S3Plugin],
-			services: [vault({ backend: 'bindings' })],
-			envBindings: [
-				envBinding(S3Plugin.nodeAddress(), {
-					vault: {
-						schema: S3VaultSchema,
-						mapping: {
-							primary: { accessKeyId: 'S3_ACCESS_KEY', secretAccessKey: 'S3_SECRET_KEY' },
-						},
-					},
-				}),
+			plugins: [
+				{
+					plugin: S3Plugin,
+					autoStart: true,
+					config: remoteConfig({ type: 'vault', key: 'primary' }),
+					envBindings: [
+						envBinding({
+							vault: {
+								schema: S3VaultSchema,
+								mapping: {
+									primary: { accessKeyId: 'S3_ACCESS_KEY', secretAccessKey: 'S3_SECRET_KEY' },
+								},
+							},
+						}),
+					],
+				},
 			],
-			config: {
-				records: [
-					{
-						owner: S3Plugin.nodeAddress(),
-						config: remoteConfig({ type: 'vault', key: 'primary' }),
-					},
-				],
-			},
-			policy: { autoStart: [S3Plugin.nodeAddress()] },
+			coreConfig: { vault: { backend: 'bindings' } },
 		}))
 		const startup = {
 			root: process.cwd(),
@@ -122,15 +122,7 @@ describe('S3Plugin remote backend', () => {
 			bindings: {},
 		}
 		const resolved = await resolveHostApplication(application, startup)
-		const host = await createHost({
-			plugins: resolved.plugins,
-			services: resolved.services,
-			vaultBindings: resolved.vaultBindings,
-			name: resolved.name,
-			config: resolved.config,
-			policy: resolved.policy,
-			runtime: resolved.runtime,
-		})
+		const host = await createResolvedHost(resolved)
 		try {
 			await host.start()
 			const status = await host.status()
@@ -146,16 +138,14 @@ describe('S3Plugin remote backend', () => {
 			resolveHostApplication(application, {
 				...startup,
 				env: { S3_ACCESS_KEY: 'env-access' },
-			}).then(({ name, plugins, services, runtime, vaultBindings }) =>
-				createHost({ plugins, services, vaultBindings, name, runtime }),
-			),
+			}),
 		).rejects.toThrow('S3_SECRET_KEY')
 	})
 
 	it('resolves access keys from a configured Vault reference without another plugin', async () => {
 		{
 			await using host = await createTestHost({
-				services: [...standardServices(), vault()],
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(S3Plugin.nodeAddress(), {
@@ -163,8 +153,7 @@ describe('S3Plugin remote backend', () => {
 			})
 			await host
 				.require(S3Plugin.nodeAddress())
-				.ctx.service(Vault)
-				.kv({ namespace: 'shared-secrets' })
+				.ctx.vault.kv({ namespace: 'shared-secrets' })
 				.set('assets.s3', {
 					accessKeyId: 'access-id',
 					secretAccessKey: 'secret-value',
@@ -187,10 +176,7 @@ describe('S3Plugin remote backend', () => {
 			const consumer = host.require(S3Consumer.nodeAddress())
 			const handle = consumer.s3.bucket()
 			const previous = handle.client
-			const kv = host
-				.require(S3Plugin.nodeAddress())
-				.ctx.service(Vault)
-				.kv({ namespace: 'shared-secrets' })
+			const kv = host.require(S3Plugin.nodeAddress()).ctx.vault.kv({ namespace: 'shared-secrets' })
 			await kv.set('assets.s3', { accessKeyId: 'rotated-id', secretAccessKey: 'rotated-secret' })
 			await vi.waitFor(() => expect(handle.client).not.toBe(previous))
 			expect(s3Mock.configs.at(-1)).toMatchObject({
@@ -205,7 +191,7 @@ describe('S3Plugin remote backend', () => {
 	it('provides O(1) named bucket selection and owner-bound handles', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(S3Plugin.nodeAddress(), {
@@ -240,7 +226,7 @@ describe('S3Plugin remote backend', () => {
 	it('fails lifecycle when a configured Vault reference is missing', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			const failure = await host.commitExpectFail((change) => {
@@ -275,7 +261,7 @@ describe('S3Plugin remote backend', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(S3Plugin.nodeAddress(), {
@@ -325,7 +311,7 @@ async function withRemoteS3(
 ): Promise<void> {
 	{
 		await using host = await createTestHost({
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 
 		await host.start(S3Plugin.nodeAddress(), {

@@ -17,7 +17,7 @@
 
 ## Unified author test host
 
-`@pluxel/test.createTestHost()` 异步组合生产 `createHost`，services 默认 []，显式 `standardServices` 才采用标准列表。name/runtime/policy/config 保持生产语义，Core FS 默认 InMemory，`runtime.zenfs` 选择持久 backend，`runtime.documents` 控制文档读写。
+`@pluxel/test.createTestHost()` 异步组合生产 `createHost`，services 默认 []，按需显式组合单项安装器。name/coreConfig/policy/config/vaultBindings 保持生产语义，Core 内建 FS、TinyBase 与 Vault；FS 默认 InMemory，`coreConfig.zenfs` 选择持久 backend，`config.document` 和 `policy.document` 控制文档读写。
 
 作者 Host 与 Core `createCoreTestHost` 都以源码 `Plugin.nodeAddress(forkId?)` 选择节点。Core testing/test-primitives 在规范化前从私有 WeakMap 取 constructor，验证 identity/当前实现后交原候选装配；JSON/parse、生成地址、复制/其他 Core 副本不能提供实现，replacement 后旧地址仍 stale。字面量 batch 保留准确实例元组。
 

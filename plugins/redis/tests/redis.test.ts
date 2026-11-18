@@ -1,5 +1,8 @@
 import { formatPluginNodeReference, BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import * as v from 'valibot'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -132,7 +135,7 @@ describe('@pluxel/plugin-redis', () => {
 	it('provides bounded client defaults and revokes the capability on stop', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start([RedisPlugin.nodeAddress(), RedisConsumer.nodeAddress()])
@@ -164,7 +167,7 @@ describe('@pluxel/plugin-redis', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(RedisPlugin.nodeAddress())
@@ -264,7 +267,7 @@ describe('@pluxel/plugin-redis', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.commit((change) => {
@@ -310,7 +313,7 @@ describe('@pluxel/plugin-redis', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			const failure = await host.commitExpectFail((change) => {

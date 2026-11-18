@@ -29,7 +29,7 @@ vp install
 
 ### 2. 在宿主中注册插件
 
-在应用的 `src/app.ts` 中，将插件加入 `plugins` 清单；如果需要在冷启动时主动运行，可加入 `policy.autoStart`：
+在 `src/app.ts` 的 `plugins` 中声明插件。需要冷启动时主动运行的节点填写 `autoStart: true`。
 
 ```ts no-twoslash
 import { defineHostApplication } from '@pluxel/host'
@@ -37,10 +37,7 @@ import { WretchPlugin } from '@pluxel/plugin-wretch'
 import { MyBusinessPlugin } from './my-plugin'
 
 export default defineHostApplication(() => ({
-	// 注册可用插件
-	plugins: [WretchPlugin, MyBusinessPlugin],
-	// 启动策略
-	policy: { autoStart: [MyBusinessPlugin.nodeAddress()] },
+	plugins: [{ plugin: WretchPlugin }, { plugin: MyBusinessPlugin, autoStart: true }],
 }))
 ```
 

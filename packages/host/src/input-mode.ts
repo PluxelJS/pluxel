@@ -8,14 +8,14 @@ export function parseHostInputMode(value: unknown, label = 'mode'): HostInputMod
 	throw new TypeError(`[host] ${label} must be declared-only, declared-first or saved-first`)
 }
 
-export function selectHostInput<T>(
+export type HostInputSource = 'declared' | 'saved' | 'default'
+
+export function hostInputSource(
 	mode: HostInputMode,
-	declared: T | undefined,
-	saved: T | undefined,
-	fallback: T,
-): T {
-	if (mode === 'declared-only') return declared === undefined ? fallback : declared
-	const first = mode === 'saved-first' ? saved : declared
-	const second = mode === 'saved-first' ? declared : saved
-	return first === undefined ? (second === undefined ? fallback : second) : first
+	declared: unknown,
+	saved: unknown,
+): HostInputSource {
+	if (mode === 'saved-first' && saved !== undefined) return 'saved'
+	if (declared !== undefined) return 'declared'
+	return mode !== 'declared-only' && saved !== undefined ? 'saved' : 'default'
 }

@@ -14,7 +14,7 @@ import {
 } from '../../pluginStatusActions'
 import { usePluginScope } from '../context'
 import { usePluginOverview } from '../../pluginOverview'
-import { canWritePluginState } from '../../pluginOverviewModel'
+import { describePluginPolicyTarget, readPluginPolicyTarget } from '../../pluginOverviewModel'
 import { describePluginControlBatchFailure } from '../../pluginControlBatchPresentation'
 import { PLUGIN_DETAIL_HOTKEYS, PLUGIN_DETAIL_HOTKEY_LABELS } from '../../../workbench/shortcuts'
 import { describePluginControl, describePluginLifecycleOutcome } from './pluginControlModel'
@@ -22,9 +22,10 @@ import { describePluginControl, describePluginLifecycleOutcome } from './pluginC
 export function ActionBar({ active = true }: { active?: boolean }) {
 	const management = useRuntimeManagementClient()
 	const statePolicy = usePluginOverview().overview?.statePolicy
-	const canWriteAutoStart = canWritePluginState(statePolicy, 'autoStart')
 	const queryClient = useQueryClient()
 	const { owner, pluginLabel, dependencyGraph, status, refetch } = usePluginScope()
+	const autoStartPolicy = readPluginPolicyTarget(statePolicy, { field: 'autoStart', node: owner })
+	const canWriteAutoStart = autoStartPolicy?.canWrite === true
 	const autoStartPendingRef = useRef(false)
 	const lifecyclePendingRef = useRef(false)
 	const [autoStartPending, setAutoStartPending] = useState(false)
@@ -188,11 +189,9 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 			</Tooltip>
 			<Tooltip
 				label={
-					!canWriteAutoStart
-						? '自动启动策略由宿主声明控制或只读'
-						: autoStartPending
-							? '正在保存自动启动策略…'
-							: presentation.autoStartDescription
+					autoStartPending
+						? '正在保存自动启动策略…'
+						: `${presentation.autoStartDescription} · ${describePluginPolicyTarget(autoStartPolicy)}`
 				}
 			>
 				<Switch

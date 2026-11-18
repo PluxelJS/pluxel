@@ -1,5 +1,4 @@
 import type { WorkbenchHost } from '@pluxel/workbench/server'
-import type { Vault, VaultAdmin } from '@pluxel/services/vault'
 import { Commands } from '@pluxel/services/commands'
 import { ElysiaApp, elysia } from '@pluxel/services/elysia'
 import {
@@ -15,11 +14,9 @@ import { createTestHost } from '@pluxel/test'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
-import { requireHostDocuments } from '@pluxel/core/internal'
+import { requireHostDocuments, requireVaultHost } from '@pluxel/core/internal'
 
 const WorkbenchHostRef = defineServiceRef<WorkbenchHost>()
-const VaultRef = defineServiceRef<Vault>()
-const VaultAdminRef = defineServiceRef<VaultAdmin>()
 @Plugin({ displayName: 'Public test host fixture' })
 class PublicFixture extends BasePlugin {}
 
@@ -81,12 +78,40 @@ class SeedFixture extends BasePlugin {
 }
 
 describe('service test host', () => {
+	it('injects read-only Vault records through the public test host with Plugin node isolation', async () => {
+		await using host = await createTestHost({
+			coreConfig: { vault: { backend: 'bindings' } },
+			vaultBindings: [
+				{
+					owner: ForkableFixture.nodeAddress(),
+					key: 'primary',
+					value: { token: 'test-token' },
+					source: 'env',
+				},
+			],
+		})
+		const [owner, fork] = await host.start([
+			ForkableFixture.nodeAddress(),
+			ForkableFixture.nodeAddress('east'),
+		])
+		expect(await owner.ctx.vault.kv().get('primary')).toMatchObject({
+			exists: true,
+			value: { token: 'test-token' },
+			source: 'env',
+			writable: false,
+		})
+		expect(await fork.ctx.vault.kv().get('primary')).toMatchObject({ exists: false })
+		await expect(owner.ctx.vault.kv().set('primary', {})).rejects.toMatchObject({
+			code: 'READ_ONLY',
+		})
+	})
+
 	it('requires source implementation evidence rather than generated or portable addresses', async () => {
 		await using host = await createTestHost()
 		const source = ForkableFixture.nodeAddress('east')
 		const generated = createPluginControlReference({
 			format: 2,
-			definition: ForkableFixture.definitionAddress(),
+			definition: ForkableFixture.address(),
 			contracts: { config: null, instance: `sha256:${'a'.repeat(64)}` },
 		})
 		for (const target of [
@@ -166,12 +191,17 @@ describe('service test host', () => {
 		expect(() => httpOnly.commands.list()).toThrow(/commands/i)
 	})
 
-	it('keeps optional Workbench and Vault disabled by default', async () => {
+	it('keeps Workbench optional and Vault built in without initializing credentials', async () => {
 		await using host = await createServiceInternalTestHost()
 
 		expect(host.ctx.service(WorkbenchHostRef)).toBeUndefined()
-		expect(host.ctx.service(VaultRef)).toBeUndefined()
-		expect(host.ctx.service(VaultAdminRef)).toBeUndefined()
+		const owner = await host.start(PublicFixture.nodeAddress())
+		expect(owner.ctx.vault).toBe(owner.ctx.vault)
+		expect(await requireVaultHost(host.ctx).admin.describe()).toMatchObject({
+			present: false,
+			unlocked: false,
+			hostIdentityPresent: false,
+		})
 	})
 
 	it('starts a typed dependency closure without exposing root authority', async () => {
@@ -214,7 +244,7 @@ describe('service test host', () => {
 		expect(
 			host.coordinator
 				.catalogSnapshot()
-				.byDefinition.has(pluginDefinitionIndexKey(SupportingFixture.definitionAddress())),
+				.byDefinition.has(pluginDefinitionIndexKey(SupportingFixture.address())),
 		).toBe(false)
 		expect(host.coordinator.catalogSnapshot().byDefinition.has(key)).toBe(true)
 		expect(host.coordinator.catalogSnapshot().entries).toHaveLength(1)

@@ -1,4 +1,7 @@
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import { describe, expect, it, vi } from 'vitest'
 import { BotWorkspacePlugin } from './BotWorkspacePlugin'
@@ -11,7 +14,7 @@ const plugins = [BotWorkspacePlugin, TelegramBotPlugin, DiscordBotPlugin, WeComB
 async function start() {
 	const host = await createTestHost({
 		workbench: true,
-		services: standardServices(),
+		services: [elysia(), commands(), nodeModules(), workers()],
 	})
 	try {
 		await host.commit((change) => {

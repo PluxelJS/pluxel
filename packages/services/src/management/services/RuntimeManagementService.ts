@@ -1,6 +1,5 @@
 import { getContextRuntimeLogging } from '@pluxel/core/logging/internal'
 import type { Context } from '@pluxel/core'
-import { optionalVaultAdmin } from '../vault'
 import type { HostApplicationMeta } from '../product-contract'
 import { describePluxelPlatform } from '../platform-host'
 import {
@@ -21,10 +20,7 @@ export class RuntimeManagementService {
 		return Object.freeze({
 			service: 'pluxel-runtime',
 			ready: true,
-			protocol: protocolDescriptor(
-				optionalVaultAdmin(this.root) !== undefined,
-				getContextRuntimeLogging(this.root) !== undefined,
-			),
+			protocol: protocolDescriptor(getContextRuntimeLogging(this.root) !== undefined),
 			application: this.application,
 			platform: describePluxelPlatform(),
 			workbench: Object.freeze({ enabled: this.workbench }),
@@ -32,14 +28,12 @@ export class RuntimeManagementService {
 	}
 }
 
-function protocolDescriptor(vault: boolean, logging: boolean): RuntimeMeta['protocol'] {
+function protocolDescriptor(logging: boolean): RuntimeMeta['protocol'] {
 	return Object.freeze({
 		name: 'pluxel.management',
 		major: RUNTIME_MANAGEMENT_PROTOCOL_MAJOR,
 		capabilities: Object.freeze(
-			RUNTIME_MANAGEMENT_CAPABILITIES.filter(
-				(capability) => (capability !== 'vault' || vault) && (capability !== 'logging' || logging),
-			),
+			RUNTIME_MANAGEMENT_CAPABILITIES.filter((capability) => capability !== 'logging' || logging),
 		),
 	})
 }

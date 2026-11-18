@@ -14,7 +14,7 @@ import {
 	type PluginDefinitionAddress,
 	type PluginEntryAddress,
 } from '@pluxel/core'
-import { PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
+import { isStartTimeoutMs, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
 import type { Program } from 'oxc-parser'
 import type { ViteCompatPlugin } from './compat.ts'
 import {
@@ -1918,9 +1918,9 @@ function validateMarker(
 		}
 		if (key === 'startTimeoutMs') {
 			const value = literalNumber(property.value)
-			if (!Number.isSafeInteger(value) || (value ?? 0) <= 0) {
+			if (!isStartTimeoutMs(value)) {
 				error(
-					`[pluxel:plugin-marker] ${id} ${raw.name} startTimeoutMs must be a positive integer literal`,
+					`[pluxel:plugin-marker] ${id} ${raw.name} startTimeoutMs must be an integer literal from 1 to 2147483647`,
 				)
 			}
 			continue

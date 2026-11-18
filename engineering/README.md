@@ -17,6 +17,7 @@ Pluxel 的框架架构、实现入口与验证方法由本目录维护。应用�
 | Host 装配、catalog、运行意图与服务    | [Host](HOST.md)                                                                                                            | `packages/host/`、`packages/services/`                                                                         |
 | 配置输入、revision、保存与采用        | [Config](CONFIG.md)                                                                                                        | `packages/core/src/services/config/`、`packages/host/`                                                         |
 | 状态、文档、文件系统                  | [TinyBase](TINYBASE.md)、[FS](FS.md)                                                                                       | `packages/core/src/tinybase/`、`packages/core/src/fs/`                                                         |
+| 内建凭据、加密与部署记录              | [Vault 约束](../packages/core/src/vault/加密实现规范.md)、[宿主输入](HOST.md#vault-记录与宿主输入)                         | `packages/core/src/vault/`、`packages/host/src/input-bindings.ts`                                              |
 | 数据库、日志、Commands                | [Database](DATABASE.md)、[Logging](LOGGING.md)、[Commands](COMMANDS.md)                                                    | `packages/services/src/`、`packages/core/src/logging/`、`packages/commands/`                                   |
 | Plugin lowering、声明与源码查询       | [Toolchain](TOOLCHAIN.md)                                                                                                  | `packages/rolldown/`                                                                                           |
 | 应用交付、Workbench / Node 制品       | [Application Build](APPLICATION_BUILD.md)、[Artifact Build](ARTIFACT_BUILD.md)、[Distribution](DISTRIBUTION.md)            | `packages/rolldown/`                                                                                           |
@@ -36,5 +37,7 @@ Pluxel 的框架架构、实现入口与验证方法由本目录维护。应用�
 - [Records](records/README.md)保存有用的迁移盘点、部署验收与设计背景，标明时间和环境。
 - [Experiments](experiments/README.md)与 [spikes](spikes/README.md)保存固定环境的能力探测；实验结论的适用范围见各自记录。
 - [Proposals](proposals/README.md)只列尚未决定或尚未完成的设计。
+
+应用声明、逐节点策略和 Core 设施分别由 [Host](HOST.md)、[Config](CONFIG.md) 与 [Core](CORE.md) 维护。公开用法见[应用配置指南](../docs/host/configuration.md)。
 
 当前机制在所属领域页维护一份，公开用法、历史证据和未来方案通过链接关联。文档职责及链接维护见 [Documentation](DOCUMENTATION.md)。

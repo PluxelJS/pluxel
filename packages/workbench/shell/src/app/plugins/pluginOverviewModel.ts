@@ -4,6 +4,8 @@ import type {
 	PluginStatusSnapshot,
 	PluginStatePolicy,
 } from '@pluxel/services/management/client'
+import { pluginDefinitionIndexKey, pluginNodeIndexKey } from '@pluxel/core'
+import type { HostInputMode, HostNodePolicyTarget } from '@pluxel/host'
 
 export type PluginStatusEntry = Readonly<
 	Omit<PluginStatusSnapshot, 'label'> & {
@@ -37,16 +39,62 @@ export function buildPluginOverview(catalog: PluginCatalogSnapshot): PluginOverv
 	})
 }
 
-/** Every field touched by the requested management patch must be writable. */
-export function canWritePluginState(
+function targetKey(target: HostNodePolicyTarget): string {
+	return 'node' in target
+		? `${target.field}:${pluginNodeIndexKey(target.node)}`
+		: `${target.field}:${pluginNodeIndexKey(target.consumerAddress)}:${pluginDefinitionIndexKey(target.requirementAddress)}`
+}
+
+function indexPolicy(policy: PluginStatePolicy) {
+	return {
+		nodeModes: new Map(policy.nodeModes.map(({ node, mode }) => [pluginNodeIndexKey(node), mode])),
+		selections: new Map(
+			policy.selections.map((selection) => [targetKey(selection.target), selection]),
+		),
+	}
+}
+
+const policyIndexes = new WeakMap<PluginStatePolicy, ReturnType<typeof indexPolicy>>()
+
+export function readPluginPolicyTarget(
 	policy: PluginStatePolicy | undefined,
-	...fields: readonly PluginStatePolicy['overriddenFields'][number][]
-): boolean {
-	return (
-		!!policy &&
+	target: HostNodePolicyTarget | 'providerDefaults',
+) {
+	if (!policy) return undefined
+	let mode: HostInputMode
+	let source: PluginStatePolicy['providerDefaultsSource']
+	let shadowed: boolean
+	if (target === 'providerDefaults') {
+		mode = policy.mode.providerDefaults
+		source = policy.providerDefaultsSource
+		shadowed = policy.providerDefaultsShadowed
+	} else {
+		let index = policyIndexes.get(policy)
+		if (!index) {
+			index = indexPolicy(policy)
+			policyIndexes.set(policy, index)
+		}
+		const node = 'node' in target ? target.node : target.consumerAddress
+		const selection = index.selections.get(targetKey(target))
+		mode =
+			selection?.mode ?? index.nodeModes.get(pluginNodeIndexKey(node)) ?? policy.mode[target.field]
+		source = selection?.source ?? 'default'
+		shadowed = selection?.shadowed ?? false
+	}
+	const canWrite =
 		!policy.readonly &&
-		fields.every((field) => !policy.overriddenFields.includes(field))
-	)
+		mode !== 'declared-only' &&
+		(mode !== 'declared-first' || source !== 'declared')
+	return { mode, source, shadowed, canWrite }
+}
+
+export function describePluginPolicyTarget(
+	value: ReturnType<typeof readPluginPolicyTarget>,
+): string {
+	if (!value) return '正在读取运行策略'
+	const source = { declared: '宿主声明', saved: '保存输入', default: '默认值' }[value.source]
+	const shadowed = value.shadowed ? ' · 保存值被覆盖' : ''
+	return `${value.mode} · ${source}${shadowed} · ${value.canWrite ? '可修改' : '生效值不可修改'}`
 }
 
 const LIFECYCLE_FAILURES = new Set<string>([

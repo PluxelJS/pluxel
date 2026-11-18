@@ -1,7 +1,6 @@
-import { resolveContextService } from '@pluxel/core/internal'
+import { resolveContextService, requireVaultHost } from '@pluxel/core/internal'
 import type { WorkbenchHost } from '@pluxel/workbench/server'
 import { Passthrough } from '@pluxel/core/fs'
-import { logtape } from '@pluxel/core/config'
 import { servicesPreset } from '@pluxel/services/preset'
 import { createElysiaHandler } from '@pluxel/services/elysia'
 import { ElysiaRuntime } from '@pluxel/services/internal'
@@ -18,9 +17,7 @@ import * as nativeFs from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Vault, VaultAdmin, vault } from '../src/vault'
 
-const VaultRef = defineServiceRef<Vault>()
 const WorkbenchHostRef = defineServiceRef<WorkbenchHost>()
 const directories: string[] = []
 afterEach(async () => {
@@ -35,7 +32,7 @@ const observations: string[] = []
 @Plugin()
 class Credentials extends BasePlugin {
 	async init() {
-		const storage = this.ctx.service(Vault).kv()
+		const storage = this.ctx.vault.kv()
 		await storage.set('credential', 'secret')
 		observations.push(
 			(await storage.get<string>('credential').then((snapshot) => snapshot.value)) ?? '',
@@ -49,7 +46,7 @@ class SearchConsumer extends BasePlugin {
 	}
 }
 const node = (plugin: typeof Credentials | typeof SearchConsumer) => ({
-	definition: plugin.definitionAddress(),
+	definition: plugin.address(),
 	variant: 'default' as const,
 })
 
@@ -60,20 +57,20 @@ describe('independently composed official and external services', () => {
 			const services = await servicesPreset(
 				{ root: process.cwd(), mode: 'development', env: {}, bindings: {} },
 				{
-					workbench,
+					workbench: workbench ? {} : false,
 				},
 			)
 			// Preparation order follows declared services, not the preset's array order.
 			const host = await createHost({
 				plugins: [],
 				services: services.toReversed(),
-				runtime: { logtape: logtape() },
+				coreConfig: { logtape: {} },
 			})
 			const logging = host.ctx.logging!
 			try {
 				expect(logging.state).toBe('installed')
 				expect(resolveContextService(host.ctx, Management)).toBeDefined()
-				const vaultState = await resolveContextService(host.ctx, VaultAdmin).describe()
+				const vaultState = await requireVaultHost(host.ctx).admin.describe()
 				expect(parseVaultAdminState(vaultState)).toEqual(vaultState)
 				await host.start()
 				const server = host.ctx.service(ElysiaRuntime)
@@ -103,7 +100,7 @@ describe('independently composed official and external services', () => {
 		30_000,
 	)
 
-	it('prepares Vault with explicit persistence, isolates missing service failure, and flushes at close', async () => {
+	it('provides built-in Vault with explicit persistence alongside an external service and flushes at close', async () => {
 		observations.length = 0
 		const prefix = await mkdtemp(join(tmpdir(), 'pluxel-composition-'))
 		directories.push(prefix)
@@ -128,8 +125,8 @@ describe('independently composed official and external services', () => {
 				durableMounts: ['/'],
 			},
 		}
-		const plugins = [Credentials, SearchConsumer]
-		const first = await createHost({ plugins, services: [vault(), search], runtime: { ...config } })
+		const plugins = [{ plugin: Credentials }, { plugin: SearchConsumer }]
+		const first = await createHost({ plugins, services: [search], coreConfig: { ...config } })
 		try {
 			await first.startNode(node(Credentials))
 			await first.startNode(node(SearchConsumer))
@@ -139,22 +136,21 @@ describe('independently composed official and external services', () => {
 		}
 		expect(events).toEqual(['search closed'])
 		// Reopen the same encrypted storage after shutdown, before any debounce could have run.
-		const reopened = await createHost({ plugins: [], services: [vault()], runtime: { ...config } })
+		const reopened = await createHost({ plugins: [], services: [], coreConfig: { ...config } })
 		try {
-			const state = await reopened.ctx.service(VaultAdmin).describe()
+			await requireVaultHost(reopened.ctx).admin.unlock()
+			const state = await requireVaultHost(reopened.ctx).admin.describe()
 			expect(state).toMatchObject({ present: true, unlocked: true })
 			expect(state.namespaces?.some((namespace) => namespace.kvKeys === 1)).toBe(true)
 		} finally {
 			await reopened.close()
 		}
 
-		const second = await createHost({ plugins, services: [search], runtime: { ...config } })
+		const second = await createHost({ plugins, services: [search], coreConfig: { ...config } })
 		try {
-			expect(second.ctx.service(VaultRef)).toBeUndefined()
-			expect(() => second.ctx.service(Vault)).toThrowError(/Vault/)
 			await second.startNode(node(Credentials))
 			await second.startNode(node(SearchConsumer))
-			expect(observations).toEqual(['secret', 'SearchConsumer', 'SearchConsumer'])
+			expect(observations).toEqual(['secret', 'SearchConsumer', 'secret', 'SearchConsumer'])
 		} finally {
 			await second.close()
 		}
@@ -162,12 +158,12 @@ describe('independently composed official and external services', () => {
 })
 
 it('installs an empty command catalog and withdraws Plugin-owned registrations on stop', async () => {
-	const host = await createHost({ plugins: [CommandPublisher], services: [commands()] })
+	const host = await createHost({ plugins: [{ plugin: CommandPublisher }], services: [commands()] })
 	try {
 		const catalog = host.ctx.service(Commands)
 		expect(catalog.list()).toEqual([])
 		const address = {
-			definition: CommandPublisher.definitionAddress(),
+			definition: CommandPublisher.address(),
 			variant: 'default' as const,
 		}
 		await host.startNode(address)

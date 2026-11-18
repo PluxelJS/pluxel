@@ -25,7 +25,7 @@ it.each(['declared-only', 'declared-first', 'saved-first'] as const)(
 		const ctx = createCoreContextHost().createRoot()
 		const store = new HostConfigStore(
 			ctx,
-			{ mode, records: [{ owner, config: { value: 'declared' } }] },
+			snapshotHostConfig({ mode }, undefined, [{ owner, config: { value: 'declared' } }]),
 			{ storage, readOnly: true },
 		)
 		try {
@@ -47,7 +47,7 @@ it.each([false, true])('does not create an absent document (readonly=%s)', async
 	const ctx = createCoreContextHost().createRoot()
 	const store = new HostConfigStore(
 		ctx,
-		{ records: [{ owner, config: { value: 'declared' } }] },
+		snapshotHostConfig({}, undefined, [{ owner, config: { value: 'declared' } }]),
 		{ storage, readOnly },
 	)
 	try {
@@ -68,7 +68,7 @@ it.each([
 	const storage = createDocumentStorage()
 	await storage.put('config.json', body)
 	const ctx = createCoreContextHost().createRoot()
-	const store = new HostConfigStore(ctx, {}, { storage })
+	const store = new HostConfigStore(ctx, undefined, { storage })
 	try {
 		await expect(store.ready).rejects.toThrow(/Existing document unchanged/)
 		expect(await storage.getText('config.json')).toBe(body)
@@ -91,21 +91,19 @@ it.each([
 	}),
 	Array(2),
 ])('rejects nonportable config input without coercion', (value) => {
-	expect(() => snapshotHostConfig({ records: [{ owner, config: { value } }] })).toThrow(
+	expect(() => snapshotHostConfig({}, undefined, [{ owner, config: { value } }])).toThrow(
 		/portable|data properties|dense/,
 	)
 })
 it('rejects duplicate and empty records, preserves mode-only entries, and merges empty objects correctly', () => {
-	expect(() => snapshotHostConfig({ records: [{ owner }] })).toThrow('requires mode or config')
+	expect(() => snapshotHostConfig({}, undefined, [{ owner }])).toThrow('requires mode or config')
 	expect(() =>
-		snapshotHostConfig({
-			records: [
-				{ owner, mode: 'saved-first' },
-				{ owner, config: {} },
-			],
-		}),
+		snapshotHostConfig({}, undefined, [
+			{ owner, mode: 'saved-first' },
+			{ owner, config: {} },
+		]),
 	).toThrow('duplicates')
-	expect(snapshotHostConfig({ records: [{ owner, mode: 'saved-first' }] }).records[0]).toEqual({
+	expect(snapshotHostConfig({}, undefined, [{ owner, mode: 'saved-first' }]).records[0]).toEqual({
 		owner,
 		mode: 'saved-first',
 	})
@@ -131,8 +129,10 @@ it('rejects sparse or behavioral record arrays without invoking element getters'
 			return { owner, config: {} }
 		},
 	})
-	expect(() => snapshotHostConfig({ records })).toThrow(/data elements/)
+	expect(() => snapshotHostConfig({}, undefined, records)).toThrow(/data elements/)
 	expect(reads).toBe(0)
-	expect(() => snapshotHostConfig({ records: Array(1) })).toThrow(/dense/)
-	expect(() => snapshotHostConfig({ records: Object.assign([], { extra: true }) })).toThrow(/dense/)
+	expect(() => snapshotHostConfig({}, undefined, Array(1))).toThrow(/dense/)
+	expect(() => snapshotHostConfig({}, undefined, Object.assign([], { extra: true }))).toThrow(
+		/dense/,
+	)
 })

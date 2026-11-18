@@ -64,26 +64,20 @@ export class CustomerPlugin extends BasePlugin {
 在宿主配置中，可以为出站请求配置全局约束：
 
 ```ts no-twoslash
+import { defineHostApplication } from '@pluxel/host'
 import { WretchPlugin } from '@pluxel/plugin-wretch'
 
 export default defineHostApplication(() => ({
-	plugins: [WretchPlugin],
-	config: {
-		records: [
-			{
-				owner: WretchPlugin.nodeAddress(),
-				config: {
-					timeoutMs: 15_000, // 单次请求超时（毫秒）
-					maxConcurrentRequests: 32, // 最大并发请求数
-					allowedOrigins: [
-						// 域名白名单（留空允许所有）
-						'https://api.example.com',
-						'https://auth.example.com',
-					],
-				},
+	plugins: [
+		{
+			plugin: WretchPlugin,
+			config: {
+				timeoutMs: 15_000,
+				maxConcurrentRequests: 32,
+				allowedOrigins: ['https://api.example.com', 'https://auth.example.com'],
 			},
-		],
-	},
+		},
+	],
 }))
 ```
 

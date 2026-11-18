@@ -107,8 +107,7 @@ export class PackageManagerPlugin extends BasePlugin {
 	override async init(signal: AbortSignal): Promise<void> {
 		const rootDir = resolve(process.cwd(), this.config.rootDir)
 		const source = requirePluginSource(this.ctx, {
-			kind: 'directory',
-			path: resolve(rootDir, 'entries'),
+			directory: resolve(rootDir, 'entries'),
 			include: ['*.mjs'],
 		})
 		const store = new ManagedPackageStore(await loadPnpmEngine(), {

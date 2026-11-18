@@ -6,7 +6,7 @@ import {
 	type MountConfiguration,
 } from '@zenfs/core'
 import { expect, it } from 'vitest'
-import { zenfs } from '../src/config/zenfs'
+import { snapshotFsConfig } from '../src/fs/config'
 import { writeFileAtomic } from '../src/fs'
 import { createCoreTestHost, getCoreTestHostContext } from '../src/internal-test'
 import { requireFs } from '../src/internal/storage'
@@ -51,7 +51,7 @@ it('snapshots native declarations without preparing backends or copying opaque r
 		const child = { backend, label: 'child', channel }
 		const mount = { backend, label: 'parent', channel, child }
 		const input = { mounts: { 'data/': mount, '/borrowed': borrowed }, durableMounts: ['data/'] }
-		const snapshot = zenfs(input)
+		const snapshot = snapshotFsConfig(input)
 		expect({ creates, checks, readies }).toEqual({ creates: 0, checks: 0, readies: 0 })
 		expect(snapshot).not.toBe(input)
 		expect(Object.keys(snapshot.mounts)).toEqual(['/data', '/borrowed', '/'])
@@ -85,20 +85,20 @@ it('snapshots native declarations without preparing backends or copying opaque r
 it.each([null, false, 42, 'storage', []])(
 	'rejects explicit malformed storage input: %j',
 	(input) => {
-		expect(() => Reflect.apply(zenfs, undefined, [input])).toThrow(TypeError)
+		expect(() => Reflect.apply(snapshotFsConfig, undefined, [input])).toThrow(TypeError)
 	},
 )
 
 it('applies omitted defaults and rejects invalid declarations before Core construction', () => {
-	const snapshot = zenfs()
+	const snapshot = snapshotFsConfig({})
 	expect(snapshot.mounts['/']).toBe(InMemory)
 	expect(snapshot.durableMounts).toEqual([])
-	expect(() => zenfs({ mounts: { data: InMemory, '/data': InMemory } })).toThrow(
+	expect(() => snapshotFsConfig({ mounts: { data: InMemory, '/data': InMemory } })).toThrow(
 		'duplicate mount point',
 	)
-	expect(() => zenfs({ mounts: { '/': InMemory }, durableMounts: ['/undeclared'] })).toThrow(
-		'undeclared mount',
-	)
+	expect(() =>
+		snapshotFsConfig({ mounts: { '/': InMemory }, durableMounts: ['/undeclared'] }),
+	).toThrow('undeclared mount')
 })
 
 it('feeds a captured native composition and borrowed mount into Core without changing ownership', async () => {
@@ -112,10 +112,9 @@ it('feeds a captured native composition and borrowed mount into Core without cha
 	try {
 		const composition = { backend: CopyOnWrite, readable: InMemory, writable: InMemory }
 		const input = { mounts: { '/': composition, '/borrowed': borrowed } }
-		const storage = zenfs(input)
+		const host = createCoreTestHost({ zenfs: input })
 		const unavailable = { ...InMemory, isAvailable: () => false }
 		composition.writable = unavailable
-		const host = createCoreTestHost({ zenfs: storage })
 		try {
 			const fs = requireFs(getCoreTestHostContext(host))
 			const composed = await fs.directory('composed')

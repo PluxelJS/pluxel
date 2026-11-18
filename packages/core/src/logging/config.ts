@@ -1,16 +1,18 @@
 import type { Config } from '@logtape/logtape'
-import { defaultLoggingConfig } from '../logging/default'
-import type { RuntimeLoggingInput } from '../logging/logging'
-import { normalizePluginLogPolicySnapshot } from '../logging/policy'
-import { assertLoggingOptions, type LoggingOptions } from '../logging/service'
-import { assertRuntimeLoggingInput } from '../logging/validation'
+import { defaultLoggingConfig } from './default'
+import type { RuntimeLoggingInput } from './logging'
+import { normalizePluginLogPolicySnapshot } from './policy'
+import { assertLoggingOptions, type LoggingOptions } from './service'
+import { assertRuntimeLoggingInput } from './validation'
 
-/** Native configuration, or native input with independent framework policy options. */
+/** Use the Core preset or supply native input, optionally with independent policy options. */
 export type LogTapeConfig =
 	| RuntimeLoggingInput
 	| Readonly<{
-			input: RuntimeLoggingInput
+			input?: RuntimeLoggingInput
 			options?: LoggingOptions
+			sinks?: never
+			loggers?: never
 	  }>
 
 /** Captured native input; resources remain borrowed until Core prepares this owner. */
@@ -43,13 +45,8 @@ function snapshotNativeConfig(config: Config<string, string>): Config<string, st
 	})
 }
 
-/**
- * Declare one Core-owned native LogTape installation without IO. Native resource
- * references are retained; a factory runs once during preparation, with access
- * to the root identity and optional bounded store sink. Custom input replaces
- * the default native console and bounded store preset completely.
- */
-export function logtape(
+/** Capture the declaration while keeping native resources and callbacks borrowed. */
+function snapshotLogTapeConfig(
 	input: RuntimeLoggingInput = defaultLoggingConfig,
 	options: LoggingOptions = {},
 ): ResolvedLogTapeConfig {
@@ -79,11 +76,22 @@ export function resolveLogTapeConfig(
 	config: LogTapeConfig | undefined,
 ): ResolvedLogTapeConfig | undefined {
 	if (config === undefined) return undefined
-	if (config && typeof config === 'object' && 'input' in config) {
-		for (const key of Object.keys(config))
-			if (key !== 'input' && key !== 'options')
-				throw new TypeError(`[core.logtape] unknown declaration field: ${key}`)
-		return logtape(config.input, config.options)
+	if (config && typeof config === 'object' && !Array.isArray(config)) {
+		const keys = Reflect.ownKeys(config)
+		if (keys.length === 0 || keys.includes('input') || keys.includes('options')) {
+			const prototype = Object.getPrototypeOf(config)
+			if (prototype !== Object.prototype && prototype !== null)
+				throw new TypeError('[core.logtape] declaration must be a plain object')
+			for (const key of keys) {
+				if (key !== 'input' && key !== 'options')
+					throw new TypeError(`[core.logtape] unknown declaration field: ${String(key)}`)
+				const descriptor = Object.getOwnPropertyDescriptor(config, key)!
+				if (!descriptor.enumerable || !('value' in descriptor))
+					throw new TypeError('[core.logtape] declaration must contain only enumerable data fields')
+			}
+			const { input, options } = config as Exclude<LogTapeConfig, RuntimeLoggingInput>
+			return snapshotLogTapeConfig(input, options)
+		}
 	}
-	return logtape(config as RuntimeLoggingInput)
+	return snapshotLogTapeConfig(config as RuntimeLoggingInput)
 }

@@ -8,7 +8,7 @@ Core 固定提供 `ctx.tinybase`，托管 Plugin Store 的恢复、writer、快�
 
 每个 canonical node（含 fork）在同一 Core 中只有一个 writer；Part/依赖视图共用 owning generation handle，不跟随动态 caller 改 owner。取得能力不执行 IO，未 open 不创建 Store、文件或监听；临时计算用原生 Store/普通对象。
 
-FS backend 由 runtime.zenfs 选择，runtime.tinybase 只设 maxSnapshotBytes。首次异步操作等 FS 准备；目标目录只读则 open 拒绝写入，无关挂载不影响。默认 InMemory 仅确认内存提交，跨 Host 恢复取决于 backend。
+应用通过 `coreConfig.zenfs` 选择 FS 后端，并通过 `coreConfig.tinybase.maxSnapshotBytes` 设定快照上限。首次异步操作等待 FS 准备。目标目录只读时，`open()` 拒绝写入。默认 InMemory 确认内存提交，跨 Host 恢复取决于后端。
 
 ## 原生实例与恢复
 

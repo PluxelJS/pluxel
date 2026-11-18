@@ -1,15 +1,15 @@
-import type { SecurityEvent } from '../../internal'
+import type { SecurityEvent } from '@pluxel/core/internal'
 import type { AdminAccessOverview } from '../services/admin-access/types'
-import type { VaultAdminState, VaultKeyPair } from '../../vault'
+import type { VaultAdminState, VaultKeyPair } from '@pluxel/core/vault'
 
 export type { AdminAccessOverview } from '../services/admin-access/types'
-export type { VaultAdminState, VaultKeyPair } from '../../vault'
+export type { VaultAdminState, VaultKeyPair } from '@pluxel/core/vault'
 
 export type SecurityAuditEvent = SecurityEvent
 
 export type SecurityOverview = Readonly<{
 	adminAccess: AdminAccessOverview
-	vault: Readonly<{ enabled: false }> | Readonly<{ enabled: true; state: VaultAdminState }>
+	vault: Readonly<{ enabled: true; state: VaultAdminState }>
 }>
 
 export type RuntimeSecurityClient = Readonly<{

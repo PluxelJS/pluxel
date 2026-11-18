@@ -78,7 +78,9 @@ describe('Host root document factories', () => {
 			createHost({
 				plugins: [],
 				services: [service],
-				runtime: { documents: { state: options as never } },
+				policy: {
+					document: options as never,
+				},
 			}),
 		).rejects.toBeInstanceOf(TypeError)
 		expect(events).toEqual([])
@@ -102,21 +104,21 @@ describe('Host root document factories', () => {
 		const host = await createHost({
 			plugins: [],
 			services: [flushingService],
-			runtime: {
-				documents: {
-					config: {
-						storage(root) {
-							roots.push(root)
-							events.push('config factory')
-							return root.service(Documents).config
-						},
+			policy: {
+				document: {
+					storage(root) {
+						roots.push(root)
+						events.push('state factory')
+						return root.service(Documents).state
 					},
-					state: {
-						storage(root) {
-							roots.push(root)
-							events.push('state factory')
-							return root.service(Documents).state
-						},
+				},
+			},
+			config: {
+				document: {
+					storage(root) {
+						roots.push(root)
+						events.push('config factory')
+						return root.service(Documents).config
 					},
 				},
 			},
@@ -153,11 +155,11 @@ describe('Host root document factories', () => {
 				createHost({
 					plugins: [],
 					services: [service],
-					runtime: {
-						documents: {
-							config: { storage: (root) => root.service(Documents).config },
-							state: { storage: result as never },
-						},
+					policy: {
+						document: { storage: result as never },
+					},
+					config: {
+						document: { storage: (root) => root.service(Documents).config },
 					},
 				}),
 			).rejects.toBeInstanceOf(TypeError)
@@ -173,13 +175,11 @@ describe('Host root document factories', () => {
 			createHost({
 				plugins: [],
 				services: [service],
-				runtime: {
-					documents: {
-						config: {
-							storage(root) {
-								root.service(Documents)
-								throw failure
-							},
+				config: {
+					document: {
+						storage(root) {
+							root.service(Documents)
+							throw failure
 						},
 					},
 				},
@@ -209,7 +209,9 @@ describe('Host root document factories', () => {
 				createHost({
 					plugins: [],
 					services: [hostService],
-					runtime: { documents: { config: { storage: (root) => root.service(Documents).config } } },
+					config: {
+						document: { storage: (root) => root.service(Documents).config },
+					},
 				}),
 			).rejects.toBe(failure)
 			expect(events.at(-1)).toBe('closed')
@@ -234,11 +236,11 @@ describe('Host root document factories', () => {
 		const creation = createHost({
 			plugins: [],
 			services: [service],
-			runtime: {
-				documents: {
-					config: { storage: (root) => root.service(Documents).config },
-					state: { storage: (root) => root.service(Documents).state },
-				},
+			policy: {
+				document: { storage: (root) => root.service(Documents).state },
+			},
+			config: {
+				document: { storage: (root) => root.service(Documents).config },
 			},
 		})
 		const observed = creation.catch((error: unknown) => error)
@@ -260,15 +262,13 @@ describe('Host root document factories', () => {
 			createHost({
 				plugins: [],
 				services: [service],
-				runtime: {
-					documents: {
-						config: {
-							storage(root) {
-								root.effects.defer(() => {
-									throw cleanupFailure
-								})
-								return root.service(Documents).config
-							},
+				config: {
+					document: {
+						storage(root) {
+							root.effects.defer(() => {
+								throw cleanupFailure
+							})
+							return root.service(Documents).config
 						},
 					},
 				},
@@ -287,16 +287,16 @@ describe('Host root document factories', () => {
 			createHost({
 				plugins: [],
 				services: [service],
-				runtime: {
-					documents: {
-						config: { storage: (root) => root.service(Documents).config },
-						state: {
-							storage(root) {
-								requireConfigService(root)
-								return root.service(Documents).state
-							},
+				policy: {
+					document: {
+						storage(root) {
+							requireConfigService(root)
+							return root.service(Documents).state
 						},
 					},
+				},
+				config: {
+					document: { storage: (root) => root.service(Documents).config },
 				},
 			}),
 		).rejects.toThrow('document storage factories must not read Host config')

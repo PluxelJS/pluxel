@@ -20,21 +20,23 @@ import { defineHostApplication, envBinding } from '@pluxel/host'
 import { PlaywrightConfig, PlaywrightPlugin } from '@pluxel/plugin-playwright'
 
 export default defineHostApplication(() => ({
-	plugins: [PlaywrightPlugin],
-	envBindings: [
-		envBinding(PlaywrightPlugin.nodeAddress(), {
-			config: {
-				schema: PlaywrightConfig,
-				mapping: {
-					endpoint: 'BROWSER_ENDPOINT', // 远程浏览器 WebSocket 或 HTTP 地址
-					protocol: 'BROWSER_PROTOCOL', // 'cdp' 或 'playwright'（默认 cdp）
-				},
-			},
-		}),
+	plugins: [
+		{
+			plugin: PlaywrightPlugin,
+			autoStart: true,
+			envBindings: [
+				envBinding({
+					config: {
+						schema: PlaywrightConfig,
+						mapping: {
+							endpoint: 'BROWSER_ENDPOINT',
+							protocol: 'BROWSER_PROTOCOL',
+						},
+					},
+				}),
+			],
+		},
 	],
-	policy: {
-		autoStart: [PlaywrightPlugin.nodeAddress()],
-	},
 }))
 ```
 

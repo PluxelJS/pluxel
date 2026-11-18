@@ -107,7 +107,7 @@ export function createHostSourceEvaluator(options: {
 								pluginSourceCovers({
 									source,
 									root: options.root,
-									requirement: { kind: 'file', path },
+									requirement: { file: path },
 								}),
 							)),
 			)
@@ -119,7 +119,8 @@ export function createHostSourceEvaluator(options: {
 			if (closed) throw new Error('[host-vite] source evaluator is closed')
 			const declarations = input.application.sources ?? []
 			for (const declaration of declarations)
-				if (declaration.kind === 'file') options.onEntry?.(resolve(options.root, declaration.path))
+				if (declaration.file !== undefined)
+					options.onEntry?.(resolve(options.root, declaration.file))
 			const slot =
 				active && sameSources(active.declarations, declarations) ? active : openSlot(declarations)
 			const owned = slot !== active

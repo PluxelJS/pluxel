@@ -1,5 +1,4 @@
 import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
-import { logtape } from '@pluxel/core/config'
 import { requirePluginService } from '@pluxel/core/internal'
 import { expect, it, vi } from 'vitest'
 import { createHost } from '../src/index'
@@ -36,8 +35,17 @@ class Counter extends BasePlugin {
 
 it('runs ordinary typed configuration tasks against a Host without official Services', async () => {
 	await using host = await createHost({
-		plugins: [Counter],
-		runtime: { documents: { config: false, state: false } },
+		plugins: [
+			{
+				plugin: Counter,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
@@ -105,9 +113,19 @@ it('runs ordinary typed configuration tasks against a Host without official Serv
 it('preserves shadowed raw inputs, source facts and readonly rejection', async () => {
 	const node = parsePluginNodeAddress(Counter.nodeAddress())
 	await using host = await createHost({
-		plugins: [Counter],
-		config: { mode: 'declared-only', records: [{ owner: node, config: { count: 7 } }] },
-		runtime: { documents: { state: false, config: false } },
+		plugins: [
+			{
+				plugin: Counter,
+				config: { count: 7 },
+			},
+		],
+		config: {
+			mode: 'declared-only',
+			document: false,
+		},
+		policy: {
+			document: false,
+		},
 	})
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
@@ -141,8 +159,17 @@ it('preserves shadowed raw inputs, source facts and readonly rejection', async (
 		await scope.dispose()
 	}
 	await using readonly = await createHost({
-		plugins: [Counter],
-		runtime: { documents: { config: { readOnly: true }, state: { readOnly: true } } },
+		plugins: [
+			{
+				plugin: Counter,
+			},
+		],
+		policy: {
+			document: { readOnly: true },
+		},
+		config: {
+			document: { readOnly: true },
+		},
 	})
 	await readonly.start()
 	const locked = createScriptScope({ ctx: readonly.ctx })
@@ -167,8 +194,17 @@ it('preserves shadowed raw inputs, source facts and readonly rejection', async (
 
 it('propagates a real CAS conflict with ordinary await without rolling back prior changes', async () => {
 	await using host = await createHost({
-		plugins: [Counter],
-		runtime: { documents: { config: false, state: false } },
+		plugins: [
+			{
+				plugin: Counter,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	await host.start()
 	await host.startNode(parsePluginNodeAddress(Counter.nodeAddress()))
@@ -229,7 +265,16 @@ class Broken extends BasePlugin {
 }
 
 it('keeps saved-but-not-applied values and complete lifecycle failure details', async () => {
-	await using host = await createHost({ plugins: [RejectConfig, Broken] })
+	await using host = await createHost({
+		plugins: [
+			{
+				plugin: RejectConfig,
+			},
+			{
+				plugin: Broken,
+			},
+		],
+	})
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
 	try {
@@ -292,8 +337,17 @@ it('keeps saved-but-not-applied values and complete lifecycle failure details', 
 it('does not publish a configuration whose persistence acknowledgement failed', async () => {
 	const storage = createDocumentStorage()
 	await using host = await createHost({
-		plugins: [Counter],
-		runtime: { documents: { config: { storage: () => storage }, state: false } },
+		plugins: [
+			{
+				plugin: Counter,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: { storage: () => storage },
+		},
 	})
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
@@ -345,7 +399,13 @@ class Delayed extends BasePlugin {
 }
 
 it('closes lexical scopes after normal return and a thrown task without closing the borrowed Host', async () => {
-	await using host = await createHost({ plugins: [Counter] })
+	await using host = await createHost({
+		plugins: [
+			{
+				plugin: Counter,
+			},
+		],
+	})
 	await host.start()
 	const normal = createScriptScope({ ctx: host.ctx })
 	{
@@ -403,7 +463,13 @@ it('shares standard and explicit cleanup rejection while draining an admitted fa
 it('closes cached admission on cancellation and drains a real accepted Host mutation', async () => {
 	startup = Promise.withResolvers<void>()
 	finishStartup = Promise.withResolvers<void>()
-	await using host = await createHost({ plugins: [Delayed] })
+	await using host = await createHost({
+		plugins: [
+			{
+				plugin: Delayed,
+			},
+		],
+	})
 	await host.start()
 	const controller = new AbortController()
 	const scope = createScriptScope({ ctx: host.ctx, signal: controller.signal })
@@ -449,15 +515,19 @@ it('closes cached admission on cancellation and drains a real accepted Host muta
 
 it('reads real bounded logging streams, waits with a deadline and preserves retention gaps', async () => {
 	await using host = await createHost({
-		plugins: [Counter],
-		runtime: {
-			logtape: logtape(({ createRuntimeLogSink }) => ({
+		plugins: [
+			{
+				plugin: Counter,
+			},
+		],
+		coreConfig: {
+			logtape: ({ createRuntimeLogSink }) => ({
 				sinks: { history: createRuntimeLogSink({ windowLines: 2 }) },
 				loggers: [
 					{ category: ['pluxel'], lowestLevel: 'trace', sinks: ['history'] },
 					{ category: ['logtape', 'meta'], lowestLevel: 'fatal', sinks: [] },
 				],
-			})),
+			}),
 		},
 	})
 	await host.start()
@@ -529,7 +599,7 @@ it('reports missing history capabilities without installing a logging backend', 
 	}
 	await using logs = await createHost({
 		plugins: [],
-		runtime: {
+		coreConfig: {
 			logtape: { sinks: {}, loggers: [{ category: [], lowestLevel: 'fatal', sinks: [] }] },
 		},
 	})

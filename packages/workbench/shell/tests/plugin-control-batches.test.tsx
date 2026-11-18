@@ -3,6 +3,7 @@
 import { MantineProvider } from '@mantine/core'
 import type {
 	PluginControlBatchResult,
+	PolicyResult,
 	RuntimeManagementClient,
 } from '@pluxel/services/management/client'
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
@@ -48,13 +49,51 @@ const applied: PluginControlBatchResult = {
 	managedRevision: 'policy:test:1',
 	results: [appliedControl(first), appliedControl(second)],
 }
+const execution = {
+	startTimeoutMs: 1500,
+	drainTimeoutMs: 1500,
+	startConcurrency: 4,
+	stopConcurrency: 4,
+}
+const restoredPolicy: Extract<PolicyResult, { ok: true }> = {
+	ok: true,
+	readonly: false,
+	managedInput: { autoStart: [{ node: first, autoStart: true }] },
+	effective: {
+		autoStart: [first, second],
+		forks: [],
+		providerDefaults: [],
+		dependencyOverrides: [],
+		...execution,
+	},
+	mode: {
+		...controlCatalog().statePolicy.mode,
+		startTimeoutMs: 'declared-first',
+		drainTimeoutMs: 'declared-first',
+		startConcurrency: 'declared-first',
+		stopConcurrency: 'declared-first',
+	},
+	sources: {
+		providerDefaults: 'default',
+		startTimeoutMs: 'default',
+		drainTimeoutMs: 'default',
+		startConcurrency: 'default',
+		stopConcurrency: 'default',
+	},
+	managedRevision: 'policy:test:2',
+	nodeModes: [],
+	selections: [],
+	shadowedFields: [],
+	appliedExecution: execution,
+	pendingExecutionFields: [],
+	application: 'applied',
+	persistence: { status: 'confirmed', retention: 'session' },
+}
 const failures: ReadonlyArray<{
 	label: string
 	batch: Extract<PluginControlBatchResult, { ok: false }>
 	autoStartTitle: string
-	undoTitle: string
 	message: string
-	undoMessage?: string
 	color: string
 }> = [
 	{
@@ -65,7 +104,6 @@ const failures: ReadonlyArray<{
 			results: [appliedControl(first), rejectedControl('graph_rejected', second)],
 		},
 		autoStartTitle: '自动启动策略部分应用',
-		undoTitle: '原策略部分恢复',
 		message: 'SecondPlugin：graph_rejected: policy changed',
 		color: 'red',
 	},
@@ -77,9 +115,7 @@ const failures: ReadonlyArray<{
 			results: [appliedControl(first), lifecycleFailedControl(second)],
 		},
 		autoStartTitle: '自动启动策略已应用，运行协调存在问题',
-		undoTitle: '原策略已恢复，运行协调存在问题',
 		message: 'SecondPlugin：策略已应用；Plugin lifecycle application completed with issues',
-		undoMessage: 'SecondPlugin：原策略已恢复；Plugin lifecycle application completed with issues',
 		color: 'red',
 	},
 	{
@@ -90,7 +126,6 @@ const failures: ReadonlyArray<{
 			results: [appliedControl(first), unknownControl(second)],
 		},
 		autoStartTitle: '自动启动策略应用结果待核对',
-		undoTitle: '策略恢复结果待核对',
 		message: 'SecondPlugin：Policy write outcome is unknown',
 		color: 'yellow',
 	},
@@ -105,7 +140,6 @@ const failures: ReadonlyArray<{
 			],
 		},
 		autoStartTitle: '自动启动策略更新被拒绝',
-		undoTitle: '策略恢复被拒绝',
 		message:
 			'FirstPlugin：revision_conflict: policy changed\nSecondPlugin：revision_conflict: policy changed',
 		color: 'red',
@@ -121,7 +155,6 @@ const failures: ReadonlyArray<{
 			results: [],
 		},
 		autoStartTitle: '自动启动策略更新被拒绝',
-		undoTitle: '策略恢复被拒绝',
 		message: 'Managed policy revision is required',
 		color: 'red',
 	},
@@ -174,7 +207,31 @@ async function mountControls(
 ) {
 	const queryClient = createManagementQueryClient()
 	queryClients.push(queryClient)
-	const snapshot = controlCatalog(plugins)
+	const baseline = controlCatalog(plugins)
+	const snapshot =
+		plugins === statuses
+			? ({
+					...baseline,
+					statePolicy: {
+						...baseline.statePolicy,
+						mode: { ...baseline.statePolicy.mode, autoStart: 'saved-first' },
+						selections: [
+							{
+								target: { field: 'autoStart', node: first },
+								mode: 'saved-first',
+								source: 'saved',
+								shadowed: false,
+							},
+							{
+								target: { field: 'autoStart', node: second },
+								mode: 'saved-first',
+								source: 'declared',
+								shadowed: false,
+							},
+						],
+					},
+				} as const)
+			: baseline
 	const overview = buildPluginOverview(snapshot)
 	queryClient.setQueryData(managementQueryKeys.pluginOverview(), overview)
 	const owner = plugins[0]!
@@ -211,11 +268,15 @@ function clientDouble(batch: PluginControlBatchResult, plugins = statuses) {
 		.fn<RuntimeManagementClient['plugins']['applyLifecycleCommands']>()
 		.mockResolvedValue(batch)
 	const snapshot = vi.fn().mockResolvedValue(controlCatalog(plugins, 'policy:test:1'))
+	const patch = vi
+		.fn<RuntimeManagementClient['policy']['patch']>()
+		.mockResolvedValue(restoredPolicy)
 	const client = {
 		catalog: { snapshot },
 		plugins: { setAutoStart, applyLifecycleCommands },
+		policy: { patch },
 	} as unknown as RuntimeManagementClient
-	return { client, setAutoStart, applyLifecycleCommands, snapshot }
+	return { client, setAutoStart, applyLifecycleCommands, snapshot, patch }
 }
 
 describe('plugin control batch notifications', () => {
@@ -265,54 +326,39 @@ describe('plugin control batch notifications', () => {
 		},
 	)
 
-	it.each(failures)(
-		'keeps the authoritative $label decision when undoing a completed bulk change',
-		async ({ batch, undoTitle, message, undoMessage = message, color }) => {
-			const { client, setAutoStart } = clientDouble(applied)
-			setAutoStart.mockResolvedValueOnce(applied).mockResolvedValueOnce(batch)
-			const container = await mountControls(client)
-			await click(container, '.plx-pluginCatalog__body button')
-			await click(container, 'button[aria-label="关闭自动启动"]')
-			const completed = notify.mock.calls[0]![0]
-			expect(completed.title).toBe('已批量关闭自动启动')
-			expect(JSON.parse(completed.diagnosticText!)).toEqual(applied)
-			const undo = await mount(completed.message)
-			await click(undo, 'button[aria-label="恢复原自动启动策略"]')
-
-			expect(setAutoStart).toHaveBeenCalledTimes(2)
-			expect(setAutoStart).toHaveBeenLastCalledWith(
-				statuses.map(({ address }) => ({ address, autoStart: true })),
-				{ expectedManagedRevision: 'policy:test:1' },
-			)
-			expect(notify).toHaveBeenCalledTimes(2)
-			const notification = notify.mock.calls[1]![0]
-			expect(notification).toMatchObject({
-				title: undoTitle,
-				message: undoMessage,
-				color,
-				autoClose: false,
-			})
-			expect(JSON.parse(notification.diagnosticText!)).toEqual(batch)
-		},
-	)
-
-	it('preserves a successful undo receipt', async () => {
-		const { client, setAutoStart } = clientDouble(applied)
+	it('restores both explicit saved values and absence of a saved record in one patch', async () => {
+		const { client, setAutoStart, patch } = clientDouble(applied)
 		const container = await mountControls(client)
 		await click(container, '.plx-pluginCatalog__body button')
 		await click(container, 'button[aria-label="关闭自动启动"]')
-		const undo = await mount(notify.mock.calls[0]![0].message)
+		const completed = notify.mock.calls[0]![0]
+		expect(JSON.parse(completed.diagnosticText!)).toEqual(applied)
+		const undo = await mount(completed.message)
 		await click(undo, 'button[aria-label="恢复原自动启动策略"]')
+		expect(patch).toHaveBeenCalledExactlyOnceWith(
+			{
+				autoStart: [{ node: first, autoStart: true }],
+				reset: [{ field: 'autoStart', node: second }],
+			},
+			{ expectedManagedRevision: applied.managedRevision },
+		)
 		expect(notify.mock.calls[1]![0]).toMatchObject({ title: '已恢复原策略', color: 'green' })
-		expect(JSON.parse(notify.mock.calls[1]![0].diagnosticText!)).toEqual(applied)
-		expect(setAutoStart).toHaveBeenCalledTimes(2)
+		expect(JSON.parse(notify.mock.calls[1]![0].diagnosticText!)).toEqual(restoredPolicy)
+		expect(setAutoStart).toHaveBeenCalledOnce()
 	})
 
 	it('keeps the original batch revision when the refresh observes another client write', async () => {
-		const conflict = failures.find(({ label }) => label === 'revision conflict')!.batch
-		const { client, setAutoStart, snapshot } = clientDouble(applied)
+		const conflict: PolicyResult = {
+			ok: false,
+			code: 'revision_conflict',
+			state: 'unchanged',
+			message: 'Policy changed',
+			managedRevision: 'policy:test:2',
+			persistence: { status: 'unchanged' },
+		}
+		const { client, patch, snapshot } = clientDouble(applied)
 		snapshot.mockResolvedValue(controlCatalog(statuses, 'policy:test:2'))
-		setAutoStart.mockResolvedValueOnce(applied).mockResolvedValueOnce(conflict)
+		patch.mockResolvedValueOnce(conflict)
 		const container = await mountControls(client)
 		await click(container, '.plx-pluginCatalog__body button')
 		await click(container, 'button[aria-label="关闭自动启动"]')
@@ -320,25 +366,31 @@ describe('plugin control batch notifications', () => {
 		const undo = await mount(notify.mock.calls[0]![0].message)
 		await click(undo, 'button[aria-label="恢复原自动启动策略"]')
 
-		expect(setAutoStart).toHaveBeenLastCalledWith(
-			statuses.map(({ address }) => ({ address, autoStart: true })),
+		expect(patch).toHaveBeenCalledExactlyOnceWith(
+			{
+				autoStart: [{ node: first, autoStart: true }],
+				reset: [{ field: 'autoStart', node: second }],
+			},
 			{ expectedManagedRevision: applied.managedRevision },
 		)
-		expect(notify.mock.calls[1]![0]).toMatchObject({ title: '策略恢复被拒绝', color: 'red' })
+		expect(notify.mock.calls[1]![0]).toMatchObject({
+			title: '策略恢复被拒绝',
+			message: 'Policy changed',
+			color: 'red',
+		})
 		expect(JSON.parse(notify.mock.calls[1]![0].diagnosticText!)).toEqual(conflict)
 	})
 
 	it('reports undo transport failure without resubmitting it', async () => {
-		const { client, setAutoStart } = clientDouble(applied)
-		setAutoStart
-			.mockResolvedValueOnce(applied)
-			.mockRejectedValueOnce(new Error('transport disconnected'))
+		const { client, setAutoStart, patch } = clientDouble(applied)
+		patch.mockRejectedValueOnce(new Error('transport disconnected'))
 		const container = await mountControls(client)
 		await click(container, '.plx-pluginCatalog__body button')
 		await click(container, 'button[aria-label="关闭自动启动"]')
 		const undo = await mount(notify.mock.calls[0]![0].message)
 		await click(undo, 'button[aria-label="恢复原自动启动策略"]')
-		expect(setAutoStart).toHaveBeenCalledTimes(2)
+		expect(setAutoStart).toHaveBeenCalledOnce()
+		expect(patch).toHaveBeenCalledOnce()
 		expect(notify).toHaveBeenCalledTimes(2)
 		expect(notify.mock.calls[1]![0]).toMatchObject({
 			title: '恢复失败',

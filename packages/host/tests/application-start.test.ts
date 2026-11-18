@@ -1,3 +1,4 @@
+import { createResolvedHost } from '../src/host'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -26,8 +27,16 @@ describe('production application startup', () => {
 		const launch = vi.fn()
 		const application = await resolveHostApplication(
 			defineHostApplication(() => ({
-				plugins: [Healthy, Failing],
-				policy: { autoStart: [Healthy.nodeAddress(), Failing.nodeAddress()] },
+				plugins: [
+					{
+						plugin: Healthy,
+						autoStart: true,
+					},
+					{
+						plugin: Failing,
+						autoStart: true,
+					},
+				],
 				prepare({ host }) {
 					host.ctx.effects.defer(close)
 				},
@@ -35,7 +44,7 @@ describe('production application startup', () => {
 			})),
 			startup,
 		)
-		const host = await createHost({ plugins: application.plugins, policy: application.policy })
+		const host = await createResolvedHost(application)
 		const failure = await startHostApplication(application, host).catch((error: unknown) => error)
 		expect(failure).toBeInstanceOf(HostApplicationStartupError)
 		expect(failure).toMatchObject({
@@ -54,8 +63,16 @@ describe('production application startup', () => {
 		const order: string[] = []
 		const application = await resolveHostApplication(
 			defineHostApplication(() => ({
-				plugins: [Healthy, Failing],
-				policy: { autoStart: [Healthy.nodeAddress(), Failing.nodeAddress()] },
+				plugins: [
+					{
+						plugin: Healthy,
+						autoStart: true,
+					},
+					{
+						plugin: Failing,
+						autoStart: true,
+					},
+				],
 				prepare({ host }) {
 					order.push('prepare')
 					host.ctx.effects.defer(() => {
@@ -77,10 +94,7 @@ describe('production application startup', () => {
 			})),
 			startup,
 		)
-		await using host = await createHost({
-			plugins: application.plugins,
-			policy: application.policy,
-		})
+		await using host = await createResolvedHost(application)
 		await startHostApplication(application, host)
 		expect(order).toEqual(['prepare', 'accept', 'launch'])
 		await host.close()
@@ -91,16 +105,20 @@ describe('production application startup', () => {
 		const launch = vi.fn()
 		const application = await resolveHostApplication(
 			defineHostApplication(() => ({
-				plugins: [Healthy, Failing],
-				policy: { autoStart: [Healthy.nodeAddress()] },
+				plugins: [
+					{
+						plugin: Healthy,
+						autoStart: true,
+					},
+					{
+						plugin: Failing,
+					},
+				],
 				launch,
 			})),
 			startup,
 		)
-		await using host = await createHost({
-			plugins: application.plugins,
-			policy: application.policy,
-		})
+		await using host = await createResolvedHost(application)
 		await startHostApplication(application, host)
 		expect(launch).toHaveBeenCalledOnce()
 		const status = await host.status()
@@ -111,13 +129,22 @@ describe('production application startup', () => {
 		const launch = vi.fn()
 		const application = await resolveHostApplication(
 			defineHostApplication(() => ({
-				plugins: [Healthy],
-				policy: { autoStart: [Failing.nodeAddress()] },
+				plugins: [
+					{
+						plugin: Healthy,
+					},
+				],
 				launch,
+				pluginNodes: [
+					{
+						definition: Failing.address(),
+						autoStart: true,
+					},
+				],
 			})),
 			startup,
 		)
-		const host = await createHost({ plugins: application.plugins, policy: application.policy })
+		const host = await createResolvedHost(application)
 		await expect(startHostApplication(application, host)).rejects.toMatchObject({
 			code: 'startup_rejected',
 			status: {

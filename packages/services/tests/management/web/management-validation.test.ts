@@ -32,6 +32,19 @@ import { RuntimeProtocolValidationError } from '../../../src/management/web/vali
 import { prepareRuntimeLogRangeForRpc } from '../../../src/management/services/management/log-transport.ts'
 import { RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES } from '../../../src/management/web/session/limits.ts'
 
+const catalogPolicy = {
+	mode: {
+		autoStart: 'declared-first',
+		forks: 'declared-first',
+		providerDefaults: 'declared-first',
+		dependencyOverrides: 'declared-first',
+	},
+	nodeModes: [],
+	selections: [],
+	providerDefaultsSource: 'default',
+	providerDefaultsShadowed: false,
+} as const
+
 const address = {
 	definition: {
 		entry: { kind: 'package-root', packageName: '@fixture/management-validation' },
@@ -111,7 +124,7 @@ describe('management protocol validation', () => {
 			statePolicy: {
 				readonly: false,
 				managedRevision: 'policy:test:0',
-				overriddenFields: [] as const,
+				...catalogPolicy,
 			},
 			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
 		})
@@ -623,7 +636,7 @@ describe('management protocol validation', () => {
 				statePolicy: {
 					readonly: false,
 					managedRevision: 'policy:test:0',
-					overriddenFields: [] as const,
+					...catalogPolicy,
 				},
 				summary: { total: 2, running: 0, stopped: 1, autoStart: 1 },
 			}),
@@ -636,7 +649,7 @@ describe('management protocol validation', () => {
 				statePolicy: {
 					readonly: false,
 					managedRevision: 'policy:test:0',
-					overriddenFields: [] as const,
+					...catalogPolicy,
 				},
 				summary: { total: 2, running: 0, stopped: 2, autoStart: 2 },
 			}),
@@ -681,20 +694,39 @@ describe('management protocol validation', () => {
 		).toThrow(RuntimeProtocolValidationError)
 	})
 
-	it('requires a closed state write policy with distinct recognized override fields', () => {
+	it('requires exact, non-duplicate policy targets and matching modes', () => {
 		const catalog = {
 			plugins: [plugin],
 			sections: [section],
 			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
 		}
 		expect(() => parsePluginCatalogSnapshot(catalog)).toThrow(/statePolicy/)
-		for (const statePolicy of [
-			{ mode: 'readwrite', overriddenFields: [] as const },
-			{ readonly: false, managedRevision: 'policy:test:0', overriddenFields: ['unknown'] },
-			{ readonly: false, managedRevision: 'policy:test:0', overriddenFields: ['forks', 'forks'] },
-			{ mode: 'writable', overriddenFields: [] as const, readonly: false },
+		const statePolicy = {
+			...catalogPolicy,
+			readonly: false,
+			managedRevision: 'policy:test:0',
+		}
+		const choice = {
+			target: { field: 'autoStart', node: address },
+			mode: 'declared-first',
+			source: 'declared',
+			shadowed: true,
+		}
+		expect(
+			parsePluginCatalogSnapshot({
+				...catalog,
+				statePolicy: { ...statePolicy, selections: [choice] },
+			}).statePolicy.selections,
+		).toEqual([choice])
+		for (const invalid of [
+			{ ...statePolicy, mode: 'readwrite' },
+			{ ...statePolicy, selections: [choice, choice] },
+			{ ...statePolicy, selections: [{ ...choice, mode: 'saved-first' }] },
+			{ ...statePolicy, selections: [{ ...choice, target: { ...choice.target, field: 'forks' } }] },
 		]) {
-			expect(() => parsePluginCatalogSnapshot({ ...catalog, statePolicy })).toThrow(/statePolicy/)
+			expect(() => parsePluginCatalogSnapshot({ ...catalog, statePolicy: invalid })).toThrow(
+				/statePolicy/,
+			)
 		}
 	})
 
@@ -708,7 +740,7 @@ describe('management protocol validation', () => {
 			statePolicy: {
 				readonly: false,
 				managedRevision: 'policy:test:0',
-				overriddenFields: [] as const,
+				...catalogPolicy,
 			},
 			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
 		})
@@ -838,6 +870,9 @@ describe("management Cap'n Web DTO validation", () => {
 			vault: { enabled: true, state: vault },
 		})
 		expect(overview.vault).toEqual({ enabled: true, state: vault })
+		expect(() => parseSecurityOverview({ ...overview, vault: { enabled: false } })).toThrow(
+			'vault.enabled must be true',
+		)
 		expect(
 			parseSecurityOverview({
 				adminAccess: {
@@ -849,9 +884,9 @@ describe("management Cap'n Web DTO validation", () => {
 						ready: true,
 					},
 				},
-				vault: { enabled: false },
+				vault: { enabled: true, state: vault },
 			}).vault,
-		).toEqual({ enabled: false })
+		).toEqual({ enabled: true, state: vault })
 		expect(parseVaultAdminState(vault)).toEqual(vault)
 		expect(parseVaultPublicKeyResult({ publicKey: 'age1public' })).toEqual({
 			publicKey: 'age1public',

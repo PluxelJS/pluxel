@@ -19,6 +19,7 @@ import { PluginScopeProvider } from '../src/app/plugins/detail/context'
 import { ActionBar } from '../src/app/plugins/detail/controls/ActionBar'
 import { BulkActionsBar } from '../src/app/plugins/catalog/components/BulkActionsBar'
 import { buildPluginOverview } from '../src/app/plugins/pluginOverviewModel'
+import { controlCatalog } from './pluginControlFixtures'
 
 const owner = node('OwnerPlugin')
 const ownerStatus = status(owner)
@@ -54,9 +55,15 @@ describe('plugin detail refresh', () => {
 		const snapshot: PluginCatalogSnapshot = {
 			...pluginCatalog(ownerStatus),
 			statePolicy: {
-				readonly: false,
-				managedRevision: 'policy:test:0',
-				overriddenFields: ['autoStart'],
+				...controlCatalog().statePolicy,
+				selections: [
+					{
+						target: { field: 'autoStart', node: owner },
+						mode: 'declared-first',
+						source: 'declared',
+						shadowed: false,
+					},
+				],
 			},
 		}
 		const client = {
@@ -223,7 +230,7 @@ function pluginCatalog(nodeStatus: PluginStatusSnapshot): PluginCatalogSnapshot 
 	return {
 		plugins: [nodeStatus],
 		sections: [],
-		statePolicy: { readonly: false, managedRevision: 'policy:test:0', overriddenFields: [] },
+		statePolicy: controlCatalog().statePolicy,
 		summary: { total: 1, running: 1, stopped: 0, autoStart: 1 },
 	}
 }

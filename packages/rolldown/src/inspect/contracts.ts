@@ -126,7 +126,7 @@ export type InspectionInputs = Readonly<{
 		entry: string
 		sourceSpaces: readonly Readonly<{ name: string; root: string }>[]
 	}>
-	/** Application-wide expression only; null means confirmed absent, never unknown. */
+	/** The selected Plugin's default-node config expression when declared. */
 	config: InspectionSourceLocation | null
 	/** Whole owning Plugin's config bindings, unaffected by partPath; excludes Vault. */
 	bindings: readonly InspectionConfigBinding[]

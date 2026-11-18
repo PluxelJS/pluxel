@@ -1,4 +1,7 @@
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { workbenchService } from '@pluxel/workbench/service'
 import { createHash } from 'node:crypto'
 import { symlink, writeFile } from 'node:fs/promises'
@@ -430,7 +433,10 @@ describe('WorkbenchArtifactService', () => {
 			await using host = await createServiceInternalTestHarness({
 				workbench: false,
 				services: [
-					...standardServices(),
+					elysia(),
+					commands(),
+					nodeModules(),
+					workers(),
 					workbenchService({ artifacts: { root: fixture.getPath('workbench') } }),
 				],
 			})
@@ -483,7 +489,10 @@ describe('WorkbenchArtifactService', () => {
 			await using host = await createServiceInternalTestHarness({
 				workbench: false,
 				services: [
-					...standardServices(),
+					elysia(),
+					commands(),
+					nodeModules(),
+					workers(),
 					workbenchService({ artifacts: { root: fixture.getPath('workbench') } }),
 				],
 			})
@@ -532,7 +541,10 @@ describe('WorkbenchArtifactService', () => {
 			await using host = await createServiceInternalTestHarness({
 				workbench: false,
 				services: [
-					...standardServices(),
+					elysia(),
+					commands(),
+					nodeModules(),
+					workers(),
 					workbenchService({ artifacts: { root: fixture.getPath('workbench') } }),
 				],
 			})

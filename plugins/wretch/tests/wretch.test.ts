@@ -1,6 +1,9 @@
 import { parsePluginNodeAddress, type PluginConstructor } from '@pluxel/core'
 import { createTestHost, type TestHost, type RawPluginConfig } from '@pluxel/test'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import * as v from 'valibot'
 import { consumeWorkbenchValue } from '@pluxel/workbench/client'
 import { ProxyAgent } from 'undici'
@@ -74,7 +77,7 @@ describe('WretchPlugin', () => {
 	it('separates same-display-name consumers by row in the provider Store', async () => {
 		await using host = await createTestHost({
 			workbench: true,
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 		await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
 		using aSettings = await openWretchSettings(host, ConsumerA.nodeAddress())
@@ -100,7 +103,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
@@ -136,7 +139,7 @@ describe('WretchPlugin', () => {
 	it('rejects restored settings whose owner does not match its row ID', async () => {
 		await using host = await createTestHost({
 			workbench: true,
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 		await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
 		using settings = await openWretchSettings(host, ConsumerA.nodeAddress())
@@ -167,7 +170,7 @@ describe('WretchPlugin', () => {
 	it('provides one native immutable Wretch base for independent consumer composition', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerB])
@@ -203,7 +206,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
@@ -240,7 +243,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], { timeoutMs: 1_000 })
@@ -281,7 +284,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerLateSettings])
@@ -301,7 +304,7 @@ describe('WretchPlugin', () => {
 	it('shares one managed-settings initialization across concurrent calls', async () => {
 		await using host = await createTestHost({
 			workbench: true,
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 		await startWretchFixture(host, [WretchPlugin, ConsumerB])
 		const pending = gatedSettingsLoad()
@@ -323,7 +326,7 @@ describe('WretchPlugin', () => {
 
 	it('drains admitted settings initialization without reusing it across generations', async () => {
 		await using host = await createTestHost({
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 		await startWretchFixture(host, [WretchPlugin, ConsumerB])
 		const pending = gatedSettingsLoad()
@@ -355,7 +358,7 @@ describe('WretchPlugin', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
@@ -379,7 +382,7 @@ describe('WretchPlugin', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
@@ -411,7 +414,7 @@ describe('WretchPlugin', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerB])
@@ -441,17 +444,17 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
 
 			using settings = await openWretchSettings(host, ConsumerA.nodeAddress())
-			const commands = settings.api
+			const api = settings.api
 			await host.stop(ConsumerA.nodeAddress())
 
-			await expect(commands.snapshotDto()).rejects.toThrow('stopped or replaced plugin generation')
-			await expect(commands.updateDto({ headers: {} })).rejects.toThrow(
+			await expect(api.snapshotDto()).rejects.toThrow('stopped or replaced plugin generation')
+			await expect(api.updateDto({ headers: {} })).rejects.toThrow(
 				'stopped or replaced plugin generation',
 			)
 		}
@@ -461,7 +464,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
@@ -485,7 +488,7 @@ describe('WretchPlugin', () => {
 			{
 				await using host = await createTestHost({
 					workbench: true,
-					services: standardServices(),
+					services: [elysia(), commands(), nodeModules(), workers()],
 				})
 
 				await startWretchFixture(host, [WretchPlugin, ConsumerA])
@@ -518,7 +521,7 @@ describe('WretchPlugin', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
@@ -588,7 +591,7 @@ describe('WretchPlugin', () => {
 
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], { timeoutMs: 5 })

@@ -129,7 +129,8 @@ export default (async(sdk,run) => {
 	expect(artifact.code).not.toContain('@pluxel/host')
 	await using host = await createHost({
 		plugins: [],
-		runtime: { documents: { config: false, state: false } },
+		config: { document: false },
+		policy: { document: false },
 	})
 	await host.start()
 	await using owner = createNodeScriptOwner({ ctx: host.ctx })
@@ -180,7 +181,8 @@ export const composed = (async (sdk) => {
 	expect(Object.getPrototypeOf(loaded)).toBe(Object.prototype)
 	await using host = await createHost({
 		plugins: [],
-		runtime: { documents: { config: false, state: false } },
+		config: { document: false },
+		policy: { document: false },
 	})
 	await host.start()
 	await using owner = createNodeScriptOwner({ ctx: host.ctx })
@@ -247,7 +249,8 @@ export const uncertain = (() => {
 	expect(artifact.code).not.toContain('class ScriptError')
 	await using host = await createHost({
 		plugins: [],
-		runtime: { documents: { config: false, state: false } },
+		config: { document: false },
+		policy: { document: false },
 	})
 	await host.start()
 	await using owner = createNodeScriptOwner({ ctx: host.ctx })
@@ -337,7 +340,8 @@ it('returns runtime errors at the original author file and line without receiver
 	const code = await compileScript({ file })
 	await using host = await createHost({
 		plugins: [],
-		runtime: { documents: { config: false, state: false } },
+		config: { document: false },
+		policy: { document: false },
 	})
 	await host.start()
 	await using owner = createNodeScriptOwner({ ctx: host.ctx })

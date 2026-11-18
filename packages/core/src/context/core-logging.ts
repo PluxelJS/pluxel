@@ -1,13 +1,17 @@
 import { disposeContextRuntimeLogging, prepareContextRuntimeLogging } from '../logging/service'
 import type { RootContext } from './Context'
-import type { ResolvedLogTapeConfig } from '../config/logtape'
+import type { ResolvedLogTapeConfig } from '../logging/config'
 import { requireFs } from '../internal/storage'
-import { createContextRuntimeLogging, type RuntimeLogging } from '../logging/logging'
+import {
+	createContextRuntimeLogging,
+	type RuntimeLogging,
+	type RuntimeLoggingManager,
+} from '../logging/logging'
 
 const preparations = new WeakMap<
 	RootContext,
 	{
-		readonly manager: RuntimeLogging
+		readonly manager: RuntimeLoggingManager
 		readonly config: ResolvedLogTapeConfig
 		ready?: Promise<void>
 	}
@@ -27,7 +31,7 @@ export function createCoreLoggingRuntime(
 		tag: 'LogTape',
 		phase: 'final',
 	})
-	return manager
+	return manager.management
 }
 
 /**

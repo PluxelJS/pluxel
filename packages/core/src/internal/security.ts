@@ -1,4 +1,4 @@
-import type { Context as PluxelContext } from '@pluxel/core'
+import type { Context as PluxelContext } from '../context/Context'
 
 export type SecurityEvent = {
 	id: string

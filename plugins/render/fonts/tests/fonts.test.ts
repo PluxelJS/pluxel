@@ -2,7 +2,10 @@ import type { Workbench } from '@pluxel/workbench'
 import { InMemory, Passthrough, writeFileAtomic } from '@pluxel/core/fs'
 import { BasePlugin, Plugin, parsePluginNodeAddress, defineServiceRef } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import * as nativeFs from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -45,7 +48,7 @@ afterEach(async () => {
 describe('FontsPlugin', () => {
 	it('demonstrates invalid font data as a Result while cancellation and withdrawal still reject', async () => {
 		await using host = await createTestHost({
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 		await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
 		const fonts = host.require(FontsLazyConsumer.nodeAddress()).fonts
@@ -64,7 +67,7 @@ describe('FontsPlugin', () => {
 
 	it.skipIf(!fontPath)('keeps successful Result registrations owned by their caller', async () => {
 		await using host = await createTestHost({
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 		await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
 		const result = await registerBrandFont(host.require(FontsLazyConsumer.nodeAddress()).fonts, {
@@ -82,7 +85,7 @@ describe('FontsPlugin', () => {
 	it('classifies fonts discovered from the host system and resolves an automatic default', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
@@ -106,8 +109,8 @@ describe('FontsPlugin', () => {
 			const backend = { mounts: { '/': { backend: InMemory } } }
 			{
 				await using host = await createTestHost({
-					services: standardServices(),
-					runtime: { zenfs: backend },
+					services: [elysia(), commands(), nodeModules(), workers()],
+					coreConfig: { zenfs: backend },
 				})
 
 				await host.start(FontsPlugin.nodeAddress())
@@ -160,7 +163,7 @@ describe('FontsPlugin', () => {
 		let registration: FontRegistration | undefined
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
@@ -190,7 +193,7 @@ describe('FontsPlugin', () => {
 	it.skipIf(!fontPath)('reference-counts duplicate portable resources by content ID', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
@@ -212,7 +215,7 @@ describe('FontsPlugin', () => {
 	it.skipIf(!fontPath)('bounds native registrations across managed and caller fonts', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(FontsPlugin.nodeAddress(), {
@@ -247,7 +250,7 @@ describe('FontsPlugin', () => {
 			const byteLength = fontData.byteLength
 			{
 				await using host = await createTestHost({
-					services: standardServices(),
+					services: [elysia(), commands(), nodeModules(), workers()],
 				})
 
 				await host.start(FontsPlugin.nodeAddress(), {
@@ -292,8 +295,8 @@ describe('FontsPlugin', () => {
 			{
 				await using host = await createTestHost({
 					workbench: true,
-					services: standardServices(),
-					runtime: { zenfs: backend },
+					services: [elysia(), commands(), nodeModules(), workers()],
+					coreConfig: { zenfs: backend },
 				})
 
 				await host.start([FontsPlugin.nodeAddress(), FontsTestConsumer.nodeAddress()])
@@ -332,8 +335,8 @@ describe('FontsPlugin', () => {
 			{
 				await using host = await createTestHost({
 					workbench: true,
-					services: standardServices(),
-					runtime: { zenfs: backend },
+					services: [elysia(), commands(), nodeModules(), workers()],
+					coreConfig: { zenfs: backend },
 				})
 				await host.start([FontsPlugin.nodeAddress(), FontsTestConsumer.nodeAddress()])
 				using reopenedManager = await openFontsManager(host)
@@ -353,7 +356,7 @@ describe('FontsPlugin', () => {
 	it('rejects invalid bytes and enforces the configured byte budget', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(FontsPlugin.nodeAddress(), { initialConfig: { maxFontBytes: 4 } })
@@ -372,7 +375,7 @@ describe('FontsPlugin', () => {
 	it('cooperatively snapshots registration bytes and observes cancellation', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
@@ -390,7 +393,7 @@ describe('FontsPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(FontsPlugin.nodeAddress(), {
@@ -414,7 +417,7 @@ describe('FontsPlugin', () => {
 	it('does not commit an async registration after its caller generation stops', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
@@ -437,7 +440,7 @@ describe('FontsPlugin', () => {
 	it.skipIf(!fontPath)('rejects oversized font files before reading their contents', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(FontsPlugin.nodeAddress(), { initialConfig: { maxFontBytes: 4 } })
@@ -456,7 +459,7 @@ describe('FontsPlugin', () => {
 		] as const) {
 			{
 				await using host = await createTestHost({
-					services: standardServices(),
+					services: [elysia(), commands(), nodeModules(), workers()],
 				})
 				await host.start(FontsPlugin.nodeAddress())
 				const storage = await host.require(FontsPlugin.nodeAddress()).ctx.fs()
@@ -483,7 +486,7 @@ describe('FontsPlugin', () => {
 
 	it('rejects malformed restored default preferences without rewriting them', async () => {
 		await using host = await createTestHost({
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 		await host.start(FontsPlugin.nodeAddress())
 		const state = host.require(FontsPlugin.nodeAddress()).ctx.tinybase
@@ -504,7 +507,7 @@ describe('FontsPlugin', () => {
 
 	it('stores the default in the provider Store and persists reset across generations', async () => {
 		await using host = await createTestHost({
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 		await host.start(FontsPlugin.nodeAddress())
 		let fonts = host.require(FontsPlugin.nodeAddress())
@@ -545,7 +548,7 @@ describe('FontsPlugin', () => {
 		}
 		const host = await createTestHost({
 			services: [],
-			runtime: {
+			coreConfig: {
 				zenfs: {
 					mounts: { '/': { backend: Passthrough, fs: native, prefix } },
 					durableMounts: ['/'],
@@ -570,7 +573,7 @@ describe('FontsPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start([FontsPlugin.nodeAddress(), FontsTestConsumer.nodeAddress()])

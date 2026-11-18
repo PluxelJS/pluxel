@@ -26,11 +26,11 @@ it('reloads shared config files into running Hosts without rewriting external co
 	const prefix = await mkdtemp(join(tmpdir(), 'pluxel-config-reload-'))
 	const owner = FileConfigured.nodeAddress()
 	const options = {
-		plugins: [FileConfigured],
-		config: { mode: 'saved-first' as const, records: [{ owner, config: { value: 'base' } }] },
+		plugins: [{ plugin: FileConfigured, config: { value: 'base' } }],
+		config: { mode: 'saved-first' as const },
+		policy: { document: false as const },
 
-		runtime: {
-			documents: { state: false as const },
+		coreConfig: {
 			zenfs: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
 		},
 	}
@@ -119,17 +119,34 @@ it('applies shared file updates in a Host with a readonly filesystem and config 
 	const owner = FileConfigured.nodeAddress()
 	const storage = { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } }
 	const writer = await createHost({
-		plugins: [FileConfigured],
-		runtime: { zenfs: storage, documents: { state: false } },
+		plugins: [
+			{
+				plugin: FileConfigured,
+			},
+		],
+		coreConfig: {
+			zenfs: storage,
+		},
+		policy: {
+			document: false,
+		},
 	})
 	let reader: Awaited<ReturnType<typeof createHost>> | undefined
 	try {
 		reader = await createHost({
-			plugins: [FileConfigured],
-
-			runtime: {
+			plugins: [
+				{
+					plugin: FileConfigured,
+				},
+			],
+			coreConfig: {
 				zenfs: { ...storage, readOnly: true },
-				documents: { state: false, config: { readOnly: true } },
+			},
+			policy: {
+				document: false,
+			},
+			config: {
+				document: { readOnly: true },
 			},
 		})
 		await reader.startNode(owner)

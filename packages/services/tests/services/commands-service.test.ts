@@ -1,6 +1,8 @@
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands, Commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { managementCommands } from '@pluxel/services/management/commands'
-import { Commands } from '@pluxel/services/commands'
 import { defineCommand, Result } from '@pluxel/commands'
 import { obj } from '@pluxel/commands/typebox'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
@@ -119,7 +121,7 @@ describe('CommandsService', () => {
 	it('publishes the built-in plugin management catalog once during preparation', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [...standardServices(), managementCommands()],
+			services: [elysia(), commands(), nodeModules(), workers(), managementCommands()],
 		})
 
 		const prepared = host.ctx.service(Commands).list()
@@ -146,7 +148,7 @@ describe('CommandsService', () => {
 	it('accepts package subpath addresses at the management command boundary', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [...standardServices(), managementCommands()],
+			services: [elysia(), commands(), nodeModules(), workers(), managementCommands()],
 		})
 		const address = {
 			definition: {
@@ -376,18 +378,18 @@ describe('CommandsService', () => {
 		@Plugin({ displayName: 'CommandOwnerA' })
 		class CommandOwnerA extends BasePlugin {
 			override async init() {
-				const commands = this.ctx.service(Commands)
+				const commandService = this.ctx.service(Commands)
 				await Promise.resolve()
-				commands.register(valueCommand('a', 'owner.a.get'))
+				commandService.register(valueCommand('a', 'owner.a.get'))
 			}
 		}
 
 		@Plugin({ displayName: 'CommandOwnerB' })
 		class CommandOwnerB extends BasePlugin {
 			override async init() {
-				const commands = this.ctx.service(Commands)
+				const commandService = this.ctx.service(Commands)
 				await Promise.resolve()
-				commands.register(valueCommand('b', 'owner.b.get'))
+				commandService.register(valueCommand('b', 'owner.b.get'))
 			}
 		}
 
@@ -422,7 +424,7 @@ describe('CommandsService', () => {
 	it('executes management commands through the existing lifecycle use case', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [...standardServices(), managementCommands()],
+			services: [elysia(), commands(), nodeModules(), workers(), managementCommands()],
 		})
 
 		@Plugin({ displayName: 'ManagedPlugin' })
@@ -484,7 +486,7 @@ describe('CommandsService', () => {
 	it('restarts the required dependent closure through management commands', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [...standardServices(), managementCommands()],
+			services: [elysia(), commands(), nodeModules(), workers(), managementCommands()],
 		})
 
 		let providerStarts = 0

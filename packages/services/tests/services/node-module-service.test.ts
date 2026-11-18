@@ -1,6 +1,5 @@
-import { standardServices } from '@pluxel/services'
 import { NodeModuleHost } from '../../src/node/token'
-import { NodeModules, defineNodeModule } from '@pluxel/services/node'
+import { nodeModules, NodeModules, defineNodeModule } from '@pluxel/services/node'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { createFixture } from 'fs-fixture'
@@ -245,9 +244,7 @@ describe('NodeModuleService', () => {
 		) as typeof declaration
 		await using host = await createServiceInternalTestHost({
 			workbench: false,
-			services: standardServices({
-				nodeModules: { root: artifactRoot },
-			}),
+			services: [nodeModules({ root: artifactRoot })],
 		})
 
 		let received: URL | undefined

@@ -31,11 +31,13 @@ import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 import { MailPlugin, Schema } from '${source}'
 throw new Error('ENTRY_MUST_NOT_EXECUTE')
 export default defineHostApplication(() => ({
-  plugins: [MailPlugin],
+  plugins: [{
+    plugin: MailPlugin,
+    config: computeConfig(),
+    envBindings: [envBinding({ config: { schema: Schema, mapping: ${mapping} } })],
+    fileBindings: [fileBinding({ config: { schema: Schema, path: './private/config.json' } })],
+  }],
   services: prepareServices(),
-  config: makeRecords(),
-  envBindings: [envBinding(MailPlugin.nodeAddress(), { config: { schema: Schema, mapping: ${mapping} } })],
-  fileBindings: [fileBinding(MailPlugin.nodeAddress(), { config: { schema: Schema, path: './private/config.json' } })],
 }))
 `
 }
@@ -173,7 +175,9 @@ describe('application-aware public Plugin inspection', () => {
 			expect(inputs.bindings[0]!.schema.declaration?.file).toBe(
 				fixture.getPath('installed/mail/src/index.ts'),
 			)
-			expect(selectedText(application('@fixture/mail', name), inputs.config!)).toBe('makeRecords()')
+			expect(selectedText(application('@fixture/mail', name), inputs.config!)).toBe(
+				'computeConfig()',
+			)
 			expect(available(result.data.sections.config).declarations).toHaveLength(2)
 		}
 		const part = await inspectPlugin(reference, {

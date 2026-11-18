@@ -1,5 +1,8 @@
 import { formatPluginNodeReference, BasePlugin, Plugin } from '@pluxel/core'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import {
 	type Counter,
@@ -28,10 +31,10 @@ class Consumer extends BasePlugin {
 		this.duration = meter.createHistogram('orders.duration', { unit: 's' })
 		meter.createGauge('queue.depth').record(3, { region: 'hk' })
 
-		const workers = meter.createObservableGauge('workers.active')
+		const activeWorkers = meter.createObservableGauge('workers.active')
 		const observeWorkers: ObservableCallback = (result) => result.observe(2, { region: 'hk' })
-		workers.addCallback(observeWorkers)
-		this.ctx.effects.defer(() => workers.removeCallback(observeWorkers))
+		activeWorkers.addCallback(observeWorkers)
+		this.ctx.effects.defer(() => activeWorkers.removeCallback(observeWorkers))
 	}
 
 	record(): void {
@@ -47,7 +50,7 @@ describe('OtelPlugin', () => {
 		vi.stubEnv('OTEL_EXPORTER_OTLP_METRICS_PROTOCOL', 'grpc')
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 			await host.start(OtelPlugin.nodeAddress(), {
 				catalog: [Consumer],

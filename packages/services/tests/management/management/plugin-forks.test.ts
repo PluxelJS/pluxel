@@ -1,7 +1,9 @@
 import { requireFs, pluginNodePhysicalKey } from '@pluxel/core/internal'
 import { requireHostStateStore, isPluginAutoStartEnabled, listForkIds } from '@pluxel/host/internal'
-import { standardServices } from '@pluxel/services'
-import { logtape } from '@pluxel/core/config'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { parsePluginNodeAddress, pluginNodeAddressEqual } from '@pluxel/core'
 import {
 	createServiceInternalTestHarness,
@@ -107,9 +109,9 @@ describe('Plugin fork control plane', () => {
 		}
 		expect(parseEnsureForkResult(await rpc.ensurePluginForkDto(obsolete))).toMatchObject(expected)
 		expect(parseRemoveForkResult(await rpc.removePluginForkDto(obsolete))).toMatchObject(expected)
-		expect(
-			listForkIds(requireHostStateStore(host.ctx).snapshot(), ForkProvider.definitionAddress()),
-		).toEqual([])
+		expect(listForkIds(requireHostStateStore(host.ctx).snapshot(), ForkProvider.address())).toEqual(
+			[],
+		)
 		expect(() =>
 			parseRemoveForkResult({
 				ok: true,
@@ -122,20 +124,30 @@ describe('Plugin fork control plane', () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
 			management: true,
+			pluginNodes: [{ definition: ForkProvider.address(), forks: { locked: {} } }],
 			policy: {
-				autoStart: [],
-				forks: [ForkProvider.nodeAddress('locked')],
+				mode: 'declared-only',
 				providerDefaults: [],
-				dependencyOverrides: [],
 			},
 		})
 		host.add([ForkProvider, ForkConsumer, PolicyProvider])
 		await host.commit()
 		const rpc = new RuntimeManagementTargetImpl(host.ctx)
-		expect(parsePluginCatalogSnapshot(await rpc.pluginCatalogDto()).statePolicy).toEqual({
+		expect(parsePluginCatalogSnapshot(await rpc.pluginCatalogDto()).statePolicy).toMatchObject({
 			readonly: false,
 			managedRevision: expect.any(String),
-			overriddenFields: ['autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'],
+			mode: {
+				autoStart: 'declared-only',
+				forks: 'declared-only',
+				dependencyOverrides: 'declared-only',
+			},
+			selections: [
+				{
+					target: { field: 'forks', node: ForkProvider.nodeAddress('locked') },
+					source: 'declared',
+					shadowed: false,
+				},
+			],
 		})
 		const expected = { ok: false, code: 'policy_shadowed', state: 'unchanged' }
 		const base = parsePluginNodeAddress(ForkProvider.nodeAddress())
@@ -163,7 +175,7 @@ describe('Plugin fork control plane', () => {
 			parsePluginDependencyMutationResult(
 				await rpc.setPluginConsumerOverrideDto({
 					consumer: parsePluginNodeAddress(ForkConsumer.nodeAddress()),
-					requirement: ForkProvider.definitionAddress(),
+					requirement: ForkProvider.address(),
 					provider: base,
 				}),
 			),
@@ -191,7 +203,7 @@ describe('Plugin fork control plane', () => {
 			autoStart: true,
 			selectFor: {
 				consumer,
-				requirement: ForkProvider.definitionAddress(),
+				requirement: ForkProvider.address(),
 			},
 		})
 
@@ -225,7 +237,7 @@ describe('Plugin fork control plane', () => {
 				autoStart: true,
 				selectFor: {
 					consumer: parsePluginNodeAddress(ForkConsumer.nodeAddress()),
-					requirement: FailingForkProvider.definitionAddress(),
+					requirement: FailingForkProvider.address(),
 				},
 			}),
 		).resolves.toMatchObject({
@@ -252,7 +264,7 @@ describe('Plugin fork control plane', () => {
 			autoStart: false,
 			selectFor: {
 				consumer,
-				requirement: ForkProvider.definitionAddress(),
+				requirement: ForkProvider.address(),
 			},
 		})
 		expect(applied).toMatchObject({ ok: true, status: 'applied', report: {} })
@@ -289,7 +301,7 @@ describe('Plugin fork control plane', () => {
 			autoStart: true,
 			selectFor: {
 				consumer,
-				requirement: ForkProvider.definitionAddress(),
+				requirement: ForkProvider.address(),
 			},
 		})
 		if (ensured.ok === false) throw new Error(ensured.error)
@@ -303,7 +315,7 @@ describe('Plugin fork control plane', () => {
 			references: [
 				{
 					consumer,
-					requirement: ForkProvider.definitionAddress(),
+					requirement: ForkProvider.address(),
 				},
 			],
 		})
@@ -312,7 +324,7 @@ describe('Plugin fork control plane', () => {
 		await expect(
 			rpc.setPluginConsumerOverrideDto({
 				consumer,
-				requirement: ForkProvider.definitionAddress(),
+				requirement: ForkProvider.address(),
 				provider: null,
 			}),
 		).resolves.toMatchObject({ ok: true, status: 'applied', report: {} })
@@ -383,10 +395,8 @@ describe('Plugin fork control plane', () => {
 
 	it('rejects readonly Config metadata removal before stopping the fork', async () => {
 		const host = await runtimeHost({
-			runtime: {
-				documents: {
-					config: { readOnly: true, storage: (root) => requireFs(root).documents('host/config') },
-				},
+			config: {
+				document: { readOnly: true, storage: (root) => requireFs(root).documents('host/config') },
 			},
 		})
 		host.add(ForkProvider)
@@ -416,22 +426,20 @@ describe('Plugin fork control plane', () => {
 	it('retries a failed Config cleanup and never purges business persistence', async () => {
 		let rejectConfigWrite = false
 		const host = await runtimeHost({
-			services: standardServices(),
-			runtime: {
-				documents: {
-					config: {
-						storage(root) {
-							const documents = requireFs(root).documents('host/config')
-							return {
-								getText: (key) => documents.getText(key),
-								stat: (key) => documents.stat(key),
-								async put(key, value) {
-									if (rejectConfigWrite && key === 'config.json')
-										throw new Error('config cleanup unavailable')
-									await documents.put(key, value)
-								},
-							}
-						},
+			services: [elysia(), commands(), nodeModules(), workers()],
+			config: {
+				document: {
+					storage(root) {
+						const documents = requireFs(root).documents('host/config')
+						return {
+							getText: (key) => documents.getText(key),
+							stat: (key) => documents.stat(key),
+							async put(key, value) {
+								if (rejectConfigWrite && key === 'config.json')
+									throw new Error('config cleanup unavailable')
+								await documents.put(key, value)
+							},
+						}
 					},
 				},
 			},
@@ -485,21 +493,24 @@ describe('Plugin fork control plane', () => {
 		const persisted: PluginLogPolicySnapshot[] = []
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: standardServices(),
-			runtime: {
-				logtape: logtape(loggingPlan(), {
-					policyStore(root) {
-						const documents = requireFs(root).documents('services/logging')
-						return createPluginLogPolicyStore({
-							getText: (key) => documents.getText(key),
-							async put(key, value) {
-								if (rejectLoggingWrite) throw new Error('logging cleanup unavailable')
-								await documents.put(key, value)
-								persisted.push(parsePluginLogPolicySnapshot(value))
-							},
-						})
+			services: [elysia(), commands(), nodeModules(), workers()],
+			coreConfig: {
+				logtape: {
+					input: loggingPlan(),
+					options: {
+						policyStore(root) {
+							const documents = requireFs(root).documents('services/logging')
+							return createPluginLogPolicyStore({
+								getText: (key) => documents.getText(key),
+								async put(key, value) {
+									if (rejectLoggingWrite) throw new Error('logging cleanup unavailable')
+									await documents.put(key, value)
+									persisted.push(parsePluginLogPolicySnapshot(value))
+								},
+							})
+						},
 					},
-				}),
+				},
 			},
 		})
 		const logging = host.ctx.logging!

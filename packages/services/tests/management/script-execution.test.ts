@@ -20,11 +20,8 @@ import {
 	createScriptControlClient,
 	type ScriptControlClient,
 } from '@pluxel/host/internal/agent/transport'
-import { elysia } from '@pluxel/services/elysia'
 import { listenElysia } from '@pluxel/services/elysia/node'
-import { managementAccess } from '@pluxel/services/management/access'
-import { management } from '@pluxel/services/management/service'
-import { managementHttp } from '@pluxel/services/management/http'
+import { servicesPreset } from '@pluxel/services/preset'
 import {
 	createRuntimeSessionClient,
 	readRuntimeAuthenticationStep,
@@ -105,15 +102,19 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			{
 				moduleId: resolve(import.meta.dirname, 'fixtures/control-sync-counter.ts'),
 				className: 'ScriptCounter',
-				definition: ScriptCounter.definitionAddress(),
+				definition: ScriptCounter.address(),
 			},
 		],
 	})
 	const makeHost = async (scripts: boolean) => {
 		const host = await createHost({
-			plugins: [ScriptCliAuthentication, ScriptCounter],
-			services: [elysia(), managementAccess(), management(), managementHttp({ scripts })],
-			runtime: { documents: { config: false, state: false } },
+			plugins: [{ plugin: ScriptCliAuthentication }, { plugin: ScriptCounter }],
+			services: await servicesPreset(
+				{ root: process.cwd(), mode: 'test', env: {}, bindings: {} },
+				{ workbench: false, managementHttp: { scripts } },
+			),
+			config: { document: false },
+			policy: { document: false },
 		})
 		setHostCatalogProvenance(
 			host.ctx,
@@ -194,7 +195,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 			expect(description.protocol.capabilities).toContain('plugins.control-materials')
 			const index = await managementClient.materials.manifest()
 			expect(index.materials).toHaveLength(1)
-			expect(index.definitions[0].definition).toEqual(ScriptCounter.definitionAddress())
+			expect(index.definitions[0].definition).toEqual(ScriptCounter.address())
 			const credentials = join(directory, 'sync-credentials.json')
 			await writeFile(credentials, JSON.stringify({ password: SCRIPT_TEST_PASSWORD }), {
 				mode: 0o600,
@@ -226,7 +227,7 @@ it('executes authenticated uploads on a real TLS Host, retaining identity and re
 					out: join(directory, 'synced-control'),
 					definitions: [
 						{
-							definition: ScriptCounter.definitionAddress(),
+							definition: ScriptCounter.address(),
 							exportName: 'ScriptCounter',
 							module: expect.any(String),
 						},

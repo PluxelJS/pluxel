@@ -52,8 +52,23 @@ const unchanged: PluginApplyReportSnapshot = {
 describe('Host report protocol and completion', () => {
 	it('roundtrips actual provider failure, blocked consumer and drain reports', async () => {
 		await using host = await createHost({
-			plugins: [FailingProvider, BlockedConsumer, FailingDrain],
-			runtime: { documents: { config: false, state: false } },
+			plugins: [
+				{
+					plugin: FailingProvider,
+				},
+				{
+					plugin: BlockedConsumer,
+				},
+				{
+					plugin: FailingDrain,
+				},
+			],
+			policy: {
+				document: false,
+			},
+			config: {
+				document: false,
+			},
 		})
 		const failed = projectPluginApplyReport(
 			host.ctx,
@@ -81,7 +96,7 @@ describe('Host report protocol and completion', () => {
 				expect.objectContaining({
 					kind: 'dependency-blocked',
 					blockedBy: expect.objectContaining({
-						definition: FailingProvider.definitionAddress(),
+						definition: FailingProvider.address(),
 						variant: 'default',
 					}),
 				}),

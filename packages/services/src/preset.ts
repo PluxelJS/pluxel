@@ -1,42 +1,88 @@
 import { resolve } from 'node:path'
 import type { HostService, HostStartupContext } from '@pluxel/host'
-import type { ProductDescriptor } from './management/product-contract'
-import type { WorkbenchShortcut } from '@pluxel/workbench/service'
-import { standardServices } from './index'
-import { vault, type VaultServiceConfig } from './vault'
+import { readProductDescriptor, type ProductDescriptor } from './management/product-contract'
+import type { ManagementServiceOptions } from './management/service'
+import type { ManagementHttpOptions } from './management/http'
+import type { WorkbenchInstallOptions } from '@pluxel/workbench/service'
+import type { WorkbenchShellOptions } from '@pluxel/workbench/http'
+import { elysia } from './elysia'
+import { commands } from './commands'
+import { nodeModules, type NodeModuleArtifactHostOptions } from './node'
+import { workers, type WorkersConfig } from './workers'
+
+type PresetInstallerOptions<Options, Owned extends keyof Options> = Options extends unknown
+	? Omit<Options, Owned> & { readonly [Key in Owned]?: never }
+	: never
+
+export type ServicesPresetOptions = Readonly<{
+	product?: ProductDescriptor
+	nodeModules?: PresetInstallerOptions<NodeModuleArtifactHostOptions, 'root'>
+	workers?: WorkersConfig
+	management?: PresetInstallerOptions<ManagementServiceOptions, 'application' | 'workbench'>
+	managementHttp?: PresetInstallerOptions<ManagementHttpOptions, 'bindings'>
+	/** Workbench is enabled by default. */
+	workbench?:
+		| false
+		| Readonly<{
+				service?: PresetInstallerOptions<WorkbenchInstallOptions, 'product' | 'artifacts'>
+				http?: PresetInstallerOptions<WorkbenchShellOptions, 'publicDir'>
+		  }>
+}>
 
 /** Official application services. Host owns preparation, rollback and shutdown. */
 export async function servicesPreset(
 	startup: HostStartupContext,
-	options: Readonly<{
-		/** Explicit Vault backend and deployment identity. */
-		vault?: VaultServiceConfig
-		/** Omitted when the application has no product branding. */
-		product?: ProductDescriptor
-		/** Include the Workbench UI at /__pluxel/workbench. @default true */
-		workbench?: boolean
-		/** Explicitly grant authenticated administrators trusted Node script execution. @default false */
-		scripts?: boolean
-		/** Initial user-removable sidebar shortcuts; declarations never control root placement. */
-		initialShortcuts?: readonly WorkbenchShortcut[]
-	}>,
+	options: ServicesPresetOptions = {},
 ): Promise<HostService[]> {
-	if (!options || typeof options !== 'object' || Array.isArray(options))
-		throw new TypeError('[services/preset] options must be an object')
-	for (const key of Object.keys(options)) {
-		if (!['vault', 'product', 'workbench', 'scripts', 'initialShortcuts'].includes(key))
-			throw new TypeError(`[services/preset] Unknown option options.${key}`)
-	}
-	if (options.workbench !== undefined && typeof options.workbench !== 'boolean')
-		throw new TypeError('[services/preset] options.workbench must be a boolean')
-	if (options.scripts !== undefined && typeof options.scripts !== 'boolean')
-		throw new TypeError('[services/preset] options.scripts must be a boolean')
-	const withWorkbench = options.workbench ?? true
+	assertOptionKeys(options, 'options', [
+		'product',
+		'nodeModules',
+		'workers',
+		'management',
+		'managementHttp',
+		'workbench',
+	])
+	const withWorkbench = options.workbench !== false
+	const workbenchOptions = options.workbench === false ? undefined : options.workbench
 	const deployment = startup.deployment
-	const nodeModules =
-		deployment?.delivery === 'standalone'
-			? { root: resolve(deployment.root, 'artifacts/node') }
-			: undefined
+	if (withWorkbench && deployment?.variant === 'headless')
+		throw new TypeError(
+			'[services/preset] Workbench requires a deployment with Workbench artifacts',
+		)
+	if (workbenchOptions !== undefined)
+		assertOptionKeys(workbenchOptions, 'options.workbench', ['service', 'http'])
+
+	const product =
+		options.product === undefined
+			? undefined
+			: readProductDescriptor(options.product, 'options.product')
+	const nodeModuleOptions = installerOptions(options.nodeModules, 'options.nodeModules', ['root'])
+	const workersOptions = installerOptions(options.workers, 'options.workers')
+	const managementOptions = installerOptions(options.management, 'options.management', [
+		'application',
+		'workbench',
+	])
+	const managementHttpOptions = installerOptions(options.managementHttp, 'options.managementHttp', [
+		'bindings',
+	])
+	const workbenchServiceOptions = installerOptions(
+		workbenchOptions?.service,
+		'options.workbench.service',
+		['product', 'artifacts'],
+	)
+	const workbenchHttpOptions = installerOptions(workbenchOptions?.http, 'options.workbench.http', [
+		'publicDir',
+	])
+	const base = [
+		elysia(),
+		commands(),
+		nodeModules(
+			deployment?.delivery === 'standalone' && nodeModuleOptions?.resolve === undefined
+				? { ...nodeModuleOptions, root: resolve(deployment.root, 'artifacts/node') }
+				: nodeModuleOptions,
+		),
+		workers(workersOptions),
+	]
 	const [{ managementAccess }, { management }, { managementCommands }, { managementHttp }] =
 		await Promise.all([
 			import('./management/access'),
@@ -63,7 +109,7 @@ export async function servicesPreset(
 			)
 		: undefined
 	const managementTransport = managementHttp({
-		scripts: options.scripts,
+		...managementHttpOptions,
 		...(workbench
 			? {
 					bindings: (ctx) => ({
@@ -75,8 +121,7 @@ export async function servicesPreset(
 			: {}),
 	})
 	return [
-		...standardServices({ nodeModules }),
-		vault({ deployIdentity: startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY, ...options.vault }),
+		...base,
 		managementAccess(),
 		managementCommands(),
 		workbench
@@ -85,19 +130,60 @@ export async function servicesPreset(
 					requires: { ...managementTransport.requires, workbench: workbench.WorkbenchHost },
 				}
 			: managementTransport,
-		management({ application: { product: options.product ?? null }, workbench: withWorkbench }),
+		management({
+			...managementOptions,
+			application: { product: product ?? null },
+			workbench: withWorkbench,
+		}),
 		...(workbench
 			? [
 					workbench.workbenchService({
-						product: options.product,
-						initialShortcuts: options.initialShortcuts,
+						...workbenchServiceOptions,
+						product,
 						artifacts: deployment ? { root: resolve(deployment.root, 'workbench') } : undefined,
 					}),
 					workbench.workbenchHttp({
-						uiBasePath: '/__pluxel/workbench',
+						...workbenchHttpOptions,
+						uiBasePath:
+							workbenchHttpOptions?.uiBasePath === undefined
+								? '/__pluxel/workbench'
+								: workbenchHttpOptions.uiBasePath,
 						publicDir: deployment ? resolve(deployment.root, 'workbench/public') : undefined,
 					}),
 				]
 			: []),
 	]
+}
+
+function optionKeys(input: unknown, label: string): string[] {
+	if (
+		!input ||
+		typeof input !== 'object' ||
+		![Object.prototype, null].includes(Object.getPrototypeOf(input))
+	)
+		throw new TypeError(`[services/preset] ${label} must be an object`)
+	return Reflect.ownKeys(input).map((key) => {
+		const property = Object.getOwnPropertyDescriptor(input, key)!
+		if (typeof key !== 'string' || !property.enumerable || !('value' in property))
+			throw new TypeError(`[services/preset] ${label} must contain only enumerable data fields`)
+		return key
+	})
+}
+
+function assertOptionKeys(input: unknown, label: string, allowed: readonly string[]): void {
+	for (const key of optionKeys(input, label))
+		if (!allowed.includes(key))
+			throw new TypeError(`[services/preset] Unknown option ${label}.${key}`)
+}
+
+function installerOptions<T>(
+	input: T | undefined,
+	label: string,
+	owned: readonly string[] = [],
+): T | undefined {
+	if (input === undefined) return undefined
+	for (const key of optionKeys(input, label))
+		if (owned.includes(key))
+			throw new TypeError(`[services/preset] ${label}.${key} is owned by the preset`)
+	return { ...input }
 }

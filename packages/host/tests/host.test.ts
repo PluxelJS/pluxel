@@ -20,10 +20,13 @@ describe('Core-only Host', () => {
 		} as const
 		await expect(
 			createHost({
-				// @ts-expect-error Node selection cannot supply a Plugin implementation.
-				plugins: [address],
+				plugins: [
+					{
+						plugin: address as never,
+					},
+				],
 			}),
-		).rejects.toThrow('plugins[0] must be a Plugin constructor')
+		).rejects.toThrow('plugins[0].plugin must be a Plugin constructor')
 	})
 	it('captures catalog inputs before awaiting initial startup', async () => {
 		@Plugin()
@@ -96,12 +99,18 @@ describe('Core-only Host', () => {
 				entry: { kind: 'package-root', packageName: '@test/host' },
 				exportName: 'LifecyclePlugin',
 			},
-			provides: LifecycleBackend.definitionAddress(),
+			provides: LifecycleBackend.address(),
 		})
-		const host = await createHost({ plugins: [LifecyclePlugin] })
+		const host = await createHost({
+			plugins: [
+				{
+					plugin: LifecyclePlugin,
+				},
+			],
+		})
 		const state = requireHostStateStore(host.ctx)
 		const address = {
-			definition: LifecyclePlugin.definitionAddress(),
+			definition: LifecyclePlugin.address(),
 			variant: 'default' as const,
 		}
 		try {
@@ -166,8 +175,12 @@ describe('Core-only Host', () => {
 		}
 		lowerTestReplacement(Original, Replacement)
 		const host = await createHost({
-			plugins: [Original],
-			policy: { autoStart: [{ definition: Original.definitionAddress(), variant: 'default' }] },
+			plugins: [
+				{
+					plugin: Original,
+					autoStart: true,
+				},
+			],
 		})
 		try {
 			await host.start()

@@ -269,6 +269,7 @@ export async function inspectPlugin<
 				resolve: snapshot.resolve,
 				location: (file, start, end) => snapshot.location(file, start, end),
 				signal: options.signal,
+				definition: definition.definition,
 				matchesPlugin: (symbol) => snapshot.matchesPlugin(symbol, definition),
 			})
 		}

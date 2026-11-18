@@ -80,8 +80,7 @@ try {
 		`
 import assert from 'node:assert/strict'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
-import { standardServices } from '@pluxel/services'
-import { vault } from '@pluxel/services/vault'
+import { elysia } from '@pluxel/services/elysia'; import { commands } from '@pluxel/services/commands'; import { nodeModules } from '@pluxel/services/node'; import { workers } from '@pluxel/services/workers';
 import { VaultAdminPlugin } from '@pluxel/services/plugins'
 import { WorkbenchHost } from '@pluxel/workbench/server'
 import { newWebSocketRpcSession } from 'capnweb'
@@ -90,7 +89,7 @@ import { once } from 'node:events'
 
 await using host = await createServiceInternalTestHost({
   workbench: true,
-  services: [...standardServices(), vault()],
+  services: [elysia(), commands(), nodeModules(), workers()],
 })
 await host.start(VaultAdminPlugin.nodeAddress())
 const backend = host.require(VaultAdminPlugin.nodeAddress()).ctx.root.service(WorkbenchHost)

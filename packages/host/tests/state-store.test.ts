@@ -8,7 +8,8 @@ import {
 import { createCoreContextHost } from '@pluxel/core/host'
 import { SuperJSON } from 'superjson'
 import { describe, expect, it, vi } from 'vitest'
-import { HostStateStore, snapshotHostPolicy } from '../src/state-store'
+import { HostStateStore } from '../src/state-store'
+import { canonicalHostPolicyInput, snapshotHostPolicy } from '../src/policy-input'
 import { hostStatePatch } from '../src/state'
 import { createDocumentStorage } from './helpers/document-storage'
 
@@ -31,7 +32,10 @@ describe('Host policy persistence and selection', () => {
 		const storage = createDocumentStorage()
 		const store = new HostStateStore(
 			createCoreContextHost().createRoot(),
-			{ autoStart: [owner], forks: [fork] },
+			snapshotHostPolicy({}, undefined, {
+				autoStart: [on(owner)],
+				forks: [{ node: fork, deploy: true }],
+			}),
 			{ storage },
 		)
 		try {
@@ -41,7 +45,7 @@ describe('Host policy persistence and selection', () => {
 			expect(storage.documents.size).toBe(0)
 			await store.commitVersioned(store.versionedSnapshot().revision, { startTimeoutMs: 12_000 })
 			expect(SuperJSON.parse(storage.documents.get('state.json')!)).toEqual({
-				version: 7,
+				version: 8,
 				startTimeoutMs: 12_000,
 			})
 			expect(store.configurationSnapshot()).toMatchObject({
@@ -52,7 +56,9 @@ describe('Host policy persistence and selection', () => {
 		} finally {
 			await store.ctx.effects.dispose()
 		}
-		const reopened = new HostStateStore(createCoreContextHost().createRoot(), {}, { storage })
+		const reopened = new HostStateStore(createCoreContextHost().createRoot(), undefined, {
+			storage,
+		})
 		try {
 			await reopened.ready
 			expect(reopened.executionSnapshot().startTimeoutMs).toBe(12_000)
@@ -63,23 +69,30 @@ describe('Host policy persistence and selection', () => {
 
 	it.each([
 		['declared-only', [owner], 1500],
-		['declared-first', [owner], 9_000],
-		['saved-first', [other], 9_000],
+		['declared-first', [other, owner], 9_000],
+		['saved-first', [other, owner], 9_000],
 	] as const)(
-		'selects %s independently and preserves explicit saved empty arrays',
+		'selects %s for each target and honors saved fork choices',
 		async (mode, expected, timeout) => {
 			const storage = createDocumentStorage()
 			await storage.put(
 				'state.json',
-				SuperJSON.stringify({ version: 7, autoStart: [other], forks: [], startTimeoutMs: 9_000 }),
+				SuperJSON.stringify({
+					version: 8,
+					autoStart: [on(other)],
+					forks: [{ node: fork, deploy: false }],
+					startTimeoutMs: 9_000,
+				}),
 			)
 			const store = new HostStateStore(
 				createCoreContextHost().createRoot(),
-				{
-					autoStart: [owner],
-					forks: [fork],
-					mode: { autoStart: mode, forks: 'saved-first', startTimeoutMs: mode },
-				},
+				snapshotHostPolicy(
+					{
+						modes: { autoStart: mode, forks: 'saved-first', startTimeoutMs: mode },
+					},
+					undefined,
+					{ autoStart: [on(owner)], forks: [{ node: fork, deploy: true }] },
+				),
 				{ storage },
 			)
 			try {
@@ -87,7 +100,7 @@ describe('Host policy persistence and selection', () => {
 				expect(store.snapshot().autoStart).toEqual(expected)
 				expect(store.snapshot().forks).toEqual([])
 				expect(store.executionSnapshot().startTimeoutMs).toBe(timeout)
-				await storage.put('state.json', SuperJSON.stringify({ version: 7, autoStart: [] }))
+				await storage.put('state.json', SuperJSON.stringify({ version: 8, autoStart: [] }))
 				expect(store.snapshot().autoStart).toEqual(expected)
 			} finally {
 				await store.ctx.effects.dispose()
@@ -96,7 +109,10 @@ describe('Host policy persistence and selection', () => {
 	)
 
 	it('lets pure saves edit shadowed input while actions refuse an ineffective target', async () => {
-		const store = new HostStateStore(createCoreContextHost().createRoot(), { autoStart: [owner] })
+		const store = new HostStateStore(
+			createCoreContextHost().createRoot(),
+			snapshotHostPolicy({}, undefined, { autoStart: [on(owner)] }),
+		)
 		try {
 			await store.ready
 			expect(
@@ -109,32 +125,45 @@ describe('Host policy persistence and selection', () => {
 					hostStatePatch({ type: 'set-auto-start', node: owner, autoStart: false }),
 				),
 			).toThrow(expect.objectContaining({ code: 'policy_shadowed' }))
-			await store.commitVersioned(0, { autoStart: [other] })
+			await store.commitVersioned(0, { autoStart: [{ node: owner, autoStart: false }, on(other)] })
 			expect(store.configurationSnapshot()).toMatchObject({
-				managedInput: { autoStart: [other] },
-				effective: { autoStart: [owner] },
-				shadowedFields: ['autoStart'],
+				managedInput: { autoStart: [on(other), { node: owner, autoStart: false }] },
+				effective: { autoStart: [other, owner] },
+				selections: expect.arrayContaining([
+					{
+						target: { field: 'autoStart', node: owner },
+						source: 'declared',
+						mode: 'declared-first',
+						shadowed: true,
+					},
+					{
+						target: { field: 'autoStart', node: other },
+						source: 'saved',
+						mode: 'declared-first',
+						shadowed: false,
+					},
+				]),
 			})
 		} finally {
 			await store.ctx.effects.dispose()
 		}
 	})
 
-	it('materializes only the changed effective column and preserves its other members', async () => {
-		const store = new HostStateStore(createCoreContextHost().createRoot(), {
-			autoStart: [owner],
-			forks: [fork],
-			mode: { autoStart: 'saved-first' },
-		})
+	it('persists only the touched node and preserves other declared choices', async () => {
+		const store = new HostStateStore(
+			createCoreContextHost().createRoot(),
+			snapshotHostPolicy({ modes: { autoStart: 'saved-first' } }, undefined, {
+				autoStart: [on(owner)],
+				forks: [{ node: fork, deploy: true }],
+			}),
+		)
 		try {
 			await store.ready
 			const candidate = store.prepareAction(
 				hostStatePatch({ type: 'set-auto-start', node: other, autoStart: true }),
 			)
 			expect(candidate).toEqual({
-				autoStart: [other, owner].sort((a, b) =>
-					a.definition.exportName.localeCompare(b.definition.exportName),
-				),
+				autoStart: [on(other)],
 			})
 			await store.commitVersioned(0, candidate)
 			expect(store.managedSnapshot().forks).toBeUndefined()
@@ -148,7 +177,7 @@ describe('Host policy persistence and selection', () => {
 		const put = vi.spyOn(storage, 'put')
 		const store = new HostStateStore(
 			createCoreContextHost().createRoot(),
-			{ autoStart: [owner] },
+			snapshotHostPolicy({}, undefined, { autoStart: [on(owner)] }),
 			{ storage, readOnly: true },
 		)
 		try {
@@ -164,20 +193,20 @@ describe('Host policy persistence and selection', () => {
 	})
 
 	it.each([
-		{ version: 6 },
-		{ version: 7, unknown: true },
-		{ version: 7, autoStart: [owner, owner] },
-		{ version: 7, forks: [owner] },
-		{ version: 7, forks: [{ ...fork, forkId: 'bad/id' }] },
-		{ version: 7, startTimeoutMs: 2_147_483_648 },
-		{ version: 7, stopConcurrency: 0 },
+		{ version: 7 },
+		{ version: 8, unknown: true },
+		{ version: 8, autoStart: [on(owner), on(owner)] },
+		{ version: 8, forks: [{ node: owner, deploy: true }] },
+		{ version: 8, forks: [{ node: { ...fork, forkId: 'bad/id' }, deploy: true }] },
+		{ version: 8, startTimeoutMs: 2_147_483_648 },
+		{ version: 8, stopConcurrency: 0 },
 	])('rejects invalid persisted input without altering it: %j', async (input) => {
 		const storage = createDocumentStorage()
 		const text = SuperJSON.stringify(input)
 		await storage.put('state.json', text)
 		const store = new HostStateStore(
 			createCoreContextHost().createRoot(),
-			{ mode: { startTimeoutMs: 'declared-only' } },
+			snapshotHostPolicy({ modes: { startTimeoutMs: 'declared-only' } }),
 			{ storage },
 		)
 		try {
@@ -193,11 +222,15 @@ describe('Host policy persistence and selection', () => {
 		const storage = createDocumentStorage()
 		await storage.put(
 			'state.json',
-			SuperJSON.stringify({ version: 7, autoStart: [fork], forks: [fork] }),
+			SuperJSON.stringify({
+				version: 8,
+				autoStart: [on(fork)],
+				forks: [{ node: fork, deploy: true }],
+			}),
 		)
 		const store = new HostStateStore(
 			createCoreContextHost().createRoot(),
-			{ mode: { forks: 'declared-only' } },
+			snapshotHostPolicy({ modes: { forks: 'declared-only' } }),
 			{ storage },
 		)
 		try {
@@ -209,7 +242,7 @@ describe('Host policy persistence and selection', () => {
 
 	it('does not publish an uncertain write and advances tokens only after confirmed changes', async () => {
 		const storage = createDocumentStorage()
-		const store = new HostStateStore(createCoreContextHost().createRoot(), {}, { storage })
+		const store = new HostStateStore(createCoreContextHost().createRoot(), undefined, { storage })
 		try {
 			await store.ready
 			const before = store.versionedSnapshot()
@@ -217,13 +250,13 @@ describe('Host policy persistence and selection', () => {
 			storage.put = async () => {
 				throw new Error('unconfirmed')
 			}
-			await expect(store.commitVersioned(before.revision, { autoStart: [owner] })).rejects.toThrow(
-				'unconfirmed',
-			)
+			await expect(
+				store.commitVersioned(before.revision, { autoStart: [on(owner)] }),
+			).rejects.toThrow('unconfirmed')
 			expect(store.versionedSnapshot()).toBe(before)
 			expect(store.managedRevision()).toBe(token)
 			storage.put = async () => {}
-			await store.commitVersioned(before.revision, { autoStart: [owner] })
+			await store.commitVersioned(before.revision, { autoStart: [on(owner)] })
 			expect(store.managedRevision()).not.toBe(token)
 			expect(() => store.assertManagedRevision(token)).toThrow(
 				expect.objectContaining({ code: 'revision_conflict' }),
@@ -237,10 +270,10 @@ describe('Host policy persistence and selection', () => {
 	})
 
 	it.each([
-		{ mode: 'saved-first' },
-		{ mode: { typo: 'saved-first' } },
-		{ startConcurrency: 0 },
-		{ startTimeoutMs: Infinity },
+		{ mode: 'parser-default' },
+		{ modes: { typo: 'saved-first' } },
+		{ execution: { startConcurrency: 0 } },
+		{ execution: { startTimeoutMs: Infinity } },
 		{ autoStart: [owner, owner] },
 		{ stopConcurrency: undefined, extra: true },
 	])('rejects malformed author policy before resources: %j', (input) => {
@@ -250,27 +283,36 @@ describe('Host policy persistence and selection', () => {
 
 it('captures author autoStart without executing array accessors or dropping sparse entries', () => {
 	const getter = vi.fn(() => owner)
-	const values: PluginNodeAddress[] = []
+	const values: ReturnType<typeof on>[] = []
 	Object.defineProperty(values, '0', { enumerable: true, get: getter })
-	expect(() => snapshotHostPolicy({ autoStart: values })).toThrow(/data properties/)
+	expect(() => canonicalHostPolicyInput({ autoStart: values })).toThrow(/accessors/)
 	expect(getter).not.toHaveBeenCalled()
-	expect(() => snapshotHostPolicy({ autoStart: Array<PluginNodeAddress>(1) })).toThrow(
-		/dense array/,
+	expect(() => canonicalHostPolicyInput({ autoStart: Array<ReturnType<typeof on>>(1) })).toThrow(
+		/dense/,
 	)
 })
 
 it('normalizes framework address evidence in policy and refuses detached copies', () => {
 	const node = PolicyAddressOwner.nodeAddress()
 	const eastFork = PolicyAddressOwner.nodeAddress('east')
-	const policy = snapshotHostPolicy({ autoStart: [node, eastFork], forks: [eastFork] })
+	const policy = canonicalHostPolicyInput({
+		autoStart: [on(node), on(eastFork)],
+		forks: [{ node: eastFork, deploy: true }],
+	})
 	expect(policy.autoStart).toHaveLength(2)
-	expect(policy.autoStart).toEqual(
+	expect(policy.autoStart?.map((choice) => choice.node)).toEqual(
 		expect.arrayContaining([node, eastFork].map(parsePluginNodeAddress)),
 	)
-	expect(policy.forks).toEqual([parsePluginNodeAddress(eastFork)])
+	expect(policy.forks).toEqual([{ node: parsePluginNodeAddress(eastFork), deploy: true }])
 	expect(Object.getOwnPropertySymbols(policy.autoStart![0]!)).toHaveLength(0)
-	expect(() => snapshotHostPolicy({ autoStart: [{ ...node }] })).toThrow('copied or detached')
-	expect(() => snapshotHostPolicy({ autoStart: [PolicyAddressOwner as never] })).toThrow(
+	expect(() => canonicalHostPolicyInput({ autoStart: [on({ ...node })] })).toThrow(
+		'copied or detached',
+	)
+	expect(() => canonicalHostPolicyInput({ autoStart: [on(PolicyAddressOwner as never)] })).toThrow(
 		'portable data tree',
 	)
 })
+
+function on(node: PluginNodeAddress) {
+	return { node, autoStart: true }
+}

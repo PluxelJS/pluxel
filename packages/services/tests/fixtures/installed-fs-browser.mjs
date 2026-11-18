@@ -62,8 +62,8 @@ export async function persisted() {
 		let missingOtherOwner
 		for (let round = 0; round < 3; round++) {
 			host = await createHost({
-				plugins: [First, Second],
-				runtime: {
+				plugins: [{ plugin: First }, { plugin: Second }],
+				coreConfig: {
 					zenfs: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
 				},
 			})
@@ -95,8 +95,8 @@ export async function persisted() {
 			views.clear()
 		}
 		host = await createHost({
-			plugins: [First, Second],
-			runtime: {
+			plugins: [{ plugin: First }, { plugin: Second }],
+			coreConfig: {
 				zenfs: {
 					mounts: { '/': { backend: IndexedDB, storeName } },
 					readOnly: true,
@@ -133,7 +133,7 @@ export async function corruptConfig() {
 	try {
 		host = await createHost({
 			plugins: [],
-			runtime: {
+			coreConfig: {
 				zenfs: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
 			},
 		})
@@ -146,7 +146,7 @@ export async function corruptConfig() {
 		try {
 			host = await createHost({
 				plugins: [],
-				runtime: {
+				coreConfig: {
 					zenfs: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
 					documents: {
 						config: { storage: (root) => (documents = requireHostDocuments(root, 'config')) },
@@ -165,7 +165,7 @@ export async function corruptConfig() {
 		await host?.close()
 		host = await createHost({
 			plugins: [],
-			runtime: {
+			coreConfig: {
 				zenfs: { mounts: { '/': { backend: IndexedDB, storeName } }, durableMounts: ['/'] },
 				documents: { config: false },
 			},

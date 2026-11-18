@@ -2,11 +2,12 @@ import { dirname, relative, resolve } from 'node:path'
 import { realpath } from 'node:fs/promises'
 import { lstatSync } from 'node:fs'
 import { watch } from 'chokidar'
-import { pluginSource, type PluginSource } from '@pluxel/host/sources'
+import type { PluginSource } from '@pluxel/host/sources'
 import {
 	discoverPluginSources,
-	pluginSourceCovers,
+	pluginSourceMatcher,
 	resolvePluginSourcePath,
+	snapshotPluginSource,
 } from '@pluxel/host/internal'
 import { hostFileWatchOptions } from './internal/watch-policy'
 import type { PluginSourceOpenOptions, PluginSourceWatch } from './source-session'
@@ -21,28 +22,21 @@ export async function watchPluginSource(
 	options: PluginSourceOpenOptions,
 ): Promise<PluginSourceWatch> {
 	options.signal?.throwIfAborted()
-	const declaration = pluginSource(source)
+	const declaration = snapshotPluginSource(source)
 	await discoverPluginSources({ root: options.root, sources: [declaration] })
-	const declaredPath = normalize(resolve(options.root, declaration.path))
+	const declaredPath = normalize(resolve(options.root, declaration.file ?? declaration.directory))
 	const ancestor = existingAncestor(dirname(declaredPath))
 	const watchRoot = normalize(await realpath(ancestor))
 	const initial = await resolvePluginSourcePath(declaration, options.root)
 	const path = normalize(initial ?? resolve(watchRoot, relative(ancestor, declaredPath)))
-	const resolvedSource = pluginSource({ ...declaration, path })
-	const root = declaration.kind === 'file' ? dirname(path) : path
-	const matches = (file: string): boolean =>
-		pluginSourceCovers({
-			source: resolvedSource,
-			root: options.root,
-			requirement: { kind: 'file', path: file },
-		})
-	const covers = (file: string): boolean =>
-		matches(file) ||
-		pluginSourceCovers({
-			source: declaration,
-			root: options.root,
-			requirement: { kind: 'file', path: file },
-		})
+	const resolvedSource: PluginSource =
+		declaration.file !== undefined
+			? { file: path }
+			: { directory: path, include: declaration.include }
+	const root = declaration.file !== undefined ? dirname(path) : path
+	const matches = pluginSourceMatcher(resolvedSource, options.root)
+	const matchesDeclaration = pluginSourceMatcher(declaration, options.root)
+	const covers = (file: string): boolean => matches(file) || matchesDeclaration(file)
 	const entries = new Set<string>()
 	let ready = false
 	let closed = false
@@ -71,7 +65,7 @@ export async function watchPluginSource(
 			if (stats?.isSymbolicLink()) return true
 			if (normalized === path) return false
 			if (stats?.isFile()) return !matches(normalized)
-			return declaration.kind === 'directory'
+			return declaration.directory !== undefined
 				? !related(normalized, root)
 				: !relatedAncestor(normalized, root)
 		},
@@ -101,7 +95,7 @@ export async function watchPluginSource(
 		const missingLiveFile = (error: unknown): undefined => {
 			if (
 				!ready ||
-				declaration.kind !== 'file' ||
+				declaration.file === undefined ||
 				!error ||
 				typeof error !== 'object' ||
 				!('code' in error) ||
@@ -122,7 +116,7 @@ export async function watchPluginSource(
 				),
 				{ code: 'PLUGIN_SOURCE_PATH_CHANGED', file: path },
 			)
-		if (leaf === undefined && declaration.kind === 'file') return []
+		if (leaf === undefined && declaration.file !== undefined) return []
 		return await discoverPluginSources({ root: options.root, sources: [resolvedSource] }).catch(
 			(error: unknown): readonly string[] => {
 				missingLiveFile(error)

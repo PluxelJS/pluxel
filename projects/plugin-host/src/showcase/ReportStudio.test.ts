@@ -1,4 +1,7 @@
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -38,7 +41,7 @@ describe('ReportStudioPlugin', () => {
 		temporaryRoots.push(storageRoot)
 		await using host = await createTestHost({
 			workbench: true,
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 		await host.commit((change) => {
 			change.catalog.add([

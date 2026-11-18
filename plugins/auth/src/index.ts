@@ -1,5 +1,4 @@
 import type { Workbench } from '@pluxel/workbench'
-import type { Vault } from '@pluxel/services/vault'
 import type {
 	ManagementAccess,
 	ManagementAccessPrincipal,
@@ -28,7 +27,6 @@ import { verifyTotp } from './totp.ts'
 import { AuthWorkbench, type AuthCredentialSetupMode, type AuthSetupSnapshot } from './workbench.ts'
 
 const WorkbenchRef = defineServiceRef<Workbench>()
-const VaultRef = defineServiceRef<Vault>()
 const ManagementAccessRef = defineServiceRef<ManagementAccess>()
 export { AuthConfig } from './config.ts'
 export type { AuthPluginConfig, AuthMode, OidcAuthMode } from './config.ts'
@@ -82,7 +80,7 @@ export class AuthPlugin extends BasePlugin {
 	})
 
 	protected override async init(): Promise<void> {
-		const store = new CredentialStore(this.ctx.service(VaultRef))
+		const store = new CredentialStore(this.ctx.vault)
 		this.store = store
 		const mode = this.config.mode
 		const [accountState, oidcState] = await Promise.all([
@@ -180,13 +178,6 @@ export class AuthPlugin extends BasePlugin {
 		}
 		const setupMode: AuthCredentialSetupMode =
 			mode.type === 'oidc' ? 'oidc-confidential' : mode.type
-		if (!this.store?.available) {
-			return Object.freeze({
-				mode: setupMode,
-				state: 'unavailable',
-				reason: 'vault-unavailable',
-			})
-		}
 		const invalid = mode.type === 'oidc' ? this.oidcSecretInvalid : this.accountInvalid
 		if (invalid) {
 			return Object.freeze({ mode: setupMode, state: 'setup-required', reason: 'invalid' })

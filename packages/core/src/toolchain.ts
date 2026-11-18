@@ -4,6 +4,7 @@ export {
 	type PluginLoweringErrorCode,
 	type PluginLoweringHeader,
 } from './plugins/runtime/lowering-abi.ts'
+export { isStartTimeoutMs } from './context/plugin-execution'
 export {
 	__definePluginRef,
 	__setPluginConfig,

@@ -229,11 +229,13 @@ async function verifyViteApplication(root: string): Promise<void> {
 		statusFile,
 		[
 			"import type { Script } from '@pluxel/agent-sdk/host'",
-			"import { examplePlugins } from '../../src/policy'",
+			"import { AuditPlugin } from '@example/audit-plugin'",
+			"import { HttpPlugin } from '@example/http-plugin'",
+			"import { TodoPlugin } from '@example/todo-plugin'",
 			"import { VaultAdminPlugin } from '@pluxel/services/plugins'",
 			'export default (async (sdk) => {',
 			'  const running: boolean[] = []',
-			'  for (const plugin of examplePlugins) {',
+			'  for (const plugin of [AuditPlugin, TodoPlugin, HttpPlugin, VaultAdminPlugin]) {',
 			'    const status = await sdk.plugin(plugin.nodeAddress()).status()',
 			"    running.push(status?.lifecycleState === 'running')",
 			'  }',
@@ -348,11 +350,7 @@ async function verifySourceInspection(root: string): Promise<void> {
 	const applicationSource = resolve(root, 'host/src/app.ts')
 	assert.equal(inputs.value.application.root, await realpath(resolve(root, 'host')))
 	assert.equal(inputs.value.application.entry, await realpath(applicationSource))
-	await assertSourceStart(
-		inputs.value.config,
-		applicationSource,
-		'exampleHostConfig(env.EXAMPLE_TODO_MAX_ITEMS)',
-	)
+	await assertSourceStart(inputs.value.config, applicationSource, '{\n\t\t\t\t\tmaxItems:')
 	assert.deepEqual(checks.value.scripts.map((script: { name: string }) => script.name).sort(), [
 		'build',
 		'test',

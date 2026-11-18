@@ -44,7 +44,7 @@ export const health = (async (sdk, run) => {
 		request.end()
 	})
 	const logging = sdk.ctx.logging
-	if (!logging) throw new Error('health requires runtime.logtape')
+	if (!logging) throw new Error('health requires coreConfig.logtape')
 	logging.flushStores()
 	const plugins = await sdk.plugins.list()
 	return {

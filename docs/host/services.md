@@ -3,9 +3,9 @@ title: Host 服务组合与扩展
 description: 使用官方服务预设快速搭建生产服务，或按需挑选服务与编写自定义服务扩展。
 ---
 
-宿主（Host）除了托管插件的依赖图之外，还可以为插件提供统一的外部基础设施服务，如 HTTP、指令、Vault 凭据和 Workbench 管理面板。
+宿主（Host）除了托管插件的依赖图之外，还可以为插件提供统一的外部基础设施服务，如 HTTP、指令和 Workbench 管理面板。
 
-Core 的 Context 直接提供 `ctx.logger`、`ctx.effects` 和 `ctx.events`；Plugin Context 另有 `ctx.fs()` 与 `ctx.tinybase`，配置日志后的根 Context 另有 `root.logging`。这些内建能力无需导入服务声明或加入 `services`。应用通过 `runtime.zenfs` 选择文件后端，通过 `runtime.logtape` 配置日志；服务扩展用于插件需要显式依赖的其他能力。
+Core 的 Context 直接提供 `ctx.logger`、`ctx.effects` 和 `ctx.events`。Plugin Context 另有 `ctx.fs()`、`ctx.tinybase` 与 `ctx.vault`，配置日志后的根 Context 另有 `root.logging`。应用通过 `coreConfig.zenfs` 选择文件后端，通过 `coreConfig.vault` 配置凭据后端，通过 `coreConfig.logtape` 配置日志。
 
 你可以直接使用官方推荐的 `servicesPreset()` 开箱组合，也可以根据特定需求按需挑选服务甚至编写自定义服务。
 
@@ -19,7 +19,7 @@ import { servicesPreset } from '@pluxel/services/preset'
 
 export default defineHostApplication(async (startup) => ({
 	services: await servicesPreset(startup, {
-		workbench: true, // 启用 Workbench 管理后台（默认为 true）
+		workers: { maxThreads: 4 },
 	}),
 }))
 ```
@@ -28,11 +28,26 @@ export default defineHostApplication(async (startup) => ({
 
 - **HTTP 路由**：挂载 Elysia 2 Web 框架，分发插件请求；
 - **Commands 指令系统**：提供命令目录与调度能力；
-- **Vault 密钥服务**：提供加密的敏感凭据存储；
 - **Worker 线程池与 Node 模块加载器**：支持后台计算任务；
+- **管理能力**：认证、运行状态、管理命令与管理 HTTP 入口；
 - **Workbench 管理后台**：提供位于 `/__pluxel/workbench` 的可视化插件管理与调试页面。
 
 Database 由应用[单独安装并选择驱动](./configuration.md#数据库服务后端选择)，不包含在预设中。
+
+### 服务选项
+
+省略选项或填写 `undefined` 时使用默认值。预设直接传递安装器选项，数组整体采用所提供的值。
+
+| 字段             | 配置                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------- |
+| `product`        | 管理面与 Workbench 共用的 `ProductDescriptor`                                                                 |
+| `nodeModules`    | `NodeModuleArtifactHostOptions` 中除 `root` 外的选项                                                          |
+| `workers`        | `WorkersConfig`，包含原生 Worker 选项                                                                         |
+| `management`     | `ManagementServiceOptions` 中除 `application` 和 `workbench` 外的选项                                         |
+| `managementHttp` | `ManagementHttpOptions` 中除 `bindings` 外的选项，例如 `scripts: true`                                        |
+| `workbench`      | `false`，或包含可选 `service` 和 `http` 的对象。预设负责服务的 `product`、`artifacts` 和 Shell 的 `publicDir` |
+
+Standalone 由交付根目录派生 `artifacts/node`，modules 按已安装的插件 inventory 定位制品，Vite 默认接入源码编译器。显式 `nodeModules.resolve` 取代这些默认定位方式。Workbench Shell 的预设路径为 `/__pluxel/workbench`，可用 `workbench.http.uiBasePath` 设置。
 
 <span id="初始侧栏入口"></span>
 
@@ -42,7 +57,11 @@ Database 由应用[单独安装并选择驱动](./configuration.md#数据库服�
 
 ```ts
 services: await servicesPreset(startup, {
-	initialShortcuts: [{ target: OrdersPlugin.nodeAddress(), entryKey: 'overview' }],
+	workbench: {
+		service: {
+			initialShortcuts: [{ target: OrdersPlugin.nodeAddress(), entryKey: 'overview' }],
+		},
+	},
 })
 ```
 
@@ -50,18 +69,20 @@ services: await servicesPreset(startup, {
 - `entryKey`：插件在 Workbench 声明中定义的稳定视图键；
 - 这些入口仅作为用户的初始布局推荐，用户后续可以自由在界面中取消固定或重新调整。
 
-## 按需挑选基础服务（standardServices）
+## 无界面应用与定制宿主
 
-如果不希望包含 Workbench 前端界面（例如纯后台无头服务），可以使用 `@pluxel/services` 导出的 `standardServices()`：
+纯后台应用设置 `workbench: false`，保留 HTTP、Commands、Node、Worker 和管理能力。交付为 headless 时启用 Workbench 会报告缺少制品。
 
 ```ts
 import { defineHostApplication } from '@pluxel/host'
-import { standardServices } from '@pluxel/services'
+import { servicesPreset } from '@pluxel/services/preset'
 
-export default defineHostApplication(() => ({
-	services: standardServices(), // 仅包含 HTTP、Commands、Node 与 Worker 服务
+export default defineHostApplication(async (startup) => ({
+	services: await servicesPreset(startup, { workbench: false }),
 }))
 ```
+
+定制宿主与隔离测试直接组合所需的单项安装器，例如 `services: [elysia(), commands()]`，分别从 `@pluxel/services/elysia` 和 `@pluxel/services/commands` 导入。需要 Node 制品或 Worker 时再选择 `nodeModules()` 与 `workers()`；Worker 依赖 Node modules。Vault 是 Core 内建能力，其后端与部署配置见[凭据指南](../plugin-development/vault.md)。
 
 ## 自定义服务扩展
 

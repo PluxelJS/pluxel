@@ -1,16 +1,22 @@
 import { CanvasPlugin } from '@pluxel/plugin-canvas'
 import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { defineHostApplication } from '@pluxel/host'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { EChartsPlugin } from '../../src/index.ts'
 import { EChartsDynamicProbePlugin } from './echarts-dynamic-probe.ts'
 
-const plugins = [FontsPlugin, CanvasPlugin, EChartsPlugin, EChartsDynamicProbePlugin] as const
-
 export default defineHostApplication(() => ({
 	name: 'render-fixture',
-	plugins,
-	services: standardServices(),
-	policy: { autoStart: plugins.map((plugin) => plugin.nodeAddress()) },
-	runtime: { documents: { config: false, state: false } },
+	plugins: [
+		{ plugin: FontsPlugin, autoStart: true },
+		{ plugin: CanvasPlugin, autoStart: true },
+		{ plugin: EChartsPlugin, autoStart: true },
+		{ plugin: EChartsDynamicProbePlugin, autoStart: true },
+	],
+	services: [elysia(), commands(), nodeModules(), workers()],
+	config: { document: false },
+	policy: { document: false },
 }))

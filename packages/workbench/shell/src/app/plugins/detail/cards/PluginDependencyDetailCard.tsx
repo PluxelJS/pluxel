@@ -42,6 +42,7 @@ import {
 import { runtimeErrorMessage } from '../../../../runtime'
 import { notifyAndRecord } from '../../../notifications/notifyBridge'
 import { PluginProvidedCapability, usePluginProviderPolicy } from './PluginProvidedCapability'
+import { describePluginPolicyTarget } from '../../pluginOverviewModel'
 
 type DetailLinkComponent = ElementType<{
 	to: string
@@ -526,6 +527,7 @@ function DependencyImplementationControl({
 		})
 	}
 
+	const overridePolicy = controls.overridePolicy(row.requirement)
 	return (
 		<Stack gap={5}>
 			<Group gap={5} wrap="nowrap" align="flex-end">
@@ -535,7 +537,8 @@ function DependencyImplementationControl({
 					label="当前插件使用"
 					data={selection.data}
 					value={selection.value}
-					disabled={consumerOverridePending || createPending || !controls.canChangeConsumerOverride}
+					description={describePluginPolicyTarget(overridePolicy)}
+					disabled={consumerOverridePending || createPending || !overridePolicy?.canWrite}
 					searchable
 					allowDeselect={false}
 					comboboxProps={{ withinPortal: true }}
@@ -574,7 +577,7 @@ function DependencyImplementationControl({
 							consumerOverridePending ||
 							createPending ||
 							row.options.length === 0 ||
-							!controls.canCreateFork
+							!overridePolicy?.canWrite
 						}
 						onClick={createFork}
 						aria-label={`为 ${row.requirement.exportName} 创建 Fork`}
@@ -593,12 +596,15 @@ function DependencyImplementationControl({
 								<Badge variant="outline" color="gray" radius="sm" size="xs">
 									{option.address.forkId}
 								</Badge>
-								<Tooltip label="删除此 Fork" withArrow>
+								<Tooltip
+									label={`删除此 Fork · ${describePluginPolicyTarget(controls.forkPolicy(option.address))}`}
+									withArrow
+								>
 									<ActionIcon
 										size="xs"
 										variant="subtle"
 										color="red"
-										disabled={removePending || !controls.canRemoveFork}
+										disabled={removePending || !controls.canRemoveFork(option.address)}
 										onClick={() => {
 											openConfirmModal({
 												title: '删除 Fork',

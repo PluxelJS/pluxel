@@ -77,12 +77,21 @@ let CounterDescriptor: PluginDescriptor<{ count?: number }, { count: number }, C
 async function setup() {
 	CounterDescriptor = createPluginControlReference({
 		format: 2,
-		definition: Counter.definitionAddress(),
+		definition: Counter.address(),
 		contracts: { config: configHash, instance: instanceHash },
 	}) as unknown as typeof CounterDescriptor
 	const host = await createHost({
-		plugins: [Counter],
-		runtime: { documents: { state: false, config: false } },
+		plugins: [
+			{
+				plugin: Counter,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
 	})
 	setHostCatalogProvenance(
 		host.ctx,
@@ -149,7 +158,7 @@ it('retains config behavior and control checks after ordinary address type erasu
 		})
 		const changed = createPluginControlReference({
 			format: 2,
-			definition: Counter.definitionAddress(),
+			definition: Counter.address(),
 			contracts: { config: wrongHash, instance: instanceHash },
 		})
 		const changedAddress: PluginNodeAddress = changed.nodeAddress()
@@ -175,8 +184,8 @@ it('selects immutable targets and replaces forks without materializing nodes or 
 		const descriptorData = {
 			format: 2 as const,
 			definition: {
-				...Counter.definitionAddress(),
-				entry: { ...Counter.definitionAddress().entry },
+				...Counter.address(),
+				entry: { ...Counter.address().entry },
 			},
 			contracts: { config: configHash, instance: instanceHash },
 		}
@@ -189,7 +198,7 @@ it('selects immutable targets and replaces forks without materializing nodes or 
 		const west = plugin(nodeAddress('west'))
 		const dynamicAddress = {
 			...parsePluginNodeAddress(Counter.nodeAddress()),
-			definition: { ...Counter.definitionAddress() },
+			definition: { ...Counter.address() },
 		}
 		const dynamic = plugin(dynamicAddress)
 		descriptorData.definition.exportName = 'Changed'
@@ -443,7 +452,7 @@ it('checks only the contract used by an operation, preserving original config an
 	try {
 		const wrongInstance = createPluginControlReference({
 			format: 2,
-			definition: Counter.definitionAddress(),
+			definition: Counter.address(),
 			contracts: { config: configHash, instance: wrongHash },
 		}) as unknown as typeof CounterDescriptor
 		expect(await scope.sdk.plugin(wrongInstance.nodeAddress()).config.get()).toMatchObject({
@@ -454,7 +463,7 @@ it('checks only the contract used by an operation, preserving original config an
 		})
 		const wrongConfig = createPluginControlReference({
 			format: 2,
-			definition: Counter.definitionAddress(),
+			definition: Counter.address(),
 			contracts: { config: wrongHash, instance: instanceHash },
 		}) as unknown as typeof CounterDescriptor
 		await expect(

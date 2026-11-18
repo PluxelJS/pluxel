@@ -14,13 +14,14 @@ import {
 import { notifyAndRecord } from '../../../notifications/notifyBridge'
 import { usePluginScope } from '../context'
 import { usePluginOverview } from '../../pluginOverview'
-import { canWritePluginState } from '../../pluginOverviewModel'
+import { describePluginPolicyTarget, readPluginPolicyTarget } from '../../pluginOverviewModel'
 import { managementQueryKeys } from '../../../managementQuery'
 
 export function usePluginProviderPolicy(refresh: () => Promise<void>) {
 	const { owner } = usePluginScope()
 	const statePolicy = usePluginOverview().overview?.statePolicy
-	const canChangeDefault = canWritePluginState(statePolicy, 'providerDefaults')
+	const providerPolicy = readPluginPolicyTarget(statePolicy, 'providerDefaults')
+	const canChangeDefault = providerPolicy?.canWrite === true
 	const ownerKey = pluginNodeIndexKey(owner)
 	const management = useRuntimeManagementClient()
 	const policyQuery = useQuery<PluginProviderPolicyInfo | null>({
@@ -114,6 +115,7 @@ export function usePluginProviderPolicy(refresh: () => Promise<void>) {
 		loading,
 		pending,
 		canChangeDefault,
+		providerPolicy,
 		selectData,
 		handleChange,
 		error: policyQuery.error,
@@ -125,7 +127,16 @@ export function PluginProvidedCapability({
 }: {
 	control: ReturnType<typeof usePluginProviderPolicy>
 }) {
-	const { policy, loading, pending, canChangeDefault, selectData, handleChange, error } = control
+	const {
+		policy,
+		loading,
+		pending,
+		canChangeDefault,
+		providerPolicy,
+		selectData,
+		handleChange,
+		error,
+	} = control
 	if (!policy && !loading && !error) return null
 	const tokenLabel = policy ? formatPluginDefinitionReference(policy.token) : undefined
 	return (
@@ -161,11 +172,7 @@ export function PluginProvidedCapability({
 						<Select
 							size="xs"
 							label="全局默认实现"
-							description={
-								canChangeDefault
-									? '影响所有依赖此能力且未单独指定实现的插件。'
-									: '默认实现策略由宿主声明控制或只读。'
-							}
+							description={describePluginPolicyTarget(providerPolicy)}
 							data={selectData}
 							value={policy.defaultProvider ? pluginNodeIndexKey(policy.defaultProvider) : null}
 							onChange={handleChange}

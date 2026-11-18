@@ -18,3 +18,8 @@ export function requireHostDocuments(root: RootContext, namespace: string): Host
 export function requireTinyBaseHost(root: RootContext) {
 	return requireCoreRuntime(root).tinybase
 }
+
+/** @internal Root-owned credential administration and deployment injection. */
+export function requireVaultHost(root: RootContext) {
+	return requireCoreRuntime(root).vault
+}

@@ -362,7 +362,7 @@ export function createCoreInternalTestHost(
 		override: (consumer, requirement, provider) => {
 			currentUpdate().setDependencyOverride(
 				targetAddress(consumer),
-				typeof requirement === 'function' ? requirement.definitionAddress() : requirement,
+				typeof requirement === 'function' ? requirement.address() : requirement,
 				provider,
 			)
 			return host

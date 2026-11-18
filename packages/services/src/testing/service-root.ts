@@ -15,7 +15,18 @@ export async function createServiceTestApplication(
 ): Promise<PluginHost> {
 	for (const key of Object.keys(options))
 		if (
-			!['name', 'runtime', 'policy', 'config', 'services', 'management', 'workbench'].includes(key)
+			![
+				'name',
+				'coreConfig',
+				'policy',
+				'config',
+				'pluginNodes',
+				'inputMode',
+				'vaultBindings',
+				'services',
+				'management',
+				'workbench',
+			].includes(key)
 		)
 			throw new TypeError(`[pluxel/test] unsupported option ${key}`)
 	const withWorkbench = options.workbench ?? false
@@ -28,8 +39,13 @@ export async function createServiceTestApplication(
 	}
 	let selectedServices = options.services
 	if (selectedServices === undefined) {
-		const { standardServices } = await import('../index')
-		selectedServices = standardServices()
+		const [{ elysia }, { commands }, { nodeModules }, { workers }] = await Promise.all([
+			import('../elysia'),
+			import('../commands'),
+			import('../node'),
+			import('../workers'),
+		])
+		selectedServices = [elysia(), commands(), nodeModules(), workers()]
 	}
 	const services: HostService[] = [...selectedServices]
 	if (withManagement) {
@@ -88,8 +104,11 @@ export async function createServiceTestApplication(
 		plugins: [],
 		services,
 		name: options.name ?? 'test',
-		runtime: options.runtime,
+		coreConfig: options.coreConfig,
 		policy: options.policy,
 		config: options.config,
+		pluginNodes: options.pluginNodes,
+		inputMode: options.inputMode,
+		vaultBindings: options.vaultBindings,
 	})
 }

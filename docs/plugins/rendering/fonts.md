@@ -101,13 +101,13 @@ for (const font of snapshot.fonts) {
 
 ## 宿主配置与环境变量绑定
 
-宿主可通过配置或环境变量指定静态字体文件与默认字体族：
+在 FontsPlugin 节点的 `envBindings` 中指定静态字体文件与默认字体族。
 
 ```ts no-twoslash
 import { envBinding } from '@pluxel/host'
-import { FontsPlugin, FontsConfig } from '@pluxel/plugin-fonts'
+import { FontsConfig } from '@pluxel/plugin-fonts'
 
-envBinding(FontsPlugin.nodeAddress(), {
+envBinding({
 	config: {
 		schema: FontsConfig,
 		mapping: {

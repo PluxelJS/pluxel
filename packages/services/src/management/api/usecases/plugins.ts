@@ -69,6 +69,7 @@ export function projectCommittedPluginCatalog(ctx: Context, view: HostPluginGrap
 function committedStatusView(ctx: Context, view: HostPluginGraphCommittedView) {
 	return {
 		catalog: view.catalog,
+		declaredNodes: view.declaredNodes,
 		applied: view.applied,
 		state: view.runtimeState.state,
 		reconciliation: view.reconciliation,

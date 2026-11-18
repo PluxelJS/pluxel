@@ -56,7 +56,7 @@ describe('late init settlement', () => {
 				await vi.waitFor(() => expect(lateCleanupRuns).toBe(1))
 				expect(host.isRunning(LateInitPlugin)).toBe(false)
 			},
-			{ plugins: { drainTimeoutMs: 20 } },
+			{ execution: { drainTimeoutMs: 20 } },
 		)
 	})
 
@@ -87,7 +87,7 @@ describe('late init settlement', () => {
 				expect(publications).toEqual([summary, successor])
 				expect(host.isRunning(LateInitPlugin)).toBe(false)
 			},
-			{ plugins: { drainTimeoutMs: 20 } },
+			{ execution: { drainTimeoutMs: 20 } },
 		)
 	})
 
@@ -112,7 +112,7 @@ describe('late init settlement', () => {
 				).toBe(false)
 				expect(lateCleanupRuns).toBe(1)
 			},
-			{ plugins: { drainTimeoutMs: 20 } },
+			{ execution: { drainTimeoutMs: 20 } },
 		)
 	})
 })

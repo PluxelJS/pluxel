@@ -6,16 +6,16 @@
 import { defineHostApplication } from '@pluxel/host'
 import { MyPlugin } from './plugin.js'
 
-export default defineHostApplication(() => ({ plugins: [MyPlugin] }))
+export default defineHostApplication(() => ({ plugins: [{ plugin: MyPlugin, autoStart: true }] }))
 ```
 
-声明只将 Plugin 加入 catalog。启动策略、env/file bindings、来源和启动示例由[Host 配置](../../docs/host/configuration.md)维护。
+每个插件条目设置其节点的配置、启动意图与 fork。绑定、动态来源和部署示例由[Host 配置](../../docs/host/configuration.md)维护。
 
 | 入口                     | 用途                                                                                                |
 | ------------------------ | --------------------------------------------------------------------------------------------------- |
 | 根入口                   | `defineHostApplication()`、`runHostApplication()`、`createHost()`、配置输入绑定                     |
 | `@pluxel/agent-sdk/host` | Script 类型与直接借用 Host 的 `createScriptScope`；[Agent SDK](../../docs/development/agent-sdk.md) |
-| `/sources`               | 纯数据 `pluginSource()`、producer 检查 `requirePluginSource()` 和 consumption policy                |
+| `/sources`               | `PluginSource` 数据类型、producer 检查 `requirePluginSource()` 和 consumption policy                |
 | `/internal/protocol`     | 框架共享的无 IO 执行/更新协议                                                                       |
 
 `createHost()` 只接受已求值的 plugins；先 `start()`，退出时等待幂等 `close()`。Host 不关闭借用的 storage backend。

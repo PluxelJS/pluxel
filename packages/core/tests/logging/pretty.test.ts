@@ -2,7 +2,6 @@ import type { LogRecord } from '@logtape/logtape'
 import { debugLogCategory, pluginLogCategory } from '@pluxel/core/logger'
 import { describe, expect, it } from 'vitest'
 import { createRuntimePrettyConsoleSink } from '@pluxel/core/logging/pretty'
-import { logtape } from '@pluxel/core/config'
 import { createHost } from '@pluxel/host'
 
 const plugin = {
@@ -89,11 +88,11 @@ describe('runtime pretty console sink', () => {
 		const host = await createHost({
 			plugins: [],
 			services: [],
-			runtime: {
-				logtape: logtape({
+			coreConfig: {
+				logtape: {
 					sinks: { native: sink },
 					loggers: [{ category: ['pluxel', 'runtime'], sinks: ['native'] }],
-				}),
+				},
 			},
 		})
 		try {

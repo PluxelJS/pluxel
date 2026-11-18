@@ -10,7 +10,7 @@ export function createPluginControlReference(data: unknown): PluginDescriptor {
 	const descriptor = parsePluginControlDescriptor(data)
 	const evidence = Object.freeze({ kind: 'control' as const, descriptor })
 	return Object.freeze({
-		definitionAddress: () => descriptor.definition,
+		address: () => descriptor.definition,
 		nodeAddress: (forkId?: string) => {
 			const node: PluginNodeAddress =
 				forkId === undefined

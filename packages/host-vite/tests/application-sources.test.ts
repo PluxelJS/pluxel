@@ -11,9 +11,9 @@ it('reuses equivalent source sessions, isolates rejected declarations, and publi
 	const closes: string[] = []
 	const notifications: string[] = []
 	const callbacks = new Map<string, PluginSourceOpenOptions>()
-	const source = (key: string): PluginSource => ({ kind: 'file', path: key })
+	const source = (key: string): PluginSource => ({ file: key })
 	vi.mocked(watchPluginSource).mockImplementation(async (declaration, options) => {
-		const key = declaration.path
+		const key = declaration.file!
 		opens.push(key)
 		callbacks.set(key, options)
 		return {
@@ -90,7 +90,7 @@ it('preserves source validation failure as the cause when releasing its watcher 
 	try {
 		await expect(
 			evaluator.evaluate({
-				application: { plugins: [], sources: [{ kind: 'file', path: 'plugin.mjs' }] },
+				application: { plugins: [], sources: [{ file: 'plugin.mjs' }] },
 				entryFiles: new Set<string>(),
 			}),
 		).rejects.toMatchObject({

@@ -2,8 +2,6 @@ import type { WorkbenchHost } from '@pluxel/workbench/server'
 import { defineServiceRef } from '@pluxel/core'
 import { CatalogLayout, Management } from '@pluxel/services/management/service'
 import { AdminAccess } from '@pluxel/services/management/access'
-import { standardServices } from '@pluxel/services'
-import { vault } from '@pluxel/services/vault'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { describe, expect, it, vi } from 'vitest'
 import { RpcStub, RpcTarget } from 'capnweb'
@@ -27,17 +25,17 @@ describe('runtime Management plane installation', () => {
 
 		const target = new RuntimeManagementTargetImpl(host.ctx)
 		expect(target.describeDto()).toMatchObject({
-			protocol: { name: 'pluxel.management', major: 13 },
+			protocol: { name: 'pluxel.management', major: 14 },
 			workbench: { enabled: false },
 		})
-		expect(target.describeDto().protocol.capabilities).not.toContain('vault')
+		expect(target.describeDto().protocol.capabilities).toContain('vault')
 		await expect(target.pluginCatalogDto()).resolves.toMatchObject({
 			plugins: [],
 			sections: [],
 			summary: { total: 0 },
 		})
 		await expect(target.securityOverviewDto()).resolves.toMatchObject({
-			vault: { enabled: false },
+			vault: { enabled: true, state: { present: false, unlocked: false } },
 		})
 
 		const oldDynamicPath = await host.http.fetch(
@@ -103,19 +101,5 @@ describe('runtime Management plane installation', () => {
 				createServiceInternalTestHost({ workbench: false, management } as never),
 			).rejects.toThrow(/management must be booleans/)
 		}
-	})
-
-	it('advertises Vault only when its optional capability is installed', async () => {
-		await using host = await createServiceInternalTestHost({
-			workbench: false,
-			management: true,
-			services: [...standardServices(), vault()],
-		})
-
-		const target = new RuntimeManagementTargetImpl(host.ctx)
-		expect(target.describeDto().protocol.capabilities).toContain('vault')
-		await expect(target.securityOverviewDto()).resolves.toMatchObject({
-			vault: { enabled: true },
-		})
 	})
 })

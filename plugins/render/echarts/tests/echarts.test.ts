@@ -1,13 +1,14 @@
 import { type PluginConstructor, BasePlugin, Plugin } from '@pluxel/core'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { createTestHost, type TestHost, type RawPluginConfig } from '@pluxel/test'
 import { CanvasPlugin } from '@pluxel/plugin-canvas'
 import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { describe, expect, it } from 'vitest'
 import { EChartsPlugin, type EChartsThemeRegistration } from '../src/index.ts'
 import { EChartsWorkbench } from '../src/workbench.ts'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { renderChart } from './fixtures/result-consumer.ts'
 
 @Plugin()
@@ -86,7 +87,7 @@ describe('EChartsPlugin', () => {
 
 	it('rejects invalid theme values before they become caller-owned state', async () => {
 		await using host = await createTestHost({
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 
 		await startEChartsFixture(host, { config: { maxThemeNodes: 2 } })
@@ -110,7 +111,7 @@ describe('EChartsPlugin', () => {
 
 	it('bounds provider-wide retained theme count and returns capacity on dispose', async () => {
 		await using host = await createTestHost({
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 
 		await startEChartsFixture(host, {
@@ -131,7 +132,7 @@ describe('EChartsPlugin', () => {
 
 	it('bounds aggregate retained theme bytes and reconciles caller cleanup', async () => {
 		await using host = await createTestHost({
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 
 		await startEChartsFixture(host, {
@@ -159,7 +160,7 @@ describe('EChartsPlugin', () => {
 
 	it('keeps named themes caller-owned and revokes them with the caller generation', async () => {
 		await using host = await createTestHost({
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 
 		await startEChartsFixture(host, { otherConsumer: true })
@@ -196,7 +197,7 @@ describe('EChartsPlugin', () => {
 	it('places the provider-owned Fonts selection Attachment', async () => {
 		await using host = await createTestHost({
 			workbench: true,
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
 
 		await host.start([

@@ -7,13 +7,15 @@ import {
 } from './coordinator'
 import { requirePluginHostCoordinator } from './install'
 import { validateHostPolicyChange, HostStateMutationRejectedError } from './mutation'
-import { HOST_POLICY_FIELDS, type HostPolicyInput, type HostPolicyField } from './policy'
+import type { HostPolicyInput, HostPolicyPatch, HostPolicyResetTarget } from './policy'
 import {
-	canonicalHostPolicyInput,
-	snapshotPolicyArray,
+	applyHostPolicyPatch,
+	canonicalHostPolicyPatch,
+	HostPolicyInputError,
+} from './policy-input'
+import {
 	hostPolicyInputEqual,
 	HostPolicyMutationRejectedError,
-	HostPolicyInputError,
 	HostPolicyRevisionConflictError,
 	type HostStateConfigurationSnapshot,
 	type HostStateStore,
@@ -38,10 +40,10 @@ export type HostPolicyResult<TReport = PluginApplyReport> =
 	  }>
 export interface HostPolicy {
 	get(options?: HostOperationOptions): Promise<HostPolicyResult>
-	validate(values: HostPolicyInput, options?: HostOperationOptions): Promise<HostPolicyResult>
-	patch(values: HostPolicyInput, options?: HostOperationOptions): Promise<HostPolicyResult>
+	validate(values: HostPolicyPatch, options?: HostOperationOptions): Promise<HostPolicyResult>
+	patch(values: HostPolicyPatch, options?: HostOperationOptions): Promise<HostPolicyResult>
 	reset(
-		keys?: readonly HostPolicyField[],
+		keys?: readonly HostPolicyResetTarget[],
 		options?: HostOperationOptions,
 	): Promise<HostPolicyResult>
 }
@@ -67,11 +69,6 @@ export function createHostPolicy(ctx: Context, store: HostStateStore): HostPolic
 					const input = candidate(store.managedSnapshot())
 					if (hostPolicyInputEqual(input, store.managedSnapshot())) return result()
 					store.assertMutable()
-					validateHostPolicyChange(
-						coordinator.catalogSnapshot(),
-						session.runtimeStateSnapshot(),
-						store.effectiveSnapshot(input),
-					)
 					const report = await session.update({ policyInput: input, reason: 'policy-edit' })
 					return result(store.managedSnapshot(), report)
 				},
@@ -82,13 +79,26 @@ export function createHostPolicy(ctx: Context, store: HostStateStore): HostPolic
 			return failure(error)
 		}
 	}
+	const patch = async (
+		values: HostPolicyPatch,
+		options?: HostOperationOptions,
+	): Promise<HostPolicyResult> => {
+		let edit: HostPolicyPatch
+		try {
+			edit = canonicalHostPolicyPatch(values)
+		} catch (error) {
+			return failure(error)
+		}
+		return mutate((current) => applyHostPolicyPatch(current, edit), options)
+	}
 	return Object.freeze({
 		get: (options?: HostOperationOptions) => coordinator.readCommitted(() => result(), options),
-		async validate(values: HostPolicyInput, options?: HostOperationOptions) {
+		async validate(values: HostPolicyPatch, options?: HostOperationOptions) {
 			try {
-				const patch = canonicalHostPolicyInput(values)
+				const edit = canonicalHostPolicyPatch(values)
 				return await coordinator.readCommitted((view) => {
-					const input = canonicalHostPolicyInput({ ...store.managedSnapshot(), ...patch })
+					store.assertManagedRevision(options?.expectedManagedRevision)
+					const input = applyHostPolicyPatch(store.managedSnapshot(), edit)
 					validateHostPolicyChange(
 						view.catalog,
 						view.runtimeState.state,
@@ -101,40 +111,11 @@ export function createHostPolicy(ctx: Context, store: HostStateStore): HostPolic
 				return failure(error)
 			}
 		},
-		async patch(values: HostPolicyInput, options?: HostOperationOptions) {
-			let patch: HostPolicyInput
-			try {
-				patch = canonicalHostPolicyInput(values)
-			} catch (error) {
-				return failure(error)
-			}
-			return mutate((current) => canonicalHostPolicyInput({ ...current, ...patch }), options)
-		},
-		async reset(keys?: readonly HostPolicyField[], options?: HostOperationOptions) {
-			let selected: readonly HostPolicyField[]
-			try {
-				selected =
-					keys === undefined ? HOST_POLICY_FIELDS : snapshotPolicyArray(keys, 'policy reset keys')
-				if (
-					selected.some((key) => !(HOST_POLICY_FIELDS as readonly string[]).includes(key)) ||
-					new Set(selected).size !== selected.length
-				)
-					throw new HostPolicyInputError('[host] policy reset requires distinct policy field names')
-			} catch (error) {
-				return failure(error)
-			}
-
-			return mutate(
-				(current) =>
-					canonicalHostPolicyInput(
-						Object.fromEntries(
-							Object.entries(current).filter(
-								([key]) => !(selected as readonly string[]).includes(key),
-							),
-						),
-					),
-				options,
-			)
+		patch,
+		reset(keys?: readonly HostPolicyResetTarget[], options?: HostOperationOptions) {
+			return keys === undefined
+				? mutate(() => Object.freeze({}), options)
+				: patch({ reset: keys }, options)
 		},
 	})
 }

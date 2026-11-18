@@ -61,7 +61,7 @@ describe('Plugin dependency graph read model', () => {
 	it('projects direct, inactive-fork, effective, and zero-intern facts', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
-		const DirectProviderDefinition = DirectProvider.definitionAddress()
+		const DirectProviderDefinition = DirectProvider.address()
 		host.add([DirectProvider, DirectConsumer])
 		const inactiveFork = host.fork(DirectConsumer, 'inactive')
 		host.cfg(DirectProvider).setAutoStart(true)
@@ -281,7 +281,7 @@ describe('Plugin dependency graph read model', () => {
 	it('returns graph_rejected with unchanged policy and graph for a cycle mutation', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 
-		const CycleTokenDefinition = CycleToken.definitionAddress()
+		const CycleTokenDefinition = CycleToken.address()
 		host.add([CycleConsumer, CycleProvider, SafeProvider])
 		host.cfg(CycleConsumer).setAutoStart(true)
 		host.start(CycleConsumer)

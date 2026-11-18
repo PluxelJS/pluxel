@@ -11,7 +11,6 @@ describe('transport-free credential provisioning', () => {
 		const provisioning = new CredentialProvisioning(
 			{ type: 'password' },
 			{
-				available: true,
 				saveAccount,
 				saveOidcSecret: vi.fn(async () => undefined),
 			},
@@ -61,7 +60,6 @@ describe('transport-free credential provisioning', () => {
 				scopes: ['openid'],
 			},
 			{
-				available: true,
 				saveAccount: vi.fn(async () => undefined),
 				saveOidcSecret,
 			},
@@ -82,7 +80,6 @@ describe('transport-free credential provisioning', () => {
 		const provisioning = new CredentialProvisioning(
 			{ type: 'password-totp' },
 			{
-				available: true,
 				saveAccount,
 				saveOidcSecret: vi.fn(async () => undefined),
 			},
@@ -119,7 +116,6 @@ describe('transport-free credential provisioning', () => {
 		const provisioning = new CredentialProvisioning(
 			{ type: 'password' },
 			{
-				available: true,
 				saveAccount,
 				saveOidcSecret: vi.fn(async () => undefined),
 			},
@@ -143,7 +139,6 @@ describe('transport-free credential provisioning', () => {
 		const provisioning = new CredentialProvisioning(
 			{ type: 'password' },
 			{
-				available: true,
 				saveAccount: vi.fn(async () => {
 					throw new Error('disk unavailable')
 				}),
@@ -175,7 +170,6 @@ describe('transport-free credential provisioning', () => {
 				scopes: ['openid'],
 			},
 			{
-				available: false,
 				saveAccount: vi.fn(async () => undefined),
 				saveOidcSecret,
 			},

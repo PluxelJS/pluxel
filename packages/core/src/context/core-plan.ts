@@ -5,13 +5,12 @@ import {
 } from './plugin-execution'
 import { ConfigService } from '../services/config/ConfigService'
 import { createEventsBackend } from '../services/events/EventsService'
-import { resolveLogTapeConfig, type ResolvedLogTapeConfig } from '../config/logtape'
 import { createCoreLoggingRuntime } from './core-logging'
-import { PluginService, type PluginServiceConfig } from '../plugins/runtime/PluginService'
-import { FsService, snapshotFsConfig } from '../fs/service'
+import { assertCoreConfigObject, snapshotCoreFacilitiesConfig } from './core-facilities'
+import { PluginService } from '../plugins/runtime/PluginService'
+import { FsService } from '../fs/service'
+import { VaultRuntime } from '../vault/runtime'
 import { TinyBaseRuntime } from '../tinybase/service'
-import { resolveTinyBaseOptions } from '../tinybase/options'
-import type { TinyBaseOptions } from '../tinybase/types'
 import {
 	freezeCorePluginLifecycleHooks,
 	type CorePluginLifecycleHooks,
@@ -21,33 +20,6 @@ import { createContextPlan, createRootContext } from '@pluxel/context/internal'
 import { type CoreHostConfig, type Context, type RootContext } from './Context'
 import { initializeCoreRootContext, type CoreRuntime } from './core-context'
 import { createGenerationContext, createOwnerContext } from './context-factory'
-
-export type CoreRootInputs = Readonly<{
-	name: string
-	logtape?: ResolvedLogTapeConfig
-	events?: Readonly<import('../services/events/EventsService').EventsServiceConfig>
-	plugins?: Readonly<PluginServiceConfig>
-	zenfs: ReturnType<typeof snapshotFsConfig>
-	tinybase: Required<TinyBaseOptions>
-}>
-
-export function resolveCoreRootInputs(config: CoreHostConfig = {}): CoreRootInputs {
-	return Object.freeze({
-		name: config.name ?? 'root',
-		zenfs: snapshotFsConfig(config.zenfs === undefined ? {} : config.zenfs),
-		tinybase: resolveTinyBaseOptions(config.tinybase),
-		logtape: resolveLogTapeConfig(config.logtape),
-		...(config.events
-			? {
-					events: Object.freeze({
-						...config.events,
-						...(config.events.events ? { events: Object.freeze([...config.events.events]) } : {}),
-					}),
-				}
-			: {}),
-		...(config.plugins ? { plugins: Object.freeze({ ...config.plugins }) } : {}),
-	})
-}
 
 /** Cache one fixed facility without moving it into the extension service registry. */
 function lazy<T>(name: string, create: () => T): () => T {
@@ -79,7 +51,7 @@ type CoreContextHostConfig = CoreHostConfig & {
 
 function createCoreRuntime(
 	root: RootContext,
-	inputs: CoreRootInputs,
+	inputs: ReturnType<typeof snapshotCoreFacilitiesConfig>,
 	config: CoreContextHostConfig,
 	execution: CorePluginExecutionBinding,
 ): CoreRuntime {
@@ -88,6 +60,7 @@ function createCoreRuntime(
 		'TinyBase',
 		() => new TinyBaseRuntime(root, filesystem(), inputs.tinybase.maxSnapshotBytes),
 	)
+	const vault = lazy('Vault', () => new VaultRuntime(root, inputs.vault, filesystem))
 	const events = lazy('events', () => createEventsBackend(root, inputs.events))
 	const configService = lazy('configuration', () =>
 		config.createConfigService ? config.createConfigService(root) : new ConfigService(root),
@@ -118,6 +91,9 @@ function createCoreRuntime(
 		get tinybase() {
 			return tinybase()
 		},
+		get vault() {
+			return vault()
+		},
 		get events() {
 			return events()
 		},
@@ -140,41 +116,57 @@ export function createCoreRootContext(config: CoreHostConfig = {}): RootContext 
 /** Compile application services alongside Core's fixed Context facilities. No resources are acquired. */
 export function createCoreContextHost(
 	config: CoreContextHostConfig = {},
+	preparedFacilities?: ReturnType<typeof snapshotCoreFacilitiesConfig>,
 ): ContextHost<Context, RootContext> {
+	assertCoreConfigObject(config, '[core] Host configuration')
 	for (const key of ['createConfigService', 'createLifecycleHooks'] as const) {
 		if (config[key] !== undefined && typeof config[key] !== 'function')
 			throw new TypeError(`[core] ${key} must be a function`)
 	}
-	if (config.executionBinding && config.plugins !== undefined)
-		throw new TypeError('[core] executionBinding and plugins cannot be supplied together')
-	const inputs = resolveCoreRootInputs(config)
-	const execution = config.executionBinding ?? createCorePluginExecutionBinding()
+	const {
+		name = 'root',
+		execution: configuredExecution,
+		executionBinding,
+		createConfigService,
+		createLifecycleHooks,
+		services,
+		...facilities
+	} = config
+	if (typeof name !== 'string' || !name.trim())
+		throw new TypeError('[core] name must be a non-empty string')
+	if (executionBinding !== undefined && configuredExecution !== undefined)
+		throw new TypeError('[core] executionBinding and execution cannot be supplied together')
+	if (preparedFacilities !== undefined && Object.keys(facilities).length > 0)
+		throw new TypeError('[core] Core facilities must be supplied once')
+	const inputs = snapshotCoreFacilitiesConfig(
+		preparedFacilities === undefined ? facilities : preparedFacilities,
+	)
+	const execution =
+		executionBinding === undefined ? createCorePluginExecutionBinding() : executionBinding
 	assertCorePluginExecutionBinding(execution)
-	if (!config.executionBinding) execution.bind(inputs.plugins ?? {})
-	const factories = Object.freeze({
-		createConfigService: config.createConfigService,
-		createLifecycleHooks: config.createLifecycleHooks,
-	})
-	const plan = createContextPlan(inputs.name, config.services ?? [])
+	if (executionBinding === undefined)
+		execution.bind(configuredExecution === undefined ? {} : configuredExecution)
+	const factories = Object.freeze({ createConfigService, createLifecycleHooks })
+	const plan = createContextPlan(name, services ?? [])
 	const roots = new WeakSet<RootContext>()
 	function assertRoot(root: RootContext): void {
 		if (!roots.has(root)) throw new TypeError('[core] Context belongs to a different host')
 	}
 	return Object.freeze({
-		name: inputs.name,
-		createRoot(name = inputs.name) {
-			const root = createRootContext(plan, name) as RootContext
+		name,
+		createRoot(rootName = name) {
+			const root = createRootContext(plan, rootName) as RootContext
 			initializeCoreRootContext(root, createCoreRuntime(root, inputs, factories, execution))
 			roots.add(root)
 			return Object.preventExtensions(root)
 		},
-		createScope(root: RootContext, name: string) {
+		createScope(root: RootContext, scopeName: string) {
 			assertRoot(root)
-			return Object.preventExtensions(createGenerationContext(root, name))
+			return Object.preventExtensions(createGenerationContext(root, scopeName))
 		},
-		createChild(parent: Context, name: string) {
+		createChild(parent: Context, childName: string) {
 			assertRoot(parent.root)
-			return Object.preventExtensions(createOwnerContext(parent, name))
+			return Object.preventExtensions(createOwnerContext(parent, childName))
 		},
 	}) as ContextHost<Context, RootContext>
 }

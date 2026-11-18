@@ -1106,8 +1106,8 @@ void [same,self,inherited,exact,text,number,input,output,forged,missing]
 			'Counter',
 		])
 		const control = await import(pathToFileURL(resolve(directory, 'dist/control/index.mjs')).href)
-		expect(control.Counter.definitionAddress()).toEqual(definition)
-		expect(Object.isFrozen(control.Counter.definitionAddress().entry)).toBe(true)
+		expect(control.Counter.address()).toEqual(definition)
+		expect(Object.isFrozen(control.Counter.address().entry)).toBe(true)
 	}, 30_000)
 
 	it('changes the instance contract for a type-only dependency while presentation changes preserve contracts', async () => {

@@ -325,7 +325,7 @@ describe('Core host lifecycle seams', () => {
 		resetLateInit()
 		let finalizations = 0
 		await using host = createCoreInternalTestHost(
-			{ plugins: { drainTimeoutMs: 20 } },
+			{ execution: { drainTimeoutMs: 20 } },
 			{
 				createRootContext: createRootFactory({
 					finalizeGeneration: () => {
@@ -352,7 +352,7 @@ describe('Core host lifecycle seams', () => {
 		let finalizerSignal: AbortSignal | undefined
 		let publication!: CoreCommitPublication
 		const host = createCoreInternalTestHost(
-			{ plugins: { startTimeoutMs: 20, drainTimeoutMs: 20 } },
+			{ execution: { startTimeoutMs: 20, drainTimeoutMs: 20 } },
 			{
 				createRootContext: createRootFactory({
 					finalizeGeneration: async ({ signal }) => {
@@ -391,7 +391,7 @@ describe('Core host lifecycle seams', () => {
 		const settled: string[][] = []
 		let publication!: CoreCommitPublication
 		await using host = createCoreInternalTestHost(
-			{ plugins: { startConcurrency: 2 } },
+			{ execution: { startConcurrency: 2 } },
 			{
 				createRootContext: createRootFactory({
 					finalizeGeneration: async ({ ctx }) => {

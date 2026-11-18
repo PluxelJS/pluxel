@@ -4,7 +4,10 @@ import {
 	requireConfigService,
 	requirePluginService,
 } from '@pluxel/core/internal'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
@@ -296,23 +299,21 @@ describe('Plugin config application scope', () => {
 		const release = deferred<void>()
 		let blocked = false
 		const host = await runtimeHost({
-			runtime: {
-				documents: {
-					config: {
-						storage(root) {
-							const documents = requireFs(root).documents('host/config')
-							return {
-								getText: (key) => documents.getText(key),
-								stat: (key) => documents.stat(key),
-								async put(key, value) {
-									if (blocked) {
-										entered.resolve()
-										await release.promise
-									}
-									await documents.put(key, value)
-								},
-							}
-						},
+			config: {
+				document: {
+					storage(root) {
+						const documents = requireFs(root).documents('host/config')
+						return {
+							getText: (key) => documents.getText(key),
+							stat: (key) => documents.stat(key),
+							async put(key, value) {
+								if (blocked) {
+									entered.resolve()
+									await release.promise
+								}
+								await documents.put(key, value)
+							},
+						}
 					},
 				},
 			},
@@ -588,7 +589,7 @@ describe('Plugin config application scope', () => {
 	})
 
 	it('rejects cross-owner registration while independent init windows overlap', async () => {
-		const host = await runtimeHost({ policy: { startConcurrency: 2 } })
+		const host = await runtimeHost({ policy: { execution: { startConcurrency: 2 } } })
 		host.add([ConcurrentConfigOwner, ConcurrentConfigBorrower])
 		host.cfg(ConcurrentConfigOwner).setAutoStart(true)
 		host.start(ConcurrentConfigOwner)
@@ -754,22 +755,20 @@ describe('ConfigService persistence', () => {
 	it('reports a stable unknown persistence state without attempting application', async () => {
 		let rejectConfigWrite = false
 		const host = await runtimeHost({
-			services: standardServices(),
-			runtime: {
-				documents: {
-					config: {
-						storage(root) {
-							const documents = requireFs(root).documents('host/config')
-							return {
-								getText: (key) => documents.getText(key),
-								stat: (key) => documents.stat(key),
-								async put(key, value) {
-									if (rejectConfigWrite && key === 'config.json')
-										throw new Error('config persistence outcome unknown')
-									await documents.put(key, value)
-								},
-							}
-						},
+			services: [elysia(), commands(), nodeModules(), workers()],
+			config: {
+				document: {
+					storage(root) {
+						const documents = requireFs(root).documents('host/config')
+						return {
+							getText: (key) => documents.getText(key),
+							stat: (key) => documents.stat(key),
+							async put(key, value) {
+								if (rejectConfigWrite && key === 'config.json')
+									throw new Error('config persistence outcome unknown')
+								await documents.put(key, value)
+							},
+						}
 					},
 				},
 			},
@@ -821,7 +820,7 @@ function deferred<T>() {
 it('edits saved input while a declared value remains effective', async () => {
 	const owner = ConfigOwner.nodeAddress()
 	const host = await runtimeHost({
-		config: { records: [{ owner, config: { value: 'declared' } }] },
+		pluginNodes: [{ definition: ConfigOwner.address(), config: { value: 'declared' } }],
 	})
 	host.add(ConfigOwner)
 	await host.commit()

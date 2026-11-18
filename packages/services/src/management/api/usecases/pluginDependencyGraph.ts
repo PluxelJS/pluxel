@@ -45,6 +45,7 @@ export function projectPluginDependencyGraph(
 	const runningNodeKeys = new Set(view.runningNodes.map(pluginNodeIndexKey))
 	const catalog = projectPluginCatalogFromView(ctx.root, {
 		catalog: view.catalog,
+		declaredNodes: view.declaredNodes,
 		applied: view.applied,
 		state: view.runtimeState.state,
 		reconciliation: view.reconciliation,

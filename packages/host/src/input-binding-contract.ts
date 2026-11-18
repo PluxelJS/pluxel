@@ -7,7 +7,7 @@ import {
 import { consumePluginDefinitionCandidate } from '@pluxel/core/internal'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { projectRawInput, type Schema } from 'valibot-form'
-import type { HostOptions } from './host'
+import type { ResolvedHostOptions } from './node-declarations'
 import { configProvenance, type ConfigBindingProof } from './config-records'
 const checkedBindings = new WeakSet<ConfigBindingProof>()
 
@@ -50,7 +50,7 @@ export function configSchema(
 ): InputSchema {
 	const owner = parsePluginNodeAddress(target)
 	const plugin = plugins.find((candidate) =>
-		pluginDefinitionAddressEqual(candidate.definitionAddress(), owner.definition),
+		pluginDefinitionAddressEqual(candidate.address(), owner.definition),
 	)
 	if (!plugin) return schema(selected, 'Config binding schema')
 	const candidate = consumePluginDefinitionCandidate(plugin)
@@ -71,21 +71,17 @@ export function configBindingProof(
 		schema: selected,
 		paths: Object.freeze(paths.map((path) => Object.freeze([...path]))),
 	})
-	if (
-		plugins.some((plugin) =>
-			pluginDefinitionAddressEqual(plugin.definitionAddress(), owner.definition),
-		)
-	)
+	if (plugins.some((plugin) => pluginDefinitionAddressEqual(plugin.address(), owner.definition)))
 		checkedBindings.add(proof)
 	return proof
 }
 /** Deployment paths are checked against the actual replacement definition, including every fork. */
 export async function validateInputBindingCandidates(
 	plugins: readonly PluginConstructor[],
-	options: Pick<HostOptions, 'config'>,
+	options: Pick<ResolvedHostOptions, 'config'>,
 ): Promise<void> {
 	for (const plugin of plugins) {
-		const bindings = configProvenance(options.config ?? {}).bindings.filter((binding) =>
+		const bindings = configProvenance(options.config).bindings.filter((binding) =>
 			pluginDefinitionAddressEqual(plugin.nodeAddress().definition, binding.owner.definition),
 		)
 		if (bindings.length === 0) continue

@@ -117,7 +117,7 @@ describe('static optional Plugin integration', () => {
 
 			const update = registry.beginUpdate({ reason: 'core-test' })
 			update.setProviderDefault(
-				AbstractOptionalProvider.definitionAddress(),
+				AbstractOptionalProvider.address(),
 				ConcreteAbstractOptionalProvider.nodeAddress(),
 			)
 			const prepared = update.prepare()
@@ -128,7 +128,7 @@ describe('static optional Plugin integration', () => {
 			expect(abstractOptionalSetups).toBe(0)
 
 			const cleanup = registry.beginUpdate({ reason: 'core-test' })
-			cleanup.setProviderDefault(AbstractOptionalProvider.definitionAddress(), null)
+			cleanup.setProviderDefault(AbstractOptionalProvider.address(), null)
 			const cleanupResult = await cleanup.commit()
 			expect(cleanupResult.ok).toBe(true)
 		})

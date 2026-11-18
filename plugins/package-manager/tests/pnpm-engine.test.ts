@@ -152,7 +152,7 @@ export { Dynamic }
 		// Missing definitions are accepted; an installed Plugin must still start successfully.
 		await writeFile(
 			resolve(root, 'app.mjs'),
-			`export default () => ({plugins:[],sources:[{kind:'directory',path:${JSON.stringify(store.entriesDir)},include:['*.mjs']}],policy:{autoStart:${JSON.stringify(names.map(address))}},acceptStartup:({status})=>status.statuses.every(node=>node.desiredState!=='running'||node.availability==='unavailable'||node.lifecycleState==='running')})`,
+			`export default () => ({sources:[{directory:${JSON.stringify(store.entriesDir)},include:['*.mjs']}],pluginNodes:${JSON.stringify(names.map((name) => ({ definition: address(name).definition, autoStart: true })))},acceptStartup:({status})=>status.statuses.every(node=>node.desiredState!=='running'||node.availability==='unavailable'||node.lifecycleState==='running')})`,
 		)
 		await writeFile(
 			script,

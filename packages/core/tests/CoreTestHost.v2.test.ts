@@ -284,7 +284,7 @@ describe('createCoreTestHost()', () => {
 	})
 
 	it('fails concurrent mutation/query and lets disposal wait for admitted mutation', async () => {
-		const host = createCoreTestHost({ plugins: { startTimeoutMs: 1_000 } })
+		const host = createCoreTestHost({ execution: { startTimeoutMs: 1_000 } })
 		resetSlowStart()
 		const pending = host.add(V2Slow.nodeAddress())
 		expect(() => host.isRunning(V2Slow.nodeAddress())).toThrow(/in progress/i)

@@ -1,6 +1,8 @@
 import { createTestHost, type TestHost } from '@pluxel/test'
-import { vault, Vault } from '@pluxel/services/vault'
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { type WorkbenchPrincipal } from '@pluxel/workbench'
 import { type WorkbenchContentObserver } from '@pluxel/workbench/client'
 import { type RpcStub } from 'capnweb'
@@ -33,8 +35,7 @@ async function startVaultS3(host: TestHost<true>): Promise<void> {
 	})
 	await host
 		.require(S3Plugin.nodeAddress())
-		.ctx.service(Vault)
-		.kv({ namespace: REFERENCE.namespace })
+		.ctx.vault.kv({ namespace: REFERENCE.namespace })
 		.set(REFERENCE.key, {
 			accessKeyId: 'old-access-key',
 			secretAccessKey: 'old-secret-key',
@@ -91,7 +92,7 @@ describe('S3 Workbench credential rotation', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices(), vault()],
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await startVaultS3(host)
@@ -164,8 +165,7 @@ describe('S3 Workbench credential rotation', () => {
 			await expect(
 				host
 					.require(S3Plugin.nodeAddress())
-					.ctx.service(Vault)
-					.kv({ namespace: REFERENCE.namespace })
+					.ctx.vault.kv({ namespace: REFERENCE.namespace })
 					.get(REFERENCE.key)
 					.then((snapshot) => snapshot.value),
 			).resolves.toEqual({
@@ -202,7 +202,7 @@ describe('S3 Workbench credential rotation', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [...standardServices(), vault()],
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await startVaultS3(host)
@@ -220,8 +220,7 @@ describe('S3 Workbench credential rotation', () => {
 			await expect(
 				host
 					.require(S3Plugin.nodeAddress())
-					.ctx.service(Vault)
-					.kv({ namespace: REFERENCE.namespace })
+					.ctx.vault.kv({ namespace: REFERENCE.namespace })
 					.get(REFERENCE.key)
 					.then((snapshot) => snapshot.value),
 			).resolves.toEqual({
@@ -240,7 +239,7 @@ describe('S3 Workbench credential rotation', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(S3Plugin.nodeAddress())
@@ -270,7 +269,7 @@ describe('S3 Workbench credential rotation', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.start(S3Plugin.nodeAddress(), {

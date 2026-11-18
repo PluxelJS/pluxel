@@ -43,7 +43,16 @@ describe('Host built-in storage without Services', () => {
 			mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 			durableMounts: ['/'],
 		}
-		const seed = await createHost({ plugins: [Configured], runtime: { zenfs: storage } })
+		const seed = await createHost({
+			plugins: [
+				{
+					plugin: Configured,
+				},
+			],
+			coreConfig: {
+				zenfs: storage,
+			},
+		})
 		try {
 			await expect(
 				seed.config.patch(owner, { set: { value: 'persisted' } }),
@@ -57,12 +66,22 @@ describe('Host built-in storage without Services', () => {
 		}
 		const confirmed = await savedDocuments(prefix)
 		const reopened = await createHost({
-			plugins: [Configured],
-			config: { mode: 'saved-first', records: [{ owner, config: { value: 'replacement seed' } }] },
-			policy: { mode: { autoStart: 'saved-first' }, autoStart: [] },
-			runtime: {
+			plugins: [
+				{
+					plugin: Configured,
+					config: { value: 'replacement seed' },
+				},
+			],
+			config: {
+				mode: 'saved-first',
+				document: { readOnly: true },
+			},
+			policy: {
+				document: { readOnly: true },
+				modes: { autoStart: 'saved-first' },
+			},
+			coreConfig: {
 				zenfs: { ...storage, readOnly: true },
-				documents: { config: { readOnly: true }, state: { readOnly: true } },
 			},
 		})
 		try {
@@ -96,16 +115,25 @@ describe('Host built-in storage without Services', () => {
 		const prefix = await temporaryDirectory()
 		const owner = Configured.nodeAddress()
 		const host = await createHost({
-			plugins: [Configured],
-			config: { records: [{ owner, config: { value: 'readonly seed' } }] },
-			policy: { autoStart: [owner] },
-			runtime: {
+			plugins: [
+				{
+					plugin: Configured,
+					autoStart: true,
+					config: { value: 'readonly seed' },
+				},
+			],
+			config: {
+				document: { readOnly: true },
+			},
+			policy: {
+				document: { readOnly: true },
+			},
+			coreConfig: {
 				zenfs: {
 					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 					readOnly: true,
 					durableMounts: ['/'],
 				},
-				documents: { config: { readOnly: true }, state: { readOnly: true } },
 			},
 		})
 		try {
@@ -129,13 +157,22 @@ describe('Host built-in storage without Services', () => {
 		const prefix = await temporaryDirectory()
 		const owner = Configured.nodeAddress()
 		const host = await createHost({
-			plugins: [Configured],
-			runtime: {
+			plugins: [
+				{
+					plugin: Configured,
+				},
+			],
+			coreConfig: {
 				zenfs: {
 					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 					durableMounts: ['/'],
 				},
-				documents: { config: false, state: false },
+			},
+			policy: {
+				document: false,
+			},
+			config: {
+				document: false,
 			},
 		})
 		try {
@@ -161,7 +198,14 @@ describe('Host built-in storage without Services', () => {
 				durableMounts: ['/'],
 			},
 		}
-		const host = await createHost({ plugins: [Configured], runtime })
+		const host = await createHost({
+			plugins: [
+				{
+					plugin: Configured,
+				},
+			],
+			coreConfig: runtime,
+		})
 		try {
 			expect(await requireHostDocuments(host.ctx, 'config').getText('config.json')).toBeUndefined()
 			expect(await requireHostDocuments(host.ctx, 'state').getText('state.json')).toBeUndefined()
@@ -177,12 +221,19 @@ describe('Host built-in storage without Services', () => {
 			})
 			expect(
 				SuperJSON.parse((await requireHostDocuments(host.ctx, 'state').getText('state.json'))!),
-			).toEqual({ version: 7, startConcurrency: 2 })
+			).toEqual({ version: 8, startConcurrency: 2 })
 		} finally {
 			await host.close()
 		}
 		const confirmed = await savedDocuments(prefix)
-		const reopened = await createHost({ plugins: [Configured], runtime })
+		const reopened = await createHost({
+			plugins: [
+				{
+					plugin: Configured,
+				},
+			],
+			coreConfig: runtime,
+		})
 		try {
 			expect(await savedDocuments(prefix)).toEqual(confirmed)
 			expect(await reopened.policy.get()).toMatchObject({
@@ -207,20 +258,22 @@ describe('Host built-in storage without Services', () => {
 		}
 		const host = await createHost({
 			plugins: [],
-			runtime: {
+			coreConfig: {
 				zenfs: { mounts: { '/': { backend, fs: nativeFs, prefix } }, durableMounts: ['/'] },
-				documents: {
-					config: {
-						storage(root) {
-							calls.push('config factory')
-							return requireHostDocuments(root, 'config')
-						},
+			},
+			policy: {
+				document: {
+					storage(root) {
+						calls.push('state factory')
+						return requireHostDocuments(root, 'state')
 					},
-					state: {
-						storage(root) {
-							calls.push('state factory')
-							return requireHostDocuments(root, 'state')
-						},
+				},
+			},
+			config: {
+				document: {
+					storage(root) {
+						calls.push('config factory')
+						return requireHostDocuments(root, 'config')
 					},
 				},
 			},
@@ -251,28 +304,30 @@ describe('Host built-in storage without Services', () => {
 		await expect(
 			createHost({
 				plugins: [],
-				runtime: {
+				coreConfig: {
 					zenfs: { mounts: { '/': { backend, fs: nativeFs, prefix } }, durableMounts: ['/'] },
-					documents: {
-						config: {
-							storage(root) {
-								filesystem = requireFs(root)
-								const documents = requireHostDocuments(root, 'config')
-								return {
-									put: documents.put.bind(documents),
-									stat: documents.stat.bind(documents),
-									async getText(key) {
-										observed = await Promise.allSettled([
-											documents.getText(key),
-											filesystem.ready(),
-											documents.getText(key),
-										])
-										throw failure
-									},
-								}
-							},
+				},
+				policy: {
+					document: { storage: (root) => requireHostDocuments(root, 'state') },
+				},
+				config: {
+					document: {
+						storage(root) {
+							filesystem = requireFs(root)
+							const documents = requireHostDocuments(root, 'config')
+							return {
+								put: documents.put.bind(documents),
+								stat: documents.stat.bind(documents),
+								async getText(key) {
+									observed = await Promise.allSettled([
+										documents.getText(key),
+										filesystem.ready(),
+										documents.getText(key),
+									])
+									throw failure
+								},
+							}
 						},
-						state: { storage: (root) => requireHostDocuments(root, 'state') },
 					},
 				},
 			}),
@@ -287,19 +342,19 @@ describe('Host built-in storage without Services', () => {
 
 	it('closes built-in documents after corrupt config rejects startup and preserves their bytes', async () => {
 		const prefix = await temporaryDirectory()
-		const runtime = {
+		const coreConfig = {
 			zenfs: {
 				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 				durableMounts: ['/'],
 			},
 		}
 		const original = '{broken'
-		const seed = await createHost({ plugins: [], runtime: { ...runtime } })
+		const seed = await createHost({ coreConfig })
 		try {
 			await requireHostDocuments(seed.ctx, 'config').put('config.json', original)
 			await requireHostDocuments(seed.ctx, 'state').put(
 				'state.json',
-				SuperJSON.stringify({ version: 7 }),
+				SuperJSON.stringify({ version: 8 }),
 			)
 		} finally {
 			await seed.close()
@@ -309,16 +364,13 @@ describe('Host built-in storage without Services', () => {
 		let documents!: HostDocumentStorage
 		await expect(
 			createHost({
-				plugins: [],
-				runtime: {
-					...runtime,
-					documents: {
-						config: {
-							storage(root) {
-								filesystem = requireFs(root)
-								documents = requireHostDocuments(root, 'config')
-								return documents
-							},
+				coreConfig,
+				config: {
+					document: {
+						storage(root) {
+							filesystem = requireFs(root)
+							documents = requireHostDocuments(root, 'config')
+							return documents
 						},
 					},
 				},

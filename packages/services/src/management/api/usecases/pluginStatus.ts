@@ -62,6 +62,7 @@ function readPluginControl(
 		hostPluginControlFromView(
 			{
 				catalog: view.catalog,
+				declaredNodes: view.declaredNodes,
 				state: view.runtimeState.state,
 				sessionIntents: view.sessionIntents,
 				desiredControl: view.desiredControl,

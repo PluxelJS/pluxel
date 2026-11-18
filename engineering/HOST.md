@@ -12,13 +12,13 @@ Host 拥有服务安装、应用启动、catalog、运行意图和资源关闭�
 2. 创建唯一 root，解析文档 factory，读取保存输入，组合八项 policy，一次绑定四项执行参数。
 3. 创建 PluginService/coordinator，按 `requires` 顺序准备服务。
 
-Core 直接装配时立即绑定执行配置；Host 的内部延迟绑定保持 Context shape 不变。同步 service factory 惰性构造 view，异步资源通常由 `prepare({ ctx, dependencies, effects })` 获取。内建 FS/TinyBase 首次操作共享准备任务，独立于服务顺序。准备失败沿同一个 root 清理路径，保留原错误和清理错误。
+Core 直接装配时立即绑定执行配置；Host 的内部延迟绑定保持 Context shape 不变。同步 service factory 惰性构造 view，异步资源通常由 `prepare({ ctx, dependencies, effects })` 获取。内建 FS/TinyBase/Vault 首次操作共享各自准备任务，独立于服务顺序。准备失败沿同一个 root 清理路径，保留原错误和清理错误。
 
 每项 service effects 在准备失败或 Host close 时释放；Plugin effects 随 generation 释放。关闭先停止 admission、排空协调操作和 Plugin，再按依赖逆序释放服务。所有清理都会执行，错误聚合。`close()` 和 `Symbol.asyncDispose` 共用幂等任务及失败结果。Host 在 Core shutdown transaction 中先撤销当前 provider-default bindings，再删除节点，保留持久 policy。
 
 service access 区分 `all`、真实 Plugin/Part `owner` 和真实 `root`。`ctx.service(Service)` 保留 missing/access/construction 错误。`ctx.root` 是受信任代码可持有的真实根引用；内部 graph/config/storage authority 留在 framework 入口，Core 固定能力通过 Context 属性提供，见 [Core](CORE.md#context-service-kernel)。
 
-`standardServices()` 安装 HTTP、Commands、Node artifacts、Workers；`servicesPreset(startup, options)` 增加 Vault、Management、管理命令及可选 Workbench。Core 的 `runtime.logtape`、`runtime.zenfs` 分别选择日志与文件后端。Database 单独安装，见 [Database](DATABASE.md)。未选择的服务不创建 backend、watcher、compiler、route 或状态。关闭 Workbench 后，业务服务和显式 `managementHttp()` 继续运行。
+`servicesPreset(startup, options)` 是唯一官方应用组合，安装 HTTP、Commands、Node artifacts、Workers、Management、管理命令及可选 Workbench。`workbench: false` 保留管理能力；定制宿主与隔离测试直接组合单项安装器。Core 的 `coreConfig.logtape`、`coreConfig.zenfs` 和 `coreConfig.vault` 分别选择日志、文件与凭据配置。Database 单独安装，见 [Database](DATABASE.md)。未选择的服务不创建 backend、watcher、compiler、route 或状态。
 
 部署清单决定 Node 制品 owner：standalone 使用应用固定目录；modules 保留已加载模块 owner，Node 服务按各 owner inventory 读取，不能用应用目录覆盖外部 worker。详见[官方默认组合](../docs/host/services.md#官方服务预设servicespreset)。
 
@@ -90,7 +90,7 @@ Host 的 `bench/status.bench.mjs` 比较 overview/find 与精确投影；Service
 | Node artifacts、Workers              | `packages/services/src/node/`、`workers/`；[Artifact Build](ARTIFACT_BUILD.md)                  |
 | Management/Workbench                 | [Workbench](WORKBENCH.md)、[管理接入](../docs/host/management.md)                               |
 
-Host 文档默认借用 Core FS，`runtime.documents` 每域 false 禁用 IO，readOnly 拒绝本实例写入，storage 同步 root factory 借用外部 backend。config v4、state v7 只保存稀疏原始输入；缺失文档不写种子，坏格式保留原文件并拒绝准备。关闭先取消观察、排空本域任务，再由 Core 关闭 backend，见 [Config](CONFIG.md#存储与创建边界)。
+Host 文档默认借用 Core FS，`config.document` 与 `policy.document` 分别选择 IO、写权限和同步 root storage factory。config v4、state v8 只保存稀疏原始输入；缺失文档不写种子，坏格式保留原文件并拒绝准备。关闭先取消观察、排空本域任务，再由 Core 关闭 backend，见 [Config](CONFIG.md#存储与创建边界)。
 
 Worker caller result 与底层 execution settlement 分开；`settlement: 'execution'` 等到线程可复用或退出再发布结果，供调用方清理文件等资源。
 
@@ -106,7 +106,9 @@ Node srvx/Vite 接线已有覆盖；Bun、Deno、Worker adapter、published Elys
 
 ## Vault 记录与宿主输入
 
-Vault 的 KV 是结构化记录，blobs 保留文件语义。默认加密 backend 借用 Core FS，bindings backend 只读，不准备密钥或磁盘。Host 在服务准备后、Plugin admission 前，通过 root-only `HostVaultBindings` 安装已校验 owner/key/value/source；缺失能力是装配错误。环境解析仍归 Host。
+Vault 是 Core 固定能力，Plugin 通过 `ctx.vault` 取得 owner 存储视图；KV 是结构化记录，blobs 保留文件语义。`coreConfig.vault` 选择默认加密 backend 或只读 bindings backend。加密后端按需借用 Core FS，bindings 后端不准备密钥或磁盘。Host 在 Plugin admission 前通过 Core 内部边界安装已校验的 owner/key/value/source；凭据契约和存储实现归 Core，部署 Schema、环境与 JSON 文件解析归 Host，Core 不引用 Host 类型。
+
+创建 Host、读取凭据能力、创建 KV/blob 句柄或管理 describe 不生成密钥；首次数据操作按需初始化新加密库，也可由管理员显式 unlock 初始化。已有库缺少匹配密钥或解密失败时保留错误，不阻止未使用凭据的 Host 启动。能力存在不代表密钥已配置、存储已解锁或记录存在，具体操作报告实际状态；管理面通过 `requireVaultHost(root).admin` 借用根管理接口，所有后端准备、观察和最终释放仍归 Core。
 
 KV mutation 在本实例 backend lock 内 clone、检查 revision、加密、原子提交，再交换 snapshot 并通知。失败不推进 revision，删除保留 tombstone。watch/watchPrefix 在同一 lock 读取初值并注册，通知在锁外、owner invocation 内运行。env/file 整记录只读且不落盘，所有写路径检查 overlay。`vault.namespace` 的命名子空间与 default/fork owner 隔离，root 保留管理权限。
 

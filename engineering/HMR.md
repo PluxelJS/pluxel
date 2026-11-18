@@ -87,7 +87,7 @@ execution 由执行入口给出闭合合同：native fixed 为 built-module/appl
 
 ### 来源发现与资源所有权
 
-初始 fixed imports 与全部来源先发现/求值，再提交同一 catalog，使 required provider 可见。来源只允许精确文件或 containment 内的正向 include。Vite 私有 openPluginSources 合并声明/重复 entry，持 watcher；pluginSource 仅验证/冻结数据。主 watcher 忽略数据/安装/cache，私有会话仅接纳覆盖 entry。
+初次启动时，`plugins` 提供的构造器和 `sources` 发现的实现提交到同一 catalog，图解析可见全部 required provider。应用工厂可以计算 `{ file }` 或 `{ directory, include }` 列表，Host 接纳时验证并快照，Vite 私有会话持有 watcher 并合并重复入口。来源文件变化按本次接纳的规则处理，工厂重求值可切换整组来源规则。按地址的 `pluginNodes` 在实现缺席期间保留节点输入。
 
 SDK 初始 epoch 收入口事件，ready 后在原队列验证完整来源。后续通知按路径合并最多 4096，25 ms 窗口，同来源单个校验；溢出比对 Chokidar 实际观察与已校验集合。raw/discovery 通知只请求校验，不凭它接纳 SDK 未观察文件。
 

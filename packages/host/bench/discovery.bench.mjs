@@ -20,13 +20,16 @@ __setPluginDefinition(DiscoveryProvider, {
 
 for (const forkCount of [1_000, 10_000]) {
 	await using host = await createHost({
-		plugins: [DiscoveryProvider],
-		policy: {
-			forks: Array.from({ length: forkCount }, (_, index) =>
-				DiscoveryProvider.nodeAddress(`fork-${index}`),
-			),
-		},
-		runtime: { documents: { config: false, state: false } },
+		plugins: [
+			{
+				plugin: DiscoveryProvider,
+				forks: Object.fromEntries(
+					Array.from({ length: forkCount }, (_, index) => [`fork-${index}`, {}]),
+				),
+			},
+		],
+		config: { document: false },
+		policy: { document: false },
 	})
 	await host.start()
 	await using scope = createScriptScope({ ctx: host.ctx })
@@ -36,8 +39,7 @@ for (const forkCount of [1_000, 10_000]) {
 		let count = 0
 		const start = performance.now()
 		do {
-			const result = await scope.sdk.plugins.list({ limit: 50, cursor })
-			const page = result.unwrap()
+			const page = await scope.sdk.plugins.list({ limit: 50, cursor })
 			count += page.nodes.length
 			cursor = page.nextCursor ?? undefined
 		} while (cursor !== undefined)

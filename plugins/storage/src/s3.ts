@@ -3,7 +3,7 @@ import { type Context, Plugin, defineServiceRef } from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 
-import type { VaultRecordSnapshot, Vault } from '@pluxel/services/vault'
+import type { VaultRecordSnapshot } from '@pluxel/core/vault'
 import type { WorkbenchContentActionResult, WorkbenchPrincipal, Workbench } from '@pluxel/workbench'
 import { S3mini } from 's3mini'
 import {
@@ -22,7 +22,6 @@ import {
 } from './workbench.ts'
 
 const WorkbenchRef = defineServiceRef<Workbench>()
-const VaultRef = defineServiceRef<Vault>()
 const MEBIBYTE = 1024 * 1024
 const MAX_BUCKETS = 64
 
@@ -228,7 +227,7 @@ export class S3CredentialsError extends Error {
 	readonly code = 'S3_CREDENTIALS_ERROR'
 
 	constructor(
-		readonly reason: 'missing' | 'invalid' | 'unavailable',
+		readonly reason: 'missing' | 'invalid',
 		readonly bucketId: string,
 		readonly key: string,
 		cause?: unknown,
@@ -398,8 +397,7 @@ export class S3Plugin extends S3 {
 			if (backend.credentials.type === 'vault') {
 				const reference = backend.credentials
 				const key = credentialKey(config.id, reference)
-				const vault = this.ctx.service(VaultRef)
-				if (!vault) throw new S3CredentialsError('unavailable', config.id, key)
+				const vault = this.ctx.vault
 				const parse = (record: VaultRecordSnapshot): S3AccessKeyCredentials => {
 					if (!record.exists) throw new S3CredentialsError('missing', config.id, key)
 					try {
@@ -541,8 +539,7 @@ export class S3Plugin extends S3 {
 			const reference = backend.credentials
 			const key = credentialKey(input.bucketId, reference)
 			try {
-				const vault = this.ctx.service(VaultRef)
-				if (!vault) throw new Error('Vault is unavailable')
+				const vault = this.ctx.vault
 				await vault
 					.kv(reference.namespace ? { namespace: reference.namespace } : undefined)
 					.set(key, credentials)

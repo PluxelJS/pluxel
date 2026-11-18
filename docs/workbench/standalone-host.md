@@ -16,11 +16,8 @@ import { workbenchService } from '@pluxel/workbench/service'
 import { ViewerPlugin } from './viewer'
 
 export default defineHostApplication(() => ({
-	plugins: [ViewerPlugin],
+	plugins: [{ plugin: ViewerPlugin, autoStart: true }],
 	services: [workbenchService()],
-	policy: {
-		autoStart: [ViewerPlugin.nodeAddress()],
-	},
 }))
 ```
 

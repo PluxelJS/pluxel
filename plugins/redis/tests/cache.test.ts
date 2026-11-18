@@ -1,4 +1,7 @@
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import * as v from 'valibot'
 import { Plugin } from '@pluxel/core'
@@ -115,7 +118,7 @@ describe('@pluxel/plugin-redis cache backend', () => {
 	it('uses registered Lua script and round-trips structured cache values', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.commit((change) => {
@@ -155,7 +158,7 @@ describe('@pluxel/plugin-redis cache backend', () => {
 	it('clears a managed prefix with SCAN and bounded UNLINK batches', async () => {
 		{
 			await using host = await createTestHost({
-				services: standardServices(),
+				services: [elysia(), commands(), nodeModules(), workers()],
 			})
 
 			await host.commit((change) => {

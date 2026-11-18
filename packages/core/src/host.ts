@@ -15,7 +15,8 @@ export {
 } from '@pluxel/context'
 export { createCoreContextHost } from './context/core-plan'
 export { prepareCoreContext } from './context/core-logging'
-export type { Context, RootContext, CoreHostConfig } from './context/Context'
+export type { Context, RootContext, CoreFacilitiesConfig, CoreHostConfig } from './context/Context'
+export type { CoreExecutionConfig } from './context/plugin-execution'
 
 import {
 	installRootService as installKernelRootService,

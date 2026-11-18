@@ -169,7 +169,7 @@ export async function createServiceInternalTestHarness(
 		return candidate
 	}
 	const definitionAddress = (plugin: PluginConstructor): PluginDefinitionAddress =>
-		addressByImplementation.get(plugin) ?? plugin.definitionAddress()
+		addressByImplementation.get(plugin) ?? plugin.address()
 	const targetAddress = (target: ServiceInternalTestTarget): PluginNodeAddress =>
 		typeof target === 'function'
 			? { definition: definitionAddress(target), variant: 'default' }

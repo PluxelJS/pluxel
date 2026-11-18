@@ -25,7 +25,7 @@ description: 按执行位置选择源码查询、进程内 Host 操作或外部 
 
 ## 操作进程内的 Host
 
-`/host` 为 Node 和 Vite 脚本导出同一个 `Script`、`ScriptSdk` 和 `ScriptError`。执行器注入 SDK，控制操作成功直接返回值、失败抛错。`sdk.ctx` 是当前 run 的根 Context 视图，直接提供 `logger`、`effects`、`events` 和可选的 `logging`；`sdk.ctx.service(Service)` 借用应用安装的服务。`const ctx = await sdk.plugin(address).context()` 借用当前运行代的 Plugin Context，另有 `fs()` 和 `tinybase`。必需声明、可选 ref、远端生成材料与失效规则见[借用已安装的服务](./scripts.md#借用已安装的服务)。Vite 从当前模块图加载服务声明，见[开发控制台](./dev-console.md)。持有现成 Host 的进程也可以直接借用它：
+`/host` 为 Node 和 Vite 脚本导出同一个 `Script`、`ScriptSdk` 和 `ScriptError`。执行器注入 SDK，控制操作成功直接返回值、失败抛错。`sdk.ctx` 是当前 run 的根 Context 视图，直接提供 `logger`、`effects`、`events` 和可选的 `logging`；`sdk.ctx.service(Service)` 借用应用安装的服务。`const ctx = await sdk.plugin(address).context()` 借用当前运行代的 Plugin Context，另有 `fs()`、`tinybase` 和 `vault`。必需声明、可选 ref、远端生成材料与失效规则见[借用已安装的服务](./scripts.md#借用已安装的服务)。Vite 从当前模块图加载服务声明，见[开发控制台](./dev-console.md)。持有现成 Host 的进程也可以直接借用它：
 
 ```ts no-twoslash
 import { createScriptScope } from '@pluxel/agent-sdk/host'

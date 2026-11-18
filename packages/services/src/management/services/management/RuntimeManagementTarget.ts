@@ -1,9 +1,8 @@
-import { resolveContextService } from '@pluxel/core/internal'
+import { listSecurityEvents, requireVaultHost, resolveContextService } from '@pluxel/core/internal'
 import { validateRuntimePortableData } from '../../web/validation'
 
 import { Management } from '../../token'
 import { AdminAccess } from '../../access'
-import { optionalVaultAdmin } from '../../vault'
 import { readManagementHostOptions } from '../../host-options'
 import {
 	type PluginRecentUpdateRead,
@@ -15,7 +14,7 @@ import {
 	createHostPolicy,
 	requireHostStateStore,
 } from '@pluxel/host/internal'
-import type { HostPolicy, HostPolicyResult, HostPolicyField } from '@pluxel/host'
+import type { HostPolicy, HostPolicyResult, HostPolicyResetTarget } from '@pluxel/host'
 import { type RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
 import {
 	parsePluginDefinitionAddress,
@@ -65,8 +64,7 @@ import {
 	type LogRangeResult,
 	type LogStreamMeta,
 } from '@pluxel/core/logging/protocol'
-import { listSecurityEvents } from '../../../internal'
-import { type VaultAdminApi, type VaultAdminState, type VaultKeyPair } from '../../../vault'
+import { type VaultAdminApi, type VaultAdminState, type VaultKeyPair } from '@pluxel/core/vault'
 import { type SecurityOverview, type SecurityAuditEvent } from '../../web/security'
 import { RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES } from '../../web/session/limits'
 import {
@@ -286,16 +284,13 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		)
 	}
 
-	async resetHostPolicyDto(keys?: unknown, options?: unknown): Promise<PolicyResult> {
+	async resetHostPolicyDto(targets?: unknown, options?: unknown): Promise<PolicyResult> {
 		this.signal?.throwIfAborted()
 		const parsed = parseManagedInputOptions(options)
-		if (
-			!parsed.ok ||
-			(keys !== undefined && (!Array.isArray(keys) || keys.some((key) => typeof key !== 'string')))
-		)
+		if (!parsed.ok || (targets !== undefined && !Array.isArray(targets)))
 			return invalidPolicyInput('Invalid policy reset input')
 		return this.#projectPolicy(
-			await this.#policy.reset(keys as readonly HostPolicyField[] | undefined, {
+			await this.#policy.reset(targets as readonly HostPolicyResetTarget[] | undefined, {
 				...parsed.value,
 				...this.#admission,
 			}),
@@ -714,13 +709,11 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		this.signal?.throwIfAborted()
 		const adminAccess = resolveContextService(this.ctx.root, AdminAccess)
 		if (!adminAccess) throw new Error('Runtime Management authentication is unavailable')
-		const vault = optionalVaultAdmin(this.ctx)
+		const vault = requireVaultHost(this.ctx.root).admin
 		return checkedDto(
 			Object.freeze({
 				adminAccess: await adminAccess.describe(),
-				vault: vault
-					? Object.freeze({ enabled: true as const, state: await vault.describe() })
-					: Object.freeze({ enabled: false as const }),
+				vault: Object.freeze({ enabled: true as const, state: await vault.describe() }),
 			}),
 		)
 	}
@@ -761,8 +754,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 	}
 
 	#vaultAdmin(): VaultAdminApi {
-		const vault = optionalVaultAdmin(this.ctx)
-		if (!vault) throw new Error('Runtime Vault is unavailable')
+		const vault = requireVaultHost(this.ctx.root).admin
 		return vault
 	}
 }

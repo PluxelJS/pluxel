@@ -1,6 +1,6 @@
 # 数据库：owner handle 与数据换代
 
-`@pluxel/services/database` 为 Plugin 提供 owner 隔离的 PostgreSQL 数据库能力，查询使用原生 Drizzle。应用显式安装；`standardServices()` 和 `servicesPreset()` 不包含它。配置、偏好和有界状态使用 [TinyBase](TINYBASE.md)。公开调用见[数据库指南](../docs/plugin-development/database.md)。
+`@pluxel/services/database` 为 Plugin 提供 owner 隔离的 PostgreSQL 数据库能力，查询使用原生 Drizzle。应用显式安装；`servicesPreset()` 不包含它。配置、偏好和有界状态使用 [TinyBase](TINYBASE.md)。公开调用见[数据库指南](../docs/plugin-development/database.md)。
 
 ## Author boundary
 

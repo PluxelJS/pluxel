@@ -35,7 +35,7 @@ class ConfiguredOwner extends BasePlugin {
 it('keeps saved input sparse and normalizes once across durable Hosts', async () => {
 	const prefix = await mkdtemp(join(tmpdir(), 'pluxel-tinybase-config-'))
 	const owner = ConfiguredOwner.nodeAddress()
-	const runtime = {
+	const coreConfig = {
 		zenfs: {
 			mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 			durableMounts: ['/'],
@@ -43,13 +43,15 @@ it('keeps saved input sparse and normalizes once across durable Hosts', async ()
 	}
 	try {
 		const host = await createHost({
-			plugins: [ConfiguredOwner],
-			runtime,
-			config: {
-				mode: 'saved-first',
-				records: [{ owner, config: { text: 'initial', locked: 'declared' } }],
-			},
-			policy: { autoStart: [owner] },
+			plugins: [
+				{
+					plugin: ConfiguredOwner,
+					autoStart: true,
+					config: { text: 'initial', locked: 'declared' },
+				},
+			],
+			coreConfig,
+			config: { mode: 'saved-first' },
 		})
 		try {
 			await host.start()
@@ -70,13 +72,15 @@ it('keeps saved input sparse and normalizes once across durable Hosts', async ()
 			await host.close()
 		}
 		const reopened = await createHost({
-			plugins: [ConfiguredOwner],
-			runtime,
-			config: {
-				mode: 'saved-first',
-				records: [{ owner, config: { text: 'different base', locked: 'declared' } }],
-			},
-			policy: { autoStart: [owner] },
+			plugins: [
+				{
+					plugin: ConfiguredOwner,
+					autoStart: true,
+					config: { text: 'different base', locked: 'declared' },
+				},
+			],
+			coreConfig,
+			config: { mode: 'saved-first' },
 		})
 		try {
 			await reopened.start()

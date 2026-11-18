@@ -7,14 +7,11 @@ import { PdfHttpPlugin, QueryHttpPlugin } from './plugins.js'
 
 export default defineHostApplication<HostApplicationFactory>((startup) => ({
 	name: 'headless-documents',
-	plugins: [QueryHttpPlugin, PdfHttpPlugin],
+	plugins: [
+		{ plugin: QueryHttpPlugin, autoStart: true, config: { fail: startup.env.FAIL_QUERY === '1' } },
+		{ plugin: PdfHttpPlugin, autoStart: true },
+	],
 	services: [elysia()],
-	policy: { autoStart: [QueryHttpPlugin.nodeAddress(), PdfHttpPlugin.nodeAddress()] },
-	config: {
-		records: [
-			{ owner: QueryHttpPlugin.nodeAddress(), config: { fail: startup.env.FAIL_QUERY === '1' } },
-		],
-	},
 	async prepare({ host }) {
 		const directory = startup.env.DATA_DIRECTORY
 		if (!directory) throw new Error('DATA_DIRECTORY is required')

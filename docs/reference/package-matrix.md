@@ -14,7 +14,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/create`                 | 快速创建包含宿主、插件、前端与测试设施的脚手架         | [快速开始](../getting-started/index.md)                      |
 | `@pluxel/core`                   | 插件核心模型、依赖图编排、生命周期与持久化状态         | [插件模型](../plugin-development/model.md)                   |
 | `@pluxel/context`                | 独立宿主的上下文能力组合与惰性初始化内核               | [组合 Context host](./context-hosts.md)                      |
-| `@pluxel/services`               | 官方基础服务集合（HTTP 路由、命令、Vault 与管理端点）  | [组合 Host 服务](../host/services.md)                        |
+| `@pluxel/services`               | 官方服务组合与单项服务（HTTP、命令与管理端点）         | [组合 Host 服务](../host/services.md)                        |
 | `@pluxel/workbench`              | 控制台 Content、View 与 Attachment 定义及前端 SDK      | [工作台视图](../workbench/view.md)                           |
 | `@pluxel/agent-sdk`              | Agent 源码查询、进程内操作、外部客户端与官方终端适配   | [Agent SDK](../development/agent-sdk.md)                     |
 | `@pluxel/host`                   | 宿主应用装配、静态/动态来源加载与运行策略              | [配置插件宿主](../host/configuration.md)                     |

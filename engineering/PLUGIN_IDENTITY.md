@@ -11,7 +11,7 @@ Plugin identity 贯穿 graph、配置、持久化、日志、管理面和工具�
 
 Address 是可校验、可序列化的 immutable value；Slot 是一个 Core registry 对同一 address intern 得到的 object key。同 registry、同 address 只有一个 Slot。generation 表示 node 的一次运行，不进入 address。
 
-lowered class 的 `definitionAddress()` 支持 concrete/abstract Plugin；`nodeAddress(forkId?)` 只支持 concrete Plugin。`PluginInstanceNodeAddress<S, A>` 保留 default/fork 判别和实例类型。生成控制入口还关联配置 input/output，SDK 统一 `sdk.plugin(nodeAddress)`。这些投影不创建实例，也不从父 class 继承 lowering facts。
+lowered class 的 `address()` 支持 concrete/abstract Plugin；`nodeAddress(forkId?)` 只支持 concrete Plugin。`PluginInstanceNodeAddress<S, A>` 保留 default/fork 判别和实例类型。生成控制入口还关联配置 input/output，SDK 统一 `sdk.plugin(nodeAddress)`。这些投影不创建实例，也不从父 class 继承 lowering facts。
 
 fork 共享 implementation、schema、metadata、编译输入和 HMR，独立持有运行状态、config、override、Context、effects 和 lease。class name、constructor object、displayName、npm version、安装路径、digest、catalog 顺序均不参与身份。
 

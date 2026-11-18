@@ -20,6 +20,14 @@ export type {
 	HostDependencyOverrideState,
 	HostPolicyOptions,
 	HostPolicyInput,
+	HostPolicyPatch,
+	HostPolicyResetTarget,
+	HostGlobalPolicyField,
+	HostNodePolicyTarget,
+	HostNodePolicyMode,
+	HostAutoStartChoice,
+	HostForkChoice,
+	HostDependencyOverrideChoice,
 	HostPolicyValues,
 	HostPolicyField,
 	HostPolicyModes,
@@ -28,7 +36,12 @@ export type {
 } from './policy'
 export type { HostInputMode } from './input-mode'
 export type { HostPersistenceResult, HostPersistenceRetention } from './persistence'
-export type { HostConfigOptions, HostConfigRecordInput, ConfigInputPatch } from './config-records'
+export type { HostConfigOptions, ConfigInputPatch } from './config-records'
+export type {
+	HostPluginDeclaration,
+	HostPluginNodesDeclaration,
+	HostPluginNodeOptions,
+} from './node-declarations'
 export type { PluginSource } from './sources'
 
 export {
@@ -47,13 +60,9 @@ export {
 	type HostPluginConfigResultOk,
 	type HostPluginConfigResultErr,
 } from './config'
-export type {
-	HostDocumentStorage,
-	HostDocumentOptions,
-	HostDocumentFacilities,
-} from './document-storage'
+export type { HostDocumentStorage, HostDocumentOptions } from './document-storage'
 export type { HostConfigSource } from './config-store'
-export type { HostStateConfigurationSnapshot } from './state-store'
+export type { HostStateConfigurationSnapshot, HostNodePolicySelection } from './state-store'
 export type { HostPolicy, HostPolicyResult } from './policy-management'
 
 export type {
@@ -75,7 +84,6 @@ export {
 	type HostStartupContext,
 	type ResolvedHostApplication,
 } from './application'
-export type { HostRuntimeOptions } from './host'
 export { HostApplicationStartupError, type HostApplicationStartup } from './application-start'
 
 export type {

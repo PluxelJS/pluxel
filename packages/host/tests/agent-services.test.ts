@@ -1,4 +1,5 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import type { VaultKvTransaction } from '@pluxel/core/vault'
 import { BasePlugin, Plugin, parsePluginNodeAddress, type Context } from '@pluxel/core'
 import {
 	createServiceRef,
@@ -166,7 +167,11 @@ it('resolves verified required descriptors and optional refs by canonical identi
 it('borrows the current owner through an untyped node and rejects retained contexts after restart', async () => {
 	let serial = 0
 	await using host = await createHost({
-		plugins: [ServiceOwner],
+		plugins: [
+			{
+				plugin: ServiceOwner,
+			},
+		],
 		services: [
 			defineHostService({
 				name: 'owner',
@@ -275,7 +280,11 @@ it('requires accepted owner service work to settle before queued Host operations
 		finish = resolve
 	})
 	await using host = await createHost({
-		plugins: [ServiceOwner],
+		plugins: [
+			{
+				plugin: ServiceOwner,
+			},
+		],
 		services: [
 			defineHostService({
 				name: 'async-owner',
@@ -308,7 +317,13 @@ it('requires accepted owner service work to settle before queued Host operations
 })
 
 it('borrows Core built-ins directly and projects instance and owner Contexts onto the run', async () => {
-	await using host = await createHost({ plugins: [ServiceOwner] })
+	await using host = await createHost({
+		plugins: [
+			{
+				plugin: ServiceOwner,
+			},
+		],
+	})
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
 	const root = scope.sdk.ctx
@@ -353,8 +368,176 @@ it('borrows Core built-ins directly and projects instance and owner Contexts ont
 	expect(() => next.root).toThrow(expect.objectContaining({ code: 'scope_closed' }))
 })
 
+it('withdraws retained Vault KV, namespace, blob and subscription capabilities when their script closes', async () => {
+	await using host = await createHost({
+		plugins: [
+			{
+				plugin: ServiceOwner,
+			},
+		],
+	})
+	await host.startNode(ServiceOwner.nodeAddress())
+	const scope = createScriptScope({ ctx: host.ctx })
+	const context = await scope.sdk.plugin(ServiceOwner.nodeAddress()).context()
+	const vault = context.vault
+	expect(vault).toBe(context.vault)
+	const kv = vault.kv()
+	await kv.set('credential', { token: 'saved' })
+	expect(await kv.get('credential')).toMatchObject({ value: { token: 'saved' } })
+	const namespace = vault.namespace('script')
+	const scopedKv = namespace.kv()
+	await scopedKv.batch((tx) => tx.set('account/main', { token: 'scoped' }))
+	const watched = await scopedKv.watch('account/main', () => {})
+	const prefix = await scopedKv.watchPrefix('account/', () => {})
+	expect(watched.snapshot.value).toEqual({ token: 'scoped' })
+	expect(prefix.snapshots).toHaveLength(1)
+	const blobs = namespace.blobs()
+	const blob = blobs.open('certificate')
+	await blob.writeText('certificate data')
+	expect(await blob.readText()).toBe('certificate data')
+	expect(blob.describe().path).toContain('certificate.blob')
+	const get = scopedKv.get
+	const dispose = watched.dispose
+	await scope.dispose()
+	for (const access of [
+		() => vault.kv(),
+		() => vault.flush(),
+		() => namespace.name,
+		() => namespace.kv(),
+		() => kv.get('credential'),
+		() => get('account/main'),
+		() => blobs.open('another'),
+		() => blob.describe(),
+		() => blob.writeText('stale'),
+		() => dispose(),
+		() => prefix.dispose(),
+	]) {
+		expect(access).toThrow(expect.objectContaining({ code: 'scope_closed' }))
+	}
+	const native = requirePluginService(host.ctx).getInstance(ServiceOwner.nodeAddress())!
+	expect(await native.ctx.vault.kv().get('credential')).toMatchObject({
+		value: { token: 'saved' },
+	})
+})
+
+it('guards Vault transaction callbacks and retained transaction methods with the borrowing run', async () => {
+	await using host = await createHost({
+		plugins: [
+			{
+				plugin: ServiceOwner,
+			},
+		],
+	})
+	await host.startNode(ServiceOwner.nodeAddress())
+	const scope = createScriptScope({ ctx: host.ctx })
+	const context = await scope.sdk.plugin(ServiceOwner.nodeAddress()).context()
+	const entered = Promise.withResolvers<void>()
+	const release = Promise.withResolvers<void>()
+	let retained!: VaultKvTransaction
+	const accepted = context.vault.kv().batch(async (tx) => {
+		retained = tx
+		tx.set('before-close', true)
+		entered.resolve()
+		await release.promise
+		tx.set('after-close', true)
+	})
+	await entered.promise
+	const settled = Promise.allSettled([accepted, scope.dispose()])
+	let retainedFailure: unknown
+	try {
+		retained.get('before-close')
+	} catch (error) {
+		retainedFailure = error
+	}
+	release.resolve()
+	const [operation, closing] = await settled
+	expect(retainedFailure).toMatchObject({ code: 'scope_closed' })
+	expect(operation).toMatchObject({
+		status: 'rejected',
+		reason: { code: 'scope_closed' },
+	})
+	expect(closing).toMatchObject({ status: 'rejected' })
+	const native = requirePluginService(host.ctx).getInstance(ServiceOwner.nodeAddress())!
+	expect(await native.ctx.vault.kv().get('before-close')).toMatchObject({ exists: false })
+})
+
+it('rejects a queued Vault batch callback after its borrowing run closes', async () => {
+	await using host = await createHost({
+		plugins: [
+			{
+				plugin: ServiceOwner,
+			},
+		],
+	})
+	await host.startNode(ServiceOwner.nodeAddress())
+	const scope = createScriptScope({ ctx: host.ctx })
+	const context = await scope.sdk.plugin(ServiceOwner.nodeAddress()).context()
+	const native = requirePluginService(host.ctx).getInstance(ServiceOwner.nodeAddress())!
+	const entered = Promise.withResolvers<void>()
+	const release = Promise.withResolvers<void>()
+	const blocking = native.ctx.vault.kv().batch(async () => {
+		entered.resolve()
+		await release.promise
+	})
+	await entered.promise
+	const callback = vi.fn(() => 'late callback')
+	const accepted = context.vault.kv().batch(callback)
+	const settled = Promise.allSettled([accepted, scope.dispose()])
+	release.resolve()
+	await blocking
+	const [operation, closing] = await settled
+	expect(operation).toMatchObject({
+		status: 'rejected',
+		reason: { code: 'scope_closed' },
+	})
+	expect(closing).toMatchObject({ status: 'rejected' })
+	expect(callback).not.toHaveBeenCalled()
+})
+
+it('drains a Vault watch callback before releasing its script subscription', async () => {
+	await using host = await createHost({
+		plugins: [
+			{
+				plugin: ServiceOwner,
+			},
+		],
+	})
+	await host.startNode(ServiceOwner.nodeAddress())
+	const scope = createScriptScope({ ctx: host.ctx })
+	const context = await scope.sdk.plugin(ServiceOwner.nodeAddress()).context()
+	const native = requirePluginService(host.ctx).getInstance(ServiceOwner.nodeAddress())!
+	const entered = Promise.withResolvers<void>()
+	const release = Promise.withResolvers<void>()
+	const listener = vi.fn(async () => {
+		entered.resolve()
+		await release.promise
+	})
+	const watched = await context.vault.kv().watch('watched', listener)
+	await native.ctx.vault.kv().set('watched', 1)
+	await entered.promise
+	let closed = false
+	const closing = scope.dispose().then((): void => {
+		closed = true
+		return undefined
+	})
+	await Promise.resolve()
+	expect(closed).toBe(false)
+	release.resolve()
+	await closing
+	expect(listener).toHaveBeenCalledTimes(1)
+	expect(() => watched.dispose()).toThrow(expect.objectContaining({ code: 'scope_closed' }))
+	await native.ctx.vault.kv().set('watched', 2)
+	expect(listener).toHaveBeenCalledTimes(1)
+})
+
 it('owns script effects in child scopes and leaves the borrowed root and generation running', async () => {
-	await using host = await createHost({ plugins: [ServiceOwner] })
+	await using host = await createHost({
+		plugins: [
+			{
+				plugin: ServiceOwner,
+			},
+		],
+	})
 	await host.start()
 	const scope = createScriptScope({ ctx: host.ctx })
 	const plugin = scope.sdk.plugin(ServiceOwner.nodeAddress())

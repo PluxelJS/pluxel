@@ -36,7 +36,7 @@ export async function prepareHostPluginControls(options: {
 	previous: HostPluginControls
 }): Promise<HostPluginControls> {
 	const selected = new Set(
-		options.plugins.map((plugin) => pluginDefinitionIndexKey(plugin.definitionAddress())),
+		options.plugins.map((plugin) => pluginDefinitionIndexKey(plugin.address())),
 	)
 	const sources = options.semantics
 		.sourceDefinitions()
@@ -48,11 +48,11 @@ export async function prepareHostPluginControls(options: {
 	const allSources = [...sources, ...services]
 	const metadata = new Map<string, PluginControlMetadata>()
 	const implementations = new Map(
-		options.plugins.map((plugin) => [pluginDefinitionIndexKey(plugin.definitionAddress()), plugin]),
+		options.plugins.map((plugin) => [pluginDefinitionIndexKey(plugin.address()), plugin]),
 	)
 	for (const plugin of options.plugins) {
 		const loaded = readLoadedPluginModule(plugin)
-		if (loaded) metadata.set(pluginDefinitionIndexKey(plugin.definitionAddress()), loaded.control)
+		if (loaded) metadata.set(pluginDefinitionIndexKey(plugin.address()), loaded.control)
 	}
 	if (allSources.length === 0)
 		return { metadata, dependencies: new Set(), owners: new Map(), implementations }

@@ -35,7 +35,7 @@ export interface PluginDescriptor<
 	O extends object = RawConfig,
 	S extends object = object,
 > {
-	readonly definitionAddress: () => PluginDefinitionAddress
+	readonly address: () => PluginDefinitionAddress
 	readonly nodeAddress: {
 		(): PluginControlNodeAddress<I, O, S, PluginDefaultNodeAddress>
 		(forkId: string): PluginControlNodeAddress<I, O, S, PluginForkNodeAddress>

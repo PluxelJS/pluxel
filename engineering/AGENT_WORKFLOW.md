@@ -57,7 +57,7 @@ CLI 通过 `/internal/client` 复用项目/profile/实例选择及错误上下�
 
 `snapshot()` 关闭后仍可读取 catalog/runtime revision 与 config/policy managed revision。具体采用结果以领域报告为准。
 
-`sdk.ctx` 返回受本次 run 控制的 `RootContext` 视图，直接使用 `logger`、`effects`、`events` 和可选 `logging`；`plugin.context()` 在 committed read 中捕获 running generation，返回带 `fs()`、`tinybase` 和 `pluginInfo` 的 `PluginContext` 视图。固定属性与缓存的能力方法都检查 run/generation admission；`root`、`parent`、`caller` 和业务实例的 `ctx` 继续返回受控视图。每个 run 与 Context 惰性创建自己的 effects 子 scope，run 关闭时释放登记资源，不能借此 dispose root 或 Plugin generation。
+`sdk.ctx` 返回受本次 run 控制的 `RootContext` 视图，直接使用 `logger`、`effects`、`events` 和可选 `logging`；`plugin.context()` 在 committed read 中捕获 running generation，返回带 `fs()`、`tinybase`、`vault` 和 `pluginInfo` 的 `PluginContext` 视图。固定属性与缓存的能力方法都检查 run/generation admission；`root`、`parent`、`caller` 和业务实例的 `ctx` 继续返回受控视图。每个 run 与 Context 惰性创建自己的 effects 子 scope，run 关闭时释放登记资源，不能借此 dispose root 或 Plugin generation。
 
 内建能力不参与 service 注册或控制材料。显式安装的扩展服务继续通过 `service` 读取；required 声明与 optional ref 使用同一安装身份，只有 optional 缺失返回 undefined，生成描述符额外核对已接纳声明契约。服务成员借用视图检查 run/generation admission 并保持原 API，失效后重新借用。业务方法返回的资源保持原所有权，由脚本 await、传递取消并释放。源码 constructor 的精确证据与实例视图见 [Dev Console](DEV_CONSOLE.md#操作-api-与资源)。
 
@@ -104,7 +104,7 @@ run/result/cancel 输出 `{ ok: true, value: { receipt, run } }`；sync 输出 `
 
 ## 授权和执行所有者
 
-远程通过 Management `bootstrap.execution` 授予 target，须由 `managementHttp({ scripts: true })` 或 `servicesPreset(..., { scripts: true })` 启用；普通管理权限与脚本开关分别检查。关闭时不创建 Node loader 或队列。
+远程通过 Management `bootstrap.execution` 授予 target。使用 `managementHttp({ scripts: true })` 或 `servicesPreset(startup, { managementHttp: { scripts: true } })` 启用。普通管理权限与脚本开关分别检查，开启脚本时创建 Node loader 和执行队列。
 
 Node owner 随 Host 存活。连接断开只释放控制引用，相同 provider/subject 可重新认证查询；退出认证、provider generation 或 authorization signal 撤回会取消主体工作。连接 signal 与授权 signal 独立，Host 先撤权、drain owner，再释放应用资源。
 

@@ -18,20 +18,18 @@ function send(message: ExampleResponse) {
 
 async function start() {
 	host = await createHost({
-		plugins: [TypstPlugin, ThemePlugin, ReportPlugin],
-		config: {
-			records: [
-				{
-					owner: TypstPlugin.nodeAddress(),
-					config: {
-						compilerWasmUrl: new URL(compilerWasmUrl, self.location.href).href,
-						rendererWasmUrl: new URL(rendererWasmUrl, self.location.href).href,
-						fontUrls: [new URL(fontUrl, self.location.href).href],
-					},
+		plugins: [
+			{
+				plugin: TypstPlugin,
+				config: {
+					compilerWasmUrl: new URL(compilerWasmUrl, self.location.href).href,
+					rendererWasmUrl: new URL(rendererWasmUrl, self.location.href).href,
+					fontUrls: [new URL(fontUrl, self.location.href).href],
 				},
-			],
-		},
-		policy: { autoStart: [ReportPlugin.nodeAddress()] },
+			},
+			{ plugin: ThemePlugin },
+			{ plugin: ReportPlugin, autoStart: true },
+		],
 	})
 	await host.start()
 	const status = await host.status()

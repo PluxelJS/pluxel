@@ -32,7 +32,7 @@ describe('Management exact Plugin status', () => {
 	it.each([8, 1_000, 10_000])(
 		'reuses the display directory across exact DTO reads with %i stopped forks',
 		async (forkCount) => {
-			const definition = StatusProvider.definitionAddress()
+			const definition = StatusProvider.address()
 			const forks: PluginForkNodeAddress[] = Array.from({ length: forkCount }, (_, index) => ({
 				definition,
 				variant: 'fork',
@@ -41,7 +41,9 @@ describe('Management exact Plugin status', () => {
 			await using host = await createServiceInternalTestHarness({
 				services: [],
 				workbench: false,
-				policy: { forks },
+				pluginNodes: [
+					{ definition, forks: Object.fromEntries(forks.map(({ forkId }) => [forkId, {}])) },
+				],
 			})
 			host.add(StatusProvider)
 			await host.commit()

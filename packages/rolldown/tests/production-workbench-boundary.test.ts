@@ -71,20 +71,19 @@ export { Dynamic }
 			'app.ts',
 			`
 import { defineHostApplication } from '@pluxel/host'
-import { pluginSource } from '@pluxel/host/sources'
 import { workbenchService } from '@pluxel/workbench/service'
 import { WorkbenchHost } from '@pluxel/workbench/server'
 export default defineHostApplication(() => ({
  name: 'workbench-boundary',
  plugins: [],
  services: [workbenchService()],
- sources: [pluginSource({ kind: 'directory', path: ${JSON.stringify(join(root, 'mutable/entries'))}, include: ['*.mjs'] })],
+ sources: [{ directory: ${JSON.stringify(join(root, 'mutable/entries'))}, include: ['*.mjs'] }],
  prepare: ({ host }) => {
   const session = host.ctx.service(WorkbenchHost).createSession({ provider: 'probe', subject: 'reader' }, () => {})
   globalThis.__hostRpcTarget = Object.getPrototypeOf(session.target.constructor)
   session.dispose()
  },
- policy: { autoStart: [{ definition: { entry: { kind: 'package-root', packageName: 'installed-target' }, exportName: 'Dynamic' }, variant: 'default' }] },
+ pluginNodes: [{ definition: { entry: { kind: 'package-root', packageName: 'installed-target' }, exportName: 'Dynamic' }, autoStart: true }],
 }))
 `,
 		)

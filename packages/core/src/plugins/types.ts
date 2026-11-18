@@ -12,6 +12,6 @@ export type SubclassOf<B extends Identifier<any>> = abstract new (...args: any[]
 
 // ✅ 插件特有别名
 export type PluginConstructor = Newable<BasePlugin> &
-	Pick<typeof BasePlugin, 'definitionAddress' | 'nodeAddress'>
+	Pick<typeof BasePlugin, 'address' | 'nodeAddress'>
 export type PluginToken = Identifier<BasePlugin> &
-	Pick<typeof BasePlugin, 'definitionAddress' | 'nodeAddress'>
+	Pick<typeof BasePlugin, 'address' | 'nodeAddress'>

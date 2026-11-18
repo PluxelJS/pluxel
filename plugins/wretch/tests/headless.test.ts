@@ -5,7 +5,8 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
-import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
+import { defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
+import { createResolvedHost } from '@pluxel/host/internal'
 import { Passthrough } from '@pluxel/core/fs'
 import { expect, it } from 'vitest'
 import { WretchConfig, WretchPlugin } from '../src/index.ts'
@@ -45,14 +46,21 @@ it('runs native HTTP, env policy and managed settings with services: []', async 
 		if (!address || typeof address === 'string') throw new Error('No listener')
 		origin = `http://127.0.0.1:${address.port}`
 		const application = defineHostApplication(() => ({
-			plugins: [WretchPlugin, StatelessHttpConsumer],
-			services: [],
-			envBindings: [
-				envBinding(WretchPlugin.nodeAddress(), {
-					config: { schema: WretchConfig, mapping: { allowedOrigins: 'HTTP_ORIGINS' } },
-				}),
+			plugins: [
+				{
+					plugin: WretchPlugin,
+					envBindings: [
+						envBinding({
+							config: { schema: WretchConfig, mapping: { allowedOrigins: 'HTTP_ORIGINS' } },
+						}),
+					],
+				},
+				{
+					plugin: StatelessHttpConsumer,
+					autoStart: true,
+				},
 			],
-			policy: { autoStart: [StatelessHttpConsumer.nodeAddress()] },
+			services: [],
 		}))
 		const resolved = await resolveHostApplication(application, {
 			root: process.cwd(),
@@ -60,14 +68,7 @@ it('runs native HTTP, env policy and managed settings with services: []', async 
 			bindings: {},
 			env: { HTTP_ORIGINS: JSON.stringify([origin]) },
 		})
-		const host = await createHost({
-			plugins: resolved.plugins,
-			services: resolved.services,
-			name: resolved.name,
-			config: resolved.config,
-			policy: resolved.policy,
-			runtime: resolved.runtime,
-		})
+		const host = await createResolvedHost(resolved)
 		try {
 			await host.start()
 			const status = await host.status()
@@ -146,21 +147,30 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 		if (!address || typeof address === 'string') throw new Error('No listener')
 		origin = `http://127.0.0.1:${address.port}`
 		const application = defineHostApplication(() => ({
-			plugins: [WretchPlugin, HeadlessHttpConsumer, SecondManagedConsumer],
-			services: [],
-			envBindings: [
-				envBinding(WretchPlugin.nodeAddress(), {
-					config: {
-						schema: WretchConfig,
-						mapping: { timeoutMs: 'HTTP_TIMEOUT', allowedOrigins: 'HTTP_ORIGINS' },
-					},
-				}),
+			plugins: [
+				{
+					plugin: WretchPlugin,
+					config: { timeoutMs: 5_000 },
+					envBindings: [
+						envBinding({
+							config: {
+								schema: WretchConfig,
+								mapping: { timeoutMs: 'HTTP_TIMEOUT', allowedOrigins: 'HTTP_ORIGINS' },
+							},
+						}),
+					],
+				},
+				{
+					plugin: HeadlessHttpConsumer,
+					autoStart: true,
+				},
+				{
+					plugin: SecondManagedConsumer,
+					autoStart: true,
+				},
 			],
-			config: { records: [{ owner: WretchPlugin.nodeAddress(), config: { timeoutMs: 5_000 } }] },
-			policy: {
-				autoStart: [HeadlessHttpConsumer.nodeAddress(), SecondManagedConsumer.nodeAddress()],
-			},
-			runtime: {
+			services: [],
+			coreConfig: {
 				zenfs: {
 					mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 					durableMounts: ['/'],
@@ -174,14 +184,7 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 				bindings: {},
 				env: { HTTP_TIMEOUT: round === 0 ? '1000' : '100', HTTP_ORIGINS: JSON.stringify([origin]) },
 			})
-			const host = await createHost({
-				plugins: resolved.plugins,
-				services: resolved.services,
-				name: resolved.name,
-				config: resolved.config,
-				policy: resolved.policy,
-				runtime: resolved.runtime,
-			})
+			const host = await createResolvedHost(resolved)
 			try {
 				await host.start()
 				const status = await host.status()

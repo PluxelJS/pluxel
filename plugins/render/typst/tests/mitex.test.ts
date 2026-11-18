@@ -103,21 +103,14 @@ it('renders the same LaTeX and cross-file references in WASM using only explicit
 		if (!path) throw new Error(`Unexpected request: ${url}`)
 		return new Response(await readFile(path))
 	})
-	await using host = await createTestHost({
-		config: {
-			records: [
-				{
-					owner: TypstPlugin.nodeAddress(),
-					config: {
-						compilerWasmUrl: 'https://example.test/compiler.wasm',
-						rendererWasmUrl: 'https://example.test/renderer.wasm',
-						fontUrls: ['https://example.test/math.ttf'],
-					},
-				},
-			],
+	await using host = await createTestHost()
+	const typst = await host.start(TypstPlugin.nodeAddress(), {
+		initialConfig: {
+			compilerWasmUrl: 'https://example.test/compiler.wasm',
+			rendererWasmUrl: 'https://example.test/renderer.wasm',
+			fontUrls: ['https://example.test/math.ttf'],
 		},
 	})
-	const typst = await host.start(TypstPlugin.nodeAddress())
 	const source = template
 	const files = Object.fromEntries(
 		Object.entries(documentFiles()).map(([path, content]) => [`/${path}`, content]),

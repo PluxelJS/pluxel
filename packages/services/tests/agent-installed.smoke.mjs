@@ -309,17 +309,9 @@ async function main() {
 		const elysiaApp = synchronized.services.find(
 			(item) => item.definition.exportName === 'ElysiaApp',
 		)
-		const vaultBindings = synchronized.services.find(
-			(item) =>
-				item.definition.entry.kind === 'package-subpath' &&
-				item.definition.entry.packageName === '@pluxel/host' &&
-				item.definition.entry.subpath === './bindings' &&
-				item.definition.exportName === 'HostVaultBindings',
-		)
 		assert.ok(tally, JSON.stringify(synchronized))
 		assert.ok(actions, JSON.stringify(synchronized))
 		assert.ok(elysiaApp, JSON.stringify(synchronized))
-		assert.ok(vaultBindings, JSON.stringify(synchronized))
 		assert.equal(tally.exportName, 'Tally')
 		assert.equal(actions.exportName, 'CounterActions')
 		const controlImport =
@@ -328,10 +320,8 @@ async function main() {
 				tally.importStatement,
 				actions.importStatement,
 				elysiaApp.importStatement,
-				vaultBindings.importStatement,
 				`import type { TallyInstance } from ${JSON.stringify(tally.module)};`,
 				`import type { CounterActionsInstance } from ${JSON.stringify(actions.module)};`,
-				`import type { HostVaultBindingsInstance } from ${JSON.stringify(vaultBindings.module)};`,
 			].join('\n') + '\n'
 		const synchronizedAgain = await cli(['sync', '--endpoint', ready.endpoint, '--out', 'control'])
 		assert.equal(synchronizedAgain.snapshot, synchronized.snapshot)
@@ -361,7 +351,7 @@ async function main() {
 			same: true,
 			owner: { serial: 1, count: 1, same: true },
 			http: true,
-			bindings: true,
+			vault: { same: true, exists: false, writable: false },
 		})
 		const second = await cli(['run', 'task.ts', '--endpoint', ready.endpoint])
 		assert.equal(second.run.state, 'succeeded')
@@ -373,7 +363,7 @@ async function main() {
 			same: true,
 			owner: { serial: 2, count: 1, same: true },
 			http: true,
-			bindings: true,
+			vault: { same: true, exists: false, writable: false },
 		})
 		// A new authenticated connection queries the original receipt; no source re-delivery occurs.
 		const queried = await cli(['result', '--receipt-file', 'first.receipt'])
@@ -514,21 +504,17 @@ console.log('INSTALLED_AGENT_SDK_NODE_OK')
 
 const application = `
 import {readFile} from 'node:fs/promises'
-import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
-import {logtape} from '@pluxel/core/config'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import {defineHostApplication,defineHostService,type HostApplication} from '@pluxel/host'
-import type {HostVaultBindings} from '@pluxel/host/bindings'
 import {installRootService,installOwnerViewService} from '@pluxel/core/host'
 import {elysia,ElysiaApp} from '@pluxel/services/elysia'
 import {listenElysia} from '@pluxel/services/elysia/node'
 import {managementAccess} from '@pluxel/services/management/access'
 import {management} from '@pluxel/services/management/service'
 import {managementHttp} from '@pluxel/services/management/http'
-import {vault} from '@pluxel/services/vault'
 import {ScriptCliAuthentication,scriptTestAuthentication} from './auth'
 import * as v from 'valibot'
 export {ScriptCliAuthentication}
-const HostVaultRef=defineServiceRef<HostVaultBindings>()
 const Schema=v.object({count:v.optional(v.number(),2)})
 @Plugin({displayName:'Installed counter'})
 export class Counter extends BasePlugin {
@@ -553,11 +539,12 @@ function applicationServices(){return defineHostService({name:'installed-agent-s
  }})
 ]})}
 export default defineHostApplication((startup):HostApplication=>({
- plugins:[ScriptCliAuthentication,Counter],
- services:[applicationServices(),elysia(),vault({backend:'bindings'}),managementAccess(),management(),managementHttp({scripts:true})],
- runtime:{documents:{config:false,state:false},logtape:logtape(({createRuntimeLogSink})=>({sinks:{history:createRuntimeLogSink({windowLines:100})},loggers:[{category:['pluxel'],lowestLevel:'trace',sinks:['history']},{category:['logtape','meta'],lowestLevel:'fatal',sinks:[]}]}))},
- policy:{autoStart:[ScriptCliAuthentication.nodeAddress(),Counter.nodeAddress()]},
- prepare:({host})=>{if(host.ctx.service(HostVaultRef)===undefined)throw new Error('Missing native HostVaultBindings service');host.ctx.effects.defer(()=>{process.stdout.write(JSON.stringify({stage:'closed',authentication:scriptTestAuthentication})+'\\n')},{tag:'AgentSmokeShutdown',phase:'shutdown'})},
+ plugins:[{ plugin: ScriptCliAuthentication, autoStart: true }, { plugin: Counter, autoStart: true }],
+ services:[applicationServices(),elysia(),managementAccess(),management(),managementHttp({scripts:true})],
+ coreConfig:{vault:{backend:'bindings'},logtape:({createRuntimeLogSink})=>({sinks:{history:createRuntimeLogSink({windowLines:100})},loggers:[{category:['pluxel'],lowestLevel:'trace',sinks:['history']},{category:['logtape','meta'],lowestLevel:'fatal',sinks:[]}]})},
+ config:{document:false},
+ policy:{document:false},
+ prepare:({host})=>{host.ctx.effects.defer(()=>{process.stdout.write(JSON.stringify({stage:'closed',authentication:scriptTestAuthentication})+'\\n')},{tag:'AgentSmokeShutdown',phase:'shutdown'})},
  launch:async({host})=>{const listener=await listenElysia(host,{hostname:startup.env.AGENT_SMOKE_HOST,port:0,tls:{key:await readFile('tls.key','utf8'),cert:await readFile('tls.crt','utf8')}});process.stdout.write(JSON.stringify({stage:'ready',endpoint:'https://'+listener.address.host+':'+listener.address.port})+'\\n')},
 }))
 `
@@ -565,7 +552,6 @@ const task = `import {ScriptError, type Script} from '@pluxel/agent-sdk/host'
 import {defineServiceRef} from '@pluxel/core'
 const TallyRef=defineServiceRef<TallyInstance>()
 const CounterActionsRef=defineServiceRef<CounterActionsInstance>()
-const HostVaultRef=defineServiceRef<HostVaultBindingsInstance>()
 let moduleRuns=0
 export default (async sdk=>{
  const select=sdk.plugin
@@ -596,9 +582,8 @@ export default (async sdk=>{
  const context=await counter.context()
  const actions=context.service(CounterActions)
  const app=context.service(ElysiaApp)
- const bindings=sdk.ctx.service(HostVaultBindings)
- await bindings.install([])
- const service={count:tally.increment(1),same:tally===sdk.ctx.service(TallyRef),owner:{serial:actions.serial,count:actions.next(),same:actions===context.service(CounterActionsRef)},http:app.routes.some(route=>route.path==='/installed-service'),bindings:bindings===sdk.ctx.service(HostVaultRef)}
+ const credential=await context.vault.kv().get('missing')
+ const service={count:tally.increment(1),same:tally===sdk.ctx.service(TallyRef),owner:{serial:actions.serial,count:actions.next(),same:actions===context.service(CounterActionsRef)},http:app.routes.some(route=>route.path==='/installed-service'),vault:{same:context.vault===context.vault,exists:credential.exists,writable:credential.writable}}
  return {moduleRuns:++moduleRuns,changed,conflict,logs,business,calls:instance.calls,actual,lifecycle,service}
 }) satisfies Script
 `
