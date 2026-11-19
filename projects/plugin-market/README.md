@@ -49,7 +49,9 @@ VITE_MARKET_URL=https://market.example.com vp run build:web
 
 `latest` 始终来自上游 dist-tag，即使对应发行未通过检查也不回退。目录元数据与已收录发行分别表达事实；`metadataVersion` 指明 README、license 对应的元数据版本。`coverage: "indexed-only"` 表示发行列表只覆盖已检查版本，不是上游完整历史。
 
-作者声明的 HTTPS `repository` 供浏览使用，不构成 provenance 证明。`refreshRepository({ registry, name })` 显式读取受支持 GitHub API 的真实 `stargazers_count`，缓存 `repositoryStars` 和 `repositoryObservedAt`。未观测时为 `null`，不补成 `0`；失败保留旧观测，仓库改变则清除旧星标。目录读取不访问 GitHub。
+包声明的 HTTPS `repository` 供浏览使用。`refreshRepository({ registry, name })` 从 GitHub 观测该仓库的星数与归属，记录 `repositoryStars`、`repositoryObservedAt` 和作者 ID。GitHub 账号按数字 ID 归组，名称与头像来自最近的有效观测。失败保留该仓库的旧观测，包变更声明仓库时清除旧归属和星数。
+
+包摘要和概览的 `author` 为市场登记的作者，或包声明的 GitHub 仓库 owner。两种身份分别以 `market:` 与 `github:` 开头，市场登记优先。无记录时为 `null`，有记录时头像仍可为空。目录读取使用已存储的归属，发行 provenance 由具体发行携带。
 
 刷新失败保留已有记录；同一发行出现不同摘要时，观测、发行和审计整批拒绝。`observedAt` 是 registry 请求开始时间，API 的 `200` 或 `304` 不表示刚刷新上游。
 
@@ -57,19 +59,21 @@ VITE_MARKET_URL=https://market.example.com vp run build:web
 
 DTO 位于 [src/protocol.ts](src/protocol.ts)，Worker 与工作区调用方共同演进。包名和精确版本各编码为单个路径段。列表默认 20 条，`limit` 为 1–50；错误使用 `application/problem+json` 与稳定 `code`。
 
-| 操作                                                                        | 返回与边界                                                                            |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `GET /v1`                                                                   | `protocolVersion: 1`、可读来源及能力，不返回凭据                                      |
-| `GET /v1/packages?query=&registry=&official=&category=&tag=&cursor=&limit=` | `{ packages, nextCursor }`；组合筛选，按名称、来源排序                                |
-| `GET /v1/facets`                                                            | 可读且可见包的分类、标签计数                                                          |
-| `GET /v1/packages/:name?registry=`                                          | 摘要、dist-tags、元数据 README/license/version、已收录数量及 coverage                 |
-| `GET /v1/packages/:name/releases?registry=&cursor=&limit=`                  | 已检查发行分页摘要，按版本字符串排序，不代表 semver 新旧                              |
-| `GET /v1/packages/:name/releases/:version?registry=`                        | 精确来源、tarball、integrity、依赖、制品 README/license 及 provenance                 |
-| `POST /v1/notifications`                                                    | `{ registry, name, version }`；持久接收后 `202` 与 `Location`，终态重复提交返回 `200` |
-| `GET /v1/notifications/:id`                                                 | 回执状态；查询成功与收录成功分别表达                                                  |
-| `POST /admin`                                                               | Bearer 认证的原生 Cap’n Web HTTP batch                                                |
+| 操作                                                       | 返回与边界                                                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `GET /v1`                                                  | `protocolVersion: 1`、可读来源及能力，不返回凭据                                      |
+| `GET /v1/packages`                                         | `{ packages, nextCursor }`，按名称、来源排序                                          |
+| `GET /v1/facets`                                           | `{ total, registries, categories, tags, authors }`，计数基于分页前的可见目录          |
+| `GET /v1/packages/:name?registry=`                         | 摘要、dist-tags、元数据 README/license/version、已收录数量及 coverage                 |
+| `GET /v1/packages/:name/releases?registry=&cursor=&limit=` | 已检查发行分页摘要，按版本字符串排序，不代表 semver 新旧                              |
+| `GET /v1/packages/:name/releases/:version?registry=`       | 精确来源、tarball、integrity、依赖、制品 README/license 及 provenance                 |
+| `POST /v1/notifications`                                   | `{ registry, name, version }`；持久接收后 `202` 与 `Location`，终态重复提交返回 `200` |
+| `GET /v1/notifications/:id`                                | 回执状态；查询成功与收录成功分别表达                                                  |
+| `POST /admin`                                              | Bearer 认证的原生 Cap’n Web HTTP batch                                                |
 
-精确包和发行查询默认选择公共 npm。搜索使用原生 FTS5，匹配包名、描述和市场 tags 的词前缀，多词同时满足；输入不作为 FTS 运算符执行。筛选和来源权限在 SQL 分页之前执行。游标绑定查询，改变筛选需重新开始；分页读取当前视图，不保留历史快照。
+目录列表和筛选选项都接收 `query`、`official`，以及可重复的 `registry`、`category`、`tag`、`author`。每组最多 20 个值，组内任意命中、组间同时命中。结果总数应用全部条件，单组选项计数应用搜索和其他组条件。隐藏包与当前请求无权读取的来源都排除在统计和结果外。仅包列表接收 `cursor` 和 `limit`。
+
+精确包和发行查询默认选择公共 npm。FTS5 匹配包名、描述和市场标签的词前缀，多词同时满足。游标绑定归一化查询和可读来源，改变筛选需从头开始。分页读取当前视图。
 
 公共目录支持 `ETag` / `If-None-Match`，缓存最长 30 秒。认证响应、通知、管理和错误响应使用 `no-store`；目录返回 `Vary: Authorization`。隐藏不撤销已下载制品。时间戳为 Unix 毫秒。
 
@@ -81,7 +85,7 @@ DTO 位于 [src/protocol.ts](src/protocol.ts)，Worker 与工作区调用方共�
 # 在本目录执行，本地沙箱会话自动提供地址与管理员凭据
 node examples/admin.ts observe @pluxel/wretch
 node examples/admin.ts package @pluxel/wretch
-node examples/admin.ts catalog '{"official":true,"category":"integration"}'
+vp exec node examples/admin.ts catalog '{"official":true,"categories":["integration","development"]}'
 node examples/admin.ts notifications '{"status":"failed","limit":20}'
 ```
 
@@ -89,7 +93,7 @@ node examples/admin.ts notifications '{"status":"failed","limit":20}'
 
 - `observe` / `refresh` / `refreshRepository`：显式刷新上述独立事实。
 - `getPackage({ registry, name })`：观测、人工元数据、隐藏状态与 revision。
-- `setMetadata({ registry, name, expectedRevision, official, category, tags })`：市场拥有的官方标记、分类和标签，不根据 scope、keywords 或仓库名推断。category 可为 `null`；小写 slug 最长 32，最多 20 个不同标签。
+- `setMetadata({ registry, name, expectedRevision, official, category, tags, author? })` 编辑市场标记与署名。分类可为 `null`，分类和标签使用最多 32 字符的小写 slug，最多 20 个不同标签。`author: { id: "market:team", name: "Team" }` 为包登记作者，同一 ID 共用显示名。用 `author: null` 清除登记，省略该字段只编辑市场标记。
 - `setVisibility({ registry, name, expectedRevision, hidden })`：与元数据编辑共享 revision；上游刷新不覆盖人工输入。冲突返回实际 revision，不生成成功审计。
 - `listNotifications({ registry?, name?, status?, code?, cursor?, limit? })`：按创建时间、ID 倒序检索。
 - `getNotification(id)` / `retryNotification(id)`：回执、内部诊断和重试决策，不暴露租约，不重置尝试预算。

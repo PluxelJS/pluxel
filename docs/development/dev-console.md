@@ -31,7 +31,7 @@ CLI 与 Vite 通过私有 Unix socket 上的 Cap’n Web 连接。发现目录�
 
 未知 `dev` 子命令同样返回 `invalid_input` JSON。多个实例时，错误列出 `candidates` 并提示使用 `--instance`；保持原 `--root` 和 `--profile`，不要自动选第一个实例。提交结果不确定时，提示使用原 receipt 的查询命令，不建议重新提交。
 
-发现记录损坏或版本不匹配时，错误 `context` 包含 `root`、`recordFile`，协议错误另含 `expectedProtocol` / `actualProtocol`。默认发现会报告这些记录；已知 `--instance` 或原 receipt 只读取目标记录，无关坏记录不阻断它。核对路径与进程后可显式清理已废弃记录；客户端不自动删除。客户端与目标使用同一版本的脚本控制协议。
+默认发现会跳过 socket 已消失或拒绝连接的实例。发现记录损坏或版本不匹配时，错误 `context` 包含 `root`、`recordFile`，协议错误另含 `expectedProtocol` / `actualProtocol`。默认发现会报告这些记录；已知 `--instance` 或原 receipt 只读取目标记录，无关坏记录不阻断它。核对路径与进程后可显式清理已废弃记录；客户端不自动删除。客户端与目标使用同一版本的脚本控制协议。
 
 <span id="hmr-批次控制"></span>
 

@@ -8,8 +8,9 @@ import {
 } from '@pluxel/agent-sdk/client'
 import { SCRIPT_PROTOCOL } from '@pluxel/host/internal/agent/runtime'
 import { createHash } from 'node:crypto'
-import { chmod, readFile, rm, symlink, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { chmod, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
+import { dirname, resolve } from 'node:path'
 import { cli as gunshiCli, define } from 'gunshi'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -90,6 +91,34 @@ describe('development control through native Capn Web', () => {
 			await selectDevInstance({ root: first.root, instance: second.instance.instanceId }),
 		).toEqual(second.instance)
 	})
+	it.skipIf(process.platform === 'win32')(
+		'discovers a live console beside a socket left by an exited listener',
+		async () => {
+			const { root, instance, directory } = await fixture()
+			const boundPath = resolve(dirname(instance.socketPath), 'bound.sock')
+			const stalePath = resolve(dirname(instance.socketPath), 'stale.sock')
+			const listener = createServer()
+			await new Promise<void>((done, reject) => {
+				listener.once('error', reject)
+				listener.listen(boundPath, done)
+			})
+			try {
+				await rename(boundPath, stalePath)
+			} finally {
+				await new Promise<void>((done, reject) =>
+					listener.close((error) => (error ? reject(error) : done())),
+				)
+			}
+			const stale = { ...instance, instanceId: 'stale', socketPath: stalePath }
+			await writeFile(resolve(directory, 'stale.json'), JSON.stringify(stale), { mode: 0o600 })
+
+			await expect(selectDevInstance({ root })).resolves.toEqual(instance)
+			await expect(connectDevInstance(stale)).rejects.toMatchObject({
+				code: 'dev_unavailable',
+				cause: { code: 'ECONNREFUSED' },
+			})
+		},
+	)
 	it('reports the exact incompatible record and safe protocol facts through the public client', async () => {
 		const { root, directory } = await fixture()
 		const recordFile = resolve(directory, 'obsolete.json')

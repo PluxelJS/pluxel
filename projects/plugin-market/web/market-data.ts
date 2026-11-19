@@ -13,14 +13,17 @@ type Owner<T> = { read: Read<T>; fetch(): Promise<void> }
 
 // The page owns only HTTP reads. Search, selection and pagination belong to Marketplace.
 export function createMarketplaceData(url: string): MarketplaceData {
-	function Packages({
-		query: { query, registry, official, category, tag, cursor, limit },
-		children,
-	}: ComponentProps<MarketplaceData['Packages']>) {
+	function Packages({ query, children }: ComponentProps<MarketplaceData['Packages']>) {
 		const read = useCallback(
-			(client: PackageMarketClient) =>
-				client.packages(marketId, { query, registry, official, category, tag, cursor, limit }),
-			[query, registry, official, category, tag, cursor, limit],
+			(client: PackageMarketClient) => client.packages(marketId, query),
+			[query],
+		)
+		return children(useMarketRead(url, read))
+	}
+	function Facets({ filters, children }: ComponentProps<MarketplaceData['Facets']>) {
+		const read = useCallback(
+			(client: PackageMarketClient) => client.facets(marketId, filters),
+			[filters],
 		)
 		return children(useMarketRead(url, read))
 	}
@@ -55,7 +58,7 @@ export function createMarketplaceData(url: string): MarketplaceData {
 		)
 		return children(useMarketRead(url, read))
 	}
-	return { Packages, Package, Releases, Release }
+	return { Packages, Facets, Package, Releases, Release }
 }
 
 function useMarketRead<T>(url: string, read: Read<T>): MarketplaceRead<T> {

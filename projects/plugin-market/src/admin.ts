@@ -1,22 +1,24 @@
 import { RpcTarget } from 'capnweb'
-import { and, desc, eq, isNull, lt, or } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { processNotifications } from './jobs'
 import { fetchObservation, fetchRelease } from './npm'
 import {
 	coordinate,
 	MarketError,
+	marketAuthorId,
 	object,
 	packageIdentity,
 	taxonomySlug,
 	type Coordinate,
 	type PackageIdentity,
-	type MarketMetadata,
+	type MarketCuration,
 	type NotificationQuery,
 } from './protocol'
 import { audits, notifications, packages } from './schema'
 import {
 	commitRelease,
 	commitObservation,
+	commitRepositoryObservation,
 	connect,
 	listNotifications,
 	notificationDetail,
@@ -25,7 +27,20 @@ import {
 	setVisibility,
 } from './store'
 import { sourceFor, type RegistrySource } from './sources'
-import { repositoryStars } from './repository'
+import { observeRepository } from './repository'
+
+function validAuthor(value: unknown) {
+	return (
+		object(value) &&
+		Object.keys(value).length === 2 &&
+		marketAuthorId(value.id) &&
+		typeof value.name === 'string' &&
+		value.name.length > 0 &&
+		value.name.length <= 120 &&
+		value.name === value.name.trim() &&
+		!/\p{Cc}/u.test(value.name)
+	)
+}
 
 export class MarketAdmin extends RpcTarget {
 	#db: ReturnType<typeof connect>
@@ -112,10 +127,21 @@ export class MarketAdmin extends RpcTarget {
 	}
 
 	/** Market-owned curation shares the visibility revision; npm observations cannot overwrite it. */
-	async setMetadata(input: PackageIdentity & MarketMetadata & { expectedRevision: number }) {
+	async setMetadata(input: PackageIdentity & MarketCuration & { expectedRevision: number }) {
 		if (
 			!object(input) ||
-			Object.keys(input).length !== 6 ||
+			Object.keys(input).some(
+				(key) =>
+					![
+						'registry',
+						'name',
+						'expectedRevision',
+						'official',
+						'category',
+						'tags',
+						'author',
+					].includes(key),
+			) ||
 			!Number.isSafeInteger(input.expectedRevision) ||
 			input.expectedRevision < 1 ||
 			typeof input.official !== 'boolean' ||
@@ -123,7 +149,8 @@ export class MarketAdmin extends RpcTarget {
 			!Array.isArray(input.tags) ||
 			input.tags.length > 20 ||
 			input.tags.some((tag) => !taxonomySlug(tag)) ||
-			new Set(input.tags).size !== input.tags.length
+			new Set(input.tags).size !== input.tags.length ||
+			(input.author !== undefined && input.author !== null && !validAuthor(input.author))
 		)
 			return { status: 'invalid' as const }
 		const selected = packageIdentity({ registry: input.registry, name: input.name })
@@ -144,28 +171,14 @@ export class MarketAdmin extends RpcTarget {
 		if (!current) return { status: 'not-found' as const }
 		if (!current.repository) return { status: 'unavailable' as const, code: 'missing-repository' }
 		try {
-			const observed = await repositoryStars(current.repository)
-			const changed = await this.#db
-				.update(packages)
-				.set({ repositoryStars: observed.stars, repositoryObservedAt: observed.observedAt })
-				.where(
-					and(
-						identity,
-						eq(packages.repository, current.repository),
-						or(
-							isNull(packages.repositoryObservedAt),
-							lt(packages.repositoryObservedAt, observed.observedAt),
-						),
-					),
-				)
-				.returning({
-					repository: packages.repository,
-					stars: packages.repositoryStars,
-					observedAt: packages.repositoryObservedAt,
-				})
-			return changed[0]
-				? { status: 'updated' as const, ...changed[0] }
-				: { status: 'conflict' as const }
+			const observed = await observeRepository(current.repository)
+			const changed = await commitRepositoryObservation(
+				this.#db,
+				selected,
+				current.repository,
+				observed,
+			)
+			return changed ? { status: 'updated' as const, ...changed } : { status: 'conflict' as const }
 		} catch (error) {
 			if (!(error instanceof MarketError)) throw error
 			return {

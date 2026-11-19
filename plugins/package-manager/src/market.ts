@@ -1,13 +1,16 @@
 import * as v from 'valibot'
-import type {
-	MarketPackagePage,
-	MarketPackageDetail,
-	MarketPackageQuery,
-	MarketReadResult,
-	MarketRelease,
-	MarketReleasePage,
-	MarketReleaseQuery,
-	PackageMarket,
+import {
+	marketFilterLimit,
+	type MarketPackagePage,
+	type MarketPackageDetail,
+	type MarketPackageQuery,
+	type MarketCatalogFacets,
+	type MarketCatalogFilters,
+	type MarketReadResult,
+	type MarketRelease,
+	type MarketReleasePage,
+	type MarketReleaseQuery,
+	type PackageMarket,
 } from './market-contracts.ts'
 
 const packageName = v.pipe(
@@ -47,6 +50,12 @@ const registry = v.pipe(
 	}),
 )
 const mark = v.pipe(v.string(), v.minLength(1), v.maxLength(64))
+const taxonomySlug = v.pipe(v.string(), v.regex(/^[a-z0-9][a-z0-9-]{0,31}$/))
+const authorId = v.pipe(
+	v.string(),
+	v.regex(/^(github:[1-9]\d{0,15}|market:[a-z0-9][a-z0-9-]{0,31})$/),
+)
+const count = v.pipe(v.number(), v.integer(), v.minValue(0))
 const safeLink = v.pipe(
 	v.string(),
 	v.maxLength(2048),
@@ -59,6 +68,13 @@ const safeLink = v.pipe(
 		}
 	}),
 )
+const avatar = v.pipe(safeLink, v.startsWith('https://avatars.githubusercontent.com/'))
+const authorFields = {
+	id: authorId,
+	name: v.pipe(v.string(), v.minLength(1), v.maxLength(120)),
+	kind: v.picklist(['github', 'market']),
+	avatarUrl: v.nullable(avatar),
+}
 const packageFields = {
 	registry,
 	name: packageName,
@@ -66,12 +82,20 @@ const packageFields = {
 	repository: v.nullable(safeLink),
 	repositoryStars: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(0))),
 	repositoryObservedAt: v.nullable(timestamp),
-	indexedVersions: v.pipe(v.number(), v.integer(), v.minValue(0)),
+	author: v.nullable(v.object(authorFields)),
+	indexedVersions: count,
 	observedAt: timestamp,
 	official: v.boolean(),
 	category: v.nullable(mark),
 	tags: v.pipe(v.array(mark), v.maxLength(20)),
 }
+const facetsSchema = v.object({
+	total: count,
+	registries: v.array(v.object({ value: registry, count })),
+	categories: v.array(v.object({ value: taxonomySlug, count })),
+	tags: v.array(v.object({ value: taxonomySlug, count })),
+	authors: v.array(v.object({ ...authorFields, count })),
+})
 const readme = v.nullable(
 	v.object({ text: v.pipe(v.string(), v.maxLength(262_144)), truncated: v.boolean() }),
 )
@@ -112,15 +136,46 @@ const releaseSchema = v.object({
 	readme,
 	license,
 })
-const querySchema = v.strictObject({
+const filterFields = {
 	query: v.optional(v.pipe(v.string(), v.maxLength(100))),
-	registry: v.optional(registry),
+	registries: v.optional(v.pipe(v.array(registry), v.maxLength(marketFilterLimit))),
 	official: v.optional(v.boolean()),
-	category: v.optional(mark),
-	tag: v.optional(mark),
+	categories: v.optional(v.pipe(v.array(taxonomySlug), v.maxLength(marketFilterLimit))),
+	tags: v.optional(v.pipe(v.array(taxonomySlug), v.maxLength(marketFilterLimit))),
+	authors: v.optional(v.pipe(v.array(authorId), v.maxLength(marketFilterLimit))),
+}
+const filterSchema = v.strictObject(filterFields)
+const querySchema = v.strictObject({
+	...filterFields,
 	cursor: v.optional(v.pipe(v.string(), v.maxLength(2048))),
 	limit: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(50))),
 })
+
+function catalogParams({
+	query,
+	registries,
+	official,
+	categories,
+	tags,
+	authors,
+	cursor,
+	limit,
+}: MarketPackageQuery) {
+	const params = new URLSearchParams()
+	if (query !== undefined) params.set('query', query)
+	if (official !== undefined) params.set('official', String(official))
+	if (cursor !== undefined) params.set('cursor', cursor)
+	if (limit !== undefined) params.set('limit', String(limit))
+	for (const [key, values] of Object.entries({
+		registry: registries,
+		category: categories,
+		tag: tags,
+		author: authors,
+	})) {
+		for (const value of [...new Set(values)].sort()) params.append(key, value)
+	}
+	return params
+}
 const releaseQuerySchema = v.strictObject({
 	registry: v.optional(registry),
 	cursor: v.optional(v.pipe(v.string(), v.maxLength(2048))),
@@ -177,19 +232,37 @@ export class PackageMarketClient {
 		if (!parsed.success)
 			return rejected(
 				'INVALID_QUERY',
-				'Use a search up to 100 characters, canonical registry, market marks, an issued cursor and limit between 1 and 50',
+				'Use a search up to 100 characters, up to 20 values per filter, an issued cursor and a limit from 1 to 50',
 			)
-		const params = new URLSearchParams()
-		for (const [key, value] of Object.entries(parsed.output))
-			if (value !== undefined) params.set(key, String(value))
-		const result = await this.read(marketId, `/v1/packages?${params}`, pageSchema)
+		const { registries } = parsed.output
+		const result = await this.read(
+			marketId,
+			`/v1/packages?${catalogParams(parsed.output)}`,
+			pageSchema,
+		)
 		if (
 			result.ok &&
-			parsed.output.registry !== undefined &&
-			result.value.packages.some((item) => item.registry !== parsed.output.registry)
+			registries?.length &&
+			result.value.packages.some((item) => !registries.includes(item.registry))
 		)
-			return rejected('INVALID_RESPONSE', 'Market returned packages from a different registry')
+			return rejected(
+				'INVALID_RESPONSE',
+				'Market returned packages outside the selected registries',
+			)
 		return result
+	}
+
+	async facets(
+		marketId: string,
+		filters: MarketCatalogFilters = {},
+	): Promise<MarketReadResult<MarketCatalogFacets>> {
+		const parsed = v.safeParse(filterSchema, filters)
+		if (!parsed.success)
+			return rejected(
+				'INVALID_QUERY',
+				'Use a search up to 100 characters and up to 20 values per filter',
+			)
+		return this.read(marketId, `/v1/facets?${catalogParams(parsed.output)}`, facetsSchema)
 	}
 
 	async package(

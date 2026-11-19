@@ -52,6 +52,7 @@ type DevErrorDetails = Readonly<{
 	context?: DevErrorContext
 	hint?: string
 	candidates?: readonly ReturnType<typeof publicInstance>[]
+	cause?: unknown
 }>
 
 export class DevClientError extends Error {
@@ -66,7 +67,7 @@ export class DevClientError extends Error {
 		message: string,
 		details: DevErrorDetails = {},
 	) {
-		super(message)
+		super(message, details)
 		this.runId = details.runId
 		this.requestHash = details.requestHash
 		this.context = details.context
@@ -115,6 +116,7 @@ export function withDevContext(
 					? diagnosticHint(previous.code, runId)
 					: previous?.hint,
 			candidates: previous?.candidates,
+			cause: previous?.cause,
 		},
 	)
 }
@@ -346,7 +348,11 @@ export async function connectDevInstance(
 		signal?.removeEventListener('abort', cancel)
 		session.close()
 		checkAbort(signal)
-		throw withDevContext(error, { root: instance.root, instanceId: instance.instanceId })
+		const context = { root: instance.root, instanceId: instance.instanceId }
+		const cause = error as NodeJS.ErrnoException | null
+		if (cause?.syscall === 'connect' && (cause.code === 'ECONNREFUSED' || cause.code === 'ENOENT'))
+			fail('dev_unavailable', 'Development instance is no longer available', { context, cause })
+		throw withDevContext(error, context)
 	} finally {
 		clearTimeout(timer)
 	}

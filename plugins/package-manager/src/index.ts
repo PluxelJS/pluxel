@@ -15,6 +15,7 @@ import type {
 	PackageMutationResult,
 	PackagePreparationResult,
 	MarketInstallRequest,
+	MarketCatalogFilters,
 	MarketPackageQuery,
 	MarketReleaseQuery,
 } from './contracts.ts'
@@ -255,6 +256,12 @@ class PackageManagerTarget extends RpcTarget implements PackageManagerApi {
 		return result
 	}
 
+	async marketFacetsDto(marketId: string, filters?: MarketCatalogFilters) {
+		const result = await this.store.marketFacets(marketId, filters)
+		assertWorkbenchDto(result)
+		return result
+	}
+
 	async marketPackageDto(marketId: string, name: string, registry?: string) {
 		const result = await this.store.marketPackage(marketId, name, registry)
 		assertWorkbenchDto(result)
@@ -296,6 +303,7 @@ export type {
 	PackageInstallPlan,
 	PackagePreparationResult,
 	MarketInstallRequest,
+	MarketCatalogFilters,
 	MarketPackageQuery,
 	MarketPackageSummary,
 	MarketPackagePage,

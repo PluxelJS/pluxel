@@ -23,6 +23,7 @@ function detail(registry: string, description = registry): MarketPackageDetail {
 		repository: null,
 		repositoryStars: null,
 		repositoryObservedAt: null,
+		author: null,
 		indexedVersions: 0,
 		observedAt: 1,
 		official: false,

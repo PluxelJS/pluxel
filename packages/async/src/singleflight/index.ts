@@ -93,7 +93,7 @@ export function singleflight<Key, Value>(): Singleflight<Key, Value> {
 			}
 			const waiter: Waiter<Awaited<Value>> = (outcome) => {
 				signal.removeEventListener('abort', abort)
-				if (outcome.ok) resolve(outcome.value)
+				if (outcome.ok === true) resolve(outcome.value)
 				else reject(outcome.reason)
 			}
 			waiters.add(waiter)
@@ -103,7 +103,7 @@ export function singleflight<Key, Value>(): Singleflight<Key, Value> {
 
 	function drain(): Promise<void> {
 		return Promise.allSettled(Array.from(pending.values(), (flight) => flight.promise)).then(
-			() => undefined,
+			(): void => undefined,
 		)
 	}
 

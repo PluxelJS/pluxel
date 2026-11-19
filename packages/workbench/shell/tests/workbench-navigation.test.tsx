@@ -4,6 +4,7 @@ import { MantineProvider } from '@mantine/core'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { formatPluginNodeRoute, type PluginNodeAddress } from '@pluxel/core'
+import type { PluginCatalogSection } from '@pluxel/services/management/client'
 import type { WorkbenchLayoutEntry } from '@pluxel/workbench/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkbenchNavigationProvider } from '../src/app/workbench/context'
@@ -18,11 +19,15 @@ import {
 import { buildPluginDetailHref } from '../src/workbench/paths'
 import { prepareNativeWorkbenchDom } from './helpers/native-workbench'
 
-const source = vi.hoisted(() => ({ snapshot: undefined as WorkbenchTargetSnapshot | undefined }))
+const source = vi.hoisted(() => ({
+	snapshot: undefined as WorkbenchTargetSnapshot | undefined,
+	sections: [] as readonly PluginCatalogSection[],
+}))
 vi.mock('../src/workbench/runtime', () => ({ useWorkbenchTargetSnapshot: () => source.snapshot }))
 vi.mock('../src/app/plugins/pluginOverview', () => ({
 	usePluginOverview: () => ({
 		overview: {
+			sections: source.sections,
 			status: {
 				statuses: [
 					{
@@ -117,6 +122,7 @@ const entries = [
 const roots: Root[] = []
 beforeEach(() => {
 	prepareNativeWorkbenchDom()
+	source.sections = []
 	source.snapshot = compileWorkbenchSnapshot(null, {
 		profile: 1,
 		revision: 1,
@@ -270,7 +276,7 @@ describe('workspace entry discovery', () => {
 		expect(navigate).toHaveBeenLastCalledWith(
 			`${buildPluginDetailHref(secondOwner)}?entry=west-tab`,
 		)
-		const query = container.querySelector<HTMLInputElement>('[aria-label="查找工作区入口"]')!
+		const query = container.querySelector<HTMLInputElement>('[aria-label="查找应用"]')!
 		await input(query, '账户入口')
 		expect(button('账户入口')).toBeDefined()
 		expect(container.textContent).not.toContain('西区账户')
@@ -287,7 +293,7 @@ describe('workspace entry discovery', () => {
 		await click(heading)
 		expect(heading.getAttribute('aria-expanded')).toBe('false')
 		expect(group.querySelector<HTMLElement>('.plx-workspace-navigation__rows')!.hidden).toBe(true)
-		const query = container.querySelector<HTMLInputElement>('[aria-label="查找工作区入口"]')!
+		const query = container.querySelector<HTMLInputElement>('[aria-label="查找应用"]')!
 		await input(query, 'East')
 		expect(heading.getAttribute('aria-expanded')).toBe('true')
 		expect(group.querySelector<HTMLElement>('.plx-workspace-navigation__rows')!.hidden).toBe(false)
@@ -296,6 +302,80 @@ describe('workspace entry discovery', () => {
 		expect(current.getAttribute('aria-label')).toBe('报表')
 		await input(query, '')
 		expect(heading.getAttribute('aria-expanded')).toBe('false')
+	})
+
+	it('projects plugin groups in catalog order and searches them without mixing their owners', async () => {
+		const west: PluginNodeAddress = { ...owner, forkId: 'west' }
+		const infrastructure: PluginNodeAddress = {
+			variant: 'default',
+			definition: { ...owner.definition, exportName: 'Infrastructure' },
+		}
+		const standalone: PluginNodeAddress = {
+			variant: 'default',
+			definition: { ...owner.definition, exportName: 'Standalone' },
+		}
+		source.sections = [
+			{
+				sectionId: 'manual:infra',
+				name: '基础设施',
+				basis: { kind: 'manual' },
+				nodes: [infrastructure],
+			},
+			{
+				sectionId: 'manual:business',
+				name: '业务分组',
+				basis: { kind: 'manual' },
+				nodes: [west, owner],
+			},
+			{ sectionId: 'manual:empty', name: '空组', basis: { kind: 'manual' }, nodes: [] },
+		]
+		source.snapshot = compileWorkbenchSnapshot(null, {
+			profile: 1,
+			revision: 2,
+			target: null,
+			entries: [
+				...entries,
+				{
+					...entry('west', { kind: 'tab', label: '西区账户', order: 0 }),
+					target: { node: west, displayName: 'Accounts West' },
+				},
+				{
+					...entry('infra', { kind: 'tab', label: '运行状态', order: 10 }),
+					target: { node: infrastructure, displayName: 'Infrastructure' },
+				},
+				{
+					...entry('standalone', { kind: 'tab', label: '独立工具', order: 20 }),
+					target: { node: standalone, displayName: 'Standalone' },
+				},
+			],
+		})
+		const { container, navigate } = await renderNavigation('publications')
+		const sections = () => [
+			...container.querySelectorAll<HTMLElement>('section[data-catalog-section]'),
+		]
+		expect(sections().map((section) => section.getAttribute('aria-label'))).toEqual([
+			'基础设施',
+			'业务分组',
+			'未分组',
+		])
+		expect(sections()[1]!.querySelector('[aria-label="Accounts East · 业务工具"]')).not.toBeNull()
+		expect(
+			[...sections()[1]!.querySelectorAll('.plx-workspace-navigation__link')].map(
+				(link) => link.textContent,
+			),
+		).toEqual(['西区账户', '报表'])
+		expect(sections()[2]!.textContent).toContain('独立工具')
+		const query = container.querySelector<HTMLInputElement>('[aria-label="查找应用"]')!
+		await click(sections()[0]!.querySelector<HTMLButtonElement>('[aria-expanded]')!)
+		await act(async () => {
+			query.focus()
+			query.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+		})
+		expect(document.activeElement).toBe(button('西区账户'))
+		await input(query, '业务分组')
+		expect(sections().map((section) => section.getAttribute('aria-label'))).toEqual(['业务分组'])
+		await click(button('西区账户'))
+		expect(navigate).toHaveBeenLastCalledWith(`${buildPluginDetailHref(west)}?entry=west`)
 	})
 
 	it('requires concrete local route parameters and keeps search/hash when navigating the current document', async () => {

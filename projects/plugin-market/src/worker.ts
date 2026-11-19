@@ -1,6 +1,7 @@
 import { newHttpBatchRpcResponse } from 'capnweb'
 import { and, asc, eq, gt, sql } from 'drizzle-orm'
 import { MarketAdmin } from './admin'
+import { authorFields, catalogQuery, effectiveAuthorId, facets, listPackages } from './catalog'
 import { processNotifications } from './jobs'
 import {
 	coordinate,
@@ -14,10 +15,9 @@ import {
 	readJson,
 	registry,
 	registryBase,
-	type PackageQuery,
 } from './protocol'
-import { notifications, packages, releases } from './schema'
-import { connect, enqueue, facets, getRelease, listPackages, receipt } from './store'
+import { authors, notifications, packages, releases } from './schema'
+import { connect, enqueue, getRelease, receipt } from './store'
 import { registrySources, sourceFor } from './sources'
 
 export type Env = { DB: D1Database; ADMIN_TOKEN: string; REGISTRIES?: string }
@@ -182,22 +182,17 @@ async function dispatch(request: Request, env: Env): Promise<Response> {
 			401,
 		)
 	if (path === '/v1/facets' && request.method === 'GET')
-		return json(request, await facets(db, visibleRegistries), admin)
-	if (path === '/v1/packages' && request.method === 'GET') {
-		const input: PackageQuery = {}
-		for (const [key, value] of url.searchParams) {
-			if (key === 'limit') input.limit = Number(value)
-			else if (key === 'official') {
-				if (value !== 'true' && value !== 'false')
-					throw new MarketError('invalid-query', 'official must be true or false')
-				input.official = value === 'true'
-			} else if (['query', 'registry', 'category', 'tag', 'cursor'].includes(key))
-				Object.assign(input, { [key]: value })
-			else throw new MarketError('invalid-query', `Unsupported query field: ${key}`)
-		}
-		if (input.registry !== undefined) input.registry = registryBase(input.registry)
-		return json(request, await listPackages(db, input, visibleRegistries), admin)
-	}
+		return json(
+			request,
+			await facets(db, catalogQuery(url.searchParams, false), visibleRegistries),
+			admin,
+		)
+	if (path === '/v1/packages' && request.method === 'GET')
+		return json(
+			request,
+			await listPackages(db, catalogQuery(url.searchParams, true), visibleRegistries),
+			admin,
+		)
 	const packageMatch = /^\/v1\/packages\/([^/]+)(?:\/releases(?:\/([^/]+))?)?$/.exec(path)
 	if (packageMatch && request.method === 'GET') {
 		const name = decoded(packageMatch[1])
@@ -214,9 +209,10 @@ async function dispatch(request: Request, env: Env): Promise<Response> {
 			if (!release) throw new MarketError('not-found', 'Release is not indexed or visible', 404)
 			return json(request, release, admin)
 		}
-		const record = await db
-			.select()
+		const selected = await db
+			.select({ record: packages, author: authorFields })
 			.from(packages)
+			.leftJoin(authors, eq(authors.id, effectiveAuthorId))
 			.where(
 				and(
 					eq(packages.registry, selectedRegistry),
@@ -225,7 +221,8 @@ async function dispatch(request: Request, env: Env): Promise<Response> {
 				),
 			)
 			.get()
-		if (!record) throw new MarketError('not-found', 'Package is not indexed or visible', 404)
+		if (!selected) throw new MarketError('not-found', 'Package is not indexed or visible', 404)
+		const { record, author } = selected
 		if (path.endsWith('/releases')) {
 			const scope = JSON.stringify([selectedRegistry, name])
 			const { after, limit } = pageInput(url, scope)
@@ -271,6 +268,7 @@ async function dispatch(request: Request, env: Env): Promise<Response> {
 				repository: record.repository,
 				repositoryStars: record.repositoryStars,
 				repositoryObservedAt: record.repositoryObservedAt,
+				author,
 				metadataVersion: record.metadataVersion,
 				readme: record.readme,
 				license: record.license,

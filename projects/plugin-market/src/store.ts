@@ -1,6 +1,22 @@
-import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, notExists, or, sql } from 'drizzle-orm'
+import {
+	and,
+	asc,
+	desc,
+	eq,
+	gt,
+	gte,
+	inArray,
+	isNull,
+	lt,
+	lte,
+	ne,
+	notExists,
+	or,
+	sql,
+	type SQL,
+} from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
-import { audits, notifications, packages, releases } from './schema'
+import { audits, authors, notifications, packages, releases } from './schema'
 import {
 	MarketError,
 	decodeCursor,
@@ -8,17 +24,16 @@ import {
 	object,
 	packageName,
 	pageLimit,
-	taxonomySlug,
 	type Coordinate,
-	type MarketMetadata,
+	type MarketAuthor,
+	type MarketCuration,
 	type NotificationDetail,
 	type NotificationQuery,
 	type PackageIdentity,
-	type PackagePage,
-	type PackageQuery,
 	type Receipt,
 	type Release,
 } from './protocol'
+import type { RepositoryObservation } from './repository'
 
 export const maxAttempts = 3
 const leaseMs = 60_000
@@ -250,6 +265,15 @@ export type Observation = {
 	observedAt: number
 }
 
+function retainedRepositoryObservation(repository: string | null) {
+	const same = sql`${packages.repository} = ${repository}`
+	return {
+		repositoryStars: sql`case when ${same} then ${packages.repositoryStars} else null end`,
+		repositoryObservedAt: sql`case when ${same} then ${packages.repositoryObservedAt} else null end`,
+		repositoryAuthorId: sql`case when ${same} then ${packages.repositoryAuthorId} else null end`,
+	}
+}
+
 export async function commitRelease(db: Database, release: Release, observation: Observation) {
 	const noConflict = notExists(
 		db
@@ -278,6 +302,8 @@ export async function commitRelease(db: Database, release: Release, observation:
 						repository: sql<string | null>`${observation.repository}`.as('repository'),
 						repositoryStars: sql<null>`null`.as('repository_stars'),
 						repositoryObservedAt: sql<null>`null`.as('repository_observed_at'),
+						repositoryAuthorId: sql<null>`null`.as('repository_author_id'),
+						curatedAuthorId: sql<null>`null`.as('curated_author_id'),
 						metadataVersion: sql<string | null>`${observation.metadataVersion}`.as(
 							'metadata_version',
 						),
@@ -308,8 +334,7 @@ export async function commitRelease(db: Database, release: Release, observation:
 					metadataVersion: observation.metadataVersion,
 					readme: observation.readme,
 					license: observation.license,
-					repositoryStars: sql`case when ${packages.repository} = ${observation.repository} then ${packages.repositoryStars} else null end`,
-					repositoryObservedAt: sql`case when ${packages.repository} = ${observation.repository} then ${packages.repositoryObservedAt} else null end`,
+					...retainedRepositoryObservation(observation.repository),
 					distTags: observation.distTags,
 					observedAt: observation.observedAt,
 				},
@@ -382,8 +407,7 @@ export async function commitObservation(
 			target: [packages.registry, packages.name],
 			set: {
 				...observation,
-				repositoryStars: sql`case when ${packages.repository} = ${observation.repository} then ${packages.repositoryStars} else null end`,
-				repositoryObservedAt: sql`case when ${packages.repository} = ${observation.repository} then ${packages.repositoryObservedAt} else null end`,
+				...retainedRepositoryObservation(observation.repository),
 			},
 			setWhere: lt(packages.observedAt, observation.observedAt),
 		})
@@ -392,6 +416,62 @@ export async function commitObservation(
 		.from(packages)
 		.where(and(eq(packages.registry, input.registry), eq(packages.name, input.name)))
 		.get()
+}
+
+function publishAuthor(db: Database, author: MarketAuthor, now: number, matches: SQL | undefined) {
+	return db
+		.insert(authors)
+		.select(
+			db
+				.select({
+					id: sql<string>`${author.id}`.as('id'),
+					name: sql<string>`${author.name}`.as('name'),
+					kind: sql<MarketAuthor['kind']>`${author.kind}`.as('kind'),
+					avatarUrl: sql<string | null>`${author.avatarUrl}`.as('avatar_url'),
+					observedAt: sql<number>`${now}`.as('observed_at'),
+				})
+				.from(packages)
+				.where(matches),
+		)
+		.onConflictDoUpdate({
+			target: authors.id,
+			set: { name: author.name, avatarUrl: author.avatarUrl, observedAt: now },
+			setWhere: lte(authors.observedAt, now),
+		})
+}
+
+export async function commitRepositoryObservation(
+	db: Database,
+	input: PackageIdentity,
+	repository: string,
+	observed: RepositoryObservation,
+) {
+	const matches = and(
+		eq(packages.registry, input.registry),
+		eq(packages.name, input.name),
+		eq(packages.repository, repository),
+		or(
+			isNull(packages.repositoryObservedAt),
+			lt(packages.repositoryObservedAt, observed.observedAt),
+		),
+	)
+	const [, changed] = await db.batch([
+		publishAuthor(db, observed.author, observed.observedAt, matches),
+		db
+			.update(packages)
+			.set({
+				repositoryStars: observed.stars,
+				repositoryObservedAt: observed.observedAt,
+				repositoryAuthorId: observed.author.id,
+			})
+			.where(matches)
+			.returning({
+				repository: packages.repository,
+				stars: packages.repositoryStars,
+				observedAt: packages.repositoryObservedAt,
+			}),
+	])
+	return changed[0]
 }
 
 export async function getRelease(
@@ -416,112 +496,6 @@ export async function getRelease(
 		)
 		.get()
 	return row?.release ?? null
-}
-
-export async function listPackages(
-	db: Database,
-	input: PackageQuery,
-	visibleRegistries: readonly string[],
-): Promise<PackagePage> {
-	const query = input.query ?? ''
-	if (typeof query !== 'string' || query.length > 100)
-		throw new MarketError('invalid-query', 'query must contain at most 100 characters')
-	if (
-		(input.official !== undefined && typeof input.official !== 'boolean') ||
-		(input.category !== undefined && !taxonomySlug(input.category)) ||
-		(input.tag !== undefined && !taxonomySlug(input.tag))
-	)
-		throw new MarketError(
-			'invalid-query',
-			'Use a boolean official filter and lowercase category/tag slugs',
-		)
-	const limit = pageLimit(input.limit)
-	const scope = JSON.stringify([
-		visibleRegistries,
-		query,
-		input.registry ?? null,
-		input.official ?? null,
-		input.category ?? null,
-		input.tag ?? null,
-	])
-	const after = decodeCursor(input.cursor, scope)
-	if (
-		after !== null &&
-		(!object(after) ||
-			!packageName(after.name) ||
-			typeof after.registry !== 'string' ||
-			Object.keys(after).length !== 2)
-	)
-		throw new MarketError('invalid-cursor', 'Invalid package cursor; restart the query')
-	const terms = query.match(/[\p{L}\p{N}]+/gu) ?? []
-	// Each term is quoted data, never an FTS operator supplied by a requester.
-	const match = terms.map((term) => `"${term}"*`).join(' AND ')
-	if (visibleRegistries.length === 0) return { packages: [], nextCursor: null }
-	const rows = await db
-		.select({
-			registry: packages.registry,
-			name: packages.name,
-			description: packages.description,
-			distTags: packages.distTags,
-			observedAt: packages.observedAt,
-			repository: packages.repository,
-			repositoryStars: packages.repositoryStars,
-			repositoryObservedAt: packages.repositoryObservedAt,
-			official: packages.official,
-			category: packages.category,
-			tags: packages.tags,
-			indexedVersions: sql<number>`(select count(*) from releases indexed_release where indexed_release.registry = packages.registry and indexed_release.name = packages.name)`,
-		})
-		.from(packages)
-		.where(
-			and(
-				eq(packages.hidden, false),
-				inArray(packages.registry, [...visibleRegistries]),
-				input.registry === undefined ? undefined : eq(packages.registry, input.registry),
-				input.official === undefined ? undefined : eq(packages.official, input.official),
-				input.category === undefined ? undefined : eq(packages.category, input.category),
-				input.tag === undefined
-					? undefined
-					: sql`exists (select 1 from json_each(${packages.tags}) where value = ${input.tag})`,
-				after === null
-					? undefined
-					: or(
-							gt(packages.name, after.name as string),
-							and(
-								eq(packages.name, after.name as string),
-								gt(packages.registry, after.registry as string),
-							),
-						),
-				query
-					? match
-						? sql`${packages}.rowid in (select rowid from package_search where package_search match ${match})`
-						: sql`0`
-					: undefined,
-			),
-		)
-		.orderBy(asc(packages.name), asc(packages.registry))
-		.limit(limit + 1)
-	const selected = rows.slice(0, limit)
-	return {
-		packages: selected.map((row) => ({
-			registry: row.registry,
-			name: row.name,
-			description: row.description,
-			latest: row.distTags.latest ?? null,
-			repository: row.repository,
-			repositoryStars: row.repositoryStars,
-			repositoryObservedAt: row.repositoryObservedAt,
-			indexedVersions: row.indexedVersions,
-			observedAt: row.observedAt,
-			official: row.official,
-			category: row.category,
-			tags: row.tags,
-		})),
-		nextCursor:
-			rows.length > limit
-				? encodeCursor(scope, { name: selected.at(-1)!.name, registry: selected.at(-1)!.registry })
-				: null,
-	}
 }
 
 export async function listNotifications(db: Database, input: NotificationQuery = {}) {
@@ -588,28 +562,6 @@ export async function listNotifications(db: Database, input: NotificationQuery =
 	}
 }
 
-export async function facets(db: Database, visibleRegistries: readonly string[]) {
-	if (visibleRegistries.length === 0) return { categories: [], tags: [] }
-	const visible = and(
-		eq(packages.hidden, false),
-		inArray(packages.registry, [...visibleRegistries]),
-	)
-	const categories = await db
-		.select({ value: packages.category, count: sql<number>`count(*)` })
-		.from(packages)
-		.where(and(visible, sql`${packages.category} is not null`))
-		.groupBy(packages.category)
-		.orderBy(asc(packages.category))
-	const tags = await db
-		.select({ value: sql<string>`tag.value`, count: sql<number>`count(*)` })
-		.from(packages)
-		.innerJoin(sql`json_each(${packages.tags}) tag`, sql`true`)
-		.where(visible)
-		.groupBy(sql`tag.value`)
-		.orderBy(sql`tag.value`)
-	return { categories, tags }
-}
-
 export async function setVisibility(
 	db: Database,
 	input: PackageIdentity & { expectedRevision: number; hidden: boolean },
@@ -620,13 +572,18 @@ export async function setVisibility(
 
 export async function setMetadata(
 	db: Database,
-	input: PackageIdentity & MarketMetadata & { expectedRevision: number },
+	input: PackageIdentity & MarketCuration & { expectedRevision: number },
 	now: number,
 ) {
 	return editPackage(
 		db,
 		input,
-		{ official: input.official, category: input.category, tags: input.tags },
+		{
+			official: input.official,
+			category: input.category,
+			tags: input.tags,
+			...(input.author === undefined ? {} : { author: input.author }),
+		},
 		'metadata',
 		now,
 	)
@@ -635,35 +592,50 @@ export async function setMetadata(
 async function editPackage(
 	db: Database,
 	input: PackageIdentity & { expectedRevision: number },
-	changes: MarketMetadata | { hidden: boolean },
+	changes: MarketCuration | { hidden: boolean },
 	action: string,
 	now: number,
 ) {
 	const identity = and(eq(packages.registry, input.registry), eq(packages.name, input.name))
 	const matches = and(identity, eq(packages.revision, input.expectedRevision))
-	const [, changed] = await db.batch([
-		db.insert(audits).select(
-			db
-				.select({
-					id: sql<string>`${crypto.randomUUID()}`.as('id'),
-					registry: packages.registry,
-					name: packages.name,
-					action: sql<string>`${action}`.as('action'),
-					revision: sql<number>`${input.expectedRevision + 1}`.as('revision'),
-					changes: sql<MarketMetadata | { hidden: boolean }>`${JSON.stringify(changes)}`.as(
-						'changes',
-					),
-					at: sql<number>`${now}`.as('at'),
-				})
-				.from(packages)
-				.where(matches),
-		),
+	const { author, ...fields } = 'official' in changes ? changes : { ...changes, author: undefined }
+	const audit = db.insert(audits).select(
 		db
-			.update(packages)
-			.set({ ...changes, revision: input.expectedRevision + 1 })
-			.where(matches)
-			.returning(),
-	])
+			.select({
+				id: sql<string>`${crypto.randomUUID()}`.as('id'),
+				registry: packages.registry,
+				name: packages.name,
+				action: sql<string>`${action}`.as('action'),
+				revision: sql<number>`${input.expectedRevision + 1}`.as('revision'),
+				changes: sql<MarketCuration | { hidden: boolean }>`${JSON.stringify(changes)}`.as(
+					'changes',
+				),
+				at: sql<number>`${now}`.as('at'),
+			})
+			.from(packages)
+			.where(matches),
+	)
+	const update = db
+		.update(packages)
+		.set({
+			...fields,
+			...(author === undefined ? {} : { curatedAuthorId: author?.id ?? null }),
+			revision: input.expectedRevision + 1,
+		})
+		.where(matches)
+		.returning()
+	let changed
+	if (author) {
+		const [, , records] = await db.batch([
+			publishAuthor(db, { ...author, kind: 'market', avatarUrl: null }, now, matches),
+			audit,
+			update,
+		])
+		changed = records
+	} else {
+		const [, records] = await db.batch([audit, update])
+		changed = records
+	}
 	if (changed[0]) return { status: 'updated' as const, record: changed[0] }
 	const current = await db.select().from(packages).where(identity).get()
 	return current

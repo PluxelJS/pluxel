@@ -13,8 +13,9 @@ import type { Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceSession } from '../src/app/workbench/session'
 import { ActivityRail } from '../src/app/workbench/ActivityRail'
+import { PinnedApplications } from '../src/app/workbench/PinnedApplications'
 import { WorkspaceNavigation } from '../src/app/workbench/WorkspaceNavigation'
-import { resolveSidebarShortcut } from '../src/app/workbench/sidebarShortcuts'
+import { resolveSidebarShortcut, sidebarShortcutId } from '../src/app/workbench/sidebarShortcuts'
 import {
 	WorkspacePersistence,
 	WorkspaceRestoreError,
@@ -176,18 +177,22 @@ describe('user sidebar shortcuts in the native workspace snapshot', () => {
 		expect(session.sidebarShortcuts()).toEqual([westAccount])
 	})
 
-	it('restores user additions and removals instead of merging changed Host defaults', async () => {
+	it('restores user additions, removals and order instead of merging changed Host defaults', async () => {
 		const first = await mount()
 		await act(async () => {
 			await first.session.setSidebarShortcut(eastAccount, true)
+			await first.session.setSidebarShortcut(westAccount, true)
 			await first.session.setSidebarShortcut(market, false)
+			await first.session.moveSidebarShortcut(
+				sidebarShortcutId(westAccount),
+				sidebarShortcutId(eastAccount),
+			)
 		})
 		await flushPreferences()
 		await first.close()
-		const { session } = await mount([market, westAccount])
-		expect(session.sidebarShortcuts()).toEqual([eastAccount])
+		const { session } = await mount([market, eastAccount, westAccount])
+		expect(session.sidebarShortcuts()).toEqual([westAccount, eastAccount])
 		expect(session.isSidebarShortcut(market)).toBe(false)
-		expect(session.isSidebarShortcut(westAccount)).toBe(false)
 	})
 
 	it('keeps an explicitly empty sidebar empty after saving and reopening', async () => {
@@ -261,7 +266,7 @@ describe('user sidebar shortcuts in the native workspace snapshot', () => {
 		expect(session.isSidebarShortcut(eastAccount)).toBe(false)
 	})
 
-	it('refreshes both the activity rail and application pin control after the user pins and removes an entry', async () => {
+	it('keeps the pinned column, activity rail and catalog in sync through the leading pin controls', async () => {
 		const { session } = await mount([])
 		source.snapshot = compileWorkbenchSnapshot(
 			null,
@@ -280,28 +285,42 @@ describe('user sidebar shortcuts in the native workspace snapshot', () => {
 			session,
 			<>
 				<ActivityRail onShowPlugins={() => undefined} />
+				<PinnedApplications />
 				<WorkspaceNavigation mode="publications" />
 			</>,
 		)
 		roots.add(root)
 		const rail = container.querySelector('nav[aria-label="工作区入口"]')!
+		const pinned = container.querySelector('section[aria-label="已固定到侧栏"]')!
+		const apps = rail.querySelector('button[aria-label="应用"]')
+		expect(apps).not.toBeNull()
+		expect(rail.querySelector('[role="separator"]')?.nextElementSibling).toBe(apps)
 		expect(rail.querySelector('button[aria-label="Marketplace"]')).toBeNull()
+		expect(pinned.querySelector('[role="listitem"]')).toBeNull()
 		const pin = container.querySelector<HTMLButtonElement>(
 			'button[aria-label="固定到侧栏 Marketplace"]',
 		)!
 		expect(pin).not.toBeNull()
+		const config = pin.nextElementSibling!
+		expect(config.getAttribute('aria-label')).toBe('打开插件配置 MarketPlugin')
+		expect(config.nextElementSibling?.getAttribute('aria-label')).toBe('Marketplace')
 		await act(async () => pin.click())
 		expect(session.sidebarShortcuts()).toEqual([market])
-		expect(rail.querySelector('button[aria-label="Marketplace"]')).not.toBeNull()
+		expect(apps?.nextElementSibling?.getAttribute('aria-label')).toBe('Marketplace')
 		expect(
 			container.querySelector('button[aria-label="取消侧栏固定 Marketplace"][aria-pressed="true"]'),
 		).not.toBeNull()
-		const remove = rail.querySelector<HTMLButtonElement>(
+		expect(rail.querySelector('button[aria-label="取消侧栏固定 Marketplace"]')).toBeNull()
+		const remove = pinned.querySelector<HTMLButtonElement>(
 			'button[aria-label="取消侧栏固定 Marketplace"]',
 		)!
+		expect(remove.previousElementSibling?.getAttribute('aria-label')).toBe('排序 Marketplace')
+		expect(remove.nextElementSibling?.getAttribute('aria-label')).toBe('Marketplace')
+		expect(container.querySelector('[role="dialog"]')).toBeNull()
 		await act(async () => remove.click())
 		expect(session.sidebarShortcuts()).toEqual([])
 		expect(rail.querySelector('button[aria-label="Marketplace"]')).toBeNull()
+		expect(pinned.querySelector('[role="listitem"]')).toBeNull()
 		expect(
 			container.querySelector('button[aria-label="固定到侧栏 Marketplace"][aria-pressed="false"]'),
 		).not.toBeNull()

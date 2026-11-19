@@ -33,6 +33,7 @@ const state = vi.hoisted(() => {
 	return {
 		snapshot: query(),
 		packages: query(),
+		facets: query(),
 		packageDetails: query(),
 		release: query(),
 		releases: query(),
@@ -40,6 +41,7 @@ const state = vi.hoisted(() => {
 		confirmation: mutation(),
 		removal: mutation(),
 		packagesInput: vi.fn(),
+		facetsInput: vi.fn(),
 		packageInput: vi.fn(),
 		releaseInput: vi.fn(),
 		releasesInput: vi.fn(),
@@ -59,6 +61,12 @@ vi.mock('../src/ui/manager.scope.ts', () => ({
 		useQuery: (input: unknown) => {
 			state.packagesInput(input)
 			return state.packages
+		},
+	},
+	marketFacetsQuery: {
+		useQuery: (input: unknown) => {
+			state.facetsInput(input)
+			return state.facets
 		},
 	},
 	marketPackageQuery: {
@@ -94,6 +102,12 @@ vi.mock('../src/ui/marketplace.scope.ts', () => ({
 			useQuery: (input: unknown) => {
 				state.packagesInput(input)
 				return state.packages
+			},
+		},
+		marketFacetsQuery: {
+			useQuery: (input: unknown) => {
+				state.facetsInput(input)
+				return state.facets
 			},
 		},
 		marketPackageQuery: {
@@ -141,6 +155,7 @@ beforeEach(() => {
 	for (const query of [
 		state.snapshot,
 		state.packages,
+		state.facets,
 		state.packageDetails,
 		state.release,
 		state.releases,
@@ -174,6 +189,10 @@ beforeEach(() => {
 		allowBuilds: [],
 	}
 	state.snapshot.data = snapshot
+	state.facets.data = {
+		ok: true,
+		value: { total: 1, authors: [], categories: [], tags: [], registries: [] },
+	}
 	state.releases.data = {
 		ok: true,
 		value: {
@@ -235,6 +254,7 @@ function packageSummary(overrides: Partial<MarketPackageSummary> = {}): MarketPa
 		repository: null,
 		repositoryStars: null,
 		repositoryObservedAt: null,
+		author: null,
 		indexedVersions: 1,
 		observedAt: 1,
 		official: false,
@@ -353,6 +373,7 @@ it('reviews the exact selected release and keeps declared repository links separ
 					repository: 'https://github.com/unverified/claim',
 					repositoryStars: null,
 					repositoryObservedAt: null,
+					author: null,
 					indexedVersions: 1,
 					observedAt: 1,
 					official: true,
@@ -379,9 +400,9 @@ it('reviews the exact selected release and keeps declared repository links separ
 	await render()
 	await click('Marketplace')
 	expect(container.textContent).toContain('Official')
-	expect(container.textContent).toContain('storage')
-	expect(container.textContent).toContain('#cache')
-	await click('View details')
+	expect(container.querySelector('.pm-result-row')?.textContent).toContain('Storage')
+	await click('alpha')
+	expect(container.querySelector('.pm-detail-header')?.textContent).toContain('#cache')
 	await click('Versions')
 	await selectVersion('2.0.0')
 	expect(state.releaseInput).toHaveBeenLastCalledWith({
@@ -443,6 +464,7 @@ it('keeps same-name public and private packages distinct through versions and in
 					repository: null,
 					repositoryStars: null,
 					repositoryObservedAt: null,
+					author: null,
 					indexedVersions: 1,
 					observedAt: 1,
 					official: index === 0,
@@ -474,9 +496,9 @@ it('keeps same-name public and private packages distinct through versions and in
 	}
 	await render()
 	await click('Marketplace')
-	expect(container.querySelector(`article[aria-label="alpha from ${registry}"]`)).not.toBeNull()
+	expect(container.querySelector(`button[aria-label="alpha from ${registry}"]`)).not.toBeNull()
 	const choices = [...container.querySelectorAll('button')].filter(
-		(element) => element.textContent === 'View details',
+		(element) => element.textContent === 'alpha',
 	)
 	expect(choices).toHaveLength(2)
 	await act(() => choices[1]!.click())
@@ -549,7 +571,7 @@ it('allows choosing an indexed version when latest has not been indexed, without
 	}
 	await render()
 	await click('Marketplace')
-	await click('View details')
+	await click('alpha')
 	await click('Versions')
 	expect(state.releaseInput).not.toHaveBeenCalled()
 	expect(state.releasesInput).toHaveBeenLastCalledWith({
@@ -613,7 +635,7 @@ it('browses indexed version pages without a latest tag and resets the selected r
 	}
 	await render()
 	await click('Marketplace')
-	await click('View details')
+	await click('alpha')
 	await click('Versions')
 	expect(container.textContent).toContain('The registry has no latest release.')
 	await selectVersion('2.0.0')
@@ -637,7 +659,7 @@ it('browses indexed version pages without a latest tag and resets the selected r
 		query: { registry: 'https://registry.npmjs.org', limit: 20 },
 	})
 	await click('Back to packages')
-	expect(button('View details').disabled).toBe(false)
+	expect(button('alpha').disabled).toBe(false)
 	expect(container.querySelector('[aria-label="Release details"]')).toBeNull()
 	expect(state.preparation.mutate).not.toHaveBeenCalled()
 })
@@ -673,8 +695,9 @@ it('browses metadata-only official packages with observed repository stars and a
 	}
 	await render()
 	await click('Marketplace')
+	expect(container.querySelector('.pm-result-row')?.textContent).toContain('Metadata only')
+	await click(pkg.name)
 	expect(container.querySelector('[aria-label="127 repository stars"]')).not.toBeNull()
-	await click('View details')
 	expect(state.packageInput).toHaveBeenLastCalledWith({
 		marketId: 'community',
 		registry: pkg.registry,
@@ -703,64 +726,107 @@ it('browses metadata-only official packages with observed repository stars and a
 	expect(state.preparation.mutate).not.toHaveBeenCalled()
 })
 
-it('submits search and source filters to the market and starts a fresh page when changing a tag', async () => {
-	const pkg = packageSummary({ category: 'storage', tags: ['cache'] })
+it('applies multiple authors and catalog filters before paging and preserves the query when clearing facets', async () => {
+	const author = {
+		id: 'github:42',
+		name: '@network-lab',
+		kind: 'github',
+		avatarUrl: 'https://avatars.githubusercontent.com/u/42?v=4',
+	} as const
+	const source = 'http://127.0.0.1:7677/npm'
+	const pkg = packageSummary({ author, category: 'network', tags: ['http'] })
 	state.snapshot.data = {
 		...snapshot,
 		markets: [{ id: 'community', url: 'https://market.example' }],
 	}
 	state.packages.data = { ok: true, value: { packages: [pkg], nextCursor: 'second-page' } }
+	state.facets.data = {
+		ok: true,
+		value: {
+			total: 36,
+			authors: [
+				{ ...author, count: 12 },
+				{ id: 'market:team', name: 'Team', kind: 'market', avatarUrl: null, count: 24 },
+			],
+			categories: [{ value: 'network', count: 36 }],
+			tags: [{ value: 'http', count: 36 }],
+			registries: [{ value: source, count: 36 }],
+		},
+	}
 	await render()
 	await click('Marketplace')
-	expect(container.querySelector('[aria-label$="repository stars"]')).toBeNull()
+	expect(container.querySelector('.pm-catalog-count')?.textContent).toBe('36 packages')
+	expect(container.querySelector<HTMLImageElement>('.pm-result-row img')?.src).toBe(
+		author.avatarUrl,
+	)
 	await click('Next')
-	const inputFor = (text: string) => {
-		const label = [...container.querySelectorAll('label')].find(
-			(item) => item.textContent === text,
-		)!
-		return document.getElementById(label.htmlFor) as HTMLInputElement
-	}
-	await setInput(inputFor('Search packages'), '  network plugin  ')
-	await click('Filters')
-	await setInput(inputFor('Registry'), 'http://127.0.0.1:7677/npm')
-	await setInput(inputFor('Category'), 'network')
-	await setInput(inputFor('Tag'), 'http')
-	await act(() => {
-		const select = inputFor('Publisher') as unknown as HTMLSelectElement
-		select.value = 'false'
-		select.dispatchEvent(new Event('change', { bubbles: true }))
-	})
-	await click('Search')
-	expect(state.packagesInput).toHaveBeenLastCalledWith({
-		marketId: 'community',
-		query: {
-			query: 'network plugin',
-			registry: 'http://127.0.0.1:7677/npm',
-			official: false,
-			category: 'network',
-			tag: 'http',
-			limit: 20,
-		},
-	})
-	await click('Next')
+	const search = container.querySelector<HTMLInputElement>('.pm-search input')!
+	await setInput(search, '  network plugin  ')
 	await act(() =>
-		(container.querySelector('[aria-label="Filter tag cache"]') as HTMLButtonElement).click(),
+		search.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
 	)
 	expect(state.packagesInput).toHaveBeenLastCalledWith({
 		marketId: 'community',
-		query: {
-			query: 'network plugin',
-			registry: 'http://127.0.0.1:7677/npm',
-			official: false,
-			category: 'network',
-			tag: 'cache',
-			limit: 20,
-		},
+		query: { query: 'network plugin', limit: 30 },
 	})
-	await click('Reset filters')
+	await act(() =>
+		container
+			.querySelector<HTMLButtonElement>('[aria-label="Filter by author @network-lab"]')!
+			.click(),
+	)
+	await click('Authors1')
+	const findAuthor = container.querySelector<HTMLInputElement>('[aria-label="Find authors"]')!
+	await setInput(findAuthor, 'team')
+	const authorOptions = container.querySelectorAll<HTMLInputElement>(
+		'.pm-filter-panel input[type="checkbox"]',
+	)
+	expect(authorOptions).toHaveLength(1)
+	await act(() => authorOptions[0]!.click())
+	expect(container.querySelector('[aria-label="Authors filter"]')).not.toBeNull()
+
+	const choose = async (filter: string) => {
+		await click(filter)
+		await act(() =>
+			container.querySelector<HTMLInputElement>('.pm-filter-panel input[type="checkbox"]')!.click(),
+		)
+	}
+	await choose('Categories')
+	await choose('Tags')
+	await choose('Sources')
+	await click('Official status')
+	await act(() =>
+		container
+			.querySelectorAll<HTMLInputElement>('.pm-filter-panel input[type="radio"]')[2]!
+			.click(),
+	)
+
+	const filters = {
+		query: 'network plugin',
+		official: false,
+		categories: ['network'],
+		tags: ['http'],
+		registries: [source],
+		authors: ['github:42', 'market:team'],
+	}
+	expect(state.facetsInput).toHaveBeenLastCalledWith({ marketId: 'community', filters })
 	expect(state.packagesInput).toHaveBeenLastCalledWith({
 		marketId: 'community',
-		query: { limit: 20 },
+		query: { ...filters, limit: 30 },
+	})
+	await click('Next')
+	expect(state.packagesInput).toHaveBeenLastCalledWith({
+		marketId: 'community',
+		query: { ...filters, limit: 30, cursor: 'second-page' },
+	})
+	await act(() => container.querySelector<HTMLButtonElement>('[aria-label="Remove Team"]')!.click())
+	expect(state.packagesInput).toHaveBeenLastCalledWith({
+		marketId: 'community',
+		query: { ...filters, authors: ['github:42'], limit: 30 },
+	})
+	await click('Clear filters')
+	expect(state.packagesInput).toHaveBeenLastCalledWith({
+		marketId: 'community',
+		query: { query: 'network plugin', limit: 30 },
 	})
 })
 
@@ -789,9 +855,9 @@ it('opens the dedicated market renderer directly and uses the same prepare-confi
 	expect(container.querySelector('input[type="search"]')).not.toBeNull()
 	expect(state.packagesInput).toHaveBeenLastCalledWith({
 		marketId: 'community',
-		query: { limit: 20 },
+		query: { limit: 30 },
 	})
-	await click('View details')
+	await click('alpha')
 	await click('Versions')
 	await selectVersion('2.0.0')
 	await click('Review installation')

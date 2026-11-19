@@ -1,4 +1,4 @@
-import { pluginNodeAddressEqual } from '@pluxel/core'
+import { formatPluginNodeReference, pluginNodeAddressEqual } from '@pluxel/core'
 import type { WorkbenchIcon } from '@pluxel/workbench'
 import type { WorkbenchLayout, WorkbenchShortcut } from '@pluxel/workbench/client'
 import { buildPluginDetailHref } from '../../workbench/paths'
@@ -7,6 +7,10 @@ import {
 	type WorkbenchRouteDirectory,
 } from '../../workbench/route-directory'
 import { matchWorkbenchRoute } from '../../workbench/routes'
+
+export function sidebarShortcutId(shortcut: WorkbenchShortcut): string {
+	return JSON.stringify([formatPluginNodeReference(shortcut.target), shortcut.entryKey])
+}
 
 /** Resolve the saved identity against today's publication; never substitute another owner. */
 export function resolveSidebarShortcut(

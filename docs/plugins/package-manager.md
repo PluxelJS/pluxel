@@ -96,7 +96,8 @@ envBinding({
 
 - 连接 URL 为市场后端的基础接口地址（不含 `/v1`）。
 - 未配置市场时，仍支持通过直接输入 npm package spec（如 `@acme/example-plugin@^2.0.0`）进行安装。
-- 市场列表支持按分类、官方标记和标签筛选包，并提供 README、依赖项与校验元数据。
+- 市场按行显示包名、简介、作者或组织、分类、来源和 registry 最新版本。点击包名查看 README 和已检查的发行，点击作者添加筛选。
+- 作者、分类、标签和来源可以多选。每组命中任意候选即可，各组条件同时生效。官方状态可选全部、官方或社区。点击已选条件可单独移除，「Clear filters」清空筛选，搜索框有独立的清除入口。
 
 ### 独立 React 市场组件
 
@@ -110,7 +111,7 @@ export function Catalog({ data }: { data: MarketplaceData }) {
 }
 ```
 
-宿主传入 `MarketplaceData`（包含 `Packages`、`Package`、`Releases`、`Release` 数据读取器）即可完成市场浏览页面的渲染。
+宿主传入 `MarketplaceData`，用 `Packages` 读取分页包列表，`Facets` 读取当前条件下的选项和计数，`Package`、`Releases`、`Release` 读取详情。两个目录读取器接收同一套筛选条件，只有 `Packages` 接收游标和页大小。
 
 ## 两阶段安装（Prepare 与 Confirm）
 

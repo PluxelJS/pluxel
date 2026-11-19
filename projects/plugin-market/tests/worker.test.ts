@@ -11,8 +11,14 @@ import { Miniflare, Response as MiniflareResponse } from 'miniflare'
 import { packTar, type TarEntry } from 'modern-tar'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { MarketAdmin } from '../src/admin'
-import { MarketError, registry, type PackagePage, type Receipt } from '../src/protocol'
-import { audits, notifications, packages, releases } from '../src/schema'
+import {
+	MarketError,
+	registry,
+	type CatalogFacets,
+	type PackagePage,
+	type Receipt,
+} from '../src/protocol'
+import { audits, authors, notifications, packages, releases } from '../src/schema'
 import {
 	claim,
 	commitRelease,
@@ -52,7 +58,21 @@ describe('plugin market on workerd and D1', () => {
 	]
 	const fixtures = new Map<string, Fixture>()
 	const requests: string[] = []
-	let github = { status: 200, body: { full_name: 'unverified/claim', stargazers_count: 42 } }
+	function githubRepository() {
+		return {
+			status: 200,
+			body: {
+				full_name: 'unverified/claim',
+				stargazers_count: 42,
+				owner: {
+					id: 128,
+					login: 'unverified',
+					avatar_url: 'https://avatars.githubusercontent.com/u/128?v=4',
+				},
+			},
+		}
+	}
+	let github = githubRepository()
 	const selected = { registry, name: '@example/plugin', version: '1.0.0' }
 
 	async function fixture(
@@ -232,16 +252,21 @@ describe('plugin market on workerd and D1', () => {
 			db.delete(releases),
 			db.delete(notifications),
 			db.delete(packages),
+			db.delete(authors),
 		])
 		fixtures.clear()
 		requests.length = 0
-		github = { status: 200, body: { full_name: 'unverified/claim', stargazers_count: 42 } }
+		github = githubRepository()
 	})
 
 	function admin(auth: string = token) {
 		return newHttpBatchRpcSession<MarketAdmin>(
 			new Request(new URL('/admin', origin).href, { headers: { Authorization: `Bearer ${auth}` } }),
 		)
+	}
+	async function callAdmin<T>(call: (access: ReturnType<typeof admin>) => T) {
+		using access = admin()
+		return await call(access)
 	}
 	function get(path: string, headers?: Record<string, string>) {
 		return fetch(new URL(path, origin).href, { headers })
@@ -747,11 +772,14 @@ describe('plugin market on workerd and D1', () => {
 		}
 		expect(requests).toHaveLength(beforeSearch)
 		expect(await getJson('/v1/facets')).toEqual({
+			total: 1,
+			registries: [{ value: registry, count: 1 }],
 			categories: [{ value: 'integration', count: 1 }],
 			tags: [
 				{ value: 'http', count: 1 },
 				{ value: 'network', count: 1 },
 			],
+			authors: [],
 		})
 		{
 			using stale = admin()
@@ -792,8 +820,143 @@ describe('plugin market on workerd and D1', () => {
 			using hidden = admin()
 			await hidden.setVisibility({ ...identity, expectedRevision: 2, hidden: true })
 		}
-		expect(await getJson('/v1/facets')).toEqual({ categories: [], tags: [] })
+		expect(await getJson('/v1/facets')).toEqual({
+			total: 0,
+			registries: [],
+			categories: [],
+			tags: [],
+			authors: [],
+		})
 		expect(await getJson('/v1/packages?query=network')).toMatchObject({ packages: [] })
+	})
+
+	it('combines multiple values per facet, counts across pages, and keeps hidden and private rows out', async () => {
+		const entries = [
+			{ name: 'alpha', category: 'storage', tags: ['http', 'telemetry'], author: 'alice' },
+			{ name: 'beta', category: 'tools', tags: ['telemetry'], author: 'bob' },
+			{ name: 'gamma', category: 'tools', tags: ['telemetry'], author: 'carol' },
+			{ name: 'delta', category: 'games', tags: ['http'], author: 'bob' },
+			{ name: 'epsilon', category: 'tools', tags: ['automation'], author: 'bob' },
+			{
+				name: 'other',
+				category: 'tools',
+				tags: ['telemetry'],
+				author: 'query-mismatch',
+				description: 'Other',
+			},
+			{ name: 'hidden', category: 'tools', tags: ['telemetry'], author: 'hidden', hidden: true },
+			{
+				name: 'alpha',
+				category: 'tools',
+				tags: ['telemetry'],
+				author: 'private',
+				registry: privateRegistry,
+			},
+		]
+		for (const entry of entries) {
+			const name = `@browse/${entry.name}`
+			const source = entry.registry ?? registry
+			const { metadata } = await fixture(name, { registry: source })
+			metadata.description = entry.description ?? 'Service transport'
+			expect(await callAdmin((access) => access.observe({ registry: source, name }))).toMatchObject(
+				{ status: 'observed' },
+			)
+			expect(
+				await callAdmin((access) =>
+					access.setMetadata({
+						registry: source,
+						name,
+						expectedRevision: 1,
+						official: false,
+						category: entry.category,
+						tags: entry.tags,
+						author: { id: `market:${entry.author}`, name: entry.author },
+					}),
+				),
+			).toMatchObject({ status: 'updated' })
+			if (entry.hidden)
+				await callAdmin((access) =>
+					access.setVisibility({ registry: source, name, expectedRevision: 2, hidden: true }),
+				)
+		}
+
+		const params = new URLSearchParams([
+			['query', 'transport'],
+			['official', 'false'],
+			['registry', registry],
+			['registry', privateRegistry],
+			['category', 'storage'],
+			['category', 'tools'],
+			['tag', 'http'],
+			['tag', 'telemetry'],
+			['author', 'market:alice'],
+			['author', 'market:bob'],
+		])
+		const first = (await getJson(`/v1/packages?${params}&limit=1`)) as PackagePage
+		expect(first.packages).toMatchObject([
+			{ name: '@browse/alpha', author: { id: 'market:alice' } },
+		])
+		expect(first.nextCursor).toBeTruthy()
+		const reordered = new URLSearchParams([...params].toReversed())
+		reordered.append('author', 'market:bob')
+		const second = (await getJson(
+			`/v1/packages?${reordered}&limit=1&cursor=${first.nextCursor}`,
+		)) as PackagePage
+		expect(second.packages).toMatchObject([{ name: '@browse/beta', author: { id: 'market:bob' } }])
+		expect(second.nextCursor).toBeNull()
+		const headers = { Authorization: `Bearer ${token}` }
+		await expect(
+			get(`/v1/packages?${params}&limit=1&cursor=${first.nextCursor}`, headers),
+		).resolves.toMatchObject({ status: 400 })
+		const different = new URLSearchParams(params)
+		different.append('author', 'market:carol')
+		await expect(
+			get(`/v1/packages?${different}&limit=1&cursor=${first.nextCursor}`),
+		).resolves.toMatchObject({ status: 400 })
+		const combined = (await getJson(`/v1/facets?${params}`)) as CatalogFacets
+		expect(combined).toEqual({
+			total: 2,
+			registries: [{ value: registry, count: 2 }],
+			categories: [
+				{ value: 'games', count: 1 },
+				{ value: 'storage', count: 1 },
+				{ value: 'tools', count: 1 },
+			],
+			tags: [
+				{ value: 'automation', count: 1 },
+				{ value: 'http', count: 1 },
+				{ value: 'telemetry', count: 2 },
+			],
+			authors: ['alice', 'bob', 'carol'].map((name) => ({
+				id: `market:${name}`,
+				name,
+				kind: 'market',
+				avatarUrl: null,
+				count: 1,
+			})),
+		})
+		const authenticated = (await getJson(`/v1/facets?${params}`, headers)) as CatalogFacets
+		expect(authenticated.authors.map(({ id }) => id)).toEqual([
+			'market:alice',
+			'market:bob',
+			'market:carol',
+			'market:private',
+		])
+		params.append('author', 'market:private')
+		const bothSources = (await getJson(`/v1/packages?${params}`, headers)) as PackagePage
+		expect(bothSources.packages.map(({ name, registry: source }) => [name, source])).toEqual([
+			['@browse/alpha', privateRegistry],
+			['@browse/alpha', registry],
+			['@browse/beta', registry],
+		])
+
+		for (const path of [
+			'/v1/facets?cursor=anything',
+			'/v1/packages?official=false&official=true',
+			'/v1/packages?author=github:0',
+			`/v1/packages?${new URLSearchParams(Array.from({ length: 21 }, () => ['tag', 'http']))}`,
+		])
+			await expect(get(path)).resolves.toMatchObject({ status: 400 })
 	})
 
 	it('lists actionable notifications with stable tied-time paging and query-bound cursors', async () => {
@@ -891,6 +1054,7 @@ describe('plugin market on workerd and D1', () => {
 					indexedVersions: 0,
 					repository: 'https://github.com/unverified/claim',
 					repositoryStars: null,
+					author: null,
 				},
 			],
 		})
@@ -941,9 +1105,23 @@ describe('plugin market on workerd and D1', () => {
 			})
 		}
 		const listing = (await getJson('/v1/packages')) as PackagePage
+		const observedAuthor = {
+			id: 'github:128',
+			name: '@unverified',
+			kind: 'github',
+			avatarUrl: 'https://avatars.githubusercontent.com/u/128?v=4',
+		}
 		expect(listing.packages[0]).toMatchObject({
 			repositoryStars: 42,
 			repositoryObservedAt: expect.any(Number),
+			author: observedAuthor,
+		})
+		expect(await getJson(`/v1/packages/${encodeURIComponent(selected.name)}`)).toMatchObject({
+			author: observedAuthor,
+		})
+		expect(await getJson('/v1/facets?author=github%3A128')).toMatchObject({
+			total: 1,
+			authors: [{ ...observedAuthor, count: 1 }],
 		})
 		github.status = 429
 		{
@@ -961,9 +1139,84 @@ describe('plugin market on workerd and D1', () => {
 		const after = (await getJson('/v1/packages')) as PackagePage
 		expect(after.packages[0].repositoryStars).toBe(42)
 		expect(after.packages[0].repositoryObservedAt).toBe(listing.packages[0].repositoryObservedAt)
+		expect(after.packages[0].author).toEqual(observedAuthor)
 		const count = requests.length
 		await getJson('/v1/packages')
 		await getJson('/v1/packages?query=plugin')
+		await getJson('/v1/facets')
 		expect(requests).toHaveLength(count)
+	})
+
+	it('keeps a shared author ID across GitHub renames and commits manual attribution with curation', async () => {
+		const old = await fixture('@example/previous')
+		old.metadata.repository = 'https://github.com/unverified/claim'
+		const renamed = await fixture('@example/current')
+		renamed.metadata.repository = 'https://github.com/renamed/claim'
+		const previous = { registry, name: old.name }
+		const current = { registry, name: renamed.name }
+		await callAdmin((access) => access.observe(previous))
+		expect(await callAdmin((access) => access.refreshRepository(previous))).toMatchObject({
+			status: 'updated',
+		})
+		await callAdmin((access) => access.observe(current))
+		github.body.full_name = 'renamed/claim'
+		github.body.owner.login = 'renamed'
+		github.body.owner.avatar_url = 'https://tracker.example/avatar'
+		expect(await callAdmin((access) => access.refreshRepository(current))).toMatchObject({
+			status: 'updated',
+		})
+		const githubAuthor = { id: 'github:128', name: '@renamed', kind: 'github', avatarUrl: null }
+		const result = (await getJson('/v1/packages?author=github%3A128')) as PackagePage
+		expect(result.packages.map(({ author }) => author)).toEqual([githubAuthor, githubAuthor])
+		expect(await getJson('/v1/facets')).toMatchObject({ authors: [{ ...githubAuthor, count: 2 }] })
+		const manual = { id: 'market:local-team', name: 'Local Team' }
+		const curation = { ...previous, official: true, category: 'tools', tags: ['example'] }
+		expect(
+			await callAdmin((access) =>
+				access.setMetadata({ ...curation, expectedRevision: 1, author: manual }),
+			),
+		).toMatchObject({ status: 'updated' })
+		expect(
+			await callAdmin((access) =>
+				access.setMetadata({
+					...curation,
+					expectedRevision: 1,
+					author: { ...manual, name: 'Stale write' },
+				}),
+			),
+		).toEqual({ status: 'conflict', currentRevision: 2 })
+		expect(
+			await callAdmin((access) => access.setMetadata({ ...curation, expectedRevision: 2 })),
+		).toMatchObject({
+			status: 'updated',
+		})
+		old.metadata.repository = 'https://example.com/moved'
+		expect(await callAdmin((access) => access.observe(previous))).toMatchObject({
+			status: 'observed',
+		})
+		const detailPath = `/v1/packages/${encodeURIComponent(previous.name)}`
+		expect(await getJson(detailPath)).toMatchObject({
+			author: { ...manual, kind: 'market', avatarUrl: null },
+			repositoryStars: null,
+			repositoryObservedAt: null,
+		})
+		expect(await getJson('/v1/facets')).toMatchObject({
+			authors: [
+				{ ...githubAuthor, count: 1 },
+				{ ...manual, kind: 'market', count: 1 },
+			],
+		})
+		expect(
+			await callAdmin((access) =>
+				access.setMetadata({ ...curation, expectedRevision: 3, author: null }),
+			),
+		).toMatchObject({ status: 'updated' })
+		const changes = await callAdmin((access) => access.recentChanges(previous))
+		expect(changes.filter(({ action }) => action === 'metadata')).toMatchObject([
+			{ revision: 4, changes: { author: null } },
+			{ revision: 3 },
+			{ revision: 2, changes: { author: manual } },
+		])
+		expect(await getJson(detailPath)).toMatchObject({ author: null })
 	})
 })

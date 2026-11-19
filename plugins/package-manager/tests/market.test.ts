@@ -108,6 +108,7 @@ describe('PackageMarketClient', () => {
 							repository: null,
 							repositoryStars: null,
 							repositoryObservedAt: null,
+							author: null,
 							indexedVersions: 1,
 							observedAt: 1,
 							official: true,
@@ -145,6 +146,7 @@ describe('PackageMarketClient', () => {
 				repository: null,
 				repositoryStars: null,
 				repositoryObservedAt: null,
+				author: null,
 				indexedVersions: 1,
 				observedAt: 1,
 				official: false,
@@ -154,11 +156,12 @@ describe('PackageMarketClient', () => {
 			fetch.mockResolvedValueOnce(Response.json({ packages: [summary], nextCursor: null }))
 			expect(
 				await client.packages('community', {
-					registry: source,
+					registries: [source],
 					query: 'plugin',
 					official: false,
-					category: 'storage',
-					tag: 'cache',
+					categories: ['storage', 'integration', 'storage'],
+					tags: ['cache'],
+					authors: ['market:authors', 'github:12'],
 					limit: 50,
 				}),
 			).toEqual({ ok: true, value: { packages: [summary], nextCursor: null } })
@@ -169,8 +172,11 @@ describe('PackageMarketClient', () => {
 				official: 'false',
 				category: 'storage',
 				tag: 'cache',
+				author: 'market:authors',
 				limit: '50',
 			})
+			expect(search.getAll('category')).toEqual(['integration', 'storage'])
+			expect(search.getAll('author')).toEqual(['github:12', 'market:authors'])
 			fetch.mockResolvedValueOnce(Response.json({ ...release, registry: source }))
 			expect(await client.release('community', release.name, release.version, source)).toEqual({
 				ok: true,
@@ -184,7 +190,7 @@ describe('PackageMarketClient', () => {
 			fetch.mockResolvedValueOnce(
 				Response.json({ packages: [{ ...summary, registry: release.registry }], nextCursor: null }),
 			)
-			expect(await client.packages('community', { registry: source })).toMatchObject({
+			expect(await client.packages('community', { registries: [source] })).toMatchObject({
 				ok: false,
 				error: { code: 'INVALID_RESPONSE' },
 			})
@@ -239,6 +245,7 @@ describe('PackageMarketClient', () => {
 			repository: 'https://github.com/example/plugin',
 			repositoryStars: null,
 			repositoryObservedAt: null,
+			author: null,
 			indexedVersions: 0,
 			observedAt: 1,
 			official: true,

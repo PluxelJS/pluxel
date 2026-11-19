@@ -1,6 +1,8 @@
 import type { RpcTarget } from 'capnweb'
 import type {
 	PackageMarket,
+	MarketCatalogFilters,
+	MarketCatalogFacets,
 	MarketPackageQuery,
 	MarketReleaseQuery,
 	MarketPackagePage,
@@ -12,6 +14,8 @@ import type {
 } from './market-contracts.ts'
 export type {
 	PackageMarket,
+	MarketCatalogFilters,
+	MarketCatalogFacets,
 	MarketPackageQuery,
 	MarketReleaseQuery,
 	MarketPackageSummary,
@@ -101,6 +105,10 @@ export interface PackageManagerApi extends RpcTarget {
 		marketId: string,
 		query?: MarketPackageQuery,
 	): Promise<MarketReadResult<MarketPackagePage>>
+	marketFacetsDto(
+		marketId: string,
+		filters?: MarketCatalogFilters,
+	): Promise<MarketReadResult<MarketCatalogFacets>>
 	/** Read package metadata even without checked releases; omitting registry selects public npm. */
 	marketPackageDto(
 		marketId: string,

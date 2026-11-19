@@ -1,16 +1,38 @@
-import { useId, useState, type ReactNode, type ComponentType } from 'react'
-import type {
-	MarketPackageIdentity,
-	MarketPackageQuery,
-	MarketPackageSummary,
-	MarketPackageDetail,
-	MarketPackagePage,
-	MarketReleaseIdentity,
-	MarketReleaseQuery,
-	MarketRelease,
-	MarketReleasePage,
-	MarketReadResult,
+import {
+	useCallback,
+	useId,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+	type ReactNode,
+	type ComponentType,
+} from 'react'
+import {
+	marketFilterLimit,
+	type MarketCatalogFacets,
+	type MarketCatalogFilters,
+	type MarketPackageIdentity,
+	type MarketPackageQuery,
+	type MarketPackageSummary,
+	type MarketPackageDetail,
+	type MarketPackagePage,
+	type MarketReleaseIdentity,
+	type MarketReleaseQuery,
+	type MarketRelease,
+	type MarketReleasePage,
+	type MarketReadResult,
 } from '../market-contracts.ts'
+import {
+	AuthorAvatar,
+	CatalogFilters,
+	catalogFacets,
+	categoryLabel,
+	emptySelection,
+	registryLabel,
+	type CatalogFacet,
+	type CatalogSelection,
+} from './marketplace-filters.tsx'
 import { marketplaceStyles } from './marketplace.styles.ts'
 import { Readme } from './marketplace-readme.tsx'
 
@@ -30,6 +52,9 @@ type ReadChildren<T> = Readonly<{ children(read: MarketplaceRead<T>): ReactNode 
  */
 export type MarketplaceData = Readonly<{
 	Packages: ComponentType<ReadChildren<MarketPackagePage> & Readonly<{ query: MarketPackageQuery }>>
+	Facets: ComponentType<
+		ReadChildren<MarketCatalogFacets> & Readonly<{ filters: MarketCatalogFilters }>
+	>
 	Package: ComponentType<
 		ReadChildren<MarketPackageDetail> & Readonly<{ identity: MarketPackageIdentity }>
 	>
@@ -52,7 +77,6 @@ export type MarketplaceProps = Readonly<{
 }>
 
 type BrowseProps = Pick<MarketplaceProps, 'data' | 'onPrepare' | 'busy'>
-const emptyFilters = { query: '', registry: '', official: '', category: '', tag: '' }
 
 export function Marketplace({ colorScheme = 'light', ...props }: MarketplaceProps) {
 	return (
@@ -68,268 +92,286 @@ export function Marketplace({ colorScheme = 'light', ...props }: MarketplaceProp
 }
 
 function MarketPackages({ data, busy, onPrepare }: BrowseProps) {
-	const [draft, setDraft] = useState(emptyFilters)
-	const [filters, setFilters] = useState<MarketPackageQuery>({})
+	const [query, setQuery] = useState('')
+	const [selection, setSelection] = useState(emptySelection)
+	const [official, setOfficial] = useState<boolean>()
 	const [cursors, setCursors] = useState<string[]>([])
-	const [selection, setSelection] = useState<MarketPackageSummary>()
-	const [filtersExpanded, setFiltersExpanded] = useState(false)
-	const id = useId()
-	const filterCount = [filters.registry, filters.official, filters.category, filters.tag].filter(
-		(value) => value !== undefined,
-	).length
+	const [selectedPackage, setSelectedPackage] = useState<MarketPackageSummary>()
+	const catalog = useRef<HTMLDivElement>(null)
+	const details = useRef<HTMLDivElement>(null)
+	const searchInput = useRef<HTMLInputElement>(null)
+	const returnTo = useRef<{ button: HTMLButtonElement; scroll: Element | null; top: number }>(
+		undefined,
+	)
 	const cursor = cursors.at(-1)
-	const applyFilters = (next: typeof emptyFilters) => {
-		setDraft(next)
-		setFilters({
-			...(next.query.trim() ? { query: next.query.trim() } : {}),
-			...(next.registry.trim() ? { registry: next.registry.trim() } : {}),
-			...(next.official ? { official: next.official === 'true' } : {}),
-			...(next.category.trim() ? { category: next.category.trim() } : {}),
-			...(next.tag.trim() ? { tag: next.tag.trim() } : {}),
-		})
+	const filters = useMemo<MarketCatalogFilters>(() => {
+		const selected: Partial<Record<CatalogFacet, readonly string[]>> = {}
+		for (const facet of catalogFacets) {
+			if (selection[facet].length > 0)
+				selected[facet] = selection[facet].map(({ value }) => value).sort()
+		}
+		return {
+			...selected,
+			...(query ? { query } : {}),
+			...(official !== undefined ? { official } : {}),
+		}
+	}, [query, official, selection])
+	const pageQuery = useMemo(
+		() => ({
+			...filters,
+			limit: 30,
+			...(cursor ? { cursor } : {}),
+		}),
+		[filters, cursor],
+	)
+
+	const scrollToCatalog = useCallback(() => {
+		catalog.current?.scrollIntoView?.({ block: 'start', inline: 'nearest' })
+	}, [])
+	const restart = useCallback(() => {
 		setCursors([])
-		setSelection(undefined)
+		scrollToCatalog()
+	}, [scrollToCatalog])
+	const applyQuery = useCallback(
+		(value: string) => {
+			setQuery(value)
+			restart()
+		},
+		[restart],
+	)
+	const toggle = (facet: CatalogFacet, choice: CatalogSelection[CatalogFacet][number]) => {
+		setSelection((current) => {
+			const values = current[facet]
+			const matches = values.some(({ value }) => value === choice.value)
+			if (!matches && values.length >= marketFilterLimit) return current
+			return {
+				...current,
+				[facet]: matches
+					? values.filter(({ value }) => value !== choice.value)
+					: [...values, choice],
+			}
+		})
+		restart()
 	}
-	const renderPackages = (query: MarketplaceRead<MarketPackagePage>) => {
-		const page = query.data?.ok ? query.data.value : undefined
-		if (selection)
-			return (
-				<PackageDetails
-					key={JSON.stringify([selection.registry, selection.name])}
-					data={data}
-					pkg={selection}
-					busy={busy}
-					onPrepare={onPrepare}
-					onClose={() => setSelection(undefined)}
-				/>
-			)
-		return (
-			<div className="pm-stack">
-				<form
-					className="pm-search"
-					onSubmit={(event) => {
-						event.preventDefault()
-						applyFilters(draft)
-					}}
-				>
-					<div className="pm-search-row">
-						<div className="pm-search-field">
-							<label htmlFor={id + '-search'}>Search packages</label>
-							<div className="pm-search-input">
-								<Icon name="search" />
-								<input
-									id={id + '-search'}
-									type="search"
-									placeholder="Name, description or tags"
-									maxLength={100}
-									value={draft.query}
-									onChange={(event) => setDraft({ ...draft, query: event.currentTarget.value })}
-								/>
-							</div>
-						</div>
-						<button type="submit" className="pm-button pm-primary">
-							Search
-						</button>
-					</div>
-					<div className="pm-toolbar">
-						<button
-							type="button"
-							className="pm-button pm-quiet"
-							aria-expanded={filtersExpanded}
-							aria-controls={id + '-filters'}
-							onClick={() => setFiltersExpanded((current) => !current)}
-						>
-							<Icon name="filter" />
-							Filters{filterCount ? ' (' + filterCount + ')' : ''}
-						</button>
-						<div className="pm-inline">
-							<span className="pm-muted pm-small" aria-live="polite">
-								{page ? page.packages.length + ' packages' : 'Plugin catalog'}
-							</span>
-							<button
-								type="button"
-								className="pm-button pm-quiet"
-								onClick={() => applyFilters(emptyFilters)}
-							>
-								Reset filters
-							</button>
-						</div>
-					</div>
-					<fieldset id={id + '-filters'} className="pm-filters" hidden={!filtersExpanded}>
-						<legend className="pm-sr-only">Filter plugins</legend>
-						<div className="pm-field">
-							<label htmlFor={id + '-registry'}>Registry</label>
-							<input
-								id={id + '-registry'}
-								type="url"
-								placeholder="All registries"
-								value={draft.registry}
-								onChange={(event) => setDraft({ ...draft, registry: event.currentTarget.value })}
-							/>
-						</div>
-						<div className="pm-field">
-							<label htmlFor={id + '-publisher'}>Publisher</label>
-							<select
-								id={id + '-publisher'}
-								value={draft.official}
-								onChange={(event) => setDraft({ ...draft, official: event.currentTarget.value })}
-							>
-								<option value="">All plugins</option>
-								<option value="true">Official only</option>
-								<option value="false">Community only</option>
-							</select>
-						</div>
-						<div className="pm-field">
-							<label htmlFor={id + '-category'}>Category</label>
-							<input
-								id={id + '-category'}
-								placeholder="All categories"
-								maxLength={32}
-								value={draft.category}
-								onChange={(event) => setDraft({ ...draft, category: event.currentTarget.value })}
-							/>
-						</div>
-						<div className="pm-field">
-							<label htmlFor={id + '-tag'}>Tag</label>
-							<input
-								id={id + '-tag'}
-								placeholder="Any tag"
-								maxLength={32}
-								value={draft.tag}
-								onChange={(event) => setDraft({ ...draft, tag: event.currentTarget.value })}
-							/>
-						</div>
-					</fieldset>
-					{filterCount > 0 ? (
-						<p className="pm-applied pm-muted pm-small">
-							{[
-								filters.registry,
-								filters.official === undefined ? null : filters.official ? 'Official' : 'Community',
-								filters.category,
-								filters.tag ? '#' + filters.tag : null,
-							]
-								.filter(Boolean)
-								.join(' · ')}
-						</p>
-					) : null}
-				</form>
-				<ReadStatus
-					query={query}
-					title="Market unavailable"
-					loadingLabel="Loading market packages"
-					retryLabel="Retry market"
-				/>
-				{page?.packages.length === 0 ? (
-					<div className="pm-empty">
-						<Icon name="package" />
-						<h3>No matching packages</h3>
-						<p>Try another name or adjust the filters.</p>
-					</div>
-				) : null}
-				{page ? (
-					<div className="pm-grid" aria-label="Plugin catalog">
-						{page.packages.map((pkg) => (
-							<PackageCard
-								key={JSON.stringify([pkg.registry, pkg.name])}
-								pkg={pkg}
-								onSelect={() => setSelection(pkg)}
-								onCategory={(category) => applyFilters({ ...draft, category })}
-								onTag={(tag) => applyFilters({ ...draft, tag })}
-							/>
-						))}
-					</div>
-				) : null}
-				{page ? (
-					<Pagination
-						page={cursors.length + 1}
-						busy={query.isFetching}
-						previous={cursors.length > 0}
-						next={Boolean(page.nextCursor)}
-						onPrevious={() => setCursors((current) => current.slice(0, -1))}
-						onNext={() => {
-							if (page.nextCursor) setCursors((current) => [...current, page.nextCursor!])
-						}}
-					/>
-				) : null}
-			</div>
-		)
+	const openPackage = (pkg: MarketPackageSummary, button: HTMLButtonElement) => {
+		const scroll = scrollContainer(button)
+		returnTo.current = { button, scroll, top: scroll?.scrollTop ?? 0 }
+		setSelectedPackage(pkg)
 	}
+
+	useLayoutEffect(() => {
+		if (selectedPackage) {
+			details.current?.scrollIntoView?.({ block: 'start', inline: 'nearest' })
+			details.current?.querySelector<HTMLButtonElement>('.pm-back')?.focus({ preventScroll: true })
+		} else if (returnTo.current) {
+			const { button, scroll, top } = returnTo.current
+			returnTo.current = undefined
+			if (scroll) scroll.scrollTop = top
+			const focus = button.isConnected ? button : searchInput.current
+			focus?.focus({ preventScroll: true })
+		}
+	}, [selectedPackage])
+
 	return (
-		<data.Packages query={{ ...filters, limit: 20, ...(cursor ? { cursor } : {}) }}>
-			{renderPackages}
-		</data.Packages>
+		<>
+			<div className="pm-catalog" ref={catalog} hidden={Boolean(selectedPackage)}>
+				<data.Facets filters={filters}>
+					{(read) => (
+						<CatalogFilters
+							read={read}
+							query={query}
+							searchInput={searchInput}
+							selection={selection}
+							official={official}
+							onQuery={applyQuery}
+							onToggle={toggle}
+							onOfficial={(value) => {
+								setOfficial(value)
+								restart()
+							}}
+							onClear={() => {
+								setSelection(emptySelection)
+								setOfficial(undefined)
+								restart()
+							}}
+						/>
+					)}
+				</data.Facets>
+				<data.Packages query={pageQuery}>
+					{(read) => {
+						const page = read.data?.ok ? read.data.value : undefined
+						const next = page?.nextCursor
+						return (
+							<>
+								<ReadStatus
+									query={read}
+									title="Market unavailable"
+									loadingLabel="Loading packages"
+									retryLabel="Retry market"
+								/>
+								{page?.packages.length === 0 ? (
+									<div className="pm-empty">
+										<h3>No matching packages</h3>
+										<p>Try another search or remove a filter.</p>
+									</div>
+								) : null}
+								{page?.packages.length ? (
+									<div className="pm-results">
+										<div className="pm-result-header" aria-hidden="true">
+											<span>Package</span>
+											<span>Author / organization</span>
+											<span>Category</span>
+											<span>Source</span>
+											<span>Latest</span>
+										</div>
+										<ul aria-label="Plugin catalog">
+											{page.packages.map((pkg) => (
+												<PackageRow
+													key={JSON.stringify([pkg.registry, pkg.name])}
+													pkg={pkg}
+													authorSelected={selection.authors.some(
+														({ value }) => value === pkg.author?.id,
+													)}
+													authorLimit={selection.authors.length >= marketFilterLimit}
+													onOpen={(button) => openPackage(pkg, button)}
+													onAuthor={(author) =>
+														toggle('authors', {
+															value: author.id,
+															label: author.name,
+															avatarUrl: author.avatarUrl,
+														})
+													}
+												/>
+											))}
+										</ul>
+									</div>
+								) : null}
+								{cursors.length > 0 || next ? (
+									<Pagination
+										page={cursors.length + 1}
+										busy={read.isFetching}
+										previous={cursors.length > 0}
+										next={Boolean(next)}
+										onPrevious={() => {
+											setCursors((current) => current.slice(0, -1))
+											scrollToCatalog()
+										}}
+										onNext={() => {
+											if (next) setCursors((current) => [...current, next])
+											scrollToCatalog()
+										}}
+									/>
+								) : null}
+							</>
+						)
+					}}
+				</data.Packages>
+			</div>
+			{selectedPackage ? (
+				<div ref={details}>
+					<PackageDetails
+						key={JSON.stringify([selectedPackage.registry, selectedPackage.name])}
+						data={data}
+						pkg={selectedPackage}
+						busy={busy}
+						onPrepare={onPrepare}
+						onClose={() => setSelectedPackage(undefined)}
+					/>
+				</div>
+			) : null}
+		</>
 	)
 }
 
-function PackageCard({
+function scrollContainer(element: HTMLElement): Element | null {
+	const { ownerDocument } = element
+	for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+		const overflow = ownerDocument.defaultView?.getComputedStyle(parent).overflowY
+		if (overflow === 'auto' || overflow === 'scroll') return parent
+	}
+	return ownerDocument.scrollingElement
+}
+
+function PackageRow({
 	pkg,
-	onSelect,
-	onCategory,
-	onTag,
+	authorSelected,
+	authorLimit,
+	onOpen,
+	onAuthor,
 }: Readonly<{
 	pkg: MarketPackageSummary
-	onSelect(): void
-	onCategory(value: string): void
-	onTag(value: string): void
+	authorSelected: boolean
+	authorLimit: boolean
+	onOpen(button: HTMLButtonElement): void
+	onAuthor(author: NonNullable<MarketPackageSummary['author']>): void
 }>) {
+	const { author } = pkg
 	return (
-		<article className="pm-card" aria-label={pkg.name + ' from ' + pkg.registry}>
-			<div className="pm-card-heading">
-				<span className="pm-package-icon">
-					<Icon name="package" />
-				</span>
-				{pkg.official ? <span className="pm-badge pm-official">Official</span> : null}
-			</div>
-			<h3>{pkg.name}</h3>
-			<p className="pm-description">{pkg.description || 'No description provided.'}</p>
-			<div className="pm-tags">
-				{pkg.category ? (
+		<li className="pm-result-row">
+			<div className="pm-package">
+				<div className="pm-package-heading">
 					<button
 						type="button"
-						className="pm-chip pm-category"
-						aria-label={'Filter category ' + pkg.category}
-						onClick={() => onCategory(pkg.category!)}
+						className="pm-text-action pm-package-name pm-truncate"
+						title={pkg.name}
+						aria-label={pkg.name + ' from ' + registryLabel(pkg.registry)}
+						onClick={(event) => onOpen(event.currentTarget)}
 					>
-						{pkg.category}
+						{pkg.name}
 					</button>
+					{pkg.official ? <span className="pm-badge pm-official">Official</span> : null}
+				</div>
+				{pkg.description ? (
+					<p className="pm-summary pm-truncate" title={pkg.description}>
+						{pkg.description}
+					</p>
 				) : null}
-				{pkg.tags.map((tag) => (
+			</div>
+			<div className="pm-package-author">
+				{author ? (
 					<button
 						type="button"
-						key={tag}
-						className="pm-chip"
-						aria-label={'Filter tag ' + tag}
-						onClick={() => onTag(tag)}
+						className="pm-text-action pm-author"
+						title={
+							author.kind === 'github'
+								? author.name + ' · Declared GitHub repository owner'
+								: author.name
+						}
+						aria-label={'Filter by author ' + author.name}
+						aria-pressed={authorSelected}
+						disabled={!authorSelected && authorLimit}
+						onClick={() => onAuthor(author)}
 					>
-						#{tag}
+						<AuthorAvatar url={author.avatarUrl} />
+						<span className="pm-truncate">{author.name}</span>
 					</button>
-				))}
+				) : (
+					<span className="pm-unset" aria-label="Author unavailable">
+						—
+					</span>
+				)}
 			</div>
-			<p className="pm-source">
-				<span>Registry</span>
-				<span>{pkg.registry}</span>
-			</p>
-			<div className="pm-card-facts">
-				<span>{pkg.latest ? 'Latest: ' + pkg.latest : 'No latest tag'}</span>
-				<span>{pkg.indexedVersions} checked releases</span>
+			<span
+				className="pm-row-category pm-truncate"
+				title={pkg.category ? categoryLabel(pkg.category) : undefined}
+			>
+				{pkg.category ? categoryLabel(pkg.category) : <span className="pm-unset">—</span>}
+			</span>
+			<span className="pm-row-source pm-truncate" title={pkg.registry}>
+				{registryLabel(pkg.registry)}
+			</span>
+			<div className="pm-row-version">
+				<span className="pm-sr-only">Registry latest</span>
+				<code className="pm-truncate" title={pkg.latest ?? undefined}>
+					{pkg.latest ?? '—'}
+				</code>
+				{pkg.indexedVersions === 0 ? (
+					<span className="pm-no-release" title="No installable releases">
+						Metadata only
+					</span>
+				) : null}
 			</div>
-			<footer className="pm-card-footer">
-				<RepositoryLink pkg={pkg} />
-				<button type="button" className="pm-button pm-link" onClick={onSelect}>
-					View details
-					<svg
-						width="14"
-						height="14"
-						viewBox="0 0 20 20"
-						fill="none"
-						stroke="currentColor"
-						aria-hidden="true"
-					>
-						<path d="M5 15 15 5M5 5h10v10" />
-					</svg>
-				</button>
-			</footer>
-		</article>
+		</li>
 	)
 }
 
@@ -357,6 +399,7 @@ function PackageOverview({
 		query: MarketplaceRead<MarketPackageDetail>
 	}>) {
 	const detail = query.data?.ok ? query.data.value : undefined
+	const author = (detail ?? pkg).author
 	const [tab, setTab] = useState('overview')
 	const identity = { registry: pkg.registry, name: pkg.name }
 	return (
@@ -378,16 +421,14 @@ function PackageOverview({
 			</div>
 			<header className="pm-detail-header">
 				<div className="pm-inline">
-					<span className="pm-package-icon">
-						<Icon name="package" />
-					</span>
+					<h2>{pkg.name}</h2>
 					{(detail ?? pkg).official ? <span className="pm-badge pm-official">Official</span> : null}
 				</div>
-				<h2>{pkg.name}</h2>
 				{(detail ?? pkg).description ? (
 					<p className="pm-detail-description">{(detail ?? pkg).description}</p>
 				) : null}
 				<div className="pm-detail-facts">
+					{author ? <AuthorFact author={author} /> : null}
 					<p className="pm-source">
 						<span>Registry</span>
 						<span>{pkg.registry}</span>
@@ -452,6 +493,21 @@ function PackageOverview({
 				/>
 			)}
 		</div>
+	)
+}
+
+function AuthorFact({ author }: Readonly<{ author: NonNullable<MarketPackageSummary['author']> }>) {
+	return (
+		<Fact
+			label={
+				author.kind === 'github' ? 'Declared GitHub repository owner' : 'Author / organization'
+			}
+		>
+			<span className="pm-author">
+				<AuthorAvatar url={author.avatarUrl} />
+				{author.name}
+			</span>
+		</Fact>
 	)
 }
 
@@ -674,7 +730,7 @@ function RepositoryLink({
 					aria-label={pkg.repositoryStars + ' repository stars'}
 					title={'Observed ' + new Date(pkg.repositoryObservedAt).toLocaleString()}
 				>
-					<Icon name="star" />
+					<Star />
 					{new Intl.NumberFormat().format(pkg.repositoryStars)}
 				</span>
 			) : null}
@@ -847,7 +903,7 @@ function ReadStatus<T>({
 	)
 }
 
-function Icon({ name }: Readonly<{ name: 'search' | 'filter' | 'star' | 'package' }>) {
+function Star() {
 	return (
 		<svg
 			width="18"
@@ -860,25 +916,7 @@ function Icon({ name }: Readonly<{ name: 'search' | 'filter' | 'star' | 'package
 			strokeLinejoin="round"
 			aria-hidden="true"
 		>
-			{name === 'search' ? (
-				<>
-					<circle cx="10.5" cy="10.5" r="6.5" />
-					<path d="m16 16 4.5 4.5" />
-				</>
-			) : name === 'filter' ? (
-				<>
-					<path d="M4 7h16M4 17h16" />
-					<circle cx="9" cy="7" r="2" fill="var(--pm-surface)" />
-					<circle cx="15" cy="17" r="2" fill="var(--pm-surface)" />
-				</>
-			) : name === 'star' ? (
-				<path d="m12 3 2.8 5.7 6.3.9-4.55 4.43L17.6 20.3 12 17.35 6.4 20.3l1.05-6.27L2.9 9.6l6.3-.9Z" />
-			) : (
-				<>
-					<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z" />
-					<path d="m4 7.5 8 4.5 8-4.5M12 12v9M8 5.25l8 4.5" />
-				</>
-			)}
+			<path d="m12 3 2.8 5.7 6.3.9-4.55 4.43L17.6 20.3 12 17.35 6.4 20.3l1.05-6.27L2.9 9.6l6.3-.9Z" />
 		</svg>
 	)
 }

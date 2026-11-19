@@ -24,6 +24,7 @@ import {
 	prepareInstallMutation,
 	removePackagesMutation,
 	marketPackagesQuery,
+	marketFacetsQuery,
 	marketPackageQuery,
 	marketReleasesQuery,
 	marketReleaseQuery,
@@ -33,6 +34,7 @@ import { WorkbenchMarketplace, createWorkbenchMarketplaceData } from './marketpl
 
 const marketQueries = createWorkbenchMarketplaceData({
 	marketPackagesQuery,
+	marketFacetsQuery,
 	marketPackageQuery,
 	marketReleasesQuery,
 	marketReleaseQuery,

@@ -102,7 +102,7 @@ Remote 使用 CSS Flex/Grid、Mantine 和容器响应式布局，独立页面通
 
 ActivityRail 独立于可收起工具区，展示 `navigationItems.ts` 的内置入口与用户固定的 publication 页面。`border_left.config.shortcuts` 是唯一偏好存储，`initialShortcuts` 仅在缺失时初始化，`[]` 保持为空。名称、图标、frame 和可用性从当前 layout 解析，失效 target/entry 保留移除入口。
 
-`/apps` 按 navigation label、publication group 和 canonical owner 聚合 tab 与显式 navigation 的业务 route，本身不登记插件 owner；全局查找额外包含其他 route。`/plugins` 使用唯一 `PluginNavigation` / `PluginCatalog`，保持分组、DnD、多选和管理持久化。中央索引只提示选择，`WorkspaceNavigation` 只投影入口。目录高亮比较 canonical plugin route，业务页同时比较 owner 和 exact entry key。
+`/apps` 展示 tab 与显式 navigation 的业务 route。目录从共享 Plugin Overview 读取已提交的插件组和组内顺序，按 canonical owner 匹配 publication，组内继续显示 publication 分类。固定列读取自己的侧栏顺序。全局查找额外包含其他 route。`/plugins` 使用唯一 `PluginNavigation` / `PluginCatalog`，保持分组、DnD、多选和管理持久化。中央索引只提示选择。`/apps` 本身不登记插件 owner。目录高亮比较 canonical plugin route，业务页同时比较 owner 和 exact entry key。
 
 ### 区域与可见性
 

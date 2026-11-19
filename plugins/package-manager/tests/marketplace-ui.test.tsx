@@ -32,6 +32,7 @@ const pkg: MarketPackageSummary = {
 	repository: 'https://github.com/example/plugin',
 	repositoryStars: 0,
 	repositoryObservedAt: 1,
+	author: null,
 	indexedVersions: 1,
 	observedAt: 1,
 	official: true,
@@ -54,6 +55,9 @@ function read<T>(value: T): MarketplaceRead<T> {
 	return { data: { ok: true, value }, isFetching: false, refetch: async () => {} }
 }
 const data: MarketplaceData = {
+	Facets({ children }: ComponentProps<MarketplaceData['Facets']>) {
+		return children(read({ total: 1, authors: [], categories: [], registries: [], tags: [] }))
+	},
 	Packages({ children }: ComponentProps<MarketplaceData['Packages']>) {
 		return children(read({ packages: [pkg], nextCursor: null }))
 	},
@@ -145,8 +149,8 @@ async function click(label: string) {
 	await act(() => button.click())
 }
 async function openRelease() {
-	await click('View details')
-	expect(container.querySelector('input[type="search"]')).toBeNull()
+	await click(pkg.name)
+	expect(container.querySelector<HTMLElement>('.pm-catalog')?.hidden).toBe(true)
 	await click('Versions')
 	const select = container.querySelector('select')!
 	await act(() => {
@@ -158,9 +162,10 @@ async function openRelease() {
 it('renders through its public browser entry without a Provider or install capability', async () => {
 	expect(PackageMarketClient).toBeTypeOf('function')
 	await act(() => root.render(createElement(Marketplace, { data })))
-	expect(container.querySelector('[aria-label="0 repository stars"]')).not.toBeNull()
-	expect(container.querySelector('fieldset')!.hidden).toBe(true)
+	expect(container.querySelector('.pm-result-row')?.textContent).toContain(pkg.description)
+	expect(container.querySelector('.pm-filter-panel')).toBeNull()
 	await openRelease()
+	expect(container.querySelector('[aria-label="0 repository stars"]')).not.toBeNull()
 	expect(container.querySelector('img')).toBeNull()
 	expect(container.querySelector('.pm-readme')!.textContent).toBe('<img src=x onerror=alert(1)>')
 	expect(
@@ -198,13 +203,19 @@ it('offers the host only a checked exact registry coordinate for installation pr
 	const onPrepare = vi.fn()
 	await act(() => root.render(createElement(Marketplace, { data, onPrepare, colorScheme: 'dark' })))
 	expect(onPrepare).not.toHaveBeenCalled()
-	await click('View details')
+	const entry = container.querySelector<HTMLButtonElement>('.pm-package-name')!
+	container.style.overflowY = 'auto'
+	container.scrollTop = 50
+	await click(pkg.name)
+	expect(document.activeElement?.textContent?.trim()).toBe('Back to packages')
 	expect(
 		[...container.querySelectorAll('button')].some(
 			(item) => item.textContent === 'Review installation',
 		),
 	).toBe(false)
 	await click('Back to packages')
+	expect(document.activeElement).toBe(entry)
+	expect(container.scrollTop).toBe(50)
 	await openRelease()
 	await click('Review installation')
 	expect(onPrepare).toHaveBeenCalledExactlyOnceWith({

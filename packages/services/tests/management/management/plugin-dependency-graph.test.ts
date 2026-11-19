@@ -141,6 +141,31 @@ describe('Plugin dependency graph read model', () => {
 		expect(graph.edges).toEqual([expect.objectContaining({ mode: 'required', effective: true })])
 	})
 
+	it('projects a required edge to the provider selected during reconciliation', async () => {
+		await using host = await createServiceInternalTestHarness({ workbench: false })
+
+		host.add([CycleConsumer, SafeProvider])
+		host.start(CycleConsumer)
+		await host.commit()
+		expect(requireHostStateStore(host.ctx).snapshot().providerDefaults).toEqual([])
+
+		const graph = await new RuntimeManagementTargetImpl(host.ctx).pluginDependencyGraphDto()
+		expect(() => parsePluginDependencyGraphSnapshot(graph)).not.toThrow()
+		expect(graph.edges).toEqual([
+			{
+				consumer: parsePluginNodeAddress(CycleConsumer.nodeAddress()),
+				requirement: CycleToken.address(),
+				mode: 'required',
+				resolution: {
+					state: 'resolved',
+					provider: parsePluginNodeAddress(SafeProvider.nodeAddress()),
+					via: 'provider-default',
+				},
+				effective: true,
+			},
+		])
+	})
+
 	it('uses the fixed resolution table and expands only eligible declarations', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: false })
 

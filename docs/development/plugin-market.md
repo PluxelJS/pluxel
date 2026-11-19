@@ -59,7 +59,13 @@ vp run @pluxel-internal/plugin-market#sandbox:admin catalog --registry "$MARKET_
 
 # 查询当前的分类与标签统计快照
 vp run @pluxel-internal/plugin-market#sandbox:admin facets
+
+# 读取公开 GitHub 仓库的归属与头像，再按作者和多个分类查目录
+vp run @pluxel-internal/plugin-market#sandbox:admin repository @pluxel/wretch
+vp run @pluxel-internal/plugin-market#sandbox:admin catalog '{"authors":["github:123"],"categories":["development","integration"]}'
 ```
+
+对已有目录包执行 `repository` 后，用回执里的作者 ID 查询。同样的筛选可传给 `facets` 读取选项与计数。市场登记方式见 [管理 API](../../projects/plugin-market/README.md#市场管理)。
 
 ## 在控制台（Workbench）中浏览插件市场
 

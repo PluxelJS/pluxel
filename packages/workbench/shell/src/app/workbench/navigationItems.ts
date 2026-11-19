@@ -8,10 +8,17 @@ import {
 	IconTopologyStar3,
 } from '@tabler/icons-react'
 
+export const appsPage = {
+	href: '/apps',
+	label: '应用',
+	description: '已发布的业务应用',
+	icon: IconApps,
+} as const
+
 /** Built-in destinations; user-selected publication shortcuts share the rail separately. */
 export const builtinPages = [
 	{ href: '/', label: '首页', description: '运行状态与常用操作', icon: IconHome2 },
-	{ href: '/apps', label: '应用', description: '已发布的业务应用', icon: IconApps },
+	appsPage,
 	{ href: '/plugins', label: '插件管理', description: '插件运行状态与配置', icon: IconPuzzle },
 	{ href: '/logs', label: '日志', description: '实时日志', icon: IconTerminal2 },
 	{ href: '/security', label: '认证与安全', description: '用户、权限与凭据', icon: IconShieldLock },

@@ -1,6 +1,6 @@
 # Plugin Catalog Groups
 
-Management 将 committed Plugin declarations 投影为管理目录分组。分组只改变管理布局，运行图和 Workbench placement 各自保持独立。用户操作与文件格式见[插件分组](../docs/workbench/plugin-groups.md)。
+Management 将 committed Plugin declarations 投影为目录分组。插件管理编辑这份布局，应用目录消费同一份分组。运行图与 Workbench placement 由各自的声明和运行契约决定。用户操作与文件格式见[插件分组](../docs/workbench/plugin-groups.md)。
 
 ## Ownership and projection
 
