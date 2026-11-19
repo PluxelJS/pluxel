@@ -1,8 +1,5 @@
 import { createTestHost } from '@pluxel/test'
 import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { expect, it } from 'vitest'
 import { RuntimeManagementTargetImpl } from '@pluxel/services/management/internal/test'
 import { VaultAdminPlugin } from '@pluxel/services/plugins'
@@ -11,7 +8,7 @@ import { VaultWorkbench } from '../src/plugins/vault/workbench.ts'
 it('withdraws its View without withdrawing host Vault management', async () => {
 	await using host = await createTestHost({
 		workbench: true,
-		services: [elysia(), commands(), nodeModules(), workers()],
+		services: [elysia()],
 	})
 	const plugin = await host.start(VaultAdminPlugin.nodeAddress())
 	const management = new RuntimeManagementTargetImpl(plugin.ctx.root)
@@ -30,7 +27,7 @@ it('withdraws its View without withdrawing host Vault management', async () => {
 })
 
 it('can run headless with only the built-in Vault capability', async () => {
-	await using headless = await createTestHost({ services: [] })
+	await using headless = await createTestHost()
 	await headless.start(VaultAdminPlugin.nodeAddress())
 	expect(headless.isRunning(VaultAdminPlugin.nodeAddress())).toBe(true)
 })

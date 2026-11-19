@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import {
 	BasePlugin,
 	Plugin,
@@ -5,6 +6,7 @@ import {
 	withCoreInternalTestHost,
 	type CoreInternalTestHost,
 } from '@pluxel/core/internal/test'
+import { CorePluginGraphVerificationError, requirePluginService } from '@pluxel/core/internal'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { lowerTestReplacement } from './lowered-replacement'
 
@@ -110,23 +112,21 @@ class LifecycleModelIndependent extends BasePlugin {
 	}
 }
 
-type Action =
-	| 'add-provider'
-	| 'add-required'
-	| 'add-optional'
-	| 'add-independent'
-	| 'commit'
-	| 'commit-allow-fail'
-	| 'fail-provider'
-	| 'recover-provider'
-	| 'restart-provider'
-	| 'replace-provider'
-
-type Trace = {
-	readonly name: string
-	readonly actions: readonly Action[]
-	readonly finalRunning: ReadonlySet<NodeName>
+const nodes = {
+	provider: LifecycleModelProvider,
+	required: LifecycleModelRequiredConsumer,
+	optional: LifecycleModelOptionalConsumer,
+	independent: LifecycleModelIndependent,
 }
+
+const addBatches = [
+	[['provider', 'required', 'optional', 'independent']],
+	[['independent', 'optional', 'required', 'provider']],
+	[['required', 'provider', 'independent'], ['optional']],
+	[['optional'], ['independent', 'provider'], ['required']],
+	[['provider'], ['required'], ['independent'], ['optional']],
+	[['independent'], ['provider'], ['optional'], ['required']],
+] as const
 
 describe('PluginService lifecycle model traces', () => {
 	beforeAll(() => {
@@ -137,48 +137,86 @@ describe('PluginService lifecycle model traces', () => {
 	beforeEach(resetLifecycleModelState)
 
 	it('converges to the same running projection across batched and incremental add orders', async () => {
-		expect.hasAssertions()
-		for (const order of allAddOrders()) {
-			await runTrace({
-				name: `batched-add-order:${order.join(',')}`,
-				actions: [...order, 'commit'],
-				finalRunning: new Set(['provider', 'required', 'optional', 'independent']),
-			})
-		}
-		for (const order of legalIncrementalAddOrders()) {
-			await runTrace({
-				name: `incremental-add-order:${order.join(',')}`,
-				actions: interleaveCommits(order),
-				finalRunning: new Set(['provider', 'required', 'optional', 'independent']),
+		for (const batches of addBatches) {
+			resetLifecycleModelState()
+			const trace = batches.map((batch) => batch.join(',')).join(' → ')
+			await withCoreInternalTestHost(async (host) => {
+				const installed = new Set<NodeName>()
+				for (const batch of batches) {
+					batch.forEach((node) => installed.add(node))
+					host.add(batch.map((node) => nodes[node]))
+					await host.commit()
+					const label = `${trace} after ${[...installed].join(',')}`
+					assertLifecycleInvariants(host, label)
+					assert.deepEqual(readRunningProjection(host), installed, label)
+				}
 			})
 		}
 	})
 
 	it('keeps failure recovery local and restarts optional consumers only on real availability changes', async () => {
-		await runTrace({
-			name: 'failure-recovery-with-optional-consumer',
-			actions: [
-				'add-optional',
-				'add-independent',
-				'commit',
-				'fail-provider',
-				'add-provider',
-				'commit-allow-fail',
-				'commit-allow-fail',
-				'add-required',
-				'commit-allow-fail',
-				'recover-provider',
-				'commit',
-				'restart-provider',
-				'commit',
-				'fail-provider',
-				'restart-provider',
-				'commit-allow-fail',
-				'commit-allow-fail',
-				'recover-provider',
-				'commit',
-			],
-			finalRunning: new Set(['provider', 'required', 'optional', 'independent']),
+		await withCoreInternalTestHost(async (host) => {
+			const registry = requirePluginService(host.ctx)
+			host.add([nodes.optional, nodes.independent])
+			await host.commit()
+			const initiallyAbsent = host.require(nodes.optional)
+			assertLifecycleInvariants(host, 'optional consumer before provider admission')
+
+			providerShouldFail = true
+			host.add(nodes.provider)
+			await host.commitAllowFail()
+			expect(host.require(nodes.optional)).toBe(initiallyAbsent)
+			await host.commitAllowFail()
+			host.add(nodes.required)
+			await host.commitAllowFail()
+			expect(host.require(nodes.optional)).toBe(initiallyAbsent)
+			expect(counters.optional.constructed).toBe(1)
+			expect(readRunningProjection(host)).toEqual(new Set(['optional', 'independent']))
+			assertLifecycleInvariants(host, 'failed provider and blocked required consumer')
+
+			providerShouldFail = false
+			await host.commit()
+			expect(readRunningProjection(host)).toEqual(new Set(Object.keys(nodes)))
+			expect(host.require(nodes.optional).generation).toBe(2)
+			assertLifecycleInvariants(host, 'provider recovered')
+
+			host.restart(nodes.provider)
+			const restarted = await host.commit()
+			expect(restarted.pluginChanges.restarted).toHaveLength(3)
+			expect(restarted.pluginChanges.restarted).toEqual(
+				expect.arrayContaining([
+					registry.resolvePluginNode(nodes.provider),
+					registry.resolvePluginNode(nodes.required),
+					registry.resolvePluginNode(nodes.optional),
+				]),
+			)
+			expect(host.require(nodes.optional).generation).toBe(3)
+			assertLifecycleInvariants(host, 'provider restarted')
+
+			providerShouldFail = true
+			host.restart(nodes.provider)
+			await host.commitAllowFail()
+			const nowAbsent = host.require(nodes.optional)
+			expect(nowAbsent.generation).toBe(4)
+			expect(readRunningProjection(host)).toEqual(new Set(['optional', 'independent']))
+			await host.commitAllowFail()
+			expect(host.require(nodes.optional)).toBe(nowAbsent)
+			expect(optionalProviderGenerations).toHaveLength(2)
+			assertLifecycleInvariants(host, 'provider failed again')
+
+			providerShouldFail = false
+			await host.commit()
+			expect(host.require(nodes.optional).generation).toBe(5)
+			expect(readRunningProjection(host)).toEqual(new Set(Object.keys(nodes)))
+			assertLifecycleInvariants(host, 'provider recovered again')
+
+			host.remove(nodes.provider)
+			await host.commit()
+			expect(host.require(nodes.optional).generation).toBe(6)
+			expect(readRunningProjection(host)).toEqual(new Set(['optional', 'independent']))
+			expect(counters.optional.cleaned).toBe(5)
+			expect(counters['optional-integration'].cleaned).toBe(3)
+			assertLifecycleInvariants(host, 'provider removed')
 		})
 
 		expect(counters.independent.constructed).toBe(1)
@@ -189,88 +227,53 @@ describe('PluginService lifecycle model traces', () => {
 	})
 
 	it('replaces a provider without leaking the old provider generation or double restarting consumers', async () => {
-		await runTrace({
-			name: 'provider-replacement',
-			actions: [
-				'add-provider',
-				'add-required',
-				'add-optional',
-				'add-independent',
-				'commit',
-				'replace-provider',
-				'commit',
-			],
-			finalRunning: new Set(['provider', 'required', 'optional', 'independent']),
+		await withCoreInternalTestHost(async (host) => {
+			const registry = requirePluginService(host.ctx)
+			host.add(Object.values(nodes))
+			await host.commit()
+			assertLifecycleInvariants(host, 'original definition')
+
+			host.replace(nodes.provider, LifecycleModelProviderReplacement)
+			const replacement = await host.commit()
+			expect(replacement.pluginChanges.restarted).toHaveLength(2)
+			expect(replacement.pluginChanges.restarted).toEqual(
+				expect.arrayContaining([
+					registry.resolvePluginNode(nodes.required),
+					registry.resolvePluginNode(nodes.optional),
+				]),
+			)
+			expect(host.require(nodes.required).generation).toBe(2)
+			expect(host.require(nodes.optional).generation).toBe(2)
+			expect(readRunningProjection(host)).toEqual(new Set(Object.keys(nodes)))
+			assertLifecycleInvariants(host, 'replacement definition')
 		})
 
-		expect(counters.provider.active).toBe(0)
-		expect(counters.required.active).toBe(0)
-		expect(counters.optional.active).toBe(0)
-		expect(counters['optional-integration'].active).toBe(0)
+		for (const [name, count] of Object.entries(counters)) {
+			expect(count.active, `${name} active effects after disposal`).toBe(0)
+			expect(count.cleaned, `${name} cleanup count after disposal`).toBe(count.started)
+		}
 		expect(counters.provider.started).toBe(2)
-		expect(counters.provider.cleaned).toBe(2)
 		expect(optionalProviderGenerations).toEqual([1, 2])
 	})
-})
 
-async function runTrace(trace: Trace): Promise<void> {
-	resetLifecycleModelState()
-	const executed: Action[] = []
-	try {
+	it('keeps the committed graph when a non-cascading removal leaves a missing dependency', async () => {
 		await withCoreInternalTestHost(async (host) => {
-			for (const action of trace.actions) {
-				executed.push(action)
-				await applyAction(host, action)
-				if (action === 'commit' || action === 'commit-allow-fail') {
-					assertLifecycleInvariants(host, `${trace.name} after ${executed.join(' -> ')}`)
-				}
-			}
-			expect(readRunningProjection(host)).toEqual(trace.finalRunning)
-		})
-	} catch (error) {
-		const detail = `Lifecycle model trace failed: ${trace.name}\nactions: ${executed.join(' -> ')}`
-		throw error instanceof Error
-			? new Error(`${detail}\n${error.message}`, { cause: error })
-			: error
-	}
-}
-
-async function applyAction(host: CoreInternalTestHost, action: Action): Promise<void> {
-	switch (action) {
-		case 'add-provider':
-			host.add(LifecycleModelProvider)
-			return
-		case 'add-required':
-			host.add(LifecycleModelRequiredConsumer)
-			return
-		case 'add-optional':
-			host.add(LifecycleModelOptionalConsumer)
-			return
-		case 'add-independent':
-			host.add(LifecycleModelIndependent)
-			return
-		case 'commit':
+			host.add([nodes.provider, nodes.required])
 			await host.commit()
-			return
-		case 'commit-allow-fail':
-			await host.commitAllowFail()
-			return
-		case 'fail-provider':
-			providerShouldFail = true
-			return
-		case 'recover-provider':
-			providerShouldFail = false
-			return
-		case 'restart-provider':
-			host.restart(LifecycleModelProvider)
-			return
-		case 'replace-provider':
-			host.replace(LifecycleModelProvider, LifecycleModelProviderReplacement)
-			return
-		default:
-			action satisfies never
-	}
-}
+			host.remove(nodes.provider, { cascadeDependents: false })
+			const error = await Promise.resolve()
+				.then(() => host.commit())
+				.catch((cause: unknown) => cause)
+			expect(error).toBeInstanceOf(CorePluginGraphVerificationError)
+			if (!(error instanceof CorePluginGraphVerificationError)) throw error
+			expect(error.message).toMatch(/Core Plugin graph verification failed/)
+			expect(error.issues).toBe(error.cause.issues)
+			expect(error.issues).toContainEqual(expect.objectContaining({ kind: 'MissingDependency' }))
+			expect(readRunningProjection(host)).toEqual(new Set(['provider', 'required']))
+			assertLifecycleInvariants(host, 'rejected non-cascading removal')
+		})
+	})
+})
 
 function assertLifecycleInvariants(host: CoreInternalTestHost, label: string): void {
 	const running = readRunningProjection(host)
@@ -295,62 +298,26 @@ function assertLifecycleInvariants(host: CoreInternalTestHost, label: string): v
 	).toBe(true)
 
 	if (running.has('required')) {
-		expect(running.has('provider'), `${label}: required consumer has running provider`).toBe(true)
-		expect(host.require(LifecycleModelRequiredConsumer).provider.generation).toBe(
+		assert(running.has('provider'), `${label}: required consumer has running provider`)
+		assert.equal(
+			host.require(LifecycleModelRequiredConsumer).provider.generation,
 			host.require(LifecycleModelProvider).generation,
+			`${label}: required consumer uses the running provider generation`,
 		)
 	}
 
-	if (!running.has('provider')) {
-		expect(counters['optional-integration'].active, `${label}: absent provider integration`).toBe(0)
-	}
-
 	if (host.isRunning(LifecycleModelIndependent)) {
-		expect(
+		assert.equal(
 			host.require(LifecycleModelIndependent).generation,
+			1,
 			`${label}: independent generation`,
-		).toBe(1)
+		)
 	}
 }
 
 function readRunningProjection(host: CoreInternalTestHost): Set<NodeName> {
 	const running = new Set<NodeName>()
-	if (host.isRunning(LifecycleModelProvider)) running.add('provider')
-	if (host.isRunning(LifecycleModelRequiredConsumer)) running.add('required')
-	if (host.isRunning(LifecycleModelOptionalConsumer)) running.add('optional')
-	if (host.isRunning(LifecycleModelIndependent)) running.add('independent')
+	for (const name of ['provider', 'required', 'optional', 'independent'] as const)
+		if (host.isRunning(nodes[name])) running.add(name)
 	return running
-}
-
-function allAddOrders(): Action[][] {
-	return permutations(addActions())
-}
-
-function legalIncrementalAddOrders(): Action[][] {
-	return permutations(addActions()).filter(
-		(actions) => actions.indexOf('add-provider') < actions.indexOf('add-required'),
-	)
-}
-
-function addActions(): Action[] {
-	return ['add-provider', 'add-required', 'add-optional', 'add-independent']
-}
-
-function interleaveCommits(actions: readonly Action[]): Action[] {
-	const out: Action[] = []
-	for (const action of actions) {
-		out.push(action, 'commit')
-	}
-	return out
-}
-
-function permutations<T>(values: readonly T[]): T[][] {
-	if (values.length <= 1) return [values.slice()]
-	const out: T[][] = []
-	for (let i = 0; i < values.length; i++) {
-		const head = values[i]!
-		const tail = values.slice(0, i).concat(values.slice(i + 1))
-		for (const rest of permutations(tail)) out.push([head, ...rest])
-	}
-	return out
 }

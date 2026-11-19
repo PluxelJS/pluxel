@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { BasePlugin, Plugin, pluginNodeIndexKey } from '@pluxel/core'
 import {
 	assertPluginLifecycleIssue,
@@ -19,10 +19,14 @@ class TimedPlugin extends BasePlugin {
 	}
 }
 
+let onDefaultPluginInit: ((signal: AbortSignal) => void) | undefined
+
 @Plugin()
 class DefaultTimeoutPlugin extends BasePlugin {
 	override init(signal: AbortSignal) {
-		return waitForAbort(signal)
+		const aborted = waitForAbort(signal)
+		onDefaultPluginInit?.(signal)
+		return aborted
 	}
 }
 
@@ -74,16 +78,26 @@ describe('Core immediate execution policy', () => {
 	)
 
 	it('uses the Core default when no deadline is declared', async () => {
+		const started = Promise.withResolvers<AbortSignal>()
+		onDefaultPluginInit = started.resolve
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+		onTestFinished(() => {
+			onDefaultPluginInit = undefined
+			vi.useRealTimers()
+		})
 		await using host = createCoreInternalTestHost()
 		host.add(DefaultTimeoutPlugin)
-		const summary = await host.commitAllowFail()
-		expect(() =>
-			assertPluginLifecycleIssue(summary, DefaultTimeoutPlugin, {
-				phase: 'start',
-				kind: 'start-failed',
-				message: 'start timeout after 1500ms',
-			}),
-		).not.toThrow()
+		const commit = host.commitAllowFail()
+		const signal = await started.promise
+		await vi.advanceTimersByTimeAsync(1_499)
+		expect(signal.aborted).toBe(false)
+		await vi.advanceTimersByTimeAsync(1)
+		assertPluginLifecycleIssue(await commit, DefaultTimeoutPlugin, {
+			phase: 'start',
+			kind: 'start-failed',
+			message: 'start timeout after 1500ms',
+		})
+		expect(signal.aborted).toBe(true)
 	})
 })
 

@@ -1,5 +1,3 @@
-import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
 import { nodeModules } from '@pluxel/services/node'
 import {
 	workers,
@@ -103,7 +101,7 @@ class WorkerTaskConsumerB extends BasePlugin {
 async function createWorkerHost(workerOptions: WorkersConfig = {}) {
 	return await createServiceInternalTestHarness({
 		workbench: false,
-		services: [elysia(), commands(), nodeModules({ root: artifactRoot }), workers(workerOptions)],
+		services: [nodeModules({ root: artifactRoot }), workers(workerOptions)],
 	})
 }
 
@@ -124,18 +122,20 @@ type WorkerTaskRootStateProbe = {
 
 function holdCurrentWorkerTermination(host: ServiceInternalTestHarness): Readonly<{
 	state: WorkerTaskRootStateProbe
+	terminating: Promise<void>
 	release(): void
 }> {
 	const state = (host.ctx.service(Workers) as unknown as { state: WorkerTaskRootStateProbe }).state
 	const worker = [...state.pool.slots][0]!.worker
 	const terminate = worker.terminate.bind(worker)
-	let release!: () => void
-	const gate = new Promise<void>((resolve) => void (release = resolve))
+	const terminating = Promise.withResolvers<void>()
+	const gate = Promise.withResolvers<void>()
 	worker.terminate = async () => {
-		await gate
+		terminating.resolve()
+		await gate.promise
 		return terminate()
 	}
-	return { state, release }
+	return { state, terminating: terminating.promise, release: gate.resolve }
 }
 
 describe('WorkerTaskService', () => {
@@ -609,7 +609,8 @@ describe('WorkerTaskService', () => {
 				)
 			host.remove(WorkerTaskConsumerA)
 			const committing = host.commit()
-			await new Promise((resolve) => setTimeout(resolve, 20))
+			await held.terminating
+			await new Promise<void>((resolve) => setImmediate(resolve))
 			expect(settled).toBe(false)
 			releaseTermination()
 			expect(await observed).toMatchObject({ code: 'NOT_RUNNING' })

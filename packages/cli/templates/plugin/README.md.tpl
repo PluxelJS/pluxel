@@ -39,12 +39,12 @@ vp install
 vp run setup
 # Once the project is a Git repository:
 vp run hooks:install
-vp run verify
 ```
 
-`verify` checks Oxfmt, Oxlint with the Pluxel rule plugin, unused lint suppressions, types, tests, and
-the production plugin build. Core is a peer dependency; build and test tooling stays in
-development dependencies. `pnpm-workspace.yaml` owns their shared compatible ranges through the
-catalog and explicitly allows the esbuild install script required by the toolchain.
+Run the relevant test file while editing, for example `vp run check-tests tests/{{pluginName}}.test.ts`.
+For complete verification, `vp run verify` checks Oxfmt, Oxlint with the Pluxel rule plugin, unused
+lint suppressions, types, tests, and the production plugin build. Core is a peer dependency, and build
+and test tooling stays in development dependencies. `pnpm-workspace.yaml` owns their shared compatible
+ranges through the catalog and explicitly allows the esbuild install script required by the toolchain.
 
 This standalone plugin has no development service. For live operations, use the consuming application’s `pluxel.dev` configuration with `vp exec pluxel dev status/run --root <app-project>` and use `--profile <name>` to override its default (or to resolve several profiles without a default). Use `--instance <id>` when several live instances match that profile; the console does not require Pitchfork. The development skill explains when to use the application console instead of isolated plugin tests, and how to pause and apply HMR batches while editing a running consumer.

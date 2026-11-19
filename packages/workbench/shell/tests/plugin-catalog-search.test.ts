@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { PluginExecutionSnapshot } from '@pluxel/services/management/client'
-import { DEFAULT_STATUS_FILTER, matchesPluginSearch } from '../src/app/plugins/catalog/filterModel'
+import {
+	DEFAULT_STATUS_FILTER,
+	hasActiveSearchTokens,
+	hasActiveStatusFilter,
+	matchesGroupSearch,
+	matchesPluginSearch,
+} from '../src/app/plugins/catalog/filterModel'
 import { parseSearchTokens } from '../src/app/plugins/catalog/searchTokens'
 import {
 	describePluginExecution,
@@ -37,13 +43,13 @@ describe('plugin catalog search', () => {
 			matchesPluginSearch(
 				'opaque-route',
 				status,
-				parseSearchTokens('ref:catalog::catalogplugin exec:unreported'),
+				parseSearchTokens('ref:catalog::catalogplugin exec:unreported exec:制品未报告'),
 				DEFAULT_STATUS_FILTER,
 			),
 		).toBe(true)
 	})
 
-	it('searches source location, export name, reference, and execution with AND semantics', () => {
+	it('combines source location, export name, reference, execution and lifecycle filters', () => {
 		const execution = describePluginExecution({
 			kind: 'vite',
 			origin: 'source',
@@ -61,22 +67,23 @@ describe('plugin catalog search', () => {
 			lifecycleState: 'running' as const,
 		}
 
-		expect(
-			matchesPluginSearch(
-				'opaque-route',
-				status,
-				parseSearchTokens('renderplugin plugins/render exec:hmr ref:workspace'),
-				DEFAULT_STATUS_FILTER,
-			),
-		).toBe(true)
-		expect(
-			matchesPluginSearch(
-				'opaque-route',
-				status,
-				parseSearchTokens('renderplugin missing'),
-				DEFAULT_STATUS_FILTER,
-			),
-		).toBe(false)
+		const tokens = parseSearchTokens('renderplugin plugins/render exec:hmr ref:workspace')
+		const stoppedOnly = { running: false, stopped: true, unavailable: false }
+		expect(hasActiveSearchTokens(parseSearchTokens(''))).toBe(false)
+		expect(hasActiveSearchTokens(tokens)).toBe(true)
+		expect(hasActiveStatusFilter(DEFAULT_STATUS_FILTER)).toBe(false)
+		expect(hasActiveStatusFilter(stoppedOnly)).toBe(true)
+		expect(matchesPluginSearch('opaque-route', status, tokens, DEFAULT_STATUS_FILTER)).toBe(true)
+		expect(matchesPluginSearch('opaque-route', status, tokens, stoppedOnly)).toBe(false)
+		const wrongExecution = parseSearchTokens('renderplugin plugins/render exec:host-reload')
+		expect(matchesPluginSearch('opaque-route', status, wrongExecution, DEFAULT_STATUS_FILTER)).toBe(
+			false,
+		)
+	})
+
+	it('matches group names only against plain search tokens', () => {
+		expect(matchesGroupSearch('Alpha Tools', parseSearchTokens('alpha tools'))).toBe(true)
+		expect(matchesGroupSearch('Alpha Tools', parseSearchTokens('@pkg'))).toBe(false)
 	})
 
 	it('searches recent update outcome and phase without changing the current execution badge', () => {
@@ -119,54 +126,28 @@ describe('plugin catalog search', () => {
 		).toBe(false)
 	})
 
-	it.each([
-		{
-			name: 'known static built artifact',
-			execution: {
-				kind: 'vite',
-				origin: 'fixed',
-				artifact: { kind: 'built-module' },
-				update: { kind: 'host-reload' },
-			},
-			query: 'exec:构建模块 exec:host-reload',
-		},
-		{
-			name: 'unreported execution artifact',
-			execution: {
-				kind: 'unreported',
-				artifact: { kind: 'unreported' },
-				update: { kind: 'unreported' },
-			},
-			query: 'exec:制品未报告',
-		},
-	] satisfies { name: string; execution: PluginExecutionSnapshot; query: string }[])(
-		'searches the localized artifact label for $name',
-		({ execution, query }) => {
-			const status = {
-				name: 'Artifact probe',
-				exportName: 'ArtifactPlugin',
-				reference: 'package:@fixture/catalog::ArtifactPlugin',
-				executionSearchTerms: describePluginExecution(execution).searchTerms,
-				availability: 'available' as const,
-				lifecycleState: 'running' as const,
-			}
-			expect(
-				matchesPluginSearch(
-					'opaque-route',
-					status,
-					parseSearchTokens(query),
-					DEFAULT_STATUS_FILTER,
-				),
-			).toBe(true)
-		},
-	)
-
-	it('treats removed tag, version, and route-id syntax as ordinary text', () => {
-		expect(parseSearchTokens('#stable v:1.2 id:route')).toEqual({
-			plain: ['#stable', 'v:1.2', 'id:route'],
-			pkg: [],
-			reference: [],
-			execution: [],
-		})
+	it('searches the localized label of a committed build artifact', () => {
+		const execution: PluginExecutionSnapshot = {
+			kind: 'vite',
+			origin: 'fixed',
+			artifact: { kind: 'built-module' },
+			update: { kind: 'host-reload' },
+		}
+		const status = {
+			name: 'Artifact probe',
+			exportName: 'ArtifactPlugin',
+			reference: 'package:@fixture/catalog::ArtifactPlugin',
+			executionSearchTerms: describePluginExecution(execution).searchTerms,
+			availability: 'available' as const,
+			lifecycleState: 'running' as const,
+		}
+		expect(
+			matchesPluginSearch(
+				'opaque-route',
+				status,
+				parseSearchTokens('exec:构建模块 exec:host-reload'),
+				DEFAULT_STATUS_FILTER,
+			),
+		).toBe(true)
 	})
 })

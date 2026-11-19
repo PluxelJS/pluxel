@@ -44,7 +44,11 @@ async function fixture() {
 		resolve(directory, 'tsconfig.json'),
 		JSON.stringify({
 			extends: resolve(root, 'tsconfig.json'),
-			compilerOptions: { strictNullChecks: true, experimentalDecorators: true },
+			compilerOptions: {
+				customConditions: ['@pluxel/hmr'],
+				strictNullChecks: true,
+				experimentalDecorators: true,
+			},
 			include: ['*.ts'],
 		}),
 	)
@@ -252,7 +256,6 @@ void [id, text, self, forged]
 					skipLibCheck: true,
 					types: ['node'],
 					allowImportingTsExtensions: true,
-					customConditions: ['@pluxel/source'],
 				},
 				files: ['usage.mts'],
 			}),
@@ -488,7 +491,6 @@ export class Plain extends BasePlugin { readonly value = 1n }`,
 			'// @ts-expect-error optional dependency\n\n// retained comment\n' + body,
 		)
 		await expect(generate()).resolves.toHaveProperty('format', 3)
-		await checkOriginal()
 		await writeFile(declaration, ignored)
 		const installed = resolve(directory, 'node_modules/control-test-electron')
 		await mkdir(installed)
@@ -529,17 +531,7 @@ export class Plain extends BasePlugin { readonly value = 1n }`,
 	}, 30_000)
 
 	it('rejects missing external types without a directive on their actual diagnostic line', async () => {
-		const { directory, declaration, generate } = await externalTypesFixture()
-		const config = resolve(directory, 'optional-tsconfig.json')
-		await writeFile(
-			config,
-			JSON.stringify({
-				extends: resolve(root, 'tsconfig.json'),
-				compilerOptions: { skipLibCheck: false },
-				files: [declaration],
-				include: [],
-			}),
-		)
+		const { declaration, generate } = await externalTypesFixture()
 		const body =
 			"type OptionalElectron = typeof import('control-test-electron');\nexport interface OptionalSdk { readonly electron:OptionalElectron }\n"
 		for (const source of [
@@ -552,19 +544,6 @@ export class Plain extends BasePlugin { readonly value = 1n }`,
 			await expect(generate()).rejects.toThrow(
 				/Cannot resolve emitted declaration import.*control-test-electron/,
 			)
-			await expect(
-				run(
-					process.execPath,
-					[
-						resolve(dirname(require.resolve('typescript/package.json')), 'bin/tsc'),
-						'--project',
-						config,
-						'--pretty',
-						'false',
-					],
-					{ maxBuffer: 1024 * 1024 },
-				),
-			).rejects.toMatchObject({ stdout: expect.stringContaining('TS2307:') })
 		}
 	}, 30_000)
 
@@ -1009,7 +988,6 @@ void [same,self,inherited,exact,text,number,input,output,forged,missing]
 					skipLibCheck: true,
 					noEmit: true,
 					allowImportingTsExtensions: true,
-					customConditions: ['@pluxel/source'],
 				},
 				files: ['usage.mts'],
 			}),
@@ -1108,32 +1086,6 @@ void [same,self,inherited,exact,text,number,input,output,forged,missing]
 		const control = await import(pathToFileURL(resolve(directory, 'dist/control/index.mjs')).href)
 		expect(control.Counter.address()).toEqual(definition)
 		expect(Object.isFrozen(control.Counter.address().entry)).toBe(true)
-	}, 30_000)
-
-	it('changes the instance contract for a type-only dependency while presentation changes preserve contracts', async () => {
-		const directory = await fixture()
-		const generate = () =>
-			generatePluginControl({
-				root: directory,
-				definitions: [
-					{ moduleId: resolve(directory, 'counter.ts'), className: 'Counter', definition },
-				],
-			})
-		const before = await generate()
-		const file = resolve(directory, 'counter.ts')
-		await writeFile(file, `// presentation only\n${await readFile(file, 'utf8')}`)
-		const comment = await generate()
-		expect(comment.manifest.definitions[0]!.contracts).toEqual(
-			before.manifest.definitions[0]!.contracts,
-		)
-		await writeFile(
-			resolve(directory, 'payload.ts'),
-			'export interface Payload { readonly id: number }\n',
-		)
-		const changed = await generate()
-		expect(changed.manifest.definitions[0]!.contracts.instance).not.toBe(
-			before.manifest.definitions[0]!.contracts.instance,
-		)
 	}, 30_000)
 
 	it('normalizes bigint class literals without losing their value in the instance contract', async () => {

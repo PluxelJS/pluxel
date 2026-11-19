@@ -4,23 +4,32 @@ import { createDiskFixture } from '@pluxel/test/fixtures'
 import { expect, it } from 'vitest'
 import { createServer } from 'vite'
 import {
+	collectHostEvaluatedInputs,
+	collectHostImportFiles,
 	hostEnvironment,
 	importHostModule,
 	invalidateHostModule,
 	invalidateHostModuleGraphFiles,
-	collectHostImportFiles,
 	HOST_VITE_ENVIRONMENT,
 } from '../src/environment'
 import { createHostModuleBytes } from '../src/module-bytes'
 import { createPluginSourceVitePipeline } from '@pluxel/rolldown/vite'
 import { hostSingletons } from '../src/singletons'
 
-it('records author TypeScript and its runtime dependencies before semantic Plugin lowering', async () => {
+it('tracks the original Plugin bytes and dependency bytes across Vite cache replacement', async () => {
+	const pluginSource = `
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { offset } from './dependency.ts'
+@Plugin()
+export class Owner extends BasePlugin { value = offset }
+export const value = offset
+`
+	const dependencySource = 'export const offset: number = 1\n'
 	await using fixture = await createDiskFixture({
 		'package.json': JSON.stringify({ type: 'module' }),
-		'entry.ts':
-			"import {BasePlugin,Plugin} from '@pluxel/core'; import {offset} from './dependency.ts'; @Plugin() export class Owner extends BasePlugin { value=offset }",
-		'dependency.ts': 'export const offset=1',
+		'entry.ts': pluginSource,
+		'dependency.ts': dependencySource,
+		'unloaded.ts': dependencySource,
 	})
 	await mkdir(resolve(fixture.path, 'node_modules/@pluxel'), { recursive: true })
 	await symlink(
@@ -28,7 +37,9 @@ it('records author TypeScript and its runtime dependencies before semantic Plugi
 		resolve(fixture.path, 'node_modules/@pluxel/core'),
 		'dir',
 	)
-	const entry = resolve(fixture.path, 'entry.ts')
+	const entry = fixture.getPath('entry.ts')
+	const dependency = fixture.getPath('dependency.ts')
+	const unloaded = fixture.getPath('unloaded.ts')
 	const bytes = createHostModuleBytes()
 	const pipeline = createPluginSourceVitePipeline({
 		root: fixture.path,
@@ -43,52 +54,31 @@ it('records author TypeScript and its runtime dependencies before semantic Plugi
 		plugins: [hostEnvironment(), hostSingletons(), bytes.plugin, ...pipeline.plugins],
 	})
 	try {
-		await importHostModule(server, entry)
+		expect(await bytes.unchanged(entry)).toBe(false)
+		expect(await importHostModule(server, entry)).toMatchObject({ value: 1 })
 		const files = collectHostImportFiles(server, entry)
-		expect(files).toEqual(new Set([entry, resolve(fixture.path, 'dependency.ts')]))
-		const accepted = bytes.snapshot(files)
-		expect([...accepted.keys()].sort()).toEqual([...files].sort())
+		expect(files).toEqual(new Set([entry, dependency]))
+		const accepted = bytes.snapshot([...files, unloaded])
+		expect(new Set(accepted.keys())).toEqual(files)
 		for (const file of files) expect(await bytes.unchanged(file, accepted)).toBe(true)
-	} finally {
-		await server.close()
-	}
-})
-
-it('recognizes only the bytes actually loaded by the Vite runner', async () => {
-	await using fixture = await createDiskFixture({
-		'package.json': JSON.stringify({ type: 'module' }),
-		'loaded.mjs': 'export const value = 1',
-		'unloaded.mjs': 'export const value = 1',
-	})
-	const loaded = resolve(fixture.path, 'loaded.mjs')
-	const unloaded = resolve(fixture.path, 'unloaded.mjs')
-	const bytes = createHostModuleBytes()
-	const server = await createServer({
-		root: fixture.path,
-		configFile: false,
-		logLevel: 'silent',
-		server: { middlewareMode: true, watch: null },
-		plugins: [hostEnvironment(), bytes.plugin],
-	})
-	try {
-		expect(await bytes.unchanged(loaded)).toBe(false)
-		expect(await importHostModule(server, loaded)).toMatchObject({ value: 1 })
-		expect(await bytes.unchanged(loaded)).toBe(true)
 		expect(await bytes.unchanged(unloaded)).toBe(false)
-		const accepted = bytes.snapshot([loaded, unloaded])
-		expect(await bytes.unchanged(loaded, accepted)).toBe(true)
-		await writeFile(loaded, 'export const value = 2')
-		expect(await bytes.unchanged(loaded)).toBe(false)
-		expect(await importHostModule(server, loaded)).toMatchObject({ value: 1 })
-		invalidateHostModuleGraphFiles(server, [loaded])
-		invalidateHostModule(server, loaded)
-		expect(await importHostModule(server, loaded)).toMatchObject({ value: 2 })
-		expect(await bytes.unchanged(loaded)).toBe(true)
-		expect(await bytes.unchanged(loaded, accepted)).toBe(false)
-		await rm(loaded)
-		expect(await bytes.unchanged(loaded)).toBe(false)
-		await mkdir(loaded)
-		await expect(bytes.unchanged(loaded)).rejects.toMatchObject({ code: 'EISDIR' })
+
+		await writeFile(dependency, 'export const offset: number = 2\n')
+		expect(await bytes.unchanged(dependency)).toBe(false)
+		expect(await importHostModule(server, entry)).toMatchObject({ value: 1 })
+		const evaluated = collectHostEvaluatedInputs(server, entry)
+		expect(evaluated.get(entry)).toBe(pluginSource)
+		expect(evaluated.get(dependency)).toBe(dependencySource)
+
+		invalidateHostModuleGraphFiles(server, files)
+		for (const file of files) invalidateHostModule(server, file)
+		expect(await importHostModule(server, entry)).toMatchObject({ value: 2 })
+		expect(await bytes.unchanged(dependency)).toBe(true)
+		expect(await bytes.unchanged(dependency, accepted)).toBe(false)
+		await rm(dependency)
+		expect(await bytes.unchanged(dependency)).toBe(false)
+		await mkdir(dependency)
+		await expect(bytes.unchanged(dependency)).rejects.toMatchObject({ code: 'EISDIR' })
 	} finally {
 		await server.close()
 	}

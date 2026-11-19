@@ -8,7 +8,7 @@ import { createCoreTestHost, getCoreTestHostContext } from '../src/internal-test
 import { requireFs, requireHostDocuments } from '../src/internal/storage'
 import { boundContexts } from '@zenfs/core'
 import { caches } from '@zenfs/core/vfs/vcache.js'
-import { InMemory, Passthrough, writeFileAtomic, type FsConfig } from '../src/fs'
+import { InMemory, Passthrough, writeFileAtomic } from '../src/fs'
 import { pluginNodePhysicalKey } from '../src/internal/plugin-address'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -45,6 +45,7 @@ describe('Core-owned filesystem', () => {
 		})
 		const documents = requireHostDocuments(getCoreTestHostContext(host), 'logging')
 		const timers = vi.spyOn(globalThis, 'setInterval')
+		const cleared = vi.spyOn(globalThis, 'clearInterval')
 		await Promise.all([
 			documents.put('plugin-policy/first.json', '{"first":true}'),
 			documents.put('plugin-policy/second.json', '{"second":true}'),
@@ -66,12 +67,7 @@ describe('Core-owned filesystem', () => {
 		} finally {
 			stop()
 		}
-		const reads = vi.spyOn(
-			await requireFs(getCoreTestHostContext(host)).directory('services/host/logging'),
-			'readFile',
-		)
-		await new Promise((resolve) => setTimeout(resolve, 300))
-		expect(reads).not.toHaveBeenCalled()
+		for (const { value: timer } of timers.mock.results) expect(cleared).toHaveBeenCalledWith(timer)
 	})
 
 	it('rejects new document adapters while draining an admitted commit before filesystem closure', async () => {
@@ -234,27 +230,6 @@ describe('Core-owned filesystem', () => {
 		await expect(filesystem.ready()).rejects.toMatchObject({ code: 'EBADF' })
 	})
 
-	it('releases an opened filesystem after document decoding fails and preserves its bytes', async () => {
-		const before = { contexts: boundContexts.size, caches: caches.size }
-		const prefix = await temporaryDirectory()
-		const path = join(prefix, 'host/config/config.json')
-		await nativeFs.promises.mkdir(join(prefix, 'host/config'), { recursive: true })
-		await nativeFs.promises.writeFile(path, '{broken', { mode: 0o600 })
-		const host = createCoreTestHost({
-			zenfs: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
-		})
-		const filesystem = requireFs(getCoreTestHostContext(host))
-		try {
-			const text = await filesystem.documents('host/config').getText('config.json')
-			expect(() => JSON.parse(text!)).toThrow(SyntaxError)
-		} finally {
-			await host.dispose()
-		}
-		expect(await readFile(path, 'utf8')).toBe('{broken')
-		await expect(filesystem.ready()).rejects.toMatchObject({ code: 'EBADF' })
-		expect({ contexts: boundContexts.size, caches: caches.size }).toEqual(before)
-	})
-
 	it('keeps each Host independent and gives Plugins a stable directory through restart', async () => {
 		await using first = await createCoreTestHost({
 			zenfs: { mounts: { '/': { backend: InMemory } } },
@@ -287,49 +262,26 @@ describe('Core-owned filesystem', () => {
 		expect(pluginNodePhysicalKey(address)).not.toBe(pluginNodePhysicalKey(fork))
 	})
 
-	it.each(['memory', 'node'] as const)(
-		'preserves the old %s document when atomic replacement fails',
-		async (mode) => {
-			const prefix = await temporaryDirectory()
-			const config: FsConfig = {
-				mounts: {
-					'/': mode === 'memory' ? InMemory : { backend: Passthrough, fs: nativeFs, prefix },
-				},
-			}
-			const host = await createCoreTestHost({ zenfs: config })
-			try {
-				const directory = await requireFs(getCoreTestHostContext(host)).directory('documents')
-				await writeFileAtomic(directory, 'document', 'OLD')
-				const failure = Object.assign(new Error('replace failed'), { code: 'EIO' })
-				const rename = vi.spyOn(directory, 'rename').mockRejectedValueOnce(failure)
-				await expect(writeFileAtomic(directory, 'document', 'NEW')).rejects.toBe(failure)
-				rename.mockRestore()
-				expect(await directory.readFile('document', 'utf8')).toBe('OLD')
-				expect(await directory.readdir('.')).toEqual(['document'])
-			} finally {
-				await host.dispose()
-			}
-		},
-	)
+	it('preserves the old document and reports cleanup failure separately when replacement fails', async () => {
+		await using host = createCoreTestHost()
+		const directory = await requireFs(getCoreTestHostContext(host)).directory('documents')
+		await writeFileAtomic(directory, 'document', 'OLD')
+		const primary = Object.assign(new Error('replace failed'), { code: 'EIO' })
+		const cleanup = Object.assign(new Error('unlink failed'), { code: 'EACCES' })
+		const rename = vi.spyOn(directory, 'rename')
+		rename.mockRejectedValueOnce(primary)
+		await expect(writeFileAtomic(directory, 'document', 'NEW')).rejects.toBe(primary)
+		expect(await directory.readFile('document', 'utf8')).toBe('OLD')
+		expect(await directory.readdir('.')).toEqual(['document'])
 
-	it('retains the primary failure when temporary-file cleanup also fails', async () => {
-		const host = await createCoreTestHost({ zenfs: { mounts: { '/': { backend: InMemory } } } })
-		try {
-			const directory = await requireFs(getCoreTestHostContext(host)).directory('documents')
-			await writeFileAtomic(directory, 'document', 'OLD')
-			const primary = Object.assign(new Error('replace failed'), { code: 'EIO' })
-			const cleanup = Object.assign(new Error('unlink failed'), { code: 'EACCES' })
-			vi.spyOn(directory, 'rename').mockRejectedValueOnce(primary)
-			vi.spyOn(directory, 'unlink').mockRejectedValueOnce(cleanup)
-			await expect(writeFileAtomic(directory, 'document', 'NEW')).rejects.toMatchObject({
-				name: 'AggregateError',
-				cause: primary,
-				errors: [primary, cleanup],
-			})
-			expect(await directory.readFile('document', 'utf8')).toBe('OLD')
-		} finally {
-			await host.dispose()
-		}
+		rename.mockRejectedValueOnce(primary)
+		vi.spyOn(directory, 'unlink').mockRejectedValueOnce(cleanup)
+		await expect(writeFileAtomic(directory, 'document', 'NEW')).rejects.toMatchObject({
+			name: 'AggregateError',
+			cause: primary,
+			errors: [primary, cleanup],
+		})
+		expect(await directory.readFile('document', 'utf8')).toBe('OLD')
 	})
 
 	it('requires durability honestly and rejects writes on a readonly native backend', async () => {

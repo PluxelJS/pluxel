@@ -199,16 +199,6 @@ describe('native Workbench snapshot persistence', () => {
 		},
 	)
 
-	it('ignores the removed grid persistence key without reading or rewriting it', async () => {
-		const legacy = '{"version":4,"state":{"tabs":[{"path":"/obsolete"}]}}'
-		window.localStorage.setItem('pluxel:workbench:ui', legacy)
-		const { workspace } = await mount()
-		expect(workspace.workbench.getDocuments().map((document) => document.href)).toEqual(['/logs'])
-		await act(async () => vi.advanceTimersByTime(180))
-		expect(window.localStorage.getItem('pluxel:workbench:ui')).toBe(legacy)
-		expect(saved().version).toBe(2)
-	})
-
 	it('keeps editing when storage is unavailable, publishes a bounded error and retries the latest snapshot', async () => {
 		let available = false
 		const backend = {

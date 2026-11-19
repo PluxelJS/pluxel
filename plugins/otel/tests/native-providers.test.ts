@@ -1,9 +1,6 @@
 import type { Workbench } from '@pluxel/workbench'
 import { BasePlugin, formatPluginNodeReference, Plugin, defineServiceRef } from '@pluxel/core'
 import { elysia, ElysiaApp } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import { SeverityNumber } from '@opentelemetry/api'
 import { resourceFromAttributes } from '@opentelemetry/resources'
@@ -180,7 +177,7 @@ class NativeConsumer extends BasePlugin {
 describe('native OpenTelemetry providers', () => {
 	it('uses the same abstract dependency for the native provider and default preset', async () => {
 		await using host = await createTestHost({
-			services: [elysia(), commands(), nodeModules(), workers()],
+			services: [elysia()],
 			workbench: true,
 		})
 		await host.start(NativeOtel.nodeAddress(), { catalog: [NativeConsumer] })
@@ -249,7 +246,7 @@ describe('native OpenTelemetry providers', () => {
 		expect(() => consumer.otel.meter).toThrow('stopped')
 
 		await using defaultHost = await createTestHost({
-			services: [elysia(), commands(), nodeModules(), workers()],
+			services: [elysia()],
 		})
 		await defaultHost.start(OtelPlugin.nodeAddress(), {
 			catalog: [NativeConsumer],
@@ -261,7 +258,7 @@ describe('native OpenTelemetry providers', () => {
 
 	it('reports actual provider presence without inferring outputs from a saved preset', async () => {
 		await using host = await createTestHost({
-			services: [elysia(), commands(), nodeModules(), workers()],
+			services: [elysia()],
 			workbench: true,
 		})
 		await host.start(TracesOnly.nodeAddress())
@@ -287,7 +284,7 @@ describe('native OpenTelemetry providers', () => {
 
 	it('reports native flush and shutdown failures while attempting the other providers', async () => {
 		await using host = await createTestHost({
-			services: [elysia(), commands(), nodeModules(), workers()],
+			services: [elysia()],
 			workbench: true,
 		})
 		await host.start(NativeOtel.nodeAddress())

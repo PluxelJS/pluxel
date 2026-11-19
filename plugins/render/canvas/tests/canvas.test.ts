@@ -1,8 +1,5 @@
 import { type PluginConstructor, BasePlugin, Plugin } from '@pluxel/core'
 import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { createTestHost, type TestHost, type RawPluginConfig } from '@pluxel/test'
 import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
@@ -48,9 +45,7 @@ const discoveredFamily = GlobalFonts.families[0]?.family
 
 describe('CanvasPlugin', () => {
 	it('demonstrates recoverable upload rejection without treating cancellation or withdrawal as an invalid image', async () => {
-		await using host = await createTestHost({
-			services: [elysia(), commands(), nodeModules(), workers()],
-		})
+		await using host = await createTestHost()
 		await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 		const canvas = host.require(CanvasTestConsumer.nodeAddress()).canvas
 		const bytes = await canvas.createCanvasSync(2, 2).encode('png')
@@ -80,9 +75,7 @@ describe('CanvasPlugin', () => {
 
 	it('creates native raster and SVG canvases in a headless host', async () => {
 		{
-			await using host = await createTestHost({
-				services: [],
-			})
+			await using host = await createTestHost()
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 			const canvas = host.require(CanvasTestConsumer.nodeAddress()).canvas.createCanvasSync(64, 32)
@@ -104,9 +97,7 @@ describe('CanvasPlugin', () => {
 
 	it('creates a bounded native worker adapter from a detached host snapshot', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 			const capability = host.require(CanvasTestConsumer.nodeAddress()).canvas
@@ -172,9 +163,7 @@ describe('CanvasPlugin', () => {
 		'applies provider preference changes to subsequently created raster and SVG contexts',
 		async () => {
 			{
-				await using host = await createTestHost({
-					services: [elysia(), commands(), nodeModules(), workers()],
-				})
+				await using host = await createTestHost()
 
 				await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasFontAdminConsumer])
 				const consumer = host.require(CanvasFontAdminConsumer.nodeAddress())
@@ -204,9 +193,7 @@ describe('CanvasPlugin', () => {
 
 	it('decodes caller-provided bytes without adding an outbound HTTP policy', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 			const capability = host.require(CanvasTestConsumer.nodeAddress()).canvas
@@ -234,9 +221,7 @@ describe('CanvasPlugin', () => {
 
 	it('cooperatively snapshots borrowed decode bytes and observes cancellation', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 			const controller = new AbortController()
@@ -250,9 +235,7 @@ describe('CanvasPlugin', () => {
 
 	it('uses bounded Pretext for multiline and rich-inline layout', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 			const capability = host.require(CanvasTestConsumer.nodeAddress()).canvas
@@ -275,9 +258,7 @@ describe('CanvasPlugin', () => {
 
 	it('rejects text before Pretext work when the host character budget is exceeded', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer], {
 				maxTextCharacters: 4,
@@ -291,9 +272,7 @@ describe('CanvasPlugin', () => {
 
 	it('enforces allocation and decode boundaries before returning resources', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin, CanvasTestConsumer], {
 				maxWidth: 100,
@@ -327,7 +306,7 @@ describe('CanvasPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			})
 
 			await startCanvasFixture(host, [FontsPlugin, CanvasPlugin])

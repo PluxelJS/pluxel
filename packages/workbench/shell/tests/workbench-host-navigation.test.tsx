@@ -294,39 +294,29 @@ describe('Plugin host navigation through the authenticated native App', () => {
 		expect(location.pathname + location.search).toBe(`${prefix}/logs`)
 	})
 
-	it.each(['navigate', 'openDocument'] as const)(
-		'delegates %s for declared and conflicting standalone routes to the workspace leave owner',
-		async (operation) => {
-			for (const [basepath, conflict] of [
-				['/', false],
-				['/__pluxel/workbench', true],
-			] as const) {
-				const leave = vi.spyOn(WorkspaceSession.prototype, 'leave').mockResolvedValue()
-				const { workspace, sourceHref, prefix, host, container, root } = await mount(
-					basepath,
-					conflict,
-				)
-				const original = workspace.workbench.getActiveDocument()!
-				expect(workspace.workbench.getDocuments().map(({ id, href }) => ({ id, href }))).toEqual([
-					{ id: original.id, href: sourceHref },
-				])
-				const historyLength = history.length
-				const historyState: unknown = history.state
-				const input = container.querySelector<HTMLInputElement>('[aria-label="manager draft"]')!
-				input.value = 'retained source draft'
-				const path = '/preview/east%20account'
-				await act(async () => {
-					if (operation === 'navigate') host.facade.navigation!.navigate(path)
-					else
-						host.facade.navigation!.openDocument({
-							path,
-							title: 'Preview account',
-							meta: 'Bot account',
-						})
-				})
-				expect(leave).toHaveBeenCalledExactlyOnceWith(
-					`${prefix}${conflict ? buildWorkbenchHref(owner, path, 'standalone') : path}`,
-				)
+	it.each([
+		['declared', '/', false],
+		['conflicting', '/__pluxel/workbench', true],
+	] as const)(
+		'delegates both navigation operations for %s standalone routes to the workspace leave owner',
+		async (_kind, basepath, conflict) => {
+			const leave = vi.spyOn(WorkspaceSession.prototype, 'leave').mockResolvedValue()
+			const { workspace, sourceHref, prefix, host, container } = await mount(basepath, conflict)
+			const original = workspace.workbench.getActiveDocument()!
+			const historyLength = history.length
+			const historyState: unknown = history.state
+			const input = container.querySelector<HTMLInputElement>('[aria-label="manager draft"]')!
+			input.value = 'retained source draft'
+			const path = '/preview/east%20account'
+			const navigation = host.facade.navigation!
+			const targetHref = `${prefix}${conflict ? buildWorkbenchHref(owner, path, 'standalone') : path}`
+			for (const navigate of [
+				() => navigation.navigate(path),
+				() => navigation.openDocument({ path, title: 'Preview account', meta: 'Bot account' }),
+			]) {
+				await act(async () => navigate())
+				expect(leave).toHaveBeenCalledExactlyOnceWith(targetHref)
+				leave.mockClear()
 				expect(workspace.workbench.getDocuments().map(({ id, href }) => ({ id, href }))).toEqual([
 					{ id: original.id, href: sourceHref },
 				])
@@ -335,13 +325,6 @@ describe('Plugin host navigation through the authenticated native App', () => {
 				expect(history.length).toBe(historyLength)
 				expect(history.state).toEqual(historyState)
 				expect(input.value).toBe('retained source draft')
-				await act(async () => {
-					await workspace.dispose()
-					root.unmount()
-				})
-				roots.splice(roots.indexOf(root), 1)
-				workspaces.splice(workspaces.indexOf(workspace), 1)
-				leave.mockRestore()
 			}
 		},
 	)

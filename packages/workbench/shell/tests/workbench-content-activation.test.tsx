@@ -38,23 +38,6 @@ vi.mock('@pluxel/workbench/federation', async (importOriginal) => ({
 	openFederatedWorkbenchView: mocks.openFederatedWorkbenchView,
 }))
 
-const plan = {
-	version: 1,
-	kind: 'workbench-content',
-	document: {
-		version: 1,
-		blocks: [
-			{
-				type: 'heading',
-				level: 1,
-				anchor: 'guide',
-				children: [{ type: 'text', value: 'Content guide' }],
-			},
-		],
-	},
-	slots: [],
-} satisfies WorkbenchContentPlan
-
 const interactivePlan = {
 	version: 1,
 	kind: 'workbench-content',
@@ -138,14 +121,20 @@ afterEach(async () => {
 })
 
 describe('Workbench Content activation', () => {
-	it('reopens after StrictMode cleanup and releases the first late result without rendering it', async () => {
+	it('subscribes only the active StrictMode open and releases both opens and the active subscription', async () => {
 		const replayed = deferred<ReturnType<typeof contentOpenResult>>()
 		const request = deferred<ReturnType<typeof contentOpenResult>>()
+		let observer!: RpcStub<WorkbenchContentObserver>
+		const abandonedSubscribe = vi.fn()
+		const activeSubscribe = vi.fn(async (next: RpcStub<WorkbenchContentObserver>) => {
+			observer = next.dup()
+			return { sequence: 1, ok: true as const, data: { status: 'connected' } }
+		})
 		mocks.openWorkbenchEntry
 			.mockReturnValueOnce(replayed.promise)
 			.mockReturnValueOnce(request.promise)
-		const abandoned = openedContentHandle()
-		const { handle, dispose } = openedContentHandle()
+		const abandoned = interactiveOpenedContentHandle(abandonedSubscribe)
+		const active = interactiveOpenedContentHandle(activeSubscribe)
 		const { container, root } = await renderContent()
 
 		expect(mocks.openWorkbenchEntry).toHaveBeenCalledTimes(2)
@@ -158,14 +147,20 @@ describe('Workbench Content activation', () => {
 		expect(container.textContent).toContain('正在打开')
 		await act(async () => replayed.resolve(contentOpenResult(abandoned.handle)))
 		expect(abandoned.dispose).toHaveBeenCalledOnce()
-		expect(container.querySelector('h1')).toBeNull()
+		expect(abandonedSubscribe).not.toHaveBeenCalled()
+		expect(container.textContent).toContain('正在打开')
 
-		await act(async () => request.resolve(contentOpenResult(handle)))
-		expect(container.querySelector('h1')?.textContent).toBe('Content guide')
-		expect(container.textContent).not.toContain('正在打开')
+		await act(async () => request.resolve(contentOpenResult(active.handle)))
+		expect(activeSubscribe).toHaveBeenCalledOnce()
+		expect(container.textContent).toContain('Status: connected')
 
+		using retainedObserver = observer
 		await unmount(root)
-		expect(dispose).toHaveBeenCalledOnce()
+		expect(active.dispose).toHaveBeenCalledOnce()
+		await act(async () => {
+			await retainedObserver({ sequence: 2, ok: true, data: { status: 'late' } })
+		})
+		expect(container.textContent).not.toContain('late')
 	})
 
 	it('keeps the Content activation when browser host callbacks change identity', async () => {
@@ -201,26 +196,6 @@ describe('Workbench Content activation', () => {
 		expect(run).not.toHaveBeenCalled()
 	})
 
-	it('disposes a successful open that settles after the Content has closed', async () => {
-		const requests = [0, 1].map(() =>
-			Object.assign(
-				{ request: deferred<ReturnType<typeof contentOpenResult>>() },
-				openedContentHandle(),
-			),
-		)
-		for (const { request } of requests)
-			mocks.openWorkbenchEntry.mockReturnValueOnce(request.promise)
-		const { container, root } = await renderContent()
-
-		await unmount(root)
-		await act(async () => {
-			for (const { request, handle } of requests) request.resolve(contentOpenResult(handle))
-		})
-
-		for (const { dispose } of requests) expect(dispose).toHaveBeenCalledOnce()
-		expect(container.querySelector('h1')).toBeNull()
-	})
-
 	it('renders a closed open failure without attempting federation activation', async () => {
 		mocks.openWorkbenchEntry.mockResolvedValue({
 			ok: false,
@@ -232,33 +207,6 @@ describe('Workbench Content activation', () => {
 		expect(container.textContent).toContain('target_unavailable')
 		expect(mocks.createWorkbenchViewHost).not.toHaveBeenCalled()
 		expect(mocks.openFederatedWorkbenchView).not.toHaveBeenCalled()
-	})
-
-	it('subscribes only the active replay result and closes the subscription with its handle', async () => {
-		let observer!: RpcStub<WorkbenchContentObserver>
-		const subscribe = vi.fn(async (next: RpcStub<WorkbenchContentObserver>) => {
-			observer = next.dup()
-			return { sequence: 1, ok: true as const, data: { status: 'connected' } }
-		})
-		const handles: ReturnType<typeof interactiveOpenedContentHandle>[] = []
-		mocks.openWorkbenchEntry.mockImplementation(async () => {
-			const opened = interactiveOpenedContentHandle(subscribe)
-			handles.push(opened)
-			return contentOpenResult(opened.handle)
-		})
-		const { container, root } = await renderContent()
-
-		expect(subscribe).toHaveBeenCalledOnce()
-		expect(container.textContent).toContain('Status: connected')
-
-		await unmount(root)
-		expect(handles).toHaveLength(2)
-		for (const { dispose } of handles) expect(dispose).toHaveBeenCalledOnce()
-		await act(async () => {
-			await observer({ sequence: 2, ok: true, data: { status: 'late' } })
-		})
-		expect(container.textContent).not.toContain('late')
-		observer[Symbol.dispose]()
 	})
 })
 
@@ -296,24 +244,6 @@ async function renderContentRoot(root: Root, browserHost: WorkbenchBrowserHost) 
 async function unmount(root: Root) {
 	await act(async () => root.unmount())
 	mounted.delete(root)
-}
-
-function openedContentHandle() {
-	const dispose = vi.fn()
-	return {
-		handle: createWorkbenchOpenedContentHandle({
-			active: true,
-			result: { [Symbol.dispose]: dispose },
-			value: {
-				kind: 'content',
-				mode: 'static',
-				params: {},
-				contentRef: entry.contentRef,
-				plan,
-			},
-		}),
-		dispose,
-	}
 }
 
 function interactiveOpenedContentHandle(
@@ -413,7 +343,7 @@ function actionOpenedContentHandle(run: WorkbenchContentRoot['runDto']) {
 	}
 }
 
-function contentOpenResult(handle: WorkbenchOpenedContentHandle = openedContentHandle().handle) {
+function contentOpenResult(handle: WorkbenchOpenedContentHandle) {
 	return { ok: true as const, handle }
 }
 

@@ -3,16 +3,13 @@ import { InMemory, Passthrough, writeFileAtomic } from '@pluxel/core/fs'
 import { BasePlugin, Plugin, parsePluginNodeAddress, defineServiceRef } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import * as nativeFs from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { GlobalFonts } from '@napi-rs/canvas'
 import { afterEach, describe, expect, it } from 'vitest'
-import { FontsError, FontsPlugin, type FontRegistration } from '../src/index.ts'
+import { FontsError, FontsPlugin } from '../src/index.ts'
 import { FontsTestWorkbench, openFontsManager, openFontSelection } from './workbench-helpers.ts'
 import { registerBrandFont } from './fixtures/result-consumer.ts'
 
@@ -47,9 +44,7 @@ afterEach(async () => {
 
 describe('FontsPlugin', () => {
 	it('demonstrates invalid font data as a Result while cancellation and withdrawal still reject', async () => {
-		await using host = await createTestHost({
-			services: [elysia(), commands(), nodeModules(), workers()],
-		})
+		await using host = await createTestHost()
 		await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
 		const fonts = host.require(FontsLazyConsumer.nodeAddress()).fonts
 		const input = { data: new Uint8Array([1, 2, 3]) }
@@ -65,28 +60,9 @@ describe('FontsPlugin', () => {
 		await expect(registerBrandFont(fonts, input)).rejects.toThrow(Error)
 	})
 
-	it.skipIf(!fontPath)('keeps successful Result registrations owned by their caller', async () => {
-		await using host = await createTestHost({
-			services: [elysia(), commands(), nodeModules(), workers()],
-		})
-		await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
-		const result = await registerBrandFont(host.require(FontsLazyConsumer.nodeAddress()).fonts, {
-			data: await readFile(fontPath!),
-			family: `Result example ${crypto.randomUUID()}`,
-		})
-		expect(result.isOk()).toBe(true)
-		if (result.isErr()) throw result.error
-		expect(result.value.active).toBe(true)
-		await host.stop(FontsLazyConsumer.nodeAddress())
-		expect(result.value.active).toBe(false)
-		result.value.dispose()
-	})
-
 	it('classifies fonts discovered from the host system and resolves an automatic default', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
 			const fonts = host.require(FontsLazyConsumer.nodeAddress()).fonts
@@ -109,7 +85,7 @@ describe('FontsPlugin', () => {
 			const backend = { mounts: { '/': { backend: InMemory } } }
 			{
 				await using host = await createTestHost({
-					services: [elysia(), commands(), nodeModules(), workers()],
+					services: [],
 					coreConfig: { zenfs: backend },
 				})
 
@@ -158,65 +134,48 @@ describe('FontsPlugin', () => {
 		},
 	)
 
-	it.skipIf(!fontPath)('owns native font registrations with the caller lifecycle', async () => {
-		const family = `Pluxel Lifecycle ${crypto.randomUUID()}`
-		let registration: FontRegistration | undefined
-		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
-
-			await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
-
-			registration = await host.require(FontsLazyConsumer.nodeAddress()).fonts.registerFromPath({
-				path: fontPath!,
-				family,
-			})
-			const fonts = host.require(FontsLazyConsumer.nodeAddress()).fonts
-			expect(fonts.portableFonts.fonts[0]?.resolvedFamilies).toContain(family)
-			expect(registration.active).toBe(true)
-			expect(registration.families).toContain(family)
-			expect(GlobalFonts.has(family)).toBe(true)
-			expect(
-				host
-					.require(FontsLazyConsumer.nodeAddress())
-					.fonts.families.find((item) => item.family === family),
-			).toMatchObject({ source: 'registered' })
-
-			await host.stop(FontsLazyConsumer.nodeAddress())
-			expect(registration.active).toBe(false)
-			expect(GlobalFonts.has(family)).toBe(false)
-			registration.dispose()
-		}
-	})
-
-	it.skipIf(!fontPath)('reference-counts duplicate portable resources by content ID', async () => {
-		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
-
-			await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
-			const fonts = host.require(FontsLazyConsumer.nodeAddress()).fonts
-			const family = `Pluxel Portable ${crypto.randomUUID()}`
-			const first = await fonts.registerFromPath({ path: fontPath!, family })
-			const second = await fonts.registerFromPath({ path: fontPath!, family })
+	it.skipIf(!fontPath)(
+		'shares one portable resource until its last caller registration is released',
+		async () => {
+			await using host = await createTestHost()
+			const [provider, consumer] = await host.start([
+				FontsPlugin.nodeAddress(),
+				FontsLazyConsumer.nodeAddress(),
+			])
+			const { fonts } = consumer
+			const family = `Pluxel Lifecycle ${crypto.randomUUID()}`
+			const fromPath = await fonts.registerFromPath({ path: fontPath!, family })
+			const result = await registerBrandFont(fonts, { data: await readFile(fontPath!), family })
+			expect(result.isOk()).toBe(true)
+			if (result.isErr()) throw result.error
+			const fromBytes = result.value
 
 			const attached = fonts.portableFonts
-			expect(attached.fonts).toHaveLength(1)
-			first.dispose()
+			expect(attached.fonts).toEqual([
+				expect.objectContaining({ resolvedFamilies: expect.arrayContaining([family]) }),
+			])
+			expect(fromPath.families).toContain(family)
+			expect(fromPath.active).toBe(true)
+			expect(fromBytes.active).toBe(true)
+			expect(GlobalFonts.has(family)).toBe(true)
+			expect(fonts.families.find((item) => item.family === family)).toMatchObject({
+				source: 'registered',
+			})
+
+			fromPath.dispose()
 			expect(fonts.portableFonts).toBe(attached)
-			second.dispose()
-			expect(fonts.portableFonts.fonts).toEqual([])
-			expect(fonts.portableFonts.revision).toBeGreaterThan(attached.revision)
-		}
-	})
+			await host.stop(FontsLazyConsumer.nodeAddress())
+			expect(fromBytes.active).toBe(false)
+			expect(GlobalFonts.has(family)).toBe(false)
+			expect(provider.portableFonts.fonts).toEqual([])
+			expect(provider.portableFonts.revision).toBeGreaterThan(attached.revision)
+			fromBytes.dispose()
+		},
+	)
 
 	it.skipIf(!fontPath)('bounds native registrations across managed and caller fonts', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.start(FontsPlugin.nodeAddress(), {
 				initialConfig: { maxNativeRegistrations: 1 },
@@ -249,9 +208,7 @@ describe('FontsPlugin', () => {
 			const fontData = await readFile(fontPath!)
 			const byteLength = fontData.byteLength
 			{
-				await using host = await createTestHost({
-					services: [elysia(), commands(), nodeModules(), workers()],
-				})
+				await using host = await createTestHost()
 
 				await host.start(FontsPlugin.nodeAddress(), {
 					initialConfig: { maxTotalFontBytes: byteLength },
@@ -295,7 +252,7 @@ describe('FontsPlugin', () => {
 			{
 				await using host = await createTestHost({
 					workbench: true,
-					services: [elysia(), commands(), nodeModules(), workers()],
+					services: [elysia()],
 					coreConfig: { zenfs: backend },
 				})
 
@@ -335,7 +292,7 @@ describe('FontsPlugin', () => {
 			{
 				await using host = await createTestHost({
 					workbench: true,
-					services: [elysia(), commands(), nodeModules(), workers()],
+					services: [elysia()],
 					coreConfig: { zenfs: backend },
 				})
 				await host.start([FontsPlugin.nodeAddress(), FontsTestConsumer.nodeAddress()])
@@ -355,9 +312,7 @@ describe('FontsPlugin', () => {
 
 	it('rejects invalid bytes and enforces the configured byte budget', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.start(FontsPlugin.nodeAddress(), { initialConfig: { maxFontBytes: 4 } })
 			await host.start(FontsLazyConsumer.nodeAddress())
@@ -374,9 +329,7 @@ describe('FontsPlugin', () => {
 
 	it('cooperatively snapshots registration bytes and observes cancellation', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
 			const controller = new AbortController()
@@ -393,7 +346,7 @@ describe('FontsPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			})
 
 			await host.start(FontsPlugin.nodeAddress(), {
@@ -416,9 +369,7 @@ describe('FontsPlugin', () => {
 
 	it('does not commit an async registration after its caller generation stops', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.start([FontsPlugin.nodeAddress(), FontsLazyConsumer.nodeAddress()])
 			const registration = host.require(FontsLazyConsumer.nodeAddress()).fonts.register({
@@ -439,9 +390,7 @@ describe('FontsPlugin', () => {
 
 	it.skipIf(!fontPath)('rejects oversized font files before reading their contents', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.start(FontsPlugin.nodeAddress(), { initialConfig: { maxFontBytes: 4 } })
 			await host.start(FontsLazyConsumer.nodeAddress())
@@ -458,9 +407,7 @@ describe('FontsPlugin', () => {
 			[`managed/${'a'.repeat(43)}.font`, new Uint8Array([1, 2, 3]), 'Managed font is corrupt'],
 		] as const) {
 			{
-				await using host = await createTestHost({
-					services: [elysia(), commands(), nodeModules(), workers()],
-				})
+				await using host = await createTestHost()
 				await host.start(FontsPlugin.nodeAddress())
 				const storage = await host.require(FontsPlugin.nodeAddress()).ctx.fs()
 				await host.stop(FontsPlugin.nodeAddress())
@@ -485,9 +432,7 @@ describe('FontsPlugin', () => {
 	})
 
 	it('rejects malformed restored default preferences without rewriting them', async () => {
-		await using host = await createTestHost({
-			services: [elysia(), commands(), nodeModules(), workers()],
-		})
+		await using host = await createTestHost()
 		await host.start(FontsPlugin.nodeAddress())
 		const state = host.require(FontsPlugin.nodeAddress()).ctx.tinybase
 		const store = await state.open()
@@ -506,9 +451,7 @@ describe('FontsPlugin', () => {
 	})
 
 	it('stores the default in the provider Store and persists reset across generations', async () => {
-		await using host = await createTestHost({
-			services: [elysia(), commands(), nodeModules(), workers()],
-		})
+		await using host = await createTestHost()
 		await host.start(FontsPlugin.nodeAddress())
 		let fonts = host.require(FontsPlugin.nodeAddress())
 		await fonts.setPreferredFamily('monospace')
@@ -573,7 +516,7 @@ describe('FontsPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			})
 
 			await host.start([FontsPlugin.nodeAddress(), FontsTestConsumer.nodeAddress()])

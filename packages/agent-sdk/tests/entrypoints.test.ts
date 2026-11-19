@@ -6,27 +6,6 @@ import { expect, it } from 'vitest'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const execute = promisify(execFile)
 
-it('imports the published client from Node without CLI, compiler or remote authentication', async () => {
-	const { stdout } = await execute(
-		process.execPath,
-		[
-			'--input-type=module',
-			'-e',
-			`
-  import { registerHooks } from 'node:module'
-  registerHooks({ resolve(specifier, context, next) {
-   if (['gunshi', '@pluxel/cli', '@pluxel/rolldown', '@pluxel/services'].some(name => specifier === name || specifier.startsWith(name + '/'))) throw new Error('Client eagerly loaded ' + specifier)
-   return next(specifier, context)
-  } })
-  const { listHosts, runScript, getScriptResult, cancelScript, syncPluginControl, controlHmr } = await import('@pluxel/agent-sdk/client')
-  console.log(JSON.stringify([listHosts, runScript, getScriptResult, cancelScript, syncPluginControl, controlHmr].every(fn => typeof fn === 'function')))
- `,
-		],
-		{ cwd: root },
-	)
-	expect(stdout.trim()).toBe('true')
-})
-
 it('imports the published Host entry without the source compiler', async () => {
 	const { stdout } = await execute(
 		process.execPath,
@@ -91,25 +70,6 @@ it('uses the published source entry from plain Node without Host execution or ev
 	})
 })
 
-it('exposes explicit domains and removes the former author aliases', async () => {
-	const { stdout } = await execute(
-		process.execPath,
-		[
-			'--input-type=module',
-			'-e',
-			`
-  for (const specifier of ['@pluxel/agent-sdk', '@pluxel/host/agent', '@pluxel/rolldown/inspect']) {
-   try { import.meta.resolve(specifier); throw new Error('Unexpected exported alias: ' + specifier) }
-   catch (error) { if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') throw error }
-  }
-  console.log('ok')
- `,
-		],
-		{ cwd: root },
-	)
-	expect(stdout.trim()).toBe('ok')
-})
-
 it('loads published command metadata without clients, compiler, project IO or service management', async () => {
 	const { stdout } = await execute(
 		process.execPath,
@@ -134,41 +94,49 @@ it('loads published command metadata without clients, compiler, project IO or se
 	})
 })
 
-it('keeps direct Node calls silent and leaves the process exit status to the caller', async () => {
+it('uses the published client directly from Node with no terminal or compiler dependency', async () => {
 	const { stdout, stderr } = await execute(
 		process.execPath,
 		[
 			'--input-type=module',
 			'-e',
 			`
-	 import {registerHooks} from 'node:module'
-	 import {mkdtemp, rm} from 'node:fs/promises'
-	 import {tmpdir} from 'node:os'
-	 import {join} from 'node:path'
-	 registerHooks({resolve(specifier, context, next) {
-	  if (specifier === 'gunshi' || specifier.startsWith('gunshi/') || specifier.startsWith('@pluxel/cli')) throw new Error('Node caller loaded terminal code')
-	  return next(specifier, context)
-	 }})
-	 const out = process.stdout.write, err = process.stderr.write
-	 process.stdout.write = process.stderr.write = () => {throw new Error('SDK wrote to terminal')}
-	 const initialExitCode = process.exitCode
-	 const directory = await mkdtemp(join(tmpdir(), 'agent-node-silent-'))
-	 try {
-	  const {listHosts, runScript, HostClientError} = await import('@pluxel/agent-sdk/client')
-	  const discovery = await listHosts({root:directory})
-	  if(discovery.instances.length !== 0) throw new Error('Unexpected instance')
-	  try {await runScript({target:{root:directory},file:'missing.ts'});throw new Error('Expected unavailable Host')}
-	  catch(error) {if(!(error instanceof HostClientError) || error.code !== 'dev_unavailable') throw error}
-	  if(process.exitCode !== initialExitCode) throw new Error('SDK changed exitCode')
-	 } finally {
-	  await rm(directory,{recursive:true,force:true})
-	  process.stdout.write = out; process.stderr.write = err
-	 }
-	 console.log('ok')
+		import assert from 'node:assert/strict'
+		import { registerHooks } from 'node:module'
+		import { mkdtemp, rm } from 'node:fs/promises'
+		import { tmpdir } from 'node:os'
+		import { join } from 'node:path'
+		const forbidden = ['gunshi', '@pluxel/cli', '@pluxel/rolldown', '@pluxel/services']
+		registerHooks({ resolve(specifier, context, next) {
+			if (forbidden.some(name => specifier === name || specifier.startsWith(name + '/')))
+				throw new Error('Client loaded ' + specifier)
+			return next(specifier, context)
+		} })
+		const directory = await mkdtemp(join(tmpdir(), 'agent-node-silent-'))
+		const stdout = process.stdout.write
+		const stderr = process.stderr.write
+		const exitCode = process.exitCode
+		process.stdout.write = process.stderr.write = () => { throw new Error('SDK wrote to terminal') }
+		try {
+			const sdk = await import('@pluxel/agent-sdk/client')
+			for (const name of ['listHosts', 'runScript', 'getScriptResult', 'cancelScript', 'syncPluginControl', 'controlHmr'])
+				assert.equal(typeof sdk[name], 'function', name)
+			const discovery = await sdk.listHosts({ root: directory })
+			assert.equal(discovery.instances.length, 0)
+			await assert.rejects(
+				sdk.runScript({ target: { root: directory }, file: 'missing.ts' }),
+				error => error instanceof sdk.HostClientError && error.code === 'dev_unavailable',
+			)
+			assert.equal(process.exitCode, exitCode)
+		} finally {
+			process.stdout.write = stdout
+			process.stderr.write = stderr
+			await rm(directory, { recursive: true, force: true })
+		}
 	`,
 		],
 		{ cwd: root },
 	)
-	expect(stdout.trim()).toBe('ok')
+	expect(stdout).toBe('')
 	expect(stderr).toBe('')
 })

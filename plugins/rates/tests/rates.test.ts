@@ -1,9 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
-import { createTestHost, type TestHost } from '@pluxel/test'
+import { createTestHost } from '@pluxel/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
 	MemoryRatesBackendPlugin,
@@ -22,10 +18,6 @@ import {
 import { ExpiryHeap } from '../src/expiry-heap.ts'
 
 const Fixed = { algorithm: 'fixed-window', limit: 2, windowMs: 1_000 } as const
-
-async function createHost(): Promise<TestHost> {
-	return await createTestHost({ services: [elysia(), commands(), nodeModules(), workers()] })
-}
 
 @Plugin({ displayName: 'RatesConsumer' })
 class ConsumerA extends BasePlugin {
@@ -88,7 +80,7 @@ afterEach(() => vi.useRealTimers())
 describe('@pluxel/plugin-rates public API', () => {
 	it('binds local quotas to callers and shares only explicit global quotas', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryRatesBackendPlugin.nodeAddress(),
@@ -110,7 +102,7 @@ describe('@pluxel/plugin-rates public API', () => {
 
 	it('snapshots policies and detects registration conflicts', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryRatesBackendPlugin.nodeAddress(),
@@ -140,7 +132,7 @@ describe('@pluxel/plugin-rates public API', () => {
 
 	it('canonicalizes tuple and sorted record identities without collisions', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryRatesBackendPlugin.nodeAddress(),
@@ -165,7 +157,7 @@ describe('@pluxel/plugin-rates public API', () => {
 
 	it('rejects invalid use synchronously and invalid consume through its promise', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryRatesBackendPlugin.nodeAddress(),
@@ -229,7 +221,7 @@ describe('@pluxel/plugin-rates public API', () => {
 
 	it('wraps unknown backend failures and never synthesizes a decision', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				BrokenRatesBackend.nodeAddress(),
@@ -244,7 +236,7 @@ describe('@pluxel/plugin-rates public API', () => {
 
 	it('rejects malformed third-party backend decisions at the coordinator boundary', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MalformedRatesBackend.nodeAddress(),
@@ -274,7 +266,7 @@ describe('@pluxel/plugin-rates public API', () => {
 
 	it('revokes cached limiter handles when the Rates provider stops', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryRatesBackendPlugin.nodeAddress(),
@@ -292,7 +284,7 @@ describe('@pluxel/plugin-rates public API', () => {
 
 	it('revokes caller-local and global limiter handles when the caller stops', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryRatesBackendPlugin.nodeAddress(),
@@ -314,7 +306,7 @@ describe('@pluxel/plugin-rates public API', () => {
 
 	it('revokes cached limiter handles when the backend generation stops and restarts', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryRatesBackendPlugin.nodeAddress(),
@@ -339,7 +331,7 @@ describe('@pluxel/plugin-rates public API', () => {
 	it('does not roll back or revoke an already submitted backend decision', async () => {
 		finishDelayedDecision = undefined
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				DelayedRatesBackend.nodeAddress(),
@@ -357,7 +349,7 @@ describe('@pluxel/plugin-rates public API', () => {
 
 	it('does not let a stopped memory backend handle recreate its state', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryRatesBackendPlugin.nodeAddress(),
@@ -383,7 +375,7 @@ describe('@pluxel/plugin-rates public API', () => {
 describe('@pluxel/plugin-rates memory algorithms', () => {
 	it('stores and verifies the full structured owner independently of the opaque key', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryRatesBackendPlugin.nodeAddress(),
@@ -405,7 +397,7 @@ describe('@pluxel/plugin-rates memory algorithms', () => {
 
 	it('keeps same-key consumption atomic before the async boundary', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryRatesBackendPlugin.nodeAddress(),
@@ -428,7 +420,7 @@ describe('@pluxel/plugin-rates memory algorithms', () => {
 		vi.useFakeTimers()
 		vi.setSystemTime(10_000)
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryRatesBackendPlugin.nodeAddress(),
@@ -518,7 +510,7 @@ describe('@pluxel/plugin-rates memory algorithms', () => {
 		vi.useFakeTimers()
 		vi.setSystemTime(20_000)
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.commit((change) => {
 				change.start(MemoryRatesBackendPlugin.nodeAddress(), {
@@ -542,7 +534,7 @@ describe('@pluxel/plugin-rates memory algorithms', () => {
 		vi.useFakeTimers()
 		vi.setSystemTime(20_000)
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.commit((change) => {
 				change.start(MemoryRatesBackendPlugin.nodeAddress(), {
@@ -575,7 +567,7 @@ describe('@pluxel/plugin-rates memory algorithms', () => {
 		vi.useFakeTimers()
 		vi.setSystemTime(30_000)
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([MemoryRatesBackendPlugin.nodeAddress()])
 			const backend = host.require(MemoryRatesBackendPlugin.nodeAddress())
@@ -608,7 +600,7 @@ describe('@pluxel/plugin-rates memory algorithms', () => {
 		vi.useFakeTimers()
 		vi.setSystemTime(50_000)
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryRatesBackendPlugin.nodeAddress(),

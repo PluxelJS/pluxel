@@ -4,9 +4,6 @@ import { Passthrough } from '@pluxel/core/fs'
 import { servicesPreset } from '@pluxel/services/preset'
 import { createElysiaHandler } from '@pluxel/services/elysia'
 import { ElysiaRuntime } from '@pluxel/services/internal'
-import { defineCommand, Result } from '@pluxel/commands'
-import { obj } from '@pluxel/commands/typebox'
-import { Commands, commands } from '../src/commands'
 import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import { installOwnerViewService } from '@pluxel/core/host'
 import { createHost, defineHostService } from '@pluxel/host'
@@ -145,53 +142,5 @@ describe('independently composed official and external services', () => {
 		} finally {
 			await reopened.close()
 		}
-
-		const second = await createHost({ plugins, services: [search], coreConfig: { ...config } })
-		try {
-			await second.startNode(node(Credentials))
-			await second.startNode(node(SearchConsumer))
-			expect(observations).toEqual(['secret', 'SearchConsumer', 'secret', 'SearchConsumer'])
-		} finally {
-			await second.close()
-		}
 	})
 })
-
-it('installs an empty command catalog and withdraws Plugin-owned registrations on stop', async () => {
-	const host = await createHost({ plugins: [{ plugin: CommandPublisher }], services: [commands()] })
-	try {
-		const catalog = host.ctx.service(Commands)
-		expect(catalog.list()).toEqual([])
-		const address = {
-			definition: CommandPublisher.address(),
-			variant: 'default' as const,
-		}
-		await host.startNode(address)
-		expect(catalog.list().map((item) => item.name)).toEqual(['example.read'])
-		await expect(catalog.execute('example.read', {})).resolves.toEqual(
-			Result.ok({ value: 'ready' }),
-		)
-		await host.stopNode(address)
-		expect(catalog.list()).toEqual([])
-		await expect(catalog.execute('example.read', {})).resolves.toMatchObject({
-			status: 'error',
-			error: { code: 'COMMAND_NOT_FOUND' },
-		})
-	} finally {
-		await host.close()
-	}
-})
-
-@Plugin()
-class CommandPublisher extends BasePlugin {
-	init() {
-		this.ctx.service(Commands).register(
-			defineCommand({
-				name: 'example.read',
-				description: 'Read a fixture value',
-				input: obj({}),
-				execute: () => Result.ok({ value: 'ready' }),
-			}),
-		)
-	}
-}

@@ -18,6 +18,7 @@ export default defineConfig({
 						'packages/workbench/src/**',
 						'!packages/services/dist/**',
 						'!packages/services/public/**',
+						'!packages/services/tests/**',
 					].map((pattern) => ({ pattern, base: 'workspace' as const })),
 				},
 			},

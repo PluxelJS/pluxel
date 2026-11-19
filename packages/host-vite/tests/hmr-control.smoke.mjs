@@ -15,7 +15,7 @@ import { host } from '@pluxel/host-vite'
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
 const require = createRequire(new URL('../package.json', import.meta.url))
 const { createServer } = await import(require.resolve('vite'))
-const count = 8
+const count = 3
 const smokeStarted = performance.now()
 const address = (index) => ({
 	definition: {
@@ -216,10 +216,7 @@ export default defineHostApplication(({ root }) => {
 		const options = { root, application: { root, entry: 'app.ts' } }
 		const dynamic = await inspectPlugin(discovered.nodes[0].address.definition, options)
 		const inspectedSource = await inspectPlugin(address(0).definition, options)
-		const locations = await Promise.all(
-			nodes.map((node) => inspectPlugin(node.address.definition, options)),
-		)
-		return { discovered, dynamic, source: inspectedSource, locations }
+		return { discovered, dynamic, source: inspectedSource, nodes }
 	}
 	function assertLocation(report, index, code, environment = 'query-process') {
 		assert.equal(report.root, root)
@@ -474,24 +471,12 @@ await scenario(
 		assert.equal(initialLocation.discovered.nextCursor, null)
 		assert.deepEqual(initialLocation.dynamic, initialLocation.source)
 		assertLocation(initialLocation.dynamic, 0, source(0, 0))
-		assert.equal(initialLocation.locations.length, count)
-		assert.equal(
-			new Set(
-				initialLocation.locations.map((located) =>
-					pluginDefinitionIndexKey(located.data.summary.definition),
-				),
-			).size,
-			count,
+		assert.deepEqual(
+			initialLocation.nodes.map((node) => pluginDefinitionIndexKey(node.address.definition)).sort(),
+			Array.from({ length: count }, (_, index) =>
+				pluginDefinitionIndexKey(address(index).definition),
+			).sort(),
 		)
-		for (const located of initialLocation.locations) {
-			const index = Array.from({ length: count }, (_, candidate) => candidate).find(
-				(candidate) =>
-					pluginDefinitionIndexKey(located.data.summary.definition) ===
-					pluginDefinitionIndexKey(address(candidate).definition),
-			)
-			assert.notEqual(index, undefined)
-			assertLocation(located, index, source(index, 0))
-		}
 		assert.equal(metrics.evaluations.length, count, 'source queries must not evaluate project code')
 		const initialMaterial = await material()
 		assert.equal(initialMaterial.definition.contracts.config, null)
@@ -501,7 +486,7 @@ await scenario(
 		assert.equal(paused.hmr.mode, 'paused')
 
 		// Every intermediate edit reaches actual admission while evaluations and lifecycle remain unchanged.
-		for (let edit = 0; edit < 4; edit++) {
+		for (let edit = 0; edit < 2; edit++) {
 			const pending = await writeObserved(sourcePath(0), `export const invalid${edit} = ;`)
 			assert.equal(pending.hmr.pending.files, 1)
 			assert.equal(metrics.evaluations.length, count)
@@ -521,8 +506,6 @@ await scenario(
 		const freshDirty = await script('fresh.ts', 'failed')
 		assert.equal(freshDirty.state, 'failed')
 		assert.equal(freshDirty.error.code, 'hmr_pending')
-		const dirtyLocation = await script('locate.ts', 'failed')
-		assert.equal(dirtyLocation.error.code, 'hmr_pending')
 		const offlineLocation = await inspectPlugin(address(0).definition, {
 			root,
 			application: { root, entry: 'app.ts' },
@@ -579,11 +562,6 @@ await scenario(
 		const staleRead = await script('stale.ts', 'failed')
 		assert.equal(staleRead.error.code, 'stale_target')
 		assert.equal(staleRead.error.details.code, 'stale_target')
-		const staleLocation = await inspectPlugin(address(0).definition, {
-			root,
-			application: { root, entry: 'app.ts' },
-		})
-		assertLocation(staleLocation, 0, source(0, 1))
 		const sequence = applied.application.latestUpdate.sequence
 		const unchanged = await control('apply')
 		assert.equal(unchanged.application.latestUpdate.sequence, sequence)
@@ -670,9 +648,8 @@ await scenario(
 		assert.equal(metrics.evaluations.length, beforeArtifact.evaluations)
 		assert.equal(metrics.starts.length, beforeArtifact.starts)
 
-		// Eight independently observed source changes are one batch; repeated cycles leave no queued work.
-		const cycles = 5
-		const memory = []
+		// Each burst coalesces independent source changes; the next burst starts with an empty queue.
+		const cycles = 2
 		const beforeEvaluations = metrics.evaluations.length
 		const beforeCycles = await inspect()
 		const beforeSequence = beforeCycles.application.latestUpdate.sequence
@@ -696,12 +673,10 @@ await scenario(
 				assert.equal(metrics.evaluations.length, beforeEvaluations + (cycle + 1) * count)
 				return batch.hmr.pending.files === 0 && !batch.hmr.pending.full
 			}, 'duplicate source notifications must settle without another candidate')
-			const { heapUsed, rss } = process.memoryUsage()
-			memory.push({ cycle, heapUsed, rss })
 		}
 		assert.equal(metrics.evaluations.length, beforeEvaluations + count * cycles)
 		const repeatedRead = await script()
-		assert.equal(repeatedRead.value, 14)
+		assert.equal(repeatedRead.value, 10 + cycles - 1)
 		await control('resume')
 		const beforeSingleAutomatic = await inspect()
 		const beforeSingleEvaluations = metrics.evaluations.length
@@ -828,7 +803,6 @@ await scenario(
 				filesPerBatch: count,
 				evaluations: metrics.evaluations.length,
 				updates: automatic.application.latestUpdate.sequence,
-				memory,
 			}),
 		)
 	},

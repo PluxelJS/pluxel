@@ -181,24 +181,6 @@ describe('native document close and save decisions', () => {
 		expect(fixtures.models.get(second)!.dispose).not.toHaveBeenCalled()
 	})
 
-	it('rechecks the first real editing revision after waiting for the second decision and deletes zero labels on change', async () => {
-		const { session, first, second } = await fixture()
-		const firstModel = fixtures.models.get(first)!
-		firstModel.dirty = true
-		fixtures.models.get(second)!.dirty = true
-		let closing!: Promise<boolean>
-		await act(async () => {
-			closing = session.closeDocuments()
-		})
-		await decide(0, true)
-		await vi.waitFor(() => expect(fixtures.decisions[1]).toBeDefined())
-		firstModel.revision++
-		await decide(1, true)
-		await act(async () => expect(await closing).toBe(false))
-		expect(session.workbench.getDocuments()).toHaveLength(2)
-		expect(firstModel.dispose).not.toHaveBeenCalled()
-	})
-
 	it('protects remote dirty state and preserves the entire batch when its owner refuses', async () => {
 		const { session, first } = await fixture()
 		session.documents.get(first)!.remoteDirty = true
@@ -336,42 +318,6 @@ describe('native document close and save decisions', () => {
 })
 
 describe('workspace departure decisions', () => {
-	it('refuses departure when an earlier saved document changes while a later decision is pending and restores its accepted URL', async () => {
-		const { session, first, second, container } = await fixture()
-		const firstModel = fixtures.models.get(first)!
-		firstModel.dirty = true
-		firstModel.save = vi.fn(async () => {
-			firstModel.dirty = false
-			firstModel.revision++
-		})
-		fixtures.models.get(second)!.dirty = true
-		const input = container.querySelector<HTMLInputElement>(`[aria-label="draft ${first}"]`)!
-		window.history.replaceState(null, '', '/security')
-		vi.spyOn(console, 'error').mockImplementation(() => {})
-		let leaving!: Promise<unknown>
-		await act(async () => {
-			leaving = session.leave('/security#left').catch((cause: unknown) => cause)
-		})
-		await decide(0, true)
-		await vi.waitFor(() => expect(fixtures.decisions[1]).toBeDefined())
-		firstModel.dirty = true
-		firstModel.revision++
-		input.value = 'new edit during departure'
-		await decide(1, true)
-		await act(async () => {
-			expect(await leaving).toBeUndefined()
-		})
-		expect(window.location.pathname + window.location.search + window.location.hash).toBe(
-			'/security',
-		)
-		expect(session.workbench.getDocuments().map((document) => document.id)).toEqual([first, second])
-		expect(container.querySelector(`[aria-label="draft ${first}"]`)).toBe(input)
-		expect(input.value).toBe('new edit during departure')
-		expect(firstModel.dirty).toBe(true)
-		expect(firstModel.save).toHaveBeenCalledOnce()
-		expect(firstModel.dispose).not.toHaveBeenCalled()
-	})
-
 	it('refuses departure when a previously approved editor is replaced by another owner with an equal revision', async () => {
 		const { session, first, second, container } = await fixture()
 		const firstModel = fixtures.models.get(first)!

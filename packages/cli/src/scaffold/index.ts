@@ -127,7 +127,7 @@ export const newCommand = define({
 			if (!plan.install) ctx.log('vp install')
 			if (plan.template.kind === 'bundled') {
 				ctx.log('vp run setup')
-				ctx.log('vp run verify')
+				ctx.log(`vp run check-tests tests/${commandPlan.pluginName}.test.ts`)
 			} else ctx.log('vp run')
 		} finally {
 			await acquired.dispose()

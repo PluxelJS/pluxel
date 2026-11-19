@@ -14,7 +14,7 @@ const declaration = defineNodeModule(import.meta.url, './fixtures/task.ts')
 
 describe('NodeModuleService', () => {
 	it('makes the first build/setup failure fail plugin startup', async () => {
-		await using host = await createServiceInternalTestHost({ workbench: false })
+		await using host = await createServiceInternalTestHost({ services: [nodeModules()] })
 
 		host.ctx.service(NodeModuleHost).attachSourceBinder(async () => {
 			throw new Error('node build failed')
@@ -42,7 +42,7 @@ describe('NodeModuleService', () => {
 	})
 
 	it('retains the setup failure when its source cleanup also fails', async () => {
-		await using host = await createServiceInternalTestHost({ workbench: false })
+		await using host = await createServiceInternalTestHost({ services: [nodeModules()] })
 		const setupFailure = new Error('consumer setup failed')
 		const cleanupFailure = new Error('source cleanup failed')
 		let caught: unknown
@@ -75,7 +75,7 @@ describe('NodeModuleService', () => {
 	})
 
 	it('stages updates, keeps the last good consumer, and cleans up with its owner', async () => {
-		await using host = await createServiceInternalTestHost({ workbench: false })
+		await using host = await createServiceInternalTestHost({ services: [nodeModules()] })
 
 		let publish!: (url: URL) => void | Promise<void>
 		let sourceDisposals = 0
@@ -116,121 +116,90 @@ describe('NodeModuleService', () => {
 		expect(sourceDisposals).toBe(1)
 	})
 
-	it('drains a pending update and late cleanup when the owner stops after source detach', async () => {
-		await using host = await createServiceInternalTestHost({ workbench: false })
+	it.each([
+		{ outcome: 'success', sourceDisposalFails: false },
+		{ outcome: 'failure', sourceDisposalFails: true },
+	])(
+		'drains a pending update and cleans both consumers after source disposal $outcome',
+		async ({ sourceDisposalFails }) => {
+			await using host = await createServiceInternalTestHost({ services: [nodeModules()] })
+			let publish!: (url: URL) => void | Promise<void>
+			const setupStarted = Promise.withResolvers<void>()
+			const releaseSetup = Promise.withResolvers<void>()
+			const sourceDisposed = Promise.withResolvers<void>()
+			const events: string[] = []
+			const detach = host.ctx
+				.service(NodeModuleHost)
+				.attachSourceBinder(async (_declaration, onUpdate) => {
+					publish = onUpdate
+					return {
+						url: new URL('file:///cache/initial.mjs'),
+						dispose() {
+							events.push('source:dispose')
+							sourceDisposed.resolve()
+							if (sourceDisposalFails) throw new Error('source disposal failed')
+						},
+					}
+				})
 
-		let publish!: (url: URL) => void | Promise<void>
-		let releaseSetup!: () => void
-		let setupStarted!: () => void
-		const didStartSetup = new Promise<void>((resolve) => (setupStarted = resolve))
-		const releaseSetupGate = new Promise<void>((resolve) => (releaseSetup = resolve))
-		let sourceDisposed!: () => void
-		const didDisposeSource = new Promise<void>((resolve) => (sourceDisposed = resolve))
-		const events: string[] = []
-		const detach = host.ctx
-			.service(NodeModuleHost)
-			.attachSourceBinder(async (_declaration, onUpdate) => {
-				publish = onUpdate
-				return {
-					url: new URL('file:///cache/initial.mjs'),
-					dispose: () => {
-						events.push('source:dispose')
-						sourceDisposed()
-					},
+			@Plugin({ displayName: 'PendingNodeModuleConsumer' })
+			class PendingNodeModuleConsumer extends BasePlugin {
+				override async init() {
+					await this.ctx.service(NodeModules).use(declaration, async (url) => {
+						events.push(`setup:${url.pathname}`)
+						if (url.pathname.endsWith('/next.mjs')) {
+							setupStarted.resolve()
+							await releaseSetup.promise
+						}
+						return () => void events.push(`cleanup:${url.pathname}`)
+					})
 				}
-			})
+			}
 
-		@Plugin({ displayName: 'PendingNodeModuleConsumer' })
-		class PendingNodeModuleConsumer extends BasePlugin {
-			override async init() {
-				await this.ctx.service(NodeModules).use(declaration, async (url) => {
-					events.push(`setup:${url.pathname}`)
-					if (url.pathname.endsWith('/next.mjs')) {
-						setupStarted()
-						await releaseSetupGate
-					}
-					return () => void events.push(`cleanup:${url.pathname}`)
+			lowerTestPlugin(PendingNodeModuleConsumer)
+			await host.start(PendingNodeModuleConsumer.nodeAddress())
+			const pendingUpdate = Promise.resolve(publish(new URL('file:///cache/next.mjs')))
+			await setupStarted.promise
+
+			try {
+				detach()
+				expect(events).toEqual(['setup:/cache/initial.mjs', 'setup:/cache/next.mjs'])
+
+				let stopped = false
+				const commit = sourceDisposalFails ? host.commitExpectFail : host.commit
+				const stopping = commit((change) =>
+					change.catalog.remove(PendingNodeModuleConsumer),
+				).finally(() => {
+					stopped = true
 				})
-			}
-		}
-
-		lowerTestPlugin(PendingNodeModuleConsumer)
-		await host.start(PendingNodeModuleConsumer.nodeAddress())
-		const pendingUpdate = Promise.resolve(publish(new URL('file:///cache/next.mjs')))
-		await didStartSetup
-
-		detach()
-		expect(events).toEqual(['setup:/cache/initial.mjs', 'setup:/cache/next.mjs'])
-
-		let stopped = false
-		const stopping = host
-			.commit((change) => change.catalog.remove(PendingNodeModuleConsumer))
-			.then((): void => {
-				stopped = true
-				return undefined
-			})
-		await didDisposeSource
-		expect(stopped).toBe(false)
-
-		releaseSetup()
-		await pendingUpdate
-		await stopping
-		expect(events).toEqual([
-			'setup:/cache/initial.mjs',
-			'setup:/cache/next.mjs',
-			'source:dispose',
-			'cleanup:/cache/next.mjs',
-			'cleanup:/cache/initial.mjs',
-		])
-	})
-
-	it('drains pending setup and the active consumer even when source disposal fails', async () => {
-		await using host = await createServiceInternalTestHost({ workbench: false })
-		let publish!: (url: URL) => void | Promise<void>
-		let release!: () => void
-		let started!: () => void
-		const pending = new Promise<void>((resolve) => (release = resolve))
-		const ready = new Promise<void>((resolve) => (started = resolve))
-		const events: string[] = []
-		host.ctx.service(NodeModuleHost).attachSourceBinder(async (_declaration, onUpdate) => {
-			publish = onUpdate
-			return {
-				url: new URL('file:///cache/initial.mjs'),
-				dispose() {
-					events.push('detach')
-					throw new Error('source disposal failed')
-				},
-			}
-		})
-		@Plugin({ displayName: 'FailedSourceDetach' })
-		class FailedSourceDetach extends BasePlugin {
-			override async init() {
-				await this.ctx.service(NodeModules).use(declaration, async (url) => {
-					if (url.pathname.endsWith('/next.mjs')) {
-						started()
-						await pending
-					}
-					return () => void events.push(`cleanup:${url.pathname}`)
+				await sourceDisposed.promise
+				expect(stopped).toBe(false)
+				releaseSetup.resolve()
+				await pendingUpdate
+				const failure = await stopping
+				const failureReport = expect.objectContaining({
+					lifecycleReport: expect.objectContaining({
+						issues: expect.arrayContaining([
+							expect.objectContaining({
+								kind: 'drain-failed',
+								message: expect.stringContaining('source disposal failed'),
+							}),
+						]),
+					}),
 				})
+				expect(failure).toEqual(sourceDisposalFails ? failureReport : undefined)
+				expect(events).toEqual([
+					'setup:/cache/initial.mjs',
+					'setup:/cache/next.mjs',
+					'source:dispose',
+					'cleanup:/cache/next.mjs',
+					'cleanup:/cache/initial.mjs',
+				])
+			} finally {
+				releaseSetup.resolve()
 			}
-		}
-		lowerTestPlugin(FailedSourceDetach)
-		await host.start(FailedSourceDetach.nodeAddress())
-		const update = Promise.resolve(publish(new URL('file:///cache/next.mjs')))
-		await ready
-		const stopping = host.commitExpectFail((change) => change.catalog.remove(FailedSourceDetach))
-		await expect.poll(() => events.includes('detach')).toBe(true)
-		release()
-		await update
-		const failure = await stopping
-		expect(events).toEqual(['detach', 'cleanup:/cache/next.mjs', 'cleanup:/cache/initial.mjs'])
-		expect(failure.lifecycleReport.issues).toContainEqual(
-			expect.objectContaining({
-				kind: 'drain-failed',
-				message: expect.stringContaining('source disposal failed'),
-			}),
-		)
-	})
+		},
+	)
 
 	it('loads the lowered artifact from a packaged/static root', async () => {
 		await using fixture = await createFixture()

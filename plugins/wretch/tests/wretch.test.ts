@@ -1,9 +1,6 @@
 import { parsePluginNodeAddress, type PluginConstructor } from '@pluxel/core'
 import { createTestHost, type TestHost, type RawPluginConfig } from '@pluxel/test'
 import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import * as v from 'valibot'
 import { consumeWorkbenchValue } from '@pluxel/workbench/client'
 import { ProxyAgent } from 'undici'
@@ -51,18 +48,24 @@ async function settledCall(operation: () => unknown): Promise<{ ok: true } | { o
 
 function gatedSettingsLoad() {
 	let reads = 0
-	let release!: () => void
-	const gate = new Promise<void>((resolve) => (release = resolve))
+	const entered = Promise.withResolvers<void>()
+	const gate = Promise.withResolvers<void>()
 	const original = ManagedSettingsStore.prototype.load
 	const spy = vi.spyOn(ManagedSettingsStore.prototype, 'load').mockImplementation(async function (
 		this: ManagedSettingsStore,
 		owner,
 	) {
 		reads++
-		await gate
+		entered.resolve()
+		await gate.promise
 		return original.call(this, owner)
 	})
-	return { reads: () => reads, release, dispose: () => spy.mockRestore() }
+	return {
+		entered: entered.promise,
+		reads: () => reads,
+		release: gate.resolve,
+		dispose: () => spy.mockRestore(),
+	}
 }
 
 beforeEach(() => {
@@ -77,7 +80,7 @@ describe('WretchPlugin', () => {
 	it('separates same-display-name consumers by row in the provider Store', async () => {
 		await using host = await createTestHost({
 			workbench: true,
-			services: [elysia(), commands(), nodeModules(), workers()],
+			services: [elysia()],
 		})
 		await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
 		using aSettings = await openWretchSettings(host, ConsumerA.nodeAddress())
@@ -103,7 +106,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
@@ -139,7 +142,7 @@ describe('WretchPlugin', () => {
 	it('rejects restored settings whose owner does not match its row ID', async () => {
 		await using host = await createTestHost({
 			workbench: true,
-			services: [elysia(), commands(), nodeModules(), workers()],
+			services: [elysia()],
 		})
 		await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
 		using settings = await openWretchSettings(host, ConsumerA.nodeAddress())
@@ -169,9 +172,7 @@ describe('WretchPlugin', () => {
 
 	it('provides one native immutable Wretch base for independent consumer composition', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerB])
 
@@ -206,7 +207,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA])
@@ -243,7 +244,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], { timeoutMs: 1_000 })
@@ -284,7 +285,7 @@ describe('WretchPlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			})
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerLateSettings])
@@ -302,22 +303,18 @@ describe('WretchPlugin', () => {
 	})
 
 	it('shares one managed-settings initialization across concurrent calls', async () => {
-		await using host = await createTestHost({
-			workbench: true,
-			services: [elysia(), commands(), nodeModules(), workers()],
-		})
+		await using host = await createTestHost()
 		await startWretchFixture(host, [WretchPlugin, ConsumerB])
 		const pending = gatedSettingsLoad()
 		try {
 			const http = host.require(ConsumerB.nodeAddress()).http
 			const first = http.enableManagedSettings()
 			const second = http.enableManagedSettings()
-			await waitFor(() => expect(pending.reads()).toBe(1))
+			await pending.entered
 			pending.release()
 			await Promise.all([first, second])
-			using settings = await openWretchSettings(host, ConsumerB.nodeAddress())
-			const snapshot = await settings.api.snapshotDto()
-			expect(snapshot.settings.headers).toEqual({})
+			expect(pending.reads()).toBe(1)
+			expect(http.managedSettings.settings.headers).toEqual({})
 		} finally {
 			pending.release()
 			pending.dispose()
@@ -325,14 +322,12 @@ describe('WretchPlugin', () => {
 	})
 
 	it('drains admitted settings initialization without reusing it across generations', async () => {
-		await using host = await createTestHost({
-			services: [elysia(), commands(), nodeModules(), workers()],
-		})
+		await using host = await createTestHost()
 		await startWretchFixture(host, [WretchPlugin, ConsumerB])
 		const pending = gatedSettingsLoad()
 		try {
 			const stale = host.require(ConsumerB.nodeAddress()).http.enableManagedSettings()
-			await waitFor(() => expect(pending.reads()).toBe(1))
+			await pending.entered
 			const restart = host.restart(WretchPlugin.nodeAddress())
 			pending.release()
 			await restart
@@ -357,9 +352,7 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
 				allowedOrigins: ['https://allowed.example'],
@@ -373,17 +366,18 @@ describe('WretchPlugin', () => {
 	})
 
 	it('bounds concurrent and queued fetch attempts', async () => {
-		const releases: Array<() => void> = []
-		fetchA = () =>
-			new Promise((resolve) => {
-				releases.push(() => resolve(jsonResponse({ ok: true })))
-			})
+		const firstResponse = Promise.withResolvers<Response>()
+		const secondResponse = Promise.withResolvers<Response>()
+		const secondStarted = Promise.withResolvers<void>()
+		fetchA = vi.fn((url) => {
+			if (url.endsWith('/one')) return firstResponse.promise
+			secondStarted.resolve()
+			return secondResponse.promise
+		})
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
 				maxConcurrentRequests: 1,
@@ -394,12 +388,17 @@ describe('WretchPlugin', () => {
 			const first = client.get('/one').json()
 			const second = client.get('/two').json()
 			const third = client.get('/three').json()
-			await expect(third).rejects.toThrow('queue is full')
-			expect(releases).toHaveLength(1)
-			releases.shift()?.()
-			await expect(first).resolves.toEqual({ ok: true })
-			await waitFor(() => expect(releases).toHaveLength(1))
-			releases.shift()?.()
+			try {
+				await expect(third).rejects.toThrow('queue is full')
+				expect(fetchA).toHaveBeenCalledOnce()
+				firstResponse.resolve(jsonResponse({ ok: true }))
+				await expect(first).resolves.toEqual({ ok: true })
+				await secondStarted.promise
+				expect(fetchA).toHaveBeenCalledTimes(2)
+			} finally {
+				firstResponse.resolve(jsonResponse({ ok: true }))
+				secondResponse.resolve(jsonResponse({ ok: true }))
+			}
 			await expect(second).resolves.toEqual({ ok: true })
 		}
 	})
@@ -413,9 +412,7 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerB])
 
@@ -440,46 +437,26 @@ describe('WretchPlugin', () => {
 		}
 	})
 
-	it('revokes cached managed-settings RPC with its caller generation', async () => {
-		{
-			await using host = await createTestHost({
-				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+	it('closes each settings View independently and revokes open Views when the caller stops', async () => {
+		await using host = await createTestHost({ workbench: true, services: [elysia()] })
+		await startWretchFixture(host, [WretchPlugin, ConsumerA])
 
-			await startWretchFixture(host, [WretchPlugin, ConsumerA])
+		using settings = await openWretchSettings(host, ConsumerA.nodeAddress())
+		using independent = await openWretchSettings(host, ConsumerA.nodeAddress())
+		expect(independent.api).not.toBe(settings.api)
+		settings[Symbol.dispose]()
+		expect(await settledCall(() => settings.api.snapshotDto())).toEqual({ ok: false })
+		expect(await settledCall(() => settings.api.updateDto({ headers: {} }))).toEqual({ ok: false })
+		const snapshot = await independent.api.snapshotDto()
+		expect(snapshot.settings.headers).toEqual({})
 
-			using settings = await openWretchSettings(host, ConsumerA.nodeAddress())
-			const api = settings.api
-			await host.stop(ConsumerA.nodeAddress())
-
-			await expect(api.snapshotDto()).rejects.toThrow('stopped or replaced plugin generation')
-			await expect(api.updateDto({ headers: {} })).rejects.toThrow(
-				'stopped or replaced plugin generation',
-			)
-		}
-	})
-
-	it('revokes a settings capability when its View closes', async () => {
-		{
-			await using host = await createTestHost({
-				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
-
-			await startWretchFixture(host, [WretchPlugin, ConsumerA])
-
-			const settings = await openWretchSettings(host, ConsumerA.nodeAddress())
-			const api = settings.api
-			using independentSettings = await openWretchSettings(host, ConsumerA.nodeAddress())
-			expect(independentSettings.api).not.toBe(api)
-			settings[Symbol.dispose]()
-
-			expect(await settledCall(() => api.snapshotDto())).toEqual({ ok: false })
-			expect(await settledCall(() => api.updateDto({ headers: {} }))).toEqual({ ok: false })
-			const independentSnapshot = await independentSettings.api.snapshotDto()
-			expect(independentSnapshot.settings.headers).toEqual({})
-		}
+		await host.stop(ConsumerA.nodeAddress())
+		await expect(independent.api.snapshotDto()).rejects.toThrow(
+			'stopped or replaced plugin generation',
+		)
+		await expect(independent.api.updateDto({ headers: {} })).rejects.toThrow(
+			'stopped or replaced plugin generation',
+		)
 	})
 
 	it('releases managed proxy state on a provider restart', async () => {
@@ -488,7 +465,7 @@ describe('WretchPlugin', () => {
 			{
 				await using host = await createTestHost({
 					workbench: true,
-					services: [elysia(), commands(), nodeModules(), workers()],
+					services: [elysia()],
 				})
 
 				await startWretchFixture(host, [WretchPlugin, ConsumerA])
@@ -508,21 +485,19 @@ describe('WretchPlugin', () => {
 	})
 
 	it('rejects queued attempts and aborts in-flight fetches during teardown', async () => {
-		let started = 0
-		fetchA = async (_url, options) => {
-			started += 1
-			return new Promise((_resolve, reject) => {
+		const started = Promise.withResolvers<void>()
+		fetchA = vi.fn((_url, options) => {
+			started.resolve()
+			return new Promise<Response>((_resolve, reject) => {
 				const signal = options.signal
 				if (signal?.aborted) reject(signal.reason)
 				else signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
 			})
-		}
+		})
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], {
 				maxConcurrentRequests: 1,
@@ -537,7 +512,7 @@ describe('WretchPlugin', () => {
 					(): undefined => undefined,
 					(error: unknown) => error,
 				)
-			await waitFor(() => expect(started).toBe(1))
+			await started.promise
 			const queued = client
 				.get('/queued')
 				.json()
@@ -554,7 +529,7 @@ describe('WretchPlugin', () => {
 			expect(queuedError).toMatchObject({
 				message: expect.stringContaining('stopped or replaced plugin generation'),
 			})
-			expect(started).toBe(1)
+			expect(fetchA).toHaveBeenCalledOnce()
 		}
 	})
 
@@ -590,9 +565,7 @@ describe('WretchPlugin', () => {
 		setFixtureFetches(fetchA, fetchB)
 
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await startWretchFixture(host, [WretchPlugin, ConsumerA], { timeoutMs: 5 })
 
@@ -604,15 +577,3 @@ describe('WretchPlugin', () => {
 		}
 	})
 })
-
-async function waitFor(assertion: () => void): Promise<void> {
-	for (let attempt = 0; attempt < 20; attempt += 1) {
-		try {
-			assertion()
-			return
-		} catch {
-			await new Promise((resolve) => setTimeout(resolve, 0))
-		}
-	}
-	assertion()
-}

@@ -56,6 +56,19 @@ mise 提供可选的工具安装与版本固定，项目执行使用上面的 `v
 
 并发限制应直接传给执行 `workspace:verify` 的任务运行器。外层 `verify` package script 会再启动任务运行器，外层并发参数不会自动传入。
 
+## 局部验证
+
+日常开发和 Coding agent 修改按受影响的行为选检查。文档改动检查改动文件和链接。局部逻辑改动在所属包运行相关测试文件，类型或公开入口变化时加包级类型检查和直接调用方的回归。跨包运行时、构建产物或真实传输变化时，再验证对应集成边界。
+
+在 Pluxel 仓库根目录开始，以下命令只运行一个 Core 测试文件。
+
+```sh
+cd packages/core
+vp test run tests/PluginIdentity.test.ts
+```
+
+`vp test run` 从当前包读取 Vitest 配置，测试名过滤可加 `-t <pattern>`。需要构建前置时，在仓库根目录使用包的测试任务。以单条 `vp test run` 执行的任务可接收测试文件路径，例如 `vp run @pluxel/core#check-tests tests/PluginIdentity.test.ts`。收尾时记录实际运行的检查与未验证边界。`vp run test` 和 `vp run verify` 用于明确的整仓验收。
+
 ### 编辑器测试发现
 
 本仓库在 `.vscode/settings.json` 使用 [Vitest 扩展的 `configSearchPatternExclude`](https://github.com/vitest-dev/vscode#workspace-configurations)，排除构建产物、生成的 `fs-fixture-*` 目录和 CLI/Create 模板中的配置，同时保留扩展原有的依赖目录排除规则。模板与独立生成项目的行为由仓库集成测试验证。

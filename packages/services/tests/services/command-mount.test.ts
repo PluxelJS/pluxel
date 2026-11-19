@@ -1,4 +1,4 @@
-import { Commands, type CommandMount } from '@pluxel/services/commands'
+import { commands, Commands, type CommandMount } from '@pluxel/services/commands'
 import {
 	CommandError,
 	createCommandRegistry,
@@ -70,7 +70,7 @@ function carrierProviderClass() {
 
 describe('CommandMount', () => {
 	it('classifies an unreadable trusted context as INTERNAL', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 		const mount = host.ctx.service(Commands).createMount()
 		let installed!: Command<{}, { value: string }>
 		mount.bind(valueCommand('ready', 'mount.context.get'), {
@@ -96,7 +96,7 @@ describe('CommandMount', () => {
 	})
 
 	it('linearizes publication after install and pins one exact command implementation', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		const rootSnapshot = host.ctx.service(Commands).snapshot()
 		const mount = host.ctx.service(Commands).createMount()
@@ -196,7 +196,7 @@ describe('CommandMount', () => {
 	})
 
 	it('preserves a hand-authored command receiver while pinning its execute function', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		const mount = host.ctx.service(Commands).createMount()
 		const descriptor = valueCommand('descriptor', 'mount.receiver.get').descriptor
@@ -224,7 +224,7 @@ describe('CommandMount', () => {
 	})
 
 	it('normalizes every admission rejection to ABORTED', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		const mount = host.ctx.service(Commands).createMount()
 		let retained!: Command<unknown, { value: string }>
@@ -246,7 +246,7 @@ describe('CommandMount', () => {
 	})
 
 	it('binds each carrier publication to its consumer generation', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		const CommandMountCarrier = carrierProviderClass()
 
@@ -300,7 +300,7 @@ describe('CommandMount', () => {
 	})
 
 	it('aborts and drains work through the publication owner before cleanup', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		const CommandMountCarrier = carrierProviderClass()
 		const started = Promise.withResolvers<void>()
@@ -374,7 +374,7 @@ describe('CommandMount', () => {
 	})
 
 	it('uses one admission and drains a provider-owned binding on provider stop', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		const started = Promise.withResolvers<void>()
 		const aborted = Promise.withResolvers<void>()
@@ -446,7 +446,7 @@ describe('CommandMount', () => {
 	})
 
 	it('never revives an old wrapper across consumer replacement', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		const CommandMountCarrier = carrierProviderClass()
 
@@ -501,7 +501,7 @@ describe('CommandMount', () => {
 	})
 
 	it('creates a fresh mount and wrapper across provider replacement', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		@Plugin({ displayName: 'Replaceable mount provider' })
 		class MountProviderV1 extends BasePlugin {
@@ -582,7 +582,7 @@ describe('CommandMount', () => {
 	})
 
 	it('manual disposal is no-throw, exactly once, and does not cancel admitted work', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		const mount = host.ctx.service(Commands).createMount()
 		const started = Promise.withResolvers<void>()
@@ -628,7 +628,7 @@ describe('CommandMount', () => {
 	})
 
 	it('rolls back all bindings even when one installer disposer throws', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		let cleanupCalls = 0
 		@Plugin({ displayName: 'Failing mount owner' })
@@ -658,7 +658,7 @@ describe('CommandMount', () => {
 	})
 
 	it('rejects asynchronous installers and consumes every late outcome', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		const mount = host.ctx.service(Commands).createMount()
 		let lateCleanupCalls = 0

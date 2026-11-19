@@ -1,8 +1,5 @@
 import { createTestHost, type TestHost } from '@pluxel/test'
 import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { type WorkbenchPrincipal } from '@pluxel/workbench'
 import { type WorkbenchContentObserver } from '@pluxel/workbench/client'
 import { type RpcStub } from 'capnweb'
@@ -88,225 +85,123 @@ function contentObserver(
 }
 
 describe('S3 Workbench credential rotation', () => {
-	it('uses password fields and never echoes replacement credentials', async () => {
-		{
-			await using host = await createTestHost({
-				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
-
-			await startVaultS3(host)
-			using opened = await openCredentials(host, ADMIN)
-			using second = await openCredentials(host, ADMIN)
-			const secondUpdates = vi.fn()
-			await expect(opened.root.subscribeDto(contentObserver())).resolves.toMatchObject({
-				ok: true,
-				data: {
-					status: {
-						buckets: [
-							{
-								id: 'assets',
-								backend: 'remote-vault',
-								credentialRotation: 'available',
-							},
-						],
-					},
-				},
-			})
-			await second.root.subscribeDto(contentObserver(secondUpdates))
-			const action = opened.presentation.slots.find((slot) => slot.kind === 'action')
-			expect(action).toMatchObject({
-				kind: 'action',
-				key: 'rotate',
-				input: 'dialog',
-				confirm: expect.stringContaining('Vault record'),
-			})
-			if (!action || action.kind !== 'action' || action.input === 'none') {
-				throw new Error('S3 credential action has no form')
-			}
-			expect(
-				action.fields.map((field) =>
-					field.kind === 'string'
-						? { name: field.name, control: field.control }
-						: { name: field.name, control: undefined },
-				),
-			).toEqual([
-				{ name: 'bucketId', control: 'text' },
-				{ name: 'accessKeyId', control: 'password' },
-				{ name: 'secretAccessKey', control: 'password' },
-			])
-
-			const replacement = {
-				bucketId: 'assets',
-				accessKeyId: 'replacement-access-key',
-				secretAccessKey: 'replacement-secret-key',
-			}
-			const result = await opened.root.runDto('rotate', replacement)
-			expect(result).toMatchObject({
-				action: { ok: true, message: expect.stringContaining('New requests') },
-				data: {
-					ok: true,
-					data: {
-						status: {
-							buckets: [
-								{
-									id: 'assets',
-									backend: 'remote-vault',
-									credentialRotation: 'available',
-								},
-							],
-						},
-					},
-				},
-			})
-			const serializedResult = JSON.stringify(result)
-			expect(serializedResult).not.toContain(replacement.accessKeyId)
-			expect(serializedResult).not.toContain(replacement.secretAccessKey)
-			await expect(
-				host
-					.require(S3Plugin.nodeAddress())
-					.ctx.vault.kv({ namespace: REFERENCE.namespace })
-					.get(REFERENCE.key)
-					.then((snapshot) => snapshot.value),
-			).resolves.toEqual({
-				accessKeyId: replacement.accessKeyId,
-				secretAccessKey: replacement.secretAccessKey,
-			})
-			await vi.waitFor(() =>
-				expect(secondUpdates).toHaveBeenCalledWith(
-					expect.objectContaining({
-						ok: true,
-						data: {
-							status: {
-								buckets: [
-									{
-										id: 'assets',
-										backend: 'remote-vault',
-										credentialRotation: 'available',
-									},
-								],
-							},
-						},
-					}),
-				),
-			)
-			const updatesBeforeDispose = secondUpdates.mock.calls.length
-			second[Symbol.dispose]()
-			await opened.root.runDto('rotate', replacement)
-			await Promise.resolve()
-			expect(secondUpdates).toHaveBeenCalledTimes(updatesBeforeDispose)
+	it('restricts rotation to administrators, sends redacted updates and withdraws the action on stop', async () => {
+		await using host = await createTestHost({ workbench: true, services: [elysia()] })
+		await startVaultS3(host)
+		const vault = host.require(S3Plugin.nodeAddress()).ctx.vault.kv({
+			namespace: REFERENCE.namespace,
+		})
+		const replacement = {
+			bucketId: 'assets',
+			accessKeyId: 'replacement-access-key',
+			secretAccessKey: 'replacement-secret-key',
 		}
+
+		using recovery = await openCredentials(host, RECOVERY)
+		await recovery.root.subscribeDto(contentObserver())
+		await expect(recovery.root.runDto('rotate', replacement)).resolves.toMatchObject({
+			action: { ok: false, code: 'rejected' },
+			data: { ok: true },
+		})
+		const original = await vault.get(REFERENCE.key)
+		expect(original.value).toEqual({
+			accessKeyId: 'old-access-key',
+			secretAccessKey: 'old-secret-key',
+		})
+
+		using opened = await openCredentials(host, ADMIN)
+		using second = await openCredentials(host, ADMIN)
+		const status = {
+			buckets: [{ id: 'assets', backend: 'remote-vault', credentialRotation: 'available' }],
+		}
+		await expect(opened.root.subscribeDto(contentObserver())).resolves.toMatchObject({
+			ok: true,
+			data: { status },
+		})
+		const secondUpdate = Promise.withResolvers<Parameters<WorkbenchContentObserver>[0]>()
+		const secondUpdates = vi.fn(secondUpdate.resolve)
+		await second.root.subscribeDto(contentObserver(secondUpdates))
+
+		const action = opened.presentation.slots.find((slot) => slot.kind === 'action')
+		expect(action).toMatchObject({
+			kind: 'action',
+			key: 'rotate',
+			input: 'dialog',
+			confirm: expect.stringContaining('Vault record'),
+		})
+		if (!action || action.kind !== 'action' || action.input === 'none') {
+			throw new Error('S3 credential action has no form')
+		}
+		expect(action.fields).toMatchObject([
+			{ name: 'bucketId', control: 'text' },
+			{ name: 'accessKeyId', control: 'password' },
+			{ name: 'secretAccessKey', control: 'password' },
+		])
+
+		const result = await opened.root.runDto('rotate', replacement)
+		expect(result).toMatchObject({
+			action: { ok: true, message: expect.stringContaining('New requests') },
+			data: { ok: true, data: { status } },
+		})
+		const update = await secondUpdate.promise
+		expect(update).toMatchObject({ ok: true, data: { status } })
+		for (const reply of [result, update]) {
+			const serialized = JSON.stringify(reply)
+			expect(serialized).not.toContain(replacement.accessKeyId)
+			expect(serialized).not.toContain(replacement.secretAccessKey)
+		}
+		const updated = await vault.get(REFERENCE.key)
+		expect(updated.value).toEqual({
+			accessKeyId: replacement.accessKeyId,
+			secretAccessKey: replacement.secretAccessKey,
+		})
+
+		const updatesBeforeDispose = secondUpdates.mock.calls.length
+		second[Symbol.dispose]()
+		await opened.root.runDto('rotate', {
+			...replacement,
+			accessKeyId: 'another-access-key',
+		})
+		expect(secondUpdates).toHaveBeenCalledTimes(updatesBeforeDispose)
+
+		await host.stop(S3Plugin.nodeAddress())
+		await expect(recovery.root.runDto('rotate', replacement)).resolves.toMatchObject({
+			action: { ok: false, code: 'invalid_input' },
+		})
 	})
 
-	it('denies the loopback recovery principal and stops accepting calls with the generation', async () => {
-		{
-			await using host = await createTestHost({
-				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
-
-			await startVaultS3(host)
-			using opened = await openCredentials(host, RECOVERY)
-			await opened.root.subscribeDto(contentObserver())
-			const replacement = {
-				bucketId: 'assets',
-				accessKeyId: 'forbidden-access-key',
-				secretAccessKey: 'forbidden-secret-key',
-			}
-			await expect(opened.root.runDto('rotate', replacement)).resolves.toMatchObject({
-				action: { ok: false, code: 'rejected' },
-				data: { ok: true },
-			})
-			await expect(
-				host
-					.require(S3Plugin.nodeAddress())
-					.ctx.vault.kv({ namespace: REFERENCE.namespace })
-					.get(REFERENCE.key)
-					.then((snapshot) => snapshot.value),
-			).resolves.toEqual({
-				accessKeyId: 'old-access-key',
-				secretAccessKey: 'old-secret-key',
-			})
-
-			await host.stop(S3Plugin.nodeAddress())
-			await expect(opened.root.runDto('rotate', replacement)).resolves.toMatchObject({
-				action: { ok: false, code: 'invalid_input' },
-			})
-		}
-	})
-
-	it('keeps credential Content topology fixed and rejects local or anonymous backends', async () => {
-		{
-			await using host = await createTestHost({
-				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
-
-			await host.start(S3Plugin.nodeAddress())
-			using opened = await openCredentials(host, ADMIN)
-			await expect(opened.root.subscribeDto(contentObserver())).resolves.toMatchObject({
-				data: {
-					status: {
-						buckets: [
-							{
-								id: 'default',
-								backend: 'local',
-								credentialRotation: 'not-applicable',
-							},
-						],
+	it('keeps local and anonymous buckets in one Content and rejects rotation for both', async () => {
+		await using host = await createTestHost({ workbench: true, services: [elysia()] })
+		await host.start(S3Plugin.nodeAddress(), {
+			initialConfig: {
+				buckets: [
+					{ id: 'default', backend: { type: 'local' } },
+					{
+						id: 'public',
+						backend: {
+							type: 'remote',
+							endpoint: 'https://bucket.s3.example.com',
+							credentials: { type: 'anonymous' },
+						},
 					},
-				},
-			})
-			await expect(
-				opened.root.runDto('rotate', {
-					bucketId: 'default',
-					accessKeyId: 'unused-access-key',
-					secretAccessKey: 'unused-secret-key',
-				}),
-			).resolves.toMatchObject({ action: { ok: false, code: 'rejected' }, data: { ok: true } })
-		}
-
-		{
-			await using host = await createTestHost({
-				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
-
-			await host.start(S3Plugin.nodeAddress(), {
-				initialConfig: {
+				],
+			},
+		})
+		using opened = await openCredentials(host, ADMIN)
+		await expect(opened.root.subscribeDto(contentObserver())).resolves.toMatchObject({
+			data: {
+				status: {
 					buckets: [
-						{
-							id: 'public',
-							backend: {
-								type: 'remote',
-								endpoint: 'https://bucket.s3.example.com',
-								region: 'auto',
-								credentials: { type: 'anonymous' },
-								requestSizeInBytes: 8 * 1024 * 1024,
-								requestAbortTimeout: 30_000,
-								minPartSize: 8 * 1024 * 1024,
-							},
-						},
+						{ id: 'default', backend: 'local', credentialRotation: 'not-applicable' },
+						{ id: 'public', backend: 'remote-anonymous', credentialRotation: 'not-applicable' },
 					],
 				},
-			})
-			using opened = await openCredentials(host, ADMIN)
-			await expect(opened.root.subscribeDto(contentObserver())).resolves.toMatchObject({
-				data: {
-					status: {
-						buckets: [
-							{
-								id: 'public',
-								backend: 'remote-anonymous',
-								credentialRotation: 'not-applicable',
-							},
-						],
-					},
-				},
-			})
+			},
+		})
+		for (const bucketId of ['default', 'public']) {
 			await expect(
 				opened.root.runDto('rotate', {
-					bucketId: 'public',
+					bucketId,
 					accessKeyId: 'unused-access-key',
 					secretAccessKey: 'unused-secret-key',
 				}),

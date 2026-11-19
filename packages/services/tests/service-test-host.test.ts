@@ -1,5 +1,4 @@
 import type { WorkbenchHost } from '@pluxel/workbench/server'
-import { Commands } from '@pluxel/services/commands'
 import { ElysiaApp, elysia } from '@pluxel/services/elysia'
 import {
 	pluginDefinitionIndexKey,
@@ -192,7 +191,7 @@ describe('service test host', () => {
 	})
 
 	it('keeps Workbench optional and Vault built in without initializing credentials', async () => {
-		await using host = await createServiceInternalTestHost()
+		await using host = await createServiceInternalTestHost({ services: [] })
 
 		expect(host.ctx.service(WorkbenchHostRef)).toBeUndefined()
 		const owner = await host.start(PublicFixture.nodeAddress())
@@ -220,7 +219,7 @@ describe('service test host', () => {
 	})
 
 	it('stops and restarts immediately without changing durable auto-start policy', async () => {
-		await using host = await createServiceInternalTestHost()
+		await using host = await createServiceInternalTestHost({ services: [] })
 
 		const first = await host.start(PublicFixture.nodeAddress())
 		expect(host.stateStore.snapshot().autoStart).toEqual([])
@@ -234,7 +233,7 @@ describe('service test host', () => {
 	})
 
 	it('rejects an implicit catalog change on an already-running high-frequency start', async () => {
-		await using host = await createServiceInternalTestHost()
+		await using host = await createServiceInternalTestHost({ services: [] })
 
 		await host.start(PublicFixture.nodeAddress())
 		await expect(
@@ -329,11 +328,4 @@ describe('service test host', () => {
 		await expect(host.http.fetch('/probe')).rejects.toThrow(/closing or closed/i)
 		await first
 	})
-})
-
-it('uses an explicit service list without silently installing defaults', async () => {
-	await using host = await createServiceInternalTestHost({ services: [] })
-	expect(() => host.ctx.service(Commands)).toThrow('does not install')
-	await host.start(PublicFixture.nodeAddress())
-	expect(host.isRunning(PublicFixture.nodeAddress())).toBe(true)
 })

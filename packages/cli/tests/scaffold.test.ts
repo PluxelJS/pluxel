@@ -130,7 +130,7 @@ describe('scaffold installation', () => {
 			{ args: ['install'], cwd: resolve(root, 'orders'), manager: manifest.packageManager },
 		])
 		expect(result.stdout).toContain('vp run setup')
-		expect(result.stdout).toContain('vp run verify')
+		expect(result.stdout).toContain('vp run check-tests tests/orders.test.ts')
 	})
 
 	it('preserves an explicit local template package-manager version through Vite+', async () => {
@@ -154,7 +154,7 @@ describe('scaffold installation', () => {
 		expect(result.code).not.toBe(0)
 		expect(result.stderr).toContain('Generated files remain in place')
 		expect(fs.existsSync(resolve(root, 'orders/package.json'))).toBe(true)
-		expect(result.stdout).not.toContain('vp run verify')
+		expect(result.stdout).not.toContain('vp run check-tests')
 	})
 })
 

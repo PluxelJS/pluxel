@@ -39,6 +39,7 @@ afterEach(async () => {
 	window.localStorage.clear()
 	vi.restoreAllMocks()
 	vi.unstubAllGlobals()
+	vi.useRealTimers()
 })
 
 function Menus({ session }: { session: WorkspaceSession }) {
@@ -415,6 +416,7 @@ describe('Pluxel native workspace menus', () => {
 	})
 
 	it('uses the native overflow candidates and selection callback with keyboard focus return', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 		const { session, container } = await workspace()
 		vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
 			this: HTMLElement,
@@ -426,9 +428,7 @@ describe('Pluxel native workspace menus', () => {
 		})
 		const logs = await openDocument(session, '/logs')
 		await openDocument(session, '/security')
-		await act(async () => {
-			await new Promise((resolve) => setTimeout(resolve, 110))
-		})
+		await act(() => vi.runOnlyPendingTimersAsync())
 		const overflow = container.querySelector<HTMLButtonElement>('.flexlayout__tab_button_overflow')!
 		expect(overflow).not.toBeNull()
 		await click(overflow)

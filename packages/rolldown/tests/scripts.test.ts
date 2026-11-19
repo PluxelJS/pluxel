@@ -24,7 +24,7 @@ async function fixture(files: Record<string, string>) {
 				target: 'ES2023',
 				module: 'ESNext',
 				moduleResolution: 'Bundler',
-				customConditions: ['@pluxel/source'],
+				customConditions: ['@pluxel/hmr'],
 				strict: true,
 				strictNullChecks: true,
 				skipLibCheck: true,

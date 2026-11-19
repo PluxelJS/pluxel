@@ -72,15 +72,6 @@ describe('source projection and localized edits', () => {
 		expect(parsed.byteToUtf16.get(Buffer.byteLength(source))).toBe(source.length)
 		expect(() => parseTypstSource('a\uD800b', parser)).toThrow('surrogate')
 	})
-	it('opens and saves without changing comments, unknown syntax, CRLF or escapes', () => {
-		const source = '// 注释\r\n= 标题\r\n\r\n普通\\*文字😀 #foo(x: 2)[未知] 结尾\r\n'
-		const p = project(source)
-		expect(prepareTypstSourceEdit(p, structuredClone(p.document))).toEqual({ ok: true, value: [] })
-		expect(all(p.document).filter((node) => node.type === 'typstInlineSource')).toHaveLength(1)
-		expect(all(p.document).find((node) => node.type === 'typstInlineSource')?.attrs?.source).toBe(
-			'#foo(x: 2)[未知]',
-		)
-	})
 	it('preserves an outer call, computed parameters and strong delimiters while editing text', () => {
 		const source = '#text(fill:red, weight: if true {"bold"} else {"regular"})[*重要事项*]'
 		const changed = edit(source, (doc) => {

@@ -65,6 +65,7 @@ try {
 	console.info('      vp run setup')
 	console.info('      vp run dev')
 	console.info('      # In a Git repository: vp run hooks:install')
+	console.info('      # Todo tests: vp run @example/todo-plugin#check-tests tests/plugin.test.ts')
 } catch (error) {
 	console.error(`[create-pluxel] ${error instanceof Error ? error.message : String(error)}`)
 	process.exitCode = 1

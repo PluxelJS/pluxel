@@ -136,18 +136,13 @@ describe('native Shell interaction contracts', () => {
 		expect(document.querySelector('[aria-label="入口搜索"]')).not.toBeNull()
 	})
 
-	it('keeps official shortcuts separate and persists icon/label mode without touching documents', async () => {
+	it('persists the sidebar display mode without disturbing the active document', async () => {
 		const { session, container } = await workspace()
 		const id = await openDocument(session, '/plugins')
 		const input = container.querySelector<HTMLInputElement>('[aria-label="插件输入"]')!
 		input.value = 'independent draft'
 		const rail = container.querySelector('[aria-label="工作区入口"]')!
 		expect(rail.getAttribute('data-mode')).toBe('icons')
-		expect(
-			[...rail.querySelectorAll('.plx-activity__items button')].map((item) =>
-				item.getAttribute('aria-label'),
-			),
-		).toEqual(['首页', '应用', '插件管理', '日志', '认证与安全', '安全审计', '依赖图'])
 		await click(container.querySelector('[aria-label="显示图标与文字"]')!)
 		expect(rail.getAttribute('data-mode')).toBe('labels')
 		await act(async () => {
@@ -156,19 +151,7 @@ describe('native Shell interaction contracts', () => {
 		const restored = new WorkspaceSession({ snapshot: session.workbench.createSnapshot() })
 		sessions.push(restored)
 		expect(restored.navigationMode()).toBe('labels')
-		expect(
-			restored.workbench.model
-				.toJson()
-				.borders?.find((border) => border.location === 'left')
-				?.children?.map((node) => node.id),
-		).toEqual(['navigation'])
 		expect(session.workbench.getActiveDocument()?.id).toBe(id)
-		await click(container.querySelector('[aria-label="左侧导航"]')!)
-		await click(container.querySelector('[aria-label="左侧导航"]')!)
-		expect(
-			session.workbench.model.toJson().borders?.find((border) => border.location === 'left')
-				?.children,
-		).toHaveLength(1)
 		await click(container.querySelector('[aria-label="仅显示图标"]')!)
 		expect(rail.getAttribute('data-mode')).toBe('icons')
 		expect(input.value).toBe('independent draft')

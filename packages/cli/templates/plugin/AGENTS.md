@@ -4,13 +4,12 @@
 
 入口缺失时：Git 用户从上游 checkout 的 CLI 执行 `source install --root <本项目>`；npm 用户安装依赖后执行 `vp exec pluxel workspace setup`。`vp exec pluxel docs` 可直接读取当前来源的正文。CLI 管理生成链接，不复制或提交上游正文。
 
-完成修改后运行 `vp run verify`，报告实际检查结果与未验证边界；在线效果需要现有 dev console 的实际证据。
+日常修改用 `vp run check-tests tests/<file>.test.ts` 运行相关测试文件。按风险补充类型检查或消费应用的回归。`vp run verify` 用于完整验收。报告实际结果与未验证边界。在线效果使用现有 dev console 验证。
 
 ## 本包构建与检查
 
 - 修改插件、公共契约、package metadata、`tsdown.config.ts` 或 lint / fmt 规则前，按开发指南确认对应契约；包发布见 `vp exec pluxel docs development/plugin-package.md`。
 - `tsdown.config.ts` 只描述包的输入输出；`pluxel build` 拥有编译语义与生成的插件依赖 metadata。
-- 完成后运行 `vp run verify`；不得无理由绕过 Pluxel lint 规则。
 
 工作区使用全局 Vite+ 统一依赖安装与命令执行；`mise.toml` 仅提供可选的工具安装与版本固定。命令约定与应用、插件及团队模板共同遵循工作区工具链指南。准备好工具后运行 `vp install`、`vp run setup`，已有 Git 仓库再 `vp run hooks:install`。`hk.pkl` 只选择文件并调用 `vp check`；`vp run verify` 委托 `workspace:verify` 原生任务图。`oxlint.config.ts` 与 `oxfmt.config.ts` 分别维护规则，根 `vite.config.ts` 引用为 `lint` / `fmt` 并启用类型检查；每份规则只维护一个来源，详见工作区工具链指南。
 

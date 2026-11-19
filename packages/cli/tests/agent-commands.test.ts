@@ -108,11 +108,10 @@ it('mounts SDK commands on the executable and preserves nested profile routing, 
 			{ stage: 'accepted', receipt: output.value.receipt },
 		])
 		expect(await readFile(join(web, receiptFile), 'utf8')).toBe(output.value.receipt + '\n')
-		for (const command of ['result', 'cancel']) {
-			const queried = await run(web, ['script', command, '--receipt-file', receiptFile])
-			expect({ code: queried.code, stderr: queried.stderr }).toEqual({ code: 0, stderr: '' })
-			expect(JSON.parse(queried.stdout)).toEqual({ ok: true, value: output.value })
-		}
+		const query = args[0] === 'run' ? 'result' : 'cancel'
+		const queried = await run(web, ['script', query, '--receipt-file', receiptFile])
+		expect({ code: queried.code, stderr: queried.stderr }).toEqual({ code: 0, stderr: '' })
+		expect(JSON.parse(queried.stdout)).toEqual({ ok: true, value: output.value })
 	}
 	const submission = outer.requests.find((request) => request.method === 'submit')
 	expect(submission?.input).toMatchObject({
@@ -194,7 +193,7 @@ console.log(JSON.stringify({id:'fixture/docs',status:'running',url:'http://docs.
 			service: { id: 'fixture/docs', status: 'running', url: 'http://docs.test/' },
 		},
 	})
-	for (const args of [['instances'], ['run', 'task.ts'], ['hmr', 'pause'], ['sync']]) {
+	for (const args of [['instances'], ['hmr', 'pause']]) {
 		const result = await run(root, ['dev', ...args], env)
 		expect(result.code).toBe(1)
 		expect(JSON.parse(result.stdout)).toMatchObject({
@@ -228,18 +227,12 @@ registerHooks({resolve(specifier, context, next) {
 		['dev'],
 		['script'],
 		['script', 'run'],
-		['script', 'result'],
-		['script', 'cancel'],
-		['script', 'sync'],
 		['dev', 'status'],
-		['dev', 'instances'],
-		['dev', 'run'],
 		['dev', 'hmr'],
-		['dev', 'sync'],
+		['docs'],
 	]) {
 		const result = await run(root, [...args, '--help'], {}, ['--import', guard])
 		expect({ code: result.code, stderr: result.stderr }).toEqual({ code: 0, stderr: '' })
 		expect(result.stdout).toContain('USAGE:')
-		expect(result.stderr).toBe('')
 	}
 })

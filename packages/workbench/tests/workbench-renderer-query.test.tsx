@@ -16,11 +16,16 @@ import {
 } from '@pluxel/workbench/client'
 import {
 	createWorkbenchRenderer,
+	useWorkbench,
 	type WorkbenchHostFacade,
 	type WorkbenchMutationState,
 	type WorkbenchQueryResult,
 } from '@pluxel/workbench/react'
-import { createWorkbenchBridge } from '@pluxel/workbench/internal/react'
+import {
+	createWorkbenchBridge,
+	readWorkbenchBridgeIdentity,
+	readWorkbenchBridgeProvider,
+} from '@pluxel/workbench/internal/react'
 
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
@@ -33,6 +38,12 @@ const QueryWorkbench = workbench.define({
 	query: workbench.view<QueryApi>({
 		renderer: rendererEntry,
 		placement: workbench.tab({ label: 'Query' }),
+	}),
+})
+const OtherWorkbench = workbench.define({
+	other: workbench.view<QueryApi>({
+		renderer: rendererEntry,
+		placement: workbench.tab({ label: 'Other' }),
 	}),
 })
 const owner = parsePluginDefinitionAddress({
@@ -51,9 +62,11 @@ const host: WorkbenchHostFacade = Object.freeze({
 })
 
 describe('Workbench renderer query scope', () => {
-	it('lends the same opened root to components, queries and mutations without duplicating it', async () => {
+	it('renders without props and lends the exact Bridge root to hooks and resource factories', async () => {
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
 		const borrowed = new Set<RpcStub<QueryApi>>()
+		let observedHost: WorkbenchHostFacade | undefined
+		let renderedProps: Readonly<Record<string, never>> | undefined
 		const query = scope.query(({ api }) => {
 			borrowed.add(api)
 			return { queryKey: ['shared-root'], queryFn: () => api.snapshot() }
@@ -63,6 +76,9 @@ describe('Workbench renderer query scope', () => {
 			return { mutationFn: () => api.snapshot() }
 		})
 		function Child(): ReactNode {
+			const current = useWorkbench(QueryWorkbench.query)
+			borrowed.add(current.api)
+			observedHost = current.host
 			borrowed.add(scope.useWorkbench().api)
 			query.useQuery()
 			mutation.useMutation()
@@ -85,8 +101,17 @@ describe('Workbench renderer query scope', () => {
 			dup: vi.fn(),
 			[Symbol.dispose]: vi.fn(),
 		}
-		const opened = await renderOpened(identity, scope.render(Page), api)
+		const ScopedPage = scope.render(Page)
+		function Renderer(props: Readonly<Record<string, never>>): ReactNode {
+			renderedProps = props
+			return <ScopedPage />
+		}
+		const opened = await renderOpened(identity, Renderer, api)
 		await vi.waitFor(() => expect(api.snapshot).toHaveBeenCalledTimes(1))
+		expect(readWorkbenchBridgeProvider(opened.provider)).toBe(opened.provider)
+		expect(readWorkbenchBridgeIdentity(opened.provider)).toEqual(identity)
+		expect(renderedProps).toEqual({})
+		expect(observedHost).toBe(host)
 		expect(borrowed.size).toBe(1)
 		expect([...borrowed][0]).toBe(api)
 		expect(api.dup).not.toHaveBeenCalled()
@@ -97,56 +122,35 @@ describe('Workbench renderer query scope', () => {
 		expect(api[Symbol.dispose]).not.toHaveBeenCalled()
 	})
 
-	it('rejects flat legacy options when their factories bind to an owner', async () => {
-		const invalidates: never[] = []
-		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+	it('rejects the wrong descriptor before a renderer can invoke its RPC API', async () => {
+		using _consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+		const snapshot = vi.fn()
+		function WrongRenderer(): null {
+			const { api } = useWorkbench(OtherWorkbench.other)
+			void api.snapshot()
+			return null
+		}
+		const opened = await renderOpened(identity, WrongRenderer, { snapshot })
+		expect(opened.dom.textContent).toContain('descriptor identity does not match this renderer')
+		expect(snapshot).not.toHaveBeenCalled()
+		await opened.dispose()
+	})
+
+	it('rejects unsupported query options when the factory binds to an owner', async () => {
+		using _consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const legacyQuery = scope.query((() => ({
+		const unsupportedQuery = scope.query((() => ({
 			queryKey: ['malformed'],
 			queryFn: () => ({ value: 1 }),
-			watch: () => ({ [Symbol.dispose]() {} }),
+			select: (result: { value: number }) => result.value,
 		})) as never)
-		function LegacyQueryPage(): ReactNode {
-			legacyQuery.useQuery()
+		function Page(): ReactNode {
+			unsupportedQuery.useQuery()
 			return null
 		}
-		const legacyQueryOpened = await renderOpened(identity, scope.render(LegacyQueryPage), {
-			snapshot: vi.fn(),
-		})
-		expect(legacyQueryOpened.dom.textContent).toMatch(/unsupported option "watch"/i)
-		await legacyQueryOpened.dispose()
-
-		const mutationScope = createWorkbenchRenderer(QueryWorkbench.query)
-		const legacyMutation = mutationScope.mutation((() => ({
-			mutationFn: (): undefined => undefined,
-			invalidates,
-		})) as never)
-		function LegacyMutationPage(): ReactNode {
-			legacyMutation.useMutation()
-			return null
-		}
-		const legacyMutationOpened = await renderOpened(
-			identity,
-			mutationScope.render(LegacyMutationPage),
-			{ snapshot: vi.fn() },
-		)
-		expect(legacyMutationOpened.dom.textContent).toMatch(/unsupported option "invalidates"/i)
-		await legacyMutationOpened.dispose()
-		consoleError.mockRestore()
-
-		expect(() =>
-			scope.query(() => ({
-				queryKey: ['namespaced'],
-				queryFn: () => ({ value: 1 }),
-				workbench: { subscribe: () => ({ [Symbol.dispose]() {} }) },
-			})),
-		).not.toThrow()
-		expect(() =>
-			scope.mutation(() => ({
-				mutationFn: (): undefined => undefined,
-				workbench: { invalidates },
-			})),
-		).not.toThrow()
+		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		expect(opened.dom.textContent).toMatch(/unsupported option "select"/i)
+		await opened.dispose()
 	})
 
 	it('isolates query owners between simultaneous opens of the same descriptor', async () => {
@@ -765,10 +769,9 @@ describe('Workbench renderer query scope', () => {
 
 		await act(async () => setVisible(false))
 		expect(firstDispose).toHaveBeenCalledTimes(1)
-		act(() => setVisible(true))
+		await act(async () => setVisible(true))
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('error:1'))
 		expect(observed.error).toBe(subscribeFailure)
-		await new Promise((resolve) => setTimeout(resolve, 10))
 		expect(subscribe).toHaveBeenCalledTimes(2)
 		expect(queryFn).toHaveBeenCalledTimes(1)
 		await opened.dispose()
@@ -961,46 +964,52 @@ describe('Workbench renderer query scope', () => {
 	})
 
 	it('turns a throwing retry predicate into query error state and cancels retries on close', async () => {
-		const retryFailure = new Error('retry predicate failed')
-		const queryFn = vi.fn(() => Promise.reject(new Error('read failed')))
-		const retry = vi.fn((_context: { failureCount: number; error: unknown }) => {
-			throw retryFailure
-		})
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const query = scope.query(() => ({
-			queryKey: ['retry-predicate'],
-			queryFn,
-			retry: (_failureCount, error) => retry({ failureCount: 1, error }),
-		}))
-		let observed: WorkbenchQueryResult<Readonly<{ value: number }>> | undefined
-		function Page(): ReactNode {
-			observed = query.useQuery()
-			return <p>{observed.status}</p>
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+		let opened: Awaited<ReturnType<typeof renderOpened>> | undefined
+		try {
+			const readFailure = new Error('read failed')
+			const retryFailure = new Error('retry predicate failed')
+			const retry = vi.fn(() => {
+				throw retryFailure
+			})
+			const retryingFn = vi.fn(async () => {
+				throw readFailure
+			})
+			const retryDelay = vi.fn(() => 100)
+			const scope = createWorkbenchRenderer(QueryWorkbench.query)
+			const throwing = scope.query(() => ({
+				queryKey: ['retry-predicate'],
+				queryFn: async () => {
+					throw readFailure
+				},
+				retry,
+			}))
+			const retrying = scope.query(() => ({
+				queryKey: ['retry-close'],
+				queryFn: retryingFn,
+				retry: 5,
+				retryDelay,
+			}))
+			let observed: WorkbenchQueryResult<never> | undefined
+			function Page(): ReactNode {
+				observed = throwing.useQuery()
+				retrying.useQuery()
+				return null
+			}
+			opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+			await act(() => vi.advanceTimersByTimeAsync(0))
+			expect(observed).toMatchObject({ status: 'error', error: retryFailure })
+			expect(retry).toHaveBeenCalledExactlyOnceWith(0, readFailure)
+			expect(retryDelay).toHaveBeenCalledExactlyOnceWith(0, readFailure)
+			expect(retryingFn).toHaveBeenCalledOnce()
+			await opened.dispose()
+			opened = undefined
+			await act(() => vi.advanceTimersByTimeAsync(100))
+			expect(retryingFn).toHaveBeenCalledOnce()
+		} finally {
+			await opened?.dispose()
+			vi.useRealTimers()
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-		await vi.waitFor(() => expect(opened.dom.textContent).toBe('error'))
-		expect(observed?.error).toBe(retryFailure)
-		expect(retry).toHaveBeenCalledTimes(1)
-		await opened.dispose()
-
-		const retryingScope = createWorkbenchRenderer(QueryWorkbench.query)
-		const retryingFn = vi.fn(() => Promise.reject(new Error('read failed')))
-		const retryingQuery = retryingScope.query(() => ({
-			queryKey: ['retry-close'],
-			queryFn: retryingFn,
-			retry: 5,
-		}))
-		function RetryingPage(): ReactNode {
-			retryingQuery.useQuery()
-			return null
-		}
-		const retrying = await renderOpened(identity, retryingScope.render(RetryingPage), {
-			snapshot: vi.fn(),
-		})
-		await vi.waitFor(() => expect(retryingFn).toHaveBeenCalledTimes(1))
-		await retrying.dispose()
-		await new Promise((resolve) => setTimeout(resolve, 300))
-		expect(retryingFn).toHaveBeenCalledTimes(1)
 	})
 
 	it('uses TanStack retryDelay semantics without retrying Workbench boundary failures', async () => {
@@ -1132,121 +1141,91 @@ describe('Workbench renderer mutation resource', () => {
 		await opened.dispose()
 	})
 
-	it('rejects malformed and oversized callback invalidations before invoking the mutation', async () => {
+	it('rejects invalid mutation targets before invoking the mutation', async () => {
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
 		const query = scope.query(() => ({
 			queryKey: ['invalidates-validation'],
 			queryFn: () => ({ value: 1 }),
 		}))
-		const mutationFn = vi.fn(() => ({ value: 1 }))
-		const malformed = scope.mutation(() => ({
-			mutationFn,
-			workbench: { invalidates: ((): null => null) as never },
+		const keyedQuery = scope.queryFamily((_context, id: number) => ({
+			queryKey: ['keyed', id],
+			queryFn: () => ({ value: id }),
 		}))
-		const oversized = scope.mutation(() => ({
-			mutationFn,
-			workbench: { invalidates: () => Array.from({ length: 129 }, () => query) },
+		const foreignScope = createWorkbenchRenderer(QueryWorkbench.query)
+		const foreignQuery = foreignScope.query(() => ({
+			queryKey: ['foreign'],
+			queryFn: () => ({ value: 1 }),
 		}))
-		let malformedState: WorkbenchMutationState<void, Readonly<{ value: number }>> | undefined
-		let oversizedState: WorkbenchMutationState<void, Readonly<{ value: number }>> | undefined
-		function Page(): ReactNode {
-			malformedState = malformed.useMutation()
-			oversizedState = oversized.useMutation()
-			return null
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-
-		act(() => malformedState!.mutate())
-		await vi.waitFor(() => expect(malformedState!.status).toBe('error'))
-		expect(malformedState!.error).toEqual(
-			expect.objectContaining({
-				message: '[workbench/react] mutation invalidates() must return an array',
-			}),
-		)
-		await act(async () => {
-			await expect(oversizedState!.mutateAsync()).rejects.toMatchObject({
-				code: 'WORKBENCH_RESOURCE_LIMIT_EXCEEDED',
-			})
-		})
-		expect(mutationFn).not.toHaveBeenCalled()
-		expect(oversizedState!.status).toBe('error')
-		await opened.dispose()
-	})
-
-	it('rejects sparse invalidations before the mutation and deduplicates repeated targets', async () => {
-		let reads = 0
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const query = scope.query(() => ({
-			queryKey: ['deduplicated-invalidation'],
-			queryFn: () => ({ value: ++reads }),
-		}))
-		const sparseMutationFn = vi.fn(() => undefined)
-		const sparse = scope.mutation(() => ({
-			mutationFn: sparseMutationFn,
-			workbench: {
-				invalidates: () => {
-					const targets: unknown[] = []
-					targets.length = 1
-					return targets as never
-				},
-			},
-		}))
-		const duplicate = scope.mutation(() => ({
-			mutationFn: (): undefined => undefined,
-			workbench: {
-				invalidates: [query, query, query],
-			},
-		}))
-		let sparseState: WorkbenchMutationState<void, void> | undefined
-		let duplicateState: WorkbenchMutationState<void, void> | undefined
-		function Page(): ReactNode {
-			const snapshot = query.useQuery()
-			sparseState = sparse.useMutation()
-			duplicateState = duplicate.useMutation()
-			return <p>{snapshot.data?.value ?? 'pending'}</p>
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-		await vi.waitFor(() => expect(opened.dom.textContent).toBe('1'))
-
-		await act(async () => {
-			await expect(sparseState!.mutateAsync()).rejects.toBeInstanceOf(Error)
-		})
-		expect(sparseMutationFn).not.toHaveBeenCalled()
-		await act(async () => {
-			await duplicateState!.mutateAsync()
-		})
-		await vi.waitFor(() => expect(opened.dom.textContent).toBe('2'))
-		expect(reads).toBe(2)
-		await opened.dispose()
-	})
-
-	it('invokes zero-variable mutation functions and invalidation selectors with zero arguments', async () => {
-		let mutationArgumentCount = -1
-		let invalidationArgumentCount = -1
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
+		const mutationFn = vi.fn<(targets: unknown) => void>()
 		const mutation = scope.mutation(() => ({
-			mutationFn: (...args: []) => {
-				mutationArgumentCount = args.length
-			},
-			workbench: {
-				invalidates: (...args: []) => {
-					invalidationArgumentCount = args.length
-					return []
-				},
-			},
+			mutationFn,
+			workbench: { invalidates: (targets: unknown) => targets as never },
 		}))
-		let state: WorkbenchMutationState<void, void> | undefined
+		let state!: WorkbenchMutationState<unknown, void>
 		function Page(): ReactNode {
 			state = mutation.useMutation()
 			return null
 		}
 		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
 
-		await act(async () => {
-			await state!.mutateAsync()
+		await act(async () => state.mutate(null))
+		expect(state).toMatchObject({
+			status: 'error',
+			error: { message: '[workbench/react] mutation invalidates() must return an array' },
 		})
-		expect(invalidationArgumentCount).toBe(0)
-		expect(mutationArgumentCount).toBe(0)
+		const sparseTargets: unknown[] = []
+		sparseTargets.length = 1
+		for (const { targets, error } of [
+			{
+				targets: Array.from({ length: 129 }, () => query),
+				error: { code: 'WORKBENCH_RESOURCE_LIMIT_EXCEEDED' },
+			},
+			{
+				targets: sparseTargets,
+				error: { message: '[workbench/react] mutation invalidates must be a dense array' },
+			},
+			{ targets: [query, foreignQuery], error: { code: 'WORKBENCH_RENDERER_SCOPE_MISMATCH' } },
+			{
+				targets: [keyedQuery.target(Number.NaN)],
+				error: { code: 'WORKBENCH_RESOURCE_KEY_INVALID' },
+			},
+		]) {
+			await act(async () => {
+				await expect(state.mutateAsync(targets)).rejects.toMatchObject(error)
+			})
+			expect(state).toMatchObject({ status: 'error', error })
+		}
+		expect(mutationFn).not.toHaveBeenCalled()
+		await opened.dispose()
+	})
+
+	it('calls no-input mutations and selectors without arguments and invalidates a repeated target once', async () => {
+		let reads = 0
+		const scope = createWorkbenchRenderer(QueryWorkbench.query)
+		const query = scope.query(() => ({
+			queryKey: ['deduplicated-invalidation'],
+			queryFn: () => ({ value: ++reads }),
+		}))
+		const mutationFn = vi.fn<() => void>()
+		const invalidates = vi.fn(() => [query, query, query])
+		const mutation = scope.mutation(() => ({
+			mutationFn,
+			workbench: { invalidates },
+		}))
+		let state!: WorkbenchMutationState<void, void>
+		function Page(): ReactNode {
+			const snapshot = query.useQuery()
+			state = mutation.useMutation()
+			return <p>{snapshot.data?.value ?? 'pending'}</p>
+		}
+		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await vi.waitFor(() => expect(opened.dom.textContent).toBe('1'))
+		await act(async () => {
+			await state.mutateAsync()
+		})
+		expect(mutationFn).toHaveBeenCalledExactlyOnceWith()
+		expect(invalidates).toHaveBeenCalledExactlyOnceWith()
+		await vi.waitFor(() => expect(opened.dom.textContent).toBe('2'))
 		await opened.dispose()
 	})
 
@@ -1297,51 +1276,6 @@ describe('Workbench renderer mutation resource', () => {
 			await allState!.mutateAsync()
 		})
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('321'))
-		await opened.dispose()
-	})
-
-	it('validates every invalidation target before invoking the mutation', async () => {
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const foreignScope = createWorkbenchRenderer(QueryWorkbench.query)
-		const foreignQuery = foreignScope.query(() => ({
-			queryKey: ['foreign'],
-			queryFn: () => ({ value: 1 }),
-		}))
-		const keyedQuery = scope.queryFamily((_context, input: Readonly<{ id: number }>) => ({
-			queryKey: ['validation', input],
-			queryFn: () => ({ value: input.id }),
-		}))
-		const mutationFn = vi.fn(() => ({ value: 1 }))
-		const foreignMutation = scope.mutation(() => ({
-			mutationFn,
-			workbench: { invalidates: [foreignQuery] as never },
-		}))
-		const invalidKeyMutation = scope.mutation(() => ({
-			mutationFn,
-			workbench: { invalidates: () => [keyedQuery.target({ id: Number.NaN })] },
-		}))
-		let foreign: WorkbenchMutationState<void, Readonly<{ value: number }>> | undefined
-		let invalidKey: WorkbenchMutationState<void, Readonly<{ value: number }>> | undefined
-		function Page(): ReactNode {
-			foreign = foreignMutation.useMutation()
-			invalidKey = invalidKeyMutation.useMutation()
-			return null
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-
-		await act(async () => {
-			await expect(foreign!.mutateAsync()).rejects.toMatchObject({
-				code: 'WORKBENCH_RENDERER_SCOPE_MISMATCH',
-			})
-		})
-		await act(async () => {
-			await expect(invalidKey!.mutateAsync()).rejects.toMatchObject({
-				code: 'WORKBENCH_RESOURCE_KEY_INVALID',
-			})
-		})
-		expect(mutationFn).not.toHaveBeenCalled()
-		expect(foreign!.status).toBe('error')
-		expect(invalidKey!.status).toBe('error')
 		await opened.dispose()
 	})
 
@@ -1526,6 +1460,7 @@ async function renderOpened(
 	}
 	return {
 		dom,
+		provider,
 		abortOwner() {
 			ownerController.abort()
 		},

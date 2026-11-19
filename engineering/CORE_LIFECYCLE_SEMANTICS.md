@@ -55,7 +55,7 @@ draft records/graph -> verify -> prepare stop/start plan -> stop old generations
 
 | ID  | 不变量                                                                                                                      | 当前测试证据                                                                                                        | 边界                                                                                                 |
 | --- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| L1  | running consumer 的每个 required dependency 都解析到 running provider generation。                                          | `PluginService.lifecycle-model.test.ts`, `PluginService.failures.test.ts`, `PluginService.cascade.test.ts`          | 只覆盖 lowered graph dependency；任意 runtime lookup 不会被提升为 required edge。                    |
+| L1  | running consumer 的每个 required dependency 都解析到 running provider generation。                                          | `PluginService.lifecycle-model.test.ts`, `PluginService.failures.test.ts`                                           | 只覆盖 lowered graph dependency；任意 runtime lookup 不会被提升为 required edge。                    |
 | L2  | 同一 Plugin node 在稳定点最多有一个可对外使用的 generation。                                                                | `PluginService.lifecycle-model.test.ts`, `PluginService.inflight-update.test.ts`                                    | 稳定点指 awaited commit 后；不声明 rolling update 零停机。                                           |
 | L3  | generation 离开 running 后不再接受新的 owner invocation。                                                                   | `OwnerInvocations.test.ts`                                                                                          | 只覆盖通过 owner invocation gate 接纳的调用。                                                        |
 | L4  | consumer cleanup 完成前，其 graph provider 不进入最终 drain。                                                               | `PluginService.teardown.test.ts`, `PluginService.optional.test.ts`, `PluginService.lifecycle-model.test.ts`         | graph ordering 不能证明隐藏外部 effect 可交换。                                                      |
@@ -77,6 +77,6 @@ draft records/graph -> verify -> prepare stop/start plan -> stop old generations
 - oracle 只检查抽象 ownership、running projection 和 dependency availability，不复制 `PluginService` 的 scheduler；
 - 每个 awaited commit 后才检查稳定点不变量；
 - 测试覆盖多种 batching 顺序、queued commit、late settlement、reentrant cleanup、optional absent/recovery、required failure blocking 和 effect active count；
-- 后续扩展 action alphabet 时，优先复用同一 trace runner，避免把每个 race 重新写成互不关联的单项测试。
+- 同一个 lifecycle 场景沿一条 trace 更新状态，在相关 commit 后核对不变量。批次顺序选择能改变依赖是否可用或何时生效的代表组合。
 
 第一批范围只覆盖 Core graph、generation、invocation 和 effects。Vite、database、HTTP、Workbench 或 worker capability 需要各自的领域审计后再接入。

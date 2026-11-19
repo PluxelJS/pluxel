@@ -122,13 +122,16 @@ Native deployment keeps these tools in development dependencies. Development con
 Open the application URL printed by `vp run dev`. The Todo UI calls the same-origin Plugin-owned
 `/api/example/todos` routes to list, create, complete and remove items.
 
-## Verify the complete workspace
+## Run a focused test
+
+Run the Todo plugin's test task with a file filter from the workspace root.
 
 ```sh
-vp run verify
+vp run @example/todo-plugin#check-tests tests/plugin.test.ts
 ```
 
-This runs governance checks, formatting, Pluxel Oxlint rules, type checking, tests and the production
+For complete workspace verification, `vp run verify` runs governance checks, formatting,
+Pluxel Oxlint rules, type checking, tests and the production
 application build. To create a real publishable plugin package alongside the examples, use:
 
 ```sh

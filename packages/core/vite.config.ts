@@ -12,6 +12,7 @@ export default defineConfig({
 				command: 'vp pack',
 				dependsOn: ['@pluxel/context#compile', 'eventure#compile'],
 				cache: {
+					input: ['!dist/**', '!tests/**'],
 					output: ['dist/**'],
 				},
 			},

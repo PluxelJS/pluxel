@@ -39,8 +39,10 @@ SSR 条件会进 worker Node --conditions；不得全局加入 import，Node 需
 
 ## 回归取舍与验证所有权
 
-case 保护当前行为、owner 或已观察失败。相同前提/结果可合并，失败阶段、并发、owner、真实传输的差异需要保留。
+测试覆盖当前契约、资源归属或已观察到的失败。相同前提和结果可以合并，保留失败阶段、并发、资源归属和真实传输的区别。
 
+- 重用同一组前置和资源来验证一个完整的操作序列。纯函数可以用表格覆盖代表输入。涉及进程、构建产物或 Host 的契约使用对应真实边界。
+- 用应用结果、事件或可控的 Promise 等待状态变化。只在验证超时或定时调度本身时推进测试时钟，外部文件和跨进程变更等待可观察的结果。
 - 纯类型放 tests/*.typecheck.ts，由包含 tests 的 typecheck 验证；preset 行为执行真实配置，不扫描源码猜 API。
 - 编译归 Rolldown，CLI 测真实 bin/产物，协议复用生产 adapter；连接/背压/关闭在 carrier 验证。
 - exports/依赖/目录政策归 [Governance](GOVERNANCE.md)；迁移完成后删除专用旧符号检查。
@@ -50,11 +52,13 @@ case 保护当前行为、owner 或已观察失败。相同前提/结果可合�
 
 ## CI scheduling and cache
 
-任务所有权见 [CLI 工作区任务图](CLI_WORKSPACES.md#工作区任务图)，运行入口和 CI 范围见[工作区工具链](../docs/development/workspace-toolchain.md#构建检查与任务图)。CI 直接执行 `workspace:ci`，Vite Task 根据真实输入缓存；本地完整入口是 `workspace:verify`。双核 runner 并发两个 package tasks，日志保留任务耗时、命中和冷构建成本，真实 Redis/Vite/子进程集成随所属任务运行。
+任务所有权见 [CLI 工作区任务图](CLI_WORKSPACES.md#工作区任务图)。本地迭代使用[局部验证](../docs/development/workspace-toolchain.md#局部验证)。CI 直接执行 `workspace:ci`，Vite Task 根据真实输入缓存；本地完整入口是 `workspace:verify`。双核 runner 并发两个 package tasks，日志保留任务耗时、命中和冷构建成本，真实 Redis/Vite/子进程集成随所属任务运行。
 
 ### 缓存输入与输出
 
 cache 在当前 checkout 的 `node_modules/.vite/task-cache`，worktree 独立，CI 按键复用。repositoryTasks 默认排除本任务 outputs；显式 inputs 接管过滤时，排自己生成目录，保留依赖产物/前阶段输出/真实读写输入。否定 glob 优先，不能靠后续肯定重新纳入；分阶段展开后再应用默认。
+
+Core、Host 和 Services 的库构建缓存排除包内 `tests/`。这些文件由各包的测试和类型检查任务读取。
 
 不同产物各有 task/output，用依赖相连。Vite Task 将 && 拆为缓存步骤，CSS 生成不能与后续 pack 共用 dist/**，避免恢复覆盖/叠旧文件。消费本包发布制品的 test 显式依赖本包 build，失败/超时子进程也须回收。governance 用真实 vp run 验证冷恢复、source/dependency 变化、阶段输入和输出内保留输入。
 

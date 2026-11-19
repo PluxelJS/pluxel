@@ -4,7 +4,7 @@
 
 入口缺失时：Git 用户从上游 checkout 的 CLI 执行 `source install --root <本项目>`；npm 用户安装依赖后执行 `vp exec pluxel workspace setup`。`vp exec pluxel docs` 可直接读取当前来源的正文。CLI 管理生成链接，不复制或提交上游正文。
 
-完成修改后运行 `vp run verify`，报告实际检查结果与未验证边界；在线效果需要现有 dev console 的实际证据。
+日常修改运行所属包的相关测试，例如 `vp run @example/todo-plugin#check-tests tests/plugin.test.ts`。按风险补充类型检查或受影响调用方的回归。`vp run verify` 用于整仓验收。报告实际结果与未验证边界。在线效果使用现有 dev console 验证。
 
 ## 本项目位置与检查
 
@@ -13,7 +13,6 @@
 - 浏览器 React/Vite 代码位于 `host/web/`；Node catalog、配置和路由策略位于 `host/`；共享中立逻辑位于 `packages/`。
 - 源码查询从 `@pluxel/agent-sdk/source` 导入普通函数，运行 `vp exec node dev/inspect.mjs`。本应用使用 `application: { root: 'host', entry: 'src/app.ts' }`；用法见 `vp exec pluxel docs development/inspection.md`。进程内 Host 操作入口为 `@pluxel/agent-sdk/host`，外部 Node 程序通过 `/client` 发现、执行和查询原 receipt。
 - 修改 `plugins/`、公共契约、Host 配置或 lint / fmt 规则前，按开发指南确认对应契约。应用装配见 `vp exec pluxel docs host/configuration.md`。
-- 完成后运行 `vp run verify`；不得无理由绕过 Pluxel lint 规则。
 
 插件范式按需读 `docs/pluxel/plugin-development/`；Host 装配读 `docs/pluxel/host/configuration.md` 的对应章节。已知目标直接定位，不把目录当作通读清单。
 

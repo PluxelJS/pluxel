@@ -1,8 +1,5 @@
 import { Result } from '@pluxel/core/better-result'
 import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WretchPlugin } from '../src/index.ts'
@@ -27,7 +24,7 @@ describe('WretchExamplePlugin', () => {
 
 		{
 			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			})
 			await host.start(WretchPlugin.nodeAddress(), { catalog: [WretchExamplePlugin] })
 			await host.start(WretchExamplePlugin.nodeAddress(), {
@@ -70,7 +67,7 @@ describe('WretchExamplePlugin', () => {
 		})
 
 		await using host = await createTestHost({
-			services: [elysia(), commands(), nodeModules(), workers()],
+			services: [elysia()],
 		})
 		await host.start(WretchPlugin.nodeAddress(), { catalog: [WretchExamplePlugin] })
 		const customerPlugin = await host.start(WretchExamplePlugin.nodeAddress(), {
@@ -120,7 +117,7 @@ describe('WretchExamplePlugin', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			})
 			await host.start(WretchPlugin.nodeAddress(), { catalog: [WretchExamplePlugin] })
 			await host.start(WretchExamplePlugin.nodeAddress())

@@ -598,33 +598,6 @@ describe('native document activation resource ownership', () => {
 		expect(workspace.workbench.getDocument(id)).toBeNull()
 	})
 
-	it.each([
-		['Content', '/native-content', ownedContent],
-		['View', '/native-view', ownedView],
-	] as const)(
-		'closes %s before an unfinished RPC returns and releases every late result',
-		async (_kind, href, owned) => {
-			const requests: ReturnType<typeof deferred<OwnedResult>>[] = []
-			const { workspace, session, container } = await mount(() => {
-				const request = deferred<OwnedResult>()
-				requests.push(request)
-				return request.promise
-			})
-			const id = await openDocument(workspace, href)
-			expect(session.openEntry).toHaveBeenCalledTimes(2)
-			await act(async () => {
-				const result = await workspace.workbench.close(id)
-				expect(result).toMatchObject({ status: 'applied', cleanupErrors: [] })
-			})
-			const disposals = requests.map(() => vi.fn())
-			await act(async () => {
-				requests.forEach((request, index) => request.resolve(owned(disposals[index])))
-			})
-			for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce()
-			expect(container.textContent).not.toContain('Native content guide')
-			expect(mf.loadRemote).not.toHaveBeenCalled()
-		},
-	)
 	it('releases the previous route late Content without changing the replacement View in the same document', async () => {
 		mf.loadRemote.mockResolvedValue({
 			default: createWorkbenchBridge(viewDescriptor, () => <input aria-label="Replacement View" />),
@@ -656,15 +629,16 @@ describe('native document activation resource ownership', () => {
 		['Content', '/native-content', ownedContent],
 		['View', '/native-view', ownedView],
 	] as const)(
-		'reports a late %s cleanup failure once through onIssue after close has settled',
+		'closes %s before pending opens settle and reports a late cleanup failure once',
 		async (kind, href, owned) => {
 			const requests: ReturnType<typeof deferred<OwnedResult>>[] = []
-			const { workspace } = await mount(() => {
+			const { workspace, container } = await mount(() => {
 				const request = deferred<OwnedResult>()
 				requests.push(request)
 				return request.promise
 			})
 			const id = await openDocument(workspace, href)
+			expect(requests).toHaveLength(2)
 			const report = vi.spyOn(workspace, 'report').mockImplementation(() => {})
 			await act(async () => {
 				const result = await workspace.workbench.close(id)
@@ -672,18 +646,24 @@ describe('native document activation resource ownership', () => {
 				workspace.check(result)
 			})
 			expect(report).not.toHaveBeenCalled()
-			const disposals = requests.map((_, index) =>
-				vi.fn(() => {
-					if (index === requests.length - 1) throw new Error(`late ${kind} RPC cleanup failed`)
-				}),
-			)
+			const disposeReplayed = vi.fn()
 			await act(async () => {
-				requests.forEach((request, index) => request.resolve(owned(disposals[index])))
+				requests[0]!.resolve(owned(disposeReplayed))
 			})
-			for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce()
+			expect(disposeReplayed).toHaveBeenCalledOnce()
+			expect(report).not.toHaveBeenCalled()
+
+			const disposeClosed = vi.fn(() => {
+				throw new Error(`late ${kind} RPC cleanup failed`)
+			})
+			await act(async () => {
+				requests[1]!.resolve(owned(disposeClosed))
+			})
+			expect(disposeClosed).toHaveBeenCalledOnce()
 			expect(report).toHaveBeenCalledOnce()
 			expect(errorMessages(report.mock.calls[0]![0])).toContain(`late ${kind} RPC cleanup failed`)
 			expect(workspace.workbench.getDocuments()).toHaveLength(0)
+			expect(container.textContent).not.toContain('Native content guide')
 			expect(mf.loadRemote).not.toHaveBeenCalled()
 		},
 	)

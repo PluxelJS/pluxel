@@ -2,10 +2,6 @@ import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
 import { envBinding, defineHostApplication, resolveHostApplication } from '@pluxel/host'
 import { createResolvedHost } from '@pluxel/host/internal'
-import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const s3Mock = vi.hoisted(() => {
@@ -144,9 +140,7 @@ describe('S3Plugin remote backend', () => {
 
 	it('resolves access keys from a configured Vault reference without another plugin', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.start(S3Plugin.nodeAddress(), {
 				initialConfig: remoteConfig({ type: 'anonymous' }),
@@ -190,9 +184,7 @@ describe('S3Plugin remote backend', () => {
 
 	it('provides O(1) named bucket selection and owner-bound handles', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.start(S3Plugin.nodeAddress(), {
 				initialConfig: {
@@ -225,9 +217,7 @@ describe('S3Plugin remote backend', () => {
 
 	it('fails lifecycle when a configured Vault reference is missing', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			const failure = await host.commitExpectFail((change) => {
 				change.catalog.add([S3Plugin, S3Consumer])
@@ -260,9 +250,7 @@ describe('S3Plugin remote backend', () => {
 		vi.stubGlobal('fetch', fetchMock)
 
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.start(S3Plugin.nodeAddress(), {
 				initialConfig: remoteConfig({ type: 'anonymous' }),
@@ -310,9 +298,7 @@ async function withRemoteS3(
 	run: (s3: S3, client: Record<string, any>, config: Record<string, any>) => void | Promise<void>,
 ): Promise<void> {
 	{
-		await using host = await createTestHost({
-			services: [elysia(), commands(), nodeModules(), workers()],
-		})
+		await using host = await createTestHost()
 
 		await host.start(S3Plugin.nodeAddress(), {
 			initialConfig: remoteConfig({ type: 'anonymous' }),

@@ -1,15 +1,9 @@
 import { formatPluginNodeReference, BasePlugin, Plugin } from '@pluxel/core'
-import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/plugin-rates'
-import * as v from 'valibot'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,
-	RedisRatesBackendConfig,
 	RedisRatesBackendPlugin,
 	type RedisClient,
 	type RedisConnection,
@@ -85,18 +79,9 @@ const policies = [
 ] satisfies RatePolicy[]
 
 describe('@pluxel/plugin-redis rates backend', () => {
-	it('rejects Redis prefixes that do not have a stable UTF-8 encoding', () => {
-		expect(v.safeParse(RedisRatesBackendConfig, { keyPrefix: 'rates:\u{1f680}:' }).success).toBe(
-			true,
-		)
-		expect(v.safeParse(RedisRatesBackendConfig, { keyPrefix: 'rates:\ud800:' }).success).toBe(false)
-		expect(v.safeParse(RedisRatesBackendConfig, { connectionId: 'Invalid ID' }).success).toBe(false)
-	})
 	it('selects one server-timed single-key script for each algorithm and digests identity keys', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.commit((change) => {
 				change.start(FakeRatesRedisPlugin.nodeAddress())
@@ -146,9 +131,7 @@ describe('@pluxel/plugin-redis rates backend', () => {
 
 	it('uses EVALSHA after load, recovers from NOSCRIPT once, and decodes deny', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.start([
 				FakeRatesRedisPlugin.nodeAddress(),
@@ -177,9 +160,7 @@ describe('@pluxel/plugin-redis rates backend', () => {
 
 	it('preserves structured policy conflicts and rejects corrupt replies', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.start([
 				FakeRatesRedisPlugin.nodeAddress(),

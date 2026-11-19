@@ -5,12 +5,10 @@ import {
 	withCoreInternalTestHost,
 } from '@pluxel/core/internal/test'
 import { requirePluginService } from '@pluxel/core/internal'
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { lowerTestReplacement } from './lowered-replacement'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
 	OptionalProvider as OptionalProviderCtor,
 	resetOptionalProvider,
-	setOptionalProviderFailure,
 	type OptionalProvider as OptionalProviderType,
 } from './plugins/OptionalProvider'
 import {
@@ -23,8 +21,6 @@ const OptionalProviderRef = definePluginRef<OptionalProviderType>()
 const SecondOptionalProviderRef = definePluginRef<SecondOptionalProviderType>()
 
 let consumerStarts = 0
-let consumerCleanups = 0
-let integrationCleanups = 0
 const observedGenerations: string[] = []
 
 @Plugin({ displayName: 'Optional consumer' })
@@ -34,23 +30,12 @@ class OptionalConsumer extends BasePlugin {
 	override init() {
 		this.plugins.use(OptionalProviderRef, (provider) => {
 			observedGenerations.push(`first:${provider.generation}`)
-			return () => {
-				integrationCleanups++
-			}
 		})
 		this.plugins.use(SecondOptionalProviderRef, (provider) => {
 			observedGenerations.push(`second:${provider.generation}`)
-			return () => {
-				integrationCleanups++
-			}
 		})
-		return () => {
-			consumerCleanups++
-		}
 	}
 }
-
-class OptionalProviderReplacement extends OptionalProviderCtor {}
 
 @Plugin({ displayName: 'Required optional-provider consumer' })
 class RequiredOptionalProviderConsumer extends BasePlugin {
@@ -93,15 +78,8 @@ class NestedOptionalConsumer extends BasePlugin {
 }
 
 describe('static optional Plugin integration', () => {
-	beforeAll(() => {
-		lowerTestReplacement(OptionalProviderCtor, OptionalProviderReplacement, {
-			plugin: { displayName: 'Optional provider replacement' },
-		})
-	})
 	beforeEach(() => {
 		consumerStarts = 0
-		consumerCleanups = 0
-		integrationCleanups = 0
 		nestedOptionalConsumerStarts = 0
 		observedGenerations.length = 0
 		resetOptionalProvider()
@@ -131,77 +109,6 @@ describe('static optional Plugin integration', () => {
 			cleanup.setProviderDefault(AbstractOptionalProvider.address(), null)
 			const cleanupResult = await cleanup.commit()
 			expect(cleanupResult.ok).toBe(true)
-		})
-	})
-
-	it('does not disturb consumers on absent -> absent retries and restarts them on real transitions', async () => {
-		await withCoreInternalTestHost(async (host) => {
-			await host.start(OptionalConsumer)
-			const initiallyAbsent = host.require(OptionalConsumer)
-			expect(observedGenerations).toEqual([])
-
-			setOptionalProviderFailure(true)
-			host.add(OptionalProviderCtor)
-			await host.commitAllowFail()
-			expect(host.require(OptionalConsumer)).toBe(initiallyAbsent)
-			expect(consumerStarts).toBe(1)
-
-			await host.commitAllowFail()
-			expect(host.require(OptionalConsumer)).toBe(initiallyAbsent)
-			expect(consumerStarts).toBe(1)
-
-			setOptionalProviderFailure(false)
-			await host.commit()
-			expect(host.require(OptionalConsumer)).not.toBe(initiallyAbsent)
-			expect(consumerStarts).toBe(2)
-			expect(observedGenerations).toHaveLength(1)
-
-			host.restart(OptionalProviderCtor)
-			await host.commit()
-			expect(consumerStarts).toBe(3)
-			expect(observedGenerations).toHaveLength(2)
-
-			setOptionalProviderFailure(true)
-			host.restart(OptionalProviderCtor)
-			await host.commitAllowFail()
-			const runningAbsent = host.require(OptionalConsumer)
-			expect(consumerStarts).toBe(4)
-			expect(observedGenerations).toHaveLength(2)
-
-			await host.commitAllowFail()
-			expect(host.require(OptionalConsumer)).toBe(runningAbsent)
-			expect(consumerStarts).toBe(4)
-
-			setOptionalProviderFailure(false)
-			await host.commit()
-			expect(consumerStarts).toBe(5)
-			expect(observedGenerations).toHaveLength(3)
-
-			host.remove(OptionalProviderCtor)
-			await host.commit()
-			expect(consumerStarts).toBe(6)
-			expect(observedGenerations).toHaveLength(3)
-			expect(consumerCleanups).toBe(5)
-			expect(integrationCleanups).toBe(3)
-		})
-	})
-
-	it('restarts one consumer generation for provider replacement', async () => {
-		await withCoreInternalTestHost(async (host) => {
-			const registry = requirePluginService(host.ctx)
-			host.add([OptionalProviderCtor, OptionalConsumer])
-			await host.commit()
-			const first = host.require(OptionalConsumer)
-
-			host.replace(OptionalProviderCtor, OptionalProviderReplacement)
-			const summary = await host.commit()
-
-			expect(host.require(OptionalConsumer)).not.toBe(first)
-			expect(consumerStarts).toBe(2)
-			expect(observedGenerations).toHaveLength(2)
-			expect(summary.pluginChanges.restarted).toEqual([
-				registry.resolvePluginNode(OptionalConsumer),
-			])
 		})
 	})
 

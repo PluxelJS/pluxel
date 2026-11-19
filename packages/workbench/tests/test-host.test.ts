@@ -20,22 +20,7 @@ class WorkbenchLeaseFixture extends BasePlugin {
 	}
 }
 
-it('opens a Workbench entry with HTTP and fixed Core storage', async () => {
-	await using host = await createTestHost({
-		workbench: true,
-		services: [elysia()],
-	})
-	await host.start(WorkbenchLeaseFixture.nodeAddress())
-	using opened = await host.workbench.open({
-		target: WorkbenchLeaseFixture.nodeAddress(),
-		entry: WorkbenchLeaseDefinition.lease,
-		principal: { provider: 'test', subject: 'minimal-workbench-host' },
-	})
-	expect(opened).toBeDefined()
-	expect(() => host.commands.list()).toThrow(/commands/i)
-})
-
-it('reports and closes a leaked public Workbench lease during host disposal', async () => {
+it('tracks Workbench leases with only HTTP installed and reports precisely the leaked lease', async () => {
 	const host = await createTestHost({
 		workbench: true,
 		services: [elysia()],
@@ -47,6 +32,11 @@ it('reports and closes a leaked public Workbench lease during host disposal', as
 			target: WorkbenchLeaseFixture.nodeAddress(),
 			entry: WorkbenchLeaseDefinition.lease,
 			principal: { provider: 'test', subject: 'runtime-test-host' },
+		}
+		expect(() => host.commands.list()).toThrow(/commands/i)
+		{
+			using opened = await host.workbench.open(entry)
+			expect(opened).toBeDefined()
 		}
 		const abortedOpen = new AbortController()
 		const pending = host.workbench.open({ ...entry, signal: abortedOpen.signal })
@@ -71,11 +61,7 @@ it('reports and closes a leaked public Workbench lease during host disposal', as
 			cleanup.mockRestore()
 		}
 		// Only this intentionally unclosed lease may appear in the disposal report.
-		const opened = await host.workbench.open({
-			target: WorkbenchLeaseFixture.nodeAddress(),
-			entry: WorkbenchLeaseDefinition.lease,
-			principal: { provider: 'test', subject: 'runtime-test-host' },
-		})
+		const opened = await host.workbench.open(entry)
 
 		disposalAttempted = true
 		const error = await host.dispose().catch((cause: unknown) => cause)
@@ -92,13 +78,7 @@ it('reports and closes a leaked public Workbench lease during host disposal', as
 		])
 
 		expect(() => opened[Symbol.dispose]()).not.toThrow()
-		await expect(
-			host.workbench.open({
-				target: WorkbenchLeaseFixture.nodeAddress(),
-				entry: WorkbenchLeaseDefinition.lease,
-				principal: { provider: 'test', subject: 'runtime-test-host' },
-			}),
-		).rejects.toThrow(/closing or closed/i)
+		await expect(host.workbench.open(entry)).rejects.toThrow(/closing or closed/i)
 	} finally {
 		if (!disposalAttempted) await host.dispose().catch((): undefined => undefined)
 	}

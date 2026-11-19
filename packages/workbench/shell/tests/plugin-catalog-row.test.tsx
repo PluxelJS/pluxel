@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import { act, type ComponentProps, type ReactNode } from 'react'
+import { act, createRef, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
@@ -10,6 +10,7 @@ import {
 } from '../src/app/plugins/catalog/organizer/components/SortableRow'
 import { GroupCard } from '../src/app/plugins/catalog/organizer/components/GroupCard'
 import { DENSITY } from '../src/app/plugins/catalog/organizer/constants'
+import { SearchBar } from '../src/app/plugins/catalog/components/SearchBar'
 
 const roots: Root[] = []
 const name = 'AccountManagementPlugin'
@@ -35,14 +36,6 @@ const props: SortableRowProps = {
 	dh: DENSITY.ultra,
 	meta,
 	sortableId: pid,
-}
-
-function Link({ to, children, ...rest }: { to: string } & ComponentProps<'a'>) {
-	return (
-		<a href={to} {...rest}>
-			{children}
-		</a>
-	)
 }
 
 beforeAll(() => {
@@ -78,68 +71,39 @@ async function mount(content: ReactNode) {
 	return container
 }
 
-describe('compact plugin catalog rows', () => {
-	it.each(Object.entries(DENSITY))(
-		'reserves visible text for the plugin name at %s density',
-		async (_density, dh) => {
-			const container = await mount(<SortableRow {...props} dh={dh} />)
-			const row = container.querySelector('[data-plugin-row]')!
-			expect(row.textContent).toBe(name)
-			expect(row.querySelector('.mantine-Badge-root')).toBeNull()
-			expect(row.querySelector('[aria-label="宿主重载"]')).not.toBeNull()
-			expect(row.querySelector('[aria-label="运行中"]')).not.toBeNull()
-			expect(row.querySelector<HTMLAnchorElement>('[data-plugin-link]')?.style.flexGrow).toBe('1')
-		},
-	)
-
-	it('gives routed plugin names the available width and preserves selection controls', async () => {
-		const container = await mount(<SortableRow {...props} LinkComp={Link} />)
-		const link = container.querySelector<HTMLAnchorElement>('[data-plugin-link]')!
-		expect(link.textContent).toBe(name)
-		expect(link.style.flexGrow).toBe('1')
-		expect(link.style.minWidth).toBe('0px')
-		await act(async () => {
-			container.querySelector<HTMLButtonElement>('[data-row-selector]')!.click()
-		})
-		expect(props.onSelect).toHaveBeenCalledWith(expect.anything(), pid, 'toggle')
-		expect(container.querySelector('[data-drag-handle]')).not.toBeNull()
-	})
-
-	it('reveals complete execution details when the indicator receives keyboard focus', async () => {
-		const container = await mount(<SortableRow {...props} />)
-		await act(async () => {
-			container.querySelector<HTMLElement>('[aria-label="宿主重载"]')!.focus()
-		})
-		expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
-			meta.executionDescription,
-		)
-	})
-
-	it('shows only the complete plugin name on focus without a large diagnostic card', async () => {
-		const container = await mount(<SortableRow {...props} />)
-		await act(async () => {
-			container.querySelector<HTMLElement>('[data-plugin-link]')!.focus()
-		})
-		const tooltip = document.querySelector('[role="tooltip"]')!
-		expect(tooltip.textContent).toBe(name)
-		expect(tooltip.textContent).not.toContain(meta.reference)
-	})
-
-	it('keeps update warnings discoverable as an icon without adding another text badge', async () => {
+describe('plugin catalog controls', () => {
+	it('keeps selection separate from the name link and exposes status and diagnostics on the compact row', async () => {
 		const container = await mount(
 			<SortableRow {...props} meta={{ ...meta, recentUpdateWarningLabel: '上次更新失败' }} />,
 		)
-		expect(container.querySelector('[aria-label="上次更新失败"] svg')).not.toBeNull()
-		expect(container.querySelector('[data-plugin-row]')?.textContent).toBe(name)
+		const row = container.querySelector('[role="listitem"]')!
+		const link = row.querySelector<HTMLAnchorElement>('a')!
+		const execution = row.querySelector<HTMLElement>('[aria-label="宿主重载"]')!
+		expect(row.textContent).toBe(name)
+		expect(link.getAttribute('href')).toBe(`/plugins/${pid}`)
+		expect(row.querySelector('[aria-label="运行中"]')).not.toBeNull()
+		expect(row.querySelector('[aria-label="上次更新失败"]')).not.toBeNull()
+		await act(async () =>
+			row.querySelector<HTMLButtonElement>(`[aria-label="选择 ${name}"]`)!.click(),
+		)
+		expect(props.onSelect).toHaveBeenCalledExactlyOnceWith(expect.anything(), pid, 'toggle')
+		await act(async () => link.focus())
+		expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(name)
+		await act(async () => execution.focus())
+		const tooltips = [...document.querySelectorAll('[role="tooltip"]')]
+		expect(tooltips.map((tooltip) => tooltip.textContent?.trim())).toContainEqual(
+			expect.stringContaining(meta.executionDescription),
+		)
 	})
 
-	it('shows only an unbadged group count, retaining running totals in the tooltip', async () => {
+	it('shows the group total with its running count in the accessible label', async () => {
+		const pluginIds = [pid, 'v1/package/ArchivedAccounts/@fixture/accounts']
 		const container = await mount(
 			<GroupCard
-				g={{ groupId: 'accounts', name: '@fixture/accounts', pluginIds: [pid] }}
-				visibleIds={[pid]}
+				g={{ groupId: 'accounts', name: '@fixture/accounts', pluginIds }}
+				visibleIds={pluginIds}
 				runningSet={new Set([pid])}
-				availableSet={new Set([pid])}
+				availableSet={new Set(pluginIds)}
 				desiredRunningSet={new Set([pid])}
 				selectedSet={new Set()}
 				activeSet={new Set()}
@@ -157,7 +121,37 @@ describe('compact plugin catalog rows', () => {
 				locked={false}
 			/>,
 		)
-		expect(container.querySelector('.mantine-Badge-root')).toBeNull()
-		expect(container.querySelector('[aria-label="运行中 1 / 共 1 个插件"]')?.textContent).toBe('1')
+		expect(container.querySelector('[aria-label="运行中 1 / 共 2 个插件"]')?.textContent).toBe('2')
+	})
+
+	it('exposes status totals and gives status filtering and search clearing separate actions', async () => {
+		const change = vi.fn()
+		const toggle = vi.fn()
+		const reset = vi.fn()
+		const container = await mount(
+			<SearchBar
+				value="runtime"
+				onChange={change}
+				inputRef={createRef<HTMLInputElement>()}
+				statusFilter={{ running: true, stopped: false, unavailable: true }}
+				statusCounts={{ running: 2, stopped: 11, unavailable: 1 }}
+				onToggleStatus={toggle}
+				onResetStatusFilter={reset}
+				hasActiveStatusFilter
+			/>,
+		)
+		const control = (label: string) =>
+			container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
+		expect(control('运行中 2 个').getAttribute('aria-pressed')).toBe('true')
+		const stopped = control('已停止 11 个')
+		expect(stopped.getAttribute('aria-pressed')).toBe('false')
+		expect(control('不可用 1 个').getAttribute('aria-pressed')).toBe('true')
+		await act(async () => stopped.click())
+		expect(toggle).toHaveBeenCalledExactlyOnceWith('stopped')
+		await act(async () => control('清空搜索').click())
+		expect(change).toHaveBeenCalledExactlyOnceWith('')
+		expect(reset).not.toHaveBeenCalled()
+		await act(async () => control('恢复全部状态筛选').click())
+		expect(reset).toHaveBeenCalledOnce()
 	})
 })

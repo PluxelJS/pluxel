@@ -1,9 +1,6 @@
 import { resolveContextService } from '@pluxel/core/internal'
 import { AdminAccess } from '@pluxel/services/management/access'
 import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { once } from 'node:events'
 import { createServer, type Server } from 'node:http'
 import { type AddressInfo } from 'node:net'
@@ -39,7 +36,7 @@ describe('official authentication vNext Runtime integration', () => {
 		await using fixture = new AuthRuntimeSessionCarrierFixture(
 			await createServiceInternalTestHost({
 				management: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			}),
 		)
 
@@ -117,7 +114,7 @@ describe('official authentication vNext Runtime integration', () => {
 		await using host = await createServiceInternalTestHost(
 			{
 				management: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			},
 			{ requestAddress: peerAddress },
 		)

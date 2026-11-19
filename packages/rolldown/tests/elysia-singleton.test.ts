@@ -95,6 +95,8 @@ import { schema } from './schema.mjs'
 import Type from 'typebox'
 import { Literal } from 'typebox/type'
 import { Format } from 'typebox/format'
+import { Value } from 'typebox/value'
+import consumerElysiaPackage from 'elysia/package.json' with { type: 'json' }
 import mirrorPackage from 'exact-mirror/package.json' with { type: 'json' }
 import * as types from 'elysia/type'
 import Elysia, { Elysia as NamedElysia } from 'elysia'
@@ -103,8 +105,11 @@ assert.equal(types.Literal, Literal)
 assert.equal('default' in types, false)
 assert.equal(Elysia, NamedElysia)
 assert.equal(Type.Literal, Literal)
+assert.equal(consumerElysiaPackage.version, '0.0.0-fixture')
 assert.notEqual(mirrorPackage.version, '0.0.0-fixture')
 Format.Set('pluxel-test', (value) => value === 'ready')
+assert.equal(Value.Check(schema, { value: 'ready' }), true)
+assert.equal(Value.Check(schema, { value: 'wrong' }), false)
 const app = new Elysia({ adapter: WebStandardAdapter }).post('/document', { body: schema, response: schema }, ({ body }) => body)
 const response = await app.fetch(new Request('http://app.test/document', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ value: 'ready' }) }))
 assert.equal(response.status, 200)

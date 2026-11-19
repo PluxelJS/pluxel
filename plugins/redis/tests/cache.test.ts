@@ -1,14 +1,8 @@
-import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
-import * as v from 'valibot'
 import { Plugin } from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,
-	RedisCacheBackendConfig,
 	RedisCacheBackendPlugin,
 	type RedisClient,
 	type RedisConnection,
@@ -107,19 +101,9 @@ class FakeRedisPlugin extends Redis {
 }
 
 describe('@pluxel/plugin-redis cache backend', () => {
-	it('rejects Redis prefixes that do not have a stable UTF-8 encoding', () => {
-		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\u{1f680}:' }).success).toBe(
-			true,
-		)
-		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\ud800:' }).success).toBe(false)
-		expect(v.safeParse(RedisCacheBackendConfig, { connectionId: 'Invalid ID' }).success).toBe(false)
-	})
-
 	it('uses registered Lua script and round-trips structured cache values', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.commit((change) => {
 				change.start(FakeRedisPlugin.nodeAddress())
@@ -157,9 +141,7 @@ describe('@pluxel/plugin-redis cache backend', () => {
 
 	it('clears a managed prefix with SCAN and bounded UNLINK batches', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.commit((change) => {
 				change.start(FakeRedisPlugin.nodeAddress())

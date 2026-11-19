@@ -35,7 +35,7 @@ async function fixture() {
 		JSON.stringify({
 			extends: resolve(import.meta.dirname, '../tsconfig.json'),
 			include: ['*.ts'],
-			compilerOptions: { strictNullChecks: true },
+			compilerOptions: { customConditions: ['@pluxel/hmr'], strictNullChecks: true },
 		}),
 	)
 	return directory

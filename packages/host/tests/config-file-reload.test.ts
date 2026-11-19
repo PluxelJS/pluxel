@@ -1,11 +1,8 @@
-import * as nativeFs from 'node:fs'
-import { mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { Passthrough } from '@pluxel/core/fs'
+import { createDiskFixture } from '@pluxel/test/fixtures'
 import { SuperJSON } from 'superjson'
-import { expect, it } from 'vitest'
+import { expect, it, onTestFinished, vi } from 'vitest'
 import * as v from 'valibot'
 import { createHost } from '../src/index'
 
@@ -23,150 +20,110 @@ class FileConfigured extends BasePlugin {
 }
 
 it('reloads shared config files into running Hosts without rewriting external content', async () => {
-	const prefix = await mkdtemp(join(tmpdir(), 'pluxel-config-reload-'))
+	await using fixture = await createDiskFixture({})
 	const owner = FileConfigured.nodeAddress()
 	const options = {
 		plugins: [{ plugin: FileConfigured, config: { value: 'base' } }],
-		config: { mode: 'saved-first' as const },
-		policy: { document: false as const },
-
+		config: { mode: 'saved-first' },
+		policy: { document: false },
 		coreConfig: {
-			zenfs: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } },
+			zenfs: { mounts: { '/': { backend: Passthrough, fs: fixture.fs, prefix: fixture.path } } },
 		},
+	} as const
+	await using first = await createHost(options)
+	await using second = await createHost(options)
+	await Promise.all([first.startNode(owner), second.startNode(owner)])
+	applied.length = 0
+	await expect(first.config.patch(owner, { set: { value: 'first' } })).resolves.toMatchObject({
+		ok: true,
+		application: 'applied',
+	})
+	await expect
+		.poll(() => second.config.get(owner), { timeout: 3000 })
+		.toMatchObject({ ok: true, application: 'applied', config: { value: 'first' } })
+	expect(applied).toEqual(['first', 'first'])
+	await second.config.patch(owner, { set: { value: 'second' } })
+	await expect
+		.poll(() => first.config.get(owner), { timeout: 3000 })
+		.toMatchObject({ config: { value: 'second' } })
+
+	const file = fixture.getPath('services/host/config/config.json')
+	const replace = async (value: unknown) => {
+		const text = SuperJSON.stringify({ version: 4, plugins: [{ owner, config: { value } }] })
+		await fixture.fsp.writeFile(`${file}.external`, text)
+		await fixture.fsp.rename(`${file}.external`, file)
+		return text
 	}
-	const first = await createHost(options)
-	let second: Awaited<ReturnType<typeof createHost>> | undefined
-	try {
-		second = await createHost(options)
-		await first.startNode(owner)
-		await second.startNode(owner)
-		applied.length = 0
-		await expect(first.config.patch(owner, { set: { value: 'first' } })).resolves.toMatchObject({
-			ok: true,
-			application: 'applied',
-		})
-		await expect
-			.poll(() => second!.config.get(owner), { timeout: 3000 })
-			.toMatchObject({
-				ok: true,
-				application: 'applied',
-				config: { value: 'first' },
+	const expectApplied = (value: string) => {
+		const entry = { ok: true, application: 'applied', config: { value } }
+		return expect
+			.poll(() => Promise.all([first.config.get(owner), second.config.get(owner)]), {
+				timeout: 3000,
 			})
-		expect(applied).toEqual(['first', 'first'])
-		await second.config.patch(owner, { set: { value: 'second' } })
-		await expect
-			.poll(() => first.config.get(owner), { timeout: 3000 })
-			.toMatchObject({ config: { value: 'second' } })
-
-		const file = join(prefix, 'services/host/config/config.json')
-		const replace = async (value: unknown) => {
-			const text = SuperJSON.stringify({
-				version: 4,
-				plugins: [{ owner, config: { value } }],
-			})
-			await writeFile(`${file}.external`, text)
-			await rename(`${file}.external`, file)
-			return text
-		}
-		const text = await replace('editor')
-		await expect
-			.poll(() => first.config.get(owner), { timeout: 3000 })
-			.toMatchObject({
-				application: 'applied',
-				config: { value: 'editor' },
-			})
-		await expect
-			.poll(() => second!.config.get(owner), { timeout: 3000 })
-			.toMatchObject({ config: { value: 'editor' } })
-		const before = await stat(file)
-		await new Promise((resolve) => setTimeout(resolve, 650))
-		expect(await readFile(file, 'utf8')).toBe(text)
-		const after = await stat(file)
-		expect(after.mtimeMs).toBe(before.mtimeMs)
-		expect(applied.filter((value) => value === 'editor')).toHaveLength(2)
-
-		// A rejected external config stays on disk for repair and is never applied.
-		const invalid = await replace(123)
-		await new Promise((resolve) => setTimeout(resolve, 650))
-		await expect(first.config.get(owner)).resolves.toMatchObject({ config: { value: 'editor' } })
-		await expect(second.config.get(owner)).resolves.toMatchObject({ config: { value: 'editor' } })
-		expect(await readFile(file, 'utf8')).toBe(invalid)
-		await replace('repaired')
-		await expect
-			.poll(() => first.config.get(owner), { timeout: 3000 })
-			.toMatchObject({ config: { value: 'repaired' } })
-		await expect
-			.poll(() => second!.config.get(owner), { timeout: 3000 })
-			.toMatchObject({ config: { value: 'repaired' } })
-
-		// Removing the saved document reveals declaration input without writing it back.
-		await rm(file)
-		await expect
-			.poll(() => first.config.get(owner), { timeout: 3000 })
-			.toMatchObject({ config: { value: 'base' } })
-		await expect
-			.poll(() => second!.config.get(owner), { timeout: 3000 })
-			.toMatchObject({ config: { value: 'base' } })
-		await expect(stat(file)).rejects.toMatchObject({ code: 'ENOENT' })
-	} finally {
-		await Promise.all([first.close(), second?.close()])
-		await rm(prefix, { recursive: true, force: true })
+			.toMatchObject([entry, entry])
 	}
+	const text = await replace('editor')
+	const before = await fixture.fsp.stat(file)
+	await expectApplied('editor')
+	expect(await fixture.fsp.readFile(file, 'utf8')).toBe(text)
+	const after = await fixture.fsp.stat(file)
+	expect(after.mtimeMs).toBe(before.mtimeMs)
+	expect(applied.filter((value) => value === 'editor')).toHaveLength(2)
+
+	const errors = [vi.spyOn(first.ctx.logger, 'error'), vi.spyOn(second.ctx.logger, 'error')]
+	onTestFinished(() => {
+		for (const error of errors) error.mockRestore()
+	})
+	const changesBeforeRejection = [...applied]
+	const invalid = await replace(123)
+	for (const error of errors) {
+		await expect
+			.poll(() => error.mock.calls, { timeout: 3000 })
+			.toContainEqual([
+				'ConfigService external reload failed',
+				{
+					error: expect.objectContaining({
+						message: expect.stringContaining('Plugin config schema'),
+					}),
+				},
+			])
+	}
+	await expectApplied('editor')
+	expect(applied).toEqual(changesBeforeRejection)
+	expect(await fixture.fsp.readFile(file, 'utf8')).toBe(invalid)
+	await replace('repaired')
+	await expectApplied('repaired')
+
+	await fixture.fsp.rm(file)
+	await expectApplied('base')
+	await expect(fixture.fsp.stat(file)).rejects.toMatchObject({ code: 'ENOENT' })
 })
 
 it('applies shared file updates in a Host with a readonly filesystem and config policy', async () => {
-	const prefix = await mkdtemp(join(tmpdir(), 'pluxel-config-readonly-'))
+	await using fixture = await createDiskFixture({})
 	const owner = FileConfigured.nodeAddress()
-	const storage = { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } } }
-	const writer = await createHost({
-		plugins: [
-			{
-				plugin: FileConfigured,
-			},
-		],
-		coreConfig: {
-			zenfs: storage,
-		},
-		policy: {
-			document: false,
-		},
-	})
-	let reader: Awaited<ReturnType<typeof createHost>> | undefined
-	try {
-		reader = await createHost({
-			plugins: [
-				{
-					plugin: FileConfigured,
-				},
-			],
-			coreConfig: {
-				zenfs: { ...storage, readOnly: true },
-			},
-			policy: {
-				document: false,
-			},
-			config: {
-				document: { readOnly: true },
-			},
-		})
-		await reader.startNode(owner)
-		await writer.config.patch(owner, { set: { value: 'shared' } })
-		await expect
-			.poll(() => reader!.config.get(owner), { timeout: 3000 })
-			.toMatchObject({
-				ok: true,
-				readonly: true,
-				application: 'applied',
-				config: { value: 'shared' },
-			})
-		await expect(
-			reader.config.patch(owner, { set: { value: 'forbidden' } }),
-		).resolves.toMatchObject({
-			ok: false,
-			code: 'mutation_rejected',
-		})
-	} finally {
-		await Promise.all([writer.close(), reader?.close()])
-		await rm(prefix, { recursive: true, force: true })
+	const storage = {
+		mounts: { '/': { backend: Passthrough, fs: fixture.fs, prefix: fixture.path } },
 	}
+	const options = { plugins: [{ plugin: FileConfigured }], policy: { document: false } } as const
+	await using writer = await createHost({ ...options, coreConfig: { zenfs: storage } })
+	await using reader = await createHost({
+		...options,
+		coreConfig: { zenfs: { ...storage, readOnly: true } },
+		config: { document: { readOnly: true } },
+	})
+	await reader.startNode(owner)
+	await writer.config.patch(owner, { set: { value: 'shared' } })
+	await expect
+		.poll(() => reader.config.get(owner), { timeout: 3000 })
+		.toMatchObject({
+			ok: true,
+			readonly: true,
+			application: 'applied',
+			config: { value: 'shared' },
+		})
+	await expect(reader.config.patch(owner, { set: { value: 'forbidden' } })).resolves.toMatchObject({
+		ok: false,
+		code: 'mutation_rejected',
+	})
 })

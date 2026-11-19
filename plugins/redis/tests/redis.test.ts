@@ -1,8 +1,5 @@
 import { formatPluginNodeReference, BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import * as v from 'valibot'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -62,7 +59,14 @@ const redisMock = vi.hoisted(() => {
 
 vi.mock('redis', () => ({ createClient: redisMock.createClient }))
 
-import { Redis, RedisConfig, RedisConnectionError, RedisPlugin } from '../src/index.ts'
+import {
+	Redis,
+	RedisCacheBackendConfig,
+	RedisConfig,
+	RedisConnectionError,
+	RedisPlugin,
+	RedisRatesBackendConfig,
+} from '../src/index.ts'
 import { RedisWorkbench } from '../src/workbench.ts'
 import { DraftsPlugin } from './fixtures/result-consumer.ts'
 
@@ -134,9 +138,7 @@ describe('@pluxel/plugin-redis', () => {
 
 	it('provides bounded client defaults and revokes the capability on stop', async () => {
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.start([RedisPlugin.nodeAddress(), RedisConsumer.nodeAddress()])
 
@@ -167,7 +169,7 @@ describe('@pluxel/plugin-redis', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			})
 
 			await host.start(RedisPlugin.nodeAddress())
@@ -258,6 +260,14 @@ describe('@pluxel/plugin-redis', () => {
 		).toBe(false)
 	})
 
+	it('requires stable UTF-8 prefixes and valid connection IDs for both Redis adapters', () => {
+		for (const schema of [RedisCacheBackendConfig, RedisRatesBackendConfig]) {
+			expect(v.safeParse(schema, { keyPrefix: 'keys:\u{1f680}:' }).success).toBe(true)
+			expect(v.safeParse(schema, { keyPrefix: 'keys:\ud800:' }).success).toBe(false)
+			expect(v.safeParse(schema, { connectionId: 'Invalid ID' }).success).toBe(false)
+		}
+	})
+
 	it('provides O(1) named connection selection and owner-bound handles', async () => {
 		const east = redisMock.makeClient()
 		const west = redisMock.makeClient()
@@ -266,9 +276,7 @@ describe('@pluxel/plugin-redis', () => {
 			.mockImplementationOnce(() => west.client)
 
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			await host.commit((change) => {
 				change.start(RedisPlugin.nodeAddress(), {
@@ -312,9 +320,7 @@ describe('@pluxel/plugin-redis', () => {
 		redisMock.client.connect.mockRejectedValueOnce(new Error('offline'))
 
 		{
-			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
+			await using host = await createTestHost()
 
 			const failure = await host.commitExpectFail((change) => {
 				change.start(RedisPlugin.nodeAddress())

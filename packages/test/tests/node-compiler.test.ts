@@ -40,29 +40,19 @@ class NodeConsumer extends BasePlugin {
 }
 
 describe('test host Node source compiler', () => {
-	it('compiles TypeScript on demand and executes it in a real worker', async () => {
-		let artifact: URL
-		{
-			await using host = await createTestHost({ services: [nodeModules(), workers()] })
-			const plugin = await host.start(NodeConsumer.nodeAddress())
-			const result = await plugin.run(21)
-			expect(result.value).toBe(42)
-			expect(result.threadId).toBeGreaterThan(0)
-			artifact = await plugin.artifact()
-			expect(existsSync(artifact)).toBe(true)
-		}
-		expect(existsSync(artifact!)).toBe(false)
-	})
-
-	it('isolates concurrent hosts and keeps the surviving host usable', async () => {
+	it('compiles real worker entries and disposes only the owning host artifacts', async () => {
 		await using first = await createTestHost({ services: [nodeModules(), workers()] })
 		await using second = await createTestHost({ services: [nodeModules(), workers()] })
 		const [a, b] = await Promise.all([
 			first.start(NodeConsumer.nodeAddress()),
 			second.start(NodeConsumer.nodeAddress()),
 		])
+		const result = await a.run(21)
+		expect(result.value).toBe(42)
+		expect(result.threadId).toBeGreaterThan(0)
 		const [aUrl, bUrl] = await Promise.all([a.artifact(), b.artifact()])
 		expect(aUrl.href).not.toBe(bUrl.href)
+		expect(existsSync(aUrl)).toBe(true)
 		await first.dispose()
 		expect(existsSync(aUrl)).toBe(false)
 		expect(existsSync(bUrl)).toBe(true)

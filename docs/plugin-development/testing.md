@@ -5,6 +5,8 @@ description: 使用 @pluxel/test 搭建隔离的测试宿主，验证依赖注�
 
 Pluxel 提供了专门的测试工具库 `@pluxel/test`。通过 `createTestHost()`，你可以在 Vitest 中以纯内存的方式启动微型宿主，运行真实的依赖图、配置校验和生命周期调度，而无需启动整个真实的 Web 应用或持久化数据库。
 
+日常修改在所属包运行相关文件，例如 `vp test run tests/plugin.test.ts`。普通领域逻辑可以直接测试，涉及注入、配置或生命周期时再创建测试宿主。其他验证入口见[局部验证](../development/workspace-toolchain.md#局部验证)。
+
 ## 安装与配置 Vitest
 
 在插件项目中安装测试依赖：

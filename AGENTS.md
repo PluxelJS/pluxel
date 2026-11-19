@@ -49,7 +49,8 @@ Node 与 Vite 项目脚本统一使用普通 TypeScript 导出函数和 `satisfi
 
 ## 完成变更
 
-- 按风险运行相关检查，报告实际结果与未验证边界；类型、运行时、公开导出和示例表达同一契约。
+- 日常改动按风险运行直接相关的检查。在所属包用 `vp test run tests/<file>.test.ts` 运行指定测试，必要时扩到包级或受影响的调用方。全仓 `vp run test` 和 `vp run verify` 用于明确的整仓验收。报告实际结果与未验证边界。见[局部验证](docs/development/workspace-toolchain.md#局部验证)。
+- 类型、运行时、公开导出和示例应表达同一契约。
 - 用户可见用法同步 `docs/`，内部边界同步所属工程文档；一处维护事实，其他入口链接。替换契约后搜索旧符号、入口和链接，包括生成项目的 AGENTS。
 - 仅在准备发布时统一整理 `.tegami/*.md`。对比上次已发布版本与待发布版本的最终成果，记录用户可见变化、包 bump 和迁移要求；忽略过程提交、已撤回设计和过渡实现。日常开发无需新增或更新，格式见[发布流程](engineering/RELEASING.md#发布说明格式)。
 - 不手改 package 版本或 `.tegami/publish-lock.yaml`；交给 Tegami。

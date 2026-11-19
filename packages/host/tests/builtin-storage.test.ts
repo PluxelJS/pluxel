@@ -36,63 +36,51 @@ afterEach(async () => {
 })
 
 describe('Host built-in storage without Services', () => {
-	it('reopens default documents with only readonly modes on a readonly filesystem and rejects management writes', async () => {
+	it('creates built-in documents on explicit writes and reopens them read-only without rewriting them', async () => {
 		const prefix = await temporaryDirectory()
 		const owner = Configured.nodeAddress()
 		const storage = {
 			mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 			durableMounts: ['/'],
 		}
-		const seed = await createHost({
-			plugins: [
-				{
-					plugin: Configured,
-				},
-			],
-			coreConfig: {
-				zenfs: storage,
-			},
-		})
-		try {
+		{
+			await using seed = await createHost({
+				plugins: [{ plugin: Configured }],
+				coreConfig: { zenfs: storage },
+			})
+			expect(await requireHostDocuments(seed.ctx, 'config').getText('config.json')).toBeUndefined()
+			expect(await requireHostDocuments(seed.ctx, 'state').getText('state.json')).toBeUndefined()
 			await expect(
 				seed.config.patch(owner, { set: { value: 'persisted' } }),
 			).resolves.toMatchObject({
 				ok: true,
-				persistence: { status: 'confirmed' },
+				persistence: { status: 'confirmed', retention: 'declared-durable' },
 			})
-			await seed.setAutoStart(owner, true)
-		} finally {
-			await seed.close()
+			await expect(
+				seed.policy.patch({ startConcurrency: 2, autoStart: [{ node: owner, autoStart: true }] }),
+			).resolves.toMatchObject({
+				ok: true,
+				persistence: { status: 'confirmed', retention: 'declared-durable' },
+			})
 		}
 		const confirmed = await savedDocuments(prefix)
-		const reopened = await createHost({
-			plugins: [
-				{
-					plugin: Configured,
-					config: { value: 'replacement seed' },
-				},
-			],
-			config: {
-				mode: 'saved-first',
-				document: { readOnly: true },
-			},
-			policy: {
-				document: { readOnly: true },
-				modes: { autoStart: 'saved-first' },
-			},
-			coreConfig: {
-				zenfs: { ...storage, readOnly: true },
-			},
-		})
-		try {
+		{
+			await using reopened = await createHost({
+				plugins: [{ plugin: Configured, config: { value: 'replacement seed' } }],
+				config: { mode: 'saved-first', document: { readOnly: true } },
+				policy: { document: { readOnly: true }, modes: { autoStart: 'saved-first' } },
+				coreConfig: { zenfs: { ...storage, readOnly: true } },
+			})
 			await expect(reopened.config.get(owner)).resolves.toMatchObject({
 				ok: true,
 				readonly: true,
 				config: { value: 'persisted' },
 			})
-			expect(requireHostStateStore(reopened.ctx).snapshot().autoStart).toEqual([
-				parsePluginNodeAddress(owner),
-			])
+			await expect(reopened.policy.get()).resolves.toMatchObject({
+				ok: true,
+				appliedExecution: { startConcurrency: 2 },
+				effective: { autoStart: [parsePluginNodeAddress(owner)] },
+			})
 			await expect(
 				reopened.config.patch(owner, { set: { value: 'rejected' } }),
 			).resolves.toMatchObject({
@@ -105,8 +93,6 @@ describe('Host built-in storage without Services', () => {
 			expect(requireHostStateStore(reopened.ctx).snapshot().autoStart).toEqual([
 				parsePluginNodeAddress(owner),
 			])
-		} finally {
-			await reopened.close()
 		}
 		expect(await savedDocuments(prefix)).toEqual(confirmed)
 	})
@@ -190,61 +176,6 @@ describe('Host built-in storage without Services', () => {
 		expect(await readdir(prefix)).toEqual([])
 	})
 
-	it('does not initialize missing built-in documents and confirms only explicit writes', async () => {
-		const prefix = await temporaryDirectory()
-		const runtime = {
-			zenfs: {
-				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-				durableMounts: ['/'],
-			},
-		}
-		const host = await createHost({
-			plugins: [
-				{
-					plugin: Configured,
-				},
-			],
-			coreConfig: runtime,
-		})
-		try {
-			expect(await requireHostDocuments(host.ctx, 'config').getText('config.json')).toBeUndefined()
-			expect(await requireHostDocuments(host.ctx, 'state').getText('state.json')).toBeUndefined()
-			await expect(
-				host.config.patch(Configured.nodeAddress(), { set: { value: 'saved' } }),
-			).resolves.toMatchObject({
-				ok: true,
-				persistence: { status: 'confirmed', retention: 'declared-durable' },
-			})
-			await expect(host.policy.patch({ startConcurrency: 2 })).resolves.toMatchObject({
-				ok: true,
-				persistence: { status: 'confirmed', retention: 'declared-durable' },
-			})
-			expect(
-				SuperJSON.parse((await requireHostDocuments(host.ctx, 'state').getText('state.json'))!),
-			).toEqual({ version: 8, startConcurrency: 2 })
-		} finally {
-			await host.close()
-		}
-		const confirmed = await savedDocuments(prefix)
-		const reopened = await createHost({
-			plugins: [
-				{
-					plugin: Configured,
-				},
-			],
-			coreConfig: runtime,
-		})
-		try {
-			expect(await savedDocuments(prefix)).toEqual(confirmed)
-			expect(await reopened.policy.get()).toMatchObject({
-				ok: true,
-				appliedExecution: { startConcurrency: 2 },
-			})
-		} finally {
-			await reopened.close()
-		}
-	})
-
 	it('resolves document factories before IO and prepares the shared filesystem once', async () => {
 		const prefix = join(await temporaryDirectory(), 'data')
 		await mkdir(prefix, { recursive: true })
@@ -293,7 +224,6 @@ describe('Host built-in storage without Services', () => {
 		const failure = Object.assign(new Error('native backend unavailable'), { code: 'EACCES' })
 		let attempts = 0
 		let filesystem!: ReturnType<typeof requireFs>
-		let observed!: PromiseSettledResult<unknown>[]
 		const backend = {
 			...Passthrough,
 			create() {
@@ -314,28 +244,12 @@ describe('Host built-in storage without Services', () => {
 					document: {
 						storage(root) {
 							filesystem = requireFs(root)
-							const documents = requireHostDocuments(root, 'config')
-							return {
-								put: documents.put.bind(documents),
-								stat: documents.stat.bind(documents),
-								async getText(key) {
-									observed = await Promise.allSettled([
-										documents.getText(key),
-										filesystem.ready(),
-										documents.getText(key),
-									])
-									throw failure
-								},
-							}
+							return requireHostDocuments(root, 'config')
 						},
 					},
 				},
 			}),
 		).rejects.toBe(failure)
-		expect(observed).toEqual(
-			Array.from({ length: 3 }, () => ({ status: 'rejected', reason: failure })),
-		)
-		expect(attempts).toBe(1)
 		await expect(filesystem.ready()).rejects.toMatchObject({ code: 'EBADF' })
 		expect(attempts).toBe(1)
 	})

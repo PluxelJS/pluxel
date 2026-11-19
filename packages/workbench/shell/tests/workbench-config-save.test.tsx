@@ -236,15 +236,17 @@ describe('business configuration save in native documents', () => {
 		expect(patch).toHaveBeenCalledTimes(2)
 	})
 
-	it('publishes dirty from the real form stores, saves its owner and closes only after acknowledgement', async () => {
+	it('retains a configuration draft after a failed close-save and closes after retry is acknowledged', async () => {
 		let release!: (result: Awaited<ReturnType<RuntimeManagementClient['config']['patch']>>) => void
 		const pending = new Promise<Awaited<ReturnType<RuntimeManagementClient['config']['patch']>>>(
 			(resolve) => {
 				release = resolve
 			},
 		)
-		const patch = vi.fn(() => pending)
-		const { session, id, input } = await fixture(patch)
+		const patch = vi
+			.fn(() => pending)
+			.mockRejectedValueOnce(new Error('configuration transport unavailable'))
+		const { session, container, id, input } = await fixture(patch)
 		await type(input, 'saved draft')
 		expect(session.documents.get(id)!.isDirty()).toBe(true)
 		let closing!: ReturnType<typeof session.workbench.close>
@@ -252,11 +254,21 @@ describe('business configuration save in native documents', () => {
 			closing = session.workbench.close(id)
 		})
 		await confirm()
-		expect(patch).toHaveBeenCalledWith(
+		await act(async () => expect(await closing).toMatchObject({ status: 'denied' }))
+		expect(session.documents.get(id)!.isDirty()).toBe(true)
+		expect(container.querySelector('input[name="name"]')).toBe(input)
+		expect(input.value).toBe('saved draft')
+
+		await act(async () => {
+			closing = session.workbench.close(id)
+		})
+		await confirm(1)
+		const save = [
 			owner,
 			{ set: { name: 'saved draft' }, remove: [['name']] },
 			{ expectedManagedRevision: 'config:initial' },
-		)
+		]
+		expect(patch.mock.calls).toEqual([save, save])
 		expect(session.workbench.getDocument(id)).not.toBeNull()
 		await act(async () => {
 			release(savedConfig({ name: 'saved draft' }))
@@ -293,24 +305,6 @@ describe('business configuration save in native documents', () => {
 		expect(session.documents.get(id)!.isDirty()).toBe(true)
 		expect(container.querySelector(`input[name="name"]`)).toBe(input)
 		expect(input.value).toBe('newer draft while saving')
-	})
-
-	it('keeps its real dirty form and input after a transport save failure', async () => {
-		const patch = vi.fn(async () => {
-			throw new Error('configuration transport unavailable')
-		})
-		const { session, container, id, input } = await fixture(patch)
-		await type(input, 'unsaved configuration')
-		let closing!: ReturnType<typeof session.workbench.close>
-		await act(async () => {
-			closing = session.workbench.close(id)
-		})
-		await confirm()
-		await act(async () => expect(await closing).toMatchObject({ status: 'denied' }))
-		expect(session.workbench.getDocument(id)).not.toBeNull()
-		expect(session.documents.get(id)!.isDirty()).toBe(true)
-		expect(container.querySelector(`input[name="name"]`)).toBe(input)
-		expect(input.value).toBe('unsaved configuration')
 	})
 
 	it('checks a real earlier form revision after another document waits and deletes none when that form changes', async () => {

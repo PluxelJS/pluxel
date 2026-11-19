@@ -1,7 +1,4 @@
-import { elysia } from '@pluxel/services/elysia'
 import { commands, Commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { managementCommands } from '@pluxel/services/management/commands'
 import { defineCommand, Result } from '@pluxel/commands'
 import { obj } from '@pluxel/commands/typebox'
@@ -22,7 +19,7 @@ function valueCommand(value: string, name = 'example.value.get') {
 
 describe('CommandsService', () => {
 	it('classifies unreadable trusted context and execution faults as INTERNAL', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 		const registration = host.ctx.service(Commands).register(valueCommand('ready'))
 		const signalError = new Error('signal getter failed')
 		const unreadableSignal = Object.defineProperty({}, 'signal', {
@@ -55,7 +52,7 @@ describe('CommandsService', () => {
 	})
 
 	it('aborts and drains owner commands before the plugin stop hook', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		const order: string[] = []
 		let captured!: { execute(candidate: unknown, context?: {}): Promise<unknown> }
@@ -121,7 +118,7 @@ describe('CommandsService', () => {
 	it('publishes the built-in plugin management catalog once during preparation', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [elysia(), commands(), nodeModules(), workers(), managementCommands()],
+			services: [commands(), managementCommands()],
 		})
 
 		const prepared = host.ctx.service(Commands).list()
@@ -148,7 +145,7 @@ describe('CommandsService', () => {
 	it('accepts package subpath addresses at the management command boundary', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [elysia(), commands(), nodeModules(), workers(), managementCommands()],
+			services: [commands(), managementCommands()],
 		})
 		const address = {
 			definition: {
@@ -169,17 +166,17 @@ describe('CommandsService', () => {
 		})
 	})
 
-	it('delegates stable catalog snapshots and publication subscriptions to the registry', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+	it('publishes stable catalog snapshots across command registration and owner removal', async () => {
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		await host.commit()
-		const initial = host.ctx.service(Commands).snapshot()
-		expect(host.ctx.service(Commands).snapshot()).toBe(initial)
-		expect(host.ctx.service(Commands).list()).toBe(initial.descriptors)
+		const catalog = host.ctx.service(Commands)
+		const initial = catalog.snapshot()
+		expect(catalog.snapshot()).toBe(initial)
+		expect(catalog.list()).toBe(initial.descriptors)
+		expect(catalog.list()).toEqual([])
 		const revisions: number[] = []
-		const unsubscribe = host.ctx
-			.service(Commands)
-			.subscribe((snapshot) => revisions.push(snapshot.revision))
+		const unsubscribe = catalog.subscribe((snapshot) => revisions.push(snapshot.revision))
 
 		@Plugin({ displayName: 'ObservedCommandOwner' })
 		class ObservedCommandOwner extends BasePlugin {
@@ -193,15 +190,24 @@ describe('CommandsService', () => {
 		host.cfg(ObservedCommandOwner).setAutoStart(true)
 		host.start(ObservedCommandOwner)
 		await host.commit()
+		expect(catalog.list().map(({ name }) => name)).toEqual(['owner.observed.get'])
+		await expect(catalog.execute('owner.observed.get', {})).resolves.toEqual(
+			Result.ok({ value: 'observed' }),
+		)
 		host.remove(ObservedCommandOwner)
 		await host.commit()
 		unsubscribe()
 
+		expect(catalog.list()).toEqual([])
+		await expect(catalog.execute('owner.observed.get', {})).resolves.toMatchObject({
+			status: 'error',
+			error: { code: 'COMMAND_NOT_FOUND' },
+		})
 		expect(revisions).toEqual([initial.revision + 1, initial.revision + 2])
 	})
 
 	it('keeps retained registration handles fixed to their original generation', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		let retained!: {
 			readonly descriptor: { readonly name: string }
@@ -276,7 +282,7 @@ describe('CommandsService', () => {
 	})
 
 	it('manual dispose revokes cached command wrappers without cancelling entered work', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		let disposeManual!: () => void
 		let captured!: { execute(candidate: unknown, context?: {}): Promise<unknown> }
@@ -347,7 +353,7 @@ describe('CommandsService', () => {
 	})
 
 	it('rolls back registrations when plugin startup fails', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		@Plugin({ displayName: 'BrokenCommandOwner' })
 		class BrokenCommandOwner extends BasePlugin {
@@ -373,7 +379,7 @@ describe('CommandsService', () => {
 	})
 
 	it('keeps cached service views and cleanup isolated between plugin owners', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: false })
+		await using host = await createServiceInternalTestHarness({ services: [commands()] })
 
 		@Plugin({ displayName: 'CommandOwnerA' })
 		class CommandOwnerA extends BasePlugin {
@@ -424,7 +430,7 @@ describe('CommandsService', () => {
 	it('executes management commands through the existing lifecycle use case', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [elysia(), commands(), nodeModules(), workers(), managementCommands()],
+			services: [commands(), managementCommands()],
 		})
 
 		@Plugin({ displayName: 'ManagedPlugin' })
@@ -486,7 +492,7 @@ describe('CommandsService', () => {
 	it('restarts the required dependent closure through management commands', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [elysia(), commands(), nodeModules(), workers(), managementCommands()],
+			services: [commands(), managementCommands()],
 		})
 
 		let providerStarts = 0

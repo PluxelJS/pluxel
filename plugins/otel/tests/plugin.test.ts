@@ -1,8 +1,5 @@
 import { formatPluginNodeReference, BasePlugin, Plugin } from '@pluxel/core'
 import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import {
 	type Counter,
@@ -50,7 +47,7 @@ describe('OtelPlugin', () => {
 		vi.stubEnv('OTEL_EXPORTER_OTLP_METRICS_PROTOCOL', 'grpc')
 		{
 			await using host = await createTestHost({
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			})
 			await host.start(OtelPlugin.nodeAddress(), {
 				catalog: [Consumer],

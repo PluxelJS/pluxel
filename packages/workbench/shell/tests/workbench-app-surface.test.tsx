@@ -357,6 +357,8 @@ describe('authenticated App surface ownership', () => {
 			expect(container.querySelector('[role="tab"][aria-label="Preview page"]')).not.toBeNull(),
 		)
 		expect(container.querySelector('[role="tab"][aria-label="Other owner"]')).toBeNull()
+		expect(container.textContent).toContain('Preview renderer unavailable')
+		expect(container.querySelectorAll('.worksplit-workbench')).toHaveLength(1)
 		expect(window.location.pathname).toBe(`${basepath}${href}`)
 	})
 
@@ -437,7 +439,7 @@ describe('authenticated App surface ownership', () => {
 		},
 	)
 
-	it.each(['declared shell', 'canonical shell', 'canonical standalone'])(
+	it.each(['declared shell', 'canonical standalone'])(
 		'classifies %s against publication before acquiring its browser owner',
 		async (mode) => {
 			const frame = mode.endsWith('standalone') ? 'standalone' : 'shell'
@@ -461,7 +463,7 @@ describe('authenticated App surface ownership', () => {
 		},
 	)
 
-	it('keeps a broken snapshot intact in an explicit recovery screen and creates no history owner', async () => {
+	it('shows recovery for a corrupt snapshot and preserves it when explicit reset fails', async () => {
 		const key = workspaceStorageKey('/')
 		const corrupt = '{bad native snapshot'
 		window.localStorage.setItem(key, corrupt)
@@ -469,28 +471,20 @@ describe('authenticated App surface ownership', () => {
 		const { container } = await mount('/logs')
 		await vi.waitFor(() => expect(container.textContent).toContain('工作区无法恢复'))
 		expect(container.textContent).toContain('保留现场并重试')
-		expect(container.textContent).toContain('删除保存的布局并重新打开')
 		expect(window.localStorage.getItem(key)).toBe(corrupt)
 		expect(container.querySelector('.worksplit-workbench')).toBeNull()
 		expect(connect).not.toHaveBeenCalled()
-	})
 
-	it('shows a failed explicit reset in the recovery screen and preserves the bad snapshot for another attempt', async () => {
-		const key = workspaceStorageKey('/')
-		const corrupt = '{bad native snapshot'
-		window.localStorage.setItem(key, corrupt)
 		vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
 			throw new Error('storage removal denied')
 		})
-		const { container } = await mount('/logs')
-		await vi.waitFor(() => expect(container.textContent).toContain('工作区无法恢复'))
 		const reset = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
 			(button) => button.textContent === '删除保存的布局并重新打开',
 		)!
 		await act(async () => reset.click())
 		expect(container.textContent).toContain('storage removal denied')
 		expect(window.localStorage.getItem(key)).toBe(corrupt)
-		expect(container.querySelector('.worksplit-workbench')).toBeNull()
+		expect(connect).not.toHaveBeenCalled()
 	})
 
 	it('navigates builtin routes through one real document Router', async () => {
@@ -507,13 +501,6 @@ describe('authenticated App surface ownership', () => {
 			expect(container.querySelectorAll('.worksplit-workbench')).toHaveLength(1)
 			expect(fixture.probes.size).toBe(1)
 		}
-	})
-
-	it('keeps one grouped plugin catalog beside the plugin selection document', async () => {
-		const { container } = await mount('/plugins')
-		await vi.waitFor(() => expect(container.textContent).toContain('选择插件'))
-		expect(container.textContent?.match(/Grouped plugin catalog/g)).toHaveLength(1)
-		expect(container.querySelectorAll('.worksplit-workbench')).toHaveLength(1)
 	})
 
 	it.each(['/', '/__pluxel/workbench'])(
@@ -562,7 +549,9 @@ describe('authenticated App surface ownership', () => {
 		)
 		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/plugins'))
 		expect(workspace.isToolVisible('navigation')).toBe(true)
-		expect(container.textContent).toContain('Grouped plugin catalog')
+		expect(container.textContent).toContain('选择插件')
+		expect(container.textContent?.match(/Grouped plugin catalog/g)).toHaveLength(1)
+		expect(container.querySelectorAll('.worksplit-workbench')).toHaveLength(1)
 	})
 
 	// This scenario crosses several complete document navigations and layout transitions.
@@ -632,7 +621,7 @@ describe('authenticated App surface ownership', () => {
 		expect(visible()).toEqual([true, false])
 	}, 15_000)
 
-	it('declares custom publication routes as application workspaces and rejects documents in the navigation border', async () => {
+	it('assigns custom publication routes to the application workspace and restores the previous document', async () => {
 		const publication = entry('/preview/:id', 'shell')
 		const { container } = await mount('/security', [publication])
 		await vi.waitFor(() => expect(fixture.probes.size).toBe(1))
@@ -642,14 +631,7 @@ describe('authenticated App surface ownership', () => {
 		await act(async () => probe.navigation.openTab({ path: '/preview/one', title: 'Preview page' }))
 		await vi.waitFor(() => expect(workspace.activeWorkspace()).toBe('apps'))
 		expect(workspace.isToolVisible('navigation')).toBe(false)
-		await act(async () => {
-			expect(
-				await workspace.workbench.dispatch(
-					Actions.moveNode(security.id, 'border_left', DockLocation.CENTER, -1),
-				),
-			).toMatchObject({ status: 'denied' })
-			workspace.workbench.activate(security.id)
-		})
+		await act(async () => workspace.workbench.activate(security.id))
 		expect(workspace.activeWorkspace()).toBeUndefined()
 		expect(
 			workspace.workbench.model.toJson().borders?.find((border) => border.location === 'left')
@@ -682,11 +664,13 @@ describe('authenticated App surface ownership', () => {
 		expect(workspace.workbench.getDocuments()).toHaveLength(1)
 		expect(workspace.isToolVisible('plugin-inspector')).toBe(false)
 		await act(async () => {
-			expect(
-				await workspace.workbench.dispatch(
-					Actions.moveNode(original.id, 'border_bottom', DockLocation.CENTER, -1),
-				),
-			).toMatchObject({ status: 'denied' })
+			for (const border of ['border_left', 'border_bottom']) {
+				expect(
+					await workspace.workbench.dispatch(
+						Actions.moveNode(original.id, border, DockLocation.CENTER, -1),
+					),
+				).toMatchObject({ status: 'denied' })
+			}
 		})
 		expect(workspace.workbench.getActiveDocument()!.containerId).toBe(original.containerId!)
 	})

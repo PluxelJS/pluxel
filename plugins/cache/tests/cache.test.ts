@@ -1,9 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
-import { createTestHost, type TestHost } from '@pluxel/test'
+import { createTestHost } from '@pluxel/test'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	Cache,
@@ -17,10 +13,6 @@ import {
 	MemoryCacheBackendPlugin,
 	Memoized,
 } from '../src/index.ts'
-
-async function createHost(): Promise<TestHost> {
-	return await createTestHost({ services: [elysia(), commands(), nodeModules(), workers()] })
-}
 
 type User = { id: string; name: string }
 
@@ -147,7 +139,7 @@ describe('@pluxel/plugin-cache', () => {
 		vi.useFakeTimers()
 		try {
 			{
-				await using host = await createHost()
+				await using host = await createTestHost()
 
 				await host.commit((change) => {
 					change.start(MemoryCacheBackendPlugin.nodeAddress())
@@ -183,7 +175,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('uses the default memory backend as an async L2 behind local cache', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryCacheBackendPlugin.nodeAddress(),
@@ -203,7 +195,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('uses node identity for caller isolation while global uses one managed shared namespace', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				TestCacheBackendPlugin.nodeAddress(),
@@ -244,7 +236,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('rejects a backend entry whose structured owner does not match its physical key', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				TestCacheBackendPlugin.nodeAddress(),
@@ -275,7 +267,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('deduplicates a global loader across consumers and does not cache rejection', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryCacheBackendPlugin.nodeAddress(),
@@ -326,7 +318,7 @@ describe('@pluxel/plugin-cache', () => {
 		'coalesces an external miss and preserves per-subscriber abort: %j',
 		async (reason) => {
 			{
-				await using host = await createHost()
+				await using host = await createTestHost()
 
 				await host.start([
 					TestCacheBackendPlugin.nodeAddress(),
@@ -364,7 +356,7 @@ describe('@pluxel/plugin-cache', () => {
 	)
 
 	it('cancels an active subscriber while preserving the shared loader failure', async () => {
-		await using host = await createHost()
+		await using host = await createTestHost()
 		await host.start([
 			TestCacheBackendPlugin.nodeAddress(),
 			CachePlugin.nodeAddress(),
@@ -394,7 +386,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('supports cache-first, cache-and-refresh, and remote-first async reads', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				TestCacheBackendPlugin.nodeAddress(),
@@ -425,7 +417,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('orders invalidation after in-flight load', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				TestCacheBackendPlugin.nodeAddress(),
@@ -444,7 +436,7 @@ describe('@pluxel/plugin-cache', () => {
 	})
 
 	it('clear drains accepted loads before clearing and admits later reads afterward', async () => {
-		await using host = await createHost()
+		await using host = await createTestHost()
 		await host.start([
 			MemoryCacheBackendPlugin.nodeAddress(),
 			CachePlugin.nodeAddress(),
@@ -471,7 +463,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('fails loudly instead of reporting a local-only clear as successful', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MissingClearCacheBackend.nodeAddress(),
@@ -487,7 +479,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('revokes cached namespace handles when provider stops', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryCacheBackendPlugin.nodeAddress(),
@@ -502,7 +494,7 @@ describe('@pluxel/plugin-cache', () => {
 	})
 
 	it('revokes a bucket without waiting for its loader and rejects late publication', async () => {
-		await using host = await createHost()
+		await using host = await createTestHost()
 		await host.start([
 			MemoryCacheBackendPlugin.nodeAddress(),
 			CachePlugin.nodeAddress(),
@@ -523,7 +515,7 @@ describe('@pluxel/plugin-cache', () => {
 	})
 
 	it('does not drain unrelated loads after a queued clear loses its owner', async () => {
-		await using host = await createHost()
+		await using host = await createTestHost()
 		await host.start([
 			TestCacheBackendPlugin.nodeAddress(),
 			CachePlugin.nodeAddress(),
@@ -556,7 +548,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('revokes caller-local, global, and decorator handles when the caller stops', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryCacheBackendPlugin.nodeAddress(),
@@ -580,7 +572,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('keeps a shared global registration alive until its final owner stops', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryCacheBackendPlugin.nodeAddress(),
@@ -601,7 +593,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('does not let a stopped memory backend handle recreate its state', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryCacheBackendPlugin.nodeAddress(),
@@ -624,7 +616,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('bounds distinct in-flight work while allowing same-key joins', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryCacheBackendPlugin.nodeAddress(),
@@ -650,7 +642,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('supports @Cached, @Memoized, custom method scopes, and explicit invalidation', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryCacheBackendPlugin.nodeAddress(),
@@ -683,7 +675,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('uses scan-resistant SIEVE eviction', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryCacheBackendPlugin.nodeAddress(),
@@ -705,7 +697,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('validates scopes, capacities, and primitive keys', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryCacheBackendPlugin.nodeAddress(),
@@ -722,7 +714,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('binds one exact normalized policy to each scope', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryCacheBackendPlugin.nodeAddress(),
@@ -751,7 +743,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('encodes bounded typed tuple and record keys without ambiguity', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				MemoryCacheBackendPlugin.nodeAddress(),
@@ -793,7 +785,7 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('supports required and bypass backend failure policies for getOrLoad only', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
 			await host.start([
 				TestCacheBackendPlugin.nodeAddress(),

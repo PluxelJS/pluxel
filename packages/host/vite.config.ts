@@ -10,6 +10,7 @@ export default defineConfig({
 				command: 'vp pack',
 				dependsOn: ['@pluxel/core#compile'],
 				cache: {
+					input: ['!dist/**', '!tests/**'],
 					output: ['dist/**'],
 				},
 			},

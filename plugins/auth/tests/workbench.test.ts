@@ -1,8 +1,5 @@
 import { createTestHost, type TestHost } from '@pluxel/test'
 import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import { type WorkbenchPrincipal } from '@pluxel/workbench'
 import { describe, expect, it } from 'vitest'
 import { AuthPlugin } from '../src/index.ts'
@@ -22,81 +19,53 @@ function openSetup(host: TestHost<true>, principal: WorkbenchPrincipal = LOCAL_R
 }
 
 describe('Auth Workbench credential setup', () => {
-	it('provisions the first password and refuses credential rotation', async () => {
-		{
-			await using host = await createTestHost({
-				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
-
-			await host.start(AuthPlugin.nodeAddress(), {
-				initialConfig: { mode: { type: 'password' } },
-			})
-
-			using opened = await openSetup(host)
-			await expect(opened.api.snapshotDto()).resolves.toEqual({
-				mode: 'password',
-				state: 'setup-required',
-				reason: 'missing',
-			})
-			await expect(
-				opened.api.setupPasswordDto({
-					username: 'Admin',
-					password: PASSWORD,
-					passwordConfirmation: PASSWORD,
-				}),
-			).resolves.toEqual({
-				ok: true,
-				snapshot: { mode: 'password', state: 'configured' },
-			})
-			await expect(opened.api.snapshotDto()).resolves.toEqual({
-				mode: 'password',
-				state: 'configured',
-			})
-			await expect(
-				opened.api.setupPasswordDto({
-					username: 'Other',
-					password: PASSWORD,
-					passwordConfirmation: PASSWORD,
-				}),
-			).resolves.toMatchObject({ ok: false, code: 'not_required' })
-			opened[Symbol.dispose]()
-			await expect(Promise.resolve().then((): unknown => opened.api.snapshotDto())).rejects.toThrow(
-				/Auth setup View is closed|disposed/i,
-			)
+	it('allows loopback recovery to provision the first password and refuses rotation', async () => {
+		await using host = await createTestHost({ workbench: true, services: [elysia()] })
+		await host.start(AuthPlugin.nodeAddress(), {
+			initialConfig: { mode: { type: 'password' } },
+		})
+		const credentials = {
+			username: 'Admin',
+			password: PASSWORD,
+			passwordConfirmation: PASSWORD,
 		}
-	})
+		using unauthorized = await openSetup(host, {
+			provider: '@pluxel/plugin-auth',
+			subject: 'local:admin',
+		})
+		await expect(unauthorized.api.setupPasswordDto(credentials)).resolves.toMatchObject({
+			ok: false,
+			code: 'forbidden',
+		})
 
-	it('allows mutations only for the loopback recovery principal', async () => {
-		{
-			await using host = await createTestHost({
-				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
-			})
-
-			await host.start(AuthPlugin.nodeAddress(), {
-				initialConfig: { mode: { type: 'password' } },
-			})
-
-			using opened = await openSetup(host, {
-				provider: '@pluxel/plugin-auth',
-				subject: 'local:admin',
-			})
-			await expect(
-				opened.api.setupPasswordDto({
-					username: 'Admin',
-					password: PASSWORD,
-					passwordConfirmation: PASSWORD,
-				}),
-			).resolves.toMatchObject({ ok: false, code: 'forbidden' })
-		}
+		using opened = await openSetup(host)
+		await expect(opened.api.snapshotDto()).resolves.toEqual({
+			mode: 'password',
+			state: 'setup-required',
+			reason: 'missing',
+		})
+		await expect(opened.api.setupPasswordDto(credentials)).resolves.toEqual({
+			ok: true,
+			snapshot: { mode: 'password', state: 'configured' },
+		})
+		await expect(opened.api.snapshotDto()).resolves.toEqual({
+			mode: 'password',
+			state: 'configured',
+		})
+		await expect(
+			opened.api.setupPasswordDto({ ...credentials, username: 'Other' }),
+		).resolves.toMatchObject({ ok: false, code: 'not_required' })
+		opened[Symbol.dispose]()
+		await expect(Promise.resolve().then((): unknown => opened.api.snapshotDto())).rejects.toThrow(
+			/Auth setup View is closed|disposed/i,
+		)
 	})
 
 	it('provisions password and TOTP as one credential', async () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			})
 
 			await host.start(AuthPlugin.nodeAddress(), {
@@ -130,7 +99,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			})
 
 			await host.start(AuthPlugin.nodeAddress(), {
@@ -163,7 +132,7 @@ describe('Auth Workbench credential setup', () => {
 		{
 			await using host = await createTestHost({
 				workbench: true,
-				services: [elysia(), commands(), nodeModules(), workers()],
+				services: [elysia()],
 			})
 
 			await host.start(AuthPlugin.nodeAddress(), {
