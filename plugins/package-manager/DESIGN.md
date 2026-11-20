@@ -14,7 +14,7 @@ Plugin 拥有 pnpm acquisition、配置、安装记录、单写者 lock、comman
 
 ## 不可变安装与发布
 
-市场和直接安装由同一个 Plugin 拥有。`markets: []` 默认不进行目录请求；market client 只访问部署方配置的 base URL，页面只能提交连接 ID。公共 HTTP 的读取有 timeout、响应大小与 DTO 校验边界，禁止重定向；错误不退化为空目录，也不影响直接安装。Worker 是独立项目，不要求消费端启动 Pluxel Host 服务端。
+市场和直接安装由同一个 Plugin 拥有。market client 只访问部署方在 `markets` 中配置的 base URL，页面提交连接 ID。Worker 主站和只读镜像提供同一套公开目录接口。公共 HTTP 读取有 timeout、响应大小和 DTO 校验边界，重定向会失败。目录读取失败时，直接安装仍由 pnpm 提供。 [部署方式](../../projects/plugin-market/README.md#只读镜像)
 
 交互安装先 `prepareInstall` / `prepareMarketInstall`，再 `confirmInstall`。准备使用相同 pnpm engine 完整物化私有 revision，保留 registry/auth/proxy 语义，不另建 npm resolver。每 store 只保留一个内存候选，10 分钟有效；候选 ID、selection revision、固定版本、SRI 和图/字节绑定。确认重新核对文件再提交，不执行第二次 acquisition。停止、替换候选或其他安装 mutation 使旧预览失效；候选不是跨进程持久任务。
 

@@ -1,9 +1,14 @@
+import { execFile, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { once } from 'node:events'
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createInterface } from 'node:readline'
+import { DatabaseSync } from 'node:sqlite'
 import { URL } from 'node:url'
+import { promisify } from 'node:util'
 import { gzipSync } from 'node:zlib'
-import { createHash } from 'node:crypto'
 import { newHttpBatchRpcSession } from 'capnweb'
 import { eq } from 'drizzle-orm'
 import { build } from 'esbuild'
@@ -1219,4 +1224,137 @@ describe('plugin market on workerd and D1', () => {
 		])
 		expect(await getJson(detailPath)).toMatchObject({ author: null })
 	})
+
+	it('serves a public mirror from committed SQLite data after the Worker goes offline', async () => {
+		const visible = await fixture('@example/mirror')
+		visible.tags = { ...visible.tags, constructor: visible.version }
+		const hidden = await fixture('@example/hidden')
+		const privateItem = await fixture(visible.name, { registry: privateRegistry })
+		for (const item of [visible, hidden, privateItem])
+			await callAdmin((access) =>
+				access.refresh({ registry: item.registry, name: item.name, version: item.version }),
+			)
+		await callAdmin((access) =>
+			access.setVisibility({ registry, name: hidden.name, expectedRevision: 1, hidden: true }),
+		)
+		const curation = {
+			registry,
+			name: visible.name,
+			official: true,
+			category: 'tools',
+			tags: ['initial'],
+			author: { id: 'market:mirror', name: 'Mirror Team' },
+		}
+		await callAdmin((access) => access.setMetadata({ ...curation, expectedRevision: 1 }))
+		const snapshot = await get('/v1/snapshot', { Authorization: `Bearer ${token}` })
+		expect(snapshot.status).toBe(200)
+		expect(await snapshot.json()).toMatchObject({
+			version: 1,
+			registries: [registry],
+			packages: [{ name: visible.name, registry }],
+			releases: [{ name: visible.name, registry, integrity: visible.integrity }],
+			authors: [{ ...curation.author, kind: 'market' }],
+		})
+		const condition = { 'If-None-Match': snapshot.headers.get('ETag')! }
+		const cachedSnapshot = await get('/v1/snapshot', condition)
+		expect(cachedSnapshot.status).toBe(304)
+
+		const binary = join(directory, 'mirror.mjs')
+		const file = join(directory, 'catalog.sqlite')
+		const execute = promisify(execFile)
+		await execute(process.execPath, ['dev/build-mirror.ts', binary], { timeout: 10_000 })
+		const publisher = origin.href
+		const sync = () =>
+			execute(process.execPath, [binary, 'sync', publisher, file], {
+				cwd: directory,
+				timeout: 10_000,
+			})
+		const initial = await sync()
+		expect(initial.stdout).toContain('1 packages, 1 releases')
+		const unchanged = await sync()
+		expect(unchanged.stdout).toContain('unchanged')
+		const server = spawn(process.execPath, [binary, 'serve', file], {
+			cwd: directory,
+			env: { ...process.env, HOST: '127.0.0.1', PORT: '0' },
+			stdio: ['ignore', 'pipe', 'pipe'],
+		})
+		const stopped = once(server, 'close')
+		const output = createInterface({ input: server.stdout })
+		let errors = ''
+		server.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+			errors += chunk
+		})
+		let offline = false
+		try {
+			const [line] = await Promise.race([
+				once(output, 'line', { signal: AbortSignal.timeout(10_000) }),
+				stopped.then(() => {
+					throw new Error(`Mirror exited before readiness: ${errors}`)
+				}),
+			])
+			expect(line).toMatch(/^Market mirror ready: http:\/\/127\.0\.0\.1:\d+$/)
+			const base = line.slice('Market mirror ready: '.length)
+			const read = (path: string) => fetch(base + path, { signal: AbortSignal.timeout(5_000) })
+			const readMirror = async (path: string) => {
+				const response = await read(path)
+				expect(response.status).toBe(200)
+				return response.json()
+			}
+			const detail = `/v1/packages/${encodeURIComponent(visible.name)}`
+			const hiddenDetail = `/v1/packages/${encodeURIComponent(hidden.name)}`
+			const release = `${detail}/releases/${visible.version}`
+			for (const path of [
+				'/v1/packages?query=mirror',
+				'/v1/facets',
+				detail,
+				`${detail}/releases`,
+				release,
+			])
+				expect(await readMirror(path)).toEqual(await getJson(path))
+			expect(await readMirror('/v1')).toMatchObject({
+				registries: [{ registry, access: 'public' }],
+				capabilities: { notifications: false },
+			})
+			const privateDetail = await read(`${detail}?registry=${encodeURIComponent(privateRegistry)}`)
+			expect(privateDetail.status).toBe(404)
+			const write = await fetch(`${base}/v1/notifications`, { method: 'POST' })
+			expect(write.status).toBe(405)
+
+			await callAdmin((access) =>
+				access.setMetadata({ ...curation, expectedRevision: 2, tags: ['delta'] }),
+			)
+			await callAdmin((access) =>
+				access.setVisibility({ registry, name: hidden.name, expectedRevision: 2, hidden: false }),
+			)
+			const trigger = 'reject_mirror_test_insert'
+			{
+				using sqlite = new DatabaseSync(file)
+				sqlite.exec(`CREATE TRIGGER ${trigger} BEFORE INSERT ON releases BEGIN
+					SELECT RAISE(ABORT, 'mirror-sync-fixture'); END;`)
+			}
+			await expect(sync()).rejects.toThrow('mirror-sync-fixture')
+			expect(await readMirror(detail)).toMatchObject({ tags: ['initial'] })
+			expect(await readMirror(release)).toMatchObject({ integrity: visible.integrity })
+			const stillHidden = await read(hiddenDetail)
+			expect(stillHidden.status).toBe(404)
+			{
+				using sqlite = new DatabaseSync(file)
+				sqlite.exec(`DROP TRIGGER ${trigger}`)
+			}
+			await sync()
+			await runtime.dispose()
+			offline = true
+			await expect(sync()).rejects.toMatchObject({ code: 1 })
+			expect(await readMirror('/v1/packages?query=delta')).toMatchObject({
+				packages: [{ name: visible.name, tags: ['delta'] }],
+			})
+			expect(await readMirror(release)).toMatchObject({ integrity: visible.integrity })
+			expect(await readMirror(hiddenDetail)).toMatchObject({ name: hidden.name })
+		} finally {
+			output.close()
+			server.kill()
+			await stopped
+			if (offline) await start()
+		}
+	}, 40_000)
 })

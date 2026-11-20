@@ -3,7 +3,7 @@ title: 本地体验插件发布与市场管理
 description: 用真实私有 PNPR 与公共 npm 体验发布、通知、收录、多来源搜索、市场分类及管理操作。
 ---
 
-在 Pluxel 框架仓库内，可以通过本地启动的 PNPR 私有包仓库与插件市场后端（基于 Cloudflare Workers/D1 架构的本地模拟运行环境），完整体验插件构建、发包通知、制品索引校验、分类打标以及在 Workbench 控制台浏览的全流程。
+用本地 PNPR 和 workerd/D1 沙箱体验插件构建、发包通知、制品检查、分类和 Workbench 浏览。线上收录和运营使用 Cloudflare Worker + D1 主站。区域目录可独立部署，使用同一份公开目录快照同步。 [主站与只读镜像](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md#只读镜像)
 
 ## 启动本地市场与测试注册表
 
