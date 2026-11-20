@@ -91,7 +91,7 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 				transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
 				transition: transition ?? 'opacity 120ms ease-out',
 				minWidth: 0,
-				padding: '6px 0 0',
+				padding: '8px 0 0',
 			}}
 			role="group"
 			aria-label={`分组 ${g.name || '未命名'}`}

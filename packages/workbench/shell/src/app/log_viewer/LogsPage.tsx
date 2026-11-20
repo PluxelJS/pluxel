@@ -69,7 +69,7 @@ function LogDocument({ search }: { search: LogsSearch }) {
 				</Text>
 				<Group gap="xs" wrap="wrap" ml="auto">
 					<Button
-						size="compact-xs"
+						size="compact-sm"
 						variant={follow ? 'default' : 'light'}
 						onClick={() => changeFollow(!follow)}
 					>
@@ -78,7 +78,7 @@ function LogDocument({ search }: { search: LogsSearch }) {
 					<LogFilters search={search} onApply={apply} />
 					<Menu closeOnItemClick={false} position="bottom-end">
 						<Menu.Target>
-							<Button size="compact-xs" variant="default">
+							<Button size="compact-sm" variant="default">
 								显示
 							</Button>
 						</Menu.Target>
@@ -99,7 +99,7 @@ function LogDocument({ search }: { search: LogsSearch }) {
 						</Menu.Dropdown>
 					</Menu>
 					<Button
-						size="compact-xs"
+						size="compact-sm"
 						variant="subtle"
 						onClick={() => {
 							clear()
@@ -121,7 +121,7 @@ function LogDocument({ search }: { search: LogsSearch }) {
 				>
 					{owner && (
 						<Button
-							size="compact-xs"
+							size="compact-sm"
 							variant="subtle"
 							onClick={() => apply({ ...search, plugin: undefined })}
 						>

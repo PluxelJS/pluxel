@@ -28,7 +28,7 @@ export function LogFilters({
 		<Popover opened={opened} onChange={setOpened} position="bottom-start" width={320}>
 			<Popover.Target>
 				<Button
-					size="compact-xs"
+					size="compact-sm"
 					variant={count ? 'light' : 'default'}
 					onClick={() => {
 						setDraft(search)

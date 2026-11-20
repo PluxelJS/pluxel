@@ -9,7 +9,7 @@ export type RowDensity = {
 
 export const DENSITY: Record<Density, RowDensity> = {
 	comfortable: { rowH: 40, px: 12, py: 8, font: 'sm' },
-	compact: { rowH: 34, px: 10, py: 6, font: 'sm' },
+	compact: { rowH: 32, px: 8, py: 4, font: 'sm' },
 	ultra: { rowH: 28, px: 8, py: 2, font: 'xs' },
 }
 

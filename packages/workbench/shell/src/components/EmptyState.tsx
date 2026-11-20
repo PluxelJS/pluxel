@@ -30,10 +30,10 @@ export function EmptyState({
 	} satisfies CSSProperties
 
 	return (
-		<Paper withBorder={withBorder} radius={withBorder ? 'lg' : 'md'} style={surfaceStyle}>
+		<Paper withBorder={withBorder} radius="md" style={surfaceStyle}>
 			<Stack align="center" gap="md" maw={400}>
 				{icon && (
-					<ThemeIcon size={56} radius="xl" variant="light" color="gray">
+					<ThemeIcon size={56} radius="md" variant="light" color="gray">
 						{icon}
 					</ThemeIcon>
 				)}

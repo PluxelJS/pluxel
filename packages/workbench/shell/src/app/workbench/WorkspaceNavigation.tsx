@@ -337,7 +337,7 @@ function NavigationContent({
 					onChange={(event) => setQuery(event.currentTarget.value)}
 					autoFocus={autofocus}
 					data-autofocus={autofocus || undefined}
-					size="xs"
+					size="sm"
 					onKeyDown={(event) => {
 						if (event.key === 'Enter') {
 							event.preventDefault()
@@ -356,7 +356,7 @@ function NavigationContent({
 			<ScrollArea className="plx-workspace-navigation__scroll" type="auto" offsetScrollbars>
 				<Stack gap={compact ? 4 : 'md'} pr={0}>
 					{panels?.owner && visiblePanels.length > 0 && (
-						<Stack gap={3} component="section" aria-label="当前插件扩展">
+						<Stack gap={4} component="section" aria-label="当前插件扩展">
 							<Text size="xs" c="dimmed" fw={600}>
 								当前插件扩展
 							</Text>
@@ -380,7 +380,7 @@ function NavigationContent({
 						</Stack>
 					)}
 					{(visibleBuiltins.length > 0 || showTool) && (
-						<Stack gap={3}>
+						<Stack gap={4}>
 							<Text size="xs" c="dimmed" fw={600}>
 								工作台
 							</Text>
@@ -391,7 +391,7 @@ function NavigationContent({
 						</Stack>
 					)}
 					{visibleCommands.length > 0 && (
-						<Stack gap={3} component="section" aria-label="工作区命令">
+						<Stack gap={4} component="section" aria-label="工作区命令">
 							<Text size="xs" c="dimmed" fw={600}>
 								命令
 							</Text>

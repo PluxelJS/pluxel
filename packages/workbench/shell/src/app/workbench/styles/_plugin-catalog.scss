@@ -10,7 +10,7 @@
 	display: flex;
 	flex: 1;
 	flex-direction: column;
-	gap: 6px;
+	gap: 8px;
 	height: 100%;
 	min-height: 0;
 	min-width: 0;
@@ -23,7 +23,7 @@
 	justify-content: space-between;
 	margin: -4px -4px 0;
 	min-width: 0;
-	padding: 6px 10px;
+	padding: 8px 12px;
 }
 
 .plx-pluginCatalog__titleLine {
@@ -31,7 +31,7 @@
 	display: flex;
 	flex: 1;
 	flex-wrap: nowrap;
-	gap: 6px;
+	gap: 8px;
 	min-width: 0;
 }
 
@@ -59,13 +59,13 @@
 	align-items: center;
 	display: inline-flex;
 	flex: 0 0 auto;
-	gap: 6px;
+	gap: 8px;
 }
 
 .plx-pluginCatalog__toolbar {
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
+	gap: 8px;
 }
 
 .plx-pluginCatalog__body {
@@ -90,14 +90,14 @@
 	min-height: 28px;
 	min-width: 0;
 	/* Same inline inset as catalog rows, so headings line up with row content. */
-	padding: 2px 4px 0 10px;
+	padding: 2px 4px 0 12px;
 }
 
 .plx-pluginCatalog__sectionActions {
 	align-items: center;
 	display: inline-flex;
 	flex-wrap: wrap;
-	gap: 6px;
+	gap: 8px;
 	justify-content: flex-end;
 }
 
@@ -138,7 +138,7 @@
 	display: flex;
 	gap: 8px;
 	justify-content: space-between;
-	padding: 3px 6px;
+	padding: 4px 8px;
 }
 
 .plx-pluginCatalog__executionIndicator,
@@ -238,10 +238,10 @@
 	font: inherit;
 	font-size: var(--mantine-font-size-xs);
 	font-weight: 600;
-	gap: 6px;
+	gap: 8px;
 	height: 24px;
 	min-width: 0;
-	padding: 0 6px;
+	padding: 0 8px;
 	text-align: start;
 }
 .plx-pluginCatalog__groupToggle > svg {

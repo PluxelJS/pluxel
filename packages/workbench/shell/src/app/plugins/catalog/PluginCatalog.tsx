@@ -355,7 +355,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 					notifyAndRecord({
 						title: autoStart ? '已批量开启自动启动' : '已批量关闭自动启动',
 						message: (
-							<Group gap={6} align="center" wrap="nowrap">
+							<Group gap={8} align="center" wrap="nowrap">
 								<Box component="span">{batch.length} 个插件</Box>
 								<ActionIcon
 									size="sm"

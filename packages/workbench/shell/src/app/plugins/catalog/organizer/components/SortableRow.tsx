@@ -196,7 +196,7 @@ const SortableRowComponent = ({
 				{selected ? <IconCheck size={11} stroke={2.2} /> : <IconSquare size={11} />}
 			</ActionIcon>
 
-			<Box style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+			<Box style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
 				{LinkComp ? (
 					<LinkComp
 						to={href}

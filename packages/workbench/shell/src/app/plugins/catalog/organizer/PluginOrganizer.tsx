@@ -479,7 +479,7 @@ export function PluginOrganizer({
 					bg="transparent"
 					shadow="none"
 					radius="sm"
-					p={6}
+					p={8}
 					style={{
 						minWidth: 0,
 						minHeight: 0,
@@ -621,7 +621,7 @@ export function PluginOrganizer({
 						bg="transparent"
 						shadow="none"
 						radius="sm"
-						p={6}
+						p={8}
 						style={{
 							minHeight: 0,
 							minWidth: 0,
@@ -696,7 +696,7 @@ export function PluginOrganizer({
 			{/* 小芯片 Overlay：不挡视线 */}
 			<DragOverlay dropAnimation={null}>
 				{dragActiveId ? (
-					<div style={{ pointerEvents: 'none', marginTop: 6, marginLeft: 6, opacity: 0.9 }}>
+					<div style={{ pointerEvents: 'none', marginTop: 8, marginLeft: 8, opacity: 0.9 }}>
 						<Badge variant="filled" size="sm">
 							+{Math.max(1, selectedIds.length)}
 						</Badge>

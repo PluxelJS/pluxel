@@ -206,23 +206,24 @@ const HUES = {
 	],
 } satisfies Record<string, MantineColorsTuple>
 
-/* Control heights in px. One step tighter than Mantine defaults for a 13px body. */
+/*
+ * Control heights in px on one 4px grid shared by buttons, inputs and icon buttons, so controls
+ * placed side by side line up: 24 inline, 28 default (toolbars and forms), 32 for emphasis.
+ */
+const CONTROL_HEIGHT = { xs: 24, sm: 28, md: 32, lg: 36, xl: 44 } as const
 const BUTTON_HEIGHT: Scale = {
-	xs: 26,
-	sm: 30,
-	md: 34,
-	lg: 40,
-	xl: 46,
-	'compact-xs': 22,
-	'compact-sm': 26,
-	'compact-md': 30,
+	...CONTROL_HEIGHT,
+	'compact-xs': 24,
+	'compact-sm': 28,
+	'compact-md': 32,
 }
-const INPUT_HEIGHT: Scale = { xs: 26, sm: 30, md: 34, lg: 40, xl: 46 }
-const ACTION_ICON_SIZE: Scale = { xs: 22, sm: 26, md: 30, lg: 36, xl: 42 }
+const INPUT_HEIGHT: Scale = CONTROL_HEIGHT
+const ACTION_ICON_SIZE: Scale = CONTROL_HEIGHT
 const THEME_ICON_SIZE: Scale = { xs: 18, sm: 22, md: 28, lg: 34, xl: 40 }
-const BADGE_HEIGHT: Scale = { xs: 16, sm: 18, md: 20, lg: 24, xl: 28 }
+// Small badges share one 20px height so status tags line up wherever they appear.
+const BADGE_HEIGHT: Scale = { xs: 20, sm: 20, md: 20, lg: 24, xl: 28 }
 /* Badge labels stay legible for CJK; Mantine's 9–11px defaults are too small. */
-const BADGE_FONT_SIZE: Scale = { xs: 11, sm: 11, md: 12, lg: 13, xl: 14 }
+const BADGE_FONT_SIZE: Scale = { xs: 12, sm: 12, md: 12, lg: 13, xl: 14 }
 
 function px(value: number) {
 	return `${value / 16}rem`
@@ -259,6 +260,7 @@ export const workbenchTheme: MantineThemeOverride = createTheme({
 		'-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
 	fontFamilyMonospace: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
 	fontSmoothing: true,
+	// Two radii: `sm` (6px) for every control and tag, `md` (8px) for surfaces and floating layers.
 	defaultRadius: 'sm',
 	radius: { xs: '4px', sm: '6px', md: '8px', lg: '10px', xl: '14px' },
 	fontSizes: { xs: '12px', sm: '13px', md: '14px', lg: '16px', xl: '20px' },
@@ -292,8 +294,8 @@ export const workbenchTheme: MantineThemeOverride = createTheme({
 	components: {
 		// Icon buttons are chrome: quiet by default, accent only where a caller asks for it.
 		ActionIcon: ActionIcon.extend({
-			defaultProps: { color: 'gray', variant: 'subtle' },
-			vars: (_theme, props) => ({ root: sized('--ai-size', ACTION_ICON_SIZE, props.size, 'md') }),
+			defaultProps: { color: 'gray', variant: 'subtle', size: 'sm' },
+			vars: (_theme, props) => ({ root: sized('--ai-size', ACTION_ICON_SIZE, props.size) }),
 		}),
 		Button: Button.extend({
 			vars: (_theme, props) => ({ root: sized('--button-height', BUTTON_HEIGHT, props.size) }),
@@ -309,7 +311,7 @@ export const workbenchTheme: MantineThemeOverride = createTheme({
 			vars: (_theme, props) => ({ root: sized('--ti-size', THEME_ICON_SIZE, props.size, 'md') }),
 		}),
 		Badge: Badge.extend({
-			defaultProps: { radius: 'xl', variant: 'light' },
+			defaultProps: { radius: 'sm', variant: 'light' },
 			vars: (_theme, props) => ({
 				root: {
 					...sized('--badge-height', BADGE_HEIGHT, props.size, 'md'),
@@ -328,7 +330,14 @@ export const workbenchTheme: MantineThemeOverride = createTheme({
 		Text: Text.extend({ defaultProps: { size: 'sm' } }),
 		Paper: Paper.extend({ defaultProps: { radius: 'md' } }),
 		Card: Card.extend({ defaultProps: { radius: 'md', padding: 'md' } }),
-		SegmentedControl: SegmentedControl.extend({ defaultProps: { radius: 'sm' } }),
+		// 2px inset + 24px segments: the same 28px outer height as buttons and inputs.
+		SegmentedControl: SegmentedControl.extend({
+			defaultProps: { radius: 'sm', size: 'xs' },
+			styles: {
+				root: { padding: 2 },
+				label: { minHeight: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+			},
+		}),
 		// Floating layers are the only surfaces with depth.
 		Menu: Menu.extend({ defaultProps: { radius: 'md', shadow: 'md' } }),
 		Popover: Popover.extend({ defaultProps: { radius: 'md', shadow: 'md' } }),
@@ -336,7 +345,7 @@ export const workbenchTheme: MantineThemeOverride = createTheme({
 		Tooltip: Tooltip.extend({ defaultProps: { radius: 'sm' } }),
 		Modal: Modal.extend({
 			defaultProps: {
-				radius: 'lg',
+				radius: 'md',
 				shadow: 'xl',
 				overlayProps: { backgroundOpacity: 0.48, blur: 2 },
 			},

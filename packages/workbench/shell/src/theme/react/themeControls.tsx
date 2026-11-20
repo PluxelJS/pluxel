@@ -74,7 +74,7 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 	const currentPreset = presets.find((preset) => preset.key === accentKey) ?? presets[0]
 	const schemeControl = (
 		<Box>
-			<Text size="xs" c="dimmed" mb={6}>
+			<Text size="xs" c="dimmed" mb={8}>
 				明暗模式
 			</Text>
 			<SegmentedControl
@@ -93,12 +93,12 @@ export function ThemeCustomizer({ compact = false }: ThemeCustomizerProps) {
 	const accentPicker = (
 		<Box>
 			{compact ? null : (
-				<Text size="xs" c="dimmed" mb={6}>
+				<Text size="xs" c="dimmed" mb={8}>
 					主题色
 				</Text>
 			)}
 			<ScrollArea.Autosize maw={compact ? 260 : '100%'} type="never">
-				<Group gap={6} wrap="wrap">
+				<Group gap={8} wrap="wrap">
 					{presets.map((preset) => (
 						<Tooltip key={preset.key} label={preset.name}>
 							<ActionIcon

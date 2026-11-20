@@ -9,7 +9,7 @@ export function NotificationMessage({
 	copyText: string
 }) {
 	return (
-		<Stack gap={6}>
+		<Stack gap={8}>
 			<div style={{ userSelect: 'text', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
 				{message}
 			</div>

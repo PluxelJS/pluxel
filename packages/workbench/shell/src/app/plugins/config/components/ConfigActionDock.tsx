@@ -49,7 +49,7 @@ export function ConfigActionDock({
 				{hasMultipleSections ? (
 					<div className="plx-pluginWorkbench__configActionSelect">
 						<Select
-							size="xs"
+							size="sm"
 							value={activeKey}
 							data={sectionOptions}
 							onChange={(value) => {
@@ -83,7 +83,7 @@ export function ConfigActionDock({
 			>
 				<Button
 					type="button"
-					size="xs"
+					size="sm"
 					variant="default"
 					onClick={onResetCurrent}
 					disabled={!activeState.dirty || activeState.submitting || saving}
@@ -92,7 +92,7 @@ export function ConfigActionDock({
 				</Button>
 				<Button
 					type="button"
-					size="xs"
+					size="sm"
 					variant="subtle"
 					color="gray"
 					onClick={onRestoreInheritance}
@@ -102,7 +102,7 @@ export function ConfigActionDock({
 				</Button>
 				<Button
 					type="button"
-					size="xs"
+					size="sm"
 					leftSection={<IconDeviceFloppy size={14} />}
 					onClick={onSubmitCurrent}
 					loading={activeState.submitting}
@@ -114,7 +114,7 @@ export function ConfigActionDock({
 				{hasMultipleSections ? (
 					<Button
 						type="button"
-						size="xs"
+						size="sm"
 						variant="light"
 						onClick={onSubmitAll}
 						loading={savingScope === 'all'}

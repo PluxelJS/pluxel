@@ -58,7 +58,7 @@ export function SecurityAuditScreen() {
 	const failures = events.filter((event) => event.status === 'failure').length
 
 	return (
-		<Stack gap="lg" p="var(--plx-page-padding)" style={{ flex: 1, minHeight: 0 }}>
+		<Stack gap="md" p="var(--plx-page-padding)" style={{ flex: 1, minHeight: 0 }}>
 			<PageHeader
 				title="安全审计"
 				meta={

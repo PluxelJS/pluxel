@@ -33,9 +33,9 @@ export function ErrorState({
 	} satisfies CSSProperties
 
 	return (
-		<Paper withBorder={withBorder} radius={withBorder ? 'lg' : 'md'} style={surfaceStyle}>
+		<Paper withBorder={withBorder} radius="md" style={surfaceStyle}>
 			<Stack align="center" gap="md" maw={400}>
-				<ThemeIcon size={56} radius="xl" variant="light" color="red">
+				<ThemeIcon size={56} radius="md" variant="light" color="red">
 					{icon || <IconAlertTriangle size={28} stroke={1.5} />}
 				</ThemeIcon>
 				<Stack align="center" gap={4}>

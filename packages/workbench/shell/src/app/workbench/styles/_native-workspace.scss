@@ -80,7 +80,7 @@
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	padding-inline: 12px 10px;
+	padding-inline: 12px 12px;
 	min-height: 44px;
 	flex: 0 0 auto;
 }
@@ -121,7 +121,7 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 10px;
+	gap: 12px;
 	min-width: 0;
 }
 .plx-workspace__search-button .mantine-Button-label {
@@ -135,7 +135,7 @@
 }
 .plx-workspace__toolbar kbd {
 	border: 1px solid var(--mantine-color-default-border);
-	border-radius: var(--mantine-radius-xs);
+	border-radius: var(--mantine-radius-sm);
 	color: var(--mantine-color-dimmed);
 	font: inherit;
 	font-size: var(--mantine-font-size-xs);
@@ -148,7 +148,7 @@
 }
 .plx-workspace__storage-error {
 	flex: 0 0 auto;
-	padding: 10px 14px;
+	padding: 12px 16px;
 	border-radius: 0;
 }
 .plx-workspace__search {
@@ -162,7 +162,7 @@
 
 .plx-workspace__tab-label {
 	display: inline-flex;
-	gap: 6px;
+	gap: 8px;
 	align-items: center;
 	min-width: 0;
 }
@@ -188,7 +188,7 @@
 }
 .plx-workspace .flexlayout__tab:not(.flexlayout__tab_border) {
 	border: 1px solid var(--plx-border);
-	border-radius: var(--mantine-radius-lg);
+	border-radius: var(--mantine-radius-md);
 }
 /* Border panels share the tab class but stay part of the chrome. */
 .plx-workspace .flexlayout__tab_border {
@@ -200,8 +200,8 @@
 }
 .plx-workspace .flexlayout__tab_button {
 	border-radius: var(--mantine-radius-sm);
-	padding-block: 5px;
-	padding-inline: 10px 6px;
+	padding-block: 4px;
+	padding-inline: 12px 8px;
 	margin-inline-end: 2px;
 }
 /*
@@ -261,14 +261,14 @@
 	max-height: min(70%, 560px);
 	max-width: min(420px, calc(100% - 12px));
 	min-width: min(230px, calc(100% - 12px));
-	padding: 6px;
+	padding: 8px;
 }
 .plx-workspace .flexlayout__popup_menu_item {
 	align-items: center;
 	display: flex;
 	gap: 8px;
 	min-height: 34px;
-	padding: 6px 9px;
+	padding: 8px 8px;
 	border-radius: var(--mantine-radius-sm);
 	white-space: normal;
 }
@@ -283,7 +283,7 @@
 	display: block;
 	color: var(--mantine-color-dimmed);
 	font-size: var(--mantine-font-size-xs);
-	margin-bottom: 5px;
+	margin-bottom: 4px;
 }
 .plx-workspace .plx-native-menu-control:has(input:focus) {
 	background: transparent;
@@ -299,7 +299,7 @@
 	font: inherit;
 	min-height: 32px;
 	min-width: 0;
-	padding: 4px 7px;
+	padding: 4px 8px;
 }
 .plx-workspace .flexlayout__group_picker {
 	flex-wrap: wrap;
@@ -308,11 +308,11 @@
 .plx-workspace .flexlayout__group_picker_item {
 	color: var(--mantine-color-black);
 	font: inherit;
-	padding: 6px 10px;
+	padding: 8px 12px;
 }
 .plx-workspace .flexlayout__group_color_picker {
-	gap: 6px;
-	padding-block: 3px;
+	gap: 8px;
+	padding-block: 4px;
 	flex-wrap: wrap;
 }
 .plx-workspace .flexlayout__group_color_picker_swatch {
@@ -365,12 +365,12 @@
 }
 .plx-workspace-navigation__shortcut {
 	border: 1px solid var(--plx-border);
-	border-radius: var(--mantine-radius-xs);
+	border-radius: var(--mantine-radius-sm);
 	color: var(--mantine-color-dimmed);
 	font-family: var(--mantine-font-family-monospace);
 	font-size: var(--mantine-font-size-xs);
 	line-height: 1.4;
-	padding: 0 5px;
+	padding: 0 4px;
 	white-space: nowrap;
 }
 
@@ -484,8 +484,8 @@
 	display: flex;
 	flex-direction: column;
 	flex: 0 0 48px;
-	gap: 6px;
-	padding: 4px 6px 8px;
+	gap: 8px;
+	padding: 4px 8px 8px;
 	background: var(--plx-canvas);
 }
 .plx-activity[data-mode='labels'] {
@@ -538,7 +538,7 @@
 }
 .plx-activity__divider {
 	border-top: 1px solid var(--plx-border-strong);
-	margin: 5px 4px;
+	margin: 4px 4px;
 }
 .plx-activity__shortcut {
 	position: relative;
@@ -566,7 +566,7 @@
 	width: 18px;
 	height: 18px;
 	border: 0;
-	border-radius: 3px;
+	border-radius: var(--mantine-radius-sm);
 	background: var(--plx-app-bg);
 	color: var(--mantine-color-dimmed);
 	cursor: pointer;

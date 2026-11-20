@@ -141,7 +141,7 @@ function OutlineNodeButton({
 				<Group
 					justify="space-between"
 					align="center"
-					gap={6}
+					gap={8}
 					className="plx-pluginWorkbench__outlineRow"
 				>
 					<Group gap={8} align="center" className="plx-pluginWorkbench__outlineLabelGroup">
@@ -166,7 +166,7 @@ function OutlineNodeButton({
 				</Group>
 			</Box>
 			{node.children.length > 0 ? (
-				<Stack gap={6} mt={6} className="plx-pluginWorkbench__outlineBranch">
+				<Stack gap={8} mt={8} className="plx-pluginWorkbench__outlineBranch">
 					{node.children.map((child) => (
 						<OutlineNodeButton
 							key={child.id}

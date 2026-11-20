@@ -128,7 +128,7 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 			children: (
 				<div>
 					<div>以下依赖当前无法启动：</div>
-					<div style={{ marginTop: 10 }}>
+					<div style={{ marginTop: 12 }}>
 						{unavailable
 							.map((item) => {
 								if (!item.provider) return formatPluginDefinitionReference(item.edge.requirement)

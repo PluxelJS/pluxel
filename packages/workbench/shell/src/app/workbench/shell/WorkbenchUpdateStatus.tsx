@@ -59,7 +59,7 @@ export function WorkbenchUpdateStatus() {
 					className="plx-workspace__update-status"
 					variant="subtle"
 					color={color}
-					size="compact-xs"
+					size="compact-sm"
 					leftSection={<Icon size={15} aria-hidden="true" />}
 					aria-label={`${label}，查看更新详情`}
 				>

@@ -30,7 +30,7 @@ export function SecurityScreen() {
 	const access = overview.data.adminAccess
 	const provider = access.provider
 	return (
-		<Stack gap="lg" p="var(--plx-page-padding)">
+		<Stack gap="md" p="var(--plx-page-padding)">
 			<PageHeader
 				title="认证与安全"
 				meta={

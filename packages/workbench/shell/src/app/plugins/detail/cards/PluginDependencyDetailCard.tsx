@@ -396,7 +396,7 @@ export function PluginDependencyDetailCard() {
 		<Paper p={0} py="sm" shadow="none" bg="transparent">
 			<Stack gap="sm">
 				<Group justify="space-between" align="center" wrap="nowrap">
-					<Group gap={6} wrap="wrap">
+					<Group gap={8} wrap="wrap">
 						<Text size="sm" fw={600}>
 							依赖管理
 						</Text>
@@ -527,8 +527,8 @@ function DependencyImplementationControl({
 	}
 
 	return (
-		<Stack gap={5}>
-			<Group gap={5} wrap="nowrap" align="flex-end">
+		<Stack gap={4}>
+			<Group gap={4} wrap="nowrap" align="flex-end">
 				<Select
 					size="xs"
 					aria-label={`设置当前插件的 ${row.requirement.exportName} 实现`}
@@ -585,11 +585,11 @@ function DependencyImplementationControl({
 			</Group>
 
 			{forkOptions.length > 0 ? (
-				<Group gap={5} wrap="wrap">
+				<Group gap={4} wrap="wrap">
 					{forkOptions.map((option) => {
 						const removePending = controls.isRemoveForkPending(option.address)
 						return (
-							<Group key={pluginNodeIndexKey(option.address)} gap={3} wrap="nowrap">
+							<Group key={pluginNodeIndexKey(option.address)} gap={4} wrap="nowrap">
 								<Badge variant="outline" color="gray" radius="sm" size="xs">
 									{option.address.forkId}
 								</Badge>

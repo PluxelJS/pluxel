@@ -95,7 +95,7 @@ export function PluginRuntimeSummaryCard({
 
 				{updateWarning ? (
 					<Group
-						gap={6}
+						gap={8}
 						wrap="nowrap"
 						align="flex-start"
 						className="plx-pluginWorkbench__statusIssues"

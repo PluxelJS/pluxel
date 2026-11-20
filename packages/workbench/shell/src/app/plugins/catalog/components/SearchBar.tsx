@@ -120,7 +120,7 @@ export function SearchBar({
 				(hasActiveStatusFilter ? OPTIONAL_ACTION_WIDTH : 0)
 			}
 			rightSectionPointerEvents="auto"
-			size="xs"
+			size="sm"
 			variant="default"
 			radius="sm"
 			aria-label="搜索插件"
