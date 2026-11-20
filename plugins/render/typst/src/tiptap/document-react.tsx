@@ -4,7 +4,6 @@ import { NodeViewContent, NodeViewWrapper, useEditorState, type NodeViewProps } 
 import { closeHistory } from '@tiptap/pm/history'
 import { PluginKey } from '@tiptap/pm/state'
 import { Suggestion, exitSuggestion, type SuggestionProps } from '@tiptap/suggestion'
-import { render } from 'katex'
 import { validReferenceLabel } from './document-nodes'
 import {
 	EditorUi,
@@ -18,7 +17,7 @@ import { editorShortcuts, matchesShortcut, shortcutProps, shortcutText } from '.
 const kindNames = { heading: '章节', figure: '图', table: '表', equation: '公式' } as const
 type Target = EditorReferenceTarget
 
-function labelProblem(editor: Editor, ui: EditorUiContext, id: string, label: string) {
+function labelProblem(ui: EditorUiContext, id: string, label: string) {
 	if (!label) return ''
 	if (!validReferenceLabel(label))
 		return 'Label 最多 128 个字符，以字母或数字开头，只使用字母、数字、冒号、点、下划线或连字符。'
@@ -36,14 +35,16 @@ function updateNode(props: NodeViewProps, attrs: Record<string, unknown>) {
 	const transaction = closeHistory(props.editor.state.tr).setNodeMarkup(at, undefined, {
 		...props.node.attrs,
 		...attrs,
-		...(attrs.label && !props.node.attrs.id ? { id: crypto.randomUUID() } : {}),
+		...(attrs.label && 'id' in props.node.attrs && !props.node.attrs.id
+			? { id: crypto.randomUUID() }
+			: {}),
 	})
 	props.editor.view.dispatch(transaction)
 	return props.editor.state.doc.nodeAt(at)?.eq(transaction.doc.nodeAt(at)!) ?? false
 }
 
 /** A short local edit commits once when the user leaves the field, never over a changed value. */
-function useObjectAttribute(props: NodeViewProps, attribute: 'label' | 'latex') {
+function useObjectAttribute(props: NodeViewProps, attribute: 'label' | 'latex' | 'expression') {
 	const ui = useContext(EditorUi)
 	const stored = String(props.node.attrs[attribute] ?? '')
 	const [draft, setDraft] = useState<{ base: string; value: string } | null>(null)
@@ -81,9 +82,7 @@ function useObjectAttribute(props: NodeViewProps, attribute: 'label' | 'latex') 
 				return false
 			}
 			const problem =
-				attribute === 'label'
-					? labelProblem(props.editor, ui, props.node.attrs.label, draft.value)
-					: ''
+				attribute === 'label' ? labelProblem(ui, props.node.attrs.label, draft.value) : ''
 			if (problem) {
 				setError(problem)
 				return false
@@ -160,31 +159,36 @@ function ReferenceLabel({ props, kind }: { props: NodeViewProps; kind: string })
 /** Caption content stays in ProseMirror, so table editing, marks and native undo work normally. */
 export function TypstFigureView(props: NodeViewProps) {
 	const { editor, node, selected } = props
-	const ui = useContext(EditorUi)
 	useEditorState({ editor, selector: ({ editor: current }) => current.state })
 	const kind = node.firstChild?.type.name === 'table' ? '表' : '图'
 	return (
 		<NodeViewWrapper
 			className="typst-figure"
-			data-figure-id={node.attrs.id}
+			data-figure-id={node.attrs.id ?? node.attrs.label}
 			data-selected={selected || undefined}
 		>
 			<NodeViewContent className="typst-figure-content" />
 			<span className="typst-figure-kind" contentEditable={false}>
 				{kind}：
 			</span>
-			{!ui.documentReferences && <ReferenceLabel props={props} kind={kind} />}
+			{'id' in node.attrs && <ReferenceLabel props={props} kind={kind} />}
 		</NodeViewWrapper>
 	)
 }
 
 /** Formula source opens at its own position; preview and label stay visible while editing. */
-export function TypstMathView(props: NodeViewProps) {
+export function TypstMathView(
+	props: NodeViewProps & {
+		renderLatex?: (source: string, element: HTMLElement, inline: boolean) => void
+	},
+) {
 	const { editor, node, selected } = props
 	const ui = useContext(EditorUi)
 	useEditorState({ editor, selector: ({ editor: current }) => current.state })
 	const inline = node.type.name === 'inlineMath'
-	const latex = useObjectAttribute(props, 'latex')
+	const { renderLatex } = props
+	const format = renderLatex ? 'LaTeX' : 'Typst'
+	const formula = useObjectAttribute(props, renderLatex ? 'latex' : 'expression')
 	const [editing, setEditing] = useState(false)
 	const [renderError, setRenderError] = useState('')
 	const preview = useRef<HTMLSpanElement>(null)
@@ -197,29 +201,24 @@ export function TypstMathView(props: NodeViewProps) {
 		if (editing) input.current?.focus()
 	}, [editing])
 	useEffect(() => {
-		if (!preview.current) return
+		if (!renderLatex || !preview.current) return
 		try {
-			render(latex.value, preview.current, {
-				displayMode: !inline,
-				throwOnError: true,
-				trust: false,
-				strict: 'warn',
-			})
+			renderLatex(formula.value, preview.current, inline)
 			setRenderError('')
 		} catch (cause) {
-			preview.current.textContent = latex.value || '空公式'
+			preview.current.textContent = formula.value || '空公式'
 			setRenderError(cause instanceof Error ? cause.message : String(cause))
 		}
-	}, [latex.value, inline])
+	}, [formula.value, inline, renderLatex])
 	const finish = (discard = false) => {
-		if (discard) latex.reset()
-		else if (!latex.commit()) return
+		if (discard) formula.reset()
+		else if (!formula.commit()) return
 		finishing.current = true
 		setEditing(false)
 		trigger.current?.focus()
 	}
 	const sourceKeys = (event: KeyboardEvent<HTMLElement>) => {
-		if (event.nativeEvent.isComposing || latex.composing.current) return
+		if (event.nativeEvent.isComposing || formula.composing.current) return
 		if (
 			matchesShortcut(event, editorShortcuts.cancel) ||
 			matchesShortcut(event, editorShortcuts.finish)
@@ -237,7 +236,7 @@ export function TypstMathView(props: NodeViewProps) {
 			contentEditable={false}
 			data-selected={selected || undefined}
 			data-editing={editing || undefined}
-			data-equation-id={node.attrs.id}
+			data-equation-id={node.attrs.id ?? node.attrs.label}
 		>
 			<button
 				ref={trigger}
@@ -246,7 +245,7 @@ export function TypstMathView(props: NodeViewProps) {
 				aria-label={inline ? '编辑行内公式' : '编辑独立公式'}
 				aria-expanded={editing}
 				aria-controls={sourceId}
-				title={renderError || latex.value}
+				title={renderError || formula.value}
 				onClick={() => {
 					const position = props.getPos()
 					if (typeof position === 'number') ui.onReveal?.(position)
@@ -255,7 +254,7 @@ export function TypstMathView(props: NodeViewProps) {
 					input.current?.focus()
 				}}
 			>
-				<span ref={preview} />
+				<span ref={preview}>{renderLatex ? undefined : formula.value || '空公式'}</span>
 				{renderError && <span className="typst-math-error">公式预览错误</span>}
 			</button>
 			{editing && (
@@ -265,29 +264,29 @@ export function TypstMathView(props: NodeViewProps) {
 					onBlur={(event) => {
 						if (finishing.current) return
 						if (event.currentTarget.contains(event.relatedTarget)) return
-						if (latex.commit()) setEditing(false)
+						if (formula.commit()) setEditing(false)
 					}}
 				>
 					<label>
-						<span>LaTeX</span>
+						<span>{format}</span>
 						<textarea
 							ref={input}
-							aria-label="公式 LaTeX"
+							aria-label={'公式 ' + format}
 							title={`${shortcutText(editorShortcuts.finish)} 完成，Esc 取消；移开焦点保存`}
 							onKeyDown={sourceKeys}
-							aria-invalid={Boolean(latex.error)}
-							aria-describedby={latex.error ? errorId : undefined}
-							value={latex.value}
+							aria-invalid={Boolean(formula.error)}
+							aria-describedby={formula.error ? errorId : undefined}
+							value={formula.value}
 							rows={inline ? 2 : 3}
-							readOnly={latex.readOnly}
+							readOnly={formula.readOnly}
 							spellCheck={false}
-							data-typst-unapplied={latex.dirty || undefined}
-							onChange={(event) => latex.change(event.currentTarget.value)}
+							data-typst-unapplied={formula.dirty || undefined}
+							onChange={(event) => formula.change(event.currentTarget.value)}
 							onCompositionStart={() => {
-								latex.composing.current = true
+								formula.composing.current = true
 							}}
 							onCompositionEnd={() => {
-								latex.composing.current = false
+								formula.composing.current = false
 							}}
 						/>
 					</label>
@@ -312,14 +311,14 @@ export function TypstMathView(props: NodeViewProps) {
 							完成
 						</button>
 					</span>
-					{latex.error && (
+					{formula.error && (
 						<span className="typst-object-error" id={errorId} role="alert">
-							{latex.error}
+							{formula.error}
 						</span>
 					)}
 				</span>
 			)}
-			{!inline && !ui.documentReferences && (
+			{!inline && 'id' in node.attrs && (
 				<div className="typst-object-meta" contentEditable={false}>
 					<span className="typst-object-kind">公式</span>
 					<ReferenceLabel props={props} kind="公式" />
@@ -340,7 +339,6 @@ export function TypstReferenceView(props: NodeViewProps) {
 	const [error, setError] = useState('')
 	const caption =
 		node.attrs.showCaption === true && target?.kind !== 'equation' ? target?.title : ''
-	const documentTitle = target?.title || '引用目标缺失'
 	return (
 		<NodeViewWrapper
 			as="span"
@@ -349,27 +347,15 @@ export function TypstReferenceView(props: NodeViewProps) {
 			data-selected={selected || undefined}
 			data-missing={!target || undefined}
 			title={
-				ui.documentReferences
-					? target
-						? `${kindNames[target.kind]} · ${documentTitle}`
-						: documentTitle
-					: target
-						? `${kindNames[target.kind]} · ${target.title}${'path' in target ? ` · ${target.path}` : ''}`
-						: ui.referenceTargets
-							? `静态索引未确认此引用；以编译结果为准：${node.attrs.target}`
-							: `引用目标不存在或尚未设置 label：${node.attrs.target}`
+				target
+					? `${kindNames[target.kind]} · ${target.title}${'path' in target ? ` · ${target.path}` : ''}`
+					: `引用目标缺失 ${node.attrs.target}`
 			}
 		>
 			<button
 				type="button"
 				className="typst-reference-trigger"
-				aria-label={
-					ui.documentReferences
-						? `引用 ${documentTitle}`
-						: target
-							? `引用 ${target.label}`
-							: `引用目标缺失 ${node.attrs.target}`
-				}
+				aria-label={target ? `引用 ${target.label}` : `引用目标缺失 ${node.attrs.target}`}
 				aria-expanded={Boolean(selected)}
 				onMouseDown={(event) => event.preventDefault()}
 				onClick={() => {
@@ -380,13 +366,8 @@ export function TypstReferenceView(props: NodeViewProps) {
 					}
 				}}
 			>
-				{ui.documentReferences
-					? documentTitle
-					: target
-						? `@${target.label}${caption ? `「${caption}」` : ''}`
-						: ui.referenceTargets
-							? `@${node.attrs.target}`
-							: `@目标缺失：${node.attrs.target}`}
+				@{node.attrs.target}
+				{caption ? `「${caption}」` : ''}
 			</button>
 			{selected && location && ui.onReference && (
 				<button
@@ -476,7 +457,6 @@ export function createReferenceSuggestion(
 	latest: () => {
 		editable?: boolean
 		referenceTargets?: () => Target[]
-		documentReferences?: boolean
 	},
 ) {
 	return Extension.create({
@@ -506,10 +486,7 @@ export function createReferenceSuggestion(
 						return (props.referenceTargets?.() ?? [])
 							.filter((target) =>
 								terms.every((term) =>
-									(props.documentReferences
-										? `${target.title} ${kindNames[target.kind]} ${target.kind}`
-										: `${target.label} ${target.title} ${kindNames[target.kind]} ${target.kind} ${'path' in target ? target.path : ''}`
-									)
+									`${target.label} ${target.title} ${kindNames[target.kind]} ${target.kind} ${'path' in target ? target.path : ''}`
 										.toLocaleLowerCase()
 										.includes(term),
 								),
@@ -546,9 +523,7 @@ export function createReferenceSuggestion(
 							popup.replaceChildren()
 							if (current.items.length === 0) {
 								const empty = document.createElement('p')
-								empty.textContent = latest().documentReferences
-									? '没有匹配的章节、图、表或公式。'
-									: '没有匹配的图、表或公式。先为对象设置 label。'
+								empty.textContent = '没有匹配的章节、图、表或公式。'
 								popup.append(empty)
 							}
 							current.items.forEach((target, index) => {
@@ -556,12 +531,8 @@ export function createReferenceSuggestion(
 								button.type = 'button'
 								button.setAttribute('role', 'option')
 								button.setAttribute('aria-selected', String(index === selected))
-								button.textContent = latest().documentReferences
-									? `${kindNames[target.kind]} · ${target.title}`
-									: `${kindNames[target.kind]} · ${target.title || target.label}  @${target.label}`
-								button.title = latest().documentReferences
-									? target.title
-									: `${'path' in target ? `${target.path} · ` : ''}${target.label}`
+								button.textContent = `${kindNames[target.kind]} · ${target.title || target.label}  @${target.label}`
+								button.title = `${'path' in target ? `${target.path} · ` : ''}${target.label}`
 								button.onpointerdown = (event) => event.preventDefault()
 								button.onclick = () => current?.command(target)
 								popup!.append(button)
@@ -580,10 +551,7 @@ export function createReferenceSuggestion(
 								popup = editor.view.dom.ownerDocument.createElement('div')
 								popup.className = 'typst-reference-suggestions'
 								popup.setAttribute('role', 'listbox')
-								popup.setAttribute(
-									'aria-label',
-									latest().documentReferences ? '引用章节、图、表或公式' : '引用图、表或公式',
-								)
+								popup.setAttribute('aria-label', '引用章节、图、表或公式')
 								editor.view.dom.ownerDocument.body.append(popup)
 								editor.view.dom.ownerDocument.addEventListener('pointerdown', outside)
 								draw()

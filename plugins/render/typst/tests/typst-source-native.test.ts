@@ -105,7 +105,12 @@ $ a = b $ <equation-a>`,
 		expect(navigation.targets.find((target) => target.label === 'fixed-target')!.page).toBe(3)
 		expect(navigation.targets.find((target) => target.label === 'table-a')!.page).toBe(4)
 		expect(navigation.targets.find((target) => target.label === 'equation-a')!.page).toBe(4)
-		expect(navigation.points.some((point) => point.path.startsWith('inputs/'))).toBe(false)
+		expect(navigation.points).toContainEqual(
+			expect.objectContaining({ path: 'inputs/fixed.typ', line: 1, page: 3 }),
+		)
+		expect(navigation.points).toContainEqual(
+			expect.objectContaining({ path: 'inputs/fixed.typ', line: 4, page: 4 }),
+		)
 		for (const label of ['fixed-target', 'figure-a', 'table-a', 'equation-a', 'chapter-alpha']) {
 			const { page, x, y } = navigation.targets.find((target) => target.label === label)!
 			expect(navigation.links).toContainEqual(

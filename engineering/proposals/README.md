@@ -12,7 +12,6 @@
 | [Schema Form 与内部 UI](schema-form/README.md)          | 独立字段模型、Valibot/JSON Schema 适配与 Pluxel 内部表单迁移；尚未实施                                           |
 | [严格契约的剩余缺口](STRICT_CONTRACT_REVIEW.md)         | 显式修复工具、应用级 capnweb 所有权检查和部分解析失败分类                                                        |
 | [插件分发与市场](plugin-distribution/README.md)         | Worker/D1、网页、管理与安装确认已有实现；待完成 provenance 自动收录、新 manifest、消费者认证与恢复闭环           |
-| [Typst 内容与私有排版](TYPST_AUTHORING_BOUNDARIES.md)   | 源码编辑、JSON 投影与 native 编译已有实现；独立 JSON 正文、私有排版输出和按单元提交待验证                        |
 | [是否删除 Plugin fork](REMOVE_PLUGIN_FORKS.md)          | Redis/S3 已改为领域目录；Core/Host 删除 fork 尚未采纳，需确认独立 graph node 调用方及数据迁移                    |
 | [Elysia 外部承载](NATIVE_ELYSIA_APPLICATION.md)         | Node/Vite HTTP、stream、WebSocket 已有实现；matcher 冲突、peer 准入与外部 lifecycle 仍有缺口                     |
 | [Decoratorless 声明](FUTURE_ARCHITECTURE_DIRECTIONS.md) | 尚未采纳；需比较薄 decorator 与新设计的发现、身份、诊断和整体复杂度                                              |

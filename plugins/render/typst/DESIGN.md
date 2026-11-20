@@ -4,11 +4,11 @@
 
 ## 权威与所有者
 
-普通 `.typ` 保存正文、排版、模板调用和原生 label/ref；JSON 保存业务数据，图片是普通资源。Tiptap JSON、CST/AST、映射和静态引用索引只属于某个源码修订，重新打开不需要它们。没有 Markdown 中转、隐藏正文 JSON 或生成区域恢复链。
+普通 `.typ` 保存正文、排版、模板调用和原生 label/ref，JSON 保存业务数据，图片是普通资源。Tiptap 文档树、解析树、映射和引用索引从源码修订派生。完整工程使用保留式补丁，可编辑章节使用原生 Typst 的正文子集。
 
-包内 source 层拥有解析、投影和源码事务；Tiptap 适配器拥有原生编辑事务准入和重投影。宿主持有文件 IO、权限、外部更新、存储 CAS 及编译调度。`TypstPlugin` 拥有编译资源，原有 `open/update/exportPdf/renderPage` 继续接收完整文件输入，不参与编辑历史。
+source 层拥有完整工程的解析、投影、源码事务与历史。`/document` 拥有章节正文转换，`/tiptap/document` 将共享 schema 挂到原生编辑器。宿主持有权限、文件 IO、引用与素材目录、存储 CAS 及编译调度。`TypstPlugin` 的 `open/update/exportPdf/renderPage` 拥有独立的编译资源和成功修订。
 
-## 编辑路径
+## 完整工程编辑路径
 
 ```text
 普通文件快照 → project.open(path) → 修订内投影 → 原生 Tiptap Editor
@@ -43,6 +43,14 @@ AST 识别结构，CST 与原文范围承担保真。无操作不写；文字编
 转义文字保留逐字符源跨度，emoji、组合字符、CRLF 与 `#` 前缀各自处理。公开 `findTypstEditorPosition` / `findTypstSourcePosition` 使用当前投影转换；未知源码取拥有者节点，不能宣称任意表达式都有精确字符投影。公开投影不泄漏 parser AST/CST 或可写回来源元数据。
 
 缓存按文件复用；普通修改只重解析受影响文件，实际 import 源变化使有关缓存失效。项目静态引用操作按需要读项目索引，不另存一份可写依赖图。快照中的字符串共享不可变值，字节资源在实际读取时给出独立副本，避免每次文字编辑复制所有资源。性能探针只说明代表性样本，不外推任意项目成本。
+
+## 章节正文往返
+
+Node.js 独立调用 `parseTypstDocument(source)` 和 `printTypstDocument(candidate)`。前者沿实际 CST/AST 边界读取受支持的字面量、块、标记和调用，返回规范化 Tiptap 树及输入字节映射。后者用同一组正文扩展的 schema 校验结构和属性，按节点生成原生 Typst。两端共用字面值校验及规范写法。错误使用 `INVALID_TYPST`、`UNSUPPORTED_SYNTAX` 或 `INVALID_DOCUMENT`，前两者带半开 UTF-8 源码区间，后者带树路径。 [转换入口](src/document/convert.ts) · [正文扩展](src/tiptap/document-extensions.ts)
+
+可编辑章节使用实际 Typst 标签。图、标题和块公式的 `attrs.label` 以及引用的 `attrs.target` 都随正文往返。正文数学节点保存 `attrs.expression`，转换处理原生 Typst 数学子集。显式题注策略使用受检查的 metadata 结构，宿主可在同一模板中安装 `/source/library` 导出的 `referenceSource`。完整工程的 MiTeX 和 `report.latex` 由其独立的模板资源提供。
+
+浏览器正文编辑器加载共享 schema、原生扩展和编辑交互。服务端转换入口使用 Node parser，完整源码视图可选择浏览器 parser。正文读写接口落在宿主，富文本直接提交候选树，源码或 Agent 提交先解析，再进入同一生成路径。宿主检查章节授权、基线、标签及资源权限后才提交可编译字节。可公开文件可直接传给库，素材派生与访问控制由选择启用的宿主持有。
 
 ## 报告结构与依赖
 
@@ -116,17 +124,19 @@ Worker 保留 NodeCompiler、最新成功 document 与文件内容索引；同�
 
 根入口、`/template` 和 `/browser` 不依赖 Tiptap/React/parser。`/source`、`/source/browser` 选择解析环境；`/tiptap` 可用于真实无 DOM Editor，`/tiptap/react` 持有控件和 NodeView。React 必须先挂载原生 view 再渲染读取 view.dom 的工具栏。CSS 独立导入；Monaco、工作区和通信由宿主维护。
 
-`/document` 的 `createTypstDocumentProject` 借用现有 source project，拥有安全语义投影与编辑准入。宿主声明开放的文档 ID/path/title、可选模板标题 label、固定引用和资源 path/URL；动态目录通过同一声明函数重新读取。源码文件、修订、权限和历史仍只有 source project 一个所有者，document project 不持久化另一份正文，也不接管编译、章节 CRUD、存储、认证或 HTTP。label 和 source object identity 映射成实例内不透明 ID，未知内容用带密钥摘要的 key/title 固定节点；前导 import/environment 保留私有，资源映射保留原始拼写。公共失败只含固定安全 code/message。
+`/tiptap/document` 与 `/tiptap/document/react` 通过纯文档树和引用目录接线。宿主同步按差异替换并保留原生选区。默认本地历史与显式远端历史按装配选择。`/document/react` 持有页图命中、跟随、原生内部链接、滚动与高亮。宿主提供页图 URL、当前修订与面板打开行为。预览在草稿或修订过期时暂停原有几何交互。
 
-`navigation({ revision, navigation })` 要求同次源码修订，源码 span 通过 projection 变成公开文档位置；真实目标来自 native introspector，链接矩形与 Position/Location/URL 来自 FrameItem::Link。固定目标可以没有编辑器位置，未知本地 URL 与不安全 scheme 不传出；不再按 outline 顺序猜章节、不从 glyph 合成链接。安全 DTO 由 `document/types.ts` 单独持有，server、语义编辑器、PNG 预览和宿主 wire type 共用。
-
-`/tiptap/document` 与 `/tiptap/document/react` 不加载 source/parser，复用语义节点和原生编辑控件。引用使用不透明 ID 与可选 `{documentId, position}`，没有编辑器目的地时不提供虚构的跳转按钮。内容校验拒绝 schema 外属性，普通事务不能改写固定节点，宿主同步只替换差异并保留原生选区。默认本地历史和显式远端历史各有一个所有者；共享 UI 的事务标记放在不依赖 source 的模块中。`/document/react` 独立持有安全 PNG 页面的命中、跟随、原生内部链接、滚动与高亮，过期/草稿状态禁用旧几何，宿主只持有实际页图 URL、当前修订与打开面板行为。第三个分章演示直接消费这些公开入口，私有 project 适配仅保留章节目录事务与模板文件，server 适配仅保留串行 lease、编译、持久化和 HTTP。
+native 输出源于同次排版。实际纳入编译的工作区源码产生跨度，包括通过 `/inputs/` 文件表提交的章节。标签目标来自 native introspector，链接矩形与 Position/Location/URL 来自 `FrameItem::Link`。宿主按该次快照的已公开路径映射成章和编辑器位置，固定目标可只对应页内坐标。`document/types.ts` 定义编辑位置、引用与导航 DTO。
 
 文件工作区以磁盘文件快照和 CAS 提交为存储边界。浏览器示例保存普通文件表；外部消费者 [Electron Studio](https://github.com/PluxelJS/lab/tree/main/experiments/electron-studio) 的工作区、存储与桌面验收由 Pluxel Lab 维护。它们共享 source 核心，不能用隔离 test host 证明在线状态。
 
 浏览器 consumer 以桌面工作区为目标，将经营报告与固定审批表放在同一文件树的两个根文件夹中，各自持有项目、编辑历史与保存键；文件导航不改变浏览器 URL；Worksplit 的 routed document 持有每个文件的编辑草稿，其 `preview`/`keep` 持有临时标签与编辑后保留语义。左侧 Border 放文件树，中央默认编辑与整篇预览左右分组，原生 Model 独占标签、选择、分屏和最大化。各项目预览拥有一条编译会话，文件标签共用该预览；会话随预览关闭释放。文件树从项目快照派生，不另外维护文件内容。宿主通过 `createFile` 创建可撤销的新 `.typ`，章节经普通 `include` 进入所属文件夹的 `main.typ` 完整预览；源码修订决定当前预览和 PDF 是否可用，不另设预览入口状态。审批表由宿主原生表单编辑实际 JSON，一次字段确认是一笔项目事务；模板保留只读，长单元格的留白与续页由普通 Typst 定义。当前两个用例共享文件、准入、历史和编译，不从单个表单提取公共 schema 或另一份文档状态。
 
-第三个分章项目书使用独立文档页面。宿主在服务端持有源码项目及预导入、章节目录和固定表达式；浏览器仅持有当前章节的语义视图与待同步草稿。正文仍由原有准入生成补丁，目录 JSON 只保存章节身份、标题和顺序。创建章节通过一笔 `createFiles + patches` 同时加入文件及目录；创建、改名、重排与正文编辑共用项目历史。业务引用目录不公开文件路径，图资源经白名单 URL 映射，原生编译结果返回页图及安全错误；同次编译的源码定位在私有端转换为章节身份、语义 PM 区间和页面矩形，并从引用节点及真实章锚生成内部链接热点。浏览器只用这些安全几何数据双向定位；链接优先于正文命中，草稿未同步及修订不符时停止旧坐标交互，新排版后重放当前光标。Vite 静态访问同时拒绝私有模块和模板路径，避免通过开发服务绕过界面。页面 lease 与保存文档身份分离，保存保留服务端文件快照，浏览器存储只留文档 ID。
+第三个分章项目书由 `document-private/project.ts` 持有获准的章节正文、引用与素材。应用通过 `source` 读取单章，`edit` 共用源码和富文本接纳路径。`chapters.json` 保存 ID、标题和顺序。创建以一次 `createFiles + patches` 同时提交目录和文件，创建、改名、重排和正文更新共用项目历史。源码视图的显示与展示内容由宿主选择。
+
+`document-private/server.ts` 打开会话时装入固定模板与批准的矢量素材。章节和目录经 `/inputs/chapters/<id>.typ` 及 `/inputs/chapters.json` 更新，复用同一会话。页面与 PDF 来自同一成功排版。预览资产仅由示例提供批准过的版本，模板和本机源码位置留在服务端。公开导航按章节和真实编译目标投影。正文诊断可定位到输入，私有编译诊断留在宿主。
+
+页面 lease 与保存文档 ID 分开。每条 lease 串行接纳编辑，保存另按文档 ID 串行比较工作副本的存储基线。宿主创建完整的 `chapters.json` 和 `chapters/*.typ` 快照，再原子更新版本标记，旧 lease 比较失败时保留现有保存。重新打开从磁盘正文重建树。浏览器只持久化文档 ID。示例服务拥有自己的临时根，生产宿主选择实际保存目录和授权策略。
 
 ## 实现与回归入口
 
@@ -135,10 +145,13 @@ Worker 保留 NodeCompiler、最新成功 document 与文件内容索引；同�
 | `src/source/parse.ts`, `project.ts`, `writeback.ts` | 解析、投影、最小保留式回写                          |
 | `src/source/project-state.ts`, `state-types.ts`     | 原子源码事务、索引、重构、历史与公开接口            |
 | `src/source/positions.ts`                           | 源码与编辑器位置转换                                |
+| `src/document/convert.ts`, `body-*.ts`              | 章节正文的严格解析、生成与往返                      |
 | `src/tiptap/source-editor.ts`, `source-react.tsx`   | 原生 Editor 准入、React 控件与修复入口              |
 | `src/session.ts`, `resources.ts`, `worker.ts`       | 编译队列、完整快照、native 资源与成功修订           |
 | `src/browser/`                                      | 预览、命中、滚动和当前性检查                        |
 | `tests/typst-source-*.test.ts`                      | 保真、真实 Editor、独立扩展准入、事务与 native 回归 |
+| `tests/typst-document-*.test.ts`                    | 正文转换、分章事务、原生输出及保存竞争              |
+| `tests/consumer/document-check.mjs`                 | 分章源码和富文本操作、真实页图、定位与同修订 PDF    |
 | `tests/consumer/source-check.mjs`                   | 现有 Playwright 服务上的真实浏览器操作              |
 | `projects/typst-agent-workspace`                    | 公开制品、普通磁盘项目、人/Agent 往返与 PDF 证据    |
 

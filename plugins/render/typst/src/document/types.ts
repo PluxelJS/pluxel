@@ -1,4 +1,3 @@
-import type { JSONContent } from '@tiptap/core'
 import type { TypstNavigationLink, TypstPage, TypstPagePosition } from '../preview-contract.js'
 
 /** Position in an exposed semantic document, never a source path or byte offset. */
@@ -7,7 +6,7 @@ export interface TypstDocumentLocation {
 	readonly position: number
 }
 
-/** Opaque identity, valid for the lifetime of the document project that issued it. */
+/** A reference to a published Typst label. */
 export interface TypstDocumentReference {
 	readonly id: string
 	readonly title: string
@@ -15,31 +14,6 @@ export interface TypstDocumentReference {
 	/** Absent for a reference to fixed content outside the exposed editor documents. */
 	readonly location?: TypstDocumentLocation
 }
-
-export interface TypstDocumentView {
-	readonly id: string
-	readonly title: string
-	readonly editable: boolean
-	readonly document: JSONContent
-}
-
-/** Safe to transport. Source text, paths, labels and compiler diagnostics are excluded. */
-export interface TypstDocumentSnapshot {
-	readonly revision: number
-	readonly canUndo: boolean
-	readonly canRedo: boolean
-	readonly documents: readonly TypstDocumentView[]
-	readonly references: readonly TypstDocumentReference[]
-}
-
-export interface TypstDocumentIssue {
-	readonly code: 'CONFLICT' | 'NOT_FOUND' | 'READ_ONLY' | 'INVALID_EDIT'
-	readonly message: string
-}
-
-export type TypstDocumentResult<T> =
-	| { readonly ok: true; readonly value: T }
-	| { readonly ok: false; readonly issues: readonly TypstDocumentIssue[] }
 
 export interface TypstDocumentPoint extends TypstDocumentLocation, TypstPagePosition {
 	readonly endPosition: number

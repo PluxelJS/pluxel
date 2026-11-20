@@ -10,7 +10,8 @@
 	padding: 10px 12px;
 }
 .chapter-explorer button,
-.chapter-heading input {
+.chapter-heading input,
+.chapter-heading button {
 	color: var(--consumer-text);
 	background: var(--consumer-surface);
 	border: 1px solid var(--consumer-border);
@@ -109,6 +110,10 @@
 	font-weight: 600;
 	min-width: 0;
 	flex: 1;
+}
+.chapter-heading button {
+	flex-shrink: 0;
+	padding: 5px 8px;
 }
 .document-preview-toolbar {
 	display: flex;

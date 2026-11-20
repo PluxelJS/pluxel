@@ -25,7 +25,7 @@
 			"default": "./dist/browser.mjs"
 		},
 		"./document": {
-			"@pluxel/hmr": "./src/document/project.ts",
+			"@pluxel/hmr": "./src/document/index.ts",
 			"default": "./dist/document.mjs"
 		},
 		"./document/react": {

@@ -1,12 +1,11 @@
 import { Node, mergeAttributes, type Command, type JSONContent } from '@tiptap/core'
-import { BlockMath, InlineMath } from '@tiptap/extension-mathematics'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { closeHistory } from '@tiptap/pm/history'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import type { TypstReferenceTarget } from './types.js'
 import './document-commands.js'
 
-const figureBodies = new Set(['image', 'table', 'typstComponent', 'typstSource', 'documentBlock'])
+const figureBodies = new Set(['image', 'table', 'typstComponent', 'typstSource'])
 export const isReferenceObject = (name: string): boolean =>
 	name === 'figure' || name === 'blockMath'
 export const validReferenceLabel = (value: unknown): value is string =>
@@ -23,13 +22,15 @@ function labelFor(node: JSONContent, id: string): string {
 	return `${{ figure: 'fig', table: 'tbl', equation: 'eq' }[referenceKind(node.type!, node.content?.[0]?.type)]}:${id}`
 }
 
-function allocateIdentity(
+export function allocateIdentity(
 	doc: ProseMirrorNode,
 	commit: boolean,
 	reserved = new Set<string>(),
 ): string {
 	doc.descendants((node) => {
 		if (typeof node.attrs.id === 'string') reserved.add(node.attrs.id)
+		if (typeof node.attrs.label === 'string' && node.attrs.label.startsWith('object-'))
+			reserved.add(node.attrs.label.slice('object-'.length))
 	})
 	let id = commit ? crypto.randomUUID() : 'object-0'
 	let index = 0
@@ -48,7 +49,6 @@ export const TypstFigureCaption = Node.create({
 	content: 'inline*',
 	parseHTML: () => [{ tag: 'figcaption' }],
 	renderHTML: ({ HTMLAttributes }) => ['figcaption', HTMLAttributes, 0],
-	renderMarkdown: (node, helpers) => helpers.renderChildren(node.content ?? []),
 	addKeyboardShortcuts() {
 		return {
 			Enter: () =>
@@ -99,30 +99,28 @@ export const TypstFigure = Node.create({
 		mergeAttributes(HTMLAttributes, { 'data-typst-figure': '' }),
 		0,
 	],
-	renderMarkdown: (node, helpers) => helpers.renderChildren(node.content ?? [], '\n\n'),
 	addCommands() {
 		return {
 			insertTypstFigure: (options) => (props) => {
 				if (!canChange(this.name, props) || !figureBodies.has(options.body.type!)) return false
 				const id = allocateIdentity(props.tr.doc, !!props.dispatch)
-				const nativeLabel = Boolean(props.state.schema.nodes[this.name]!.spec.attrs?.label)
+				const privateIdentity = props.state.schema.nodes[this.name]!.spec.attrs?.id
 				const content: JSONContent = {
 					type: this.name,
 					attrs: {
-						id,
-						...(nativeLabel
-							? {
-									label:
-										options.label ?? labelFor({ type: this.name, content: [options.body] }, id),
-								}
-							: {}),
+						...(privateIdentity && { id }),
+						label:
+							options.label ??
+							(privateIdentity
+								? labelFor({ type: this.name, content: [options.body] }, id)
+								: 'object-' + id),
 					},
 					content: [
 						structuredClone(options.body),
 						{ type: 'figureCaption', content: structuredClone(options.caption ?? []) },
 					],
 				}
-				if (nativeLabel && !validReferenceLabel(content.attrs!.label)) return false
+				if (!validReferenceLabel(content.attrs!.label)) return false
 				try {
 					props.state.schema.nodeFromJSON(content).check()
 				} catch {
@@ -150,14 +148,12 @@ export const TypstFigure = Node.create({
 					)
 						return false
 					const id = allocateIdentity(props.tr.doc, !!props.dispatch)
+					const privateIdentity = props.state.schema.nodes[this.name]!.spec.attrs?.id
 					const json: JSONContent = {
 						type: this.name,
-						attrs: {
-							id,
-							...(props.state.schema.nodes[this.name]!.spec.attrs?.label
-								? { label: labelFor({ type: this.name, content: [body.toJSON()] }, id) }
-								: {}),
-						},
+						attrs: privateIdentity
+							? { id, label: labelFor({ type: this.name, content: [body.toJSON()] }, id) }
+							: { label: 'object-' + id },
 						content: [body.toJSON(), { type: 'figureCaption', content: structuredClone(caption) }],
 					}
 					let figure: ProseMirrorNode
@@ -183,43 +179,7 @@ export const TypstFigure = Node.create({
 	},
 })
 
-export const TypstInlineMath = InlineMath
-
-/** Official LaTeX editing and KaTeX view with explicit document identity for block equations. */
-export const TypstBlockMath = BlockMath.extend({
-	addAttributes() {
-		return { ...this.parent?.(), id: { default: null }, label: { default: null } }
-	},
-	addCommands() {
-		const parent = this.parent?.()
-		return {
-			...parent,
-			insertBlockMath: (options) => (props) => {
-				if (
-					!canChange(this.name, props) ||
-					typeof options.latex !== 'string' ||
-					!options.latex ||
-					!options.latex.isWellFormed()
-				)
-					return false
-				const id = allocateIdentity(props.tr.doc, !!props.dispatch)
-				if (props.dispatch) closeHistory(props.tr)
-				return props.commands.insertContentAt(options.pos ?? props.state.selection.from, {
-					type: this.name,
-					attrs: {
-						latex: options.latex,
-						id,
-						...(props.state.schema.nodes[this.name]!.spec.attrs?.label
-							? { label: `eq:${id}` }
-							: {}),
-					},
-				})
-			},
-		}
-	},
-})
-
-/** A reference stores object identity; the current label is resolved only at generation. */
+/** A reference names a native Typst label. */
 export const TypstReference = Node.create({
 	name: 'reference',
 	group: 'inline',
@@ -251,7 +211,6 @@ export const TypstReference = Node.create({
 		`@${node.attrs.target ?? '?'}`,
 	],
 	renderText: ({ node }) => `@${node.attrs.target ?? '?'}`,
-	renderMarkdown: (node) => `@${node.attrs?.target ?? '?'}`,
 	addCommands() {
 		return {
 			insertTypstReference: (target) => (props) =>

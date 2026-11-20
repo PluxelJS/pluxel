@@ -211,6 +211,69 @@ describe('TypstPlugin real host and worker', () => {
 		expect(thirdResult.revision).toBe(first.revision + 2)
 	}, 30_000)
 
+	it('locates dynamic chapters and their cross references across updates to one session', async () => {
+		await using host = await fixture()
+		const source = await template(`#set heading(numbering: "1.")
+#include "/inputs/chapters/background.typ"
+#pagebreak()
+#include "/inputs/chapters/approach.typ"`)
+		await using session = await host.require(TypstConsumer.nodeAddress()).typst.open(source)
+		const chapters = {
+			'/inputs/chapters/background.typ': {
+				kind: 'text',
+				text: '= Background <chapter-background>\nSee #ref(<chapter-approach>).\n',
+			},
+			'/inputs/chapters/approach.typ': {
+				kind: 'text',
+				text: '= Initial method <chapter-approach>\nSee #ref(<chapter-background>).\n',
+			},
+		} satisfies TypstFiles
+		const first = await session.update({ files: chapters })
+		const firstPage = await session.renderPage({ revision: first.revision, page: 2, scale: 1 })
+		const second = await session.update({
+			files: {
+				...chapters,
+				'/inputs/chapters/approach.typ': {
+					kind: 'text',
+					text: '= Updated method <chapter-approach>\nSee #ref(<chapter-background>).\nMore detail.\n',
+				},
+			},
+		})
+		expect(second.revision).toBe(first.revision + 1)
+		expect(second.preview.sessionId).toBe(first.preview.sessionId)
+		for (const { preview } of [first, second]) {
+			const { links, pages, points, targets } = preview.navigation
+			expect(pages).toHaveLength(2)
+			for (const [chapter, page, linkPage] of [
+				['background', 1, 2],
+				['approach', 2, 1],
+			] as const) {
+				expect(points).toContainEqual(
+					expect.objectContaining({ path: `inputs/chapters/${chapter}.typ`, line: 2, page }),
+				)
+				const target = targets.find(({ label }) => label === `chapter-${chapter}`)
+				if (!target) throw new Error(`Missing chapter target: ${chapter}`)
+				expect(target.page).toBe(page)
+				expect(links).toContainEqual(
+					expect.objectContaining({
+						page: linkPage,
+						target: { kind: 'position', page, x: target.x, y: target.y },
+					}),
+				)
+			}
+		}
+		expect(second.preview.navigation.points).toContainEqual(
+			expect.objectContaining({ path: 'inputs/chapters/approach.typ', line: 3, page: 2 }),
+		)
+		const secondPage = await session.renderPage({ revision: second.revision, page: 2, scale: 1 })
+		expect(Buffer.from(secondPage.data).equals(firstPage.data)).toBe(false)
+		expect(
+			Buffer.from(await session.exportPdf(second.revision))
+				.subarray(0, 5)
+				.toString(),
+		).toBe('%PDF-')
+	}, 30_000)
+
 	it('await using closes sessions, releases capacity, and rejects cached handles', async () => {
 		await using host = await fixture()
 		const typst = host.require(TypstConsumer.nodeAddress()).typst

@@ -1,22 +1,24 @@
 ---
 title: Typst 源码编辑
-description: 人与 Agent 共同编辑普通 Typst 文件；Tiptap 负责结构化视图，JSON 保存业务数据。
+description: 人与 Agent 共同编辑普通 Typst 文件，按需组合 Tiptap、章节事务与预览。
 ---
 
-在 Pluxel 中，`.typ` 源码文件始终是文档内容的唯一事实来源。用户可以通过基于 Tiptap 的可视化富文本界面直观修改段落、格式、表格与图题；AI Agent 或自动化流程也可以直接读写底层源码。复杂的业务参数和表格数据则由单独的 JSON 文件存储，编辑器的解析树与位置索引均可随时从源码完整重建。
+普通 `.typ` 文件保存正文，Tiptap 提供可选的结构化视图。完整工程可以保留原有脚本、模板调用和未触及的源码。分章应用可以对可编辑正文采用可往返的 Typst 子集，让富文本、源码视图和 Agent 共享接纳规则。两种用法都可直接使用原生编译会话。 [Typst 编译用法](typst.md)
 
 ## 模块子入口与职责划分
 
-| 子入口                               | 运行环境与职责                                                  |
-| :----------------------------------- | :-------------------------------------------------------------- |
-| `.`（包根）、`/template`、`/browser` | 服务端编译、文档模板定义与矢量预览组件；无需编辑器依赖          |
-| `/source`                            | Node.js 服务端环境下的源码工程与事务管理                        |
-| `/source/browser`                    | 浏览器环境下的源码工程；异步加载语法解析器 WebAssembly 模块     |
-| `/source/parser.wasm`                | 语法解析器 WASM 二进制文件资源入口                              |
-| `/tiptap`                            | 原生核心编辑器工厂 `createTypstSourceEditor`（支持无 DOM 模式） |
-| `/tiptap/react`                      | React 界面组件 `TypstSourceEditor` 及配套工具栏                 |
-| `/tiptap/document/react`             | 针对受控业务模式的文档编辑器组件（无需接触原始 Typst 源码）     |
-| `/document`                          | 服务端安全文档工程：提供只读投影、编辑准入与语义级导航          |
+| 子入口                               | 运行环境与职责                                                   |
+| :----------------------------------- | :--------------------------------------------------------------- |
+| `.`（包根）、`/template`、`/browser` | 服务端编译、文档模板定义与矢量预览组件；无需编辑器依赖           |
+| `/source`                            | Node.js 服务端环境下的源码工程与事务管理                         |
+| `/source/browser`                    | 浏览器环境下的源码工程；异步加载语法解析器 WebAssembly 模块      |
+| `/source/parser.wasm`                | 语法解析器 WASM 二进制文件资源入口                               |
+| `/tiptap`                            | 原生核心编辑器工厂 `createTypstSourceEditor`（支持无 DOM 模式）  |
+| `/tiptap/react`                      | React 界面组件 `TypstSourceEditor` 及配套工具栏                  |
+| `/document`                          | Node.js 的 `parseTypstDocument` 与 `printTypstDocument` 正文转换 |
+| `/tiptap/document`                   | 从 Tiptap JSON 打开正文编辑器，支持无 DOM 模式                   |
+| `/tiptap/document/react`             | 从 Tiptap JSON 挂载正文编辑器和工具栏                            |
+| `/document/react`                    | 消费宿主提供的页图和导航，支持双向定位                           |
 
 ## 快速上手：在 React 中嵌入富文本编辑器
 
@@ -84,58 +86,42 @@ try {
 }
 ```
 
-<span id="用户不接触源码的文档编辑"></span>
+## 按章节编辑正文
 
-## 面向终端用户的安全受控文档编辑
+`/document` 提供两项无状态转换。`parseTypstDocument(source)` 将单章 `.typ` 转为 `{ document, mapping }`。`printTypstDocument(candidate)` 接收待校验的 Tiptap JSON，返回 `{ source, document }`。`source` 是规范化的原生 Typst，`document` 是相应的规范化树。重新打开章节时从 `.typ` 重建文档树。
 
-在许多企业应用场景中，排版模板由设计人员维护，业务填报人员仅需填写指定的正文或表格，不应直接接触或破坏底层的 Typst 宏与版式定义。
-
-此时可以使用 `/document` 提供的文档投影系统：
+下面的 Node.js 示例将 Typst 和富文本输入接到同一个生成函数。它将成功结果保存为普通章节文件。
 
 ```ts
-import { createTypstSourceProject } from '@pluxel/plugin-typst/source'
-import { createTypstDocumentProject } from '@pluxel/plugin-typst/document'
+import { writeFile } from 'node:fs/promises'
+import { parseTypstDocument, printTypstDocument } from '@pluxel/plugin-typst/document'
 
-// 1. 服务端加载完整工程，声明哪些文件允许用户修改
-const project = createTypstSourceProject({
-	files: {
-		'main.typ': '#set page("a4")\n#include "body.typ"\n',
-		'body.typ': '= 项目概述 <intro>\n\n请在此处输入正文。\n',
-	},
-	writablePaths: ['body.typ'],
-})
+type ChapterInput = { kind: 'typst'; source: string } | { kind: 'tiptap'; document: unknown }
 
-// 2. 将特定文件抽象为可编辑的语义文档
-const documents = createTypstDocumentProject({
-	project,
-	documents: [{ id: 'body', title: '正文部分', path: 'body.typ' }],
-})
-
-// 3. 生成向前端暴露的轻量文档视图（不泄露服务端文件路径）
-const view = documents.view()
-
-// 4. 接收前端回传的富文本变更并应用修改
-const result = documents.edit({
-	baseRevision: view.revision,
-	id: 'body',
-	document: view.documents[0]!.document,
-})
-
-if (!result.ok) {
-	console.error('修改校验未通过:', result.issues)
+function convert(input: ChapterInput) {
+	if (input.kind === 'tiptap') return printTypstDocument(input.document)
+	const parsed = parseTypstDocument(input.source)
+	return parsed.ok ? printTypstDocument(parsed.value.document) : parsed
 }
+
+const result = convert({
+	kind: 'typst',
+	source: '= 项目概述\n\n预计完成率为 $p = n / N$。',
+})
+
+if (result.ok) await writeFile('chapter.typ', result.value.source)
+else console.error(result.issues)
 ```
 
-- 前端仅需引入轻量的 `TypstDocumentEditor`，无需在浏览器端解析语法或加载 WASM。
-- 服务端会校验修订号与字段权限，确保用户操作不会破坏未授权的章节或宏指令。
+语法错误和超出正文子集的用法分别返回 `INVALID_TYPST` 和 `UNSUPPORTED_SYNTAX`，区间 `[from, to)` 使用 UTF-8 字节偏移。`INVALID_DOCUMENT` 的 `path` 定位候选文档树中的字段。
 
-文档投影中的 JSON 来自当前源码修订，编辑成功后仍写回同一源码工程。固定内容、引用身份和历史由该工程及投影实例维护。
+React 页面把解析成功后的 `value.document` 作为 `TypstDocumentEditor` 的 `content`，从 `onChange` 接收富文本草稿。运行时入口是 `@pluxel/plugin-typst/tiptap/document/react`，样式沿用 `@pluxel/plugin-typst/tiptap/style.css`。Node.js 可用 `/tiptap/document` 的 `createTypstDocumentEditor()` 执行无 DOM 编辑，完成后调用 `editor.destroy()`。
 
-宿主通过 `resources: [{ path, url }]` 将允许公开的本地资源映射为 URL，并负责这些 URL 的访问控制和实际响应内容。`writablePaths` 只限定源码写入范围；资产下载、PDF 导出及编译环境的读取权限由宿主分别控制。
+宿主可按需开放本章原生源码。人或 Agent 读取获准章节的 `.typ` 和基线修订，提交修改后走相同的生成与接纳路径。宿主核对章节权限、修订、引用目标与素材，再提交生成的 `.typ`。可公开素材直接使用原文件。需要保护原件时，宿主提供获准的发布版，并用同一批输入产生预览和原生 PDF。PDF 保留编译器生成的文本、矢量内容和链接。 [分章项目书示例](../../../plugins/render/typst/tests/consumer/README.md) · [编译与 PDF 导出](typst.md)
 
 ## Agent 源码事务与增量补丁
 
-Agent 或外部后台可以通过基于字节范围的精确补丁（Patches）进行协同修改：
+有权直接修改完整 Typst 工程的 Agent 可以按基线和字节范围提交补丁。
 
 ```ts
 const baseline = project.snapshot()
@@ -159,27 +145,21 @@ if (!result.ok) {
 - 补丁的 `from` 和 `to` 使用基线文件的 UTF-8 字节偏移。
 - 只有基线版本匹配且所有检查通过时，事务才会原子生效并生成新的修订版本。
 
-## 结构化富文本能力与映射规则
+## 正文子集的排版能力
 
-编辑器针对主流 Typst 语法提供了开箱即用的可视化操作支持：
+| 文档元素                 | 原生 Typst 表达                                                                        |
+| :----------------------- | :------------------------------------------------------------------------------------- |
+| 段落、标题、列表、引用块 | Typst 标记语法，支持常见强调、对齐、字面字体和颜色                                     |
+| 图片、表格和图题         | 本地 `#image(...)`、带表头和合并单元格的 `#table(...)`、`#figure(..., caption: [...])` |
+| 行内数学和块级公式       | 原生 `$...$`，如 `$p = (n + 1) / N$`。编辑树保存 `attrs.expression`                    |
+| 标签及引用               | `<label>`、`@label` 或 `#ref(<label>)`。目标 ID 使用实际 Typst 标签                    |
 
-| 语法结构                           | 交互体验                                          | 源码回写规则                                             |
-| :--------------------------------- | :------------------------------------------------ | :------------------------------------------------------- |
-| 段落、标题、列表、加粗、斜体、代码 | 原生富文本输入体验                                | 回写为对应的 Markdown/Typst 常用符号（`*`、`_`、`=` 等） |
-| 手工排版表格                       | 支持增删行/列、合并单元格、边框背景调节           | 回写为标准的 `#table(...)` 语法                          |
-| 图片与图题（Figure）               | 统一的图片插入控件，支持编辑 Caption              | 回写为 `#figure(image(...), caption: [...]) <label>`     |
-| 数学公式                           | 支持行内公式与独立块公式，提供即时渲染预览        | 回写为原生 `$ ... $` 语法                                |
-| 交叉引用（References）             | 键入 `@` 自动补全当前工程中已声明的图表与章节标签 | 回写为 `@label` 语法                                     |
-| 章节包含（Include）                | 树状章节卡片，可调整顺序或跳转子文件              | 回写为 `#include "..."`                                  |
+源文件的控制语句、导入、自定义调用和计算参数留在完整工程或宿主模板。正文转换按已支持的参数、节点和作用域接纳完整输入。解析和生成按规范化树往返，空白及等价格式写法会归一化。完整源码工程的结构化编辑使用保留式补丁，适用于自定义组件、静态 `#include` 和保留原式的草稿。工程还可使用 `/source/library` 的 `createTypstSourceLibrary()` 引入完整 Typst 模板所需的 MiTeX 和 `report.latex`。
 
 <span id="编译与预览定位"></span>
 
 ## 源码与预览的双向位置同步
 
-为提供类似 Overleaf 或现代文档编辑器的流畅体验，系统提供了高精度的双向光标跟随机制：
+完整工程使用 `findTypstSourcePosition` 将编辑器位置转换成源码位置，再交给 `TypstPreviewView.revealSource()`。点击预览时，`findTypstEditorPosition` 将编译器提供的源码行列映射到 ProseMirror 位置，宿主调用 `editor.commands.focus(position)`。
 
-1. **从源码跳转预览**：
-   在编辑器光标变动时，调用 `findTypstSourcePosition` 将当前光标位置转换为 Typst 源码位置，并通过 `TypstPreviewView.revealSource()` 在预览面板中高亮并滚动到对应区域。
-
-2. **从预览跳转源码**：
-   在预览面板中点击任意文本或图表时，预览组件将命中点的物理坐标转换为行列信息，通过 `findTypstEditorPosition` 转换为 ProseMirror 节点位置，并调用 `editor.commands.focus(position)` 聚焦选区。
+分章应用从实际送编译的同一版本正文得到 `mapping`。宿主把本次编译的源码跨度和标签目标映射成章节 ID、编辑器区间及页面坐标，再交给 `TypstDocumentPreview`。预览按当前修订跟随编辑器并使用真实页面链接。模板内的固定目标可以只提供页面目的地。
