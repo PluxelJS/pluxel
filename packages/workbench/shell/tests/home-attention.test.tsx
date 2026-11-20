@@ -6,8 +6,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PluginOverviewSnapshot, PluginStatusEntry } from '../src/app/plugins/pluginOverview'
 import { pluginAttention } from '../src/app/plugins/pluginOverviewModel'
-import { prepareNativeWorkbenchDom } from './helpers/native-workbench'
-import { controlCatalog } from './pluginControlFixtures'
+import { prepareNativeWorkbenchDom } from './fixtures/native-workbench'
+import { controlCatalog } from './fixtures/plugin-controls'
 
 const state = vi.hoisted(() => ({
 	overview: undefined as unknown as PluginOverviewSnapshot,

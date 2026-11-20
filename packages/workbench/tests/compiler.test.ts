@@ -11,7 +11,6 @@ import {
 } from '@pluxel/workbench/internal'
 import { createWorkbenchContentSet, serializeWorkbenchContentSet } from '@pluxel/core/internal'
 import {
-	createWorkbenchFederationCompatibilitySet,
 	createWorkbenchFederationDeploymentInventory,
 	WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE,
 	createWorkbenchFederationProducerPlan,
@@ -20,11 +19,8 @@ import {
 import { createCoreInternalTestHost } from '@pluxel/core/internal/test'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { join } from 'pathe'
-import * as React from 'react'
-import * as ReactDom from 'react-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-import { version as runtimeVersion } from '@pluxel/workbench/package.json'
+import { federationManifest } from './fixtures/federation-manifest'
 
 const producerBuildMocks = vi.hoisted(() => ({
 	buildWorkbenchFederationProducer: vi.fn(
@@ -48,11 +44,6 @@ const definition = {
 	entry: { kind: 'package-root', packageName: '@example/fonts' },
 	exportName: 'FontsPlugin',
 } as const
-const compatibility = createWorkbenchFederationCompatibilitySet({
-	react: React.version,
-	reactDom: ReactDom.version,
-	workbench: runtimeVersion,
-})
 
 function createPlan(buildRevision: string): WorkbenchFederationProducerPlan {
 	return createWorkbenchFederationProducerPlan({
@@ -700,48 +691,19 @@ async function writeProducer(plan: WorkbenchFederationProducerPlan, outDir: stri
 	await writeFile(join(outDir, 'assets/view.js'), 'export const view = true\n')
 	await writeFile(join(outDir, 'types/index.d.ts'), 'export {}\n')
 	await writeFile(join(outDir, '@mf-types.zip'), 'zip-placeholder')
+	const manifest = federationManifest(plan)
+	for (const entry of manifest.exposes) entry.assets.js.sync = ['assets/view.js']
 	await writeFile(
 		join(outDir, 'mf-manifest.json'),
 		JSON.stringify({
-			id: plan.producer,
-			name: plan.producer,
+			...manifest,
 			metaData: {
-				name: plan.producer,
-				globalName: plan.producer,
-				buildInfo: { buildVersion: plan.buildRevision, buildName: plan.producer },
-				publicPath: 'auto',
+				...manifest.metaData,
 				remoteEntry: {
-					name: 'remoteEntry.js',
-					path: '',
-					type: 'module',
+					...manifest.metaData.remoteEntry,
 					pluxel: { artifactRoot: 'dist', workbenchArtifacts: true },
 				},
-				types: { path: '', name: '', api: 'types/index.d.ts', zip: '@mf-types.zip' },
-				type: 'global',
 			},
-			remotes: [] satisfies unknown[],
-			shared: Object.entries(compatibility.shared).map(([name, version]) => ({
-				name,
-				version,
-				requiredVersion: version,
-				singleton: true,
-				assets: assetGroup([]),
-			})),
-			exposes: plan.entries.map((entry) => ({
-				name: entry.expose.slice(2),
-				path: entry.expose.slice(2),
-				assets: assetGroup(['assets/view.js']),
-			})),
 		}),
 	)
-}
-
-function assetGroup(js: string[]): {
-	js: { sync: string[]; async: string[] }
-	css: { sync: string[]; async: string[] }
-} {
-	return {
-		js: { sync: js, async: [] },
-		css: { sync: [], async: [] },
-	}
 }

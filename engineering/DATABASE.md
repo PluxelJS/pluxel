@@ -61,6 +61,6 @@ acquire 与缓存 handle 的 read/transaction 都进入 Core root/owner invocati
 
 ## 实现与验证
 
-实现位于 `packages/services/src/database/`。回归入口为 `packages/services/tests/database-host.test.ts`、`services/database-service.test.ts`、`vite-database.test.ts` 和 `packages/rolldown/tests/database/artifact.test.ts`。
+实现位于 `packages/services/src/database/`。回归入口为 `packages/services/tests/database-host.test.ts`、`services/database-service.test.ts`、`vite/database.test.ts` 和 `packages/rolldown/tests/database/artifact.test.ts`。
 
 关键场景是 lazy/disabled 零 driver、owner/fork 隔离、缓存 handle 撤回、排队 stop、migration 失败保留 active instance、原子 promotion 和 rollback 无 outbox。PGlite 覆盖本地单连接行为；生产并发、锁、deadlock、pool exhaustion 和 connection loss 在真实 PostgreSQL 验证。

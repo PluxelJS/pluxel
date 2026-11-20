@@ -66,6 +66,6 @@ ZenFS 修复集中于固定版本依赖补丁。Core 构建内联 backend 闭包
 - `fs/{service,documents,atomic,observe}.ts`：目录需求、文档、提交、观察。
 - `internal/storage.ts`、`storage/documents.ts`：owner key、Host 内部资源和借用接口。
 
-回归从 [ZenFS](../packages/core/tests/zenfs.test.ts)、[StoreFS](../packages/core/tests/zenfs-store.test.ts)、[浏览器验收](../packages/core/tests/zenfs.browser.mjs) 开始，覆盖短 IO、abort/配额、readonly、坏根、确认后发布、关闭 flush、fork/generation 和跨 Host 恢复。真实页面/Worker IndexedDB 与独立安装各自验收；现有配额证据是 abort/QuotaExceededError 注入，Windows/Cloudflare 持久后端/DO 文件系统尚未验收。
+回归从 [ZenFS](../packages/core/tests/storage/zenfs.test.ts)、[StoreFS](../packages/core/tests/storage/zenfs-store.test.ts)、[浏览器验收](../packages/core/tests/storage/zenfs.browser.mjs) 开始，覆盖短 IO、abort/配额、readonly、坏根、确认后发布、关闭 flush、fork/generation 和跨 Host 恢复。真实页面/Worker IndexedDB 与独立安装各自验收；现有配额证据是 abort/QuotaExceededError 注入，Windows/Cloudflare 持久后端/DO 文件系统尚未验收。
 
 已有数据转换由显式维护工具备份、校验并原子提交，启动不猜测旧格式或启用旧配置。迁移范围和有日期记录见 [TinyBase 迁移清单](records/plugin-state-adoption.md)。

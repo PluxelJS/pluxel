@@ -9,7 +9,7 @@ import { expect, it, vi } from 'vitest'
 import { HostExecutionPolicy as Editor } from '../src/app/home/HostExecutionPolicy'
 import { ManagementQueryProvider } from '../src/app/managementQuery'
 import { RuntimeManagementClientProvider } from '../src/runtime'
-import { prepareNativeWorkbenchDom } from './helpers/native-workbench'
+import { prepareReactDom } from './fixtures/react-dom'
 
 const appliedExecution: HostExecutionPolicy = {
 	startTimeoutMs: 1500,
@@ -62,7 +62,7 @@ function snapshot(revision: string, managedInput: HostPolicyInput = {}): PolicyR
 }
 
 it('keeps the edited execution budget across a revision conflict and retries only that field', async () => {
-	prepareNativeWorkbenchDom()
+	prepareReactDom()
 	const root = createRoot(document.body.appendChild(document.createElement('div')))
 	try {
 		const get = vi

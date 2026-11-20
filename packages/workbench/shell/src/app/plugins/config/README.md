@@ -28,4 +28,4 @@
 
 ## 验证
 
-配置协议或保存改动检查 `shell/tests/workbench-config-save.test.tsx`、`shell/tests/web/config-form-loop.test.tsx` 及受影响的 query/validation 回归；目录改动检查 `shell/tests/workbench-outline.test.tsx`。真实浏览器补查两份同 owner 草稿、取消离开、窄高度滚动和 late MF CSS。只编辑浏览器 draft 没有证明后端保存成功，保存回执也不证明旧 UI draft 未被覆盖。
+配置协议或保存改动检查 `shell/tests/plugins/config/plugin-configuration.test.tsx` 及受影响的 query/validation 回归；目录改动检查 `shell/tests/workspace/workbench-outline.test.tsx`。真实浏览器补查两份同 owner 草稿、取消离开、窄高度滚动和 late MF CSS。只编辑浏览器 draft 没有证明后端保存成功，保存回执也不证明旧 UI draft 未被覆盖。

@@ -98,7 +98,7 @@ Workbench 446 项通过。全套检查另外暴露 `workbench-editor-grid.test.t
 
 实施与三路独立复核完成：2026-10-04 至 2026-10-05。本轮已完成框架、调用方、测试、文档与发行说明迁移；未通过和未验证的边界在本节明确保留。当前用法见[Host 配置](../../docs/host/configuration.md)、[应用构建](../APPLICATION_BUILD.md)、[HMR](../HMR.md)和[Package Manager](../../docs/plugins/package-manager.md)。
 
-本轮以真实 Node 进程、独立 tarball 安装和实际 Vite 事件补齐共享身份、文件观察和关闭边界。可重复入口包括 [native admission](../../packages/host/tests/native-admission.test.ts)、[modules 构建](../../packages/rolldown/tests/modules-application.test.ts)、[不可变安装](../../plugins/package-manager/tests/immutable-installation.test.ts)、[生产 Vite smoke](../../plugins/package-manager/tests/production-vite.smoke.mjs)、[生产运行入口](../../packages/host-vite/tests/run.test.ts)与[生成应用 smoke](../../packages/create/scripts/smoke-starter.ts)。设计与修正历史由 Git 保存。
+本轮以真实 Node 进程、独立 tarball 安装和实际 Vite 事件补齐共享身份、文件观察和关闭边界。可重复入口包括 [native admission](../../packages/host/tests/deployment/native-admission.test.ts)、[modules 构建](../../packages/rolldown/tests/modules-application.test.ts)、[不可变安装](../../plugins/package-manager/tests/immutable-installation.test.ts)、[生产 Vite smoke](../../plugins/package-manager/tests/production-vite.smoke.mjs)、[生产运行入口](../../packages/host-vite/tests/run.test.ts)与[生成应用 smoke](../../packages/create/scripts/smoke-starter.ts)。设计与修正历史由 Git 保存。
 
 本轮没有操作已有在线应用；所有运行验证使用隔离目录、临时数据、本地 npm registry 和新建 Node/Vite 进程。
 
@@ -207,7 +207,7 @@ WeakMap 以稳定 `HostStateSnapshot` 为 key；新 state 冷索引仍扫描 aut
 | 1,000            | 0.0289 ms   | 0.0216 ms     |
 | 10,000           | 0.0243 ms   | 0.0221 ms     |
 
-计时外包装当前 session/desired Map 的 values 并在 finally 恢复：各场景冷目录调用 2 次，热查询 0 次。首次目录仍遍历身份并建立 Map，新 state 也可能触发 Host 索引重建。计数只表示扫描入口。`status-projection.test.ts` 与 Services `management/management/plugin-status-read.test.ts` 保护结果一致性、冷热扫描和失效条件；`control-protocol.test.ts` 保护并发回执与逐项取消。
+计时外包装当前 session/desired Map 的 values 并在 finally 恢复：各场景冷目录调用 2 次，热查询 0 次。首次目录仍遍历身份并建立 Map，新 state 也可能触发 Host 索引重建。计数只表示扫描入口。`graph/status.test.ts` 与 Services `management/catalog-navigation.test.ts` 分别检查 Host 状态投影与管理端精确节点读取。`management/control-receipts.test.ts` 验证并发回执与逐项取消。
 
 ## 控制 SDK 交付观察（2026-11-15）
 

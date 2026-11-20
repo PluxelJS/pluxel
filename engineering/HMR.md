@@ -137,7 +137,7 @@ NodeModules.use 对 consumer 串行 staged setup，新 setup 成功才 cleanup p
 
 重点覆盖 structural reject、PONR 后真实 facts、definition-wide forks/required/optional closure、显式 Stop、候选 rollback、迟到 producer 和 fresh-host compensation。真实 Vite 验 namespace、来源恢复/provenance、watcher close/drain、暂停最终编辑、执行中新观察、失败修复、auto 合并和 pending 上界；控制命令不被自身 replacement 撤回。DTO 验相对诊断和节点归因，browser/Node 在各自真实资源边界验证。
 
-具体入口：packages/host-vite/tests 的 hmr-control、initial-source-recovery、environment-inputs，以及 Services 的 installed-plugin.smoke.mjs。后者验证运行时 wrapper 新增、传递依赖替换、删除、包安装/升级/失败保留/卸载；发现入口后仍服从 auto-start/session intent。
+具体入口：packages/host-vite/tests 的 hmr-control、initial-source-recovery、environment-inputs，以及 Services 的 `tests/installed/plugin.smoke.mjs`。后者验证运行时 wrapper 新增、传递依赖替换、删除、包安装/升级/失败保留/卸载；发现入口后仍服从 auto-start/session intent。
 
 ## Development console execution
 

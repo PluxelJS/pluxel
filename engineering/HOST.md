@@ -76,19 +76,19 @@ Services label 缓存属于 root，按 catalog、state、sessionIntents、desire
 
 Host 的 `bench/status.bench.mjs` 比较 overview/find 与精确投影；Services 的 `bench/management-status.bench.mjs` 测实际 Management DTO。构建所属包后用 `vp exec node <path>` 执行，历史数值与范围见[测量记录](records/host-deployment.md#状态投影测量2026-11-15)。
 
-回归入口是 Host `status-projection.test.ts`、Services `management/management/plugin-status-read.test.ts` 与 `control-protocol.test.ts`，保护结果、缓存失效、冷热扫描及并发回执。
+回归入口是 Host `graph/status.test.ts`、Services `management/catalog-navigation.test.ts` 与 `management/control-receipts.test.ts`。它们分别验证状态投影、精确节点读取和并发操作回执。
 
 ## 资源边界与验证入口
 
-| 主题                                 | 实现与回归入口                                                                                  |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| service plan、prepare rollback、关闭 | `packages/host/src/{services,host}.ts`；services/host/application tests                         |
-| config/state 文档与事务              | Host `config-store.ts`、`state-store.ts`；[Config](CONFIG.md)                                   |
-| catalog、candidate、commit           | Host `coordinator.ts`；[HMR](HMR.md)                                                            |
-| 应用/native loading                  | Host `application.ts`、`application-start.ts`、`source-discovery.ts`、`native-source-loader.ts` |
-| HTTP lease、stream、WS               | `packages/services/src/elysia/`；[HTTP 用法](../docs/plugin-development/http.md)                |
-| Node artifacts、Workers              | `packages/services/src/node/`、`workers/`；[Artifact Build](ARTIFACT_BUILD.md)                  |
-| Management/Workbench                 | [Workbench](WORKBENCH.md)、[管理接入](../docs/host/management.md)                               |
+| 主题                                 | 实现与回归入口                                                                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| service plan、prepare rollback、关闭 | `packages/host/src/{services,host}.ts`；services/host/application tests                                                         |
+| config/state 文档与事务              | Host [配置操作](../packages/host/tests/config/operations.test.ts)、[部署策略](../packages/host/tests/policy/deployment.test.ts) |
+| catalog、candidate、commit           | Host `coordinator.ts`；[HMR](HMR.md)                                                                                            |
+| 应用/native loading                  | Host `application.ts`、`application-start.ts`、`source-discovery.ts`、`native-source-loader.ts`                                 |
+| HTTP lease、stream、WS               | `packages/services/src/elysia/`；[HTTP 用法](../docs/plugin-development/http.md)                                                |
+| Node artifacts、Workers              | `packages/services/src/node/`、`workers/`；[Artifact Build](ARTIFACT_BUILD.md)                                                  |
+| Management/Workbench                 | [Workbench](WORKBENCH.md)、[管理接入](../docs/host/management.md)                                                               |
 
 Host 文档默认借用 Core FS，`config.document` 与 `policy.document` 分别选择 IO、写权限和同步 root storage factory。config v4、state v8 只保存稀疏原始输入；缺失文档不写种子，坏格式保留原文件并拒绝准备。关闭先取消观察、排空本域任务，再由 Core 关闭 backend，见 [Config](CONFIG.md#存储与创建边界)。
 
@@ -102,7 +102,7 @@ Node srvx/Vite 接线已有覆盖；Bun、Deno、Worker adapter、published Elys
 
 `@pluxel/host/internal/protocol` 组合浏览器/服务端共享 execution/update snapshots、操作报告及 parser。`report-protocol.ts` 校验 report、reconciliation、lifecycle summary、persistence 的字段与语义，地址沿用 Core codec。parser 带字段标签抛 TypeError；Management 在载体边界映射自己的协议错误、校验 envelope 与权限。
 
-新增报告字段时，Host 的 producer、类型和 parser 同步更新；`report-protocol.test.ts` 维护对照。Management 客户端消费 portable protocol，不加载 source/IO/lifecycle 编排。
+新增报告字段时，Host 的 producer、类型和 parser 同步更新；`graph/report-protocol.test.ts` 维护对照。Management 客户端消费 portable protocol，不加载 source/IO/lifecycle 编排。
 
 ## Vault 记录与宿主输入
 

@@ -41,15 +41,23 @@ SSR 条件会进 worker Node --conditions；不得全局加入 import，Node 需
 
 保留测试前，先明确哪条契约失效时调用方会看到什么结果。由拥有该行为的入口验证，例如重启后旧句柄拒绝调用、文件写入失败后已确认内容仍可读。相同前提和结果用一个场景验证，失败阶段、资源归属或传输方式引入独立风险时再增加用例。
 
+框架回归从可执行的使用路径出发。插件作者装配和重连依赖见 [Core 生命周期](CORE_LIFECYCLE_SEMANTICS.md#不变量矩阵)，宿主读取、保存和重开见 [配置验证](CONFIG.md#验证)，操作员的回执与状态见 [Host](HOST.md#http-与管理页面)，编辑与关闭见 [Workbench](WORKBENCH_FLEXLAYOUT_VALIDATION.md)。同一条路径用足以暴露失败的 fixture，各处复用已有 Host 或传输接线。
+
 - 重用同一组前置和资源来验证一个完整的操作序列。纯函数可以用表格覆盖代表输入。涉及进程、构建产物或 Host 的契约使用对应真实边界。
 - 性能用代表性负载衡量。图和缓存的功能回归断言结果，内部索引、遍历次数和缓存布局可随实现调整。
 - 用应用结果、事件或可控的 Promise 等待状态变化。只在验证超时或定时调度本身时推进测试时钟，外部文件和跨进程变更等待可观察的结果。
-- 纯类型放 tests/*.typecheck.ts，由包含 tests 的 typecheck 验证；preset 行为执行真实配置，不扫描源码猜 API。
+- 纯类型用 `.typecheck.ts` 后缀，由所属包的 typecheck 验证。验证 preset 行为时执行真实配置。
 - 编译归 Rolldown，CLI 测真实 bin/产物，协议复用生产 adapter；连接/背压/关闭在 carrier 验证。
 - exports/依赖/目录政策归 [Governance](GOVERNANCE.md)；迁移完成后删除专用旧符号检查。
 - 模板/独立安装走对应 smoke，不用 manifest 文本代替行为。
 - start/require 返回 raw instance；caller attribution/admission/withdrawal 需真实 Consumer dependency。
 - Host 用 await using，RPC lease 用 using；操作结算后直接断言，仅外部 eventual observation 用 expect.poll。
+
+### 目录与 fixture
+
+用例从所属包的 `tests/` 查找，目录用行为命名。Core 的插件生命周期在 `tests/plugins/`，Host 的配置操作在 `tests/config/`，Workbench Shell 的文档操作在 `shell/tests/workspace/`。发行包验收从包脚本进入。
+
+一个场景独有的短输入直接写在用例旁。复用的装配由共享这些前置条件的用例持有。编译器、浏览器和子进程读取的输入保留独立文件，并由调用处定位。存储测试需要原生临时目录时，可用 `await using` 持有 `createDiskFixture()` 创建的目录，让先打开的目录在 Host 关闭后释放。
 
 ## CI scheduling and cache
 

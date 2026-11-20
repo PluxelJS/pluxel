@@ -64,10 +64,10 @@ mise 提供可选的工具安装与版本固定，项目执行使用上面的 `v
 
 ```sh
 cd packages/core
-vp test run tests/PluginIdentity.test.ts
+vp test run tests/plugins/PluginIdentity.test.ts
 ```
 
-`vp test run` 从当前包读取 Vitest 配置，测试名过滤可加 `-t <pattern>`。需要构建前置时，在仓库根目录使用包的测试任务。以单条 `vp test run` 执行的任务可接收测试文件路径，例如 `vp run @pluxel/core#check-tests tests/PluginIdentity.test.ts`。收尾时记录实际运行的检查与未验证边界。`vp run test` 和 `vp run verify` 用于明确的整仓验收。
+`vp test run` 从当前包读取 Vitest 配置，测试名过滤可加 `-t <pattern>`。需要构建前置时，在仓库根目录使用包的测试任务。以单条 `vp test run` 执行的任务可接收测试文件路径，例如 `vp run @pluxel/core#check-tests tests/plugins/PluginIdentity.test.ts`。收尾时记录实际运行的检查与未验证边界。`vp run test` 和 `vp run verify` 用于明确的整仓验收。
 
 ### 编辑器测试发现
 

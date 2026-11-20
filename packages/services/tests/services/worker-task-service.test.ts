@@ -8,7 +8,6 @@ import {
 } from '@pluxel/services/workers'
 import { NodeModuleHost } from '../../src/node/token'
 
-import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -45,7 +44,7 @@ const transferDeclaration = (defineWorkerTask as unknown as (...args: unknown[])
 	'./fixtures/worker-transfer.mjs',
 	'worker-transfer',
 ) as ReturnType<typeof defineWorkerTask<TransferTaskInput, TransferTaskOutput>>
-const artifactRoot = dirname(fileURLToPath(new URL('./fixtures/worker-task.mjs', import.meta.url)))
+const artifactRoot = fileURLToPath(new URL('./fixtures/', import.meta.url))
 
 @Plugin()
 class WorkerTaskConsumerA extends BasePlugin {

@@ -47,7 +47,7 @@ Wire 版本由 [`RUNTIME_MANAGEMENT_PROTOCOL_MAJOR`](../packages/services/src/ma
 - `packages/services/src/management/services/management/PluginCatalogLayoutService.ts`：文档、串行 IO 与失败恢复。
 - 同目录 `catalog-groups.ts`：family 投影和自动分组。
 - `packages/services/tests/management/plugin-catalog-layout.test.ts`：存储、修改与恢复。
-- `packages/services/tests/management/management/plugin-catalog-groups.test.ts`：纯算法；同目录 `plugin-catalog-projection.test.ts`：committed projection。
+- `packages/services/tests/management/catalog-navigation.test.ts` 验证目录读取、分组编辑和节点标题更新。`management/catalog-labels.test.ts` 验证提交后目录的标签与重名区分。
 
 ## Verification
 

@@ -170,11 +170,11 @@ Valibot schema 拥有 kind、requiredness、choices、format、range。`formMeta
 
 ## 验证
 
-Host 直接入口为 `config.test.ts`、`config-store.test.ts`、`config-environment.test.ts`、`config-file-reload.test.ts`、`config.types.ts`；Core tests 覆盖 composite/Part config 和 constructor 时序。
+Host 通过 [配置操作](../packages/host/tests/config/operations.test.ts) 验证读取、保存、采用与恢复。[文档输入](../packages/host/tests/storage/startup-inputs.test.ts) 覆盖冷启动拒绝及保留原文件，`config/deployment-inputs.test.ts` 与 `config/file-reload.test.ts` 分别验证部署输入和文件观察。
 
-- [配置层集成](../packages/host/tests/config-layers-integration.test.ts)：code/file/env/saved、动态节点、default/fork。
-- [管理事务](../packages/services/tests/management/management/host-input-transactions.test.ts)、[表单闭环](../packages/workbench/shell/tests/web/config-form-loop.test.tsx)：原始输入、CAS、保存/采用反馈。
-- [借用文档](../packages/host/tests/document-storage.test.ts)、[浏览器存储](../packages/host/tests/browser-storage.test.ts)：factory、IO 排空、backend owner、页面/Worker 恢复。
-- [策略](../packages/host/tests/policy-management.test.ts)、[执行参数绑定](../packages/core/tests/plugin-execution-binding.test.ts)：当前 Host 参数固定、重建采用新目标。
+- [配置层集成](../packages/host/tests/config/layers.test.ts)：code/file/env/saved、动态节点、default/fork。
+- [管理操作](../packages/services/tests/management/plugin-operations.test.ts)、[表单保存](../packages/workbench/shell/tests/plugins/config/plugin-configuration.test.tsx)：原始输入、CAS、保存/采用反馈。
+- [借用文档](../packages/host/tests/storage/documents.test.ts)、[浏览器存储](../packages/host/tests/browser/storage.test.ts)：factory、IO 排空、backend owner、页面/Worker 恢复。
+- [部署策略](../packages/host/tests/policy/deployment.test.ts)、[策略编辑](../packages/host/tests/policy/management.test.ts)、[执行参数绑定](../packages/core/tests/plugins/plugin-execution-binding.test.ts)：当前 Host 参数固定、重建采用新目标。
 
-保存回归重点是冲突先于副作用、flush 失败不发布、schema 只执行一次、snapshot identity 正确；通知回归覆盖缺失/reject、撤回、children-before-owner、fork 隔离及保留 desired。在线验证从现有 [devconsole](../docs/development/dev-console.md) 检查 persistence/application/applyFailure。
+保存回归重点是冲突先于副作用、flush 失败不发布、schema 只执行一次、snapshot identity 正确；[监听器通知](../packages/host/tests/config/listeners.test.ts) 覆盖监听器缺失或拒绝、实例撤回、Part 先于 owner、fork 隔离及保留 desired。在线验证从现有 [devconsole](../docs/development/dev-console.md) 检查 persistence/application/applyFailure。

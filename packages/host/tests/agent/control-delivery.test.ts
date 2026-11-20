@@ -1,0 +1,213 @@
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { generatePluginControl } from '@pluxel/rolldown/control'
+import { compileScript } from '@pluxel/rolldown/scripts'
+import { requirePluginService } from '@pluxel/core/internal'
+import { parsePluginNodeAddress } from '@pluxel/core'
+import { expect, it } from 'vitest'
+import { createHost } from '../../src'
+import { setHostCatalogProvenance } from '../../src/internal'
+import { SCRIPT_PROTOCOL, scriptRequestHash } from '../../src/agent-runtime'
+import { createNodeScriptOwner } from '../../src/agent/node'
+import { createScriptControlTarget } from '../../src/agent/transport'
+import { createWorkspace, hostPackage } from '../support/workspace'
+import { DeliveryCounter } from './control-delivery.fixture'
+
+const hostRoot = fileURLToPath(hostPackage)
+const pluginFile = fileURLToPath(new URL('./control-delivery.fixture.ts', import.meta.url))
+
+it('generates real Plugin declarations, compiles an author script and uploads it to the original Host instance', async () => {
+	await using workspace = await createWorkspace('control-delivery', ['core', 'host'])
+	const { root: directory } = workspace
+	await using host = await createHost({
+		plugins: [
+			{
+				plugin: DeliveryCounter,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
+	})
+	const generation = await generatePluginControl({
+		root: hostRoot,
+		definitions: [
+			{
+				moduleId: pluginFile,
+				className: 'DeliveryCounter',
+				definition: DeliveryCounter.address(),
+			},
+		],
+	})
+	const entry = generation.manifest.definitions[0]!
+	setHostCatalogProvenance(
+		host.ctx,
+		new Map([
+			[
+				DeliveryCounter,
+				{
+					control: {
+						state: 'available',
+						format: 2,
+						contracts: entry.contracts,
+						material: {
+							snapshot: generation.snapshot,
+							manifest: generation.manifest,
+							files: generation.files,
+						},
+					},
+				},
+			],
+		]),
+	)
+	for (const [path, contents] of Object.entries(generation.files)) {
+		const output = join(directory, 'control', path)
+		await mkdir(dirname(output), { recursive: true })
+		await writeFile(output, contents)
+	}
+	await writeFile(
+		join(directory, 'tsconfig.json'),
+		JSON.stringify({ extends: join(hostRoot, 'tsconfig.json') }),
+	)
+	const source = join(directory, 'task.ts')
+	await writeFile(
+		source,
+		`
+import type { Script } from '@pluxel/agent-sdk/host'
+import { DeliveryCounter } from './control/${entry.module}'
+export default (async (sdk, run) => {
+  const address = sdk.plugin(DeliveryCounter.nodeAddress()).address
+  const selected = sdk.plugin(address)
+  const { get, patch } = selected.config
+  const before = await get()
+  const changed = await patch({ set: { count: 12 } }, { expectedManagedRevision: before.managedRevision })
+  if (changed.application !== 'applied') return changed
+  const { instance } = await selected.instance()
+  const added = await instance.addAsync(5, run.signal)
+  return { changed: changed, added, observed: instance.count }
+}) satisfies Script
+export const selectedAddress = (() => DeliveryCounter.nodeAddress()) satisfies Script
+export const encodeFailure = (async (sdk) => {
+  const { instance } = await sdk.plugin(DeliveryCounter.nodeAddress()).instance()
+  instance.add(3)
+  return instance
+}) satisfies Script
+export const shortCircuit = (async (sdk) => {
+  const selected = sdk.plugin(DeliveryCounter.nodeAddress())
+  const changed = await selected.config.patch({ set: { count: 999 } }, { expectedManagedRevision: 'stale revision' })
+  const { instance } = await selected.instance()
+  return instance.add(1000)
+}) satisfies Script
+`,
+	)
+	const artifact = await compileScript({ file: source })
+	expect(artifact.code).not.toContain('class DeliveryCounter')
+	await host.start()
+	await host.startNode(DeliveryCounter.nodeAddress())
+	await using owner = createNodeScriptOwner({ ctx: host.ctx })
+	const target = createScriptControlTarget({
+		executor: owner.executor,
+		subject: 'control-delivery',
+		assertAuthorized() {},
+		describe: () => ({ provides: ['plugin.instance'] }),
+	})
+	const request = { runId: 'generated-control-operation', code: artifact }
+	const receipt = {
+		protocol: SCRIPT_PROTOCOL,
+		instanceId: owner.instanceId,
+		runId: request.runId,
+		requestHash: await scriptRequestHash(request),
+	}
+	expect(
+		await target.submit({
+			protocol: receipt.protocol,
+			instanceId: receipt.instanceId,
+			...request,
+		}),
+	).toMatchObject({ ok: true, value: { requestHash: receipt.requestHash } })
+	expect(await owner.executor.settled(receipt.runId, 'control-delivery')).toMatchObject({
+		state: 'succeeded',
+		value: {
+			changed: { application: 'applied', config: { count: 12 } },
+			added: 17,
+			observed: 17,
+		},
+	})
+	expect(
+		await target.result({
+			protocol: receipt.protocol,
+			instanceId: receipt.instanceId,
+			runId: receipt.runId,
+		}),
+	).toMatchObject({ ok: true, value: { state: 'succeeded' } })
+	expect(
+		await target.submit({
+			protocol: receipt.protocol,
+			instanceId: receipt.instanceId,
+			...request,
+		}),
+	).toMatchObject({ ok: true, value: { state: 'succeeded' } })
+	expect(requirePluginService(host.ctx).getInstance(DeliveryCounter.nodeAddress())).toMatchObject({
+		count: 17,
+	})
+	expect(await host.config.get(DeliveryCounter.nodeAddress())).toMatchObject({
+		config: { count: 12 },
+		application: 'applied',
+	})
+	const addressArtifact = await compileScript({ file: source, exportName: 'selectedAddress' })
+	await target.submit({
+		protocol: receipt.protocol,
+		instanceId: receipt.instanceId,
+		runId: 'generated-node-address',
+		code: addressArtifact,
+	})
+	const addressRun = await owner.executor.settled('generated-node-address', 'control-delivery')
+	expect(addressRun).toMatchObject({ state: 'succeeded' })
+	if (addressRun.state !== 'succeeded') throw new Error('Expected a portable generated address')
+	expect(addressRun.value).toEqual(parsePluginNodeAddress(DeliveryCounter.nodeAddress()))
+	const failureArtifact = await compileScript({ file: source, exportName: 'encodeFailure' })
+	await target.submit({
+		protocol: receipt.protocol,
+		instanceId: receipt.instanceId,
+		runId: 'generated-encode-failure',
+		code: failureArtifact,
+	})
+	expect(
+		await owner.executor.settled('generated-encode-failure', 'control-delivery'),
+	).toMatchObject({
+		state: 'failed',
+		phase: 'encode',
+		error: { code: 'result_not_serializable' },
+	})
+	expect(requirePluginService(host.ctx).getInstance(DeliveryCounter.nodeAddress())).toMatchObject({
+		count: 20,
+	})
+	const shortCircuit = await compileScript({ file: source, exportName: 'shortCircuit' })
+	await target.submit({
+		protocol: receipt.protocol,
+		instanceId: receipt.instanceId,
+		runId: 'generated-short-circuit',
+		code: shortCircuit,
+	})
+	expect(await owner.executor.settled('generated-short-circuit', 'control-delivery')).toMatchObject(
+		{
+			state: 'failed',
+			phase: 'execute',
+			error: {
+				code: 'revision_conflict',
+				details: { code: 'revision_conflict', state: 'unchanged' },
+			},
+		},
+	)
+	expect(requirePluginService(host.ctx).getInstance(DeliveryCounter.nodeAddress())).toMatchObject({
+		count: 20,
+	})
+	expect(await host.config.get(DeliveryCounter.nodeAddress())).toMatchObject({
+		config: { count: 12 },
+		application: 'applied',
+	})
+}, 120000)

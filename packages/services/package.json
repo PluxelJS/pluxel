@@ -195,8 +195,8 @@
 		"bench:worker-task": "vp test bench bench/worker-task.bench.ts",
 		"build": "vp run compile",
 		"test": "vp run check-tests",
-		"test:installed": "vp test run --config tests/installed.config.mts && node tests/installed-plugin.smoke.mjs && node tests/installed-node.smoke.mjs",
-		"test:installed-workbench": "node tests/installed-workbench.smoke.mjs",
+		"test:installed": "vp test run --config tests/installed/smoke.config.mts && node tests/installed/plugin.smoke.mjs && node tests/installed/node.smoke.mjs",
+		"test:installed-workbench": "node tests/installed/workbench.smoke.mjs",
 		"typecheck": "vp run check-types"
 	},
 	"dependencies": {

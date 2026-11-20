@@ -70,7 +70,7 @@ Services 与 Shell 同步采用公共模型，删除重复映射及旧包 import
 | UI 不覆盖新输入            | 同 owner 双文档、保存期间继续输入、旧响应、失败重试、外部刷新 dirty form、保存全部的跨 section 错误                  |
 | Content 迁移守约           | unsupported action publication 拒绝；data default/transform/password 限制；错误保留草稿；关闭后 late result 不更新   |
 
-现有证据入口包括 `packages/valibot-form/src/tests/`、`packages/services/tests/management/config-presentation.test.ts`、`packages/workbench/tests/workbench-content-presentation.test.ts`，以及 Shell 的 `web/config-form-loop.test.tsx`、`workbench-config-save.test.tsx` 和 `workbench-outline.test.tsx`。迁移测试时保留这些用户行为，不为旧文件布局保留测试兼容层。
+现有证据入口包括 `packages/valibot-form/src/tests/`、`packages/services/tests/management/config-presentation.test.ts`、`packages/workbench/tests/workbench-content-presentation.test.ts`，以及 Shell 的 `plugins/config/plugin-configuration.test.tsx` 和 `workspace/workbench-outline.test.tsx`。迁移测试时保留这些用户行为，不为旧文件布局保留测试兼容层。
 
 ## UI 的实际验收
 

@@ -4,6 +4,6 @@
 		"strictNullChecks": true,
 		"skipLibCheck": false
 	},
-	"files": ["tests/agent-control.typecheck.ts"],
+	"files": ["tests/agent/control.typecheck.ts"],
 	"include": []
 }

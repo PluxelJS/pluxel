@@ -1,0 +1,286 @@
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { BasePlugin, Plugin, type PluginNodeAddress } from '@pluxel/core'
+import { compileScript } from '@pluxel/rolldown/scripts'
+import { Miniflare, Response as WorkerResponse } from 'miniflare'
+import { build } from 'vite-plus'
+import { expect, it } from 'vitest'
+import { createHost } from '../../src/index'
+import { createScriptScope, snapshotJson } from '../../src/agent-runtime'
+import type { ScriptPluginConfig } from '../../src/agent'
+import { createWorkspace, hostPackage } from '../support/workspace'
+
+it('bundles the actual portable SDK and execution entry without platform or compiler imports', async () => {
+	await using workspace = await createWorkspace('agent-portable', ['host'])
+	const { root } = workspace
+	await writeFile(
+		join(root, 'entry.ts'),
+		"export * from '@pluxel/agent-sdk/host'; export { ScriptExecutor, executeHostScript } from '@pluxel/host/internal/agent/runtime'",
+	)
+	const modules: string[] = []
+	const output = await build({
+		configFile: false,
+		root,
+		logLevel: 'silent',
+		resolve: { conditions: ['@pluxel/source', 'browser', 'module', 'production'] },
+		plugins: [
+			{
+				name: 'observe-agent-closure',
+				generateBundle() {
+					modules.push(...this.getModuleIds())
+				},
+			},
+		],
+		build: {
+			write: false,
+			target: 'esnext',
+			minify: false,
+			lib: { entry: join(root, 'entry.ts'), formats: ['es'] },
+		},
+	})
+	const chunks = (Array.isArray(output) ? output : [output]).flatMap((result) => {
+		if (!('output' in result)) throw new Error('Expected an immediate portable build')
+		return result.output.filter((chunk) => chunk.type === 'chunk')
+	})
+	expect(chunks).toHaveLength(1)
+	expect(chunks[0]!.exports).toEqual(
+		expect.arrayContaining(['createScriptScope', 'ScriptExecutor', 'executeHostScript']),
+	)
+	expect(chunks[0]!.imports).toEqual([])
+	expect(chunks[0]!.dynamicImports).toEqual([])
+	expect(
+		modules.filter((id) =>
+			/(?:^node:|__vite-browser-external|\/packages\/(?:host-vite|services|rolldown)\/|\/agent\/(?:node|socket|transport)\.ts$)/.test(
+				id,
+			),
+		),
+	).toEqual([])
+	expect(chunks[0]!.code).not.toContain('__vite-browser-external')
+})
+
+const schema = {
+	'~standard': {
+		version: 1 as const,
+		vendor: 'worker-bridge-test',
+		types: undefined as { input: Record<string, unknown>; output: { count: number } } | undefined,
+		validate(input: unknown) {
+			const count = (input as { count?: unknown })?.count ?? 2
+			return typeof count === 'number'
+				? { value: { count } }
+				: { issues: [{ message: 'Expected count to be numeric', path: ['count'] }] }
+		},
+	},
+}
+
+@Plugin()
+class WorkerCounter extends BasePlugin {
+	readonly config = this.configs.use(schema)
+	init() {
+		this.configs.onUpdate(this.config, () => {})
+	}
+}
+
+it('loads the compiled factory in real workerd and bridges ordinary SDK calls to the original Host', async () => {
+	await using workspace = await createWorkspace('agent-workerd', ['core', 'host'])
+	const { root: directory } = workspace
+	await using host = await createHost({
+		plugins: [
+			{
+				plugin: WorkerCounter,
+			},
+		],
+		policy: {
+			document: false,
+		},
+		config: {
+			document: false,
+		},
+	})
+	await host.start()
+	await host.startNode(WorkerCounter.nodeAddress())
+	await using scope = createScriptScope({ ctx: host.ctx })
+	let runtime: Miniflare | undefined
+	try {
+		await writeFile(
+			join(directory, 'tsconfig.json'),
+			JSON.stringify({
+				extends: fileURLToPath(new URL('tsconfig.json', hostPackage)),
+			}),
+		)
+		const file = join(directory, 'task.ts')
+		await writeFile(
+			file,
+			`
+import type { Script } from '@pluxel/agent-sdk/host'
+import * as sharedBetterResult from '@pluxel/core/better-result'
+const { Result } = sharedBetterResult
+let moduleInvocations = 0
+export const namespace = () => sharedBetterResult
+export default (async (sdk, run) => {
+  run.signal.throwIfAborted()
+  const nodes = await sdk.plugins.list()
+  const { get, patch } = sdk.plugin(nodes.nodes[0].address).config
+  const before = await get()
+  const values = [before.config.count]
+  let next = 0
+  for (const value of values) {
+    if (typeof value === 'number') next += value * 2
+  }
+  const changed = await patch({ set: { count: next } }, { expectedManagedRevision: before.managedRevision })
+  const actual = await get()
+  return Result.ok({ moduleInvocations: ++moduleInvocations, changed, actual, runtime: navigator.userAgent })
+}) satisfies Script
+`,
+		)
+		const artifact = await compileScript({ file })
+		const resultEntry = join(directory, 'worker-result.ts')
+		await writeFile(
+			resultEntry,
+			`
+import * as sharedBetterResult from '@pluxel/core/better-result'
+const { Result } = sharedBetterResult
+// The Host codec checks payloads before JSON transport. The Worker bridge only restores those JSON DTOs.
+const payload = { '~standard': { version: 1 as const, vendor: 'workerd-test-bridge', validate: (input: unknown) => ({ value: input }) } }
+export const codec = Result.codec({ serialize: { ok: payload, err: payload }, deserialize: { ok: payload, err: payload } })
+export { sharedBetterResult }
+`,
+		)
+		const resultBuild = await build({
+			configFile: false,
+			root: directory,
+			logLevel: 'silent',
+			resolve: { conditions: ['@pluxel/source', 'browser', 'module', 'production'] },
+			build: {
+				write: false,
+				target: 'esnext',
+				minify: false,
+				lib: { entry: resultEntry, formats: ['es'] },
+			},
+		})
+		const resultChunks = (Array.isArray(resultBuild) ? resultBuild : [resultBuild]).flatMap(
+			(output) => {
+				if (!('output' in output)) throw new Error('Expected an immediate Result module build')
+				return output.output.filter((chunk) => chunk.type === 'chunk')
+			},
+		)
+		expect(resultChunks).toHaveLength(1)
+		expect(resultChunks[0]!.imports).toEqual([])
+		const dynamic = `
+import { WorkerEntrypoint } from 'cloudflare:workers'
+import { codec, sharedBetterResult } from './result.js'
+function loadModule(__pluxel_script_better_result) { ${artifact.code} }
+export default class Task extends WorkerEntrypoint {
+  async run(input) {
+    const sdk = {
+      plugins: { list: async () => this.env.HOST.listPlugins() },
+      // This test bridge supplies only the two calls exercised by this task.
+      plugin: (node) => ({
+        address: node,
+        config: {
+          get: async () => this.env.HOST.getConfig(node),
+          patch: async (change, options) => this.env.HOST.patchConfig(node, change, options),
+        },
+      }),
+    }
+    const module = loadModule(sharedBetterResult)
+    if (module.namespace() !== sharedBetterResult) throw new Error('Factory replaced the Worker Result namespace')
+    return codec.serializeUnsafe(await module[${JSON.stringify(artifact.exportName)}](sdk, { id: 'workerd-probe', input, signal: new AbortController().signal }))
+  }
+}
+`
+		const parent = `
+import { WorkerEntrypoint } from 'cloudflare:workers'
+export class HostBridge extends WorkerEntrypoint {
+  async listPlugins() { return this.call({ operation: 'plugins' }) }
+  async getConfig(node) { return this.call({ operation: 'get', node }) }
+  async patchConfig(node, change, options) { return this.call({ operation: 'patch', node, change, options }) }
+  async call(input) {
+    const response = await this.env.HOST.fetch('http://host/', { method: 'POST', body: JSON.stringify(input) })
+    return response.json()
+  }
+}
+export default {
+  async fetch(request, env, ctx) {
+    const worker = env.LOADER.load({ compatibilityDate: '2026-11-03', mainModule: 'task.js', modules: { 'task.js': ${JSON.stringify(dynamic)}, 'result.js': ${JSON.stringify(resultChunks[0]!.code)} }, env: { HOST: ctx.exports.HostBridge({}) }, globalOutbound: null })
+    return Response.json(await worker.getEntrypoint().run(await request.json()))
+  }
+}
+`
+		runtime = new Miniflare({
+			host: '127.0.0.1',
+			port: 0,
+			workers: [
+				{
+					config: {
+						name: 'pluxel-agent-boundary',
+						compatibilityDate: '2026-11-03',
+						manifest: {
+							mainModule: 'parent.js',
+							modules: { 'parent.js': { type: 'esm', contents: parent } },
+						},
+						env: {
+							LOADER: { type: 'worker-loader' },
+							HOST: {
+								type: 'fetcher',
+								async handler(request) {
+									const input = (await request.json()) as {
+										operation: string
+										node: PluginNodeAddress
+										change: Parameters<ScriptPluginConfig['patch']>[0]
+										options: Parameters<ScriptPluginConfig['patch']>[1]
+									}
+									switch (input.operation) {
+										case 'plugins':
+											return WorkerResponse.json(snapshotJson(await scope.sdk.plugins.list()))
+										case 'get':
+											return WorkerResponse.json(
+												snapshotJson(await scope.sdk.plugin(input.node).config.get()),
+											)
+										case 'patch':
+											return WorkerResponse.json(
+												snapshotJson(
+													await scope.sdk
+														.plugin(input.node)
+														.config.patch(input.change, input.options),
+												),
+											)
+										default:
+											throw new Error(`Unexpected bridge operation ${input.operation}`)
+									}
+								},
+							},
+						},
+					},
+				},
+			],
+		})
+		await runtime.ready
+		for (const count of [4, 8]) {
+			const response = await runtime.dispatchFetch('http://probe/', {
+				method: 'POST',
+				body: 'null',
+			})
+			const body = await response.text()
+			expect({ status: response.status, error: response.ok ? null : body }).toEqual({
+				status: 200,
+				error: null,
+			})
+			expect(JSON.parse(body)).toMatchObject({
+				status: 'ok',
+				value: {
+					moduleInvocations: 1,
+					changed: { application: 'applied', config: { count } },
+					actual: { config: { count } },
+					runtime: 'Cloudflare-Workers',
+				},
+			})
+			expect(await host.config.get(WorkerCounter.nodeAddress())).toMatchObject({
+				config: { count },
+				application: 'applied',
+			})
+		}
+	} finally {
+		await runtime?.dispose()
+	}
+}, 30000)

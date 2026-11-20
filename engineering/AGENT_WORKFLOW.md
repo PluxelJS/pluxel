@@ -47,7 +47,7 @@ CLI 通过 `/internal/client` 复用项目/profile/实例选择及错误上下�
 
 帮助路径仅加载 Gunshi 和轻量目录；lazy loader 返回执行回调，实际运行才导入主体及失败依赖。`/source`、`/host`、`/client` 保持普通库行为，不导入终端适配或修改 `process.exitCode`。`@pluxel/cli` 拥有唯一 executable、总命令树、前台启动与 Pitchfork 管理；`dev status` 对 Host 调用 `listHosts`，对 `scripts: false` 服务查询 Pitchfork。
 
-命令侧 `receipt.ts` 复用客户端的 token 预算与校验，负责提交前保存及有界文件读取，文件用法见[保存和恢复 receipt](../docs/development/scripts.md#保存和恢复-receipt)。SDK 命令主体测试与 CLI executable 的挂载测试分属各自包；独立安装验收由 Services `agent-installed` smoke 完成。
+命令侧 `receipt.ts` 复用客户端的 token 预算与校验，负责提交前保存及有界文件读取，文件用法见[保存和恢复 receipt](../docs/development/scripts.md#保存和恢复-receipt)。SDK 命令主体测试与 CLI executable 的挂载测试分属各自包；独立安装验收由 Services [独立安装 smoke](../packages/services/tests/installed/agent.smoke.mjs) 完成。
 
 ## scope 的接纳和结算
 
@@ -112,15 +112,15 @@ Vite owner 随开发实例存活，私有 socket 认证独立于 Management read
 
 ## 验证入口与已验证范围
 
-| 边界                                              | 入口                                                                                                                                       |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| SDK 配置/CAS/采用、持久化失败、启停、日志、取消   | [`agent-sdk.test.ts`](../packages/host/tests/agent-sdk.test.ts)、[`agent-sdk.typecheck.ts`](../packages/host/tests/agent-sdk.typecheck.ts) |
-| 客户端快照、提交前回执、中断、原 owner 与入口隔离 | [`client.test.ts`](../packages/agent-sdk/tests/client.test.ts)、[`entrypoints.test.ts`](../packages/agent-sdk/tests/entrypoints.test.ts)   |
-| 身份、编码、保留、失败、取消                      | [`agent-runtime.test.ts`](../packages/host/tests/agent-runtime.test.ts)                                                                    |
-| Node 制品、重复运行、原源码堆栈、关闭             | [`agent-node.test.ts`](../packages/host/tests/agent-node.test.ts)                                                                          |
-| TS/Rolldown、依赖、共享绑定、source map           | [`scripts.test.ts`](../packages/rolldown/tests/scripts.test.ts)                                                                            |
-| 可移植入口与 Workers 最小桥                       | [`agent-portability.test.ts`](../packages/host/tests/agent-portability.test.ts)                                                            |
-| Vite 与交付接收端                                 | [Dev Console](DEV_CONSOLE.md#实现与验证入口)、[Plugin Control](PLUGIN_CONTROL.md#验证入口)                                                 |
+| 边界                                              | 入口                                                                                                                                                     |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SDK 配置/CAS/采用、持久化失败、启停、日志、取消   | [`agent/operations.test.ts`](../packages/host/tests/agent/operations.test.ts)、[`agent/sdk.typecheck.ts`](../packages/host/tests/agent/sdk.typecheck.ts) |
+| 客户端快照、提交前回执、中断、原 owner 与入口隔离 | [`client.test.ts`](../packages/agent-sdk/tests/client.test.ts)、[`entrypoints.test.ts`](../packages/agent-sdk/tests/entrypoints.test.ts)                 |
+| 身份、编码、保留、失败、取消                      | [`agent/runtime.test.ts`](../packages/host/tests/agent/runtime.test.ts)                                                                                  |
+| Node 制品、重复运行、原源码堆栈、关闭             | [`agent/node.test.ts`](../packages/host/tests/agent/node.test.ts)                                                                                        |
+| TS/Rolldown、依赖、共享绑定、source map           | [`scripts.test.ts`](../packages/rolldown/tests/scripts.test.ts)                                                                                          |
+| 可移植入口与 Workers 最小桥                       | [`agent/portability.test.ts`](../packages/host/tests/agent/portability.test.ts)                                                                          |
+| Vite 与交付接收端                                 | [Dev Console](DEV_CONSOLE.md#实现与验证入口)、[Plugin Control](PLUGIN_CONTROL.md#验证入口)                                                               |
 
 真实 Host 验证复用正常 lowering、schema 与 coordinator；独立交付需经过 SDK/CLI → 认证 → 无源码/编译器 Node 应用。
 

@@ -54,27 +54,6 @@ const InteractiveContentWorkbench = workbench.define({
 	}),
 })
 
-const RoutedWorkbench = workbench.define({
-	account: workbench.view<SettingsApi>({
-		renderer,
-		placement: workbench.route('/accounts/:accountId', { title: 'Account' }),
-	}),
-})
-
-const SharedRouteWorkbenchA = workbench.define({
-	settings: workbench.view<SettingsApi>({
-		renderer,
-		placement: workbench.route('/settings', { title: 'Settings A' }),
-	}),
-})
-
-const SharedRouteWorkbenchB = workbench.define({
-	settings: workbench.view<SettingsApi>({
-		renderer,
-		placement: workbench.route('/settings', { title: 'Settings B', frame: 'standalone' }),
-	}),
-})
-
 const ProviderWorkbench = workbench.define({
 	picker: workbench.attachment<CatalogApi, SelectionApi>({ renderer }),
 })
@@ -227,38 +206,6 @@ class LateFactoryPlugin extends BasePlugin {
 				if (!lateFactory) throw new Error('late factory test was not initialized')
 				return lateFactory.promise
 			},
-		})
-	}
-}
-
-let routedParams: Readonly<Record<string, string>> | undefined
-
-@Plugin({ displayName: 'Routed' })
-class RoutedPlugin extends BasePlugin {
-	protected override init() {
-		this.ctx.service(WorkbenchRef)?.publish(RoutedWorkbench, {
-			account: ({ params, signal }) => {
-				routedParams = params
-				return new SettingsTarget(signal)
-			},
-		})
-	}
-}
-
-@Plugin({ displayName: 'Shared route A' })
-class SharedRoutePluginA extends BasePlugin {
-	protected override init() {
-		this.ctx.service(WorkbenchRef)?.publish(SharedRouteWorkbenchA, {
-			settings: ({ signal }) => new SettingsTarget(signal),
-		})
-	}
-}
-
-@Plugin({ displayName: 'Shared route B' })
-class SharedRoutePluginB extends BasePlugin {
-	protected override init() {
-		this.ctx.service(WorkbenchRef)?.publish(SharedRouteWorkbenchB, {
-			settings: ({ signal }) => new SettingsTarget(signal),
 		})
 	}
 }
@@ -601,44 +548,6 @@ describe('Workbench publication', () => {
 		session.dispose()
 	})
 
-	it('keeps layout capability-free and opens one fresh root lazily', async () => {
-		localFactoryCalls = 0
-		disposedTargets.length = 0
-		await using host = await createServiceInternalTestHarness({ workbench: true })
-		host.add(LocalPlugin)
-		host.start(LocalPlugin)
-		await host.commit()
-
-		const backend = host.ctx.service(WorkbenchHost)
-		let invalidated = false
-		const session = backend.createSession(localPrincipal, () => {
-			invalidated = true
-		})
-		const target = LocalPlugin.nodeAddress()
-		const layout = session.target.layoutDto({ target })
-
-		expect(layout.entries).toHaveLength(1)
-		expect(session.target.layoutDto({ target: null }).entries).toEqual(layout.entries)
-		expect(localFactoryCalls).toBe(0)
-		expect(layout.entries[0]).not.toHaveProperty('api')
-
-		const result = await session.target.openEntry({
-			layoutRevision: layout.revision,
-			target,
-			descriptor: layout.entries[0]!.descriptor,
-		})
-		expect(result.ok).toBe(true)
-		expect(localFactoryCalls).toBe(1)
-		if (!result.ok || result.value.kind !== 'local') throw new Error('open failed')
-		const openedTarget = result.value.api as SettingsTarget
-		expect(openedTarget.snapshot()).toEqual({ enabled: true })
-
-		session.dispose()
-		expect(openedTarget.disposed).toBe(true)
-		expect(openedTarget.signal.aborted).toBe(true)
-		expect(invalidated).toBe(false)
-	})
-
 	it('opens ready entries after producer-status-only layout revisions', async () => {
 		localFactoryCalls = 0
 		await using host = await createServiceInternalTestHarness({ workbench: true })
@@ -933,45 +842,6 @@ describe('Workbench publication', () => {
 		}
 	})
 
-	it('disposes a factory target once when it resolves after session close', async () => {
-		disposedTargets.length = 0
-		lateFactory = Promise.withResolvers<SettingsTarget>()
-		lateFactoryStarted = Promise.withResolvers<void>()
-		lateFactorySignal = undefined
-		const host = await createServiceInternalTestHarness({ workbench: true })
-		host.add(LateFactoryPlugin)
-		host.start(LateFactoryPlugin)
-		await host.commit()
-		let resolvedTarget: SettingsTarget | undefined
-
-		try {
-			const backend = host.ctx.service(WorkbenchHost)
-			const session = backend.createSession(localPrincipal, () => {})
-			const target = LateFactoryPlugin.nodeAddress()
-			const layout = session.target.layoutDto({ target })
-			const opening = session.target.openEntry({
-				layoutRevision: layout.revision,
-				target,
-				descriptor: layout.entries[0]!.descriptor,
-			})
-			await lateFactoryStarted.promise
-
-			session.dispose()
-			expect(lateFactorySignal?.aborted).toBe(true)
-			resolvedTarget = new SettingsTarget(lateFactorySignal!)
-			lateFactory.resolve(resolvedTarget)
-			await expect(opening).resolves.toEqual({ ok: false, code: 'target_unavailable' })
-			expect(resolvedTarget.disposed).toBe(true)
-			expect(disposedTargets.filter((candidate) => candidate === resolvedTarget)).toHaveLength(1)
-		} finally {
-			await host.dispose()
-			lateFactory = undefined
-			lateFactoryStarted = undefined
-			lateFactorySignal = undefined
-		}
-		expect(disposedTargets.filter((candidate) => candidate === resolvedTarget)).toHaveLength(1)
-	})
-
 	it('returns factory_timeout before a non-cooperative factory settles', async () => {
 		disposedTargets.length = 0
 		lateFactory = Promise.withResolvers<SettingsTarget>()
@@ -1030,83 +900,6 @@ describe('Workbench publication', () => {
 			lateFactorySignal = undefined
 		}
 		expect(disposedTargets.filter((candidate) => candidate === resolvedTarget)).toHaveLength(1)
-	})
-
-	it('server-rematches parameterized routes and rejects browser params', async () => {
-		routedParams = undefined
-		await using host = await createServiceInternalTestHarness({ workbench: true })
-		host.add(RoutedPlugin)
-		host.start(RoutedPlugin)
-		await host.commit()
-		const backend = host.ctx.service(WorkbenchHost)
-		const session = backend.createSession(localPrincipal, () => {})
-		const target = RoutedPlugin.nodeAddress()
-		const layout = session.target.layoutDto({ target })
-		// Global routing includes parameterized routes that do not enter navigation.
-		expect(session.target.layoutDto({ target: null }).entries).toEqual(layout.entries)
-		const result = await session.target.openEntry({
-			layoutRevision: layout.revision,
-			target,
-			descriptor: layout.entries[0]!.descriptor,
-			location: '/accounts/account%201',
-		})
-		expect(result.ok).toBe(true)
-		expect(routedParams).toEqual({ accountId: 'account 1' })
-		await expect(
-			session.target.openEntry({
-				layoutRevision: layout.revision,
-				target,
-				descriptor: layout.entries[0]!.descriptor,
-				location: '/other/account%201',
-			}),
-		).resolves.toEqual({ ok: false, code: 'target_unavailable' })
-		session.dispose()
-	})
-
-	it('scopes identical route paths to their target Plugin', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: true })
-		host.add([SharedRoutePluginA, SharedRoutePluginB])
-		host.start(SharedRoutePluginA)
-		host.start(SharedRoutePluginB)
-		await host.commit()
-		const backend = host.ctx.service(WorkbenchHost)
-		const session = backend.createSession(localPrincipal, () => {})
-		const layoutA = session.target.layoutDto({ target: SharedRoutePluginA.nodeAddress() })
-		const layoutB = session.target.layoutDto({ target: SharedRoutePluginB.nodeAddress() })
-		expect(layoutA.entries[0]?.placement).toMatchObject({ path: '/settings' })
-		expect(layoutB.entries[0]?.placement).toMatchObject({ path: '/settings' })
-		expect(session.target.layoutDto({ target: null }).entries).toEqual(
-			expect.arrayContaining([...layoutA.entries, ...layoutB.entries]),
-		)
-		session.dispose()
-	})
-
-	it('expires the whole socket epoch and opened root on owner withdrawal', async () => {
-		await using host = await createServiceInternalTestHarness({ workbench: true })
-		host.add(LocalPlugin)
-		host.start(LocalPlugin)
-		await host.commit()
-		const backend = host.ctx.service(WorkbenchHost)
-		let invalidation: Error | undefined
-		const session = backend.createSession(localPrincipal, (cause) => {
-			invalidation = cause
-		})
-		const target = LocalPlugin.nodeAddress()
-		const layout = session.target.layoutDto({ target })
-		const result = await session.target.openEntry({
-			layoutRevision: layout.revision,
-			target,
-			descriptor: layout.entries[0]!.descriptor,
-		})
-		if (!result.ok || result.value.kind !== 'local') throw new Error('open failed')
-		const openedTarget = result.value.api as SettingsTarget
-
-		host.stop(LocalPlugin)
-		await host.commit()
-		expect(openedTarget.signal.aborted).toBe(true)
-		expect(openedTarget.disposed).toBe(true)
-		expect(session.signal.aborted).toBe(true)
-		expect(invalidation?.message).toContain('publication changed')
 	})
 })
 
