@@ -23,6 +23,8 @@ import { usePluginOverview, type PluginStatusEntry } from '../plugins/pluginOver
 import { pluginAttention, type PluginAttention } from '../plugins/pluginOverviewModel'
 import { useRuntimeMeta } from '../product'
 import { useRuntimeUpdates } from '../runtimeUpdates'
+import { HomeApps } from './HomeApps'
+import { HomeLogs } from './HomeLogs'
 
 export function HomeIntro() {
 	const overview = usePluginOverview()
@@ -30,7 +32,11 @@ export function HomeIntro() {
 	const platform = runtimeMeta?.platform
 	const summary = overview.overview?.status.summary
 	const statuses = overview.overview?.status.statuses ?? []
-	const stoppedPlugins = statuses.filter((plugin) => plugin.lifecycleState === 'stopped')
+	// Plugins that are not simply running come first, so the list doubles as a to-do list.
+	const sortedPlugins = [...statuses].sort(
+		(left, right) =>
+			Number(isRunning(left)) - Number(isRunning(right)) || left.label.localeCompare(right.label),
+	)
 	const attention = statuses.flatMap((plugin) => {
 		const reason = pluginAttention(plugin)
 		return reason ? [{ plugin, reason }] : []
@@ -87,11 +93,11 @@ export function HomeIntro() {
 				onRetry={() => void overview.refetch()}
 			/>
 
-			{stoppedPlugins.length > 0 ? (
-				<section aria-labelledby="plx-home-queue-title">
+			<div className="plx-home__columns">
+				<section aria-labelledby="plx-home-queue-title" className="plx-home__plugins">
 					<div className="plx-home__sectionHeader">
 						<Title id="plx-home-queue-title" order={2} className="plx-home__sectionTitle">
-							未运行
+							插件
 						</Title>
 						<Text
 							component={RouterLinkAdapter}
@@ -99,12 +105,16 @@ export function HomeIntro() {
 							size="xs"
 							className="plx-home__allLink"
 						>
-							全部插件
+							管理
 						</Text>
 					</div>
-					<PluginQueue plugins={stoppedPlugins} />
+					{sortedPlugins.length > 0 ? <PluginQueue plugins={sortedPlugins} /> : null}
 				</section>
-			) : null}
+				<div className="plx-home__side">
+					<HomeApps />
+					<HomeLogs />
+				</div>
+			</div>
 		</main>
 	)
 }
@@ -313,22 +323,30 @@ function PluginQueue({
 						data-status={
 							plugin.availability === 'unavailable'
 								? 'unavailable'
-								: plugin.desiredState === 'running'
-									? 'pending'
-									: 'stopped'
+								: plugin.lifecycleState === 'running'
+									? 'running'
+									: plugin.desiredState === 'running'
+										? 'pending'
+										: 'stopped'
 						}
 					/>
 					<span className="plx-home__queueName">{plugin.label}</span>
 					<span className="plx-home__queueStatus">
 						{plugin.availability === 'unavailable'
 							? '不可用'
-							: plugin.desiredState === 'running'
-								? '等待运行'
-								: null}
+							: plugin.lifecycleState === 'running'
+								? null
+								: plugin.desiredState === 'running'
+									? '等待运行'
+									: '已停止'}
 					</span>
 					<IconArrowRight size={14} aria-hidden="true" />
 				</RouterLinkAdapter>
 			))}
 		</div>
 	)
+}
+
+function isRunning(plugin: { availability: string; lifecycleState: string }): boolean {
+	return plugin.availability !== 'unavailable' && plugin.lifecycleState === 'running'
 }

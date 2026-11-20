@@ -27,6 +27,10 @@ vi.mock('../src/app/router/RouterLinkAdapter', () => ({
 	),
 }))
 
+// Live shortcuts and logs need a Workbench session; they are covered by their own surfaces.
+vi.mock('../src/app/home/HomeApps', () => ({ HomeApps: () => null }))
+vi.mock('../src/app/home/HomeLogs', () => ({ HomeLogs: () => null }))
+
 const { HomeIntro } = await import('../src/app/home/HomeIntro')
 
 type Entry = Pick<
