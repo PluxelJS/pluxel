@@ -96,10 +96,54 @@
 }
 
 .plx-workspace__brand {
+	display: flex;
+	align-items: center;
+	gap: 8px;
 	flex: 0 1 auto;
 	max-width: 240px;
 	min-width: 0;
 	padding-inline: 4px 8px;
+}
+/* A monogram instead of bare text: it gives the corner a fixed anchor of the same size as rail icons. */
+.plx-workspace__brand-mark {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 20px;
+	height: 20px;
+	border-radius: var(--mantine-radius-sm);
+	background: var(--mantine-primary-color-filled);
+	color: var(--mantine-color-white);
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1;
+}
+.plx-workspace__brand-name {
+	min-width: 0;
+}
+/* With the unified rail the brand sits on the rail's own grid: its mark lines up with the rail
+   icons and, when labels show, its name lines up with the labels. */
+.plx-workspace--unified-navigation .plx-workspace__toolbar {
+	padding-inline-start: 0;
+	gap: 0;
+}
+.plx-workspace--unified-navigation .plx-workspace__brand {
+	flex: 0 0 52px;
+	justify-content: center;
+	max-width: none;
+	padding-inline: 0;
+}
+.plx-workspace--unified-navigation .plx-workspace__brand[data-mode='labels'] {
+	flex-basis: 156px;
+	justify-content: flex-start;
+	gap: 12px;
+	padding-inline: 16px 8px;
+}
+.plx-workspace--unified-navigation .plx-workspace__brand[data-mode='icons'] .plx-workspace__brand-name {
+	display: none;
+}
+.plx-workspace--unified-navigation .plx-workspace__search-button {
+	margin-inline-start: 6px;
 }
 /* The search entry reads as a command field: muted label, shortcut on the trailing edge.
    It and the brand give way first; the workspace menu button never shrinks. */
@@ -483,7 +527,7 @@
 .plx-activity {
 	display: flex;
 	flex-direction: column;
-	flex: 0 0 48px;
+	flex: 0 0 52px;
 	gap: 8px;
 	padding: 4px 8px 8px;
 	background: var(--plx-canvas);

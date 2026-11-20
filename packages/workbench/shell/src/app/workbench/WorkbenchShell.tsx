@@ -73,6 +73,8 @@ export function WorkbenchShell() {
 	const borders = useWorkbenchState(session.workbench, () =>
 		session.workbench.getContainers().filter((container) => container.kind === 'border'),
 	)
+	const navigationMode = useWorkbenchState(session.workbench, () => session.navigationMode())
+	const brandName = product?.displayName ?? 'Pluxel'
 	const unifiedNavigation =
 		(session.workbench.getContainers().find(({ id }) => id === 'border_left')?.tabIds.length ??
 			0) <= 1
@@ -321,9 +323,14 @@ export function WorkbenchShell() {
 			tabIndex={-1}
 		>
 			<header className="plx-workspace__toolbar">
-				<Text fw={650} size="sm" className="plx-workspace__brand" truncate="end">
-					{product?.displayName ?? 'Pluxel'}
-				</Text>
+				<div className="plx-workspace__brand" data-mode={navigationMode} title={brandName}>
+					<span className="plx-workspace__brand-mark" aria-hidden>
+						{Array.from(brandName)[0]?.toUpperCase()}
+					</span>
+					<Text fw={650} size="sm" className="plx-workspace__brand-name" truncate="end">
+						{brandName}
+					</Text>
+				</div>
 				<Button
 					variant="default"
 					size="compact-sm"
