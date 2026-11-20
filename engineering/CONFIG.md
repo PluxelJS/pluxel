@@ -28,7 +28,8 @@ configs.use(ObjectSchema) / owned PluginPart declarations
 | srvx/Elysia       | `listenElysia()` 保留 TCP/TLS、middleware、plugin 和 error options，Host 拥有 dispatch/关闭；[接线](../docs/host/configuration.md#独立-http-host)                       |
 | Vite/tsdown       | 原生配置文件和插件，Pluxel 增加 lowering/共享身份/制品检查；[Artifact Build](ARTIFACT_BUILD.md)                                                                         |
 | Workers           | 原生 WorkerOptions，Services 拥有固定 entry、message/transfer、stdio、admission 和退出结算；[Node artifacts](../docs/plugin-development/node-artifacts.md#选择安装能力) |
-| Wretch/Redis/S3   | 原生 SDK client，保存设置只承担预算、凭据引用和部署选择；[Wretch](../docs/plugins/wretch.md)、[Redis](../docs/plugins/redis.md)、[Storage](../docs/plugins/storage.md)  |
+| 出站 HTTP         | `coreConfig.http` 提供部署限制和传输，Core 持有已应用策略，插件借用原生 Wretch 或 Fetch。 [出站 HTTP](OUTBOUND_HTTP.md)                                                 |
+| Redis/S3          | 原生 SDK client，保存设置只承担预算、凭据引用和部署选择。 [Redis](../docs/plugins/redis.md) · [Storage](../docs/plugins/storage.md)                                     |
 
 Vault envelope/轮换和渲染预算属于各领域，不复制为 SDK 参数镜像。新增字段应有明确 owner，不以封闭实现白名单代替原生扩展点。
 

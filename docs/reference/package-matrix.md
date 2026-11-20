@@ -26,7 +26,6 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/commands`               | 命令系统声明、参数校验与 Cap'n Web / MCP 协议投影      | [Commands 命令](../plugin-development/commands.md)           |
 | `valibot-form`                   | 基于 Valibot 的表单元数据抽象与 Web 渲染适配器         | [Valibot 配置表单](../workbench/valibot-form.mdx)            |
 | `@pluxel/plugin-auth`            | Workbench 与管理 API 鉴权服务插件                      | [Management 认证](../plugins/auth.md)                        |
-| `@pluxel/plugin-wretch`          | 插件专属的类型安全 HTTP 客户端能力                     | [Wretch HTTP 客户端](../plugins/wretch.md)                   |
 | `@pluxel/plugin-playwright`      | 外部 CDP / Playwright 浏览器自动化连接插件             | [浏览器连接](../plugins/browser.md)                          |
 | `@pluxel/plugin-invoice`         | 电子发票与财政票据图片解析提取插件                     | [发票提取与查验](../plugins/invoice.md)                      |
 | `@pluxel/plugin-fonts`           | 服务端跨平台字体注册与管理插件                         | [服务端字体](../plugins/rendering/fonts.md)                  |

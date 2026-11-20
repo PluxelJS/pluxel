@@ -94,6 +94,8 @@ Plugin address 从 category 解析，structured plugin filter 接收 PluginNodeA
 
 Workbench range/follow 经过页面唯一的已认证 Runtime session；generation-scoped ElysiaApp 是业务 ingress，不拥有日志 store 或管理 principal。长期归档使用 file/OTel sink。RuntimeLogLine 是保留 category、identity、structured message、props、error summary 的 transport/UI 投影。
 
+`pluxel:outbound-http` 是 Core 受管 HTTP 自有的物理流。它使用同一 `RuntimeLogStore` 和 Management range/follow，保留本次宿主运行最近 5,000 条请求记录。这个标识由 Core 保留，应用 sink 可用自己的流标识。 [受管出站 HTTP](OUTBOUND_HTTP.md#管理与观测)
+
 ## 性能验证
 
 guard 不做 caller capture、properties 求值、snapshot、序列化或 IO；单 owner rank lookup 为 O(1)。snapshot/reset/replace/persistence 显式 O(N)。`packages/core/bench/logger.bench.ts` 对比普通与 100,000 overrides hit 的规模趋势。

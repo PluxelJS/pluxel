@@ -6,11 +6,13 @@ import {
 import { ConfigService } from '../services/config/ConfigService'
 import { createEventsBackend } from '../services/events/EventsService'
 import { createCoreLoggingRuntime } from './core-logging'
-import { assertCoreConfigObject, snapshotCoreFacilitiesConfig } from './core-facilities'
+import { snapshotCoreFacilitiesConfig } from './core-facilities'
+import { assertCoreConfigObject } from './core-config-object'
 import { PluginService } from '../plugins/runtime/PluginService'
 import { FsService } from '../fs/service'
 import { VaultRuntime } from '../vault/runtime'
 import { TinyBaseRuntime } from '../tinybase/service'
+import { OutboundHttpRuntime } from '../http/runtime'
 import {
 	freezeCorePluginLifecycleHooks,
 	type CorePluginLifecycleHooks,
@@ -61,6 +63,7 @@ function createCoreRuntime(
 		() => new TinyBaseRuntime(root, filesystem(), inputs.tinybase.maxSnapshotBytes),
 	)
 	const vault = lazy('Vault', () => new VaultRuntime(root, inputs.vault, filesystem))
+	const http = lazy('outbound HTTP', () => new OutboundHttpRuntime(root, inputs.http))
 	const events = lazy('events', () => createEventsBackend(root, inputs.events))
 	const configService = lazy('configuration', () =>
 		config.createConfigService ? config.createConfigService(root) : new ConfigService(root),
@@ -93,6 +96,9 @@ function createCoreRuntime(
 		},
 		get vault() {
 			return vault()
+		},
+		get http() {
+			return http()
 		},
 		get events() {
 			return events()

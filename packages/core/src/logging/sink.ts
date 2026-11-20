@@ -5,7 +5,7 @@ import { readPluginLogIdentity } from '../logger/categories'
 import { captureCaller, formatLogName, isReservedLogProperty } from './host'
 import type { RuntimeLogError, RuntimeLogLine } from './protocol'
 import { toPortableLogValue } from './serialization'
-import { RuntimeLogStoreRegistry } from './store'
+import { assertCustomLogStreamId, type RuntimeLogStoreRegistry } from './store'
 
 type RuntimeLogSinkCaps = {
 	/** Max chars for the derived `msg` (primary list). Defaults to 4000. */
@@ -260,6 +260,7 @@ export function createRuntimeLogSink(
 ): Sink & Disposable & { flush(): void } {
 	const registry = options.registry
 	const streamId = options.streamId ?? 'default'
+	assertCustomLogStreamId(streamId)
 	const minLevel = options.minLevel ?? 'trace'
 	const bufferSize = Math.min(Math.max(1, Math.floor(options.bufferSize ?? 1000)), 50_000)
 	const flushIntervalMs = Math.min(Math.max(0, Math.floor(options.flushIntervalMs ?? 80)), 60_000)

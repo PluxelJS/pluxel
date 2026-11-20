@@ -18,6 +18,7 @@ import {
 	type PolicyResult,
 	type EnsureForkResult,
 	type LoggingHandleApi,
+	type OutboundHttpHandleApi,
 	type PluginAutoStartBatchItem,
 	type PluginConsumerRequirementsInspectionResult,
 	type PluginControlBatchResult,
@@ -52,6 +53,8 @@ import {
 	parseEnsureForkResult,
 	parseLogRangeResult,
 	parseLogStreamMeta,
+	parseOutboundHttpSaveResult,
+	parseOutboundHttpSnapshot,
 	parsePluginConsumerRequirementsInspectionResult,
 	parsePluginControlBatchResult,
 	parsePluginDependencyGraphSnapshot,
@@ -197,6 +200,7 @@ export type RuntimeManagementClient = Readonly<{
 		): Promise<RemoveForkResult>
 	}>
 	logging: Readonly<LoggingHandleApi>
+	outboundHttp: OutboundHttpHandleApi
 	logs: RuntimeLogClient
 	security: RuntimeSecurityClient
 }>
@@ -347,6 +351,14 @@ export function createRuntimeManagementClient(
 				call(
 					(root) => root.resetLogPolicyDto(expectedRevision),
 					parseVersionedPluginLogPolicySnapshot,
+				),
+		}),
+		outboundHttp: Object.freeze({
+			get: (owner) => call((root) => root.getOutboundHttpDto(owner), parseOutboundHttpSnapshot),
+			save: (owner, expectedRevision, settings) =>
+				call(
+					(root) => root.saveOutboundHttpDto(owner, expectedRevision, settings),
+					parseOutboundHttpSaveResult,
 				),
 		}),
 		logs: Object.freeze({

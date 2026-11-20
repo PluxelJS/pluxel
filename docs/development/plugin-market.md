@@ -61,7 +61,7 @@ vp run @pluxel-internal/plugin-market#sandbox:admin catalog --registry "$MARKET_
 vp run @pluxel-internal/plugin-market#sandbox:admin facets
 
 # 读取公开 GitHub 仓库的归属与头像，再按作者和多个分类查目录
-vp run @pluxel-internal/plugin-market#sandbox:admin repository @pluxel/wretch
+vp run @pluxel-internal/plugin-market#sandbox:admin repository @pluxel/fonts
 vp run @pluxel-internal/plugin-market#sandbox:admin catalog '{"authors":["github:123"],"categories":["development","integration"]}'
 ```
 

@@ -14,11 +14,11 @@ catalog 来源、配置层合并与保存策略由 Host 拥有；HTTP、RPC 等�
 
 ## Context service kernel
 
-Core 直接提供固定的 `ctx.logger`、`ctx.effects`、`ctx.events`，Plugin Context 另有 `ctx.fs()`、`ctx.tinybase` 与 `ctx.vault`；配置日志后，根 Context 提供 `root.logging`。这些内建能力由 Core 构造、缓存并管理生命周期，不进入 service 安装集合或服务控制材料。
+Core 直接提供固定的 `ctx.logger`、`ctx.effects`、`ctx.events`。Plugin Context 另有 `ctx.fs()`、`ctx.tinybase`、`ctx.vault`、`ctx.wretch` 和 `ctx.fetch`。配置日志后，根 Context 提供 `root.logging`。这些固定能力由 Core 构造、缓存并管理生命周期。 [出站 HTTP](OUTBOUND_HTTP.md)
 
 Core 的组合入口是 `createCoreContextHost()`：它固定内建能力，并将应用选择的 `services` 交给 Context kernel 编译。Database、HTTP、Workbench 等由应用显式安装，插件通过 `ctx.service()` 声明对它们的依赖。required 声明直接使用普通 class 或 abstract class；`defineServiceRef<T>()` 是指向同一声明的 optional 引用，由源码工具链从具名导入生成。Pluxel 的跨编译身份来自 canonical entry + exportName，standalone kernel 也可直接以声明对象作为进程内 key。没有手写 service ID、property projection 或运行期安装入口。
 
-`CoreFacilitiesConfig` 统一声明 LogTape、ZenFS、TinyBase、Vault 与 events。直接创建 Core 时将这些字段和 `name`、`execution` 一起传入。应用 Host 在处理部署输入前调用 Core 校验并快照 `coreConfig`，编译 Context 时使用该快照。配置捕获保留原生 callback 与借用资源的引用，资源获取由各设施的准备阶段负责。
+`CoreFacilitiesConfig` 统一声明 LogTape、ZenFS、TinyBase、Vault、出站 HTTP 与 events。直接创建 Core 时将这些字段和 `name`、`execution` 一起传入。应用 Host 在处理部署输入前调用 Core 校验并快照 `coreConfig`，编译 Context 时使用该快照。配置捕获保留原生 callback 与借用资源的引用，资源获取由各设施的准备阶段负责。
 
 `ctx.service(Declaration)` 返回 T，未安装抛出 `ContextServiceMissingError`；`ctx.service(ref)` 返回 T | undefined，仅缺失返回 undefined。声明与安装访问权限都要通过校验，access、construction、stale contract 错误不能被可选引用吞掉。
 

@@ -18,6 +18,9 @@ import { usePluginMeta } from './context'
 import { usePluginDetailSearch } from './pluginDetailSearchState'
 import { useWorkspaceSession } from '../../workbench/workspaceContext'
 import { useWorkbenchState } from '@worksplit/react'
+import { RouterLinkAdapter } from '../../router/RouterLinkAdapter'
+import { buildOutboundHttpNodeHref, PLUGIN_OUTBOUND_HTTP_PATH } from '../../outbound-http/paths'
+import { OutboundHttpSettings } from '../../outbound-http/OutboundHttpSettings'
 
 const EMPTY_PARAMS = Object.freeze({})
 
@@ -26,6 +29,8 @@ export function RightPane({ config }: { config: PluginConfigState }) {
 	const { entries, snapshot } = useWorkbenchTabs(owner)
 	const pathname = useCurrentPathname()
 	const restPath = parsePluginDetailHref(pathname)?.path ?? ''
+	const outboundHttp = restPath === PLUGIN_OUTBOUND_HTTP_PATH
+	const isConfig = !restPath || restPath === '/config' || outboundHttp
 	const search = usePluginDetailSearch()
 	const navigation = useWorkbenchNavigation()
 	const session = useWorkspaceSession()
@@ -34,10 +39,7 @@ export function RightPane({ config }: { config: PluginConfigState }) {
 	const selectedEntry = search.entry
 		? entries.find((candidate) => candidate.descriptor.key === search.entry)
 		: undefined
-	useDocumentPlugin(
-		restPath && restPath !== '/config' ? undefined : owner,
-		selectedEntry?.descriptor.key,
-	)
+	useDocumentPlugin(isConfig ? owner : undefined, selectedEntry?.descriptor.key)
 	if (search.entry)
 		return selectedEntry ? (
 			<WorkbenchEntryView
@@ -52,7 +54,7 @@ export function RightPane({ config }: { config: PluginConfigState }) {
 				description={`未找到入口：${search.entry}。请检查插件权限和发布状态。`}
 			/>
 		)
-	if (restPath && restPath !== '/config')
+	if (!isConfig)
 		return (
 			<RouteContent
 				target={owner}
@@ -89,8 +91,32 @@ export function RightPane({ config }: { config: PluginConfigState }) {
 					))}
 				</Group>
 			)}
+			<Group component="nav" gap="xs" aria-label="插件设置">
+				<Button
+					component={RouterLinkAdapter}
+					to={buildPluginDetailHref(owner)}
+					aria-current={outboundHttp ? undefined : 'page'}
+					variant={outboundHttp ? 'subtle' : 'light'}
+					size="compact-sm"
+				>
+					插件配置
+				</Button>
+				<Button
+					component={RouterLinkAdapter}
+					to={buildOutboundHttpNodeHref(owner)}
+					aria-current={outboundHttp ? 'page' : undefined}
+					variant={outboundHttp ? 'light' : 'subtle'}
+					size="compact-sm"
+				>
+					出站 HTTP
+				</Button>
+			</Group>
 			<div className="plx-pluginDocument__panel">
-				<ConfigContent config={config} owner={owner} displayName={pluginLabel} active={active} />
+				{outboundHttp ? (
+					<OutboundHttpSettings owner={owner} />
+				) : (
+					<ConfigContent config={config} owner={owner} displayName={pluginLabel} active={active} />
+				)}
 			</div>
 		</Stack>
 	)

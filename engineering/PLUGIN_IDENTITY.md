@@ -138,12 +138,12 @@ buildPluginNodeLabels/formatPluginNodeStandaloneLabel 是 catalog/日志共用�
 | HostState   | fork family、required token      | auto-start、provider、consumer override         |
 | Logging     | —                                | node policy/category；rootId/bootId/epoch       |
 | Management  | family 分类/排序                 | variants/target；preference revision            |
-| HTTP        | —                                | 最终 route contribution；application generation |
+| 入站 HTTP   | —                                | 最终 route contribution；application generation |
 | Artifact    | declaration/source/build input   | node binding；publication/fingerprint           |
 | Database    | schema/migration                 | node owner；schema/role/instance                |
 | Vault       | —                                | node 默认 namespace；命名 namespace/blob        |
 | Cache/Rates | —                                | caller namespace；key/TTL                       |
-| Wretch      | —                                | consumer settings；provider Store rows          |
+| 出站 HTTP   | —                                | 完整节点设置和活动摘要，客户端绑定运行代        |
 
 同一 definition 的 default/forks 使用一次 HMR plan；artifact cache 不含 forkId，node binding/lease 仍隔离。config 的 node 隔离和保存/通知顺序见 [Config](CONFIG.md#保存与应用)。
 
@@ -163,7 +163,7 @@ Management 分类按 definition family，新 fork 继承，variants 不拆组。
 | Database registry     | node reference                                              | exact reference              |
 | Vault                 | 完整 canonical SHA-256                                      | exact node bytes             |
 | TinyBase snapshot     | pluxel.tinybase / formatVersion 1                           | exact node envelope          |
-| Wretch settings       | consumerSettings row v1，托管 TinyBase                      | exact consumer address       |
+| 出站 HTTP 策略        | Host 文档 v1                                                | 宿主默认与完整节点地址       |
 | Cache/Rates namespace | v3 canonical-byte namespace                                 | exact node bytes             |
 
 格式/路径的具体 producer 和 parser 由各领域维护。保存数据的部署在升级前备份并离线转换。

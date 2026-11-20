@@ -1,4 +1,5 @@
 import { listSecurityEvents, requireVaultHost, resolveContextService } from '@pluxel/core/internal'
+import { requireOutboundHttp } from '@pluxel/core/host'
 import { validateRuntimePortableData } from '../../web/validation'
 
 import { Management } from '../../token'
@@ -12,6 +13,7 @@ import {
 	projectPluginApplyReport,
 	projectHostPolicyResult,
 	createHostPolicy,
+	requirePluginHostCoordinator,
 	requireHostStateStore,
 } from '@pluxel/host/internal'
 import type { HostPolicy, HostPolicyResult, HostPolicyResetTarget } from '@pluxel/host'
@@ -43,10 +45,13 @@ import {
 import {
 	inspectPluginConsumerRequirements,
 	inspectPluginProviderPolicy,
-	PluginNodeUnavailableError,
 	setPluginConsumerOverride as applyPluginConsumerOverride,
 	setPluginProviderPolicyDefault as applyPluginProviderPolicyDefault,
 } from '../../api/usecases/pluginDependencies'
+import {
+	PluginNodeUnavailableError,
+	requireAvailablePluginNode,
+} from '../../api/usecases/pluginNode'
 import { pluginDependencyGraph } from '../../api/usecases/pluginDependencyGraph'
 import { applyLifecycleCommands, setAutoStart } from '../../api/usecases/pluginStatus'
 import { logsFollow, logsIndex, logsMeta, logsRange } from '../../api/usecases/logs'
@@ -73,6 +78,7 @@ import {
 	type RuntimeLogObserver,
 	type RuntimeSubscriptionTarget,
 	type RuntimeManagementTarget,
+	type RuntimeOutboundHttpSaveDto,
 } from '../../web/management-target'
 import {
 	type ConfigResult,
@@ -91,6 +97,7 @@ import {
 	type PluginCatalogSnapshot,
 	type PluginControlBatchResult,
 	type PluginStatusQueryResult,
+	type OutboundHttpSnapshot,
 } from '../../web/protocol'
 import {
 	parseConfigPresentationResult,
@@ -677,6 +684,66 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		return checkedDto(policy.describe())
 	}
 
+	async getOutboundHttpDto(input: unknown): Promise<OutboundHttpSnapshot> {
+		this.signal?.throwIfAborted()
+		const owner = outboundHttpOwner(input)
+		if (owner !== null) {
+			await requirePluginHostCoordinator(this.ctx).readCommitted(
+				(view) => requireAvailablePluginNode(view, owner),
+				this.#admission,
+			)
+		}
+		const snapshot = await requireOutboundHttp(this.ctx.root).snapshot(owner)
+		this.signal?.throwIfAborted()
+		return checkedDto(snapshot)
+	}
+
+	async saveOutboundHttpDto(
+		input: unknown,
+		expectedRevision: unknown,
+		settings: unknown,
+	): Promise<RuntimeOutboundHttpSaveDto> {
+		this.signal?.throwIfAborted()
+		const owner = outboundHttpOwner(input)
+		if (
+			typeof expectedRevision !== 'number' ||
+			!Number.isSafeInteger(expectedRevision) ||
+			expectedRevision < 0
+		) {
+			throw new TypeError('Outbound HTTP revision must be a non-negative safe integer')
+		}
+		validateRuntimePortableData(settings, 'Outbound HTTP settings', true)
+
+		let saved
+		try {
+			saved = await requirePluginHostCoordinator(this.ctx).runExclusive(
+				'outbound-http-save',
+				async (session) => {
+					if (owner !== null) {
+						session.readCommitted((view) => requireAvailablePluginNode(view, owner))
+					}
+					return requireOutboundHttp(this.ctx.root).save(owner, expectedRevision, settings)
+				},
+				this.#admission,
+			)
+		} catch (error) {
+			if (error instanceof Error && 'code' in error && error.code === 'revision_conflict') {
+				return checkedDto({ ok: false, code: 'revision_conflict', error: error.message })
+			}
+			throw error
+		}
+
+		// Retirement can drain active response bodies. Release the Host gate before awaiting it.
+		const cleanupError = await saved.cleanup
+		return checkedDto({
+			ok: true,
+			value: {
+				snapshot: saved.snapshot,
+				...(cleanupError === undefined ? {} : { cleanupError }),
+			},
+		})
+	}
+
 	logStreamsDto(): RuntimeLogStreamsIndex {
 		this.signal?.throwIfAborted()
 		return checkedDto(logsIndex(this.ctx))
@@ -1126,6 +1193,12 @@ function parseRpcNullableNode(
 	if (input === null) return { ok: true, value: null }
 	const value = parseRpcNode(input)
 	return value ? { ok: true, value } : { ok: false }
+}
+
+function outboundHttpOwner(input: unknown): PluginNodeAddress | null {
+	const parsed = parseRpcNullableNode(input)
+	if (!parsed.ok) throw new TypeError('Invalid outbound HTTP Plugin node address')
+	return parsed.value
 }
 
 function parseRpcForkSelection(input: unknown):

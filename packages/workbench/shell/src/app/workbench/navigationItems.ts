@@ -5,8 +5,10 @@ import {
 	IconTerminal2,
 	IconShieldLock,
 	IconHistory,
+	IconWorld,
 	IconTopologyStar3,
 } from '@tabler/icons-react'
+import { OUTBOUND_HTTP_PATH } from '../outbound-http/paths'
 
 export const appsPage = {
 	href: '/apps',
@@ -21,6 +23,12 @@ export const builtinPages = [
 	appsPage,
 	{ href: '/plugins', label: '插件管理', description: '插件运行状态与配置', icon: IconPuzzle },
 	{ href: '/logs', label: '日志', description: '实时日志', icon: IconTerminal2 },
+	{
+		href: OUTBOUND_HTTP_PATH,
+		label: '受管出站 HTTP',
+		description: '请求活动、允许的目标和代理设置',
+		icon: IconWorld,
+	},
 	{ href: '/security', label: '认证与安全', description: '用户、权限与凭据', icon: IconShieldLock },
 	{ href: '/security/audit', label: '安全审计', description: '访问与操作记录', icon: IconHistory },
 	{

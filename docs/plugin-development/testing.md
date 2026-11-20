@@ -67,6 +67,7 @@ it('能够启动插件并调用其方法', async () => {
 ### `createTestHost` 常用选项
 
 - `services`：挂载测试所需的服务列表（默认为 `[]`）。
+- `coreConfig.http.fetch`：替换 `ctx.wretch` 和 `ctx.fetch` 共享的最终传输，保留宿主策略。 [出站请求测试](./outbound-http.md#在测试中替换传输)
 - `workbench`：设为 `true` 时启用 Workbench 测试环境驱动。
 - `policy` / `config`：传入自定义的初始策略或插件初始配置。
 - `vaultBindings`：使用与 Host 相同的部署记录格式，向指定插件注入只读凭据；后端通过 `coreConfig.vault` 选择。

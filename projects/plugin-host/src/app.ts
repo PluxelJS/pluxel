@@ -22,7 +22,6 @@ import { S3, S3Plugin } from '@pluxel/plugin-storage'
 import { TakumiPlugin } from '@pluxel/plugin-takumi'
 import { TakumiMarkdownPlugin } from '@pluxel/plugin-takumi-markdown'
 import { TypstPlugin } from '@pluxel/plugin-typst'
-import { WretchPlugin } from '@pluxel/plugin-wretch'
 import { ReportStudioPlugin } from './showcase/ReportStudio'
 
 export const product = defineProduct({
@@ -87,7 +86,6 @@ export default defineHostApplication(async (startup): Promise<HostApplication> =
 					],
 				},
 			},
-			{ plugin: WretchPlugin, autoStart: true },
 			{ plugin: FontsPlugin, autoStart: true },
 			{ plugin: CanvasPlugin, autoStart: true },
 			{ plugin: EChartsPlugin, autoStart: true },

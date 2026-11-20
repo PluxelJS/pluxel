@@ -208,7 +208,9 @@
 		"better-result": "catalog:prod",
 		"pathe": "catalog:node",
 		"std-env": "catalog:prod",
-		"tinybase": "catalog:prod"
+		"tinybase": "catalog:prod",
+		"undici": "catalog:prod",
+		"wretch": "catalog:prod"
 	},
 	"devDependencies": {
 		"@logtape/file": "catalog:prod",

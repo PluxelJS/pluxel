@@ -101,8 +101,8 @@ node mirror.mjs serve ./catalog.sqlite
 
 ```sh
 # 在本目录执行，本地沙箱会话自动提供地址与管理员凭据
-node examples/admin.ts observe @pluxel/wretch
-node examples/admin.ts package @pluxel/wretch
+node examples/admin.ts observe @pluxel/fonts
+node examples/admin.ts package @pluxel/fonts
 vp exec node examples/admin.ts catalog '{"official":true,"categories":["integration","development"]}'
 node examples/admin.ts notifications '{"status":"failed","limit":20}'
 ```

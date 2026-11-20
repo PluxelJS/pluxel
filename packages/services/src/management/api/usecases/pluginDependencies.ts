@@ -11,7 +11,6 @@ import {
 	HostStatePersistenceError,
 	HostPolicyRevisionConflictError,
 	HostPolicyMutationRejectedError,
-	pluginCatalogEntry,
 	requirePluginHostCoordinator,
 	hostStatePatch,
 	listForkIds,
@@ -25,26 +24,7 @@ import type {
 	PluginProviderOption,
 	PluginProviderPolicyInfo,
 } from '../../web/protocol'
-
-export class PluginNodeUnavailableError extends Error {
-	constructor() {
-		super('Plugin node is unavailable in the committed runtime graph policy')
-		this.name = 'PluginNodeUnavailableError'
-	}
-}
-
-function candidate(view: HostPluginGraphCommittedView, address: PluginNodeAddress) {
-	const entry = pluginCatalogEntry(view.catalog, address.definition)
-	if (!entry) throw new PluginNodeUnavailableError()
-	if (
-		address.variant === 'fork' &&
-		(!entry.candidate.declaration.forkable ||
-			!listForkIds(view.runtimeState.state, address.definition).includes(address.forkId))
-	) {
-		throw new PluginNodeUnavailableError()
-	}
-	return entry.candidate
-}
+import { PluginNodeUnavailableError, requireAvailablePluginNode } from './pluginNode'
 
 function consumerOverride(
 	view: HostPluginGraphCommittedView,
@@ -102,7 +82,7 @@ function projectConsumerRequirements(
 	view: HostPluginGraphCommittedView,
 	consumer: PluginNodeAddress,
 ): PluginConsumerRequirementState[] {
-	const declaration = candidate(view, consumer).declaration
+	const declaration = requireAvailablePluginNode(view, consumer).declaration
 	return declaration.requires.map((requirement) => {
 		const override = consumerOverride(view, consumer, requirement) ?? null
 		const options = providerOptions(view, requirement)
@@ -161,7 +141,7 @@ export async function setPluginProviderPolicyDefault(
 	let token: PluginDefinitionAddress | undefined
 	try {
 		const declaration = await requirePluginHostCoordinator(ctx).readCommitted(
-			(view) => candidate(view, policyOwner).declaration,
+			(view) => requireAvailablePluginNode(view, policyOwner).declaration,
 			options,
 		)
 		token = policyOwner.variant === 'default' ? declaration.provides : undefined
@@ -256,7 +236,7 @@ function projectProviderPolicy(
 	view: HostPluginGraphCommittedView,
 	policyOwner: PluginNodeAddress,
 ): PluginProviderPolicyInfo | null {
-	const declaration = candidate(view, policyOwner).declaration
+	const declaration = requireAvailablePluginNode(view, policyOwner).declaration
 	const token = policyOwner.variant === 'default' ? declaration.provides : undefined
 	if (!token) return null
 	const defaultProvider = configuredProviderDefault(view, token) ?? null

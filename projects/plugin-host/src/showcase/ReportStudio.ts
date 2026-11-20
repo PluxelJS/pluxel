@@ -27,7 +27,6 @@ import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/plugin-taku
 import { TypstPlugin } from '@pluxel/plugin-typst'
 import type { ReportFont, ReportRenderInput } from './report-render.contracts'
 import { SHOWCASE_ENGINES, type ShowcaseRenderRequest } from './ReportStudio.contracts'
-import { WretchPlugin } from '@pluxel/plugin-wretch'
 import {
 	ReportStudioWorkbench,
 	type ReportStudioApi,
@@ -110,7 +109,6 @@ export class ReportStudioPlugin extends BasePlugin {
 	}>
 
 	constructor(
-		private readonly http: WretchPlugin,
 		private readonly otel: Otel,
 		private readonly cacheProvider: Cache,
 		private readonly rates: Rates,
@@ -125,7 +123,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		super()
 	}
 
-	protected override async init(): Promise<void> {
+	protected override init(): void {
 		this.cache = this.cacheProvider.scope('previews', {
 			ttlMs: this.config.cacheTtlMs,
 			maxEntries: 32,
@@ -137,7 +135,6 @@ export class ReportStudioPlugin extends BasePlugin {
 			windowMs: this.config.admission.windowMs,
 		})
 		this.markdownRenderer = this.markdown.createRenderer({ theme: 'dark' })
-		await this.http.enableManagedSettings()
 		const meter = this.otel.meter
 		this.renderCounter = meter.createCounter('showcase.report.generated', { unit: '{report}' })
 		this.renderDuration = meter.createHistogram('showcase.report.duration', { unit: 'ms' })
@@ -222,7 +219,6 @@ export class ReportStudioPlugin extends BasePlugin {
 						})),
 				}),
 			}),
-			httpSettings: { provider: this.http },
 		})
 	}
 
@@ -305,10 +301,11 @@ export class ReportStudioPlugin extends BasePlugin {
 
 	async probeOutbound(): Promise<NonNullable<ShowcaseSnapshot['lastOutbound']>> {
 		try {
-			const response = await this.http.client
+			const response = await this.ctx.wretch
 				.url(this.config.outboundBaseUrl, true)
 				.get(this.config.outboundPath)
 				.res()
+			await response.body?.cancel()
 			this.lastOutbound = Object.freeze({
 				ok: response.ok,
 				status: response.status,

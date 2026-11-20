@@ -17,6 +17,7 @@
 | `src/context/core-facilities.ts`                      | Core 与应用 Host 设施声明的同步校验和快照                                                                                                 |
 | `src/context/plugin-execution.ts`                     | Host 执行默认值、期限校验与节点期限接线                                                                                                   |
 | `src/logging/`                                        | Core 日志安装、policy、store、query 与最终关闭，见 [Logging](../../engineering/LOGGING.md)                                                |
+| `src/http/`                                           | 原生 Wretch 与 Fetch、Host 策略、代理资源和节点活动，见 [出站 HTTP](../../engineering/OUTBOUND_HTTP.md)                                   |
 | `src/toolchain.ts`                                    | 构建生成 metadata 的内部协作入口                                                                                                          |
 
 Core 不拥有 Vite/HMR、HTTP、Host 配置复制或宿主退出策略。内部 helpers 不扩展为 Plugin 作者 API。

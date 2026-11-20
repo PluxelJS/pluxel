@@ -2,6 +2,7 @@ import { pluginNodeIndexKey } from '../plugins/runtime/identity'
 import {
 	compileLogFilter,
 	matchesLogFilterCompiled,
+	OUTBOUND_HTTP_LOG_STREAM_ID,
 	type CompiledLogFilter,
 	type LogFilter,
 	type LogRangeResult,
@@ -590,6 +591,11 @@ const DEFAULTS: RegistryDefaults = {
 	windowLines: 200_000,
 }
 
+export function assertCustomLogStreamId(streamId: string): void {
+	if (streamId === OUTBOUND_HTTP_LOG_STREAM_ID)
+		throw new TypeError(`Log stream ${streamId} is owned by Core`)
+}
+
 export class RuntimeLogStoreRegistry {
 	private readonly stores = new Map<string, RuntimeLogStore>()
 	private readonly maxStores: number
@@ -612,6 +618,7 @@ export class RuntimeLogStoreRegistry {
 	}
 
 	getOrCreate(streamId: string, opts: Partial<RuntimeLogStoreOptions> = {}): RuntimeLogStore {
+		assertCustomLogStreamId(streamId)
 		const existing = this.get(streamId)
 		if (existing) return existing
 		const next = new RuntimeLogStore({

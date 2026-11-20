@@ -16,7 +16,6 @@ import { OtelPlugin } from '@pluxel/plugin-otel'
 import { MemoryRatesBackendPlugin, Rates, RatesBackend, RatesPlugin } from '@pluxel/plugin-rates'
 import { createTestHost } from '@pluxel/test'
 import { S3, S3Plugin } from '@pluxel/plugin-storage'
-import { WretchPlugin } from '@pluxel/plugin-wretch'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ReportStudioWorkbench } from './ReportStudio.workbench'
 import { ReportStudioPlugin } from './ReportStudio'
@@ -39,9 +38,11 @@ describe('ReportStudioPlugin', () => {
 		const compileMath = vi.spyOn(TypstPlugin.prototype, 'renderSvg')
 		const storageRoot = await mkdtemp(join(tmpdir(), 'pluxel-report-studio-'))
 		temporaryRoots.push(storageRoot)
+		const outboundFetch = vi.fn<typeof globalThis.fetch>()
 		await using host = await createTestHost({
 			workbench: true,
 			services: [elysia(), commands(), nodeModules(), workers()],
+			coreConfig: { http: { fetch: outboundFetch } },
 		})
 		await host.commit((change) => {
 			change.catalog.add([
@@ -56,7 +57,6 @@ describe('ReportStudioPlugin', () => {
 				TakumiMarkdownPlugin,
 				TypstPlugin,
 				S3Plugin,
-				WretchPlugin,
 				OtelPlugin,
 			])
 			change.config.seed(S3Plugin.nodeAddress(), {
@@ -227,6 +227,23 @@ describe('ReportStudioPlugin', () => {
 		} finally {
 			unsubscribe()
 		}
+
+		const cancelProbeBody = vi.fn()
+		outboundFetch
+			.mockResolvedValueOnce(
+				new Response(new ReadableStream({ cancel: cancelProbeBody }), { status: 200 }),
+			)
+			.mockResolvedValueOnce(new Response('upstream unavailable', { status: 503 }))
+		await expect(studioView.api.probeOutboundDto()).resolves.toMatchObject({
+			ok: true,
+			status: 200,
+		})
+		expect(cancelProbeBody).toHaveBeenCalledOnce()
+		await expect(studioView.api.probeOutboundDto()).resolves.toMatchObject({
+			ok: false,
+			message: 'upstream unavailable',
+		})
+		expect(outboundFetch).toHaveBeenCalledTimes(2)
 		await expect(studio.generate({ title: '', engine: 'canvas' })).rejects.toThrow(
 			'title must not be empty',
 		)

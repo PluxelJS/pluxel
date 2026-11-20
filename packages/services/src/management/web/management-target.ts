@@ -21,6 +21,9 @@ import {
 	type PolicyResult,
 	type EnsureForkResult,
 	type LoggingHandleApi,
+	type OutboundHttpHandleApi,
+	type OutboundHttpSaveResult,
+	type OutboundHttpSettings,
 	type PluginDependencyGraphSnapshot,
 	type PluginConsumerRequirementsInspectionResult,
 	type PluginDependencyMutationResult,
@@ -60,6 +63,10 @@ export type RuntimeLogFollowInput = Readonly<{
 }>
 
 export type RuntimeLogObserver = (event: unknown) => Promise<void>
+
+export type RuntimeOutboundHttpSaveDto =
+	| Readonly<{ ok: true; value: OutboundHttpSaveResult }>
+	| Readonly<{ ok: false; code: 'revision_conflict'; error: string }>
 
 /** Disposal is the only cancellation operation for a live Management subscription. */
 export interface RuntimeSubscriptionTarget extends RpcTarget {}
@@ -170,6 +177,12 @@ export interface RuntimeManagementTarget extends RpcTarget {
 	setPluginLogLevelDto: LoggingHandleApi['setPluginLevel']
 	clearPluginLogLevelDto: LoggingHandleApi['clearPluginLevel']
 	resetLogPolicyDto: LoggingHandleApi['resetPolicy']
+	getOutboundHttpDto: OutboundHttpHandleApi['get']
+	saveOutboundHttpDto: (
+		owner: PluginNodeAddress | null,
+		expectedRevision: number,
+		settings: OutboundHttpSettings | null,
+	) => Promise<RuntimeOutboundHttpSaveDto>
 	logStreamsDto: () => RuntimeLogStreamsIndex | Promise<RuntimeLogStreamsIndex>
 	logMetaDto: (streamId: unknown) => LogStreamMeta | Promise<LogStreamMeta>
 	logRangeDto: (streamId: unknown, query: unknown) => LogRangeResult | Promise<LogRangeResult>

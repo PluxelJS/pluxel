@@ -84,4 +84,4 @@ Host shared-runtime helper 校验 semver/实际 manifest，Cap’n Web 复用同
 - `internal/storage.ts`、`tinybase/{service,writer}.ts`：owner、publication、flush、撤回/恢复。
 - `tinybase/codec.ts`：快照格式。
 
-Core tests 覆盖原生互操作、fork/reopen、空快照、publication、flush、故障/readonly、晚到恢复、恢复互斥；Host tests 覆盖实际后端跨 Host 恢复与外部文件接纳。production/Rolldown/Services Vite 回归保护精确版本准入和上游绑定，Wretch/Fonts/Management 及独立 tarball/starter smoke 验证真实调用方与发行边界。
+Core tests 覆盖原生互操作、fork/reopen、空快照、publication、flush、故障/readonly、晚到恢复、恢复互斥；Host tests 覆盖实际后端跨 Host 恢复与外部文件接纳。production/Rolldown/Services Vite 回归保护精确版本准入和上游绑定，Fonts/Management 及独立 tarball/starter smoke 验证真实调用方与发行边界。

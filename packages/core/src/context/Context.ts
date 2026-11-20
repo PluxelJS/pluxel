@@ -9,6 +9,8 @@ import type { LogTapeConfig } from '../logging/config'
 import type { PluginNodeInfo } from '../plugins/runtime/PluginDefinitions'
 import type { CoreExecutionConfig } from './plugin-execution'
 import type { EventsService, EventsServiceConfig } from '../services/events/EventsService'
+import type { Wretch } from 'wretch'
+import type { OutboundFetch, OutboundHttpOptions } from '../http/types'
 
 /** Plugin-facing Context. Service installation and construction remain Host-owned. */
 export interface Context extends BaseContext<RootContext> {
@@ -36,6 +38,10 @@ export interface PluginContext extends Context {
 	readonly tinybase: TinyBaseService
 	/** Credentials isolated to the owning Plugin node; storage initializes on the first operation. */
 	readonly vault: VaultStorageApi
+	/** Native Wretch client using this generation's managed outbound Fetch. */
+	readonly wretch: Wretch
+	/** Fetch for absolute HTTP(S) targets, subject to the Host's outbound policy and owner lifetime. */
+	readonly fetch: OutboundFetch
 }
 
 /** Built-in facilities shared by direct Core and application Hosts. */
@@ -49,6 +55,8 @@ export interface CoreFacilitiesConfig {
 	tinybase?: TinyBaseOptions
 	/** Credential backend and explicit deployment identity. Defaults to lazy encrypted storage. */
 	vault?: VaultServiceConfig
+	/** Policy and terminal transport shared by all managed outbound clients in this Host. */
+	http?: OutboundHttpOptions
 }
 
 /** Direct Core configuration. Application Hosts select execution through Host policy. */

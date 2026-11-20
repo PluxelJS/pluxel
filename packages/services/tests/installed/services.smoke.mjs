@@ -126,6 +126,8 @@ const checkInstalledBrowserFs = async (root) => {
 		await context.route('https://installed-fs.test/**', (route) => {
 			const path = new URL(route.request().url()).pathname.slice(1)
 			requests.push(path)
+			if (path === 'outbound.json')
+				return route.fulfill({ contentType: 'application/json', body: '{"browser":true}' })
 			return route.fulfill(
 				path === ''
 					? { contentType: 'text/html', body: '<!doctype html><title>Installed filesystem</title>' }
@@ -140,6 +142,11 @@ const checkInstalledBrowserFs = async (root) => {
 		const load = `import(${JSON.stringify(`/${entry.fileName}`)})`
 		expect(await page.evaluate(`${load}.then((runtime) => runtime.memory())`)).toBe('MEMORY')
 		for (const file of entry.dynamicImports) expect(requests).not.toContain(file)
+		expect(await page.evaluate(load + '.then((runtime) => runtime.outboundHttp())')).toEqual({
+			data: { browser: true },
+			denied: 'origin_denied',
+		})
+		expect(requests.filter((path) => path === 'outbound.json')).toHaveLength(1)
 		expect(await page.evaluate(`${load}.then((runtime) => runtime.persisted())`)).toEqual({
 			content: 'PERSISTED',
 			empty: '',

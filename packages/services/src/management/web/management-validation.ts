@@ -39,6 +39,11 @@ import {
 	type PolicyResult,
 	type ConfigValidationErrors,
 	type EnsureForkResult,
+	type OutboundHttpActivity,
+	type OutboundHttpEffectiveSettings,
+	type OutboundHttpSaveResult,
+	type OutboundHttpSettings,
+	type OutboundHttpSnapshot,
 	type PluginApplyReport,
 	type PluginControlBatchResult,
 	type PluginControlMutationFailure,
@@ -89,6 +94,15 @@ import {
 
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warning', 'error', 'fatal'] as const
 const RUNTIME_LOG_LEVELS = [...LOG_LEVELS, 'off'] as const
+
+export class OutboundHttpRevisionConflictError extends Error {
+	readonly code = 'revision_conflict'
+
+	constructor(message: string) {
+		super(message)
+		this.name = 'OutboundHttpRevisionConflictError'
+	}
+}
 
 /** Validate and deep-freeze the Plugin catalog returned by the management RPC boundary. */
 export function parsePluginCatalogSnapshot(input: unknown): PluginCatalogSnapshot {
@@ -864,6 +878,149 @@ export function parsePluginLogPolicyMutationResult(input: unknown): PluginLogPol
 			['none', 'clean', 'dirty', 'failed'],
 			'logging policy mutation result.persistence',
 		),
+	})
+}
+
+export function parseOutboundHttpSnapshot(input: unknown): OutboundHttpSnapshot {
+	return outboundHttpSnapshot(rootRecord(input, 'outbound HTTP snapshot'))
+}
+
+export function parseOutboundHttpSaveResult(input: unknown): OutboundHttpSaveResult {
+	const label = 'outbound HTTP save result'
+	const envelope = rootRecord(input, label)
+	if (envelope.ok === false) {
+		shape(envelope, ['ok', 'code', 'error'], [], label)
+		literal(envelope.code, ['revision_conflict'], `${label}.code`)
+		throw new OutboundHttpRevisionConflictError(text(envelope.error, `${label}.error`))
+	}
+	shape(envelope, ['ok', 'value'], [], label)
+	if (envelope.ok !== true) fail(`${label}.ok must be true`)
+	const value = object(envelope.value, `${label}.value`)
+	shape(value, ['snapshot'], ['cleanupError'], `${label}.value`)
+	return Object.freeze({
+		snapshot: outboundHttpSnapshot(object(value.snapshot, `${label}.snapshot`)),
+		...(value.cleanupError === undefined
+			? {}
+			: { cleanupError: text(value.cleanupError, `${label}.cleanupError`) }),
+	})
+}
+
+function outboundHttpSnapshot(value: Record<string, unknown>): OutboundHttpSnapshot {
+	const label = 'outbound HTTP snapshot'
+	shape(value, ['revision', 'owner', 'settings', 'effective', 'limits', 'activity'], [], label)
+	const limits = object(value.limits, `${label}.limits`)
+	shape(
+		limits,
+		['timeoutMs', 'maxConcurrentRequests', 'maxQueuedRequests', 'allowProxyChanges'],
+		['allowedOrigins'],
+		`${label}.limits`,
+	)
+	return Object.freeze({
+		revision: nonNegativeInteger(value.revision, `${label}.revision`),
+		owner: nullableNodeAddress(value.owner, `${label}.owner`),
+		settings: outboundHttpSettings(value.settings, `${label}.settings`),
+		effective: outboundHttpEffectiveSettings(value.effective, `${label}.effective`),
+		limits: Object.freeze({
+			...outboundHttpOrigins(limits.allowedOrigins, `${label}.limits.allowedOrigins`),
+			timeoutMs: nonNegativeInteger(limits.timeoutMs, `${label}.limits.timeoutMs`),
+			maxConcurrentRequests: nonNegativeInteger(
+				limits.maxConcurrentRequests,
+				`${label}.limits.maxConcurrentRequests`,
+			),
+			maxQueuedRequests: nonNegativeInteger(
+				limits.maxQueuedRequests,
+				`${label}.limits.maxQueuedRequests`,
+			),
+			allowProxyChanges: boolean(limits.allowProxyChanges, `${label}.limits.allowProxyChanges`),
+		}),
+		activity: Object.freeze(
+			array(value.activity, `${label}.activity`).map((entry, index) =>
+				outboundHttpActivity(entry, `${label}.activity[${index}]`),
+			),
+		),
+	})
+}
+
+function outboundHttpOrigins(
+	input: unknown,
+	label: string,
+): Pick<OutboundHttpSettings, 'allowedOrigins'> {
+	if (input === undefined) return {}
+	return {
+		allowedOrigins: Object.freeze(
+			array(input, label).map((item, index) => text(item, `${label}[${index}]`)),
+		),
+	}
+}
+
+function outboundHttpHeaders(input: unknown, label: string): Readonly<Record<string, string>> {
+	return Object.freeze(
+		Object.fromEntries(
+			Object.entries(object(input, label)).map(([key, value]) => [
+				key,
+				text(value, `${label}.${key}`),
+			]),
+		),
+	)
+}
+
+function outboundHttpSettings(input: unknown, label: string): OutboundHttpSettings {
+	const value = object(input, label)
+	shape(value, [], ['allowedOrigins', 'timeoutMs', 'headers', 'proxyUrl'], label)
+	return Object.freeze({
+		...outboundHttpOrigins(value.allowedOrigins, `${label}.allowedOrigins`),
+		...(value.timeoutMs === undefined
+			? {}
+			: { timeoutMs: nonNegativeInteger(value.timeoutMs, `${label}.timeoutMs`) }),
+		...(value.headers === undefined
+			? {}
+			: { headers: outboundHttpHeaders(value.headers, `${label}.headers`) }),
+		...(value.proxyUrl === undefined
+			? {}
+			: { proxyUrl: value.proxyUrl === null ? null : text(value.proxyUrl, `${label}.proxyUrl`) }),
+	})
+}
+
+function outboundHttpEffectiveSettings(
+	input: unknown,
+	label: string,
+): OutboundHttpEffectiveSettings {
+	const value = object(input, label)
+	shape(value, ['timeoutMs', 'headers', 'proxyUrl'], ['allowedOrigins'], label)
+	return Object.freeze({
+		...outboundHttpOrigins(value.allowedOrigins, `${label}.allowedOrigins`),
+		timeoutMs: nonNegativeInteger(value.timeoutMs, `${label}.timeoutMs`),
+		headers: outboundHttpHeaders(value.headers, `${label}.headers`),
+		proxyUrl: value.proxyUrl === null ? null : text(value.proxyUrl, `${label}.proxyUrl`),
+	})
+}
+
+function outboundHttpActivity(input: unknown, label: string): OutboundHttpActivity {
+	const value = object(input, label)
+	shape(
+		value,
+		['owner', 'lastAttemptAt', 'lastOrigin', 'received', 'failed', 'denied', 'lastOutcome'],
+		['lastStatus', 'lastCode'],
+		label,
+	)
+	return Object.freeze({
+		owner: nodeAddress(value.owner, `${label}.owner`),
+		lastAttemptAt: nonNegativeInteger(value.lastAttemptAt, `${label}.lastAttemptAt`),
+		lastOrigin: text(value.lastOrigin, `${label}.lastOrigin`),
+		received: nonNegativeInteger(value.received, `${label}.received`),
+		failed: nonNegativeInteger(value.failed, `${label}.failed`),
+		denied: nonNegativeInteger(value.denied, `${label}.denied`),
+		lastOutcome: literal(
+			value.lastOutcome,
+			['response', 'failed', 'denied'],
+			`${label}.lastOutcome`,
+		),
+		...(value.lastStatus === undefined
+			? {}
+			: { lastStatus: nonNegativeInteger(value.lastStatus, `${label}.lastStatus`) }),
+		...(value.lastCode === undefined
+			? {}
+			: { lastCode: text(value.lastCode, `${label}.lastCode`) }),
 	})
 }
 

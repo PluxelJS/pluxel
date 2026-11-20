@@ -1,6 +1,9 @@
 import type { LogLevel } from '@logtape/logtape'
 import { pluginNodeAddressEqual, type PluginNodeAddress } from '../plugins/runtime/identity'
 
+/** Built-in managed HTTP request records, available independently of plugin log levels. */
+export const OUTBOUND_HTTP_LOG_STREAM_ID = 'pluxel:outbound-http'
+
 export type LogFilter = {
 	plugin?: PluginNodeAddress
 	context?: string

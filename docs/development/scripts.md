@@ -157,7 +157,9 @@ export default (async (sdk) => {
 }) satisfies Script
 ```
 
-`context()` 捕获当前 running generation，不会启动节点。返回的 Plugin Context 直接提供 `logger`、`effects`、`events`、`fs()`、`tinybase` 和 `vault`，应用安装的服务继续通过 `service` 读取，各项能力保持原生 API。run 关闭或该 generation 被停止、重启、替换后，旧视图与已借用能力失效，重新调用 `context()` 取得新 generation。`sdk.ctx` 允许根访问，节点 Context 允许 owner 访问，两者都保留安装权限。脚本自己创建的订阅、RPC lease 和其他资源仍须按原 API 释放。
+`context()` 捕获当前 running generation，不会启动节点。返回的 Plugin Context 直接提供 `logger`、`effects`、`events`、`fs()`、`tinybase`、`vault`、`wretch` 和 `fetch`，应用安装的服务继续通过 `service` 读取，各项能力保持原生 API。出站请求使用该节点的策略与归属，脚本关闭或节点停止时会收到取消信号。
+
+run 关闭或该 generation 被停止、重启、替换后，旧视图与已借用能力失效，重新调用 `context()` 取得新 generation。`sdk.ctx` 允许根访问，节点 Context 允许 owner 访问，两者都保留安装权限。脚本自己创建的订阅、RPC lease 和其他资源仍须按原 API 释放。 [发起受管出站请求](../plugin-development/outbound-http.md)
 
 ## 向 Node 应用提交
 

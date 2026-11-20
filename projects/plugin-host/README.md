@@ -61,7 +61,7 @@ ReportStudioPlugin
   ├─ TakumiMarkdown -> Typst math + Takumi shared Worker
   ├─ Typst (stateless SVG compilation through the shared Workers service)
   ├─ S3 bucket:drafts + bucket:releases
-  ├─ Wretch (provider-owned HTTP settings Attachment)
+  ├─ ctx.wretch (built-in outbound HTTP)
   └─ Otel (report metrics at /showcase/metrics)
 ```
 
@@ -97,8 +97,8 @@ The same application Plugin also registers:
 - HTTP: `GET /showcase/status`, `POST /showcase/generate/:engine/:title`,
   `GET /showcase/artifacts/:id`;
 - Commands: `showcase.report.generate` with `{ title, engine }`, `showcase.cache.clear`;
-- Workbench: one view with an engine selector, status/artifact panels, observer and Wretch's
-  provider-owned Attachment;
+- Workbench: one view with an engine selector, status/artifact panels and observer. Open **出站 HTTP**
+  in the plugin details to edit its outbound settings. **受管出站 HTTP** in the sidebar shows activity.
 - one object config for admission, preview caching, output prefixes and outbound HTTP.
 
 Inspect the single `S3Plugin` provider's `drafts` and `releases` buckets. Cache and Rates keep their

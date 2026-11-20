@@ -5,7 +5,7 @@ description: 装配宿主管理接口、权限认证与状态快照服务。
 
 `@pluxel/services/management` 提供了宿主底层的管理与自省能力。它是 Workbench 界面与远程控制台的数据源，负责向客户端提供插件状态快照、配置修改与控制指令。
 
-当前管理协议为 `pluxel.management` major 14。客户端先核对 `describe()` 元数据，版本不匹配时结束管理操作。策略按目标报告采用的 mode、来源及遮盖状态。批量自动启动回执携带 `managedRevision`，撤销在该版本下恢复原保存值，原先缺少记录时删除相应键。升级服务端时同步升级 Workbench 与管理客户端。
+当前管理协议为 `pluxel.management` major 15。客户端先核对 `describe()` 元数据，版本不匹配时结束管理操作。策略按目标报告采用的 mode、来源及遮盖状态。批量自动启动回执携带 `managedRevision`，撤销在该版本下恢复原保存值，原先缺少记录时删除相应键。升级服务端时同步升级 Workbench 与管理客户端。
 
 ## 组装管理服务
 
@@ -46,6 +46,10 @@ CLI 凭据从 `--credentials-file` 的 JSON 文件读取：密码模式用 `{ "p
 - 节点的 `issues` 提供稳定的故障码和消息；操作报告保留具体生命周期错误及可用的堆栈信息。
 
 列表保留已经接纳但尚未启动的节点，以及仍被策略引用的不可用节点。单节点查询使用完整 node address，与列表中的对应节点采用同一状态投影。
+
+受管出站 HTTP 的 `management.outboundHttp.get(owner)` 返回保存设置、生效值、部署限制和活动摘要。传 `null` 查询宿主默认值。编辑时通过 `save(owner, expectedRevision, settings)` 提交，设置传 `null` 恢复继承。回执的 `cleanupError` 表示新设置已经生效，并报告被替换资源的清理问题。 [Workbench 操作](../workbench/operations.md#查看受管出站-http)
+
+逐次请求使用 `management.logs` 的 `pluxel:outbound-http` 流。通过 `meta` 取得游标，使用 `range` 读取最近记录或 `follow` 实时接收。`filter.plugin` 接收包含 fork 的完整 `PluginNodeAddress`。
 
 ## 核对操作结果
 

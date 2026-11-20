@@ -530,6 +530,74 @@ it('drains a Vault watch callback before releasing its script subscription', asy
 	expect(listener).toHaveBeenCalledTimes(1)
 })
 
+it('borrows managed Fetch and native Wretch for both the plugin generation and script run', async () => {
+	const callerEntered = Promise.withResolvers<AbortSignal>()
+	const runEntered = Promise.withResolvers<AbortSignal>()
+	const unawaitedEntered = Promise.withResolvers<AbortSignal>()
+	const enteredByPath = new Map([
+		['/caller', callerEntered],
+		['/run', runEntered],
+		['/unawaited', unawaitedEntered],
+	])
+	await using host = await createHost({
+		plugins: [{ plugin: ServiceOwner }],
+		coreConfig: {
+			http: {
+				async fetch(input, init) {
+					const request = new Request(input, init)
+					const entered = enteredByPath.get(new URL(request.url).pathname)
+					if (!entered) return new Response(request.headers.get('x-plugin'))
+					request.signal.throwIfAborted()
+					return await new Promise<Response>((_resolve, reject) => {
+						request.signal.addEventListener('abort', () => reject(request.signal.reason), {
+							once: true,
+						})
+						entered.resolve(request.signal)
+					})
+				},
+			},
+		},
+	})
+	await host.start()
+	await using scope = createScriptScope({ ctx: host.ctx })
+	const plugin = scope.sdk.plugin(ServiceOwner.nodeAddress())
+	await plugin.start()
+	const first = await plugin.context()
+	expect(first.wretch).toBe(first.wretch)
+	expect('wretch' in scope.sdk.ctx).toBe(false)
+	const native = first.wretch.url('https://example.test', true)
+	await expect(native.headers({ 'X-Plugin': 'service' }).get('/test').text()).resolves.toBe(
+		'service',
+	)
+	const staleFetch = first.fetch
+	await plugin.restart()
+	await expect(staleFetch('https://example.test/test')).rejects.toThrow('Plugin owner stopped')
+	await expect(native.get('/test').text()).rejects.toThrow('Plugin owner stopped')
+
+	const context = await plugin.context()
+	const caller = new AbortController()
+	const callerReason = new Error('caller cancelled')
+	const callerResult = context
+		.fetch(new Request('https://example.test/caller', { signal: caller.signal }))
+		.catch((error: unknown) => error)
+	await callerEntered.promise
+	caller.abort(callerReason)
+	expect(await callerResult).toBe(callerReason)
+
+	const client = context.wretch.url('https://example.test', true)
+	const pending = client
+		.get('/run')
+		.text()
+		.catch((error: unknown) => error)
+	void context.fetch('https://example.test/unawaited')
+	const signals = await Promise.all([runEntered.promise, unawaitedEntered.promise])
+	await scope.dispose()
+	expect(await pending).toMatchObject({ name: 'AbortError' })
+	expect(signals.every((signal) => signal.aborted)).toBe(true)
+	await expect(client.get('/test').text()).rejects.toMatchObject({ code: 'scope_closed' })
+	expect(requirePluginService(host.ctx).isRunning(ServiceOwner.nodeAddress())).toBe(true)
+})
+
 it('owns script effects in child scopes and leaves the borrowed root and generation running', async () => {
 	await using host = await createHost({
 		plugins: [

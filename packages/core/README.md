@@ -1,6 +1,6 @@
 # @pluxel/core
 
-Pluxel 的 Plugin 内核，拥有依赖图、Plugin/Part 组成、配置事实、generation 生命周期、effects，以及固定 FS/TinyBase/Vault 能力和所选日志运行时。HTTP、来源发现、Vite 与宿主退出策略由其他层负责。
+Pluxel 的 Plugin 内核，拥有依赖图、Plugin/Part 组成、配置事实、generation 生命周期、effects，以及固定 FS、TinyBase、Vault、受管出站 HTTP 和所选日志运行时。入站 HTTP 由 Services 组合，来源发现和宿主退出策略由 Host 管理，Vite 管开发执行与 HMR。
 
 ## 按任务进入
 
@@ -21,6 +21,7 @@ Pluxel 的 Plugin 内核，拥有依赖图、Plugin/Part 组成、配置事实�
 - `/logging/pretty`：按需使用的 console sink，保留插件身份与 Context 展示；文件输出直接使用 `@logtape/file`。
 - `/fs`、`/fs/browser`：原生文件后端、借用类型与浏览器 IndexedDB 后端。
 - `/vault` 提供内建凭据存储的配置、记录、管理状态类型与 `VaultError`。插件直接使用 `ctx.vault`，应用通过 `coreConfig.vault` 配置后端。
+- 插件直接使用原生 `ctx.wretch` 和受管的 `ctx.fetch`。应用通过 `coreConfig.http` 配置策略和传输。 [出站 HTTP](../../engineering/OUTBOUND_HTTP.md)
 - `/internal/test`：Core 白盒测试；普通 Plugin 测试使用 `@pluxel/test`。
 
 完整导出以 [package.json](package.json) 为准。Plugin facts 必须经过 Pluxel Vite/Rolldown semantic pass；不能用普通 TypeScript runner 或 constructor/class name 猜测依赖图。

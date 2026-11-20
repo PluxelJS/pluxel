@@ -13,6 +13,20 @@ class Owner extends BasePlugin {
 }
 class First extends Owner {}
 class Second extends Owner {}
+let outboundResult
+// oxlint-disable-next-line pluxel/plugin-base-class-requires-plugin-registration -- The installed fixture registers this Plugin explicitly below.
+class OutboundBrowserClient extends BasePlugin {
+	async init() {
+		const data = await this.ctx.wretch.get('https://installed-fs.test/outbound.json').json()
+		let denied
+		try {
+			await this.ctx.fetch('https://blocked.test/')
+		} catch (error) {
+			denied = error.code
+		}
+		outboundResult = { data, denied }
+	}
+}
 const address = (type) => ({
 	definition: {
 		entry: { kind: 'package-root', packageName: 'installed-fs-browser' },
@@ -20,13 +34,27 @@ const address = (type) => ({
 	},
 	variant: 'default',
 })
-for (const type of [First, Second]) {
+for (const type of [First, Second, OutboundBrowserClient]) {
 	Plugin()(type)
 	__setPluginDefinition(type, {
 		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 		kind: 'plugin',
 		definition: address(type).definition,
 	})
+}
+
+export async function outboundHttp() {
+	const host = await createHost({
+		plugins: [{ plugin: OutboundBrowserClient }],
+		coreConfig: { http: { allowedOrigins: ['https://installed-fs.test'] } },
+	})
+	try {
+		await host.startNode(address(OutboundBrowserClient))
+		return outboundResult
+	} finally {
+		await host.close()
+		outboundResult = undefined
+	}
 }
 
 async function startOwners(host) {

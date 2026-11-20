@@ -8,6 +8,7 @@ import { useWorkbenchNavigation } from './context'
 import { useWorkbenchTargetSnapshot } from '../../workbench/runtime'
 import { resolveSidebarShortcut, sidebarShortcutId } from './sidebarShortcuts'
 import { WorkbenchEntryIcon } from './WorkbenchEntryIcon'
+import { OUTBOUND_HTTP_DEFAULTS_PATH, OUTBOUND_HTTP_PATH } from '../outbound-http/paths'
 
 const railPages = [...builtinPages.filter((page) => page !== appsPage), appsPage]
 
@@ -40,7 +41,10 @@ export function ActivityRail({ onShowPlugins }: { onShowPlugins: () => void }) {
 							? workspace === 'plugins' || pathname === `${base}/plugins`
 							: href === '/apps'
 								? (workspace === 'apps' && !shortcutActive) || pathname === `${base}/apps`
-								: pathname === `${base}${href}` || (href === '/' && pathname === base)
+								: pathname === `${base}${href}` ||
+									(href === '/' && pathname === base) ||
+									(href === OUTBOUND_HTTP_PATH &&
+										pathname === `${base}${OUTBOUND_HTTP_DEFAULTS_PATH}`)
 					return (
 						<Fragment key={href}>
 							{href === '/apps' && (

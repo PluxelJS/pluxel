@@ -4,7 +4,7 @@ import { PluginShowcase } from '../components/plugin-showcase'
 
 const patterns = [
 	{
-		code: 'constructor(private readonly http: WretchPlugin) { super() }',
+		code: 'constructor(private readonly fonts: FontsPlugin) { super() }',
 		description: '需要另一个 Plugin 时，直接写构造函数参数。类型就是依赖声明。',
 		href: '/docs/plugin-development/model',
 		icon: Braces,

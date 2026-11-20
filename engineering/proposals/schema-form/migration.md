@@ -19,7 +19,7 @@
 | Content             | `packages/workbench/src/workbench/definition.ts`、Shell `WorkbenchContentSlots.tsx` 与 `presentationAdapter.ts`                                       | 共享模型及 UI，保留发布限制、action 和 display 行为         |
 | Shell bootstrap     | `packages/workbench/shell/src/app/bootstrap.ts`                                                                                                       | 审查并移除无消费者的 schema vendor 全局                     |
 | 文档应用            | `projects/docs/src/components/configuration-{schema,preview,playground}.tsx/ts`、`scripts/generate-playground-types.mjs`、Vite 与依赖声明             | 新 imports、类型资源、预览 renderer 和验证示例同步更新      |
-| 作者与样例          | `plugins/{auth,redis,storage,wretch,otel,package-manager,render}/`、`projects/plugin-host/`                                                           | 默认迁移 Valibot import 路径；选择代表配置增加 TypeBox 样例 |
+| 作者与样例          | `plugins/{auth,redis,storage,otel,package-manager,render}/`、`projects/plugin-host/`                                                                  | 默认迁移 Valibot import 路径；选择代表配置增加 TypeBox 样例 |
 | 仓库治理            | `scripts/check-{repository-governance,source-declarations}.mjs`、`scripts/repository-packages.test.mjs`、依赖锁文件和任务图                           | 新包归类、exports、构建依赖和源码声明规则同步               |
 
 源码搜索至少覆盖 `valibot-form`、`@pluxel/valibot-form`、`valibot-form/web`、旧目录路径、`__PLUXEL_SCHEMA_VENDORS__` 和 presentation DTO 名称。后者与路径类型的变更还需要按 exports 追踪真实调用方。

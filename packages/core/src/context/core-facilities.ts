@@ -6,35 +6,16 @@ import { resolveTinyBaseOptions } from '../tinybase/options'
 import type { TinyBaseOptions } from '../tinybase/types'
 import { snapshotVaultConfig } from '../vault/options'
 import type { VaultServiceConfig } from '../vault/types'
+import { assertCoreConfigObject } from './core-config-object'
+import { snapshotOutboundHttpOptions, type ResolvedOutboundHttpOptions } from '../http/options'
 
-const facilityFields = new Set(['logtape', 'zenfs', 'tinybase', 'vault', 'events'])
+const facilityFields = new Set(['logtape', 'zenfs', 'tinybase', 'vault', 'events', 'http'])
 const eventFields = new Set([
 	'events',
 	'catchPromiseError',
 	'checkSyncFuncReturnPromise',
 	'errorPolicy',
 ])
-
-export function assertCoreConfigObject(
-	input: unknown,
-	label: string,
-	fields?: ReadonlySet<string>,
-): void {
-	if (
-		!input ||
-		typeof input !== 'object' ||
-		Array.isArray(input) ||
-		![Object.prototype, null].includes(Object.getPrototypeOf(input))
-	)
-		throw new TypeError(`${label} must be a plain object`)
-	for (const key of Reflect.ownKeys(input)) {
-		if (typeof key !== 'string' || (fields && !fields.has(key)))
-			throw new TypeError(`${label} includes unsupported ${String(key)}`)
-		const descriptor = Object.getOwnPropertyDescriptor(input, key)!
-		if (!descriptor.enumerable || !('value' in descriptor))
-			throw new TypeError(`${label} must contain only enumerable data fields`)
-	}
-}
 
 function snapshotEvents(config: EventsServiceConfig | undefined): EventsServiceConfig | undefined {
 	if (config === undefined) return undefined
@@ -64,6 +45,7 @@ type ResolvedCoreFacilitiesConfig = Readonly<{
 	zenfs: ResolvedFsConfig
 	tinybase: Required<TinyBaseOptions>
 	vault: Readonly<VaultServiceConfig>
+	http: ResolvedOutboundHttpOptions
 }>
 
 const snapshots = new WeakSet<CoreFacilitiesConfig>()
@@ -80,6 +62,7 @@ export function snapshotCoreFacilitiesConfig(
 		zenfs: snapshotFsConfig(input.zenfs === undefined ? {} : input.zenfs),
 		tinybase: resolveTinyBaseOptions(input.tinybase),
 		vault: snapshotVaultConfig(input.vault),
+		http: snapshotOutboundHttpOptions(input.http),
 	})
 	snapshots.add(snapshot)
 	return snapshot

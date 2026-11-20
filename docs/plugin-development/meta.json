@@ -6,6 +6,7 @@
 		"model",
 		"events",
 		"logging",
+		"outbound-http",
 		"lifecycle",
 		"configuration",
 		"parts",

@@ -13,6 +13,7 @@ import type { TinyBaseRuntime } from '../tinybase/service'
 import type { VaultRuntime } from '../vault/runtime'
 import type { RuntimeLogging } from '../logging/logging'
 import { pluginNodePhysicalKey } from '../internal/plugin-address'
+import type { OutboundHttpRuntime } from '../http/runtime'
 
 /** Fixed Core facilities. They never participate in the application's service registry. */
 export interface CoreRuntime {
@@ -21,6 +22,7 @@ export interface CoreRuntime {
 	readonly fs: FsService
 	readonly tinybase: TinyBaseRuntime
 	readonly vault: VaultRuntime
+	readonly http: OutboundHttpRuntime
 	readonly events: ReturnType<typeof createEventsBackend>
 	readonly logging: RuntimeLogging | undefined
 }
@@ -92,6 +94,16 @@ const pluginProperties: PropertyDescriptorMap = {
 	tinybase: {
 		get(this: Context) {
 			return requireCoreRuntime(this).tinybase.forOwner(stateOf(this).scope)
+		},
+	},
+	wretch: {
+		get(this: Context) {
+			return requireCoreRuntime(this).http.wretchFor(stateOf(this).scope)
+		},
+	},
+	fetch: {
+		get(this: Context) {
+			return requireCoreRuntime(this).http.fetchFor(stateOf(this).scope)
 		},
 	},
 }

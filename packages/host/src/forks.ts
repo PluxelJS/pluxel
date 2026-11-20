@@ -1,5 +1,6 @@
 import { removeHostNodeMetadata } from './services'
 import { clearLoggingPolicy } from '@pluxel/core/logging/internal'
+import { clearOutboundHttpNode } from '@pluxel/core/host'
 import { HostPolicyRevisionConflictError, HostPolicyMutationRejectedError } from './state-store'
 import { HostStateMutationRejectedError } from './mutation'
 import { hostStatePatch } from './state'
@@ -24,7 +25,7 @@ import type { HostConfigStore } from './config-store'
 
 class ForkMetadataPersistenceError extends Error {
 	constructor(
-		public readonly backend: 'config' | 'services' | 'logging',
+		public readonly backend: 'config' | 'services' | 'logging' | 'outbound-http',
 		cause: unknown,
 	) {
 		super(`[host:fork] failed to persist ${backend} metadata cleanup`, { cause })
@@ -187,6 +188,11 @@ export async function removeFork(
 					} catch (error) {
 						throw new ForkMetadataPersistenceError('logging', error)
 					}
+				}
+				try {
+					await clearOutboundHttpNode(ctx.root, node)
+				} catch (error) {
+					throw new ForkMetadataPersistenceError('outbound-http', error)
 				}
 				phase = 'remove'
 				const finalReport = await session.update({

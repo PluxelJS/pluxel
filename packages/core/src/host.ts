@@ -29,6 +29,30 @@ import {
 	type OwnerViewServiceInstallation,
 } from '@pluxel/context'
 import type { Context, RootContext } from './context/Context'
+import type { PluginNodeAddress } from './plugins/runtime/identity'
+import { requireCoreRuntime } from './context/core-context'
+import type { OutboundHttpRuntime } from './http/runtime'
+
+export type {
+	OutboundHttpActivity,
+	OutboundHttpEffectiveSettings,
+	OutboundHttpLimits,
+	OutboundHttpOptions,
+	OutboundHttpSaveResult,
+	OutboundHttpSettings,
+	OutboundHttpSnapshot,
+} from './http/types'
+
+/** Borrow the root-owned management operations for this Host. */
+export function requireOutboundHttp(root: RootContext): OutboundHttpRuntime['management'] {
+	if (root !== root.root) throw new TypeError('[core.http] management requires a root Context')
+	return requireCoreRuntime(root).http.management
+}
+
+/** Called under the Host metadata mutation gate when a node is removed. */
+export function clearOutboundHttpNode(root: RootContext, owner: PluginNodeAddress): Promise<void> {
+	return requireCoreRuntime(root).http.clearNode(owner)
+}
 
 // These factories execute only in a Core Context; the fixed-plan implementation belongs to the kernel.
 export const installRootService = installKernelRootService as <T>(

@@ -4,7 +4,6 @@ packages:
   '@pluxel/core': minor
   '@pluxel/services': patch
   '@pluxel/plugin-fonts': patch
-  '@pluxel/plugin-wretch': patch
   '@pluxel/plugin-auth': patch
 ---
 
@@ -33,5 +32,5 @@ does not pad renderer containers.
 The packaged Shell handler now emits imported chunks' stylesheets before the entry's own, so
 Shell styles override Mantine's base rules as intended.
 
-Built-in renderers in `@pluxel/services`, `@pluxel/plugin-fonts`, `@pluxel/plugin-wretch` and
-`@pluxel/plugin-auth` use the new Provider.
+Built-in renderers in `@pluxel/services`, `@pluxel/plugin-fonts` and `@pluxel/plugin-auth` use the
+new Provider.

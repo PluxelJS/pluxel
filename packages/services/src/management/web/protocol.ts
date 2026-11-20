@@ -8,6 +8,13 @@ import {
 	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
+import type {
+	OutboundHttpActivity,
+	OutboundHttpEffectiveSettings,
+	OutboundHttpSaveResult,
+	OutboundHttpSettings,
+	OutboundHttpSnapshot,
+} from '@pluxel/core/host'
 import { type HostApplicationMeta } from '../product-contract'
 import { type PluxelPlatformSnapshot } from '../platform'
 import {
@@ -22,8 +29,15 @@ export type {
 	PluginUpdateLifecycleIssue,
 } from '@pluxel/host/internal/protocol'
 export type { VaultKeyPair } from '@pluxel/core/vault'
+export type {
+	OutboundHttpActivity,
+	OutboundHttpEffectiveSettings,
+	OutboundHttpSaveResult,
+	OutboundHttpSettings,
+	OutboundHttpSnapshot,
+}
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 14 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 15 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',
@@ -35,6 +49,7 @@ export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugins.dependencies',
 	'plugins.forks',
 	'logging',
+	'outbound-http',
 	'security',
 	'vault',
 ] as const)
@@ -756,3 +771,14 @@ export type LoggingHandleApi = {
 	) => Promise<PluginLogPolicyMutationResult>
 	resetPolicy: (expectedRevision: number) => Promise<VersionedPluginLogPolicySnapshot>
 }
+
+export type OutboundHttpHandleApi = Readonly<{
+	/** Read the Host defaults when owner is null, or the saved and effective policy for a node. */
+	get(owner: PluginNodeAddress | null): Promise<OutboundHttpSnapshot>
+	/** Replace the scope's saved policy at the expected revision. Null restores inheritance. */
+	save(
+		owner: PluginNodeAddress | null,
+		expectedRevision: number,
+		settings: OutboundHttpSettings | null,
+	): Promise<OutboundHttpSaveResult>
+}>

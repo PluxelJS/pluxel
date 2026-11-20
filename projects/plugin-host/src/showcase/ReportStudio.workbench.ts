@@ -1,7 +1,6 @@
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 import { workbench } from '@pluxel/workbench'
-import { WretchWorkbench } from '@pluxel/plugin-wretch/workbench'
 import type { ReportStudioApi } from './ReportStudio.contracts'
 
 export type {
@@ -55,11 +54,4 @@ export const ReportStudioWorkbench = workbench.define({
 			order: 1,
 		}),
 	}),
-	httpSettings: WretchWorkbench.settings.place(
-		workbench.tab({
-			label: 'Outbound HTTP',
-			icon: workbench.icons.Settings,
-			order: 20,
-		}),
-	),
 })

@@ -5,7 +5,7 @@ description: 使用官方服务预设快速搭建生产服务，或按需挑选�
 
 宿主（Host）除了托管插件的依赖图之外，还可以为插件提供统一的外部基础设施服务，如 HTTP、指令和 Workbench 管理面板。
 
-Core 的 Context 直接提供 `ctx.logger`、`ctx.effects` 和 `ctx.events`。Plugin Context 另有 `ctx.fs()`、`ctx.tinybase` 与 `ctx.vault`，配置日志后的根 Context 另有 `root.logging`。应用通过 `coreConfig.zenfs` 选择文件后端，通过 `coreConfig.vault` 配置凭据后端，通过 `coreConfig.logtape` 配置日志。
+Core 的 Context 直接提供 `ctx.logger`、`ctx.effects` 和 `ctx.events`。Plugin Context 另有 `ctx.fs()`、`ctx.tinybase`、`ctx.vault`、`ctx.wretch` 和 `ctx.fetch`，配置日志后的根 Context 另有 `root.logging`。应用通过 `coreConfig.zenfs` 选择文件后端，通过 `coreConfig.vault` 配置凭据后端，通过 `coreConfig.logtape` 配置日志。出站策略通过 `coreConfig.http` 声明。 [受管出站 HTTP](../plugin-development/outbound-http.md)
 
 你可以直接使用官方推荐的 `servicesPreset()` 开箱组合，也可以根据特定需求按需挑选服务甚至编写自定义服务。
 

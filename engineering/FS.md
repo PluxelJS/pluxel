@@ -33,7 +33,7 @@ Backend/config 创建的 FileSystem 一返回即登记为 Core 所有，含 nest
 | Vault          | `services/vault`                  | envelope、身份、KV/blob、锁    |
 | Plugin         | `plugins/<physicalKey>`           | 业务格式、并发、发布顺序       |
 
-physicalKey 为 canonical node bytes 的完整 SHA-256，包含 fork，排除 generation/displayName/version/安装路径。Node/浏览器共用摘要算法。目录缓存不保留 Context。停止、HMR、fork 删除保留数据，FS 不解释领域 revision 或预算。Wretch consumer 设置和 Fonts 偏好使用 [TinyBase](TINYBASE.md)。
+physicalKey 为 canonical node bytes 的完整 SHA-256，包含 fork，排除 generation/displayName/version/安装路径。Node/浏览器共用摘要算法。目录缓存不保留 Context。停止、HMR、fork 删除保留数据，FS 不解释领域 revision 或预算。Fonts 偏好使用 TinyBase。 [TinyBase](TINYBASE.md)
 
 ## Host 文档与关闭
 
@@ -41,7 +41,7 @@ physicalKey 为 canonical node bytes 的完整 SHA-256，包含 fork，排除 ge
 
 Core 定义 `HostDocumentStorage`，Host 原名 re-export：getText、put、stat 和可选 subscribe。put 等待完整原子提交；仅真正缺失返回 undefined，坏内容保留原文件。普通文档单文件预算为 UTF-8 8 MiB，TinyBase snapshot 自有预算。原子写失败可能已发生提交，领域 owner 决定后续发布/恢复。
 
-内建 Vault 通过 requireFs 按需使用自身目录，Logging/Management 借用普通文档。Host 与 Services 先排空各自操作；Core 在关闭文件系统前完成 Vault 的观察释放与 flush、日志和 TinyBase writers 的结算，最后关闭 FS 文档和 backend。首次 subscribe 才观察已访问 key，新 key 加入同一订阅，最后一次取消停止观察；普通 read 不启动观察。关闭等待在途观察和全部已接纳读写，构造/prepare 失败也走同一清理路径。
+内建 Vault 通过 requireFs 按需使用自身目录，Logging、Management 与受管出站 HTTP 借用普通文档。Host 与 Services 先排空各自操作；Core 在关闭文件系统前完成 Vault 的观察释放与 flush、日志和 TinyBase writers 的结算，最后关闭 FS 文档和 backend。首次 subscribe 才观察已访问 key，新 key 加入同一订阅，最后一次取消停止观察；普通 read 不启动观察。关闭等待在途观察和全部已接纳读写，构造/prepare 失败也走同一清理路径。
 
 caller 等待自己的文件操作，并释放 FileHandle、watcher、任务；原生 promises API 没有 generation Proxy，关闭后不能继续使用借用对象。
 

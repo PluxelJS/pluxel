@@ -426,17 +426,56 @@ export function createScriptScope(
 				},
 			})
 		} else if (owner.pluginInfo) {
+			const plugin = owner as unknown as PluginContext
+			let wretch: PluginContext['wretch'] | undefined
+			const fetch: PluginContext['fetch'] = (input, init) => {
+				let task: Promise<Response>
+				try {
+					assertContextOpen(owner)
+					const callerSignal =
+						init?.signal === undefined && input instanceof Request ? input.signal : init?.signal
+					const requestSignal = callerSignal
+						? AbortSignal.any([controller.signal, callerSignal])
+						: controller.signal
+					task = plugin.fetch(input, { ...init, signal: requestSignal })
+				} catch (error) {
+					return Promise.reject(error)
+				}
+				activeCalls++
+				track(
+					task
+						.finally(() => {
+							activeCalls--
+						})
+						.catch((error: unknown) => {
+							if (!controller.signal.aborted || error !== controller.signal.reason) throw error
+						}),
+				)
+				return task
+			}
 			Object.defineProperties(view, {
+				fetch: {
+					get: () => {
+						assertContextOpen(owner)
+						return fetch
+					},
+				},
+				wretch: {
+					get: () => {
+						assertContextOpen(owner)
+						return (wretch ??= plugin.wretch.fetchPolyfill(fetch))
+					},
+				},
 				fs: {
 					get: () => {
 						assertContextOpen(owner)
-						return borrow(owner, (owner as unknown as PluginContext).fs)
+						return borrow(owner, plugin.fs)
 					},
 				},
 				vault: {
 					get: () => {
 						assertContextOpen(owner)
-						return (vault ??= createBorrowedVaultView((owner as unknown as PluginContext).vault, {
+						return (vault ??= createBorrowedVaultView(plugin.vault, {
 							borrow: (value) => borrow(owner, value),
 							defer: (cleanup) => scriptEffects().defer(cleanup, { tag: 'VaultWatch' }),
 						}))
@@ -445,7 +484,7 @@ export function createScriptScope(
 				tinybase: {
 					get: () => {
 						assertContextOpen(owner)
-						return borrow(owner, (owner as unknown as PluginContext).tinybase)
+						return borrow(owner, plugin.tinybase)
 					},
 				},
 			})

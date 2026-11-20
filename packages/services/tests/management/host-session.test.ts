@@ -19,7 +19,10 @@ import { RuntimeManagementTargetImpl } from '../../src/management/services/manag
 import { managementAccess, AdminAccess } from '../../src/management/access'
 import { management, createHostManagementTarget } from '../../src/management/service'
 import { createManagementEndpoint } from '../../src/management/index'
-import { createRuntimeManagementClient } from '../../src/management/client'
+import {
+	createRuntimeManagementClient,
+	OutboundHttpRevisionConflictError,
+} from '../../src/management/client'
 import { type RuntimeSessionRoot } from '../../src/management/web/session/protocol'
 
 // Crossws forwards the third argument to ws on Node, although its declaration only exposes WebSocket.
@@ -100,9 +103,25 @@ it('serves a real authenticated socket for a Core Host and leaves it alive when 
 		expect(boot.kind).toBe('management')
 		if (boot.kind !== 'management') throw new Error('Expected authenticated management')
 		const client = createRuntimeManagementClient(boot.management)
-		expect(await client.describe()).toMatchObject({ workbench: { enabled: false } })
+		expect(await client.describe()).toMatchObject({
+			protocol: { capabilities: expect.arrayContaining(['outbound-http']) },
+			workbench: { enabled: false },
+		})
 		expect(await client.catalog.snapshot()).toMatchObject({ summary: { total: 1, running: 0 } })
 		const address = ManagedWorker.nodeAddress()
+		const outbound = await client.outboundHttp.get(address)
+		const saved = await client.outboundHttp.save(address, outbound.revision, { timeoutMs: 1_200 })
+		expect(saved.snapshot).toMatchObject({
+			owner: address,
+			settings: { timeoutMs: 1_200 },
+			effective: { timeoutMs: 1_200 },
+		})
+		await expect(client.outboundHttp.save(address, outbound.revision, null)).rejects.toBeInstanceOf(
+			OutboundHttpRevisionConflictError,
+		)
+		expect(await client.outboundHttp.save(address, saved.snapshot.revision, null)).toMatchObject({
+			snapshot: { settings: {}, effective: { timeoutMs: outbound.effective.timeoutMs } },
+		})
 		const started = await client.plugins.applyLifecycleCommands([{ address, command: 'start' }])
 		expect(started.ok).toBe(true)
 		expect(await host.status()).toMatchObject({ statuses: [{ lifecycleState: 'running' }] })

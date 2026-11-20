@@ -7,6 +7,8 @@ description: 在插件中集成 Elysia 2 路由、Webhook 与 WebSocket，实现
 
 Host 须安装 `elysia()`；`servicesPreset()` 包含它，见 [Host 服务组合](../host/services.md)。
 
+插件向外部服务发起请求时使用内建的 `ctx.wretch` 或 `ctx.fetch`。 [受管出站 HTTP](./outbound-http.md)
+
 ## 最小路由
 
 在插件中挂载 HTTP 接口的典型示例：

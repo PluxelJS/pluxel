@@ -20,6 +20,7 @@ description: 使用 defineHostApplication 统一组装插件、挂载服务、�
 | [文件系统后端](#选择文件后端)                       | 挂载纯内存、本地磁盘或浏览器存储后端                    |
 | [配置与策略持久化](#保存配置和运行策略)             | 配置的 `declared-first`、`saved-first` 模式与热应用机制 |
 | [凭据后端](#部署凭据与-vault-绑定)                  | 配置内建 Vault 的加密后端或只读部署绑定                 |
+| [受管出站 HTTP](#受管出站-http)                     | 共享请求预算、代理及按节点收紧的访问范围                |
 | [日志系统配置](#host-logging)                       | 接入 LogTape 控制台与远程传输 Sink                      |
 | [数据库服务装配](#选择-native-postgresql-或-pglite) | 切换本地嵌入式 PGlite 与生产 PostgreSQL 数据库          |
 | [独立轻量 Host](#独立-http-host)                    | 纯脚本或轻量进程中快速创建 Host                         |
@@ -106,14 +107,14 @@ export default defineHostApplication(async (startup) => {
 
 ### 核心属性说明
 
-| 字段                            | 职责                                                        |
-| ------------------------------- | ----------------------------------------------------------- |
-| `plugins`                       | 固定构造器及其默认节点和 fork 声明                          |
-| `sources`                       | 发现并接纳动态实现                                          |
-| `pluginNodes`                   | 通过定义地址预置动态节点的配置与策略                        |
-| `coreConfig`                    | Core 的 `logtape`、`zenfs`、`tinybase`、`vault` 与 `events` |
-| `services`                      | 额外服务，由官方预设或单项安装器提供                        |
-| `inputMode`、`config`、`policy` | 输入优先级、文档接线与应用级运行策略                        |
+| 字段                            | 职责                                                                |
+| ------------------------------- | ------------------------------------------------------------------- |
+| `plugins`                       | 固定构造器及其默认节点和 fork 声明                                  |
+| `sources`                       | 发现并接纳动态实现                                                  |
+| `pluginNodes`                   | 通过定义地址预置动态节点的配置与策略                                |
+| `coreConfig`                    | Core 的 `logtape`、`zenfs`、`tinybase`、`vault`、`http` 与 `events` |
+| `services`                      | 额外服务，由官方预设或单项安装器提供                                |
+| `inputMode`、`config`、`policy` | 输入优先级、文档接线与应用级运行策略                                |
 
 `name` 命名应用及根实例。`prepare` 在节点启动前执行，`acceptStartup` 判定启动结果，`launch` 在结果获接受后发布应用。
 
@@ -289,6 +290,43 @@ Host 相对应用根目录读 JSON 文件，从 `startup.env` 取显式映射的
 敏感凭证由 Core 内建的 `ctx.vault` 访问，Host 通过 `coreConfig.vault` 选择后端。默认加密后端借用 `coreConfig.zenfs` 的文件系统，首次数据操作按需初始化新库；只使用 `envBindings` / `fileBindings` 提供的只读记录时，可设置 `coreConfig.vault: { backend: 'bindings' }`，不打开加密存储或生成密钥。
 
 应用工厂通过 `deployIdentity: startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY` 显式传入部署私钥。能力存在不表示存储已经解锁或记录存在，具体状态由操作报告。绑定 Schema、命名空间、读写和错误处理见 [Vault 凭据指南](../plugin-development/vault.md)。
+
+---
+
+## 受管出站 HTTP
+
+`coreConfig.http` 配置内建的出站传输，作用于插件通过 `ctx.wretch` 和 `ctx.fetch` 发起的请求。下面的宿主将访问限制到一个 HTTP origin，并调低每次尝试的超时和并发上限。 [插件调用](../plugin-development/outbound-http.md)
+
+```ts twoslash
+import { defineHostApplication } from '@pluxel/host'
+
+export default defineHostApplication(() => ({
+	coreConfig: {
+		http: {
+			allowedOrigins: ['https://api.example.com'],
+			timeoutMs: 15_000,
+			maxConcurrentRequests: 32,
+			maxQueuedRequests: 128,
+		},
+	},
+}))
+```
+
+默认每个宿主共享 64 个并发尝试和 256 个排队位置，每次已接纳的尝试有 30 秒等待响应头的预算。超时值 `0` 关闭部署层计时。origin 以规范化的 HTTP(S) scheme、host 和 port 匹配。省略 `allowedOrigins` 允许任意 HTTP(S) origin，空列表拒绝全部受管请求。保存的宿主规则和节点规则在部署范围内继续收紧。
+
+启用 origin 限制时，字符串或 URL 请求默认使用 `redirect: 'error'`，显式 `follow` 会在发送前被拒绝。调用方可用 `manual` 取得运行时原生响应，并通过同一入口请求获得的下一跳。已有 `Request` 的有效重定向模式由 `init.redirect` 或 `Request.redirect` 决定。
+
+管理设置在已配置的 Host 文档存储中持久化，Workbench 读取同一套设置与活动摘要。应用使用内存存储时，记录随宿主结束释放。 [受管出站管理](../workbench/operations.md#查看受管出站-http)
+
+Node Host 可用 `proxyUrl` 设置无凭据的 HTTP(S) 代理 origin，或者用 `null` 清除受管代理并使用 Host 的默认传输。默认允许管理侧调整代理，`allowProxyChanges: false` 将代理选择固定在部署配置。Browser Host 使用平台 Fetch。
+
+通过 `headers` 声明 `User-Agent`、`Accept` 等非敏感默认头。节点默认值优先于宿主保存值及部署值，插件在每个请求中显式提供的头优先。认证和 Cookie 由插件提供，连接、长度等传输头由 Fetch 管理。
+
+### 从 Wretch 插件迁移
+
+将原 Wretch 节点的 `allowedOrigins`、`timeoutMs`、`maxConcurrentRequests` 和 `maxQueuedRequests` 移至 `coreConfig.http`。原有 `allowedOrigins: []` 表示不限地址，迁移时省略该字段。调用方直接使用 `ctx.wretch`，并移除原来的 Wretch 节点和构造参数。迁移时核对与请求同名的已保存默认头。迁移后的请求显式值优先于保存值。
+
+旧 provider Store 的 `consumerSettings` 表有记录时，在停机期间读取各行的 `owner` 和 `settings` JSON 字符串。按完整节点地址核对对应关系和冲突，再把每个值作为 `{ owner, settings }` 放入新文档的 `nodes` 数组，保留 fork 标识。新文档位于 Core FS 的 `services/host/outbound-http/policy.json`，首次创建使用 `version: 1`、`revision: 1` 及 `defaults: {}`。已有文档时合并到现有 `nodes` 并递增 `revision`。保存后通过 Workbench 核对实际采用的设置。 [受管出站设置与活动](../workbench/operations.md#查看受管出站-http)
 
 ---
 

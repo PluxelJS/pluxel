@@ -16,6 +16,8 @@ export type {
 	TinyBaseStatus,
 } from './tinybase/types'
 export type { HostDocumentStorage } from './storage/documents'
+export { OutboundHttpError, type OutboundHttpErrorCode } from './http/admission'
+export type { OutboundFetch, OutboundHttpOptions } from './http/types'
 
 export {
 	ContextServiceMissingError,
