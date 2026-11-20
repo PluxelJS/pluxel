@@ -360,7 +360,7 @@ try {
 
 	await selectText('本季度营收增长，已核对中文合同与回款。', true)
 	await page.keyboard.insertText('见 @fig:rev')
-	await page.getByRole('listbox', { name: '引用图、表或公式' }).waitFor()
+	await page.getByRole('listbox', { name: '引用章节、图、表或公式' }).waitFor()
 	await page.getByRole('option').filter({ hasText: 'fig:revenue' }).first().click()
 	await current()
 	files = await sourceFiles()

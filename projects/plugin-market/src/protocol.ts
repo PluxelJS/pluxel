@@ -7,12 +7,28 @@ export type PackageIdentity = { registry: string; name: string }
 export type Coordinate = PackageIdentity & { version: string }
 
 export type MarketMetadata = { official: boolean; category: string | null; tags: string[] }
-export type PackageQuery = {
+
+export type MarketAuthor = {
+	id: string
+	name: string
+	kind: 'github' | 'market'
+	avatarUrl: string | null
+}
+
+export type MarketCuration = MarketMetadata & {
+	author?: Pick<MarketAuthor, 'id' | 'name'> | null
+}
+
+export type CatalogFilters = {
 	query?: string
-	registry?: string
+	registries?: string[]
 	official?: boolean
-	category?: string
-	tag?: string
+	categories?: string[]
+	tags?: string[]
+	authors?: string[]
+}
+
+export type PackageQuery = CatalogFilters & {
 	cursor?: string
 	limit?: number
 }
@@ -40,11 +56,22 @@ export type PackageSummary = {
 	repository: string | null
 	repositoryStars: number | null
 	repositoryObservedAt: number | null
+	author: MarketAuthor | null
 	indexedVersions: number
 	observedAt: number
 } & MarketMetadata
 
 export type PackagePage = { packages: PackageSummary[]; nextCursor: string | null }
+
+type FacetValue = { value: string; count: number }
+
+export type CatalogFacets = {
+	total: number
+	registries: FacetValue[]
+	categories: FacetValue[]
+	tags: FacetValue[]
+	authors: (MarketAuthor & { count: number })[]
+}
 
 export type Receipt = Coordinate & {
 	id: string
@@ -142,6 +169,14 @@ export function registryBase(value: string): string {
 
 export function taxonomySlug(value: unknown): value is string {
 	return typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,31}$/.test(value)
+}
+
+export function marketAuthorId(value: unknown): value is string {
+	return typeof value === 'string' && value.startsWith('market:') && taxonomySlug(value.slice(7))
+}
+
+export function catalogAuthorId(value: string): boolean {
+	return marketAuthorId(value) || /^github:[1-9]\d{0,15}$/.test(value)
 }
 
 export function pageLimit(value: unknown = 20): number {

@@ -18,6 +18,8 @@ it('builds the current project through the CLI bin and preserves its input optio
 			version: '1.0.0',
 			type: 'module',
 			exports: { '.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' } },
+			peerDependencies: { '@pluxel/core': '*', '@pluxel/host': '*' },
+			peerDependenciesMeta: { '@pluxel/host': { optional: true } },
 		}),
 		'tsconfig.json': JSON.stringify({
 			compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler' },
@@ -49,7 +51,7 @@ export const inputOverride = __FIXTURE_INPUT__
 	})
 	const packages = resolve(fixture.path, 'node_modules/@pluxel')
 	await mkdir(packages, { recursive: true })
-	for (const name of ['rolldown', 'core']) {
+	for (const name of ['rolldown', 'core', 'host']) {
 		await symlink(
 			dirname(toolchainRequire.resolve(`@pluxel/${name}/package.json`)),
 			resolve(packages, name),

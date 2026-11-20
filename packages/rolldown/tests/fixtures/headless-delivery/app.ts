@@ -1,18 +1,17 @@
 import { join } from 'node:path'
-import { defineHostApplication } from '@pluxel/host'
+import { defineHostApplication, type HostApplicationFactory } from '@pluxel/host'
 import { elysia } from '@pluxel/services/elysia'
 import { listenElysia } from '@pluxel/services/elysia/node'
 import { prepareDatabase } from './database.js'
 import { PdfHttpPlugin, QueryHttpPlugin } from './plugins.js'
 
-export default defineHostApplication((startup) => ({
+export default defineHostApplication<HostApplicationFactory>((startup) => ({
 	name: 'headless-documents',
-	plugins: [QueryHttpPlugin, PdfHttpPlugin],
+	plugins: [
+		{ plugin: QueryHttpPlugin, autoStart: true, config: { fail: startup.env.FAIL_QUERY === '1' } },
+		{ plugin: PdfHttpPlugin, autoStart: true },
+	],
 	services: [elysia()],
-	policy: { autoStart: [QueryHttpPlugin, PdfHttpPlugin] },
-	config: {
-		records: [{ owner: QueryHttpPlugin, config: { fail: startup.env.FAIL_QUERY === '1' } }],
-	},
 	async prepare({ host }) {
 		const directory = startup.env.DATA_DIRECTORY
 		if (!directory) throw new Error('DATA_DIRECTORY is required')

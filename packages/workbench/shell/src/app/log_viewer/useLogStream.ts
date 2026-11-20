@@ -28,11 +28,13 @@ export function useLogStream({
 	filter,
 	capacity,
 	historyLimit,
+	enabled = true,
 }: {
 	streamId: string
 	filter: LogFilter
 	capacity: number
 	historyLimit: number
+	enabled?: boolean
 }): LogStreamState {
 	if (
 		!Number.isSafeInteger(capacity) ||
@@ -67,6 +69,7 @@ export function useLogStream({
 	const retry = useCallback(() => setAttempt((value) => value + 1), [])
 
 	useEffect(() => {
+		if (!enabled) return
 		let disposed = false
 		let subscription: Disposable | undefined
 		let frame: number | undefined
@@ -134,16 +137,21 @@ export function useLogStream({
 			pending.clear()
 			store.clear()
 		}
-		const read = async (meta: LogStreamMeta, start: string, stop: bigint, limit: number) => {
+		const read = async (
+			meta: LogStreamMeta,
+			start: string | undefined,
+			stop: bigint,
+			limit: number,
+		) => {
 			const generation = epochGeneration
 			const result = createLogStreamStore(Math.max(1, limit))
-			let cursor = BigInt(start)
-			while (!disposed && cursor <= stop) {
+			let cursor = start === undefined ? undefined : BigInt(start)
+			while (!disposed && (cursor === undefined || cursor <= stop)) {
 				const page = await management.logs
 					.range(streamId, {
 						epoch: meta.epoch,
-						fromSeq: String(cursor),
-						limit: PAGE_LIMIT,
+						...(cursor === undefined ? {} : { fromSeq: String(cursor) }),
+						limit: cursor === undefined ? limit : PAGE_LIMIT,
 						filter: activeFilter,
 					})
 					.catch((error: unknown) => {
@@ -154,8 +162,9 @@ export function useLogStream({
 					return []
 				if (!page.ok) throw new Error(page.message ?? `日志读取失败：${page.code}`)
 				if (page.epoch !== meta.epoch) throw new Error('日志读取期间 epoch 已变化，请重试')
+				if (cursor === undefined && page.lines.length === 0) break
 				const next = BigInt(page.nextSeq)
-				if (next <= cursor) throw new Error('日志分页游标未前进，请重试')
+				if (next <= (cursor ?? BigInt(page.fromSeq))) throw new Error('日志分页游标未前进，请重试')
 				result.append(page.lines.filter((line) => BigInt(line.seq) <= stop))
 				cursor = next
 			}
@@ -170,9 +179,10 @@ export function useLogStream({
 			})
 			if (disposed || generation !== epochGeneration || meta === null) return
 			acceptMeta(meta)
-			const lines = historyLimit
-				? await read(meta, meta.headSeq, BigInt(meta.tailSeq), historyLimit)
-				: []
+			const lines =
+				historyLimit && meta.count > 0
+					? await read(meta, undefined, BigInt(meta.tailSeq), historyLimit)
+					: []
 			if (!disposed && version === clearVersion) append(lines)
 		}
 		const handle = async (event: RuntimeLogEvent) => {
@@ -271,6 +281,6 @@ export function useLogStream({
 			queue.length = 0
 			release()
 		}
-	}, [management, streamId, activeFilter, capacity, historyLimit, attempt, store])
+	}, [management, streamId, activeFilter, capacity, historyLimit, enabled, attempt, store])
 	return { store, ...state, clear, retry }
 }

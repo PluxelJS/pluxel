@@ -1,5 +1,6 @@
+import type { Workbench } from '@pluxel/workbench'
 import { assertWorkbenchDto } from '@pluxel/workbench/server'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import {
 	FontConsumerWorkbench,
@@ -16,10 +17,11 @@ import {
 	type FontSet,
 } from './PluginContributionFontDemo.shared'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 @Plugin()
 export class PluginContributionFontManager extends BasePlugin {
 	override init(): void {
-		this.ctx.workbench?.publish(FontManagerWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(FontManagerWorkbench, {
 			selection: () => new FontCatalogTarget(),
 		})
 	}
@@ -37,7 +39,7 @@ export class PluginContributionFontConsumer extends BasePlugin {
 	override init(): void {
 		const configured = readFontRef(this.config.fontSetRef)
 		this.fontSetRef = configured ? toFontRef(configured) : null
-		this.ctx.workbench?.publish(FontConsumerWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(FontConsumerWorkbench, {
 			appearanceFont: {
 				provider: this.fontManager,
 				consumer: () => new FontSelectionTarget(this),

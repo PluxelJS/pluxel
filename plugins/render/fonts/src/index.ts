@@ -1,7 +1,14 @@
+import type { Workbench } from '@pluxel/workbench'
 import { open } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { GlobalFonts, type FontKey } from '@napi-rs/canvas'
-import { type Context, BasePlugin, Plugin, type TinyBaseService } from '@pluxel/core'
+import {
+	type Context,
+	BasePlugin,
+	Plugin,
+	type TinyBaseService,
+	defineServiceRef,
+} from '@pluxel/core'
 
 import { writeFileAtomic, type FsPromises } from '@pluxel/core/fs'
 import { type Store } from 'tinybase'
@@ -29,6 +36,7 @@ import {
 	type ManagedFontSnapshot,
 } from './workbench-contracts.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 const DEFAULT_FAMILY_VALUE = 'defaultFamily'
 const MANAGED_ID = /^[A-Za-z0-9_-]{43}$/
 const MAX_FILE_NAME_LENGTH = 255
@@ -331,7 +339,7 @@ export class FontsPlugin extends BasePlugin {
 			this.registerBytes(this.ctx, data, id, undefined, false)
 		}
 		this.managed = await this.initializeManagedFonts(storage)
-		this.ctx.workbench?.publish(FontsWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(FontsWorkbench, {
 			manager: () => this.createWorkbenchManager(),
 			selection: () => this.createSelectionTarget(),
 		})

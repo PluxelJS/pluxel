@@ -61,7 +61,7 @@ const pnpmLock = await readFile(resolve(root, 'pnpm-lock.yaml'), 'utf8')
 for (const [tool, requiredMajor] of [
 	['node', 24],
 	['pnpm', 11],
-	['viteplus', 1],
+	['"github:voidzero-dev/vite-plus"', 1],
 	['hk', 2],
 	['pitchfork', 2],
 ]) {
@@ -121,7 +121,9 @@ if (
 		'React and ReactDOM must pin the same exact stable version for the precompiled Workbench MF shared contract; ranges can install a version different from the published assets',
 	)
 }
-const vitePlusVersion = /^viteplus\s*=\s*["']([^"']+)["']/m.exec(miseConfig)?.[1]
+const vitePlusVersion = /^"github:voidzero-dev\/vite-plus"\s*=\s*["']([^"']+)["']/m.exec(
+	miseConfig,
+)?.[1]
 if (
 	workspace.catalogs?.build?.['vite-plus'] !== vitePlusVersion ||
 	workspace.peerDependencyRules?.allowedVersions?.vite !== vitePlusVersion ||
@@ -129,7 +131,7 @@ if (
 	workspace.overrides?.['vite@*'] !== `npm:@voidzero-dev/vite-plus-core@${vitePlusVersion}`
 ) {
 	errors.push(
-		'mise viteplus, the vite-plus catalog, Vite Core aliases and peer allowance must pin the same version',
+		'mise Vite+, the vite-plus catalog, Vite Core aliases and peer allowance must pin the same version',
 	)
 }
 const workspacePatterns = new Set(workspace.packages)
@@ -236,19 +238,21 @@ for (const [id, draft] of releaseDraft.getPackageDrafts()) {
 if (plannedVersions.size > 1)
 	errors.push(`Tegami must plan one public version, got ${[...plannedVersions].join(', ')}`)
 
-for (const { manifest } of packagesRequiringInitialMajor(publicPackages)) {
-	if (
-		!releaseDraft
-			.getChangelogs()
-			.some((entry) =>
-				[manifest.name, `npm:${manifest.name}`, 'group:pluxel'].some(
-					(name) => entry.packages.get(name)?.type === 'major',
-				),
+if (plannedPackages.length > 0) {
+	for (const { manifest } of packagesRequiringInitialMajor(publicPackages)) {
+		if (
+			!releaseDraft
+				.getChangelogs()
+				.some((entry) =>
+					[manifest.name, `npm:${manifest.name}`, 'group:pluxel'].some(
+						(name) => entry.packages.get(name)?.type === 'major',
+					),
+				)
+		) {
+			errors.push(
+				`${manifest.name} must have its own major Tegami intent before its initial stable release`,
 			)
-	) {
-		errors.push(
-			`${manifest.name} must have its own major Tegami intent before its initial stable release`,
-		)
+		}
 	}
 }
 

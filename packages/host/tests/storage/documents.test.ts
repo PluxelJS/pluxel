@@ -1,0 +1,305 @@
+import { type RootContext } from '@pluxel/core'
+import { installRootService } from '@pluxel/core/host'
+import { requireConfigService } from '@pluxel/core/internal'
+import { describe, expect, it } from 'vitest'
+import { createHost, defineHostService, type HostDocumentStorage } from '../../src/index'
+import { createDocumentStorage } from '../support/document-storage'
+import { assertResolvedHostStoreStorage } from '../../src/document-storage'
+
+export abstract class Documents {
+	static readonly access = 'root'
+	abstract readonly config: HostDocumentStorage
+	abstract readonly state: HostDocumentStorage
+}
+
+function documentService(events: string[]) {
+	let closed = false
+	const tracked = () => {
+		const memory = createDocumentStorage()
+		return {
+			...memory,
+			async getText(key: string) {
+				if (closed) throw new Error('Document backend is closed')
+				events.push(`read ${key}`)
+				return memory.getText(key)
+			},
+			async put(key: string, value: string) {
+				if (closed) throw new Error('Document backend is closed')
+				await memory.put(key, value)
+				events.push(`committed ${key}`)
+			},
+		}
+	}
+	const config = tracked()
+	const state = tracked()
+	const service = defineHostService({
+		name: 'host-test.documents',
+		provides: [
+			installRootService(Documents, {
+				create(root) {
+					events.push('constructed')
+					root.effects.defer(
+						() => {
+							closed = true
+							events.push('closed')
+						},
+						{ phase: 'final' },
+					)
+					return { config, state }
+				},
+			}),
+		],
+		prepare() {
+			events.push('prepared')
+		},
+	})
+	return { service, config, state }
+}
+
+describe('Host root document factories', () => {
+	it('rejects malformed resolved storage rather than inventing a document adapter', () => {
+		expect(() => assertResolvedHostStoreStorage({ readOnly: 'yes' } as never)).toThrow('readOnly')
+		expect(() => assertResolvedHostStoreStorage({ storage: {} } as never)).toThrow(
+			'requires getText',
+		)
+	})
+
+	it.each([
+		{ name: 'a storage object', options: { storage: createDocumentStorage() } },
+		{ name: 'an unknown storage mode', options: { mode: 'unsupported' } },
+		{
+			name: 'a persistent factory in memory mode',
+			options: { storage: () => createDocumentStorage(), mode: 'memory' },
+		},
+	])('rejects $name before service acquisition', async ({ options }) => {
+		const events: string[] = []
+		const { service } = documentService(events)
+		await expect(
+			createHost({
+				plugins: [],
+				services: [service],
+				policy: {
+					document: options as never,
+				},
+			}),
+		).rejects.toBeInstanceOf(TypeError)
+		expect(events).toEqual([])
+	})
+
+	it('resolves both factories once before document IO and flushes runtime work before root final', async () => {
+		const events: string[] = []
+		const roots: RootContext[] = []
+		const { service, config, state } = documentService(events)
+		const flushingService = defineHostService({
+			...service,
+			prepare({ effects }) {
+				events.push('prepared')
+				effects.defer(async () => {
+					await config.put('service-document.json', 'last config write')
+					await state.put('service-document.json', 'last service write')
+					events.push('runtime settled')
+				})
+			},
+		})
+		const host = await createHost({
+			plugins: [],
+			services: [flushingService],
+			policy: {
+				document: {
+					storage(root) {
+						roots.push(root)
+						events.push('state factory')
+						return root.service(Documents).state
+					},
+				},
+			},
+			config: {
+				document: {
+					storage(root) {
+						roots.push(root)
+						events.push('config factory')
+						return root.service(Documents).config
+					},
+				},
+			},
+		})
+		try {
+			expect(roots).toEqual([host.ctx, host.ctx])
+			expect(events.slice(0, 3)).toEqual(['config factory', 'constructed', 'state factory'])
+			expect(events.indexOf('prepared')).toBeGreaterThan(events.indexOf('read config.json'))
+			expect(events.indexOf('prepared')).toBeGreaterThan(events.indexOf('read state.json'))
+			await host.start()
+			await host.status()
+			expect(events.filter((event) => event.endsWith('factory'))).toHaveLength(2)
+		} finally {
+			await host.close()
+		}
+		expect(config.documents.has('config.json')).toBe(false)
+		expect(config.documents.get('service-document.json')).toBe('last config write')
+		expect(state.documents.has('state.json')).toBe(false)
+		expect(state.documents.get('service-document.json')).toBe('last service write')
+		expect(events.slice(-2)).toEqual(['runtime settled', 'closed'])
+	})
+
+	it.each([
+		{ name: 'an absent namespace', result: (): undefined => undefined },
+		{ name: 'null', result: (): null => null },
+		{ name: 'an async namespace', result: () => Promise.resolve(createDocumentStorage()) },
+		{ name: 'an incomplete namespace', result: () => ({ getText() {}, put() {} }) },
+	])(
+		'rejects $name before either store starts IO and still releases root resources',
+		async ({ result }) => {
+			const events: string[] = []
+			const { service } = documentService(events)
+			await expect(
+				createHost({
+					plugins: [],
+					services: [service],
+					policy: {
+						document: { storage: result as never },
+					},
+					config: {
+						document: { storage: (root) => root.service(Documents).config },
+					},
+				}),
+			).rejects.toBeInstanceOf(TypeError)
+			expect(events).toEqual(['constructed', 'closed'])
+		},
+	)
+
+	it('cleans resources acquired by a throwing factory and retains its original failure', async () => {
+		const events: string[] = []
+		const failure = new Error('Document binding failed')
+		const { service } = documentService(events)
+		await expect(
+			createHost({
+				plugins: [],
+				services: [service],
+				config: {
+					document: {
+						storage(root) {
+							root.service(Documents)
+							throw failure
+						},
+					},
+				},
+			}),
+		).rejects.toBe(failure)
+		expect(events).toEqual(['constructed', 'closed'])
+	})
+
+	it.each(['read', 'service prepare'] as const)(
+		'releases root resources after a failed %s',
+		async (stage) => {
+			const events: string[] = []
+			const failure = new Error(`${stage} failed`)
+			const { service, config } = documentService(events)
+			if (stage === 'read')
+				config.getText = async () => {
+					throw failure
+				}
+
+			const hostService = {
+				...service,
+				prepare() {
+					if (stage === 'service prepare') throw failure
+				},
+			}
+			await expect(
+				createHost({
+					plugins: [],
+					services: [hostService],
+					config: {
+						document: { storage: (root) => root.service(Documents).config },
+					},
+				}),
+			).rejects.toBe(failure)
+			expect(events.at(-1)).toBe('closed')
+		},
+	)
+
+	it('waits for a store already loading when the other store constructor fails', async () => {
+		const events: string[] = []
+		const entered = Promise.withResolvers<void>()
+		const release = Promise.withResolvers<void>()
+		const { service, state, config } = documentService(events)
+		const failure = new Error('config read rejected')
+		config.getText = async () => {
+			throw failure
+		}
+		state.getText = async () => {
+			entered.resolve()
+			await release.promise
+			events.push('state read settled')
+			return undefined
+		}
+		const creation = createHost({
+			plugins: [],
+			services: [service],
+			policy: {
+				document: { storage: (root) => root.service(Documents).state },
+			},
+			config: {
+				document: { storage: (root) => root.service(Documents).config },
+			},
+		})
+		const observed = creation.catch((error: unknown) => error)
+		await entered.promise
+		release.resolve()
+		expect(await observed).toBe(failure)
+		expect(events.indexOf('closed')).toBeGreaterThan(events.indexOf('state read settled'))
+	})
+
+	it('retains the preparation cause and runs final cleanup after another cleanup fails', async () => {
+		const events: string[] = []
+		const failure = new Error('Document read failed')
+		const cleanupFailure = new Error('Runtime cleanup failed')
+		const { service, config } = documentService(events)
+		config.getText = async () => {
+			throw failure
+		}
+		await expect(
+			createHost({
+				plugins: [],
+				services: [service],
+				config: {
+					document: {
+						storage(root) {
+							root.effects.defer(() => {
+								throw cleanupFailure
+							})
+							return root.service(Documents).config
+						},
+					},
+				},
+			}),
+		).rejects.toMatchObject({
+			cause: failure,
+			errors: [failure, expect.objectContaining({ errors: [cleanupFailure] })],
+		})
+		expect(events.at(-1)).toBe('closed')
+	})
+
+	it('rejects access to Host config while document factories are being resolved', async () => {
+		const events: string[] = []
+		const { service } = documentService(events)
+		await expect(
+			createHost({
+				plugins: [],
+				services: [service],
+				policy: {
+					document: {
+						storage(root) {
+							requireConfigService(root)
+							return root.service(Documents).state
+						},
+					},
+				},
+				config: {
+					document: { storage: (root) => root.service(Documents).config },
+				},
+			}),
+		).rejects.toThrow('document storage factories must not read Host config')
+		expect(events).toEqual(['constructed', 'closed'])
+	})
+})

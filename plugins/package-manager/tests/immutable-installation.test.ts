@@ -251,7 +251,7 @@ export const resource = () => import('node:fs/promises').then(fs => fs.readFile(
 			})
 			await writeFile(
 				resolve(root, 'app.mjs'),
-				`import {defineHostApplication} from '@pluxel/host'; import {pluginSource} from '@pluxel/host/sources'; import {standardServices} from '@pluxel/services'; import {value} from './fixed.mjs'; import {PackageManagerPlugin} from '@pluxel/plugin-package-manager'; export default defineHostApplication(() => ({plugins: [PackageManagerPlugin], config:{records:[{owner:${JSON.stringify(node('@pluxel/plugin-package-manager', 'PackageManagerPlugin'))},config:{rootDir:${JSON.stringify(rootDir)},minimumReleaseAgeMinutes:0}}]}, policy:{autoStart:${JSON.stringify([node('fixture-a', 'A'), node('fixture-b', 'B'), node('@pluxel/plugin-package-manager', 'PackageManagerPlugin')])}}, sources: [pluginSource({kind:'directory',path:'./managed/entries',include:['*.mjs']})], services:standardServices(), prepare({host,startup}) { startup.bindings.capture(host, value) }}))`,
+				`import {defineHostApplication} from '@pluxel/host'; import { elysia } from '@pluxel/services/elysia'; import { commands } from '@pluxel/services/commands'; import { nodeModules } from '@pluxel/services/node'; import { workers } from '@pluxel/services/workers'; import {value} from './fixed.mjs'; import {PackageManagerPlugin} from '@pluxel/plugin-package-manager'; export default defineHostApplication(() => ({plugins: [{plugin:PackageManagerPlugin,autoStart:true,config:{rootDir:${JSON.stringify(rootDir)},minimumReleaseAgeMinutes:0}}], pluginNodes:${JSON.stringify([node('fixture-a', 'A'), node('fixture-b', 'B')].map(({ definition }) => ({ definition, autoStart: true })))}, sources: [{directory:'./managed/entries',include:['*.mjs']}], services:[elysia(), commands(), nodeModules(), workers()], prepare({host,startup}) { startup.bindings.capture(host, value) }}))`,
 			)
 			await writeFile(
 				resolve(root, 'vite.config.mjs'),
@@ -416,6 +416,6 @@ function compiledPlugin(name: string, version: string, dependsOnP: boolean): str
  version='${version}';
  late(){ return late() }
  resource(){ return resource() }
- ${name === 'fixture-p' ? '' : `${dependsOnP ? 'constructor(provider){super();this.provider=provider};' : ''} plain=plain; async init(){ this.workerValue=await this.ctx.require(Workers).run(task,null); this.ctx.require(ElysiaApp).use(websocket()).get('/${exportName.toLowerCase()}',()=>this.version).ws('/${exportName.toLowerCase()}/socket',{open:socket=>socket.send(this.version)}) }`}
+ ${name === 'fixture-p' ? '' : `${dependsOnP ? 'constructor(provider){super();this.provider=provider};' : ''} plain=plain; async init(){ this.workerValue=await this.ctx.service(Workers).run(task,null); this.ctx.service(ElysiaApp).use(websocket()).get('/${exportName.toLowerCase()}',()=>this.version).ws('/${exportName.toLowerCase()}/socket',{open:socket=>socket.send(this.version)}) }`}
  }; Plugin()(${exportName}); __setPluginDefinition(${exportName},{abiVersion:2,kind:'plugin',definition:${JSON.stringify(definition)},constructorRequires:${JSON.stringify(dependsOnP ? [provider] : [])}}); export {${exportName}};`
 }

@@ -82,8 +82,7 @@ try {
 	assert.equal(current(a).workerValue, '1.0.0')
 	assert.equal(current(b).workerValue, '1.0.0')
 	const consumption = await requirePluginSource(globalThis.__productionHost.ctx, {
-		kind: 'directory',
-		path: `${root}/managed/entries`,
+		directory: `${root}/managed/entries`,
 		include: ['*.mjs'],
 	})
 	assert.equal(consumption.updates, 'live')
@@ -255,8 +254,8 @@ try {
 					`${root}/app.mjs`,
 					"import {workbenchService} from '@pluxel/workbench/service'; import {workbenchHttp} from '@pluxel/workbench/http';\n" +
 						app.replace(
-							'services:standardServices()',
-							"services:[...standardServices(),workbenchService(),workbenchHttp({uiBasePath:'/admin'})]",
+							'services:[elysia(), commands(), nodeModules(), workers()]',
+							"services:[elysia(), commands(), nodeModules(), workers(),workbenchService(),workbenchHttp({uiBasePath:'/admin'})]",
 						),
 				)
 				const controller = new AbortController()
@@ -269,7 +268,7 @@ try {
 				assert.ok(current(manager))
 				const { WorkbenchHost } = await import('@pluxel/workbench/server')
 				const compiledView = globalThis.__productionHost.ctx
-					.require(WorkbenchHost)
+					.service(WorkbenchHost)
 					.artifacts.getCurrent(manager.definition)
 				assert.ok(compiledView)
 				assert.ok(compiledView.entries.length > 0)

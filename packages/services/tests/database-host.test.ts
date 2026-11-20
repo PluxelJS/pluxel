@@ -34,7 +34,7 @@ let handle!: PluginDatabaseHandle<typeof definition>
 @Plugin({ startTimeoutMs: 15_000 })
 class Owner extends BasePlugin {
 	async init() {
-		handle = await this.ctx.require(Database).use(definition)
+		handle = await this.ctx.service(Database).use(definition)
 	}
 }
 
@@ -47,7 +47,7 @@ it.each(['owned', 'borrowed'] as const)(
 		let nativeClient: PGlite | undefined
 		const backend = pglite(borrowedClient ?? { dataDir: 'memory://' })
 		const host = await createHost({
-			plugins: [Owner],
+			plugins: [{ plugin: Owner }],
 			services: [
 				database({
 					backend: async (onError) => {

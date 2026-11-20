@@ -1,54 +1,37 @@
 # @pluxel/context
 
-`@pluxel/context` 是同步、immutable、strict-lazy 的 Context host kernel。它让 standalone application 或 framework host 在
-创建 root 前组合固定能力，并用 root、scope 与 owner-view 表达共享和所有权；本包不依赖 `@pluxel/core` 或
-`@pluxel/host`。
+`@pluxel/context` 是同步、固定服务集合、严格惰性的 Context 内核。Host 在创建 root 前安装服务，所有读取统一使用 `ctx.service()`。
 
 ```ts
-import {
-	createContextHost,
-	defineContextCapability,
-	installRootCapability,
-	installScopeCapability,
-} from '@pluxel/context'
+import { createContextHost, installRootService, installScopeService } from '@pluxel/context'
 
-const clockCapability = defineContextCapability<{ now(): number }>('app.clock')
-const cacheCapability = defineContextCapability<Map<string, unknown>>('app.cache')
-
+abstract class Clock {
+	static readonly access = 'root'
+	abstract now(): number
+}
+abstract class Cache {
+	abstract readonly entries: Map<string, unknown>
+}
 const host = createContextHost({
 	name: 'app',
-	capabilities: [
-		installRootCapability(clockCapability, {
-			property: 'clock',
-			create: () => ({ now: () => Date.now() }),
-		}),
-		installScopeCapability(cacheCapability, {
-			property: 'cache',
-			create: () => new Map(),
-		}),
+	services: [
+		installRootService(Clock, { create: () => ({ now: () => Date.now() }) }),
+		installScopeService(Cache, { create: () => ({ entries: new Map() }) }),
 	],
 })
-
 const root = host.createRoot()
 const request = host.createScope(root, 'request')
-const handler = host.createChild(request, 'handler')
-
-void root.clock.now()
-void handler.cache
+console.log(root.service(Clock).now())
+request.service(Cache).entries.set('answer', 42)
 ```
 
-关键边界：
+服务 class 是声明，读取不会执行其 constructor。实例完全由已安装工厂提供；缺少必需声明时明确抛错。Pluxel 的 `defineServiceRef<T>()` 经语义编译生成可选引用，`ctx.service(ref)` 仅在未安装时返回 `undefined`，访问与构造错误仍抛出。
 
-- 创建 host/root/scope/child 不运行 factory；第一次属性读取或 `resolveContextCapability()` 才构造并按 scope 缓存；
-- root 每个 root 一份，scope 与其 children 共享一份，owner-view 使用 root backing 并为每个 Context 缓存独立 view；
-- `overrides` 只在 host 编译前替换基础集合中的同一 descriptor，且必须保持 scope/property；
-- host 编译后没有 install/mutate API；
-- `ContextHost` 没有 `prepare()`、`dispose()` 或资源协议，启动和清理由上层 host 明确拥有；
-- Pluxel Plugin 不能借助本包修改已经创建的 Host Context，Plugin 业务依赖仍进入 Plugin graph。
+- root 安装每个 root 缓存一个值，普通 owner 不能直接读取；
+- scope 安装与其 children 共享一个值；
+- owner-view 安装共享 root backing，每个 Context 缓存自己的视图；
+- 创建 Host/root/scope/child 不运行工厂，首次读取才创建；
+- 服务集合与访问范围在编译安装计划时固定，Host 创建前可显式替换实现；
+- Context 内核不拥有 IO 或资源生命周期，Host 与 Plugin 的 effects 负责释放。
 
-公开入口：
-
-- `@pluxel/context`：descriptor、scoped installation、Context host、projection types 与显式 resolve；
-- `@pluxel/context/internal`：供 Pluxel framework packages 使用的 raw plan/context construction，不是稳定第三方 API。
-
-完整用法见[组合 Context host](../../docs/reference/context-hosts.md)，实现取舍与历史测量见 [DESIGN.md](./DESIGN.md)。
+包不依赖 Core、Host 或编译器。独立 Context 使用 class 的对象身份；Pluxel 编译器与 Host 在同一解析链上绑定规范服务身份。完整用法见[组合 Context host](../../docs/reference/context-hosts.md)，实现取舍见 [DESIGN.md](./DESIGN.md)。

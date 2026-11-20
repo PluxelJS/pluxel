@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createClient, type Client } from '@libsql/client'
-import type { Context } from '@pluxel/core'
+import { type Context } from '@pluxel/core'
 
 interface ApplicationDatabase {
 	readonly client: Client

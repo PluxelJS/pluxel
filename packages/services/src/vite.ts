@@ -8,7 +8,7 @@ export type PresetViteOptions = Readonly<{
 	/** Application module default-exporting defineHostApplication(factory), relative to Vite root. */
 	entry: string
 	/** Enable the official local TypeScript console. @default false */
-	devConsole?: boolean
+	scripts?: boolean
 	/** Shallow immutable Host startup bindings; defaults to an empty record. */
 	bindings?: Readonly<Record<string, unknown>>
 }>
@@ -20,8 +20,8 @@ export function serviceSingletons(): Plugin {
 
 /** Official Host development composition; attaches resources only for installed services. */
 export function vitePreset(options: PresetViteOptions): PluginOption[] {
-	if (options.devConsole !== undefined && typeof options.devConsole !== 'boolean')
-		throw new TypeError('[services/vite] devConsole must be a boolean')
+	if (options.scripts !== undefined && typeof options.scripts !== 'boolean')
+		throw new TypeError('[services/vite] scripts must be a boolean')
 	return [
 		serviceSingletons(),
 		{
@@ -35,7 +35,7 @@ export function vitePreset(options: PresetViteOptions): PluginOption[] {
 		...serviceDevelopment(),
 		...host({
 			entry: options.entry,
-			devConsole: options.devConsole,
+			scripts: options.scripts,
 			bindings: options.bindings,
 		}),
 	]

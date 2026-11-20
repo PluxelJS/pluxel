@@ -25,7 +25,7 @@ type ServiceMeta = {
 }
 type RuntimeServiceCtor<T> = new (ctx: Context, cfg?: any) => T
 
-// oxlint-disable-next-line typescript/no-unsafe-declaration-merging -- this class is intentionally merged with an interface for service augmentation.
+// This class is intentionally merged with an interface for service augmentation.
 export class Context {
 	get [Symbol.toStringTag]() {
 		// Hint frameworks like Elysia that this is a class-like object, so they don't deep-merge

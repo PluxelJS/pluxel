@@ -1,6 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { standardServices } from '@pluxel/services'
-import { createTestHost, type TestHost } from '@pluxel/test'
+import { createTestHost } from '@pluxel/test'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	Cache,
@@ -14,10 +13,6 @@ import {
 	MemoryCacheBackendPlugin,
 	Memoized,
 } from '../src/index.ts'
-
-async function createHost(): Promise<TestHost> {
-	return await createTestHost({ services: standardServices() })
-}
 
 type User = { id: string; name: string }
 
@@ -144,16 +139,16 @@ describe('@pluxel/plugin-cache', () => {
 		vi.useFakeTimers()
 		try {
 			{
-				await using host = await createHost()
+				await using host = await createTestHost()
 
 				await host.commit((change) => {
-					change.start(MemoryCacheBackendPlugin)
-					change.start(CachePlugin, {
+					change.start(MemoryCacheBackendPlugin.nodeAddress())
+					change.start(CachePlugin.nodeAddress(), {
 						initialConfig: { ttlMs: 20, maxEntries: 2 },
 					})
-					change.start(ConsumerA)
+					change.start(ConsumerA.nodeAddress())
 				})
-				const cache = host.require(ConsumerA).cache
+				const cache = host.require(ConsumerA.nodeAddress()).cache
 				cache.local.set('default', 0)
 				const l1 = cache.scope('hot', {
 					ttlMs: 100,
@@ -180,10 +175,16 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('uses the default memory backend as an async L2 behind local cache', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-			const cache = host.require(ConsumerA).cache.scope('memory-l2', { maxEntries: 1 })
+			await host.start([
+				MemoryCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+			])
+			const cache = host
+				.require(ConsumerA.nodeAddress())
+				.cache.scope('memory-l2', { maxEntries: 1 })
 			await cache.set('a', 1)
 			await cache.set('b', 2)
 			expect(cache.local.get('a')).toBeUndefined()
@@ -194,12 +195,17 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('uses node identity for caller isolation while global uses one managed shared namespace', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([TestCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
-			const a = host.require(ConsumerA)
-			const b = host.require(ConsumerB)
-			const backend = host.require(TestCacheBackendPlugin)
+			await host.start([
+				TestCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+				ConsumerB.nodeAddress(),
+			])
+			const a = host.require(ConsumerA.nodeAddress())
+			const b = host.require(ConsumerB.nodeAddress())
+			const backend = host.require(TestCacheBackendPlugin.nodeAddress())
 
 			await a.cache.set('user:1', { id: '1', name: 'private' })
 			expect(await b.cache.get('user:1')).toBeUndefined()
@@ -230,12 +236,17 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('rejects a backend entry whose structured owner does not match its physical key', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([TestCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
-			const a = host.require(ConsumerA)
-			const b = host.require(ConsumerB)
-			const backend = host.require(TestCacheBackendPlugin)
+			await host.start([
+				TestCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+				ConsumerB.nodeAddress(),
+			])
+			const a = host.require(ConsumerA.nodeAddress())
+			const b = host.require(ConsumerB.nodeAddress())
+			const backend = host.require(TestCacheBackendPlugin.nodeAddress())
 			await a.cache.set('owned', 'value')
 			const [key, entry] = [...backend.values.entries()].find(([candidate]) =>
 				candidate.endsWith('v1|p|s5:owned'),
@@ -256,11 +267,16 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('deduplicates a global loader across consumers and does not cache rejection', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([MemoryCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
-			const a = host.require(ConsumerA).cache.global
-			const b = host.require(ConsumerB).cache.global
+			await host.start([
+				MemoryCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+				ConsumerB.nodeAddress(),
+			])
+			const a = host.require(ConsumerA.nodeAddress()).cache.global
+			const b = host.require(ConsumerB.nodeAddress()).cache.global
 			const gate = deferred<User>()
 			let loads = 0
 			const load = () => {
@@ -302,12 +318,17 @@ describe('@pluxel/plugin-cache', () => {
 		'coalesces an external miss and preserves per-subscriber abort: %j',
 		async (reason) => {
 			{
-				await using host = await createHost()
+				await using host = await createTestHost()
 
-				await host.start([TestCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
-				const backend = host.require(TestCacheBackendPlugin)
-				const a = host.require(ConsumerA).cache.global
-				const b = host.require(ConsumerB).cache.global
+				await host.start([
+					TestCacheBackendPlugin.nodeAddress(),
+					CachePlugin.nodeAddress(),
+					ConsumerA.nodeAddress(),
+					ConsumerB.nodeAddress(),
+				])
+				const backend = host.require(TestCacheBackendPlugin.nodeAddress())
+				const a = host.require(ConsumerA.nodeAddress()).cache.global
+				const b = host.require(ConsumerB.nodeAddress()).cache.global
 				const external = deferred<void>()
 				backend.getGate = external.promise
 				let loads = 0
@@ -335,9 +356,13 @@ describe('@pluxel/plugin-cache', () => {
 	)
 
 	it('cancels an active subscriber while preserving the shared loader failure', async () => {
-		await using host = await createHost()
-		await host.start([TestCacheBackendPlugin, CachePlugin, ConsumerA])
-		const cache = host.require(ConsumerA).cache
+		await using host = await createTestHost()
+		await host.start([
+			TestCacheBackendPlugin.nodeAddress(),
+			CachePlugin.nodeAddress(),
+			ConsumerA.nodeAddress(),
+		])
+		const cache = host.require(ConsumerA.nodeAddress()).cache
 		const started = deferred<void>()
 		const result = deferred<string>()
 		const controller = new AbortController()
@@ -361,11 +386,15 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('supports cache-first, cache-and-refresh, and remote-first async reads', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([TestCacheBackendPlugin, CachePlugin, ConsumerA])
-			const backend = host.require(TestCacheBackendPlugin)
-			const cache = host.require(ConsumerA).cache
+			await host.start([
+				TestCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+			])
+			const backend = host.require(TestCacheBackendPlugin.nodeAddress())
+			const cache = host.require(ConsumerA.nodeAddress()).cache
 			const cacheFirst = cache.scope('cache-first')
 			await cacheFirst.set('k', 'remote')
 			cacheFirst.local.set('k', 'memory')
@@ -388,10 +417,14 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('orders invalidation after in-flight load', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([TestCacheBackendPlugin, CachePlugin, ConsumerA])
-			const cache = host.require(ConsumerA).cache
+			await host.start([
+				TestCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+			])
+			const cache = host.require(ConsumerA.nodeAddress()).cache
 			const gate = deferred<User>()
 			const loading = cache.getOrLoad('3', () => gate.promise)
 			const deleting = cache.delete('3')
@@ -403,9 +436,13 @@ describe('@pluxel/plugin-cache', () => {
 	})
 
 	it('clear drains accepted loads before clearing and admits later reads afterward', async () => {
-		await using host = await createHost()
-		await host.start([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-		const cache = host.require(ConsumerA).cache
+		await using host = await createTestHost()
+		await host.start([
+			MemoryCacheBackendPlugin.nodeAddress(),
+			CachePlugin.nodeAddress(),
+			ConsumerA.nodeAddress(),
+		])
+		const cache = host.require(ConsumerA.nodeAddress()).cache
 		const started = deferred<void>()
 		const gate = deferred<number>()
 		const loading = cache.getOrLoad('before-clear', () => {
@@ -426,10 +463,14 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('fails loudly instead of reporting a local-only clear as successful', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([MissingClearCacheBackend, CachePlugin, ConsumerA])
-			const cache = host.require(ConsumerA).cache
+			await host.start([
+				MissingClearCacheBackend.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+			])
+			const cache = host.require(ConsumerA.nodeAddress()).cache
 			await cache.set('value', 1)
 			await expect(cache.clear()).rejects.toBeInstanceOf(TypeError)
 			expect(cache.local.get('value')).toBe(1)
@@ -438,20 +479,28 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('revokes cached namespace handles when provider stops', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-			const handle = host.require(ConsumerA).cache.scope('saved')
+			await host.start([
+				MemoryCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+			])
+			const handle = host.require(ConsumerA.nodeAddress()).cache.scope('saved')
 			await handle.set('live', 1)
-			await host.stop(CachePlugin)
+			await host.stop(CachePlugin.nodeAddress())
 			await expect(handle.get('live')).rejects.toBeInstanceOf(CacheStoppedError)
 		}
 	})
 
 	it('revokes a bucket without waiting for its loader and rejects late publication', async () => {
-		await using host = await createHost()
-		await host.start([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-		const cache = host.require(ConsumerA).cache.scope('teardown')
+		await using host = await createTestHost()
+		await host.start([
+			MemoryCacheBackendPlugin.nodeAddress(),
+			CachePlugin.nodeAddress(),
+			ConsumerA.nodeAddress(),
+		])
+		const cache = host.require(ConsumerA.nodeAddress()).cache.scope('teardown')
 		const started = deferred<void>()
 		const gate = deferred<number>()
 		const loading = cache.getOrLoad('stopped-load', () => {
@@ -459,17 +508,21 @@ describe('@pluxel/plugin-cache', () => {
 			return gate.promise
 		})
 		await started.promise
-		await host.stop(ConsumerA)
+		await host.stop(ConsumerA.nodeAddress())
 		gate.resolve(1)
 		await expect(loading).rejects.toBeInstanceOf(CacheStoppedError)
 		expect(() => cache.stats()).toThrow(CacheStoppedError)
 	})
 
 	it('does not drain unrelated loads after a queued clear loses its owner', async () => {
-		await using host = await createHost()
-		await host.start([TestCacheBackendPlugin, CachePlugin, ConsumerA])
-		const cache = host.require(ConsumerA).cache.scope('teardown')
-		const backend = host.require(TestCacheBackendPlugin)
+		await using host = await createTestHost()
+		await host.start([
+			TestCacheBackendPlugin.nodeAddress(),
+			CachePlugin.nodeAddress(),
+			ConsumerA.nodeAddress(),
+		])
+		const cache = host.require(ConsumerA.nodeAddress()).cache.scope('teardown')
+		const backend = host.require(TestCacheBackendPlugin.nodeAddress())
 		const started = deferred<void>()
 		const loadGate = deferred<number>()
 		const writeGate = deferred<void>()
@@ -482,7 +535,7 @@ describe('@pluxel/plugin-cache', () => {
 		const writing = cache.set('writing', 1)
 		await vi.waitFor(() => expect(backend.metrics.sets).toBe(1))
 		const clearing = cache.clear()
-		await host.stop(ConsumerA)
+		await host.stop(ConsumerA.nodeAddress())
 		writeGate.resolve()
 		try {
 			await expect(writing).rejects.toBeInstanceOf(CacheStoppedError)
@@ -495,17 +548,21 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('revokes caller-local, global, and decorator handles when the caller stops', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([MemoryCacheBackendPlugin, CachePlugin, DecoratedConsumer])
-			const consumer = host.require(DecoratedConsumer)
+			await host.start([
+				MemoryCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				DecoratedConsumer.nodeAddress(),
+			])
+			const consumer = host.require(DecoratedConsumer.nodeAddress())
 			const local = consumer.cache.scope('saved')
 			const global = consumer.cache.global
 			await local.set('live', 1)
 			await global.set('live', 1)
 			await consumer.user('1')
 
-			await host.stop(DecoratedConsumer)
+			await host.stop(DecoratedConsumer.nodeAddress())
 
 			await expect(local.get('live')).rejects.toBeInstanceOf(CacheStoppedError)
 			await expect(global.get('live')).rejects.toBeInstanceOf(CacheStoppedError)
@@ -515,14 +572,19 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('keeps a shared global registration alive until its final owner stops', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([MemoryCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
-			const a = host.require(ConsumerA).cache.global
-			const b = host.require(ConsumerB).cache.global
+			await host.start([
+				MemoryCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+				ConsumerB.nodeAddress(),
+			])
+			const a = host.require(ConsumerA.nodeAddress()).cache.global
+			const b = host.require(ConsumerB.nodeAddress()).cache.global
 			await a.set('shared', 1)
 
-			await host.stop(ConsumerA)
+			await host.stop(ConsumerA.nodeAddress())
 
 			await expect(a.get('shared')).rejects.toBeInstanceOf(CacheStoppedError)
 			expect(await b.get('shared')).toBe(1)
@@ -531,15 +593,19 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('does not let a stopped memory backend handle recreate its state', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-			const backend = host.require(MemoryCacheBackendPlugin)
+			await host.start([
+				MemoryCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+			])
+			const backend = host.require(MemoryCacheBackendPlugin.nodeAddress())
 			await backend.set('saved', 1, { ttlMs: 0 })
 
 			await host.commit((change) => {
 				for (const PluginClass of [ConsumerA, CachePlugin, MemoryCacheBackendPlugin]) {
-					change.stop(PluginClass)
+					change.stop(PluginClass.nodeAddress())
 				}
 			})
 
@@ -550,10 +616,16 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('bounds distinct in-flight work while allowing same-key joins', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-			const cache = host.require(ConsumerA).cache.scope('backpressure', { maxInFlight: 1 })
+			await host.start([
+				MemoryCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+			])
+			const cache = host
+				.require(ConsumerA.nodeAddress())
+				.cache.scope('backpressure', { maxInFlight: 1 })
 			const gate = deferred<number>()
 			const first = cache.getOrLoad('a', () => gate.promise)
 			const joined = cache.getOrLoad('a', () => 99)
@@ -570,10 +642,14 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('supports @Cached, @Memoized, custom method scopes, and explicit invalidation', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([MemoryCacheBackendPlugin, CachePlugin, DecoratedConsumer])
-			const consumer = host.require(DecoratedConsumer)
+			await host.start([
+				MemoryCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				DecoratedConsumer.nodeAddress(),
+			])
+			const consumer = host.require(DecoratedConsumer.nodeAddress())
 			const gate = deferred<void>()
 			consumer.gate = gate.promise
 			const first = consumer.user('1')
@@ -599,10 +675,14 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('uses scan-resistant SIEVE eviction', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-			const cache = host.require(ConsumerA).cache
+			await host.start([
+				MemoryCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+			])
+			const cache = host.require(ConsumerA.nodeAddress()).cache
 			const sieve = cache.scope('sieve', { maxEntries: 3 }).local
 			sieve.set('a', 1)
 			sieve.get('a')
@@ -617,10 +697,14 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('validates scopes, capacities, and primitive keys', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-			const cache = host.require(ConsumerA).cache
+			await host.start([
+				MemoryCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+			])
+			const cache = host.require(ConsumerA.nodeAddress()).cache
 			expect(() => cache.scope('bad name')).toThrow(/Cache scope/)
 			expect(() => cache.scope(`scope\ud800`)).toThrow(/well-formed Unicode/)
 			expect(() => cache.scope('valid', { maxEntries: 0 })).toThrow(/maxEntries/)
@@ -630,10 +714,14 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('binds one exact normalized policy to each scope', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-			const cache = host.require(ConsumerA).cache
+			await host.start([
+				MemoryCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+			])
+			const cache = host.require(ConsumerA.nodeAddress()).cache
 			const original = cache.scope('policy', {
 				ttlMs: 10,
 				readPolicy: 'remote-first',
@@ -655,10 +743,14 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('encodes bounded typed tuple and record keys without ambiguity', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-			const cache = host.require(ConsumerA).cache
+			await host.start([
+				MemoryCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+			])
+			const cache = host.require(ConsumerA.nodeAddress()).cache
 			await cache.set({ tenant: 'a', id: 1 }, 'record')
 			expect(await cache.get({ id: 1, tenant: 'a' })).toBe('record')
 			await cache.set(['a', 1], 'tuple')
@@ -693,11 +785,15 @@ describe('@pluxel/plugin-cache', () => {
 
 	it('supports required and bypass backend failure policies for getOrLoad only', async () => {
 		{
-			await using host = await createHost()
+			await using host = await createTestHost()
 
-			await host.start([TestCacheBackendPlugin, CachePlugin, ConsumerA])
-			const backend = host.require(TestCacheBackendPlugin)
-			const cache = host.require(ConsumerA).cache
+			await host.start([
+				TestCacheBackendPlugin.nodeAddress(),
+				CachePlugin.nodeAddress(),
+				ConsumerA.nodeAddress(),
+			])
+			const backend = host.require(TestCacheBackendPlugin.nodeAddress())
+			const cache = host.require(ConsumerA.nodeAddress()).cache
 			backend.getError = new Error('read unavailable')
 
 			await expect(cache.getOrLoad('required', () => 1)).rejects.toThrow('read unavailable')

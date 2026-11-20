@@ -6,14 +6,16 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PluginOverviewSnapshot, PluginStatusEntry } from '../src/app/plugins/pluginOverview'
 import { pluginAttention } from '../src/app/plugins/pluginOverviewModel'
-import { prepareNativeWorkbenchDom } from './helpers/native-workbench'
+import { prepareNativeWorkbenchDom } from './fixtures/native-workbench'
+import { controlCatalog } from './fixtures/plugin-controls'
 
 const state = vi.hoisted(() => ({
 	overview: undefined as unknown as PluginOverviewSnapshot,
 	update: null as unknown,
+	meta: null as { protocol: { capabilities: string[] } } | null,
 }))
 vi.mock('../src/app/plugins/pluginOverview', () => ({ usePluginOverview: () => state.overview }))
-vi.mock('../src/app/product', () => ({ useRuntimeMeta: () => null }))
+vi.mock('../src/app/product', () => ({ useRuntimeMeta: () => state.meta }))
 vi.mock('../src/app/runtimeUpdates', () => ({
 	useRuntimeUpdates: () => ({ snapshot: state.update, ready: true, error: null }),
 }))
@@ -49,7 +51,7 @@ function snapshot(plugins: Entry[] | null, extra: Partial<PluginOverviewSnapshot
 	state.overview = {
 		hasSnapshot: plugins !== null,
 		overview: plugins && {
-			statePolicy: { readonly: false, managedRevision: 'test', overriddenFields: [] },
+			statePolicy: controlCatalog([], 'test').statePolicy,
 			status: {
 				statuses: plugins as unknown as PluginStatusEntry[],
 				summary: {
@@ -73,6 +75,7 @@ afterEach(() => {
 	for (const root of roots.splice(0)) act(() => root.unmount())
 	document.body.innerHTML = ''
 	state.update = null
+	state.meta = null
 })
 async function render() {
 	prepareNativeWorkbenchDom()
@@ -160,6 +163,7 @@ describe('home attention panel', () => {
 			}),
 			plugin('waiting', { lifecycleState: 'stopped' }),
 		])
+		state.meta = { protocol: { capabilities: ['host.policy'] } }
 		state.update = {
 			sequence: 3,
 			state: 'settled',
@@ -180,6 +184,9 @@ describe('home attention panel', () => {
 		expect(section.textContent).toContain('1 个异常 · 1 个等待启动')
 		expect(section.textContent).toContain('已恢复到上一版本')
 		expect(section.textContent).toContain('SyntaxError: boom')
+		expect([...container.querySelectorAll('button')].map((button) => button.textContent)).toContain(
+			'宿主执行参数',
+		)
 		const metric = container.querySelector('.plx-home__metric[data-tone="attention"]')
 		expect(metric?.textContent).toContain('2')
 	})

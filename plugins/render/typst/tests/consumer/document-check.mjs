@@ -8,25 +8,18 @@ import { trackConsumerSessions } from './browser-session.mjs'
 import { assertWorkspaceFile, chooseWorkspaceFile } from './workspace-ui.mjs'
 
 const fixture = await readFile(new URL('./document-private/project.ts', import.meta.url), 'utf8')
-const canary = fixture.match(/export const documentSourceCanary = ['"]([^'"]+)['"]/)?.[1]
-const entry = fixture.match(/export const documentEntry = ['"]([^'"]+)['"]/)?.[1]
-assert.ok(canary && entry, 'Read the private fixture only on the Node side')
-const privatePrefix = entry.slice(0, entry.indexOf('/') + 1)
+const canary = fixture.match(/\bDOCUMENT_PRIVATE_SOURCE_[a-f0-9]+\b/)?.[0]
+assert.ok(canary, 'Read the private fixture only on the Node side')
 const privateDirectory = fileURLToPath(new URL('./document-private/', import.meta.url))
 const sourceSecrets = [
 	canary,
-	privatePrefix,
 	privateDirectory,
 	'document-private/project.ts',
 	'document-private/server.ts',
+	'inputs/chapters/',
 ]
-const forbidden = [
-	...sourceSecrets,
-	'chapter-background',
-	'chapter-approach',
-	'chapter-schedule',
-	'object-architecture',
-]
+const publishedLabel = /^(?:chapter|object)-[a-z0-9-]+$/
+const assetPath = '/body-assets/architecture.svg'
 const endpoint = new URL('/', process.env.PLUXEL_TYPST_URL ?? 'http://typst.pluxel.localhost:8088')
 const output = resolve(process.env.TYPST_DOCUMENT_EVIDENCE ?? '/tmp/pluxel-typst-document-evidence')
 const sessionUrl = new URL('/document-api/session', endpoint).href
@@ -40,9 +33,9 @@ const checks = [],
 	opens = []
 let latest
 
-function noSource(value, where, nativePdf = false) {
+function noSource(value, where) {
 	const text = typeof value === 'string' ? value : JSON.stringify(value)
-	for (const secret of nativePdf ? sourceSecrets : forbidden)
+	for (const secret of sourceSecrets)
 		assert.ok(
 			!text.includes(secret),
 			`${where}: private source marker reached the browser boundary`,
@@ -62,17 +55,15 @@ function semantic(document) {
 		keys(node, ['type', 'attrs', 'marks', 'content', 'text'], `node ${node.type}`)
 		assert.equal(typeof node.type, 'string')
 		assert.ok(!node.type.startsWith('typst'), `Source node ${node.type} is not semantic content`)
+		assert.ok(!['documentBlock', 'documentInline'].includes(node.type), 'Unexpected placeholder')
 		for (const key of Object.keys(node.attrs ?? {}))
 			assert.ok(
-				!['source', 'module', 'file', 'path', 'label'].includes(key),
+				!['source', 'module', 'file', 'path', 'key'].includes(key),
 				`Source attribute ${key}`,
 			)
-		if (node.type === 'documentBlock' || node.type === 'documentInline') {
-			keys(node.attrs, ['key', 'title'], 'fixed content')
-			assert.equal(node.attrs.title, '固定内容')
-			assert.match(node.attrs.key, /^[a-f0-9]{64}$/)
-		}
-		if (node.type === 'image') assert.equal(node.attrs.src, '/document-api/asset/architecture')
+		if (node.attrs?.label) assert.match(node.attrs.label, /^object-[a-z0-9-]+$/)
+		if (node.type === 'reference') assert.match(node.attrs.target, publishedLabel)
+		if (node.type === 'image') assert.equal(node.attrs.src, assetPath)
 		for (const child of node.content ?? []) visit(child)
 	}
 	visit(document)
@@ -98,9 +89,12 @@ function safeView(view) {
 		assert.ok(view.documents.some((item) => item.id === location.documentId))
 		assert.ok(Number.isSafeInteger(location.position) && location.position >= 0)
 	}
+	const labels = new Set()
 	for (const reference of view.references) {
 		keys(reference, ['id', 'title', 'kind', 'location'], 'reference')
-		assert.match(reference.id, /^[0-9a-f-]{36}$/)
+		assert.match(reference.id, publishedLabel)
+		assert.ok(!labels.has(reference.id), 'Every published label must be unique')
+		labels.add(reference.id)
 		assert.ok(['heading', 'figure', 'table', 'equation'].includes(reference.kind))
 		if (reference.location) safeLocation(reference.location)
 	}
@@ -166,35 +160,8 @@ const nodes = (document, type) => {
 }
 const textOf = (node) => node.text ?? (node.content ?? []).map(textOf).join('')
 const sameContent = (before, after) => {
-	// IDs and protected keys are scoped to the opened project, not persisted content.
-	const meaning = (view) => {
-		const identities = new Map(
-			view.references.map(({ id, ...target }) => [id, JSON.stringify(target)]),
-		)
-		const node = (value) => ({
-			...value,
-			...(value.attrs
-				? {
-						attrs: Object.fromEntries(
-							Object.entries(value.attrs).map(([key, data]) => [
-								key,
-								key === 'key'
-									? 'fixed'
-									: ['id', 'target'].includes(key) && data
-										? (identities.get(data) ?? 'object')
-										: data,
-							]),
-						),
-					}
-				: {}),
-			...(value.content ? { content: value.content.map(node) } : {}),
-		})
-		return {
-			documents: view.documents.map((item) => ({ ...item, document: node(item.document) })),
-			references: view.references.map(({ id: _id, ...target }) => target),
-		}
-	}
-	assert.deepEqual(meaning(after), meaning(before))
+	assert.deepEqual(after.documents, before.documents)
+	assert.deepEqual(after.references, before.references)
 }
 await mkdir(output, { recursive: true })
 const browser = await chromium.connect(
@@ -260,12 +227,7 @@ await context.route(`${endpoint.origin}/**`, async (route) => {
 	const inspecting = (async () => {
 		const response = await route.fetch()
 		const body = await response.body()
-		// Native PDF named destinations retain labels; semantic responses must use opaque IDs.
-		noSource(
-			body.toString('utf8'),
-			`response ${new URL(response.url()).pathname}`,
-			response.headers()['content-type']?.startsWith('application/pdf'),
-		)
+		noSource(body.toString('utf8'), `response ${new URL(response.url()).pathname}`)
 		if (new URL(response.url()).pathname === '/document-api/page' && response.ok()) {
 			assert.equal(response.headers()['content-type']?.split(';')[0], 'image/png')
 			assert.equal(body.subarray(0, 8).toString('hex'), '89504e470d0a1a0a')
@@ -276,9 +238,15 @@ await context.route(`${endpoint.origin}/**`, async (route) => {
 			response.status() === 200 &&
 			response.headers()['content-type']?.includes('application/json')
 		) {
-			const view = JSON.parse(body.toString('utf8'))
-			safeView(view)
-			latest = view
+			const payload = JSON.parse(body.toString('utf8'))
+			if (route.request().postDataJSON()?.action === 'source') {
+				keys(payload, ['revision', 'source'], 'chapter source')
+				assert.ok(Number.isSafeInteger(payload.revision) && payload.revision >= 0)
+				assert.equal(typeof payload.source, 'string')
+			} else {
+				safeView(payload)
+				latest = payload
+			}
 		}
 		await route.fulfill({ response, body })
 	})()
@@ -433,23 +401,17 @@ async function highlighted(target) {
 async function clickPreview(point) {
 	const paper = page.locator(`[data-document-page="${point.page}"]`)
 	const dimensions = latest.preview.pages.find((item) => item.page === point.page)
-	const screenPoint = () =>
-		paper.evaluate(
-			(element, { point: target, dimensions: size }) => {
-				const bounds = element.getBoundingClientRect()
-				return {
-					x: bounds.x + ((target.x + target.width / 2) / size.width) * bounds.width,
-					y: bounds.y + ((target.y + target.height / 2) / size.height) * bounds.height,
-				}
-			},
-			{ point, dimensions },
-		)
-	const before = await screenPoint()
-	await page.locator('.typst-document-preview').evaluate((element, y) => {
-		element.scrollTop += y - element.getBoundingClientRect().top - element.clientHeight / 2
-	}, before.y)
-	const screen = await screenPoint()
-	await page.mouse.click(screen.x, screen.y)
+	const position = await paper.evaluate(
+		(element, { point: target, dimensions: size }) => {
+			const bounds = element.getBoundingClientRect()
+			return {
+				x: ((target.x + target.width / 2) / size.width) * bounds.width,
+				y: ((target.y + target.height / 2) / size.height) * bounds.height,
+			}
+		},
+		{ point, dimensions },
+	)
+	await paper.click({ position, timeout: 5000 })
 }
 
 async function editorAt(chapterId, position) {
@@ -600,7 +562,7 @@ async function checkSharedWorkspace() {
 		await download.saveAs(destination)
 		const pdf = await readFile(destination)
 		assert.equal(pdf.subarray(0, 5).toString(), '%PDF-')
-		noSource(pdf.toString('utf8'), 'PDF with a public source draft', true)
+		noSource(pdf.toString('utf8'), 'PDF with a public source draft')
 		await sameWorkspace()
 
 		await tab('analysis.typ').click()
@@ -737,6 +699,49 @@ try {
 	sameContent(initial, undone)
 	const redone = await change('redo', () => button('重做').click())
 	sameContent(plain, redone)
+
+	const readingSource = nextView('source', (_source, request) => request.chapterId === 'background')
+	await button('Typst 源码').click()
+	const originalSource = await readingSource
+	assert.equal(originalSource.revision, redone.revision)
+	const sourceEditor = panel('background').getByRole('textbox', { name: 'Typst 正文', exact: true })
+	await sourceEditor.waitFor()
+	assert.equal(await sourceEditor.inputValue(), originalSource.source)
+	assert.match(originalSource.source, /正文验收保持。/)
+	const rejectedSource = '#let editorial-note = 1\n正文。'
+	await sourceEditor.fill(rejectedSource)
+	const rejection = page.waitForResponse(
+		(response) =>
+			response.url() === sessionUrl &&
+			response.status() === 400 &&
+			response.request().postDataJSON()?.content?.kind === 'typst',
+	)
+	await button('应用源码').click()
+	const rejectedResponse = await rejection
+	const sourceFailure = await rejectedResponse.json()
+	assert.equal(sourceFailure.code, 'UNSUPPORTED_SYNTAX')
+	assert.equal(await sourceEditor.inputValue(), rejectedSource)
+	assert.equal(latest.revision, redone.revision)
+	const sourceMarker = '源码视图验收'
+	await sourceEditor.fill(`${originalSource.source.trimEnd()}\n\n*${sourceMarker}*。\n`)
+	const fromSource = await change(
+		'edit',
+		async () => {
+			await button('应用源码').click()
+			await editor().waitFor()
+		},
+		(view, request) =>
+			request.content.kind === 'typst' &&
+			nodes(chapter(view, 'background').document, 'text').some(
+				(node) => node.text === sourceMarker && node.marks?.some(({ type }) => type === 'bold'),
+			),
+	)
+	assert.notEqual(imageHash(fromSource), imageHash(redone))
+	assert.match((await editor().textContent()) ?? '', /源码视图验收/)
+	checks.push(
+		'源码视图读取富文本已接纳的正文，拒绝的源码原样保留，修改后的 Typst 回到富文本并更新实际 PNG',
+	)
+
 	await end()
 	await page.keyboard.press('Enter')
 	await page.keyboard.press('Enter')
@@ -767,20 +772,20 @@ try {
 	)
 	assert.notEqual(imageHash(tableEdited, 1), oldApproachImage)
 	await button('编辑行内公式').click()
-	const formula = page.getByRole('textbox', { name: '公式 LaTeX', exact: true })
-	await formula.fill('p = \\frac{n + 1}{N}')
+	const formula = page.getByRole('textbox', { name: '公式 Typst', exact: true })
+	await formula.fill('p = (n + 1) / N')
 	const mathEdited = await change(
 		'edit',
 		() => button('完成').click(),
 		(view) =>
 			nodes(chapter(view, 'approach').document, 'inlineMath').some(
-				(node) => node.attrs.latex === 'p = \\frac{n + 1}{N}',
+				(node) => node.attrs.expression === 'p = (n + 1) / N',
 			),
 	)
 	assert.notEqual(imageHash(mathEdited, 1), imageHash(tableEdited, 1))
-	checks.push('实际表格单元格与 LaTeX 公式可编辑并由原生排版，语义 JSON 与各章真实 PNG 同时变化')
+	checks.push('实际表格单元格与 Typst 公式可编辑并由原生排版，语义 JSON 与各章真实 PNG 同时变化')
 
-	// Insert before fixed content, then keep typing while the first server edit is in flight.
+	// Keep typing while the first chapter edit is in flight.
 	await editor().locator('p').first().click()
 	await page.keyboard.press('Control+Home')
 	await page.keyboard.press('Enter')
@@ -803,13 +808,12 @@ try {
 		(view) =>
 			textOf(chapter(view, 'approach').document).includes('连续输入第一段。继续输入不丢失。'),
 	)
-	const fixed = nodes(chapter(continuous, 'approach').document, 'documentInline').concat(
-		nodes(chapter(continuous, 'approach').document, 'documentBlock'),
+	assert.ok(
+		nodes(chapter(continuous, 'approach').document, 'figure').some(
+			(node) => node.attrs?.label === 'object-architecture',
+		),
 	)
-	assert.ok(fixed.length > 0)
-	checks.push(
-		'含固定内容的章节开头插入段落后连续输入，首笔同步期间后续草稿仍被接纳，固定内容保持安全身份',
-	)
+	checks.push('在章节开头插入段落后连续输入，首笔同步期间后续草稿仍被接纳，图示保留原生标签')
 
 	await end()
 	await page.keyboard.press('Enter')
@@ -823,36 +827,54 @@ try {
 		() => tableForm.getByRole('button', { name: '插入表格', exact: true }).click(),
 		(view) => nodes(chapter(view, 'approach').document, 'table').length === 2,
 	)
-	const insertedCell = editor().locator('table').last().locator('th,td').first().locator('p')
+	const insertedTables = nodes(chapter(inserted, 'approach').document, 'table')
+	const insertedIndex = insertedTables.findIndex((table) => textOf(table) === '')
+	assert.ok(insertedIndex >= 0)
+	const insertedCell = editor()
+		.locator('table')
+		.nth(insertedIndex)
+		.locator('th,td')
+		.first()
+		.locator('p')
 	await insertedCell.click()
-	await change(
+	const filled = await change(
 		'edit',
 		() => page.keyboard.insertText('新增表格内容'),
-		(view) => textOf(chapter(view, 'approach').document).includes('新增表格内容'),
+		(view) => {
+			const tables = nodes(chapter(view, 'approach').document, 'table')
+			const firstCell = tables[insertedIndex]?.content?.[0]?.content?.[0]
+			return firstCell && textOf(firstCell) === '新增表格内容'
+		},
 	)
-	assert.equal(nodes(chapter(inserted, 'approach').document, 'table').length, 2)
-	checks.push('通过普通插入菜单新建表格并输入内容，固定块仍保留且下一笔编辑可继续同步')
+	const filledTables = nodes(chapter(filled, 'approach').document, 'table')
+	assert.equal(filledTables.length, 2)
+	assert.deepEqual(
+		filledTables.filter((_, index) => index !== insertedIndex),
+		nodes(chapter(continuous, 'approach').document, 'table'),
+	)
+	checks.push('通过普通插入菜单新建表格并输入内容，下一笔编辑可继续同步')
 
 	await choose('background')
 	const scheduleReference = latest.references.find((reference) => reference.title === '实施计划').id
+	assert.equal(scheduleReference, 'chapter-schedule')
 	const previousReferences = nodes(chapter(latest, 'background').document, 'reference').filter(
 		(node) => node.attrs.target === scheduleReference,
 	).length
 	await end()
 	await page.keyboard.press('Enter')
 	await page.keyboard.insertText('新增引用：@实施')
-	const references = page.getByRole('listbox', { name: '引用章节、图、表或公式', exact: true })
+	const references = page.getByRole('listbox', { name: /^引用/ })
 	await references.waitFor()
 	let referenced = await change(
 		'edit',
-		() => references.getByRole('option', { name: '章节 · 实施计划', exact: true }).click(),
+		() => references.getByRole('option', { name: /实施计划/ }).click(),
 		(view) =>
 			nodes(chapter(view, 'background').document, 'reference').filter(
 				(node) => node.attrs.target === scheduleReference,
 			).length ===
 			previousReferences + 1,
 	)
-	await button('引用 实施计划').last().click()
+	await button(`引用 ${scheduleReference}`).last().click()
 	const policyPosition = await editor().evaluate((element) => element.editor.state.selection.from)
 	referenced = await change(
 		'edit',
@@ -876,7 +898,7 @@ try {
 	await clickPreview(policyLink)
 	await highlighted(policyLink.target)
 	await panel('background').waitFor()
-	await button('引用 实施计划').last().click()
+	await button(`引用 ${scheduleReference}`).last().click()
 	await button('转到引用目标').click()
 	await panel('schedule').waitFor()
 	assert.equal(latest.revision, referenced.revision, 'Following a reference is not a document edit')
@@ -959,7 +981,7 @@ try {
 				action: 'edit',
 				baseRevision: reopened.revision,
 				chapterId: 'missing-chapter',
-				document: { type: 'doc', content: [] },
+				content: { kind: 'typst', source: '正文。' },
 			},
 			400,
 			'NOT_FOUND',
@@ -969,35 +991,49 @@ try {
 				action: 'edit',
 				baseRevision: reopened.revision,
 				chapterId: 'background',
-				document: {
-					type: 'doc',
-					content: [{ type: 'typstInlineSource', attrs: { source: '#let injected = 1' } }],
+				content: {
+					kind: 'tiptap',
+					document: {
+						type: 'doc',
+						content: [{ type: 'typstInlineSource', attrs: { source: 'Editorial note' } }],
+					},
 				},
 			},
 			400,
-			'INVALID_EDIT',
+			'INVALID_DOCUMENT',
 		],
 		[{ action: 'save', baseRevision: reopened.revision - 1 }, 409, 'CONFLICT'],
 	]) {
 		const response = await page.request.post(sessionUrl, { headers: headers(currentLease), data })
 		assert.equal(response.status(), status)
 		const failure = await response.json()
-		keys(failure, ['code', 'message'], 'safe error')
+		keys(failure, ['code', 'message', 'issues'], 'safe error')
 		assert.equal(failure.code, code)
+		for (const issue of failure.issues ?? [])
+			keys(issue, ['code', 'message', 'from', 'to', 'path'], 'chapter validation issue')
 		noSource(failure, 'failed operation')
 	}
 	for (const path of [
 		'/document-private/project.ts?raw',
 		'/document-private/server.ts?raw',
 		`/@fs${fileURLToPath(new URL('./document-private/project.ts', import.meta.url))}?raw`,
-		'/private-proposal/main.typ?raw',
 	]) {
 		const response = await page.request.get(new URL(path, endpoint).href)
 		assert.equal(response.status(), 403, `Private Vite read must fail: ${path}`)
 		noSource(await response.text(), 'private raw read error')
 	}
+	const svg = await page.request.get(new URL(assetPath, endpoint).href)
+	assert.equal(svg.status(), 200)
+	assert.match(svg.headers()['content-type'], /^image\/svg\+xml/)
+	const publishedAsset = await svg.text()
+	assert.match(publishedAsset, /^<svg\b/)
+	noSource(publishedAsset, 'published SVG')
+	const removedAssetRoute = await page.request.get(
+		new URL('/document-api/asset/architecture', endpoint).href,
+	)
+	assert.equal(removedAssetRoute.status(), 403)
 	checks.push(
-		'不存在章节、注入源码节点和迟到修订均被服务器明确拒绝；错误仅含安全 code/message，私有 Vite/raw/文件路径读取全部 403',
+		'不存在章节、越界节点和迟到修订均被拒绝，诊断仅回传安全信息。私有模块读取被拦截，图片使用公布的 SVG',
 	)
 
 	await choose('approach')
@@ -1035,7 +1071,7 @@ try {
 	await download.saveAs(pdfPath)
 	const pdf = await readFile(pdfPath)
 	assert.equal(pdf.subarray(0, 5).toString(), '%PDF-')
-	noSource(pdf.toString('utf8'), 'exported PDF', true)
+	noSource(pdf.toString('utf8'), 'exported PDF')
 	await page
 		.locator('.document-preview .typst-document-preview img')
 		.nth(1)

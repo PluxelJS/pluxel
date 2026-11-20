@@ -1,5 +1,5 @@
-import { vault } from '@pluxel/services/vault'
-import { standardServices } from '@pluxel/services'
+import { AdminAccess } from '@pluxel/services/management/access'
+import { elysia } from '@pluxel/services/elysia'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { describe, expect, it } from 'vitest'
 import { AuthPlugin } from '../src/index.ts'
@@ -8,14 +8,14 @@ describe('AuthPlugin lifecycle', () => {
 	it('runs in setup-required state and revokes its generation on stop', async () => {
 		{
 			await using host = await createServiceInternalTestHost({
-				services: [...standardServices(), vault()],
+				services: [elysia()],
 				management: true,
 			})
 
-			await host.start(AuthPlugin, {
+			await host.start(AuthPlugin.nodeAddress(), {
 				initialConfig: { mode: { type: 'password' } },
 			})
-			expect(await host.ctx.adminAccess?.describe()).toEqual({
+			expect(await host.ctx.service(AdminAccess)?.describe()).toEqual({
 				policy: 'provider-or-local-recovery',
 				provider: {
 					id: '@pluxel/plugin-auth',
@@ -24,19 +24,22 @@ describe('AuthPlugin lifecycle', () => {
 					ready: false,
 				},
 			})
-			await host.stop(AuthPlugin)
-			expect(await host.ctx.adminAccess?.describe()).toEqual({
+			await host.stop(AuthPlugin.nodeAddress())
+			expect(await host.ctx.service(AdminAccess)?.describe()).toEqual({
 				policy: 'provider-or-local-recovery',
 				provider: null,
 			})
 		}
 	})
 
-	it('runs public OIDC without Vault', async () => {
+	it('runs public OIDC without accessing credential storage', async () => {
 		{
-			await using host = await createServiceInternalTestHost({ management: true })
+			await using host = await createServiceInternalTestHost({
+				services: [elysia()],
+				management: true,
+			})
 
-			await host.start(AuthPlugin, {
+			await host.start(AuthPlugin.nodeAddress(), {
 				initialConfig: {
 					mode: {
 						type: 'oidc',
@@ -47,7 +50,7 @@ describe('AuthPlugin lifecycle', () => {
 					},
 				},
 			})
-			expect(await host.ctx.adminAccess?.describe()).toMatchObject({
+			expect(await host.ctx.service(AdminAccess)?.describe()).toMatchObject({
 				provider: { method: 'oidc', ready: true },
 			})
 		}

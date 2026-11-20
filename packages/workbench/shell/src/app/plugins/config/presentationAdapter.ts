@@ -74,7 +74,12 @@ function write(root: Record<string, unknown>, path: readonly string[], value: un
  * rejected as "Cannot serialize value"), so records are plain and keys are defined, not assigned.
  */
 function setOwn(target: Record<string, unknown>, key: string, value: unknown): void {
-	Object.defineProperty(target, key, { value, enumerable: true, configurable: true, writable: true })
+	Object.defineProperty(target, key, {
+		value,
+		enumerable: true,
+		configurable: true,
+		writable: true,
+	})
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === 'object' && !Array.isArray(value)

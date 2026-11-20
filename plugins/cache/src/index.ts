@@ -1,8 +1,5 @@
-import { createHash } from 'node:crypto'
-import { deserialize, serialize } from 'node:v8'
-import { waitFor } from '@pluxel/async/wait'
-import { singleflight, type Singleflight } from '@pluxel/async/singleflight'
 import {
+	type Context,
 	encodePluginNodeAddressBytes,
 	parsePluginNodeAddress,
 	pluginNodeAddressEqual,
@@ -11,6 +8,10 @@ import {
 	BasePlugin,
 	Plugin,
 } from '@pluxel/core'
+import { createHash } from 'node:crypto'
+import { deserialize, serialize } from 'node:v8'
+import { waitFor } from '@pluxel/async/wait'
+import { singleflight, type Singleflight } from '@pluxel/async/singleflight'
 import * as v from 'valibot'
 
 import { writeFileAtomic, type FsPromises } from '@pluxel/core/fs'
@@ -296,16 +297,10 @@ type Resolved = {
 	bucket: Bucket
 }
 
-type OwnerContext = {
+type OwnerContext = Pick<Context, 'effects'> & {
 	readonly pluginInfo: {
 		readonly nodeSlot: object
 		readonly nodeAddress: PluginNodeAddress
-	}
-	readonly effects: {
-		defer(
-			cleanup: () => void,
-			meta?: { tag?: string; phase?: 'shutdown' | 'runtime' | 'final' },
-		): unknown
 	}
 }
 
@@ -913,7 +908,9 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 					if (!hasErrno(error, 'EROFS')) throw error
 					this.ctx.logger.warn(
 						'Memory cache persistence is not writable; restoring without saving updates',
-						{ error },
+						{
+							error,
+						},
 					)
 				}
 			}

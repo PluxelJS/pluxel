@@ -11,11 +11,6 @@ export type AuthSetupSnapshot =
 			state: 'setup-required'
 			reason: 'missing' | 'invalid'
 	  }>
-	| Readonly<{
-			mode: AuthCredentialSetupMode
-			state: 'unavailable'
-			reason: 'vault-unavailable'
-	  }>
 
 export type AuthSetupFailureCode =
 	| 'forbidden'

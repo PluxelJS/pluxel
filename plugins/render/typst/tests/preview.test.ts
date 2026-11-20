@@ -170,6 +170,16 @@ function pointer(container: HTMLElement, type: string, options: Partial<PointerE
 	)
 }
 
+function holdNextRender(renderer: ReturnType<typeof fixture>['renderer']) {
+	const started = Promise.withResolvers<void>()
+	const svg = Promise.withResolvers<string>()
+	vi.mocked(renderer.renderSvg).mockImplementationOnce(() => {
+		started.resolve()
+		return svg.promise
+	})
+	return { started: started.promise, finish: svg.resolve }
+}
+
 describe('TypstPreviewView', () => {
 	it('uses a full reset, displays only the matching newer revision and cleans native sessions', async () => {
 		const { view, renderer, container, cleanup } = fixture()
@@ -188,17 +198,11 @@ describe('TypstPreviewView', () => {
 
 	it('does not flash a superseded in-flight render', async () => {
 		const { view, renderer, container } = fixture()
-		let finish!: (svg: string) => void
-		vi.mocked(renderer.renderSvg).mockImplementationOnce(
-			() =>
-				new Promise((resolve) => {
-					finish = resolve
-				}),
-		)
+		const render = holdNextRender(renderer)
 		const first = view.show(packet(1))
-		await vi.waitFor(() => expect(finish).toBeDefined())
+		await render.started
 		const second = view.show(packet(2))
-		finish('<svg>stale</svg>')
+		render.finish('<svg>stale</svg>')
 		expect(await first).toBe(false)
 		expect(container.innerHTML).not.toBe('<svg>stale</svg>')
 		expect(await second).toBe(true)
@@ -218,20 +222,14 @@ describe('TypstPreviewView', () => {
 
 	it('waits for renderer cleanup during idempotent disposal and never commits afterward', async () => {
 		const { view, renderer, container, cleanup } = fixture()
-		let finish!: (svg: string) => void
-		vi.mocked(renderer.renderSvg).mockImplementationOnce(
-			() =>
-				new Promise((resolve) => {
-					finish = resolve
-				}),
-		)
+		const render = holdNextRender(renderer)
 		const first = view.show(packet(1))
-		await vi.waitFor(() => expect(finish).toBeDefined())
+		await render.started
 		const queued = view.show(packet(2))
 		const closing = view.dispose()
 		expect(view.dispose()).toBe(closing)
 		expect(cleanup).not.toHaveBeenCalled()
-		finish('<svg>late</svg>')
+		render.finish('<svg>late</svg>')
 		expect(await first).toBe(false)
 		expect(await queued).toBe(false)
 		await closing

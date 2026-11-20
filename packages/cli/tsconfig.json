@@ -3,7 +3,7 @@
 	"include": ["src", "tests", "package.json", "scripts", "tsdown.config.ts", "vitest.config.ts"],
 	"compilerOptions": {
 		"jsx": "react-jsx",
-		"customConditions": ["development"],
+		"customConditions": ["development", "@pluxel/source"],
 		"allowJs": true
 	}
 }

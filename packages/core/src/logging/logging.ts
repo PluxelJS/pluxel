@@ -25,7 +25,7 @@ import { RuntimeLogStoreRegistry } from './store'
 import { assertRuntimeLoggingInput, assertRuntimeLoggingOptions } from './validation'
 
 const ACTIVE_RUNTIME_LOGGING = Symbol.for('pluxel:runtime:active-logging')
-const CONTEXT_RUNTIME_LOGGING = new WeakMap<object, RuntimeLogging>()
+const CONTEXT_RUNTIME_LOGGING = new WeakMap<object, RuntimeLoggingManager>()
 const MAX_DEBUG_PATTERNS = 256
 const MAX_DIAGNOSTIC_COUNT = Number.MAX_SAFE_INTEGER
 
@@ -89,21 +89,50 @@ export type RuntimeLoggingDescription = {
 	}
 }
 
+/** Root logging management. Installation and shutdown remain owned by Core. */
 export type RuntimeLogging = {
 	readonly state: RuntimeLoggingState
 	readonly resolved: ResolvedRuntimeLoggingPlan
-	readonly contextBinding: LoggerServiceConfig
 	readonly policy: RuntimePluginLogPolicy
 	readonly ready: Promise<void>
 	readonly stores: RuntimeLogStoreRegistry
-	install(): Promise<void>
-	initializePolicy(store?: PluginLogPolicyStore): Promise<void>
 	describe(): RuntimeLoggingDescription
 	/** Flush bounded stores and policy, then await native LogTape drainable sinks. */
 	flush(): Promise<void>
 	/** Flush buffered store records without waiting for unrelated policy persistence. */
 	flushStores(): void
+}
+
+/** @internal Core owns native installation, Context binding and final disposal. */
+export type RuntimeLoggingManager = RuntimeLogging & {
+	readonly management: RuntimeLogging
+	readonly contextBinding: LoggerServiceConfig
+	install(): Promise<void>
+	initializePolicy(store?: PluginLogPolicyStore): Promise<void>
 	dispose(): Promise<void>
+}
+
+function createLoggingManagement(manager: RuntimeLogging): RuntimeLogging {
+	return Object.freeze({
+		get state() {
+			return manager.state
+		},
+		get resolved() {
+			return manager.resolved
+		},
+		get policy() {
+			return manager.policy
+		},
+		get ready() {
+			return manager.ready
+		},
+		get stores() {
+			return manager.stores
+		},
+		describe: () => manager.describe(),
+		flush: () => manager.flush(),
+		flushStores: () => manager.flushStores(),
+	})
 }
 
 type CompiledDebugPattern = {
@@ -179,7 +208,8 @@ function matchesDebugTopic(
 	return false
 }
 
-class RuntimeLoggingImpl implements RuntimeLogging {
+class RuntimeLoggingImpl implements RuntimeLoggingManager {
+	public readonly management: RuntimeLogging
 	public state: RuntimeLoggingState = 'created'
 	public readonly resolved: ResolvedRuntimeLoggingPlan
 	public readonly contextBinding: LoggerServiceConfig
@@ -204,6 +234,7 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 		rootId = createRootId(),
 	) {
 		this.input = input
+		this.management = createLoggingManagement(this)
 		this.resolved = {
 			root: {
 				id: rootId,
@@ -509,24 +540,27 @@ function throwFailures(results: readonly PromiseSettledResult<unknown>[], messag
 export function createRuntimeLogging(
 	input: RuntimeLoggingInput,
 	options: RuntimeLoggingOptions = {},
-): RuntimeLogging {
+): RuntimeLoggingManager {
 	assertRuntimeLoggingInput(input)
 	assertRuntimeLoggingOptions(options)
 	return new RuntimeLoggingImpl(input, options)
 }
 
-export function getActiveRuntimeLogging(): RuntimeLogging | undefined {
+export function getActiveRuntimeLogging(): RuntimeLoggingManager | undefined {
 	return (globalThis as RuntimeLoggingGlobal)[ACTIVE_RUNTIME_LOGGING]
 }
 
-export function requireActiveRuntimeLogging(): RuntimeLogging {
+export function requireActiveRuntimeLogging(): RuntimeLoggingManager {
 	const logging = getActiveRuntimeLogging()
 	if (!logging) throw new Error('RuntimeLogging is not installed')
 	return logging
 }
 
 /** @internal Bind one immutable root identity to its launcher-owned logging manager. */
-export function bindContextRuntimeLogging(ctx: Context, logging: RuntimeLogging): () => void {
+export function bindContextRuntimeLogging(
+	ctx: Context,
+	logging: RuntimeLoggingManager,
+): () => void {
 	const root = ctx.root
 	const active = getActiveRuntimeLogging()
 	if (active !== logging) {
@@ -547,7 +581,7 @@ export function bindContextRuntimeLogging(ctx: Context, logging: RuntimeLogging)
 
 export function getContextRuntimeLogging(ctx: Context): RuntimeLogging | undefined {
 	const logging = CONTEXT_RUNTIME_LOGGING.get(ctx.root)
-	return logging && logging === getActiveRuntimeLogging() ? logging : undefined
+	return logging && logging === getActiveRuntimeLogging() ? logging.management : undefined
 }
 
 export function requireContextRuntimeLogging(ctx: Context): RuntimeLogging {
@@ -563,7 +597,7 @@ export function createContextRuntimeLogging(
 	ctx: Context,
 	input: RuntimeLoggingInput,
 	options: LoggingOptions = {},
-): RuntimeLogging {
+): RuntimeLoggingManager {
 	assertRuntimeLoggingInput(input)
 	const { policyStore: _, ...runtimeOptions } = options
 	assertRuntimeLoggingOptions(runtimeOptions)

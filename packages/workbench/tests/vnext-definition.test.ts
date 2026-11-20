@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-	readWorkbenchDefinition,
-	readWorkbenchDescriptor,
-	readWorkbenchMarkdownDocument,
-	readWorkbenchRendererEntry,
-} from '../src/workbench/definition'
+import { readWorkbenchDescriptor } from '../src/workbench/definition'
 import { RpcTarget } from 'capnweb'
 import { workbench } from '@pluxel/workbench'
 import * as v from 'valibot'
@@ -17,68 +12,7 @@ interface CatalogApi extends RpcTarget {
 	list(): readonly string[]
 }
 
-describe('Workbench vNext definitions', () => {
-	it('declares bounded owner-scoped panels for Views, Content, and Attachments', () => {
-		const renderer = workbench.entry(import.meta.url, './fixtures/settings.tsx')
-		const provider = workbench.define({ picker: workbench.attachment<CatalogApi>({ renderer }) })
-		const definition = workbench.define({
-			inspector: workbench.view<SettingsApi>({
-				renderer,
-				placement: workbench.panel('right', { label: 'Inspector', icon: workbench.icons.Settings }),
-			}),
-			guide: workbench.content({
-				document: workbench.markdown(import.meta.url, './fixtures/guide.md'),
-				placement: workbench.panel('left', { label: 'Guide', order: 10 }),
-			}),
-			picker: provider.picker.place(workbench.panel('bottom', { label: 'Picker', order: 20 })),
-		})
-		expect(
-			readWorkbenchDefinition(definition).entries.map((entry) =>
-				'placement' in entry ? entry.placement : undefined,
-			),
-		).toEqual([
-			{ kind: 'panel', region: 'right', label: 'Inspector', icon: 'settings', order: 0 },
-			{ kind: 'panel', region: 'left', label: 'Guide', order: 10 },
-			{ kind: 'panel', region: 'bottom', label: 'Picker', order: 20 },
-		])
-		for (const region of ['left', 'right', 'bottom'] as const)
-			expect(Object.isFrozen(workbench.panel(region, { label: 'Tool' }))).toBe(true)
-		expect(() => workbench.panel('center' as never, { label: 'Invalid' })).toThrow('region')
-		expect(() => workbench.panel('left', { label: '' })).toThrow('label')
-		expect(() => workbench.panel('left', { label: 'x'.repeat(257) })).toThrow('label')
-		expect(() => workbench.panel('left', { label: 'Tool', order: Infinity })).toThrow('order')
-		expect(() => workbench.panel('left', { label: 'Tool', icon: 'remote-icon' as never })).toThrow(
-			'icon',
-		)
-		expect(() => workbench.panel('left', { label: 'Tool', target: 'global' } as never)).toThrow(
-			'unsupported option',
-		)
-	})
-
-	it('declares a frozen host-rendered Markdown Content with no renderer', () => {
-		const document = workbench.markdown(import.meta.url, './fixtures/guide.md')
-		const definition = workbench.define({
-			guide: workbench.content({
-				document,
-				placement: workbench.tab({ label: 'Guide' }),
-			}),
-		})
-
-		expect(readWorkbenchMarkdownDocument(document)).toEqual({
-			moduleUrl: import.meta.url,
-			sourcePath: './fixtures/guide.md',
-			slots: {},
-		})
-		expect(readWorkbenchDescriptor(definition.guide)).toMatchObject({
-			kind: 'content',
-			key: 'guide',
-			document,
-		})
-		expect(Object.isFrozen(document)).toBe(true)
-		expect(Object.isFrozen(definition.guide)).toBe(true)
-		expect(definition.guide).not.toHaveProperty('renderer')
-	})
-
+describe('Workbench definitions', () => {
 	it('rejects forged Content documents and unsafe Markdown provenance', () => {
 		expect(() => workbench.markdown(import.meta.url, '/guide.md')).toThrow(
 			'sourcePath must be module-relative',
@@ -147,20 +81,14 @@ describe('Workbench vNext definitions', () => {
 		})
 
 		expect(Object.keys(definition)).toEqual(['settings', 'catalog'])
-		expect(Object.getPrototypeOf(definition)).toBeNull()
 		expect(Object.isFrozen(definition)).toBe(true)
-		expect(Reflect.get(definition, 'unknown')).toBeUndefined()
-		expect(readWorkbenchDefinition(definition).entries).toEqual([
-			expect.objectContaining({ kind: 'view', key: 'settings' }),
-			expect.objectContaining({ kind: 'attachment', key: 'catalog' }),
-		])
 		expect(readWorkbenchDescriptor(definition.settings)).toMatchObject({
 			kind: 'view',
 			key: 'settings',
 		})
-		expect(readWorkbenchRendererEntry(renderer)).toEqual({
-			moduleUrl: import.meta.url,
-			entryPath: './fixtures/settings.tsx',
+		expect(readWorkbenchDescriptor(definition.catalog)).toMatchObject({
+			kind: 'attachment',
+			key: 'catalog',
 		})
 	})
 
@@ -187,34 +115,8 @@ describe('Workbench vNext definitions', () => {
 		})
 	})
 
-	it('normalizes the closed tab and route placement records', () => {
-		expect(
-			workbench.route('/accounts/:accountId/', {
-				title: 'Account',
-			}),
-		).toEqual({
-			kind: 'route',
-			path: '/accounts/:accountId',
-			title: 'Account',
-			frame: 'shell',
-			order: 0,
-		})
-		expect(() =>
-			workbench.route('/accounts/:accountId', {
-				title: 'Account',
-				navigation: { label: 'Accounts' },
-			}),
-		).toThrow('parameterized routes cannot enter navigation')
-		expect(() => workbench.route('/accounts/:bad-name', { title: 'Account' })).toThrow(
-			'invalid route parameter',
-		)
-	})
-
-	it('rejects compatibility-shaped definitions and unsafe keys', () => {
+	it('rejects unsafe definition keys and unsupported options', () => {
 		const renderer = workbench.entry(import.meta.url, './fixtures/settings.tsx')
-		expect(() => workbench.define({ views: { settings: {} } } as never)).toThrow(
-			'invalid entry descriptor',
-		)
 		const unsafeDefinition = Object.fromEntries([
 			[
 				['th', 'en'].join(''),

@@ -38,7 +38,11 @@ export const HttpWorkbench = workbench.define({
 在提供方的 `init()` 中发布该能力：
 
 ```ts
-this.ctx.workbench?.publish(HttpWorkbench, {
+import type { Workbench } from '@pluxel/workbench'
+import { defineServiceRef } from '@pluxel/core'
+
+const WorkbenchRef = defineServiceRef<Workbench>()
+this.ctx.service(WorkbenchRef)?.publish(HttpWorkbench, {
 	settings: ({ consumer, signal }) => new HttpSettingsTarget(consumer.node, signal),
 })
 ```

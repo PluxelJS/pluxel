@@ -9,15 +9,9 @@ description: 连接插件市场，或直接通过受控 pnpm 环境安装与更�
 
 ## 宿主装配
 
-在宿主配置中启用包管理器需要配置四个关键项：
-
-1. 在 `plugins` 列表中声明 `PackageManagerPlugin`；
-2. 在 `sources` 中注册对应的受管插件入口目录；
-3. 在 `policy.autoStart` 中将其加入随宿主自启列表；
-4. 在 `config.records` 中配置管理路径与安全规则。
+在 `plugins` 中给 `PackageManagerPlugin` 声明启动意图和管理目录，再用 `sources` 接纳该目录发布的入口。
 
 ```ts no-twoslash
-import { zenfs } from '@pluxel/core/config'
 import { resolve } from 'node:path'
 import * as nativeFs from 'node:fs'
 import { defineHostApplication } from '@pluxel/host'
@@ -25,9 +19,6 @@ import { servicesPreset } from '@pluxel/services/preset'
 import { Passthrough } from '@pluxel/core/fs'
 import { resolveHostEnv } from '@pluxel/host/environment'
 import { PackageManagerPlugin } from '@pluxel/plugin-package-manager'
-import { pluginSource } from '@pluxel/host/sources'
-
-const packageManagerNode = PackageManagerPlugin.nodeAddress()
 
 export default defineHostApplication(async (startup) => {
 	const dataRoot = resolve(
@@ -40,34 +31,25 @@ export default defineHostApplication(async (startup) => {
 
 	return {
 		name: 'managed-plugins',
-		plugins: [PackageManagerPlugin],
-		sources: [
-			pluginSource({
-				kind: 'directory',
-				path: resolve(managedPackagesRoot, 'entries'),
-				include: ['*.mjs'],
-			}),
-		],
-		services: await servicesPreset(startup, {}),
-		policy: { autoStart: [packageManagerNode] },
-		config: {
-			records: [
-				{
-					owner: packageManagerNode,
-					config: {
-						rootDir: managedPackagesRoot,
-						ignoreScripts: true,
-						allowBuilds: [],
-						minimumReleaseAgeMinutes: 1_440,
-					},
+		plugins: [
+			{
+				plugin: PackageManagerPlugin,
+				autoStart: true,
+				config: {
+					rootDir: managedPackagesRoot,
+					ignoreScripts: true,
+					allowBuilds: [],
+					minimumReleaseAgeMinutes: 1_440,
 				},
-			],
-		},
-		runtime: {
-			zenfs: zenfs({
+			},
+		],
+		sources: [{ directory: resolve(managedPackagesRoot, 'entries'), include: ['*.mjs'] }],
+		services: await servicesPreset(startup),
+		coreConfig: {
+			zenfs: {
 				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
 				durableMounts: ['/'],
-			}),
+			},
 		},
 	}
 })
@@ -85,13 +67,13 @@ export default defineHostApplication(async (startup) => {
 | `minimumReleaseAgeMinutes` | `number` (`1440`)                    | 拒绝安装发布时间少于指定分钟数的包（默认 24 小时，防范供应链投毒） |
 | `markets`                  | `Array<{ id, url }>` (`[]`)          | 远程插件市场连接端点列表                                           |
 
-通过 `envBinding` 将配置项与环境变量绑定：
+在包管理器节点的 `envBindings` 中加入：
 
 ```ts no-twoslash
 import { envBinding } from '@pluxel/host'
-import { PackageManagerPlugin, PackageManagerConfig } from '@pluxel/plugin-package-manager'
+import { PackageManagerConfig } from '@pluxel/plugin-package-manager'
 
-envBinding(PackageManagerPlugin, {
+envBinding({
 	config: {
 		schema: PackageManagerConfig,
 		mapping: {
@@ -113,8 +95,10 @@ envBinding(PackageManagerPlugin, {
 ```
 
 - 连接 URL 为市场后端的基础接口地址（不含 `/v1`）。
+- 连接可指向 Worker 主站或只读目录镜像。镜像保留发行的来源和摘要，插件及依赖仍通过 pnpm 配置选择的 registry 获取。 [镜像部署](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md#只读镜像)
 - 未配置市场时，仍支持通过直接输入 npm package spec（如 `@acme/example-plugin@^2.0.0`）进行安装。
-- 市场列表支持按分类、官方标记和标签筛选包，并提供 README、依赖项与校验元数据。
+- 市场按行显示包名、简介、作者或组织、分类、来源和 registry 最新版本。点击包名查看 README 和已检查的发行，点击作者添加筛选。
+- 作者、分类、标签和来源可以多选。每组命中任意候选即可，各组条件同时生效。官方状态可选全部、官方或社区。点击已选条件可单独移除，「Clear filters」清空筛选，搜索框有独立的清除入口。
 
 ### 独立 React 市场组件
 
@@ -128,7 +112,7 @@ export function Catalog({ data }: { data: MarketplaceData }) {
 }
 ```
 
-宿主传入 `MarketplaceData`（包含 `Packages`、`Package`、`Releases`、`Release` 数据读取器）即可完成市场浏览页面的渲染。
+宿主传入 `MarketplaceData`，用 `Packages` 读取分页包列表，`Facets` 读取当前条件下的选项和计数，`Package`、`Releases`、`Release` 读取详情。两个目录读取器接收同一套筛选条件，只有 `Packages` 接收游标和页大小。
 
 ## 两阶段安装（Prepare 与 Confirm）
 
@@ -165,13 +149,13 @@ if (!installed.ok) {
 import { Commands } from '@pluxel/services/commands'
 
 // 直接安装
-const installed = await ctx.require(Commands).execute('package.install', {
+const installed = await ctx.service(Commands).execute('package.install', {
 	specs: ['@acme/example-plugin@^2.0.0'],
 })
 if (installed.isErr()) throw new Error(installed.error.message)
 
 // 卸载插件
-const removed = await ctx.require(Commands).execute('package.remove', {
+const removed = await ctx.service(Commands).execute('package.remove', {
 	specs: ['@acme/example-plugin'],
 })
 if (removed.isErr()) throw new Error(removed.error.message)
@@ -199,3 +183,5 @@ if (removed.isErr()) throw new Error(removed.error.message)
 
 - 进程内采用单写者模型，初始化与变更操作严格串行。
 - 卸载插件时，系统会移除对应的 `entries/*.mjs` 入口文件；在 Vite 开发模式下系统会自动感知更新，在生产 Native 运行时通常在下一次重启时生效。
+
+安装发布后，自动化脚本通过 Host 当前 catalog 发现插件并操作。尚无类型时，同步控制材料后再编写强类型方法调用，见[动态安装后的发现与操作](../development/plugin-control.md#动态安装后的发现与操作)。

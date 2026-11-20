@@ -1,6 +1,6 @@
 ---
 title: 官方插件总览
-description: 浏览官方提供的现成插件，涵盖 HTTP 客户端、身份认证、缓存、存储与服务端渲染能力。
+description: 浏览官方提供的现成插件，涵盖身份认证、缓存、存储与服务端渲染能力。
 icon: Blocks
 ---
 
@@ -10,37 +10,34 @@ icon: Blocks
 
 ## 把一个插件加入应用
 
-以引入出站 HTTP 客户端插件 `@pluxel/plugin-wretch` 为例：
+以下示例为应用添加服务端字体插件 `@pluxel/plugin-fonts`。
 
 ### 1. 安装依赖
 
 在项目根目录下通过包管理器添加依赖：
 
 ```sh
-pnpm add @pluxel/plugin-wretch
+vp add @pluxel/plugin-fonts
 ```
 
 如果你的项目使用 pnpm catalog 统一管理版本，也可以运行：
 
 ```sh
-vp exec pluxel pncat add @pluxel/plugin-wretch
+vp exec pluxel pncat add @pluxel/plugin-fonts
 vp install
 ```
 
 ### 2. 在宿主中注册插件
 
-在应用的 `src/app.ts` 中，将插件加入 `plugins` 清单；如果需要在冷启动时主动运行，可加入 `policy.autoStart`：
+在 `src/app.ts` 的 `plugins` 中声明插件。需要冷启动时主动运行的节点填写 `autoStart: true`。
 
 ```ts no-twoslash
 import { defineHostApplication } from '@pluxel/host'
-import { WretchPlugin } from '@pluxel/plugin-wretch'
-import { MyBusinessPlugin } from './my-plugin'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
+import { ReportsPlugin } from './reports-plugin'
 
 export default defineHostApplication(() => ({
-	// 注册可用插件
-	plugins: [WretchPlugin, MyBusinessPlugin],
-	// 启动策略
-	policy: { autoStart: [MyBusinessPlugin] },
+	plugins: [{ plugin: FontsPlugin }, { plugin: ReportsPlugin, autoStart: true }],
 }))
 ```
 
@@ -50,16 +47,16 @@ export default defineHostApplication(() => ({
 
 ```ts no-twoslash
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { WretchPlugin } from '@pluxel/plugin-wretch'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
 
 @Plugin()
-export class MyBusinessPlugin extends BasePlugin {
-	constructor(private readonly http: WretchPlugin) {
+export class ReportsPlugin extends BasePlugin {
+	constructor(private readonly fonts: FontsPlugin) {
 		super()
 	}
 
-	async fetchRemoteData() {
-		return this.http.client().url('https://api.example.com/data').get().json()
+	defaultFont() {
+		return this.fonts.defaultFont
 	}
 }
 ```
@@ -68,17 +65,16 @@ export class MyBusinessPlugin extends BasePlugin {
 
 以下插件均已在 npm 上公开发布：
 
-| 插件包名                             | 核心能力                                         | 使用文档                                        |
-| ------------------------------------ | ------------------------------------------------ | ----------------------------------------------- |
-| **`@pluxel/plugin-wretch`**          | 出站 HTTP 客户端，支持超时、重试与域名白名单策略 | [Wretch HTTP 客户端](./wretch.md)               |
-| **`@pluxel/plugin-auth`**            | Workbench 管理界面与 Management API 认证         | [认证与鉴权](./auth.md)                         |
-| **`@pluxel/plugin-playwright`**      | 远程 CDP / Playwright 浏览器自动化与会话隔离     | [浏览器自动化](./browser.md)                    |
-| **`@pluxel/plugin-invoice`**         | 发票票据 OCR 结构化提取与查验编排                | [票据识别与查验](./invoice.md)                  |
-| **`@pluxel/plugin-fonts`**           | 服务端中英文字体库扫描、加载与分发               | [服务端字体](./rendering/fonts.md)              |
-| **`@pluxel/plugin-canvas`**          | 基于 Skia 的高性能服务端 Canvas 绘图与图片合成   | [服务端 Canvas](./rendering/canvas.md)          |
-| **`@pluxel/plugin-echarts`**         | 服务端图表生成与 SVG/PNG 渲染                    | [服务端 ECharts](./rendering/echarts.md)        |
-| **`@pluxel/plugin-takumi`**          | JSX/HTML 原生模板渲染引擎                        | [Takumi 渲染](./rendering/takumi.md)            |
-| **`@pluxel/plugin-takumi-markdown`** | GFM Markdown 解析、代码语法高亮与数学公式排版    | [Markdown 渲染](./rendering/takumi-markdown.md) |
+| 插件包名                             | 核心能力                                       | 使用文档                                        |
+| ------------------------------------ | ---------------------------------------------- | ----------------------------------------------- |
+| **`@pluxel/plugin-auth`**            | Workbench 管理界面与 Management API 认证       | [认证与鉴权](./auth.md)                         |
+| **`@pluxel/plugin-playwright`**      | 远程 CDP / Playwright 浏览器自动化与会话隔离   | [浏览器自动化](./browser.md)                    |
+| **`@pluxel/plugin-invoice`**         | 发票票据 OCR 结构化提取与查验编排              | [票据识别与查验](./invoice.md)                  |
+| **`@pluxel/plugin-fonts`**           | 服务端中英文字体库扫描、加载与分发             | [服务端字体](./rendering/fonts.md)              |
+| **`@pluxel/plugin-canvas`**          | 基于 Skia 的高性能服务端 Canvas 绘图与图片合成 | [服务端 Canvas](./rendering/canvas.md)          |
+| **`@pluxel/plugin-echarts`**         | 服务端图表生成与 SVG/PNG 渲染                  | [服务端 ECharts](./rendering/echarts.md)        |
+| **`@pluxel/plugin-takumi`**          | JSX/HTML 原生模板渲染引擎                      | [Takumi 渲染](./rendering/takumi.md)            |
+| **`@pluxel/plugin-takumi-markdown`** | GFM Markdown 解析、代码语法高亮与数学公式排版  | [Markdown 渲染](./rendering/takumi-markdown.md) |
 
 ## 工作区插件（持续孵化中）
 

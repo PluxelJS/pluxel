@@ -1,10 +1,10 @@
-import { type RootCapabilityInstallation } from '@pluxel/core/host'
+import { type RootServiceInstallation } from '@pluxel/core/host'
 import { createHost, defineHostService, type PluginHost, type HostService } from '@pluxel/host'
 import { type ServiceInternalTestHostOptions } from './options'
 
 export type ServiceInternalTestRootOptions = Readonly<{
-	/** Framework test-only installation of capabilities before the root is created. */
-	capabilities?: readonly RootCapabilityInstallation<unknown, undefined>[]
+	/** Framework test-only installation of provides before the root is created. */
+	provides?: readonly RootServiceInstallation<unknown>[]
 	/** Simulated physical peer for in-process Management HTTP tests. Defaults to loopback. */
 	requestAddress?: (request: Request) => Readonly<{ address: string }> | null
 }>
@@ -15,7 +15,18 @@ export async function createServiceTestApplication(
 ): Promise<PluginHost> {
 	for (const key of Object.keys(options))
 		if (
-			!['name', 'runtime', 'policy', 'config', 'services', 'management', 'workbench'].includes(key)
+			![
+				'name',
+				'coreConfig',
+				'policy',
+				'config',
+				'pluginNodes',
+				'inputMode',
+				'vaultBindings',
+				'services',
+				'management',
+				'workbench',
+			].includes(key)
 		)
 			throw new TypeError(`[pluxel/test] unsupported option ${key}`)
 	const withWorkbench = options.workbench ?? false
@@ -28,8 +39,13 @@ export async function createServiceTestApplication(
 	}
 	let selectedServices = options.services
 	if (selectedServices === undefined) {
-		const { standardServices } = await import('../index')
-		selectedServices = standardServices()
+		const [{ elysia }, { commands }, { nodeModules }, { workers }] = await Promise.all([
+			import('../elysia'),
+			import('../commands'),
+			import('../node'),
+			import('../workers'),
+		])
+		selectedServices = [elysia(), commands(), nodeModules(), workers()]
 	}
 	const services: HostService[] = [...selectedServices]
 	if (withManagement) {
@@ -50,20 +66,20 @@ export async function createServiceTestApplication(
 	services.push(
 		defineHostService({
 			name: 'Service test transport',
-			requires: withManagement ? { http: ElysiaRuntime } : {},
-			capabilities: internal.capabilities ?? [],
+			requires: ElysiaRuntime ? { http: ElysiaRuntime } : {},
+			provides: internal.provides ?? [],
 			async prepare({ ctx, effects }) {
 				if (!withManagement) return
 				const { attachManagementHttp } = await import('../management/http-internal')
 				const workbench = withWorkbench ? await import('@pluxel/workbench/server') : undefined
-				attachManagementHttp(
+				await attachManagementHttp(
 					ctx,
 					effects,
 					withWorkbench
 						? {
 								bindings: () => ({
 									createWorkbench: (principal, identity) =>
-										workbench!.requireWorkbench(ctx).createSession(principal, identity),
+										ctx.service(workbench!.WorkbenchHost).createSession(principal, identity),
 									artifacts: workbench!.createWorkbenchArtifactHandler(ctx),
 								}),
 							}
@@ -88,8 +104,11 @@ export async function createServiceTestApplication(
 		plugins: [],
 		services,
 		name: options.name ?? 'test',
-		runtime: options.runtime,
+		coreConfig: options.coreConfig,
 		policy: options.policy,
 		config: options.config,
+		pluginNodes: options.pluginNodes,
+		inputMode: options.inputMode,
+		vaultBindings: options.vaultBindings,
 	})
 }

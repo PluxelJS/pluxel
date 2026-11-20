@@ -26,21 +26,14 @@ it('runs WASM through Pluxel, recovers source errors, and restarts without nativ
 		if (!path) throw new Error(`Unexpected request: ${url}`)
 		return new Response(await readFile(path))
 	})
-	await using host = await createTestHost({
-		config: {
-			records: [
-				{
-					owner: TypstPlugin.nodeAddress(),
-					config: {
-						compilerWasmUrl: 'https://example.test/compiler.wasm',
-						rendererWasmUrl: 'https://example.test/renderer.wasm',
-						fontUrls: [],
-					},
-				},
-			],
+	await using host = await createTestHost()
+	const typst = await host.start(TypstPlugin.nodeAddress(), {
+		initialConfig: {
+			compilerWasmUrl: 'https://example.test/compiler.wasm',
+			rendererWasmUrl: 'https://example.test/renderer.wasm',
+			fontUrls: [],
 		},
 	})
-	const typst = await host.start(TypstPlugin)
 	const rendering = typst.renderSvg(source)
 	await expect(typst.renderSvg(source)).rejects.toMatchObject({ code: 'BUSY' })
 	const svg = new TextDecoder().decode(await rendering)
@@ -90,9 +83,9 @@ it('runs WASM through Pluxel, recovers source errors, and restarts without nativ
 		code: 'COMPILE_FAILED',
 	})
 	expect(await typst.renderSvg(source)).toEqual(await rendering)
-	await host.stop(TypstPlugin)
+	await host.stop(TypstPlugin.nodeAddress())
 	await expect(typst.renderSvg(source)).rejects.toMatchObject({ code: 'CLOSED' })
-	const restarted = await host.start(TypstPlugin)
+	const restarted = await host.start(TypstPlugin.nodeAddress())
 	expect(new TextDecoder().decode(await restarted.renderSvg(source))).toContain('<svg')
 	expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([...assets.keys(), ...assets.keys()])
 }, 30_000)

@@ -1,4 +1,5 @@
 import { lazy, type SubCommandable } from 'gunshi'
+import { devCommonArgs, devSubCommands } from '@pluxel/agent-sdk/internal/cli'
 
 export const docsCommandArgs = {
 	path: {
@@ -27,7 +28,7 @@ export const newCommandArgs = {
 	},
 	pm: {
 		type: 'enum',
-		description: 'Package manager (auto-detect by default)',
+		description: 'Package manager override (must match template requirements)',
 		choices: ['pnpm', 'npm', 'yarn', 'bun'],
 	},
 	force: { type: 'boolean', description: 'Overwrite existing files', default: false },
@@ -587,116 +588,10 @@ export const workspaceCommandDefinition = {
 	subCommands: workspaceSubCommands,
 } as const
 
-export const devCommonArgs = {
-	profile: {
-		type: 'string',
-		description: 'Named pluxel.dev profile; defaults to configured default or the sole profile',
-	},
-	root: {
-		type: 'string',
-		description:
-			'Project directory from which to find dev profiles (defaults to current directory)',
-	},
-	instance: {
-		type: 'string',
-		description: 'Exact running instance when a Vite root has multiple consoles',
-	},
-} as const
-
-/** Gunshi routes raw positionals before resolving option values on commands with children. */
-export function normalizeDevArgs(argv: string[]): string[] {
-	if (argv[0] !== 'dev') return argv
-	const normalized: string[] = []
-	for (let index = 0; index < argv.length; index++) {
-		const argument = argv[index]!
-		if (argument === '--') return [...normalized, ...argv.slice(index)]
-		const next = argv[index + 1]
-		if (
-			argument.startsWith('--') &&
-			Object.hasOwn(devCommonArgs, argument.slice(2)) &&
-			next !== undefined &&
-			!next.startsWith('-')
-		) {
-			normalized.push(`${argument}=${next}`)
-			index++
-		} else normalized.push(argument)
-	}
-	return normalized
-}
-
-export const devInstancesDefinition = {
-	name: 'instances',
-	description: 'Discover running consoles in the selected Vite root',
-	args: devCommonArgs,
-} as const
-
 export const devStatusDefinition = {
 	name: 'status',
 	description: 'Inspect application or service state and URLs without starting a service',
 	args: devCommonArgs,
-} as const
-
-const devExecutionArgs = {
-	detach: { type: 'boolean', default: false, description: 'Return the receipt without waiting' },
-	timeout: {
-		type: 'string',
-		default: '30000',
-		description: 'Cooperative operation deadline in milliseconds (1–300000)',
-	},
-} as const
-
-export const devHmrArgs = {
-	...devCommonArgs,
-	...devExecutionArgs,
-	action: { type: 'positional', required: true, description: 'pause, apply or resume' },
-} as const
-
-export const devHmrDefinition = {
-	name: 'hmr',
-	description: 'Control Host HMR batches without loading project code; return an operation receipt',
-	args: devHmrArgs,
-} as const
-
-export const devRunArgs = {
-	...devCommonArgs,
-	...devExecutionArgs,
-	file: {
-		type: 'positional',
-		required: true,
-		description:
-			'TypeScript module inside the selected Vite root; path is relative to current directory',
-	},
-	export: { type: 'string', default: 'default', description: 'Exported function to call' },
-	input: { type: 'string', description: 'JSON input passed to the execution context' },
-	'input-file': { type: 'string', description: 'Read JSON input from this file' },
-} as const
-
-export const devRunDefinition = {
-	name: 'run',
-	description:
-		'Execute in a running application; print final JSON and a receipt pinned to the original instance',
-	toKebab: true,
-	args: devRunArgs,
-} as const
-
-export const devReceiptArgs = {
-	receipt: {
-		type: 'positional',
-		required: true,
-		description: 'Complete receipt returned by dev run or dev hmr',
-	},
-} as const
-
-export const devResultDefinition = {
-	name: 'result',
-	description: 'Read a retained run from its original instance using its receipt',
-	args: devReceiptArgs,
-} as const
-
-export const devCancelDefinition = {
-	name: 'cancel',
-	description: 'Request cooperative cancellation at the original instance using its receipt',
-	args: devReceiptArgs,
 } as const
 
 export const devCommandDefinition = {
@@ -704,40 +599,12 @@ export const devCommandDefinition = {
 	description: 'Start or reuse the project application or service and display current addresses',
 	args: devCommonArgs,
 	subCommands: new Map<string, SubCommandable>([
+		...devSubCommands,
 		[
 			'status',
 			lazy(
-				() => import('./commands/dev').then((module) => module.devStatusCommand),
+				() => (ctx) => import('./commands/dev').then((module) => module.devStatusCommand.run!(ctx)),
 				devStatusDefinition,
-			),
-		],
-		[
-			'instances',
-			lazy(
-				() => import('./commands/dev').then((module) => module.devInstancesCommand),
-				devInstancesDefinition,
-			),
-		],
-		[
-			'hmr',
-			lazy(() => import('./commands/dev').then((module) => module.devHmrCommand), devHmrDefinition),
-		],
-		[
-			'run',
-			lazy(() => import('./commands/dev').then((module) => module.devRunCommand), devRunDefinition),
-		],
-		[
-			'result',
-			lazy(
-				() => import('./commands/dev').then((module) => module.devResultCommand),
-				devResultDefinition,
-			),
-		],
-		[
-			'cancel',
-			lazy(
-				() => import('./commands/dev').then((module) => module.devCancelCommand),
-				devCancelDefinition,
 			),
 		],
 	]),

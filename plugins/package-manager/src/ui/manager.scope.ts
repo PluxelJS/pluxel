@@ -9,6 +9,7 @@ export const {
 	prepareInstallMutation,
 	confirmInstallMutation,
 	marketPackagesQuery,
+	marketFacetsQuery,
 	marketPackageQuery,
 	marketReleaseQuery,
 	marketReleasesQuery,

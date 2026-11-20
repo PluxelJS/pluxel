@@ -7,10 +7,10 @@ export const sharedRuntimes = {
 	workbenchCapnweb: {
 		name: 'capnweb',
 		marker: 'workbenchCapnweb',
-		label: 'Workbench capnweb',
-		host: 'Workbench',
-		owner: '@pluxel/workbench',
-		entry: '@pluxel/workbench',
+		label: 'capnweb',
+		host: 'capnweb',
+		owner: '@pluxel/host',
+		entry: '@pluxel/host',
 	},
 	tinybase: {
 		name: 'tinybase',

@@ -33,6 +33,7 @@
 		"@pluxel/host-vite": "catalog:pluxel",
 		"@pluxel/rolldown": "catalog:pluxel",
 		"@tabler/icons-react": "catalog:frontend",
+		"@types/bun": "catalog:tooling",
 		"@types/node": "catalog:tooling",
 		"@types/react": "catalog:frontend",
 		"@types/react-dom": "catalog:frontend",

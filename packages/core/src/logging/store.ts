@@ -2,6 +2,7 @@ import { pluginNodeIndexKey } from '../plugins/runtime/identity'
 import {
 	compileLogFilter,
 	matchesLogFilterCompiled,
+	OUTBOUND_HTTP_LOG_STREAM_ID,
 	type CompiledLogFilter,
 	type LogFilter,
 	type LogRangeResult,
@@ -390,7 +391,8 @@ export class RuntimeLogStore {
 
 	range(input: {
 		epoch: number
-		fromSeq: string
+		/** Omit to return the most recent matching lines. */
+		fromSeq?: string
 		limit: number
 		filter?: LogFilter
 	}): LogRangeResult {
@@ -410,6 +412,18 @@ export class RuntimeLogStore {
 		}
 
 		const limit = Math.min(Math.max(1, Math.floor(input.limit)), this.cap)
+		if (input.fromSeq === undefined) {
+			const lines = this.tailWindow(limit, input.filter)
+			const nextSeq = seqToString(this.nextSeq)
+			return {
+				ok: true,
+				streamId: this.streamId,
+				epoch: this.epoch,
+				fromSeq: lines[0]?.seq ?? nextSeq,
+				nextSeq,
+				lines,
+			}
+		}
 		const from = parseSeq(input.fromSeq)
 		if (from === null) return { ok: false, code: 'invalid', message: 'Invalid fromSeq' }
 
@@ -538,46 +552,30 @@ export class RuntimeLogStore {
 	}
 
 	/**
-	 * Fast path for "tail N" queries (used by the UI initial snapshot).
-	 * Returns a contiguous, unfiltered window (caller can filter client-side).
+	 * Returns the newest matching records in ascending sequence order.
 	 */
-	tailWindow(limit: number): RuntimeLogLine[] {
+	tailWindow(limit: number, filter?: LogFilter): RuntimeLogLine[] {
 		const n = Math.min(Math.max(0, Math.floor(limit)), this.count)
 		if (n === 0) return []
 		if (this.chunkCount === 0) return []
 
 		const out = Array<RuntimeLogLine>(n)
+		const compiled = compileLogFilter(filter)
 		let need = n
 
 		let idx = this.tailChunk
-		let chunk = this.chunks[idx]
-		if (!chunk) return []
-		let pos = chunk.len - 1
-
-		while (need > 0 && chunk) {
-			const line = chunkGet(chunk, pos)
-			if (line) {
-				out[need - 1] = line
-				need--
-			}
-			pos--
-			if (need === 0) break
-			if (pos < 0) {
-				// Move to the previous chunk in ring order.
-				idx = (idx - 1 + this.maxChunks) % this.maxChunks
-				chunk = this.chunks[idx]
-				// Skip empty slots (should be rare).
-				let guard = 0
-				while (!chunk && guard++ < this.maxChunks) {
-					idx = (idx - 1 + this.maxChunks) % this.maxChunks
-					chunk = this.chunks[idx]
+		for (let visited = 0; visited < this.chunkCount && need > 0; visited++) {
+			const chunk = this.chunks[idx]
+			idx = (idx - 1 + this.maxChunks) % this.maxChunks
+			if (!chunk || !chunkMayMatch(chunk.meta, compiled)) continue
+			for (let pos = chunk.len - 1; pos >= 0 && need > 0; pos--) {
+				const line = chunkGet(chunk, pos)
+				if (line && (!compiled.hasFilter || matchesLogFilterCompiled(line, compiled))) {
+					out[--need] = line
 				}
-				if (!chunk) break
-				pos = chunk.len - 1
 			}
 		}
 
-		// If we couldn't fill (shouldn't happen unless corruption), trim.
 		return need === 0 ? out : out.slice(need)
 	}
 }
@@ -588,6 +586,11 @@ type RegistryDefaults = {
 
 const DEFAULTS: RegistryDefaults = {
 	windowLines: 200_000,
+}
+
+export function assertCustomLogStreamId(streamId: string): void {
+	if (streamId === OUTBOUND_HTTP_LOG_STREAM_ID)
+		throw new TypeError(`Log stream ${streamId} is owned by Core`)
 }
 
 export class RuntimeLogStoreRegistry {
@@ -612,6 +615,7 @@ export class RuntimeLogStoreRegistry {
 	}
 
 	getOrCreate(streamId: string, opts: Partial<RuntimeLogStoreOptions> = {}): RuntimeLogStore {
+		assertCustomLogStreamId(streamId)
 		const existing = this.get(streamId)
 		if (existing) return existing
 		const next = new RuntimeLogStore({

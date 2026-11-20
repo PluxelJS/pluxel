@@ -3,7 +3,7 @@ title: CLI 与工具链
 description: 了解脚手架、插件构建、应用执行、HMR、源码联调和发行检查分别由谁负责。
 ---
 
-Pluxel CLI（`@pluxel/cli`）是贯穿工作区初始化、代码生成、构建转换、本地调试与包发布的核心命令行工具。
+Pluxel CLI（`@pluxel/cli`）是贯穿工作区初始化、代码生成、构建转换、本地调试与包发布的核心命令行工具。终端使用 `vp exec pluxel <command>`，依赖管理和项目任务遵循[统一命令入口](./workspace-toolchain.md#统一命令入口)。
 
 ## CLI 命令概览
 
@@ -14,7 +14,8 @@ Pluxel CLI（`@pluxel/cli`）是贯穿工作区初始化、代码生成、构建
 - **数据库迁移维护**：`pluxel database generate/check/rebase`（见 [数据库开发](../plugin-development/database.md)）
 - **应用发行物打包与校验**：`pluxel distribution create/inspect/verify`
 - **发布 npm 包并同步市场**：`pluxel publish --webhook`
-- **开发控制台与 HMR 批次管理**：`pluxel dev status/hmr/run/result/cancel`（见 [开发控制台](./dev-console.md)）
+- **开发控制台与 HMR 批次管理**：`pluxel dev status/instances/hmr/run`；凭原 receipt 查询和取消使用 `pluxel script result/cancel`（见 [开发控制台](./dev-console.md)）
+- **从插件地址查询作者源码**：直接调用 `@pluxel/agent-sdk/source` 的函数；见[源码查询](./inspection.md)
 - **本地多仓联调管理**：`pluxel source register/list/unregister/doctor/build/install`
 - **工作区依赖治理与 Catalog 同步**：`pluxel pncat add/remove/migrate/clean` 与 `pluxel workspace sync`
 
@@ -26,7 +27,7 @@ Pluxel CLI（`@pluxel/cli`）是贯穿工作区初始化、代码生成、构建
 
 - **项目内本地依赖**：建议在 Monorepo 根目录下作为 devDependencies 安装：
   ```sh
-  npx nypm add -D @pluxel/cli
+  vp add -D @pluxel/cli
   ```
 - **全局安装**：全局安装的 CLI 进入已存在本地 `@pluxel/cli` 的项目时，会自动将执行权移交给本地版本，确保与当前工程的版本锁定一致。
 - **源码工作区联调**：在本地开发 Pluxel 框架源码时，通过 `pluxel source` 命令族注册本地 checkout。
@@ -42,10 +43,12 @@ Pluxel CLI（`@pluxel/cli`）是贯穿工作区初始化、代码生成、构建
 
 ## 自定义本地插件模板
 
+应用脚手架、内置插件模板与团队模板使用相同的 `vp install`、`vp run setup`、`vp run verify` 流程。模板的 `package.json` 声明 `packageManager` 和项目 scripts；mise 可提供工具安装与版本固定。README、AGENTS 和生成完成提示沿用这套命令。
+
 `pluxel new` 除了内置的通用插件模板外，也支持基于团队本地目录生成：
 
 ```sh
-pluxel new --template ./templates/custom-plugin --name @acme/orders
+vp exec pluxel new --template ./templates/custom-plugin --name @acme/orders
 ```
 
 模板根目录需包含 `pluxel-template.jsonc` 声明文件：
@@ -68,6 +71,8 @@ pluxel new --template ./templates/custom-plugin --name @acme/orders
 
 - 普通文件按字节完整拷贝；
 - 以 `.tpl` 结尾的文件在输出时会移除后缀，并将其中的 `{{ key }}` 与 `{{ json key }}` 变量替换为命令行输入的具体值。
+
+内置模板默认通过 `vp install` 安装依赖；本地模板显式传入 `--install` 才安装。`--no-install` 仅生成文件。`packageManager.name` 约束包管理器种类，具体版本由生成项目的 `package.json#packageManager` 固定；`--pm` 可为未固定种类的模板显式选择包管理器，安装仍由 Vite+ 执行。
 
 <span id="source-build-boundary"></span>
 

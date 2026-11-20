@@ -95,6 +95,7 @@ export class InvoiceProjectionPlugin extends BasePlugin {
 
 ```ts no-twoslash
 // 在业务操作中等待所有下游监听完成
+
 const outcomes = await this.events.invoicePaid.emitSettled(invoice, signal)
 
 for (const outcome of outcomes) {

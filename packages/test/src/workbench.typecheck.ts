@@ -38,14 +38,14 @@ declare const view: WorkbenchView<ProviderApi>
 declare const providerOnly: WorkbenchAttachmentPlacement<ProviderApi, never>
 declare const providerAndConsumer: WorkbenchAttachmentPlacement<ProviderApi, ConsumerApi>
 
-const viewLease = host.workbench.open({ target: FirstPlugin, entry: view, principal })
+const viewLease = host.workbench.open({ target: FirstPlugin.nodeAddress(), entry: view, principal })
 const providerOnlyLease = host.workbench.open({
-	target: FirstPlugin,
+	target: FirstPlugin.nodeAddress(),
 	entry: providerOnly,
 	principal,
 })
 const providerAndConsumerLease = host.workbench.open({
-	target: FirstPlugin,
+	target: FirstPlugin.nodeAddress(),
 	entry: providerAndConsumer,
 	principal,
 })

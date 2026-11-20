@@ -1,10 +1,9 @@
 import { Bench } from 'tinybench'
 import {
 	createContextHost,
-	defineContextCapability,
-	installOwnerViewCapability,
-	installRootCapability,
-	installScopeCapability,
+	installOwnerViewService,
+	installRootService,
+	installScopeService,
 	type Context,
 } from '../src/kernel.ts'
 import { Context as LegacyContext } from '../legacy/src/Context.ts'
@@ -58,22 +57,21 @@ const legacyRootProjection = legacyRoot as unknown as LegacyProjection
 const legacyScopeProjection = legacyScope as unknown as LegacyProjection
 const legacyChildProjection = legacyChild as unknown as LegacyProjection
 
-const rootCapability = defineContextCapability<object>('comparison.root')
-const scopeCapability = defineContextCapability<object>('comparison.scope')
-const ownerCapability = defineContextCapability<{ readonly owner: Context }>('comparison.owner')
+abstract class RootValue {}
+abstract class ScopeValue {}
+abstract class OwnerValue {
+	abstract readonly owner: Context
+}
 const currentHost = createContextHost({
 	name: 'comparison',
-	capabilities: [
-		installRootCapability(rootCapability, {
-			property: 'rootValue',
+	services: [
+		installRootService(RootValue, {
 			create: () => ({}),
 		}),
-		installScopeCapability(scopeCapability, {
-			property: 'scopeValue',
+		installScopeService(ScopeValue, {
 			create: () => ({}),
 		}),
-		installOwnerViewCapability(ownerCapability, {
-			property: 'ownerValue',
+		installOwnerViewService(OwnerValue, {
 			createRoot: () => ({}),
 			createView: (_backing, owner) => ({ owner }),
 		}),
@@ -87,10 +85,10 @@ void legacyRootProjection.comparisonRoot
 void legacyScopeProjection.comparisonScoped
 void legacyRootProjection.comparisonOwner
 void legacyChildProjection.comparisonOwner
-void currentRoot.rootValue
-void currentScope.scopeValue
-void currentRoot.ownerValue
-void currentChild.ownerValue
+void currentRoot.service(RootValue)
+void currentScope.service(ScopeValue)
+void currentRoot.service(OwnerValue)
+void currentChild.service(OwnerValue)
 
 const getterBatch = 1_000
 const creationBatch = 100
@@ -104,24 +102,24 @@ bench.add('legacy cached root getter', () => {
 		sink = legacyRootProjection.comparisonRoot
 	}
 })
-bench.add('current cached root getter', () => {
-	for (let index = 0; index < getterBatch; index += 1) sink = currentRoot.rootValue
+bench.add('current cached root service', () => {
+	for (let index = 0; index < getterBatch; index += 1) sink = currentRoot.service(RootValue)
 })
 bench.add('legacy cached isolated getter', () => {
 	for (let index = 0; index < getterBatch; index += 1) {
 		sink = legacyScopeProjection.comparisonScoped
 	}
 })
-bench.add('current cached scope getter', () => {
-	for (let index = 0; index < getterBatch; index += 1) sink = currentScope.scopeValue
+bench.add('current cached scope service', () => {
+	for (let index = 0; index < getterBatch; index += 1) sink = currentScope.service(ScopeValue)
 })
 bench.add('legacy cached owner getter without owner switching', () => {
 	for (let index = 0; index < getterBatch; index += 1) {
 		sink = legacyChildProjection.comparisonOwner
 	}
 })
-bench.add('current cached stable owner-view getter', () => {
-	for (let index = 0; index < getterBatch; index += 1) sink = currentChild.ownerValue
+bench.add('current cached stable owner service', () => {
+	for (let index = 0; index < getterBatch; index += 1) sink = currentChild.service(OwnerValue)
 })
 bench.add('legacy alternating owner getter + mutable ctx rebind', () => {
 	for (let index = 0; index < getterBatch; index += 1) {
@@ -129,10 +127,10 @@ bench.add('legacy alternating owner getter + mutable ctx rebind', () => {
 		alternateSink = legacyChildProjection.comparisonOwner
 	}
 })
-bench.add('current alternating stable owner-view getter', () => {
+bench.add('current alternating stable owner service', () => {
 	for (let index = 0; index < getterBatch; index += 1) {
-		sink = currentRoot.ownerValue
-		alternateSink = currentChild.ownerValue
+		sink = currentRoot.service(OwnerValue)
+		alternateSink = currentChild.service(OwnerValue)
 	}
 })
 bench.add('legacy extend child creation', () => {

@@ -37,6 +37,7 @@ import { PluginTool } from './PluginTools'
 import { PluginNavigation } from './PluginNavigation'
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { WorkspaceSnapshotStorage, WorkspaceRestoreError, workspaceStorageKey } from './snapshot'
+import { sidebarShortcutId } from './sidebarShortcuts'
 
 export const navigationTab = {
 	type: 'tab' as const,
@@ -380,7 +381,7 @@ export class WorkspaceSession {
 					this.panelsPending = false
 					const owner = this.currentPanelOwner()
 					for (const side of ['left', 'right', 'bottom'] as const) {
-						let border = this.workbench.model.getNodeById(`border_${side}`)
+						const border = this.workbench.model.getNodeById(`border_${side}`)
 						if (!(border instanceof BorderNode)) continue
 						const config = border.getConfig() ?? {}
 						if (config.panelOwner !== owner) {
@@ -410,7 +411,7 @@ export class WorkspaceSession {
 								if (result.status !== 'applied') throw new Error('无法恢复插件面板布局')
 							}
 							const expanded = border.getSelected() >= 0
-							border = this.workbench.model.getNodeById(`border_${side}`) as BorderNode
+							const updatedBorder = this.workbench.model.getNodeById(border.getId()) as BorderNode
 							const selectedId = restore
 								? restore.selected
 								: expanded
@@ -422,10 +423,14 @@ export class WorkspaceSession {
 									: undefined
 							this.check(
 								await this.workbench.dispatch(
-									Actions.updateNodeAttributes(border.getId(), {
-										config: { ...config, panelOwner: owner, panelArchives: archives },
+									Actions.updateNodeAttributes(updatedBorder.getId(), {
+										config: {
+											...updatedBorder.getConfig(),
+											panelOwner: owner,
+											panelArchives: archives,
+										},
 										selected: selectedId
-											? border.getChildren().findIndex((node) => node.getId() === selectedId)
+											? updatedBorder.getChildren().findIndex((node) => node.getId() === selectedId)
 											: -1,
 									}),
 								),
@@ -474,6 +479,18 @@ export class WorkspaceSession {
 				? current.map((saved) => (matches(saved) ? validated! : saved))
 				: [...current, validated!]
 			: current.filter((saved) => !matches(saved))
+		await this.saveSidebarShortcuts(shortcuts)
+	}
+	async moveSidebarShortcut(id: string, overId: string): Promise<void> {
+		const shortcuts = [...this.sidebarShortcuts()]
+		const from = shortcuts.findIndex((shortcut) => sidebarShortcutId(shortcut) === id)
+		const to = shortcuts.findIndex((shortcut) => sidebarShortcutId(shortcut) === overId)
+		if (from === -1 || to === -1 || from === to) return
+		const [moved] = shortcuts.splice(from, 1)
+		shortcuts.splice(to, 0, moved!)
+		await this.saveSidebarShortcuts(shortcuts)
+	}
+	private async saveSidebarShortcuts(shortcuts: readonly WorkbenchShortcut[]): Promise<void> {
 		const result = await this.workbench.dispatch(
 			Actions.updateNodeAttributes('border_left', {
 				config: { ...this.navigationConfig(), shortcuts },

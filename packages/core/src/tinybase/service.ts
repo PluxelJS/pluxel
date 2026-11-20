@@ -1,8 +1,7 @@
 import { pluginNodeIndexKey, type PluginNodeAddress } from '../plugins/runtime/identity'
 import type { Context, PluginContext, RootContext } from '../context/Context'
 import type { CorePluginLifecycleHooks } from '../plugins/runtime/plugin-service/HostLifecycle'
-import type { HostDocumentStorage } from '../storage/documents'
-import type { FsService } from '../fs/service'
+import type { CoreStorage, HostDocumentStorage } from '../storage/documents'
 import { pluginNodePhysicalKey } from '../internal/plugin-address'
 import { TinyBaseError } from './error'
 import { StoreWriter, runOperation } from './writer'
@@ -14,14 +13,29 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 	private readonly published = new WeakSet<Context>()
 	private readonly writers = new Map<string, StoreWriter>()
 	private readonly nodeBacking: HostDocumentStorage
+	private readonly fileBacked: boolean
 	private closed = false
 
 	constructor(
 		private readonly root: RootContext,
-		private readonly fs: FsService,
+		storage: CoreStorage,
 		private readonly maxBytes: number,
 	) {
-		this.nodeBacking = fs.documents('services/tinybase/nodes', maxBytes)
+		const directory = 'services/tinybase/nodes'
+		const backing = storage.documents.documents(directory, maxBytes)
+		const files = storage.files
+		this.fileBacked = files !== undefined
+		this.nodeBacking = files
+			? {
+					put: (file, text) => backing.put(file, text),
+					stat: (file) => backing.stat(file),
+					getText: async (file) => {
+						// open() is a writable capability even for an existing snapshot.
+						await files.directory(directory, { writable: true })
+						return backing.getText(file)
+					},
+				}
+			: backing
 		this.lifecycle = {
 			prepareCommit: ({ started }) => {
 				for (const ctx of started) this.owners.get(ctx)?.preparePublication()
@@ -45,17 +59,10 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 			const key = pluginNodeIndexKey(node)
 			writer = new StoreWriter(
 				ctx as PluginContext,
-				{
-					put: (file, text) => this.nodeBacking.put(file, text),
-					stat: (file) => this.nodeBacking.stat(file),
-					getText: async (file) => {
-						// open() is a writable capability even when this particular file already exists.
-						await this.fs.directory('services/tinybase/nodes', { writable: true })
-						return this.nodeBacking.getText(file)
-					},
-				},
+				this.nodeBacking,
 				`${pluginNodePhysicalKey(node)}.json`,
 				this.maxBytes,
+				this.fileBacked,
 				() => {
 					this.assertOpen()
 					const current = this.writers.get(key)

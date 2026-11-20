@@ -1,6 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { Playwright } from '@pluxel/plugin-playwright'
-import { Vault } from '@pluxel/services/vault'
 import type { BrowserContext } from 'playwright-core'
 import * as v from 'valibot'
 import { InvoiceConfig, InvoiceCredentialSchema } from './config.ts'
@@ -64,7 +63,7 @@ export class InvoicePlugin extends BasePlugin {
 			{ tag: 'invoice-operations', phase: 'shutdown' },
 		)
 		if (this.config.vlm) {
-			const record = await this.ctx.require(Vault).kv().get(this.config.vlm.credentialKey)
+			const record = await this.ctx.vault.kv().get(this.config.vlm.credentialKey)
 			const parsed = v.safeParse(InvoiceCredentialSchema, record.value)
 			if (!record.exists || !parsed.success)
 				throw new Error('Invoice Vault credential is missing or invalid')

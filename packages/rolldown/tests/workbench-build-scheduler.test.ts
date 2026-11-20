@@ -5,109 +5,87 @@ import {
 	runWorkbenchOutputTransaction,
 } from '../src/workbench/build-scheduler'
 
-const pause = (milliseconds = 20) =>
-	new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
-
 describe('workbench build scheduler', () => {
-	it('bounds same-application builds', async () => {
-		let active = 0
-		let maximum = 0
-		await Promise.all(
-			Array.from({ length: 3 }, () =>
+	it('admits at most two same-application builds at a time', async () => {
+		const admitted = Promise.withResolvers<void>()
+		const release = Promise.withResolvers<void>()
+		const started: number[] = []
+		const builds = Promise.all(
+			[0, 1, 2].map((index) =>
 				runWorkbenchFederationBuild('/application/a', async () => {
-					active += 1
-					maximum = Math.max(maximum, active)
-					try {
-						await pause()
-					} finally {
-						active -= 1
-					}
+					started.push(index)
+					if (index === 1) admitted.resolve()
+					await release.promise
 				}),
 			),
 		)
-		expect(maximum).toBe(2)
+		try {
+			await admitted.promise
+			expect(started).toEqual([0, 1])
+		} finally {
+			release.resolve()
+			await builds
+		}
+		expect(started).toEqual([0, 1, 2])
 	})
 
-	it('never overlaps roots or lets a later same-root task skip a waiting cohort', async () => {
-		let activeRoot: string | undefined
-		let crossedRoots = false
+	it('drains the current root before admitting the waiting cohort after failure', async () => {
+		const entered = Promise.withResolvers<void>()
+		const release = Promise.withResolvers<void>()
+		const failure = new Error('expected Federation failure')
 		const order: string[] = []
-		const run = (root: string, label: string) =>
-			runWorkbenchFederationBuild(root, async () => {
-				if (activeRoot !== undefined && activeRoot !== root) crossedRoots = true
-				activeRoot = root
-				order.push(label)
-				try {
-					await pause()
-				} finally {
-					activeRoot = undefined
-				}
-			})
-
-		await Promise.all([
-			run('/application/a', 'a-first'),
-			run('/application/b', 'b'),
-			run('/application/a', 'a-later'),
+		const builds = Promise.allSettled([
+			runWorkbenchFederationBuild('/application/a', async () => {
+				order.push('a-start')
+				entered.resolve()
+				await release.promise
+				order.push('a-fail')
+				throw failure
+			}),
+			runWorkbenchFederationBuild('/application/b', async () => order.push('b')),
+			runWorkbenchFederationBuild('/application/a', async () => order.push('a-later')),
 		])
-		expect(crossedRoots).toBe(false)
-		expect(order).toEqual(['a-first', 'b', 'a-later'])
+		try {
+			await entered.promise
+			expect(order).toEqual(['a-start'])
+		} finally {
+			release.resolve()
+			await builds
+		}
+		const [failed, waiting, later] = await builds
+		expect(failed).toEqual({ status: 'rejected', reason: failure })
+		expect([waiting.status, later.status]).toEqual(['fulfilled', 'fulfilled'])
+		expect(order).toEqual(['a-start', 'a-fail', 'b', 'a-later'])
 	})
 
-	it('continues with the next application root after a Federation build fails', async () => {
-		await expect(
-			runWorkbenchFederationBuild('/application/failure', async () => {
-				throw new Error('expected Federation failure')
-			}),
-		).rejects.toThrow('expected Federation failure')
-		await expect(
-			runWorkbenchFederationBuild('/application/recovery', async () => 'recovered'),
-		).resolves.toBe('recovered')
-	})
-
-	it('continues scheduling after a failed Federation build', async () => {
-		await expect(
-			runWorkbenchOutputTransaction('/tmp/pluxel-failed-target', async () => {
-				throw new Error('expected transaction failure')
-			}),
-		).rejects.toThrow('expected transaction failure')
-		await expect(
-			runWorkbenchOutputTransaction('/tmp/pluxel-failed-target', async () => {}),
-		).resolves.toBeUndefined()
-	})
-
-	it('serializes one output target without blocking independent targets', async () => {
-		let sameTargetActive = 0
-		let sameTargetMaximum = 0
-		await Promise.all(
-			Array.from({ length: 2 }, () =>
-				runWorkbenchOutputTransaction('/tmp/pluxel-same-target', async () => {
-					sameTargetActive += 1
-					sameTargetMaximum = Math.max(sameTargetMaximum, sameTargetActive)
-					try {
-						await pause()
-					} finally {
-						sameTargetActive -= 1
-					}
-				}),
-			),
+	it('queues the same target through failure while permitting independent outputs', async () => {
+		const entered = Promise.withResolvers<void>()
+		const release = Promise.withResolvers<void>()
+		const failure = new Error('expected transaction failure')
+		const order: string[] = []
+		const first = runWorkbenchOutputTransaction('/tmp/pluxel-output/a', async () => {
+			order.push('a-start')
+			entered.resolve()
+			await release.promise
+			order.push('a-fail')
+			throw failure
+		})
+		const next = runWorkbenchOutputTransaction('/tmp/pluxel-output/a', async () =>
+			order.push('a-later'),
 		)
-		expect(sameTargetMaximum).toBe(1)
-
-		let differentTargetActive = 0
-		let differentTargetMaximum = 0
-		await Promise.all(
-			['a', 'b'].map((target) =>
-				runWorkbenchOutputTransaction(`/tmp/pluxel-target-${target}`, async () => {
-					differentTargetActive += 1
-					differentTargetMaximum = Math.max(differentTargetMaximum, differentTargetActive)
-					try {
-						await pause()
-					} finally {
-						differentTargetActive -= 1
-					}
-				}),
-			),
+		const independent = runWorkbenchOutputTransaction('/tmp/pluxel-output/b', async () =>
+			order.push('b'),
 		)
-		expect(differentTargetMaximum).toBe(2)
+		const transactions = Promise.allSettled([first, next, independent])
+		try {
+			await Promise.all([entered.promise, independent])
+			expect(order.toSorted()).toEqual(['a-start', 'b'])
+		} finally {
+			release.resolve()
+			await transactions
+		}
+		const [failed] = await transactions
+		expect(failed).toEqual({ status: 'rejected', reason: failure })
+		expect(order.slice(2)).toEqual(['a-fail', 'a-later'])
 	})
 })

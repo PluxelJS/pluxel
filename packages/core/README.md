@@ -1,6 +1,6 @@
 # @pluxel/core
 
-Pluxel 的 Plugin 内核，拥有依赖图、Plugin/Part 组成、配置事实、generation 生命周期、effects，以及固定 FS/TinyBase 能力和所选日志运行时。HTTP、来源发现、Vite 与宿主退出策略由其他层负责。
+Pluxel 的 Plugin 内核，拥有依赖图、Plugin/Part 组成、配置事实、generation 生命周期、effects，以及固定 FS、TinyBase、Vault、受管出站 HTTP 和所选日志运行时。入站 HTTP 由 Services 组合，来源发现和宿主退出策略由 Host 管理，Vite 管开发执行与 HMR。
 
 ## 按任务进入
 
@@ -13,14 +13,15 @@ Pluxel 的 Plugin 内核，拥有依赖图、Plugin/Part 组成、配置事实�
 
 ## 入口边界
 
-- `@pluxel/core`：Plugin 作者 API、Context 与 address/lifecycle 等只读公共契约。
-- `/host`：独立 Core 宿主与 capability descriptor；配置日志后须先等待 `prepareCoreContext(root)`，生产 Host 自动执行此准备。
-- `/services`：effects、config helpers、`EventsService` 与 `EvtChannel`。
+- `@pluxel/core` 提供 Plugin 作者 API、Context、地址、生命周期和 `CoreFacilitiesConfig`、`CoreHostConfig`、`CoreExecutionConfig` 类型。
+- `/host`：独立 Core 宿主与服务安装器；配置日志后须先等待 `prepareCoreContext(root)`，生产 Host 自动执行此准备。
+- `/services`：effects 类型、错误与 guard、config helpers 和 `EvtChannel`；内建能力直接通过 `ctx` 使用。
 - `/logger`：Context logger facade 与结构化 Plugin category。
-- `/config`：`logtape()` 与 `zenfs()`，分别用于应用的 `runtime.logtape` 与 `runtime.zenfs`；helper 不获取资源。
-- `/logging`：已配置 root 的 `Logging` token、日志 policy、store 与查询；`/logging/protocol` 提供浏览器安全的 DTO/filter，`/logging/internal` 仅供框架集成。
+- `/logging` 提供 `LogTapeConfig`、日志运行时类型、policy、store 与查询。已配置的运行时通过 `root.logging` 读取。`/logging/protocol` 提供浏览器安全的 DTO 和 filter，`/logging/internal` 供框架集成。
 - `/logging/pretty`：按需使用的 console sink，保留插件身份与 Context 展示；文件输出直接使用 `@logtape/file`。
 - `/fs`、`/fs/browser`：原生文件后端、借用类型与浏览器 IndexedDB 后端。
+- `/vault` 提供内建凭据存储的配置、记录、管理状态类型与 `VaultError`。插件直接使用 `ctx.vault`，应用通过 `coreConfig.vault` 配置后端。
+- 插件直接使用原生 `ctx.wretch` 和受管的 `ctx.fetch`。应用通过 `coreConfig.http` 配置策略和传输。 [出站 HTTP](../../engineering/OUTBOUND_HTTP.md)
 - `/internal/test`：Core 白盒测试；普通 Plugin 测试使用 `@pluxel/test`。
 
 完整导出以 [package.json](package.json) 为准。Plugin facts 必须经过 Pluxel Vite/Rolldown semantic pass；不能用普通 TypeScript runner 或 constructor/class name 猜测依赖图。

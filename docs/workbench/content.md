@@ -54,8 +54,12 @@ export const ServiceWorkbench = workbench.define({
 在插件的 `init()` 钩子中，为定义的槽位绑定实际的获取与执行逻辑：
 
 ```ts
+import type { Workbench } from '@pluxel/workbench'
+import { defineServiceRef } from '@pluxel/core'
+
+const WorkbenchRef = defineServiceRef<Workbench>()
 override init() {
-	this.ctx.workbench?.publish(ServiceWorkbench, {
+	this.ctx.service(WorkbenchRef)?.publish(ServiceWorkbench, {
 		overview: () => ({
 			// 对应 workbench.data 的数据加载函数
 			load: () => ({

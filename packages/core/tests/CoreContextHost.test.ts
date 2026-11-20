@@ -1,103 +1,176 @@
-import {
-	createCoreContextHost,
-	defineContextCapability,
-	installOwnerViewCapability,
-	installScopeCapability,
-} from '../src/host'
-import type { Context, RootContext } from '../src'
+import { createCoreContextHost, getContextLoggerRootId, installOwnerViewService } from '../src/host'
+import { type Context, type RootContext } from '../src'
 import { describe, expect, expectTypeOf, it } from 'vitest'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createCallerContextView, createGenerationContext } from '../src/context/context-factory'
-import { createCoreRootContext } from '../src/context/core-plan'
+import { createCoreRootContext } from '../src/context/zenfs-plan'
+import {
+	getInstalledServiceDefinitions,
+	consumePluginDefinitionCandidate,
+	createCoreContextHostWithFacilities,
+	requireFs,
+	requireConfigService,
+	requireHostDocumentRetention,
+	requireHostDocuments,
+	requirePluginService,
+	snapshotRequestCoreFacilitiesConfig,
+} from '../src/internal'
+import { ConfigService } from '../src/services/config/ConfigService'
+abstract class ExampleService {}
+interface ExampleService {
+	readonly owner: Context
+}
+
+@Plugin()
+class Configless extends BasePlugin {}
 
 describe('Core Context integration', () => {
-	it('installs the Core-owned scope capabilities on the immutable root', () => {
+	it('provides fixed Core facilities outside the extension service registry', () => {
 		const root = createCoreRootContext({ name: 'core-integration' })
 		const scope = createGenerationContext(root, 'scope')
-
 		expect(root.name).toBe('core-integration')
 		expect(scope.logger).toBe(scope.logger)
 		expect(scope.effects).toBe(scope.effects)
+		expect(scope.logger).not.toBe(root.logger)
+		expect(scope.effects).not.toBe(root.effects)
 		expect(Object.isExtensible(root)).toBe(false)
+		expect('logger' in scope).toBe(true)
+		expect(scope.events).toBe(scope.events)
+		expect(scope.events.ctx).toBe(scope)
+		expect(scope.events).not.toBe(root.events)
+		expect(getInstalledServiceDefinitions(root)).toEqual([])
+		expect(getInstalledServiceDefinitions(scope)).toEqual([])
+		expect('require' in scope).toBe(false)
 	})
 
-	it('keeps Core caller views isolated while sharing provider scope capabilities', () => {
+	it('shares generation facilities while preserving dependency caller ownership', () => {
 		const root = createCoreRootContext({ name: 'caller-core' })
 		const provider = createGenerationContext(root, 'provider')
 		const firstCaller = createGenerationContext(root, 'first-caller')
 		const secondCaller = createGenerationContext(root, 'second-caller')
 		const firstView = createCallerContextView(provider, firstCaller)
 		const secondView = createCallerContextView(provider, secondCaller)
-
 		expect(firstView.caller).toBe(firstCaller)
 		expect(secondView.caller).toBe(secondCaller)
 		expect(firstView).not.toBe(secondView)
 		expect(firstView.effects).toBe(provider.effects)
 		expect(secondView.effects).toBe(provider.effects)
+		expect(firstView.logger).toBe(provider.logger)
+		expect(secondView.logger).toBe(provider.logger)
+		expect(firstView.events.ctx).toBe(firstView)
+		expect(secondView.events.ctx).toBe(secondView)
+		expect(firstView.events).not.toBe(secondView.events)
 	})
-})
 
-it('composes typed services with Core and preserves caller and Part capability owners', () => {
-	const service = defineContextCapability<{ owner: Context }>('example.service', {
-		access: 'all',
-		property: 'exampleService',
+	it('captures lazy factories before caller mutation and isolates their instances per root', async () => {
+		let configCreations = 0
+		let lifecycleCreations = 0
+		const config = {
+			createConfigService(root: RootContext) {
+				configCreations++
+				return new ConfigService(root)
+			},
+			createLifecycleHooks() {
+				lifecycleCreations++
+				return {}
+			},
+		}
+		const host = createCoreContextHost(config)
+		config.createConfigService = () => {
+			throw new Error('mutated configuration factory')
+		}
+		config.createLifecycleHooks = () => {
+			throw new Error('mutated lifecycle factory')
+		}
+		const first = host.createRoot('first')
+		const second = host.createRoot('second')
+		try {
+			expect(configCreations).toBe(0)
+			expect(lifecycleCreations).toBe(0)
+			const registry = requirePluginService(first)
+			const node = Configless.nodeAddress()
+			const start = registry.beginUpdate()
+			start.materializeNode(node, consumePluginDefinitionCandidate(Configless))
+			expect(await start.commit()).toMatchObject({ ok: true })
+			expect(registry.getInstance(node)).toBeInstanceOf(Configless)
+			const stop = registry.beginUpdate()
+			stop.dematerializeNode(node)
+			expect(await stop.commit()).toMatchObject({ ok: true })
+			expect(configCreations).toBe(0)
+			expect(requireConfigService(first)).toBe(requireConfigService(first))
+			expect(requirePluginService(first)).toBe(requirePluginService(first))
+			expect(configCreations).toBe(1)
+			expect(lifecycleCreations).toBe(1)
+			expect(requireConfigService(second)).not.toBe(requireConfigService(first))
+			expect(requirePluginService(second)).not.toBe(requirePluginService(first))
+			expect(configCreations).toBe(2)
+			expect(lifecycleCreations).toBe(2)
+		} finally {
+			await Promise.all([first.effects.dispose(), second.effects.dispose()])
+		}
 	})
-	const capability = installOwnerViewCapability(service, {
-		property: 'exampleService',
-		createRoot: (root) => {
-			expectTypeOf(root).toEqualTypeOf<RootContext>()
-			return {}
-		},
-		createView: (_, owner) => ({ owner }),
-	})
-	const host = createCoreContextHost({ capabilities: [capability] })
-	const root = host.createRoot()
-	const provider = host.createScope(root, 'provider')
-	const part = host.createChild(provider, 'part')
-	const caller = host.createScope(root, 'caller')
-	const view = createCallerContextView(provider, caller)
-	expect(provider.require(service)).toBe(provider.exampleService)
-	expect(part.require(service).owner).toBe(part)
-	expect(view.require(service).owner).toBe(view)
-	expect(provider.require(service)).not.toBe(view.require(service))
-	expectTypeOf(provider.exampleService).toEqualTypeOf<{ owner: Context }>()
-	const typeChecks = () => {
-		// @ts-expect-error An unselected service is not part of a different Host's required shape.
-		createCoreContextHost().createRoot().exampleService
-		// @ts-expect-error Duplicate literal projected properties are rejected before compilation.
-		createCoreContextHost({ capabilities: [capability, capability] })
-		createCoreContextHost({
-			// @ts-expect-error Core owner identity is not a service extension point.
-			capabilities: [
-				installScopeCapability(service, { property: 'pluginInfo', create: (owner) => ({ owner }) }),
-			],
-		})
-		createCoreContextHost({
-			// @ts-expect-error The fixed Plugin filesystem cannot be replaced by an extension.
-			capabilities: [
-				installScopeCapability(service, { property: 'fs', create: (owner) => ({ owner }) }),
-			],
-		})
-		createCoreContextHost({
-			// @ts-expect-error The fixed Plugin state bridge cannot be replaced by an extension.
-			capabilities: [
-				installScopeCapability(service, { property: 'tinybase', create: (owner) => ({ owner }) }),
-			],
-		})
-		createCoreContextHost({
-			// @ts-expect-error Core reserves its logging runtime even when no logger is configured.
-			capabilities: [
-				installScopeCapability(service, { property: 'logging', create: (owner) => ({ owner }) }),
-			],
-		})
-	}
-	void typeChecks
-})
 
-it('reserves Core logging ownership when no logger is configured', () => {
-	const token = defineContextCapability('another.logging')
-	expect(() =>
-		createCoreContextHost({
-			capabilities: [installScopeCapability(token, { property: 'logging', create: () => ({}) })],
-		} as never),
-	).toThrow(/logging/)
+	it('rejects an invalid lifecycle factory result instead of adopting empty hooks', async () => {
+		const root = createCoreContextHost({ createLifecycleHooks: () => null as never }).createRoot()
+		try {
+			expect(() => requirePluginService(root)).toThrow(TypeError)
+		} finally {
+			await root.effects.dispose()
+		}
+	})
+
+	it('binds owner views to their Context and rejects duplicate service installations', () => {
+		const installation = installOwnerViewService(ExampleService, {
+			createRoot: (root) => {
+				expectTypeOf(root).toEqualTypeOf<RootContext>()
+				return {}
+			},
+			createView: (_, owner) => ({ owner }),
+		})
+		const host = createCoreContextHost({ services: [installation] })
+		const root = host.createRoot()
+		const provider = host.createScope(root, 'provider')
+		const part = host.createChild(provider, 'part')
+		const caller = host.createScope(root, 'caller')
+		const view = createCallerContextView(provider, caller)
+		expect(getInstalledServiceDefinitions(root)).toEqual([ExampleService])
+		expect(provider.service(ExampleService).owner).toBe(provider)
+		expect(part.service(ExampleService).owner).toBe(part)
+		expect(view.service(ExampleService).owner).toBe(view)
+		expect(provider.service(ExampleService)).not.toBe(view.service(ExampleService))
+		expectTypeOf(provider.service(ExampleService)).toEqualTypeOf<ExampleService>()
+		expect(() => createCoreContextHost({ services: [installation, installation] })).toThrow(
+			/more than once/,
+		)
+	})
+
+	it('owns session documents per request and keeps logger category identity bounded', async () => {
+		const plan = createCoreContextHostWithFacilities({}, snapshotRequestCoreFacilitiesConfig())
+		const first = plan.createRoot('first request')
+		const next = plan.createRoot('next request')
+		try {
+			const documents = requireHostDocuments(first, 'config')
+			await documents.put('records.json', 'first')
+			expect(await documents.getText('records.json')).toBe('first')
+			expect(await requireHostDocuments(next, 'config').getText('records.json')).toBeUndefined()
+			expect(requireHostDocumentRetention(first, 'config')).toBe('session')
+			expect(() => requireFs(first)).toThrow(expect.objectContaining({ code: 'ENOTSUP' }))
+			expect(getContextLoggerRootId(first)).toBe(getContextLoggerRootId(next))
+			await first.effects.dispose()
+			await expect(documents.getText('records.json')).rejects.toMatchObject({ code: 'EBADF' })
+		} finally {
+			await Promise.all([first.effects.dispose(), next.effects.dispose()])
+		}
+	})
+
+	it.each([
+		{ zenfs: {} },
+		{ logtape: {} },
+		{ vault: { backend: 'encrypted' } },
+		{ vault: { backend: 'bindings', deployIdentity: '' } },
+		{ http: { proxyUrl: null } },
+		{ http: { allowProxyChanges: false } },
+	] as const)('rejects facilities that the request assembly does not own: %j', (config) => {
+		expect(() => snapshotRequestCoreFacilitiesConfig(config)).toThrow(TypeError)
+	})
 })

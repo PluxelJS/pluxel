@@ -25,7 +25,7 @@ caller 的停止等待它完成；不为单个 caller 杀死共享 transport。�
 `protocol` 默认 `cdp`，通过 `chromium.connectOverCDP` 连接；显式 `playwright` 使用 `chromium.connect`。同一 context API 与 lifecycle 沿用不变。
 CDP 接受 HTTP(S)/WS(S)，原生协议仅接受 WS(S)；普通配置在 schema 校验，Vault 记录在启动解析后复核所选协议。
 协议由部署方声明，不通过失败重试猜测；原生协议连接要求服务端与客户端 major.minor 匹配，依赖版本升级由宿主工作区管理。
-没有凭据时不需要 Vault 服务。凭据通过 `PlaywrightVaultSchema` 的 owner namespace 记录绑定，启动时校验；不观察自动轮换，更新后重启。
+没有凭据时不访问内建 Vault。凭据通过 `PlaywrightVaultSchema` 的 owner namespace 记录绑定，启动时校验；不观察自动轮换，更新后重启。
 普通 endpoint 拒绝 userinfo、query 和 fragment；路径可能也包含 secret，部署方必须把这样的 URL 放在 Vault。
 SDK 连接错误可能包含 endpoint / headers，初始化统一抛安全消息，不保留原始 cause。业务阶段原生 SDK 错误保持原样，调用方投影到日志/HTTP 时自行选择安全字段。
 

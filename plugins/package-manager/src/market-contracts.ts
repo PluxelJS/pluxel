@@ -1,13 +1,36 @@
 export type PackageMarket = Readonly<{ id: string; url: string }>
 
-export type MarketPackageQuery = Readonly<{
+export const marketFilterLimit = 20
+
+/** Any selected value within a dimension can match. All active dimensions must match. */
+export type MarketCatalogFilters = Readonly<{
 	query?: string
-	registry?: string
+	registries?: readonly string[]
 	official?: boolean
-	category?: string
-	tag?: string
-	cursor?: string
-	limit?: number
+	categories?: readonly string[]
+	tags?: readonly string[]
+	authors?: readonly string[]
+}>
+export type MarketPackageQuery = MarketCatalogFilters &
+	Readonly<{
+		cursor?: string
+		limit?: number
+	}>
+export type MarketAuthor = Readonly<{
+	id: string
+	name: string
+	kind: 'github' | 'market'
+	avatarUrl: string | null
+}>
+export type MarketFacetValue = Readonly<{ value: string; count: number }>
+export type MarketCatalogFacets = Readonly<{
+	/** All visible packages that match every active filter, before pagination. */
+	total: number
+	/** Each option's count applies the search and filters from the other dimensions. */
+	registries: readonly MarketFacetValue[]
+	categories: readonly MarketFacetValue[]
+	tags: readonly MarketFacetValue[]
+	authors: readonly (MarketAuthor & Readonly<{ count: number }>)[]
 }>
 export type MarketReleaseQuery = Readonly<{ registry?: string; cursor?: string; limit?: number }>
 export type MarketPackageSummary = Readonly<{
@@ -20,6 +43,8 @@ export type MarketPackageSummary = Readonly<{
 	/** Last observed source-repository stars; null means no observation is available. */
 	repositoryStars: number | null
 	repositoryObservedAt: number | null
+	/** Market credit, or the observed owner of the package's declared GitHub repository. */
+	author: MarketAuthor | null
 	indexedVersions: number
 	observedAt: number
 	/** Market-administered marks, independent of the release's build provenance. */

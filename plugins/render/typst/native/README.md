@@ -23,7 +23,7 @@ Do not commit native binaries, build caches or machine-specific stamps. Build lo
 
 ## Navigation contract
 
-The returned JSON has required `points`, `outline`, `pages`, `targets` and `links` arrays. Source paths in `points` are slash-separated relative paths inside the compiler workspace; package and outside-workspace sources are excluded, as are generated `inputs/` files. Callers should additionally restrict source navigation to files present in their workspace snapshot.
+The returned JSON has required `points`, `outline`, `pages`, `targets` and `links` arrays. Source paths in `points` are slash-separated relative paths inside the compiler workspace. Compiled Typst files supplied under `inputs/` contribute points when their source spans resolve. Files used only as data or assets have no source ranges of their own. Callers should restrict navigation to permitted files in their workspace snapshot.
 
 Point source ranges use **1-based lines and UTF-16 columns**, with exclusive end positions. Page numbers are 1-based. `x`, `y`, `width`, `height` use Typst points in page coordinates. Nested group transforms are applied to all four corners and reported as axis-aligned bounds. Text uses glyph advance bounds; images and shapes use their layout geometry. These are navigation hit areas, not pixel-accurate glyph outlines. Generated content without a resolvable source span has no point. One source expression can produce multiple points/pages.
 

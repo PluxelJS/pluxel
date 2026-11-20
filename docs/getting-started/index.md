@@ -7,27 +7,15 @@ description: 使用 @pluxel/create 创建并运行一个包含 HTTP 接口、业
 
 ## 创建项目
 
-确保已安装 [Node.js](https://nodejs.org/)（>= 24）和 [pnpm](https://pnpm.io/)（>= 11）。我们推荐配合 [mise](https://mise.jdx.dev/) 管理工具链：
+准备全局 [Vite+](https://viteplus.dev/guide/global-cli)、[Node.js](https://nodejs.org/)（>= 24）和 Pitchfork，安装方式见[工作区工具链](../development/workspace-toolchain.md#准备-checkout)。应用与插件模板的日常命令统一通过 `vp` 执行，Vite+ 按项目声明选择并安装 pnpm：
 
 ```sh
-mise exec node@24 pnpm@11 viteplus@1.3.0 -- vp create @pluxel my-app --no-install
+vp create @pluxel my-app --no-install
 cd my-app
-mise trust
-mise install
 vp install
 vp run setup
 vp run dev
 ```
-
-> [!TIP]
-> 如果你的环境中没有使用 mise，可直接使用包管理器安装依赖并启动项目：
->
-> ```sh
-> npx @pluxel/cli new --name my-app
-> cd my-app
-> pnpm install
-> pnpm run dev
-> ```
 
 ## 访问与体验应用
 

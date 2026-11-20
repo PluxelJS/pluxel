@@ -8,7 +8,7 @@ export default defineConfig({
 		wasm: 'src/wasm.ts',
 		template: 'src/template.ts',
 		source: 'src/source/node.ts',
-		document: 'src/document/project.ts',
+		document: 'src/document/index.ts',
 		'document/react': 'src/document/react.tsx',
 		'source/browser': 'src/source/browser.ts',
 		'source/library': 'src/source/library.ts',

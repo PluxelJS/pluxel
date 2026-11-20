@@ -81,7 +81,7 @@ export async function preparePublishing(
 	const version = execute('npm', ['--version'], true).trim()
 	const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version)
 	if (!match || Number(match[1]) < 11 || (Number(match[1]) === 11 && Number(match[2]) < 15)) {
-		throw new Error('npm >= 11.15.0 is required; run through mise exec.')
+		throw new Error('npm >= 11.15.0 is required; update the npm available on PATH.')
 	}
 	if (apply) execute('npm', ['whoami'])
 	log(
@@ -130,7 +130,7 @@ if (import.meta.main) {
 			(args.length === 1 && args[0] !== '--apply' && args[0] !== '--dry-run')
 		) {
 			throw new Error(
-				'Usage: mise exec -- node scripts/prepare-npm-publishing.mts [--dry-run | --apply]',
+				'Usage: vp exec node scripts/prepare-npm-publishing.mts [--dry-run | --apply]',
 			)
 		}
 		const names = repositoryPackages

@@ -5,9 +5,9 @@ import {
 	type PluginNodeAddress,
 	type RootContext,
 } from '@pluxel/core'
+import { createCoreContextHost } from '@pluxel/core/host'
 import {
 	consumePluginDefinitionCandidate,
-	createCoreRootContext,
 	requirePluginService,
 	type ConcretePluginDefinitionCandidate,
 } from '@pluxel/core/internal'
@@ -68,7 +68,7 @@ function definePlugin(name: string, deps?: readonly PluginFixture[]): PluginFixt
 function pluginFixture(ctor: PluginCtor): PluginFixture {
 	return Object.freeze({
 		ctor,
-		definitionAddress: ctor.definitionAddress(),
+		definitionAddress: ctor.address(),
 		nodeAddress: ctor.nodeAddress(),
 		candidate: consumePluginDefinitionCandidate(ctor),
 	})
@@ -155,7 +155,7 @@ export type ScenarioSizes = {
 export type Scenario = ReturnType<typeof createScenario>
 
 export function createBenchHost(name: string): BenchHost {
-	const ctx = createCoreRootContext({ name })
+	const ctx = createCoreContextHost({ name }).createRoot()
 	return Object.freeze({ ctx, plugins: requirePluginService(ctx) })
 }
 

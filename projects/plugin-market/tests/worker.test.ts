@@ -1,9 +1,14 @@
+import { execFile, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { once } from 'node:events'
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createInterface } from 'node:readline'
+import { DatabaseSync } from 'node:sqlite'
 import { URL } from 'node:url'
+import { promisify } from 'node:util'
 import { gzipSync } from 'node:zlib'
-import { createHash } from 'node:crypto'
 import { newHttpBatchRpcSession } from 'capnweb'
 import { eq } from 'drizzle-orm'
 import { build } from 'esbuild'
@@ -11,8 +16,14 @@ import { Miniflare, Response as MiniflareResponse } from 'miniflare'
 import { packTar, type TarEntry } from 'modern-tar'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { MarketAdmin } from '../src/admin'
-import { MarketError, registry, type PackagePage, type Receipt } from '../src/protocol'
-import { audits, notifications, packages, releases } from '../src/schema'
+import {
+	MarketError,
+	registry,
+	type CatalogFacets,
+	type PackagePage,
+	type Receipt,
+} from '../src/protocol'
+import { audits, authors, notifications, packages, releases } from '../src/schema'
 import {
 	claim,
 	commitRelease,
@@ -52,7 +63,21 @@ describe('plugin market on workerd and D1', () => {
 	]
 	const fixtures = new Map<string, Fixture>()
 	const requests: string[] = []
-	let github = { status: 200, body: { full_name: 'unverified/claim', stargazers_count: 42 } }
+	function githubRepository() {
+		return {
+			status: 200,
+			body: {
+				full_name: 'unverified/claim',
+				stargazers_count: 42,
+				owner: {
+					id: 128,
+					login: 'unverified',
+					avatar_url: 'https://avatars.githubusercontent.com/u/128?v=4',
+				},
+			},
+		}
+	}
+	let github = githubRepository()
 	const selected = { registry, name: '@example/plugin', version: '1.0.0' }
 
 	async function fixture(
@@ -232,16 +257,21 @@ describe('plugin market on workerd and D1', () => {
 			db.delete(releases),
 			db.delete(notifications),
 			db.delete(packages),
+			db.delete(authors),
 		])
 		fixtures.clear()
 		requests.length = 0
-		github = { status: 200, body: { full_name: 'unverified/claim', stargazers_count: 42 } }
+		github = githubRepository()
 	})
 
 	function admin(auth: string = token) {
 		return newHttpBatchRpcSession<MarketAdmin>(
 			new Request(new URL('/admin', origin).href, { headers: { Authorization: `Bearer ${auth}` } }),
 		)
+	}
+	async function callAdmin<T>(call: (access: ReturnType<typeof admin>) => T) {
+		using access = admin()
+		return await call(access)
 	}
 	function get(path: string, headers?: Record<string, string>) {
 		return fetch(new URL(path, origin).href, { headers })
@@ -747,11 +777,14 @@ describe('plugin market on workerd and D1', () => {
 		}
 		expect(requests).toHaveLength(beforeSearch)
 		expect(await getJson('/v1/facets')).toEqual({
+			total: 1,
+			registries: [{ value: registry, count: 1 }],
 			categories: [{ value: 'integration', count: 1 }],
 			tags: [
 				{ value: 'http', count: 1 },
 				{ value: 'network', count: 1 },
 			],
+			authors: [],
 		})
 		{
 			using stale = admin()
@@ -792,8 +825,143 @@ describe('plugin market on workerd and D1', () => {
 			using hidden = admin()
 			await hidden.setVisibility({ ...identity, expectedRevision: 2, hidden: true })
 		}
-		expect(await getJson('/v1/facets')).toEqual({ categories: [], tags: [] })
+		expect(await getJson('/v1/facets')).toEqual({
+			total: 0,
+			registries: [],
+			categories: [],
+			tags: [],
+			authors: [],
+		})
 		expect(await getJson('/v1/packages?query=network')).toMatchObject({ packages: [] })
+	})
+
+	it('combines multiple values per facet, counts across pages, and keeps hidden and private rows out', async () => {
+		const entries = [
+			{ name: 'alpha', category: 'storage', tags: ['http', 'telemetry'], author: 'alice' },
+			{ name: 'beta', category: 'tools', tags: ['telemetry'], author: 'bob' },
+			{ name: 'gamma', category: 'tools', tags: ['telemetry'], author: 'carol' },
+			{ name: 'delta', category: 'games', tags: ['http'], author: 'bob' },
+			{ name: 'epsilon', category: 'tools', tags: ['automation'], author: 'bob' },
+			{
+				name: 'other',
+				category: 'tools',
+				tags: ['telemetry'],
+				author: 'query-mismatch',
+				description: 'Other',
+			},
+			{ name: 'hidden', category: 'tools', tags: ['telemetry'], author: 'hidden', hidden: true },
+			{
+				name: 'alpha',
+				category: 'tools',
+				tags: ['telemetry'],
+				author: 'private',
+				registry: privateRegistry,
+			},
+		]
+		for (const entry of entries) {
+			const name = `@browse/${entry.name}`
+			const source = entry.registry ?? registry
+			const { metadata } = await fixture(name, { registry: source })
+			metadata.description = entry.description ?? 'Service transport'
+			expect(await callAdmin((access) => access.observe({ registry: source, name }))).toMatchObject(
+				{ status: 'observed' },
+			)
+			expect(
+				await callAdmin((access) =>
+					access.setMetadata({
+						registry: source,
+						name,
+						expectedRevision: 1,
+						official: false,
+						category: entry.category,
+						tags: entry.tags,
+						author: { id: `market:${entry.author}`, name: entry.author },
+					}),
+				),
+			).toMatchObject({ status: 'updated' })
+			if (entry.hidden)
+				await callAdmin((access) =>
+					access.setVisibility({ registry: source, name, expectedRevision: 2, hidden: true }),
+				)
+		}
+
+		const params = new URLSearchParams([
+			['query', 'transport'],
+			['official', 'false'],
+			['registry', registry],
+			['registry', privateRegistry],
+			['category', 'storage'],
+			['category', 'tools'],
+			['tag', 'http'],
+			['tag', 'telemetry'],
+			['author', 'market:alice'],
+			['author', 'market:bob'],
+		])
+		const first = (await getJson(`/v1/packages?${params}&limit=1`)) as PackagePage
+		expect(first.packages).toMatchObject([
+			{ name: '@browse/alpha', author: { id: 'market:alice' } },
+		])
+		expect(first.nextCursor).toBeTruthy()
+		const reordered = new URLSearchParams([...params].toReversed())
+		reordered.append('author', 'market:bob')
+		const second = (await getJson(
+			`/v1/packages?${reordered}&limit=1&cursor=${first.nextCursor}`,
+		)) as PackagePage
+		expect(second.packages).toMatchObject([{ name: '@browse/beta', author: { id: 'market:bob' } }])
+		expect(second.nextCursor).toBeNull()
+		const headers = { Authorization: `Bearer ${token}` }
+		await expect(
+			get(`/v1/packages?${params}&limit=1&cursor=${first.nextCursor}`, headers),
+		).resolves.toMatchObject({ status: 400 })
+		const different = new URLSearchParams(params)
+		different.append('author', 'market:carol')
+		await expect(
+			get(`/v1/packages?${different}&limit=1&cursor=${first.nextCursor}`),
+		).resolves.toMatchObject({ status: 400 })
+		const combined = (await getJson(`/v1/facets?${params}`)) as CatalogFacets
+		expect(combined).toEqual({
+			total: 2,
+			registries: [{ value: registry, count: 2 }],
+			categories: [
+				{ value: 'games', count: 1 },
+				{ value: 'storage', count: 1 },
+				{ value: 'tools', count: 1 },
+			],
+			tags: [
+				{ value: 'automation', count: 1 },
+				{ value: 'http', count: 1 },
+				{ value: 'telemetry', count: 2 },
+			],
+			authors: ['alice', 'bob', 'carol'].map((name) => ({
+				id: `market:${name}`,
+				name,
+				kind: 'market',
+				avatarUrl: null,
+				count: 1,
+			})),
+		})
+		const authenticated = (await getJson(`/v1/facets?${params}`, headers)) as CatalogFacets
+		expect(authenticated.authors.map(({ id }) => id)).toEqual([
+			'market:alice',
+			'market:bob',
+			'market:carol',
+			'market:private',
+		])
+		params.append('author', 'market:private')
+		const bothSources = (await getJson(`/v1/packages?${params}`, headers)) as PackagePage
+		expect(bothSources.packages.map(({ name, registry: source }) => [name, source])).toEqual([
+			['@browse/alpha', privateRegistry],
+			['@browse/alpha', registry],
+			['@browse/beta', registry],
+		])
+
+		for (const path of [
+			'/v1/facets?cursor=anything',
+			'/v1/packages?official=false&official=true',
+			'/v1/packages?author=github:0',
+			`/v1/packages?${new URLSearchParams(Array.from({ length: 21 }, () => ['tag', 'http']))}`,
+		])
+			await expect(get(path)).resolves.toMatchObject({ status: 400 })
 	})
 
 	it('lists actionable notifications with stable tied-time paging and query-bound cursors', async () => {
@@ -891,6 +1059,7 @@ describe('plugin market on workerd and D1', () => {
 					indexedVersions: 0,
 					repository: 'https://github.com/unverified/claim',
 					repositoryStars: null,
+					author: null,
 				},
 			],
 		})
@@ -941,9 +1110,23 @@ describe('plugin market on workerd and D1', () => {
 			})
 		}
 		const listing = (await getJson('/v1/packages')) as PackagePage
+		const observedAuthor = {
+			id: 'github:128',
+			name: '@unverified',
+			kind: 'github',
+			avatarUrl: 'https://avatars.githubusercontent.com/u/128?v=4',
+		}
 		expect(listing.packages[0]).toMatchObject({
 			repositoryStars: 42,
 			repositoryObservedAt: expect.any(Number),
+			author: observedAuthor,
+		})
+		expect(await getJson(`/v1/packages/${encodeURIComponent(selected.name)}`)).toMatchObject({
+			author: observedAuthor,
+		})
+		expect(await getJson('/v1/facets?author=github%3A128')).toMatchObject({
+			total: 1,
+			authors: [{ ...observedAuthor, count: 1 }],
 		})
 		github.status = 429
 		{
@@ -961,9 +1144,217 @@ describe('plugin market on workerd and D1', () => {
 		const after = (await getJson('/v1/packages')) as PackagePage
 		expect(after.packages[0].repositoryStars).toBe(42)
 		expect(after.packages[0].repositoryObservedAt).toBe(listing.packages[0].repositoryObservedAt)
+		expect(after.packages[0].author).toEqual(observedAuthor)
 		const count = requests.length
 		await getJson('/v1/packages')
 		await getJson('/v1/packages?query=plugin')
+		await getJson('/v1/facets')
 		expect(requests).toHaveLength(count)
 	})
+
+	it('keeps a shared author ID across GitHub renames and commits manual attribution with curation', async () => {
+		const old = await fixture('@example/previous')
+		old.metadata.repository = 'https://github.com/unverified/claim'
+		const renamed = await fixture('@example/current')
+		renamed.metadata.repository = 'https://github.com/renamed/claim'
+		const previous = { registry, name: old.name }
+		const current = { registry, name: renamed.name }
+		await callAdmin((access) => access.observe(previous))
+		expect(await callAdmin((access) => access.refreshRepository(previous))).toMatchObject({
+			status: 'updated',
+		})
+		await callAdmin((access) => access.observe(current))
+		github.body.full_name = 'renamed/claim'
+		github.body.owner.login = 'renamed'
+		github.body.owner.avatar_url = 'https://tracker.example/avatar'
+		expect(await callAdmin((access) => access.refreshRepository(current))).toMatchObject({
+			status: 'updated',
+		})
+		const githubAuthor = { id: 'github:128', name: '@renamed', kind: 'github', avatarUrl: null }
+		const result = (await getJson('/v1/packages?author=github%3A128')) as PackagePage
+		expect(result.packages.map(({ author }) => author)).toEqual([githubAuthor, githubAuthor])
+		expect(await getJson('/v1/facets')).toMatchObject({ authors: [{ ...githubAuthor, count: 2 }] })
+		const manual = { id: 'market:local-team', name: 'Local Team' }
+		const curation = { ...previous, official: true, category: 'tools', tags: ['example'] }
+		expect(
+			await callAdmin((access) =>
+				access.setMetadata({ ...curation, expectedRevision: 1, author: manual }),
+			),
+		).toMatchObject({ status: 'updated' })
+		expect(
+			await callAdmin((access) =>
+				access.setMetadata({
+					...curation,
+					expectedRevision: 1,
+					author: { ...manual, name: 'Stale write' },
+				}),
+			),
+		).toEqual({ status: 'conflict', currentRevision: 2 })
+		expect(
+			await callAdmin((access) => access.setMetadata({ ...curation, expectedRevision: 2 })),
+		).toMatchObject({
+			status: 'updated',
+		})
+		old.metadata.repository = 'https://example.com/moved'
+		expect(await callAdmin((access) => access.observe(previous))).toMatchObject({
+			status: 'observed',
+		})
+		const detailPath = `/v1/packages/${encodeURIComponent(previous.name)}`
+		expect(await getJson(detailPath)).toMatchObject({
+			author: { ...manual, kind: 'market', avatarUrl: null },
+			repositoryStars: null,
+			repositoryObservedAt: null,
+		})
+		expect(await getJson('/v1/facets')).toMatchObject({
+			authors: [
+				{ ...githubAuthor, count: 1 },
+				{ ...manual, kind: 'market', count: 1 },
+			],
+		})
+		expect(
+			await callAdmin((access) =>
+				access.setMetadata({ ...curation, expectedRevision: 3, author: null }),
+			),
+		).toMatchObject({ status: 'updated' })
+		const changes = await callAdmin((access) => access.recentChanges(previous))
+		expect(changes.filter(({ action }) => action === 'metadata')).toMatchObject([
+			{ revision: 4, changes: { author: null } },
+			{ revision: 3 },
+			{ revision: 2, changes: { author: manual } },
+		])
+		expect(await getJson(detailPath)).toMatchObject({ author: null })
+	})
+
+	it('serves a public mirror from committed SQLite data after the Worker goes offline', async () => {
+		const visible = await fixture('@example/mirror')
+		visible.tags = { ...visible.tags, constructor: visible.version }
+		const hidden = await fixture('@example/hidden')
+		const privateItem = await fixture(visible.name, { registry: privateRegistry })
+		for (const item of [visible, hidden, privateItem])
+			await callAdmin((access) =>
+				access.refresh({ registry: item.registry, name: item.name, version: item.version }),
+			)
+		await callAdmin((access) =>
+			access.setVisibility({ registry, name: hidden.name, expectedRevision: 1, hidden: true }),
+		)
+		const curation = {
+			registry,
+			name: visible.name,
+			official: true,
+			category: 'tools',
+			tags: ['initial'],
+			author: { id: 'market:mirror', name: 'Mirror Team' },
+		}
+		await callAdmin((access) => access.setMetadata({ ...curation, expectedRevision: 1 }))
+		const snapshot = await get('/v1/snapshot', { Authorization: `Bearer ${token}` })
+		expect(snapshot.status).toBe(200)
+		expect(await snapshot.json()).toMatchObject({
+			version: 1,
+			registries: [registry],
+			packages: [{ name: visible.name, registry }],
+			releases: [{ name: visible.name, registry, integrity: visible.integrity }],
+			authors: [{ ...curation.author, kind: 'market' }],
+		})
+		const condition = { 'If-None-Match': snapshot.headers.get('ETag')! }
+		const cachedSnapshot = await get('/v1/snapshot', condition)
+		expect(cachedSnapshot.status).toBe(304)
+
+		const binary = join(directory, 'mirror.mjs')
+		const file = join(directory, 'catalog.sqlite')
+		const execute = promisify(execFile)
+		await execute(process.execPath, ['dev/build-mirror.ts', binary], { timeout: 10_000 })
+		const publisher = origin.href
+		const sync = () =>
+			execute(process.execPath, [binary, 'sync', publisher, file], {
+				cwd: directory,
+				timeout: 10_000,
+			})
+		const initial = await sync()
+		expect(initial.stdout).toContain('1 packages, 1 releases')
+		const unchanged = await sync()
+		expect(unchanged.stdout).toContain('unchanged')
+		const server = spawn(process.execPath, [binary, 'serve', file], {
+			cwd: directory,
+			env: { ...process.env, HOST: '127.0.0.1', PORT: '0' },
+			stdio: ['ignore', 'pipe', 'pipe'],
+		})
+		const stopped = once(server, 'close')
+		const output = createInterface({ input: server.stdout })
+		let errors = ''
+		server.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+			errors += chunk
+		})
+		let offline = false
+		try {
+			const [line] = await Promise.race([
+				once(output, 'line', { signal: AbortSignal.timeout(10_000) }),
+				stopped.then(() => {
+					throw new Error(`Mirror exited before readiness: ${errors}`)
+				}),
+			])
+			expect(line).toMatch(/^Market mirror ready: http:\/\/127\.0\.0\.1:\d+$/)
+			const base = line.slice('Market mirror ready: '.length)
+			const read = (path: string) => fetch(base + path, { signal: AbortSignal.timeout(5_000) })
+			const readMirror = async (path: string) => {
+				const response = await read(path)
+				expect(response.status).toBe(200)
+				return response.json()
+			}
+			const detail = `/v1/packages/${encodeURIComponent(visible.name)}`
+			const hiddenDetail = `/v1/packages/${encodeURIComponent(hidden.name)}`
+			const release = `${detail}/releases/${visible.version}`
+			for (const path of [
+				'/v1/packages?query=mirror',
+				'/v1/facets',
+				detail,
+				`${detail}/releases`,
+				release,
+			])
+				expect(await readMirror(path)).toEqual(await getJson(path))
+			expect(await readMirror('/v1')).toMatchObject({
+				registries: [{ registry, access: 'public' }],
+				capabilities: { notifications: false },
+			})
+			const privateDetail = await read(`${detail}?registry=${encodeURIComponent(privateRegistry)}`)
+			expect(privateDetail.status).toBe(404)
+			const write = await fetch(`${base}/v1/notifications`, { method: 'POST' })
+			expect(write.status).toBe(405)
+
+			await callAdmin((access) =>
+				access.setMetadata({ ...curation, expectedRevision: 2, tags: ['delta'] }),
+			)
+			await callAdmin((access) =>
+				access.setVisibility({ registry, name: hidden.name, expectedRevision: 2, hidden: false }),
+			)
+			const trigger = 'reject_mirror_test_insert'
+			{
+				using sqlite = new DatabaseSync(file)
+				sqlite.exec(`CREATE TRIGGER ${trigger} BEFORE INSERT ON releases BEGIN
+					SELECT RAISE(ABORT, 'mirror-sync-fixture'); END;`)
+			}
+			await expect(sync()).rejects.toThrow('mirror-sync-fixture')
+			expect(await readMirror(detail)).toMatchObject({ tags: ['initial'] })
+			expect(await readMirror(release)).toMatchObject({ integrity: visible.integrity })
+			const stillHidden = await read(hiddenDetail)
+			expect(stillHidden.status).toBe(404)
+			{
+				using sqlite = new DatabaseSync(file)
+				sqlite.exec(`DROP TRIGGER ${trigger}`)
+			}
+			await sync()
+			await runtime.dispose()
+			offline = true
+			await expect(sync()).rejects.toMatchObject({ code: 1 })
+			expect(await readMirror('/v1/packages?query=delta')).toMatchObject({
+				packages: [{ name: visible.name, tags: ['delta'] }],
+			})
+			expect(await readMirror(release)).toMatchObject({ integrity: visible.integrity })
+			expect(await readMirror(hiddenDetail)).toMatchObject({ name: hidden.name })
+		} finally {
+			output.close()
+			server.kill()
+			await stopped
+			if (offline) await start()
+		}
+	}, 40_000)
 })

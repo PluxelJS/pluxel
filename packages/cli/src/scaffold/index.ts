@@ -2,7 +2,7 @@ import { cancel, intro, isCancel, note, outro, select, spinner, text } from '@cl
 import { type ArgValues, define } from 'gunshi'
 import { resolve } from 'pathe'
 import { newCommandArgs, newCommandDefinition } from '../command-manifest'
-import { detectPm, formatPackageScriptCommand, type PM, runPackageManager } from '../utils/pm'
+import { installDependencies, type PM } from '../utils/pm'
 import { loadTemplateContract, type TemplateContract } from './contract'
 import { scaffoldError } from './errors'
 import { materializeScaffoldPlan, printScaffoldPlan } from './materialize'
@@ -106,14 +106,12 @@ export const newCommand = define({
 				throw error
 			}
 
-			let packageManager = plan.packageManager
 			if (plan.install) {
-				packageManager ??= await detectPm(plan.targetDir)
 				const installSpinner = interactive ? spinner({ indicator: 'timer' }) : null
-				if (installSpinner) installSpinner.start(`Installing deps with ${packageManager}...`)
-				else ctx.log(`\n→ Installing deps with ${packageManager}...`)
+				if (installSpinner) installSpinner.start('Installing deps with Vite+...')
+				else ctx.log('\n→ Installing deps with Vite+...')
 				try {
-					await runPackageManager(packageManager, ['install'], plan.targetDir)
+					await installDependencies(plan.targetDir, plan.packageManager)
 					if (installSpinner) installSpinner.stop('Installed.')
 				} catch (error) {
 					if (installSpinner) installSpinner.stop('Failed.')
@@ -123,10 +121,14 @@ export const newCommand = define({
 						error,
 					)
 				}
-				ctx.log(`\nNext: ${formatPackageScriptCommand(packageManager, 'verify')}`)
 			}
 
 			outro(`✔ Done.\ncd ${plan.targetDir}`)
+			if (!plan.install) ctx.log('vp install')
+			if (plan.template.kind === 'bundled') {
+				ctx.log('vp run setup')
+				ctx.log(`vp run check-tests tests/${commandPlan.pluginName}.test.ts`)
+			} else ctx.log('vp run')
 		} finally {
 			await acquired.dispose()
 		}
@@ -249,7 +251,7 @@ function formatCommandPlan(command: CommandPlan, acquired: AcquiredTemplate, pla
 		`Target: ${plan.targetDir}`,
 		`Template: ${formatTemplateProvenance(acquired.provenance)}`,
 		`Files: ${plan.outputs.length}`,
-		`Install: ${plan.install ? (plan.packageManager ?? 'auto') : 'skipped'}`,
+		`Install: ${plan.install ? 'vp install' : 'skipped'}`,
 		plan.overwrite.length > 0 ? `Overwrite: ${plan.overwrite.length} file(s)` : '',
 	]
 		.filter(Boolean)

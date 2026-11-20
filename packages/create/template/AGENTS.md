@@ -4,22 +4,21 @@
 
 入口缺失时：Git 用户从上游 checkout 的 CLI 执行 `source install --root <本项目>`；npm 用户安装依赖后执行 `vp exec pluxel workspace setup`。`vp exec pluxel docs` 可直接读取当前来源的正文。CLI 管理生成链接，不复制或提交上游正文。
 
-完成修改后运行 `vp run verify`，报告实际检查结果与未验证边界；在线效果需要现有 dev console 的实际证据。
+日常修改运行所属包的相关测试，例如 `vp run @example/todo-plugin#check-tests tests/plugin.test.ts`。按风险补充类型检查或受影响调用方的回归。`vp run verify` 用于整仓验收。报告实际结果与未验证边界。在线效果使用现有 dev console 验证。
 
 ## 本项目位置与检查
 
 - `host/src/app.ts` 是开发与生产共用的应用声明；可选 `sources` 扩展固定 catalog。默认 modules 构建与原生 `start.mjs` 只在启动接纳预编译来源；开发 Vite 持续更新。生产 Vite 使用独立 `vite.runtime.config.ts` 与 `start-vite.mjs`，加载同一 compiled factory。
 - 生产 listener 与 `publicDir` 由应用 `launch` 显式选择；启动意图通过判定后才执行，关闭统一使用 Host。Vite 自己持有 listener，不执行应用 `acceptStartup` 或 `launch`。
 - 浏览器 React/Vite 代码位于 `host/web/`；Node catalog、配置和路由策略位于 `host/`；共享中立逻辑位于 `packages/`。
-- inspect 选择本应用时使用 workspace-relative `application: { root: 'host', entry: 'src/app.ts' }`。
+- 源码查询从 `@pluxel/agent-sdk/source` 导入普通函数，运行 `vp exec node dev/inspect.mjs`。本应用使用 `application: { root: 'host', entry: 'src/app.ts' }`；用法见 `vp exec pluxel docs development/inspection.md`。进程内 Host 操作入口为 `@pluxel/agent-sdk/host`，外部 Node 程序通过 `/client` 发现、执行和查询原 receipt。
 - 修改 `plugins/`、公共契约、Host 配置或 lint / fmt 规则前，按开发指南确认对应契约。应用装配见 `vp exec pluxel docs host/configuration.md`。
-- 完成后运行 `vp run verify`；不得无理由绕过 Pluxel lint 规则。
 
 插件范式按需读 `docs/pluxel/plugin-development/`；Host 装配读 `docs/pluxel/host/configuration.md` 的对应章节。已知目标直接定位，不把目录当作通读清单。
 
 ## 工作区工具与服务
 
-先读 `docs/pluxel/development/workspace-toolchain.md`（或 `vp exec pluxel docs development/workspace-toolchain.md`）。`mise.toml` 只配置工具版本、环境和 PATH，package scripts 提供项目操作入口，Vite+ 执行任务图、打包、lint 和格式化，`hk.pkl` 定义检查，`pitchfork.toml` 声明 `app` 服务。首次运行 `mise trust`、`mise install`、`vp install`、`vp run setup`；已有 Git 仓库再运行 `vp run hooks:install`。
+先读 `docs/pluxel/development/workspace-toolchain.md`（或 `vp exec pluxel docs development/workspace-toolchain.md`）。Vite+ 统一依赖安装、命令执行与任务图，package scripts 提供项目操作入口，`hk.pkl` 定义检查，`pitchfork.toml` 声明 `app` 服务；`mise.toml` 仅提供可选的工具安装与版本固定。命令约定与应用、插件及团队模板共同遵循工作区工具链指南。准备好工具后运行 `vp install`、`vp run setup`；已有 Git 仓库再运行 `vp run hooks:install`。
 
 修改服务前先读现有配置、运行 `pitchfork list` 和 `pitchfork status app`，按需查询 `pitchfork <command> --help` 与官方文档。用 `vp run dev` 启动或复用并显示当前应用与 Workbench 地址（项目 CLI 的 `dev`；`package.json` 中 `pluxel.dev.default` 选择 `app`，`pluxel.dev.app` 声明 `root: host/web` 与 `pitchfork: app`）；用原生 stop、restart、logs 管理，不手写后台进程、端口探测、轮询或 supervisor。命名空间默认由目录决定，保留 Git worktree 隔离。Vite 已拥有 HMR，不重复配置进程级源码 watch。
 
@@ -29,7 +28,7 @@
 
 - 复用现有服务；已注册项目可访问真实代理 URL 唤起，首次 checkout 仍需准备依赖并注册或启动。访问 URL 会启动服务和依赖；不要猜域名或把启动页当作应用 ready。
 - 启动失败、Vite 编译错误、进程退出和 stdout/stderr 使用 `pitchfork logs app --since 5min -n 100 --no-pager`。跨目录先发现完整服务 ID；仅为具体观察短暂使用 `--follow`，不另起进程收集日志。
-- 应用状态、HMR 接纳、Plugin 业务日志、配置、方法和 Workbench RPC 使用 `docs/pluxel/development/dev-console.md` 指导的控制台。用 `vp exec pluxel dev status` 确认 `host/web` 的实例与应用状态，再用 `dev run host/web/dev/<script>.ts` 操作。控制台不调用 Pitchfork；显式 `--profile` 优先于 default，再选择唯一 profile，匹配实例仍有多个时显式 `--instance`，跨目录用 `--root` 选择配置发现起点；保存 receipt 用于 `dev result/cancel`，旧操作不转投重启后的实例。不能用进程 running 代替业务结果。
+- 应用状态、HMR 接纳、Plugin 业务日志、配置、方法和 Workbench RPC 使用 `docs/pluxel/development/dev-console.md` 指导的控制台。用 `vp exec pluxel dev status` 确认 `host/web` 的实例与应用状态，再用 `dev run host/web/dev/<script>.ts` 操作。控制台不调用 Pitchfork；显式 `--profile` 优先于 default，再选择唯一 profile，匹配实例仍有多个时显式 `--instance`，跨目录用 `--root` 选择配置发现起点；保存 receipt 用于 `script result/cancel`，旧操作不转投重启后的实例。不能用进程 running 代替业务结果。
 - 在运行中的应用上跨文件或连续修改前，按控制台指南的「HMR 批次控制」先 `dev hmr pause`；检查通过后 `dev hmr apply` 并验证报告与实际行为。失败保持暂停，成功且原本 auto 才 `dev hmr resume`，不在 finally 中无条件恢复或重启服务模拟 apply。
 - 按需启动不等于自动空闲停止。只清理本任务启动的临时服务，保留原有共享实例。冷启动和日志保留策略按工作区指南及已安装 CLI 帮助配置。
 
@@ -37,8 +36,14 @@
 
 `vp run build` 通过 Vite Task 调度各包的标准 `build` 入口（委托 `compile` task）；`vp run verify` 组合治理、`vp check`、测试和构建。根 `package.json` scripts 保留 IDE 可发现的开发、构建、测试和检查入口；聚合 scripts 委托给 `workspace:*` 原生任务，入口不缓存，底层任务按各自规则缓存。`oxlint.config.ts` 与 `oxfmt.config.ts` 分别维护规则，根 `vite.config.ts` 引用为 `lint` / `fmt` 并启用类型检查；包配置拥有任务、依赖和缓存。CI 直接运行 `vp run --concurrency-limit=2 workspace:verify`，让并发限制覆盖实际任务图。原生 `tsdown.config.ts` 通过 `pack` 引用，Plugin 构建继续使用 `pluxel build` 的编译语义。依赖操作使用 `vp exec pluxel pncat`，版本对齐使用 `vp exec pluxel workspace sync`；不要添加重复的 catalog 脚本。
 
+项目和上传脚本统一使用 `satisfies Script`（`@pluxel/agent-sdk/host`），通过 `sdk.ctx` 使用内建能力，通过 `sdk.ctx.service(Service)` 借用应用安装的服务。控制操作直接 `await` 成功值，失败抛 `ScriptError`；业务实例用 `const { instance } = await plugin.instance()` 借用。调用、失败恢复和资源释放见 `vp exec pluxel docs development/scripts.md`，项目模块与 HMR 操作见 `vp exec pluxel docs development/dev-console.md`。配置修改后核对保存结果与实际采用。
+
+插件地址、控制材料同步、配置类型和业务实例调用见 `vp exec pluxel docs development/plugin-control.md`。完整调用由这些随 CLI 交付的指南维护。
+
 ## 持久状态与原生依赖
 
-配置继续使用 `configs.use()`。配置之外的有界状态通过固定的 `ctx.tinybase.open()` 取得每个 Plugin node 唯一的托管 Store；原生 API 和类型直接从 `tinybase` 与上游子路径导入。持久位置、恢复和保存归 Host，不在插件管理 Persister 或另写 JSON 设置。密钥留在 Vault，大文件通过固定的 `ctx.fs()` 保存；后端在 Host 的 `runtime.zenfs: zenfs(...)` 中选择；日志输出在 `runtime.logtape: logtape(...)` 中选择，两个可选 helper 都从 `@pluxel/core/config` 导入，原生配置可直接输入，不加入服务清单。
+配置继续使用 `configs.use()`。配置之外的有界状态通过固定的 `ctx.tinybase.open()` 取得每个 Plugin node 唯一的托管 Store，原生 API 和类型直接从 `tinybase` 与上游子路径导入。持久位置、恢复和保存归 Host。密钥通过固定的 `ctx.vault` 访问，后端由 Host 的 `coreConfig.vault` 配置。`host/src/app.ts` 显式把 `startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY` 注入该配置。大文件通过固定的 `ctx.fs()` 保存，后端通过 `coreConfig.zenfs` 选择，日志输出通过 `coreConfig.logtape` 选择。
 
 共享托管 Store 的包使用 catalog 所选的精确 `tinybase` peer 与同版 dev dependency；Core 内建精确 TinyBase runtime；应用仅在直接使用原生 TinyBase 时声明自己的 dependency。`pluxel build` 生成 `pluxel.tinybase` 接纳事实，不手写标记或使用全局 override。仅使用配置的包不需要新增 TinyBase import。独立私有 Store 保留普通依赖与自身解析；开始交换宿主托管 Store 后再进入共享契约。完整用法见 `vp exec pluxel docs development/plugin-package.md`。
+
+终端命令与普通 Node 调用的选择见 `vp exec pluxel docs development/agent-sdk.md` 的「终端命令」；项目脚本继续使用原有 SDK 类型。

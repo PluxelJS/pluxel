@@ -1,5 +1,6 @@
 export {
 	createRuntimeSessionClient,
+	readRuntimeAuthenticationStep,
 	type RuntimeClientBootstrap,
 	type RuntimeSessionClient,
 	type RuntimeSessionClientOptions,

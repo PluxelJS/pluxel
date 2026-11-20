@@ -1,4 +1,7 @@
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import { describe, expect, it, vi } from 'vitest'
 import { PluginWithUI } from './PluginWithUI'
@@ -10,11 +13,11 @@ describe('PluginWithUI Workbench observer', () => {
 	it('delivers updates through a disposable Workbench observer subscription', async () => {
 		await using host = await createTestHost({
 			workbench: true,
-			services: standardServices(),
+			services: [elysia(), commands(), nodeModules(), workers()],
 		})
-		await host.start(PluginWithUI)
+		await host.start(PluginWithUI.nodeAddress())
 		using opened = await host.workbench.open({
-			target: PluginWithUI,
+			target: PluginWithUI.nodeAddress(),
 			entry: PluginWithUIWorkbench.overview,
 			principal,
 		})

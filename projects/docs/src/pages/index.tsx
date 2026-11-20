@@ -4,7 +4,7 @@ import { PluginShowcase } from '../components/plugin-showcase'
 
 const patterns = [
 	{
-		code: 'constructor(private readonly http: WretchPlugin) { super() }',
+		code: 'constructor(private readonly fonts: FontsPlugin) { super() }',
 		description: '需要另一个 Plugin 时，直接写构造函数参数。类型就是依赖声明。',
 		href: '/docs/plugin-development/model',
 		icon: Braces,
@@ -32,24 +32,19 @@ const hosts = [
 import { OrdersPlugin } from '@app/orders'
 
 export default defineHostApplication(() => ({
-  plugins: [OrdersPlugin],
+  plugins: [{ plugin: OrdersPlugin, autoStart: true }],
 }))`,
 		description:
-			'插件清单在应用构建时静态打包，开发时支持实时热更新。通过 policy.autoStart 指定应用启动时默认运行的插件。',
+			'插件清单在应用构建时静态打包，开发时支持实时热更新。在节点上设置 autoStart，声明应用启动时主动运行的插件。',
 		icon: ServerCog,
 		meta: 'Fixed catalog',
 		title: '固定插件目录',
 	},
 	{
 		code: `import { defineHostApplication } from '@pluxel/host'
-import { pluginSource } from '@pluxel/host/sources'
 
 export default defineHostApplication(() => ({
-  plugins: [],
-  sources: [pluginSource({
-    kind: 'directory', path: './plugins',
-    include: ['*.mjs'],
-  })],
+  sources: [{ directory: './plugins', include: ['*.mjs'] }],
 }))`,
 		description:
 			'开发期间可在指定目录新增、更新或移除插件文件，宿主会自动发现变动并按运行策略加载。',
@@ -67,8 +62,7 @@ const toolchain = [
 import { servicesPreset } from '@pluxel/services/preset'
 
 export default defineHostApplication(async (startup) => ({
-  plugins: [],
-  services: await servicesPreset(startup, {}),
+  services: await servicesPreset(startup),
 }))`,
 	},
 	{
@@ -79,7 +73,7 @@ import { vitePreset } from '@pluxel/services/vite'
 
 export default defineConfig({
   plugins: [vitePreset({
-    entry: './src/app.ts', devConsole: true,
+    entry: './src/app.ts', scripts: true,
   })],
 })`,
 	},

@@ -136,3 +136,7 @@ export class OrdersPlugin extends BasePlugin {
 
 - **定义地址（Definition Address）**：由包名（或源码路径）与导出的类名唯一确定（如 `@acme/billing::BillingPlugin`）。
 - **节点地址（Node Address）**：区分默认实例与多实例分叉（Fork）。如果一个插件支持多实例并配置了 `@Plugin({ forkable: true })`，它的不同分叉拥有独立的节点地址（例如 `...#fork=east`），各自管理独立的配置与运行生命周期。
+
+Plugin class 和构建生成的控制入口都通过 `address()`、`nodeAddress()` 和 `nodeAddress('east')` 提供地址。应用使用 `plugins: [{ plugin: PluginClass }]` 接纳固定实现，并在同一项声明配置、启动意图和 fork。自动化脚本通过节点地址选择实际目标。必需依赖通过构造函数和值导入声明。
+
+调用 `sdk.plugin(PluginClass.nodeAddress())` 时，地址保留原 class 的实例类型与实现校验。生成控制入口还提供配置输入、输出和源码说明。保留框架返回的原地址用于类型化操作，JSON 保存的地址用于动态配置和生命周期管理；完整调用见[插件控制类型与实例调用](../development/plugin-control.md)。

@@ -318,45 +318,18 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 		}
 	})
 
-	it('lowers a Node declaration and publishes its Node ESM artifact', async () => {
+	it('publishes executable Node modules and workers from one package', async () => {
 		await using fixture = await createFixture({
-			'src/index.ts':
-				"import { defineNodeModule } from '@pluxel/services/node'\nexport const task = defineNodeModule(import.meta.url, './task.ts')\n",
+			'src/index.ts': `import { defineNodeModule } from '@pluxel/services/node'
+import { defineWorkerTask } from '@pluxel/services/workers'
+export const task = defineNodeModule(import.meta.url, './task.ts')
+export const worker = defineWorkerTask<number, number>(import.meta.url, './worker.ts')
+`,
 			'src/task.ts': 'export const answer = 42\n',
-		})
-		const bundle = await rolldown({
-			input: `${fixture.path}/src/index.ts`,
-			external: ['@pluxel/services/node', '@pluxel/services/workers'],
-			plugins: [
-				pluginArtifactBuildPlugin({
-					root: fixture.path,
-					buildDir: 'dist',
-					workbench: false,
-					node: { minify: false },
-				}),
-			],
-		})
-		await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
-		await bundle.close()
-
-		const server = await readFile(`${fixture.path}/dist/index.js`, 'utf8')
-		const key = server.match(
-			/defineNodeModule\(import\.meta\.url,\s*['"]\.\/task\.ts['"],\s*['"]([^'"]+)/,
-		)?.[1]
-		expect(key).toMatch(/^node-[a-f\d]{16}$/)
-		const artifact = await readFile(`${fixture.path}/dist/artifacts/node/${key}.mjs`, 'utf8')
-		expect(artifact).toContain('answer')
-		expect(artifact).not.toContain('@pluxel/core')
-	})
-
-	it('lowers a worker declaration through the shared Node artifact pipeline', async () => {
-		await using fixture = await createFixture({
-			'src/index.ts':
-				"import { defineWorkerTask } from '@pluxel/services/workers'\nexport const task = defineWorkerTask<number, number>(\n  import.meta.url,\n  './worker.ts',\n)\n",
 			'src/worker.ts': 'export default (value: number) => value * 2\n',
 		})
 		const bundle = await rolldown({
-			input: `${fixture.path}/src/index.ts`,
+			input: join(fixture.path, 'src/index.ts'),
 			external: ['@pluxel/services/node', '@pluxel/services/workers'],
 			plugins: [
 				pluginArtifactBuildPlugin({
@@ -367,20 +340,28 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 				}),
 			],
 		})
-		await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
-		await bundle.close()
+		try {
+			await bundle.write({ dir: join(fixture.path, 'dist'), format: 'esm' })
+		} finally {
+			await bundle.close()
+		}
 
-		const server = await readFile(`${fixture.path}/dist/index.js`, 'utf8')
-		const key = server.match(
-			/defineWorkerTask(?:<[^>]+>)?\(import\.meta\.url,\s*['"]\.\/worker\.ts['"],\s*['"]([^'"]+)/,
+		const server = await readFile(join(fixture.path, 'dist/index.js'), 'utf8')
+		const taskKey = server.match(
+			/defineNodeModule\(import\.meta\.url,\s*['"]\.\/task\.ts['"],\s*['"](node-[a-f\d]{16})/,
 		)?.[1]
-		expect(key).toMatch(/^node-[a-f\d]{16}$/)
-		const artifact = await readFile(`${fixture.path}/dist/artifacts/node/${key}.mjs`, 'utf8')
-		expect(artifact).toContain('value * 2')
-		const builtTask = await import(
-			pathToFileURL(`${fixture.path}/dist/artifacts/node/${key}.mjs`).href
-		)
-		expect(builtTask.default(21)).toBe(42)
+		const workerKey = server.match(
+			/defineWorkerTask\(import\.meta\.url,\s*['"]\.\/worker\.ts['"],\s*['"](node-[a-f\d]{16})/,
+		)?.[1]
+		expect(taskKey).toBeDefined()
+		expect(workerKey).toBeDefined()
+		expect(taskKey).not.toBe(workerKey)
+
+		const output = join(fixture.path, 'dist/artifacts/node')
+		const task = await import(pathToFileURL(join(output, `${taskKey}.mjs`)).href)
+		const worker = await import(pathToFileURL(join(output, `${workerKey}.mjs`)).href)
+		expect(task.answer).toBe(42)
+		expect(worker.default(21)).toBe(42)
 	})
 
 	it('rebuilds native ownership for standalone and loads after relocation without the source package', async () => {

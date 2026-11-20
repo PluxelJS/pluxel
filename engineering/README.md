@@ -1,69 +1,44 @@
-# 框架维护索引
+# 工程维护索引
 
-修改 Pluxel 框架时使用本页。编写应用或插件从[用户文档](../docs/index.md)进入；定位插件声明、操作在线应用和隔离回归的选择见[开发指南](../docs/development/index.md)。
+Pluxel 的框架架构、实现入口与验证方法由本目录维护。应用和插件用法见 [docs](../docs/index.md)，仓库操作规则见 [AGENTS.md](../AGENTS.md)。
 
-## 最短工作路径
+## 架构入口
 
-1. 读[工程原则](DESIGN_PRINCIPLES.md)与[系统边界](PLUGIN_SYSTEM.md)，确认本次改动由哪一层拥有。
-2. 在下表选择涉及的领域。沿文档的实现入口读代码、exports、测试和真实调用方；只在跨边界时追加相邻领域。
-3. 改公共契约时使用 [API 设计规则](../.agents/rules/library-api-design.md)；改依赖或包入口时同时读 [Governance](GOVERNANCE.md)。
-4. 在拥有该事实的页面更新约束或用法，并按领域风险验证。测试工具选择见 [TESTING](TESTING.md)。
+[系统边界](PLUGIN_SYSTEM.md)串起源码声明、Host 装配、Core generation 与可选 Workbench 的执行路径；[工程原则](DESIGN_PRINCIPLES.md)维护跨领域不变量。Context 是同步能力 kernel，Core 管 Plugin graph 和生命周期，Host 管装配与运行策略，Services 提供具体能力。领域页进一步说明机制、源码和测试。
 
-## 按改动定位
+公开入口以 package 的 `exports` 为准。修改公共 API 时同时检查 [API 设计规则](../.agents/rules/library-api-design.md)与真实调用方；依赖、导出和 workspace 调整由 [Governance](GOVERNANCE.md)维护。
 
-每行列出候选入口，不要求整行通读；选本次修改涉及的章节。只改 Context kernel 时先读其公共契约，涉及 Plugin generation 或 Host 服务装配时才追加 Core 或 Host。
+## 按领域定位
 
-“源码范围”用于开始搜索，不代表完整影响范围。公开入口以各 package 的 `package.json` exports 为准。
+| 修改对象                              | 工程文档                                                                                                                   | 源码起点                                                                                                       |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Context kernel、scope、能力组合       | [Core](CORE.md#context-service-kernel)、[Context 公共参考](../docs/reference/context-hosts.md)                             | `packages/context/`、`packages/core/src/host.ts`                                                               |
+| Plugin 身份、依赖、generation、Part   | [Identity](PLUGIN_IDENTITY.md)、[Core](CORE.md)、[生命周期](CORE_LIFECYCLE_SEMANTICS.md)                                   | [Core 实现索引](../packages/core/IMPLEMENTATION_INDEX.md)                                                      |
+| Host 装配、catalog、运行意图与服务    | [Host](HOST.md)                                                                                                            | `packages/host/`、`packages/services/`                                                                         |
+| 配置输入、revision、保存与采用        | [Config](CONFIG.md)                                                                                                        | `packages/core/src/services/config/`、`packages/host/`                                                         |
+| 状态、文档、文件系统                  | [TinyBase](TINYBASE.md)、[FS](FS.md)                                                                                       | `packages/core/src/tinybase/`、`packages/core/src/fs/`                                                         |
+| 内建凭据、加密与部署记录              | [Vault 约束](../packages/core/src/vault/加密实现规范.md)、[宿主输入](HOST.md#vault-记录与宿主输入)                         | `packages/core/src/vault/`、`packages/host/src/input-bindings.ts`                                              |
+| 数据库、日志、Commands                | [Database](DATABASE.md)、[Logging](LOGGING.md)、[Commands](COMMANDS.md)                                                    | `packages/services/src/`、`packages/core/src/logging/`、`packages/commands/`                                   |
+| 受管出站 HTTP                         | [出站 HTTP](OUTBOUND_HTTP.md)                                                                                              | `packages/core/src/http/`、`packages/services/src/management/`                                                 |
+| Plugin lowering、声明与源码查询       | [Toolchain](TOOLCHAIN.md)                                                                                                  | `packages/rolldown/`                                                                                           |
+| 应用交付、Workbench / Node 制品       | [Application Build](APPLICATION_BUILD.md)、[Artifact Build](ARTIFACT_BUILD.md)、[Distribution](DISTRIBUTION.md)            | `packages/rolldown/`                                                                                           |
+| CLI、脚手架、跨仓库源码协作           | [CLI Workspaces](CLI_WORKSPACES.md)                                                                                        | [CLI 索引](../packages/cli/IMPLEMENTATION_INDEX.md)、[Create 索引](../packages/create/IMPLEMENTATION_INDEX.md) |
+| Vite 更新与开发控制台                 | [HMR](HMR.md)、[Dev Console](DEV_CONSOLE.md)                                                                               | `packages/host-vite/`                                                                                          |
+| 脚本 SDK、执行、receipt 与控制材料    | [Agent Workflow](AGENT_WORKFLOW.md)、[Plugin Control](PLUGIN_CONTROL.md)                                                   | `packages/host/src/agent/`、`packages/agent-sdk/src/`、`packages/rolldown/src/control/`                        |
+| Workbench publication、会话、renderer | [Workbench](WORKBENCH.md)                                                                                                  | `packages/workbench/`                                                                                          |
+| Shell 导航、布局、视觉与目录          | [交互设计](WORKBENCH_DESIGN.md)、[Frontend](FRONTEND.md)、[Plugin Catalog](PLUGIN_CATALOG.md)、[UI Library](UI_LIBRARY.md) | `packages/workbench/shell/`、`packages/valibot-form/`                                                          |
+| 测试设施与真实浏览器验证              | [Testing](TESTING.md)、[Workbench 验收](WORKBENCH_FLEXLAYOUT_VALIDATION.md)                                                | `packages/test/`、各包 tests                                                                                   |
+| 仓库治理、发布、贡献接纳              | [Governance](GOVERNANCE.md)、[Releasing](RELEASING.md)、[Contribution Review](CONTRIBUTION_REVIEW.md)                      | `scripts/`、`.github/`                                                                                         |
+| 文档组织与改写                        | [Documentation](DOCUMENTATION.md)                                                                                          | `docs/`、`engineering/`、package 实现索引                                                                      |
 
-| 改动                                    | 当前约束                                                                                 | 源码范围                                                                                                       |
-| --------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Context kernel、scope、能力组合         | [Context 公共契约](../docs/reference/context-hosts.md)、[Host](HOST.md)、[Core](CORE.md) | `packages/context/`、`packages/core/src/host.ts`                                                               |
-| Plugin 身份、依赖图、generation 与清理  | [身份](PLUGIN_IDENTITY.md)、[Core](CORE.md)、[生命周期证据](CORE_LIFECYCLE_SEMANTICS.md) | [Core 实现索引](../packages/core/IMPLEMENTATION_INDEX.md)                                                      |
-| 宿主装配、来源、运行意图与服务所有权    | [Host](HOST.md)                                                                          | `packages/host/`、`packages/services/`                                                                         |
-| 配置声明、输入、revision 与保存         | [Config](CONFIG.md)                                                                      | `packages/core/src/services/config/`、`packages/host/`、`packages/services/`                                   |
-| Plugin 编译与源码查询                   | [Toolchain](TOOLCHAIN.md)                                                                | `packages/rolldown/`                                                                                           |
-| 应用交付构建                            | [Application Build](APPLICATION_BUILD.md)                                                | `packages/rolldown/`                                                                                           |
-| Workbench / Node 制品编译               | [Artifact Build](ARTIFACT_BUILD.md)                                                      | `packages/rolldown/`                                                                                           |
-| CLI、模板与跨仓库源码协作               | [CLI Workspaces](CLI_WORKSPACES.md)                                                      | [CLI 索引](../packages/cli/IMPLEMENTATION_INDEX.md)、[Create 索引](../packages/create/IMPLEMENTATION_INDEX.md) |
-| Vite 更新与开发控制台                   | [HMR](HMR.md)、[Dev Console](DEV_CONSOLE.md)                                             | `packages/host-vite/`                                                                                          |
-| 测试设施                                | [Testing](TESTING.md)                                                                    | `packages/test/`、各包 tests                                                                                   |
-| Commands、协议载体与发布                | [Commands](COMMANDS.md)                                                                  | `packages/commands/`、`packages/services/src/commands/`                                                        |
-| 数据库、日志                            | [Database](DATABASE.md)、[Logging](LOGGING.md)                                           | `packages/services/src/database/`、`packages/core/src/logging/`                                                |
-| Plugin 状态、Host 文档与保存屏障        | [TinyBase](TINYBASE.md)、[迁移清单](TINYBASE_MIGRATION.md)                               | `packages/core/src/tinybase/`、`packages/host/src/config-store.ts`                                             |
-| 文件系统、目录归属与原子提交            | [FS](FS.md)                                                                              | `packages/core/src/fs/`、`packages/host/src/document-storage.ts`                                               |
-| Workbench 发布、会话、renderer 与 Shell | [交互设计](WORKBENCH_DESIGN.md)、[Workbench](WORKBENCH.md)、[Frontend](FRONTEND.md)      | `packages/workbench/`、`packages/workbench/shell/`                                                             |
-| UI 组件与 Plugin catalog                | [UI Library](UI_LIBRARY.md)、[Plugin Catalog](PLUGIN_CATALOG.md)                         | `packages/valibot-form/`、`packages/workbench/`                                                                |
-| 应用制品、scaffold 与发布               | [Distribution](DISTRIBUTION.md)、[Releasing](RELEASING.md)                               | `packages/rolldown/`、[Create 索引](../packages/create/IMPLEMENTATION_INDEX.md)、`scripts/`                    |
+跨 Plugin 调用和缓存 service handle 的撤回行为集中在[能力生命周期矩阵](PROVIDER_WITHDRAWAL_AUDIT.md)，覆盖 admission、在途任务、replacement 和 root 资源的区别。
 
-跨 Plugin 调用或 service handle 变更还要检查缓存句柄、并发、owner 撤回和已接纳工作的处理，证据入口见[服务撤回审计](PROVIDER_WITHDRAWAL_AUDIT.md)。
+## 设计依据与待办
 
-## 证据与背景按需读取
+- [Records](records/README.md)保存有用的迁移盘点、部署验收与设计背景，标明时间和环境。
+- [Experiments](experiments/README.md)与 [spikes](spikes/README.md)保存固定环境的能力探测；实验结论的适用范围见各自记录。
+- [Proposals](proposals/README.md)只列尚未决定或尚未完成的设计。
 
-| 内容                                                                                                                           | 用途与限制                                         |
-| ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
-| [Host 部署验证](HOST_DEPLOYMENT_VALIDATION.md)                                                                                 | 已验证环境和待验证平台；不能从一个平台推断全部平台 |
-| [Workbench FlexLayout 验收](WORKBENCH_FLEXLAYOUT_VALIDATION.md)                                                                | 原生工作区、真实 MF/浏览器、清理证据与未验证边界   |
-| [服务撤回审计](PROVIDER_WITHDRAWAL_AUDIT.md)                                                                                   | 生命周期与句柄行为的证据，不另定义作者 API         |
-| [时空组合记录](SPATIOTEMPORAL_COMPOSABILITY_NOTES.md)                                                                          | 设计动机与 Cordis 对照                             |
-| [显式 schema 实验](experiments/tsgo-plugin-inputs/README.md)、[Content Mapper 实验](experiments/tsgo-content-mapper/README.md) | 固定版本的实验结果                                 |
-| [Carrier spikes](spikes/README.md)                                                                                             | 上游能力实验，不代表当前支持矩阵                   |
-| [提案](proposals/README.md)                                                                                                    | 尚未落地的决定，不作为当前契约                     |
+应用声明、逐节点策略和 Core 设施分别由 [Host](HOST.md)、[Config](CONFIG.md) 与 [Core](CORE.md) 维护。公开用法见[应用配置指南](../docs/host/configuration.md)。
 
-## 文档所有权
-
-| 位置                             | 维护什么                           | 不重复什么               |
-| -------------------------------- | ---------------------------------- | ------------------------ |
-| `AGENTS.md`                      | 任务分流、必须遵守的工作流程       | 领域教程和完整 API 清单  |
-| `.agents/rules/`                 | 通用设计默认、理由、例外与验收方法 | Pluxel 当前架构事实      |
-| `engineering/` 领域页            | 内部职责、不变量、实现与验证入口   | 公开调用教程             |
-| `docs/`                          | 当前公开用法、失败、资源寿命与限制 | 内部实现说明和迁移历史   |
-| package README / 实现索引        | 本包职责、安装或操作、源码导航     | 第二套插件模型或领域契约 |
-| proposals / experiments / spikes | 未实现方案或有范围的实验依据       | 当前功能承诺             |
-
-改写先明确适用任务与事实归属，保留失败、并发、取消、所有权和验证边界，不用删除限制换取短篇幅。区分必须保持的契约与可替换实现；非显然约束保留一句原因或失败反例，并链接实现或验证依据。
-
-导航摘要指向权威章节，不另定默认值，不省略会改变含义的适用条件。
-
-保持已有页面路径；更改标题时检查锚点引用。新增或移动页面时检查侧栏、相对链接和生成项目的 AGENTS。已实现提案移除落地部分，旧模型由 Git 保存。
-
-公开文档的职责、任务路由与迁移验收见[文档维护](DOCUMENTATION.md)。
+当前机制在所属领域页维护一份，公开用法、历史证据和未来方案通过链接关联。文档职责及链接维护见 [Documentation](DOCUMENTATION.md)。

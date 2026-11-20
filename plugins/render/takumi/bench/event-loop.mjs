@@ -14,9 +14,9 @@ await using host = await createTestHost({
 })
 await host.commit((change) => {
 	change.catalog.add([TakumiPlugin])
-	change.start(TakumiPlugin)
+	change.start(TakumiPlugin.nodeAddress())
 })
-const takumi = host.require(TakumiPlugin)
+const takumi = host.require(TakumiPlugin.nodeAddress())
 const html = `<div style="display:flex;flex-wrap:wrap">${Array.from({ length: 2000 }, (_, i) => `<span style="font-size:12px;padding:2px">cell-${i}</span>`).join('')}</div>`
 const options = { width: 1200, height: 630, emoji: 'from-font' }
 const results = []

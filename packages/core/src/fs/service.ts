@@ -1,5 +1,5 @@
 import type { RootContext } from '../context/Context'
-import type { HostDocumentStorage } from '../storage/documents'
+import { MAX_DOCUMENT_BYTES, type HostDocumentStorage } from '../storage/documents'
 import { InMemory, type BoundContext } from '@zenfs/core'
 import { withErrno } from 'kerium'
 import { FsDocuments } from './documents'
@@ -25,8 +25,6 @@ function validateDirectory(path: string): void {
 	)
 		throw new TypeError(`[core.fs] expected a canonical relative directory: ${path}`)
 }
-
-const MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 
 /** One Host owns preparation, bound directories and final backend closure. */
 export class FsService {

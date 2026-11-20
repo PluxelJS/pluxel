@@ -9,13 +9,13 @@ description: 为每个 Plugin 提供原生 Meter、Tracer 与 Logger，由宿主
 
 ## 快速配置导出目标
 
-通过 `OtelConfig` 可配置输出的遥测信号（Metrics、Traces、Logs）或 Prometheus 端点：
+在 OtelPlugin 节点的 `envBindings` 中使用 `OtelConfig` 映射遥测信号或 Prometheus 端点。
 
 ```ts no-twoslash
 import { envBinding } from '@pluxel/host'
-import { OtelPlugin, OtelConfig } from '@pluxel/plugin-otel'
+import { OtelConfig } from '@pluxel/plugin-otel'
 
-envBinding(OtelPlugin, {
+envBinding({
 	config: {
 		schema: OtelConfig,
 		mapping: {
@@ -26,37 +26,21 @@ envBinding(OtelPlugin, {
 })
 ```
 
-默认情况下，`OtelPlugin` 会启用三种 OTLP 信号并关闭 Prometheus：
+默认配置启用三种 OTLP 信号。节点的 `config` 可以选择信号并打开 Prometheus。
 
 ```ts no-twoslash
-await host.start(OtelPlugin, {
-	catalog: [CatalogPlugin],
-	initialConfig: {
-		otlp: ['metrics', 'traces', 'logs'],
-		prometheus: false,
-	},
-})
-await host.start(CatalogPlugin)
-```
+import { defineHostApplication } from '@pluxel/host'
+import { OtelPlugin } from '@pluxel/plugin-otel'
 
-按需定制导出组合：
-
-```ts no-twoslash
-// 仅导出 Traces 和 Logs，并开启 Prometheus 指标抓取接口
-await host.start(OtelPlugin, {
-	initialConfig: {
-		otlp: ['traces', 'logs'],
-		prometheus: { path: '/metrics' },
-	},
-})
-
-// 仅开启 Prometheus 抓取
-await host.start(OtelPlugin, {
-	initialConfig: {
-		otlp: [],
-		prometheus: {},
-	},
-})
+export default defineHostApplication(() => ({
+	plugins: [
+		{
+			plugin: OtelPlugin,
+			autoStart: true,
+			config: { otlp: ['traces', 'logs'], prometheus: { path: '/metrics' } },
+		},
+	],
+}))
 ```
 
 - Prometheus 抓取端点默认挂载在宿主 Elysia 实例的 `GET /metrics` 路由上，复用现有 HTTP 端口。

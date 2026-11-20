@@ -48,6 +48,7 @@ export class StoreWriter implements TinyBaseService {
 		private readonly documents: HostDocumentStorage,
 		private readonly file: string,
 		private readonly maxBytes: number,
+		private readonly fileBacked: boolean,
 		private readonly claim: () => void,
 		private readonly release: () => void,
 	) {
@@ -258,7 +259,7 @@ export class StoreWriter implements TinyBaseService {
 	}
 
 	private observe(): void {
-		if (this.stopObserving || this.closing) return
+		if (!this.fileBacked || this.stopObserving || this.closing) return
 		let readRevision = this.revision
 		this.stopObserving = observeFile(
 			() => {

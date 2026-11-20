@@ -102,9 +102,6 @@ export class AuthSetupTarget extends RpcTarget implements AuthSetupApi {
 		if (snapshot.state === 'configured') {
 			return failure('not_required', 'Authentication credentials are already configured.')
 		}
-		if (snapshot.state === 'unavailable') {
-			return failure('unavailable', 'Vault is unavailable.')
-		}
 		return undefined
 	}
 

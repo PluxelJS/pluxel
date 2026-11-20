@@ -1,6 +1,6 @@
 import { type Context, type RootContext } from '@pluxel/core'
-import { installRootCapability, installOwnerViewCapability } from '@pluxel/core/host'
-import { defineHostService } from '@pluxel/host'
+import { installRootService, installOwnerViewService } from '@pluxel/core/host'
+import { defineHostService, type HostService } from '@pluxel/host'
 import { AdminAccess } from './access'
 import { Management, CatalogLayout, ApiValidation } from './token'
 import { RuntimeManagementService } from './services/RuntimeManagementService'
@@ -10,7 +10,7 @@ import { bindManagementHostOptions, type ManagementHostOptions } from './host-op
 import { RuntimeManagementTargetImpl } from './services/management/RuntimeManagementTarget'
 import { readProductDescriptor, type HostApplicationMeta } from './product-contract'
 
-export { Management } from './token'
+export { Management, CatalogLayout, ApiValidation } from './token'
 export type ManagementServiceOptions = ManagementHostOptions &
 	Readonly<{
 		application?: HostApplicationMeta
@@ -18,7 +18,7 @@ export type ManagementServiceOptions = ManagementHostOptions &
 	}>
 
 /** Installs the shared Host management projection. Authentication and persistence are explicit prerequisites. */
-export function management(options: ManagementServiceOptions = {}) {
+export function management(options: ManagementServiceOptions = {}): HostService {
 	const application = Object.freeze({
 		product: options.application?.product
 			? readProductDescriptor(options.application.product, 'management.application.product')
@@ -29,17 +29,14 @@ export function management(options: ManagementServiceOptions = {}) {
 	return defineHostService({
 		name: 'Management',
 		requires: { authentication: AdminAccess },
-		capabilities: [
-			installRootCapability(Management, {
-				property: 'runtimeManagement',
+		provides: [
+			installRootService(Management, {
 				create: (ctx) => new RuntimeManagementService(ctx, application, workbench),
 			}),
-			installRootCapability(CatalogLayout, {
-				property: 'pluginCatalogLayout',
+			installRootService(CatalogLayout, {
 				create: (ctx) => new PluginCatalogLayoutService(ctx),
 			}),
-			installOwnerViewCapability(ApiValidation, {
-				property: 'internalApiValidation',
+			installOwnerViewService(ApiValidation, {
 				createRoot: (ctx) => new InternalApiValidationService(ctx as Context),
 				createView: (root, owner) => root.forOwner(owner),
 			}),

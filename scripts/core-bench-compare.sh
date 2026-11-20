@@ -83,10 +83,10 @@ run_bench() {
 
 	# Build with each revision's package-local Pack config. Its build scripts may discover
 	# unrelated historical Vite task configs before their workspace plugins exist.
-	# pnpm preserves dependency order for these measured owners; registry eventure revisions
+	# Filtered execution preserves dependency order for these measured owners; registry eventure revisions
 	# already have its artifact. Dependency-wide recursion would also build dev-only helpers.
-	if ! pnpm --recursive --filter eventure --filter @pluxel/context --filter @pluxel/core \
-		--fail-if-no-match exec vp pack >"$log_file" 2>&1; then
+	if ! vp exec --filter eventure --filter @pluxel/context --filter @pluxel/core \
+		--fail-if-no-match -- vp pack >"$log_file" 2>&1; then
 		tail -200 "$log_file"
 		return 1
 	fi

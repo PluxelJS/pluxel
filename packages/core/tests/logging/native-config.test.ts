@@ -15,11 +15,11 @@ import {
 } from '@logtape/logtape'
 import { createHost } from '@pluxel/host'
 import { afterEach, expect, it } from 'vitest'
-import type { RuntimeLogging } from '@pluxel/core/logging'
-import { logtape } from '@pluxel/core/config'
-import { createRuntimeLogging } from '../../src/logging/internal'
+import { createCoreContextHost } from '@pluxel/core/host'
+import type { RuntimeLoggingInput } from '@pluxel/core/logging'
+import { createRuntimeLogging, type RuntimeLoggingManager } from '../../src/logging/internal'
 
-let manager: RuntimeLogging | undefined
+let manager: RuntimeLoggingManager | undefined
 afterEach(async () => {
 	await manager?.dispose()
 	manager = undefined
@@ -225,7 +225,7 @@ it('preserves native configuration errors and rejects reset:true without silent 
 it('evaluates the bounded-store factory at preparation and prevents later sink creation', async () => {
 	let factories = 0
 	let lateCreate: (() => Sink) | undefined
-	const descriptor = logtape(({ createRuntimeLogSink }) => {
+	const input: RuntimeLoggingInput = ({ createRuntimeLogSink }) => {
 		factories++
 		lateCreate = createRuntimeLogSink
 		return {
@@ -235,9 +235,9 @@ it('evaluates the bounded-store factory at preparation and prevents later sink c
 				{ category: ['logtape', 'meta'], lowestLevel: null },
 			],
 		}
-	})
+	}
 	expect(factories).toBe(0)
-	const host = await createHost({ plugins: [], runtime: { logtape: descriptor }, services: [] })
+	const host = await createHost({ coreConfig: { logtape: input } })
 	try {
 		expect(factories).toBe(1)
 		expect(() => lateCreate!()).toThrow('during logging configuration')
@@ -293,7 +293,7 @@ it('waits for native installation before closing and retains ownership through a
 it('validates the options object before separating framework policy settings', () => {
 	const invalidOptions: unknown[] = [null, 1, false, '', []]
 	for (const options of invalidOptions) {
-		expect(() => logtape({ sinks: {}, loggers: [] }, options as never)).toThrow(
+		expect(() => createCoreContextHost({ logtape: { options: options as never } })).toThrow(
 			'options must be an object',
 		)
 	}

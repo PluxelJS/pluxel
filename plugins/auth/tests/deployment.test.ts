@@ -1,28 +1,34 @@
-import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
+import type { WorkbenchHost } from '@pluxel/workbench/server'
+import { defineServiceRef } from '@pluxel/core'
+import { defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
+import { createResolvedHost } from '@pluxel/host/internal'
 import { AdminAccess, managementAccess } from '@pluxel/services/management/access'
-import { vault } from '@pluxel/services/vault'
 import { describe, expect, it } from 'vitest'
 import { AuthConfig, AuthPlugin, AuthVaultSchema } from '../src/index.ts'
 import { hashPassword } from '../src/password.ts'
 
+const WorkbenchHostRef = defineServiceRef<WorkbenchHost>()
 describe('Auth headless deployment', () => {
 	it.each(['password', 'oidc'] as const)(
 		'starts ready with %s credentials from a Vault binding and no Workbench',
 		async (mode) => {
 			const recordKey = mode === 'password' ? 'management-account-v1' : 'oidc-client-secret-v1'
 			const application = defineHostApplication(() => ({
-				plugins: [AuthPlugin],
-				services: [managementAccess(), vault({ backend: 'bindings' })],
-				envBindings: [
-					envBinding(AuthPlugin, {
-						config: { schema: AuthConfig, mapping: { mode: 'AUTH_MODE' } },
-						vault: { schema: AuthVaultSchema, mapping: { [recordKey]: 'AUTH_CREDENTIAL' } },
-					}),
+				plugins: [
+					{
+						plugin: AuthPlugin,
+						autoStart: true,
+						config: { mode: { type: 'password' } },
+						envBindings: [
+							envBinding({
+								config: { schema: AuthConfig, mapping: { mode: 'AUTH_MODE' } },
+								vault: { schema: AuthVaultSchema, mapping: { [recordKey]: 'AUTH_CREDENTIAL' } },
+							}),
+						],
+					},
 				],
-				config: {
-					records: [{ owner: AuthPlugin.nodeAddress(), config: { mode: { type: 'password' } } }],
-				},
-				policy: { autoStart: [AuthPlugin.nodeAddress()] },
+				services: [managementAccess()],
+				coreConfig: { vault: { backend: 'bindings' } },
 			}))
 			const credential =
 				mode === 'password'
@@ -50,23 +56,15 @@ describe('Auth headless deployment', () => {
 				bindings: {},
 				env: { AUTH_MODE: JSON.stringify(modeConfig), AUTH_CREDENTIAL: JSON.stringify(credential) },
 			})
-			const host = await createHost({
-				plugins: resolved.plugins,
-				services: resolved.services,
-				vaultBindings: resolved.vaultBindings,
-				name: resolved.name,
-				config: resolved.config,
-				policy: resolved.policy,
-				runtime: resolved.runtime,
-			})
+			const host = await createResolvedHost(resolved)
 			try {
 				await host.start()
-				expect(host.ctx.workbench).toBeUndefined()
+				expect(host.ctx.service(WorkbenchHostRef)).toBeUndefined()
 				const config = await host.config.get(AuthPlugin.nodeAddress())
 				expect(config).toMatchObject({ ok: true, config: { mode: modeConfig } })
 				expect(JSON.stringify(config)).not.toContain('deployment-client-secret')
 				expect(JSON.stringify(config)).not.toContain('"password":')
-				expect(await host.ctx.require(AdminAccess).describe()).toMatchObject({
+				expect(await host.ctx.service(AdminAccess).describe()).toMatchObject({
 					provider: { method: mode, ready: true },
 				})
 			} finally {

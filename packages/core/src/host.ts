@@ -1,109 +1,74 @@
-/** Host and service-author composition; no service factories run during plan compilation. */
+/** Host and service composition. Resource acquisition belongs to Host preparation, not plan compilation. */
 export {
-	getContextInstallationCapability,
-	resolveContextCapability,
-	type ContextCapabilityAccess,
-	type ContextCapabilityInstallation,
+	getServiceInstallationDefinition,
+	type ServiceAccess,
+	type ServiceDefinition,
+	type ServiceRef,
+	type ServiceClass,
+	type ServiceInstallation,
+	type RootServiceInstallation,
+	type ScopeServiceInstallation,
+	type OwnerViewServiceInstallation,
 	type ContextHost,
 	type ContextOf,
 	type RootContextOf,
-	type ContextProjection,
-	type RootContextProjection,
-	type ValidateContextInstallations,
 } from '@pluxel/context'
-export { createCoreContextHost } from './context/core-plan'
+export { createCoreContextHost, snapshotCoreFacilitiesConfig } from './context/zenfs-plan'
 export { prepareCoreContext } from './context/core-logging'
-export type { Context, RootContext, CoreHostConfig } from './context/Context'
+export type { Context, RootContext, CoreFacilitiesConfig, CoreHostConfig } from './context/Context'
+export type { CoreExecutionConfig } from './context/plugin-execution'
 
 import {
-	defineContextCapability as defineKernelContextCapability,
-	installRootCapability as installKernelRootCapability,
-	installScopeCapability as installKernelScopeCapability,
-	installOwnerViewCapability as installKernelOwnerViewCapability,
-	type ContextCapability as KernelContextCapability,
-	type ContextCapabilityAccess,
-	type RootCapabilityInstallation as KernelRootCapabilityInstallation,
-	type ScopeCapabilityInstallation as KernelScopeCapabilityInstallation,
-	type OwnerViewCapabilityInstallation as KernelOwnerViewCapabilityInstallation,
+	installRootService as installKernelRootService,
+	installScopeService as installKernelScopeService,
+	installOwnerViewService as installKernelOwnerViewService,
+	type ServiceDefinition,
+	type ServiceAccess,
+	type RootServiceInstallation,
+	type ScopeServiceInstallation,
+	type OwnerViewServiceInstallation,
 } from '@pluxel/context'
 import type { Context, RootContext } from './context/Context'
+export { clearOutboundHttpNode, requireOutboundHttp } from './http/host'
 
-/** A service token uses the Core kernel; the local name is retained in downstream declarations. */
-export interface ContextCapability<
+export type {
+	ManagedOutboundHttpSnapshot,
+	OutboundHttpActivity,
+	OutboundHttpEffectiveSettings,
+	OutboundHttpLimits,
+	OutboundHttpOptions,
+	OutboundHttpRecords,
+	OutboundHttpSaveResult,
+	OutboundHttpSettings,
+	OutboundHttpSnapshot,
+} from './http/types'
+
+// These factories execute only in a Core Context; the fixed-plan implementation belongs to the kernel.
+export const installRootService = installKernelRootService as <T>(
+	definition: ServiceDefinition<T, ServiceAccess>,
+	options: { readonly access?: 'all' | 'root'; create(ctx: RootContext): NoInfer<T> },
+) => RootServiceInstallation<T>
+export const installScopeService = installKernelScopeService as <
 	T,
-	A extends ContextCapabilityAccess = 'all',
-> extends KernelContextCapability<T, A> {}
-
-export const defineContextCapability = defineKernelContextCapability as {
-	<T>(
-		description: string,
-		options: { readonly access: 'root'; readonly property?: PropertyKey },
-	): ContextCapability<T, 'root'>
-	<T>(
-		description: string,
-		options: { readonly access: 'owner'; readonly property?: PropertyKey },
-	): ContextCapability<T, 'owner'>
-	<T>(
-		description: string,
-		options?: { readonly access: 'all'; readonly property?: PropertyKey },
-	): ContextCapability<T>
-}
-
-/** Core-owned declaration names keep inferred service exports on the Core kernel identity. */
-export interface RootCapabilityInstallation<
-	T = any,
-	P extends PropertyKey | undefined = undefined,
-> extends KernelRootCapabilityInstallation<T, P> {}
-export interface ScopeCapabilityInstallation<
-	T = any,
-	P extends PropertyKey | undefined = undefined,
-	A extends ContextCapabilityAccess = ContextCapabilityAccess,
-> extends KernelScopeCapabilityInstallation<T, P, A> {}
-export interface OwnerViewCapabilityInstallation<
-	B = any,
-	T = any,
-	P extends PropertyKey | undefined = undefined,
-	A extends ContextCapabilityAccess = ContextCapabilityAccess,
-> extends KernelOwnerViewCapabilityInstallation<B, T, P, A> {}
-
-// Core service factories run only in Core hosts; the backing implementation remains the kernel's.
-export const installRootCapability = installKernelRootCapability as {
-	<T, const P extends PropertyKey>(
-		token: ContextCapability<T, ContextCapabilityAccess>,
-		options: { readonly property: P; create(ctx: RootContext): T },
-	): RootCapabilityInstallation<T, P>
-	<T>(
-		token: ContextCapability<T, ContextCapabilityAccess>,
-		options: { create(ctx: RootContext): T },
-	): RootCapabilityInstallation<T, undefined>
-}
-export const installScopeCapability = installKernelScopeCapability as {
-	<T, const P extends PropertyKey, A extends ContextCapabilityAccess = ContextCapabilityAccess>(
-		token: ContextCapability<T, A>,
-		options: { readonly property: P; create(ctx: Context): T },
-	): ScopeCapabilityInstallation<T, P, A>
-	<T, A extends ContextCapabilityAccess = ContextCapabilityAccess>(
-		token: ContextCapability<T, A>,
-		options: { create(ctx: Context): T },
-	): ScopeCapabilityInstallation<T, undefined, A>
-}
-export const installOwnerViewCapability = installKernelOwnerViewCapability as {
-	<B, T, const P extends PropertyKey, A extends ContextCapabilityAccess = ContextCapabilityAccess>(
-		token: ContextCapability<T, A>,
-		options: {
-			readonly property: P
-			createRoot(ctx: RootContext): B
-			createView(backend: B, owner: Context): T
-		},
-	): OwnerViewCapabilityInstallation<B, T, P, A>
-	<B, T, A extends ContextCapabilityAccess = ContextCapabilityAccess>(
-		token: ContextCapability<T, A>,
-		options: { createRoot(ctx: RootContext): B; createView(backend: B, owner: Context): T },
-	): OwnerViewCapabilityInstallation<B, T, undefined, A>
-}
+	A extends ServiceAccess = ServiceAccess,
+>(
+	definition: ServiceDefinition<T, A>,
+	options: { readonly access?: A; create(ctx: Context): NoInfer<T> },
+) => ScopeServiceInstallation<T, A>
+export const installOwnerViewService = installKernelOwnerViewService as <
+	B,
+	T,
+	A extends ServiceAccess = ServiceAccess,
+>(
+	definition: ServiceDefinition<T, A>,
+	options: {
+		readonly access?: A
+		createRoot(ctx: RootContext): B
+		createView(backing: B, owner: Context): NoInfer<T>
+	},
+) => OwnerViewServiceInstallation<B, T, A>
 
 export { enterOwnerInvocation, type OwnerInvocationLease } from './internal/owner-invocations'
-
 export type {
 	CorePluginLifecycleHooks,
 	CoreGenerationFinalization,
@@ -111,5 +76,4 @@ export type {
 	CoreGenerationRejection,
 	CoreCommitPublication,
 } from './plugins/runtime/plugin-service/HostLifecycle'
-
 export { getContextLoggerRootId } from './logger/LoggerService'

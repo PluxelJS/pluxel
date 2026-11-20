@@ -39,22 +39,22 @@ describe('semantic document editor', () => {
 		}
 	})
 
-	it('resolves opaque references to titles and accepts document destinations', () => {
+	it('resolves native labels to titles and accepts document destinations', () => {
 		const references = [
 			{
-				id: 'opaque/chapter/1',
+				id: 'chapter-first',
 				title: '实施方案',
 				kind: 'heading' as const,
 				location: { documentId: 'one', position: 0 },
 			},
-			{ id: 'opaque/fixed/appendix', title: '固定附录', kind: 'heading' as const },
+			{ id: 'chapter-appendix', title: '固定附录', kind: 'heading' as const },
 		]
 		const editor = createTypstDocumentEditor({ content: document('参见'), references })
 		try {
 			editor.commands.setTextSelection(3)
 			expect(editor.commands.insertTypstReference(references[0]!.id)).toBe(true)
 			expect(editor.getText()).toBe('参见实施方案')
-			expect(editor.getText()).not.toContain('opaque')
+			expect(editor.getText()).not.toContain('chapter-first')
 			editor.commands.setTextSelection({ from: 3, to: 4 })
 			const plugin = editor.state.plugins.find(
 				(candidate) => candidate.props.clipboardTextSerializer,
@@ -66,7 +66,7 @@ describe('semantic document editor', () => {
 			)
 			expect(clipboard).toBe('实施方案')
 			expect((editor.getJSON() as JSONContent).content![0]!.content![1]!.attrs).toEqual({
-				target: 'opaque/chapter/1',
+				target: 'chapter-first',
 				showCaption: null,
 			})
 			references[0]!.title = '更新后的方案'
@@ -79,13 +79,17 @@ describe('semantic document editor', () => {
 		}
 	})
 
-	it('uses the existing figure, equation and table commands without native source labels', () => {
+	it('edits tables and native formulas and rebinds references when duplicating an object', () => {
 		const editor = createTypstDocumentEditor({ content: document('正文') })
 		try {
 			expect(
 				editor.commands.insertTypstFigure({
-					body: { type: 'image', attrs: { src: '/document-api/asset/diagram' } },
-					caption: [{ type: 'text', text: '系统结构' }],
+					body: { type: 'image', attrs: { src: '/body-assets/diagram.svg' } },
+					label: 'object-figure',
+					caption: [
+						{ type: 'text', text: '系统结构' },
+						{ type: 'reference', attrs: { target: 'object-figure', showCaption: false } },
+					],
 				}),
 			).toBe(true)
 			let position = -1
@@ -93,66 +97,31 @@ describe('semantic document editor', () => {
 				if (node.type.name === 'figure') position = at
 			})
 			const figure = editor.state.doc.nodeAt(position)!
-			expect(Object.keys(figure.attrs)).toEqual(['id'])
-			expect(typeof figure.attrs.id).toBe('string')
+			expect(figure.attrs).toEqual({ label: 'object-figure' })
 			expect(editor.commands.duplicateTypstFigure(position)).toBe(true)
 			const copy = editor.state.doc.nodeAt(position + figure.nodeSize)!
 			expect(copy.type.name).toBe('figure')
-			expect(copy.attrs.id).not.toBe(figure.attrs.id)
+			expect(copy.attrs.label).toMatch(/^object-/)
+			expect(copy.attrs.label).not.toBe(figure.attrs.label)
+			expect(copy.child(1).child(1).attrs.target).toBe(copy.attrs.label)
 			expect(copy.textContent).toBe('系统结构')
 			editor.commands.setTextSelection(editor.state.doc.content.size - 1)
-			expect(editor.commands.insertBlockMath({ latex: 'E=mc^2' })).toBe(true)
+			expect(
+				editor.commands.insertContent({
+					type: 'blockMath',
+					attrs: { expression: 'E = m c^2', label: 'object-equation' },
+				}),
+			).toBe(true)
 			const equations: Record<string, unknown>[] = []
 			editor.state.doc.descendants((node) => {
 				if (node.type.name === 'blockMath') equations.push(node.attrs)
 			})
 			expect(equations).toHaveLength(1)
-			expect(equations[0]).toMatchObject({ latex: 'E=mc^2' })
-			expect(equations[0]).not.toHaveProperty('label')
+			expect(equations[0]).toEqual({ expression: 'E = m c^2', label: 'object-equation' })
 			expect(editor.commands.insertTable({ rows: 2, cols: 2, withHeaderRow: true })).toBe(true)
 			expect(editor.state.doc.toJSON()).not.toHaveProperty('source')
 			expect(editor.schema.nodes).not.toHaveProperty('typstSource')
 			expect(editor.schema.nodes).not.toHaveProperty('typstField')
-		} finally {
-			editor.destroy()
-		}
-	})
-
-	it('preserves host-managed fixed content while editing surrounding text', () => {
-		const changed = vi.fn()
-		const content: JSONContent = {
-			type: 'doc',
-			content: [
-				{
-					type: 'paragraph',
-					content: [
-						{ type: 'text', text: '开始' },
-						{ type: 'documentInline', attrs: { key: 'fixed-inline', title: '固定字段' } },
-						{ type: 'text', text: '结束' },
-					],
-				},
-				{ type: 'documentBlock', attrs: { key: 'fixed-block', title: '固定内容' } },
-				paragraph('正文'),
-			],
-		}
-		const editor = createTypstDocumentEditor({ content, onChange: changed })
-		try {
-			const initial = editor.state.doc
-			editor.view.dispatch(editor.state.tr.delete(3, 4))
-			expect(editor.state.doc.eq(initial)).toBe(true)
-			editor.view.dispatch(
-				editor.state.tr.setNodeAttribute(initial.child(0).nodeSize, 'title', '改写固定内容'),
-			)
-			expect(editor.state.doc.eq(initial)).toBe(true)
-			expect(changed).not.toHaveBeenCalled()
-			editor.commands.insertContentAt(1, { type: 'text', text: '新增：' })
-			expect(editor.getText()).toContain('新增：开始固定字段结束')
-			expect(changed).toHaveBeenCalledOnce()
-			const remote = structuredClone(content)
-			remote.content![1]!.attrs!.title = '服务端更新后的固定内容'
-			synchronizeDocument(editor, remote)
-			expect(editor.getText()).toContain('服务端更新后的固定内容')
-			expect(changed).toHaveBeenCalledOnce()
 		} finally {
 			editor.destroy()
 		}
@@ -240,6 +209,6 @@ describe('semantic document editor', () => {
 					content: [{ type: 'figure', attrs: { id: 'figure-one', label: 'fig:native' } }],
 				},
 			}),
-		).toThrow('Unsupported figure attribute: label')
+		).toThrow('Unsupported figure attribute: id')
 	})
 })

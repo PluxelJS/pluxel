@@ -1,11 +1,11 @@
 export type {
 	Context,
-	ContextServices,
-	RootContextServices,
+	CoreFacilitiesConfig,
 	CoreHostConfig,
 	PluginContext,
 	RootContext,
 } from './context/Context'
+export type { CoreExecutionConfig } from './context/plugin-execution'
 export type { ContextLogger } from './logger/LoggerService'
 export { TinyBaseError } from './tinybase/error'
 export type {
@@ -16,12 +16,16 @@ export type {
 	TinyBaseStatus,
 } from './tinybase/types'
 export type { HostDocumentStorage } from './storage/documents'
+export { OutboundHttpError, type OutboundHttpErrorCode } from './http/admission'
+export type { OutboundFetch, OutboundHttpOptions, OutboundHttpRecords } from './http/types'
 
 export {
-	ContextCapabilityMissingError,
-	ContextCapabilityAccessError,
-	type ContextCapabilityAccess,
-	type ContextCapability,
+	ContextServiceMissingError,
+	ContextServiceAccessError,
+	type ServiceAccess,
+	type ServiceClass,
+	type ServiceDefinition,
+	type ServiceRef,
 } from '@pluxel/context'
 
 export { BasePlugin, OptionalPluginBindings, PluginConfigs, PluginPart } from './plugins'
@@ -69,6 +73,7 @@ export type {
 	PluginEntryAddress,
 	PluginForkNodeAddress,
 	PluginNodeAddress,
+	PluginInstanceNodeAddress,
 	PluginNodeInfo,
 	PluginNodeSlot,
 } from './plugins'
@@ -104,3 +109,6 @@ export {
 	formatPluginNodeStandaloneLabel,
 	type PluginNodeLabel,
 } from './plugins/runtime/plugin-label'
+
+export { defineServiceRef } from './services/definition'
+export type { ServiceDefinitionAddress } from './services/definition'

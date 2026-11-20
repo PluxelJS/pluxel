@@ -20,10 +20,7 @@ export class RuntimeManagementService {
 		return Object.freeze({
 			service: 'pluxel-runtime',
 			ready: true,
-			protocol: protocolDescriptor(
-				'vaultAdmin' in this.root.root,
-				getContextRuntimeLogging(this.root) !== undefined,
-			),
+			protocol: protocolDescriptor(getContextRuntimeLogging(this.root) !== undefined),
 			application: this.application,
 			platform: describePluxelPlatform(),
 			workbench: Object.freeze({ enabled: this.workbench }),
@@ -31,14 +28,12 @@ export class RuntimeManagementService {
 	}
 }
 
-function protocolDescriptor(vault: boolean, logging: boolean): RuntimeMeta['protocol'] {
+function protocolDescriptor(logging: boolean): RuntimeMeta['protocol'] {
 	return Object.freeze({
 		name: 'pluxel.management',
 		major: RUNTIME_MANAGEMENT_PROTOCOL_MAJOR,
 		capabilities: Object.freeze(
-			RUNTIME_MANAGEMENT_CAPABILITIES.filter(
-				(capability) => (capability !== 'vault' || vault) && (capability !== 'logging' || logging),
-			),
+			RUNTIME_MANAGEMENT_CAPABILITIES.filter((capability) => capability !== 'logging' || logging),
 		),
 	})
 }

@@ -2,6 +2,7 @@ import {
 	formatPluginNodeReference,
 	type Context as PluxelContext,
 	type PluginNodeAddress,
+	type ContextLogger,
 } from '@pluxel/core'
 import { pinOwnerContext } from '../../../internal'
 
@@ -30,7 +31,7 @@ type ActiveValidator = {
 
 export class InternalApiValidationService {
 	private readonly validators: Set<ActiveValidator>
-	private readonly logger: NonNullable<PluxelContext['logger']>
+	private readonly logger: ContextLogger
 
 	constructor(
 		public readonly ctx: PluxelContext,

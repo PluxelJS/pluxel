@@ -14,7 +14,7 @@ const noDirectLogtapeGetLogger = createRule(
 		docs: { description: 'Keep direct getLogger() usage inside logger infrastructure only' },
 		messages: {
 			direct:
-				'Use `ctx.logger`, `ctx.logger.getDebugChannel(...)`, or pluxel logger helpers instead of importing `getLogger()` directly here.',
+				'Use `ctx.logger`, its `getDebugChannel(...)`, or pluxel logger helpers instead of importing `getLogger()` directly here.',
 		},
 	},
 	(context) => ({

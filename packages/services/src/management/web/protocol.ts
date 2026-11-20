@@ -1,10 +1,21 @@
-import type { PluginApplyReportSnapshot as PluginApplyReport } from '@pluxel/host'
+import type {
+	HostStateConfigurationSnapshot,
+	PluginApplyReportSnapshot as PluginApplyReport,
+} from '@pluxel/host'
 /** Versioned, framework-neutral management protocol types shared by clients and servers. */
 import {
 	type PluginDefinitionAddress,
 	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
+import type {
+	ManagedOutboundHttpSnapshot,
+	OutboundHttpActivity,
+	OutboundHttpEffectiveSettings,
+	OutboundHttpSaveResult,
+	OutboundHttpSettings,
+	OutboundHttpSnapshot,
+} from '@pluxel/core/host'
 import { type HostApplicationMeta } from '../product-contract'
 import { type PluxelPlatformSnapshot } from '../platform'
 import {
@@ -18,19 +29,29 @@ export type {
 	PluginUpdateBatchSnapshot,
 	PluginUpdateLifecycleIssue,
 } from '@pluxel/host/internal/protocol'
-export type { VaultKeyPair } from '../../vault'
+export type { VaultKeyPair } from '@pluxel/core/vault'
+export type {
+	ManagedOutboundHttpSnapshot,
+	OutboundHttpActivity,
+	OutboundHttpEffectiveSettings,
+	OutboundHttpSaveResult,
+	OutboundHttpSettings,
+	OutboundHttpSnapshot,
+}
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 9 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 16 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',
 	'runtime.updates',
 	'plugins.lifecycle',
 	'plugins.config',
+	'plugins.control-materials',
 	'host.policy',
 	'plugins.dependencies',
 	'plugins.forks',
 	'logging',
+	'outbound-http',
 	'security',
 	'vault',
 ] as const)
@@ -69,6 +90,8 @@ export type PluginStatusIssue = Readonly<{
 		| 'start-failed'
 		| 'dependency-blocked'
 		| 'drain-failed'
+		| 'control_analysis_failed'
+		| 'control_source_changed'
 	message: string
 }>
 
@@ -107,12 +130,18 @@ export type PluginCatalogSection = Readonly<{
 	nodes: readonly PluginNodeAddress[]
 }>
 
-export type PluginStatePolicy = Readonly<{
-	readonly: boolean
-	managedRevision: string
-	/** Graph columns that an immediate management action cannot change under the declaration rule. */
-	overriddenFields: readonly ('autoStart' | 'forks' | 'providerDefaults' | 'dependencyOverrides')[]
-}>
+export type PluginStatePolicy = Pick<
+	HostStateConfigurationSnapshot,
+	'readonly' | 'managedRevision' | 'nodeModes' | 'selections'
+> &
+	Readonly<{
+		mode: Pick<
+			HostStateConfigurationSnapshot['mode'],
+			'autoStart' | 'forks' | 'providerDefaults' | 'dependencyOverrides'
+		>
+		providerDefaultsSource: HostStateConfigurationSnapshot['sources']['providerDefaults']
+		providerDefaultsShadowed: boolean
+	}>
 
 export type PluginCatalogSnapshot = Readonly<{
 	statePolicy: PluginStatePolicy
@@ -413,6 +442,7 @@ export type PluginControlMutationErrorCode =
 	| 'node_unavailable'
 	| 'graph_rejected'
 	| 'persistence_failed'
+	| 'lifecycle_failed'
 export type PluginControlMutationSuccess = Readonly<{
 	address: PluginNodeAddress
 	ok: true
@@ -436,22 +466,35 @@ export type PluginControlMutationFailure =
 			state: 'unchanged'
 			error: string
 	  }>
-	| Readonly<{
+	| (Readonly<{
 			address: PluginNodeAddress
 			ok: false
 			code: 'persistence_failed'
 			state: 'unknown'
 			error: string
+	  }> &
+			(
+				| Readonly<{ report: PluginApplyReport; control: PluginControlSnapshot }>
+				| Readonly<{ report?: never; control?: never }>
+			))
+	| Readonly<{
+			address: PluginNodeAddress
+			ok: false
+			code: 'lifecycle_failed'
+			status: 'applied-with-issues'
+			error: string
+			report: PluginApplyReport
+			control: PluginControlSnapshot
 	  }>
 export type PluginControlMutationResult =
 	| PluginControlMutationSuccess
 	| PluginControlMutationFailure
-/** Actions are serialized and may partially apply before a later item fails. */
-export type PluginControlBatchResult =
+/** Actions are serialized. Any uncertain item makes the batch unknown; inspect all results before retrying. */
+export type PluginControlBatchResult = (
 	| Readonly<{ ok: true; status: 'applied'; results: readonly PluginControlMutationSuccess[] }>
 	| Readonly<{
 			ok: false
-			status: 'partially-applied' | 'rejected'
+			status: 'unknown' | 'applied-with-issues' | 'partially-applied' | 'rejected'
 			results: readonly PluginControlMutationResult[]
 	  }>
 	| Readonly<{
@@ -462,6 +505,15 @@ export type PluginControlBatchResult =
 			error: string
 			results: readonly []
 	  }>
+) &
+	Readonly<{
+		/**
+		 * Managed-policy revision observed before the admitted auto-start batch releases its
+		 * exclusive boundary. Absent for lifecycle batches or admission/input rejection.
+		 * This is a CAS token, not proof of persistence or lifecycle completion; retain all results.
+		 */
+		managedRevision?: string
+	}>
 export type PluginDependencyKind = 'plugin' | 'abstract'
 
 /** A complete manual layout; `sections: null` clears all manual choices and recomputes defaults. */
@@ -721,3 +773,14 @@ export type LoggingHandleApi = {
 	) => Promise<PluginLogPolicyMutationResult>
 	resetPolicy: (expectedRevision: number) => Promise<VersionedPluginLogPolicySnapshot>
 }
+
+export type OutboundHttpHandleApi = Readonly<{
+	/** Read the Host defaults when owner is null, or the saved and effective policy for a node. */
+	get(owner: PluginNodeAddress | null): Promise<OutboundHttpSnapshot>
+	/** Replace the scope's saved policy at the expected revision. Null restores inheritance. */
+	save(
+		owner: PluginNodeAddress | null,
+		expectedRevision: number,
+		settings: OutboundHttpSettings | null,
+	): Promise<OutboundHttpSaveResult>
+}>

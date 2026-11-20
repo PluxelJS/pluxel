@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import assert from 'node:assert/strict'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { requestDocument } from './smoke-navigation.mjs'
 import { parse } from 'yaml'
@@ -14,21 +15,17 @@ import {
 } from '../../../scripts/repository-packages.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
+const repositoryManifest = JSON.parse(
+	await readFile(resolve(repositoryRoot, 'package.json'), 'utf8'),
+)
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'pluxel-create-smoke-'))
 const tarballRoot = resolve(temporaryRoot, 'tarballs')
 const installRoot = resolve(temporaryRoot, 'create-install')
 const generatedRoot = resolve(temporaryRoot, 'starter')
-const publishRoots = [
-	'@pluxel/cli',
-	'@pluxel/core',
-	'@pluxel/create',
-	'@pluxel/rolldown',
-	'@pluxel/host',
-	'@pluxel/services',
-	'@pluxel/workbench',
-	'@pluxel/host-vite',
-	'@pluxel/test',
-] as const
+const templateWorkspace = parse(
+	await readFile(resolve(repositoryRoot, 'packages/create/template/pnpm-workspace.yaml'), 'utf8'),
+)
+const publishRoots = ['@pluxel/create', ...Object.keys(templateWorkspace.catalogs.pluxel)]
 
 try {
 	await mkdir(tarballRoot, { recursive: true })
@@ -61,6 +58,7 @@ try {
 
 	await runVp(['install', '--no-frozen-lockfile'], generatedRoot)
 	await runVp(['exec', 'pluxel', 'workspace', 'setup'], generatedRoot)
+	await verifySourceInspection(generatedRoot)
 	await runVp(['run', 'verify'], generatedRoot, { CI: '1' })
 	await verifyModulesApplicationDistribution(generatedRoot)
 	await verifyProductionViteApplication(generatedRoot)
@@ -92,7 +90,7 @@ async function installPackedCreate(root: string, tarball: string): Promise<void>
 	await mkdir(root, { recursive: true })
 	await writeFile(
 		resolve(root, 'package.json'),
-		`${JSON.stringify({ name: 'create-pluxel-smoke', private: true, packageManager: 'pnpm@11.28.6', dependencies: { '@pluxel/create': tarball } }, null, 2)}\n`,
+		`${JSON.stringify({ name: 'create-pluxel-smoke', private: true, packageManager: repositoryManifest.packageManager, dependencies: { '@pluxel/create': tarball } }, null, 2)}\n`,
 	)
 	await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
 	await runVp(['install', '--no-frozen-lockfile'], root)
@@ -226,18 +224,24 @@ async function verifyProductionViteApplication(root: string): Promise<void> {
 
 async function verifyViteApplication(root: string): Promise<void> {
 	const consoleRoot = resolve(root, 'host/web')
-	const inspectionFile = resolve(consoleRoot, 'smoke-inspect.ts')
+	const statusFile = resolve(consoleRoot, 'dev/smoke-status.ts')
 	await writeFile(
-		inspectionFile,
+		statusFile,
 		[
-			"import { defineDevConsole } from '@pluxel/host-vite/console'",
-			"import { examplePlugins } from '../src/policy'",
+			"import type { Script } from '@pluxel/agent-sdk/host'",
+			"import { AuditPlugin } from '@example/audit-plugin'",
+			"import { HttpPlugin } from '@example/http-plugin'",
+			"import { TodoPlugin } from '@example/todo-plugin'",
 			"import { VaultAdminPlugin } from '@pluxel/services/plugins'",
-			'export default defineDevConsole(async (dev) => ({',
-			'  running: examplePlugins.map(plugin => dev.plugins.isRunning(plugin)),',
-			'  vaultArtifact: (await dev.plugins.status(VaultAdminPlugin))?.execution.artifact.kind,',
-			'  status: await dev.plugins.list(),',
-			'}))',
+			'export default (async (sdk) => {',
+			'  const running: boolean[] = []',
+			'  for (const plugin of [AuditPlugin, TodoPlugin, HttpPlugin, VaultAdminPlugin]) {',
+			'    const status = await sdk.plugin(plugin.nodeAddress()).status()',
+			"    running.push(status?.lifecycleState === 'running')",
+			'  }',
+			'  const vault = await sdk.plugin(VaultAdminPlugin.nodeAddress()).status()',
+			'  return { running, vaultArtifact: vault?.execution.artifact.kind }',
+			'}) satisfies Script',
 		].join('\n'),
 	)
 	const port = await reservePort()
@@ -288,14 +292,14 @@ async function verifyViteApplication(root: string): Promise<void> {
 		if (!discovered.ok || discovered.value.length !== 1) {
 			throw new Error(`Expected one starter development console: ${JSON.stringify(discovered)}`)
 		}
-		const inspection = JSON.parse(
+		const status = JSON.parse(
 			await runVpCapture(
 				[
 					'exec',
 					'pluxel',
 					'dev',
 					'run',
-					inspectionFile,
+					statusFile,
 					'--profile',
 					'local',
 					'--root',
@@ -307,17 +311,67 @@ async function verifyViteApplication(root: string): Promise<void> {
 			),
 		)
 		if (
-			!inspection.ok ||
-			inspection.value.state !== 'succeeded' ||
-			inspection.value.value.running.length !== 4 ||
-			inspection.value.value.vaultArtifact !== 'built-module' ||
-			inspection.value.value.running.some((running: boolean) => !running)
+			!status.ok ||
+			status.value.run.state !== 'succeeded' ||
+			status.value.run.value.running.length !== 4 ||
+			status.value.run.value.vaultArtifact !== 'built-module' ||
+			status.value.run.value.running.some((running: boolean) => !running)
 		) {
-			throw new Error(`Starter Plugin admission failed: ${JSON.stringify(inspection)}`)
+			throw new Error(`Starter Plugin admission failed: ${JSON.stringify(status)}`)
 		}
 	} finally {
 		await stopVite(vite)
 	}
+}
+
+async function verifySourceInspection(root: string): Promise<void> {
+	const report = JSON.parse(await runProcessCapture(process.execPath, ['dev/inspect.mjs'], root))
+	assert.equal(report.root, await realpath(root))
+	assert.deepEqual(report.source, {
+		content: 'current-disk',
+		environment: 'query-process',
+		runtimeMatch: 'unverified',
+	})
+	assert.equal(report.data.summary.exportName, 'TodoPlugin')
+	const todoSource = resolve(root, 'plugins/todo/src/index.ts')
+	await assertSourceStart(
+		report.data.summary.declaration,
+		todoSource,
+		'class TodoPlugin extends BasePlugin',
+	)
+	const { config, parts, inputs, checks } = report.data.sections
+	for (const section of [config, parts, inputs, checks])
+		assert.equal(section.status, 'complete', JSON.stringify(section))
+	assert.equal(config.value.declarations.length, 1)
+	const schema = config.value.declarations[0].schema
+	assert.equal(schema.symbol, 'TodoConfig')
+	await assertSourceStart(schema.declaration, todoSource, 'v.object({')
+	assert.deepEqual(parts.value.occurrences, [])
+	const applicationSource = resolve(root, 'host/src/app.ts')
+	assert.equal(inputs.value.application.root, await realpath(resolve(root, 'host')))
+	assert.equal(inputs.value.application.entry, await realpath(applicationSource))
+	await assertSourceStart(inputs.value.config, applicationSource, '{\n\t\t\t\t\tmaxItems:')
+	assert.deepEqual(checks.value.scripts.map((script: { name: string }) => script.name).sort(), [
+		'build',
+		'test',
+		'typecheck',
+	])
+}
+
+async function assertSourceStart(
+	location: { file: string; start: { line: number; column: number } },
+	file: string,
+	marker: string,
+): Promise<void> {
+	assert.equal(location.file, await realpath(file))
+	const source = await readFile(file, 'utf8')
+	const offset = source.indexOf(marker)
+	assert.notEqual(offset, -1, `Expected source declaration ${marker} in ${file}`)
+	const lines = source.slice(0, offset).split('\n')
+	assert.deepEqual(location.start, {
+		line: lines.length,
+		column: lines.at(-1)!.length + 1,
+	})
 }
 
 async function verifyViteBrowserGraph(origin: string): Promise<void> {
@@ -455,22 +509,19 @@ async function runVp(
 	cwd: string,
 	environment: Record<string, string> = {},
 ): Promise<void> {
-	await runProcess('vp', args, cwd, {
-		...environment,
-		PATH: `${resolve(cwd, 'node_modules/.bin')}${delimiter}${process.env.PATH ?? ''}`,
-	})
+	await runProcess('vp', args, cwd, environment)
 }
 
 async function runVpCapture(args: string[], cwd: string): Promise<string> {
-	const command = 'vp'
+	return runProcessCapture('vp', args, cwd)
+}
+
+async function runProcessCapture(command: string, args: string[], cwd: string): Promise<string> {
 	return await new Promise((accept, reject) => {
 		const child = spawn(command, args, {
 			cwd,
 			stdio: ['ignore', 'pipe', 'pipe'],
-			env: {
-				...process.env,
-				PATH: `${resolve(cwd, 'node_modules/.bin')}${delimiter}${process.env.PATH ?? ''}`,
-			},
+			env: process.env,
 		})
 		let stdout = ''
 		let stderr = ''
@@ -479,7 +530,12 @@ async function runVpCapture(args: string[], cwd: string): Promise<string> {
 		child.once('error', reject)
 		child.once('exit', (code, signal) => {
 			if (code === 0) accept(stdout)
-			else reject(new Error(`vp ${args.join(' ')} failed (${signal ?? code}): ${stderr || stdout}`))
+			else
+				reject(
+					new Error(
+						`${command} ${args.join(' ')} failed (${signal ?? code}):\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+					),
+				)
 		})
 	})
 }

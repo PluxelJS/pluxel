@@ -1,5 +1,5 @@
 import type { RootContext } from '@pluxel/core'
-import { defineContextCapability, enterOwnerInvocation } from '@pluxel/core/host'
+import { enterOwnerInvocation } from '@pluxel/core/host'
 import type { ElysiaApplicationDirectory } from './ElysiaApplicationDirectory'
 import type { ElysiaApplicationCarrier } from './elysia-application-carrier'
 import { requestWithSignal } from './request'
@@ -28,9 +28,10 @@ export interface ElysiaRuntimeApi {
 	/** One Host shell fallback, after business route dispatch misses. */
 	mountFallback(fallback: ElysiaFallback): () => void
 }
-export const ElysiaRuntime = defineContextCapability<ElysiaRuntimeApi>('services.elysia.runtime', {
-	access: 'root',
-})
+export abstract class ElysiaRuntime {
+	static readonly access = 'root' as const
+}
+export interface ElysiaRuntime extends ElysiaRuntimeApi {}
 
 export class HostElysiaRuntime implements ElysiaRuntimeApi {
 	private readonly endpoints = new Set<ElysiaEndpoint>()

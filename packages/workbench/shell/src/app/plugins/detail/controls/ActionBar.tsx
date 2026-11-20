@@ -14,16 +14,18 @@ import {
 } from '../../pluginStatusActions'
 import { usePluginScope } from '../context'
 import { usePluginOverview } from '../../pluginOverview'
-import { canWritePluginState } from '../../pluginOverviewModel'
+import { describePluginPolicyTarget, readPluginPolicyTarget } from '../../pluginOverviewModel'
+import { describePluginControlBatchFailure } from '../../pluginControlBatchPresentation'
 import { PLUGIN_DETAIL_HOTKEYS, PLUGIN_DETAIL_HOTKEY_LABELS } from '../../../workbench/shortcuts'
 import { describePluginControl, describePluginLifecycleOutcome } from './pluginControlModel'
 
 export function ActionBar({ active = true }: { active?: boolean }) {
 	const management = useRuntimeManagementClient()
 	const statePolicy = usePluginOverview().overview?.statePolicy
-	const canWriteAutoStart = canWritePluginState(statePolicy, 'autoStart')
 	const queryClient = useQueryClient()
 	const { owner, pluginLabel, dependencyGraph, status, refetch } = usePluginScope()
+	const autoStartPolicy = readPluginPolicyTarget(statePolicy, { field: 'autoStart', node: owner })
+	const canWriteAutoStart = autoStartPolicy?.canWrite === true
 	const autoStartPendingRef = useRef(false)
 	const lifecyclePendingRef = useRef(false)
 	const [autoStartPending, setAutoStartPending] = useState(false)
@@ -35,19 +37,15 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 		autoStartPendingRef.current = true
 		setAutoStartPending(true)
 		try {
-			const result = await setPluginAutoStart(
+			const batch = await setPluginAutoStart(
 				management,
 				queryClient,
 				owner,
 				autoStart,
 				statePolicy.managedRevision,
 			)
-			if (result.ok === false) {
-				notifyAndRecord({
-					title: '自动启动策略更新失败',
-					message: result.error || '操作失败，请稍后重试',
-					color: 'red',
-				})
+			if (batch.ok === false) {
+				notifyAndRecord(describePluginControlBatchFailure('auto-start', batch, () => pluginLabel))
 				return
 			}
 			notifyAndRecord({
@@ -56,6 +54,7 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 					? `${pluginLabel} 将在宿主启动时自动请求运行；当前会话状态不变。`
 					: `${pluginLabel} 当前会话状态不变。`,
 				color: 'green',
+				diagnosticText: JSON.stringify(batch, null, 2),
 			})
 		} catch (error: unknown) {
 			notifyAndRecord({
@@ -75,16 +74,23 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 		lifecyclePendingRef.current = true
 		setLifecyclePending(command)
 		try {
-			const result = await applyPluginLifecycleCommand(management, queryClient, owner, command)
-			if (result.ok === false) {
+			const batch = await applyPluginLifecycleCommand(management, queryClient, owner, command)
+			if (batch.ok === false) {
+				const result = batch.results[0]
 				notifyAndRecord({
-					title: '生命周期命令执行失败',
-					message: result.error || '操作失败，请稍后重试',
-					color: 'red',
+					...(batch.status === 'applied-with-issues' &&
+					result?.ok === false &&
+					result.code === 'lifecycle_failed'
+						? describePluginLifecycleOutcome(pluginLabel, command, result)
+						: describePluginControlBatchFailure('lifecycle', batch, () => pluginLabel)),
+					diagnosticText: JSON.stringify({ command, batch }, null, 2),
 				})
 				return
 			}
-			notifyAndRecord(describePluginLifecycleOutcome(pluginLabel, command, result))
+			notifyAndRecord({
+				...describePluginLifecycleOutcome(pluginLabel, command, batch.results[0]!),
+				diagnosticText: JSON.stringify({ command, batch }, null, 2),
+			})
 		} catch (error: unknown) {
 			notifyAndRecord({
 				title: '生命周期命令执行失败',
@@ -183,11 +189,9 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 			</Tooltip>
 			<Tooltip
 				label={
-					!canWriteAutoStart
-						? '自动启动策略由宿主声明控制或只读'
-						: autoStartPending
-							? '正在保存自动启动策略…'
-							: presentation.autoStartDescription
+					autoStartPending
+						? '正在保存自动启动策略…'
+						: `${presentation.autoStartDescription} · ${describePluginPolicyTarget(autoStartPolicy)}`
 				}
 			>
 				<Switch

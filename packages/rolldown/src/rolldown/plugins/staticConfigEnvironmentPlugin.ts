@@ -35,7 +35,12 @@ export function staticConfigEnvironmentDeclarationPlugin(
 				code,
 				id: entry,
 				sourceResolver: createConfigSchemaSourceResolver(this),
-				error: (message) => this.error(message),
+				error: (message, detail) =>
+					this.error(
+						typeof detail?.node?.start === 'number'
+							? { message, id: detail.file ?? entry, pos: detail.node.start }
+							: message,
+					),
 			})
 			options.onDeclaration?.(facts)
 		},

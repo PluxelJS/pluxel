@@ -1,4 +1,7 @@
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { workbenchService } from '@pluxel/workbench/service'
 import { createHash } from 'node:crypto'
 import { symlink, writeFile } from 'node:fs/promises'
@@ -14,19 +17,16 @@ import {
 } from '@pluxel/core/internal'
 import {
 	WORKBENCH_FEDERATION_PRODUCER_INVENTORY_FILE,
-	createWorkbenchFederationCompatibilitySet,
 	createWorkbenchFederationDeploymentInventory,
 	createWorkbenchFederationProducerPlan,
 	type WorkbenchFederationProducerPlan,
 } from '@pluxel/core/federation'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { createServiceInternalTestHarness } from '@pluxel/services/internal/test'
-import * as React from 'react'
-import * as ReactDom from 'react-dom'
 import { describe, expect, it, vi } from 'vitest'
+import { federationManifest } from './fixtures/federation-manifest'
 
-import { version as runtimeVersion } from '@pluxel/workbench/package.json'
-import { requireWorkbench } from '@pluxel/workbench/server'
+import { WorkbenchHost } from '@pluxel/workbench/server'
 import {
 	WorkbenchArtifactService,
 	WorkbenchArtifactCoordinator,
@@ -38,11 +38,6 @@ const definition = {
 	entry: { kind: 'package-root', packageName: '@example/fonts' },
 	exportName: 'FontsPlugin',
 } as const
-const compatibility = createWorkbenchFederationCompatibilitySet({
-	react: React.version,
-	reactDom: ReactDom.version,
-	workbench: runtimeVersion,
-})
 
 function createPlan(
 	buildRevision: string,
@@ -64,52 +59,9 @@ function createPlan(
 	})
 }
 
-function manifest(
-	plan: WorkbenchFederationProducerPlan,
-	exposes = plan.entries.map((entry) => entry.expose),
-) {
-	const remotes: never[] = []
-	return {
-		id: plan.producer,
-		name: plan.producer,
-		metaData: {
-			name: plan.producer,
-			globalName: plan.producer,
-			buildInfo: { buildVersion: plan.buildRevision, buildName: plan.producer },
-			publicPath: 'auto',
-			remoteEntry: { name: 'remoteEntry.js', path: '', type: 'module' },
-			types: { path: '', name: '', api: 'types/index.d.ts', zip: '@mf-types.zip' },
-			type: 'global',
-		},
-		remotes,
-		shared: Object.entries(compatibility.shared).map(([name, version]) => ({
-			name,
-			version,
-			requiredVersion: version,
-			singleton: true,
-			assets: assetGroup(),
-		})),
-		exposes: exposes.map((expose, index) => ({
-			name: expose.slice(2),
-			path: expose.slice(2),
-			assets: assetGroup([`assets/view-${index}.js`]),
-		})),
-	}
-}
-
-function assetGroup(js: string[] = []): {
-	js: { sync: string[]; async: string[] }
-	css: { sync: string[]; async: string[] }
-} {
-	return {
-		js: { sync: js, async: [] },
-		css: { sync: [], async: [] },
-	}
-}
-
 function candidateFiles(plan: WorkbenchFederationProducerPlan, rawManifest?: string) {
 	return {
-		'mf-manifest.json': rawManifest ?? `${JSON.stringify(manifest(plan), null, 2)}\n`,
+		'mf-manifest.json': rawManifest ?? `${JSON.stringify(federationManifest(plan), null, 2)}\n`,
 		'remoteEntry.js': "export { ready } from './assets/remote-runtime.js'\n",
 		'assets/remote-runtime.js': 'export const ready = true\n',
 		'assets/view-0.js': 'export const manager = true\n',
@@ -389,7 +341,7 @@ describe('WorkbenchArtifactService', () => {
 			await using host = await createServiceInternalTestHarness({ workbench: true })
 
 			await host.commit()
-			const backend = requireWorkbench(host.ctx)
+			const backend = host.ctx.service(WorkbenchHost)
 			const coordinatorEvents = vi.fn()
 			const invalidated = vi.fn()
 			const unsubscribe = backend.artifactCoordinator.subscribe(coordinatorEvents)
@@ -430,13 +382,16 @@ describe('WorkbenchArtifactService', () => {
 			await using host = await createServiceInternalTestHarness({
 				workbench: false,
 				services: [
-					...standardServices(),
+					elysia(),
+					commands(),
+					nodeModules(),
+					workers(),
 					workbenchService({ artifacts: { root: fixture.getPath('workbench') } }),
 				],
 			})
 
 			await host.commit()
-			const artifacts = requireWorkbench(host.ctx).artifacts
+			const artifacts = host.ctx.service(WorkbenchHost).artifacts
 			expect(artifacts.getCurrent(definition)).toMatchObject({
 				producer: plan.producer,
 				buildRevision: plan.buildRevision,
@@ -483,13 +438,16 @@ describe('WorkbenchArtifactService', () => {
 			await using host = await createServiceInternalTestHarness({
 				workbench: false,
 				services: [
-					...standardServices(),
+					elysia(),
+					commands(),
+					nodeModules(),
+					workers(),
 					workbenchService({ artifacts: { root: fixture.getPath('workbench') } }),
 				],
 			})
 
 			await host.commit()
-			const contentService = requireWorkbench(host.ctx).content
+			const contentService = host.ctx.service(WorkbenchHost).content
 			expect(contentService.getCurrent(definition)).toMatchObject({
 				definitionDigest: contentArtifact.candidate.definitionDigest,
 				digest: contentArtifact.candidate.digest,
@@ -532,12 +490,15 @@ describe('WorkbenchArtifactService', () => {
 			await using host = await createServiceInternalTestHarness({
 				workbench: false,
 				services: [
-					...standardServices(),
+					elysia(),
+					commands(),
+					nodeModules(),
+					workers(),
 					workbenchService({ artifacts: { root: fixture.getPath('workbench') } }),
 				],
 			})
 
-			const backend = requireWorkbench(host.ctx)
+			const backend = host.ctx.service(WorkbenchHost)
 			// Host preparation loads one atomic inventory before any Plugin activation.
 			expect(backend.artifactCoordinator.revision).toBe(1)
 			await host.commit()
@@ -579,7 +540,7 @@ describe('WorkbenchArtifactService', () => {
 				[rejected.producer]: {
 					[rejected.buildRevision]: candidateFiles(
 						rejected,
-						JSON.stringify(manifest(rejected, [])),
+						JSON.stringify(federationManifest(rejected, [])),
 					),
 				},
 			},
@@ -601,7 +562,7 @@ describe('WorkbenchArtifactService', () => {
 
 	it('atomically commits one exact standard Manifest revision and serves its raw bytes', async () => {
 		const plan = createPlan('revision-a')
-		const rawManifest = `${JSON.stringify(manifest(plan), null, 2)}\n`
+		const rawManifest = `${JSON.stringify(federationManifest(plan), null, 2)}\n`
 		await using fixture = await createDiskFixture({
 			artifact: candidateFiles(plan, rawManifest),
 		})
@@ -665,19 +626,18 @@ describe('WorkbenchArtifactService', () => {
 	it('keeps the previous current revision when candidate validation fails', async () => {
 		const first = createPlan('revision-a')
 		const rejected = createPlan('revision-b')
-		const missingShared = manifest(rejected)
+		const missingShared = federationManifest(rejected)
 		missingShared.shared.pop()
-		const extraShared = manifest(rejected)
+		const extraShared = federationManifest(rejected)
 		extraShared.shared.push({
+			...extraShared.shared[0]!,
 			name: 'unexpected-shared',
 			version: '1.0.0',
 			requiredVersion: '1.0.0',
-			singleton: true,
-			assets: assetGroup(),
 		})
-		const wrongSharedVersion = manifest(rejected)
+		const wrongSharedVersion = federationManifest(rejected)
 		wrongSharedVersion.shared[0]!.requiredVersion = '0.0.0'
-		const wrongManifest = JSON.stringify(manifest(rejected, ['./views/not-declared']))
+		const wrongManifest = JSON.stringify(federationManifest(rejected, ['./views/not-declared']))
 		await using fixture = await createDiskFixture({
 			first: candidateFiles(first),
 			missingShared: candidateFiles(rejected, JSON.stringify(missingShared)),

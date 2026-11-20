@@ -1,48 +1,25 @@
 import { type ArgValues, type CommandContext, define } from 'gunshi'
 import { styleText } from 'node:util'
+import { devCommandDefinition, devStatusDefinition } from '../command-manifest'
 import {
-	devCancelDefinition,
-	devCommandDefinition,
 	devCommonArgs,
-	devHmrArgs,
-	devHmrDefinition,
-	devInstancesDefinition,
-	devStatusDefinition,
-	devResultDefinition,
-	devRunArgs,
-	devRunDefinition,
-	devReceiptArgs,
-} from '../command-manifest'
+	validateCommandOptions,
+	printDevFailure,
+	printValue,
+} from '@pluxel/agent-sdk/internal/cli'
 import {
+	requireDevScripts,
+	resolveDevSelection,
 	DevClientError,
-	controlDevHmr,
-	liveDevInstances,
-	matchesDevInstance,
-	parseInput,
-	parseRunSnapshot,
-	publicInstance,
-	readBoundedFile,
-	requestDev,
-	runDevFile,
+	type DevInstance,
 	selectDevInstance,
 	withDevContext,
-	type DevInstance,
-	type DevRunSnapshot,
-} from '../dev/client'
-import {
-	connectDevProject,
-	readDevService,
-	requireDevConsole,
-	resolveDevSelection,
-	startDevService,
-} from '../dev/project'
+} from '@pluxel/agent-sdk/internal/client'
+import { listHosts } from '@pluxel/agent-sdk/client'
+import { readDevService, startDevService } from '../dev/project'
 import { runDevCommand } from '../dev/process'
-import { decodeDevReceipt, encodeDevReceipt } from '../dev/receipt'
 
-type DevCommandContext = Pick<
-	CommandContext,
-	'args' | 'tokens' | 'log' | 'positionals' | 'commandPath'
->
+type DevCommandContext = Pick<CommandContext, 'log'>
 
 function printDevHeading(
 	ctx: DevCommandContext,
@@ -64,115 +41,14 @@ function terminalUrl(line: string): string {
 	)
 }
 
-function validateDevOptions(ctx: DevCommandContext): void {
-	const allowed = new Set(['help', 'version'])
-	const short = new Set(['h', 'v'])
-	for (const [name, argument] of Object.entries(ctx.args)) {
-		if (argument.type === 'positional') continue
-		allowed.add(name)
-		if (argument.short) short.add(argument.short)
-		if (argument.type === 'boolean' && argument.negatable) allowed.add(`no-${name}`)
-	}
-	for (const token of ctx.tokens) {
-		if (token.kind !== 'option') continue
-		const names = token.rawName?.startsWith('--') ? allowed : short
-		if (token.name && names.has(token.name)) continue
-		throw new DevClientError(
-			'invalid_input',
-			`Unknown dev option ${token.rawName ?? token.name ?? '(unnamed)'}.`,
-			{
-				hint: 'Check the selected dev command’s --help for supported options.',
-			},
-		)
-	}
-	const positionalCount = ctx.positionals.length
-	const declaredPositionals = Object.values(ctx.args).filter(
-		(arg) => arg.type === 'positional',
-	).length
-	if (positionalCount > ctx.commandPath.length + declaredPositionals)
-		throw new DevClientError(
-			'invalid_input',
-			'Unexpected argument; check the selected dev command’s --help',
-		)
-}
-
-function runReceipt(instance: DevInstance, runId: string): string {
-	return encodeDevReceipt({
-		root: instance.root,
-		instanceId: instance.instanceId,
-		runId,
-		serviceId: instance.serviceId,
-	})
-}
-
-function runResult(instance: DevInstance, snapshot: DevRunSnapshot) {
-	return { ...snapshot, receipt: runReceipt(instance, snapshot.runId) }
-}
-
-function printAccepted(instance: DevInstance, snapshot: DevRunSnapshot): void {
-	process.stderr.write(
-		JSON.stringify({
-			event: 'accepted',
-			root: snapshot.root,
-			runId: snapshot.runId,
-			instanceId: snapshot.instanceId,
-			receipt: runReceipt(instance, snapshot.runId),
-			state: snapshot.state,
-		}) + '\n',
-	)
-}
-
-async function printResult(
-	ctx: DevCommandContext,
-	action: () => Promise<unknown>,
-	pendingExitCode = 2,
-) {
-	try {
-		validateDevOptions(ctx)
-		const value = await action()
-		ctx.log(JSON.stringify({ ok: true, value }))
-		if (value && typeof value === 'object' && 'state' in value) {
-			if (value.state === 'failed' || value.state === 'cancelled') process.exitCode = 1
-			else if (value.state !== 'succeeded') process.exitCode = pendingExitCode
-		}
-	} catch (error) {
-		const failure = withDevContext(error, {})
-		const context = failure.context
-		const receipt =
-			failure.runId && context?.root && context.instanceId
-				? encodeDevReceipt({
-						root: context.root,
-						instanceId: context.instanceId,
-						runId: failure.runId,
-						serviceId: context.serviceId,
-					})
-				: undefined
-		ctx.log(
-			JSON.stringify({
-				ok: false,
-				error: {
-					code: failure.code,
-					message: failure.message.slice(0, 8192),
-					...(failure.runId ? { runId: failure.runId } : {}),
-					...(receipt ? { receipt } : {}),
-					...(context && Object.keys(context).length > 0 ? { context } : {}),
-					...(failure.hint ? { hint: failure.hint } : {}),
-					...(failure.candidates ? { candidates: failure.candidates } : {}),
-				},
-			}),
-		)
-		process.exitCode = 1
-	}
-}
-
 export const devCommand = define({
 	...devCommandDefinition,
 	async run(ctx) {
 		try {
-			validateDevOptions(ctx)
+			await validateCommandOptions(ctx)
 			const selection = await resolveDevSelection(ctx.values as ArgValues<typeof devCommonArgs>)
 			const project = selection.project
-			if (selection.instance !== undefined) requireDevConsole(project)
+			if (selection.instance !== undefined) requireDevScripts(project)
 			let instance: DevInstance
 			let action: 'started' | 'reused' = 'reused'
 			if (project?.pitchfork && selection.instance === undefined) {
@@ -183,7 +59,7 @@ export const devCommand = define({
 					return
 				}
 				action = service.status === 'running' ? 'reused' : 'started'
-				if (project.console === false) {
+				if (project.scripts === false) {
 					const current = await readDevService(project)
 					if (current.id !== service.id)
 						throw new DevClientError(
@@ -217,7 +93,7 @@ export const devCommand = define({
 							'invalid_project',
 							'No running console or development command was found.',
 							{
-								hint: 'Declare a named pluxel.dev profile with a command or pitchfork service in package.json, or start Vite with devConsole enabled.',
+								hint: 'Declare a named pluxel.dev profile with a command or pitchfork service in package.json, or start Vite with scripts enabled.',
 							},
 						)
 					// The foreground process owns startup output, keyboard shortcuts and its lifetime.
@@ -235,7 +111,7 @@ export const devCommand = define({
 					'dev_unavailable',
 					'The selected Vite instance has no URL presentation.',
 					{
-						hint: 'Check devConsole and host-vite, then restart the selected development server.',
+						hint: 'Check scripts and host-vite, then restart the selected development server.',
 					},
 				)
 			printDevHeading(ctx, project.profile, action)
@@ -259,131 +135,33 @@ export const devCommand = define({
 	},
 })
 
-export const devInstancesCommand = define({
-	...devInstancesDefinition,
-	async run(ctx) {
-		await printResult(ctx, async () => {
-			const selection = await resolveDevSelection(ctx.values as ArgValues<typeof devCommonArgs>)
-			requireDevConsole(selection.project)
-			const instances = await liveDevInstances(selection.root)
-			return instances
-				.filter((instance) => matchesDevInstance(instance, selection))
-				.map(publicInstance)
-		})
-	},
-})
-
 export const devStatusCommand = define({
 	...devStatusDefinition,
 	async run(ctx) {
-		await printResult(ctx, async () => {
+		try {
+			await validateCommandOptions(ctx)
 			const selection = await resolveDevSelection(ctx.values as ArgValues<typeof devCommonArgs>)
-			if (selection.project.console === false) {
-				if (selection.instance !== undefined) requireDevConsole(selection.project)
-				return {
+			if (selection.project.scripts === false) {
+				if (selection.instance !== undefined) requireDevScripts(selection.project)
+				printValue(ctx.log, {
 					workspace: selection.project.workspace,
 					profile: selection.project.profile,
 					root: selection.root,
-					console: false,
+					scripts: false,
 					service: await readDevService(selection.project),
-				}
-			}
-			const live = await liveDevInstances(selection.root)
-			const instances = live.filter((instance) => matchesDevInstance(instance, selection))
-			return {
-				...(selection.project ? { workspace: selection.project.workspace } : {}),
-				...(selection.project.profile ? { profile: selection.project.profile } : {}),
-				root: selection.root,
-				instances: instances.map(publicInstance),
-			}
-		})
-	},
-})
-
-export const devRunCommand = define({
-	...devRunDefinition,
-	async run(ctx) {
-		const values = ctx.values as ArgValues<typeof devRunArgs>
-		await printResult(
-			ctx,
-			async () => {
-				if (values.input !== undefined && values['input-file'] !== undefined)
-					throw new DevClientError('invalid_input', 'Use either --input or --input-file')
-				const buffer =
-					values['input-file'] === undefined
-						? undefined
-						: await readBoundedFile(values['input-file'])
-				const source = buffer === undefined ? values.input : buffer.toString('utf8')
-				const input = source === undefined ? undefined : parseInput(source)
-				const instance = await connectDevProject(values)
-				const result = await runDevFile({
-					instance,
-					file: values.file,
-					exportName: values.export,
-					input,
-					timeoutMs: Number(values.timeout),
-					detach: values.detach,
-					onAccepted: (snapshot) => printAccepted(instance, snapshot),
 				})
-				return runResult(instance, result)
-			},
-			values.detach ? 0 : 2,
-		)
-	},
-})
-
-export const devHmrCommand = define({
-	...devHmrDefinition,
-	async run(ctx) {
-		const values = ctx.values as ArgValues<typeof devHmrArgs>
-		await printResult(
-			ctx,
-			async () => {
-				const instance = await connectDevProject(values)
-				const result = await controlDevHmr({
-					instance,
-					action: values.action,
-					timeoutMs: Number(values.timeout),
-					detach: values.detach,
-					onAccepted: (snapshot) => printAccepted(instance, snapshot),
-				})
-				return runResult(instance, result)
-			},
-			values.detach ? 0 : 2,
-		)
-	},
-})
-
-async function receiptResult(ctx: DevCommandContext, token: string, method: 'result' | 'cancel') {
-	await printResult(ctx, async () => {
-		const receipt = decodeDevReceipt(token)
-		try {
-			const instance = await selectDevInstance({
-				root: receipt.root,
-				instance: receipt.instanceId,
-				serviceId: receipt.serviceId,
-			})
-			const snapshot = parseRunSnapshot(
-				await requestDev(instance, { method, runId: receipt.runId }),
-				instance,
-				receipt.runId,
+				return
+			}
+			printValue(
+				ctx.log,
+				await listHosts({
+					root: selection.project.profile ? selection.project.workspace : selection.root,
+					profile: selection.project.profile,
+					instance: selection.instance,
+				}),
 			)
-			return runResult(instance, snapshot)
 		} catch (error) {
-			throw withDevContext(error, receipt, receipt.runId)
+			await printDevFailure(ctx.log, error)
 		}
-	})
-}
-
-export const devResultCommand = define({
-	...devResultDefinition,
-	async run(ctx) {
-		await receiptResult(ctx, (ctx.values as ArgValues<typeof devReceiptArgs>).receipt, 'result')
-	},
-})
-export const devCancelCommand = define({
-	...devCancelDefinition,
-	async run(ctx) {
-		await receiptResult(ctx, (ctx.values as ArgValues<typeof devReceiptArgs>).receipt, 'cancel')
 	},
 })

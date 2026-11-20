@@ -1,8 +1,5 @@
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
-import { envBinding, defineHostApplication, resolveHostApplication, createHost } from '@pluxel/host'
-import { vault } from '@pluxel/services/vault'
-import { standardServices } from '@pluxel/services'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const s3Mock = vi.hoisted(() => {
@@ -23,7 +20,7 @@ vi.mock('s3mini', () => ({
 	},
 }))
 
-import { S3, S3NotRunningError, S3VaultSchema, S3Plugin } from '../src/index.ts'
+import { S3, S3NotRunningError, S3Plugin } from '../src/index.ts'
 import { DocumentsPlugin } from './fixtures/result-consumer.ts'
 
 @Plugin()
@@ -56,8 +53,8 @@ beforeEach(() => {
 describe('S3Plugin remote backend', () => {
 	it('demonstrates object absence as a Result without swallowing IO or permission failures', async () => {
 		await using host = await createTestHost()
-		await host.start(S3Plugin, { initialConfig: remoteConfig({ type: 'anonymous' }) })
-		const documents = await host.start(DocumentsPlugin)
+		await host.start(S3Plugin.nodeAddress(), { initialConfig: remoteConfig({ type: 'anonymous' }) })
+		const documents = await host.start(DocumentsPlugin.nodeAddress())
 		const client = s3Mock.clients.at(-1)!
 		client.getObject.mockResolvedValueOnce('').mockResolvedValueOnce(null)
 		const empty = await documents.read('empty')
@@ -69,7 +66,7 @@ describe('S3Plugin remote backend', () => {
 		const denied = new Error('AccessDenied')
 		client.getObject.mockRejectedValueOnce(denied)
 		await expect(documents.read('private')).rejects.toBe(denied)
-		await host.stop(S3Plugin)
+		await host.stop(S3Plugin.nodeAddress())
 		await expect(documents.read('stopped')).rejects.toThrow(Error)
 	})
 
@@ -91,97 +88,39 @@ describe('S3Plugin remote backend', () => {
 		})
 	})
 
-	it('starts an environment-only deployment without encrypted storage and fails closed for missing input', async () => {
-		const application = defineHostApplication(() => ({
-			plugins: [S3Plugin],
-			services: [vault({ backend: 'bindings' })],
-			envBindings: [
-				envBinding(S3Plugin, {
-					vault: {
-						schema: S3VaultSchema,
-						mapping: {
-							primary: { accessKeyId: 'S3_ACCESS_KEY', secretAccessKey: 'S3_SECRET_KEY' },
-						},
-					},
-				}),
-			],
-			config: {
-				records: [
-					{
-						owner: S3Plugin.nodeAddress(),
-						config: remoteConfig({ type: 'vault', key: 'primary' }),
-					},
-				],
-			},
-			policy: { autoStart: [S3Plugin.nodeAddress()] },
-		}))
-		const startup = {
-			root: process.cwd(),
-			mode: 'test' as const,
-			env: { S3_ACCESS_KEY: 'env-access', S3_SECRET_KEY: 'env-secret' },
-			bindings: {},
-		}
-		const resolved = await resolveHostApplication(application, startup)
-		const host = await createHost({
-			plugins: resolved.plugins,
-			services: resolved.services,
-			vaultBindings: resolved.vaultBindings,
-			name: resolved.name,
-			config: resolved.config,
-			policy: resolved.policy,
-			runtime: resolved.runtime,
-		})
-		try {
-			await host.start()
-			const status = await host.status()
-			expect(status.summary.running).toBe(1)
-			expect(s3Mock.configs.at(-1)).toMatchObject({
-				accessKeyId: 'env-access',
-				secretAccessKey: 'env-secret',
-			})
-		} finally {
-			await host.close()
-		}
-		await expect(
-			resolveHostApplication(application, {
-				...startup,
-				env: { S3_ACCESS_KEY: 'env-access' },
-			}).then(({ name, plugins, services, runtime, vaultBindings }) =>
-				createHost({ plugins, services, vaultBindings, name, runtime }),
-			),
-		).rejects.toThrow('S3_SECRET_KEY')
-	})
-
 	it('resolves access keys from a configured Vault reference without another plugin', async () => {
 		{
-			await using host = await createTestHost({
-				services: [...standardServices(), vault()],
-			})
+			await using host = await createTestHost()
 
-			await host.start(S3Plugin, { initialConfig: remoteConfig({ type: 'anonymous' }) })
-			await host.require(S3Plugin).ctx.vault!.kv({ namespace: 'shared-secrets' }).set('assets.s3', {
-				accessKeyId: 'access-id',
-				secretAccessKey: 'secret-value',
+			await host.start(S3Plugin.nodeAddress(), {
+				initialConfig: remoteConfig({ type: 'anonymous' }),
 			})
+			await host
+				.require(S3Plugin.nodeAddress())
+				.ctx.vault.kv({ namespace: 'shared-secrets' })
+				.set('assets.s3', {
+					accessKeyId: 'access-id',
+					secretAccessKey: 'secret-value',
+				})
 
-			await host.stop(S3Plugin)
-			await host.config.patch(S3Plugin, {
+			await host.stop(S3Plugin.nodeAddress())
+			await host.config.patch(S3Plugin.nodeAddress(), {
 				set: remoteConfig({
 					type: 'vault',
 					key: 'assets.s3',
 					namespace: 'shared-secrets',
 				}),
 			})
-			await host.start(S3Plugin)
-			await host.start(S3Consumer)
+			await host.start(S3Plugin.nodeAddress())
+			await host.start(S3Consumer.nodeAddress())
 			expect(s3Mock.configs.at(-1)).toMatchObject({
 				accessKeyId: 'access-id',
 				secretAccessKey: 'secret-value',
 			})
-			const consumer = host.require(S3Consumer)
+			const consumer = host.require(S3Consumer.nodeAddress())
 			const handle = consumer.s3.bucket()
 			const previous = handle.client
-			const kv = host.require(S3Plugin).ctx.vault!.kv({ namespace: 'shared-secrets' })
+			const kv = host.require(S3Plugin.nodeAddress()).ctx.vault.kv({ namespace: 'shared-secrets' })
 			await kv.set('assets.s3', { accessKeyId: 'rotated-id', secretAccessKey: 'rotated-secret' })
 			await vi.waitFor(() => expect(handle.client).not.toBe(previous))
 			expect(s3Mock.configs.at(-1)).toMatchObject({
@@ -193,13 +132,11 @@ describe('S3Plugin remote backend', () => {
 		}
 	})
 
-	it('provides O(1) named bucket selection and owner-bound handles', async () => {
+	it('selects named buckets and withdraws only the stopped caller’s handle', async () => {
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
-			await host.start(S3Plugin, {
+			await host.start(S3Plugin.nodeAddress(), {
 				initialConfig: {
 					buckets: [
 						remoteBucket('east', { type: 'anonymous' }, 'https://east-bucket.s3.example.com'),
@@ -207,22 +144,21 @@ describe('S3Plugin remote backend', () => {
 					],
 				},
 			})
-			await host.start([S3ConsumerA, S3ConsumerB])
-			const eastCapability = host.require(S3ConsumerA).s3.bucket('east')
-			const westCapability = host.require(S3ConsumerB).s3.bucket('west')
+			await host.start([S3ConsumerA.nodeAddress(), S3ConsumerB.nodeAddress()])
+			const eastCapability = host.require(S3ConsumerA.nodeAddress()).s3.bucket('east')
+			const westCapability = host.require(S3ConsumerB.nodeAddress()).s3.bucket('west')
 			const eastClient = eastCapability.client
 			const westClient = westCapability.client
 			expect(eastClient).not.toBe(westClient)
-			expect(host.require(S3ConsumerA).s3.bucket('east')).toBe(eastCapability)
-			expect(host.require(S3ConsumerA).s3.bucketIds()).toEqual(['east', 'west'])
-			expect(() => host.require(S3ConsumerA).s3.bucket('missing')).toThrowError(
+			expect(host.require(S3ConsumerA.nodeAddress()).s3.bucketIds()).toEqual(['east', 'west'])
+			expect(() => host.require(S3ConsumerA.nodeAddress()).s3.bucket('missing')).toThrowError(
 				expect.objectContaining({ code: 'S3_BUCKET_NOT_FOUND' }),
 			)
 			expect(s3Mock.configs.map((config) => config.endpoint).sort()).toEqual([
 				'https://east-bucket.s3.example.com',
 				'https://west-bucket.s3.example.com',
 			])
-			await host.stop(S3ConsumerA)
+			await host.stop(S3ConsumerA.nodeAddress())
 			expect(() => eastCapability.client).toThrow('Plugin owner stopped')
 			expect(westCapability.client).toBe(westClient)
 		}
@@ -230,20 +166,21 @@ describe('S3Plugin remote backend', () => {
 
 	it('fails lifecycle when a configured Vault reference is missing', async () => {
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
 			const failure = await host.commitExpectFail((change) => {
 				change.catalog.add([S3Plugin, S3Consumer])
-				change.config.seed(S3Plugin, remoteConfig({ type: 'vault', key: 'missing.s3' }))
-				change.start(S3Plugin)
-				change.start(S3Consumer)
+				change.config.seed(
+					S3Plugin.nodeAddress(),
+					remoteConfig({ type: 'vault', key: 'missing.s3' }),
+				)
+				change.start(S3Plugin.nodeAddress())
+				change.start(S3Consumer.nodeAddress())
 			})
-			expect(host.isRunning(S3Plugin)).toBe(false)
+			expect(host.isRunning(S3Plugin.nodeAddress())).toBe(false)
 			expect(failure.lifecycleReport.issues).toContainEqual(
 				expect.objectContaining({
-					plugin: S3Plugin.nodeAddress(),
+					plugin: parsePluginNodeAddress(S3Plugin.nodeAddress()),
 					kind: 'start-failed',
 				}),
 			)
@@ -262,15 +199,13 @@ describe('S3Plugin remote backend', () => {
 		vi.stubGlobal('fetch', fetchMock)
 
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
-			await host.start(S3Plugin, {
+			await host.start(S3Plugin.nodeAddress(), {
 				initialConfig: remoteConfig({ type: 'anonymous' }),
 			})
-			await host.start(S3Consumer)
-			const capability = host.require(S3Consumer).s3
+			await host.start(S3Consumer.nodeAddress())
+			const capability = host.require(S3Consumer.nodeAddress()).s3
 			const client = s3Mock.clients.at(-1)!
 			const config = s3Mock.configs.at(-1)!
 			client.getObject.mockImplementation(() => config.fetch('https://bucket/key', {}))
@@ -278,7 +213,7 @@ describe('S3Plugin remote backend', () => {
 			const pending = bucket.client.getObject('key')
 			await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
 
-			await host.stop(S3Plugin)
+			await host.stop(S3Plugin.nodeAddress())
 			await expect(pending).rejects.toBeInstanceOf(S3NotRunningError)
 			expect(() => bucket.client).toThrow('Plugin owner stopped')
 		}
@@ -312,14 +247,16 @@ async function withRemoteS3(
 	run: (s3: S3, client: Record<string, any>, config: Record<string, any>) => void | Promise<void>,
 ): Promise<void> {
 	{
-		await using host = await createTestHost({
-			services: standardServices(),
-		})
+		await using host = await createTestHost()
 
-		await host.start(S3Plugin, {
+		await host.start(S3Plugin.nodeAddress(), {
 			initialConfig: remoteConfig({ type: 'anonymous' }),
 		})
-		await host.start(S3Consumer)
-		await run(host.require(S3Consumer).s3, s3Mock.clients.at(-1)!, s3Mock.configs.at(-1)!)
+		await host.start(S3Consumer.nodeAddress())
+		await run(
+			host.require(S3Consumer.nodeAddress()).s3,
+			s3Mock.clients.at(-1)!,
+			s3Mock.configs.at(-1)!,
+		)
 	}
 }

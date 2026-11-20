@@ -2,7 +2,7 @@
 
 ## Ownership
 
-Runtime owns the control WebSocket, physical peer/TLS facts, pre-auth quotas, Cap’n Web target admission and the three exact unauthenticated HTTP routes. `@pluxel/plugin-auth` is an ordinary generation-owned provider registered through `ctx.managementAccess.provide()`.
+Runtime owns the control WebSocket, physical peer/TLS facts, pre-auth quotas, Cap’n Web target admission and the three exact unauthenticated HTTP routes. `@pluxel/plugin-auth` is an ordinary generation-owned provider registered through `ctx.service(ManagementAccess).provide()`.
 
 The plugin owns credential verification, OIDC, opaque browser sessions, one-use cookie commits, login failure state and credential persistence. It does not own the listener, Workbench root, Management operations or generic HTTP routing.
 

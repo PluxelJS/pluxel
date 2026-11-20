@@ -75,7 +75,7 @@ export class TakumiPlugin extends BasePlugin {
 					)
 			}
 		}
-		return this.ctx.require(Workers).run(renderTask, input, { signal, settlement: 'execution' })
+		return this.ctx.service(Workers).run(renderTask, input, { signal, settlement: 'execution' })
 	}
 }
 

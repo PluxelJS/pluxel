@@ -17,6 +17,7 @@ import {
 } from '@tiptap/react'
 import type { Editor } from '@tiptap/core'
 import { Image } from '@tiptap/extension-image'
+import { render } from 'katex'
 import type { TypstSourceProject } from '../source/state-types.js'
 import type { TypstSourceComponent, TypstSourceDiagnostic } from '../source/types.js'
 import {
@@ -29,7 +30,8 @@ import {
 	TypstImport,
 	TypstInclude,
 } from './source-editor.js'
-import { TypstFigure, TypstBlockMath, TypstInlineMath, TypstReference } from './document-nodes.js'
+import { TypstFigure, TypstReference } from './document-nodes.js'
+import { TypstBlockMath, TypstInlineMath } from './source-math.js'
 import {
 	TypstFigureView,
 	TypstMathView,
@@ -67,6 +69,19 @@ const SourceContext = createContext<{
 	onOpenFile?: (path: string) => void
 	renderComponentParameters?: TypstSourceEditorProps['renderComponentParameters']
 } | null>(null)
+
+function renderLatex(source: string, element: HTMLElement, inline: boolean) {
+	render(source, element, {
+		displayMode: !inline,
+		throwOnError: true,
+		trust: false,
+		strict: 'warn',
+	})
+}
+
+function SourceMathView(props: NodeViewProps) {
+	return <TypstMathView {...props} renderLatex={renderLatex} />
+}
 
 function SourceView(props: NodeViewProps) {
 	const source = useContext(SourceContext)!
@@ -1048,8 +1063,8 @@ export function TypstSourceEditor(props: TypstSourceEditorProps) {
 					content: '(image | table | typstSource | typstComponent) figureCaption',
 					addNodeView: () => ReactNodeViewRenderer(TypstFigureView),
 				}),
-				TypstBlockMath.extend({ addNodeView: () => ReactNodeViewRenderer(TypstMathView) }),
-				TypstInlineMath.extend({ addNodeView: () => ReactNodeViewRenderer(TypstMathView) }),
+				TypstBlockMath.extend({ addNodeView: () => ReactNodeViewRenderer(SourceMathView) }),
+				TypstInlineMath.extend({ addNodeView: () => ReactNodeViewRenderer(SourceMathView) }),
 				TypstReference.extend({ addNodeView: () => ReactNodeViewRenderer(TypstReferenceView) }),
 				createReferenceSuggestion(() => ({
 					editable: latest.current.editable,

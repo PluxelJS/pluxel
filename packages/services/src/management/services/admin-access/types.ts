@@ -38,6 +38,8 @@ export type ManagementAuthenticationCookieCommit = Readonly<{
 }>
 
 export interface ManagementAuthenticationProviderSession extends Disposable {
+	/** Optional credential revocation, independent of connection closure and session disposal. */
+	readonly authorizationSignal?: AbortSignal
 	state(): ManagementAuthenticationProviderStep | Promise<ManagementAuthenticationProviderStep>
 	submit(
 		input: unknown,

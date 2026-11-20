@@ -55,10 +55,13 @@ export const OrdersWorkbench = workbench.define({
 在插件中实现 `OrdersApi`，并在 `init()` 阶段发布：
 
 ```ts
-import { BasePlugin, Plugin } from '@pluxel/core'
+import type { Workbench } from '@pluxel/workbench'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import { assertWorkbenchDto } from '@pluxel/workbench/server'
 import { OrdersWorkbench, type OrdersApi, type OrdersSnapshot } from './workbench.ts'
+
+const WorkbenchRef = defineServiceRef<Workbench>()
 
 @Plugin({ displayName: 'Orders' })
 export class OrdersPlugin extends BasePlugin {
@@ -66,7 +69,7 @@ export class OrdersPlugin extends BasePlugin {
 
 	protected override init() {
 		// 每次前端打开页面时，创建一个新的 Target 会话实例
-		this.ctx.workbench?.publish(OrdersWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(OrdersWorkbench, {
 			overview: () => new OrdersTarget(this),
 		})
 	}

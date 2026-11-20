@@ -313,13 +313,13 @@ function createWorkbenchModuleStore(
 			if (declaration?.type !== 'ClassDeclaration') continue
 			const className = identifierName(declaration.id)
 			if (!className) continue
-			const calls = collectPublishCalls(declaration, facts.imports)
+			const calls = collectPublishCalls(declaration, facts)
 			if (calls.length === 0) continue
 			const owner = owners.get(className)
 			if (!owner) {
 				throw semanticError(
 					id,
-					`${className} calls ctx.workbench.publish(), but only the owning @Plugin class may publish`,
+					`${className} calls ctx.service(Workbench).publish(), but only the owning @Plugin class may publish`,
 				)
 			}
 			if (calls.length !== 1) {
@@ -1386,37 +1386,71 @@ async function moduleFacts(
 	})
 }
 
-function collectPublishCalls(classNode: Node, imports: ReadonlyMap<string, ImportBinding>): Node[] {
+function collectPublishCalls(classNode: Node, module: ModuleFacts): Node[] {
 	const calls: Node[] = []
 	walk(classNode.body, (node) => {
-		if (node.type === 'CallExpression' && isPublishCallee(node.callee, imports)) calls.push(node)
+		if (node.type === 'CallExpression' && isPublishCallee(node.callee, module)) calls.push(node)
 	})
 	return calls
 }
 
-function isPublishCallee(input: unknown, imports: ReadonlyMap<string, ImportBinding>): boolean {
+/** Recognize declared Workbench provenance, including an optional imported-type reference. */
+function isWorkbenchService(input: Node, module: ModuleFacts, seen = new Set<string>()): boolean {
+	const value = unwrapExpression(input)
+	if (value.type === 'MemberExpression' && memberName(value) === 'Workbench') {
+		const binding = module.imports.get(identifierName(value.object) ?? '')
+		return Boolean(binding?.namespace && WORKBENCH_IMPORTS.has(binding.source))
+	}
+	const name = identifierName(value)
+	if (!name || seen.has(name)) return false
+	seen.add(name)
+	const binding = module.imports.get(name)
+	if (binding?.imported === 'Workbench' && WORKBENCH_IMPORTS.has(binding.source)) return true
+	const initializer = module.constants.get(name)
+	if (!initializer) return false
+	const reference = unwrapExpression(initializer)
+	if (reference.type === 'Identifier') return isWorkbenchService(reference, module, seen)
+	if (reference.type !== 'CallExpression') return false
+	const callee = unwrapExpression(object(reference.callee) ?? {})
+	const helper = module.imports.get(
+		identifierName(callee.type === 'MemberExpression' ? callee.object : callee) ?? '',
+	)
+	const isRef =
+		helper?.source === '@pluxel/core' &&
+		(helper.namespace
+			? memberName(callee) === 'defineServiceRef'
+			: helper.imported === 'defineServiceRef')
+	const args = nodes(object(reference.typeArguments)?.params)
+	const type = args.length === 1 ? args[0] : undefined
+	const imported =
+		type?.type === 'TSTypeReference'
+			? module.imports.get(identifierName(type.typeName) ?? '')
+			: undefined
+	return Boolean(
+		isRef && imported?.imported === 'Workbench' && WORKBENCH_IMPORTS.has(imported.source),
+	)
+}
+
+function isPublishCallee(input: unknown, module: ModuleFacts): boolean {
 	const publish = unwrapExpression(object(input) ?? {})
 	if (publish.type !== 'MemberExpression' || memberName(publish) !== 'publish') return false
 	const workbench = unwrapExpression(object(publish.object) ?? {})
-	let ctx: Node
-	if (workbench.type === 'CallExpression') {
-		const require = unwrapExpression(object(workbench.callee) ?? {})
-		const args = nodes(workbench.arguments)
-		const token = args.length === 1 ? imports.get(identifierName(args[0]) ?? '') : undefined
-		if (
-			require.type !== 'MemberExpression' ||
-			memberName(require) !== 'require' ||
-			token?.imported !== 'Workbench' ||
-			!['@pluxel/workbench', '@pluxel/workbench/service'].includes(token.source)
-		)
-			return false
-		ctx = unwrapExpression(object(require.object) ?? {})
-	} else {
-		if (workbench.type !== 'MemberExpression' || memberName(workbench) !== 'workbench') return false
-		ctx = unwrapExpression(object(workbench.object) ?? {})
-	}
-	if (ctx.type !== 'MemberExpression' || memberName(ctx) !== 'ctx') return false
-	return unwrapExpression(object(ctx.object) ?? {}).type === 'ThisExpression'
+	if (workbench.type !== 'CallExpression') return false
+	const service = unwrapExpression(object(workbench.callee) ?? {})
+	const args = nodes(workbench.arguments)
+	if (
+		service.type !== 'MemberExpression' ||
+		memberName(service) !== 'service' ||
+		args.length !== 1 ||
+		!isWorkbenchService(args[0]!, module)
+	)
+		return false
+	const ctx = unwrapExpression(object(service.object) ?? {})
+	return (
+		ctx.type === 'MemberExpression' &&
+		memberName(ctx) === 'ctx' &&
+		unwrapExpression(object(ctx.object) ?? {}).type === 'ThisExpression'
+	)
 }
 
 function isUnconditionalInitPublication(classNode: Node, call: Node): boolean {
@@ -2240,20 +2274,31 @@ function canonicalPackageMetadata(manifest: Record<string, unknown>): string {
 				.map((field) => [
 					field,
 					field === 'exports'
-						? canonicalPackageExports(manifest[field])
+						? canonicalPackageExports(
+								manifest[field],
+								Boolean(
+									manifest.pluxel &&
+									typeof manifest.pluxel === 'object' &&
+									typeof (manifest.pluxel as Record<string, unknown>).control === 'string',
+								),
+							)
 						: canonicalJsonValue(manifest[field]),
 				]),
 		),
 	)
 }
 
-function canonicalPackageExports(value: unknown): unknown {
+function canonicalPackageExports(value: unknown, controlMaterial = false): unknown {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		return canonicalJsonValue(value)
 	}
 	return canonicalJsonValue(
 		Object.fromEntries(
-			Object.entries(value as Record<string, unknown>).filter(([key]) => key !== './package.json'),
+			// The generated control entry is separately content-addressed. A renderer importing it
+			// contributes its actual file through the normal dependency walk.
+			Object.entries(value as Record<string, unknown>).filter(
+				([key]) => key !== './package.json' && (!controlMaterial || key !== './control'),
+			),
 		),
 	)
 }

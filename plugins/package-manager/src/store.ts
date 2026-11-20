@@ -21,6 +21,7 @@ import type {
 	PackagePreparationResult,
 	PackageMarket,
 	MarketInstallRequest,
+	MarketCatalogFilters,
 	MarketPackageQuery,
 	MarketRelease,
 	MarketReleaseQuery,
@@ -200,6 +201,11 @@ export class ManagedPackageStore {
 	marketPackages(marketId: string, query?: MarketPackageQuery) {
 		this.assertOpen()
 		return this.market.packages(marketId, query)
+	}
+
+	marketFacets(marketId: string, filters?: MarketCatalogFilters) {
+		this.assertOpen()
+		return this.market.facets(marketId, filters)
 	}
 
 	marketPackage(marketId: string, name: string, registry?: string) {

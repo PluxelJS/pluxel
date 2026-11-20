@@ -7,7 +7,15 @@ import {
 	text,
 	uniqueIndex,
 } from 'drizzle-orm/sqlite-core'
-import type { MarketMetadata, Provenance } from './protocol'
+import type { MarketCuration, Provenance } from './protocol'
+
+export const authors = sqliteTable('market_authors', {
+	id: text('id').primaryKey(),
+	name: text('name').notNull(),
+	kind: text('kind', { enum: ['github', 'market'] }).notNull(),
+	avatarUrl: text('avatar_url'),
+	observedAt: integer('observed_at').notNull(),
+})
 
 export const packages = sqliteTable(
 	'packages',
@@ -18,6 +26,8 @@ export const packages = sqliteTable(
 		repository: text('repository'),
 		repositoryStars: integer('repository_stars'),
 		repositoryObservedAt: integer('repository_observed_at'),
+		repositoryAuthorId: text('repository_author_id').references(() => authors.id),
+		curatedAuthorId: text('curated_author_id').references(() => authors.id),
 		metadataVersion: text('metadata_version'),
 		readme: text('readme', { mode: 'json' }).$type<{ text: string; truncated: boolean } | null>(),
 		license: text('license'),
@@ -99,7 +109,7 @@ export const audits = sqliteTable(
 		name: text('name').notNull(),
 		action: text('action').notNull(),
 		revision: integer('revision'),
-		changes: text('changes', { mode: 'json' }).$type<MarketMetadata | { hidden: boolean }>(),
+		changes: text('changes', { mode: 'json' }).$type<MarketCuration | { hidden: boolean }>(),
 		at: integer('at').notNull(),
 	},
 	(table) => [index('audit_package').on(table.registry, table.name, table.at)],

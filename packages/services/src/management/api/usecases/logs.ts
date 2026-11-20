@@ -1,6 +1,7 @@
 import {
 	compileLogFilter,
 	matchesLogFilterCompiled,
+	OUTBOUND_HTTP_LOG_STREAM_ID,
 	type LogFilter,
 	type LogRangeResult,
 	type LogStreamMeta,
@@ -8,7 +9,11 @@ import {
 	type RuntimeLogLine,
 } from '@pluxel/core/logging/protocol'
 import { pluginNodeAddressEqual, type Context } from '@pluxel/core'
-import { requireContextRuntimeLogging } from '@pluxel/core/logging/internal'
+import { requireOutboundHttp } from '@pluxel/core/host'
+import {
+	getContextRuntimeLogging,
+	requireContextRuntimeLogging,
+} from '@pluxel/core/logging/internal'
 import type { RuntimeLogStore } from '@pluxel/core/logging'
 
 export type LogsMetaInput = {
@@ -22,7 +27,7 @@ export type LogsIndexOutput = Readonly<{ streams: readonly LogStreamMeta[] }>
 export type LogsRangeInput = {
 	streamId?: string
 	epoch: number
-	fromSeq: string
+	fromSeq?: string
 	limit?: number
 	filter?: LogFilter
 }
@@ -58,11 +63,11 @@ export type LogsFollowInput = Readonly<{
 }>
 
 export function logsIndex(ctx: Context): LogsIndexOutput {
+	const stores = getContextRuntimeLogging(ctx)?.stores.list() ?? []
+	const outbound = requireOutboundHttp(ctx.root).logs
 	return Object.freeze({
 		streams: Object.freeze(
-			requireContextRuntimeLogging(ctx)
-				.stores.list()
-				.map((store) => Object.freeze(store.meta())),
+			(outbound ? [...stores, outbound] : stores).map((store) => Object.freeze(store.meta())),
 		),
 	})
 }
@@ -79,9 +84,14 @@ type ResolvedLogStream = {
 }
 
 function resolveStream(ctx: Context, input?: string): ResolvedLogStream {
+	const requested = toStreamId(input)
+	if (requested === OUTBOUND_HTTP_LOG_STREAM_ID) {
+		const store = requireOutboundHttp(ctx.root).logs
+		if (!store) throw new Error('Outbound HTTP request logs are disabled by the Host')
+		return { streamId: requested, store, virtual: false }
+	}
 	const stores = requireContextRuntimeLogging(ctx).stores
 	const defaultStore = stores.getOrCreate('default')
-	const requested = toStreamId(input)
 	if (requested === 'default') return { streamId: 'default', store: defaultStore, virtual: false }
 	const existing = stores.get(requested)
 	if (existing) return { streamId: requested, store: existing, virtual: false }

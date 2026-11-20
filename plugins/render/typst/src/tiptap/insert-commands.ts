@@ -2,6 +2,7 @@ import { CommandManager, isNodeActive, type ChainedCommands, type Editor } from 
 import { closeHistory } from '@tiptap/pm/history'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { Transaction } from '@tiptap/pm/state'
+import { allocateIdentity } from './document-nodes.js'
 import { allowedNode, canEdit, type EditorUiContext, type IconName } from './editor-ui'
 import { sourceAdmission, type SourceAdmissionReceipt } from './editor-transactions'
 
@@ -176,6 +177,8 @@ export function insertEntries(
 	local?: LocalInsertionTarget,
 	query = '',
 ): InsertEntry[] {
+	const nativeMath = Boolean(editor.schema.nodes.inlineMath?.spec.attrs?.expression)
+	const mathFormat = nativeMath ? 'Typst' : 'LaTeX'
 	const paragraphs: InsertEntry[] = []
 	for (const block of blockTypes) {
 		if (!allowedNode(ui, editor, block.node)) continue
@@ -236,32 +239,43 @@ export function insertEntries(
 		entries.push({
 			id: 'inlineMath',
 			title: '行内公式',
-			description: '在正文中插入 LaTeX 公式',
-			keywords: ['math', 'latex', '公式'],
+			description: `在正文中插入 ${mathFormat} 公式`,
+			keywords: ['math', mathFormat.toLowerCase(), '公式'],
 			icon: 'code',
 			group: '内容',
 			command: (chain) =>
-				chain.command(({ commands, tr }) =>
-					commands.insertInlineMath({ latex: 'x^2', pos: tr.selection.from }),
-				),
+				nativeMath
+					? chain.insertContent({ type: 'inlineMath', attrs: { expression: 'x^2' } })
+					: chain.command(({ commands, tr }) =>
+							commands.insertInlineMath({ latex: 'x^2', pos: tr.selection.from }),
+						),
 		})
 	if (allowedNode(ui, editor, 'blockMath'))
 		entries.push({
 			id: 'blockMath',
 			title: '独立公式',
-			description: '可编号、可引用的 LaTeX 公式',
-			keywords: ['math', 'equation', 'latex', '公式'],
+			description: `可编号、可引用的 ${mathFormat} 公式`,
+			keywords: ['math', 'equation', mathFormat.toLowerCase(), '公式'],
 			icon: 'code',
 			group: '内容',
-			command: (chain) => chain.insertBlockMath({ latex: 'E = mc^2' }),
+			command: (chain) =>
+				nativeMath
+					? chain.command(({ commands, tr, dispatch }) =>
+							commands.insertContent({
+								type: 'blockMath',
+								attrs: {
+									expression: 'E = m c^2',
+									label: 'object-' + allocateIdentity(tr.doc, Boolean(dispatch)),
+								},
+							}),
+						)
+					: chain.insertBlockMath({ latex: 'E = mc^2' }),
 		})
 	if (allowedNode(ui, editor, 'reference'))
 		entries.push({
 			id: 'reference',
 			title: '交叉引用',
-			description: ui.documentReferences
-				? '输入 @ 搜索章节、图、表或公式'
-				: '输入 @ 搜索图、表或公式',
+			description: '输入 @ 搜索章节、图、表或公式',
 			keywords: ['reference', '引用'],
 			icon: 'link',
 			group: '内容',

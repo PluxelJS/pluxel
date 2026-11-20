@@ -101,13 +101,13 @@ for (const font of snapshot.fonts) {
 
 ## 宿主配置与环境变量绑定
 
-宿主可通过配置或环境变量指定静态字体文件与默认字体族：
+在 FontsPlugin 节点的 `envBindings` 中指定静态字体文件与默认字体族。
 
 ```ts no-twoslash
 import { envBinding } from '@pluxel/host'
-import { FontsPlugin, FontsConfig } from '@pluxel/plugin-fonts'
+import { FontsConfig } from '@pluxel/plugin-fonts'
 
-envBinding(FontsPlugin, {
+envBinding({
 	config: {
 		schema: FontsConfig,
 		mapping: {
@@ -138,15 +138,18 @@ envBinding(FontsPlugin, {
 `FontsPlugin` 提供了开箱即用的控制台挂件（Attachment），可直接嵌入业务插件的详情页中：
 
 ```ts no-twoslash
+import { defineServiceRef } from '@pluxel/core'
 import { FontsWorkbench } from '@pluxel/plugin-fonts/workbench'
-import { workbench } from '@pluxel/workbench'
+import { workbench, type Workbench } from '@pluxel/workbench'
+
+const WorkbenchRef = defineServiceRef<Workbench>()
 
 export const ReportsWorkbench = workbench.define({
 	fonts: FontsWorkbench.selection.place(workbench.tab({ label: 'Fonts' })),
 })
 
 protected override init() {
-	this.ctx.workbench?.publish(ReportsWorkbench, {
+	this.ctx.service(WorkbenchRef)?.publish(ReportsWorkbench, {
 		fonts: { provider: this.fonts },
 	})
 }

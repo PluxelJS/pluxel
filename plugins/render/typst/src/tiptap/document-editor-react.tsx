@@ -3,19 +3,19 @@ import { EditorContent, ReactNodeViewRenderer } from '@tiptap/react'
 import type { Editor, JSONContent } from '@tiptap/core'
 import { createTypstDocumentEditor } from './document-editor.js'
 import type { TypstDocumentHistory, TypstDocumentReference } from './document-types.js'
-import { TypstFigure, TypstBlockMath, TypstInlineMath, TypstReference } from './document-nodes.js'
+import { TypstReference } from './document-nodes.js'
+import {
+	TypstDocumentFigure,
+	TypstDocumentBlockMath,
+	TypstDocumentInlineMath,
+} from './document-extensions.js'
 import {
 	TypstFigureView,
 	TypstMathView,
 	TypstReferenceView,
 	createReferenceSuggestion,
 } from './document-react.js'
-import {
-	prepareDocumentCopy,
-	preservesDocumentPlaceholders,
-	readDocument,
-	synchronizeDocument,
-} from './document-content.js'
+import { prepareDocumentCopy, readDocument, synchronizeDocument } from './document-content.js'
 import { EditorUi, type EditorReferenceTarget, type EditorUiContext } from './editor-ui.js'
 import { EditorMenus, TypstEditorToolbar } from './ui.js'
 import type { TypstSlashCommand } from './insert-commands.js'
@@ -75,14 +75,13 @@ export function TypstDocumentEditor(props: TypstDocumentEditorProps) {
 				return latest.current.history
 			},
 			extensions: [
-				TypstFigure.extend({ addNodeView: () => ReactNodeViewRenderer(TypstFigureView) }),
-				TypstBlockMath.extend({ addNodeView: () => ReactNodeViewRenderer(TypstMathView) }),
-				TypstInlineMath.extend({ addNodeView: () => ReactNodeViewRenderer(TypstMathView) }),
+				TypstDocumentFigure.extend({ addNodeView: () => ReactNodeViewRenderer(TypstFigureView) }),
+				TypstDocumentBlockMath.extend({ addNodeView: () => ReactNodeViewRenderer(TypstMathView) }),
+				TypstDocumentInlineMath.extend({ addNodeView: () => ReactNodeViewRenderer(TypstMathView) }),
 				TypstReference.extend({ addNodeView: () => ReactNodeViewRenderer(TypstReferenceView) }),
 				createReferenceSuggestion(() => ({
 					editable: latest.current.editable,
 					referenceTargets,
-					documentReferences: true,
 				})),
 			],
 			onChange: (document) => latest.current.onChange(document),
@@ -109,7 +108,6 @@ export function TypstDocumentEditor(props: TypstDocumentEditorProps) {
 			editable: writable,
 			fontFamilies: props.fontFamilies ?? [],
 			slashCommands: props.slashCommands ?? [],
-			documentReferences: true,
 			referenceTargets,
 			onReference: props.onReference,
 			onReveal: props.onReveal,
@@ -117,10 +115,8 @@ export function TypstDocumentEditor(props: TypstDocumentEditorProps) {
 			validateDocument(document) {
 				if (!editor) return false
 				try {
-					return preservesDocumentPlaceholders(
-						editor.state.doc,
-						readDocument(editor.schema, document),
-					)
+					readDocument(editor.schema, document)
+					return true
 				} catch {
 					return false
 				}

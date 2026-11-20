@@ -1,3 +1,4 @@
+import { type Context as CoreContext } from '@pluxel/core'
 import {
 	CommandError,
 	Result,
@@ -9,7 +10,6 @@ import {
 	type Registration,
 } from '@pluxel/commands'
 import { isCommandResult } from '@pluxel/commands/internal'
-import type { Context as CoreContext } from '@pluxel/core'
 import { CALLER_CONTEXT_BIND, enterOwnerInvocation } from '@pluxel/core/internal'
 
 /** A carrier endpoint pinned to its provider and publisher generations. */

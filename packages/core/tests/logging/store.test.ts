@@ -1,99 +1,75 @@
-import { describe, expect, it } from 'vitest'
 import { RuntimeLogStore } from '@pluxel/core/logging'
+import { expect, it } from 'vitest'
 
-const pluginA = {
+const selected = {
 	definition: {
-		entry: { kind: 'package-root', packageName: '@test/a' },
+		entry: { kind: 'package-root', packageName: '@test/selected' },
 		exportName: 'Plugin',
 	},
 	variant: 'default',
 } as const
 
-const pluginB = {
-	definition: {
-		entry: { kind: 'package-root', packageName: '@test/b' },
-		exportName: 'Plugin',
-	},
-	variant: 'default',
-} as const
+it('pages a filtered log through the retention window using the scanned stream cursor', () => {
+	const store = new RuntimeLogStore({ streamId: 'test', windowLines: 1_400, epoch: 1 })
+	store.append(
+		Array.from({ length: 2_000 }, (_, index) => {
+			const seq = index + 1
+			return {
+				ts: 1_700_000_000_000 + seq,
+				level: 'info' as const,
+				category: ['pluxel'],
+				msg: `record ${seq}`,
+				plugin: [1_701, 1_903, 2_000].includes(seq) ? selected : undefined,
+			}
+		}),
+	)
 
-function lineInput(i: number, extra?: Partial<any>) {
-	return {
-		ts: 1700000000000 + i,
-		level: 'info' as const,
-		category: ['pluxel', 'hmr'],
-		msg: `line-${i}`,
-		...extra,
-	}
-}
-
-describe('RuntimeLogStore', () => {
-	it('keeps a bounded retention window with monotonic seq', () => {
-		const store = new RuntimeLogStore({ streamId: 't', windowLines: 5, epoch: 1 })
-		store.append(Array.from({ length: 8 }, (_, i) => lineInput(i + 1)))
-
-		const meta = store.meta()
-		expect(meta.epoch).toBe(1)
-		expect(meta.count).toBe(5)
-		expect(meta.headSeq).toBe('4')
-		expect(meta.tailSeq).toBe('8')
-		expect(meta.nextSeq).toBe('9')
+	expect(store.range({ epoch: 1, fromSeq: '600', limit: 2 })).toMatchObject({
+		ok: false,
+		code: 'from_too_old',
+		headSeq: '601',
+		tailSeq: '2000',
 	})
-
-	it('ranges correctly and advances nextSeq by scanned offset', () => {
-		const store = new RuntimeLogStore({ streamId: 't', windowLines: 5, epoch: 1 })
-		store.append(Array.from({ length: 8 }, (_, i) => lineInput(i + 1)))
-
-		const out = store.range({ epoch: 1, fromSeq: '4', limit: 2 })
-		expect(out.ok).toBe(true)
-		if (!out.ok) return
-		expect(out.lines.map((l) => l.seq)).toEqual(['4', '5'])
-		expect(out.nextSeq).toBe('6')
-
-		const tailPlusOne = store.range({ epoch: 1, fromSeq: '9', limit: 10 })
-		expect(tailPlusOne.ok).toBe(true)
-		if (!tailPlusOne.ok) return
-		expect(tailPlusOne.lines.length).toBe(0)
-		expect(tailPlusOne.nextSeq).toBe('9')
+	const first = store.range({
+		epoch: 1,
+		fromSeq: '601',
+		limit: 2,
+		filter: { plugin: selected },
 	})
+	if (!first.ok) throw new Error('Expected the retained log to be readable')
+	expect(first.lines.map((line) => line.seq)).toEqual(['1701', '1903'])
+	expect(first.nextSeq).toBe('1904')
 
-	it('filters without breaking cursor semantics', () => {
-		const store = new RuntimeLogStore({ streamId: 't', windowLines: 50, epoch: 1 })
-		store.append([
-			lineInput(1, { plugin: pluginA }),
-			lineInput(2, { plugin: pluginB }),
-			lineInput(3, { plugin: pluginA }),
-			lineInput(4, { plugin: pluginB }),
-			lineInput(5, { plugin: pluginA }),
-			lineInput(6, { plugin: pluginB }),
-		])
-
-		const out = store.range({ epoch: 1, fromSeq: '1', limit: 2, filter: { plugin: pluginA } })
-		expect(out.ok).toBe(true)
-		if (!out.ok) return
-		expect(out.lines.map((l) => l.seq)).toEqual(['1', '3'])
-		// scanned 1..3 and stopped after the 2nd match
-		expect(out.nextSeq).toBe('4')
+	const second = store.range({
+		epoch: 1,
+		fromSeq: first.nextSeq,
+		limit: 2,
+		filter: { plugin: selected },
 	})
-
-	it('tailWindow returns the newest N lines', () => {
-		const store = new RuntimeLogStore({ streamId: 't', windowLines: 20, epoch: 1 })
-		store.append(Array.from({ length: 6 }, (_, i) => lineInput(i + 1)))
-		const tail = store.tailWindow(3)
-		expect(tail.map((l) => l.seq)).toEqual(['4', '5', '6'])
+	expect(second).toMatchObject({ ok: true, lines: [{ seq: '2000' }], nextSeq: '2001' })
+	expect(store.range({ epoch: 1, fromSeq: '2001', limit: 2 })).toMatchObject({
+		ok: true,
+		lines: [],
+		nextSeq: '2001',
 	})
+	expect(store.tailWindow(2).map((line) => line.seq)).toEqual(['1999', '2000'])
+})
 
-	it('can skip whole chunks when filters cannot match', () => {
-		const store = new RuntimeLogStore({ streamId: 't', windowLines: 2000, epoch: 1 })
-		const a = Array.from({ length: 1100 }, (_, i) => lineInput(i + 1, { plugin: pluginA }))
-		const x = Array.from({ length: 10 }, (_, i) => lineInput(1100 + i + 1, { plugin: pluginB }))
-		store.append(a)
-		store.append(x)
-
-		const out = store.range({ epoch: 1, fromSeq: '1', limit: 1, filter: { plugin: pluginB } })
-		expect(out.ok).toBe(true)
-		if (!out.ok) return
-		expect(out.lines.map((l) => l.seq)).toEqual(['1101'])
-		expect(out.nextSeq).toBe('1102')
+it('reads the latest matching lines even with several newer chunks from other nodes', () => {
+	const store = new RuntimeLogStore({ streamId: 'test', windowLines: 5_000, epoch: 1 })
+	store.append(
+		Array.from({ length: 5_002 }, (_, index) => ({
+			ts: index,
+			level: 'info',
+			category: ['pluxel'],
+			msg: 'record',
+			...([1_499, 1_800, 2_000].includes(index + 1) ? { plugin: selected } : {}),
+		})),
+	)
+	expect(store.range({ epoch: 1, limit: 2, filter: { plugin: selected } })).toMatchObject({
+		ok: true,
+		fromSeq: '1800',
+		nextSeq: '5003',
+		lines: [{ seq: '1800' }, { seq: '2000' }],
 	})
 })

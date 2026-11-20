@@ -6,7 +6,11 @@ import { marketplaceStyles } from './marketplace.styles.ts'
 
 type MarketQueries = Pick<
 	ReturnType<typeof createPackageManagerResources>,
-	'marketPackagesQuery' | 'marketPackageQuery' | 'marketReleasesQuery' | 'marketReleaseQuery'
+	| 'marketPackagesQuery'
+	| 'marketFacetsQuery'
+	| 'marketPackageQuery'
+	| 'marketReleasesQuery'
+	| 'marketReleaseQuery'
 >
 const MarketContext = createContext<string | null>(null)
 function useMarketId() {
@@ -20,6 +24,10 @@ export function createWorkbenchMarketplaceData(queries: MarketQueries): Marketpl
 	function Packages({ query, children }: ComponentProps<MarketplaceData['Packages']>) {
 		const marketId = useMarketId()
 		return children(queries.marketPackagesQuery.useQuery({ marketId, query }))
+	}
+	function Facets({ filters, children }: ComponentProps<MarketplaceData['Facets']>) {
+		const marketId = useMarketId()
+		return children(queries.marketFacetsQuery.useQuery({ marketId, filters }))
 	}
 	function Package({ identity, children }: ComponentProps<MarketplaceData['Package']>) {
 		const marketId = useMarketId()
@@ -39,7 +47,7 @@ export function createWorkbenchMarketplaceData(queries: MarketQueries): Marketpl
 		const marketId = useMarketId()
 		return children(queries.marketReleaseQuery.useQuery({ marketId, ...identity }))
 	}
-	return { Packages, Package, Releases, Release }
+	return { Packages, Facets, Package, Releases, Release }
 }
 
 type WorkbenchMarketplaceProps = Readonly<{
@@ -81,11 +89,7 @@ export function WorkbenchMarketplace({
 							))}
 						</select>
 					</div>
-				) : (
-					<p className="pm-small pm-muted">
-						Market: {market.id} · {market.url}
-					</p>
-				)}
+				) : null}
 				<MarketContext.Provider value={market.id}>
 					<Marketplace
 						key={market.id}

@@ -5,7 +5,7 @@
 ## 安装与运行环境
 
 ```sh
-npm install @pluxel/async
+vp add @pluxel/async
 ```
 
 包声明 Node.js 24+，仅提供 ESM，内置类型声明。运行实现不导入 Node 内置模块，构建目标为 ES2022；浏览器或其他运行时仍需自行验证 Abort API 等能力，当前不承诺已测试的兼容矩阵。

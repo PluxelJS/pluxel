@@ -4,7 +4,7 @@
 	"description": {{json description}},
 	"version": "0.1.0",
 	"type": "module",
-	"packageManager": "pnpm@11.28.6",
+	"packageManager": "pnpm@11.28.10",
 	"exports": {
 		".": {
 			"@pluxel/hmr": "./src/{{pluginName}}.ts",
@@ -20,7 +20,7 @@
 	],
 	"scripts": {
 		"setup": "pluxel workspace setup",
-		"hooks:install": "hk install --mise",
+		"hooks:install": "hk install",
 		"check": "vp check",
 		"fix": "vp check --fix",
 		"verify": "vp run workspace:verify",
@@ -32,11 +32,19 @@
 		"valibot": "catalog:"
 	},
 	"peerDependencies": {
-		"@pluxel/core": "catalog:"
+		"@pluxel/core": "catalog:",
+		"@pluxel/host": "catalog:"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		}
 	},
 	"devDependencies": {
+		"@pluxel/agent-sdk": "catalog:",
 		"@pluxel/cli": "catalog:",
 		"@pluxel/core": "catalog:",
+		"@pluxel/host": "catalog:",
 		"@pluxel/rolldown": "catalog:",
 		"@pluxel/test": "catalog:",
 		"typescript": "catalog:",

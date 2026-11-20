@@ -81,6 +81,7 @@ function retainProviderAdmission<T>(provider: Context, value: T): T {
 function createCallerContext(provider: Context, consumer: Context): Context {
 	const view = createCallerContextView(provider, consumer)
 	inheritPinnedPluginInfo(view, provider)
+	Object.preventExtensions(view)
 	return view
 }
 

@@ -1,4 +1,3 @@
-import { standardServices } from '@pluxel/services'
 import {
 	database as installDatabase,
 	Database,
@@ -169,10 +168,7 @@ describe('DatabaseService', () => {
 	beforeAll(async () => {
 		databaseHost = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [
-				...standardServices(),
-				installDatabase({ backend: pglite({ dataDir: 'memory://' }) }),
-			],
+			services: [installDatabase({ backend: pglite({ dataDir: 'memory://' }) })],
 		})
 	})
 
@@ -203,7 +199,7 @@ describe('DatabaseService', () => {
 			class QueuedDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(definition.database)
+					this.db = await this.ctx.service(Database).use(definition.database)
 				}
 			}
 
@@ -249,7 +245,7 @@ describe('DatabaseService', () => {
 			class CachedDatabaseHandlePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(definition.database)
+					this.db = await this.ctx.service(Database).use(definition.database)
 				}
 			}
 
@@ -274,7 +270,7 @@ describe('DatabaseService', () => {
 		}
 	}, 30_000)
 
-	it('runs migrations and isolates same-named tables by canonical plugin owner', async () => {
+	it('isolates rows and publishes only committed invalidations for each database owner', async () => {
 		const definition = databaseFixture()
 		const host = databaseHost
 		try {
@@ -282,10 +278,7 @@ describe('DatabaseService', () => {
 			class DatabaseLeft extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(definition.database)
-					await this.db.transaction((tx) =>
-						tx.insert(definition.items).values({ id: 'item', value: 'left' }),
-					)
+					this.db = await this.ctx.service(Database).use(definition.database)
 				}
 			}
 
@@ -293,10 +286,7 @@ describe('DatabaseService', () => {
 			class DatabaseRight extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(definition.database)
-					await this.db.transaction((tx) =>
-						tx.insert(definition.items).values({ id: 'item', value: 'right' }),
-					)
+					this.db = await this.ctx.service(Database).use(definition.database)
 				}
 			}
 
@@ -309,12 +299,43 @@ describe('DatabaseService', () => {
 			host.start(DatabaseRight)
 			await host.commit()
 
-			await expect(
-				host.require(DatabaseLeft).db.read((db) => db.select().from(definition.items)),
-			).resolves.toEqual([{ id: 'item', value: 'left' }])
-			await expect(
-				host.require(DatabaseRight).db.read((db) => db.select().from(definition.items)),
-			).resolves.toEqual([{ id: 'item', value: 'right' }])
+			const left = host.require(DatabaseLeft).db
+			const right = host.require(DatabaseRight).db
+			const leftPublished = Promise.withResolvers<void>()
+			const rightPublished = vi.fn()
+			const unsubscribeLeft = subscribeDatabaseHandle(left, [definition.items], () => {
+				leftPublished.resolve()
+			})
+			const unsubscribeRight = subscribeDatabaseHandle(right, [definition.items], rightPublished)
+			try {
+				await expect(
+					right.transaction(async (tx) => {
+						await tx.insert(definition.items).values({ id: 'item', value: 'rolled back' })
+						throw new Error('rollback')
+					}),
+				).rejects.toThrow('rollback')
+				await expect(right.read((db) => db.select().from(definition.items))).resolves.toEqual([])
+
+				await left.transaction((tx) =>
+					tx.insert(definition.items).values({ id: 'item', value: 'left' }),
+				)
+				// Observing the later commit confirms the outbox has processed the earlier transaction.
+				await leftPublished.promise
+				expect(rightPublished).not.toHaveBeenCalled()
+			} finally {
+				unsubscribeLeft()
+				unsubscribeRight()
+			}
+
+			await right.transaction((tx) =>
+				tx.insert(definition.items).values({ id: 'item', value: 'right' }),
+			)
+			await expect(left.read((db) => db.select().from(definition.items))).resolves.toEqual([
+				{ id: 'item', value: 'left' },
+			])
+			await expect(right.read((db) => db.select().from(definition.items))).resolves.toEqual([
+				{ id: 'item', value: 'right' },
+			])
 		} finally {
 			await resetRuntimeHost(host)
 		}
@@ -328,7 +349,7 @@ describe('DatabaseService', () => {
 			class ReadOnlyDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(definition.database)
+					this.db = await this.ctx.service(Database).use(definition.database)
 				}
 			}
 
@@ -354,13 +375,13 @@ describe('DatabaseService', () => {
 		const definition = databaseFixture()
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: standardServices(),
+			services: [],
 		})
 
 		@Plugin({ displayName: 'DisabledDatabasePlugin' })
 		class DisabledDatabasePlugin extends BasePlugin {
 			override async init() {
-				await this.ctx.require(Database).use(definition.database)
+				await this.ctx.service(Database).use(definition.database)
 			}
 		}
 		lowerTestPlugin(DisabledDatabasePlugin)
@@ -380,14 +401,14 @@ describe('DatabaseService', () => {
 			{
 				await using firstHost = await createServiceInternalTestHarness({
 					workbench: false,
-					services: [...standardServices(), installDatabase({ backend: pglite({ dataDir }) })],
+					services: [installDatabase({ backend: pglite({ dataDir }) })],
 				})
 
 				@Plugin({ displayName: 'PersistentDatabasePlugin' })
 				class FirstProcessPlugin extends BasePlugin {
 					db!: PluginDatabaseHandle<typeof definition.database>
 					override async init() {
-						this.db = await this.ctx.require(Database).use(definition.database)
+						this.db = await this.ctx.service(Database).use(definition.database)
 						await this.db.transaction((tx) =>
 							tx.insert(definition.items).values({ id: 'kept', value: 'persisted' }),
 						)
@@ -403,14 +424,14 @@ describe('DatabaseService', () => {
 
 			await using secondHost = await createServiceInternalTestHarness({
 				workbench: false,
-				services: [...standardServices(), installDatabase({ backend: pglite({ dataDir }) })],
+				services: [installDatabase({ backend: pglite({ dataDir }) })],
 			})
 
 			@Plugin({ displayName: 'PersistentDatabasePlugin' })
 			class SecondProcessPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(definition.database)
+					this.db = await this.ctx.service(Database).use(definition.database)
 				}
 			}
 			lowerTestPlugin(SecondProcessPlugin, { id: 'PersistentDatabasePlugin' })
@@ -434,16 +455,13 @@ describe('DatabaseService', () => {
 		const persistence = join(root, 'nested', 'persistence')
 		const host = await createServiceInternalTestHarness({
 			workbench: false,
-			services: [
-				...standardServices(),
-				installDatabase({ backend: pglite({ dataDir: join(persistence, 'database') }) }),
-			],
+			services: [installDatabase({ backend: pglite({ dataDir: join(persistence, 'database') }) })],
 		})
 		try {
 			@Plugin({ displayName: 'DefaultPersistenceDatabasePlugin' })
 			class DefaultPersistenceDatabasePlugin extends BasePlugin {
 				override async init() {
-					await this.ctx.require(Database).use(definition.database)
+					await this.ctx.service(Database).use(definition.database)
 				}
 			}
 			lowerTestPlugin(DefaultPersistenceDatabasePlugin)
@@ -467,7 +485,7 @@ describe('DatabaseService', () => {
 			class InitialPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof initial.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(initial.database)
+					this.db = await this.ctx.service(Database).use(initial.database)
 					await this.db.transaction((tx) =>
 						tx.insert(initial.items).values({ id: 'kept', value: 'before' }),
 					)
@@ -486,7 +504,7 @@ describe('DatabaseService', () => {
 			class UpgradedPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof upgraded.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(upgraded.database)
+					this.db = await this.ctx.service(Database).use(upgraded.database)
 				}
 			}
 			lowerTestPlugin(UpgradedPlugin, { id: 'IncrementalDatabasePlugin' })
@@ -513,7 +531,7 @@ describe('DatabaseService', () => {
 			class FirstRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof first.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(first.database)
+					this.db = await this.ctx.service(Database).use(first.database)
 					await this.db.transaction((tx) =>
 						tx.insert(first.items).values({ id: 'old', value: 'archived' }),
 					)
@@ -532,7 +550,7 @@ describe('DatabaseService', () => {
 			class SecondRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof second.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(second.database)
+					this.db = await this.ctx.service(Database).use(second.database)
 				}
 			}
 			lowerTestPlugin(SecondRelease, { id: 'RebasedDatabasePlugin' })
@@ -560,7 +578,7 @@ describe('DatabaseService', () => {
 			class InitialPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof initial.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(initial.database)
+					this.db = await this.ctx.service(Database).use(initial.database)
 					await this.db.transaction((tx) =>
 						tx.insert(initial.items).values({ id: 'kept', value: 'same-schema' }),
 					)
@@ -579,7 +597,7 @@ describe('DatabaseService', () => {
 			class RebuiltPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof rebuilt.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(rebuilt.database)
+					this.db = await this.ctx.service(Database).use(rebuilt.database)
 				}
 			}
 			lowerTestPlugin(RebuiltPlugin, { id: 'ResetDatabasePlugin' })
@@ -606,7 +624,7 @@ describe('DatabaseService', () => {
 			class StableRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof stable.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(stable.database)
+					this.db = await this.ctx.service(Database).use(stable.database)
 					await this.db.transaction((tx) =>
 						tx.insert(stable.items).values({ id: 'kept', value: 'durable' }),
 					)
@@ -624,7 +642,7 @@ describe('DatabaseService', () => {
 			@Plugin({ displayName: 'AtomicReplacementPlugin' })
 			class BrokenRelease extends BasePlugin {
 				override async init() {
-					await this.ctx.require(Database).use(invalid.database)
+					await this.ctx.service(Database).use(invalid.database)
 				}
 			}
 			lowerTestPlugin(BrokenRelease, { id: 'AtomicReplacementPlugin' })
@@ -639,7 +657,7 @@ describe('DatabaseService', () => {
 			class RecoveredRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof stable.database>
 				override async init() {
-					this.db = await this.ctx.require(Database).use(stable.database)
+					this.db = await this.ctx.service(Database).use(stable.database)
 				}
 			}
 			lowerTestPlugin(RecoveredRelease, { id: 'AtomicReplacementPlugin' })
@@ -652,40 +670,6 @@ describe('DatabaseService', () => {
 			await expect(recovered.read((db) => db.select().from(stable.items))).resolves.toEqual([
 				{ id: 'kept', value: 'durable' },
 			])
-		} finally {
-			await resetRuntimeHost(host)
-		}
-	}, 30_000)
-
-	it('does not publish outbox invalidation for rolled-back transactions', async () => {
-		const definition = databaseFixture()
-		const host = databaseHost
-		try {
-			@Plugin({ displayName: 'RollbackDatabasePlugin' })
-			class RollbackDatabasePlugin extends BasePlugin {
-				db!: PluginDatabaseHandle<typeof definition.database>
-				override async init() {
-					this.db = await this.ctx.require(Database).use(definition.database)
-				}
-			}
-			lowerTestPlugin(RollbackDatabasePlugin)
-			host.add(RollbackDatabasePlugin)
-			host.cfg(RollbackDatabasePlugin).setAutoStart(true)
-			host.start(RollbackDatabasePlugin)
-			await host.commit()
-			const database = host.require(RollbackDatabasePlugin).db
-			const listener = vi.fn()
-			const unsubscribe = subscribeDatabaseHandle(database, [definition.items], listener)
-			await expect(
-				database.transaction(async (tx) => {
-					await tx.insert(definition.items).values({ id: 'rolled-back', value: 'no' })
-					throw new Error('rollback')
-				}),
-			).rejects.toThrow('rollback')
-			await new Promise((resolve) => setTimeout(resolve, 750))
-			expect(listener).not.toHaveBeenCalled()
-			await expect(database.read((db) => db.select().from(definition.items))).resolves.toEqual([])
-			unsubscribe()
 		} finally {
 			await resetRuntimeHost(host)
 		}

@@ -7,6 +7,8 @@ description: 通过 ctx.fs() 访问专属文件目录，使用标准的 Promise 
 
 宿主可根据部署环境将底层存储挂载为纯内存（InMemory）、本地磁盘（Passthrough）或浏览器存储（IndexedDB）。
 
+在 [Cloudflare 请求 Host](../host/configuration.md#cloudflare-请求-host) 中，`ctx.fs()` 以 `ENOTSUP` 拒绝。适合存入 TinyBase 的结构化数据可以在该 Host 的请求范围内使用。
+
 ## 访问目录与写入文件
 
 在插件中调用 `this.ctx.fs()` 获取当前插件专用的目录句柄：

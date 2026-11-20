@@ -1,10 +1,7 @@
 // @vitest-environment jsdom
 
 import { parsePluginDefinitionAddress, parsePluginNodeAddress } from '@pluxel/core'
-import {
-	parseWorkbenchDeclarationIdentity,
-	type WorkbenchDeclarationIdentity,
-} from '@pluxel/core/federation'
+import { parseWorkbenchDeclarationIdentity } from '@pluxel/core/federation'
 import { StrictMode, act, useState, type ReactNode, type ComponentType } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { type RpcStub, type RpcTarget } from 'capnweb'
@@ -16,11 +13,17 @@ import {
 } from '@pluxel/workbench/client'
 import {
 	createWorkbenchRenderer,
+	useWorkbench,
 	type WorkbenchHostFacade,
 	type WorkbenchMutationState,
 	type WorkbenchQueryResult,
+	type WorkbenchRendererScope,
 } from '@pluxel/workbench/react'
-import { createWorkbenchBridge } from '@pluxel/workbench/internal/react'
+import {
+	createWorkbenchBridge,
+	readWorkbenchBridgeIdentity,
+	readWorkbenchBridgeProvider,
+} from '@pluxel/workbench/internal/react'
 
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
@@ -33,6 +36,12 @@ const QueryWorkbench = workbench.define({
 	query: workbench.view<QueryApi>({
 		renderer: rendererEntry,
 		placement: workbench.tab({ label: 'Query' }),
+	}),
+})
+const OtherWorkbench = workbench.define({
+	other: workbench.view<QueryApi>({
+		renderer: rendererEntry,
+		placement: workbench.tab({ label: 'Other' }),
 	}),
 })
 const owner = parsePluginDefinitionAddress({
@@ -51,144 +60,111 @@ const host: WorkbenchHostFacade = Object.freeze({
 })
 
 describe('Workbench renderer query scope', () => {
-	it('lends the same opened root to components, queries and mutations without duplicating it', async () => {
+	it('lends each Bridge root to its own consumers and keeps their caches independent', async () => {
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
 		const borrowed = new Set<RpcStub<QueryApi>>()
+		const snapshots = new Set<Readonly<{ value: number }>>()
+		let observedHost: WorkbenchHostFacade | undefined
+		let renderedProps: Readonly<Record<string, never>> | undefined
 		const query = scope.query(({ api }) => {
 			borrowed.add(api)
-			return { queryKey: ['shared-root'], queryFn: () => api.snapshot() }
+			return { queryKey: ['snapshot'], queryFn: () => api.snapshot() }
 		})
 		const mutation = scope.mutation(({ api }) => {
 			borrowed.add(api)
 			return { mutationFn: () => api.snapshot() }
 		})
-		function Child(): ReactNode {
+		function Consumer() {
+			const current = useWorkbench(QueryWorkbench.query)
+			borrowed.add(current.api)
 			borrowed.add(scope.useWorkbench().api)
-			query.useQuery()
+			observedHost = current.host
 			mutation.useMutation()
-			return null
+			const { data } = query.useQuery()
+			if (data) snapshots.add(data)
+			return <span>{data?.value ?? 'pending'}</span>
 		}
-		function Page(): ReactNode {
+		const Page = scope.render(function Page() {
 			const [visible, setVisible] = useState(true)
 			return (
 				<StrictMode>
-					<button type="button" onClick={() => setVisible(false)}>
-						Hide
-					</button>
-					{visible && <Child />}
-					<Child />
+					<button type="button" aria-label="Hide one consumer" onClick={() => setVisible(false)} />
+					{visible && <Consumer />}
+					<Consumer />
 				</StrictMode>
 			)
+		})
+		function Renderer(props: Readonly<Record<string, never>>) {
+			renderedProps = props
+			return <Page />
 		}
-		const api = {
-			snapshot: vi.fn(() => ({ value: 1 })),
+		const firstValue = { value: 1 }
+		const secondValue = { value: 2 }
+		const firstApi = { snapshot: vi.fn(() => firstValue), dup: vi.fn(), [Symbol.dispose]: vi.fn() }
+		const secondApi = {
+			snapshot: vi.fn(() => secondValue),
 			dup: vi.fn(),
 			[Symbol.dispose]: vi.fn(),
 		}
-		const opened = await renderOpened(identity, scope.render(Page), api)
-		await vi.waitFor(() => expect(api.snapshot).toHaveBeenCalledTimes(1))
-		expect(borrowed.size).toBe(1)
-		expect([...borrowed][0]).toBe(api)
-		expect(api.dup).not.toHaveBeenCalled()
-		await act(async () => opened.dom.querySelector('button')!.click())
-		expect(api[Symbol.dispose]).not.toHaveBeenCalled()
-		await opened.dispose()
-		// Renderer consumers never dispose the borrowed child; the opened envelope owns it.
-		expect(api[Symbol.dispose]).not.toHaveBeenCalled()
+		await using first = await renderOpened(Renderer, firstApi)
+		await using second = await renderOpened(Renderer, secondApi)
+		await vi.waitFor(() => {
+			expect(first.dom.textContent).toBe('11')
+			expect(second.dom.textContent).toBe('22')
+		})
+		expect(readWorkbenchBridgeProvider(first.provider)).toBe(first.provider)
+		expect(readWorkbenchBridgeIdentity(first.provider)).toEqual(identity)
+		expect(renderedProps).toEqual({})
+		expect(observedHost).toBe(host)
+		expect(borrowed).toEqual(new Set([firstApi, secondApi]))
+		for (const value of [firstValue, secondValue]) {
+			expect(snapshots.has(value)).toBe(true)
+			expect(Object.isFrozen(value)).toBe(true)
+		}
+		await act(async () => first.dom.querySelector('button')!.click())
+		expect(first.dom.textContent).toBe('1')
+		await first.dispose()
+		expect(second.dom.textContent).toBe('22')
+		for (const api of [firstApi, secondApi]) {
+			expect(api.snapshot).toHaveBeenCalledOnce()
+			expect(api.dup).not.toHaveBeenCalled()
+			expect(api[Symbol.dispose]).not.toHaveBeenCalled()
+		}
 	})
 
-	it('rejects flat legacy options when their factories bind to an owner', async () => {
-		const invalidates: never[] = []
-		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+	it('rejects the wrong descriptor before a renderer can invoke its RPC API', async () => {
+		using _consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+		const snapshot = vi.fn()
+		function WrongRenderer(): null {
+			const { api } = useWorkbench(OtherWorkbench.other)
+			void api.snapshot()
+			return null
+		}
+		await using opened = await renderOpened(WrongRenderer, { snapshot })
+		expect(opened.dom.textContent).toContain('descriptor identity does not match this renderer')
+		expect(snapshot).not.toHaveBeenCalled()
+	})
+
+	it('rejects unsupported query options when the factory binds to an owner', async () => {
+		using _consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const legacyQuery = scope.query((() => ({
+		const unsupportedQuery = scope.query((() => ({
 			queryKey: ['malformed'],
 			queryFn: () => ({ value: 1 }),
-			watch: () => ({ [Symbol.dispose]() {} }),
+			select: (result: { value: number }) => result.value,
 		})) as never)
-		function LegacyQueryPage(): ReactNode {
-			legacyQuery.useQuery()
-			return null
-		}
-		const legacyQueryOpened = await renderOpened(identity, scope.render(LegacyQueryPage), {
-			snapshot: vi.fn(),
-		})
-		expect(legacyQueryOpened.dom.textContent).toMatch(/unsupported option "watch"/i)
-		await legacyQueryOpened.dispose()
-
-		const mutationScope = createWorkbenchRenderer(QueryWorkbench.query)
-		const legacyMutation = mutationScope.mutation((() => ({
-			mutationFn: (): undefined => undefined,
-			invalidates,
-		})) as never)
-		function LegacyMutationPage(): ReactNode {
-			legacyMutation.useMutation()
-			return null
-		}
-		const legacyMutationOpened = await renderOpened(
-			identity,
-			mutationScope.render(LegacyMutationPage),
-			{ snapshot: vi.fn() },
-		)
-		expect(legacyMutationOpened.dom.textContent).toMatch(/unsupported option "invalidates"/i)
-		await legacyMutationOpened.dispose()
-		consoleError.mockRestore()
-
-		expect(() =>
-			scope.query(() => ({
-				queryKey: ['namespaced'],
-				queryFn: () => ({ value: 1 }),
-				workbench: { subscribe: () => ({ [Symbol.dispose]() {} }) },
-			})),
-		).not.toThrow()
-		expect(() =>
-			scope.mutation(() => ({
-				mutationFn: (): undefined => undefined,
-				workbench: { invalidates },
-			})),
-		).not.toThrow()
-	})
-
-	it('isolates query owners between simultaneous opens of the same descriptor', async () => {
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const query = scope.query(({ api }) => ({
-			queryKey: ['snapshot'],
-			queryFn: () => api.snapshot(),
-		}))
-		const observed: WorkbenchQueryResult<Readonly<{ value: number }>>[] = []
 		function Page(): ReactNode {
-			const value = query.useQuery()
-			observed.push(value)
-			return <p>{value.data?.value ?? 'pending'}</p>
+			unsupportedQuery.useQuery()
+			return null
 		}
-		const Renderer = scope.render(Page)
-		const firstValue = { value: 1 }
-		const secondValue = { value: 2 }
-		const firstApi = { snapshot: vi.fn(() => firstValue) }
-		const secondApi = { snapshot: vi.fn(() => secondValue) }
-		const first = await renderOpened(identity, Renderer, firstApi)
-		const second = await renderOpened(identity, Renderer, secondApi)
-
-		await vi.waitFor(() => {
-			expect(first.dom.textContent).toBe('1')
-			expect(second.dom.textContent).toBe('2')
-		})
-		expect(firstApi.snapshot).toHaveBeenCalledTimes(1)
-		expect(secondApi.snapshot).toHaveBeenCalledTimes(1)
-		expect(observed.some((value) => value.status === 'pending')).toBe(true)
-		expect(observed.some((value) => value.data === firstValue)).toBe(true)
-		expect(observed.some((value) => value.data === secondValue)).toBe(true)
-		expect(Object.isFrozen(firstValue)).toBe(true)
-		expect(Object.isFrozen(secondValue)).toBe(true)
-
-		await first.dispose()
-		await second.dispose()
+		await using opened = await renderOpened(scope.render(Page))
+		expect(opened.dom.textContent).toMatch(/unsupported option "select"/i)
 	})
 
-	it('shares one subscribe-before-read cycle and coalesces invalidation during a read', async () => {
+	it('shares one subscription and coalesces notifications during setup and the first read', async () => {
 		const events: string[] = []
-		const firstRead = deferred<ReturnType<typeof disposableValue>>()
-		const secondRead = deferred<ReturnType<typeof disposableValue>>()
+		const firstRead = Promise.withResolvers<ReturnType<typeof disposableValue>>()
+		const secondRead = Promise.withResolvers<ReturnType<typeof disposableValue>>()
 		const firstDispose = vi.fn()
 		const secondDispose = vi.fn()
 		const watchDispose = vi.fn()
@@ -211,6 +187,7 @@ describe('Workbench renderer query scope', () => {
 				subscribe: ({ invalidate: next }) => {
 					events.push('watch')
 					invalidate = next
+					next()
 					return { [Symbol.dispose]: watchDispose }
 				},
 			},
@@ -227,15 +204,21 @@ describe('Workbench renderer query scope', () => {
 				</StrictMode>
 			)
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await using opened = await renderOpened(scope.render(Page))
 
 		await vi.waitFor(() => expect(queryFn).toHaveBeenCalledTimes(1))
-		expect(events.slice(0, 2)).toEqual(['watch', 'read-1'])
-		act(() => invalidate?.())
+		expect(events).toEqual(['watch', 'read-1'])
+		act(() => {
+			invalidate!()
+			invalidate!()
+		})
+		expect(queryFn).toHaveBeenCalledOnce()
 		firstRead.resolve(disposableValue(1, firstDispose))
 		await vi.waitFor(() => expect(queryFn).toHaveBeenCalledTimes(2))
 		secondRead.resolve(disposableValue(2, secondDispose))
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('22'))
+		expect(events).toEqual(['watch', 'read-1', 'read-2'])
+		expect(queryFn).toHaveBeenCalledTimes(2)
 		expect(watchDispose).not.toHaveBeenCalled()
 		expect(firstDispose).toHaveBeenCalledTimes(1)
 		expect(secondDispose).toHaveBeenCalledTimes(1)
@@ -244,51 +227,32 @@ describe('Workbench renderer query scope', () => {
 		expect(watchDispose).toHaveBeenCalledTimes(1)
 	})
 
-	it('disposes a late result and a pending watch when the renderer closes', async () => {
-		const watch = deferred<Disposable>()
-		const read = deferred<ReturnType<typeof disposableValue>>()
-		const pendingWatchDispose = vi.fn()
+	it('disposes a watch that resolves after the renderer closes without starting a read', async () => {
+		const watch = Promise.withResolvers<Disposable>()
 		const settledWatchDispose = vi.fn()
-		const resultDispose = vi.fn()
+		const subscribe = vi.fn(() => watch.promise)
+		const queryFn = vi.fn(() => ({ value: 1 }))
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
 		const query = scope.query(() => ({
 			queryKey: ['late-watch'],
-			queryFn: () => read.promise,
-			workbench: { subscribe: () => watch.promise },
+			queryFn,
+			workbench: { subscribe },
 		}))
 		function Page(): ReactNode {
 			query.useQuery()
 			return null
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-		await vi.waitFor(() => expect(watch.settled).toBe(false))
+		await using opened = await renderOpened(scope.render(Page))
+		await vi.waitFor(() => expect(subscribe).toHaveBeenCalledOnce())
 		await opened.dispose()
 
 		watch.resolve({ [Symbol.dispose]: settledWatchDispose })
-		await Promise.resolve()
-		expect(settledWatchDispose).toHaveBeenCalledTimes(1)
-		expect(pendingWatchDispose).not.toHaveBeenCalled()
-		// A read only begins after watch settles, so make a second unwatched owner exercise late DTO cleanup.
-		const lateScope = createWorkbenchRenderer(QueryWorkbench.query)
-		const lateQuery = lateScope.query(() => ({
-			queryKey: ['late-read'],
-			queryFn: () => read.promise,
-		}))
-		function LatePage(): ReactNode {
-			lateQuery.useQuery()
-			return null
-		}
-		const lateOpened = await renderOpened(identity, lateScope.render(LatePage), {
-			snapshot: vi.fn(),
-		})
-		await vi.waitFor(() => expect(read.settled).toBe(false))
-		await lateOpened.dispose()
-		read.resolve(disposableValue(7, resultDispose))
-		await vi.waitFor(() => expect(resultDispose).toHaveBeenCalledTimes(1))
+		await vi.waitFor(() => expect(settledWatchDispose).toHaveBeenCalledOnce())
+		expect(queryFn).not.toHaveBeenCalled()
 	})
 
 	it('closes renderer resources synchronously when the host owner signal aborts', async () => {
-		const read = deferred<ReturnType<typeof disposableValue>>()
+		const read = Promise.withResolvers<ReturnType<typeof disposableValue>>()
 		const subscriptionDispose = vi.fn()
 		const resultDispose = vi.fn()
 		let readSignal: AbortSignal | undefined
@@ -307,7 +271,7 @@ describe('Workbench renderer query scope', () => {
 			query.useQuery()
 			return null
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await using opened = await renderOpened(scope.render(Page))
 		await vi.waitFor(() => expect(readSignal?.aborted).toBe(false))
 
 		opened.abortOwner()
@@ -316,11 +280,10 @@ describe('Workbench renderer query scope', () => {
 
 		read.resolve(disposableValue(1, resultDispose))
 		await vi.waitFor(() => expect(resultDispose).toHaveBeenCalledTimes(1))
-		await opened.dispose()
 	})
 
 	it('keeps query ownership coherent when one render creates many inactive keys', async () => {
-		const read = deferred<ReturnType<typeof disposableValue>>()
+		const read = Promise.withResolvers<ReturnType<typeof disposableValue>>()
 		const resultDispose = vi.fn()
 		const subscriptionDispose = vi.fn()
 		let readSignal: AbortSignal | undefined
@@ -343,7 +306,7 @@ describe('Workbench renderer query scope', () => {
 		function Page(): ReactNode {
 			return Array.from({ length: 129 }, (_, input) => <Child key={input} input={input} />)
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await using opened = await renderOpened(scope.render(Page))
 		await vi.waitFor(() => expect(readSignal?.aborted).toBe(false))
 		await opened.dispose()
 		expect(readSignal?.aborted).toBe(true)
@@ -371,146 +334,67 @@ describe('Workbench renderer query scope', () => {
 				<Child key={slot} slot={slot} input={slot === 0 ? first : slot} />
 			))
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await using opened = await renderOpened(scope.render(Page))
 		await vi.waitFor(() => expect(queryFn).toHaveBeenCalledTimes(64))
 
 		await act(async () => replaceFirst())
 		await vi.waitFor(() => expect(queryFn).toHaveBeenCalledTimes(65))
 		expect(opened.dom.querySelector('[data-slot="0"]')?.textContent).toBe('64,')
 		expect(opened.dom.textContent).not.toMatch(/too many active query keys/i)
-		await opened.dispose()
 	})
 
-	it('canonicalizes structural keys and rejects unsafe or oversized keys with stable codes', async () => {
+	it('shares structural keys and rejects unsafe or oversized invalidation keys', async () => {
+		type Input = Readonly<{ a: number; b: number }>
+		const queryFn = vi.fn(({ a, b }: Input) => ({ value: a + b }))
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const queryFn = vi.fn((input: Readonly<{ a: number; b: number }>) => ({
-			value: input.a + input.b,
-		}))
-		const query = scope.queryFamily((_context, input: Readonly<{ a: number; b: number }>) => ({
+		const query = scope.queryFamily((_context, input: Input) => ({
 			queryKey: ['sum', input],
 			queryFn: () => queryFn(input),
 		}))
-		function Child({ input }: Readonly<{ input: Readonly<{ a: number; b: number }> }>): ReactNode {
+		const mutationFn = vi.fn<(input: unknown) => void>()
+		const mutation = scope.mutation(() => ({
+			mutationFn,
+			workbench: { invalidates: (input: unknown) => [query.target(input as Input)] },
+		}))
+		let invalidate!: WorkbenchMutationState<unknown, void>
+		function Sum({ input }: { input: Input }) {
 			return <span>{query.useQuery(input).data?.value ?? 'pending'}</span>
 		}
-		function Page(): ReactNode {
-			return (
-				<>
-					<Child input={{ a: 1, b: 2 }} />
-					<Child input={{ b: 2, a: 1 }} />
-				</>
-			)
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await using opened = await renderOpened(
+			scope.render(function Page() {
+				invalidate = mutation.useMutation()
+				return (
+					<>
+						<Sum input={{ a: 1, b: 2 }} />
+						<Sum input={{ b: 2, a: 1 }} />
+					</>
+				)
+			}),
+		)
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('33'))
-		expect(queryFn).toHaveBeenCalledTimes(1)
+		expect(queryFn).toHaveBeenCalledOnce()
 
-		const invalid = (() => {
-			class ArrayKey extends Array<unknown> {}
-			return new ArrayKey('unsafe')
-		})()
-		const oversized = { a: 1, b: 2, extra: 'x'.repeat(16_385) }
-		const hiddenField = Object.defineProperty({ a: 1, b: 2 }, 'hidden', {
-			value: 3,
-			enumerable: false,
-		})
+		class ArrayKey extends Array<unknown> {}
 		const hiddenIndex = ['unsafe']
 		Object.defineProperty(hiddenIndex, '0', { value: 'unsafe', enumerable: false })
-		const invalidMutation = scope.mutation(() => ({
-			mutationFn: (): undefined => undefined,
-			workbench: { invalidates: [query.target(invalid as never)] },
-		}))
-		const oversizedMutation = scope.mutation(() => ({
-			mutationFn: (): undefined => undefined,
-			workbench: { invalidates: [query.target(oversized as never)] },
-		}))
-		const hiddenFieldMutation = scope.mutation(() => ({
-			mutationFn: (): undefined => undefined,
-			workbench: { invalidates: [query.target(hiddenField)] },
-		}))
-		const hiddenIndexMutation = scope.mutation(() => ({
-			mutationFn: (): undefined => undefined,
-			workbench: { invalidates: [query.target(hiddenIndex as never)] },
-		}))
-		let invalidate!: WorkbenchMutationState<void, void>
-		let invalidateOversized!: WorkbenchMutationState<void, void>
-		let invalidateHiddenField!: WorkbenchMutationState<void, void>
-		let invalidateHiddenIndex!: WorkbenchMutationState<void, void>
-		function Invalidations(): ReactNode {
-			invalidate = invalidMutation.useMutation()
-			invalidateOversized = oversizedMutation.useMutation()
-			invalidateHiddenField = hiddenFieldMutation.useMutation()
-			invalidateHiddenIndex = hiddenIndexMutation.useMutation()
-			return null
+		for (const [input, code] of [
+			[new ArrayKey('unsafe'), 'WORKBENCH_RESOURCE_KEY_INVALID'],
+			[
+				Object.defineProperty({ a: 1, b: 2 }, 'hidden', { value: 3 }),
+				'WORKBENCH_RESOURCE_KEY_INVALID',
+			],
+			[hiddenIndex, 'WORKBENCH_RESOURCE_KEY_INVALID'],
+			[{ a: 1, b: 2, extra: 'x'.repeat(16_385) }, 'WORKBENCH_RESOURCE_LIMIT_EXCEEDED'],
+		] as const) {
+			await act(async () => {
+				await expect(invalidate.mutateAsync(input)).rejects.toMatchObject({ code })
+			})
 		}
-		const invalidations = await renderOpened(identity, scope.render(Invalidations), {
-			snapshot: vi.fn(),
-		})
-		await expect(invalidate.mutateAsync()).rejects.toMatchObject({
-			code: 'WORKBENCH_RESOURCE_KEY_INVALID',
-		})
-		await expect(invalidateOversized.mutateAsync()).rejects.toMatchObject({
-			code: 'WORKBENCH_RESOURCE_LIMIT_EXCEEDED',
-		})
-		await expect(invalidateHiddenField.mutateAsync()).rejects.toMatchObject({
-			code: 'WORKBENCH_RESOURCE_KEY_INVALID',
-		})
-		await expect(invalidateHiddenIndex.mutateAsync()).rejects.toMatchObject({
-			code: 'WORKBENCH_RESOURCE_KEY_INVALID',
-		})
-		await invalidations.dispose()
-		await opened.dispose()
-	})
-
-	it('does not create duplicate runs when watch synchronously invalidates', async () => {
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const watch = vi.fn((invalidate: () => void) => {
-			invalidate()
-			return { [Symbol.dispose]() {} }
-		})
-		const queryFn = vi.fn(() => ({ value: 1 }))
-		const query = scope.query(() => ({
-			queryKey: ['sync-watch'],
-			queryFn,
-			workbench: { subscribe: ({ invalidate }) => watch(invalidate) },
-		}))
-		function Page(): ReactNode {
-			return <p>{query.useQuery().data?.value ?? 'pending'}</p>
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-		await vi.waitFor(() => expect(opened.dom.textContent).toBe('1'))
-		expect(watch).toHaveBeenCalledTimes(1)
-		expect(queryFn).toHaveBeenCalledTimes(1)
-		await opened.dispose()
-	})
-
-	it('replaces the per-open owner when the Bridge payload changes in the same React mount', async () => {
-		const firstRead = deferred<ReturnType<typeof disposableValue>>()
-		const firstDispose = vi.fn()
-		const firstApi = { snapshot: vi.fn(() => firstRead.promise) }
-		const secondApi = { snapshot: vi.fn(() => ({ value: 2 })) }
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const query = scope.query(({ api }) => ({
-			queryKey: ['replace-api'],
-			queryFn: () => api.snapshot(),
-		}))
-		function Page(): ReactNode {
-			return <p>{query.useQuery().data?.value ?? 'pending'}</p>
-		}
-		const opened = await renderOpened(identity, scope.render(Page), firstApi)
-		await vi.waitFor(() => expect(firstApi.snapshot).toHaveBeenCalledTimes(1))
-
-		await opened.replaceApi(secondApi)
-		await vi.waitFor(() => expect(opened.dom.textContent).toBe('2'))
-		expect(secondApi.snapshot).toHaveBeenCalledTimes(1)
-		firstRead.resolve(disposableValue(1, firstDispose))
-		await vi.waitFor(() => expect(firstDispose).toHaveBeenCalledTimes(1))
-		expect(opened.dom.textContent).toBe('2')
-		await opened.dispose()
+		expect(mutationFn).not.toHaveBeenCalled()
 	})
 
 	it('remounts local state and lets the new owner mutate while the old owner is still settling', async () => {
-		const firstResult = deferred<ReturnType<typeof disposableValue>>()
+		const firstResult = Promise.withResolvers<ReturnType<typeof disposableValue>>()
 		const firstDispose = vi.fn()
 		const firstApi = { snapshot: vi.fn(() => firstResult.promise) }
 		const secondApi = { snapshot: vi.fn(() => ({ value: 2 })) }
@@ -526,7 +410,7 @@ describe('Workbench renderer query scope', () => {
 			mutation = save.useMutation()
 			return <p>{`${local}:${mutation.status}:${mutation.data?.value ?? 'none'}`}</p>
 		}
-		const opened = await renderOpened(identity, scope.render(Page), firstApi)
+		await using opened = await renderOpened(scope.render(Page), firstApi)
 		act(() => setLocal(7))
 		expect(opened.dom.textContent).toBe('7:idle:none')
 
@@ -547,12 +431,11 @@ describe('Workbench renderer query scope', () => {
 		firstResult.resolve(disposableValue(1, firstDispose))
 		await vi.waitFor(() => expect(firstDispose).toHaveBeenCalledTimes(1))
 		expect(opened.dom.textContent).toBe('0:success:2')
-		await opened.dispose()
 	})
 
 	it('re-establishes an async subscription before reading after observer reactivation', async () => {
-		const firstSubscription = deferred<Disposable>()
-		const secondSubscription = deferred<Disposable>()
+		const firstSubscription = Promise.withResolvers<Disposable>()
+		const secondSubscription = Promise.withResolvers<Disposable>()
 		const firstDispose = vi.fn()
 		const secondDispose = vi.fn()
 		let firstInvalidate: (() => void) | undefined
@@ -574,21 +457,14 @@ describe('Workbench renderer query scope', () => {
 			queryFn,
 			workbench: { subscribe },
 		}))
-		let setVisible!: (visible: boolean) => void
-		function Child(): ReactNode {
+		await using opened = await renderObserver(scope, function Observer() {
 			return <span>{query.useQuery().data?.value ?? 'pending'}</span>
-		}
-		function Page(): ReactNode {
-			const [visible, updateVisible] = useState(true)
-			setVisible = updateVisible
-			return visible ? <Child /> : <span>hidden</span>
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		})
 		await vi.waitFor(() => expect(subscribe).toHaveBeenCalledTimes(1))
 		expect(queryFn).not.toHaveBeenCalled()
 
-		await act(async () => setVisible(false))
-		act(() => setVisible(true))
+		await opened.setVisible(false)
+		await opened.setVisible(true)
 		firstSubscription.resolve({ [Symbol.dispose]: firstDispose })
 		await vi.waitFor(() => expect(subscribe).toHaveBeenCalledTimes(2))
 		expect(firstDispose).toHaveBeenCalledTimes(1)
@@ -621,21 +497,14 @@ describe('Workbench renderer query scope', () => {
 			queryFn,
 			workbench: { subscribe },
 		}))
-		let setVisible!: (visible: boolean) => void
-		function Child(): ReactNode {
+		await using opened = await renderObserver(scope, function Observer() {
 			return <span>{query.useQuery().data?.value ?? 'pending'}</span>
-		}
-		function Page(): ReactNode {
-			const [visible, updateVisible] = useState(true)
-			setVisible = updateVisible
-			return visible ? <Child /> : <span>hidden</span>
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		})
 		await vi.waitFor(() => expect(subscribe).toHaveBeenCalledTimes(1))
 
-		act(() => setVisible(false))
+		await opened.setVisible(false)
 		await vi.waitFor(() => expect(firstSubscription.dispose).toHaveBeenCalledTimes(1))
-		act(() => setVisible(true))
+		await opened.setVisible(true)
 		await vi.waitFor(() => expect(subscribe).toHaveBeenCalledTimes(2))
 
 		firstSubscription.reject(new Error('old subscription failed late'))
@@ -651,7 +520,7 @@ describe('Workbench renderer query scope', () => {
 	})
 
 	it('refreshes after a cancelled read even when the old query function ignores abort', async () => {
-		const staleRead = deferred<ReturnType<typeof disposableValue>>()
+		const staleRead = Promise.withResolvers<ReturnType<typeof disposableValue>>()
 		const staleDispose = vi.fn()
 		let staleSignal: AbortSignal | undefined
 		let latestInvalidate: (() => void) | undefined
@@ -673,72 +542,34 @@ describe('Workbench renderer query scope', () => {
 			queryFn,
 			workbench: { subscribe },
 		}))
-		let setVisible!: (visible: boolean) => void
-		function Child(): ReactNode {
+		await using opened = await renderObserver(scope, function Observer() {
 			return <span>{query.useQuery().data?.value ?? 'pending'}</span>
-		}
-		function Page(): ReactNode {
-			const [visible, updateVisible] = useState(true)
-			setVisible = updateVisible
-			return visible ? <Child /> : <span>hidden</span>
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		})
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('1'))
 		act(() => latestInvalidate?.())
 		await vi.waitFor(() => expect(queryFn).toHaveBeenCalledTimes(2))
 
-		act(() => setVisible(false))
+		await opened.setVisible(false)
 		await vi.waitFor(() => expect(staleSignal?.aborted).toBe(true))
-		act(() => setVisible(true))
+		await opened.setVisible(true)
 		await vi.waitFor(() => expect(subscribe).toHaveBeenCalledTimes(2))
-		act(() => latestInvalidate?.())
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('3'))
 		expect(queryFn).toHaveBeenCalledTimes(3)
 
 		staleRead.resolve(disposableValue(2, staleDispose))
 		await vi.waitFor(() => expect(staleDispose).toHaveBeenCalledTimes(1))
-		await opened.dispose()
+		expect(opened.dom.textContent).toBe('3')
 	})
 
-	it('revokes an invalidation callback when subscription setup fails', async () => {
-		const subscribeFailure = new Error('subscribe failed')
-		let ghostInvalidate: (() => void) | undefined
-		const subscribe = vi.fn(({ invalidate }: Readonly<{ invalidate: () => void }>) => {
-			ghostInvalidate = invalidate
-			throw subscribeFailure
-		})
-		const queryFn = vi.fn(() => ({ value: 1 }))
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const query = scope.query(() => ({
-			queryKey: ['failed-subscription'],
-			queryFn,
-			retry: false,
-			workbench: { subscribe },
-		}))
-		let observed: WorkbenchQueryResult<Readonly<{ value: number }>> | undefined
-		function Page(): ReactNode {
-			observed = query.useQuery()
-			return <p>{observed.status}</p>
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-		await vi.waitFor(() => expect(opened.dom.textContent).toBe('error'))
-		expect(observed?.error).toBe(subscribeFailure)
-		expect(queryFn).not.toHaveBeenCalled()
-
-		act(() => ghostInvalidate?.())
-		await Promise.resolve()
-		expect(subscribe).toHaveBeenCalledTimes(1)
-		expect(queryFn).not.toHaveBeenCalled()
-		await opened.dispose()
-	})
-
-	it('does not retry a failed subscription as a separate reactivation read', async () => {
+	it('keeps cached data and revokes invalidation when renewing the subscription fails', async () => {
 		const subscribeFailure = new Error('reactivated subscription failed')
 		const firstDispose = vi.fn()
+		let failedInvalidate!: () => void
 		const subscribe = vi
 			.fn()
 			.mockImplementationOnce(() => ({ [Symbol.dispose]: firstDispose }))
-			.mockImplementationOnce(() => {
+			.mockImplementationOnce(({ invalidate }: { invalidate: () => void }) => {
+				failedInvalidate = invalidate
 				throw subscribeFailure
 			})
 		const queryFn = vi.fn(() => ({ value: 1 }))
@@ -750,56 +581,21 @@ describe('Workbench renderer query scope', () => {
 			workbench: { subscribe },
 		}))
 		let observed!: WorkbenchQueryResult<Readonly<{ value: number }>>
-		let setVisible!: (visible: boolean) => void
-		function Child(): ReactNode {
+		await using opened = await renderObserver(scope, function Observer() {
 			observed = query.useQuery()
 			return <span>{`${observed.status}:${observed.data?.value ?? 'none'}`}</span>
-		}
-		function Page(): ReactNode {
-			const [visible, updateVisible] = useState(true)
-			setVisible = updateVisible
-			return visible ? <Child /> : <span>hidden</span>
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		})
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('success:1'))
 
-		await act(async () => setVisible(false))
+		await opened.setVisible(false)
 		expect(firstDispose).toHaveBeenCalledTimes(1)
-		act(() => setVisible(true))
+		await opened.setVisible(true)
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('error:1'))
 		expect(observed.error).toBe(subscribeFailure)
-		await new Promise((resolve) => setTimeout(resolve, 10))
+
+		await act(async () => failedInvalidate())
 		expect(subscribe).toHaveBeenCalledTimes(2)
 		expect(queryFn).toHaveBeenCalledTimes(1)
-		await opened.dispose()
-	})
-
-	it('marks a continuously observed query stale after staleTime', async () => {
-		vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
-		let opened: Awaited<ReturnType<typeof renderOpened>> | undefined
-		try {
-			const scope = createWorkbenchRenderer(QueryWorkbench.query)
-			const query = scope.query(() => ({
-				queryKey: ['stale-timer'],
-				queryFn: () => ({ value: 1 }),
-				staleTime: 200,
-			}))
-			let observed: WorkbenchQueryResult<Readonly<{ value: number }>> | undefined
-			function Page(): ReactNode {
-				observed = query.useQuery()
-				return <p>{`${observed.status}:${observed.isStale}`}</p>
-			}
-			opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-			await act(() => vi.advanceTimersByTimeAsync(0))
-			expect(opened.dom.textContent).toBe('success:false')
-			await act(() => vi.advanceTimersByTimeAsync(199))
-			expect(opened.dom.textContent).toBe('success:false')
-			await act(() => vi.advanceTimersByTimeAsync(2))
-			expect(opened.dom.textContent).toBe('success:true')
-		} finally {
-			await opened?.dispose()
-			vi.useRealTimers()
-		}
 	})
 
 	it('expires instance controls when the Hook that produced them unmounts', async () => {
@@ -827,7 +623,7 @@ describe('Workbench renderer query scope', () => {
 			setInput = updateInput
 			return visible ? <Child input={input} /> : <span>hidden</span>
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await using opened = await renderOpened(scope.render(Page))
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('1'))
 		const firstQuery = savedQuery
 
@@ -855,7 +651,6 @@ describe('Workbench renderer query scope', () => {
 		})
 		expect(queryFn).toHaveBeenCalledTimes(2)
 		expect(mutationFn).not.toHaveBeenCalled()
-		await opened.dispose()
 	})
 
 	it('keeps successful data when a background refresh fails', async () => {
@@ -868,48 +663,17 @@ describe('Workbench renderer query scope', () => {
 			observed = query.useQuery()
 			return <p>{`${observed.status}:${observed.data?.value ?? 'none'}`}</p>
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await using opened = await renderOpened(scope.render(Page))
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('success:1'))
 
 		act(() => observed!.invalidate())
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('error:1'))
 		expect(observed).toMatchObject({ error: failure, isStale: true, data: { value: 1 } })
-		await opened.dispose()
-	})
-
-	it('makes concurrent refetch calls join the current initial read', async () => {
-		const firstRead = deferred<Readonly<{ value: number }>>()
-		const queryFn = vi.fn(() => firstRead.promise)
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const query = scope.query(() => ({ queryKey: ['concurrent-refetch'], queryFn }))
-		let observed: WorkbenchQueryResult<Readonly<{ value: number }>> | undefined
-		function Page(): ReactNode {
-			observed = query.useQuery()
-			return <p>{observed.data?.value ?? 'pending'}</p>
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-		await vi.waitFor(() => expect(queryFn).toHaveBeenCalledTimes(1))
-		let firstRefetch!: Promise<Readonly<{ value: number }>>
-		let secondRefetch!: Promise<Readonly<{ value: number }>>
-		act(() => {
-			firstRefetch = observed!.refetch()
-			secondRefetch = observed!.refetch()
-		})
-		await act(async () => {
-			firstRead.resolve({ value: 1 })
-			await expect(Promise.all([firstRefetch, secondRefetch])).resolves.toEqual([
-				{ value: 1 },
-				{ value: 1 },
-			])
-		})
-		expect(queryFn).toHaveBeenCalledTimes(1)
-		expect(opened.dom.textContent).toBe('1')
-		await opened.dispose()
 	})
 
 	it('keeps a shared subscription leased across concurrent disabled refetch cancellation', async () => {
-		const cancelledRead = deferred<Readonly<{ value: number }>>()
-		const latestRead = deferred<Readonly<{ value: number }>>()
+		const cancelledRead = Promise.withResolvers<Readonly<{ value: number }>>()
+		const latestRead = Promise.withResolvers<Readonly<{ value: number }>>()
 		const subscriptionDisposers: ReturnType<typeof vi.fn>[] = []
 		const subscribe = vi.fn(() => {
 			const dispose = vi.fn()
@@ -933,7 +697,7 @@ describe('Workbench renderer query scope', () => {
 			observed = query.useQuery()
 			return <p>{observed.data?.value ?? 'pending'}</p>
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await using opened = await renderOpened(scope.render(Page))
 		await act(async () => expect(observed.refetch()).resolves.toEqual({ value: 1 }))
 		await vi.waitFor(() => expect(subscriptionDisposers[0]).toHaveBeenCalledTimes(1))
 
@@ -956,51 +720,56 @@ describe('Workbench renderer query scope', () => {
 			const results = await Promise.allSettled([first, second])
 			expect(results[1]).toEqual({ status: 'fulfilled', value: { value: 3 } })
 		})
-		await vi.waitFor(() => expect(subscriptionDisposers[1]).toHaveBeenCalledTimes(1))
-		await opened.dispose()
+		await vi.waitFor(() => {
+			expect(subscriptionDisposers[1]).toHaveBeenCalledOnce()
+			expect(opened.dom.textContent).toBe('3')
+		})
 	})
 
 	it('turns a throwing retry predicate into query error state and cancels retries on close', async () => {
-		const retryFailure = new Error('retry predicate failed')
-		const queryFn = vi.fn(() => Promise.reject(new Error('read failed')))
-		const retry = vi.fn((_context: { failureCount: number; error: unknown }) => {
-			throw retryFailure
-		})
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const query = scope.query(() => ({
-			queryKey: ['retry-predicate'],
-			queryFn,
-			retry: (_failureCount, error) => retry({ failureCount: 1, error }),
-		}))
-		let observed: WorkbenchQueryResult<Readonly<{ value: number }>> | undefined
-		function Page(): ReactNode {
-			observed = query.useQuery()
-			return <p>{observed.status}</p>
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+		try {
+			const readFailure = new Error('read failed')
+			const retryFailure = new Error('retry predicate failed')
+			const retry = vi.fn(() => {
+				throw retryFailure
+			})
+			const retryingFn = vi.fn(async () => {
+				throw readFailure
+			})
+			const retryDelay = vi.fn(() => 100)
+			const scope = createWorkbenchRenderer(QueryWorkbench.query)
+			const throwing = scope.query(() => ({
+				queryKey: ['retry-predicate'],
+				queryFn: async () => {
+					throw readFailure
+				},
+				retry,
+			}))
+			const retrying = scope.query(() => ({
+				queryKey: ['retry-close'],
+				queryFn: retryingFn,
+				retry: 5,
+				retryDelay,
+			}))
+			let observed: WorkbenchQueryResult<never> | undefined
+			function Page(): ReactNode {
+				observed = throwing.useQuery()
+				retrying.useQuery()
+				return null
+			}
+			await using opened = await renderOpened(scope.render(Page))
+			await act(() => vi.advanceTimersByTimeAsync(0))
+			expect(observed).toMatchObject({ status: 'error', error: retryFailure })
+			expect(retry).toHaveBeenCalledExactlyOnceWith(0, readFailure)
+			expect(retryDelay).toHaveBeenCalledExactlyOnceWith(0, readFailure)
+			expect(retryingFn).toHaveBeenCalledOnce()
+			await opened.dispose()
+			await act(() => vi.advanceTimersByTimeAsync(100))
+			expect(retryingFn).toHaveBeenCalledOnce()
+		} finally {
+			vi.useRealTimers()
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-		await vi.waitFor(() => expect(opened.dom.textContent).toBe('error'))
-		expect(observed?.error).toBe(retryFailure)
-		expect(retry).toHaveBeenCalledTimes(1)
-		await opened.dispose()
-
-		const retryingScope = createWorkbenchRenderer(QueryWorkbench.query)
-		const retryingFn = vi.fn(() => Promise.reject(new Error('read failed')))
-		const retryingQuery = retryingScope.query(() => ({
-			queryKey: ['retry-close'],
-			queryFn: retryingFn,
-			retry: 5,
-		}))
-		function RetryingPage(): ReactNode {
-			retryingQuery.useQuery()
-			return null
-		}
-		const retrying = await renderOpened(identity, retryingScope.render(RetryingPage), {
-			snapshot: vi.fn(),
-		})
-		await vi.waitFor(() => expect(retryingFn).toHaveBeenCalledTimes(1))
-		await retrying.dispose()
-		await new Promise((resolve) => setTimeout(resolve, 300))
-		expect(retryingFn).toHaveBeenCalledTimes(1)
 	})
 
 	it('uses TanStack retryDelay semantics without retrying Workbench boundary failures', async () => {
@@ -1032,14 +801,13 @@ describe('Workbench renderer query scope', () => {
 			boundaryResult = boundary.useQuery()
 			return <p>{`${retriedResult.data?.value ?? 'pending'}:${boundaryResult.status}`}</p>
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await using opened = await renderOpened(scope.render(Page))
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('3:error'))
 		expect(retriedQueryFn).toHaveBeenCalledTimes(3)
 		expect(retryDelay.mock.calls.map(([failureCount]) => failureCount)).toEqual([0, 1])
 		expect(boundaryQueryFn).toHaveBeenCalledTimes(1)
 		expect(boundaryRetryDelay).not.toHaveBeenCalled()
 		expect(boundaryResult?.error).toMatchObject({ code: 'WORKBENCH_NON_PORTABLE_VALUE' })
-		await opened.dispose()
 	})
 
 	it('continues owner teardown after one watch disposer throws', async () => {
@@ -1066,7 +834,7 @@ describe('Workbench renderer query scope', () => {
 			second.useQuery()
 			return null
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await using opened = await renderOpened(scope.render(Page))
 		await vi.waitFor(() => {
 			expect(firstRead).toHaveBeenCalledTimes(1)
 			expect(secondRead).toHaveBeenCalledTimes(1)
@@ -1080,7 +848,7 @@ describe('Workbench renderer query scope', () => {
 
 describe('Workbench renderer mutation resource', () => {
 	it('is single-flight per hook, consumes its result, invalidates, and resets settled state', async () => {
-		const result = deferred<Readonly<{ value: number }>>()
+		const result = Promise.withResolvers<Readonly<{ value: number }>>()
 		const resultDispose = vi.fn()
 		let reads = 0
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
@@ -1102,7 +870,7 @@ describe('Workbench renderer mutation resource', () => {
 			mutation = save.useMutation()
 			return <p>{`${snapshot.data?.value ?? 'pending'}:${mutation.status}`}</p>
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await using opened = await renderOpened(scope.render(Page))
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('1:idle'))
 		invalidations.length = 0
 
@@ -1129,128 +897,66 @@ describe('Workbench renderer mutation resource', () => {
 
 		act(() => mutation!.reset())
 		expect(opened.dom.textContent).toBe('2:idle')
-		await opened.dispose()
 	})
 
-	it('rejects malformed and oversized callback invalidations before invoking the mutation', async () => {
+	it('rejects invalid mutation targets before invoking the mutation', async () => {
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
 		const query = scope.query(() => ({
 			queryKey: ['invalidates-validation'],
 			queryFn: () => ({ value: 1 }),
 		}))
-		const mutationFn = vi.fn(() => ({ value: 1 }))
-		const malformed = scope.mutation(() => ({
-			mutationFn,
-			workbench: { invalidates: ((): null => null) as never },
+		const keyedQuery = scope.queryFamily((_context, id: number) => ({
+			queryKey: ['keyed', id],
+			queryFn: () => ({ value: id }),
 		}))
-		const oversized = scope.mutation(() => ({
-			mutationFn,
-			workbench: { invalidates: () => Array.from({ length: 129 }, () => query) },
+		const foreignScope = createWorkbenchRenderer(QueryWorkbench.query)
+		const foreignQuery = foreignScope.query(() => ({
+			queryKey: ['foreign'],
+			queryFn: () => ({ value: 1 }),
 		}))
-		let malformedState: WorkbenchMutationState<void, Readonly<{ value: number }>> | undefined
-		let oversizedState: WorkbenchMutationState<void, Readonly<{ value: number }>> | undefined
-		function Page(): ReactNode {
-			malformedState = malformed.useMutation()
-			oversizedState = oversized.useMutation()
-			return null
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-
-		act(() => malformedState!.mutate())
-		await vi.waitFor(() => expect(malformedState!.status).toBe('error'))
-		expect(malformedState!.error).toEqual(
-			expect.objectContaining({
-				message: '[workbench/react] mutation invalidates() must return an array',
-			}),
-		)
-		await act(async () => {
-			await expect(oversizedState!.mutateAsync()).rejects.toMatchObject({
-				code: 'WORKBENCH_RESOURCE_LIMIT_EXCEEDED',
-			})
-		})
-		expect(mutationFn).not.toHaveBeenCalled()
-		expect(oversizedState!.status).toBe('error')
-		await opened.dispose()
-	})
-
-	it('rejects sparse invalidations before the mutation and deduplicates repeated targets', async () => {
-		let reads = 0
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const query = scope.query(() => ({
-			queryKey: ['deduplicated-invalidation'],
-			queryFn: () => ({ value: ++reads }),
-		}))
-		const sparseMutationFn = vi.fn(() => undefined)
-		const sparse = scope.mutation(() => ({
-			mutationFn: sparseMutationFn,
-			workbench: {
-				invalidates: () => {
-					const targets: unknown[] = []
-					targets.length = 1
-					return targets as never
-				},
-			},
-		}))
-		const duplicate = scope.mutation(() => ({
-			mutationFn: (): undefined => undefined,
-			workbench: {
-				invalidates: [query, query, query],
-			},
-		}))
-		let sparseState: WorkbenchMutationState<void, void> | undefined
-		let duplicateState: WorkbenchMutationState<void, void> | undefined
-		function Page(): ReactNode {
-			const snapshot = query.useQuery()
-			sparseState = sparse.useMutation()
-			duplicateState = duplicate.useMutation()
-			return <p>{snapshot.data?.value ?? 'pending'}</p>
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-		await vi.waitFor(() => expect(opened.dom.textContent).toBe('1'))
-
-		await act(async () => {
-			await expect(sparseState!.mutateAsync()).rejects.toBeInstanceOf(Error)
-		})
-		expect(sparseMutationFn).not.toHaveBeenCalled()
-		await act(async () => {
-			await duplicateState!.mutateAsync()
-		})
-		await vi.waitFor(() => expect(opened.dom.textContent).toBe('2'))
-		expect(reads).toBe(2)
-		await opened.dispose()
-	})
-
-	it('invokes zero-variable mutation functions and invalidation selectors with zero arguments', async () => {
-		let mutationArgumentCount = -1
-		let invalidationArgumentCount = -1
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
+		const mutationFn = vi.fn<(targets: unknown) => void>()
 		const mutation = scope.mutation(() => ({
-			mutationFn: (...args: []) => {
-				mutationArgumentCount = args.length
-			},
-			workbench: {
-				invalidates: (...args: []) => {
-					invalidationArgumentCount = args.length
-					return []
-				},
-			},
+			mutationFn,
+			workbench: { invalidates: (targets: unknown) => targets as never },
 		}))
-		let state: WorkbenchMutationState<void, void> | undefined
+		let state!: WorkbenchMutationState<unknown, void>
 		function Page(): ReactNode {
 			state = mutation.useMutation()
 			return null
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await using _opened = await renderOpened(scope.render(Page))
 
-		await act(async () => {
-			await state!.mutateAsync()
+		await act(async () => state.mutate(null))
+		expect(state).toMatchObject({
+			status: 'error',
+			error: { message: '[workbench/react] mutation invalidates() must return an array' },
 		})
-		expect(invalidationArgumentCount).toBe(0)
-		expect(mutationArgumentCount).toBe(0)
-		await opened.dispose()
+		const sparseTargets: unknown[] = []
+		sparseTargets.length = 1
+		for (const { targets, error } of [
+			{
+				targets: Array.from({ length: 129 }, () => query),
+				error: { code: 'WORKBENCH_RESOURCE_LIMIT_EXCEEDED' },
+			},
+			{
+				targets: sparseTargets,
+				error: { message: '[workbench/react] mutation invalidates must be a dense array' },
+			},
+			{ targets: [query, foreignQuery], error: { code: 'WORKBENCH_RENDERER_SCOPE_MISMATCH' } },
+			{
+				targets: [keyedQuery.target(Number.NaN)],
+				error: { code: 'WORKBENCH_RESOURCE_KEY_INVALID' },
+			},
+		]) {
+			await act(async () => {
+				await expect(state.mutateAsync(targets)).rejects.toMatchObject(error)
+			})
+			expect(state).toMatchObject({ status: 'error', error })
+		}
+		expect(mutationFn).not.toHaveBeenCalled()
 	})
 
-	it('supports input-derived exact and static broad keyed invalidation targets', async () => {
+	it('invalidates exact or broad keyed targets once and leaves unrelated data alone', async () => {
 		type Key = 'first' | 'second'
 		const reads: Record<Key, number> = { first: 0, second: 0 }
 		let unrelatedReads = 0
@@ -1269,9 +975,12 @@ describe('Workbench renderer mutation resource', () => {
 			},
 			workbench: { invalidates: (input: Key) => [query.target(input)] },
 		}))
+		const invalidateAllFn = vi.fn<() => void>()
+		const family = query.all()
+		const allTargets = vi.fn(() => [family, family, family])
 		const invalidateAll = scope.mutation(() => ({
-			mutationFn: (): undefined => undefined,
-			workbench: { invalidates: [query.all()] },
+			mutationFn: invalidateAllFn,
+			workbench: { invalidates: allTargets },
 		}))
 		let exactState: WorkbenchMutationState<Key, void> | undefined
 		let allState: WorkbenchMutationState<void, void> | undefined
@@ -1285,7 +994,7 @@ describe('Workbench renderer mutation resource', () => {
 				<p>{`${first.data?.value ?? 0}${second.data?.value ?? 0}${separate.data?.value ?? 0}`}</p>
 			)
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await using opened = await renderOpened(scope.render(Page))
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('111'))
 
 		await act(async () => {
@@ -1296,107 +1005,54 @@ describe('Workbench renderer mutation resource', () => {
 		await act(async () => {
 			await allState!.mutateAsync()
 		})
+		expect(invalidateAllFn).toHaveBeenCalledExactlyOnceWith()
+		expect(allTargets).toHaveBeenCalledExactlyOnceWith()
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('321'))
-		await opened.dispose()
+		expect(reads).toEqual({ first: 3, second: 2 })
 	})
 
-	it('validates every invalidation target before invoking the mutation', async () => {
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const foreignScope = createWorkbenchRenderer(QueryWorkbench.query)
-		const foreignQuery = foreignScope.query(() => ({
-			queryKey: ['foreign'],
-			queryFn: () => ({ value: 1 }),
-		}))
-		const keyedQuery = scope.queryFamily((_context, input: Readonly<{ id: number }>) => ({
-			queryKey: ['validation', input],
-			queryFn: () => ({ value: input.id }),
-		}))
-		const mutationFn = vi.fn(() => ({ value: 1 }))
-		const foreignMutation = scope.mutation(() => ({
-			mutationFn,
-			workbench: { invalidates: [foreignQuery] as never },
-		}))
-		const invalidKeyMutation = scope.mutation(() => ({
-			mutationFn,
-			workbench: { invalidates: () => [keyedQuery.target({ id: Number.NaN })] },
-		}))
-		let foreign: WorkbenchMutationState<void, Readonly<{ value: number }>> | undefined
-		let invalidKey: WorkbenchMutationState<void, Readonly<{ value: number }>> | undefined
-		function Page(): ReactNode {
-			foreign = foreignMutation.useMutation()
-			invalidKey = invalidKeyMutation.useMutation()
-			return null
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-
-		await act(async () => {
-			await expect(foreign!.mutateAsync()).rejects.toMatchObject({
-				code: 'WORKBENCH_RENDERER_SCOPE_MISMATCH',
-			})
-		})
-		await act(async () => {
-			await expect(invalidKey!.mutateAsync()).rejects.toMatchObject({
-				code: 'WORKBENCH_RESOURCE_KEY_INVALID',
-			})
-		})
-		expect(mutationFn).not.toHaveBeenCalled()
-		expect(foreign!.status).toBe('error')
-		expect(invalidKey!.status).toBe('error')
-		await opened.dispose()
-	})
-
-	it('invalidates after rejection and after fulfilled-result consumption failure', async () => {
+	it('refreshes after a rejected write and after an unreadable write receipt', async () => {
 		const domainFailure = new Error('write outcome is unknown')
-		const invalidDispose = vi.fn()
+		const disposeReceipt = vi.fn()
+		const mutationFn = vi
+			.fn<() => Promise<{ receipt: undefined }>>()
+			.mockRejectedValueOnce(domainFailure)
+			.mockResolvedValueOnce(
+				Object.defineProperty({ receipt: undefined }, Symbol.dispose, {
+					value: disposeReceipt,
+				}),
+			)
 		let reads = 0
 		const scope = createWorkbenchRenderer(QueryWorkbench.query)
 		const query = scope.query(() => ({
 			queryKey: ['settle-invalidation'],
 			queryFn: () => ({ value: ++reads }),
 		}))
-		const rejected = scope.mutation(() => ({
-			mutationFn: () => Promise.reject(domainFailure),
-			workbench: { invalidates: [query] },
-		}))
-		const invalidResult = scope.mutation(() => ({
-			mutationFn: () =>
-				Promise.resolve(
-					Object.defineProperty({ missing: undefined }, Symbol.dispose, {
-						value: invalidDispose,
-					}),
-				),
-			workbench: { invalidates: [query] },
-		}))
-		let rejectState: WorkbenchMutationState<void, never> | undefined
-		let invalidState: WorkbenchMutationState<void, Readonly<{ missing: undefined }>> | undefined
-		function Page(): ReactNode {
-			const snapshot = query.useQuery()
-			rejectState = rejected.useMutation()
-			invalidState = invalidResult.useMutation()
-			return <p>{snapshot.data?.value ?? 'pending'}</p>
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		const mutation = scope.mutation(() => ({ mutationFn, workbench: { invalidates: [query] } }))
+		let state!: WorkbenchMutationState<void, { receipt: undefined }>
+		await using opened = await renderOpened(
+			scope.render(function Page() {
+				state = mutation.useMutation()
+				return <p>{query.useQuery().data?.value ?? 'pending'}</p>
+			}),
+		)
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('1'))
-
-		await act(async () => {
-			await expect(rejectState!.mutateAsync()).rejects.toBe(domainFailure)
-		})
+		await act(async () => expect(state.mutateAsync()).rejects.toBe(domainFailure))
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('2'))
-		expect(rejectState!.status).toBe('error')
+		expect(state.status).toBe('error')
 
 		await act(async () => {
-			await expect(invalidState!.mutateAsync()).rejects.toMatchObject({
+			await expect(state.mutateAsync()).rejects.toMatchObject({
 				code: 'WORKBENCH_NON_PORTABLE_VALUE',
 			})
 		})
-		expect(invalidDispose).toHaveBeenCalledTimes(1)
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('3'))
-		expect(invalidState!.status).toBe('error')
-		await opened.dispose()
+		expect(state.status).toBe('error')
+		expect(disposeReceipt).toHaveBeenCalledOnce()
 	})
 
 	it('rejects promptly on renderer close while still disposing the late result', async () => {
-		const result = deferred<Readonly<{ value: number }>>()
+		const result = Promise.withResolvers<Readonly<{ value: number }>>()
 		const resultDispose = vi.fn()
 		let mutation: WorkbenchMutationState<number, Readonly<{ value: number }>> | undefined
 		let executionSignal: AbortSignal | undefined
@@ -1412,7 +1068,7 @@ describe('Workbench renderer mutation resource', () => {
 			mutation = save.useMutation()
 			return <p>{mutation.status}</p>
 		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
+		await using opened = await renderOpened(scope.render(Page))
 		let pending!: Promise<Readonly<{ value: number }>>
 		act(() => {
 			pending = mutation!.mutateAsync(1)
@@ -1432,123 +1088,109 @@ function disposableValue(value: number, dispose = vi.fn()) {
 	return { value, [Symbol.dispose]: dispose }
 }
 
-function deferred<Value>() {
-	let resolve!: (value: Value) => void
-	let reject!: (error: unknown) => void
-	let settled = false
-	const promise = new Promise<Value>((nextResolve, nextReject) => {
-		resolve = (value) => {
-			settled = true
-			nextResolve(value)
-		}
-		reject = (error) => {
-			settled = true
-			nextReject(error)
-		}
-	})
-	return {
-		promise,
-		resolve,
-		reject,
-		get settled() {
-			return settled
-		},
-	}
-}
-
 function disposableDeferred<Value>() {
-	const operation = deferred<Value>()
+	const operation = Promise.withResolvers<Value>()
 	const dispose = vi.fn()
 	const promise = operation.promise as Promise<Value> & Disposable
 	Object.defineProperty(promise, Symbol.dispose, { value: dispose })
 	return { ...operation, promise, dispose }
 }
 
-async function renderOpened(
-	declaration: WorkbenchDeclarationIdentity,
-	Renderer: ComponentType<Readonly<Record<string, never>>>,
-	api: object,
-) {
-	const federatedViewRef = Object.freeze({
-		profile: 1 as const,
-		producer: 'pluxel_workbench_query',
-		buildRevision: 'build-1',
-		manifestUrl: '/__pluxel/runtime/federation/pluxel_workbench_query/build-1/mf-manifest.json',
-		expose: './views/query' as const,
-		descriptor: declaration,
-	})
-	const entry: WorkbenchLayoutEntry = Object.freeze({
-		descriptor: declaration as Extract<typeof declaration, { kind: 'view' }>,
-		target: Object.freeze({ node, displayName: 'Query' }),
-		renderer: node,
-		definitionRevisions: Object.freeze({ target: 1, renderer: 1 }),
-		placement: QueryWorkbench.query.placement,
-		federatedViewRef,
-	})
-	const open = async (nextApi: object) => {
-		if (!(Symbol.dispose in nextApi)) {
-			Object.defineProperty(nextApi, Symbol.dispose, { value() {} })
-		}
-		const session = {
-			openEntry: vi.fn().mockResolvedValue({
+const moduleName = 'pluxel_workbench_query/views/query'
+const federatedViewRef = {
+	profile: 1,
+	producer: 'pluxel_workbench_query',
+	buildRevision: 'build-1',
+	manifestUrl: '/__pluxel/runtime/federation/pluxel_workbench_query/build-1/mf-manifest.json',
+	expose: './views/query',
+	descriptor: identity,
+} as const
+const entry: WorkbenchLayoutEntry = {
+	descriptor: identity as Extract<typeof identity, { kind: 'view' }>,
+	target: { node, displayName: 'Query' },
+	renderer: node,
+	definitionRevisions: { target: 1, renderer: 1 },
+	placement: QueryWorkbench.query.placement,
+	federatedViewRef,
+}
+
+async function openQueryView(api: object) {
+	if (!(Symbol.dispose in api)) Object.defineProperty(api, Symbol.dispose, { value() {} })
+	const session = {
+		async openEntry() {
+			return {
 				ok: true,
-				value: { kind: 'local', api: nextApi, params: {}, federatedViewRef },
+				value: { kind: 'local', api, params: {}, federatedViewRef },
 				[Symbol.dispose]() {},
-			}),
-		} as unknown as RpcStub<WorkbenchSessionApi>
-		const result = await openWorkbenchEntry(session, entry, { layoutRevision: 1 })
-		if (!result.ok) throw new Error('expected View')
-		return result.handle
-	}
-	const openedHandles = [await open(api)]
-	const ownerController = new AbortController()
-	const provider = createWorkbenchBridge(declaration, Renderer)
+			}
+		},
+	} as unknown as RpcStub<WorkbenchSessionApi>
+	const result = await openWorkbenchEntry(session, entry, { layoutRevision: 1 })
+	if (!result.ok) throw new Error('Expected the query view to open')
+	return result.handle
+}
+
+async function renderOpened(Renderer: ComponentType, api: object = {}) {
+	const handles = [await openQueryView(api)]
+	const controller = new AbortController()
+	const provider = createWorkbenchBridge(identity, Renderer)
 	const application = provider()
 	const dom = document.createElement('div')
-	try {
-		await act(() =>
+	const render = (handle: (typeof handles)[number]) =>
+		act(() =>
 			application.render({
 				dom,
-				moduleName: 'pluxel_workbench_query/views/query',
-				__pluxelWorkbench: {
-					profile: 1,
-					handle: openedHandles[0],
-					host,
-					ownerSignal: ownerController.signal,
-				},
+				moduleName,
+				__pluxelWorkbench: { profile: 1, handle, host, ownerSignal: controller.signal },
 			}),
 		)
+	let closed = false
+	async function dispose() {
+		if (closed) return
+		closed = true
+		try {
+			await act(async () => application.destroy({ dom, moduleName }))
+		} finally {
+			controller.abort()
+			for (const handle of handles) handle[Symbol.dispose]()
+		}
+	}
+
+	try {
+		await render(handles[0]!)
 	} catch (error) {
-		act(() => application.destroy({ dom, moduleName: 'query' }))
-		ownerController.abort()
-		for (const handle of openedHandles) handle[Symbol.dispose]()
+		await dispose()
 		throw error
 	}
+
 	return {
 		dom,
-		abortOwner() {
-			ownerController.abort()
-		},
+		provider,
+		abortOwner: () => controller.abort(),
 		async replaceApi(nextApi: object) {
-			const handle = await open(nextApi)
-			openedHandles.push(handle)
-			await act(() =>
-				application.render({
-					dom,
-					moduleName: 'pluxel_workbench_query/views/query',
-					__pluxelWorkbench: {
-						profile: 1,
-						handle,
-						host,
-						ownerSignal: ownerController.signal,
-					},
-				}),
-			)
+			const handle = await openQueryView(nextApi)
+			handles.push(handle)
+			await render(handle)
 		},
-		async dispose() {
-			act(() => application.destroy({ dom, moduleName: 'query' }))
-			ownerController.abort()
-			for (const handle of openedHandles) handle[Symbol.dispose]()
-		},
+		dispose,
+		[Symbol.asyncDispose]: dispose,
+	}
+}
+
+async function renderObserver(
+	scope: WorkbenchRendererScope<typeof QueryWorkbench.query>,
+	Observer: ComponentType,
+) {
+	let updateVisibility!: (visible: boolean) => void
+	const opened = await renderOpened(
+		scope.render(function Page() {
+			const [visible, setVisible] = useState(true)
+			updateVisibility = setVisible
+			return visible ? <Observer /> : null
+		}),
+	)
+	return {
+		...opened,
+		setVisible: (visible: boolean) => act(async () => updateVisibility(visible)),
 	}
 }

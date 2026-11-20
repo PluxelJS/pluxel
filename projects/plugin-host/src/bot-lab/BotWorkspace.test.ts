@@ -1,4 +1,7 @@
-import { standardServices } from '@pluxel/services'
+import { elysia } from '@pluxel/services/elysia'
+import { commands } from '@pluxel/services/commands'
+import { nodeModules } from '@pluxel/services/node'
+import { workers } from '@pluxel/services/workers'
 import { createTestHost } from '@pluxel/test'
 import { describe, expect, it, vi } from 'vitest'
 import { BotWorkspacePlugin } from './BotWorkspacePlugin'
@@ -11,14 +14,14 @@ const plugins = [BotWorkspacePlugin, TelegramBotPlugin, DiscordBotPlugin, WeComB
 async function start() {
 	const host = await createTestHost({
 		workbench: true,
-		services: standardServices(),
+		services: [elysia(), commands(), nodeModules(), workers()],
 	})
 	try {
 		await host.commit((change) => {
 			change.catalog.add(plugins)
-			change.start(TelegramBotPlugin)
-			change.start(DiscordBotPlugin)
-			change.start(WeComBotPlugin)
+			change.start(TelegramBotPlugin.nodeAddress())
+			change.start(DiscordBotPlugin.nodeAddress())
+			change.start(WeComBotPlugin.nodeAddress())
 		})
 		return host
 	} catch (error) {
@@ -31,18 +34,18 @@ describe('Bot workspace real plugin contributions', () => {
 	it('aggregates three providers and isolates same-id bots through their bound Workbench RPC roots', async () => {
 		await using host = await start()
 		using list = await host.workbench.open({
-			target: BotWorkspacePlugin,
+			target: BotWorkspacePlugin.nodeAddress(),
 			entry: BotWorkspaceWorkbench.list,
 			principal,
 		})
 		using telegram = await host.workbench.open({
-			target: BotWorkspacePlugin,
+			target: BotWorkspacePlugin.nodeAddress(),
 			entry: BotWorkspaceWorkbench.bot,
 			location: '/bot-lab/telegram/support',
 			principal,
 		})
 		using discord = await host.workbench.open({
-			target: BotWorkspacePlugin,
+			target: BotWorkspacePlugin.nodeAddress(),
 			entry: BotWorkspaceWorkbench.bot,
 			location: '/bot-lab/discord/support',
 			principal,
@@ -79,31 +82,31 @@ describe('Bot workspace real plugin contributions', () => {
 	it('withdraws only the stopped provider, retains unavailable last-known bots, and rejects pre-restart revisions', async () => {
 		await using host = await start()
 		using list = await host.workbench.open({
-			target: BotWorkspacePlugin,
+			target: BotWorkspacePlugin.nodeAddress(),
 			entry: BotWorkspaceWorkbench.list,
 			principal,
 		})
 		using telegram = await host.workbench.open({
-			target: BotWorkspacePlugin,
+			target: BotWorkspacePlugin.nodeAddress(),
 			entry: BotWorkspaceWorkbench.bot,
 			location: '/bot-lab/telegram/support',
 			principal,
 		})
 		using discord = await host.workbench.open({
-			target: BotWorkspacePlugin,
+			target: BotWorkspacePlugin.nodeAddress(),
 			entry: BotWorkspaceWorkbench.bot,
 			location: '/bot-lab/discord/support',
 			principal,
 		})
-		const aggregator = host.require(BotWorkspacePlugin)
+		const aggregator = host.require(BotWorkspacePlugin.nodeAddress())
 		const old = await telegram.api.snapshotDto()
 		const changed = vi.fn()
 		using _subscription = await list.api.watch(changed)
-		await host.stop(TelegramBotPlugin)
+		await host.stop(TelegramBotPlugin.nodeAddress())
 		await vi.waitFor(() => expect(changed).toHaveBeenCalled())
-		expect(host.isRunning(BotWorkspacePlugin)).toBe(true)
-		expect(host.require(BotWorkspacePlugin)).toBe(aggregator)
-		expect(host.isRunning(DiscordBotPlugin)).toBe(true)
+		expect(host.isRunning(BotWorkspacePlugin.nodeAddress())).toBe(true)
+		expect(host.require(BotWorkspacePlugin.nodeAddress())).toBe(aggregator)
+		expect(host.isRunning(DiscordBotPlugin.nodeAddress())).toBe(true)
 		await expect(telegram.api.snapshotDto()).resolves.toMatchObject({
 			available: false,
 			name: old.name,
@@ -119,7 +122,7 @@ describe('Bot workspace real plugin contributions', () => {
 				expectedRevision: available.revision,
 			}),
 		).resolves.toEqual({ ok: true })
-		await host.start(TelegramBotPlugin)
+		await host.start(TelegramBotPlugin.nodeAddress())
 		await expect(telegram.api.snapshotDto()).resolves.toMatchObject({ available: true })
 		await expect(
 			telegram.api.saveDto({
@@ -133,7 +136,7 @@ describe('Bot workspace real plugin contributions', () => {
 
 	it('restores editable source preferences while keeping simulated observations out of the Store', async () => {
 		await using host = await start()
-		const workspace = host.require(BotWorkspacePlugin)
+		const workspace = host.require(BotWorkspacePlugin.nodeAddress())
 		const identity = workspace.identity('telegram', 'support')
 		const before = workspace.detail(identity)
 		expect(
@@ -147,13 +150,13 @@ describe('Bot workspace real plugin contributions', () => {
 		expect(
 			workspace.update(identity, { running: false, expectedRevision: edited.revision }, 'running'),
 		).toEqual({ ok: true })
-		const store = await host.require(TelegramBotPlugin).ctx.tinybase.open()
+		const store = await host.require(TelegramBotPlugin.nodeAddress()).ctx.tinybase.open()
 		expect(store.getTable('bots')).toEqual({
 			support: { instructions: 'Remember Telegram', running: false },
 		})
-		const discord = await host.require(DiscordBotPlugin).ctx.tinybase.open()
+		const discord = await host.require(DiscordBotPlugin.nodeAddress()).ctx.tinybase.open()
 		expect(discord.getContent()).toEqual([{}, {}])
-		await host.restart(TelegramBotPlugin)
+		await host.restart(TelegramBotPlugin.nodeAddress())
 		expect(workspace.detail(identity)).toMatchObject({
 			instructions: 'Remember Telegram',
 			running: false,
@@ -167,24 +170,27 @@ describe('Bot workspace real plugin contributions', () => {
 
 	it('fails a source with malformed saved preferences before publishing a replacement contribution', async () => {
 		await using host = await start()
-		const state = host.require(TelegramBotPlugin).ctx.tinybase
+		const state = host.require(TelegramBotPlugin.nodeAddress()).ctx.tinybase
 		const store = await state.open()
 		store.setRow('bots', 'support', { instructions: 'valid instructions', running: 'invalid' })
 		await state.flush()
-		await host.stop(TelegramBotPlugin)
-		const failure = await host.commitExpectFail((change) => change.start(TelegramBotPlugin))
+		await host.stop(TelegramBotPlugin.nodeAddress())
+		const failure = await host.commitExpectFail((change) =>
+			change.start(TelegramBotPlugin.nodeAddress()),
+		)
 		expect(failure.lifecycleReport.issues).toContainEqual(
 			expect.objectContaining({ kind: 'start-failed' }),
 		)
 		expect(
-			host.require(BotWorkspacePlugin).detail({ source: 'telegram', id: 'support' }).available,
+			host.require(BotWorkspacePlugin.nodeAddress()).detail({ source: 'telegram', id: 'support' })
+				.available,
 		).toBe(false)
-		expect(host.isRunning(DiscordBotPlugin)).toBe(true)
+		expect(host.isRunning(DiscordBotPlugin.nodeAddress())).toBe(true)
 	})
 
 	it('releases per-open view watches and Content subscriptions without closing sibling roots', async () => {
 		await using host = await start()
-		const workspace = host.require(BotWorkspacePlugin)
+		const workspace = host.require(BotWorkspacePlugin.nodeAddress())
 		const subscribe = workspace.subscribe.bind(workspace)
 		const released = vi.fn()
 		const spy = vi.spyOn(workspace, 'subscribe').mockImplementation((listener) => {
@@ -200,22 +206,22 @@ describe('Bot workspace real plugin contributions', () => {
 			}
 		})
 		using list = await host.workbench.open({
-			target: BotWorkspacePlugin,
+			target: BotWorkspacePlugin.nodeAddress(),
 			entry: BotWorkspaceWorkbench.list,
 			principal,
 		})
 		using sibling = await host.workbench.open({
-			target: BotWorkspacePlugin,
+			target: BotWorkspacePlugin.nodeAddress(),
 			entry: BotWorkspaceWorkbench.list,
 			principal,
 		})
 		using sources = await host.workbench.open({
-			target: BotWorkspacePlugin,
+			target: BotWorkspacePlugin.nodeAddress(),
 			entry: BotWorkspaceWorkbench.sources,
 			principal,
 		})
 		using events = await host.workbench.open({
-			target: BotWorkspacePlugin,
+			target: BotWorkspacePlugin.nodeAddress(),
 			entry: BotWorkspaceWorkbench.events,
 			principal,
 		})
@@ -236,7 +242,7 @@ describe('Bot workspace real plugin contributions', () => {
 		sources[Symbol.dispose]()
 		events[Symbol.dispose]()
 		expect(released).toHaveBeenCalledTimes(3)
-		await host.stop(WeComBotPlugin)
+		await host.stop(WeComBotPlugin.nodeAddress())
 		await vi.waitFor(() => expect(siblingChanged).toHaveBeenCalledTimes(1))
 		expect(firstChanged).not.toHaveBeenCalled()
 		second[Symbol.dispose]()

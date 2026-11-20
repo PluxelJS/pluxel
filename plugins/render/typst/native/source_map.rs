@@ -115,7 +115,7 @@ fn source_entry(world: &TypstSystemWorld, span: Span) -> Option<SourceEntry> {
         .ok()?
         .to_string_lossy()
         .replace('\\', "/");
-    if path.is_empty() || path.starts_with("inputs/") {
+    if path.is_empty() {
         return None;
     }
     let source = world.source(id).ok()?;

@@ -2,6 +2,15 @@
 # Independent downstream repositories linked against this Pluxel source tree.
 /local-projects/
 
+# Local artifacts left by runtime projects moved to PluxelJS/lab.
+/projects/embedded-launcher/native/target/
+/projects/embedded-launcher/native/vendor/
+/projects/embedded-launcher/release/
+/projects/report-template-studio/.editor-generated/
+/projects/report-template-studio/.studio-dev/
+/projects/report-template-studio/release/
+/projects/report-template-studio/test-results/
+
 # Created by https://www.toptal.com/developers/gitignore/api/node,visualstudiocode,intellij
 # Edit at https://www.toptal.com/developers/gitignore?templates=node,visualstudiocode,intellij
 

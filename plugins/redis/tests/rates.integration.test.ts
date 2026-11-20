@@ -1,4 +1,3 @@
-import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
 import { createHash, randomUUID } from 'node:crypto'
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/plugin-rates'
@@ -26,22 +25,20 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 	it('executes all algorithms atomically, keeps policy in state, and recovers after SCRIPT FLUSH', async () => {
 		const prefix = `pluxel:test:rates:${randomUUID()}:`
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
 			await host.commit((change) => {
-				change.start(RedisPlugin, {
+				change.start(RedisPlugin.nodeAddress(), {
 					initialConfig: { connections: [{ id: 'default', url: redisUrl! }] },
 				})
-				change.start(RedisRatesBackendPlugin, {
+				change.start(RedisRatesBackendPlugin.nodeAddress(), {
 					initialConfig: { keyPrefix: prefix },
 				})
-				change.start(RatesPlugin)
-				change.start(IntegrationConsumer)
+				change.start(RatesPlugin.nodeAddress())
+				change.start(IntegrationConsumer.nodeAddress())
 			})
-			const consumer = host.require(IntegrationConsumer)
-			const redis = host.require(RedisPlugin).connection()
+			const consumer = host.require(IntegrationConsumer.nodeAddress())
+			const redis = host.require(RedisPlugin.nodeAddress()).connection()
 				.client as unknown as IntegrationRedisClient
 			try {
 				for (const policy of algorithms) {
@@ -81,21 +78,33 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 					remaining: 0,
 				})
 
-				const partialExpiry = consumer.rates.use('integration.partial-expiry', {
+				const backend = host.require(RedisRatesBackendPlugin.nodeAddress())
+				const partialPolicy = Object.freeze({
 					algorithm: 'sliding-window-log',
 					limit: 5,
-					windowMs: 1_000,
-				})
-				await partialExpiry.consume('same', { cost: 2 })
-				await new Promise((resolve) => setTimeout(resolve, 550))
-				await partialExpiry.consume('same', { cost: 2 })
-				await new Promise((resolve) => setTimeout(resolve, 550))
-				await expect(partialExpiry.consume('same', { cost: 3 })).resolves.toMatchObject({
+					windowMs: 60_000,
+				} as const)
+				const partialKey = 'partial-expiry'
+				const [seconds, microseconds] = await redis.time()
+				const serverTime = Number(seconds) * 1_000 + Math.floor(Number(microseconds) / 1_000)
+				const newest = serverTime - 30_000
+				const oldest = newest - 45_000
+				// Both events were live at the last write. Only the newer one remains live now.
+				await redis.zAdd(storageKey(prefix, partialKey), [
+					{
+						score: -1,
+						value: `m|2|sliding-window-log|5|60000|4|${newest}|${newest}|0|global`,
+					},
+					{ score: oldest, value: `e|${oldest}|0|2` },
+					{ score: newest, value: `e|${newest}|0|2` },
+				])
+				await expect(
+					backend.consume({ key: partialKey, owner: null, policy: partialPolicy, cost: 3 }),
+				).resolves.toMatchObject({
 					denied: false,
 					remaining: 0,
 				})
 
-				const backend = host.require(RedisRatesBackendPlugin)
 				const fixed = Object.freeze({
 					algorithm: 'fixed-window',
 					limit: 2,
@@ -130,7 +139,9 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 					policy: Object.freeze({ algorithm: 'fixed-window', limit: 1, windowMs: 20 }),
 					cost: 1,
 				})
-				await new Promise((resolve) => setTimeout(resolve, 40))
+				await expect
+					.poll(() => redis.exists(storageKey(prefix, expiringKey)), { interval: 10 })
+					.toBe(0)
 				await expect(
 					backend.consume({
 						key: expiringKey,
@@ -232,6 +243,7 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 })
 
 type IntegrationRedisClient = {
+	time(): Promise<[seconds: string, microseconds: string]>
 	scanIterator(options: { MATCH: string; COUNT: number }): AsyncIterable<Array<string | Buffer>>
 	unlink(keys: string[]): Promise<number>
 	scriptFlush(): Promise<unknown>

@@ -19,12 +19,22 @@
 			"@pluxel/hmr": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
+		}
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
-			"./package.json": "./package.json"
+			"./package.json": "./package.json",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
 		},
 		"access": "public"
 	},
@@ -44,7 +54,6 @@
 		"@pluxel/core": "workspace:*",
 		"@pluxel/host": "workspace:*",
 		"@pluxel/plugin-playwright": "workspace:*",
-		"@pluxel/services": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/jsdom": "catalog:types",
 		"jsdom": "catalog:dev",
@@ -54,8 +63,13 @@
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:^",
-		"@pluxel/plugin-playwright": "workspace:^",
-		"@pluxel/services": "workspace:^"
+		"@pluxel/host": "workspace:^",
+		"@pluxel/plugin-playwright": "workspace:^"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/host": {
+			"optional": true
+		}
 	},
 	"pluxel": {
 		"artifactRoot": "dist",
@@ -63,6 +77,7 @@
 		"workbenchArtifacts": true,
 		"pluginPackages": {
 			"@pluxel/plugin-playwright": "required"
-		}
+		},
+		"control": "./dist/control/manifest.json"
 	}
 }

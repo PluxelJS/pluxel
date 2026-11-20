@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { getTimeRotatingFileSink } from '@logtape/file'
-import { logtape } from '@pluxel/core/config'
 import { createHost } from '@pluxel/host'
 
 it('uses the upstream formatter for bigint and circular values and flushes on disposal', async () => {
@@ -16,11 +15,11 @@ it('uses the upstream formatter for bigint and circular values and flushes on di
 		})
 		const host = await createHost({
 			plugins: [],
-			runtime: {
-				logtape: logtape({
+			coreConfig: {
+				logtape: {
 					sinks: { file: sink },
 					loggers: [{ category: ['pluxel', 'runtime'], sinks: ['file'] }],
-				}),
+				},
 			},
 			services: [],
 		})

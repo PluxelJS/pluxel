@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import {
 	BasePlugin,
 	parsePluginNodeAddress,
@@ -8,6 +7,7 @@ import {
 	type PluginNodeAddress,
 	type PluginNodeSlot,
 } from '@pluxel/core'
+import { randomUUID } from 'node:crypto'
 import {
 	parseWorkbenchDeclarationIdentity,
 	parseWorkbenchOpenableIdentity,

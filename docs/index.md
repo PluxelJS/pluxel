@@ -21,6 +21,8 @@ Pluxel 是一个面向 TypeScript 场景的模块化插件运行时。它基于�
 
 ## 终端文档查阅
 
+本套文档、应用脚手架和插件模板使用 [Vite+ 统一命令入口](./development/workspace-toolchain.md#统一命令入口)。安装依赖用 `vp install`，执行项目任务用 `vp run`，调用项目内的 Pluxel CLI 用 `vp exec pluxel`。
+
 除了通过网页查阅文档，在本地项目中也可以使用命令行工具直接查看指定文档：
 
 ```sh

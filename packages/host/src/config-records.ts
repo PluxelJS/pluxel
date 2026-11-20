@@ -1,35 +1,32 @@
 import {
 	parsePluginNodeAddress,
 	pluginNodeAddressEqual,
-	type PluginConstructor,
+	pluginNodeIndexKey,
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import type { PluginConfigRecordSnapshot } from '@pluxel/core/services'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { parseHostInputMode, type HostInputMode } from './input-mode'
+import { snapshotHostDocument, type HostDocumentOptions } from './document-storage'
 
 export type ConfigInputPatch<T> = T extends readonly unknown[]
 	? T
 	: T extends object
 		? { readonly [K in keyof T]?: ConfigInputPatch<T[K]> }
 		: T
-export type HostConfigRecordInput = Readonly<{
-	owner: PluginConstructor | PluginNodeAddress
+type HostConfigRecordInput = Readonly<{
+	owner: PluginNodeAddress
 	mode?: HostInputMode
 	config?: Readonly<Record<string, unknown>>
 }>
 export type HostConfigOptions = Readonly<{
 	mode?: HostInputMode
-	records?: readonly HostConfigRecordInput[]
-}>
-export type ResolvedHostConfigRecord = Readonly<{
-	owner: PluginNodeAddress
-	mode?: HostInputMode
-	config?: Readonly<Record<string, unknown>>
+	document?: false | HostDocumentOptions
 }>
 export type ResolvedHostConfigOptions = Readonly<{
 	mode: HostInputMode
-	records: readonly ResolvedHostConfigRecord[]
+	records: readonly HostConfigRecordInput[]
+	document?: false | HostDocumentOptions
 }>
 export type ConfigDeclarationSource = Readonly<{
 	owner: PluginNodeAddress
@@ -54,21 +51,32 @@ export function attachConfigProvenance(options: object, facts: ConfigProvenance)
 	provenance.set(options, facts)
 }
 
-export function snapshotHostConfig(input: HostConfigOptions = {}): ResolvedHostConfigOptions {
-	assertDataObject(input, 'config', ['mode', 'records'])
-	const mode = parseHostInputMode(input.mode, 'config.mode')
-	const records: ResolvedHostConfigRecord[] = []
-	for (const record of dataArray(input.records ?? [], 'config.records')) {
+export function snapshotHostConfig(
+	input: HostConfigOptions = {},
+	inputMode?: HostInputMode,
+	nodes: readonly HostConfigRecordInput[] = [],
+): ResolvedHostConfigOptions {
+	assertDataObject(input, 'config', ['mode', 'document'])
+	return snapshotHostConfigRecords({
+		mode: parseHostInputMode(input.mode === undefined ? inputMode : input.mode, 'config.mode'),
+		document: snapshotHostDocument(input.document, 'config.document'),
+		records: nodes,
+	})
+}
+
+export function snapshotHostConfigRecords(
+	input: ResolvedHostConfigOptions,
+): ResolvedHostConfigOptions {
+	const records: HostConfigRecordInput[] = []
+	const seen = new Set<string>()
+	for (const record of dataArray(input.records, 'config records')) {
 		assertDataObject(record, 'config record', ['owner', 'mode', 'config'])
 		if (record.mode === undefined && record.config === undefined)
 			throw new TypeError('[host] config record requires mode or config')
-		const owner = parsePluginNodeAddress(
-			typeof record.owner === 'function'
-				? (record.owner as PluginConstructor).nodeAddress()
-				: record.owner,
-		)
-		if (records.some((entry) => pluginNodeAddressEqual(entry.owner, owner)))
-			throw new TypeError('[host] config.records duplicates a Plugin node owner')
+		const owner = parsePluginNodeAddress(record.owner)
+		const key = pluginNodeIndexKey(owner)
+		if (seen.has(key)) throw new TypeError('[host] config.records duplicates a Plugin node owner')
+		seen.add(key)
 		records.push(
 			Object.freeze({
 				owner,
@@ -79,7 +87,7 @@ export function snapshotHostConfig(input: HostConfigOptions = {}): ResolvedHostC
 			}),
 		)
 	}
-	const result = Object.freeze({ mode, records: Object.freeze(records) })
+	const result = Object.freeze({ ...input, records: Object.freeze(records) })
 	const facts = provenance.get(input)
 	if (facts) provenance.set(result, facts)
 	return result
@@ -93,7 +101,7 @@ export function assertDataObject(
 	if (!isRecord(value)) throw new TypeError(`[host] ${label} must be a plain object`)
 	for (const key of Reflect.ownKeys(value)) {
 		if (typeof key !== 'string' || (fields && !fields.includes(key)))
-			throw new TypeError(`[host] ${label} includes an unsupported field`)
+			throw new TypeError(`[host] ${label} includes unsupported "${String(key)}"`)
 		const descriptor = Object.getOwnPropertyDescriptor(value, key)!
 		if (!descriptor.enumerable || !('value' in descriptor))
 			throw new TypeError(`[host] ${label} requires enumerable data properties`)

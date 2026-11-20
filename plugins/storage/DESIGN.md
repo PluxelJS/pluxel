@@ -32,7 +32,7 @@ exceptional platform lifecycle -> custom @Plugin(S3, ...)
 - `remote`：endpoint、region、request bounds、multipart size，以及 `anonymous | vault` credential source。
 
 ordinary config 只保存 per-bucket Vault namespace/key 引用，不保存 access key。vault mode 从 owner-bound `ctx.vault` 读取一个
-`S3AccessKeyCredentials` object；local/anonymous 分支不触碰 Vault。Vault 缺失、引用不存在或 payload 非法会让 `init()` 失败，
+`S3AccessKeyCredentials` object；local/anonymous 分支不触碰 Vault。Vault 未解锁、引用不存在或 payload 非法会让 `init()` 失败，
 不会构造半配置 client。每个 remote/vault bucket 通过 Vault watch 取得初始 snapshot 并观察更新；新请求使用替换后的 client，已发出请求保留旧 snapshot。缺失或非法更新撤销后续 client 访问，不回退 anonymous。watch 随 generation cleanup 释放。
 
 每个已经运行的 generation 固定发布一个 Workbench bucket Content，以 bounded rows 区分各 ID 的 local、remote/anonymous 与

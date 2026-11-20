@@ -32,7 +32,11 @@ export const ReportsWorkbench = workbench.define({
 在插件的 `init()` 中正常发布即可：
 
 ```ts
-this.ctx.workbench?.publish(ReportsWorkbench)
+import type { Workbench } from '@pluxel/workbench'
+import { defineServiceRef } from '@pluxel/core'
+
+const WorkbenchRef = defineServiceRef<Workbench>()
+this.ctx.service(WorkbenchRef)?.publish(ReportsWorkbench)
 ```
 
 用户在 Workbench 界面中查看当前插件时，即可从侧边展开该指南面板。

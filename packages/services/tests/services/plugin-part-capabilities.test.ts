@@ -20,11 +20,11 @@ let ownerElysia: unknown
 
 class CapabilityPart extends PluginPart<CapabilityOwner> {
 	protected override init() {
-		partCommands = this.ctx.require(Commands)
-		repeatedPartCommands = this.ctx.require(Commands)
-		partElysia = this.ctx.require(ElysiaApp)
-		repeatedPartElysia = this.ctx.require(ElysiaApp)
-		this.ctx.require(Commands).register(
+		partCommands = this.ctx.service(Commands)
+		repeatedPartCommands = this.ctx.service(Commands)
+		partElysia = this.ctx.service(ElysiaApp)
+		repeatedPartElysia = this.ctx.service(ElysiaApp)
+		this.ctx.service(Commands).register(
 			defineCommand({
 				name: 'part.capability.read',
 				description: 'Read a value registered by a PluginPart.',
@@ -32,7 +32,7 @@ class CapabilityPart extends PluginPart<CapabilityOwner> {
 				execute: () => Result.ok({ value: 'part' }),
 			}),
 		)
-		this.ctx.require(ElysiaApp).get('/part-capability', () => 'part-route')
+		this.ctx.service(ElysiaApp).get('/part-capability', () => 'part-route')
 	}
 }
 
@@ -41,8 +41,8 @@ class CapabilityOwner extends BasePlugin {
 	readonly capability = this.parts.use(CapabilityPart)
 
 	override init() {
-		ownerCommands = this.ctx.require(Commands)
-		ownerElysia = this.ctx.require(ElysiaApp)
+		ownerCommands = this.ctx.service(Commands)
+		ownerElysia = this.ctx.service(ElysiaApp)
 	}
 }
 
@@ -71,7 +71,7 @@ describe('PluginPart runtime capabilities', () => {
 		{
 			await using host = await createServiceInternalTestHost({ workbench: true })
 
-			await host.start(CapabilityOwner)
+			await host.start(CapabilityOwner.nodeAddress())
 			expect(partCommands).toBe(repeatedPartCommands)
 			expect(partCommands).not.toBe(ownerCommands)
 			expect(partElysia).toBe(repeatedPartElysia)
@@ -98,7 +98,7 @@ describe('PluginPart runtime capabilities', () => {
 		{
 			await using host = await createServiceInternalTestHost({ workbench: false })
 
-			await host.start(ConfiguredOwner)
+			await host.start(ConfiguredOwner.nodeAddress())
 			const address = ConfiguredOwner.nodeAddress()
 			const definition = requirePluginHostCoordinator(host.ctx)
 				.catalogSnapshot()

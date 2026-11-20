@@ -1,115 +1,110 @@
 ---
 title: 查询插件源码
-description: 用 TypeScript 定位插件、Part、配置声明与应用输入，帮助 coding agent 找到修改位置和验证入口。
+description: 通过 @pluxel/agent-sdk/source 的普通函数发现插件、定位声明、Part、Schema、依赖和应用输入。
 ---
 
-在修改或重构插件前，可以通过 `@pluxel/rolldown/inspect` 提供的静态代码分析接口，快速获取工作区内所有插件、Part 组成结构、配置项定义及宿主环境变量绑定。查询过程基于 AST 静态分析，直接输出纯 JSON 数据与精确的源码位置（文件绝对路径及行列号），无需启动应用或执行实际业务代码。
+`@pluxel/agent-sdk/source` 提供普通异步函数。安装依赖后，用 Node 即可查询磁盘源码；查询不启动 Host、不加载项目模块、不执行应用工厂或 Schema。运行中的应用操作按执行位置选择 [Host SDK 或外部客户端](./agent-sdk.md)。
 
-## 场景速查
+## 直接定位声明
 
-| 查询目标                       | 推荐调用方式                                                          |
-| :----------------------------- | :-------------------------------------------------------------------- |
-| 查询某个特定 npm 包内的插件    | `plugins({ packageName })` 获取定义后，调用 `plugin()` 深入分析       |
-| 查询具体插件的完整结构         | `plugin(reference, { include: ['parts', 'config', 'dependencies'] })` |
-| 根据文件反查归属插件           | `file(path)`，返回引用了该文件的插件及 Part 列表                      |
-| 定位宿主环境变量与配置文件映射 | `plugin(..., { application, include: ['inputs', 'config'] })`         |
-| 浏览工作区项目概览             | `overview()` 列出所有子包与可用脚本                                   |
+将以下内容保存为项目根的 `inspect.mjs`，执行 `node inspect.mjs`：
 
-## 查询子包中的插件定义
+```js
+import { inspectPlugin } from '@pluxel/agent-sdk/source'
 
-在工程中创建 `dev/inspect.mts`：
-
-```ts no-twoslash
-import { openProject } from '@pluxel/rolldown/inspect'
-
-await using project = await openProject({ root: '/workspace/my-app' })
-
-// 查询指定包中的插件导出
-const plugins = await project.plugins({ packageName: '@example/mail' })
-console.log(JSON.stringify(plugins, null, 2))
-```
-
-直接通过 Node.js 执行：
-
-```sh
-node dev/inspect.mts
-```
-
-- `openProject` 会自动解析 `pnpm-workspace.yaml` 中的子包成员列表。
-- `plugins()` 会返回指定包暴露的具体 Plugin 类名与抽象依赖定义。
-
-## 提取插件全量元数据
-
-获取到插件定义后，可一次性提取其 Part 拓扑、配置项 Schema 与外部依赖关系：
-
-```ts no-twoslash
-if (plugins.data.status !== 'unavailable') {
-	const selected = plugins.data.value.items.find((p) => p.exportName === 'MailPlugin')
-	if (selected) {
-		const report = await project.plugin(selected.definition, {
-			include: ['parts', 'config', 'dependencies', 'checks'],
-		})
-		console.log(JSON.stringify(report, null, 2))
-	}
-}
-```
-
-各 Section 数据内容说明：
-
-- `parts`：按挂载路径展开的所有 Part 实例、类声明代码位置及依赖；
-- `config`：插件及各 Part 声明的配置字段、Schema 表达式及其原始定义位置；
-- `dependencies`：当前插件必需（required）与可选（optional）的外部插件依赖列表；
-- `checks`：该包在 `package.json` 中配置的构建、测试与类型检查 scripts；
-- `inputs`：宿主应用中针对该插件配置的环境变量映射（Env Bindings）与配置文件路径（需指定 `application`）。
-
-若仅需分析某个深层 Part，可通过 `partPath` 进行精准过滤：
-
-```ts no-twoslash
-const report = await project.plugin('package:@example/mail::MailPlugin', {
-	partPath: ['delivery', 'retry'],
-	include: ['config', 'dependencies'],
+const report = await inspectPlugin('package:@example/todo-plugin::TodoPlugin', {
+	root: process.cwd(),
 })
+console.log(report.data.summary.declaration)
 ```
 
-## 定位宿主应用的输入与环境映射
+`root` 固定本次查询的观察工作区。目标接受标准 definition 对象或 definition reference；从运行节点取得的 `address.definition`、依赖结果的 definition 可直接传入。无需导入和执行 Plugin class 来取得地址。
 
-通过传入宿主应用的入口配置，可静态追踪该插件在具体应用中的环境变量与配置参数绑定：
+声明位置包含绝对 `file` 和 `start/end: { line, column }`。行列从 1 开始，column 按 UTF-16 计数，end 不包含在范围内。编辑器或 agent 可直接打开该位置。
 
-```ts no-twoslash
-const report = await project.plugin('package:@example/mail::MailPlugin', {
+查询应用自己的源码或配置绑定时，显式指定解析来源：
+
+```js
+const application = { root: 'host', entry: 'src/app.ts' }
+const report = await inspectPlugin('source:app/src/mail.ts::MailPlugin', {
+	root: process.cwd(),
+	application,
+	include: ['config', 'inputs'],
+})
+console.log(report.data)
+```
+
+`application.root` 相对观察工作区，`entry` 相对 application root。默认 `app` source-space 对应该应用根目录，额外映射通过 `application.sourceSpaces` 提供。source-entry 和 `inputs` 查询要求 application；package 查询提供 application 时从其 entry 解析依赖，省略时从观察工作区解析。
+
+仓库已有可运行示例：`node projects/plugin-host/dev/source.mjs`。生成项目使用 `node dev/inspect.mjs`。
+
+## 发现与文件反查
+
+同一入口提供四个函数：
+
+| 函数                                 | 用途                                       |
+| ------------------------------------ | ------------------------------------------ |
+| `inspectPlugin(definition, options)` | 定位声明，按需取得结构和应用绑定           |
+| `listPlugins(options)`               | 分页发现定义，返回可继续查询的 definition  |
+| `inspectFile(path, options)`         | 反查文件所属的 Plugin、Part 和 Schema      |
+| `inspectProject(options)`            | 列出工作区 package 及根 package 的 scripts |
+
+所有 options 都要求 `root`。`listPlugins`、`inspectFile` 和 `inspectProject` 默认每页 50，最多 200；把非空 `nextCursor` 交给相同查询的 `cursor` 参数。查询输入或观察到的源码变化后返回 `cursor_stale`，从第一页重新查询。
+
+```js
+import { listPlugins, inspectPlugin } from '@pluxel/agent-sdk/source'
+
+const options = {
+	root: process.cwd(),
 	application: { root: 'host', entry: 'src/app.ts' },
-	include: ['config', 'inputs', 'checks'],
-})
-
-const inputs = report.data.sections.inputs
-if (inputs.status === 'complete' || inputs.status === 'partial') {
-	console.log('配置字段位置:', inputs.value.config)
-	console.log('环境变量/文件绑定:', inputs.value.bindings)
+}
+const found = await listPlugins({ ...options, limit: 50 })
+if (found.data.status === 'unavailable') throw new Error(found.data.reason.message)
+for (const item of found.data.value.items) {
+	const report = await inspectPlugin(item.definition, options)
+	console.log(report.data.summary.declaration)
 }
 ```
 
-- `bindings`：返回每项环境映射的声明代码行、对应的环境变量名称（如 `SMTP_PORT`）或本地配置文件路径。
+发现范围由输入决定：
 
-## 根据文件反查关联插件
+- 省略 application 时，查询工作区 package 的公开插件入口；`packageName` 可定位某个工作区或已安装 package。
+- 提供 application 时，沿 entry 的静态 import/re-export 和字面量动态 import，查找显式 source-spaces 内的 TypeScript 声明。应用无需 package exports。结果描述源码图；运行时安装的节点由 Host 发现。
+- 同时提供 application 与 packageName 时，从该应用解析指定 package 的公开入口。
 
-已知某份配置文件或工具代码时，可通过 `file()` 反查属于哪些插件：
+未知动态 import 和无法读取的源码保留 `partial.gaps`。`inspectFile` 使用同样的范围，返回 `scope`、定义及 declaration/part/config-schema 关系；它不分析任意 import 的修改影响。
 
-```ts no-twoslash
-const owners = await project.file('plugins/mail/src/retry-config.ts')
-console.log(JSON.stringify(owners, null, 2))
+## 结构与依赖
+
+`inspectPlugin` 默认只返回 `summary`，通过 `include` 选择其他 section：
+
+- `parts`：occurrence 路径、Part 声明与挂载位置。
+- `config`：Plugin/Part 配置字段、Schema 使用与定义位置。
+- `dependencies`：required/optional definition、provider 关系和声明来源。
+- `inputs`：目标插件默认节点的 `config` 表达式、各节点的 env/file 绑定和 `forkId` 源码位置。查询仅定位声明，部署值由 Host 读取。
+- `checks`：所属 package 声明的 scripts；查询不会执行命令。
+
+```js
+const report = await inspectPlugin(definition, {
+	root: process.cwd(),
+	application,
+	include: ['dependencies'],
+})
+const dependencies = report.data.sections.dependencies
+if (dependencies.status === 'unavailable') throw new Error(dependencies.reason.message)
+for (const required of dependencies.value.requires) {
+	console.log(await inspectPlugin(required, { root: process.cwd(), application }))
+}
 ```
 
-返回包含该文件的 Plugin 声明、Part 声明或共享配置 Schema。
+抽象 token 与具体 Plugin 使用同样的 definition 查询。`partPath: ['delivery', 'retry']` 缩小 parts、config 和 dependency origins；依赖全集与 inputs 仍描述整个 Plugin。
 
-<span id="读取结果"></span>
-<span id="读取结果和处理变化"></span>
+Section 的 `complete` 表示请求范围内分析完整；`partial` 保留可用值和 `gaps`；`unavailable` 保留 `reason`。未知表达式不会被解释成空列表。
 
-## 结果状态与数据契约
+## 结果与失败
 
-返回的 `Inspection` 数据对象中包含 `root`、`revision` 与 `data`：
+每个函数返回 `Inspection<T>`，包含 `root`、`revision`、`data` 和 `source`。`source.content: 'current-disk'`、`environment: 'query-process'` 表示位置属于执行查询的进程；`runtimeMatch: 'unverified'` 表示未核对运行版本。HMR 暂停、应用损坏或未启动时仍可查询磁盘。
 
-- `status: 'complete'`：在当前解析范围内完整提取了所有静态元数据；
-- `status: 'partial'`：已提取部分可用事实，并在 `gaps` 中列出由于动态表达式或外部模块无法静态分析的节点；
-- `status: 'unavailable'`：无法完成该 section 的分析，具体原因记录在 `reason` 字段中。
+作者源码通过正式 package source conditions 或 canonical source-space 解析。控制 `.d.ts` 和普通构建 JavaScript 不充当作者源码；缺少源码时保留具体诊断。解析使用原生 resolver 与正式源码条件，自定义 Vite alias/hook 应显式对应到查询输入。
 
-源码位置均采用绝对路径，行号与列号从 1 开始计数。每次调用均实时重新解析最新代码，修改代码后再次调用即可获得最新结果。
+查询级失败 reject `InspectionError`，调用方可按 `code` 分支。源码在查询期间变化返回 `source_changed`；传入 `signal` 可取消，返回 `aborted`。每次调用自行完成并释放文件 IO，结果是冻结的普通数据，不要求创建会话或执行 dispose。

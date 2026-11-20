@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto'
 import {
+	type Context,
 	BasePlugin,
 	encodePluginNodeAddressBytes,
 	parsePluginNodeAddress,
@@ -7,6 +7,7 @@ import {
 	pluginNodeAddressEqual,
 	type PluginNodeAddress,
 } from '@pluxel/core'
+import { createHash } from 'node:crypto'
 import * as v from 'valibot'
 import { RatesBackend, type RatesBackendConsumeRequest } from './backend.ts'
 import {
@@ -76,19 +77,13 @@ export abstract class Rates extends BasePlugin implements RatesBinding {
 	abstract use(name: string, policy: RatePolicy): RateLimiter
 }
 
-type EffectGuard = { readonly active: boolean }
-type OwnerContext = {
+type OwnerContext = Pick<Context, 'effects'> & {
 	readonly pluginInfo: {
 		readonly nodeSlot: object
 		readonly nodeAddress: PluginNodeAddress
 	}
-	readonly effects: {
-		defer(
-			cleanup: () => void,
-			meta?: { tag?: string; phase?: 'shutdown' | 'runtime' | 'final' },
-		): EffectGuard
-	}
 }
+
 type OwnerState = {
 	active: boolean
 	readonly context: OwnerContext

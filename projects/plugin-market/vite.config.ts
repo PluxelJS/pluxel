@@ -18,6 +18,10 @@ export default defineConfig({
 					env: ['VITE_MARKET_URL'],
 				},
 			},
+			'compile-mirror': {
+				command: 'node dev/build-mirror.ts',
+				cache: { output: ['dist/mirror.mjs'] },
+			},
 			'serve-local': {
 				command: 'wrangler dev',
 				dependsOn: ['compile-web'],

@@ -1,192 +1,83 @@
-const CONTEXT_CAPABILITY_TYPE: unique symbol = Symbol('pluxel.context.capability')
 const CONTEXT_HOST_TYPE: unique symbol = Symbol('pluxel.context.host')
 const CONTEXT_PLAN_TYPE: unique symbol = Symbol('pluxel.context.plan')
 const CONTEXT_INSTALLATION_TYPE: unique symbol = Symbol('pluxel.context.installation')
 const CONTEXT_TYPE: unique symbol = Symbol('pluxel.context.type')
 const ROOT_CONTEXT_TYPE: unique symbol = Symbol('pluxel.context.root-type')
+const SERVICE_TYPE: unique symbol = Symbol('pluxel.context.service')
+const SERVICE_REF_TYPE: unique symbol = Symbol('pluxel.context.service-ref')
 const CONSTRUCTING = Symbol('pluxel.context.constructing')
 const EMPTY_OWNER_VALUES: unknown[] = Object.freeze([]) as unknown as unknown[]
 
-export type ContextCapabilityAccess = 'all' | 'owner' | 'root'
+export type ServiceAccess = 'all' | 'owner' | 'root'
+export type ServiceScope = 'root' | 'scope' | 'owner-view'
+export type ServiceClass<T = any, A extends ServiceAccess = 'all'> = (abstract new (
+	...args: any[]
+) => T) &
+	Readonly<{ access?: A }>
 
-type CapabilityScope = 'root' | 'scope' | 'owner-view'
+/** A required service declaration. A class is its declaration, never an instruction to construct it. */
+export type ServiceDefinition<T = any, A extends ServiceAccess = 'all'> =
+	| ServiceClass<T, A>
+	| Readonly<{ access: A; [SERVICE_TYPE]: (value: T) => T }>
 
-/** An opaque, identity-based key for one Context capability. */
-export interface ContextCapability<T, TAccess extends ContextCapabilityAccess = 'all'> {
-	readonly access: TAccess
-	readonly [CONTEXT_CAPABILITY_TYPE]: (value: T) => T
-	readonly description: string
+/** An optional reference to the same installed definition, not another service declaration. */
+export interface ServiceRef<T, A extends ServiceAccess = ServiceAccess> {
+	readonly access: A
+	readonly [SERVICE_REF_TYPE]: (value: T) => T
 }
 
-type AnyCapability = ContextCapability<any, ContextCapabilityAccess>
+type AnyDefinition = ServiceDefinition<any, ServiceAccess>
+type AnyTarget = AnyDefinition | ServiceRef<any>
+export type ServiceKey = object | string
 
-type RootCapabilityOptions<T> = Readonly<{
-	property?: PropertyKey
-	create(ctx: RootContext): T
-}>
+type ReferenceRecord = Readonly<{ key: ServiceKey; access: ServiceAccess; optional: boolean }>
+const REFERENCES = new WeakMap<object, ReferenceRecord>()
+const CLASS_REFERENCES = new WeakMap<object, ReferenceRecord>()
+const IDENTITIES = new WeakMap<object, ServiceKey>()
 
-type ScopeCapabilityOptions<T> = Readonly<{
-	property?: PropertyKey
-	create(ctx: Context): T
-}>
-
-type OwnerViewCapabilityOptions<TRoot, TView> = Readonly<{
-	property?: PropertyKey
-	createRoot(root: RootContext): TRoot
-	createView(rootValue: TRoot, owner: Context): TView
-}>
-
-/**
- * Opaque, immutable input to a Context host. Installations can only be produced by the scoped
- * installation helpers; their runtime representation is deliberately not an extension contract.
- */
-export interface ContextCapabilityInstallation<
-	TValue = any,
-	TProperty extends PropertyKey | undefined = any,
-	TScope extends CapabilityScope = CapabilityScope,
-	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
+/** Opaque fixed-plan input. Installation factories are synchronous and strictly lazy. */
+export interface ServiceInstallation<
+	T = any,
+	S extends ServiceScope = ServiceScope,
+	A extends ServiceAccess = ServiceAccess,
 > {
-	readonly [CONTEXT_INSTALLATION_TYPE]: Readonly<{
-		value: TValue
-		property: TProperty
-		scope: TScope
-		access: TAccess
-	}>
+	readonly [CONTEXT_INSTALLATION_TYPE]: Readonly<{ value: T; scope: S; access: A }>
+}
+export type RootServiceInstallation<T = any> = ServiceInstallation<T, 'root'>
+export type ScopeServiceInstallation<
+	T = any,
+	A extends ServiceAccess = ServiceAccess,
+> = ServiceInstallation<T, 'scope', A>
+export interface OwnerViewServiceInstallation<
+	B = any,
+	T = any,
+	A extends ServiceAccess = ServiceAccess,
+> extends ServiceInstallation<T, 'owner-view', A> {
+	readonly [SERVICE_TYPE]: B
 }
 
-export type RootCapabilityInstallation<
-	TValue = any,
-	TProperty extends PropertyKey | undefined = undefined,
-> = ContextCapabilityInstallation<TValue, TProperty, 'root'>
-
-export type ScopeCapabilityInstallation<
-	TValue = any,
-	TProperty extends PropertyKey | undefined = undefined,
-	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
-> = ContextCapabilityInstallation<TValue, TProperty, 'scope', TAccess>
-
-export interface OwnerViewCapabilityInstallation<
-	TRoot = any,
-	TView = any,
-	TProperty extends PropertyKey | undefined = undefined,
-	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
-> {
-	readonly [CONTEXT_INSTALLATION_TYPE]: Readonly<{
-		value: TView
-		rootValue: TRoot
-		property: TProperty
-		scope: 'owner-view'
-		access: TAccess
-	}>
-}
-
-type InstallationMetadata<TInstallation> =
-	TInstallation extends Readonly<{
-		readonly [CONTEXT_INSTALLATION_TYPE]: infer TMetadata
-	}>
-		? TMetadata
-		: never
-
-/** Compile-time validation for literal installation tuples; runtime compilation is authoritative. */
-export type ValidateContextInstallations<
-	T extends readonly ContextCapabilityInstallation[],
-	TReserved extends PropertyKey = keyof Context | 'constructor' | '__proto__',
-	TSeen extends PropertyKey = never,
-> = number extends T['length']
-	? unknown
-	: T extends readonly [
-				infer Head extends ContextCapabilityInstallation,
-				...infer Tail extends readonly ContextCapabilityInstallation[],
-		  ]
-		? InstallationMetadata<Head> extends { property: infer P }
-			? [P] extends [undefined]
-				? ValidateContextInstallations<Tail, TReserved, TSeen>
-				: P extends PropertyKey
-					? string extends P
-						? ValidateContextInstallations<Tail, TReserved, TSeen>
-						: number extends P
-							? ValidateContextInstallations<Tail, TReserved, TSeen>
-							: symbol extends P
-								? ValidateContextInstallations<Tail, TReserved, TSeen>
-								: P extends TReserved | TSeen
-									? { readonly invalidContextProperty: P }
-									: ValidateContextInstallations<Tail, TReserved, TSeen | P>
-					: ValidateContextInstallations<Tail, TReserved, TSeen>
-			: unknown
-		: unknown
-
-type AnyInstallationProjection<TInstallation> = TInstallation extends unknown
-	? InstallationMetadata<TInstallation> extends Readonly<{
-			value: infer TValue
-			property: infer TProperty
-		}>
-		? TProperty extends PropertyKey
-			? { readonly [TKey in TProperty]: TValue }
-			: never
-		: never
-	: never
-
-type UnionToIntersection<T> = (T extends unknown ? (value: T) => void : never) extends (
-	value: infer TIntersection,
-) => void
-	? TIntersection
-	: never
-
-type ProjectionIntersection<T> = [T] extends [never] ? unknown : UnionToIntersection<T>
-
-type NonRootInstallationProjection<TInstallation> = TInstallation extends unknown
-	? InstallationMetadata<TInstallation> extends Readonly<{ scope: infer TScope }>
-		? TScope extends 'scope' | 'owner-view'
-			? AnyInstallationProjection<TInstallation>
-			: never
-		: never
-	: never
-
-/** Properties available from every Context in a host. */
-export type ContextProjection<TInstallations extends readonly ContextCapabilityInstallation[]> =
-	number extends TInstallations['length']
-		? unknown
-		: ProjectionIntersection<NonRootInstallationProjection<TInstallations[number]>>
-
-type RootInstallationProjection<TInstallation> = TInstallation extends unknown
-	? InstallationMetadata<TInstallation> extends Readonly<{ access: 'owner' }>
-		? never
-		: AnyInstallationProjection<TInstallation>
-	: never
-
-/** Properties available only from the root Context, plus the normal Context projection. */
-export type RootContextProjection<TInstallations extends readonly ContextCapabilityInstallation[]> =
-	number extends TInstallations['length']
-		? unknown
-		: ProjectionIntersection<RootInstallationProjection<TInstallations[number]>>
-
-/** Plan-neutral Context shared by one root host. */
 export interface Context<TRoot extends RootContext<any> = RootContext> {
 	readonly [CONTEXT_TYPE]: true
-	/** Read an installed capability permitted for this Context's ownership scope. */
-	require<T>(capability: ContextCapability<T, 'all'>): T
-	require<T>(
-		capability: ContextCapability<T, 'root'> &
+	service<T>(definition: ServiceDefinition<T, 'all'>): T
+	service<T>(
+		definition: ServiceDefinition<T, 'root'> &
 			(this extends { readonly [ROOT_CONTEXT_TYPE]: true } ? unknown : never),
 	): T
-	require<T>(
-		capability: ContextCapability<T, 'owner'> &
+	service<T>(
+		definition: ServiceDefinition<T, 'owner'> &
 			(this extends { readonly [ROOT_CONTEXT_TYPE]: true } ? never : unknown),
 	): T
+	service<T>(ref: ServiceRef<T>): T | undefined
 	readonly root: TRoot
 	readonly parent?: Context<TRoot>
 	readonly name: string
 	readonly [Symbol.toStringTag]: 'PluxelContext'
 }
-
-/** The root Context of one host. */
 export interface RootContext<
 	TRoot extends RootContext<any> = RootContext<any>,
 > extends Context<TRoot> {
 	readonly [ROOT_CONTEXT_TYPE]: true
 }
-
-/** An immutable owner of one compiled Context shape. */
 export interface ContextHost<
 	TContext extends Context<any> = Context,
 	TRoot extends RootContext<any> = RootContext,
@@ -194,70 +85,52 @@ export interface ContextHost<
 	readonly [CONTEXT_HOST_TYPE]: Readonly<{ context: TContext; root: TRoot }>
 	readonly name: string
 	createRoot(name?: string): TRoot
-	/** Create an independent capability scope whose values are shared only with its children. */
 	createScope(root: TRoot, name: string): TContext
-	/** Create a child owner that shares its parent's scope values and gets fresh owner views. */
 	createChild(parent: TContext, name: string): TContext
 }
-
-export type ContextOf<THost extends ContextHost<any, any>> =
-	THost extends ContextHost<infer TContext, any> ? TContext : never
-
-export type RootContextOf<THost extends ContextHost<any, any>> =
-	THost extends ContextHost<any, infer TRoot> ? TRoot : never
-
+export type ContextOf<H extends ContextHost<any, any>> =
+	H extends ContextHost<infer C, any> ? C : never
+export type RootContextOf<H extends ContextHost<any, any>> =
+	H extends ContextHost<any, infer R> ? R : never
 export type ContextHostOptions<
-	TCapabilities extends readonly ContextCapabilityInstallation[] =
-		readonly ContextCapabilityInstallation[],
+	TServices extends readonly ServiceInstallation[] = readonly ServiceInstallation[],
 > = Readonly<{
 	name: string
-	capabilities: TCapabilities
-	/** Additional members owned by the embedding framework, unavailable for capability projection. */
-	reservedProperties?: readonly PropertyKey[]
-	/**
-	 * Explicit pre-root replacements. Every item must match one base capability and preserve its
-	 * scope and projected property.
-	 */
-	overrides?: readonly TCapabilities[number][]
+	services: TServices
+	overrides?: readonly TServices[number][]
 }>
 
-type ProjectedRoot<TCapabilities extends readonly ContextCapabilityInstallation[]> = RootContext<
-	ProjectedRoot<TCapabilities>
-> &
-	RootContextProjection<TCapabilities>
-type ProjectedContext<TCapabilities extends readonly ContextCapabilityInstallation[]> = Context<
-	ProjectedRoot<TCapabilities>
-> &
-	ContextProjection<TCapabilities> &
-	Readonly<{ parent?: ProjectedContext<TCapabilities> }>
-
+type RootOptions<T> = Readonly<{ access?: 'all' | 'root'; create(ctx: RootContext): T }>
+type ScopeOptions<T, A extends ServiceAccess> = Readonly<{ access?: A; create(ctx: Context): T }>
+type OwnerOptions<B, T, A extends ServiceAccess> = Readonly<{
+	access?: A
+	createRoot(root: RootContext): B
+	createView(backing: B, owner: Context): T
+}>
 type CompiledInstallation = Readonly<{
-	capability: AnyCapability
-	scope: CapabilityScope
-	property?: PropertyKey
+	definition: AnyDefinition
+	key: ServiceKey
+	access: ServiceAccess
+	scope: ServiceScope
 	create?: (ctx: any) => unknown
-	createRoot?: (root: RootContext) => unknown
-	createView?: (rootValue: unknown, owner: Context) => unknown
+	createRoot?: (ctx: RootContext) => unknown
+	createView?: (backing: unknown, owner: Context) => unknown
 }>
-
-type ContextResolver = (ctx: Context) => unknown
-type ContextGetter = (this: Context) => unknown
-
-/** @internal Opaque compiled plan. Its representation is not an extension contract. */
-export type ContextPlan = Readonly<{
-	readonly [CONTEXT_PLAN_TYPE]: true
+type Resolver = (state: ContextState, ctx: Context) => unknown
+type InstalledService = Readonly<{
+	definition: AnyDefinition
+	access: ServiceAccess
+	scope: ServiceScope
+	resolve: Resolver
 }>
-
-type CompiledContextPlan = Readonly<{
+export type ContextPlan = Readonly<{ readonly [CONTEXT_PLAN_TYPE]: true }>
+type CompiledPlan = Readonly<{
 	name: string
-	ContextConstructor: new () => ContextImpl
-	RootContextConstructor: new () => ContextImpl
-	resolverByCapability: ReadonlyMap<AnyCapability, ContextResolver>
-	rootCapabilities: ReadonlySet<AnyCapability>
+	services: ReadonlyMap<ServiceKey, InstalledService>
+	definitions: readonly AnyDefinition[]
 }>
-
 type ContextState = {
-	readonly plan: CompiledContextPlan
+	readonly plan: CompiledPlan
 	readonly root: RootContext
 	readonly scope: Context
 	readonly parent?: Context
@@ -266,850 +139,502 @@ type ContextState = {
 	readonly scopeValues: unknown[]
 	ownerValues: unknown[]
 }
-
-const CAPABILITIES = new WeakMap<
-	object,
-	Readonly<{ access: ContextCapabilityAccess; property?: PropertyKey }>
->()
-const INSTALLATION_RECORDS = new WeakMap<object, CompiledInstallation>()
-const PLAN_RECORDS = new WeakMap<object, CompiledContextPlan>()
-
-let initializeContextState!: (ctx: Context, state: ContextState) => void
-let readContextState!: (ctx: Context) => ContextState
-let createRootProjectedGetter!: (
-	index: number,
-	capability: AnyCapability,
-	create: (ctx: RootContext) => unknown,
-) => ContextGetter
-let createScopeProjectedGetter!: (
-	index: number,
-	capability: AnyCapability,
-	create: (ctx: Context) => unknown,
-) => ContextGetter
-let createOwnerProjectedGetter!: (
-	viewIndex: number,
-	rootIndex: number,
-	capability: AnyCapability,
-	createRoot: (root: RootContext) => unknown,
-	createView: (rootValue: unknown, owner: Context) => unknown,
-) => ContextGetter
-let createRootDirectResolver!: (
-	index: number,
-	capability: AnyCapability,
-	create: (ctx: RootContext) => unknown,
-) => ContextResolver
-let createScopeDirectResolver!: (
-	index: number,
-	capability: AnyCapability,
-	create: (ctx: Context) => unknown,
-) => ContextResolver
-let createOwnerDirectResolver!: (
-	viewIndex: number,
-	rootIndex: number,
-	capability: AnyCapability,
-	createRoot: (root: RootContext) => unknown,
-	createView: (rootValue: unknown, owner: Context) => unknown,
-) => ContextResolver
-
-// Deliberately does not implement Context: consumers may extend the public interface while this
-// plan-neutral implementation only owns the structural fields.
+const INSTALLATIONS = new WeakMap<object, CompiledInstallation>()
+const PLANS = new WeakMap<object, CompiledPlan>()
+let readState!: (ctx: Context) => ContextState
+let initializeState!: (ctx: Context, state: ContextState) => void
 class ContextImpl {
 	#state?: ContextState
-
 	static {
-		initializeContextState = (ctx, state) => {
-			if (!isObject(ctx)) throw invalidContextError(ctx)
-			const implementation = ctx as unknown as ContextImpl
-			if (!(#state in implementation)) throw invalidContextError(ctx)
-			if (implementation.#state) {
-				throw new TypeError('[pluxel/context] Context is already initialized')
-			}
-			implementation.#state = state
-		}
-		readContextState = (ctx) => {
-			if (!isObject(ctx)) throw invalidContextError(ctx)
-			const implementation = ctx as unknown as ContextImpl
-			if (#state in implementation) {
-				const state = implementation.#state
+		readState = (ctx) => {
+			if (isObject(ctx) && #state in ctx) {
+				const state = (ctx as unknown as ContextImpl).#state
 				if (state) return state
 			}
 			throw invalidContextError(ctx)
 		}
-		// Projected getters only exist on private frozen prototypes compiled by this kernel. Compile
-		// them here so their hot path reads #state directly; explicit resolve retains boundary checks.
-		createRootProjectedGetter = (index, capability, create) =>
-			function (this: Context) {
-				const implementation = this as unknown as ContextImpl
-				const state = implementation.#state!
-				const values = state.rootValues
-				const current = values[index]
-				if (current === CONSTRUCTING) throw constructionCycleError(capability)
-				if (current !== undefined) return current
-				return constructCached(values, index, capability, create, state.root)
-			}
-		createScopeProjectedGetter = (index, capability, create) =>
-			function (this: Context) {
-				const implementation = this as unknown as ContextImpl
-				const state = implementation.#state!
-				const values = state.scopeValues
-				const current = values[index]
-				if (current === CONSTRUCTING) throw constructionCycleError(capability)
-				if (current !== undefined) return current
-				return constructCached(values, index, capability, create, state.scope)
-			}
-		createOwnerProjectedGetter = (viewIndex, rootIndex, capability, createRoot, createView) =>
-			function (this: Context) {
-				const implementation = this as unknown as ContextImpl
-				const state = implementation.#state!
-				const current = state.ownerValues[viewIndex]
-				if (current === CONSTRUCTING) throw constructionCycleError(capability)
-				if (current !== undefined) return current
-				return resolveOwnerViewMiss(
-					state,
-					this,
-					viewIndex,
-					rootIndex,
-					capability,
-					createRoot,
-					createView,
-				)
-			}
-		// Explicit resolution validates the receiver and selects this plan before invoking its private
-		// resolver. Read #state directly here so the hot resolver does not repeat boundary validation.
-		createRootDirectResolver = (index, capability, create) => (ctx) => {
+		initializeState = (ctx, state) => {
+			if (!isObject(ctx) || !(#state in ctx)) throw invalidContextError(ctx)
 			const implementation = ctx as unknown as ContextImpl
-			const state = implementation.#state!
-			const values = state.rootValues
-			const current = values[index]
-			if (current === CONSTRUCTING) throw constructionCycleError(capability)
-			if (current !== undefined) return current
-			return constructCached(values, index, capability, create, state.root)
+			if (implementation.#state)
+				throw new TypeError('[pluxel/context] Context is already initialized')
+			implementation.#state = state
 		}
-		createScopeDirectResolver = (index, capability, create) => (ctx) => {
-			const implementation = ctx as unknown as ContextImpl
-			const state = implementation.#state!
-			const values = state.scopeValues
-			const current = values[index]
-			if (current === CONSTRUCTING) throw constructionCycleError(capability)
-			if (current !== undefined) return current
-			return constructCached(values, index, capability, create, state.scope)
-		}
-		createOwnerDirectResolver =
-			(viewIndex, rootIndex, capability, createRoot, createView) => (ctx) => {
-				const implementation = ctx as unknown as ContextImpl
-				const state = implementation.#state!
-				const current = state.ownerValues[viewIndex]
-				if (current === CONSTRUCTING) throw constructionCycleError(capability)
-				if (current !== undefined) return current
-				return resolveOwnerViewMiss(
-					state,
-					ctx,
-					viewIndex,
-					rootIndex,
-					capability,
-					createRoot,
-					createView,
-				)
-			}
 	}
-
-	require<T>(capability: ContextCapability<T, ContextCapabilityAccess>): T {
+	service<T>(target: ServiceDefinition<T, ServiceAccess> | ServiceRef<T>): T | undefined {
 		const ctx = this as unknown as Context
-		const state = readContextState(ctx)
-		assertCapability(capability)
-		const access = CAPABILITIES.get(capability)!.access
-		if (
-			(access === 'root' && ctx !== state.root) ||
-			(access === 'owner' && ctx === state.root) ||
-			(state.plan.rootCapabilities.has(capability) && ctx !== state.root)
-		) {
-			throw new ContextCapabilityAccessError(capability.description)
+		const state = readState(ctx)
+		const reference = readTarget(target)
+		assertAccess(state, ctx, reference.access, describeTarget(target))
+		const installed = state.plan.services.get(reference.key)
+		if (!installed) {
+			if (reference.optional) return undefined
+			throw new ContextServiceMissingError(describeTarget(target), state.plan.name)
 		}
-		return resolveContextCapability(ctx, capability)
+		assertAccess(
+			state,
+			ctx,
+			installed.access,
+			describeTarget(installed.definition),
+			installed.scope,
+		)
+		return installed.resolve(state, ctx) as T
 	}
-
-	get [Symbol.toStringTag](): 'PluxelContext' {
-		return 'PluxelContext'
-	}
-
 	get root(): RootContext {
 		return this.#state!.root
 	}
-
 	get parent(): Context | undefined {
 		return this.#state!.parent
 	}
-
 	get name(): string {
 		return this.#state!.name
 	}
+	get [Symbol.toStringTag](): 'PluxelContext' {
+		return 'PluxelContext'
+	}
 }
-
-hidePrototypeConstructor(ContextImpl.prototype)
+Object.defineProperty(ContextImpl.prototype, 'constructor', {
+	value: undefined,
+	writable: false,
+	configurable: false,
+})
 Object.freeze(ContextImpl.prototype)
 
-/** Stable signal for an absent identity; construction failures retain their original error. */
-export class ContextCapabilityMissingError extends Error {
-	readonly code = 'CONTEXT_CAPABILITY_MISSING'
+export class ContextServiceMissingError extends Error {
+	readonly code = 'CONTEXT_SERVICE_MISSING'
 	constructor(
-		readonly capability: string,
+		readonly service: string,
 		readonly host: string,
 	) {
-		super(`[pluxel/context] Context host ${host} does not install ${capability}`)
-		this.name = 'ContextCapabilityMissingError'
+		super(`[pluxel/context] Context host ${host} does not install ${service}`)
+		this.name = 'ContextServiceMissingError'
+	}
+}
+export class ContextServiceAccessError extends Error {
+	readonly code = 'CONTEXT_SERVICE_ACCESS_DENIED'
+	constructor(readonly service: string) {
+		super(`[pluxel/context] Service ${service} is not available through service() in this Context`)
+		this.name = 'ContextServiceAccessError'
 	}
 }
 
-export class ContextCapabilityAccessError extends Error {
-	readonly code = 'CONTEXT_CAPABILITY_ACCESS_DENIED'
-	constructor(readonly capability: string) {
-		super(
-			`[pluxel/context] Capability ${capability} is not available through require in this Context`,
+export function installRootService<T>(
+	definition: ServiceDefinition<T, ServiceAccess>,
+	options: RootOptions<NoInfer<T>>,
+): RootServiceInstallation<T> {
+	return installation(definition, 'root', options)
+}
+export function installScopeService<T, A extends ServiceAccess = ServiceAccess>(
+	definition: ServiceDefinition<T, A>,
+	options: ScopeOptions<NoInfer<T>, A>,
+): ScopeServiceInstallation<T, A> {
+	return installation(definition, 'scope', options)
+}
+export function installOwnerViewService<B, T, A extends ServiceAccess = ServiceAccess>(
+	definition: ServiceDefinition<T, A>,
+	options: OwnerOptions<B, NoInfer<T>, A>,
+): OwnerViewServiceInstallation<B, T, A> {
+	return installation(definition, 'owner-view', options)
+}
+function installation<T extends ServiceInstallation>(
+	definition: AnyDefinition,
+	scope: ServiceScope,
+	options: any,
+): T {
+	const target = readRequired(definition)
+	const access = options?.access ?? target.access
+	assertServiceAccess(access)
+	if ((scope === 'root' && access === 'owner') || (scope !== 'root' && access === 'root')) {
+		throw new TypeError(
+			`[pluxel/context] Service ${describeTarget(definition)} has an incompatible installation scope`,
 		)
-		this.name = 'ContextCapabilityAccessError'
 	}
-}
-
-type CapabilityOptions<TAccess extends ContextCapabilityAccess> = Readonly<{
-	access: TAccess
-	/** If specified, every installation must use this exact property. */
-	property?: PropertyKey
-}>
-
-export function defineContextCapability<T>(
-	description: string,
-	options: CapabilityOptions<'root'>,
-): ContextCapability<T, 'root'>
-export function defineContextCapability<T>(
-	description: string,
-	options: CapabilityOptions<'owner'>,
-): ContextCapability<T, 'owner'>
-export function defineContextCapability<T>(
-	description: string,
-	options?: CapabilityOptions<'all'>,
-): ContextCapability<T>
-export function defineContextCapability<T>(
-	description: string,
-	options?: CapabilityOptions<ContextCapabilityAccess>,
-): ContextCapability<T, ContextCapabilityAccess> {
-	if (typeof description !== 'string' || description.length === 0) {
-		throw new TypeError('[pluxel/context] Context capability description is required')
-	}
-	const access = options?.access ?? 'all'
-	if (!['all', 'owner', 'root'].includes(access)) {
-		throw new TypeError('[pluxel/context] Invalid Context capability access')
-	}
-	if (
-		options?.property !== undefined &&
-		!['string', 'number', 'symbol'].includes(typeof options.property)
-	) {
-		throw new TypeError('[pluxel/context] Invalid Context capability property')
-	}
-	const capability = Object.freeze({ description, access }) as ContextCapability<
-		T,
-		ContextCapabilityAccess
-	>
-	CAPABILITIES.set(
-		capability,
+	const factories = scope === 'owner-view' ? ['createRoot', 'createView'] : ['create']
+	for (const name of factories)
+		if (typeof options?.[name] !== 'function') {
+			throw new TypeError(
+				`[pluxel/context] Service ${describeTarget(definition)} requires a ${name} factory`,
+			)
+		}
+	const value = Object.freeze({}) as T
+	// Installation fixes the lookup identity; a later binder must never invalidate a compiled plan.
+	IDENTITIES.set(definition, target.key)
+	INSTALLATIONS.set(
+		value,
 		Object.freeze({
+			definition,
+			key: target.key,
 			access,
-			...(options?.property === undefined ? {} : { property: options.property }),
+			scope,
+			...(scope === 'owner-view'
+				? { createRoot: options.createRoot, createView: options.createView }
+				: { create: options.create }),
 		}),
 	)
-	return capability
+	return value
 }
-
-/** Inspect only the identity needed to validate a host preparation dependency plan. */
-export function getContextInstallationCapability(
-	installation: ContextCapabilityInstallation,
-): ContextCapability<any, ContextCapabilityAccess> {
-	return installationRecord(installation).capability
+export function getServiceInstallationDefinition(value: ServiceInstallation): AnyDefinition {
+	return installationRecord(value).definition
 }
-
-export function installRootCapability<T, const TProperty extends PropertyKey>(
-	capability: ContextCapability<T, ContextCapabilityAccess>,
-	options: RootCapabilityOptions<T> & Readonly<{ property: TProperty }>,
-): RootCapabilityInstallation<T, TProperty>
-export function installRootCapability<T>(
-	capability: ContextCapability<T, ContextCapabilityAccess>,
-	options: RootCapabilityOptions<T>,
-): RootCapabilityInstallation<T, undefined>
-export function installRootCapability<T>(
-	capability: ContextCapability<T, ContextCapabilityAccess>,
-	options: RootCapabilityOptions<T>,
-): RootCapabilityInstallation<T, PropertyKey | undefined> {
-	return freezeRootInstallation(capability, options)
-}
-
-export function installScopeCapability<
-	T,
-	const TProperty extends PropertyKey,
-	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
->(
-	capability: ContextCapability<T, TAccess>,
-	options: ScopeCapabilityOptions<T> & Readonly<{ property: TProperty }>,
-): ScopeCapabilityInstallation<T, TProperty, TAccess>
-export function installScopeCapability<
-	T,
-	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
->(
-	capability: ContextCapability<T, TAccess>,
-	options: ScopeCapabilityOptions<T>,
-): ScopeCapabilityInstallation<T, undefined, TAccess>
-export function installScopeCapability<
-	T,
-	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
->(
-	capability: ContextCapability<T, TAccess>,
-	options: ScopeCapabilityOptions<T>,
-): ScopeCapabilityInstallation<T, PropertyKey | undefined, TAccess> {
-	assertCapability(capability)
-	assertCapabilityFactory(capability, options?.create, 'create')
-	return createInstallationToken<ScopeCapabilityInstallation<T, PropertyKey | undefined, TAccess>>({
-		capability,
-		scope: 'scope' as const,
-		...(options.property === undefined ? {} : { property: options.property }),
-		create: options.create,
-	})
-}
-
-export function installOwnerViewCapability<
-	TRoot,
-	TView,
-	const TProperty extends PropertyKey,
-	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
->(
-	capability: ContextCapability<TView, TAccess>,
-	options: OwnerViewCapabilityOptions<TRoot, TView> & Readonly<{ property: TProperty }>,
-): OwnerViewCapabilityInstallation<TRoot, TView, TProperty, TAccess>
-export function installOwnerViewCapability<
-	TRoot,
-	TView,
-	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
->(
-	capability: ContextCapability<TView, TAccess>,
-	options: OwnerViewCapabilityOptions<TRoot, TView>,
-): OwnerViewCapabilityInstallation<TRoot, TView, undefined, TAccess>
-export function installOwnerViewCapability<
-	TRoot,
-	TView,
-	TAccess extends ContextCapabilityAccess = ContextCapabilityAccess,
->(
-	capability: ContextCapability<TView, TAccess>,
-	options: OwnerViewCapabilityOptions<TRoot, TView>,
-): OwnerViewCapabilityInstallation<TRoot, TView, PropertyKey | undefined, TAccess> {
-	assertCapability(capability)
-	assertCapabilityFactory(capability, options?.createRoot, 'createRoot')
-	assertCapabilityFactory(capability, options?.createView, 'createView')
-	return createInstallationToken<
-		OwnerViewCapabilityInstallation<TRoot, TView, PropertyKey | undefined, TAccess>
-	>({
-		capability,
-		scope: 'owner-view' as const,
-		...(options.property === undefined ? {} : { property: options.property }),
-		createRoot: options.createRoot,
-		createView: options.createView,
-	})
-}
-
-export function createContextHost<
-	const TCapabilities extends readonly ContextCapabilityInstallation[],
->(
-	options: ContextHostOptions<TCapabilities>,
-): ContextHost<ProjectedContext<TCapabilities>, ProjectedRoot<TCapabilities>> {
-	const plan = createContextPlan(
-		options.name,
-		applyOverrides(options.capabilities, options.overrides),
-		options.reservedProperties,
-	)
-	type TContext = ProjectedContext<TCapabilities>
-	type TRoot = ProjectedRoot<TCapabilities>
-	const host: ContextHost<TContext, TRoot> = {
-		name: options.name,
-		createRoot: (name = 'root') => Object.preventExtensions(createRootContext(plan, name)) as TRoot,
-		createScope: (root, name) => {
-			assertPlanContext(plan, root)
-			return Object.preventExtensions(createScopeContext(root, name)) as TContext
-		},
-		createChild: (parent, name) => {
-			assertPlanContext(plan, parent)
-			return Object.preventExtensions(createChildContext(parent, name)) as TContext
-		},
-	} as ContextHost<TContext, TRoot>
-	return Object.freeze(host)
-}
-
-export function resolveContextCapability<T>(
+/** Preparation dependencies deliberately resolve an installed service without a public owner-access check. */
+export function resolveContextService<T>(
 	ctx: Context,
-	capability: ContextCapability<T, ContextCapabilityAccess>,
+	definition: ServiceDefinition<T, ServiceAccess>,
 ): T {
-	const state = readContextState(ctx)
-	const resolver = state.plan.resolverByCapability.get(capability as AnyCapability)
-	if (resolver === undefined) {
-		assertCapability(capability)
-		throw new ContextCapabilityMissingError(capability.description, state.plan.name)
-	}
-	return resolver(ctx) as T
+	const state = readState(ctx)
+	const target = readRequired(definition)
+	const installed = state.plan.services.get(target.key)
+	if (!installed) throw new ContextServiceMissingError(describeTarget(definition), state.plan.name)
+	return installed.resolve(state, ctx) as T
 }
-
-/** @internal Compile an immutable installation set into slot resolvers and a private prototype. */
+export function createContextHost<const TServices extends readonly ServiceInstallation[]>(
+	options: ContextHostOptions<TServices>,
+): ContextHost {
+	const plan = createContextPlan(options.name, applyOverrides(options.services, options.overrides))
+	return Object.freeze({
+		name: options.name,
+		createRoot: (name = 'root') => Object.preventExtensions(createRootContext(plan, name)),
+		createScope: (root: RootContext, name: string) => {
+			assertPlanContext(plan, root)
+			return Object.preventExtensions(createScopeContext(root, name))
+		},
+		createChild: (parent: Context, name: string) => {
+			assertPlanContext(plan, parent)
+			return Object.preventExtensions(createChildContext(parent, name))
+		},
+	}) as ContextHost
+}
+/** Compile once; no factory or resource acquisition runs here. */
 export function createContextPlan(
 	name: string,
-	installations: readonly ContextCapabilityInstallation[],
-	reservedProperties: readonly PropertyKey[] = [],
+	source: readonly ServiceInstallation[],
 ): ContextPlan {
-	if (typeof name !== 'string' || name.length === 0) {
+	if (typeof name !== 'string' || !name)
 		throw new TypeError('[pluxel/context] Context host name is required')
-	}
-	const resolverByCapability = new Map<AnyCapability, ContextResolver>()
-	const properties = new Set<PropertyKey>(reservedProperties)
-	const rootCapabilities = new Set<AnyCapability>()
-	let rootValueCount = 0
-	let scopeValueCount = 0
-	let ownerValueCount = 0
-	const ContextConstructor = class extends ContextImpl {}
-	const RootContextConstructor = class extends ContextConstructor {}
-	const contextPrototype = ContextConstructor.prototype
-	const rootPrototype = RootContextConstructor.prototype
-
-	for (const source of installations) {
-		const sourceRecord = installationRecord(source, name)
-		const capability = sourceRecord.capability
-		if (resolverByCapability.has(capability)) {
+	const services = new Map<ServiceKey, InstalledService>()
+	let roots = 0,
+		scopes = 0,
+		owners = 0
+	for (const value of source) {
+		const item = installationRecord(value)
+		if (services.has(item.key))
 			throw new Error(
-				`[pluxel/context] Context host ${name} installs ${capability.description} more than once`,
+				`[pluxel/context] Context host ${name} installs ${describeTarget(item.definition)} more than once`,
 			)
-		}
-		const installation = sourceRecord
-		const contract = CAPABILITIES.get(capability)!
-		if (contract.property !== undefined && contract.property !== installation.property) {
-			throw new TypeError(
-				`[pluxel/context] Capability ${capability.description} requires property ${String(contract.property)}`,
-			)
-		}
-		if (
-			(contract.access === 'root' && installation.scope !== 'root') ||
-			(contract.access === 'owner' && installation.scope === 'root')
-		) {
-			throw new TypeError(
-				`[pluxel/context] Capability ${capability.description} has an incompatible installation scope`,
-			)
-		}
-		if (installation.scope === 'root') rootCapabilities.add(capability)
-		let valueIndex: number
-		let rootIndex: number | undefined
-		if (installation.scope === 'root') {
-			valueIndex = rootValueCount++
-		} else if (installation.scope === 'scope') {
-			valueIndex = scopeValueCount++
+		let resolve: Resolver
+		if (item.scope === 'root') {
+			const index = roots++
+			resolve = (state) =>
+				cached(state.rootValues, index, item.definition, () => item.create!(state.root))
+		} else if (item.scope === 'scope') {
+			const index = scopes++
+			resolve = (state) =>
+				cached(state.scopeValues, index, item.definition, () => item.create!(state.scope))
 		} else {
-			valueIndex = ownerValueCount++
-			rootIndex = rootValueCount++
+			const rootIndex = roots++,
+				ownerIndex = owners++
+			resolve = (state, ctx) => {
+				if (state.ownerValues === EMPTY_OWNER_VALUES) state.ownerValues = []
+				return cached(state.ownerValues, ownerIndex, item.definition, () => {
+					const backing = cached(state.rootValues, rootIndex, item.definition, () =>
+						item.createRoot!(state.root),
+					)
+					return item.createView!(backing, ctx)
+				})
+			}
 		}
-		resolverByCapability.set(capability, compileResolver(installation, valueIndex, rootIndex))
-		if (installation.property === undefined) continue
-		if (properties.has(installation.property) || installation.property in ContextImpl.prototype) {
-			throw new Error(
-				`[pluxel/context] Context host ${name} has a duplicate property ${String(installation.property)}`,
-			)
-		}
-		properties.add(installation.property)
-		Object.defineProperty(
-			installation.scope === 'root' ? rootPrototype : contextPrototype,
-			installation.property,
-			{
-				configurable: false,
-				enumerable: false,
-				get: compileProjectedGetter(installation, valueIndex, rootIndex),
-			},
+		services.set(
+			item.key,
+			Object.freeze({
+				definition: item.definition,
+				access: item.access,
+				scope: item.scope,
+				resolve,
+			}),
 		)
 	}
-
-	for (const source of installations) {
-		const installation = installationRecord(source)
-		if (
-			installation.property !== undefined &&
-			CAPABILITIES.get(installation.capability)!.access === 'owner'
-		) {
-			Object.defineProperty(rootPrototype, installation.property, { value: undefined })
-		}
-	}
-
-	hidePrototypeConstructor(contextPrototype)
-	hidePrototypeConstructor(rootPrototype)
-	Object.freeze(contextPrototype)
-	Object.freeze(rootPrototype)
-	Object.freeze(ContextConstructor)
-	Object.freeze(RootContextConstructor)
-	const compiledPlanRecord = Object.freeze({
-		name,
-		ContextConstructor,
-		RootContextConstructor,
-		resolverByCapability,
-		rootCapabilities,
-	})
 	const plan = Object.freeze({}) as ContextPlan
-	PLAN_RECORDS.set(plan, compiledPlanRecord)
+	PLANS.set(
+		plan,
+		Object.freeze({
+			name,
+			services,
+			definitions: Object.freeze([...services.values()].map(({ definition }) => definition)),
+		}),
+	)
 	return plan
 }
-
-/** @internal */
 export function createRootContext(plan: ContextPlan, name = 'root'): RootContext {
 	const compiled = compiledPlan(plan)
-	const values: unknown[] = []
-	const root = allocateRootContext(compiled)
-	initializeContextState(root, {
+	const root = new ContextImpl() as unknown as RootContext
+	initializeState(root, {
 		plan: compiled,
 		root,
 		scope: root,
 		name,
-		rootValues: values,
+		rootValues: [],
 		scopeValues: [],
 		ownerValues: EMPTY_OWNER_VALUES,
 	})
 	return root
 }
-
-/** @internal */
 export function createScopeContext(root: RootContext, name: string): Context {
-	const rootState = readContextState(root)
-	if (rootState.root !== root)
-		throw new TypeError('[pluxel/context] A scope requires a root Context')
-	const ctx = allocateContext(rootState.plan)
-	initializeContextState(ctx, {
-		plan: rootState.plan,
+	const state = readState(root)
+	if (state.root !== root) throw new TypeError('[pluxel/context] A scope requires a root Context')
+	const ctx = new ContextImpl() as unknown as Context
+	initializeState(ctx, {
+		plan: state.plan,
 		root,
 		scope: ctx,
 		name,
-		rootValues: rootState.rootValues,
+		rootValues: state.rootValues,
 		scopeValues: [],
 		ownerValues: EMPTY_OWNER_VALUES,
 	})
 	return ctx
 }
-
-/** @internal */
 export function createChildContext(parent: Context, name: string): Context {
-	const parentState = readContextState(parent)
-	const ctx = allocateContext(parentState.plan)
-	initializeContextState(ctx, {
-		plan: parentState.plan,
-		root: parentState.root,
-		scope: parentState.scope,
+	const state = readState(parent)
+	const ctx = new ContextImpl() as unknown as Context
+	initializeState(ctx, {
+		plan: state.plan,
+		root: state.root,
+		scope: state.scope,
 		parent,
 		name,
-		rootValues: parentState.rootValues,
-		scopeValues: parentState.scopeValues,
+		rootValues: state.rootValues,
+		scopeValues: state.scopeValues,
 		ownerValues: EMPTY_OWNER_VALUES,
 	})
 	return ctx
 }
-
-/** @internal Create a fresh owner view over the source scope without adding a containment parent. */
 export function createContextView(source: Context): Context {
-	const sourceState = readContextState(source)
-	const ctx = allocateContext(sourceState.plan)
-	initializeContextState(ctx, {
-		plan: sourceState.plan,
-		root: sourceState.root,
-		scope: sourceState.scope,
-		...(sourceState.parent ? { parent: sourceState.parent } : {}),
-		name: sourceState.name,
-		rootValues: sourceState.rootValues,
-		scopeValues: sourceState.scopeValues,
+	const state = readState(source)
+	const ctx = new ContextImpl() as unknown as Context
+	initializeState(ctx, {
+		plan: state.plan,
+		root: state.root,
+		scope: state.scope,
+		...(state.parent ? { parent: state.parent } : {}),
+		name: state.name,
+		rootValues: state.rootValues,
+		scopeValues: state.scopeValues,
 		ownerValues: EMPTY_OWNER_VALUES,
 	})
 	return ctx
 }
 
-function freezeRootInstallation<T>(
-	capability: ContextCapability<T, ContextCapabilityAccess>,
-	options: RootCapabilityOptions<T>,
-): RootCapabilityInstallation<T, PropertyKey | undefined> {
-	assertCapability(capability)
-	assertCapabilityFactory(capability, options?.create, 'create')
-	return createInstallationToken<RootCapabilityInstallation<T, PropertyKey | undefined>>({
-		capability,
-		scope: 'root' as const,
-		...(options.property === undefined ? {} : { property: options.property }),
-		create: options.create,
-	})
-}
-
-function applyOverrides(
-	capabilities: readonly ContextCapabilityInstallation[],
-	overrides: readonly ContextCapabilityInstallation[] | undefined,
-): readonly ContextCapabilityInstallation[] {
-	if (!overrides?.length) return capabilities
-	const result = [...capabilities]
-	const indexes = new Map<AnyCapability, number>()
-	for (let index = 0; index < result.length; index += 1) {
-		const capability = installationRecord(result[index]!).capability
-		if (!indexes.has(capability)) indexes.set(capability, index)
+/** Framework binding: a stable identity supplements a declaration's process-local object key. */
+export function bindServiceIdentity(definition: AnyDefinition, key: string): void {
+	const reference = readRequired(definition)
+	if (typeof key !== 'string' || !key)
+		throw new TypeError('[pluxel/context] Service identity must be a non-empty string')
+	const existing =
+		IDENTITIES.get(definition) ?? (typeof reference.key === 'string' ? reference.key : undefined)
+	if (existing !== undefined && existing !== key) {
+		if (typeof existing !== 'string')
+			throw new TypeError('[pluxel/context] Service identity must be bound before installation')
+		throw new TypeError('[pluxel/context] Service declaration is already bound to another identity')
 	}
-	const replaced = new Set<AnyCapability>()
-	for (const replacementToken of overrides) {
-		const replacement = installationRecord(replacementToken)
-		const capability = replacement.capability
-		const index = indexes.get(capability)
-		if (index === undefined) {
+	IDENTITIES.set(definition, key)
+	const classReference = CLASS_REFERENCES.get(definition)
+	if (classReference) CLASS_REFERENCES.set(definition, Object.freeze({ ...classReference, key }))
+}
+export function createServiceReference<T, A extends ServiceAccess>(
+	key: string,
+	access: A,
+): ServiceDefinition<T, A> {
+	return makeReference(key, access, false) as ServiceDefinition<T, A>
+}
+export function createServiceRef<T, A extends ServiceAccess = ServiceAccess>(
+	target: ServiceDefinition<T, A>,
+	access?: A,
+): ServiceRef<T, A>
+export function createServiceRef<T, A extends ServiceAccess = ServiceAccess>(
+	key: string,
+	access: A,
+): ServiceRef<T, A>
+export function createServiceRef<T, A extends ServiceAccess = ServiceAccess>(
+	target: string | ServiceDefinition<T, A>,
+	access?: A,
+): ServiceRef<T, A> {
+	if (typeof target === 'string')
+		return makeReference(target, access ?? 'all', true) as ServiceRef<T, A>
+	const definition = readRequired(target)
+	return makeReference(definition.key, access ?? definition.access, true) as ServiceRef<T, A>
+}
+function makeReference(key: ServiceKey, access: ServiceAccess, optional: boolean): object {
+	if ((typeof key !== 'string' || !key) && !isObject(key))
+		throw new TypeError('[pluxel/context] Service reference identity must be a non-empty string')
+	assertServiceAccess(access)
+	const value = Object.freeze({ access })
+	REFERENCES.set(value, Object.freeze({ key, access, optional }))
+	return value
+}
+export function getServiceDefinitionKey(target: AnyTarget): ServiceKey {
+	return readTarget(target).key
+}
+export function getServiceDefinitionAccess(target: AnyTarget): ServiceAccess {
+	return readTarget(target).access
+}
+export function isServiceRef(value: unknown): value is ServiceRef<unknown> {
+	return isObject(value) && REFERENCES.get(value)?.optional === true
+}
+export function getInstalledServiceDefinitions(ctx: Context): readonly AnyDefinition[] {
+	return readState(ctx).plan.definitions
+}
+export function resolveInstalledServiceDefinition(
+	ctx: Context,
+	key: ServiceKey,
+): AnyDefinition | undefined {
+	return readState(ctx).plan.services.get(key)?.definition
+}
+export function getInstalledServiceAccess(
+	ctx: Context,
+	key: ServiceKey,
+): ServiceAccess | undefined {
+	return readState(ctx).plan.services.get(key)?.access
+}
+function readRequired(target: AnyDefinition): ReferenceRecord {
+	const value = readTarget(target)
+	if (value.optional)
+		throw new TypeError(
+			'[pluxel/context] An optional ServiceRef cannot declare an installed service',
+		)
+	return value
+}
+function readTarget(target: AnyTarget): ReferenceRecord {
+	if (!isObject(target))
+		throw new TypeError('[pluxel/context] Invalid service declaration or reference')
+	const reference = REFERENCES.get(target)
+	if (reference) {
+		const key =
+			IDENTITIES.get(target) ??
+			(isObject(reference.key) ? (IDENTITIES.get(reference.key) ?? reference.key) : reference.key)
+		if (key === reference.key) return reference
+		const bound = Object.freeze({ ...reference, key })
+		REFERENCES.set(target, bound)
+		return bound
+	}
+	const classReference = CLASS_REFERENCES.get(target)
+	if (classReference) return classReference
+	if (
+		typeof target === 'function' &&
+		typeof target.prototype === 'object' &&
+		target.prototype !== null
+	) {
+		const access = (target as ServiceClass<any, ServiceAccess>).access ?? 'all'
+		assertServiceAccess(access)
+		const created = Object.freeze({
+			key: IDENTITIES.get(target) ?? target,
+			access,
+			optional: false,
+		})
+		CLASS_REFERENCES.set(target, created)
+		return created
+	}
+	throw new TypeError(
+		'[pluxel/context] Invalid service declaration or reference; use values from the same evaluated Context kernel instance',
+	)
+}
+function assertAccess(
+	state: ContextState,
+	ctx: Context,
+	access: ServiceAccess,
+	name: string,
+	scope?: ServiceScope,
+): void {
+	if (
+		(access === 'root' && ctx !== state.root) ||
+		(access === 'owner' && ctx === state.root) ||
+		(scope === 'root' && ctx !== state.root)
+	)
+		throw new ContextServiceAccessError(name)
+}
+function assertServiceAccess(value: unknown): asserts value is ServiceAccess {
+	if (value !== 'all' && value !== 'root' && value !== 'owner')
+		throw new TypeError('[pluxel/context] Invalid service access')
+}
+function installationRecord(value: ServiceInstallation): CompiledInstallation {
+	const record = isObject(value) ? INSTALLATIONS.get(value) : undefined
+	if (!record) throw new TypeError('[pluxel/context] Invalid service installation')
+	return record
+}
+function compiledPlan(value: ContextPlan): CompiledPlan {
+	const record = isObject(value) ? PLANS.get(value) : undefined
+	if (!record) throw new TypeError('[pluxel/context] Invalid Context plan')
+	return record
+}
+function assertPlanContext(plan: ContextPlan, ctx: Context): void {
+	if (readState(ctx).plan !== compiledPlan(plan))
+		throw new TypeError('[pluxel/context] Context belongs to a different host')
+}
+function applyOverrides(
+	source: readonly ServiceInstallation[],
+	overrides?: readonly ServiceInstallation[],
+): readonly ServiceInstallation[] {
+	if (!overrides?.length) return source
+	const result = [...source]
+	const positions = new Map(source.map((item, index) => [installationRecord(item).key, index]))
+	const replaced = new Set<ServiceKey>()
+	for (const value of overrides) {
+		const item = installationRecord(value),
+			index = positions.get(item.key)
+		if (index === undefined)
 			throw new Error(
-				`[pluxel/context] Cannot override uninstalled capability ${capability.description}`,
+				`[pluxel/context] Cannot override uninstalled service ${describeTarget(item.definition)}`,
 			)
-		}
-		if (replaced.has(capability)) {
+		if (replaced.has(item.key))
 			throw new Error(
-				`[pluxel/context] Capability ${capability.description} is overridden more than once`,
+				`[pluxel/context] Service ${describeTarget(item.definition)} is overridden more than once`,
 			)
-		}
 		const original = installationRecord(result[index]!)
-		if (original.scope !== replacement.scope || original.property !== replacement.property) {
+		if (original.scope !== item.scope || original.access !== item.access)
 			throw new Error(
-				`[pluxel/context] Override for ${capability.description} must preserve scope and property`,
+				`[pluxel/context] Override for ${describeTarget(item.definition)} must preserve scope and access`,
 			)
-		}
-		result[index] = replacementToken
-		replaced.add(capability)
+		result[index] = value
+		replaced.add(item.key)
 	}
 	return Object.freeze(result)
 }
-
-function assertCapability(capability: AnyCapability): void {
-	if (!isObject(capability) || !CAPABILITIES.has(capability)) {
-		if (isObject(capability) && looksLikeContextCapability(capability)) {
-			throw foreignKernelError('Context capability descriptor')
-		}
-		throw new TypeError('[pluxel/context] Invalid Context capability descriptor')
-	}
-}
-
-function assertCapabilityFactory(
-	capability: AnyCapability,
-	factory: unknown,
-	name: 'create' | 'createRoot' | 'createView',
-): void {
-	if (typeof factory !== 'function') {
-		throw new TypeError(
-			`[pluxel/context] Context capability ${capability.description} requires a ${name} factory`,
-		)
-	}
-}
-
-function createInstallationToken<TInstallation extends ContextCapabilityInstallation>(
-	record: object,
-): TInstallation {
-	const installation = Object.freeze({}) as TInstallation
-	INSTALLATION_RECORDS.set(installation, Object.freeze(record) as CompiledInstallation)
-	return installation
-}
-
-function installationRecord(
-	installation: ContextCapabilityInstallation,
-	hostName?: string,
-): CompiledInstallation {
-	const record = isObject(installation) ? INSTALLATION_RECORDS.get(installation) : undefined
-	if (record) return record
-	const host = hostName ? ` host ${hostName}` : ''
-	throw new TypeError(`[pluxel/context] Context${host} received an invalid capability installation`)
-}
-
-function compiledPlan(plan: ContextPlan): CompiledContextPlan {
-	const compiled = isObject(plan) ? PLAN_RECORDS.get(plan) : undefined
-	if (compiled) return compiled
-	throw new TypeError('[pluxel/context] Invalid Context plan')
-}
-
-function assertPlanContext(plan: ContextPlan, ctx: Context): void {
-	if (readContextState(ctx).plan !== compiledPlan(plan)) {
-		throw new TypeError('[pluxel/context] Context belongs to a different host')
-	}
-}
-
-function allocateContext(plan: CompiledContextPlan): Context {
-	return new plan.ContextConstructor() as unknown as Context
-}
-
-function allocateRootContext(plan: CompiledContextPlan): RootContext {
-	return new plan.RootContextConstructor() as unknown as RootContext
-}
-
-function hidePrototypeConstructor(prototype: object): void {
-	Object.defineProperty(prototype, 'constructor', {
-		value: undefined,
-		writable: false,
-		enumerable: false,
-		configurable: false,
-	})
-}
-
-function invalidContextError(value: unknown): TypeError {
-	if (isObject(value) && hasPluxelContextTag(value)) {
-		return foreignKernelError('Context')
-	}
-	return new TypeError('[pluxel/context] Invalid Context implementation')
-}
-
-function foreignKernelError(subject: 'Context' | 'Context capability descriptor'): TypeError {
-	return new TypeError(
-		[
-			`[pluxel/context] ${subject} belongs to a different evaluated Context kernel.`,
-			'Use Context values, capability descriptors, installations, and plans from the same evaluated kernel instance.',
-			'This usually means @pluxel/context and @pluxel/core values were mixed, or one package was evaluated more than once through HMR or workspace resolution.',
-		].join('\n'),
-	)
-}
-
-function hasPluxelContextTag(value: object): boolean {
+function cached(
+	values: unknown[],
+	index: number,
+	definition: AnyDefinition,
+	create: () => unknown,
+): unknown {
+	const current = values[index]
+	if (current === CONSTRUCTING)
+		throw new Error(`[pluxel/context] Service construction cycle at ${describeTarget(definition)}`)
+	if (current !== undefined) return current
+	values[index] = CONSTRUCTING
 	try {
-		return Object.prototype.toString.call(value) === '[object PluxelContext]'
-	} catch {
-		return false
+		const value = create()
+		if (value === undefined)
+			throw new TypeError(
+				`[pluxel/context] Service ${describeTarget(definition)} returned undefined`,
+			)
+		values[index] = value
+		return value
+	} catch (error) {
+		values[index] = undefined
+		throw error
 	}
 }
-
-function looksLikeContextCapability(value: object): boolean {
-	try {
-		const keys = Reflect.ownKeys(value)
-		if (
-			(keys.length !== 1 && keys.length !== 2) ||
-			keys[0] !== 'description' ||
-			!Object.isFrozen(value)
-		)
-			return false
-		const description = Object.getOwnPropertyDescriptor(value, 'description')
-		return (
-			description !== undefined &&
-			typeof description.value === 'string' &&
-			description.value.length > 0 &&
-			description.enumerable === true &&
-			description.configurable === false &&
-			description.writable === false
-		)
-	} catch {
-		return false
-	}
+function describeTarget(value: AnyTarget): string {
+	const key = typeof value === 'function' ? value : readTarget(value).key
+	return typeof key === 'function' ? key.name || '<anonymous service>' : String(key)
 }
-
 function isObject(value: unknown): value is object {
-	return (typeof value === 'object' && value !== null) || typeof value === 'function'
+	return value !== null && (typeof value === 'object' || typeof value === 'function')
 }
-
-function compileResolver(
-	installation: CompiledInstallation,
-	valueIndex: number,
-	rootIndex: number | undefined,
-): ContextResolver {
-	const capability = installation.capability
-	if (installation.scope === 'root') {
-		return createRootDirectResolver(valueIndex, capability, installation.create!)
-	}
-	if (installation.scope === 'scope') {
-		return createScopeDirectResolver(valueIndex, capability, installation.create!)
-	}
-	return createOwnerDirectResolver(
-		valueIndex,
-		rootIndex!,
-		capability,
-		installation.createRoot!,
-		installation.createView!,
-	)
-}
-
-function compileProjectedGetter(
-	installation: CompiledInstallation,
-	valueIndex: number,
-	rootIndex: number | undefined,
-): ContextGetter {
-	const capability = installation.capability
-	if (installation.scope === 'root') {
-		return createRootProjectedGetter(valueIndex, capability, installation.create!)
-	}
-	if (installation.scope === 'scope') {
-		return createScopeProjectedGetter(valueIndex, capability, installation.create!)
-	}
-	return createOwnerProjectedGetter(
-		valueIndex,
-		rootIndex!,
-		capability,
-		installation.createRoot!,
-		installation.createView!,
-	)
-}
-
-function readCached(current: unknown, capability: AnyCapability): unknown {
-	if (current === CONSTRUCTING) throw constructionCycleError(capability)
-	return current
-}
-
-function constructionCycleError(capability: AnyCapability): Error {
-	return new Error(
-		`[pluxel/context] Context capability construction cycle at ${capability.description}`,
-	)
-}
-
-function resolveOwnerViewMiss(
-	state: ContextState,
-	owner: Context,
-	viewIndex: number,
-	rootIndex: number,
-	capability: AnyCapability,
-	createRoot: (root: RootContext) => unknown,
-	createView: (rootValue: unknown, owner: Context) => unknown,
-): unknown {
-	let ownerValues = state.ownerValues
-	if (ownerValues === EMPTY_OWNER_VALUES) state.ownerValues = ownerValues = []
-	const rootValues = state.rootValues
-	const rootCurrent = rootValues[rootIndex]
-	const rootValue =
-		rootCurrent === undefined
-			? constructCached(rootValues, rootIndex, capability, createRoot, state.root)
-			: readCached(rootCurrent, capability)
-	return constructOwnerView(ownerValues, viewIndex, capability, createView, rootValue, owner)
-}
-
-function constructCached<TContext extends Context>(
-	values: unknown[],
-	index: number,
-	capability: AnyCapability,
-	create: (ctx: TContext) => unknown,
-	ctx: TContext,
-): unknown {
-	values[index] = CONSTRUCTING
+function invalidContextError(value: unknown): TypeError {
 	try {
-		const value = create(ctx)
-		if (value === undefined) {
-			throw new TypeError(
-				`[pluxel/context] Context capability ${capability.description} returned undefined`,
+		if (isObject(value) && Object.prototype.toString.call(value) === '[object PluxelContext]')
+			return new TypeError(
+				'[pluxel/context] Context belongs to a different evaluated Context kernel; use values from the same evaluated kernel instance (including HMR and workspace resolution)',
 			)
-		}
-		values[index] = value
-		return value
-	} catch (error) {
-		values[index] = undefined
-		throw error
-	}
-}
-
-function constructOwnerView(
-	values: unknown[],
-	index: number,
-	capability: AnyCapability,
-	create: (rootValue: unknown, owner: Context) => unknown,
-	rootValue: unknown,
-	owner: Context,
-): unknown {
-	values[index] = CONSTRUCTING
-	try {
-		const value = create(rootValue, owner)
-		if (value === undefined) {
-			throw new TypeError(
-				`[pluxel/context] Context capability ${capability.description} returned undefined`,
-			)
-		}
-		values[index] = value
-		return value
-	} catch (error) {
-		values[index] = undefined
-		throw error
-	}
+	} catch {}
+	return new TypeError('[pluxel/context] Invalid Context implementation')
 }

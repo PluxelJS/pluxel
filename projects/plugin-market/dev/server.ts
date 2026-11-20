@@ -114,9 +114,9 @@ try {
 	}
 	const columns = await db.prepare('PRAGMA table_info(packages)').all<{ name: string }>()
 	const releaseColumns = await db.prepare('PRAGMA table_info(releases)').all<{ name: string }>()
-	const search = await db
-		.prepare("SELECT name FROM sqlite_master WHERE name = 'package_search'")
-		.first()
+	const catalog = await db
+		.prepare("SELECT name FROM sqlite_master WHERE name IN ('package_search', 'market_authors')")
+		.all<{ name: string }>()
 	if (
 		![
 			'registry',
@@ -126,11 +126,13 @@ try {
 			'repository',
 			'repository_stars',
 			'repository_observed_at',
+			'repository_author_id',
+			'curated_author_id',
 		].every((name) => columns.results.some((column) => column.name === name)) ||
 		!['readme', 'license'].every((name) =>
 			releaseColumns.results.some((column) => column.name === name),
 		) ||
-		!search
+		catalog.results.length !== 2
 	)
 		throw new Error(
 			'Existing sandbox D1 needs the current migrations applied explicitly before starting market',

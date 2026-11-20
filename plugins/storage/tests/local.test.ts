@@ -1,8 +1,8 @@
-import { standardServices } from '@pluxel/services'
 import { createTestHost } from '@pluxel/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { ReadableStream as NodeReadableStream } from 'node:stream/web'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { afterEach, describe, expect, it } from 'vitest'
 import { S3, S3NotRunningError, S3Plugin, S3UnsupportedOperationError } from '../src/index.ts'
@@ -23,6 +23,28 @@ afterEach(async () => {
 })
 
 describe('S3Plugin local backend', () => {
+	it('reads and cancels Node-backed global Web Stream responses without changing stored bytes', async () => {
+		const root = await temporaryRoot()
+		await withLocalS3(root, async (s3) => {
+			const bytes = Uint8Array.from({ length: 256 * 1024 }, (_, index) => index % 251)
+			const client = s3.bucket().client
+			await client.putObject('stream.bin', bytes)
+			const response = (await client.getObjectResponse('stream.bin'))!
+			expect(NodeReadableStream).toBe(globalThis.ReadableStream)
+			expect(response.body).toBeInstanceOf(globalThis.ReadableStream)
+			const reader = response.body!.getReader()
+			try {
+				const chunk = await reader.read()
+				expect(chunk.done).toBe(false)
+				expect(chunk.value).toEqual(bytes.subarray(0, chunk.value!.byteLength))
+				await reader.cancel()
+			} finally {
+				reader.releaseLock()
+			}
+			expect(new Uint8Array((await client.getObjectArrayBuffer('stream.bin'))!)).toEqual(bytes)
+		})
+	})
+
 	it('preserves S3 keys and object metadata across provider lifecycles', async () => {
 		const root = await temporaryRoot()
 		const keys = ['documents/你好.txt', '../escape', '/absolute//key', 'windows\\key']
@@ -191,11 +213,9 @@ describe('S3Plugin local backend', () => {
 	it('revokes the caller facade and captured local client on provider stop', async () => {
 		const root = await temporaryRoot()
 		{
-			await using host = await createTestHost({
-				services: standardServices(),
-			})
+			await using host = await createTestHost()
 
-			await host.start(S3Plugin, {
+			await host.start(S3Plugin.nodeAddress(), {
 				initialConfig: {
 					buckets: [
 						{
@@ -210,11 +230,11 @@ describe('S3Plugin local backend', () => {
 					],
 				},
 			})
-			await host.start(LocalS3Consumer)
-			const capability = host.require(LocalS3Consumer).s3
+			await host.start(LocalS3Consumer.nodeAddress())
+			const capability = host.require(LocalS3Consumer.nodeAddress()).s3
 			const bucket = capability.bucket()
 			const client = bucket.client
-			await host.stop(S3Plugin)
+			await host.stop(S3Plugin.nodeAddress())
 			expect(() => bucket.client).toThrow('Plugin owner stopped')
 			await expect(client.bucketExists()).rejects.toBeInstanceOf(S3NotRunningError)
 		}
@@ -229,11 +249,9 @@ async function temporaryRoot(): Promise<string> {
 
 async function withLocalS3(rootDir: string, run: (s3: S3) => void | Promise<void>): Promise<void> {
 	{
-		await using host = await createTestHost({
-			services: standardServices(),
-		})
+		await using host = await createTestHost()
 
-		await host.start(S3Plugin, {
+		await host.start(S3Plugin.nodeAddress(), {
 			initialConfig: {
 				buckets: [
 					{
@@ -248,7 +266,7 @@ async function withLocalS3(rootDir: string, run: (s3: S3) => void | Promise<void
 				],
 			},
 		})
-		await host.start(LocalS3Consumer)
-		await run(host.require(LocalS3Consumer).s3)
+		await host.start(LocalS3Consumer.nodeAddress())
+		await run(host.require(LocalS3Consumer.nodeAddress()).s3)
 	}
 }

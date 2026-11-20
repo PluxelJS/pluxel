@@ -1,3 +1,7 @@
+import { defineServiceRef } from '@pluxel/core'
+import type { Workbench } from '@pluxel/workbench'
+
+const WorkbenchRef = defineServiceRef<Workbench>()
 // These probes keep the Workbench author entry focused on the builder and the types that either
 // consumers name directly or exported Plugin definitions need for declaration emit. Runtime wiring
 // types stay internal.
@@ -17,15 +21,15 @@ type Definition = import('@pluxel/workbench').WorkbenchDefinition<{}>
 type AnyDefinition = import('@pluxel/workbench').AnyWorkbenchDefinition
 // @ts-expect-error PluginWorkbench is a Context service contract, not an author helper.
 type PluginWorkbench = import('@pluxel/workbench').PluginWorkbench
-// @ts-expect-error Open contexts are supplied contextually by ctx.workbench.publish().
+// @ts-expect-error Open contexts are supplied contextually by ctx.service(WorkbenchRef).publish().
 type AttachmentOpenContext = import('@pluxel/workbench').WorkbenchAttachmentOpenContext
-// @ts-expect-error Target factories are supplied contextually by ctx.workbench.publish().
+// @ts-expect-error Target factories are supplied contextually by ctx.service(WorkbenchRef).publish().
 type AttachmentTargetFactory = import('@pluxel/workbench').WorkbenchAttachmentTargetFactory
-// @ts-expect-error Publication wiring is supplied contextually by ctx.workbench.publish().
+// @ts-expect-error Publication wiring is supplied contextually by ctx.service(WorkbenchRef).publish().
 type Bindings = import('@pluxel/workbench').WorkbenchBindings
-// @ts-expect-error Content bindings are supplied contextually by ctx.workbench.publish().
+// @ts-expect-error Content bindings are supplied contextually by ctx.service(WorkbenchRef).publish().
 type ContentBinding = import('@pluxel/workbench').WorkbenchContentBinding
-// @ts-expect-error Content factories are supplied contextually by ctx.workbench.publish().
+// @ts-expect-error Content factories are supplied contextually by ctx.service(WorkbenchRef).publish().
 type ContentFactory = import('@pluxel/workbench').WorkbenchContentFactory
 // @ts-expect-error Schema constraints are inferred by workbench.data()/action().
 type ContentSchema = import('@pluxel/workbench').WorkbenchContentSchema
@@ -53,9 +57,9 @@ type RoutePlacement = import('@pluxel/workbench').WorkbenchRoutePlacement
 type TabPlacement = import('@pluxel/workbench').WorkbenchTabPlacement
 // @ts-expect-error Panel placements are inferred by workbench.panel().
 type PanelPlacement = import('@pluxel/workbench').WorkbenchPanelPlacement
-// @ts-expect-error Target factories are supplied contextually by ctx.workbench.publish().
+// @ts-expect-error Target factories are supplied contextually by ctx.service(WorkbenchRef).publish().
 type TargetFactory = import('@pluxel/workbench').WorkbenchTargetFactory
-// @ts-expect-error View open contexts are supplied contextually by ctx.workbench.publish().
+// @ts-expect-error View open contexts are supplied contextually by ctx.service(WorkbenchRef).publish().
 type ViewOpenContext = import('@pluxel/workbench').WorkbenchViewOpenContext
 
 void (null as unknown as ContentActionResult)

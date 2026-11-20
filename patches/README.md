@@ -27,17 +27,21 @@
 
 ## 回归入口
 
-在 `packages/services` 目录执行：
+在 `packages/core` 目录执行：
 
 ```sh
-mise exec -- vp test run tests/zenfs.test.ts tests/zenfs-store.test.ts tests/fs.test.ts
-mise exec -- vp run check-types
-mise exec -- vp run check-zenfs-browser
-# 先构建，再检查真实 tarball；不使用工作区 source 条件。
-mise exec -- vp test run --config tests/installed.config.mts -t 'ships the patched filesystem'
+vp test run tests/storage/zenfs.test.ts tests/storage/zenfs-store.test.ts tests/storage/fs.test.ts
+vp run check-types
+vp run check-zenfs-browser
 ```
 
-浏览器入口连接现有 `PLAYWRIGHT_WS_ENDPOINT`，缺省 `ws://127.0.0.1:3000`；只关闭自己的 context 并断开连接，不安装、启动或关闭共享浏览器。HTML 与浏览器 bundle 由 Playwright route 交付，无额外开发服务；该 task 禁用缓存。
+构建后在 `packages/services` 目录检查独立安装：
+
+```sh
+vp test run --config tests/installed/smoke.config.mts -t 'ships the patched filesystem'
+```
+
+浏览器入口读取 `PLAYWRIGHT_WS_ENDPOINT`。设置时使用现有 Chromium 并只关闭自己的 context 和连接，省略时启动本地 Chromium。HTML 与浏览器 bundle 由 Playwright route 交付，Core 的浏览器任务禁用缓存。
 
 原版红基线已用相同操作和结果断言校准：短写落盘为 `NE`，StoreFS 32 个注入场景中 26 个破坏回滚，IndexedDB write/rename 返回时事务尚未完成，preload 失败泄漏连接，损坏 root 假成功。正式机制回归消费 pnpm 安装的包，无临时源码 alias；独立发布回归另从工作区外安装 tarball，验证 Node、真实浏览器、owner 隔离、关闭重开、只读及 `types: []` / `skipLibCheck: false`。
 

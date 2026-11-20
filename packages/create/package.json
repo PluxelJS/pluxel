@@ -29,6 +29,7 @@
 		"prepack": "vp run compile"
 	},
 	"devDependencies": {
+		"@pluxel/agent-sdk": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@types/node": "catalog:types",
 		"typescript": "catalog:dev",

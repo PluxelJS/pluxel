@@ -1,4 +1,4 @@
-import type { PluginConstructor, RootContext } from '@pluxel/core'
+import { type PluginConstructor, type RootContext } from '@pluxel/core'
 import type { PluginCatalogProvenance } from './catalog'
 import { clonePluginExecutionSnapshot } from './execution'
 

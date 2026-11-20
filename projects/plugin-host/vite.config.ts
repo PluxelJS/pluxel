@@ -50,7 +50,7 @@ export default defineConfig({
 					},
 				}),
 			},
-			vitePreset({ entry: './src/app.ts', devConsole: true }),
+			vitePreset({ entry: './src/app.ts', scripts: true }),
 		]
 	}),
 })

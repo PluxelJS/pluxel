@@ -298,13 +298,6 @@ function AuthSetup() {
 					</Alert>
 				) : null}
 
-				{snapshot?.state === 'unavailable' ? (
-					<Alert color="yellow" title="Vault is unavailable">
-						This credential mode needs persistent Vault storage. Enable Vault or provision the
-						credential in a host that uses the same persistence.
-					</Alert>
-				) : null}
-
 				{snapshot?.state === 'setup-required' ? (
 					<Alert color={snapshot.reason === 'invalid' ? 'red' : 'blue'}>
 						{snapshot.reason === 'invalid'

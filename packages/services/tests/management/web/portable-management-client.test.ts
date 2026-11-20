@@ -8,12 +8,25 @@ import type {
 	RuntimeManagementTarget,
 } from '../../../src/management/web/management-target.ts'
 
+const catalogPolicy = {
+	mode: {
+		autoStart: 'declared-first',
+		forks: 'declared-first',
+		providerDefaults: 'declared-first',
+		dependencyOverrides: 'declared-first',
+	},
+	nodeModes: [],
+	selections: [],
+	providerDefaultsSource: 'default',
+	providerDefaultsShadowed: false,
+} as const
+
 const metadata = Object.freeze({
 	service: 'pluxel-runtime' as const,
 	ready: true as const,
 	protocol: Object.freeze({
 		name: 'pluxel.management' as const,
-		major: 9 as const,
+		major: 16 as const,
 		capabilities: RUNTIME_MANAGEMENT_CAPABILITIES,
 	}),
 	application: Object.freeze({ product: null }),
@@ -48,7 +61,7 @@ describe('injected Runtime Management client', () => {
 				statePolicy: {
 					readonly: false,
 					managedRevision: 'policy:test:0',
-					overriddenFields: [] as const,
+					...catalogPolicy,
 				},
 				summary: { total: 0, running: 0, stopped: 0, autoStart: 0 },
 			})),
@@ -87,7 +100,7 @@ describe('injected Runtime Management client', () => {
 			statePolicy: {
 				readonly: false,
 				managedRevision: 'policy:test:0',
-				overriddenFields: [] as const,
+				...catalogPolicy,
 			},
 			summary: { total: 0, running: 0, stopped: 0, autoStart: 0 },
 		})
@@ -162,7 +175,7 @@ it('reads a real local RPC result and releases its envelope without retaining tr
 				statePolicy: {
 					readonly: false,
 					managedRevision: 'policy:test:0',
-					overriddenFields: [] as const,
+					...catalogPolicy,
 				},
 				summary: { total: 0, running: 0, stopped: 0, autoStart: 0 },
 			}
@@ -199,7 +212,7 @@ it('releases result envelopes after validation success or failure without invoki
 		statePolicy: {
 			readonly: false,
 			managedRevision: 'policy:test:0',
-			overriddenFields: [] as const,
+			...catalogPolicy,
 		},
 		summary: { total: 0, running: 0, stopped: 0, autoStart: 0 },
 		[Symbol.dispose]: dispose,

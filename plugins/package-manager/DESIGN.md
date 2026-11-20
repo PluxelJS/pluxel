@@ -8,17 +8,17 @@ Workbench target 仅投影同一 store，不是配置或安装操作的唯一入
 
 `/market` 和 `/packages` 两个 Direct View 通过同一 `PackageManagerApi` factory 绑定同一 Store，每个打开项独立拥有 RPC root 和 renderer query resources。资源定义由一个工厂按 descriptor 建立，不能跨 open 共享查询缓存。市场浏览的 `./marketplace` 导出仅依赖 React、无导入的 market DTO 和公共 HTTP client，不引入 Mantine、Workbench 或 CapnWeb；Workbench adapter 与公开 UI 不在同一导出依赖图。
 
-市场 UI 的搜索、分页和所选坐标只有一个 React 所有者；`MarketplaceData` 的四个稳定读取组件只提供当前查询状态，通过 render children 投影结果。使用组件 slot 保持 React hook 静态调用，不能在 props 中动态传 hook。Workbench adapter 复用原有 per-open queryFamily；独立网页自行拥有 HTTP 请求、取消和晚到结果清理。`onPrepare` 是宿主显式授予的能力，缺省只浏览，不建立第二套安装或收藏服务。
+市场 UI 的搜索、多选、分页和所选坐标由共享 React 组件持有。包列表与筛选选项使用同一套已应用条件，筛选读不带包游标。详情返回时恢复列表的页、滚动位置与焦点。`MarketplaceData` 的稳定读取组件通过 render children 投影当前查询。Workbench adapter 使用每次打开的 queryFamily，独立网页拥有自己的 HTTP 请求、取消和晚到结果清理。`onPrepare` 由宿主显式授予，缺省只浏览。
 
 Plugin 拥有 pnpm acquisition、配置、安装记录、单写者 lock、commands 和可选 Direct View。Host 只消费普通 ESM wrapper；不读取安装私有状态。init 在任何 native/文件/UI 副作用前用 requirePluginSource 校验 rootDir/entries，返回 next-start/live 事实。Native 下次新进程启动扫描；Vite 独立报告目录事务与 lifecycle。
 
 ## 不可变安装与发布
 
-市场和直接安装由同一个 Plugin 拥有。`markets: []` 默认不进行目录请求；market client 只访问部署方配置的 base URL，页面只能提交连接 ID。公共 HTTP 的读取有 timeout、响应大小与 DTO 校验边界，禁止重定向；错误不退化为空目录，也不影响直接安装。Worker 是独立项目，不要求消费端启动 Pluxel Host 服务端。
+市场和直接安装由同一个 Plugin 拥有。market client 只访问部署方在 `markets` 中配置的 base URL，页面提交连接 ID。Worker 主站和只读镜像提供同一套公开目录接口。公共 HTTP 读取有 timeout、响应大小和 DTO 校验边界，重定向会失败。目录读取失败时，直接安装仍由 pnpm 提供。 [部署方式](../../projects/plugin-market/README.md#只读镜像)
 
 交互安装先 `prepareInstall` / `prepareMarketInstall`，再 `confirmInstall`。准备使用相同 pnpm engine 完整物化私有 revision，保留 registry/auth/proxy 语义，不另建 npm resolver。每 store 只保留一个内存候选，10 分钟有效；候选 ID、selection revision、固定版本、SRI 和图/字节绑定。确认重新核对文件再提交，不执行第二次 acquisition。停止、替换候选或其他安装 mutation 使旧预览失效；候选不是跨进程持久任务。
 
-市场包身份为 registry + name；官方标记、分类和标签消费市场自身的管理事实，不根据 scope 或 provenance 推断。列表筛选、renderer query key、版本选择、精确发行和安装准备保留同一 registry。公开查询省略来源时明确选择公共 npm；安装准备必须显式携带来源，不能从不可用私有包回退公共同名包。客户端不持有管理密钥，受保护来源由市场访问控制决定是否可读。
+市场包身份为 registry + name。官方标记、分类、标签和作者均消费市场返回的目录数据，来源与作者的筛选规则见 [市场 HTTP 契约](../../projects/plugin-market/README.md#http-契约)。包列表省略来源时搜索全部可读 registry，精确包与发行查询省略来源时选择公共 npm。安装准备显式携带所选发行的来源。受保护来源由市场访问控制决定是否可读。
 
 包概览与可安装发行是不同事实：`marketPackage` 允许只观察过元数据的包显示 registry README、许可和声明仓库，`indexedVersions: 0` 不产生安装入口。Workbench 先读概览，打开版本页才查询已校验发行；发行 README 来自已校验 archive。两处 README 复用 browser-safe mdast/GFM 到 React 的渲染器：不注入 HTML、不加载包声明的图片，只允许 HTTP(S)/mailto 绝对链接，相对链接保留文字，表格和代码块在局部横向滚动。来源 stars 仅消费带观测时间的实际缓存，声明仓库和官方标记不赋予 provenance verified 状态。
 

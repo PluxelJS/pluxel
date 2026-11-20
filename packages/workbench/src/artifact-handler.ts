@@ -1,13 +1,13 @@
-import type { Context } from '@pluxel/core'
-import { requireWorkbench } from './services/workbench'
+import type { RootContext } from '@pluxel/core'
+import { WorkbenchHost } from './token'
 
 const ARTIFACT_BASE = '/__pluxel/runtime/federation/'
 
 /** Borrowed Fetch handler over the committed immutable producer inventory. Authenticate in the carrier. */
 export function createWorkbenchArtifactHandler(
-	root: Context,
+	root: RootContext,
 ): (request: Request) => Promise<Response | undefined> {
-	const backend = requireWorkbench(root)
+	const backend = root.service(WorkbenchHost)
 	return async (request) => {
 		const pathname = new URL(request.url).pathname
 		if (!pathname.startsWith(ARTIFACT_BASE)) return undefined

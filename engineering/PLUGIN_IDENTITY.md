@@ -1,52 +1,33 @@
 # Plugin Identity 与人类可读引用
 
-本文定义当前 Plugin identity、source canonicalization 和人类可读投影。它是实现、持久化、日志、HTTP、Workbench、
-toolchain 和 coding agent 的共同约束；作者模型见 [`PLUGIN_SYSTEM.md`](PLUGIN_SYSTEM.md)。
-
-新增身份使用点先读[规范词汇](#规范词汇)，选择 Address/Slot/Reference/Route；修改 source resolver 读 [Entry canonicalization](#entry-canonicalization)；修改持久化读[持久化版本](#持久化版本)。不要从展示文本反推身份。
+Plugin identity 贯穿 graph、配置、持久化、日志、管理面和工具链。本页拥有 address、canonicalization 和 codec；作者模型见 [Plugin 系统](PLUGIN_SYSTEM.md)。
 
 ## 决策摘要
 
-Pluxel 只有两个 Plugin 身份作用域：
+| 作用域     | 身份                                | 独立内容                                                    |
+| ---------- | ----------------------------------- | ----------------------------------------------------------- |
+| definition | canonical entry + root named export | implementation、schema/metadata、source/HMR、artifact input |
+| node       | definition + default/fork           | config/revision、依赖选择、运行意图、generation/resources   |
 
-| 作用域     | 表示什么                               | 主要事实                                                                |
-| ---------- | -------------------------------------- | ----------------------------------------------------------------------- |
-| definition | 一份可替换的 Plugin 实现               | canonical entry、root export、metadata/schema、source/HMR、build input  |
-| node       | definition 的 default 或 fork 运行部署 | lifecycle、config value、dependency override、Context/effects、外部资源 |
+Address 是可校验、可序列化的 immutable value；Slot 是一个 Core registry 对同一 address intern 得到的 object key。同 registry、同 address 只有一个 Slot。generation 表示 node 的一次运行，不进入 address。
 
-每个作用域各有两种表示，不是两套身份：
+lowered class 的 `address()` 支持 concrete/abstract Plugin；`nodeAddress(forkId?)` 只支持 concrete Plugin。`PluginInstanceNodeAddress<S, A>` 保留 default/fork 判别和实例类型。生成控制入口还关联配置 input/output，SDK 统一 `sdk.plugin(nodeAddress)`。这些投影不创建实例，也不从父 class 继承 lowering facts。
 
-- `PluginDefinitionAddress` / `PluginNodeAddress` 是严格校验、可序列化的 immutable value；
-- `PluginDefinitionSlot` / `PluginNodeSlot` 是同一 address 在一个 Core registry 内 intern 后的 object-reference key。
-
-`Address` 用于配置、持久化、RPC 和 URL codec；`Slot` 只在进程内用于 graph、DI、lifecycle 和 owner map。
-同一 address 在同一 registry 内只产生一个 slot。generation 是 node 当前的一次运行，不进入 address。
-
-作者通过 lowered class 的 `Plugin.definitionAddress()` 取得声明身份，abstract token 同样支持；`Plugin.nodeAddress()` 和
-`Plugin.nodeAddress(forkId)` 只适用于 concrete Plugin，分别返回 `PluginDefaultNodeAddress` 和 `PluginForkNodeAddress`。
-这些静态投影不创建或启动实例，不通过继承查找另一个 class 的 lowering facts；Core 内部直接读取同一 canonical identity owner。
-
-fork 是同一 definition 的运行时多态，不是源码副本：default 和所有 fork 共享 constructor implementation、schema、metadata、
-artifact input 与 HMR invalidation，各自隔离 auto-start/session/running 状态、config value/revision、dependency override、Context、effects 和资源 lease。
-
-class name、constructor object、`displayName`、npm version、物理安装路径、digest 和 catalog 顺序都不参与 identity。
+fork 共享 implementation、schema、metadata、编译输入和 HMR，独立持有运行状态、config、override、Context、effects 和 lease。class name、constructor object、displayName、npm version、安装路径、digest、catalog 顺序均不参与身份。
 
 ## 规范词汇
 
-代码、DTO 和文档只使用以下词汇：
+| 名称         | 含义                           | API 示例                        |
+| ------------ | ------------------------------ | ------------------------------- |
+| Address      | 可序列化 definition/node 值    | PluginNodeAddress、ownerAddress |
+| Slot         | registry 内 object key         | PluginNodeSlot、ownerSlot       |
+| Reference    | 稳定可逆文本                   | formatPluginNodeReference()     |
+| Route        | 版本化 URL path                | formatPluginNodeRoute()         |
+| Label        | catalog revision 内的展示文本  | PluginNodeLabel                 |
+| Index key    | canonical bytes 的内存 Map key | pluginNodeIndexKey()            |
+| Physical key | backend 私有 SHA-256 namespace | pluginNodePhysicalKey()         |
 
-| 名词         | 唯一含义                              | 典型 API                            |
-| ------------ | ------------------------------------- | ----------------------------------- |
-| Address      | 可校验、可序列化的 definition/node 值 | `PluginNodeAddress`, `ownerAddress` |
-| Slot         | address 的进程内 interned key         | `PluginNodeSlot`, `ownerSlot`       |
-| Reference    | address 的稳定、可逆纯文本            | `formatPluginNodeReference()`       |
-| Route        | address 的版本化 URL path 编码        | `formatPluginNodeRoute()`           |
-| Label        | catalog revision 内的短展示文本       | `PluginNodeLabel`                   |
-| Index key    | canonical bytes 的进程内 Map key      | `pluginNodeIndexKey()`              |
-| Physical key | backend 私有的完整 SHA-256 namespace  | `pluginNodePhysicalKey()`           |
-
-不要用 `id`、`uid`、`locator`、`slug`、`qualifiedName` 或 `friendlyName` 作为 Plugin identity 同义词。
-`displayName` 是作者 metadata；`label` 是 runtime presentation。`forkId` 是稳定 identity component，不是可随意改名的标题。
+identity 字段使用这些具体名称。displayName 属于作者 metadata，label 属于展示，forkId 是稳定身份分量。
 
 ## Address schema
 
@@ -75,57 +56,51 @@ type PluginForkNodeAddress = Readonly<{
 type PluginNodeAddress = PluginDefaultNodeAddress | PluginForkNodeAddress
 ```
 
-discriminated union 不允许 default node 携带 `forkId`，也不允许 fork 缺少 `forkId`。外部 `unknown` 必须在 trust boundary
-通过 `parsePlugin*Address()`；内部纯 helper 接受已校验 address，不在每次 `Map.get()` 前重复 parse。
+default 禁止 forkId，fork 必须有 forkId。外部 unknown 在边界使用 parsePlugin*Address，内部 helper 接受已校验值。
 
-identity 的唯一性域是一个 host application/persistence profile，不是全球：
+唯一性范围是一个 application/persistence profile：packageName 对应一个物理来源，sourceSpace 内 canonical path 唯一，definition 内 forkId 唯一。跨 deployment 同址对象由 carrier 的 deployment/root/boot facts 区分。
 
-- 一个 catalog 中同一 `packageName` 只能对应一个 resolved physical package source；
-- 一个 source space 中 canonical POSIX `path` 唯一；
-- 一个 definition 中 `forkId` 唯一；
-- 跨 deployment 的相同 address 由 carrier 的 deployment/root/boot facts 区分。
+### 调用证据与可序列化身份
+
+地址工厂把调用证据绑定到确切 immutable object：Core class 证据保存 constructor，Host 控制入口证据保存声明摘要。Core browser-safe `internal/plugin-address-evidence` 用私有 WeakMap，不依赖 Host。class default address 按 constructor 缓存，fork address 每次创建；生成 factory 的独立值互不覆盖证据。
+
+证据不改变字符串身份字段。可枚举 symbol 只带冻结标记，equality/index/reference/route/JSON 只用 address 字段。SDK 规范化前读证据，在 committed lookup 或配置事务中再验证当前 implementation/摘要。reference.address 保留原对象；动态输入则捕获 immutable 身份快照。HMR 后旧 class 地址仍要求旧 constructor。
+
+JSON 往返或显式 parse 得到普通动态地址，可用于配置/lifecycle；业务 instance 访问必须来自 class 或生成控制入口。类型断言不能恢复证据。spread/Object.assign 只复制标记，不复制 WeakMap 注册，选择时拒绝分离证据；不同 Core 副本的 foreign evidence 同样拒绝。
+
+class 地址保留 instance 类型，但 config 为动态未知字段；完整配置类型由[生成控制入口](../docs/development/plugin-control.md)提供。Script JSON 可编码原厂地址为纯身份，规则与预算见 [Agent Workflow](AGENT_WORKFLOW.md)。
 
 ## Entry canonicalization
 
 ### Package entry
 
-package definition 使用 canonical npm package name + 显式公开 export path + named export。
-根入口保留 `package-root` address；子路径使用 `package-subpath`，例如 `{ kind: 'package-subpath', packageName: '@pluxel/services', subpath: './plugins' }`。
-子路径必须是规范的非空 `./` 路径，不能包含 traversal、query/hash 或通配符。它是公开契约的一部分，改变路径会改变 definition identity。
-workspace symlink、store path、版本和物理构建路径不进入 address。可信 package plan 优先于 source-space classification。
-同一 constructor 从多个公开入口或名称导出，以及跨包 Plugin re-export，均 fail-fast。一个 `/plugins` 入口可提供多个不同的具名 Plugin。
+package definition 使用 canonical npm name、显式 export path 和 named export。root 为 package-root，子路径为 package-subpath，例如 `{ kind: 'package-subpath', packageName: '@pluxel/services', subpath: './plugins' }`。subpath 必须为规范非空 ./ 路径，拒绝 traversal、query/hash、通配符；更改公开路径会改变 identity。
+
+可信 package plan 优先于 source classification。一个 constructor 只允许一个权威 named export；多入口/多名称导出和跨包 re-export 拒绝。一个 /plugins 入口可包含多个不同 Plugin。symlink/store/version/build path 不进入 address。
 
 ### Source space
 
-`sourceSpace` 是 host/source provider 拥有的稳定逻辑名称，物理 root 不进入 address。内建 `app` 映射 host source root；
-外部 source 使用显式命名 mapping。name 使用 `[A-Za-z0-9][A-Za-z0-9._-]*`，在一个 host persistence profile 内唯一且不可变。
+sourceSpace 是 provider 拥有的稳定逻辑名称，内建 app 对应 Host source root，外部 root 显式命名。名称匹配 `[A-Za-z0-9][A-Za-z0-9._-]*`，profile 内唯一。
 
-生产 semantic pass 按固定顺序生成 source entry：
+production semantic pass 按以下顺序生成 source address：
 
-1. 由 bundler resolver 得到 filesystem module path，按 bundler grammar 去掉 query/hash；
-2. 先应用可信 package plan，命中 package entry 后停止 source classification；
-3. 对 source-space roots 和 existing file 使用 native `realpath()`；
-4. 选择包含该 file 的最具体 root，用 native `path.relative()` 验证 containment；
-5. containment 成功后才转换为 `/` 分隔的 POSIX relative `path`；
-6. 拒绝空路径、absolute、跨 drive/share、`..`、反斜杠、NUL、query/hash 和 symlink escape。
+1. bundler resolver 取得路径，按其 grammar 去 query/hash。
+2. 优先应用可信 package plan。
+3. 对 source roots/existing file 执行 native realpath。
+4. 选择最具体 containing root，用 native path.relative 校验 containment。
+5. 转换为 POSIX relative path，拒绝空/absolute/跨 drive 或 share、..、反斜杠、NUL、query/hash 和 symlink escape。
 
-root 内 symlink 指向 root 外时拒绝；symlinked root 本身可以使用，identity 仍保留 logical source-space name。Linux 不 lowercase，
-Core 不擅自做 Unicode normalization。纯 AST diagnostics 可以生成 lexical test address，但不是 runtime/build identity producer。
-
-修改 source-space name、映射或嵌套关系会改变 address，属于 identity-breaking host 配置变更。需要跨布局稳定性的 Plugin 应从显式 package entry 暴露。
+symlink root 合法，root 内指向外部的文件拒绝。Linux 不 lowercase，Core 不做 Unicode normalization。AST-only diagnostics 的 lexical test address 不作为 runtime/build 身份。更改 space 名称、映射或嵌套关系属于 identity-breaking 配置；跨布局稳定 Plugin 使用 package entry。
 
 ## Canonical codec
 
-`@pluxel/core` 的 browser-safe identity module 是 parse、equality、ordering、canonical bytes、index key、reference 和 route 的唯一实现。
-runtime、logger 和 Workbench 不包裹平行 codec。
+Core browser-safe identity module 唯一实现 parse、equality、ordering、bytes、index、reference、route。canonical bytes 以 version/kind/字段长度/UTF-8 编码，独立于 JSON 属性顺序和 delimiter。
 
-canonical bytes 使用 codec version、kind tag、字段长度和 UTF-8 字段，编码是 injective 的，不依赖 JSON property order 或 delimiter。
-`plugin*IndexKey()` 是 bytes 的 hex 文本，只用于进程内 map/order；不能写成 durable owner ID。持久 document 保存 structured address；
-需要可解析文本列时保存 canonical reference；filesystem/backend namespace 使用 canonical bytes 的完整 SHA-256，并在需要时保存 exact owner envelope。
+Index key 为 bytes 的 hex，仅用于内存。持久文档保存 structured address，可解析文本列使用 reference，backend namespace 使用完整 SHA-256，必要时附 exact owner envelope。
 
 ### Plugin node reference
 
-reference 用于 CLI 精确输入、日志详情和诊断，稳定、可逆且不依赖 catalog：
+reference 用于 CLI 精确输入和日志诊断，不依赖 catalog：
 
 ```text
 package:@acme/orders::OrdersPlugin
@@ -134,13 +109,11 @@ source:app/plugins/orders.ts::OrdersPlugin
 source:managed/orders.mjs::OrdersPlugin#fork=tenant-a
 ```
 
-每个逻辑 segment 独立 percent-encode；parser 拒绝 encoded slash/backslash、非 canonical percent encoding、控制字符、
-未知前缀、字段缺失和超限输入。reference 不是另一个 branded ID，也不代替普通 structured persistence。
+逻辑 segment 独立 percent-encode。parser 拒绝 encoded slash/backslash、非 canonical encoding、控制字符、未知前缀、缺字段、超限值。
 
 ### Plugin node route
 
-route 用于 Workbench navigation、management catalog projection 和 logger category 等 host-owned addressing，
-稳定、可逆、带 codec version且不依赖 catalog。它不是业务 HTTP namespace；Plugin 的 Elysia path 不从 node route 派生：
+route 为 Workbench、Management、logger 提供 host-owned address；业务 Elysia path 自行声明：
 
 ```text
 /plugins/v1/package/OrdersPlugin/@acme/orders
@@ -149,91 +122,66 @@ route 用于 Workbench navigation、management catalog projection 和 logger cat
 /plugins/v1/fork/tenant-a/source/OrdersPlugin/managed/1/orders.mjs
 ```
 
-`formatPluginNodeRoute()` 返回无 leading slash 的相对 route。source path 前的十进制数是 path segment count；
-`parsePluginNodeRoute()` 返回 address 和 `consumedSegments`，因此 View/HTTP suffix 不需要 magic delimiter。parser 限制总 segment、
-字段和 decoded byte 长度，并拒绝 dot segment、encoded separator、重复/非 canonical encoding。正常 lookup parse 后使用 index Map，
-不按 label 扫描 catalog。
+formatPluginNodeRoute 返回无 leading slash 路径；source 的十进制数为 path segment count。parse 返回 address/consumedSegments，后续 suffix 可继续解析。总 segments、字段、decoded bytes 有界，拒绝 dot segment、encoded separator、重复/非 canonical encoding。解析后按 index 查表。
 
 ### Plugin node label
 
-Core 的 `buildPluginNodeLabels()` 与 `formatPluginNodeStandaloneLabel()` 是 catalog 和日志共用的纯身份展示投影；它们不读取 Host、graph 或运行状态。
-
-label 只用于 Workbench 和 pretty log。runtime 先使用 `displayName`，fork 追加 ` / <forkId>`；发生冲突时依次追加 package/source
-provenance、root export，最终可回退完整 reference。相同 address 重复出现直接报错。新增同名 Plugin 可以改变必要的 label qualification，
-但不能改变 address、reference、route、React key、policy 或持久状态。
+buildPluginNodeLabels/formatPluginNodeStandaloneLabel 是 catalog/日志共用的纯展示函数。displayName 优先，fork 追加 ` / <forkId>`；冲突依次追加 provenance、root export，必要时完整 reference。同址重复输入报错。新增同名 Plugin 可改变 label，但不会改变 address/route、React key、policy 或持久状态。
 
 ## 各领域作用域
 
-| 领域               | definition scope                               | node scope                                     | 领域私有 identity                  |
-| ------------------ | ---------------------------------------------- | ---------------------------------------------- | ---------------------------------- |
-| Core graph/DI      | required/optional edge target                  | slot、lifecycle owner                          | generation                         |
-| HMR                | source/module invalidation，一次枚举全部 nodes | 每个 node 重建并保留 address/slot              | module revision                    |
-| Config             | schema、defaults、declaration path             | value、revision、update notification           | config record revision             |
-| HostState          | fork family、required token                    | auto-start、provider target、consumer override | file revision                      |
-| Logging            | 无 policy owner                                | category、filter、policy、reference/label      | rootId、bootId、stream epoch/seq   |
-| Management catalog | host classification、user ordering/assignment  | displayed variants、target grouping            | group id、preference revision      |
-| HTTP               | 无                                             | final Elysia path 的 contribution owner        | sealed application generation      |
-| Artifact           | declaration/source/build input，不含 forkId    | node-to-artifact binding                       | fingerprint、publication revision  |
-| Database           | schema/migration declaration                   | data owner                                     | physical schema/role/instance      |
-| Vault              | 无                                             | default namespace owner                        | explicit shared namespace、blob id |
-| Cache/Rates        | 无                                             | caller namespace owner                         | canonical key、TTL state           |
-| Wretch settings    | 无                                             | consumer settings owner                        | settings revision/file key         |
+| 领域        | definition                       | node / 其他寿命                                 |
+| ----------- | -------------------------------- | ----------------------------------------------- |
+| Core/DI     | required/optional target         | node slot；generation Context/effects           |
+| HMR         | 一次 invalidation 枚举全部 nodes | 每 node 重建、保留 address/slot                 |
+| Config      | schema/default/declaration path  | input/output、revision、listener                |
+| HostState   | fork family、required token      | auto-start、provider、consumer override         |
+| Logging     | —                                | node policy/category；rootId/bootId/epoch       |
+| Management  | family 分类/排序                 | variants/target；preference revision            |
+| 入站 HTTP   | —                                | 最终 route contribution；application generation |
+| Artifact    | declaration/source/build input   | node binding；publication/fingerprint           |
+| Database    | schema/migration                 | node owner；schema/role/instance                |
+| Vault       | —                                | node 默认 namespace；命名 namespace/blob        |
+| Cache/Rates | —                                | caller namespace；key/TTL                       |
+| 出站 HTTP   | —                                | 完整节点设置和活动摘要，客户端绑定运行代        |
 
-HMR 对一个 definition 的 default/forks 生成一次 commit plan，不能让部分 fork 使用新源码、部分 fork 使用旧源码。
-artifact build cache 不含 `forkId`，相同输入只编译一次；node binding 和 generation lease 仍各自隔离。
+同一 definition 的 default/forks 使用一次 HMR plan；artifact cache 不含 forkId，node binding/lease 仍隔离。config 的 node 隔离和保存/通知顺序见 [Config](CONFIG.md#保存与应用)。
 
-config record/revision 与通知按 node 隔离，修改一个 fork 不通知 sibling/default。保存、应用和 listener 失败的唯一顺序见 [CONFIG](CONFIG.md#保存与应用)。
-
-Management 分类偏好按 definition family 保存，新 fork 自动继承；一个 definition 的 variants 不能被分到不同组。Workbench
-View/Attachment descriptor identity 按 definition，publication/binding owner 按 node，opened target lifetime 按
-generation/socket epoch。Plugin 在 `ctx.require(ElysiaApp)` 中声明的 path 就是最终产品 path；Runtime 不从 node identity 派生隐藏 namespace，
-也不提供另一份 `publicPath` 映射。多个 node 需要同时暴露 HTTP 时，业务 config 或唯一 gateway 必须让最终 path 保持不冲突。
+Management 分类按 definition family，新 fork 继承，variants 不拆组。Workbench descriptor 按 definition，publication owner 按 node，opened target 按 generation/socket epoch。最终 Elysia path 由业务声明，多 node 由业务配置或 gateway 避免冲突。
 
 ## 持久化版本
 
-每个边界只读取和写入当前 schema。版本不匹配、address 非法或 owner envelope 不一致时 fail-fast；浏览器本地 UI 状态则丢弃
-无效 snapshot 并恢复默认值。实现不提供双读、自动转换、URL redirect、physical namespace 领养或 display-name fallback。
+各 owner 只读写当前格式，address/owner envelope 不匹配时拒绝；浏览器 UI 可丢弃坏 snapshot 恢复默认。数据升级由显式工具转换，运行时不猜 identity。
 
-| 领域                      | 当前版本/编码                | 当前 owner 契约                     |
-| ------------------------- | ---------------------------- | ----------------------------------- |
-| HostState                 | v7                           | structured definition/node address  |
-| Config file/env           | v4                           | structured node address             |
-| Logger policy             | v3                           | structured node address             |
-| Management catalog groups | v1                           | structured definition address       |
-| Workbench browser state   | v4                           | current versioned Plugin route      |
-| Database owner registry   | node reference               | exact current node reference        |
-| Vault                     | full canonical SHA-256       | exact current node address bytes    |
-| Wretch settings           | `consumers/v3` + envelope v2 | exact current node address envelope |
-| Cache/Rates               | v3 canonical-byte namespace  | exact current node address bytes    |
+| 领域                  | 当前格式                                                    | owner                        |
+| --------------------- | ----------------------------------------------------------- | ---------------------------- |
+| HostState             | v7                                                          | structured definition/node   |
+| Config document       | v4                                                          | structured node              |
+| Logger policy         | v3                                                          | structured node              |
+| Management groups     | v1                                                          | structured definition        |
+| Workbench workspace   | [原生 Worksplit snapshot](FRONTEND.md#原生工作区与文档路由) | 当前版本 Plugin route/target |
+| Database registry     | node reference                                              | exact reference              |
+| Vault                 | 完整 canonical SHA-256                                      | exact node bytes             |
+| TinyBase snapshot     | pluxel.tinybase / formatVersion 1                           | exact node envelope          |
+| 出站 HTTP 策略        | Host 文档 v1                                                | 宿主默认与完整节点地址       |
+| Cache/Rates namespace | v3 canonical-byte namespace                                 | exact node bytes             |
 
-不能从 display name、class name、catalog 顺序、物理路径或 opaque catalog key 猜测 identity。需要保留数据的部署必须在升级前由
-宿主拥有的显式离线工具转换；runtime 正常启动路径始终只有一个当前契约。
+格式/路径的具体 producer 和 parser 由各领域维护。保存数据的部署在升级前备份并离线转换。
 
 ## 性能与安全
 
-- slot/index lookup 为 O(1)；一次 node intern 只校验一次完整 address，registry 拒绝 foreign slot；definition HMR 枚举为
-  O(k)，k 是该 definition 当前 node 数；
-- catalog 每个 revision 用 O(N) 建立 address/reference/route/label projection，后续按 index/route O(1) lookup；
-- route/reference 按输入长度单次线性 parse；filesystem `realpath` 只在 build/discovery/HMR boundary，并缓存 root/file 结果；
-- logger category 首次出现时严格解析，immutable category/address 使用 `WeakMap` 缓存且在 policy mutation 后失效；稳定日志流只做
-  identity/rank lookup 和数值比较，不做 filesystem I/O、catalog scan 或 SHA-256；
-- Config 内存 owner lookup O(1)，200 ms 合并后原子重写 snapshot 是 O(B)，B 为全部 serialized config bytes；当前不宣称无界 fork/config 规模；
-- physical namespace 使用完整 SHA-256，不使用无 collision record 的截断 digest；
-- route、reference、CLI、JSON 和 persistence 输入均有长度、字符与结构校验；source route 不泄漏机器绝对路径；
-- label/displayName/forkId 输出转义控制字符，不能伪造日志结构或参与授权。
+slot/index lookup 为 O(1)，intern 时完整校验一次并拒绝 foreign slot；definition HMR 为 O(k)。catalog projection 每 revision O(N)，route/reference 线性解析，realpath 仅在 build/discovery/HMR 执行并缓存。
 
-如果 Config snapshot 的 record/byte/mutation 预算成为实测瓶颈，应在 Config backend 内改用 shard、journal 或 transactional KV；
-不能通过改变 node identity、暴露 digest ID 或复制 per-fork schema 来规避存储问题。
+日志 category/address 以 WeakMap 复用，policy mutation 失效；热流只查 identity/rank。Config 每次 mutation 等待原子完整 snapshot 确认，成本 O(B)，详见 [Config](CONFIG.md#输入接纳与成本)。
+
+physical namespace 使用完整 SHA-256。route/reference/CLI/JSON/persistence 均校验长度、字符、结构；source route 不泄露绝对路径。label/displayName/forkId 转义控制字符，展示字段不参与授权。存储规模问题在 backend 解决，不改变 node identity 或复制 per-fork schema。
 
 ## 实现入口与验证
 
-- Core address/slot/codec：`packages/core/src/plugins/runtime/identity.ts`
-- Core logger category codec：`packages/core/src/logger/categories.ts`
-- source canonicalization：`packages/rolldown/src/rolldown/plugins/pluginSemanticsPlugin.ts`
-- catalog projection/label：`packages/services/src/management/api/features/plugins/catalog-projection.ts`、`packages/core/src/plugins/runtime/plugin-label.ts`
-- Workbench route/browser ownership：`packages/workbench/shell/src/workbench/paths.ts`、`packages/workbench/shell/src/app/workbench/session.tsx`；文档身份由 Worksplit Router 协调，见 [Frontend](FRONTEND.md#原生工作区与文档路由)
-- HostState/Config/logger/catalog persistence：对应 `packages/host/src/`、`packages/core/src/logging/` 与 `packages/services/src/management/`
+- Core `plugins/runtime/identity.ts`：address/slot/codec；`internal/plugin-address-evidence.ts`、runtime definition：调用证据。
+- Core `logger/categories.ts`、`plugins/runtime/plugin-label.ts`：日志和展示。
+- Rolldown `rolldown/plugins/pluginSemanticsPlugin.ts`：canonicalization。
+- Services `management/api/features/plugins/catalog-projection.ts`：catalog。
+- Workbench `shell/src/workbench/paths.ts`、`app/workbench/session.tsx`：route/target；[Frontend](FRONTEND.md#原生工作区与文档路由)。
 
-变更 identity 时至少验证 package/source、default/fork、reference/route round-trip、encoded separator 拒绝、native realpath containment、
-definition-wide HMR、fork config isolation、definition-family classification、logger structured owner、HTTP readable route 和全部当前版本 reader。
-仓库中不得重新出现 JSON-in-path、catalog-dependent Plugin ID、opaque digest public ID 或第二套 address equality/key codec。
+回归覆盖 package/source、default/fork、codec round-trip/非法编码、realpath containment、definition-wide HMR、config fork 隔离、family 分类、structured logger owner、HTTP route 和当前格式 reader。变更使用点继续复用本 codec。

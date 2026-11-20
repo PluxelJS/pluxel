@@ -1,14 +1,5 @@
-import { defineContextCapability, type ContextCapability } from '@pluxel/core/host'
 import type { CommandsService } from './service'
 
-export const Commands: ContextCapability<CommandsService> =
-	defineContextCapability<CommandsService>('services.commands', {
-		access: 'all',
-		property: 'commands',
-	})
-
-declare module '@pluxel/core' {
-	interface ContextServices {
-		readonly commands: CommandsService
-	}
-}
+/** Owner-bound access to the Host command catalog. */
+export abstract class Commands {}
+export interface Commands extends CommandsService {}

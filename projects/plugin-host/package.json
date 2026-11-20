@@ -34,7 +34,6 @@
 		"@pluxel/plugin-takumi": "workspace:*",
 		"@pluxel/plugin-takumi-markdown": "workspace:*",
 		"@pluxel/plugin-typst": "workspace:*",
-		"@pluxel/plugin-wretch": "workspace:*",
 		"@pluxel/services": "workspace:*",
 		"@pluxel/workbench": "workspace:*",
 		"@sinclair/typebox": "catalog:prod",
@@ -51,6 +50,7 @@
 	"devDependencies": {
 		"@mantine/core": "catalog:frontend",
 		"@mantine/hooks": "catalog:frontend",
+		"@pluxel/agent-sdk": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -65,7 +65,8 @@
 		"tailwindcss": "catalog:frontend",
 		"typescript": "catalog:dev",
 		"vite-plus": "catalog:build",
-		"vitest": "catalog:test"
+		"vitest": "catalog:test",
+		"wretch": "catalog:dev"
 	},
 	"peerDependencies": {
 		"capnweb": "catalog:prod"

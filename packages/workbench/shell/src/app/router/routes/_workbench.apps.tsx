@@ -1,20 +1,21 @@
-import { Box, Stack, Text, Title } from '@mantine/core'
+import { Title } from '@mantine/core'
 import { createFileRoute } from '@tanstack/react-router'
+import { PinnedApplications } from '../../workbench/PinnedApplications'
 import { WorkspaceNavigation } from '../../workbench/WorkspaceNavigation'
 
 function AppsRoute() {
 	return (
-		<Stack h="100%" mih={0} p="var(--plx-page-padding)" gap="md">
-			<Title order={2} size="h4">
-				应用
-			</Title>
-			<Text size="sm" c="dimmed">
-				打开业务应用，在标签页中处理日常工作。
-			</Text>
-			<Box flex={1} mih={0}>
-				<WorkspaceNavigation mode="publications" />
-			</Box>
-		</Stack>
+		<div className="plx-apps">
+			<div className="plx-apps__columns">
+				<PinnedApplications />
+				<section className="plx-apps__catalog" aria-label="全部应用">
+					<Title order={2} size="h4">
+						全部应用
+					</Title>
+					<WorkspaceNavigation mode="publications" />
+				</section>
+			</div>
+		</div>
 	)
 }
 

@@ -4,7 +4,7 @@ import { resolveHostEnv } from '@pluxel/host/environment'
 import { workbenchShellMount } from './shell/mount'
 import type { Plugin } from 'vite'
 import type { HostVitePluginApi, HostViteCatalog, HostViteCandidate } from '@pluxel/host-vite'
-import { requireWorkbench } from './server'
+import { WorkbenchHost } from './server'
 import { readLoadedWorkbenchArtifacts } from './services/workbench/loaded-artifacts'
 import {
 	PluginArtifactCompiler,
@@ -36,7 +36,7 @@ export function workbenchArtifacts(
 						publicOrigin: environment.publicOrigin,
 						workbenchBasePath: () => workbenchShellMount(host.ctx),
 					})
-					const backend = requireWorkbench(host.ctx)
+					const backend = host.ctx.service(WorkbenchHost)
 					const compiler = new PluginArtifactCompiler(
 						host.ctx,
 						{

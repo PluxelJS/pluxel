@@ -7,7 +7,7 @@ import {
 import { consumePluginDefinitionCandidate } from '@pluxel/core/internal'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { projectRawInput, type Schema } from 'valibot-form'
-import type { HostOptions } from './host'
+import type { ResolvedHostOptions } from './node-declarations'
 import { configProvenance, type ConfigBindingProof } from './config-records'
 const checkedBindings = new WeakSet<ConfigBindingProof>()
 
@@ -44,19 +44,14 @@ export function schema(value: unknown, label: string): InputSchema {
 	return value as unknown as InputSchema
 }
 export function configSchema(
-	target: PluginConstructor | PluginNodeAddress,
+	target: PluginNodeAddress,
 	selected?: StandardSchemaV1,
 	plugins: readonly PluginConstructor[] = [],
 ): InputSchema {
-	const plugin =
-		typeof target === 'function'
-			? target
-			: plugins.find((candidate) =>
-					pluginDefinitionAddressEqual(
-						candidate.nodeAddress().definition,
-						parsePluginNodeAddress(target).definition,
-					),
-				)
+	const owner = parsePluginNodeAddress(target)
+	const plugin = plugins.find((candidate) =>
+		pluginDefinitionAddressEqual(candidate.address(), owner.definition),
+	)
 	if (!plugin) return schema(selected, 'Config binding schema')
 	const candidate = consumePluginDefinitionCandidate(plugin)
 	const declared = schema(candidate.declaration.config?.owner?.schema, 'configs.use()')
@@ -65,37 +60,32 @@ export function configSchema(
 	return declared
 }
 export function configBindingProof(
-	target: PluginConstructor | PluginNodeAddress,
+	target: PluginNodeAddress,
 	selected: StandardSchemaV1,
 	paths: readonly (readonly string[])[],
 	plugins: readonly PluginConstructor[],
 ): ConfigBindingProof {
-	const owner = parsePluginNodeAddress(typeof target === 'function' ? target.nodeAddress() : target)
+	const owner = parsePluginNodeAddress(target)
 	const proof = Object.freeze({
 		owner,
 		schema: selected,
 		paths: Object.freeze(paths.map((path) => Object.freeze([...path]))),
 	})
-	if (
-		typeof target === 'function' ||
-		plugins.some((plugin) =>
-			pluginDefinitionAddressEqual(plugin.nodeAddress().definition, owner.definition),
-		)
-	)
+	if (plugins.some((plugin) => pluginDefinitionAddressEqual(plugin.address(), owner.definition)))
 		checkedBindings.add(proof)
 	return proof
 }
 /** Deployment paths are checked against the actual replacement definition, including every fork. */
 export async function validateInputBindingCandidates(
 	plugins: readonly PluginConstructor[],
-	options: Pick<HostOptions, 'config'>,
+	options: Pick<ResolvedHostOptions, 'config'>,
 ): Promise<void> {
 	for (const plugin of plugins) {
-		const bindings = configProvenance(options.config ?? {}).bindings.filter((binding) =>
+		const bindings = configProvenance(options.config).bindings.filter((binding) =>
 			pluginDefinitionAddressEqual(plugin.nodeAddress().definition, binding.owner.definition),
 		)
 		if (bindings.length === 0) continue
-		const declared = configSchema(plugin)
+		const declared = configSchema(plugin.nodeAddress(), undefined, [plugin])
 		for (const binding of bindings) {
 			if (!checkedBindings.has(binding) && binding.schema !== declared)
 				fail('[host] Config binding must reference the same schema as configs.use()')

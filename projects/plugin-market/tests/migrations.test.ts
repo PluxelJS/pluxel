@@ -56,7 +56,9 @@ it('migrates existing single-source data without losing release identity, receip
 		}
 		expect(
 			await db
-				.prepare('SELECT registry, name, hidden, revision, official, tags FROM packages')
+				.prepare(
+					'SELECT registry, name, hidden, revision, official, tags, repository_author_id, curated_author_id FROM packages',
+				)
 				.first(),
 		).toEqual({
 			registry: 'https://registry.npmjs.org',
@@ -65,6 +67,8 @@ it('migrates existing single-source data without losing release identity, receip
 			revision: 7,
 			official: 0,
 			tags: '[]',
+			repository_author_id: null,
+			curated_author_id: null,
 		})
 		expect(await db.prepare('SELECT registry, integrity FROM releases').first()).toEqual({
 			registry: 'https://registry.npmjs.org',

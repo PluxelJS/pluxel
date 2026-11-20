@@ -64,7 +64,7 @@ export class TypstPlugin extends BasePlugin {
 			},
 			{ tag: 'typst-generation' },
 		)
-		await this.ctx.require(NodeModules).use(compilerModule, (url) => {
+		await this.ctx.service(NodeModules).use(compilerModule, (url) => {
 			this.workerUrl = url
 			return async () => {
 				await Promise.all([...generation.sessions].map((session) => session.dispose()))
@@ -102,7 +102,7 @@ export class TypstPlugin extends BasePlugin {
 				},
 				{ tag: 'typst-svg' },
 			)
-			pending = this.ctx.require(Workers).runPrepared(
+			pending = this.ctx.service(Workers).runPrepared(
 				svgTask,
 				async (signal) => {
 					await assertSourceBytes(source, this.config.maxInputBytes, signal)

@@ -1,4 +1,5 @@
 export * from './catalog'
+export * from './control-manifest'
 export * from './coordinator'
 export * from './mutation'
 export * from './reconcile'
@@ -6,7 +7,13 @@ export * from './state'
 export * from './policy'
 export * from './install'
 export * from './driver'
-export { installPluginSources, pluginSourceCovers, pluginSourceKey } from './source-contract'
+export {
+	installPluginSources,
+	snapshotPluginSource,
+	pluginSourceCovers,
+	pluginSourceKey,
+	pluginSourceMatcher,
+} from './source-contract'
 export { discoverPluginSources, resolvePluginSourcePath } from './source-discovery'
 export { collectPluginModuleExports } from './module'
 
@@ -22,9 +29,9 @@ export {
 export { HostConfigStore, type PluginConfigFile } from './config-store'
 export {
 	HostStateStore,
+	assertPolicyGraphReferences,
 	HostPolicyRevisionConflictError,
 	HostPolicyMutationRejectedError,
-	canonicalHostStateSnapshot,
 	type HostStateFile,
 } from './state-store'
 export type { HostStateConfigurationSnapshot } from './state-store'
@@ -37,11 +44,21 @@ export * from './status'
 
 export { ensureFork, removeFork, type ForkEnsureResult, type ForkRemoveResult } from './forks'
 
-export { requireHostStateStore } from './host'
+export { createResolvedHost, requireHostStateStore } from './host'
+export {
+	snapshotHostPolicy,
+	canonicalHostPolicyInput,
+	canonicalHostPolicyPatch,
+	nodePolicyKey,
+} from './policy-input'
 
 export * from './recent-update'
 
-export { projectPluginApplyReport } from './apply-report'
+export {
+	projectPluginApplyReport,
+	projectPluginConfigResult,
+	projectHostPolicyResult,
+} from './apply-report'
 
 export { setHostCatalogProvenance } from './catalog-provenance'
 
@@ -56,8 +73,14 @@ export {
 } from './shared-packages'
 export {
 	readLoadedPluginModule,
+	readLoadedApplicationControl,
+	loadLoadedApplicationServiceControls,
 	recordLoadedPluginModule,
 	recordLoadedHostApplication,
 	readLoadedHostApplicationModule,
 } from './loaded-modules'
 export { startHostApplication } from './application-start'
+
+export { setServiceControlMaterial, type ServiceControlMaterial } from './service-control'
+
+export { loadNativeHostServiceControls } from './control-material.node'

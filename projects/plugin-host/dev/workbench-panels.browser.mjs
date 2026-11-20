@@ -57,19 +57,20 @@ async function inspect() {
 	)
 	const result = JSON.parse(stdout)
 	assert.equal(result.ok, true, JSON.stringify(result))
-	assert.equal(result.value.state, 'succeeded', JSON.stringify(result.value))
+	const { run } = result.value
+	assert.equal(run.state, 'succeeded', JSON.stringify(run))
 	const accepted = stderr
 		.trim()
 		.split('\n')
 		.map((line) => JSON.parse(line))
-		.find((event) => event.event === 'accepted')
+		.find((event) => event.stage === 'accepted')
 	assert.ok(accepted?.receipt)
 	receipt.console.push({
 		receipt: accepted.receipt,
-		runId: result.value.runId,
-		hostEpoch: result.value.hostEpoch,
+		runId: run.runId,
+		hostEpoch: run.hostEpoch,
 	})
-	return result.value.value
+	return run.value
 }
 async function check(name, run) {
 	await run()

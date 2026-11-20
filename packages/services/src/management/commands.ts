@@ -1,4 +1,4 @@
-import { defineHostService } from '@pluxel/host'
+import { defineHostService, type HostService } from '@pluxel/host'
 import { Commands } from '../commands'
 import { defineCommand, Result, type AnyCommand, type CommandFailure } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
@@ -168,13 +168,13 @@ function createPluginManagementCommands(ctx: Context): readonly AnyCommand[] {
 }
 
 /** Publish Host inspection and lifecycle commands into an explicitly installed command catalog. */
-export function managementCommands() {
+export function managementCommands(): HostService<readonly []> {
 	return defineHostService({
 		name: 'Management commands',
 		requires: { commands: Commands },
-		capabilities: [],
+		provides: [],
 		prepare({ ctx }) {
-			const catalog = ctx.require(Commands)
+			const catalog = ctx.service(Commands)
 			for (const command of createPluginManagementCommands(ctx)) catalog.register(command)
 		},
 	})

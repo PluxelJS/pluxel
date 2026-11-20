@@ -1,37 +1,63 @@
 import type { HostInputMode } from './input-mode'
+import type { HostDocumentOptions } from './document-storage'
 import {
 	pluginDefinitionIndexKey,
 	pluginNodeIndexKey,
-	type PluginConstructor,
 	type PluginDefinitionAddress,
 	type PluginForkNodeAddress,
 	type PluginNodeAddress,
+	type CoreExecutionConfig,
 } from '@pluxel/core'
 
 export type HostStateSnapshot = Readonly<{
+	/** Complete node identities from source classes, generated providers or discovery. Does not load implementations. */
 	autoStart: readonly PluginNodeAddress[]
 	forks: readonly PluginForkNodeAddress[]
 	providerDefaults: readonly HostProviderDefaultState[]
 	dependencyOverrides: readonly HostDependencyOverrideState[]
 }>
 
-export type HostExecutionPolicy = Readonly<{
-	startTimeoutMs: number
-	drainTimeoutMs: number
-	startConcurrency: number
-	stopConcurrency: number
-}>
+export type HostExecutionPolicy = Required<CoreExecutionConfig>
 export type HostPolicyValues = HostStateSnapshot & HostExecutionPolicy
 export type HostPolicyField = keyof HostPolicyValues
 export type HostExecutionPolicyField = keyof HostExecutionPolicy
-export type HostPolicyInput = Readonly<Partial<HostPolicyValues>>
-export type HostPolicyModes = Readonly<Partial<Record<HostPolicyField, HostInputMode>>>
-export type HostPolicyOptions = Readonly<
-	Omit<HostPolicyInput, 'autoStart'> & {
-		autoStart?: readonly (PluginConstructor | PluginNodeAddress)[]
-		mode?: HostPolicyModes
+export type HostNodePolicyField = 'autoStart' | 'forks' | 'dependencyOverrides'
+export type HostGlobalPolicyField = Exclude<HostPolicyField, HostNodePolicyField>
+export type HostAutoStartChoice = Readonly<{ node: PluginNodeAddress; autoStart: boolean }>
+export type HostForkChoice = Readonly<{ node: PluginForkNodeAddress; deploy: boolean }>
+export type HostDependencyOverrideChoice = Readonly<
+	Omit<HostDependencyOverrideState, 'providerAddress'> & {
+		providerAddress: PluginNodeAddress | null
 	}
 >
+export type HostNodePolicyTarget =
+	| Readonly<{ field: 'autoStart'; node: PluginNodeAddress }>
+	| Readonly<{ field: 'forks'; node: PluginForkNodeAddress }>
+	| Readonly<{
+			field: 'dependencyOverrides'
+			consumerAddress: PluginNodeAddress
+			requirementAddress: PluginDefinitionAddress
+	  }>
+export type HostPolicyResetTarget = HostGlobalPolicyField | HostNodePolicyTarget
+/** Explicit, sparse saved choices. Empty node arrays provide no keys. */
+export type HostPolicyInput = Readonly<
+	Partial<Pick<HostPolicyValues, HostGlobalPolicyField>> & {
+		autoStart?: readonly HostAutoStartChoice[]
+		forks?: readonly HostForkChoice[]
+		dependencyOverrides?: readonly HostDependencyOverrideChoice[]
+	}
+>
+export type HostPolicyPatch = HostPolicyInput &
+	Readonly<{ reset?: readonly HostPolicyResetTarget[] }>
+export type HostPolicyModes = Readonly<Partial<Record<HostPolicyField, HostInputMode>>>
+export type HostPolicyOptions = Readonly<{
+	mode?: HostInputMode
+	modes?: HostPolicyModes
+	document?: false | HostDocumentOptions
+	providerDefaults?: readonly HostProviderDefaultState[]
+	execution?: CoreExecutionConfig
+}>
+export type HostNodePolicyMode = Readonly<{ node: PluginNodeAddress; mode: HostInputMode }>
 export const HOST_GRAPH_POLICY_FIELDS = [
 	'autoStart',
 	'forks',
@@ -48,6 +74,11 @@ export const HOST_POLICY_FIELDS = [
 	...HOST_GRAPH_POLICY_FIELDS,
 	...HOST_EXECUTION_POLICY_FIELDS,
 ] as const
+export const HOST_GLOBAL_POLICY_FIELDS = [
+	'providerDefaults',
+	...HOST_EXECUTION_POLICY_FIELDS,
+] as const
+export const HOST_NODE_POLICY_FIELDS = ['autoStart', 'forks', 'dependencyOverrides'] as const
 
 export type HostStateVersionedSnapshot = Readonly<{
 	revision: number

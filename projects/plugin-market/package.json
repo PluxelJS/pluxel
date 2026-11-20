@@ -5,6 +5,7 @@
 	"scripts": {
 		"build": "vp run compile",
 		"build:web": "vp run compile-web",
+		"build:mirror": "vp run compile-mirror",
 		"test": "vp run check-tests",
 		"typecheck": "vp run check-types",
 		"dev": "vp run serve-local",
@@ -21,6 +22,7 @@
 		"drizzle-orm": "catalog:backend",
 		"modern-tar": "catalog:prod",
 		"semver": "catalog:dev",
+		"valibot": "catalog:validation",
 		"validate-npm-package-name": "catalog:prod"
 	},
 	"devDependencies": {

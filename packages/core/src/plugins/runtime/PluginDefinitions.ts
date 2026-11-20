@@ -903,6 +903,7 @@ function installPluginGenerationInfo(
 			...(definition.config === undefined ? {} : { config: definition.config }),
 		}),
 	)
+	Object.preventExtensions(ctx)
 }
 
 function invalidDeclaration(nodeKey: object, message: string): GraphBuildError {

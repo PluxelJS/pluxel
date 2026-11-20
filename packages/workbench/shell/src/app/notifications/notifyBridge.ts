@@ -37,9 +37,10 @@ export function notifyAndRecord(payload: NotificationData & { diagnosticText?: s
 	const displayedId = notifications.show({
 		...notification,
 		...(payload.color === 'red' && payload.autoClose === undefined ? { autoClose: false } : {}),
-		message: message
-			? createElement(NotificationMessage, { message: payload.message, copyText })
-			: payload.message,
+		message:
+			message || diagnosticText
+				? createElement(NotificationMessage, { message: payload.message, copyText })
+				: payload.message,
 	})
 	const id =
 		typeof payload.id === 'string'

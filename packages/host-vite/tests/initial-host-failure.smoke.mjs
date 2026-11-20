@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,16 +11,17 @@ const host = new URL('../dist/index.mjs', import.meta.url).href
 for (const stage of ['service', 'application']) {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-initial-host-failure-'))
 	try {
+		await symlink(new URL('../node_modules', import.meta.url), join(root, 'node_modules'), 'dir')
 		const prepare = `effects.defer(() => console.log('RESOURCE_DRAINED')); throw Object.assign(new Error('Unsupported vault snapshot version.'), {code:'INVALID_FORMAT'})`
 		await writeFile(
 			join(root, 'app.mjs'),
 			stage === 'service'
-				? `export default () => ({plugins:[],services:[{name:'vault',capabilities:[],prepare({effects}){${prepare}}}]})`
+				? `export default () => ({plugins:[],services:[{name:'vault',provides:[],prepare({effects}){${prepare}}}]})`
 				: `export default () => ({plugins:[],prepare({host}){const effects=host.ctx.effects;${prepare}}})`,
 		)
 		await writeFile(
 			join(root, 'vite.config.mjs'),
-			`import {host} from ${JSON.stringify(host)}; export default {plugins:host({entry:'app.mjs',devConsole:true})}`,
+			`import {host} from ${JSON.stringify(host)}; export default {plugins:host({entry:'app.mjs',scripts:true})}`,
 		)
 		await assert.rejects(
 			promisify(execFile)(

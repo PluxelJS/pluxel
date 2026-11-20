@@ -12,6 +12,8 @@ description: 从零构建一个包含业务方法、Valibot 配置校验、结�
 
 ## 初始化插件包
 
+准备[工作区工具链](../development/workspace-toolchain.md#准备-checkout)中的全局 Vite+ 与 Node.js 24+。插件模板与应用脚手架采用相同的 `vp` 命令约定。
+
 在终端中执行以下命令生成一个插件模板并安装基础开发依赖：
 
 ```sh
@@ -89,7 +91,7 @@ it('能够正确读取配置，并在停止后销毁定时器', async () => {
 		await using host = await createTestHost()
 
 		// 启动待测插件，并传入自定义初始配置
-		const plugin = await host.start(StatusPlugin, {
+		const plugin = await host.start(StatusPlugin.nodeAddress(), {
 			initialConfig: { label: 'healthy', intervalMs: 1_000 },
 		})
 
@@ -101,7 +103,7 @@ it('能够正确读取配置，并在停止后销毁定时器', async () => {
 		expect(plugin.snapshot().samples).toBe(1)
 
 		// 停止插件
-		await host.stop(StatusPlugin)
+		await host.stop(StatusPlugin.nodeAddress())
 
 		// 再次推进时间，确认后台定时器已彻底停止
 		vi.advanceTimersByTime(1_000)

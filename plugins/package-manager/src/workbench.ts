@@ -29,6 +29,8 @@ export type {
 	PackageMarket,
 	PackageInstallPlan,
 	PackagePreparationResult,
+	MarketCatalogFilters,
+	MarketCatalogFacets,
 	MarketPackageQuery,
 	MarketPackageSummary,
 	MarketPackagePage,

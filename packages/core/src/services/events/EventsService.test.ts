@@ -7,7 +7,7 @@ import {
 	type Events,
 	type EventsService,
 } from '@pluxel/core'
-import { resolveCoreRootInputs } from '@pluxel/core/internal'
+import { snapshotCoreFacilitiesConfig } from '../../context/zenfs-plan'
 import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 
 declare module '@pluxel/core' {
@@ -116,7 +116,7 @@ describe('event boundaries', () => {
 		await withCoreInternalTestHost(async (host) => {
 			expect(ambientHostConfig.events.events).toEqual(['test:ambient-changed'])
 			const configuredEvents: (keyof Events)[] = ['test:ambient-changed']
-			const inputs = resolveCoreRootInputs({
+			const inputs = snapshotCoreFacilitiesConfig({
 				events: { events: configuredEvents, errorPolicy: 'throw' },
 			})
 			configuredEvents.length = 0

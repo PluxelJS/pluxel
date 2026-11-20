@@ -1,92 +1,115 @@
 # Host 与服务架构
 
-本页拥有服务安装、应用启动与 Host 资源边界。整体分层见 [Plugin 系统](PLUGIN_SYSTEM.md)；应用组合用法见 [Host services](../docs/host/services.md)。
+Host 拥有服务安装、应用启动、catalog、运行意图和资源关闭，复用 Core 的 graph/lifecycle。应用用法见 [Host services](../docs/host/services.md)，整体分层见 [Plugin 系统](PLUGIN_SYSTEM.md)。
 
-应用以 `defineHostApplication(factory)` 声明 `HostApplicationFactory`，每次返回一个完整 `HostApplication`。官方运行时服务与 Vite 附件的默认组合归 `servicesPreset()`、`vitePreset()`；应用构建统一使用 `@pluxel/rolldown` 的 `pluxel()`。这些函数返回普通服务声明或工具插件，不能拥有第二套 Host。
-
-服务组合与关闭读[服务与资源](#服务与资源)；应用求值与 replacement 读[应用、开发和部署](#应用开发和部署)；请求 lease 与管理接入读 [HTTP 与管理页面](#http-与管理页面)；密钥记录读 [Vault 记录](#vault-记录与宿主输入)。每项资源的实现及验证见[资源边界与验证入口](#资源边界与验证入口)。
+`defineHostApplication(factory)` 每次返回完整 `HostApplication`。`servicesPreset()` 和 `vitePreset()` 组合运行时服务及开发附件，`@pluxel/rolldown` 的 `pluxel()` 构建应用；这些入口共用一个 Host。
 
 ## 服务与资源
 
-`createHost({ plugins, policy, config, services, runtime })` 在 root 创建前捕获作者输入并验证固定安装计划。创建唯一 root 后解析文档 factory、读取保存输入，组合八项 policy，并一次绑定四项执行参数，再创建 PluginService、coordinator 和准备服务。Core 直接装配仍立即绑定原生执行配置；Host 的内部延迟绑定不改变 Context shape，也不是公开 setter。准备失败使用同一个 root 清理路径，保留原错误和清理错误。
-服务用 `requires` 声明准备依赖；同步 capability factory 保持惰性，异步资源通常在 `prepare({ ctx, dependencies, effects })` 获取。Core 内建 [FS](FS.md) 提供 Host 普通配置文档，[TinyBase](TINYBASE.md) 承载 Plugin Store；首个异步文件/文档操作共享准备任务，不依赖服务安装顺序。
-`@pluxel/host/browser` 从 `src/browser.ts` 只导出同一 Host 与服务组合实现，避免根 barrel 的 Node application/source loader 求值。它不提供另一套 runtime，也不为所选 Plugin 或服务补 Node polyfill；浏览器装配及 lowering 由[浏览器 Host 用法](../docs/host/configuration.md#浏览器-host)维护。
-每项服务的 effects scope 随服务准备失败或 Host 关闭释放。Plugin generation 的 effects 随该代停止释放，两者都使用 Core effects 契约，但 owner 与生命周期必须在调用位置清楚可见。
-关闭先停止接纳、排空协调操作和插件，再按依赖逆序释放服务；清理失败聚合，不能跳过其余清理。
-生产 Host 实现标准 `AsyncDisposable`；`close()` 与 `Symbol.asyncDispose` 共用同一个幂等关闭任务和失败结果，作用域释放不另建 teardown 路径。
-Host 从协调队列末尾取得已应用 provider-default bindings，在同一 Core shutdown transaction 中先撤销绑定再删除节点；
-持久化的 provider 选择和 auto-start 意图不因进程关闭而改变。
+`createHost({ plugins, policy, config, services, runtime })` 的准备顺序：
 
-能力 token 的 access 表达调用 Context 的所有权：`all` 通用，`owner` 需要真实插件/Part owner，`root` 需要真实 RootContext。宿主代码使用 `ctx.require(Token)`，缺失、访问越界和构造失败保留各自错误。
-`ctx.root` 返回真实根引用，持有它的受信任代码可访问 root 能力；这不是不可信代码沙箱。Core 内部图 authority 的 token 不进入普通作者入口。
+1. 捕获输入，校验 root 创建前的固定安装计划。
+2. 创建唯一 root，解析文档 factory，读取保存输入，组合八项 policy，一次绑定四项执行参数。
+3. 创建 PluginService/coordinator，按 `requires` 顺序准备服务。
 
-`@pluxel/services` 的 `standardServices()` 安装 HTTP、Commands、Node artifacts、Workers。同包的 `@pluxel/services/preset` 入口的 `servicesPreset(startup, options)` 增加 Vault、Management、管理命令及可选 Workbench。Core 日志通过 `runtime.logtape: logtape(...)` 选择，FS 通过 `runtime.zenfs: zenfs(...)` 选择后端，所有 Host 文档与 Plugin 状态共用；显式安装的 Database 单独选择原生 backend；Database 不加入默认组合，查询使用原生 Drizzle，见 [Database](DATABASE.md)。
-未选择服务不创建对应 backend、watcher、编译器、route 或状态。关闭 Workbench 不关闭业务服务或管理 HTTP/WebSocket 接入；preset 始终显式安装 `managementHttp()`。
-部署清单决定 Node 制品归属。Services preset 只为 standalone 安装应用级固定目录；modules 保留 Host 已加载模块的 owner，让 Node 服务校验并消费各 owner 的 inventory，不能用应用目录覆盖外部包的 worker。路径与失败契约见[官方服务组合](../docs/host/services.md#官方默认组合)。
+Core 直接装配时立即绑定执行配置；Host 的内部延迟绑定保持 Context shape 不变。同步 service factory 惰性构造 view，异步资源通常由 `prepare({ ctx, dependencies, effects })` 获取。内建 FS/TinyBase/Vault 首次操作共享各自准备任务，独立于服务顺序。准备失败沿同一个 root 清理路径，保留原错误和清理错误。
+
+每项 service effects 在准备失败或 Host close 时释放；Plugin effects 随 generation 释放。关闭先停止 admission、排空协调操作和 Plugin，再按依赖逆序释放服务。所有清理都会执行，错误聚合。`close()` 和 `Symbol.asyncDispose` 共用幂等任务及失败结果。Host 在 Core shutdown transaction 中先撤销当前 provider-default bindings，再删除节点，保留持久 policy。
+
+service access 区分 `all`、真实 Plugin/Part `owner` 和真实 `root`。`ctx.service(Service)` 保留 missing/access/construction 错误。`ctx.root` 是受信任代码可持有的真实根引用；内部 graph/config/storage authority 留在 framework 入口，Core 固定能力通过 Context 属性提供，见 [Core](CORE.md#context-service-kernel)。
+
+`servicesPreset(startup, options)` 是唯一官方应用组合，安装 HTTP、Commands、Node artifacts、Workers、Management、管理命令及可选 Workbench。`workbench: false` 保留管理能力；定制宿主与隔离测试直接组合单项安装器。Core 的 `coreConfig.logtape`、`coreConfig.zenfs` 和 `coreConfig.vault` 分别选择日志、文件与凭据配置。Database 单独安装，见 [Database](DATABASE.md)。未选择的服务不创建 backend、watcher、compiler、route 或状态。
+
+部署清单决定 Node 制品 owner：standalone 使用应用固定目录；modules 保留已加载模块 owner，Node 服务按各 owner inventory 读取，不能用应用目录覆盖外部 worker。详见[官方默认组合](../docs/host/services.md#官方服务预设servicespreset)。
+
+Node 与浏览器入口共享 ZenFS 装配，Node 入口额外接入 Undici 代理工厂。Cloudflare 请求入口 `@pluxel/host/cloudflare` 选择会话文档和只读 Vault bindings。三个入口把已校验的 Core 设施交给同一 `createResolvedHost`。Cloudflare 调用方在当次 handler 内创建、启动、使用和关闭 Host。所选 Plugin 和 Services 的依赖闭包由应用构建验证。 [浏览器 Host](../docs/host/configuration.md#浏览器-host) · [Cloudflare 请求 Host](../docs/host/configuration.md#cloudflare-请求-host)
 
 ## 应用、开发和部署
 
-应用每次启动执行配置工厂，取得完整 name/plugins/sources/policy/config/services/runtime；来源、服务、插件选择和输入值在异步 binding 读取前捕获，服务声明复制能力与依赖集合，借用句柄保持身份。`createHost()` 仅接收 Host 正式字段，执行入口显式投影，不依赖忽略额外应用字段。`prepare` 在服务与开发附件准备好后、插件启动前执行。
-生产启动由内部 `application-start.ts` 维护唯一顺序：prepare → host.start 与服务结算 → acceptStartup → launch。默认消费 Host status 中的有效运行意图，任何 desiredState=running 而 lifecycleState 非 running 的节点都拒绝启动；应用 callback 可显式接受降级。拒绝保留 report/status，异常和清理异常保留因果链，所有失败仍调用既有 host.close，不建立另一套 graph 或资源容器。launch 只在判定通过后发布生产入口；Vite 不执行 acceptStartup/launch，保留自己的 listener、更新与局部失败诊断。
-Host 不改变进程 cwd。入口与来源锚定 startup root，环境通过 startup 显式传递。`envBindings`/`fileBindings` 显式选择输入，与 config.records 共同构成本次声明；逐 node 的 mode 决定声明与保存输入的取值规则。模式、写入权限、跨启动保留与 generation 采用分别表达，唯一求值链由 [Config](CONFIG.md#static-startup-config) 维护。runtime 只保留四项原生设施与 documents 接线。
+每次启动求值配置工厂，在异步 bindings 读取前捕获 name/plugins/sources/policy/config/services/runtime。服务声明复制能力和依赖集合，借用句柄保留 identity。执行入口向 `createHost()` 显式投影正式字段。`prepare` 在服务和开发附件准备后、Plugin 启动前执行。
 
-Vite、生产 launcher 共用 Host 应用解析。工厂 identity 变化时重新求值完整配置并替换 Host，固定插件 import 更新也可能使工厂失效。工厂求值失败保留旧 Host。动态来源更新若工厂未变，则复用本次配置并提交 catalog。替换失败可用最后成功声明创建 fresh Host 补偿，但不能复活旧 generation。
-Host-vite 是唯一开发驱动；官方服务附件分别由 Services、Workbench 拥有。数据库 lowering 属于官方 Vite preset 的工具插件，不是运行时服务。
-modules 的 native launcher 在全新 Node 进程、业务闭包首次求值前向 `runHostApplication(entry, { startup, sharedPackages })` 提交预编译入口路径，先建立共享绑定，再求值默认工厂及固定 imports。standalone bootstrap 已内联闭包，不再次发现模块；两条路径在 Host 创建与附件接线完成后都调用 `startHostApplication`。应用在自己的闭包内静态导入 HTTP 服务并在 launch 中调用，避免把 bundle 内 Host 交给外部另一套服务 token。构建资源 variant 不替应用安装服务或决定静态目录。此前普通依赖的 ESM cache 闭包不能由 Node hook 证明；准确拒绝范围和调用前置条件见[Host 配置](../docs/host/configuration.md#生产构建)。
-Native loader 在本次 scope 内复用已完成 owner、exports 与 ABI 检查的求值 namespace；新加载模块继续检查，无法确认 owner 或检查失败时不记成功。共享 import 的安装版本准入仍消费实际 manifest，不使用通用或跨 Host 的 manifest cache。
-待检查 namespace 使用同一 loader 的 pending 集合。成功 entry 的累计闭包事实引用本次唯一 URL 顺序数组和当时的前缀长度；后续加载不延长较早 entry 的事实，关闭后冻结数组供 Node namespace cache 保留，不复制另一套依赖图。
+生产入口 `application-start.ts` 统一执行：
+
+```text
+prepare → host.start / 服务结算 → acceptStartup → launch
+```
+
+默认要求 Host status 中全部 desiredState=running 的节点都已 running；应用可显式接受降级。拒绝保留 report/status，异常及清理异常保留 cause，失败调用原 `host.close()`。launch 只在判定通过后发布。Vite 拥有自己的 listener、更新和局部失败诊断，不执行 acceptStartup/launch。
+
+固定 `plugins` 与声明式 `sources` 进入同一 catalog。policy/config/bindings 使用 canonical address，提前声明动态节点不会加载代码、创建 fork 或启动节点。Host 保持进程 cwd；入口和来源锚定 startup root，env 由 startup 显式传入。输入合并由 [Config](CONFIG.md#static-startup-config) 维护。
+
+Vite 和生产 launcher 共用应用解析。工厂 identity 变化时重新求值并替换 Host，固定 import 更新也可使工厂失效；求值失败保留旧 Host。工厂未变的动态来源更新复用当前配置、提交 catalog。replacement 失败可用最后成功声明创建 fresh Host 补偿，旧 generation 保持退役。Host-vite 是唯一开发驱动；Services/Workbench 分别拥有自己的附件，database lowering 属于工具插件。
+
+modules launcher 在全新 Node 进程、业务闭包首次求值前，调用 `runHostApplication(entry, { startup, sharedPackages })`：先建立共享绑定，再求值工厂和 imports。standalone bootstrap 已内联闭包，无需再次发现模块。两者完成 Host/附件接线后共用 `startHostApplication`。应用在自身闭包静态导入 HTTP 服务并在 launch 调用，保持 Host 与 服务声明身份 一致。构建 variant 只选择资源交付方式；原生启动的求值前提见[生产构建](../docs/host/configuration.md#生产构建)。
+
+native loader 在本 scope 复用通过 owner/exports/ABI 检查的 namespace，新模块继续检查；失败或 owner 未确认时不缓存成功。共享包版本准入读取实际 manifest，不用跨 Host manifest cache。pending namespace 集合属于 loader；成功 entry 的累计闭包以本次 URL 顺序数组和前缀长度表示，后续加载不延长旧 entry 的范围，关闭后冻结数组供 Node cache 保留。
 
 ## 控制台 execution
 
-控制台借用当前 Host/RootContext 执行普通 TypeScript export，不进入 Plugin graph；HMR 不重放操作。运行撤回、有限更新 barrier、协作取消与脚本资源边界由 [DEV_CONSOLE](DEV_CONSOLE.md)统一定义。
+控制台借用当前 Host/RootContext 执行普通 TypeScript export，不进入 Plugin graph，HMR 不重放操作。运行撤回、update barrier、取消和资源边界见 [Dev Console](DEV_CONSOLE.md)。
 
 ## HTTP 与管理页面
 
-`ElysiaApp` 是 Plugin generation 所有的真实 Elysia application，Plugin 与 Parts 共享同一 app。init 成功后 Host HTTP lifecycle 完成 finalize、settle、prepare、publish，原子交换完整 directory。初始化失败不发布半成品路由。
-`ElysiaRuntime` 是框架内部 root-only 分发，不进入公共服务入口；`ElysiaApp`、`elysia()`、`createElysiaHandler()` 属于 `/elysia`，`listenElysia()` 属于 `/elysia/node`。唯一生产适配为 Elysia 2 + srvx。应用创建的 Node listener 登记到 root effects，公开 listener.close 与 Host close 共用关闭；Vite 持有自己的 listener。generation 停止不能关闭共享 listener。
-内部 dispatch 保留 Response 与 undefined，最终传输边界才把未处理请求转成 404；静态文件与 SPA fallback 只处理未处理请求，不读取业务 status 来判断所有权，也不预检查一次路由。公开 Fetch handler 仍始终返回 Response。
-请求、stream 和 WebSocket 持有 generation lease；停止先拒绝新操作，排空已接纳操作后再清理。跨 owner route collision 只检查已证明的精确 route inventory，不模拟 Elysia matcher grammar。
+`ElysiaApp` 是 generation 拥有的真实 Elysia application，Plugin 与 Parts 共用。init 成功后 HTTP lifecycle 完成 finalize、settle、prepare、publish，再原子交换 directory；失败候选不发布路由。
 
-Carrier metadata 的 `url` 保留物理监听事实；launcher 显式提供的 `publicOrigin` 只用于管理会话同源校验，不能据此推断 TLS 或客户端地址。Vite 和 Node listener 从 Host 的 `publicOrigin` 传入该值；Vite 同时用该值展示终端 URL。`resolveHostEnv(input)` 在 Vite/native launcher 的显式环境边界按 `PLUXEL_PUBLIC_ORIGIN` > `PITCHFORK_URL`、`PLUXEL_HOST_BIND/PORT` > `HOST/PORT` 解析；listener 接受显式 hostname/port/publicOrigin，不读取 process.env。缺省公开 origin 使用物理地址，不信任 Forwarded / X-Forwarded-* 头。
+公共 `/elysia` 提供 `ElysiaApp`、`elysia()`、`createElysiaHandler()`，`/elysia/node` 提供 srvx `listenElysia()`；`ElysiaRuntime` 是内部 root-only dispatcher。Node listener 登记到 root effects，公开 close 与 Host close 共用清理；Vite 自己拥有 listener。generation stop 只排空自身请求、stream、WebSocket lease。
 
-Management 安装认证、状态投影和 RPC session；Workbench 安装内容/publication、页面和交互能力。它们共享 Host coordinator，不保存第二份插件运行状态。业务 HTTP 不自动继承 Management 认证。`managementHttp()` 唯一持有管理 endpoint；`workbenchHttp()` 只拥有 Shell fallback。preset 通过既有 bindings 组合 Workbench session/artifact handler，并用 `requires: { workbench: WorkbenchHost }` 声明准备顺序。
-`managementCommands()` 把插件查询和 lifecycle 命令发布到显式安装的 Commands catalog；它是独立接入，不能让通用 Commands 服务隐式安装管理面。
+内部 dispatch 保留 Response/undefined，传输边界将未处理请求变为 404。静态文件和 SPA fallback 只处理 undefined，不按 status 或二次路由判断所有权；公开 Fetch handler 始终返回 Response。跨 owner collision 只比较可证明的精确 route inventory。
+
+carrier `url` 保存物理监听地址；显式 `publicOrigin` 用于管理会话同源校验和终端展示。Vite/native launcher 在环境边界用 `resolveHostEnv(input)` 解析 `PLUXEL_PUBLIC_ORIGIN` > `PITCHFORK_URL`、`PLUXEL_HOST_BIND/PORT` > `HOST/PORT`；listener 只接收显式选项。默认 origin 来自物理地址，Forwarded/X-Forwarded-* 不参与信任判断。
+
+Node 客户端断线由 srvx 原生 `request.signal` 传播，owner lease 合成关闭取消。Host handler 接收 root lease signal，同时保留原 ingress 的地址和 upgrade identity。
+
+Management 拥有认证、状态投影和 RPC session；Workbench 拥有 publication、Shell 和页面。`managementHttp()` 唯一安装管理 endpoint，`workbenchHttp()` 只安装 Shell fallback。preset 用既有 bindings 组合 session/artifact handler，并以 `requires: { workbench: WorkbenchHost }` 声明准备顺序。业务 HTTP 的认证由业务自己选择；`managementCommands()` 是独立 Commands 接入。
+
+`pluginApplyReportOutcome()` 统一归约 Host 操作报告，保留持久化未知、生命周期/协调失败或完成结论及原报告。Script SDK 直接返回成功值，失败抛出携带领域信息的 `ScriptError`；Management 映射 DTO。生命周期失败仍返回操作后的 control 和 report，UI 据此刷新与展示诊断。配置、policy、fork 删除分别保留保存、采用和排空结果。Services `web/control-batch.ts` 共用于执行和 wire 校验；任一项 persistence unknown 使批量摘要为 unknown，逐项结果完整保留。
+
+`status.ts` 分开枚举节点和投影单节点。列表包括已接纳 default、配置 forks，以及仍被 policy/运行状态引用的节点；精确查询和控制回执共用存在性/control 投影。运行状态、诊断和 recent update 每次读取当前 committed view。
+
+生命周期操作的存在性检查、`session.update(pluginLifecycleUpdate(...))` 与回执投影位于同一次 `runExclusive`，避免后排操作污染回执。批量逐项排队，取消阻止下一项，已接纳项继续结算；auto-start 批量保留整批 CAS 边界。
+
+Services label 缓存属于 root，按 catalog、state、sessionIntents、desiredControl、applied.nodes identity 失效。命中时按 address 查表，不扫描目录或分配比较数组。Core adjacency 每次创建新数组，不能作缓存证据；applied.nodes 与 Core membership 的同集关系由依赖图回归保护。fork 增删、改名 replacement、session 引用、有效图变化会失效；普通读取、配置保存和仅 restart 可复用 label。
+
+### 状态投影测量
+
+精确查询用稳定 `HostStateSnapshot` 的 WeakMap 索引。新 state 仍枚举 auto-start/forks 并创建集合；完整 SDK readCommitted 也读取 Core adjacency。热索引命中与完整调用成本分别测量。
+
+Host 的 `bench/status.bench.mjs` 比较 overview/find 与精确投影；Services 的 `bench/management-status.bench.mjs` 测实际 Management DTO。构建所属包后用 `vp exec node <path>` 执行，历史数值与范围见[测量记录](records/host-deployment.md#状态投影测量2026-11-15)。
+
+回归入口是 Host `graph/status.test.ts`、Services `management/catalog-navigation.test.ts` 与 `management/control-receipts.test.ts`。它们分别验证状态投影、精确节点读取和并发操作回执。
 
 ## 资源边界与验证入口
 
-- Host plan、prepare rollback、关闭顺序：`packages/host/src/services.ts`、`host.ts`，对应 services/host/application 测试。
-- 配置与运行策略存储：Host `config-store.ts`、`state-store.ts`。默认通过 [FS](FS.md) 普通文档 adapter 借用 `services/host/<namespace>/<key>`；`runtime.documents` 的每域 false 关闭文档 IO，readOnly 拒绝本实例写入，storage 同步 root factory 借用外部 backend。Host 不关闭借用 backend，在 root final 关闭前停止观察并排空。配置只接受 v4 原始记录，运行策略只接受 v7 稀疏输入；缺文档不写种子、默认值或声明，只有明确管理修改才提交。文档若解析、版本或结构无效，Host 准备失败并保留原文件。恢复或旧格式转换由操作者显式完成，没有兼容 reader、重置或启动迁移。
-- Catalog、failed candidate 和 committed authority：Host `coordinator.ts`；原生加载使用 `application.ts`、`source-discovery.ts` 与 `native-source-loader.ts`，生产启动共用 `application-start.ts`，持续观察和更新归 Host-vite `host-vite.ts`。细节见 [HMR](HMR.md)。
-- HTTP owner lease、stream、WS 与 carrier：[HTTP 用法](../docs/plugin-development/http.md)、`packages/services/src/elysia/`。
-- 数据库的 generation handle、迁移、backend 与应用自管边界：[DATABASE.md](DATABASE.md)。
-- 日志 root、策略与有界 store：[LOGGING.md](LOGGING.md)。
-- Node artifacts、Workers：`packages/services/src/node/`、`workers/`；compiler 属于 Rolldown 与服务开发附件。 Worker caller result 与底层 execution settlement 分开；`settlement: 'execution'` 把公开结果发布推迟到线程可复用或已退出，为调用方持有的文件等资源提供清理边界。
-- Management 与 Workbench：[WORKBENCH.md](WORKBENCH.md)、[管理接入](../docs/host/management.md)。
-- 隔离测试宿主：[TESTING.md](TESTING.md)；在线应用检查：[DEV_CONSOLE.md](DEV_CONSOLE.md)。
+| 主题                                 | 实现与回归入口                                                                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| service plan、prepare rollback、关闭 | `packages/host/src/{services,host}.ts`；services/host/application tests                                                         |
+| config/state 文档与事务              | Host [配置操作](../packages/host/tests/config/operations.test.ts)、[部署策略](../packages/host/tests/policy/deployment.test.ts) |
+| catalog、candidate、commit           | Host `coordinator.ts`；[HMR](HMR.md)                                                                                            |
+| 应用/native loading                  | Host `application.ts`、`application-start.ts`、`source-discovery.ts`、`native-source-loader.ts`                                 |
+| HTTP lease、stream、WS               | `packages/services/src/elysia/`；[HTTP 用法](../docs/plugin-development/http.md)                                                |
+| Node artifacts、Workers              | `packages/services/src/node/`、`workers/`；[Artifact Build](ARTIFACT_BUILD.md)                                                  |
+| Management/Workbench                 | [Workbench](WORKBENCH.md)、[管理接入](../docs/host/management.md)                                                               |
 
-代码、公开类型、文档必须描述同一所有权。不允许用测试宿主证明在线应用当前状态，或以 source-mode 测试代替独立安装和搬离工作区后的发行验证。
-Node srvx 与 Vite 接线已有覆盖，不提供 Bun/Deno/Worker adapter。Published Elysia peer admission 和工作区外下游迁移仍需独立验证，不由本分层自动保证。
+Host 文档默认借用 Core FS，`config.document` 与 `policy.document` 分别选择 IO、写权限和同步 root storage factory。config v4、state v8 只保存稀疏原始输入；缺失文档不写种子，坏格式保留原文件并拒绝准备。关闭先取消观察、排空本域任务，再由 Core 关闭 backend，见 [Config](CONFIG.md#存储与创建边界)。
 
-Services 包含基础服务、Management 与官方 preset；子入口按能力、可选 backend 和运行环境划分，不各自发布。基础入口不加载未选择的后端。Elysia application 与 Fetch handler 同属 `/elysia`，srvx listener 使用 `/elysia/node`，Vite 接线使用 `/elysia/vite`。框架跨包共享的 owner-view/security helpers 收敛到不加载 backend 的 `/internal`；白盒测试另用 `/internal/test`。仅包内测试使用的实现通过相对源码导入，数据库 driver 通过 package `imports` 私有加载，不成为导出子路径。
+Worker caller result 与底层 execution settlement 分开；`settlement: 'execution'` 等到线程可复用或退出再发布结果，供调用方清理文件等资源。
+
+Services 的可选 backend 和运行环境按叶入口隔离，`/internal` 只提供 framework owner/security helpers，`/internal/test` 提供白盒设施，driver 通过 package imports 私有加载。包内实现直接相对导入，不为单 consumer 增加 服务声明/resolve 转发层。
+
+Node srvx/Vite 接线已有覆盖；Bun、Deno、Worker adapter、published Elysia peer admission 和工作区外下游迁移需各自验证。发行验证使用独立安装制品，在线状态从现有 [Dev Console](DEV_CONSOLE.md) 观察。
 
 ### 可移植 execution 协议
 
-`@pluxel/host/internal/protocol` 是浏览器和服务端共享 execution/update snapshots 与验证函数的唯一内部跨包入口，直接构建无外部依赖的 `src/execution.ts`。服务端框架集成仍使用 `/internal`，该入口不再转发 execution 协议。Management 客户端直接消费 protocol，不经过包含来源加载、IO 和生命周期编排的服务端 barrel；此拆分表达真实的运行环境边界，不能因减少路径而合并。
+`@pluxel/host/internal/protocol` 组合浏览器/服务端共享 execution/update snapshots、操作报告及 parser。`report-protocol.ts` 校验 report、reconciliation、lifecycle summary、persistence 的字段与语义，地址沿用 Core codec。parser 带字段标签抛 TypeError；Management 在载体边界映射自己的协议错误、校验 envelope 与权限。
 
-服务内部不为单个 consumer 建立 token/resolve 转发层：Elysia directory token 与安装器同属 `elysia.ts`，开发附件直接读取 Node backend token。Vite 子入口直接映射开发模块；只有需要限制导出集合或组合多个实现的入口才保留 facade。数据库 adapter 实现与调用方共享 `DatabaseAdapter` 和 backend options 类型，资源策略仍由原有 coordinator 统一拥有。
+新增报告字段时，Host 的 producer、类型和 parser 同步更新；`graph/report-protocol.test.ts` 维护对照。Management 客户端消费 portable protocol，不加载 source/IO/lifecycle 编排。
 
 ## Vault 记录与宿主输入
 
-Vault 只用结构化 KV 表达记录，blobs 保留独立文件语义。默认加密后端借用 Core FS；bindings 后端只安装读取能力，
-不准备密钥、磁盘或文件目录。Host 在服务准备后、插件启动前，通过 root-only `HostVaultBindings` 安装 schema 已验证的
-owner/key/value/source 记录；缺少安装能力属于装配错误。Services 不反向拥有 Host 的环境解析。
+Vault 是 Core 固定能力，Plugin 通过 `ctx.vault` 取得 owner 存储视图；KV 是结构化记录，blobs 保留文件语义。`coreConfig.vault` 选择默认加密 backend 或只读 bindings backend。加密后端按需借用 Core FS，bindings 后端不准备密钥或磁盘。Host 在 Plugin admission 前通过 Core 内部边界安装已校验的 owner/key/value/source；凭据契约和存储实现归 Core，部署 Schema、环境与 JSON 文件解析归 Host，Core 不引用 Host 类型。
 
-KV mutation 在本实例唯一 backend lock 内 clone、检查 revision、加密并原子提交，然后才交换 snapshot 与发布通知；失败不推进
-revision。删除保留 tombstone。watch/watchPrefix 在同一 lock 内读取初始 snapshot 并注册，通知在锁外、owner invocation 内运行。
-部署 env/file 整记录只读且不落盘；任何 KV 写入路径都检查 overlay。绑定通过 `vault.namespace` 选择命名子空间，default/fork owner namespace 和其命名子空间隔离，root 保持受信任管理权限。
+创建 Host、读取凭据能力、创建 KV/blob 句柄或管理 describe 不生成密钥；首次数据操作按需初始化新加密库，也可由管理员显式 unlock 初始化。已有库缺少匹配密钥或解密失败时保留错误，不阻止未使用凭据的 Host 启动。能力存在不代表密钥已配置、存储已解锁或记录存在，具体操作报告实际状态；管理面通过 `requireVaultHost(root).admin` 借用根管理接口，所有后端准备、观察和最终释放仍归 Core。
 
-加密 snapshot 的外部变化由 Vault 重新解密并校验，在本实例 lock 内交换有效视图，再在锁外通知；无效更新保留最后有效值并报告错误，不重写文件。外部 revision 可以重复或回退，不能把本地条件检查和观察通知当作跨实例 CAS。持久 snapshot 只接受 version 2 的结构化 KV 与 revision。完整加密格式、操作与恢复边界见 [Vault](../docs/plugin-development/vault.md)。
+KV mutation 在本实例 backend lock 内 clone、检查 revision、加密、原子提交，再交换 snapshot 并通知。失败不推进 revision，删除保留 tombstone。watch/watchPrefix 在同一 lock 读取初值并注册，通知在锁外、owner invocation 内运行。env/file 整记录只读且不落盘，所有写路径检查 overlay。`vault.namespace` 的命名子空间与 default/fork owner 隔离，root 保留管理权限。
 
-文件后端选择由 [Host 配置](../docs/host/configuration.md#选择文件后端)维护，目录、原生 errno 与原子保存见[插件文件存储](../docs/plugin-development/fs.md)。
-
-Node 客户端断线由 srvx 原生 `request.signal` 传播，不再另装 response close 监听器；owner 关闭仍由 invocation lease 合成取消。Host endpoint 将 root lease signal 传入 handler；carrier 的请求身份仍指向原始 ingress，不能因取消用 Request 派生而丢失地址或 upgrade 状态。
+外部加密快照由 Vault 解密校验，在 lock 内交换有效 view、锁外通知；无效更新保留最后有效值和原文件。外部 revision 可重复或回退，本地检查不是跨实例 CAS。格式只接受 version 2 的 KV/revision；加密、轮换和恢复见 [Vault](../docs/plugin-development/vault.md)。后端与原子文件规则见 [FS](FS.md)。

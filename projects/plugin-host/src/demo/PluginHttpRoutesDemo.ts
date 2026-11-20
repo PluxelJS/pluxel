@@ -10,7 +10,7 @@ const ROUTE_BASE = '/demo/http'
 @Plugin()
 export class PluginHttpRoutesDemo extends BasePlugin {
 	override init(): void {
-		this.ctx.require(ElysiaApp).group(ROUTE_BASE, (app) =>
+		this.ctx.service(ElysiaApp).group(ROUTE_BASE, (app) =>
 			app
 				.get('/status', () => ({
 					plugin: formatPluginNodeReference(this.ctx.pluginInfo.nodeAddress),

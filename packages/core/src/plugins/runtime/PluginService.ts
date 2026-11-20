@@ -1,6 +1,7 @@
 import type { Context as PluxelContext, PluginContext } from '../../context/Context'
 import { pinOwnerContext } from '../../context/owner-view'
 import { createGenerationContext } from '../../context/context-factory'
+import type { ResolvedCoreExecutionConfig } from '../../context/plugin-execution'
 import type { GraphBuildError } from '../../internal/di'
 import { createErr, createOk } from 'option-t/plain_result'
 import { requireConfigService } from '../../internal/config-service'
@@ -84,21 +85,6 @@ export type {
 	RuntimeUpdateCommitSummary,
 } from './plugin-service/CommitPlan'
 
-export type PluginServiceConfig = {
-	startTimeoutMs?: number
-	drainTimeoutMs?: number
-	startConcurrency?: number
-	stopConcurrency?: number
-}
-
-/** @internal Authoritative default execution parameters. */
-export const DEFAULT_PLUGIN_EXECUTION = Object.freeze({
-	startTimeoutMs: 1500,
-	drainTimeoutMs: 3000,
-	startConcurrency: 8,
-	stopConcurrency: 1,
-})
-
 type RuntimeUpdateCommitResult =
 	| { ok: true; val: { graph: PluginGraph; delta: CommitExecutionDelta } }
 	| { ok: false; err: unknown }
@@ -158,10 +144,6 @@ export class CorePluginGraphVerificationError extends Error {
 export class PluginService {
 	private readonly definitions: PluginDefinitions
 	private _commitLock: Promise<unknown> = Promise.resolve()
-	private readonly startTimeoutMs: number
-	private readonly drainTimeoutMs: number
-	private readonly startConcurrency: number
-	private readonly stopConcurrency: number
 	private _lastCommit?: CommitSummary
 	private _activeGraph?: PluginGraph
 	private _activeRuntime?: PluginRuntime
@@ -198,21 +180,16 @@ export class PluginService {
 
 	constructor(
 		public readonly ctx: PluxelContext,
-		config: PluginServiceConfig = {},
+		private readonly execution: ResolvedCoreExecutionConfig,
 		lifecycleHooks: CorePluginLifecycleHooks = EMPTY_CORE_PLUGIN_LIFECYCLE_HOOKS,
 	) {
 		pinOwnerContext(this, ctx)
-		this.startTimeoutMs = config.startTimeoutMs ?? DEFAULT_PLUGIN_EXECUTION.startTimeoutMs
-		this.drainTimeoutMs = config.drainTimeoutMs ?? DEFAULT_PLUGIN_EXECUTION.drainTimeoutMs
-		this.startConcurrency = config.startConcurrency ?? DEFAULT_PLUGIN_EXECUTION.startConcurrency
-		this.stopConcurrency = config.stopConcurrency ?? DEFAULT_PLUGIN_EXECUTION.stopConcurrency
 		this.lifecycleHooks = freezeCorePluginLifecycleHooks(lifecycleHooks)
 		this.definitions = new PluginDefinitions(() => this.createPluginContext())
 		this.lifecycleManager = new LifecycleManager(
 			this.ctx,
 			this.definitions.slots,
-			this.startTimeoutMs,
-			this.drainTimeoutMs,
+			execution.drainTimeoutMs,
 		)
 		this.dependentClosure = new DependentClosureCollector((graph, address) =>
 			this.resolveGraphKey(graph, address),
@@ -1005,7 +982,7 @@ export class PluginService {
 				const node = graph.keyOf(slot)
 				if (isPluginNodeSlot(node)) await this.stopPlugin(node, report)
 			},
-			{ concurrency: this.stopConcurrency },
+			{ concurrency: this.execution.stopConcurrency },
 		)
 	}
 
@@ -1117,8 +1094,12 @@ export class PluginService {
 		operation: CorePluginLifecycleOperation,
 	): Promise<boolean> {
 		try {
+			const startTimeoutMs =
+				this.execution.readNodeStartTimeout?.(instance.ctx.pluginInfo.nodeAddress) ??
+				requirePluginGenerationInfo(instance.ctx).startTimeoutMs ??
+				this.execution.startTimeoutMs
 			const result = await this.lifecycleManager.startLifecycle(node, instance, {
-				timeoutMs: requirePluginGenerationInfo(instance.ctx).startTimeoutMs,
+				timeoutMs: startTimeoutMs,
 				finalizeGeneration: this.lifecycleHooks.finalizeGeneration
 					? (signal) =>
 							this.lifecycleHooks.finalizeGeneration!({
@@ -1190,7 +1171,7 @@ export class PluginService {
 					: Promise.resolve(false)
 			},
 			{
-				concurrency: this.startConcurrency,
+				concurrency: this.execution.startConcurrency,
 				blocks: (slot, dependency) =>
 					graph.depSlotsOf(slot as number).includes(dependency as number),
 				onDependencyBlocked: (slot, dependency) => {

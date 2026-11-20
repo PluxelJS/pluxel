@@ -1,3 +1,4 @@
+import type { Workbench } from '@pluxel/workbench'
 import { assertWorkbenchDto, createWorkbenchWatch } from '@pluxel/workbench/server'
 import { ElysiaApp } from '@pluxel/services/elysia'
 import { Commands } from '@pluxel/services/commands'
@@ -10,7 +11,13 @@ import { Type, obj } from '@pluxel/commands/typebox'
 import { EChartsPlugin } from '@pluxel/plugin-echarts'
 import { Otel } from '@pluxel/plugin-otel'
 import { Rates, type RateDecision, type RateLimiter } from '@pluxel/plugin-rates'
-import { BasePlugin, EvtChannel, formatPluginNodeReference, Plugin } from '@pluxel/core'
+import {
+	BasePlugin,
+	EvtChannel,
+	formatPluginNodeReference,
+	Plugin,
+	defineServiceRef,
+} from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { RpcTarget } from 'capnweb'
@@ -20,7 +27,6 @@ import { TakumiMarkdownPlugin, type MarkdownRenderer } from '@pluxel/plugin-taku
 import { TypstPlugin } from '@pluxel/plugin-typst'
 import type { ReportFont, ReportRenderInput } from './report-render.contracts'
 import { SHOWCASE_ENGINES, type ShowcaseRenderRequest } from './ReportStudio.contracts'
-import { WretchPlugin } from '@pluxel/plugin-wretch'
 import {
 	ReportStudioWorkbench,
 	type ReportStudioApi,
@@ -31,6 +37,7 @@ import {
 	type ShowcaseSnapshot,
 } from './ReportStudio.workbench'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 const MAX_ARTIFACTS = 8
 const MAX_TITLE_LENGTH = 80
 const WIDTH = 720
@@ -102,7 +109,6 @@ export class ReportStudioPlugin extends BasePlugin {
 	}>
 
 	constructor(
-		private readonly http: WretchPlugin,
 		private readonly otel: Otel,
 		private readonly cacheProvider: Cache,
 		private readonly rates: Rates,
@@ -117,7 +123,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		super()
 	}
 
-	protected override async init(): Promise<void> {
+	protected override init(): void {
 		this.cache = this.cacheProvider.scope('previews', {
 			ttlMs: this.config.cacheTtlMs,
 			maxEntries: 32,
@@ -129,12 +135,11 @@ export class ReportStudioPlugin extends BasePlugin {
 			windowMs: this.config.admission.windowMs,
 		})
 		this.markdownRenderer = this.markdown.createRenderer({ theme: 'dark' })
-		await this.http.enableManagedSettings()
 		const meter = this.otel.meter
 		this.renderCounter = meter.createCounter('showcase.report.generated', { unit: '{report}' })
 		this.renderDuration = meter.createHistogram('showcase.report.duration', { unit: 'ms' })
 
-		this.ctx.require(Commands).register(
+		this.ctx.service(Commands).register(
 			defineCommand({
 				name: 'showcase.report.generate',
 				description: 'Render, cache and publish one Report Studio preview.',
@@ -148,7 +153,7 @@ export class ReportStudioPlugin extends BasePlugin {
 				},
 			}),
 		)
-		this.ctx.require(Commands).register(
+		this.ctx.service(Commands).register(
 			defineCommand({
 				name: 'showcase.cache.clear',
 				description: 'Clear the Report Studio caller-owned preview cache.',
@@ -161,7 +166,7 @@ export class ReportStudioPlugin extends BasePlugin {
 		)
 
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.get('/showcase/status', () => compactSnapshot(this.snapshot()))
 			.post('/showcase/generate/:engine/:title', async ({ params }) =>
 				pickCommandArtifact(
@@ -184,7 +189,7 @@ export class ReportStudioPlugin extends BasePlugin {
 				return new Response(data, { headers: { 'content-type': artifact.mediaType } })
 			})
 
-		this.ctx.workbench?.publish(ReportStudioWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(ReportStudioWorkbench, {
 			studio: ({ signal }) => new ReportStudioTarget(this, signal),
 			studioStatus: () => ({
 				subscribe: (changed) => this.subscribe(changed),
@@ -214,7 +219,6 @@ export class ReportStudioPlugin extends BasePlugin {
 						})),
 				}),
 			}),
-			httpSettings: { provider: this.http },
 		})
 	}
 
@@ -297,10 +301,11 @@ export class ReportStudioPlugin extends BasePlugin {
 
 	async probeOutbound(): Promise<NonNullable<ShowcaseSnapshot['lastOutbound']>> {
 		try {
-			const response = await this.http.client
+			const response = await this.ctx.wretch
 				.url(this.config.outboundBaseUrl, true)
 				.get(this.config.outboundPath)
 				.res()
+			await response.body?.cancel()
 			this.lastOutbound = Object.freeze({
 				ok: response.ok,
 				status: response.status,
@@ -423,7 +428,7 @@ $$
 			// The font snapshot belongs to this generation and is never mutated. Borrow it until
 			// execution settles, avoiding an extra admission-time copy of the shared font bytes.
 			data: await this.ctx
-				.require(Workers)
+				.service(Workers)
 				.run(
 					renderTask,
 					{ title, engine, fonts },

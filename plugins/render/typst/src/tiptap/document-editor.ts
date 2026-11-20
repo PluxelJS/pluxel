@@ -7,14 +7,9 @@ import {
 	type Extensions,
 	type JSONContent,
 } from '@tiptap/core'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
-import { createTypstExtensions } from './extensions.js'
-import { TypstTableStyle } from './table-style.js'
-import {
-	copyDocumentBlock,
-	preservesDocumentPlaceholders,
-	readDocument,
-} from './document-content.js'
+import { PluginKey } from '@tiptap/pm/state'
+import { createTypstDocumentExtensions } from './document-extensions.js'
+import { copyDocumentBlock, readDocument } from './document-content.js'
 import { documentSync } from './editor-transactions.js'
 import type { TypstDocumentHistory, TypstDocumentReference } from './document-types.js'
 import './document-commands.js'
@@ -37,59 +32,16 @@ export interface TypstDocumentEditorOptions {
 	onSelection?(position: number): void
 }
 
-function placeholder(inline: boolean) {
-	const name = inline ? 'documentInline' : 'documentBlock'
-	return Node.create({
-		name,
-		group: inline ? 'inline' : 'block',
-		inline,
-		atom: true,
-		selectable: false,
-		marks: '',
-		addAttributes: () => ({
-			key: { default: null },
-			title: { default: '固定内容' },
-		}),
-		parseHTML: () => [{ tag: `${inline ? 'span' : 'div'}[data-document-fixed]` }],
-		renderHTML: ({ node }) => [
-			inline ? 'span' : 'div',
-			{
-				'data-document-fixed': node.attrs.key,
-				class: inline ? 'typst-document-inline' : 'typst-document-block typst-source-card',
-				contenteditable: 'false',
-				title: '由文档管理的固定内容',
-			},
-			node.attrs.title,
-		],
-		renderText: ({ node }) => node.attrs.title,
-		renderMarkdown: (node) => node.attrs?.title ?? '固定内容',
-	})
-}
-
 /** A native Tiptap editor over semantic JSON only. It never opens or assembles a Typst project. */
 export function createTypstDocumentEditor(options: TypstDocumentEditorOptions): Editor {
 	const historyAction = new PluginKey<'undo' | 'redo'>('typstDocumentHistory')
 	const replacements = new Map(options.extensions?.map((extension) => [extension.name, extension]))
 	const title = (id: unknown) =>
 		options.references?.find((target) => target.id === id)?.title || '引用目标缺失'
-	const extensions = createTypstExtensions({
-		extensions: [placeholder(false), placeholder(true), TypstTableStyle],
-	}).map((extension) => {
+	const extensions = createTypstDocumentExtensions().map((extension) => {
 		let current = replacements.get(extension.name) ?? extension
 		if (current.name === 'starterKit' && options.history)
 			return current.configure({ undoRedo: false })
-		if (current.name === 'figure')
-			current = (current as Node).extend({
-				content: '(image | table | documentBlock) figureCaption',
-				addAttributes: () => ({ id: { default: null } }),
-			})
-		if (current.name === 'blockMath')
-			current = (current as Node).extend({
-				addAttributes() {
-					const { label: _label, ...attributes } = this.parent?.() ?? {}
-					return attributes
-				},
-			})
 		if (current.name === 'reference')
 			current = (current as Node).extend({
 				renderHTML: ({ node, HTMLAttributes }) => [
@@ -98,20 +50,6 @@ export function createTypstDocumentEditor(options: TypstDocumentEditorOptions): 
 					title(node.attrs.target),
 				],
 				renderText: ({ node }) => title(node.attrs.target),
-				renderMarkdown: (node) => title(node.attrs?.target),
-				addCommands() {
-					return {
-						insertTypstReference:
-							(target) =>
-							({ editor, commands }) =>
-								editor.isEditable &&
-								!editor.view.composing &&
-								typeof target === 'string' &&
-								Boolean(target) &&
-								target.isWellFormed() &&
-								commands.insertContent({ type: this.name, attrs: { target } }),
-					}
-				},
 			})
 		return current
 	})
@@ -120,7 +58,6 @@ export function createTypstDocumentEditor(options: TypstDocumentEditorOptions): 
 	extensions.push(
 		Extension.create({
 			name: 'typstDocumentEditing',
-			addGlobalAttributes: () => [{ types: ['heading'], attributes: { id: { default: null } } }],
 			addCommands: () => ({
 				duplicateTypstFigure:
 					(position) =>
@@ -143,14 +80,6 @@ export function createTypstDocumentEditor(options: TypstDocumentEditorOptions): 
 						tr.doc.nodeAt(position)?.type.name === 'blockMath' &&
 						copyDocumentBlock(tr, position, Boolean(dispatch)),
 			}),
-			addProseMirrorPlugins: () => [
-				new Plugin({
-					filterTransaction: (transaction, state) =>
-						!transaction.docChanged ||
-						transaction.getMeta(documentSync) ||
-						preservesDocumentPlaceholders(state.doc, transaction.doc),
-				}),
-			],
 		}),
 	)
 	if (options.history)

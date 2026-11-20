@@ -13,7 +13,7 @@ export function attachNodeArtifactCompiler(
 	options: NodeArtifactCompilerOptions = {},
 ): Readonly<{ dispose(): Promise<void> }> {
 	if (ctx !== ctx.root) throw new TypeError('Node artifact host requires a root Context')
-	const backend = ctx.root.require(NodeModuleHost)
+	const backend = ctx.root.service(NodeModuleHost)
 	if (backend.hasArtifactConfiguration)
 		throw new TypeError('Node source compilation conflicts with explicit artifact configuration')
 	const compiler = new NodeArtifactCompiler(ctx, options)
@@ -42,7 +42,7 @@ export function nodeArtifacts(
 		api: {
 			pluxelHost: {
 				async attach(input) {
-					const backend = input.host.ctx.require(NodeModuleHost)
+					const backend = input.host.ctx.service(NodeModuleHost)
 					if (backend.hasArtifactConfiguration) return undefined
 					const { host, server, catalog } = input
 					const compiler = attachNodeArtifactCompiler(host.ctx, { ...options, viteServer: server })

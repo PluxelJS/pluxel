@@ -18,6 +18,12 @@ description: 区分本地插件方法、RPC 传输数据与远程资源引用，
 
 插件之间的本地调用无需经过 RPC 封装或 DTO 序列化，直接调用方法即可；仅当通过 Workbench 暴露给前端时，才需要将其投影为符合 DTO 规范的数据。
 
+## 第三方库的版本边界
+
+把第三方运行时对象交给宿主时，由接收能力决定兼容版本。使用宿主 Elysia application 的插件遵守 [HTTP 依赖声明](./http.md)，向 Workbench 发布 `RpcTarget` 的插件遵守 [Workbench 发布与版本准入](https://github.com/PluxelJS/pluxel/blob/main/engineering/WORKBENCH.md#definition-与-publication)。作者直接从 `elysia`、`capnweb` 导入上游 API，并按对应能力声明精确 peer 与同版开发依赖。
+
+插件私有 SDK、独立 HTTP/RPC 端点及其客户端由插件作者管理版本。通过 JSON 等数据协议交换信息时，双方约定传输格式；宿主的模块接线只覆盖它接收的运行时对象。插件间公开 Better Result 实例可使用 [Core 共享入口](./better-result.md)，原生 SDK 结果、操作回执和生命周期失败保留各自语义。
+
 ## 本地插件 API 按领域设计
 
 同一宿主中的插件调用应直接使用领域方法。方法返回普通数据或具有明确关闭语义的对象：

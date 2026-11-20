@@ -14,7 +14,7 @@ const { version: servicesVersion } = JSON.parse(
 	await readFile(new URL('../../services/package.json', import.meta.url), 'utf8'),
 ) as { version: string }
 
-it('relocates a traced native library in the Pluxel namespace without external framework copies', async () => {
+it('relocates an explicit native residual and its runtime-only data under the Pluxel namespace', async () => {
 	const temporary = await mkdtemp(join(tmpdir(), 'pluxel-standalone-native-library-'))
 	const root = join(temporary, 'source')
 	const library = join(root, 'library')
@@ -40,17 +40,26 @@ it('relocates a traced native library in the Pluxel namespace without external f
 		)
 		await writeFile(
 			join(library, 'package.json'),
-			JSON.stringify({ name: '@pluxel/native-fixture', version: '1.0.0', main: 'dist/index.cjs' }),
+			JSON.stringify({
+				name: '@pluxel/native-fixture',
+				version: '1.0.0',
+				main: 'dist/index.cjs',
+				types: 'dist/index.d.cts',
+			}),
+		)
+		await writeFile(
+			join(library, 'dist/index.d.cts'),
+			'declare const native: string; export = native;\n',
 		)
 		await writeFile(join(library, 'dist/index.cjs'), "module.exports = require('../binding.cjs')")
 		await writeFile(
 			join(library, 'binding.cjs'),
-			"module.exports = require('node:fs').readFileSync(require('node:path').join(__dirname, 'runtime.asset'), 'utf8')",
+			"module.exports = require('node:fs').readFileSync(require('node:path').join(__dirname, ['runtime', 'asset'].join('.')), 'utf8')",
 		)
 		await writeFile(join(library, 'runtime.asset'), 'RESIDUAL_NATIVE_LAYOUT_OK')
 		await writeFile(
 			join(root, 'app.ts'),
-			`import native from '@pluxel/native-fixture';
+			`import {createRequire} from 'node:module';
 import {BasePlugin,Plugin} from '@pluxel/core';
 import {defineHostApplication} from '@pluxel/host';
 import * as v from 'valibot';
@@ -60,12 +69,13 @@ class Probe extends BasePlugin {
  protected init(){if(this.config.answer!==42) throw new Error('Standalone config was lost'); console.log('STANDALONE_CONFIG_AND_AUTOSTART_OK')}
 }
 export default defineHostApplication(() => ({
- plugins:[Probe],
- policy:{autoStart:[Probe],startTimeoutMs:12345},
- config:{records:[{owner:Probe,config:{answer:42}}]},
+ plugins:[{plugin:Probe,autoStart:true,config:{answer:42}}],
+ sources:[],
+ policy:{execution:{startTimeoutMs:12345}},
  async prepare({host}) {
   const policy=await host.policy.get();
   if(!policy.ok || policy.effective.startTimeoutMs!==12345) throw new Error('Standalone execution policy was lost');
+  const native=createRequire(import.meta.url)(['@pluxel','native-fixture'].join('/'));
   if(native!=='RESIDUAL_NATIVE_LAYOUT_OK') throw new Error('Native library layout changed');
   console.log(native);
  }
@@ -74,8 +84,18 @@ export default defineHostApplication(() => ({
 		const buildScript = join(root, 'build.mts')
 		await writeFile(
 			buildScript,
-			`import {build} from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'app.ts',plugins:[pluxel({delivery:'standalone',variant:'headless',lint:false,residualDependencies:{packages:['@pluxel/native-fixture']}})],config:false})`,
+			`import {build} from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'app.ts',plugins:[pluxel({delivery:'standalone',variant:'headless',lint:false,residualDependencies:{fullTrace:['@pluxel/native-fixture']}})],config:false})`,
 		)
+		const entry = join(root, 'app.ts')
+		const appSource = await readFile(entry, 'utf8')
+		await writeFile(entry, appSource.replace('sources:[]', "sources:[{ file: './dynamic.mjs' }]"))
+		await expect(
+			promisify(execFile)(process.execPath, ['--import', import.meta.resolve('tsx'), buildScript], {
+				timeout: 30_000,
+				maxBuffer: 4 * 1024 * 1024,
+			}),
+		).rejects.toThrow('standalone delivery rejects sources')
+		await writeFile(entry, appSource)
 		await promisify(execFile)(
 			process.execPath,
 			['--import', import.meta.resolve('tsx'), buildScript],
@@ -166,7 +186,7 @@ it('preserves native modules and shared framework identity with installed module
 import {BasePlugin,Plugin} from '@pluxel/core';
 import {__setPluginDefinition} from '@pluxel/core/toolchain';
 import {Commands} from '@pluxel/services/commands';
-class Dynamic extends BasePlugin { init(){ if (!Array.isArray(this.ctx.require(Commands).list())) throw new Error('MISSING_COMMANDS'); if (Commands !== globalThis.__frameworkCommands) throw new Error('COMMANDS_IDENTITY_MISMATCH'); process.stdout.write('DYNAMIC_STARTED\\n') } }
+class Dynamic extends BasePlugin { init(){ if (!Array.isArray(this.ctx.service(Commands).list())) throw new Error('MISSING_COMMANDS'); if (Commands !== globalThis.__frameworkCommands) throw new Error('COMMANDS_IDENTITY_MISMATCH'); process.stdout.write('DYNAMIC_STARTED\\n') } }
 Plugin()(Dynamic); __setPluginDefinition(Dynamic,{abiVersion:2,kind:'plugin',definition:${JSON.stringify(address.definition)}}); export {Dynamic};
 `,
 		)
@@ -174,23 +194,33 @@ Plugin()(Dynamic); __setPluginDefinition(Dynamic,{abiVersion:2,kind:'plugin',def
 		await writeFile(join(root, 'task.ts'), 'export default (value: number) => value * 2')
 		await writeFile(
 			join(root, 'app.ts'),
-			`import {pluginSource} from '@pluxel/host/sources';
-import {Commands} from '@pluxel/services/commands';
-import {standardServices} from '@pluxel/services';
+			`import {Commands} from '@pluxel/services/commands';
+import { elysia } from '@pluxel/services/elysia'; import { commands } from '@pluxel/services/commands'; import { nodeModules } from '@pluxel/services/node'; import { workers } from '@pluxel/services/workers';
 import {BasePlugin,Plugin} from '@pluxel/core';
 import {Workers,defineWorkerTask} from '@pluxel/services/workers';
 import {resolve} from 'node:path';
+declare global { var __frameworkCommands: typeof Commands | undefined; }
 const task = defineWorkerTask<number,number>(import.meta.url, './task.ts');
 @Plugin()
 class FrozenWorker extends BasePlugin {
  async init() {
-  const value = await this.ctx.require(Workers).run(task,21);
+  const value = await this.ctx.service(Workers).run(task,21);
   if(value !== 42) throw new Error('WRONG_WORKER_RESULT');
   process.stdout.write('FROZEN_WORKER_OK\\n');
  }
 }
 import {defineHostApplication} from '@pluxel/host';
-export default defineHostApplication(() => ({name:'production-bridge', plugins:[FrozenWorker],sources:[pluginSource({kind:'directory',path:${JSON.stringify(sources)},include:['*.mjs']})],prepare:()=>{globalThis.__frameworkCommands=Commands},services:standardServices(),policy:{autoStart:[FrozenWorker,${JSON.stringify(address)}]}}))
+export default defineHostApplication(startup => {
+ const directories = (startup.env.SOURCE_DIRECTORIES ?? '').split(',').filter(Boolean)
+ return {
+  name:'production-bridge',
+  plugins:[{plugin:FrozenWorker,autoStart:true}],
+  sources:directories.map(directory => ({directory:resolve(startup.root,directory),include:['*.mjs']})),
+  pluginNodes:[{definition:${JSON.stringify(address.definition)},autoStart:true}],
+  prepare:()=>{globalThis.__frameworkCommands=Commands},
+  services:[elysia(), commands(), nodeModules(), workers()],
+ }
+})
 `,
 		)
 		const buildScript = join(root, 'build.mts')
@@ -220,7 +250,7 @@ import assert from 'node:assert/strict';
 
 try {
  const { runHostApplication } = await import(${JSON.stringify(new URL('../../host/dist/index.mjs', import.meta.url).href)});
- globalThis.runtime = await runHostApplication(${JSON.stringify(join(deployed, 'app.mjs'))}, { startup: { root: ${JSON.stringify(root)}, mode: 'production', env: {}, bindings: {} }, sharedPackages: ['@pluxel/services','@pluxel/commands'] });
+ globalThis.runtime = await runHostApplication(${JSON.stringify(join(deployed, 'app.mjs'))}, { startup: { root: ${JSON.stringify(root)}, mode: 'production', env: { SOURCE_DIRECTORIES: 'mutable/entries' }, bindings: {} }, sharedPackages: ['@pluxel/services','@pluxel/commands'] });
 } finally { await globalThis.runtime?.close(); }
 await assert.rejects(import(${JSON.stringify(pathToFileURL(join(root, 'mutable/node_modules/@pluxel/core/wrong.mjs')).href)}), /WRONG_CORE_COPY/);
 console.log('NATIVE_MODULES_IDENTITY_OK');
@@ -295,7 +325,7 @@ const errors=error=>error instanceof AggregateError?error.errors.flatMap(errors)
 await assert.rejects(import(${JSON.stringify(pathToFileURL(join(root, 'dist/app.mjs')).href)}),error=>{
  assert(error instanceof AggregateError,error.stack);
  assert.equal(error.cause,error.errors[0]);
- ${listener ? "assert(errors(error).some(error=>error.code==='EADDRINUSE'))" : "const missing=errors(error).find(error=>error.code==='CONTEXT_CAPABILITY_MISSING'); assert(missing); assert.match(missing.capability,/elysia/i)"};
+ ${listener ? "assert(errors(error).some(error=>error.code==='EADDRINUSE'))" : "const missing=errors(error).find(error=>error.code==='CONTEXT_SERVICE_MISSING'); assert(missing); assert.equal(missing.name,'ContextServiceMissingError')"};
  assert(errors(error).some(error=>error.message==='STANDALONE_CLEANUP_PROBE'));
  return true;
 });

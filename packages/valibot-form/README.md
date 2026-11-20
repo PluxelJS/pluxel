@@ -70,7 +70,7 @@ if (projection.ok) {
 Install those peers only when using the web adapter:
 
 ```sh
-pnpm add valibot-form valibot react react-dom @mantine/core @mantine/hooks @tanstack/react-form @tabler/icons-react @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
+vp add valibot-form valibot react react-dom @mantine/core @mantine/hooks @tanstack/react-form @tabler/icons-react @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
 ```
 
 ```tsx

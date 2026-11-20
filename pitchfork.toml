@@ -13,33 +13,28 @@ sync_hosts = false
 # Directory-derived namespaces keep projects and Git worktrees distinct.
 [daemons.plugin-host]
 run = "vp run @pluxel/plugins-host#dev:server"
-mise = true
 port = { expect = [3310], bump = 100 }
 ready_output = { pattern = "(Local:|Application:|Workbench:)", timeout = "5m" }
 
 [daemons.docs]
 run = "vp run pluxel-docs#dev:server"
-mise = true
 port = { expect = [3000], bump = 100 }
 ready_output = { pattern = "ready: Listening on", timeout = "5m" }
 
 # Browser-only consumer of the shared Typst editor and preview, with a local compiler.
 [daemons.typst]
 run = "vp run @pluxel/plugin-typst#dev:consumer"
-mise = true
 port = { expect = [3410], bump = 100 }
 ready_output = { pattern = "Local:", timeout = "5m" }
 
 # Local npm publication and market administration experience; no public npm writes.
 [daemons.market-registry]
 run = "vp run @pluxel-internal/plugin-market#dev:registry"
-mise = true
 port = { expect = [7677], bump = 100 }
 ready_cmd = 'curl --fail --silent http://127.0.0.1:$PORT/-/ready'
 
 [daemons.market]
 run = "vp run @pluxel-internal/plugin-market#dev:sandbox"
-mise = true
 depends = ["market-registry"]
 port = { expect = [8787], bump = 100 }
 env = { MARKET_TEST_REGISTRY = 'http://127.0.0.1:{{ daemons["market-registry"].port }}/npm/' }

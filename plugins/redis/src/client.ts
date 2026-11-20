@@ -1,4 +1,11 @@
-import { BasePlugin, formatPluginNodeReference, Plugin, type Context } from '@pluxel/core'
+import type { Workbench } from '@pluxel/workbench'
+import {
+	BasePlugin,
+	formatPluginNodeReference,
+	Plugin,
+	type Context,
+	defineServiceRef,
+} from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import {
@@ -11,6 +18,7 @@ import { RedisScripts } from './scripts.ts'
 import { isRedisConnectionId } from './validation.ts'
 import { RedisWorkbench, type RedisWorkbenchStatus } from './workbench.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 const MAX_CONNECTIONS = 64
 
 function isCredentialFreeRedisUrl(value: string): boolean {
@@ -226,7 +234,7 @@ export class RedisPlugin extends Redis {
 		const state: RedisConnectionState = {
 			config,
 			client,
-			workbench: this.ctx.workbench
+			workbench: this.ctx.service(WorkbenchRef)
 				? {
 						recentErrorType: null,
 						ping: { state: 'not-run', latencyMs: null, errorType: null },
@@ -292,7 +300,7 @@ export class RedisPlugin extends Redis {
 	}
 
 	private publishWorkbench(): void {
-		const workbench = this.ctx.workbench
+		const workbench = this.ctx.service(WorkbenchRef)
 		if (!workbench) return
 		this.workbenchDataListeners = new Set()
 		workbench.publish(RedisWorkbench, {

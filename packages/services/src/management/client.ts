@@ -26,6 +26,13 @@ export type {
 	RuntimeLogLine,
 } from '@pluxel/core/logging/protocol'
 export * from './web/protocol'
+export { OutboundHttpRevisionConflictError } from './web/management-validation'
+export type {
+	PluginControlManifestIndex,
+	PluginControlManifestRequest,
+	PluginControlFileRequest,
+	PluginControlFileChunk,
+} from '@pluxel/host/internal/agent/runtime'
 export {
 	parseConfigFieldPathSegments,
 	parseConfigPresentationPlanV2,

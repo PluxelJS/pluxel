@@ -1,22 +1,20 @@
-import type { Context as BaseContext, RootContext as BaseRootContext } from '@pluxel/context'
-import type { ContextLogger } from '../logger/LoggerService'
-import type { LogTapeConfig } from '../config/logtape'
-import type { RuntimeLogging } from '../logging/logging'
-import type { PluginNodeInfo } from '../plugins/runtime/PluginDefinitions'
-import type { PluginServiceConfig } from '../plugins/runtime/PluginService'
-import type { EffectsScope } from '../services/effects/EffectsService'
-import type { EventsService, EventsServiceConfig } from '../services/events/EventsService'
+import type { VaultServiceConfig, VaultStorageApi } from '../vault/types'
 import type { FsConfig, FsPromises, FsRequirement } from '../fs/service'
 import type { TinyBaseOptions, TinyBaseService } from '../tinybase/types'
+import type { Context as BaseContext, RootContext as BaseRootContext } from '@pluxel/context'
+import type { ContextLogger } from '../logger/LoggerService'
+import type { EffectsScope } from '../services/effects/EffectsService'
+import type { RuntimeLogging } from '../logging/logging'
+import type { LogTapeConfig } from '../logging/config'
+import type { PluginNodeInfo } from '../plugins/runtime/PluginDefinitions'
+import type { CoreExecutionConfig } from './plugin-execution'
+import type { EventsService, EventsServiceConfig } from '../services/events/EventsService'
+import type { Wretch } from 'wretch'
+import type { OutboundFetch, OutboundHttpOptions } from '../http/types'
 
-/** Known owner-facing service vocabulary. Entries remain optional until a host proves installation. */
-export interface ContextServices {}
-
-/** Known root service vocabulary, never projected onto Plugin and Part Contexts. */
-export interface RootContextServices {}
-
-/** Plugin-facing owner and capability projection. Construction remains host-owned. */
-export interface Context extends BaseContext<RootContext>, Readonly<Partial<ContextServices>> {
+/** Plugin-facing Context. Service installation and construction remain Host-owned. */
+export interface Context extends BaseContext<RootContext> {
+	readonly parent?: Context
 	readonly logger: ContextLogger
 	readonly effects: EffectsScope
 	readonly events: EventsService
@@ -24,31 +22,45 @@ export interface Context extends BaseContext<RootContext>, Readonly<Partial<Cont
 	readonly caller?: Context
 }
 
-/** Host root with Core and host-owned root capabilities. */
-export interface RootContext
-	extends Context, BaseRootContext<RootContext>, Readonly<Partial<RootContextServices>> {
-	/** The single Core logging runtime, present only when config.logtape is declared. */
+/** Host root with root and shared service access. */
+export interface RootContext extends Context, BaseRootContext<RootContext> {
+	readonly parent?: Context
+	/** Log policy, bounded stores and diagnostics; present only with logtape configuration. Core owns installation and shutdown. */
 	readonly logging?: RuntimeLogging
 }
 
 /** Context owned by one running Plugin generation and shared by its Parts. */
 export interface PluginContext extends Context {
 	readonly pluginInfo: PluginNodeInfo
-	/** Borrow the owning Plugin node's runtime data directory. */
+	/** Borrow the owning Plugin node's data directory. */
 	readonly fs: (requirement?: FsRequirement) => Promise<FsPromises>
-	/** The owning Plugin generation's single native Store bridge. */
+	/** One native Store bridge per Plugin generation, shared with its Parts. */
 	readonly tinybase: TinyBaseService
+	/** Credentials isolated to the owning Plugin node; storage initializes on the first operation. */
+	readonly vault: VaultStorageApi
+	/** Native Wretch client using this generation's outbound Fetch. */
+	readonly wretch: Wretch
+	/** Fetch bound to the generation's lifetime and the Host's outbound configuration. */
+	readonly fetch: OutboundFetch
 }
 
-/** Public configuration shared by Core-based host constructors. */
-export interface CoreHostConfig {
-	name?: string
-	/** Native LogTape configuration or root factory, optionally with framework policy options. */
+/** Built-in facilities shared by direct Core and application Hosts. */
+export interface CoreFacilitiesConfig {
+	/** Omit to leave logging unmanaged. An empty declaration selects the Core preset. */
 	logtape?: LogTapeConfig
 	events?: EventsServiceConfig
-	plugins?: PluginServiceConfig
 	/** Native ZenFS mounts shared by Plugin files and state. Omitted means an isolated InMemory root. */
 	zenfs?: FsConfig
 	/** Snapshot policy; the backend is selected once through zenfs. */
 	tinybase?: TinyBaseOptions
+	/** Credential backend and explicit deployment identity. Defaults to lazy encrypted storage. */
+	vault?: VaultServiceConfig
+	/** Policy and terminal transport shared by all managed outbound clients in this Host. */
+	http?: OutboundHttpOptions
+}
+
+/** Direct Core configuration. Application Hosts select execution through Host policy. */
+export interface CoreHostConfig extends CoreFacilitiesConfig {
+	name?: string
+	execution?: CoreExecutionConfig
 }

@@ -1,8 +1,9 @@
+import { listSecurityEvents, requireVaultHost, resolveContextService } from '@pluxel/core/internal'
+import { requireOutboundHttp } from '@pluxel/core/host'
 import { validateRuntimePortableData } from '../../web/validation'
-import { resolveContextCapability } from '@pluxel/core/host'
+
 import { Management } from '../../token'
 import { AdminAccess } from '../../access'
-import { optionalVaultAdmin } from '../../vault'
 import { readManagementHostOptions } from '../../host-options'
 import {
 	type PluginRecentUpdateRead,
@@ -10,14 +11,17 @@ import {
 	ensureFork,
 	removeFork,
 	projectPluginApplyReport,
+	projectHostPolicyResult,
 	createHostPolicy,
+	requirePluginHostCoordinator,
 	requireHostStateStore,
 } from '@pluxel/host/internal'
-import type { HostPolicy, HostPolicyResult, HostPolicyField } from '@pluxel/host'
+import type { HostPolicy, HostPolicyResult, HostPolicyResetTarget } from '@pluxel/host'
 import { type RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
 import {
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
+	OutboundHttpError,
 	type Context,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
@@ -42,10 +46,13 @@ import {
 import {
 	inspectPluginConsumerRequirements,
 	inspectPluginProviderPolicy,
-	PluginNodeUnavailableError,
 	setPluginConsumerOverride as applyPluginConsumerOverride,
 	setPluginProviderPolicyDefault as applyPluginProviderPolicyDefault,
 } from '../../api/usecases/pluginDependencies'
+import {
+	PluginNodeUnavailableError,
+	requireAvailablePluginNode,
+} from '../../api/usecases/pluginNode'
 import { pluginDependencyGraph } from '../../api/usecases/pluginDependencyGraph'
 import { applyLifecycleCommands, setAutoStart } from '../../api/usecases/pluginStatus'
 import { logsFollow, logsIndex, logsMeta, logsRange } from '../../api/usecases/logs'
@@ -60,11 +67,11 @@ import {
 import {
 	type LogFilter,
 	type RuntimeLogEvent,
+	type RuntimeLogLine,
 	type LogRangeResult,
 	type LogStreamMeta,
 } from '@pluxel/core/logging/protocol'
-import { listSecurityEvents } from '../../../internal'
-import { type VaultAdminApi, type VaultAdminState, type VaultKeyPair } from '../../../vault'
+import { type VaultAdminApi, type VaultAdminState, type VaultKeyPair } from '@pluxel/core/vault'
 import { type SecurityOverview, type SecurityAuditEvent } from '../../web/security'
 import { RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES } from '../../web/session/limits'
 import {
@@ -73,6 +80,7 @@ import {
 	type RuntimeLogObserver,
 	type RuntimeSubscriptionTarget,
 	type RuntimeManagementTarget,
+	type RuntimeOutboundHttpSaveDto,
 } from '../../web/management-target'
 import {
 	type ConfigResult,
@@ -91,6 +99,7 @@ import {
 	type PluginCatalogSnapshot,
 	type PluginControlBatchResult,
 	type PluginStatusQueryResult,
+	type OutboundHttpSnapshot,
 } from '../../web/protocol'
 import {
 	parseConfigPresentationResult,
@@ -99,6 +108,15 @@ import {
 	parsePluginControlBatchResult,
 } from '../../web/management-validation'
 import { estimateRuntimeRpcPayloadBytes, prepareRuntimeLogRangeForRpc } from './log-transport'
+import {
+	createPluginControlMaterialReader,
+	readPluginControlMaterials,
+	scriptFailure,
+	type PluginControlMaterialReader,
+	type PluginControlManifestIndex,
+	type PluginControlFileChunk,
+} from '@pluxel/host/internal/agent/runtime'
+import type { ScriptControlResponse } from '@pluxel/host/internal/agent/transport'
 
 /** Assert the producer's existing snapshot without rebuilding its value tree. */
 function checkedDto<const T>(value: T): T {
@@ -109,6 +127,7 @@ function checkedDto<const T>(value: T): T {
 export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeManagementTarget {
 	private readonly ctx: Context
 	readonly #policy: HostPolicy
+	readonly #materials: PluginControlMaterialReader
 	get #admission() {
 		return this.signal ? { signal: this.signal } : undefined
 	}
@@ -120,11 +139,42 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		super()
 		this.ctx = ctx
 		this.#policy = createHostPolicy(ctx, requireHostStateStore(ctx))
+		this.#materials = createPluginControlMaterialReader(
+			() => readPluginControlMaterials(ctx, this.#admission),
+			{ signal },
+		)
+	}
+
+	async pluginControlManifestDto(
+		input?: unknown,
+	): Promise<ScriptControlResponse<PluginControlManifestIndex>> {
+		this.signal?.throwIfAborted()
+		try {
+			const value = await this.#materials.manifest(input)
+			this.signal?.throwIfAborted()
+			return checkedDto({ ok: true, value })
+		} catch (error) {
+			this.signal?.throwIfAborted()
+			return checkedDto({ ok: false, error: scriptFailure(error, 'control_material_unavailable') })
+		}
+	}
+
+	pluginControlFileDto(input: unknown): ScriptControlResponse<PluginControlFileChunk> {
+		this.signal?.throwIfAborted()
+		try {
+			return checkedDto({ ok: true, value: this.#materials.file(input) })
+		} catch (error) {
+			return checkedDto({ ok: false, error: scriptFailure(error, 'control_file_unavailable') })
+		}
+	}
+
+	[Symbol.dispose](): void {
+		this.#materials[Symbol.dispose]()
 	}
 
 	describeDto(): RuntimeMeta {
 		this.signal?.throwIfAborted()
-		const management = resolveContextCapability(this.ctx.root, Management)
+		const management = resolveContextService(this.ctx.root, Management)
 		if (!management) throw new Error('Runtime Management is unavailable')
 		return checkedDto(management.describe())
 	}
@@ -243,16 +293,13 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		)
 	}
 
-	async resetHostPolicyDto(keys?: unknown, options?: unknown): Promise<PolicyResult> {
+	async resetHostPolicyDto(targets?: unknown, options?: unknown): Promise<PolicyResult> {
 		this.signal?.throwIfAborted()
 		const parsed = parseManagedInputOptions(options)
-		if (
-			!parsed.ok ||
-			(keys !== undefined && (!Array.isArray(keys) || keys.some((key) => typeof key !== 'string')))
-		)
+		if (!parsed.ok || (targets !== undefined && !Array.isArray(targets)))
 			return invalidPolicyInput('Invalid policy reset input')
 		return this.#projectPolicy(
-			await this.#policy.reset(keys as readonly HostPolicyField[] | undefined, {
+			await this.#policy.reset(targets as readonly HostPolicyResetTarget[] | undefined, {
 				...parsed.value,
 				...this.#admission,
 			}),
@@ -260,12 +307,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 	}
 
 	#projectPolicy(result: HostPolicyResult): PolicyResult {
-		if (!result.ok) return parsePolicyResult(result)
-		const { report, ...snapshot } = result
-		return parsePolicyResult({
-			...snapshot,
-			...(report ? { report: projectPluginApplyReport(this.ctx, report) } : {}),
-		})
+		return parsePolicyResult(projectHostPolicyResult(this.ctx, result))
 	}
 
 	async pluginConfigDto(owner: unknown): Promise<ConfigResult> {
@@ -577,6 +619,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 				ok: false,
 				status: 'rejected',
 				code: 'invalid_input',
+				state: 'unchanged',
 				error: 'Invalid managed input options',
 				results: [],
 			}
@@ -643,6 +686,69 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 		return checkedDto(policy.describe())
 	}
 
+	async getOutboundHttpDto(input: unknown): Promise<OutboundHttpSnapshot> {
+		this.signal?.throwIfAborted()
+		const owner = outboundHttpOwner(input)
+		if (owner !== null) {
+			await requirePluginHostCoordinator(this.ctx).readCommitted(
+				(view) => requireAvailablePluginNode(view, owner),
+				this.#admission,
+			)
+		}
+		const snapshot = await requireOutboundHttp(this.ctx.root).snapshot(owner)
+		this.signal?.throwIfAborted()
+		return checkedDto(snapshot)
+	}
+
+	async saveOutboundHttpDto(
+		input: unknown,
+		expectedRevision: unknown,
+		settings: unknown,
+	): Promise<RuntimeOutboundHttpSaveDto> {
+		this.signal?.throwIfAborted()
+		const owner = outboundHttpOwner(input)
+		if (
+			typeof expectedRevision !== 'number' ||
+			!Number.isSafeInteger(expectedRevision) ||
+			expectedRevision < 0
+		) {
+			throw new TypeError('Outbound HTTP revision must be a non-negative safe integer')
+		}
+		validateRuntimePortableData(settings, 'Outbound HTTP settings', true)
+
+		let saved
+		try {
+			saved = await requirePluginHostCoordinator(this.ctx).runExclusive(
+				'outbound-http-save',
+				async (session) => {
+					if (owner !== null) {
+						session.readCommitted((view) => requireAvailablePluginNode(view, owner))
+					}
+					return requireOutboundHttp(this.ctx.root).save(owner, expectedRevision, settings)
+				},
+				this.#admission,
+			)
+		} catch (error) {
+			if (
+				error instanceof OutboundHttpError &&
+				(error.code === 'revision_conflict' || error.code === 'management_disabled')
+			) {
+				return checkedDto({ ok: false, code: error.code, error: error.message })
+			}
+			throw error
+		}
+
+		// Retirement can drain active response bodies. Release the Host gate before awaiting it.
+		const cleanupError = await saved.cleanup
+		return checkedDto({
+			ok: true,
+			value: {
+				snapshot: saved.snapshot,
+				...(cleanupError === undefined ? {} : { cleanupError }),
+			},
+		})
+	}
+
 	logStreamsDto(): RuntimeLogStreamsIndex {
 		this.signal?.throwIfAborted()
 		return checkedDto(logsIndex(this.ctx))
@@ -673,15 +779,13 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 
 	async securityOverviewDto(): Promise<SecurityOverview> {
 		this.signal?.throwIfAborted()
-		const adminAccess = resolveContextCapability(this.ctx.root, AdminAccess)
+		const adminAccess = resolveContextService(this.ctx.root, AdminAccess)
 		if (!adminAccess) throw new Error('Runtime Management authentication is unavailable')
-		const vault = optionalVaultAdmin(this.ctx)
+		const vault = requireVaultHost(this.ctx.root).admin
 		return checkedDto(
 			Object.freeze({
 				adminAccess: await adminAccess.describe(),
-				vault: vault
-					? Object.freeze({ enabled: true as const, state: await vault.describe() })
-					: Object.freeze({ enabled: false as const }),
+				vault: Object.freeze({ enabled: true as const, state: await vault.describe() }),
 			}),
 		)
 	}
@@ -722,8 +826,7 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 	}
 
 	#vaultAdmin(): VaultAdminApi {
-		const vault = optionalVaultAdmin(this.ctx)
-		if (!vault) throw new Error('Runtime Vault is unavailable')
+		const vault = requireVaultHost(this.ctx.root).admin
 		return vault
 	}
 }
@@ -738,10 +841,19 @@ const MAX_LOG_PENDING_BYTES = RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES * 4
 const MAX_DEPLOY_RECIPIENTS = 1_000
 const MAX_DEPLOY_RECIPIENT_LENGTH = 4_096
 
+type PendingLogEvent = {
+	event:
+		| Exclude<RuntimeLogEvent, { type: 'append' }>
+		| (Extract<RuntimeLogEvent, { type: 'append' }> & {
+				lines: RuntimeLogLine[]
+		  })
+	bytes: number
+}
+
 class RuntimeLogSubscription extends RpcTarget implements RuntimeSubscriptionTarget {
 	private readonly observer: RpcStub<RuntimeLogObserver>
 	private readonly unsubscribe: () => void
-	private readonly queue: RuntimeLogEvent[] = []
+	private readonly queue: PendingLogEvent[] = []
 	private queuedBytes = 0
 	private draining = false
 	private active = true
@@ -783,13 +895,34 @@ class RuntimeLogSubscription extends RpcTarget implements RuntimeSubscriptionTar
 		const oversized =
 			bytes > MAX_LOG_CALLBACK_BYTES ||
 			(event.type === 'append' && event.lines.length > MAX_LOG_CALLBACK_LINES)
+		const tail = this.queue.at(-1)
+		if (
+			event.type === 'append' &&
+			tail?.event.type === 'append' &&
+			tail.event.epoch === event.epoch &&
+			tail.event.nextSeq === event.fromSeq &&
+			tail.event.lines.length + event.lines.length <= MAX_LOG_CALLBACK_LINES &&
+			tail.bytes + bytes <= MAX_LOG_CALLBACK_BYTES &&
+			this.queuedBytes + bytes <= MAX_LOG_PENDING_BYTES
+		) {
+			tail.event.lines.push(...event.lines)
+			tail.event.nextSeq = event.nextSeq
+			tail.bytes += bytes
+			this.queuedBytes += bytes
+			return
+		}
 		const overflow =
 			this.queue.length >= MAX_LOG_PENDING_EVENTS ||
 			this.queuedBytes + bytes > MAX_LOG_PENDING_BYTES
 		if (oversized || overflow) {
-			const gap = collapseLogGap(this.queue, event)
+			const gap = collapseLogGap(
+				this.queue.map((item) => item.event),
+				event,
+			)
+			const reset = this.queue[0]?.event.type === 'reset' ? this.queue[0] : undefined
 			this.queue.length = 0
 			this.queuedBytes = 0
+			if (reset) this.#push(reset.event, reset.bytes)
 			this.#push(gap)
 		} else {
 			this.#push(event, bytes)
@@ -798,23 +931,26 @@ class RuntimeLogSubscription extends RpcTarget implements RuntimeSubscriptionTar
 	}
 
 	#push(event: RuntimeLogEvent, bytes = estimateRuntimeRpcPayloadBytes(event)): void {
-		this.queue.push(event)
+		this.queue.push({
+			event: event.type === 'append' ? { ...event, lines: [...event.lines] } : event,
+			bytes,
+		})
 		this.queuedBytes += bytes
 	}
 
 	#startDrain(): void {
 		if (this.draining) return
 		this.draining = true
-		void this.#drain()
+		queueMicrotask(() => void this.#drain())
 	}
 
 	async #drain(): Promise<void> {
 		try {
 			while (this.active) {
-				const event = this.queue.shift()
-				if (!event) return
-				this.queuedBytes = Math.max(0, this.queuedBytes - estimateRuntimeRpcPayloadBytes(event))
-				using result = this.observer(event)
+				const item = this.queue.shift()
+				if (!item) return
+				this.queuedBytes -= item.bytes
+				using result = this.observer(item.event)
 				await result
 			}
 		} catch {
@@ -843,7 +979,8 @@ function parseLogRangeInput(streamId: unknown, input: unknown) {
 	if (!Number.isSafeInteger(record.epoch) || Number(record.epoch) <= 0) {
 		throw new TypeError('Log range epoch must be a positive integer')
 	}
-	if (typeof record.fromSeq !== 'string' || !/^\d+$/.test(record.fromSeq)) {
+	const { fromSeq } = record
+	if (fromSeq !== undefined && (typeof fromSeq !== 'string' || !/^\d+$/.test(fromSeq))) {
 		throw new TypeError('Log range fromSeq must be an unsigned integer string')
 	}
 	const limit =
@@ -851,7 +988,7 @@ function parseLogRangeInput(streamId: unknown, input: unknown) {
 	return Object.freeze({
 		streamId: parseLogStreamId(streamId),
 		epoch: Number(record.epoch),
-		fromSeq: record.fromSeq,
+		...(typeof fromSeq === 'string' ? { fromSeq } : {}),
 		...(limit === undefined ? {} : { limit }),
 		...(record.filter === undefined ? {} : { filter: parseLogFilter(record.filter) }),
 	})
@@ -1095,6 +1232,12 @@ function parseRpcNullableNode(
 	if (input === null) return { ok: true, value: null }
 	const value = parseRpcNode(input)
 	return value ? { ok: true, value } : { ok: false }
+}
+
+function outboundHttpOwner(input: unknown): PluginNodeAddress | null {
+	const parsed = parseRpcNullableNode(input)
+	if (!parsed.ok) throw new TypeError('Invalid outbound HTTP Plugin node address')
+	return parsed.value
 }
 
 function parseRpcForkSelection(input: unknown):

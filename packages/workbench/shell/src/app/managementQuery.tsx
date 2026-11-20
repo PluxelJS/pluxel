@@ -7,6 +7,7 @@ export const MANAGEMENT_QUERY_STALE_TIME = 30_000
 export const managementQueryKeys = {
 	all: ['management'] as const,
 	configState: () => [...managementQueryKeys.all, 'config-state'] as const,
+	hostPolicy: () => [...managementQueryKeys.all, 'host-policy'] as const,
 	runtimeMeta: () => [...managementQueryKeys.all, 'runtime-meta'] as const,
 	pluginOverview: () => [...managementQueryKeys.all, 'plugins', 'overview'] as const,
 	pluginDependencyGraph: () => [...managementQueryKeys.all, 'plugins', 'dependency-graph'] as const,
@@ -22,6 +23,9 @@ export const managementQueryKeys = {
 	securityEvents: () => [...managementQueryKeys.all, 'security', 'events'] as const,
 	logStreams: () => [...managementQueryKeys.all, 'logging', 'streams'] as const,
 	loggingPolicy: () => [...managementQueryKeys.all, 'logging', 'policy'] as const,
+	outboundHttp: () => [...managementQueryKeys.all, 'outbound-http'] as const,
+	outboundHttpScope: (owner: PluginNodeAddress | null) =>
+		[...managementQueryKeys.outboundHttp(), owner ? pluginNodeIndexKey(owner) : null] as const,
 	dependencies: () => [...managementQueryKeys.all, 'dependencies'] as const,
 	providerPolicy: (owner: PluginNodeAddress) =>
 		[...managementQueryKeys.dependencies(), 'provider-policy', pluginNodeIndexKey(owner)] as const,

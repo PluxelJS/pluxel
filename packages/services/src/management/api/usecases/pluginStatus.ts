@@ -1,5 +1,6 @@
 import {
 	parsePluginNodeAddress,
+	pluginNodeIndexKey,
 	type CommitSummary,
 	type Context,
 	type PluginNodeAddress,
@@ -15,19 +16,23 @@ import {
 	HostPolicyMutationRejectedError,
 	type HostPluginGraphExclusiveSession,
 	requirePluginHostCoordinator,
+	requireHostStateStore,
 	hostStatePatch,
 	projectPluginApplyReport,
+	pluginLifecycleUpdate,
+	hostPluginControlFromView,
 } from '@pluxel/host/internal'
+import { pluginApplyReportOutcome } from '@pluxel/host/internal/protocol'
 import type {
 	PluginAutoStartBatchItem,
 	PluginControlBatchResult,
 	PluginControlMutationResult,
-	PluginControlMutationSuccess,
 	PluginControlSnapshot,
+	PluginApplyReport,
 	PluginLifecycleCommand,
 	PluginLifecycleCommandBatchItem,
 } from '../../web/protocol'
-import { pluginStatus, pluginStatusFromView } from './plugins'
+import { summarizePluginControlBatch } from '../../web/control-batch'
 
 const MAX_CONTROL_BATCH_ITEMS = 1_000
 const INHERITED_STOPPED_CONTROL: PluginControlSnapshot = Object.freeze({
@@ -39,20 +44,34 @@ const INHERITED_STOPPED_CONTROL: PluginControlSnapshot = Object.freeze({
 })
 
 function controlOf(
-	status: Awaited<ReturnType<typeof pluginStatus>>,
+	control: PluginControlSnapshot | null,
 	disappeared?: PluginControlSnapshot,
 ): PluginControlSnapshot {
-	if (!status) {
+	if (!control) {
 		if (disappeared) return disappeared
 		throw new Error('[runtime:control] applied Plugin node disappeared from projection')
 	}
-	return {
-		autoStart: status.autoStart,
-		sessionIntent: status.sessionIntent,
-		desiredState: status.desiredState,
-		activationReason: status.activationReason,
-		lifecycleState: status.lifecycleState,
-	}
+	return control
+}
+
+function readPluginControl(
+	session: HostPluginGraphExclusiveSession<CommitSummary>,
+	address: PluginNodeAddress,
+): PluginControlSnapshot | null {
+	return session.readCommitted((view) =>
+		hostPluginControlFromView(
+			{
+				catalog: view.catalog,
+				declaredNodes: view.declaredNodes,
+				state: view.runtimeState.state,
+				sessionIntents: view.sessionIntents,
+				desiredControl: view.desiredControl,
+				coreNodes: view.coreAdjacency.nodes,
+				runningNodeKeys: new Set(view.runningNodes.map(pluginNodeIndexKey)),
+			},
+			address,
+		),
+	)
 }
 
 async function setOneAutoStart(
@@ -65,21 +84,20 @@ async function setOneAutoStart(
 		// Enabling is admitted against the pinned catalog inside the coordinator so a stale or
 		// otherwise absent address receives the precise node_unavailable contract. Disabling an
 		// unknown address remains a query-level not-found instead of becoming a successful no-op.
-		const readStatus = () =>
-			session.readCommitted((view) => pluginStatusFromView(ctx, view, address))
-		if (!readStatus() && !autoStart) return notFound(address)
+		if (!readPluginControl(session, address) && !autoStart) return notFound(address)
 		const report = await session.update({
 			statePatch: hostStatePatch({ type: 'set-auto-start', node: address, autoStart }),
 			reason: 'plugin-auto-start-set',
 			mode: 'live',
 		})
-		return {
+		return mutationReport(
 			address,
-			ok: true,
-			status: 'applied',
-			report: projectPluginApplyReport(ctx, report),
-			control: controlOf(readStatus(), autoStart ? undefined : INHERITED_STOPPED_CONTROL),
-		}
+			projectPluginApplyReport(ctx, report),
+			controlOf(
+				readPluginControl(session, address),
+				autoStart ? undefined : INHERITED_STOPPED_CONTROL,
+			),
+		)
 	} catch (error) {
 		return mutationFailure(address, error)
 	}
@@ -92,24 +110,24 @@ async function runLifecycleCommand(
 	options?: HostOperationOptions,
 ): Promise<PluginControlMutationResult> {
 	try {
-		if (!(await pluginStatus(ctx, address, options))) return notFound(address)
-		const coordinator = requirePluginHostCoordinator(ctx)
-		const report =
-			command === 'start'
-				? await coordinator.startNode(address, undefined, options)
-				: command === 'stop'
-					? await coordinator.stopNode(address, undefined, options)
-					: await coordinator.restartNode(address, undefined, options)
-		return {
-			address,
-			ok: true,
-			status: 'applied',
-			report: projectPluginApplyReport(ctx, report),
-			control: controlOf(
-				await pluginStatus(ctx, address),
-				command === 'stop' ? INHERITED_STOPPED_CONTROL : undefined,
-			),
-		}
+		return await requirePluginHostCoordinator(ctx).runExclusive(
+			`plugin-${command}`,
+			async (session) => {
+				if (!readPluginControl(session, address)) return notFound(address)
+				const report = await session.update(
+					pluginLifecycleUpdate(command, address, `plugin-${command}`),
+				)
+				return mutationReport(
+					address,
+					projectPluginApplyReport(ctx, report),
+					controlOf(
+						readPluginControl(session, address),
+						command === 'stop' ? INHERITED_STOPPED_CONTROL : undefined,
+					),
+				)
+			},
+			options,
+		)
 	} catch (error) {
 		return mutationFailure(address, error)
 	}
@@ -132,9 +150,15 @@ export async function setAutoStart(
 					Promise.resolve(mutationFailure(address, error)),
 				)
 			}
-			return runBatch(parsed.items, ({ address, autoStart }) =>
+			const result = await runBatch(parsed.items, ({ address, autoStart }) =>
 				setOneAutoStart(ctx, address, autoStart, session),
 			)
+			// Capture the managed-policy token before releasing the batch's exclusive admission.
+			// A later catalog refresh can already include another client's policy write.
+			return Object.freeze({
+				...result,
+				managedRevision: requireHostStateStore(ctx).managedRevision(),
+			})
 		},
 		options,
 	)
@@ -147,7 +171,7 @@ export async function applyLifecycleCommands(
 ): Promise<PluginControlBatchResult> {
 	const parsed = parseLifecycleItems(input)
 	if (parsed.ok === false) return rejectedBatch(parsed.error)
-	return await runBatch(parsed.items, ({ address, command }) =>
+	return runBatch(parsed.items, ({ address, command }) =>
 		runLifecycleCommand(ctx, address, command, options),
 	)
 }
@@ -156,16 +180,37 @@ async function runBatch<T>(
 	items: readonly T[],
 	run: (item: T) => Promise<PluginControlMutationResult>,
 ): Promise<PluginControlBatchResult> {
-	if (items.length === 0) return { ok: true, status: 'applied', results: [] }
 	const results: PluginControlMutationResult[] = []
 	for (const item of items) results.push(await run(item))
-	const successes = results.filter((result): result is PluginControlMutationSuccess => result.ok)
-	if (successes.length === results.length)
-		return { ok: true, status: 'applied', results: successes }
+	return summarizePluginControlBatch(results)
+}
+
+function mutationReport(
+	address: PluginNodeAddress,
+	report: PluginApplyReport,
+	control: PluginControlSnapshot,
+): PluginControlMutationResult {
+	const outcome = pluginApplyReportOutcome(report)
+	if (outcome.status === 'applied') return { address, ok: true, status: 'applied', report, control }
+	if (outcome.status === 'lifecycle_failed') {
+		return {
+			address,
+			ok: false,
+			code: 'lifecycle_failed',
+			status: 'applied-with-issues',
+			error: outcome.message,
+			report,
+			control,
+		}
+	}
 	return {
+		address,
 		ok: false,
-		status: successes.length > 0 ? 'partially-applied' : 'rejected',
-		results,
+		code: 'persistence_failed',
+		state: 'unknown',
+		error: outcome.message,
+		report,
+		control,
 	}
 }
 

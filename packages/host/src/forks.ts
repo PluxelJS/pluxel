@@ -11,7 +11,11 @@ import {
 	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
+import {
+	clearOutboundHttpNode,
+	requireConfigService,
+	requirePluginService,
+} from '@pluxel/core/internal'
 import {
 	PluginGraphRejectedError,
 	HostStatePersistenceError,
@@ -24,7 +28,7 @@ import type { HostConfigStore } from './config-store'
 
 class ForkMetadataPersistenceError extends Error {
 	constructor(
-		public readonly backend: 'config' | 'services' | 'logging',
+		public readonly backend: 'config' | 'services' | 'logging' | 'outbound-http',
 		cause: unknown,
 	) {
 		super(`[host:fork] failed to persist ${backend} metadata cleanup`, { cause })
@@ -115,7 +119,7 @@ export async function ensureFork(
 	try {
 		const report = await coordinator.updateRuntimeState(
 			hostStatePatch(
-				{ type: 'ensure-fork', definition: node.definition, forkId: node.forkId },
+				{ type: 'ensure-fork', node },
 				...(options.autoStart === undefined
 					? []
 					: [{ type: 'set-auto-start' as const, node, autoStart: options.autoStart }]),
@@ -158,7 +162,7 @@ export async function removeFork(
 			async (session) => {
 				const removalPatch = hostStatePatch(
 					{ type: 'remove-node-policy', node },
-					{ type: 'remove-fork', definition: node.definition, forkId: node.forkId },
+					{ type: 'remove-fork', node },
 				)
 				session.validateRuntimeStatePatch(removalPatch, options?.expectedManagedRevision)
 				const state = session.runtimeStateSnapshot()
@@ -180,12 +184,18 @@ export async function removeFork(
 				} catch (error) {
 					throw new ForkMetadataPersistenceError('services', error)
 				}
-				if (ctx.root.logging) {
+				const logging = ctx.root.logging
+				if (logging !== undefined) {
 					try {
-						await clearLoggingPolicy(ctx.root.logging, node)
+						await clearLoggingPolicy(logging, node)
 					} catch (error) {
 						throw new ForkMetadataPersistenceError('logging', error)
 					}
+				}
+				try {
+					await clearOutboundHttpNode(ctx.root, node)
+				} catch (error) {
+					throw new ForkMetadataPersistenceError('outbound-http', error)
 				}
 				phase = 'remove'
 				const finalReport = await session.update({

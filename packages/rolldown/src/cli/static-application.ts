@@ -568,19 +568,18 @@ function buildHostBootstrap(entry: string, variant: 'headless' | 'workbench'): s
 	return `
 import application, * as applicationExports from ${JSON.stringify(entry)}
 export * from ${JSON.stringify(entry)}
-import { createHost, resolveHostApplication } from '@pluxel/host'
-import { setHostCatalogProvenance, startHostApplication } from '@pluxel/host/internal'
+import { resolveHostApplication } from '@pluxel/host'
+import { createResolvedHost, setHostCatalogProvenance, startHostApplication, recordLoadedHostApplication, readLoadedApplicationControl, loadLoadedApplicationServiceControls } from '@pluxel/host/internal'
 import { readFile } from 'node:fs/promises'
 const reservedExports = ['host', 'ctx', 'start', 'stop'].filter(name => Object.hasOwn(applicationExports, name))
 if (reservedExports.length > 0) throw new TypeError('[pluxel:application] standalone application exports reserved entry names: ' + reservedExports.join(', '))
 const deployment = JSON.parse(await readFile(new URL('./pluxel-deployment.json', import.meta.url), 'utf8'))
+recordLoadedHostApplication(application, import.meta.url, {controlManifest:'./control/manifest.json'})
 const resolved = await resolveHostApplication(application, {root:import.meta.dirname,mode:'production',env:process.env,bindings:{},deployment:{root:import.meta.dirname,target:'node',delivery:'standalone',variant:${JSON.stringify(variant)},application:deployment.application}})
-export const host = await createHost({
- name:resolved.name,plugins:resolved.plugins,runtime:resolved.runtime,config:resolved.config,policy:resolved.policy,
- vaultBindings:resolved.vaultBindings,services:resolved.services,
-})
+export const host = await createResolvedHost(resolved)
 try {
- setHostCatalogProvenance(host.ctx, new Map(resolved.plugins.map(plugin => [plugin, {execution:{kind:'native',origin:'fixed',artifact:{kind:'application-bundle'},update:{kind:'next-start'}}}])))
+ await loadLoadedApplicationServiceControls(application, host.ctx, import.meta.dirname)
+ setHostCatalogProvenance(host.ctx, new Map(resolved.plugins.map(plugin => [plugin, {execution:{kind:'native',origin:'fixed',artifact:{kind:'application-bundle'},update:{kind:'next-start'}},control:readLoadedApplicationControl(application,plugin)}])))
 } catch (error) {
  const [cleanup] = await Promise.allSettled([host.close()])
  if (cleanup.status==='rejected') throw new AggregateError([error,cleanup.reason], 'Application startup and cleanup failed', {cause:error})

@@ -42,7 +42,10 @@ async function fixture(
 	await put('plugin/package.json', {
 		name: '@fixture/store',
 		version: '1.0.0',
-		peerDependencies: options.peer ? { tinybase: options.peer } : {},
+		peerDependencies: {
+			'@pluxel/host': '^1.1.0',
+			...(options.peer ? { tinybase: options.peer } : {}),
+		},
 		devDependencies: options.dev ? { tinybase: options.dev } : {},
 	})
 	await put('plugin/index.ts', options.source ?? "export { createStore } from 'tinybase'")
@@ -88,7 +91,7 @@ it.each([
 it.each([
 	"export { BasePlugin } from '@pluxel/core'",
 	'export const open = ctx => ctx.tinybase.open()',
-	"import type { TinyBaseService } from '@pluxel/core'; export const result = 1",
+	'export const result = 1',
 	"export { createStore } from 'tinybase'",
 ])(
 	'does not invent upstream interoperability from fixed Core APIs or private imports: %s',

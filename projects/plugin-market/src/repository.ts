@@ -1,13 +1,31 @@
-import { MarketError, object, readJson } from './protocol'
+import { MarketError, object, readJson, type MarketAuthor } from './protocol'
+
+export type RepositoryObservation = {
+	stars: number
+	observedAt: number
+	author: MarketAuthor
+}
+
+function avatarUrl(value: unknown): string | null {
+	if (typeof value !== 'string' || value.length > 2048) return null
+	try {
+		const url = new URL(value)
+		return url.origin === 'https://avatars.githubusercontent.com' && !url.username && !url.password
+			? url.href
+			: null
+	} catch {
+		return null
+	}
+}
 
 /** Repository links are package metadata, independent of verified build provenance. */
-export async function repositoryStars(repository: string) {
+export async function observeRepository(repository: string): Promise<RepositoryObservation> {
 	const url = new URL(repository)
 	const match = /^\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)$/.exec(url.pathname)
 	if (url.origin !== 'https://github.com' || !match)
 		throw new MarketError(
 			'repository-provider-unsupported',
-			'Star observations currently support GitHub repositories only',
+			'Repository observations currently support GitHub repositories only',
 			422,
 		)
 	const observedAt = Date.now()
@@ -47,13 +65,30 @@ export async function repositoryStars(repository: string) {
 		!object(value) ||
 		typeof value.full_name !== 'string' ||
 		value.full_name.toLowerCase() !== `${match[1]}/${match[2]}`.toLowerCase() ||
+		typeof value.stargazers_count !== 'number' ||
 		!Number.isSafeInteger(value.stargazers_count) ||
-		(value.stargazers_count as number) < 0
+		value.stargazers_count < 0 ||
+		!object(value.owner) ||
+		typeof value.owner.id !== 'number' ||
+		!Number.isSafeInteger(value.owner.id) ||
+		value.owner.id < 1 ||
+		typeof value.owner.login !== 'string' ||
+		!/^[a-z0-9][a-z0-9-]{0,38}$/i.test(value.owner.login) ||
+		value.owner.login.toLowerCase() !== match[1].toLowerCase()
 	)
 		throw new MarketError(
 			'invalid-repository-response',
-			'The repository API did not return the selected repository and a valid star count',
+			'The repository API did not return the selected repository, a valid owner, and a valid star count',
 			502,
 		)
-	return { stars: value.stargazers_count as number, observedAt }
+	return {
+		stars: value.stargazers_count,
+		observedAt,
+		author: {
+			id: `github:${value.owner.id}`,
+			name: `@${value.owner.login}`,
+			kind: 'github',
+			avatarUrl: avatarUrl(value.owner.avatar_url),
+		},
+	}
 }

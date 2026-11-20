@@ -3,9 +3,7 @@ import type { Node as ProseMirrorNode, Schema } from '@tiptap/pm/model'
 import { closeHistory } from '@tiptap/pm/history'
 import { NodeSelection, type Transaction } from '@tiptap/pm/state'
 import { documentSync } from './editor-transactions.js'
-
-export const isDocumentPlaceholder = (name: string): boolean =>
-	name === 'documentBlock' || name === 'documentInline'
+import { allocateIdentity } from './document-nodes.js'
 
 /** Reject unknown attributes instead of silently discarding source or unsupported host data. */
 export function readDocument(schema: Schema, content: JSONContent): ProseMirrorNode {
@@ -31,24 +29,6 @@ export function readDocument(schema: Schema, content: JSONContent): ProseMirrorN
 	return document
 }
 
-function placeholders(document: ProseMirrorNode): ProseMirrorNode[] {
-	const nodes: ProseMirrorNode[] = []
-	document.descendants((node) => {
-		if (isDocumentPlaceholder(node.type.name)) nodes.push(node)
-	})
-	return nodes
-}
-
-/** Fixed content is supplied by the host; ordinary edits preserve its sequence and values. */
-export function preservesDocumentPlaceholders(
-	before: ProseMirrorNode,
-	after: ProseMirrorNode,
-): boolean {
-	const previous = placeholders(before)
-	const next = placeholders(after)
-	return previous.length === next.length && previous.every((node, index) => node.eq(next[index]!))
-}
-
 /** Replace only the changed range so a normal host echo leaves the native selection alone. */
 export function synchronizeDocument(editor: Editor, content: JSONContent): void {
 	const next = readDocument(editor.schema, content)
@@ -67,7 +47,7 @@ export function synchronizeDocument(editor: Editor, content: JSONContent): void 
 	editor.view.dispatch(transaction)
 }
 
-/** Native duplication gives referenceable objects new identities, including internal references. */
+/** Duplicated objects receive fresh labels and retain references within the copied content. */
 export function copyDocumentBlock(
 	transaction: Transaction,
 	position: number,
@@ -79,23 +59,22 @@ export function copyDocumentBlock(
 	const original = transaction.doc.nodeAt(position)
 	if (resolved.depth !== 0 || !original?.isBlock) return false
 	const document = original.toJSON() as JSONContent
-	const identities = new Map<string, string>()
-	let fixed = false
+	const labels = new Map<string, string>()
+	const reserved = new Set<string>()
 	const visit = (node: JSONContent, action: (node: JSONContent) => void) => {
 		action(node)
 		for (const child of node.content ?? []) visit(child, action)
 	}
 	visit(document, (node) => {
-		if (isDocumentPlaceholder(node.type!)) fixed = true
-		if (!['figure', 'blockMath', 'heading'].includes(node.type!)) return
-		const id = crypto.randomUUID()
-		if (typeof node.attrs?.id === 'string') identities.set(node.attrs.id, id)
-		node.attrs = { ...node.attrs, id }
+		const previous = node.attrs?.label
+		if (!previous && node.type !== 'figure' && node.type !== 'blockMath') return
+		const label = 'object-' + allocateIdentity(transaction.doc, commit, reserved)
+		if (typeof previous === 'string') labels.set(previous, label)
+		node.attrs = { ...node.attrs, label }
 	})
-	if (fixed) return false
 	visit(document, (node) => {
-		if (node.type === 'reference' && identities.has(node.attrs?.target))
-			node.attrs = { ...node.attrs, target: identities.get(node.attrs!.target) }
+		if (node.type === 'reference' && labels.has(node.attrs?.target))
+			node.attrs = { ...node.attrs, target: labels.get(node.attrs!.target) }
 	})
 	const copied = original.type.schema.nodeFromJSON(document)
 	copied.check()

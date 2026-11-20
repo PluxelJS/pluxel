@@ -35,12 +35,12 @@ describe('repository package policy', () => {
 		try {
 			await writeFile(
 				join(root, 'pnpm-workspace.yaml'),
-				"packages: [projects/*, projects/embedded-launcher/sdk, vendor/library, '!projects/excluded']\n",
+				"packages: [projects/*, projects/example/sdk, vendor/library, '!projects/excluded']\n",
 			)
 			for (const directory of [
-				'projects/embedded-launcher',
-				'projects/embedded-launcher/sdk',
-				'projects/embedded-launcher/unrelated',
+				'projects/example',
+				'projects/example/sdk',
+				'projects/example/unrelated',
 				'projects/excluded',
 				'vendor/library',
 			]) {
@@ -52,8 +52,8 @@ describe('repository package policy', () => {
 			}
 			const packages = await readRepositoryPackages(root)
 			assert.deepEqual(packages.map(({ directory }) => directory).sort(), [
-				'projects/embedded-launcher',
-				'projects/embedded-launcher/sdk',
+				'projects/example',
+				'projects/example/sdk',
 				'vendor/library',
 			])
 			assert.deepEqual(

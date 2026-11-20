@@ -1,5 +1,4 @@
-import './services/index'
-import { createCoreRootContext } from './context/core-plan'
+import { createCoreRootContext } from './context/zenfs-plan'
 import { prepareCoreContext } from './context/core-logging'
 import type { CoreHostConfig, RootContext } from './context/Context'
 import {
@@ -363,7 +362,7 @@ export function createCoreInternalTestHost(
 		override: (consumer, requirement, provider) => {
 			currentUpdate().setDependencyOverride(
 				targetAddress(consumer),
-				typeof requirement === 'function' ? requirement.definitionAddress() : requirement,
+				typeof requirement === 'function' ? requirement.address() : requirement,
 				provider,
 			)
 			return host
@@ -462,7 +461,6 @@ export async function withCoreInternalTestContext<T>(
 export {
 	createCoreTestHost,
 	getCoreTestHostContext,
-	definePluginFork,
 	PluginLifecycleAssertionError,
 } from './internal-test-host'
 export type {
@@ -475,7 +473,6 @@ export type {
 	ProviderDefaultInput,
 	PluginInitialConfigOptions,
 	LifecycleFailureCommitSummary,
-	PluginForkRef,
 	PluginInstanceFor,
 	PluginInstances,
 	PluginLifecycleAssertionOperation,

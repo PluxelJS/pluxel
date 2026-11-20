@@ -1,133 +1,142 @@
 import { describe, expect, it } from 'vitest'
 import type { JSONContent } from '@tiptap/core'
 import {
+	chapterPath,
 	DocumentInputError,
 	DocumentProject,
+	documentAssetPath,
 	documentDirectory,
-	documentEntry,
 	documentSeed,
-	documentSourceCanary,
 } from './consumer/document-private/project'
 
-const text = (value: string): JSONContent => ({
+const paragraph = (text: string): JSONContent => ({
 	type: 'paragraph',
-	content: [{ type: 'text', text: value }],
+	content: [{ type: 'text', text }],
 })
-const chapter = (model: DocumentProject, id: string) =>
-	model.view().documents.find((entry) => entry.id === id)!
-const sourcePath = (id: string) => `private-proposal/chapters/${id}.typ`
+const body = (model: DocumentProject, id: string) =>
+	structuredClone(model.view().documents.find((entry) => entry.id === id)!.document)
 
-describe('private document host', () => {
-	it('sends semantic content without private source, preserves source bytes on a no-op edit', async () => {
-		const files = await documentSeed()
+describe('chapter document host', () => {
+	it('publishes editable content with stable labels and echoes it without a new source revision', () => {
+		const files = documentSeed()
 		const model = new DocumentProject(files)
 		const view = model.view()
 		const wire = JSON.stringify(view)
-		for (const value of [
-			documentSourceCanary,
-			'private-proposal',
+		for (const privateValue of [
+			'DOCUMENT_PRIVATE_SOURCE_',
+			'inputs/chapters/',
 			'.typ',
-			'#import',
+			'固定研究提示',
 			'typstImport',
 			'typstSource',
-			'architecture.svg',
-			'"label":',
 		])
-			expect(wire).not.toContain(value)
+			expect(wire).not.toContain(privateValue)
+		expect(wire).toContain(documentAssetPath)
 		expect(view.references).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
+					id: 'chapter-approach',
 					title: '研究方法',
 					location: { documentId: 'approach', position: 0 },
 				}),
-				expect.objectContaining({ kind: 'figure' }),
+				expect.objectContaining({ id: 'object-architecture', kind: 'figure' }),
 			]),
 		)
-		for (const entry of view.documents) model.edit(entry.id, entry.document)
+		for (const entry of view.documents) {
+			model.edit(entry.id, { kind: 'tiptap', document: entry.document })
+			model.edit(entry.id, { kind: 'typst', source: model.source(entry.id) })
+		}
 		expect(model.files()).toEqual(files)
+		expect(model.revision).toBe(view.revision)
 		expect(model.dirty).toBe(false)
-		expect(model.project.canUndo).toBe(false)
+		expect(model.view().canUndo).toBe(false)
 	})
 
-	it('accepts repeated edits around protected content without changing its identity or template', async () => {
-		const model = new DocumentProject(await documentSeed())
+	it('uses one editable Typst chapter for source and rich-text edits, history and reopen', () => {
+		const model = new DocumentProject(documentSeed())
 		const baseline = model.files()
-		const first = chapter(model, 'approach').document
-		const before = JSON.stringify(first).match(/"key":"([a-f0-9]+)"/g)
-		first.content!.unshift(text('新加入的引言。'))
-		model.edit('approach', first)
-		const next = chapter(model, 'approach').document
-		expect(JSON.stringify(next).match(/"key":"([a-f0-9]+)"/g)).toEqual(before)
-		first.content![0] = text('继续填写引言，并保留固定研究提示。')
-		model.edit('approach', first)
-		expect(String(model.files()[sourcePath('approach')])).toContain(
-			'继续填写引言，并保留固定研究提示。',
+		model.edit('approach', {
+			kind: 'typst',
+			source: '新加入的 *引言*。\n\n' + model.source('approach'),
+		})
+		const first = model.files()
+		const document = body(model, 'approach')
+		expect(document.content![0]!.content).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ text: '引言', marks: [{ type: 'bold' }] }),
+			]),
 		)
-		expect(String(model.files()[sourcePath('approach')])).toContain('#upper("固定研究提示")')
-		expect(model.files()[documentEntry]).toBe(baseline[documentEntry])
+		document.content![0] = paragraph('继续填写引言。')
+		model.edit('approach', { kind: 'tiptap', document })
+		const second = model.files()
+		expect(second[chapterPath('approach')]).toContain('继续填写引言。')
+		expect(Object.keys(second).sort()).toEqual(Object.keys(baseline).sort())
 		expect(model.dirty).toBe(true)
 		model.undo()
+		expect(model.files()).toEqual(first)
 		model.undo()
 		expect(model.files()).toEqual(baseline)
 		model.redo()
 		model.redo()
-		expect(chapter(model, 'approach').document.content![0]).toEqual(
-			text('继续填写引言，并保留固定研究提示。'),
-		)
+		expect(model.files()).toEqual(second)
+		const reopened = new DocumentProject(second).view()
+		expect(reopened.documents).toEqual(model.view().documents)
+		expect(reopened.references).toEqual(model.view().references)
 	})
 
-	it('rejects raw nodes, private attributes, forged or removed fixed content atomically', async () => {
-		const model = new DocumentProject(await documentSeed())
+	it('rejects unknown structure, unsupported Typst and unapproved labels and assets atomically', () => {
+		const model = new DocumentProject(documentSeed())
 		const baseline = model.files()
-		const original = chapter(model, 'approach').document
-		const opaqueIndex = original.content!.findIndex((node) => node.type === 'documentBlock')
-		expect(opaqueIndex).toBeGreaterThanOrEqual(0)
+		const document = body(model, 'background')
 		const cases = [
 			{
-				...original,
-				content: [...original.content!, { type: 'typstSource', attrs: { source: '#panic()' } }],
+				kind: 'tiptap',
+				document: {
+					...document,
+					content: [
+						{ type: 'typstSource', attrs: { source: '#let editorial-note = 1' } },
+						...document.content!,
+					],
+				},
 			},
 			{
-				...original,
-				content: [
-					text('ordinary'),
-					{ type: 'paragraph', attrs: { path: 'private-proposal/main.typ' } },
-					...original.content!,
-				],
+				kind: 'tiptap',
+				document: {
+					...document,
+					content: [{ type: 'paragraph', attrs: { path: 'main.typ' } }, ...document.content!],
+				},
 			},
-			{ ...original, content: original.content!.filter((_, index) => index !== opaqueIndex) },
+			{ kind: 'typst', source: '#let editorial-note = 1\n可见正文。' },
+			{ kind: 'typst', source: '见 #ref(<object-unpublished>)。' },
 			{
-				...original,
-				content: original.content!.map((node, index) =>
-					index === opaqueIndex
-						? { type: 'documentBlock', attrs: { key: 'forged', title: '固定内容' } }
-						: node,
-				),
+				kind: 'typst',
+				source: '#figure(image("/body-assets/unpublished.svg"), caption: [图示])',
 			},
+			{ kind: 'typst', source: '= 重复标签 <object-architecture>' },
 		]
-		for (const document of cases) {
-			expect(() => model.edit('approach', document)).toThrow(DocumentInputError)
+		for (const candidate of cases) {
+			expect(() => model.edit('background', candidate)).toThrow(DocumentInputError)
 			expect(model.files()).toEqual(baseline)
-			expect(model.project.canUndo).toBe(false)
+			expect(model.view().canUndo).toBe(false)
 		}
 	})
 
-	it('creates, names and reorders actual chapters as individual project history entries', async () => {
-		const model = new DocumentProject(await documentSeed())
-		const edited = chapter(model, 'background').document
-		edited.content!.push(text('先前已经接纳的内容。'))
-		model.edit('background', edited)
+	it('creates, names and reorders chapters as individual project history entries', () => {
+		const model = new DocumentProject(documentSeed())
+		const document = body(model, 'background')
+		document.content!.push(paragraph('先前已经接纳的内容。'))
+		model.edit('background', { kind: 'tiptap', document })
 		const prior = model.files()
 		const revision = model.revision
 		model.create('review', '成果复核')
 		expect(model.revision).toBe(revision + 1)
 		expect(model.view().documents.at(-1)?.title).toBe('成果复核')
-		expect(model.files()[sourcePath('review')]).toContain('请在这里撰写正文。')
+		expect(model.files()[chapterPath('review')]).toContain('请在这里撰写正文。')
 		model.undo()
 		expect(model.files()).toEqual(prior)
 		model.redo()
 		model.rename('review', '复核与交付')
-		const beforeOrder = model.files()
+		const { [documentDirectory]: beforeDirectory, ...beforeChapters } = model.files()
 		model.reorder(['background', 'review', 'approach', 'schedule'])
 		expect(model.view().documents.map(({ id }) => id)).toEqual([
 			'background',
@@ -135,10 +144,12 @@ describe('private document host', () => {
 			'approach',
 			'schedule',
 		])
-		for (const [path, value] of Object.entries(beforeOrder).filter(
-			([candidate]) => candidate !== documentDirectory,
-		))
-			expect(model.files()[path]).toEqual(value)
+		expect(model.view().references).toContainEqual(
+			expect.objectContaining({ id: 'chapter-review', title: '复核与交付' }),
+		)
+		const { [documentDirectory]: afterDirectory, ...afterChapters } = model.files()
+		expect(afterDirectory).not.toBe(beforeDirectory)
+		expect(afterChapters).toEqual(beforeChapters)
 		model.markSaved()
 		expect(model.dirty).toBe(false)
 		model.undo()
@@ -147,8 +158,8 @@ describe('private document host', () => {
 		expect(model.dirty).toBe(false)
 	})
 
-	it('rejects invalid metadata and stale revisions without altering any chapter', async () => {
-		const model = new DocumentProject(await documentSeed())
+	it('rejects invalid metadata and stale revisions without altering any chapter', () => {
+		const model = new DocumentProject(documentSeed())
 		const baseline = model.files()
 		for (const action of [
 			() => model.create('../outside', '无效'),
@@ -156,7 +167,7 @@ describe('private document host', () => {
 			() => model.rename('background', ''),
 			() => model.reorder(['background', 'approach', 'approach']),
 			() => model.checkRevision(99),
-			() => model.edit('../outside', text('无效')),
+			() => model.edit('../outside', { kind: 'typst', source: '无效' }),
 		])
 			expect(action).toThrow(DocumentInputError)
 		expect(model.files()).toEqual(baseline)

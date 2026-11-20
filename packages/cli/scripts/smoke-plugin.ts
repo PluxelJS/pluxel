@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { delimiter, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { parse } from 'yaml'
 import {
 	isPublishablePackage,
@@ -10,6 +10,9 @@ import {
 } from '../../../scripts/repository-packages.mjs'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
+const repositoryManifest = JSON.parse(
+	await readFile(resolve(repositoryRoot, 'package.json'), 'utf8'),
+)
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'pluxel-cli-plugin-smoke-'))
 const tarballRoot = resolve(temporaryRoot, 'tarballs')
 const installRoot = resolve(temporaryRoot, 'cli-install')
@@ -76,7 +79,7 @@ async function installPackedCli(
 	await mkdir(root, { recursive: true })
 	await writeFile(
 		resolve(root, 'package.json'),
-		`${JSON.stringify({ name: 'pluxel-cli-smoke', private: true, packageManager: 'pnpm@11.28.6', dependencies: { '@pluxel/cli': tarball } }, null, 2)}\n`,
+		`${JSON.stringify({ name: 'pluxel-cli-smoke', private: true, packageManager: repositoryManifest.packageManager, dependencies: { '@pluxel/cli': tarball } }, null, 2)}\n`,
 	)
 	await writeFile(
 		resolve(root, 'pnpm-workspace.yaml'),
@@ -145,10 +148,7 @@ async function runVp(
 	cwd: string,
 	environment: Record<string, string> = {},
 ): Promise<void> {
-	await runProcess('vp', args, cwd, {
-		...environment,
-		PATH: `${resolve(cwd, 'node_modules/.bin')}${delimiter}${process.env.PATH ?? ''}`,
-	})
+	await runProcess('vp', args, cwd, environment)
 }
 
 async function runVpCapture(args: string[], cwd: string): Promise<string> {
@@ -157,10 +157,7 @@ async function runVpCapture(args: string[], cwd: string): Promise<string> {
 		const child = spawn(command, args, {
 			cwd,
 			stdio: ['ignore', 'pipe', 'pipe'],
-			env: {
-				...process.env,
-				PATH: `${resolve(cwd, 'node_modules/.bin')}${delimiter}${process.env.PATH ?? ''}`,
-			},
+			env: process.env,
 		})
 		let stdout = ''
 		let stderr = ''

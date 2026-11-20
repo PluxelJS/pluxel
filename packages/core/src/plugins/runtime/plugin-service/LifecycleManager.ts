@@ -13,7 +13,6 @@ import {
 import { type LifecycleSnapshot, lifecycleSelectors, PluginLifecycleActor } from '../PluginActor'
 
 export type LifecycleStartOptions = Readonly<{
-	timeoutMs?: number
 	onLateError?: (error: unknown, phase: 'start' | 'drain') => void
 	finalizeGeneration?: (signal: AbortSignal) => void | Promise<void>
 }>
@@ -34,7 +33,6 @@ export class LifecycleManager {
 	constructor(
 		private readonly ctx: Context,
 		private readonly slots: PluginSlotRegistry,
-		private readonly startTimeoutMs: number,
 		private readonly drainTimeoutMs: number,
 	) {}
 
@@ -104,14 +102,14 @@ export class LifecycleManager {
 	async startLifecycle(
 		id: PluginNodeSlot,
 		plugin: BasePlugin,
-		options: LifecycleStartOptions = {},
+		options: LifecycleStartOptions & Readonly<{ timeoutMs: number }>,
 	): Promise<LifecycleStartResult> {
 		const ref = this.ensureLifecycle(id, plugin, options)
 		if (lifecycleSelectors.isRunning(ref.getSnapshot?.())) return LIFECYCLE_STARTED
 
 		ref.send({ type: 'START' })
 
-		const startTimeoutMs = normalizeTimeoutMs(options.timeoutMs, this.startTimeoutMs)
+		const startTimeoutMs = options.timeoutMs
 
 		let snapshot: LifecycleSnapshot
 		try {
@@ -181,7 +179,7 @@ export class LifecycleManager {
 	async stopLifecycle(
 		_id: PluginNodeSlot,
 		plugin: BasePlugin,
-		opts?: { ref?: PluginLifecycleActor; timeoutMs?: number },
+		opts?: { ref: PluginLifecycleActor },
 	): Promise<LifecycleSnapshot | undefined> {
 		const lifecycle = opts?.ref ?? this.getLifecycle(plugin)
 		if (!lifecycle) return undefined
@@ -192,8 +190,7 @@ export class LifecycleManager {
 			/* ignore */
 		}
 
-		const timeoutMs = normalizeTimeoutMs(opts?.timeoutMs, this.drainTimeoutMs)
-		const snapshot = await this.waitUntilStopped(lifecycle, timeoutMs)
+		const snapshot = await this.waitUntilStopped(lifecycle, this.drainTimeoutMs)
 		this.setLifecycle(plugin)
 		return snapshot
 	}
@@ -235,11 +232,4 @@ function lifecycleDrainError(
 		snapshot.context.err ??
 		new Error(`Plugin generation ${String(snapshot.context.id)} failed to drain`)
 	)
-}
-
-function normalizeTimeoutMs(value: number | undefined, fallback: number): number {
-	if (value === null || value === undefined) return fallback
-	if (!Number.isFinite(value)) return fallback
-	const ms = Math.floor(value)
-	return ms > 0 ? ms : fallback
 }

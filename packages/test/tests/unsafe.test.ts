@@ -30,14 +30,14 @@ lowerTestReplacement(OriginalPlugin, ReplacementPlugin)
 
 describe('@pluxel/test/unsafe', () => {
 	it('lowers an explicit test replacement as a new evaluation of the target definition', async () => {
-		expect(ReplacementPlugin.definitionAddress()).toEqual(OriginalPlugin.definitionAddress())
+		expect(ReplacementPlugin.address()).toEqual(OriginalPlugin.address())
 
 		await using host = createCoreTestHost()
-		await host.add(OriginalPlugin)
-		expect(host.require(OriginalPlugin).revision).toBe('original')
+		await host.add(OriginalPlugin.nodeAddress())
+		expect(host.require(OriginalPlugin.nodeAddress()).revision).toBe('original')
 
 		await host.replaceDefinition(OriginalPlugin, ReplacementPlugin)
-		expect(host.require(ReplacementPlugin)).toBeInstanceOf(ReplacementPlugin)
-		expect(host.require(ReplacementPlugin).revision).toBe('replacement')
+		expect(host.require(ReplacementPlugin.nodeAddress())).toBeInstanceOf(ReplacementPlugin)
+		expect(host.require(ReplacementPlugin.nodeAddress()).revision).toBe('replacement')
 	})
 })

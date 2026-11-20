@@ -1,530 +1,344 @@
-// Exercise the published plugin, real filesystem observers and the authenticated console socket.
 import assert from 'node:assert/strict'
-import { createHash, randomUUID } from 'node:crypto'
-import { mkdtemp, mkdir, writeFile, readFile, readdir, symlink, rm } from 'node:fs/promises'
-import { createRequire } from 'node:module'
-import { createConnection } from 'node:net'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { host } from '../dist/index.mjs'
+import { controlHmr, runScript } from '@pluxel/agent-sdk/client'
+import { host } from '@pluxel/host-vite'
+import { createServer } from 'vite'
+import { openProjectControl } from './script-control.fixture.mjs'
 
 const workspace = fileURLToPath(new URL('../../../', import.meta.url))
-const require = createRequire(new URL('../package.json', import.meta.url))
-const { createServer } = await import(require.resolve('vite'))
-const count = 8
-const address = (index) => ({
-	definition: {
-		entry: { kind: 'source-entry', sourceSpace: 'fixture', path: `probe-${index}.mjs` },
-		exportName: 'Probe',
-	},
-	variant: 'default',
+const require = createRequire(import.meta.url)
+const root = await mkdtemp(join(tmpdir(), 'pluxel-hmr-control-'))
+const target = { root }
+const entries = ['probe', 'neighbor']
+const pluginFile = (name) => join(root, 'entries', name + '.entry.ts')
+const artifactFile = join(root, 'content.txt')
+const appFile = join(root, 'app.ts')
+const offsetFile = join(root, 'entries/offset.mjs')
+const scriptFile = join(root, 'read.ts')
+const entry = (name) => ({
+	kind: 'source-entry',
+	sourceSpace: 'app',
+	path: 'entries/' + name + '.entry.ts',
 })
+const metrics = { evaluated: [], started: [], stopped: [], artifact: null, gate: null }
+const errors = []
+globalThis.__pluxelHmrTest = metrics
+let server
+let instance
 
-async function scenario(initiallyInvalid, run) {
-	const resourcesBefore = process.getActiveResourcesInfo()
-	const root = await mkdtemp(join(tmpdir(), 'pluxel-hmr-control-'))
-	const key = `__hmrControl_${randomUUID()}`
-	const metrics = {
-		evaluations: [],
-		starts: [],
-		stops: [],
-		prepared: [],
-		gate: undefined,
-		artifactPreparations: 0,
-		artifacts: [],
-		attachments: 0,
-		attachmentDisposals: 0,
-	}
-	globalThis[key] = metrics
-	const errors = []
-	let server
-	let instance
-	const sourcePath = (index) => join(root, 'entries', `probe-${index}.entry.mjs`)
-	const source = (index, value) => `
-import { BasePlugin, Plugin } from '@pluxel/core';
-import { __setPluginDefinition } from '@pluxel/core/toolchain';
-const metrics = globalThis[${JSON.stringify(key)}];
-metrics.evaluations.push(${JSON.stringify(`${index}:${value}`)});
+function plugin(name, version) {
+	const generation = name + ':' + version
+	return `
+import { BasePlugin, Plugin } from '@pluxel/core'
+import { offset } from './offset.mjs'
+import { metrics } from '../metrics.ts'
+metrics.evaluated.push('${generation}')
+@Plugin()
 export class Probe extends BasePlugin {
-	value = ${value};
-	async init() {
-		metrics.starts.push(${JSON.stringify(`${index}:${value}`)});
-		if (metrics.gate?.index === ${index}) {
-			const gate = metrics.gate;
-			metrics.gate = undefined;
-			await gate.release.promise;
-		}
-		return () => metrics.stops.push(${JSON.stringify(`${index}:${value}`)});
-	}
+  readonly version: ${version} = ${version}
+  readonly value = this.version + offset
+  async init() {
+    metrics.started.push('${generation}')
+    ${name === 'probe' ? 'await metrics.gate?.promise' : ''}
+    return () => { metrics.stopped.push('${generation}') }
+  }
 }
-Plugin()(Probe);
-__setPluginDefinition(Probe, ${JSON.stringify({ abiVersion: 2, kind: 'plugin', definition: address(index).definition })});
 `
-	const app = (version) => `
-import { defineHostApplication } from '@pluxel/host';
-import { pluginSource } from '@pluxel/host/sources';
+}
+
+function application(name) {
+	return `
+import { defineHostApplication } from '@pluxel/host'
 export default defineHostApplication(() => ({
-	plugins: [],
-	sources: [pluginSource({kind:'directory',path:'./entries',include:['*.entry.mjs']})],
-	policy: { autoStart: ${JSON.stringify(Array.from({ length: count }, (_, index) => address(index)))} },
-	prepare() { globalThis[${JSON.stringify(key)}].prepared.push(${version}); }
-}));
+  name: '${name}',
+  sources: [{ directory: './entries', include: ['*.entry.ts'] }],
+  pluginNodes: ${JSON.stringify(
+		entries.map((label) => ({
+			definition: { entry: entry(label), exportName: 'Probe' },
+			autoStart: true,
+		})),
+	)},
+}))
 `
-	const request = (payload) =>
-		new Promise((resolve, reject) => {
-			const socket = createConnection(instance.socketPath)
-			let response = ''
-			socket.setTimeout(10000, () => socket.destroy(new Error('Console request timed out')))
-			socket.on('error', reject)
-			socket.once('connect', () =>
-				socket.write(
-					JSON.stringify({
-						protocol: instance.protocol,
-						instanceId: instance.instanceId,
-						nonce: instance.nonce,
-						...payload,
-					}) + '\n',
-				),
-			)
-			socket.on('data', (chunk) => {
-				response += chunk.toString()
-			})
-			socket.once('end', () => {
-				try {
-					const packet = JSON.parse(response)
-					assert.equal(packet.ok, true, JSON.stringify(packet))
-					resolve(packet.value)
-				} catch (error) {
-					reject(error)
-				}
-			})
+}
+
+async function status() {
+	using client = await openProjectControl(instance)
+	return await client.describe()
+}
+
+async function until(check, description) {
+	const deadline = Date.now() + 10_000
+	while (Date.now() < deadline) {
+		const result = await check()
+		if (result) return result
+		await delay(25)
+	}
+	throw new Error(
+		description + ': ' + JSON.stringify({ status: await status(), errors: errors.slice(-2) }),
+	)
+}
+
+async function observed(change) {
+	const { hmr } = await status()
+	const before = hmr.observedRevision
+	await change()
+	return until(async () => {
+		const current = await status()
+		return current.hmr.observedRevision > before && current
+	}, 'Expected the watcher to admit the file change')
+}
+
+async function control(action) {
+	const { run } = await controlHmr({ target, action, timeoutMs: 60_000 })
+	assert.equal(run.state, 'succeeded', JSON.stringify({ run, errors: errors.slice(-2) }))
+	return run.value
+}
+
+async function readPlugin(expected) {
+	const { run } = await runScript({ target, file: scriptFile })
+	assert.equal(run.state, 'succeeded', JSON.stringify(run))
+	assert.equal(run.value, expected)
+	return run
+}
+
+async function materials() {
+	using client = await openProjectControl(instance)
+	const index = await client.materials()
+	const selected = index.definitions.find(
+		({ definition }) => definition.entry.path === entry('probe').path,
+	)
+	assert.ok(selected, JSON.stringify(index))
+	const manifest = []
+	let offset = 0
+	for (;;) {
+		const chunk = await client.materialFile({
+			snapshot: selected.snapshot,
+			path: 'manifest.json',
+			offset,
 		})
-	const inspect = () => request({ method: 'inspect' })
-	async function until(check, label) {
-		const deadline = Date.now() + 10000
-		while (true) {
-			const matched = await check()
-			if (matched) return matched
-			if (Date.now() >= deadline) throw new Error(`${label}: ${errors.slice(-3).join('; ')}`)
-			await delay(20)
-		}
+		manifest.push(Buffer.from(chunk.data, 'base64'))
+		if (chunk.done) break
+		offset = chunk.nextOffset
 	}
-	async function result(runId) {
-		return until(async () => {
-			const snapshot = await request({ method: 'result', runId })
-			return ['succeeded', 'failed', 'cancelled'].includes(snapshot.state) && snapshot
-		}, `run ${runId} must settle`)
-	}
-	async function submit(action) {
-		const runId = randomUUID()
-		await request({ method: 'hmr', runId, action })
-		return runId
-	}
-	async function control(action) {
-		const outcome = await result(await submit(action))
-		assert.equal(outcome.state, 'succeeded', JSON.stringify(outcome))
-		return outcome.value
-	}
-	async function writeObserved(file, text) {
-		const before = await inspect()
-		await writeFile(file, text)
-		return until(async () => {
-			const status = await inspect()
-			return status.hmr.observedRevision > before.hmr.observedRevision && status
-		}, `${file} must reach HMR admission`)
-	}
-	async function script(name = 'inspect.ts') {
-		const file = join(root, name)
-		const bytes = await readFile(file)
-		const runId = randomUUID()
-		await request({
-			method: 'run',
-			runId,
-			file,
-			sourceHash: createHash('sha256').update(bytes).digest('hex'),
-			exportName: 'default',
-		})
-		return result(runId)
-	}
-	try {
-		await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
-		for (const name of ['host', 'core'])
-			await symlink(
-				join(workspace, 'packages', name),
-				join(root, 'node_modules/@pluxel', name),
-				'dir',
-			)
-		await writeFile(
-			join(root, 'package.json'),
-			JSON.stringify({ name: 'hmr-control-fixture', type: 'module' }),
+	const material = JSON.parse(Buffer.concat(manifest).toString('utf8'))
+	const contract = (name) =>
+		material.definitions.find(({ definition }) => definition.entry.path === entry(name).path)
+			.contracts.instance
+	return { snapshot: selected.snapshot, probe: contract('probe'), neighbor: contract('neighbor') }
+}
+
+try {
+	await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
+	for (const name of ['host', 'core', 'agent-sdk']) {
+		await symlink(
+			join(workspace, 'packages', name),
+			join(root, 'node_modules/@pluxel', name),
+			'dir',
 		)
-		await mkdir(join(root, 'entries'))
-		await writeFile(join(root, 'app.ts'), app(0))
-		const artifactFile = join(root, 'view.txt')
-		await writeFile(artifactFile, 'initial')
-		await writeFile(
-			join(root, 'inspect.ts'),
-			"import { Probe } from './entries/probe-0.entry.mjs'; export default (dev) => dev.plugins.require(Probe).value",
-		)
-		await writeFile(join(root, 'fresh.ts'), await readFile(join(root, 'inspect.ts')))
-		await Promise.all(
-			Array.from({ length: count }, (_, index) =>
-				writeFile(
-					sourcePath(index),
-					initiallyInvalid && index === 0 ? 'export const invalid = ;' : source(index, 0),
-				),
-			),
-		)
-		server = await createServer({
-			root,
-			configFile: false,
-			server: { port: 0, host: '127.0.0.1' },
-			plugins: [
-				...host({ entry: 'app.ts', devConsole: true }),
-				{
-					name: 'fixture:artifact',
-					api: {
-						pluxelHost: {
-							attach({ server: vite }) {
-								metrics.attachments++
-								vite.watcher.add(artifactFile)
-								return {
-									tracks: (file) => file === artifactFile,
-									async prepareCandidate() {
-										metrics.artifactPreparations++
-										const content = await readFile(artifactFile, 'utf8')
-										return {
-											commit() {
-												metrics.artifacts.push(content)
-											},
-											rollback() {},
-										}
-									},
-									dispose() {
-										metrics.attachmentDisposals++
-									},
-								}
-							},
+	}
+	await mkdir(join(root, 'entries'))
+	const files = {
+		'package.json': JSON.stringify({ type: 'module' }),
+		'tsconfig.json': JSON.stringify({
+			compilerOptions: {
+				target: 'ESNext',
+				module: 'ESNext',
+				moduleResolution: 'Bundler',
+				// Keep declaration inputs under the fixture's node_modules so HMR
+				// observes fixture code independently of concurrent framework builds.
+				preserveSymlinks: true,
+				strict: true,
+				skipLibCheck: true,
+				experimentalDecorators: true,
+				allowImportingTsExtensions: true,
+				allowJs: true,
+				noEmit: true,
+				types: ['node'],
+				typeRoots: [dirname(dirname(require.resolve('@types/node/package.json')))],
+				lib: ['ESNext', 'DOM'],
+			},
+			include: ['*.ts', 'entries/*'],
+		}),
+		'metrics.ts': `
+export const metrics = (globalThis as unknown as { __pluxelHmrTest: {
+  evaluated: string[], started: string[], stopped: string[],
+  gate: PromiseWithResolvers<void> | null
+} }).__pluxelHmrTest
+`,
+		'app.ts': application('original'),
+		'content.txt': 'initial',
+		'entries/offset.mjs': 'export const offset = 0',
+		'entries/probe.entry.ts': 'export const invalid = ;',
+		'entries/neighbor.entry.ts': plugin('neighbor', 0),
+		'read.ts': `
+import type { Script } from '@pluxel/agent-sdk/host'
+import { Probe } from './entries/probe.entry.ts'
+export default (async (sdk) => {
+  const { instance } = await sdk.plugin(Probe.nodeAddress()).instance()
+  return instance.value
+}) satisfies Script
+`,
+	}
+	for (const [file, content] of Object.entries(files)) await writeFile(join(root, file), content)
+
+	server = await createServer({
+		root,
+		configFile: false,
+		server: { port: 0, host: '127.0.0.1' },
+		plugins: [
+			...host({ entry: 'app.ts', scripts: true }),
+			{
+				name: 'fixture:content',
+				api: {
+					pluxelHost: {
+						attach({ server: vite }) {
+							vite.watcher.add(artifactFile)
+							return {
+								tracks: (file) => file === artifactFile,
+								async prepareCandidate() {
+									const content = await readFile(artifactFile, 'utf8')
+									return {
+										commit() {
+											metrics.artifact = content
+										},
+										rollback() {},
+									}
+								},
+							}
 						},
 					},
 				},
-			],
-			customLogger: {
-				hasWarned: false,
-				info() {},
-				warn() {},
-				warnOnce() {},
-				clearScreen() {},
-				hasErrorLogged() {
-					return false
-				},
-				error(message, details) {
-					errors.push(details?.error?.stack ?? message)
-				},
 			},
-		})
-		await server.listen()
-		const [file] = await readdir(join(root, '.pluxel/dev-console'))
-		instance = JSON.parse(await readFile(join(root, '.pluxel/dev-console', file), 'utf8'))
-		await run({
-			root,
-			metrics,
-			sourcePath,
-			source,
-			app,
-			request,
-			inspect,
-			until,
-			result,
-			submit,
-			control,
-			writeObserved,
-			script,
-		})
+		],
+		customLogger: {
+			hasWarned: false,
+			info() {},
+			warn() {},
+			warnOnce() {},
+			clearScreen() {},
+			hasErrorLogged() {
+				return false
+			},
+			error(message, details) {
+				errors.push(details?.error?.stack ?? message)
+			},
+		},
+	})
+	await server.listen()
+	const discovery = join(root, '.pluxel/dev-console')
+	const [record] = await readdir(discovery)
+	instance = JSON.parse(await readFile(join(discovery, record), 'utf8'))
+
+	// HMR belongs to the Vite instance and can repair an unavailable Host.
+	const initialStatus = await status()
+	assert.equal(initialStatus.application.state, 'unavailable')
+	assert.ok(
+		metrics.evaluated.includes('neighbor:0'),
+		'the valid sibling was evaluated before failure',
+	)
+	const paused = await control('pause')
+	assert.equal(paused.hmr.mode, 'paused')
+	await observed(() => writeFile(pluginFile('probe'), plugin('probe', 0)))
+	assert.deepEqual(metrics.started, [])
+	const recovered = await control('apply')
+	assert.equal(recovered.application.state, 'ready')
+	const original = await readPlugin(0)
+	const accepted = await materials()
+
+	// Intermediate saves stay out of the running catalog and its control materials.
+	await observed(() => writeFile(pluginFile('probe'), 'export const stillInvalid = ;'))
+	const dirty = await runScript({ target, file: scriptFile })
+	assert.equal(dirty.run.error?.code, 'hmr_pending', JSON.stringify(dirty.run))
+	const failed = await controlHmr({ target, action: 'apply' })
+	assert.equal(failed.run.state, 'failed')
+	const rejectedStatus = await status()
+	assert.equal(rejectedStatus.application.latestUpdate.outcome, 'retained-previous')
+	const retained = await materials()
+	assert.equal(retained.snapshot, accepted.snapshot)
+	assert.deepEqual(metrics.stopped, [])
+
+	await observed(() => writeFile(pluginFile('probe'), plugin('probe', 1)))
+	const applied = await control('apply')
+	assert.equal(applied.hmr.mode, 'paused')
+	await readPlugin(1)
+	const next = await materials()
+	assert.notEqual(next.snapshot, accepted.snapshot)
+	assert.notEqual(next.probe, accepted.probe)
+	assert.equal(next.neighbor, accepted.neighbor)
+	assert.deepEqual(metrics.stopped, ['probe:0'])
+
+	// A real watcher event arriving during initialization waits for the next apply.
+	const gate = Promise.withResolvers()
+	metrics.gate = gate
+	await observed(() => writeFile(pluginFile('probe'), plugin('probe', 2)))
+	const applying = control('apply')
+	try {
+		await until(async () => {
+			const current = await status()
+			return current.hmr.running && metrics.started.includes('probe:2')
+		}, 'Expected the next Plugin generation to enter while applying')
+		await observed(() => writeFile(pluginFile('probe'), plugin('probe', 3)))
 	} finally {
-		metrics.gate?.release.resolve()
+		metrics.gate = null
+		gate.resolve()
+		await applying
+	}
+	assert.equal(metrics.started.at(-1), 'probe:2')
+	await control('apply')
+	await readPlugin(3)
+
+	await observed(() => writeFile(artifactFile, 'updated content'))
+	await control('apply')
+	assert.equal(metrics.artifact, 'updated content')
+	assert.equal(metrics.started.filter((item) => item === 'probe:3').length, 1)
+
+	await observed(() => writeFile(appFile, application('replacement')))
+	await control('apply')
+	const replacement = await status()
+	assert.equal(replacement.instanceId, instance.instanceId)
+	assert.notEqual(replacement.hostEpoch, original.hostEpoch)
+	await readPlugin(3)
+
+	// Matching bytes cannot bypass validation of the physical source owner.
+	const linkedSource = join(root, 'same-bytes.ts')
+	await writeFile(linkedSource, plugin('probe', 3))
+	await observed(() => writeFile(pluginFile('probe'), plugin('probe', 3)))
+	await rm(pluginFile('probe'))
+	await symlink(linkedSource, pluginFile('probe'))
+	const invalidOwner = await controlHmr({ target, action: 'apply' })
+	assert.equal(invalidOwner.run.state, 'failed')
+	assert.match(invalidOwner.run.error?.message ?? '', /symbolic link/)
+	await observed(async () => {
+		await rm(pluginFile('probe'))
+		await writeFile(pluginFile('probe'), plugin('probe', 3))
+	})
+	await control('resume')
+	await readPlugin(3)
+
+	// In auto mode a dependency edit reaches the Plugin and the next script import.
+	await observed(() => writeFile(offsetFile, 'export const offset = 10'))
+	await until(async () => {
+		const current = await status()
+		return current.hmr.mode === 'auto' && !current.hmr.running && current.hmr.pending.files === 0
+	}, 'Expected the automatic dependency update to settle')
+	await readPlugin(13)
+
+	await server.close()
+	assert.deepEqual([...metrics.stopped].sort(), [...metrics.started].sort())
+	assert.deepEqual(await readdir(discovery), [])
+	console.log('HMR_CONTROL_SMOKE_OK')
+} finally {
+	metrics.gate?.resolve()
+	try {
 		await server?.close()
-		assert.equal(
-			metrics.stops.length,
-			metrics.starts.length,
-			'every initialized generation must release',
-		)
-		assert.equal(metrics.attachmentDisposals, metrics.attachments)
-		if (server) {
-			assert.equal(server.httpServer.listening, false)
-			assert.deepEqual(server.watcher.getWatched(), {})
-			assert.deepEqual(await readdir(join(root, '.pluxel/dev-console')), [])
-		}
-		delete globalThis[key]
+	} finally {
+		delete globalThis.__pluxelHmrTest
 		await rm(root, { recursive: true, force: true })
-		await delay(0)
-		console.log(
-			'HMR_RESOURCES_AFTER_CLOSE',
-			JSON.stringify({
-				initiallyInvalid,
-				resourcesBefore,
-				resourcesAfter: process.getActiveResourcesInfo(),
-				started: metrics.starts.length,
-				released: metrics.stops.length,
-			}),
-		)
 	}
 }
-
-await scenario(
-	false,
-	async ({
-		root,
-		metrics,
-		sourcePath,
-		source,
-		app,
-		inspect,
-		until,
-		result,
-		submit,
-		control,
-		writeObserved,
-		script,
-	}) => {
-		const initial = await inspect()
-		assert.equal(initial.application.state, 'ready')
-		assert.equal(metrics.evaluations.length, count)
-		assert.equal(metrics.starts.length, count)
-		const initialRead = await script()
-		assert.equal(initialRead.value, 0)
-		const paused = await control('pause')
-		assert.equal(paused.hmr.mode, 'paused')
-
-		// Every intermediate edit reaches actual admission while evaluations and lifecycle remain unchanged.
-		for (let edit = 0; edit < 4; edit++) {
-			const pending = await writeObserved(sourcePath(0), `export const invalid${edit} = ;`)
-			assert.equal(pending.hmr.pending.files, 1)
-			assert.equal(metrics.evaluations.length, count)
-			assert.equal(metrics.starts.length, count)
-			assert.equal(metrics.stops.length, 0)
-		}
-		await writeObserved(sourcePath(0), source(0, 1))
-		const dirty = await script()
-		assert.equal(dirty.state, 'failed')
-		assert.equal(dirty.error.code, 'hmr_pending')
-		const freshDirty = await script('fresh.ts')
-		assert.equal(freshDirty.state, 'failed')
-		assert.equal(freshDirty.error.code, 'hmr_pending')
-		assert.equal(
-			metrics.evaluations.length,
-			count,
-			'dirty console admission must precede module evaluation',
-		)
-		const applied = await control('apply')
-		assert.equal(applied.hmr.mode, 'paused')
-		assert.equal(applied.hmr.pending.files, 0)
-		assert.equal(metrics.evaluations.length, count + 1)
-		assert.equal(metrics.starts.at(-1), '0:1')
-		const firstRead = await script()
-		assert.equal(firstRead.value, 1)
-		const sequence = applied.application.latestUpdate.sequence
-		const unchanged = await control('apply')
-		assert.equal(unchanged.application.latestUpdate.sequence, sequence)
-		assert.equal(metrics.evaluations.length, count + 1)
-
-		// A failed explicit batch retains the running generation and stays repairable through the same socket.
-		await writeObserved(sourcePath(0), 'export const stillInvalid = ;')
-		const failed = await result(await submit('apply'))
-		assert.equal(failed.state, 'failed')
-		const failedStatus = await inspect()
-		assert.equal(failedStatus.hmr.mode, 'paused')
-		assert.equal(failedStatus.application.latestUpdate.outcome, 'retained-previous')
-		assert.equal(metrics.starts.at(-1), '0:1')
-		await writeObserved(sourcePath(0), source(0, 2))
-		await control('apply')
-		const repairedRead = await script()
-		assert.equal(repairedRead.value, 2)
-
-		// Edits observed during lifecycle await belong to the next explicit batch.
-		const gate = { index: 0, release: Promise.withResolvers() }
-		metrics.gate = gate
-		await writeObserved(sourcePath(0), source(0, 3))
-		const running = await submit('apply')
-		try {
-			await until(() => metrics.gate === undefined, 'blocked Plugin initializer must enter')
-			const runningStatus = await inspect()
-			assert.equal(runningStatus.hmr.running, true)
-			await writeObserved(sourcePath(0), source(0, 4))
-		} finally {
-			gate.release.resolve()
-		}
-		const runningResult = await result(running)
-		assert.equal(runningResult.state, 'succeeded')
-		const pendingAfterRun = await inspect()
-		assert.equal(pendingAfterRun.hmr.pending.files, 1)
-		assert.equal(metrics.starts.at(-1), '0:3')
-		await control('apply')
-		const latestRead = await script()
-		assert.equal(latestRead.value, 4)
-
-		// The control run owns the Vite instance, so full Host replacement must not cancel itself.
-		const previousHost = await inspect()
-		await writeObserved(join(root, 'app.ts'), app(1))
-		await control('apply')
-		const replaced = await inspect()
-		assert.notEqual(replaced.hostEpoch, previousHost.hostEpoch)
-		assert.equal(replaced.instanceId, initial.instanceId)
-		assert.equal(replaced.hmr.mode, 'paused')
-		assert.deepEqual(metrics.prepared, [0, 1])
-
-		// Content-only changes prepare the real attachment once without replacing Plugin definitions.
-		const beforeArtifact = {
-			evaluations: metrics.evaluations.length,
-			starts: metrics.starts.length,
-			preparations: metrics.artifactPreparations,
-		}
-		await writeObserved(join(root, 'view.txt'), 'intermediate')
-		// The Vite watcher may coalesce rapid saves; apply must still read the latest bytes.
-		await writeFile(join(root, 'view.txt'), 'final content')
-		assert.equal(metrics.artifactPreparations, beforeArtifact.preparations)
-		const artifactBatch = await control('apply')
-		assert.equal(
-			artifactBatch.application.latestUpdate.sequence,
-			replaced.application.latestUpdate.sequence + 1,
-		)
-		assert.equal(metrics.artifactPreparations, beforeArtifact.preparations + 1)
-		assert.equal(metrics.artifacts.at(-1), 'final content')
-		assert.equal(metrics.evaluations.length, beforeArtifact.evaluations)
-		assert.equal(metrics.starts.length, beforeArtifact.starts)
-
-		// Eight independently observed source changes are one batch; repeated cycles leave no queued work.
-		const cycles = 5
-		const memory = []
-		const beforeEvaluations = metrics.evaluations.length
-		const beforeCycles = await inspect()
-		const beforeSequence = beforeCycles.application.latestUpdate.sequence
-		for (let cycle = 0; cycle < cycles; cycle++) {
-			await Promise.all(
-				Array.from({ length: count }, (_, index) =>
-					writeFile(sourcePath(index), source(index, 10 + cycle)),
-				),
-			)
-			await until(async () => {
-				const status = await inspect()
-				return status.hmr.pending.files === count
-			}, 'all burst files must be admitted')
-			assert.equal(metrics.evaluations.length, beforeEvaluations + cycle * count)
-			// Independent filesystem observers can report the same writes during apply.
-			// Consume those later notifications explicitly; they must not evaluate or commit again.
-			await until(async () => {
-				const batch = await control('apply')
-				assert.equal(batch.hmr.running, false)
-				assert.equal(batch.application.latestUpdate.sequence, beforeSequence + cycle + 1)
-				assert.equal(metrics.evaluations.length, beforeEvaluations + (cycle + 1) * count)
-				return batch.hmr.pending.files === 0 && !batch.hmr.pending.full
-			}, 'duplicate source notifications must settle without another candidate')
-			const { heapUsed, rss } = process.memoryUsage()
-			memory.push({ cycle, heapUsed, rss })
-		}
-		assert.equal(metrics.evaluations.length, beforeEvaluations + count * cycles)
-		const repeatedRead = await script()
-		assert.equal(repeatedRead.value, 14)
-		await control('resume')
-		const beforeAutomatic = await inspect()
-		const beforeAuto = beforeAutomatic.application.latestUpdate.sequence
-		await Promise.all(
-			Array.from({ length: count }, (_, index) => writeFile(sourcePath(index), source(index, 20))),
-		)
-		await until(async () => {
-			const status = await inspect()
-			return (
-				metrics.starts.filter((entry) => entry.endsWith(':20')).length === count &&
-				!status.hmr.running &&
-				status.hmr.pending.files === 0 &&
-				!status.hmr.pending.full
-			)
-		}, 'automatic burst must finish')
-		const automatic = await inspect()
-		assert.equal(automatic.hmr.pending.files, 0)
-		assert.equal(automatic.application.latestUpdate.sequence, beforeAuto + 1)
-		assert.equal(metrics.evaluations.length, beforeEvaluations + count * (cycles + 1))
-		const automaticRead = await script()
-		assert.equal(automaticRead.value, 20)
-
-		// Matching bytes cannot bypass source validation or acknowledge a rejected owner.
-		await control('pause')
-		await writeObserved(sourcePath(0), source(0, 20))
-		const sameBytes = await control('apply')
-		assert.equal(
-			sameBytes.application.latestUpdate.sequence,
-			automatic.application.latestUpdate.sequence,
-		)
-		const duplicateEvaluations = metrics.evaluations.length
-		await writeObserved(sourcePath(0), source(0, 20))
-		const target = join(root, 'same-bytes.mjs')
-		await writeFile(target, source(0, 20))
-		await rm(sourcePath(0))
-		await symlink(target, sourcePath(0))
-		const invalidOwner = await result(await submit('apply'))
-		assert.equal(invalidOwner.state, 'failed')
-		assert.equal(metrics.evaluations.length, duplicateEvaluations)
-		await rm(sourcePath(0))
-		await writeObserved(sourcePath(0), source(0, 20))
-		const restoredOwner = await control('apply')
-		assert.equal(restoredOwner.application.latestUpdate.outcome, 'applied')
-		assert.equal(metrics.evaluations.length, duplicateEvaluations + 1)
-		// apply is finite: late observations stay pending until the user resumes or applies again.
-		await control('resume')
-		const restoredRead = await script()
-		assert.equal(
-			restoredRead.state,
-			'succeeded',
-			JSON.stringify({ receipt: restoredRead, status: await inspect() }),
-		)
-		assert.equal(restoredRead.value, 20)
-		await control('pause')
-
-		// Removing and recreating the same bytes still withdraws and readmits the definition.
-		await rm(sourcePath(0))
-		await until(async () => {
-			const status = await inspect()
-			return status.hmr.pending.files > 0
-		}, 'source removal must be observed')
-		const beforeRemoval = metrics.stops.length
-		await control('apply')
-		assert.equal(metrics.stops.length, beforeRemoval + 1)
-		await writeObserved(sourcePath(0), source(0, 20))
-		await control('apply')
-		assert.equal(metrics.evaluations.length, duplicateEvaluations + 2)
-		await control('resume')
-		const recreatedRead = await script()
-		assert.equal(recreatedRead.state, 'succeeded', JSON.stringify(recreatedRead))
-		assert.equal(recreatedRead.value, 20)
-		console.log(
-			'HMR_CONTROL_SMOKE_OK',
-			JSON.stringify({
-				cycles,
-				filesPerBatch: count,
-				evaluations: metrics.evaluations.length,
-				updates: automatic.application.latestUpdate.sequence,
-				memory,
-			}),
-		)
-	},
-)
-
-await scenario(
-	true,
-	async ({ metrics, sourcePath, source, inspect, control, writeObserved, script }) => {
-		const unavailable = await inspect()
-		assert.equal(unavailable.application.state, 'unavailable')
-		await control('pause')
-		await writeObserved(sourcePath(0), source(0, 1))
-		assert.equal(metrics.starts.length, 0)
-		const recovered = await control('apply')
-		assert.equal(recovered.application.state, 'ready')
-		assert.equal(recovered.hmr.mode, 'paused')
-		assert.equal(recovered.hmr.pending.files, 0)
-		const recoveredRead = await script()
-		assert.equal(recoveredRead.value, 1)
-		console.log('HMR_UNAVAILABLE_RECOVERY_OK')
-	},
-)

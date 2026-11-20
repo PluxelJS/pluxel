@@ -11,11 +11,16 @@ const parser: TypstSourceParser = { parse, parseAst }
 const bytes = (text: string) => new TextEncoder().encode(text).length
 
 describe('source project transactions', () => {
-	it('preserves every original byte on open and no-op save, including BOM, CRLF and unknown syntax', () => {
-		const source = '\uFEFF// 保留\r\n中文 e\u0301 😀 #unknown(1) 后文\r\n'
+	it('preserves BOM, comments, CRLF, escapes and opaque syntax on a no-op save', () => {
+		const source = '\uFEFF// 保留\r\n= 标题\r\n\r\n中文\\* e\u0301 😀 #foo(x: 2)[未知] 后文\r\n'
 		const project = createTypstSourceProjectState({ files: { 'main.typ': source } }, parser)
 		const projection = project.open('main.typ')
-		const result = project.edit({ projection, document: projection.document })
+		const inlineSource = projection.document.content
+			?.flatMap((block) => block.content ?? [])
+			.filter((node) => node.type === 'typstInlineSource')
+			.map((node) => node.attrs?.source)
+		expect(inlineSource).toEqual(['#foo(x: 2)[未知]'])
+		const result = project.edit({ projection, document: structuredClone(projection.document) })
 		expect(result.ok).toBe(true)
 		expect(project.revision).toBe(0)
 		expect(project.snapshot().files['main.typ']).toBe(source)

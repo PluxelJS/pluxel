@@ -37,7 +37,7 @@
    crossws `Peer` 没有 portable `pong()`，而 send/backpressure status 也不保证与 Elysia 的数字返回语义一致。
 
 因此可以继续实现 Runtime-private application contribution、directory 和 carrier skeleton，但不能先删除旧 API 并对外宣称
-`ctx.elysia` 已经是完整原生 Elysia。
+`ctx.service(ElysiaApp)` 已经是完整原生 Elysia。
 
 ## 结果矩阵
 

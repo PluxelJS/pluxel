@@ -38,6 +38,7 @@ export function createPluginDependencyMetadataHook(
 			workbenchArtifacts: options.workbenchArtifacts,
 			artifactRoot:
 				relative(dirname(options.packageJsonPath), config.outDir).replaceAll('\\', '/') || '.',
+			control: true,
 		})
 		for (const message of updates ?? []) options.log(`[build] ${message}`)
 	}

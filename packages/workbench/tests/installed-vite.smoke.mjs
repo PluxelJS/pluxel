@@ -22,7 +22,7 @@ const hook = registerHooks({
 })
 const { vitePreset } = await import('@pluxel/services/vite')
 const { workbenchArtifacts } = await import('../dist/vite.mjs')
-const { requireWorkbench, createWorkbenchArtifactHandler } = await import('../dist/server.mjs')
+const { WorkbenchHost, createWorkbenchArtifactHandler } = await import('../dist/server.mjs')
 const { readHostRecentUpdates } = await import('@pluxel/host/internal')
 const diagnostics = []
 let server, instance
@@ -36,7 +36,7 @@ const until = async (predicate) => {
 						instance
 							? {
 									catalog: instance.catalog(),
-									layout: requireWorkbench(instance.ctx).registry.getLayout({
+									layout: instance.ctx.service(WorkbenchHost).registry.getLayout({
 										definition: instance.catalog().entries[0].address,
 										variant: 'default',
 									}),
@@ -101,7 +101,7 @@ export const UI = workbench.define({
 		'plugin.ts',
 		`import { BasePlugin, Plugin } from '@pluxel/core';import { Workbench } from '@pluxel/workbench';import { RpcTarget } from 'capnweb';import { UI } from './definition';
 class Page extends RpcTarget {released=false;value(){return 42}isReleased(){return this.released}[Symbol.dispose](){this.released=true}}
-@Plugin() export class Viewer extends BasePlugin {init(){this.ctx.require(Workbench).publish(UI,{page:()=>new Page()})}}
+@Plugin() export class Viewer extends BasePlugin {init(){this.ctx.service(Workbench).publish(UI,{page:()=>new Page()})}}
 `,
 	)
 	await symlink(
@@ -111,11 +111,11 @@ class Page extends RpcTarget {released=false;value(){return 42}isReleased(){retu
 	)
 	await write(
 		'app.ts',
-		`import { defineHostApplication } from '@pluxel/host';import { logtape } from '@pluxel/core/config';import { Viewer } from './plugin';import { workbenchService } from '@pluxel/workbench/service';import { workbenchHttp } from '@pluxel/workbench/http';import { elysia } from '@pluxel/services/elysia';
-export default defineHostApplication(({bindings}) => ({plugins:[Viewer],runtime:{logtape:logtape({
+		`import { defineHostApplication } from '@pluxel/host';import { Viewer } from './plugin';import { workbenchService } from '@pluxel/workbench/service';import { workbenchHttp } from '@pluxel/workbench/http';import { elysia } from '@pluxel/services/elysia';
+export default defineHostApplication(({bindings}) => ({plugins:[{plugin:Viewer,autoStart:true}],coreConfig:{logtape:{input:{
  sinks:{capture:bindings.captureLog},
  loggers:[{category:['pluxel','runtime'],sinks:['capture'],lowestLevel:'error'},{category:['logtape','meta'],lowestLevel:null}]
-},{profile:'fixture'}),state:{autoStart:[Viewer.nodeAddress()]}},services:[elysia(),workbenchService(),workbenchHttp({uiBasePath:'/admin'})]}))`,
+},options:{profile:'fixture'}}},services:[elysia(),workbenchService(),workbenchHttp({uiBasePath:'/admin'})]}))`,
 	)
 	server = await createServer({
 		root,
@@ -147,7 +147,7 @@ export default defineHostApplication(({bindings}) => ({plugins:[Viewer],runtime:
 	await until(
 		() =>
 			instance &&
-			requireWorkbench(instance.ctx).registry.getLayout({
+			instance.ctx.service(WorkbenchHost).registry.getLayout({
 				definition: instance.catalog().entries[0].address,
 				variant: 'default',
 			}).entries.length === 2,
@@ -181,7 +181,7 @@ export default defineHostApplication(({bindings}) => ({plugins:[Viewer],runtime:
 	const shellEntry = await fetch(new URL(entryUrl, origin))
 	assert.equal(shellEntry.status, 200)
 	assert.match(shellEntry.headers.get('content-type') ?? '', /javascript/)
-	const backend = requireWorkbench(instance.ctx)
+	const backend = instance.ctx.service(WorkbenchHost)
 	const original = instance
 	const target = instance.catalog().entries[0].address
 	const address = { definition: target, variant: 'default' }

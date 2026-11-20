@@ -82,7 +82,7 @@ Plugin identity、config owner、HMR generation 或 dependency edge。Cache/Rate
 
 ## Secret
 
-普通 config 只能保存无 credential endpoint。默认 provider 不读取环境变量，也不隐式安装 Vault；宿主拥有部署和
+普通 config 只能保存无 credential endpoint。默认 provider 不读取环境变量，凭据从内建 `ctx.vault` 读取；宿主拥有部署和
 secret policy。需要 secret、Sentinel、Cluster 或平台 binding 时实现另一个 `@Plugin(Redis, ...)` provider，并由该
 provider 使用宿主已经安装的安全能力。
 

@@ -1,5 +1,5 @@
+import { type PluginDefinitionAddress, type PluginConstructor } from '@pluxel/core'
 import type { HostViteProfile } from './profile'
-import type { PluginDefinitionAddress, PluginConstructor } from '@pluxel/core'
 import type { PluginHost, HostStartupContext } from '@pluxel/host'
 import type { PluginSourceVitePipeline } from '@pluxel/rolldown/vite'
 import type { ViteDevServer } from 'vite'

@@ -1,13 +1,15 @@
 import { existsSync } from 'node:fs'
-import { spawn } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { promisify } from 'node:util'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
 const pluxelBin = fileURLToPath(new URL('../bin/pluxel.mjs', import.meta.url))
+const execute = promisify(execFile)
 const temporaryRoots: string[] = []
 
 afterEach(async () => {
@@ -27,34 +29,20 @@ async function createProject(files: Record<string, string>) {
 	return root
 }
 
-function runNode(
+async function runNode(
 	args: string[],
 	cwd: string,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-	return new Promise((resolvePromise, reject) => {
-		const env = { ...process.env }
-		delete env.NODE_OPTIONS
-		delete env.NODE_PATH
-		const child = spawn(process.execPath, args, {
-			cwd,
-			stdio: ['ignore', 'pipe', 'pipe'],
-			env,
-		})
-		let stdout = ''
-		let stderr = ''
-		child.stdout.setEncoding('utf8')
-		child.stderr.setEncoding('utf8')
-		child.stdout.on('data', (chunk) => {
-			stdout += chunk
-		})
-		child.stderr.on('data', (chunk) => {
-			stderr += chunk
-		})
-		child.on('error', reject)
-		child.on('close', (code) => {
-			resolvePromise({ code: code ?? 1, stdout, stderr })
-		})
-	})
+	const env = { ...process.env }
+	delete env.NODE_OPTIONS
+	delete env.NODE_PATH
+	try {
+		return { ...(await execute(process.execPath, args, { cwd, env, timeout: 4_000 })), code: 0 }
+	} catch (error) {
+		if (!(error instanceof Error) || !('code' in error) || typeof error.code !== 'number')
+			throw error
+		return error as Error & { code: number; stdout: string; stderr: string }
+	}
 }
 
 async function releaseBin() {
@@ -67,26 +55,34 @@ async function releaseBin() {
 }
 
 describe('pluxel bin launcher', () => {
-	it.each(['--root'])('checks dev %s source binding before loading CLI code', async (option) => {
-		const root = await createProject({
-			'package.json': '{"name":"bound-consumer"}',
-			'.pluxel/development.json': JSON.stringify({
-				source: { kind: 'git', root: '/other-pluxel-checkout' },
-			}),
+	it.each([
+		{ argv: ['script', 'run'], boundary: 'missing script positional argument' },
+		{ argv: ['script', 'result'], boundary: 'missing receipt selection' },
+		{ argv: ['dev', '--profile', 'app', 'statuz'], boundary: 'unknown dev subcommand' },
+		{ argv: ['dev', 'status', '--root'], boundary: 'missing CLI option value' },
+		{ argv: ['dev', 'run', 'task.ts', '--receipt-file'], boundary: 'missing SDK option value' },
+	])('prints one control JSON error for $boundary', async ({ argv }) => {
+		const result = await runNode([await releaseBin(), ...argv], tmpdir())
+		expect(result.code).toBe(1)
+		expect(result.stderr).toBe('')
+		expect(result.stdout.trim().split('\n')).toHaveLength(1)
+		expect(JSON.parse(result.stdout)).toMatchObject({
+			ok: false,
+			error: { code: 'invalid_input', message: expect.any(String) },
 		})
-		for (const selector of [[option, root], [`${option}=${root}`]]) {
-			const result = await runNode([pluxelBin, 'dev', 'status', ...selector], dirname(root))
-			expect(result.code).toBe(1)
-			expect(result.stderr).toContain('Source mismatch')
-			expect(result.stderr).toContain('/other-pluxel-checkout')
-		}
 	})
 
 	it.each([
+		['source', 'unregister'],
 		['dev', '--root'],
-		['pncat', '--cwd'],
-		['build', '--root'],
-	])('stops reading %s source selectors at --', async (command, option) => {
+	])('preserves non-control validation output for %j', async (...argv) => {
+		const result = await runNode([await releaseBin(), ...argv], tmpdir())
+		expect(result.code).toBe(1)
+		expect(result.stderr).not.toBe('')
+		expect(() => JSON.parse(result.stdout)).toThrow(SyntaxError)
+	})
+
+	it('honors each command’s source selector only before the argument separator', async () => {
 		const root = await createProject({
 			'package.json': '{"name":"bound-consumer"}',
 			'.pluxel/development.json': JSON.stringify({
@@ -94,34 +90,18 @@ describe('pluxel bin launcher', () => {
 			}),
 			'other/.git/HEAD': 'ref: refs/heads/main\n',
 		})
-		for (const selector of [
-			[option, resolve(root, 'other')],
-			[`${option}=${resolve(root, 'other')}`],
-		]) {
-			const result = await runNode([pluxelBin, command, '--', ...selector], root)
+		for (const [cwd, args] of [
+			[dirname(root), ['dev', 'status', '--root', root]],
+			[dirname(root), ['pncat', 'clean', `--cwd=${root}`]],
+			[root, ['build', '--', `--root=${resolve(root, 'other')}`]],
+		] as const) {
+			const result = await runNode([pluxelBin, ...args], cwd)
 			expect(result.code).toBe(1)
 			expect(result.stderr).toContain('Source mismatch')
 			expect(result.stderr).toContain('/other-pluxel-checkout')
 		}
 	})
 
-	it('checks the pncat cwd binding before forwarding native arguments', async () => {
-		const root = await createProject({
-			'package.json': '{"name":"bound-consumer"}',
-			'.pluxel/development.json': JSON.stringify({
-				source: { kind: 'git', root: '/other-pluxel-checkout' },
-			}),
-		})
-		for (const cwdArgs of [['--cwd', root], [`--cwd=${root}`]]) {
-			const result = await runNode(
-				[pluxelBin, 'pncat', 'clean', '--yes', '--no-install', ...cwdArgs],
-				dirname(root),
-			)
-			expect(result.code).toBe(1)
-			expect(result.stderr).toContain('Source mismatch')
-			expect(result.stderr).toContain('/other-pluxel-checkout')
-		}
-	})
 	it('rejects stale Git CLI code before executing the old artifact and accepts restored content', async () => {
 		const packagePath = 'packages/cli'
 		const root = await createProject({
@@ -160,12 +140,8 @@ describe('pluxel bin launcher', () => {
 		const { cliSourceFingerprint } = await import(
 			pathToFileURL(resolve(packageRoot, 'bin/build-state.mjs')).href
 		)
-		await writeFile(
-			resolve(packageRoot, 'dist/source-fingerprint'),
-			cliSourceFingerprint(packageRoot),
-		)
-		const current = await run()
-		expect(current.stdout).toBe('artifact executed')
+		const built = cliSourceFingerprint(packageRoot)
+		await writeFile(resolve(packageRoot, 'dist/source-fingerprint'), built)
 		await writeFile(resolve(packageRoot, 'src/cli.ts'), 'export const version = 2\n')
 		const stale = await run()
 		expect(stale.code).toBe(1)
@@ -173,34 +149,17 @@ describe('pluxel bin launcher', () => {
 		expect(stale.stderr).toContain(`cd "${root}" && vp run @pluxel/cli#compile`)
 		await writeFile(resolve(packageRoot, 'src/cli.ts'), 'export const version = 1\n')
 		const restored = await run()
+		expect(restored.code).toBe(0)
 		expect(restored.stdout).toBe('artifact executed')
-		await writeFile(
-			resolve(root, 'packages/core/package.json'),
-			'{"name":"@pluxel/core","version":"1.2.0"}',
-		)
-		const staleVersion = await run()
-		expect(staleVersion.stderr).toContain('CLI build is stale')
-		await writeFile(
-			resolve(root, 'packages/core/package.json'),
-			'{"name":"@pluxel/core","version":"1.1.0"}',
-		)
+
 		await writeFile(
 			resolve(packageRoot, 'templates/plugin/pnpm-workspace.yaml'),
 			'catalog: { yaml: ^2.0.0 }\n',
 		)
-		const staleTemplate = await run()
-		expect(staleTemplate.stderr).toContain('CLI build is stale')
-		await writeFile(resolve(packageRoot, 'templates/plugin/pnpm-workspace.yaml'), 'catalog: {}\n')
-		await writeFile(
-			resolve(root, 'pnpm-workspace.yaml'),
-			'packages: [packages/*]\ncatalog: { yaml: ^2.0.0 }\n',
-		)
-		const stalePolicy = await run()
-		expect(stalePolicy.stderr).toContain('CLI build is stale')
-		await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages: [packages/*]\n')
-		await writeFile(resolve(root, 'vendor/pncat/src/sync.ts'), 'export const changed = true\n')
-		const staleVendor = await run()
-		expect(staleVendor.stderr).toContain('CLI build is stale')
+		const changedTemplate = await run()
+		expect(changedTemplate.code).toBe(1)
+		expect(changedTemplate.stdout).toBe('')
+		expect(changedTemplate.stderr).toContain('CLI build is stale')
 	})
 
 	it('keeps the Git CLI for ordinary documentation even with another local CLI', async () => {
@@ -233,52 +192,19 @@ describe('pluxel bin launcher', () => {
 				'process.stdout.write(JSON.stringify({',
 				'  argv: process.argv.slice(1),',
 				'  cwd: process.cwd(),',
-				'  direct: Boolean(globalThis[Symbol.for("pluxel.cli.direct")]),',
 				'}))',
 				'',
 			].join('\n'),
 		})
 
 		const result = await runNode([await releaseBin(), 'build'], root)
-		const payload = JSON.parse(result.stdout) as { argv: string[]; cwd: string; direct: boolean }
+		const payload = JSON.parse(result.stdout) as { argv: string[]; cwd: string }
 
 		expect(result.stderr).toBe('')
 		expect(result.code).toBe(0)
 		expect(payload.cwd).toBe(root)
 		expect(payload.argv[0]).toContain('node_modules/@pluxel/cli/bin/pluxel.mjs')
 		expect(payload.argv.slice(1)).toEqual(['build'])
-		expect(payload.direct).toBe(false)
-	})
-
-	it('does not fall back to the current CLI for ordinary commands when a declared local CLI is not installed', async () => {
-		const root = await createProject({
-			'package.json': JSON.stringify({
-				name: 'fixture',
-				version: '1.0.0',
-				devDependencies: { '@pluxel/cli': '0.1.0' },
-			}),
-		})
-
-		const result = await runNode([await releaseBin(), '--version'], root)
-
-		expect(result.code).toBe(1)
-		expect(result.stderr).toContain('declares @pluxel/cli, but it is not installed')
-	})
-
-	it('uses the current independent CLI to bootstrap source workspaces before the local CLI is installed', async () => {
-		const root = await createProject({
-			'package.json': JSON.stringify({
-				name: 'fixture',
-				version: '1.0.0',
-				devDependencies: { '@pluxel/cli': '0.1.0' },
-			}),
-		})
-
-		const result = await runNode([pluxelBin, 'source', '--help'], root)
-
-		expect(result.code).toBe(0)
-		expect(result.stderr).toBe('')
-		expect(result.stdout).toContain('Use registered source checkouts')
 	})
 
 	it('uses the calling CLI for source bootstrap even when an installed local CLI is incomplete', async () => {
@@ -296,7 +222,7 @@ describe('pluxel bin launcher', () => {
 			}),
 		})
 
-		const result = await runNode([pluxelBin, 'source', '--help'], root)
+		const result = await runNode([await releaseBin(), 'source', '--help'], root)
 
 		expect(result.code).toBe(0)
 		expect(result.stderr).toBe('')

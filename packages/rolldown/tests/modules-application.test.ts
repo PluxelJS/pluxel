@@ -221,20 +221,22 @@ it('records verified Workbench transport in modules deployments and omits it fro
 		)
 		await writeFile(
 			resolve(root, 'src/owner.ts'),
-			`import { BasePlugin, Plugin } from '@pluxel/core'
+			`import { defineServiceRef, BasePlugin, Plugin } from '@pluxel/core'
 import { workbench } from '@pluxel/workbench'
 import { RpcTarget } from 'capnweb'
+import type { Workbench } from '@pluxel/workbench'
+const WorkbenchRef = defineServiceRef<Workbench>()
 export const OwnerWorkbench = workbench.define({
  panel: workbench.view({ renderer: workbench.entry(import.meta.url, './panel.tsx'), placement: workbench.tab({ label: 'Peer' }) }),
 })
 @Plugin()
 export class Owner extends BasePlugin {
- init() { this.ctx.workbench?.publish(OwnerWorkbench, { panel: () => new RpcTarget() }) }
+ init() { this.ctx.service(WorkbenchRef)?.publish(OwnerWorkbench, { panel: () => new RpcTarget() }) }
 }`,
 		)
 		await writeFile(
 			resolve(root, 'src/app.ts'),
-			`import { defineHostApplication } from '@pluxel/host'; import { Owner } from './owner'; export default defineHostApplication(() => ({ plugins: [Owner] }))`,
+			`import { defineHostApplication } from '@pluxel/host'; import { Owner } from './owner'; export default defineHostApplication(() => ({ plugins: [{plugin:Owner}] }))`,
 		)
 		await writeFile(
 			resolve(root, 'build.mts'),
@@ -329,7 +331,7 @@ it('uses package-owned workers through servicesPreset after modules deployment r
 import {Workers,defineWorkerTask} from '@pluxel/services/workers';
 const task=defineWorkerTask<number,{value:number,url:string}>(import.meta.url,'./${name}-task.ts');
 @Plugin() export class ${plugin} extends BasePlugin {
- async init(){const result=await this.ctx.require(Workers).run(task,21);process.stdout.write('WORKER_RESULT '+JSON.stringify({owner:'${name}',...result})+'\\n')}
+ async init(){const result=await this.ctx.service(Workers).run(task,21);process.stdout.write('WORKER_RESULT '+JSON.stringify({owner:'${name}',...result})+'\\n')}
 }`,
 			)
 		}
@@ -341,9 +343,9 @@ import {servicesPreset} from '@pluxel/services/preset';
 import {External} from 'fixture-worker-owner';
 import {Local} from './local';
 export default defineHostApplication(async startup=>({
- plugins:[External,Local],
- services:await servicesPreset(startup,{workbench:false,vault:{backend:'bindings'}}),
- runtime:{documents:{state:false}},policy:{autoStart:[External,Local]},
+ plugins:[{plugin:External,autoStart:true},{plugin:Local,autoStart:true}],
+ services:await servicesPreset(startup,{workbench:false}),
+ coreConfig:{vault:{backend:'bindings'}},policy:{document:false},
 }))`,
 		)
 		await writeFile(
@@ -450,11 +452,11 @@ it('preserves public and private identities, named product, minified artifacts a
 		await writeFile(resolve(root, 'src/task.ts'), 'export default (value: number) => value * 2')
 		await writeFile(
 			resolve(root, 'src/private.ts'),
-			`import {BasePlugin,Plugin} from '@pluxel/core'; import {Workers,defineWorkerTask} from '@pluxel/services/workers'; const task=defineWorkerTask<number,number>(import.meta.url,'./task.ts'); @Plugin() export class Private extends BasePlugin {async init(){const value=await this.ctx.require(Workers).run(task,21);if(value!==42)throw new Error('ARTIFACT_NOT_RELOCATED');console.log('MODULES_WORKER_OK')}}`,
+			`import {BasePlugin,Plugin} from '@pluxel/core'; import {Workers,defineWorkerTask} from '@pluxel/services/workers'; const task=defineWorkerTask<number,number>(import.meta.url,'./task.ts'); @Plugin() export class Private extends BasePlugin {async init(){const value=await this.ctx.service(Workers).run(task,21);if(value!==42)throw new Error('ARTIFACT_NOT_RELOCATED');console.log('MODULES_WORKER_OK')}}`,
 		)
 		await writeFile(
 			resolve(root, 'src/app.ts'),
-			`import {defineHostApplication} from '@pluxel/host';  import {standardServices} from '@pluxel/services'; import {Public} from './public'; import {Feature} from './feature'; import {Private} from './private'; export const product={title:'Modules probe'}; export default defineHostApplication(()=>({plugins:[Public,Feature,Private],services:standardServices(),runtime:{documents:{state:false}},policy:{autoStart:[Private]},prepare({host,startup}){startup.bindings.capture?.(host)}}))`,
+			`import {defineHostApplication} from '@pluxel/host';  import { elysia } from '@pluxel/services/elysia'; import { commands } from '@pluxel/services/commands'; import { nodeModules } from '@pluxel/services/node'; import { workers } from '@pluxel/services/workers'; import {Public} from './public'; import {Feature} from './feature'; import {Private} from './private'; export const product={title:'Modules probe'}; export default defineHostApplication(()=>({plugins:[{plugin:Public},{plugin:Feature},{plugin:Private,autoStart:true}],services:[elysia(), commands(), nodeModules(), workers()],policy:{document:false},prepare({host,startup}){startup.bindings.capture?.(host)}}))`,
 		)
 		await writeFile(
 			resolve(root, 'build.mts'),
@@ -501,7 +503,7 @@ it('preserves public and private identities, named product, minified artifacts a
 			`import {vitePreset} from '@pluxel/services/vite'; export default {logLevel:'error',cacheDir:'.vite',plugins:[...vitePreset({entry:'relocated/app.mjs',bindings:{capture:host=>{globalThis.__modulesHost=host}}}),{name:'fixture:modules-server',configureServer(server){globalThis.__modulesServer=server}}]}`,
 		)
 		await setOutputPermissions(deployed, false)
-		const shared = `const {default:assert}=await import('node:assert/strict'); const app=await import(${JSON.stringify(pathToFileURL(resolve(deployed, 'app.mjs')).href)}); assert.equal(app.product.title,'Modules probe'); const startup={root:${JSON.stringify(root)},mode:'production',env:{},bindings:{}}; const declared=await app.default(startup); const [pub,feature,local]=declared.plugins; assert.deepEqual(pub.definitionAddress(),{entry:{kind:'package-root',packageName:'@fixture/modules'},exportName:'Public'}); assert.deepEqual(feature.definitionAddress(),{entry:{kind:'package-subpath',packageName:'@fixture/modules',subpath:'./feature'},exportName:'Feature'}); assert.equal(local.definitionAddress().entry.kind,'source-entry'); assert.equal((await import(${JSON.stringify(pathToFileURL(resolve(deployed, 'index.mjs')).href)})).Public,pub);`
+		const shared = `const {default:assert}=await import('node:assert/strict'); const app=await import(${JSON.stringify(pathToFileURL(resolve(deployed, 'app.mjs')).href)}); assert.equal(app.product.title,'Modules probe'); const startup={root:${JSON.stringify(root)},mode:'production',env:{},bindings:{}}; const declared=await app.default(startup); const [pub,feature,local]=declared.plugins.map(({plugin})=>plugin); assert.deepEqual(pub.address(),{entry:{kind:'package-root',packageName:'@fixture/modules'},exportName:'Public'}); assert.deepEqual(feature.address(),{entry:{kind:'package-subpath',packageName:'@fixture/modules',subpath:'./feature'},exportName:'Feature'}); assert.equal(local.address().entry.kind,'source-entry'); assert.equal((await import(${JSON.stringify(pathToFileURL(resolve(deployed, 'index.mjs')).href)})).Public,pub);`
 		const native = await promisify(execFile)(
 			process.execPath,
 			[

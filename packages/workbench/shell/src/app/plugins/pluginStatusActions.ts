@@ -1,23 +1,19 @@
 import type { PluginNodeAddress } from '@pluxel/core'
 import type { QueryClient } from '@tanstack/react-query'
-import type { RuntimeManagementClient } from '../../runtime'
+import type { PluginControlBatchResult, RuntimeManagementClient } from '../../runtime'
 import { refreshPluginReadModels } from './pluginReadModels'
 
 export type PluginLifecycleCommand = 'start' | 'stop' | 'restart'
 
-function shouldRefreshControlResult(result: {
-	ok: boolean
-	state?: string
-	code?: string
-}): boolean {
-	return result.ok || result.state === 'unknown' || result.code === 'revision_conflict'
-}
-
 async function alignControlReadModels(
 	queryClient: QueryClient,
-	results: readonly Readonly<{ ok: boolean; state?: string }>[],
+	batch: PluginControlBatchResult,
 ): Promise<void> {
-	if (results.some(shouldRefreshControlResult)) await refreshPluginReadModels(queryClient)
+	if (
+		batch.status !== 'rejected' ||
+		batch.results.some((result) => result.ok === false && result.code === 'revision_conflict')
+	)
+		await refreshPluginReadModels(queryClient)
 }
 
 export async function setPluginAutoStarts(
@@ -25,8 +21,7 @@ export async function setPluginAutoStarts(
 	queryClient: QueryClient,
 	actions: readonly Readonly<{ address: PluginNodeAddress; autoStart: boolean }>[],
 	expectedManagedRevision: string,
-) {
-	if (actions.length === 0) return []
+): Promise<PluginControlBatchResult> {
 	let payload: Awaited<ReturnType<RuntimeManagementClient['plugins']['setAutoStart']>>
 	try {
 		payload = await client.plugins.setAutoStart(actions, { expectedManagedRevision })
@@ -34,12 +29,13 @@ export async function setPluginAutoStarts(
 		await refreshPluginReadModels(queryClient)
 		throw error
 	}
-	const results = payload.results
-	if (results.length !== actions.length) {
+	if ('code' in payload && payload.code === 'invalid_input') return payload
+	if (payload.results.length !== actions.length) {
+		await refreshPluginReadModels(queryClient)
 		throw new Error('运行时返回的自动启动策略结果数量与请求不一致')
 	}
-	await alignControlReadModels(queryClient, results)
-	return results
+	await alignControlReadModels(queryClient, payload)
+	return payload
 }
 
 export async function setPluginAutoStart(
@@ -48,16 +44,8 @@ export async function setPluginAutoStart(
 	address: PluginNodeAddress,
 	autoStart: boolean,
 	expectedManagedRevision: string,
-) {
-	const results = await setPluginAutoStarts(
-		client,
-		queryClient,
-		[{ address, autoStart }],
-		expectedManagedRevision,
-	)
-	const first = results[0]
-	if (!first) throw new Error('运行时未返回自动启动策略结果')
-	return first
+): Promise<PluginControlBatchResult> {
+	return setPluginAutoStarts(client, queryClient, [{ address, autoStart }], expectedManagedRevision)
 }
 
 export async function applyPluginLifecycleCommands(
@@ -67,8 +55,7 @@ export async function applyPluginLifecycleCommands(
 		address: PluginNodeAddress
 		command: PluginLifecycleCommand
 	}>[],
-) {
-	if (commands.length === 0) return []
+): Promise<PluginControlBatchResult> {
 	let payload: Awaited<ReturnType<RuntimeManagementClient['plugins']['applyLifecycleCommands']>>
 	try {
 		payload = await client.plugins.applyLifecycleCommands(commands)
@@ -76,12 +63,13 @@ export async function applyPluginLifecycleCommands(
 		await refreshPluginReadModels(queryClient)
 		throw error
 	}
-	const results = payload.results
-	if (results.length !== commands.length) {
+	if ('code' in payload && payload.code === 'invalid_input') return payload
+	if (payload.results.length !== commands.length) {
+		await refreshPluginReadModels(queryClient)
 		throw new Error('运行时返回的生命周期命令结果数量与请求不一致')
 	}
-	await alignControlReadModels(queryClient, results)
-	return results
+	await alignControlReadModels(queryClient, payload)
+	return payload
 }
 
 export async function applyPluginLifecycleCommand(
@@ -89,9 +77,6 @@ export async function applyPluginLifecycleCommand(
 	queryClient: QueryClient,
 	address: PluginNodeAddress,
 	command: PluginLifecycleCommand,
-) {
-	const results = await applyPluginLifecycleCommands(client, queryClient, [{ address, command }])
-	const first = results[0]
-	if (!first) throw new Error('运行时未返回生命周期命令结果')
-	return first
+): Promise<PluginControlBatchResult> {
+	return applyPluginLifecycleCommands(client, queryClient, [{ address, command }])
 }

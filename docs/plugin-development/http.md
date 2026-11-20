@@ -3,7 +3,11 @@ title: 插件 HTTP 与 WebSocket 服务
 description: 在插件中集成 Elysia 2 路由、Webhook 与 WebSocket，实现强类型接口与生命周期联动。
 ---
 
-在 Pluxel 插件中对外提供 Web 接口非常便捷：通过在 `init()` 钩子中调用 `this.ctx.require(ElysiaApp)`，即可直接使用原生的 [Elysia](https://elysiajs.com/) 实例定义路由。宿主在启动时负责监听端口并将请求分发至对应插件，当插件停止或热重载时，相关路由会自动安全注销。
+在 Pluxel 插件中对外提供 Web 接口非常便捷：通过在 `init()` 钩子中调用 `this.ctx.service(ElysiaApp)`，即可直接使用原生的 [Elysia](https://elysiajs.com/) 实例定义路由。宿主在启动时负责监听端口并将请求分发至对应插件，当插件停止或热重载时，相关路由会自动安全注销。
+
+Host 须安装 `elysia()`；`servicesPreset()` 包含它，见 [Host 服务组合](../host/services.md)。
+
+插件向外部服务发起请求时使用内建的 `ctx.wretch` 或 `ctx.fetch`。 [受管出站 HTTP](./outbound-http.md)
 
 ## 最小路由
 
@@ -20,7 +24,7 @@ export class OrdersPlugin extends BasePlugin {
 	protected override init() {
 		// 1. 获取当前插件绑定的 ElysiaApp 实例并注册路由
 		this.ctx
-			.require(ElysiaApp)
+			.service(ElysiaApp)
 			.get('/health', () => ({ ok: true }))
 			.get('/orders/:id', ({ params }) => this.findOrder(params.id))
 	}
@@ -38,14 +42,16 @@ export class OrdersPlugin extends BasePlugin {
 > 声明的路由路径即为最终对外暴露的 URL 路径。如果需要统一的路由前缀，建议使用 Elysia 的 `.group()` 组织：
 >
 > ```ts
-> this.ctx.require(ElysiaApp).group('/api/v1', (app) => app.get('/orders', () => this.listOrders()))
+> import { ElysiaApp } from '@pluxel/services/elysia'
+>
+> this.ctx.service(ElysiaApp).group('/api/v1', (app) => app.get('/orders', () => this.listOrders()))
 > ```
 >
 > 注意：`/__pluxel` 为框架管理面板的保留前缀，插件不可占用。
 
 ## 直接使用 Elysia 能力
 
-`this.ctx.require(ElysiaApp)` 返回的是标准的 Elysia 实例，所有 Elysia 2 的原生特性均可直接使用：
+`this.ctx.service(ElysiaApp)` 返回的是标准的 Elysia 实例，所有 Elysia 2 的原生特性均可直接使用：
 
 ### 强类型输入校验与文档（TypeBox）
 
@@ -55,7 +61,7 @@ Elysia 内建了基于 TypeBox 的高性能校验器 `t`：
 import { ElysiaApp } from '@pluxel/services/elysia'
 import { t } from 'elysia'
 
-this.ctx.require(ElysiaApp).post(
+this.ctx.service(ElysiaApp).post(
 	'/orders',
 	{
 		body: t.Object({
@@ -75,8 +81,10 @@ this.ctx.require(ElysiaApp).post(
 可以使用 `onRequest`、`onBeforeHandle` 或 `onError` 统一处理请求生命周期：
 
 ```ts no-twoslash
+import { ElysiaApp } from '@pluxel/services/elysia'
+
 this.ctx
-	.require(ElysiaApp)
+	.service(ElysiaApp)
 	.onRequest(({ request }) => {
 		this.ctx.logger.debug('Incoming request', { url: request.url })
 	})
@@ -94,7 +102,7 @@ import { ElysiaApp } from '@pluxel/services/elysia'
 import { websocket } from 'elysia/websocket'
 
 this.ctx
-	.require(ElysiaApp)
+	.service(ElysiaApp)
 	.use(websocket())
 	.ws('/events', {
 		open(socket) {
@@ -121,8 +129,8 @@ import { BasePlugin, Plugin, PluginPart } from '@pluxel/core'
 
 class MetricsPart extends PluginPart<OrdersPlugin> {
 	protected override init() {
-		// Part 内部同样可以通过 this.ctx.require(ElysiaApp) 注册专属路由
-		this.ctx.require(ElysiaApp).get('/orders/metrics', () => this.getMetrics())
+		// Part 内部同样可以通过 this.ctx.service(ElysiaApp) 注册专属路由
+		this.ctx.service(ElysiaApp).get('/orders/metrics', () => this.getMetrics())
 	}
 
 	private getMetrics() {
@@ -161,7 +169,7 @@ it('能够正确响应 HTTP 请求', async () => {
 		services: [elysia()],
 	})
 
-	await host.start(OrdersPlugin)
+	await host.start(OrdersPlugin.nodeAddress())
 
 	// 使用内置的轻量 fetch 客户端
 	const res = await host.http.fetch(new URL('/health', host.http.origin))

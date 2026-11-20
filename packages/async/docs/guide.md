@@ -5,7 +5,7 @@
 `@pluxel/async` 是独立的通用异步工具包，不依赖 Pluxel runtime。公开契约使用原生 Promise、Iterable / AsyncIterable 和 AbortSignal，没有全局调度器或私有任务协议。
 
 ```sh
-pnpm add @pluxel/async
+vp add @pluxel/async
 ```
 
 包没有根入口，按用途选择：

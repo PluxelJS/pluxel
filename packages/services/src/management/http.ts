@@ -8,6 +8,8 @@ import { attachManagementHttp } from './http-internal'
 
 /** Optional Workbench bindings are borrowed from the selected Host's service. */
 export type ManagementHttpOptions = Readonly<{
+	/** Enable trusted uploaded scripts. Grants authenticated administrators in-process Node execution. @default false */
+	scripts?: boolean
 	bindings?(ctx: RootContext): Pick<ManagementEndpointOptions, 'createWorkbench' | 'artifacts'>
 	onError?(error: unknown): void
 }>
@@ -16,7 +18,7 @@ export type ManagementHttpOptions = Readonly<{
 export function managementHttp(options: ManagementHttpOptions = {}): HostService<readonly []> {
 	return defineHostService({
 		name: 'ManagementHTTP',
-		capabilities: [],
+		provides: [],
 		requires: { http: ElysiaRuntime, management: Management, authentication: AdminAccess },
 		prepare: ({ ctx, effects }) => attachManagementHttp(ctx, effects, options),
 	})

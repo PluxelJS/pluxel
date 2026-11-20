@@ -93,7 +93,7 @@ jobs:
 
       - name: Resolve pnpm store
         id: pnpm-store
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+        run: echo "path=$(vp exec pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - name: Restore dependency cache
         id: pnpm-store-cache

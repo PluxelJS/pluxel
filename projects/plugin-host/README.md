@@ -61,7 +61,7 @@ ReportStudioPlugin
   ├─ TakumiMarkdown -> Typst math + Takumi shared Worker
   ├─ Typst (stateless SVG compilation through the shared Workers service)
   ├─ S3 bucket:drafts + bucket:releases
-  ├─ Wretch (provider-owned HTTP settings Attachment)
+  ├─ ctx.wretch (built-in outbound HTTP)
   └─ Otel (report metrics at /showcase/metrics)
 ```
 
@@ -97,8 +97,8 @@ The same application Plugin also registers:
 - HTTP: `GET /showcase/status`, `POST /showcase/generate/:engine/:title`,
   `GET /showcase/artifacts/:id`;
 - Commands: `showcase.report.generate` with `{ title, engine }`, `showcase.cache.clear`;
-- Workbench: one view with an engine selector, status/artifact panels, observer and Wretch's
-  provider-owned Attachment;
+- Workbench: one view with an engine selector, status/artifact panels and observer. Open **出站 HTTP**
+  in the plugin details to edit its outbound settings. **受管出站 HTTP** in the sidebar shows activity.
 - one object config for admission, preview caching, output prefixes and outbound HTTP.
 
 Inspect the single `S3Plugin` provider's `drafts` and `releases` buckets. Cache and Rates keep their
@@ -111,7 +111,7 @@ keeps its own product boundary and independent sources.
 
 The Vite configuration explicitly enables the development console. Coding agents must use this
 console for runtime inspection, config edits, Plugin methods, Workbench RPC, data and logs.
-The current local transport supports Unix systems; on Windows disable `devConsole` in the
+The current local transport supports Unix systems; on Windows disable `scripts` in the
 configuration to run the host without the console.
 
 From the repository root, discover the already running host and use its returned instance ID:
@@ -129,12 +129,12 @@ previous operations. The default `inspect.ts` export returns current Plugin stat
 the real showcase and Workbench HTTP routes and returns bounded logs; set `origin` to the address reported by the selected instance.
 
 Follow the [development console guide](../../docs/development/dev-console.md) for typed config,
-explicit service access and recovery. Scripts import `DevConsole` from `@pluxel/host-vite/console` and use `dev.ctx` with service APIs; they pass `dev.signal` and release their own service resources. Isolated regressions continue to use the test host.
+explicit service access and recovery. Node and Vite scripts use `satisfies Script` from `@pluxel/agent-sdk/host`. SDK control operations return values directly and throw `ScriptError` on failure. Use `sdk.ctx.service(Token)` for services and `const { instance } = await plugin.instance()` for Plugin business methods; pass `run.signal` and release resources created by the script. The shared SDK is documented in [Host scripts](../../docs/development/scripts.md). Isolated regressions continue to use the test host.
 
 ## Boundary
 
 - `src/app.ts` owns fixed Plugins, mutable sources, service configuration and startup policy.
-- `src/app.ts` uses `servicesPreset()` from `@pluxel/services/preset` for the official service set and optional Workbench; Core logging and storage are explicit `runtime.logtape` / `runtime.zenfs` declarations from `@pluxel/core/config`.
+- `src/app.ts` uses `servicesPreset()` from `@pluxel/services/preset` for the official service set and optional Workbench. Core credentials use `coreConfig.vault`, with `PLUXEL_VAULT_DEPLOY_IDENTITY` supplied from `startup.env`. Logging and storage use `coreConfig.logtape` and `coreConfig.zenfs`.
 - `vite.config.ts` uses `vitePreset()` from `@pluxel/services/vite`; it combines the shared development driver with attachments for installed official services.
 - `tsdown.config.ts` uses `pluxel({ delivery: 'modules' })` from `@pluxel/rolldown`; package imports and compiled Node/Workbench artifacts are preserved.
 - Managed entries and Package Manager's data share the explicitly configured application-local directory.

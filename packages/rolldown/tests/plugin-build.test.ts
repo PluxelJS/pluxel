@@ -1,14 +1,22 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { resolve } from 'pathe'
 import { pluginPackage, resolveBuildContext, type BuildRuntimeConfig } from '../src/cli'
+import { createPluginBuildPipeline } from '../src/cli/plugin-build'
 import { runWithTsdown } from '../src/internal-cli'
 import { runRules } from '../src/cli/rules'
 
 const toolchainRequire = createRequire(import.meta.url)
 const reactExportNames = Object.keys(toolchainRequire('react')).filter((name) => name !== 'default')
+const fixtureRuns = new Set<Promise<unknown>>()
+
+afterEach(async () => {
+	// A test timeout does not cancel its native build. Restore cwd and release the fixture
+	// after that build settles before allowing another test to enter its own cwd.
+	await Promise.allSettled(fixtureRuns)
+}, 120_000)
 
 const pluginPackageOverlay = (context: BuildRuntimeConfig) =>
 	pluginPackage({
@@ -43,6 +51,22 @@ function fixturePackage(name: string, version: string, exports: readonly string[
 
 const buildFixtures = {
 	basic: {
+		...fixturePackage('@pluxel/core', '1.1.0', ['.']),
+		...fixturePackage('pluxel-plugin-alpha', '1.0.0', ['.']),
+		...fixturePackage('pluxel-plugin-beta', '0.5.0', ['.']),
+		'node_modules/@pluxel/core/index.d.ts': `
+export declare class BasePlugin {
+ protected readonly plugins: { use<T>(ref:{readonly type?:T}, callback:(plugin:T)=>unknown):void }
+ protected readonly parts: { use<T extends object>(part:Function & {readonly prototype:T}):T }
+}
+export declare class PluginPart<Owner extends BasePlugin> extends BasePlugin {}
+export declare function definePluginRef<T>():{readonly type?:T}
+export declare function Plugin(options?:unknown):ClassDecorator
+`,
+		'node_modules/pluxel-plugin-alpha/index.d.ts':
+			"import {BasePlugin} from '@pluxel/core'; export declare class AlphaPlugin extends BasePlugin {}\n",
+		'node_modules/pluxel-plugin-beta/index.d.ts':
+			"import {BasePlugin} from '@pluxel/core'; export declare class BetaPlugin extends BasePlugin {}\n",
 		'package.json': JSON.stringify(
 			{
 				name: 'pluxel-cli-build-fixture',
@@ -55,11 +79,13 @@ const buildFixtures = {
 					'pluxel-plugin-beta': '^0.5.0',
 				},
 				peerDependencies: {
+					'@pluxel/host': '^1.1.0',
 					'pluxel-plugin-alpha': '^1.0.0',
 					'pluxel-plugin-beta': '^0.5.0',
 					'pluxel-plugin-stale': '^9.0.0',
 				},
 				peerDependenciesMeta: {
+					'@pluxel/host': { optional: true },
 					'pluxel-plugin-beta': { optional: true },
 					'pluxel-plugin-stale': { optional: true },
 				},
@@ -143,6 +169,7 @@ const buildFixtures = {
 			'./internal/react',
 		]),
 		...fixturePackage('@pluxel/core', '1.0.0', ['.']),
+		...fixturePackage('@pluxel/host', '1.0.0', ['.']),
 		...fixturePackage('capnweb', '0.12.0', ['.']),
 		'node_modules/@pluxel/core/index.js':
 			'export class BasePlugin {}\nexport function Plugin() { return () => {} }\n',
@@ -152,6 +179,7 @@ const buildFixtures = {
 		'node_modules/capnweb/index.d.ts':
 			'export declare class RpcTarget { [Symbol.dispose](): void }\n',
 		'node_modules/@pluxel/workbench/index.js': `
+export class Workbench { static access = 'owner' }
 export const workbench = Object.freeze({
 	entry: (_base, path) => ({ path }),
 	view: (value) => value,
@@ -160,6 +188,10 @@ export const workbench = Object.freeze({
 })
 `,
 		'node_modules/@pluxel/workbench/index.d.ts': `
+export declare class Workbench {
+	static readonly access: 'owner'
+	publish(definition: unknown, bindings?: unknown): void
+}
 export declare const workbench: {
 	entry(base: string, path: string): Readonly<{ path: string }>
 	view<Api>(value: Record<string, unknown>): unknown
@@ -187,7 +219,8 @@ export function createWorkbenchBridge(identity, Renderer) {
 					react: '19.3.1',
 					'react-dom': '19.3.1',
 				},
-				peerDependencies: { capnweb: '0.12.0' },
+				peerDependencies: { '@pluxel/host': '^1.1.0', capnweb: '0.12.0' },
+				peerDependenciesMeta: { '@pluxel/host': { optional: true } },
 				devDependencies: { capnweb: '0.12.0' },
 				exports: {
 					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
@@ -226,7 +259,7 @@ export function createWorkbenchBridge(identity, Renderer) {
 		'src/index.ts': [
 			"import { BasePlugin, Plugin } from '@pluxel/core'",
 			"import { RpcTarget } from 'capnweb'",
-			"import { workbench } from '@pluxel/workbench'",
+			"import { Workbench, workbench } from '@pluxel/workbench'",
 			'',
 			"const first = workbench.entry(import.meta.url, './ui/index.ts')",
 			"const second = workbench.entry(import.meta.url, './ui/second.ts')",
@@ -238,7 +271,7 @@ export function createWorkbenchBridge(identity, Renderer) {
 			"@Plugin({ displayName: 'RuntimeUiFixturePlugin' })",
 			'export class RuntimeUiFixturePlugin extends BasePlugin {',
 			'\tinit() {',
-			'\t\tthis.ctx.workbench.publish(DemoWorkbench, {',
+			'\t\tthis.ctx.service(Workbench).publish(DemoWorkbench, {',
 			'\t\t\tfirst: () => new RpcTarget(),',
 			'\t\t\tsecond: () => new RpcTarget(),',
 			'\t\t})',
@@ -258,18 +291,24 @@ export function createWorkbenchBridge(identity, Renderer) {
 	},
 } satisfies Record<string, Record<string, string>>
 
-async function withBuildFixture<T>(
-	name: keyof typeof buildFixtures,
+function withBuildFixture<T>(
+	source: keyof typeof buildFixtures | Record<string, string>,
 	run: (dir: string) => Promise<T>,
 ) {
-	await using fixture = await createFixture(buildFixtures[name])
-	const originalCwd = process.cwd()
-	try {
-		process.chdir(fixture.path)
-		return await run(fixture.path)
-	} finally {
-		process.chdir(originalCwd)
-	}
+	const completion = (async () => {
+		await using fixture = await createFixture(
+			typeof source === 'string' ? buildFixtures[source] : source,
+		)
+		const originalCwd = process.cwd()
+		try {
+			process.chdir(fixture.path)
+			return await run(fixture.path)
+		} finally {
+			process.chdir(originalCwd)
+		}
+	})()
+	fixtureRuns.add(completion)
+	return completion.finally(() => fixtureRuns.delete(completion))
 }
 
 describe('plugin package build', () => {
@@ -278,21 +317,50 @@ describe('plugin package build', () => {
 			const runtime = await resolveBuildContext({})
 			expect(runtime.projectRoot).toBe(fixtureDir)
 			expect(runtime.packageJsonPath).toBe(resolve(fixtureDir, 'package.json'))
-			await runWithTsdown({
+			await writeFile(resolve(fixtureDir, 'author.mjs'), 'export const author = true\n')
+			const options = {
 				context: runtime,
 				log: () => {},
-				extraConfig: pluginPackageOverlay(runtime),
-			})
+				extraConfig: {
+					...pluginPackageOverlay(runtime),
+					exports: {
+						devExports: '@pluxel/source',
+						async customExports(
+							exports: Record<string, unknown>,
+							{ isPublish }: { isPublish: boolean },
+						) {
+							if (!isPublish)
+								exports['.'] = { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' }
+							return { ...exports, './author': './author.mjs' }
+						},
+					},
+				},
+			}
+			await runWithTsdown(options)
 			expect(
 				await stat(resolve(fixtureDir, '.pluxel/workbench-build')).catch((): null => null),
 			).toBeNull()
 
 			const pkg = JSON.parse(await readFile(runtime.packageJsonPath, 'utf8'))
+			expect(pkg.exports['.']).toEqual({
+				'@pluxel/hmr': './src/index.ts',
+				default: './dist/index.mjs',
+			})
+			expect(pkg.exports['./author']).toBe('./author.mjs')
+			expect(pkg.publishConfig.exports['./author']).toBe('./author.mjs')
+			expect(pkg.exports['./control']).toEqual({
+				types: './dist/control/index.d.mts',
+				import: './dist/control/index.mjs',
+				default: './dist/control/index.mjs',
+			})
+			expect(pkg.publishConfig.exports['./control']).toEqual(pkg.exports['./control'])
 			expect(pkg.optionalDependencies?.['pluxel-plugin-alpha']).toBeUndefined()
 			expect(pkg.optionalDependencies?.['pluxel-plugin-beta']).toBeUndefined()
 			expect(pkg.peerDependencies?.['pluxel-plugin-alpha']).toBe('^1.0.0')
 			expect(pkg.peerDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
 			expect(pkg.peerDependencies?.['pluxel-plugin-stale']).toBe('^9.0.0')
+			expect(pkg.peerDependencies?.['@pluxel/host']).toBe('^1.1.0')
+			expect(pkg.peerDependenciesMeta?.['@pluxel/host']?.optional).toBe(true)
 			expect(pkg.peerDependenciesMeta?.['pluxel-plugin-stale']?.optional).toBe(true)
 			expect(pkg.dependencies?.['pluxel-plugin-alpha']).toBeUndefined()
 			expect(pkg.devDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
@@ -308,6 +376,8 @@ describe('plugin package build', () => {
 			)
 
 			const firstManifest = await readFile(runtime.packageJsonPath, 'utf8')
+			await runWithTsdown(options)
+			expect(await readFile(runtime.packageJsonPath, 'utf8')).toBe(firstManifest)
 			// Writeback idempotence and removal belong to the manifest owner, not another compile.
 			await runRules({
 				packageJsonPath: runtime.packageJsonPath,
@@ -325,7 +395,7 @@ describe('plugin package build', () => {
 			expect(cleaned.devDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
 			expect(cleaned.pluxel?.pluginPackages).toBeUndefined()
 		})
-	})
+	}, 30_000)
 
 	it('rejects an incorrect Plugin dependency role without writing any manifest field', async () => {
 		await using fixture = await createFixture({
@@ -346,6 +416,133 @@ describe('plugin package build', () => {
 		expect(await readFile(packageJsonPath, 'utf8')).toBe(original)
 	})
 
+	it('preserves root conditions and published exports when adding generated control materials', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({
+				name: 'control-exports',
+				type: 'module',
+				peerDependencies: { '@pluxel/host': '^1.1.0' },
+				exports: { types: './dist/index.d.mts', import: './dist/index.mjs' },
+				publishConfig: { exports: { '.': './dist/index.mjs', './extra': './dist/extra.mjs' } },
+			}),
+		})
+		const packageJsonPath = resolve(fixture.path, 'package.json')
+		const context = {
+			packageJsonPath,
+			pluginUsages: new Map(),
+			artifactRoot: 'dist',
+			control: true,
+		}
+		await runRules(context)
+		const first = await readFile(packageJsonPath, 'utf8')
+		const pkg = JSON.parse(first)
+		expect(pkg.exports['.']).toEqual({ types: './dist/index.d.mts', import: './dist/index.mjs' })
+		expect(pkg.exports['./control'].types).toBe('./dist/control/index.d.mts')
+		expect(pkg.publishConfig.exports['./control']).toEqual(pkg.exports['./control'])
+		expect(pkg.publishConfig.exports['./extra']).toBe('./dist/extra.mjs')
+		await runRules(context)
+		expect(await readFile(packageJsonPath, 'utf8')).toBe(first)
+	})
+
+	it('rejects an author-owned control export without rewriting the package manifest', async () => {
+		const original = JSON.stringify({
+			name: 'author-control',
+			peerDependencies: { '@pluxel/host': '^1.1.0' },
+			exports: { '.': './dist/index.mjs', './control': './author.mjs' },
+		})
+		await using fixture = await createFixture({ 'package.json': original })
+		const packageJsonPath = resolve(fixture.path, 'package.json')
+		await expect(
+			runRules({ packageJsonPath, pluginUsages: new Map(), artifactRoot: 'dist', control: true }),
+		).rejects.toThrow(/belongs to the author/)
+		expect(await readFile(packageJsonPath, 'utf8')).toBe(original)
+	})
+
+	it.each([false, true])(
+		'preserves an explicitly declared Host peer with optional=%s',
+		async (optional) => {
+			const declaration = {
+				name: 'control-host-peer',
+				peerDependencies: { '@pluxel/host': '^1.1.0' },
+				peerDependenciesMeta: { '@pluxel/host': { optional } },
+			}
+			await using fixture = await createFixture({ 'package.json': JSON.stringify(declaration) })
+			const packageJsonPath = resolve(fixture.path, 'package.json')
+			await runRules({
+				packageJsonPath,
+				pluginUsages: new Map(),
+				artifactRoot: 'dist',
+				control: true,
+			})
+			const updated = JSON.parse(await readFile(packageJsonPath, 'utf8'))
+			expect(updated.peerDependencies).toEqual(declaration.peerDependencies)
+			expect(updated.peerDependenciesMeta).toEqual(declaration.peerDependenciesMeta)
+			expect(updated.exports['./control']).toBeDefined()
+		},
+	)
+
+	it.each([
+		{ devDependencies: { '@pluxel/host': '^1.1.0' } },
+		{ dependencies: { '@pluxel/host': '^1.1.0' } },
+		{ peerDependencies: { '@pluxel/host': '^1.1.0' }, dependencies: { '@pluxel/host': '^1.1.0' } },
+		{
+			peerDependencies: { '@pluxel/host': '^1.1.0' },
+			optionalDependencies: { '@pluxel/host': '^1.1.0' },
+		},
+	])(
+		'rejects undeclared or nested Host runtime ownership without writing the package: %j',
+		async (fields) => {
+			const original = JSON.stringify({ name: 'missing-control-host-peer', ...fields })
+			await using fixture = await createFixture({ 'package.json': original })
+			const packageJsonPath = resolve(fixture.path, 'package.json')
+			await expect(
+				runRules({ packageJsonPath, pluginUsages: new Map(), artifactRoot: 'dist', control: true }),
+			).rejects.toThrow(/Invalid generated control dependency declarations/)
+			expect(await readFile(packageJsonPath, 'utf8')).toBe(original)
+		},
+	)
+
+	it('checks Host peer ownership before tsdown writes generated control exports', async () => {
+		await withBuildFixture('basic', async () => {
+			const runtime = await resolveBuildContext({})
+			const pkg = JSON.parse(await readFile(runtime.packageJsonPath, 'utf8'))
+			delete pkg.peerDependencies['@pluxel/host']
+			pkg.devDependencies['@pluxel/host'] = '^1.1.0'
+			const original = JSON.stringify(pkg)
+			await writeFile(runtime.packageJsonPath, original)
+			await expect(
+				runWithTsdown({
+					context: runtime,
+					log: () => {},
+					extraConfig: pluginPackageOverlay(runtime),
+				}),
+			).rejects.toThrow(/peerDependencies\.@pluxel\/host/)
+			expect(await readFile(runtime.packageJsonPath, 'utf8')).toBe(original)
+		})
+	})
+
+	it('checks control export ownership before tsdown replaces its previous export map', async () => {
+		await withBuildFixture('basic', async () => {
+			const runtime = await resolveBuildContext({})
+			const pkg = JSON.parse(await readFile(runtime.packageJsonPath, 'utf8'))
+			pkg.exports['./control'] = './author-control.mjs'
+			await writeFile(
+				resolve(runtime.projectRoot, 'author-control.mjs'),
+				'export const author = true\n',
+			)
+			const original = `${JSON.stringify(pkg, null, '\t')}\n`
+			await writeFile(runtime.packageJsonPath, original)
+			await expect(
+				runWithTsdown({
+					context: runtime,
+					log: () => {},
+					extraConfig: pluginPackageOverlay(runtime),
+				}),
+			).rejects.toThrow(/belongs to the author/)
+			expect(await readFile(runtime.packageJsonPath, 'utf8')).toBe(original)
+		})
+	})
+
 	it('lowers one direct Workbench definition into one multi-expose MF producer', async () => {
 		await withBuildFixture('runtimeUi', async (fixtureDir) => {
 			const runtime = await resolveBuildContext({})
@@ -358,7 +555,7 @@ describe('plugin package build', () => {
 			})
 
 			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
-			expect(output).toContain('this.ctx.workbench.publish')
+			expect(output).toContain('this.ctx.service(Workbench).publish')
 			expect(output).toContain('@pluxel/workbench')
 			expect(output).not.toContain('__PLUXEL_UI_ONLY_MARKER__')
 			expect(output).not.toContain('__PLUXEL_SECOND_UI_ONLY_MARKER__')
@@ -417,44 +614,47 @@ describe('plugin package build', () => {
 			message: 'tsdown override must export a single config object or async function',
 		},
 	])('rejects an invalid tsdown override: $config', async ({ config, message }) => {
-		await using fixture = await createFixture({
-			'package.json': JSON.stringify({ name: 'invalid-plugin-build', type: 'module' }),
-			'tsdown.config.ts': `export default ${config}`,
-			'src/index.ts': 'export const answer = 1',
-		})
-		const cwd = process.cwd()
-		try {
-			process.chdir(fixture.path)
-			const context = await resolveBuildContext({})
-			await expect(runWithTsdown({ context, log: () => {} })).rejects.toThrow(message)
-		} finally {
-			process.chdir(cwd)
-		}
+		await withBuildFixture(
+			{
+				'package.json': JSON.stringify({ name: 'invalid-plugin-build', type: 'module' }),
+				'tsdown.config.ts': `export default ${config}`,
+				'src/index.ts': 'export const answer = 1',
+			},
+			async () => {
+				const context = await resolveBuildContext({})
+				await expect(runWithTsdown({ context, log: () => {} })).rejects.toThrow(message)
+			},
+		)
 	})
 
 	it('rejects decorator syntax introduced by caller-supplied output plugins', async () => {
-		await withBuildFixture('basic', async () => {
-			const context = await resolveBuildContext({})
-			await expect(
-				runWithTsdown({
-					context,
-					log: () => {},
-					extraConfig: pluginPackage({
-						root: context.projectRoot,
-						packageMetadata: { packageJsonPath: context.packageJsonPath, log: () => {} },
-						additionalPlugins: [
-							{
-								name: 'fixture:invalid-output',
-								generateBundle(_, bundle) {
-									for (const item of Object.values(bundle)) {
-										if (item.type === 'chunk') item.code += '\n@Plugin() class InvalidOutput {}'
-									}
-								},
+		await withBuildFixture(
+			{
+				'package.json': JSON.stringify({ name: 'output-guard-fixture', type: 'module' }),
+				'tsdown.config.ts': "export default { entry: 'src/index.ts', dts: false }",
+				'src/index.ts': 'export const answer = 42',
+			},
+			async () => {
+				const context = await resolveBuildContext({})
+				const { inputOptions, plugins } = createPluginBuildPipeline({
+					root: context.projectRoot,
+					lint: false,
+					workbench: false,
+					additionalPlugins: [
+						{
+							name: 'fixture:invalid-output',
+							generateBundle(_, bundle) {
+								for (const item of Object.values(bundle)) {
+									if (item.type === 'chunk') item.code += '\n@Plugin() class InvalidOutput {}'
+								}
 							},
-						],
-					}),
-				}),
-			).rejects.toThrow('still contains decorator syntax')
-		})
+						},
+					],
+				})
+				await expect(
+					runWithTsdown({ context, log: () => {}, extraConfig: { inputOptions, plugins } }),
+				).rejects.toThrow('still contains decorator syntax')
+			},
+		)
 	})
 })

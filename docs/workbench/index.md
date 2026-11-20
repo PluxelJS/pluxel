@@ -32,22 +32,27 @@ Workbench 是 Pluxel 内置的可视化管理工作台。它为开发者和运�
 为插件接入工作台只需两步：
 
 1. **静态声明入口**：在插件元数据中通过 `workbench.define()` 声明界面类型、标题与路由位置；
-2. **动态发布能力**：在插件的 `init()` 钩子中调用 `this.ctx.workbench?.publish()`，绑定实际的业务数据与操作方法。
+2. **动态发布能力**：在插件的 `init()` 钩子中调用 `this.ctx.service(WorkbenchRef)?.publish()`，绑定实际的业务数据与操作方法。
 
 ```ts no-twoslash
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { workbench, type Workbench } from '@pluxel/workbench'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
+
+const WorkbenchRef = defineServiceRef<Workbench>()
+const AnalyticsWorkbench = workbench.define({
+	overview: workbench.content({
+		document: workbench.markdown(import.meta.url, './overview.md'),
+		placement: workbench.tab({ label: '概览' }),
+	}),
+})
 
 @Plugin({ displayName: 'Analytics' })
 export class AnalyticsPlugin extends BasePlugin {
 	protected override init() {
 		// 仅在宿主启用了 Workbench 时发布交互能力
-		this.ctx.workbench?.publish('analytics:overview', {
-			async getStats() {
-				return { activeUsers: 42 }
-			},
-		})
+		this.ctx.service(WorkbenchRef)?.publish(AnalyticsWorkbench)
 	}
 }
 ```
 
-使用可选链 `?.` 可以确保插件在没有安装 Workbench 服务的纯后台宿主中依然能平稳运行。
+同目录的 `overview.md` 提供页面正文。使用可选链 `?.` 可以确保插件在没有安装 Workbench 服务的纯后台宿主中依然能平稳运行。

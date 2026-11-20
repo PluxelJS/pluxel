@@ -1,9 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { HostVaultBindings } from '@pluxel/host/bindings'
-import { defineHostService } from '@pluxel/host'
 import { PlaywrightPlugin } from '@pluxel/plugin-playwright'
-import { vault, Vault } from '@pluxel/services/vault'
 import { createTestHost } from '@pluxel/test'
 import { chromium, type Browser } from 'playwright-core'
 import { vi } from 'vitest'
@@ -79,30 +76,27 @@ export async function setup(
 			newContext,
 		}) as unknown as Browser)
 	vi.spyOn(chromium, 'connectOverCDP').mockResolvedValue(browser)
-	const credentials = defineHostService({
-		name: 'Invoice test credentials',
-		requires: { vault: Vault },
-		capabilities: [],
-		async prepare({ ctx }) {
-			await ctx.require(HostVaultBindings).install([
-				{
-					owner: InvoicePlugin.nodeAddress(),
-					key: 'primary',
-					value: { apiKey },
-					source: 'env',
-				},
-			])
-		},
+	const host = await createTestHost({
+		coreConfig: { vault: { backend: 'bindings' } },
+		vaultBindings: [
+			{
+				owner: InvoicePlugin.nodeAddress(),
+				key: 'primary',
+				value: { apiKey },
+				source: 'env',
+			},
+		],
 	})
-	const host = await createTestHost({ services: [vault({ backend: 'bindings' }), credentials] })
 	try {
 		await host.commit((change) => {
 			change.catalog.add([PlaywrightPlugin, InvoicePlugin, Consumer])
-			change.start(PlaywrightPlugin, { initialConfig: { endpoint: 'http://127.0.0.1:9222' } })
-			change.start(InvoicePlugin, { initialConfig: config })
-			change.start(Consumer)
+			change.start(PlaywrightPlugin.nodeAddress(), {
+				initialConfig: { endpoint: 'http://127.0.0.1:9222' },
+			})
+			change.start(InvoicePlugin.nodeAddress(), { initialConfig: config })
+			change.start(Consumer.nodeAddress())
 		})
-		return { host, consumer: host.require(Consumer), newContext }
+		return { host, consumer: host.require(Consumer.nodeAddress()), newContext }
 	} catch (error) {
 		await host.dispose()
 		throw error

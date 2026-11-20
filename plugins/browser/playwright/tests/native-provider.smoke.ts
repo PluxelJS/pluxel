@@ -43,9 +43,9 @@ it('connects two owned generations to one native Playwright server with full con
 	try {
 		for (let run = 0; run < 2; run++) {
 			await using host = await createTestHost()
-			await host.start(NativeProvider)
+			await host.start(NativeProvider.nodeAddress())
 			const browser = connections[run]!
-			const consumer = await host.start(Consumer)
+			const consumer = await host.start(Consumer.nodeAddress())
 			const context = await consumer.open()
 			let closed = false
 			context.once('close', () => {
@@ -55,10 +55,10 @@ it('connects two owned generations to one native Playwright server with full con
 			await page.setContent('<!doctype html><title>Native provider</title><p>owned context</p>')
 			expect(await page.title()).toBe('Native provider')
 			expect(await page.locator('p').innerText()).toBe('owned context')
-			await host.stop(Consumer)
+			await host.stop(Consumer.nodeAddress())
 			expect(closed).toBe(true)
 			expect(browser.isConnected()).toBe(true)
-			await host.stop(NativeProvider)
+			await host.stop(NativeProvider.nodeAddress())
 			expect(browser.isConnected()).toBe(false)
 			expect(server.process().exitCode).toBeNull()
 		}

@@ -37,10 +37,10 @@ export function lowerTestReplacement<T extends PluginConstructor>(
 	__setPluginDefinition(replacement, {
 		abiVersion: PLUGIN_LOWERING_ABI_VERSION,
 		kind: 'plugin',
-		definition: previous.definitionAddress(),
-		constructorRequires: options.requires?.map((plugin) => plugin.definitionAddress()),
-		optional: options.optional?.map((plugin) => plugin.definitionAddress()),
-		...(options.provides === undefined ? {} : { provides: options.provides.definitionAddress() }),
+		definition: previous.address(),
+		constructorRequires: options.requires?.map((plugin) => plugin.address()),
+		optional: options.optional?.map((plugin) => plugin.address()),
+		...(options.provides === undefined ? {} : { provides: options.provides.address() }),
 	})
 	return replacement
 }

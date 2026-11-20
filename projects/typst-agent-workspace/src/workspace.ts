@@ -251,7 +251,11 @@ export async function renderSnapshots(
 	const { nodeModules } = await import('@pluxel/services/node')
 	const { ReportRenderPlugin } = await import('./index.ts')
 	const host = await createHost({
-		plugins: [FontsPlugin, TypstPlugin, ReportRenderPlugin],
+		plugins: [
+			{ plugin: FontsPlugin, config: { files: fonts, maxFontBytes: 64 * 1024 * 1024 } },
+			{ plugin: TypstPlugin },
+			{ plugin: ReportRenderPlugin, autoStart: true, config: { job, entry } },
+		],
 		services: [
 			nodeModules({
 				root: resolve(
@@ -260,16 +264,6 @@ export async function renderSnapshots(
 				),
 			}),
 		],
-		config: {
-			records: [
-				{
-					owner: FontsPlugin.nodeAddress(),
-					config: { files: fonts, maxFontBytes: 64 * 1024 * 1024 },
-				},
-				{ owner: ReportRenderPlugin.nodeAddress(), config: { job, entry } },
-			],
-		},
-		policy: { autoStart: [ReportRenderPlugin.nodeAddress()] },
 	})
 	try {
 		const report = await host.start()

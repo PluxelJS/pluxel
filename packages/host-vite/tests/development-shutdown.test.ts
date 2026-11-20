@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -8,9 +8,15 @@ import { expect, it } from 'vitest'
 it('lets a development connection owner observe Host drain before releasing borrowed bindings', async () => {
 	const root = await mkdtemp(resolve(tmpdir(), 'pluxel-development-drain-'))
 	try {
+		await symlink(
+			resolve(import.meta.dirname, '../node_modules'),
+			resolve(root, 'node_modules'),
+			'dir',
+		)
 		await writeFile(
 			resolve(root, 'app.mjs'),
-			`export default startup => ({
+			`;
+export default startup => ({
  plugins: [],
  prepare({host}) {
   host.ctx.effects.defer(() => { startup.bindings.write('HOST_DRAINED'); throw new Error('OWNED_CLOSE_FAILED') })

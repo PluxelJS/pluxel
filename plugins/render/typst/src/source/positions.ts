@@ -1,4 +1,10 @@
-import type { TypstSourceProjection } from './types.js'
+import type { TypstSourceMapping } from './types.js'
+
+interface LocatedSource {
+	readonly path: string
+	readonly source: string
+	readonly mapping: readonly TypstSourceMapping[]
+}
 
 /** Native Typst source navigation uses one-based lines and UTF-16 columns. */
 export interface TypstSourcePosition {
@@ -34,7 +40,7 @@ export function findTypstEditorPosition({
 	projection,
 	sourcePosition,
 }: {
-	projection: TypstSourceProjection
+	projection: LocatedSource
 	sourcePosition: TypstSourcePosition
 }): number | undefined {
 	if (sourcePosition.path.replace(/^\//, '') !== projection.path) return
@@ -58,7 +64,7 @@ export function findTypstSourcePosition({
 	projection,
 	position,
 }: {
-	projection: TypstSourceProjection
+	projection: LocatedSource
 	position: number
 }): TypstSourcePosition | undefined {
 	if (!Number.isSafeInteger(position) || position < 0) return

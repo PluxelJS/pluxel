@@ -3,7 +3,7 @@ import { LoggerService } from '@pluxel/core/logger'
 import type { PluginNodeAddress } from '@pluxel/core'
 import {
 	createRuntimeLogging,
-	type RuntimeLogging,
+	type RuntimeLoggingManager,
 	type RuntimeLoggingInput,
 } from '@pluxel/core/logging/internal'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -36,7 +36,7 @@ const pluginA = {
 } as const satisfies PluginNodeAddress
 
 function pluginLogger(
-	logging: RuntimeLogging,
+	logging: RuntimeLoggingManager,
 	address: PluginNodeAddress,
 	displayName = 'Plugin A',
 ) {
@@ -47,7 +47,7 @@ function pluginLogger(
 }
 
 describe('RuntimeLogging', () => {
-	let logging: RuntimeLogging | undefined
+	let logging: RuntimeLoggingManager | undefined
 
 	afterEach(async () => {
 		await logging?.dispose()

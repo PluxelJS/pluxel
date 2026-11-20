@@ -14,6 +14,7 @@ description: 掌握 Pluxel 插件的核心模型、依赖注入、生命周期�
 - **[配置模型](./configuration.md)**：使用 Valibot Schema 统一定义配置类型、默认值、运行时校验与 Workbench 管理表单。
 - **[事件通知](./events.md)**：利用 `ctx.events` 广播或订阅跨插件事件，松耦合串联业务流程。
 - **[结构化日志](./logging.md)**：使用 `ctx.logger` 输出携带上下文的结构化日志，方便本地调试与运维排查。
+- **[受管出站 HTTP](./outbound-http.md)**：通过 `ctx.wretch` 或 `ctx.fetch` 请求外部服务，沿用宿主的代理和出站限制。
 - **[拆分内部逻辑（PluginPart）](./parts.md)**：对于逻辑庞大的插件，使用 `PluginPart` 拆分子模块与局部配置，随父插件统一启停。
 - **[插件测试](./testing.md)**：借助 `@pluxel/test` 在纯内存测试宿主中进行端到端隔离验证。
 

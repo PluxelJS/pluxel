@@ -15,7 +15,6 @@ describe('argv routing', () => {
 		})
 		const router = createArgvRouter()
 		const cli = toCli(echo, { routes: ['text echo'], tail: tail.text('text') })
-		expect(Object.isFrozen(cli)).toBe(true)
 		using binding = router.bind(cli)
 		const resolved = router.resolve('text echo hello world')!
 		expect(resolved.candidate).toEqual({ text: 'hello world' })

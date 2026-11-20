@@ -1,14 +1,18 @@
 import type {
 	HostConfigState,
+	HostInputMode,
+	HostNodePolicyTarget,
 	HostPolicyInput,
 	HostPolicyValues,
 	HostPolicyField,
 	HostStateConfigurationSnapshot,
 } from '@pluxel/host'
+import { summarizePluginControlBatch } from './control-batch'
 import {
 	comparePluginDefinitionAddress,
 	comparePluginNodeAddress,
 	formatPluginNodeReference,
+	OutboundHttpError,
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
 	pluginDefinitionIndexKey,
@@ -36,9 +40,11 @@ import {
 	type PolicyResult,
 	type ConfigValidationErrors,
 	type EnsureForkResult,
-	type PluginApplyCommitSummary,
-	type PluginApplyLifecycleErrorInfo,
-	type PluginApplyLifecycleIssue,
+	type OutboundHttpActivity,
+	type OutboundHttpEffectiveSettings,
+	type OutboundHttpSaveResult,
+	type OutboundHttpSettings,
+	type OutboundHttpSnapshot,
 	type PluginApplyReport,
 	type PluginControlBatchResult,
 	type PluginControlMutationFailure,
@@ -59,10 +65,10 @@ import {
 	type PluginCatalogSectionBasis,
 	type PluginCatalogSnapshot,
 	type PluginLogPolicyMutationResult,
-	type PluginReconciliationIssue,
 	type PluginStatusIssue,
 	type PluginStatusQueryResult,
 	type PluginStatusSnapshot,
+	type PluginStatePolicy,
 	type RemoveForkResult,
 	type RuntimeJsonObject,
 	type RuntimeJsonValue,
@@ -70,7 +76,12 @@ import {
 	type VersionedPluginLogPolicySnapshot,
 } from './protocol'
 import {
+	parsePluginApplyReportSnapshot,
+	parseHostPersistenceResult,
+	pluginApplyReportOutcome,
 	HOST_POLICY_FIELDS,
+	HOST_GLOBAL_POLICY_FIELDS,
+	HOST_GRAPH_POLICY_FIELDS,
 	HOST_EXECUTION_POLICY_FIELDS,
 	clonePluginExecutionSnapshot,
 	clonePluginRecentUpdateSnapshot,
@@ -82,16 +93,17 @@ import {
 	RuntimeProtocolValidationError,
 } from './validation'
 
-const LIFECYCLE_PHASES = ['resolve', 'config', 'start', 'dependency', 'drain'] as const
-const LIFECYCLE_KINDS = [
-	'resolve-failed',
-	'config-failed',
-	'start-failed',
-	'dependency-blocked',
-	'drain-failed',
-] as const
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warning', 'error', 'fatal'] as const
 const RUNTIME_LOG_LEVELS = [...LOG_LEVELS, 'off'] as const
+
+export class OutboundHttpRevisionConflictError extends Error {
+	readonly code = 'revision_conflict'
+
+	constructor(message: string) {
+		super(message)
+		this.name = 'OutboundHttpRevisionConflictError'
+	}
+}
 
 /** Validate and deep-freeze the Plugin catalog returned by the management RPC boundary. */
 export function parsePluginCatalogSnapshot(input: unknown): PluginCatalogSnapshot {
@@ -122,32 +134,38 @@ export function parsePluginCatalogSnapshot(input: unknown): PluginCatalogSnapsho
 	const policy = object(value.statePolicy, 'plugin catalog.statePolicy')
 	shape(
 		policy,
-		['readonly', 'managedRevision', 'overriddenFields'],
+		[
+			'readonly',
+			'managedRevision',
+			'mode',
+			'providerDefaultsSource',
+			'providerDefaultsShadowed',
+			'nodeModes',
+			'selections',
+		],
 		[],
 		'plugin catalog.statePolicy',
 	)
-	const readonly = boolean(policy.readonly, 'plugin catalog.statePolicy.readonly')
-	const overriddenFields = array(
-		policy.overriddenFields,
-		'plugin catalog.statePolicy.overriddenFields',
-	).map((field) =>
-		literal(
-			field,
-			['autoStart', 'forks', 'providerDefaults', 'dependencyOverrides'],
-			'plugin catalog.statePolicy.overriddenFields',
-		),
-	)
-	if (new Set(overriddenFields).size !== overriddenFields.length)
-		fail('plugin catalog.statePolicy.overriddenFields contains duplicates')
+	const mode = policyModes(policy.mode, HOST_GRAPH_POLICY_FIELDS, 'plugin catalog.statePolicy.mode')
 	return Object.freeze({
 		plugins: Object.freeze(plugins),
 		statePolicy: Object.freeze({
-			readonly,
+			readonly: boolean(policy.readonly, 'plugin catalog.statePolicy.readonly'),
 			managedRevision: revisionToken(
 				policy.managedRevision,
 				'plugin catalog.statePolicy.managedRevision',
 			),
-			overriddenFields: Object.freeze(overriddenFields),
+			mode,
+			providerDefaultsSource: literal(
+				policy.providerDefaultsSource,
+				POLICY_SOURCES,
+				'plugin catalog.statePolicy.providerDefaultsSource',
+			),
+			providerDefaultsShadowed: boolean(
+				policy.providerDefaultsShadowed,
+				'plugin catalog.statePolicy.providerDefaultsShadowed',
+			),
+			...policyNodeMetadata(policy, mode, 'plugin catalog.statePolicy'),
 		}),
 		sections: Object.freeze(sections),
 		summary: Object.freeze({ total, running, stopped, autoStart }),
@@ -340,6 +358,8 @@ export function parsePolicyResult(input: unknown): PolicyResult {
 			'mode',
 			'sources',
 			'shadowedFields',
+			'nodeModes',
+			'selections',
 			'managedRevision',
 			'appliedExecution',
 			'pendingExecutionFields',
@@ -349,23 +369,14 @@ export function parsePolicyResult(input: unknown): PolicyResult {
 		['report'],
 		'policy result',
 	)
-	const mode = object(value.mode, 'policy result.mode')
+	const mode = policyModes(value.mode, HOST_POLICY_FIELDS, 'policy result.mode')
 	const sources = object(value.sources, 'policy result.sources')
-	shape(mode, HOST_POLICY_FIELDS, [], 'policy result.mode')
-	shape(sources, HOST_POLICY_FIELDS, [], 'policy result.sources')
-	const parsedMode = Object.freeze(
-		Object.fromEntries(
-			HOST_POLICY_FIELDS.map((field) => [
-				field,
-				literal(mode[field], INPUT_MODES, `policy result.mode.${field}`),
-			]),
-		),
-	) as HostStateConfigurationSnapshot['mode']
+	shape(sources, HOST_GLOBAL_POLICY_FIELDS, [], 'policy result.sources')
 	const parsedSources = Object.freeze(
 		Object.fromEntries(
-			HOST_POLICY_FIELDS.map((field) => [
+			HOST_GLOBAL_POLICY_FIELDS.map((field) => [
 				field,
-				literal(sources[field], ['declared', 'saved', 'default'], `policy result.sources.${field}`),
+				literal(sources[field], POLICY_SOURCES, `policy result.sources.${field}`),
 			]),
 		),
 	) as HostStateConfigurationSnapshot['sources']
@@ -406,13 +417,14 @@ export function parsePolicyResult(input: unknown): PolicyResult {
 		readonly: boolean(value.readonly, 'policy result.readonly'),
 		managedInput: policyValues(value.managedInput, 'policy result.managedInput', false),
 		effective,
-		mode: parsedMode,
+		mode,
 		sources: parsedSources,
 		shadowedFields: policyFields(
 			value.shadowedFields,
-			HOST_POLICY_FIELDS,
+			HOST_GLOBAL_POLICY_FIELDS,
 			'policy result.shadowedFields',
 		),
+		...policyNodeMetadata(value, mode, 'policy result'),
 		managedRevision: revisionToken(value.managedRevision, 'policy result.managedRevision'),
 		appliedExecution,
 		pendingExecutionFields,
@@ -422,6 +434,88 @@ export function parsePolicyResult(input: unknown): PolicyResult {
 			? {}
 			: { report: pluginApplyReport(value.report, 'policy result.report') }),
 	})
+}
+
+const POLICY_SOURCES = ['declared', 'saved', 'default'] as const
+
+function policyModes<const Field extends HostPolicyField>(
+	input: unknown,
+	fields: readonly Field[],
+	label: string,
+): Readonly<Record<Field, HostInputMode>> {
+	const value = object(input, label)
+	shape(value, fields, [], label)
+	return Object.freeze(
+		Object.fromEntries(
+			fields.map((field) => [field, literal(value[field], INPUT_MODES, `${label}.${field}`)]),
+		),
+	) as Readonly<Record<Field, HostInputMode>>
+}
+
+function policyNodeMetadata(
+	input: Record<string, unknown>,
+	modes: PluginStatePolicy['mode'],
+	label: string,
+): Pick<PluginStatePolicy, 'nodeModes' | 'selections'> {
+	const byNode = new Map<string, HostInputMode>()
+	const nodeModes = array(input.nodeModes, `${label}.nodeModes`).map((raw, index) => {
+		const at = `${label}.nodeModes[${index}]`
+		const item = object(raw, at)
+		shape(item, ['node', 'mode'], [], at)
+		const node = nodeAddress(item.node, `${at}.node`)
+		const key = pluginNodeIndexKey(node)
+		if (byNode.has(key)) fail(`${label}.nodeModes contains a duplicate node`)
+		const mode = literal(item.mode, INPUT_MODES, `${at}.mode`)
+		byNode.set(key, mode)
+		return Object.freeze({ node, mode })
+	})
+	const targetKeys = new Set<string>()
+	const selections = array(input.selections, `${label}.selections`).map((raw, index) => {
+		const at = `${label}.selections[${index}]`
+		const item = object(raw, at)
+		shape(item, ['target', 'mode', 'source', 'shadowed'], [], at)
+		const target = policyNodeTarget(item.target, `${at}.target`)
+		const nodeKey = pluginNodeIndexKey('node' in target ? target.node : target.consumerAddress)
+		const key =
+			'requirementAddress' in target
+				? `${target.field}:${nodeKey}:${pluginDefinitionIndexKey(target.requirementAddress)}`
+				: `${target.field}:${nodeKey}`
+		if (targetKeys.has(key)) fail(`${label}.selections contains a duplicate target`)
+		targetKeys.add(key)
+		const mode = literal(item.mode, INPUT_MODES, `${at}.mode`)
+		if (mode !== (byNode.get(nodeKey) ?? modes[target.field]))
+			fail(`${at}.mode does not match the target policy`)
+		const source = literal(item.source, POLICY_SOURCES, `${at}.source`)
+		const shadowed = boolean(item.shadowed, `${at}.shadowed`)
+		if (source === 'saved' && (shadowed || mode === 'declared-only'))
+			fail(`${at} has an inconsistent saved selection`)
+		return Object.freeze({ target, mode, source, shadowed })
+	})
+	return { nodeModes: Object.freeze(nodeModes), selections: Object.freeze(selections) }
+}
+
+function policyNodeTarget(input: unknown, label: string): HostNodePolicyTarget {
+	const value = object(input, label)
+	const field = literal(
+		value.field,
+		['autoStart', 'forks', 'dependencyOverrides'],
+		`${label}.field`,
+	)
+	if (field === 'dependencyOverrides') {
+		shape(value, ['field', 'consumerAddress', 'requirementAddress'], [], label)
+		return Object.freeze({
+			field,
+			consumerAddress: nodeAddress(value.consumerAddress, `${label}.consumerAddress`),
+			requirementAddress: definitionAddress(
+				value.requirementAddress,
+				`${label}.requirementAddress`,
+			),
+		})
+	}
+	shape(value, ['field', 'node'], [], label)
+	return field === 'forks'
+		? Object.freeze({ field, node: forkAddress(value.node, `${label}.node`) })
+		: Object.freeze({ field, node: nodeAddress(value.node, `${label}.node`) })
 }
 
 function revisionToken(input: unknown, label: string): string {
@@ -446,7 +540,11 @@ function policyNumber(input: unknown, field: string, label: string): number {
 }
 function policyValues(input: unknown, label: string, complete: true): HostPolicyValues
 function policyValues(input: unknown, label: string, complete: false): HostPolicyInput
-function policyValues(input: unknown, label: string, complete: boolean): HostPolicyInput {
+function policyValues(
+	input: unknown,
+	label: string,
+	complete: boolean,
+): HostPolicyInput | HostPolicyValues {
 	const value = object(input, label)
 	shape(value, complete ? HOST_POLICY_FIELDS : [], complete ? [] : HOST_POLICY_FIELDS, label)
 	const result: Record<string, unknown> = {}
@@ -464,10 +562,20 @@ function policyValues(input: unknown, label: string, complete: boolean): HostPol
 				let parsed: unknown
 				let key: string
 				if (field === 'autoStart' || field === 'forks') {
-					const node = nodeAddress(raw, entryLabel)
-					if (field === 'forks' && node.variant !== 'fork')
-						fail(`${entryLabel} requires a fork node`)
-					parsed = node
+					const setting = field === 'autoStart' ? 'autoStart' : 'deploy'
+					const entry = complete ? undefined : object(raw, entryLabel)
+					if (entry) shape(entry, ['node', setting], [], entryLabel)
+					const identity = entry ? entry.node : raw
+					const node =
+						field === 'forks'
+							? forkAddress(identity, entryLabel)
+							: nodeAddress(identity, entryLabel)
+					parsed = entry
+						? Object.freeze({
+								node,
+								[setting]: boolean(entry[setting], `${entryLabel}.${setting}`),
+							})
+						: node
 					key = pluginNodeIndexKey(node)
 				} else if (field === 'providerDefaults') {
 					const entry = object(raw, entryLabel)
@@ -492,7 +600,10 @@ function policyValues(input: unknown, label: string, complete: boolean): HostPol
 					parsed = Object.freeze({
 						consumerAddress,
 						requirementAddress,
-						providerAddress: nodeAddress(entry.providerAddress, `${entryLabel}.providerAddress`),
+						providerAddress:
+							!complete && entry.providerAddress === null
+								? null
+								: nodeAddress(entry.providerAddress, `${entryLabel}.providerAddress`),
 					})
 					key = `${pluginNodeIndexKey(consumerAddress)}:${pluginDefinitionIndexKey(requirementAddress)}`
 				}
@@ -502,7 +613,7 @@ function policyValues(input: unknown, label: string, complete: boolean): HostPol
 			}),
 		)
 	}
-	return Object.freeze(result) as HostPolicyInput
+	return Object.freeze(result) as HostPolicyInput | HostPolicyValues
 }
 
 /** Validate and deep-freeze a config presentation query result. */
@@ -682,24 +793,6 @@ export function parseRemoveForkResult(input: unknown): RemoveForkResult {
 /** Validate and deep-freeze a Plugin control batch result, including partial application. */
 export function parsePluginControlBatchResult(input: unknown): PluginControlBatchResult {
 	const value = rootRecord(input, 'plugin control batch result')
-	if (value.ok === true) {
-		shape(value, ['ok', 'status', 'results'], [], 'plugin control batch result')
-		literal(value.status, ['applied'], 'plugin control batch result.status')
-		const results = array(value.results, 'plugin control batch result.results').map((item, index) =>
-			controlMutationSuccess(item, `plugin control batch result.results[${index}]`),
-		)
-		return Object.freeze({
-			ok: true,
-			status: 'applied',
-			results: Object.freeze(results) as PluginControlMutationSuccess[],
-		})
-	}
-	if (value.ok !== false) fail('plugin control batch result.ok must be boolean')
-	const status = literal(
-		value.status,
-		['partially-applied', 'rejected'],
-		'plugin control batch result.status',
-	)
 	if (Object.hasOwn(value, 'code')) {
 		shape(
 			value,
@@ -707,9 +800,8 @@ export function parsePluginControlBatchResult(input: unknown): PluginControlBatc
 			[],
 			'plugin control batch result',
 		)
-		if (status !== 'rejected') {
-			fail('plugin control batch result with code must have rejected status')
-		}
+		if (value.ok !== false) fail('invalid-input control batch result.ok must be false')
+		literal(value.status, ['rejected'], 'plugin control batch result.status')
 		literal(value.code, ['invalid_input'], 'plugin control batch result.code')
 		literal(value.state, ['unchanged'], 'plugin control batch result.state')
 		if (array(value.results, 'plugin control batch result.results').length > 0) {
@@ -724,22 +816,21 @@ export function parsePluginControlBatchResult(input: unknown): PluginControlBatc
 			results: Object.freeze([]) as [],
 		})
 	}
-	shape(value, ['ok', 'status', 'results'], [], 'plugin control batch result')
+	shape(value, ['ok', 'status', 'results'], ['managedRevision'], 'plugin control batch result')
 	const results = array(value.results, 'plugin control batch result.results').map((item, index) =>
 		controlMutationResult(item, `plugin control batch result.results[${index}]`),
 	)
-	if (status === 'partially-applied') {
-		if (!results.some((result) => result.ok) || !results.some((result) => !result.ok)) {
-			fail('partially-applied control batch must contain successes and failures')
-		}
-	} else if (results.some((result) => result.ok)) {
-		fail('rejected control batch must not contain successful results')
-	}
-	return Object.freeze({
-		ok: false,
-		status,
-		results: Object.freeze(results) as PluginControlMutationResult[],
-	}) as PluginControlBatchResult
+	const batch = summarizePluginControlBatch(results)
+	if (value.ok !== batch.ok || value.status !== batch.status)
+		fail(
+			`plugin control batch summary must match its results (ok: ${batch.ok}, status: ${batch.status})`,
+		)
+	return value.managedRevision === undefined
+		? batch
+		: Object.freeze({
+				...batch,
+				managedRevision: text(value.managedRevision, 'plugin control batch result.managedRevision'),
+			})
 }
 
 /** Validate and deep-freeze the current logging policy snapshot. */
@@ -788,6 +879,170 @@ export function parsePluginLogPolicyMutationResult(input: unknown): PluginLogPol
 			['none', 'clean', 'dirty', 'failed'],
 			'logging policy mutation result.persistence',
 		),
+	})
+}
+
+export function parseOutboundHttpSnapshot(input: unknown): OutboundHttpSnapshot {
+	return outboundHttpSnapshot(rootRecord(input, 'outbound HTTP snapshot'))
+}
+
+export function parseOutboundHttpSaveResult(input: unknown): OutboundHttpSaveResult {
+	const label = 'outbound HTTP save result'
+	const envelope = rootRecord(input, label)
+	if (envelope.ok === false) {
+		shape(envelope, ['ok', 'code', 'error'], [], label)
+		const code = literal(
+			envelope.code,
+			['revision_conflict', 'management_disabled'],
+			`${label}.code`,
+		)
+		const message = text(envelope.error, `${label}.error`)
+		if (code === 'revision_conflict') throw new OutboundHttpRevisionConflictError(message)
+		throw new OutboundHttpError(code, message)
+	}
+	shape(envelope, ['ok', 'value'], [], label)
+	if (envelope.ok !== true) fail(`${label}.ok must be true`)
+	const value = object(envelope.value, `${label}.value`)
+	shape(value, ['snapshot'], ['cleanupError'], `${label}.value`)
+	const snapshot = outboundHttpSnapshot(object(value.snapshot, `${label}.snapshot`))
+	if (!snapshot.managed) fail(`${label}.snapshot must be managed`)
+	return Object.freeze({
+		snapshot,
+		...(value.cleanupError === undefined
+			? {}
+			: { cleanupError: text(value.cleanupError, `${label}.cleanupError`) }),
+	})
+}
+
+function outboundHttpSnapshot(value: Record<string, unknown>): OutboundHttpSnapshot {
+	const label = 'outbound HTTP snapshot'
+	const managed = boolean(value.managed, `${label}.managed`)
+	const owner = nullableNodeAddress(value.owner, `${label}.owner`)
+	if (!managed) {
+		shape(value, ['managed', 'owner'], [], label)
+		return Object.freeze({ managed: false, owner })
+	}
+	shape(
+		value,
+		['managed', 'records', 'revision', 'owner', 'settings', 'effective', 'limits', 'activity'],
+		[],
+		label,
+	)
+	const limits = object(value.limits, `${label}.limits`)
+	shape(
+		limits,
+		['timeoutMs', 'maxConcurrentRequests', 'maxQueuedRequests', 'allowProxyChanges'],
+		['allowedOrigins'],
+		`${label}.limits`,
+	)
+	return Object.freeze({
+		managed: true,
+		records: literal(value.records, ['requests', 'summary', 'off'], `${label}.records`),
+		revision: nonNegativeInteger(value.revision, `${label}.revision`),
+		owner,
+		settings: outboundHttpSettings(value.settings, `${label}.settings`),
+		effective: outboundHttpEffectiveSettings(value.effective, `${label}.effective`),
+		limits: Object.freeze({
+			...outboundHttpOrigins(limits.allowedOrigins, `${label}.limits.allowedOrigins`),
+			timeoutMs: nonNegativeInteger(limits.timeoutMs, `${label}.limits.timeoutMs`),
+			maxConcurrentRequests: nonNegativeInteger(
+				limits.maxConcurrentRequests,
+				`${label}.limits.maxConcurrentRequests`,
+			),
+			maxQueuedRequests: nonNegativeInteger(
+				limits.maxQueuedRequests,
+				`${label}.limits.maxQueuedRequests`,
+			),
+			allowProxyChanges: boolean(limits.allowProxyChanges, `${label}.limits.allowProxyChanges`),
+		}),
+		activity: Object.freeze(
+			array(value.activity, `${label}.activity`).map((entry, index) =>
+				outboundHttpActivity(entry, `${label}.activity[${index}]`),
+			),
+		),
+	})
+}
+
+function outboundHttpOrigins(
+	input: unknown,
+	label: string,
+): Pick<OutboundHttpSettings, 'allowedOrigins'> {
+	if (input === undefined) return {}
+	return {
+		allowedOrigins: Object.freeze(
+			array(input, label).map((item, index) => text(item, `${label}[${index}]`)),
+		),
+	}
+}
+
+function outboundHttpHeaders(input: unknown, label: string): Readonly<Record<string, string>> {
+	return Object.freeze(
+		Object.fromEntries(
+			Object.entries(object(input, label)).map(([key, value]) => [
+				key,
+				text(value, `${label}.${key}`),
+			]),
+		),
+	)
+}
+
+function outboundHttpSettings(input: unknown, label: string): OutboundHttpSettings {
+	const value = object(input, label)
+	shape(value, [], ['allowedOrigins', 'timeoutMs', 'headers', 'proxyUrl'], label)
+	return Object.freeze({
+		...outboundHttpOrigins(value.allowedOrigins, `${label}.allowedOrigins`),
+		...(value.timeoutMs === undefined
+			? {}
+			: { timeoutMs: nonNegativeInteger(value.timeoutMs, `${label}.timeoutMs`) }),
+		...(value.headers === undefined
+			? {}
+			: { headers: outboundHttpHeaders(value.headers, `${label}.headers`) }),
+		...(value.proxyUrl === undefined
+			? {}
+			: { proxyUrl: value.proxyUrl === null ? null : text(value.proxyUrl, `${label}.proxyUrl`) }),
+	})
+}
+
+function outboundHttpEffectiveSettings(
+	input: unknown,
+	label: string,
+): OutboundHttpEffectiveSettings {
+	const value = object(input, label)
+	shape(value, ['timeoutMs', 'headers', 'proxyUrl'], ['allowedOrigins'], label)
+	return Object.freeze({
+		...outboundHttpOrigins(value.allowedOrigins, `${label}.allowedOrigins`),
+		timeoutMs: nonNegativeInteger(value.timeoutMs, `${label}.timeoutMs`),
+		headers: outboundHttpHeaders(value.headers, `${label}.headers`),
+		proxyUrl: value.proxyUrl === null ? null : text(value.proxyUrl, `${label}.proxyUrl`),
+	})
+}
+
+function outboundHttpActivity(input: unknown, label: string): OutboundHttpActivity {
+	const value = object(input, label)
+	shape(
+		value,
+		['owner', 'lastAttemptAt', 'lastOrigin', 'received', 'failed', 'denied', 'lastOutcome'],
+		['lastStatus', 'lastCode'],
+		label,
+	)
+	return Object.freeze({
+		owner: nodeAddress(value.owner, `${label}.owner`),
+		lastAttemptAt: nonNegativeInteger(value.lastAttemptAt, `${label}.lastAttemptAt`),
+		lastOrigin: text(value.lastOrigin, `${label}.lastOrigin`),
+		received: nonNegativeInteger(value.received, `${label}.received`),
+		failed: nonNegativeInteger(value.failed, `${label}.failed`),
+		denied: nonNegativeInteger(value.denied, `${label}.denied`),
+		lastOutcome: literal(
+			value.lastOutcome,
+			['response', 'failed', 'denied'],
+			`${label}.lastOutcome`,
+		),
+		...(value.lastStatus === undefined
+			? {}
+			: { lastStatus: nonNegativeInteger(value.lastStatus, `${label}.lastStatus`) }),
+		...(value.lastCode === undefined
+			? {}
+			: { lastCode: text(value.lastCode, `${label}.lastCode`) }),
 	})
 }
 
@@ -1062,6 +1317,8 @@ function pluginStatusIssue(input: unknown, label: string): PluginStatusIssue {
 				'start-failed',
 				'dependency-blocked',
 				'drain-failed',
+				'control_analysis_failed',
+				'control_source_changed',
 			],
 			`${label}.code`,
 		),
@@ -1195,19 +1452,11 @@ function persistenceResult(
 	input: unknown,
 	label: string,
 ): import('@pluxel/host').HostPersistenceResult {
-	const value = object(input, label)
-	const status = literal(value.status, ['unchanged', 'confirmed', 'unknown'], `${label}.status`)
-	shape(value, status === 'confirmed' ? ['status', 'retention'] : ['status'], [], label)
-	return status === 'confirmed'
-		? Object.freeze({
-				status,
-				retention: literal(
-					value.retention,
-					['session', 'declared-durable', 'unknown'],
-					`${label}.retention`,
-				),
-			})
-		: Object.freeze({ status })
+	try {
+		return parseHostPersistenceResult(input, label)
+	} catch (error) {
+		fail(errorMessage(error))
+	}
 }
 
 function configValue(value: Record<string, unknown>) {
@@ -1487,239 +1736,11 @@ function providerPolicyInfo(input: unknown, label: string): PluginProviderPolicy
 }
 
 function pluginApplyReport(input: unknown, label: string): PluginApplyReport {
-	const value = object(input, label)
-	shape(
-		value,
-		[
-			'catalogRevision',
-			'runtimeStateRevision',
-			'reconciliation',
-			'core',
-			'persistence',
-			'writtenFields',
-		],
-		[],
-		label,
-	)
-	const core = object(value.core, `${label}.core`)
-	const status = literal(core.status, ['unchanged', 'committed'], `${label}.core.status`)
-	const parsedCore: PluginApplyReport['core'] =
-		status === 'unchanged'
-			? (() => {
-					shape(core, ['status'], [], `${label}.core`)
-					return Object.freeze({ status: 'unchanged' as const })
-				})()
-			: (() => {
-					shape(core, ['status', 'summary'], [], `${label}.core`)
-					return Object.freeze({
-						status: 'committed' as const,
-						summary: pluginApplyCommitSummary(core.summary, `${label}.core.summary`),
-					})
-				})()
-	return Object.freeze({
-		persistence: persistenceResult(value.persistence, `${label}.persistence`),
-		writtenFields: policyFields(value.writtenFields, HOST_POLICY_FIELDS, `${label}.writtenFields`),
-		catalogRevision: nonNegativeInteger(value.catalogRevision, `${label}.catalogRevision`),
-		runtimeStateRevision: nonNegativeInteger(
-			value.runtimeStateRevision,
-			`${label}.runtimeStateRevision`,
-		),
-		reconciliation: Object.freeze(
-			array(value.reconciliation, `${label}.reconciliation`).map((item, index) =>
-				reconciliationIssue(item, `${label}.reconciliation[${index}]`),
-			),
-		),
-		core: parsedCore,
-	})
-}
-
-function reconciliationIssue(input: unknown, label: string): PluginReconciliationIssue {
-	const value = object(input, label)
-	const kind = literal(
-		value.kind,
-		[
-			'consumer_unavailable',
-			'requirement_removed',
-			'provider_unavailable',
-			'provider_incompatible',
-			'fork_not_allowed',
-			'fork_default_forbidden',
-			'provider_default_requires_abstract',
-			'explicit_binding_invalid',
-			'missing_required_provider',
-		],
-		`${label}.kind`,
-	)
-	const message = text(value.message, `${label}.message`)
-	if (kind === 'consumer_unavailable' || kind === 'missing_required_provider') {
-		shape(
-			value,
-			kind === 'consumer_unavailable'
-				? ['kind', 'consumer', 'message']
-				: ['kind', 'consumer', 'requirement', 'message'],
-			[],
-			label,
-		)
-		return kind === 'consumer_unavailable'
-			? Object.freeze({
-					kind,
-					consumer: nodeAddress(value.consumer, `${label}.consumer`),
-					message,
-				})
-			: Object.freeze({
-					kind,
-					consumer: nodeAddress(value.consumer, `${label}.consumer`),
-					requirement: definitionAddress(value.requirement, `${label}.requirement`),
-					message,
-				})
+	try {
+		return parsePluginApplyReportSnapshot(input, label)
+	} catch (error) {
+		fail(errorMessage(error))
 	}
-	if (kind === 'requirement_removed') {
-		shape(value, ['kind', 'binding', 'consumer', 'requirement', 'provider', 'message'], [], label)
-		literal(value.binding, ['dependency-override'], `${label}.binding`)
-		return Object.freeze({
-			kind,
-			binding: 'dependency-override',
-			consumer: nodeAddress(value.consumer, `${label}.consumer`),
-			requirement: definitionAddress(value.requirement, `${label}.requirement`),
-			provider: nodeAddress(value.provider, `${label}.provider`),
-			message,
-		})
-	}
-	if (kind === 'provider_unavailable' || kind === 'provider_incompatible') {
-		shape(value, ['kind', 'binding', 'requirement', 'provider', 'message'], ['consumer'], label)
-		return Object.freeze({
-			kind,
-			binding: literal(
-				value.binding,
-				['provider-default', 'dependency-override'],
-				`${label}.binding`,
-			),
-			...(value.consumer === undefined
-				? {}
-				: { consumer: nodeAddress(value.consumer, `${label}.consumer`) }),
-			requirement: definitionAddress(value.requirement, `${label}.requirement`),
-			provider: nodeAddress(value.provider, `${label}.provider`),
-			message,
-		})
-	}
-	if (kind === 'fork_not_allowed') {
-		shape(value, ['kind', 'node', 'message'], [], label)
-		return Object.freeze({
-			kind,
-			node: nodeAddress(value.node, `${label}.node`),
-			message,
-		})
-	}
-	if (kind === 'fork_default_forbidden' || kind === 'provider_default_requires_abstract') {
-		shape(value, ['kind', 'requirement', 'provider', 'message'], [], label)
-		return Object.freeze({
-			kind,
-			requirement: definitionAddress(value.requirement, `${label}.requirement`),
-			provider: nodeAddress(value.provider, `${label}.provider`),
-			message,
-		})
-	}
-	shape(value, ['kind', 'binding', 'requirement', 'provider', 'message'], ['consumer'], label)
-	return Object.freeze({
-		kind: 'explicit_binding_invalid',
-		binding: literal(
-			value.binding,
-			['provider-default', 'dependency-override'],
-			`${label}.binding`,
-		),
-		...(value.consumer === undefined
-			? {}
-			: { consumer: nodeAddress(value.consumer, `${label}.consumer`) }),
-		requirement: definitionAddress(value.requirement, `${label}.requirement`),
-		provider: nodeAddress(value.provider, `${label}.provider`),
-		message,
-	})
-}
-
-function pluginApplyCommitSummary(input: unknown, label: string): PluginApplyCommitSummary {
-	const value = object(input, label)
-	shape(value, ['pluginChanges', 'runtimeUpdate', 'lifecycleReport'], [], label)
-	const changes = object(value.pluginChanges, `${label}.pluginChanges`)
-	shape(
-		changes,
-		['added', 'replaced', 'removed', 'restarted', 'availabilityChanged'],
-		[],
-		`${label}.pluginChanges`,
-	)
-	const runtimeUpdate = object(value.runtimeUpdate, `${label}.runtimeUpdate`)
-	shape(runtimeUpdate, [], ['reason'], `${label}.runtimeUpdate`)
-	const lifecycleReport = object(value.lifecycleReport, `${label}.lifecycleReport`)
-	shape(lifecycleReport, ['ok', 'issues'], [], `${label}.lifecycleReport`)
-	const issues = array(lifecycleReport.issues, `${label}.lifecycleReport.issues`).map(
-		(item, index) => lifecycleIssue(item, `${label}.lifecycleReport.issues[${index}]`),
-	)
-	const ok = boolean(lifecycleReport.ok, `${label}.lifecycleReport.ok`)
-	if (ok !== (issues.length === 0)) {
-		fail(`${label}.lifecycleReport.ok is inconsistent with issues`)
-	}
-	const parsedRuntimeUpdate =
-		runtimeUpdate.reason === undefined
-			? Object.freeze({})
-			: Object.freeze({ reason: text(runtimeUpdate.reason, `${label}.runtimeUpdate.reason`) })
-	return Object.freeze({
-		pluginChanges: Object.freeze({
-			added: addressArray(changes.added, `${label}.pluginChanges.added`),
-			replaced: Object.freeze(
-				array(changes.replaced, `${label}.pluginChanges.replaced`).map((item, index) => {
-					const replacementLabel = `${label}.pluginChanges.replaced[${index}]`
-					const replacement = object(item, replacementLabel)
-					shape(replacement, ['from', 'to'], [], replacementLabel)
-					return Object.freeze({
-						from: nodeAddress(replacement.from, `${replacementLabel}.from`),
-						to: nodeAddress(replacement.to, `${replacementLabel}.to`),
-					})
-				}),
-			),
-			removed: addressArray(changes.removed, `${label}.pluginChanges.removed`),
-			restarted: addressArray(changes.restarted, `${label}.pluginChanges.restarted`),
-			availabilityChanged: addressArray(
-				changes.availabilityChanged,
-				`${label}.pluginChanges.availabilityChanged`,
-			),
-		}),
-		runtimeUpdate: parsedRuntimeUpdate,
-		lifecycleReport: Object.freeze({ ok, issues: Object.freeze(issues) }),
-	})
-}
-
-function lifecycleIssue(input: unknown, label: string): PluginApplyLifecycleIssue {
-	const value = object(input, label)
-	shape(value, ['plugin', 'phase', 'kind', 'message'], ['error', 'blockedBy'], label)
-	return Object.freeze({
-		plugin: nodeAddress(value.plugin, `${label}.plugin`),
-		phase: literal(value.phase, LIFECYCLE_PHASES, `${label}.phase`),
-		kind: literal(value.kind, LIFECYCLE_KINDS, `${label}.kind`),
-		message: text(value.message, `${label}.message`),
-		...(value.error === undefined ? {} : { error: lifecycleError(value.error, `${label}.error`) }),
-		...(value.blockedBy === undefined
-			? {}
-			: { blockedBy: nodeAddress(value.blockedBy, `${label}.blockedBy`) }),
-	})
-}
-
-function lifecycleError(input: unknown, label: string): PluginApplyLifecycleErrorInfo {
-	const value = object(input, label)
-	shape(value, ['name', 'message'], ['stack', 'cause', 'partPath'], label)
-	return Object.freeze({
-		name: text(value.name, `${label}.name`),
-		message: text(value.message, `${label}.message`),
-		...(value.stack === undefined ? {} : { stack: text(value.stack, `${label}.stack`) }),
-		...(value.cause === undefined ? {} : { cause: text(value.cause, `${label}.cause`) }),
-		...(value.partPath === undefined
-			? {}
-			: {
-					partPath: Object.freeze(
-						array(value.partPath, `${label}.partPath`).map((item, index) =>
-							text(item, `${label}.partPath[${index}]`),
-						),
-					),
-				}),
-	})
 }
 
 function forkNodeAddress(input: unknown, label: string) {
@@ -1833,11 +1854,14 @@ function controlMutationSuccess(input: unknown, label: string): PluginControlMut
 		[],
 		`${label}.control`,
 	)
+	const report = pluginApplyReport(value.report, `${label}.report`)
+	if (pluginApplyReportOutcome(report).status !== 'applied')
+		fail(`${label}.ok is inconsistent with the Host application report`)
 	return Object.freeze({
 		address: nodeAddress(value.address, `${label}.address`),
 		ok: true,
 		status: 'applied',
-		report: pluginApplyReport(value.report, `${label}.report`),
+		report,
 		control: pluginControlSnapshot(controlValue, `${label}.control`),
 	})
 }
@@ -1845,7 +1869,29 @@ function controlMutationSuccess(input: unknown, label: string): PluginControlMut
 function controlMutationFailure(input: unknown, label: string): PluginControlMutationFailure {
 	const value = object(input, label)
 	if (value.ok !== false) fail(`${label}.ok must be false`)
-	shape(value, ['address', 'ok', 'code', 'state', 'error'], [], label)
+	if (value.code === 'lifecycle_failed') {
+		shape(value, ['address', 'ok', 'code', 'status', 'error', 'report', 'control'], [], label)
+		literal(value.status, ['applied-with-issues'], `${label}.status`)
+		const report = pluginApplyReport(value.report, `${label}.report`)
+		if (pluginApplyReportOutcome(report).status !== 'lifecycle_failed')
+			fail(`${label}.code is inconsistent with the Host application report`)
+		return Object.freeze({
+			address: nodeAddress(value.address, `${label}.address`),
+			ok: false,
+			code: 'lifecycle_failed',
+			status: 'applied-with-issues',
+			error: text(value.error, `${label}.error`),
+			report,
+			control: pluginControlSnapshot(object(value.control, `${label}.control`), `${label}.control`),
+		})
+	}
+	const hasReport = Object.hasOwn(value, 'report') || Object.hasOwn(value, 'control')
+	shape(
+		value,
+		['address', 'ok', 'code', 'state', 'error', ...(hasReport ? ['report', 'control'] : [])],
+		[],
+		label,
+	)
 	const code = literal(
 		value.code,
 		[
@@ -1866,6 +1912,22 @@ function controlMutationFailure(input: unknown, label: string): PluginControlMut
 		code === 'persistence_failed' ? ['unknown'] : ['unchanged'],
 		`${label}.state`,
 	)
+	if (hasReport) {
+		if (code !== 'persistence_failed')
+			fail(`${label}.report is only valid for application uncertainty`)
+		const report = pluginApplyReport(value.report, `${label}.report`)
+		if (pluginApplyReportOutcome(report).status !== 'persistence_failed')
+			fail(`${label}.code is inconsistent with the Host application report`)
+		return Object.freeze({
+			address: nodeAddress(value.address, `${label}.address`),
+			ok: false,
+			code: 'persistence_failed',
+			state: 'unknown',
+			error: text(value.error, `${label}.error`),
+			report,
+			control: pluginControlSnapshot(object(value.control, `${label}.control`), `${label}.control`),
+		})
+	}
 	return Object.freeze({
 		address: nodeAddress(value.address, `${label}.address`),
 		ok: false,
@@ -2007,14 +2069,7 @@ export function parseSecurityOverview(input: unknown): SecurityOverview {
 	const value = rootRecord(input, 'security overview')
 	shape(value, ['adminAccess', 'vault'], [], 'security overview')
 	const vault = object(value.vault, 'security overview.vault')
-	if (vault.enabled === false) {
-		shape(vault, ['enabled'], [], 'security overview.vault')
-		return Object.freeze({
-			adminAccess: adminAccessOverview(value.adminAccess, 'security overview.adminAccess'),
-			vault: Object.freeze({ enabled: false as const }),
-		})
-	}
-	if (vault.enabled !== true) fail('security overview.vault.enabled must be boolean')
+	if (vault.enabled !== true) fail('security overview.vault.enabled must be true')
 	shape(vault, ['enabled', 'state'], [], 'security overview.vault')
 	return Object.freeze({
 		adminAccess: adminAccessOverview(value.adminAccess, 'security overview.adminAccess'),
@@ -2366,18 +2421,18 @@ function nullableNodeAddress(input: unknown, label: string): PluginNodeAddress |
 	return input === null ? null : nodeAddress(input, label)
 }
 
+function forkAddress(input: unknown, label: string) {
+	const node = nodeAddress(input, label)
+	if (node.variant !== 'fork') fail(`${label} requires a fork node`)
+	return node
+}
+
 function definitionAddress(input: unknown, label: string): PluginDefinitionAddress {
 	try {
 		return parsePluginDefinitionAddress(input)
 	} catch (error) {
 		fail(`${label} is invalid: ${errorMessage(error)}`)
 	}
-}
-
-function addressArray(input: unknown, label: string): readonly PluginNodeAddress[] {
-	return Object.freeze(
-		array(input, label).map((item, index) => nodeAddress(item, `${label}[${index}]`)),
-	)
 }
 
 function runtimeLogLevel(input: unknown, label: string): RuntimePluginLogLevel {

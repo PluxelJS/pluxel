@@ -1,2 +1,2 @@
-export { pluginSource, requirePluginSource, PluginSourceRequiredError } from './source-contract'
+export { requirePluginSource, PluginSourceRequiredError } from './source-contract'
 export type { PluginSource } from './source-contract'

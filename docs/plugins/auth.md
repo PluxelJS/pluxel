@@ -8,7 +8,7 @@ description: 为 Workbench 工作台与 Management 管理接口提供 OIDC 单�
 ## 安装与快速配置
 
 ```sh
-pnpm add @pluxel/plugin-auth
+vp add @pluxel/plugin-auth
 ```
 
 在应用入口中注册 `AuthPlugin` 并设置认证模式：
@@ -20,19 +20,14 @@ import { AuthPlugin } from '@pluxel/plugin-auth'
 
 export default defineHostApplication(async (startup) => ({
 	name: 'my-app',
-	plugins: [AuthPlugin],
-	policy: { autoStart: [AuthPlugin] },
-	config: {
-		records: [
-			{
-				owner: AuthPlugin,
-				config: {
-					mode: { type: 'password' }, // 可选 'password'、'password_totp' 或 'oidc'
-				},
-			},
-		],
-	},
-	services: await servicesPreset(startup, {}),
+	plugins: [
+		{
+			plugin: AuthPlugin,
+			autoStart: true,
+			config: { mode: { type: 'password' } },
+		},
+	],
+	services: await servicesPreset(startup),
 }))
 ```
 

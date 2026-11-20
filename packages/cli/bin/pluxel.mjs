@@ -108,7 +108,7 @@ async function delegateToProjectLocalCli(cwd) {
 	const localExecutable = await resolveDeclaredCliBin(projectManifest)
 	if (!localExecutable) {
 		console.error(`[pluxel] ${projectManifest.path} declares @pluxel/cli, but it is not installed.`)
-		console.error('Run the project package manager install before invoking `pluxel`.')
+		console.error('Run `vp install` before invoking `pluxel`.')
 		process.exit(1)
 	}
 	let localRealpath

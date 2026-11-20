@@ -1,6 +1,11 @@
 import type { WorkbenchRendererScope } from '@pluxel/workbench/react'
 import type { PackageManagerWorkbench } from '../workbench.ts'
-import type { MarketInstallRequest, MarketPackageQuery, MarketReleaseQuery } from '../contracts.ts'
+import type {
+	MarketCatalogFilters,
+	MarketInstallRequest,
+	MarketPackageQuery,
+	MarketReleaseQuery,
+} from '../contracts.ts'
 
 export type PrepareInstallInput =
 	| Readonly<{ kind: 'direct'; specs: readonly string[] }>
@@ -37,6 +42,14 @@ export function createPackageManagerResources(
 		({ api }, input: Readonly<{ marketId: string; query: MarketPackageQuery }>) => ({
 			queryKey: ['package-manager', 'market', input.marketId, input.query] as const,
 			queryFn: () => api.marketPackagesDto(input.marketId, input.query),
+			staleTime: 30_000,
+		}),
+	)
+
+	const marketFacetsQuery = scope.queryFamily(
+		({ api }, input: Readonly<{ marketId: string; filters: MarketCatalogFilters }>) => ({
+			queryKey: ['package-manager', 'market-facets', input.marketId, input.filters] as const,
+			queryFn: () => api.marketFacetsDto(input.marketId, input.filters),
 			staleTime: 30_000,
 		}),
 	)
@@ -82,6 +95,7 @@ export function createPackageManagerResources(
 		prepareInstallMutation,
 		confirmInstallMutation,
 		marketPackagesQuery,
+		marketFacetsQuery,
 		marketPackageQuery,
 		marketReleaseQuery,
 		marketReleasesQuery,

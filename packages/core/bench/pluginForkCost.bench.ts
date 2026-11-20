@@ -5,9 +5,9 @@ import {
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
+import { createCoreContextHost } from '@pluxel/core/host'
 import {
 	consumePluginDefinitionCandidate,
-	createCoreRootContext,
 	requirePluginService,
 	type ConcretePluginDefinitionCandidate,
 } from '@pluxel/core/internal'
@@ -253,7 +253,7 @@ type Row = {
 async function runHost(
 	forks: number,
 ): Promise<Omit<Row, 'postDisposeHeapKiB' | 'postDisposeArrayBuffersKiB'>> {
-	const ctx = createCoreRootContext({ name: `fork-cost-${forks}` })
+	const ctx = createCoreContextHost({ name: `fork-cost-${forks}` }).createRoot()
 	const registry = requirePluginService(ctx)
 	const internals = internalsOf(registry)
 	const originalCreatePluginContext = internals.createPluginContext
@@ -410,7 +410,7 @@ async function runSize(forks: number): Promise<Row> {
 }
 
 async function fixedFamilyReplacement(background: number) {
-	const ctx = createCoreRootContext({ name: `fork-cost-background-${background}` })
+	const ctx = createCoreContextHost({ name: `fork-cost-background-${background}` }).createRoot()
 	const registry = requirePluginService(ctx)
 	const target = ForkCostProviderV1.nodeAddress()
 	const initial = registry.beginUpdate({ reason: `fixed-family-setup-${background}` })

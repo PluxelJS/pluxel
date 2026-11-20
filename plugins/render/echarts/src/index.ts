@@ -1,7 +1,8 @@
+import type { Workbench } from '@pluxel/workbench'
 import { Workers, defineWorkerTask, WorkerTaskError } from '@pluxel/services/workers'
 import { CanvasPlugin } from '@pluxel/plugin-canvas'
 import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/plugin-fonts'
-import { BasePlugin, Plugin, type Context } from '@pluxel/core'
+import { BasePlugin, Plugin, type Context, defineServiceRef } from '@pluxel/core'
 
 import type { EChartsOption, SetOptionOpts } from 'echarts'
 import { EChartsConfig, type EChartsPluginConfig } from './config.ts'
@@ -15,6 +16,7 @@ import { assertRenderDataBudget } from './render-input.ts'
 import type { EChartsWorkerInput, EChartsWorkerOutput } from './worker.ts'
 import { EChartsWorkbench } from './workbench.ts'
 
+const WorkbenchRef = defineServiceRef<Workbench>()
 const MAX_THEME_NAME_LENGTH = 128
 const BUILTIN_THEMES = new Set(['default', 'dark'])
 const EMPTY_THEME: EChartsTheme = Object.freeze({})
@@ -166,7 +168,7 @@ export class EChartsPlugin extends BasePlugin {
 			},
 			{ tag: 'echarts-generation' },
 		)
-		this.ctx.workbench?.publish(EChartsWorkbench, {
+		this.ctx.service(WorkbenchRef)?.publish(EChartsWorkbench, {
 			fonts: { provider: this.fonts },
 		})
 	}
@@ -275,7 +277,7 @@ export class EChartsPlugin extends BasePlugin {
 	): Promise<RenderEngineResult> {
 		let response: EChartsWorkerOutput
 		try {
-			response = await this.ctx.require(Workers).runPrepared(renderTask, prepare, {
+			response = await this.ctx.service(Workers).runPrepared(renderTask, prepare, {
 				signal,
 				inputOwnership: 'borrowed',
 			})

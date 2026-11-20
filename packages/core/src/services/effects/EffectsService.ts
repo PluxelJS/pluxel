@@ -292,7 +292,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 	scope(meta?: EffectsMeta, opts?: RegisterOpts, ownerCtx: PluxelContext = this.ctx): EffectsScope {
 		this.assertRegisterAllowed(opts)
 		// Child scopes are owned by default so parent disposal propagates.
-		return new EffectsScopeImpl(ownerCtx, { parent: this, meta, registerOpts: opts })
+		return new EffectsService(ownerCtx, { parent: this, meta, registerOpts: opts })
 	}
 
 	async transaction<R>(fn: (tx: Effects) => R | Promise<R>, parent?: TransactionState): Promise<R> {
@@ -547,7 +547,7 @@ class EffectsImpl implements Effects, EffectGuardHost {
 	}
 }
 
-class EffectsScopeImpl implements EffectsScope {
+export class EffectsService implements EffectsScope {
 	protected readonly impl: EffectsImpl
 	constructor(
 		public readonly ctx: PluxelContext,
@@ -583,11 +583,5 @@ class EffectsScopeImpl implements EffectsScope {
 
 	[Symbol.asyncDispose](): Promise<void> {
 		return this.dispose()
-	}
-}
-
-export class EffectsService extends EffectsScopeImpl {
-	constructor(ctx: PluxelContext, _cfg: unknown) {
-		super(ctx)
 	}
 }

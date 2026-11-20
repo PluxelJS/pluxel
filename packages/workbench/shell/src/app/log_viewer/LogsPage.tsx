@@ -1,9 +1,12 @@
 import { Box, Button, Checkbox, Group, Menu, Stack, Text } from '@mantine/core'
 import { parsePluginNodeReference, pluginNodeAddressEqual } from '@pluxel/core'
+import { OUTBOUND_HTTP_LOG_STREAM_ID } from '@pluxel/core/logging/protocol'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { RuntimeLogLine } from '../../runtime'
+import { buildOutboundHttpActivityHref, buildOutboundHttpNodeHref } from '../outbound-http/paths'
 import { usePluginOverview } from '../plugins/pluginOverview'
 import { buildLogsHref, type LogsSearch } from '../router/logsSearch'
+import { RouterLinkAdapter } from '../router/RouterLinkAdapter'
 import { useWorkbenchNavigation } from '../workbench/context'
 import { LogDetails } from './LogDetails'
 import { LogFilters } from './LogFilters'
@@ -22,10 +25,14 @@ function LogDocument({ search }: { search: LogsSearch }) {
 		[search.plugin],
 	)
 	const { overview } = usePluginOverview()
+	const outboundHttp = search.stream === OUTBOUND_HTTP_LOG_STREAM_ID
+	const showStreamFilter = search.stream !== undefined && (!outboundHttp || owner !== undefined)
 	const label = owner
 		? (overview?.status.statuses.find((entry) => pluginNodeAddressEqual(entry.address, owner))
 				?.label ?? search.plugin)
-		: '全部日志'
+		: outboundHttp
+			? '联网日志'
+			: '全部日志'
 	const { store, status, error, meta, clear, retry } = useLogStream({
 		streamId: search.stream ?? 'default',
 		filter: {
@@ -56,7 +63,7 @@ function LogDocument({ search }: { search: LogsSearch }) {
 				<Text size="sm" fw={600} title={search.plugin} truncate style={{ maxWidth: '100%' }}>
 					{label}
 				</Text>
-				{owner && <LogPolicyPopover owner={owner} />}
+				{owner && !outboundHttp && <LogPolicyPopover owner={owner} />}
 				<Text size="xs" c={error ? 'red' : 'dimmed'} role="status">
 					{status === 'loading'
 						? '正在读取…'
@@ -68,6 +75,28 @@ function LogDocument({ search }: { search: LogsSearch }) {
 					· {store.length.toLocaleString()} 条
 				</Text>
 				<Group gap="xs" wrap="wrap" ml="auto">
+					{outboundHttp && (
+						<>
+							{owner && (
+								<Button
+									component={RouterLinkAdapter}
+									to={buildOutboundHttpNodeHref(owner)}
+									size="compact-xs"
+									variant="subtle"
+								>
+									出站设置
+								</Button>
+							)}
+							<Button
+								component={RouterLinkAdapter}
+								to={buildOutboundHttpActivityHref(owner)}
+								size="compact-xs"
+								variant="subtle"
+							>
+								出站总览
+							</Button>
+						</>
+					)}
 					<Button
 						size="compact-xs"
 						variant={follow ? 'default' : 'light'}
@@ -111,7 +140,7 @@ function LogDocument({ search }: { search: LogsSearch }) {
 					</Button>
 				</Group>
 			</Group>
-			{(owner || search.stream || search.context || search.category || search.displayName) && (
+			{(owner || showStreamFilter || search.context || search.category || search.displayName) && (
 				<Group
 					gap="xs"
 					px="xs"
@@ -128,9 +157,9 @@ function LogDocument({ search }: { search: LogsSearch }) {
 							清除插件筛选
 						</Button>
 					)}
-					{search.stream && (
+					{showStreamFilter && (
 						<Text size="xs" c="dimmed">
-							日志流：{search.stream}
+							{outboundHttp ? '联网日志' : `日志流：${search.stream}`}
 						</Text>
 					)}
 					{search.displayName && (
