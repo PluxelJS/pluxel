@@ -161,11 +161,7 @@ export function PluginProvidedCapability({
 						<Select
 							size="xs"
 							label="全局默认实现"
-							description={
-								canChangeDefault
-									? '影响所有依赖此能力且未单独指定实现的插件。'
-									: '默认实现策略由宿主声明控制或只读。'
-							}
+							description={canChangeDefault ? '用于未单独指定实现的插件' : '只读'}
 							data={selectData}
 							value={policy.defaultProvider ? pluginNodeIndexKey(policy.defaultProvider) : null}
 							onChange={handleChange}

@@ -48,7 +48,7 @@ describe('Workbench update status semantics', () => {
 		}
 		const markup = renderToStaticMarkup(<WorkbenchUpdateStatus />)
 		expect(markup).toContain('HMR 已应用')
-		expect(markup).toContain('界面产物就绪后会自动载入')
+		expect(markup).toContain('最近批次已应用')
 	})
 	it('only promises the previous version remains available during candidate preparation', () => {
 		state.snapshot = {
@@ -60,10 +60,10 @@ describe('Workbench update status semantics', () => {
 			trigger: null,
 			error: null,
 		}
-		expect(renderToStaticMarkup(<WorkbenchUpdateStatus />)).toContain('当前版本继续提供服务')
+		expect(renderToStaticMarkup(<WorkbenchUpdateStatus />)).toContain('当前版本继续服务')
 		state.snapshot = { ...state.snapshot, phase: 'commit' }
 		const markup = renderToStaticMarkup(<WorkbenchUpdateStatus />)
-		expect(markup).toContain('正在切换运行版本')
-		expect(markup).not.toContain('当前版本继续提供服务')
+		expect(markup).toContain('正在切换版本')
+		expect(markup).not.toContain('当前版本继续服务')
 	})
 })

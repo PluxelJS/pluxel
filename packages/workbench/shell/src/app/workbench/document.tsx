@@ -93,9 +93,7 @@ export class WorkbenchDocumentState {
 				modal = openConfirmModal({
 					title: '此文档有未保存的更改',
 					returnFocus: false,
-					children: editor?.save
-						? '保存成功后继续，或取消并保留输入。'
-						: '继续会放弃此文档的未保存更改。',
+					children: editor?.save ? '保存后继续，或取消以保留输入。' : '继续将放弃未保存的更改。',
 					labels: { confirm: editor?.save ? '保存并继续' : '放弃更改并继续', cancel: '保留文档' },
 					onConfirm: () => finish(editor?.save ? 'save' : 'discard'),
 					onCancel: cancel,

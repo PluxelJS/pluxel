@@ -96,13 +96,13 @@ function PluginPanel({ identity, id }: { identity: PanelIdentity; id: string }) 
 	if (!entry)
 		return (
 			<Alert color="gray" title="面板暂不可用">
-				当前插件尚未发布此面板。可以关闭它，并从插件信息的扩展面板列表重新打开可用面板。
+				当前插件未发布此面板。
 			</Alert>
 		)
 	if (runtime.runningPluginsReady && !runtime.runningPluginKeys.has(pluginNodeIndexKey(owner)))
 		return (
 			<Alert color="gray" title="插件未运行">
-				启动当前插件后可使用此面板。
+				启动插件后可用。
 			</Alert>
 		)
 	return (

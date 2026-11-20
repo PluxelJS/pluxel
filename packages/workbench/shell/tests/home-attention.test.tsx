@@ -148,7 +148,8 @@ describe('home attention panel', () => {
 			plugin('beta', { desiredState: 'stopped', lifecycleState: 'stopped' }),
 		])
 		;({ section } = await render())
-		expect(section.textContent).toContain('2 个插件的运行状态与期望一致')
+		expect(section.textContent).toContain('运行正常')
+		expect(section.querySelector('.plx-home__sectionHeader')).toBeNull()
 	})
 
 	it('links each plugin needing attention and reports a failed runtime update', async () => {
@@ -178,7 +179,7 @@ describe('home attention panel', () => {
 		expect(rows[0]!.textContent).toContain('port in use')
 		expect(rows[1]!.textContent).toContain('等待启动')
 		expect(section.textContent).toContain('1 个异常 · 1 个等待启动')
-		expect(section.textContent).toContain('已恢复到上一版本')
+		expect(section.textContent).toContain('已恢复上一版本')
 		expect(section.textContent).toContain('SyntaxError: boom')
 		const metric = container.querySelector('.plx-home__metric[data-tone="attention"]')
 		expect(metric?.textContent).toContain('2')

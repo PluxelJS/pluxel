@@ -74,7 +74,12 @@ function write(root: Record<string, unknown>, path: readonly string[], value: un
  * rejected as "Cannot serialize value"), so records are plain and keys are defined, not assigned.
  */
 function setOwn(target: Record<string, unknown>, key: string, value: unknown): void {
-	Object.defineProperty(target, key, { value, enumerable: true, configurable: true, writable: true })
+	Object.defineProperty(target, key, {
+		value,
+		enumerable: true,
+		configurable: true,
+		writable: true,
+	})
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -92,11 +97,11 @@ export function applyConfigSources(
 		const source = sources.find((item) => contains(item.path, path))
 		const origin =
 			source?.kind === 'env'
-				? `当前生效值来自环境变量 ${source.name ?? ''}`
+				? `来自环境变量 ${source.name ?? ''}`
 				: source?.kind === 'file'
-					? `当前生效值来自文件 ${source.name ?? ''}`
+					? `来自文件 ${source.name ?? ''}`
 					: source?.kind === 'declaration'
-						? '当前生效值来自应用声明'
+						? '来自应用声明'
 						: undefined
 		let effective: unknown = effectiveInput
 		for (const segment of path) effective = isRecord(effective) ? effective[segment] : undefined
@@ -105,12 +110,15 @@ export function applyConfigSources(
 			!(field.kind === 'string' && field.control === 'password')
 		let output: unknown = config
 		for (const segment of path) output = isRecord(output) ? output[segment] : undefined
+		const effectiveText = effective === undefined ? undefined : JSON.stringify(effective)
+		const outputText = output === undefined ? undefined : JSON.stringify(output)
+		// The field already shows the saved input; only surface values it cannot show.
 		const inherited =
-			displayScalar && effective !== undefined
-				? `当前有效输入：${JSON.stringify(effective)}`
-				: undefined
+			displayScalar && origin && effectiveText !== undefined ? `生效值 ${effectiveText}` : undefined
 		const target =
-			displayScalar && output !== undefined ? `目标配置：${JSON.stringify(output)}` : undefined
+			displayScalar && outputText !== undefined && outputText !== effectiveText
+				? `解析为 ${outputText}`
+				: undefined
 		const description = [field.meta.description, origin, inherited, target]
 			.filter(Boolean)
 			.join('。')

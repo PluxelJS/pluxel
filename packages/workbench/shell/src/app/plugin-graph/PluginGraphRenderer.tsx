@@ -340,9 +340,7 @@ export function PluginGraphRenderer({
 				<div className="plx-pluginGraphRelations__header">
 					<div>
 						<strong id="plugin-graph-relations-title">依赖关系</strong>
-						<span>
-							提供方 → 使用方 · {model.connectedNodes.length} 个节点 · {model.edges.length} 条关系
-						</span>
+						<span>提供方 → 使用方</span>
 					</div>
 					<div className="plx-pluginGraphHeaderActions">
 						<div className="plx-pluginGraphLegend" aria-label="依赖关系图例">
@@ -408,8 +406,7 @@ export function PluginGraphRenderer({
 
 				{model.edges.length === 0 ? (
 					<div className="plx-pluginGraphRelations__empty" role="status">
-						<strong>当前筛选下没有依赖关系</strong>
-						<span>可以查看独立节点，或切换到“声明关系”。</span>
+						<strong>没有依赖关系</strong>
 					</div>
 				) : (
 					/* oxlint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex -- This spatial viewport is an ARIA application with keyboard-equivalent pan and zoom controls. */
@@ -569,7 +566,6 @@ export function PluginGraphRenderer({
 					<div className="plx-pluginGraphUnconnectedPanel__heading">
 						<div>
 							<strong>独立节点</strong>
-							<span>当前筛选下没有可见关系，不代表 Plugin 无效</span>
 						</div>
 						<button
 							type="button"

@@ -37,9 +37,9 @@ describe('plugin catalog overview', () => {
 			exportName: 'Running',
 			executionLabel: '更新未报告',
 			recentUpdateSearchTerms: expect.arrayContaining(['restored-previous', '补偿']),
-			recentUpdateWarningLabel: '应用重载失败 · 已用上一应用定义恢复',
+			recentUpdateWarningLabel: '应用重载失败 · 已恢复上一版本',
 			recentUpdateWarningTone: 'yellow',
-			recentUpdateWarningDescription: expect.stringContaining('全新补偿宿主'),
+			recentUpdateWarningDescription: expect.stringContaining('补偿宿主'),
 		})
 	})
 })

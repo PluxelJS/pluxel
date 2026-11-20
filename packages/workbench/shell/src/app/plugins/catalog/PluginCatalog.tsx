@@ -356,7 +356,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 						title: autoStart ? '已批量开启自动启动' : '已批量关闭自动启动',
 						message: (
 							<Group gap={6} align="center" wrap="nowrap">
-								<Box component="span">{batch.length} 个 Plugin 的当前会话状态保持不变</Box>
+								<Box component="span">{batch.length} 个插件</Box>
 								<ActionIcon
 									size="sm"
 									variant="subtle"
@@ -392,7 +392,7 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 												} else {
 													notifyAndRecord({
 														title: '已恢复原策略',
-														message: `${batch.length} 个 Plugin 的自动启动策略已恢复`,
+														message: `${batch.length} 个插件`,
 														color: 'green',
 													})
 												}
@@ -500,7 +500,6 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 			<EmptyState
 				icon={<IconPlugConnected size={28} stroke={1.5} />}
 				title="暂无插件"
-				description="安装插件后，这里会显示所有可用的插件列表。"
 				minHeight={160}
 			/>
 		)
@@ -510,7 +509,6 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 			<EmptyState
 				icon={<IconSearchOff size={28} stroke={1.5} />}
 				title={emptyTitle}
-				description="尝试其他关键词搜索。"
 				minHeight={160}
 			/>
 		)

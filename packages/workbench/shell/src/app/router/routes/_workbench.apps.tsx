@@ -1,4 +1,4 @@
-import { Box, Stack, Text, Title } from '@mantine/core'
+import { Box, Stack, Title } from '@mantine/core'
 import { createFileRoute } from '@tanstack/react-router'
 import { WorkspaceNavigation } from '../../workbench/WorkspaceNavigation'
 
@@ -8,9 +8,6 @@ function AppsRoute() {
 			<Title order={2} size="h4">
 				应用
 			</Title>
-			<Text size="sm" c="dimmed">
-				打开业务应用，在标签页中处理日常工作。
-			</Text>
 			<Box flex={1} mih={0}>
 				<WorkspaceNavigation mode="publications" />
 			</Box>

@@ -37,10 +37,10 @@ export function InvalidatedSession({ cause }: { cause: RuntimeSessionEvent['caus
 			<Text c="dimmed">{sessionInvalidationMessage(cause)}</Text>
 			<Text size="sm" role="status">
 				{decision === 'automatic'
-					? '正在自动重新载入，保留当前地址与工作区布局…'
+					? '正在重新载入…'
 					: decision === 'frequent'
-						? '短时间内更新过于频繁，已暂停自动刷新。待更新完成后可重新载入。'
-						: '请重新载入以建立新的会话。'}
+						? '更新过于频繁，已暂停自动载入'
+						: '请重新载入'}
 			</Text>
 			<Button
 				onClick={() => {
@@ -59,11 +59,11 @@ export function InvalidatedSession({ cause }: { cause: RuntimeSessionEvent['caus
 function sessionInvalidationMessage(cause: RuntimeSessionEvent['cause']): string {
 	switch (cause) {
 		case 'workbench':
-			return '插件或界面已更新，需要载入新版本。'
+			return '插件或界面已更新'
 		case 'authentication':
-			return '认证设置已变化，需要重新确认会话。'
+			return '认证设置已变化'
 		case 'service-restart':
-			return 'Runtime 管理服务已重启，需要建立新的会话。'
+			return 'Runtime 管理服务已重启'
 	}
 }
 

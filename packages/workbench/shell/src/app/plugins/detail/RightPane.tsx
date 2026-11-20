@@ -47,10 +47,7 @@ export function RightPane({ config }: { config: PluginConfigState }) {
 				params={EMPTY_PARAMS}
 			/>
 		) : (
-			<EmptyState
-				title="入口不可用"
-				description={`未找到入口：${search.entry}。请检查插件权限和发布状态。`}
-			/>
+			<EmptyState title="入口不可用" description={`未找到入口：${search.entry}`} />
 		)
 	if (restPath && restPath !== '/config')
 		return (
@@ -124,14 +121,7 @@ function ConfigContent({
 			</Center>
 		)
 	if (!config.data || !config.data.snapshot || config.data.fields.length === 0)
-		return (
-			<EmptyState
-				icon={<IconSettingsOff size={28} />}
-				title="暂无可配置项"
-				description="该插件未声明可在 Workbench 中编辑的配置。"
-				minHeight={200}
-			/>
-		)
+		return <EmptyState icon={<IconSettingsOff size={28} />} title="暂无可配置项" minHeight={200} />
 	return (
 		<ConfigForm
 			owner={owner}

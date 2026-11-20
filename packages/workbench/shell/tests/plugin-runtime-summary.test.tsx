@@ -94,7 +94,7 @@ describe('plugin runtime summary', () => {
 			'来源@fixture/tools',
 		])
 		expect(container.textContent).not.toContain('暂无描述')
-		expect(container.textContent).not.toContain('本进程暂无更新记录')
+		expect(container.textContent).not.toContain('暂无更新记录')
 		expect(details.textContent).toContain('构建模块')
 		expect(details.textContent).toContain('package:@fixture/tools::ToolsPlugin')
 	})
@@ -102,11 +102,11 @@ describe('plugin runtime summary', () => {
 	it.each([
 		{ outcome: 'retained-previous', phase: 'evaluate', label: '更新失败 · 已保留上一版本' },
 		{ outcome: 'applied-with-issues', phase: 'lifecycle', label: '上次更新 · 启动失败' },
-		{ outcome: 'applied-with-issues', phase: 'commit', label: '本批更新已提交 · 提交后异常' },
+		{ outcome: 'applied-with-issues', phase: 'commit', label: '已提交 · 提交后异常' },
 		{
 			outcome: 'restored-previous',
 			phase: 'application-reload',
-			label: '应用重载失败 · 已用上一应用定义恢复',
+			label: '应用重载失败 · 已恢复上一版本',
 		},
 	] as const)(
 		'keeps $outcome / $phase and runtime issues visible outside diagnostics',

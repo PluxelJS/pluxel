@@ -15,14 +15,14 @@ function platform(override: Partial<PluxelPlatformSnapshot> = {}): PluxelPlatfor
 describe('Workbench platform notice', () => {
 	it('calls out Cloudflare Workers runtime constraints', () => {
 		expect(platformNotice(platform({ runtime: { name: 'workerd', version: null } }))).toContain(
-			'Cloudflare Workers runtime',
+			'运行于 Cloudflare Workers',
 		)
 	})
 
 	it('distinguishes provider detection from the JavaScript runtime', () => {
 		expect(
 			platformNotice(platform({ deployment: { provider: 'cloudflare_workers', ci: false } })),
-		).toContain('检测到 Cloudflare Workers 部署环境')
+		).toContain('Cloudflare Workers 部署')
 	})
 
 	it('does not show a warning for a normal Node host', () => {

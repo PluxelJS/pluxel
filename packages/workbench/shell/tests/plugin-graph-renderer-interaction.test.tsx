@@ -95,9 +95,7 @@ describe('plugin graph renderer interaction', () => {
 		expect(node?.getAttribute('aria-label')).toContain('Plugin 节点')
 		expect(node?.getAttribute('aria-label')).toContain('运行中')
 		expect(node?.getAttribute('aria-label')).toContain('当前有效图')
-		expect(container.querySelector('[role="status"]')?.textContent).toContain(
-			'当前筛选下没有依赖关系',
-		)
+		expect(container.querySelector('[role="status"]')?.textContent).toContain('没有依赖关系')
 		expect(container.querySelector('.plx-pluginGraphMiniMap')).toBeNull()
 
 		await act(async () => {

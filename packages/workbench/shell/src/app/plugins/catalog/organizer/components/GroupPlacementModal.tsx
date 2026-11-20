@@ -41,7 +41,7 @@ export function GroupPlacementModal({
 			>
 				<Stack gap="sm">
 					<Text size="sm" c="dimmed">
-						将当前选中的 {count} 个插件移动到目标分组。移动后会保持选中状态，便于继续批量操作。
+						已选 {count} 个插件
 					</Text>
 					<Select
 						autoFocus

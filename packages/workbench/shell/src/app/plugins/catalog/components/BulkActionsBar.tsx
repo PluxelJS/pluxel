@@ -22,7 +22,7 @@ export function BulkActionsBar({ count, busy, canChangeAutoStart, onAction }: Pr
 					variant="subtle"
 					disabled={busy || !canChangeAutoStart}
 					onClick={() => onAction('auto-start-off')}
-					title="关闭自动启动（不停止当前会话）"
+					title="关闭自动启动"
 					aria-label="关闭自动启动"
 				>
 					<IconBan size={14} />
@@ -32,7 +32,7 @@ export function BulkActionsBar({ count, busy, canChangeAutoStart, onAction }: Pr
 					variant="subtle"
 					disabled={busy || !canChangeAutoStart}
 					onClick={() => onAction('auto-start-on')}
-					title="开启自动启动（不启动当前会话）"
+					title="开启自动启动"
 					aria-label="开启自动启动"
 				>
 					<IconPower size={14} />

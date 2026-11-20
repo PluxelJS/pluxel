@@ -643,8 +643,7 @@ export class WorkspaceSession {
 		const confirmed = await new Promise<boolean>((resolve) =>
 			openConfirmModal({
 				title: '恢复默认布局',
-				children:
-					'将关闭所有文档并重新载入工作区。固定或受保护标签须先解除保护；已保存的业务修改不会撤销。',
+				children: '将关闭所有文档并重新载入工作区。',
 				labels: { confirm: '关闭文档并恢复布局', cancel: '保留工作区' },
 				onConfirm: () => resolve(true),
 				onCancel: () => resolve(false),

@@ -333,22 +333,19 @@ function ConfigFormInstance({
 		>
 			{readOnly ? (
 				<Text size="sm" c="dimmed">
-					当前宿主的配置只读。
+					配置只读
 				</Text>
 			) : null}
 			{!snapshot.ok ? (
 				<Text size="sm" c="red">
-					当前有效配置未通过校验：{snapshot.message}。请修改保存输入后重新提交。
+					当前配置未通过校验：{snapshot.message}
 				</Text>
 			) : null}
 			{snapshot.shadowedPaths.length > 0 ? (
 				<Text size="sm" c="dimmed">
-					部分保存值被应用声明覆盖；修改这些值不会立即改变当前生效配置。
+					部分值被应用声明覆盖，修改后不会立即生效。
 				</Text>
 			) : null}
-			<Text size="xs" c="dimmed">
-				表单编辑保存输入。未设置的字段继续继承声明或插件默认值。
-			</Text>
 			{active ? (
 				<Box className="plx-pluginWorkbench__configToolbar">
 					<ConfigActionDock

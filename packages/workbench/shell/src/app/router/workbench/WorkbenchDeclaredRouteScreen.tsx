@@ -37,7 +37,7 @@ export function WorkbenchDeclaredRouteScreen({ pathname }: { pathname: string })
 			<Stack p="md" gap="md" style={{ overflowY: 'auto' }}>
 				<Text fw={600}>这个路径有多个注册来源</Text>
 				<Text size="sm" c="dimmed">
-					{pathname} 无法唯一定位页面，请使用下方完整链接。
+					{pathname} 对应多个页面，请选择：
 				</Text>
 				<WorkbenchRouteConflictList routes={conflicts} pathname={pathname} />
 			</Stack>

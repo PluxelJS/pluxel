@@ -441,12 +441,12 @@ export function PluginDependencyDetailCard() {
 				{!graph.detail ? <PluginProvidedCapability control={providerPolicy} /> : null}
 				{graph.detail && graph.error ? (
 					<Text size="xs" c="yellow">
-						刷新失败，当前显示上一次成功读取的数据：{graph.error}
+						刷新失败，显示上次数据：{graph.error}
 					</Text>
 				) : null}
 				{graph.detail && controls.error ? (
 					<Text size="xs" c="yellow">
-						候选实现读取失败，关系仍可查看：{controls.error}
+						候选实现读取失败：{controls.error}
 					</Text>
 				) : null}
 			</Stack>
@@ -484,7 +484,7 @@ function DependencyImplementationControl({
 			children: (
 				<Box>
 					<Text size="sm" c="dimmed">
-						从 {base.displayName} 创建当前依赖专用的独立实例；选择后由依赖关系按需启动。
+						从 {base.displayName} 创建专用实例，按需启动。
 					</Text>
 					<TextInput
 						autoFocus
@@ -510,7 +510,7 @@ function DependencyImplementationControl({
 						notifyAndRecord({
 							title: 'Fork 已创建并选择',
 							message: deferred
-								? `${base.displayName} / ${normalized}；当前未运行，将由依赖关系按需启动。`
+								? `${base.displayName} / ${normalized}，将按需启动`
 								: `${base.displayName} / ${normalized}`,
 							color: 'green',
 						})
@@ -605,7 +605,7 @@ function DependencyImplementationControl({
 												children: (
 													<Text size="sm" title={formatPluginNodeReference(option.address)}>
 														将删除 {option.displayName} / {option.address.forkId}{' '}
-														的运行时意图、配置与日志覆盖； 业务数据不会被清理。
+														的运行意图、配置与日志设置，业务数据保留。
 													</Text>
 												),
 												labels: { confirm: '删除', cancel: '取消' },
@@ -617,7 +617,7 @@ function DependencyImplementationControl({
 															if (result.ok === false) {
 																const detail =
 																	result.code === 'fork_referenced'
-																		? `仍被 ${result.references.length} 个依赖覆盖引用，请先清除引用。`
+																		? `仍被 ${result.references.length} 个依赖引用`
 																		: result.error
 																throw new Error(detail)
 															}

@@ -120,7 +120,7 @@ describe('plugin execution presentation', () => {
 			badgeLabel: '宿主重载',
 			badgeTone: 'orange',
 			artifactLabel: '构建模块',
-			updateLabel: '应用及固定插件变化时重建宿主',
+			updateLabel: '应用或固定插件变化时重建宿主',
 			searchTerms: expect.arrayContaining(['host-reload', '宿主重载', 'vite', 'fixed']),
 		})
 	})
@@ -246,7 +246,7 @@ describe('plugin execution presentation', () => {
 				lifecycle: null,
 			}),
 		).toMatchObject({
-			label: '本批更新已提交 · 提交后异常',
+			label: '已提交 · 提交后异常',
 			tone: 'red',
 			meta: '#9 · 3 ms · 提交阶段',
 		})
@@ -262,11 +262,11 @@ describe('plugin execution presentation', () => {
 				lifecycle: null,
 			}),
 		).toMatchObject({
-			label: '应用重载失败 · 已用上一应用定义恢复',
+			label: '应用重载失败 · 已恢复上一版本',
 			tone: 'yellow',
-			meta: '#10 · 125 ms · 已启动全新补偿宿主，未复活旧运行代',
+			meta: '#10 · 125 ms · 已启动补偿宿主',
 		})
-		expect(describePluginRecentUpdate(null).label).toBe('本进程暂无更新记录')
+		expect(describePluginRecentUpdate(null).label).toBe('暂无更新记录')
 	})
 	it('does not turn a healthy node red because its application update contains another failure', () => {
 		const result = describePluginRecentUpdate({

@@ -141,7 +141,7 @@ describe('config action dock', () => {
 		try {
 			const input = container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!
 			expect(input.matches(':disabled')).toBe(true)
-			expect(container.textContent).toContain('当前宿主的配置只读')
+			expect(container.textContent).toContain('配置只读')
 			await act(async () => {
 				input.click()
 				input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -169,7 +169,7 @@ describe('config action dock', () => {
 			expect(buttonWithText(container, '撤销').disabled).toBe(true)
 			expect(notify).toHaveBeenCalledExactlyOnceWith({
 				title: '配置已保存',
-				message: '目标配置已被当前插件采用。',
+				message: '已生效。',
 				color: 'green',
 			})
 			await act(async () =>

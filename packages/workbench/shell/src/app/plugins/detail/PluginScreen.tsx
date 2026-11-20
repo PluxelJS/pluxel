@@ -85,7 +85,6 @@ export const PluginScreen = memo(function PluginScreen({ pluginRoute }: PluginSc
 			<EmptyState
 				icon={<IconPuzzle size={28} stroke={1.5} />}
 				title="请选择一个插件"
-				description="从左侧列表选择插件以查看详情。"
 				minHeight="100%"
 			/>
 		)

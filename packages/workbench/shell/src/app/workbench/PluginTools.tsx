@@ -28,10 +28,7 @@ export function PluginTool() {
 	})
 	const owner = activeId ? session.documents.get(activeId)?.plugin : undefined
 	if (!visible || !session.activeWorkspace()) return null
-	if (!owner)
-		return (
-			<EmptyState title="请选择插件" description="打开插件配置或页面后，此处跟随当前活动插件。" />
-		)
+	if (!owner) return <EmptyState title="未选择插件" />
 	const route = formatPluginNodeRoute(owner)
 	return (
 		<Tabs

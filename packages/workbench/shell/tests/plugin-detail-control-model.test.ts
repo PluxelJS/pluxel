@@ -227,8 +227,8 @@ describe('plugin detail control presentation', () => {
 				report: applyReport([]),
 			}),
 		).toEqual({
-			title: '命令已提交，运行状态仍未收敛',
-			message: 'Discord 当前仍未运行，请检查协调问题与依赖状态。',
+			title: '命令已提交，状态未收敛',
+			message: 'Discord 仍未运行',
 			color: 'yellow',
 		})
 	})

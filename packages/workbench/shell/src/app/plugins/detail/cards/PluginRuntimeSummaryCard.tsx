@@ -114,9 +114,6 @@ export function PluginRuntimeSummaryCard({
 								{detail}
 							</Text>
 						))}
-						<Text size="xs" c="dimmed">
-							以上为上次更新记录；是否已恢复请看当前状态。
-						</Text>
 					</Stack>
 				) : null}
 

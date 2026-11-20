@@ -11,7 +11,7 @@ export class WorkspaceRestoreError extends Error {
 		readonly storage: WorkspaceSnapshotStorage,
 		cause: unknown,
 	) {
-		super('工作区布局无法恢复。保存的现场未被改写；可以重试，或显式删除布局后重新打开。', { cause })
+		super('工作区布局无法恢复，已保存的布局未被改动。', { cause })
 		storage.blocked = true
 	}
 }

@@ -117,7 +117,7 @@ export function PluginGraphScreen({ pathname }: { pathname: string }) {
 		return (
 			<ErrorState
 				title="依赖图不可用"
-				message={graphState.error ?? 'Runtime 没有返回可用的依赖图 snapshot。'}
+				message={graphState.error ?? 'Runtime 未返回依赖图'}
 				onRetry={() => void graphState.refetch()}
 				minHeight="100%"
 			/>
@@ -140,9 +140,6 @@ export function PluginGraphScreen({ pathname }: { pathname: string }) {
 								</Badge>
 							) : null}
 						</Group>
-						<Text size="xs" c="dimmed">
-							从提供方指向使用方；必须依赖为实线，可选集成为虚线。
-						</Text>
 					</Stack>
 					<Group gap="xs" wrap="wrap">
 						<SegmentedControl
@@ -212,16 +209,12 @@ export function PluginGraphScreen({ pathname }: { pathname: string }) {
 
 			{graphState.error ? (
 				<Alert color="yellow" icon={<IconAlertTriangle size={17} />}>
-					刷新失败，当前显示上一次成功读取的数据：{graphState.error}
+					刷新失败，显示上次数据：{graphState.error}
 				</Alert>
 			) : null}
 
 			{model.nodes.length === 0 ? (
-				<EmptyState
-					title="当前筛选没有节点"
-					description="切换到声明关系或调整 relation filter 后重试。"
-					minHeight={320}
-				/>
+				<EmptyState title="当前筛选没有节点" minHeight={320} />
 			) : (
 				<div className="plx-pluginGraphWorkspace" data-has-selection={selection ? 'true' : 'false'}>
 					<Suspense
@@ -351,7 +344,7 @@ function PluginGraphInspector({
 					</Button>
 				</>
 			) : (
-				<Alert color="gray">该节点只存在于浏览器声明视图，不会写入 catalog 或持久状态。</Alert>
+				<Alert color="gray">仅存在于声明视图</Alert>
 			)}
 		</InspectorShell>
 	)

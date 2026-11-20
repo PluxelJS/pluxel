@@ -24,7 +24,7 @@ export function GroupEditorModal({
 		<Modal opened={opened} onClose={onClose} title="编辑插件分组" centered>
 			<Stack gap="sm">
 				<Text size="sm" c="dimmed">
-					保存后固定当前分组。删除分组会将成员移回未分组；新插件继续按依赖自动归类。
+					删除分组后，成员移回未分组。
 				</Text>
 				{draft.map((group) => (
 					<Group key={group.groupId} wrap="nowrap">

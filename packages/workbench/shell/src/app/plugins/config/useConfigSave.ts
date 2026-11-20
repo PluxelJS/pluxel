@@ -51,19 +51,14 @@ export function useConfigSave({ owner }: { owner: PluginNodeAddress }) {
 			const retention =
 				result.persistence.status === 'confirmed' ? result.persistence.retention : undefined
 			const persistenceMessage =
-				retention === 'session'
-					? '本次会话已更新，重建宿主后不保留。'
-					: retention === 'unknown'
-						? '写入已确认，跨重启保留能力由宿主后端决定。'
-						: ''
-			const shadowed =
-				result.shadowedPaths.length > 0 ? '部分保存值被声明覆盖，当前生效值保持其来源规则。' : ''
+				retention === 'session' ? '仅本次会话有效。' : retention === 'unknown' ? '' : ''
+			const shadowed = result.shadowedPaths.length > 0 ? '部分值被声明覆盖。' : ''
 			const applicationMessage =
 				result.application === 'saved-not-applied'
-					? (result.applyFailure?.message ?? '运行中的插件尚未采用当前目标配置。')
+					? (result.applyFailure?.message ?? '插件尚未采用新配置。')
 					: result.application === 'deferred'
-						? '目标配置将在插件启动时采用。'
-						: '目标配置已被当前插件采用。'
+						? '将在插件启动时生效。'
+						: '已生效。'
 			notifyAndRecord({
 				title:
 					result.persistence.status === 'unchanged'

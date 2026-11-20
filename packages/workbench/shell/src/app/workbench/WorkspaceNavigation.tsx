@@ -536,7 +536,7 @@ ${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalon
 			</ScrollArea>
 			{!compact && (
 				<Text size="xs" c="dimmed">
-					↑↓ 选择，Enter 打开入口或执行命令。
+					↑↓ 选择 · Enter 打开
 				</Text>
 			)}
 			<Modal
@@ -548,7 +548,7 @@ ${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalon
 			>
 				<Stack gap="sm">
 					<Text size="sm" c="dimmed">
-						将路径中的参数替换为实际值。此入口仍使用插件声明的路由和认证。
+						将路径参数替换为实际值。
 					</Text>
 					<TextInput
 						label="页面路径"

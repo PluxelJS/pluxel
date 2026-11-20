@@ -130,10 +130,7 @@ function RuntimeSessionGate() {
 	}
 	return (
 		<GatePanel title="正在准备 Workbench">
-			<Text c="dimmed">连接 Runtime，并准备插件与 Workbench 视图…</Text>
-			<Text size="xs" c="dimmed">
-				首次启动或界面变更后，部分视图会显示后台构建状态；失败会留在对应位置。
-			</Text>
+			<Text c="dimmed">正在连接 Runtime…</Text>
 		</GatePanel>
 	)
 }

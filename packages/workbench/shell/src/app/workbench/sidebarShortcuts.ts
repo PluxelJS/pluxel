@@ -46,7 +46,7 @@ export function resolveSidebarShortcut(
 	const url = new URL(location, 'https://workbench.invalid')
 	const params = matchWorkbenchRoute(route.compiled, url.pathname)
 	if (!params || Object.entries(params).some(([name, value]) => value === `:${name}`)) {
-		return { ...display, unavailable: '页面路径已改变，请在应用中重新固定' }
+		return { ...display, unavailable: '页面路径已改变，请重新固定' }
 	}
 	return {
 		...display,

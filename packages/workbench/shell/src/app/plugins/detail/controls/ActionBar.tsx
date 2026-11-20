@@ -52,9 +52,7 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 			}
 			notifyAndRecord({
 				title: autoStart ? '已开启自动启动' : '已关闭自动启动',
-				message: autoStart
-					? `${pluginLabel} 将在宿主启动时自动请求运行；当前会话状态不变。`
-					: `${pluginLabel} 当前会话状态不变。`,
+				message: autoStart ? `${pluginLabel} 将随宿主启动` : pluginLabel,
 				color: 'green',
 			})
 		} catch (error: unknown) {
@@ -106,12 +104,7 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 			if (effectiveDependents.length > 0) {
 				openConfirmModal({
 					title: '停止 Plugin？',
-					children: (
-						<Text size="sm">
-							停止本次会话会影响 {effectiveDependents.length} 个当前生效的必须依赖方；
-							自动启动策略不会改变。
-						</Text>
-					),
+					children: <Text size="sm">将影响 {effectiveDependents.length} 个必须依赖它的插件。</Text>,
 					labels: { confirm: '停止', cancel: '取消' },
 					confirmProps: { color: 'red' },
 					onConfirm: () => void performLifecycleCommand(command),
@@ -134,7 +127,7 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 			title: '前置依赖不可用',
 			children: (
 				<div>
-					<div>运行时会协调启动可用但尚未运行的依赖；以下依赖当前无法启动：</div>
+					<div>以下依赖当前无法启动：</div>
 					<div style={{ marginTop: 10 }}>
 						{unavailable
 							.map((item) => {
@@ -184,7 +177,7 @@ export function ActionBar({ active = true }: { active?: boolean }) {
 			<Tooltip
 				label={
 					!canWriteAutoStart
-						? '自动启动策略由宿主声明控制或只读'
+						? '自动启动策略只读'
 						: autoStartPending
 							? '正在保存自动启动策略…'
 							: presentation.autoStartDescription

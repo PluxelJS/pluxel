@@ -238,8 +238,7 @@ export function WorkbenchShell() {
 	const closeDocuments = () =>
 		openConfirmModal({
 			title: '关闭所有文档',
-			children:
-				'将关闭全部文档，包括折叠分组中的文档。固定或受保护文档会阻止关闭；未保存更改仍需确认。',
+			children: '包括折叠分组中的文档；固定或受保护的文档不会关闭。',
 			labels: { confirm: '关闭所有文档', cancel: '保留工作区' },
 			confirmProps: { color: 'red' },
 			onConfirm: () => {
@@ -289,7 +288,7 @@ export function WorkbenchShell() {
 		{
 			id: 'close-all',
 			label: '关闭所有文档',
-			description: '文档 · 保留布局，需确认',
+			description: '文档',
 			keywords: 'close all tabs 标签',
 			disabled: !count || pending,
 			run: closeDocuments,
@@ -297,7 +296,7 @@ export function WorkbenchShell() {
 		{
 			id: 'reset-layout',
 			label: '恢复默认布局',
-			description: '布局 · 关闭文档并重新载入',
+			description: '布局',
 			keywords: 'reset layout 重置',
 			disabled: pending,
 			run: resetLayout,
@@ -373,9 +372,9 @@ export function WorkbenchShell() {
 							<Menu.Item onClick={() => setHelpOpen(true)}>键盘操作</Menu.Item>
 							<Menu.Divider />
 							<Menu.Item color="red" disabled={!count} onClick={closeDocuments}>
-								关闭所有文档（保留布局）
+								关闭所有文档
 							</Menu.Item>
-							<Menu.Item onClick={resetLayout}>恢复默认布局（关闭文档并重新载入）</Menu.Item>
+							<Menu.Item onClick={resetLayout}>恢复默认布局</Menu.Item>
 						</Menu.Dropdown>
 					</Menu>
 				</Group>
@@ -492,9 +491,6 @@ export function WorkbenchShell() {
 							<Text size="sm">{description}</Text>
 						</Group>
 					))}
-					<Text c="dimmed" size="xs">
-						工作区命令忽略文本输入；命令面板可在输入时打开。箭头键遵循原生标签和菜单的焦点规则。
-					</Text>
 				</Stack>
 			</Modal>
 		</div>

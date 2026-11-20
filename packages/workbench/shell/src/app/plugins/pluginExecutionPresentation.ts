@@ -113,7 +113,7 @@ export function describePluginExecution(
 				badgeTone: 'gray',
 				currentLabel: execution.origin === 'fixed' ? 'Native 固定插件' : 'Native 来源插件',
 				artifactLabel: artifactLabel(execution.artifact.kind),
-				updateLabel: '新进程启动时接纳发布',
+				updateLabel: '新进程启动时生效',
 				searchTerms: [
 					'native',
 					execution.origin,
@@ -131,7 +131,7 @@ export function describePluginExecution(
 						badgeTone: 'orange',
 						currentLabel: 'Vite 固定插件',
 						artifactLabel: artifactLabel(execution.artifact.kind),
-						updateLabel: '应用及固定插件变化时重建宿主',
+						updateLabel: '应用或固定插件变化时重建宿主',
 						searchTerms: [
 							'vite',
 							'fixed',
@@ -245,7 +245,7 @@ function describeUpdateBatch(
 ): Omit<PluginRecentUpdatePresentation, 'warning' | 'batchLabel' | 'details'> {
 	if (!update) {
 		return {
-			label: '本进程暂无更新记录',
+			label: '暂无更新记录',
 			tone: 'gray',
 			meta: null,
 			searchTerms: ['none', 'no-update', '暂无更新记录', '本进程暂无更新记录'],
@@ -264,7 +264,7 @@ function describeUpdateBatch(
 		case 'applied-with-issues': {
 			const lifecycleIssue = update.phase === 'lifecycle'
 			return {
-				label: lifecycleIssue ? '本批更新已提交 · 部分生命周期异常' : '本批更新已提交 · 提交后异常',
+				label: lifecycleIssue ? '已提交 · 部分生命周期异常' : '已提交 · 提交后异常',
 				tone: 'red',
 				meta: `${attempt} · ${lifecycleIssue ? '生命周期阶段' : '提交阶段'}`,
 				searchTerms: [
@@ -284,9 +284,9 @@ function describeUpdateBatch(
 			}
 		case 'restored-previous':
 			return {
-				label: '应用重载失败 · 已用上一应用定义恢复',
+				label: '应用重载失败 · 已恢复上一版本',
 				tone: 'yellow',
-				meta: `${attempt} · 已启动全新补偿宿主，未复活旧运行代`,
+				meta: `${attempt} · 已启动补偿宿主`,
 				searchTerms: [
 					'restored-previous',
 					'application-reload',
@@ -294,7 +294,7 @@ function describeUpdateBatch(
 					'补偿',
 					'更新失败',
 					'上一应用定义',
-					'全新补偿宿主',
+					'补偿宿主',
 				],
 			}
 		case 'retained-previous':

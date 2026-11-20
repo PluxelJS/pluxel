@@ -154,7 +154,7 @@ export function LogPolicyPopover({ owner }: { owner: PluginNodeAddress }) {
 		<Stack gap="xs" style={{ minHeight: 0 }}>
 			<Group gap="xs" justify="space-between">
 				<Text size="xs" c="dimmed">
-					当前插件可单独设置级别；默认级别影响所有继承它的插件。
+					日志级别
 				</Text>
 				<Group gap="xs" wrap="nowrap">
 					<Button

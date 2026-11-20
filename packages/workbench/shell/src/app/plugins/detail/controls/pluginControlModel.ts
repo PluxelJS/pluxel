@@ -81,13 +81,13 @@ export function describePluginControl(
 			? failure.message
 			: !available
 				? wantsRunning
-					? '当前 Plugin node 不可用，无法启动；仍可停止以清除本次会话运行意图'
-					: '当前 Plugin node 不可用，无法启动或重启'
+					? '插件不可用；可停止以清除运行意图'
+					: '插件不可用'
 				: running
 					? `由${status.activationReason ? ACTIVATION_REASON_LABEL[status.activationReason] : '运行时协调'}激活`
 					: wantsRunning
-						? '运行时仍期望该 Plugin 运行，可重试启动或停止本次会话意图'
-						: '当前会话不要求该 Plugin 运行',
+						? '期望运行但未运行'
+						: '未要求运行',
 		primaryCommand,
 		primaryLabel,
 		primaryTone,
@@ -96,9 +96,7 @@ export function describePluginControl(
 		canStop: pending === null && (running || wantsRunning),
 		canChangeAutoStart: available || status.autoStart,
 		autoStartActionLabel: status.autoStart ? '关闭自动启动' : '开启自动启动',
-		autoStartDescription: status.autoStart
-			? '宿主启动时自动请求运行；关闭不会停止当前会话'
-			: '宿主启动时不自动运行；仍可单独启动当前会话',
+		autoStartDescription: status.autoStart ? '随宿主启动' : '不随宿主启动',
 		sessionIntentLabel: SESSION_INTENT_LABEL[status.sessionIntent],
 		desiredStateLabel: wantsRunning ? '期望运行' : '期望停止',
 		activationReasonLabel: status.activationReason
@@ -147,8 +145,8 @@ export function describePluginLifecycleOutcome(
 	const running = result.control.lifecycleState === 'running'
 	if (running !== expectedRunning) {
 		return Object.freeze({
-			title: '命令已提交，运行状态仍未收敛',
-			message: `${pluginLabel} 当前仍${running ? '在运行' : '未运行'}，请检查协调问题与依赖状态。`,
+			title: '命令已提交，状态未收敛',
+			message: `${pluginLabel} 仍${running ? '在运行' : '未运行'}`,
 			color: 'yellow',
 		})
 	}

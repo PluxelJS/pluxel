@@ -27,30 +27,12 @@
 	max-width: 640px;
 }
 
-.plx-home__eyebrow,
-.plx-home__sectionKicker {
-	color: var(--mantine-primary-color-light-color);
-	font-size: var(--mantine-font-size-xs);
-	font-weight: 800;
-	letter-spacing: 0.11em;
-	line-height: 1.2;
-	text-transform: uppercase;
-}
-
 .plx-home__title {
 	font-size: var(--mantine-h1-font-size);
 	font-weight: 720;
 	letter-spacing: -0.035em;
 	line-height: 1.1;
 	margin-top: 7px;
-}
-
-.plx-home__description {
-	color: var(--mantine-color-dimmed);
-	font-size: var(--mantine-font-size-md);
-	line-height: 1.55;
-	margin-top: 9px;
-	max-width: 620px;
 }
 
 .plx-home__platform {
@@ -65,10 +47,6 @@
 	line-height: 1.45;
 	max-width: 680px;
 	padding: 10px 12px;
-}
-
-.plx-home__heroActions {
-	margin-top: 15px;
 }
 
 .plx-home__runtimeSummary {
@@ -175,27 +153,11 @@
 	min-width: 0;
 }
 
-.plx-home__workspaceTitleLine {
-	align-items: baseline;
-	display: grid;
-	gap: 8px;
-	grid-template-columns: minmax(0, 1fr) auto;
-	min-width: 0;
-}
-
 .plx-home__workspaceTitle {
 	font-weight: 700;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-}
-
-.plx-home__workspaceMeta {
-	color: var(--mantine-color-dimmed);
-	font-size: var(--mantine-font-size-xs);
-	font-weight: 800;
-	letter-spacing: 0.08em;
-	text-transform: uppercase;
 }
 
 .plx-home__pluginQueues {
@@ -402,20 +364,6 @@
 
 	.plx-home__title {
 		font-size: var(--mantine-font-size-xl);
-	}
-
-	.plx-home__description {
-		font-size: var(--mantine-font-size-md);
-		line-height: 1.65;
-	}
-
-	.plx-home__heroActions {
-		align-items: stretch;
-		flex-direction: column;
-	}
-
-	.plx-home__heroActions > * {
-		width: 100%;
 	}
 
 	.plx-home__workspaceCard {

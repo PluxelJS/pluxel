@@ -249,9 +249,7 @@ function UnavailableFederatedWorkbenchEntryView({
 				title={failed ? 'Workbench View 构建失败' : 'Workbench View 正在构建'}
 				tone={failed ? 'error' : 'muted'}
 			>
-				{failed
-					? unavailable.message
-					: '对应界面产物正在后台构建，完成后 Workbench 会话会自动刷新。'}
+				{failed ? unavailable.message : '构建完成后自动刷新'}
 			</InlineNotice>
 		</WorkbenchErrorBoundary>
 	)
