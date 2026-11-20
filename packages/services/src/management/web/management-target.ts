@@ -52,7 +52,8 @@ export type RuntimeLogStreamsIndex = Readonly<{ streams: readonly LogStreamMeta[
 
 export type RuntimeLogRangeQuery = Readonly<{
 	epoch: number
-	fromSeq: string
+	/** Omit to read the most recent matching records. */
+	fromSeq?: string
 	limit?: number
 	filter?: LogFilter
 }>
@@ -66,7 +67,7 @@ export type RuntimeLogObserver = (event: unknown) => Promise<void>
 
 export type RuntimeOutboundHttpSaveDto =
 	| Readonly<{ ok: true; value: OutboundHttpSaveResult }>
-	| Readonly<{ ok: false; code: 'revision_conflict'; error: string }>
+	| Readonly<{ ok: false; code: 'revision_conflict' | 'management_disabled'; error: string }>
 
 /** Disposal is the only cancellation operation for a live Management subscription. */
 export interface RuntimeSubscriptionTarget extends RpcTarget {}

@@ -110,6 +110,7 @@ it('serves a real authenticated socket for a Core Host and leaves it alive when 
 		expect(await client.catalog.snapshot()).toMatchObject({ summary: { total: 1, running: 0 } })
 		const address = ManagedWorker.nodeAddress()
 		const outbound = await client.outboundHttp.get(address)
+		if (!outbound.managed) throw new Error('Expected managed outbound HTTP')
 		const saved = await client.outboundHttp.save(address, outbound.revision, { timeoutMs: 1_200 })
 		expect(saved.snapshot).toMatchObject({
 			owner: address,

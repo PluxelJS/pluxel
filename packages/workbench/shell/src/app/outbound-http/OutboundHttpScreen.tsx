@@ -48,11 +48,15 @@ export function OutboundHttpScreen({ owner }: { owner?: PluginNodeAddress }) {
 		queryKey: managementQueryKeys.outboundHttpScope(null),
 		queryFn: () => management.outboundHttp.get(null),
 	})
+	const snapshot = query.data
+	const records = snapshot?.managed ? snapshot.records : undefined
+	const hasRequestLogs = records === 'requests'
 	const logs = useLogStream({
 		streamId: OUTBOUND_HTTP_LOG_STREAM_ID,
 		filter: { plugin: owner },
 		capacity: 12,
 		historyLimit: 12,
+		enabled: hasRequestLogs,
 	})
 	const version = useSyncExternalStore(
 		logs.store.subscribe,
@@ -62,56 +66,60 @@ export function OutboundHttpScreen({ owner }: { owner?: PluginNodeAddress }) {
 	const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 	const { refetch } = query
 	useEffect(() => {
-		if (!logs.meta || refreshTimer.current !== undefined) return
+		if (!hasRequestLogs || !logs.meta || refreshTimer.current !== undefined) return
 		// Reconcile the Host's roster after stream resets and batches of request records.
 		refreshTimer.current = setTimeout(() => {
 			refreshTimer.current = undefined
 			void refetch()
 		}, 500)
-	}, [version, logs.meta, refetch])
+	}, [hasRequestLogs, version, logs.meta, refetch])
 	useEffect(
 		() => () => {
 			clearTimeout(refreshTimer.current)
 			refreshTimer.current = undefined
 		},
-		[],
+		[hasRequestLogs],
 	)
 	const ownerKey = owner ? pluginNodeIndexKey(owner) : undefined
 	const activity = useMemo(() => {
-		const items = query.data?.activity ?? []
+		const items = snapshot?.managed ? snapshot.activity : []
 		return ownerKey ? items.filter((item) => pluginNodeIndexKey(item.owner) === ownerKey) : items
-	}, [query.data?.activity, ownerKey])
+	}, [snapshot, ownerKey])
 
 	return (
 		<Stack h="100%" gap="md" p="var(--plx-page-padding)" style={{ minWidth: 0, overflow: 'auto' }}>
 			<Group justify="space-between" gap="xs">
 				<Title order={1} size="h3">
-					受管出站 HTTP
+					{snapshot?.managed === false ? '出站 HTTP' : '受管出站 HTTP'}
 				</Title>
 				<Group gap="xs">
-					<Button
-						component={RouterLinkAdapter}
-						to={buildOutboundHttpLogsHref(owner)}
-						size="compact-sm"
-						variant="default"
-					>
-						完整联网日志
-					</Button>
-					<Button
-						component={RouterLinkAdapter}
-						to={OUTBOUND_HTTP_DEFAULTS_PATH}
-						size="compact-sm"
-						variant="default"
-					>
-						宿主默认设置
-					</Button>
+					{hasRequestLogs && (
+						<Button
+							component={RouterLinkAdapter}
+							to={buildOutboundHttpLogsHref(owner)}
+							size="compact-sm"
+							variant="default"
+						>
+							完整联网日志
+						</Button>
+					)}
+					{snapshot?.managed && (
+						<Button
+							component={RouterLinkAdapter}
+							to={OUTBOUND_HTTP_DEFAULTS_PATH}
+							size="compact-sm"
+							variant="default"
+						>
+							宿主默认设置
+						</Button>
+					)}
 					<Button
 						size="compact-sm"
 						variant="subtle"
 						loading={query.isFetching}
 						onClick={() => {
 							void refetch()
-							if (logs.error) logs.retry()
+							if (hasRequestLogs && logs.error) logs.retry()
 						}}
 					>
 						刷新
@@ -123,22 +131,39 @@ export function OutboundHttpScreen({ owner }: { owner?: PluginNodeAddress }) {
 					<Text size="sm" fw={600} style={wrapText}>
 						{(ownerKey && labels.get(ownerKey)) ?? formatPluginNodeReference(owner)}
 					</Text>
-					<Anchor component={RouterLinkAdapter} to={buildOutboundHttpNodeHref(owner)} size="xs">
-						出站设置
-					</Anchor>
+					{snapshot?.managed && (
+						<Anchor component={RouterLinkAdapter} to={buildOutboundHttpNodeHref(owner)} size="xs">
+							出站设置
+						</Anchor>
+					)}
 					<Anchor component={RouterLinkAdapter} to={OUTBOUND_HTTP_PATH} size="xs">
 						全部节点
 					</Anchor>
 				</Group>
 			)}
-			{query.data ? (
+			{snapshot ? (
 				<>
 					{query.isRefetchError && (
 						<Alert color="red" title="刷新出站活动失败">
 							{runtimeErrorMessage(query.error)}
 						</Alert>
 					)}
-					<OutboundActivity activity={activity} labels={labels} filtered={owner !== undefined} />
+					{snapshot.managed === false ? (
+						<Text size="sm" c="dimmed">
+							宿主使用平台 Fetch 或部署声明的传输，保留插件生命周期取消。
+						</Text>
+					) : records === 'off' ? (
+						<Text size="sm" c="dimmed">
+							宿主已关闭联网记录。
+						</Text>
+					) : (
+						<OutboundActivity
+							activity={activity}
+							labels={labels}
+							filtered={owner !== undefined}
+							hasRequestLogs={hasRequestLogs}
+						/>
+					)}
 				</>
 			) : query.isPending ? (
 				<Group role="status">
@@ -154,42 +179,44 @@ export function OutboundHttpScreen({ owner }: { owner?: PluginNodeAddress }) {
 					onRetry={() => void refetch()}
 				/>
 			)}
-			<Stack gap="xs" component="section" aria-label="最近联网记录">
-				<Group gap="xs">
-					<Title order={2} size="h5">
-						最近联网记录
-					</Title>
-					{logs.status === 'live' && (
-						<Text size="xs" c="dimmed">
-							实时更新
+			{hasRequestLogs && (
+				<Stack gap="xs" component="section" aria-label="最近联网记录">
+					<Group gap="xs">
+						<Title order={2} size="h5">
+							最近联网记录
+						</Title>
+						{logs.status === 'live' && (
+							<Text size="xs" c="dimmed">
+								实时更新
+							</Text>
+						)}
+					</Group>
+					{logs.error ? (
+						<ErrorState title="联网日志读取失败" message={logs.error} onRetry={logs.retry} />
+					) : logs.store.length === 0 ? (
+						<Text size="sm" c="dimmed" role="status">
+							{logs.status === 'loading' ? '正在读取联网日志…' : '暂无联网记录'}
 						</Text>
+					) : (
+						<ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+							{logs.store
+								.toArray()
+								.toReversed()
+								.map((line, index) => (
+									<li key={`${line.epoch}:${line.seq}`}>
+										<LogRow
+											line={line}
+											preview
+											showName={!owner}
+											striped={index % 2 === 1}
+											ansi={false}
+										/>
+									</li>
+								))}
+						</ol>
 					)}
-				</Group>
-				{logs.error ? (
-					<ErrorState title="联网日志读取失败" message={logs.error} onRetry={logs.retry} />
-				) : logs.store.length === 0 ? (
-					<Text size="sm" c="dimmed" role="status">
-						{logs.status === 'loading' ? '正在读取联网日志…' : '暂无联网记录'}
-					</Text>
-				) : (
-					<ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-						{logs.store
-							.toArray()
-							.toReversed()
-							.map((line, index) => (
-								<li key={`${line.epoch}:${line.seq}`}>
-									<LogRow
-										line={line}
-										preview
-										showName={!owner}
-										striped={index % 2 === 1}
-										ansi={false}
-									/>
-								</li>
-							))}
-					</ol>
-				)}
-			</Stack>
+				</Stack>
+			)}
 		</Stack>
 	)
 }
@@ -198,10 +225,12 @@ const OutboundActivity = memo(function OutboundActivity({
 	activity,
 	labels,
 	filtered,
+	hasRequestLogs,
 }: {
 	activity: readonly OutboundHttpActivity[]
 	labels: ReadonlyMap<string, string>
 	filtered: boolean
+	hasRequestLogs: boolean
 }) {
 	const items = [...activity].sort((a, b) => b.lastAttemptAt - a.lastAttemptAt)
 	return (
@@ -258,7 +287,7 @@ const OutboundActivity = memo(function OutboundActivity({
 														to={buildOutboundHttpActivityHref(item.owner)}
 														size="xs"
 													>
-														联网记录
+														{hasRequestLogs ? '联网记录' : '联网摘要'}
 													</Anchor>
 												</Group>
 											)}

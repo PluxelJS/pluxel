@@ -4,11 +4,11 @@ Core 通过 `PluginContext.wretch` 提供原生 Wretch，通过 `PluginContext.f
 
 ## 归属与接纳
 
-一个 Host 共享一份出站运行时和队列。请求归取得传输句柄的节点及运行代。Part 共用所属运行代，跨插件调用中 B 使用自己的 Context 发送的请求归 B。停止、替换或关闭通过既有 owner admission 撤回句柄并取消在途请求。原生响应体由调用方读取或取消，运行代和 Host 的取消信号继续关联响应流。 [能力寿命](PROVIDER_WITHDRAWAL_AUDIT.md)
+受管 Host 共享一份出站运行时和队列。请求归取得传输句柄的节点及运行代。Part 共用所属运行代，跨插件调用中 B 使用自己的 Context 发送的请求归 B。停止、替换或关闭通过既有 owner admission 撤回句柄并取消在途请求。原生响应体由调用方读取或取消，运行代和 Host 的取消信号继续关联响应流。`managed: false` 的宿主使用相同的生命周期边界，直接调用平台或部署提供的 Fetch。客户端首次请求时绑定运行代信号，第一个参数与调用方原输入相同。 [能力寿命](PROVIDER_WITHDRAWAL_AUDIT.md)
 
-传输先校验绝对 HTTP(S) URL，再按已应用策略判定。排队期间策略可能变化，出队时重新判定。并发占位与单次超时从接纳开始，到 Fetch 返回响应头或失败结束。两入口共用同一阈值，Wretch 的每次重试重新接纳。部署可通过 `coreConfig.http.fetch` 注入最终传输。注入的传输接收已应用策略的 `Request`，遵守它的取消信号，并转交 Node 代理使用的每请求 Dispatcher。测试宿主使用同一契约。 [接纳与传输](../packages/core/src/http/runtime.ts)
+受管传输先校验绝对 HTTP(S) URL，再按已应用策略判定。排队期间策略可能变化，出队时按变化后的策略重新判定。并发占位与单次超时从接纳开始，到 Fetch 返回响应头或失败结束。两入口共用同一阈值，Wretch 的每次重试重新接纳。部署可通过 `coreConfig.http.fetch` 注入最终传输。受管模式的注入传输接收已应用策略的 `Request`，遵守它的取消信号，并转交 Node 代理使用的每请求 Dispatcher。测试宿主使用同一契约。 [接纳与传输](../packages/core/src/http/runtime.ts)
 
-部署、宿主管理默认和节点规则的 origin 约束取交集。省略该层即继承，显式空数组拒绝该范围的受管请求。启用任何 origin 限制时，URL 或字符串输入省略 `redirect` 采用 `error`。已有 `Request` 按 `init` 覆盖其原有值。最终为 `follow` 的请求在传输前被拒绝，`manual` 采用平台原生响应。调用方通过受管 Fetch 显式发下一跳时再次进入同一判定。 [Fetch 重定向](https://fetch.spec.whatwg.org/#http-fetch)
+部署、宿主管理默认和节点规则的 origin 约束取交集。省略该层即继承，显式空数组拒绝该范围的受管请求。启用任何 origin 限制时，URL 或字符串输入省略 `redirect` 采用 `error`。已有 `Request` 按 `init` 覆盖其原有值。最终为 `follow` 的请求在传输前被拒绝，`manual` 采用平台原生响应。`error` 在传输层用 `manual` 发一跳，遇到重定向即取消响应体并以 `TypeError` 失败，兼容只接纳 `follow` 和 `manual` 的 workerd。调用方通过受管 Fetch 显式发下一跳时再次进入同一判定。 [Fetch 重定向](https://fetch.spec.whatwg.org/#http-fetch) · [Workers Request](https://developers.cloudflare.com/workers/runtime-apis/request/)
 
 策略拒绝以核心的 `OutboundHttpError.code` 表达。队列容量、origin、重定向模式和 Dispatcher 冲突都有独立分类。HTTP 状态和传输异常保留上游语义，Wretch 按自己的协议处理 Fetch 结果。请求显式设置的头优先，受管节点默认值与宿主默认值依次补缺。 [配置](../docs/host/configuration.md#受管出站-http) · [输入校验](../packages/core/src/http/options.ts)
 
@@ -24,6 +24,14 @@ Node 代理由根运行时惰性创建并关闭原生 Undici ProxyAgent。运行
 
 Workbench 通过已有认证的 Management 会话读取出站活动。总览跟随联网日志流，有新记录时重新读取 Host 的节点摘要。节点覆盖在插件详情的出站设置中编辑，来回跳转保留精确节点筛选。宿主与节点共用规则编辑器，各字段旁显示宿主返回的生效值。Headless 使用同一运行时和保存输入。 [Workbench 操作](../docs/workbench/operations.md#查看受管出站-http)
 
-Core 按节点保留本次 Host 运行期间的摘要，区分策略拒绝、传输失败和收到响应。已结算的尝试写入 Host 自有的 `pluxel:outbound-http` 日志流，复用 `RuntimeLogStore` 并保留最近 5,000 条。每条记录含 canonical 节点地址、方法、origin、耗时和结果。URL 路径、查询、请求头和正文留在请求本身。日志流由受管传输记录，独立于插件调试级别和 LogTape 配置。同进程插件的全网络强制控制需要按插件身份隔离的执行环境和网络出口策略。 [日志存储](LOGGING.md#runtime-store)
+受管模式的 `records` 由宿主创建时确定。`summary` 按节点保留当前实例内的最近结果和计数。`requests` 同时向 `pluxel:outbound-http` 写入已结算的尝试，保留最近 5,000 条。每条包含 canonical 节点地址、方法、origin、耗时和结果。URL 路径、查询、请求头和正文留在请求本身。`off` 跳过观测计时、节点计数和日志对象构造。日志流独立于插件调试级别和 LogTape 配置。同进程插件的全网络强制控制需要按插件身份隔离的执行环境和网络出口策略。 [日志存储](LOGGING.md#runtime-store)
+
+Workbench 初次读取从宿主取最近匹配的记录。省略日志 range 的 `fromSeq` 时，存储从尾部用分块索引筛选，仍按序号升序交付。达到 RPC 字节预算后按已有游标续读。实时订阅合并队列中连续的 append，复用入队时的字节计数，保留有界队列和缺口恢复。
 
 回归入口包括 Core 的公开 Context 消费、排队策略变更、停止、保存、原生 Node 代理交接，以及 Services 的授权管理和独立安装测试。 [Core 回归](../packages/core/tests/plugins/OutboundHttp.test.ts) · [交付消费者](../packages/services/tests/installed/services.smoke.mjs)
+
+## Workers 部署接手
+
+- **Host 启动。** 以 browser 条件打包的最小静态 `@pluxel/host/browser` 可生成模块，但仓库当前的 Miniflare 5.20261103.0-beta 在加载 ZenFS 时失败。`FileSystem` 初始化调用 `crypto.randomUUID()`，然后经 `StoreFS` 在模块作用域创建内存文件系统。该 workerd 组合中，`nodejs_compat` 及在 handler 内动态 import 都复现。验收入口是带真实静态插件定义的 Worker Host，在 handler 内启动插件并执行请求。 [Browser Host 入口](../packages/host/src/browser.ts) · [持久化边界](FS.md)
+- **出站传输。** 在同一 workerd 组合中，原生 `Fetcher` Service Binding 返回 200，两次构造 `Request` 后仍能读取 `cf.cacheTtl`，`manual` 返回原生 302，`error` 在构造阶段失败。HTTP 层现在按上面的单跳契约处理 `error`。完整的 Host 启动与 HTTP 联测依赖前一项。公网走平台 Fetch。服务绑定由部署方通过 `coreConfig.http.fetch` 接入，origin 规则使用绑定对应的逻辑 URL。 [Service Binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/http/) · [Workers Request](https://developers.cloudflare.com/workers/runtime-apis/request/)
+- **请求生存期与观测。** HTTP 调用发生在当前 Worker handler，将当次 `request.signal` 传入插件方法。宿主长期状态只保存可复用的配置和资源。内存记录以宿主实例为范围，跨实例查询需由 Worker 部署提供相应观测数据。 [Workers 请求作用域](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/) · [Workers 取消信号](https://developers.cloudflare.com/workers/configuration/compatibility-flags/)

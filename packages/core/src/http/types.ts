@@ -3,6 +3,9 @@ import type { PluginNodeAddress } from '../plugins/runtime/identity'
 /** The callable Web Fetch contract, without runtime-specific static helpers. */
 export type OutboundFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
+/** Keep per-node counts, counts and request history, or neither. */
+export type OutboundHttpRecords = 'summary' | 'requests' | 'off'
+
 export type OutboundHttpSettings = Readonly<{
 	/** Omit to inherit. An empty list denies all managed requests in this scope. */
 	allowedOrigins?: readonly string[]
@@ -15,17 +18,26 @@ export type OutboundHttpSettings = Readonly<{
 }>
 
 /** Settings supplied by the Host before any saved policy is loaded. */
-export type OutboundHttpOptions = OutboundHttpSettings &
-	Readonly<{
-		/** Trusted transport used after applying policy. Defaults to platform Fetch. */
-		fetch?: OutboundFetch
-		/** Default 64. */
-		maxConcurrentRequests?: number
-		/** Default 256. Zero disables queueing. */
-		maxQueuedRequests?: number
-		/** Allow saved overrides to select a proxy on supported hosts. */
-		allowProxyChanges?: boolean
-	}>
+export type OutboundHttpOptions =
+	| Readonly<{
+			/** Keep lifecycle cancellation and use Fetch directly. */
+			managed: false
+			fetch?: OutboundFetch
+	  }>
+	| (OutboundHttpSettings &
+			Readonly<{
+				managed?: true
+				/** Default requests. */
+				records?: OutboundHttpRecords
+				/** Trusted transport used after applying policy. Defaults to platform Fetch. */
+				fetch?: OutboundFetch
+				/** Default 64. */
+				maxConcurrentRequests?: number
+				/** Default 256. Zero disables queueing. */
+				maxQueuedRequests?: number
+				/** Allow saved overrides to select a proxy on supported hosts. */
+				allowProxyChanges?: boolean
+			}>)
 
 export type OutboundHttpEffectiveSettings = Readonly<{
 	allowedOrigins?: readonly string[]
@@ -54,7 +66,9 @@ export type OutboundHttpActivity = Readonly<{
 	lastCode?: string
 }>
 
-export type OutboundHttpSnapshot = Readonly<{
+export type ManagedOutboundHttpSnapshot = Readonly<{
+	managed: true
+	records: OutboundHttpRecords
 	revision: number
 	owner: PluginNodeAddress | null
 	settings: OutboundHttpSettings
@@ -63,7 +77,11 @@ export type OutboundHttpSnapshot = Readonly<{
 	activity: readonly OutboundHttpActivity[]
 }>
 
+export type OutboundHttpSnapshot =
+	| Readonly<{ managed: false; owner: PluginNodeAddress | null }>
+	| ManagedOutboundHttpSnapshot
+
 export type OutboundHttpSaveResult = Readonly<{
-	snapshot: OutboundHttpSnapshot
+	snapshot: ManagedOutboundHttpSnapshot
 	cleanupError?: string
 }>

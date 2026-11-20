@@ -12,6 +12,7 @@ import {
 	comparePluginDefinitionAddress,
 	comparePluginNodeAddress,
 	formatPluginNodeReference,
+	OutboundHttpError,
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
 	pluginDefinitionIndexKey,
@@ -890,15 +891,23 @@ export function parseOutboundHttpSaveResult(input: unknown): OutboundHttpSaveRes
 	const envelope = rootRecord(input, label)
 	if (envelope.ok === false) {
 		shape(envelope, ['ok', 'code', 'error'], [], label)
-		literal(envelope.code, ['revision_conflict'], `${label}.code`)
-		throw new OutboundHttpRevisionConflictError(text(envelope.error, `${label}.error`))
+		const code = literal(
+			envelope.code,
+			['revision_conflict', 'management_disabled'],
+			`${label}.code`,
+		)
+		const message = text(envelope.error, `${label}.error`)
+		if (code === 'revision_conflict') throw new OutboundHttpRevisionConflictError(message)
+		throw new OutboundHttpError(code, message)
 	}
 	shape(envelope, ['ok', 'value'], [], label)
 	if (envelope.ok !== true) fail(`${label}.ok must be true`)
 	const value = object(envelope.value, `${label}.value`)
 	shape(value, ['snapshot'], ['cleanupError'], `${label}.value`)
+	const snapshot = outboundHttpSnapshot(object(value.snapshot, `${label}.snapshot`))
+	if (!snapshot.managed) fail(`${label}.snapshot must be managed`)
 	return Object.freeze({
-		snapshot: outboundHttpSnapshot(object(value.snapshot, `${label}.snapshot`)),
+		snapshot,
 		...(value.cleanupError === undefined
 			? {}
 			: { cleanupError: text(value.cleanupError, `${label}.cleanupError`) }),
@@ -907,7 +916,18 @@ export function parseOutboundHttpSaveResult(input: unknown): OutboundHttpSaveRes
 
 function outboundHttpSnapshot(value: Record<string, unknown>): OutboundHttpSnapshot {
 	const label = 'outbound HTTP snapshot'
-	shape(value, ['revision', 'owner', 'settings', 'effective', 'limits', 'activity'], [], label)
+	const managed = boolean(value.managed, `${label}.managed`)
+	const owner = nullableNodeAddress(value.owner, `${label}.owner`)
+	if (!managed) {
+		shape(value, ['managed', 'owner'], [], label)
+		return Object.freeze({ managed: false, owner })
+	}
+	shape(
+		value,
+		['managed', 'records', 'revision', 'owner', 'settings', 'effective', 'limits', 'activity'],
+		[],
+		label,
+	)
 	const limits = object(value.limits, `${label}.limits`)
 	shape(
 		limits,
@@ -916,8 +936,10 @@ function outboundHttpSnapshot(value: Record<string, unknown>): OutboundHttpSnaps
 		`${label}.limits`,
 	)
 	return Object.freeze({
+		managed: true,
+		records: literal(value.records, ['requests', 'summary', 'off'], `${label}.records`),
 		revision: nonNegativeInteger(value.revision, `${label}.revision`),
-		owner: nullableNodeAddress(value.owner, `${label}.owner`),
+		owner,
 		settings: outboundHttpSettings(value.settings, `${label}.settings`),
 		effective: outboundHttpEffectiveSettings(value.effective, `${label}.effective`),
 		limits: Object.freeze({

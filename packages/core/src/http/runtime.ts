@@ -14,7 +14,11 @@ import {
 } from '../plugins/runtime/identity'
 import type { HostDocumentStorage } from '../storage/documents'
 import { OutboundHttpError, RequestAdmission } from './admission'
-import { normalizeOutboundHttpSettings, type ResolvedOutboundHttpOptions } from './options'
+import {
+	normalizeOutboundHttpSettings,
+	type ResolvedManagedOutboundHttpOptions,
+	type ResolvedOutboundHttpOptions,
+} from './options'
 import {
 	compileOutboundHttpPolicy,
 	parseOutboundHttpPolicy,
@@ -22,6 +26,7 @@ import {
 	type OutboundHttpPolicy,
 } from './policy'
 import type {
+	ManagedOutboundHttpSnapshot,
 	OutboundFetch,
 	OutboundHttpActivity,
 	OutboundHttpSettings,
@@ -30,26 +35,99 @@ import type {
 
 const policyKey = 'policy.json'
 const emptySettings = Object.freeze({})
+const redirectStatuses = new Set([301, 302, 303, 307, 308])
 type NodeRequestInit = RequestInit & { dispatcher?: Dispatcher }
 type ProxyResource = { dispatcher: Dispatcher; active: number; notifyIdle?: () => void }
 type Dispatchers = ReadonlyMap<string, ProxyResource>
 
 type Client = { fetch: OutboundFetch; wretch?: Wretch }
 type Applied = ReturnType<typeof compileOutboundHttpPolicy> & { dispatchers: Dispatchers }
+type Caller = {
+	address: PluginNodeAddress
+	key: string
+	log?: { name: string; pluginReference: string }
+}
 
 /** A committed settings change may still be waiting for retired connections to drain. */
 export type OutboundHttpCommit = Readonly<{
-	snapshot: OutboundHttpSnapshot
+	snapshot: ManagedOutboundHttpSnapshot
 	cleanup: Promise<string | undefined>
 }>
 
-export class OutboundHttpRuntime {
-	private readonly clients = new WeakMap<Context, Client>()
-	private readonly activity = new Map<string, OutboundHttpActivity>()
-	private readonly logs = new RuntimeLogStore({
-		streamId: OUTBOUND_HTTP_LOG_STREAM_ID,
-		windowLines: 5_000,
-	})
+type OutboundHttpManagement = Readonly<{
+	logs?: RuntimeLogStore
+	snapshot(owner: PluginNodeAddress | null): Promise<OutboundHttpSnapshot>
+	save(
+		owner: PluginNodeAddress | null,
+		expectedRevision: number,
+		input: unknown,
+	): Promise<OutboundHttpCommit>
+}>
+
+export function createOutboundHttpRuntime(root: RootContext, options: ResolvedOutboundHttpOptions) {
+	const managed = options.managed ? new ManagedOutboundHttpRuntime(root, options) : undefined
+	const clients = new WeakMap<Context, Client>()
+	const management: OutboundHttpManagement =
+		managed?.management ??
+		Object.freeze({
+			async snapshot(owner: PluginNodeAddress | null): Promise<OutboundHttpSnapshot> {
+				return Object.freeze({
+					managed: false,
+					owner: owner === null ? null : parsePluginNodeAddress(owner),
+				})
+			},
+			async save(): Promise<never> {
+				throw new OutboundHttpError(
+					'management_disabled',
+					'Outbound HTTP management is disabled by the Host',
+				)
+			},
+		})
+
+	function clientFor(owner: Context): Client {
+		if (owner.root !== root) throw new TypeError('[core.http] the owner belongs to another Host')
+		const present = clients.get(owner)
+		if (present) return present
+		const address = owner.pluginInfo?.nodeAddress
+		if (!address) throw new TypeError('[core.http] a Plugin node address is required')
+		const fetch = managed ? managed.bind(owner, address) : bindUnmanagedFetch(owner, options.fetch)
+		const client = { fetch }
+		clients.set(owner, client)
+		return client
+	}
+	return {
+		management,
+		async clearNode(owner: PluginNodeAddress) {
+			if (managed) return await managed.clearNode(owner)
+			// A fork removed while policy is inactive must not inherit it when recreated later.
+			const documents = requireHostDocuments(root, 'outbound-http')
+			const policy = parseOutboundHttpPolicy(await documents.getText(policyKey))
+			const key = pluginNodeIndexKey(owner)
+			if (!policy.nodes.has(key)) return
+			const nodes = new Map(policy.nodes)
+			nodes.delete(key)
+			await documents.put(
+				policyKey,
+				serializeOutboundHttpPolicy({
+					...policy,
+					revision: nextPolicyRevision(policy),
+					nodes,
+				}),
+			)
+		},
+		fetchFor: (owner: Context) => clientFor(owner).fetch,
+		wretchFor(owner: Context): Wretch {
+			const client = clientFor(owner)
+			return (client.wretch ??= wretch().fetchPolyfill(client.fetch))
+		},
+	}
+}
+
+export type OutboundHttpRuntime = ReturnType<typeof createOutboundHttpRuntime>
+
+class ManagedOutboundHttpRuntime {
+	private readonly activity?: Map<string, OutboundHttpActivity>
+	private readonly logs?: RuntimeLogStore
 	private readonly resources = new Set<ProxyResource>()
 	private readonly retirements = new Set<Promise<string | undefined>>()
 	private readonly admission: RequestAdmission
@@ -59,40 +137,44 @@ export class OutboundHttpRuntime {
 	private documents?: HostDocumentStorage
 	private writeTail: Promise<void> = Promise.resolve()
 	private writeFault?: Error
-	readonly management = Object.freeze({
-		logs: this.logs,
-		snapshot: (owner: PluginNodeAddress | null) => this.snapshot(owner),
-		save: (owner: PluginNodeAddress | null, expectedRevision: number, input: unknown) =>
-			this.save(owner, expectedRevision, input),
-	})
+	readonly management: OutboundHttpManagement
 
 	constructor(
 		private readonly root: RootContext,
-		private readonly options: ResolvedOutboundHttpOptions,
+		private readonly options: ResolvedManagedOutboundHttpOptions,
 	) {
 		const { maxConcurrentRequests, maxQueuedRequests } = options.limits
 		this.admission = new RequestAdmission(maxConcurrentRequests, maxQueuedRequests)
+		if (options.records !== 'off') this.activity = new Map()
+		if (options.records === 'requests') {
+			this.logs = new RuntimeLogStore({
+				streamId: OUTBOUND_HTTP_LOG_STREAM_ID,
+				windowLines: 5_000,
+			})
+		}
+		this.management = Object.freeze({
+			logs: this.logs,
+			snapshot: (owner: PluginNodeAddress | null) => this.snapshot(owner),
+			save: (owner: PluginNodeAddress | null, expectedRevision: number, input: unknown) =>
+				this.save(owner, expectedRevision, input),
+		})
 		root.effects.defer(() => this.dispose(), { tag: 'OutboundHTTP', phase: 'shutdown' })
 	}
 
-	fetchFor(owner: Context): OutboundFetch {
-		if (owner.root !== this.root)
-			throw new TypeError('[core.http] the owner belongs to another Host')
-		const existing = this.clients.get(owner)
-		if (existing) return existing.fetch
-		const address = owner.pluginInfo?.nodeAddress
-		if (!address) throw new TypeError('[core.http] a Plugin node address is required')
-		const key = pluginNodeIndexKey(address)
-		const fetch: OutboundFetch = (input, init) =>
-			this.fetchAttempt(owner, address, key, input, init)
-		this.clients.set(owner, { fetch })
-		return fetch
-	}
-
-	wretchFor(owner: Context): Wretch {
-		const fetch = this.fetchFor(owner)
-		const client = this.clients.get(owner)!
-		return (client.wretch ??= wretch().fetchPolyfill(fetch))
+	bind(owner: Context, address: PluginNodeAddress): OutboundFetch {
+		const caller: Caller = { address, key: pluginNodeIndexKey(address) }
+		if (this.logs) {
+			const name = owner.pluginInfo?.displayName ?? address.definition.exportName
+			caller.log = {
+				name: address.variant === 'fork' ? `${name} · ${address.forkId}` : name,
+				pluginReference: formatPluginNodeReference(address),
+			}
+		}
+		return bindOwnerFetch(
+			owner,
+			(input, init, lifetime) => this.send(caller, input, init, lifetime),
+			this.shutdown.signal,
+		)
 	}
 
 	private async snapshot(owner: PluginNodeAddress | null): Promise<OutboundHttpSnapshot> {
@@ -123,7 +205,7 @@ export class OutboundHttpRuntime {
 		await this.enqueue(async () => {
 			const applied = await this.current()
 			if (applied.policy.nodes.has(key)) await this.commit(applied, owner, null)
-			this.activity.delete(key)
+			this.activity?.delete(key)
 		})
 	}
 
@@ -160,11 +242,13 @@ export class OutboundHttpRuntime {
 		}
 	}
 
-	private describe(applied: Applied, owner: PluginNodeAddress | null): OutboundHttpSnapshot {
+	private describe(applied: Applied, owner: PluginNodeAddress | null): ManagedOutboundHttpSnapshot {
 		const { policy, host, nodes } = applied
 		const key = owner === null ? undefined : pluginNodeIndexKey(owner)
-		const seen = key === undefined ? undefined : this.activity.get(key)
+		const seen = key === undefined ? undefined : this.activity?.get(key)
 		return Object.freeze({
+			managed: true,
+			records: this.options.records,
 			revision: policy.revision,
 			owner,
 			settings:
@@ -173,7 +257,9 @@ export class OutboundHttpRuntime {
 			limits: this.options.limits,
 			activity: Object.freeze(
 				key === undefined
-					? [...this.activity.values()].sort((a, b) => comparePluginNodeAddress(a.owner, b.owner))
+					? [...(this.activity?.values() ?? [])].sort((a, b) =>
+							comparePluginNodeAddress(a.owner, b.owner),
+						)
 					: seen
 						? [seen]
 						: [],
@@ -232,11 +318,8 @@ export class OutboundHttpRuntime {
 			if (settings === null) nodes.delete(key)
 			else nodes.set(key, { owner, settings })
 		}
-		const revision = applied.policy.revision + 1
-		if (!Number.isSafeInteger(revision))
-			throw new RangeError('[core.http] policy revision limit reached')
 		const policy: OutboundHttpPolicy = {
-			revision,
+			revision: nextPolicyRevision(applied.policy),
 			defaults: owner === null ? (settings ?? emptySettings) : applied.policy.defaults,
 			nodes,
 		}
@@ -316,87 +399,65 @@ export class OutboundHttpRuntime {
 		)
 		await Promise.allSettled(this.retirements)
 		this.resources.clear()
-		this.activity.clear()
-		this.logs.reset()
+		this.activity?.clear()
+		this.logs?.reset()
 		const failures = results.flatMap((result) =>
 			result.status === 'rejected' ? [result.reason] : [],
 		)
 		if (failures.length > 0) throw new AggregateError(failures, '[core.http] proxy shutdown failed')
 	}
 
-	private async fetchAttempt(
-		owner: Context,
-		address: PluginNodeAddress,
-		key: string,
-		input: RequestInfo | URL,
-		init?: NodeRequestInit,
-	): Promise<Response> {
-		this.shutdown.signal.throwIfAborted()
-		const rootLease = enterOwnerInvocation(this.root)
-		try {
-			const lease = enterOwnerInvocation(owner)
-			try {
-				return await this.send(owner, address, key, input, init, [
-					rootLease.signal,
-					lease.signal,
-					this.shutdown.signal,
-				])
-			} finally {
-				lease.dispose()
-			}
-		} finally {
-			rootLease.dispose()
-		}
-	}
-
 	private async send(
-		owner: Context,
-		address: PluginNodeAddress,
-		key: string,
+		caller: Caller,
 		input: RequestInfo | URL,
 		init: NodeRequestInit | undefined,
-		lifetimes: AbortSignal[],
+		lifetime: AbortSignal,
 	): Promise<Response> {
 		if (typeof input === 'string') input = new URL(input)
-		const redirect = init?.redirect ?? (input instanceof Request ? input.redirect : undefined)
-		const request = new Request(input, init)
+		const original = input instanceof Request ? input : undefined
+		const redirect = init?.redirect ?? original?.redirect
+		// workerd supports manual and follow. Apply the error contract below the transport.
+		const request = new Request(
+			input,
+			init?.redirect === 'error' ? requestInitWith(init, 'redirect', 'manual') : init,
+		)
 		const url = new URL(request.url)
 		if (url.protocol !== 'http:' && url.protocol !== 'https:')
 			throw new TypeError('[core.http] requests require an absolute HTTP(S) URL')
-		const signal = AbortSignal.any([...lifetimes, request.signal])
-		const startedAt = performance.now()
+		const signal =
+			original || init !== undefined ? AbortSignal.any([lifetime, request.signal]) : lifetime
+		const startedAt = this.logs ? performance.now() : undefined
+		const { key } = caller
 		try {
-			const initiallyApplied = await this.current(signal)
+			const initiallyApplied = this.applied ?? (await this.current(signal))
+			const initial = initiallyApplied.nodes.get(key) ?? initiallyApplied.host
 			signal.throwIfAborted()
-			enforce(
-				(initiallyApplied.nodes.get(key) ?? initiallyApplied.host).origins,
-				url.origin,
-				redirect,
-				init?.dispatcher,
-			)
-			const release = await this.admission.acquire(signal)
+			enforce(initial.origins, url.origin, redirect, init?.dispatcher)
+			const slot = this.admission.acquire(signal)
+			const release = typeof slot === 'function' ? slot : await slot
 			try {
 				signal.throwIfAborted()
 				const applied = this.applied!
-				const { origins, effective } = applied.nodes.get(key) ?? applied.host
-				enforce(origins, url.origin, redirect, init?.dispatcher)
+				const policy =
+					applied === initiallyApplied ? initial : (applied.nodes.get(key) ?? applied.host)
+				if (policy !== initial) enforce(policy.origins, url.origin, redirect, init?.dispatcher)
 				const response = await this.dispatch(
 					request,
 					signal,
-					origins === undefined ? undefined : (redirect ?? 'error'),
-					effective,
+					redirect ?? (policy.origins === undefined ? undefined : 'error'),
+					policy,
 					applied.dispatchers,
 				)
-				this.record(
-					owner,
-					address,
-					key,
-					request,
-					url.origin,
-					startedAt,
-					'response',
-					response.status || undefined,
-				)
+				if (this.activity)
+					this.record(
+						this.activity,
+						caller,
+						request,
+						url.origin,
+						startedAt,
+						'response',
+						response.status || undefined,
+					)
 				return response
 			} finally {
 				release()
@@ -410,17 +471,17 @@ export class OutboundHttpRuntime {
 					: error instanceof DOMException && error.name === 'TimeoutError'
 						? 'timeout'
 						: undefined
-			this.record(
-				owner,
-				address,
-				key,
-				request,
-				url.origin,
-				startedAt,
-				denied ? 'denied' : 'failed',
-				undefined,
-				code,
-			)
+			if (this.activity)
+				this.record(
+					this.activity,
+					caller,
+					request,
+					url.origin,
+					startedAt,
+					denied ? 'denied' : 'failed',
+					undefined,
+					code,
+				)
 			throw error
 		}
 	}
@@ -429,34 +490,42 @@ export class OutboundHttpRuntime {
 		request: Request,
 		lifetime: AbortSignal,
 		redirect: RequestRedirect | undefined,
-		settings: Applied['host']['effective'],
+		{ effective: settings, defaultHeaders }: Applied['host'],
 		dispatchers: Dispatchers,
 	): Promise<Response> {
-		const headers = new Headers(request.headers)
-		for (const [name, value] of Object.entries(settings.headers)) {
-			if (!headers.has(name)) headers.set(name, value)
+		let headers: Headers | undefined
+		for (const [name, value] of defaultHeaders) {
+			if (!request.headers.has(name)) (headers ??= new Headers(request.headers)).set(name, value)
 		}
-		const deadline = new AbortController()
-		const signal = AbortSignal.any([lifetime, deadline.signal])
+		const deadline = settings.timeoutMs > 0 ? new AbortController() : undefined
+		const signal = deadline ? AbortSignal.any([lifetime, deadline.signal]) : lifetime
 		const proxy = settings.proxyUrl === null ? undefined : dispatchers.get(settings.proxyUrl)
-		const timeout =
-			settings.timeoutMs > 0
-				? setTimeout(
-						() =>
-							deadline.abort(new DOMException('Outbound HTTP attempt timed out', 'TimeoutError')),
-						settings.timeoutMs,
-					)
-				: undefined
+		const timeout = deadline
+			? setTimeout(
+					() => deadline.abort(new DOMException('Outbound HTTP attempt timed out', 'TimeoutError')),
+					settings.timeoutMs,
+				)
+			: undefined
 		if (proxy) proxy.active++
 		try {
-			const outgoing = new Request(request, {
-				headers,
+			const requestInit: RequestInit = {
 				signal,
-				...(redirect === undefined ? {} : { redirect }),
-			})
-			const init: NodeRequestInit | undefined = proxy && { dispatcher: proxy.dispatcher }
+				...(headers === undefined ? {} : { headers }),
+				...(redirect === undefined ? {} : { redirect: redirect === 'error' ? 'manual' : redirect }),
+			}
+			const dispatcher: NodeRequestInit | undefined = proxy && { dispatcher: proxy.dispatcher }
 			const fetch = this.options.fetch
-			return await (fetch ? fetch(outgoing, init) : globalThis.fetch(outgoing, init))
+			const response = await (fetch
+				? fetch(new Request(request, requestInit), dispatcher)
+				: globalThis.fetch(request, dispatcher ? { ...requestInit, ...dispatcher } : requestInit))
+			if (
+				redirect === 'error' &&
+				(response.type === 'opaqueredirect' || redirectStatuses.has(response.status))
+			) {
+				void response.body?.cancel().catch(() => {})
+				throw new TypeError('Outbound HTTP request encountered a redirect in error mode')
+			}
+			return response
 		} finally {
 			if (proxy) {
 				proxy.active--
@@ -467,19 +536,18 @@ export class OutboundHttpRuntime {
 	}
 
 	private record(
-		owner: Context,
-		address: PluginNodeAddress,
-		key: string,
+		activity: Map<string, OutboundHttpActivity>,
+		{ address, key, log }: Caller,
 		request: Request,
 		origin: string,
-		startedAt: number,
+		startedAt: number | undefined,
 		outcome: OutboundHttpActivity['lastOutcome'],
 		status?: number,
 		code?: string,
 	): void {
-		const previous = this.activity.get(key)
+		const previous = activity.get(key)
 		const now = Date.now()
-		this.activity.set(
+		activity.set(
 			key,
 			Object.freeze({
 				owner: address,
@@ -493,11 +561,10 @@ export class OutboundHttpRuntime {
 				...(code === undefined ? {} : { lastCode: code }),
 			}),
 		)
+		if (startedAt === undefined || !log || !this.logs) return
 		const method = request.method.slice(0, 64)
 		const logOrigin = origin.slice(0, 512)
 		const durationMs = Math.round(performance.now() - startedAt)
-		const pluginReference = formatPluginNodeReference(address)
-		const name = owner.pluginInfo?.displayName ?? address.definition.exportName
 		const result = status === undefined ? (code ?? outcome) : String(status)
 		const props = {
 			outcome,
@@ -513,13 +580,78 @@ export class OutboundHttpRuntime {
 				level: outcome === 'response' ? 'info' : 'warning',
 				category: ['pluxel', 'outbound-http'],
 				plugin: address,
-				pluginReference,
-				name: address.variant === 'fork' ? `${name} · ${address.forkId}` : name,
+				...log,
 				msg: `${method} ${logOrigin} · ${result} · ${durationMs} ms`,
 				props,
 			},
 		])
 	}
+}
+
+function bindOwnerFetch(
+	owner: Context,
+	send: (
+		input: RequestInfo | URL,
+		init: NodeRequestInit | undefined,
+		lifetime: AbortSignal,
+	) => Promise<Response>,
+	shutdown?: AbortSignal,
+): OutboundFetch {
+	let lifetime: AbortSignal | undefined
+	return async (input, init) => {
+		const root = enterOwnerInvocation(owner.root)
+		try {
+			const lease = enterOwnerInvocation(owner)
+			try {
+				lifetime ??= AbortSignal.any(
+					shutdown ? [root.signal, lease.signal, shutdown] : [root.signal, lease.signal],
+				)
+				lifetime.throwIfAborted()
+				return await send(input, init, lifetime)
+			} finally {
+				lease.dispose()
+			}
+		} finally {
+			root.dispose()
+		}
+	}
+}
+
+function nextPolicyRevision(policy: OutboundHttpPolicy): number {
+	const revision = policy.revision + 1
+	if (!Number.isSafeInteger(revision))
+		throw new RangeError('[core.http] policy revision limit reached')
+	return revision
+}
+
+function bindUnmanagedFetch(owner: Context, transport?: OutboundFetch): OutboundFetch {
+	let defaults: RequestInit | undefined
+	const send = transport ?? ((input, init) => globalThis.fetch(input, init))
+	return bindOwnerFetch(owner, (input, init, lifetime) => {
+		if (!transport && init === undefined && !(input instanceof Request))
+			return send(input, (defaults ??= Object.freeze({ signal: lifetime })))
+		const caller =
+			init?.signal === undefined && input instanceof Request ? input.signal : init?.signal
+		const signal = caller ? AbortSignal.any([lifetime, caller]) : lifetime
+		return send(input, requestInitWith(init, 'signal', signal))
+	})
+}
+
+function requestInitWith<K extends 'signal' | 'redirect'>(
+	init: RequestInit | undefined,
+	key: K,
+	value: RequestInit[K],
+): RequestInit {
+	const override = { [key]: value }
+	if (!init) return override
+	const prototype: unknown = Object.getPrototypeOf(init)
+	if (prototype === Object.prototype || prototype === null) return { ...init, ...override }
+	// Fetch accepts a Request as the options dictionary. Its inherited getters require the original receiver.
+	return new Proxy(override, {
+		get(_target, property) {
+			return property === key ? value : Reflect.get(init, property, init)
+		},
+	})
 }
 
 async function waitForPolicy(policy: Promise<Applied>, signal: AbortSignal): Promise<Applied> {

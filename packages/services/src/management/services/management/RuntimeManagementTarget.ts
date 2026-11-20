@@ -21,6 +21,7 @@ import { type RuntimeUpdateSnapshot } from '@pluxel/host/internal/protocol'
 import {
 	parsePluginDefinitionAddress,
 	parsePluginNodeAddress,
+	OutboundHttpError,
 	type Context,
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
@@ -66,6 +67,7 @@ import {
 import {
 	type LogFilter,
 	type RuntimeLogEvent,
+	type RuntimeLogLine,
 	type LogRangeResult,
 	type LogStreamMeta,
 } from '@pluxel/core/logging/protocol'
@@ -727,8 +729,11 @@ export class RuntimeManagementTargetImpl extends RpcTarget implements RuntimeMan
 				this.#admission,
 			)
 		} catch (error) {
-			if (error instanceof Error && 'code' in error && error.code === 'revision_conflict') {
-				return checkedDto({ ok: false, code: 'revision_conflict', error: error.message })
+			if (
+				error instanceof OutboundHttpError &&
+				(error.code === 'revision_conflict' || error.code === 'management_disabled')
+			) {
+				return checkedDto({ ok: false, code: error.code, error: error.message })
 			}
 			throw error
 		}
@@ -836,10 +841,19 @@ const MAX_LOG_PENDING_BYTES = RUNTIME_SESSION_RPC_PAYLOAD_BUDGET_BYTES * 4
 const MAX_DEPLOY_RECIPIENTS = 1_000
 const MAX_DEPLOY_RECIPIENT_LENGTH = 4_096
 
+type PendingLogEvent = {
+	event:
+		| Exclude<RuntimeLogEvent, { type: 'append' }>
+		| (Extract<RuntimeLogEvent, { type: 'append' }> & {
+				lines: RuntimeLogLine[]
+		  })
+	bytes: number
+}
+
 class RuntimeLogSubscription extends RpcTarget implements RuntimeSubscriptionTarget {
 	private readonly observer: RpcStub<RuntimeLogObserver>
 	private readonly unsubscribe: () => void
-	private readonly queue: RuntimeLogEvent[] = []
+	private readonly queue: PendingLogEvent[] = []
 	private queuedBytes = 0
 	private draining = false
 	private active = true
@@ -881,13 +895,34 @@ class RuntimeLogSubscription extends RpcTarget implements RuntimeSubscriptionTar
 		const oversized =
 			bytes > MAX_LOG_CALLBACK_BYTES ||
 			(event.type === 'append' && event.lines.length > MAX_LOG_CALLBACK_LINES)
+		const tail = this.queue.at(-1)
+		if (
+			event.type === 'append' &&
+			tail?.event.type === 'append' &&
+			tail.event.epoch === event.epoch &&
+			tail.event.nextSeq === event.fromSeq &&
+			tail.event.lines.length + event.lines.length <= MAX_LOG_CALLBACK_LINES &&
+			tail.bytes + bytes <= MAX_LOG_CALLBACK_BYTES &&
+			this.queuedBytes + bytes <= MAX_LOG_PENDING_BYTES
+		) {
+			tail.event.lines.push(...event.lines)
+			tail.event.nextSeq = event.nextSeq
+			tail.bytes += bytes
+			this.queuedBytes += bytes
+			return
+		}
 		const overflow =
 			this.queue.length >= MAX_LOG_PENDING_EVENTS ||
 			this.queuedBytes + bytes > MAX_LOG_PENDING_BYTES
 		if (oversized || overflow) {
-			const gap = collapseLogGap(this.queue, event)
+			const gap = collapseLogGap(
+				this.queue.map((item) => item.event),
+				event,
+			)
+			const reset = this.queue[0]?.event.type === 'reset' ? this.queue[0] : undefined
 			this.queue.length = 0
 			this.queuedBytes = 0
+			if (reset) this.#push(reset.event, reset.bytes)
 			this.#push(gap)
 		} else {
 			this.#push(event, bytes)
@@ -896,23 +931,26 @@ class RuntimeLogSubscription extends RpcTarget implements RuntimeSubscriptionTar
 	}
 
 	#push(event: RuntimeLogEvent, bytes = estimateRuntimeRpcPayloadBytes(event)): void {
-		this.queue.push(event)
+		this.queue.push({
+			event: event.type === 'append' ? { ...event, lines: [...event.lines] } : event,
+			bytes,
+		})
 		this.queuedBytes += bytes
 	}
 
 	#startDrain(): void {
 		if (this.draining) return
 		this.draining = true
-		void this.#drain()
+		queueMicrotask(() => void this.#drain())
 	}
 
 	async #drain(): Promise<void> {
 		try {
 			while (this.active) {
-				const event = this.queue.shift()
-				if (!event) return
-				this.queuedBytes = Math.max(0, this.queuedBytes - estimateRuntimeRpcPayloadBytes(event))
-				using result = this.observer(event)
+				const item = this.queue.shift()
+				if (!item) return
+				this.queuedBytes -= item.bytes
+				using result = this.observer(item.event)
 				await result
 			}
 		} catch {
@@ -941,7 +979,8 @@ function parseLogRangeInput(streamId: unknown, input: unknown) {
 	if (!Number.isSafeInteger(record.epoch) || Number(record.epoch) <= 0) {
 		throw new TypeError('Log range epoch must be a positive integer')
 	}
-	if (typeof record.fromSeq !== 'string' || !/^\d+$/.test(record.fromSeq)) {
+	const { fromSeq } = record
+	if (fromSeq !== undefined && (typeof fromSeq !== 'string' || !/^\d+$/.test(fromSeq))) {
 		throw new TypeError('Log range fromSeq must be an unsigned integer string')
 	}
 	const limit =
@@ -949,7 +988,7 @@ function parseLogRangeInput(streamId: unknown, input: unknown) {
 	return Object.freeze({
 		streamId: parseLogStreamId(streamId),
 		epoch: Number(record.epoch),
-		fromSeq: record.fromSeq,
+		...(typeof fromSeq === 'string' ? { fromSeq } : {}),
 		...(limit === undefined ? {} : { limit }),
 		...(record.filter === undefined ? {} : { filter: parseLogFilter(record.filter) }),
 	})

@@ -47,6 +47,7 @@ it('controls an addressed Wretch caller through Management and removes settings 
 	)
 
 	const initial = await client.outboundHttp.get(fork)
+	if (!initial.managed) throw new Error('Expected managed outbound HTTP')
 	const localized = await client.outboundHttp.save(fork, initial.revision, {
 		headers: { 'accept-language': 'zh-Hant' },
 	})
@@ -97,10 +98,19 @@ it('controls an addressed Wretch caller through Management and removes settings 
 	const defaultPlugin = requirePluginService(host.ctx).getInstance(defaultNode) as OutboundWorker
 	await defaultPlugin.read('https://outbound.test/')
 	const all = await client.outboundHttp.get(null)
+	if (!all.managed) throw new Error('Expected managed outbound HTTP')
 	expect(all.activity.map(({ owner: address }) => formatPluginNodeReference(address))).toEqual(
 		[defaultNode, fork].map(formatPluginNodeReference),
 	)
 	await expect(client.logs.meta(streamId)).resolves.toHaveProperty('count', 3)
+	await expect(
+		client.logs.range(streamId, { epoch: meta.epoch, limit: 1, filter: { plugin: fork } }),
+	).resolves.toMatchObject({
+		ok: true,
+		fromSeq: '2',
+		nextSeq: '4',
+		lines: [lines()[1]],
+	})
 	expect(lines()).toHaveLength(2)
 
 	expect(await client.forks.remove(fork)).toMatchObject({ ok: true, status: 'removed' })
@@ -109,4 +119,43 @@ it('controls an addressed Wretch caller through Management and removes settings 
 	).rejects.toThrow(/unavailable/)
 	expect(await client.forks.ensure({ fork })).toMatchObject({ ok: true })
 	await expect(client.outboundHttp.get(fork)).resolves.toHaveProperty('settings', {})
+})
+
+it('projects unmanaged status and rejects management writes across RPC', async () => {
+	await using host = await createHost({
+		plugins: [],
+		coreConfig: { http: { managed: false } },
+		services: [],
+	})
+	using remote = new RpcStub(createHostManagementTarget(host.ctx))
+	const client = createRuntimeManagementClient(remote)
+	await expect(client.outboundHttp.get(null)).resolves.toEqual({ managed: false, owner: null })
+	await expect(client.outboundHttp.save(null, 0, null)).rejects.toMatchObject({
+		code: 'management_disabled',
+	})
+	await expect(client.logs.streams()).resolves.toEqual({ streams: [] })
+})
+
+it('batches live outbound records in sequence order', async () => {
+	await using host = await createHost({
+		plugins: [{ plugin: OutboundWorker }],
+		coreConfig: { http: { fetch: async () => new Response(null, { status: 204 }) } },
+	})
+	const owner = OutboundWorker.nodeAddress()
+	await host.startNode(owner)
+	const worker = requirePluginService(host.ctx).getInstance(owner) as OutboundWorker
+	using remote = new RpcStub(createHostManagementTarget(host.ctx))
+	const client = createRuntimeManagementClient(remote)
+	const batches: string[][] = []
+	using _subscription = await client.logs.follow(
+		{ streamId: OUTBOUND_HTTP_LOG_STREAM_ID },
+		(event) => {
+			if (event.type === 'append') batches.push(event.lines.map((line) => line.seq))
+		},
+	)
+	await Promise.all(Array.from({ length: 16 }, () => worker.read('https://outbound.test/')))
+	await vi.waitFor(() =>
+		expect(batches.flat()).toEqual(Array.from({ length: 16 }, (_, i) => String(i + 1))),
+	)
+	expect(batches.some((batch) => batch.length > 1)).toBe(true)
 })

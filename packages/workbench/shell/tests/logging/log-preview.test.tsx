@@ -89,21 +89,24 @@ function rows(container: HTMLElement) {
 }
 
 describe('plugin log preview', () => {
-	it('scans the retained window with exact fork filtering, including empty pages, and keeps only ten latest plugin lines', async () => {
+	it('starts at the filtered tail and follows RPC pages through the snapshot boundary', async () => {
 		let observe!: (event: RuntimeLogEvent) => void
 		const dispose = vi.fn()
-		const range = vi.fn(async (_stream: string, input: { fromSeq: string; filter: unknown }) => {
-			expect(input.filter).toMatchObject({ plugin: owner })
-			const pages: Record<string, { nextSeq: string; lines: RuntimeLogLine[] }> = {
-				'100': { nextSeq: '2000', lines: Array.from({ length: 6 }, (_, i) => line(100 + i)) },
-				'2000': { nextSeq: '4000', lines: [] },
-				'4000': { nextSeq: '6000', lines: Array.from({ length: 6 }, (_, i) => line(4000 + i)) },
-				'6000': { nextSeq: '9001', lines: [] },
-			}
-			const page = pages[input.fromSeq]
-			if (!page) throw new Error(`Unexpected cursor ${input.fromSeq}`)
-			return { ok: true, streamId: 'default', epoch: 1, fromSeq: input.fromSeq, ...page }
-		})
+		const range = vi.fn(
+			async (_stream: string, input: { fromSeq?: string; limit: number; filter: unknown }) => {
+				expect(input.filter).toMatchObject({ plugin: owner })
+				const pages: Record<string, { nextSeq: string; lines: RuntimeLogLine[] }> = {
+					'102': { nextSeq: '2000', lines: Array.from({ length: 4 }, (_, i) => line(102 + i)) },
+					'2000': { nextSeq: '4000', lines: [] },
+					'4000': { nextSeq: '6000', lines: Array.from({ length: 6 }, (_, i) => line(4000 + i)) },
+					'6000': { nextSeq: '9001', lines: [] },
+				}
+				const fromSeq = input.fromSeq ?? '102'
+				const page = pages[fromSeq]
+				if (!page) throw new Error(`Unexpected cursor ${input.fromSeq}`)
+				return { ok: true, streamId: 'default', epoch: 1, fromSeq, ...page }
+			},
+		)
 		const follow = vi.fn(async (_input: unknown, observer: typeof observe) => {
 			observe = observer
 			return { [Symbol.dispose]: dispose }
@@ -121,11 +124,12 @@ describe('plugin log preview', () => {
 			expect.any(Function),
 		)
 		expect(range.mock.calls.map(([, input]) => input.fromSeq)).toEqual([
-			'100',
+			undefined,
 			'2000',
 			'4000',
 			'6000',
 		])
+		expect(range.mock.calls[0]?.[1].limit).toBe(10)
 		expect(rows(container)).toEqual(
 			[102, 103, 104, 105, 4000, 4001, 4002, 4003, 4004, 4005].map((seq) => `event-${seq}`),
 		)

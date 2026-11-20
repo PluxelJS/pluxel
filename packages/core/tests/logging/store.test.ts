@@ -54,3 +54,22 @@ it('pages a filtered log through the retention window using the scanned stream c
 	})
 	expect(store.tailWindow(2).map((line) => line.seq)).toEqual(['1999', '2000'])
 })
+
+it('reads the latest matching lines even with several newer chunks from other nodes', () => {
+	const store = new RuntimeLogStore({ streamId: 'test', windowLines: 5_000, epoch: 1 })
+	store.append(
+		Array.from({ length: 5_002 }, (_, index) => ({
+			ts: index,
+			level: 'info',
+			category: ['pluxel'],
+			msg: 'record',
+			...([1_499, 1_800, 2_000].includes(index + 1) ? { plugin: selected } : {}),
+		})),
+	)
+	expect(store.range({ epoch: 1, limit: 2, filter: { plugin: selected } })).toMatchObject({
+		ok: true,
+		fromSeq: '1800',
+		nextSeq: '5003',
+		lines: [{ seq: '1800' }, { seq: '2000' }],
+	})
+})

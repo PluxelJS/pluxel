@@ -1,6 +1,7 @@
 export type OutboundHttpErrorCode =
 	| 'origin_denied'
 	| 'redirect_denied'
+	| 'management_disabled'
 	| 'queue_full'
 	| 'dispatcher_conflict'
 	| 'revision_conflict'
@@ -32,7 +33,7 @@ export class RequestAdmission {
 		private readonly queued: number,
 	) {}
 
-	async acquire(signal: AbortSignal): Promise<() => void> {
+	acquire(signal: AbortSignal): (() => void) | Promise<() => void> {
 		signal.throwIfAborted()
 		if (this.active < this.concurrent) return this.admit()
 		if (this.pending.length >= this.queued)

@@ -12,7 +12,7 @@ import { PluginService } from '../plugins/runtime/PluginService'
 import { FsService } from '../fs/service'
 import { VaultRuntime } from '../vault/runtime'
 import { TinyBaseRuntime } from '../tinybase/service'
-import { OutboundHttpRuntime } from '../http/runtime'
+import { createOutboundHttpRuntime } from '../http/runtime'
 import {
 	freezeCorePluginLifecycleHooks,
 	type CorePluginLifecycleHooks,
@@ -63,7 +63,7 @@ function createCoreRuntime(
 		() => new TinyBaseRuntime(root, filesystem(), inputs.tinybase.maxSnapshotBytes),
 	)
 	const vault = lazy('Vault', () => new VaultRuntime(root, inputs.vault, filesystem))
-	const http = lazy('outbound HTTP', () => new OutboundHttpRuntime(root, inputs.http))
+	const http = lazy('outbound HTTP', () => createOutboundHttpRuntime(root, inputs.http))
 	const events = lazy('events', () => createEventsBackend(root, inputs.events))
 	const configService = lazy('configuration', () =>
 		config.createConfigService ? config.createConfigService(root) : new ConfigService(root),

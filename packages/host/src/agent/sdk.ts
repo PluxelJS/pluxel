@@ -443,13 +443,17 @@ export function createScriptScope(
 				}
 				activeCalls++
 				track(
-					task
-						.finally(() => {
+					task.then(
+						(): undefined => {
 							activeCalls--
-						})
-						.catch((error: unknown) => {
+							return undefined
+						},
+						(error: unknown): undefined => {
+							activeCalls--
 							if (!controller.signal.aborted || error !== controller.signal.reason) throw error
-						}),
+							return undefined
+						},
+					),
 				)
 				return task
 			}

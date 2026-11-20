@@ -34,10 +34,12 @@ import { requireCoreRuntime } from './context/core-context'
 import type { OutboundHttpRuntime } from './http/runtime'
 
 export type {
+	ManagedOutboundHttpSnapshot,
 	OutboundHttpActivity,
 	OutboundHttpEffectiveSettings,
 	OutboundHttpLimits,
 	OutboundHttpOptions,
+	OutboundHttpRecords,
 	OutboundHttpSaveResult,
 	OutboundHttpSettings,
 	OutboundHttpSnapshot,

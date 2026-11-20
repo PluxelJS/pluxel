@@ -5,7 +5,7 @@ description: 装配宿主管理接口、权限认证与状态快照服务。
 
 `@pluxel/services/management` 提供了宿主底层的管理与自省能力。它是 Workbench 界面与远程控制台的数据源，负责向客户端提供插件状态快照、配置修改与控制指令。
 
-当前管理协议为 `pluxel.management` major 15。客户端先核对 `describe()` 元数据，版本不匹配时结束管理操作。策略按目标报告采用的 mode、来源及遮盖状态。批量自动启动回执携带 `managedRevision`，撤销在该版本下恢复原保存值，原先缺少记录时删除相应键。升级服务端时同步升级 Workbench 与管理客户端。
+当前管理协议为 `pluxel.management` major 16。客户端先核对 `describe()` 元数据，版本不匹配时结束管理操作。策略按目标报告采用的 mode、来源及遮盖状态。批量自动启动回执携带 `managedRevision`，撤销在该版本下恢复原保存值，原先缺少记录时删除相应键。升级服务端时同步升级 Workbench 与管理客户端。
 
 ## 组装管理服务
 

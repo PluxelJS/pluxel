@@ -27,7 +27,7 @@ export type LogsIndexOutput = Readonly<{ streams: readonly LogStreamMeta[] }>
 export type LogsRangeInput = {
 	streamId?: string
 	epoch: number
-	fromSeq: string
+	fromSeq?: string
 	limit?: number
 	filter?: LogFilter
 }
@@ -64,9 +64,10 @@ export type LogsFollowInput = Readonly<{
 
 export function logsIndex(ctx: Context): LogsIndexOutput {
 	const stores = getContextRuntimeLogging(ctx)?.stores.list() ?? []
+	const outbound = requireOutboundHttp(ctx.root).logs
 	return Object.freeze({
 		streams: Object.freeze(
-			[...stores, requireOutboundHttp(ctx.root).logs].map((store) => Object.freeze(store.meta())),
+			(outbound ? [...stores, outbound] : stores).map((store) => Object.freeze(store.meta())),
 		),
 	})
 }
@@ -85,7 +86,9 @@ type ResolvedLogStream = {
 function resolveStream(ctx: Context, input?: string): ResolvedLogStream {
 	const requested = toStreamId(input)
 	if (requested === OUTBOUND_HTTP_LOG_STREAM_ID) {
-		return { streamId: requested, store: requireOutboundHttp(ctx.root).logs, virtual: false }
+		const store = requireOutboundHttp(ctx.root).logs
+		if (!store) throw new Error('Outbound HTTP request logs are disabled by the Host')
+		return { streamId: requested, store, virtual: false }
 	}
 	const stores = requireContextRuntimeLogging(ctx).stores
 	const defaultStore = stores.getOrCreate('default')

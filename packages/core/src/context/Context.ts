@@ -38,9 +38,9 @@ export interface PluginContext extends Context {
 	readonly tinybase: TinyBaseService
 	/** Credentials isolated to the owning Plugin node; storage initializes on the first operation. */
 	readonly vault: VaultStorageApi
-	/** Native Wretch client using this generation's managed outbound Fetch. */
+	/** Native Wretch client using this generation's outbound Fetch. */
 	readonly wretch: Wretch
-	/** Fetch for absolute HTTP(S) targets, subject to the Host's outbound policy and owner lifetime. */
+	/** Fetch bound to the generation's lifetime and the Host's outbound configuration. */
 	readonly fetch: OutboundFetch
 }
 

@@ -4,9 +4,9 @@ import * as fs from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { BasePlugin, Plugin } from '@pluxel/core'
+import { BasePlugin, Plugin, pluginNodeAddressEqual } from '@pluxel/core'
 import { Passthrough } from '@pluxel/core/fs'
-import { requireOutboundHttp } from '@pluxel/core/host'
+import { clearOutboundHttpNode, requireOutboundHttp } from '@pluxel/core/host'
 import { requireHostDocuments } from '@pluxel/core/internal'
 import { createTestHost } from '@pluxel/test'
 import { expect, it, vi } from 'vitest'
@@ -62,9 +62,13 @@ it('uses one owner-bound transport for native Wretch and Fetch on an otherwise e
 	expect(requests[1]?.headers.get('user-agent')).toBe('host')
 	expect(await requests[1]?.text()).toBe('body owned by the caller')
 	const snapshot = await manager.snapshot(node)
-	expect(snapshot.activity).toMatchObject([
-		{ owner: node, lastOrigin: 'https://example.test', received: 2, failed: 0, denied: 0 },
-	])
+	expect(snapshot).toMatchObject({
+		managed: true,
+		records: 'requests',
+		activity: [
+			{ owner: node, lastOrigin: 'https://example.test', received: 2, failed: 0, denied: 0 },
+		],
+	})
 })
 
 it('evaluates the effective origin and redirect mode before handing off to Fetch', async () => {
@@ -96,15 +100,126 @@ it('evaluates the effective origin and redirect mode before handing off to Fetch
 		code: 'redirect_denied',
 	})
 	expect(requests).toEqual([])
-	await expect(fetch('https://allowed.test')).resolves.toHaveProperty('status', 302)
+	await expect(fetch('https://allowed.test')).rejects.toThrow(/redirect in error mode/)
+	await expect(fetch('https://allowed.test', { redirect: 'error' })).rejects.toThrow(
+		/redirect in error mode/,
+	)
 	await expect(
 		fetch(new Request('https://allowed.test'), { redirect: 'manual' }),
 	).resolves.toHaveProperty('status', 302)
-	expect(requests.map(({ redirect }) => redirect)).toEqual(['error', 'manual'])
+	expect(requests.map(({ redirect }) => redirect)).toEqual(['manual', 'manual', 'manual'])
 	const blocked = await manager.save(node, 1, { allowedOrigins: [] })
 	await blocked.cleanup
 	await expect(fetch('https://allowed.test')).rejects.toMatchObject({ code: 'origin_denied' })
-	expect(requests).toHaveLength(2)
+	expect(requests).toHaveLength(3)
+})
+
+it.each(['off', 'summary'] as const)('keeps rules applied with %s records', async (records) => {
+	await using host = await createTestHost({
+		coreConfig: {
+			http: {
+				records,
+				allowedOrigins: ['https://allowed.test'],
+				fetch: async () => new Response(null, { status: 204 }),
+			},
+		},
+	})
+	const node = OutboundClient.nodeAddress()
+	const plugin = await host.start(node)
+	const { fetch, root } = plugin.client()
+	const management = requireOutboundHttp(root)
+	await expect(fetch('https://allowed.test')).resolves.toHaveProperty('status', 204)
+	await expect(fetch('https://outside.test')).rejects.toMatchObject({ code: 'origin_denied' })
+	expect(management.logs).toBeUndefined()
+	await expect(management.snapshot(null)).resolves.toMatchObject({
+		managed: true,
+		records,
+		activity: records === 'off' ? [] : [{ owner: node, received: 1, denied: 1 }],
+	})
+})
+
+it('uses a declared unmanaged Fetch while keeping caller and owner cancellation', async () => {
+	const entered = Promise.withResolvers<void>()
+	const transport = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+		const request = new Request(input, init)
+		request.signal.throwIfAborted()
+		if (new URL(request.url).pathname === '/header')
+			return new Response(request.headers.get('x-origin'))
+		if (new URL(request.url).pathname !== '/pending') return new Response('worker binding')
+		return await new Promise<Response>((_resolve, reject) => {
+			request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true })
+			entered.resolve()
+		})
+	})
+	await using host = await createTestHost({
+		coreConfig: { http: { managed: false, fetch: transport } },
+	})
+	const node = OutboundClient.nodeAddress()
+	const plugin = await host.start(node)
+	const { fetch, wretch, root } = plugin.client()
+	const manager = requireOutboundHttp(root)
+	// An inactive document is neither restored by the client nor consulted by Management reads.
+	await requireHostDocuments(root, 'outbound-http').put('policy.json', '{')
+	expect(manager.logs).toBeUndefined()
+	const status = await manager.snapshot(node)
+	expect(status.managed).toBe(false)
+	expect(status.owner && pluginNodeAddressEqual(status.owner, node)).toBe(true)
+	await expect(manager.save(node, 0, {})).rejects.toMatchObject({ code: 'management_disabled' })
+	const request = new Request('https://service.internal/')
+	const response = await fetch(request)
+	await expect(response.text()).resolves.toBe('worker binding')
+	expect(transport.mock.calls[0]?.[0]).toBe(request)
+	await expect(wretch.get('https://service.internal/').text()).resolves.toBe('worker binding')
+	const forwarded = new Request(request, { headers: { 'x-origin': 'ingress' } })
+	const fromIngress = await fetch('https://service.internal/header', forwarded)
+	await expect(fromIngress.text()).resolves.toBe('ingress')
+	const caller = new AbortController()
+	const reason = new Error('caller stopped')
+	caller.abort(reason)
+	await expect(fetch(new Request(request, { signal: caller.signal }))).rejects.toBe(reason)
+	const pending = fetch('https://service.internal/pending').catch((error: unknown) => error)
+	await entered.promise
+	await host.stop(node)
+	expect(await pending).toMatchObject({ message: 'Plugin owner stopped' })
+	await expect(wretch.get('https://service.internal/').text()).rejects.toThrow(
+		'Plugin owner stopped',
+	)
+})
+
+it('rejects observations or policy fields when management is disabled', async () => {
+	for (const http of [
+		{ managed: false, records: 'off' },
+		{ managed: false, allowedOrigins: [] },
+	] as const) {
+		await expect(createTestHost({ coreConfig: { http: http as never } })).rejects.toThrow(
+			/\[core.http\] unmanaged options includes unsupported/,
+		)
+	}
+})
+
+it('removes dormant overrides when a node is removed in unmanaged mode', async () => {
+	await using host = await createTestHost({ coreConfig: { http: { managed: false } } })
+	const node = OutboundClient.nodeAddress()
+	const plugin = await host.start(node)
+	const { root } = plugin.client()
+	const owner = { definition: node.definition, variant: 'fork', forkId: 'expired' } as const
+	const documents = requireHostDocuments(root, 'outbound-http')
+	await documents.put(
+		'policy.json',
+		JSON.stringify({
+			version: 1,
+			revision: 1,
+			defaults: { timeoutMs: 2_000 },
+			nodes: [{ owner, settings: { allowedOrigins: [] } }],
+		}),
+	)
+	await clearOutboundHttpNode(root, owner)
+	expect(JSON.parse((await documents.getText('policy.json'))!)).toEqual({
+		version: 1,
+		revision: 2,
+		defaults: { timeoutMs: 2_000 },
+		nodes: [],
+	})
 })
 
 it('revalidates queued requests when a new policy is applied and bounds queue admission', async () => {

@@ -314,9 +314,20 @@ export default defineHostApplication(() => ({
 
 默认每个宿主共享 64 个并发尝试和 256 个排队位置，每次已接纳的尝试有 30 秒等待响应头的预算。超时值 `0` 关闭部署层计时。origin 以规范化的 HTTP(S) scheme、host 和 port 匹配。省略 `allowedOrigins` 允许任意 HTTP(S) origin，空列表拒绝全部受管请求。保存的宿主规则和节点规则在部署范围内继续收紧。
 
+宿主在创建时确定是否接管出站请求，以及留存哪些记录。插件统一使用 `ctx.wretch` 或 `ctx.fetch`，在途请求始终关联宿主、插件运行代和调用方的取消信号。
+
+| `coreConfig.http`                | 生效行为                                          |
+| -------------------------------- | ------------------------------------------------- |
+| 省略或 `{ records: 'requests' }` | 启用受管能力，保留节点摘要和最近 5,000 条请求日志 |
+| `{ records: 'summary' }`         | 启用受管能力，每个节点仅保留最近结果及计数        |
+| `{ records: 'off' }`             | 仅启用受管能力                                    |
+| `{ managed: false }`             | 按平台 Fetch 的语义发送，保留生命周期取消         |
+
+`managed: false` 可以配合部署提供的 `fetch` 使用。遇到 origin、代理、超时、队列或记录等受管选项时，宿主在校验声明时拒绝组合。受管模式下，`fetch` 接收已应用策略的 `Request`。关闭接管时，`fetch` 接收原调用的 URL 或 `Request`，以及附带生命周期取消信号的选项。宿主可以在这处接入运行环境提供的 Fetch 兼容函数。
+
 启用 origin 限制时，字符串或 URL 请求默认使用 `redirect: 'error'`，显式 `follow` 会在发送前被拒绝。调用方可用 `manual` 取得运行时原生响应，并通过同一入口请求获得的下一跳。已有 `Request` 的有效重定向模式由 `init.redirect` 或 `Request.redirect` 决定。
 
-管理设置在已配置的 Host 文档存储中持久化，Workbench 读取同一套设置与活动摘要。应用使用内存存储时，记录随宿主结束释放。 [受管出站管理](../workbench/operations.md#查看受管出站-http)
+管理设置在已配置的 Host 文档存储中持久化，Workbench 读取同一套设置与活动摘要。活动摘要和请求日志属于当前宿主实例，随宿主结束释放。 [受管出站管理](../workbench/operations.md#查看受管出站-http)
 
 Node Host 可用 `proxyUrl` 设置无凭据的 HTTP(S) 代理 origin，或者用 `null` 清除受管代理并使用 Host 的默认传输。默认允许管理侧调整代理，`allowProxyChanges: false` 将代理选择固定在部署配置。Browser Host 使用平台 Fetch。
 

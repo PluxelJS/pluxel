@@ -8,7 +8,7 @@ import { assertCoreConfigObject } from '../context/core-config-object'
 import {
 	effectiveOutboundHttpSettings,
 	normalizeOutboundHttpSettings,
-	type ResolvedOutboundHttpOptions,
+	type ResolvedManagedOutboundHttpOptions,
 } from './options'
 import type { OutboundHttpEffectiveSettings, OutboundHttpSettings } from './types'
 
@@ -22,6 +22,7 @@ export type OutboundHttpPolicy = Readonly<{
 
 type ScopePolicy = Readonly<{
 	effective: OutboundHttpEffectiveSettings
+	defaultHeaders: readonly (readonly [string, string])[]
 	origins?: ReadonlySet<string>
 }>
 
@@ -64,13 +65,14 @@ export function serializeOutboundHttpPolicy(policy: OutboundHttpPolicy): string 
 }
 
 export function compileOutboundHttpPolicy(
-	options: ResolvedOutboundHttpOptions,
+	options: ResolvedManagedOutboundHttpOptions,
 	policy: OutboundHttpPolicy,
 ) {
 	const scope = (settings?: OutboundHttpSettings): ScopePolicy => {
 		const effective = effectiveOutboundHttpSettings(options, policy.defaults, settings)
 		return {
 			effective,
+			defaultHeaders: Object.entries(effective.headers),
 			...(effective.allowedOrigins === undefined
 				? {}
 				: { origins: new Set(effective.allowedOrigins) }),

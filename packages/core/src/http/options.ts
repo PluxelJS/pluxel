@@ -1,21 +1,26 @@
-import { isNode } from 'std-env'
+import { isNode, isWorkerd } from 'std-env'
 import { assertCoreConfigObject } from '../context/core-config-object'
 import type {
 	OutboundFetch,
 	OutboundHttpEffectiveSettings,
 	OutboundHttpLimits,
 	OutboundHttpOptions,
+	OutboundHttpRecords,
 	OutboundHttpSettings,
 } from './types'
 
 const settingsFields = new Set(['allowedOrigins', 'headers', 'timeoutMs', 'proxyUrl'])
 const optionFields = new Set([
 	...settingsFields,
+	'managed',
+	'records',
 	'allowProxyChanges',
 	'fetch',
 	'maxConcurrentRequests',
 	'maxQueuedRequests',
 ])
+const unmanagedFields = new Set(['managed', 'fetch'])
+const supportsManagedProxy = isNode && !isWorkerd
 const reservedHeaders = new Set([
 	'__proto__',
 	'authorization',
@@ -35,11 +40,17 @@ const reservedHeaders = new Set([
 	'x-api-key',
 ])
 
-export type ResolvedOutboundHttpOptions = Readonly<{
+export type ResolvedManagedOutboundHttpOptions = Readonly<{
+	managed: true
+	records: OutboundHttpRecords
 	settings: OutboundHttpSettings
 	limits: OutboundHttpLimits
 	fetch?: OutboundFetch
 }>
+
+export type ResolvedOutboundHttpOptions =
+	| Readonly<{ managed: false; fetch?: OutboundFetch }>
+	| ResolvedManagedOutboundHttpOptions
 
 function integer(value: unknown, name: string, min: number, max = Number.MAX_SAFE_INTEGER): number {
 	if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max)
@@ -121,14 +132,31 @@ export function snapshotOutboundHttpOptions(
 	input: OutboundHttpOptions = {},
 ): ResolvedOutboundHttpOptions {
 	assertCoreConfigObject(input, '[core.http] options', optionFields)
-	const { fetch, allowProxyChanges, maxConcurrentRequests, maxQueuedRequests, ...rawSettings } =
-		input
+	const { fetch, managed } = input
 	if (fetch !== undefined && typeof fetch !== 'function')
 		throw new TypeError('[core.http] fetch must be a function')
+	const transport = fetch === undefined ? {} : { fetch }
+	if (managed === false) {
+		assertCoreConfigObject(input, '[core.http] unmanaged options', unmanagedFields)
+		return Object.freeze({ managed: false, ...transport })
+	}
+	if (managed !== undefined && managed !== true)
+		throw new TypeError('[core.http] managed must be a boolean')
+	const {
+		fetch: _fetch,
+		managed: _managed,
+		records = 'requests',
+		allowProxyChanges,
+		maxConcurrentRequests,
+		maxQueuedRequests,
+		...rawSettings
+	} = input
+	if (records !== 'requests' && records !== 'summary' && records !== 'off')
+		throw new TypeError('[core.http] records must be requests, summary or off')
 	if (allowProxyChanges !== undefined && typeof allowProxyChanges !== 'boolean')
 		throw new TypeError('[core.http] allowProxyChanges must be a boolean')
 	const settings = normalizeOutboundHttpSettings(rawSettings, true)
-	if (!isNode && (settings.proxyUrl != null || allowProxyChanges === true))
+	if (!supportsManagedProxy && (settings.proxyUrl != null || allowProxyChanges === true))
 		throw new TypeError('[core.http] managed proxies require a Node host')
 	const limits = Object.freeze({
 		...(settings.allowedOrigins === undefined ? {} : { allowedOrigins: settings.allowedOrigins }),
@@ -143,13 +171,13 @@ export function snapshotOutboundHttpOptions(
 			'maxQueuedRequests',
 			0,
 		),
-		allowProxyChanges: allowProxyChanges ?? isNode,
+		allowProxyChanges: allowProxyChanges ?? supportsManagedProxy,
 	})
-	return Object.freeze({ settings, limits, ...(fetch === undefined ? {} : { fetch }) })
+	return Object.freeze({ managed: true, records, settings, limits, ...transport })
 }
 
 export function effectiveOutboundHttpSettings(
-	options: ResolvedOutboundHttpOptions,
+	options: ResolvedManagedOutboundHttpOptions,
 	defaults: OutboundHttpSettings,
 	node?: OutboundHttpSettings,
 ): OutboundHttpEffectiveSettings {

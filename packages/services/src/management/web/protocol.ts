@@ -9,6 +9,7 @@ import {
 	type PluginNodeAddress,
 } from '@pluxel/core'
 import type {
+	ManagedOutboundHttpSnapshot,
 	OutboundHttpActivity,
 	OutboundHttpEffectiveSettings,
 	OutboundHttpSaveResult,
@@ -30,6 +31,7 @@ export type {
 } from '@pluxel/host/internal/protocol'
 export type { VaultKeyPair } from '@pluxel/core/vault'
 export type {
+	ManagedOutboundHttpSnapshot,
 	OutboundHttpActivity,
 	OutboundHttpEffectiveSettings,
 	OutboundHttpSaveResult,
@@ -37,7 +39,7 @@ export type {
 	OutboundHttpSnapshot,
 }
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 15 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 16 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',

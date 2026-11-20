@@ -13,6 +13,7 @@ import {
 } from '@mantine/core'
 import { OutboundHttpRevisionConflictError } from '@pluxel/services/management/client'
 import type {
+	ManagedOutboundHttpSnapshot,
 	OutboundHttpSettings,
 	OutboundHttpSnapshot,
 } from '@pluxel/services/management/protocol'
@@ -66,7 +67,7 @@ function AppliedValue({ children, source }: { children: ReactNode; source?: stri
 	)
 }
 
-export function OutboundHttpEditor({ snapshot }: { snapshot: OutboundHttpSnapshot }) {
+export function OutboundHttpEditor({ snapshot }: { snapshot: ManagedOutboundHttpSnapshot }) {
 	const management = useRuntimeManagementClient()
 	const queryClient = useQueryClient()
 	const document = useOptionalWorkbenchDocument()
@@ -111,7 +112,7 @@ export function OutboundHttpEditor({ snapshot }: { snapshot: OutboundHttpSnapsho
 		onSuccess: async ({ snapshot: applied, cleanupError }) => {
 			await queryClient.cancelQueries({ queryKey: queryFamily })
 			queryClient.setQueryData<OutboundHttpSnapshot>(queryKey, (current) =>
-				current && current.revision > applied.revision ? current : applied,
+				current && (!current.managed || current.revision > applied.revision) ? current : applied,
 			)
 			setDraft(undefined)
 			setFeedback(
@@ -126,7 +127,7 @@ export function OutboundHttpEditor({ snapshot }: { snapshot: OutboundHttpSnapsho
 			const refreshed = queryClient.getQueryState<OutboundHttpSnapshot>(queryKey)
 			const current = draftRef.current
 			if (error instanceof OutboundHttpRevisionConflictError) {
-				if (current && refreshed?.status === 'success' && refreshed.data) {
+				if (current && refreshed?.status === 'success' && refreshed.data?.managed) {
 					setDraft({ ...current, revision: refreshed.data.revision })
 				}
 				setFeedback({
@@ -148,6 +149,7 @@ export function OutboundHttpEditor({ snapshot }: { snapshot: OutboundHttpSnapsho
 		const current = draftRef.current
 		if (pending.current || (!reset && !current)) return
 		const latest = queryClient.getQueryData<OutboundHttpSnapshot>(queryKey) ?? snapshot
+		if (!latest.managed) return
 		let settings: OutboundHttpSettings | null
 		try {
 			settings = reset

@@ -74,7 +74,7 @@ scope/generation 等待已接纳工作。为避免 provider 与 coordinator 互�
 
 ## 同步与脚本输入
 
-Management major 15 的 plugins.control-materials 与 Vite target 沿原连接读材料，独立于 scripts 开关。读取固定 committed catalog、已安装服务集合和所选 definitions/services；每连接最长缓存 5 分钟、128 份、共 64 MiB，索引分页、文件按 32 KiB UTF-8/base64 分块。过期报 `control_snapshot_expired`，重新同步。
+Management 的 plugins.control-materials 与 Vite target 沿原连接读材料，独立于 scripts 开关。读取固定 committed catalog、已安装服务集合和所选 definitions/services；每连接最长缓存 5 分钟、128 份、共 64 MiB，索引分页、文件按 32 KiB UTF-8/base64 分块。过期报 `control_snapshot_expired`，重新同步。
 
 script sync/dev sync 共用客户端实现；packageName/完整 definition 互斥筛选在连接前校验，收齐索引后只下载选中 snapshot，仍完整验证该 snapshot 的声明闭包。无匹配定义报错且保留 current。验证后写 `.snapshots/<digest>`，再原子切换 current symlink。按 canonical entry 生成稳定模块，只导出所选Plugin/Service定义；普通具名导出保留原名，特殊名称冲突在生成时处理，输出 module/exportName/importStatement 供直接导入。原始材料保留验证后的声明/数据，执行模块由标准模板生成。owner marker、内容和锁检查拒绝覆盖作者文件或被修改快照，旧快照由显式维护清理。
 

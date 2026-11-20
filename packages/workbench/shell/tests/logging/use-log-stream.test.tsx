@@ -80,7 +80,12 @@ function backend() {
 			},
 		),
 		meta: vi.fn(async (): Promise<LogStreamMeta> => meta),
-		range: vi.fn(async (): Promise<LogRangeOk> => page([])),
+		range: vi.fn(
+			async (
+				_streamId: string,
+				_query: Parameters<RuntimeManagementClient['logs']['range']>[1],
+			): Promise<LogRangeOk> => page([]),
+		),
 	}
 	return { logs, observers, releases, client: { logs } as unknown as RuntimeManagementClient }
 }
@@ -140,15 +145,10 @@ describe('independent log stream reader', () => {
 		expect(api.releases[0]).toHaveBeenCalledOnce()
 	})
 
-	it('subscribes before reading and finds bounded matching history across empty pages far behind the global tail', async () => {
+	it('subscribes first and continues a filtered tail query through empty pages', async () => {
 		const api = backend()
 		api.logs.range
-			.mockResolvedValueOnce(
-				page(
-					Array.from({ length: 8 }, (_, i) => line(i + 1)),
-					'2000',
-				),
-			)
+			.mockResolvedValueOnce(page([line(7), line(8)], '2000'))
 			.mockResolvedValueOnce(page([], '4000'))
 			.mockResolvedValueOnce(page(Array.from({ length: 8 }, (_, i) => line(4000 + i))))
 		const view = await mount(api.client, { capacity: 20, historyLimit: 10 })
@@ -159,8 +159,9 @@ describe('independent log stream reader', () => {
 		expect(api.logs.range).toHaveBeenNthCalledWith(
 			1,
 			'default',
-			expect.objectContaining({ fromSeq: '1', filter: { plugin: owner } }),
+			expect.objectContaining({ limit: 10, filter: { plugin: owner } }),
 		)
+		expect(api.logs.range.mock.calls[0]?.[1]).not.toHaveProperty('fromSeq')
 		expect(api.logs.range).toHaveBeenNthCalledWith(
 			2,
 			'default',

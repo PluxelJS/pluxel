@@ -12,6 +12,7 @@ import {
 } from '@pluxel/services/management/client'
 import type {
 	OutboundHttpSettings,
+	ManagedOutboundHttpSnapshot,
 	OutboundHttpSnapshot,
 } from '@pluxel/services/management/protocol'
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router'
@@ -68,8 +69,10 @@ vi.mock('../../src/workbench/runtime', async (importOriginal) => ({
 	useWorkbenchTabs: () => ({ entries: [], snapshot: {} }),
 }))
 
-function snapshot(revision: number, settings: OutboundHttpSettings): OutboundHttpSnapshot {
+function snapshot(revision: number, settings: OutboundHttpSettings): ManagedOutboundHttpSnapshot {
 	return {
+		managed: true,
+		records: 'requests',
 		revision,
 		owner,
 		settings,
@@ -130,9 +133,13 @@ it('reconciles activity with the log stream and opens the exact node settings', 
 		const newerHeaders = { 'accept-language': 'zh-TW' }
 		let current = snapshot(1, { timeoutMs: 5_000 })
 		const first = current.activity[0]!
-		let activity: OutboundHttpSnapshot['activity'] = [first]
-		const get = vi.fn(async (scope: PluginNodeAddress | null) =>
-			scope === null ? { ...snapshot(0, {}), owner: null, activity } : current,
+		let activity: ManagedOutboundHttpSnapshot['activity'] = [first]
+		let records: ManagedOutboundHttpSnapshot['records'] = 'requests'
+		let managed = true
+		const get = vi.fn(async (scope: PluginNodeAddress | null): Promise<OutboundHttpSnapshot> =>
+			managed
+				? { ...(scope === null ? snapshot(0, {}) : current), owner: scope, activity, records }
+				: { managed: false, owner: scope },
 		)
 		const save = vi
 			.fn()
@@ -179,7 +186,7 @@ it('reconciles activity with the log stream and opens the exact node settings', 
 					ok: true,
 					streamId,
 					epoch,
-					fromSeq: input.fromSeq,
+					fromSeq: input.fromSeq ?? lines[0]?.seq ?? String(lines.length + 1),
 					nextSeq: String(lines.length + 1),
 					lines: lines.filter(
 						(line) =>
@@ -343,6 +350,27 @@ it('reconciles activity with the log stream and opens the exact node settings', 
 		await vi.waitFor(() => expect(timeoutInput()).toBeTruthy())
 		expect(container.textContent).toContain('宿主出站默认设置')
 		expect(timeoutInput().placeholder).toBe('继承部署配置')
+
+		await act(async () => link('出站总览').click())
+		const refresh = () =>
+			[...container.querySelectorAll('button')].find((button) => button.textContent === '刷新')!
+		await vi.waitFor(() => expect(refresh().disabled).toBe(false))
+		records = 'summary'
+		await act(async () => refresh().click())
+		await vi.waitFor(() => {
+			expect(emit).toBeUndefined()
+			expect(link('联网摘要')).toBeTruthy()
+			expect(link('完整联网日志')).toBeUndefined()
+		})
+		records = 'off'
+		await act(async () => refresh().click())
+		await vi.waitFor(() => expect(container.textContent).toContain('宿主已关闭联网记录'))
+		expect(container.querySelector('table')).toBeNull()
+		expect(link('宿主默认设置')).toBeTruthy()
+		managed = false
+		await act(async () => refresh().click())
+		await vi.waitFor(() => expect(container.textContent).toContain('宿主使用平台 Fetch'))
+		expect(link('宿主默认设置')).toBeUndefined()
 	} finally {
 		await act(async () => root.unmount())
 		await workspace.dispose()
