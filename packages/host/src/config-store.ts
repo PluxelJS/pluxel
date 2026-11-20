@@ -63,7 +63,7 @@ export class HostConfigStore extends ConfigService {
 		ResolvedHostConfigOptions['records'][number]
 	>
 	private managed: readonly PluginConfigRecordSnapshot[] = []
-	private readonly instance = globalThis.crypto.randomUUID()
+	private readonly instance = crypto.randomUUID()
 	private managedSequence = 0
 	private readonly inputDigests = new Map<string, string>()
 	private pending?: ManagedConfigTransaction

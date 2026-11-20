@@ -1,4 +1,4 @@
-import { createCoreRootContext } from './context/core-plan'
+import { createCoreRootContext } from './context/zenfs-plan'
 import { prepareCoreContext } from './context/core-logging'
 import type { CoreHostConfig, RootContext } from './context/Context'
 import { closeOwnerInvocations } from './internal/owner-invocations'

@@ -1,5 +1,5 @@
 import type { Context } from '@pluxel/core'
-import { enterOwnerInvocation } from '@pluxel/core/host'
+import { enterOwnerInvocation } from '@pluxel/core/internal'
 
 /** Per-run member admission; native values returned by business APIs keep their own lifecycle. */
 export function createBorrowedValueView(

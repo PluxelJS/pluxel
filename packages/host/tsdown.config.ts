@@ -11,6 +11,7 @@ export default defineConfig({
 		'internal/agent/node': './src/agent/node.ts',
 		bindings: './src/bindings.ts',
 		browser: './src/browser.ts',
+		cloudflare: './src/cloudflare.ts',
 		environment: './src/environment.ts',
 		sources: './src/sources.ts',
 		index: './src/index.ts',
@@ -21,6 +22,10 @@ export default defineConfig({
 		'internal/shared-runtime': './src/shared-runtime.ts',
 	},
 	format: ['esm'],
+	// Keep the shared chunks portable. The Node entries import their builtins explicitly.
+	platform: 'neutral',
+	fixedExtension: true,
+	deps: { neverBundle: [/^node:/] },
 	dts: { eager: true },
 	clean: true,
 	treeshake: true,

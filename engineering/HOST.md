@@ -22,7 +22,7 @@ service access 区分 `all`、真实 Plugin/Part `owner` 和真实 `root`。`ctx
 
 部署清单决定 Node 制品 owner：standalone 使用应用固定目录；modules 保留已加载模块 owner，Node 服务按各 owner inventory 读取，不能用应用目录覆盖外部 worker。详见[官方默认组合](../docs/host/services.md#官方服务预设servicespreset)。
 
-`@pluxel/host/browser` 从 `src/browser.ts` 导出同一 Host/服务实现，避免 Node application/source loader 求值；所选 Plugin 的平台依赖仍由应用负责，见[浏览器 Host](../docs/host/configuration.md#浏览器-host)。
+Node 与浏览器入口共享 ZenFS 装配，Node 入口额外接入 Undici 代理工厂。Cloudflare 请求入口 `@pluxel/host/cloudflare` 选择会话文档和只读 Vault bindings。三个入口把已校验的 Core 设施交给同一 `createResolvedHost`。Cloudflare 调用方在当次 handler 内创建、启动、使用和关闭 Host。所选 Plugin 和 Services 的依赖闭包由应用构建验证。 [浏览器 Host](../docs/host/configuration.md#浏览器-host) · [Cloudflare 请求 Host](../docs/host/configuration.md#cloudflare-请求-host)
 
 ## 应用、开发和部署
 

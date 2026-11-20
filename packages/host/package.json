@@ -27,6 +27,10 @@
 			"@pluxel/source": "./src/browser.ts",
 			"default": "./dist/browser.mjs"
 		},
+		"./cloudflare": {
+			"@pluxel/source": "./src/cloudflare.ts",
+			"default": "./dist/cloudflare.mjs"
+		},
 		"./environment": {
 			"@pluxel/source": "./src/environment.ts",
 			"default": "./dist/environment.mjs"
@@ -86,6 +90,7 @@
 			".": "./dist/index.mjs",
 			"./bindings": "./dist/bindings.mjs",
 			"./browser": "./dist/browser.mjs",
+			"./cloudflare": "./dist/cloudflare.mjs",
 			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/agent-types": "./dist/internal/agent-types.mjs",

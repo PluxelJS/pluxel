@@ -8,7 +8,7 @@ import {
 	type HostApplicationFactory,
 	type HostStartupContext,
 } from '../../src/application'
-import { createHost } from '../../src/host'
+import { createHost } from '../../src/index'
 import { runNodeModule } from '../support/node'
 import { createWorkspace, hostPackage } from '../support/workspace'
 

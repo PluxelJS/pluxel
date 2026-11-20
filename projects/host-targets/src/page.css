@@ -1,0 +1,20 @@
+:root {
+	font-family: system-ui, sans-serif;
+	color-scheme: light dark;
+}
+
+body {
+	max-width: 54rem;
+	margin: 3rem auto;
+	padding: 0 1.5rem;
+}
+
+section {
+	margin-block: 2rem;
+}
+
+pre {
+	padding: 1rem;
+	background: color-mix(in srgb, CanvasText 8%, Canvas);
+	overflow: auto;
+}

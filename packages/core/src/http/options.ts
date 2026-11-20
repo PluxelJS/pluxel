@@ -1,4 +1,4 @@
-import { isNode, isWorkerd } from 'std-env'
+import type { Dispatcher } from 'undici'
 import { assertCoreConfigObject } from '../context/core-config-object'
 import type {
 	OutboundFetch,
@@ -20,7 +20,9 @@ const optionFields = new Set([
 	'maxQueuedRequests',
 ])
 const unmanagedFields = new Set(['managed', 'fetch'])
-const supportsManagedProxy = isNode && !isWorkerd
+const noProxyOptionFields = new Set(
+	[...optionFields].filter((field) => field !== 'proxyUrl' && field !== 'allowProxyChanges'),
+)
 const reservedHeaders = new Set([
 	'__proto__',
 	'authorization',
@@ -40,12 +42,15 @@ const reservedHeaders = new Set([
 	'x-api-key',
 ])
 
+export type ProxyDispatcherFactory = (url: string) => Promise<Dispatcher>
+
 export type ResolvedManagedOutboundHttpOptions = Readonly<{
 	managed: true
 	records: OutboundHttpRecords
 	settings: OutboundHttpSettings
 	limits: OutboundHttpLimits
 	fetch?: OutboundFetch
+	createProxyDispatcher?: ProxyDispatcherFactory
 }>
 
 export type ResolvedOutboundHttpOptions =
@@ -130,8 +135,15 @@ export function normalizeOutboundHttpSettings(
 
 export function snapshotOutboundHttpOptions(
 	input: OutboundHttpOptions = {},
+	legacyProxy?: Readonly<{ createDispatcher?: ProxyDispatcherFactory }>,
 ): ResolvedOutboundHttpOptions {
-	assertCoreConfigObject(input, '[core.http] options', optionFields)
+	const createProxyDispatcher = legacyProxy?.createDispatcher
+	const supportsManagedProxy = createProxyDispatcher !== undefined
+	assertCoreConfigObject(
+		input,
+		'[core.http] options',
+		legacyProxy === undefined ? noProxyOptionFields : optionFields,
+	)
 	const { fetch, managed } = input
 	if (fetch !== undefined && typeof fetch !== 'function')
 		throw new TypeError('[core.http] fetch must be a function')
@@ -173,7 +185,14 @@ export function snapshotOutboundHttpOptions(
 		),
 		allowProxyChanges: allowProxyChanges ?? supportsManagedProxy,
 	})
-	return Object.freeze({ managed: true, records, settings, limits, ...transport })
+	return Object.freeze({
+		managed: true,
+		records,
+		settings,
+		limits,
+		...transport,
+		createProxyDispatcher,
+	})
 }
 
 export function effectiveOutboundHttpSettings(

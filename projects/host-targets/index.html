@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Pluxel Host targets</title>
+	</head>
+	<body>
+		<main>
+			<h1>Pluxel Host targets</h1>
+			<button type="button">Run plugins</button>
+			<section data-section="node">
+				<h2>Node</h2>
+				<pre data-host="node" aria-live="polite">Starting…</pre>
+			</section>
+			<section>
+				<h2>Browser module worker</h2>
+				<pre data-host="browser" aria-live="polite">Starting…</pre>
+			</section>
+			<section>
+				<h2>Cloudflare Workers</h2>
+				<pre data-host="cloudflare" aria-live="polite">Starting…</pre>
+			</section>
+		</main>
+		<script type="module" src="/src/page.ts"></script>
+	</body>
+</html>

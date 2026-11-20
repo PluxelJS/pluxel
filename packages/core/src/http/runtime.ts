@@ -273,6 +273,8 @@ class ManagedOutboundHttpRuntime {
 	): Promise<Applied> {
 		const compiled = compileOutboundHttpPolicy(this.options, policy)
 		const dispatchers = new Map<string, ProxyResource>()
+		const { createProxyDispatcher } = this.options
+		if (!createProxyDispatcher) return { ...compiled, dispatchers }
 		const acquired: ProxyResource[] = []
 		const proxies = new Set([
 			compiled.host.effective.proxyUrl,
@@ -489,7 +491,7 @@ class ManagedOutboundHttpRuntime {
 	private async dispatch(
 		request: Request,
 		lifetime: AbortSignal,
-		redirect: RequestRedirect | undefined,
+		redirect: RequestInit['redirect'],
 		{ effective: settings, defaultHeaders }: Applied['host'],
 		dispatchers: Dispatchers,
 	): Promise<Response> {
@@ -518,12 +520,13 @@ class ManagedOutboundHttpRuntime {
 			const response = await (fetch
 				? fetch(new Request(request, requestInit), dispatcher)
 				: globalThis.fetch(request, dispatcher ? { ...requestInit, ...dispatcher } : requestInit))
-			if (
-				redirect === 'error' &&
-				(response.type === 'opaqueredirect' || redirectStatuses.has(response.status))
-			) {
-				void response.body?.cancel().catch(() => {})
-				throw new TypeError('Outbound HTTP request encountered a redirect in error mode')
+			if (redirect === 'error') {
+				// A browser's manual redirect can be opaque with status zero.
+				const responseType: string = response.type
+				if (responseType === 'opaqueredirect' || redirectStatuses.has(response.status)) {
+					void response.body?.cancel().catch(() => {})
+					throw new TypeError('Outbound HTTP request encountered a redirect in error mode')
+				}
 			}
 			return response
 		} finally {
@@ -673,23 +676,10 @@ function changedDispatchers(previous: Dispatchers, next: Dispatchers): ProxyReso
 	)
 }
 
-async function createProxyDispatcher(url: string): Promise<Dispatcher> {
-	// Only reached for a Node Host with a configured proxy. Keep Undici out of browser bundles.
-	const moduleName: string = 'undici'
-	const { ProxyAgent, Dispatcher1Wrapper } = (await import(
-		/* @vite-ignore */ moduleName
-	)) as typeof import('undici')
-	const agent = new ProxyAgent(url)
-	// Node 24's built-in Fetch still uses the legacy Dispatcher handler protocol.
-	return Number.parseInt(process.versions.undici ?? '0', 10) < 8
-		? new Dispatcher1Wrapper(agent)
-		: agent
-}
-
 function enforce(
 	origins: ReadonlySet<string> | undefined,
 	origin: string,
-	redirect: RequestRedirect | undefined,
+	redirect: RequestInit['redirect'],
 	dispatcher: Dispatcher | undefined,
 ): void {
 	if (origins !== undefined && !origins.has(origin))

@@ -13,7 +13,7 @@ import {
 import {
 	assertStartTimeoutMs,
 	consumePluginDefinitionCandidate,
-	snapshotCoreFacilitiesConfig,
+	type PreparedCoreFacilities,
 } from '@pluxel/core/internal'
 import type { VaultBindingRecord } from '@pluxel/core/vault'
 import type { HostEnvironmentBinding, HostFileBinding, OwnedInputBindings } from './bindings'
@@ -80,12 +80,14 @@ export type HostOptions = HostDeclarations<PortableNodeOptions> &
 		vaultBindings?: readonly VaultBindingRecord[]
 	}>
 
+export type SnapshotCoreFacilities = (input?: CoreFacilitiesConfig) => PreparedCoreFacilities
+
 export type ResolvedHostOptions = Readonly<{
 	name?: string
 	plugins: readonly PluginConstructor[]
 	declaredNodes: readonly PluginNodeAddress[]
 	services?: readonly HostService[]
-	coreConfig: ReturnType<typeof snapshotCoreFacilitiesConfig>
+	coreConfig: PreparedCoreFacilities
 	policy: ResolvedHostPolicy
 	config: ResolvedHostConfigOptions
 	vaultBindings?: readonly VaultBindingRecord[]
@@ -114,7 +116,10 @@ const nodeFields = [
 ] as const
 
 /** Both application drivers and portable Hosts interpret the same code declarations. */
-export function snapshotHostDeclarations(input: HostDeclarations): {
+export function snapshotHostDeclarations(
+	input: HostDeclarations,
+	snapshotFacilities: SnapshotCoreFacilities,
+): {
 	options: ResolvedHostOptions
 	bindings: OwnedInputBindings
 } {
@@ -251,7 +256,7 @@ export function snapshotHostDeclarations(input: HostDeclarations): {
 			declaredNodes: Object.freeze(declaredNodes),
 			services:
 				input.services === undefined ? undefined : snapshotPolicyArray(input.services, 'services'),
-			coreConfig: snapshotCoreFacilitiesConfig(input.coreConfig),
+			coreConfig: snapshotFacilities(input.coreConfig),
 			config: snapshotHostConfig(input.config, inputMode, records),
 			policy: snapshotHostPolicy(
 				input.policy,

@@ -39,6 +39,7 @@ it('runs the lowered dependency graph and drains it without Node globals', async
 	const code = chunks[0]!.code
 	expect(code).not.toContain('__vite-browser-external')
 	const modules = chunks.flatMap((chunk) => Object.keys(chunk.modules))
+	expect(modules.some((id) => id.endsWith('/core/src/http/node-proxy.ts'))).toBe(false)
 	for (const name of ['logging', 'fs']) {
 		expect(modules.some((id) => id.endsWith(`/core/src/${name}/config.ts`))).toBe(true)
 	}

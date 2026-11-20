@@ -3,7 +3,7 @@ title: 插件持久化状态（TinyBase）
 description: 使用内建的 TinyBase Store 保存用户偏好与轻量业务记录，支持自动快照与跨重启恢复。
 ---
 
-对于用户偏好设置、开关标记或轻量业务记录，Pluxel 内置了对 [TinyBase](https://tinybase.org/) 响应式内存数据存储的支持。每个插件节点拥有专属的 Store，修改会自动由宿主生成快照并持久化到文件后端。
+对于用户偏好设置、开关标记或轻量业务记录，Pluxel 内置了对 [TinyBase](https://tinybase.org/) 响应式内存数据存储的支持。每个插件节点拥有专属的 Store，修改会自动由宿主生成快照并写入所选的存储。Node 和浏览器使用 ZenFS 后端。Cloudflare 请求 Host 的快照保留到请求 Host 关闭。 [Host 存储](../host/configuration.md#cloudflare-请求-host)
 
 > [!TIP]
 > **状态选型建议**
@@ -53,7 +53,7 @@ export class PreferencesPlugin extends BasePlugin {
 ### 自动持久化与快照刷新
 
 - **自动持久化**：宿主会在插件更新数据后自动生成快照并安排写入，在插件卸载时会确保所有在途数据安全排空（Drain）。
-- **显式确认（`flush`）**：在对外提供的方法中，如果需要等待数据真正落盘并返回调用回执，可以 `await this.state.flush()`。
+- **显式确认（`flush`）**：在对外提供的方法中，用 `await this.state.flush()` 等待所选后端确认保存。跨 Host 恢复取决于该后端的持久性。
 
 ## 单元测试中的状态验证
 

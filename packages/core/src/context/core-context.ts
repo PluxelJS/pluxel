@@ -1,5 +1,9 @@
 import type { Context, RootContext } from './Context'
-import { LoggerService, type ContextLogger } from '../logger/LoggerService'
+import {
+	LoggerService,
+	type ContextLogger,
+	type LoggerServiceConfig,
+} from '../logger/LoggerService'
 import { EffectsService, type EffectsScope } from '../services/effects/EffectsService'
 import {
 	createEventsServiceView,
@@ -8,18 +12,21 @@ import {
 } from '../services/events/EventsService'
 import type { ConfigService } from '../services/config/ConfigService'
 import type { PluginService } from '../plugins/runtime/PluginService'
-import type { FsService, FsPromises, FsRequirement } from '../fs/service'
+import type { FsPromises, FsRequirement } from '../fs/service'
 import type { TinyBaseRuntime } from '../tinybase/service'
 import type { VaultRuntime } from '../vault/runtime'
 import type { RuntimeLogging } from '../logging/logging'
 import { pluginNodePhysicalKey } from '../internal/plugin-address'
 import type { OutboundHttpRuntime } from '../http/runtime'
+import type { CoreStorage } from '../storage/documents'
+import { withErrno } from 'kerium/error'
 
 /** Fixed Core facilities. They never participate in the application's service registry. */
 export interface CoreRuntime {
 	readonly config: ConfigService
 	readonly plugins: PluginService
-	readonly fs: FsService
+	readonly storage: CoreStorage
+	readonly loggerConfig?: LoggerServiceConfig
 	readonly tinybase: TinyBaseRuntime
 	readonly vault: VaultRuntime
 	readonly http: OutboundHttpRuntime
@@ -46,6 +53,12 @@ export function requireCoreRuntime(ctx: Context): CoreRuntime {
 	return runtime
 }
 
+export function requireCoreFilesystem(ctx: Context) {
+	const files = requireCoreRuntime(ctx).storage.files
+	if (!files) throw withErrno('ENOTSUP', 'This Host does not provide a plugin filesystem')
+	return files
+}
+
 function stateOf(ctx: Context): ContextState {
 	const state = contexts.get(ctx)
 	if (!state) throw new TypeError('[core] Invalid Core Context')
@@ -56,7 +69,10 @@ const properties: PropertyDescriptorMap = {
 	logger: {
 		get(this: Context) {
 			const state = stateOf(this)
-			return (state.logger ??= state.owner === this ? new LoggerService(this) : state.owner.logger)
+			return (state.logger ??=
+				state.owner === this
+					? new LoggerService(this, requireCoreRuntime(this).loggerConfig)
+					: state.owner.logger)
 		},
 	},
 	effects: {
@@ -82,8 +98,8 @@ const pluginProperties: PropertyDescriptorMap = {
 			const address = this.pluginInfo?.nodeAddress
 			if (!address) throw new TypeError('[core.fs] A Plugin node address is required')
 			const directory = `plugins/${pluginNodePhysicalKey(address)}`
-			const filesystem = requireCoreRuntime(this).fs
-			return (state.fs = (requirement) => filesystem.directory(directory, requirement))
+			return (state.fs = async (requirement) =>
+				requireCoreFilesystem(this).directory(directory, requirement))
 		},
 	},
 	vault: {

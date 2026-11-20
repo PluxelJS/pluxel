@@ -1,0 +1,31 @@
+{
+	"name": "@pluxel-example/host-targets",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vp run prepare-dev && vp dev",
+		"build": "vp run compile",
+		"preview": "vp run compile && vp preview",
+		"start:node": "node dist/node/node-main.js",
+		"test:smoke": "vp run check-smoke",
+		"typecheck": "vp run check-types"
+	},
+	"dependencies": {
+		"@pluxel/agent-sdk": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"valibot": "catalog:validation"
+	},
+	"devDependencies": {
+		"@cloudflare/vite-plugin": "catalog:build",
+		"@cloudflare/workers-types": "catalog:dev",
+		"@pluxel/host-vite": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@types/node": "catalog:types",
+		"playwright": "catalog:dev",
+		"typescript": "catalog:dev",
+		"vite": "catalog:build",
+		"vite-plus": "catalog:build",
+		"wrangler": "catalog:dev"
+	}
+}

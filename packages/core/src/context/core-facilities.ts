@@ -1,5 +1,5 @@
-import type { CoreFacilitiesConfig } from './Context'
-import { snapshotFsConfig, type ResolvedFsConfig } from '../fs/config'
+import type { CoreFacilitiesConfig, RootContext } from './Context'
+import type { LoggerServiceConfig } from '../logger/LoggerService'
 import { resolveLogTapeConfig, type ResolvedLogTapeConfig } from '../logging/config'
 import type { EventsServiceConfig } from '../services/events/EventsService'
 import { resolveTinyBaseOptions } from '../tinybase/options'
@@ -7,9 +7,16 @@ import type { TinyBaseOptions } from '../tinybase/types'
 import { snapshotVaultConfig } from '../vault/options'
 import type { VaultServiceConfig } from '../vault/types'
 import { assertCoreConfigObject } from './core-config-object'
-import { snapshotOutboundHttpOptions, type ResolvedOutboundHttpOptions } from '../http/options'
+import {
+	snapshotOutboundHttpOptions,
+	type ProxyDispatcherFactory,
+	type ResolvedOutboundHttpOptions,
+} from '../http/options'
+import type { CoreStorage } from '../storage/documents'
+import { createMemoryStorage } from '../storage/memory'
 
 const facilityFields = new Set(['logtape', 'zenfs', 'tinybase', 'vault', 'events', 'http'])
+const requestFacilityFields = new Set(['tinybase', 'vault', 'events', 'http'])
 const eventFields = new Set([
 	'events',
 	'catchPromiseError',
@@ -39,31 +46,65 @@ function snapshotEvents(config: EventsServiceConfig | undefined): EventsServiceC
 	})
 }
 
-type ResolvedCoreFacilitiesConfig = Readonly<{
+type CoreStorageFactory = (root: RootContext) => CoreStorage
+
+export type PreparedCoreFacilities = Readonly<{
 	logtape?: ResolvedLogTapeConfig
 	events?: EventsServiceConfig
-	zenfs: ResolvedFsConfig
 	tinybase: Required<TinyBaseOptions>
+	createStorage: CoreStorageFactory
+	createLoggerConfig?: () => LoggerServiceConfig
 	vault: Readonly<VaultServiceConfig>
 	http: ResolvedOutboundHttpOptions
 }>
 
-const snapshots = new WeakSet<CoreFacilitiesConfig>()
+const snapshots = new WeakSet<PreparedCoreFacilities>()
 
-/** Validate and capture fixed Core inputs without opening backends or invoking factories. */
-export function snapshotCoreFacilitiesConfig(
-	input: CoreFacilitiesConfig = {},
-): ResolvedCoreFacilitiesConfig {
-	if (snapshots.has(input)) return input as ResolvedCoreFacilitiesConfig
-	assertCoreConfigObject(input, '[core] facilities', facilityFields)
+function prepareFacilities(
+	input: CoreFacilitiesConfig,
+	resolved: Pick<PreparedCoreFacilities, 'createStorage' | 'createLoggerConfig' | 'vault' | 'http'>,
+): PreparedCoreFacilities {
 	const snapshot = Object.freeze({
 		logtape: resolveLogTapeConfig(input.logtape),
 		events: snapshotEvents(input.events),
-		zenfs: snapshotFsConfig(input.zenfs === undefined ? {} : input.zenfs),
 		tinybase: resolveTinyBaseOptions(input.tinybase),
-		vault: snapshotVaultConfig(input.vault),
-		http: snapshotOutboundHttpOptions(input.http),
+		...resolved,
 	})
 	snapshots.add(snapshot)
 	return snapshot
+}
+
+/** Validate and capture fixed Core inputs without opening backends or invoking factories. */
+export function snapshotCoreFacilities(
+	input: CoreFacilitiesConfig,
+	prepareStorage: (input: CoreFacilitiesConfig['zenfs']) => CoreStorageFactory,
+	createProxyDispatcher: ProxyDispatcherFactory | undefined,
+): PreparedCoreFacilities {
+	assertCoreConfigObject(input, '[core] facilities', facilityFields)
+	return prepareFacilities(input, {
+		createStorage: prepareStorage(input.zenfs),
+		vault: snapshotVaultConfig(input.vault),
+		http: snapshotOutboundHttpOptions(input.http, { createDispatcher: createProxyDispatcher }),
+	})
+}
+
+/** One request owns session documents and reads only the supplied Vault bindings. */
+export function snapshotRequestCoreFacilitiesConfig(
+	input: CoreFacilitiesConfig = {},
+): PreparedCoreFacilities {
+	assertCoreConfigObject(input, '[core] Request Host facilities', requestFacilityFields)
+	const vault = snapshotVaultConfig(input.vault)
+	if (vault.backend === 'encrypted' || vault.deployIdentity !== undefined)
+		throw new TypeError('[core.vault] Request Host supports only deployment bindings')
+	return prepareFacilities(input, {
+		createStorage: createMemoryStorage,
+		// LogTape categories live for the isolate. Correlate requests in record properties.
+		createLoggerConfig: () => ({ rootId: 'worker-request', requestId: crypto.randomUUID() }),
+		vault: Object.freeze({ backend: 'bindings' }),
+		http: snapshotOutboundHttpOptions(input.http),
+	})
+}
+
+export function assertPreparedCoreFacilities(input: PreparedCoreFacilities): void {
+	if (!snapshots.has(input)) throw new TypeError('[core] expected prepared Core facilities')
 }

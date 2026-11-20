@@ -13,7 +13,7 @@ export {
 	type ContextOf,
 	type RootContextOf,
 } from '@pluxel/context'
-export { createCoreContextHost } from './context/core-plan'
+export { createCoreContextHost, snapshotCoreFacilitiesConfig } from './context/zenfs-plan'
 export { prepareCoreContext } from './context/core-logging'
 export type { Context, RootContext, CoreFacilitiesConfig, CoreHostConfig } from './context/Context'
 export type { CoreExecutionConfig } from './context/plugin-execution'
@@ -29,9 +29,7 @@ import {
 	type OwnerViewServiceInstallation,
 } from '@pluxel/context'
 import type { Context, RootContext } from './context/Context'
-import type { PluginNodeAddress } from './plugins/runtime/identity'
-import { requireCoreRuntime } from './context/core-context'
-import type { OutboundHttpRuntime } from './http/runtime'
+export { clearOutboundHttpNode, requireOutboundHttp } from './http/host'
 
 export type {
 	ManagedOutboundHttpSnapshot,
@@ -44,17 +42,6 @@ export type {
 	OutboundHttpSettings,
 	OutboundHttpSnapshot,
 } from './http/types'
-
-/** Borrow the root-owned management operations for this Host. */
-export function requireOutboundHttp(root: RootContext): OutboundHttpRuntime['management'] {
-	if (root !== root.root) throw new TypeError('[core.http] management requires a root Context')
-	return requireCoreRuntime(root).http.management
-}
-
-/** Called under the Host metadata mutation gate when a node is removed. */
-export function clearOutboundHttpNode(root: RootContext, owner: PluginNodeAddress): Promise<void> {
-	return requireCoreRuntime(root).http.clearNode(owner)
-}
 
 // These factories execute only in a Core Context; the fixed-plan implementation belongs to the kernel.
 export const installRootService = installKernelRootService as <T>(

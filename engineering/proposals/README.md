@@ -6,6 +6,7 @@
 
 | 方向                                                    | 已有基础与待解决问题                                                                                             |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| [平台中性运行时](PLATFORM_NEUTRAL_RUNTIME.md)           | 静态 Node、浏览器和 Cloudflare 请求 Host 已有示例。共享持久状态、流式接线和可选服务需各自验收                    |
 | [Agent 执行与控制](AGENT_WORKFLOW.md)                   | Node/Vite、共享控制与材料同步已有实现；待交付正式 Cloudflare 后端、远程 Vite、离线 validator、持久任务与材料清理 |
 | [Agent 工作流对照研究](AGENT_WORKFLOW_EVALUATION.md)    | 固定模型与相同任务下，验证文件查阅、错误恢复、任务结果及 token 消耗的变化；尚未开展                              |
 | [Schema Form 与内部 UI](schema-form/README.md)          | 独立字段模型、Valibot/JSON Schema 适配与 Pluxel 内部表单迁移；尚未实施                                           |

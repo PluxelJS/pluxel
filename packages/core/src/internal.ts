@@ -33,6 +33,7 @@ export { requireConfigService } from './internal/config-service'
 export { requirePluginService } from './internal/plugin-service'
 export {
 	requireFs,
+	requireHostDocumentRetention,
 	requireHostDocuments,
 	requireTinyBaseHost,
 	requireVaultHost,
@@ -66,7 +67,9 @@ export {
 export { createGenerationContext, createOwnerContext } from './context/context-factory'
 export { getPluginGenerationContext } from './plugins/composition/BasePlugin'
 export { isPluginPartContext } from './plugins/composition/PluginPart'
-export { createCoreRootContext } from './context/core-plan'
+export { createCoreContextHostWithFacilities } from './context/core-plan'
+export { prepareCoreContext } from './context/core-logging'
+export { clearOutboundHttpNode } from './http/host'
 export {
 	checkPluginDecorator,
 	consumePluginDefinitionCandidate,
@@ -115,7 +118,10 @@ export {
 	createCorePluginExecutionBinding,
 	DEFAULT_PLUGIN_EXECUTION,
 } from './context/plugin-execution'
-export { snapshotCoreFacilitiesConfig } from './context/core-facilities'
+export {
+	snapshotRequestCoreFacilitiesConfig,
+	type PreparedCoreFacilities,
+} from './context/core-facilities'
 
 export { recordSecurityEvent, listSecurityEvents, type SecurityEvent } from './internal/security'
 

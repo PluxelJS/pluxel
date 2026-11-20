@@ -483,7 +483,15 @@ await host.start()
 
 ## 浏览器 Host
 
-`@pluxel/host/browser` 导出了适用于浏览器环境与 Web Worker 的轻量宿主实现。在该入口下，底层文件存储默认使用内存（InMemory）或浏览器的 IndexedDB 后端，插件与服务可在纯前端环境中协同运转。
+`@pluxel/host/browser` 提供浏览器和 Web Worker 中的 `createHost()`。文件存储默认使用 InMemory。需要重开恢复时，通过 `coreConfig.zenfs` 显式挂载 IndexedDB。浏览器入口使用浏览器 Fetch，Node 代理由 Node 入口提供。调用方负责启动和关闭 Host。
+
+## Cloudflare 请求 Host
+
+在 Cloudflare Workers 的原生 `fetch(request, env, ctx)` 内，从 `@pluxel/host/cloudflare` 调用 `createHost()`，传入构建时确定的插件。调用方等待 `host.start()`，确认期望运行的节点已达到 `running`，再调用业务方法。可用 `await using host` 在返回已消费完业务数据的 JSON 等响应前结算 Host。流式响应的调用方须把 Host 保留到响应体结束或取消。
+
+此入口的根文档和 TinyBase 快照保留到当前请求的 Host 关闭。部署通过 `vaultBindings` 传入节点可读的凭据，通过 `coreConfig.http.fetch` 接入 Service Binding 等传输。请求 Host 拒绝托管 LogTape、ZenFS 和 Node 代理配置。插件调用 `ctx.fs()` 会收到 `ENOTSUP`。
+
+插件可以继续使用 `ctx.logger`。由 Worker 应用在 isolate 中配置 LogTape 输出，例如控制台 sink。请求 Host 沿用这份配置，并在日志属性中附加 `hostRequestId`。 [三端完整示例](../../projects/host-targets/README.md)
 
 ---
 

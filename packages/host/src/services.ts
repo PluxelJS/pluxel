@@ -1,6 +1,7 @@
 import {
 	getServiceDefinitionKey,
 	getServiceDefinitionAccess,
+	getServiceInstallationDefinition,
 	resolveContextService,
 } from '@pluxel/core/internal'
 import {
@@ -9,13 +10,12 @@ import {
 	type PluginNodeAddress,
 	type PluginConstructor,
 } from '@pluxel/core'
-import {
-	getServiceInstallationDefinition,
-	type CorePluginLifecycleHooks,
-	type CoreGenerationRejection,
-	type ServiceDefinition,
-	type ServiceAccess,
-	type ServiceInstallation,
+import type {
+	CorePluginLifecycleHooks,
+	CoreGenerationRejection,
+	ServiceDefinition,
+	ServiceAccess,
+	ServiceInstallation,
 } from '@pluxel/core/host'
 
 export type HostServiceDependencies = Readonly<

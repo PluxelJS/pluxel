@@ -43,7 +43,7 @@ export type ServiceControlManifestEntry = Readonly<{
 /** SHA-256 for UTF-8 control materials without a Node dependency. */
 export async function controlSha256(content: string | Uint8Array): Promise<string> {
 	const bytes = typeof content === 'string' ? new TextEncoder().encode(content) : content
-	const digest = await globalThis.crypto.subtle.digest('SHA-256', new Uint8Array(bytes))
+	const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(bytes))
 	return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('')
 }
 

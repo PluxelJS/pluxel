@@ -1,5 +1,5 @@
 import type { RootContext, HostDocumentStorage } from '@pluxel/core'
-import { requireFs, requireHostDocuments } from '@pluxel/core/internal'
+import { requireHostDocumentRetention, requireHostDocuments } from '@pluxel/core/internal'
 import type { HostPersistenceRetention } from './persistence'
 export type { HostDocumentStorage } from '@pluxel/core'
 
@@ -42,7 +42,7 @@ export function resolveHostStoreStorage(
 		return Object.freeze({
 			storage: requireHostDocuments(root, namespace),
 			readOnly: options?.readOnly ?? false,
-			retention: requireFs(root).documentRetention(`services/host/${namespace}`),
+			retention: requireHostDocumentRetention(root, namespace),
 		})
 	const storage = options.storage(root)
 	assertDocumentStorage(storage)

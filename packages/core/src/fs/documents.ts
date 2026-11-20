@@ -1,5 +1,9 @@
 import { withErrno } from 'kerium'
-import type { HostDocumentStorage } from '../storage/documents'
+import {
+	assertDocumentBudget,
+	assertDocumentKey,
+	type HostDocumentStorage,
+} from '../storage/documents'
 import { writeFileAtomic } from './atomic'
 import { observeFile } from './observe'
 import type { FsPromises, FsRequirement } from './service'
@@ -32,7 +36,7 @@ export class FsDocuments implements HostDocumentStorage {
 
 	put(key: string, text: string): Promise<void> {
 		this.assertKey(key)
-		this.assertBudget(text)
+		assertDocumentBudget(text, this.maxBytes)
 		const task = this.tail.then(async (): Promise<void> => {
 			await writeFileAtomic(await this.directory({ writable: true }), key, text)
 			this.accessed.set(key, text)
@@ -89,7 +93,7 @@ export class FsDocuments implements HostDocumentStorage {
 			if (stat.size > this.maxBytes)
 				throw new RangeError(`[core.fs] document exceeds ${this.maxBytes} UTF-8 bytes`)
 			const text = await fs.readFile(key, 'utf8')
-			this.assertBudget(text)
+			assertDocumentBudget(text, this.maxBytes)
 			return text
 		} catch (error) {
 			if (missing(error)) return undefined
@@ -133,24 +137,9 @@ export class FsDocuments implements HostDocumentStorage {
 		return task
 	}
 
-	private assertBudget(text: string): void {
-		if (typeof text !== 'string') throw new TypeError('[core.fs] document content must be a string')
-		if (new TextEncoder().encode(text).byteLength > this.maxBytes)
-			throw new RangeError(`[core.fs] document exceeds ${this.maxBytes} UTF-8 bytes`)
-	}
-
 	private assertKey(key: string): void {
 		this.assertOpen()
-		if (
-			typeof key !== 'string' ||
-			key.length === 0 ||
-			key.length > 16_384 ||
-			key.includes('\\') ||
-			key.includes('\0') ||
-			/^[A-Za-z]:/.test(key) ||
-			key.split('/').some((part) => part === '' || part === '.' || part === '..')
-		)
-			throw new TypeError('[core.fs] document key must be a canonical relative file path')
+		assertDocumentKey(key)
 	}
 
 	private assertOpen(): void {

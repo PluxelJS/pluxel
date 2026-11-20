@@ -1,15 +1,15 @@
 import {
 	createCorePluginExecutionBinding,
 	assertCorePluginExecutionBinding,
+	type CoreExecutionConfig,
 	type CorePluginExecutionBinding,
 } from './plugin-execution'
 import { ConfigService } from '../services/config/ConfigService'
 import { createEventsBackend } from '../services/events/EventsService'
 import { createCoreLoggingRuntime } from './core-logging'
-import { snapshotCoreFacilitiesConfig } from './core-facilities'
+import { assertPreparedCoreFacilities, type PreparedCoreFacilities } from './core-facilities'
 import { assertCoreConfigObject } from './core-config-object'
 import { PluginService } from '../plugins/runtime/PluginService'
-import { FsService } from '../fs/service'
 import { VaultRuntime } from '../vault/runtime'
 import { TinyBaseRuntime } from '../tinybase/service'
 import { createOutboundHttpRuntime } from '../http/runtime'
@@ -19,8 +19,8 @@ import {
 } from '../plugins/runtime/plugin-service/HostLifecycle'
 import { type ContextHost, type ServiceInstallation } from '@pluxel/context'
 import { createContextPlan, createRootContext } from '@pluxel/context/internal'
-import { type CoreHostConfig, type Context, type RootContext } from './Context'
-import { initializeCoreRootContext, type CoreRuntime } from './core-context'
+import { type Context, type RootContext } from './Context'
+import { initializeCoreRootContext, requireCoreFilesystem, type CoreRuntime } from './core-context'
 import { createGenerationContext, createOwnerContext } from './context-factory'
 
 /** Cache one fixed facility without moving it into the extension service registry. */
@@ -43,26 +43,40 @@ function lazy<T>(name: string, create: () => T): () => T {
 	}
 }
 
-type CoreContextHostConfig = CoreHostConfig & {
+export type CoreContextPlanConfig = Readonly<{
+	name?: string
+	execution?: CoreExecutionConfig
 	/** One-time Host preparation seam, fixed before Plugin admission. */
-	readonly executionBinding?: CorePluginExecutionBinding
-	readonly createConfigService?: (root: RootContext) => ConfigService
-	readonly createLifecycleHooks?: (root: RootContext) => CorePluginLifecycleHooks
-	readonly services?: readonly ServiceInstallation[]
-}
+	executionBinding?: CorePluginExecutionBinding
+	createConfigService?: (root: RootContext) => ConfigService
+	createLifecycleHooks?: (root: RootContext) => CorePluginLifecycleHooks
+	services?: readonly ServiceInstallation[]
+}>
+
+const planFields = new Set([
+	'name',
+	'execution',
+	'executionBinding',
+	'createConfigService',
+	'createLifecycleHooks',
+	'services',
+])
 
 function createCoreRuntime(
 	root: RootContext,
-	inputs: ReturnType<typeof snapshotCoreFacilitiesConfig>,
-	config: CoreContextHostConfig,
+	inputs: PreparedCoreFacilities,
+	config: CoreContextPlanConfig,
 	execution: CorePluginExecutionBinding,
 ): CoreRuntime {
-	const filesystem = lazy('filesystem', () => new FsService(root, inputs.zenfs))
+	const storage = lazy('storage', () => inputs.createStorage(root))
 	const tinybase = lazy(
 		'TinyBase',
-		() => new TinyBaseRuntime(root, filesystem(), inputs.tinybase.maxSnapshotBytes),
+		() => new TinyBaseRuntime(root, storage(), inputs.tinybase.maxSnapshotBytes),
 	)
-	const vault = lazy('Vault', () => new VaultRuntime(root, inputs.vault, filesystem))
+	const vault = lazy(
+		'Vault',
+		() => new VaultRuntime(root, inputs.vault, () => requireCoreFilesystem(root)),
+	)
 	const http = lazy('outbound HTTP', () => createOutboundHttpRuntime(root, inputs.http))
 	const events = lazy('events', () => createEventsBackend(root, inputs.events))
 	const configService = lazy('configuration', () =>
@@ -88,8 +102,9 @@ function createCoreRuntime(
 		})
 	})
 	return {
-		get fs() {
-			return filesystem()
+		loggerConfig: inputs.createLoggerConfig?.(),
+		get storage() {
+			return storage()
 		},
 		get tinybase() {
 			return tinybase()
@@ -115,16 +130,13 @@ function createCoreRuntime(
 	}
 }
 
-export function createCoreRootContext(config: CoreHostConfig = {}): RootContext {
-	return createCoreContextHost(config).createRoot()
-}
-
-/** Compile application services alongside Core's fixed Context facilities. No resources are acquired. */
-export function createCoreContextHost(
-	config: CoreContextHostConfig = {},
-	preparedFacilities?: ReturnType<typeof snapshotCoreFacilitiesConfig>,
+/** Compile application services alongside the already selected Core facilities. */
+export function createCoreContextHostWithFacilities(
+	config: CoreContextPlanConfig,
+	inputs: PreparedCoreFacilities,
 ): ContextHost<Context, RootContext> {
-	assertCoreConfigObject(config, '[core] Host configuration')
+	assertCoreConfigObject(config, '[core] Host plan', planFields)
+	assertPreparedCoreFacilities(inputs)
 	for (const key of ['createConfigService', 'createLifecycleHooks'] as const) {
 		if (config[key] !== undefined && typeof config[key] !== 'function')
 			throw new TypeError(`[core] ${key} must be a function`)
@@ -136,17 +148,11 @@ export function createCoreContextHost(
 		createConfigService,
 		createLifecycleHooks,
 		services,
-		...facilities
 	} = config
 	if (typeof name !== 'string' || !name.trim())
 		throw new TypeError('[core] name must be a non-empty string')
 	if (executionBinding !== undefined && configuredExecution !== undefined)
 		throw new TypeError('[core] executionBinding and execution cannot be supplied together')
-	if (preparedFacilities !== undefined && Object.keys(facilities).length > 0)
-		throw new TypeError('[core] Core facilities must be supplied once')
-	const inputs = snapshotCoreFacilitiesConfig(
-		preparedFacilities === undefined ? facilities : preparedFacilities,
-	)
 	const execution =
 		executionBinding === undefined ? createCorePluginExecutionBinding() : executionBinding
 	assertCorePluginExecutionBinding(execution)

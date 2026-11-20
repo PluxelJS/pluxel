@@ -175,6 +175,7 @@ catalogs:
     pg: ^8.23.1
     redis: ^6.3.1
   build:
+    '@cloudflare/vite-plugin': 1.68.0
     '@module-federation/vite': 1.23.9
     '@rolldown/pluginutils': ^1.0.1
     '@tailwindcss/vite': ^4.3.4

@@ -150,6 +150,9 @@ try {
 				target: 'ESNext',
 				module: 'ESNext',
 				moduleResolution: 'Bundler',
+				// Keep declaration inputs under the fixture's node_modules so HMR
+				// observes fixture code independently of concurrent framework builds.
+				preserveSymlinks: true,
 				strict: true,
 				skipLibCheck: true,
 				experimentalDecorators: true,

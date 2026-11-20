@@ -1,14 +1,19 @@
-import { createCoreContextHost, installOwnerViewService } from '../src/host'
+import { createCoreContextHost, getContextLoggerRootId, installOwnerViewService } from '../src/host'
 import { type Context, type RootContext } from '../src'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { createCallerContextView, createGenerationContext } from '../src/context/context-factory'
-import { createCoreRootContext } from '../src/context/core-plan'
+import { createCoreRootContext } from '../src/context/zenfs-plan'
 import {
 	getInstalledServiceDefinitions,
 	consumePluginDefinitionCandidate,
+	createCoreContextHostWithFacilities,
+	requireFs,
 	requireConfigService,
+	requireHostDocumentRetention,
+	requireHostDocuments,
 	requirePluginService,
+	snapshotRequestCoreFacilitiesConfig,
 } from '../src/internal'
 import { ConfigService } from '../src/services/config/ConfigService'
 abstract class ExampleService {}
@@ -137,5 +142,35 @@ describe('Core Context integration', () => {
 		expect(() => createCoreContextHost({ services: [installation, installation] })).toThrow(
 			/more than once/,
 		)
+	})
+
+	it('owns session documents per request and keeps logger category identity bounded', async () => {
+		const plan = createCoreContextHostWithFacilities({}, snapshotRequestCoreFacilitiesConfig())
+		const first = plan.createRoot('first request')
+		const next = plan.createRoot('next request')
+		try {
+			const documents = requireHostDocuments(first, 'config')
+			await documents.put('records.json', 'first')
+			expect(await documents.getText('records.json')).toBe('first')
+			expect(await requireHostDocuments(next, 'config').getText('records.json')).toBeUndefined()
+			expect(requireHostDocumentRetention(first, 'config')).toBe('session')
+			expect(() => requireFs(first)).toThrow(expect.objectContaining({ code: 'ENOTSUP' }))
+			expect(getContextLoggerRootId(first)).toBe(getContextLoggerRootId(next))
+			await first.effects.dispose()
+			await expect(documents.getText('records.json')).rejects.toMatchObject({ code: 'EBADF' })
+		} finally {
+			await Promise.all([first.effects.dispose(), next.effects.dispose()])
+		}
+	})
+
+	it.each([
+		{ zenfs: {} },
+		{ logtape: {} },
+		{ vault: { backend: 'encrypted' } },
+		{ vault: { backend: 'bindings', deployIdentity: '' } },
+		{ http: { proxyUrl: null } },
+		{ http: { allowProxyChanges: false } },
+	] as const)('rejects facilities that the request assembly does not own: %j', (config) => {
+		expect(() => snapshotRequestCoreFacilitiesConfig(config)).toThrow(TypeError)
 	})
 })

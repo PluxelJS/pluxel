@@ -67,6 +67,11 @@
 			"import": "./dist/internal/test.mjs",
 			"require": "./dist/internal/test.cjs"
 		},
+		"./internal/zenfs": {
+			"@pluxel/source": "./src/internal/zenfs.ts",
+			"import": "./dist/internal/zenfs.mjs",
+			"require": "./dist/internal/zenfs.cjs"
+		},
 		"./logger": {
 			"@pluxel/source": "./src/logger/index.ts",
 			"import": "./dist/logger.mjs",
@@ -150,6 +155,10 @@
 			"./internal/test": {
 				"import": "./dist/internal/test.mjs",
 				"require": "./dist/internal/test.cjs"
+			},
+			"./internal/zenfs": {
+				"import": "./dist/internal/zenfs.mjs",
+				"require": "./dist/internal/zenfs.cjs"
 			},
 			"./logger": {
 				"import": "./dist/logger.mjs",

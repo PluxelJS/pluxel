@@ -1,4 +1,12 @@
-export { createHost, type HostOptions, type HostApplication, type PluginHost } from './host'
+import { snapshotCoreFacilitiesConfig } from '@pluxel/core/host'
+import { createHostFromOptions, type HostOptions, type PluginHost } from './host'
+
+/** Prepare a Node Host with ZenFS. Plugin generations start through host.start(). */
+export function createHost(options: HostOptions): Promise<PluginHost> {
+	return createHostFromOptions(options, snapshotCoreFacilitiesConfig)
+}
+
+export type { HostOptions, HostApplication, PluginHost } from './host'
 export {
 	HostStatePersistenceError,
 	PluginGraphRejectedError,

@@ -8,7 +8,8 @@ import { requireFs, requireHostDocuments, requireTinyBaseHost } from '@pluxel/co
 import { SuperJSON } from 'superjson'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as v from 'valibot'
-import { createHost, requireHostStateStore } from '../../src/host'
+import { requireHostStateStore } from '../../src/host'
+import { createHost } from '../../src/index'
 
 @Plugin()
 class Configured extends BasePlugin {

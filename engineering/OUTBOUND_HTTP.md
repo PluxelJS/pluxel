@@ -18,7 +18,7 @@ Core 通过 `PluginContext.wretch` 提供原生 Wretch，通过 `PluginContext.f
 
 通过 revision 校验候选，准备代理后等待文档提交，随后发布同一份生效快照。并发编辑使用读到的 revision，过期提交报告冲突。文档写入结果无法确认时，保留已生效快照，释放候选资源并暂停后续写入。核对文档后在新 Host 恢复。代理替换后，新请求采用新快照，旧 Dispatcher 排空已接纳的请求后关闭。Management 在应用结果发布后退出 Host 的写入门控，再等待旧资源清理。清理失败在已应用回执中单独报告。 [运行时](../packages/core/src/http/runtime.ts) · [管理投影](../packages/services/src/management/services/management/RuntimeManagementTarget.ts)
 
-Node 代理由根运行时惰性创建并关闭原生 Undici ProxyAgent。运行时按内置 Undici 的协议选择匹配的每请求 Dispatcher。浏览器入口保持平台 Fetch。部署可以锁定代理，保存的覆盖此时仍可读取或清除，生效值采用部署配置。管理回执确认配置已应用，代理连通性来自实际请求。 [Undici Dispatcher 兼容](https://github.com/nodejs/undici/blob/v8.12.3/README.md#undicisetglobaldispatcherdispatcher)
+Node 装配提供原生 Undici ProxyAgent 工厂，根运行时惰性创建并关闭代理资源。工厂按内置 Undici 的协议选择匹配的每请求 Dispatcher。浏览器和 Cloudflare 请求入口保持平台 Fetch。部署可以锁定代理，保存的覆盖此时仍可读取或清除，生效值采用部署配置。管理回执确认配置已应用，代理连通性来自实际请求。 [Node 代理工厂](../packages/core/src/http/node-proxy.ts) · [Undici Dispatcher 兼容](https://github.com/nodejs/undici/blob/v8.12.3/README.md#undicisetglobaldispatcherdispatcher)
 
 ## 管理与观测
 
@@ -30,8 +30,8 @@ Workbench 初次读取从宿主取最近匹配的记录。省略日志 range 的
 
 回归入口包括 Core 的公开 Context 消费、排队策略变更、停止、保存、原生 Node 代理交接，以及 Services 的授权管理和独立安装测试。 [Core 回归](../packages/core/tests/plugins/OutboundHttp.test.ts) · [交付消费者](../packages/services/tests/installed/services.smoke.mjs)
 
-## Workers 部署接手
+## Cloudflare 请求 Host
 
-- **Host 启动。** 以 browser 条件打包的最小静态 `@pluxel/host/browser` 可生成模块，但仓库当前的 Miniflare 5.20261103.0-beta 在加载 ZenFS 时失败。`FileSystem` 初始化调用 `crypto.randomUUID()`，然后经 `StoreFS` 在模块作用域创建内存文件系统。该 workerd 组合中，`nodejs_compat` 及在 handler 内动态 import 都复现。验收入口是带真实静态插件定义的 Worker Host，在 handler 内启动插件并执行请求。 [Browser Host 入口](../packages/host/src/browser.ts) · [持久化边界](FS.md)
-- **出站传输。** 在同一 workerd 组合中，原生 `Fetcher` Service Binding 返回 200，两次构造 `Request` 后仍能读取 `cf.cacheTtl`，`manual` 返回原生 302，`error` 在构造阶段失败。HTTP 层现在按上面的单跳契约处理 `error`。完整的 Host 启动与 HTTP 联测依赖前一项。公网走平台 Fetch。服务绑定由部署方通过 `coreConfig.http.fetch` 接入，origin 规则使用绑定对应的逻辑 URL。 [Service Binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/http/) · [Workers Request](https://developers.cloudflare.com/workers/runtime-apis/request/)
-- **请求生存期与观测。** HTTP 调用发生在当前 Worker handler，将当次 `request.signal` 传入插件方法。宿主长期状态只保存可复用的配置和资源。内存记录以宿主实例为范围，跨实例查询需由 Worker 部署提供相应观测数据。 [Workers 请求作用域](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/) · [Workers 取消信号](https://developers.cloudflare.com/workers/configuration/compatibility-flags/)
+- **Host 启动。** `@pluxel/host/cloudflare` 使用请求内文档，运行时闭包无需 ZenFS。真实 workerd 回归从 handler 启动正常 lowering 的 provider/consumer 图，再执行受管 Fetch，并核对连续和并发请求的隔离及关闭。 [Worker Host 回归](../packages/host/tests/cloudflare/runtime.test.ts) · [Host 入口](../docs/host/configuration.md#cloudflare-请求-host)
+- **出站传输。** 公网使用平台 Fetch。部署通过 `coreConfig.http.fetch` 接入 `Fetcher` Service Binding，origin 规则采用绑定对应的逻辑 URL。HTTP 层按上面的单跳契约处理 workerd 的 `redirect: 'error'`。 [Service Binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/http/) · [Workers Request](https://developers.cloudflare.com/workers/runtime-apis/request/)
+- **请求生存期与观测。** 调用方将当前 `request.signal` 传入插件方法，并在事件内结算 Host。记录和生效策略保留在当前 Host 的内存。联测覆盖已取消的调用信号，真实客户端断连时入站 signal 的行为仍需在部署所用的传输上验收。 [Workers 请求作用域](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/) · [Workers 取消信号](https://developers.cloudflare.com/workers/configuration/compatibility-flags/)

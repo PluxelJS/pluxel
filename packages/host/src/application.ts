@@ -1,4 +1,5 @@
 import { pluginNodeIndexKey, type PluginConstructor } from '@pluxel/core'
+import { snapshotCoreFacilitiesConfig } from '@pluxel/core/host'
 import {
 	recordLoadedApplicationPlugins,
 	readLoadedPluginModule,
@@ -157,7 +158,10 @@ export async function resolveHostApplication(
 	const startup = snapshotStartup(input)
 	const application = await factory(startup)
 	assertApplicationShape(application)
-	const { options: resolved, bindings } = snapshotHostDeclarations(application)
+	const { options: resolved, bindings } = snapshotHostDeclarations(
+		application,
+		snapshotCoreFacilitiesConfig,
+	)
 	const sources = Object.freeze(
 		application.sources === undefined
 			? []

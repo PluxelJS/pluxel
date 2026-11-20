@@ -1,5 +1,26 @@
-/** Browser and Web Worker composition, without Node application loading or source discovery. */
-export { createHost, type HostOptions, type PluginHost } from './host'
+import type { CoreFacilitiesConfig } from '@pluxel/core'
+import { snapshotZenFsCoreFacilitiesConfig } from '@pluxel/core/internal/zenfs'
+import {
+	createHostFromOptions,
+	type HostOptions as EmbeddedHostOptions,
+	type PluginHost,
+} from './host'
+
+export type HostOptions = Omit<EmbeddedHostOptions, 'coreConfig'> &
+	Readonly<{
+		coreConfig?: Omit<CoreFacilitiesConfig, 'http'> &
+			Readonly<{
+				http?: CoreFacilitiesConfig['http'] &
+					Readonly<{ proxyUrl?: null; allowProxyChanges?: false }>
+			}>
+	}>
+
+/** Prepare a browser or Web Worker Host with ZenFS and the browser Fetch transport. */
+export function createHost(options: HostOptions): Promise<PluginHost> {
+	return createHostFromOptions(options, snapshotZenFsCoreFacilitiesConfig)
+}
+
+export type { PluginHost } from './host'
 export { defineHostService, type HostService, type HostServiceDependencies } from './services'
 export type { PluginApplyReport } from './coordinator'
 export type { HostPluginStatusOverview, HostPluginStatusSnapshot } from './status'

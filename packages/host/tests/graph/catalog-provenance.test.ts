@@ -1,7 +1,7 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/test/unsafe'
 import { expect, it } from 'vitest'
-import { createHost } from '../../src/host'
+import { createHost } from '../../src/index'
 import { readHostCatalogProvenance, setHostCatalogProvenance } from '../../src/catalog-provenance'
 import type { PluginCatalogProvenance } from '../../src/catalog'
 

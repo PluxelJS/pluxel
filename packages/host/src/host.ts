@@ -24,14 +24,15 @@ import {
 import { PluginLoweringError } from '@pluxel/core/toolchain'
 import {
 	closeOwnerInvocations,
+	createCoreContextHostWithFacilities,
 	createCorePluginExecutionBinding,
 	consumePluginDefinitionCandidate,
+	prepareCoreContext,
 	requireConfigService,
 	requirePluginService,
 	requireVaultHost,
 	snapshotVaultBindings,
 } from '@pluxel/core/internal'
-import { createCoreContextHost, prepareCoreContext } from '@pluxel/core/host'
 import { planHostServices, prepareHostServices, createHostServiceLifecycle } from './services'
 import {
 	createPluginCatalogSnapshot,
@@ -52,6 +53,7 @@ import {
 	type HostDeclarations,
 	type HostOptions,
 	type ResolvedHostOptions,
+	type SnapshotCoreFacilities,
 } from './node-declarations'
 
 export type { HostOptions } from './node-declarations'
@@ -118,10 +120,13 @@ export interface PluginHost extends AsyncDisposable {
 	close(): Promise<void>
 }
 
-/** Validate and prepare a fixed service composition. Plugin generations start only through start(). */
-export async function createHost(options: HostOptions): Promise<PluginHost> {
+/** Validate a fixed service composition and prepare it with the entry point's Core facilities. */
+export async function createHostFromOptions(
+	options: HostOptions,
+	snapshotFacilities: SnapshotCoreFacilities,
+): Promise<PluginHost> {
 	assertDataObject(options, 'createHost options', [...HOST_DECLARATION_FIELDS, 'vaultBindings'])
-	const declaration = snapshotHostDeclarations(options)
+	const declaration = snapshotHostDeclarations(options, snapshotFacilities)
 	if (declaration.bindings.envBindings.length > 0 || declaration.bindings.fileBindings.length > 0)
 		throw new TypeError(
 			'[host] envBindings and fileBindings require an application startup context',
@@ -142,7 +147,7 @@ export async function createResolvedHost(options: ResolvedHostOptions): Promise<
 	const services = planHostServices(options.services ?? [])
 	await validateInputBindingCandidates(fixed, options)
 	let configStorageOptions: ConstructorParameters<typeof HostConfigStore>[2] | undefined
-	const shape = createCoreContextHost(
+	const shape = createCoreContextHostWithFacilities(
 		{
 			executionBinding,
 			name: options.name,

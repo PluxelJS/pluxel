@@ -7,7 +7,7 @@ import {
 	type Events,
 	type EventsService,
 } from '@pluxel/core'
-import { snapshotCoreFacilitiesConfig } from '../../context/core-facilities'
+import { snapshotCoreFacilitiesConfig } from '../../context/zenfs-plan'
 import { withCoreInternalTestHost } from '@pluxel/core/internal/test'
 
 declare module '@pluxel/core' {

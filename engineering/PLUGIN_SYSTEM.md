@@ -39,7 +39,7 @@ required dependency 只写 constructor，工具链从 root import provenance 生
 
 Part occurrence 有 config/diagnostic path，没有独立 node、override 或 lifecycle。Part 对外只暴露业务 API，不暴露 root owner、Context attribution path 或 service locator。每个具体 Plugin/Part 最多一个 `configs.use(ObjectSchema)` field；Part schema 按 occurrence path 聚合为同一 Plugin record。
 
-Host 在 root 创建前固定 Context 服务集合；Plugin 不安装 capability。Core 固定提供 logger、effects、events、配置事实、FS/TinyBase/Vault 和受管出站 HTTP，其他服务由应用显式组合。`ctx.events` 是可经 module augmentation 扩展的 host 广播；沿 dependency edge 的固定协议使用具名 `EvtChannel` 属性。事件类型声明本身不建立 graph dependency。 [出站 HTTP](OUTBOUND_HTTP.md)
+Host 在 root 创建前固定 Context 服务集合，应用显式组合扩展服务。Core 提供 logger、effects、events、配置事实、TinyBase、Vault 和受管出站 HTTP。文件能力由 Host 装配提供，`ctx.events` 是可经 module augmentation 扩展的 host 广播。沿 dependency edge 的固定协议使用具名 `EvtChannel` 属性，类型声明本身不建立 graph dependency。 [Host 装配](HOST.md#服务与资源) · [出站 HTTP](OUTBOUND_HTTP.md)
 
 Workbench 通过可选 `ctx.service(WorkbenchRef)?.publish()` 接入。业务 Plugin 不依赖 UI 是否安装；页面 API 使用 fresh Cap’n Web `RpcTarget`，Attachment 的 API/renderer 由 provider 拥有、placement 由 consumer 拥有。
 
@@ -65,7 +65,7 @@ Constructor dependency facade 固定 provider generation 和 caller Context。Pa
 
 ## 服务、来源与宿主策略
 
-Core 固定提供 FS、TinyBase、Vault 与受管出站 HTTP，日志输出通过 `coreConfig.logtape` 选择；`servicesPreset()` 组合入站 HTTP、Commands、NodeModules、Workers、Management、管理命令及可选 Workbench。`workbench: false` 保留管理能力，定制宿主和隔离测试直接组合单项安装器；Database 由应用单独选择。安装顺序与 root/service/generation 资源边界见 [HOST](HOST.md)。
+Node 的 `servicesPreset()` 组合入站 HTTP、Commands、NodeModules、Workers、Management、管理命令及可选 Workbench。`workbench: false` 保留管理能力，定制宿主和隔离测试直接组合单项安装器。Database 由应用单独选择。安装顺序与 root/service/generation 资源边界见 [HOST](HOST.md)。
 
 固定 imports 与动态来源共用应用声明、catalog 和运行意图。动态来源只发布/删除普通 ESM entry；Package Manager 是显式安装的普通 Plugin，自己拥有 acquisition、registry、安装状态和 UI。生产来源加载与开发 HMR 各有边界，不能从“支持动态来源”推断“支持生产热替换”。
 

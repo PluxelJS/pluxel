@@ -13,6 +13,8 @@ let defaultRootIdSequence = 0
 export type LoggerServiceConfig = Readonly<{
 	/** @internal Core pins this identity to the root; Host logging uses the same identity. */
 	rootId: string
+	/** Request Hosts keep a bounded category and attach per-request correlation separately. */
+	requestId?: string
 }>
 
 type ContextLoggerIdentity = Readonly<{
@@ -154,12 +156,15 @@ export class LoggerService extends ContextLogger {
 
 	constructor(ctx: PluxelContext, config?: LoggerServiceConfig) {
 		const plugin = findPluginLogContext(ctx)
-		super({
-			rootId: rootIdFor(ctx, config),
-			plugin: plugin?.nodeAddress,
-			pluginDisplayName: plugin?.displayName,
-			context: ctx.name,
-		})
+		super(
+			{
+				rootId: rootIdFor(ctx, config),
+				plugin: plugin?.nodeAddress,
+				pluginDisplayName: plugin?.displayName,
+				context: ctx.name,
+			},
+			config?.requestId === undefined ? undefined : { hostRequestId: config.requestId },
+		)
 		this.ctx = ctx
 		pinOwnerContext(this, ctx)
 	}

@@ -64,6 +64,7 @@ export default defineConfig({
 		'internal/plugin-address-evidence': 'src/internal/plugin-address-evidence.ts',
 		'internal/control-manifest': 'src/internal/control-manifest.ts',
 		'internal/test': 'src/internal-test.ts',
+		'internal/zenfs': 'src/internal/zenfs.ts',
 		index: 'src/index.ts',
 		host: 'src/host.ts',
 		services: 'src/services/index.ts',

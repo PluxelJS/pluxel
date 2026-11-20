@@ -1,6 +1,5 @@
 import { removeHostNodeMetadata } from './services'
 import { clearLoggingPolicy } from '@pluxel/core/logging/internal'
-import { clearOutboundHttpNode } from '@pluxel/core/host'
 import { HostPolicyRevisionConflictError, HostPolicyMutationRejectedError } from './state-store'
 import { HostStateMutationRejectedError } from './mutation'
 import { hostStatePatch } from './state'
@@ -12,7 +11,11 @@ import {
 	type PluginForkNodeAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
-import { requireConfigService, requirePluginService } from '@pluxel/core/internal'
+import {
+	clearOutboundHttpNode,
+	requireConfigService,
+	requirePluginService,
+} from '@pluxel/core/internal'
 import {
 	PluginGraphRejectedError,
 	HostStatePersistenceError,
