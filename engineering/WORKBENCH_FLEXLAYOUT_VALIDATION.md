@@ -16,8 +16,8 @@
 | 关闭与未保存内容           | `workbench-close-lifecycle.test.tsx`、`workbench-config-save.test.tsx`、`web/config-form-loop.test.tsx`                                           | dirty 取消保留输入；批量关闭一次预检；revision/owner/capability 变化拒绝过期决定；保存失败不丢草稿                |
 | 持久化、恢复与重置         | `workbench-state-persistence.test.tsx`、`workbench-app-surface.test.tsx`                                                                          | Model 与恢复信息唯一；不保存 draft/handle；坏快照保留；存储失败可发现；重置经过关闭守卫                           |
 | 目录分组、多选、筛选       | `plugin-catalog-row.test.tsx`、`plugin-catalog-overview.test.ts`、`plugin-catalog-search.test.ts`、`web/plugin-organizer-virtualization.test.tsx` | 单一管理目录、独立的选择和导航、保留已有分组、目标身份和滚动期间的提示行为                                        |
-| Content/MF 打开和释放      | `workbench-native-activation.test.tsx`、`workbench-content-activation.test.tsx`、`workbench-federated-availability.test.tsx`                      | 每次 open 独立 root，StrictMode 重放后只接纳当前结果，释放晚到结果，按 Bridge → facade → handle 关闭              |
-| 会话与缓存                 | `session-reload.test.ts`、`runtime-updates.test.tsx`、`management-query.test.ts`                                                                  | 撤回完整 reload；缓存不持有 capability；旧请求不覆盖写入后的权威快照                                              |
+| Content/MF 打开和释放      | `workbench-native-activation.test.tsx`、`workbench-content-activation.test.tsx`、`workbench-content-interaction.test.tsx`                         | 每次 open 独立 root，StrictMode 重放后只接纳当前结果，释放晚到结果，按 Bridge → facade → handle 关闭              |
+| 会话与缓存                 | `session-reload.test.ts`、`runtime-updates.test.tsx`、`plugin-detail-refresh.test.tsx`、`log-policy-race.test.tsx`                                | 撤回完整 reload；缓存不持有 capability；旧请求不覆盖写入后的权威快照                                              |
 | 配置目录、DOM identity     | `workbench-outline.test.tsx`、`web/config-form-loop.test.tsx`                                                                                     | 同 owner 副本的 label、anchor、scroll host 与草稿互不串用                                                         |
 | 主题与交互反馈             | `workbench-shell-interactions.test.tsx`、`workbench-native-menus.test.tsx`                                                                        | theme provider 生效；菜单保留 Provider；输入、键盘与焦点正确                                                      |
 | 公开 DTO/Bridge/资源       | 公开包的 `workbench-client.test.ts`、`workbench-federation.test.tsx`                                                                              | tuple 验证、单一 ownership、closed failure 清理与客户端公开契约一致                                               |
@@ -36,7 +36,7 @@
 6. **日志与策略**：完整页默认将宽度留给日志；筛选和详情按需出现，窄窗口不产生固定侧栏挤压。右侧“最近日志”独立标签最多显示当前 owner 最近 10 条，确认记录滚动时头部与完整页入口不移动；点击“查看完整日志”新开日志文档并保留配置页，确认 canonical reference 含 fork，不串其他实例。切换插件不改变已开日志文档的筛选，切换到插件信息或隐藏右侧释放日志订阅。策略入口与日志一起呈现，继承/覆盖和全局设置表达清楚；仅展开或查看不等于完成写入验证。
 7. **恢复与失败**：正常刷新恢复结构和标题，业务草稿按实际契约处理；坏快照显示可恢复错误。会话撤回采用完整 reload，不能悄悄接旧 roots 或备用传输。
 
-`use-log-stream.test.tsx` 与 `log-stream-store.test.ts` 覆盖 epoch reset 前在途读取、乱序 gap 回填、后台绘制暂停时的容量上限、清空后旧结果不回灌和卸载后晚到 subscription 释放。`log-preview.test.tsx` 保护预览最近 10 条、稀疏历史与晚到订阅释放；`log-presentation.test.tsx` 保护行、详情与安全格式化；`log-document.test.tsx` 保护暂停跟随、清空显示和 reset 后撤销旧详情；`workbench-logs-route.test.tsx` 保护 canonical 筛选；`log-document.test.tsx` 保护 reset 后详情清理、暂停跟随与本地清空；`log-policy-race.test.tsx` 使用真实 Query cache 验证写前/写中旧 GET、串行 revision 与失败 readback。
+`use-log-stream.test.tsx` 与 `log-stream-store.test.ts` 覆盖 epoch reset 前在途读取、乱序 gap 回填、后台绘制暂停时的容量上限、清空后旧结果不回灌和卸载后晚到 subscription 释放。`log-preview.test.tsx` 保护预览最近 10 条和稀疏历史；`log-presentation.test.tsx` 保护可见行范围和安全格式化；`log-document.test.tsx` 保护暂停跟随、清空显示和 reset 后撤销旧详情；`workbench-logs-route.test.tsx` 保护 canonical 筛选；`log-policy-race.test.tsx` 使用真实 Query cache 验证写前/写中旧 GET、串行 revision 与失败 readback。
 
 这些是选择场景的清单，不要求每次小改都跑全套。改动影响的边界必须有相应证据；未执行的场景直接注明。
 

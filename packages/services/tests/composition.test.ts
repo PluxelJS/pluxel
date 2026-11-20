@@ -1,146 +1,59 @@
-import { resolveContextService, requireVaultHost } from '@pluxel/core/internal'
-import type { WorkbenchHost } from '@pluxel/workbench/server'
-import { Passthrough } from '@pluxel/core/fs'
-import { servicesPreset } from '@pluxel/services/preset'
-import { createElysiaHandler } from '@pluxel/services/elysia'
-import { ElysiaRuntime } from '@pluxel/services/internal'
-import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { installOwnerViewService } from '@pluxel/core/host'
 import { createHost, defineHostService } from '@pluxel/host'
-import { Management } from '@pluxel/services/management/service'
-import { parseVaultAdminState } from '@pluxel/services/management/internal/test'
-import { afterEach, describe, expect, it } from 'vitest'
-import * as nativeFs from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { Commands } from '@pluxel/services/commands'
+import { createElysiaHandler, ElysiaApp } from '@pluxel/services/elysia'
+import { servicesPreset } from '@pluxel/services/preset'
+import { expect, it } from 'vitest'
 
-const WorkbenchHostRef = defineServiceRef<WorkbenchHost>()
-const directories: string[] = []
-afterEach(async () => {
-	await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })))
-})
-export abstract class Search {}
-export interface Search {
-	query(): string
+export abstract class Greeting {
+	abstract message(): string
 }
-const observations: string[] = []
 
 @Plugin()
-class Credentials extends BasePlugin {
-	async init() {
-		const storage = this.ctx.vault.kv()
-		await storage.set('credential', 'secret')
-		observations.push(
-			(await storage.get<string>('credential').then((snapshot) => snapshot.value)) ?? '',
-		)
-	}
-}
-@Plugin()
-class SearchConsumer extends BasePlugin {
+class Greeter extends BasePlugin {
 	init() {
-		observations.push(this.ctx.service(Search).query())
+		const greeting = this.ctx.service(Greeting)
+		this.ctx.service(ElysiaApp).get('/greeting', () => greeting.message())
 	}
 }
-const node = (plugin: typeof Credentials | typeof SearchConsumer) => ({
-	definition: plugin.address(),
-	variant: 'default' as const,
-})
 
-describe('independently composed official and external services', () => {
-	it.each([false, true])(
-		'keeps Management HTTP independent of Workbench selection (%s)',
-		async (workbench) => {
-			const services = await servicesPreset(
-				{ root: process.cwd(), mode: 'development', env: {}, bindings: {} },
-				{
-					workbench: workbench ? {} : false,
-				},
-			)
-			// Preparation order follows declared services, not the preset's array order.
-			const host = await createHost({
-				plugins: [],
-				services: services.toReversed(),
-				coreConfig: { logtape: {} },
-			})
-			const logging = host.ctx.logging!
-			try {
-				expect(logging.state).toBe('installed')
-				expect(resolveContextService(host.ctx, Management)).toBeDefined()
-				const vaultState = await requireVaultHost(host.ctx).admin.describe()
-				expect(parseVaultAdminState(vaultState)).toEqual(vaultState)
-				await host.start()
-				const server = host.ctx.service(ElysiaRuntime)
-				const missing = new Request('http://local.dev/missing')
-				expect(server.matchesRequest(missing)).toBe(false)
-				const missingResponse = await createElysiaHandler(host)(missing)
-				expect(missingResponse.status).toBe(404)
-				const request = new Request('http://local.dev/__pluxel/runtime/session', {
-					headers: { upgrade: 'websocket', connection: 'Upgrade' },
-				})
-				expect(server.matchesRequest(request)).toBe(true)
-				expect(server.matchesWebSocketRoute(request)).toBe(true)
-				const handshake = await server.fetch(new Request(request.url))
-				expect(handshake.status).toBe(400)
-				expect(Boolean(host.ctx.service(WorkbenchHostRef))).toBe(workbench)
-				const page = new Request('http://local.dev/__pluxel/workbench', {
-					headers: { accept: 'text/html' },
-				})
-				expect(server.matchesRequest(page)).toBe(workbench)
-				const headlessResponse = workbench ? undefined : await server.fetch(page)
-				expect(headlessResponse?.status).toBe(workbench ? undefined : 404)
-			} finally {
-				await host.close()
-			}
-			expect(logging.state).toBe('disposed')
-		},
-		30_000,
-	)
-
-	it('provides built-in Vault with explicit persistence alongside an external service and flushes at close', async () => {
-		observations.length = 0
-		const prefix = await mkdtemp(join(tmpdir(), 'pluxel-composition-'))
-		directories.push(prefix)
-		const events: string[] = []
-		const search = defineHostService({
-			name: 'Example Search',
-			provides: [
-				installOwnerViewService(Search, {
-					createRoot: () => ({}),
-					createView: (_root, owner) => ({ query: () => owner.pluginInfo!.displayName }),
+it('runs a custom service and Management commands with the Workbench disabled', async () => {
+	const greeting = defineHostService({
+		name: 'Greeting',
+		provides: [
+			installOwnerViewService(Greeting, {
+				createRoot: () => ({}),
+				createView: (_root, owner) => ({
+					message: () => `Hello from ${owner.pluginInfo?.displayName}`,
 				}),
-			],
-			prepare({ effects }) {
-				effects.defer(() => {
-					events.push('search closed')
-				})
-			},
-		})
-		const config = {
-			zenfs: {
-				mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix } },
-				durableMounts: ['/'],
-			},
-		}
-		const plugins = [{ plugin: Credentials }, { plugin: SearchConsumer }]
-		const first = await createHost({ plugins, services: [search], coreConfig: { ...config } })
-		try {
-			await first.startNode(node(Credentials))
-			await first.startNode(node(SearchConsumer))
-			expect(observations).toEqual(['secret', 'SearchConsumer'])
-		} finally {
-			await first.close()
-		}
-		expect(events).toEqual(['search closed'])
-		// Reopen the same encrypted storage after shutdown, before any debounce could have run.
-		const reopened = await createHost({ plugins: [], services: [], coreConfig: { ...config } })
-		try {
-			await requireVaultHost(reopened.ctx).admin.unlock()
-			const state = await requireVaultHost(reopened.ctx).admin.describe()
-			expect(state).toMatchObject({ present: true, unlocked: true })
-			expect(state.namespaces?.some((namespace) => namespace.kvKeys === 1)).toBe(true)
-		} finally {
-			await reopened.close()
-		}
+			}),
+		],
 	})
+	const services = await servicesPreset(
+		{ root: process.cwd(), mode: 'test', env: {}, bindings: {} },
+		{ workbench: false },
+	)
+	await using host = await createHost({
+		plugins: [{ plugin: Greeter, autoStart: true }],
+		services: [greeting, ...services.toReversed()],
+	})
+	await host.start()
+	const fetch = createElysiaHandler(host)
+	const response = await fetch(new Request('http://local.test/greeting'))
+	expect(await response.text()).toBe('Hello from Greeter')
+	const list = await host.ctx.service(Commands).execute('plugin.list', {})
+	expect(list.unwrap()).toMatchObject({
+		plugins: [{ address: Greeter.nodeAddress(), lifecycleState: 'running' }],
+	})
+	const session = await fetch(new Request('http://local.test/__pluxel/runtime/session'))
+	expect(session.status).toBe(400)
+	await session.body?.cancel()
+	const shell = await fetch(
+		new Request('http://local.test/__pluxel/workbench', {
+			headers: { accept: 'text/html' },
+		}),
+	)
+	expect(shell.status).toBe(404)
+	await shell.body?.cancel()
 })

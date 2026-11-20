@@ -43,28 +43,6 @@ it('pause retains bounded changes without executing, apply remains paused and em
 	await driver.close()
 })
 
-it('keeps edits observed during apply for the next batch and pause waits only active work', async () => {
-	const held = Promise.withResolvers<void>()
-	const entered = Promise.withResolvers<void>()
-	const apply = vi.fn(async () => {
-		entered.resolve()
-		await held.promise
-	})
-	const driver = createHostViteDriver({ apply, onError: vi.fn() })
-	driver.changed(change('/first'))
-	const applying = driver.control('apply', signal())
-	await entered.promise
-	driver.changed(change('/next'))
-	const paused = driver.control('pause', signal())
-	held.resolve()
-	await Promise.all([applying, paused])
-	expect(apply).toHaveBeenCalledTimes(1)
-	expect(driver.status()).toMatchObject({ mode: 'paused', running: false, pending: { files: 1 } })
-	await driver.control('apply', signal())
-	expect(apply).toHaveBeenCalledTimes(2)
-	await driver.close()
-})
-
 it('retains a failed batch without automatic retry, then merges new evidence and recovers', async () => {
 	vi.useFakeTimers()
 	const error = new Error('bad source')

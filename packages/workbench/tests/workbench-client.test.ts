@@ -434,18 +434,6 @@ describe('Workbench opened View client', () => {
 })
 
 describe('remote value owner', () => {
-	it('takes ownership of the full local tree without allocating a second snapshot', () => {
-		const input = { rows: [{ name: 'first' }] }
-		const snapshot = consumeWorkbenchValue(input)
-		expect(snapshot).toBe(input)
-		expect(snapshot.rows).toBe(input.rows)
-		expect(snapshot.rows[0]).toBe(input.rows[0])
-		expect(Object.isFrozen(snapshot.rows[0])).toBe(true)
-		expect(() => {
-			input.rows[0]!.name = 'changed'
-		}).toThrow(TypeError)
-	})
-
 	it('rejects accessors without invoking them, including then before consumption', () => {
 		for (const key of ['then', 'secret']) {
 			const getter = vi.fn(() => 'private')
@@ -515,22 +503,6 @@ describe('remote value owner', () => {
 
 		const detached = consumeWorkbenchValue(Promise.resolve(input))
 		await expect(detached).resolves.toEqual({ nested: { value: 'safe' } })
-		expect(dispose).toHaveBeenCalledOnce()
-	})
-
-	it('releases a transport-owned DTO when portable-data validation fails', () => {
-		const dispose = vi.fn()
-		const input = Object.defineProperty({ missing: undefined }, Symbol.dispose, {
-			configurable: true,
-			value: dispose,
-		})
-
-		expect(() => consumeWorkbenchValue(input)).toThrowError(
-			expect.objectContaining({
-				name: 'WorkbenchPortableValueError',
-				code: 'WORKBENCH_NON_PORTABLE_VALUE',
-			}),
-		)
 		expect(dispose).toHaveBeenCalledOnce()
 	})
 

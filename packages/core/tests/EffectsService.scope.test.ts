@@ -1,40 +1,25 @@
 import { withCoreInternalTestContext } from '@pluxel/core/internal/test'
-import { describe, expect, it } from 'vitest'
+import { expect, it } from 'vitest'
 
-describe('EffectsService child scope ownership', () => {
-	it('disposes child resources without over-cleaning the parent scope', async () => {
-		await withCoreInternalTestContext(async (ctx) => {
-			const cleaned: string[] = []
-			const parent = ctx.effects.defer(() => {
-				cleaned.push('parent')
-			})
-			const child = ctx.effects.scope()
-			child.defer(() => {
-				cleaned.push('child')
-			})
-
-			await child.dispose()
-
-			expect(cleaned).toEqual(['child'])
-			expect(parent.active).toBe(true)
-
-			await parent.dispose()
-			expect(cleaned).toEqual(['child', 'parent'])
+it('allows child disposal before the root drains other scopes and skips already released entries', async () => {
+	await withCoreInternalTestContext(async ({ effects }) => {
+		const cleaned: string[] = []
+		effects.defer(() => {
+			cleaned.push('root')
 		})
-	})
-
-	it('propagates parent disposal into an owned child scope exactly once', async () => {
-		await withCoreInternalTestContext(async (ctx) => {
-			let childCleanups = 0
-			const child = ctx.effects.scope()
-			child.defer(() => {
-				childCleanups++
-			})
-
-			await ctx.effects.dispose()
-			await child.dispose()
-
-			expect(childCleanups).toBe(1)
+		const first = effects.scope()
+		first.defer(() => {
+			cleaned.push('first')
 		})
+		const second = effects.scope()
+		second.defer(() => {
+			cleaned.push('second')
+		})
+
+		await first.dispose()
+		expect(cleaned).toEqual(['first'])
+		await effects.dispose()
+		await second.dispose()
+		expect(cleaned).toEqual(['first', 'second', 'root'])
 	})
 })

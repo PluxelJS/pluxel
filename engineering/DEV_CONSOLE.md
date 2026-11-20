@@ -48,6 +48,6 @@ class 地址提供完整实例类型和动态配置；生成控制入口额外�
 - [`packages/host-vite/src/console/`](../packages/host-vite/src/console/)：attachment/source 的 `ModuleRunner`、摘要、依赖和 epoch；server/discovery 的发现与握手。
 - [`packages/agent-sdk/src/client/`](../packages/agent-sdk/src/client/)：普通 Promise 客户端、归属选择和原 receipt 恢复。
 - [`packages/host-vite/tests/`](../packages/host-vite/tests/)：server/client/attachment 测试覆盖无 Services Host、fork、stale constructor、原生 Cap’n Web、摘要和权限。
-- [`hmr-control.smoke.mjs`](../packages/host-vite/tests/hmr-control.smoke.mjs)：真实 watcher、共享 constructor、暂停/修复、重复更新和 replacement；[`initial-source-recovery.smoke.mjs`](../packages/host-vite/tests/initial-source-recovery.smoke.mjs) 覆盖初始源码失败恢复。
+- [`hmr-control.smoke.mjs`](../packages/host-vite/tests/hmr-control.smoke.mjs) 经真实 watcher 验证同批入口的语法修复、脚本与应用共享 constructor、暂停及 Host replacement。[`initial-source-recovery.smoke.mjs`](../packages/host-vite/tests/initial-source-recovery.smoke.mjs) 验证缺失的导入出现时自动恢复。
 
 通用执行和 Node/Workers 验证由 [Agent Workflow](AGENT_WORKFLOW.md#验证入口与已验证范围)维护。

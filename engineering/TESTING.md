@@ -35,13 +35,14 @@ constructor 仅用于 catalog.add/remove、replaceDefinition、全局 provider d
 
 配置模块先于 resolve.conditions 求值，因此 source overlay 的任务先执行 pluxel source build `--package` `@pluxel/test`，再从正式 export 加载 preset。只构建该 owner 的真实前置（含 Services/Workbench 发布入口），不预构整个 source closure；构建不表示服务初始化。配置加载后 preset 为测试图设置 `@pluxel/source`、`@pluxel/hmr`。
 
-SSR 条件会进 worker Node --conditions；不得全局加入 import，Node 需按每次 import/require 选择分支，否则 pg 等 CJS 内部会误载 ESM。原生子进程回归在 [`packages/test/tests/vitest.test.ts`](../packages/test/tests/vitest.test.ts)。
+SSR 条件会进 worker Node --conditions；不得全局加入 import，Node 需按每次 import/require 选择分支，否则 pg 等 CJS 内部会误载 ESM。[`packages/test/tests/vitest.test.ts`](../packages/test/tests/vitest.test.ts) 在真实 Vitest worker 中以原生 require 验证分支选择。
 
 ## 回归取舍与验证所有权
 
-测试覆盖当前契约、资源归属或已观察到的失败。相同前提和结果可以合并，保留失败阶段、并发、资源归属和真实传输的区别。
+保留测试前，先明确哪条契约失效时调用方会看到什么结果。由拥有该行为的入口验证，例如重启后旧句柄拒绝调用、文件写入失败后已确认内容仍可读。相同前提和结果用一个场景验证，失败阶段、资源归属或传输方式引入独立风险时再增加用例。
 
 - 重用同一组前置和资源来验证一个完整的操作序列。纯函数可以用表格覆盖代表输入。涉及进程、构建产物或 Host 的契约使用对应真实边界。
+- 性能用代表性负载衡量。图和缓存的功能回归断言结果，内部索引、遍历次数和缓存布局可随实现调整。
 - 用应用结果、事件或可控的 Promise 等待状态变化。只在验证超时或定时调度本身时推进测试时钟，外部文件和跨进程变更等待可观察的结果。
 - 纯类型放 tests/*.typecheck.ts，由包含 tests 的 typecheck 验证；preset 行为执行真实配置，不扫描源码猜 API。
 - 编译归 Rolldown，CLI 测真实 bin/产物，协议复用生产 adapter；连接/背压/关闭在 carrier 验证。

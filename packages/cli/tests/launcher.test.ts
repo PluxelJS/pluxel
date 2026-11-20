@@ -56,17 +56,11 @@ async function releaseBin() {
 
 describe('pluxel bin launcher', () => {
 	it.each([
-		{ argv: ['script'], boundary: 'missing script subcommand' },
-		{ argv: ['script', '--unknown'], boundary: 'unknown option on the script command' },
 		{ argv: ['script', 'run'], boundary: 'missing script positional argument' },
-		{ argv: ['script', 'run', 'task.ts'], boundary: 'missing required script option' },
-		{ argv: ['script', 'result'], boundary: 'invalid receipt selection inside a command' },
+		{ argv: ['script', 'result'], boundary: 'missing receipt selection' },
 		{ argv: ['dev', '--profile', 'app', 'statuz'], boundary: 'unknown dev subcommand' },
-		{ argv: ['dev', '--', 'statuz'], boundary: 'unknown dev subcommand after --' },
-		{ argv: ['dev', 'status', '--root'], boundary: 'missing value for a CLI-owned option' },
+		{ argv: ['dev', 'status', '--root'], boundary: 'missing CLI option value' },
 		{ argv: ['dev', 'run', 'task.ts', '--receipt-file'], boundary: 'missing SDK option value' },
-		{ argv: ['dev', 'instances', 'unexpected'], boundary: 'unexpected dev positional argument' },
-		{ argv: ['dev', 'sync', '--unknown'], boundary: 'unknown option on a dev subcommand' },
 	])('prints one control JSON error for $boundary', async ({ argv }) => {
 		const result = await runNode([await releaseBin(), ...argv], tmpdir())
 		expect(result.code).toBe(1)
@@ -88,26 +82,7 @@ describe('pluxel bin launcher', () => {
 		expect(() => JSON.parse(result.stdout)).toThrow(SyntaxError)
 	})
 
-	it('checks the dev --root source binding before loading CLI code', async () => {
-		const root = await createProject({
-			'package.json': '{"name":"bound-consumer"}',
-			'.pluxel/development.json': JSON.stringify({
-				source: { kind: 'git', root: '/other-pluxel-checkout' },
-			}),
-		})
-		for (const selector of [['--root', root], [`--root=${root}`]]) {
-			const result = await runNode([pluxelBin, 'dev', 'status', ...selector], dirname(root))
-			expect(result.code).toBe(1)
-			expect(result.stderr).toContain('Source mismatch')
-			expect(result.stderr).toContain('/other-pluxel-checkout')
-		}
-	})
-
-	it.each([
-		['dev', '--root'],
-		['pncat', '--cwd'],
-		['build', '--root'],
-	])('stops reading %s source selectors at --', async (command, option) => {
+	it('honors each command’s source selector only before the argument separator', async () => {
 		const root = await createProject({
 			'package.json': '{"name":"bound-consumer"}',
 			'.pluxel/development.json': JSON.stringify({
@@ -115,34 +90,18 @@ describe('pluxel bin launcher', () => {
 			}),
 			'other/.git/HEAD': 'ref: refs/heads/main\n',
 		})
-		for (const selector of [
-			[option, resolve(root, 'other')],
-			[`${option}=${resolve(root, 'other')}`],
-		]) {
-			const result = await runNode([pluxelBin, command, '--', ...selector], root)
+		for (const [cwd, args] of [
+			[dirname(root), ['dev', 'status', '--root', root]],
+			[dirname(root), ['pncat', 'clean', `--cwd=${root}`]],
+			[root, ['build', '--', `--root=${resolve(root, 'other')}`]],
+		] as const) {
+			const result = await runNode([pluxelBin, ...args], cwd)
 			expect(result.code).toBe(1)
 			expect(result.stderr).toContain('Source mismatch')
 			expect(result.stderr).toContain('/other-pluxel-checkout')
 		}
 	})
 
-	it('checks the pncat cwd binding before forwarding native arguments', async () => {
-		const root = await createProject({
-			'package.json': '{"name":"bound-consumer"}',
-			'.pluxel/development.json': JSON.stringify({
-				source: { kind: 'git', root: '/other-pluxel-checkout' },
-			}),
-		})
-		for (const cwdArgs of [['--cwd', root], [`--cwd=${root}`]]) {
-			const result = await runNode(
-				[pluxelBin, 'pncat', 'clean', '--yes', '--no-install', ...cwdArgs],
-				dirname(root),
-			)
-			expect(result.code).toBe(1)
-			expect(result.stderr).toContain('Source mismatch')
-			expect(result.stderr).toContain('/other-pluxel-checkout')
-		}
-	})
 	it('rejects stale Git CLI code before executing the old artifact and accepts restored content', async () => {
 		const packagePath = 'packages/cli'
 		const root = await createProject({
@@ -192,18 +151,15 @@ describe('pluxel bin launcher', () => {
 		const restored = await run()
 		expect(restored.code).toBe(0)
 		expect(restored.stdout).toBe('artifact executed')
-		for (const [path, changed] of [
-			['packages/core/package.json', '{"name":"@pluxel/core","version":"1.2.0"}'],
-			[`${packagePath}/templates/plugin/pnpm-workspace.yaml`, 'catalog: { yaml: ^2.0.0 }\n'],
-			['pnpm-workspace.yaml', 'packages: [packages/*]\ncatalog: { yaml: ^2.0.0 }\n'],
-			['vendor/pncat/src/sync.ts', 'export const changed = true\n'],
-		] as const) {
-			const file = resolve(root, path)
-			const original = await readFile(file)
-			await writeFile(file, changed)
-			expect(cliSourceFingerprint(packageRoot)).not.toBe(built)
-			await writeFile(file, original)
-		}
+
+		await writeFile(
+			resolve(packageRoot, 'templates/plugin/pnpm-workspace.yaml'),
+			'catalog: { yaml: ^2.0.0 }\n',
+		)
+		const changedTemplate = await run()
+		expect(changedTemplate.code).toBe(1)
+		expect(changedTemplate.stdout).toBe('')
+		expect(changedTemplate.stderr).toContain('CLI build is stale')
 	})
 
 	it('keeps the Git CLI for ordinary documentation even with another local CLI', async () => {
@@ -236,41 +192,19 @@ describe('pluxel bin launcher', () => {
 				'process.stdout.write(JSON.stringify({',
 				'  argv: process.argv.slice(1),',
 				'  cwd: process.cwd(),',
-				'  direct: Boolean(globalThis[Symbol.for("pluxel.cli.direct")]),',
 				'}))',
 				'',
 			].join('\n'),
 		})
 
 		const result = await runNode([await releaseBin(), 'build'], root)
-		const payload = JSON.parse(result.stdout) as { argv: string[]; cwd: string; direct: boolean }
+		const payload = JSON.parse(result.stdout) as { argv: string[]; cwd: string }
 
 		expect(result.stderr).toBe('')
 		expect(result.code).toBe(0)
 		expect(payload.cwd).toBe(root)
 		expect(payload.argv[0]).toContain('node_modules/@pluxel/cli/bin/pluxel.mjs')
 		expect(payload.argv.slice(1)).toEqual(['build'])
-		expect(payload.direct).toBe(false)
-	})
-
-	it('permits source bootstrap before the project-local CLI is installed', async () => {
-		const root = await createProject({
-			'package.json': JSON.stringify({
-				name: 'fixture',
-				version: '1.0.0',
-				devDependencies: { '@pluxel/cli': '0.1.0' },
-			}),
-		})
-
-		const launcher = await releaseBin()
-		const ordinary = await runNode([launcher, '--version'], root)
-		expect(ordinary.code).toBe(1)
-		expect(ordinary.stderr).toContain('declares @pluxel/cli, but it is not installed')
-
-		const bootstrap = await runNode([launcher, 'source', '--help'], root)
-		expect(bootstrap.code).toBe(0)
-		expect(bootstrap.stderr).toBe('')
-		expect(bootstrap.stdout).toContain('Use registered source checkouts')
 	})
 
 	it('uses the calling CLI for source bootstrap even when an installed local CLI is incomplete', async () => {

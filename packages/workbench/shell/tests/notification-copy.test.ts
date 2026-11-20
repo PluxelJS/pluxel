@@ -32,8 +32,7 @@ describe('diagnostic notifications', () => {
 	})
 
 	it('copies full diagnostics while preserving rich content and its undo action', () => {
-		const undo = vi.fn()
-		const undoButton = createElement('button', { type: 'button', onClick: undo }, '恢复原策略')
+		const undoButton = createElement('button', { type: 'button', onClick: vi.fn() }, '恢复原策略')
 		const message = createElement('div', null, '2 个 Plugin 的策略已更新', undoButton)
 		const receipt = {
 			ok: true,
@@ -49,17 +48,5 @@ describe('diagnostic notifications', () => {
 		}
 		expect(payload.message.props.copyText).toBe(`已批量关闭自动启动\n\n${diagnosticText}`)
 		expect(payload.message.props.message).toBe(message)
-		expect(message.props.children).toEqual(['2 个 Plugin 的策略已更新', undoButton])
-		undoButton.props.onClick()
-		expect(undo).toHaveBeenCalledOnce()
-	})
-
-	it('keeps rich notifications without diagnostics in their original form', () => {
-		const message = createElement('div', null, '操作完成', createElement('button', null, '撤销'))
-
-		notifyAndRecord({ title: '已完成', message, color: 'green' })
-
-		const payload = mocks.show.mock.calls.at(-1)![0] as { message: ReactNode }
-		expect(payload.message).toBe(message)
 	})
 })

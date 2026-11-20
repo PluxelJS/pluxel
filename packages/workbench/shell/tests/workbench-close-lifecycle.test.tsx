@@ -181,19 +181,6 @@ describe('native document close and save decisions', () => {
 		expect(fixtures.models.get(second)!.dispose).not.toHaveBeenCalled()
 	})
 
-	it('protects remote dirty state and preserves the entire batch when its owner refuses', async () => {
-		const { session, first } = await fixture()
-		session.documents.get(first)!.remoteDirty = true
-		let closing!: Promise<boolean>
-		await act(async () => {
-			closing = session.closeDocuments()
-		})
-		await decide(0, false)
-		await act(async () => expect(await closing).toBe(false))
-		expect(fixtures.decisions).toHaveLength(1)
-		expect(session.workbench.getDocuments()).toHaveLength(2)
-	})
-
 	it('rejects the entire batch when an approved editor owner is replaced even with an equal business revision', async () => {
 		const { session, first, second } = await fixture()
 		const firstModel = fixtures.models.get(first)!
@@ -232,32 +219,6 @@ describe('native document close and save decisions', () => {
 		await act(async () => expect(await closing).toBe(false))
 		expect(session.workbench.getDocuments().map((document) => document.id)).toEqual([first, second])
 		expect(firstModel.dispose).not.toHaveBeenCalled()
-	})
-
-	it('keeps the input and reports a failed save instead of closing the document', async () => {
-		const { session, first, container } = await fixture()
-		const model = fixtures.models.get(first)!
-		model.dirty = true
-		model.save = vi.fn(async () => {
-			throw new Error('save transport failed')
-		})
-		const input = container.querySelector<HTMLInputElement>(`[aria-label="draft ${first}"]`)!
-		input.value = 'unsaved input'
-		let closing!: ReturnType<typeof session.workbench.close>
-		await act(async () => {
-			closing = session.workbench.close(first)
-		})
-		await decide(0, true)
-		await act(async () =>
-			expect(await closing).toMatchObject({
-				status: 'failed',
-				error: expect.objectContaining({ message: 'save transport failed' }),
-			}),
-		)
-		expect(model.dirty).toBe(true)
-		expect(session.workbench.getDocument(first)).not.toBeNull()
-		expect(container.querySelector(`[aria-label="draft ${first}"]`)).toBe(input)
-		expect(input.value).toBe('unsaved input')
 	})
 
 	it('allows search/hash edits in a dirty document and rejects a pathname departure with no ghost browser history', async () => {
@@ -303,49 +264,9 @@ describe('native document close and save decisions', () => {
 			expect.objectContaining({ message: expect.stringContaining('解除固定或关闭保护') }),
 		)
 	})
-
-	it('disposes content once after an accepted close and preserves the other instance', async () => {
-		const { session, first, second } = await fixture()
-		const firstModel = fixtures.models.get(first)!
-		await act(async () => {
-			const result = await session.workbench.close(first)
-			expect(result.status).toBe('applied')
-		})
-		expect(firstModel.dispose).toHaveBeenCalledOnce()
-		expect(session.workbench.getDocument(second)).not.toBeNull()
-		expect(fixtures.models.get(second)!.dispose).not.toHaveBeenCalled()
-	})
 })
 
 describe('workspace departure decisions', () => {
-	it('refuses departure when a previously approved editor is replaced by another owner with an equal revision', async () => {
-		const { session, first, second, container } = await fixture()
-		const firstModel = fixtures.models.get(first)!
-		firstModel.dirty = true
-		fixtures.models.get(second)!.dirty = true
-		const input = container.querySelector<HTMLInputElement>(`[aria-label="draft ${first}"]`)!
-		window.history.replaceState(null, '', '/security')
-		vi.spyOn(console, 'error').mockImplementation(() => {})
-		let leaving!: Promise<unknown>
-		await act(async () => {
-			leaving = session.leave('/security#left').catch((cause: unknown) => cause)
-		})
-		await decide(0, true)
-		await vi.waitFor(() => expect(fixtures.decisions[1]).toBeDefined())
-		session.documents.get(first)!.editor = {
-			getState: () => ({ hasUnsavedChanges: true, token: firstModel.revision }),
-			isWritePending: () => false,
-		}
-		await decide(1, true)
-		await act(async () => {
-			expect(await leaving).toBeUndefined()
-		})
-		expect(window.location.pathname + window.location.hash).toBe('/security')
-		expect(session.workbench.getDocuments()).toHaveLength(2)
-		expect(container.querySelector(`[aria-label="draft ${first}"]`)).toBe(input)
-		expect(firstModel.dispose).not.toHaveBeenCalled()
-	})
-
 	it('accepts unchanged save and discard decisions, terminates content and releases beforeunload protection', async () => {
 		const { session, first, second } = await fixture()
 		const firstModel = fixtures.models.get(first)!

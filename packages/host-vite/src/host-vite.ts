@@ -250,6 +250,9 @@ export function host(options: HostViteOptions): PluginOption[] {
 				applicationFiles: recovery.invalidationFiles(files),
 				changedDependencies: await moduleBytes.changed(dependenciesToCheck),
 				recoverMissingImports:
+					// An unavailable Host can retain evaluated modules from an attempt whose
+					// compiler facts rolled back. Retry those modules with the repaired one.
+					!active ||
 					batch.full ||
 					changes.some(
 						(change) =>

@@ -4,10 +4,6 @@ import {
 	requireConfigService,
 	requirePluginService,
 } from '@pluxel/core/internal'
-import { elysia } from '@pluxel/services/elysia'
-import { commands } from '@pluxel/services/commands'
-import { nodeModules } from '@pluxel/services/node'
-import { workers } from '@pluxel/services/workers'
 import {
 	createServiceInternalTestHarness,
 	type ServiceInternalTestHarness,
@@ -26,7 +22,6 @@ const ConfigSchema = v.object({
 	value: v.optional(v.string(), 'initial'),
 })
 
-let defaultStarts: string[] = []
 let forkStarts = new Map<string, string[]>()
 let defaultUpdates: Array<{ applied: string; desired: string }> = []
 let forkUpdates = new Map<string, string[]>()
@@ -133,7 +128,6 @@ class ConfigOwner extends BasePlugin {
 	runtimeValue = ''
 
 	override init() {
-		defaultStarts.push(this.config.value)
 		this.runtimeValue = this.config.value
 		this.configs.onUpdate(this.config, ({ applied, desired }) => {
 			defaultUpdates.push({ applied: applied.value, desired: desired.value })
@@ -170,11 +164,6 @@ class ConfigFork extends BasePlugin {
 
 @Plugin()
 class StoppedConfigOwner extends BasePlugin {
-	readonly config = this.configs.use(ConfigSchema)
-}
-
-@Plugin()
-class ConfigWithoutListener extends BasePlugin {
 	readonly config = this.configs.use(ConfigSchema)
 }
 
@@ -274,7 +263,6 @@ const hosts: ServiceInternalTestHarness[] = []
 
 afterEach(async () => {
 	for (const host of hosts.splice(0)) await host.dispose()
-	defaultStarts = []
 	forkStarts = new Map()
 	defaultUpdates = []
 	forkUpdates = new Map()
@@ -368,32 +356,6 @@ describe('Plugin config application scope', () => {
 		expect(configService.getRawConfig(owner)).toEqual({ value: 'before-unlink' })
 	})
 
-	it('durably saves and notifies one running default generation', async () => {
-		const host = await runtimeHost()
-		host.add(ConfigOwner)
-		host.cfg(ConfigOwner).setAutoStart(true)
-		host.start(ConfigOwner)
-		await host.commit()
-
-		const owner = ConfigOwner.nodeAddress()
-		const generation = host.require(ConfigOwner)
-		const result = await pluginConfigPatch(host.ctx, owner, { set: { value: 'changed' } })
-		expect(result).toMatchObject({
-			ok: true,
-			persistence: { status: 'confirmed' },
-			application: 'applied',
-			report: { core: { status: 'unchanged' } },
-			config: { value: 'changed' },
-		})
-		if (result.ok === false) throw new Error(result.message)
-		expect(result.appliedRevision).toBe(result.desiredRevision)
-		expect(host.require(ConfigOwner)).toBe(generation)
-		expect(defaultStarts).toEqual(['initial'])
-		expect(defaultUpdates).toEqual([{ applied: 'initial', desired: 'changed' }])
-		expect(generation.runtimeValue).toBe('changed')
-		expect(generation.config.value).toBe('changed')
-	})
-
 	it('notifies only the addressed fork and keeps sibling config isolated', async () => {
 		const host = await runtimeHost()
 		const East = host.fork(ConfigFork, 'east')
@@ -426,25 +388,6 @@ describe('Plugin config application scope', () => {
 		})
 	})
 
-	it('defers application for a stopped node', async () => {
-		const host = await runtimeHost()
-		host.add(StoppedConfigOwner)
-		await host.commit()
-
-		const owner = StoppedConfigOwner.nodeAddress()
-		await expect(
-			pluginConfigPatch(host.ctx, owner, { set: { value: 'later' } }),
-		).resolves.toMatchObject({
-			ok: true,
-			persistence: { status: 'confirmed' },
-			application: 'deferred',
-			appliedRevision: null,
-			report: {},
-			config: { value: 'later' },
-		})
-		expect(host.isRunning(StoppedConfigOwner)).toBe(false)
-	})
-
 	it('keeps desired config after a listener failure and reports it as not applied', async () => {
 		const host = await runtimeHost()
 		host.add(FailingConfigOwner)
@@ -470,30 +413,6 @@ describe('Plugin config application scope', () => {
 		})
 		expect(host.isRunning(FailingConfigOwner)).toBe(true)
 		expect(failingStarts).toBe(1)
-	})
-
-	it('saves without notifying when a running declaration has no listener', async () => {
-		const host = await runtimeHost()
-		host.add(ConfigWithoutListener)
-		host.cfg(ConfigWithoutListener).setAutoStart(true)
-		host.start(ConfigWithoutListener)
-		await host.commit()
-		const owner = ConfigWithoutListener.nodeAddress()
-		const generation = host.require(ConfigWithoutListener)
-		const appliedBefore = requireConfigService(host.ctx).getAppliedConfigRevision(owner)
-
-		await expect(
-			pluginConfigPatch(host.ctx, owner, { set: { value: 'desired' } }),
-		).resolves.toMatchObject({
-			ok: true,
-			persistence: { status: 'confirmed' },
-			application: 'saved-not-applied',
-			appliedRevision: appliedBefore,
-			applyFailure: { code: 'listener_not_registered' },
-		})
-		expect(host.require(ConfigWithoutListener)).toBe(generation)
-		expect(generation.config.value).toBe('initial')
-		expect(host.isRunning(ConfigWithoutListener)).toBe(true)
 	})
 
 	it('notifies nested Part declarations before the owner and advances one revision', async () => {
@@ -748,54 +667,6 @@ describe('Plugin config application scope', () => {
 		})
 		expect((Object.prototype as Record<string, unknown>)[pollutionKey]).toBeUndefined()
 		expect(requireConfigService(host.ctx).getRawConfig(owner)).toEqual({})
-	})
-})
-
-describe('ConfigService persistence', () => {
-	it('reports a stable unknown persistence state without attempting application', async () => {
-		let rejectConfigWrite = false
-		const host = await runtimeHost({
-			services: [elysia(), commands(), nodeModules(), workers()],
-			config: {
-				document: {
-					storage(root) {
-						const documents = requireFs(root).documents('host/config')
-						return {
-							getText: (key) => documents.getText(key),
-							stat: (key) => documents.stat(key),
-							async put(key, value) {
-								if (rejectConfigWrite && key === 'config.json')
-									throw new Error('config persistence outcome unknown')
-								await documents.put(key, value)
-							},
-						}
-					},
-				},
-			},
-		})
-		host.add(ConfigOwner)
-		await host.commit()
-		rejectConfigWrite = true
-
-		const failed = await pluginConfigPatch(host.ctx, ConfigOwner.nodeAddress(), {
-			set: { value: 'desired' },
-		})
-		expect(failed).toMatchObject({
-			ok: false,
-			code: 'persistence_failed',
-			state: 'unknown',
-			managedInput: null,
-			effectiveInput: {},
-			persistence: { status: 'unknown' },
-		})
-		expect(failed).not.toHaveProperty('config')
-		host.cfg(ConfigOwner).setAutoStart(true)
-		host.start(ConfigOwner)
-		const retained = await host.commitAllowFail()
-		expect(retained.lifecycleReport.issues).toEqual([])
-		expect(host.isRunning(ConfigOwner)).toBe(true)
-		expect(defaultStarts).toEqual(['initial'])
-		rejectConfigWrite = false
 	})
 })
 

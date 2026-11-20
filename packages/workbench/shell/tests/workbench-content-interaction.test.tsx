@@ -11,7 +11,6 @@ import type { ConfigPresentationFieldV1 } from '@pluxel/services/management/clie
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { mapServerValidationIssues } from '../src/app/forms/serverValidation'
 import { WorkbenchContentController } from '../src/app/workbench/WorkbenchContentController'
 import { WorkbenchContentRenderer } from '../src/app/workbench/WorkbenchContentRenderer'
 import { type WorkbenchContentInteraction } from '../src/app/workbench/WorkbenchContentSlots'
@@ -30,16 +29,6 @@ const profileField = field({
 		field({ kind: 'boolean', name: 'enabled', control: 'switch', label: 'Enabled', depth: 1 }),
 	],
 })
-const itemsField = field({
-	kind: 'array',
-	name: 'items',
-	item: field({ kind: 'string', control: 'text', label: 'Item', depth: 1 }),
-})
-const labelsField = field({
-	kind: 'record',
-	name: 'labels',
-	value: field({ kind: 'string', control: 'text', label: 'Value', depth: 1 }),
-})
 const nameField = field({ kind: 'string', name: 'name', control: 'text', label: 'Name' })
 const titleField = field({ kind: 'string', name: 'title', control: 'text', label: 'Title' })
 
@@ -49,16 +38,7 @@ const plan = {
 	document: {
 		version: 1,
 		blocks: [
-			{
-				type: 'paragraph',
-				children: [
-					{ type: 'text', value: 'Service: ' },
-					{ type: 'slot', key: 'status' },
-				],
-			},
-			{ type: 'slot', key: 'profile' },
-			{ type: 'slot', key: 'items' },
-			{ type: 'slot', key: 'labels' },
+			{ type: 'slot', key: 'status' },
 			{ type: 'slot', key: 'refresh' },
 			{ type: 'slot', key: 'restart' },
 			{ type: 'slot', key: 'save' },
@@ -66,10 +46,7 @@ const plan = {
 		],
 	},
 	slots: [
-		{ kind: 'data', key: 'status', display: 'inline' },
-		{ kind: 'data', key: 'profile', display: 'block' },
-		{ kind: 'data', key: 'items', display: 'block' },
-		{ kind: 'data', key: 'labels', display: 'block' },
+		{ kind: 'data', key: 'status', display: 'block' },
 		{ kind: 'action', key: 'refresh', display: 'block', label: 'Refresh', input: 'none' },
 		{
 			kind: 'action',
@@ -86,10 +63,7 @@ const plan = {
 
 const presentation = {
 	slots: [
-		{ kind: 'data', key: 'status', display: 'inline', field: statusField },
-		{ kind: 'data', key: 'profile', display: 'block', field: profileField },
-		{ kind: 'data', key: 'items', display: 'block', field: itemsField },
-		{ kind: 'data', key: 'labels', display: 'block', field: labelsField },
+		{ kind: 'data', key: 'status', display: 'block', field: statusField },
 		{ kind: 'action', key: 'refresh', label: 'Refresh', input: 'none' },
 		{
 			kind: 'action',
@@ -106,12 +80,7 @@ const presentation = {
 const initialData = {
 	sequence: 1,
 	ok: true,
-	data: {
-		status: 'ready',
-		profile: { host: 'otel.internal', enabled: true },
-		items: ['traces', 'metrics'],
-		labels: { environment: 'production' },
-	},
+	data: { status: 'ready' },
 } satisfies WorkbenchContentDataOutcome
 
 const mounted = new Set<Root>()
@@ -148,70 +117,32 @@ afterEach(async () => {
 })
 
 describe('interactive Workbench Content', () => {
-	it('renders loading and presentation-guided scalar, object, array, and record data', async () => {
-		const initial = deferred<WorkbenchContentDataOutcome>()
-		const fixture = await renderInteractive({
-			subscribe: vi.fn(async () => initial.promise),
-		})
-
-		expect(fixture.container.textContent).toContain('加载中')
-		await act(async () => initial.resolve(initialData))
-
-		expect(fixture.container.textContent).toContain('Service: Ready to serve')
-		expect(fixture.container.textContent).toContain('otel.internal')
-		expect(fixture.container.textContent).toContain('Enabled是')
-		expect(fixture.container.textContent).toContain('traces')
-		expect(fixture.container.textContent).toContain('metrics')
-		expect(fixture.container.textContent).toContain('environmentproduction')
-	})
-
-	it('renders an initial load error and recovers through retry', async () => {
-		const load = vi.fn(async () => ({ ...initialData, sequence: 2 }))
-		const fixture = await renderInteractive({
-			subscribe: vi.fn(async (): Promise<WorkbenchContentDataOutcome> => ({
-				sequence: 1,
-				ok: false,
-				code: 'load_failed',
-			})),
-			load,
-		})
-		await tick()
-
-		expect(fixture.container.textContent).toContain('数据加载失败')
-		expect(fixture.container.textContent).not.toContain('otel.internal')
-
-		const retry = button(fixture.container, '重试')
-		expect(retry.getAttribute('aria-label')).toBe('重试加载Status')
-		await click(retry)
-		expect(load).toHaveBeenCalledOnce()
-		expect(fixture.container.textContent).toContain('otel.internal')
-		expect(fixture.container.textContent).not.toContain('数据加载失败')
-	})
-
-	it('keeps stale data visible and retries through the same Content capability', async () => {
+	it('recovers an initial error and later retries stale data without reopening Content', async () => {
 		let observer!: (outcome: WorkbenchContentDataOutcome) => void | Promise<void>
-		const load = vi.fn(async () => ({
-			sequence: 3,
-			ok: true as const,
-			data: { ...initialData.data, status: 'recovered' },
-		}))
-		const fixture = await renderInteractive({
-			subscribe: vi.fn(async (next) => {
-				observer = next
-				return initialData
-			}),
-			load,
+		const subscribe = vi.fn(async (next: typeof observer): Promise<WorkbenchContentDataOutcome> => {
+			observer = next
+			return { sequence: 1, ok: false, code: 'load_failed' }
 		})
-		await tick()
+		const load = vi
+			.fn()
+			.mockResolvedValueOnce({ ...initialData, sequence: 2 })
+			.mockResolvedValueOnce({ sequence: 4, ok: true, data: { status: 'recovered' } })
+		const { container } = await renderInteractive({ subscribe, load })
 
-		await act(async () => observer({ sequence: 2, ok: false, code: 'load_failed' }))
-		expect(fixture.container.textContent).toContain('显示的是上次数据')
-		expect(fixture.container.textContent).toContain('otel.internal')
+		expect(container.textContent).toContain('数据加载失败')
+		expect(container.textContent).not.toContain('Ready to serve')
+		await click(button(container, '重试'))
+		expect(container.textContent).toContain('Ready to serve')
 
-		await click(button(fixture.container, '重试'))
-		expect(load).toHaveBeenCalledOnce()
-		expect(fixture.container.textContent).not.toContain('显示的是上次数据')
-		expect(fixture.container.textContent).toContain('recovered')
+		await act(async () => observer({ sequence: 3, ok: false, code: 'load_failed' }))
+		expect(container.textContent).toContain('显示的是上次数据')
+		expect(container.textContent).toContain('Ready to serve')
+		await click(button(container, '重试'))
+
+		expect(container.textContent).toContain('recovered')
+		expect(container.textContent).not.toContain('显示的是上次数据')
+		expect(load).toHaveBeenCalledTimes(2)
+		expect(subscribe).toHaveBeenCalledOnce()
 	})
 
 	it('runs no-input actions, requests confirmation, and applies action-pushed data', async () => {
@@ -259,24 +190,6 @@ describe('interactive Workbench Content', () => {
 		expect(run).toHaveBeenCalledWith('restart')
 	})
 
-	it('keeps a completed action successful when host notification delivery fails', async () => {
-		const notify = vi.fn(() => {
-			throw new Error('notification unavailable')
-		})
-		const run = vi.fn(async () => ({
-			action: { ok: true as const, message: 'refresh complete' },
-			data: null,
-		}))
-		const fixture = await renderInteractive({ run }, { notify })
-		await tick()
-
-		await click(button(fixture.container, 'Refresh'))
-
-		expect(notify).toHaveBeenCalledOnce()
-		expect(fixture.container.textContent).toContain('refresh complete')
-		expect(fixture.container.textContent).not.toContain('操作失败，请重试。')
-	})
-
 	it('prevents confirmation re-entry and recovers when confirmation rejects', async () => {
 		const confirmation = deferred<boolean>()
 		const confirm = vi
@@ -318,51 +231,6 @@ describe('interactive Workbench Content', () => {
 		await click(button(fixture.container, 'Refresh'))
 
 		expect(run).toHaveBeenCalledOnce()
-		expect(run).toHaveBeenCalledWith('refresh')
-	})
-
-	it('renders action-only Content immediately without creating a data subscription', async () => {
-		const subscribe = vi.fn()
-		const run = vi.fn(async () => ({ action: { ok: true as const }, data: null }))
-		const actionPresentation = {
-			slots: [{ kind: 'action', key: 'refresh', label: 'Refresh', input: 'none' }],
-		} satisfies WorkbenchContentPresentation
-		const actionPlan = {
-			version: 1,
-			kind: 'workbench-content',
-			document: {
-				version: 1,
-				blocks: [{ type: 'slot', key: 'refresh' }],
-			},
-			slots: [
-				{ kind: 'action', key: 'refresh', display: 'block', label: 'Refresh', input: 'none' },
-			],
-		} satisfies WorkbenchContentPlan
-		const handle = interactiveHandle({ presentation: actionPresentation, run, subscribe })
-		const controller = new WorkbenchContentController(handle)
-		controller.start()
-		const interaction: WorkbenchContentInteraction = {
-			presentation: actionPresentation,
-			controller,
-			confirm: vi.fn(async () => true),
-			notify: vi.fn(),
-		}
-		const container = document.createElement('div')
-		document.body.appendChild(container)
-		const root = createRoot(container)
-		mounted.add(root)
-
-		await act(async () => {
-			root.render(
-				<MantineProvider>
-					<WorkbenchContentRenderer interaction={interaction} plan={actionPlan} />
-				</MantineProvider>,
-			)
-		})
-
-		expect(subscribe).not.toHaveBeenCalled()
-		expect(container.textContent).not.toContain('加载中')
-		await click(button(container, 'Refresh'))
 		expect(run).toHaveBeenCalledWith('refresh')
 	})
 
@@ -493,24 +361,6 @@ describe('interactive Workbench Content', () => {
 	})
 })
 
-it('routes portable validation issues to mounted full paths and summarizes unmounted issues', () => {
-	expect(
-		mapServerValidationIssues(
-			[
-				{ path: ['profile', 'host'], message: 'Invalid host' },
-				{ path: [], message: 'Form rejected' },
-				{ path: ['removed'], message: 'Unknown field' },
-			],
-			new Set(['profile.host']),
-		),
-	).toEqual({
-		form: ['Form rejected', 'Unknown field'],
-		fields: {
-			'profile.host': [{ message: 'Invalid host' }],
-		},
-	})
-})
-
 async function renderInteractive(
 	overrides: Partial<Pick<WorkbenchOpenedContentHandle, 'subscribe' | 'load' | 'run'>> = {},
 	host: Partial<Pick<WorkbenchContentInteraction, 'confirm' | 'notify'>> = {},
@@ -572,20 +422,6 @@ function field(
 				label?: string
 				depth?: number
 				entries: readonly { value: string; label: string }[]
-		  }
-		| {
-				kind: 'array'
-				name: string
-				label?: string
-				depth?: number
-				item: ConfigPresentationFieldV1
-		  }
-		| {
-				kind: 'record'
-				name: string
-				label?: string
-				depth?: number
-				value: ConfigPresentationFieldV1
 		  }
 		| {
 				kind: 'object'

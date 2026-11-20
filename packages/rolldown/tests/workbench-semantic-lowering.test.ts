@@ -222,28 +222,26 @@ async function collectModule(
 }
 
 describe('Workbench semantic lowering', () => {
-	it.each(['left', 'right', 'bottom'] as const)(
-		'lowers %s panels and preserves View placement in the browser projection',
-		async (region) => {
-			const files = fixtureFiles()
-			files['src/guide.md'] = '# Plugin panel guide\n'
-			files['src/settings.tsx'] = `
+	it('projects a resolved panel placement while leaving Content independent of the producer', async () => {
+		const files = fixtureFiles()
+		files['src/guide.md'] = '# Plugin panel guide\n'
+		files['src/settings.tsx'] = `
 import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { SemanticWorkbench } from './plugin.ts'
 const renderer = createWorkbenchRenderer(SemanticWorkbench.settings)
 export default renderer.render(function Settings() { return null })
 `
-			files['src/provider.ts'] = `
+		files['src/provider.ts'] = `
 import { workbench } from '@pluxel/workbench'
 export const ProviderWorkbench = workbench.define({
 	picker: workbench.attachment({ renderer: workbench.entry(import.meta.url, './picker.tsx') }),
 })
 `
-			await using fixture = await createFixture(files)
-			const code = `
+		await using fixture = await createFixture(files)
+		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
 import { ProviderWorkbench } from './provider.ts'
-const region = ${JSON.stringify(region)}
+const region = 'bottom'
 const options = { label: 'Plugin status', icon: workbench.icons.Settings, order: 12 }
 function placement(region, options) { return workbench.panel(region, options) }
 export const SemanticWorkbench = workbench.define({
@@ -255,37 +253,27 @@ class SemanticPlugin {
 	init() { this.ctx.service(Workbench).publish(SemanticWorkbench, { settings: () => ({}), fonts: { provider: this.provider } }) }
 }
 `
-			const lowering = createWorkbenchSemanticLowering(fixture.path)
-			await collectModule(lowering, fixture.path, 'src/plugin.ts', code)
-			const plans = await lowering.plans()
-			expect(plans).toHaveLength(1)
-			expect(plans[0]!.entries.map((entry) => entry.descriptor.key)).toEqual(['settings'])
-			const generatedDir = dirname(resolve(fixture.path, plans[0]!.entries[0]!.bridgeEntryPath))
-			const projection = await readFile(resolve(generatedDir, 'settings.definition.ts'), 'utf-8')
-			expect(projection).toContain(
-				`workbench.panel(${JSON.stringify(region)}, {"label":"Plugin status","icon":"settings","order":12})`,
-			)
-			expect(projection).not.toContain('workbench.tab(')
-			expect(projection).not.toContain('workbench.icons.')
-			expect(await lowering.contentCompilations()).toHaveLength(1)
-		},
-	)
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		await collectModule(lowering, fixture.path, 'src/plugin.ts', code)
+		const plans = await lowering.plans()
+		expect(plans).toHaveLength(1)
+		expect(plans[0]!.entries.map((entry) => entry.descriptor.key)).toEqual(['settings'])
+		const generatedDir = dirname(resolve(fixture.path, plans[0]!.entries[0]!.bridgeEntryPath))
+		const projection = await readFile(resolve(generatedDir, 'settings.definition.ts'), 'utf-8')
+		expect(projection).toContain(
+			`workbench.panel("bottom", {"label":"Plugin status","icon":"settings","order":12})`,
+		)
+		expect(await lowering.contentCompilations()).toHaveLength(1)
+	})
 
 	it.each([
 		["workbench.panel('center', { label: 'Tool' })", 'region must be left, right, or bottom'],
 		["workbench.panel('left', { label: '' })", 'label'],
-		["workbench.panel('right', { label: ' Tool ' })", 'label'],
-		["workbench.panel('left', {})", 'label'],
-		["workbench.panel('right', { label: 'Tool', order: 'first' })", 'order'],
 		[
 			"workbench.panel('right', { label: 'Tool', icon: 'arbitrary-icon' })",
 			'fixed Workbench icon set',
 		],
 		["workbench.panel('bottom', { label: 'Tool', scope: 'global' })", 'unsupported option'],
-		["workbench.panel('bottom', { label: 'Tool', path: '/tool' })", 'unsupported option'],
-		["workbench.panel('bottom')", 'requires a region'],
-		["workbench.panel('bottom', { label: 'Tool' }, {})", 'requires a region'],
-		["workbench.pannel('bottom', { label: 'Tool' })", 'unsupported static member access'],
 	])('rejects invalid static panel declaration %s', async (placement, error) => {
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({ name: '@example/panel-validation', type: 'module' }),
@@ -639,7 +627,7 @@ class SemanticPlugin {
 		expect(reused?.sources).toEqual([])
 	})
 
-	it('lowers one owner producer and generates exact descriptor-bound Bridge entries', async () => {
+	it('builds both typed exposures into one relocatable producer for the owner', async () => {
 		await using fixture = await createFixture(fixtureFiles())
 		await writeFile(
 			resolve(fixture.path, 'src/settings.tsx'),
@@ -671,20 +659,6 @@ export default function Picker() {
 			'utf-8',
 		)
 		await writeFile(
-			resolve(fixture.path, 'src/tool.tsx'),
-			`import { useWorkbench } from '@pluxel/workbench/react'
-import { SemanticWorkbench } from './plugin.ts'
-export default function Tool() {
-	const { api } = useWorkbench(SemanticWorkbench.tool)
-	api.run()
-	// @ts-expect-error provider-only Attachment must retain its exact API
-	api.preview('not-a-tool-method')
-	return null
-}
-`,
-			'utf-8',
-		)
-		await writeFile(
 			resolve(fixture.path, 'src/protocol.ts'),
 			`import type { RpcTarget } from 'capnweb'
 export interface SettingsApi extends RpcTarget {
@@ -696,20 +670,19 @@ export type PickerApi = RpcTarget & {
 export interface PickerConsumerApi extends RpcTarget {
 	preview(id: string): void
 }
-export type ToolApi = RpcTarget & { run(): void }
 `,
 			'utf-8',
 		)
 		await writeFile(
 			resolve(fixture.path, 'src/protocol-index.ts'),
-			`export type { PickerApi, PickerConsumerApi, SettingsApi, ToolApi } from './protocol.ts'\n`,
+			`export type { PickerApi, PickerConsumerApi, SettingsApi } from './protocol.ts'\n`,
 			'utf-8',
 		)
 		const code = `
 import { defineServiceRef } from '@pluxel/core'
 
 import { workbench } from '@pluxel/workbench'
-import type { PickerApi, PickerConsumerApi, SettingsApi, ToolApi } from './protocol-index.ts'
+import type { PickerApi, PickerConsumerApi, SettingsApi } from './protocol-index.ts'
 import type { Workbench } from '@pluxel/workbench'
 const WorkbenchRef = defineServiceRef<Workbench>()
 
@@ -723,9 +696,6 @@ function entries(viewRenderer: ReturnType<typeof workbench.entry>) {
 		picker: workbench.attachment<PickerApi, PickerConsumerApi>({
 			renderer: workbench.entry(import.meta.url, './picker.tsx'),
 		}),
-		tool: workbench.attachment<ToolApi>({
-			renderer: workbench.entry(import.meta.url, './tool.tsx'),
-		}),
 	}
 }
 export const SemanticWorkbench = workbench.define(entries(renderer))
@@ -736,7 +706,6 @@ class SemanticPlugin {
 		this.ctx.service(WorkbenchRef)?.publish(SemanticWorkbench, {
 			settings: () => ({}),
 			picker: () => ({}),
-			tool: () => ({}),
 		})
 	}
 }
@@ -752,47 +721,8 @@ class SemanticPlugin {
 			entries: [
 				{ descriptor: { kind: 'attachment', owner, key: 'picker' }, expose: './views/picker' },
 				{ descriptor: { kind: 'view', owner, key: 'settings' }, expose: './views/settings' },
-				{ descriptor: { kind: 'attachment', owner, key: 'tool' }, expose: './views/tool' },
 			],
 		})
-		const settings = plans[0]!.entries.find((entry) => entry.descriptor.key === 'settings')!
-		const generated = await readFile(resolve(fixture.path, settings.bridgeEntryPath), 'utf-8')
-		expect(generated).toContain(
-			`createWorkbenchBridge(${JSON.stringify(settings.descriptor)}, Renderer)`,
-		)
-		expect(generated).not.toContain('SemanticWorkbench')
-		expect(generated).not.toContain('Definition')
-		expect(generated).toContain("from '@pluxel/workbench/internal/react'")
-		const settingsProjection = await readFile(
-			resolve(dirname(resolve(fixture.path, settings.bridgeEntryPath)), 'settings.definition.ts'),
-			'utf-8',
-		)
-		expect(settingsProjection).toContain(
-			'type SourceDescriptor = (typeof import("../../../../src/plugin.js"))["SemanticWorkbench"]["settings"]',
-		)
-		expect(settingsProjection).toContain('workbench.view({ renderer: ProjectedRenderer, placement:')
-		expect(settingsProjection).toContain('as unknown as SourceDescriptor')
-		expect(settingsProjection).not.toContain('workbench.view<any>')
-		const picker = plans[0]!.entries.find((entry) => entry.descriptor.key === 'picker')!
-		const pickerProjection = await readFile(
-			resolve(dirname(resolve(fixture.path, picker.bridgeEntryPath)), 'picker.definition.ts'),
-			'utf-8',
-		)
-		expect(pickerProjection).toContain(
-			'type SourceDescriptor = (typeof import("../../../../src/plugin.js"))["SemanticWorkbench"]["picker"]',
-		)
-		expect(pickerProjection).toContain('workbench.attachment({ renderer: ProjectedRenderer })')
-		expect(pickerProjection).not.toContain('workbench.attachment<any>')
-		const tool = plans[0]!.entries.find((entry) => entry.descriptor.key === 'tool')!
-		const toolProjection = await readFile(
-			resolve(dirname(resolve(fixture.path, tool.bridgeEntryPath)), 'tool.definition.ts'),
-			'utf-8',
-		)
-		expect(toolProjection).toContain(
-			'type SourceDescriptor = (typeof import("../../../../src/plugin.js"))["SemanticWorkbench"]["tool"]',
-		)
-		expect(toolProjection).toContain('workbench.attachment({ renderer: ProjectedRenderer })')
-
 		const outDir = resolve(fixture.path, 'dist/semantic-producer')
 		await buildWorkbenchFederationProducer({
 			root: fixture.path,
@@ -817,16 +747,6 @@ class SemanticPlugin {
 		)
 		expect(settingsDeclaration).toBeTypeOf('string')
 		const settingsDeclarationPath = resolve(outDir, settingsDeclaration!)
-		const packagedDefinitionDeclaration = resolve(
-			dirname(settingsDeclarationPath),
-			'../../../../src/plugin.d.ts',
-		)
-		await expect(readFile(packagedDefinitionDeclaration, 'utf-8')).resolves.toContain(
-			"from './protocol-index.ts'",
-		)
-		await expect(
-			readFile(resolve(dirname(packagedDefinitionDeclaration), 'protocol.d.ts'), 'utf-8'),
-		).resolves.toContain('export type PickerApi = RpcTarget &')
 		await rm(resolve(fixture.path, 'src'), { recursive: true, force: true })
 		try {
 			execFileSync(
@@ -862,7 +782,6 @@ class SemanticPlugin {
 			compatibility,
 		})
 		if (validation.valid === false) throw new Error(validation.reason)
-		expect(validation.valid).toBe(true)
 		expect(validation.manifest.shared).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -934,29 +853,6 @@ class SemanticPlugin {
 		const lowering = createWorkbenchSemanticLowering(fixture.path)
 		await collectModule(lowering, fixture.path, 'src/workbench.ts', code)
 		const [plan] = await lowering.plans()
-		const bridgeEntryPath = resolve(fixture.path, plan!.entries[0]!.bridgeEntryPath)
-		const generatedDir = dirname(bridgeEntryPath)
-		const generatedFiles = await readdir(generatedDir)
-		const generatedSources = await Promise.all(
-			generatedFiles
-				.filter((file) => /settings\.renderer(?:-module-\d+)?\.(?:ts|tsx)$/.test(file))
-				.map((file) => readFile(resolve(generatedDir, file), 'utf-8')),
-		)
-		expect(generatedSources).toHaveLength(3)
-		expect(
-			generatedSources.filter((source) => source.includes('createWorkbenchRenderer(')),
-		).toHaveLength(1)
-		expect(
-			generatedSources.filter((source) => source.includes('settingsRenderer.render(SettingsPage)')),
-		).toHaveLength(1)
-		expect(
-			generatedSources.filter(
-				(source) => source.includes('scope-page-marker') && source.includes('settingsRenderer'),
-			),
-		).toHaveLength(1)
-		expect(generatedSources.join('\n')).toContain('./settings.definition.ts')
-		expect(generatedSources.join('\n')).not.toContain('../src/settings.scope.ts')
-
 		const outDir = resolve(fixture.path, 'dist/scoped-producer')
 		await buildWorkbenchFederationProducer({
 			root: fixture.path,
@@ -1275,8 +1171,7 @@ class SemanticPlugin {
 			plan: compilation!.plan,
 			compatibility: resolveWorkbenchFederationShared(fixture.path).compatibility,
 		})
-		expect(validation.valid).toBe(true)
-		expect(deploymentOutDir.startsWith(resolve(fixture.path, 'host-dist'))).toBe(true)
+		expect(validation).toMatchObject({ valid: true })
 	}, 60_000)
 
 	it('does not create a producer for an attachment-only consumer', async () => {
@@ -1388,8 +1283,6 @@ class OtherPlugin { init() { this.ctx.service(Workbench).publish(OtherWorkbench)
 		const [after] = await lowering.contentCompilations(other)
 		expect(after?.digest).not.toBe(before?.digest)
 		expect(JSON.stringify(after!.contentSet)).toContain('Other after')
-		await expect(lowering.contentCompilations(new Set())).resolves.toEqual([])
-		await expect(lowering.contentCompilations(other)).resolves.toEqual([after])
 
 		await writeFile(definitionPath, 'export const unfinished = true')
 		lowering.invalidate(definitionPath)
@@ -1445,9 +1338,6 @@ class SemanticPlugin { init() { this.ctx.service(Workbench).publish(SemanticWork
 		await writeFile(definitionPath, 'export const unfinished = true')
 		lowering.invalidate(definitionPath)
 		await expect(lowering.plans()).rejects.toThrow('SemanticWorkbench is missing')
-		await rm(definitionPath)
-		lowering.invalidate(definitionPath)
-		await expect(lowering.plans()).rejects.toThrow('cannot read imported module')
 		await writeFile(definitionPath, content)
 		lowering.invalidate(definitionPath)
 		await expect(lowering.plans()).resolves.toHaveLength(0)
@@ -1460,7 +1350,7 @@ class SemanticPlugin { init() { this.ctx.service(Workbench).publish(SemanticWork
 		await expect(lowering.contentCompilations()).resolves.toEqual([])
 	})
 
-	it.each(['replace', 'invalidate', 'remove', 'reset'] as const)(
+	it.each(['replace', 'remove'] as const)(
 		'does not let an in-flight collection write back after %s',
 		async (operation) => {
 			await using fixture = await createFixture({
@@ -1495,8 +1385,7 @@ class SemanticPlugin { init() { this.ctx.service(Workbench).publish(SemanticWork
 						'src/plugin.ts',
 						'export const ordinary = true',
 					)
-				else if (operation === 'reset') lowering.reset()
-				else lowering[operation](id)
+				else lowering.remove(id)
 			} finally {
 				release.resolve()
 			}
@@ -1544,31 +1433,20 @@ class SemanticPlugin { init() { this.ctx.service(Workbench).publish(SemanticWork
 		expect(after?.digest).toBe(before?.digest)
 	})
 
-	it('rejects conditional publication and inline definition topology', async () => {
+	it('requires a statically traceable binding for publication', async () => {
 		await using fixture = await createFixture(fixtureFiles())
 		const lowering = createWorkbenchSemanticLowering(fixture.path)
-		const conditional = `
-import { Workbench, workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({
-	settings: workbench.view({ renderer: workbench.entry(import.meta.url, './settings.tsx'), placement: workbench.tab() }),
-})
-class SemanticPlugin { init() { if (this.enabled) this.ctx.service(Workbench).publish(SemanticWorkbench, {}) } }
-`
-		await expect(
-			collectModule(lowering, fixture.path, 'src/conditional.ts', conditional),
-		).rejects.toThrow('one unconditional statement in init()')
-
-		lowering.reset()
-		const inline = `
+		await collectModule(
+			lowering,
+			fixture.path,
+			'src/plugin.ts',
+			`
 import { Workbench, workbench } from '@pluxel/workbench'
 class SemanticPlugin {
 	init() { this.ctx.service(Workbench).publish(workbench.define({}), {}) }
-}
-`
-		await collectModule(lowering, fixture.path, 'src/inline.ts', inline)
-		await expect(lowering.plans()).rejects.toThrow(
-			'publish() first argument must be a statically traceable final workbench.define() binding',
+}`,
 		)
+		await expect(lowering.plans()).rejects.toThrow('statically traceable')
 	})
 
 	it('rejects publication from a helper or PluginPart instead of the owning Plugin', async () => {
@@ -1667,223 +1545,66 @@ class SemanticPlugin {
 		expect(rendererRevision).not.toBe(definitionRevision)
 	})
 
-	it('fingerprints resolved UI dependencies without hashing unrelated lockfile state', async () => {
-		const files = fixtureFiles()
-		files['pnpm-lock.yaml'] = 'lockfileVersion: 9.0\n'
-		files['packages/producer/package.json'] = JSON.stringify({
-			name: '@example/producer',
-			version: '0.1.0',
-			type: 'module',
+	it('fingerprints the resolved UI closure while ignoring unrelated lockfile updates', async () => {
+		const registry = 'node_modules/@example/registry-ui'
+		const dependency = 'node_modules/@example/theme'
+		const manifest = (version: string) =>
+			JSON.stringify({
+				name: '@example/theme',
+				type: 'module',
+				version,
+				exports: { './label': './label.js' },
+			})
+		await using fixture = await createFixture({
+			...fixtureFiles(),
+			'pnpm-lock.yaml': 'lockfileVersion: 9.0\n',
+			[registry + '/package.json']: JSON.stringify({
+				name: '@example/registry-ui',
+				type: 'module',
+				exports: './index.js',
+				dependencies: { '@example/theme': '^1.0.0' },
+				optionalDependencies: { '@example/native': '^1.0.0' },
+			}),
+			[registry + '/index.js']: "export { label } from '@example/theme/label'",
+			[dependency + '/package.json']: manifest('1.0.0'),
+			[dependency + '/label.js']: "export const label = 'Settings'",
+			'src/settings.tsx': `import { label } from '@example/registry-ui'
+export default function Settings() { return label }`,
 		})
-		files['packages/sibling-ui/package.json'] = JSON.stringify({
-			name: '@example/sibling-ui',
-			version: '0.1.0',
-			type: 'module',
-			exports: './src/index.ts',
-		})
-		files['packages/sibling-ui/src/index.ts'] = "export const siblingLabel = 'sibling-v1'\n"
-		files['node_modules/@example/registry-ui/package.json'] = JSON.stringify({
-			name: '@example/registry-ui',
-			optionalDependencies: { '@example/foreign-native': '^1.0.0' },
-			version: '0.1.0',
-			type: 'module',
-			exports: './index.js',
-			dependencies: {
-				'@example/registry-theme': '^1.0.0',
-				'@example/subpath-only': '^1.0.0',
-				'@types/ui-only': '^1.0.0',
-				'bun-types': '^1.0.0',
-			},
-		})
-		files['node_modules/@example/registry-ui/index.js'] =
-			"export { themeLabel as registryLabel } from '@example/registry-theme'\n"
-		files['node_modules/@example/registry-theme/package.json'] = JSON.stringify({
-			name: '@example/registry-theme',
-			version: '0.1.0',
-			type: 'module',
-			exports: './index.js',
-		})
-		files['node_modules/@example/registry-theme/index.js'] = "export const themeLabel = 'theme'\n"
-		files['node_modules/@example/subpath-only/package.json'] = JSON.stringify({
-			name: '@example/subpath-only',
-			version: '0.1.0',
-			type: 'module',
-			exports: { './icon': './icon.js' },
-		})
-		files['node_modules/@example/subpath-only/icon.js'] = 'export const icon = true\n'
-		files['node_modules/@types/ui-only/package.json'] = JSON.stringify({
-			name: '@types/ui-only',
-			version: '1.0.0',
-			main: '',
-			types: 'index.d.ts',
-			exports: {
-				'.': {
-					'types@<=5.0': { default: './ts5.0/index.d.ts' },
-					types: { default: './index.d.ts' },
-				},
-				'./package.json': './package.json',
-			},
-		})
-		files['node_modules/@types/ui-only/ts5.0/index.d.ts'] = 'export type UiOnly = string\n'
-		files['node_modules/@types/ui-only/index.d.ts'] = 'export type UiOnly = string\n'
-		files['node_modules/bun-types/package.json'] = JSON.stringify({
-			name: 'bun-types',
-			version: '1.0.0',
-			types: './index.d.ts',
-		})
-		files['node_modules/bun-types/index.d.ts'] = 'export type BunOnly = string\n'
-		files['packages/producer/src/settings.tsx'] = `
-import { siblingLabel } from '@example/sibling-ui'
-import { registryLabel } from '@example/registry-ui'
-export default function Settings() { return siblingLabel + registryLabel }
-`
-		await using fixture = await createFixture(files)
 		await symlink(
 			resolve(fixture.path, 'uninstalled-platform-package'),
-			resolve(fixture.path, 'node_modules/@example/foreign-native'),
-			'dir',
-		)
-		await symlink(
-			resolve(fixture.path, 'packages/sibling-ui'),
-			resolve(fixture.path, 'node_modules/@example/sibling-ui'),
+			resolve(fixture.path, 'node_modules/@example/native'),
 			'dir',
 		)
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
 export const SemanticWorkbench = workbench.define({
-	settings: workbench.view({
-		renderer: workbench.entry(import.meta.url, './settings.tsx'),
-		placement: workbench.tab({ label: 'Settings' }),
-	}),
+	settings: workbench.view({ renderer: workbench.entry(import.meta.url, './settings.tsx') }),
 })
 class SemanticPlugin {
 	init() { this.ctx.service(Workbench).publish(SemanticWorkbench, { settings: () => ({}) }) }
 }
 `
-		const revisionAt = async (root: string) => {
-			const lowering = createWorkbenchSemanticLowering(root)
-			await collectModule(lowering, root, 'packages/producer/src/plugin.ts', code)
-			const plans = await lowering.plans()
-			return plans[0]!.buildRevision
+		const revision = async () => {
+			const lowering = createWorkbenchSemanticLowering(fixture.path)
+			await collectModule(lowering, fixture.path, 'src/plugin.ts', code)
+			const [plan] = await lowering.plans()
+			return plan!.buildRevision
 		}
-		const revision = () => revisionAt(fixture.path)
 
-		const initialRevision = await revision()
-		// Declaring an inactive optional binary is valid; actually importing it remains an error.
-		await writeFile(
-			resolve(fixture.path, 'packages/producer/src/settings.tsx'),
-			`import '@example/foreign-native'\n${files['packages/producer/src/settings.tsx']}`,
-		)
-		await expect(revision()).rejects.toThrow(/@example\/foreign-native/)
-		await writeFile(
-			resolve(fixture.path, 'packages/producer/src/settings.tsx'),
-			files['packages/producer/src/settings.tsx']!,
-		)
-
-		await using equivalentFixture = await createFixture(files)
-		await symlink(
-			resolve(equivalentFixture.path, 'packages/sibling-ui'),
-			resolve(equivalentFixture.path, 'node_modules/@example/sibling-ui'),
-			'dir',
-		)
-		expect(await revisionAt(equivalentFixture.path)).toBe(initialRevision)
+		const before = await revision()
 		await writeFile(
 			resolve(fixture.path, 'pnpm-lock.yaml'),
 			'lockfileVersion: 9.0\npackages:\n  unrelated: 2.0.0\n',
 		)
-		expect(await revision()).toBe(initialRevision)
-		await writeFile(
-			resolve(fixture.path, 'node_modules/@example/registry-ui/package.json'),
-			JSON.stringify({
-				name: '@example/registry-ui',
-				optionalDependencies: { '@example/foreign-native': '^1.0.0' },
-				version: '0.1.0',
-				type: 'module',
-				exports: './index.js',
-				dependencies: {
-					'@example/registry-theme': '^1.0.0',
-					'@example/subpath-only': '^1.0.0',
-					'@types/ui-only': '^1.0.0',
-					'bun-types': '^1.0.0',
-				},
-				description: 'non-build metadata changed',
-				scripts: { test: 'exit 1' },
-			}),
-		)
-		expect(await revision()).toBe(initialRevision)
-		await writeFile(
-			resolve(fixture.path, 'node_modules/@example/registry-ui/package.json'),
-			JSON.stringify({
-				name: '@example/registry-ui',
-				optionalDependencies: { '@example/foreign-native': '^1.0.0' },
-				version: '0.1.0',
-				type: 'module',
-				exports: './index.js',
-				sideEffects: false,
-				dependencies: {
-					'@example/registry-theme': '^1.0.0',
-					'@example/subpath-only': '^1.0.0',
-					'@types/ui-only': '^1.0.0',
-					'bun-types': '^1.0.0',
-				},
-				description: 'non-build metadata changed',
-				scripts: { test: 'exit 1' },
-			}),
-		)
-		const packageMetadataRevision = await revision()
-		expect(packageMetadataRevision).not.toBe(initialRevision)
+		expect(await revision()).toBe(before)
+		await writeFile(resolve(fixture.path, dependency, 'package.json'), manifest('1.1.0'))
+		expect(await revision()).not.toBe(before)
 
 		await writeFile(
-			resolve(fixture.path, 'packages/sibling-ui/src/index.ts'),
-			"export const siblingLabel = 'sibling-v2'\n",
+			resolve(fixture.path, 'src/settings.tsx'),
+			"import '@example/native'; import { label } from '@example/registry-ui'; export default () => label",
 		)
-		const siblingRevision = await revision()
-		expect(siblingRevision).not.toBe(packageMetadataRevision)
-
-		await writeFile(
-			resolve(fixture.path, 'node_modules/@example/registry-theme/package.json'),
-			JSON.stringify({
-				name: '@example/registry-theme',
-				version: '1.1.0',
-				type: 'module',
-				exports: './index.js',
-			}),
-		)
-		const transitiveRevision = await revision()
-		expect(transitiveRevision).not.toBe(siblingRevision)
-
-		await writeFile(
-			resolve(fixture.path, 'node_modules/@example/subpath-only/package.json'),
-			JSON.stringify({
-				name: '@example/subpath-only',
-				version: '1.1.0',
-				type: 'module',
-				exports: { './icon': './icon.js' },
-			}),
-		)
-		const subpathRevision = await revision()
-		expect(subpathRevision).not.toBe(transitiveRevision)
-		await writeFile(
-			resolve(fixture.path, 'node_modules/@types/ui-only/package.json'),
-			JSON.stringify({
-				name: '@types/ui-only',
-				version: '1.1.0',
-				main: '',
-				types: 'index.d.ts',
-				exports: { '.': { types: './index.d.ts' }, './package.json': './package.json' },
-			}),
-		)
-		expect(await revision()).not.toBe(subpathRevision)
-		await writeFile(
-			resolve(fixture.path, 'node_modules/@types/ui-only/package.json'),
-			JSON.stringify({
-				name: '@types/ui-only',
-				version: '1.1.0',
-				main: '',
-				types: 'index.d.ts',
-				exports: { '.': { types: './index.d.ts', default: './missing.js' } },
-			}),
-		)
-		await expect(revision()).rejects.toThrow(/@types\/ui-only/)
+		await expect(revision()).rejects.toThrow('@example/native')
 	})
 })

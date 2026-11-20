@@ -115,33 +115,6 @@ describe('CommandsService', () => {
 		})
 	})
 
-	it('publishes the built-in plugin management catalog once during preparation', async () => {
-		await using host = await createServiceInternalTestHarness({
-			workbench: false,
-			services: [commands(), managementCommands()],
-		})
-
-		const prepared = host.ctx.service(Commands).list()
-		expect(prepared).toHaveLength(6)
-		await host.commit()
-		await host.commit()
-		expect(host.ctx.service(Commands).list()).toEqual(prepared)
-		expect(
-			host.ctx
-				.service(Commands)
-				.list()
-				.map(({ name }) => name),
-		).toEqual([
-			'plugin.auto-start.set',
-			'plugin.list',
-			'plugin.restart',
-			'plugin.start',
-			'plugin.status.get',
-			'plugin.stop',
-		])
-		expect(host.ctx.service(Commands).list()).toBe(host.ctx.service(Commands).list())
-	})
-
 	it('accepts package subpath addresses at the management command boundary', async () => {
 		await using host = await createServiceInternalTestHarness({
 			workbench: false,

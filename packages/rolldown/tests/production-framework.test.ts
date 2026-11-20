@@ -14,7 +14,7 @@ const { version: servicesVersion } = JSON.parse(
 	await readFile(new URL('../../services/package.json', import.meta.url), 'utf8'),
 ) as { version: string }
 
-it('relocates a traced native library in the Pluxel namespace without external framework copies', async () => {
+it('relocates an explicit native residual and its runtime-only data under the Pluxel namespace', async () => {
 	const temporary = await mkdtemp(join(tmpdir(), 'pluxel-standalone-native-library-'))
 	const root = join(temporary, 'source')
 	const library = join(root, 'library')
@@ -54,12 +54,12 @@ it('relocates a traced native library in the Pluxel namespace without external f
 		await writeFile(join(library, 'dist/index.cjs'), "module.exports = require('../binding.cjs')")
 		await writeFile(
 			join(library, 'binding.cjs'),
-			"module.exports = require('node:fs').readFileSync(require('node:path').join(__dirname, 'runtime.asset'), 'utf8')",
+			"module.exports = require('node:fs').readFileSync(require('node:path').join(__dirname, ['runtime', 'asset'].join('.')), 'utf8')",
 		)
 		await writeFile(join(library, 'runtime.asset'), 'RESIDUAL_NATIVE_LAYOUT_OK')
 		await writeFile(
 			join(root, 'app.ts'),
-			`import native from '@pluxel/native-fixture';
+			`import {createRequire} from 'node:module';
 import {BasePlugin,Plugin} from '@pluxel/core';
 import {defineHostApplication} from '@pluxel/host';
 import * as v from 'valibot';
@@ -75,6 +75,7 @@ export default defineHostApplication(() => ({
  async prepare({host}) {
   const policy=await host.policy.get();
   if(!policy.ok || policy.effective.startTimeoutMs!==12345) throw new Error('Standalone execution policy was lost');
+  const native=createRequire(import.meta.url)(['@pluxel','native-fixture'].join('/'));
   if(native!=='RESIDUAL_NATIVE_LAYOUT_OK') throw new Error('Native library layout changed');
   console.log(native);
  }
@@ -83,7 +84,7 @@ export default defineHostApplication(() => ({
 		const buildScript = join(root, 'build.mts')
 		await writeFile(
 			buildScript,
-			`import {build} from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'app.ts',plugins:[pluxel({delivery:'standalone',variant:'headless',lint:false,residualDependencies:{packages:['@pluxel/native-fixture']}})],config:false})`,
+			`import {build} from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}; import {pluxel} from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)}; await build({cwd:${JSON.stringify(root)},entry:'app.ts',plugins:[pluxel({delivery:'standalone',variant:'headless',lint:false,residualDependencies:{fullTrace:['@pluxel/native-fixture']}})],config:false})`,
 		)
 		const entry = join(root, 'app.ts')
 		const appSource = await readFile(entry, 'utf8')

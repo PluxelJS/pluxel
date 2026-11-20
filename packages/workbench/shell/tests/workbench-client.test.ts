@@ -192,65 +192,41 @@ describe('one-epoch Workbench layout runtime', () => {
 		}
 	})
 
-	it('refreshes building producer status inside the same session', async () => {
+	it('refreshes a building producer through failure and recovery in the same session', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 		const dispose = vi.fn()
 		const read = vi
 			.fn()
 			.mockResolvedValueOnce({ ...producerStatusLayout('building'), [Symbol.dispose]: dispose })
 			.mockResolvedValueOnce({ ...producerStatusLayout('failed'), [Symbol.dispose]: dispose })
-		{
+			.mockResolvedValueOnce({ ...layout(), revision: 10, [Symbol.dispose]: dispose })
+
+		try {
 			using runtime = new WorkbenchLayoutRuntime(
-				{
-					layoutDto: read,
-				} as unknown as RpcStub<WorkbenchSessionApi>,
+				{ layoutDto: read } as unknown as RpcStub<WorkbenchSessionApi>,
 				{ statusPollMs: 10 },
 			)
 
 			const release = runtime.retain(node)
 			await ready(runtime)
-			expect(runtime.getSnapshot(node).layout?.revision).toBe(8)
-			expect(read).toHaveBeenCalledOnce()
-
-			await vi.waitFor(() => expect(runtime.getSnapshot(node).layout?.revision).toBe(9))
-			expect(read.mock.calls.length).toBeGreaterThanOrEqual(2)
 			expect(runtime.getSnapshot(node).tabs[0]).toMatchObject({
-				federatedViewUnavailable: {
-					reason: 'failed',
-					message: 'renderer syntax error',
-				},
+				federatedViewUnavailable: { reason: 'building' },
+			})
+			await vi.advanceTimersByTimeAsync(10)
+			expect(runtime.getSnapshot(node).tabs[0]).toMatchObject({
+				federatedViewUnavailable: { reason: 'failed', message: 'renderer syntax error' },
+			})
+			await vi.advanceTimersByTimeAsync(10)
+			expect(runtime.getSnapshot(node).tabs[0]).toMatchObject({
+				federatedViewRef: federatedRef(panelDescriptor),
 			})
 
+			await vi.advanceTimersByTimeAsync(10)
+			expect(read).toHaveBeenCalledTimes(3)
+			expect(dispose).toHaveBeenCalledTimes(3)
 			release()
+		} finally {
+			vi.useRealTimers()
 		}
-		expect(dispose).toHaveBeenCalledTimes(2)
-	})
-
-	it('continues refreshing failed producer status inside the same session', async () => {
-		const dispose = vi.fn()
-		const read = vi
-			.fn()
-			.mockResolvedValueOnce({ ...producerStatusLayout('failed'), [Symbol.dispose]: dispose })
-			.mockResolvedValueOnce({ ...layout(), [Symbol.dispose]: dispose })
-		{
-			using runtime = new WorkbenchLayoutRuntime(
-				{
-					layoutDto: read,
-				} as unknown as RpcStub<WorkbenchSessionApi>,
-				{ statusPollMs: 10 },
-			)
-
-			const release = runtime.retain(node)
-			await ready(runtime)
-			expect(runtime.getSnapshot(node).layout?.revision).toBe(9)
-			expect(read).toHaveBeenCalledOnce()
-
-			await vi.waitFor(() => expect(runtime.getSnapshot(node).layout?.revision).toBe(7))
-			expect(read).toHaveBeenCalledTimes(2)
-			expect(runtime.getSnapshot(node).tabs[0]).toHaveProperty('federatedViewRef')
-			expect(runtime.getSnapshot(node).tabs[0]).not.toHaveProperty('federatedViewUnavailable')
-
-			release()
-		}
-		expect(dispose).toHaveBeenCalledTimes(2)
 	})
 })

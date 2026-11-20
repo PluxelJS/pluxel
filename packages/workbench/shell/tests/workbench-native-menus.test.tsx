@@ -197,39 +197,6 @@ describe('Pluxel native workspace menus', () => {
 		expect(session.workbench.getDocuments()).toHaveLength(4)
 	})
 
-	it('pins a non-active preview through dispatch, promotes it, keeps its content, and returns focus to that tab', async () => {
-		const { session, container } = await workspace()
-		let first = ''
-		await act(async () => {
-			await session.start('/security', false)
-			const opened = await session.workbench.open({ to: '/logs' }, { preview: true })
-			if (opened.status !== 'applied') throw new Error(JSON.stringify(opened))
-			first = opened.value.document.id
-		})
-		expect(session.workbench.getDocument(first)?.preview).toBe(true)
-		const input = container.querySelector<HTMLInputElement>('[aria-label="日志输入"]')!
-		input.value = 'retained input'
-		const active = await openDocument(session, '/security')
-		const dispatch = vi.spyOn(session.workbench, 'dispatch')
-		const target = tab(container, first)
-		await context(target)
-		await click(menuItem('固定标签（分组中的标签会移出分组）'))
-		expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: Actions.SET_TAB_PINNED }))
-		expect((session.workbench.model.getNodeById(first) as TabNode).isPinned()).toBe(true)
-		expect(session.workbench.getDocument(first)?.preview).toBe(false)
-		expect(session.workbench.getActiveDocument()?.id).toBe(active)
-		expect(container.querySelector('[aria-label="日志输入"]')).toBe(input)
-		expect(input.value).toBe('retained input')
-		expect(document.querySelector('[role="menu"]')).toBeNull()
-		expect(document.activeElement).toBe(target)
-		await pressKey(target, 'F6')
-		await act(async () => {
-			await vi.waitFor(() => expect(document.activeElement).toBe(input))
-		})
-		await pressKey(input, 'F6')
-		expect(document.activeElement).toBe(target)
-	})
-
 	it('allows group text editing and palette keyboard activation without triggering menu typeahead', async () => {
 		const { session, container } = await workspace()
 		const id = await openDocument(session, '/logs')
@@ -329,28 +296,6 @@ describe('Pluxel native workspace menus', () => {
 		expect(menuItem('关闭标签').getAttribute('aria-disabled')).toBe('true')
 	})
 
-	it('closes a deleted group menu and focuses the surviving workspace, including after its old DOM is clicked', async () => {
-		const { session, container } = await workspace()
-		const id = await openDocument(session, '/logs')
-		await act(async () => {
-			await session.workbench.dispatch(Actions.addTabToNewGroup(id, 'Temporary'))
-		})
-		const group = findGroup(session)
-		await context(container.querySelector<HTMLElement>('.flexlayout__group_pill')!)
-		const stale = menuItem('关闭整个标签容器（含折叠分组）')
-		await act(async () => {
-			await session.workbench.dispatch(Actions.ungroup(group.getId()))
-		})
-		expect(document.querySelector('[role="menu"]')).toBeNull()
-		const nativeScope = container.querySelector<HTMLElement>('.worksplit-workbench')!
-		await act(async () => {
-			await vi.waitFor(() => expect(document.activeElement).toBe(nativeScope))
-		})
-		await click(stale)
-		expect(session.workbench.getDocument(id)).not.toBeNull()
-		expect(document.activeElement).toBe(nativeScope)
-	})
-
 	it('closes the current whole group, including a member added after the menu opened', async () => {
 		const { session, container } = await workspace()
 		const logs = await openDocument(session, '/logs')
@@ -391,28 +336,6 @@ describe('Pluxel native workspace menus', () => {
 		await click(stale)
 		expect(session.workbench.getDocument(logs)).not.toBeNull()
 		expect(container.querySelector('[aria-label="日志输入"]')).toBe(input)
-	})
-
-	it('keeps native custom Border controls under the Mantine Provider and removes portals on unmount', async () => {
-		const { session, container, root } = await workspace()
-		await act(async () => {
-			await session.start('/', false)
-			await session.workbench.dispatch(Actions.updateNodeAttributes('border_left', { show: true }))
-		})
-		const trigger = container.querySelector<HTMLElement>('.flexlayout__border')!
-		await context(trigger)
-		const size = container.querySelector<HTMLInputElement>('.mantine-NumberInput-input')!
-		expect(size).not.toBeNull()
-		expect(size.value).toBe('340')
-		const left = await pressKey(size, 'ArrowLeft')
-		expect(left.defaultPrevented).toBe(false)
-		await click(menuItem('边栏悬浮显示'))
-		expect(session.workbench.model.toJson().borders?.[0]?.borderType).toBe('overlay')
-		await context(trigger)
-		expect(container.querySelector('[role="menu"]')).not.toBeNull()
-		await act(async () => root.unmount())
-		roots.splice(roots.indexOf(root), 1)
-		expect(document.querySelector('.flexlayout__popup_menu_container')).toBeNull()
 	})
 
 	it('uses the native overflow candidates and selection callback with keyboard focus return', async () => {

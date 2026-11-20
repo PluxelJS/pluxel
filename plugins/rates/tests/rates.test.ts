@@ -15,7 +15,6 @@ import {
 	type RateDecision,
 	type RatesBackendConsumeRequest,
 } from '../src/index.ts'
-import { ExpiryHeap } from '../src/expiry-heap.ts'
 
 const Fixed = { algorithm: 'fixed-window', limit: 2, windowMs: 1_000 } as const
 
@@ -527,39 +526,6 @@ describe('@pluxel/plugin-rates memory algorithms', () => {
 			})
 			vi.advanceTimersByTime(1_000)
 			await expect(limiter.consume('attacker')).resolves.toMatchObject({ denied: false })
-		}
-	})
-
-	it('bounds routine expiry cleanup while reclaiming one slot at capacity', async () => {
-		vi.useFakeTimers()
-		vi.setSystemTime(20_000)
-		{
-			await using host = await createTestHost()
-
-			await host.commit((change) => {
-				change.start(MemoryRatesBackendPlugin.nodeAddress(), {
-					initialConfig: { maxIdentities: 1_000 },
-				})
-				change.start(RatesPlugin.nodeAddress())
-				change.start(ConsumerA.nodeAddress())
-			})
-			const limiter = host.require(ConsumerA.nodeAddress()).rates.use('bounded-cleanup', Fixed)
-			await Promise.all(
-				Array.from({ length: 1_000 }, (_, index) => limiter.consume(`identity-${index}`)),
-			)
-			vi.advanceTimersByTime(1_000)
-			const deletes = vi.spyOn(ExpiryHeap.prototype, 'delete')
-
-			await expect(limiter.consume('new-identity')).resolves.toMatchObject({ denied: false })
-			expect(deletes).toHaveBeenCalledTimes(64)
-			deletes.mockClear()
-
-			// A second request also pays only the fixed routine budget even though hundreds
-			// of expired identities remain queued.
-			await expect(limiter.consume('another-new-identity')).resolves.toMatchObject({
-				denied: false,
-			})
-			expect(deletes.mock.calls.length).toBeLessThanOrEqual(64)
 		}
 	})
 

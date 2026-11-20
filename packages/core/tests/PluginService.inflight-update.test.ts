@@ -1,149 +1,56 @@
-import type { StandardSchemaV1 } from '@standard-schema/spec'
-import { BasePlugin, Plugin, withCoreInternalTestHost } from '@pluxel/core/internal/test'
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { BasePlugin, Plugin, createCoreInternalTestHost } from '@pluxel/core/internal/test'
+import { expect, it } from 'vitest'
+import * as v from 'valibot'
 import { lowerTestReplacement } from './lowered-replacement'
 
-const ConfigSchema: StandardSchemaV1<unknown, { value?: number }> = {
-	'~standard': {
-		version: 1,
-		vendor: 'pluxel:test',
-		validate: (value: unknown) => ({
-			value:
-				value && typeof value === 'object' && !Array.isArray(value)
-					? (value as { value?: number })
-					: {},
-		}),
-	},
-}
-
-let applied: number[]
-let lifecycleEvents: string[]
-let started: Promise<void>
-let markStarted: () => void
-let release: Promise<void>
-let allowInit: () => void
-
-function resetRace(): void {
-	applied = []
-	lifecycleEvents = []
-	;({ promise: started, resolve: markStarted } = Promise.withResolvers<void>())
-	;({ promise: release, resolve: allowInit } = Promise.withResolvers<void>())
-}
-
-@Plugin({ displayName: 'In-flight update' })
-class InflightUpdatePlugin extends BasePlugin {
-	readonly config = this.configs.use(ConfigSchema)
-
-	override async init(): Promise<void> {
-		applied.push(this.config.value ?? 0)
-		lifecycleEvents.push('provider:start')
-		this.ctx.effects.defer(() => {
-			lifecycleEvents.push('provider:cleanup')
-		})
-		if (this.config.value !== 1) return
-		markStarted()
-		await release
-	}
-}
+const configSchema = v.object({ value: v.number() })
+let enteredInit: ReturnType<typeof Promise.withResolvers<void>>
+let finishInit: ReturnType<typeof Promise.withResolvers<void>>
 
 @Plugin()
-class InflightConsumer extends BasePlugin {
-	constructor(readonly provider: InflightUpdatePlugin) {
-		super()
+class ConfiguredProvider extends BasePlugin {
+	readonly config = this.configs.use(configSchema)
+
+	override async init() {
+		enteredInit.resolve()
+		await finishInit.promise
 	}
-	override init() {
-		lifecycleEvents.push('consumer:start')
-		return () => {
-			lifecycleEvents.push('consumer:cleanup')
+}
+
+class Replacement extends ConfiguredProvider {}
+
+it('rejects concurrent edits and applies later configuration only in the next generation', async () => {
+	lowerTestReplacement(ConfiguredProvider, Replacement, {
+		config: { fieldName: 'config', schema: configSchema },
+	})
+	enteredInit = Promise.withResolvers()
+	finishInit = Promise.withResolvers()
+	await using host = createCoreInternalTestHost()
+	const config = host.cfg(ConfiguredProvider)
+	config.set({ value: 1 })
+	host.add(ConfiguredProvider)
+
+	const starting = host.commit()
+	try {
+		await enteredInit.promise
+		config.set({ value: 2 })
+		for (const edit of [
+			() => host.restart(ConfiguredProvider),
+			() => host.replace(ConfiguredProvider, Replacement),
+			() => host.remove(ConfiguredProvider),
+		]) {
+			expect(edit).toThrow(/another update is active/i)
 		}
+	} finally {
+		finishInit.resolve()
+		await starting
 	}
-}
+	const original = host.require(ConfiguredProvider)
+	expect(original.config.value).toBe(1)
 
-class InflightReplacementPlugin extends InflightUpdatePlugin {
-	override async init(): Promise<void> {
-		applied.push(20)
-	}
-}
-
-describe('updates attempted during an in-flight Core transaction', () => {
-	beforeAll(() => {
-		lowerTestReplacement(InflightUpdatePlugin, InflightReplacementPlugin, {
-			plugin: { displayName: 'In-flight replacement' },
-			config: { fieldName: 'config', schema: ConfigSchema },
-		})
-	})
-	beforeEach(resetRace)
-
-	it('rejects overlap and applies the latest config in the next generation', async () => {
-		await withCoreInternalTestHost(async (host) => {
-			const config = host.cfg(InflightUpdatePlugin)
-			config.set({ value: 1 })
-			host.add(InflightUpdatePlugin)
-
-			const initialCommit = host.commit()
-			await started
-
-			config.set({ value: 2 })
-			expect(() => host.restart(InflightUpdatePlugin)).toThrow(/another update is active/i)
-
-			allowInit()
-			await initialCommit
-			host.restart(InflightUpdatePlugin)
-			await host.commit()
-
-			expect(applied).toEqual([1, 2])
-			expect(host.require(InflightUpdatePlugin).config.value).toBe(2)
-		})
-	})
-
-	it('admits replacement only after the active transaction settles', async () => {
-		await withCoreInternalTestHost(async (host) => {
-			host.cfg(InflightUpdatePlugin).set({ value: 1 })
-			host.add(InflightUpdatePlugin)
-
-			const initialCommit = host.commit()
-			await started
-
-			expect(() => host.replace(InflightUpdatePlugin, InflightReplacementPlugin)).toThrow(
-				/another update is active/i,
-			)
-
-			allowInit()
-			await initialCommit
-			host.replace(InflightUpdatePlugin, InflightReplacementPlugin)
-			await host.commit()
-
-			expect(applied).toEqual([1, 20])
-			expect(host.require(InflightUpdatePlugin)).toBeInstanceOf(InflightReplacementPlugin)
-		})
-	})
-
-	it('admits removal only after the active transaction settles', async () => {
-		await withCoreInternalTestHost(async (host) => {
-			host.cfg(InflightUpdatePlugin).set({ value: 1 })
-			host.add([InflightUpdatePlugin, InflightConsumer])
-
-			const initialCommit = host.commit()
-			await started
-
-			expect(() => host.remove(InflightUpdatePlugin)).toThrow(/another update is active/i)
-
-			allowInit()
-			await initialCommit
-			host.remove(InflightUpdatePlugin)
-			await host.commit()
-
-			expect(applied).toEqual([1])
-			expect(host.has(InflightUpdatePlugin)).toBe(false)
-			expect(host.isRunning(InflightUpdatePlugin)).toBe(false)
-			expect(host.has(InflightConsumer)).toBe(false)
-			expect(host.isRunning(InflightConsumer)).toBe(false)
-			expect(lifecycleEvents).toEqual([
-				'provider:start',
-				'consumer:start',
-				'consumer:cleanup',
-				'provider:cleanup',
-			])
-		})
-	})
+	host.restart(ConfiguredProvider)
+	await host.commit()
+	const next = host.require(ConfiguredProvider)
+	expect(next).not.toBe(original)
+	expect(next.config.value).toBe(2)
 })

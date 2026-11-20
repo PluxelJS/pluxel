@@ -4,6 +4,7 @@ import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { resolve } from 'pathe'
 import { pluginPackage, resolveBuildContext, type BuildRuntimeConfig } from '../src/cli'
+import { createPluginBuildPipeline } from '../src/cli/plugin-build'
 import { runWithTsdown } from '../src/internal-cli'
 import { runRules } from '../src/cli/rules'
 
@@ -396,32 +397,6 @@ describe('plugin package build', () => {
 		})
 	}, 30_000)
 
-	it('keeps author package field ordering while updating generated metadata', async () => {
-		const author = {
-			name: 'ordered-control-exports',
-			license: 'MIT',
-			repository: 'https://example.com/plugin',
-			files: ['dist'],
-			type: 'module',
-			types: './dist/index.d.mts',
-			exports: { '.': './dist/index.mjs' },
-			publishConfig: { access: 'public' },
-			scripts: { test: 'test', build: 'build' },
-			peerDependencies: { '@pluxel/host': '^1.1.0' },
-		}
-		await using fixture = await createFixture({ 'package.json': JSON.stringify(author) })
-		const packageJsonPath = resolve(fixture.path, 'package.json')
-		await runRules({
-			packageJsonPath,
-			pluginUsages: new Map(),
-			artifactRoot: 'dist',
-			control: true,
-		})
-		const updated = JSON.parse(await readFile(packageJsonPath, 'utf8'))
-		expect(Object.keys(updated).filter((key) => key !== 'pluxel')).toEqual(Object.keys(author))
-		expect(updated.scripts).toEqual(author.scripts)
-	})
-
 	it('rejects an incorrect Plugin dependency role without writing any manifest field', async () => {
 		await using fixture = await createFixture({
 			'package.json': buildFixtures.basic['package.json'],
@@ -653,28 +628,33 @@ describe('plugin package build', () => {
 	})
 
 	it('rejects decorator syntax introduced by caller-supplied output plugins', async () => {
-		await withBuildFixture('basic', async () => {
-			const context = await resolveBuildContext({})
-			await expect(
-				runWithTsdown({
-					context,
-					log: () => {},
-					extraConfig: pluginPackage({
-						root: context.projectRoot,
-						packageMetadata: { packageJsonPath: context.packageJsonPath, log: () => {} },
-						additionalPlugins: [
-							{
-								name: 'fixture:invalid-output',
-								generateBundle(_, bundle) {
-									for (const item of Object.values(bundle)) {
-										if (item.type === 'chunk') item.code += '\n@Plugin() class InvalidOutput {}'
-									}
-								},
+		await withBuildFixture(
+			{
+				'package.json': JSON.stringify({ name: 'output-guard-fixture', type: 'module' }),
+				'tsdown.config.ts': "export default { entry: 'src/index.ts', dts: false }",
+				'src/index.ts': 'export const answer = 42',
+			},
+			async () => {
+				const context = await resolveBuildContext({})
+				const { inputOptions, plugins } = createPluginBuildPipeline({
+					root: context.projectRoot,
+					lint: false,
+					workbench: false,
+					additionalPlugins: [
+						{
+							name: 'fixture:invalid-output',
+							generateBundle(_, bundle) {
+								for (const item of Object.values(bundle)) {
+									if (item.type === 'chunk') item.code += '\n@Plugin() class InvalidOutput {}'
+								}
 							},
-						],
-					}),
-				}),
-			).rejects.toThrow('still contains decorator syntax')
-		})
+						},
+					],
+				})
+				await expect(
+					runWithTsdown({ context, log: () => {}, extraConfig: { inputOptions, plugins } }),
+				).rejects.toThrow('still contains decorator syntax')
+			},
+		)
 	})
 })

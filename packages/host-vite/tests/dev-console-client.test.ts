@@ -1,122 +1,45 @@
-import { runScript, controlHmr } from '@pluxel/agent-sdk/client'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cancelScript, getScriptResult, runScript } from '@pluxel/agent-sdk/client'
+import { createDiskFixture } from '@pluxel/test/fixtures'
+import { expect, it } from 'vitest'
 import { startProjectScriptServer } from '../src/console/server'
-import { connectDevInstance, selectDevInstance } from '@pluxel/agent-sdk/internal/client'
 
-const cleanup: Array<() => Promise<void>> = []
-afterEach(async () => {
-	for (const close of cleanup.splice(0).toReversed()) await close()
-})
-
-describe('dev console wire interoperability', () => {
-	it('controls HMR without a source file or available Host and returns the retained receipt identity', async () => {
-		const root = await mkdtemp(resolve(tmpdir(), 'px-hmr-interop-'))
-		cleanup.push(() => rm(root, { recursive: true, force: true }))
-		const hmr = {
-			mode: 'paused',
-			running: false,
-			pending: { files: 3, full: false },
-			observedRevision: 3,
-			attemptedRevision: 0,
-		}
-		const server = await startProjectScriptServer({
-			root,
-			execute: async () => {
-				throw new Error('Host unavailable')
-			},
-			control: async (action) => ({ action, hmr }),
-			inspect: () => ({ hmr, application: { state: 'unavailable', latestUpdate: null } }),
-		})
-		cleanup.push(() => server.close())
-		const instance = await selectDevInstance({ root })
-		using client = await connectDevInstance(instance)
-		expect(instance.hmr).toEqual(hmr)
-		for (const action of ['pause', 'apply', 'resume'] as const) {
-			const result = await controlHmr({
-				target: { root: instance.root, instance: instance.instanceId },
-				action,
-				timeoutMs: 1000,
-				detach: false,
-			}).then(({ run }) => run)
-			expect(result).toMatchObject({
-				kind: 'hmr',
-				action,
-				state: 'succeeded',
-				instanceId: instance.instanceId,
-				value: { action, hmr },
-			})
-			expect(await client.result(result.runId)).toMatchObject({
-				kind: 'hmr',
-				action,
-				state: 'succeeded',
-			})
-		}
+it('cancels an admitted local script by its receipt and reports when it has actually settled', async () => {
+	await using fixture = await createDiskFixture({
+		'package.json': '{}',
+		'operation.ts': 'export default () => null',
 	})
-
-	it('interoperates with the real console server for repeated runs, results and cancellation', async () => {
-		const root = await mkdtemp(resolve(tmpdir(), 'px-interop-'))
-		cleanup.push(() => rm(root, { recursive: true, force: true }))
-		await writeFile(resolve(root, 'package.json'), '{}')
-		const file = resolve(root, 'operation.ts')
-		await writeFile(file, 'export default () => 1')
-		let calls = 0
-		const server = await startProjectScriptServer({
-			root,
-			async execute(input, run) {
-				calls++
-				run.phase('execute')
-				if ((input.code as { exportName: string }).exportName === 'wait') {
-					await new Promise<void>((done) =>
-						run.signal.addEventListener('abort', () => done(), { once: true }),
-					)
-					return null
-				}
-				return { calls, input: input.input }
-			},
-		})
-		cleanup.push(() => server.close())
-		const instance = await selectDevInstance({ root })
-		using client = await connectDevInstance(instance)
-		expect(instance.instanceId).toBe(server.instance.instanceId)
-		const first = await runScript({
-			target: { root: instance.root, instance: instance.instanceId },
-			file,
-			exportName: 'default',
-			input: { count: 3 },
-			timeoutMs: 1000,
-			detach: false,
-		}).then(({ run }) => run)
-		expect(first).toMatchObject({
-			instanceId: instance.instanceId,
-			state: 'succeeded',
-			value: { calls: 1, input: { count: 3 } },
-		})
-		const second = await runScript({
-			target: { root: instance.root, instance: instance.instanceId },
-			file,
-			exportName: 'default',
-			timeoutMs: 1000,
-			detach: false,
-		}).then(({ run }) => run)
-		expect(second).toMatchObject({ state: 'succeeded', value: { calls: 2 } })
-		const waiting = await runScript({
-			target: { root: instance.root, instance: instance.instanceId },
-			file,
-			exportName: 'wait',
-			timeoutMs: 1000,
+	const entered = Promise.withResolvers<void>()
+	const release = Promise.withResolvers<void>()
+	const server = await startProjectScriptServer({
+		root: fixture.path,
+		async execute(_input, { signal }) {
+			entered.resolve()
+			await release.promise
+			signal.throwIfAborted()
+		},
+	})
+	try {
+		const { receipt } = await runScript({
+			target: { root: fixture.path },
+			file: fixture.getPath('operation.ts'),
 			detach: true,
-		}).then(({ run }) => run)
-		expect(await client.cancel(waiting.runId)).toMatchObject({
-			state: 'cancelling',
 		})
-		expect(await server.executor.settled(waiting.runId, instance.instanceId)).toMatchObject({
-			state: 'cancelled',
+		await entered.promise
+		await expect(cancelScript(receipt)).resolves.toMatchObject({
+			receipt,
+			run: { state: 'cancelling' },
 		})
-		expect(await client.result(first.runId)).toMatchObject({
-			value: { calls: 1 },
+		await expect(getScriptResult(receipt)).resolves.toMatchObject({
+			run: { state: 'cancelling' },
 		})
-	})
+		release.resolve()
+		await expect
+			.poll(() => getScriptResult(receipt))
+			.toMatchObject({
+				run: { state: 'cancelled', error: { code: 'cancelled' } },
+			})
+	} finally {
+		release.resolve()
+		await server.close()
+	}
 })

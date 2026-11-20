@@ -1,7 +1,12 @@
 import type { WorkbenchHost } from '@pluxel/workbench/server'
 import { createServer } from 'node:http'
 import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
-import { envBinding, defineHostApplication, resolveHostApplication } from '@pluxel/host'
+import {
+	envBinding,
+	defineHostApplication,
+	resolveHostApplication,
+	type HostStartupContext,
+} from '@pluxel/host'
 import { createResolvedHost } from '@pluxel/host/internal'
 import { expect, it } from 'vitest'
 import { S3, S3Config, S3VaultSchema, S3Plugin } from '../src/index.ts'
@@ -52,7 +57,7 @@ it('signs an S3 write without Workbench using env-backed configuration and Vault
 			],
 			coreConfig: { vault: { backend: 'bindings' } },
 		}))
-		const resolved = await resolveHostApplication(application, {
+		const startup: HostStartupContext = {
 			root: process.cwd(),
 			mode: 'test',
 			bindings: {},
@@ -71,20 +76,21 @@ it('signs an S3 write without Workbench using env-backed configuration and Vault
 					},
 				]),
 			},
-		})
-		const host = await createResolvedHost(resolved)
-		try {
-			await host.start()
-			expect(host.ctx.service(WorkbenchHostRef)).toBeUndefined()
-			const status = await host.status()
-			expect(status.summary.running).toBe(2)
-			expect(requests).toHaveLength(1)
-			expect(requests[0]).toMatchObject({ url: '/deployment-check', body: 'payload' })
-			expect(requests[0]?.authorization).toContain('Credential=deployment-access/')
-			expect(requests[0]?.authorization).not.toContain('deployment-secret')
-		} finally {
-			await host.close()
 		}
+		await expect(
+			resolveHostApplication(application, {
+				...startup,
+				env: { ...startup.env, SECRET_KEY: undefined },
+			}),
+		).rejects.toThrow('SECRET_KEY')
+
+		await using host = await createResolvedHost(await resolveHostApplication(application, startup))
+		await host.start()
+		expect(host.ctx.service(WorkbenchHostRef)).toBeUndefined()
+		expect(requests).toHaveLength(1)
+		expect(requests[0]).toMatchObject({ url: '/deployment-check', body: 'payload' })
+		expect(requests[0]?.authorization).toContain('Credential=deployment-access/')
+		expect(requests[0]?.authorization).not.toContain('deployment-secret')
 	} finally {
 		await new Promise<void>((resolve, reject) =>
 			server.close((error) => (error ? reject(error) : resolve())),

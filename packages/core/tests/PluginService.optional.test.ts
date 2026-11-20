@@ -2,150 +2,138 @@ import {
 	BasePlugin,
 	Plugin,
 	definePluginRef,
-	withCoreInternalTestHost,
+	createCoreInternalTestHost,
 } from '@pluxel/core/internal/test'
-import { requirePluginService } from '@pluxel/core/internal'
-import { beforeEach, describe, expect, it } from 'vitest'
-import {
-	OptionalProvider as OptionalProviderCtor,
-	resetOptionalProvider,
-	type OptionalProvider as OptionalProviderType,
-} from './plugins/OptionalProvider'
-import {
-	resetSecondOptionalProvider,
-	SecondOptionalProvider as SecondOptionalProviderCtor,
-	type SecondOptionalProvider as SecondOptionalProviderType,
-} from './plugins/SecondOptionalProvider'
+import { expect, it } from 'vitest'
 
-const OptionalProviderRef = definePluginRef<OptionalProviderType>()
-const SecondOptionalProviderRef = definePluginRef<SecondOptionalProviderType>()
+let providerFails: boolean
 
-let consumerStarts = 0
-const observedGenerations: string[] = []
-
-@Plugin({ displayName: 'Optional consumer' })
-class OptionalConsumer extends BasePlugin {
-	readonly generation = ++consumerStarts
+@Plugin()
+class OptionalProvider extends BasePlugin {
+	readonly value = 'first'
 
 	override init() {
-		this.plugins.use(OptionalProviderRef, (provider) => {
-			observedGenerations.push(`first:${provider.generation}`)
+		if (providerFails) throw new Error('optional provider failed')
+	}
+}
+
+@Plugin()
+class SecondProvider extends BasePlugin {
+	readonly value = 'second'
+}
+
+const FirstRef = definePluginRef<OptionalProvider>()
+const SecondRef = definePluginRef<SecondProvider>()
+let consumerStarts: number
+
+@Plugin()
+class OptionalConsumer extends BasePlugin {
+	readonly links = new Set<string>()
+
+	override init() {
+		consumerStarts++
+		this.plugins.use(FirstRef, ({ value }) => {
+			this.links.add(value)
+			return () => {
+				this.links.delete(value)
+			}
 		})
-		this.plugins.use(SecondOptionalProviderRef, (provider) => {
-			observedGenerations.push(`second:${provider.generation}`)
+		this.plugins.use(SecondRef, ({ value }) => {
+			this.links.add(value)
+			return () => {
+				this.links.delete(value)
+			}
 		})
 	}
 }
 
-@Plugin({ displayName: 'Required optional-provider consumer' })
-class RequiredOptionalProviderConsumer extends BasePlugin {
-	constructor(readonly provider: OptionalProviderCtor) {
+it('ignores absent-to-absent retries and restarts once when two optional providers become available', async () => {
+	providerFails = true
+	consumerStarts = 0
+	await using host = createCoreInternalTestHost()
+	const absent = await host.start(OptionalConsumer)
+	expect(absent.links.size).toBe(0)
+
+	host.add(OptionalProvider)
+	await host.commitAllowFail()
+	await host.commitAllowFail()
+	expect(host.require(OptionalConsumer)).toBe(absent)
+
+	providerFails = false
+	host.add(SecondProvider)
+	await host.commit()
+	const connected = host.require(OptionalConsumer)
+	expect(connected.links).toEqual(new Set(['first', 'second']))
+	expect(consumerStarts).toBe(2)
+
+	host.remove(OptionalProvider)
+	await host.commit()
+	expect(connected.links.size).toBe(0)
+	expect(host.require(OptionalConsumer).links).toEqual(new Set(['second']))
+})
+
+@Plugin()
+class RequiredConsumer extends BasePlugin {
+	constructor(readonly provider: SecondProvider) {
 		super()
 	}
 }
 
-const RequiredOptionalProviderConsumerRef = definePluginRef<RequiredOptionalProviderConsumer>()
-let nestedOptionalConsumerStarts = 0
-
-abstract class AbstractOptionalProvider extends BasePlugin {
-	abstract readonly value: string
-}
-
-@Plugin(AbstractOptionalProvider)
-class ConcreteAbstractOptionalProvider extends AbstractOptionalProvider {
-	readonly value = 'concrete'
-}
-
-const AbstractOptionalProviderRef = definePluginRef<AbstractOptionalProvider>()
-let abstractOptionalSetups = 0
+const RequiredConsumerRef = definePluginRef<RequiredConsumer>()
 
 @Plugin()
-class AbstractOptionalConsumer extends BasePlugin {
+class OptionalObserver extends BasePlugin {
+	providerValue?: string
+
 	override init() {
-		this.plugins.use(AbstractOptionalProviderRef, () => {
-			abstractOptionalSetups++
+		this.plugins.use(RequiredConsumerRef, (consumer) => {
+			this.providerValue = consumer.provider.value
 		})
 	}
 }
 
-@Plugin({ displayName: 'Nested optional consumer' })
-class NestedOptionalConsumer extends BasePlugin {
-	readonly generation = ++nestedOptionalConsumerStarts
+it('keeps optional consumers running when the required provider chain is removed', async () => {
+	await using host = createCoreInternalTestHost()
+	host.add([OptionalObserver, RequiredConsumer, SecondProvider])
+	await host.commit()
+	expect(host.require(OptionalObserver).providerValue).toBe('second')
+
+	host.remove(SecondProvider)
+	await host.commit()
+	expect(host.get(RequiredConsumer)).toBeUndefined()
+	expect(host.require(OptionalObserver).providerValue).toBeUndefined()
+})
+
+abstract class AbstractProvider extends BasePlugin {}
+
+@Plugin(AbstractProvider)
+class ConcreteProvider extends AbstractProvider {}
+const AbstractRef = definePluginRef<AbstractProvider>()
+
+@Plugin()
+class AbstractObserver extends BasePlugin {
+	connected = false
 
 	override init() {
-		this.plugins.use(RequiredOptionalProviderConsumerRef, () => undefined)
+		this.plugins.use(AbstractRef, () => {
+			this.connected = true
+		})
 	}
 }
 
-describe('static optional Plugin integration', () => {
-	beforeEach(() => {
-		consumerStarts = 0
-		nestedOptionalConsumerStarts = 0
-		observedGenerations.length = 0
-		resetOptionalProvider()
-		resetSecondOptionalProvider()
-		abstractOptionalSetups = 0
-	})
+it('does not connect an optional reference through an abstract provider default', async () => {
+	await using host = createCoreInternalTestHost()
+	host.add([ConcreteProvider, AbstractObserver])
+	await host.commit()
 
-	it('does not resolve an abstract provider default through a concrete-only PluginRef', async () => {
-		await withCoreInternalTestHost(async (host) => {
-			const registry = requirePluginService(host.ctx)
-			host.add([ConcreteAbstractOptionalProvider, AbstractOptionalConsumer])
-			await host.commit()
-
-			const update = registry.beginUpdate({ reason: 'core-test' })
-			update.setProviderDefault(
-				AbstractOptionalProvider.address(),
-				ConcreteAbstractOptionalProvider.nodeAddress(),
-			)
-			const prepared = update.prepare()
-			const result = await prepared.commit()
-
-			expect(result.ok).toBe(true)
-			expect(host.isRunning(AbstractOptionalConsumer)).toBe(true)
-			expect(abstractOptionalSetups).toBe(0)
-
-			const cleanup = registry.beginUpdate({ reason: 'core-test' })
-			cleanup.setProviderDefault(AbstractOptionalProvider.address(), null)
-			const cleanupResult = await cleanup.commit()
-			expect(cleanupResult.ok).toBe(true)
-		})
-	})
-
-	it('restarts optional consumers outside a required removal cascade', async () => {
-		await withCoreInternalTestHost(async (host) => {
-			const registry = requirePluginService(host.ctx)
-			host.add([OptionalProviderCtor, RequiredOptionalProviderConsumer, NestedOptionalConsumer])
-			await host.commit()
-			const firstOptionalConsumer = host.require(NestedOptionalConsumer)
-
-			host.remove(OptionalProviderCtor)
-			const summary = await host.commit()
-
-			expect(host.has(OptionalProviderCtor)).toBe(false)
-			expect(host.has(RequiredOptionalProviderConsumer)).toBe(false)
-			expect(host.require(NestedOptionalConsumer)).not.toBe(firstOptionalConsumer)
-			expect(nestedOptionalConsumerStarts).toBe(2)
-			expect(summary.pluginChanges.restarted).toEqual([
-				registry.resolvePluginNode(NestedOptionalConsumer),
-			])
-		})
-	})
-
-	it('unions overlapping provider transitions so each consumer restarts once', async () => {
-		await withCoreInternalTestHost(async (host) => {
-			const registry = requirePluginService(host.ctx)
-			await host.start(OptionalConsumer)
-			host.add([OptionalProviderCtor, SecondOptionalProviderCtor])
-			const summary = await host.commit()
-
-			expect(consumerStarts).toBe(2)
-			expect(new Set(observedGenerations.map((value) => value.split(':')[0]))).toEqual(
-				new Set(['first', 'second']),
-			)
-			expect(summary.pluginChanges.restarted).toEqual([
-				registry.resolvePluginNode(OptionalConsumer),
-			])
-		})
-	})
+	const update = host.pluginService.beginUpdate({ reason: 'set provider default' })
+	update.setProviderDefault(AbstractProvider.address(), ConcreteProvider.nodeAddress())
+	try {
+		expect(await update.commit()).toMatchObject({ ok: true })
+		expect(host.require(AbstractObserver).connected).toBe(false)
+	} finally {
+		const reset = host.pluginService.beginUpdate({ reason: 'clear provider default' })
+		reset.setProviderDefault(AbstractProvider.address(), null)
+		await reset.commit()
+	}
 })

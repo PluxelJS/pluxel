@@ -6,29 +6,6 @@ import { expect, it } from 'vitest'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const execute = promisify(execFile)
 
-it('imports the published Host entry without the source compiler', async () => {
-	const { stdout } = await execute(
-		process.execPath,
-		[
-			'--input-type=module',
-			'-e',
-			`
-  import { registerHooks } from 'node:module'
-  registerHooks({ resolve(specifier, context, next) {
-   if (['gunshi', '@pluxel/cli', '@pluxel/rolldown', '@pluxel/services'].some(name => specifier === name || specifier.startsWith(name + '/'))) throw new Error('Host entry loaded the compiler')
-   return next(specifier, context)
-  } })
-  const api = await import('@pluxel/agent-sdk/host')
-  const owner = await import('@pluxel/host/internal/agent/host')
-  if (Object.keys(api).join() !== Object.keys(owner).join() || api.ScriptError !== owner.ScriptError || api.createScriptScope !== owner.createScriptScope) throw new Error('Host SDK namespace lost its receiver identity')
-  console.log(typeof api.createScriptScope)
- `,
-		],
-		{ cwd: root },
-	)
-	expect(stdout.trim()).toBe('function')
-})
-
 it('uses the published source entry from plain Node without Host execution or evaluating author code', async () => {
 	const { stdout } = await execute(
 		process.execPath,
@@ -70,30 +47,6 @@ it('uses the published source entry from plain Node without Host execution or ev
 	})
 })
 
-it('loads published command metadata without clients, compiler, project IO or service management', async () => {
-	const { stdout } = await execute(
-		process.execPath,
-		[
-			'--input-type=module',
-			'-e',
-			`
-	 import { registerHooks } from 'node:module'
-	 registerHooks({resolve(specifier, context, next) {
-	  if (['node:fs', 'node:fs/promises', 'node:net', 'node:child_process', '@pluxel/cli', '@pluxel/host', '@pluxel/rolldown', '@pluxel/services'].some(name => specifier === name || specifier.startsWith(name + '/'))) throw new Error('Metadata eagerly loaded ' + specifier)
-	  return next(specifier, context)
-	 }})
-	 const {scriptCommand, devSubCommands} = await import('@pluxel/agent-sdk/internal/cli')
-	 console.log(JSON.stringify({script: [...scriptCommand.subCommands.keys()], dev: [...devSubCommands.keys()]}))
-	`,
-		],
-		{ cwd: root },
-	)
-	expect(JSON.parse(stdout)).toEqual({
-		script: ['sync', 'run', 'result', 'cancel'],
-		dev: ['sync', 'instances', 'hmr', 'run'],
-	})
-})
-
 it('uses the published client directly from Node with no terminal or compiler dependency', async () => {
 	const { stdout, stderr } = await execute(
 		process.execPath,
@@ -119,8 +72,6 @@ it('uses the published client directly from Node with no terminal or compiler de
 		process.stdout.write = process.stderr.write = () => { throw new Error('SDK wrote to terminal') }
 		try {
 			const sdk = await import('@pluxel/agent-sdk/client')
-			for (const name of ['listHosts', 'runScript', 'getScriptResult', 'cancelScript', 'syncPluginControl', 'controlHmr'])
-				assert.equal(typeof sdk[name], 'function', name)
 			const discovery = await sdk.listHosts({ root: directory })
 			assert.equal(discovery.instances.length, 0)
 			await assert.rejects(

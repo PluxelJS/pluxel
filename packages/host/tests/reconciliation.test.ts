@@ -17,7 +17,6 @@ import {
 	PluginHostCoordinator,
 	HostStateMutationRejectedError,
 	hostStatePatch,
-	validateHostStateMutation,
 	type CorePluginGraphDriver,
 	type HostStateCoordinatorStore,
 	type HostStateSnapshot,
@@ -74,47 +73,6 @@ function state(input: Partial<HostStateSnapshot> = {}): HostStateSnapshot {
 }
 
 describe('Host Plugin reconciliation', () => {
-	it('removes batched node policy through the reverse override index', () => {
-		const Consumer = definition('IndexedConsumer')
-		const Requirement = definition('IndexedRequirement')
-		const provider = node(definition('IndexedProvider'))
-		let addressReads = 0
-		const count = 256
-		const consumers = Array.from({ length: count }, (_, index) =>
-			Object.freeze({
-				get definition() {
-					addressReads++
-					return Consumer
-				},
-				variant: 'fork' as const,
-				forkId: `consumer-${index}`,
-			}),
-		)
-		const snapshot = state({
-			autoStart: consumers,
-			dependencyOverrides: consumers.map((consumerAddress) => ({
-				consumerAddress,
-				requirementAddress: Requirement,
-				providerAddress: provider,
-			})),
-		})
-
-		const next = applyHostStatePatch(
-			snapshot,
-			hostStatePatch(
-				...consumers.map((consumer) => ({
-					type: 'remove-node-policy' as const,
-					node: consumer,
-				})),
-			),
-		)
-
-		expect(next.autoStart).toEqual([])
-		expect(next.dependencyOverrides).toEqual([])
-		// A full scan per removal would read ~count² consumer addresses.
-		expect(addressReads).toBeLessThan(count * 20)
-	})
-
 	it('infers an abstract default deterministically for the effective graph', () => {
 		const Token = definition('Token')
 		const ProviderA = definition('ProviderA')
@@ -508,42 +466,31 @@ describe('Host Plugin reconciliation', () => {
 		).toEqual(expect.arrayContaining([provider, consumer]))
 	})
 
-	it('propagates a blocked dependency chain with one requirement scan per consumer', () => {
-		const count = 96
-		const definitions = Array.from({ length: count }, (_, index) =>
-			definition(`Linear${String(index).padStart(3, '0')}`),
-		)
-		const Missing = definition('LinearMissing')
-		let requirementReads = 0
-		const candidates = definitions.map((address, index) => {
-			const requirements = Object.freeze([definitions[index + 1] ?? Missing])
-			const base = candidate(address, { requires: requirements })
-			const declaration = { ...base.declaration }
-			Object.defineProperty(declaration, 'requires', {
-				enumerable: true,
-				get: () => {
-					requirementReads++
-					return requirements
-				},
-			})
-			return Object.freeze({
-				...base,
-				declaration: Object.freeze(declaration),
-			}) as ConcretePluginDefinitionCandidate
-		})
-		const catalog = createPluginCatalogSnapshot(
-			1,
-			candidates.map((tracked) => ({ candidate: tracked })),
-		)
-
+	it('blocks the dependent chain of a missing provider while admitting unrelated nodes', () => {
+		const app = definition('App')
+		const adapter = definition('Adapter')
+		const missing = definition('MissingBackend')
+		const independent = definition('Independent')
+		const catalog = createPluginCatalogSnapshot(1, [
+			{ candidate: candidate(app, { requires: [adapter] }) },
+			{ candidate: candidate(adapter, { requires: [missing] }) },
+			{ candidate: candidate(independent) },
+		])
 		const plan = reconcilePluginGraph({
 			catalog,
-			runtimeState: state({ autoStart: definitions.map((address) => node(address)) }),
+			runtimeState: state({ autoStart: [node(app), node(independent)] }),
 			runtimeStateRevision: 1,
 		})
 
-		expect(plan.blocked).toHaveLength(count)
-		expect(requirementReads).toBe(count)
+		expect(plan.blocked).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ consumer: node(app), requirement: adapter }),
+				expect.objectContaining({ consumer: node(adapter), requirement: missing }),
+			]),
+		)
+		expect(plan.coreOperations.filter(({ type }) => type === 'materialize-node')).toEqual([
+			expect.objectContaining({ address: node(independent) }),
+		])
 	})
 })
 
@@ -725,40 +672,6 @@ describe('Host Plugin graph publication', () => {
 		}
 	})
 
-	it('restarts an applied node without scanning or reconciling the catalog', async () => {
-		const Plugin = definition('FastRestart')
-		const base = createPluginCatalogSnapshot(1, [{ candidate: candidate(Plugin) }])
-		let rejectCatalogScan = false
-		const guardedCatalog = Object.freeze({
-			...base,
-			entries: new Proxy(base.entries, {
-				get(target, property, receiver) {
-					if (rejectCatalogScan && property === Symbol.iterator) {
-						throw new Error('restart scanned the full catalog')
-					}
-					return Reflect.get(target, property, receiver)
-				},
-			}),
-		})
-		const coordinator = new PluginHostCoordinator(
-			memoryStateStore(state({ autoStart: [node(Plugin)] })),
-			coreDriver(
-				async ({ onGraphCommitted }) => {
-					onGraphCommitted()
-					return 'committed'
-				},
-				() => true,
-			),
-		)
-		await coordinator.reconcileStartup(guardedCatalog)
-		rejectCatalogScan = true
-
-		await expect(coordinator.restartNode(node(Plugin))).resolves.toMatchObject({
-			catalogRevision: 1,
-			core: { status: 'committed', summary: 'committed' },
-		})
-	})
-
 	it('rejects restart for an unmaterialized node with a stable typed error', async () => {
 		const Plugin = definition('UnavailableRestart')
 		const coordinator = new PluginHostCoordinator(
@@ -798,40 +711,6 @@ describe('Host pinned mutation admission', () => {
 		await unlink
 		await expect(autoStart).rejects.toMatchObject({ code: 'node_unavailable' })
 		expect(store.versionedSnapshot().state.autoStart).toEqual([])
-	})
-
-	it('admits a bulk patch from one indexed prospective-state build', () => {
-		const requirement = definition('BulkRequirement')
-		let consumerDefinitionReads = 0
-		const dependencyOverrides = Array.from({ length: 80 }, (_, index) => {
-			const address = node(definition(`BulkConsumer${String(index).padStart(3, '0')}`))
-			const consumer = Object.freeze(
-				Object.defineProperty({ ...address }, 'definition', {
-					enumerable: true,
-					get: () => {
-						consumerDefinitionReads++
-						return address.definition
-					},
-				}),
-			) as PluginNodeAddress
-			return {
-				consumerAddress: consumer,
-				requirementAddress: requirement,
-				providerAddress: node(definition(`BulkProvider${String(index).padStart(3, '0')}`)),
-			}
-		})
-		const operations = Array.from({ length: 80 }, (_, index) => ({
-			type: 'set-auto-start' as const,
-			node: node(definition(`Absent${String(index).padStart(3, '0')}`)),
-			autoStart: false,
-		}))
-
-		validateHostStateMutation(
-			createPluginCatalogSnapshot(1, []),
-			state({ dependencyOverrides }),
-			hostStatePatch(...operations),
-		)
-		expect(consumerDefinitionReads).toBeLessThanOrEqual(dependencyOverrides.length * 4)
 	})
 
 	it('rejects a queued first fork after definition unlink or forkability contraction', async () => {

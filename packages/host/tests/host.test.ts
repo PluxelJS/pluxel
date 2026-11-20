@@ -1,199 +1,82 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
-import { requirePluginService } from '@pluxel/core/internal'
-import { describe, expect, it } from 'vitest'
-import {
-	__setPluginDefinition,
-	PLUGIN_LOWERING_ABI_VERSION,
-	lowerTestReplacement,
-} from '@pluxel/test/unsafe'
+import { lowerTestReplacement } from '@pluxel/test/unsafe'
+import { expect, it } from 'vitest'
 import { createHost } from '../src/index'
-import { requireHostStateStore } from '../src/host'
 
-describe('Core-only Host', () => {
-	it('rejects identity addresses where a Plugin implementation is required', async () => {
-		const address = {
-			definition: {
-				entry: { kind: 'package-root', packageName: '@test/selection' },
-				exportName: 'Selected',
-			},
-			variant: 'default',
-		} as const
-		await expect(
-			createHost({
-				plugins: [
-					{
-						plugin: address as never,
-					},
-				],
-			}),
-		).rejects.toThrow('plugins[0].plugin must be a Plugin constructor')
-	})
-	it('captures catalog inputs before awaiting initial startup', async () => {
-		@Plugin()
-		class Selected extends BasePlugin {}
-		__setPluginDefinition(Selected, {
-			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
-			kind: 'plugin',
-			definition: {
-				entry: { kind: 'package-root', packageName: '@test/captured-catalog' },
-				exportName: 'Selected',
-			},
-		})
-		const host = await createHost({ plugins: [] })
-		try {
-			const selection = [Selected]
-			const updating = host.updateCatalog(selection)
-			selection.length = 0
-			await updating
-			expect(host.catalog().entries).toHaveLength(1)
-		} finally {
-			await host.close()
-		}
-	})
+@Plugin()
+class Counter extends BasePlugin {
+	static readonly events: string[] = []
+	version = 'original'
 
-	it('rejects unknown JavaScript options before acquiring resources', async () => {
-		let prepared = false
-		await expect(
-			createHost({
-				plugins: [],
-				service: [],
-				services: [
-					{
-						name: 'probe',
-						provides: [],
-						prepare() {
-							prepared = true
-						},
-					},
-				],
-			} as never),
-		).rejects.toThrow('unsupported "service"')
-		expect(prepared).toBe(false)
-	})
+	init() {
+		const version = this.version
+		Counter.events.push(`start ${version}`)
+		return () => {
+			Counter.events.push(`stop ${version}`)
+		}
+	}
+}
 
-	it('owns one catalog and queue, separates admission from intent, and drains shutdown', async () => {
-		abstract class LifecycleBackend extends BasePlugin {}
-		__setPluginDefinition(LifecycleBackend, {
-			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
-			kind: 'abstract',
-			definition: {
-				entry: { kind: 'package-root', packageName: '@test/host' },
-				exportName: 'LifecycleBackend',
-			},
-		})
-		@Plugin(LifecycleBackend)
-		class LifecyclePlugin extends LifecycleBackend {
-			static starts = 0
-			static stops = 0
-			init() {
-				LifecyclePlugin.starts++
-				this.ctx.effects.defer(() => {
-					LifecyclePlugin.stops++
-				})
-			}
-		}
-		__setPluginDefinition(LifecyclePlugin, {
-			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
-			kind: 'plugin',
-			definition: {
-				entry: { kind: 'package-root', packageName: '@test/host' },
-				exportName: 'LifecyclePlugin',
-			},
-			provides: LifecycleBackend.address(),
-		})
-		const host = await createHost({
-			plugins: [
-				{
-					plugin: LifecyclePlugin,
-				},
-			],
-		})
-		const state = requireHostStateStore(host.ctx)
-		const address = {
-			definition: LifecyclePlugin.address(),
-			variant: 'default' as const,
-		}
-		try {
-			await host.start()
-			expect(host.catalog().entries).toHaveLength(1)
-			expect(requirePluginService(host.ctx).isRunning(address)).toBe(false)
-			const status1 = await host.status()
-			expect(status1.statuses[0]).toMatchObject({
-				autoStart: false,
-				lifecycleState: 'stopped',
-			})
-			await host.setAutoStart(address, true)
-			const status2 = await host.status()
-			expect(status2.statuses[0]).toMatchObject({
-				autoStart: true,
-				lifecycleState: 'stopped',
-			})
-			await host.startNode(address)
-			expect(requirePluginService(host.ctx).isRunning(address)).toBe(true)
-			await host.updateCatalog([LifecyclePlugin])
-			expect(LifecyclePlugin.starts).toBe(1)
-			await host.stopNode(address)
-			await host.updateCatalog([LifecyclePlugin])
-			expect(requirePluginService(host.ctx).isRunning(address)).toBe(false)
-			await host.startNode(address)
-		} finally {
-			await host.close()
-		}
-		expect(LifecyclePlugin.stops).toBe(2)
-		expect(requirePluginService(host.ctx).readCommittedDependencyAdjacency().nodes).toEqual([])
-		// Inferred provider selection belongs to the effective graph, never durable state.
-		expect(state.snapshot().providerDefaults).toEqual([])
-		await expect(host.close()).resolves.toBeUndefined()
-		await expect(host.startNode(address)).rejects.toThrow('closed')
+it('keeps session intent across catalog updates and starts the newly published implementation', async () => {
+	const address = Counter.nodeAddress()
+	Counter.events.length = 0
+	await using host = await createHost({
+		plugins: [{ plugin: Counter }],
+		policy: { document: false },
 	})
-	it('retains rejected catalogs, replaces definitions, and drains shutdown', async () => {
-		const events: string[] = []
-		@Plugin()
-		class Original extends BasePlugin {
-			init() {
-				events.push('original')
-				this.ctx.effects.defer(() => {
-					events.push('stop original')
-				})
-			}
-		}
-		__setPluginDefinition(Original, {
-			abiVersion: PLUGIN_LOWERING_ABI_VERSION,
-			kind: 'plugin',
-			definition: {
-				entry: { kind: 'package-root', packageName: '@test/source' },
-				exportName: 'Plugin',
+	await host.start()
+	await host.setAutoStart(address, true)
+	const afterPolicy = await host.status()
+	expect(afterPolicy.statuses).toMatchObject([
+		{ address, autoStart: true, lifecycleState: 'stopped' },
+	])
+	expect(Counter.events).toEqual([])
+
+	await host.startNode(address)
+	const selection = [Counter]
+	const refreshing = host.updateCatalog(selection)
+	selection.length = 0
+	await refreshing
+	expect(Counter.events).toEqual(['start original'])
+
+	await host.stopNode(address)
+	const Replacement = lowerTestReplacement(
+		Counter,
+		class extends Counter {
+			override version = 'replacement'
+		},
+	)
+	await host.updateCatalog([Replacement])
+	const afterReplacement = await host.status()
+	expect(afterReplacement.statuses).toMatchObject([
+		{ address, autoStart: true, lifecycleState: 'stopped' },
+	])
+	expect(Counter.events).toEqual(['start original', 'stop original'])
+
+	await host.startNode(address)
+	await host.close()
+	expect(Counter.events).toEqual([
+		'start original',
+		'stop original',
+		'start replacement',
+		'stop replacement',
+	])
+})
+
+it('rejects an identity in place of a constructor or an unknown Host option before preparing services', async () => {
+	const services = [
+		{
+			name: 'probe',
+			provides: [] as const,
+			prepare: () => {
+				throw new Error('prepared')
 			},
-		})
-		class Replacement extends BasePlugin {
-			init() {
-				events.push('replacement')
-				this.ctx.effects.defer(() => {
-					events.push('stop replacement')
-				})
-			}
-		}
-		lowerTestReplacement(Original, Replacement)
-		const host = await createHost({
-			plugins: [
-				{
-					plugin: Original,
-					autoStart: true,
-				},
-			],
-		})
-		try {
-			await host.start()
-			await expect(host.updateCatalog([null as never])).rejects.toMatchObject({
-				code: 'plugin_declaration_invalid',
-			})
-			expect(events).toEqual(['original'])
-			await host.updateCatalog([Replacement])
-			expect(events).toEqual(['original', 'stop original', 'replacement'])
-		} finally {
-			await host.close()
-		}
-		await expect(host.updateCatalog([Replacement])).rejects.toThrow('closed')
-		expect(events).toEqual(['original', 'stop original', 'replacement', 'stop replacement'])
-	})
+		},
+	]
+	await expect(
+		createHost({ plugins: [{ plugin: Counter.nodeAddress() }], services } as never),
+	).rejects.toThrow('plugins[0].plugin must be a Plugin constructor')
+	await expect(createHost({ plugins: [], service: [], services } as never)).rejects.toThrow(
+		'unsupported "service"',
+	)
 })

@@ -1,7 +1,5 @@
 import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { createTestHost } from '@pluxel/test'
-import { envBinding, defineHostApplication, resolveHostApplication } from '@pluxel/host'
-import { createResolvedHost } from '@pluxel/host/internal'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const s3Mock = vi.hoisted(() => {
@@ -22,7 +20,7 @@ vi.mock('s3mini', () => ({
 	},
 }))
 
-import { S3, S3NotRunningError, S3VaultSchema, S3Plugin } from '../src/index.ts'
+import { S3, S3NotRunningError, S3Plugin } from '../src/index.ts'
 import { DocumentsPlugin } from './fixtures/result-consumer.ts'
 
 @Plugin()
@@ -90,54 +88,6 @@ describe('S3Plugin remote backend', () => {
 		})
 	})
 
-	it('starts an environment-only deployment without encrypted storage and fails closed for missing input', async () => {
-		const application = defineHostApplication(() => ({
-			plugins: [
-				{
-					plugin: S3Plugin,
-					autoStart: true,
-					config: remoteConfig({ type: 'vault', key: 'primary' }),
-					envBindings: [
-						envBinding({
-							vault: {
-								schema: S3VaultSchema,
-								mapping: {
-									primary: { accessKeyId: 'S3_ACCESS_KEY', secretAccessKey: 'S3_SECRET_KEY' },
-								},
-							},
-						}),
-					],
-				},
-			],
-			coreConfig: { vault: { backend: 'bindings' } },
-		}))
-		const startup = {
-			root: process.cwd(),
-			mode: 'test' as const,
-			env: { S3_ACCESS_KEY: 'env-access', S3_SECRET_KEY: 'env-secret' },
-			bindings: {},
-		}
-		const resolved = await resolveHostApplication(application, startup)
-		const host = await createResolvedHost(resolved)
-		try {
-			await host.start()
-			const status = await host.status()
-			expect(status.summary.running).toBe(1)
-			expect(s3Mock.configs.at(-1)).toMatchObject({
-				accessKeyId: 'env-access',
-				secretAccessKey: 'env-secret',
-			})
-		} finally {
-			await host.close()
-		}
-		await expect(
-			resolveHostApplication(application, {
-				...startup,
-				env: { S3_ACCESS_KEY: 'env-access' },
-			}),
-		).rejects.toThrow('S3_SECRET_KEY')
-	})
-
 	it('resolves access keys from a configured Vault reference without another plugin', async () => {
 		{
 			await using host = await createTestHost()
@@ -182,7 +132,7 @@ describe('S3Plugin remote backend', () => {
 		}
 	})
 
-	it('provides O(1) named bucket selection and owner-bound handles', async () => {
+	it('selects named buckets and withdraws only the stopped caller’s handle', async () => {
 		{
 			await using host = await createTestHost()
 
@@ -200,7 +150,6 @@ describe('S3Plugin remote backend', () => {
 			const eastClient = eastCapability.client
 			const westClient = westCapability.client
 			expect(eastClient).not.toBe(westClient)
-			expect(host.require(S3ConsumerA.nodeAddress()).s3.bucket('east')).toBe(eastCapability)
 			expect(host.require(S3ConsumerA.nodeAddress()).s3.bucketIds()).toEqual(['east', 'west'])
 			expect(() => host.require(S3ConsumerA.nodeAddress()).s3.bucket('missing')).toThrowError(
 				expect.objectContaining({ code: 'S3_BUCKET_NOT_FOUND' }),

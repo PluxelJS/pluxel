@@ -1,10 +1,12 @@
 import { createCoreContextHost, installOwnerViewService } from '../src/host'
 import { type Context, type RootContext } from '../src'
 import { describe, expect, expectTypeOf, it } from 'vitest'
+import { BasePlugin, Plugin } from '@pluxel/core'
 import { createCallerContextView, createGenerationContext } from '../src/context/context-factory'
 import { createCoreRootContext } from '../src/context/core-plan'
 import {
 	getInstalledServiceDefinitions,
+	consumePluginDefinitionCandidate,
 	requireConfigService,
 	requirePluginService,
 } from '../src/internal'
@@ -13,6 +15,9 @@ abstract class ExampleService {}
 interface ExampleService {
 	readonly owner: Context
 }
+
+@Plugin()
+class Configless extends BasePlugin {}
 
 describe('Core Context integration', () => {
 	it('provides fixed Core facilities outside the extension service registry', () => {
@@ -77,6 +82,16 @@ describe('Core Context integration', () => {
 		try {
 			expect(configCreations).toBe(0)
 			expect(lifecycleCreations).toBe(0)
+			const registry = requirePluginService(first)
+			const node = Configless.nodeAddress()
+			const start = registry.beginUpdate()
+			start.materializeNode(node, consumePluginDefinitionCandidate(Configless))
+			expect(await start.commit()).toMatchObject({ ok: true })
+			expect(registry.getInstance(node)).toBeInstanceOf(Configless)
+			const stop = registry.beginUpdate()
+			stop.dematerializeNode(node)
+			expect(await stop.commit()).toMatchObject({ ok: true })
+			expect(configCreations).toBe(0)
 			expect(requireConfigService(first)).toBe(requireConfigService(first))
 			expect(requirePluginService(first)).toBe(requirePluginService(first))
 			expect(configCreations).toBe(1)

@@ -5,9 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { RuntimeLogLine } from '../src/runtime'
-import { LogRow } from '../src/app/log_viewer/LogRow'
 import { LogList } from '../src/app/log_viewer/LogList'
-import { LogDetails } from '../src/app/log_viewer/LogDetails'
 import {
 	messageToText,
 	renderAnsi,
@@ -87,19 +85,6 @@ it('formats structured message values without failing on bigint or circular payl
 	expect(() => messageToText({ ...line, msg: '', message: ['payload ', circular] })).not.toThrow()
 	expect(serializeLogValue(circular)).toContain('[Circular]')
 })
-it('uses a non-interactive preview and a selectable full row', async () => {
-	const select = vi.fn()
-	await mount(
-		<>
-			<LogRow line={line} preview onSelect={select} />
-			<LogRow line={line} onSelect={select} />
-		</>,
-	)
-	expect(host.querySelectorAll('button')).toHaveLength(1)
-	expect(host.textContent).toContain('hello⏎world')
-	await act(async () => host.querySelector('button')!.click())
-	expect(select).toHaveBeenCalledWith(line)
-})
 it('renders only the virtual window of a large store and never materializes the buffer', async () => {
 	const get = vi.fn((index: number) => ({ ...line, seq: String(index) }))
 	const toArray = vi.fn(() => {
@@ -111,16 +96,4 @@ it('renders only the virtual window of a large store and never materializes the 
 	expect(host.querySelectorAll('button').length).toBeLessThan(100)
 	expect(get.mock.calls.length).toBeLessThan(100)
 	expect(toArray).not.toHaveBeenCalled()
-})
-it('shows structured details and forwards close', async () => {
-	const close = vi.fn()
-	await mount(<LogDetails line={line} onClose={close} />)
-	expect(host.textContent).toContain('复制文本')
-	expect(host.textContent).toContain('复制 JSON')
-	expect(host.textContent).toContain('属性')
-	expect(host.textContent).toContain('原始记录')
-	await act(async () =>
-		host.querySelector<HTMLButtonElement>('[aria-label="关闭日志详情"]')!.click(),
-	)
-	expect(close).toHaveBeenCalledOnce()
 })

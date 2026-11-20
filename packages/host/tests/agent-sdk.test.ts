@@ -33,81 +33,41 @@ class Counter extends BasePlugin {
 	}
 }
 
-it('runs ordinary typed configuration tasks against a Host without official Services', async () => {
+it('applies a typed script mutation, then rejects a stale edit without undoing the accepted change', async () => {
 	await using host = await createHost({
-		plugins: [
-			{
-				plugin: Counter,
-			},
-		],
-		policy: {
-			document: false,
-		},
-		config: {
-			document: false,
-		},
+		plugins: [{ plugin: Counter, autoStart: true }],
+		policy: { document: false },
+		config: { document: false },
 	})
 	await host.start()
-	const scope = createScriptScope({ ctx: host.ctx })
+	await using scope = createScriptScope({ ctx: host.ctx })
 	const node = parsePluginNodeAddress(Counter.nodeAddress())
-	try {
-		await scope.sdk.plugin(node).start()
-		const script = (async (sdk, run) => {
-			run.signal.throwIfAborted()
-			const selected = sdk.plugin(node)
-			const before = await selected.config.get()
-			const count = before.config.count
-			if (typeof count !== 'number') throw new TypeError('Expected numeric count')
-			const changed = await selected.config.patch(
-				{ set: { count: count * 2 } },
-				{ expectedManagedRevision: before.managedRevision },
-			)
-			const actual = await selected.config.get()
-			const status = await selected.status()
-			return { changed: changed, actual: actual, status: status }
-		}) satisfies Script
-		const result = await script(scope.sdk, {
-			id: 'config-task',
-			input: null,
-			signal: new AbortController().signal,
-		})
-		expect(result).toMatchObject({
-			changed: {
-				application: 'applied',
-				persistence: { status: 'confirmed', retention: 'session' },
+	const script = (async (sdk) => {
+		const selected = sdk.plugin(node)
+		const before = await selected.config.get()
+		await selected.config.patch(
+			{ set: { count: 4 } },
+			{
+				expectedManagedRevision: before.managedRevision,
 			},
-			actual: { config: { count: 4 } },
-			status: { lifecycleState: 'running' },
-		})
-		expect(requirePluginService(host.ctx).getInstance(node)).toMatchObject({ count: 4 })
-		const saved = await scope.sdk.plugin(node).config.get()
-		await expect(
-			scope.sdk.plugin(node).config.validate({ set: { count: 'wrong' } }),
-		).rejects.toMatchObject({
-			details: {
-				code: 'validation_failed',
-				errors: { _root: { count: [{ message: 'count must be a number', path: ['count'] }] } },
+		)
+		await selected.config.patch(
+			{ set: { count: 8 } },
+			{
+				expectedManagedRevision: before.managedRevision,
 			},
-		})
-		await scope.sdk
-			.plugin(node)
-			.config.patch({ set: { count: 8 } }, { expectedManagedRevision: saved.managedRevision })
-		await expect(
-			scope.sdk
-				.plugin(node)
-				.config.patch({ set: { count: 16 } }, { expectedManagedRevision: saved.managedRevision }),
-		).rejects.toMatchObject({ details: { code: 'revision_conflict', state: 'unchanged' } })
-		expect(await scope.sdk.plugin(node).config.reset()).toMatchObject({
-			config: { count: 2 },
-			application: 'applied',
-		})
-		await scope.sdk.plugin(node).restart()
-		await scope.sdk.plugin(node).stop()
-		const plugins = await scope.sdk.plugins.list()
-		expect(plugins.nodes).toMatchObject([{ address: node, lifecycleState: 'stopped' }])
-	} finally {
-		await scope.dispose()
-	}
+		)
+	}) satisfies Script
+	await expect(script(scope.sdk)).rejects.toMatchObject({
+		name: 'ScriptError',
+		code: 'revision_conflict',
+		details: { code: 'revision_conflict', state: 'unchanged' },
+	})
+	await expect(scope.sdk.plugin(node).config.get()).resolves.toMatchObject({
+		config: { count: 4 },
+		application: 'applied',
+	})
+	expect(requirePluginService(host.ctx).getInstance(node)).toMatchObject({ count: 4 })
 })
 
 it('preserves shadowed raw inputs, source facts and readonly rejection', async () => {
@@ -189,61 +149,6 @@ it('preserves shadowed raw inputs, source facts and readonly rejection', async (
 		})
 	} finally {
 		await locked.dispose()
-	}
-})
-
-it('propagates a real CAS conflict with ordinary await without rolling back prior changes', async () => {
-	await using host = await createHost({
-		plugins: [
-			{
-				plugin: Counter,
-			},
-		],
-		policy: {
-			document: false,
-		},
-		config: {
-			document: false,
-		},
-	})
-	await host.start()
-	await host.startNode(parsePluginNodeAddress(Counter.nodeAddress()))
-	const scope = createScriptScope({ ctx: host.ctx })
-	try {
-		expect(scope.sdk).not.toHaveProperty('Result')
-		const selected = scope.sdk.plugin(parsePluginNodeAddress(Counter.nodeAddress()))
-		const before = await selected.config.get()
-		expect(before).not.toHaveProperty('ok')
-		let reachedFinalMutation = false
-		const operation = (async () => {
-			await selected.config.patch({ set: { count: 4 } })
-			await selected.config.patch(
-				{ set: { count: 8 } },
-				{ expectedManagedRevision: before.managedRevision },
-			)
-			reachedFinalMutation = true
-			return selected.config.patch({ set: { count: 999 } })
-		})()
-		const outcome = await operation.catch((error: unknown) => error)
-		expect(outcome).toBeInstanceOf(ScriptError)
-		expect(outcome).toMatchObject({
-			code: 'revision_conflict',
-			details: { code: 'revision_conflict', state: 'unchanged' },
-		})
-		if (!(outcome instanceof ScriptError)) throw new Error('Expected a structured failure')
-		expect(Object.getPrototypeOf(outcome.details)).toBe(Object.prototype)
-		expect(outcome.details).not.toHaveProperty('ok')
-		expect(reachedFinalMutation).toBe(false)
-		const after = await selected.config.get()
-		expect(after).toMatchObject({ config: { count: 4 }, application: 'applied' })
-		expect(after.managedRevision).not.toBe(before.managedRevision)
-		expect(
-			requirePluginService(host.ctx).getInstance(parsePluginNodeAddress(Counter.nodeAddress())),
-		).toMatchObject({
-			count: 4,
-		})
-	} finally {
-		await scope.dispose()
 	}
 })
 

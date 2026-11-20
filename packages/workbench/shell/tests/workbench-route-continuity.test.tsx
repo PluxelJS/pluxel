@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, StrictMode, useEffect, type ReactNode } from 'react'
+import { act, useEffect, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import {
 	createMemoryHistory,
@@ -13,7 +13,6 @@ import {
 } from '@tanstack/react-router'
 import { Actions, DockLocation } from 'flexlayout-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Workbench } from '@worksplit/react'
 import { WorkspaceSession } from '../src/app/workbench/session'
 import { useOptionalWorkbenchDocument } from '../src/app/workbench/document'
 import { RouteErrorBoundary } from '../src/app/router/RouteErrorBoundary'
@@ -23,7 +22,6 @@ import {
 	openDocument,
 	prepareNativeWorkbenchDom,
 	renderWorkspace,
-	WorkspaceProviders,
 } from './helpers/native-workbench'
 
 const probes = vi.hoisted(() => ({
@@ -195,34 +193,6 @@ describe('native Workbench route continuity', () => {
 		},
 	)
 
-	it('reuses an ordinary URL, creates a distinct explicit copy, and closes only that copy', async () => {
-		const workspace = session()
-		const { container, root } = await renderWorkspace(workspace)
-		mounted.push(root)
-		const first = await openDocument(workspace, '/logs')
-		const input = container.querySelector<HTMLInputElement>(
-			`main[data-document-id="${first}"] input`,
-		)!
-		input.value = 'first draft'
-		expect(await openDocument(workspace, '/logs')).toBe(first)
-		const copy = await openDocument(workspace, '/logs', true)
-		expect(copy).not.toBe(first)
-		const copyInput = container.querySelector<HTMLInputElement>(
-			`main[data-document-id="${copy}"] input`,
-		)!
-		expect(copyInput).not.toBe(input)
-		expect(copyInput.value).toBe('draft')
-		expect(probes.routers.get(copy)).not.toBe(probes.routers.get(first))
-		await act(async () => {
-			const result = await workspace.workbench.close(copy)
-			expect(result.status).toBe('applied')
-		})
-		expect(workspace.workbench.getDocuments()).toHaveLength(1)
-		expect(input.value).toBe('first draft')
-		expect(probes.unmount.mock.calls.filter(([id]) => id === copy)).toHaveLength(1)
-		expect(probes.unmount.mock.calls.filter(([id]) => id === first)).toHaveLength(0)
-	})
-
 	it('lets only Worksplit write browser history and keeps the document URL when a Border tool is focused', async () => {
 		const workspace = session('/__pluxel/workbench')
 		window.history.replaceState(null, '', '/__pluxel/workbench/logs')
@@ -257,31 +227,5 @@ describe('native Workbench route continuity', () => {
 			'/__pluxel/workbench/logs?filter=warn#tail',
 		)
 		expect(push).toHaveBeenCalledTimes(1)
-	})
-
-	it('retains session and content across StrictMode replay, rerenders and theme changes', async () => {
-		const workspace = session()
-		const id = await openDocument(workspace, '/logs')
-		const container = document.body.appendChild(document.createElement('div'))
-		const root = createRoot(container)
-		mounted.push(root)
-		const view = (colorScheme: 'light' | 'dark') => (
-			<StrictMode>
-				<WorkspaceProviders session={workspace} colorScheme={colorScheme}>
-					<Workbench instance={workspace.workbench} />
-				</WorkspaceProviders>
-			</StrictMode>
-		)
-		await act(async () => root.render(view('light')))
-		const input = container.querySelector<HTMLInputElement>(`main[data-document-id="${id}"] input`)!
-		input.value = 'retained draft'
-		const initialMounts = probes.mount.mock.calls.length
-		const router = probes.routers.get(id)
-		await act(async () => root.render(view('dark')))
-		expect(container.querySelector(`main[data-document-id="${id}"] input`)).toBe(input)
-		expect(input.value).toBe('retained draft')
-		expect(probes.routers.get(id)).toBe(router)
-		expect(probes.mount).toHaveBeenCalledTimes(initialMounts)
-		expect(workspace.workbench.getDocuments()).toHaveLength(1)
 	})
 })

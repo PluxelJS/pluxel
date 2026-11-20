@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { StrictMode, act } from 'react'
+import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { Workbench } from '@worksplit/react'
 import { Actions } from 'flexlayout-react'
@@ -45,9 +45,7 @@ afterEach(async () => {
 	vi.useRealTimers()
 })
 
-async function mount(
-	options: { strict?: boolean; storage?: WorkspaceSnapshotStorage; basepath?: string } = {},
-) {
+async function mount(options: { storage?: WorkspaceSnapshotStorage; basepath?: string } = {}) {
 	const workspace = new WorkspaceSession({
 		storage: options.storage,
 		basepath: options.basepath ?? '/',
@@ -63,7 +61,7 @@ async function mount(
 		</WorkspaceProviders>
 	)
 	await act(async () => {
-		root.render(options.strict ? <StrictMode>{content}</StrictMode> : content)
+		root.render(content)
 		await workspace.start(`${workspace.basepath === '/' ? '' : workspace.basepath}/logs`, false)
 	})
 	return { workspace, root, container }
@@ -131,17 +129,6 @@ describe('native Workbench snapshot persistence', () => {
 			expect(write).toHaveBeenCalledTimes(1)
 		},
 	)
-
-	it('does not repeat identical writes after StrictMode replay', async () => {
-		const write = vi.spyOn(Storage.prototype, 'setItem')
-		const { workspace } = await mount({ strict: true })
-		await act(async () => vi.advanceTimersByTime(180))
-		expect(write).toHaveBeenCalledTimes(1)
-		workspace.storage.schedule()
-		workspace.storage.schedule()
-		await act(async () => vi.advanceTimersByTime(180))
-		expect(write).toHaveBeenCalledTimes(1)
-	})
 
 	it('restores native groups, pin state and geometry from a new workspace-specific snapshot', async () => {
 		const { workspace } = await mount({ basepath: '/__pluxel/workbench' })

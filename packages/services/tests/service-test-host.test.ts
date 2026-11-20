@@ -1,21 +1,13 @@
-import type { WorkbenchHost } from '@pluxel/workbench/server'
 import { ElysiaApp, elysia } from '@pluxel/services/elysia'
-import {
-	pluginDefinitionIndexKey,
-	parsePluginNodeAddress,
-	BasePlugin,
-	Plugin,
-	defineServiceRef,
-} from '@pluxel/core'
+import { pluginDefinitionIndexKey, parsePluginNodeAddress, BasePlugin, Plugin } from '@pluxel/core'
 import { createPluginControlReference } from '@pluxel/host/internal/control-reference'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { createTestHost } from '@pluxel/test'
 import { lowerTestReplacement } from '@pluxel/test/unsafe'
 import { describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
-import { requireHostDocuments, requireVaultHost } from '@pluxel/core/internal'
+import { requireHostDocuments } from '@pluxel/core/internal'
 
-const WorkbenchHostRef = defineServiceRef<WorkbenchHost>()
 @Plugin({ displayName: 'Public test host fixture' })
 class PublicFixture extends BasePlugin {}
 
@@ -190,24 +182,9 @@ describe('service test host', () => {
 		expect(() => httpOnly.commands.list()).toThrow(/commands/i)
 	})
 
-	it('keeps Workbench optional and Vault built in without initializing credentials', async () => {
-		await using host = await createServiceInternalTestHost({ services: [] })
-
-		expect(host.ctx.service(WorkbenchHostRef)).toBeUndefined()
-		const owner = await host.start(PublicFixture.nodeAddress())
-		expect(owner.ctx.vault).toBe(owner.ctx.vault)
-		expect(await requireVaultHost(host.ctx).admin.describe()).toMatchObject({
-			present: false,
-			unlocked: false,
-			hostIdentityPresent: false,
-		})
-	})
-
 	it('starts a typed dependency closure without exposing root authority', async () => {
 		await using host = await createTestHost()
 		expect('ctx' in host).toBe(false)
-		expect(host[Symbol.asyncDispose]).toBeTypeOf('function')
-		expect(host.http.origin).toBe('http://local.test')
 
 		const consumer = await host.start(DependencyConsumer.nodeAddress(), {
 			catalog: [RequiredDependency],

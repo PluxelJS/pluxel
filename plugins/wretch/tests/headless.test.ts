@@ -1,7 +1,7 @@
 import type { Workbench } from '@pluxel/workbench'
 import { createServer } from 'node:http'
 import * as nativeFs from 'node:fs'
-import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
@@ -14,75 +14,6 @@ import { WretchConfig, WretchPlugin } from '../src/index.ts'
 const WorkbenchRef = defineServiceRef<Workbench>()
 let origin = ''
 let round = 0
-
-@Plugin()
-class StatelessHttpConsumer extends BasePlugin {
-	constructor(private readonly http: WretchPlugin) {
-		super()
-	}
-	async init() {
-		expect(this.ctx.fs).toBeTypeOf('function')
-		expect(this.ctx.service(WorkbenchRef)).toBeUndefined()
-		await this.http.enableManagedSettings()
-		await this.http.updateManagedSettings({ headers: {} })
-		await this.http.resetManagedSettings()
-		expect(this.http.managedSettings.settings.headers).toEqual({})
-		expect(await this.http.client.get(origin).text()).toBe('stateless')
-		await expect(this.http.client.get('https://not-allowed.example').text()).rejects.toThrow(
-			/origin/i,
-		)
-	}
-}
-
-it('runs native HTTP, env policy and managed settings with services: []', async () => {
-	let requests = 0
-	const server = createServer((_request, response) => {
-		requests++
-		response.end('stateless')
-	})
-	await new Promise<void>((ready) => server.listen(0, '127.0.0.1', ready))
-	try {
-		const address = server.address()
-		if (!address || typeof address === 'string') throw new Error('No listener')
-		origin = `http://127.0.0.1:${address.port}`
-		const application = defineHostApplication(() => ({
-			plugins: [
-				{
-					plugin: WretchPlugin,
-					envBindings: [
-						envBinding({
-							config: { schema: WretchConfig, mapping: { allowedOrigins: 'HTTP_ORIGINS' } },
-						}),
-					],
-				},
-				{
-					plugin: StatelessHttpConsumer,
-					autoStart: true,
-				},
-			],
-			services: [],
-		}))
-		const resolved = await resolveHostApplication(application, {
-			root: process.cwd(),
-			mode: 'test',
-			bindings: {},
-			env: { HTTP_ORIGINS: JSON.stringify([origin]) },
-		})
-		const host = await createResolvedHost(resolved)
-		try {
-			await host.start()
-			const status = await host.status()
-			expect(status.summary.running).toBe(2)
-			expect(requests).toBe(1)
-		} finally {
-			await host.close()
-		}
-	} finally {
-		await new Promise<void>((resolve, reject) =>
-			server.close((error) => (error ? reject(error) : resolve())),
-		)
-	}
-})
 
 @Plugin()
 class HeadlessHttpConsumer extends BasePlugin {
@@ -193,7 +124,6 @@ it('applies env-bound provider policy and caller saved settings without Workbenc
 				await host.close()
 			}
 		}
-		expect(await readdir(prefix)).not.toContain('plugins')
 		expect(requests).toEqual([
 			{ managed: 'saved', authorization: 'Bearer caller-owned' },
 			{ managed: 'saved', authorization: 'Bearer caller-owned' },

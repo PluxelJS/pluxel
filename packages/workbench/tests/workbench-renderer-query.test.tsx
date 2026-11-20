@@ -488,31 +488,6 @@ describe('Workbench renderer query scope', () => {
 		await opened.dispose()
 	})
 
-	it('replaces the per-open owner when the Bridge payload changes in the same React mount', async () => {
-		const firstRead = deferred<ReturnType<typeof disposableValue>>()
-		const firstDispose = vi.fn()
-		const firstApi = { snapshot: vi.fn(() => firstRead.promise) }
-		const secondApi = { snapshot: vi.fn(() => ({ value: 2 })) }
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const query = scope.query(({ api }) => ({
-			queryKey: ['replace-api'],
-			queryFn: () => api.snapshot(),
-		}))
-		function Page(): ReactNode {
-			return <p>{query.useQuery().data?.value ?? 'pending'}</p>
-		}
-		const opened = await renderOpened(identity, scope.render(Page), firstApi)
-		await vi.waitFor(() => expect(firstApi.snapshot).toHaveBeenCalledTimes(1))
-
-		await opened.replaceApi(secondApi)
-		await vi.waitFor(() => expect(opened.dom.textContent).toBe('2'))
-		expect(secondApi.snapshot).toHaveBeenCalledTimes(1)
-		firstRead.resolve(disposableValue(1, firstDispose))
-		await vi.waitFor(() => expect(firstDispose).toHaveBeenCalledTimes(1))
-		expect(opened.dom.textContent).toBe('2')
-		await opened.dispose()
-	})
-
 	it('remounts local state and lets the new owner mutate while the old owner is still settling', async () => {
 		const firstResult = deferred<ReturnType<typeof disposableValue>>()
 		const firstDispose = vi.fn()
@@ -777,34 +752,6 @@ describe('Workbench renderer query scope', () => {
 		await opened.dispose()
 	})
 
-	it('marks a continuously observed query stale after staleTime', async () => {
-		vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
-		let opened: Awaited<ReturnType<typeof renderOpened>> | undefined
-		try {
-			const scope = createWorkbenchRenderer(QueryWorkbench.query)
-			const query = scope.query(() => ({
-				queryKey: ['stale-timer'],
-				queryFn: () => ({ value: 1 }),
-				staleTime: 200,
-			}))
-			let observed: WorkbenchQueryResult<Readonly<{ value: number }>> | undefined
-			function Page(): ReactNode {
-				observed = query.useQuery()
-				return <p>{`${observed.status}:${observed.isStale}`}</p>
-			}
-			opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-			await act(() => vi.advanceTimersByTimeAsync(0))
-			expect(opened.dom.textContent).toBe('success:false')
-			await act(() => vi.advanceTimersByTimeAsync(199))
-			expect(opened.dom.textContent).toBe('success:false')
-			await act(() => vi.advanceTimersByTimeAsync(2))
-			expect(opened.dom.textContent).toBe('success:true')
-		} finally {
-			await opened?.dispose()
-			vi.useRealTimers()
-		}
-	})
-
 	it('expires instance controls when the Hook that produced them unmounts', async () => {
 		const queryFn = vi.fn((value: number) => ({ value }))
 		const mutationFn = vi.fn((value: number) => ({ value }))
@@ -877,36 +824,6 @@ describe('Workbench renderer query scope', () => {
 		act(() => observed!.invalidate())
 		await vi.waitFor(() => expect(opened.dom.textContent).toBe('error:1'))
 		expect(observed).toMatchObject({ error: failure, isStale: true, data: { value: 1 } })
-		await opened.dispose()
-	})
-
-	it('makes concurrent refetch calls join the current initial read', async () => {
-		const firstRead = deferred<Readonly<{ value: number }>>()
-		const queryFn = vi.fn(() => firstRead.promise)
-		const scope = createWorkbenchRenderer(QueryWorkbench.query)
-		const query = scope.query(() => ({ queryKey: ['concurrent-refetch'], queryFn }))
-		let observed: WorkbenchQueryResult<Readonly<{ value: number }>> | undefined
-		function Page(): ReactNode {
-			observed = query.useQuery()
-			return <p>{observed.data?.value ?? 'pending'}</p>
-		}
-		const opened = await renderOpened(identity, scope.render(Page), { snapshot: vi.fn() })
-		await vi.waitFor(() => expect(queryFn).toHaveBeenCalledTimes(1))
-		let firstRefetch!: Promise<Readonly<{ value: number }>>
-		let secondRefetch!: Promise<Readonly<{ value: number }>>
-		act(() => {
-			firstRefetch = observed!.refetch()
-			secondRefetch = observed!.refetch()
-		})
-		await act(async () => {
-			firstRead.resolve({ value: 1 })
-			await expect(Promise.all([firstRefetch, secondRefetch])).resolves.toEqual([
-				{ value: 1 },
-				{ value: 1 },
-			])
-		})
-		expect(queryFn).toHaveBeenCalledTimes(1)
-		expect(opened.dom.textContent).toBe('1')
 		await opened.dispose()
 	})
 

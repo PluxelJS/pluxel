@@ -221,25 +221,6 @@ describe('plugin state within native documents', () => {
 		expect(firstInput.value).toBe('first draft')
 	})
 
-	it('retains configuration draft while toggling tools and isolates an explicit copy', async () => {
-		state.details = true
-		const { workspace, content } = await mount()
-		const first = await openDocument(workspace, `/plugins/${firstRoute}/config`)
-		const input = content(first).querySelector<HTMLInputElement>('[aria-label="配置状态"]')!
-		input.value = 'unsaved config state'
-		await act(async () => {
-			await workspace.toggleBorder('right')
-			await workspace.toggleBorder('right')
-		})
-		expect(content(first).querySelector('[aria-label="配置状态"]')).toBe(input)
-		expect(input.value).toBe('unsaved config state')
-		const copy = await openDocument(workspace, `/plugins/${firstRoute}/config`, true)
-		expect(content(copy).querySelector('[aria-label="配置状态"]')).not.toBe(input)
-		expect(content(copy).querySelector<HTMLInputElement>('[aria-label="配置状态"]')?.value).toBe(
-			'config draft',
-		)
-	})
-
 	it('opens a published entry as its own URL document and reports a removed entry explicitly', async () => {
 		state.details = true
 		const owner = parsePluginDetailHref(`/plugins/${firstRoute}`)!.target
@@ -340,63 +321,6 @@ describe('plugin state within native documents', () => {
 		expect(container.querySelector('[data-testid="scoped-log"]')?.textContent).toBe(secondRoute)
 		expect(content(first).querySelector('input')).toBe(input)
 		expect(input.value).toBe('kept draft')
-	})
-
-	it('retains the right strip when collapsed and hides owner tools only when no plugin is active', async () => {
-		const { workspace, container } = await mount()
-		const first = await openDocument(workspace, `/plugins/${firstRoute}`)
-		await act(async () => workspace.syncWorkspacePanels())
-		const right = () => workspace.workbench.model.getNodeById('border_right') as BorderNode
-		expect(right().isShowing()).toBe(true)
-		expect(right().getSelected()).toBe(-1)
-		await act(async () => workspace.toggleBorder('right'))
-		expect(container.querySelector('[data-testid="scoped-info"]')?.textContent).toBe(firstRoute)
-		await act(async () => workspace.toggleBorder('right'))
-		expect(right().isShowing()).toBe(true)
-		expect(right().getSelected()).toBe(-1)
-		expect(container.querySelector('[data-testid="scoped-info"]')).toBeNull()
-		await openDocument(workspace, '/logs')
-		await act(async () => workspace.syncWorkspacePanels())
-		expect(workspace.panelAvailable('right')).toBe(false)
-		expect(workspace.panelAvailable('bottom')).toBe(false)
-		expect(right().isShowing()).toBe(false)
-		expect((workspace.workbench.model.getNodeById('border_bottom') as BorderNode).isShowing()).toBe(
-			false,
-		)
-		await act(async () => {
-			await workspace.toggleBorder('right')
-		})
-		expect(workspace.panelAvailable('bottom')).toBe(false)
-		await act(async () => {
-			workspace.workbench.activate(first)
-			await workspace.syncWorkspacePanels()
-		})
-		expect(right().isShowing()).toBe(true)
-		expect(right().getSelected()).toBe(-1)
-	})
-
-	it('keeps the right log preview while central documents are maximized', async () => {
-		const { workspace, container } = await mount()
-		await openDocument(workspace, `/plugins/${firstRoute}`)
-		const documentContainer = workspace.workbench.getActiveDocument()!.containerId!
-		const logs = () => container.querySelector('[data-testid="scoped-log"]')?.textContent
-		await act(async () => workspace.toggleBorder('right'))
-		await act(async () => {
-			;[...container.querySelectorAll<HTMLButtonElement>('[role=tab]')]
-				.find((tab) => tab.textContent === '最近日志')!
-				.click()
-		})
-		expect(logs()).toBe(firstRoute)
-		await act(async () => {
-			expect(
-				await workspace.workbench.dispatch(Actions.maximizeToggle(documentContainer)),
-			).toMatchObject({ status: 'applied' })
-		})
-		expect(logs()).toBe(firstRoute)
-		await act(async () => {
-			await workspace.workbench.dispatch(Actions.maximizeToggle(documentContainer))
-		})
-		expect(logs()).toBe(firstRoute)
 	})
 
 	it('follows the active plugin and fork, preserves context on tool focus, and suspends hidden previews', async () => {

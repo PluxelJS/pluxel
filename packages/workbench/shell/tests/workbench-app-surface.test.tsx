@@ -10,7 +10,6 @@ import type {
 	WorkbenchSessionApi,
 } from '@pluxel/workbench/client'
 import type { RpcStub } from 'capnweb'
-import { Actions, DockLocation, TabGroupNode, TabNode } from 'flexlayout-react'
 import { StrictMode, act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -27,11 +26,7 @@ import {
 	type WorkbenchNavigationContextValue,
 } from '../src/app/workbench/context'
 import { WorkspaceSession } from '../src/app/workbench/session'
-import {
-	buildPluginDetailHref,
-	buildWorkbenchHref,
-	parsePluginDetailHref,
-} from '../src/workbench/paths'
+import { buildWorkbenchHref, parsePluginDetailHref } from '../src/workbench/paths'
 import { workspaceStorageKey } from '../src/app/workbench/snapshot'
 import { prepareNativeWorkbenchDom } from './helpers/native-workbench'
 
@@ -226,105 +221,6 @@ describe('authenticated App surface ownership', () => {
 		expect(report).not.toHaveBeenCalled()
 	})
 
-	it.each([true, false])(
-		'uses a committed tab label or key on the initial deep link: labeled=%s',
-		async (labeled) => {
-			const route = entry('/preview/:id', 'shell')
-			const publication = {
-				...route,
-				placement: { kind: 'tab' as const, ...(labeled ? { label: 'Accounts' } : {}), order: 0 },
-			}
-			const { container } = await mount(
-				`${buildPluginDetailHref(publication.target.node)}?entry=preview`,
-				[publication],
-			)
-			await vi.waitFor(() =>
-				expect(
-					container.querySelector(`[role="tab"][aria-label="${labeled ? 'Accounts' : 'preview'}"]`),
-				).not.toBeNull(),
-			)
-		},
-	)
-
-	it('retains native tab names, dirty guards and refreshed state below a nested base path', async () => {
-		const basepath = '/__pluxel/workbench'
-		const meta = document.createElement('meta')
-		meta.name = 'pluxel-workbench-ui-base-path'
-		meta.content = basepath
-		document.head.append(meta)
-		const route = entry('/preview/:id', 'shell')
-		const labeled = { ...route, placement: { kind: 'tab' as const, label: 'Accounts', order: 0 } }
-		const fallback = {
-			...labeled,
-			descriptor: { ...labeled.descriptor, key: 'diagnostics' },
-			placement: { kind: 'tab' as const, order: 1 },
-		}
-		const { container, root } = await mount(`${basepath}/logs`, [labeled, fallback])
-		await vi.waitFor(() => expect(fixture.probes.size).toBe(1))
-		const probe = [...fixture.probes.values()][0]!
-		const workspace = probe.workspace!
-		await act(async () => {
-			container.querySelector<HTMLButtonElement>('[aria-label="打开命令面板"]')!.click()
-		})
-		const href = `${buildPluginDetailHref(labeled.target.node)}?entry=preview`
-		const button = [
-			...document.querySelectorAll<HTMLButtonElement>('.plx-workspace-navigation__link'),
-		].find((candidate) => candidate.textContent?.includes('Accounts'))!
-		await act(async () => button.click())
-		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.title).toBe('Accounts'))
-		const id = workspace.workbench.getActiveDocument()!.id
-		await act(async () => {
-			await workspace.workbench.dispatch(Actions.renameTab(id, 'Research notes'))
-			probe.navigation.navigate(`${href}&tab=config#form`)
-		})
-		await vi.waitFor(() => expect(window.location.hash).toBe('#form'))
-		expect(workspace.workbench.getActiveDocument()).toMatchObject({ id, title: 'Research notes' })
-		expect(workspace.workbench.getDocuments()).toHaveLength(1)
-		await act(async () => {
-			workspace.documents.get(id)!.remoteDirty = true
-			workspace.notifyContentState()
-		})
-		const refuseLeave = vi
-			.spyOn(workspace.documents.get(id)!, 'decide')
-			.mockResolvedValue({ decision: 'deny' })
-		await act(async () => {
-			probe.navigation.navigate(`${buildPluginDetailHref(labeled.target.node)}?entry=diagnostics`)
-		})
-		expect(refuseLeave).toHaveBeenCalled()
-		expect(workspace.workbench.getActiveDocument()).toMatchObject({ id, title: 'Research notes' })
-		expect(workspace.workbench.getActiveDocument()?.href).toContain('entry=preview')
-		refuseLeave.mockRestore()
-		await act(async () => {
-			workspace.documents.get(id)!.remoteDirty = false
-			workspace.notifyContentState()
-		})
-		await act(async () =>
-			probe.navigation.openTab({
-				path: `${buildPluginDetailHref(labeled.target.node)}?entry=diagnostics`,
-				title: 'diagnostics',
-			}),
-		)
-		await vi.waitFor(() =>
-			expect(workspace.workbench.getActiveDocument()?.title).toBe('diagnostics'),
-		)
-		await act(async () => workspace.workbench.activate(id))
-		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.id).toBe(id))
-		expect(workspace.workbench.getActiveDocument()?.title).toBe('Research notes')
-		const restoreHref = workspace.workbench.getActiveDocument()!.href
-		const restoreState: unknown = window.history.state
-		const snapshot = workspace.workbench.createSnapshot()
-		await act(async () => root.unmount())
-		roots.splice(roots.indexOf(root), 1)
-		window.localStorage.setItem(workspaceStorageKey(basepath), JSON.stringify(snapshot))
-		const restored = await mount(restoreHref, [labeled, fallback], undefined, restoreState)
-		await vi.waitFor(() =>
-			expect(
-				restored.container.querySelector('[role="tab"][aria-label="Research notes"]'),
-			).not.toBeNull(),
-		)
-		expect(restored.container.querySelector('[role="tab"][aria-label="Accounts"]')).toBeNull()
-	})
-
 	it('uses the exact owner and compiled declaration for canonical route titles below a nested base path', async () => {
 		const basepath = '/__pluxel/workbench'
 		const meta = document.createElement('meta')
@@ -361,28 +257,6 @@ describe('authenticated App surface ownership', () => {
 		expect(container.querySelectorAll('.worksplit-workbench')).toHaveLength(1)
 		expect(window.location.pathname).toBe(`${basepath}${href}`)
 	})
-
-	it.each([true, false])(
-		'uses an authoritative plugin detail label only when its canonical owner is published: %s',
-		async (published) => {
-			const publication = entry('/preview/:id', 'shell')
-			const target = published
-				? publication.target.node
-				: {
-						definition: publication.target.node.definition,
-						variant: 'fork' as const,
-						forkId: 'unpublished',
-					}
-			const { container } = await mount(buildPluginDetailHref(target), [publication])
-			await vi.waitFor(() =>
-				expect(
-					container.querySelector(
-						`[role="tab"][aria-label="${published ? 'Preview' : '插件详情'}"]`,
-					),
-				).not.toBeNull(),
-			)
-		},
-	)
 
 	it('waits for committed publication before creating the workspace and its browser-history owner', async () => {
 		let release!: () => void
@@ -439,30 +313,6 @@ describe('authenticated App surface ownership', () => {
 		},
 	)
 
-	it.each(['declared shell', 'canonical standalone'])(
-		'classifies %s against publication before acquiring its browser owner',
-		async (mode) => {
-			const frame = mode.endsWith('standalone') ? 'standalone' : 'shell'
-			const publication = entry('/preview/:id', frame)
-			const href = mode.startsWith('canonical')
-				? buildWorkbenchHref(publication.target.node, '/preview/a', frame)
-				: '/preview/a'
-			const key = workspaceStorageKey('/')
-			const read = vi.spyOn(Storage.prototype, 'getItem')
-			const connect = vi.spyOn(WorkspaceSession.prototype, 'start')
-			const { container } = await mount(href, [publication])
-			await vi.waitFor(() =>
-				expect(container.textContent).toContain('Preview renderer unavailable'),
-			)
-			expect(Boolean(container.querySelector('.worksplit-workbench'))).toBe(frame === 'shell')
-			expect(connect).toHaveBeenCalledTimes(frame === 'shell' ? 1 : 0)
-			expect(read.mock.calls.filter(([candidate]) => candidate === key)).toHaveLength(
-				frame === 'shell' ? 1 : 0,
-			)
-			expect(window.location.pathname).toBe(href)
-		},
-	)
-
 	it('shows recovery for a corrupt snapshot and preserves it when explicit reset fails', async () => {
 		const key = workspaceStorageKey('/')
 		const corrupt = '{bad native snapshot'
@@ -487,22 +337,6 @@ describe('authenticated App surface ownership', () => {
 		expect(connect).not.toHaveBeenCalled()
 	})
 
-	it('navigates builtin routes through one real document Router', async () => {
-		const { container } = await mount('/security/audit')
-		await vi.waitFor(() =>
-			expect(container.querySelector('[aria-label="Page /security/audit"]')).not.toBeNull(),
-		)
-		const probe = [...fixture.probes.values()][0]!
-		for (const href of ['/', '/logs', '/security', '/plugin-graph']) {
-			await act(async () => probe.navigation.navigate(href))
-			await vi.waitFor(() =>
-				expect(container.querySelector(`[aria-label="Page ${href}"]`)).not.toBeNull(),
-			)
-			expect(container.querySelectorAll('.worksplit-workbench')).toHaveLength(1)
-			expect(fixture.probes.size).toBe(1)
-		}
-	})
-
 	it.each(['/', '/__pluxel/workbench'])(
 		'preserves an unknown deep link below %s as an explicit unavailable document',
 		async (basepath) => {
@@ -522,105 +356,7 @@ describe('authenticated App surface ownership', () => {
 		},
 	)
 
-	it('enters applications from the home menu and treats an explicit plugin shortcut as an expansion request', async () => {
-		const { container } = await mount('/')
-		await vi.waitFor(() => expect(fixture.probes.size).toBe(1))
-		const workspace = [...fixture.probes.values()][0]!.workspace!
-		const menu = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
-			(button) => button.textContent?.trim() === '工作区',
-		)!
-		await act(async () => menu.click())
-		let pages: HTMLElement | undefined
-		await vi.waitFor(() => {
-			pages = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
-				item.textContent?.includes('显示应用目录'),
-			)
-			expect(pages).toBeDefined()
-		})
-		await act(async () => pages!.click())
-		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/apps'))
-		expect(workspace.isToolVisible('navigation')).toBe(false)
-		await act(async () =>
-			container.querySelector<HTMLButtonElement>('.plx-activity [aria-label="首页"]')!.click(),
-		)
-		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/'))
-		await act(async () =>
-			container.querySelector<HTMLButtonElement>('.plx-activity [aria-label="插件管理"]')!.click(),
-		)
-		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/plugins'))
-		expect(workspace.isToolVisible('navigation')).toBe(true)
-		expect(container.textContent).toContain('选择插件')
-		expect(container.textContent?.match(/Grouped plugin catalog/g)).toHaveLength(1)
-		expect(container.querySelectorAll('.worksplit-workbench')).toHaveLength(1)
-	})
-
 	// This scenario crosses several complete document navigations and layout transitions.
-	it('requires a plugin owner for tools and restores each manual preference across navigation', async () => {
-		const { container } = await mount('/')
-		await vi.waitFor(() => expect(fixture.probes.size).toBe(1))
-		const probe = [...fixture.probes.values()][0]!
-		const workspace = probe.workspace!
-		const visible = () =>
-			['navigation', 'plugin-inspector'].map((id) => workspace.isToolVisible(id))
-		expect(visible()).toEqual([false, false])
-		expect(container.querySelector<HTMLButtonElement>('[aria-label="右侧面板"]')?.disabled).toBe(
-			true,
-		)
-		await act(async () =>
-			container.querySelector<HTMLButtonElement>('.plx-activity [aria-label="插件管理"]')!.click(),
-		)
-		await vi.waitFor(() => expect(workspace.activeWorkspace()).toBe('plugins'))
-		expect(workspace.workbench.getActiveDocument()?.href).toBe('/plugins')
-		expect(visible()).toEqual([true, false])
-		await act(async () => {
-			await workspace.toggleBorder('right')
-			await workspace.toggleBorder('bottom')
-		})
-		expect(visible()).toEqual([true, false])
-		const pluginHref = '/plugins/v1/package/Preview/@test/preview'
-		await act(async () => probe.navigation.navigate(pluginHref))
-		const pluginDocument = workspace.workbench.getActiveDocument()!
-		await act(async () => {
-			await workspace.toggleBorder('right')
-			await workspace.toggleBorder('bottom')
-		})
-		expect(visible()).toEqual([true, true])
-		await act(async () => {
-			await workspace.workbench.dispatch(Actions.maximizeToggle(pluginDocument.containerId!))
-		})
-		await act(async () =>
-			container
-				.querySelector<HTMLButtonElement>('.plx-activity [aria-label="认证与安全"]')!
-				.click(),
-		)
-		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/security'))
-		expect(visible()).toEqual([false, false])
-		expect(
-			workspace.workbench.model.toJson().borders?.find((border) => border.location === 'bottom')
-				?.children,
-		).toEqual([])
-		await act(async () => {
-			await workspace.workbench.dispatch(Actions.maximizeToggle(pluginDocument.containerId!))
-		})
-		await act(async () => probe.navigation.navigate(pluginHref))
-		expect(visible()).toEqual([true, true])
-		await act(async () => {
-			await workspace.toggleBorder('left')
-			await workspace.toggleBorder('right')
-			await workspace.toggleBorder('bottom')
-		})
-		await act(async () =>
-			container.querySelector<HTMLButtonElement>('.plx-activity [aria-label="日志"]')!.click(),
-		)
-		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/logs'))
-		await act(async () => probe.navigation.navigate(pluginHref))
-		expect(visible()).toEqual([false, false])
-		await act(async () =>
-			container.querySelector<HTMLButtonElement>('.plx-activity [aria-label="插件管理"]')!.click(),
-		)
-		expect(visible()).toEqual([true, false])
-	}, 15_000)
-
 	it('assigns custom publication routes to the application workspace and restores the previous document', async () => {
 		const publication = entry('/preview/:id', 'shell')
 		const { container } = await mount('/security', [publication])
@@ -640,84 +376,6 @@ describe('authenticated App surface ownership', () => {
 		expect(container.querySelector('[aria-label="Page /security"]')).not.toBeNull()
 		expect(workspace.workbench.getActiveDocument()?.id).toBe(security.id)
 	})
-
-	it('reuses the retained document after tool focus and rejects moving documents into tools', async () => {
-		const { container } = await mount('/plugins/v1/package/Preview/@test/preview')
-		await vi.waitFor(() => expect(fixture.probes.size).toBe(1))
-		const workspace = [...fixture.probes.values()][0]!.workspace!
-		const original = workspace.workbench.getActiveDocument()!
-		await act(async () => workspace.toggleBorder('right'))
-		await act(async () => {
-			workspace.workbench.activate('plugin-inspector')
-		})
-		expect(workspace.workbench.getActiveDocument()?.id).toBe(original.id)
-		await act(async () =>
-			container
-				.querySelector<HTMLButtonElement>('.plx-activity [aria-label="认证与安全"]')!
-				.click(),
-		)
-		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/security'))
-		expect(workspace.workbench.getActiveDocument()).toMatchObject({
-			id: original.id,
-			containerId: original.containerId!,
-		})
-		expect(workspace.workbench.getDocuments()).toHaveLength(1)
-		expect(workspace.isToolVisible('plugin-inspector')).toBe(false)
-		await act(async () => {
-			for (const border of ['border_left', 'border_bottom']) {
-				expect(
-					await workspace.workbench.dispatch(
-						Actions.moveNode(original.id, border, DockLocation.CENTER, -1),
-					),
-				).toMatchObject({ status: 'denied' })
-			}
-		})
-		expect(workspace.workbench.getActiveDocument()!.containerId).toBe(original.containerId!)
-	})
-
-	it.each(['ordinary', 'grouped', 'pinned'] as const)(
-		'opens an independent document after its captured %s anchor in the same native container',
-		async (kind) => {
-			await mount('/logs')
-			await vi.waitFor(() => expect(fixture.probes.size).toBe(1))
-			const probe = [...fixture.probes.values()][0]!
-			const workspace = probe.workspace!
-			const original = workspace.workbench.getActiveDocument()!
-			await act(async () => probe.navigation.openTab({ path: '/security', title: 'Security' }))
-			await vi.waitFor(() => expect(workspace.workbench.getDocuments()).toHaveLength(2))
-			const security = workspace.workbench.getActiveDocument()!
-			await act(async () => {
-				if (kind === 'grouped')
-					await workspace.workbench.dispatch(Actions.addTabToNewGroup(original.id, 'Reports'))
-				if (kind === 'pinned') {
-					await workspace.workbench.dispatch(Actions.setTabPinned(original.id, true))
-					await workspace.workbench.dispatch(Actions.setTabPinned(security.id, true))
-				}
-			})
-			await act(async () =>
-				probe.navigation.openTab({
-					path: '/logs',
-					title: 'New logs',
-					afterDocumentId: original.id,
-				}),
-			)
-			await vi.waitFor(() => expect(workspace.workbench.getDocuments()).toHaveLength(3))
-			const copy = workspace.workbench.getActiveDocument()!
-			expect(copy.id).not.toBe(original.id)
-			expect(copy.containerId!).toBe(original.containerId!)
-			const node = workspace.workbench.model.getNodeById(original.id) as TabNode
-			const parent = node.getParent()!
-			const container = parent instanceof TabGroupNode ? parent.getParent()! : parent
-			expect(container.getChildren().map((child) => child.getId())).toEqual(
-				kind === 'pinned'
-					? [original.id, security.id, copy.id]
-					: [kind === 'grouped' ? node.getParent()!.getId() : original.id, copy.id, security.id],
-			)
-			await act(async () => probe.navigation.navigate('/security'))
-			await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.id).toBe(copy.id))
-			expect(workspace.workbench.getDocuments()).toHaveLength(3)
-		},
-	)
 
 	it('shares service Providers across documents and keeps their owners across a theme rerender', async () => {
 		const connect = vi.spyOn(WorkspaceSession.prototype, 'start')

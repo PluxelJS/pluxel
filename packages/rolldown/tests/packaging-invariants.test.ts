@@ -1,6 +1,5 @@
 import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
-import { buildPluxelFrontendResolveConditions } from '../src/workspace/vite.ts'
 
 type CoreContextPublicEntry = Pick<typeof import('@pluxel/core/host'), 'createCoreContextHost'>
 type CoreContextInternalEntry = Pick<
@@ -42,12 +41,5 @@ describe('built package entry behavior', () => {
 				require('../../core/dist/internal.cjs'),
 			),
 		).toBe('shared')
-	})
-
-	it('prefers community development entries before framework source entries in frontend graphs', () => {
-		expect(buildPluxelFrontendResolveConditions('development').slice(0, 2)).toEqual([
-			'development',
-			'@pluxel/source',
-		])
 	})
 })

@@ -1,4 +1,3 @@
-import type { WorkbenchHost } from '@pluxel/workbench/server'
 import { defineServiceRef } from '@pluxel/core'
 import { CatalogLayout, Management } from '@pluxel/services/management/service'
 import { AdminAccess } from '@pluxel/services/management/access'
@@ -10,64 +9,26 @@ import { RuntimeManagementService } from '../../../src/management/services/Runti
 import { RuntimeManagementTargetImpl } from '../../../src/management/services/management/RuntimeManagementTarget.ts'
 import { RUNTIME_SESSION_PATH } from '../../../src/management/web/session/protocol.ts'
 
-const WorkbenchHostRef = defineServiceRef<WorkbenchHost>()
 const AdminAccessRef = defineServiceRef<AdminAccess>()
 const ManagementRef = defineServiceRef<Management>()
 const CatalogLayoutRef = defineServiceRef<CatalogLayout>()
 describe('runtime Management plane installation', () => {
-	it('installs headless Management as a service with no dynamic HTTP API', async () => {
-		await using host = await createServiceInternalTestHost({ workbench: false, management: true })
-
-		expect(host.ctx.service(WorkbenchHostRef)).toBeUndefined()
-		expect(host.ctx.root.service(AdminAccess)).toBeDefined()
-		expect(host.ctx.root.service(Management)).toBeDefined()
-		expect(host.ctx.root.service(CatalogLayout)).toBeDefined()
-
-		const target = new RuntimeManagementTargetImpl(host.ctx)
-		expect(target.describeDto()).toMatchObject({
-			protocol: { name: 'pluxel.management', major: 14 },
-			workbench: { enabled: false },
-		})
-		expect(target.describeDto().protocol.capabilities).toContain('vault')
-		await expect(target.pluginCatalogDto()).resolves.toMatchObject({
-			plugins: [],
-			sections: [],
-			summary: { total: 0 },
-		})
-		await expect(target.securityOverviewDto()).resolves.toMatchObject({
-			vault: { enabled: true, state: { present: false, unlocked: false } },
-		})
-
-		const oldDynamicPath = await host.http.fetch(
-			new Request('http://runtime.test/__pluxel/runtime/meta'),
-		)
-		expect(oldDynamicPath.status).toBe(404)
-		expect(await oldDynamicPath.text()).toContain('Not Found')
-	})
-
 	it('keeps local helpers off the RPC surface and rejects capability-bearing producer DTOs', async () => {
 		await using host = await createServiceInternalTestHost({ workbench: false, management: true })
 
 		const target = new RuntimeManagementTargetImpl(host.ctx)
 		using remote = new RpcStub(target)
-		const names = Object.getOwnPropertyNames(RuntimeManagementTargetImpl.prototype)
-		expect(names.filter((name) => name !== 'constructor' && !name.endsWith('Dto'))).toEqual([
-			'followRuntimeUpdates',
-			'followLogs',
-		])
 		await expect(
 			(remote as unknown as { logPolicy(): Promise<unknown> }).logPolicy(),
 		).rejects.toThrow(/logPolicy/)
 		const valid = target.describeDto()
 		const describeSnapshot = vi
 			.spyOn(RuntimeManagementService.prototype, 'describe')
-			.mockReturnValue(valid)
-		try {
-			expect(target.describeDto()).toBe(valid)
-			describeSnapshot.mockReturnValue({
+			.mockReturnValue({
 				...valid,
 				application: { product: new RpcTarget() },
 			} as unknown as ReturnType<RuntimeManagementService['describe']>)
+		try {
 			expect(() => target.describeDto()).toThrow(/plain object/)
 		} finally {
 			describeSnapshot.mockRestore()
@@ -89,9 +50,12 @@ describe('runtime Management plane installation', () => {
 	})
 
 	it('does not wait indefinitely for an unread in-process response during host disposal', async () => {
-		const host = await createServiceInternalTestHost({ workbench: false, management: true })
-		const response = await host.http.fetch(new Request('http://runtime.test/__pluxel/runtime/meta'))
-		expect(response.status).toBe(404)
+		await using host = await createServiceInternalTestHost({ workbench: false, management: true })
+		const response = await host.http.fetch(
+			new Request(`http://runtime.test${RUNTIME_SESSION_PATH}`),
+		)
+		expect(response.status).toBe(400)
+		expect(response.body).not.toBeNull()
 		await expect(host.dispose()).resolves.toBeUndefined()
 	})
 

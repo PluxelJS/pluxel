@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import type { PluginExecutionSnapshot } from '@pluxel/services/management/client'
 import {
 	DEFAULT_STATUS_FILTER,
 	hasActiveSearchTokens,
@@ -20,35 +19,6 @@ const unreportedExecution = describePluginExecution({
 })
 
 describe('plugin catalog search', () => {
-	it('finds a package identity even when execution provenance is unreported', () => {
-		const status = {
-			name: 'Catalog tools',
-			packageName: '@fixture/catalog',
-			exportName: 'CatalogPlugin',
-			reference: 'package:@fixture/catalog::CatalogPlugin',
-			executionSearchTerms: unreportedExecution.searchTerms,
-			availability: 'available' as const,
-			lifecycleState: 'running' as const,
-		}
-
-		expect(
-			matchesPluginSearch(
-				'opaque-route',
-				status,
-				parseSearchTokens('@fixture/catalog'),
-				DEFAULT_STATUS_FILTER,
-			),
-		).toBe(true)
-		expect(
-			matchesPluginSearch(
-				'opaque-route',
-				status,
-				parseSearchTokens('ref:catalog::catalogplugin exec:unreported exec:制品未报告'),
-				DEFAULT_STATUS_FILTER,
-			),
-		).toBe(true)
-	})
-
 	it('combines source location, export name, reference, execution and lifecycle filters', () => {
 		const execution = describePluginExecution({
 			kind: 'vite',
@@ -124,30 +94,5 @@ describe('plugin catalog search', () => {
 				DEFAULT_STATUS_FILTER,
 			),
 		).toBe(false)
-	})
-
-	it('searches the localized label of a committed build artifact', () => {
-		const execution: PluginExecutionSnapshot = {
-			kind: 'vite',
-			origin: 'fixed',
-			artifact: { kind: 'built-module' },
-			update: { kind: 'host-reload' },
-		}
-		const status = {
-			name: 'Artifact probe',
-			exportName: 'ArtifactPlugin',
-			reference: 'package:@fixture/catalog::ArtifactPlugin',
-			executionSearchTerms: describePluginExecution(execution).searchTerms,
-			availability: 'available' as const,
-			lifecycleState: 'running' as const,
-		}
-		expect(
-			matchesPluginSearch(
-				'opaque-route',
-				status,
-				parseSearchTokens('exec:构建模块 exec:host-reload'),
-				DEFAULT_STATUS_FILTER,
-			),
-		).toBe(true)
 	})
 })

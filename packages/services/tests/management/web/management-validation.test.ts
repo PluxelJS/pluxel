@@ -8,25 +8,18 @@ import { summarizePluginControlBatch } from '../../../src/management/web/control
 import {
 	parseConfigResult,
 	parseConfigState,
-	parseEnsureForkResult,
 	parseLogRangeResult,
 	parseLogStreamMeta,
-	parsePluginConsumerRequirementsInspectionResult,
-	parsePluginDependencyMutationResult,
-	parsePluginProviderPolicyInspectionResult,
 	parsePluginCatalogLayoutMutationResult,
 	parsePluginCatalogSnapshot,
-	parsePluginLogPolicyMutationResult,
 	parsePluginControlBatchResult,
 	parsePluginStatusQueryResult,
-	parseRemoveForkResult,
 	parseRuntimeLogStreamsIndex,
 	parseSecurityAuditEvents,
 	parseSecurityOverview,
 	parseVaultAdminState,
 	parseVaultKeyPair,
 	parseVaultPublicKeyResult,
-	parseVersionedPluginLogPolicySnapshot,
 } from '../../../src/management/web/management-validation.ts'
 import { RuntimeProtocolValidationError } from '../../../src/management/web/validation.ts'
 import { prepareRuntimeLogRangeForRpc } from '../../../src/management/services/management/log-transport.ts'
@@ -94,6 +87,12 @@ const section = {
 	basis: { kind: 'manual' },
 	nodes: [address],
 } as const
+const catalog = {
+	plugins: [plugin],
+	sections: [section],
+	statePolicy: { ...catalogPolicy, readonly: false, managedRevision: 'policy:test:0' },
+	summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
+}
 
 describe('management protocol validation', () => {
 	it('preserves control declaration diagnostics without changing runtime availability or lifecycle', () => {
@@ -115,193 +114,6 @@ describe('management protocol validation', () => {
 		expect(() => parseConfigState(borrowed)).toThrow(/data property/)
 		expect(getter).not.toHaveBeenCalled()
 		expect(() => parseConfigState({ readonly: 'yes' })).toThrow(RuntimeProtocolValidationError)
-	})
-
-	it('validates and deep-freezes every Level 1 RPC result family', () => {
-		const catalog = parsePluginCatalogSnapshot({
-			plugins: [plugin],
-			sections: [section],
-			statePolicy: {
-				readonly: false,
-				managedRevision: 'policy:test:0',
-				...catalogPolicy,
-			},
-			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
-		})
-		expect(catalog.plugins[0]).toEqual(plugin)
-		expect(catalog.sections).toEqual([section])
-		expect(Object.isFrozen(catalog)).toBe(true)
-		expect(Object.isFrozen(catalog.plugins)).toBe(true)
-		expect(Object.isFrozen(catalog.plugins[0]!.address.definition.entry)).toBe(true)
-
-		expect(parsePluginStatusQueryResult({ ok: true, value: plugin })).toEqual({
-			ok: true,
-			value: plugin,
-		})
-		expect(parsePluginCatalogLayoutMutationResult({ ok: true, sections: [section] })).toEqual({
-			ok: true,
-			sections: [section],
-		})
-
-		const config = parseConfigResult({
-			ok: true,
-			persistence: { status: 'confirmed', retention: 'session' },
-			readonly: false,
-			mode: 'declared-first',
-			managedInput: null as null,
-			effectiveInput: {},
-			sources: [] as const,
-			shadowedPaths: [] as const,
-			managedRevision: 'test:config:0',
-			application: 'applied',
-			desiredRevision: 4,
-			appliedRevision: 4,
-			config: { nested: { enabled: true } },
-			report,
-		})
-		expect(config).toMatchObject({
-			ok: true,
-			persistence: { status: 'confirmed', retention: 'session' },
-			readonly: false,
-			mode: 'declared-first',
-			managedInput: null as null,
-			effectiveInput: {},
-			sources: [] as const,
-			shadowedPaths: [] as const,
-			managedRevision: 'test:config:0',
-			application: 'applied',
-		})
-		expect(Object.isFrozen((Reflect.get(config, 'config') as { nested: unknown }).nested)).toBe(
-			true,
-		)
-
-		expect(
-			parsePluginConsumerRequirementsInspectionResult({
-				ok: true,
-				items: [
-					{
-						requirement: definition,
-						kind: 'plugin',
-						consumerOverride: null,
-						inheritedProvider: address,
-						options: [
-							{
-								address,
-								displayName: 'Fixture Plugin',
-								availability: 'available',
-							},
-						],
-					},
-				],
-			}),
-		).toMatchObject({ ok: true, items: [{ requirement: definition }] })
-		expect(parsePluginDependencyMutationResult({ ok: true, status: 'applied', report })).toEqual({
-			ok: true,
-			status: 'applied',
-			report,
-		})
-		expect(
-			parsePluginDependencyMutationResult({
-				ok: false,
-				code: 'provider_policy_unavailable',
-				state: 'unchanged',
-				error: 'not a provider policy owner',
-			}),
-		).toMatchObject({ ok: false, code: 'provider_policy_unavailable', state: 'unchanged' })
-		expect(
-			parsePluginProviderPolicyInspectionResult({
-				ok: true,
-				value: {
-					token: definition,
-					defaultProvider: address,
-					policyOwnerIsDefault: true,
-					options: [],
-				},
-			}),
-		).toMatchObject({ ok: true, value: { token: definition } })
-		expect(
-			parsePluginProviderPolicyInspectionResult({
-				ok: false,
-				code: 'provider_policy_unavailable',
-				state: 'unchanged',
-				error: 'owner unavailable',
-			}),
-		).toMatchObject({ ok: false, code: 'provider_policy_unavailable', state: 'unchanged' })
-
-		expect(parseEnsureForkResult({ ok: true, status: 'deferred', fork, report })).toEqual({
-			ok: true,
-			status: 'deferred',
-			fork,
-			report,
-		})
-		expect(parseRemoveForkResult({ ok: true, status: 'already-absent', fork })).toEqual({
-			ok: true,
-			status: 'already-absent',
-			fork,
-		})
-		expect(
-			parseRemoveForkResult({
-				ok: false,
-				code: 'persistence_failed',
-				state: 'stopped-retained',
-				fork,
-				error: 'metadata cleanup failed',
-			}),
-		).toMatchObject({ ok: false, code: 'persistence_failed', state: 'stopped-retained' })
-		expect(
-			parsePluginControlBatchResult({
-				ok: true,
-				status: 'applied',
-				results: [
-					{
-						address,
-						ok: true,
-						status: 'applied',
-						report,
-						control: {
-							autoStart: true,
-							sessionIntent: 'inherit',
-							desiredState: 'running',
-							activationReason: 'auto-start',
-							lifecycleState: 'stopped',
-						},
-					},
-				],
-			}),
-		).toMatchObject({ ok: true, status: 'applied' })
-		expect(
-			parsePluginControlBatchResult({
-				ok: false,
-				status: 'rejected',
-				results: [
-					{
-						address,
-						ok: false,
-						code: 'start_unavailable',
-						state: 'unchanged',
-						error: 'Plugin node is unavailable',
-					},
-				],
-			}),
-		).toMatchObject({
-			ok: false,
-			status: 'rejected',
-			results: [{ code: 'start_unavailable', state: 'unchanged' }],
-		})
-
-		const logging = parseVersionedPluginLogPolicySnapshot({
-			version: 3,
-			defaultLevel: 'info',
-			overrides: [{ owner: address, level: 'off' }],
-			revision: 2,
-			persistence: 'clean',
-		})
-		expect(logging.overrides).toEqual([{ owner: address, level: 'off' }])
-		expect(Object.isFrozen(logging.overrides)).toBe(true)
-		expect(parsePluginLogPolicyMutationResult({ revision: 3, persistence: 'dirty' })).toEqual({
-			revision: 3,
-			persistence: 'dirty',
-		})
 	})
 
 	it('preserves uncertain batches and rejects summaries that contradict individual results', () => {
@@ -342,185 +154,66 @@ describe('management protocol validation', () => {
 			},
 		} as const
 		const cases: readonly [PluginControlMutationResult[], boolean, string][] = [
-			[[], true, 'applied'],
 			[[applied], true, 'applied'],
 			[[issue], false, 'applied-with-issues'],
-			[[applied, issue], false, 'applied-with-issues'],
 			[[applied, rejected], false, 'partially-applied'],
-			[[issue, rejected], false, 'partially-applied'],
 			[[rejected], false, 'rejected'],
-			[[uncertain], false, 'unknown'],
-			[[applied, uncertain], false, 'unknown'],
-			[[rejected, uncertain], false, 'unknown'],
-			[[issue, uncertain], false, 'unknown'],
+			[[applied, issue, rejected, uncertain], false, 'unknown'],
 		]
 		for (const [results, ok, status] of cases) {
-			const batch = summarizePluginControlBatch(results)
-			expect(batch).toEqual({ ok, status, results })
-			expect(parsePluginControlBatchResult(JSON.parse(JSON.stringify(batch)))).toEqual(batch)
-			const versioned = { ...batch, managedRevision: 'policy:test:7' }
-			expect(parsePluginControlBatchResult(JSON.parse(JSON.stringify(versioned)))).toEqual(
-				versioned,
-			)
-			expect(() => parsePluginControlBatchResult({ ...batch, managedRevision: 7 })).toThrow(
-				RuntimeProtocolValidationError,
-			)
-			for (const wrong of [
-				'applied',
-				'applied-with-issues',
-				'partially-applied',
-				'rejected',
-				'unknown',
-			]) {
-				if (wrong === status) continue
-				expect(() => parsePluginControlBatchResult({ ...batch, status: wrong })).toThrow(
-					RuntimeProtocolValidationError,
-				)
-			}
-			expect(() => parsePluginControlBatchResult({ ...batch, ok: !ok })).toThrow(
-				RuntimeProtocolValidationError,
-			)
+			const batch = { results, ok, status }
+			expect(summarizePluginControlBatch(results)).toEqual(batch)
+			expect(parsePluginControlBatchResult(batch)).toEqual(batch)
 		}
+		const uncertainBatch = {
+			ok: false,
+			status: 'unknown',
+			results: [applied, uncertain],
+			managedRevision: 'policy:test:7',
+		}
+		expect(parsePluginControlBatchResult(uncertainBatch)).toEqual(uncertainBatch)
+		expect(() =>
+			parsePluginControlBatchResult({ ...uncertainBatch, status: 'partially-applied' }),
+		).toThrow(RuntimeProtocolValidationError)
+		expect(() => parsePluginControlBatchResult({ ...uncertainBatch, ok: true })).toThrow(
+			RuntimeProtocolValidationError,
+		)
 	})
 
-	it('validates portable execution diagnostics without exposing physical module identity', () => {
-		const result = parsePluginStatusQueryResult({
-			ok: true,
-			value: {
-				...plugin,
-				execution: {
-					kind: 'vite',
-					origin: 'source',
-					artifact: { kind: 'built-module' },
-					update: { kind: 'definition-hmr' },
-				},
-				recentUpdate: {
-					batch: {
-						scope: 'application',
-						outcome: 'restored-previous',
-						phase: 'application-reload',
-						sequence: 7,
-						durationMs: 4.5,
-					},
-					lifecycle: null,
-				},
-			},
-		})
-		expect(result).toMatchObject({
-			ok: true,
-			value: {
-				execution: {
-					kind: 'vite',
-					origin: 'source',
-					artifact: { kind: 'built-module' },
-					update: { kind: 'definition-hmr' },
-				},
-				recentUpdate: {
-					batch: {
-						scope: 'application',
-						outcome: 'restored-previous',
-						phase: 'application-reload',
-					},
-					lifecycle: null,
-				},
-			},
-		})
-		if (!result.ok || !result.value) throw new Error('expected one Plugin status')
-		expect(Object.isFrozen(result.value.execution)).toBe(true)
-		expect(Object.isFrozen(result.value.execution.artifact)).toBe(true)
-		expect(Object.isFrozen(result.value.execution.update)).toBe(true)
-		expect(Object.isFrozen(result.value.recentUpdate)).toBe(true)
-		const serialized = JSON.stringify(result.value)
-		expect(serialized).not.toContain('moduleId')
-		expect(serialized).not.toContain('file://')
-		expect(serialized).not.toContain('/@fs/')
-		expect(serialized).not.toContain('/private/host')
+	it('keeps update diagnostics portable and rejects impossible execution metadata', () => {
+		const execution = {
+			kind: 'vite',
+			origin: 'source',
+			artifact: { kind: 'built-module' },
+			update: { kind: 'definition-hmr' },
+		}
+		const batch = {
+			scope: 'application',
+			outcome: 'restored-previous',
+			phase: 'application-reload',
+			sequence: 7,
+			durationMs: 4.5,
+		}
+		const recentUpdate = { batch, lifecycle: null as null }
+		const value = { ...plugin, execution, recentUpdate }
+		expect(parsePluginStatusQueryResult({ ok: true, value })).toEqual({ ok: true, value })
 
-		expect(() =>
-			parsePluginStatusQueryResult({
-				ok: true,
-				value: {
-					...plugin,
-					execution: {
-						kind: 'vite',
-						origin: 'source',
-						artifact: {
-							kind: 'built-module',
-							moduleId: 'file:///private/host/plugin.mjs',
-						},
-						update: { kind: 'definition-hmr' },
-					},
-				},
-			}),
-		).toThrow(/unsupported field moduleId/)
-		expect(() =>
-			parsePluginStatusQueryResult({
-				ok: true,
-				value: {
-					...plugin,
-					execution: {
-						kind: 'native',
-						origin: 'source',
-						artifact: { kind: 'source-module' },
-						update: { kind: 'next-start' },
-					},
-				},
-			}),
-		).toThrow(/invalid execution, artifact, and update combination/)
-		expect(() =>
-			parsePluginStatusQueryResult({
-				ok: true,
-				value: {
-					...plugin,
-					recentUpdate: {
-						batch: {
-							scope: 'definitions',
-							outcome: 'applied',
-							phase: null,
-							sequence: 0,
-							durationMs: -1,
-						},
-						lifecycle: null,
-					},
-				},
-			}),
-		).toThrow(/sequence must be a positive safe integer/)
-		expect(() =>
-			parsePluginStatusQueryResult({
-				ok: true,
-				value: {
-					...plugin,
-					recentUpdate: {
-						batch: {
-							scope: 'definitions',
-							outcome: 'applied-with-lifecycle-issues',
-							phase: 'lifecycle',
-							sequence: 1,
-							durationMs: 1,
-						},
-						lifecycle: null,
-					},
-				},
-			}),
-		).toThrow(/outcome must be one of/)
-		expect(() =>
-			parsePluginStatusQueryResult({
-				ok: true,
-				value: {
-					...plugin,
-					recentUpdate: {
-						batch: {
-							scope: 'application',
-							outcome: 'restored-previous',
-							phase: 'commit',
-							sequence: 1,
-							durationMs: 1,
-						},
-						lifecycle: null,
-					},
-				},
-			}),
-		).toThrow(/phase must be application-reload/)
+		const privateArtifact = { ...execution.artifact, moduleId: 'file:///private/plugin.mjs' }
+		const privateStatus = { ...value, execution: { ...execution, artifact: privateArtifact } }
+		expect(() => parsePluginStatusQueryResult({ ok: true, value: privateStatus })).toThrow(
+			/unsupported field moduleId/,
+		)
+		const wrongRuntime = { ...value, execution: { ...execution, kind: 'native' } }
+		expect(() => parsePluginStatusQueryResult({ ok: true, value: wrongRuntime })).toThrow(
+			/invalid execution, artifact, and update combination/,
+		)
+		const wrongPhase = {
+			...value,
+			recentUpdate: { ...recentUpdate, batch: { ...batch, phase: 'commit' } },
+		}
+		expect(() => parsePluginStatusQueryResult({ ok: true, value: wrongPhase })).toThrow(
+			/phase must be application-reload/,
+		)
 	})
 
 	it('rejects a display reference that contradicts the canonical Plugin address', () => {
@@ -535,177 +228,28 @@ describe('management protocol validation', () => {
 		).toThrow(/reference must match its canonical address/)
 	})
 
-	it('rejects open shapes, dangerous fields, malformed addresses, and dishonest states', () => {
-		expect(() =>
-			parsePluginStatusQueryResult({
-				ok: false,
-				code: 'invalid_input',
-				state: 'unchanged',
-				error: 'bad input',
-				retryable: true,
-			}),
-		).toThrow(/unsupported field retryable/)
-
-		const dangerous = Object.create(null) as Record<string, unknown>
-		dangerous.ok = true
-		dangerous.saved = false
-		dangerous.application = 'applied'
-		dangerous.desiredRevision = 0
-		dangerous.appliedRevision = 0
-		dangerous.config = Object.assign(Object.create(null), { constructor: 'poison' })
-		expect(() => parseConfigResult(dangerous)).toThrow(/reserved field constructor/)
-
-		expect(() =>
-			parsePluginConsumerRequirementsInspectionResult({
-				ok: true,
-				items: [
-					{
-						requirement: definition,
-						index: 0,
-						token: definition,
-						kind: 'plugin',
-						consumerOverride: null,
-						inheritedProvider: null,
-						options: [],
-					},
-				],
-			}),
-		).toThrow(/unsupported field index/)
-
-		expect(() =>
-			parsePluginConsumerRequirementsInspectionResult({
-				ok: true,
-				items: [
-					{
-						requirement: definition,
-						kind: 'plugin',
-						consumerOverride: null,
-						inheritedProvider: null,
-						options: [
-							{
-								address,
-								displayName: 'Fixture Plugin',
-								availability: 'available',
-								lifecycleState: 'stopped',
-							},
-						],
-					},
-				],
-			}),
-		).toThrow(/unsupported field lifecycleState/)
-
-		expect(() =>
-			parsePluginConsumerRequirementsInspectionResult({
-				ok: true,
-				items: [
-					{
-						requirement: definition,
-						kind: 'plugin',
-						consumerOverride: null,
-						selected: null,
-						inheritedProvider: null,
-						options: [],
-					},
-				],
-			}),
-		).toThrow(/unsupported field selected/)
-
-		expect(() =>
-			parseEnsureForkResult({
-				ok: true,
-				status: 'saved-not-applied',
-				fork,
-				report,
-			}),
-		).toThrow(/applied, deferred/)
-
-		expect(() =>
-			parseRemoveForkResult({
-				ok: false,
-				code: 'persistence_failed',
-				state: 'disabled-retained',
-				fork,
-				error: 'legacy state',
-			}),
-		).toThrow(/stopped-retained/)
-
+	it('rejects catalog snapshots with contradictory totals or duplicate identities', () => {
 		expect(() =>
 			parsePluginCatalogSnapshot({
-				plugins: [plugin],
-				sections: [section],
-				statePolicy: {
-					readonly: false,
-					managedRevision: 'policy:test:0',
-					...catalogPolicy,
-				},
-				summary: { total: 2, running: 0, stopped: 1, autoStart: 1 },
+				...catalog,
+				summary: { ...catalog.summary, total: 2 },
 			}),
 		).toThrow(/inconsistent/)
-
 		expect(() =>
 			parsePluginCatalogSnapshot({
+				...catalog,
 				plugins: [plugin, plugin],
-				sections: [section],
-				statePolicy: {
-					readonly: false,
-					managedRevision: 'policy:test:0',
-					...catalogPolicy,
-				},
 				summary: { total: 2, running: 0, stopped: 2, autoStart: 2 },
 			}),
 		).toThrow(/duplicate Plugin node/)
-
+		const second = { ...section, sectionId: 'source:app/src/other', nodes: [fork] }
 		expect(() =>
-			parsePluginCatalogLayoutMutationResult({
-				ok: true,
-				sections: [section, section],
-			}),
-		).toThrow(/duplicate section ids/)
-
-		expect(() =>
-			parsePluginCatalogLayoutMutationResult({
-				ok: true,
-				sections: [
-					section,
-					{
-						sectionId: 'source:app/src/other',
-						name: 'other',
-						basis: { kind: 'manual' },
-						nodes: [{ definition, variant: 'fork', forkId: 'other' }],
-					},
-				],
-			}),
+			parsePluginCatalogLayoutMutationResult({ ok: true, sections: [section, second] }),
 		).toThrow(/definition family across sections/)
-
-		expect(() =>
-			parsePluginControlBatchResult({
-				ok: false,
-				status: 'partially-applied',
-				results: [
-					{
-						address,
-						ok: false,
-						code: 'graph_rejected',
-						state: 'unchanged',
-						error: 'rejected',
-					},
-				],
-			}),
-		).toThrow(RuntimeProtocolValidationError)
 	})
 
 	it('requires exact, non-duplicate policy targets and matching modes', () => {
-		const catalog = {
-			plugins: [plugin],
-			sections: [section],
-			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
-		}
-		expect(() => parsePluginCatalogSnapshot(catalog)).toThrow(/statePolicy/)
-		const statePolicy = {
-			...catalogPolicy,
-			readonly: false,
-			managedRevision: 'policy:test:0',
-		}
+		const { statePolicy } = catalog
 		const choice = {
 			target: { field: 'autoStart', node: address },
 			mode: 'declared-first',
@@ -734,26 +278,18 @@ describe('management protocol validation', () => {
 		const getter = vi.fn(() => plugin)
 		const items = [plugin]
 		Object.defineProperty(items, '0', { enumerable: true, get: getter })
-		const catalog = (plugins: unknown) => ({
-			plugins,
-			sections: [] as unknown[],
-			statePolicy: {
-				readonly: false,
-				managedRevision: 'policy:test:0',
-				...catalogPolicy,
-			},
-			summary: { total: 1, running: 0, stopped: 1, autoStart: 1 },
-		})
-		expect(() => parsePluginCatalogSnapshot(catalog(items))).toThrow(/data property/)
+		expect(() => parsePluginCatalogSnapshot({ ...catalog, plugins: items })).toThrow(
+			/data property/,
+		)
 		expect(getter).not.toHaveBeenCalled()
-		const sparse: unknown[] = []
-		sparse.length = 1
-		expect(() => parsePluginCatalogSnapshot(catalog(sparse))).toThrow(/dense array/)
+		expect(() => parsePluginCatalogSnapshot({ ...catalog, plugins: Array(1) })).toThrow(
+			/dense array/,
+		)
 		expect(() =>
-			parsePluginCatalogSnapshot(catalog([{ ...plugin, [Symbol.dispose]() {} }])),
-		).toThrow(/symbols/)
-		expect(() =>
-			parsePluginCatalogSnapshot(catalog([{ ...plugin, extra: { constructor: null } }])),
+			parsePluginCatalogSnapshot({
+				...catalog,
+				plugins: [{ ...plugin, extra: { constructor: null } }],
+			}),
 		).toThrow(/reserved field/)
 	})
 

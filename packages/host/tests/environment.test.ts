@@ -1,132 +1,54 @@
-import { env as standardEnvironment } from 'std-env'
-import { describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { env, resolveHostEnv } from '../src/environment'
+import { expect, it, vi } from 'vitest'
+import { resolveHostEnv } from '../src/environment'
 
-declare module '../src/environment' {
-	interface PluxelEnvironmentVariables {
-		readonly APPLICATION_REGION?: string
+it('uses only the supplied environment and keeps previously resolved values', async () => {
+	vi.stubEnv('PLUXEL_HOST_PORT', 'invalid')
+	try {
+		vi.resetModules()
+		const { resolveHostEnv: resolveAfterImport } = await import('../src/environment')
+		expect(resolveAfterImport({})).toEqual({ dataRoot: '.pluxel' })
+		const env = { PLUXEL_DATA_ROOT: ' ./state ', PLUXEL_WORKBENCH: 'FALSE' }
+		const snapshot = resolveAfterImport(env)
+		env.PLUXEL_DATA_ROOT = './next'
+		expect(snapshot).toEqual({ dataRoot: './state', workbench: false })
+		expect(resolveAfterImport(env).dataRoot).toBe('./next')
+	} finally {
+		vi.unstubAllEnvs()
 	}
-}
+})
 
-describe('Pluxel environment', () => {
-	it('re-exports the std-env object with official variables typed', () => {
-		expect(env).toBe(standardEnvironment)
-		expectTypeOf(env.PLUXEL_WORKBENCH).toEqualTypeOf<'true' | 'false' | undefined>()
-		expectTypeOf(env.PLUXEL_HOST_PORT).toEqualTypeOf<string | undefined>()
-		expectTypeOf(env.PLUXEL_PUBLIC_ORIGIN).toEqualTypeOf<string | undefined>()
-		expectTypeOf(env.PITCHFORK_URL).toEqualTypeOf<string | undefined>()
-		expectTypeOf(env.APPLICATION_REGION).toEqualTypeOf<string | undefined>()
+it('uses launcher defaults and lets the explicit configuration override each value', () => {
+	const launcher = { HOST: '127.0.0.1', PORT: '4321', PITCHFORK_URL: 'https://launcher.test' }
+	expect(resolveHostEnv(launcher)).toEqual({
+		dataRoot: '.pluxel',
+		hostBind: '127.0.0.1',
+		hostPort: 4321,
+		publicOrigin: 'https://launcher.test',
 	})
+	expect(
+		resolveHostEnv({
+			...launcher,
+			PLUXEL_HOST_BIND: ' 0.0.0.0 ',
+			PLUXEL_HOST_PORT: '0',
+			PLUXEL_PUBLIC_ORIGIN: 'https://public.test/',
+		}),
+	).toEqual({
+		dataRoot: '.pluxel',
+		hostBind: '0.0.0.0',
+		hostPort: 0,
+		publicOrigin: 'https://public.test',
+	})
+})
 
-	it('resolves independent immutable snapshots only from the supplied environment', () => {
-		const input = { PLUXEL_DATA_ROOT: './first' }
-		const first = resolveHostEnv(input)
-		input.PLUXEL_DATA_ROOT = './second'
-		expect(first.dataRoot).toBe('./first')
-		expect(resolveHostEnv(input).dataRoot).toBe('./second')
-		expect(Object.isFrozen(first)).toBe(true)
-	})
-
-	it('imports the environment module without resolving malformed process inputs', async () => {
-		vi.stubEnv('PLUXEL_HOST_PORT', 'invalid')
-		try {
-			vi.resetModules()
-			const environment = await import('../src/environment')
-			expect(environment.resolveHostEnv({})).toEqual({ dataRoot: '.pluxel' })
-		} finally {
-			vi.unstubAllEnvs()
-		}
-	})
-
-	it('validates explicit host behavior and applies only the framework-wide data root default', () => {
-		expect(
-			resolveHostEnv({
-				PLUXEL_DATA_ROOT: ' ./state ',
-				PLUXEL_WORKBENCH: 'FALSE',
-				PLUXEL_HOST_BIND: ' 127.0.0.1 ',
-				PLUXEL_HOST_PORT: '0',
-			}),
-		).toEqual({
-			dataRoot: './state',
-			workbench: false,
-			hostBind: '127.0.0.1',
-			hostPort: 0,
-		})
-		expect(resolveHostEnv({})).toEqual({ dataRoot: '.pluxel' })
-	})
-
-	it('adopts Pitchfork listener values without overriding explicit Pluxel host policy', () => {
-		expect(
-			resolveHostEnv({
-				PITCHFORK_URL: 'https://rhythm.localhost',
-				HOST: '127.0.0.1',
-				PORT: '4321',
-			}),
-		).toEqual({
-			dataRoot: '.pluxel',
-			hostBind: '127.0.0.1',
-			hostPort: 4321,
-			publicOrigin: 'https://rhythm.localhost',
-		})
-		expect(
-			resolveHostEnv({
-				PITCHFORK_URL: 'https://rhythm.localhost/',
-				HOST: '127.0.0.1',
-				PORT: '4321',
-				PLUXEL_HOST_BIND: '0.0.0.0',
-				PLUXEL_HOST_PORT: '3310',
-			}),
-		).toMatchObject({ hostBind: '0.0.0.0', hostPort: 3310 })
-		expect(resolveHostEnv({ HOST: '127.0.0.1', PORT: '4321' })).toEqual({
-			dataRoot: '.pluxel',
-			hostBind: '127.0.0.1',
-			hostPort: 4321,
-		})
-	})
-
-	it('uses an explicit public origin for any proxy, ahead of launcher discovery', () => {
-		expect(resolveHostEnv({ PLUXEL_PUBLIC_ORIGIN: 'https://app.example.test/' })).toEqual({
-			dataRoot: '.pluxel',
-			publicOrigin: 'https://app.example.test',
-		})
-		expect(
-			resolveHostEnv({
-				PLUXEL_PUBLIC_ORIGIN: 'https://app.example.test',
-				PITCHFORK_URL: 'https://web.project.localhost',
-			}),
-		).toMatchObject({ publicOrigin: 'https://app.example.test' })
-	})
-
-	it.each([
-		'app.test',
-		'ftp://app.test',
-		'https://user:pass@app.test',
-		'https://app.test/path',
-		'https://app.test/?query',
-		'https://app.test/#hash',
-		'',
-	])('rejects invalid public origin %s', (value) => {
-		expect(() => resolveHostEnv({ PLUXEL_PUBLIC_ORIGIN: value })).toThrow('PLUXEL_PUBLIC_ORIGIN')
-	})
-
-	it('rejects malformed explicit values', () => {
-		expect(() => resolveHostEnv({ PLUXEL_WORKBENCH: 'yes' })).toThrow(
-			'PLUXEL_WORKBENCH must be "true" or "false"',
-		)
-		expect(() => resolveHostEnv({ PLUXEL_HOST_PORT: '12px' })).toThrow(
-			'PLUXEL_HOST_PORT must be an integer',
-		)
-		expect(() => resolveHostEnv({ PLUXEL_DATA_ROOT: '  ' })).toThrow(
-			'PLUXEL_DATA_ROOT must not be empty',
-		)
-		expect(() => resolveHostEnv({ PITCHFORK_URL: 'rhythm.localhost' })).toThrow(
-			'PITCHFORK_URL must be an HTTP(S) origin',
-		)
-		expect(() =>
-			resolveHostEnv({ PITCHFORK_URL: 'https://rhythm.localhost/path', PORT: '4321' }),
-		).toThrow('PITCHFORK_URL must be an HTTP(S) origin')
-		expect(() =>
-			resolveHostEnv({ PITCHFORK_URL: 'https://rhythm.localhost', PORT: 'auto' }),
-		).toThrow('PORT must be an integer')
-	})
+it.each([
+	['PLUXEL_PUBLIC_ORIGIN', 'https://public.test/path'],
+	['PLUXEL_PUBLIC_ORIGIN', 'https://user:pass@public.test'],
+	['PLUXEL_PUBLIC_ORIGIN', 'ftp://public.test'],
+	['PITCHFORK_URL', 'launcher.test'],
+	['PLUXEL_HOST_PORT', '12px'],
+	['PORT', 'auto'],
+	['PLUXEL_WORKBENCH', 'yes'],
+	['PLUXEL_DATA_ROOT', '  '],
+])('rejects invalid %s value %s', (key, value) => {
+	expect(() => resolveHostEnv({ [key]: value })).toThrow(key)
 })

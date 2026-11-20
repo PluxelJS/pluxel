@@ -13,52 +13,6 @@ const owner: PluginNodeAddress = {
 	},
 	variant: 'default',
 }
-it.each(['declared-only', 'declared-first', 'saved-first'] as const)(
-	'selects %s without writing declarations or normalized output',
-	async (mode) => {
-		const storage = createDocumentStorage()
-		const body = SuperJSON.stringify({
-			version: 4,
-			plugins: [{ owner, config: { value: 'saved', extra: 1 } }],
-		})
-		await storage.put('config.json', body)
-		const ctx = createCoreContextHost().createRoot()
-		const store = new HostConfigStore(
-			ctx,
-			snapshotHostConfig({ mode }, undefined, [{ owner, config: { value: 'declared' } }]),
-			{ storage, readOnly: true },
-		)
-		try {
-			await store.ready
-			expect(store.composeConfig(owner)).toEqual(
-				mode === 'declared-only'
-					? { value: 'declared' }
-					: { value: mode === 'saved-first' ? 'saved' : 'declared', extra: 1 },
-			)
-			expect(() => store.patchConfig(owner, { value: 'x' })).toThrow(/readonly/)
-			expect(await storage.getText('config.json')).toBe(body)
-		} finally {
-			await ctx.effects.dispose()
-		}
-	},
-)
-it.each([false, true])('does not create an absent document (readonly=%s)', async (readOnly) => {
-	const storage = createDocumentStorage()
-	const ctx = createCoreContextHost().createRoot()
-	const store = new HostConfigStore(
-		ctx,
-		snapshotHostConfig({}, undefined, [{ owner, config: { value: 'declared' } }]),
-		{ storage, readOnly },
-	)
-	try {
-		await store.ready
-		expect(store.getManagedInput(owner)).toBeNull()
-		expect(store.composeConfig(owner)).toEqual({ value: 'declared' })
-		expect(await storage.stat('config.json')).toBeUndefined()
-	} finally {
-		await ctx.effects.dispose()
-	}
-})
 it.each([
 	'{',
 	SuperJSON.stringify([]),

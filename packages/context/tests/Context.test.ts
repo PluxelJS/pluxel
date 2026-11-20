@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import {
 	ContextServiceAccessError,
 	ContextServiceMissingError,
@@ -10,19 +10,14 @@ import {
 	type ServiceInstallation,
 } from '../src'
 import {
-	resolveContextService,
 	bindServiceIdentity,
+	createContextView,
 	createServiceRef,
 	createServiceReference,
-	createContextPlan,
-	createRootContext,
-	createContextView,
-	getInstalledServiceDefinitions,
-	resolveInstalledServiceDefinition,
-	getServiceDefinitionKey,
+	resolveContextService,
 } from '../src/internal'
 
-abstract class Value {
+abstract class RootValue {
 	abstract readonly value: number
 }
 abstract class ScopeValue {
@@ -33,325 +28,175 @@ abstract class OwnerValue {
 	abstract readonly backing: object
 }
 
-describe('Context services', () => {
-	it('is strictly lazy and preserves root, scope, child and owner identities', () => {
-		let roots = 0,
-			scopes = 0,
-			backings = 0,
-			views = 0
-		const host = createContextHost({
-			name: 'lazy',
-			services: [
-				installRootService(Value, {
-					create: () => {
-						roots++
-						return { value: 42 }
-					},
-				}),
-				installScopeService(ScopeValue, {
-					create: (scope) => {
-						scopes++
-						return { scope }
-					},
-				}),
-				installOwnerViewService(OwnerValue, {
-					createRoot: () => {
-						backings++
-						return {}
-					},
-					createView: (backing, owner) => {
-						views++
-						return { owner, backing }
-					},
-				}),
-			],
-		})
-		const root = host.createRoot(),
-			first = host.createScope(root, 'first'),
-			second = host.createScope(root, 'second')
-		const child = host.createChild(first, 'child'),
-			sibling = host.createChild(first, 'sibling')
-		expect([roots, scopes, backings, views]).toEqual([0, 0, 0, 0])
-		expect(root.service(Value).value).toBe(42)
-		expect(child.service(ScopeValue)).toBe(first.service(ScopeValue))
-		expect(child.service(ScopeValue).scope).toBe(first)
-		expect(child.service(ScopeValue)).not.toBe(second.service(ScopeValue))
-		expect(child.service(OwnerValue)).toBe(child.service(OwnerValue))
-		expect(child.service(OwnerValue)).not.toBe(sibling.service(OwnerValue))
-		expect(child.service(OwnerValue).backing).toBe(sibling.service(OwnerValue).backing)
-		expect(child.service(OwnerValue).owner).toBe(child)
-		expect(child.root).toBe(root)
-		expect(child.parent).toBe(first)
-		expect([roots, scopes, backings, views]).toEqual([1, 2, 1, 2])
+it('lazily shares services at their root, scope, and owner boundaries', () => {
+	const makeRoot = vi.fn(() => ({ value: 42 }))
+	const makeScope = vi.fn((scope: Context) => ({ scope }))
+	const makeBacking = vi.fn(() => ({}))
+	const makeView = vi.fn((backing: object, owner: Context) => ({ backing, owner }))
+	const host = createContextHost({
+		name: 'scoped',
+		services: [
+			installRootService(RootValue, { create: makeRoot }),
+			installScopeService(ScopeValue, { create: makeScope }),
+			installOwnerViewService(OwnerValue, { createRoot: makeBacking, createView: makeView }),
+		],
 	})
-	it('isolates values between roots and independent hosts', () => {
-		const host = createContextHost({
-			name: 'isolated',
-			services: [installRootService(Value, { create: () => ({ value: 1 }) })],
-		})
-		const first = host.createRoot(),
-			second = host.createRoot()
-		expect(first.service(Value)).not.toBe(second.service(Value))
-		const another = createContextHost({
-			name: 'other',
-			services: [installRootService(Value, { create: () => ({ value: 2 }) })],
-		})
-		expect(another.createRoot().service(Value).value).toBe(2)
-		expect(() => host.createScope(another.createRoot(), 'foreign')).toThrow('different host')
+	const root = host.createRoot()
+	const scope = host.createScope(root, 'scope')
+	const child = host.createChild(scope, 'child')
+	const view = createContextView(scope)
+	for (const factory of [makeRoot, makeScope, makeBacking, makeView]) {
+		expect(factory).not.toHaveBeenCalled()
+	}
+
+	expect(root.service(RootValue)).toBe(root.service(RootValue))
+	expect(host.createRoot().service(RootValue)).not.toBe(root.service(RootValue))
+	expect(child.service(ScopeValue)).toBe(scope.service(ScopeValue))
+	expect(view.service(ScopeValue)).toBe(scope.service(ScopeValue))
+	expect(host.createScope(root, 'other').service(ScopeValue)).not.toBe(scope.service(ScopeValue))
+	expect(child.service(OwnerValue)).toBe(child.service(OwnerValue))
+	expect(child.service(OwnerValue).owner).toBe(child)
+	expect(view.service(OwnerValue).owner).toBe(view)
+	expect(view.service(OwnerValue).backing).toBe(child.service(OwnerValue).backing)
+})
+
+it('matches canonical service references without conflating declarations by class name', () => {
+	const first = class Value {
+		value = 7
+	}
+	const sameName = class Value {
+		value = 7
+	}
+	const optional = createServiceRef(first)
+	bindServiceIdentity(first, 'service-value')
+	const generated = createServiceReference<InstanceType<typeof first>, 'all'>(
+		'service-value',
+		'all',
+	)
+	const root = createContextHost({
+		name: 'identity',
+		services: [installRootService(first, { create: () => new first() })],
+	}).createRoot()
+	expect(root.service(generated)).toBe(root.service(first))
+	expect(root.service(optional)).toBe(root.service(first))
+	expect(() => root.service(sameName)).toThrow(ContextServiceMissingError)
+	expect(root.service(createServiceRef(sameName))).toBeUndefined()
+	expect(() => root.service({ ...optional } as typeof optional)).toThrow(TypeError)
+})
+
+it('rejects canonical identity collisions and refuses to rename a service after installation', () => {
+	abstract class First extends RootValue {}
+	abstract class Second extends RootValue {}
+	bindServiceIdentity(First, 'same-key')
+	bindServiceIdentity(Second, 'same-key')
+	const first = installRootService(First, { create: () => ({ value: 1 }) })
+	const second = installRootService(Second, { create: () => ({ value: 2 }) })
+
+	expect(() => createContextHost({ name: 'collision', services: [first, second] })).toThrow(
+		'more than once',
+	)
+	expect(() => bindServiceIdentity(First, 'another')).toThrow('another identity')
+	const local = installRootService(RootValue, { create: () => ({ value: 3 }) })
+	expect(() => bindServiceIdentity(RootValue, 'too-late')).toThrow('before installation')
+	expect(
+		createContextHost({ name: 'local', services: [local] })
+			.createRoot()
+			.service(RootValue).value,
+	).toBe(3)
+})
+
+it('enforces root and owner access for optional references as well as required declarations', () => {
+	abstract class OwnerOnly {
+		static readonly access = 'owner'
+		abstract readonly value: number
+	}
+	const host = createContextHost({
+		name: 'access',
+		services: [
+			installRootService(RootValue, { create: () => ({ value: 1 }) }),
+			installScopeService(OwnerOnly, { create: () => ({ value: 2 }) }),
+		],
 	})
-	it('gives source Context views fresh owner values while sharing the scope', () => {
-		const host = createContextHost({
-			name: 'views',
-			services: [
-				installScopeService(ScopeValue, { create: (scope) => ({ scope }) }),
-				installOwnerViewService(OwnerValue, {
-					createRoot: () => ({}),
-					createView: (backing, owner) => ({ backing, owner }),
-				}),
-			],
+	const root = host.createRoot()
+	const owner = host.createScope(root, 'owner')
+	expect(() => owner.service(createServiceRef(RootValue))).toThrow(ContextServiceAccessError)
+	expect(() => root.service(createServiceRef(OwnerOnly))).toThrow(ContextServiceAccessError)
+	expect(() => installRootService(OwnerOnly, { create: () => ({ value: 0 }) })).toThrow(
+		'incompatible installation scope',
+	)
+	expect(owner.service(OwnerOnly).value).toBe(2)
+	expect(resolveContextService(owner, RootValue)).toBe(root.service(RootValue))
+})
+
+it('surfaces an optional factory failure and caches a falsy value after successful retry', () => {
+	const failure = new Error('backend failed')
+	const build = vi.fn()
+	build
+		.mockImplementationOnce(() => {
+			throw failure
 		})
-		const scope = host.createScope(host.createRoot(), 'scope')
-		const a = createContextView(scope),
-			b = createContextView(scope)
-		expect(a.service(ScopeValue)).toBe(b.service(ScopeValue))
-		expect(a.service(OwnerValue)).not.toBe(b.service(OwnerValue))
-		expect(a.service(OwnerValue).owner).toBe(a)
-		expect(b.service(OwnerValue).owner).toBe(b)
-	})
-	it('unifies required and optional references through the bound canonical identity', () => {
-		abstract class Native {
-			abstract readonly value: number
-		}
-		const optional = createServiceRef(Native)
-		expect(
-			createContextHost({ name: 'not-installed-yet', services: [] }).createRoot().service(optional),
-		).toBeUndefined()
-		bindServiceIdentity(Native, 'canonical-service')
-		const required = createServiceReference<Native, 'all'>('canonical-service', 'all')
-		const host = createContextHost({
-			name: 'identity',
-			services: [installRootService(Native, { create: () => ({ value: 7 }) })],
-		})
-		const root = host.createRoot()
-		expect(root.service(required)).toBe(root.service(Native))
-		expect(root.service(optional)).toBe(root.service(Native))
-		expect(getServiceDefinitionKey(Native)).toBe('canonical-service')
-		expect(getInstalledServiceDefinitions(root)).toEqual([Native])
-		expect(resolveInstalledServiceDefinition(root, 'canonical-service')).toBe(Native)
-		expect(() => bindServiceIdentity(Native, 'another')).toThrow('another identity')
-	})
-	it('rejects distinct declarations claiming the same canonical identity', () => {
-		abstract class First {
-			abstract readonly value: number
-		}
-		abstract class Second {
-			abstract readonly value: number
-		}
-		bindServiceIdentity(First, 'same-key')
-		bindServiceIdentity(Second, 'same-key')
-		expect(() =>
-			createContextHost({
-				name: 'collision',
-				services: [
-					installRootService(First, { create: () => ({ value: 1 }) }),
-					installRootService(Second, { create: () => ({ value: 2 }) }),
-				],
+		.mockReturnValue(0)
+	const value = createServiceReference<number, 'all'>('value', 'all')
+	const ref = createServiceRef(value)
+	const root = createContextHost({
+		name: 'retry',
+		services: [installRootService(value, { create: build })],
+	}).createRoot()
+
+	expect(() => root.service(ref)).toThrow(failure)
+	expect(root.service(ref)).toBe(0)
+	expect(root.service(value)).toBe(0)
+	expect(build).toHaveBeenCalledTimes(2)
+})
+
+it('rejects an undefined factory result instead of reporting a missing optional service', () => {
+	const invalid = createServiceReference<unknown, 'all'>('invalid', 'all')
+	const root = createContextHost({
+		name: 'invalid',
+		services: [installRootService(invalid, { create: (): undefined => undefined })],
+	}).createRoot()
+	expect(() => root.service(createServiceRef(invalid))).toThrow('returned undefined')
+})
+
+it('recovers from an owner-view construction cycle while retaining its shared backing', () => {
+	const backing = vi.fn(() => ({}))
+	let enterCycle = true
+	const host = createContextHost({
+		name: 'cycle',
+		services: [
+			installOwnerViewService(RootValue, {
+				createRoot: backing,
+				createView: (_, owner) => (enterCycle ? owner.service(RootValue) : { value: 1 }),
 			}),
-		).toThrow('more than once')
+		],
 	})
-	it('fixes identity before installation so later binding cannot invalidate existing plans', () => {
-		abstract class Local {
-			abstract readonly value: number
-		}
-		const ref = createServiceRef(Local)
-		const item = installRootService(Local, { create: () => ({ value: 1 }) })
-		expect(() => bindServiceIdentity(Local, 'too-late')).toThrow('before installation')
-		const root = createContextHost({ name: 'fixed-identity', services: [item] }).createRoot()
-		expect(root.service(Local).value).toBe(1)
-		expect(root.service(ref)).toBe(root.service(Local))
-		const descriptor = createServiceReference<Local, 'all'>('fixed-descriptor', 'all')
-		expect(() => bindServiceIdentity(descriptor, 'another-descriptor')).toThrow('another identity')
+	const owner = host.createScope(host.createRoot(), 'owner')
+	expect(() => owner.service(RootValue)).toThrow('construction cycle')
+	enterCycle = false
+	expect(owner.service(RootValue).value).toBe(1)
+	expect(backing).toHaveBeenCalledOnce()
+})
+
+it('applies a service override only when it preserves the installation boundary', () => {
+	const original = installRootService(RootValue, { create: () => ({ value: 1 }) })
+	const replacement = installRootService(RootValue, { create: () => ({ value: 2 }) })
+	const host = createContextHost({
+		name: 'override',
+		services: [original],
+		overrides: [replacement],
 	})
-	it('returns undefined only for a missing optional reference', () => {
-		const ref = createServiceRef(Value)
-		const root = createContextHost({ name: 'absent', services: [] }).createRoot()
-		expect(root.service(ref)).toBeUndefined()
-		expect(() => root.service(Value)).toThrow(ContextServiceMissingError)
-		expect(() => root.service({ ...ref } as typeof ref)).toThrow(TypeError)
-		expect(() => installRootService(ref as never, { create: () => ({ value: 0 }) })).toThrow(
-			'optional ServiceRef',
-		)
-	})
-	it('preserves factory errors for optional lookup and retries failed construction', () => {
-		const failure = new Error('backend failed')
-		let attempts = 0
-		const root = createContextHost({
-			name: 'failure',
-			services: [
-				installRootService(Value, {
-					create: () => {
-						if (attempts++ === 0) throw failure
-						return { value: 9 }
-					},
-				}),
+	expect(host.createRoot().service(RootValue).value).toBe(2)
+	expect(() =>
+		createContextHost({
+			name: 'invalid-override',
+			services: [original],
+			overrides: [
+				// @ts-expect-error Runtime callers must also preserve the installation scope.
+				installScopeService(RootValue, { create: () => ({ value: 3 }) }),
 			],
-		}).createRoot()
-		const ref = createServiceRef(Value)
-		expect(() => root.service(ref)).toThrow(failure)
-		expect(root.service(ref)?.value).toBe(9)
-	})
-	it('enforces installation access even when the declaration has default all access', () => {
-		abstract class RootOnly {
-			static readonly access = 'root'
-			abstract readonly value: number
-		}
-		abstract class OwnerOnly {
-			static readonly access = 'owner'
-			abstract readonly value: number
-		}
-		const host = createContextHost({
-			name: 'access',
-			services: [
-				installRootService(RootOnly, { create: () => ({ value: 1 }) }),
-				installRootService(Value, { create: () => ({ value: 2 }) }),
-				installScopeService(OwnerOnly, { create: () => ({ value: 3 }) }),
-			],
-		})
-		const root = host.createRoot(),
-			scope = host.createScope(root, 'owner')
-		expect(root.service(RootOnly).value).toBe(1)
-		expect(scope.service(OwnerOnly).value).toBe(3)
-		expect(() => scope.service(RootOnly as never)).toThrow(ContextServiceAccessError)
-		expect(() => scope.service(createServiceRef(Value))).toThrow(ContextServiceAccessError)
-		expect(() => root.service(createServiceRef(OwnerOnly))).toThrow(ContextServiceAccessError)
-		expect(() => root.service(createServiceRef(OwnerOnly))).toThrow(
-			'Service OwnerOnly is not available',
-		)
-		expect(() => installRootService(OwnerOnly, { create: () => ({ value: 0 }) })).toThrow(
-			'incompatible installation scope',
-		)
-		expect(() => installScopeService(RootOnly, { create: () => ({ value: 0 }) })).toThrow(
-			'incompatible installation scope',
-		)
-		// Framework preparation can intentionally obtain the root backing through the internal resolver.
-		expect(resolveContextService(scope, RootOnly)).toBe(root.service(RootOnly))
-	})
-	it('keeps primitive and function values native and caches falsy values', () => {
-		const zero = createServiceReference<number, 'all'>('zero', 'all')
-		const nil = createServiceReference<null, 'all'>('nil', 'all')
-		abstract class Callable {}
-		interface Callable {
-			(value: number): number
-		}
-		let calls = 0
-		const root = createContextHost({
-			name: 'native',
-			services: [
-				installRootService(zero, {
-					create: () => {
-						calls++
-						return 0
-					},
-				}),
-				installRootService(nil, { create: (): null => null }),
-				installScopeService(Callable, { create: () => (value) => value * 2 }),
-			],
-		}).createRoot()
-		expect(root.service(zero)).toBe(0)
-		expect(root.service(zero)).toBe(0)
-		expect(calls).toBe(1)
-		expect(root.service(nil)).toBeNull()
-		expect(root.service(Callable)(3)).toBe(6)
-	})
-	it('rejects undefined results without converting them into optional absence', () => {
-		const invalid = createServiceReference<unknown, 'all'>('invalid', 'all')
-		let calls = 0
-		const root = createContextHost({
-			name: 'undefined',
-			services: [
-				installRootService(invalid, {
-					create: (): undefined => {
-						calls++
-						return undefined
-					},
-				}),
-			],
-		}).createRoot()
-		const ref = createServiceRef(invalid)
-		expect(() => root.service(ref)).toThrow('returned undefined')
-		expect(() => root.service(ref)).toThrow('returned undefined')
-		expect(calls).toBe(2)
-	})
-	it('detects cycles and recovers while preserving an owner-view backing', () => {
-		let cycle = true,
-			backingCalls = 0
-		const host = createContextHost({
-			name: 'cycle',
-			services: [
-				installOwnerViewService(Value, {
-					createRoot: () => {
-						backingCalls++
-						return {}
-					},
-					createView: (_backing, owner) => {
-						if (cycle) {
-							cycle = false
-							return owner.service(Value)
-						}
-						return { value: 1 }
-					},
-				}),
-			],
-		})
-		const owner = host.createScope(host.createRoot(), 'owner')
-		expect(() => owner.service(Value)).toThrow('construction cycle')
-		expect(owner.service(Value).value).toBe(1)
-		expect(backingCalls).toBe(1)
-	})
-	it('applies explicit overrides and preserves installation scope and access', () => {
-		const base = installRootService(Value, { create: () => ({ value: 1 }) })
-		const replacement = installRootService(Value, { create: () => ({ value: 2 }) })
-		const root = createContextHost({
-			name: 'override',
-			services: [base],
-			overrides: [replacement],
-		}).createRoot()
-		expect(root.service(Value).value).toBe(2)
-		expect(() =>
-			createContextHost({
-				name: 'duplicate',
-				services: [base],
-				overrides: [replacement, replacement],
-			}),
-		).toThrow('more than once')
-		expect(() =>
-			createContextHost({
-				name: 'scope',
-				services: [base],
-				overrides: [
-					installScopeService(Value, { create: () => ({ value: 3 }) }) as unknown as typeof base,
-				],
-			}),
-		).toThrow('preserve scope and access')
-	})
-	it('uses opaque installations and plans with private immutable context shape', () => {
-		const item = installRootService(Value, { create: () => ({ value: 1 }) })
-		const plan = createContextPlan('opaque', [item])
-		expect(Object.isFrozen(item)).toBe(true)
-		expect(Reflect.ownKeys(item)).toEqual([])
-		expect(Object.isFrozen(plan)).toBe(true)
-		expect(Reflect.ownKeys(plan)).toEqual([])
-		expect(createRootContext(plan).service(Value).value).toBe(1)
-		expect(() => createContextPlan('forged', [{} as ServiceInstallation])).toThrow(
-			'Invalid service installation',
-		)
-		const root = createContextHost({ name: 'shape', services: [] }).createRoot()
-		expect(Object.isFrozen(Object.getPrototypeOf(root))).toBe(true)
-		expect(Object.getOwnPropertySymbols(root)).toEqual([])
-		expect('require' in root).toBe(false)
-		expect(() => Object.defineProperty(root, 'injected', { value: 1 })).toThrow(TypeError)
-		expect(() => resolveContextService({} as Context, Value)).toThrow(
-			'Invalid Context implementation',
-		)
-	})
+		}),
+	).toThrow('preserve scope and access')
+	expect(() =>
+		createContextHost({ name: 'forged', services: [{} as ServiceInstallation] }),
+	).toThrow('Invalid service installation')
 })

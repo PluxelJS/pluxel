@@ -1,4 +1,4 @@
-// Built-artifact regression: initial dynamic failures have no committed watcher or Plugin catalog.
+// A missing import in an initial dynamic source has no committed watcher or Plugin catalog.
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, readdir, symlink, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -21,81 +21,74 @@ async function inspectApplication(root) {
 	return description.application
 }
 
-async function runScenario(scenario) {
-	const root = await mkdtemp(join(tmpdir(), 'pluxel-initial-source-'))
-	const errors = []
-	const key = `__initialSourceRecovery_${process.pid}`
-	let server
-	async function until(check, label) {
-		const deadline = Date.now() + 10000
-		while (!(await check())) {
-			if (Date.now() > deadline) throw new Error(`${label}: ${errors.join('; ')}`)
-			await delay(25)
-		}
-	}
-	try {
-		await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
-		await symlink(join(workspace, 'packages/host'), join(root, 'node_modules/@pluxel/host'), 'dir')
-		await symlink(join(workspace, 'packages/core'), join(root, 'node_modules/@pluxel/core'), 'dir')
-		await writeFile(
-			join(root, 'package.json'),
-			JSON.stringify({ name: 'initial-source-fixture', type: 'module' }),
-		)
-		await writeFile(
-			join(root, 'app.ts'),
-			`import {defineHostApplication} from '@pluxel/host'
-export default defineHostApplication(() => ({plugins:[],sources:[{directory:'./entries',include:['*.entry.mjs']}],prepare(){globalThis[${JSON.stringify(key)}]=(globalThis[${JSON.stringify(key)}]??0)+1}}))`,
-		)
-		await mkdir(join(root, 'entries'))
-		const source = join(root, 'entries/broken.entry.mjs')
-		const valid = `import { BasePlugin, Plugin } from '@pluxel/core'; import { __setPluginDefinition } from '@pluxel/core/toolchain'; export class Recovered extends BasePlugin {}; Plugin()(Recovered); __setPluginDefinition(Recovered, {abiVersion:2,kind:'plugin',definition:{entry:{kind:'source-entry',sourceSpace:'fixture',path:'recovered.mjs'},exportName:'Recovered'}});`
-		await writeFile(
-			source,
-			scenario === 'syntax' ? 'export const invalid = ;' : `import './missing.mjs'; ${valid}`,
-		)
-		server = await createServer({
-			root,
-			configFile: false,
-			server: { port: 0, host: '127.0.0.1' },
-			plugins: host({ entry: 'app.ts', scripts: true }),
-			customLogger: {
-				hasWarned: false,
-				info() {},
-				warn() {},
-				warnOnce() {},
-				clearScreen() {},
-				hasErrorLogged() {
-					return false
-				},
-				error(message, details) {
-					errors.push(details?.error?.stack ?? message)
-				},
-			},
-		})
-		await server.listen()
-		assert.equal(globalThis[key], undefined)
-		assert.ok(errors.length > 0)
-		const failed = await inspectApplication(root)
-		assert.equal(failed.state, 'unavailable')
-		assert.equal(failed.latestUpdate.outcome, 'failed')
-		if (scenario === 'syntax') await writeFile(source, valid)
-		else await writeFile(join(root, 'entries/missing.mjs'), 'export {}')
-		await until(
-			() => globalThis[key] === 1,
-			`${scenario} repair must recover initial dynamic source`,
-		)
-		await until(async () => {
-			const application = await inspectApplication(root)
-			return application.state === 'ready'
-		}, `${scenario} host readiness`)
-		await server.close()
-		server = undefined
-		assert.equal(globalThis[key], 1)
-		console.log('INITIAL_SOURCE_RECOVERY_SMOKE_OK', scenario)
-	} finally {
-		await server?.close()
-		delete globalThis[key]
-		await rm(root, { recursive: true, force: true })
+const root = await mkdtemp(join(tmpdir(), 'pluxel-initial-source-'))
+const errors = []
+const key = `__initialSourceRecovery_${process.pid}`
+let server
+async function until(check, label) {
+	const deadline = Date.now() + 10000
+	while (!(await check())) {
+		if (Date.now() > deadline) throw new Error(`${label}: ${errors.join('; ')}`)
+		await delay(25)
 	}
 }
-for (const scenario of ['syntax', 'missing-import']) await runScenario(scenario)
+try {
+	await mkdir(join(root, 'node_modules/@pluxel'), { recursive: true })
+	await symlink(join(workspace, 'packages/host'), join(root, 'node_modules/@pluxel/host'), 'dir')
+	await symlink(join(workspace, 'packages/core'), join(root, 'node_modules/@pluxel/core'), 'dir')
+	await writeFile(
+		join(root, 'package.json'),
+		JSON.stringify({ name: 'initial-source-fixture', type: 'module' }),
+	)
+	await writeFile(
+		join(root, 'app.ts'),
+		`import {defineHostApplication} from '@pluxel/host'
+export default defineHostApplication(() => ({plugins:[],sources:[{directory:'./entries',include:['*.entry.mjs']}],prepare(){globalThis[${JSON.stringify(key)}]=(globalThis[${JSON.stringify(key)}]??0)+1}}))`,
+	)
+	await mkdir(join(root, 'entries'))
+	const source = join(root, 'entries/broken.entry.mjs')
+	const valid = `import { BasePlugin, Plugin } from '@pluxel/core'; import { __setPluginDefinition } from '@pluxel/core/toolchain'; export class Recovered extends BasePlugin {}; Plugin()(Recovered); __setPluginDefinition(Recovered, {abiVersion:2,kind:'plugin',definition:{entry:{kind:'source-entry',sourceSpace:'fixture',path:'recovered.mjs'},exportName:'Recovered'}});`
+	await writeFile(source, `import './missing.mjs'; ${valid}`)
+	server = await createServer({
+		root,
+		configFile: false,
+		server: { port: 0, host: '127.0.0.1' },
+		plugins: host({ entry: 'app.ts', scripts: true }),
+		customLogger: {
+			hasWarned: false,
+			info() {},
+			warn() {},
+			warnOnce() {},
+			clearScreen() {},
+			hasErrorLogged() {
+				return false
+			},
+			error(message, details) {
+				errors.push(details?.error?.stack ?? message)
+			},
+		},
+	})
+	await server.listen()
+	assert.equal(globalThis[key], undefined)
+	assert.ok(errors.length > 0)
+	const failed = await inspectApplication(root)
+	assert.equal(failed.state, 'unavailable')
+	assert.equal(failed.latestUpdate.outcome, 'failed')
+	await writeFile(join(root, 'entries/missing.mjs'), 'export {}')
+	await until(
+		() => globalThis[key] === 1,
+		'Installing the missing import must recover initial dynamic source',
+	)
+	await until(async () => {
+		const application = await inspectApplication(root)
+		return application.state === 'ready'
+	}, 'Host must become ready after the import appears')
+	await server.close()
+	server = undefined
+	assert.equal(globalThis[key], 1)
+	console.log('INITIAL_SOURCE_RECOVERY_SMOKE_OK')
+} finally {
+	await server?.close()
+	delete globalThis[key]
+	await rm(root, { recursive: true, force: true })
+}

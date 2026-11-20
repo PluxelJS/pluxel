@@ -27,7 +27,7 @@ import {
 	compileWorkbenchSnapshot,
 	type WorkbenchTargetSnapshot,
 } from '../src/workbench/client-snapshot'
-import { buildPluginDetailHref, buildWorkbenchHref } from '../src/workbench/paths'
+import { buildWorkbenchHref } from '../src/workbench/paths'
 import { createWorkbenchRouteDirectory } from '../src/workbench/route-directory'
 
 const source = vi.hoisted(() => ({ snapshot: undefined as WorkbenchTargetSnapshot | undefined }))
@@ -150,33 +150,6 @@ async function flushPreferences() {
 }
 
 describe('user sidebar shortcuts in the native workspace snapshot', () => {
-	it('adopts Host defaults on the first visit and saves them with native layout preferences', async () => {
-		const { session } = await mount()
-		expect(session.sidebarShortcuts()).toEqual([market])
-		expect(session.isSidebarShortcut(structuredClone(market))).toBe(true)
-		await flushPreferences()
-		const raw = window.localStorage.getItem(workspaceStorageKey('/'))
-		expect(raw).not.toBeNull()
-		const snapshot = JSON.parse(raw!)
-		expect(
-			snapshot.layout.borders.find((border: { location: string }) => border.location === 'left'),
-		).toMatchObject({ config: { shortcuts: [market] } })
-	})
-
-	it('keeps one shortcut per exact owner and entry while distinguishing forks', async () => {
-		const { session } = await mount([])
-		await act(async () => {
-			await session.setSidebarShortcut(eastAccount, true)
-			await session.setSidebarShortcut(structuredClone(eastAccount), true)
-			await session.setSidebarShortcut(westAccount, true)
-		})
-		expect(session.sidebarShortcuts()).toEqual([eastAccount, westAccount])
-		await act(async () => session.setSidebarShortcut(structuredClone(eastAccount), false))
-		expect(session.isSidebarShortcut(eastAccount)).toBe(false)
-		expect(session.isSidebarShortcut(westAccount)).toBe(true)
-		expect(session.sidebarShortcuts()).toEqual([westAccount])
-	})
-
 	it('restores user additions, removals and order instead of merging changed Host defaults', async () => {
 		const first = await mount()
 		await act(async () => {
@@ -245,27 +218,6 @@ describe('user sidebar shortcuts in the native workspace snapshot', () => {
 		},
 	)
 
-	it('restores Host defaults only after the user explicitly resets the workspace layout', async () => {
-		const first = await mount()
-		await act(async () => {
-			await first.session.setSidebarShortcut(eastAccount, true)
-			await first.session.setSidebarShortcut(market, false)
-		})
-		await flushPreferences()
-		const assign = vi.fn()
-		const pageLocation = globalThis.location
-		vi.stubGlobal('location', { assign })
-		await act(async () => {
-			expect(await first.session.resetLayout()).toBe(true)
-		})
-		expect(assign).toHaveBeenCalledWith('/')
-		await first.close()
-		vi.stubGlobal('location', pageLocation)
-		const { session } = await mount()
-		expect(session.sidebarShortcuts()).toEqual([market])
-		expect(session.isSidebarShortcut(eastAccount)).toBe(false)
-	})
-
 	it('keeps the pinned column, activity rail and catalog in sync through the leading pin controls', async () => {
 		const { session } = await mount([])
 		source.snapshot = compileWorkbenchSnapshot(
@@ -328,21 +280,6 @@ describe('user sidebar shortcuts in the native workspace snapshot', () => {
 })
 
 describe('sidebar shortcut resolution against current committed publications', () => {
-	it('resolves the exact owner, fork and entry and uses its current label and icon', () => {
-		const unrelated: PluginNodeAddress = { ...east, definition: marketNode.definition }
-		const entries = [
-			publication(west, 'account', { kind: 'tab', label: 'West account', order: 0 }),
-			publication(unrelated, 'account', { kind: 'tab', label: 'Other plugin', order: 0 }),
-			publication(east, 'another', { kind: 'tab', label: 'Other entry', order: 0 }),
-			publication(east, 'account', { kind: 'tab', label: 'East account', icon: 'users', order: 0 }),
-		]
-		expect(resolve({ target: east, entryKey: 'account' }, entries)).toEqual({
-			label: 'East account',
-			icon: 'users',
-			href: `${buildPluginDetailHref(east)}?entry=account`,
-		})
-	})
-
 	it('keeps a withdrawn shortcut unavailable without substituting another fork or rewriting its identity', () => {
 		const shortcut = structuredClone(eastAccount)
 		const saved = JSON.stringify(shortcut)

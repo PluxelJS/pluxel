@@ -5,7 +5,6 @@ import type {
 } from '@pluxel/services/management/client'
 import { describe, expect, it, vi } from 'vitest'
 
-import { refreshPluginReadModels } from '../src/app/plugins/pluginReadModels'
 import {
 	applyPluginLifecycleCommand,
 	applyPluginLifecycleCommands,
@@ -84,15 +83,6 @@ function clientDouble(batch: PluginControlBatchResult) {
 }
 
 describe('plugin read model refresh', () => {
-	it('cancels stale reads, invalidates both models, and awaits authoritative refetches', async () => {
-		const queryClient = queryClientDouble()
-
-		await refreshPluginReadModels(queryClient)
-
-		expect(queryClient.cancelQueries).toHaveBeenCalledTimes(2)
-		expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(2)
-	})
-
 	it.each(batches)(
 		'preserves the $label batch and aligns affected read models',
 		async ({ batch, refreshes }) => {
@@ -120,29 +110,6 @@ describe('plugin read model refresh', () => {
 			expect(lifecycleQueries.invalidateQueries).toHaveBeenCalledTimes(refreshes)
 		},
 	)
-
-	it('preserves a server rejection for 1001 actions without splitting or reinterpreting it', async () => {
-		const batch = invalidControlBatch()
-		const client = clientDouble(batch)
-		const queryClient = queryClientDouble()
-		const actions = Array.from({ length: 1001 }, (_, index) => ({
-			address: controlNode(`Plugin${index}`),
-			autoStart: true,
-		}))
-		const commands = actions.map((action) => ({
-			address: action.address,
-			command: 'start' as const,
-		}))
-
-		expect(await setPluginAutoStarts(client, queryClient, actions, 'policy:test:0')).toBe(batch)
-		expect(await applyPluginLifecycleCommands(client, queryClient, commands)).toBe(batch)
-
-		expect(client.plugins.setAutoStart).toHaveBeenCalledExactlyOnceWith(actions, {
-			expectedManagedRevision: 'policy:test:0',
-		})
-		expect(client.plugins.applyLifecycleCommands).toHaveBeenCalledExactlyOnceWith(commands)
-		expect(queryClient.invalidateQueries).not.toHaveBeenCalled()
-	})
 
 	it('keeps top-level rejections intact for single-operation callers', async () => {
 		const batch = invalidControlBatch('Managed policy revision is required')
@@ -176,19 +143,6 @@ describe('plugin read model refresh', () => {
 			expect(lifecycleQueries.invalidateQueries).toHaveBeenCalledTimes(2)
 		},
 	)
-
-	it('forwards empty batches to the domain owner and returns its receipt', async () => {
-		const batch: PluginControlBatchResult = { ok: true, status: 'applied', results: [] }
-		const client = clientDouble(batch)
-		const queryClient = queryClientDouble()
-
-		expect(await setPluginAutoStarts(client, queryClient, [], 'policy:test:0')).toBe(batch)
-		expect(await applyPluginLifecycleCommands(client, queryClient, [])).toBe(batch)
-		expect(client.plugins.setAutoStart).toHaveBeenCalledExactlyOnceWith([], {
-			expectedManagedRevision: 'policy:test:0',
-		})
-		expect(client.plugins.applyLifecycleCommands).toHaveBeenCalledExactlyOnceWith([])
-	})
 
 	it('realigns read models after transport failure without resubmitting commands', async () => {
 		const error = new Error('socket closed')

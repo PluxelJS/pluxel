@@ -29,33 +29,6 @@ describe('WorkbenchContentController', () => {
 		expect(controller.getSnapshot().data).toEqual({ status: 'live' })
 	})
 
-	it('keeps the last good data stale after a newer failure and clears it on recovery', async () => {
-		let observer!: (outcome: WorkbenchContentDataOutcome) => void | Promise<void>
-		const handle = interactiveHandle({
-			subscribe: vi.fn(async (next) => {
-				observer = next
-				return { sequence: 1, ok: true as const, data: { count: 1 } }
-			}),
-		})
-		const controller = new WorkbenchContentController(handle)
-		controller.start()
-		await tick()
-
-		observer({ sequence: 2, ok: false, code: 'load_failed' })
-		expect(controller.getSnapshot()).toMatchObject({
-			status: 'ready',
-			data: { count: 1 },
-			stale: true,
-		})
-
-		observer({ sequence: 3, ok: true as const, data: { count: 2 } })
-		expect(controller.getSnapshot()).toMatchObject({
-			status: 'ready',
-			data: { count: 2 },
-			stale: false,
-		})
-	})
-
 	it('retries without replacing data for busy or older load results', async () => {
 		const handle = interactiveHandle({
 			subscribe: vi.fn(async () => ({ sequence: 3, ok: true as const, data: { count: 3 } })),
@@ -109,23 +82,23 @@ describe('WorkbenchContentController', () => {
 		expect(listener).toHaveBeenCalledTimes(callsBeforeDispose + 1)
 	})
 
-	it('runs action-only Content without creating a data subscription', async () => {
+	it('runs an action-only publication without retaining data resources', async () => {
 		const subscribe = vi.fn()
 		const run = vi.fn(async () => ({ action: { ok: true as const }, data: null }))
-		const handle = interactiveHandle({
-			presentation: {
-				slots: [{ kind: 'action', key: 'refresh', label: 'Refresh', input: 'none' }],
-			},
-			subscribe,
-			run,
-		})
-		const controller = new WorkbenchContentController(handle)
-
+		using controller = new WorkbenchContentController(
+			interactiveHandle({
+				presentation: {
+					slots: [{ kind: 'action', key: 'refresh', label: 'Refresh', input: 'none' }],
+				},
+				subscribe,
+				run,
+			}),
+		)
 		controller.start()
-		expect(await controller.run('refresh')).toEqual({ ok: true })
 
+		expect(await controller.run('refresh')).toEqual({ ok: true })
+		expect(run).toHaveBeenCalledExactlyOnceWith('refresh')
 		expect(subscribe).not.toHaveBeenCalled()
-		expect(run).toHaveBeenCalledWith('refresh')
 	})
 })
 

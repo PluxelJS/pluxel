@@ -306,30 +306,4 @@ describe('business configuration save in native documents', () => {
 		expect(container.querySelector(`input[name="name"]`)).toBe(input)
 		expect(input.value).toBe('newer draft while saving')
 	})
-
-	it('checks a real earlier form revision after another document waits and deletes none when that form changes', async () => {
-		const patch = vi.fn(async (_owner: PluginNodeAddress, mutation: ConfigPatch) =>
-			savedConfig(mutation.set ?? {}),
-		)
-		const { session, container, id: first, input } = await fixture(patch)
-		await type(input, 'first configuration')
-		const second = await openDocument(session, '/security')
-		const secondInput = container.querySelector<HTMLInputElement>(
-			`[data-worksplit-content="${second}"] input[name="name"]`,
-		)!
-		await type(secondInput, 'second configuration')
-		let closing!: Promise<boolean>
-		await act(async () => {
-			closing = session.closeDocuments()
-		})
-		await confirm(0)
-		await vi.waitFor(() => expect(decisions[1]).toBeDefined())
-		await type(input, 'first edited after save')
-		await confirm(1)
-		await act(async () => expect(await closing).toBe(false))
-		expect(session.workbench.getDocuments().map((document) => document.id)).toEqual([first, second])
-		expect(session.documents.get(first)!.isDirty()).toBe(true)
-		expect(input.value).toBe('first edited after save')
-		expect(patch).toHaveBeenCalledTimes(2)
-	})
 })

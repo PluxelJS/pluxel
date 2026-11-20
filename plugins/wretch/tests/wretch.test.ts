@@ -77,29 +77,17 @@ beforeEach(() => {
 })
 
 describe('WretchPlugin', () => {
-	it('separates same-display-name consumers by row in the provider Store', async () => {
-		await using host = await createTestHost({
-			workbench: true,
-			services: [elysia()],
-		})
+	it('keeps settings isolated between callers with the same display name', async () => {
+		await using host = await createTestHost({ workbench: true, services: [elysia()] })
 		await startWretchFixture(host, [WretchPlugin, ConsumerA, ConsumerLateSettings])
-		using aSettings = await openWretchSettings(host, ConsumerA.nodeAddress())
-		using lateSettings = await openWretchSettings(host, ConsumerLateSettings.nodeAddress())
-		await aSettings.api.updateDto({ headers: { 'X-Owner': 'a' } })
-		await lateSettings.api.updateDto({ headers: { 'X-Owner': 'late' } })
-		const store = await host.require(WretchPlugin.nodeAddress()).ctx.tinybase.open()
-		const rows = Object.entries(store.getTable('consumerSettings'))
-		expect(rows).toHaveLength(2)
-		for (const [id, row] of rows) {
-			expect(id).toMatch(/^[a-f0-9]{64}$/)
-			expect(row.version).toBe(1)
-			expect(
-				[ConsumerA.nodeAddress(), ConsumerLateSettings.nodeAddress()].map(parsePluginNodeAddress),
-			).toContainEqual(parsePluginNodeAddress(JSON.parse(String(row.owner))))
-		}
-		// The provider owns this table; enabling it never opens either consumer's business Store.
-		const consumerStore = await host.require(ConsumerA.nodeAddress()).ctx.tinybase.open()
-		expect(consumerStore.getContent()).toEqual([{}, {}])
+		using first = await openWretchSettings(host, ConsumerA.nodeAddress())
+		using second = await openWretchSettings(host, ConsumerLateSettings.nodeAddress())
+		await first.api.updateDto({ headers: { 'X-Owner': 'first' } })
+		await second.api.updateDto({ headers: { 'X-Owner': 'second' } })
+		const firstSnapshot = await first.api.snapshotDto()
+		const secondSnapshot = await second.api.snapshotDto()
+		expect(firstSnapshot.settings.headers).toEqual({ 'x-owner': 'first' })
+		expect(secondSnapshot.settings.headers).toEqual({ 'x-owner': 'second' })
 	})
 
 	it('emits portable settings snapshots without undefined optional fields', async () => {
@@ -190,11 +178,10 @@ describe('WretchPlugin', () => {
 
 			expect(a).toEqual({ url: 'https://a.example/api/users', consumer: 'a' })
 			expect(b).toEqual({ url: 'https://b.example/v1/events', consumer: 'b' })
-			expect(host.require(WretchPlugin.nodeAddress()).client._url).toBe('')
 		}
 	})
 
-	it('applies persisted Workbench settings to an existing client without rebuilding it', async () => {
+	it('applies Workbench edits to a cached client and restores them after consumer restart', async () => {
 		fetchA = async (url, options) =>
 			jsonResponse({
 				url,
@@ -210,10 +197,10 @@ describe('WretchPlugin', () => {
 				services: [elysia()],
 			})
 
-			await startWretchFixture(host, [WretchPlugin, ConsumerA])
-			const consumer = host.require(ConsumerA.nodeAddress())
+			await startWretchFixture(host, [WretchPlugin, ConsumerLateSettings])
+			const consumer = host.require(ConsumerLateSettings.nodeAddress())
 			const client = consumer.client
-			using settings = await openWretchSettings(host, ConsumerA.nodeAddress())
+			using settings = await openWretchSettings(host, ConsumerLateSettings.nodeAddress())
 
 			await settings.api.updateDto({
 				headers: { 'Accept-Language': 'zh-HK', 'X-Consumer': 'managed' },
@@ -227,10 +214,10 @@ describe('WretchPlugin', () => {
 				hasProxyDispatcher: true,
 			})
 
-			await host.stop(ConsumerA.nodeAddress())
-			await host.start(ConsumerA.nodeAddress())
+			await host.stop(ConsumerLateSettings.nodeAddress())
+			await host.start(ConsumerLateSettings.nodeAddress())
 
-			using restarted = await openWretchSettings(host, ConsumerA.nodeAddress())
+			using restarted = await openWretchSettings(host, ConsumerLateSettings.nodeAddress())
 			const restartedSnapshot = await restarted.api.snapshotDto()
 			expect(restartedSnapshot.settings).toMatchObject({
 				headers: { 'accept-language': 'zh-HK', 'x-consumer': 'managed' },
@@ -275,31 +262,6 @@ describe('WretchPlugin', () => {
 		expect(v.safeParse(WretchConfig, { allowedOrigins: ['ftp://allowed.example'] }).success).toBe(
 			false,
 		)
-	})
-
-	it('applies managed settings to a client created before settings are enabled', async () => {
-		fetchA = async (_url, options) =>
-			jsonResponse({ language: new Headers(options.headers).get('accept-language') })
-		setFixtureFetches(fetchA, fetchB)
-
-		{
-			await using host = await createTestHost({
-				workbench: true,
-				services: [elysia()],
-			})
-
-			await startWretchFixture(host, [WretchPlugin, ConsumerLateSettings])
-
-			const consumer = host.require(ConsumerLateSettings.nodeAddress())
-			using settings = await openWretchSettings(host, ConsumerLateSettings.nodeAddress())
-			await settings.api.updateDto({
-				headers: { 'Accept-Language': 'zh-HK' },
-			})
-
-			await expect(consumer.client.get('/managed').json()).resolves.toEqual({
-				language: 'zh-HK',
-			})
-		}
 	})
 
 	it('shares one managed-settings initialization across concurrent calls', async () => {

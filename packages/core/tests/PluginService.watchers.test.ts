@@ -1,36 +1,26 @@
-import { describe, expect, it } from 'vitest'
-import { requirePluginService } from '@pluxel/core/internal'
-import { BasePlugin, Plugin, withCoreInternalTestHost } from '@pluxel/core/internal/test'
+import { BasePlugin, Plugin, createCoreInternalTestHost } from '@pluxel/core/internal/test'
+import { expect, it } from 'vitest'
 
-let observedSequence = 0
+@Plugin({ forkable: true })
+class ObservedPlugin extends BasePlugin {}
 
-@Plugin({ displayName: 'Observed' })
-class ObservedPlugin extends BasePlugin {
-	readonly sequence = ++observedSequence
-}
+it('watches an absent fork through first admission, restart, and removal', async () => {
+	await using host = createCoreInternalTestHost()
+	const address = ObservedPlugin.nodeAddress('east')
+	const seen: Array<BasePlugin | undefined> = []
+	host.ctx.effects.defer(
+		host.pluginService.watchInstance(address, (instance) => seen.push(instance)),
+	)
 
-describe('PluginService watchInstance()', () => {
-	it('publishes exact slot availability across restart and removal', async () => {
-		await withCoreInternalTestHost(async (host) => {
-			const registry = requirePluginService(host.ctx)
-			observedSequence = 0
-			const seen: Array<number | undefined> = []
-			const node = registry.internNodeAddress(ObservedPlugin.nodeAddress())
-			const off = registry.watchInstance(node, (instance) =>
-				seen.push((instance as ObservedPlugin | undefined)?.sequence),
-			)
-			expect(seen).toEqual([undefined])
-			await host.start(ObservedPlugin)
-			expect(seen).toEqual([undefined, 1])
-			expect(registry.isRunning(node)).toBe(true)
-			host.restart(ObservedPlugin)
-			await host.commit()
-			expect(seen).toEqual([undefined, 1, 2])
-			host.remove(ObservedPlugin)
-			await host.commit()
-			expect(seen).toEqual([undefined, 1, 2, undefined])
-			expect(registry.isRunning(node)).toBe(false)
-			off()
-		})
-	})
+	const east = host.fork(ObservedPlugin, 'east')
+	await host.commit()
+	const first = host.require(east)
+	host.restart(east)
+	await host.commit()
+	const second = host.require(east)
+	host.remove(east)
+	await host.commit()
+
+	expect(second).not.toBe(first)
+	expect(seen).toEqual([undefined, first, second, undefined])
 })

@@ -1,118 +1,75 @@
+import { createCoreContextHost } from '@pluxel/core/host'
 import {
 	BasePlugin,
 	Plugin,
 	assertPluginLifecycleIssue,
-	withCoreInternalTestHost,
+	createCoreInternalTestHost,
+	type CommitSummary,
 } from '@pluxel/core/internal/test'
-import { requirePluginService } from '@pluxel/core/internal'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vitest'
 
-type LateMode = 'cleanup' | 'cleanup-failure'
+let late: ReturnType<typeof Promise.withResolvers<() => void>>
 
-let lateMode: LateMode = 'cleanup'
-let lateCleanupRuns = 0
-let lateInitPromise: Promise<void>
-let resolveLateInit: () => void
-let rejectLateInit: (error: unknown) => void
-
-function resetLateInit(mode: LateMode): void {
-	lateMode = mode
-	lateCleanupRuns = 0
-	lateInitPromise = new Promise<void>((resolve, reject) => {
-		resolveLateInit = resolve
-		rejectLateInit = reject
-	})
-}
-
-resetLateInit('cleanup')
-
-@Plugin({ displayName: 'Late init', startTimeoutMs: 15 })
-class LateInitPlugin extends BasePlugin {
-	override async init() {
-		await lateInitPromise
-		return () => {
-			lateCleanupRuns++
-			if (lateMode === 'cleanup-failure') throw new Error('late cleanup boom')
-		}
+@Plugin({ startTimeoutMs: 15 })
+class LatePlugin extends BasePlugin {
+	override init() {
+		return late.promise
 	}
 }
 
-describe('late init settlement', () => {
-	beforeEach(() => resetLateInit('cleanup'))
-
-	it('never resurrects a timed-out generation and immediately runs its returned cleanup', async () => {
-		await withCoreInternalTestHost(
-			async (host) => {
-				host.add(LateInitPlugin)
-				const summary = await host.commitAllowFail()
-				expect(host.isRunning(LateInitPlugin)).toBe(false)
-				assertPluginLifecycleIssue(summary, LateInitPlugin, {
-					phase: 'start',
-					kind: 'start-failed',
-					message: 'start timeout',
-				})
-
-				resolveLateInit()
-				await vi.waitFor(() => expect(lateCleanupRuns).toBe(1))
-				expect(host.isRunning(LateInitPlugin)).toBe(false)
-			},
-			{ execution: { drainTimeoutMs: 20 } },
-		)
+it('drains a cleanup returned after timeout without finalizing or publishing that generation', async () => {
+	late = Promise.withResolvers()
+	const cleaned = Promise.withResolvers<void>()
+	const finalizeGeneration = vi.fn()
+	await using host = createCoreInternalTestHost(
+		{ execution: { drainTimeoutMs: 20 } },
+		{
+			createRootContext: (config) =>
+				createCoreContextHost({
+					...config,
+					createLifecycleHooks: () => ({ finalizeGeneration }),
+				}).createRoot(),
+		},
+	)
+	host.add(LatePlugin)
+	const timedOut = await host.commitAllowFail()
+	late.resolve(cleaned.resolve)
+	assertPluginLifecycleIssue(timedOut, LatePlugin, {
+		kind: 'start-failed',
+		message: 'start timeout',
 	})
-
-	it('publishes a frozen successor for a late rejection without mutating the first summary', async () => {
-		await withCoreInternalTestHost(
-			async (host) => {
-				const registry = requirePluginService(host.ctx)
-				const publications: unknown[] = []
-				const unsubscribe = registry.subscribeCommitted((published) => publications.push(published))
-				host.ctx.effects.defer(unsubscribe)
-				host.add(LateInitPlugin)
-				const summary = await host.commitAllowFail()
-				rejectLateInit(new Error('late init boom'))
-
-				await vi.waitFor(() => expect(registry.lastCommit).not.toBe(summary))
-				const successor = registry.lastCommit!
-				assertPluginLifecycleIssue(successor, LateInitPlugin, {
-					phase: 'start',
-					kind: 'start-failed',
-					message: 'late init boom',
-				})
-				expect(
-					summary.lifecycleReport.issues.some((issue) => issue.message === 'late init boom'),
-				).toBe(false)
-				expect(Object.isFrozen(successor)).toBe(true)
-				expect(Object.isFrozen(successor.lifecycleReport)).toBe(true)
-				expect(Object.isFrozen(successor.lifecycleReport.issues)).toBe(true)
-				expect(publications).toEqual([summary, successor])
-				expect(host.isRunning(LateInitPlugin)).toBe(false)
-			},
-			{ execution: { drainTimeoutMs: 20 } },
-		)
-	})
-
-	it('publishes a frozen successor for a late returned-cleanup failure', async () => {
-		resetLateInit('cleanup-failure')
-		await withCoreInternalTestHost(
-			async (host) => {
-				const registry = requirePluginService(host.ctx)
-				host.add(LateInitPlugin)
-				const summary = await host.commitAllowFail()
-				resolveLateInit()
-
-				await vi.waitFor(() => expect(registry.lastCommit).not.toBe(summary))
-				const successor = registry.lastCommit!
-				assertPluginLifecycleIssue(successor, LateInitPlugin, {
-					phase: 'drain',
-					kind: 'drain-failed',
-					message: 'late cleanup boom',
-				})
-				expect(
-					summary.lifecycleReport.issues.some((issue) => issue.message === 'late cleanup boom'),
-				).toBe(false)
-				expect(lateCleanupRuns).toBe(1)
-			},
-			{ execution: { drainTimeoutMs: 20 } },
-		)
-	})
+	await cleaned.promise
+	expect(finalizeGeneration).not.toHaveBeenCalled()
+	expect(host.get(LatePlugin)).toBeUndefined()
 })
+
+it.each(['start-failed', 'drain-failed'] as const)(
+	'publishes a successor report for a late %s issue without rewriting the timeout report',
+	async (kind) => {
+		late = Promise.withResolvers()
+		await using host = createCoreInternalTestHost({ execution: { drainTimeoutMs: 20 } })
+		host.add(LatePlugin)
+		const timedOut = await host.commitAllowFail()
+		const originalIssues = [...timedOut.lifecycleReport.issues]
+		assertPluginLifecycleIssue(timedOut, LatePlugin, {
+			kind: 'start-failed',
+			message: 'start timeout',
+		})
+		const updated = Promise.withResolvers<CommitSummary>()
+		host.ctx.effects.defer(host.pluginService.subscribeCommitted(updated.resolve))
+
+		const error = new Error('late failure')
+		if (kind === 'start-failed') late.reject(error)
+		else
+			late.resolve(() => {
+				throw error
+			})
+
+		const successor = await updated.promise
+		expect(successor).not.toBe(timedOut)
+		assertPluginLifecycleIssue(successor, LatePlugin, { kind, message: error.message })
+		expect(timedOut.lifecycleReport.issues).toEqual(originalIssues)
+		expect(Object.isFrozen(successor.lifecycleReport.issues)).toBe(true)
+		expect(host.get(LatePlugin)).toBeUndefined()
+	},
+)

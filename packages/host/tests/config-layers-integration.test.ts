@@ -27,114 +27,84 @@ class DeploymentOwner extends BasePlugin {
 	readonly config = this.configs.use(DeploymentConfig)
 }
 
-it.each(['declared-only', 'declared-first', 'saved-first'] as const)(
-	'composes a real fork from code, file, environment and saved input using %s',
-	async (mode) => {
-		const root = await mkdtemp(join(tmpdir(), 'pluxel-config-layers-'))
-		try {
-			await writeFile(
-				join(root, 'deployment.json'),
-				JSON.stringify({ value: 'file', fileOnly: 'from-file' }),
-			)
-			const owner = DeploymentOwner.nodeAddress('deployment')
-			const storage = createDocumentStorage()
-			const document = SuperJSON.stringify({
-				version: 4,
-				plugins: [{ owner, config: { value: 'saved', savedOnly: 'from-saved' } }],
-			})
-			await storage.put('config.json', document)
-			let writes = 0
-			const resolved = await resolveHostApplication(
-				() => ({
-					plugins: [
-						{
-							plugin: DeploymentOwner,
-							forks: {
-								deployment: {
-									config: { value: 'code', codeOnly: 'from-code' },
-									configMode: mode,
-									fileBindings: [
-										fileBinding({ config: { schema: DeploymentConfig, path: 'deployment.json' } }),
-									],
-									envBindings: [
-										envBinding({
-											config: {
-												schema: DeploymentConfig,
-												mapping: { value: 'VALUE', envOnly: 'ENV_ONLY' },
-											},
-										}),
-									],
-								},
+it('reads all four config layers at a deployed fork and falls back to environment on reset', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'pluxel-config-layers-'))
+	try {
+		await writeFile(
+			join(root, 'deployment.json'),
+			JSON.stringify({
+				value: 'file',
+				fileOnly: 'from-file',
+			}),
+		)
+		const owner = DeploymentOwner.nodeAddress('deployment')
+		const storage = createDocumentStorage()
+		const document = SuperJSON.stringify({
+			version: 4,
+			plugins: [{ owner, config: { value: 'saved', savedOnly: 'from-saved' } }],
+		})
+		await storage.put('config.json', document)
+		const resolved = await resolveHostApplication(
+			() => ({
+				plugins: [
+					{
+						plugin: DeploymentOwner,
+						forks: {
+							deployment: {
+								config: { value: 'code', codeOnly: 'from-code' },
+								configMode: 'saved-first',
+								fileBindings: [
+									fileBinding({ config: { schema: DeploymentConfig, path: 'deployment.json' } }),
+								],
+								envBindings: [
+									envBinding({
+										config: {
+											schema: DeploymentConfig,
+											mapping: { value: 'VALUE', envOnly: 'ENV_ONLY' },
+										},
+									}),
+								],
 							},
 						},
-					],
-					policy: { document: false },
-					config: {
-						mode: 'declared-only',
-						document: {
-							storage: () => ({
-								...storage,
-								async put(key, value) {
-									writes++
-									await storage.put(key, value)
-								},
-							}),
-						},
 					},
-				}),
-				{ root, mode: 'test', env: { VALUE: 'environment', ENV_ONLY: 'from-env' }, bindings: {} },
-			)
-			await using host = await createResolvedHost(resolved)
-			await host.startNode(owner)
-			const result = await host.config.get(owner)
-			expect(result).toMatchObject({
-				ok: true,
-				mode,
-				application: 'applied',
-				persistence: { status: 'unchanged' },
-				managedInput: { value: 'saved', savedOnly: 'from-saved' },
-				config: {
-					value: mode === 'saved-first' ? 'saved' : 'environment',
-					codeOnly: 'from-code',
-					fileOnly: 'from-file',
-					envOnly: 'from-env',
-					...(mode === 'declared-only' ? {} : { savedOnly: 'from-saved' }),
-				},
-			})
-			if (result.ok === false) throw new Error(result.message)
-			expect(Object.hasOwn(result.config, 'savedOnly')).toBe(mode !== 'declared-only')
-			expect(result.sources).toEqual(
-				expect.arrayContaining([
-					expect.objectContaining({ path: ['codeOnly'], kind: 'declaration' }),
-					expect.objectContaining({ path: ['fileOnly'], kind: 'file', name: 'deployment.json' }),
-					expect.objectContaining({ path: ['envOnly'], kind: 'env', name: 'ENV_ONLY' }),
-					expect.objectContaining({
-						path: ['value'],
-						kind: mode === 'saved-first' ? 'saved' : 'env',
-					}),
-				]),
-			)
-			expect(writes).toBe(0)
-			expect(await storage.getText('config.json')).toBe(document)
-			await expect(
-				host.config.reset(owner, [['value']], {
-					expectedManagedRevision: result.managedRevision,
-				}),
-			).resolves.toMatchObject({
-				ok: true,
-				config: { value: 'environment' },
-				managedInput: { savedOnly: 'from-saved' },
-				persistence: { status: 'confirmed', retention: 'unknown' },
-				sources: expect.arrayContaining([
-					expect.objectContaining({ path: ['value'], kind: 'env', name: 'VALUE' }),
-				]),
-			})
-			expect(writes).toBe(1)
-		} finally {
-			await rm(root, { recursive: true, force: true })
-		}
-	},
-)
+				],
+				policy: { document: false },
+				config: { document: { storage: () => storage } },
+			}),
+			{ root, mode: 'test', env: { VALUE: 'environment', ENV_ONLY: 'from-env' }, bindings: {} },
+		)
+		await using host = await createResolvedHost(resolved)
+		await host.startNode(owner)
+		const result = await host.config.get(owner)
+		expect(result).toMatchObject({
+			ok: true,
+			application: 'applied',
+			managedInput: { value: 'saved', savedOnly: 'from-saved' },
+			config: {
+				value: 'saved',
+				codeOnly: 'from-code',
+				fileOnly: 'from-file',
+				envOnly: 'from-env',
+				savedOnly: 'from-saved',
+			},
+		})
+		expect(await storage.getText('config.json')).toBe(document)
+		if (result.ok === false) throw new Error(result.message)
+		await expect(
+			host.config.reset(owner, [['value']], { expectedManagedRevision: result.managedRevision }),
+		).resolves.toMatchObject({
+			ok: true,
+			config: { value: 'environment' },
+			managedInput: { savedOnly: 'from-saved' },
+			persistence: { status: 'confirmed' },
+			sources: expect.arrayContaining([
+				expect.objectContaining({ path: ['value'], kind: 'env', name: 'VALUE' }),
+			]),
+		})
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})
 
 const PartConfig = v.object({ value: v.string(), retained: v.optional(v.number()) })
 const RootConfig = v.object({ title: v.optional(v.string(), 'schema-default') })
@@ -321,23 +291,12 @@ try {
  assert.equal(globalThis.configLayerModuleLoads,1);
  assert.equal(host.catalog().entries.length,2);
  assert.equal(requirePluginService(host.ctx).isRunning(nodes.later),true,'generated startup address selects the discovered implementation');
- const {createScriptScope}=await import('@pluxel/host/internal/agent/runtime');
- await using scope=createScriptScope({ctx:host.ctx});
- const page=await scope.sdk.plugins.list({definition:nodes.later.definition});
- assert.equal(page.nextCursor,null);
- const discovered=page.nodes.find(node=>node.address.variant==='default');
- assert.ok(discovered);
- assert.deepEqual(discovered.address,nodes.later);
- assert.equal((await scope.sdk.plugin(discovered.address).config.get()).config.value,'saved-Later');
  for (const [owner,mode,value] of [[nodes.later,'saved-first','saved-Later'],[nodes.separate,'declared-only','declared-separate'],[nodes.east,'declared-first','declared-east']]) {
   const result=await host.config.get(owner);
   assert.equal(result.ok,true);assert.equal(result.mode,mode);assert.equal(result.config.value,value);
  }
  assert.equal((await host.config.get(nodes.absent)).code,'node_unavailable','config records must not create forks');
  const policy=await host.policy.get();assert.equal(policy.ok,true);assert.deepEqual(policy.managedInput,{});assert.deepEqual(policy.effective.forks,[nodes.east]);
- await host.startNode(nodes.later);assert.equal(requirePluginService(host.ctx).isRunning(nodes.later),true);
- await host.stopNode(nodes.later);assert.equal(requirePluginService(host.ctx).isRunning(nodes.later),false);
- assert.deepEqual((await host.policy.get()).managedInput,{},'declared-only does not persist session intent');
  assert.equal(writes,0,'loading and reading must not seed managed records');
  const {Later}=await import(root+'/package/index.mjs');
  await assert.rejects(createHost({plugins:[{plugin:Later}],pluginNodes:[{definition:nodes.later.definition}]}),

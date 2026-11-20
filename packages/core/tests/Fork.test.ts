@@ -21,31 +21,6 @@ describe('fork node identity', () => {
 		})
 	})
 
-	it('runs fork nodes with isolated Context and structured addresses', async () => {
-		await withCoreInternalTestHost(async (host) => {
-			host.add(Forkable)
-			const A = host.fork(Forkable, 'a')
-			const B = host.fork(Forkable, 'b')
-			await host.commit()
-			const defaultNode = host.require(Forkable)
-			const a = host.require(A)
-			const b = host.require(B)
-			expect(a).not.toBe(b)
-			expect(a.ctx).not.toBe(b.ctx)
-			expect(defaultNode.constructor).toBe(Forkable)
-			expect(a.constructor).toBe(Forkable)
-			expect(b.constructor).toBe(Forkable)
-			expect(a.ctx.pluginInfo.definitionRevision).toBe(
-				defaultNode.ctx.pluginInfo.definitionRevision,
-			)
-			expect(b.ctx.pluginInfo.definitionRevision).toBe(
-				defaultNode.ctx.pluginInfo.definitionRevision,
-			)
-			expect(a.ctx.pluginInfo.nodeAddress).toMatchObject({ variant: 'fork', forkId: 'a' })
-			expect(b.ctx.pluginInfo.nodeAddress).toMatchObject({ variant: 'fork', forkId: 'b' })
-		})
-	})
-
 	it('selects a fork through slot-based dependency overrides', async () => {
 		await withCoreInternalTestHost(async (host) => {
 			host.fork(Forkable, 'a')

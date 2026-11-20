@@ -62,7 +62,7 @@ immutable snapshot 的 slot table 使用四层、每层 64 路的 radix sharing�
 
 `GraphSnapshot` 和 radix/tombstone layout 是内部表示。公共 `CommitSummary` 投影 `pluginChanges`、`lifecycleReport` 与 `runtimeUpdate.reason`；只有内部 watcher 接收 committed graph。
 
-成本回归位于 `PluginDefinitions.cost-model.test.ts`、`PluginService.cost-model.test.ts` 和 internal DI tests。趋势探针：
+Internal DI 回归验证提交后的图快照和深链行为。扩展成本通过以下基准测量。
 
 ```sh
 vp run @pluxel/core#bench:caller-view

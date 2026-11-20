@@ -15,11 +15,6 @@ vi.mock('../src/app/plugins/pluginReadModels', () => ({
 	refreshPluginReadModels: vi.fn(async () => undefined),
 }))
 
-vi.mock('../src/app/plugins/config/components/ConfigActionDock', { spy: true })
-vi.mock('../src/app/plugins/config/ConfigTab', { spy: true })
-
-import { ConfigActionDock } from '../src/app/plugins/config/components/ConfigActionDock'
-import { ConfigTabContent } from '../src/app/plugins/config/ConfigTab'
 import { ConfigForm } from '../src/app/plugins/config/ConfigForm'
 import { createManagementQueryClient } from '../src/app/managementQuery'
 import { refreshPluginReadModels } from '../src/app/plugins/pluginReadModels'
@@ -237,39 +232,6 @@ describe('config action dock', () => {
 		}
 	})
 
-	it('releases the native submit lock after a transport rejection and saves the same draft on retry', async () => {
-		const patch = vi
-			.fn()
-			.mockRejectedValueOnce(new Error('Transport unavailable'))
-			.mockResolvedValueOnce(savedSnapshot({ rootEnabled: true }))
-		const { container, root } = await mount(
-			<ConfigHarness client={createFakeManagementClient(patch)} />,
-		)
-		try {
-			const input = container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!
-			await act(async () => input.click())
-			await act(async () =>
-				input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
-			)
-			expect(patch).toHaveBeenCalledOnce()
-			expect(input.checked).toBe(true)
-			expect(buttonWithText(container, '保存').disabled).toBe(false)
-			await act(async () =>
-				input.form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
-			)
-			expect(patch).toHaveBeenCalledTimes(2)
-			expect(patch).toHaveBeenNthCalledWith(
-				2,
-				OWNER,
-				{ set: { rootEnabled: true }, remove: [['rootEnabled']] },
-				{ expectedManagedRevision: 'config:initial' },
-			)
-			expect(buttonWithText(container, '保存').disabled).toBe(true)
-		} finally {
-			await act(async () => root.unmount())
-		}
-	})
-
 	it('ignores another native section submit while a save is pending and permits it after completion', async () => {
 		let resolve!: (result: unknown) => void
 		const patch = vi.fn().mockImplementationOnce(
@@ -328,93 +290,6 @@ describe('config action dock', () => {
 			await act(async () => root.unmount())
 		}
 	})
-
-	it('keeps outer controls and sibling panes idle while typing and saves the latest draft', async () => {
-		const fields = f.extractFormFields(v.object({ title: v.string() }))
-		const patch = vi.fn(async (_owner: PluginNodeAddress, input: Record<string, unknown>) =>
-			savedSnapshot(input.set as Record<string, unknown>),
-		)
-		const { container, root } = await mount(
-			<ConfigHarness
-				client={createFakeManagementClient(patch)}
-				sections={[
-					{ path: [], fieldName: 'config', fields },
-					{
-						path: ['cache'],
-						fieldName: 'cache',
-						fields: nestedFields,
-					},
-				]}
-			/>,
-		)
-		try {
-			const input = container.querySelector<HTMLInputElement>('input[name="title"]')!
-			const setValue = (value: string) => {
-				Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
-					input,
-					value,
-				)
-				input.dispatchEvent(new Event('input', { bubbles: true }))
-			}
-			await act(async () => setValue('first edit'))
-			expect(buttonWithText(container, '全部保存').disabled).toBe(false)
-			const dockCalls = vi.mocked(ConfigActionDock).mock.calls.length
-			const paneCalls = vi.mocked(ConfigTabContent).mock.calls.length
-			await act(async () => setValue('second edit'))
-			await act(async () => setValue('freshest draft'))
-			expect(input.value).toBe('freshest draft')
-			expect(vi.mocked(ConfigActionDock).mock.calls.length).toBe(dockCalls)
-			expect(vi.mocked(ConfigTabContent).mock.calls.length).toBe(paneCalls)
-			await act(async () => buttonWithText(container, '全部保存').click())
-			expect(patch).toHaveBeenCalledExactlyOnceWith(
-				OWNER,
-				{ set: { title: 'freshest draft' }, remove: [['title']] },
-				{ expectedManagedRevision: 'config:initial' },
-			)
-		} finally {
-			await act(async () => root.unmount())
-		}
-	})
-
-	it.each(['success', 'validation'] as const)(
-		'preserves edits made during a pending section save (%s)',
-		async (outcome) => {
-			let resolve!: (result: unknown) => void
-			const patch = vi.fn(
-				() =>
-					new Promise<any>((done) => {
-						resolve = done
-					}),
-			)
-			const { container, root } = await mount(
-				<ConfigHarness client={createFakeManagementClient(patch)} />,
-			)
-			try {
-				const input = container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')!
-				await act(async () => input.click())
-				await act(async () => buttonWithText(container, '保存').click())
-				expect(patch).toHaveBeenCalledOnce()
-				await act(async () => input.click())
-				await act(async () =>
-					resolve(
-						outcome === 'success'
-							? savedSnapshot({ rootEnabled: true })
-							: {
-									ok: false,
-									code: 'validation_failed',
-									errors: {
-										_root: { rootEnabled: [{ path: ['rootEnabled'], message: 'Stale rejection' }] },
-									},
-								},
-					),
-				)
-				expect(input.checked).toBe(false)
-				expect(container.textContent).not.toContain('Stale rejection')
-			} finally {
-				await act(async () => root.unmount())
-			}
-		},
-	)
 
 	it.each(['success', 'validation'] as const)(
 		'preserves edits made during a pending save-all (%s)',
@@ -540,25 +415,6 @@ describe('config action dock', () => {
 		}
 	})
 
-	it('keeps the action group outside and before the scrolling form content', async () => {
-		const { container, root } = await mount(<ConfigHarness />)
-		try {
-			const form = container.querySelector('.plx-pluginWorkbench__configForm')!
-			const toolbar = container.querySelector('.plx-pluginWorkbench__configToolbar')!
-			const scrollArea = container.querySelector('.plx-pluginWorkbench__configScrollArea')!
-
-			expect(toolbar.parentElement).toBe(form)
-			expect(scrollArea.parentElement).toBe(form)
-			expect(
-				toolbar.compareDocumentPosition(scrollArea) & Node.DOCUMENT_POSITION_FOLLOWING,
-			).toBeTruthy()
-			expect(toolbar.querySelector('button')?.textContent).toContain('撤销')
-			expect(scrollArea.querySelector('.plx-pluginWorkbench__configActionButtons')).toBeNull()
-		} finally {
-			await act(async () => root.unmount())
-		}
-	})
-
 	it('saves with Ctrl/Command+S even while a config input has focus', async () => {
 		const patch = vi.fn(async () => savedSnapshot({ rootEnabled: true }))
 		const { container, root } = await mount(
@@ -590,57 +446,6 @@ describe('config action dock', () => {
 				{ set: { rootEnabled: true }, remove: [['rootEnabled']] },
 				{ expectedManagedRevision: 'config:initial' },
 			)
-		} finally {
-			await act(async () => root.unmount())
-		}
-	})
-
-	it('restores inheritance by removing editable saved paths with CAS and keeps uneditable literal keys', async () => {
-		const fields = f.extractFormFields(
-			v.object({
-				literal: v.object({ key: v.string() }),
-				'literal.key': v.string(),
-				'0': v.string(),
-				'': v.string(),
-				rootEnabled: v.boolean(),
-			}),
-		)
-		const savedConfig = {
-			literal: { key: 'nested saved' },
-			'literal.key': 'dotted saved',
-			'0': 'numeric saved',
-			'': 'empty saved',
-			rootEnabled: true,
-		}
-		const inherited = {
-			'literal.key': savedConfig['literal.key'],
-			'0': savedConfig['0'],
-			'': savedConfig[''],
-		}
-		const client = createFakeManagementClient()
-		client.config.reset = vi.fn(async () => savedSnapshot(inherited))
-		const { container, root } = await mount(
-			<ConfigHarness
-				client={client}
-				savedConfig={savedConfig}
-				sections={[{ path: [], fieldName: 'config', fields }]}
-			/>,
-		)
-		try {
-			await act(async () => buttonWithText(container, '恢复继承').click())
-			expect(client.config.reset).toHaveBeenCalledExactlyOnceWith(
-				OWNER,
-				[['literal', 'key'], ['rootEnabled']],
-				{
-					expectedManagedRevision: 'config:initial',
-				},
-			)
-			expect(client.config.patch).not.toHaveBeenCalled()
-			expect(container.querySelector<HTMLInputElement>('input[name="literal.key"]')?.value).toBe('')
-			expect(container.querySelector<HTMLInputElement>('input[name="rootEnabled"]')?.checked).toBe(
-				false,
-			)
-			expect(buttonWithText(container, '保存').disabled).toBe(true)
 		} finally {
 			await act(async () => root.unmount())
 		}

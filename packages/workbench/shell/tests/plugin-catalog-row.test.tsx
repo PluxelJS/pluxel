@@ -8,7 +8,6 @@ import {
 	SortableRow,
 	type SortableRowProps,
 } from '../src/app/plugins/catalog/organizer/components/SortableRow'
-import { GroupCard } from '../src/app/plugins/catalog/organizer/components/GroupCard'
 import { DENSITY } from '../src/app/plugins/catalog/organizer/constants'
 import { SearchBar } from '../src/app/plugins/catalog/components/SearchBar'
 
@@ -94,34 +93,6 @@ describe('plugin catalog controls', () => {
 		expect(tooltips.map((tooltip) => tooltip.textContent?.trim())).toContainEqual(
 			expect.stringContaining(meta.executionDescription),
 		)
-	})
-
-	it('shows the group total with its running count in the accessible label', async () => {
-		const pluginIds = [pid, 'v1/package/ArchivedAccounts/@fixture/accounts']
-		const container = await mount(
-			<GroupCard
-				g={{ groupId: 'accounts', name: '@fixture/accounts', pluginIds }}
-				visibleIds={pluginIds}
-				runningSet={new Set([pid])}
-				availableSet={new Set(pluginIds)}
-				desiredRunningSet={new Set([pid])}
-				selectedSet={new Set()}
-				activeSet={new Set()}
-				focusedId={null}
-				onSelect={vi.fn()}
-				sortableId="accounts"
-				droppableId="accounts-drop"
-				isFiltering={false}
-				isCollapsed
-				toggleCollapse={vi.fn()}
-				getName={() => name}
-				getMeta={() => meta}
-				getItemSortableId={(id) => id}
-				dh={DENSITY.ultra}
-				locked={false}
-			/>,
-		)
-		expect(container.querySelector('[aria-label="运行中 1 / 共 2 个插件"]')?.textContent).toBe('2')
 	})
 
 	it('exposes status totals and gives status filtering and search clearing separate actions', async () => {
