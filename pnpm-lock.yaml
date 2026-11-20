@@ -3411,6 +3411,9 @@ importers:
       semver:
         specifier: catalog:dev
         version: 7.8.6
+      valibot:
+        specifier: catalog:validation
+        version: 1.5.0(typescript@7.0.2)
       validate-npm-package-name:
         specifier: catalog:prod
         version: 8.0.0

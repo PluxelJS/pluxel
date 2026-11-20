@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, inArray, or, sql } from 'drizzle-orm'
-import { authors, packages } from './schema'
-import type { Database } from './store'
+import type { DrizzleD1Database } from 'drizzle-orm/d1'
+import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core'
 import {
 	MarketError,
 	catalogAuthorId,
@@ -13,9 +13,16 @@ import {
 	taxonomySlug,
 	type CatalogFacets,
 	type CatalogFilters,
+	type Coordinate,
+	type PackageIdentity,
 	type PackagePage,
 	type PackageQuery,
+	type Release,
 } from './protocol'
+import { authors, packages, releases } from './schema'
+
+export type CatalogDatabase = Pick<BaseSQLiteDatabase<'async', unknown>, 'select'> &
+	Pick<DrizzleD1Database, 'batch'>
 
 const filterFields = new Set(['query', 'registry', 'official', 'category', 'tag', 'author'])
 
@@ -72,6 +79,57 @@ export const authorFields = {
 	avatarUrl: authors.avatarUrl,
 }
 
+const packageFields = {
+	registry: packages.registry,
+	name: packages.name,
+	description: packages.description,
+	repository: packages.repository,
+	repositoryStars: packages.repositoryStars,
+	repositoryObservedAt: packages.repositoryObservedAt,
+	observedAt: packages.observedAt,
+	official: packages.official,
+	category: packages.category,
+	tags: packages.tags,
+}
+
+const summaryFields = {
+	...packageFields,
+	latest: sql<string | null>`json_extract(${packages.distTags}, '$.latest')`,
+	author: authorFields,
+	indexedVersions: sql<number>`(select count(*) from releases indexed_release where indexed_release.registry = packages.registry and indexed_release.name = packages.name)`,
+}
+
+export const packageDetailFields = {
+	...packageFields,
+	metadataVersion: packages.metadataVersion,
+	readme: packages.readme,
+	license: packages.license,
+	distTags: packages.distTags,
+}
+
+export const releasePackage = and(
+	eq(packages.registry, releases.registry),
+	eq(packages.name, releases.name),
+)
+
+export const releaseFields = {
+	registry: releases.registry,
+	name: releases.name,
+	version: releases.version,
+	tarball: releases.tarball,
+	integrity: releases.integrity,
+	checkedAt: releases.checkedAt,
+	provenance: releases.provenance,
+	peerDependencies: releases.peerDependencies,
+	pluginPackages: releases.pluginPackages,
+	readme: releases.readme,
+	license: releases.license,
+}
+
+export function visiblePackages(registries: readonly string[]) {
+	return and(eq(packages.hidden, false), inArray(packages.registry, registries))
+}
+
 function catalogWhere(input: CatalogFilters, visibleRegistries: readonly string[]) {
 	const query = input.query ?? ''
 	// Each term is quoted data, never an FTS operator supplied by a requester.
@@ -87,8 +145,7 @@ function catalogWhere(input: CatalogFilters, visibleRegistries: readonly string[
 	}
 	return (except?: keyof typeof dimensions) =>
 		and(
-			eq(packages.hidden, false),
-			inArray(packages.registry, visibleRegistries),
+			visiblePackages(visibleRegistries),
 			input.official === undefined ? undefined : eq(packages.official, input.official),
 			query
 				? match
@@ -102,7 +159,7 @@ function catalogWhere(input: CatalogFilters, visibleRegistries: readonly string[
 }
 
 export async function listPackages(
-	db: Database,
+	db: CatalogDatabase,
 	input: PackageQuery,
 	visibleRegistries: readonly string[],
 ): Promise<PackagePage> {
@@ -135,21 +192,7 @@ export async function listPackages(
 	if (registries.length === 0) return { packages: [], nextCursor: null }
 	const where = catalogWhere(filters, registries)
 	const rows = await db
-		.select({
-			registry: packages.registry,
-			name: packages.name,
-			description: packages.description,
-			latest: sql<string | null>`json_extract(${packages.distTags}, '$.latest')`,
-			observedAt: packages.observedAt,
-			repository: packages.repository,
-			repositoryStars: packages.repositoryStars,
-			repositoryObservedAt: packages.repositoryObservedAt,
-			author: authorFields,
-			official: packages.official,
-			category: packages.category,
-			tags: packages.tags,
-			indexedVersions: sql<number>`(select count(*) from releases indexed_release where indexed_release.registry = packages.registry and indexed_release.name = packages.name)`,
-		})
+		.select(summaryFields)
 		.from(packages)
 		.leftJoin(authors, eq(authors.id, effectiveAuthorId))
 		.where(and(where(), beyondCursor))
@@ -167,7 +210,7 @@ export async function listPackages(
 }
 
 export async function facets(
-	db: Database,
+	db: CatalogDatabase,
 	input: CatalogFilters,
 	visibleRegistries: readonly string[],
 ): Promise<CatalogFacets> {
@@ -203,4 +246,40 @@ export async function facets(
 			.orderBy(asc(authors.name), asc(authors.id)),
 	])
 	return { total: totals[0].count, registries, categories, tags, authors: knownAuthors }
+}
+
+export async function getPackage(db: CatalogDatabase, input: PackageIdentity) {
+	return db
+		.select({ ...packageDetailFields, ...summaryFields })
+		.from(packages)
+		.leftJoin(authors, eq(authors.id, effectiveAuthorId))
+		.where(
+			and(
+				eq(packages.registry, input.registry),
+				eq(packages.name, input.name),
+				eq(packages.hidden, false),
+			),
+		)
+		.get()
+}
+
+export async function getRelease(
+	db: CatalogDatabase,
+	input: Coordinate,
+	includeHidden = false,
+): Promise<Release | null> {
+	const row = await db
+		.select(releaseFields)
+		.from(releases)
+		.innerJoin(packages, releasePackage)
+		.where(
+			and(
+				eq(releases.registry, input.registry),
+				eq(releases.name, input.name),
+				eq(releases.version, input.version),
+				includeHidden ? undefined : eq(packages.hidden, false),
+			),
+		)
+		.get()
+	return row ?? null
 }

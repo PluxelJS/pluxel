@@ -95,6 +95,7 @@ envBinding({
 ```
 
 - 连接 URL 为市场后端的基础接口地址（不含 `/v1`）。
+- 连接可指向 Worker 主站或只读目录镜像。镜像保留发行的来源和摘要，插件及依赖仍通过 pnpm 配置选择的 registry 获取。 [镜像部署](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md#只读镜像)
 - 未配置市场时，仍支持通过直接输入 npm package spec（如 `@acme/example-plugin@^2.0.0`）进行安装。
 - 市场按行显示包名、简介、作者或组织、分类、来源和 registry 最新版本。点击包名查看 README 和已检查的发行，点击作者添加筛选。
 - 作者、分类、标签和来源可以多选。每组命中任意候选即可，各组条件同时生效。官方状态可选全部、官方或社区。点击已选条件可单独移除，「Clear filters」清空筛选，搜索框有独立的清除入口。

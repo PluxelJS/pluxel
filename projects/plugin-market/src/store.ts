@@ -16,6 +16,7 @@ import {
 	type SQL,
 } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
+import { getRelease } from './catalog'
 import { audits, authors, notifications, packages, releases } from './schema'
 import {
 	MarketError,
@@ -472,30 +473,6 @@ export async function commitRepositoryObservation(
 			}),
 	])
 	return changed[0]
-}
-
-export async function getRelease(
-	db: Database,
-	input: Coordinate,
-	includeHidden = false,
-): Promise<Release | null> {
-	const row = await db
-		.select({ release: releases })
-		.from(releases)
-		.innerJoin(
-			packages,
-			and(eq(packages.registry, releases.registry), eq(packages.name, releases.name)),
-		)
-		.where(
-			and(
-				eq(releases.registry, input.registry),
-				eq(releases.name, input.name),
-				eq(releases.version, input.version),
-				includeHidden ? undefined : eq(packages.hidden, false),
-			),
-		)
-		.get()
-	return row?.release ?? null
 }
 
 export async function listNotifications(db: Database, input: NotificationQuery = {}) {
