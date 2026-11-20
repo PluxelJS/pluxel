@@ -64,9 +64,9 @@ export function ConfigTabContent({
 				incomingValue={initialValue}
 			/>
 			{showToc ? (
-				<Accordion mb="md">
+				<Accordion mb="xs" className="plx-configToc" chevronPosition="left">
 					<Accordion.Item value="outline">
-						<Accordion.Control>配置目录</Accordion.Control>
+						<Accordion.Control>目录</Accordion.Control>
 						<Accordion.Panel>
 							<FormToc
 								sectionIdPrefix={sectionIdPrefix}

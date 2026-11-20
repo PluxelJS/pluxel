@@ -215,7 +215,7 @@ describe('PluginOrganizer virtualization', () => {
 		})
 
 		expect(container.textContent).toContain('未分组')
-		expect(container.textContent).toContain('插件分类')
+		expect(container.textContent).toContain('分组')
 		expect(container.textContent).toContain('Alpha')
 		expect(container.textContent).not.toContain('新建分组')
 		expect(container.querySelector('[role="group"][aria-label="分组 Alpha"]')).not.toBeNull()
@@ -233,7 +233,7 @@ describe('plugin group editing', () => {
 			},
 		})
 		expect(container.textContent).toContain('全部插件')
-		expect(container.textContent).not.toContain('插件分类')
+		expect(container.querySelector('[role="group"][aria-label^="分组"]')).toBeNull()
 		await act(async () => {
 			container.querySelector<HTMLButtonElement>('[aria-label="编辑分组"]')!.click()
 		})

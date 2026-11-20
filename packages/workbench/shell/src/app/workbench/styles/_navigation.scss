@@ -180,3 +180,23 @@
 .plx-workspace-navigation__link[data-variant='light'] .mantine-Button-section {
 	color: var(--mantine-primary-color-filled);
 }
+/* Palette rows read on one line: name first, a dimmed qualifier after it. */
+.plx-workspace-navigation__label {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	min-width: 0;
+}
+
+/* Pin toggles appear with the row; a pinned entry keeps its toggle visible. */
+.plx-workspace-navigation__item > .mantine-ActionIcon-root:not([aria-pressed='true']) {
+	opacity: 0;
+	transition: opacity 120ms ease-out;
+}
+.plx-workspace-navigation__item:is(:hover, :focus-within) > .mantine-ActionIcon-root {
+	opacity: 1;
+}
+.plx-appsDirectory {
+	max-width: 760px;
+	width: 100%;
+}

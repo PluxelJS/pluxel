@@ -13,6 +13,7 @@ import {
 	Stack,
 	Text,
 	Tooltip,
+	VisuallyHidden,
 	useComputedColorScheme,
 	useMantineColorScheme,
 } from '@mantine/core'
@@ -22,13 +23,11 @@ import {
 	IconBell,
 	IconCopyPlus,
 	IconDots,
-	IconFile,
 	IconInfoCircle,
 	IconLayoutSidebarLeftExpand,
 	IconLayoutSidebarRight,
 	IconLayoutBottombar,
 	IconSearch,
-	IconShieldLock,
 	IconX,
 } from '@tabler/icons-react'
 import { Actions, BorderNode, type ILayoutApi } from 'flexlayout-react'
@@ -183,14 +182,13 @@ export function WorkbenchShell() {
 				values: Parameters<NonNullable<NonNullable<WorkbenchProps['native']>['onRenderTab']>>[1],
 			) => {
 				const document = session.workbench.getDocument(node.getId())
+				// Only fixed tools carry an icon; documents are identified by their name alone.
 				values.leading =
 					node.getId() === 'navigation' ? (
 						<IconLayoutSidebarLeftExpand size={14} />
 					) : node.getId() === 'plugin-inspector' ? (
 						<IconInfoCircle size={14} />
-					) : (
-						<IconFile size={14} />
-					)
+					) : undefined
 				if (document && node.getId() === activeDocumentId)
 					values.buttons.push(
 						<ActionIcon
@@ -323,103 +321,81 @@ export function WorkbenchShell() {
 			tabIndex={-1}
 		>
 			<header className="plx-workspace__toolbar">
-				<Group gap="sm" wrap="nowrap" className="plx-workspace__primary">
-					<Text fw={650} size="sm" className="plx-workspace__brand" truncate="end">
-						{product?.displayName ?? 'Pluxel'}
-					</Text>
-					<Button
-						variant="default"
-						size="compact-sm"
-						leftSection={<IconSearch size={15} />}
-						onClick={showSearch}
-						aria-label="打开命令面板"
-						className="plx-workspace__search-button"
+				<Text fw={650} size="sm" className="plx-workspace__brand" truncate="end">
+					{product?.displayName ?? 'Pluxel'}
+				</Text>
+				<Button
+					variant="default"
+					size="compact-sm"
+					leftSection={<IconSearch size={15} />}
+					onClick={showSearch}
+					aria-label="打开命令面板"
+					className="plx-workspace__search-button"
+				>
+					<span className="plx-workspace__search-label">
+						搜索 <kbd>{WORKBENCH_HOTKEY_LABELS.commandPalette}</kbd>
+					</span>
+				</Button>
+				<Group gap={4} wrap="nowrap" ml="auto" className="plx-workspace__utilities">
+					<WorkbenchUpdateStatus />
+					<Group
+						gap={2}
+						wrap="nowrap"
+						className="plx-workspace__layout-controls"
+						aria-label="布局控制"
 					>
-						<span className="plx-workspace__search-label">
-							查找或执行命令 <kbd>{WORKBENCH_HOTKEY_LABELS.commandPalette}</kbd>
-						</span>
-					</Button>
-					<Menu position="bottom-start" shadow="md" width={265}>
+						{(
+							[
+								['left', '左侧导航', IconLayoutSidebarLeftExpand],
+								['right', '右侧面板', IconLayoutSidebarRight],
+								['bottom', '底部面板', IconLayoutBottombar],
+							] as const
+						).map(([side, label, Icon]) => (
+							<Tooltip key={side} label={`${borderVisible(side) ? '收起' : '显示'}${label}`}>
+								<ActionIcon
+									variant={borderVisible(side) ? 'light' : 'subtle'}
+									color="gray"
+									aria-label={label}
+									aria-pressed={borderVisible(side)}
+									disabled={!session.panelAvailable(side)}
+									onClick={() => toggleBorder(side)}
+								>
+									<Icon size={17} stroke={1.6} />
+								</ActionIcon>
+							</Tooltip>
+						))}
+					</Group>
+					<NotificationHistory />
+					<ThemeCustomizer compact />
+					<Menu position="bottom-end" shadow="md" width={220}>
 						<Menu.Target>
-							<Button
-								size="compact-sm"
-								variant="subtle"
-								color="gray"
-								rightSection={<IconDots size={16} />}
-								disabled={pending}
-								className="plx-workspace__workspace-menu"
-							>
-								工作区
-							</Button>
+							<ActionIcon variant="subtle" color="gray" aria-label="工作区菜单" disabled={pending}>
+								<IconDots size={17} />
+							</ActionIcon>
 						</Menu.Target>
 						<Menu.Dropdown>
-							<Menu.Label>{count} 个文档</Menu.Label>
-							<Menu.Item onClick={showNavigation}>显示插件目录</Menu.Item>
-							<Menu.Item onClick={() => navigation.navigate('/apps')}>显示应用目录</Menu.Item>
 							<Menu.Item
 								disabled={!count}
 								onClick={closeActive}
 								rightSection={<kbd>{WORKBENCH_HOTKEY_LABELS.closeActiveTab}</kbd>}
 							>
-								关闭活动文档
+								关闭标签页
 							</Menu.Item>
 							<Menu.Item
 								disabled={!activeGroup || activeGroup.startsWith('border_')}
 								onClick={maximize}
+								rightSection={<kbd>{WORKBENCH_HOTKEY_LABELS.maximize}</kbd>}
 							>
-								最大化或还原活动容器
+								最大化
 							</Menu.Item>
-							<Menu.Item onClick={() => setHelpOpen(true)}>键盘操作</Menu.Item>
+							<Menu.Item onClick={() => setHelpOpen(true)}>快捷键</Menu.Item>
 							<Menu.Divider />
-							<Menu.Item color="red" disabled={!count} onClick={closeDocuments}>
-								关闭所有文档
-							</Menu.Item>
 							<Menu.Item onClick={resetLayout}>恢复默认布局</Menu.Item>
+							<Menu.Item color="red" disabled={!count} onClick={closeDocuments}>
+								关闭全部标签页
+							</Menu.Item>
 						</Menu.Dropdown>
 					</Menu>
-				</Group>
-				<Group
-					gap="xs"
-					wrap="nowrap"
-					className="plx-workspace__layout-controls"
-					aria-label="布局控制"
-				>
-					{(
-						[
-							['left', '左侧导航', IconLayoutSidebarLeftExpand],
-							['right', '右侧面板', IconLayoutSidebarRight],
-							['bottom', '底部面板', IconLayoutBottombar],
-						] as const
-					).map(([side, label, Icon]) => (
-						<Tooltip key={side} label={`${borderVisible(side) ? '收起' : '显示'}${label}`}>
-							<ActionIcon
-								size="sm"
-								variant={borderVisible(side) ? 'light' : 'subtle'}
-								color={borderVisible(side) ? 'brand' : 'gray'}
-								aria-label={label}
-								aria-pressed={borderVisible(side)}
-								disabled={!session.panelAvailable(side)}
-								onClick={() => toggleBorder(side)}
-							>
-								<Icon size={17} />
-							</ActionIcon>
-						</Tooltip>
-					))}
-				</Group>
-				<Group gap="xs" wrap="nowrap" ml="auto" className="plx-workspace__utilities">
-					<WorkbenchUpdateStatus />
-					<NotificationHistory />
-					<Tooltip label="认证与安全">
-						<ActionIcon
-							variant="subtle"
-							size="sm"
-							aria-label="认证与安全"
-							onClick={() => navigation.navigate('/security')}
-						>
-							<IconShieldLock size={17} />
-						</ActionIcon>
-					</Tooltip>
-					<ThemeCustomizer compact />
 				</Group>
 			</header>
 			{storageError && (
@@ -448,24 +424,25 @@ export function WorkbenchShell() {
 					native={native}
 					layoutRef={layoutRef}
 					empty={
-						<Stack gap="xs" align="center">
-							<Text c="dimmed" size="sm">
-								工作区没有打开的文档
-							</Text>
-							<Button variant="light" size="xs" onClick={showSearch}>
-								查找页面或插件入口
-							</Button>
-						</Stack>
+						<Button variant="subtle" color="gray" size="xs" onClick={showSearch}>
+							搜索页面{' '}
+							<kbd className="plx-workspace__empty-kbd">
+								{WORKBENCH_HOTKEY_LABELS.commandPalette}
+							</kbd>
+						</Button>
 					}
 				/>
 			</div>
 			<Modal
 				opened={searchOpen}
 				onClose={() => setSearchOpen(false)}
-				title="命令面板"
+				withCloseButton={false}
 				size="lg"
-				centered
+				yOffset="12dvh"
+				padding="xs"
+				classNames={{ content: 'plx-workspace__palette' }}
 			>
+				<VisuallyHidden>命令面板</VisuallyHidden>
 				<div className="plx-workspace__search">
 					<WorkspaceNavigation
 						commands={commands}
@@ -475,13 +452,7 @@ export function WorkbenchShell() {
 					/>
 				</div>
 			</Modal>
-			<Modal
-				opened={helpOpen}
-				onClose={() => setHelpOpen(false)}
-				title="工作区键盘操作"
-				size="lg"
-				centered
-			>
+			<Modal opened={helpOpen} onClose={() => setHelpOpen(false)} title="快捷键" size="lg" centered>
 				<Stack gap="xs">
 					{WORKBENCH_SHORTCUT_ITEMS.map(([key, description]) => (
 						<Group key={key} wrap="nowrap" align="start">

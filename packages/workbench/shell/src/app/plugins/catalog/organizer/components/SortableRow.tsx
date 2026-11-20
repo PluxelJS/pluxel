@@ -292,7 +292,8 @@ const SortableRowComponent = ({
 				</CatalogTooltip>
 			) : null}
 
-			{executionLabel ? (
+			{/* Every plugin has an execution mode; the row only flags one that went unreported. */}
+			{executionLabel && meta?.executionTone === 'yellow' ? (
 				<CatalogTooltip
 					label={`${executionLabel}${meta?.executionDescription ? ` · ${meta.executionDescription}` : ''}`}
 					multiline
@@ -314,7 +315,8 @@ const SortableRowComponent = ({
 				</CatalogTooltip>
 			) : null}
 
-			{typeof running === 'boolean' && (
+			{/* Running is the normal state; the dot marks only plugins that are not. */}
+			{typeof running === 'boolean' && !(running && statusLabel === '运行中') && (
 				<CatalogTooltip
 					label={
 						meta?.failureDescription ? `${statusLabel} · ${meta.failureDescription}` : statusLabel

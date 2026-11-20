@@ -37,28 +37,32 @@ export function ActivityRail({ onShowPlugins }: { onShowPlugins: () => void }) {
 	return (
 		<nav className="plx-activity" data-mode={mode} aria-label="工作区入口">
 			<div className="plx-activity__items">
-				{builtinPages.map(({ href, label, icon: Icon }) => {
-					const current =
-						href === '/plugins'
-							? workspace === 'plugins' || pathname === `${base}/plugins`
-							: href === '/apps'
-								? (workspace === 'apps' && !shortcutActive) || pathname === `${base}/apps`
-								: pathname === `${base}${href}` || (href === '/' && pathname === base)
-					return (
-						<Tooltip key={href} label={label} position="right" disabled={expanded}>
-							<button
-								type="button"
-								className="plx-activity__item"
-								aria-label={label}
-								aria-current={current ? 'page' : undefined}
-								onClick={href === '/plugins' ? onShowPlugins : () => navigation.navigate(href)}
-							>
-								<Icon size={20} stroke={1.7} aria-hidden />
-								{expanded && <span>{label}</span>}
-							</button>
-						</Tooltip>
-					)
-				})}
+				{builtinPages
+					.filter(({ rail }) => rail)
+					.map(({ href, label, icon: Icon }) => {
+						const current =
+							href === '/plugins'
+								? workspace === 'plugins' || pathname === `${base}/plugins`
+								: href === '/apps'
+									? (workspace === 'apps' && !shortcutActive) || pathname === `${base}/apps`
+									: href === '/security'
+										? pathname.startsWith(`${base}/security`)
+										: pathname === `${base}${href}` || (href === '/' && pathname === base)
+						return (
+							<Tooltip key={href} label={label} position="right" disabled={expanded}>
+								<button
+									type="button"
+									className="plx-activity__item"
+									aria-label={label}
+									aria-current={current ? 'page' : undefined}
+									onClick={href === '/plugins' ? onShowPlugins : () => navigation.navigate(href)}
+								>
+									<Icon size={20} stroke={1.7} aria-hidden />
+									{expanded && <span>{label}</span>}
+								</button>
+							</Tooltip>
+						)
+					})}
 				{shortcuts.length > 0 && (
 					<div className="plx-activity__divider" role="separator" aria-label="已固定应用" />
 				)}

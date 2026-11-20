@@ -4,8 +4,6 @@ import {
 	Button,
 	Group,
 	Loader,
-	Paper,
-	SimpleGrid,
 	Skeleton,
 	Text,
 	Title,
@@ -15,11 +13,7 @@ import {
 	IconAlertTriangle,
 	IconArrowRight,
 	IconCircleCheck,
-	IconCloud,
-	IconHistory,
 	IconInfoCircle,
-	IconPlugConnected,
-	IconShieldCheck,
 } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
 import type { RuntimeMeta } from '@pluxel/services/management/client'
@@ -30,41 +24,12 @@ import { pluginAttention, type PluginAttention } from '../plugins/pluginOverview
 import { useRuntimeMeta } from '../product'
 import { useRuntimeUpdates } from '../runtimeUpdates'
 
-type WorkspaceLink = {
-	title: string
-	description: string
-	to: string
-	icon: ReactNode
-}
-
-const WORKSPACE_LINKS: WorkspaceLink[] = [
-	{
-		title: '插件工作台',
-		description: '查看运行状态、配置与依赖关系',
-		to: '/plugins',
-		icon: <IconPlugConnected size={20} stroke={1.7} />,
-	},
-	{
-		title: '实时日志',
-		description: '按级别筛选并追踪最新运行事件',
-		to: '/logs',
-		icon: <IconHistory size={20} stroke={1.7} />,
-	},
-	{
-		title: '安全中心',
-		description: '检查管理访问与近期安全事件',
-		to: '/security',
-		icon: <IconShieldCheck size={20} stroke={1.7} />,
-	},
-]
-
 export function HomeIntro() {
 	const overview = usePluginOverview()
 	const runtimeMeta = useRuntimeMeta()
 	const platform = runtimeMeta?.platform
 	const summary = overview.overview?.status.summary
 	const statuses = overview.overview?.status.statuses ?? []
-	const runningPlugins = statuses.filter((plugin) => plugin.lifecycleState === 'running')
 	const stoppedPlugins = statuses.filter((plugin) => plugin.lifecycleState === 'stopped')
 	const attention = statuses.flatMap((plugin) => {
 		const reason = pluginAttention(plugin)
@@ -72,10 +37,10 @@ export function HomeIntro() {
 	})
 	const loading = !overview.hasSnapshot && overview.isLoading
 	const metrics = [
-		{ label: '插件总数', value: summary?.total },
-		{ label: '正在运行', value: summary?.running, tone: 'running' },
+		{ label: '插件', value: summary?.total },
+		{ label: '运行中', value: summary?.running, tone: 'running' },
 		{
-			label: '需要关注',
+			label: '需关注',
 			value: overview.hasSnapshot ? attention.length : undefined,
 			tone: attention.length > 0 ? 'attention' : undefined,
 		},
@@ -84,36 +49,34 @@ export function HomeIntro() {
 
 	return (
 		<main className="plx-home">
-			<section className="plx-home__hero" aria-labelledby="plx-home-title">
-				<div className="plx-home__heroCopy">
+			<header className="plx-home__header">
+				<div className="plx-home__heading">
 					<Title id="plx-home-title" order={1} className="plx-home__title">
-						运行工作台
+						概览
 					</Title>
 					<PlatformSummary platform={platform} />
 				</div>
-
-				<div
-					className="plx-home__runtimeSummary"
+				<dl
+					className="plx-home__metrics"
 					aria-label="插件运行概览"
 					aria-busy={loading || undefined}
 				>
 					{metrics.map((metric) => (
 						<div className="plx-home__metric" data-tone={metric.tone} key={metric.label}>
-							<Text className="plx-home__metricLabel">{metric.label}</Text>
-							{loading ? (
-								<Skeleton height={22} width={44} radius="sm" />
-							) : (
-								<Text
-									className="plx-home__metricValue"
-									title={typeof metric.value === 'number' ? undefined : '运行状态尚未读取'}
-								>
-									{typeof metric.value === 'number' ? metric.value : '—'}
-								</Text>
-							)}
+							<dd className="plx-home__metricValue">
+								{loading ? (
+									<Skeleton height={20} width={28} radius="sm" />
+								) : typeof metric.value === 'number' ? (
+									metric.value
+								) : (
+									<span title="运行状态尚未读取">—</span>
+								)}
+							</dd>
+							<dt className="plx-home__metricLabel">{metric.label}</dt>
 						</div>
 					))}
-				</div>
-			</section>
+				</dl>
+			</header>
 
 			<AttentionPanel
 				items={attention}
@@ -124,41 +87,24 @@ export function HomeIntro() {
 				onRetry={() => void overview.refetch()}
 			/>
 
-			<section aria-label="常用工具">
-				<SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
-					{WORKSPACE_LINKS.map((item) => (
-						<WorkspaceCard key={item.to} {...item} />
-					))}
-				</SimpleGrid>
-			</section>
-
-			<section aria-labelledby="plx-home-queue-title">
-				<div className="plx-home__sectionHeader">
-					<Title id="plx-home-queue-title" order={2} className="plx-home__sectionTitle">
-						插件
-					</Title>
-					<Text component={RouterLinkAdapter} to="/plugins" size="sm" className="plx-home__allLink">
-						全部
-					</Text>
-				</div>
-
-				<SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm" className="plx-home__pluginQueues">
-					<PluginQueue
-						title="运行中"
-						plugins={runningPlugins}
-						empty="无"
-						loading={loading}
-						error={overview.hasSnapshot ? undefined : overview.error}
-					/>
-					<PluginQueue
-						title="未运行"
-						plugins={stoppedPlugins}
-						empty="无"
-						loading={loading}
-						error={overview.hasSnapshot ? undefined : overview.error}
-					/>
-				</SimpleGrid>
-			</section>
+			{stoppedPlugins.length > 0 ? (
+				<section aria-labelledby="plx-home-queue-title">
+					<div className="plx-home__sectionHeader">
+						<Title id="plx-home-queue-title" order={2} className="plx-home__sectionTitle">
+							未运行
+						</Title>
+						<Text
+							component={RouterLinkAdapter}
+							to="/plugins"
+							size="xs"
+							className="plx-home__allLink"
+						>
+							全部插件
+						</Text>
+					</div>
+					<PluginQueue plugins={stoppedPlugins} />
+				</section>
+			) : null}
 		</main>
 	)
 }
@@ -180,30 +126,20 @@ export function platformNotice(platform: PluxelPlatformSnapshot | undefined): st
 function PlatformSummary({ platform }: { platform: PluxelPlatformSnapshot | undefined }) {
 	if (!platform) return null
 	const notice = platformNotice(platform)
-	const runtimeLabel = [platform.runtime.name ?? 'unknown runtime', platform.runtime.version]
-		.filter(Boolean)
-		.join(' ')
+	const facts = [
+		[platform.runtime.name ?? 'unknown runtime', platform.runtime.version]
+			.filter(Boolean)
+			.join(' '),
+		platform.platform,
+		platform.deployment.provider?.replaceAll('_', ' '),
+		platform.mode,
+		platform.deployment.ci ? 'CI' : undefined,
+	].filter(Boolean)
 	return (
-		<div className="plx-home__platform">
-			<Group gap={6} wrap="wrap" aria-label="宿主环境">
-				<Badge variant="light" leftSection={<IconInfoCircle size={12} />}>
-					{runtimeLabel}
-				</Badge>
-				{platform.platform ? <Badge variant="default">{platform.platform}</Badge> : null}
-				{platform.deployment.provider ? (
-					<Badge color="cyan" variant="light" leftSection={<IconCloud size={12} />}>
-						{platform.deployment.provider.replaceAll('_', ' ')}
-					</Badge>
-				) : null}
-				<Badge color={platform.mode === 'production' ? 'green' : 'gray'} variant="light">
-					{platform.mode}
-				</Badge>
-				{platform.deployment.ci ? (
-					<Badge color="violet" variant="light">
-						CI
-					</Badge>
-				) : null}
-			</Group>
+		<>
+			<Text component="p" size="xs" c="dimmed" className="plx-home__platform" aria-label="宿主环境">
+				{facts.join(' · ')}
+			</Text>
 			{notice ? (
 				<Alert
 					color="orange"
@@ -213,28 +149,7 @@ function PlatformSummary({ platform }: { platform: PluxelPlatformSnapshot | unde
 					{notice}
 				</Alert>
 			) : null}
-		</div>
-	)
-}
-
-function WorkspaceCard({ title, description, to, icon }: WorkspaceLink) {
-	return (
-		<Paper
-			component={RouterLinkAdapter as any}
-			to={to}
-			className="plx-home__workspaceCard"
-			withBorder
-			radius="md"
-			p="md"
-		>
-			<div className="plx-home__workspaceIcon">{icon}</div>
-			<div className="plx-home__workspaceCopy">
-				<Text className="plx-home__workspaceTitle">{title}</Text>
-				<Text size="sm" c="dimmed">
-					{description}
-				</Text>
-			</div>
-		</Paper>
+		</>
 	)
 }
 
@@ -375,15 +290,8 @@ function AttentionPanel({
 }
 
 function PluginQueue({
-	empty,
-	error,
-	loading,
 	plugins,
-	title,
 }: {
-	empty: string
-	error?: string
-	loading: boolean
 	plugins: Array<{
 		route: string
 		label: string
@@ -391,54 +299,36 @@ function PluginQueue({
 		desiredState: 'running' | 'stopped'
 		lifecycleState: 'running' | 'stopped'
 	}>
-	title: string
 }) {
-	const visiblePlugins = plugins.slice(0, 6)
-	const message = loading ? '正在读取运行状态…' : error ? '运行后端不可用' : empty
-
 	return (
 		<div className="plx-home__queue">
-			<div className="plx-home__queueHeader">
-				<Text fw={700}>{title}</Text>
-				<Text size="xs" c="dimmed">
-					{plugins.length}
-				</Text>
-			</div>
-			<div className="plx-home__queueBody">
-				{visiblePlugins.length > 0 ? (
-					visiblePlugins.map((plugin) => (
-						<RouterLinkAdapter
-							key={plugin.route}
-							to={`/plugins/${plugin.route}`}
-							className="plx-home__queueRow"
-						>
-							<span
-								className="plx-home__statusDot"
-								data-status={
-									plugin.availability === 'unavailable'
-										? 'unavailable'
-										: plugin.lifecycleState === 'running'
-											? 'running'
-											: plugin.desiredState === 'running'
-												? 'pending'
-												: 'stopped'
-								}
-							/>
-							<span className="plx-home__queueName">{plugin.label}</span>
-							<span className="plx-home__queueStatus">
-								{plugin.availability === 'unavailable'
-									? '不可用'
-									: plugin.lifecycleState !== 'running' && plugin.desiredState === 'running'
-										? '等待运行'
-										: null}
-							</span>
-							<IconArrowRight size={15} aria-hidden="true" />
-						</RouterLinkAdapter>
-					))
-				) : (
-					<Text className="plx-home__queueEmpty">{message}</Text>
-				)}
-			</div>
+			{plugins.map((plugin) => (
+				<RouterLinkAdapter
+					key={plugin.route}
+					to={`/plugins/${plugin.route}`}
+					className="plx-home__queueRow"
+				>
+					<span
+						className="plx-home__statusDot"
+						data-status={
+							plugin.availability === 'unavailable'
+								? 'unavailable'
+								: plugin.desiredState === 'running'
+									? 'pending'
+									: 'stopped'
+						}
+					/>
+					<span className="plx-home__queueName">{plugin.label}</span>
+					<span className="plx-home__queueStatus">
+						{plugin.availability === 'unavailable'
+							? '不可用'
+							: plugin.desiredState === 'running'
+								? '等待运行'
+								: null}
+					</span>
+					<IconArrowRight size={14} aria-hidden="true" />
+				</RouterLinkAdapter>
+			))}
 		</div>
 	)
 }

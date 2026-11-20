@@ -1,7 +1,8 @@
-import { Badge, Button, Group, Loader, Paper, Stack, Table, Text } from '@mantine/core'
+import { ActionIcon, Badge, Button, Group, Loader, Stack, Text, Tooltip } from '@mantine/core'
+import { IconRefresh } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { runtimeErrorMessage, useRuntimeManagementClient } from '../../runtime'
-import { ErrorState } from '../../components'
+import { ErrorState, PageHeader } from '../../components'
 import { RouterLinkAdapter } from '../router/RouterLinkAdapter'
 import { managementQueryKeys } from '../managementQuery'
 
@@ -13,63 +14,59 @@ export function SecurityScreen() {
 	})
 	if (overview.isPending)
 		return (
-			<Group justify="center" p="xl">
+			<Group justify="center" p="xl" gap="xs">
 				<Loader size="sm" />
-				<Text>Loading security state</Text>
+				<Text c="dimmed">正在读取…</Text>
 			</Group>
 		)
 	if (overview.error || !overview.data)
 		return (
 			<ErrorState
-				title="Security state unavailable"
-				message={runtimeErrorMessage(overview.error, 'Failed to load security state')}
+				title="无法读取安全状态"
+				message={runtimeErrorMessage(overview.error, '读取失败')}
 				onRetry={() => void overview.refetch()}
 			/>
 		)
 	const access = overview.data.adminAccess
+	const provider = access.provider
 	return (
-		<Stack gap="md" p="var(--plx-page-padding)">
-			<Group justify="space-between">
-				<Badge color={access.provider?.ready ? 'green' : 'orange'}>
-					{access.provider
-						? access.provider.method + (access.provider.ready ? ' ready' : ' setup required')
-						: 'local recovery only'}
-				</Badge>
-				<Group>
-					<Button component={RouterLinkAdapter} to="/security/audit" variant="light">
-						打开审计
-					</Button>
-					<Button
-						variant="light"
-						loading={overview.isFetching}
-						onClick={() => void overview.refetch()}
-					>
-						刷新
-					</Button>
-				</Group>
-			</Group>
-			<Paper withBorder p="sm">
-				<Table>
-					<Table.Tbody>
-						<Table.Tr>
-							<Table.Td>访问策略</Table.Td>
-							<Table.Td>{access.policy}</Table.Td>
-						</Table.Tr>
-						<Table.Tr>
-							<Table.Td>Provider</Table.Td>
-							<Table.Td>{access.provider?.label ?? 'none'}</Table.Td>
-						</Table.Tr>
-						<Table.Tr>
-							<Table.Td>认证模式</Table.Td>
-							<Table.Td>{access.provider?.method ?? '-'}</Table.Td>
-						</Table.Tr>
-						<Table.Tr>
-							<Table.Td>远程状态</Table.Td>
-							<Table.Td>{access.provider?.ready ? 'ready' : 'local setup required'}</Table.Td>
-						</Table.Tr>
-					</Table.Tbody>
-				</Table>
-			</Paper>
+		<Stack gap="lg" p="var(--plx-page-padding)">
+			<PageHeader
+				title="认证与安全"
+				meta={
+					<Badge variant="light" color={provider?.ready ? 'green' : 'orange'}>
+						{provider ? (provider.ready ? '远程登录可用' : '远程登录待配置') : '仅本地恢复'}
+					</Badge>
+				}
+				actions={
+					<>
+						<Button component={RouterLinkAdapter} to="/security/audit" variant="subtle" size="xs">
+							审计记录
+						</Button>
+						<Tooltip label="刷新">
+							<ActionIcon
+								variant="subtle"
+								color="gray"
+								aria-label="刷新"
+								loading={overview.isFetching}
+								onClick={() => void overview.refetch()}
+							>
+								<IconRefresh size={16} />
+							</ActionIcon>
+						</Tooltip>
+					</>
+				}
+			/>
+			<dl className="plx-facts">
+				<dt>访问策略</dt>
+				<dd>{access.policy}</dd>
+				<dt>Provider</dt>
+				<dd>{provider?.label ?? '无'}</dd>
+				<dt>认证方式</dt>
+				<dd>{provider?.method ?? '—'}</dd>
+				<dt>远程状态</dt>
+				<dd>{provider?.ready ? '就绪' : '需在本地完成配置'}</dd>
+			</dl>
 		</Stack>
 	)
 }

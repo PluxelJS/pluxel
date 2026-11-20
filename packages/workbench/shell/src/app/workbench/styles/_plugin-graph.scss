@@ -24,8 +24,9 @@
 }
 
 .plx-pluginGraphSearch {
-	margin-top: 8px;
-	max-width: 520px;
+	flex: 0 1 240px;
+	margin-inline-start: 8px;
+	min-width: 120px;
 	position: relative;
 }
 
@@ -67,6 +68,7 @@
 	background: var(--mantine-color-body);
 	border: 1px solid var(--plx-border);
 	border-radius: var(--mantine-radius-md);
+	position: relative;
 	height: 100%;
 	min-width: 0;
 	display: flex;
@@ -75,27 +77,26 @@
 	overflow: hidden;
 }
 
+/* Canvas controls float over the canvas' top-right corner instead of taking a header row. */
 .plx-pluginGraphRelations__header {
 	align-items: center;
-	background: var(--plx-raised);
-	border-bottom: 1px solid var(--plx-border);
 	display: flex;
-	gap: 12px;
-	justify-content: space-between;
-	min-height: 46px;
-	padding: 10px 14px;
+	gap: 8px;
+	inset-block-start: 10px;
+	inset-inline-end: 10px;
+	pointer-events: none;
+	position: absolute;
+	z-index: 3;
 }
 
-.plx-pluginGraphRelations__header > div:first-child {
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
-	min-width: 0;
+.plx-pluginGraphRelations__header > * {
+	pointer-events: auto;
 }
 
-.plx-pluginGraphRelations__header strong {
-	font-size: var(--mantine-font-size-sm);
-	line-height: 1.25;
+.plx-pluginGraphLegend {
+	background: color-mix(in srgb, var(--mantine-color-body) 86%, transparent);
+	border-radius: var(--mantine-radius-sm);
+	padding: 4px 8px;
 }
 
 .plx-pluginGraphRelations__header span {
@@ -749,4 +750,14 @@
 	.plx-pluginGraphNode {
 		transition: none;
 	}
+}
+
+.plx-visuallyHidden {
+	block-size: 1px;
+	clip-path: inset(50%);
+	inline-size: 1px;
+	margin: 0;
+	overflow: hidden;
+	position: absolute;
+	white-space: nowrap;
 }

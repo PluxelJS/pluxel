@@ -536,7 +536,11 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 
 	return (
 		<CatalogHints>
-			<Stack className="plx-pluginCatalog" w="100%">
+			<Stack
+				className="plx-pluginCatalog"
+				w="100%"
+				data-selecting={selectedIds.length > 0 || undefined}
+			>
 				<div className="plx-pluginCatalog__header">
 					<div className="plx-pluginCatalog__titleLine">
 						<span className="plx-pluginCatalog__title">插件目录</span>
@@ -552,15 +556,16 @@ export function PluginCatalog({ activeId }: { activeId?: string } = {}) {
 						) : null}
 					</div>
 					<div className="plx-pluginCatalog__headerActions">
-						<button
-							type="button"
-							className="plx-pluginCatalog__helpButton"
+						<ActionIcon
+							variant="subtle"
+							color="gray"
+							size="sm"
 							onClick={() => setHelpOpened(true)}
-							title="F1 / ? 打开快捷键和搜索语法"
+							aria-label="快捷键与搜索语法"
+							title="快捷键与搜索语法 (F1)"
 						>
-							<IconKeyboard size={13} stroke={1.8} />
-							<span>F1</span>
-						</button>
+							<IconKeyboard size={15} stroke={1.6} />
+						</ActionIcon>
 					</div>
 				</div>
 				<div className="plx-pluginCatalog__toolbar">

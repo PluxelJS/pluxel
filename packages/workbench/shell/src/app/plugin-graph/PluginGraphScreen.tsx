@@ -127,20 +127,51 @@ export function PluginGraphScreen({ pathname }: { pathname: string }) {
 	return (
 		<div className="plx-pluginGraphPage">
 			<Box className="plx-pluginGraphToolbar">
-				<Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
-					<Stack gap={4}>
-						<Group gap="xs" wrap="wrap">
-							<Text fw={650}>Plugin 依赖图</Text>
-							<Badge variant="light" color="gray">
-								{model.nodes.length} 个节点 · {model.edges.length} 条关系
+				<Group justify="space-between" align="center" wrap="wrap" gap="sm">
+					<Group gap="sm" wrap="nowrap" miw={0} style={{ flex: 1 }}>
+						<Text fw={650} style={{ whiteSpace: 'nowrap' }}>
+							依赖图
+						</Text>
+						<Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+							{model.nodes.length} 个插件 · {model.edges.length} 条关系
+						</Text>
+						{graphState.isStale ? (
+							<Badge variant="light" color="yellow">
+								待刷新
 							</Badge>
-							{graphState.isStale ? (
-								<Badge variant="outline" color="yellow">
-									数据待刷新
-								</Badge>
+						) : null}
+						<Box className="plx-pluginGraphSearch">
+							<TextInput
+								value={search}
+								onChange={(event) => setSearch(event.currentTarget.value)}
+								leftSection={<IconSearch size={15} />}
+								placeholder="搜索插件"
+								aria-label="搜索依赖图节点"
+							/>
+							{searchResults.length > 0 ? (
+								<Paper withBorder shadow="md" className="plx-pluginGraphSearch__results">
+									{searchResults.map((node) => (
+										<Button
+											key={node.id}
+											variant="subtle"
+											color="gray"
+											fullWidth
+											justify="space-between"
+											onClick={() => {
+												setManualSelectionKey({ kind: 'node', id: node.id })
+												setSearch('')
+											}}
+										>
+											<span>{node.label}</span>
+											<Text component="span" size="xs" c="dimmed" truncate>
+												{node.reference}
+											</Text>
+										</Button>
+									))}
+								</Paper>
 							) : null}
-						</Group>
-					</Stack>
+						</Box>
+					</Group>
 					<Group gap="xs" wrap="wrap">
 						<SegmentedControl
 							size="xs"
@@ -164,7 +195,8 @@ export function PluginGraphScreen({ pathname }: { pathname: string }) {
 						/>
 						<Tooltip label={graphState.isLoading ? '刷新中…' : '刷新依赖数据'}>
 							<ActionIcon
-								variant="default"
+								variant="subtle"
+								color="gray"
 								onClick={() => void graphState.refetch()}
 								disabled={graphState.isLoading}
 								aria-label="刷新依赖图"
@@ -174,37 +206,6 @@ export function PluginGraphScreen({ pathname }: { pathname: string }) {
 						</Tooltip>
 					</Group>
 				</Group>
-				<Box className="plx-pluginGraphSearch">
-					<TextInput
-						value={search}
-						onChange={(event) => setSearch(event.currentTarget.value)}
-						leftSection={<IconSearch size={15} />}
-						placeholder="搜索 Plugin 名称或标准引用"
-						aria-label="搜索依赖图节点"
-					/>
-					{searchResults.length > 0 ? (
-						<Paper withBorder shadow="md" className="plx-pluginGraphSearch__results">
-							{searchResults.map((node) => (
-								<Button
-									key={node.id}
-									variant="subtle"
-									color="gray"
-									fullWidth
-									justify="space-between"
-									onClick={() => {
-										setManualSelectionKey({ kind: 'node', id: node.id })
-										setSearch('')
-									}}
-								>
-									<span>{node.label}</span>
-									<Text component="span" size="xs" c="dimmed" truncate>
-										{node.reference}
-									</Text>
-								</Button>
-							))}
-						</Paper>
-					) : null}
-				</Box>
 			</Box>
 
 			{graphState.error ? (

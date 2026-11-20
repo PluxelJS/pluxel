@@ -54,7 +54,7 @@ export function PluginRuntimeSummaryCard({
 	)
 
 	return (
-		<Paper withBorder p="sm" shadow="none" bg="var(--plx-raised)">
+		<Paper p={0} py="sm" shadow="none" bg="transparent">
 			<Stack gap={8}>
 				{description ? (
 					<Text size="xs" c="dimmed">

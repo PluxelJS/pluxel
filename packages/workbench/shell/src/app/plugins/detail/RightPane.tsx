@@ -60,32 +60,34 @@ export function RightPane({ config }: { config: PluginConfigState }) {
 		)
 	return (
 		<Stack gap="md" h="100%" p="var(--plx-page-padding)" style={{ minHeight: 0 }}>
-			<Group justify="space-between">
-				<Text fw={600} size="lg">
-					{pluginLabel}
-				</Text>
+			<Group justify="space-between" wrap="nowrap" gap="sm" className="plx-pluginDocument__header">
+				<Group gap="xs" wrap="nowrap" miw={0}>
+					<Text fw={600} size="lg" truncate="end">
+						{pluginLabel}
+					</Text>
+					{entries.length > 0 && (
+						<Group gap={4} wrap="nowrap" aria-label="插件页面入口">
+							{entries.map((entry) => (
+								<Button
+									key={entry.descriptor.key}
+									size="compact-sm"
+									variant="subtle"
+									onClick={() =>
+										navigation.navigate(
+											`${buildPluginDetailHref(owner)}?entry=${encodeURIComponent(entry.descriptor.key)}`,
+										)
+									}
+								>
+									{entry.placement.kind === 'tab'
+										? (entry.placement.label ?? entry.descriptor.key)
+										: entry.descriptor.key}
+								</Button>
+							))}
+						</Group>
+					)}
+				</Group>
 				<ActionBar active={active} />
 			</Group>
-			{entries.length > 0 && (
-				<Group gap="xs" aria-label="插件页面入口">
-					{entries.map((entry) => (
-						<Button
-							key={entry.descriptor.key}
-							size="compact-sm"
-							variant="light"
-							onClick={() =>
-								navigation.navigate(
-									`${buildPluginDetailHref(owner)}?entry=${encodeURIComponent(entry.descriptor.key)}`,
-								)
-							}
-						>
-							{entry.placement.kind === 'tab'
-								? (entry.placement.label ?? entry.descriptor.key)
-								: entry.descriptor.key}
-						</Button>
-					))}
-				</Group>
-			)}
 			<div className="plx-pluginDocument__panel">
 				<ConfigContent config={config} owner={owner} displayName={pluginLabel} active={active} />
 			</div>

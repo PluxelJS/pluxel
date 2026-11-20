@@ -77,39 +77,61 @@
 
 .plx-workspace__toolbar {
 	background: var(--plx-canvas);
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+	display: flex;
 	align-items: center;
-	gap: 6px;
-	padding-inline: 12px;
+	gap: 8px;
+	padding-inline: 12px 10px;
 	min-height: 44px;
 	flex: 0 0 auto;
+}
+.plx-workspace__utilities .mantine-ActionIcon-root {
+	color: var(--mantine-color-dimmed);
+}
+.plx-workspace__utilities .mantine-ActionIcon-root:where([aria-pressed='true']) {
+	color: var(--mantine-color-text);
+}
+/* Layout toggles are one cluster, separated from status and global utilities by space only. */
+.plx-workspace__layout-controls {
+	margin-inline: 4px;
 }
 
 .plx-workspace__brand {
 	flex: 0 1 auto;
 	max-width: 240px;
 	min-width: 0;
-	padding-inline: 4px 16px;
+	padding-inline: 4px 8px;
 }
 /* The search entry reads as a command field: muted label, shortcut on the trailing edge.
    It and the brand give way first; the workspace menu button never shrinks. */
 .plx-workspace__search-button {
 	color: var(--mantine-color-dimmed);
-	flex: 0 1 220px;
+	flex: 0 1 240px;
 	font-weight: 400;
 	min-width: 0;
+	background: var(--plx-raised);
+	border-color: transparent;
 }
-.plx-workspace__primary > .plx-workspace__workspace-menu {
-	flex: none;
+.plx-workspace__search-button:hover {
+	background: var(--plx-hover-bg);
 }
 .plx-workspace__search-button .mantine-Button-inner {
 	justify-content: flex-start;
 }
 .plx-workspace__search-label {
-	display: inline-flex;
+	display: flex;
 	align-items: center;
+	justify-content: space-between;
 	gap: 10px;
+	min-width: 0;
+}
+.plx-workspace__search-button .mantine-Button-label {
+	flex: 1;
+}
+.plx-workspace__empty-kbd {
+	margin-inline-start: 8px;
+	color: var(--mantine-color-dimmed);
+	font: inherit;
+	font-size: var(--mantine-font-size-xs);
 }
 .plx-workspace__toolbar kbd {
 	border: 1px solid var(--mantine-color-default-border);
@@ -130,7 +152,7 @@
 	border-radius: 0;
 }
 .plx-workspace__search {
-	height: min(60dvh, 520px);
+	height: min(56dvh, 480px);
 	min-height: 240px;
 }
 .plx-workspace__notification {
@@ -399,15 +421,8 @@
 	}
 }
 
-.plx-workspace__primary {
-	min-width: 0;
-	overflow: hidden;
-}
-.plx-workspace__layout-controls {
-	justify-self: center;
-}
 .plx-workspace__utilities {
-	justify-self: end;
+	flex: none;
 	min-width: 0;
 }
 .plx-plugin-tool {
@@ -418,9 +433,13 @@
 	min-width: 0;
 	overflow: hidden;
 }
-.plx-plugin-tool .plx-plugin-tool__heading {
-	flex: 0 0 auto;
-	padding: 6px var(--plx-panel-padding);
+/*
+ * The inspector is chrome, not a document: its sections sit flat on the canvas and are separated
+ * by hairlines instead of each being a bordered card.
+ */
+
+.plx-plugin-tool--inspector .plx-plugin-tool__scroll > * + * {
+	border-top: 1px solid var(--plx-border);
 }
 .plx-plugin-tool .plx-plugin-tool__scroll {
 	flex: 1;
@@ -572,4 +591,8 @@
 	border: 0;
 	overflow: hidden;
 	visibility: hidden;
+}
+/* The command palette is a bare search surface: no title bar, input at the top. */
+.plx-workspace__palette .mantine-Modal-body {
+	padding: var(--mantine-spacing-xs);
 }

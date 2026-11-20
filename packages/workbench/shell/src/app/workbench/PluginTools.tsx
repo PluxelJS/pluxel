@@ -1,4 +1,4 @@
-import { Button, Group, Stack, Text, Tabs } from '@mantine/core'
+import { Button, Group, Stack, Tabs } from '@mantine/core'
 import { formatPluginNodeRoute, type PluginNodeAddress } from '@pluxel/core'
 import { useWorkbenchState } from '@worksplit/react'
 import { useSyncExternalStore } from 'react'
@@ -84,13 +84,11 @@ function PluginToolContent({ pluginRoute }: { pluginRoute: string }) {
 				refetch,
 			}}
 		>
-			<section className="plx-plugin-tool plx-plugin-tool--inspector" aria-label="当前插件信息">
-				<Group gap="xs" wrap="wrap" className="plx-plugin-tool__heading">
-					<Text size="xs" fw={600} truncate="end" title={pluginRoute} style={{ minWidth: 0 }}>
-						{detail.label}
-					</Text>
-				</Group>
-				<Stack gap="sm" p="var(--plx-panel-padding)" className="plx-plugin-tool__scroll">
+			<section
+				className="plx-plugin-tool plx-plugin-tool--inspector"
+				aria-label={`当前插件信息 · ${detail.label}`}
+			>
+				<Stack gap={0} p="var(--plx-panel-padding)" className="plx-plugin-tool__scroll">
 					<PluginRuntimeSummaryCard status={statusEntry} description={detail.desc} />
 					<PluginDependencyDetailCard />
 					<PluginPanelDirectory />
@@ -106,32 +104,24 @@ function PluginLogTool({ owner, pluginRoute }: { owner: PluginNodeAddress; plugi
 	const label = detail?.label ?? pluginRoute
 	return (
 		<section className="plx-plugin-tool" aria-label="插件最近日志面板">
-			<Stack
+			<Group
 				gap="xs"
+				justify="space-between"
+				wrap="nowrap"
 				p="var(--plx-panel-padding)"
 				style={{ flexShrink: 0, borderBottom: '1px solid var(--plx-border)' }}
 			>
-				<Group gap="xs" justify="space-between">
-					<Text size="xs" fw={600} truncate title={label} style={{ minWidth: 0, flex: 1 }}>
-						{label}
-					</Text>
-					<LogPolicyPopover owner={owner} />
-				</Group>
-				<Group justify="space-between" gap="xs">
-					<Text size="xs" c="dimmed">
-						最近 10 条
-					</Text>
-					<Button
-						variant="subtle"
-						size="compact-xs"
-						onClick={() =>
-							navigation.openTab({ path: buildPluginLogsHref(owner), title: `日志 · ${label}` })
-						}
-					>
-						查看完整插件日志
-					</Button>
-				</Group>
-			</Stack>
+				<Button
+					variant="subtle"
+					size="compact-xs"
+					onClick={() =>
+						navigation.openTab({ path: buildPluginLogsHref(owner), title: `日志 · ${label}` })
+					}
+				>
+					完整日志
+				</Button>
+				<LogPolicyPopover owner={owner} />
+			</Group>
 			<div className="plx-plugin-tool__scroll" style={{ padding: 'var(--mantine-spacing-xs)' }}>
 				<LogPreview owner={owner} />
 			</div>

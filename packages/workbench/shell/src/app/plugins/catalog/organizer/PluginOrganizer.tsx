@@ -503,8 +503,8 @@ export function PluginOrganizer({
 								}
 							>
 								{showFlatResults
-									? `${flatVisibleRunning}/${flatVisibleIds.length}`
-									: `${visibleUngroupedRunning}/${visibleUngrouped.length}`}
+									? countLabel(flatVisibleRunning, flatVisibleIds.length)
+									: countLabel(visibleUngroupedRunning, visibleUngrouped.length)}
 							</Text>
 						</div>
 						<Box className="plx-pluginCatalog__sectionActions">
@@ -634,10 +634,7 @@ export function PluginOrganizer({
 							<div className="plx-pluginCatalog__sectionHeader">
 								<div className="plx-pluginCatalog__sectionHeading">
 									<Text size="xs" className="plx-pluginCatalog__sectionTitle">
-										插件分类
-									</Text>
-									<Text size="xs" className="plx-pluginCatalog__sectionMetric">
-										{visibleGroups.length} 个
+										分组
 									</Text>
 								</div>
 							</div>
@@ -735,4 +732,9 @@ export function PluginOrganizer({
 			/>
 		</DndContext>
 	)
+}
+
+/** All running is the normal case: show the bare total, and the running share only when it differs. */
+function countLabel(running: number, total: number): string {
+	return running === total ? String(total) : `${running}/${total}`
 }

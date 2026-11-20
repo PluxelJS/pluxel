@@ -86,8 +86,9 @@ describe('compact plugin catalog rows', () => {
 			const row = container.querySelector('[data-plugin-row]')!
 			expect(row.textContent).toBe(name)
 			expect(row.querySelector('.mantine-Badge-root')).toBeNull()
-			expect(row.querySelector('[aria-label="宿主重载"]')).not.toBeNull()
-			expect(row.querySelector('[aria-label="运行中"]')).not.toBeNull()
+			// Normal execution and running state are the resting case and carry no row marker.
+			expect(row.querySelector('[aria-label="宿主重载"]')).toBeNull()
+			expect(row.querySelector('[aria-label="运行中"]')).toBeNull()
 			expect(row.querySelector<HTMLAnchorElement>('[data-plugin-link]')?.style.flexGrow).toBe('1')
 		},
 	)
@@ -105,10 +106,17 @@ describe('compact plugin catalog rows', () => {
 		expect(container.querySelector('[data-drag-handle]')).not.toBeNull()
 	})
 
-	it('reveals complete execution details when the indicator receives keyboard focus', async () => {
-		const container = await mount(<SortableRow {...props} />)
+	it('marks stopped plugins and unreported execution, with details on keyboard focus', async () => {
+		const container = await mount(
+			<SortableRow
+				{...props}
+				running={false}
+				meta={{ ...meta, executionLabel: '更新未报告', executionTone: 'yellow' }}
+			/>,
+		)
+		expect(container.querySelector('[aria-label="已停止"]')).not.toBeNull()
 		await act(async () => {
-			container.querySelector<HTMLElement>('[aria-label="宿主重载"]')!.focus()
+			container.querySelector<HTMLElement>('[aria-label="更新未报告"]')!.focus()
 		})
 		expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
 			meta.executionDescription,

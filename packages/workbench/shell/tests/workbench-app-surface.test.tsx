@@ -535,22 +535,13 @@ describe('authenticated App surface ownership', () => {
 		},
 	)
 
-	it('enters applications from the home menu and treats an explicit plugin shortcut as an expansion request', async () => {
+	it('enters applications from the rail and treats an explicit plugin shortcut as an expansion request', async () => {
 		const { container } = await mount('/')
 		await vi.waitFor(() => expect(fixture.probes.size).toBe(1))
 		const workspace = [...fixture.probes.values()][0]!.workspace!
-		const menu = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
-			(button) => button.textContent?.trim() === '工作区',
-		)!
-		await act(async () => menu.click())
-		let pages: HTMLElement | undefined
-		await vi.waitFor(() => {
-			pages = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
-				item.textContent?.includes('显示应用目录'),
-			)
-			expect(pages).toBeDefined()
-		})
-		await act(async () => pages!.click())
+		await act(async () =>
+			container.querySelector<HTMLButtonElement>('.plx-activity [aria-label="应用"]')!.click(),
+		)
 		await vi.waitFor(() => expect(workspace.workbench.getActiveDocument()?.href).toBe('/apps'))
 		expect(workspace.isToolVisible('navigation')).toBe(false)
 		await act(async () =>

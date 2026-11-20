@@ -111,29 +111,22 @@
 }
 
 .plx-pluginDependencyDetail__relations {
-	background: color-mix(in srgb, var(--plx-raised) 72%, transparent);
-	border: 1px solid color-mix(in srgb, var(--plx-border) 84%, transparent);
-	border-radius: var(--mantine-radius-md);
-	margin-top: 4px;
-	overflow: hidden;
+	margin-top: 2px;
 }
 
 .plx-pluginDependencyDetail__relation {
 	align-items: center;
+	border-radius: var(--mantine-radius-sm);
 	display: grid;
 	gap: 8px;
 	grid-template-columns: minmax(0, 1fr) auto;
-	min-height: 40px;
+	min-height: 32px;
 	min-width: 0;
-	padding: 4px 4px 4px 8px;
-}
-
-.plx-pluginDependencyDetail__relation + .plx-pluginDependencyDetail__relation {
-	border-top: 1px solid color-mix(in srgb, var(--plx-border) 68%, transparent);
+	padding: 2px 4px 2px 8px;
 }
 
 .plx-pluginDependencyDetail__relation:hover {
-	background: color-mix(in srgb, var(--mantine-primary-color-light) 28%, transparent);
+	background: var(--plx-hover-bg);
 }
 
 .plx-pluginDependencyDetail__endpointName,
@@ -474,4 +467,30 @@
 	.plx-pluginWorkbench__actionBar {
 		flex-wrap: wrap;
 	}
+}
+
+/* The config outline is a quiet disclosure above the form, not a full-width accordion row. */
+.plx-configToc .mantine-Accordion-item {
+	border: 0;
+}
+.plx-configToc .mantine-Accordion-control {
+	border-radius: var(--mantine-radius-sm);
+	color: var(--mantine-color-dimmed);
+	gap: 4px;
+	padding-inline: 4px 8px;
+	width: auto;
+}
+.plx-configToc .mantine-Accordion-control:hover {
+	background: var(--plx-hover-bg);
+	color: var(--mantine-color-text);
+}
+.plx-configToc .mantine-Accordion-label {
+	font-size: var(--mantine-font-size-xs);
+	padding-block: 4px;
+}
+.plx-configToc .mantine-Accordion-chevron {
+	margin-inline-end: 0;
+}
+.plx-configToc .mantine-Accordion-content {
+	padding: 4px 0 8px;
 }

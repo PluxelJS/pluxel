@@ -53,7 +53,7 @@ function ConnectedDirectory({ session }: { session: WorkspaceSession }) {
 	const directory = usePluginPanelDirectory(session)
 	if (!directory.owner) return null
 	return (
-		<Paper withBorder p="sm" shadow="none" bg="var(--plx-raised)">
+		<Paper p={0} py="sm" shadow="none" bg="transparent">
 			<Stack gap="xs" component="section" aria-label="插件扩展">
 				<Text size="sm" fw={600}>
 					插件扩展

@@ -1,4 +1,4 @@
-import { Badge, Button, Group, Loader, Paper, Stack, Table, Text } from '@mantine/core'
+import { ActionIcon, Badge, Group, Loader, Stack, Table, Text, Tooltip } from '@mantine/core'
 import { IconRefresh } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -6,7 +6,7 @@ import {
 	runtimeErrorMessage,
 	useRuntimeManagementClient,
 } from '../../runtime'
-import { EmptyState, ErrorState } from '../../components'
+import { EmptyState, ErrorState, PageHeader } from '../../components'
 import { managementQueryKeys } from '../managementQuery'
 
 const eventTimeFormatter = new Intl.DateTimeFormat(undefined, {
@@ -38,61 +38,56 @@ export function SecurityAuditScreen() {
 	const events = query.data ?? []
 	const loading = query.isPending
 	const refreshing = query.isFetching
-	const error = query.error
-		? runtimeErrorMessage(query.error, 'Failed to load security audit events')
-		: null
+	const error = query.error ? runtimeErrorMessage(query.error, '读取失败') : null
 
 	if (loading) {
 		return (
-			<Group justify="center" p="xl">
+			<Group justify="center" p="xl" gap="xs">
 				<Loader size="sm" />
-				<Text c="dimmed">Loading audit events</Text>
+				<Text c="dimmed">正在读取…</Text>
 			</Group>
 		)
 	}
 
 	if (error) {
 		return (
-			<ErrorState
-				title="Audit events unavailable"
-				message={error}
-				onRetry={() => void query.refetch()}
-			/>
+			<ErrorState title="无法读取审计记录" message={error} onRetry={() => void query.refetch()} />
 		)
 	}
 
 	const failures = events.filter((event) => event.status === 'failure').length
 
 	return (
-		<Stack gap="md" p="var(--plx-page-padding)" style={{ flex: 1, minHeight: 0 }}>
-			<Paper withBorder p="sm">
-				<Group justify="space-between" align="center" wrap="wrap" gap="xs">
-					<Group gap={6} wrap="wrap">
-						<Badge variant="light" color="gray">
-							事件 {events.length}
-						</Badge>
-						<Badge variant="light" color={failures > 0 ? 'red' : 'gray'}>
-							失败 {failures}
-						</Badge>
-					</Group>
-					<Button
-						leftSection={<IconRefresh size={16} />}
-						variant="light"
-						size="xs"
-						loading={refreshing}
-						onClick={() => void query.refetch()}
-					>
-						刷新
-					</Button>
-				</Group>
-			</Paper>
+		<Stack gap="lg" p="var(--plx-page-padding)" style={{ flex: 1, minHeight: 0 }}>
+			<PageHeader
+				title="安全审计"
+				meta={
+					<>
+						{events.length} 条
+						{failures > 0 ? <Text span c="red" size="xs">{` · ${failures} 条失败`}</Text> : null}
+					</>
+				}
+				actions={
+					<Tooltip label="刷新">
+						<ActionIcon
+							variant="subtle"
+							color="gray"
+							aria-label="刷新"
+							loading={refreshing}
+							onClick={() => void query.refetch()}
+						>
+							<IconRefresh size={16} />
+						</ActionIcon>
+					</Tooltip>
+				}
+			/>
 
-			<Paper withBorder p="sm" style={{ flex: 1, minHeight: 0 }}>
+			<div style={{ flex: 1, minHeight: 0 }}>
 				{events.length === 0 ? (
-					<EmptyState title="暂无事件" description="安全事件会显示在这里。" minHeight="100%" />
+					<EmptyState title="暂无记录" minHeight="100%" />
 				) : (
 					<div style={tableWrapStyle}>
-						<Table striped highlightOnHover verticalSpacing={6} miw={720}>
+						<Table highlightOnHover verticalSpacing={8} miw={720} className="plx-table">
 							<Table.Thead>
 								<Table.Tr>
 									<Table.Th>时间</Table.Th>
@@ -109,7 +104,7 @@ export function SecurityAuditScreen() {
 										<Table.Td>{event.area}</Table.Td>
 										<Table.Td>{event.action}</Table.Td>
 										<Table.Td>
-											<Badge size="sm" color={toneForEventStatus(event.status)}>
+											<Badge size="sm" variant="light" color={toneForEventStatus(event.status)}>
 												{event.status}
 											</Badge>
 										</Table.Td>
@@ -124,7 +119,7 @@ export function SecurityAuditScreen() {
 						</Table>
 					</div>
 				)}
-			</Paper>
+			</div>
 		</Stack>
 	)
 }

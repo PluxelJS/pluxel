@@ -147,7 +147,7 @@ describe('native Shell interaction contracts', () => {
 			[...rail.querySelectorAll('.plx-activity__items button')].map((item) =>
 				item.getAttribute('aria-label'),
 			),
-		).toEqual(['首页', '应用', '插件管理', '日志', '认证与安全', '安全审计', '依赖图'])
+		).toEqual(['首页', '应用', '插件管理', '日志', '依赖图', '认证与安全'])
 		await click(container.querySelector('[aria-label="显示图标与文字"]')!)
 		expect(rail.getAttribute('data-mode')).toBe('labels')
 		await act(async () => {

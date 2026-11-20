@@ -8,18 +8,28 @@ import {
 	IconTopologyStar3,
 } from '@tabler/icons-react'
 
-/** Built-in destinations; user-selected publication shortcuts share the rail separately. */
+/**
+ * Built-in destinations; user-selected publication shortcuts share the rail separately.
+ * `rail: false` pages stay reachable from search and their parent page only.
+ */
 export const builtinPages = [
-	{ href: '/', label: '首页', description: '运行状态与常用操作', icon: IconHome2 },
-	{ href: '/apps', label: '应用', description: '已发布的业务应用', icon: IconApps },
-	{ href: '/plugins', label: '插件管理', description: '插件运行状态与配置', icon: IconPuzzle },
-	{ href: '/logs', label: '日志', description: '实时日志', icon: IconTerminal2 },
-	{ href: '/security', label: '认证与安全', description: '用户、权限与凭据', icon: IconShieldLock },
-	{ href: '/security/audit', label: '安全审计', description: '访问与操作记录', icon: IconHistory },
+	{ href: '/', label: '首页', keywords: 'home', icon: IconHome2, rail: true },
+	{ href: '/apps', label: '应用', keywords: 'apps', icon: IconApps, rail: true },
+	{ href: '/plugins', label: '插件管理', keywords: 'plugins', icon: IconPuzzle, rail: true },
+	{ href: '/logs', label: '日志', keywords: 'logs', icon: IconTerminal2, rail: true },
 	{
 		href: '/plugin-graph',
 		label: '依赖图',
-		description: '插件依赖与运行拓扑',
+		keywords: 'graph dependencies',
 		icon: IconTopologyStar3,
+		rail: true,
 	},
+	{
+		href: '/security',
+		label: '认证与安全',
+		keywords: 'security auth',
+		icon: IconShieldLock,
+		rail: true,
+	},
+	{ href: '/security/audit', label: '安全审计', keywords: 'audit', icon: IconHistory, rail: false },
 ] as const

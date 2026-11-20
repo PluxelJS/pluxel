@@ -1,45 +1,43 @@
 @use '../../../styles/theme/mantine' as mantine;
 
+/* Home is one calm column: heading and numbers, then only what needs a look. */
 .plx-home {
 	box-sizing: border-box;
 	display: flex;
 	flex: 1;
 	flex-direction: column;
-	gap: 18px;
+	gap: 28px;
+	margin-inline: auto;
+	max-width: 960px;
 	overflow: auto;
-	padding: clamp(16px, 2vw, 28px);
+	padding: clamp(20px, 3vw, 40px) var(--plx-page-padding);
 	width: 100%;
 }
 
-.plx-home__hero {
-	align-items: stretch;
-	background: var(--plx-raised);
-	border: 1px solid var(--plx-border);
-	border-radius: var(--mantine-radius-md);
-	display: grid;
-	gap: clamp(20px, 3vw, 44px);
-	grid-template-columns: minmax(320px, 1fr) minmax(420px, 0.9fr);
-	padding: clamp(18px, 2.2vw, 30px);
+.plx-home__header {
+	align-items: end;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 16px 32px;
+	justify-content: space-between;
 }
 
-.plx-home__heroCopy {
-	align-self: center;
-	max-width: 640px;
+.plx-home__heading {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
 }
 
 .plx-home__title {
-	font-size: var(--mantine-h1-font-size);
-	font-weight: 720;
-	letter-spacing: -0.035em;
-	line-height: 1.1;
-	margin-top: 7px;
+	font-size: var(--mantine-h2-font-size);
+	font-weight: 680;
+	letter-spacing: -0.02em;
+	line-height: 1.15;
 }
 
 .plx-home__platform {
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-	margin-top: 13px;
+	margin: 0;
 }
 
 .plx-home__platformNotice {
@@ -49,181 +47,111 @@
 	padding: 10px 12px;
 }
 
-.plx-home__runtimeSummary {
-	display: grid;
-	gap: 8px;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
+/* Numbers sit on the page itself: value over label, no boxes. */
+.plx-home__metrics {
+	display: flex;
+	gap: 28px;
+	margin: 0;
 }
 
 .plx-home__metric {
-	background: var(--plx-raised);
-	border: 1px solid var(--plx-border);
-	border-radius: var(--mantine-radius-md);
 	display: flex;
 	flex-direction: column;
-	justify-content: space-between;
-	min-height: 76px;
-	padding: 12px 14px;
+	gap: 2px;
+	min-width: 48px;
 }
 
-.plx-home__metric[data-tone='running'] {
-	border-color: color-mix(in srgb, var(--mantine-color-teal-6) 42%, var(--plx-border));
-}
-
-.plx-home__metric[data-tone='attention'] {
-	border-color: color-mix(in srgb, var(--mantine-color-red-6) 42%, var(--plx-border));
+.plx-home__metricValue {
+	font-size: var(--mantine-font-size-xl);
+	font-variant-numeric: tabular-nums;
+	font-weight: 650;
+	letter-spacing: -0.02em;
+	line-height: 1.1;
+	margin: 0;
 }
 
 .plx-home__metric[data-tone='attention'] .plx-home__metricValue {
 	color: var(--mantine-color-red-light-color);
 }
 
-.plx-home__metric[data-tone='auto-start'] {
-	border-color: color-mix(in srgb, var(--mantine-color-blue-6) 36%, var(--plx-border));
-}
-
 .plx-home__metricLabel {
 	color: var(--mantine-color-dimmed);
 	font-size: var(--mantine-font-size-xs);
-	font-weight: 650;
-}
-
-.plx-home__metricValue {
-	font-size: var(--mantine-font-size-xl);
-	font-weight: 750;
-	letter-spacing: -0.03em;
-	line-height: 1;
 }
 
 .plx-home__sectionHeader {
-	align-items: end;
+	align-items: baseline;
 	display: flex;
+	gap: 12px;
 	justify-content: space-between;
-	margin-bottom: 14px;
+	margin-bottom: 8px;
 }
 
 .plx-home__sectionTitle {
-	font-size: var(--mantine-font-size-xl);
-	letter-spacing: -0.02em;
-	line-height: 1.2;
-	margin-top: 4px;
-}
-
-.plx-home__workspaceCard {
-	align-items: start;
-	background: var(--plx-raised);
-	color: inherit;
-	display: flex;
-	gap: 12px;
-	min-height: 104px;
-	min-width: 0;
-	text-decoration: none;
-	transition:
-		background-color 140ms ease,
-		border-color 140ms ease,
-		box-shadow 140ms ease,
-		transform 140ms ease;
-}
-
-.plx-home__workspaceCard:hover,
-.plx-home__workspaceCard:focus-visible {
-	background: color-mix(in srgb, var(--plx-raised) 82%, var(--mantine-primary-color-light) 18%);
-	border-color: var(--plx-selected-border);
-	outline: none;
-	transform: translateY(-2px);
-}
-
-.plx-home__workspaceIcon {
-	align-items: center;
-	background: var(--mantine-primary-color-light);
-	border-radius: var(--mantine-radius-sm);
-	color: var(--mantine-primary-color-light-color);
-	display: flex;
-	flex: 0 0 40px;
-	height: 40px;
-	justify-content: center;
-	width: 40px;
-}
-
-.plx-home__workspaceCopy {
-	display: flex;
-	flex: 1;
-	flex-direction: column;
-	gap: 6px;
-	min-width: 0;
-}
-
-.plx-home__workspaceTitle {
-	font-weight: 700;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.plx-home__pluginQueues {
-	min-width: 0;
+	font-size: var(--mantine-font-size-sm);
+	font-weight: 650;
+	line-height: 1.3;
 }
 
 .plx-home__allLink {
-	color: var(--mantine-primary-color-light-color);
-	font-weight: 650;
+	color: var(--mantine-color-dimmed);
 	text-decoration: none;
 }
 
 .plx-home__allLink:hover,
 .plx-home__allLink:focus-visible {
-	text-decoration: underline;
+	color: var(--mantine-color-text);
 }
 
-.plx-home__queue {
-	background: var(--plx-raised);
-	border: 1px solid var(--plx-border);
-	border-radius: var(--mantine-radius-md);
+/* Lists: hairline-separated rows on the document surface. */
+.plx-home__queue,
+.plx-home__attention {
+	border-top: 1px solid var(--plx-border);
 	display: flex;
 	flex-direction: column;
-	min-height: 176px;
-	overflow: hidden;
 }
 
-.plx-home__queueHeader {
+.plx-home__queueRow,
+.plx-home__attentionRow {
 	align-items: center;
 	border-bottom: 1px solid var(--plx-border);
-	display: flex;
-	justify-content: space-between;
-	padding: 10px 14px;
-}
-
-.plx-home__queueBody {
-	display: flex;
-	flex: 1;
-	flex-direction: column;
-}
-
-.plx-home__queueRow {
-	align-items: center;
 	color: inherit;
 	display: grid;
-	font-size: var(--mantine-font-size-xs);
+	font-size: var(--mantine-font-size-sm);
 	gap: 12px;
-	grid-template-columns: 8px minmax(0, 1fr) auto 16px;
 	min-height: 40px;
-	padding: 5px 12px;
+	padding: 4px 8px;
 	text-decoration: none;
 }
 
-.plx-home__queueRow + .plx-home__queueRow {
-	border-top: 1px solid color-mix(in srgb, var(--plx-border) 68%, transparent);
+.plx-home__queueRow {
+	grid-template-columns: 7px minmax(0, 1fr) auto 14px;
 }
 
-.plx-home__queueRow:hover,
-.plx-home__queueRow:focus-visible {
-	background: var(--plx-raised);
+.plx-home__attentionRow {
+	grid-template-columns: 7px minmax(96px, 220px) auto minmax(0, 1fr) 14px;
+}
+
+.plx-home__queueRow > svg,
+.plx-home__attentionRow > svg {
+	color: var(--mantine-color-dimmed);
+	opacity: 0;
+}
+
+.plx-home__queueRow:is(:hover, :focus-visible),
+.plx-home__attentionRow:is(:hover, :focus-visible) {
+	background: var(--plx-hover-bg);
 	outline: none;
+}
+
+.plx-home__queueRow:is(:hover, :focus-visible) > svg,
+.plx-home__attentionRow:is(:hover, :focus-visible) > svg {
+	opacity: 1;
 }
 
 .plx-home__statusDot {
 	background: var(--mantine-color-dimmed);
-	border-radius: var(--mantine-radius-sm);
+	border-radius: 50%;
 	height: 7px;
 	width: 7px;
 }
@@ -232,7 +160,8 @@
 	background: var(--mantine-color-teal-6);
 }
 
-.plx-home__statusDot[data-status='pending'] {
+.plx-home__statusDot[data-status='pending'],
+.plx-home__statusDot[data-status='warning'] {
 	background: var(--mantine-color-yellow-6);
 }
 
@@ -241,58 +170,21 @@
 	background: var(--mantine-color-red-6);
 }
 
-.plx-home__queueName {
-	font-weight: 650;
+.plx-home__queueName,
+.plx-home__attentionName {
+	font-weight: 550;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-.plx-home__queueStatus {
+.plx-home__queueStatus,
+.plx-home__attentionMessage {
 	color: var(--mantine-color-dimmed);
-}
-
-.plx-home__queueEmpty {
-	align-items: center;
-	color: var(--mantine-color-dimmed);
-	display: flex;
-	flex: 1;
 	font-size: var(--mantine-font-size-xs);
-	justify-content: center;
-	padding: 24px;
-}
-
-.plx-home__attention {
-	background: var(--plx-raised);
-	border: 1px solid var(--plx-border);
-	border-radius: var(--mantine-radius-md);
-	display: flex;
-	flex-direction: column;
-	gap: 0;
 	overflow: hidden;
-}
-
-.plx-home__updateProblem {
-	border-bottom: 1px solid var(--plx-border);
-	border-radius: 0;
-}
-
-.plx-home__updateError {
-	overflow-wrap: anywhere;
-	white-space: pre-wrap;
-}
-
-.plx-home__attention > .mantine-Alert-root:not(.plx-home__updateProblem) {
-	border-radius: 0;
-}
-
-.plx-home__attentionState {
-	color: var(--mantine-color-dimmed);
-	padding: 16px 14px;
-}
-
-.plx-home__attentionState[data-tone='ok'] {
-	color: var(--mantine-color-teal-light-color);
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .plx-home__attentionList {
@@ -300,87 +192,51 @@
 	flex-direction: column;
 }
 
-.plx-home__attentionRow {
-	align-items: center;
-	color: inherit;
-	display: grid;
-	font-size: var(--mantine-font-size-xs);
-	gap: 12px;
-	grid-template-columns: 8px minmax(96px, 220px) auto minmax(0, 1fr) 16px;
-	min-height: 40px;
-	padding: 5px 12px;
-	text-decoration: none;
+/* The all-clear and loading states are a single quiet line, not a panel. */
+.plx-home__attention:has(> .plx-home__attentionState:only-child) {
+	border-top: 0;
 }
 
-.plx-home__attentionRow + .plx-home__attentionRow {
-	border-top: 1px solid color-mix(in srgb, var(--plx-border) 68%, transparent);
-}
-
-.plx-home__attentionRow:hover,
-.plx-home__attentionRow:focus-visible {
-	background: var(--plx-hover-bg);
-	outline: none;
-}
-
-.plx-home__attentionName {
-	font-weight: 650;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.plx-home__attentionMessage {
+.plx-home__attentionState {
 	color: var(--mantine-color-dimmed);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	padding: 0;
+}
+
+.plx-home__attentionState[data-tone='ok'] {
+	color: var(--mantine-color-teal-light-color);
+}
+
+.plx-home__updateProblem {
+	margin-block: 8px;
+}
+
+.plx-home__updateError {
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
 }
 
 .plx-home__attentionMore {
-	border-top: 1px solid color-mix(in srgb, var(--plx-border) 68%, transparent);
-	color: var(--mantine-primary-color-light-color);
+	color: var(--mantine-color-dimmed);
 	font-size: var(--mantine-font-size-xs);
-	padding: 10px 14px;
+	padding: 10px 8px;
 	text-decoration: none;
-}
-
-@include mantine.smaller-than(md) {
-	.plx-home__hero {
-		align-items: start;
-		grid-template-columns: 1fr;
-	}
 }
 
 @include mantine.smaller-than(sm) {
 	.plx-home {
-		gap: 16px;
-		padding: 14px 12px 88px;
+		gap: 20px;
+		padding: 16px 12px 88px;
 	}
 
-	.plx-home__hero {
-		gap: 16px;
-		padding: 16px;
-	}
-
-	.plx-home__title {
-		font-size: var(--mantine-font-size-xl);
-	}
-
-	.plx-home__workspaceCard {
-		min-height: 96px;
+	.plx-home__metrics {
+		gap: 20px;
 	}
 
 	.plx-home__attentionRow {
-		grid-template-columns: 8px minmax(0, 1fr) auto 16px;
+		grid-template-columns: 7px minmax(0, 1fr) auto 14px;
 	}
 
 	.plx-home__attentionMessage {
 		display: none;
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.plx-home__workspaceCard {
-		transition: none;
 	}
 }

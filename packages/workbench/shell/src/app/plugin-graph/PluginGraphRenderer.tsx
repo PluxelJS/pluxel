@@ -338,10 +338,9 @@ export function PluginGraphRenderer({
 		<div className="plx-pluginGraphRenderer">
 			<section className="plx-pluginGraphRelations" aria-labelledby="plugin-graph-relations-title">
 				<div className="plx-pluginGraphRelations__header">
-					<div>
-						<strong id="plugin-graph-relations-title">依赖关系</strong>
-						<span>提供方 → 使用方</span>
-					</div>
+					<h2 id="plugin-graph-relations-title" className="plx-visuallyHidden">
+						依赖关系（提供方 → 使用方）
+					</h2>
 					<div className="plx-pluginGraphHeaderActions">
 						<div className="plx-pluginGraphLegend" aria-label="依赖关系图例">
 							<span data-mode="required">

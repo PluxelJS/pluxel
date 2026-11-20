@@ -235,7 +235,7 @@ function NavigationContent({
 		}))
 		.filter((group) => group.entries.length > 0)
 	const visibleBuiltins = (mode === 'all' ? builtinPages : []).filter((page) =>
-		matches(`${page.label} ${page.href} ${page.description}`),
+		matches(`${page.label} ${page.href} ${page.keywords}`),
 	)
 	const visibleEntries = entries.filter(
 		(entry) =>
@@ -355,18 +355,6 @@ function NavigationContent({
 			</div>
 			<ScrollArea className="plx-workspace-navigation__scroll" type="auto" offsetScrollbars>
 				<Stack gap={compact ? 4 : 'md'} pr={0}>
-					{showTool && (
-						<Stack gap={3}>
-							<Text size="xs" c="dimmed" fw={600}>
-								固定工具
-							</Text>
-							<NavigationItem
-								label="插件目录"
-								description="显示或重新打开插件目录"
-								onOpen={openTool}
-							/>
-						</Stack>
-					)}
 					{panels?.owner && visiblePanels.length > 0 && (
 						<Stack gap={3} component="section" aria-label="当前插件扩展">
 							<Text size="xs" c="dimmed" fw={600}>
@@ -391,18 +379,14 @@ function NavigationContent({
 							})}
 						</Stack>
 					)}
-					{visibleBuiltins.length > 0 && (
+					{(visibleBuiltins.length > 0 || showTool) && (
 						<Stack gap={3}>
 							<Text size="xs" c="dimmed" fw={600}>
 								工作台
 							</Text>
+							{showTool && <NavigationItem label="插件目录" onOpen={openTool} />}
 							{visibleBuiltins.map((page) => (
-								<NavigationItem
-									key={page.href}
-									label={page.label}
-									description={page.description}
-									onOpen={() => open(page.href)}
-								/>
+								<NavigationItem key={page.href} label={page.label} onOpen={() => open(page.href)} />
 							))}
 						</Stack>
 					)}
@@ -415,7 +399,6 @@ function NavigationContent({
 								<NavigationItem
 									key={command.id}
 									label={command.label}
-									description={command.description}
 									shortcut={command.shortcut}
 									disabled={command.disabled}
 									onOpen={() => runCommand(command)}
@@ -534,11 +517,7 @@ ${placement.kind === 'route' ? placement.path : entry.descriptor.key}${standalon
 						)}
 				</Stack>
 			</ScrollArea>
-			{!compact && (
-				<Text size="xs" c="dimmed">
-					↑↓ 选择 · Enter 打开
-				</Text>
-			)}
+
 			<Modal
 				opened={Boolean(routeEntry)}
 				onClose={() => setRouteEntry(undefined)}
@@ -611,7 +590,7 @@ function NavigationItem({
 	disabled = false,
 }: {
 	label: string
-	description: string
+	description?: string
 	onOpen(): void
 	standalone?: boolean
 	active?: boolean
@@ -628,7 +607,7 @@ function NavigationItem({
 	return (
 		<Group gap={2} wrap="nowrap" className="plx-workspace-navigation__item">
 			<Tooltip
-				label={detail ?? `${label} · ${description}`}
+				label={detail ?? [label, description].filter(Boolean).join(' · ')}
 				multiline
 				maw={420}
 				openDelay={400}
@@ -636,7 +615,7 @@ function NavigationItem({
 				events={{ hover: true, focus: true, touch: false }}
 			>
 				<Button
-					title={detail ?? `${label} · ${description}`}
+					title={detail ?? [label, description].filter(Boolean).join(' · ')}
 					aria-label={
 						compact
 							? [label, statusLabel, standalone ? '独立页面' : undefined]
@@ -667,12 +646,12 @@ function NavigationItem({
 						) : undefined
 					}
 				>
-					<span>
-						<Text component="span" size="sm" truncate="end" display="block">
+					<span className="plx-workspace-navigation__label">
+						<Text component="span" size="sm" truncate="end">
 							{label}
 						</Text>
-						{!compact && (
-							<Text component="span" size="xs" c="dimmed" truncate="end" display="block">
+						{!compact && description && (
+							<Text component="span" size="xs" c="dimmed" truncate="end">
 								{description}
 							</Text>
 						)}

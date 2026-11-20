@@ -100,25 +100,20 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 				align="center"
 				gap={2}
 				justify="space-between"
-				style={{ minWidth: 0, paddingInline: '10px 4px' }}
+				style={{ minWidth: 0, paddingInline: '4px' }}
 			>
 				<Group gap={4} align="center" wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
-					<Box style={{ minWidth: 0, flex: 1 }}>
-						<CatalogTooltip label={g.name || '未命名分组'} withinPortal withArrow>
-							<Text
-								fw={600}
-								size="xs"
-								style={{
-									whiteSpace: 'nowrap',
-									overflow: 'hidden',
-									textOverflow: 'ellipsis',
-									color: 'var(--mantine-color-text)',
-								}}
-							>
-								{g.name || '未命名分组'}
-							</Text>
-						</CatalogTooltip>
-					</Box>
+					<button
+						type="button"
+						className="plx-pluginCatalog__groupToggle"
+						aria-label={collapseLabel}
+						aria-expanded={!isCollapsed}
+						onClick={toggleCollapse}
+						title={g.name || '未命名分组'}
+					>
+						{isCollapsed ? <IconChevronRight size={12} /> : <IconChevronDown size={12} />}
+						<span>{g.name || '未命名分组'}</span>
+					</button>
 					<CatalogTooltip
 						label={`运行中 ${stat.running} / 共 ${stat.total} 个插件`}
 						withinPortal
@@ -137,18 +132,6 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 				</Group>
 
 				<Group gap={2} align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
-					<CatalogTooltip label={collapseLabel} withinPortal withArrow>
-						<ActionIcon
-							size="xs"
-							variant="subtle"
-							aria-label={collapseLabel}
-							onClick={toggleCollapse}
-							style={{ flexShrink: 0 }}
-						>
-							{isCollapsed ? <IconChevronRight size={14} /> : <IconChevronDown size={14} />}
-						</ActionIcon>
-					</CatalogTooltip>
-
 					<CatalogTooltip
 						label={locked ? '云端同步中' : '拖拽分组'}
 						withinPortal
@@ -187,7 +170,7 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 						items={visibleIds.map((id) => getItemSortableId(id))}
 						strategy={verticalListSortingStrategy}
 					>
-						<Stack gap={0} mt={6} align="stretch" role="list" aria-label="插件列表">
+						<Stack gap={0} mt={2} align="stretch" role="list" aria-label="插件列表">
 							{visibleIds.map((id) => (
 								<SortableRow
 									key={id}

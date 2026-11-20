@@ -1,5 +1,5 @@
-import { Badge, Button, Group, Select, Text, Tooltip } from '@mantine/core'
-import { IconDeviceFloppy, IconRestore } from '@tabler/icons-react'
+import { Badge, Button, Group, Select, Tooltip } from '@mantine/core'
+import { IconDeviceFloppy } from '@tabler/icons-react'
 import { PLUGIN_DETAIL_HOTKEY_LABELS } from '../../../workbench/shortcuts'
 
 type ActiveState = {
@@ -10,7 +10,6 @@ type ActiveState = {
 
 export function ConfigActionDock({
 	activeKey,
-	activeLabel,
 	activeState,
 	dirtyLabels,
 	hasMultipleSections,
@@ -63,11 +62,8 @@ export function ConfigActionDock({
 							nothingFoundMessage="没有可选项"
 						/>
 					</div>
-				) : (
-					<Text fw={600} size="sm" className="plx-pluginWorkbench__configActionKey">
-						{activeLabel}
-					</Text>
-				)}
+				) : null}
+				{/* Saved is the resting state; only pending changes are announced. */}
 				<span aria-live="polite">
 					{dirtyCount > 0 ? (
 						<Tooltip label={dirtyLabel} withArrow>
@@ -75,16 +71,8 @@ export function ConfigActionDock({
 								待保存 {dirtyCount}
 							</Badge>
 						</Tooltip>
-					) : (
-						<Badge variant="light" color="green">
-							已保存
-						</Badge>
-					)}
+					) : null}
 				</span>
-				<Text size="xs" c="dimmed" className="plx-pluginWorkbench__configShortcutHint">
-					{PLUGIN_DETAIL_HOTKEY_LABELS.saveCurrentConfig} 保存
-					{hasMultipleSections ? ` · ${PLUGIN_DETAIL_HOTKEY_LABELS.saveAllConfig} 全部` : ''}
-				</Text>
 			</div>
 
 			<Group
@@ -106,7 +94,7 @@ export function ConfigActionDock({
 					type="button"
 					size="xs"
 					variant="subtle"
-					leftSection={<IconRestore size={14} />}
+					color="gray"
 					onClick={onRestoreInheritance}
 					disabled={activeState.submitting || saving}
 				>
@@ -119,7 +107,7 @@ export function ConfigActionDock({
 					onClick={onSubmitCurrent}
 					loading={activeState.submitting}
 					disabled={!activeState.dirty || !activeState.canSubmit || saving}
-					title="保存当前配置 (Ctrl/⌘ + S)"
+					title={`保存 (${PLUGIN_DETAIL_HOTKEY_LABELS.saveCurrentConfig})`}
 				>
 					保存
 				</Button>
@@ -131,7 +119,7 @@ export function ConfigActionDock({
 						onClick={onSubmitAll}
 						loading={savingScope === 'all'}
 						disabled={dirtyCount === 0 || saving || !canSaveAll}
-						title="保存全部已修改配置 (Ctrl/⌘ + Shift + S)"
+						title={`全部保存 (${PLUGIN_DETAIL_HOTKEY_LABELS.saveAllConfig})`}
 					>
 						全部保存
 					</Button>

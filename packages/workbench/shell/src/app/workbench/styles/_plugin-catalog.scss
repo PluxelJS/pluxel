@@ -62,30 +62,6 @@
 	gap: 6px;
 }
 
-.plx-pluginCatalog__helpButton {
-	align-items: center;
-	background: transparent;
-	border: 1px solid transparent;
-	border-radius: var(--mantine-radius-sm);
-	color: var(--mantine-color-dimmed);
-	cursor: pointer;
-	display: inline-flex;
-	font-size: var(--mantine-font-size-xs);
-	font-weight: 700;
-	gap: 6px;
-	height: 30px;
-	line-height: 1;
-	padding: 0 7px;
-	white-space: nowrap;
-}
-
-.plx-pluginCatalog__helpButton:hover,
-.plx-pluginCatalog__helpButton:focus-visible {
-	background: var(--plx-hover-bg);
-	color: var(--mantine-color-text);
-	outline: none;
-}
-
 .plx-pluginCatalog__toolbar {
 	display: flex;
 	flex-direction: column;
@@ -133,9 +109,9 @@
 }
 
 .plx-pluginCatalog__sectionTitle {
-	color: var(--mantine-color-text);
+	color: var(--mantine-color-dimmed);
 	font-size: var(--mantine-font-size-xs);
-	font-weight: 700;
+	font-weight: 600;
 	letter-spacing: 0.04em;
 	line-height: 1.2;
 	text-transform: uppercase;
@@ -231,4 +207,56 @@
 
 .plx-pluginCatalog__row:not([data-active]):not([data-selected]):hover {
 	background-color: var(--plx-hover-bg);
+}
+
+/*
+ * Row controls stay out of the way until they are needed: the drag handle and the selection box
+ * appear on hover or keyboard focus, and the selection box stays visible while a selection exists.
+ */
+.plx-pluginCatalog__row [data-drag-handle],
+.plx-pluginCatalog__group > div > div:last-child [data-drag-handle],
+.plx-pluginCatalog__rowSelector:not([data-selected='true']) {
+	opacity: 0;
+	transition: opacity 120ms ease-out;
+}
+.plx-pluginCatalog__row:is(:hover, :focus-within) [data-drag-handle],
+.plx-pluginCatalog__group > div:first-child:is(:hover, :focus-within) [data-drag-handle],
+.plx-pluginCatalog__row:is(:hover, :focus-within) .plx-pluginCatalog__rowSelector,
+.plx-pluginCatalog[data-selecting] .plx-pluginCatalog__rowSelector {
+	opacity: 1;
+}
+
+.plx-pluginCatalog__groupToggle {
+	align-items: center;
+	background: transparent;
+	border: 0;
+	border-radius: var(--mantine-radius-sm);
+	color: var(--mantine-color-text);
+	cursor: pointer;
+	display: flex;
+	flex: 1;
+	font: inherit;
+	font-size: var(--mantine-font-size-xs);
+	font-weight: 600;
+	gap: 6px;
+	height: 24px;
+	min-width: 0;
+	padding: 0 6px;
+	text-align: start;
+}
+.plx-pluginCatalog__groupToggle > svg {
+	color: var(--mantine-color-dimmed);
+	flex: none;
+}
+.plx-pluginCatalog__groupToggle > span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.plx-pluginCatalog__groupToggle:hover {
+	background: var(--plx-hover-bg);
+}
+.plx-pluginCatalog__groupToggle:focus-visible {
+	outline: 2px solid var(--mantine-primary-color-filled);
+	outline-offset: -2px;
 }

@@ -143,7 +143,7 @@ describe('business configuration save in native documents', () => {
 			const scrollHost = scope.querySelector<HTMLElement>('[data-config-scroll-root]')!
 			scrollHost.scrollTo = vi.fn()
 			const outline = [...scope.querySelectorAll<HTMLButtonElement>('button')].find(
-				(item) => item.textContent === '配置目录',
+				(item) => item.textContent === '目录',
 			)!
 			await act(async () => {
 				outline.click()
