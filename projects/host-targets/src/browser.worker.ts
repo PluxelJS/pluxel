@@ -1,5 +1,7 @@
 import { createHost } from '@pluxel/host/browser'
-import { demoOptions, runDemo, startDemo, type DemoResult } from './demo'
+import { runDemo, startDemo } from './demo'
+import { consumerAddress, demoOptions } from './demo-plugins'
+import type { DemoResult } from './protocol'
 
 export type BrowserCommand = 'read' | 'close'
 export type BrowserReply =
@@ -26,7 +28,7 @@ worker.addEventListener('message', ({ data, ports }: MessageEvent<BrowserCommand
 				await host.close()
 				reply.postMessage({ kind: 'closed' } satisfies BrowserReply, [])
 			} else if (data === 'read') {
-				const value = await runDemo(host, 'browser')
+				const value = await runDemo(host, { address: consumerAddress, target: 'browser' })
 				reply.postMessage({ kind: 'result', value } satisfies BrowserReply, [])
 			}
 		} catch (error) {

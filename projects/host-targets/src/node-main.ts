@@ -1,7 +1,9 @@
 import { createHost } from '@pluxel/host'
-import { demoOptions, runDemo, startDemo } from './demo'
+import { runDemo, startDemo } from './demo'
 import { nodeFetch, nodeSource } from './demo-config'
+import { consumerAddress, demoOptions } from './demo-plugins'
 
 await using host = await createHost(demoOptions(nodeSource, nodeFetch))
 await startDemo(host)
-process.stdout.write(JSON.stringify(await runDemo(host, 'node')) + '\n')
+const result = await runDemo(host, { address: consumerAddress, target: 'node' })
+process.stdout.write(JSON.stringify(result) + '\n')

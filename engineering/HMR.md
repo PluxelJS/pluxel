@@ -16,6 +16,8 @@ HMR 以 definition replacement 切换模块、Core generation、effects 和制�
 
 dev console 直接控制调度器，不经脚本 loader/Host ready/scope；模式跨 Host replacement 保留，随 Vite 关闭释放。状态提供 mode/running/有界 pending/观察与尝试 revision，候选结果由 `application.latestUpdate` 提供。attempted revision 仅代表尝试；脚本遇运行时 pending 报 `hmr_pending`，不越过暂停。用法见[批次控制](../docs/development/dev-console.md#hmr-批次控制)。
 
+`onUpdateSettled` 订阅路由拥有的同一报告，首次接纳前可用，排空后随 Vite 会话释放。异步 observer 的失败由开发诊断记录，候选事务独立结算。
+
 来源可能先求值最新字节、后收到 SDK 通知。仅普通 update 已对应被接纳入口，且 physical owner/完整 entry/模块及已知依赖摘要均未变时可消费通知；新增/删除/rescan/失败恢复仍重新验证，相同字节不能绕过失败后的重新接纳。
 
 ## Definition replacement
@@ -134,6 +136,8 @@ producer inventory 或 publication epoch 改变后：server 失效 session→She
 NodeModules.use 对 consumer 串行 staged setup，新 setup 成功才 cleanup previous，失败保留 last-known-good。owner stop 失效 pending，迟到 setup 立即 cleanup。Worker 新 dispatch 读 content-addressed 新 URL，已运行任务保持原 module；取消/stop 等真实 worker 退出。
 
 ## 验证
+
+[`projects/host-targets`](../projects/host-targets/README.md) 用同一个发布 tarball 验证三端运行，开发验收通过各自的更新通知驱动同一个页面。Node 业务路由借用已接纳实例，Vite 批次结算后通知页面。浏览器由页面重建 Dedicated Worker，Cloudflare Worker 通过 Vite 的 `import.meta.hot.accept` 接纳插件模块，再通知页面请求。三端的更新和状态寿命可从 generation 与调用结果观察。
 
 重点覆盖 structural reject、PONR 后真实 facts、definition-wide forks/required/optional closure、显式 Stop、候选 rollback、迟到 producer 和 fresh-host compensation。真实 Vite 验 namespace、来源恢复/provenance、watcher close/drain、暂停最终编辑、执行中新观察、失败修复、auto 合并和 pending 上界；控制命令不被自身 replacement 撤回。DTO 验相对诊断和节点归因，browser/Node 在各自真实资源边界验证。
 

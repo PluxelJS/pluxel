@@ -7,11 +7,19 @@ const ProviderConfig = v.object({
 })
 const SourcePayload = v.object({ source: v.string() })
 
+export type Greeting = {
+	message: string
+	source: string
+	visits: number
+	generation: string
+}
+
 @Plugin()
 export class Provider extends BasePlugin {
 	private readonly config = this.configs.use(ProviderConfig)
+	private readonly generation = crypto.randomUUID()
 
-	async greet(signal?: AbortSignal) {
+	async greet(signal?: AbortSignal): Promise<Greeting> {
 		const response = await this.ctx.fetch(this.config.source, { signal })
 		if (!response.ok) {
 			await response.body?.cancel()
@@ -23,6 +31,17 @@ export class Provider extends BasePlugin {
 		const visits = (typeof previous === 'number' ? previous : 0) + 1
 		store.setValue('visits', visits)
 		await this.ctx.tinybase.flush()
-		return { message: `Hello, ${this.config.name}!`, source, visits }
+		return { message: `Hello, ${this.config.name}!`, source, visits, generation: this.generation }
+	}
+}
+
+@Plugin()
+export class Consumer extends BasePlugin {
+	constructor(private readonly provider: Provider) {
+		super()
+	}
+
+	greet(signal?: AbortSignal) {
+		return this.provider.greet(signal)
 	}
 }

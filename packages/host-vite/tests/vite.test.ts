@@ -57,6 +57,9 @@ describe('host-vite Vite plugin stack', () => {
 	it('rejects unknown Host options rather than silently ignoring misspelled configuration', () => {
 		const options = { entry: 'app.ts', devConsol: true }
 		expect(() => host(options)).toThrow('[host-vite] unsupported devConsol')
+		expect(() => host({ entry: 'app.ts', onUpdateSettled: null })).toThrow(
+			'[host-vite] onUpdateSettled must be a function',
+		)
 	})
 
 	it('pins selected service entries to their native application installation', async () => {

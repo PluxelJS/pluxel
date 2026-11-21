@@ -11,10 +11,10 @@
 		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
+		"@pluxel-example/host-targets-plugins": "workspace:*",
 		"@pluxel/agent-sdk": "workspace:*",
 		"@pluxel/core": "workspace:*",
-		"@pluxel/host": "workspace:*",
-		"valibot": "catalog:validation"
+		"@pluxel/host": "workspace:*"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "catalog:build",

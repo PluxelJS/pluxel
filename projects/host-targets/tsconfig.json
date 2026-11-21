@@ -3,7 +3,6 @@
 	"compilerOptions": {
 		"experimentalDecorators": true,
 		"lib": ["ES2024", "ESNext.Disposable", "DOM", "DOM.Iterable", "WebWorker"],
-		"customConditions": ["@pluxel/source"],
 		"types": ["node", "vite/client"]
 	},
 	"include": ["src", "*.config.ts"],

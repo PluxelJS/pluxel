@@ -51,6 +51,8 @@ vp exec pluxel dev hmr resume
 
 HMR 控制属于 Vite 实例，在应用启动失败或 Host replacement 期间仍可用。暂停且有待处理运行时变化时，项目脚本以 `hmr_pending` 结束；脚本不会自动 apply。执行中的普通脚本不占有整个 HMR/coordinator 锁，更新可以与脚本中的 await 交错。
 
+Vite 集成可在 `host()` 或 `vitePreset()` 中传入 `onUpdateSettled(update)`。每次结算后回调收到与 `application.latestUpdate` 同源的快照，包括初次求值失败和 Host 重建。回调可异步报告结果，批次发布和关闭独立结算。回调失败进入宿主的开发诊断。 [页面更新示例](../../projects/host-targets/vite.dev.ts)
+
 ## 编写可交互的开发脚本
 
 在目标 Vite root 内创建 `dev/inspect.ts`。以下示例使用应用自己的 TodoPlugin；`snapshot()`、`add()` 是该插件公开的业务方法。

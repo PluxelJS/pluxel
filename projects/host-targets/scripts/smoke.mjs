@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { cp, mkdtempDisposable, readFile, symlink, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
-import { setTimeout } from 'node:timers/promises'
+import {
+	cp,
+	mkdir,
+	mkdtempDisposable,
+	readdir,
+	readFile,
+	rename,
+	symlink,
+	writeFile,
+} from 'node:fs/promises'
+import { basename, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { chromium } from 'playwright'
 import { createServer, preview } from 'vite'
@@ -39,24 +47,33 @@ async function waitForResult(page, host, message) {
 	return await readResult(page, host)
 }
 
-async function waitForServerResult(origin, host, message) {
-	const signal = AbortSignal.timeout(10_000)
-	let output
-	try {
-		for (;;) {
-			const response = await fetch(`${origin}/api/${host}`, { method: 'POST', signal })
-			output = response.ok ? await response.json() : await response.text()
-			if (response.ok && output.message === message) return output
-			await setTimeout(50, undefined, { signal })
-		}
-	} catch (error) {
-		throw new Error(
-			`${host} did not return ${JSON.stringify(message)}. Output ${JSON.stringify(output)}`,
-			{
-				cause: error,
-			},
-		)
+async function prepareAppFixture(directory, plugins) {
+	for (const path of [
+		'src',
+		'public',
+		'index.html',
+		'package.json',
+		'tsconfig.json',
+		'wrangler.jsonc',
+		'vite.config.ts',
+		'vite.dev.ts',
+	]) {
+		await cp(join(root, path), join(directory, path), { recursive: true })
 	}
+	await symlink(join(root, 'plugins/node_modules'), join(plugins, 'node_modules'), 'dir')
+	const modules = join(directory, 'node_modules')
+	const scope = join(modules, '@pluxel-example')
+	await mkdir(scope, { recursive: true })
+	for (const name of await readdir(join(root, 'node_modules'))) {
+		if (name.startsWith('.') || name === '@pluxel-example') continue
+		await symlink(join(root, 'node_modules', name), join(modules, name), 'dir')
+	}
+	await symlink(plugins, join(scope, 'host-targets-plugins'), 'dir')
+}
+
+async function editPlugin(file, source) {
+	await writeFile(file + '.next', source)
+	await rename(file + '.next', file)
 }
 
 process.env.CLOUDFLARE_CF_FETCH_ENABLED ??= 'false'
@@ -66,12 +83,24 @@ const browser = process.env.PLAYWRIGHT_WS_ENDPOINT
 	: await chromium.launch({ headless: true })
 
 try {
-	const { stdout } = await run(process.execPath, ['dist/node/node-main.js'], { cwd: root })
+	await using release = await mkdtempDisposable(resolve(root, '../.host-targets-release-'))
+	const archive = join(release.path, 'plugins.tgz')
+	await run('vp', ['pm', 'pack', '--out', archive], { cwd: join(root, 'plugins') })
+	await run('tar', ['-xzf', archive, '-C', release.path])
+	const packagedPlugins = join(release.path, 'package')
+	const packagedFiles = await readdir(packagedPlugins)
+	assert.ok(!packagedFiles.includes('src'))
+	await prepareAppFixture(release.path, packagedPlugins)
+	await run('vp', ['build'], { cwd: release.path })
+	await run('vp', ['build', '--mode', 'node'], { cwd: release.path })
+
+	const { stdout } = await run(process.execPath, ['dist/node/node-main.js'], { cwd: release.path })
 	const nodeArtifact = JSON.parse(stdout)
 	assert.equal(nodeArtifact.host, 'node')
 	assert.equal(nodeArtifact.message, 'Hello, Pluxel!')
+	assert.equal(nodeArtifact.plugin, 'package:@pluxel-example/host-targets-plugins::Consumer')
 
-	const built = await preview({ root, preview: { host: '127.0.0.1', port: 0 } })
+	const built = await preview({ root: release.path, preview: { host: '127.0.0.1', port: 0 } })
 	try {
 		const page = await browser.newPage()
 		try {
@@ -93,18 +122,12 @@ try {
 
 	// The development update edits only a disposable source tree.
 	await using fixture = await mkdtempDisposable(resolve(root, '../.host-targets-smoke-'))
-	for (const path of [
-		'src',
-		'public',
-		'index.html',
-		'package.json',
-		'tsconfig.json',
-		'wrangler.jsonc',
-		'vite.config.ts',
-	]) {
-		await cp(join(root, path), join(fixture.path, path), { recursive: true })
-	}
-	await symlink(join(root, 'node_modules'), join(fixture.path, 'node_modules'), 'dir')
+	const plugins = join(fixture.path, 'plugins')
+	await cp(join(root, 'plugins'), plugins, {
+		recursive: true,
+		filter: (source) => basename(source) !== 'node_modules',
+	})
+	await prepareAppFixture(fixture.path, plugins)
 	// Preview initializes Vite's ambient production mode in this test process.
 	process.env.NODE_ENV = 'development'
 	const dev = await createServer({
@@ -127,23 +150,64 @@ try {
 				window.hostTargetsSmoke = true
 			})
 
-			const file = join(fixture.path, 'src/Provider.ts')
+			const file = join(fixture.path, 'plugins/src/index.ts')
 			const source = await readFile(file, 'utf8')
 			const updated = source.replace('Hello, ', 'Updated, ')
 			assert.notEqual(updated, source)
-			await writeFile(file, updated)
+			await editPlugin(file, updated)
+			const immediate = await fetch(`${address}/api/node`, {
+				method: 'POST',
+				signal: AbortSignal.timeout(10_000),
+			})
+			assert.ok(immediate.ok, await immediate.text())
 
 			const updatedMessage = 'Updated, Pluxel!'
-			const browserResult = await waitForResult(page, 'browser', updatedMessage)
+			const [nodeResult, browserResult, edgeResult] = await Promise.all([
+				waitForResult(page, 'node', updatedMessage),
+				waitForResult(page, 'browser', updatedMessage),
+				waitForResult(page, 'cloudflare', updatedMessage),
+			])
 			assert.equal(browserResult.plugin, before.plugin)
 			assert.equal(browserResult.visits, 1)
+			assert.notEqual(browserResult.generation, web.generation)
 			assert.equal(await page.evaluate(() => window.hostTargetsSmoke), true)
-			const nodeResult = await waitForServerResult(address, 'node', updatedMessage)
 			assert.equal(nodeResult.plugin, before.plugin)
 			assert.ok(nodeResult.visits > before.visits, 'Node HMR retains the plugin state')
-			const edgeResult = await waitForServerResult(address, 'cloudflare', updatedMessage)
+			assert.notEqual(nodeResult.generation, before.generation)
 			assert.equal(edgeResult.plugin, before.plugin)
 			assert.equal(edgeResult.visits, 1, 'Cloudflare reads run in distinct request Hosts')
+			assert.notEqual(edgeResult.generation, edge.generation)
+
+			const rejection = 'Rejected demo edit'
+			await editPlugin(file, `${updated}\nthrow new Error(${JSON.stringify(rejection)})\n`)
+			await Promise.all(
+				Object.entries({
+					node: rejection,
+					browser: rejection,
+					cloudflare: 'Worker plugin module failed to evaluate',
+				}).map(([host, hasText]) =>
+					page.locator(`[data-host="${host}"]`).filter({ hasText }).waitFor(),
+				),
+			)
+			const retained = await fetch(`${address}/api/node`, {
+				method: 'POST',
+				signal: AbortSignal.timeout(10_000),
+			})
+			assert.ok(retained.ok)
+			const retainedResult = await retained.json()
+			assert.equal(retainedResult.generation, nodeResult.generation)
+			const unavailable = await fetch(`${address}/api/cloudflare`, {
+				method: 'POST',
+				signal: AbortSignal.timeout(10_000),
+			})
+			assert.equal(unavailable.status, 503)
+			assert.match(await unavailable.text(), /Worker plugin module failed to evaluate/)
+
+			const recovered = 'Recovered, Pluxel!'
+			await editPlugin(file, source.replace('Hello, ', 'Recovered, '))
+			await Promise.all(
+				['node', 'browser', 'cloudflare'].map((host) => waitForResult(page, host, recovered)),
+			)
 		} finally {
 			await page.close()
 		}

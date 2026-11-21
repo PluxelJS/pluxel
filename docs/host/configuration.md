@@ -493,6 +493,10 @@ await host.start()
 
 插件可以继续使用 `ctx.logger`。由 Worker 应用在 isolate 中配置 LogTape 输出，例如控制台 sink。请求 Host 沿用这份配置，并在日志属性中附加 `hostRequestId`。 [三端完整示例](../../projects/host-targets/README.md)
 
+### 跨平台固定插件集
+
+用相同的已构建插件包和固定 `plugins` 声明装配三个宿主。完整依赖闭包须可在目标运行时求值，每个宿主须具备插件用到的服务和 Context 能力。构建时通过包的发布入口验证实际 ESM，并在各目标运行一次真实业务调用。 [插件包构建](../development/plugin-package.md) · [三端验收](../../projects/host-targets/README.md#构建与验收)
+
 ---
 
 <span id="生产启动判定"></span>

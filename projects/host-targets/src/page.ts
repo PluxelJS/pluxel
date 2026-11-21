@@ -1,5 +1,5 @@
 import type { BrowserCommand, BrowserReply } from './browser.worker'
-import type { DemoHost, DemoResult } from './demo'
+import { demoUpdateEvent, type DemoHost, type DemoResult, type DemoUpdate } from './protocol'
 import './page.css'
 
 function createBrowserWorker() {
@@ -44,13 +44,34 @@ function createBrowserWorker() {
 }
 
 let browser = Promise.resolve(createBrowserWorker())
+const currentReads = new Map<DemoHost, AbortController>()
 
-async function show(host: DemoHost, read: () => Promise<DemoResult>) {
-	const output = document.querySelector<HTMLElement>(`[data-host="${host}"]`)!
+function stopRead(host: DemoHost) {
+	currentReads.get(host)?.abort()
+	currentReads.delete(host)
+}
+
+function outputFor(host: DemoHost) {
+	return document.querySelector<HTMLElement>(`[data-host="${host}"]`)!
+}
+
+async function refreshHost(host: DemoHost) {
+	stopRead(host)
+	const controller = new AbortController()
+	currentReads.set(host, controller)
+	const output = outputFor(host)
+	output.setAttribute('aria-busy', 'true')
 	try {
-		output.textContent = JSON.stringify(await read(), null, 2)
+		const result =
+			host === 'browser' ? await readBrowser() : await readServer(host, controller.signal)
+		if (!controller.signal.aborted) output.textContent = JSON.stringify(result, null, 2)
 	} catch (error) {
-		output.textContent = String(error)
+		if (!controller.signal.aborted) output.textContent = String(error)
+	} finally {
+		if (currentReads.get(host) === controller) {
+			currentReads.delete(host)
+			output.removeAttribute('aria-busy')
+		}
 	}
 }
 
@@ -61,33 +82,41 @@ async function readBrowser(): Promise<DemoResult> {
 	throw new Error(result.kind === 'error' ? result.message : 'Browser Host closed')
 }
 
-async function readServer(host: 'node' | 'cloudflare'): Promise<DemoResult> {
-	const response = await fetch(`/api/${host}`, { method: 'POST' })
+async function readServer(host: 'node' | 'cloudflare', signal: AbortSignal): Promise<DemoResult> {
+	const response = await fetch(`/api/${host}`, { method: 'POST', signal })
 	if (!response.ok) throw new Error(await response.text())
 	return await response.json()
 }
 
-async function refresh() {
-	await Promise.all([
-		show('browser', readBrowser),
-		show('cloudflare', () => readServer('cloudflare')),
-		...(import.meta.env.DEV ? [show('node', () => readServer('node'))] : []),
-	])
+function refresh() {
+	void refreshHost('browser')
+	void refreshHost('cloudflare')
+	if (import.meta.env.DEV) void refreshHost('node')
 }
 
 if (!import.meta.env.DEV) document.querySelector('[data-section="node"]')?.remove()
 
-document.querySelector('button')!.addEventListener('click', () => void refresh())
+document.querySelector('button')!.addEventListener('click', refresh)
 window.addEventListener('pagehide', () => {
+	for (const host of currentReads.keys()) stopRead(host)
 	void browser.then((current) => current.close()).catch((error) => console.error(error))
 })
 
-import.meta.hot?.on('host-targets:browser-worker-update', () => {
-	browser = browser.then(async (current) => {
-		await current.close().catch((error) => console.error(error))
-		return createBrowserWorker()
-	})
-	void show('browser', readBrowser)
+import.meta.hot?.on(demoUpdateEvent, ({ host, error }: DemoUpdate) => {
+	if (error) {
+		stopRead(host)
+		const output = outputFor(host)
+		output.textContent = error
+		output.removeAttribute('aria-busy')
+		return
+	}
+	if (host === 'browser') {
+		browser = browser.then(async (current) => {
+			await current.close()
+			return createBrowserWorker()
+		}, createBrowserWorker)
+	}
+	void refreshHost(host)
 })
 
-void refresh()
+refresh()

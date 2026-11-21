@@ -3,8 +3,7 @@
 	"compilerOptions": {
 		"experimentalDecorators": true,
 		"lib": ["ES2024", "ESNext.Disposable"],
-		"customConditions": ["@pluxel/source"],
-		"types": ["@cloudflare/workers-types"]
+		"types": ["@cloudflare/workers-types", "vite/client"]
 	},
 	"include": ["entry.ts"]
 }

@@ -1,29 +1,12 @@
 import { createScriptScope } from '@pluxel/agent-sdk/host'
-import { formatPluginNodeReference, type OutboundFetch } from '@pluxel/core'
+import type { Consumer } from '@pluxel-example/host-targets-plugins'
+import { formatPluginNodeReference, type PluginInstanceNodeAddress } from '@pluxel/core'
 import type { PluginHost } from '@pluxel/host'
-import { Consumer } from './Consumer'
-import { Provider } from './Provider'
-import { demoConfig } from './demo-config'
+import type { DemoHost, DemoResult } from './protocol'
 
-export type DemoHost = 'node' | 'browser' | 'cloudflare'
-export type DemoResult = {
-	host: DemoHost
-	plugin: string
-	message: string
-	source: string
-	visits: number
-}
-
-export function demoOptions(source: string, fetch?: OutboundFetch) {
-	const { provider, consumer, coreConfig } = demoConfig(source, fetch)
-	return {
-		plugins: [
-			{ plugin: Provider, ...provider },
-			{ plugin: Consumer, ...consumer },
-		],
-		coreConfig,
-	}
-}
+type ConsumerAddress =
+	| PluginInstanceNodeAddress<Consumer>
+	| ReturnType<typeof import('@pluxel-example/host-targets-plugins/control').Consumer.nodeAddress>
 
 export async function startDemo(host: PluginHost): Promise<void> {
 	await host.start()
@@ -39,12 +22,10 @@ export async function startDemo(host: PluginHost): Promise<void> {
 
 export async function runDemo(
 	host: PluginHost,
-	kind: DemoHost,
-	signal?: AbortSignal,
+	{ address, target, signal }: { address: ConsumerAddress; target: DemoHost; signal?: AbortSignal },
 ): Promise<DemoResult> {
 	await using scope = createScriptScope({ ctx: host.ctx, signal })
-	const address = Consumer.nodeAddress()
 	const { instance } = await scope.sdk.plugin(address).instance()
 	const greeting = await instance.greet(signal)
-	return { host: kind, plugin: formatPluginNodeReference(address), ...greeting }
+	return { host: target, plugin: formatPluginNodeReference(address), ...greeting }
 }

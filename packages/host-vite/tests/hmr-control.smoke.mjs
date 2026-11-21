@@ -27,6 +27,7 @@ const entry = (name) => ({
 })
 const metrics = { evaluated: [], started: [], stopped: [], artifact: null, gate: null }
 const errors = []
+const updates = []
 globalThis.__pluxelHmrTest = metrics
 let server
 let instance
@@ -192,7 +193,14 @@ export default (async (sdk) => {
 		configFile: false,
 		server: { port: 0, host: '127.0.0.1' },
 		plugins: [
-			...host({ entry: 'app.ts', scripts: true }),
+			...host({
+				entry: 'app.ts',
+				scripts: true,
+				async onUpdateSettled(update) {
+					updates.push(update)
+					if (updates.length === 1) throw new Error('test update observer rejection')
+				},
+			}),
 			{
 				name: 'fixture:content',
 				api: {
@@ -238,6 +246,9 @@ export default (async (sdk) => {
 	// HMR belongs to the Vite instance and can repair an unavailable Host.
 	const initialStatus = await status()
 	assert.equal(initialStatus.application.state, 'unavailable')
+	assert.deepEqual(updates, [initialStatus.application.latestUpdate])
+	assert.equal(updates[0].outcome, 'failed')
+	assert.ok(errors.some((error) => error.includes('test update observer rejection')))
 	assert.ok(
 		metrics.evaluated.includes('neighbor:0'),
 		'the valid sibling was evaluated before failure',
@@ -259,6 +270,7 @@ export default (async (sdk) => {
 	assert.equal(failed.run.state, 'failed')
 	const rejectedStatus = await status()
 	assert.equal(rejectedStatus.application.latestUpdate.outcome, 'retained-previous')
+	assert.deepEqual(updates.at(-1), rejectedStatus.application.latestUpdate)
 	const retained = await materials()
 	assert.equal(retained.snapshot, accepted.snapshot)
 	assert.deepEqual(metrics.stopped, [])
@@ -303,6 +315,7 @@ export default (async (sdk) => {
 	const replacement = await status()
 	assert.equal(replacement.instanceId, instance.instanceId)
 	assert.notEqual(replacement.hostEpoch, original.hostEpoch)
+	assert.deepEqual(updates.at(-1), replacement.application.latestUpdate)
 	await readPlugin(3)
 
 	// Matching bytes cannot bypass validation of the physical source owner.

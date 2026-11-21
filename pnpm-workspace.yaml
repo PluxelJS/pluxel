@@ -8,6 +8,7 @@ packages:
   - vendor/split-like-vscode/packages/react
   - vendor/split-like-vscode/packages/demo
   - projects/*
+  - projects/host-targets/plugins
 
 allowBuilds:
   # Places the pinned platform binary at the PNPR executable entry.

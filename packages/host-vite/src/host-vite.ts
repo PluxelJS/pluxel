@@ -16,6 +16,7 @@ import {
 	type ResolvedHostApplication,
 	type PluginHost,
 	type PluginApplyReport,
+	type RuntimeUpdateSnapshot,
 } from '@pluxel/host'
 import {
 	createResolvedHost,
@@ -78,6 +79,10 @@ export type HostViteOptions = Readonly<{
 	scripts?: boolean
 	/** Shallow immutable startup bindings shared by the application factory and prepare; omitted means an empty record. */
 	bindings?: Readonly<Record<string, unknown>>
+	/** Observe each settled Vite update, including initial evaluation and Host replacement. */
+	onUpdateSettled?: (
+		update: Extract<RuntimeUpdateSnapshot, { state: 'settled' }>,
+	) => void | Promise<void>
 }>
 
 class HostInitializationError extends Error {
@@ -89,13 +94,20 @@ class HostInitializationError extends Error {
 /** Host Vite assembly owning one runner, source evaluator and candidate protocol. */
 export function host(options: HostViteOptions): PluginOption[] {
 	for (const key of Object.keys(options))
-		if (!['entry', 'scripts', 'bindings'].includes(key))
+		if (!['entry', 'scripts', 'bindings', 'onUpdateSettled'].includes(key))
 			throw new TypeError(`[host-vite] unsupported ${key}`)
-	const { entry: inputEntry, scripts: enableScripts, bindings: inputBindings } = options
+	const {
+		entry: inputEntry,
+		scripts: enableScripts,
+		bindings: inputBindings,
+		onUpdateSettled,
+	} = options
 	if (typeof inputEntry !== 'string' || !inputEntry.trim())
 		throw new TypeError('[host-vite] entry is required')
 	if (enableScripts !== undefined && typeof enableScripts !== 'boolean')
 		throw new TypeError('[host-vite] scripts must be a boolean')
+	if (onUpdateSettled !== undefined && typeof onUpdateSettled !== 'function')
+		throw new TypeError('[host-vite] onUpdateSettled must be a function')
 	if (
 		inputBindings !== undefined &&
 		(!inputBindings ||
@@ -145,6 +157,14 @@ export function host(options: HostViteOptions): PluginOption[] {
 		() => (closing ? undefined : active?.ctx.logger),
 		createViteDiagnostics(() => server.config.logger),
 	)
+	const stopObservingUpdates = onUpdateSettled
+		? recentUpdates.subscribeUpdates((update) => {
+				if (update?.state !== 'settled') return
+				void Promise.resolve()
+					.then(() => onUpdateSettled(update))
+					.catch((error) => diagnostics.error('Vite Host update observer failed', { error }))
+			})
+		: undefined
 	const recovery = new ViteApplicationRecovery(diagnostics)
 	const report = (error: unknown): void => {
 		diagnostics.error('Vite Host update failed', { error })
@@ -675,6 +695,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 				() => dependencies?.close(),
 				() => recovery.close(),
 				() => drained,
+				() => stopObservingUpdates?.(),
 				() => active?.close(),
 			]) {
 				try {
