@@ -1,8 +1,0 @@
----
-packages:
-  '@pluxel/test': patch
----
-
-# Preserve native CommonJS and ESM resolution in Vitest
-
-Remove the forced global `import` condition from the Vitest preset's Node conditions. CommonJS dependencies such as `pg` now select their native `require` exports while ESM imports keep their native branch. Framework source identity, condition ordering and compile-only type probe exclusions remain intact.

@@ -1,0 +1,15 @@
+---
+title: Preserve native transport and application configuration
+date: 2026-11-05T05:59:25.688Z
+packages:
+  '@pluxel/services':
+    version: 1.2.0
+  '@pluxel/host-vite':
+    version: 1.2.0
+---
+
+# Preserve native transport and application configuration
+
+`listenElysia()` accepts native srvx TCP/TLS options, plugins, middleware, proxy handling, body limits and error handlers. Host dispatch and shutdown remain managed; custom transports can use `createElysiaHandler()` with srvx directly.
+
+Listener addresses and request metadata use the actual TCP port, including HTTPS default ports.
