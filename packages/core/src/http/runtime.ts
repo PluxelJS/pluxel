@@ -411,7 +411,7 @@ class ManagedOutboundHttpRuntime {
 
 	private async send(
 		caller: Caller,
-		input: RequestInfo | URL,
+		input: Parameters<OutboundFetch>[0],
 		init: NodeRequestInit | undefined,
 		lifetime: AbortSignal,
 	): Promise<Response> {
@@ -594,7 +594,7 @@ class ManagedOutboundHttpRuntime {
 function bindOwnerFetch(
 	owner: Context,
 	send: (
-		input: RequestInfo | URL,
+		input: Parameters<OutboundFetch>[0],
 		init: NodeRequestInit | undefined,
 		lifetime: AbortSignal,
 	) => Promise<Response>,
