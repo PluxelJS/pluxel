@@ -19,7 +19,7 @@ import {
 } from 'miniflare'
 import { packTar, type TarEntry } from 'modern-tar'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { build } from 'esbuild'
+import { buildMarketWorker, workerModule } from '../dev/build-worker'
 import type { MarketAdmin } from '../src/admin'
 import { connect } from '../src/db/d1'
 import {
@@ -220,8 +220,8 @@ describe('plugin market on workerd and D1', () => {
 							'no_nodejs_compat_v2',
 						],
 						manifest: {
-							mainModule: 'worker.mjs',
-							modules: { 'worker.mjs': { type: 'esm', contents: script } },
+							mainModule: workerModule,
+							modules: { [workerModule]: { type: 'esm', contents: script } },
 						},
 						env: {
 							DB: { type: 'd1', id: 'plugin-market-test' },
@@ -279,14 +279,7 @@ describe('plugin market on workerd and D1', () => {
 		signingKey = pair.privateKey
 		signingJwk = { ...(await exportJWK(pair.publicKey)), kid: 'test-key' }
 		directory = await mkdtemp(join(tmpdir(), 'pluxel-market-'))
-		const output = await build({
-			entryPoints: ['src/worker.ts'],
-			bundle: true,
-			write: false,
-			format: 'esm',
-			platform: 'browser',
-		})
-		script = output.outputFiles[0].text
+		script = await buildMarketWorker()
 		await start()
 		const binding = await runtime.getD1Database('DB')
 		const migrationEntries = await readdir(new URL('../migrations/', import.meta.url))

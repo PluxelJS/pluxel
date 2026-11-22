@@ -3,7 +3,7 @@ title: 插件市场发布与管理
 description: 使用 GitHub Actions 发布到 npm 或自建 registry，体验插件安装、市场通知与收录。
 ---
 
-用本地 PNPR 和 workerd/D1 沙箱体验插件构建、发包通知、制品检查、分类和 Workbench 浏览。参考市场运行在 Cloudflare Worker 中，可以读取标准 npm registry，也可以启用自建 registry 接收发布。区域目录可独立部署，使用同一份公开目录快照同步。[参考市场与只读镜像](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md)
+用本地 PNPR 和 workerd/D1 沙箱体验插件构建、发包通知、制品检查、分类和 Workbench 浏览。参考市场由 Pluxel 插件在 Cloudflare Worker 中运行，可以读取标准 npm registry，也可以启用自建 registry 接收发布。区域目录可独立部署，使用同一份公开目录快照同步。[参考市场与只读镜像](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md)
 
 ## GitHub Actions
 
@@ -106,7 +106,9 @@ Pluxel 维护插件制品规范、发布入口、可互操作的 HTTP 目录与�
 
 ## 启动本地市场与测试注册表
 
-在仓库根目录下执行：
+开发市场插件或网页时可使用 Vite。Worker 的请求和 Cron 复用同一 Host，插件实现支持在 workerd 内热替换。[开发入口与来源配置](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md#本地运行与来源配置)
+
+联调发布流程时，在仓库根目录下启动市场和测试注册表：
 
 ```sh
 # 启动市场后端与私有 npm registry 服务

@@ -1,12 +1,23 @@
 import { defineConfig } from 'vite-plus'
 import { repositoryTasks } from '../../scripts/vite-tasks'
 
+const workerPrerequisites = [
+	'@pluxel/host#compile',
+	'@pluxel/host-vite#compile',
+	'@pluxel/rolldown#compile',
+]
+
 export default defineConfig({
 	run: {
 		tasks: repositoryTasks({
 			compile: {
-				command: 'wrangler deploy --dry-run --outdir dist/worker',
-				dependsOn: ['compile-web'],
+				command: 'wrangler deploy --dry-run --outdir dist/deploy',
+				dependsOn: ['compile-web', 'compile-worker'],
+				cache: { output: ['dist/deploy/**'] },
+			},
+			'compile-worker': {
+				command: 'node dev/build-worker.ts',
+				dependsOn: workerPrerequisites,
 				cache: { output: ['dist/worker/**'] },
 			},
 			'compile-web': {
@@ -23,18 +34,18 @@ export default defineConfig({
 				cache: { output: ['dist/mirror.mjs'] },
 			},
 			'serve-local': {
-				command: 'wrangler dev',
-				dependsOn: ['compile-web'],
+				command: 'vp dev --config vite.dev.ts',
+				dependsOn: workerPrerequisites,
 				cache: false,
 			},
 			'serve-sandbox': {
 				command: 'node dev/server.ts',
-				dependsOn: ['compile-web'],
+				dependsOn: ['compile-web', 'compile-worker'],
 				cache: false,
 			},
 			'check-tests': {
 				command: 'vp test run --config vitest.config.ts',
-				dependsOn: [],
+				dependsOn: workerPrerequisites,
 				cache: false,
 			},
 			'check-types': {
@@ -42,7 +53,7 @@ export default defineConfig({
 					'tsc --noEmit --pretty false',
 					'tsc --noEmit --pretty false -p web/tsconfig.json',
 				],
-				dependsOn: [],
+				dependsOn: workerPrerequisites,
 			},
 			'prepare-sandbox': {
 				command: 'node dev/experience.ts prepare',

@@ -1,6 +1,6 @@
 # 插件市场
 
-参考市场运行在 Cloudflare Worker 中。D1 持久化目录和回执，公开网页和 Package Manager 可以读取主站或独立部署的只读镜像。[事件入口](src/worker.ts)
+参考市场运行在 Cloudflare Worker 中。同一 isolate 内，相同部署配置的 HTTP 请求和 Cron 任务复用一个 Host 和 `MarketPlugin` 实例。每次调用把当前事件的 D1、R2、管理令牌和自建 registry 读令牌传给插件。D1 持久化目录和回执，公开网页和 Package Manager 可以读取主站或独立部署的只读镜像。[应用声明](src/application.ts) · [事件入口](src/worker.ts)
 
 同一市场可配置公共 npm 与私有 PNPR。包身份是 `registry + name`，发行身份再加精确 `version`。PNPR 代理公共 npm 时也保留实际读取的来源。搜索直接查询所在服务的 SQLite 数据。
 
@@ -8,19 +8,19 @@
 
 | 修改内容                                              | 入口                                                                                                 |
 | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Worker 装配、请求路由和管理 RPC                       | [`worker.ts`](src/worker.ts)、[`admin.ts`](src/admin.ts) |
+| Worker 装配、请求路由和管理 RPC                       | [`worker.ts`](src/worker.ts)、[`market-plugin.ts`](src/market-plugin.ts)、[`admin.ts`](src/admin.ts) |
 | 搜索与详情、分类标签、作者、快照及 Node 镜像          | [`catalog/`](src/catalog/)                                                                           |
 | 通知认证、回执和重试、Cron 收录                       | [`indexing/`](src/indexing/)                                                                         |
 | npm 来源、自建 registry、OIDC、tarball 校验和审核规则 | [`registry/`](src/registry/)                                                                         |
 | D1 连接和迁移所用 schema                              | [`db/`](src/db/)                                                                                     |
 
-`MarketDeployment` 解析 registry 来源、审核规则和自建 registry 的发布者。HTTP 与 Cron 从事件绑定取得数据库和归档存储。手工与定时收录共用 [`indexing/commit.ts`](src/indexing/commit.ts)，发行、审计和定时任务回执由同一 D1 事务提交。自建 registry 的 R2 与 D1 写入由 [`registry/hosted-store.ts`](src/registry/hosted-store.ts) 管理。
+`MarketDeployment` 根服务在启动时解析 registry 来源、审核规则和自建 registry 的发布者。HTTP 与 Cron 共用这些部署策略；每次调用从事件绑定取得数据库和归档存储。手工与定时收录共用 [`indexing/commit.ts`](src/indexing/commit.ts)，发行、审计和定时任务回执由同一 D1 事务提交。自建 registry 的 R2 与 D1 写入由 [`registry/hosted-store.ts`](src/registry/hosted-store.ts) 管理。
 
 ## 本地运行与来源配置
 
 从构建发布、通知到市场管理的操作见 [PNPR 本地体验指南](../../docs/development/plugin-market.md)。Miniflare 和 Pitchfork 用于本地 workerd/D1 联调，主站通过 Wrangler 部署。
 
-直接使用 Wrangler 时，在本目录执行 `vp run db:migrate:local`，在忽略的 `.dev.vars` 中设置 `ADMIN_TOKEN`，然后执行 `vp run dev`。默认来源为公共 npm。多来源由部署方通过 `REGISTRIES` JSON 设置：
+开发 Worker 或市场网页时，在本目录执行 `vp run db:migrate:local`，在忽略的 `.dev.vars` 中设置 `ADMIN_TOKEN`，然后执行 `vp run dev`。Vite 直接服务网页源码，并在本地 workerd 内运行 Worker。编辑插件实现或仅由它导入的业务模块后，Vite 在同一 Host 内替换插件，后续请求使用新实例。模块求值失败时，正在服务的实例继续处理请求，Vite 日志显示错误。修改应用声明或根服务实现时，Vite 重新加载 Worker 入口，`closeOnHotReload` 关闭旧 Host，下一个事件按新声明启动。Wrangler 的 D1 迁移与此入口使用同一份本地状态。默认来源为公共 npm。多来源由部署方通过 `REGISTRIES` JSON 设置：
 
 ```json
 [
@@ -41,7 +41,7 @@
 
 `notificationIndexing: "unsigned"` 只适用于明确选择此策略的私有来源。定时处理校验没有 attestations 的精确发行，再把目录、审计和回执一起提交。回执成功是 `indexed`，发行证明仍是 `missing`。选项省略时仍要求具备 provenance 校验能力。
 
-Wrangler 的 D1 ID 默认只供本地运行。远程部署方创建独立 D1、设置实际 ID、保存 secrets 并显式应用迁移。`vp run build` 编译静态网页，再执行 Wrangler dry-run。随后可用同一构建产物执行 `vp exec wrangler deploy`。运行时不会自行修改数据库结构。
+Wrangler 的 D1 ID 默认只供本地运行。远程部署方创建独立 D1、设置实际 ID、保存 secrets 并显式应用迁移。`vp run build` 编译插件和静态网页，再执行 Wrangler dry-run。随后可用同一构建产物执行 `vp exec wrangler deploy`。运行时不会自行修改数据库结构。
 
 ### 自建插件 registry
 

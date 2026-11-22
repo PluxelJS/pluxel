@@ -1,11 +1,11 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { build } from 'esbuild'
 import { Miniflare } from 'miniflare'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { unstable_readConfig } from 'wrangler'
 import { marketAssets } from '../dev/assets'
+import { buildMarketWorker, workerModule } from '../dev/build-worker'
 import { projectRoot } from '../dev/session'
 
 describe('native market static assets', () => {
@@ -23,13 +23,7 @@ describe('native market static assets', () => {
 		await writeFile(join(directory, 'v1', 'index.html'), 'incorrect API asset')
 		await writeFile(join(directory, 'v1', 'unknown.html'), 'incorrect API asset')
 		await writeFile(join(directory, 'admin.html'), 'incorrect admin asset')
-		const output = await build({
-			entryPoints: [resolve(projectRoot, 'src/worker.ts')],
-			bundle: true,
-			write: false,
-			format: 'esm',
-			platform: 'browser',
-		})
+		const script = await buildMarketWorker()
 		runtime = new Miniflare({
 			port: 0,
 			workers: [
@@ -37,10 +31,15 @@ describe('native market static assets', () => {
 					config: {
 						name: 'market-assets-test',
 						compatibilityDate: '2026-11-03',
+						compatibilityFlags: [
+							'enable_request_signal',
+							'no_nodejs_compat',
+							'no_nodejs_compat_v2',
+						],
 						assets: { ...marketAssets, directory },
 						manifest: {
-							mainModule: 'worker.mjs',
-							modules: { 'worker.mjs': { type: 'esm', contents: output.outputFiles[0].text } },
+							mainModule: workerModule,
+							modules: { [workerModule]: { type: 'esm', contents: script } },
 						},
 						env: {
 							DB: { type: 'd1', id: 'market-assets-test' },

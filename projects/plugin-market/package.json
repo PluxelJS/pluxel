@@ -18,6 +18,8 @@
 		"db:migrate:local": "wrangler d1 migrations apply plugin-market --local"
 	},
 	"dependencies": {
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
 		"capnweb": "catalog:dev",
 		"drizzle-orm": "catalog:backend",
 		"jose": "catalog:prod",
@@ -27,8 +29,11 @@
 		"validate-npm-package-name": "catalog:prod"
 	},
 	"devDependencies": {
+		"@cloudflare/vite-plugin": "catalog:build",
 		"@cloudflare/workers-types": "catalog:dev",
+		"@pluxel/host-vite": "workspace:*",
 		"@pluxel/plugin-package-manager": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
 		"@pnpm/pnpr": "catalog:dev",
 		"@types/jsdom": "catalog:types",
 		"@types/node": "catalog:types",
@@ -43,6 +48,7 @@
 		"react": "catalog:frontend",
 		"react-dom": "catalog:frontend",
 		"typescript": "catalog:tooling",
+		"vite": "catalog:build",
 		"vite-plus": "catalog:build",
 		"vitest": "catalog:test",
 		"wrangler": "catalog:dev"

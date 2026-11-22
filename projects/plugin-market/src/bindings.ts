@@ -14,3 +14,12 @@ export type MarketResources = Pick<
 	MarketBindings,
 	'DB' | 'HOSTED_ARCHIVES' | 'ADMIN_TOKEN' | 'HOSTED_READ_TOKEN'
 >
+
+export function marketEnvironment({
+	REGISTRIES,
+	HOSTED_REGISTRY_URL,
+	HOSTED_PUBLISHERS,
+	MARKET_REVIEW,
+}: MarketBindings) {
+	return { REGISTRIES, HOSTED_REGISTRY_URL, HOSTED_PUBLISHERS, MARKET_REVIEW }
+}

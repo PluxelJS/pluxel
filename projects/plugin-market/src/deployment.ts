@@ -1,16 +1,17 @@
-import type { MarketBindings, MarketResources } from './bindings'
+import type { ApplicationEnvironment } from '@pluxel/host/application'
+import type { MarketResources } from './bindings'
 import { connect } from './db/d1'
 import { HostedRegistry } from './registry/hosted'
 import { registrySources, type RegistrySource } from './registry/sources'
 import { createPackageReview, type PackageReview } from './registry/review'
 
-/** Parse the registry and review policy for this deployment. D1, R2 and request-local transports belong to each call. */
+/** Parse deployment policy once. D1, R2 and request-local transports belong to each call. */
 export class MarketDeployment {
 	readonly review: PackageReview
 	private readonly sources: readonly RegistrySource[]
 	private readonly hosted?: HostedRegistry
 
-	constructor(env: MarketBindings) {
+	constructor(env: ApplicationEnvironment['env']) {
 		this.review = createPackageReview(env.MARKET_REVIEW)
 		this.sources = registrySources(env.REGISTRIES)
 		if (env.HOSTED_REGISTRY_URL !== undefined || env.HOSTED_PUBLISHERS !== undefined)
