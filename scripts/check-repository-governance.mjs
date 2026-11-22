@@ -4,7 +4,9 @@ import { parseSync } from 'vite'
 import { parse } from 'yaml'
 
 import {
+	isFrameworkReleasePackage,
 	isPublishablePackage,
+	officialPluginsRepository,
 	rootWorkspaceDependencyErrors,
 	packagesRequiringInitialMajor,
 	releasePackageErrors,
@@ -165,6 +167,7 @@ if (new Set(packageNames).size !== packageNames.length) {
 	errors.push('repository package names must be unique')
 }
 const publicPackages = packageManifests.filter(isPublishablePackage)
+const frameworkReleasePackages = publicPackages.filter(isFrameworkReleasePackage)
 errors.push(...releasePackageErrors(packageManifests))
 errors.push(...workspaceOnlyDependencyErrors(packageManifests))
 const publishedDependencies = new Map(
@@ -239,7 +242,7 @@ if (plannedVersions.size > 1)
 	errors.push(`Tegami must plan one public version, got ${[...plannedVersions].join(', ')}`)
 
 if (plannedPackages.length > 0) {
-	for (const { manifest } of packagesRequiringInitialMajor(publicPackages)) {
+	for (const { manifest } of packagesRequiringInitialMajor(frameworkReleasePackages)) {
 		if (
 			!releaseDraft
 				.getChangelogs()
@@ -326,11 +329,18 @@ for (const { packageRoot, manifestPath, directory, kind, manifest } of packageMa
 		if ((await readOptionalFile(resolve(packageRoot, 'LICENSE'))) !== rootLicense) {
 			errors.push(`${manifest.name} must include an unmodified package-local LICENSE`)
 		}
-		if (manifest.repository?.url !== repositoryUrl) {
-			errors.push(`${manifest.name} repository.url must be ${repositoryUrl}`)
+		const releaseRepository = isFrameworkReleasePackage({ kind, manifest })
+			? repositoryUrl
+			: officialPluginsRepository
+		const releaseDirectory =
+			releaseRepository === officialPluginsRepository
+				? directory.slice('plugins/'.length)
+				: directory
+		if (manifest.repository?.url !== releaseRepository) {
+			errors.push(`${manifest.name} repository.url must be ${releaseRepository}`)
 		}
-		if (manifest.repository?.directory !== directory) {
-			errors.push(`${manifest.name} repository.directory must be ${directory}`)
+		if (manifest.repository?.directory !== releaseDirectory) {
+			errors.push(`${manifest.name} repository.directory must be ${releaseDirectory}`)
 		}
 	}
 

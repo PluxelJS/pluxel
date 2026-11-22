@@ -3,6 +3,7 @@ import { dirname, relative, resolve, sep } from 'node:path'
 import { parse } from 'yaml'
 
 export const repositoryRoot = resolve(import.meta.dirname, '..')
+export const officialPluginsRepository = 'https://github.com/PluxelJS/plugins'
 
 // Explicit workspace protocols also cover vendor packages outside the release inventory.
 export function rootWorkspaceDependencyErrors(manifest, packages) {
@@ -29,6 +30,14 @@ export function rootWorkspaceDependencyErrors(manifest, packages) {
 
 export function isPublishablePackage({ kind, manifest }) {
 	return (kind === 'package' || kind === 'plugin') && manifest.private !== true
+}
+
+/** A plugin can remain in the integration workspace after moving its release to the plugins repository. */
+export function isFrameworkReleasePackage(pkg) {
+	return (
+		isPublishablePackage(pkg) &&
+		(pkg.kind !== 'plugin' || pkg.manifest.repository?.url !== officialPluginsRepository)
+	)
 }
 
 /**
@@ -67,7 +76,7 @@ export function publishPackageClosure(packages, roots) {
 
 export function tegamiIgnorePattern(packages) {
 	const names = packages
-		.filter(isPublishablePackage)
+		.filter(isFrameworkReleasePackage)
 		.map(({ manifest }) => manifest.name.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&'))
 		.toSorted()
 	// Tegami tests both bare package names and qualified workspace IDs.
@@ -81,7 +90,7 @@ export function packagesRequiringInitialMajor(packages) {
 
 export function releasePackageErrors(packages) {
 	const errors = []
-	const publicPackages = packages.filter(isPublishablePackage)
+	const publicPackages = packages.filter(isFrameworkReleasePackage)
 	const coreVersion = publicPackages.find(({ manifest }) => manifest.name === '@pluxel/core')
 		?.manifest.version
 	if (!coreVersion || coreVersion.startsWith('0.'))

@@ -2,7 +2,11 @@ import { spawnSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { setTimeout } from 'node:timers/promises'
 import { parse } from 'yaml'
-import { isPublishablePackage, repositoryPackages, repositoryRoot } from './repository-packages.mjs'
+import {
+	isFrameworkReleasePackage,
+	repositoryPackages,
+	repositoryRoot,
+} from './repository-packages.mjs'
 
 const repository = 'PluxelJS/pluxel'
 const workflow = 'release.yml'
@@ -134,7 +138,7 @@ if (import.meta.main) {
 			)
 		}
 		const names = repositoryPackages
-			.filter(isPublishablePackage)
+			.filter(isFrameworkReleasePackage)
 			.map(({ manifest }) => manifest.name)
 		const lock = parse(await readFile(`${repositoryRoot}/.tegami/publish-lock.yaml`, 'utf8'))
 		await preparePublishing(args[0] === '--apply', names, lock)

@@ -1,0 +1,125 @@
+name: Verify and pack Pluxel plugins
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: Name of the uploaded plugin tarball artifact before the run-attempt suffix
+        type: string
+        default: pluxel-plugin
+      package-name:
+        description: Exact package name to pack from a multi-package workspace
+        type: string
+      pack-artifact:
+        description: Upload an npm tarball after workspace verification
+        type: boolean
+        default: true
+      framework-ref:
+        description: Exact Pluxel commit for a plugins workspace developed as the framework's plugins submodule
+        type: string
+    outputs:
+      artifact-id:
+        description: ID of the uploaded plugin tarball artifact
+        value: ${{ jobs.build.outputs.artifact-id }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.framework-ref == '' && 15 || 60 }}
+    services:
+      redis:
+        image: ${{ inputs.framework-ref != '' && 'redis:7-alpine' || '' }}
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Validate framework ref
+        if: inputs.framework-ref != ''
+        env:
+          FRAMEWORK_REF: ${{ inputs.framework-ref }}
+        run: |
+          if [[ ! "$FRAMEWORK_REF" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::framework-ref must be a full Pluxel commit SHA."
+            exit 1
+          fi
+      - name: Checkout framework
+        if: inputs.framework-ref != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: PluxelJS/pluxel
+          ref: ${{ inputs.framework-ref }}
+          path: framework
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/plugins/
+      - name: Checkout framework vendor submodules
+        if: inputs.framework-ref != ''
+        working-directory: framework
+        run: git submodule update --init --recursive -- vendor
+      - name: Checkout plugins
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: ${{ inputs.framework-ref == '' && '.' || 'framework/plugins' }}
+          persist-credentials: false
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5
+        with:
+          cache: false
+          install: true
+          working_directory: ${{ inputs.framework-ref == '' && '.' || 'framework' }}
+      - name: Install dependencies
+        working-directory: ${{ inputs.framework-ref == '' && '.' || 'framework' }}
+        run: vp install --frozen-lockfile
+      - name: Verify standalone workspace
+        if: inputs.framework-ref == ''
+        run: |
+          vp run setup
+          vp run verify
+      - name: Verify framework integration
+        if: inputs.framework-ref != ''
+        working-directory: framework
+        env:
+          PLUXEL_REDIS_TEST_URL: redis://127.0.0.1:6379
+        run: vp run --concurrency-limit=2 plugins:ci
+      - name: Pack plugin
+        if: inputs.pack-artifact
+        working-directory: ${{ inputs.framework-ref == '' && '.' || 'framework' }}
+        env:
+          PACKAGE_NAME: ${{ inputs.package-name }}
+          FRAMEWORK_REF: ${{ inputs.framework-ref }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$PACKAGE_NAME" ]]; then
+            if [[ ! "$PACKAGE_NAME" =~ ^(@[a-z0-9._-]+/)?[a-z0-9][a-z0-9._-]*$ ]]; then
+              echo "::error::package-name must be an exact npm package name."
+              exit 1
+            fi
+            if [[ -n "$FRAMEWORK_REF" ]]; then
+              vp run --concurrency-limit=2 "$PACKAGE_NAME#compile"
+            fi
+            vp pm pack --filter "$PACKAGE_NAME" --out "$RUNNER_TEMP/plugin.tgz"
+          else
+            if [[ -n "$FRAMEWORK_REF" ]]; then
+              echo "::error::Set package-name to pack an exact plugin from the framework workspace."
+              exit 1
+            fi
+            vp pm pack --out "$RUNNER_TEMP/plugin.tgz"
+          fi
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: inputs.pack-artifact
+        id: upload
+        with:
+          name: ${{ inputs.artifact-name }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/plugin.tgz
+          if-no-files-found: error
+          retention-days: 7
