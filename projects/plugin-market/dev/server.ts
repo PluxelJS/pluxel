@@ -1,8 +1,8 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { build } from 'esbuild'
 import { Miniflare } from 'miniflare'
 import { marketAssets } from './assets.ts'
+import { build } from 'esbuild'
 import { localRoot, projectRoot, sessionPath, type Session } from './session.ts'
 
 const registryUrl = new URL(process.env.MARKET_TEST_REGISTRY ?? 'http://127.0.0.1:7677/npm/')
@@ -70,6 +70,7 @@ const runtime = new Miniflare({
 			config: {
 				name: 'plugin-market-sandbox',
 				compatibilityDate: '2026-11-03',
+				compatibilityFlags: ['enable_request_signal', 'no_nodejs_compat', 'no_nodejs_compat_v2'],
 				assets: marketAssets,
 				manifest: {
 					mainModule: 'worker.mjs',
@@ -82,7 +83,13 @@ const runtime = new Miniflare({
 						type: 'text',
 						value: JSON.stringify([
 							{ registry: 'https://registry.npmjs.org', access: 'public' },
-							{ registry, access: 'admin', token: login.token, notificationToken },
+							{
+								registry,
+								access: 'admin',
+								token: login.token,
+								notificationToken,
+								notificationIndexing: 'unsigned',
+							},
 						]),
 					},
 				},
@@ -154,7 +161,7 @@ try {
 	console.info(`Market sandbox ready: ${session.publicUrl}/v1`)
 	console.info(`Private PNPR source: ${registry}; public npm remains a separate source.`)
 	console.info(
-		'Automatic provenance verification remains unavailable. Use sandbox:admin for manual indexing.',
+		'This sandbox can automatically index unsigned releases from its private PNPR source.',
 	)
 	await new Promise<void>((accept) => {
 		process.once('SIGINT', accept)

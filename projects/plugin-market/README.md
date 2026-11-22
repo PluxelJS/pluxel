@@ -1,8 +1,20 @@
 # 插件市场
 
-Cloudflare Worker + D1 是唯一可写主站，负责目录、上游观测、制品检查、运营编辑与通知。公开市场网页和 Package Manager 可以读取主站或独立部署的只读镜像。安装及运行由 Package Manager 与 Host 负责。
+参考市场运行在 Cloudflare Worker 中。D1 持久化目录和回执，公开网页和 Package Manager 可以读取主站或独立部署的只读镜像。[事件入口](src/worker.ts)
 
 同一市场可配置公共 npm 与私有 PNPR。包身份是 `registry + name`，发行身份再加精确 `version`。PNPR 代理公共 npm 时也保留实际读取的来源。搜索直接查询所在服务的 SQLite 数据。
+
+## 源码导航
+
+| 修改内容                                              | 入口                                                                                                 |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Worker 装配、请求路由和管理 RPC                       | [`worker.ts`](src/worker.ts)、[`admin.ts`](src/admin.ts) |
+| 搜索与详情、分类标签、作者、快照及 Node 镜像          | [`catalog/`](src/catalog/)                                                                           |
+| 通知认证、回执和重试、Cron 收录                       | [`indexing/`](src/indexing/)                                                                         |
+| npm 来源、自建 registry、OIDC、tarball 校验和审核规则 | [`registry/`](src/registry/)                                                                         |
+| D1 连接和迁移所用 schema                              | [`db/`](src/db/)                                                                                     |
+
+`MarketDeployment` 解析 registry 来源、审核规则和自建 registry 的发布者。HTTP 与 Cron 从事件绑定取得数据库和归档存储。手工与定时收录共用 [`indexing/commit.ts`](src/indexing/commit.ts)，发行、审计和定时任务回执由同一 D1 事务提交。自建 registry 的 R2 与 D1 写入由 [`registry/hosted-store.ts`](src/registry/hosted-store.ts) 管理。
 
 ## 本地运行与来源配置
 
@@ -17,20 +29,46 @@ Cloudflare Worker + D1 是唯一可写主站，负责目录、上游观测、制
 		"registry": "https://packages.example.com/npm",
 		"access": "admin",
 		"token": "UPSTREAM_READ_CREDENTIAL",
-		"notificationToken": "SEPARATE_NOTIFICATION_CREDENTIAL"
+		"notificationToken": "SEPARATE_NOTIFICATION_CREDENTIAL",
+		"notificationIndexing": "unsigned"
 	}
 ]
 ```
 
 这是部署配置，不接受通知发送者添加网络目标。registry 使用 HTTPS，本机 loopback 另允许 HTTP；支持路径前缀，坐标不带末尾 `/`、凭据、query 或 fragment。上游 token 只发送到对应 origin 与路径前缀，不跟随重定向。配置凭据不进入公开 DTO。
 
-匿名目录只包含 `access: public` 来源，私有包详情与回执返回 `404`。管理员 Bearer token 可读全部来源；独立通知 token 只可提交该私源通知、读取其回执，不能浏览私有目录或操作后台。当前没有普通用户的私有目录权限系统。
+匿名目录只包含 `access: public` 来源，私有包详情与回执返回 `404`。管理员 Bearer token 可读全部来源。独立通知 token 或登记的 GitHub workflow 可以提交私源通知和读取获准的回执。它们没有私有目录或后台权限。当前没有普通用户的私有目录权限系统。
 
-Wrangler 的 D1 ID 默认只供本地运行；远程部署方需创建 D1、设置实际 ID、保存 secrets 并显式应用迁移。`compile` 构建静态网页后执行部署 dry-run。运行时不清空或自动修复数据库。
+`notificationIndexing: "unsigned"` 只适用于明确选择此策略的私有来源。定时处理校验没有 attestations 的精确发行，再把目录、审计和回执一起提交。回执成功是 `indexed`，发行证明仍是 `missing`。选项省略时仍要求具备 provenance 校验能力。
+
+Wrangler 的 D1 ID 默认只供本地运行。远程部署方创建独立 D1、设置实际 ID、保存 secrets 并显式应用迁移。`vp run build` 编译静态网页，再执行 Wrangler dry-run。随后可用同一构建产物执行 `vp exec wrangler deploy`。运行时不会自行修改数据库结构。
+
+### 自建插件 registry
+
+同一个 Worker 可以启用自建 registry。它提供 `/npm` 下的 scoped 插件发布、packument、精确版本、dist-tags 查询和 tarball 下载。R2 保存 tarball，D1 记录规范化元数据、SHA-512、发布者身份和 dist-tag。重复发布同一版本返回 `409`，已提交的制品和标签继续生效。普通 `REGISTRIES` 条目通过 HTTPS 接入 npm、PNPR 和其他兼容 registry。
+
+```jsonc
+{
+	"r2_buckets": [{ "binding": "HOSTED_ARCHIVES", "bucket_name": "pluxel-plugin-archives" }],
+	"vars": { "HOSTED_REGISTRY_URL": "https://market.example.com/npm" },
+}
+```
+
+创建上例的 R2 bucket 并应用 D1 迁移。`HOSTED_PUBLISHERS` 接收与[通知登记](#github-actions-发布通知)相同格式的发布者规则数组，直接按精确包名授权。发布 job 向 GitHub 获取以 `HOSTED_REGISTRY_URL` 为 audience 的短期 token，npm 把它作为 Bearer 发送。Worker 用 GitHub JWKS 验证签名和 workflow 身份。这个发布入口记录 OIDC 发布者，npm 的 token exchange 与 Sigstore provenance 各自需要独立实现。[发布 workflow 用法](../../docs/development/plugin-market.md#自建-registry-发布) · [Cloudflare R2 binding](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)
+
+设置 `HOSTED_READ_TOKEN` 限制 registry 下载，省略时允许匿名读。要把版本纳入市场，在 `REGISTRIES` 中登记同一 URL。私有来源使用 `access: "admin"`，其 `token` 与读凭据一致。使用 `notificationIndexing: "unsigned"` 启用该私源的自动收录，通过 `githubPublishers` 登记可通知的 GitHub workflow。该来源的请求在 Worker 内直接交给自建 registry。发布、接收通知和完成收录分别产生结果。
+
+当前发布由初次 PUT 指定 dist-tag，支持至多 4 MiB 的压缩 tarball、6 MiB 的请求正文。独立改 tag、下架、npm 登录和按用户分配读权限暂未实现。R2 先写入该次发布的独立对象，再在一个 D1 批次写入版本与标签。确定的竞争失败会尝试清理该次对象；遇到不确定的 D1 响应会保留对象，后续核对 D1 引用再清理。
+
+### 部署自定义审核
+
+[`registry/review.ts`](src/registry/review.ts) 的审核函数用于自建 registry 发布以及手工和定时收录。部署可设置 `MARKET_REVIEW`，例如 `{"requireLicense":true,"maxArchiveBytes":2097152}`。许可证取包内声明，尺寸取实际压缩 tarball。规则以 `review-license-required` 或 `review-archive-size` 拒绝并保留原状态。制品身份、摘要、manifest、export 和 provenance 检查由已有链路统一执行。
+
+扩展同步规则时继续使用审核函数。需要独立调度的数据观测可以由单独的插件提供，目录和安装继续使用市场提交的精确版本与摘要。
 
 ## GitHub Actions 发布通知
 
-在公开来源的 `githubPublishers` 登记精确包名和获准的 workflow。可为同一包登记多个调用方或并行过渡的固定 SHA。插件仓库的数字 ID 和 owner ID 可从 `gh api repos/OWNER/REPO --jq '[.id, .owner.id]'` 查询。
+在来源的 `githubPublishers` 登记精确包名和获准的 workflow。可为同一包登记多个调用方或并行过渡的固定 SHA。插件仓库的数字 ID 和 owner ID 可从 `gh api repos/OWNER/REPO --jq '[.id, .owner.id]'` 查询。
 
 ```json
 [
@@ -52,7 +90,7 @@ Wrangler 的 D1 ID 默认只供本地运行；远程部署方需创建 D1、设�
 
 通知发送到 `POST /v1/notifications`，正文仍是 `{ registry, name, version }`。Worker 用 GitHub 的公开 JWKS 验证 JWT、有效期和 audience。Audience 使用该通知端点的完整 URL，例如 `https://market.example.com/v1/notifications`。授权核对调用方的两个数字 ID、`workflow_ref` 和实际 Git ref，并在配置了 `jobWorkflowRef` 时核对 SHA 固定的 `job_workflow_ref`。省略 `jobWorkflowRef` 表示只约束调用方 workflow。允许的 GitHub 事件是 `push`、`workflow_dispatch` 和 `release`。配置中的 workflow ref 按 GitHub claim 的实际拼写填写。
 
-登记过的包要求 OIDC bearer 或市场管理员凭据。公开来源里其余包仍可匿名提交。无效或缺少 JWT 返回 `401 github-oidc-invalid`，身份未授权返回 `403 github-oidc-publisher-denied`，无法读取验证密钥返回 `503 github-oidc-unavailable`。公开回执仍可匿名查询。管理 API 的 `githubPublisher` 记录首次接收时的 workflow ref、run ID 与 attempt，历史回执和通过其他凭据接收的记录为 `null`。同一坐标复用原记录。
+登记过的包可使用 OIDC bearer。市场管理员和私源的专用通知 token 也可提交。公开来源里其余包仍可匿名提交。无效或缺少 JWT 返回 `401 github-oidc-invalid`，身份未授权返回 `403 github-oidc-publisher-denied`，无法读取验证密钥返回 `503 github-oidc-unavailable`。公开回执可匿名查询。私源 workflow 使用同一通知 audience 的 token 查询登记包的私有回执。管理 API 的 `githubPublisher` 记录首次接收时的 workflow ref、run ID 与 attempt，历史回执和通过其他凭据接收的记录为 `null`。同一坐标复用原记录。
 
 调用方示例见 [GitHub Actions](../../docs/development/plugin-market.md#github-actions)。需先应用 D1 迁移再部署此 Worker。OIDC 处理通知者身份，发行的 npm provenance 由制品验证链处理。
 
@@ -100,7 +138,7 @@ node mirror.mjs serve ./catalog.sqlite
 
 ## HTTP 契约
 
-目录 DTO 位于 [src/protocol.ts](src/protocol.ts)，由 Worker、镜像与工作区调用方共同演进。包名和精确版本各编码为单个路径段。列表默认 20 条，`limit` 为 1–50；错误使用 `application/problem+json` 与稳定 `code`。
+第三方市场从 [接入其他市场](../../docs/development/plugin-market.md#接入其他市场) 开始。参考实现的 DTO 位于 [src/protocol.ts](src/protocol.ts)。包名和精确版本各编码为单个路径段。列表默认 20 条，`limit` 为 1–50。错误使用 `application/problem+json` 与稳定 `code`。
 
 | 操作                                                       | 返回与边界                                                                            |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------- |
@@ -150,11 +188,11 @@ node examples/admin.ts notifications '{"status":"failed","limit":20}'
 
 ## Provenance 边界
 
-**CI 通知的自动收录尚未启用。** 原生 Sigstore 在 workerd 的 `nodejs_compat` 中未通过真实有效 npm provenance 正例，复现见 [Worker 可行性实验](../../engineering/spikes/plugin-market-worker/README.md#provenance-阻塞与最小复现)。项目没有关闭检查或补丁绕过。
+**公开 npm 的 provenance 自动收录仍受运行时阻塞。** 原生 Sigstore 在 workerd 的 `nodejs_compat` 中未通过真实有效 npm provenance 正例。复现见 [Worker 可行性实验](../../engineering/spikes/plugin-market-worker/README.md#provenance-阻塞与最小复现)。
 
-`GET /v1` 返回 `capabilities.provenanceVerification: false`。通知持久去重，处理后明确以 `provenance-runtime-unsupported` 失败；已知运行时问题不会通过重试或反复下载掩盖。npm 发布成功、通知 `202`、市场收录是三个结果。
+`GET /v1` 返回 `capabilities.provenanceVerification: false`。要求 provenance 的自动收录及带 attestations 的发行以 `provenance-runtime-unsupported` 失败。通知接收返回 `202`，处理结果以回执为准。
 
-手工 `refresh` 只接纳未声明 attestations 的发行；存在证明时同样失败，不降级成 `missing`。`observe` 可展示这类包的元数据，但不生成已检查发行。自动收录仍需实际 workerd 的 Sigstore 正负例、部署维护的 TUF 刷新，以及有效租约与目录写入的同一条件提交。
+手工 `refresh` 与允许无证明的自动收录都要求上游未声明 attestations。`observe` 可展示带证明的包的元数据。启用证明收录前，须验证真实 npm 签名、透明日志和篡改拒绝，并建立可信 TUF 根及其刷新路径。自动收录已用同一 D1 条件事务提交有效租约、目录和回执。
 
 ## 制品、容量与迁移
 

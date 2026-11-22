@@ -1,7 +1,22 @@
 import { RpcTarget } from 'capnweb'
 import { and, desc, eq } from 'drizzle-orm'
-import { processNotifications } from './jobs'
-import { fetchObservation, fetchRelease } from './npm'
+import { observeRepository } from './catalog/repository'
+import {
+	commitObservation,
+	commitRepositoryObservation,
+	setMetadata,
+	setVisibility,
+} from './catalog/write'
+import type { Database } from './db/d1'
+import { audits, packages } from './db/schema'
+import { commitRelease } from './indexing/commit'
+import { processNotifications } from './indexing/jobs'
+import {
+	findNotification,
+	listNotifications,
+	notificationDetail,
+	retryNotification,
+} from './indexing/notifications'
 import {
 	coordinate,
 	MarketError,
@@ -14,20 +29,9 @@ import {
 	type MarketCuration,
 	type NotificationQuery,
 } from './protocol'
-import { audits, notifications, packages } from './schema'
-import {
-	commitRelease,
-	commitObservation,
-	commitRepositoryObservation,
-	connect,
-	listNotifications,
-	notificationDetail,
-	retryNotification,
-	setMetadata,
-	setVisibility,
-} from './store'
-import { sourceFor, type RegistrySource } from './sources'
-import { observeRepository } from './repository'
+import { fetchObservation, fetchRelease } from './registry/npm'
+import type { PackageReview } from './registry/review'
+import { sourceFor, type RegistrySource } from './registry/sources'
 
 function validAuthor(value: unknown) {
 	return (
@@ -43,13 +47,27 @@ function validAuthor(value: unknown) {
 }
 
 export class MarketAdmin extends RpcTarget {
-	#db: ReturnType<typeof connect>
+	#db: Database
 	#sources: readonly RegistrySource[]
+	#review: PackageReview
+	#signal: AbortSignal
 
-	constructor(binding: D1Database, sources: readonly RegistrySource[]) {
+	constructor({
+		db,
+		sources,
+		review,
+		signal,
+	}: {
+		db: Database
+		sources: readonly RegistrySource[]
+		review: PackageReview
+		signal: AbortSignal
+	}) {
 		super()
-		this.#db = connect(binding)
+		this.#db = db
 		this.#sources = sources
+		this.#review = review
+		this.#signal = signal
 	}
 
 	async getPackage(input: PackageIdentity) {
@@ -71,7 +89,9 @@ export class MarketAdmin extends RpcTarget {
 			const { release, observation } = await fetchRelease(
 				selected,
 				sourceFor(this.#sources, selected.registry),
+				{ review: this.#review, signal: this.#signal },
 			)
+			this.#signal.throwIfAborted()
 			return {
 				status: 'indexed' as const,
 				release: await commitRelease(this.#db, release, observation),
@@ -94,7 +114,9 @@ export class MarketAdmin extends RpcTarget {
 			const observation = await fetchObservation(
 				selected,
 				sourceFor(this.#sources, selected.registry),
+				this.#signal,
 			)
+			this.#signal.throwIfAborted()
 			return {
 				status: 'observed' as const,
 				record: await commitObservation(this.#db, selected, observation),
@@ -171,7 +193,8 @@ export class MarketAdmin extends RpcTarget {
 		if (!current) return { status: 'not-found' as const }
 		if (!current.repository) return { status: 'unavailable' as const, code: 'missing-repository' }
 		try {
-			const observed = await observeRepository(current.repository)
+			const observed = await observeRepository(current.repository, this.#signal)
+			this.#signal.throwIfAborted()
 			const changed = await commitRepositoryObservation(
 				this.#db,
 				selected,
@@ -193,7 +216,7 @@ export class MarketAdmin extends RpcTarget {
 	async getNotification(id: string) {
 		if (typeof id !== 'string' || !/^[\w-]{1,64}$/.test(id))
 			throw new TypeError('Invalid receipt id')
-		const row = await this.#db.select().from(notifications).where(eq(notifications.id, id)).get()
+		const row = await findNotification(this.#db, id)
 		return row ? notificationDetail(row) : null
 	}
 
@@ -209,7 +232,10 @@ export class MarketAdmin extends RpcTarget {
 
 	/** Process one bounded scheduled batch, useful for local development and recovery. */
 	async processNotifications() {
-		return processNotifications(this.#db)
+		return processNotifications(this.#db, this.#sources, {
+			review: this.#review,
+			signal: this.#signal,
+		})
 	}
 
 	async recentChanges(input: PackageIdentity) {

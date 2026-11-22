@@ -2,11 +2,11 @@
 
 状态：人工观测、精确发行校验和通知机制已实现；自动 provenance 收录与补漏扫描尚未实现。上级：[提案总览](README.md)。
 
-现有多 registry 配置、`observe` / `refresh`、tarball 校验、不可变摘要和通知限制见 [Worker 项目](../../../projects/plugin-market/README.md)。`src/jobs.ts` 当前领取通知后返回 `provenance-runtime-unsupported`；它尚未执行自动拉包和目录发布。
+现有多 registry 配置、`observe` / `refresh`、tarball 校验、不可变摘要和通知限制见 [Worker 项目](../../../projects/plugin-market/README.md)。[定时收录](../../../projects/plugin-market/src/indexing/jobs.ts)会为明确启用 `unsigned` 的私有来源拉包并提交结果。要求 provenance 的通知返回 `provenance-runtime-unsupported`。
 
 ## CI 发布通知与 npm provenance
 
-现有通知只提交获准 registry、包名和精确版本，持久接收后返回回执。自动收录仍需连接下面的处理路径：
+现有通知提交获准 registry、包名和精确版本，持久接收后返回回执。带证明的自动收录需要接入以下处理路径。
 
 1. 持有效租约，从指定 registry 读取元数据、实际 tarball 和该发行的 npm provenance。
 2. 使用原生验证链校验证明，并核对包名、版本和 tarball 摘要，取得关联仓库、commit 与构建信息。

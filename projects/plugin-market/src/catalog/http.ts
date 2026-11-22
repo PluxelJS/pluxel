@@ -6,8 +6,8 @@ import {
 	getRelease,
 	listPackages,
 	type CatalogDatabase,
-} from './catalog'
-import { json } from './http'
+} from './queries'
+import { json } from '../http'
 import {
 	decodeCursor,
 	encodeCursor,
@@ -17,9 +17,9 @@ import {
 	pageLimit,
 	registry,
 	registryBase,
-} from './protocol'
-import { packages, releases } from './schema'
-import type { RegistrySource } from './sources'
+} from '../protocol'
+import { packages, releases } from '../db/schema'
+import type { RegistrySource } from '../registry/sources'
 
 function decoded(value: string) {
 	try {

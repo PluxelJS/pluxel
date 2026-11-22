@@ -4,7 +4,7 @@ import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { newHttpBatchRpcSession } from 'capnweb'
 import type { MarketAdmin } from '../src/admin.ts'
-import type { NotificationDetail, PackagePage, Receipt, Release } from '../src/protocol.ts'
+import type { PackagePage, Receipt, Release } from '../src/protocol.ts'
 import { localRoot, readSession, repositoryRoot } from './session.ts'
 
 const [command = 'prepare'] = process.argv.slice(2)
@@ -245,46 +245,28 @@ if (command === 'prepare') {
 		const result = await processing.processNotifications()
 		assert.ok(result.processed >= 1)
 	}
-	const failed = await marketJson<Receipt>(
+	const indexed = await marketJson<Receipt>(
 		`/v1/notifications/${receipt.id}`,
 		undefined,
 		session.notificationToken,
 	)
-	assert.equal(failed.status, 'failed')
-	assert.equal(failed.code, 'provenance-runtime-unsupported')
-	{
-		using retry = admin()
-		const result = await retry.retryNotification(receipt.id)
-		assert.equal(result.status, 'unavailable')
-	}
+	assert.equal(indexed.status, 'indexed')
+	assert.equal(indexed.attempts, 1)
+	assert.equal(indexed.code, null)
 	{
 		using inbox = admin()
 		const result = await inbox.listNotifications({
 			...identity,
-			status: 'failed',
-			code: 'provenance-runtime-unsupported',
+			status: 'indexed',
 			limit: 1,
 		})
 		assert.equal(result.notifications[0]?.id, receipt.id)
-		assert.equal(result.notifications[0]?.retry, 'provenance-runtime-unsupported')
+		assert.equal(result.notifications[0]?.retry, 'not-failed')
 		assert.equal('leaseToken' in result.notifications[0], false)
-	}
-	{
-		using details = admin()
-		const result: NotificationDetail | null = await details.getNotification(receipt.id)
-		assert.ok(result?.diagnostic)
-		assert.equal(result.retry, 'provenance-runtime-unsupported')
-	}
-	passed(
-		'The filtered admin inbox explains the provenance failure and retry decision without leaking internal leases',
-	)
-	{
-		using indexing = admin()
-		const result = await indexing.refresh({ ...identity, version: '0.1.0' })
-		assert.equal(result.status, 'indexed', JSON.stringify(result))
 	}
 	const first = await marketJson<Release>(packageUrl('/releases/0.1.0'))
 	assert.equal(first.registry, session.registry)
+	assert.equal(first.provenance.status, 'missing')
 	assert.equal(new URL(first.tarball).origin, new URL(session.registry).origin)
 	const npmResponse = await fetch(
 		new URL(`${encodeURIComponent(name)}/0.1.0`, session.registryUrl),
@@ -299,7 +281,7 @@ if (command === 'prepare') {
 		((await npmResponse.json()) as { dist: { integrity: string } }).dist.integrity,
 	)
 	const retained = await marketJson<Receipt>(`/v1/notifications/${receipt.id}`)
-	assert.equal(retained.status, 'failed')
+	assert.equal(retained.status, 'indexed')
 	const anonymousRelease = await marketResponse(packageUrl('/releases/0.1.0'), {}, null)
 	assert.equal(anonymousRelease.status, 404)
 	const notificationCatalog = await marketResponse(packageUrl(), {}, session.notificationToken)
@@ -311,7 +293,7 @@ if (command === 'prepare') {
 	)
 	assert.equal(anonymousCatalog.packages.length, 0)
 	passed(
-		'Manual refresh verified the native private tarball without rewriting its origin; anonymous catalog and receipt reads disclose no private data',
+		'The notification batch verified and indexed the private tarball; anonymous catalog and receipt reads disclose no private data',
 	)
 	await run('npm', ['version', '0.2.0', '--no-git-tag-version', '--ignore-scripts'])
 	await writeFile(
@@ -333,9 +315,9 @@ if (command === 'prepare') {
 		'Published 0.2.0; latest records the actual private registry tag before that release is indexed',
 	)
 	{
-		using indexing = admin()
-		const result = await indexing.refresh({ ...identity, version: '0.2.0' })
-		assert.equal(result.status, 'indexed')
+		using processing = admin()
+		const result = await processing.processNotifications()
+		assert.ok(result.processed >= 1)
 	}
 	const second = await marketJson<Release>(packageUrl('/releases/0.2.0'))
 	assert.notEqual(second.integrity, first.integrity)
@@ -431,7 +413,7 @@ if (command === 'prepare') {
 	)
 	await writeFile(
 		resolve(localRoot, 'last-run.json'),
-		`${JSON.stringify({ registry: session.registry, name, pluginRoot, marketUrl: session.publicUrl, receipt: failed, steps }, null, 2)}\n`,
+		`${JSON.stringify({ registry: session.registry, name, pluginRoot, marketUrl: session.publicUrl, receipt: indexed, steps }, null, 2)}\n`,
 	)
 	console.info(`Experience complete. Evidence: ${resolve(localRoot, 'last-run.json')}`)
 }

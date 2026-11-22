@@ -1,6 +1,52 @@
 import { createRemoteJWKSet, errors, jwtVerify } from 'jose'
-import { MarketError, type GitHubNotificationPublisher } from './protocol'
-import type { GitHubPublisher } from './sources'
+import { MarketError, object, packageName, type GitHubNotificationPublisher } from '../protocol'
+
+export type GitHubPublisher = {
+	name: string
+	repositoryId: string
+	repositoryOwnerId: string
+	workflowRef: string
+	jobWorkflowRef?: string
+}
+
+export function githubPublishers(value: unknown): GitHubPublisher[] {
+	if (!Array.isArray(value) || value.length > 5000)
+		throw new Error('githubPublishers must be an array of at most 5000 package rules')
+	const workflowRef =
+		/^[\w.-]+\/[\w.-]+\/\.github\/workflows\/[\w.-]+\.ya?ml@refs\/(heads|tags)\/[^\s@*]+$/
+	const jobWorkflowRef = /^[\w.-]+\/[\w.-]+\/\.github\/workflows\/[\w.-]+\.ya?ml@[a-f0-9]{40}$/
+	const id = /^[1-9]\d{0,19}$/
+	return value.map((entry: unknown) => {
+		if (
+			!object(entry) ||
+			!packageName(entry.name) ||
+			typeof entry.repositoryId !== 'string' ||
+			!id.test(entry.repositoryId) ||
+			typeof entry.repositoryOwnerId !== 'string' ||
+			!id.test(entry.repositoryOwnerId) ||
+			typeof entry.workflowRef !== 'string' ||
+			!workflowRef.test(entry.workflowRef) ||
+			(entry.jobWorkflowRef !== undefined &&
+				(typeof entry.jobWorkflowRef !== 'string' || !jobWorkflowRef.test(entry.jobWorkflowRef))) ||
+			Object.keys(entry).some(
+				(key) =>
+					!['name', 'repositoryId', 'repositoryOwnerId', 'workflowRef', 'jobWorkflowRef'].includes(
+						key,
+					),
+			)
+		)
+			throw new Error(
+				'Each githubPublishers rule needs a package name, numeric repository and owner IDs, an exact caller workflow ref, and an optional SHA-pinned reusable workflow ref',
+			)
+		return {
+			name: entry.name,
+			repositoryId: entry.repositoryId,
+			repositoryOwnerId: entry.repositoryOwnerId,
+			workflowRef: entry.workflowRef,
+			jobWorkflowRef: entry.jobWorkflowRef,
+		}
+	})
+}
 
 const issuer = 'https://token.actions.githubusercontent.com'
 const keys = createRemoteJWKSet(new URL('/.well-known/jwks', issuer), { timeoutDuration: 5000 })
@@ -8,19 +54,19 @@ const keys = createRemoteJWKSet(new URL('/.well-known/jwks', issuer), { timeoutD
 const denied = () =>
 	new MarketError(
 		'github-oidc-invalid',
-		'A valid GitHub Actions OIDC bearer token for this market is required',
+		'A valid GitHub Actions OIDC bearer token for this operation is required',
 		401,
 	)
 
-export async function authorizeGitHubNotification(
+export async function authorizeGitHubPublisher(
 	request: Request,
 	publishers: readonly GitHubPublisher[],
+	audience: string,
 ): Promise<GitHubNotificationPublisher> {
 	const token = /^Bearer ([\w-]+\.[\w-]+\.[\w-]+)$/.exec(
 		request.headers.get('Authorization') ?? '',
 	)?.[1]
 	if (!token || token.length > 8192) throw denied()
-	const audience = new URL('/v1/notifications', request.url).href
 	const { payload } = await jwtVerify(token, keys, {
 		issuer,
 		audience,
@@ -70,7 +116,7 @@ export async function authorizeGitHubNotification(
 	) {
 		throw new MarketError(
 			'github-oidc-publisher-denied',
-			'This GitHub Actions job is not authorized to notify this package',
+			'This GitHub Actions job is not authorized for this package',
 			403,
 		)
 	}

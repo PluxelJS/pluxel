@@ -4,9 +4,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { resolve } from 'node:path'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { drizzle, type AsyncRemoteCallback } from 'drizzle-orm/sqlite-proxy'
-import { readCatalog } from './catalog-http'
-import { marketResponse } from './http'
-import { MarketError, readJson } from './protocol'
+import { readCatalog } from './http'
+import { marketResponse } from '../http'
+import { MarketError, readJson } from '../protocol'
 import { decodeCatalogSnapshot, snapshotByteLimit, type CatalogSnapshot } from './snapshot'
 
 const applicationId = 0x504c4d52 // PLMR

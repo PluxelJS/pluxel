@@ -1,12 +1,5 @@
-import { MarketError, object, packageName, registry, registryBase } from './protocol'
-
-export type GitHubPublisher = {
-	name: string
-	repositoryId: string
-	repositoryOwnerId: string
-	workflowRef: string
-	jobWorkflowRef?: string
-}
+import { MarketError, object, registry, registryBase } from '../protocol'
+import { githubPublishers, type GitHubPublisher } from './github-publisher'
 
 export type RegistrySource = {
 	registry: string
@@ -15,46 +8,11 @@ export type RegistrySource = {
 	token?: string
 	/** Separate capability for notification submission and private receipt lookup. */
 	notificationToken?: string
+	/** Private registry policy for automatically indexing releases without attestations. */
+	notificationIndexing?: 'unsigned'
 	githubPublishers?: GitHubPublisher[]
-}
-
-function githubPublishers(value: unknown): GitHubPublisher[] {
-	if (!Array.isArray(value) || value.length > 5000)
-		throw new Error('githubPublishers must be an array of at most 5000 package rules')
-	const workflowRef =
-		/^[\w.-]+\/[\w.-]+\/\.github\/workflows\/[\w.-]+\.ya?ml@refs\/(heads|tags)\/[^\s@*]+$/
-	const jobWorkflowRef = /^[\w.-]+\/[\w.-]+\/\.github\/workflows\/[\w.-]+\.ya?ml@[a-f0-9]{40}$/
-	const id = /^[1-9]\d{0,19}$/
-	return value.map((entry: unknown) => {
-		if (
-			!object(entry) ||
-			!packageName(entry.name) ||
-			typeof entry.repositoryId !== 'string' ||
-			!id.test(entry.repositoryId) ||
-			typeof entry.repositoryOwnerId !== 'string' ||
-			!id.test(entry.repositoryOwnerId) ||
-			typeof entry.workflowRef !== 'string' ||
-			!workflowRef.test(entry.workflowRef) ||
-			(entry.jobWorkflowRef !== undefined &&
-				(typeof entry.jobWorkflowRef !== 'string' || !jobWorkflowRef.test(entry.jobWorkflowRef))) ||
-			Object.keys(entry).some(
-				(key) =>
-					!['name', 'repositoryId', 'repositoryOwnerId', 'workflowRef', 'jobWorkflowRef'].includes(
-						key,
-					),
-			)
-		)
-			throw new Error(
-				'Each githubPublishers rule needs a package name, numeric repository and owner IDs, an exact caller workflow ref, and an optional SHA-pinned reusable workflow ref',
-			)
-		return {
-			name: entry.name,
-			repositoryId: entry.repositoryId,
-			repositoryOwnerId: entry.repositoryOwnerId,
-			workflowRef: entry.workflowRef,
-			jobWorkflowRef: entry.jobWorkflowRef,
-		}
-	})
+	/** Transport bound to the current event’s native resources. */
+	fetch?: (request: Request) => Promise<Response>
 }
 
 /** Deployment-owned allowlist; notification senders cannot add network targets. */
@@ -74,7 +32,8 @@ export function registrySources(raw?: string): RegistrySource[] {
 			!object(value) ||
 			typeof value.registry !== 'string' ||
 			(value.access !== 'public' && value.access !== 'admin') ||
-			(value.githubPublishers !== undefined && value.access !== 'public') ||
+			(value.notificationIndexing !== undefined &&
+				(value.notificationIndexing !== 'unsigned' || value.access !== 'admin')) ||
 			['token', 'notificationToken'].some(
 				(key) =>
 					value[key] !== undefined &&
@@ -82,11 +41,18 @@ export function registrySources(raw?: string): RegistrySource[] {
 			) ||
 			Object.keys(value).some(
 				(key) =>
-					!['registry', 'access', 'token', 'notificationToken', 'githubPublishers'].includes(key),
+					![
+						'registry',
+						'access',
+						'token',
+						'notificationToken',
+						'notificationIndexing',
+						'githubPublishers',
+					].includes(key),
 			)
 		)
 			throw new Error(
-				'Each registry source needs registry and access (public/admin). githubPublishers is available for public sources.',
+				'Each source needs registry and access (public/admin). Only private sources can set notificationIndexing: unsigned.',
 			)
 		const base = registryBase(value.registry)
 		if (seen.has(base)) throw new Error('REGISTRIES contains a duplicate registry')
@@ -96,6 +62,7 @@ export function registrySources(raw?: string): RegistrySource[] {
 			access: value.access,
 			token: value.token as string | undefined,
 			notificationToken: value.notificationToken as string | undefined,
+			notificationIndexing: value.notificationIndexing as RegistrySource['notificationIndexing'],
 			githubPublishers:
 				value.githubPublishers === undefined ? undefined : githubPublishers(value.githubPublishers),
 		}

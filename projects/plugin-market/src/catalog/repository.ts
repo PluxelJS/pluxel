@@ -1,4 +1,4 @@
-import { MarketError, object, readJson, type MarketAuthor } from './protocol'
+import { MarketError, object, readJson, type MarketAuthor } from '../protocol'
 
 export type RepositoryObservation = {
 	stars: number
@@ -19,7 +19,11 @@ function avatarUrl(value: unknown): string | null {
 }
 
 /** Repository links are package metadata, independent of verified build provenance. */
-export async function observeRepository(repository: string): Promise<RepositoryObservation> {
+export async function observeRepository(
+	repository: string,
+	eventSignal?: AbortSignal,
+): Promise<RepositoryObservation> {
+	eventSignal?.throwIfAborted()
 	const url = new URL(repository)
 	const match = /^\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)$/.exec(url.pathname)
 	if (url.origin !== 'https://github.com' || !match)
@@ -29,6 +33,7 @@ export async function observeRepository(repository: string): Promise<RepositoryO
 			422,
 		)
 	const observedAt = Date.now()
+	const deadline = AbortSignal.timeout(10_000)
 	let response: Response
 	try {
 		response = await fetch(
@@ -40,7 +45,7 @@ export async function observeRepository(repository: string): Promise<RepositoryO
 					'X-GitHub-Api-Version': '2022-11-28',
 				},
 				redirect: 'manual',
-				signal: AbortSignal.timeout(10_000),
+				signal: eventSignal ? AbortSignal.any([eventSignal, deadline]) : deadline,
 			},
 		)
 	} catch {

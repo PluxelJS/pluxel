@@ -3,13 +3,11 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { bundleFromJSON } from '@sigstore/bundle'
 import { TrustedRoot } from '@sigstore/protobuf-specs'
 import { getTrustedRoot } from '@sigstore/tuf'
-import { toSignedEntity, toTrustMaterial, Verifier } from '@sigstore/verify'
 import { Miniflare } from 'miniflare'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { ProbeInput } from './provenance-worker'
+import probe, { type ProbeInput } from './provenance-worker'
 
 describe('npm provenance verification inside workerd (network integration)', () => {
 	let runtime: Miniflare
@@ -87,26 +85,16 @@ describe('npm provenance verification inside workerd (network integration)', () 
 		}
 	})
 
-	async function verify(value: ProbeInput) {
-		const response = await runtime.dispatchFetch('http://probe/', {
+	function probeInit(value: ProbeInput) {
+		return {
 			method: 'POST',
 			body: JSON.stringify(value),
-		})
-		return { status: response.status, body: await response.json() }
+		}
 	}
 
-	it('accepts the same proof with the native Node verifier', () => {
-		const verifier = new Verifier(toTrustMaterial(TrustedRoot.fromJSON(input.trustedRoot)))
-		expect(() =>
-			verifier.verify(toSignedEntity(bundleFromJSON(input.bundle)), {
-				extensions: { issuer: 'https://token.actions.githubusercontent.com' },
-				subjectAlternativeName:
-					'https://github.com/cloudflare/capnweb/.github/workflows/release.yml@refs/heads/main',
-			}),
-		).not.toThrow()
-	})
-
-	it('verifies npm bytes in workerd before checking substitutions', async () => {
+	async function checkProofAndSubstitutions(
+		verify: (value: ProbeInput) => Promise<{ status: number; body: unknown }>,
+	) {
 		const result = await verify(input)
 		expect(result, JSON.stringify(result)).toMatchObject({
 			status: 200,
@@ -127,6 +115,20 @@ describe('npm provenance verification inside workerd (network integration)', () 
 		expect(await verify({ ...input, bundle })).toMatchObject({
 			status: 422,
 			body: { verified: false },
+		})
+	}
+
+	it('verifies npm bytes and rejects substitutions with the native Node verifier', async () => {
+		await checkProofAndSubstitutions(async (value) => {
+			const response = await probe.fetch(new Request('http://probe/', probeInit(value)))
+			return { status: response.status, body: await response.json() }
+		})
+	})
+
+	it('verifies npm bytes in workerd before checking substitutions', async () => {
+		await checkProofAndSubstitutions(async (value) => {
+			const response = await runtime.dispatchFetch('http://probe/', probeInit(value))
+			return { status: response.status, body: await response.json() }
 		})
 	})
 })

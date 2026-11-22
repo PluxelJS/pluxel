@@ -8,7 +8,7 @@ import {
 	releasePackage,
 	visiblePackages,
 	type CatalogDatabase,
-} from './catalog'
+} from './queries'
 import {
 	catalogAuthorId,
 	exactVersion,
@@ -17,8 +17,8 @@ import {
 	registryBase,
 	taxonomySlug,
 	type Release,
-} from './protocol'
-import { authors, packages, releases } from './schema'
+} from '../protocol'
+import { authors, packages, releases } from '../db/schema'
 
 export const snapshotByteLimit = 16 * 1024 * 1024
 

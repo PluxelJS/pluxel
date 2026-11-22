@@ -18,8 +18,8 @@ import {
 	type PackagePage,
 	type PackageQuery,
 	type Release,
-} from './protocol'
-import { authors, packages, releases } from './schema'
+} from '../protocol'
+import { authors, packages, releases } from '../db/schema'
 
 export type CatalogDatabase = Pick<BaseSQLiteDatabase<'async', unknown>, 'select'> &
 	Pick<DrizzleD1Database, 'batch'>

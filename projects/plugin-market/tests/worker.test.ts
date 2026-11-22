@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -11,12 +11,17 @@ import { promisify } from 'node:util'
 import { gzipSync } from 'node:zlib'
 import { newHttpBatchRpcSession } from 'capnweb'
 import { eq } from 'drizzle-orm'
-import { build } from 'esbuild'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
-import { Miniflare, Response as MiniflareResponse } from 'miniflare'
+import {
+	Miniflare,
+	Response as MiniflareResponse,
+	type Request as MiniflareRequest,
+} from 'miniflare'
 import { packTar, type TarEntry } from 'modern-tar'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { build } from 'esbuild'
 import type { MarketAdmin } from '../src/admin'
+import { connect } from '../src/db/d1'
 import {
 	MarketError,
 	registry,
@@ -24,16 +29,23 @@ import {
 	type PackagePage,
 	type Receipt,
 } from '../src/protocol'
-import { audits, authors, notifications, packages, releases } from '../src/schema'
+import {
+	audits,
+	authors,
+	hostedReleases,
+	hostedTags,
+	notifications,
+	packages,
+	releases,
+} from '../src/db/schema'
+import { commitRelease } from '../src/indexing/commit'
 import {
 	claim,
-	commitRelease,
-	connect,
 	enqueue,
 	failAttempt,
 	maxAttempts,
 	pendingNotifications,
-} from '../src/store'
+} from '../src/indexing/notifications'
 
 type Fixture = {
 	registry: string
@@ -71,6 +83,7 @@ describe('plugin market on workerd and D1', () => {
 			access: 'admin',
 			token: 'read-private',
 			notificationToken: 'notify-private',
+			notificationIndexing: 'unsigned',
 		},
 	]
 	const fixtures = new Map<string, Fixture>()
@@ -151,16 +164,61 @@ describe('plugin market on workerd and D1', () => {
 		return result
 	}
 
-	async function start() {
+	function registryReply(request: MiniflareRequest) {
+		const url = new URL(request.url)
+		if (url.href === `${githubIssuer}/.well-known/jwks`) {
+			expect(request.headers.has('Authorization')).toBe(false)
+			if (!githubKeysAvailable) return new MiniflareResponse(null, { status: 503 })
+			return MiniflareResponse.json({ keys: [signingJwk] })
+		}
+		if (url.origin === 'https://api.github.com')
+			return MiniflareResponse.json(github.body, { status: github.status })
+		if (!sources.some((source) => request.url.startsWith(`${source.registry}/`)))
+			throw new Error(`Unexpected source ${url.origin}`)
+		if (request.url.startsWith(`${privateRegistry}/`))
+			expect(request.headers.get('Authorization')).toBe('Bearer read-private')
+		for (const item of fixtures.values()) {
+			if (request.url === `${item.registry}/${encodeURIComponent(item.name)}`)
+				return MiniflareResponse.json({
+					name: item.name,
+					'dist-tags': item.tags,
+					versions: Object.fromEntries(
+						[...fixtures.values()]
+							.filter((other) => other.registry === item.registry && other.name === item.name)
+							.map((other) => [other.version, other.metadata]),
+					),
+					readme: '# Registry README\nRead before choosing a version.',
+				})
+			if (request.url === `${item.registry}/${encodeURIComponent(item.name)}/${item.version}`)
+				return MiniflareResponse.json(item.metadata)
+			if (request.url === `${item.registry}/${encodeURIComponent(item.name)}/-/${item.version}.tgz`)
+				return new MiniflareResponse(item.bytes)
+			if (request.url === `${item.registry}/-/package/${encodeURIComponent(item.name)}/dist-tags`)
+				return MiniflareResponse.json(item.tags)
+		}
+		if (url.pathname === '/redirect.tgz')
+			return new MiniflareResponse(null, {
+				status: 302,
+				headers: { Location: 'https://unexpected.example/file.tgz' },
+			})
+		return new MiniflareResponse('Not found', { status: 404 })
+	}
+
+	async function start(hostedUrl?: string, port = 0) {
 		runtime = new Miniflare({
 			host: '127.0.0.1',
-			port: 0,
+			port,
 			resourcePersistencePath: directory,
 			workers: [
 				{
 					config: {
 						name: 'plugin-market-test',
 						compatibilityDate: '2026-11-03',
+						compatibilityFlags: [
+							'enable_request_signal',
+							'no_nodejs_compat',
+							'no_nodejs_compat_v2',
+						],
 						manifest: {
 							mainModule: 'worker.mjs',
 							modules: { 'worker.mjs': { type: 'esm', contents: script } },
@@ -168,7 +226,35 @@ describe('plugin market on workerd and D1', () => {
 						env: {
 							DB: { type: 'd1', id: 'plugin-market-test' },
 							ADMIN_TOKEN: { type: 'text', value: token },
-							REGISTRIES: { type: 'text', value: JSON.stringify(sources) },
+							REGISTRIES: {
+								type: 'text',
+								value: JSON.stringify(
+									hostedUrl
+										? [
+												...sources,
+												{
+													registry: hostedUrl,
+													access: 'admin',
+													notificationIndexing: 'unsigned',
+													token: 'hosted-read',
+													githubPublishers: [githubPublisherRule],
+												},
+											]
+										: sources,
+								),
+							},
+							...(hostedUrl
+								? {
+										HOSTED_REGISTRY_URL: { type: 'text' as const, value: hostedUrl },
+										HOSTED_ARCHIVES: { type: 'r2' as const, name: 'hosted-archives' },
+										HOSTED_PUBLISHERS: {
+											type: 'text' as const,
+											value: JSON.stringify([githubPublisherRule]),
+										},
+										HOSTED_READ_TOKEN: { type: 'text' as const, value: 'hosted-read' },
+										MARKET_REVIEW: { type: 'text' as const, value: '{"requireLicense":true}' },
+									}
+								: {}),
 						},
 					},
 					dev: {
@@ -176,54 +262,7 @@ describe('plugin market on workerd and D1', () => {
 							type: 'fetcher',
 							handler(request) {
 								requests.push(request.url)
-								const url = new URL(request.url)
-								if (url.href === `${githubIssuer}/.well-known/jwks`) {
-									expect(request.headers.has('Authorization')).toBe(false)
-									if (!githubKeysAvailable) return new MiniflareResponse(null, { status: 503 })
-									return MiniflareResponse.json({ keys: [signingJwk] })
-								}
-								if (url.origin === 'https://api.github.com')
-									return MiniflareResponse.json(github.body, { status: github.status })
-								if (!sources.some((source) => request.url.startsWith(`${source.registry}/`)))
-									throw new Error(`Unexpected source ${url.origin}`)
-								if (request.url.startsWith(`${privateRegistry}/`))
-									expect(request.headers.get('Authorization')).toBe('Bearer read-private')
-								for (const item of fixtures.values()) {
-									if (request.url === `${item.registry}/${encodeURIComponent(item.name)}`)
-										return MiniflareResponse.json({
-											name: item.name,
-											'dist-tags': item.tags,
-											versions: Object.fromEntries(
-												[...fixtures.values()]
-													.filter(
-														(other) => other.registry === item.registry && other.name === item.name,
-													)
-													.map((other) => [other.version, other.metadata]),
-											),
-											readme: '# Registry README\nRead before choosing a version.',
-										})
-									if (
-										request.url ===
-										`${item.registry}/${encodeURIComponent(item.name)}/${item.version}`
-									)
-										return MiniflareResponse.json(item.metadata)
-									if (
-										request.url ===
-										`${item.registry}/${encodeURIComponent(item.name)}/-/${item.version}.tgz`
-									)
-										return new MiniflareResponse(item.bytes)
-									if (
-										request.url ===
-										`${item.registry}/-/package/${encodeURIComponent(item.name)}/dist-tags`
-									)
-										return MiniflareResponse.json(item.tags)
-								}
-								if (url.pathname === '/redirect.tgz')
-									return new MiniflareResponse(null, {
-										status: 302,
-										headers: { Location: 'https://unexpected.example/file.tgz' },
-									})
-								return new MiniflareResponse('Not found', { status: 404 })
+								return registryReply(request)
 							},
 						},
 					},
@@ -273,6 +312,8 @@ describe('plugin market on workerd and D1', () => {
 
 	beforeEach(async () => {
 		await db.batch([
+			db.delete(hostedTags),
+			db.delete(hostedReleases),
 			db.delete(audits),
 			db.delete(releases),
 			db.delete(notifications),
@@ -308,7 +349,282 @@ describe('plugin market on workerd and D1', () => {
 			body: JSON.stringify(value),
 		})
 	}
+	function signPublisher(audience: string, claims = {}, key = signingKey) {
+		return new SignJWT({
+			iss: githubIssuer,
+			aud: audience,
+			repository_id: githubPublisherRule.repositoryId,
+			repository_owner_id: githubPublisherRule.repositoryOwnerId,
+			workflow_ref: githubPublisherRule.workflowRef,
+			job_workflow_ref: githubPublisherRule.jobWorkflowRef,
+			ref: 'refs/heads/main',
+			event_name: 'workflow_dispatch',
+			run_id: '912345',
+			run_attempt: '1',
+			iat: Math.floor(Date.now() / 1000),
+			exp: Math.floor(Date.now() / 1000) + 60,
+			...claims,
+		})
+			.setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
+			.sign(key)
+	}
+
 	const releasePath = `/v1/packages/${encodeURIComponent(selected.name)}/releases/${selected.version}`
+
+	it('publishes to the hosted registry with npm and GitHub OIDC, then installs and indexes the same archive', async () => {
+		const hostedUrl = `${origin.origin}/npm`
+		const port = Number(origin.port)
+		await runtime.dispose()
+		await start(hostedUrl, port)
+		const cwd = await mkdtemp(join(tmpdir(), 'pluxel-hosted-npm-'))
+		try {
+			const verified = await fixture(githubPublisherRule.name, {
+				registry: hostedUrl,
+				manifest: { license: 'MIT' },
+			})
+			const rejected = await fixture(verified.name, { registry: hostedUrl, version: '1.0.1' })
+			const packagePath = `${hostedUrl}/${encodeURIComponent(verified.name)}`
+			function publish(item: Fixture, bearer?: string, tag = 'latest') {
+				return fetch(packagePath, {
+					method: 'PUT',
+					headers: {
+						'Content-Type': 'application/json',
+						...(bearer && { Authorization: `Bearer ${bearer}` }),
+					},
+					body: JSON.stringify({
+						versions: {
+							[item.version]: { name: item.name, version: item.version, license: 'MIT' },
+						},
+						'dist-tags': { [tag]: item.version },
+						_attachments: {
+							'plugin.tgz': {
+								data: Buffer.from(item.bytes).toString('base64'),
+								length: item.bytes.byteLength,
+							},
+						},
+					}),
+				})
+			}
+			await expect(publish(verified)).resolves.toMatchObject({ status: 401 })
+			await expect(
+				publish(verified, await signPublisher(`${origin.origin}/v1/notifications`)),
+			).resolves.toMatchObject({ status: 401 })
+			await expect(
+				publish(verified, await signPublisher(hostedUrl, { repository_id: 'wrong' })),
+			).resolves.toMatchObject({ status: 403 })
+
+			const credential = await signPublisher(hostedUrl)
+			const denied = await publish(rejected, credential)
+			expect(denied.status).toBe(422)
+			await expect(denied.json()).resolves.toMatchObject({ code: 'review-license-required' })
+			await expect(db.select().from(hostedReleases)).resolves.toEqual([])
+			const npmrc = join(cwd, '.npmrc-test')
+			await writeFile(npmrc, `//${origin.host}/npm/:_authToken=\${NODE_AUTH_TOKEN}\n`)
+			await writeFile(join(cwd, 'plugin.tgz'), verified.bytes)
+			await writeFile(join(cwd, 'package.json'), JSON.stringify({ private: true }))
+			const npm = promisify(execFile)
+			function runNpm(args: string[], authToken: string) {
+				return npm('npm', [...args, '--registry', `${hostedUrl}/`, '--ignore-scripts'], {
+					cwd,
+					env: {
+						...process.env,
+						NPM_ID_TOKEN: undefined,
+						ACTIONS_ID_TOKEN_REQUEST_TOKEN: undefined,
+						ACTIONS_ID_TOKEN_REQUEST_URL: undefined,
+						NPM_CONFIG_USERCONFIG: npmrc,
+						NPM_CONFIG_CACHE: join(cwd, 'cache'),
+						NODE_AUTH_TOKEN: authToken,
+					},
+				})
+			}
+			await runNpm(
+				['publish', './plugin.tgz', '--access=restricted', '--provenance=false'],
+				credential,
+			)
+			const next = await fixture(verified.name, {
+				registry: hostedUrl,
+				version: '1.1.0',
+				manifest: { license: 'MIT' },
+			})
+			const competing = await Promise.all([
+				publish(next, credential, 'next'),
+				publish(next, credential, 'next'),
+			])
+			expect(competing.map((response) => response.status).sort()).toEqual([201, 409])
+			await expect(publish(verified, credential, 'preview')).resolves.toMatchObject({ status: 409 })
+			await expect(fetch(packagePath)).resolves.toMatchObject({ status: 401 })
+			const reader = { Authorization: 'Bearer hosted-read' }
+			const packument = await fetch(packagePath, { headers: reader })
+			expect(packument.status).toBe(200)
+			const manifest = (await packument.json()) as {
+				'dist-tags': Record<string, string>
+				versions: Record<
+					string,
+					{ dist: { tarball: string; integrity: string; unpackedSize: number } }
+				>
+			}
+			expect(manifest['dist-tags']).toEqual({ latest: verified.version, next: next.version })
+			const dist = manifest.versions[verified.version].dist
+			expect(dist.integrity).toBe(verified.integrity)
+			expect(dist.unpackedSize).toBeGreaterThan(0)
+			const archive = await fetch(dist.tarball, { headers: reader })
+			expect(Buffer.from(await archive.arrayBuffer())).toEqual(Buffer.from(verified.bytes))
+			expect(await db.select().from(hostedReleases)).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						version: verified.version,
+						publisher: expect.objectContaining({ runId: '912345' }),
+					}),
+				]),
+			)
+			const archives = await runtime.getR2Bucket('HOSTED_ARCHIVES')
+			const storedArchives = await archives.list()
+			expect(storedArchives.objects).toHaveLength(2)
+
+			await runNpm(
+				[
+					'install',
+					`${verified.name}@${verified.version}`,
+					'--legacy-peer-deps',
+					'--no-audit',
+					'--no-fund',
+					'--package-lock=false',
+				],
+				'hosted-read',
+			)
+			const installed = await readFile(
+				join(cwd, 'node_modules', verified.name, 'package.json'),
+				'utf8',
+			)
+			expect(JSON.parse(installed)).toMatchObject({
+				name: verified.name,
+				version: verified.version,
+				license: 'MIT',
+			})
+
+			const endpoint = new URL('/v1/notifications', origin)
+			const notificationToken = await signPublisher(endpoint.href)
+			const notice = await fetch(endpoint, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${notificationToken}`,
+				},
+				body: JSON.stringify({
+					registry: hostedUrl,
+					name: verified.name,
+					version: verified.version,
+				}),
+			})
+			expect(notice.status).toBe(202)
+			const receipt = (await notice.json()) as Receipt
+			const receiptPath = `/v1/notifications/${receipt.id}`
+			await expect(get(receiptPath)).resolves.toMatchObject({ status: 404 })
+			await expect(
+				get(receiptPath, { Authorization: `Bearer ${credential}` }),
+			).resolves.toMatchObject({ status: 404 })
+			const entry = await runtime.getWorker()
+			expect(await entry.scheduled({ cron: '*/5 * * * *' })).toMatchObject({ outcome: 'ok' })
+			expect(
+				await getJson(receiptPath, { Authorization: `Bearer ${notificationToken}` }),
+			).toMatchObject({ status: 'indexed' })
+			expect(await callAdmin((session) => session.getNotification(receipt.id))).toMatchObject({
+				status: 'indexed',
+				githubPublisher: { runId: '912345' },
+			})
+			const path = `/v1/packages/${encodeURIComponent(verified.name)}/releases/${verified.version}?registry=${encodeURIComponent(hostedUrl)}`
+			expect(await getJson(path, { Authorization: `Bearer ${token}` })).toMatchObject({
+				integrity: verified.integrity,
+			})
+			await expect(get(path)).resolves.toMatchObject({ status: 404 })
+			await fixture(selected.name, { registry: privateRegistry })
+			expect(
+				await callAdmin((session) => session.refresh({ ...selected, registry: privateRegistry })),
+			).toMatchObject({
+				status: 'failed',
+				code: 'review-license-required',
+			})
+		} finally {
+			await rm(cwd, { recursive: true, force: true })
+			await runtime.dispose()
+			await start()
+		}
+	}, 25_000)
+
+	it('atomically settles a private unsigned receipt and keeps proof-bearing releases out of the catalog', async () => {
+		const unsigned = await fixture(selected.name, { registry: privateRegistry })
+		const signed = await fixture('@example/signed', { registry: privateRegistry })
+		signed.metadata.dist = { ...(signed.metadata.dist as object), attestations: { url: 'proof' } }
+		const received = await Promise.all(
+			[unsigned, signed].map(async ({ registry: source, name, version }) => {
+				const response = await fetch(new URL('/v1/notifications', origin), {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', Authorization: 'Bearer notify-private' },
+					body: JSON.stringify({ registry: source, name, version }),
+				})
+				expect(response.status).toBe(202)
+				return (await response.json()) as Receipt
+			}),
+		)
+		const entry = await runtime.getWorker()
+		expect(await entry.scheduled({ cron: '*/5 * * * *' })).toMatchObject({ outcome: 'ok' })
+		expect(await callAdmin((session) => session.getNotification(received[0].id))).toMatchObject({
+			status: 'indexed',
+			attempts: 1,
+			code: null,
+		})
+		expect(await callAdmin((session) => session.getNotification(received[1].id))).toMatchObject({
+			status: 'failed',
+			code: 'provenance-runtime-unsupported',
+		})
+		const path = `${releasePath}?registry=${encodeURIComponent(privateRegistry)}`
+		expect(await getJson(path, { Authorization: `Bearer ${token}` })).toMatchObject({
+			integrity: unsigned.integrity,
+			provenance: { status: 'missing' },
+		})
+		await expect(get(path)).resolves.toMatchObject({ status: 404 })
+		expect(await db.select().from(releases)).toMatchObject([{ name: unsigned.name }])
+		expect(await db.select().from(audits)).toMatchObject([
+			{ name: unsigned.name, action: 'refresh' },
+		])
+	})
+
+	it('rejects all writes from an expired indexing lease', async () => {
+		const input = { ...selected, registry: privateRegistry }
+		const queued = await enqueue(db, input, 0)
+		const task = await claim(db, queued.id, 0)
+		expect(task).not.toBeNull()
+		await expect(
+			commitRelease(
+				db,
+				{
+					...input,
+					integrity: 'test',
+					checkedAt: 1,
+					tarball: `${privateRegistry}/test.tgz`,
+					provenance: { status: 'missing' },
+					peerDependencies: {},
+					pluginPackages: {},
+					readme: null,
+					license: null,
+				},
+				{
+					description: null,
+					repository: null,
+					metadataVersion: input.version,
+					readme: null,
+					license: null,
+					distTags: {},
+					observedAt: 1,
+				},
+				task!,
+			),
+		).rejects.toMatchObject({ code: 'notification-lease-lost' })
+		expect(await db.select().from(packages)).toEqual([])
+		expect(await db.select().from(releases)).toEqual([])
+		expect(await db.select().from(audits)).toEqual([])
+		expect(await db.select().from(notifications)).toMatchObject([{ status: 'processing' }])
+	})
 
 	it('fetches and verifies npm bytes before publishing a browsable, cacheable exact release', async () => {
 		const item = await fixture()
@@ -401,25 +717,7 @@ describe('plugin market on workerd and D1', () => {
 	it('authenticates GitHub Actions notifications against the package and both workflow identities', async () => {
 		const target = { ...selected, name: githubPublisherRule.name }
 		const audience = new URL('/v1/notifications', origin).href
-		function sign(claims = {}, key = signingKey) {
-			return new SignJWT({
-				iss: githubIssuer,
-				aud: audience,
-				repository_id: githubPublisherRule.repositoryId,
-				repository_owner_id: githubPublisherRule.repositoryOwnerId,
-				workflow_ref: githubPublisherRule.workflowRef,
-				job_workflow_ref: githubPublisherRule.jobWorkflowRef,
-				ref: 'refs/heads/main',
-				event_name: 'workflow_dispatch',
-				run_id: '912345',
-				run_attempt: '1',
-				iat: Math.floor(Date.now() / 1000),
-				exp: Math.floor(Date.now() / 1000) + 60,
-				...claims,
-			})
-				.setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
-				.sign(key)
-		}
+		const sign = (claims = {}, key = signingKey) => signPublisher(audience, claims, key)
 		async function submit(jwt?: string, payload = target) {
 			return fetch(new URL('/v1/notifications', origin), {
 				method: 'POST',

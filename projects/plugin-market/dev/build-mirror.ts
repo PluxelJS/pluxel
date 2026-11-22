@@ -9,7 +9,7 @@ const migrations = readMigrationFiles({ migrationsFolder: resolve(projectRoot, '
 
 await build({
 	stdin: {
-		contents: `import { main } from './src/mirror'; await main(${JSON.stringify(migrations)})`,
+		contents: `import { main } from './src/catalog/mirror'; await main(${JSON.stringify(migrations)})`,
 		resolveDir: projectRoot,
 	},
 	outfile: process.argv[2] ?? resolve(projectRoot, 'dist/mirror.mjs'),

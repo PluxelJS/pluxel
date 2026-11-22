@@ -7,7 +7,40 @@ import {
 	text,
 	uniqueIndex,
 } from 'drizzle-orm/sqlite-core'
-import type { GitHubNotificationPublisher, MarketCuration, Provenance } from './protocol'
+import type { GitHubNotificationPublisher, MarketCuration, Provenance } from '../protocol'
+
+export const hostedReleases = sqliteTable(
+	'hosted_releases',
+	{
+		registry: text('registry').notNull(),
+		name: text('name').notNull(),
+		version: text('version').notNull(),
+		archiveKey: text('archive_key').notNull(),
+		integrity: text('integrity').notNull(),
+		shasum: text('shasum').notNull(),
+		manifest: text('manifest', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+		publishedAt: integer('published_at').notNull(),
+		publisher: text('publisher', { mode: 'json' }).$type<GitHubNotificationPublisher>().notNull(),
+	},
+	(table) => [primaryKey({ columns: [table.registry, table.name, table.version] })],
+)
+
+export const hostedTags = sqliteTable(
+	'hosted_tags',
+	{
+		registry: text('registry').notNull(),
+		name: text('name').notNull(),
+		tag: text('tag').notNull(),
+		version: text('version').notNull(),
+	},
+	(table) => [
+		primaryKey({ columns: [table.registry, table.name, table.tag] }),
+		foreignKey({
+			columns: [table.registry, table.name, table.version],
+			foreignColumns: [hostedReleases.registry, hostedReleases.name, hostedReleases.version],
+		}),
+	],
+)
 
 export const authors = sqliteTable('market_authors', {
 	id: text('id').primaryKey(),
