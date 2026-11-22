@@ -115,14 +115,29 @@ export function applyConfigSources(
 		// The field already shows the saved input; only surface values it cannot show.
 		const inherited =
 			displayScalar && origin && effectiveText !== undefined ? `生效值 ${effectiveText}` : undefined
+		// Nothing saved: the default goes in the empty control as its placeholder, unless the field
+		// has a placeholder of its own; otherwise it is named after the description.
+		const placeholder =
+			displayScalar && effective === undefined ? defaultPlaceholder(field, output) : undefined
 		const target =
-			displayScalar && outputText !== undefined && outputText !== effectiveText
+			displayScalar &&
+			placeholder === undefined &&
+			outputText !== undefined &&
+			outputText !== effectiveText
 				? `解析为 ${outputText}`
 				: undefined
 		const description = [field.meta.description, origin, inherited, target]
-			.filter(Boolean)
+			.filter((part): part is string => typeof part === 'string' && part !== '')
+			// A plugin's own description often ends a sentence already; one stop between parts.
+			.map((part) => part.replace(/[。.．！!？?\s]+$/u, ''))
 			.join('。')
 		const meta = description ? { ...field.meta, description } : field.meta
+		if (
+			placeholder !== undefined &&
+			(field.kind === 'picklist' || field.kind === 'string' || field.kind === 'number')
+		) {
+			return { ...field, meta, placeholder }
+		}
 		return field.kind === 'object'
 			? {
 					...field,
@@ -131,6 +146,20 @@ export function applyConfigSources(
 				}
 			: { ...field, meta }
 	})
+}
+/** The resolved default as an empty control's placeholder: an option's label, or the value. */
+function defaultPlaceholder(field: FieldNode, output: unknown): string | undefined {
+	if (typeof output !== 'string' && typeof output !== 'number') return undefined
+	if (output === '') return undefined
+	if (field.kind === 'picklist') {
+		if (field.placeholder) return undefined
+		const entry = field.entries?.find((item) => item.value === output)
+		return entry?.label ?? field.labels?.[output] ?? String(output)
+	}
+	if (field.kind === 'string' || field.kind === 'number') {
+		return field.placeholder ? undefined : String(output)
+	}
+	return undefined
 }
 function contains(parent: readonly string[], child: readonly string[]): boolean {
 	return parent.length <= child.length && parent.every((key, index) => key === child[index])

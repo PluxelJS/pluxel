@@ -341,3 +341,48 @@ it('explains effective env sources on nested fields while preserving editable si
 		),
 	).toEqual({ set: { nested: { free: 'edit' } }, remove: [['nested', 'free']] })
 })
+
+it('joins a description that already ends a sentence to its hints with one stop', () => {
+	const [field] = applyConfigSources(
+		adaptConfigPresentationFields([
+			{
+				...baseField('limit'),
+				kind: 'number',
+				placeholder: '例如 100',
+				meta: { label: 'Limit', description: '上限。' },
+			},
+		]),
+		[],
+		[],
+		{},
+		{ limit: 500 },
+	)
+	expect(field?.meta.description).toBe('上限。解析为 500')
+})
+
+it('shows an unsaved default as the placeholder of an empty control', () => {
+	const [limit, theme, saved] = applyConfigSources(
+		adaptConfigPresentationFields([
+			{ ...baseField('limit'), kind: 'number', meta: { label: 'Limit', description: '上限。' } },
+			{
+				name: 'theme',
+				path: 'theme',
+				depth: 0,
+				required: true,
+				kind: 'picklist',
+				control: 'select',
+				options: ['nord', 'sand'],
+				labels: { nord: 'Nord', sand: 'Sand' },
+				meta: { label: 'Theme' },
+			},
+			{ ...baseField('saved'), kind: 'number', meta: { label: 'Saved' } },
+		]),
+		[],
+		[],
+		{ saved: 3 },
+		{ limit: 500, theme: 'nord', saved: 3 },
+	)
+	expect(limit).toMatchObject({ placeholder: '500', meta: { description: '上限' } })
+	expect(theme).toMatchObject({ placeholder: 'Nord' })
+	expect(saved).not.toHaveProperty('placeholder')
+})
