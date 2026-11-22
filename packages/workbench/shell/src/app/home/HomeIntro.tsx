@@ -12,11 +12,13 @@ import {
 import {
 	IconAlertTriangle,
 	IconArrowRight,
+	IconChevronRight,
 	IconCircleCheck,
 	IconInfoCircle,
 } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
-import type { RuntimeMeta } from '@pluxel/services/management/client'
+import { pluginNodeIndexKey } from '@pluxel/core'
+import type { PluginCatalogSection, RuntimeMeta } from '@pluxel/services/management/client'
 type PluxelPlatformSnapshot = RuntimeMeta['platform']
 import { RouterLinkAdapter } from '../router/RouterLinkAdapter'
 import { usePluginOverview, type PluginStatusEntry } from '../plugins/pluginOverview'
@@ -32,11 +34,7 @@ export function HomeIntro() {
 	const platform = runtimeMeta?.platform
 	const summary = overview.overview?.status.summary
 	const statuses = overview.overview?.status.statuses ?? []
-	// Plugins that are not simply running come first, so the list doubles as a to-do list.
-	const sortedPlugins = [...statuses].sort(
-		(left, right) =>
-			Number(isRunning(left)) - Number(isRunning(right)) || left.label.localeCompare(right.label),
-	)
+	const pluginGroups = groupPlugins(statuses, overview.overview?.sections ?? [])
 	const attention = statuses.flatMap((plugin) => {
 		const reason = pluginAttention(plugin)
 		return reason ? [{ plugin, reason }] : []
@@ -108,7 +106,13 @@ export function HomeIntro() {
 							管理
 						</Text>
 					</div>
-					{sortedPlugins.length > 0 ? <PluginQueue plugins={sortedPlugins} /> : null}
+					{pluginGroups.map((group) =>
+						group.name === null ? (
+							<PluginQueue key="" plugins={group.plugins} />
+						) : (
+							<PluginGroup key={group.id} name={group.name} plugins={group.plugins} />
+						),
+					)}
 				</section>
 				<div className="plx-home__side">
 					<HomeApps />
@@ -299,17 +303,70 @@ function AttentionPanel({
 	)
 }
 
-function PluginQueue({
-	plugins,
-}: {
-	plugins: Array<{
-		route: string
-		label: string
-		availability: 'available' | 'unavailable'
-		desiredState: 'running' | 'stopped'
-		lifecycleState: 'running' | 'stopped'
-	}>
-}) {
+type QueuePlugin = Readonly<{
+	route: string
+	label: string
+	availability: 'available' | 'unavailable'
+	desiredState: 'running' | 'stopped'
+	lifecycleState: 'running' | 'stopped'
+}>
+
+type HomePluginGroup = Readonly<{
+	id: string
+	/** Null for the plugins in no catalog group, listed first without a heading. */
+	name: string | null
+	plugins: readonly PluginStatusEntry[]
+}>
+
+/**
+ * The catalog's groups (the same as on the plugins page), each sorted so that plugins that are
+ * not simply running come first: the list doubles as a to-do list.
+ */
+export function groupPlugins(
+	statuses: readonly PluginStatusEntry[],
+	sections: readonly PluginCatalogSection[],
+): HomePluginGroup[] {
+	const byAddress = new Map(statuses.map((status) => [pluginNodeIndexKey(status.address), status]))
+	const grouped = new Set<string>()
+	const groups: HomePluginGroup[] = []
+	for (const section of sections) {
+		const plugins = section.nodes.flatMap((address) => {
+			const key = pluginNodeIndexKey(address)
+			const status = byAddress.get(key)
+			if (!status || grouped.has(key)) return []
+			grouped.add(key)
+			return [status]
+		})
+		if (plugins.length > 0) {
+			groups.push({ id: section.sectionId, name: section.name, plugins: sortQueue(plugins) })
+		}
+	}
+	const rest = statuses.filter((status) => !grouped.has(pluginNodeIndexKey(status.address)))
+	return rest.length > 0 ? [{ id: '', name: null, plugins: sortQueue(rest) }, ...groups] : groups
+}
+
+function sortQueue(plugins: readonly PluginStatusEntry[]): PluginStatusEntry[] {
+	return [...plugins].sort(
+		(left, right) =>
+			Number(isRunning(left)) - Number(isRunning(right)) || left.label.localeCompare(right.label),
+	)
+}
+
+/** A catalog group on the home page: its name and count, folding its plugins away. */
+function PluginGroup({ name, plugins }: { name: string; plugins: readonly QueuePlugin[] }) {
+	return (
+		<details className="plx-home__queueGroup" open>
+			<summary className="plx-home__queueGroupTitle">
+				<IconChevronRight size={12} aria-hidden="true" className="plx-home__queueGroupChevron" />
+				<span>{name}</span>
+				<span className="plx-home__queueGroupCount">{plugins.length}</span>
+			</summary>
+			<PluginQueue plugins={plugins} />
+		</details>
+	)
+}
+
+function PluginQueue({ plugins }: { plugins: readonly QueuePlugin[] }) {
 	return (
 		<div className="plx-home__queue">
 			{plugins.map((plugin) => (

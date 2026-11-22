@@ -35,12 +35,23 @@ const { HomeIntro } = await import('../src/app/home/HomeIntro')
 
 type Entry = Pick<
 	PluginStatusEntry,
-	'route' | 'label' | 'issues' | 'availability' | 'desiredState' | 'lifecycleState' | 'autoStart'
+	| 'route'
+	| 'label'
+	| 'address'
+	| 'issues'
+	| 'availability'
+	| 'desiredState'
+	| 'lifecycleState'
+	| 'autoStart'
 >
 function plugin(route: string, override: Partial<Entry> = {}): Entry {
 	return {
 		route,
 		label: route,
+		address: {
+			definition: { entry: { kind: 'package-root', packageName: '@test/home' }, exportName: route },
+			variant: 'default',
+		},
 		issues: [],
 		availability: 'available',
 		desiredState: 'running',

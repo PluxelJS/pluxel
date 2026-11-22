@@ -155,6 +155,56 @@
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* A catalog group on the home page: a quiet heading over its own two-column list. */
+.plx-home__queueGroup {
+	margin-top: 16px;
+}
+
+.plx-home__queueGroupTitle {
+	align-items: center;
+	color: var(--mantine-color-dimmed);
+	cursor: pointer;
+	display: flex;
+	font-size: var(--mantine-font-size-xs);
+	font-weight: 600;
+	gap: 6px;
+	list-style: none;
+	padding-bottom: 6px;
+	user-select: none;
+}
+
+.plx-home__queueGroupTitle::-webkit-details-marker {
+	display: none;
+}
+
+.plx-home__queueGroupTitle:hover {
+	color: var(--mantine-color-text);
+}
+
+.plx-home__queueGroupChevron {
+	transition: transform 120ms ease;
+}
+
+.plx-home__queueGroup[open] .plx-home__queueGroupChevron {
+	transform: rotate(90deg);
+}
+
+.plx-home__queueGroupCount {
+	font-variant-numeric: tabular-nums;
+	font-weight: 400;
+}
+
+.plx-home__appBlock + .plx-home__appBlock {
+	margin-top: 16px;
+}
+
+.plx-home__appGroupTitle {
+	color: var(--mantine-color-dimmed);
+	font-size: var(--mantine-font-size-xs);
+	font-weight: 600;
+	margin: 0 0 6px;
+}
+
 .plx-home__appGrid {
 	display: grid;
 	gap: 8px;
