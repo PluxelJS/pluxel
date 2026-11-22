@@ -90,9 +90,7 @@ jobs:
         working-directory: framework
         env:
           PLUXEL_REDIS_TEST_URL: redis://127.0.0.1:6379
-        run: |
-          vp exec --filter @pluxel/host playwright-core install --with-deps --only-shell chromium
-          vp run --concurrency-limit=2 workspace:ci
+        run: vp run --concurrency-limit=2 plugins:ci
       - name: Pack plugin
         if: inputs.pack-artifact
         working-directory: ${{ inputs.framework-ref == '' && '.' || 'framework' }}

@@ -56,7 +56,7 @@ jobs:
 
 对整个插件仓库执行 PR 检查时，调用 `plugin-build.yml` 并传入 `pack-artifact: false`。发布时向 `plugin-publish.yml` 传入准确的 `package-name`，例如 `@pluxel/plugin-playwright`，它只上传和发布选中的包。各 npm 包分别登记调用方的仓库和发布 workflow。
 
-如果插件仓库作为 Pluxel 的 `plugins/` submodule 开发，调用方可以额外传入已公开的完整 `framework-ref`。复用 workflow 检出指定框架，把调用方提交放到其中的 `plugins/`，使用框架的 catalog、冻结 lockfile 和 `workspace:ci` 验证。依赖变化需要配套更新框架的 lockfile 和该 pin。
+如果插件仓库作为 Pluxel 的 `plugins/` submodule 开发，调用方可以额外传入已公开的完整 `framework-ref`。复用 workflow 检出指定框架，把调用方提交放到其中的 `plugins/`，使用框架的 catalog、冻结 lockfile 和 `plugins:ci` 验证。该任务构建插件需要的框架产物，执行插件检查、类型检查、测试及 Typst WASM 验收。依赖变化需要配套更新框架的 lockfile 和该 pin。
 
 ### PNPR 私有 registry 演示
 
