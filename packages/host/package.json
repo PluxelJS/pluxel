@@ -19,6 +19,10 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./application": {
+			"@pluxel/source": "./src/application.ts",
+			"default": "./dist/application.mjs"
+		},
 		"./bindings": {
 			"@pluxel/source": "./src/bindings.ts",
 			"default": "./dist/bindings.mjs"
@@ -88,6 +92,7 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./application": "./dist/application.mjs",
 			"./bindings": "./dist/bindings.mjs",
 			"./browser": "./dist/browser.mjs",
 			"./cloudflare": "./dist/cloudflare.mjs",

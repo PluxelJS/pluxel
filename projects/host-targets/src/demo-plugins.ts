@@ -1,16 +1,19 @@
-import { Consumer, Provider } from '@pluxel-example/host-targets-plugins'
-import type { OutboundFetch } from '@pluxel/core'
+import { defineHostApplication } from '@pluxel/host/application'
 import { demoConfig } from './demo-config'
 
-export const consumerAddress = Consumer.nodeAddress()
-
-export function demoOptions(source: string, fetch?: OutboundFetch) {
-	const { provider, consumer, coreConfig } = demoConfig(source, fetch)
-	return {
-		plugins: [
-			{ plugin: Provider, ...provider },
-			{ plugin: Consumer, ...consumer },
-		],
-		coreConfig,
-	}
+export function demoApplication({
+	Provider,
+	Consumer,
+}: typeof import('@pluxel-example/host-targets-plugins')) {
+	return defineHostApplication(({ env }) => {
+		const source = env.GREETING_SOURCE
+		if (!source) throw new Error('GREETING_SOURCE is required')
+		const { provider, consumer } = demoConfig(source)
+		return {
+			plugins: [
+				{ plugin: Provider, ...provider },
+				{ plugin: Consumer, ...consumer },
+			],
+		}
+	})
 }

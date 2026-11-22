@@ -2,11 +2,19 @@
 
 Host 拥有服务安装、应用启动、catalog、运行意图和资源关闭，复用 Core 的 graph/lifecycle。应用用法见 [Host services](../docs/host/services.md)，整体分层见 [Plugin 系统](PLUGIN_SYSTEM.md)。
 
-`defineHostApplication(factory)` 每次返回完整 `HostApplication`。`servicesPreset()` 和 `vitePreset()` 组合运行时服务及开发附件，`@pluxel/rolldown` 的 `pluxel()` 构建应用；这些入口共用一个 Host。
+`defineHostApplication(factory)` 返回工厂本身，由驱动在启动时求值。Node 应用可用 `servicesPreset()` 和 `vitePreset()` 组合运行时服务及开发附件，使用 `@pluxel/rolldown` 的 `pluxel()` 构建交付。
+
+## 应用工厂与运行寿命
+
+`@pluxel/host/application` 提供三端共享的 `defineHostApplication(({ env }) => …)` 和服务安装函数。每个根用冻结的部署变量选择插件和服务，完成 catalog、fork 和服务依赖校验。`@pluxel/host` 的 Node 入口导出同一个函数对象，工厂参数推断为 `HostStartupContext`，可直接读取启动路径、模式和部署信息。Node 托管加载器另外解析动态来源、文件与环境绑定。Node 与浏览器的 `startHost(application, inputs?)` 返回已验收的根，调用方持有并关闭它。三端共用准备、启动验收和发布钩子。默认验收只在失败时投影完整状态，自定义 `acceptStartup` 始终收到完整快照。 [应用工厂](../packages/host/src/application.ts) · [直接启动](../packages/host/src/embedded-application.ts) · [启动判定](../packages/host/src/application-start.ts)
+
+Cloudflare 在模块作用域创建 `createWorkerHost(application)`。首个事件进入 `worker.run({ env, ctx }, callback)` 时启动根，当前事件通过 `ctx.waitUntil` 持有冷启动任务。相同部署变量的并发事件等待同一次启动，后续事件复用已启动的根、服务和插件。部署变量按字符串键值比较。新快照启动成功后接替原根，已接纳的旧事件结算后再关闭原根。新快照启动失败会使等待它的事件失败，下次同配置事件可以重试。平台回收 isolate 后由下一实例重新启动。 [Worker 驱动](../packages/host/src/cloudflare.ts) · [workerd 回归](../packages/host/tests/cloudflare/runtime.test.ts)
+
+每次 `run` 建立独立的 SDK scope，持有本次取消信号、插件借用和 effects。原生 Request、事件 bindings 和请求产生的流由 handler 显式传入业务方法。默认在回调结束时释放 scope。依赖插件的响应体以 `responseBody: 'scope'` 和请求 signal 把借用延长到读完、取消或异常。其他事件继续使用常驻根。HTTP 响应完成或客户端断连后，平台为同次事件的全部 `waitUntil` 工作合计最多保留 30 秒。 [Market HTTP 与 Cron](../projects/plugin-market/src/worker.ts) · [Workers 执行上下文](https://developers.cloudflare.com/workers/runtime-apis/context/#waituntil)
 
 ## 服务与资源
 
-`createHost({ plugins, policy, config, services, runtime })` 的准备顺序：
+`createHost({ plugins, policy, config, services, coreConfig })` 的准备顺序：
 
 1. 捕获输入，校验 root 创建前的固定安装计划。
 2. 创建唯一 root，解析文档 factory，读取保存输入，组合八项 policy，一次绑定四项执行参数。
@@ -22,11 +30,11 @@ service access 区分 `all`、真实 Plugin/Part `owner` 和真实 `root`。`ctx
 
 部署清单决定 Node 制品 owner：standalone 使用应用固定目录；modules 保留已加载模块 owner，Node 服务按各 owner inventory 读取，不能用应用目录覆盖外部 worker。详见[官方默认组合](../docs/host/services.md#官方服务预设servicespreset)。
 
-Node 与浏览器入口共享 ZenFS 装配，Node 入口额外接入 Undici 代理工厂。Cloudflare 请求入口 `@pluxel/host/cloudflare` 选择会话文档和只读 Vault bindings。三个入口把已校验的 Core 设施交给同一 `createResolvedHost`。Cloudflare 调用方在当次 handler 内创建、启动、使用和关闭 Host。所选 Plugin 和 Services 的依赖闭包由应用构建验证。 [浏览器 Host](../docs/host/configuration.md#浏览器-host) · [Cloudflare 请求 Host](../docs/host/configuration.md#cloudflare-请求-host)
+Node 与浏览器入口共享 ZenFS 装配，Node 入口额外接入 Undici 代理工厂。Cloudflare 使用根所有的会话文档和只读 Vault bindings。文档、TinyBase 会话数据和 logger 根标识在同一根的各次调用间保留。请求日志可显式用 `ctx.logger.with({ requestId })` 关联到单次事件。所选 Plugin 和 Services 的依赖闭包由应用构建验证。 [浏览器 Host](../docs/host/configuration.md#浏览器-host) · [Worker 设施](../packages/core/src/context/core-facilities.ts)
 
 ## 应用、开发和部署
 
-每次启动求值配置工厂，在异步 bindings 读取前捕获 name/plugins/sources/policy/config/services/runtime。服务声明复制能力和依赖集合，借用句柄保留 identity。执行入口向 `createHost()` 显式投影正式字段。`prepare` 在服务和开发附件准备后、Plugin 启动前执行。
+每次启动求值应用工厂，捕获插件、策略、配置、服务、Core 设施和生命周期函数。Node 托管加载器还捕获来源声明，再异步解析 bindings。服务声明复制能力和依赖集合，借用句柄保留 identity。各入口将解析后的声明交给 `createResolvedHost()` 建根。`prepare` 在服务和开发附件准备后、Plugin 启动前执行。
 
 生产入口 `application-start.ts` 统一执行：
 
@@ -34,11 +42,11 @@ Node 与浏览器入口共享 ZenFS 装配，Node 入口额外接入 Undici 代�
 prepare → host.start / 服务结算 → acceptStartup → launch
 ```
 
-默认要求 Host status 中全部 desiredState=running 的节点都已 running；应用可显式接受降级。拒绝保留 report/status，异常及清理异常保留 cause，失败调用原 `host.close()`。launch 只在判定通过后发布。Vite 拥有自己的 listener、更新和局部失败诊断，不执行 acceptStartup/launch。
+默认要求 Host status 中全部 desiredState=running 的节点都已 running；应用可显式接受降级。拒绝保留 report/status，异常及清理异常保留 cause，失败调用原 `host.close()`。launch 只在判定通过后发布。Node 的 Vite 托管入口执行 `prepare`，由开发服务器持有 listener、报告启动状态并管理更新。浏览器与 Cloudflare 的 Vite 示例直接使用各自的启动入口，照常执行启动验收和 `launch`。
 
 固定 `plugins` 与声明式 `sources` 进入同一 catalog。policy/config/bindings 使用 canonical address，提前声明动态节点不会加载代码、创建 fork 或启动节点。Host 保持进程 cwd；入口和来源锚定 startup root，env 由 startup 显式传入。输入合并由 [Config](CONFIG.md#static-startup-config) 维护。
 
-Vite 和生产 launcher 共用应用解析。工厂 identity 变化时重新求值并替换 Host，固定 import 更新也可使工厂失效；求值失败保留旧 Host。工厂未变的动态来源更新复用当前配置、提交 catalog。replacement 失败可用最后成功声明创建 fresh Host 补偿，旧 generation 保持退役。Host-vite 是唯一开发驱动；Services/Workbench 分别拥有自己的附件，database lowering 属于工具插件。
+Vite 和生产 launcher 共用应用解析。工厂 identity 变化时重新求值并替换 Host，固定 import 更新也可使工厂失效；求值失败保留旧 Host。工厂未变的动态来源更新复用当前配置、提交 catalog。replacement 失败可用最后成功声明创建 fresh Host 补偿，旧 generation 保持退役。Host-vite 驱动 Node 应用开发；Services/Workbench 分别拥有自己的附件，database lowering 属于工具插件。
 
 modules launcher 在全新 Node 进程、业务闭包首次求值前，调用 `runHostApplication(entry, { startup, sharedPackages })`：先建立共享绑定，再求值工厂和 imports。standalone bootstrap 已内联闭包，无需再次发现模块。两者完成 Host/附件接线后共用 `startHostApplication`。应用在自身闭包静态导入 HTTP 服务并在 launch 调用，保持 Host 与 服务声明身份 一致。构建 variant 只选择资源交付方式；原生启动的求值前提见[生产构建](../docs/host/configuration.md#生产构建)。
 

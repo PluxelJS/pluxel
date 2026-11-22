@@ -34,7 +34,7 @@ For continuous or multi-file edits while the application is running, use the con
 Run `vp exec node dev/inspect.mjs` to locate the example Plugin, Parts, Schema and application bindings directly from local source. This uses `@pluxel/agent-sdk/source` and works before starting the app. See the [source query guide](https://github.com/PluxelJS/pluxel/blob/main/docs/development/inspection.md).
 
 The host declares its fixed Plugin catalog and optional sources in `host/src/app.ts`.
-Vite development and production execution consume that same `defineHostApplication(factory)` declaration.
+Vite development and production execution consume the same `defineHostApplication(factory)` declaration. The factory uses `startup.env` to select plugins and services. The Node entry point also supplies the deployment root and startup bindings.
 The application factory returns an explicit service list; `servicesPreset()` from `@pluxel/services/preset` combines base services,
 Management and optional Workbench. Set `workbench: false` for a headless application with management capabilities.
 Core provides `ctx.vault` directly. `coreConfig.vault` passes `startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY` as the deployment key.

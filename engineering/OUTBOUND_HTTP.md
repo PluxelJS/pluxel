@@ -10,6 +10,8 @@ Core 通过 `PluginContext.wretch` 提供原生 Wretch，通过 `PluginContext.f
 
 部署、宿主管理默认和节点规则的 origin 约束取交集。省略该层即继承，显式空数组拒绝该范围的受管请求。启用任何 origin 限制时，URL 或字符串输入省略 `redirect` 采用 `error`。已有 `Request` 按 `init` 覆盖其原有值。最终为 `follow` 的请求在传输前被拒绝，`manual` 采用平台原生响应。`error` 在传输层用 `manual` 发一跳，遇到重定向即取消响应体并以 `TypeError` 失败，兼容只接纳 `follow` 和 `manual` 的 workerd。调用方通过受管 Fetch 显式发下一跳时再次进入同一判定。 [Fetch 重定向](https://fetch.spec.whatwg.org/#http-fetch) · [Workers Request](https://developers.cloudflare.com/workers/runtime-apis/request/)
 
+可用配额走同步接纳路径。并发配额用满时，占用最后一个配额的调用发布容量变化的 Promise，后续调用按先进先出等待前序事件的完成。取消从队列移除当前调用并唤醒其后继。在 workerd 中由仍持有 I/O 的事件创建等待信号，等待方可在自己的事件上下文继续发送。 [出站接纳](../packages/core/src/http/admission.ts) · [跨事件回归](../packages/host/tests/cloudflare/runtime.test.ts)
+
 策略拒绝以核心的 `OutboundHttpError.code` 表达。队列容量、origin、重定向模式和 Dispatcher 冲突都有独立分类。HTTP 状态和传输异常保留上游语义，Wretch 按自己的协议处理 Fetch 结果。请求显式设置的头优先，受管节点默认值与宿主默认值依次补缺。 [配置](../docs/host/configuration.md#受管出站-http) · [输入校验](../packages/core/src/http/options.ts)
 
 ## 保存与资源
@@ -30,8 +32,8 @@ Workbench 初次读取从宿主取最近匹配的记录。省略日志 range 的
 
 回归入口包括 Core 的公开 Context 消费、排队策略变更、停止、保存、原生 Node 代理交接，以及 Services 的授权管理和独立安装测试。 [Core 回归](../packages/core/tests/plugins/OutboundHttp.test.ts) · [交付消费者](../packages/services/tests/installed/services.smoke.mjs)
 
-## Cloudflare 请求 Host
+## Cloudflare Worker Host
 
-- **Host 启动。** `@pluxel/host/cloudflare` 使用请求内文档，运行时闭包无需 ZenFS。真实 workerd 回归从 handler 启动正常 lowering 的 provider/consumer 图，再执行受管 Fetch，并核对连续和并发请求的隔离及关闭。 [Worker Host 回归](../packages/host/tests/cloudflare/runtime.test.ts) · [Host 入口](../docs/host/configuration.md#cloudflare-请求-host)
-- **出站传输。** 公网使用平台 Fetch。部署通过 `coreConfig.http.fetch` 接入 `Fetcher` Service Binding，origin 规则采用绑定对应的逻辑 URL。HTTP 层按上面的单跳契约处理 workerd 的 `redirect: 'error'`。 [Service Binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/http/) · [Workers Request](https://developers.cloudflare.com/workers/runtime-apis/request/)
-- **请求生存期与观测。** 调用方将当前 `request.signal` 传入插件方法，并在事件内结算 Host。记录和生效策略保留在当前 Host 的内存。联测覆盖已取消的调用信号，真实客户端断连时入站 signal 的行为仍需在部署所用的传输上验收。 [Workers 请求作用域](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/) · [Workers 取消信号](https://developers.cloudflare.com/workers/configuration/compatibility-flags/)
+- **Host 启动。** `@pluxel/host/cloudflare` 使用根内存文档，运行时闭包无需 ZenFS。真实 workerd 回归从 handler 启动正常 lowering 的 provider/consumer 图，再执行受管 Fetch，并核对连续和并发请求的隔离及关闭。 [Worker Host 回归](../packages/host/tests/cloudflare/runtime.test.ts) · [Host 入口](../docs/host/configuration.md#cloudflare-worker-host)
+- **出站传输。** 公网使用平台 Fetch。部署通过 `coreConfig.http.fetch` 在当前事件中获取并调用 Service Binding，origin 规则采用绑定对应的逻辑 URL。HTTP 层按上面的单跳契约处理 workerd 的 `redirect: 'error'`。 [Service Binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/http/) · [Workers Request](https://developers.cloudflare.com/workers/runtime-apis/request/)
+- **请求生存期与观测。** 调用方将当前 `request.signal` 传入插件方法，并在事件内结算该调用的作用域。记录和生效策略保留在当前 Host 的内存。联测覆盖已取消的调用信号，真实客户端断连时入站 signal 的行为仍需在部署所用的传输上验收。 [Workers 请求作用域](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/) · [Workers 取消信号](https://developers.cloudflare.com/workers/configuration/compatibility-flags/)

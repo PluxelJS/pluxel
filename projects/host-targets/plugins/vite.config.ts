@@ -4,5 +4,10 @@ import { repositoryTasks } from '../../../scripts/vite-tasks'
 
 export default defineConfig({
 	pack,
-	run: { tasks: repositoryTasks({ compile: 'pluxel build' }) },
+	run: {
+		tasks: repositoryTasks({
+			compile: 'pluxel build',
+			'check-types': 'tsc --noEmit --pretty false',
+		}),
+	},
 })

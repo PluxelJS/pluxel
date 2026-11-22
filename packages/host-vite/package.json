@@ -19,9 +19,17 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./hmr": {
+			"@pluxel/source": "./src/hmr.ts",
+			"default": "./dist/hmr.mjs"
+		},
 		"./internal": {
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
+		},
+		"./modules": {
+			"@pluxel/source": "./src/modules.ts",
+			"default": "./dist/modules.mjs"
 		},
 		"./run": {
 			"@pluxel/source": "./src/run.ts",
@@ -32,7 +40,9 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./hmr": "./dist/hmr.mjs",
 			"./internal": "./dist/internal.mjs",
+			"./modules": "./dist/modules.mjs",
 			"./run": "./dist/run.mjs",
 			"./package.json": "./package.json"
 		},

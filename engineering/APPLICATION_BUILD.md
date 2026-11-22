@@ -20,7 +20,9 @@ manifest 声明 `artifactRoot`、Node/Workbench 能力和 modules 版本；`plux
 
 standalone 由 pluxel() 在普通 tsdown entry/output 上生成 platform bootstrap。bootstrap 加载应用、装配 Host、绑定 provenance 后调用共享 `startHostApplication`，导出 host/ctx/start/stop 和应用显式 named exports。保留名冲突（含 alias/export *）在启动时检查 namespace，并在读取 deployment/求值工厂前拒绝。HTTP fetch/address/publicDir 由应用选择；prepare/start/close 逻辑仍归 Host。
 
-freezer 接受直接默认导出的 `defineHostApplication(factory)`，工厂为同步或异步函数表达式，以对象字面量或块中唯一无条件顶层 return 返回对象，返回对象无 spread。构建从 `plugins` 的 `{ plugin: Constructor, … }` 条目读取固定闭包，支持直接数组和模块级导入数组。构造器是可解析的直接类标识符，节点的业务配置和 Core 设施选项由工厂在运行期决定。省略 `plugins` 表示空闭包。standalone 接受省略的 `sources` 或直接的空数组。需要动态来源的应用选择 modules。
+freezer 从 `@pluxel/host/application` 或 Node 根入口识别同一声明，接受直接默认导出的 `defineHostApplication(factory)`。工厂为同步或异步函数表达式，以对象字面量或块中唯一无条件顶层 return 返回对象，返回对象无 spread。构建从 `plugins` 的 `{ plugin: Constructor, … }` 条目读取固定闭包，支持直接数组和模块级导入数组。构造器是可解析的直接类标识符，节点的业务配置和 Core 设施选项由工厂在运行期决定。省略 `plugins` 表示空闭包。standalone 接受省略的 `sources` 或直接的空数组。需要动态来源的应用选择 modules。
+
+跨平台应用从 `@pluxel/host/application` 导入 `installRootService`、`installScopeService` 和 `installOwnerViewService`。三者直接导出同一份服务安装实现。语义编译器在安装调用处为服务声明绑定身份，应用工厂只负责选择安装项。 [服务语义编译](../packages/rolldown/src/service-semantics.ts)
 
 静态数组在模块求值、工厂及 helper/callback 中须保持成员不变。检查器拒绝明显赋值、删除、mutator、别名和向 helper 传数组，允许 map/slice 等读取；跨模块副作用和 callback 仍由作者保持该约束，检查范围限可判定语法。
 

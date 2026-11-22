@@ -5,7 +5,7 @@ import { demoConfig, nodeFetch, nodeSource } from './demo-config'
 
 const consumerAddress = Consumer.nodeAddress()
 
-export default defineHostApplication(() => {
+export default defineHostApplication((startup) => {
 	const { provider, consumer, coreConfig } = demoConfig(nodeSource, nodeFetch)
 	return {
 		sources: [{ file: './plugins/src/index.ts' }],
@@ -14,7 +14,7 @@ export default defineHostApplication(() => {
 			{ definition: Consumer.address(), ...consumer },
 		],
 		coreConfig,
-		prepare({ host, startup }) {
+		prepare({ host }) {
 			const serve = startup.bindings.serve
 			if (typeof serve !== 'function') throw new TypeError('The Node demo endpoint is required')
 			host.ctx.effects.defer(

@@ -12,7 +12,7 @@ import {
 	readSharedRuntimePackage,
 	sharedRuntimeForImport,
 } from './shared-runtime'
-import type { HostApplicationFactory } from './application'
+import type { HostApplicationFactory } from './node-application'
 import { recordLoadedPluginModule, readLoadedPluginModule } from './loaded-modules'
 import {
 	assertSharedPackageVersion,

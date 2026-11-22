@@ -145,7 +145,7 @@ try {
 			const edge = await waitForResult(page, 'cloudflare', nodeArtifact.message)
 			assert.equal(web.plugin, before.plugin)
 			assert.equal(edge.plugin, before.plugin)
-			assert.equal(edge.visits, 1)
+			assert.ok(edge.visits >= 1)
 			await page.evaluate(() => {
 				window.hostTargetsSmoke = true
 			})
@@ -168,14 +168,20 @@ try {
 				waitForResult(page, 'cloudflare', updatedMessage),
 			])
 			assert.equal(browserResult.plugin, before.plugin)
-			assert.equal(browserResult.visits, 1)
+			assert.ok(
+				browserResult.visits > web.visits,
+				'Browser HMR retains the worker and its plugin state',
+			)
 			assert.notEqual(browserResult.generation, web.generation)
 			assert.equal(await page.evaluate(() => window.hostTargetsSmoke), true)
 			assert.equal(nodeResult.plugin, before.plugin)
 			assert.ok(nodeResult.visits > before.visits, 'Node HMR retains the plugin state')
 			assert.notEqual(nodeResult.generation, before.generation)
 			assert.equal(edgeResult.plugin, before.plugin)
-			assert.equal(edgeResult.visits, 1, 'Cloudflare reads run in distinct request Hosts')
+			assert.ok(
+				edgeResult.visits > edge.visits,
+				'Cloudflare HMR retains the isolate Host and plugin state',
+			)
 			assert.notEqual(edgeResult.generation, edge.generation)
 
 			const rejection = 'Rejected demo edit'
@@ -183,7 +189,7 @@ try {
 			await Promise.all(
 				Object.entries({
 					node: rejection,
-					browser: rejection,
+					browser: 'Worker plugin module failed to evaluate',
 					cloudflare: 'Worker plugin module failed to evaluate',
 				}).map(([host, hasText]) =>
 					page.locator(`[data-host="${host}"]`).filter({ hasText }).waitFor(),
@@ -196,18 +202,49 @@ try {
 			assert.ok(retained.ok)
 			const retainedResult = await retained.json()
 			assert.equal(retainedResult.generation, nodeResult.generation)
-			const unavailable = await fetch(`${address}/api/cloudflare`, {
+			const lastGood = await fetch(`${address}/api/cloudflare`, {
 				method: 'POST',
 				signal: AbortSignal.timeout(10_000),
 			})
-			assert.equal(unavailable.status, 503)
-			assert.match(await unavailable.text(), /Worker plugin module failed to evaluate/)
+			assert.equal(lastGood.status, 200)
+			const retainedEdge = await lastGood.json()
+			assert.equal(retainedEdge.message, updatedMessage)
+			assert.equal(retainedEdge.generation, edgeResult.generation)
+			assert.ok(retainedEdge.visits > edgeResult.visits)
+			await page.locator('button').click()
+			const retainedBrowser = await waitForResult(page, 'browser', updatedMessage)
+			assert.equal(retainedBrowser.generation, browserResult.generation)
+			assert.ok(retainedBrowser.visits > browserResult.visits)
 
 			const recovered = 'Recovered, Pluxel!'
 			await editPlugin(file, source.replace('Hello, ', 'Recovered, '))
 			await Promise.all(
 				['node', 'browser', 'cloudflare'].map((host) => waitForResult(page, host, recovered)),
 			)
+
+			const configFile = join(fixture.path, 'src/demo-plugins.ts')
+			const config = await readFile(configFile, 'utf8')
+			const configured = config.replace(
+				'{ plugin: Provider, ...provider }',
+				"{ plugin: Provider, config: { ...provider.config, name: 'App reload' } }",
+			)
+			assert.notEqual(configured, config)
+			await editPlugin(configFile, configured)
+			const configuredResult = await waitForResult(page, 'browser', 'Recovered, App reload!')
+			assert.equal(configuredResult.visits, 1, 'A declaration change starts a fresh browser Host')
+			const configuredEdge = await waitForResult(page, 'cloudflare', 'Recovered, App reload!')
+			assert.equal(configuredEdge.visits, 1, 'A declaration change starts a fresh Cloudflare Host')
+
+			const bootstrap = join(fixture.path, 'src/browser.worker.ts')
+			const workerSource = await readFile(bootstrap, 'utf8')
+			const changedWorker = workerSource.replace(
+				"{ kind: 'result', value } satisfies BrowserReply",
+				"{ kind: 'result', value: { ...value, message: 'New worker: ' + value.message } } satisfies BrowserReply",
+			)
+			assert.notEqual(changedWorker, workerSource)
+			await editPlugin(bootstrap, changedWorker)
+			const restarted = await waitForResult(page, 'browser', 'New worker: Recovered, App reload!')
+			assert.equal(restarted.visits, 1, 'An edit to the worker bootstrap starts a fresh Host')
 		} finally {
 			await page.close()
 		}

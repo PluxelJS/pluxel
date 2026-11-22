@@ -3197,9 +3197,6 @@ importers:
       '@pluxel/host-vite':
         specifier: workspace:*
         version: link:../../packages/host-vite
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../../packages/rolldown
       '@types/node':
         specifier: catalog:types
         version: 26.6.6

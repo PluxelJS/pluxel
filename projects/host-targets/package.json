@@ -20,7 +20,6 @@
 		"@cloudflare/vite-plugin": "catalog:build",
 		"@cloudflare/workers-types": "catalog:dev",
 		"@pluxel/host-vite": "workspace:*",
-		"@pluxel/rolldown": "workspace:*",
 		"@types/node": "catalog:types",
 		"playwright": "catalog:dev",
 		"typescript": "catalog:dev",

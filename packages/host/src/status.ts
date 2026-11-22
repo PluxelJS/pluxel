@@ -6,6 +6,7 @@ import {
 	type PluginDefinitionAddress,
 	type PluginNodeAddress,
 } from '@pluxel/core'
+import type { HostPluginGraphCommittedView } from './coordinator'
 import { readHostRecentUpdates } from './recent-update'
 import { requirePluginHostCoordinator } from './install'
 import { readHostPluginLifecycleIssues } from './diagnostics'
@@ -246,19 +247,40 @@ export async function readHostPluginStatusOverview(
 	recentUpdate?: PluginRecentUpdateRead,
 ): Promise<HostPluginStatusOverview> {
 	return await requirePluginHostCoordinator(ctx).readCommitted((view) =>
-		hostPluginStatusOverviewFromView({
-			catalog: view.catalog,
-			declaredNodes: view.declaredNodes,
-			state: view.runtimeState.state,
-			reconciliation: view.reconciliation,
-			lifecycleIssues: readHostPluginLifecycleIssues(ctx),
-			sessionIntents: view.sessionIntents,
-			desiredControl: view.desiredControl,
-			coreNodes: view.coreAdjacency.nodes,
-			runningNodeKeys: new Set(view.runningNodes.map(pluginNodeIndexKey)),
-			recentUpdate: recentUpdate ?? readHostRecentUpdates(ctx),
-		}),
+		projectCommittedOverview(ctx, view, recentUpdate),
 	)
+}
+
+/** Only materialize diagnostics when a desired node failed admission. */
+export function readUnreadyHostStatus(ctx: Context) {
+	return requirePluginHostCoordinator(ctx).readCommitted((view) => {
+		const running = new Set(view.runningNodes.map(pluginNodeIndexKey))
+		for (const [key, node] of view.desiredControl) {
+			if (node.activationReason != null && !running.has(key))
+				return projectCommittedOverview(ctx, view, undefined, running)
+		}
+		return undefined
+	})
+}
+
+function projectCommittedOverview(
+	ctx: Context,
+	view: HostPluginGraphCommittedView,
+	recentUpdate?: PluginRecentUpdateRead,
+	runningNodeKeys = new Set(view.runningNodes.map(pluginNodeIndexKey)),
+) {
+	return hostPluginStatusOverviewFromView({
+		catalog: view.catalog,
+		declaredNodes: view.declaredNodes,
+		state: view.runtimeState.state,
+		reconciliation: view.reconciliation,
+		lifecycleIssues: readHostPluginLifecycleIssues(ctx),
+		sessionIntents: view.sessionIntents,
+		desiredControl: view.desiredControl,
+		coreNodes: view.coreAdjacency.nodes,
+		runningNodeKeys,
+		recentUpdate: recentUpdate ?? readHostRecentUpdates(ctx),
+	})
 }
 
 /** Read one known node from one committed view without projecting or sorting the catalog. */

@@ -55,6 +55,29 @@ async function lower(directory: string, name: string, code: string) {
 	})
 }
 
+it('lowers each service installer from the portable application entry', async () => {
+	const directory = await fixture()
+	const result = await lower(
+		directory,
+		'services.ts',
+		`import { installRootService, installScopeService, installOwnerViewService } from '@pluxel/host/application'
+export class RootService {}
+export class ScopeService {}
+export class ViewService {}
+export const installations = [
+	installRootService(RootService, { create: () => new RootService() }),
+	installScopeService(ScopeService, { create: () => new ScopeService() }),
+	installOwnerViewService(ViewService, { createRoot: () => ({}), createView: () => new ViewService() }),
+]`,
+	)
+	expect(result.services.map(({ definition }) => definition.exportName)).toEqual([
+		'RootService',
+		'ScopeService',
+		'ViewService',
+	])
+	expect(result.replacements).toHaveLength(3)
+})
+
 it('preserves a compiled native service installation only through the exact toolchain binder import', async () => {
 	const directory = await fixture()
 	const code = (source: string) => `

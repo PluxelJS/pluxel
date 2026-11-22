@@ -1,7 +1,7 @@
 import type { PluginNodeAddress } from '../plugins/runtime/identity'
 
 /** The callable Web Fetch contract, without runtime-specific static helpers. */
-export type OutboundFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+export type OutboundFetch = (input: string | Request | URL, init?: RequestInit) => Promise<Response>
 
 /** Keep per-node counts, counts and request history, or neither. */
 export type OutboundHttpRecords = 'summary' | 'requests' | 'off'

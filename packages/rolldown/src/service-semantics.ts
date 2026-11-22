@@ -456,7 +456,12 @@ export async function lowerServiceModule(options: {
 			error(`[pluxel:service-ref] ${inputId} requires an unexported module-level const`)
 		if (
 			['installRootService', 'installScopeService', 'installOwnerViewService'].some((name) =>
-				authoring(node, name, ['@pluxel/core/host', '@pluxel/core/internal', '@pluxel/context']),
+				authoring(node, name, [
+					'@pluxel/host/application',
+					'@pluxel/core/host',
+					'@pluxel/core/internal',
+					'@pluxel/context',
+				]),
 			)
 		)
 			installs.push(node)

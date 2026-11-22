@@ -137,7 +137,7 @@ NodeModules.use 对 consumer 串行 staged setup，新 setup 成功才 cleanup p
 
 ## 验证
 
-[`projects/host-targets`](../projects/host-targets/README.md) 用同一个发布 tarball 验证三端运行，开发验收通过各自的更新通知驱动同一个页面。Node 业务路由借用已接纳实例，Vite 批次结算后通知页面。浏览器由页面重建 Dedicated Worker，Cloudflare Worker 通过 Vite 的 `import.meta.hot.accept` 接纳插件模块，再通知页面请求。三端的更新和状态寿命可从 generation 与调用结果观察。
+三端示例用同一份插件 tarball 验证运行时行为。Node、Dedicated Module Worker 与 Cloudflare 都在插件更新后向页面报告提交结果。浏览器 Worker 与 workerd 用更新前后的 TinyBase 计数区分同根替换和入口重载。 [三端验收](../projects/host-targets/README.md) · [浏览器 Worker 与 Cloudflare](#浏览器-worker-与-cloudflare)
 
 重点覆盖 structural reject、PONR 后真实 facts、definition-wide forks/required/optional closure、显式 Stop、候选 rollback、迟到 producer 和 fresh-host compensation。真实 Vite 验 namespace、来源恢复/provenance、watcher close/drain、暂停最终编辑、执行中新观察、失败修复、auto 合并和 pending 上界；控制命令不被自身 replacement 撤回。DTO 验相对诊断和节点归因，browser/Node 在各自真实资源边界验证。
 
@@ -164,3 +164,13 @@ wrapper 重发按实际文件摘要只失效变化模块/importers，共享未�
 新 dependency watcher ready 才切观察集合，打开失败关候选/保旧，同集合可显式重试。close 同时释放 active/opening watcher 并 drain 回调。
 
 production /run 在全部 config hooks 后验证 `middlewareMode`、browser HMR、`NODE_ENV` define，冲突拒绝启动；host 未知顶层字段也拒绝，保留用户配置与拼写诊断。
+
+## 浏览器 Worker 与 Cloudflare
+
+`@pluxel/host-vite/modules` 提供 `pluginModules({ root, environments })`，在选定的 Vite 环境内分别编译插件及配置声明。Dedicated Module Worker 自己接受插件模块更新，串行执行 `host.updateCatalog(plugins, { onGraphCommitted })`。提交回调同步切换预先取得的构造器地址，之后检查生命周期回执并通知页面。页面的消息端口继续连到同一个 Worker。这个边界覆盖插件模块及其依赖；Host 装配或 Worker 入口的改变交给 Vite 的常规重载。Node 开发适配器也在同一提交点激活新的执行资源。 [三端回归](../projects/host-targets/scripts/smoke.mjs)
+
+Cloudflare 的 Vite 接纳回调将候选构造器交给 `worker.updateCatalog(({ env }) => selectPlugins(env), { onGraphCommitted })`。选择函数使用当前已验收根的部署变量。驱动串行处理更新，在途事件和借用插件的响应流结算后，才提交到常驻 Host 的 catalog。等待更新的新事件在提交结束后进入。提交回调同步发布对应地址，使后续请求借用已接纳的 generation。服务、根文档与无关的插件继续存活。首次冷启动之前的更新仅发布构造器引用，启动时由应用工厂按当次 env 选择并校验 catalog。接纳方检查完整更新回执中的 reconciliation 与生命周期结果。 [Cloudflare 接纳示例](../projects/host-targets/src/cloudflare/entry.ts) · [Market 应用](../projects/plugin-market/src/application.ts)
+
+workerd 的排空依赖必须指向每个在途事件自己创建、自己结算的完成 Promise。控制事件等待这些 Promise，平台才能追踪各个生产者的 I/O。若控制事件自己创建一个只能由别的事件唤醒的 Promise，即使交给 `waitUntil`，workerd 也可能将该事件判定为挂起并中止。 [Worker 驱动](../packages/host/src/cloudflare.ts) · [原生并发与流回归](../packages/host/tests/cloudflare/runtime.test.ts) · [跨请求 Promise 兼容规则](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#handle-cross-request-promise-resolution-correctly)
+
+装配模块在 `if (import.meta.hot)` 内调用 `await closeOnHotReload(import.meta.hot, host)`，由 `@pluxel/host-vite/hmr` 持有该模块的 Vite dispose 回调和 full reload 监听。遇到 Cloudflare 虚拟入口绕过 dispose 重新导入的情况，helper 从模块的 `hot.data` 找到上一代并等待关闭。插件依赖的 `import.meta.hot.accept(…)` 仍写在拥有接纳边界的模块中。装配或原生入口重载后，新的 Worker Host 在下一个事件中启动。生产部署由平台决定 isolate 的替换时间和请求路由。 [HMR 资源关闭](../packages/host-vite/src/hmr.ts)

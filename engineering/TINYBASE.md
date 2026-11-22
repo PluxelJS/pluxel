@@ -8,7 +8,7 @@ Core 固定提供 `ctx.tinybase`，托管 Plugin Store 的恢复、writer、快�
 
 每个 canonical node（含 fork）在同一 Core 中只有一个 writer；Part/依赖视图共用 owning generation handle，不跟随动态 caller 改 owner。取得能力不执行 IO，未 open 不创建 Store、文件或监听；临时计算用原生 Store/普通对象。
 
-应用通过 `coreConfig.tinybase.maxSnapshotBytes` 设定快照上限。Node 与浏览器沿用 `coreConfig.zenfs` 选择的 FS 后端，首次异步操作等待 FS 准备，目标目录只读时 `open()` 拒绝写入。Cloudflare 请求 Host 使用当前 root 的内存文档。跨 Host 恢复取决于所选后端。 [Host 文件系统](FS.md#host-文档与关闭)
+应用通过 `coreConfig.tinybase.maxSnapshotBytes` 设定快照上限。Node 与浏览器沿用 `coreConfig.zenfs` 选择的 FS 后端，首次异步操作等待 FS 准备，目标目录只读时 `open()` 拒绝写入。Cloudflare Worker Host 使用当前 root 的内存文档。跨 Host 恢复取决于所选后端。 [Host 文件系统](FS.md#host-文档与关闭)
 
 ## 原生实例与恢复
 

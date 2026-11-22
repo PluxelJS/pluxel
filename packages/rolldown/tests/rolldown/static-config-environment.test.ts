@@ -141,7 +141,7 @@ describe('static config environment declaration lowering', () => {
 
 	it('requires a direct factory and rejects hidden fields', async () => {
 		await expect(parseFixture(`export default { plugins: [] }`)).rejects.toThrow(
-			'must default-export defineHostApplication(factory)',
+			'must default-export defineHostApplication',
 		)
 		await expect(
 			parseFixture(`
@@ -150,6 +150,20 @@ describe('static config environment declaration lowering', () => {
 			export default defineHostApplication(() => ({ ...base, name: 'spread' }))
 		`),
 		).rejects.toThrow('does not allow spread properties')
+		await expect(
+			parseFixture(`
+			import { defineHostApplication } from '@pluxel/host/application'
+			export default defineHostApplication(() => ({}), {})
+		`),
+		).rejects.toThrow('requires one inline factory')
+	})
+
+	it('reads the platform-neutral application entry', async () => {
+		const result = await parseFixture(`
+			import { defineHostApplication } from '@pluxel/host/application'
+			export default defineHostApplication(() => ({ name: 'shared', plugins: [] }))
+		`)
+		expect(result).toEqual({ name: 'shared', targets: [], hasSources: false })
 	})
 
 	it('reads an asynchronous factory without running preparation or nested callbacks', async () => {

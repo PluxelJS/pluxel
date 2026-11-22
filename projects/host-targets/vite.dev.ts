@@ -1,16 +1,13 @@
 import { resolve } from 'node:path'
 import { host, type HostViteOptions } from '@pluxel/host-vite'
-import { configSourcePlugin, createPluginSemanticsPlugin } from '@pluxel/rolldown/plugins'
+import { pluginModules } from '@pluxel/host-vite/modules'
 import {
 	defaultClientConditions,
-	normalizePath,
-	perEnvironmentPlugin,
-	type EnvironmentModuleNode,
 	type NormalizedHotChannel,
 	type Plugin,
 	type PluginOption,
 } from 'vite'
-import { demoUpdateEvent, type DemoResult, type DemoUpdate } from './src/protocol'
+import { demoUpdateEvent, type DemoResult, type DemoUpdate } from './src/protocol.ts'
 
 const pluginPackage = '@pluxel-example/host-targets-plugins'
 
@@ -29,50 +26,21 @@ function sourcePlugins(root: string): Plugin[] {
 				}
 			},
 		},
-		{
-			...perEnvironmentPlugin('host-targets:lowering', (environment) =>
-				environment.name === 'client' || environment.name === 'cloudflare'
-					? ([
-							createPluginSemanticsPlugin({
-								root: packageRoot,
-								packageJsonPath: resolve(packageRoot, 'package.json'),
-							}).plugin,
-							configSourcePlugin(),
-						] as Plugin[])
-					: false,
-			),
-			enforce: 'pre',
-		},
+		pluginModules({
+			root: packageRoot,
+			packageJsonPath: resolve(packageRoot, 'package.json'),
+			environments: ['client', 'cloudflare'],
+		}),
 	]
 }
 
-function forwardWorkerUpdates(root: string): Plugin {
-	const entry = normalizePath(resolve(root, 'src/browser.worker.ts'))
-
-	function isWorkerModule(
-		module: EnvironmentModuleNode,
-		seen = new Set<EnvironmentModuleNode>(),
-	): boolean {
-		if (module.file === entry) return true
-		if (seen.has(module)) return false
-		seen.add(module)
-		return [...module.importers].some((importer) => isWorkerModule(importer, seen))
-	}
-
+function forwardCloudflareUpdates(): Plugin {
 	return {
-		name: 'host-targets:worker-updates',
+		name: 'host-targets:cloudflare-updates',
 		configureServer(server) {
-			const client = server.environments.client.hot
 			server.environments.cloudflare.hot.on(demoUpdateEvent, (update: DemoUpdate) => {
-				client.send(demoUpdateEvent, update)
+				server.environments.client.hot.send(demoUpdateEvent, update)
 			})
-		},
-		hotUpdate({ modules }) {
-			if (this.environment.name !== 'client') return undefined
-			const workers = new Set(modules.filter((module) => isWorkerModule(module)))
-			if (workers.size === 0) return undefined
-			this.environment.hot.send(demoUpdateEvent, { host: 'browser' } satisfies DemoUpdate)
-			return modules.filter((module) => !workers.has(module))
 		},
 	}
 }
@@ -135,7 +103,7 @@ export function demoDevelopment(root: string): PluginOption[] {
 	const node = nodeDemoEndpoint()
 	return [
 		...sourcePlugins(root),
-		forwardWorkerUpdates(root),
+		forwardCloudflareUpdates(),
 		node.plugin,
 		host({
 			entry: './src/node-app.ts',

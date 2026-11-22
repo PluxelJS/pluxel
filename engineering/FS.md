@@ -1,6 +1,6 @@
 # Host 文件系统
 
-配置了文件能力的 Core 通过 `ctx.fs()` 返回所属 Plugin node 目录的 ZenFS promises API。Part 共用 owner 目录，root 不提供 Plugin 业务目录。Cloudflare 请求 Host 使用独立内存文档，`ctx.fs()` 以 `ENOTSUP` 拒绝。公开调用见[插件文件存储](../docs/plugin-development/fs.md)，装配见 [Host 后端选择](../docs/host/configuration.md#选择文件后端)。
+配置了文件能力的 Core 通过 `ctx.fs()` 返回所属 Plugin node 目录的 ZenFS promises API。Part 共用 owner 目录，root 不提供 Plugin 业务目录。Cloudflare Worker Host 使用独立内存文档，`ctx.fs()` 以 `ENOTSUP` 拒绝。公开调用见[插件文件存储](../docs/plugin-development/fs.md)，装配见 [Host 后端选择](../docs/host/configuration.md#选择文件后端)。
 
 ## 唯一接线与准备
 
@@ -37,7 +37,7 @@ physicalKey 为 canonical node bytes 的完整 SHA-256，包含 fork，排除 ge
 
 ## Host 文档与关闭
 
-`requireHostDocuments(root, namespace)` 借用当前 Core 的文档存储。Node 与浏览器将 namespace 映射到原有 ZenFS 目录。Cloudflare 请求 Host 按 root 保存内存文档，省略外部变更观察。`config.document` 和 `policy.document` 接受同步 root factory，也可分别设为 `false` 以关闭对应的文档 IO。
+`requireHostDocuments(root, namespace)` 借用当前 Core 的文档存储。Node 与浏览器将 namespace 映射到原有 ZenFS 目录。Cloudflare Worker Host 按 root 保存内存文档，省略外部变更观察。`config.document` 和 `policy.document` 接受同步 root factory，也可分别设为 `false` 以关闭对应的文档 IO。
 
 Core 定义 `HostDocumentStorage`，Host 原名 re-export：getText、put、stat 和可选 subscribe。put 等待完整原子提交；仅真正缺失返回 undefined，坏内容保留原文件。普通文档单文件预算为 UTF-8 8 MiB，TinyBase snapshot 自有预算。原子写失败可能已发生提交，领域 owner 决定后续发布/恢复。
 

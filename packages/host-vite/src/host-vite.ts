@@ -20,7 +20,6 @@ import {
 } from '@pluxel/host'
 import {
 	createResolvedHost,
-	updateHostCatalog,
 	loadNativeHostServiceControls,
 	installPluginSources,
 	setHostCatalogProvenance,
@@ -458,8 +457,10 @@ export function host(options: HostViteOptions): PluginOption[] {
 						recentUpdates.updatePhase('artifacts')
 						artifactCandidate = await attachments.get(active!)?.prepareCandidate(nextCatalog)
 						recentUpdates.updatePhase('commit')
-						lifecycle = await updateHostCatalog(active!, next.plugins, {
-							onGraphCommitted: () => artifactCandidate?.commit(),
+						lifecycle = await active!.updateCatalog(next.plugins, {
+							onGraphCommitted() {
+								artifactCandidate?.commit()
+							},
 						})
 						accepted = true
 					} catch (error) {

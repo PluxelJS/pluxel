@@ -59,24 +59,19 @@ import {
 export type { HostOptions } from './node-declarations'
 
 /** Complete configuration returned by an application factory for one fresh Host. */
-export type HostApplication = HostDeclarations &
-	Readonly<{
-		/** Discover implementations into the same catalog as the directly selected constructors. */
-		sources?: readonly PluginSource[]
-		prepare?(input: {
-			host: PluginHost
-			startup: import('./application').HostStartupContext
-		}): void | Promise<void>
-		/** Production startup decision after graph settlement. Omitted requires every intended node to be running. */
-		acceptStartup?(
-			input: import('./application-start').HostApplicationStartup,
-		): boolean | Promise<boolean>
-		/** Publish the production entry point after startup is accepted. Register resources with host.ctx.effects. */
-		launch?(input: {
-			host: PluginHost
-			startup: import('./application').HostStartupContext
-		}): void | Promise<void>
-	}>
+export type HostApplication<Startup = import('./node-application').HostStartupContext> =
+	HostDeclarations &
+		Readonly<{
+			/** Discover implementations into the same catalog as the directly selected constructors. */
+			sources?: readonly PluginSource[]
+			prepare?: (input: { host: PluginHost; startup: Startup }) => void | Promise<void>
+			/** Production startup decision after graph settlement. Omitted requires every intended node to be running. */
+			acceptStartup?: (
+				input: import('./application-start').HostApplicationStartup<Startup>,
+			) => boolean | Promise<boolean>
+			/** Publish the production entry point after startup is accepted. Register resources with host.ctx.effects. */
+			launch?: (input: { host: PluginHost; startup: Startup }) => void | Promise<void>
+		}>
 
 export interface PluginHost extends AsyncDisposable {
 	readonly ctx: RootContext
@@ -112,7 +107,13 @@ export interface PluginHost extends AsyncDisposable {
 	start(): Promise<PluginApplyReport>
 	catalog(): PluginCatalogSnapshot
 	/** Replaces the complete definition catalog, preserving running intent for retained addresses. */
-	updateCatalog(plugins: readonly PluginConstructor[]): Promise<PluginApplyReport>
+	updateCatalog(
+		plugins: readonly PluginConstructor[],
+		options?: Readonly<{
+			/** Publish prepared references synchronously before startup. The graph stays committed if publication throws. */
+			onGraphCommitted?: () => undefined
+		}>,
+	): Promise<PluginApplyReport>
 	startNode(address: PluginNodeAddress): Promise<PluginApplyReport>
 	stopNode(address: PluginNodeAddress): Promise<PluginApplyReport>
 	restartNode(address: PluginNodeAddress): Promise<PluginApplyReport>
@@ -126,13 +127,14 @@ export async function createHostFromOptions(
 	snapshotFacilities: SnapshotCoreFacilities,
 ): Promise<PluginHost> {
 	assertDataObject(options, 'createHost options', [...HOST_DECLARATION_FIELDS, 'vaultBindings'])
-	const declaration = snapshotHostDeclarations(options, snapshotFacilities)
+	const declaration = snapshotHostDeclarations(options)
 	if (declaration.bindings.envBindings.length > 0 || declaration.bindings.fileBindings.length > 0)
 		throw new TypeError(
 			'[host] envBindings and fileBindings require an application startup context',
 		)
 	return createResolvedHost({
 		...declaration.options,
+		coreConfig: snapshotFacilities(options.coreConfig),
 		...(options.vaultBindings === undefined
 			? {}
 			: { vaultBindings: snapshotVaultBindings(options.vaultBindings) }),
@@ -141,27 +143,27 @@ export async function createHostFromOptions(
 
 /** @internal Prepare the already captured declaration and its selected catalog. */
 export async function createResolvedHost(options: ResolvedHostOptions): Promise<PluginHost> {
-	const executionBinding = createCorePluginExecutionBinding(options.nodeStartTimeoutMs)
 	const fixed = [...options.plugins]
 	assertDeclaredForks(catalog(1, fixed), options.declaredNodes)
 	const services = planHostServices(options.services ?? [])
-	await validateInputBindingCandidates(fixed, options)
+	const executionBinding = createCorePluginExecutionBinding(options.nodeStartTimeoutMs)
 	let configStorageOptions: ConstructorParameters<typeof HostConfigStore>[2] | undefined
-	const shape = createCoreContextHostWithFacilities(
+	const context = createCoreContextHostWithFacilities(
 		{
-			executionBinding,
 			name: options.name,
-			createLifecycleHooks: (ctx) => createHostServiceLifecycle(ctx, services),
-			services: services.flatMap((service) => [...service.provides]),
-			createConfigService: (ctx) => {
+			executionBinding,
+			services: services.flatMap((service) => service.provides),
+			createLifecycleHooks: (root) => createHostServiceLifecycle(root, services),
+			createConfigService(root) {
 				if (!configStorageOptions)
 					throw new Error('[host] document storage factories must not read Host config')
-				return new HostConfigStore(ctx, options.config, configStorageOptions)
+				return new HostConfigStore(root, options.config, configStorageOptions)
 			},
 		},
 		options.coreConfig,
 	)
-	const ctx = shape.createRoot(options.name)
+	await validateInputBindingCandidates(fixed, options)
+	const ctx = context.createRoot()
 	try {
 		const configStorage = resolveHostStoreStorage(options.config.document, ctx, 'config')
 		const stateStorage = resolveHostStoreStorage(options.policy.document, ctx, 'state')
@@ -226,14 +228,11 @@ function createPreparedHost(
 		assertOpen()
 		return (start ??= (async () => {
 			assertOpen()
-			await validateInputBindingCandidates(fixedPlugins, options)
+			// Initial binding candidates were validated before prepare. Catalog replacement awaits start.
 			return coordinator.reconcileStartup(catalog(++revision, fixedPlugins, ctx))
 		})())
 	}
-	const updateCatalog = async (
-		plugins: readonly PluginConstructor[],
-		onGraphCommitted?: () => void,
-	): Promise<PluginApplyReport> => {
+	const updateCatalog: PluginHost['updateCatalog'] = async (plugins, { onGraphCommitted } = {}) => {
 		assertOpen()
 		const next = [...plugins]
 		await startHost()
@@ -261,7 +260,6 @@ function createPreparedHost(
 		)
 		return task
 	}
-	hostCatalogUpdaters.set(ctx, updateCatalog)
 
 	const close = (): Promise<void> => {
 		return (closing ??= (async () => {
@@ -438,7 +436,7 @@ function createPreparedHost(
 			},
 		}),
 		catalog: () => coordinator.catalogSnapshot(),
-		updateCatalog: (plugins: readonly PluginConstructor[]) => updateCatalog(plugins),
+		updateCatalog,
 		async startNode(address: PluginNodeAddress) {
 			assertOpen()
 			await startHost()
@@ -501,22 +499,4 @@ export function requireHostStateStore(ctx: Context): HostStateStore {
 	const store = hostStateStores.get(ctx.root)
 	if (!store) throw new Error('[host] root has no Host state store')
 	return store
-}
-
-const hostCatalogUpdaters = new WeakMap<
-	RootContext,
-	(
-		plugins: readonly PluginConstructor[],
-		onGraphCommitted?: () => void,
-	) => Promise<PluginApplyReport>
->()
-/** Development adapters activate prepared resources at graph acceptance, before new Plugin startup. */
-export function updateHostCatalog(
-	host: PluginHost,
-	plugins: readonly PluginConstructor[],
-	options: Readonly<{ onGraphCommitted: () => void }>,
-): Promise<PluginApplyReport> {
-	const update = hostCatalogUpdaters.get(host.ctx)
-	if (!update) throw new Error('[host] catalog updater is unavailable')
-	return update(plugins, options.onGraphCommitted)
 }

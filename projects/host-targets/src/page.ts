@@ -4,6 +4,7 @@ import './page.css'
 
 function createBrowserWorker() {
 	const worker = new Worker(new URL('./browser.worker.ts', import.meta.url), { type: 'module' })
+	worker.addEventListener('message', ({ data }: MessageEvent<DemoUpdate>) => onUpdate(data))
 	const lifetime = new AbortController()
 	worker.addEventListener('error', (event) =>
 		lifetime.abort(new Error(event.message || 'Browser Host did not start')),
@@ -43,7 +44,7 @@ function createBrowserWorker() {
 	}
 }
 
-let browser = Promise.resolve(createBrowserWorker())
+const browser = createBrowserWorker()
 const currentReads = new Map<DemoHost, AbortController>()
 
 function stopRead(host: DemoHost) {
@@ -76,8 +77,7 @@ async function refreshHost(host: DemoHost) {
 }
 
 async function readBrowser(): Promise<DemoResult> {
-	const current = await browser
-	const result = await current.call('read')
+	const result = await browser.call('read')
 	if (result.kind === 'result') return result.value
 	throw new Error(result.kind === 'error' ? result.message : 'Browser Host closed')
 }
@@ -99,10 +99,10 @@ if (!import.meta.env.DEV) document.querySelector('[data-section="node"]')?.remov
 document.querySelector('button')!.addEventListener('click', refresh)
 window.addEventListener('pagehide', () => {
 	for (const host of currentReads.keys()) stopRead(host)
-	void browser.then((current) => current.close()).catch((error) => console.error(error))
+	void browser.close().catch((error) => console.error(error))
 })
 
-import.meta.hot?.on(demoUpdateEvent, ({ host, error }: DemoUpdate) => {
+function onUpdate({ host, error }: DemoUpdate) {
 	if (error) {
 		stopRead(host)
 		const output = outputFor(host)
@@ -110,13 +110,8 @@ import.meta.hot?.on(demoUpdateEvent, ({ host, error }: DemoUpdate) => {
 		output.removeAttribute('aria-busy')
 		return
 	}
-	if (host === 'browser') {
-		browser = browser.then(async (current) => {
-			await current.close()
-			return createBrowserWorker()
-		}, createBrowserWorker)
-	}
 	void refreshHost(host)
-})
+}
+import.meta.hot?.on(demoUpdateEvent, onUpdate)
 
 refresh()

@@ -3,22 +3,17 @@ import { RequestProvider } from './provider'
 
 @Plugin()
 export class RequestConsumer extends BasePlugin {
-	private readonly lifetime: string[] = []
-
 	constructor(private readonly provider: RequestProvider) {
 		super()
 	}
 
-	protected override init() {
-		this.lifetime.push('consumer started')
-		return () => {
-			this.lifetime.push('consumer closed')
-		}
+	load(id: string, signal: AbortSignal) {
+		return this.provider.load(id, signal)
 	}
 
-	async load(id: string, signal: AbortSignal) {
-		const reply = await this.provider.load(id, signal)
-		return { ...reply, consumerLifetime: this.lifetime }
+	async echo(request: Request, binding: { fetch(request: Request): Promise<Response> }) {
+		const response = await binding.fetch(request)
+		return response.text()
 	}
 
 	async checkCancelledFetch(id: string) {

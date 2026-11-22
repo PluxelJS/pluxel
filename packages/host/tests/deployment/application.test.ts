@@ -2,13 +2,14 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
+	createHost,
 	defineHostApplication,
 	prepareHostApplication,
 	resolveHostApplication,
 	type HostApplicationFactory,
 	type HostStartupContext,
-} from '../../src/application'
-import { createHost } from '../../src/index'
+} from '../../src/index'
+import { defineHostApplication as definePortableApplication } from '../../src/application'
 import { runNodeModule } from '../support/node'
 import { createWorkspace, hostPackage } from '../support/workspace'
 
@@ -16,6 +17,7 @@ const startup = { root: process.cwd(), mode: 'test' as const, bindings: {}, env:
 
 describe('shared Host application startup', () => {
 	it('declares without evaluation and preserves contextual startup and concrete return types', async () => {
+		expect(defineHostApplication).toBe(definePortableApplication)
 		let calls = 0
 		const application = defineHostApplication((input) => {
 			expectTypeOf(input).toEqualTypeOf<HostStartupContext>()

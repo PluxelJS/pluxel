@@ -25,6 +25,7 @@ import {
 } from './config-records'
 import { parseHostInputMode, type HostInputMode } from './input-mode'
 import type { HostService } from './services'
+import type { HostApplication } from './host'
 import type {
 	HostAutoStartChoice,
 	HostDependencyOverrideChoice,
@@ -104,6 +105,20 @@ export const HOST_DECLARATION_FIELDS = [
 	'policy',
 	'config',
 ] as const
+const lifecycleFields = ['prepare', 'acceptStartup', 'launch'] as const
+const applicationFields = [...HOST_DECLARATION_FIELDS, ...lifecycleFields]
+const managedFields = [...applicationFields, 'sources']
+
+export function assertApplicationShape(
+	input: unknown,
+	driver: 'embedded' | 'managed',
+): asserts input is HostApplication {
+	assertDataObject(input, 'Application', driver === 'managed' ? managedFields : applicationFields)
+	for (const key of lifecycleFields)
+		if (input[key] !== undefined && typeof input[key] !== 'function')
+			throw new TypeError(`[host] Application ${key} must be a function`)
+}
+
 const nodeFields = [
 	'autoStart',
 	'config',
@@ -116,11 +131,8 @@ const nodeFields = [
 ] as const
 
 /** Both application drivers and portable Hosts interpret the same code declarations. */
-export function snapshotHostDeclarations(
-	input: HostDeclarations,
-	snapshotFacilities: SnapshotCoreFacilities,
-): {
-	options: ResolvedHostOptions
+export function snapshotHostDeclarations(input: HostDeclarations): {
+	options: Omit<ResolvedHostOptions, 'coreConfig'>
 	bindings: OwnedInputBindings
 } {
 	if (input.name !== undefined && (typeof input.name !== 'string' || !input.name.trim()))
@@ -256,7 +268,6 @@ export function snapshotHostDeclarations(
 			declaredNodes: Object.freeze(declaredNodes),
 			services:
 				input.services === undefined ? undefined : snapshotPolicyArray(input.services, 'services'),
-			coreConfig: snapshotFacilities(input.coreConfig),
 			config: snapshotHostConfig(input.config, inputMode, records),
 			policy: snapshotHostPolicy(
 				input.policy,

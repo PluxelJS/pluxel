@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, realpathSync } from 'node:fs'
 import { resolve, relative, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { HostApplicationFactory } from './application'
+import type { HostApplicationFactory } from './node-application'
 import { installedPackageFacts, type InstalledPackageFacts } from './shared-packages'
 import {
 	loadNativeHostServiceControls,

@@ -13,7 +13,7 @@ import {
 	requireHostDocumentRetention,
 	requireHostDocuments,
 	requirePluginService,
-	snapshotRequestCoreFacilitiesConfig,
+	snapshotWorkerCoreFacilitiesConfig,
 } from '../src/internal'
 import { ConfigService } from '../src/services/config/ConfigService'
 abstract class ExampleService {}
@@ -144,10 +144,10 @@ describe('Core Context integration', () => {
 		)
 	})
 
-	it('owns session documents per request and keeps logger category identity bounded', async () => {
-		const plan = createCoreContextHostWithFacilities({}, snapshotRequestCoreFacilitiesConfig())
-		const first = plan.createRoot('first request')
-		const next = plan.createRoot('next request')
+	it('keeps Worker session documents and logger identities local to each root', async () => {
+		const plan = createCoreContextHostWithFacilities({}, snapshotWorkerCoreFacilitiesConfig())
+		const first = plan.createRoot('first worker')
+		const next = plan.createRoot('next worker')
 		try {
 			const documents = requireHostDocuments(first, 'config')
 			await documents.put('records.json', 'first')
@@ -155,7 +155,10 @@ describe('Core Context integration', () => {
 			expect(await requireHostDocuments(next, 'config').getText('records.json')).toBeUndefined()
 			expect(requireHostDocumentRetention(first, 'config')).toBe('session')
 			expect(() => requireFs(first)).toThrow(expect.objectContaining({ code: 'ENOTSUP' }))
-			expect(getContextLoggerRootId(first)).toBe(getContextLoggerRootId(next))
+			expect(getContextLoggerRootId(plan.createScope(first, 'plugin'))).toBe(
+				getContextLoggerRootId(first),
+			)
+			expect(getContextLoggerRootId(first)).not.toBe(getContextLoggerRootId(next))
 			await first.effects.dispose()
 			await expect(documents.getText('records.json')).rejects.toMatchObject({ code: 'EBADF' })
 		} finally {
@@ -170,7 +173,7 @@ describe('Core Context integration', () => {
 		{ vault: { backend: 'bindings', deployIdentity: '' } },
 		{ http: { proxyUrl: null } },
 		{ http: { allowProxyChanges: false } },
-	] as const)('rejects facilities that the request assembly does not own: %j', (config) => {
-		expect(() => snapshotRequestCoreFacilitiesConfig(config)).toThrow(TypeError)
+	] as const)('rejects facilities that the Worker assembly does not own: %j', (config) => {
+		expect(() => snapshotWorkerCoreFacilitiesConfig(config)).toThrow(TypeError)
 	})
 })

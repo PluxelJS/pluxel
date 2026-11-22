@@ -1,5 +1,4 @@
 import type { CoreFacilitiesConfig, RootContext } from './Context'
-import type { LoggerServiceConfig } from '../logger/LoggerService'
 import { resolveLogTapeConfig, type ResolvedLogTapeConfig } from '../logging/config'
 import type { EventsServiceConfig } from '../services/events/EventsService'
 import { resolveTinyBaseOptions } from '../tinybase/options'
@@ -16,7 +15,7 @@ import type { CoreStorage } from '../storage/documents'
 import { createMemoryStorage } from '../storage/memory'
 
 const facilityFields = new Set(['logtape', 'zenfs', 'tinybase', 'vault', 'events', 'http'])
-const requestFacilityFields = new Set(['tinybase', 'vault', 'events', 'http'])
+const workerFacilityFields = new Set(['tinybase', 'vault', 'events', 'http'])
 const eventFields = new Set([
 	'events',
 	'catchPromiseError',
@@ -53,7 +52,6 @@ export type PreparedCoreFacilities = Readonly<{
 	events?: EventsServiceConfig
 	tinybase: Required<TinyBaseOptions>
 	createStorage: CoreStorageFactory
-	createLoggerConfig?: () => LoggerServiceConfig
 	vault: Readonly<VaultServiceConfig>
 	http: ResolvedOutboundHttpOptions
 }>
@@ -62,7 +60,7 @@ const snapshots = new WeakSet<PreparedCoreFacilities>()
 
 function prepareFacilities(
 	input: CoreFacilitiesConfig,
-	resolved: Pick<PreparedCoreFacilities, 'createStorage' | 'createLoggerConfig' | 'vault' | 'http'>,
+	resolved: Pick<PreparedCoreFacilities, 'createStorage' | 'vault' | 'http'>,
 ): PreparedCoreFacilities {
 	const snapshot = Object.freeze({
 		logtape: resolveLogTapeConfig(input.logtape),
@@ -88,18 +86,16 @@ export function snapshotCoreFacilities(
 	})
 }
 
-/** One request owns session documents and reads only the supplied Vault bindings. */
-export function snapshotRequestCoreFacilitiesConfig(
+/** A Worker root owns session documents and reads deployment Vault bindings. */
+export function snapshotWorkerCoreFacilitiesConfig(
 	input: CoreFacilitiesConfig = {},
 ): PreparedCoreFacilities {
-	assertCoreConfigObject(input, '[core] Request Host facilities', requestFacilityFields)
+	assertCoreConfigObject(input, '[core] Worker Host facilities', workerFacilityFields)
 	const vault = snapshotVaultConfig(input.vault)
 	if (vault.backend === 'encrypted' || vault.deployIdentity !== undefined)
-		throw new TypeError('[core.vault] Request Host supports only deployment bindings')
+		throw new TypeError('[core.vault] Worker Host supports only deployment bindings')
 	return prepareFacilities(input, {
 		createStorage: createMemoryStorage,
-		// LogTape categories live for the isolate. Correlate requests in record properties.
-		createLoggerConfig: () => ({ rootId: 'worker-request', requestId: crypto.randomUUID() }),
 		vault: Object.freeze({ backend: 'bindings' }),
 		http: snapshotOutboundHttpOptions(input.http),
 	})

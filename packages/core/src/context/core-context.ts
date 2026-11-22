@@ -1,9 +1,5 @@
 import type { Context, RootContext } from './Context'
-import {
-	LoggerService,
-	type ContextLogger,
-	type LoggerServiceConfig,
-} from '../logger/LoggerService'
+import { LoggerService, type ContextLogger } from '../logger/LoggerService'
 import { EffectsService, type EffectsScope } from '../services/effects/EffectsService'
 import {
 	createEventsServiceView,
@@ -26,7 +22,6 @@ export interface CoreRuntime {
 	readonly config: ConfigService
 	readonly plugins: PluginService
 	readonly storage: CoreStorage
-	readonly loggerConfig?: LoggerServiceConfig
 	readonly tinybase: TinyBaseRuntime
 	readonly vault: VaultRuntime
 	readonly http: OutboundHttpRuntime
@@ -69,10 +64,7 @@ const properties: PropertyDescriptorMap = {
 	logger: {
 		get(this: Context) {
 			const state = stateOf(this)
-			return (state.logger ??=
-				state.owner === this
-					? new LoggerService(this, requireCoreRuntime(this).loggerConfig)
-					: state.owner.logger)
+			return (state.logger ??= state.owner === this ? new LoggerService(this) : state.owner.logger)
 		},
 	},
 	effects: {

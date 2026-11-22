@@ -556,12 +556,12 @@ export function readApplicationDeclaration(options: {
 	const configBinding = callee ? module.imports.get(callee) : undefined
 	if (
 		!configBinding ||
-		configBinding.source !== '@pluxel/host' ||
+		!['@pluxel/host', '@pluxel/host/application'].includes(configBinding.source) ||
 		configBinding.imported !== 'defineHostApplication' ||
 		configBinding.namespace
 	) {
 		error(
-			`[application] ${id} must default-export defineHostApplication(factory) imported from @pluxel/host`,
+			`[application] ${id} must default-export defineHostApplication from @pluxel/host/application or @pluxel/host`,
 		)
 	}
 	const factoryArguments = directCallArguments(declaration, 'defineHostApplication', id, error)

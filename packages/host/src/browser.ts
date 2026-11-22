@@ -1,3 +1,5 @@
+import type { PortableApplication } from './application'
+import { startEmbeddedApplication, type HostInputs } from './embedded-application'
 import type { CoreFacilitiesConfig } from '@pluxel/core'
 import { snapshotZenFsCoreFacilitiesConfig } from '@pluxel/core/internal/zenfs'
 import {
@@ -18,6 +20,14 @@ export type HostOptions = Omit<EmbeddedHostOptions, 'coreConfig'> &
 /** Prepare a browser or Web Worker Host with ZenFS and the browser Fetch transport. */
 export function createHost(options: HostOptions): Promise<PluginHost> {
 	return createHostFromOptions(options, snapshotZenFsCoreFacilitiesConfig)
+}
+
+/** Start and accept an isolated root from reusable declarations. The caller owns its lifetime. */
+export function startHost(
+	application: PortableApplication<HostOptions['coreConfig']>,
+	input?: HostInputs<HostOptions['coreConfig']>,
+): Promise<PluginHost> {
+	return startEmbeddedApplication(application, snapshotZenFsCoreFacilitiesConfig, input)
 }
 
 export type { PluginHost } from './host'

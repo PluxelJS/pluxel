@@ -9,6 +9,7 @@ export default defineConfig({
 		'internal/agent/socket': './src/agent/socket.ts',
 		'internal/agent/transport': './src/agent/transport.ts',
 		'internal/agent/node': './src/agent/node.ts',
+		application: './src/application.ts',
 		bindings: './src/bindings.ts',
 		browser: './src/browser.ts',
 		cloudflare: './src/cloudflare.ts',

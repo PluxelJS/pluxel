@@ -60,7 +60,9 @@ export default defineConfig(({ command, isPreview, mode }) => {
 			const edge = cloudflare({ viteEnvironment: { name: 'cloudflare' }, persistState: false })
 			if (!dev) return edge
 
-			const { demoDevelopment } = await import('./vite.dev')
+			const { demoDevelopment } = (await import(
+				import.meta.resolve('./vite.dev.ts')
+			)) as typeof import('./vite.dev')
 			return [edge, ...demoDevelopment(import.meta.dirname)]
 		}),
 	}

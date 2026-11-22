@@ -3,7 +3,7 @@ title: 插件持久化状态（TinyBase）
 description: 使用内建的 TinyBase Store 保存用户偏好与轻量业务记录，支持自动快照与跨重启恢复。
 ---
 
-对于用户偏好设置、开关标记或轻量业务记录，Pluxel 内置了对 [TinyBase](https://tinybase.org/) 响应式内存数据存储的支持。每个插件节点拥有专属的 Store，修改会自动由宿主生成快照并写入所选的存储。Node 和浏览器使用 ZenFS 后端。Cloudflare 请求 Host 的快照保留到请求 Host 关闭。 [Host 存储](../host/configuration.md#cloudflare-请求-host)
+对于用户偏好设置、开关标记或轻量业务记录，Pluxel 内置了对 [TinyBase](https://tinybase.org/) 响应式内存数据存储的支持。每个插件节点拥有专属的 Store，修改会自动由宿主生成快照并写入所选的存储。Node 和浏览器使用 ZenFS 后端。Cloudflare Worker Host 的快照在同一 isolate 中跨请求保留到根关闭。 [Host 存储](../host/configuration.md#cloudflare-worker-host)
 
 > [!TIP]
 > **状态选型建议**

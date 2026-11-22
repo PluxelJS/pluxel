@@ -102,7 +102,6 @@ function createCoreRuntime(
 		})
 	})
 	return {
-		loggerConfig: inputs.createLoggerConfig?.(),
 		get storage() {
 			return storage()
 		},

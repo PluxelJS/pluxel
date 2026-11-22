@@ -80,8 +80,10 @@ export async function validateInputBindingCandidates(
 	plugins: readonly PluginConstructor[],
 	options: Pick<ResolvedHostOptions, 'config'>,
 ): Promise<void> {
+	const declaredBindings = configProvenance(options.config).bindings
+	if (!declaredBindings.length) return
 	for (const plugin of plugins) {
-		const bindings = configProvenance(options.config).bindings.filter((binding) =>
+		const bindings = declaredBindings.filter((binding) =>
 			pluginDefinitionAddressEqual(plugin.nodeAddress().definition, binding.owner.definition),
 		)
 		if (bindings.length === 0) continue

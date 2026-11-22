@@ -41,10 +41,12 @@ export {
 export { observeFile } from './fs/observe'
 export { pluginNodePhysicalKey } from './internal/plugin-address'
 export {
-	createContextHost,
 	installOwnerViewService,
 	installRootService,
 	installScopeService,
+} from './services/installation'
+export {
+	createContextHost,
 	getServiceInstallationDefinition,
 	type ServiceDefinition,
 	type ServiceInstallation,
@@ -119,7 +121,7 @@ export {
 	DEFAULT_PLUGIN_EXECUTION,
 } from './context/plugin-execution'
 export {
-	snapshotRequestCoreFacilitiesConfig,
+	snapshotWorkerCoreFacilitiesConfig,
 	type PreparedCoreFacilities,
 } from './context/core-facilities'
 

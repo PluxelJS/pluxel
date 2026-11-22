@@ -1,9 +1,19 @@
+import type { PortableApplication } from './application'
+import { startEmbeddedApplication, type HostInputs } from './embedded-application'
 import { snapshotCoreFacilitiesConfig } from '@pluxel/core/host'
 import { createHostFromOptions, type HostOptions, type PluginHost } from './host'
 
 /** Prepare a Node Host with ZenFS. Plugin generations start through host.start(). */
 export function createHost(options: HostOptions): Promise<PluginHost> {
 	return createHostFromOptions(options, snapshotCoreFacilitiesConfig)
+}
+
+/** Start and accept an isolated root from reusable declarations. The caller owns its lifetime. */
+export function startHost(
+	application: PortableApplication,
+	input?: HostInputs<HostOptions['coreConfig']>,
+): Promise<PluginHost> {
+	return startEmbeddedApplication(application, snapshotCoreFacilitiesConfig, input)
 }
 
 export type { HostOptions, HostApplication, PluginHost } from './host'
@@ -91,7 +101,7 @@ export {
 	prepareHostApplication,
 	type HostStartupContext,
 	type ResolvedHostApplication,
-} from './application'
+} from './node-application'
 export { HostApplicationStartupError, type HostApplicationStartup } from './application-start'
 
 export type {

@@ -62,8 +62,6 @@ export {
 
 export { setHostCatalogProvenance } from './catalog-provenance'
 
-export { updateHostCatalog } from './host'
-
 export {
 	hostSharedPackages,
 	resolveNativeImport,
