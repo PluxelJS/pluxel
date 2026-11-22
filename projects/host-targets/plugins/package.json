@@ -30,7 +30,8 @@
 		}
 	},
 	"scripts": {
-		"build": "vp run compile"
+		"build": "vp run compile",
+		"typecheck": "vp run check-types"
 	},
 	"dependencies": {
 		"valibot": "catalog:validation"

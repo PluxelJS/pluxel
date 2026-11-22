@@ -76,6 +76,8 @@ create/CLI 在 Vite+ Pack `build:done` 复制模板后，共用构建专用 pnca
 
 ## Trusted Publishing
 
+官方插件的 `repository.url` 指向 `PluxelJS/plugins` 后，仍参与主仓 workspace 联调，发行和版本由插件仓维护。主仓 Tegami 与 npm 预登记只选择主仓拥有的发行包。插件仓调用 [插件发布 workflow](../docs/development/plugin-market.md#多包插件仓库)，其 npm Trusted Publisher 登记插件仓的 `publish.yml`。
+
 npm trusted publisher 绑定 `PluxelJS/pluxel` 与 `.github/workflows/release.yml`，使用 GitHub OIDC。workflow 按仓库 visibility 开关 provenance：公开仓库支持 provenance，私有仓库可用 OIDC。设置需要 package write、账号 2FA 和交互式 npm 登录。
 
 使用 `vp exec npm --version` 核对 npm 11.15.0+ 的 `npm trust` 支持。在已完成 version 的发布准备提交上初始化；批量脚本要求 publish lock 覆盖全部公开包：

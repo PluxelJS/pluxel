@@ -106,6 +106,9 @@ jobs:
               echo "::error::package-name must be an exact npm package name."
               exit 1
             fi
+            if [[ -n "$FRAMEWORK_REF" ]]; then
+              vp run --concurrency-limit=2 "$PACKAGE_NAME#compile"
+            fi
             vp pm pack --filter "$PACKAGE_NAME" --out "$RUNNER_TEMP/plugin.tgz"
           else
             if [[ -n "$FRAMEWORK_REF" ]]; then

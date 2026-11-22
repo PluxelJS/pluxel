@@ -10,7 +10,7 @@ import {
 	type Plugin,
 	type PluginOption,
 } from 'vite'
-import { demoUpdateEvent, type DemoResult, type DemoUpdate } from './src/protocol'
+import { demoUpdateEvent, type DemoResult, type DemoUpdate } from './src/protocol.ts'
 
 const pluginPackage = '@pluxel-example/host-targets-plugins'
 
