@@ -1,7 +1,0 @@
-{
-	"total": 120,
-	"channels": [
-		{ "name": "直营", "actual": 80 },
-		{ "name": "合作", "actual": 40 }
-	]
-}
