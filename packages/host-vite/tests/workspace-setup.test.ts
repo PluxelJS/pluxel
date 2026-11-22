@@ -83,6 +83,38 @@ it('checks an explicitly configured child with the parent workspace CLI', async 
 	expect(await readFile(statePath, 'utf8')).toBe(before)
 }, 40_000)
 
+it.each(['submodule', 'checkout'])(
+	'uses workspace membership to resolve the CLI for a nested Git %s',
+	async (checkout) => {
+		await using fixture = await createDiskFixture({
+			...workspaceFiles,
+			'pnpm-workspace.yaml':
+				'packages:\n  - host\n  - plugins/*\n  - "!plugins/excluded"\ncatalogs:\n  dev:\n    "@pluxel/cli": ^1.1.0\n',
+			'plugins/member/package.json': JSON.stringify({
+				name: '@fixture/member',
+				devDependencies: { '@pluxel/cli': 'catalog:dev' },
+			}),
+			'plugins/excluded/package.json': JSON.stringify({
+				name: '@fixture/excluded',
+				devDependencies: { '@pluxel/cli': '1.1.0' },
+			}),
+		})
+		const plugins = resolve(fixture.path, 'plugins')
+		if (checkout === 'submodule') {
+			await writeFile(resolve(plugins, '.git'), 'gitdir: ../.git/modules/plugins\n')
+		} else {
+			await mkdir(resolve(plugins, '.git'))
+		}
+		const cli = await installCli(fixture.path)
+		await setup(cli, fixture.path)
+		await expect(checkDevelopmentWorkspace(resolve(plugins, 'member'))).resolves.toBeUndefined()
+		await expect(checkDevelopmentWorkspace(resolve(plugins, 'excluded'))).rejects.toThrow(
+			`Pluxel development setup missing at ${plugins}.`,
+		)
+	},
+	40_000,
+)
+
 it.each(['.git', 'pnpm-lock.yaml'])(
 	'does not borrow a CLI across the nested %s boundary',
 	async (marker) => {
