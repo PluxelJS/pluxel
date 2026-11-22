@@ -13,6 +13,7 @@ import {
 import { createConnection } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { afterEach, expect, it, vi } from 'vitest'
 import { openScriptSocketSession } from '@pluxel/host/internal/agent/socket'
 import type { ScriptConnectionTarget } from '@pluxel/host/internal/agent/transport'
@@ -53,6 +54,13 @@ async function fixture() {
 	}
 	return { ...files, execute, server, input }
 }
+it('keeps an authenticated control connection usable past the handshake timeout', async () => {
+	const { server } = await fixture()
+	using client = await connectDevInstance(server.instance)
+	await delay(5200)
+	expect(await client.describe()).toMatchObject({ instanceId: server.instance.instanceId })
+}, 12_000)
+
 it('grants the shared control target only after native Cap’n Web instance authentication', async () => {
 	const { server, execute } = await fixture()
 	for (const nonce of ['', randomUUID()]) {

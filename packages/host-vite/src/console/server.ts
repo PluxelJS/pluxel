@@ -8,6 +8,7 @@ import {
 	ScriptExecutor,
 	ScriptExecutionError,
 	SCRIPT_PROTOCOL,
+	SCRIPT_MAX_TIMEOUT,
 	scriptFailure,
 	type ScriptSubmission,
 	type ScriptHmrAction,
@@ -144,6 +145,8 @@ export async function startProjectScriptServer(options: {
 				!timingSafeEqual(Buffer.from(value.nonce), Buffer.from(nonce))
 			)
 				throw new ScriptExecutionError('unauthorized', 'Script instance credentials do not match')
+			// An authenticated HMR operation can occupy the module runner past the handshake deadline.
+			socket.setTimeout(SCRIPT_MAX_TIMEOUT)
 			return createScriptControlTarget({
 				materials: options.materials,
 				executor,
