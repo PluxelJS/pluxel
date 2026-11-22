@@ -59,7 +59,31 @@ it('pnpm shares immutable dependency slots across private installations', async 
 		{ name: 'fixture-a', version: '4.0.0', dependencies: { 'fixture-p': '3.0.0' } },
 	]
 	const registry = createServer((request, response) => {
-		const path = decodeURIComponent(request.url?.split('?')[0] ?? '')
+		const origin = `http://${request.headers.host}`
+		const url = new URL(request.url ?? '/', origin)
+		const path = decodeURIComponent(url.pathname)
+		// This catalog speaks the HTTP contract independently of the reference Worker.
+		if (path === '/community/v1/packages/fixture-a/releases/1.0.0') {
+			if (url.searchParams.get('registry') !== origin) {
+				response.writeHead(404).end()
+				return
+			}
+			response.writeHead(200, { 'content-type': 'application/json' }).end(
+				JSON.stringify({
+					name: 'fixture-a',
+					version: '1.0.0',
+					registry: origin,
+					integrity: `sha512-${createHash('sha512').update(archives.get('fixture-a-1.0.0')!).digest('base64')}`,
+					checkedAt: Date.now(),
+					provenance: { status: 'missing' },
+					peerDependencies: {},
+					pluginPackages: {},
+					readme: null,
+					license: null,
+				}),
+			)
+			return
+		}
 		const archive = archives.get(path.slice('/archive/'.length))
 		if (path.startsWith('/archive/') && archive) {
 			response.writeHead(200, { 'content-type': 'application/octet-stream' }).end(archive)
@@ -83,6 +107,9 @@ it('pnpm shares immutable dependency slots across private installations', async 
 							...pkg,
 							dist: {
 								tarball: `http://${request.headers.host}/archive/${pkg.name}-${pkg.version}`,
+								integrity: `sha512-${createHash('sha512')
+									.update(archives.get(`${pkg.name}-${pkg.version}`)!)
+									.digest('base64')}`,
 								shasum: createHash('sha1')
 									.update(archives.get(`${pkg.name}-${pkg.version}`)!)
 									.digest('hex'),
@@ -221,6 +248,7 @@ export const resource = () => import('node:fs/promises').then(fs => fs.readFile(
 			ignoreScripts: true,
 			allowBuilds: [] as string[],
 			minimumReleaseAgeMinutes: 0,
+			markets: [{ id: 'community', url: new URL('community', url).href }],
 		}
 		const store = new ManagedPackageStore(managedEngine, options)
 		await store.initialize()
@@ -228,9 +256,17 @@ export const resource = () => import('node:fs/promises').then(fs => fs.readFile(
 			await expect(
 				new ManagedPackageStore(managedEngine, options).initialize(),
 			).rejects.toMatchObject({ code: 'PACKAGE_STORE_WRITER_CONFLICT' })
-			expect(await store.install(['fixture-a@1.0.0', 'fixture-b@1.0.0'])).toMatchObject({
-				ok: true,
+			expect(await store.install(['fixture-b@1.0.0'])).toMatchObject({ ok: true })
+			const selected = await store.prepareMarketInstall({
+				marketId: 'community',
+				registry: new URL(url).origin,
+				name: 'fixture-a',
+				version: '1.0.0',
 			})
+			if (selected.ok === false) throw new Error(JSON.stringify(selected.failed))
+			const beforeConfirmation = await store.snapshot()
+			expect(beforeConfirmation.packages.map(({ name }) => name)).toEqual(['fixture-b'])
+			expect(await store.confirmInstall(selected.plan.id)).toMatchObject({ ok: true })
 			const entry = (name: string) =>
 				resolve(store.entriesDir, Buffer.from(name).toString('base64url') + '.mjs')
 			const inner = async (name: string) =>
