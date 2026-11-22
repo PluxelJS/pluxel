@@ -12,6 +12,7 @@ import { gzipSync } from 'node:zlib'
 import { newHttpBatchRpcSession } from 'capnweb'
 import { eq } from 'drizzle-orm'
 import { build } from 'esbuild'
+import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { Miniflare, Response as MiniflareResponse } from 'miniflare'
 import { packTar, type TarEntry } from 'modern-tar'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -52,8 +53,19 @@ describe('plugin market on workerd and D1', () => {
 	let script: string
 	const token = crypto.randomUUID()
 	const privateRegistry = 'https://private.example/npm'
+	const githubIssuer = 'https://token.actions.githubusercontent.com'
+	const githubPublisherRule = {
+		name: '@example/ci-plugin',
+		repositoryId: '123',
+		repositoryOwnerId: '456',
+		workflowRef: 'publisher/plugin/.github/workflows/publish.yml@refs/heads/main',
+		jobWorkflowRef: `pluxeljs/pluxel/.github/workflows/plugin-publish.yml@${'a'.repeat(40)}`,
+	}
+	let signingKey: Awaited<ReturnType<typeof generateKeyPair>>['privateKey']
+	let signingJwk: Awaited<ReturnType<typeof exportJWK>>
+	let githubKeysAvailable = true
 	const sources = [
-		{ registry, access: 'public' },
+		{ registry, access: 'public', githubPublishers: [githubPublisherRule] },
 		{
 			registry: privateRegistry,
 			access: 'admin',
@@ -165,6 +177,11 @@ describe('plugin market on workerd and D1', () => {
 							handler(request) {
 								requests.push(request.url)
 								const url = new URL(request.url)
+								if (url.href === `${githubIssuer}/.well-known/jwks`) {
+									expect(request.headers.has('Authorization')).toBe(false)
+									if (!githubKeysAvailable) return new MiniflareResponse(null, { status: 503 })
+									return MiniflareResponse.json({ keys: [signingJwk] })
+								}
 								if (url.origin === 'https://api.github.com')
 									return MiniflareResponse.json(github.body, { status: github.status })
 								if (!sources.some((source) => request.url.startsWith(`${source.registry}/`)))
@@ -219,6 +236,9 @@ describe('plugin market on workerd and D1', () => {
 	}
 
 	beforeAll(async () => {
+		const pair = await generateKeyPair('RS256')
+		signingKey = pair.privateKey
+		signingJwk = { ...(await exportJWK(pair.publicKey)), kid: 'test-key' }
 		directory = await mkdtemp(join(tmpdir(), 'pluxel-market-'))
 		const output = await build({
 			entryPoints: ['src/worker.ts'],
@@ -376,6 +396,92 @@ describe('plugin market on workerd and D1', () => {
 		})
 		expect(requests).toHaveLength(0)
 		expect(await db.select().from(releases)).toHaveLength(0)
+	})
+
+	it('authenticates GitHub Actions notifications against the package and both workflow identities', async () => {
+		const target = { ...selected, name: githubPublisherRule.name }
+		const audience = new URL('/v1/notifications', origin).href
+		function sign(claims = {}, key = signingKey) {
+			return new SignJWT({
+				iss: githubIssuer,
+				aud: audience,
+				repository_id: githubPublisherRule.repositoryId,
+				repository_owner_id: githubPublisherRule.repositoryOwnerId,
+				workflow_ref: githubPublisherRule.workflowRef,
+				job_workflow_ref: githubPublisherRule.jobWorkflowRef,
+				ref: 'refs/heads/main',
+				event_name: 'workflow_dispatch',
+				run_id: '912345',
+				run_attempt: '1',
+				iat: Math.floor(Date.now() / 1000),
+				exp: Math.floor(Date.now() / 1000) + 60,
+				...claims,
+			})
+				.setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
+				.sign(key)
+		}
+		async function submit(jwt?: string, payload = target) {
+			return fetch(new URL('/v1/notifications', origin), {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					...(jwt && { Authorization: `Bearer ${jwt}` }),
+				},
+				body: JSON.stringify(payload),
+			})
+		}
+		await expect(submit()).resolves.toMatchObject({ status: 401 })
+		githubKeysAvailable = false
+		try {
+			const unavailable = await submit(await sign())
+			expect(unavailable.status).toBe(503)
+			await expect(unavailable.json()).resolves.toMatchObject({ code: 'github-oidc-unavailable' })
+		} finally {
+			githubKeysAvailable = true
+		}
+		const unrelatedKey = await generateKeyPair('RS256')
+		for (const jwt of [
+			await sign({}, unrelatedKey.privateKey),
+			await sign({ iss: 'https://other-issuer.example' }),
+			await sign({ aud: 'npm:registry.npmjs.org' }),
+			await sign({ exp: Math.floor(Date.now() / 1000) - 60 }),
+		]) {
+			const response = await submit(jwt)
+			expect(response.status).toBe(401)
+			await expect(response.json()).resolves.toMatchObject({ code: 'github-oidc-invalid' })
+		}
+		for (const claims of [
+			{ repository_id: '789' },
+			{ repository_owner_id: '789' },
+			{ workflow_ref: 'publisher/plugin/.github/workflows/other.yml@refs/heads/main' },
+			{ job_workflow_ref: githubPublisherRule.jobWorkflowRef.replace(/a{40}$/, 'b'.repeat(40)) },
+			{ ref: 'refs/pull/9/merge' },
+			{ event_name: 'pull_request_target' },
+		]) {
+			const response = await submit(await sign(claims))
+			expect(response.status).toBe(403)
+			await expect(response.json()).resolves.toMatchObject({ code: 'github-oidc-publisher-denied' })
+		}
+		await expect(submit(await sign(), selected)).resolves.toMatchObject({ status: 403 })
+		expect(await db.select().from(notifications)).toEqual([])
+
+		const accepted = await submit(await sign())
+		expect(accepted.status).toBe(202)
+		const receipt = (await accepted.json()) as Receipt
+		expect(receipt).toMatchObject({ ...target, status: 'pending' })
+		expect(receipt).not.toHaveProperty('githubPublisher')
+		await expect(submit()).resolves.toMatchObject({ status: 401 })
+		const replay = await submit(await sign({ run_attempt: '2' }))
+		await expect(replay.json()).resolves.toEqual(receipt)
+		using operator = admin()
+		await expect(operator.getNotification(receipt.id)).resolves.toMatchObject({
+			githubPublisher: {
+				workflowRef: githubPublisherRule.workflowRef,
+				runId: '912345',
+				runAttempt: '1',
+			},
+		})
+		expect(requests.every((url) => url === `${githubIssuer}/.well-known/jwks`)).toBe(true)
 	})
 
 	it('never downgrades a present proof, follows redirects, or fetches arbitrary tarball origins', async () => {

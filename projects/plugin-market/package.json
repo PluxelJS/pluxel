@@ -20,6 +20,7 @@
 	"dependencies": {
 		"capnweb": "catalog:dev",
 		"drizzle-orm": "catalog:backend",
+		"jose": "catalog:prod",
 		"modern-tar": "catalog:prod",
 		"semver": "catalog:dev",
 		"valibot": "catalog:validation",

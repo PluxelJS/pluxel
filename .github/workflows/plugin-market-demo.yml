@@ -1,0 +1,30 @@
+name: Plugin market sandbox
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5
+        with:
+          cache: false
+          install: true
+      - run: vp install --frozen-lockfile
+      - run: vp test run tests/worker.test.ts
+        working-directory: projects/plugin-market
+      - run: pitchfork start market
+      - run: vp run @pluxel-internal/plugin-market#sandbox:verify
+      - if: failure()
+        run: pitchfork logs market market-registry --since 10min -n 100 --no-pager
+      - if: always()
+        run: pitchfork stop market market-registry

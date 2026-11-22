@@ -112,3 +112,5 @@ vp exec pluxel publish --webhook
 - `dist/` 目录下正确生成了 `.mjs` 模块及 `.d.ts` 类型声明文件；
 - 临时文件、测试夹具、敏感凭据或源码映射未被误打包；
 - `peerDependencies` 版本范围符合目标运行环境的要求。
+
+独立插件仓库可以调用 Pluxel 的可复用 GitHub Actions workflow 做 PR 构建、npm Trusted Publishing 和市场通知。见 [GitHub Actions 示例](./plugin-market.md#github-actions)。

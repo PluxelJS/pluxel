@@ -20,7 +20,7 @@ description: 掌握 Pluxel 插件与应用的开发、代码检查、调试测�
 | CLI 命令系统与编译机制               | [CLI 与构建工具](./tooling.md)                | 了解 Pluxel CLI 的指令设计、Rollup/Vite 插件转换与打包逻辑 |
 | 打包分发独立插件包                   | [插件包发布](./plugin-package.md)             | 配置插件元数据清单、依赖声明与导出规范                     |
 | 生产部署与单体二进制打包             | [应用交付与打包部署](./distribution.md)       | 构建生产运行时发行物、打包原生依赖与静态资产               |
-| 本地运行插件市场与私有源             | [插件市场调试](./plugin-market.md)            | 运行本地 PNPR 仓库与市场服务端，体验包上传与更新流程       |
+| 发布插件与体验市场                   | [插件市场](./plugin-market.md)                | GitHub Actions 发布与通知、PNPR 沙箱和目录管理             |
 
 ## 开发调试工作流建议
 

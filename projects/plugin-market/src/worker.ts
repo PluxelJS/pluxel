@@ -2,6 +2,7 @@ import { newHttpBatchRpcResponse } from 'capnweb'
 import { eq } from 'drizzle-orm'
 import { MarketAdmin } from './admin'
 import { readCatalog } from './catalog-http'
+import { authorizeGitHubNotification } from './github-notification'
 import { json, marketResponse } from './http'
 import { processNotifications } from './jobs'
 import { coordinate, MarketError, readBytes, readJson } from './protocol'
@@ -54,7 +55,18 @@ async function dispatch(request: Request, env: Env): Promise<Response> {
 				'Private-source notifications require a notification credential',
 				401,
 			)
-		const row = await enqueue(db, input, Date.now())
+		const publishers = source.githubPublishers?.filter((rule) => rule.name === input.name) ?? []
+		if (source.access === 'public' && !admin && authorization && publishers.length === 0)
+			throw new MarketError(
+				'github-oidc-publisher-denied',
+				'No GitHub publisher is configured for this package',
+				403,
+			)
+		const githubPublisher =
+			!admin && publishers.length > 0
+				? await authorizeGitHubNotification(request, publishers)
+				: null
+		const row = await enqueue(db, input, Date.now(), githubPublisher)
 		return Response.json(receipt(row), {
 			status: row.status === 'failed' || row.status === 'indexed' ? 200 : 202,
 			headers: { Location: `/v1/notifications/${row.id}`, 'Cache-Control': 'no-store' },

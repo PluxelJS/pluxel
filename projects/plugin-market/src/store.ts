@@ -69,10 +69,20 @@ function retryState(row: Notification): NotificationDetail['retry'] {
 }
 
 export function notificationDetail(row: Notification): NotificationDetail {
-	return { ...receipt(row), diagnostic: row.diagnostic, retry: retryState(row) }
+	return {
+		...receipt(row),
+		diagnostic: row.diagnostic,
+		githubPublisher: row.githubPublisher,
+		retry: retryState(row),
+	}
 }
 
-export async function enqueue(db: Database, input: Coordinate, now: number): Promise<Notification> {
+export async function enqueue(
+	db: Database,
+	input: Coordinate,
+	now: number,
+	githubPublisher: Notification['githubPublisher'] = null,
+): Promise<Notification> {
 	const key = and(
 		eq(notifications.registry, input.registry),
 		eq(notifications.name, input.name),
@@ -105,6 +115,9 @@ export async function enqueue(db: Database, input: Coordinate, now: number): Pro
 					leaseUntil: sql<null>`null`.as('lease_until'),
 					code: sql<null>`null`.as('code'),
 					diagnostic: sql<null>`null`.as('diagnostic'),
+					githubPublisher: sql<
+						string | null
+					>`${githubPublisher && JSON.stringify(githubPublisher)}`.as('github_publisher'),
 				})
 				.from(sql`(select 1)`)
 				.where(admitted),

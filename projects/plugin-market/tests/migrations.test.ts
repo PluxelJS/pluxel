@@ -75,12 +75,15 @@ it('migrates existing single-source data without losing release identity, receip
 			integrity: 'original-digest',
 		})
 		expect(
-			await db.prepare('SELECT registry, id, status, attempts FROM notifications').first(),
+			await db
+				.prepare('SELECT registry, id, status, attempts, github_publisher FROM notifications')
+				.first(),
 		).toEqual({
 			registry: 'https://registry.npmjs.org',
 			id: 'kept-receipt',
 			status: 'failed',
 			attempts: 1,
+			github_publisher: null,
 		})
 		expect(await db.prepare('SELECT registry, id, revision FROM audits').first()).toEqual({
 			registry: 'https://registry.npmjs.org',
