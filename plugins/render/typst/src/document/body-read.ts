@@ -224,6 +224,11 @@ class BodyReader {
 		)
 	}
 
+	private linkMarks(expr: AstExpr, href: string, marks: Mark[]): Mark[] {
+		if (marks.some(({ type }) => type === 'link')) this.fail(expr, 'Links must not be nested')
+		return this.marked(marks, 'link', { href })
+	}
+
 	private text(value: string, range: Range, marks: Mark[], direct = false): Projected[] {
 		if (!value) return []
 		return [
@@ -334,7 +339,7 @@ class BodyReader {
 				break
 			case 'link':
 				if (bodyLink(expr.url))
-					return this.text(expr.url, range, this.marked(marks, 'link', { href: expr.url }), true)
+					return this.text(expr.url, range, this.linkMarks(expr, expr.url, marks), true)
 				break
 			case 'ref':
 				if (!expr.supplement) return [this.reference(expr, expr.target, null, marks)]
@@ -382,11 +387,7 @@ class BodyReader {
 			} = this.args(expr, [], 2)
 			if (target?.kind !== 'str' || !bodyLink(target.value))
 				this.fail(target!, 'Expected a supported literal link')
-			if (marks.some(({ type }) => type === 'link')) this.fail(expr, 'Links must not be nested')
-			return this.inlines(
-				this.content(body!).body,
-				this.marked(marks, 'link', { href: target.value }),
-			)
+			return this.inlines(this.content(body!).body, this.linkMarks(expr, target.value, marks))
 		}
 		if (name === 'raw') {
 			const {

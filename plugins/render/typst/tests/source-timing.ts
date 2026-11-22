@@ -76,7 +76,11 @@ for (let index = 0; index < 35; index++) {
 	project.open(path) // Open the current source as the real editor does before prepareEdit.
 	parseCalls = 0
 	const prepareStart = performance.now()
-	const prepared = project.prepareEdit({ projection, document })
+	const prepared = project.prepareEdit({
+		path: projection.path,
+		baseRevision: projection.revision,
+		document,
+	})
 	const projectPrepare = performance.now() - prepareStart
 	const calls = parseCalls
 	assert.ok(prepared.ok)

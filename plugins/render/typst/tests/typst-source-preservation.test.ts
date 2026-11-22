@@ -16,7 +16,11 @@ describe('source preservation across independently authored scope and trivia', (
 		const projection = project.open('main.typ')
 		const document = structuredClone(projection.document)
 		nodes(document).find((node) => node.text === 'Hello')!.marks = [{ type: 'textStyle', attrs }]
-		const result = project.edit({ projection, document })
+		const result = project.edit({
+			path: projection.path,
+			baseRevision: projection.revision,
+			document,
+		})
 		expect(result).toMatchObject({ ok: false, issues: [{ code: 'UNSUPPORTED_EDIT' }] })
 		expect(project.snapshot().files['main.typ']).toBe(source)
 		expect(project.revision).toBe(0)
@@ -30,7 +34,9 @@ describe('source preservation across independently authored scope and trivia', (
 			const projection = project.open('main.typ')
 			const document = structuredClone(projection.document)
 			document.content!.at(-1)!.attrs = { textAlign: 'right' }
-			expect(project.edit({ projection, document })).toMatchObject({
+			expect(
+				project.edit({ path: projection.path, baseRevision: projection.revision, document }),
+			).toMatchObject({
 				ok: false,
 				issues: [{ code: 'UNSUPPORTED_EDIT' }],
 			})
@@ -70,7 +76,9 @@ describe('source preservation across independently authored scope and trivia', (
 		const projection = project.open('main.typ')
 		const document = structuredClone(projection.document)
 		delete document.content![0]!.attrs!.textAlign
-		expect(project.edit({ projection, document }).ok).toBe(true)
+		expect(
+			project.edit({ path: projection.path, baseRevision: projection.revision, document }).ok,
+		).toBe(true)
 		expect(project.snapshot().files['main.typ']).toBe(expected)
 	})
 
@@ -80,7 +88,11 @@ describe('source preservation across independently authored scope and trivia', (
 		const projection = project.open('main.typ')
 		const document = structuredClone(projection.document)
 		nodes(document).find((node) => node.text === 'Hello')!.text = 'Hello 中文😀'
-		const result = project.edit({ projection, document })
+		const result = project.edit({
+			path: projection.path,
+			baseRevision: projection.revision,
+			document,
+		})
 		expect(result.ok).toBe(true)
 		expect(project.snapshot().files['main.typ']).toBe(`Hello 中文😀\n\n${invalid}`)
 		const after = project.open('main.typ')
@@ -100,7 +112,9 @@ describe('source preservation across independently authored scope and trivia', (
 		const document = structuredClone(projection.document)
 		nodes(document).find((node) => node.attrs?.role === 'invalid')!.attrs!.source =
 			'#let broken = ['
-		expect(project.edit({ projection, document })).toMatchObject({
+		expect(
+			project.edit({ path: projection.path, baseRevision: projection.revision, document }),
+		).toMatchObject({
 			ok: false,
 			issues: [{ code: 'SYNTAX_ERROR' }],
 		})

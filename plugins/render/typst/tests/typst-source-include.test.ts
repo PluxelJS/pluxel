@@ -37,9 +37,13 @@ describe('native static include content', () => {
 				.map((node) => node.text)
 				.join(''),
 		).toBe('正文😀。')
-		expect(project.edit({ projection, document: structuredClone(projection.document) }).ok).toBe(
-			true,
-		)
+		expect(
+			project.edit({
+				path: projection.path,
+				baseRevision: projection.revision,
+				document: structuredClone(projection.document),
+			}).ok,
+		).toBe(true)
 		expect(project.snapshot().files['main.typ']).toBe(source)
 		expect(project.snapshot().files['chapters/one.typ']).toBe('= 外部章节\n\n第一节正文。')
 	})
@@ -63,14 +67,20 @@ describe('native static include content', () => {
 				},
 			},
 		])
-		expect(project.edit({ projection, document: structuredClone(projection.document) }).ok).toBe(
-			true,
-		)
+		expect(
+			project.edit({
+				path: projection.path,
+				baseRevision: projection.revision,
+				document: structuredClone(projection.document),
+			}).ok,
+		).toBe(true)
 		expect(project.snapshot().files['main.typ']).toBe(source)
 		const document = structuredClone(projection.document)
 		const after = all(document).find((node) => node.type === 'text' && node.text?.includes('后文'))!
 		after.text = after.text!.replace('后文', '更新后文')
-		expect(project.edit({ projection, document }).ok).toBe(true)
+		expect(
+			project.edit({ path: projection.path, baseRevision: projection.revision, document }).ok,
+		).toBe(true)
 		expect(project.snapshot().files['main.typ']).toBe(source.replace('后文', '更新后文'))
 		expect(project.undo().ok).toBe(true)
 		expect(project.snapshot().files['main.typ']).toBe(source)
@@ -83,9 +93,13 @@ describe('native static include content', () => {
 		expect(projection.document.content).toHaveLength(1)
 		expect(all(projection.document).some((node) => node.type === 'typstInclude')).toBe(false)
 		expect(projection.diagnostics.some((issue) => issue.message.includes('semicolon'))).toBe(true)
-		expect(project.edit({ projection, document: structuredClone(projection.document) }).ok).toBe(
-			true,
-		)
+		expect(
+			project.edit({
+				path: projection.path,
+				baseRevision: projection.revision,
+				document: structuredClone(projection.document),
+			}).ok,
+		).toBe(true)
 		expect(project.snapshot().files['main.typ']).toBe(source)
 	})
 
@@ -95,7 +109,9 @@ describe('native static include content', () => {
 			projection = project.open('main.typ')
 		const document = structuredClone(projection.document)
 		document.content![0]!.attrs!.module = 'chapters/two.typ'
-		expect(project.edit({ projection, document }).ok).toBe(true)
+		expect(
+			project.edit({ path: projection.path, baseRevision: projection.revision, document }).ok,
+		).toBe(true)
 		expect(project.snapshot().files['main.typ']).toBe(source.replace('one.typ', 'two.typ'))
 		expect(project.undo().ok).toBe(true)
 		expect(project.snapshot().files['main.typ']).toBe(source)
@@ -111,12 +127,16 @@ describe('native static include content', () => {
 			projection = project.open('main.typ')
 		const document = structuredClone(projection.document)
 		;[document.content![0], document.content![1]] = [document.content![1]!, document.content![0]!]
-		expect(project.edit({ projection, document }).ok).toBe(true)
+		expect(
+			project.edit({ path: projection.path, baseRevision: projection.revision, document }).ok,
+		).toBe(true)
 		expect(project.snapshot().files['main.typ']).toBe(`${second}\n\n${first}\n\n正文。`)
 		const moved = project.open('main.typ'),
 			deleted = structuredClone(moved.document)
 		deleted.content!.splice(0, 1)
-		expect(project.edit({ projection: moved, document: deleted }).ok).toBe(true)
+		expect(
+			project.edit({ path: moved.path, baseRevision: moved.revision, document: deleted }).ok,
+		).toBe(true)
 		expect(project.snapshot().files['main.typ']).toBe(`\n\n${first}\n\n正文。`)
 		expect(project.undo().ok).toBe(true)
 		expect(project.snapshot().files['main.typ']).toBe(`${second}\n\n${first}\n\n正文。`)
@@ -181,6 +201,27 @@ describe('native static include content', () => {
 			'b.typ': '\n\n#include /* keep */ "chapters/one.typ"\n\n目标正文。',
 		})
 		expect(project.open('b.typ').document.content![0]!.type).toBe('typstInclude')
+	})
+
+	it('copies a rooted include without rewriting its path or confusing it with a package', () => {
+		const source = '#include /* keep */ "/chapters/@one.typ"'
+		const project = createTypstSourceProject({
+			files: {
+				'sections/a.typ': source,
+				'sections/nested/b.typ': '目标正文。',
+				'chapters/@one.typ': '= 唯一章节',
+			},
+		})
+		const copied = project.copy({
+			baseRevision: 0,
+			path: 'sections/a.typ',
+			from: 0,
+			to: bytes(source),
+			toPath: 'sections/nested/b.typ',
+			at: 0,
+		})
+		expect(copied.ok).toBe(true)
+		expect(project.open('sections/nested/b.typ').source).toContain(source)
 	})
 
 	it('does not use static includes as variable-scope barriers while retaining dynamic and import barriers', () => {
@@ -269,7 +310,9 @@ describe('native static include content', () => {
 				projection = project.open('main.typ'),
 				document = structuredClone(projection.document)
 			Object.assign(document.content![0]!.attrs!, attrs)
-			expect(project.edit({ projection, document }).ok).toBe(false)
+			expect(
+				project.edit({ path: projection.path, baseRevision: projection.revision, document }).ok,
+			).toBe(false)
 			expect(project.snapshot().files['main.typ']).toBe(source)
 		}
 	})

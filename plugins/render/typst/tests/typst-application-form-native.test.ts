@@ -6,7 +6,37 @@ import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 import { createTypstSourceLibrary } from '../src/source/library.js'
 import { loadNativeCompiler } from '../src/native-binding.ts'
-import runTypst from '../src/worker.ts'
+import { createTypstSourceProject } from '../src/source/node.ts'
+import { compileFixture } from './compile-fixture.ts'
+import { applyApplicationField } from './consumer/application-form.tsx'
+
+it('commits a field against its own baseline and leaves unrelated accepted input intact', async () => {
+	const path = 'data/application.json'
+	const initial = await readFile(
+		new URL(`./consumer/public/application-form/${path}`, import.meta.url),
+		'utf8',
+	)
+	const project = createTypstSourceProject({ files: { [path]: initial } })
+	const { name, studentId } = JSON.parse(initial)
+	const applicant = { key: 'name', label: '姓名' }
+	const number = { key: 'studentId', label: '学号' }
+	applyApplicationField(project, number, { base: studentId, text: '001023' })
+	applyApplicationField(project, applicant, { base: name, text: '张同学' })
+	const saved = project.snapshot()
+	expect(JSON.parse(saved.files[path] as string)).toMatchObject({
+		name: '张同学',
+		studentId: '001023',
+	})
+	expect(() => applyApplicationField(project, applicant, { base: name, text: '王同学' })).toThrow(
+		'姓名已在别处修改',
+	)
+	expect(project.snapshot()).toEqual(saved)
+	expect(project.undo().ok).toBe(true)
+	expect(JSON.parse(project.snapshot().files[path] as string)).toMatchObject({
+		name,
+		studentId: '001023',
+	})
+})
 
 it('prints the actual application form on one page and paginates long fields without changing its template', async () => {
 	const template = new URL('./consumer/public/application-form/main.typ', import.meta.url)
@@ -57,7 +87,7 @@ it('prints the actual application form on one page and paginates long fields wit
 		const pageCounts: number[] = []
 		for (const [index, data] of [short, long].entries()) {
 			await writeFile(join(root, 'data/application.json'), JSON.stringify(data))
-			const result = runTypst({
+			const result = compileFixture({
 				root,
 				entry: 'main.typ',
 				revision: index + 1,

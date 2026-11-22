@@ -127,6 +127,25 @@ describe('Typst editable body conversion', () => {
 		})
 	})
 
+	it.each(['https://inner.test', '#link("https://inner.test")[内层]'])(
+		'rejects nested link %s at its source span',
+		(inner) => {
+			const prefix = '正文 #link("https://outer.test")['
+			const encoder = new TextEncoder()
+			expect(parseTypstDocument(prefix + inner + ']')).toMatchObject({
+				ok: false,
+				issues: [
+					{
+						code: 'UNSUPPORTED_SYNTAX',
+						from: encoder.encode(prefix).length,
+						to: encoder.encode(prefix + inner).length,
+						message: 'Links must not be nested',
+					},
+				],
+			})
+		},
+	)
+
 	it('uses the same math delimiters at validation and emission', () => {
 		const trailingLinebreak = 'x \\'
 		const document: JSONContent = {

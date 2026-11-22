@@ -3,6 +3,7 @@ import type { TypstComponentParametersProps } from '@pluxel/plugin-typst/tiptap/
 /** This consumer supplies a local form for its own ordinary Typst component. */
 export function renderComponentParameters({
 	component,
+	readonlyParameters,
 	values,
 	disabled,
 	onChange,
@@ -15,7 +16,8 @@ export function renderComponentParameters({
 				标题
 				<input
 					aria-label="指标卡标题"
-					placeholder="组件默认"
+					disabled={readonlyParameters.includes('title')}
+					placeholder={readonlyParameters.includes('title') ? '由源码决定' : '组件默认'}
 					value={String(values.title ?? '')}
 					onChange={(event) => onChange({ ...values, title: event.currentTarget.value })}
 				/>
@@ -24,6 +26,7 @@ export function renderComponentParameters({
 				底色
 				<select
 					aria-label="指标卡底色"
+					disabled={readonlyParameters.includes('accent')}
 					value={String(values.accent ?? '')}
 					onChange={(event) => {
 						const next = { ...values }
@@ -32,7 +35,9 @@ export function renderComponentParameters({
 						onChange(next)
 					}}
 				>
-					<option value="">组件默认</option>
+					<option value="">
+						{readonlyParameters.includes('accent') ? '由源码决定' : '组件默认'}
+					</option>
 					<option value="#eef4fa">雾蓝</option>
 					<option value="#effaf3">浅绿</option>
 					<option value="#fff7e5">暖黄</option>

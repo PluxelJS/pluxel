@@ -20,7 +20,11 @@ describe('source project transactions', () => {
 			.filter((node) => node.type === 'typstInlineSource')
 			.map((node) => node.attrs?.source)
 		expect(inlineSource).toEqual(['#foo(x: 2)[未知]'])
-		const result = project.edit({ projection, document: structuredClone(projection.document) })
+		const result = project.edit({
+			path: projection.path,
+			baseRevision: projection.revision,
+			document: structuredClone(projection.document),
+		})
 		expect(result.ok).toBe(true)
 		expect(project.revision).toBe(0)
 		expect(project.snapshot().files['main.typ']).toBe(source)
@@ -109,7 +113,13 @@ describe('source project transactions', () => {
 		expect(
 			project.replace({ baseRevision: 1, files: { 'main.typ': 'Agent', 'extra.typ': 'New' } }).ok,
 		).toBe(true)
-		expect(project.edit({ projection: original, document: original.document })).toMatchObject({
+		expect(
+			project.edit({
+				path: original.path,
+				baseRevision: original.revision,
+				document: original.document,
+			}),
+		).toMatchObject({
 			ok: false,
 			issues: [{ code: 'CONFLICT' }],
 		})
@@ -122,6 +132,70 @@ describe('source project transactions', () => {
 		expect(project.snapshot().files['main.typ']).toBe('Agent')
 		expect(project.canUndo).toBe(false)
 		expect(project.canRedo).toBe(false)
+	})
+
+	it('publishes replacement files and their write allowlist in the same revision', () => {
+		const project = createTypstSourceProjectState(
+			{ files: { 'main.typ': 'Template', 'body.typ': 'Initial' }, writablePaths: ['body.typ'] },
+			parser,
+		)
+		const observed: unknown[] = []
+		project.subscribe(() => {
+			observed.push([project.revision, project.isWritable('body.typ'), project.canUndo])
+		})
+		expect(
+			project.apply({
+				baseRevision: 0,
+				patches: [{ path: 'body.typ', from: 0, to: 0, text: 'Draft ' }],
+			}).ok,
+		).toBe(true)
+
+		const template = { 'main.typ': 'Template' }
+		expect(
+			project.replace({ baseRevision: 1, files: template, writablePaths: ['body.typ'] }),
+		).toMatchObject({ ok: false, issues: [{ code: 'INVALID_PATH' }] })
+		expect(project.isWritable('body.typ')).toBe(true)
+		expect(project.canUndo).toBe(true)
+
+		expect(project.replace({ baseRevision: 1, files: template }).ok).toBe(true)
+		const restored = { ...template, 'body.typ': 'Restored' }
+		expect(project.replace({ baseRevision: 2, files: restored }).ok).toBe(true)
+		expect(project.isWritable('body.typ')).toBe(false)
+		expect(
+			project.replace({ baseRevision: 3, files: restored, writablePaths: ['body.typ'] }).ok,
+		).toBe(true)
+		expect(project.isWritable('body.typ')).toBe(true)
+		expect(project.isWritable('main.typ')).toBe(false)
+		expect(observed).toEqual([
+			[1, true, true],
+			[2, false, false],
+			[3, false, false],
+			[4, true, false],
+		])
+	})
+
+	it('refreshes only changed files and affected import projections after full replacement', () => {
+		const parseSource = vi.fn(parse)
+		const files = {
+			'main.typ': '#import "lib/pluxel.typ" as report\n#report.reference(<target>, caption: true)',
+			'other.typ': 'Unrelated',
+			'lib/pluxel.typ': typstSourceLibrary,
+		}
+		const project = createTypstSourceProjectState({ files }, { parse: parseSource, parseAst })
+		expect(project.open('main.typ').references).toMatchObject([{ label: 'target' }])
+		project.open('other.typ')
+		parseSource.mockClear()
+
+		expect(
+			project.replace({
+				baseRevision: 0,
+				files: { ...files, 'lib/pluxel.typ': '#let reference = none' },
+			}).ok,
+		).toBe(true)
+		expect(project.open('other.typ').revision).toBe(1)
+		expect(parseSource).not.toHaveBeenCalled()
+		expect(project.open('main.typ').references).toEqual([])
+		expect(parseSource).toHaveBeenCalledExactlyOnceWith(files['main.typ'], { mode: 'markup' })
 	})
 
 	it('retains invalid source drafts and recovers projection after a source repair', () => {
@@ -212,7 +286,11 @@ describe('source project transactions', () => {
 		const target = document.content!.find((node) => node.type === 'figure')!
 		expect(target).toBeDefined()
 		target.attrs!.label = 'fig:renamed'
-		const prepared = project.prepareEdit({ projection, document })
+		const prepared = project.prepareEdit({
+			path: projection.path,
+			baseRevision: projection.revision,
+			document,
+		})
 		expect(prepared.ok).toBe(true)
 		expect(project.revision).toBe(0)
 		expect(project.snapshot().files['references.typ']).toBe(references)
@@ -237,7 +315,9 @@ describe('source project transactions', () => {
 		const projection = project.open('figure.typ')
 		const document = structuredClone(projection.document)
 		document.content!.find((node) => node.type === 'figure')!.attrs!.label = 'fig:new'
-		expect(project.prepareEdit({ projection, document })).toMatchObject({
+		expect(
+			project.prepareEdit({ path: projection.path, baseRevision: projection.revision, document }),
+		).toMatchObject({
 			ok: false,
 			issues: [{ code: 'READ_ONLY', path: 'refs.typ' }],
 		})

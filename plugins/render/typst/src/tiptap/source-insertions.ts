@@ -2,7 +2,7 @@ import type { JSONContent } from '@tiptap/core'
 import type { TypstSourceProject } from '../source/state-types.js'
 import { typstSourceLibrary } from '../source/library.js'
 import { matchesInsertion, type InsertEntry, type TypstSlashCommand } from './insert-commands.js'
-import { relativePath, sourceLiteral } from './source-paths.js'
+import { relativePath, sourceLiteral } from '../source/paths.js'
 
 const decode = (value: string | Uint8Array) =>
 	typeof value === 'string' ? value : new TextDecoder('utf-8', { fatal: true }).decode(value)

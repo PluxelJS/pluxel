@@ -26,7 +26,7 @@ function setup(source = '/import', extensions: Extensions = []) {
 		slashCommands: [],
 		renderSourceFileInput: vi.fn(() => null),
 		validateDocument: (document) =>
-			project.prepareEdit({ projection: project.open('main.typ'), document }).ok,
+			project.prepareEdit({ path: 'main.typ', baseRevision: project.revision, document }).ok,
 	}
 	return { project, editor, ui }
 }

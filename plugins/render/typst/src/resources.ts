@@ -70,6 +70,7 @@ export async function prepareTemplate(
 	limits: ResourceLimits,
 	signal?: AbortSignal,
 ): Promise<{ entry: string; bytes: number }> {
+	if (!template || typeof template !== 'object') invalid('template', 'expected a root and entry')
 	if (typeof template.root !== 'string' || !isAbsolute(template.root))
 		invalid('root', 'expected an absolute directory')
 	if (typeof template.entry !== 'string' || isAbsolute(template.entry))

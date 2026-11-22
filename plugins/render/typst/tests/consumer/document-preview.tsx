@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { TypstDocumentPreview } from '@pluxel/plugin-typst/document/react'
-import type { TypstDocumentLocation, TypstDocumentSelection } from '@pluxel/plugin-typst/document'
+import type { TypstDocumentSelection } from '@pluxel/plugin-typst/document'
 import type { DocumentClient, DocumentClientState } from './document-client'
 
 export function DocumentPreview({
@@ -12,7 +12,7 @@ export function DocumentPreview({
 	state: DocumentClientState
 	client: DocumentClient
 	selection?: TypstDocumentSelection
-	onSelect(location: TypstDocumentLocation): void
+	onSelect(selection: TypstDocumentSelection): void
 }) {
 	const preview = state.view!.preview
 	const pending = Object.keys(state.drafts).length > 0

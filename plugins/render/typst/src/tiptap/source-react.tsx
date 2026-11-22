@@ -51,11 +51,13 @@ import {
 	restoreSourceFocus,
 } from './source-controls.js'
 import { SourceFileForm, SourcePathInput } from './source-file-input.js'
-import { resolveSourcePath } from './source-paths.js'
+import { resolveModulePath, resolveSourcePath } from '../source/paths.js'
 
 /** A component's local parameter form. Applying, history and source admission stay with the editor. */
 export interface TypstComponentParametersProps {
 	readonly component: TypstSourceComponent
+	/** Authored arguments whose values must be edited in source. */
+	readonly readonlyParameters: readonly string[]
 	readonly values: Readonly<Record<string, string | number | boolean>>
 	readonly disabled: boolean
 	onChange(values: Readonly<Record<string, string | number | boolean>>): void
@@ -208,7 +210,7 @@ function SourceFileLink({
 	project: TypstSourceProject
 	onOpenFile?: (path: string) => void
 }) {
-	const resolved = resolveSourcePath(path, module)
+	const resolved = resolveModulePath(path, module)
 	const target =
 		resolved && Object.hasOwn(project.snapshot().files, resolved) ? resolved : undefined
 	const name = module.slice(module.lastIndexOf('/') + 1)
@@ -728,6 +730,10 @@ function ComponentView(props: NodeViewProps) {
 		string,
 		{ type: string; label?: string }
 	> | null
+	const readonlyParameters: readonly string[] = props.node.attrs.readonlyParameters ?? []
+	const editableParameters = Object.entries(parameters ?? {}).filter(
+		([name]) => !readonlyParameters.includes(name),
+	)
 	const component = project.components.find(
 		(value) => value.module === props.node.attrs.module && value.name === props.node.attrs.name,
 	)
@@ -749,10 +755,16 @@ function ComponentView(props: NodeViewProps) {
 		draft && component
 			? renderComponentParameters?.({
 					component,
+					readonlyParameters,
 					values: draft.props,
 					disabled: disabled || draft.revision !== project.revision,
 					onChange(values) {
 						if (disabled || draft.revision !== project.revision) return
+						if (readonlyParameters.some((name) => Object.hasOwn(values, name))) {
+							setError('由源码决定的参数需要在源码中修改。')
+							return
+						}
+						setError('')
 						setDraft((current) =>
 							current === draft ? { ...current, props: { ...values } } : current,
 						)
@@ -786,8 +798,8 @@ function ComponentView(props: NodeViewProps) {
 				<button
 					type="button"
 					className="typst-node-settings"
-					aria-label="编辑参数"
-					title="编辑参数"
+					aria-label={editableParameters.length > 0 ? '编辑参数' : '查看参数'}
+					title={editableParameters.length > 0 ? '编辑参数' : '查看参数'}
 					aria-expanded={Boolean(draft)}
 					disabled={disabled}
 					onClick={begin}
@@ -819,7 +831,7 @@ function ComponentView(props: NodeViewProps) {
 								return
 							}
 							const values = { ...draft.props }
-							for (const [name, definition] of Object.entries(parameters ?? {})) {
+							for (const [name, definition] of editableParameters) {
 								if (definition.type !== 'number' || typeof values[name] !== 'string') continue
 								const raw = String(values[name]).trim()
 								if (raw === '') delete values[name]
@@ -845,8 +857,14 @@ function ComponentView(props: NodeViewProps) {
 							close()
 						}}
 					>
+						{readonlyParameters.length > 0 && (
+							<p>
+								由源码决定：
+								{readonlyParameters.map((name) => parameters?.[name]?.label ?? name).join('、')}
+							</p>
+						)}
 						{customParameters ??
-							Object.entries(parameters ?? {}).map(([name, definition]) => (
+							editableParameters.map(([name, definition]) => (
 								<div key={name} className="typst-component-parameter">
 									<label>
 										{definition.label ?? name}
@@ -922,14 +940,13 @@ function SourceImageView(props: NodeViewProps) {
 	const [url, setUrl] = useState('')
 	useEffect(() => {
 		const src = String(props.node.attrs.src ?? '')
-		if (/^(?:https?:|data:)/.test(src)) {
-			setUrl(src)
+		const file = resolveSourcePath(path, src)
+		if (!file) {
+			setUrl('')
 			return
 		}
-		const resolved = new URL(src, `https://project.invalid/${path}`)
-		const file = decodeURIComponent(resolved.pathname.slice(1))
 		const value = project.snapshot().files[file]
-		if (resolved.origin !== 'https://project.invalid' || value === undefined) {
+		if (value === undefined) {
 			setUrl('')
 			return
 		}
@@ -1123,7 +1140,11 @@ export function TypstSourceEditor(props: TypstSourceEditorProps) {
 			prepareDuplicate: (instance, position) =>
 				prepareTypstSourceCopy(instance, props.project, props.path, position),
 			validateDocument: (document) =>
-				props.project.prepareEdit({ projection: props.project.open(props.path), document }).ok,
+				props.project.prepareEdit({
+					path: props.path,
+					baseRevision: props.project.revision,
+					document,
+				}).ok,
 			onReference: props.onReference,
 			composing,
 			editable: writable,

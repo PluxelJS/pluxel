@@ -6,7 +6,6 @@ export default defineConfig({
 		index: 'src/index.ts',
 		browser: 'src/browser/preview.ts',
 		wasm: 'src/wasm.ts',
-		template: 'src/template.ts',
 		source: 'src/source/node.ts',
 		document: 'src/document/index.ts',
 		'document/react': 'src/document/react.tsx',

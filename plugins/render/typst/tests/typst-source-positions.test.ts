@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 import {
 	createTypstSourceProject,
 	findTypstEditorPosition,
+	findTypstSourceOffset,
 	findTypstSourcePosition,
 } from '../src/source/node'
 import { typstSourceLibrary } from '../src/source/library.js'
@@ -48,6 +49,24 @@ it('maps UTF-8 source spans, native UTF-16 columns and editor positions without 
 	).toBeUndefined()
 	expect(projection).not.toHaveProperty('parsed')
 	expect(projection).not.toHaveProperty('origins')
+})
+
+it('uses the preceding glyph only at the end of a text run and resolves raw UTF-16 positions', () => {
+	const path = 'body.typ'
+	const source = '甲😀乙\r\n\r\n下一段'
+	const projection = createTypstSourceProject({ files: { [path]: source } }).open(path)
+	const boundary = findTypstEditorPosition({
+		projection,
+		sourcePosition: { path, line: 1, column: 5 },
+	})!
+	expect(findTypstSourcePosition({ projection, position: boundary })).toEqual({
+		path,
+		line: 1,
+		column: 4,
+	})
+	expect(findTypstSourceOffset({ source, position: { line: 3, column: 2 } })).toBe(9)
+	expect(findTypstSourceOffset({ source, position: { line: 1, column: 3 } })).toBeUndefined()
+	expect(findTypstSourceOffset({ source, position: { line: 1, column: 6 } })).toBeUndefined()
 })
 
 it('locates expression atoms inside the native span after the markup hash', () => {

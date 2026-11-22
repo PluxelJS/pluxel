@@ -1,22 +1,33 @@
 import { createContext, useContext } from 'react'
 import type { WorkbenchInstance, ContentHandle } from '@worksplit/react'
 import type { AnyRouter } from '@tanstack/react-router'
-import type { Editor } from '@tiptap/core'
+import type { TypstSourcePosition } from '@pluxel/plugin-typst/source/browser'
 import type { ExampleId } from './examples'
 import type { WorkspaceFolders } from './file-explorer'
 
-export type CaretSelection = {
+export type CaretRequest = (
+	| {
+			kind: 'editor'
+			position: number
+	  }
+	| {
+			kind: 'source'
+			point: TypstSourcePosition
+	  }
+) & {
 	path: string
-	position: number
 	explicit: boolean
-	serial: number
-	editor?: Editor
+	revision: number
 }
+export type CaretSelection = CaretRequest & { serial: number }
+export type FileLocation = (
+	| { kind: 'editor'; position: number }
+	| { kind: 'source'; point: TypstSourcePosition }
+) & { revision: number }
 export type FileFocus = {
 	folder: ExampleId
 	path: string
-	position?: number
-	source?: boolean
+	location?: FileLocation
 	serial: number
 }
 export type WorkspaceContextValue = {
@@ -29,11 +40,9 @@ export type WorkspaceContextValue = {
 	openFile(
 		folder: ExampleId,
 		path: string,
-		position?: number,
-		showSource?: boolean,
-		source?: ContentHandle,
+		options?: { location?: FileLocation; source?: ContentHandle },
 	): Promise<void>
-	selectCaret(folder: ExampleId, value: Omit<CaretSelection, 'serial'>): void
+	selectCaret(folder: ExampleId, value: CaretRequest): void
 	setPending(id: string, folder: ExampleId, pending: boolean): void
 	save(folder: ExampleId): boolean
 	report(message: string): void

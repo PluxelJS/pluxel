@@ -15,6 +15,6 @@ Workspace 内的 Typst 文档插件，当前保持 private。`renderSvg(source, 
 
 服务端接入须注册 FontsPlugin，并由 Host 安装 NodeModules；无状态 SVG 另需 Workers。`servicesPreset()` 已包含这些服务，安装本包本身不会挂载它们。无需启用 Workbench；字体偏好与上传使用 Core 内建 TinyBase 和 FS，部署字体仍通过原生文件路径加载。
 
-根入口供 native 服务端使用，`/template` 是纯文档定义，`/browser` 提供预览。`/source` 与 `/source/browser` 分别提供 Node/Web 源码工程，`/tiptap` 与 `/tiptap/react` 提供结构化源码视图。`/document` 的 `parseTypstDocument` 和 `printTypstDocument` 转换章节正文。`/tiptap/document` 与 `/tiptap/document/react` 编辑文档树，`/document/react` 消费页图与公开导航。 [章节正文编辑](../../../docs/plugins/rendering/typst-editor.md#按章节编辑正文)
+根入口供 native 服务端使用，`/browser` 提供矢量预览。`/source` 与 `/source/browser` 分别提供 Node/Web 源码工程，`/tiptap` 与 `/tiptap/react` 提供结构化源码视图。`/document` 的 `parseTypstDocument` 和 `printTypstDocument` 转换章节正文。`/tiptap/document` 与 `/tiptap/document/react` 编辑文档树，`/document/react` 消费页图与公开导航。 [章节正文编辑](../../../docs/plugins/rendering/typst-editor.md#按章节编辑正文)
 
 `/wasm` 提供纯浏览器内存文本编译，宿主显式提供 WASM、字体 URL 与本次附加文件。 [浏览器编译](../../../docs/plugins/rendering/typst.md#浏览器编译)

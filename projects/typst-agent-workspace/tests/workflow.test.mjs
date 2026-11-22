@@ -86,7 +86,13 @@ test('no-op opening and saving preserve exact source bytes, comments and unknown
 	const current = await openWorkspace(directory)
 	for (const path of bodyPaths) {
 		const projection = current.project.open(path)
-		accepted(current.project.edit({ projection, document: projection.document }))
+		accepted(
+			current.project.edit({
+				path: projection.path,
+				baseRevision: projection.revision,
+				document: projection.document,
+			}),
+		)
 	}
 	const receipt = await commit(directory, {
 		baseRevision: current.diskRevision,
@@ -265,7 +271,11 @@ test('external Agent changes reject both stale disk writes and old source projec
 	const after = await snapshot(directory)
 	assert.equal(after.diskRevision, latest.diskRevision)
 	accepted(current.project.replace({ baseRevision: current.project.revision, files: latest.files }))
-	const stale = current.project.edit({ projection, document: projection.document })
+	const stale = current.project.edit({
+		path: projection.path,
+		baseRevision: projection.revision,
+		document: projection.document,
+	})
 	assert.equal(stale.ok, false)
 	assert.equal(stale.issues[0].code, 'CONFLICT')
 })

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
-import type { TypstSourceProject } from '@pluxel/plugin-typst/source/browser'
+import type { TypstSourceFiles, TypstSourceProject } from '@pluxel/plugin-typst/source/browser'
 import { exampleTitles, type ExampleId } from './examples'
 
 export type WorkspaceFolder = {
 	project: TypstSourceProject
 	initialFiles: Record<string, string>
+	writablePathsFor(files: TypstSourceFiles): readonly string[]
 }
 export type WorkspaceFolders = Record<ExampleId, WorkspaceFolder>
 type Row = {

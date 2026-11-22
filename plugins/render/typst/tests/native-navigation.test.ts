@@ -3,12 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
-import runTypst from '../src/worker.ts'
+import { compileFixture } from './compile-fixture.ts'
 
 it('retains real successful warnings separately from errors and clears them after repair', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'typst-native-diagnostics-'))
 	const compile = (revision: number) =>
-		runTypst({
+		compileFixture({
 			root,
 			entry: 'main.typ',
 			revision,
@@ -73,7 +73,7 @@ it.each([
 	const root = await mkdtemp(join(tmpdir(), 'typst-native-navigation-'))
 	try {
 		await writeFile(join(root, 'main.typ'), `#set text(font: "DejaVu Sans")\n${source}`)
-		const compiled = runTypst({
+		const compiled = compileFixture({
 			root,
 			entry: 'main.typ',
 			revision: 1,
@@ -98,7 +98,7 @@ it('keeps computed text atomic instead of inventing character positions in its e
 	const source = '#text(str(123456789))'
 	try {
 		await writeFile(join(root, 'main.typ'), source)
-		const compiled = runTypst({
+		const compiled = compileFixture({
 			root,
 			entry: 'main.typ',
 			revision: 1,

@@ -9,7 +9,7 @@ const positive = (fallback: number) =>
 /** Execution budgets, independent of application document data. */
 export const TypstConfig = v.object({
 	maxSessions: positive(4),
-	maxQueuedUpdates: positive(8),
+	maxQueuedOperations: positive(8),
 	maxFiles: positive(4096),
 	maxTemplateBytes: positive(64 * 1024 * 1024),
 	maxInputBytes: positive(256 * 1024 * 1024),

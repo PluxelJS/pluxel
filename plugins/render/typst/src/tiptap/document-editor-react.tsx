@@ -1,14 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { EditorContent, ReactNodeViewRenderer } from '@tiptap/react'
 import type { Editor, JSONContent } from '@tiptap/core'
-import { createTypstDocumentEditor } from './document-editor.js'
+import { createDocumentEditor } from './document-editor-core.js'
 import type { TypstDocumentHistory, TypstDocumentReference } from './document-types.js'
-import { TypstReference } from './document-nodes.js'
-import {
-	TypstDocumentFigure,
-	TypstDocumentBlockMath,
-	TypstDocumentInlineMath,
-} from './document-extensions.js'
 import {
 	TypstFigureView,
 	TypstMathView,
@@ -64,29 +58,34 @@ export function TypstDocumentEditor(props: TypstDocumentEditorProps) {
 		[],
 	)
 	useEffect(() => {
-		const instance = createTypstDocumentEditor({
-			element: document.createElement('div'),
-			content: latest.current.content,
-			editable: latest.current.editable,
-			get references() {
-				return latest.current.references
+		const math = ReactNodeViewRenderer(TypstMathView)
+		const instance = createDocumentEditor(
+			{
+				element: document.createElement('div'),
+				content: latest.current.content,
+				editable: latest.current.editable,
+				get references() {
+					return latest.current.references
+				},
+				get history() {
+					return latest.current.history
+				},
+				onChange: (document) => latest.current.onChange(document),
+				onSelection: (position) => latest.current.onSelection?.(position),
 			},
-			get history() {
-				return latest.current.history
-			},
-			extensions: [
-				TypstDocumentFigure.extend({ addNodeView: () => ReactNodeViewRenderer(TypstFigureView) }),
-				TypstDocumentBlockMath.extend({ addNodeView: () => ReactNodeViewRenderer(TypstMathView) }),
-				TypstDocumentInlineMath.extend({ addNodeView: () => ReactNodeViewRenderer(TypstMathView) }),
-				TypstReference.extend({ addNodeView: () => ReactNodeViewRenderer(TypstReferenceView) }),
-				createReferenceSuggestion(() => ({
+			{
+				nodeViews: {
+					figure: ReactNodeViewRenderer(TypstFigureView),
+					blockMath: math,
+					inlineMath: math,
+					reference: ReactNodeViewRenderer(TypstReferenceView),
+				},
+				referenceSuggestion: createReferenceSuggestion(() => ({
 					editable: latest.current.editable,
 					referenceTargets,
 				})),
-			],
-			onChange: (document) => latest.current.onChange(document),
-			onSelection: (position) => latest.current.onSelection?.(position),
-		})
+			},
+		)
 		setEditor(instance)
 		return () => instance.destroy()
 	}, [externalHistory, referenceTargets])

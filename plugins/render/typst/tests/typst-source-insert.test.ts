@@ -35,7 +35,8 @@ function fixture(source = '开头 #unknown[保留] 结尾。\n') {
 		slashCommands: [],
 		sourceEntries: catalog.entries,
 		validateDocument: (document) =>
-			project.prepareEdit({ projection: project.open('sections/body.typ'), document }).ok,
+			project.prepareEdit({ path: 'sections/body.typ', baseRevision: project.revision, document })
+				.ok,
 		prepareDuplicate: (instance, position) =>
 			prepareTypstSourceCopy(instance, project, 'sections/body.typ', position),
 	}
@@ -262,7 +263,7 @@ it('limits matching choices while keeping fields near the end of a large JSON ar
 			slashCommands: [],
 			sourceEntries: catalog.entries,
 			validateDocument: (document) =>
-				project.prepareEdit({ projection: project.open('main.typ'), document }).ok,
+				project.prepareEdit({ path: 'main.typ', baseRevision: project.revision, document }).ok,
 		}
 		const entries = insertEntries(editor, ui, undefined, 'records.149999.value')
 		const entry = entries.find(

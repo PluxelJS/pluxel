@@ -25,7 +25,47 @@ const choices = [
 	{ value: 'renew', label: '续期' },
 	{ value: 'change', label: '变更' },
 ] as const
-type Draft = { text: string; base: string; source: string; revision: number }
+type Draft = { text: string; base: string }
+
+function readForm(project: TypstSourceProject) {
+	const snapshot = project.snapshot()
+	const contents = snapshot.files[path]
+	if (contents === undefined) throw new Error('填报文件不存在。')
+	const source =
+		typeof contents === 'string'
+			? contents
+			: new TextDecoder('utf-8', { fatal: true }).decode(contents)
+	const data = JSON.parse(source)
+	if (!data || Array.isArray(data) || typeof data !== 'object') throw new Error('需要 JSON 对象。')
+	for (const field of [...applicantFields, opinion])
+		if (typeof data[field.key] !== 'string') throw new Error(`${field.label}需要字符串值。`)
+	return { data: data as Record<string, unknown>, source, revision: snapshot.revision }
+}
+
+/** Reject changes to the same field without discarding an unrelated accepted edit. */
+export function applyApplicationField(
+	project: TypstSourceProject,
+	field: Field,
+	input: Draft,
+): void {
+	const { data, source, revision } = readForm(project)
+	if (data[field.key] === input.text) return
+	if (data[field.key] !== input.base)
+		throw new Error(`${field.label}已在别处修改，请核对最新值后重新填写。`)
+	data[field.key] = input.text
+	const result = project.apply({
+		baseRevision: revision,
+		patches: [
+			{
+				path,
+				from: 0,
+				to: encoder.encode(source).length,
+				text: JSON.stringify(data, null, 2) + '\n',
+			},
+		],
+	})
+	if (!result.ok) throw new Error(result.issues.map((issue) => issue.message).join('\n'))
+}
 
 /** Host-owned form controls use the same ordinary JSON file and project history as the editor. */
 export function ApplicationForm({
@@ -37,16 +77,11 @@ export function ApplicationForm({
 	hasPending: boolean
 	onIssue(message: string): void
 }) {
-	const revision = useSyncExternalStore(project.subscribe, () => project.revision)
-	const contents = project.snapshot().files[path]
-	const source = typeof contents === 'string' ? contents : new TextDecoder().decode(contents)
-	let data: Record<string, string>
+	useSyncExternalStore(project.subscribe, () => project.revision)
+	const form = useRef<HTMLElement>(null)
+	let data: Record<string, unknown>
 	try {
-		data = JSON.parse(source)
-		if (!data || Array.isArray(data) || typeof data !== 'object')
-			throw new Error('需要 JSON 对象。')
-		for (const field of [...applicantFields, opinion])
-			if (typeof data[field.key] !== 'string') throw new Error(`${field.label}需要字符串值。`)
+		data = readForm(project).data
 	} catch (error) {
 		return (
 			<p role="alert" className="application-error">
@@ -58,14 +93,12 @@ export function ApplicationForm({
 		<ApplicationField
 			key={field.key}
 			field={field}
-			value={data[field.key]!}
-			source={source}
-			revision={revision}
+			value={data[field.key] as string}
 			project={project}
 		/>
 	)
 	return (
-		<section className="application-form" aria-label="申请填报">
+		<section ref={form} className="application-form" aria-label="申请填报">
 			<div className="application-toolbar">
 				<p>离开输入框后更新预览；Enter 确认单行输入，Esc 放弃当前输入。</p>
 				<div className="application-history">
@@ -73,7 +106,7 @@ export function ApplicationForm({
 						type="button"
 						disabled={!project.canUndo && !hasPending}
 						onClick={() => {
-							if (document.querySelector('.application-form [data-typst-unapplied]')) return
+							if (form.current?.querySelector('[data-typst-unapplied]')) return
 							if (!project.canUndo) return
 							const result = project.undo()
 							if (!result.ok) onIssue(result.issues.map((issue) => issue.message).join('\n'))
@@ -108,14 +141,10 @@ export function ApplicationForm({
 function ApplicationField({
 	field,
 	value,
-	source,
-	revision,
 	project,
 }: {
 	field: Field
 	value: string
-	source: string
-	revision: number
 	project: TypstSourceProject
 }) {
 	const [draft, setDraft] = useState<Draft | null>(null)
@@ -133,23 +162,7 @@ function ApplicationField({
 			return
 		}
 		try {
-			const data = JSON.parse(captured.source)
-			data[field.key] = text
-			const result = project.apply({
-				baseRevision: captured.revision,
-				patches: [
-					{
-						path,
-						from: 0,
-						to: encoder.encode(captured.source).length,
-						text: JSON.stringify(data, null, 2) + '\n',
-					},
-				],
-			})
-			if (!result.ok) {
-				setError(result.issues.map((issue) => issue.message).join('\n'))
-				return
-			}
+			applyApplicationField(project, field, { base: captured.base, text })
 			cancel()
 		} catch (cause) {
 			setError(String(cause))
@@ -161,7 +174,7 @@ function ApplicationField({
 		disabled: !writable,
 		onChange(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
 			const text = event.currentTarget.value
-			setDraft((current) => ({ ...(current ?? { base: value, source, revision }), text }))
+			setDraft((current) => ({ base: current?.base ?? value, text }))
 			setError('')
 		},
 		onBlur(event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
@@ -200,9 +213,7 @@ function ApplicationField({
 								value={choice.value}
 								disabled={!writable}
 								checked={value === choice.value}
-								onChange={() =>
-									apply(choice.value, { text: choice.value, base: value, source, revision })
-								}
+								onChange={() => apply(choice.value, { text: choice.value, base: value })}
 							/>
 							{choice.label}
 						</label>

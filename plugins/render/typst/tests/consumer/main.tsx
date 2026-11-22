@@ -1,6 +1,9 @@
 import { createRoot } from 'react-dom/client'
 import parserWasm from '@pluxel/plugin-typst/source/parser.wasm?url'
-import { createTypstSourceProject } from '@pluxel/plugin-typst/source/browser'
+import {
+	createTypstSourceProject,
+	type TypstSourceFiles,
+} from '@pluxel/plugin-typst/source/browser'
 import type { ExampleId } from './examples'
 import type { WorkspaceFolders } from './file-explorer'
 import type { sourceExample } from './source-example'
@@ -23,15 +26,18 @@ async function start() {
 		const seed = seeds[example]
 		const saved = localStorage.getItem(storageKeys[example])
 		const files = saved ? (JSON.parse(saved) as Record<string, string>) : seed.files
+		const initialWritable = new Set(seed.writablePaths)
+		const writablePathsFor = (candidate: TypstSourceFiles) =>
+			Object.keys(candidate).filter(
+				(path) => initialWritable.has(path) || !Object.hasOwn(seed.files, path),
+			)
 		folders[example] = {
 			initialFiles: seed.files,
+			writablePathsFor,
 			project: await createTypstSourceProject({
 				files,
 				components: seed.components,
-				writablePaths: [
-					...seed.writablePaths,
-					...Object.keys(files).filter((path) => !Object.hasOwn(seed.files, path)),
-				],
+				writablePaths: writablePathsFor(files),
 				parserWasm,
 			}),
 		}

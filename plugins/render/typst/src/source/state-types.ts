@@ -21,6 +21,13 @@ export interface TypstPreparedSourceEdit {
 	readonly patches: readonly TypstSourcePatch[]
 }
 
+export interface TypstSourceEdit {
+	readonly path: string
+	/** Revision from this project's projection when the document was opened. */
+	readonly baseRevision: number
+	readonly document: JSONContent
+}
+
 export interface TypstSourceProjectOptions {
 	readonly files: TypstSourceFiles
 	/** Explicit parameter/data bindings for reusable Typst component calls. */
@@ -44,14 +51,9 @@ export interface TypstSourceProject {
 	/** Current syntax and statically confirmed project diagnostics. Unresolved refs are warnings. */
 	diagnostics(): readonly TypstSourceDiagnostic[]
 	/** Validate without accepting; apply rechecks the revision and all patches. */
-	prepareEdit(input: {
-		readonly projection: TypstSourceProjection
-		readonly document: JSONContent
-	}): TypstSourceResult<TypstPreparedSourceEdit>
-	edit(input: {
-		readonly projection: TypstSourceProjection
-		readonly document: JSONContent
-	}): TypstSourceResult<TypstSourceSnapshot>
+	prepareEdit(input: TypstSourceEdit): TypstSourceResult<TypstPreparedSourceEdit>
+	/** Validate and commit one structured editor document against its source baseline. */
+	edit(input: TypstSourceEdit): TypstSourceResult<TypstSourceSnapshot>
 	/** UTF-8 byte ranges in the baseline. Every patch is checked before any source changes. */
 	apply(input: {
 		readonly baseRevision: number
@@ -98,6 +100,8 @@ export interface TypstSourceProject {
 	replace(input: {
 		readonly baseRevision: number
 		readonly files: TypstSourceFiles
+		/** Replace the write allowlist. Omit to keep the current policy for surviving paths. */
+		readonly writablePaths?: readonly string[]
 	}): TypstSourceResult<TypstSourceSnapshot>
 	/** Called synchronously after acceptance. Read current state with snapshot/open. */
 	subscribe(listener: () => void): () => void

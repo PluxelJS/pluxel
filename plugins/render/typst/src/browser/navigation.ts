@@ -1,4 +1,4 @@
-import type { TypstNavigationPoint } from '../preview-contract.js'
+import type { TypstNavigationPoint, TypstPagePosition } from '../preview-contract.js'
 
 /** Workspace-relative source path and one-based UTF-16 line and column. */
 export interface SourcePosition {
@@ -8,13 +8,13 @@ export interface SourcePosition {
 }
 
 /** Native compiler rectangles use page-local points, independent of preview zoom. */
-export function pointAtPreview(
-	points: readonly TypstNavigationPoint[],
+export function pointAtPreview<T extends TypstPagePosition & { width: number; height: number }>(
+	points: readonly T[],
 	page: number,
 	x: number,
 	y: number,
-): TypstNavigationPoint | undefined {
-	let closest: TypstNavigationPoint | undefined
+): T | undefined {
+	let closest: T | undefined
 	let distance = Infinity
 	let area = Infinity
 	for (const point of points) {

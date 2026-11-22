@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 import { loadNativeCompiler } from '../src/native-binding.ts'
-import runTypst from '../src/worker.ts'
+import { compileFixture } from './compile-fixture.ts'
 import { createTypstDocumentEditor } from '../src/tiptap/document-editor.js'
 import {
 	chapterPath,
@@ -96,7 +96,7 @@ it('natively prints the private three-chapter document and paginates complete ed
 				model.reorder(['background', 'schedule', 'approach'])
 			}
 			await save(join(root, 'inputs'), model.files())
-			const result = runTypst({
+			const result = compileFixture({
 				root,
 				entry: documentEntry,
 				revision,

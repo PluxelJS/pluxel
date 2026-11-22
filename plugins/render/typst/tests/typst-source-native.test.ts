@@ -8,7 +8,8 @@ import { expect, it } from 'vitest'
 import { createTypstSourceProject } from '../src/source/node.js'
 import { createTypstSourceLibrary } from '../src/source/library.js'
 import { createTypstSourceEditor } from '../src/tiptap/source-editor.js'
-import runTypst, { renderTypstPage } from '../src/worker.ts'
+import { renderTypstPage } from '../src/worker.ts'
+import { compileFixture } from './compile-fixture.ts'
 import { loadNativeCompiler, type NavigationDocument } from '../src/native-binding.ts'
 import { findTypstEditorPosition } from '../src/source/positions.ts'
 import type { TypstPagePosition } from '../src/preview-contract.ts'
@@ -22,7 +23,7 @@ async function save(root: string, files: Readonly<Record<string, string | Uint8A
 	}
 }
 function compile(root: string, revision: number, fontPaths?: string[]) {
-	const result = runTypst({
+	const result = compileFixture({
 		root,
 		entry: 'main.typ',
 		revision,
@@ -423,7 +424,7 @@ it('preserves LaTeX, template reference policy, caption self/mutual refs and rea
 			}).ok,
 		).toBe(true)
 		await save(root, project.snapshot().files)
-		const failure = runTypst({
+		const failure = compileFixture({
 			root,
 			entry: 'main.typ',
 			revision: 2,
@@ -446,7 +447,7 @@ it('preserves LaTeX, template reference policy, caption self/mutual refs and rea
 it('reads fields according to each JSON parent and recompiles JSON-only changes without rewriting Typst', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'typst-source-field-'))
 	const source =
-		'#import "lib/pluxel.typ" as report\n#set page(width: 400pt, height: auto)\n= #report.field(json("data.json"), ("parent", "0")) / #report.field(json("data.json"), ("parent", "length")) / #report.field(json("data.json"), ("codes", "01"))\n'
+		'#import "/lib/pluxel.typ" as report\n#set page(width: 400pt, height: auto)\n= #report.field(json("/data.json"), ("parent", "0")) / #report.field(json("/data.json"), ("parent", "length")) / #report.field(json("/data.json"), ("codes", "01"))\n'
 	const data = JSON.stringify({
 		parent: ['Array first', 'Array second'],
 		codes: { '01': 'Leading zero' },
@@ -460,9 +461,11 @@ it('reads fields according to each JSON parent and recompiles JSON-only changes 
 		document
 			.content!.find((node) => node.type === 'heading')!
 			.content!.find((node) => node.type === 'typstField')!.marks = [{ type: 'code' }]
-		expect(project.edit({ projection, document }).ok).toBe(true)
+		expect(
+			project.edit({ path: projection.path, baseRevision: projection.revision, document }).ok,
+		).toBe(true)
 		const authored = project.open('main.typ').source
-		expect(authored).toContain('#raw(report.field(json("data.json"), ("parent", "0")))')
+		expect(authored).toContain('#raw(report.field(json("/data.json"), ("parent", "0")))')
 		await save(root, project.snapshot().files)
 		expect(compile(root, 1).navigation.outline).toContainEqual(
 			expect.objectContaining({ title: 'Array first / 2 / Leading zero' }),
@@ -521,7 +524,11 @@ it('compiles edited native image dimensions, ordered numbering and cell alignmen
 			type: 'I',
 		})
 		nodes(doc).find((node) => node.type === 'tableCell')!.attrs!.align = 'right'
-		const accepted = project.edit({ projection, document: doc })
+		const accepted = project.edit({
+			path: projection.path,
+			baseRevision: projection.revision,
+			document: doc,
+		})
 		if (!accepted.ok) issues.push(...accepted.issues)
 		expect(issues).toEqual([])
 		await save(root, project.snapshot().files)

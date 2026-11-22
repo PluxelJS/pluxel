@@ -142,7 +142,6 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 	}
 	const dependencies: Record<string, string> = {
 		'@pluxel/plugin-typst': `file:${staged.get('@pluxel/plugin-typst')}`,
-		valibot: await installedSpec('valibot'),
 	}
 	const nodeTypes = await manifest(rootRequire.resolve('@types/node/package.json'))
 	const devDependencies: Record<string, string> = {
@@ -313,17 +312,17 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 	])
 	await writeFile(
 		join(app, 'base-check.mts'),
-		`import { defineTypstDocument } from '@pluxel/plugin-typst/template'; import { TypstPreviewView, pointAtSource, type SourcePosition, type TypstDiagnostic } from '@pluxel/plugin-typst/browser'; import * as v from 'valibot'; const document = defineTypstDocument({ template: 'main.typ', schema: v.object({ name: v.string() }) }); const position: SourcePosition = { path: 'main.typ', line: 1, column: 1 }; const diagnostic: TypstDiagnostic = { severity: 'error', message: 'example', range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } } }; void [document, TypstPreviewView, pointAtSource([], position, 1), diagnostic];`,
+		`import { TypstPreviewView, pointAtSource, type SourcePosition, type TypstDiagnostic } from '@pluxel/plugin-typst/browser'; const position: SourcePosition = { path: 'main.typ', line: 1, column: 1 }; const diagnostic: TypstDiagnostic = { severity: 'error', message: 'example', range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } } }; void [TypstPreviewView, pointAtSource([], position, 1), diagnostic];`,
 	)
 	await checkTypes(['base-check.mts'])
 	await writeFile(
 		join(app, 'base.mjs'),
-		`${importGuard(['@tiptap', 'react', 'react-dom', 'modern-monaco', '@pluxel/workbench', 'electron'])} await import('@pluxel/plugin-typst/template'); await import('@pluxel/plugin-typst/browser'); hooks.deregister();`,
+		`${importGuard(['@tiptap', 'react', 'react-dom', 'modern-monaco', '@pluxel/workbench', 'electron'])} await import('@pluxel/plugin-typst/browser'); hooks.deregister();`,
 	)
 	await command(process.execPath, ['base.mjs'], app, log)
 	await writeFile(
 		join(app, 'base-browser.ts'),
-		`import { TypstPreviewView, pointAtSource } from '@pluxel/plugin-typst/browser'; import { defineTypstDocument } from '@pluxel/plugin-typst/template'; document.body.textContent = [typeof TypstPreviewView, typeof pointAtSource, typeof defineTypstDocument].join(',');`,
+		`import { TypstPreviewView, pointAtSource } from '@pluxel/plugin-typst/browser'; document.body.textContent = [typeof TypstPreviewView, typeof pointAtSource].join(',');`,
 	)
 	await writeFile(
 		join(app, 'base.html'),
@@ -331,7 +330,7 @@ it('consumes isolated built source, editor, browser and native artifacts', async
 	)
 	await consumerBuild('base.html', 'base-dist')
 	stages.push(
-		'Browser app without Tiptap/React or native server peers: template/browser strict types, imports and production browser build',
+		'Browser app without Tiptap/React or native server peers: preview types, imports and production browser build',
 	)
 
 	await cp(join(fixtureRoot, 'acceptance-project'), join(app, 'project'), { recursive: true })
@@ -351,8 +350,9 @@ it('consumes isolated built source, editor, browser and native artifacts', async
  assert.ok(bytes.byteLength>100000,'Parser WASM is present in the copied artifact');
  const browser=await createBrowser({files,parserWasm:bytes});
  for(const path of ['sections/analysis.typ','sections/actions.typ']){
-  assert.deepEqual(project.open(path).document,browser.open(path).document);
-  assert.equal(project.edit({projection:project.open(path),document:project.open(path).document}).ok,true);
+  const {document,revision}=project.open(path);
+  assert.deepEqual(document,browser.open(path).document);
+  assert.equal(project.edit({path,baseRevision:revision,document}).ok,true);
  }
  assert.deepEqual({...project.snapshot().files},files);
  assert.equal(project.diagnostics().some(issue=>issue.severity==='error'),false,JSON.stringify(project.diagnostics()));
@@ -474,7 +474,7 @@ it('consumes isolated built source, editor, browser and native artifacts', async
  const stale=project.open('sections/actions.typ');
  assert.equal(project.renameLabel({baseRevision:project.revision,from:'fig:revenue',to:'fig:income'}).ok,true);
  assert.match(project.snapshot().files['sections/actions.typ'],/@fig:income/);
- assert.equal(project.edit({projection:stale,document:stale.document}).ok,false);
+ assert.equal(project.edit({path:stale.path,baseRevision:stale.revision,document:stale.document}).ok,false);
  assert.equal(project.undo().ok,true);assert.deepEqual(project.snapshot().files,edited.files);
  assert.equal(project.redo().ok,true);
  const saved=project.snapshot().files;
@@ -539,9 +539,9 @@ it('consumes isolated built source, editor, browser and native artifacts', async
  const documentId='analysis';
  function App(){
   const [content,setContent]=useState(view.document);
-  const [selection,setSelection]=useState<TypstDocumentSelection>({documentId,position:1});
+  const [selection,setSelection]=useState<TypstDocumentSelection>({documentId,position:1,revision:view.revision});
   const [preview]=useState<TypstDocumentPreviewData|null>(null);
-  return <main><TypstDocumentEditor content={content} onChange={setContent} references={view.references} onSelection={position=>setSelection({documentId,position})} onReveal={position=>setSelection({documentId,position,explicit:true})} onReference={(documentId,position)=>setSelection({documentId,position,explicit:true})}/><TypstDocumentPreview preview={preview} revision={view.revision} selection={selection} onSelect={location=>setSelection(location)}/></main>;
+  return <main><TypstDocumentEditor content={content} onChange={setContent} references={view.references} onSelection={position=>setSelection({documentId,position,revision:view.revision})} onReveal={position=>setSelection({documentId,position,revision:view.revision,explicit:true})} onReference={(documentId,position)=>setSelection({documentId,position,revision:view.revision,explicit:true})}/><TypstDocumentPreview preview={preview} revision={view.revision} selection={selection} onSelect={location=>setSelection(location)}/></main>;
  }
  createRoot(document.getElementById('app')!).render(<App/>);
  `,

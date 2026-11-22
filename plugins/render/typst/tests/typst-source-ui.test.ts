@@ -17,7 +17,7 @@ function setup(source: string) {
 		fontFamilies: [],
 		slashCommands: [],
 		validateDocument: (document) =>
-			project.prepareEdit({ projection: project.open('main.typ'), document }).ok,
+			project.prepareEdit({ path: 'main.typ', baseRevision: project.revision, document }).ok,
 		prepareDuplicate: (view, position) =>
 			prepareTypstSourceCopy(view, project, 'main.typ', position),
 	}

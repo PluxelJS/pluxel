@@ -50,5 +50,7 @@ export interface TypstDocumentPreviewData extends Omit<TypstDocumentNavigation, 
 
 /** A fresh request object repeats a reveal even when the caret position is unchanged. */
 export interface TypstDocumentSelection extends TypstDocumentLocation {
+	/** Revision of the editor from which this position was obtained. */
+	readonly revision: number
 	readonly explicit?: boolean
 }

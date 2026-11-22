@@ -19,10 +19,12 @@ const svgTask = defineWorkerTask<TypstSvgWorkerInput, TypstSvgWorkerOutput>(
 	'./svg-worker.ts',
 )
 
+type CompilerArtifact = { url: URL; active: boolean }
 type Generation = {
-	active: boolean
+	bindingPath: string
 	controller: AbortController
-	sessions: Set<DocumentSession>
+	compiler?: CompilerArtifact
+	sessions: Map<DocumentSession, CompilerArtifact>
 	svg: Set<Promise<unknown>>
 }
 
@@ -30,44 +32,44 @@ type Generation = {
 export class TypstPlugin extends BasePlugin {
 	private readonly config = this.configs.use(TypstConfig)
 	private generation?: Generation
-	private workerUrl?: URL
-	private bindingPath?: string
 
 	constructor(private readonly fonts: FontsPlugin) {
 		super()
 	}
 
 	override async init(): Promise<void> {
-		this.bindingPath = resolveNativeBinding(import.meta.url)
 		const generation: Generation = {
-			active: true,
+			bindingPath: resolveNativeBinding(import.meta.url),
 			controller: new AbortController(),
-			sessions: new Set(),
+			sessions: new Map(),
 			svg: new Set(),
 		}
 		this.generation = generation
 		this.ctx.effects.defer(
 			async () => {
-				generation.active = false
 				generation.controller.abort(new TypstError('CLOSED', 'TypstPlugin generation stopped'))
-				if (this.generation === generation) this.generation = undefined
+				this.generation = undefined
 				await Promise.allSettled(generation.svg)
-				const results = await Promise.allSettled(
-					[...generation.sessions].map((session) => session.dispose()),
-				)
-				const failed = results.filter((result) => result.status === 'rejected')
-				if (failed.length > 0)
-					throw new AggregateError(
-						failed.map((result) => result.reason),
-						'Typst sessions failed to close',
-					)
 			},
-			{ tag: 'typst-generation' },
+			{ tag: 'typst-generation', phase: 'shutdown' },
 		)
 		await this.ctx.service(NodeModules).use(compilerModule, (url) => {
-			this.workerUrl = url
+			const previous = generation.compiler
+			const artifact = { url, active: true }
+			generation.compiler = artifact
 			return async () => {
-				await Promise.all([...generation.sessions].map((session) => session.dispose()))
+				artifact.active = false
+				if (generation.compiler === artifact)
+					generation.compiler = previous?.active ? previous : undefined
+				const closing = [...generation.sessions]
+					.filter(([, owner]) => owner === artifact)
+					.map(([session]) => session.dispose())
+				const settled = await Promise.allSettled(closing)
+				const failures = settled.flatMap((result) =>
+					result.status === 'rejected' ? [result.reason] : [],
+				)
+				if (failures.length > 0)
+					throw new AggregateError(failures, 'Typst sessions failed to close')
 			}
 		})
 	}
@@ -75,7 +77,7 @@ export class TypstPlugin extends BasePlugin {
 	/** Trusted Typst source to caller-owned SVG bytes; no session is retained. Requires Workers. */
 	async renderSvg(source: string, options: TypstSvgOptions = {}): Promise<Uint8Array> {
 		const generation = this.generation
-		if (!generation?.active) throw new TypstError('CLOSED', 'TypstPlugin is not running')
+		if (!generation) throw new TypstError('CLOSED', 'TypstPlugin is not running')
 		if (typeof source !== 'string' || source.length === 0)
 			throw new TypstError('INVALID_INPUT', 'renderSvg requires non-empty Typst source')
 		if (source.length > this.config.maxInputBytes)
@@ -108,7 +110,7 @@ export class TypstPlugin extends BasePlugin {
 					await assertSourceBytes(source, this.config.maxInputBytes, signal)
 					return {
 						source,
-						bindingPath: this.bindingPath!,
+						bindingPath: generation.bindingPath,
 						fonts: await this.readFonts(signal),
 						maxOutputBytes,
 					}
@@ -133,30 +135,29 @@ export class TypstPlugin extends BasePlugin {
 	/** Initial template and fixed fonts; caller keeps source files stable until this settles. */
 	async open(template: TypstTemplate, options: TypstOperationOptions = {}): Promise<TypstSession> {
 		const generation = this.generation
-		if (!generation?.active) throw new TypstError('CLOSED', 'TypstPlugin is not running')
-		if (!template || typeof template !== 'object' || !options || typeof options !== 'object')
-			throw new TypstError('INVALID_INPUT', 'open requires a template and operation options')
+		const artifact = generation?.compiler
+		if (!generation || !artifact) throw new TypstError('CLOSED', 'Typst compiler is not running')
 		if (generation.sessions.size >= this.config.maxSessions)
 			throw new TypstError('BUSY', 'Typst session capacity is full')
-		if (!this.workerUrl) throw new TypstError('CLOSED', 'Typst compiler module is unavailable')
-		const client = new NativeCompilerClient(this.workerUrl, this.bindingPath!)
-		const owner = this.ctx.caller ?? this.ctx
+		const client = new NativeCompilerClient(artifact.url, generation.bindingPath)
 		let ownerCleanup: { cancel(): void } | undefined
 		const session = new DocumentSession(
 			Object.freeze({ ...this.config }),
-			async (prepare, signal) => client.run(await prepare(signal), signal),
+			client,
 			() => {
 				generation.sessions.delete(session)
 				ownerCleanup?.cancel()
 			},
-			() => client.close(),
-			(input, signal) => client.render(input, signal),
+			generation.controller.signal,
 		)
-		generation.sessions.add(session)
+		generation.sessions.set(session, artifact)
 		try {
-			ownerCleanup = owner.effects.defer(() => session.dispose(), { tag: 'typst-session' })
+			ownerCleanup = this.ctx.caller?.effects.defer(() => session.dispose(), {
+				tag: 'typst-session',
+			})
 			await session.initialize(template, (signal) => this.readFonts(signal), options)
-			if (!generation.active) throw new TypstError('CLOSED', 'Typst generation stopped during open')
+			if (generation.controller.signal.aborted || !artifact.active)
+				throw new TypstError('CLOSED', 'Typst compiler was withdrawn during open')
 			return session
 		} catch (cause) {
 			try {

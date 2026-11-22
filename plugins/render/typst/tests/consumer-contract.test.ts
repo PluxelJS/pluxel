@@ -1,8 +1,9 @@
+import { findTypstSourceOffset } from '../src/source/positions.ts'
 import { describe, expect, it } from 'vitest'
 import { TypstError } from '../src/errors.js'
 import { WorkerTaskError } from '@pluxel/services/workers'
 import { consumerFailure } from './consumer/server.js'
-import { diagnosticPosition, sourceOffset } from './consumer/compile-contract.js'
+import { diagnosticPosition } from './consumer/compile-contract.js'
 
 describe('consumer compile boundary', () => {
 	it('projects structured diagnostics and preserves non-Typst failure categories and codes', () => {
@@ -60,7 +61,7 @@ describe('consumer compile boundary', () => {
 		})!
 		expect(position).toEqual({ path: 'main.typ', line: 2, column: 4 })
 		const source = 'first\n😀 x\nlast'
-		expect(sourceOffset(source, position)).toBe(source.indexOf('x'))
+		expect(findTypstSourceOffset({ source, position })).toBe(source.indexOf('x'))
 		expect(diagnosticPosition({ severity: 'warning', message: 'no span' })).toBeUndefined()
 		for (const [line, column] of [
 			[0, 1],
@@ -71,7 +72,7 @@ describe('consumer compile boundary', () => {
 			[1, 1.5],
 		])
 			expect(
-				sourceOffset(source, { path: 'main.typ', line: line!, column: column! }),
+				findTypstSourceOffset({ source, position: { line: line!, column: column! } }),
 			).toBeUndefined()
 	})
 })

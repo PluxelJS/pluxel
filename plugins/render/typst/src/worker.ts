@@ -13,6 +13,8 @@ import type { TypstNavigation } from './preview-contract.ts'
 
 export type TypstWorkerInput = Readonly<{
 	root: string
+	templateRoot: string
+	inputsRoot: string
 	revision: number
 	entry: string
 	fontPaths?: readonly string[]
@@ -46,17 +48,12 @@ export function renderTypstPage(input: TypstRenderWorkerInput): TypstPageImage {
 	validateRenderPage(input)
 	if (!compiled || input.revision !== compiled.revision)
 		throw new TypstError('STALE_REVISION', 'Requested Typst revision is no longer available')
-	validateRenderPage(input, compiled.navigation.pages)
+	const scale = validateRenderPage(input, compiled.navigation.pages)
 	if (!Number.isSafeInteger(input.maxOutputBytes) || input.maxOutputBytes <= 0)
 		throw new TypstError('INVALID_INPUT', 'maxOutputBytes must be a positive safe integer')
 	let rendered
 	try {
-		rendered = compiled.document.renderPage(
-			input.page,
-			input.scale ?? 2,
-			input.region,
-			input.maxOutputBytes,
-		)
+		rendered = compiled.document.renderPage(input.page, scale, input.region, input.maxOutputBytes)
 	} catch (cause) {
 		if (cause instanceof Error && cause.message === 'PNG exceeds configured output byte limit')
 			throw new TypstError('LIMIT_EXCEEDED', cause.message, { cause })
@@ -73,7 +70,10 @@ let retained:
 			root: string
 			fonts: string
 			compiler: NodeCompiler
-			sources: Map<string, { bytes: Buffer; mtime: number; ino: number; size: number }>
+			sources: Map<
+				string,
+				{ path: string; bytes: Buffer; mtime: number; ino: number; size: number }
+			>
 	  }
 	| undefined
 function nativeCompiler(input: TypstCompileWorkerInput) {
@@ -91,32 +91,44 @@ function nativeCompiler(input: TypstCompileWorkerInput) {
 		}
 	}
 	const state = retained
-	const next = new Map<string, { bytes: Buffer; mtime: number; ino: number; size: number }>()
-	function visit(root: string) {
-		for (const item of readdirSync(root, { withFileTypes: true })) {
-			const path = join(root, item.name)
-			if (item.isDirectory()) visit(path)
+	const seen = new Set<string>()
+	function visit(directory: string, prefix: string) {
+		for (const item of readdirSync(directory, { withFileTypes: true })) {
+			const path = join(directory, item.name)
+			const name = join(prefix, item.name)
+			if (item.isDirectory()) visit(path, name)
 			else {
+				const shadow = join(input.root, name)
+				seen.add(shadow)
 				const stat = statSync(path)
-				const previous = state.sources.get(path)
+				const previous = state.sources.get(shadow)
 				if (
 					previous &&
+					previous.path === path &&
 					previous.mtime === stat.mtimeMs &&
 					previous.ino === stat.ino &&
 					previous.size === stat.size
-				) {
-					next.set(path, previous)
+				)
 					continue
-				}
 				const bytes = readFileSync(path)
-				next.set(path, { bytes, mtime: stat.mtimeMs, ino: stat.ino, size: stat.size })
-				if (!previous?.bytes.equals(bytes)) state.compiler.mapShadow(path, bytes)
+				if (!previous?.bytes.equals(bytes)) state.compiler.mapShadow(shadow, bytes)
+				state.sources.set(shadow, {
+					path,
+					bytes,
+					mtime: stat.mtimeMs,
+					ino: stat.ino,
+					size: stat.size,
+				})
 			}
 		}
 	}
-	visit(input.root)
-	for (const path of state.sources.keys()) if (!next.has(path)) state.compiler.unmapShadow(path)
-	state.sources = next
+	visit(input.templateRoot, '')
+	visit(input.inputsRoot, 'inputs')
+	for (const shadow of state.sources.keys()) {
+		if (seen.has(shadow)) continue
+		state.compiler.unmapShadow(shadow)
+		state.sources.delete(shadow)
+	}
 	return state.compiler
 }
 export default function compileTypst(input: TypstCompileWorkerInput): TypstWorkerOutput {
@@ -132,6 +144,8 @@ export default function compileTypst(input: TypstCompileWorkerInput): TypstWorke
 		throw new TypeError('Typst worker entry must stay inside its workspace')
 	}
 	const compiler = nativeCompiler(input)
+	let published: NonNullable<typeof compiled>
+	let output: Extract<TypstWorkerOutput, { ok: true }>
 	try {
 		const result = compiler.compile({ mainFilePath: entry, resetRead: true })
 		// This binding's takeDiagnostics takes errors only; successful warnings have a separate receipt.
@@ -173,12 +187,14 @@ export default function compileTypst(input: TypstCompileWorkerInput): TypstWorke
 				],
 			}
 		}
-		compiled = { document: document as NavigationDocument, revision: input.revision, navigation }
-		return { ok: true, vector, pdf, navigation, diagnostics }
+		published = { document: document as NavigationDocument, revision: input.revision, navigation }
+		output = { ok: true, vector, pdf, navigation, diagnostics }
 	} finally {
 		// Age out unused native memoized results while preserving recent incremental work.
 		compiler.evictCache(10)
 	}
+	compiled = published
+	return output
 }
 
 function normalizeDiagnostics(values: readonly unknown[], root: string): TypstDiagnostic[] {
@@ -227,17 +243,14 @@ function isPosition(value: unknown): value is { line: number; character: number 
 }
 
 if (!isMainThread && parentPort) {
-	parentPort.on('message', (input: TypstCompileWorkerInput | TypstRenderWorkerInput) => {
+	const port = parentPort
+	port.on('message', (input: TypstCompileWorkerInput | TypstRenderWorkerInput) => {
+		let reply
 		try {
-			parentPort!.postMessage(
-				{ ok: true, value: 'kind' in input ? renderTypstPage(input) : compileTypst(input) },
-				[],
-			)
+			reply = { ok: true, value: 'kind' in input ? renderTypstPage(input) : compileTypst(input) }
 		} catch (error) {
-			parentPort!.postMessage(
-				{ ok: false, error, code: error instanceof TypstError ? error.code : undefined },
-				[],
-			)
+			reply = { ok: false, error, code: error instanceof TypstError ? error.code : undefined }
 		}
+		port.postMessage(reply)
 	})
 }

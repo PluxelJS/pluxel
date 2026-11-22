@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { WorkerTaskError } from '@pluxel/services/workers'
-import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
 import type { TypstPluginConfig } from './config.ts'
 import type { TypstFiles, TypstTemplate } from './contracts.ts'
 import { TypstError, type TypstDiagnostic } from './errors.ts'
+import type { NativeCompilerClient } from './native-client.ts'
 import {
 	validateRenderPage,
 	type TypstRenderPageOptions,
@@ -15,7 +16,7 @@ import {
 import type { TypstPreview } from './preview-contract.ts'
 import { createTypstOperation, type TypstOperationOptions } from './operation.ts'
 import { prepareInputs, prepareTemplate } from './resources.ts'
-import type { TypstWorkerInput, TypstWorkerOutput, TypstRenderWorkerInput } from './worker.ts'
+import type { TypstWorkerOutput } from './worker.ts'
 
 export interface TypstCompiled {
 	readonly revision: number
@@ -24,7 +25,7 @@ export interface TypstCompiled {
 }
 export interface TypstSession extends AsyncDisposable {
 	readonly id: string
-	/** Full input replacement and optional full template replacement; sources stay unchanged until settlement. Fonts remain fixed. */
+	/** Compiles a complete input set and adopts a replacement template on success. Borrowed sources stay unchanged until settlement. */
 	update(
 		input: {
 			readonly files: TypstFiles
@@ -38,69 +39,70 @@ export interface TypstSession extends AsyncDisposable {
 	dispose(): Promise<void>
 }
 
-type TaskRunner = (
-	prepare: (signal: AbortSignal) => Promise<TypstWorkerInput>,
-	signal: AbortSignal,
-) => Promise<TypstWorkerOutput>
 type FontReader = (signal: AbortSignal) => Promise<readonly Uint8Array[]>
 type Job = { run(): Promise<void>; cancel(): void }
+type Compiler = Pick<NativeCompilerClient, 'compile' | 'render' | 'close' | 'closed'>
+type Workspace = {
+	root: string
+	template: { root: string; entry: string }
+	fontPaths: string[]
+}
 
 export class DocumentSession implements TypstSession {
 	readonly id = randomUUID()
 	private readonly controller = new AbortController()
+	private readonly signal: AbortSignal
 	private readonly queue: Job[] = []
 	private readonly pending = new Set<Promise<unknown>>()
 	private active = false
-	private revision = 0
 	private current?: { revision: number; pdf: Uint8Array }
 	private directory?: string
-	private entry = ''
-	private fontPaths: string[] = []
 	private closing?: Promise<void>
-	private ready?: Promise<void>
-	private cleanupFailure?: Error
+	private ready?: Promise<Workspace>
+	private unsettled?: WorkerTaskError
 
 	constructor(
 		private readonly config: TypstPluginConfig,
-		private readonly runTask: TaskRunner,
+		private readonly compiler: Compiler,
 		private readonly released: () => void,
-		private readonly closeNative: () => Promise<void> = async () => {},
-		private readonly renderNative?: (
-			input: TypstRenderWorkerInput,
-			signal: AbortSignal,
-		) => Promise<TypstPageImage>,
-	) {}
+		providerSignal?: AbortSignal,
+	) {
+		this.signal = providerSignal
+			? AbortSignal.any([providerSignal, this.controller.signal])
+			: this.controller.signal
+	}
 
-	initialize(
+	async initialize(
 		template: TypstTemplate,
 		readFonts: FontReader,
 		options: TypstOperationOptions,
 	): Promise<void> {
+		if (this.ready) throw new Error('Typst session is already initializing or initialized')
 		this.ready = this.prepare(template, readFonts, options)
-		return this.ready
+		await this.ready
 	}
 
 	private async prepare(
 		template: TypstTemplate,
 		readFonts: FontReader,
 		options: TypstOperationOptions,
-	): Promise<void> {
+	): Promise<Workspace> {
 		const operation = this.operation(options)
 		try {
 			operation.signal.throwIfAborted()
 			this.directory = await mkdtemp(join(tmpdir(), 'pluxel-typst-'))
 			const root = join(this.directory, 'workspace')
 			await mkdir(root)
-			const prepared = await prepareTemplate(
+			const templateRoot = join(this.directory, 'template')
+			const { entry } = await prepareTemplate(
 				template,
-				root,
+				templateRoot,
 				{
 					...this.resourceLimits,
 					maxBytes: this.config.maxTemplateBytes,
 				},
 				operation.signal,
 			)
-			this.entry = prepared.entry
 			const fonts = await readFonts(operation.signal)
 			const fontFiles: Record<string, { kind: 'bytes'; bytes: Uint8Array }> = {}
 			fonts.forEach((bytes, i) => {
@@ -113,8 +115,12 @@ export class DocumentSession implements TypstSession {
 				{ ...this.resourceLimits, maxBytes: this.config.maxFontBytes },
 				operation.signal,
 			)
-			this.fontPaths = [join(fontRoot, 'inputs')]
 			operation.signal.throwIfAborted()
+			return {
+				root,
+				template: { root: templateRoot, entry },
+				fontPaths: [join(fontRoot, 'inputs')],
+			}
 		} finally {
 			operation.dispose()
 		}
@@ -137,32 +143,25 @@ export class DocumentSession implements TypstSession {
 		} catch (cause) {
 			return Promise.reject(cause)
 		}
-		return this.enqueue(input, async (signal) => {
-			await this.ready
-			this.assertOpen()
+		return this.enqueue(input, (signal) => {
 			signal.throwIfAborted()
 			if (!this.current || input.revision !== this.current.revision)
 				throw new TypstError('STALE_REVISION', 'Requested Typst revision is no longer available')
-			if (!this.renderNative) throw new Error('Native page renderer is unavailable')
-			try {
-				const result = await this.renderNative(
-					{
-						kind: 'render',
-						revision: input.revision,
-						page: input.page,
-						scale: input.scale,
-						region: input.region,
-						maxOutputBytes: this.config.maxOutputBytes,
-					},
-					signal,
-				)
-				signal.throwIfAborted()
-				this.assertOpen()
-				return result
-			} catch (cause) {
-				this.handleNativeFailure(cause, signal)
-				throw cause
-			}
+			return this.execute(
+				() =>
+					this.compiler.render(
+						{
+							kind: 'render',
+							revision: input.revision,
+							page: input.page,
+							scale: input.scale,
+							region: input.region,
+							maxOutputBytes: this.config.maxOutputBytes,
+						},
+						signal,
+					),
+				signal,
+			)
 		})
 	}
 
@@ -172,7 +171,7 @@ export class DocumentSession implements TypstSession {
 	): Promise<T> {
 		try {
 			this.assertOpen()
-			if (this.queue.length >= this.config.maxQueuedUpdates)
+			if (this.queue.length >= this.config.maxQueuedOperations)
 				throw new TypstError('BUSY', 'Typst session operation queue is full')
 			const operation = this.operation(input)
 			if (operation.signal.aborted) {
@@ -231,81 +230,103 @@ export class DocumentSession implements TypstSession {
 		signal: AbortSignal,
 		template?: TypstTemplate,
 	): Promise<TypstCompiled> {
-		await this.ready
+		const workspace = await this.ready!
 		this.assertOpen()
 		signal.throwIfAborted()
-		const root = join(this.directory!, 'workspace')
-		let staging: string | undefined
+		const revision = (this.current?.revision ?? 0) + 1
+		const staging = await mkdtemp(join(this.directory!, 'update-'))
+		let candidateRoot: string | undefined
+		let nextTemplate = workspace.template
+		let output: Extract<TypstWorkerOutput, { ok: true }>
 		try {
-			const output = await this.runTask(async (workerSignal) => {
-				const preparationSignal = AbortSignal.any([signal, workerSignal])
-				preparationSignal.throwIfAborted()
-				staging = await mkdtemp(join(this.directory!, 'update-'))
-				await prepareInputs(files, staging, this.resourceLimits, preparationSignal)
-				if (template) {
-					const replacement = join(staging, 'template')
-					const prepared = await prepareTemplate(
-						template,
-						replacement,
-						{ ...this.resourceLimits, maxBytes: this.config.maxTemplateBytes },
-						preparationSignal,
-					)
-					preparationSignal.throwIfAborted()
-					await rm(root, { recursive: true, force: true })
-					await rename(replacement, root)
-					this.entry = prepared.entry
-				}
-				preparationSignal.throwIfAborted()
-				await rm(join(root, 'inputs'), { recursive: true, force: true })
-				await rename(join(staging, 'inputs'), join(root, 'inputs'))
-				return {
-					root,
-					revision: this.revision + 1,
-					entry: this.entry,
-					fontPaths: this.fontPaths,
-					maxOutputBytes: this.config.maxOutputBytes,
-				}
-			}, signal)
-			signal.throwIfAborted()
-			this.assertOpen()
-			if (output.ok === false)
+			await prepareInputs(files, staging, this.resourceLimits, signal)
+			if (template !== undefined) {
+				candidateRoot = await mkdtemp(join(this.directory!, 'template-'))
+				const { entry } = await prepareTemplate(
+					template,
+					candidateRoot,
+					{ ...this.resourceLimits, maxBytes: this.config.maxTemplateBytes },
+					signal,
+				)
+				nextTemplate = { root: candidateRoot, entry }
+			}
+			const result = await this.execute(
+				() =>
+					this.compiler.compile(
+						{
+							root: workspace.root,
+							templateRoot: nextTemplate.root,
+							inputsRoot: join(staging, 'inputs'),
+							revision,
+							entry: nextTemplate.entry,
+							fontPaths: workspace.fontPaths,
+							maxOutputBytes: this.config.maxOutputBytes,
+						},
+						signal,
+					),
+				signal,
+			)
+			if (result.ok === false)
 				throw new TypstError(
-					output.code,
-					output.code === 'COMPILE_FAILED'
+					result.code,
+					result.code === 'COMPILE_FAILED'
 						? 'Typst compilation failed'
 						: 'Typst output exceeds configured limit',
-					{ diagnostics: output.diagnostics },
+					{ diagnostics: result.diagnostics },
 				)
-			const revision = ++this.revision
-			this.current = { revision, pdf: output.pdf }
-			return {
-				revision,
-				preview: {
-					sessionId: this.id,
-					revision,
-					format: 'vector',
-					compilerVersion: '0.7.0',
-					data: output.vector,
-					navigation: output.navigation,
-				},
-				diagnostics: output.diagnostics,
-			}
+			output = result
 		} catch (cause) {
-			this.handleNativeFailure(cause, signal)
+			await this.discard(staging, candidateRoot, { cause })
 			throw cause
-		} finally {
-			if (staging && !this.cleanupFailure) await rm(staging, { recursive: true, force: true })
+		}
+		await this.discard(staging, candidateRoot === undefined ? undefined : workspace.template.root)
+		this.assertOpen()
+		workspace.template = nextTemplate
+		this.current = { revision, pdf: output.pdf }
+		return {
+			revision,
+			preview: {
+				sessionId: this.id,
+				revision,
+				format: 'vector',
+				compilerVersion: '0.7.0',
+				data: output.vector,
+				navigation: output.navigation,
+			},
+			diagnostics: output.diagnostics,
 		}
 	}
 
-	private handleNativeFailure(cause: unknown, signal: AbortSignal): void {
-		if (signal.aborted) this.controller.abort(signal.reason)
-		if (cause instanceof WorkerTaskError && cause.code === 'EXECUTION_UNSETTLED') {
-			this.cleanupFailure = new Error(
-				`Typst worker exit is unconfirmed; resources retained at ${this.directory}`,
-				{ cause },
-			)
-			this.controller.abort(this.cleanupFailure)
+	private async execute<T>(run: () => Promise<T>, signal: AbortSignal): Promise<T> {
+		signal.throwIfAborted()
+		try {
+			return await run()
+		} catch (cause) {
+			if (cause instanceof WorkerTaskError && cause.code === 'EXECUTION_UNSETTLED')
+				this.retainUnsettled(cause)
+			if (this.unsettled || this.compiler.closed) this.controller.abort(this.unsettled ?? cause)
+			throw cause
+		}
+	}
+
+	private retainUnsettled(cause: unknown): WorkerTaskError {
+		return (this.unsettled ??= new WorkerTaskError(
+			'EXECUTION_UNSETTLED',
+			`Typst worker exit is unconfirmed; resources retained at ${this.directory}`,
+			{ cause },
+		))
+	}
+
+	private async discard(staging: string, template?: string, failure?: { cause: unknown }) {
+		if (this.unsettled) return
+		try {
+			await rm(staging, { recursive: true, force: true })
+			if (template !== undefined) await rm(template, { recursive: true, force: true })
+		} catch (cleanup) {
+			this.controller.abort(cleanup)
+			throw failure
+				? new AggregateError([failure.cause, cleanup], 'Typst update and cleanup failed', failure)
+				: cleanup
 		}
 	}
 
@@ -315,7 +336,7 @@ export class DocumentSession implements TypstSession {
 			if (!this.current || revision !== this.current.revision)
 				throw new TypstError('STALE_REVISION', 'Requested Typst revision is no longer available')
 			const pdf = this.current.pdf
-			return this.track(copyBytes(pdf, this.controller.signal))
+			return this.track(copyBytes(pdf, this.signal))
 		} catch (cause) {
 			return Promise.reject(cause)
 		}
@@ -325,11 +346,15 @@ export class DocumentSession implements TypstSession {
 		if (this.closing) return this.closing
 		this.controller.abort(new TypstError('CLOSED', 'Typst session is closed'))
 		this.closing = (async () => {
+			await Promise.allSettled([...(this.ready ? [this.ready] : []), ...this.pending])
+			this.current = undefined
+			if (this.unsettled) throw this.unsettled
 			try {
-				await Promise.allSettled([...(this.ready ? [this.ready] : []), ...this.pending])
-				this.current = undefined
-				await this.closeNative()
-				if (this.cleanupFailure) throw this.cleanupFailure
+				await this.compiler.close()
+			} catch (cause) {
+				throw this.retainUnsettled(cause)
+			}
+			try {
 				if (this.directory) await rm(this.directory, { recursive: true, force: true })
 			} finally {
 				this.released()
@@ -343,7 +368,7 @@ export class DocumentSession implements TypstSession {
 	}
 
 	private assertOpen(): void {
-		if (this.controller.signal.aborted) throw new TypstError('CLOSED', 'Typst session is closed')
+		if (this.signal.aborted) throw new TypstError('CLOSED', 'Typst session is closed')
 	}
 	private get resourceLimits() {
 		return {
@@ -362,7 +387,7 @@ export class DocumentSession implements TypstSession {
 		return promise
 	}
 	private operation(options: TypstOperationOptions) {
-		return createTypstOperation(options, [this.controller.signal])
+		return createTypstOperation(options, [this.signal])
 	}
 }
 

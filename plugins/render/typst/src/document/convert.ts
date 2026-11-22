@@ -43,40 +43,6 @@ function bodySchema() {
 	return (cachedSchema ??= getSchema(createTypstDocumentExtensions()))
 }
 
-const nodeNames = new Set([
-	'doc',
-	'paragraph',
-	'text',
-	'heading',
-	'hardBreak',
-	'blockquote',
-	'codeBlock',
-	'horizontalRule',
-	'bulletList',
-	'orderedList',
-	'listItem',
-	'image',
-	'table',
-	'tableRow',
-	'tableCell',
-	'tableHeader',
-	'figure',
-	'figureCaption',
-	'reference',
-	'inlineMath',
-	'blockMath',
-])
-const markNames = new Set([
-	'bold',
-	'italic',
-	'strike',
-	'underline',
-	'subscript',
-	'superscript',
-	'code',
-	'link',
-	'textStyle',
-])
 const nodeKeys = new Set(['type', 'attrs', 'content', 'marks', 'text'])
 const numericLayout = /^(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?(pt|fr|%)$/
 const maxDocumentNodes = 1_000_000
@@ -290,12 +256,16 @@ function checkedMarks(value: unknown, schema: Schema, path: DocumentPath): reado
 	for (const [index, candidate] of dataList(
 		value,
 		path,
-		markNames.size,
+		schema.spec.marks.size,
 		'Expected a list of body marks',
 	).entries()) {
 		const markPath = [...path, index]
 		const item = dataRecord(candidate, markPath, 'Expected a body mark object')
-		if (typeof item.type !== 'string' || !markNames.has(item.type) || seen.has(item.type))
+		if (
+			typeof item.type !== 'string' ||
+			!Object.hasOwn(schema.marks, item.type) ||
+			seen.has(item.type)
+		)
 			invalid(markPath, 'Unsupported or repeated body mark')
 		for (const key of Object.keys(item))
 			if (key !== 'type' && key !== 'attrs') invalid([...markPath, key], 'Unknown mark field')
@@ -319,11 +289,13 @@ function documentTree(input: unknown, schema: Schema): Node {
 			return invalid(path, 'The body exceeds the supported document size or depth')
 		const candidate = dataRecord(value, path, 'Expected a body node object')
 		const { type, text: sourceText, content, marks, attrs } = candidate
-		if (typeof type !== 'string' || !nodeNames.has(type) || (depth === 0) !== (type === 'doc'))
+		if (typeof type !== 'string' || !Object.hasOwn(schema.nodes, type))
 			return invalid([...path, 'type'], 'Unsupported body node')
+		const nodeType = schema.nodes[type]!
+		if ((depth === 0) !== (nodeType === schema.topNodeType))
+			return invalid([...path, 'type'], 'Expected a doc at the root and body nodes within it')
 		for (const key of Object.keys(candidate))
 			if (!nodeKeys.has(key)) invalid([...path, key], 'Unknown node field')
-		const nodeType = schema.nodes[type]!
 		const attributesPath = [...path, 'attrs']
 		const checkedAttrs = attributes(type, attrs, nodeType.spec.attrs, attributesPath)
 		const nodeMarks = checkedMarks(marks, schema, [...path, 'marks'])

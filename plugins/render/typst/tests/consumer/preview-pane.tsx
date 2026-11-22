@@ -12,7 +12,7 @@ import {
 	findTypstSourcePosition,
 	type TypstSourceProject,
 } from '@pluxel/plugin-typst/source/browser'
-import type { Editor } from '@tiptap/core'
+import type { CaretSelection } from './workspace-context'
 import { PreviewPageControl, PreviewOutline } from './preview-controls'
 import { diagnosticPosition, type ConsumerFailure } from './compile-contract'
 import type { ExampleId } from './examples'
@@ -21,15 +21,6 @@ interface Compiled {
 	clientRevision: number
 	preview: TypstPreview
 	diagnostics: readonly TypstDiagnostic[]
-}
-
-interface PreviewSelection {
-	path: string
-	position: number
-	explicit: boolean
-	serial: number
-	/** Retains the native paragraph-end caret fallback when its editor is still mounted. */
-	editor?: Editor
 }
 
 /** One mounted folder preview owns one compiler session; routing and editor drafts belong to the host. */
@@ -43,10 +34,14 @@ export function PreviewPane({
 }: {
 	project: TypstSourceProject
 	folder: ExampleId
-	selection?: PreviewSelection
+	selection?: CaretSelection
 	/** Unapplied inputs in this folder, including retained editor tabs. */
 	hasPending?: boolean
-	onNavigate(position: SourcePosition): void
+	onNavigate(request: {
+		point: SourcePosition
+		revision: number
+		kind: 'preview' | 'diagnostic'
+	}): void
 	onIssue(message: string): void
 }) {
 	const revision = useSyncExternalStore(project.subscribe, () => project.revision)
@@ -70,7 +65,7 @@ export function PreviewPane({
 	const viewport = useRef<HTMLDivElement>(null)
 	const view = useRef<TypstPreviewView | undefined>(undefined)
 	const displayed = useRef<Compiled | undefined>(undefined)
-	const sourceSelection = useRef<PreviewSelection | undefined>(undefined)
+	const sourceSelection = useRef<CaretSelection | undefined>(undefined)
 	const latest = useRef({ onNavigate, onIssue, hasPending, following })
 	latest.current = { onNavigate, onIssue, hasPending, following }
 	const post = (url: string, body: unknown, signal?: AbortSignal) =>
@@ -119,9 +114,8 @@ export function PreviewPane({
 	}, [project, revision])
 
 	function navigate(position: SourcePosition) {
-		if (displayed.current?.clientRevision !== project.revision) return
-		const path = position.path.replace(/^\//, '')
-		if (Object.hasOwn(project.snapshot().files, path)) latest.current.onNavigate(position)
+		if (displayed.current?.clientRevision !== project.revision || latest.current.hasPending) return
+		latest.current.onNavigate({ point: position, revision: project.revision, kind: 'preview' })
 	}
 	useEffect(() => {
 		if (!compiled || !container.current || !viewport.current) return
@@ -137,7 +131,8 @@ export function PreviewPane({
 					renderer,
 					sessionId: compiled.preview.sessionId,
 					onStateChange: setViewState,
-					isNavigationCurrent: () => displayed.current?.clientRevision === project.revision,
+					isNavigationCurrent: () =>
+						displayed.current?.clientRevision === project.revision && !latest.current.hasPending,
 					onNavigate: ({ point }) => navigate(point),
 				})
 			}
@@ -177,43 +172,26 @@ export function PreviewPane({
 			setLocationStatus('等待预览更新后定位')
 			return
 		}
+		if (latest.current.hasPending || selected.revision !== project.revision) return
 		if (!viewport.current?.clientWidth || !viewport.current.clientHeight) return
 		if (!Object.hasOwn(project.snapshot().files, selected.path)) return
 		view.current?.refresh()
-		const projection = project.open(selected.path)
-		const point = findTypstSourcePosition({ projection, position: selected.position })
-		let found = point ? view.current?.revealSource(point) : false
-		// A caret at the exclusive end of a paragraph belongs to its preceding glyph.
-		const instance = selected.editor
-		if (
-			!found &&
-			instance &&
-			!instance.isDestroyed &&
-			selected.position <= instance.state.doc.content.size
-		) {
-			const at = instance.state.doc.resolve(selected.position)
-			if (instance.state.selection.empty && at.parent.isTextblock && at.nodeBefore?.isText) {
-				const previous = findTypstSourcePosition({
-					projection,
-					position: selected.position - 1,
-				})
-				found = previous ? view.current?.revealSource(previous) : false
-			}
-		}
+		const point =
+			selected.kind === 'source'
+				? selected.point
+				: findTypstSourcePosition({
+						projection: project.open(selected.path),
+						position: selected.position,
+					})
+		const found = point && view.current?.revealSource(point)
 		selected.explicit = false
 		setLocationStatus(found ? '已定位光标处 · 点击纸面可返回编辑' : '此处暂不支持预览定位')
 	}
 	useEffect(() => {
 		sourceSelection.current = selection ? { ...selection } : undefined
 		revealSelection()
-	}, [
-		selection?.serial,
-		selection?.path,
-		selection?.position,
-		selection?.explicit,
-		selection?.editor,
-	])
-	useEffect(revealSelection, [displayedRevision, following, revision])
+	}, [selection])
+	useEffect(revealSelection, [displayedRevision, following, revision, hasPending])
 	useEffect(() => {
 		// A retained routed tab can receive selections while its viewport is hidden.
 		const observer = new ResizeObserver(revealSelection)
@@ -323,7 +301,16 @@ export function PreviewPane({
 							key={index}
 							onClick={() => {
 								const point = diagnosticPosition(diagnostic)
-								if (point) latest.current.onNavigate(point)
+								if (
+									point &&
+									!latest.current.hasPending &&
+									failure.clientRevision === project.revision
+								)
+									latest.current.onNavigate({
+										point,
+										revision: failure.clientRevision,
+										kind: 'diagnostic',
+									})
 							}}
 						>
 							{diagnostic.path}: {diagnostic.message}

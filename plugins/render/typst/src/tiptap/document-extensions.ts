@@ -10,7 +10,7 @@ const label = {
 		attributes.label ? { 'data-typst-label': attributes.label } : {},
 }
 
-export const TypstDocumentFigure = TypstFigure.extend({
+const TypstDocumentFigure = TypstFigure.extend({
 	addAttributes: () => ({ label }),
 })
 
@@ -42,8 +42,8 @@ function equation(inline: boolean) {
 	})
 }
 
-export const TypstDocumentInlineMath = equation(true)
-export const TypstDocumentBlockMath = equation(false)
+const inlineMath = equation(true)
+const blockMath = equation(false)
 
 const bodyAttributes = Extension.create({
 	name: 'typstDocumentAttributes',
@@ -86,8 +86,8 @@ export function createTypstDocumentExtensions(): Extensions {
 		...createEditorExtensions(),
 		TypstDocumentFigure,
 		TypstFigureCaption,
-		TypstDocumentInlineMath,
-		TypstDocumentBlockMath,
+		inlineMath,
+		blockMath,
 		TypstReference,
 		TypstTableStyle.configure({ allowedStyles: ['grid', 'borderless'] }),
 		Subscript,

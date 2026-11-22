@@ -1,26 +1,4 @@
-/** Project paths stay local; spelling in authored Typst remains relative to its file. */
-export function relativePath(from: string, to: string): string {
-	const base = from.split('/').slice(0, -1),
-		target = to.split('/').filter(Boolean)
-	while (base.length > 0 && target.length > 0 && base[0] === target[0]) {
-		base.shift()
-		target.shift()
-	}
-	return [...base.map(() => '..'), ...target].join('/') || './'
-}
-
-export function resolveSourcePath(from: string, value: string): string | undefined {
-	if (!value || value.includes('\\') || value.includes('\0') || value.startsWith('@')) return
-	const parts = value.startsWith('/') ? [] : from.split('/').slice(0, -1)
-	for (const part of value.split('/')) {
-		if (!part || part === '.') continue
-		if (part === '..') {
-			if (parts.length === 0) return
-			parts.pop()
-		} else parts.push(part)
-	}
-	return parts.join('/')
-}
+import { relativePath, resolveModulePath } from '../source/paths.js'
 
 export interface SourcePathCompletion {
 	value: string
@@ -37,7 +15,7 @@ export function completeSourcePaths(
 	const slash = value.lastIndexOf('/'),
 		prefix = value.slice(0, slash + 1),
 		fragment = value.slice(slash + 1)
-	const directory = resolveSourcePath(from, prefix || './')
+	const directory = resolveModulePath(from, prefix || './')
 	if (directory === undefined) return []
 	const root = directory ? `${directory}/` : ''
 	const entries = new Map<string, SourcePathCompletion>()
@@ -59,26 +37,4 @@ export function completeSourcePaths(
 	return [...entries.values()]
 		.sort((a, b) => Number(b.directory) - Number(a.directory) || a.label.localeCompare(b.label))
 		.slice(0, 30)
-}
-
-export function sourceLiteral(value: string | number): string {
-	if (typeof value === 'number') return String(value)
-	if (!value.isWellFormed()) throw new Error('路径含无效 Unicode')
-	let text = '"'
-	for (const character of value) {
-		const code = character.codePointAt(0)!
-		text +=
-			character === '"' || character === '\\'
-				? `\\${character}`
-				: character === '\n'
-					? '\\n'
-					: character === '\r'
-						? '\\r'
-						: character === '\t'
-							? '\\t'
-							: code < 0x20 || code === 0x7f
-								? `\\u{${code.toString(16)}}`
-								: character
-	}
-	return text + '"'
 }

@@ -44,10 +44,6 @@
 			"@pluxel/hmr": "./src/source/library.ts",
 			"default": "./dist/source/library.mjs"
 		},
-		"./template": {
-			"@pluxel/hmr": "./src/template.ts",
-			"default": "./dist/template.mjs"
-		},
 		"./tiptap": {
 			"@pluxel/hmr": "./src/tiptap/index.ts",
 			"default": "./dist/tiptap.mjs"
@@ -92,7 +88,6 @@
 			"./source": "./dist/source.mjs",
 			"./source/browser": "./dist/source/browser.mjs",
 			"./source/library": "./dist/source/library.mjs",
-			"./template": "./dist/template.mjs",
 			"./tiptap": "./dist/tiptap.mjs",
 			"./tiptap/document": "./dist/tiptap/document.mjs",
 			"./tiptap/document/react": "./dist/tiptap/document/react.mjs",

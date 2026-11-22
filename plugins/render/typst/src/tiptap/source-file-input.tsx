@@ -2,7 +2,8 @@ import { useId, useLayoutEffect, useRef, useState } from 'react'
 import type { TypstSourceProject } from '../source/state-types.js'
 import type { TypstSlashCommand } from './insert-commands.js'
 import { useSourceFormComposition } from './source-controls.js'
-import { completeSourcePaths, resolveSourcePath, sourceLiteral } from './source-paths.js'
+import { resolveModulePath, sourceLiteral } from '../source/paths.js'
+import { completeSourcePaths } from './source-paths.js'
 
 export function SourcePathInput({
 	files,
@@ -182,7 +183,7 @@ export function SourceFileForm({
 	const snapshot = project.snapshot()
 	const files = Object.keys(snapshot.files)
 	function validPath(value: string) {
-		const target = resolveSourcePath(path, value)
+		const target = resolveModulePath(path, value)
 		return (
 			target !== undefined &&
 			target !== path &&

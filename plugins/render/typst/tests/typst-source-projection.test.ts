@@ -36,12 +36,16 @@ describe('source projection and localized edits', () => {
 		const projection = state.open('body'),
 			document = structuredClone(projection.document)
 		all(document).find((node) => node.type === 'text')!.text = 'Edited'
-		expect(state.edit({ projection, document }).ok).toBe(true)
+		expect(
+			state.edit({ path: projection.path, baseRevision: projection.revision, document }).ok,
+		).toBe(true)
 		expect(state.open('body').source).toBe('Edited')
 		const current = state.open('body'),
 			invalid = structuredClone(current.document)
 		invalid.content!.push({ type: 'typstSource', attrs: { role: 'unknown', source: '#text[' } })
-		expect(state.edit({ projection: current, document: invalid })).toMatchObject({
+		expect(
+			state.edit({ path: current.path, baseRevision: current.revision, document: invalid }),
+		).toMatchObject({
 			ok: false,
 			issues: [{ code: 'SYNTAX_ERROR', path: 'body' }],
 		})
@@ -119,7 +123,7 @@ describe('source projection and localized edits', () => {
 		const doc = structuredClone(initial.document)
 		all(doc).find((node) => node.type === 'typstField')!.marks = [{ type: 'italic' }]
 		all(doc).find((node) => node.type === 'reference')!.marks = []
-		const result = state.edit({ projection: initial, document: doc })
+		const result = state.edit({ path: initial.path, baseRevision: initial.revision, document: doc })
 		if (!result.ok) throw new Error(JSON.stringify(result.issues))
 		const changed = state.open('body.typ')
 		expect(changed.source).toBe(
@@ -164,7 +168,9 @@ describe('source projection and localized edits', () => {
 		const initial = fields.open('body.typ'),
 			document = structuredClone(initial.document)
 		all(document).find((node) => node.type === 'typstField')!.marks = [{ type: 'code' }]
-		expect(fields.edit({ projection: initial, document }).ok).toBe(true)
+		expect(fields.edit({ path: initial.path, baseRevision: initial.revision, document }).ok).toBe(
+			true,
+		)
 		const coded = fields.open('body.typ')
 		expect(coded.source).toBe(
 			fieldSource.replace(call, '#raw(report.field(json("data.json"), ("name",)))'),
@@ -175,7 +181,9 @@ describe('source projection and localized edits', () => {
 		})
 		const plain = structuredClone(coded.document)
 		all(plain).find((node) => node.type === 'typstField')!.marks = []
-		expect(fields.edit({ projection: coded, document: plain }).ok).toBe(true)
+		expect(
+			fields.edit({ path: coded.path, baseRevision: coded.revision, document: plain }).ok,
+		).toBe(true)
 		expect(fields.open('body.typ').source).toBe(fieldSource)
 	})
 	it('rejects bindings that lose their declared meaning after insertion into a shadowed scope', () => {
@@ -195,7 +203,11 @@ describe('source projection and localized edits', () => {
 				source: '#report.field(json("data.json"), ("name",))',
 			},
 		})
-		const result = state.edit({ projection, document })
+		const result = state.edit({
+			path: projection.path,
+			baseRevision: projection.revision,
+			document,
+		})
 		expect(result).toMatchObject({
 			ok: false,
 			issues: [{ code: 'UNSUPPORTED_EDIT', message: expect.stringContaining('binding') }],
@@ -231,7 +243,9 @@ describe('source projection and localized edits', () => {
 				source: '#blocks.chart(title: "Wanted")',
 			},
 		})
-		expect(components.edit({ projection: old, document: next })).toMatchObject({
+		expect(
+			components.edit({ path: old.path, baseRevision: old.revision, document: next }),
+		).toMatchObject({
 			ok: false,
 			issues: [{ code: 'UNSUPPORTED_EDIT', message: expect.stringContaining('binding') }],
 		})
@@ -248,7 +262,9 @@ describe('source projection and localized edits', () => {
 		const projection = state.open('body.typ'),
 			document = structuredClone(projection.document)
 		document.content!.at(-1)!.attrs!.source = '#report.field(json("data.json"), ("name",))'
-		expect(state.edit({ projection, document }).ok).toBe(true)
+		expect(
+			state.edit({ path: projection.path, baseRevision: projection.revision, document }).ok,
+		).toBe(true)
 		expect(all(state.open('body.typ').document).some((node) => node.type === 'typstField')).toBe(
 			true,
 		)
@@ -538,7 +554,9 @@ describe('source projection and localized edits', () => {
 		const doc = structuredClone(state.open('main.typ').document)
 		all(doc).find((node) => node.type === 'reference')!.attrs!.showCaption = null
 		all(doc).find((node) => node.type === 'blockMath')!.attrs!.latex = '\\frac{1}{2}'
-		expect(state.edit({ projection: state.open('main.typ'), document: doc }).ok).toBe(true)
+		expect(state.edit({ path: 'main.typ', baseRevision: state.revision, document: doc }).ok).toBe(
+			true,
+		)
 		const updated = state.snapshot().files['main.typ'] as string
 		expect(updated).toContain('caption: auto')
 		expect(updated).toContain('"\\\\frac{1}{2}"')
@@ -559,7 +577,9 @@ describe('source projection and localized edits', () => {
 			type: 'paragraph',
 			content: [{ type: 'reference', attrs: { target: 'sec:target', showCaption: true } }],
 		})
-		expect(state.edit({ projection, document }).ok).toBe(true)
+		expect(
+			state.edit({ path: projection.path, baseRevision: projection.revision, document }).ok,
+		).toBe(true)
 		projection = state.open('refs.typ')
 		expect(projection.source).toContain(
 			'#metadata((__pluxel_reference: true, target: <sec:target>, show-caption: false))',
@@ -576,7 +596,9 @@ describe('source projection and localized edits', () => {
 		const references = all(document).filter((node) => node.type === 'reference')
 		references[0]!.attrs!.showCaption = true
 		references[1]!.attrs!.showCaption = null
-		expect(state.edit({ projection, document }).ok).toBe(true)
+		expect(
+			state.edit({ path: projection.path, baseRevision: projection.revision, document }).ok,
+		).toBe(true)
 		expect(state.open('refs.typ').source).toContain('show-caption: auto')
 		expect(
 			state.renameLabel({ baseRevision: state.revision, from: 'sec:target', to: 'sec:renamed' }).ok,
@@ -640,13 +662,51 @@ describe('source projection and localized edits', () => {
 		})
 		expect(component.attrs?.props).toEqual({ title: '旧', loud: false })
 		component.attrs!.props = { title: '新', loud: true, count: 3 }
-		expect(state.edit({ projection: p, document: doc }).ok).toBe(true)
+		expect(state.edit({ path: p.path, baseRevision: p.revision, document: doc }).ok).toBe(true)
 		const next = state.snapshot().files['sections/a.typ'] as string
 		expect(next).toContain('tone: if true { red } else { blue }')
 		expect(next).toContain('count: 3)[内容]')
 		expect(parse(next).errors).toEqual([])
 		expect(state.snapshot().files['data/sales.json']).toBe('{"value":42}')
 	})
+	it('keeps computed, repeated and spread component arguments out of structured edits', () => {
+		const source =
+			'#import "/lib/block.typ": sample\n\n#sample(title: upper("a"), count: -1)\n\n#sample(title: "first", title: "second")\n\n#sample(..params)'
+		const state = createTypstSourceProject({
+			files: {
+				'sections/a.typ': source,
+				'lib/block.typ': '#let sample(title: "", count: 0) = [#title]',
+			},
+			components: [
+				{
+					module: 'lib/block.typ',
+					name: 'sample',
+					label: 'Sample',
+					parameters: { title: { type: 'string' }, count: { type: 'number' } },
+				},
+			],
+		})
+		const { path, revision: baseRevision, document } = state.open('sections/a.typ')
+		const components = all(document).filter((node) => node.type === 'typstComponent')
+		expect(components.map(({ attrs }) => attrs?.readonlyParameters)).toEqual([
+			['title'],
+			['title', 'count'],
+		])
+		expect(
+			all(document).find(({ attrs }) => attrs?.source?.includes('title: "second"')),
+		).toMatchObject({ type: 'typstSource' })
+		expect(components[0]!.attrs?.props).toEqual({ count: -1 })
+		components[0]!.attrs!.props = { title: 'replacement', count: -1 }
+		expect(state.edit({ path, baseRevision, document })).toMatchObject({
+			ok: false,
+			issues: [{ code: 'UNSUPPORTED_EDIT', message: expect.stringContaining('parameter title') }],
+		})
+		expect(state.open(path).source).toBe(source)
+		components[0]!.attrs!.props = { count: -2 }
+		expect(state.edit({ path, baseRevision, document }).ok).toBe(true)
+		expect(state.open(path).source).toBe(source.replace('count: -1', 'count: -2'))
+	})
+
 	it('does not call code label literals declarations and exposes explicit field bindings', () => {
 		const source =
 			'#import "lib/pluxel.typ" as report\n#let target = <not-a-declaration>\n\n#report.field(json("data/a.json"), ("company",))'
@@ -789,7 +849,7 @@ describe('source projection and localized edits', () => {
 			fontFamilies: [],
 			slashCommands: [],
 			validateDocument: (document: JSONContent) =>
-				state.prepareEdit({ projection: state.open('main.typ'), document }).ok,
+				state.prepareEdit({ path: 'main.typ', baseRevision: state.revision, document }).ok,
 		}
 		try {
 			editor.commands.setTextSelection(3)
@@ -845,7 +905,8 @@ describe('source projection and localized edits', () => {
 		const editor = createTypstSourceEditor({ project: state, path: 'main.typ' })
 		try {
 			const result = state.prepareEdit({
-				projection: state.open('main.typ'),
+				path: 'main.typ',
+				baseRevision: state.revision,
 				document: editor.getJSON(),
 			})
 			if (!result.ok) throw new Error(JSON.stringify(result.issues))
@@ -982,7 +1043,11 @@ describe('source projection and localized edits', () => {
 		})
 		try {
 			expect(
-				state.prepareEdit({ projection: state.open('main.typ'), document: editor.getJSON() }),
+				state.prepareEdit({
+					path: 'main.typ',
+					baseRevision: state.revision,
+					document: editor.getJSON(),
+				}),
 			).toMatchObject({ ok: true, value: { patches: [] } })
 			editor.commands.setTextSelection({ from: 1, to: 5 })
 			expect(editor.commands.unsetBold()).toBe(true)

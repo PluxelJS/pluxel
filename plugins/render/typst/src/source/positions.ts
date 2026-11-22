@@ -13,7 +13,14 @@ export interface TypstSourcePosition {
 	column: number
 }
 
-function offset(source: string, position: TypstSourcePosition): number | undefined {
+/** Convert one-based UTF-16 source coordinates to a UTF-16 offset for a source editor. */
+export function findTypstSourceOffset({
+	source,
+	position,
+}: {
+	source: string
+	position: Pick<TypstSourcePosition, 'line' | 'column'>
+}): number | undefined {
 	if (
 		!Number.isSafeInteger(position.line) ||
 		!Number.isSafeInteger(position.column) ||
@@ -28,8 +35,9 @@ function offset(source: string, position: TypstSourcePosition): number | undefin
 		start = next + 1
 	}
 	const end = source.indexOf('\n', start)
+	const lineEnd = end < 0 ? source.length : end > start && source[end - 1] === '\r' ? end - 1 : end
 	const at = start + position.column - 1
-	if (at > (end < 0 ? source.length : end)) return
+	if (at > lineEnd) return
 	if (at > 0 && /[\uD800-\uDBFF]/.test(source[at - 1]!) && /[\uDC00-\uDFFF]/.test(source[at] ?? ''))
 		return
 	return at
@@ -44,17 +52,19 @@ export function findTypstEditorPosition({
 	sourcePosition: TypstSourcePosition
 }): number | undefined {
 	if (sourcePosition.path.replace(/^\//, '') !== projection.path) return
-	const at = offset(projection.source, sourcePosition)
+	const at = findTypstSourceOffset({ source: projection.source, position: sourcePosition })
 	if (at === undefined) return
 	const byte = new TextEncoder().encode(projection.source.slice(0, at)).length
-	const entries = projection.mapping
-		.filter((entry) => byte >= entry.from && byte <= entry.to)
-		.sort(
-			(a, b) =>
-				(a.kind === 'text' ? 0 : 1) - (b.kind === 'text' ? 0 : 1) ||
-				a.to - a.from - (b.to - b.from),
+	let found: TypstSourceMapping | undefined
+	for (const entry of projection.mapping) {
+		if (byte < entry.from || byte > entry.to) continue
+		if (
+			!found ||
+			(Number(found.kind === 'text') - Number(entry.kind === 'text') ||
+				entry.to - entry.from - (found.to - found.from)) < 0
 		)
-	const found = entries[0]
+			found = entry
+	}
 	if (!found) return
 	return found.kind === 'text' && byte === found.to ? found.endPosition : found.position
 }
@@ -68,19 +78,32 @@ export function findTypstSourcePosition({
 	position: number
 }): TypstSourcePosition | undefined {
 	if (!Number.isSafeInteger(position) || position < 0) return
-	const entries = projection.mapping
-		.filter((entry) => position >= entry.position && position <= entry.endPosition)
-		.sort(
-			(a, b) =>
-				(a.kind === 'text' ? 0 : 1) - (b.kind === 'text' ? 0 : 1) ||
-				a.endPosition - a.position - (b.endPosition - b.position),
-		)
-	const found = entries[0]
+	let found: TypstSourceMapping | undefined
+	let rank = Infinity
+	for (const entry of projection.mapping) {
+		if (position < entry.position || position > entry.endPosition) continue
+		const nextRank =
+			entry.kind === 'text'
+				? position === entry.endPosition
+					? 2
+					: 0
+				: position === entry.position
+					? 1
+					: 3
+		if (
+			nextRank < rank ||
+			(nextRank === rank &&
+				entry.endPosition - entry.position < found!.endPosition - found!.position)
+		) {
+			found = entry
+			rank = nextRank
+		}
+	}
 	if (!found) return
-	let byte = found.kind === 'text' && position === found.endPosition ? found.to : found.from
+	let byte = found.from
 	const bytes = new TextEncoder().encode(projection.source)
 	// Typst attributes a markup call to its expression, excluding the leading # token.
-	if (bytes[byte] === 35 && (found.kind !== 'text' || position === found.endPosition)) byte += 1
+	if (bytes[byte] === 35 && found.kind !== 'text') byte += 1
 	const prefix = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, byte))
 	const lines = prefix.split('\n')
 	return { path: projection.path, line: lines.length, column: lines.at(-1)!.length + 1 }

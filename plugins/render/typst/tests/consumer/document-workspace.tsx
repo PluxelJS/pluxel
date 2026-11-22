@@ -30,7 +30,7 @@ interface DocumentWorkspaceValue {
 	state: DocumentClientState
 	workbench: WorkbenchInstance<AnyRouter>
 	active: string
-	focus?: { chapterId: string; position?: number; serial: number }
+	focus?: { chapterId: string; position: number; revision: number; serial: number }
 	selection?: TypstDocumentSelection
 	locate(chapterId: string, position: number, explicit?: boolean): void
 	openChapter(
@@ -225,7 +225,22 @@ function ChapterPane({ chapterId }: { chapterId: string }) {
 		}
 		setTitle(chapter.title)
 	}, [chapter?.title, content.id])
-	const focus = workspace.focus?.chapterId === chapterId ? workspace.focus : undefined
+	const focus =
+		workspace.focus?.chapterId === chapterId && workspace.focus.revision === state.view?.revision
+			? workspace.focus
+			: undefined
+	useEffect(() => {
+		const instance = editor.current
+		if (
+			chapter &&
+			!state.drafts[chapterId] &&
+			instance?.isFocused &&
+			instance.state.doc.eq(instance.schema.nodeFromJSON(chapter.document))
+		) {
+			// Re-read the caret only after the host has accepted the editor's actual content.
+			workspace.locate(chapterId, instance.state.selection.from)
+		}
+	}, [state.view?.revision, chapter?.document, state.drafts[chapterId]])
 	useEffect(() => {
 		if (focus?.position === undefined) return
 		if (source && !sourceDirty) setSource(undefined)
@@ -345,7 +360,7 @@ function ChapterPane({ chapterId }: { chapterId: string }) {
 							if (editor.current?.isFocused) workspace.locate(chapterId, position)
 						}}
 						onReference={(id, position) => {
-							void workspace.openChapter(id, position, undefined, content)
+							void workspace.openChapter(id, position, state.view?.revision, content)
 						}}
 						onReveal={(position) => {
 							workspace.locate(chapterId, position, true)
@@ -365,8 +380,8 @@ function DocumentPreview() {
 			state={state}
 			client={client}
 			selection={selection}
-			onSelect={({ documentId, position }) => {
-				void openChapter(documentId, position, state.view!.revision, source)
+			onSelect={({ documentId, position, revision }) => {
+				void openChapter(documentId, position, revision, source)
 			}}
 		/>
 	)
@@ -424,7 +439,9 @@ export function DocumentWorkspaceProvider({
 		)
 	}
 	function locate(chapterId: string, position: number, explicit = false) {
-		setSelection({ documentId: chapterId, position, explicit })
+		const revision = client.getSnapshot().view?.revision
+		if (revision === undefined) return
+		setSelection({ documentId: chapterId, position, revision, explicit })
 		if (explicit) void showPreview(true, workbench.getActiveDocument()?.handle)
 	}
 	async function openChapter(
@@ -466,8 +483,11 @@ export function DocumentWorkspaceProvider({
 		if (result.status !== 'applied' || !current()) return
 		setActive(id)
 		locate(id, position ?? 0)
+		const revision = client.getSnapshot().view?.revision
 		setFocus(
-			position === undefined ? undefined : { chapterId: id, position, serial: ++serial.current },
+			position !== undefined && revision !== undefined
+				? { chapterId: id, position, revision, serial: ++serial.current }
+				: undefined,
 		)
 		if (result.value.document.id === previousId) {
 			void workbench.activate('chapters', { presentation: 'reveal' })

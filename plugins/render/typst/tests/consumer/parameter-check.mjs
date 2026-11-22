@@ -25,6 +25,8 @@ export async function checkDefaultParameters(page, output) {
 		await host.locator('.typst-component').waitFor()
 		const baseline = await files()
 		await open()
+		await dialog.getByText('由源码决定：色调', { exact: true }).waitFor()
+		assert.equal(await dialog.getByRole('textbox', { name: '色调', exact: true }).count(), 0)
 		for (const scheme of ['light', 'dark']) {
 			await page.emulateMedia({ colorScheme: scheme })
 			for (const [layout, viewport] of [
@@ -64,6 +66,7 @@ export async function checkDefaultParameters(page, output) {
 		await apply()
 		saved = await files()
 		assert.match(saved['main.typ'], /count: 0/)
+		assert.match(saved['main.typ'], /tone: upper\("warm"\)/)
 		await undo(baseline)
 
 		await open()
@@ -82,7 +85,7 @@ export async function checkDefaultParameters(page, output) {
 		assert.match(saved['main.typ'], /title: ""/)
 		await undo(baseline)
 		return [
-			'默认参数表单：空数字恢复默认、0保留、布尔与字符串可恢复默认，空字符串独立保留，每笔撤销恢复源码字节',
+			'默认参数表单区分计算值、默认值、0 和空字符串，字面量编辑保留计算参数，每笔撤销恢复源码字节',
 		]
 	} finally {
 		await page.evaluate(() => {

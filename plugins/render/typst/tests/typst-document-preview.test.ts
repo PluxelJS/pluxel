@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { TypstDocumentPreview, type TypstDocumentPreviewData } from '../src/document/react.js'
+import { pointAtDocumentPosition } from '../src/document/navigation.js'
 
 vi.mock('../src/source/project-state.js', () => {
 	throw new Error('Loaded a source project')
@@ -30,6 +31,8 @@ const preview: TypstDocumentPreviewData = {
 			'mailto:editor@example.com',
 			'tel:+12345',
 			'/document-resources/guide',
+			'/\\other.example/guide',
+			'/\t/other.example/guide',
 			'javascript:alert(1)',
 			'data:text/html,secret',
 		].map((url, index) => ({
@@ -45,6 +48,28 @@ const preview: TypstDocumentPreviewData = {
 }
 
 describe('source-free document preview', () => {
+	it('reveals mapped text and adjacent caret endpoints without jumping across unmapped content', () => {
+		const body = {
+			documentId: 'chapter',
+			position: 3,
+			endPosition: 5,
+			page: 1,
+			x: 10,
+			y: 10,
+			width: 8,
+			height: 8,
+		}
+		const next = { ...body, position: 5, endPosition: 7, x: 40 }
+		const reused = { ...body, page: 2 }
+		const sample = { ...preview, points: [body, next, reused] }
+		const point = (position: number, page: number) =>
+			pointAtDocumentPosition(sample, { documentId: 'chapter', position }, page)
+		expect(point(3, 2)).toMatchObject(reused)
+		expect(point(5, 1)).toMatchObject(next)
+		expect(point(7, 1)).toMatchObject(next)
+		expect(point(20, 1)).toBeUndefined()
+	})
+
 	it('renders fixed native destinations and opens only supported URL schemes', () => {
 		const markup = renderToStaticMarkup(
 			createElement(TypstDocumentPreview, {
@@ -61,6 +86,7 @@ describe('source-free document preview', () => {
 		expect(markup).toContain('rel="noopener noreferrer"')
 		expect(markup).not.toContain('javascript:')
 		expect(markup).not.toContain('data:text/html')
+		expect(markup).not.toContain('other.example')
 	})
 	it.each([{ revision: 4 }, { revision: 3, pending: true }])(
 		'keeps page images visible while disabling stale or pending interaction: %j',

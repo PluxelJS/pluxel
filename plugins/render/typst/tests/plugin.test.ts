@@ -3,17 +3,24 @@ import { mkdtemp, open, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BasePlugin, Plugin } from '@pluxel/core'
+import { installOwnerViewService } from '@pluxel/core/host'
 import { requirePluginService } from '@pluxel/core/internal'
 import { FontsConfig, FontsPlugin } from '@pluxel/plugin-fonts'
 import { createTestHost, PluginLifecycleAssertionError } from '@pluxel/test'
 import {
 	defineHostApplication,
+	defineHostService,
 	envBinding,
 	fileBinding,
 	resolveHostApplication,
 } from '@pluxel/host'
 import { createResolvedHost } from '@pluxel/host/internal'
-import { nodeModules } from '@pluxel/services/node'
+import {
+	NodeModules,
+	nodeModules,
+	type NodeModuleCleanup,
+	type NodeModuleSetup,
+} from '@pluxel/services/node'
 import { attachTestNodeCompiler } from '@pluxel/services/internal/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TypstConfig, TypstPlugin, type TypstFiles, type TypstSession } from '../src/index.ts'
@@ -403,13 +410,25 @@ it('replaces template sources and removes deleted imports in the same native ses
 	expect(changed.preview.sessionId).toBe(first.preview.sessionId)
 	expect(changed.revision).toBe(first.revision + 1)
 	expect(changed.preview.data).not.toEqual(first.preview.data)
+	const image = await session.renderPage({ revision: changed.revision, page: 1 })
+	const pdf = await session.exportPdf(changed.revision)
 	await rm(join(source.root, 'shared.typ'))
 	await expect(session.update({ template: source, files: {} })).rejects.toMatchObject({
 		code: 'COMPILE_FAILED',
 	})
+	expect(await session.exportPdf(changed.revision)).toEqual(pdf)
+	expect(await session.renderPage({ revision: changed.revision, page: 1 })).toEqual(image)
+	const retained = await session.update({ files: {} })
+	expect(retained.revision).toBe(changed.revision + 1)
+	const retainedPage = await session.renderPage({ revision: retained.revision, page: 1 })
+	expect(retainedPage.data).toEqual(image.data)
+	await expect(
+		// Simulate an explicit malformed value arriving from JavaScript.
+		session.update({ template: null as never, files: {} }),
+	).rejects.toMatchObject({ code: 'INVALID_INPUT', path: 'template' })
 	await writeFile(join(source.root, 'shared.typ'), 'Repaired')
 	expect(await session.update({ template: source, files: {} })).toMatchObject({
-		revision: changed.revision + 1,
+		revision: retained.revision + 1,
 	})
 })
 
@@ -423,4 +442,43 @@ it('preserves timeout reason, closes the interrupted native session and can reop
 	await expect(interrupted.update({ files: {} })).rejects.toMatchObject({ code: 'CLOSED' })
 	await using recovered = await typst.open(await template('Recovered'))
 	expect(await recovered.update({ files: {} })).toHaveProperty('preview')
+})
+
+it('keeps sessions admitted by a new compiler artifact when the previous artifact is withdrawn', async () => {
+	let setup!: NodeModuleSetup
+	const initial = new URL('file:///test-compiler-a.mjs')
+	let activeCleanup: NodeModuleCleanup | undefined
+	await using host = await createTestHost({
+		services: [
+			defineHostService({
+				name: 'Test Node module replacement',
+				provides: [
+					installOwnerViewService(NodeModules, {
+						createRoot: () => ({}),
+						createView: (_, ctx) => ({
+							ctx,
+							async use(_declaration, accept) {
+								setup = accept
+								activeCleanup = (await setup(initial)) || undefined
+								ctx.effects.defer(() => activeCleanup?.())
+							},
+						}),
+					}),
+				],
+			}),
+		],
+	})
+	await host.commit((change) => {
+		change.catalog.add([FontsPlugin, TypstPlugin])
+		change.start([FontsPlugin.nodeAddress(), TypstPlugin.nodeAddress()])
+	})
+	const typst = host.require(TypstPlugin.nodeAddress())
+	const source = await template('Report')
+	await using oldSession = await typst.open(source)
+	const previousCleanup = activeCleanup
+	activeCleanup = (await setup(new URL('file:///test-compiler-b.mjs'))) || undefined
+	await using newSession = await typst.open(source)
+	await previousCleanup?.()
+	await expect(oldSession.exportPdf(1)).rejects.toMatchObject({ code: 'CLOSED' })
+	await expect(newSession.exportPdf(1)).rejects.toMatchObject({ code: 'STALE_REVISION' })
 })

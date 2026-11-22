@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { chooseWorkspaceFile } from './workspace-ui.mjs'
+import { clickPreviewPoint, sourcePoint } from './preview-navigation.mjs'
 
 /** User-facing form edits, source preservation, native preview and independent folder storage. */
 export async function checkApplicationForm(page, output) {
@@ -136,7 +137,22 @@ export async function checkApplicationForm(page, output) {
 	await date.fill('2026-11-02')
 	const dated = next((data) => data.date === '2026-11-02')
 	await date.press('Enter')
-	await compiled(dated)
+	const layout = await compiled(dated)
+	const title = '项目申请审批表'
+	const { point } = sourcePoint(seed, layout.preview, 'main.typ', title)
+	await clickPreviewPoint(page, point)
+	const template = page.getByRole('textbox', { name: '文件源码' })
+	await template.waitFor()
+	assert.equal(await template.isEditable(), false)
+	await page.waitForFunction((text) => {
+		const input = document.querySelector('textarea[aria-label="文件源码"]')
+		return (
+			input === document.activeElement && input.value.slice(input.selectionStart).startsWith(text)
+		)
+	}, title)
+	await template.press('ArrowRight')
+	await page.locator('.preview-pane:visible .preview-source-highlight').waitFor()
+	await chooseWorkspaceFile(page, 'data/application.json', 'application-form')
 	const filled = await snapshot()
 	assert.deepEqual(JSON.parse(filled['data/application.json']), {
 		name: '张同学',
@@ -213,6 +229,7 @@ export async function checkApplicationForm(page, output) {
 	assert.equal(await page.evaluate(() => localStorage.getItem('typst-source-project-v2')), report)
 	return [
 		'审批表文件夹：空表不改源码，字段失焦或 Enter 确认，单选立即更新，多行 Enter 保留换行，Escape 放弃输入',
+		'点击审批表标题定位只读模板原文，原文光标可跟随回预览',
 		'填报写入真实 JSON，学号前导零与特殊字符保留，模板与其他文件不变；一次撤销重做恢复整笔字段及源码字节',
 		'长内容由原生模板自动续页，完整数据保存重开且导出真实 PDF；桌面明暗主题可用，两个文件夹通过树切换且 URL 不变，数据与撤销历史隔离并保留',
 	]
