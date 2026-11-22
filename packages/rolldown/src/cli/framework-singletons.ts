@@ -2,6 +2,9 @@ import type { Plugin, ResolvedId } from 'rolldown'
 import { dirname } from 'pathe'
 import { resolveWithOxc } from '../resolver/oxc'
 
+/** Official Services resolve as one published build; see the comment in resolveId. */
+const PublishedServicesPackage = '@pluxel/services'
+
 /** Shared framework identities always resolve through the application, including package subpaths. */
 export function staticFrameworkSingletonPlugin(
 	entry: string,
@@ -16,25 +19,27 @@ export function staticFrameworkSingletonPlugin(
 		},
 		resolveId(id, _importer, options) {
 			const name = packageName(id)
-			const publishedPlugins = id === '@pluxel/services/plugins'
-			if (!name || (!packages.has(name) && !publishedPlugins)) return null
+			const published = name === PublishedServicesPackage
+			if (!name || (!packages.has(name) && !published)) return null
 			let resolution = resolutions.get(id)
 			if (!resolution) {
-				// The official Services Plugin entry owns a published Workbench inventory. Resolve
-				// that exact entry as published, rather than rebuilding it through @pluxel/hmr
-				// and then merging a second producer with the same revision. Other Services
-				// imports are not made singletons by this rule; ordinary Plugin HMR is unchanged.
-				const published = publishedPlugins
+				// The official Services Plugin entry owns a published Workbench inventory, so it must
+				// not be rebuilt through @pluxel/hmr (that would merge a second producer with the
+				// same revision). Its published chunks carry their own copy of the Services
+				// capability tokens (Vault, database, …), and Context capabilities are compared by
+				// identity: every other Services entry must come from the same published build, or
+				// a Plugin such as VaultAdminPlugin requires a Vault the host never installed.
+				const publishedEntry = published
 					? resolveWithOxc(dirname(entry), id, {
 							conditionNames: ['node', 'import', 'module', 'production', 'default'],
 							tsconfig: false,
 						})
 					: undefined
-				if (publishedPlugins && !published)
+				if (published && !publishedEntry)
 					this.error(
-						`[static-application] Cannot resolve published Plugin entry ${id} from ${entry}`,
+						`[static-application] Cannot resolve published Services entry ${id} from ${entry}`,
 					)
-				resolution = this.resolve(published?.path ?? id, entry, {
+				resolution = this.resolve(publishedEntry?.path ?? id, entry, {
 					...options,
 					skipSelf: true,
 				}).then((resolved) => {

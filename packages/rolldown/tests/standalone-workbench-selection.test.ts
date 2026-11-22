@@ -97,7 +97,11 @@ await build({ cwd: ${JSON.stringify(root)}, entry: 'app.ts', minify: true, plugi
 	expect(built.stdout).not.toContain('SELECTION_FACTORY_EVALUATED')
 }
 
-async function assertRuntimeCatalog(root: string, names: readonly string[]): Promise<void> {
+async function assertRuntimeCatalog(
+	root: string,
+	names: readonly string[],
+	running: readonly string[] = [],
+): Promise<void> {
 	const runtime = await exec(
 		process.execPath,
 		[
@@ -108,6 +112,9 @@ import assert from 'node:assert/strict'
 const application = await import(${JSON.stringify(pathToFileURL(join(root, 'dist/app.mjs')).href)})
 try {
  assert.deepEqual(globalThis.__selectionHost.catalog().entries.map(entry => entry.address.exportName).sort(), ${JSON.stringify(names)})
+ // A selected official Plugin must start against the Services the host installed.
+ const { statuses } = await globalThis.__selectionHost.status()
+ assert.deepEqual(statuses.filter(node => node.lifecycleState === 'running').map(node => node.rootExportName).sort(), ${JSON.stringify(running)})
 } finally { await application.stop() }
 console.log('SELECTION_RUNTIME_CLOSED')
 `,
@@ -139,6 +146,7 @@ export default defineHostApplication(async startup => {
  return {
   name: 'services-selection',
   plugins: ${selected ? '[VaultAdminPlugin]' : '[]'},
+  ${selected ? 'policy: { autoStart: [VaultAdminPlugin] },' : ''}
   services: await servicesPreset(startup, { vault: { backend: 'bindings' }, workbench: true }),
   prepare: ({ host }) => { globalThis.__selectionHost = host },
  }
@@ -177,7 +185,7 @@ export default defineHostApplication(async startup => {
 				)
 			}
 			await rm(join(root, 'app.ts'))
-			await assertRuntimeCatalog(root, names)
+			await assertRuntimeCatalog(root, names, names)
 		} finally {
 			await rm(root, { recursive: true, force: true })
 		}
