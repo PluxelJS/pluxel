@@ -2,7 +2,7 @@
 
 应用 preset 决定包边界、runtime closure 与最终部署目录。Plugin 声明由 [Toolchain](TOOLCHAIN.md)分析，独立 browser/Node 制品由 [Artifact Build](ARTIFACT_BUILD.md)生成，完整性和签名由 [Distribution](DISTRIBUTION.md)维护。
 
-构建宿主为 `vite-plus/pack` 的 tsdown API，pluxel() 保持 tsdownConfig hook。`tsdown.config.ts` 拥有选项，`vite.config.ts.pack` 引用同配置；冷扫描不能提前加载框架产物的任务，在前置完成后通过 `scripts/pack.mjs` 调 build({ config: '`tsdown.config.ts`', watch: false })。vp pack --config 不选择独立 tsdown 配置。
+构建宿主为 `vite-plus/pack` 的 tsdown API，pluxel() 保持 tsdownConfig hook。`tsdown.config.ts` 拥有选项。配置可从 `vite.config.ts.pack` 引用。依赖框架产物的配置由 Vite Task 在前置完成后通过 `scripts/pack.mjs` 使用 tsx 加载，保留相对 TypeScript 导入的解析。
 
 同次编译生成 control/ 声明、闭包和配置源码。modules metadata 与 standalone bootstrap 分别绑定所属材料，运行端不安装源码编译器；规则见 [Plugin Control](PLUGIN_CONTROL.md)。
 

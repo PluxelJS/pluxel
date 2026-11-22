@@ -1,9 +1,7 @@
 import { defineConfig } from 'vite-plus'
 import { repositoryTasks } from '../../scripts/vite-tasks'
-import packConfig from './tsdown.config'
 
 export default defineConfig({
-	pack: packConfig,
 	run: {
 		tasks: repositoryTasks({
 			compile: {
@@ -32,7 +30,7 @@ export default defineConfig({
 				],
 			},
 			'compile-lib': {
-				command: 'vp pack',
+				command: 'node ../../scripts/pack.mjs',
 				dependsOn: ['compile-web'],
 			},
 		}),
