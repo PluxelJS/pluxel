@@ -37,7 +37,7 @@ export default defineConfig(() => {
 				command:
 					script === 'build'
 						? 'node scripts/check-source-declarations.mjs'
-						: script === 'typecheck'
+						: script === 'typecheck' && scope !== 'plugins'
 							? 'tsc --noEmit --pretty false -p scripts/tsconfig.json'
 							: [],
 				cache: false,
