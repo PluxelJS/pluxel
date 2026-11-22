@@ -640,7 +640,7 @@ export abstract class Cache extends BasePlugin implements CacheNamespace {
 /**
  * Caller-aware coordinator with synchronous local caching and a polymorphic async backend.
  */
-@Plugin(Cache)
+@Plugin(Cache, { displayName: 'Cache' })
 export class CachePlugin extends Cache {
 	protected readonly config = this.configs.use(CacheConfig)
 	private readonly runtime: CacheRuntime = {
@@ -871,7 +871,7 @@ export class CachePlugin extends Cache {
 	}
 }
 
-@Plugin(CacheBackend)
+@Plugin(CacheBackend, { displayName: 'Memory Cache Backend' })
 export class MemoryCacheBackendPlugin extends CacheBackend {
 	private readonly config = this.configs.use(MemoryCacheBackendConfig)
 	/** Caller-bound dependency views inherit this reference, so all mutations stay provider-owned. */

@@ -207,7 +207,7 @@ type DefaultFontState = {
 	resolvedFamilies?: Readonly<{ revision: number; snapshot: readonly FontFamilySnapshot[] }>
 }
 
-@Plugin()
+@Plugin({ displayName: 'Fonts' })
 export class FontsPlugin extends BasePlugin {
 	private readonly config = this.configs.use(FontsConfig)
 	private readonly registrations = new Set<OwnedRegistration>()

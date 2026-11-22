@@ -97,7 +97,7 @@ const mutationInput = obj({
 	}),
 })
 
-@Plugin({ startTimeoutMs: 120_000 })
+@Plugin({ displayName: 'Package Manager', startTimeoutMs: 120_000 })
 export class PackageManagerPlugin extends BasePlugin {
 	private readonly config = this.configs.use(PackageManagerConfig)
 	private store?: ManagedPackageStore

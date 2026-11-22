@@ -245,7 +245,7 @@ export abstract class Otel extends BasePlugin {
 }
 
 /** Optional OTLP/Prometheus preset configured through OtelConfig and standard OTEL_* inputs. */
-@Plugin(Otel)
+@Plugin(Otel, { displayName: 'OpenTelemetry' })
 export class OtelPlugin extends Otel {
 	private readonly config = this.configs.use(OtelConfig)
 

@@ -15,7 +15,7 @@ const renderTask = defineWorkerTask<RenderWorkerRequest, Uint8Array | string>(
 )
 
 /** Takumi's native API, available through the Pluxel dependency graph. */
-@Plugin()
+@Plugin({ displayName: 'Takumi' })
 export class TakumiPlugin extends BasePlugin {
 	render(...args: Parameters<typeof render>): ReturnType<typeof render> {
 		return render(...args)

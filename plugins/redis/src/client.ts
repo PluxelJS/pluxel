@@ -147,7 +147,7 @@ type RedisOwnerState = {
 }
 
 /** Credential-free standalone provider for a bounded catalog of named Redis connections. */
-@Plugin(Redis)
+@Plugin(Redis, { displayName: 'Redis' })
 export class RedisPlugin extends Redis {
 	private readonly config = this.configs.use(RedisConfig)
 	private ids: readonly string[] = Object.freeze([])
