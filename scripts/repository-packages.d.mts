@@ -1,4 +1,5 @@
 export declare const repositoryRoot: string
+export declare const officialPluginsRepository: string
 export declare function rootWorkspaceDependencyErrors(manifest: any, packages: any): string[]
 export declare function isPublishablePackage({
 	kind,
@@ -7,6 +8,7 @@ export declare function isPublishablePackage({
 	kind: any
 	manifest: any
 }): boolean
+export declare function isFrameworkReleasePackage(pkg: { kind: string; manifest: any }): boolean
 /**
  * Local tarballs needed by a published consumer; development and optional peer links stay external.
  * @param {Awaited<ReturnType<typeof readRepositoryPackages>>} packages

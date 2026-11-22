@@ -1,0 +1,162 @@
+name: Publish a Pluxel plugin
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: Name of the uploaded plugin tarball artifact
+        type: string
+        default: pluxel-plugin
+      package-name:
+        description: Exact package name to publish from a multi-package workspace
+        type: string
+      framework-ref:
+        description: Exact Pluxel commit for a plugins workspace developed as the framework's plugins submodule
+        type: string
+      market-url:
+        description: HTTPS market origin for the OIDC notification
+        type: string
+      wait-for-indexing:
+        description: Wait up to six minutes for the market receipt to reach a terminal state
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  build:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/plugin-build.yml
+    with:
+      artifact-name: ${{ inputs.artifact-name }}
+      package-name: ${{ inputs.package-name }}
+      framework-ref: ${{ inputs.framework-ref }}
+
+  publish:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+    outputs:
+      name: ${{ steps.package.outputs.name }}
+      version: ${{ steps.package.outputs.version }}
+      market: ${{ steps.package.outputs.market }}
+    steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: ${{ runner.temp }}/pluxel-artifact
+          merge-multiple: true
+      - name: Read package coordinates
+        id: package
+        env:
+          MARKET_URL: ${{ inputs.market-url }}
+          PACKAGE_NAME: ${{ inputs.package-name }}
+        run: |
+          set -euo pipefail
+          tar -xOf "$RUNNER_TEMP/pluxel-artifact/plugin.tgz" package/package.json |
+            node --input-type=module -e '
+              import { readFileSync } from "node:fs"
+              const { name, version, private: isPrivate } = JSON.parse(readFileSync(0, "utf8"))
+              if (typeof name !== "string" || !/^(@[a-z0-9._-]+\/)?[a-z0-9._-]+$/.test(name)
+                || typeof version !== "string" || !/^[0-9][0-9A-Za-z.+-]+$/.test(version)) {
+                throw new Error("The packaged manifest must contain a package name and version")
+              }
+              if (process.env.PACKAGE_NAME && name !== process.env.PACKAGE_NAME) {
+                throw new Error("The packaged name does not match package-name")
+              }
+              if (isPrivate) throw new Error("The selected package is private")
+              console.log(`name=${name}\nversion=${version}`)
+              if (process.env.MARKET_URL) {
+                const market = new URL(process.env.MARKET_URL)
+                if (market.protocol !== "https:" || market.href !== `${market.origin}/`) {
+                  throw new Error("market-url must be an HTTPS origin")
+                }
+                console.log(`market=${market.origin}`)
+              }
+            ' >> "$GITHUB_OUTPUT"
+      - name: Publish to npm with Trusted Publishing
+        run: npm publish "$RUNNER_TEMP/pluxel-artifact/plugin.tgz" --registry=https://registry.npmjs.org --access=public --provenance --ignore-scripts
+
+  notify:
+    needs: publish
+    if: needs.publish.outputs.market != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      id-token: write
+    steps:
+      - name: Send OIDC market notification
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          MARKET: ${{ needs.publish.outputs.market }}
+          NAME: ${{ needs.publish.outputs.name }}
+          VERSION: ${{ needs.publish.outputs.version }}
+          WAIT_FOR_INDEXING: ${{ inputs.wait-for-indexing }}
+        with:
+          script: |
+            const { MARKET, NAME, VERSION, WAIT_FOR_INDEXING } = process.env
+            const endpoint = new URL('/v1/notifications', MARKET)
+            const coordinate = { registry: 'https://registry.npmjs.org', name: NAME, version: VERSION }
+            const summary = core.summary.addHeading('Pluxel Market')
+              .addRaw(`npm published ${NAME}@${VERSION}`, true)
+            let receiptUrl
+            let receipt
+            async function readReceipt(response) {
+              const value = await response.json()
+              if (!response.ok) {
+                const code = /^[a-z][a-z0-9-]{0,63}$/.test(value?.code ?? '') ? ` (${value.code})` : ''
+                throw new Error(`Market returned HTTP ${response.status}${code}`)
+              }
+              if (!/^[\w-]{1,64}$/.test(value?.id ?? '')
+                  || Object.entries(coordinate).some(([key, expected]) => value[key] !== expected)
+                  || !['pending', 'processing', 'indexed', 'failed'].includes(value.status)) {
+                throw new Error('Market returned an invalid receipt')
+              }
+              return value
+            }
+            try {
+              const token = await core.getIDToken(endpoint.href)
+              const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(coordinate),
+                redirect: 'error',
+                signal: AbortSignal.timeout(10_000),
+              })
+              receipt = await readReceipt(response)
+              receiptUrl = new URL(`/v1/notifications/${receipt.id}`, MARKET)
+              const active = () => ['pending', 'processing'].includes(receipt.status)
+              if (WAIT_FOR_INDEXING === 'true') {
+                const deadline = Date.now() + 360_000
+                while (active() && Date.now() + 15_000 < deadline) {
+                  await new Promise((resolve) => setTimeout(resolve, 15_000))
+                  const next = await readReceipt(await fetch(receiptUrl, {
+                    redirect: 'error',
+                    signal: AbortSignal.timeout(Math.min(10_000, Math.max(1, deadline - Date.now()))),
+                  }))
+                  if (next.id !== receipt.id) throw new Error('Market returned a different receipt ID')
+                  receipt = next
+                }
+                if (active()) throw new Error('Market indexing did not finish within six minutes')
+              }
+              if (receipt.status === 'failed') {
+                const code = typeof receipt.code === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(receipt.code)
+                  ? ` (${receipt.code})` : ''
+                throw new Error(`Market indexing failed${code}`)
+              }
+            } finally {
+              if (receiptUrl) {
+                summary.addLink('Market receipt', receiptUrl.href).addRaw(` · ${receipt.status}`, true)
+              } else {
+                summary.addRaw('Market receipt unavailable', true)
+              }
+              await summary.write()
+            }
