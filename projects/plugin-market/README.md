@@ -28,6 +28,34 @@ Cloudflare Worker + D1 是唯一可写主站，负责目录、上游观测、制
 
 Wrangler 的 D1 ID 默认只供本地运行；远程部署方需创建 D1、设置实际 ID、保存 secrets 并显式应用迁移。`compile` 构建静态网页后执行部署 dry-run。运行时不清空或自动修复数据库。
 
+## GitHub Actions 发布通知
+
+在公开来源的 `githubPublishers` 登记精确包名和获准的 workflow。可为同一包登记多个调用方或并行过渡的固定 SHA。插件仓库的数字 ID 和 owner ID 可从 `gh api repos/OWNER/REPO --jq '[.id, .owner.id]'` 查询。
+
+```json
+[
+	{
+		"registry": "https://registry.npmjs.org",
+		"access": "public",
+		"githubPublishers": [
+			{
+				"name": "@acme/pluxel-plugin-orders",
+				"repositoryId": "123456",
+				"repositoryOwnerId": "789012",
+				"workflowRef": "acme/orders/.github/workflows/publish.yml@refs/heads/main",
+				"jobWorkflowRef": "PluxelJS/pluxel/.github/workflows/plugin-publish.yml@0123456789abcdef0123456789abcdef01234567"
+			}
+		]
+	}
+]
+```
+
+通知发送到 `POST /v1/notifications`，正文仍是 `{ registry, name, version }`。Worker 用 GitHub 的公开 JWKS 验证 JWT、有效期和 audience。Audience 使用该通知端点的完整 URL，例如 `https://market.example.com/v1/notifications`。授权核对调用方的两个数字 ID、`workflow_ref` 和实际 Git ref，并在配置了 `jobWorkflowRef` 时核对 SHA 固定的 `job_workflow_ref`。省略 `jobWorkflowRef` 表示只约束调用方 workflow。允许的 GitHub 事件是 `push`、`workflow_dispatch` 和 `release`。配置中的 workflow ref 按 GitHub claim 的实际拼写填写。
+
+登记过的包要求 OIDC bearer 或市场管理员凭据。公开来源里其余包仍可匿名提交。无效或缺少 JWT 返回 `401 github-oidc-invalid`，身份未授权返回 `403 github-oidc-publisher-denied`，无法读取验证密钥返回 `503 github-oidc-unavailable`。公开回执仍可匿名查询。管理 API 的 `githubPublisher` 记录首次接收时的 workflow ref、run ID 与 attempt，历史回执和通过其他凭据接收的记录为 `null`。同一坐标复用原记录。
+
+调用方示例见 [GitHub Actions](../../docs/development/plugin-market.md#github-actions)。需先应用 D1 迁移再部署此 Worker。OIDC 处理通知者身份，发行的 npm provenance 由制品验证链处理。
+
 ## 独立网页与官网挂载
 
 启动现有市场服务后直接访问市场根地址，例如 `http://127.0.0.1:8787/`。Wrangler Workers Static Assets 与本地 Miniflare 使用同一 `dist/web`；`/v1` 和 `/admin` 保持 Worker 处理，未找到的路径不会回退成首页。`dev` 和 `dev:sandbox` 启动前通过同一个 `compile-web` 任务构建网页，无独立前端服务。

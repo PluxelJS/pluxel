@@ -43,6 +43,13 @@
 			"when": 1795081521873,
 			"tag": "0005_package_authors",
 			"breakpoints": true
+		},
+		{
+			"idx": 6,
+			"version": "6",
+			"when": 1795323742212,
+			"tag": "0006_fat_pestilence",
+			"breakpoints": true
 		}
 	]
 }

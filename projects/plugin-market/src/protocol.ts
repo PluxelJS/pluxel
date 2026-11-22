@@ -92,8 +92,11 @@ export type NotificationQuery = {
 	limit?: number
 }
 
+export type GitHubNotificationPublisher = { workflowRef: string; runId: string; runAttempt: string }
+
 export type NotificationDetail = Receipt & {
 	diagnostic: string | null
+	githubPublisher: GitHubNotificationPublisher | null
 	retry: 'available' | 'not-failed' | 'attempts-exhausted' | 'provenance-runtime-unsupported'
 }
 

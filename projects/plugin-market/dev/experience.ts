@@ -102,6 +102,9 @@ async function prepare() {
 	const core = JSON.parse(
 		await readFile(resolve(repositoryRoot, 'packages/core/package.json'), 'utf8'),
 	) as { version: string }
+	const host = JSON.parse(
+		await readFile(resolve(repositoryRoot, 'packages/host/package.json'), 'utf8'),
+	) as { version: string }
 	const files = {
 		'package.json': `${JSON.stringify(
 			{
@@ -117,7 +120,11 @@ async function prepare() {
 					},
 				},
 				files: ['dist', '!**/*.map'],
-				peerDependencies: { '@pluxel/core': `^${core.version}` },
+				peerDependencies: {
+					'@pluxel/core': `^${core.version}`,
+					'@pluxel/host': `^${host.version}`,
+				},
+				peerDependenciesMeta: { '@pluxel/host': { optional: true } },
 				publishConfig: { registry: session.registryUrl, access: 'public', provenance: false },
 			},
 			null,

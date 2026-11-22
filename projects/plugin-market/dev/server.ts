@@ -114,6 +114,9 @@ try {
 	}
 	const columns = await db.prepare('PRAGMA table_info(packages)').all<{ name: string }>()
 	const releaseColumns = await db.prepare('PRAGMA table_info(releases)').all<{ name: string }>()
+	const notificationColumns = await db
+		.prepare('PRAGMA table_info(notifications)')
+		.all<{ name: string }>()
 	const catalog = await db
 		.prepare("SELECT name FROM sqlite_master WHERE name IN ('package_search', 'market_authors')")
 		.all<{ name: string }>()
@@ -132,6 +135,7 @@ try {
 		!['readme', 'license'].every((name) =>
 			releaseColumns.results.some((column) => column.name === name),
 		) ||
+		!notificationColumns.results.some((column) => column.name === 'github_publisher') ||
 		catalog.results.length !== 2
 	)
 		throw new Error(

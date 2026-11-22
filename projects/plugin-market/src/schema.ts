@@ -7,7 +7,7 @@ import {
 	text,
 	uniqueIndex,
 } from 'drizzle-orm/sqlite-core'
-import type { MarketCuration, Provenance } from './protocol'
+import type { GitHubNotificationPublisher, MarketCuration, Provenance } from './protocol'
 
 export const authors = sqliteTable('market_authors', {
 	id: text('id').primaryKey(),
@@ -93,6 +93,9 @@ export const notifications = sqliteTable(
 		leaseUntil: integer('lease_until'),
 		code: text('code'),
 		diagnostic: text('diagnostic'),
+		githubPublisher: text('github_publisher', {
+			mode: 'json',
+		}).$type<GitHubNotificationPublisher>(),
 	},
 	(table) => [
 		uniqueIndex('notification_coordinate').on(table.registry, table.name, table.version),
