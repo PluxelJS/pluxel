@@ -19,13 +19,15 @@
 准备全局 Vite+、Node.js 24+、hk 与 Pitchfork，安装方式见[工作区工具链](./docs/development/workspace-toolchain.md)。在仓库根目录运行：
 
 ```sh
-git clone https://github.com/PluxelJS/pluxel.git
+git clone --recurse-submodules https://github.com/PluxelJS/pluxel.git
 cd pluxel
 vp install --frozen-lockfile
 vp run @pluxel/cli#compile
 vp run hooks:install
 vp run verify
 ```
+
+已有 checkout 可在安装依赖前运行 `git submodule update --init --recursive`。官方插件在同一工作区的 `plugins/` 中联调，源码提交和评审在插件仓完成。框架仓提交经过验证的 submodule 指针。[官方插件开发与发布](https://github.com/PluxelJS/plugins#开发与发布)
 
 日常开发常用命令：
 

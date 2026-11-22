@@ -2,7 +2,7 @@
 
 状态：市场浏览与安装已整合到 Package Manager；本页保留认证与结果交互的待办。上级：[提案总览](README.md)。
 
-现有可选 `markets` 配置、直接安装、分页浏览、所选 registry、prepare/confirm 与独立 React 组件见 [Package Manager 用法](../../../docs/plugins/package-manager.md)。请求、缓存与安装所有权由[内部设计](../../../plugins/package-manager/DESIGN.md)维护。
+现有可选 `markets` 配置、直接安装、分页浏览、所选 registry、prepare/confirm 与独立 React 组件见 [Package Manager 用法](../../../docs/plugins/package-manager.md)。请求、缓存与安装所有权由[内部设计](https://github.com/PluxelJS/plugins/blob/main/package-manager/DESIGN.md)维护。
 
 ## 私有市场访问
 

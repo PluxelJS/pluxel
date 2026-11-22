@@ -76,7 +76,7 @@ export default defineHostApplication(async (startup) => {
 
 普通静态应用只需填写 `plugins`。仅由管理端操作动态节点的应用可以只声明 `sources`。`plugins`、`sources` 和 `pluginNodes` 省略时各自视为空。`name` 命名应用及根实例。`prepare`、`acceptStartup` 和 `launch` 分别负责启动前准备、启动结果判定和发布。
 
-这套结构替换分散的实现清单、启动名单、`config.records` 与顶层绑定。已有调用能看到同一身份在不同入口重复出现。[脚手架](../../packages/create/template/host/src/policy.ts)、[示例应用清单](../../projects/plugin-host/src/showcase/catalog.ts)、[应用策略](../../projects/plugin-host/src/showcase/policy.ts)、[Invoice 应用](../../plugins/browser/invoice/examples/application.ts)
+这套结构替换分散的实现清单、启动名单、`config.records` 与顶层绑定。已有调用能看到同一身份在不同入口重复出现。[脚手架](../../packages/create/template/host/src/policy.ts)、[示例应用清单](../../projects/plugin-host/src/showcase/catalog.ts)、[应用策略](../../projects/plugin-host/src/showcase/policy.ts)、[Invoice 应用](https://github.com/PluxelJS/plugins/blob/main/browser/invoice/examples/application.ts)
 
 ## 插件声明与地址
 
@@ -120,7 +120,7 @@ sources: [
 ]
 ```
 
-`file` 精确指定一个入口，缺失报错。`directory` 按非空的正向 `include` glob 匹配目录内的入口，目录尚未创建时视为尚无入口。路径可以是绝对路径或相对应用根目录的路径。Host 验证文件类型、路径范围和符号链接规则，合并重复入口。现有发布方的 `requirePluginSource()` 同样用此对象形状声明所需覆盖。Host 接纳时统一验证和快照，删除只用于封装这一步的公开 `pluginSource()` helper。[当前路径解析](../../packages/host/src/source-discovery.ts)、[发布覆盖](../../plugins/package-manager/src/index.ts)
+`file` 精确指定一个入口，缺失报错。`directory` 按非空的正向 `include` glob 匹配目录内的入口，目录尚未创建时视为尚无入口。路径可以是绝对路径或相对应用根目录的路径。Host 验证文件类型、路径范围和符号链接规则，合并重复入口。现有发布方的 `requirePluginSource()` 同样用此对象形状声明所需覆盖。Host 接纳时统一验证和快照，删除只用于封装这一步的公开 `pluginSource()` helper。[当前路径解析](../../packages/host/src/source-discovery.ts)、[发布覆盖](https://github.com/PluxelJS/plugins/blob/main/package-manager/src/index.ts)
 
 路径、glob 和来源数组由 `defineHostApplication(startup)` 的普通 TypeScript 代码计算。可以用 `resolve()`、环境变量、条件和 `map()`，工厂返回完成求值的数据。Host 以本次声明选定的入口为准。共享发布路径可以用普通常量表达。路径变化经应用工厂重求值接纳，来源文件变化使用本次已接纳的来源规则。
 

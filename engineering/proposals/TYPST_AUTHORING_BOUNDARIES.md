@@ -1,6 +1,6 @@
 # Typst 原生正文与排版重构结项
 
-2026-11-20 完成切换。接口与运行行为由[公开编辑指南](../../docs/plugins/rendering/typst-editor.md)、[包设计](../../plugins/render/typst/DESIGN.md)和[运行样本](../../plugins/render/typst/tests/consumer/README.md)维护。
+2026-11-20 完成切换。接口与运行行为由[公开编辑指南](../../docs/plugins/rendering/typst-editor.md)、[包设计](https://github.com/PluxelJS/plugins/blob/main/render/typst/DESIGN.md)和[运行样本](https://github.com/PluxelJS/plugins/blob/main/render/typst/tests/consumer/README.md)维护。
 
 - 编辑、源码输入与 Agent 共用正文转换和接纳规则。每章保存规范化的 `.typ`，Tiptap 文档及位置按源码修订重建。`/document` 提供独立的解析、生成和位置类型。
 - 分章项目书在一个会话内复用固定模板，正文通过动态文件表更新。native 导航返回参与排版的实际源码位置，宿主按编译快照发布编辑器定位、页图和链接。

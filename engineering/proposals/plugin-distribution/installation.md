@@ -2,7 +2,7 @@
 
 状态：pnpm 获取、不可变安装与 prepare/confirm 已实现；本页保留 Host 影响、持久结果及制品清理的设计。上级：[提案总览](README.md)。
 
-当前 API 与默认策略见 [Package Manager 用法](../../../docs/plugins/package-manager.md)；来源核对、私有 revision、候选失效、部分发布结果与离线维护由[内部设计](../../../plugins/package-manager/DESIGN.md)维护。
+当前 API 与默认策略见 [Package Manager 用法](../../../docs/plugins/package-manager.md)；来源核对、私有 revision、候选失效、部分发布结果与离线维护由[内部设计](https://github.com/PluxelJS/plugins/blob/main/package-manager/DESIGN.md)维护。
 
 ## 发行身份与 Host 身份
 

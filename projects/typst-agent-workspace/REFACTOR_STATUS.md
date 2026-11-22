@@ -8,7 +8,7 @@
 
 一条编辑路径：读取文件快照 → 解析和投影 → 原生 Tiptap 事务 → 保真补丁预检 → 项目原子接纳 → 宿主持久化及同一编译 session 更新。项目拥有跨文件事务、冲突与 undo/redo；宿主拥有磁盘 CAS、权限、外部监听和编译调度。保存草稿、结构化可编辑和编译成功分别报告，无效原文可保存，旧预览保留其旧回执。
 
-解析范围和补丁使用 UTF-8 字节；JS 字符串和 ProseMirror 文本使用 UTF-16，节点位置另含结构 token。native 定位为 1-based UTF-16 行列，编译诊断为 0-based UTF-16；转换显式处理转义、emoji、组合字符、CRLF 和 `#` 边界。完整职责与短公开调用见 [DESIGN](../../plugins/render/typst/DESIGN.md) 和 [源码编辑用法](../../docs/plugins/rendering/typst-editor.md)。
+解析范围和补丁使用 UTF-8 字节；JS 字符串和 ProseMirror 文本使用 UTF-16，节点位置另含结构 token。native 定位为 1-based UTF-16 行列，编译诊断为 0-based UTF-16；转换显式处理转义、emoji、组合字符、CRLF 和 `#` 边界。完整职责与短公开调用见 [DESIGN](https://github.com/PluxelJS/plugins/blob/main/render/typst/DESIGN.md) 和 [源码编辑用法](../../docs/plugins/rendering/typst-editor.md)。
 
 ## 既有能力迁移矩阵
 
