@@ -226,8 +226,8 @@ import { workbench } from '@pluxel/workbench'
 import { RpcTarget } from 'capnweb'
 import type { Workbench } from '@pluxel/workbench'
 const WorkbenchRef = defineServiceRef<Workbench>()
-export const OwnerWorkbench = workbench.define({
- panel: workbench.view({ renderer: workbench.entry(import.meta.url, './panel.tsx'), placement: workbench.tab({ label: 'Peer' }) }),
+export const OwnerWorkbench = workbench.define(import.meta.url, {
+ panel: workbench.view({ renderer: './panel.tsx', placement: { kind: 'tab', label: 'Peer' } }),
 })
 @Plugin()
 export class Owner extends BasePlugin {

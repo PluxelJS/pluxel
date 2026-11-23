@@ -38,9 +38,9 @@ const identity = parseWorkbenchDeclarationIdentity({
 	owner: definition,
 	key: 'settings',
 })
-const renderer = workbench.entry(import.meta.url, './fixtures/settings.tsx')
-const SettingsWorkbench = workbench.define({
-	settings: workbench.view<SettingsApi>({ renderer, placement: workbench.tab() }),
+const renderer = './fixtures/settings.tsx'
+const SettingsWorkbench = workbench.define(import.meta.url, {
+	settings: workbench.view<SettingsApi>({ renderer, placement: { kind: 'tab' } }),
 })
 const ref = Object.freeze({
 	profile: 1 as const,

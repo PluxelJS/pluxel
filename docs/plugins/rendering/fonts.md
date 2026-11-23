@@ -138,20 +138,28 @@ envBinding({
 `FontsPlugin` 提供了开箱即用的控制台挂件（Attachment），可直接嵌入业务插件的详情页中：
 
 ```ts no-twoslash
-import { defineServiceRef } from '@pluxel/core'
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
+import { FontsPlugin } from '@pluxel/plugin-fonts'
 import { FontsWorkbench } from '@pluxel/plugin-fonts/workbench'
 import { workbench, type Workbench } from '@pluxel/workbench'
 
 const WorkbenchRef = defineServiceRef<Workbench>()
 
-export const ReportsWorkbench = workbench.define({
-	fonts: FontsWorkbench.selection.place(workbench.tab({ label: 'Fonts' })),
+export const ReportsWorkbench = workbench.define(import.meta.url, {
+	fonts: FontsWorkbench.selection.place({ kind: 'tab', label: 'Fonts' }),
 })
 
-protected override init() {
-	this.ctx.service(WorkbenchRef)?.publish(ReportsWorkbench, {
-		fonts: { provider: this.fonts },
-	})
+@Plugin()
+export class ReportsPlugin extends BasePlugin {
+	constructor(private readonly fonts: FontsPlugin) {
+		super()
+	}
+
+	protected override init() {
+		this.ctx.service(WorkbenchRef)?.publish(ReportsWorkbench, {
+			fonts: { provider: this.fonts },
+		})
+	}
 }
 ```
 

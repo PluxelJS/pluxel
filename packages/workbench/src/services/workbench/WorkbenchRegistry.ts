@@ -27,8 +27,6 @@ import { RpcTarget } from 'capnweb'
 import {
 	readWorkbenchDefinition,
 	readWorkbenchDescriptor,
-	readWorkbenchMarkdownDocument,
-	readWorkbenchRendererEntry,
 	type AnyWorkbenchDefinition,
 	type WorkbenchAttachmentOpenContext,
 	type WorkbenchContentFactory,
@@ -469,11 +467,7 @@ export class WorkbenchRegistry {
 	): PublishedTarget {
 		const metadata = readWorkbenchDefinition(definition)
 		const expectedKeys = metadata.entries
-			.filter(
-				(entry) =>
-					entry.kind !== 'content' ||
-					Object.keys(readWorkbenchMarkdownDocument(entry.document).slots).length > 0,
-			)
+			.filter((entry) => entry.kind !== 'content' || Object.keys(entry.slots).length > 0)
 			.map((entry) => entry.key)
 			.sort()
 		if (expectedKeys.length === 0 && bindings.length > 0) {
@@ -508,14 +502,14 @@ export class WorkbenchRegistry {
 					const resolved = this.content.resolveContent(
 						owner.pluginInfo.definitionAddress,
 						descriptorIdentity,
-						descriptor.document,
+						descriptor.slots,
 					)
 					if (!resolved) {
 						throw new TypeError(
 							`[workbench] no committed Content artifact for Content "${descriptor.key}"`,
 						)
 					}
-					const contract = prepareWorkbenchContentContract(descriptor.document, resolved.plan)
+					const contract = prepareWorkbenchContentContract(descriptor.slots, resolved.plan)
 					const interactive = contract.presentation.slots.length > 0
 					entries.set(
 						descriptor.key,
@@ -639,7 +633,7 @@ export class WorkbenchRegistry {
 					!this.content.resolveContent(
 						candidate.owner.pluginInfo.definitionAddress,
 						descriptor,
-						entry.metadata.document,
+						entry.metadata.slots,
 					)
 				) {
 					throw new TypeError(
@@ -742,7 +736,7 @@ export class WorkbenchRegistry {
 			const resolved = this.content.resolveContent(
 				target.owner.pluginInfo.definitionAddress,
 				descriptor,
-				entry.metadata.document,
+				entry.metadata.slots,
 			)
 			if (!resolved) return null
 			return Object.freeze({
@@ -877,7 +871,7 @@ export class WorkbenchRegistry {
 			const content = this.content.resolveContent(
 				target.owner.pluginInfo.definitionAddress,
 				layoutEntry.descriptor,
-				metadata.metadata.document,
+				metadata.metadata.slots,
 			)
 			if (!content) return null
 			return Object.freeze({ target, entry: metadata, layoutEntry, params, content })
@@ -1119,9 +1113,7 @@ function assertSameRendererProvenance(
 	placed: Extract<WorkbenchDescriptorMetadata, { kind: 'attachment' }>,
 	published: Extract<WorkbenchDescriptorMetadata, { kind: 'attachment' }>,
 ): void {
-	const left = readWorkbenchRendererEntry(placed.renderer)
-	const right = readWorkbenchRendererEntry(published.renderer)
-	if (left.moduleUrl !== right.moduleUrl || left.entryPath !== right.entryPath) {
+	if (placed.moduleUrl !== published.moduleUrl || placed.renderer !== published.renderer) {
 		throw new TypeError('[workbench] placed Attachment does not belong to the bound provider')
 	}
 }

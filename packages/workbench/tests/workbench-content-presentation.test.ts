@@ -28,12 +28,12 @@ function plan(slots: readonly ContentSlot[]): WorkbenchContentPlan {
 
 describe('Workbench Content presentation boundary', () => {
 	it('fails publication for unsupported action fields', () => {
-		const document = workbench.markdown(import.meta.url, './fixtures/action.md', {
+		const slots = {
 			submit: workbench.action({
 				label: 'Submit',
 				input: v.object({ createdAt: v.date() }),
 			}),
-		})
+		}
 		const artifact = plan([
 			{
 				kind: 'action',
@@ -44,7 +44,7 @@ describe('Workbench Content presentation boundary', () => {
 			},
 		])
 
-		expect(() => prepareWorkbenchContentContract(document, artifact)).toThrow(
+		expect(() => prepareWorkbenchContentContract(slots, artifact)).toThrow(
 			'unsupported form fields',
 		)
 	})
@@ -66,20 +66,20 @@ describe('Workbench Content presentation boundary', () => {
 			'must not display a password value',
 		],
 	] as const)('rejects a %s data schema before publication', (_name, schema, message) => {
-		const document = workbench.markdown(import.meta.url, './fixtures/data.md', {
+		const slots = {
 			status: workbench.data(schema),
-		})
+		}
 		const artifact = plan([{ kind: 'data', key: 'status', display: 'block' }])
 
-		expect(() => prepareWorkbenchContentContract(document, artifact)).toThrow(message)
+		expect(() => prepareWorkbenchContentContract(slots, artifact)).toThrow(message)
 	})
 
 	it('accepts nullable data without treating Valibot internal metadata as a default', () => {
-		const document = workbench.markdown(import.meta.url, './fixtures/data.md', {
+		const slots = {
 			status: workbench.data(v.object({ error: v.nullable(v.string()) })),
-		})
+		}
 		const contract = prepareWorkbenchContentContract(
-			document,
+			slots,
 			plan([{ kind: 'data', key: 'status', display: 'block' }]),
 		)
 
@@ -88,12 +88,12 @@ describe('Workbench Content presentation boundary', () => {
 
 	it('rejects artifact/declaration key, kind, and action metadata mismatches', () => {
 		const dataArtifact = plan([{ kind: 'data', key: 'status', display: 'block' }])
-		const wrongKey = workbench.markdown(import.meta.url, './fixtures/data.md', {
+		const wrongKey = {
 			other: workbench.data(v.string()),
-		})
-		const wrongKind = workbench.markdown(import.meta.url, './fixtures/data.md', {
+		}
+		const wrongKind = {
 			status: workbench.action({ label: 'Status' }),
-		})
+		}
 		const actionArtifact = plan([
 			{
 				kind: 'action',
@@ -103,9 +103,9 @@ describe('Workbench Content presentation boundary', () => {
 				input: 'none',
 			},
 		])
-		const wrongMetadata = workbench.markdown(import.meta.url, './fixtures/action.md', {
+		const wrongMetadata = {
 			refresh: workbench.action({ label: 'Declaration label' }),
-		})
+		}
 
 		expect(() => prepareWorkbenchContentContract(wrongKey, dataArtifact)).toThrow(
 			'slots do not match the committed artifact',
@@ -119,12 +119,12 @@ describe('Workbench Content presentation boundary', () => {
 	})
 
 	it('requires exact factory and action binding keys', () => {
-		const document = workbench.markdown(import.meta.url, './fixtures/interactive.md', {
+		const slots = {
 			refresh: workbench.action({ label: 'Refresh' }),
 			status: workbench.data(v.object({ count: v.number() })),
-		})
+		}
 		const contract = prepareWorkbenchContentContract(
-			document,
+			slots,
 			plan([
 				{
 					kind: 'action',

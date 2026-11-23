@@ -51,7 +51,7 @@ describe('buildNodeModule', () => {
 			'style.ts': "import './theme.css'\nexport const ok = true\n",
 			'theme.css': 'body {}',
 			'nested.ts': "export const nested = defineNodeModule(import.meta.url, './other.ts')\n",
-			'nested-workbench.ts': 'export const nested = workbench.define({})\n',
+			'nested-workbench.ts': 'export const nested = workbench.define(import.meta.url, {})\n',
 		})
 		for (const [entry, message] of [
 			['runtime.ts', 'value import'],

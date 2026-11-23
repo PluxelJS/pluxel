@@ -28,46 +28,47 @@ interface SelectionApi extends RpcTarget {
 	select(id: string): boolean
 }
 
-const renderer = workbench.entry(import.meta.url, './fixtures/settings.tsx')
+const renderer = './fixtures/settings.tsx'
 
-const LocalWorkbench = workbench.define({
+const LocalWorkbench = workbench.define(import.meta.url, {
 	settings: workbench.view<SettingsApi>({
 		renderer,
-		placement: workbench.tab({ label: 'Settings' }),
+		placement: { kind: 'tab', label: 'Settings' },
 	}),
 })
 
-const ContentWorkbench = workbench.define({
+const ContentWorkbench = workbench.define(import.meta.url, {
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './fixtures/guide.md'),
-		placement: workbench.tab({ label: 'Guide' }),
+		document: './fixtures/guide.md',
+		placement: { kind: 'tab', label: 'Guide' },
 	}),
 })
 
-const InteractiveContentWorkbench = workbench.define({
+const InteractiveContentWorkbench = workbench.define(import.meta.url, {
 	interactive: workbench.content({
-		document: workbench.markdown(import.meta.url, './fixtures/interactive.md', {
+		document: './fixtures/interactive.md',
+		slots: {
 			status: workbench.data(v.object({ count: v.number() })),
 			refresh: workbench.action({ label: 'Refresh' }),
-		}),
-		placement: workbench.tab({ label: 'Interactive' }),
+		},
+		placement: { kind: 'tab', label: 'Interactive' },
 	}),
 })
 
-const ProviderWorkbench = workbench.define({
+const ProviderWorkbench = workbench.define(import.meta.url, {
 	picker: workbench.attachment<CatalogApi, SelectionApi>({ renderer }),
 })
 
-const PanelWorkbench = workbench.define({
+const PanelWorkbench = workbench.define(import.meta.url, {
 	inspector: workbench.view<SettingsApi>({
 		renderer,
-		placement: workbench.panel('right', { label: 'Inspector' }),
+		placement: { kind: 'panel', region: 'right', label: 'Inspector' },
 	}),
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './fixtures/guide.md'),
-		placement: workbench.panel('left', { label: 'Guide' }),
+		document: './fixtures/guide.md',
+		placement: { kind: 'panel', region: 'left', label: 'Guide' },
 	}),
-	fonts: ProviderWorkbench.picker.place(workbench.panel('bottom', { label: 'Fonts' })),
+	fonts: ProviderWorkbench.picker.place({ kind: 'panel', region: 'bottom', label: 'Fonts' }),
 })
 
 const disposedTargets: SettingsTarget[] = []

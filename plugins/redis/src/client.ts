@@ -217,7 +217,23 @@ export class RedisPlugin extends Redis {
 			this.deactivate()
 			throw error
 		}
-		this.publishWorkbench()
+		this.ctx.service(WorkbenchRef)?.publish(RedisWorkbench, {
+			connections: ({ signal: openSignal }) => ({
+				subscribe: (changed) => {
+					const listeners = (this.workbenchDataListeners ??= new Set())
+					listeners.add(changed)
+					return {
+						[Symbol.dispose]: () => {
+							listeners.delete(changed)
+						},
+					}
+				},
+				load: () => ({ status: this.workbenchStatus(openSignal) }),
+				actions: {
+					ping: ({ connectionId, payload }) => this.pingRedis(openSignal, connectionId, payload),
+				},
+			}),
+		})
 	}
 
 	private async startConnection(config: RedisConnectionConfig, signal: AbortSignal): Promise<void> {
@@ -297,28 +313,6 @@ export class RedisPlugin extends Redis {
 			)
 		}
 		this.states.set(config.id, state)
-	}
-
-	private publishWorkbench(): void {
-		const workbench = this.ctx.service(WorkbenchRef)
-		if (!workbench) return
-		this.workbenchDataListeners = new Set()
-		workbench.publish(RedisWorkbench, {
-			connections: ({ signal }) => ({
-				subscribe: (changed) => {
-					this.workbenchDataListeners!.add(changed)
-					return {
-						[Symbol.dispose]: () => {
-							this.workbenchDataListeners?.delete(changed)
-						},
-					}
-				},
-				load: () => ({ status: this.workbenchStatus(signal) }),
-				actions: {
-					ping: ({ connectionId, payload }) => this.pingRedis(signal, connectionId, payload),
-				},
-			}),
-		})
 	}
 
 	private workbenchStatus(signal: AbortSignal): RedisWorkbenchStatus {

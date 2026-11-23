@@ -17,18 +17,19 @@ import { workbench } from '@pluxel/workbench'
 
 // 1. 定义展示数据的 Schema
 const StatusSchema = v.object({
-	connected: v.boolean(),
-	queued: v.pipe(v.number(), v.integer(), v.minValue(0)),
+	checks: v.pipe(v.number(), v.integer(), v.minValue(0)),
+	updatedAt: v.string(),
 })
 
 // 2. 定义页面结构：关联 Markdown 文件与槽位（Slots）
-export const ServiceWorkbench = workbench.define({
+export const ServiceWorkbench = workbench.define(import.meta.url, {
 	overview: workbench.content({
-		document: workbench.markdown(import.meta.url, './overview.md', {
+		document: './overview.md',
+		slots: {
 			status: workbench.data(StatusSchema),
-			refresh: workbench.action({ label: '刷新状态' }),
-		}),
-		placement: workbench.tab({ label: '概览' }),
+			refresh: workbench.action({ label: '记录检查' }),
+		},
+		placement: { kind: 'tab', label: '概览' },
 	}),
 })
 ```
@@ -40,11 +41,11 @@ export const ServiceWorkbench = workbench.define({
 ```md
 # 服务运行概览
 
-当前连接与任务堆积状态：
+已记录的检查次数与最近更新时间：
 
 ::slot[status]
 
-点击下方按钮可手动触发上游同步：
+完成检查后，点击下方按钮记录一次。
 
 ::slot[refresh]
 ```
@@ -54,80 +55,68 @@ export const ServiceWorkbench = workbench.define({
 在插件的 `init()` 钩子中，为定义的槽位绑定实际的获取与执行逻辑：
 
 ```ts
+import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import type { Workbench } from '@pluxel/workbench'
-import { defineServiceRef } from '@pluxel/core'
+import { ServiceWorkbench } from './workbench.ts'
 
 const WorkbenchRef = defineServiceRef<Workbench>()
-override init() {
-	this.ctx.service(WorkbenchRef)?.publish(ServiceWorkbench, {
-		overview: () => ({
-			// 对应 workbench.data 的数据加载函数
-			load: () => ({
-				status: this.inspectService(),
+
+@Plugin({ displayName: 'Service checks' })
+export class ServicePlugin extends BasePlugin {
+	private checks = 0
+	private updatedAt = new Date().toISOString()
+
+	recordChecks(count = 1) {
+		this.checks += count
+		this.updatedAt = new Date().toISOString()
+	}
+
+	protected override init() {
+		this.ctx.service(WorkbenchRef)?.publish(ServiceWorkbench, {
+			overview: () => ({
+				load: () => ({ status: { checks: this.checks, updatedAt: this.updatedAt } }),
+				actions: { refresh: () => this.recordChecks() },
 			}),
-			// 对应 workbench.action 的操作逻辑
-			actions: {
-				refresh: async () => {
-					await this.refreshService()
-					return { ok: true, message: '刷新成功' }
-				},
-			},
-		}),
-	})
+		})
+	}
 }
 ```
 
-当用户在界面中点击“刷新状态”按钮后，后台执行完毕，Workbench 会自动重新调用 `load()` 刷新页面数据，无需前端编写任何状态维护逻辑。
+点击“记录检查”会调用 `actions.refresh`，Workbench 在操作后重新执行 `load()`，页面显示最新的计数与时间。
 
 ## 添加操作表单
 
-如果按钮点击需要用户输入参数，可以为 `action` 声明输入 Schema：
+要让用户一次记录多次检查，在 `src/workbench.ts` 的模块顶层声明表单输入。
 
 ```ts
-const ProbeInput = v.object({
-	timeoutMs: v.pipe(v.number(), v.integer(), v.minValue(100), v.maxValue(30_000)),
-})
-
-export const ServiceWorkbench = workbench.define({
-	overview: workbench.content({
-		document: workbench.markdown(import.meta.url, './overview.md', {
-			probe: workbench.action({
-				label: '测试探测',
-				input: ProbeInput,
-				form: 'embedded', // 'embedded' 展开表单，默认点击后弹窗输入
-			}),
-		}),
-		placement: workbench.tab({ label: '概览' }),
-	}),
+const CheckInput = v.object({
+	count: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100)),
 })
 ```
 
-在插件的 `actions.probe` 中直接接收校验后的入参 `{ timeoutMs }`。
+在同一组 `slots` 中，把原来的 `refresh` 替换为以下声明。键仍是 `refresh`，Markdown 中的 `::slot[refresh]` 直接展示该表单。
+
+```ts
+refresh: workbench.action({
+	label: '记录检查',
+	input: CheckInput,
+	form: 'embedded',
+}),
+```
+
+在插件绑定的 `actions` 中改为 `refresh: ({ count }) => this.recordChecks(count)`。服务端按 `CheckInput` 校验输入后才执行该方法。省略 `form` 时，点击按钮会打开表单对话框。
 
 <span id="只在状态会自行变化时加入-live-refresh"></span>
 
 ## 只在状态会自行变化时加入 live refresh
 
-如果数据源在后台会自发产生更新（例如后台定时拉取、收到 WebSocket 广播），可在绑定中提供 `subscribe` 监听：
+如果后台任务或其他插件也会调用 `recordChecks()`，可以通知已经打开的页面。为 `ServicePlugin` 添加字段 `private readonly changes = new EventTarget()`，在 `recordChecks()` 完成修改后调用 `this.changes.dispatchEvent(new Event('change'))`。在 `overview` 工厂返回的对象里，与 `load`、`actions` 并列添加以下属性。
 
 ```ts
-overview: () => ({
-	load: () => ({ status: this.inspectService() }),
-	// 订阅外部数据变化
-	subscribe: (changed) => {
-		this.serviceEvents.on('change', changed)
-		// 返回注销函数，页面关闭时自动清理
-		return {
-			[Symbol.dispose]: () => this.serviceEvents.off('change', changed),
-		}
-	},
-	actions: {
-		refresh: async () => {
-			await this.refreshService()
-			return { ok: true, message: '已刷新' }
-		},
-	},
-})
+subscribe: (changed) => {
+	this.changes.addEventListener('change', changed)
+	return { [Symbol.dispose]: () => this.changes.removeEventListener('change', changed) }
+},
 ```
 
-每当调用 `changed()` 时，Workbench 会自动重新调用 `load()` 更新界面上的数据展示。
+Workbench 先订阅，再读取首次状态；后续 `changed()` 通知合并到串行的 `load()` 中。关闭该页面时释放它的监听器。

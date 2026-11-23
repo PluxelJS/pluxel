@@ -3,7 +3,7 @@ title: 扩展插件的侧栏与底部面板
 description: 在当前插件的左侧、右侧或底部添加轻量辅助面板，复用 Content、View 与 Attachment。
 ---
 
-除了在中央主区域展示配置或视图文档外，插件还可以通过 `workbench.panel()` 向界面的左侧、右侧或底部抽屉扩展辅助面板。面板适合承载操作指引、快速状态监控或最近产物列表。
+除了在中央主区域展示配置或视图文档外，插件还可以通过 `placement: { kind: 'panel', region, label }` 向界面的左侧、右侧或底部抽屉扩展辅助面板。面板适合承载操作指引、快速状态监控或最近产物列表。
 
 ## 场景选型与布局规划
 
@@ -20,11 +20,11 @@ description: 在当前插件的左侧、右侧或底部添加轻量辅助面板�
 // src/workbench.ts
 import { workbench } from '@pluxel/workbench'
 
-export const ReportsWorkbench = workbench.define({
+export const ReportsWorkbench = workbench.define(import.meta.url, {
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './guide.md'),
+		document: './guide.md',
 		// 声明放置在左侧面板，并指定标题与排序权重
-		placement: workbench.panel('left', { label: '操作指南', order: 10 }),
+		placement: { kind: 'panel', region: 'left', label: '操作指南', order: 10 },
 	}),
 })
 ```
@@ -43,7 +43,7 @@ this.ctx.service(WorkbenchRef)?.publish(ReportsWorkbench)
 
 ## 面板内容类型
 
-`workbench.panel()` 支持挂载各种标准的视图类型：
+同一个面板位置可承载以下内容。
 
 - **Content 内容**：使用 Markdown 与简明状态快速搭建；
 - **View 组件**：需要交互式动态组件时，传入基于 React 编写的视图；

@@ -1001,9 +1001,9 @@ import { workbenchArtifacts } from '@pluxel/workbench/vite'
 import { workbenchHttp } from '@pluxel/workbench/http'
 import { createWorkbenchShellHandler } from '@pluxel/workbench/shell'
 const uiHost = await createHost({ plugins: [], services: [workbenchService()] })
-const definition = workbench.define({ guide: workbench.content({
-  document: workbench.markdown(import.meta.url, './guide.md', { refresh: workbench.action({ label: 'Refresh' }) }),
-  placement: workbench.tab({ label: 'Guide' }),
+const definition = workbench.define(import.meta.url, { guide: workbench.content({
+  document: './guide.md', slots: { refresh: workbench.action({ label: 'Refresh' }) },
+  placement: { kind: 'tab', label: 'Guide' },
 }) })
 class UiConsumer extends BasePlugin { init() {
   this.ctx.service(Workbench).publish(definition, { guide: () => ({ actions: { refresh: () => {} } }) })

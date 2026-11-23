@@ -162,9 +162,10 @@ export class PackageManagerPlugin extends BasePlugin {
 				execute: async ({ specs }) => Result.ok(toCommandMutation(await store.remove(specs))),
 			}),
 		)
+		const open = () => new PackageManagerTarget(store)
 		this.ctx.service(WorkbenchRef)?.publish(PackageManagerWorkbench, {
-			marketplace: () => new PackageManagerTarget(store),
-			manager: () => new PackageManagerTarget(store),
+			marketplace: open,
+			manager: open,
 		})
 	}
 

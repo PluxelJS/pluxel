@@ -13,7 +13,6 @@ import {
 } from '@pluxel/workbench/client'
 import {
 	createWorkbenchRenderer,
-	useWorkbench,
 	type WorkbenchHostFacade,
 	type WorkbenchMutationState,
 	type WorkbenchQueryResult,
@@ -31,17 +30,17 @@ interface QueryApi extends RpcTarget {
 	snapshot(): Readonly<{ value: number }>
 }
 
-const rendererEntry = workbench.entry(import.meta.url, './fixtures/query.tsx')
-const QueryWorkbench = workbench.define({
+const rendererEntry = './fixtures/query.tsx'
+const QueryWorkbench = workbench.define(import.meta.url, {
 	query: workbench.view<QueryApi>({
 		renderer: rendererEntry,
-		placement: workbench.tab({ label: 'Query' }),
+		placement: { kind: 'tab', label: 'Query' },
 	}),
 })
-const OtherWorkbench = workbench.define({
+const OtherWorkbench = workbench.define(import.meta.url, {
 	other: workbench.view<QueryApi>({
 		renderer: rendererEntry,
-		placement: workbench.tab({ label: 'Other' }),
+		placement: { kind: 'tab', label: 'Other' },
 	}),
 })
 const owner = parsePluginDefinitionAddress({
@@ -75,9 +74,8 @@ describe('Workbench renderer query scope', () => {
 			return { mutationFn: () => api.snapshot() }
 		})
 		function Consumer() {
-			const current = useWorkbench(QueryWorkbench.query)
+			const current = scope.useWorkbench()
 			borrowed.add(current.api)
-			borrowed.add(scope.useWorkbench().api)
 			observedHost = current.host
 			mutation.useMutation()
 			const { data } = query.useQuery()
@@ -135,11 +133,12 @@ describe('Workbench renderer query scope', () => {
 	it('rejects the wrong descriptor before a renderer can invoke its RPC API', async () => {
 		using _consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 		const snapshot = vi.fn()
-		function WrongRenderer(): null {
-			const { api } = useWorkbench(OtherWorkbench.other)
+		const wrong = createWorkbenchRenderer(OtherWorkbench.other)
+		const WrongRenderer = wrong.render(function WrongRenderer() {
+			const { api } = wrong.useWorkbench()
 			void api.snapshot()
 			return null
-		}
+		})
 		await using opened = await renderOpened(WrongRenderer, { snapshot })
 		expect(opened.dom.textContent).toContain('descriptor identity does not match this renderer')
 		expect(snapshot).not.toHaveBeenCalled()

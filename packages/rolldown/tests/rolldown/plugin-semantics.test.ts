@@ -348,10 +348,10 @@ describe('plugin semantic lowering', () => {
 			return `
 				import { BasePlugin, Plugin } from '@pluxel/core'
 				import { Workbench, workbench } from '@pluxel/workbench'
-				export const pages = workbench.define({
+				export const pages = workbench.define(import.meta.url, {
 					guide: workbench.content({
-						document: workbench.markdown(import.meta.url, './guide.md'),
-						placement: workbench.tab({ label: 'Guide' }),
+						document: './guide.md',
+						placement: { kind: 'tab', label: 'Guide' },
 					}),
 				})
 				@Plugin() export class ${className} extends BasePlugin {

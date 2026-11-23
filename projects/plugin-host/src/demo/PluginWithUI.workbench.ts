@@ -27,25 +27,23 @@ export interface PluginWithUIApi extends RpcTarget {
 	clearEvents(): void
 }
 
-const overviewRenderer = workbench.entry(import.meta.url, './PluginWithUI/ui/overview.tsx')
-const eventsRenderer = workbench.entry(import.meta.url, './PluginWithUI/ui/events.tsx')
-const dashboardRenderer = workbench.entry(import.meta.url, './PluginWithUI/ui/dashboard.tsx')
-
-export const PluginWithUIWorkbench = workbench.define({
+export const PluginWithUIWorkbench = workbench.define(import.meta.url, {
 	overview: workbench.view<PluginWithUIApi>({
-		renderer: overviewRenderer,
-		placement: workbench.tab({ label: '概览', order: 10 }),
+		renderer: './PluginWithUI/ui/overview.tsx',
+		placement: { kind: 'tab', label: '概览', order: 10 },
 	}),
 	events: workbench.view<PluginWithUIApi>({
-		renderer: eventsRenderer,
-		placement: workbench.tab({ label: '事件', order: 20 }),
+		renderer: './PluginWithUI/ui/events.tsx',
+		placement: { kind: 'tab', label: '事件', order: 20 },
 	}),
 	dashboard: workbench.view<PluginWithUIApi>({
-		renderer: dashboardRenderer,
-		placement: workbench.route('/dashboard', {
+		renderer: './PluginWithUI/ui/dashboard.tsx',
+		placement: {
+			kind: 'route',
+			path: '/dashboard',
 			title: 'PluginWithUI Dashboard',
 			navigation: { label: 'UI Demo' },
 			order: 30,
-		}),
+		},
 	}),
 })

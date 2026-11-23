@@ -54,11 +54,13 @@ const state = vi.hoisted(() => {
 
 function mockResources() {
 	return {
-		packageManagerSnapshotQuery: { useQuery: () => state.snapshot },
-		packageUsageQuery: { useQuery: () => state.usage },
-		prepareInstallMutation: { useMutation: () => state.preparation },
-		confirmInstallMutation: { useMutation: () => state.confirmation },
-		removePackagesMutation: { useMutation: () => state.removal },
+		usePackageManager: () => ({
+			snapshotQuery: state.snapshot,
+			usageQuery: state.usage,
+			preparation: state.preparation,
+			confirmation: state.confirmation,
+			removal: state.removal,
+		}),
 		marketPackagesQuery: {
 			useQuery: (input: unknown) => {
 				state.packagesInput(input)

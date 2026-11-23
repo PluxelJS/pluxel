@@ -6,7 +6,6 @@ import {
 } from '@pluxel/core/federation'
 import { describe, expect, it, vi } from 'vitest'
 import {
-	createRemoteValue,
 	consumeWorkbenchValue,
 	openWorkbenchEntry,
 	readWorkbenchLayout,
@@ -155,11 +154,24 @@ describe('Workbench opened View client', () => {
 	)
 
 	it.each([
+		{ kind: 'route', path: '/tool', title: 'Tool', order: 0 },
+		{ kind: 'route', path: '/tool', title: 'Tool', order: 0, frame: null },
+		{ kind: 'route', path: '/tool/', title: 'Tool', order: 0, frame: 'shell' },
+		{ kind: 'tab', label: 'Tool', order: null },
+		{
+			kind: 'route',
+			path: '/tool/:id',
+			title: 'Tool',
+			navigation: { label: 'Tool' },
+			order: 0,
+			frame: 'shell',
+		},
+		{ kind: 'tab', label: 'Tool' },
 		{ kind: 'panel', region: 'center', label: 'Tool', order: 0 },
 		{ kind: 'panel', region: 'left', order: 0 },
 		{ kind: 'panel', region: 'left', label: 'Tool', order: 0, path: '/tool' },
 		{ kind: 'panel', region: 'left', label: 'Tool', order: 0, scope: 'global' },
-	])('rejects malformed panel placement %# and releases the DTO', async (placement) => {
+	])('rejects malformed or incomplete placement %# and releases the DTO', async (placement) => {
 		const disposeResult = vi.fn()
 		const session = {
 			layoutDto: vi.fn().mockResolvedValue({
@@ -584,67 +596,5 @@ describe('remote value owner', () => {
 		expect(() => consumeWorkbenchValue(Array.from({ length: 10_001 }, () => 0))).toThrowError(
 			expect.objectContaining({ code: 'WORKBENCH_PORTABLE_VALUE_TOO_LARGE' }),
 		)
-	})
-
-	it('subscribes before reading and coalesces invalidation during an active read', async () => {
-		const order: string[] = []
-		const disposeSubscription = vi.fn()
-		let invalidate: (() => void) | undefined
-		let settleFirst: ((value: string) => void) | undefined
-		let reads = 0
-		const snapshots: unknown[] = []
-		const value = createRemoteValue({
-			subscribe(callback) {
-				order.push('subscribe')
-				invalidate = callback
-				return { [Symbol.dispose]: disposeSubscription }
-			},
-			read() {
-				reads += 1
-				order.push(`read-${reads}`)
-				if (reads === 1) return new Promise<string>((resolve) => (settleFirst = resolve))
-				return Promise.resolve('latest')
-			},
-		})
-		value.subscribe(() => snapshots.push(value.getSnapshot()))
-		await Promise.resolve()
-		expect(order).toEqual(['subscribe', 'read-1'])
-
-		invalidate?.()
-		invalidate?.()
-		settleFirst?.('stale')
-		await vi.waitFor(() => expect(value.getSnapshot()).toEqual({ state: 'ready', value: 'latest' }))
-		expect(reads).toBe(2)
-		expect(snapshots).not.toContainEqual({ state: 'ready', value: 'stale' })
-
-		value[Symbol.dispose]()
-		value[Symbol.dispose]()
-		expect(disposeSubscription).toHaveBeenCalledTimes(1)
-	})
-
-	it('does not infer ownership of values returned by Plugin read functions', async () => {
-		const disposeValue = vi.fn()
-		const snapshotValue = Object.freeze({ value: 'detached', [Symbol.dispose]: disposeValue })
-		const remote = createRemoteValue({ read: () => snapshotValue })
-
-		await vi.waitFor(() =>
-			expect(remote.getSnapshot()).toEqual({ state: 'ready', value: snapshotValue }),
-		)
-		expect(disposeValue).not.toHaveBeenCalled()
-
-		remote[Symbol.dispose]()
-		expect(disposeValue).not.toHaveBeenCalled()
-	})
-
-	it('disposes a synchronously returned subscription only once during startup cancellation', async () => {
-		const disposeSubscription = vi.fn()
-		const remote = createRemoteValue({
-			read: () => 'unused',
-			subscribe: () => ({ [Symbol.dispose]: disposeSubscription }),
-		})
-
-		remote[Symbol.dispose]()
-		await Promise.resolve()
-		expect(disposeSubscription).toHaveBeenCalledTimes(1)
 	})
 })

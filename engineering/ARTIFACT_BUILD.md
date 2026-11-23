@@ -4,7 +4,7 @@ Rolldown 将 server 声明编译为 browser producer/Content 和 Node artifact�
 
 ## Workbench source declaration
 
-semantic pass 在 TS 擦除前读取 workbench.define、entry key、kind，以及 literal markdown(import.meta.url, path, slots?)/entry(import.meta.url, path)，与 canonical definition 合成 identity。panel(region, options) 复用 author 纯准入，仅支持 left/right/bottom，将区域、标签、图标、排序投影到 View descriptor；Content/Attachment 保持自己的 placement。
+semantic pass 在 TS 擦除前读取 `workbench.define(import.meta.url, entries)`，用 canonical Plugin definition 与 entry key 生成 identity。它相对 define 所在的源码模块解析 `document` 和 `renderer`，读取 Content 的可选 `slots`，并与运行时共用路径和 placement 校验。View 的浏览器 descriptor 投影包含完整的已验证 placement。
 
 Markdown 由 build-time CommonMark/GFM+directive compiler 生成有界 portable AST。HTML、图片、不安全/相对链接、task list、frontmatter、非法 slot topology 和不支持语法拒绝。data/action 只 lower metadata，真实 schema 留在 server；Markdown 加入 watch graph，但源码/parser 不交付 server/browser。
 

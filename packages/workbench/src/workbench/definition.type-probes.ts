@@ -1,6 +1,6 @@
 import { RpcTarget, type RpcStub } from 'capnweb'
 import { workbench, type PluginWorkbench, type WorkbenchBindings } from './definition.ts'
-import { type WorkbenchHookValue } from './react.tsx'
+import { createWorkbenchRenderer, type WorkbenchHookValue } from './react.tsx'
 import type { BasePlugin } from '@pluxel/core'
 import * as v from 'valibot'
 
@@ -28,32 +28,50 @@ class ConsumerTarget extends RpcTarget implements ConsumerApi {
 	}
 }
 
-const renderer = workbench.entry(import.meta.url, './definition.type-probes.ts')
+const renderer = './definition.type-probes.ts'
 
-const ProviderWorkbench = workbench.define({
+const ProviderWorkbench = workbench.define(import.meta.url, {
 	settings: workbench.attachment<ProviderApi>({ renderer }),
 	picker: workbench.attachment<ProviderApi, ConsumerApi>({ renderer }),
 })
 
-const ConsumerWorkbench = workbench.define({
+const rawView = workbench.view<LocalApi>({ renderer, placement: { kind: 'tab' } })
+// @ts-expect-error Only a descriptor in a definition can bind a renderer.
+createWorkbenchRenderer(rawView)
+// @ts-expect-error Plain records lack the declaration returned by a builder.
+workbench.define(import.meta.url, { fake: { kind: 'view' } })
+// @ts-expect-error A definition-owned descriptor cannot be rebound to another definition.
+workbench.define(import.meta.url, { duplicate: ProviderWorkbench.settings })
+// @ts-expect-error A reusable attachment is placeable after its provider definition owns it.
+workbench.attachment<ProviderApi>({ renderer }).place({ kind: 'tab' })
+
+const refresh = workbench.action({ label: 'Refresh' })
+// @ts-expect-error Explicit interactive slots must have matching declarations.
+workbench.content<{ refresh: typeof refresh }>({
+	document: './guide.md',
+	placement: { kind: 'tab' },
+})
+
+const ConsumerWorkbench = workbench.define(import.meta.url, {
 	local: workbench.view<LocalApi>({
 		renderer,
-		placement: workbench.tab(),
+		placement: { kind: 'tab' },
 	}),
-	settings: ProviderWorkbench.settings.place(workbench.tab()),
-	picker: ProviderWorkbench.picker.place(workbench.tab()),
+	settings: ProviderWorkbench.settings.place({ kind: 'tab' }),
+	picker: ProviderWorkbench.picker.place({ kind: 'tab' }),
 })
 
-const ContentWorkbench = workbench.define({
+const ContentWorkbench = workbench.define(import.meta.url, {
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './guide.md'),
-		placement: workbench.tab(),
+		document: './guide.md',
+		placement: { kind: 'tab' },
 	}),
 })
 
-const InteractiveContentWorkbench = workbench.define({
+const InteractiveContentWorkbench = workbench.define(import.meta.url, {
 	status: workbench.content({
-		document: workbench.markdown(import.meta.url, './guide.md', {
+		document: './guide.md',
+		slots: {
 			state: workbench.data(v.object({ ready: v.boolean() })),
 			history: workbench.data(
 				v.object({ entries: v.array(v.object({ labels: v.array(v.string()) })) }),
@@ -63,14 +81,14 @@ const InteractiveContentWorkbench = workbench.define({
 				label: 'Probe',
 				input: v.object({ timeoutMs: v.number(), labels: v.array(v.string()) }),
 			}),
-		}),
-		placement: workbench.tab(),
+		},
+		placement: { kind: 'tab' },
 	}),
 })
 
-const MixedWorkbench = workbench.define({
-	...ContentWorkbench,
-	local: workbench.view<LocalApi>({ renderer, placement: workbench.tab() }),
+const MixedWorkbench = workbench.define(import.meta.url, {
+	guide: workbench.content({ document: './guide.md', placement: { kind: 'tab' } }),
+	local: workbench.view<LocalApi>({ renderer, placement: { kind: 'tab' } }),
 })
 
 declare const provider: BasePlugin
@@ -152,7 +170,7 @@ void providerSnapshot
 void consumerSelection
 
 // @ts-expect-error Workbench APIs must be actual Cap'n Web targets.
-workbench.view<{ snapshot(): number }>({ renderer, placement: workbench.tab() })
+workbench.view<{ snapshot(): number }>({ renderer, placement: { kind: 'tab' } })
 
 const invalidProviderOnly: WorkbenchBindings<typeof ConsumerWorkbench> = {
 	...validBindings,

@@ -33,30 +33,20 @@ type ContentBinding = import('@pluxel/workbench').WorkbenchContentBinding
 type ContentFactory = import('@pluxel/workbench').WorkbenchContentFactory
 // @ts-expect-error Schema constraints are inferred by workbench.data()/action().
 type ContentSchema = import('@pluxel/workbench').WorkbenchContentSchema
-// @ts-expect-error Content slots are inferred by workbench.markdown().
+// @ts-expect-error Content slots are inferred by workbench.content().
 type ContentSlot = import('@pluxel/workbench').WorkbenchContentSlot
-// @ts-expect-error Content slot maps are inferred by workbench.markdown().
+// @ts-expect-error Content slot maps are inferred by workbench.content().
 type ContentSlotMap = import('@pluxel/workbench').WorkbenchContentSlotMap
 // @ts-expect-error Entries are inferred from their exact descriptors.
 type Entry = import('@pluxel/workbench').WorkbenchEntry
 // @ts-expect-error Entry maps are inferred by workbench.define().
 type EntryMap = import('@pluxel/workbench').WorkbenchEntryMap
-// @ts-expect-error Groups are inferred by workbench.tab()/route().
-type Group = import('@pluxel/workbench').WorkbenchGroup
-// @ts-expect-error Markdown documents are inferred by workbench.markdown().
-type MarkdownDocument = import('@pluxel/workbench').WorkbenchMarkdownDocument
-// @ts-expect-error Navigation values are inferred by workbench.route().
-type Navigation = import('@pluxel/workbench').WorkbenchNavigation
-// @ts-expect-error Placements are inferred by workbench.tab()/route().
-type Placement = import('@pluxel/workbench').WorkbenchPlacement
-// @ts-expect-error Renderer entries are inferred by workbench.entry().
-type RendererEntry = import('@pluxel/workbench').WorkbenchRendererEntry
-// @ts-expect-error Route placements are inferred by workbench.route().
-type RoutePlacement = import('@pluxel/workbench').WorkbenchRoutePlacement
-// @ts-expect-error Tab placements are inferred by workbench.tab().
-type TabPlacement = import('@pluxel/workbench').WorkbenchTabPlacement
-// @ts-expect-error Panel placements are inferred by workbench.panel().
-type PanelPlacement = import('@pluxel/workbench').WorkbenchPanelPlacement
+// Reusable placement declarations can name the author input, with defaults left to the definition.
+const placement = {
+	kind: 'tab',
+	label: 'Settings',
+} satisfies import('@pluxel/workbench').WorkbenchPlacementInput
+
 // @ts-expect-error Target factories are supplied contextually by ctx.service(WorkbenchRef).publish().
 type TargetFactory = import('@pluxel/workbench').WorkbenchTargetFactory
 // @ts-expect-error View open contexts are supplied contextually by ctx.service(WorkbenchRef).publish().
@@ -83,14 +73,8 @@ void (null as unknown as ContentSlotMap)
 void (null as unknown as Definition)
 void (null as unknown as Entry)
 void (null as unknown as EntryMap)
-void (null as unknown as Group)
-void (null as unknown as MarkdownDocument)
-void (null as unknown as Navigation)
 void (null as unknown as Content)
-void (null as unknown as Placement)
-void (null as unknown as RendererEntry)
-void (null as unknown as RoutePlacement)
-void (null as unknown as TabPlacement)
-void (null as unknown as PanelPlacement)
 void (null as unknown as TargetFactory)
 void (null as unknown as ViewOpenContext)
+
+void placement

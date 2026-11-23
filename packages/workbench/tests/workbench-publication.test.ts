@@ -8,10 +8,10 @@ import { RpcStub, RpcTarget } from 'capnweb'
 import { expect, it, vi } from 'vitest'
 
 const WorkbenchRef = defineServiceRef<Workbench>()
-const IncidentView = workbench.define({
+const IncidentView = workbench.define(import.meta.url, {
 	incident: workbench.view<IncidentPage>({
-		renderer: workbench.entry(import.meta.url, './fixtures/settings.tsx'),
-		placement: workbench.route('/incidents/:id', { title: 'Incident' }),
+		renderer: './fixtures/settings.tsx',
+		placement: { kind: 'route', path: '/incidents/:id', title: 'Incident' },
 	}),
 })
 

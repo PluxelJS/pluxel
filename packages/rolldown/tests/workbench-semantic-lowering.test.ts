@@ -100,7 +100,13 @@ declare const serviceRef: unique symbol
 export interface ServiceRef<T> { readonly [serviceRef]: (service: T) => T }
 export declare function defineServiceRef<T>(): ServiceRef<T>
 `,
-		...packageFiles('@pluxel/workbench', '0.1.0', ['.', './internal/react', './client', './react']),
+		...packageFiles('@pluxel/workbench', '0.1.0', [
+			'.',
+			'./internal/react',
+			'./client',
+			'./react',
+			'./mantine',
+		]),
 		...packageFiles('capnweb', '0.4.0', ['.']),
 		'node_modules/capnweb/index.d.ts': `
 export interface RpcTarget extends Disposable {}
@@ -108,16 +114,12 @@ export interface RpcTarget extends Disposable {}
 		'node_modules/@pluxel/workbench/index.js': `
 export class Workbench { static access = 'owner' }
 export const workbench = Object.freeze({
-	entry: (_base, path) => ({ path }),
 	view: (value) => value,
 	content: (value) => value,
 	attachment: (value) => Object.assign(value, { place: (placement) => ({ placement }) }),
-	markdown: (_base, path, slots = {}) => ({ path, slots }),
 	data: (schema) => ({ schema }),
 	action: (value) => value,
-	tab: (value) => value,
-	panel: (region, value) => ({ kind: 'panel', region, ...value }),
-	define: (value) => Object.freeze(value),
+	define: (_base, value) => Object.freeze(value),
 })
 `,
 		'node_modules/@pluxel/workbench/index.d.ts': `
@@ -125,17 +127,19 @@ export declare class Workbench {
 	static readonly access: 'owner'
 	publish(definition: unknown, bindings?: unknown): void
 }
-export type RendererEntry = Readonly<{ path: string }>
 declare const apiType: unique symbol
 declare const consumerApiType: unique symbol
+declare const owner: unique symbol
+export type Owned<Entry = unknown> = Entry & { readonly [owner]: true }
+export type Definition<Entries> = { readonly [K in keyof Entries]: Owned<Entries[K]> }
 type DescriptorBrand<Api, ConsumerApi = never> = Readonly<{
 	[apiType]: (value: Api) => Api
 	[consumerApiType]: (value: ConsumerApi) => ConsumerApi
 }>
-export type Entry<Api> = Readonly<{ renderer: RendererEntry }> & DescriptorBrand<Api>
+export type Entry<Api> = Readonly<{ renderer: string }> & DescriptorBrand<Api>
 export type Attachment<Api, ConsumerApi = never> = Entry<Api> &
 	DescriptorBrand<Api, ConsumerApi> & { place(placement: unknown): unknown }
-export type WorkbenchRenderableDescriptor = Readonly<{ renderer: RendererEntry }>
+export type WorkbenchRenderableDescriptor = Readonly<{ renderer: string }>
 export type WorkbenchDescriptorApi<Descriptor> = Descriptor extends Readonly<{
 	[apiType]: (value: infer Api) => unknown
 }> ? Api : never
@@ -143,26 +147,24 @@ export type WorkbenchDescriptorConsumerApi<Descriptor> = Descriptor extends Read
 	[consumerApiType]: (value: infer Api) => unknown
 }> ? Api : never
 export declare const workbench: {
-	entry(base: string, path: string): RendererEntry
-	view<Api>(value: Readonly<{ renderer: RendererEntry }> & Record<string, unknown>): Entry<Api>
+	view<Api>(value: Readonly<{ renderer: string }> & Record<string, unknown>): Entry<Api>
 	content(value: Record<string, unknown>): unknown
 	attachment<Api, ConsumerApi = never>(
-		value: Readonly<{ renderer: RendererEntry }> & Record<string, unknown>,
+		value: Readonly<{ renderer: string }> & Record<string, unknown>,
 	): Attachment<Api, ConsumerApi>
-	markdown(base: string, path: string, slots?: Record<string, unknown>): unknown
 	data(schema: unknown): unknown
 	action(value: Record<string, unknown>): unknown
-	tab(value: Record<string, unknown>): unknown
-	panel(region: 'left' | 'right' | 'bottom', value: Record<string, unknown>): unknown
-	define<const Entries extends Record<string, unknown>>(value: Entries): Readonly<Entries>
+	define<const Entries extends Record<string, unknown>>(
+		base: string,
+		value: Entries & { [K in keyof Entries]: Entries[K] extends Owned ? never : Entries[K] },
+	): Definition<Entries>
 }
 `,
 		'node_modules/@pluxel/workbench/react.js': `
-export function useWorkbench() { return Object.freeze({ api: Object.freeze({}) }) }
-export function createWorkbenchRenderer(descriptor) {
+export function createWorkbenchRenderer() {
 	return Object.freeze({
 		render: (Component) => Component,
-		useWorkbench: () => useWorkbench(descriptor),
+		useWorkbench: () => Object.freeze({ api: Object.freeze({}) }),
 	})
 }
 `,
@@ -172,9 +174,7 @@ import type {
 	WorkbenchDescriptorConsumerApi,
 	WorkbenchRenderableDescriptor,
 } from './index.js'
-export declare function useWorkbench<Descriptor extends WorkbenchRenderableDescriptor>(
-	descriptor: Descriptor,
-): [WorkbenchDescriptorConsumerApi<Descriptor>] extends [never]
+type WorkbenchHookValue<Descriptor> = [WorkbenchDescriptorConsumerApi<Descriptor>] extends [never]
 	? { api: WorkbenchDescriptorApi<Descriptor> }
 	: {
 		api: WorkbenchDescriptorApi<Descriptor>
@@ -185,7 +185,7 @@ export declare function createWorkbenchRenderer<Descriptor extends WorkbenchRend
 	descriptor: Descriptor,
 ): {
 	render<Component>(component: Component): Component
-	useWorkbench(): ReturnType<typeof useWorkbench<Descriptor>>
+	useWorkbench(): WorkbenchHookValue<Descriptor>
 }
 `,
 		'node_modules/@pluxel/workbench/internal/react.js': `
@@ -233,8 +233,8 @@ export default renderer.render(function Settings() { return null })
 `
 		files['src/provider.ts'] = `
 import { workbench } from '@pluxel/workbench'
-export const ProviderWorkbench = workbench.define({
-	picker: workbench.attachment({ renderer: workbench.entry(import.meta.url, './picker.tsx') }),
+export const ProviderWorkbench = workbench.define(import.meta.url, {
+	picker: workbench.attachment({ renderer: './picker.tsx' }),
 })
 `
 		await using fixture = await createFixture(files)
@@ -242,12 +242,12 @@ export const ProviderWorkbench = workbench.define({
 import { Workbench, workbench } from '@pluxel/workbench'
 import { ProviderWorkbench } from './provider.ts'
 const region = 'bottom'
-const options = { label: 'Plugin status', icon: workbench.icons.Settings, order: 12 }
-function placement(region, options) { return workbench.panel(region, options) }
-export const SemanticWorkbench = workbench.define({
-	settings: workbench.view({ renderer: workbench.entry(import.meta.url, './settings.tsx'), placement: placement(region, options) }),
-	guide: workbench.content({ document: workbench.markdown(import.meta.url, './guide.md'), placement: workbench.panel('left', { label: 'Guide' }) }),
-	fonts: ProviderWorkbench.picker.place(workbench.panel('bottom', { label: 'Fonts' })),
+const options = { label: 'Plugin status', icon: 'settings', order: -12 }
+function placement(region, options) { return { kind: 'panel', region, ...options } }
+export const SemanticWorkbench = workbench.define(import.meta.url, {
+	settings: workbench.view({ renderer: './settings.tsx', placement: placement(region, options) }),
+	guide: workbench.content({ document: './guide.md', placement: { kind: 'panel', region: 'left', label: 'Guide' } }),
+	fonts: ProviderWorkbench.picker.place({ kind: 'panel', region: 'bottom', label: 'Fonts' }),
 })
 class SemanticPlugin {
 	init() { this.ctx.service(Workbench).publish(SemanticWorkbench, { settings: () => ({}), fonts: { provider: this.provider } }) }
@@ -261,19 +261,25 @@ class SemanticPlugin {
 		const generatedDir = dirname(resolve(fixture.path, plans[0]!.entries[0]!.bridgeEntryPath))
 		const projection = await readFile(resolve(generatedDir, 'settings.definition.ts'), 'utf-8')
 		expect(projection).toContain(
-			`workbench.panel("bottom", {"label":"Plugin status","icon":"settings","order":12})`,
+			JSON.stringify({
+				kind: 'panel',
+				region: 'bottom',
+				label: 'Plugin status',
+				icon: 'settings',
+				order: -12,
+			}),
 		)
 		expect(await lowering.contentCompilations()).toHaveLength(1)
 	})
 
 	it.each([
-		["workbench.panel('center', { label: 'Tool' })", 'region must be left, right, or bottom'],
-		["workbench.panel('left', { label: '' })", 'label'],
+		["{ kind: 'panel', region: 'center', label: 'Tool' }", 'region must be left, right, or bottom'],
+		["{ kind: 'panel', region: 'left', label: '' }", 'label'],
 		[
-			"workbench.panel('right', { label: 'Tool', icon: 'arbitrary-icon' })",
+			"{ kind: 'panel', region: 'right', label: 'Tool', icon: 'arbitrary-icon' }",
 			'fixed Workbench icon set',
 		],
-		["workbench.panel('bottom', { label: 'Tool', scope: 'global' })", 'unsupported option'],
+		["{ kind: 'panel', region: 'bottom', label: 'Tool', scope: 'global' }", 'unsupported option'],
 	])('rejects invalid static panel declaration %s', async (placement, error) => {
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({ name: '@example/panel-validation', type: 'module' }),
@@ -281,8 +287,8 @@ class SemanticPlugin {
 		})
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({
-	guide: workbench.content({ document: workbench.markdown(import.meta.url, './guide.md'), placement: ${placement} }),
+export const SemanticWorkbench = workbench.define(import.meta.url, {
+	guide: workbench.content({ document: './guide.md', placement: ${placement} }),
 })
 class SemanticPlugin { init() { this.ctx.service(Workbench).publish(SemanticWorkbench) } }
 `
@@ -312,10 +318,10 @@ class SemanticPlugin { init() { this.ctx.service(Workbench).publish(SemanticWork
 		})
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({
+export const SemanticWorkbench = workbench.define(import.meta.url, {
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './guide.md'),
-		placement: workbench.tab({ label: 'Guide' }),
+		document: './guide.md',
+		placement: { kind: 'tab', label: 'Guide' },
 	}),
 })
 class SemanticPlugin {
@@ -368,6 +374,37 @@ class SemanticPlugin {
 		).rejects.toMatchObject({ code: 'ENOENT' })
 	})
 
+	it('resolves contributed document paths from the final definition and slots from their declaring module', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: '@example/composed-content', type: 'module' }),
+			'src/guide.md': '# Diagnostics\n\n::slot[status]\n',
+			'src/shared/entries.ts': `
+import { workbench } from '@pluxel/workbench'
+const Status = {}
+const options = { document: './guide.md', slots: { status: workbench.data(Status) }, placement: { kind: 'tab' } }
+export const guide = workbench.content(options)
+`,
+		})
+		const lowering = createWorkbenchSemanticLowering(fixture.path)
+		await collectModule(
+			lowering,
+			fixture.path,
+			'src/plugin.ts',
+			`
+import { Workbench, workbench } from '@pluxel/workbench'
+import { guide } from './shared/entries.ts'
+export const Pages = workbench.define(import.meta.url, { guide })
+class SemanticPlugin {
+	init() { this.ctx.service(Workbench).publish(Pages, { guide: () => ({}) }) }
+}
+`,
+		)
+		const [compilation] = await lowering.contentCompilations()
+		expect(compilation!.contentSet.entries[0]!.content.slots).toMatchObject([
+			{ key: 'status', kind: 'data' },
+		])
+	})
+
 	it('rejects unsafe or unsupported Markdown at the build boundary', async () => {
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({ name: '@example/content-invalid', type: 'module' }),
@@ -375,10 +412,10 @@ class SemanticPlugin {
 		})
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({
+export const SemanticWorkbench = workbench.define(import.meta.url, {
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './guide.md'),
-		placement: workbench.route({ path: '/guide' }),
+		document: './guide.md',
+		placement: { kind: 'route', path: '/guide', title: 'Guide' },
 	}),
 })
 class SemanticPlugin {
@@ -416,10 +453,10 @@ const slots = {
 	dialog: workbench.action({ label: 'Dialog', input: ProbeSchema }),
 clear: workbench.action({ label: 'Clear', confirm: 'Deletes cached state' }),
 }
-export const SemanticWorkbench = workbench.define({
+export const SemanticWorkbench = workbench.define(import.meta.url, {
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './guide.md', slots),
-		placement: workbench.tab({ label: 'Guide' }),
+		document: './guide.md', slots,
+		placement: { kind: 'tab', label: 'Guide' },
 	}),
 })
 class SemanticPlugin {
@@ -524,10 +561,10 @@ class SemanticPlugin {
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
 const StatusSchema = {}
-export const SemanticWorkbench = workbench.define({
+export const SemanticWorkbench = workbench.define(import.meta.url, {
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './guide.md', { status: ${slot} }),
-		placement: workbench.tab({ label: 'Guide' }),
+		document: './guide.md', slots: { status: ${slot} },
+		placement: { kind: 'tab', label: 'Guide' },
 	}),
 })
 class SemanticPlugin {
@@ -549,10 +586,10 @@ class SemanticPlugin {
 import { Workbench, workbench } from '@pluxel/workbench'
 const StatusSchema = {}
 const inherited = { inherited: workbench.data(StatusSchema) }
-export const SemanticWorkbench = workbench.define({
+export const SemanticWorkbench = workbench.define(import.meta.url, {
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './guide.md', ${slots}),
-		placement: workbench.tab({ label: 'Guide' }),
+		document: './guide.md', slots: ${slots},
+		placement: { kind: 'tab', label: 'Guide' },
 	}),
 })
 class SemanticPlugin {
@@ -567,8 +604,14 @@ class SemanticPlugin {
 			'schema must be a module-level binding',
 		)
 		await expect(compile('{ ...inherited, status: workbench.data(StatusSchema) }')).rejects.toThrow(
-			'slots require exact static properties',
+			'slot map requires exact static properties',
 		)
+		await expect(compile('undefined')).rejects.toThrow(
+			'slot map binding undefined is not traceable',
+		)
+		await expect(
+			compile('{ status: workbench.data(StatusSchema), status: workbench.data(StatusSchema) }'),
+		).rejects.toThrow('slot map property status is duplicated')
 	})
 
 	it('rejects leading frontmatter before CommonMark can reinterpret it as content', async () => {
@@ -578,10 +621,10 @@ class SemanticPlugin {
 		})
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({
+export const SemanticWorkbench = workbench.define(import.meta.url, {
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './guide.md'),
-		placement: workbench.tab({ label: 'Guide' }),
+		document: './guide.md',
+		placement: { kind: 'tab', label: 'Guide' },
 	}),
 })
 class SemanticPlugin {
@@ -602,10 +645,10 @@ class SemanticPlugin {
 		})
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({
+export const SemanticWorkbench = workbench.define(import.meta.url, {
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './guide.md'),
-		placement: workbench.tab({ label: 'Guide' }),
+		document: './guide.md',
+		placement: { kind: 'tab', label: 'Guide' },
 	}),
 })
 class SemanticPlugin {
@@ -631,30 +674,32 @@ class SemanticPlugin {
 		await using fixture = await createFixture(fixtureFiles())
 		await writeFile(
 			resolve(fixture.path, 'src/settings.tsx'),
-			`import { useWorkbench } from '@pluxel/workbench/react'
+			`import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { SemanticWorkbench } from './plugin.ts'
-export default function Settings() {
-	const { api } = useWorkbench(SemanticWorkbench.settings)
+const settings = createWorkbenchRenderer(SemanticWorkbench.settings)
+export default settings.render(function Settings() {
+	const { api } = settings.useWorkbench()
 	api.snapshot()
 	// @ts-expect-error the browser projection must retain the exact View API
 	api.select('not-a-settings-method')
 	return null
-}
+})
 `,
 			'utf-8',
 		)
 		await writeFile(
 			resolve(fixture.path, 'src/picker.tsx'),
-			`import { useWorkbench } from '@pluxel/workbench/react'
+			`import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { SemanticWorkbench } from './plugin.ts'
-export default function Picker() {
-	const { provider, consumer } = useWorkbench(SemanticWorkbench.picker)
+const picker = createWorkbenchRenderer(SemanticWorkbench.picker)
+export default picker.render(function Picker() {
+	const { provider, consumer } = picker.useWorkbench()
 	provider.select('selected')
 	consumer.preview('selected')
 	// @ts-expect-error provider and consumer contracts must not collapse to any
 	provider.preview('not-a-provider-method')
 	return null
-}
+})
 `,
 			'utf-8',
 		)
@@ -686,19 +731,19 @@ import type { PickerApi, PickerConsumerApi, SettingsApi } from './protocol-index
 import type { Workbench } from '@pluxel/workbench'
 const WorkbenchRef = defineServiceRef<Workbench>()
 
-const renderer = workbench.entry(import.meta.url, './settings.tsx')
-function entries(viewRenderer: ReturnType<typeof workbench.entry>) {
+const renderer = './settings.tsx'
+function entries(viewRenderer: string) {
 	return {
 		settings: workbench.view<SettingsApi>({
 			renderer: viewRenderer,
-			placement: workbench.tab({ label: 'Settings' }),
+			placement: { kind: 'tab', label: 'Settings' },
 		}),
 		picker: workbench.attachment<PickerApi, PickerConsumerApi>({
-			renderer: workbench.entry(import.meta.url, './picker.tsx'),
+			renderer: './picker.tsx',
 		}),
 	}
 }
-export const SemanticWorkbench = workbench.define(entries(renderer))
+export const SemanticWorkbench = workbench.define(import.meta.url, entries(renderer))
 
 class SemanticPlugin {
 	declare ctx: { service(ref: ReturnType<typeof defineServiceRef<Workbench>>): Workbench | undefined }
@@ -809,7 +854,10 @@ class SemanticPlugin {
 	it('projects one exact renderer scope through every importing page without executing the definition', async () => {
 		const serverSentinel = 'SCOPE_SERVER_DEFINITION_MUST_NOT_EXECUTE_97ac'
 		const files = fixtureFiles()
-		files['src/server-label.ts'] = `export const serverLabel = '${serverSentinel}'\n`
+		files['src/server-label.ts'] = `
+if (typeof window !== 'undefined') throw new Error('${serverSentinel}')
+export const serverLabel = 'Settings'
+`
 		files['src/settings.types.ts'] = `
 import type { ScopedWorkbench } from './workbench.ts'
 export type SettingsDescriptor = typeof ScopedWorkbench.settings
@@ -840,10 +888,10 @@ import type { RpcTarget } from 'capnweb'
 import { Workbench, workbench } from '@pluxel/workbench'
 import { serverLabel } from './server-label.ts'
 interface SettingsApi extends RpcTarget { snapshot(): { enabled: boolean } }
-export const ScopedWorkbench = workbench.define({
+export const ScopedWorkbench = workbench.define(import.meta.url, {
 	settings: workbench.view<SettingsApi>({
-		renderer: workbench.entry(import.meta.url, './settings.tsx'),
-		placement: workbench.tab({ label: serverLabel }),
+		renderer: './settings.tsx',
+		placement: { kind: 'tab', label: serverLabel },
 	}),
 })
 class SemanticPlugin {
@@ -888,14 +936,14 @@ export default settingsRenderer.render(() => null)
 		await using fixture = await createFixture(files)
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
-export const ScopedWorkbench = workbench.define({
+export const ScopedWorkbench = workbench.define(import.meta.url, {
 	settings: workbench.view({
-		renderer: workbench.entry(import.meta.url, './settings.tsx'),
-		placement: workbench.tab({ label: 'Settings' }),
+		renderer: './settings.tsx',
+		placement: { kind: 'tab', label: 'Settings' },
 	}),
 	other: workbench.view({
-		renderer: workbench.entry(import.meta.url, './picker.tsx'),
-		placement: workbench.tab({ label: 'Other' }),
+		renderer: './picker.tsx',
+		placement: { kind: 'tab', label: 'Other' },
 	}),
 })
 class SemanticPlugin {
@@ -922,14 +970,14 @@ export default settingsRenderer.render(() => null)
 		await using fixture = await createFixture(files)
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
-export const ScopedWorkbench = workbench.define({
+export const ScopedWorkbench = workbench.define(import.meta.url, {
 	settings: workbench.view({
-		renderer: workbench.entry(import.meta.url, './settings.tsx'),
-		placement: workbench.tab({ label: 'Settings' }),
+		renderer: './settings.tsx',
+		placement: { kind: 'tab', label: 'Settings' },
 	}),
 	other: workbench.view({
-		renderer: workbench.entry(import.meta.url, './picker.tsx'),
-		placement: workbench.tab({ label: 'Other' }),
+		renderer: './picker.tsx',
+		placement: { kind: 'tab', label: 'Other' },
 	}),
 })
 class SemanticPlugin {
@@ -951,12 +999,10 @@ class SemanticPlugin {
 		const files = fixtureFiles()
 		files['src/guide.md'] = '::slot[status]\n\n::slot[probe]\n'
 		files['src/settings.tsx'] = `
-import { useWorkbench } from '@pluxel/workbench/react'
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { MixedWorkbench } from './mixed'
-export default function Settings() {
-	useWorkbench(MixedWorkbench.settings)
-	return null
-}
+const settings = createWorkbenchRenderer(MixedWorkbench.settings)
+export default settings.render(function Settings() { return null })
 `
 		files['src/content-schema.ts'] = `
 export const schemaSentinel = '${schemaSentinel}'
@@ -973,17 +1019,18 @@ import { Workbench, workbench } from '@pluxel/workbench'
 import { StatusSchema, ProbeSchema } from './content-schema'
 import { probe } from './content-handler'
 
-export const MixedWorkbench = workbench.define({
+export const MixedWorkbench = workbench.define(import.meta.url, {
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './guide.md', {
+		document: './guide.md',
+		slots: {
 			status: workbench.data(StatusSchema),
 			probe: workbench.action({ label: 'Probe', input: ProbeSchema }),
-		}),
-		placement: workbench.tab({ label: 'Guide' }),
+		},
+		placement: { kind: 'tab', label: 'Guide' },
 	}),
 	settings: workbench.view({
-		renderer: workbench.entry(import.meta.url, './settings.tsx'),
-		placement: workbench.tab({ label: 'Settings' }),
+		renderer: './settings.tsx',
+		placement: { kind: 'tab', label: 'Settings' },
 	}),
 })
 class SemanticPlugin {
@@ -1039,6 +1086,16 @@ export default async function Settings() {
 				/src\/settings\.tsx[\s\S]*dynamic import[\s\S]*"\.\/mixed"[\s\S]*createWorkbenchRenderer\(MixedWorkbench\.settings\)/,
 		},
 		{
+			name: 'a directly imported definition without a renderer scope',
+			settings: `
+import { MixedWorkbench } from './mixed'
+export default function Settings() { return MixedWorkbench.settings }
+`,
+			helper: undefined,
+			expectedError:
+				/src\/settings\.tsx[\s\S]*"\.\/mixed"[\s\S]*requires one createWorkbenchRenderer\(\) bound to MixedWorkbench\.settings/,
+		},
+		{
 			name: 'an indirect definition import',
 			settings: `
 import { descriptor } from './settings-helper'
@@ -1049,7 +1106,7 @@ import { MixedWorkbench } from './mixed'
 export const descriptor = MixedWorkbench.settings
 			`,
 			expectedError:
-				/src\/settings-helper\.ts[\s\S]*"\.\/mixed"[\s\S]*does not bind a renderer scope[\s\S]*createWorkbenchRenderer\(MixedWorkbench\.settings\)/,
+				/src\/settings-helper\.ts[\s\S]*"\.\/mixed"[\s\S]*requires one createWorkbenchRenderer[\s\S]*createWorkbenchRenderer\(MixedWorkbench\.settings\)/,
 		},
 		{
 			name: 'multiple server-definition boundaries',
@@ -1083,14 +1140,14 @@ export const second = MixedWorkbench.settings
 			await using fixture = await createFixture(files)
 			const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
-export const MixedWorkbench = workbench.define({
+export const MixedWorkbench = workbench.define(import.meta.url, {
 	guide: workbench.content({
-		document: workbench.markdown(import.meta.url, './guide.md'),
-		placement: workbench.tab({ label: 'Guide' }),
+		document: './guide.md',
+		placement: { kind: 'tab', label: 'Guide' },
 	}),
 	settings: workbench.view({
-		renderer: workbench.entry(import.meta.url, './settings.tsx'),
-		placement: workbench.tab({ label: 'Settings' }),
+		renderer: './settings.tsx',
+		placement: { kind: 'tab', label: 'Settings' },
 	}),
 })
 class SemanticPlugin {
@@ -1132,10 +1189,10 @@ export default function Settings() { return settingsLabel }
 		)
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({
+export const SemanticWorkbench = workbench.define(import.meta.url, {
 	settings: workbench.view({
-		renderer: workbench.entry(import.meta.url, './settings.tsx'),
-		placement: workbench.tab({ label: 'Settings' }),
+		renderer: './settings.tsx',
+		placement: { kind: 'tab', label: 'Settings' },
 	}),
 })
 class SemanticPlugin {
@@ -1178,8 +1235,8 @@ class SemanticPlugin {
 		const files = fixtureFiles()
 		files['src/provider.ts'] = `
 import { workbench } from '@pluxel/workbench'
-export const ProviderWorkbench = workbench.define({
-	picker: workbench.attachment({ renderer: workbench.entry(import.meta.url, './picker.tsx') }),
+export const ProviderWorkbench = workbench.define(import.meta.url, {
+	picker: workbench.attachment({ renderer: './picker.tsx' }),
 })
 `
 		files['src/provider-index.ts'] = `export * from './provider.ts'\n`
@@ -1187,8 +1244,8 @@ export const ProviderWorkbench = workbench.define({
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
 import { ProviderWorkbench } from './provider-index.ts'
-export const SemanticWorkbench = workbench.define({
-	fonts: ProviderWorkbench.picker.place(workbench.tab({ label: 'Fonts' })),
+export const SemanticWorkbench = workbench.define(import.meta.url, {
+	fonts: ProviderWorkbench.picker.place({ kind: 'tab', label: 'Fonts' }),
 })
 class SemanticPlugin {
 	init() {
@@ -1205,8 +1262,8 @@ class SemanticPlugin {
 		await using fixture = await createFixture(fixtureFiles())
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({
-	settings: workbench.view({ renderer: workbench.entry(import.meta.url, './settings.tsx') }),
+export const SemanticWorkbench = workbench.define(import.meta.url, {
+	settings: workbench.view({ renderer: './settings.tsx', placement: { kind: 'tab' } }),
 })
 class SemanticPlugin {
 	init() { this.ctx.service(Workbench).publish(SemanticWorkbench, { settings: () => ({}) }) }
@@ -1239,11 +1296,11 @@ class SemanticPlugin {
 			exportName: 'OtherPlugin',
 		})
 		const otherDefinition = (document: string) => `import { workbench } from '@pluxel/workbench'
-export const OtherWorkbench = workbench.define({ guide: workbench.content({ document: workbench.markdown(import.meta.url, '${document}'), placement: workbench.tab({ label: 'Other guide' }) }) })`
+export const OtherWorkbench = workbench.define(import.meta.url, { guide: workbench.content({ document: '${document}', placement: { kind: 'tab', label: 'Other guide' } }) })`
 		await using fixture = await createFixture({
 			...fixtureFiles(),
 			'src/first-workbench.ts': `import { workbench } from '@pluxel/workbench'
-export const FirstWorkbench = workbench.define({ guide: workbench.content({ document: workbench.markdown(import.meta.url, './first.md'), placement: workbench.tab({ label: 'First guide' }) }) })`,
+export const FirstWorkbench = workbench.define(import.meta.url, { guide: workbench.content({ document: './first.md', placement: { kind: 'tab', label: 'First guide' } }) })`,
 			'src/other-workbench.ts': otherDefinition('./other-before.md'),
 			'src/first.md': '# First guide\n',
 			'src/other-before.md': '# Other before\n',
@@ -1294,12 +1351,12 @@ class OtherPlugin { init() { this.ctx.service(Workbench).publish(OtherWorkbench)
 
 	it('refreshes imported definitions, renderer choices and failed reads in the same compiler', async () => {
 		const content = `import { workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({
- settings: workbench.content({ document: workbench.markdown(import.meta.url, './guide.md', { run: workbench.action({ label: 'Run' }) }), placement: workbench.tab({ label: 'Settings' }) }),
+export const SemanticWorkbench = workbench.define(import.meta.url, {
+ settings: workbench.content({ document: './guide.md', slots: { run: workbench.action({ label: 'Run' }) }, placement: { kind: 'tab', label: 'Settings' } }),
 })`
 		const view = `import { workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({
- settings: workbench.view({ renderer: workbench.entry(import.meta.url, './settings.tsx') }),
+export const SemanticWorkbench = workbench.define(import.meta.url, {
+ settings: workbench.view({ renderer: './settings.tsx', placement: { kind: 'tab' } }),
 })`
 		await using fixture = await createFixture({
 			...fixtureFiles(),
@@ -1361,7 +1418,7 @@ class SemanticPlugin { init() { this.ctx.service(Workbench).publish(SemanticWork
 			const id = resolve(fixture.path, 'src/plugin.ts')
 			const code = `import './delay.ts'
 import { Workbench, workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({ guide: workbench.content({ document: workbench.markdown(import.meta.url, './guide.md'), placement: workbench.tab({ label: 'Guide' }) }) })
+export const SemanticWorkbench = workbench.define(import.meta.url, { guide: workbench.content({ document: './guide.md', placement: { kind: 'tab', label: 'Guide' } }) })
 class SemanticPlugin { init() { this.ctx.service(Workbench).publish(SemanticWorkbench) } }`
 			const entered = Promise.withResolvers<void>()
 			const release = Promise.withResolvers<void>()
@@ -1416,7 +1473,7 @@ class SemanticPlugin { init() { this.ctx.service(Workbench).publish(SemanticWork
 		await using fixture = await createFixture({ ...fixtureFiles(), 'src/guide.md': '# Guide\n' })
 		const lowering = createWorkbenchSemanticLowering(fixture.path)
 		const code = `import { Workbench, workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({ guide: workbench.content({ document: workbench.markdown(import.meta.url, './guide.md'), placement: workbench.tab({ label: 'Guide' }) }) })
+export const SemanticWorkbench = workbench.define(import.meta.url, { guide: workbench.content({ document: './guide.md', placement: { kind: 'tab', label: 'Guide' } }) })
 class SemanticPlugin { init() { this.ctx.service(Workbench).publish(SemanticWorkbench) } }`
 		await collectModule(lowering, fixture.path, 'src/plugin.ts', code)
 		const [before] = await lowering.contentCompilations()
@@ -1443,7 +1500,7 @@ class SemanticPlugin { init() { this.ctx.service(Workbench).publish(SemanticWork
 			`
 import { Workbench, workbench } from '@pluxel/workbench'
 class SemanticPlugin {
-	init() { this.ctx.service(Workbench).publish(workbench.define({}), {}) }
+	init() { this.ctx.service(Workbench).publish(workbench.define(import.meta.url, {}), {}) }
 }`,
 		)
 		await expect(lowering.plans()).rejects.toThrow('statically traceable')
@@ -1453,7 +1510,7 @@ class SemanticPlugin {
 		await using fixture = await createFixture(fixtureFiles())
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({})
+export const SemanticWorkbench = workbench.define(import.meta.url, {})
 class CapabilityPart {
 	init() { this.ctx.service(Workbench).publish(SemanticWorkbench, {}) }
 }
@@ -1476,10 +1533,10 @@ import { defineServiceRef, BasePlugin, Plugin } from '@pluxel/core'
 import { workbench } from '@pluxel/workbench'
 import type { Workbench } from '@pluxel/workbench'
 const WorkbenchRef = defineServiceRef<Workbench>()
-export const SemanticWorkbench = workbench.define({
+export const SemanticWorkbench = workbench.define(import.meta.url, {
 	settings: workbench.view({
-		renderer: workbench.entry(import.meta.url, './settings.tsx'),
-		placement: workbench.tab(),
+		renderer: './settings.tsx',
+		placement: { kind: 'tab' },
 	}),
 })
 @Plugin()
@@ -1513,10 +1570,10 @@ export class SemanticPlugin extends BasePlugin {
 		await using fixture = await createFixture(fixtureFiles())
 		const source = (label: string) => `
 import { Workbench, workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({
+export const SemanticWorkbench = workbench.define(import.meta.url, {
 	settings: workbench.view({
-		renderer: workbench.entry(import.meta.url, './settings.tsx'),
-		placement: workbench.tab({ label: ${JSON.stringify(label)} }),
+		renderer: './settings.tsx',
+		placement: { kind: 'tab', label: ${JSON.stringify(label)} },
 	}),
 })
 class SemanticPlugin {
@@ -1578,8 +1635,8 @@ export default function Settings() { return label }`,
 		)
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
-export const SemanticWorkbench = workbench.define({
-	settings: workbench.view({ renderer: workbench.entry(import.meta.url, './settings.tsx') }),
+export const SemanticWorkbench = workbench.define(import.meta.url, {
+	settings: workbench.view({ renderer: './settings.tsx', placement: { kind: 'tab' } }),
 })
 class SemanticPlugin {
 	init() { this.ctx.service(Workbench).publish(SemanticWorkbench, { settings: () => ({}) }) }

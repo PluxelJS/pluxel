@@ -166,6 +166,7 @@ export declare function Plugin(options?:unknown):ClassDecorator
 			'.',
 			'./client',
 			'./react',
+			'./mantine',
 			'./internal/react',
 		]),
 		...fixturePackage('@pluxel/core', '1.0.0', ['.']),
@@ -181,10 +182,8 @@ export declare function Plugin(options?:unknown):ClassDecorator
 		'node_modules/@pluxel/workbench/index.js': `
 export class Workbench { static access = 'owner' }
 export const workbench = Object.freeze({
-	entry: (_base, path) => ({ path }),
 	view: (value) => value,
-	tab: (value) => value,
-	define: (value) => Object.freeze(value),
+	define: (_base, value) => Object.freeze(value),
 })
 `,
 		'node_modules/@pluxel/workbench/index.d.ts': `
@@ -193,10 +192,8 @@ export declare class Workbench {
 	publish(definition: unknown, bindings?: unknown): void
 }
 export declare const workbench: {
-	entry(base: string, path: string): Readonly<{ path: string }>
 	view<Api>(value: Record<string, unknown>): unknown
-	tab(value?: Record<string, unknown>): unknown
-	define<const Entries extends Record<string, unknown>>(value: Entries): Readonly<Entries>
+	define<const Entries extends Record<string, unknown>>(base: string, value: Entries): Readonly<Entries>
 }
 `,
 		'node_modules/@pluxel/workbench/internal/react.js': `
@@ -261,11 +258,11 @@ export function createWorkbenchBridge(identity, Renderer) {
 			"import { RpcTarget } from 'capnweb'",
 			"import { Workbench, workbench } from '@pluxel/workbench'",
 			'',
-			"const first = workbench.entry(import.meta.url, './ui/index.ts')",
-			"const second = workbench.entry(import.meta.url, './ui/second.ts')",
-			'export const DemoWorkbench = workbench.define({',
-			'	first: workbench.view<any>({ renderer: first, placement: workbench.tab() }),',
-			'	second: workbench.view<any>({ renderer: second, placement: workbench.tab() }),',
+			"const first = './ui/index.ts'",
+			"const second = './ui/second.ts'",
+			'export const DemoWorkbench = workbench.define(import.meta.url, {',
+			'	first: workbench.view<any>({ renderer: first, placement: { kind: "tab" } }),',
+			'	second: workbench.view<any>({ renderer: second, placement: { kind: "tab" } }),',
 			'})',
 			'',
 			"@Plugin({ displayName: 'RuntimeUiFixturePlugin' })",

@@ -29,29 +29,33 @@ const RecentArtifacts = v.array(
 	}),
 )
 
-export const ReportStudioWorkbench = workbench.define({
+export const ReportStudioWorkbench = workbench.define(import.meta.url, {
 	studioGuide: workbench.content({
-		document: workbench.markdown(import.meta.url, './studio-guide.md'),
-		placement: workbench.panel('left', { label: '操作指南', order: 10 }),
+		document: './studio-guide.md',
+		placement: { kind: 'panel', region: 'left', label: '操作指南', order: 10 },
 	}),
 	studioStatus: workbench.content({
-		document: workbench.markdown(import.meta.url, './studio-status.md', {
+		document: './studio-status.md',
+		slots: {
 			status: workbench.data(StudioStatus),
-		}),
-		placement: workbench.panel('right', { label: '渲染状态', order: 10 }),
+		},
+		placement: { kind: 'panel', region: 'right', label: '渲染状态', order: 10 },
 	}),
 	studioArtifacts: workbench.content({
-		document: workbench.markdown(import.meta.url, './studio-artifacts.md', {
+		document: './studio-artifacts.md',
+		slots: {
 			artifacts: workbench.data(RecentArtifacts),
-		}),
-		placement: workbench.panel('bottom', { label: '最近产物', order: 10 }),
+		},
+		placement: { kind: 'panel', region: 'bottom', label: '最近产物', order: 10 },
 	}),
 	studio: workbench.view<ReportStudioApi>({
-		renderer: workbench.entry(import.meta.url, './ui/studio.tsx'),
-		placement: workbench.route('/architecture-lab', {
+		renderer: './ui/studio.tsx',
+		placement: {
+			kind: 'route',
+			path: '/architecture-lab',
 			title: 'Pluxel Architecture Lab',
 			navigation: { label: 'Architecture Lab' },
 			order: 1,
-		}),
+		},
 	}),
 })

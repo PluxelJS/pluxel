@@ -11,9 +11,9 @@ import {
 import { pluginDefinitionIndexKey, type PluginDefinitionAddress } from '@pluxel/core'
 import type { WorkbenchContentSet } from '@pluxel/core/internal'
 import {
-	panel,
-	WORKBENCH_ICONS,
-	type WorkbenchPanelPlacement,
+	parseWorkbenchPlacement,
+	parseWorkbenchSourcePath,
+	type WorkbenchPlacement,
 } from '@pluxel/workbench/internal/transport'
 import type { Program } from 'oxc-parser'
 import { dirname, extname, isAbsolute, relative, resolve } from 'pathe'
@@ -70,11 +70,6 @@ type BindingRef = Readonly<{
 	localName: string
 }>
 
-type Renderer = Readonly<{
-	moduleId: string
-	entryPath: string
-}>
-
 type RendererGraphImport = Readonly<{
 	specifier: string
 	kind: 'static' | 'dynamic'
@@ -91,19 +86,14 @@ type RendererGraphModule = Readonly<{
 	imports: readonly RendererGraphImport[]
 }>
 
-type MarkdownDocument = Readonly<{
-	kind: 'markdown-document'
-	moduleId: string
-	sourcePath: string
-	slots: ReadonlyMap<string, WorkbenchSemanticContentSlot>
-}>
-
-type Placement = Readonly<{ kind: 'placement'; panel?: WorkbenchPanelPlacement }>
-
 type Descriptor =
-	| Readonly<{ kind: 'view'; renderer: Renderer; placement?: Placement }>
-	| Readonly<{ kind: 'attachment'; renderer: Renderer }>
-	| Readonly<{ kind: 'content'; document: MarkdownDocument; placement: Placement }>
+	| Readonly<{ kind: 'view'; renderer: string; placement: WorkbenchPlacement }>
+	| Readonly<{ kind: 'attachment'; renderer: string }>
+	| Readonly<{
+			kind: 'content'
+			document: string
+			slots: ReadonlyMap<string, WorkbenchSemanticContentSlot>
+	  }>
 	| Readonly<{
 			kind: 'attachment-placement'
 			provider: DefinedEntry
@@ -133,28 +123,19 @@ type SemanticValue =
 	| number
 	| boolean
 	| null
-	| Renderer
 	| Descriptor
 	| Definition
 	| DefinedEntry
 	| FunctionValue
-	| MarkdownDocument
-	| Placement
 	| RecordValue
-	| WorkbenchNamespace
-
-type WorkbenchNamespace = Readonly<{ kind: 'workbench-namespace' }>
 
 type EvaluationEnvironment = ReadonlyMap<string, SemanticValue>
 
-const WORKBENCH_NAMESPACE: WorkbenchNamespace = Object.freeze({
-	kind: 'workbench-namespace',
-})
 const WORKBENCH_IMPORTS = new Set(['@pluxel/workbench'])
 const WORKBENCH_REACT_IMPORTS = new Set(['@pluxel/workbench/react'])
 const ENTRY_KEY = /^[A-Za-z][A-Za-z0-9_]*$/
 const RESERVED_ENTRY_KEYS = new Set(['__proto__', 'prototype', 'constructor', 'then'])
-const GENERATED_ABI_VERSION = 3
+const GENERATED_ABI_VERSION = 4
 const BUILD_REVISION_VERSION = 5
 const FIXED_SHARED_PACKAGES = new Set(
 	WORKBENCH_FEDERATION_SHARED_MODULES.map(packageNameFromSpecifier),
@@ -502,7 +483,7 @@ async function compileWorkbenchSnapshot(
 			)
 			const definition = await evaluateDefinition(definitionBinding)
 			const requiresBindings = [...definition.entries.values()].some(
-				(descriptor) => descriptor.kind !== 'content' || descriptor.document.slots.size > 0,
+				(descriptor) => descriptor.kind !== 'content' || descriptor.slots.size > 0,
 			)
 			if (publication.hasBindings !== requiresBindings) {
 				throw semanticError(
@@ -527,15 +508,15 @@ async function compileWorkbenchSnapshot(
 						root: buildRoot,
 						entries: contentEntries.map(([key, descriptor]) => ({
 							key,
-							sourcePath: descriptor.document.sourcePath,
-							slots: [...descriptor.document.slots.values()],
+							sourcePath: resolve(dirname(definition.binding.moduleId), descriptor.document),
+							slots: [...descriptor.slots.values()],
 						})),
 					}),
 				)
 			}
 			const localEntries = [...definition.entries]
 				.filter(
-					(entry): entry is [string, Extract<Descriptor, { renderer: Renderer }>] =>
+					(entry): entry is [string, Extract<Descriptor, { renderer: string }>] =>
 						entry[1].kind === 'view' || entry[1].kind === 'attachment',
 				)
 				.sort(([left], [right]) => left.localeCompare(right))
@@ -548,7 +529,7 @@ async function compileWorkbenchSnapshot(
 					owner: publication.owner.definition,
 					key,
 				}),
-				renderer: descriptor.renderer,
+				renderer: resolve(dirname(definition.binding.moduleId), descriptor.renderer),
 			}))
 			const { revision: buildRevision, sources } = await buildRevisionFor(
 				buildRoot,
@@ -698,13 +679,13 @@ async function compileWorkbenchSnapshot(
 			throw semanticError(binding.moduleId, `${binding.localName} is not workbench.define(...)`)
 		}
 		const args = nodes(call.arguments)
-		if (args.length !== 1) {
+		if (args.length !== 2 || !isImportMetaUrl(args[0]!)) {
 			throw semanticError(
 				binding.moduleId,
-				'workbench.define() must receive one final entry record',
+				'workbench.define() requires import.meta.url and one final entry record',
 			)
 		}
-		const entriesValue = await evaluateExpression(binding.moduleId, args[0]!, new Map(), new Set())
+		const entriesValue = await evaluateExpression(binding.moduleId, args[1]!, new Map(), new Set())
 		if (!(entriesValue instanceof Map)) {
 			throw semanticError(binding.moduleId, 'workbench.define() entries must resolve to one record')
 		}
@@ -755,14 +736,22 @@ async function compileWorkbenchSnapshot(
 					return node.value as string | number | boolean | null
 				}
 				break
+			case 'UnaryExpression': {
+				if (node.operator !== '-') break
+				const operand = await evaluateExpression(
+					moduleId,
+					object(node.argument)!,
+					environment,
+					stack,
+				)
+				if (typeof operand === 'number') return -operand
+				break
+			}
 			case 'Identifier': {
 				const name = String(node.name)
 				if (environment.has(name)) return environment.get(name)!
 				const imported = module.imports.get(name)
 				if (imported) {
-					if (WORKBENCH_IMPORTS.has(imported.source) && imported.imported === 'workbench') {
-						return WORKBENCH_NAMESPACE
-					}
 					if (!imported.resolved || imported.namespace) {
 						throw semanticError(moduleId, `unsupported imported value ${name}`)
 					}
@@ -833,8 +822,6 @@ async function compileWorkbenchSnapshot(
 				const base = await evaluateExpression(moduleId, object(node.object)!, environment, stack)
 				const key = memberName(node)
 				if (!key) throw semanticError(moduleId, 'computed Workbench member is not static')
-				if (base === WORKBENCH_NAMESPACE && key === 'icons')
-					return new Map(Object.entries(WORKBENCH_ICONS))
 				if (isDefinition(base)) {
 					const descriptor = base.entries.get(key)
 					if (!descriptor) throw semanticError(moduleId, `definition has no entry ${key}`)
@@ -885,29 +872,15 @@ async function compileWorkbenchSnapshot(
 		stack: Set<string>,
 	): Promise<ReadonlyMap<string, WorkbenchSemanticContentSlot>> => {
 		if (!expression) return new Map()
-		const resolved = await resolveStaticValueNode(
+		const { moduleId: slotsModule, properties } = await staticObjectProperties(
 			moduleId,
 			expression,
-			'workbench.markdown() slots',
-			new Set(),
+			'workbench.content() slot map',
 		)
-		if (resolved.node.type !== 'ObjectExpression') {
-			throw semanticError(moduleId, 'workbench.markdown() slots must resolve to one static record')
-		}
 		const slots = new Map<string, WorkbenchSemanticContentSlot>()
-		for (const property of nodes(resolved.node.properties)) {
-			if (property.type !== 'Property' || property.computed === true) {
-				throw semanticError(moduleId, 'workbench.markdown() slots require exact static properties')
-			}
-			const key = propertyName(property.key)
-			if (!key) throw semanticError(moduleId, 'workbench.markdown() slot key must be static')
-			assertEntryKey(moduleId, key)
-			if (slots.has(key)) {
-				throw semanticError(moduleId, `workbench.markdown() slot ${key} is duplicated`)
-			}
-			const value = object(property.value)
-			if (!value) throw semanticError(moduleId, `workbench.markdown() slot ${key} has no value`)
-			slots.set(key, await parseContentSlot(resolved.moduleId, key, value, environment, stack))
+		for (const [key, value] of properties) {
+			assertEntryKey(slotsModule, key)
+			slots.set(key, await parseContentSlot(slotsModule, key, value, environment, stack))
 		}
 		return new Map([...slots].sort(([left], [right]) => left.localeCompare(right)))
 	}
@@ -944,7 +917,7 @@ async function compileWorkbenchSnapshot(
 		if (!isWorkbenchCall(call, module, 'action') || args.length !== 1) {
 			throw semanticError(moduleId, `Workbench Content slot ${key} must be workbench.data/action()`)
 		}
-		const options = await staticObjectProperties(
+		const { properties: options, moduleId: optionsModule } = await staticObjectProperties(
 			resolved.moduleId,
 			args[0]!,
 			`workbench.action() for slot ${key}`,
@@ -962,13 +935,13 @@ async function compileWorkbenchSnapshot(
 		if (!labelNode) {
 			throw semanticError(moduleId, `workbench.action() for slot ${key} requires label`)
 		}
-		const label = await evaluateExpression(resolved.moduleId, labelNode, environment, stack)
+		const label = await evaluateExpression(optionsModule, labelNode, environment, stack)
 		if (typeof label !== 'string' || label.length === 0) {
 			throw semanticError(moduleId, `workbench.action() for slot ${key} requires a static label`)
 		}
 		const confirmNode = options.get('confirm')
 		const confirm = confirmNode
-			? await evaluateExpression(resolved.moduleId, confirmNode, environment, stack)
+			? await evaluateExpression(optionsModule, confirmNode, environment, stack)
 			: undefined
 		if (confirm !== undefined && (typeof confirm !== 'string' || confirm.length === 0)) {
 			throw semanticError(
@@ -990,10 +963,10 @@ async function compileWorkbenchSnapshot(
 				...(confirm === undefined ? {} : { confirm: confirm as string }),
 			})
 		}
-		await assertSchemaBinding(resolved.moduleId, inputNode, environment)
+		await assertSchemaBinding(optionsModule, inputNode, environment)
 		let input: 'dialog' | 'embedded' = 'dialog'
 		if (formNode) {
-			const form = await evaluateExpression(resolved.moduleId, formNode, environment, stack)
+			const form = await evaluateExpression(optionsModule, formNode, environment, stack)
 			if (form !== 'embedded') {
 				throw semanticError(moduleId, `workbench.action() for slot ${key} form must be "embedded"`)
 			}
@@ -1026,11 +999,7 @@ async function compileWorkbenchSnapshot(
 		}
 	}
 
-	const staticObjectProperties = async (
-		moduleId: string,
-		expression: Node,
-		label: string,
-	): Promise<ReadonlyMap<string, Node>> => {
+	const staticObjectProperties = async (moduleId: string, expression: Node, label: string) => {
 		const resolved = await resolveStaticValueNode(moduleId, expression, label, new Set())
 		if (resolved.node.type !== 'ObjectExpression') {
 			throw semanticError(moduleId, `${label} must resolve to one static record`)
@@ -1047,7 +1016,7 @@ async function compileWorkbenchSnapshot(
 			if (!value) throw semanticError(moduleId, `${label} property ${key} has no value`)
 			result.set(key, value)
 		}
-		return result
+		return { moduleId: resolved.moduleId, properties: result }
 	}
 
 	const resolveStaticValueNode = async (
@@ -1114,117 +1083,56 @@ async function compileWorkbenchSnapshot(
 			const objectNode = object(callee.object)!
 			if (isWorkbenchMember(callee, module)) {
 				switch (method) {
-					case 'markdown': {
-						if ((args.length !== 2 && args.length !== 3) || !isImportMetaUrl(args[0]!)) {
-							throw semanticError(
-								moduleId,
-								'workbench.markdown() must use import.meta.url, one literal relative path, and optional static slots',
-							)
-						}
-						const path = literalString(args[1])
-						if (path === null || (!path.startsWith('./') && !path.startsWith('../'))) {
-							throw semanticError(moduleId, 'workbench.markdown() path must be a relative literal')
-						}
-						if (path.includes('\\') || path.includes('?') || path.includes('#')) {
-							throw semanticError(moduleId, 'workbench.markdown() path must be normalized')
-						}
-						if (extname(path).toLowerCase() !== '.md') {
-							throw semanticError(
-								moduleId,
-								'workbench.markdown() source must use the .md extension',
-							)
-						}
-						return Object.freeze({
-							kind: 'markdown-document',
-							moduleId,
-							sourcePath: resolve(dirname(moduleId), path),
-							slots: await parseContentSlots(moduleId, args[2], environment, stack),
-						})
-					}
-					case 'entry': {
-						if (args.length !== 2 || !isImportMetaUrl(args[0]!)) {
-							throw semanticError(
-								moduleId,
-								'workbench.entry() must use import.meta.url and one literal relative path',
-							)
-						}
-						const path = await evaluateExpression(moduleId, args[1]!, environment, stack)
-						if (typeof path !== 'string' || (!path.startsWith('./') && !path.startsWith('../'))) {
-							throw semanticError(moduleId, 'workbench.entry() path must be module-relative')
-						}
-						if (path.includes('\\') || path.includes('?') || path.includes('#')) {
-							throw semanticError(moduleId, 'workbench.entry() path must be normalized')
-						}
-						return Object.freeze({ moduleId, entryPath: resolve(dirname(moduleId), path) })
-					}
 					case 'view':
 					case 'attachment': {
-						if (args.length !== 1) {
-							throw semanticError(moduleId, `workbench.${method}() must receive one record`)
-						}
+						if (args.length !== 1)
+							throw semanticError(moduleId, `workbench.${method}() requires one options record`)
 						const options = await evaluateExpression(moduleId, args[0]!, environment, stack)
-						if (!(options instanceof Map) || !isRenderer(options.get('renderer'))) {
-							throw semanticError(moduleId, `workbench.${method}() requires a static renderer`)
-						}
-						const placement = options.get('placement')
-						return Object.freeze({
-							kind: method,
-							renderer: options.get('renderer')!,
-							...(method === 'view' && isPlacement(placement) ? { placement } : {}),
-						})
+						if (!(options instanceof Map))
+							throw semanticError(moduleId, `workbench.${method}() requires one options record`)
+						checkEntryOptions(
+							moduleId,
+							method,
+							options,
+							method === 'view' ? ['renderer', 'placement'] : ['renderer'],
+						)
+						const renderer = sourcePath(moduleId, 'renderer', options.get('renderer'))
+						return method === 'attachment'
+							? { kind: method, renderer }
+							: { kind: method, renderer, placement: placement(moduleId, options.get('placement')) }
 					}
 					case 'content': {
-						if (args.length !== 1) {
-							throw semanticError(moduleId, 'workbench.content() must receive one record')
-						}
-						const options = await evaluateExpression(moduleId, args[0]!, environment, stack)
-						if (!(options instanceof Map)) {
-							throw semanticError(moduleId, 'workbench.content() must receive one static record')
-						}
-						const keys = [...options.keys()].sort()
-						if (keys.length !== 2 || keys[0] !== 'document' || keys[1] !== 'placement') {
-							throw semanticError(
-								moduleId,
-								'workbench.content() requires exactly document and placement',
-							)
-						}
+						if (args.length !== 1)
+							throw semanticError(moduleId, 'workbench.content() requires one options record')
+						const { properties: options, moduleId: optionsModule } = await staticObjectProperties(
+							moduleId,
+							args[0]!,
+							'workbench.content()',
+						)
+						checkEntryOptions(moduleId, method, options, ['document', 'placement', 'slots'])
 						const document = options.get('document')
-						const placement = options.get('placement')
-						if (!isMarkdownDocument(document) || !isPlacement(placement)) {
-							throw semanticError(
+						const position = options.get('placement')
+						if (!document || !position)
+							throw semanticError(moduleId, 'workbench.content() requires document and placement')
+						placement(
+							moduleId,
+							await evaluateExpression(optionsModule, position, environment, stack),
+						)
+						return {
+							kind: 'content',
+							document: sourcePath(
 								moduleId,
-								'workbench.content() requires workbench.markdown() and a static placement',
-							)
-						}
-						return Object.freeze({ kind: 'content', document, placement })
-					}
-					case 'tab':
-					case 'route':
-						return Object.freeze({ kind: 'placement' })
-					case 'panel': {
-						if (args.length !== 2)
-							throw semanticError(
-								moduleId,
-								'workbench.panel() requires a region and one static options record',
-							)
-						const region = await evaluateExpression(moduleId, args[0]!, environment, stack)
-						const options = await evaluateExpression(moduleId, args[1]!, environment, stack)
-						if (!(options instanceof Map))
-							throw semanticError(moduleId, 'workbench.panel() requires one static options record')
-						try {
-							return Object.freeze({
-								kind: 'placement',
-								panel: panel(
-									region as WorkbenchPanelPlacement['region'],
-									Object.fromEntries(options) as Parameters<typeof panel>[1],
-								),
-							})
-						} catch (cause) {
-							throw semanticError(moduleId, cause instanceof Error ? cause.message : String(cause))
+								'document',
+								await evaluateExpression(optionsModule, document, environment, stack),
+							),
+							slots: await parseContentSlots(
+								optionsModule,
+								options.get('slots'),
+								environment,
+								stack,
+							),
 						}
 					}
-					case 'icons':
-						return new Map()
 					case 'define':
 						throw semanticError(moduleId, 'nested workbench.define() is not a valid entry value')
 				}
@@ -1234,7 +1142,7 @@ async function compileWorkbenchSnapshot(
 				if (args.length !== 1) {
 					throw semanticError(moduleId, 'Attachment.place() must receive one static placement')
 				}
-				await evaluateExpression(moduleId, args[0]!, environment, stack)
+				placement(moduleId, await evaluateExpression(moduleId, args[0]!, environment, stack))
 				return Object.freeze({ kind: 'attachment-placement', provider: base })
 			}
 		}
@@ -1499,7 +1407,7 @@ async function writeBridgeEntry(input: {
 	buildRevision: string
 	identity: WorkbenchFederationDescriptorIdentity
 	definition: Definition
-	renderer: Renderer
+	renderer: string
 }): Promise<string> {
 	// An accepted plan must keep pointing to its own generated files while a newer
 	// candidate compiles or builds in the background.
@@ -1530,18 +1438,18 @@ async function writeProjectedRenderer(input: {
 	generatedDir: string
 	identity: WorkbenchFederationDescriptorIdentity
 	definition: Definition
-	renderer: Renderer
+	renderer: string
 }): Promise<string> {
-	const extension = extname(input.renderer.entryPath) || '.tsx'
+	const extension = extname(input.renderer) || '.tsx'
 	const rendererPath = resolve(input.generatedDir, `${input.identity.key}.renderer${extension}`)
 	const projectionPath = resolve(input.generatedDir, `${input.identity.key}.definition.ts`)
 	const projectionGraph = await collectRendererProjectionGraph(
-		input.renderer.entryPath,
+		input.renderer,
 		input.definition.binding.moduleId,
 		input.definition,
 		input.identity,
 	)
-	if (!projectionGraph) return input.renderer.entryPath
+	if (!projectionGraph) return input.renderer
 	const clonedPaths = new Map<string, string>()
 	const clonedModules = [...projectionGraph.modules]
 		.filter(([path]) => projectionGraph.clonePaths.has(path))
@@ -1591,7 +1499,7 @@ async function writeProjectedRenderer(input: {
 		const previous = await readFile(clonePath, 'utf-8').catch((): undefined => undefined)
 		if (previous !== projected) await writeFile(clonePath, projected, 'utf-8')
 	}
-	const rendererDeclaration = `workbench.entry(import.meta.url, ${JSON.stringify(`./${input.identity.key}.renderer${extension}`)})`
+	const renderer = JSON.stringify(`./${input.identity.key}.renderer${extension}`)
 	// Keep the runtime graph browser-only while deriving the invariant API brands from the author's
 	// exact descriptor. `typeof import(...)` exists only in TypeScript's type graph, so Vite never
 	// executes the server definition module. Indexing the final definition also works when the entry
@@ -1601,28 +1509,19 @@ async function writeProjectedRenderer(input: {
 		.replace(/\.(?:tsx?|jsx)$/i, '.js')
 		.replace(/\.mts$/i, '.mjs')
 		.replace(/\.cts$/i, '.cjs')
-	const sourceDescriptor = `(typeof import(${JSON.stringify(sourceDefinitionImport)}))[${JSON.stringify(input.definition.exportName)}][${JSON.stringify(input.identity.key)}]`
+	const sourceDefinition = `(typeof import(${JSON.stringify(sourceDefinitionImport)}))[${JSON.stringify(input.definition.exportName)}]`
 	const sourceEntry = input.definition.entries.get(input.identity.key)
-	const panelPlacement = sourceEntry?.kind === 'view' ? sourceEntry.placement?.panel : undefined
-	const projectedPlacement = panelPlacement
-		? `workbench.panel(${JSON.stringify(panelPlacement.region)}, ${JSON.stringify({
-				label: panelPlacement.label,
-				...(panelPlacement.icon === undefined ? {} : { icon: panelPlacement.icon }),
-				order: panelPlacement.order,
-			})})`
-		: `workbench.tab({ label: ${JSON.stringify(input.identity.key)} })`
 	const descriptor =
-		input.identity.kind === 'view'
-			? `workbench.view({ renderer: ProjectedRenderer, placement: ${projectedPlacement} }) as unknown as SourceDescriptor`
-			: 'workbench.attachment({ renderer: ProjectedRenderer }) as unknown as SourceDescriptor'
+		sourceEntry?.kind === 'view'
+			? `workbench.view({ renderer: ${renderer}, placement: ${JSON.stringify(sourceEntry.placement)} })`
+			: `workbench.attachment({ renderer: ${renderer} })`
 	const projection = [
 		'// Generated browser-only Workbench descriptor projection. Do not edit.',
 		`import { workbench } from '@pluxel/workbench'`,
-		`type SourceDescriptor = ${sourceDescriptor}`,
-		`const ProjectedRenderer = ${rendererDeclaration}`,
-		`export const ${input.definition.exportName} = workbench.define({`,
+		`type ProjectedDefinition = Pick<${sourceDefinition}, ${JSON.stringify(input.identity.key)}>`,
+		`export const ${input.definition.exportName}: ProjectedDefinition = workbench.define(import.meta.url, {`,
 		`\t${JSON.stringify(input.identity.key)}: ${descriptor},`,
-		'})',
+		'}) as unknown as ProjectedDefinition',
 		'',
 	].join('\n')
 	const previousProjection = await readFile(projectionPath, 'utf-8').catch(
@@ -1741,39 +1640,22 @@ async function collectRendererProjectionGraph(
 		)
 	}
 	assertProjectionImport(statement, definitionObject, boundary.module.path)
-	if (rendererCalls.length === 0) {
-		if (boundary.module.path !== renderer) {
-			throw rendererScopeError({
-				rendererPath,
-				definition: definitionObject,
-				identity,
-				message:
-					'renderer may reference its server definition only through a direct static import; ' +
-					`the import in ${boundary.module.path} via ${JSON.stringify(boundary.item.specifier)} does not bind a renderer scope`,
-			})
-		}
-	} else {
-		if (
-			rendererCalls.length !== 1 ||
-			rendererCalls[0]!.module.path !== boundary.module.path ||
-			!isModuleConstInitializer(rendererCalls[0]!.module.ast, rendererCalls[0]!.call) ||
-			!isExactWorkbenchRendererCall(
-				rendererCalls[0]!.call,
-				statement,
-				definitionObject,
-				identity.key,
-			)
-		) {
-			throw rendererScopeError({
-				rendererPath,
-				definition: definitionObject,
-				identity,
-				message:
-					'renderer graph must contain one createWorkbenchRenderer() bound to ' +
-					`${definitionObject.exportName}.${identity.key}; ` +
-					`scope call/import boundary is ${boundary.module.path} via ${JSON.stringify(boundary.item.specifier)}`,
-			})
-		}
+	const scope = rendererCalls[0]
+	if (
+		rendererCalls.length !== 1 ||
+		!scope ||
+		scope.module.path !== boundary.module.path ||
+		!isModuleConstInitializer(scope.module.ast, scope.call) ||
+		!isExactWorkbenchRendererCall(scope.call, statement, definitionObject, identity.key)
+	) {
+		throw rendererScopeError({
+			rendererPath,
+			definition: definitionObject,
+			identity,
+			message:
+				`the import in ${boundary.module.path} via ${JSON.stringify(boundary.item.specifier)} ` +
+				`requires one createWorkbenchRenderer() bound to ${definitionObject.exportName}.${identity.key}`,
+		})
 	}
 
 	const importers = new Map<string, Set<string>>()
@@ -1828,9 +1710,8 @@ function rendererScopeError(
 	const descriptor = `${input.definition.exportName}.${input.identity.key}`
 	return new Error(
 		`[workbench-semantic] ${input.rendererPath}: renderer scope for ${descriptor}: ${input.message}. ` +
-			`For the standard scope form, use one reachable boundary with createWorkbenchRenderer(${descriptor}); ` +
-			'other renderer modules must import that scope or its resources instead of the server definition. ' +
-			`A low-level useWorkbench(${descriptor}) boundary must remain directly in the renderer entry.`,
+			`Bind a module-level const with createWorkbenchRenderer(${descriptor}). ` +
+			'Other renderer modules can import that scope or its resources.',
 	)
 }
 
@@ -1974,7 +1855,7 @@ async function buildRevisionFor(
 	definition: Definition,
 	entries: readonly Readonly<{
 		descriptor: WorkbenchFederationDescriptorIdentity
-		renderer: Renderer
+		renderer: string
 	}>[],
 ): Promise<Readonly<{ revision: string; sources: readonly string[] }>> {
 	const hash = createHash('sha256')
@@ -1986,12 +1867,10 @@ async function buildRevisionFor(
 		`definition:${relative(root, definition.binding.moduleId)}#${definition.exportName}\n`,
 	)
 	for (const entry of entries) {
-		hash.update(
-			`entry:${JSON.stringify(entry.descriptor)}:${relative(root, entry.renderer.entryPath)}\n`,
-		)
+		hash.update(`entry:${JSON.stringify(entry.descriptor)}:${relative(root, entry.renderer)}\n`)
 	}
 	const roots = [
-		...new Set([definition.binding.moduleId, ...entries.map((entry) => entry.renderer.entryPath)]),
+		...new Set([definition.binding.moduleId, ...entries.map((entry) => entry.renderer)]),
 	].sort()
 	const sources = await hashSourceGraph(hash, root, roots)
 	return Object.freeze({ revision: hash.digest('hex').slice(0, 24), sources })
@@ -2407,32 +2286,41 @@ function isDescriptor(value: SemanticValue): value is Descriptor {
 	)
 }
 
-function isRenderer(value: SemanticValue | undefined): value is Renderer {
-	return Boolean(
-		value &&
-		typeof value === 'object' &&
-		'moduleId' in value &&
-		'entryPath' in value &&
-		typeof value.moduleId === 'string' &&
-		typeof value.entryPath === 'string',
-	)
+function checkEntryOptions(
+	moduleId: string,
+	kind: string,
+	options: ReadonlyMap<string, unknown>,
+	allowed: readonly string[],
+): void {
+	for (const key of options.keys()) {
+		if (!allowed.includes(key))
+			throw semanticError(moduleId, `workbench.${kind}(): unsupported option "${key}"`)
+	}
 }
 
-function isMarkdownDocument(value: SemanticValue | undefined): value is MarkdownDocument {
-	return Boolean(
-		value &&
-		typeof value === 'object' &&
-		'kind' in value &&
-		value.kind === 'markdown-document' &&
-		'sourcePath' in value &&
-		typeof value.sourcePath === 'string',
-	)
+function sourcePath(
+	moduleId: string,
+	field: 'renderer' | 'document',
+	value: SemanticValue | undefined,
+): string {
+	try {
+		return parseWorkbenchSourcePath(field, value)
+	} catch (cause) {
+		throw semanticError(moduleId, cause instanceof Error ? cause.message : String(cause))
+	}
 }
 
-function isPlacement(value: SemanticValue | undefined): value is Placement {
-	return Boolean(
-		value && typeof value === 'object' && 'kind' in value && value.kind === 'placement',
-	)
+function plainStaticValue(value: SemanticValue | undefined): unknown {
+	if (!(value instanceof Map)) return value
+	return Object.fromEntries([...value].map(([key, child]) => [key, plainStaticValue(child)]))
+}
+
+function placement(moduleId: string, value: SemanticValue | undefined): WorkbenchPlacement {
+	try {
+		return parseWorkbenchPlacement(plainStaticValue(value))
+	} catch (cause) {
+		throw semanticError(moduleId, cause instanceof Error ? cause.message : String(cause))
+	}
 }
 
 function isDefinition(value: SemanticValue): value is Definition {

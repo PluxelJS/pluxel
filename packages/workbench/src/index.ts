@@ -7,8 +7,10 @@ export type {
 	WorkbenchContentActionResult,
 	WorkbenchContentData,
 	WorkbenchDefinition,
+	WorkbenchDefinedEntry,
 	WorkbenchIcon,
 	WorkbenchPrincipal,
+	WorkbenchPlacementInput,
 	WorkbenchView,
 } from './workbench/definition.ts'
 

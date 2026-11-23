@@ -20,7 +20,7 @@ import {
 	type WorkbenchContentIdentity,
 } from '@pluxel/core/federation'
 import { isAbsolute, join, relative } from 'pathe'
-import type { WorkbenchMarkdownDocument } from '../../workbench/definition.ts'
+import type { WorkbenchContentSlotMap } from '../../workbench/definition.ts'
 import { WORKBENCH_ARTIFACT_TRANSACTION } from './WorkbenchArtifactService.ts'
 
 export type WorkbenchContentArtifactCandidate = Readonly<{
@@ -59,7 +59,7 @@ export type WorkbenchContentArtifactLookup = Readonly<{
 		definition: PluginDefinitionAddress,
 		descriptor: WorkbenchContentIdentity,
 		/** Test lookups may synthesize a plan from the current declaration. */
-		declaration?: WorkbenchMarkdownDocument,
+		slots?: WorkbenchContentSlotMap,
 	): WorkbenchResolvedContentArtifact | undefined
 }>
 

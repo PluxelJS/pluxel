@@ -11,17 +11,17 @@ Workbench 是可选 Host 服务。关闭时不安装服务，也不创建 backen
 | Content    | Shell 渲染 build-time portable Markdown plan、bounded latest state、短 action 和一次性表单           |
 | View       | Plugin 提供 fresh `RpcTarget` 和完整 React renderer                                                  |
 | Attachment | provider 拥有 renderer/API；consumer 经 constructor dependency 决定 placement，可提供自己的 API root |
-| Placement  | 固定 `tab()` / `route()` / `panel()` topology；领域列表行保持为数据                                  |
+| Placement  | 带 `kind` 的 tab / route / panel 数据；领域列表行保持为数据                                          |
 
 普通 Plugin 配置使用 ConfigService/标准 UI。复杂交互、lossless stream、分页、progress/cancel 由 View 的领域 API 表达。启用后的交付采用 Cap’n Web over WebSocket、MF2 Manifest/Snapshot 和 React Bridge；Content-only definition 没有 MF producer。
 
 ## Definition 与 publication
 
-Definition 是 flat、frozen、固定键集合。Canonical Plugin definition address 与 entry key 决定 identity；Attachment placement 另固定 consumer definition 和 provider descriptor。`workbench.entry()` / `markdown()` 的 module-relative literal 只提供编译 provenance。
+Definition 是 flat、frozen、固定键集合。Canonical Plugin definition address 与 entry key 决定 identity；Attachment placement 另固定 consumer definition 和 provider descriptor。`workbench.define(import.meta.url, entries)` 持有所有本地来源。每个 View/Attachment 的 `renderer` 和 Content 的 `document` 都相对该模块解析，包括通过 helper 组合的声明。一个已归属的 descriptor 不能转移给另一份 definition，跨插件复用由已发布 Attachment 的 `.place(placement)` 表达。
 
 Plugin 在 `init()` 中最多 publish 一次，bindings 精确覆盖需要绑定的 entries，纯 Markdown 无 binding。Part 由 owning Plugin 聚合。Context 决定 owner，publication 纳入 generation effects，在 owner committed/running 后才可见。
 
-`panel(region, { label, icon?, order? })` 生成 `kind: panel` placement，region 仅 left/right/bottom。它沿用 publication/openEntry，以 target node、entry key 和当前 layout revision 接纳；Panel 不进入 route directory。
+声明与编译器共用 placement 校验。面板声明为 `{ kind: 'panel', region, label, icon?, order? }`，region 限定为 left/right/bottom。它沿用 publication/openEntry，以 target node、entry key 和当前 layout revision 接纳；Panel 不进入 route directory。
 
 每次 View/Attachment open 创建 fresh roots，interactive Content 使用框架创建的 per-open root。Factory 取得已认证 principal、服务端重新匹配的 frozen params 和 lifetime signal；领域 observer、任务与缓存随 signal/disposer 释放。Factory 不取得 raw request、consumer Context 或 service locator。Attachment provider 只取得 exact consumer node address，可选 consumer root 保持自己的 owner、授权与 cleanup。
 
@@ -93,7 +93,7 @@ Static assembly、dynamic discovery 和 dev compiler 共用 artifact store。Mix
 
 一个 Plugin definition 的全部 renderers 合为一个 producer，每个 declaration 生成稳定 `./views/<key>` expose 和 Bridge wrapper。工具链拥有 remote name、shared、public path 与 manifest URL，构建实现见 [Artifact Build](ARTIFACT_BUILD.md#workbench-source-declaration)。
 
-Renderer graph 只有一个 exact definition value-import boundary，通常是 `createWorkbenchRenderer(Exact.entry)` 所在的 scope module；低层 hook 可由 default entry 持有。其他 page/panel import scope/resource，跨 renderer 组件接收普通数据。Toolchain 将该边界改写为 browser-only descriptor projection，保留类型且不执行 server definition；indirect/dynamic/re-export 和跨 renderer scope 均拒绝。
+需要 RPC、Host 或托管资源的 renderer graph 由一个模块直接导入 definition，以模块级 `const scope = createWorkbenchRenderer(Exact.entry)` 绑定唯一条目。默认入口导出 `scope.render(Page)`，其他组件使用同一个 scope 或其资源。纯展示 renderer 可以直接默认导出零参数组件。Toolchain 将该边界改写为 browser-only descriptor projection，保留类型且不执行 server definition；indirect/dynamic/re-export 和跨 renderer scope 均拒绝。
 
 Manifest 是浏览器模块信息的唯一来源，Snapshot 从标准 Manifest 生成。Host 只记录 definition/revision 到 immutable artifact root 的 inventory。Manifest、entry、exposes、types 和 shared versions 验证后才提交；HTTP 只提供冻结 regular-file digest inventory 中的文件，Manifest assets 字段本身不等于完整 import closure。
 

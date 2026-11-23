@@ -6,10 +6,10 @@ import { WorkbenchOpenedContentHandle } from '@pluxel/workbench/internal'
 import { expect, it, vi } from 'vitest'
 
 const WorkbenchRef = defineServiceRef<Workbench>()
-const WorkbenchLeaseDefinition = workbench.define({
+const WorkbenchLeaseDefinition = workbench.define(import.meta.url, {
 	lease: workbench.content({
-		document: workbench.markdown(import.meta.url, './fixtures/test-host-lease.md'),
-		placement: workbench.tab({ label: 'Lease' }),
+		document: './fixtures/test-host-lease.md',
+		placement: { kind: 'tab', label: 'Lease' },
 	}),
 })
 

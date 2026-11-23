@@ -19,33 +19,42 @@ const Events = v.array(
 	}),
 )
 
-export const BotWorkspaceWorkbench = workbench.define({
+export const BotWorkspaceWorkbench = workbench.define(import.meta.url, {
 	home: workbench.view<BotWorkspaceApi>({
-		renderer: workbench.entry(import.meta.url, './ui/home.tsx'),
-		placement: workbench.route('/bot-lab', {
+		renderer: './ui/home.tsx',
+		placement: {
+			kind: 'route',
+			path: '/bot-lab',
 			title: '机器人工作区',
 			navigation: { label: '机器人工作区（模拟）' },
 			order: 2,
-		}),
+		},
 	}),
 	list: workbench.view<BotWorkspaceApi>({
-		renderer: workbench.entry(import.meta.url, './ui/list.tsx'),
-		placement: workbench.panel('left', { label: '机器人', icon: workbench.icons.MessageChatbot }),
+		renderer: './ui/list.tsx',
+		placement: {
+			kind: 'panel',
+			region: 'left',
+			label: '机器人',
+			icon: 'message-chatbot',
+		},
 	}),
 	bot: workbench.view<BotDetailApi>({
-		renderer: workbench.entry(import.meta.url, './ui/bot.tsx'),
-		placement: workbench.route('/bot-lab/:source/:bot', { title: '机器人' }),
+		renderer: './ui/bot.tsx',
+		placement: { kind: 'route', path: '/bot-lab/:source/:bot', title: '机器人' },
 	}),
 	sources: workbench.content({
-		document: workbench.markdown(import.meta.url, './sources.md', {
+		document: './sources.md',
+		slots: {
 			sources: workbench.data(Sources),
-		}),
-		placement: workbench.panel('right', { label: '数据来源' }),
+		},
+		placement: { kind: 'panel', region: 'right', label: '数据来源' },
 	}),
 	events: workbench.content({
-		document: workbench.markdown(import.meta.url, './events.md', {
+		document: './events.md',
+		slots: {
 			events: workbench.data(Events),
-		}),
-		placement: workbench.panel('bottom', { label: '工作区事件' }),
+		},
+		placement: { kind: 'panel', region: 'bottom', label: '工作区事件' },
 	}),
 })

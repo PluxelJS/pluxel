@@ -28,16 +28,18 @@ const RuntimeStatus = v.pipe(
 
 export type OtelWorkbenchStatus = v.InferOutput<typeof RuntimeStatus>
 
-export const OtelWorkbench = workbench.define({
+export const OtelWorkbench = workbench.define(import.meta.url, {
 	operations: workbench.content({
-		document: workbench.markdown(import.meta.url, './workbench-guide.md', {
+		document: './workbench-guide.md',
+		slots: {
 			status: workbench.data(RuntimeStatus),
 			flush: workbench.action({ label: '立即导出待处理 telemetry' }),
-		}),
-		placement: workbench.tab({
+		},
+		placement: {
+			kind: 'tab',
 			label: '运维说明',
-			icon: workbench.icons.TextRecognition,
+			icon: 'text-recognition',
 			order: 80,
-		}),
+		},
 	}),
 })

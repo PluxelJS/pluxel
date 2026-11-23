@@ -6,8 +6,9 @@
   获得只服务于自身的特殊入口。白盒框架集成测试可以使用 `/internal/test`，普通作者测试使用公开 test host。
 - 将官方插件视为跨插件组成、调用方归属、生命周期、配置、日志和可选 Workbench 集成的实践验证层与
   一致性验证层。
-- Workbench 关闭时，业务能力仍必须完整运行。Plugin 自有管理界面只通过固定 Direct View 或 Attachment 投影
-  browser-safe API。
+- Workbench 关闭时，业务能力仍必须完整运行。在 `workbench.define(import.meta.url, entries)` 中声明固定入口，
+  View 的 `renderer` 和 Content 的 `document` 路径相对定义模块，`placement.kind` 选择 route、tab 或 panel。
+  要向其他 Plugin 提供可放置的 renderer 时声明 Attachment。
 - 配置 schema 从插件的权威公开入口导出同一实例，供 Host env/file bindings 使用；不另建环境解析或 RPC 专属配置层。部署配置、业务保存状态与调用参数各有明确所有者，保存状态不得暗中绕过部署预算或策略。仅持久化操作需要的服务在该能力边界取得，基础能力不为可选编辑界面强制建立存储。修改这些边界时验证无 Workbench 的真实 Host 路径。
 - 包内问题优先在包内解决。只有当需求能够表达为可复用的跨插件不变量，而不是单个插件的实现捷径时，
   才提议修改 Pluxel core/runtime。

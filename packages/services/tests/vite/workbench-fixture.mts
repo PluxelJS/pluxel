@@ -59,25 +59,26 @@ export function workbenchDefinition(
 ): string {
 	const source =
 		kind === 'content'
-			? "document: workbench.markdown(import.meta.url, './guide.md', { status: workbench.data(StatusSchema) })"
-			: "renderer: workbench.entry(import.meta.url, './renderer.ts')"
+			? "document: './guide.md', slots: { status: workbench.data(StatusSchema) }"
+			: "renderer: './renderer.ts'"
 	return `import * as v from 'valibot'
 import { workbench } from '@pluxel/workbench'
 const StatusSchema = v.object({})
 export const version = ${JSON.stringify(version)}
 export const fail = ${fail}
-export const UI = workbench.define({ page: workbench.${kind}({
+export const UI = workbench.define(import.meta.url, { page: workbench.${kind}({
   ${source},
-  placement: workbench.tab({ label: 'Page' }),
+  placement: { kind: 'tab', label: 'Page' },
 }) })
 `
 }
 
 export function workbenchRenderer(marker: string): string {
-	return `import { useWorkbench } from '@pluxel/workbench/react'
+	return `import { createWorkbenchRenderer } from '@pluxel/workbench/react'
 import { UI } from './workbench'
 
-export default function Renderer() { useWorkbench(UI.page); return ${JSON.stringify(marker)} }
+const page = createWorkbenchRenderer(UI.page)
+export default page.render(function Renderer() { return ${JSON.stringify(marker)} })
 `
 }
 

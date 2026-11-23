@@ -47,21 +47,13 @@ function parseSpecs(value: string): string[] {
 
 export function PackageManagerPage({
 	host,
-	snapshotQuery,
-	usageQuery,
-	preparation,
-	confirmation,
-	removal,
+	state: { snapshotQuery, usageQuery, preparation, confirmation, removal },
 	marketData,
 	title,
 	initialTab,
 }: Readonly<{
 	host: WorkbenchHostFacade
-	snapshotQuery: ReturnType<PackageManagerResources['packageManagerSnapshotQuery']['useQuery']>
-	usageQuery: ReturnType<PackageManagerResources['packageUsageQuery']['useQuery']>
-	preparation: ReturnType<PackageManagerResources['prepareInstallMutation']['useMutation']>
-	confirmation: ReturnType<PackageManagerResources['confirmInstallMutation']['useMutation']>
-	removal: ReturnType<PackageManagerResources['removePackagesMutation']['useMutation']>
+	state: ReturnType<PackageManagerResources['usePackageManager']>
 	marketData: MarketplaceData
 	title: string
 	initialTab: 'market' | 'installed'

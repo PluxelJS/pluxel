@@ -7,10 +7,9 @@ import {
 } from '@pluxel/services/management/internal'
 import {
 	readWorkbenchContentSlot,
-	readWorkbenchMarkdownDocument,
 	type WorkbenchContentActionResult,
 	type WorkbenchContentSchema,
-	type WorkbenchMarkdownDocument,
+	type WorkbenchContentSlotMap,
 } from '../../workbench/definition.ts'
 import type {
 	WorkbenchContentActionPresentation,
@@ -39,10 +38,9 @@ export type WorkbenchContentRuntimeBinding = Readonly<{
 
 /** Compiles generation-owned schemas into a portable presentation and checks its pinned artifact. */
 export function prepareWorkbenchContentContract(
-	document: WorkbenchMarkdownDocument,
+	declarations: WorkbenchContentSlotMap,
 	plan: WorkbenchContentPlan,
 ): WorkbenchContentContract {
-	const declarations = readWorkbenchMarkdownDocument(document).slots
 	const declaredKeys = Object.keys(declarations).sort()
 	const planKeys = plan.slots.map((slot) => slot.key)
 	if (!sameStrings(declaredKeys, planKeys)) {

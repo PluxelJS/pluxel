@@ -4,10 +4,12 @@ import { workbench } from '@pluxel/workbench'
 import { FontsPlugin } from '../src/index.ts'
 import { FontsWorkbench } from '../src/workbench.ts'
 
-export const FontsTestWorkbench = workbench.define({
-	fonts: FontsWorkbench.selection.place(
-		workbench.tab({ label: 'Fonts', icon: workbench.icons.Typography }),
-	),
+export const FontsTestWorkbench = workbench.define(import.meta.url, {
+	fonts: FontsWorkbench.selection.place({
+		kind: 'tab',
+		label: 'Fonts',
+		icon: 'typography',
+	}),
 })
 
 export function openFontsManager(

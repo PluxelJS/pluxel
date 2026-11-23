@@ -11,6 +11,6 @@
 - `PluginOutboundHttpDemo`：内建 Wretch、原生重试与 404 业务分支，以及独立 HTTP 路由的 DTO 投影。
 - `PluginHttpWorkerDemo`：typed task + root shared worker pool + HMR/static artifact。
 
-Workbench 插件每代至多调用一次 `ctx.service(Workbench).publish(definition, bindings)`。每次打开 View 都返回新的
-`RpcTarget`；普通 snapshot/watch renderer 通过 descriptor-bound scope 声明 query/mutation，只有 capability、progress/cancel
-等高级协议才直接使用 exact descriptor 的低层 `useWorkbench()`。状态读取和订阅仍由插件 API 自己定义。
+示例在所属 Plugin 的 `init()` 中调用一次 `this.ctx.service(WorkbenchRef)?.publish(definition, bindings)`。每次打开 View 都返回新的
+`RpcTarget`。Renderer 使用 `createWorkbenchRenderer(Definition.entry)` 绑定页面，通过 scope 的 query/mutation 读取和修改状态。
+需要直接操作 capability、进度或取消时，在同一页面内通过 `scope.useWorkbench()` 借用 RPC root。

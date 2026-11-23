@@ -154,7 +154,7 @@ ActivityRail 独立于可收起工具区，展示 `navigationItems.ts` 的内置
 
 跨组件共享数据使用 `subscribe/getSnapshot` store，空 array/object 和 Context value 保持稳定 identity。共享 session/providers 在文档导航时保留；每份 Plugin detail draft 属于具体文档和 canonical node。
 
-`useRemoteValue` 在 render 只创建本地 store，commit 才订阅/读取；effect replay 复用资源，依赖切换隔离 owner，晚到 subscription 仍释放。Content/remote read 用 sequence/epoch guard，旧结果不能覆盖新 target/route。Mutation handler 显式 await/catch 或以 `void` 表达有意忽略。
+Renderer query 的读、缓存和订阅归每次打开的 scope owner。React effect 重放复用同一 owner，关闭后释放晚到的订阅。Content/renderer query 按当前 lease 或 owner 接纳结果。Mutation handler 显式 await/catch 或以 `void` 表达有意忽略。
 
 WorkspaceSession 在已认证入口创建，Shell effect replay 复用实例；最终 teardown 先 dispose Worksplit、结算已知内容，再释放会话。Content/View 的每次 React setup 独立获取资源，旧 setup 的晚到结果经 defer 清理。Renderer cache、key、invalidation 与关闭规则见 [Workbench](WORKBENCH.md#renderer-resource-与撤回)。
 

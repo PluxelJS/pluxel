@@ -16,14 +16,16 @@ export type {
 	AuthTotpEnrollmentResult,
 } from './workbench-contracts.ts'
 
-export const AuthWorkbench = workbench.define({
+export const AuthWorkbench = workbench.define(import.meta.url, {
 	setup: workbench.view<AuthSetupApi>({
-		renderer: workbench.entry(import.meta.url, './ui/setup.tsx'),
-		placement: workbench.route('/auth/setup', {
+		renderer: './ui/setup.tsx',
+		placement: {
+			kind: 'route',
+			path: '/auth/setup',
 			title: 'Authentication setup',
-			icon: workbench.icons.ShieldLock,
+			icon: 'shield-lock',
 			navigation: { label: 'Authentication' },
 			order: 10,
-		}),
+		},
 	}),
 })

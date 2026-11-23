@@ -96,15 +96,19 @@ export function createPackageManagerResources(
 	}))
 
 	return {
-		packageManagerSnapshotQuery,
-		packageUsageQuery,
-		prepareInstallMutation,
-		confirmInstallMutation,
+		usePackageManager() {
+			return {
+				snapshotQuery: packageManagerSnapshotQuery.useQuery(),
+				usageQuery: packageUsageQuery.useQuery(),
+				preparation: prepareInstallMutation.useMutation(),
+				confirmation: confirmInstallMutation.useMutation(),
+				removal: removePackagesMutation.useMutation(),
+			}
+		},
 		marketPackagesQuery,
 		marketFacetsQuery,
 		marketPackageQuery,
 		marketReleaseQuery,
 		marketReleasesQuery,
-		removePackagesMutation,
 	}
 }

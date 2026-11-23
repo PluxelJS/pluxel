@@ -27,10 +27,10 @@ export interface HttpSettingsApi extends RpcTarget {
 	updateDto(input: { timeoutMs: number }): Promise<void>
 }
 
-export const HttpWorkbench = workbench.define({
+export const HttpWorkbench = workbench.define(import.meta.url, {
 	// 声明一个没有预设位置的 Attachment 视图
 	settings: workbench.attachment<HttpSettingsApi>({
-		renderer: workbench.entry(import.meta.url, './ui/settings.tsx'),
+		renderer: './ui/settings.tsx',
 	}),
 })
 ```
@@ -55,16 +55,22 @@ this.ctx.service(WorkbenchRef)?.publish(HttpWorkbench, {
 import { HttpWorkbench } from '@acme/http/workbench'
 import { workbench } from '@pluxel/workbench'
 
-export const ReportsWorkbench = workbench.define({
+export const ReportsWorkbench = workbench.define(import.meta.url, {
 	// 将提供方的 settings 挂载为当前插件的一个选项卡
-	http: HttpWorkbench.settings.place(workbench.tab({ label: '网络设置' })),
+	http: HttpWorkbench.settings.place({ kind: 'tab', label: '网络设置' }),
 })
 ```
 
-这样，用户打开“报表插件”时，便能直接看到一个无缝嵌入的“网络设置”选项卡，修改的数据由底层 HTTP 插件安全维护。
+在消费方插件的 `init()` 中把入口绑定到构造函数注入的 HTTP 插件实例。每次打开页面，Workbench 都按这条依赖选择提供方节点。
+
+```ts
+this.ctx.service(WorkbenchRef)?.publish(ReportsWorkbench, {
+	http: { provider: this.http },
+})
+```
 
 ## 消费方自存选择（双向 API）
 
 在选择器场景中（例如字体选择器），字体列表由提供方提供，但“当前报表选用了哪种字体”需要保存在消费方自身的配置中。
 
-此时，Attachment 支持同时传入 `providerApi` 与 `consumerApi`，组件内既能拉取提供方的全量数据列表，又能调用消费方接口保存当前的选择结果，实现完美的跨插件交互协作。
+提供方用 `workbench.attachment<FontCatalogApi, FontSelectionApi>({ renderer })` 声明两个接口。消费方绑定 `{ provider: this.fonts, consumer: () => new SelectionTarget(this) }`。组件通过 `scope.useWorkbench()` 取得 `provider` 和 `consumer`。两侧的 target 各自由所属插件创建，关闭页面会释放这次打开持有的资源。

@@ -10,6 +10,7 @@ import {
 } from './workbench/opened-entry'
 import {
 	readWorkbenchDescriptor,
+	type WorkbenchDefinedEntry,
 	type WorkbenchContent,
 	type WorkbenchContentSlotMap,
 	type WorkbenchDescriptorApi,
@@ -25,9 +26,10 @@ import type {
 import type { WorkbenchContentPlan } from '@pluxel/core/internal'
 
 /** Existential input shape; exact authored descriptor brands are inferred by `open()`. */
-export type WorkbenchOpenableEntry = Readonly<{
-	kind: 'view' | 'attachment-placement' | 'content'
-}>
+export type WorkbenchOpenableEntry = WorkbenchDefinedEntry &
+	Readonly<{
+		kind: 'view' | 'attachment-placement' | 'content'
+	}>
 
 export type LocalWorkbenchEntryOptions<Entry extends WorkbenchOpenableEntry> = Readonly<{
 	target: PluginNodeAddress

@@ -201,13 +201,13 @@ import { workbench } from '@pluxel/workbench'
 import { RpcTarget } from 'capnweb'
 import type { Workbench } from '@pluxel/workbench'
 const WorkbenchRef = defineServiceRef<Workbench>()
-export const SelectedWorkbench = workbench.define({
- settings: workbench.view({ renderer: workbench.entry(import.meta.url, './panel.tsx'), placement: workbench.tab({ label: 'Selected' }) }),
- guide: workbench.content({ document: workbench.markdown(import.meta.url, './guide.md'), placement: workbench.tab({ label: 'Selected guide' }) }),
+export const SelectedWorkbench = workbench.define(import.meta.url, {
+ settings: workbench.view({ renderer: './panel.tsx', placement: { kind: 'tab', label: 'Selected' } }),
+ guide: workbench.content({ document: './guide.md', placement: { kind: 'tab', label: 'Selected guide' } }),
 })
-export const UnselectedWorkbench = workbench.define({
- settings: workbench.view({ renderer: workbench.entry(import.meta.url, './unselected-panel.tsx'), placement: workbench.tab({ label: 'Unselected' }) }),
- guide: workbench.content({ document: workbench.markdown(import.meta.url, './unselected-guide.md'), placement: workbench.tab({ label: 'Unselected guide' }) }),
+export const UnselectedWorkbench = workbench.define(import.meta.url, {
+ settings: workbench.view({ renderer: './unselected-panel.tsx', placement: { kind: 'tab', label: 'Unselected' } }),
+ guide: workbench.content({ document: './unselected-guide.md', placement: { kind: 'tab', label: 'Unselected guide' } }),
 })
 @Plugin()
 export class SelectedPlugin extends BasePlugin {

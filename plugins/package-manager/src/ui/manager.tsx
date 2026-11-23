@@ -6,19 +6,11 @@ const marketData = createWorkbenchMarketplaceData(managerResources)
 
 export function Manager() {
 	const { host } = managerScope.useWorkbench()
-	const snapshotQuery = managerResources.packageManagerSnapshotQuery.useQuery()
-	const usageQuery = managerResources.packageUsageQuery.useQuery()
-	const preparation = managerResources.prepareInstallMutation.useMutation()
-	const confirmation = managerResources.confirmInstallMutation.useMutation()
-	const removal = managerResources.removePackagesMutation.useMutation()
+	const state = managerResources.usePackageManager()
 	return (
 		<PackageManagerPage
 			host={host}
-			snapshotQuery={snapshotQuery}
-			usageQuery={usageQuery}
-			preparation={preparation}
-			confirmation={confirmation}
-			removal={removal}
+			state={state}
 			marketData={marketData}
 			title="Plugin packages"
 			initialTab="installed"
