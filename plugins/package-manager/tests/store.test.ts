@@ -5,7 +5,11 @@ import { createHash } from 'node:crypto'
 import type { InstallOptions, InstallResult, ParsedBareSpecifier } from '@pnpm/napi'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PnpmEngine } from '../src/pnpm-engine.ts'
-import type { MarketRelease } from '../src/contracts.ts'
+import {
+	packageMutationLimit,
+	type MarketInstallRequest,
+	type MarketRelease,
+} from '../src/contracts.ts'
 import { ManagedPackageStore } from '../src/store.ts'
 
 const roots: string[] = []
@@ -106,6 +110,21 @@ function createEngine() {
 			}) satisfies ReturnType<PnpmEngine['readConfig']>,
 	}
 	return { engine, install }
+}
+
+function checkedRelease({ name, version, registry }: MarketInstallRequest): MarketRelease {
+	return {
+		name,
+		version,
+		registry,
+		integrity: `sha512-${createHash('sha512').update(`${name}@${version}`).digest('base64')}`,
+		checkedAt: 1,
+		provenance: { status: 'missing' },
+		peerDependencies: {},
+		pluginPackages: {},
+		readme: null,
+		license: null,
+	}
 }
 
 describe('ManagedPackageStore', () => {
@@ -248,7 +267,7 @@ describe('ManagedPackageStore', () => {
 		expect(await readdir(resolve(rootDir, 'revisions'))).toEqual([])
 	})
 
-	it('compares the selected market integrity with native acquisition and keeps direct installation independent', async () => {
+	it('checks every selected market release and confirms the whole reviewed selection once', async () => {
 		const rootDir = await fixtureRoot()
 		const { engine, install } = createEngine()
 		const store = new ManagedPackageStore(engine, {
@@ -260,69 +279,127 @@ describe('ManagedPackageStore', () => {
 		})
 		await store.initialize()
 		const fetch = vi.spyOn(globalThis, 'fetch')
-		const release: MarketRelease & { tarball: string } = {
+		const alpha = {
+			marketId: 'community',
 			name: 'alpha',
 			version: '1.0.0',
 			registry: 'https://registry.npmjs.org',
-			integrity: `sha512-${createHash('sha512').update('wrong').digest('base64')}`,
-			checkedAt: 1,
-			provenance: { status: 'missing' },
-			peerDependencies: {},
-			pluginPackages: {},
-			readme: null,
-			license: null,
-			tarball: 'https://attacker.invalid/code.tgz',
 		}
+		const beta = { ...alpha, name: 'beta', version: '2.1.0-rc.1' }
 		try {
-			fetch.mockResolvedValueOnce(Response.json(release))
-			expect(
-				await store.prepareMarketInstall({
-					marketId: 'community',
-					registry: release.registry,
-					name: 'alpha',
-					version: '1.0.0',
-				}),
-			).toMatchObject({
-				ok: false,
-				failed: [{ code: 'INSTALL_FAILED', message: expect.stringContaining('integrity') }],
-			})
-			expect(await readdir(store.entriesDir)).toEqual([])
-			expect(install).toHaveBeenCalledTimes(1)
-			fetch.mockRejectedValueOnce(new Error('offline'))
-			expect(
-				await store.prepareMarketInstall({
-					marketId: 'community',
-					registry: release.registry,
-					name: 'alpha',
-					version: '1.0.0',
-				}),
-			).toMatchObject({ ok: false, failed: [{ code: 'MARKET_FAILED' }] })
-			const direct = await store.prepareInstall(['alpha@1.0.0'])
-			expect(direct.ok).toBe(true)
-			expect(fetch).toHaveBeenCalledTimes(2)
-			if (!direct.ok) throw new Error('Expected direct preparation')
-			expect(await store.confirmInstall(direct.plan.id)).toMatchObject({ ok: true })
-			fetch.mockResolvedValueOnce(
+			fetch.mockResolvedValueOnce(Response.json(checkedRelease(alpha))).mockResolvedValueOnce(
 				Response.json({
-					...release,
-					integrity: `sha512-${createHash('sha512').update('alpha@1.0.0').digest('base64')}`,
+					...checkedRelease(beta),
+					integrity: `sha512-${createHash('sha512').update('different').digest('base64')}`,
+					tarball: 'https://attacker.invalid/code.tgz',
 				}),
 			)
-			const selected = await store.prepareMarketInstall({
-				marketId: 'community',
-				registry: release.registry,
-				name: 'alpha',
-				version: '1.0.0',
+			expect(await store.prepareMarketInstall([alpha, beta])).toMatchObject({
+				ok: false,
+				failed: [
+					{
+						input: 'beta@2.1.0-rc.1',
+						code: 'INSTALL_FAILED',
+						message: expect.stringContaining('integrity'),
+					},
+				],
 			})
-			expect(selected.ok).toBe(true)
+			expect(await readdir(store.entriesDir)).toEqual([])
+			expect(await store.snapshot()).toMatchObject({ revision: 0, packages: [] })
+			expect(install).toHaveBeenCalledTimes(1)
+			fetch
+				.mockResolvedValueOnce(Response.json(checkedRelease(alpha)))
+				.mockRejectedValueOnce(new Error('offline'))
+			expect(await store.prepareMarketInstall([alpha, beta])).toMatchObject({
+				ok: false,
+				failed: [{ input: 'beta@2.1.0-rc.1', code: 'MARKET_FAILED' }],
+			})
+			expect(install).toHaveBeenCalledTimes(1)
+			const direct = await store.prepareInstall(['alpha@0.9.0'])
+			if (!direct.ok) throw new Error('Expected direct preparation')
+			expect(await store.confirmInstall(direct.plan.id)).toMatchObject({ ok: true })
+			expect(fetch).toHaveBeenCalledTimes(4)
+
+			const before = await store.snapshot()
+			const releases = [{ ...alpha }, { ...beta }]
+			fetch
+				.mockResolvedValueOnce(Response.json(checkedRelease(alpha)))
+				.mockResolvedValueOnce(Response.json(checkedRelease(beta)))
+			const preparing = store.prepareMarketInstall(releases)
+			releases[1]!.version = '9.0.0'
+			releases.splice(0, 1)
+			const selected = await preparing
 			if (selected.ok === false) throw new Error(selected.failed[0]?.message)
-			expect(await store.confirmInstall(selected.plan.id)).toMatchObject({ ok: true })
+			const market = { marketId: alpha.marketId, registry: alpha.registry }
+			expect(selected.plan.packages).toMatchObject([
+				{ name: 'alpha', previousVersion: '0.9.0', version: alpha.version, market },
+				{ name: 'beta', previousVersion: null, version: beta.version, market },
+			])
+			expect(await store.snapshot()).toEqual(before)
+			expect(await store.confirmInstall(selected.plan.id)).toEqual({
+				ok: true,
+				succeeded: ['alpha', 'beta'],
+				failed: [],
+			})
+			expect(await store.confirmInstall(selected.plan.id)).toMatchObject({
+				ok: false,
+				failed: [{ code: 'INVALID_PLAN' }],
+			})
+			expect(install).toHaveBeenCalledTimes(3)
+			expect(await store.snapshot()).toMatchObject({
+				revision: before.revision + 1,
+				packages: [
+					{ name: 'alpha', installedVersion: alpha.version, entryFile: expect.any(String) },
+					{ name: 'beta', installedVersion: beta.version, entryFile: expect.any(String) },
+				],
+			})
 		} finally {
 			await store.close()
 		}
 	})
 
-	it('requires the selected private registry in native configuration and rejects public-source substitution', async () => {
+	it('rejects invalid or conflicting market selections before reading or materializing any release', async () => {
+		const { engine, install } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir: await fixtureRoot(),
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+			markets: [{ id: 'community', url: 'https://market.example' }],
+		})
+		await store.initialize()
+		const select = {
+			marketId: 'community',
+			registry: 'https://registry.npmjs.org',
+			name: 'alpha',
+			version: '1.0.0',
+		}
+		const fetch = vi.spyOn(globalThis, 'fetch')
+		try {
+			for (const requests of [
+				[],
+				[{ ...select, version: 'latest' }],
+				[select, { ...select, version: '2.0.0' }],
+				[select, { ...select, marketId: 'another', registry: 'https://another.example' }],
+				Array.from({ length: packageMutationLimit + 1 }, (_, index) => ({
+					...select,
+					name: `alpha-${index}`,
+				})),
+			]) {
+				expect(await store.prepareMarketInstall(requests)).toMatchObject({
+					ok: false,
+					failed: [{ code: 'INVALID_SPEC' }],
+				})
+			}
+			expect(fetch).not.toHaveBeenCalled()
+			expect(install).not.toHaveBeenCalled()
+			expect(await store.snapshot()).toMatchObject({ revision: 0, packages: [] })
+		} finally {
+			await store.close()
+		}
+	})
+
+	it('preserves per-release sources across markets and rejects a scoped registry mismatch for the entire batch', async () => {
 		const rootDir = await fixtureRoot()
 		const { engine, install } = createEngine()
 		const store = new ManagedPackageStore(engine, {
@@ -330,59 +407,159 @@ describe('ManagedPackageStore', () => {
 			ignoreScripts: true,
 			allowBuilds: [],
 			minimumReleaseAgeMinutes: 0,
-			markets: [{ id: 'community', url: 'https://market.example' }],
+			markets: [
+				{ id: 'community', url: 'https://market.example' },
+				{ id: 'team', url: 'https://team.example' },
+			],
 		})
 		await store.initialize()
 		const request = {
-			marketId: 'community',
+			marketId: 'team',
 			registry: 'http://127.0.0.1:7677/npm',
 			name: '@example/plugin',
 			version: '1.0.0',
 		}
-		const release: MarketRelease = {
-			registry: request.registry,
-			name: request.name,
-			version: request.version,
-			integrity: `sha512-${createHash('sha512').update('@example/plugin@1.0.0').digest('base64')}`,
-			checkedAt: 1,
-			provenance: { status: 'missing' },
-			peerDependencies: {},
-			pluginPackages: {},
-			readme: null,
-			license: null,
+		const publicRequest = {
+			marketId: 'community',
+			registry: 'https://registry.npmjs.org',
+			name: 'alpha',
+			version: '2.0.0',
 		}
+		const selections = [publicRequest, request]
+		const release = checkedRelease(request)
 		const fetch = vi.spyOn(globalThis, 'fetch')
 		try {
-			fetch.mockResolvedValueOnce(
-				Response.json({ ...release, registry: 'https://registry.npmjs.org' }),
-			)
-			expect(await store.prepareMarketInstall(request)).toMatchObject({
+			fetch
+				.mockResolvedValueOnce(Response.json(checkedRelease(publicRequest)))
+				.mockResolvedValueOnce(
+					Response.json({ ...release, registry: 'https://registry.npmjs.org' }),
+				)
+			expect(await store.prepareMarketInstall(selections)).toMatchObject({
 				ok: false,
-				failed: [{ code: 'MARKET_FAILED' }],
+				failed: [{ input: '@example/plugin@1.0.0', code: 'MARKET_FAILED' }],
 			})
 			expect(install).not.toHaveBeenCalled()
-			fetch.mockResolvedValueOnce(Response.json(release))
-			expect(await store.prepareMarketInstall(request)).toMatchObject({
+			fetch
+				.mockResolvedValueOnce(Response.json(checkedRelease(publicRequest)))
+				.mockResolvedValueOnce(Response.json(release))
+			expect(await store.prepareMarketInstall(selections)).toMatchObject({
 				ok: false,
-				failed: [{ code: 'INSTALL_FAILED', message: expect.stringContaining('same registry') }],
+				failed: [
+					{
+						input: '@example/plugin@1.0.0',
+						code: 'INSTALL_FAILED',
+						message: expect.stringContaining('same registry'),
+					},
+				],
 			})
 			expect(install).not.toHaveBeenCalled()
 			expect(await readdir(store.entriesDir)).toEqual([])
 			const config = engine.readConfig({ dir: rootDir })
-			vi.spyOn(engine, 'readConfig').mockReturnValue({
+			const registryConfig = vi.spyOn(engine, 'readConfig').mockReturnValue({
 				...config,
 				registries: [...config.registries, { name: '@example', url: `${request.registry}/` }],
 			})
-			fetch.mockResolvedValueOnce(Response.json(release))
-			const prepared = await store.prepareMarketInstall(request)
+			fetch
+				.mockResolvedValueOnce(Response.json(checkedRelease(publicRequest)))
+				.mockResolvedValueOnce(Response.json(release))
+			const prepared = await store.prepareMarketInstall(selections)
 			expect(prepared.ok).toBe(true)
 			if (prepared.ok === false) throw new Error(prepared.failed[0]?.message)
+			expect(prepared.plan.packages.map(({ name, market }) => [name, market])).toEqual([
+				[request.name, { marketId: request.marketId, registry: request.registry }],
+				[
+					publicRequest.name,
+					{ marketId: publicRequest.marketId, registry: publicRequest.registry },
+				],
+			])
 			expect(install).toHaveBeenCalledTimes(1)
 			expect(install.mock.calls[0]![0].registries?.['@example']).toBe(`${request.registry}/`)
 			expect(await store.confirmInstall(prepared.plan.id)).toMatchObject({ ok: true })
 			expect(install).toHaveBeenCalledTimes(1)
+			const installed = await store.snapshot()
+			expect(installed.packages).toMatchObject([
+				{ name: request.name, marketRegistry: request.registry },
+				{ name: publicRequest.name, marketRegistry: publicRequest.registry },
+			])
+
+			// A different registry can serve the same exact archive for the same scoped name.
+			const other = { ...request, registry: publicRequest.registry }
+			registryConfig.mockReturnValue(config)
+			fetch.mockResolvedValueOnce(Response.json(checkedRelease(other)))
+			const switchSource = await store.prepareMarketInstall([other])
+			if (switchSource.ok === false) throw new Error(switchSource.failed[0]?.message)
+			expect(switchSource.plan.packages[0]).toMatchObject({
+				name: request.name,
+				previousVersion: request.version,
+				version: request.version,
+				previousMarketRegistry: request.registry,
+				market: { registry: other.registry },
+				changed: true,
+			})
+			expect(await store.snapshot()).toEqual(installed)
+			expect(await store.confirmInstall(switchSource.plan.id)).toMatchObject({ ok: true })
+			const switched = await store.snapshot()
+			expect(switched.packages[0]?.marketRegistry).toBe(other.registry)
+
+			// A direct graph change loses its source claim. Unchanged packages retain their evidence.
+			expect(await store.install([publicRequest.name + '@3.0.0'])).toMatchObject({ ok: true })
+			const direct = await store.snapshot()
+			expect(direct.packages[0]?.marketRegistry).toBe(other.registry)
+			expect(direct.packages[1]).not.toHaveProperty('marketRegistry')
+			const unverified = { ...publicRequest, version: '3.0.0' }
+			fetch.mockResolvedValueOnce(Response.json(checkedRelease(unverified)))
+			const verify = await store.prepareMarketInstall([unverified])
+			if (verify.ok === false) throw new Error(verify.failed[0]?.message)
+			expect(verify.plan.packages[1]).toMatchObject({
+				name: publicRequest.name,
+				previousVersion: unverified.version,
+				changed: true,
+				market: { registry: unverified.registry },
+			})
+			expect(verify.plan.packages[1]).not.toHaveProperty('previousMarketRegistry')
+			expect(await store.snapshot()).toEqual(direct)
 		} finally {
 			await store.close()
+		}
+	})
+
+	it('accepts published records without a market source and rejects malformed recorded registries', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine } = createEngine()
+		const options = {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [] as string[],
+			minimumReleaseAgeMinutes: 0,
+		}
+		const store = new ManagedPackageStore(engine, options)
+		await store.initialize()
+		try {
+			expect(await store.install(['alpha@1.0.0'])).toMatchObject({ ok: true })
+		} finally {
+			await store.close()
+		}
+		const reopened = new ManagedPackageStore(engine, options)
+		await reopened.initialize()
+		try {
+			const legacy = await reopened.snapshot()
+			expect(legacy.packages[0]).not.toHaveProperty('marketRegistry')
+		} finally {
+			await reopened.close()
+		}
+		const file = resolve(rootDir, 'published-installation.json')
+		const record = JSON.parse(await readFile(file, 'utf8'))
+		for (const field of [
+			null,
+			'https://registry.example/',
+			'https://registry.example/pack?token=x',
+			'https://user@registry.example',
+		]) {
+			record.packages[0].marketRegistry = field
+			await writeFile(file, JSON.stringify(record))
+			await expect(new ManagedPackageStore(engine, options).initialize()).rejects.toThrow(
+				'Invalid managed published package',
+			)
 		}
 	})
 
@@ -617,6 +794,39 @@ describe('ManagedPackageStore', () => {
 		await expect(outcome).resolves.toMatchObject({ message: 'Package store is closed' })
 		await closing
 		await expect(stat(resolve(rootDir, '.writer'))).rejects.toMatchObject({ code: 'ENOENT' })
+	})
+
+	it('checks the reviewed removal revision after previously admitted writes settle', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine, install } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+		})
+		await store.initialize()
+		try {
+			await store.install(['alpha@1.0.0'])
+			const reviewed = await store.snapshot()
+			const update = store.install(['alpha@2.0.0'])
+			const removal = store.remove(['alpha'], reviewed.revision)
+			expect(await update).toMatchObject({ ok: true })
+			expect(await removal).toMatchObject({
+				ok: false,
+				succeeded: [],
+				failed: [{ code: 'REMOVE_FAILED' }],
+			})
+			expect(install).toHaveBeenCalledTimes(2)
+			const current = await store.snapshot()
+			expect(current.packages).toMatchObject([{ name: 'alpha', installedVersion: '2.0.0' }])
+			expect(await store.remove(['alpha'], current.revision)).toMatchObject({
+				ok: true,
+				succeeded: ['alpha'],
+			})
+		} finally {
+			await store.close()
+		}
 	})
 
 	it('captures install and remove inputs before queued work starts', async () => {

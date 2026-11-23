@@ -67,14 +67,13 @@ switch (command) {
 	case 'metadata': {
 		if (!name || !argument)
 			throw new Error(
-				'metadata <package> <JSON with expectedRevision, official, category, tags and optional author> [--registry <base>]',
+				'metadata <package> <JSON with expectedRevision, official, category and tags> [--registry <base>]',
 			)
 		const input = jsonInput(argument, [
 			'expectedRevision',
 			'official',
 			'category',
 			'tags',
-			'author',
 		]) as MarketCuration & { expectedRevision: number }
 		result = await admin.setMetadata({ registry, name, ...input })
 		break

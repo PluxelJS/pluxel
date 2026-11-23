@@ -14,7 +14,7 @@ import { generateOgImage } from './src/components/og-image'
 import { linkValidationPlugin } from 'fumapress/plugins/link-validation'
 import { createRelativeLink } from 'fumadocs-ui/mdx'
 import { defineDocs } from 'fumadocs-mdx/macro'
-import { BookOpen, FlaskConical, History, PanelsTopLeft } from 'lucide-react'
+import { BookOpen, FlaskConical, History, PanelsTopLeft, Store } from 'lucide-react'
 import { fileURLToPath } from 'node:url'
 import { ConfigurationExampleLayout } from './src/components/configuration-example-layout'
 import { ConfigurationPreviewLoader } from './src/components/configuration-preview-loader'
@@ -93,6 +93,16 @@ const config = defineConfig({
 					</span>
 				),
 				url: '/docs',
+				active: 'nested-url',
+			},
+			{
+				text: (
+					<span className="inline-flex items-center gap-2">
+						<Store aria-hidden="true" className="size-4 shrink-0" />
+						插件市场
+					</span>
+				),
+				url: '/market',
 				active: 'nested-url',
 			},
 			{

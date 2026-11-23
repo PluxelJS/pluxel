@@ -37,7 +37,7 @@ const pkg: MarketPackageSummary = {
 	observedAt: 1,
 	official: true,
 	category: 'tools',
-	tags: ['test'],
+	tags: ['test', 'tooling', 'integration'],
 }
 const release: MarketRelease = {
 	registry: pkg.registry,
@@ -162,15 +162,31 @@ async function openRelease() {
 it('renders through its public browser entry without a Provider or install capability', async () => {
 	expect(PackageMarketClient).toBeTypeOf('function')
 	await act(() => root.render(createElement(Marketplace, { data })))
-	expect(container.querySelector('.pm-result-row')?.textContent).toContain(pkg.description)
-	expect(container.querySelector('.pm-filter-panel')).toBeNull()
+	const card = container.querySelector('ul[aria-label="Plugin catalog"] > li')
+	expect(card?.textContent).toContain(pkg.description)
+	expect(card?.textContent).toContain('#test')
+	expect(card?.textContent).toContain('#tooling')
+	expect(card?.querySelector('[title="integration"]')?.textContent).toContain('+1')
+	expect(card?.querySelector('a[href="https://github.com/example/plugin"]')?.textContent).toBe(
+		'example/plugin',
+	)
+	expect(card?.querySelector('[aria-label="0 repository stars"]')).not.toBeNull()
+	expect(card?.querySelector('.pm-package-status')).toBeNull()
+	expect(card?.textContent).toContain('Repository owner unavailable')
+	expect(container.querySelector('aside[aria-label="Catalog filters"]')).not.toBeNull()
 	await openRelease()
-	expect(container.querySelector('[aria-label="0 repository stars"]')).not.toBeNull()
+	expect(container.querySelector('option[value="1.0.0"]')?.textContent).toBe(
+		'1.0.0 (registry latest)',
+	)
+	expect(
+		container.querySelector('.pm-detail-header [aria-label="0 repository stars"]'),
+	).not.toBeNull()
+	expect(container.querySelector('.pm-detail-header')?.textContent).toContain('#integration')
 	expect(container.querySelector('img')).toBeNull()
 	expect(container.querySelector('.pm-readme')!.textContent).toBe('<img src=x onerror=alert(1)>')
 	expect(
 		[...container.querySelectorAll('button')].some(
-			(item) => item.textContent === 'Review installation',
+			(item) => item.textContent === 'Choose this release',
 		),
 	).toBe(false)
 })
@@ -199,10 +215,18 @@ it('renders readable Markdown while preventing package HTML and unsafe or relati
 	expect(container.textContent).toContain('This README was truncated by the market.')
 })
 
-it('offers the host only a checked exact registry coordinate for installation preview', async () => {
-	const onPrepare = vi.fn()
-	await act(() => root.render(createElement(Marketplace, { data, onPrepare, colorScheme: 'dark' })))
-	expect(onPrepare).not.toHaveBeenCalled()
+it('composes host actions with the checked release currently displayed', async () => {
+	const choose = vi.fn()
+	const releaseAction = (checked: MarketRelease) =>
+		createElement(
+			'button',
+			{ type: 'button', onClick: () => choose(checked) },
+			'Choose this release',
+		)
+	await act(() =>
+		root.render(createElement(Marketplace, { data, releaseAction, colorScheme: 'dark' })),
+	)
+	expect(choose).not.toHaveBeenCalled()
 	const entry = container.querySelector<HTMLButtonElement>('.pm-package-name')!
 	container.style.overflowY = 'auto'
 	container.scrollTop = 50
@@ -210,17 +234,13 @@ it('offers the host only a checked exact registry coordinate for installation pr
 	expect(document.activeElement?.textContent?.trim()).toBe('Back to packages')
 	expect(
 		[...container.querySelectorAll('button')].some(
-			(item) => item.textContent === 'Review installation',
+			(item) => item.textContent === 'Choose this release',
 		),
 	).toBe(false)
 	await click('Back to packages')
 	expect(document.activeElement).toBe(entry)
 	expect(container.scrollTop).toBe(50)
 	await openRelease()
-	await click('Review installation')
-	expect(onPrepare).toHaveBeenCalledExactlyOnceWith({
-		registry: release.registry,
-		name: release.name,
-		version: release.version,
-	})
+	await click('Choose this release')
+	expect(choose).toHaveBeenCalledExactlyOnceWith(release)
 })

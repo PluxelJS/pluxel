@@ -143,10 +143,15 @@ describe('PackageMarketClient', () => {
 				name: release.name,
 				description: 'Private plugin',
 				latest: release.version,
-				repository: null,
+				repository: 'https://github.com/PrivateTeam/plugin',
 				repositoryStars: null,
 				repositoryObservedAt: null,
-				author: null,
+				author: {
+					id: 'github:owner/privateteam',
+					name: '@PrivateTeam',
+					kind: 'github',
+					avatarUrl: null,
+				},
 				indexedVersions: 1,
 				observedAt: 1,
 				official: false,
@@ -161,7 +166,7 @@ describe('PackageMarketClient', () => {
 					official: false,
 					categories: ['storage', 'integration', 'storage'],
 					tags: ['cache'],
-					authors: ['market:authors', 'github:12'],
+					authors: ['github:owner/privateteam', 'github:owner/example'],
 					limit: 50,
 				}),
 			).toEqual({ ok: true, value: { packages: [summary], nextCursor: null } })
@@ -172,11 +177,22 @@ describe('PackageMarketClient', () => {
 				official: 'false',
 				category: 'storage',
 				tag: 'cache',
-				author: 'market:authors',
+				author: 'github:owner/privateteam',
 				limit: '50',
 			})
 			expect(search.getAll('category')).toEqual(['integration', 'storage'])
-			expect(search.getAll('author')).toEqual(['github:12', 'market:authors'])
+			expect(search.getAll('author')).toEqual(['github:owner/example', 'github:owner/privateteam'])
+			for (const conflicting of [
+				{ ...summary, author: { ...summary.author, name: '@OtherTeam' } },
+				{ ...summary, repository: 'https://github.com/OtherTeam/plugin' },
+				{ ...summary, repository: 'https://git.example/PrivateTeam/plugin' },
+			]) {
+				fetch.mockResolvedValueOnce(Response.json({ packages: [conflicting], nextCursor: null }))
+				expect(await client.packages('community')).toMatchObject({
+					ok: false,
+					error: { code: 'INVALID_RESPONSE' },
+				})
+			}
 			fetch.mockResolvedValueOnce(Response.json({ ...release, registry: source }))
 			expect(await client.release('community', release.name, release.version, source)).toEqual({
 				ok: true,

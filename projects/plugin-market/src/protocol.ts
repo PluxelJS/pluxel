@@ -6,17 +6,14 @@ export const registry = 'https://registry.npmjs.org' as const
 export type PackageIdentity = { registry: string; name: string }
 export type Coordinate = PackageIdentity & { version: string }
 
-export type MarketMetadata = { official: boolean; category: string | null; tags: string[] }
+export type MarketCuration = { official: boolean; category: string | null; tags: string[] }
 
+/** Owner of the declared GitHub repository; the release carries its own publisher evidence. */
 export type MarketAuthor = {
 	id: string
 	name: string
-	kind: 'github' | 'market'
+	kind: 'github'
 	avatarUrl: string | null
-}
-
-export type MarketCuration = MarketMetadata & {
-	author?: Pick<MarketAuthor, 'id' | 'name'> | null
 }
 
 export type CatalogFilters = {
@@ -59,7 +56,7 @@ export type PackageSummary = {
 	author: MarketAuthor | null
 	indexedVersions: number
 	observedAt: number
-} & MarketMetadata
+} & MarketCuration
 
 export type PackagePage = { packages: PackageSummary[]; nextCursor: string | null }
 
@@ -174,12 +171,29 @@ export function taxonomySlug(value: unknown): value is string {
 	return typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,31}$/.test(value)
 }
 
-export function marketAuthorId(value: unknown): value is string {
-	return typeof value === 'string' && value.startsWith('market:') && taxonomySlug(value.slice(7))
-}
+const githubLogin = /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}$/i
+export const repositoryOwnerIdPrefix = 'github:owner/'
 
 export function catalogAuthorId(value: string): boolean {
-	return marketAuthorId(value) || /^github:[1-9]\d{0,15}$/.test(value)
+	if (!value.startsWith(repositoryOwnerIdPrefix)) return false
+	const login = value.slice(repositoryOwnerIdPrefix.length)
+	return login === login.toLowerCase() && githubLogin.test(login)
+}
+
+/** Input is the normalized repository link stored by observe/refresh. */
+export function repositoryOwner(repository: string | null): string | null {
+	const parts = /^https:\/\/github\.com\/([^/]+)\/([A-Za-z0-9_.-]{1,100})$/.exec(repository ?? '')
+	if (!parts || !githubLogin.test(parts[1]) || parts[2] === '.' || parts[2] === '..') return null
+	return parts[1]
+}
+
+export function repositoryAuthor(owner: string, avatarUrl: string | null): MarketAuthor {
+	return {
+		id: repositoryOwnerIdPrefix + owner.toLowerCase(),
+		name: '@' + owner,
+		kind: 'github',
+		avatarUrl,
+	}
 }
 
 export function pageLimit(value: unknown = 20): number {

@@ -1,8 +1,6 @@
-import { asc, eq } from 'drizzle-orm'
+import { asc } from 'drizzle-orm'
 import * as v from 'valibot'
 import {
-	authorFields,
-	effectiveAuthorId,
 	packageDetailFields,
 	releaseFields,
 	releasePackage,
@@ -10,7 +8,6 @@ import {
 	type CatalogDatabase,
 } from './queries'
 import {
-	catalogAuthorId,
 	exactVersion,
 	object,
 	packageName,
@@ -18,7 +15,7 @@ import {
 	taxonomySlug,
 	type Release,
 } from '../protocol'
-import { authors, packages, releases } from '../db/schema'
+import { packages, releases } from '../db/schema'
 
 export const snapshotByteLimit = 16 * 1024 * 1024
 
@@ -29,10 +26,10 @@ export async function exportCatalogSnapshot(
 	registries: string[],
 ): Promise<CatalogSnapshot> {
 	const visible = visiblePackages(registries)
-	// These reads share one D1 transaction, including the visibility of joined releases and authors.
-	const [packageRows, releaseRows, authorRows] = await db.batch([
+	// These reads share one D1 transaction, including the visibility of joined releases.
+	const [packageRows, releaseRows] = await db.batch([
 		db
-			.select({ ...packageDetailFields, authorId: effectiveAuthorId })
+			.select({ ...packageDetailFields, repositoryAvatarUrl: packages.repositoryAvatarUrl })
 			.from(packages)
 			.where(visible)
 			.orderBy(asc(packages.registry), asc(packages.name)),
@@ -42,18 +39,10 @@ export async function exportCatalogSnapshot(
 			.innerJoin(packages, releasePackage)
 			.where(visible)
 			.orderBy(asc(releases.registry), asc(releases.name), asc(releases.version)),
-		db
-			.select({ ...authorFields })
-			.from(authors)
-			.innerJoin(packages, eq(effectiveAuthorId, authors.id))
-			.where(visible)
-			.groupBy(authors.id)
-			.orderBy(asc(authors.id)),
 	])
 	return {
-		version: 1,
+		version: 2,
 		registries,
-		authors: authorRows,
 		packages: packageRows,
 		releases: releaseRows,
 	}
@@ -78,7 +67,6 @@ function snapshotSchema() {
 		v.string(),
 		v.check((value: string) => packageName(value)),
 	)
-	const authorId = v.pipe(v.string(), v.check(catalogAuthorId))
 	const slug = v.pipe(
 		v.string(),
 		v.check((value: string) => taxonomySlug(value)),
@@ -90,25 +78,19 @@ function snapshotSchema() {
 		(value) => object(value) && Object.values(value).every((item) => typeof item === 'string'),
 	)
 	return v.strictObject({
-		version: v.literal(1),
+		version: v.literal(2),
 		registries: v.pipe(v.array(registry), v.maxLength(20)),
-		authors: v.array(
-			v.strictObject({
-				id: authorId,
-				name: v.string(),
-				kind: v.picklist(['github', 'market']),
-				avatarUrl: text,
-			}),
-		),
 		packages: v.array(
 			v.strictObject({
 				registry,
 				name,
-				authorId: v.nullable(authorId),
 				description: text,
 				repository: text,
 				repositoryStars: v.nullable(timestamp),
 				repositoryObservedAt: v.nullable(timestamp),
+				repositoryAvatarUrl: v.nullable(
+					v.pipe(v.string(), v.url(), v.startsWith('https://avatars.githubusercontent.com/')),
+				),
 				metadataVersion: v.nullable(version),
 				readme,
 				license: text,
@@ -163,7 +145,5 @@ export function decodeCatalogSnapshot(value: unknown): CatalogSnapshot {
 		snapshot.releases.some((item) => !registries.has(item.registry))
 	)
 		throw new Error('Catalog snapshot contains an invalid public registry set')
-	if (snapshot.authors.some((author) => !author.id.startsWith(`${author.kind}:`)))
-		throw new Error('Catalog snapshot contains an invalid author identity')
 	return snapshot
 }

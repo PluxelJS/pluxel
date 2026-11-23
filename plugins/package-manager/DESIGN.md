@@ -6,9 +6,11 @@
 持久化安装清单和发布 revision 属于业务状态，不反向覆盖配置。公共 `snapshot/install/remove` 与 Commands 在无 Workbench 时完整可用；
 Workbench target 仅投影同一 store，不是配置或安装操作的唯一入口。registry/auth/proxy 保留 pnpm 原生输入契约，不另建普通 secret 配置。
 
-`/market` 和 `/packages` 两个 Direct View 通过同一 `PackageManagerApi` factory 绑定同一 Store，每个打开项独立拥有 RPC root 和 renderer query resources。资源定义由一个工厂按 descriptor 建立，不能跨 open 共享查询缓存。市场浏览的 `./marketplace` 导出仅依赖 React、无导入的 market DTO 和公共 HTTP client，不引入 Mantine、Workbench 或 CapnWeb；Workbench adapter 与公开 UI 不在同一导出依赖图。
+`/market` 和 `/packages` 两个 Direct View 复用同一包管理页面，分别默认打开市场和已安装标签。两者通过同一 `PackageManagerApi` factory 绑定同一 Store，每个打开项独立拥有 RPC root 和 renderer query resources。资源定义由一个工厂按 descriptor 建立，不能跨 open 共享查询缓存。市场浏览的 `./marketplace` 导出仅依赖 React、无导入的 market DTO 和公共 HTTP client，不引入 Mantine、Workbench 或 CapnWeb；Workbench adapter 与公开 UI 不在同一导出依赖图。
 
-市场 UI 的搜索、多选、分页和所选坐标由共享 React 组件持有。包列表与筛选选项使用同一套已应用条件，筛选读不带包游标。详情返回时恢复列表的页、滚动位置与焦点。`MarketplaceData` 的稳定读取组件通过 render children 投影当前查询。Workbench adapter 使用每次打开的 queryFamily，独立网页拥有自己的 HTTP 请求、取消和晚到结果清理。`onPrepare` 由宿主显式授予，缺省只浏览。
+共享 React 目录拥有搜索、筛选、分页、包详情和版本页。返回目录时恢复原页、滚动位置与焦点。`MarketplaceData` 的稳定读取组件投影当前查询。公开网页和文档使用匿名 HTTP adapter；Workbench 使用每个打开项的 queryFamily。`packageAction`、`packageStatus`、`releaseAction` 和 `versionNote` 允许 Workbench 组合宿主操作与状态。公开目录只传 data 即可完整浏览。
+
+Workbench 文档持有待安装清单，卡片、已检查的发行详情与清单版本选择器编辑同一份草稿。包名在清单中唯一，来源保留 marketId 和 registry。提交从每个具名版本字段取精确值，只对已选包读取版本列表。编辑清单撤回页面的旧预览，后端仍负责所有完整性检查。更新提示要求能读取该 registry 的精确 latest 发行。已装版本来自包管理器的已发布入口；宿主使用状态由授权 Management catalog 的声明包名、节点与生命周期投影，同名关系不提供运行字节的版本证明。卸载审阅记录受管选择 revision，提交时在 store 写队列内检查 revision。
 
 Plugin 拥有 pnpm acquisition、配置、安装记录、单写者 lock、commands 和可选 Direct View。Host 只消费普通 ESM wrapper；不读取安装私有状态。init 在任何 native/文件/UI 副作用前用 requirePluginSource 校验 rootDir/entries，返回 next-start/live 事实。Native 下次新进程启动扫描；Vite 独立报告目录事务与 lifecycle。
 
@@ -18,11 +20,13 @@ Plugin 拥有 pnpm acquisition、配置、安装记录、单写者 lock、comman
 
 交互安装先 `prepareInstall` / `prepareMarketInstall`，再 `confirmInstall`。准备使用相同 pnpm engine 完整物化私有 revision，保留 registry/auth/proxy 语义，不另建 npm resolver。每 store 只保留一个内存候选，10 分钟有效；候选 ID、selection revision、固定版本、SRI 和图/字节绑定。确认重新核对文件再提交，不执行第二次 acquisition。停止、替换候选或其他安装 mutation 使旧预览失效；候选不是跨进程持久任务。
 
-市场包身份为 registry + name。官方标记、分类、标签和作者均消费市场返回的目录数据，来源与作者的筛选规则见 [市场 HTTP 契约](../../projects/plugin-market/README.md#http-契约)。包列表省略来源时搜索全部可读 registry，精确包与发行查询省略来源时选择公共 npm。安装准备显式携带所选发行的来源。受保护来源由市场访问控制决定是否可读。
+市场包身份为 registry + name。卡片、详情和侧栏使用同一个仓库所有者 ID，客户端核对所有者与声明的仓库地址。同名包的详情、版本、选择和安装均以 registry 区分。列表省略来源时搜索全部可读 registry，精确包与发行查询省略来源时选择公共 npm。受保护来源由市场访问控制决定是否可读。 [市场 HTTP 契约](../../projects/plugin-market/README.md#http-契约)
 
-包概览与可安装发行是不同事实：`marketPackage` 允许只观察过元数据的包显示 registry README、许可和声明仓库，`indexedVersions: 0` 不产生安装入口。Workbench 先读概览，打开版本页才查询已校验发行；发行 README 来自已校验 archive。两处 README 复用 browser-safe mdast/GFM 到 React 的渲染器：不注入 HTML、不加载包声明的图片，只允许 HTTP(S)/mailto 绝对链接，相对链接保留文字，表格和代码块在局部横向滚动。来源 stars 仅消费带观测时间的实际缓存，声明仓库和官方标记不赋予 provenance verified 状态。
+包概览与可安装发行是不同事实：`marketPackage` 允许只观察过元数据的包显示 registry README、许可和声明仓库，`indexedVersions: 0` 不产生安装入口。Workbench 先读概览，打开版本页才查询已校验发行；发行 README 来自已校验 archive。来源 stars 仅消费带观测时间的实际缓存，声明仓库和官方标记不赋予 provenance verified 状态。
 
-市场选择由后端读取精确发行，核对 pnpm registry、lockfile SRI 和实际 package.json name/version；市场 tarball URL 不进入 acquisition。pnpm 的 scoped registry 优先于 default，来源不一致在 acquisition 之前拒绝；相同来源复用原生认证和代理配置。确认后的顶层选择固定为精确版本，原请求范围保留在预览。准备允许显式策略授权的构建脚本，故不承诺只读。当前预览覆盖受管包图变化，不冒充完整 Host Plugin/fork 生命周期预检。
+两处 README 复用 browser-safe mdast/GFM 到 React 的渲染器。包内 HTML 和图片替代文字以文本呈现，导航只允许 HTTP(S)/mailto 绝对链接。代码围栏先显示原文，遇到支持的语言后按需加载本地 Shiki 语法与两套主题，以 React 文本节点显示 token。表格和长代码行在各自的容器内横向滚动。
+
+`prepareMarketInstall` 接收 1–100 项选择。后端读取每项精确发行，为整个图生成一份预览，逐一核对 pnpm registry、lockfile SRI 和实际 package.json name/version；市场 tarball URL 不进入 acquisition。pnpm 的 scoped registry 优先于 default，来源不一致在 acquisition 之前拒绝；相同来源复用原生认证和代理配置。确认后的顶层选择固定为精确版本，原请求范围保留在预览。准备允许显式策略授权的构建脚本，故不承诺只读。当前预览覆盖受管包图变化，不冒充完整 Host Plugin/fork 生命周期预检。
 
 每次 mutation 将完整 manifest 交给一次 pnpm install，私有 revisions/<uuid> 保存 manifest/lockfile/node_modules 链接和 inner entries。global virtual store 位于 root/slots，copy 导入包字节；相同 resolution、peer context 和依赖图复用同一物理 slot，A/B 不会因安装批次得到两份共同 P。
 
@@ -42,7 +46,7 @@ published-installation.json 是当前安装选择的唯一 authority；准备失
 
 package.install/remove commands、Plugin 方法和每次打开的 owner-bound Workbench target 复用同一 store。初始化、mutation 和 snapshot 共用串行队列，snapshot 不混合两次提交的事实；关闭同步撤销 admission，等待已开始初始化/安装和同一次 writer 释放，缓存句柄也不能继续读取。调用时捕获输入数组，排队期间调用方修改原数组不改变操作目标。关闭 Workbench 不影响安装。停止 Plugin 撤回 commands/View、abort target 和安装 admission；持久文件不因 generation cleanup 删除。
 
-succeeded 表示 wrapper 已发布，failed 保留 INVALID_SPEC/INSTALL_FAILED/REMOVE_FAILED，绝不表示实际 Plugin 已运行。Vite catalog、native next-start 与 auto-start/session intent 是另外的事实。public snapshot 不返回 registry/auth/proxy/raw native event；native acquisition 错误使用经过挑选的领域消息。
+succeeded 表示 wrapper 已发布，failed 保留 INVALID_SPEC/INSTALL_FAILED/REMOVE_FAILED。Vite catalog、native next-start 与 auto-start/session intent 分别描述宿主接纳及运行状态。snapshot 可返回安装时核验过的市场 registry，缺少证据的安装省略该字段。pnpm 的本机配置、凭据、代理与原生事件留在宿主，native acquisition 错误使用经过挑选的领域消息。
 
 默认忽略 scripts、空 allowBuilds 和 24 小时 minimum release age。放宽 scripts 必须同时显式配置非空 exact allow-list。只接纳 canonical registry package name 与版本/range/dist-tag；alias/path/URL/Git 属于其他 producer。
 

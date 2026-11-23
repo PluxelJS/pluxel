@@ -7,6 +7,7 @@ import type {
 	MarketPackageSummary,
 	MarketPackageDetail,
 	MarketRelease,
+	MarketReadResult,
 	PackageInstallPlan,
 	PackageManagerSnapshot,
 } from '../src/contracts.ts'
@@ -28,10 +29,12 @@ const state = vi.hoisted(() => {
 		error: null as unknown,
 		isPending: false,
 		mutate: vi.fn(),
+		mutateAsync: vi.fn(async () => ({ ok: true, succeeded: [], failed: [] })),
 		reset: vi.fn(),
 	})
 	return {
 		snapshot: query(),
+		usage: query(),
 		packages: query(),
 		facets: query(),
 		packageDetails: query(),
@@ -45,59 +48,17 @@ const state = vi.hoisted(() => {
 		packageInput: vi.fn(),
 		releaseInput: vi.fn(),
 		releasesInput: vi.fn(),
+		documentTitle: vi.fn(),
 	}
 })
 
-vi.mock('../src/ui/manager.scope.ts', () => ({
-	managerScope: {
-		render: (Component: unknown) => Component,
-		useWorkbench: () => ({ host: { colorScheme: 'dark' } }),
-	},
-	packageManagerSnapshotQuery: { useQuery: () => state.snapshot },
-	prepareInstallMutation: { useMutation: () => state.preparation },
-	confirmInstallMutation: { useMutation: () => state.confirmation },
-	removePackagesMutation: { useMutation: () => state.removal },
-	marketPackagesQuery: {
-		useQuery: (input: unknown) => {
-			state.packagesInput(input)
-			return state.packages
-		},
-	},
-	marketFacetsQuery: {
-		useQuery: (input: unknown) => {
-			state.facetsInput(input)
-			return state.facets
-		},
-	},
-	marketPackageQuery: {
-		useQuery: (input: unknown) => {
-			state.packageInput(input)
-			return state.packageDetails
-		},
-	},
-	marketReleasesQuery: {
-		useQuery: (input: unknown) => {
-			state.releasesInput(input)
-			return state.releases
-		},
-	},
-	marketReleaseQuery: {
-		useQuery: (input: unknown) => {
-			state.releaseInput(input)
-			return state.release
-		},
-	},
-}))
-
-vi.mock('../src/ui/marketplace.scope.ts', () => ({
-	marketplaceScope: {
-		render: (Component: unknown) => Component,
-		useWorkbench: () => ({ host: { colorScheme: 'dark' } }),
-	},
-	marketplaceResources: {
+function mockResources() {
+	return {
 		packageManagerSnapshotQuery: { useQuery: () => state.snapshot },
+		packageUsageQuery: { useQuery: () => state.usage },
 		prepareInstallMutation: { useMutation: () => state.preparation },
 		confirmInstallMutation: { useMutation: () => state.confirmation },
+		removePackagesMutation: { useMutation: () => state.removal },
 		marketPackagesQuery: {
 			useQuery: (input: unknown) => {
 				state.packagesInput(input)
@@ -128,7 +89,25 @@ vi.mock('../src/ui/marketplace.scope.ts', () => ({
 				return state.release
 			},
 		},
+	}
+}
+
+vi.mock('../src/ui/manager.scope.ts', () => ({
+	managerScope: {
+		render: (Component: unknown) => Component,
+		useWorkbench: () => ({ host: { colorScheme: 'dark' } }),
 	},
+	managerResources: mockResources(),
+}))
+
+vi.mock('../src/ui/marketplace.scope.ts', () => ({
+	marketplaceScope: {
+		render: (Component: unknown) => Component,
+		useWorkbench: () => ({
+			host: { colorScheme: 'dark', document: { setTitle: state.documentTitle } },
+		}),
+	},
+	marketplaceResources: mockResources(),
 }))
 
 import ManagerWorkbench from '../src/ui/manager.tsx'
@@ -154,6 +133,7 @@ beforeEach(() => {
 	)
 	for (const query of [
 		state.snapshot,
+		state.usage,
 		state.packages,
 		state.facets,
 		state.packageDetails,
@@ -294,6 +274,32 @@ function preparedPlan(): PackageInstallPlan {
 	}
 }
 
+it('explains a registry switch and a first source verification even when both versions stay the same', async () => {
+	const plan = preparedPlan()
+	const market = { marketId: 'community', registry: 'https://registry.npmjs.org' }
+	const sameVersion = { ...plan.packages[0]!, previousVersion: '1.2.3', market }
+	const previousMarketRegistry = 'https://registry.example'
+	state.preparation.status = 'success'
+	state.preparation.data = {
+		ok: true,
+		plan: {
+			...plan,
+			requested: ['alpha', 'beta'],
+			packages: [
+				{ ...sameVersion, previousMarketRegistry },
+				{ ...sameVersion, name: 'beta' },
+			],
+		},
+	}
+	await render()
+	const review = container.querySelector('[aria-label="Installation review"]')!
+	expect(review.querySelector('li')?.textContent).toContain('Change registry')
+	expect(review.querySelectorAll('li')[1]?.textContent).toContain('Verify source')
+	expect(review.querySelector('details')?.textContent).toContain(
+		'Previous checked registry: ' + previousMarketRegistry,
+	)
+})
+
 it('keeps direct installation available without a market and confirms the reviewed plan, retaining the draft on failure', async () => {
 	await render()
 	expect(container.textContent).toContain('Plugin packages')
@@ -304,14 +310,14 @@ it('keeps direct installation available without a market and confirms the review
 	await setInput(draft, 'alpha@latest')
 	await click('Review installation')
 	expect(state.preparation.mutate).toHaveBeenCalledWith({ kind: 'direct', specs: ['alpha@latest'] })
-	expect(state.confirmation.mutate).not.toHaveBeenCalled()
+	expect(state.confirmation.mutateAsync).not.toHaveBeenCalled()
 	Object.assign(state.preparation, { status: 'success', data: { ok: true, plan: preparedPlan() } })
 	await render()
 	expect(container.textContent).toContain('1.2.3')
 	expect(container.textContent).toContain('next application start')
 	await setInput(draft, 'beta@latest')
 	await click('Confirm installation')
-	expect(state.confirmation.mutate).toHaveBeenCalledWith('prepared-bytes')
+	expect(state.confirmation.mutateAsync).toHaveBeenCalledWith('prepared-bytes')
 	Object.assign(state.confirmation, {
 		status: 'success',
 		data: {
@@ -332,7 +338,7 @@ it('preserves explicit withdrawal retries and waits for the authoritative snapsh
 	await render()
 	expect(container.textContent).toContain('Package removal needs retry')
 	await click('Retry removal')
-	expect(state.removal.mutate).toHaveBeenCalledWith(['alpha'])
+	expect(state.removal.mutate).toHaveBeenCalledWith({ names: ['alpha'], expectedRevision: 0 })
 	state.snapshot.isFetching = true
 	await render()
 	expect(button('Retry removal').disabled).toBe(true)
@@ -354,6 +360,47 @@ it('loads markets only when opened and keeps a market failure separate from dire
 	await click('Direct install')
 	expect(button('Review installation').disabled).toBe(false)
 	expect(container.querySelector('textarea')).not.toBeNull()
+})
+
+it('exposes installed packages and direct installation in Market with a metadata-only catalog', async () => {
+	state.snapshot.data = {
+		...snapshot,
+		markets: [{ id: 'community', url: 'https://market.example' }],
+		packages: [
+			{
+				name: 'managed-example',
+				requested: '1.0.0',
+				installedVersion: '1.0.0',
+				entryFile: 'example.mjs',
+			},
+		],
+	}
+	state.packages.data = {
+		ok: true,
+		value: { packages: [packageSummary({ indexedVersions: 0 })], nextCursor: null },
+	}
+	await act(() => root.render(createElement(MarketplaceWorkbench)))
+	expect(button('Marketplace').getAttribute('aria-selected')).toBe('true')
+	expect(container.querySelector('[aria-label="Plugin catalog"]')?.textContent).toContain(
+		'Metadata only',
+	)
+	await click('Installed')
+	expect(container.textContent).toContain('managed-example')
+	await act(() =>
+		container.querySelector<HTMLInputElement>('[aria-label="Select managed-example"]')!.click(),
+	)
+	await click('Review removal')
+	expect(state.removal.mutate).not.toHaveBeenCalled()
+	await click('Confirm removal')
+	expect(state.removal.mutate).toHaveBeenCalledWith({
+		names: ['managed-example'],
+		expectedRevision: 0,
+	})
+	await click('Direct install')
+	await setInput(container.querySelector('textarea')!, 'alpha@1.2.3')
+	await click('Review installation')
+	expect(state.preparation.mutate).toHaveBeenCalledWith({ kind: 'direct', specs: ['alpha@1.2.3'] })
+	expect(state.confirmation.mutateAsync).not.toHaveBeenCalled()
 })
 
 it('reviews the exact selected release and keeps declared repository links separate from verified provenance', async () => {
@@ -400,7 +447,9 @@ it('reviews the exact selected release and keeps declared repository links separ
 	await render()
 	await click('Marketplace')
 	expect(container.textContent).toContain('Official')
-	expect(container.querySelector('.pm-result-row')?.textContent).toContain('Storage')
+	expect(container.querySelector('[aria-label="Plugin catalog"] li')?.textContent).toContain(
+		'Storage',
+	)
 	await click('alpha')
 	expect(container.querySelector('.pm-detail-header')?.textContent).toContain('#cache')
 	await click('Versions')
@@ -418,7 +467,9 @@ it('reviews the exact selected release and keeps declared repository links separ
 	expect(container.textContent).toContain('@pluxel/hono')
 	expect(container.textContent).toContain('^1.0.0')
 	expect(container.textContent).toContain('optional plugin')
-	expect(container.querySelector('a[href="https://github.com/unverified/claim"]')).not.toBeNull()
+	expect(
+		container.querySelector('.pm-detail-header a[href="https://github.com/unverified/claim"]'),
+	).not.toBeNull()
 	expect(container.textContent).not.toContain('Source verified')
 	state.release.data = {
 		ok: true,
@@ -435,15 +486,21 @@ it('reviews the exact selected release and keeps declared repository links separ
 	await render()
 	expect(container.textContent).toContain('Source verified')
 	expect(container.querySelector('a[href="https://github.com/example/alpha"]')).not.toBeNull()
-	await click('Review installation')
+	await click('Add to selection')
+	expect(state.preparation.mutate).not.toHaveBeenCalled()
+	await click('Review selection')
 	expect(state.preparation.mutate).toHaveBeenCalledWith({
 		kind: 'market',
-		marketId: 'community',
-		registry: 'https://registry.npmjs.org',
-		name: 'alpha',
-		version: '2.0.0',
+		requests: [
+			{
+				marketId: 'community',
+				registry: 'https://registry.npmjs.org',
+				name: 'alpha',
+				version: '2.0.0',
+			},
+		],
 	})
-	expect(state.confirmation.mutate).not.toHaveBeenCalled()
+	expect(state.confirmation.mutateAsync).not.toHaveBeenCalled()
 })
 
 it('keeps same-name public and private packages distinct through versions and installation review', async () => {
@@ -522,13 +579,19 @@ it('keeps same-name public and private packages distinct through versions and in
 		name: 'alpha',
 		version: '2.0.0',
 	})
-	await click('Review installation')
+	await click('Add to selection')
+	expect(state.preparation.mutate).not.toHaveBeenCalled()
+	await click('Review selection')
 	expect(state.preparation.mutate).toHaveBeenCalledWith({
 		kind: 'market',
-		marketId: 'community',
-		registry,
-		name: 'alpha',
-		version: '2.0.0',
+		requests: [
+			{
+				marketId: 'community',
+				registry,
+				name: 'alpha',
+				version: '2.0.0',
+			},
+		],
 	})
 })
 
@@ -580,7 +643,7 @@ it('allows choosing an indexed version when latest has not been indexed, without
 		query: { registry: 'https://registry.npmjs.org', limit: 20 },
 	})
 	expect(container.textContent).toContain('Registry latest: 3.0.0')
-	expect(container.textContent).not.toContain('2.0.0 (latest)')
+	expect(container.textContent).not.toContain('2.0.0 (registry latest)')
 	await selectVersion('2.0.0')
 	expect(state.releaseInput).toHaveBeenLastCalledWith({
 		marketId: 'community',
@@ -589,13 +652,19 @@ it('allows choosing an indexed version when latest has not been indexed, without
 		version: '2.0.0',
 	})
 	expect(container.textContent).toContain('alpha@2.0.0')
-	await click('Review installation')
+	await click('Add to selection')
+	expect(state.preparation.mutate).not.toHaveBeenCalled()
+	await click('Review selection')
 	expect(state.preparation.mutate).toHaveBeenCalledWith({
 		kind: 'market',
-		marketId: 'community',
-		registry: 'https://registry.npmjs.org',
-		name: 'alpha',
-		version: '2.0.0',
+		requests: [
+			{
+				marketId: 'community',
+				registry: 'https://registry.npmjs.org',
+				name: 'alpha',
+				version: '2.0.0',
+			},
+		],
 	})
 })
 
@@ -642,7 +711,7 @@ it('browses indexed version pages without a latest tag and resets the selected r
 	expect(container.textContent).toContain('Release is no longer available.')
 	expect(
 		[...container.querySelectorAll('button')].some(
-			(element) => element.textContent === 'Review installation',
+			(element) => element.textContent === 'Add to selection',
 		),
 	).toBe(false)
 	await click('Next versions')
@@ -695,9 +764,13 @@ it('browses metadata-only official packages with observed repository stars and a
 	}
 	await render()
 	await click('Marketplace')
-	expect(container.querySelector('.pm-result-row')?.textContent).toContain('Metadata only')
+	expect(container.querySelector('[aria-label="Plugin catalog"] li')?.textContent).toContain(
+		'Metadata only',
+	)
 	await click(pkg.name)
-	expect(container.querySelector('[aria-label="127 repository stars"]')).not.toBeNull()
+	expect(
+		container.querySelector('.pm-detail-header [aria-label="127 repository stars"]'),
+	).not.toBeNull()
 	expect(state.packageInput).toHaveBeenLastCalledWith({
 		marketId: 'community',
 		registry: pkg.registry,
@@ -708,27 +781,27 @@ it('browses metadata-only official packages with observed repository stars and a
 	expect(container.textContent).toContain('<script>alert(1)</script>')
 	expect(container.querySelector('script')).toBeNull()
 	expect(container.textContent).toContain('This README was truncated by the market.')
-	expect(container.textContent).toContain('No releases are available to install from this market.')
+	expect(container.textContent).toContain('No checked releases are available from this market.')
 	expect(
 		container.querySelector('a[href="https://npmx.dev/package/@pluxel/wretch/v/1.0.0"]'),
 	).not.toBeNull()
 	expect(container.textContent).not.toContain('Source verified')
 	await click('Versions')
-	expect(container.textContent).toContain('No releases are available to install from this market.')
+	expect(container.textContent).toContain('No checked releases are available from this market.')
 	expect(
 		[...container.querySelectorAll('label')].some((item) => item.textContent === 'Package version'),
 	).toBe(false)
 	expect(
 		[...container.querySelectorAll('button')].some(
-			(item) => item.textContent === 'Review installation',
+			(item) => item.textContent === 'Add to selection',
 		),
 	).toBe(false)
 	expect(state.preparation.mutate).not.toHaveBeenCalled()
 })
 
-it('applies multiple authors and catalog filters before paging and preserves the query when clearing facets', async () => {
+it('combines repository owners from cards and the filter sidebar with catalog filters before paging and preserves the query when clearing facets', async () => {
 	const author = {
-		id: 'github:42',
+		id: 'github:owner/network-lab',
 		name: '@network-lab',
 		kind: 'github',
 		avatarUrl: 'https://avatars.githubusercontent.com/u/42?v=4',
@@ -746,7 +819,16 @@ it('applies multiple authors and catalog filters before paging and preserves the
 			total: 36,
 			authors: [
 				{ ...author, count: 12 },
-				{ id: 'market:team', name: 'Team', kind: 'market', avatarUrl: null, count: 24 },
+				{ id: 'github:owner/team', name: '@Team', kind: 'github', avatarUrl: null, count: 20 },
+				...['east', 'north', 'south', 'west'].map(
+					(name): NonNullable<MarketPackageSummary['author']> & { count: number } => ({
+						id: 'github:owner/' + name,
+						name: '@' + name,
+						kind: 'github' as const,
+						avatarUrl: null,
+						count: 1,
+					}),
+				),
 			],
 			categories: [{ value: 'network', count: 36 }],
 			tags: [{ value: 'http', count: 36 }],
@@ -756,7 +838,7 @@ it('applies multiple authors and catalog filters before paging and preserves the
 	await render()
 	await click('Marketplace')
 	expect(container.querySelector('.pm-catalog-count')?.textContent).toBe('36 packages')
-	expect(container.querySelector<HTMLImageElement>('.pm-result-row img')?.src).toBe(
+	expect(container.querySelector<HTMLImageElement>('[aria-label="Plugin catalog"] img')?.src).toBe(
 		author.avatarUrl,
 	)
 	await click('Next')
@@ -771,32 +853,34 @@ it('applies multiple authors and catalog filters before paging and preserves the
 	})
 	await act(() =>
 		container
-			.querySelector<HTMLButtonElement>('[aria-label="Filter by author @network-lab"]')!
+			.querySelector<HTMLButtonElement>('[aria-label="Filter by repository owner @network-lab"]')!
 			.click(),
 	)
-	await click('Authors1')
-	const findAuthor = container.querySelector<HTMLInputElement>('[aria-label="Find authors"]')!
+	expect(state.packageInput).not.toHaveBeenCalled()
+	const sidebar = container.querySelector<HTMLElement>('aside[aria-label="Catalog filters"]')!
+	const findAuthor = container.querySelector<HTMLInputElement>(
+		'[aria-label="Find repository owners"]',
+	)!
 	await setInput(findAuthor, 'team')
-	const authorOptions = container.querySelectorAll<HTMLInputElement>(
-		'.pm-filter-panel input[type="checkbox"]',
+	const authorOptions = sidebar.querySelectorAll<HTMLInputElement>(
+		'[role="group"][aria-label="Repository owners"] input[type="checkbox"]',
 	)
 	expect(authorOptions).toHaveLength(1)
 	await act(() => authorOptions[0]!.click())
-	expect(container.querySelector('[aria-label="Authors filter"]')).not.toBeNull()
+	expect(authorOptions[0]!.checked).toBe(true)
 
 	const choose = async (filter: string) => {
-		await click(filter)
-		await act(() =>
-			container.querySelector<HTMLInputElement>('.pm-filter-panel input[type="checkbox"]')!.click(),
-		)
+		const group = sidebar.querySelector('[role="group"][aria-label="' + filter + '"]')!
+		await act(() => group.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
 	}
 	await choose('Categories')
 	await choose('Tags')
 	await choose('Sources')
-	await click('Official status')
 	await act(() =>
-		container
-			.querySelectorAll<HTMLInputElement>('.pm-filter-panel input[type="radio"]')[2]!
+		sidebar
+			.querySelectorAll<HTMLInputElement>(
+				'[role="group"][aria-label="Official status"] input[type="radio"]',
+			)[2]!
 			.click(),
 	)
 
@@ -806,9 +890,21 @@ it('applies multiple authors and catalog filters before paging and preserves the
 		categories: ['network'],
 		tags: ['http'],
 		registries: [source],
-		authors: ['github:42', 'market:team'],
+		authors: ['github:owner/network-lab', 'github:owner/team'],
 	}
 	expect(state.facetsInput).toHaveBeenLastCalledWith({ marketId: 'community', filters })
+	expect(state.packagesInput).toHaveBeenLastCalledWith({
+		marketId: 'community',
+		query: { ...filters, limit: 30 },
+	})
+	state.packageDetails.data = { ok: true, value: packageDetail(pkg) }
+	await click(pkg.name)
+	const fromOwner = container.querySelector<HTMLButtonElement>(
+		'[aria-label="Show packages from repository owner @network-lab"]',
+	)!
+	await act(() => fromOwner.click())
+	expect(container.querySelector('[aria-label="Package details"]')).toBeNull()
+	expect(document.activeElement).toBe(search)
 	expect(state.packagesInput).toHaveBeenLastCalledWith({
 		marketId: 'community',
 		query: { ...filters, limit: 30 },
@@ -818,10 +914,12 @@ it('applies multiple authors and catalog filters before paging and preserves the
 		marketId: 'community',
 		query: { ...filters, limit: 30, cursor: 'second-page' },
 	})
-	await act(() => container.querySelector<HTMLButtonElement>('[aria-label="Remove Team"]')!.click())
+	await act(() =>
+		container.querySelector<HTMLButtonElement>('[aria-label="Remove @Team"]')!.click(),
+	)
 	expect(state.packagesInput).toHaveBeenLastCalledWith({
 		marketId: 'community',
-		query: { ...filters, authors: ['github:42'], limit: 30 },
+		query: { ...filters, authors: ['github:owner/network-lab'], limit: 30 },
 	})
 	await click('Clear filters')
 	expect(state.packagesInput).toHaveBeenLastCalledWith({
@@ -830,13 +928,58 @@ it('applies multiple authors and catalog filters before paging and preserves the
 	})
 })
 
-it('opens the dedicated market renderer directly and uses the same prepare-confirm receipt contract', async () => {
+it('reflects the managed snapshot and reviews a checked exact update in the dedicated market document', async () => {
+	const registry = 'https://registry.npmjs.org'
+	const otherRegistry = 'https://registry.example'
+	const installation = {
+		name: 'alpha',
+		requested: '1.0.0',
+		installedVersion: '1.0.0',
+		entryFile: 'alpha.mjs',
+		marketRegistry: registry,
+	}
 	state.snapshot.data = {
 		...snapshot,
+		packages: [
+			installation,
+			{ name: 'partial', requested: '1.0.0', installedVersion: '1.0.0', entryFile: null },
+			{ name: 'legacy', requested: '1.0.0', installedVersion: '1.0.0', entryFile: 'legacy.mjs' },
+		],
+		pendingRemovals: ['removed'],
 		markets: [{ id: 'community', url: 'https://market.example' }],
 	}
-	state.packages.data = { ok: true, value: { packages: [packageSummary()], nextCursor: null } }
-	state.release.data = {
+	state.usage.data = [
+		{
+			name: 'alpha',
+			plugins: [
+				{ lifecycleState: 'running', availability: 'available', label: 'Alpha', route: 'alpha' },
+			],
+		},
+	]
+	state.packages.data = {
+		ok: true,
+		value: {
+			packages: [
+				packageSummary(),
+				packageSummary({ registry: otherRegistry }),
+				...['available', 'partial', 'removed', 'legacy'].map((name) => packageSummary({ name })),
+			],
+			nextCursor: null,
+		},
+	}
+	state.releases.data = {
+		ok: true,
+		value: {
+			releases: ['1.0.0', '2.0.0', '3.0.0-beta.1'].map((version) => ({
+				version,
+				integrity: 'sha512-checked',
+				checkedAt: 1,
+			})),
+			nextCursor: null,
+			coverage: 'indexed-only',
+		},
+	}
+	const checkedRelease: MarketReadResult<MarketRelease> = {
 		ok: true,
 		value: {
 			registry: 'https://registry.npmjs.org',
@@ -851,22 +994,68 @@ it('opens the dedicated market renderer directly and uses the same prepare-confi
 			license: null,
 		},
 	}
+	state.release.data = {
+		ok: false,
+		error: { code: 'MARKET_UNAVAILABLE', message: 'Release not indexed' },
+	}
 	await act(() => root.render(createElement(MarketplaceWorkbench)))
 	expect(container.querySelector('input[type="search"]')).not.toBeNull()
 	expect(state.packagesInput).toHaveBeenLastCalledWith({
 		marketId: 'community',
 		query: { limit: 30 },
 	})
-	await click('alpha')
-	await click('Versions')
-	await selectVersion('2.0.0')
-	await click('Review installation')
-	expect(state.preparation.mutate).toHaveBeenCalledWith({
-		kind: 'market',
+	const catalog = container.querySelector('[aria-label="Plugin catalog"]')!
+	expect(
+		[...catalog.querySelectorAll('.pm-package-status')].map((item) => item.textContent),
+	).toEqual([
+		'Installed here 1.0.0Running in app',
+		'Same name installed from another registry',
+		'Not managed',
+		'Not published',
+		'Removal pending',
+		'Local version 1.0.0 · source unknown',
+	])
+	expect(state.releaseInput).toHaveBeenCalledWith({
 		marketId: 'community',
 		registry: 'https://registry.npmjs.org',
 		name: 'alpha',
 		version: '2.0.0',
+	})
+	expect(container.textContent).not.toContain('Newer checked')
+	state.release.data = checkedRelease
+	await act(() => root.render(createElement(MarketplaceWorkbench)))
+	expect(catalog.textContent).toContain('Newer checked 2.0.0')
+	const otherCard = catalog
+		.querySelector('[aria-label="alpha from registry.example"]')!
+		.closest('li')!
+	expect(otherCard.textContent).toContain('Same name installed from another registry')
+	expect(otherCard.textContent).not.toMatch(/Newer checked|Installed here|Running in app/)
+	expect(state.releaseInput).not.toHaveBeenCalledWith(
+		expect.objectContaining({ registry: otherRegistry }),
+	)
+	await click('alpha')
+	expect(state.documentTitle).toHaveBeenLastCalledWith({
+		title: 'alpha',
+		meta: 'Plugin marketplace',
+	})
+	await click('Versions')
+	expect(container.textContent).toContain('1.0.0 (installed here)')
+	expect(container.textContent).toContain('2.0.0 (registry latest, newer than installed)')
+	expect(container.textContent).toContain('3.0.0-beta.1 (newer than installed)')
+	await selectVersion('2.0.0')
+	await click('Add to selection')
+	expect(state.preparation.mutate).not.toHaveBeenCalled()
+	await click('Review selection')
+	expect(state.preparation.mutate).toHaveBeenCalledWith({
+		kind: 'market',
+		requests: [
+			{
+				marketId: 'community',
+				registry: 'https://registry.npmjs.org',
+				name: 'alpha',
+				version: '2.0.0',
+			},
+		],
 	})
 	const basePlan = preparedPlan()
 	state.preparation.status = 'success'
@@ -875,12 +1064,13 @@ it('opens the dedicated market renderer directly and uses the same prepare-confi
 		plan: {
 			...basePlan,
 			requested: ['alpha@2.0.0'],
-			packages: [{ ...basePlan.packages[0]!, version: '2.0.0' }],
+			packages: [{ ...basePlan.packages[0]!, version: '2.0.0', previousVersion: '1.0.0' }],
 		},
 	}
 	await act(() => root.render(createElement(MarketplaceWorkbench)))
+	expect(document.activeElement?.getAttribute('aria-label')).toBe('Installation review')
 	await click('Confirm installation')
-	expect(state.confirmation.mutate).toHaveBeenCalledWith('prepared-bytes')
+	expect(state.confirmation.mutateAsync).toHaveBeenCalledWith('prepared-bytes')
 	state.confirmation.status = 'success'
 	state.confirmation.data = {
 		ok: false,
@@ -890,4 +1080,79 @@ it('opens the dedicated market renderer directly and uses the same prepare-confi
 	await act(() => root.render(createElement(MarketplaceWorkbench)))
 	expect(container.textContent).toContain('Prepare a new review.')
 	expect(button('Confirm installation').disabled).toBe(true)
+	const back = button('Back to packages')
+	await act(() =>
+		back.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+		),
+	)
+	expect(state.documentTitle).toHaveBeenLastCalledWith({ title: 'Plugin marketplace' })
+	expect(document.activeElement).toBe(button('alpha'))
+})
+
+it('keeps multi-package choices across browsing and submits one checked version per name', async () => {
+	const registry = 'https://registry.npmjs.org'
+	const packages = [
+		packageSummary({ name: 'alpha', latest: '2.0.0', indexedVersions: 2 }),
+		packageSummary({ name: 'beta', latest: '2.0.0', indexedVersions: 2 }),
+		packageSummary({ name: 'metadata', indexedVersions: 0 }),
+		packageSummary({ name: 'alpha', registry: 'https://registry.example', indexedVersions: 2 }),
+	]
+	state.snapshot.data = {
+		...snapshot,
+		markets: [{ id: 'community', url: 'https://market.example' }],
+	}
+	state.packages.data = { ok: true, value: { packages, nextCursor: null } }
+	state.releases.data = {
+		ok: true,
+		value: {
+			releases: ['1.0.0', '2.0.0'].map((version) => ({
+				version,
+				integrity: 'sha512-test',
+				checkedAt: 1,
+			})),
+			nextCursor: null,
+			coverage: 'indexed-only',
+		},
+	}
+	await act(() => root.render(createElement(MarketplaceWorkbench)))
+	const cardInputs = () => [
+		...container.querySelectorAll<HTMLInputElement>('.pm-package-card input[type="checkbox"]'),
+	]
+	expect(cardInputs()[2]!.disabled).toBe(true)
+	expect(state.releasesInput).not.toHaveBeenCalled()
+	await act(() => cardInputs()[0]!.click())
+	expect(cardInputs()[3]!.disabled).toBe(true)
+	expect(cardInputs()[3]!.title).toContain(registry)
+	await act(() => cardInputs()[1]!.click())
+	const version = () => container.querySelector<HTMLSelectElement>('select[name="alpha"]')!
+	expect(version().value).toBe('2.0.0')
+	await act(() => {
+		version().value = '1.0.0'
+		version().dispatchEvent(new Event('change', { bubbles: true }))
+	})
+	await click('Installed')
+	await click('Marketplace')
+	expect(version().value).toBe('1.0.0')
+	await setInput(container.querySelector<HTMLInputElement>('input[type="search"]')!, 'another')
+	state.packages.data = { ok: true, value: { packages: [], nextCursor: null } }
+	await act(() => root.render(createElement(MarketplaceWorkbench)))
+	expect(container.textContent).toContain('No matching packages')
+	expect(state.preparation.mutate).not.toHaveBeenCalled()
+	await click('Review selection')
+	expect(state.preparation.mutate).toHaveBeenCalledExactlyOnceWith({
+		kind: 'market',
+		requests: [
+			{ marketId: 'community', registry, name: 'alpha', version: '1.0.0' },
+			{ marketId: 'community', registry, name: 'beta', version: '2.0.0' },
+		],
+	})
+	expect(state.confirmation.mutateAsync).not.toHaveBeenCalled()
+	await act(() =>
+		container
+			.querySelector<HTMLButtonElement>('[aria-label="Remove beta from selection"]')!
+			.click(),
+	)
+	expect(container.textContent).toContain('1 package selected')
+	expect(state.preparation.reset).toHaveBeenCalled()
 })

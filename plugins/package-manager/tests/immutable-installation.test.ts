@@ -63,17 +63,21 @@ it('pnpm shares immutable dependency slots across private installations', async 
 		const url = new URL(request.url ?? '/', origin)
 		const path = decodeURIComponent(url.pathname)
 		// This catalog speaks the HTTP contract independently of the reference Worker.
-		if (path === '/community/v1/packages/fixture-a/releases/1.0.0') {
+		const checked = /^\/community\/v1\/packages\/(fixture-[ab])\/releases\/([12]\.0\.0)$/.exec(path)
+		if (checked) {
+			const [, name, version] = checked
 			if (url.searchParams.get('registry') !== origin) {
 				response.writeHead(404).end()
 				return
 			}
 			response.writeHead(200, { 'content-type': 'application/json' }).end(
 				JSON.stringify({
-					name: 'fixture-a',
-					version: '1.0.0',
+					name,
+					version,
 					registry: origin,
-					integrity: `sha512-${createHash('sha512').update(archives.get('fixture-a-1.0.0')!).digest('base64')}`,
+					integrity: `sha512-${createHash('sha512')
+						.update(archives.get(`${name}-${version}`)!)
+						.digest('base64')}`,
 					checkedAt: Date.now(),
 					provenance: { status: 'missing' },
 					peerDependencies: {},
@@ -256,22 +260,70 @@ export const resource = () => import('node:fs/promises').then(fs => fs.readFile(
 			await expect(
 				new ManagedPackageStore(managedEngine, options).initialize(),
 			).rejects.toMatchObject({ code: 'PACKAGE_STORE_WRITER_CONFLICT' })
-			expect(await store.install(['fixture-b@1.0.0'])).toMatchObject({ ok: true })
-			const selected = await store.prepareMarketInstall({
+			expect(await store.install(['fixture-b@2.0.0'])).toMatchObject({ ok: true })
+			const common = {
 				marketId: 'community',
 				registry: new URL(url).origin,
-				name: 'fixture-a',
-				version: '1.0.0',
-			})
-			if (selected.ok === false) throw new Error(JSON.stringify(selected.failed))
+			}
+			const prepareSelection = async (version: string) => {
+				const selected = await store.prepareMarketInstall([
+					{ ...common, name: 'fixture-a', version },
+					{ ...common, name: 'fixture-b', version: '1.0.0' },
+				])
+				if (selected.ok === false) throw new Error(JSON.stringify(selected.failed))
+				return selected.plan
+			}
+			const selected = await prepareSelection('1.0.0')
+			expect(selected.packages).toMatchObject([
+				{ name: 'fixture-a', previousVersion: null, version: '1.0.0', market: common },
+				{ name: 'fixture-b', previousVersion: '2.0.0', version: '1.0.0', market: common },
+			])
 			const beforeConfirmation = await store.snapshot()
 			expect(beforeConfirmation.packages.map(({ name }) => name)).toEqual(['fixture-b'])
-			expect(await store.confirmInstall(selected.plan.id)).toMatchObject({ ok: true })
+			expect(beforeConfirmation.packages[0]).not.toHaveProperty('marketRegistry')
+			expect(await store.confirmInstall(selected.id)).toMatchObject({
+				ok: true,
+				succeeded: ['fixture-a', 'fixture-b'],
+			})
 			const entry = (name: string) =>
 				resolve(store.entriesDir, Buffer.from(name).toString('base64url') + '.mjs')
+			const beforeUpgrade = await store.snapshot()
+			expect(beforeUpgrade.packages).toMatchObject([
+				{ name: 'fixture-a', installedVersion: '1.0.0', marketRegistry: common.registry },
+				{ name: 'fixture-b', installedVersion: '1.0.0', marketRegistry: common.registry },
+			])
+			const originalEntry = await readFile(entry('fixture-a'), 'utf8')
+			const upgrade = await prepareSelection('2.0.0')
+			expect(upgrade.packages).toMatchObject([
+				{ name: 'fixture-a', previousVersion: '1.0.0', version: '2.0.0', changed: true },
+				{ name: 'fixture-b', previousVersion: '1.0.0', version: '1.0.0', changed: false },
+			])
+			expect(await store.snapshot()).toEqual(beforeUpgrade)
+			expect(await readFile(entry('fixture-a'), 'utf8')).toBe(originalEntry)
+			expect(await store.confirmInstall(upgrade.id)).toMatchObject({ ok: true })
+			const afterUpgrade = await store.snapshot()
+			expect(afterUpgrade.packages).toMatchObject([
+				{ name: 'fixture-a', installedVersion: '2.0.0' },
+				{ name: 'fixture-b', installedVersion: '1.0.0' },
+			])
+			expect(await readFile(entry('fixture-a'), 'utf8')).not.toBe(originalEntry)
+			// The production Vite scenario starts at the original release and changes it live.
+			const restore = await prepareSelection('1.0.0')
+			expect(await store.confirmInstall(restore.id)).toMatchObject({ ok: true })
 			const inner = async (name: string) =>
 				resolve(store.entriesDir, /from "(.+?)"/.exec(await readFile(entry(name), 'utf8'))![1]!)
 			await store.close()
+			const persisted = new ManagedPackageStore(managedEngine, options)
+			await persisted.initialize()
+			try {
+				const persistedSnapshot = await persisted.snapshot()
+				expect(persistedSnapshot.packages).toMatchObject([
+					{ name: 'fixture-a', marketRegistry: common.registry },
+					{ name: 'fixture-b', marketRegistry: common.registry },
+				])
+			} finally {
+				await persisted.close()
+			}
 			await writeFile(
 				resolve(rootDir, '.npmrc'),
 				`registry=${url}\nstore-dir=${resolve(root, 'store')}\ncache-dir=${resolve(root, 'cache')}\nfetch-retries=0\n`,
@@ -430,6 +482,7 @@ assert.equal((await a1.late()).version,'1.0.0'); assert.equal(await a1.resource(
 			expect(reopenedSnapshot.packages).toMatchObject([
 				{ name: 'fixture-b', installedVersion: '3.0.0' },
 			])
+			expect(reopenedSnapshot.packages[0]).not.toHaveProperty('marketRegistry')
 			await reopened.close()
 		} finally {
 			await store.close()

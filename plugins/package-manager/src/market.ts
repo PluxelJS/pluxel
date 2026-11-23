@@ -49,11 +49,17 @@ const registry = v.pipe(
 		}
 	}),
 )
+export const marketInstallRequestSchema = v.object({
+	marketId: v.pipe(v.string(), v.regex(/^[a-zA-Z0-9_-]{1,64}$/)),
+	registry,
+	name: packageName,
+	version,
+})
 const mark = v.pipe(v.string(), v.minLength(1), v.maxLength(64))
 const taxonomySlug = v.pipe(v.string(), v.regex(/^[a-z0-9][a-z0-9-]{0,31}$/))
 const authorId = v.pipe(
 	v.string(),
-	v.regex(/^(github:[1-9]\d{0,15}|market:[a-z0-9][a-z0-9-]{0,31})$/),
+	v.regex(/^github:owner\/[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}$/),
 )
 const count = v.pipe(v.number(), v.integer(), v.minValue(0))
 const safeLink = v.pipe(
@@ -71,9 +77,24 @@ const safeLink = v.pipe(
 const avatar = v.pipe(safeLink, v.startsWith('https://avatars.githubusercontent.com/'))
 const authorFields = {
 	id: authorId,
-	name: v.pipe(v.string(), v.minLength(1), v.maxLength(120)),
-	kind: v.picklist(['github', 'market']),
+	name: v.pipe(v.string(), v.regex(/^@[A-Za-z0-9-]{1,39}$/)),
+	kind: v.literal('github'),
 	avatarUrl: v.nullable(avatar),
+}
+function ownerMatchesName({ id, name }: { id: string; name: string }) {
+	return id === 'github:owner/' + name.slice(1).toLowerCase()
+}
+function ownerMatchesRepository(pkg: Pick<MarketPackageDetail, 'author' | 'repository'>) {
+	if (!pkg.author) return true
+	const match = pkg.repository?.match(
+		/^https:\/\/github\.com\/([a-z0-9-]+)\/([a-z0-9_.-]{1,100})$/i,
+	)
+	return Boolean(
+		match &&
+		match[2] !== '.' &&
+		match[2] !== '..' &&
+		pkg.author.id === 'github:owner/' + match[1].toLowerCase(),
+	)
 }
 const packageFields = {
 	registry,
@@ -82,7 +103,12 @@ const packageFields = {
 	repository: v.nullable(safeLink),
 	repositoryStars: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(0))),
 	repositoryObservedAt: v.nullable(timestamp),
-	author: v.nullable(v.object(authorFields)),
+	author: v.nullable(
+		v.pipe(
+			v.object(authorFields),
+			v.check((owner) => ownerMatchesName(owner)),
+		),
+	),
 	indexedVersions: count,
 	observedAt: timestamp,
 	official: v.boolean(),
@@ -94,7 +120,12 @@ const facetsSchema = v.object({
 	registries: v.array(v.object({ value: registry, count })),
 	categories: v.array(v.object({ value: taxonomySlug, count })),
 	tags: v.array(v.object({ value: taxonomySlug, count })),
-	authors: v.array(v.object({ ...authorFields, count })),
+	authors: v.array(
+		v.pipe(
+			v.object({ ...authorFields, count }),
+			v.check((owner) => ownerMatchesName(owner)),
+		),
+	),
 })
 const readme = v.nullable(
 	v.object({ text: v.pipe(v.string(), v.maxLength(262_144)), truncated: v.boolean() }),
@@ -102,20 +133,28 @@ const readme = v.nullable(
 const license = v.nullable(v.pipe(v.string(), v.maxLength(256)))
 const pageSchema = v.object({
 	packages: v.pipe(
-		v.array(v.object({ ...packageFields, latest: v.nullable(version) })),
+		v.array(
+			v.pipe(
+				v.object({ ...packageFields, latest: v.nullable(version) }),
+				v.check((pkg) => ownerMatchesRepository(pkg)),
+			),
+		),
 		v.maxLength(50),
 	),
 	nextCursor: v.nullable(v.pipe(v.string(), v.maxLength(2048))),
 })
-const packageSchema = v.object({
-	...packageFields,
-	latest: v.nullable(version),
-	distTags: v.record(v.pipe(v.string(), v.maxLength(128)), version),
-	metadataVersion: v.nullable(version),
-	readme,
-	license,
-	coverage: v.literal('indexed-only'),
-})
+const packageSchema = v.pipe(
+	v.object({
+		...packageFields,
+		latest: v.nullable(version),
+		distTags: v.record(v.pipe(v.string(), v.maxLength(128)), version),
+		metadataVersion: v.nullable(version),
+		readme,
+		license,
+		coverage: v.literal('indexed-only'),
+	}),
+	v.check((pkg) => ownerMatchesRepository(pkg)),
+)
 const releaseSchema = v.object({
 	name: packageName,
 	version,
@@ -356,16 +395,14 @@ export class PackageMarketClient {
 		try {
 			response = await fetch(market.url + path, {
 				headers: { accept: 'application/json' },
+				credentials: 'omit',
 				redirect: 'error',
 				signal,
 			})
 		} catch {
 			this.lifetime.signal.throwIfAborted()
 			this.signal?.throwIfAborted()
-			return rejected(
-				'MARKET_UNAVAILABLE',
-				'Market request failed or timed out; direct installation remains available',
-			)
+			return rejected('MARKET_UNAVAILABLE', 'Market request failed or timed out')
 		}
 		if (!response.ok) {
 			await response.body?.cancel()

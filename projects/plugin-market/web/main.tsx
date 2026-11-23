@@ -1,6 +1,5 @@
-import { Marketplace } from '@pluxel/plugin-package-manager/marketplace'
+import { createMarketplaceData, Marketplace } from '@pluxel/plugin-package-manager/marketplace'
 import { createRoot } from 'react-dom/client'
-import { createMarketplaceData } from './market-data'
 import './page.css'
 
 const root = document.getElementById('root')

@@ -275,7 +275,13 @@ describe('Pluxel native workspace menus', () => {
 		await pressKey(tab(container, logs), 'F6', { ctrlKey: true })
 		expect(document.activeElement).toBe(tab(container, security))
 		await pressKey(tab(container, security), 'F6')
-		expect(document.activeElement).toBe(input)
+		const section = container.querySelector<HTMLElement>(
+			'[aria-label="安全中心"] [aria-selected="true"]',
+		)!
+		expect(document.activeElement).toBe(section)
+		await pressKey(section, 'F6')
+		expect(document.activeElement).toBe(tab(container, security))
+		await act(async () => input.focus())
 		await pressKey(input, 'F6')
 		expect(document.activeElement).toBe(tab(container, security))
 		await pressKey(tab(container, security), 'F2')

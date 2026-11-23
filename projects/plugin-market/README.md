@@ -98,6 +98,8 @@ Wrangler 的 D1 ID 默认只供本地运行。远程部署方创建独立 D1、�
 
 启动现有市场服务后直接访问市场根地址，例如 `http://127.0.0.1:8787/`。Wrangler Workers Static Assets 与本地 Miniflare 使用同一 `dist/web`；`/v1` 和 `/admin` 保持 Worker 处理，未找到的路径不会回退成首页。`dev` 和 `dev:sandbox` 启动前通过同一个 `compile-web` 任务构建网页，无独立前端服务。
 
+Pitchfork 沙箱在启动时读取 Miniflare 静态资源清单。改动独立网页后，从仓库根执行 `vp exec pitchfork restart pluxel/market`，启动任务会构建并接纳同一版 HTML 和脚本。
+
 网页与 Workbench 复用 `@pluxel/plugin-package-manager/marketplace` 的纯 React 浏览组件。网页直接匿名读取公共 HTTP，不创建 Workbench、Cap’n Web 会话或安装/管理权限；私源目录仍不会向匿名网页公开。
 
 仅导出静态站点时，在本目录执行：
@@ -107,6 +109,8 @@ VITE_MARKET_URL=https://market.example.com vp run build:web
 ```
 
 将 `dist/web/` 整体挂到官网的根目录或带末尾 `/` 的子目录即可；资源 URL 使用相对路径。构建时的 `VITE_MARKET_URL` 选择公开市场 API 地址，省略时使用网页当前 origin。这里不接收 token，也不把本地沙箱凭据打包进网页。站点可独立托管，运行时不依赖源码工作区；跨域目录读取由市场已有的公开 CORS 契约支持。
+
+工作区文档站的 `/market` 与独立网页共用 `@pluxel/plugin-package-manager/marketplace` 导出的 `Marketplace` 和 `createMarketplaceData(url)`。文档站使用当前主题，通过匿名 HTTP 浏览公开目录。构建文档站时设置 `VITE_MARKET_URL` 指向公开市场或只读镜像。未配置的部署会显示接入说明。本地通过 Pitchfork 打开文档站时默认读取同一 namespace 的 `market` 服务。
 
 ## 只读镜像
 
@@ -130,9 +134,9 @@ node mirror.mjs serve ./catalog.sqlite
 
 `latest` 始终来自上游 dist-tag，即使对应发行未通过检查也不回退。目录元数据与已收录发行分别表达事实；`metadataVersion` 指明 README、license 对应的元数据版本。`coverage: "indexed-only"` 表示发行列表只覆盖已检查版本，不是上游完整历史。
 
-包声明的 HTTPS `repository` 供浏览使用。`refreshRepository({ registry, name })` 从 GitHub 观测该仓库的星数与归属，记录 `repositoryStars`、`repositoryObservedAt` 和作者 ID。GitHub 账号按数字 ID 归组，名称与头像来自最近的有效观测。失败保留该仓库的旧观测，包变更声明仓库时清除旧归属和星数。
+卡片、详情和 `authors` 分面均按包声明的 GitHub 仓库归组。收录 `https://github.com/PluxelJS/pluxel` 时即可得到 `author.id = "github:owner/pluxeljs"` 与 `author.name = "@PluxelJS"`。ID 中的小写 login 对应仓库当前的命名空间。归属只使用规范仓库地址，缺失或不支持的地址得到 `author: null`。不同 registry 中的同名包各自使用自己的仓库，在目录、详情和安装中保持独立。
 
-包摘要和概览的 `author` 为市场登记的作者，或包声明的 GitHub 仓库 owner。两种身份分别以 `market:` 与 `github:` 开头，市场登记优先。无记录时为 `null`，有记录时头像仍可为空。目录读取使用已存储的归属，发行 provenance 由具体发行携带。
+`refreshRepository({ registry, name })` 单独刷新星数、观测时间及可选头像。GitHub 限流时仍可按仓库所有者筛选，仓库地址变化会重算归属并清除旧观测。发布身份和证明由具体发行的 `provenance` 表达。
 
 刷新失败保留已有记录；同一发行出现不同摘要时，观测、发行和审计整批拒绝。`observedAt` 是 registry 请求开始时间，API 的 `200` 或 `304` 不表示刚刷新上游。
 
@@ -148,7 +152,7 @@ node mirror.mjs serve ./catalog.sqlite
 | `GET /v1/packages/:name?registry=`                         | 摘要、dist-tags、元数据 README/license/version、已收录数量及 coverage                 |
 | `GET /v1/packages/:name/releases?registry=&cursor=&limit=` | 已检查发行分页摘要，按版本字符串排序，不代表 semver 新旧                              |
 | `GET /v1/packages/:name/releases/:version?registry=`       | 精确来源、tarball、integrity、依赖、制品 README/license 及 provenance                 |
-| `GET /v1/snapshot`                                         | 主站的公开目录快照，`version: 1`，含公开来源、可见包、有效作者和已检查发行            |
+| `GET /v1/snapshot`                                         | 主站的公开目录快照，`version: 2`，含公开来源、可见包、仓库地址、可选头像和已检查发行  |
 | `POST /v1/notifications`                                   | `{ registry, name, version }`；持久接收后 `202` 与 `Location`，终态重复提交返回 `200` |
 | `GET /v1/notifications/:id`                                | 回执状态；查询成功与收录成功分别表达                                                  |
 | `POST /admin`                                              | Bearer 认证的原生 Cap’n Web HTTP batch                                                |
@@ -177,7 +181,7 @@ node examples/admin.ts notifications '{"status":"failed","limit":20}'
 
 - `observe` / `refresh` / `refreshRepository`：显式刷新上述独立事实。
 - `getPackage({ registry, name })`：观测、人工元数据、隐藏状态与 revision。
-- `setMetadata({ registry, name, expectedRevision, official, category, tags, author? })` 编辑市场标记与署名。分类可为 `null`，分类和标签使用最多 32 字符的小写 slug，最多 20 个不同标签。`author: { id: "market:team", name: "Team" }` 为包登记作者，同一 ID 共用显示名。用 `author: null` 清除登记，省略该字段只编辑市场标记。
+- `setMetadata({ registry, name, expectedRevision, official, category, tags })` 编辑市场标记。分类可为 `null`，分类和标签使用最多 32 字符的小写 slug，每包最多 20 个不同标签。
 - `setVisibility({ registry, name, expectedRevision, hidden })`：与元数据编辑共享 revision；上游刷新不覆盖人工输入。冲突返回实际 revision，不生成成功审计。
 - `listNotifications({ registry?, name?, status?, code?, cursor?, limit? })`：按创建时间、ID 倒序检索。
 - `getNotification(id)` / `retryNotification(id)`：回执、内部诊断和重试决策，不暴露租约，不重置尝试预算。

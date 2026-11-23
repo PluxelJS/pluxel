@@ -1,4 +1,16 @@
-import { Alert, Anchor, Button, Group, Loader, Stack, Table, Text, Title } from '@mantine/core'
+import {
+	Alert,
+	Anchor,
+	DEFAULT_THEME,
+	Grid,
+	Group,
+	Loader,
+	Paper,
+	Stack,
+	Table,
+	Text,
+	Title,
+} from '@mantine/core'
 import { formatPluginNodeReference, pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import { OUTBOUND_HTTP_LOG_STREAM_ID } from '@pluxel/core/logging/protocol'
 import type { OutboundHttpActivity } from '@pluxel/services/management/protocol'
@@ -11,17 +23,18 @@ import { useLogStream } from '../log_viewer/useLogStream'
 import { managementQueryKeys } from '../managementQuery'
 import { usePluginOverview } from '../plugins/pluginOverview'
 import { RouterLinkAdapter } from '../router/RouterLinkAdapter'
+import { RefreshAction } from '../workbench/RefreshAction'
 import {
 	buildOutboundHttpActivityHref,
 	buildOutboundHttpLogsHref,
 	buildOutboundHttpNodeHref,
-	OUTBOUND_HTTP_DEFAULTS_PATH,
 	OUTBOUND_HTTP_PATH,
 } from './paths'
 
 const dateTime = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'medium' })
 const wrapText = { overflowWrap: 'anywhere' } as const
 const activityOutcome = { response: '收到响应', failed: '传输失败', denied: '策略拒绝' } as const
+const activityBreakpoints = { ...DEFAULT_THEME.breakpoints, lg: '1160px' }
 
 export function OutboundHttpScreen({ owner }: { owner?: PluginNodeAddress }) {
 	const management = useRuntimeManagementClient()
@@ -85,47 +98,19 @@ export function OutboundHttpScreen({ owner }: { owner?: PluginNodeAddress }) {
 		const items = snapshot?.managed ? snapshot.activity : []
 		return ownerKey ? items.filter((item) => pluginNodeIndexKey(item.owner) === ownerKey) : items
 	}, [snapshot, ownerKey])
+	const refresh = (
+		<RefreshAction
+			label="刷新联网概览"
+			loading={query.isFetching}
+			onClick={() => {
+				void refetch()
+				if (hasRequestLogs && logs.error) logs.retry()
+			}}
+		/>
+	)
 
 	return (
-		<Stack h="100%" gap="md" p="var(--plx-page-padding)" style={{ minWidth: 0, overflow: 'auto' }}>
-			<Group justify="space-between" gap="xs">
-				<Title order={1} size="h3">
-					{snapshot?.managed === false ? '出站 HTTP' : '受管出站 HTTP'}
-				</Title>
-				<Group gap="xs">
-					{hasRequestLogs && (
-						<Button
-							component={RouterLinkAdapter}
-							to={buildOutboundHttpLogsHref(owner)}
-							size="compact-sm"
-							variant="default"
-						>
-							完整联网日志
-						</Button>
-					)}
-					{snapshot?.managed && (
-						<Button
-							component={RouterLinkAdapter}
-							to={OUTBOUND_HTTP_DEFAULTS_PATH}
-							size="compact-sm"
-							variant="default"
-						>
-							宿主默认设置
-						</Button>
-					)}
-					<Button
-						size="compact-sm"
-						variant="subtle"
-						loading={query.isFetching}
-						onClick={() => {
-							void refetch()
-							if (hasRequestLogs && logs.error) logs.retry()
-						}}
-					>
-						刷新
-					</Button>
-				</Group>
-			</Group>
+		<Stack gap="md" miw={0}>
 			{owner && (
 				<Group gap="xs">
 					<Text size="sm" fw={600} style={wrapText}>
@@ -148,21 +133,44 @@ export function OutboundHttpScreen({ owner }: { owner?: PluginNodeAddress }) {
 							{runtimeErrorMessage(query.error)}
 						</Alert>
 					)}
-					{snapshot.managed === false ? (
-						<Text size="sm" c="dimmed">
-							宿主使用平台 Fetch 或部署声明的传输，保留插件生命周期取消。
-						</Text>
-					) : records === 'off' ? (
-						<Text size="sm" c="dimmed">
-							宿主已关闭联网记录。
-						</Text>
+					{!snapshot.managed || records === 'off' ? (
+						<Group gap="sm">
+							<Text size="sm" c="dimmed">
+								{snapshot.managed
+									? '宿主已关闭联网记录。'
+									: '宿主使用平台 Fetch 或部署声明的传输，保留插件生命周期取消。'}
+							</Text>
+							{refresh}
+						</Group>
 					) : (
-						<OutboundActivity
-							activity={activity}
-							labels={labels}
-							filtered={owner !== undefined}
-							hasRequestLogs={hasRequestLogs}
-						/>
+						<Grid type="container" breakpoints={activityBreakpoints} gap="md">
+							<Grid.Col span={hasRequestLogs ? { base: 12, lg: 7 } : 12}>
+								<Paper withBorder p="md" component="section" aria-label="联网节点">
+									<Stack gap="xs">
+										<Group gap="xs">
+											<Title order={2} size="h4">
+												联网节点
+											</Title>
+											<Text size="xs" c="dimmed">
+												{activity.length} 个
+											</Text>
+											{refresh}
+										</Group>
+										<OutboundActivity
+											activity={activity}
+											labels={labels}
+											filtered={owner !== undefined}
+											hasRequestLogs={hasRequestLogs}
+										/>
+									</Stack>
+								</Paper>
+							</Grid.Col>
+							{hasRequestLogs && (
+								<Grid.Col span={{ base: 12, lg: 5 }}>
+									<RecentOutboundRequests logs={logs} owner={owner} />
+								</Grid.Col>
+							)}
+						</Grid>
 					)}
 				</>
 			) : query.isPending ? (
@@ -179,45 +187,59 @@ export function OutboundHttpScreen({ owner }: { owner?: PluginNodeAddress }) {
 					onRetry={() => void refetch()}
 				/>
 			)}
-			{hasRequestLogs && (
-				<Stack gap="xs" component="section" aria-label="最近联网记录">
-					<Group gap="xs">
-						<Title order={2} size="h5">
-							最近联网记录
-						</Title>
-						{logs.status === 'live' && (
-							<Text size="xs" c="dimmed">
-								实时更新
-							</Text>
-						)}
-					</Group>
-					{logs.error ? (
-						<ErrorState title="联网日志读取失败" message={logs.error} onRetry={logs.retry} />
-					) : logs.store.length === 0 ? (
-						<Text size="sm" c="dimmed" role="status">
-							{logs.status === 'loading' ? '正在读取联网日志…' : '暂无联网记录'}
-						</Text>
-					) : (
-						<ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-							{logs.store
-								.toArray()
-								.toReversed()
-								.map((line, index) => (
-									<li key={`${line.epoch}:${line.seq}`}>
-										<LogRow
-											line={line}
-											preview
-											showName={!owner}
-											striped={index % 2 === 1}
-											ansi={false}
-										/>
-									</li>
-								))}
-						</ol>
-					)}
-				</Stack>
-			)}
 		</Stack>
+	)
+}
+
+function RecentOutboundRequests({
+	logs,
+	owner,
+}: {
+	logs: ReturnType<typeof useLogStream>
+	owner?: PluginNodeAddress
+}) {
+	return (
+		<Paper withBorder p="md" component="section" aria-label="最近联网记录">
+			<Stack gap="xs">
+				<Group gap="xs">
+					<Title order={2} size="h4">
+						最近联网记录
+					</Title>
+					{logs.status === 'live' && (
+						<Text size="xs" c="dimmed">
+							实时更新
+						</Text>
+					)}
+					<Anchor component={RouterLinkAdapter} to={buildOutboundHttpLogsHref(owner)} size="xs">
+						完整联网日志
+					</Anchor>
+				</Group>
+				{logs.error ? (
+					<ErrorState title="联网日志读取失败" message={logs.error} onRetry={logs.retry} />
+				) : logs.store.length === 0 ? (
+					<Text size="sm" c="dimmed" role="status">
+						{logs.status === 'loading' ? '正在读取联网日志…' : '暂无联网记录'}
+					</Text>
+				) : (
+					<ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+						{logs.store
+							.toArray()
+							.toReversed()
+							.map((line, index) => (
+								<li key={`${line.epoch}:${line.seq}`}>
+									<LogRow
+										line={line}
+										preview
+										showName={!owner}
+										striped={index % 2 === 1}
+										ansi={false}
+									/>
+								</li>
+							))}
+					</ol>
+				)}
+			</Stack>
+		</Paper>
 	)
 }
 
@@ -233,86 +255,74 @@ const OutboundActivity = memo(function OutboundActivity({
 	hasRequestLogs: boolean
 }) {
 	const items = [...activity].sort((a, b) => b.lastAttemptAt - a.lastAttemptAt)
-	return (
-		<Stack gap="xs" component="section" aria-label="联网节点">
-			<Group gap="xs" align="baseline">
-				<Title order={2} size="h5">
-					联网节点
-				</Title>
-				<Text size="xs" c="dimmed">
-					{items.length} 个
-				</Text>
-			</Group>
-			{items.length === 0 ? (
-				<Text size="sm" c="dimmed">
-					{filtered
-						? '本次宿主运行尚未记录到此节点的受管请求。'
-						: '等待本次运行中经 ctx.wretch 或 ctx.fetch 发出的请求。'}
-				</Text>
-			) : (
-				<Table.ScrollContainer minWidth={640}>
-					<Table verticalSpacing="xs">
-						<Table.Thead>
-							<Table.Tr>
-								<Table.Th>插件节点</Table.Th>
-								<Table.Th>最近请求</Table.Th>
-								<Table.Th>目标 origin</Table.Th>
-								<Table.Th>最近结果</Table.Th>
-								<Table.Th>响应</Table.Th>
-								<Table.Th>失败</Table.Th>
-								<Table.Th>拒绝</Table.Th>
+	return items.length === 0 ? (
+		<Text size="sm" c="dimmed">
+			{filtered
+				? '本次宿主运行尚未记录到此节点的受管请求。'
+				: '等待本次运行中经 ctx.wretch 或 ctx.fetch 发出的请求。'}
+		</Text>
+	) : (
+		<Table.ScrollContainer minWidth={640}>
+			<Table verticalSpacing="xs">
+				<Table.Thead>
+					<Table.Tr>
+						<Table.Th>插件节点</Table.Th>
+						<Table.Th>最近请求</Table.Th>
+						<Table.Th>目标 origin</Table.Th>
+						<Table.Th>最近结果</Table.Th>
+						<Table.Th>响应</Table.Th>
+						<Table.Th>失败</Table.Th>
+						<Table.Th>拒绝</Table.Th>
+					</Table.Tr>
+				</Table.Thead>
+				<Table.Tbody>
+					{items.map((item) => {
+						const key = pluginNodeIndexKey(item.owner)
+						const reference = formatPluginNodeReference(item.owner)
+						return (
+							<Table.Tr key={key}>
+								<Table.Td>
+									<Text size="sm" title={reference} style={wrapText}>
+										{labels.get(key) ?? reference}
+									</Text>
+									{!filtered && (
+										<Group gap="xs" wrap="nowrap">
+											<Anchor
+												component={RouterLinkAdapter}
+												to={buildOutboundHttpNodeHref(item.owner)}
+												size="xs"
+											>
+												出站设置
+											</Anchor>
+											<Anchor
+												component={RouterLinkAdapter}
+												to={buildOutboundHttpActivityHref(item.owner)}
+												size="xs"
+											>
+												{hasRequestLogs ? '联网记录' : '联网摘要'}
+											</Anchor>
+										</Group>
+									)}
+								</Table.Td>
+								<Table.Td>{dateTime.format(item.lastAttemptAt)}</Table.Td>
+								<Table.Td style={wrapText}>{item.lastOrigin}</Table.Td>
+								<Table.Td>
+									{activityOutcome[item.lastOutcome]}
+									{item.lastStatus === undefined ? '' : ` ${item.lastStatus}`}
+									{item.lastCode && (
+										<Text size="xs" c="dimmed" style={wrapText}>
+											{item.lastCode}
+										</Text>
+									)}
+								</Table.Td>
+								<Table.Td>{item.received.toLocaleString()}</Table.Td>
+								<Table.Td>{item.failed.toLocaleString()}</Table.Td>
+								<Table.Td>{item.denied.toLocaleString()}</Table.Td>
 							</Table.Tr>
-						</Table.Thead>
-						<Table.Tbody>
-							{items.map((item) => {
-								const key = pluginNodeIndexKey(item.owner)
-								const reference = formatPluginNodeReference(item.owner)
-								return (
-									<Table.Tr key={key}>
-										<Table.Td>
-											<Text size="sm" title={reference} style={wrapText}>
-												{labels.get(key) ?? reference}
-											</Text>
-											{!filtered && (
-												<Group gap="xs" wrap="nowrap">
-													<Anchor
-														component={RouterLinkAdapter}
-														to={buildOutboundHttpNodeHref(item.owner)}
-														size="xs"
-													>
-														出站设置
-													</Anchor>
-													<Anchor
-														component={RouterLinkAdapter}
-														to={buildOutboundHttpActivityHref(item.owner)}
-														size="xs"
-													>
-														{hasRequestLogs ? '联网记录' : '联网摘要'}
-													</Anchor>
-												</Group>
-											)}
-										</Table.Td>
-										<Table.Td>{dateTime.format(item.lastAttemptAt)}</Table.Td>
-										<Table.Td style={wrapText}>{item.lastOrigin}</Table.Td>
-										<Table.Td>
-											{activityOutcome[item.lastOutcome]}
-											{item.lastStatus === undefined ? '' : ` ${item.lastStatus}`}
-											{item.lastCode && (
-												<Text size="xs" c="dimmed" style={wrapText}>
-													{item.lastCode}
-												</Text>
-											)}
-										</Table.Td>
-										<Table.Td>{item.received.toLocaleString()}</Table.Td>
-										<Table.Td>{item.failed.toLocaleString()}</Table.Td>
-										<Table.Td>{item.denied.toLocaleString()}</Table.Td>
-									</Table.Tr>
-								)
-							})}
-						</Table.Tbody>
-					</Table>
-				</Table.ScrollContainer>
-			)}
-		</Stack>
+						)
+					})}
+				</Table.Tbody>
+			</Table>
+		</Table.ScrollContainer>
 	)
 })

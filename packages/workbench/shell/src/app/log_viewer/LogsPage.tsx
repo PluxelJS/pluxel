@@ -1,4 +1,4 @@
-import { Box, Button, Checkbox, Group, Menu, Stack, Text } from '@mantine/core'
+import { Anchor, Box, Button, Checkbox, Group, Menu, Stack, Text } from '@mantine/core'
 import { parsePluginNodeReference, pluginNodeAddressEqual } from '@pluxel/core'
 import { OUTBOUND_HTTP_LOG_STREAM_ID } from '@pluxel/core/logging/protocol'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
@@ -78,23 +78,21 @@ function LogDocument({ search }: { search: LogsSearch }) {
 					{outboundHttp && (
 						<>
 							{owner && (
-								<Button
+								<Anchor
 									component={RouterLinkAdapter}
 									to={buildOutboundHttpNodeHref(owner)}
-									size="compact-xs"
-									variant="subtle"
+									size="xs"
 								>
 									出站设置
-								</Button>
+								</Anchor>
 							)}
-							<Button
+							<Anchor
 								component={RouterLinkAdapter}
 								to={buildOutboundHttpActivityHref(owner)}
-								size="compact-xs"
-								variant="subtle"
+								size="xs"
 							>
 								出站总览
-							</Button>
+							</Anchor>
 						</>
 					)}
 					<Button

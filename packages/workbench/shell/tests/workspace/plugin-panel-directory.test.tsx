@@ -125,6 +125,16 @@ describe('current plugin extension discovery', () => {
 		const container = await render(<PluginPanelDirectory />)
 		expect(container.querySelector('[aria-label="插件扩展"]')).toBeNull()
 	})
+	it('omits the directory after a successful empty read', async () => {
+		fixture.target = compileWorkbenchSnapshot(owner, {
+			profile: 1,
+			revision: 2,
+			target: { node: owner, displayName: 'Bot workspace' },
+			entries: [],
+		})
+		const container = await render(<PluginPanelDirectory />)
+		expect(container.querySelector('[aria-label="插件扩展"]')).toBeNull()
+	})
 	it('finds current plugin panels in the official search and opens on Enter without document navigation', async () => {
 		const chosen = vi.fn()
 		const container = await render(<WorkspaceNavigation onChosen={chosen} />)

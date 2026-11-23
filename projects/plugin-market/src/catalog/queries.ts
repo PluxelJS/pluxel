@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, or, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, isNotNull, or, sql } from 'drizzle-orm'
 import type { DrizzleD1Database } from 'drizzle-orm/d1'
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core'
 import {
@@ -10,6 +10,8 @@ import {
 	packageName,
 	pageLimit,
 	registryBase,
+	repositoryAuthor,
+	repositoryOwnerIdPrefix,
 	taxonomySlug,
 	type CatalogFacets,
 	type CatalogFilters,
@@ -19,7 +21,7 @@ import {
 	type PackageQuery,
 	type Release,
 } from '../protocol'
-import { authors, packages, releases } from '../db/schema'
+import { packages, releases } from '../db/schema'
 
 export type CatalogDatabase = Pick<BaseSQLiteDatabase<'async', unknown>, 'select'> &
 	Pick<DrizzleD1Database, 'batch'>
@@ -69,14 +71,15 @@ export function catalogQuery(params: URLSearchParams, paged: boolean): PackageQu
 	}
 }
 
-export const effectiveAuthorId = sql<
-	string | null
->`coalesce(${packages.curatedAuthorId}, ${packages.repositoryAuthorId})`
-export const authorFields = {
-	id: authors.id,
-	name: authors.name,
-	kind: authors.kind,
-	avatarUrl: authors.avatarUrl,
+const ownerLogin = sql<string>`lower(${packages.repositoryOwner})`
+
+function withRepositoryAuthor<
+	T extends { repositoryOwner: string | null; repositoryAvatarUrl: string | null },
+>({ repositoryOwner, repositoryAvatarUrl, ...pkg }: T) {
+	return {
+		...pkg,
+		author: repositoryOwner ? repositoryAuthor(repositoryOwner, repositoryAvatarUrl) : null,
+	}
 }
 
 const packageFields = {
@@ -95,7 +98,8 @@ const packageFields = {
 const summaryFields = {
 	...packageFields,
 	latest: sql<string | null>`json_extract(${packages.distTags}, '$.latest')`,
-	author: authorFields,
+	repositoryOwner: packages.repositoryOwner,
+	repositoryAvatarUrl: packages.repositoryAvatarUrl,
 	indexedVersions: sql<number>`(select count(*) from releases indexed_release where indexed_release.registry = packages.registry and indexed_release.name = packages.name)`,
 }
 
@@ -141,7 +145,12 @@ function catalogWhere(input: CatalogFilters, visibleRegistries: readonly string[
 		tags: input.tags?.length
 			? sql`exists (select 1 from json_each(${packages.tags}) tag where tag.value in (select value from json_each(${JSON.stringify(input.tags)})))`
 			: undefined,
-		authors: input.authors?.length ? inArray(effectiveAuthorId, input.authors) : undefined,
+		authors: input.authors?.length
+			? inArray(
+					ownerLogin,
+					input.authors.map((id) => id.slice(repositoryOwnerIdPrefix.length)),
+				)
+			: undefined,
 	}
 	return (except?: keyof typeof dimensions) =>
 		and(
@@ -194,14 +203,13 @@ export async function listPackages(
 	const rows = await db
 		.select(summaryFields)
 		.from(packages)
-		.leftJoin(authors, eq(authors.id, effectiveAuthorId))
 		.where(and(where(), beyondCursor))
 		.orderBy(asc(packages.name), asc(packages.registry))
 		.limit(limit + 1)
 	const selected = rows.slice(0, limit)
 	const last = selected.at(-1)
 	return {
-		packages: selected,
+		packages: selected.map(withRepositoryAuthor),
 		nextCursor:
 			last && rows.length > limit
 				? encodeCursor(scope, { name: last.name, source: registries.indexOf(last.registry) })
@@ -238,21 +246,32 @@ export async function facets(
 			.groupBy(sql`tag.value`)
 			.orderBy(sql`tag.value`),
 		db
-			.select({ ...authorFields, count })
+			.select({
+				// A single visible spelling is sufficient when the same owner uses different casing.
+				owner: sql<string>`min(${packages.repositoryOwner})`,
+				avatarUrl: sql<string | null>`max(${packages.repositoryAvatarUrl})`,
+				count,
+			})
 			.from(packages)
-			.innerJoin(authors, eq(authors.id, effectiveAuthorId))
-			.where(where('authors'))
-			.groupBy(authors.id)
-			.orderBy(asc(authors.name), asc(authors.id)),
+			.where(and(where('authors'), isNotNull(packages.repositoryOwner)))
+			.groupBy(ownerLogin)
+			.orderBy(asc(ownerLogin)),
 	])
-	return { total: totals[0].count, registries, categories, tags, authors: knownAuthors }
+	return {
+		total: totals[0].count,
+		registries,
+		categories,
+		tags,
+		authors: knownAuthors.map((row) =>
+			Object.assign(repositoryAuthor(row.owner, row.avatarUrl), { count: row.count }),
+		),
+	}
 }
 
 export async function getPackage(db: CatalogDatabase, input: PackageIdentity) {
-	return db
+	const row = await db
 		.select({ ...packageDetailFields, ...summaryFields })
 		.from(packages)
-		.leftJoin(authors, eq(authors.id, effectiveAuthorId))
 		.where(
 			and(
 				eq(packages.registry, input.registry),
@@ -261,6 +280,7 @@ export async function getPackage(db: CatalogDatabase, input: PackageIdentity) {
 			),
 		)
 		.get()
+	return row ? withRepositoryAuthor(row) : undefined
 }
 
 export async function getRelease(

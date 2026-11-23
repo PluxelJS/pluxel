@@ -240,11 +240,14 @@ describe('plugin state within native documents', () => {
 		const first = await openDocument(workspace, `/plugins/${firstRoute}`)
 		const input = content(first).querySelector<HTMLInputElement>('[aria-label="配置状态"]')!
 		input.value = 'configuration draft'
-		const button = content(first).querySelector<HTMLButtonElement>(
-			'[aria-label="插件页面入口"] button',
+		const button = [...content(first).querySelectorAll('button')].find(
+			(element) => element.textContent === '插件页面',
 		)!
+		await act(async () => button.click())
+		const link = document.querySelector<HTMLAnchorElement>('a[role="menuitem"]')!
+		expect(link.getAttribute('href')).toBe(`${buildPluginDetailHref(owner)}?entry=version`)
 		await act(async () => {
-			button.click()
+			link.click()
 			await vi.waitFor(() => expect(workspace.workbench.getDocuments()).toHaveLength(2))
 		})
 		const entry = workspace.workbench.getActiveDocument()!

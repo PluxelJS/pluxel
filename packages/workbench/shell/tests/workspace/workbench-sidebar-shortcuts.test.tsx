@@ -244,10 +244,10 @@ describe('user sidebar shortcuts in the native workspace snapshot', () => {
 		roots.add(root)
 		const rail = container.querySelector('nav[aria-label="工作区入口"]')!
 		const pinned = container.querySelector('section[aria-label="已固定到侧栏"]')!
-		const apps = rail.querySelector('button[aria-label="应用"]')
-		expect(apps).not.toBeNull()
+		const apps = rail.querySelector('a[aria-label="应用"]')
+		expect(apps?.getAttribute('href')).toBe('/apps')
 		expect(rail.querySelector('[role="separator"]')?.nextElementSibling).toBe(apps)
-		expect(rail.querySelector('button[aria-label="Marketplace"]')).toBeNull()
+		expect(rail.querySelector('[aria-label="Marketplace"]')).toBeNull()
 		expect(pinned.querySelector('[role="listitem"]')).toBeNull()
 		const pin = container.querySelector<HTMLButtonElement>(
 			'button[aria-label="固定到侧栏 Marketplace"]',
@@ -259,6 +259,7 @@ describe('user sidebar shortcuts in the native workspace snapshot', () => {
 		await act(async () => pin.click())
 		expect(session.sidebarShortcuts()).toEqual([market])
 		expect(apps?.nextElementSibling?.getAttribute('aria-label')).toBe('Marketplace')
+		expect(apps?.nextElementSibling?.getAttribute('href')).toBe('/market')
 		expect(
 			container.querySelector('button[aria-label="取消侧栏固定 Marketplace"][aria-pressed="true"]'),
 		).not.toBeNull()
@@ -271,7 +272,7 @@ describe('user sidebar shortcuts in the native workspace snapshot', () => {
 		expect(container.querySelector('[role="dialog"]')).toBeNull()
 		await act(async () => remove.click())
 		expect(session.sidebarShortcuts()).toEqual([])
-		expect(rail.querySelector('button[aria-label="Marketplace"]')).toBeNull()
+		expect(rail.querySelector('[aria-label="Marketplace"]')).toBeNull()
 		expect(pinned.querySelector('[role="listitem"]')).toBeNull()
 		expect(
 			container.querySelector('button[aria-label="固定到侧栏 Marketplace"][aria-pressed="false"]'),

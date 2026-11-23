@@ -97,22 +97,38 @@ envBinding({
 - 连接 URL 为市场后端的基础接口地址（不含 `/v1`）。
 - 连接可指向 Worker 主站或只读目录镜像。镜像保留发行的来源和摘要，插件及依赖仍通过 pnpm 配置选择的 registry 获取。 [镜像部署](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md#只读镜像)
 - 未配置市场时，仍支持通过直接输入 npm package spec（如 `@acme/example-plugin@^2.0.0`）进行安装。
-- 市场按行显示包名、简介、作者或组织、分类、来源和 registry 最新版本。点击包名查看 README 和已检查的发行，点击作者添加筛选。
-- 作者、分类、标签和来源可以多选。每组命中任意候选即可，各组条件同时生效。官方状态可选全部、官方或社区。点击已选条件可单独移除，「Clear filters」清空筛选，搜索框有独立的清除入口。
+- 市场卡片显示包名、简介、仓库所有者、分类、来源、标签和 registry 最新版本。点击卡片查看详情，点击 `@PluxelJS` 等所有者筛选其仓库下的包，仓库链接可直接打开项目。详情中也可以按所有者回到结果，或按 `Esc` 返回之前的筛选、分页和焦点。
+- **Overview** 展示 registry 提供的 README、许可证和已检查的版本数。**Versions** 可以阅读某个已检查版本随包发布的 README。带有 `ts`、`sh`、`json` 等语言标记的代码块会随页面主题高亮，长行可在代码块内横向滚动。
+- 宽面板的筛选栏在结果左侧，窄面板点 **Filters** 展开。仓库所有者、分类、标签和来源支持多选，同一组取并集，各组同时生效。官方状态可选全部、官方或社区。可单独移除已选条件，也可点 **Clear filters** 清空筛选。
+- 所有者来自包声明的 GitHub 仓库路径，公开 npm 和私有 registry 都使用这一规则。其他地址仍可打开，所有者显示为未知。跨 registry 同名包分别占一张卡片，详情、版本和安装都使用卡片上标明的来源。发行的发布证明可在版本详情中查看。
+- Workbench 只在 registry 与已核验的安装来源一致时标记已安装版本、提示更新。其他来源的同名包会指出名称冲突。旧记录或直接安装缺少来源证据时显示本地版本和 **source unknown**。在新的市场预览中可核对来源变更，确认后才更新记录。
+
+### 在 Workbench 一起安装多个精确版本
+
+1. 打开 **Marketplace**，勾选所需包的卡片。在上方清单中分别选择精确版本。registry 的 `latest` 出现在当前已检查的版本页时会被预选。可以翻页选择旧版或预发行版，也可以打开 **Versions** 阅读某次发行的依赖、来源证明和摘要，再用 **Add to selection** 加入清单。
+2. 继续搜索、翻页或切换市场。清单保留已选项和明确选择的版本。一批最多安装 100 个不同包名，每个包名对应一个市场、registry 和版本。更换同名包的来源时，先从清单移除原来的选择。
+3. 点 **Review selection**。包管理器逐一读取所选发行并核对应用的 npm 来源，再用一次 pnpm 安装准备整个依赖图。在预览中核对新增、升级、降级和依赖变化，展开 **Sources and integrity** 可以查看每个选中包的市场、registry 和完整性摘要。准备失败会指出出错项，已发布的包保持原状态。
+4. 点 **Confirm installation** 发布这份预览的插件入口。页面报告实际已发布的包和失败项。**Installed** 显示受管版本和宿主报告的插件状态。宿主可以即时接纳入口，也可能在下次启动时接纳。
+
+**Metadata only** 表示市场尚未检查该包的可安装发行。仍可打开卡片浏览。要直接从应用配置的 npm registry 安装，在 **Direct install** 输入 `@scope/plugin@1.2.3`，多包可分行填写，然后预览并确认。
+
+在 **Installed** 可按包名或插件名搜索，用 **Running only** 查看宿主报告正在运行的插件。宿主装配的包也会显示，只有受包管理器管理的包可以在这里卸载。勾选受管包后点 **Review removal**，核对版本、宿主报告及生效时机，再确认移除。受管选择发生变化时需要重新审阅。撤回入口失败时，页面保留 **Retry removal** 以便重试。
 
 ### 独立 React 市场组件
 
-`@pluxel/plugin-package-manager/marketplace` 导出了无宿主依赖的 React 市场组件：
+文档站的「插件市场」页面位于 `/market`。其他站点也可以用同一组件和公开市场地址嵌入只读目录：
 
 ```tsx
-import { Marketplace, type MarketplaceData } from '@pluxel/plugin-package-manager/marketplace'
+import { createMarketplaceData, Marketplace } from '@pluxel/plugin-package-manager/marketplace'
 
-export function Catalog({ data }: { data: MarketplaceData }) {
+const data = createMarketplaceData('https://plugins.example.com')
+
+export function Catalog() {
 	return <Marketplace data={data} colorScheme="light" />
 }
 ```
 
-宿主传入 `MarketplaceData`，用 `Packages` 读取分页包列表，`Facets` 读取当前条件下的选项和计数，`Package`、`Releases`、`Release` 读取详情。两个目录读取器接收同一套筛选条件，只有 `Packages` 接收游标和页大小。
+需使用其他传输时可以传入自己的 `MarketplaceData`。其中 `Packages` 读取分页包列表，`Facets` 读取当前条件下的选项和计数，`Package`、`Releases`、`Release` 读取详情。两个目录读取器接收同一套筛选条件，只有 `Packages` 接收游标和页大小。Workbench 通过这个接口连接当前应用，再为同一组件组合卡片和发行操作。每个打开的 Workbench 文档管理自己的清单、预览、确认和卸载。
 
 ## 两阶段安装（Prepare 与 Confirm）
 
@@ -121,25 +137,29 @@ export function Catalog({ data }: { data: MarketplaceData }) {
 1. **准备阶段（Prepare）**：pnpm 解析版本树并下载依赖到私有修订版本（Revision）中。系统生成预览计划，包含精确安装版本、哈希与受影响的依赖。
 2. **确认阶段（Confirm）**：校验预览未过期且文件完整后，正式将插件入口（`entries/*.mjs`）发布到生效目录。
 
-在业务代码中执行两阶段安装：
+从代码安装市场中选定的版本时，把所有坐标一起传给 `prepareMarketInstall`。把返回的计划交给用户审阅，确认操作提交同一个 `plan.id`。
 
 ```ts no-twoslash
-const prepared = await packages.prepareInstall(['@acme/example-plugin@^2.0.0'])
+const registry = 'https://registry.npmjs.org'
+const selection = [
+	{ marketId: 'community', registry, name: '@acme/charts', version: '2.1.0' },
+	{ marketId: 'community', registry, name: '@acme/fonts', version: '1.4.0' },
+]
+const prepared = await packages.prepareMarketInstall(selection)
 if (!prepared.ok) {
-	console.error('准备失败:', prepared.failed)
+	console.error('准备失败', prepared.failed)
 	return
 }
 
-console.log('待安装包版本:', prepared.plan.packages)
-
-// 用户在界面确认后，根据同一 plan.id 提交确认
-const installed = await packages.confirmInstall(prepared.plan.id)
-if (!installed.ok) {
-	console.error('安装确认失败:', installed.failed)
+// 由界面展示计划并等待用户确认
+if (await confirmInUI(prepared.plan)) {
+	const result = await packages.confirmInstall(prepared.plan.id)
+	console.log('已发布入口', result.succeeded)
+	if (!result.ok) console.error('发布失败', result.failed)
 }
 ```
 
-预览计划默认有效期为 10 分钟。对于无需人工确认的脚本自动化场景，也可以使用 `Commands` 服务直接调用单步安装。
+直接从 npm 安装时用 `packages.prepareInstall(['@acme/example-plugin@^2.0.0'])` 生成计划，同样要确认后才发布。计划默认有效期为 10 分钟。脚本也可以通过 `Commands` 调用单步安装。
 
 ## 命令系统调用
 

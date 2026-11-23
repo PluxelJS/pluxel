@@ -1,12 +1,12 @@
-import { Button, Center, Group, Loader, Stack, Text } from '@mantine/core'
-import { IconSettingsOff } from '@tabler/icons-react'
+import { Button, Center, Group, Loader, Menu, Text } from '@mantine/core'
+import { IconChevronDown, IconSettingsOff } from '@tabler/icons-react'
 import { EmptyState, ErrorState } from '../../../components'
 import {
 	useResolvedWorkbenchRoute,
 	useWorkbenchTabs,
 	WorkbenchEntryView,
 } from '../../../workbench/runtime'
-import { useWorkbenchNavigation } from '../../workbench/context'
+import { DocumentTabs } from '../../workbench/DocumentTabs'
 import { useOptionalWorkbenchDocument, useDocumentPlugin } from '../../workbench/document'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
 import { parsePluginDetailHref, buildPluginDetailHref } from '../../../workbench/paths'
@@ -32,7 +32,6 @@ export function RightPane({ config }: { config: PluginConfigState }) {
 	const outboundHttp = restPath === PLUGIN_OUTBOUND_HTTP_PATH
 	const isConfig = !restPath || restPath === '/config' || outboundHttp
 	const search = usePluginDetailSearch()
-	const navigation = useWorkbenchNavigation()
 	const session = useWorkspaceSession()
 	const id = useOptionalWorkbenchDocument()?.id ?? null
 	const active = useWorkbenchState(session.workbench, (state) => state.activeDocumentId === id)
@@ -64,61 +63,52 @@ export function RightPane({ config }: { config: PluginConfigState }) {
 			/>
 		)
 	return (
-		<Stack gap="md" h="100%" p="var(--plx-page-padding)" style={{ minHeight: 0 }}>
-			<Group justify="space-between">
-				<Text fw={600} size="lg">
-					{pluginLabel}
-				</Text>
-				<ActionBar active={active} />
-			</Group>
-			{entries.length > 0 && (
-				<Group gap="xs" aria-label="插件页面入口">
-					{entries.map((entry) => (
-						<Button
-							key={entry.descriptor.key}
-							size="compact-sm"
-							variant="light"
-							onClick={() =>
-								navigation.navigate(
-									`${buildPluginDetailHref(owner)}?entry=${encodeURIComponent(entry.descriptor.key)}`,
-								)
-							}
-						>
-							{entry.placement.kind === 'tab'
-								? (entry.placement.label ?? entry.descriptor.key)
-								: entry.descriptor.key}
-						</Button>
-					))}
+		<DocumentTabs
+			title={pluginLabel}
+			label="插件设置"
+			value={outboundHttp ? 'outbound-http' : 'config'}
+			sections={[
+				{ value: 'config', label: '插件配置', to: buildPluginDetailHref(owner) },
+				{ value: 'outbound-http', label: '出站 HTTP', to: buildOutboundHttpNodeHref(owner) },
+			]}
+			actions={
+				<Group gap="sm">
+					{entries.length > 0 && (
+						<Menu position="bottom-end">
+							<Menu.Target>
+								<Button
+									size="compact-sm"
+									variant="default"
+									rightSection={<IconChevronDown size={14} aria-hidden />}
+								>
+									插件页面
+								</Button>
+							</Menu.Target>
+							<Menu.Dropdown>
+								{entries.map((entry) => (
+									<Menu.Item
+										key={entry.descriptor.key}
+										component={RouterLinkAdapter}
+										to={`${buildPluginDetailHref(owner)}?entry=${encodeURIComponent(entry.descriptor.key)}`}
+									>
+										{entry.placement.kind === 'tab'
+											? (entry.placement.label ?? entry.descriptor.key)
+											: entry.descriptor.key}
+									</Menu.Item>
+								))}
+							</Menu.Dropdown>
+						</Menu>
+					)}
+					<ActionBar active={active} />
 				</Group>
+			}
+		>
+			{outboundHttp ? (
+				<OutboundHttpSettings owner={owner} />
+			) : (
+				<ConfigContent config={config} owner={owner} displayName={pluginLabel} active={active} />
 			)}
-			<Group component="nav" gap="xs" aria-label="插件设置">
-				<Button
-					component={RouterLinkAdapter}
-					to={buildPluginDetailHref(owner)}
-					aria-current={outboundHttp ? undefined : 'page'}
-					variant={outboundHttp ? 'subtle' : 'light'}
-					size="compact-sm"
-				>
-					插件配置
-				</Button>
-				<Button
-					component={RouterLinkAdapter}
-					to={buildOutboundHttpNodeHref(owner)}
-					aria-current={outboundHttp ? 'page' : undefined}
-					variant={outboundHttp ? 'light' : 'subtle'}
-					size="compact-sm"
-				>
-					出站 HTTP
-				</Button>
-			</Group>
-			<div className="plx-pluginDocument__panel">
-				{outboundHttp ? (
-					<OutboundHttpSettings owner={owner} />
-				) : (
-					<ConfigContent config={config} owner={owner} displayName={pluginLabel} active={active} />
-				)}
-			</div>
-		</Stack>
+		</DocumentTabs>
 	)
 }
 

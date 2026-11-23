@@ -77,12 +77,14 @@ describe('plugin runtime summary', () => {
 		const details = container.querySelector('details')!
 		expect(details.open).toBe(false)
 		expect(details.querySelector('summary')?.textContent).toBe('调试信息')
-		const summaryRows = [...container.querySelectorAll('.plx-pluginWorkbench__summaryRow')].filter(
-			(row) => !details.contains(row),
-		)
-		expect(summaryRows.map((row) => row.textContent)).toEqual([
-			'当前状态运行中',
-			'来源@fixture/tools',
+		const summary = container.querySelector('dl[aria-label="运行摘要"]')!
+		expect([...summary.querySelectorAll('dt')].map((label) => label.textContent)).toEqual([
+			'状态',
+			'来源',
+		])
+		expect([...summary.querySelectorAll('dd')].map((value) => value.textContent)).toEqual([
+			'运行中',
+			'@fixture/tools',
 		])
 		expect(container.textContent).not.toContain('暂无描述')
 		expect(container.textContent).not.toContain('本进程暂无更新记录')

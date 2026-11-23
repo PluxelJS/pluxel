@@ -161,12 +161,14 @@ vp run @pluxel-internal/plugin-market#sandbox:admin catalog --registry "$MARKET_
 # 查询当前的分类与标签统计快照
 vp run @pluxel-internal/plugin-market#sandbox:admin facets
 
-# 读取公开 GitHub 仓库的归属与头像，再按作者和多个分类查目录
+# 按声明的仓库所有者查询，同时限定分类
+vp run @pluxel-internal/plugin-market#sandbox:admin catalog '{"authors":["github:owner/pluxeljs"],"categories":["rendering","integration"]}'
+
+# 按需刷新 GitHub 星数和头像
 vp run @pluxel-internal/plugin-market#sandbox:admin repository @pluxel/fonts
-vp run @pluxel-internal/plugin-market#sandbox:admin catalog '{"authors":["github:123"],"categories":["development","integration"]}'
 ```
 
-对已有目录包执行 `repository` 后，用回执里的作者 ID 查询。同样的筛选可传给 `facets` 读取选项与计数。市场登记方式见 [管理 API](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md#市场管理)。
+目录摄取仓库地址时即可按所有者查询。同样的筛选可传给 `facets` 读取选项与计数。私源同名包可用 `--registry` 定向查询。市场标记的编辑方式见 [管理 API](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md#市场管理)。
 
 ## 在控制台（Workbench）中浏览插件市场
 
@@ -178,7 +180,7 @@ vp run @pluxel-internal/plugin-market#sandbox:admin catalog '{"authors":["github
 }
 ```
 
-启动宿主应用后，在 Workbench 侧边栏点击 **Marketplace**（或访问 `/market` 路由），即可在图形化界面中查看已收录的插件列表、版本发布历史与 README 文档。
+启动宿主应用后，在 Workbench 侧边栏点击 **Marketplace** 或访问 `/market`。可以浏览 README 和发行历史，也可以在卡片上勾选多个包，逐项选择精确版本后一次预览并确认。安装、运行状态和卸载步骤见[插件市场与包管理器](../plugins/package-manager.md#在-workbench-一起安装多个精确版本)。
 
 ## 运行端到端沙箱自动化验收
 

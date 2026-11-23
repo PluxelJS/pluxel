@@ -2,10 +2,11 @@ import {
 	Alert,
 	Button,
 	Code,
+	Divider,
 	Group,
 	NumberInput,
-	Paper,
 	Select,
+	SimpleGrid,
 	Stack,
 	Text,
 	Textarea,
@@ -206,141 +207,148 @@ export function OutboundHttpEditor({ snapshot }: { snapshot: ManagedOutboundHttp
 	const savedScope = owner ? '节点覆盖' : '宿主设置'
 	const headers = Object.entries(effective.headers)
 	return (
-		<Paper withBorder p="md" component="form" aria-label="出站设置" onSubmit={submit}>
+		<form aria-label="出站设置" onSubmit={submit}>
 			<Stack gap="md">
-				<Select
-					label="目标策略"
-					styles={appliedFieldStyles}
-					description={
-						<AppliedValue
-							source={savedSettings.allowedOrigins === undefined ? inherits : '与上层取交集'}
-						>
-							{describeOrigins(effective.allowedOrigins)}
-						</AppliedValue>
-					}
-					data={[
-						{ value: 'inherit', label: inherits },
-						{ value: 'deny', label: '禁止受管出站' },
-						{ value: 'list', label: '仅允许指定 origin' },
-					]}
-					value={form.origins.mode}
-					allowDeselect={false}
-					disabled={saving}
-					onChange={(mode) => {
-						if (mode === 'inherit' || mode === 'deny' || mode === 'list')
-							edit('origins', { ...form.origins, mode })
-					}}
-				/>
-				{form.origins.mode === 'list' && (
-					<Textarea
-						label="允许的 origin"
-						description="每行一个 HTTP(S) origin。上层限制仍然生效。启用允许列表后，受管请求需要显式处理重定向。"
-						placeholder="https://api.example.com"
-						rows={3}
-						resize="vertical"
-						value={form.origins.text}
-						disabled={saving}
-						onChange={(event) =>
-							edit('origins', { ...form.origins, text: event.currentTarget.value })
-						}
-					/>
-				)}
-				<NumberInput
-					label="单次尝试超时（毫秒）"
-					styles={appliedFieldStyles}
-					description={
-						<AppliedValue
-							source={savedSettings.timeoutMs === undefined ? inherits : '采用各层上限的最小值'}
-						>
-							{describeTimeout(effective.timeoutMs)}
-						</AppliedValue>
-					}
-					placeholder={inherits}
-					allowDecimal={false}
-					min={1}
-					clampBehavior="none"
-					hideControls
-					value={form.timeoutMs}
-					disabled={saving}
-					onChange={(value) => edit('timeoutMs', value)}
-				/>
-				<Select
-					label="代理"
-					styles={appliedFieldStyles}
-					description={
-						<AppliedValue
-							source={
-								limits.allowProxyChanges
-									? savedSettings.proxyUrl === undefined
-										? inherits
-										: savedScope
-									: '由宿主锁定'
+				<SimpleGrid
+					type="container"
+					cols={{ base: 1, '720px': 2 }}
+					spacing="lg"
+					verticalSpacing="md"
+				>
+					<Stack gap="md" miw={0}>
+						<Select
+							label="目标策略"
+							styles={appliedFieldStyles}
+							description={
+								<AppliedValue
+									source={savedSettings.allowedOrigins === undefined ? inherits : '与上层取交集'}
+								>
+									{describeOrigins(effective.allowedOrigins)}
+								</AppliedValue>
 							}
-						>
-							{effective.proxyUrl ?? '无受管代理'}
-						</AppliedValue>
-					}
-					data={[
-						{ value: 'inherit', label: inherits },
-						{ value: 'direct', label: '无受管代理' },
-						{ value: 'url', label: '指定代理地址' },
-					]}
-					value={form.proxy.mode}
-					allowDeselect={false}
-					disabled={saving || !limits.allowProxyChanges}
-					onChange={(mode) => {
-						if (mode === 'inherit' || mode === 'direct' || mode === 'url')
-							edit('proxy', { ...form.proxy, mode })
-					}}
-				/>
-				{form.proxy.mode === 'url' && (
-					<TextInput
-						label="代理地址"
-						description="填写无凭据的 HTTP(S) origin。"
-						placeholder="http://proxy.example.com:8080"
-						value={form.proxy.url}
-						disabled={saving || !limits.allowProxyChanges}
-						onChange={(event) => edit('proxy', { ...form.proxy, url: event.currentTarget.value })}
-					/>
-				)}
-				<Textarea
-					label="默认请求头"
-					description={
-						<>
-							<AppliedValue>
-								{headers.length === 0
-									? '无'
-									: headers.map(([name, value]) => (
-											<span key={name} style={{ display: 'block' }}>
-												<Code>{name}</Code> {value}{' '}
-												<Text component="span" inherit c="dimmed">
-													·{' '}
-													{Object.hasOwn(savedSettings.headers ?? {}, name) ? savedScope : inherits}
-												</Text>
-											</span>
-										))}
-							</AppliedValue>
-							<span style={{ display: 'block' }}>
-								每行填写一个名称和值。插件显式设置的同名头优先。
-							</span>
-						</>
-					}
-					styles={{ description: wrapText }}
-					placeholder="Accept-Language: zh-CN"
-					rows={3}
-					resize="vertical"
-					value={form.headers}
-					disabled={saving}
-					onChange={(event) => edit('headers', event.currentTarget.value)}
-				/>
-				<Text size="xs" c="dimmed" style={wrapText}>
-					部署上限 ·{' '}
-					{limits.allowedOrigins === undefined
-						? ''
-						: `${describeOrigins(limits.allowedOrigins)} · `}
-					超时 {describeTimeout(limits.timeoutMs)} · 并发 {limits.maxConcurrentRequests} · 排队{' '}
-					{limits.maxQueuedRequests}
-				</Text>
+							data={[
+								{ value: 'inherit', label: inherits },
+								{ value: 'deny', label: '禁止受管出站' },
+								{ value: 'list', label: '仅允许指定 origin' },
+							]}
+							value={form.origins.mode}
+							allowDeselect={false}
+							disabled={saving}
+							onChange={(mode) => {
+								if (mode === 'inherit' || mode === 'deny' || mode === 'list')
+									edit('origins', { ...form.origins, mode })
+							}}
+						/>
+						{form.origins.mode === 'list' && (
+							<Textarea
+								label="允许的 origin"
+								description="每行一个 HTTP(S) origin。上层限制仍然生效。启用允许列表后，受管请求需要显式处理重定向。"
+								placeholder="https://api.example.com"
+								rows={3}
+								resize="vertical"
+								value={form.origins.text}
+								disabled={saving}
+								onChange={(event) =>
+									edit('origins', { ...form.origins, text: event.currentTarget.value })
+								}
+							/>
+						)}
+						<NumberInput
+							label="单次尝试超时（毫秒）"
+							styles={appliedFieldStyles}
+							description={
+								<AppliedValue
+									source={savedSettings.timeoutMs === undefined ? inherits : '采用各层上限的最小值'}
+								>
+									{describeTimeout(effective.timeoutMs)}
+								</AppliedValue>
+							}
+							placeholder={inherits}
+							allowDecimal={false}
+							min={1}
+							clampBehavior="none"
+							hideControls
+							value={form.timeoutMs}
+							disabled={saving}
+							onChange={(value) => edit('timeoutMs', value)}
+						/>
+					</Stack>
+					<Stack gap="md" miw={0}>
+						<Select
+							label="代理"
+							styles={appliedFieldStyles}
+							description={
+								<AppliedValue
+									source={
+										limits.allowProxyChanges
+											? savedSettings.proxyUrl === undefined
+												? inherits
+												: savedScope
+											: '由宿主锁定'
+									}
+								>
+									{effective.proxyUrl ?? '无受管代理'}
+								</AppliedValue>
+							}
+							data={[
+								{ value: 'inherit', label: inherits },
+								{ value: 'direct', label: '无受管代理' },
+								{ value: 'url', label: '指定代理地址' },
+							]}
+							value={form.proxy.mode}
+							allowDeselect={false}
+							disabled={saving || !limits.allowProxyChanges}
+							onChange={(mode) => {
+								if (mode === 'inherit' || mode === 'direct' || mode === 'url')
+									edit('proxy', { ...form.proxy, mode })
+							}}
+						/>
+						{form.proxy.mode === 'url' && (
+							<TextInput
+								label="代理地址"
+								description="填写无凭据的 HTTP(S) origin。"
+								placeholder="http://proxy.example.com:8080"
+								value={form.proxy.url}
+								disabled={saving || !limits.allowProxyChanges}
+								onChange={(event) =>
+									edit('proxy', { ...form.proxy, url: event.currentTarget.value })
+								}
+							/>
+						)}
+						<Textarea
+							label="默认请求头"
+							description={
+								<>
+									<AppliedValue>
+										{headers.length === 0
+											? '无'
+											: headers.map(([name, value]) => (
+													<span key={name} style={{ display: 'block' }}>
+														<Code>{name}</Code> {value}{' '}
+														<Text component="span" inherit c="dimmed">
+															·{' '}
+															{Object.hasOwn(savedSettings.headers ?? {}, name)
+																? savedScope
+																: inherits}
+														</Text>
+													</span>
+												))}
+									</AppliedValue>
+									<span style={{ display: 'block' }}>
+										每行填写一个名称和值。插件显式设置的同名头优先。
+									</span>
+								</>
+							}
+							styles={{ description: wrapText }}
+							placeholder="Accept-Language: zh-CN"
+							rows={3}
+							resize="vertical"
+							value={form.headers}
+							disabled={saving}
+							onChange={(event) => edit('headers', event.currentTarget.value)}
+						/>
+					</Stack>
+				</SimpleGrid>
 				{feedback && (
 					<Alert
 						color={feedback.color}
@@ -350,17 +358,26 @@ export function OutboundHttpEditor({ snapshot }: { snapshot: ManagedOutboundHttp
 						{feedback.message}
 					</Alert>
 				)}
-				<Group justify="space-between" gap="xs" wrap="wrap">
-					<Button
-						type="button"
-						variant="default"
-						size="compact-sm"
-						disabled={saving || Object.keys(savedSettings).length === 0}
-						onClick={() => void save(true)}
-					>
-						恢复继承
-					</Button>
-					<Group gap="xs" wrap="wrap">
+				<Divider />
+				<Group justify="space-between" gap="sm">
+					<Text size="xs" c="dimmed" style={wrapText}>
+						部署上限 ·{' '}
+						{limits.allowedOrigins === undefined
+							? ''
+							: `${describeOrigins(limits.allowedOrigins)} · `}
+						超时 {describeTimeout(limits.timeoutMs)} · 并发 {limits.maxConcurrentRequests} · 排队{' '}
+						{limits.maxQueuedRequests}
+					</Text>
+					<Group gap="xs" ml="auto">
+						<Button
+							type="button"
+							variant="default"
+							size="compact-sm"
+							disabled={saving || Object.keys(savedSettings).length === 0}
+							onClick={() => void save(true)}
+						>
+							恢复继承
+						</Button>
 						{draft && (
 							<Button
 								type="button"
@@ -381,6 +398,6 @@ export function OutboundHttpEditor({ snapshot }: { snapshot: ManagedOutboundHttp
 					</Group>
 				</Group>
 			</Stack>
-		</Paper>
+		</form>
 	)
 }

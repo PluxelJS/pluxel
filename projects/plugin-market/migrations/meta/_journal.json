@@ -57,6 +57,13 @@
 			"when": 1795342773029,
 			"tag": "0007_dazzling_senator_kelly",
 			"breakpoints": true
+		},
+		{
+			"idx": 8,
+			"version": "6",
+			"when": 1795421973254,
+			"tag": "0008_repository_owners",
+			"breakpoints": true
 		}
 	]
 }

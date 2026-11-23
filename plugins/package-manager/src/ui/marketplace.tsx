@@ -69,14 +69,21 @@ export type MarketplaceData = Readonly<{
 
 export type MarketplaceProps = Readonly<{
 	data: MarketplaceData
-	/** Omit in a browsing-only host. Called only for a checked exact release. */
-	onPrepare?(selection: MarketReleaseIdentity): void
-	busy?: boolean
+	/** Optional host-owned status shown with the package summary and in its detail. */
+	packageStatus?(pkg: MarketPackageSummary): ReactNode
+	/** An independent action beside the package title on cards and in details. */
+	packageAction?(pkg: MarketPackageSummary): ReactNode
+	/** Actions for the exact release currently displayed after a successful read. */
+	releaseAction?(release: MarketRelease): ReactNode
+	/** Optional host-specific annotation beside an exact version. */
+	versionNote?(selection: MarketReleaseIdentity): string | undefined
+	/** Reports opening a package or returning to the catalog within this instance. */
+	onPackageChange?(selection: MarketPackageIdentity | null): void
 	/** Fixed appearance for this surface. @defaultValue 'light' */
 	colorScheme?: 'light' | 'dark'
 }>
 
-type BrowseProps = Pick<MarketplaceProps, 'data' | 'onPrepare' | 'busy'>
+type BrowseProps = Pick<MarketplaceProps, 'data' | 'releaseAction' | 'versionNote'>
 
 export function Marketplace({ colorScheme = 'light', ...props }: MarketplaceProps) {
 	return (
@@ -91,7 +98,14 @@ export function Marketplace({ colorScheme = 'light', ...props }: MarketplaceProp
 	)
 }
 
-function MarketPackages({ data, busy, onPrepare }: BrowseProps) {
+function MarketPackages({
+	data,
+	packageAction,
+	releaseAction,
+	packageStatus,
+	versionNote,
+	onPackageChange,
+}: Omit<MarketplaceProps, 'colorScheme'>) {
 	const [query, setQuery] = useState('')
 	const [selection, setSelection] = useState(emptySelection)
 	const [official, setOfficial] = useState<boolean>()
@@ -100,9 +114,9 @@ function MarketPackages({ data, busy, onPrepare }: BrowseProps) {
 	const catalog = useRef<HTMLDivElement>(null)
 	const details = useRef<HTMLDivElement>(null)
 	const searchInput = useRef<HTMLInputElement>(null)
-	const returnTo = useRef<{ button: HTMLButtonElement; scroll: Element | null; top: number }>(
-		undefined,
-	)
+	const returnTo = useRef<
+		{ button: HTMLButtonElement; scroll: Element | null; top: number } | 'results'
+	>(undefined)
 	const cursor = cursors.at(-1)
 	const filters = useMemo<MarketCatalogFilters>(() => {
 		const selected: Partial<Record<CatalogFacet, readonly string[]>> = {}
@@ -157,12 +171,26 @@ function MarketPackages({ data, busy, onPrepare }: BrowseProps) {
 		const scroll = scrollContainer(button)
 		returnTo.current = { button, scroll, top: scroll?.scrollTop ?? 0 }
 		setSelectedPackage(pkg)
+		onPackageChange?.({ name: pkg.name, registry: pkg.registry })
 	}
+	const closePackage = () => {
+		setSelectedPackage(undefined)
+		onPackageChange?.(null)
+	}
+	const authorSelected = (author: MarketPackageSummary['author']) =>
+		selection.authors.some(({ value }) => value === author?.id)
+	const toggleOwner = (author: NonNullable<MarketPackageSummary['author']>) =>
+		toggle('authors', { value: author.id, label: author.name, avatarUrl: author.avatarUrl })
+	const ownerLimit = selection.authors.length >= marketFilterLimit
 
 	useLayoutEffect(() => {
 		if (selectedPackage) {
 			details.current?.scrollIntoView?.({ block: 'start', inline: 'nearest' })
 			details.current?.querySelector<HTMLButtonElement>('.pm-back')?.focus({ preventScroll: true })
+		} else if (returnTo.current === 'results') {
+			returnTo.current = undefined
+			scrollToCatalog()
+			searchInput.current?.focus({ preventScroll: true })
 		} else if (returnTo.current) {
 			const { button, scroll, top } = returnTo.current
 			returnTo.current = undefined
@@ -170,7 +198,7 @@ function MarketPackages({ data, busy, onPrepare }: BrowseProps) {
 			const focus = button.isConnected ? button : searchInput.current
 			focus?.focus({ preventScroll: true })
 		}
-	}, [selectedPackage])
+	}, [selectedPackage, scrollToCatalog])
 
 	return (
 		<>
@@ -197,85 +225,80 @@ function MarketPackages({ data, busy, onPrepare }: BrowseProps) {
 						/>
 					)}
 				</data.Facets>
-				<data.Packages query={pageQuery}>
-					{(read) => {
-						const page = read.data?.ok ? read.data.value : undefined
-						const next = page?.nextCursor
-						return (
-							<>
-								<ReadStatus
-									query={read}
-									title="Market unavailable"
-									loadingLabel="Loading packages"
-									retryLabel="Retry market"
-								/>
-								{page?.packages.length === 0 ? (
-									<div className="pm-empty">
-										<h3>No matching packages</h3>
-										<p>Try another search or remove a filter.</p>
-									</div>
-								) : null}
-								{page?.packages.length ? (
-									<div className="pm-results">
-										<div className="pm-result-header" aria-hidden="true">
-											<span>Package</span>
-											<span>Author / organization</span>
-											<span>Category</span>
-											<span>Source</span>
-											<span>Latest</span>
+				<div className="pm-catalog-results">
+					<data.Packages query={pageQuery}>
+						{(read) => {
+							const page = read.data?.ok ? read.data.value : undefined
+							const next = page?.nextCursor
+							return (
+								<>
+									<ReadStatus
+										query={read}
+										title="Market unavailable"
+										loadingLabel="Loading packages"
+										retryLabel="Retry market"
+									/>
+									{page?.packages.length === 0 ? (
+										<div className="pm-empty">
+											<h3>No matching packages</h3>
+											<p>Try another search or remove a filter.</p>
 										</div>
-										<ul aria-label="Plugin catalog">
+									) : null}
+									{page?.packages.length ? (
+										<ul className="pm-results" aria-label="Plugin catalog">
 											{page.packages.map((pkg) => (
-												<PackageRow
+												<PackageCard
 													key={JSON.stringify([pkg.registry, pkg.name])}
 													pkg={pkg}
-													authorSelected={selection.authors.some(
-														({ value }) => value === pkg.author?.id,
-													)}
-													authorLimit={selection.authors.length >= marketFilterLimit}
+													action={packageAction?.(pkg)}
+													status={packageStatus?.(pkg)}
+													authorSelected={authorSelected(pkg.author)}
+													authorLimit={ownerLimit}
 													onOpen={(button) => openPackage(pkg, button)}
-													onAuthor={(author) =>
-														toggle('authors', {
-															value: author.id,
-															label: author.name,
-															avatarUrl: author.avatarUrl,
-														})
-													}
+													onAuthor={toggleOwner}
 												/>
 											))}
 										</ul>
-									</div>
-								) : null}
-								{cursors.length > 0 || next ? (
-									<Pagination
-										page={cursors.length + 1}
-										busy={read.isFetching}
-										previous={cursors.length > 0}
-										next={Boolean(next)}
-										onPrevious={() => {
-											setCursors((current) => current.slice(0, -1))
-											scrollToCatalog()
-										}}
-										onNext={() => {
-											if (next) setCursors((current) => [...current, next])
-											scrollToCatalog()
-										}}
-									/>
-								) : null}
-							</>
-						)
-					}}
-				</data.Packages>
+									) : null}
+									{cursors.length > 0 || next ? (
+										<Pagination
+											page={cursors.length + 1}
+											busy={read.isFetching}
+											previous={cursors.length > 0}
+											next={Boolean(next)}
+											onPrevious={() => {
+												setCursors((current) => current.slice(0, -1))
+												scrollToCatalog()
+											}}
+											onNext={() => {
+												if (next) setCursors((current) => [...current, next])
+												scrollToCatalog()
+											}}
+										/>
+									) : null}
+								</>
+							)
+						}}
+					</data.Packages>
+				</div>
 			</div>
 			{selectedPackage ? (
-				<div ref={details}>
+				<div className="pm-detail-anchor" ref={details}>
 					<PackageDetails
 						key={JSON.stringify([selectedPackage.registry, selectedPackage.name])}
 						data={data}
 						pkg={selectedPackage}
-						busy={busy}
-						onPrepare={onPrepare}
-						onClose={() => setSelectedPackage(undefined)}
+						packageAction={packageAction}
+						releaseAction={releaseAction}
+						packageStatus={packageStatus}
+						versionNote={versionNote}
+						onClose={closePackage}
+						canFilterOwner={(author) => authorSelected(author) || !ownerLimit}
+						onFilterOwner={(author) => {
+							if (!authorSelected(author)) toggleOwner(author)
+							returnTo.current = 'results'
+							closePackage()
+						}}
 					/>
 				</div>
 			) : null}
@@ -292,52 +315,56 @@ function scrollContainer(element: HTMLElement): Element | null {
 	return ownerDocument.scrollingElement
 }
 
-function PackageRow({
+function PackageCard({
 	pkg,
+	action,
+	status,
 	authorSelected,
 	authorLimit,
 	onOpen,
 	onAuthor,
 }: Readonly<{
 	pkg: MarketPackageSummary
+	action: ReactNode
+	status: ReactNode
 	authorSelected: boolean
 	authorLimit: boolean
 	onOpen(button: HTMLButtonElement): void
 	onAuthor(author: NonNullable<MarketPackageSummary['author']>): void
 }>) {
 	const { author } = pkg
+	const category = pkg.category ? categoryLabel(pkg.category) : null
+	const tags = pkg.tags.slice(0, 2)
+	const remainingTags = pkg.tags.length - tags.length
 	return (
-		<li className="pm-result-row">
-			<div className="pm-package">
-				<div className="pm-package-heading">
-					<button
-						type="button"
-						className="pm-text-action pm-package-name pm-truncate"
-						title={pkg.name}
-						aria-label={pkg.name + ' from ' + registryLabel(pkg.registry)}
-						onClick={(event) => onOpen(event.currentTarget)}
-					>
-						{pkg.name}
-					</button>
-					{pkg.official ? <span className="pm-badge pm-official">Official</span> : null}
-				</div>
-				{pkg.description ? (
-					<p className="pm-summary pm-truncate" title={pkg.description}>
-						{pkg.description}
-					</p>
-				) : null}
+		<li className="pm-package-card">
+			<div className="pm-package-heading">
+				{action}
+				<button
+					type="button"
+					className="pm-text-action pm-package-name"
+					title={pkg.name}
+					aria-label={pkg.name + ' from ' + registryLabel(pkg.registry)}
+					onClick={(event) => onOpen(event.currentTarget)}
+				>
+					<span className="pm-truncate">
+						<PackageName name={pkg.name} />
+					</span>
+				</button>
+				{pkg.official ? <span className="pm-badge pm-official">Official</span> : null}
 			</div>
-			<div className="pm-package-author">
+			{pkg.description ? (
+				<p className="pm-summary" title={pkg.description}>
+					{pkg.description}
+				</p>
+			) : null}
+			<div className="pm-card-byline">
 				{author ? (
 					<button
 						type="button"
-						className="pm-text-action pm-author"
-						title={
-							author.kind === 'github'
-								? author.name + ' · Declared GitHub repository owner'
-								: author.name
-						}
-						aria-label={'Filter by author ' + author.name}
+						className="pm-text-action pm-author pm-card-author"
+						title={'Filter by repository owner ' + author.name}
+						aria-label={'Filter by repository owner ' + author.name}
 						aria-pressed={authorSelected}
 						disabled={!authorSelected && authorLimit}
 						onClick={() => onAuthor(author)}
@@ -346,38 +373,87 @@ function PackageRow({
 						<span className="pm-truncate">{author.name}</span>
 					</button>
 				) : (
-					<span className="pm-unset" aria-label="Author unavailable">
-						—
-					</span>
+					<span className="pm-owner-unknown">Repository owner unavailable</span>
 				)}
+				<RepositoryLink pkg={pkg} />
 			</div>
-			<span
-				className="pm-row-category pm-truncate"
-				title={pkg.category ? categoryLabel(pkg.category) : undefined}
-			>
-				{pkg.category ? categoryLabel(pkg.category) : <span className="pm-unset">—</span>}
-			</span>
-			<span className="pm-row-source pm-truncate" title={pkg.registry}>
-				{registryLabel(pkg.registry)}
-			</span>
-			<div className="pm-row-version">
-				<span className="pm-sr-only">Registry latest</span>
-				<code className="pm-truncate" title={pkg.latest ?? undefined}>
-					{pkg.latest ?? '—'}
-				</code>
-				{pkg.indexedVersions === 0 ? (
-					<span className="pm-no-release" title="No installable releases">
-						Metadata only
+			{tags.length > 0 || status ? (
+				<div className="pm-card-metadata">
+					{tags.length > 0 ? (
+						<div className="pm-card-tags">
+							{tags.map((tag) => (
+								<span key={tag} className="pm-chip pm-truncate" title={tag}>
+									#{tag}
+								</span>
+							))}
+							{remainingTags > 0 ? (
+								<span
+									className="pm-chip pm-card-more-tags"
+									title={pkg.tags.slice(tags.length).join(', ')}
+								>
+									+{remainingTags}
+									<span className="pm-sr-only"> more tags</span>
+								</span>
+							) : null}
+						</div>
+					) : null}
+					{status}
+				</div>
+			) : null}
+			<div className="pm-card-footer">
+				<div className="pm-card-origin">
+					{category ? (
+						<span className="pm-truncate" title={category}>
+							{category}
+						</span>
+					) : null}
+					<span className="pm-truncate" title={pkg.registry}>
+						{registryLabel(pkg.registry)}
 					</span>
+				</div>
+				{pkg.latest || pkg.indexedVersions === 0 ? (
+					<div className="pm-card-version">
+						{pkg.latest ? (
+							<>
+								<span className="pm-sr-only">Registry latest</span>
+								<code className="pm-truncate" title={pkg.latest}>
+									{pkg.latest}
+								</code>
+							</>
+						) : null}
+						{pkg.indexedVersions === 0 ? (
+							<span className="pm-no-release" title="No installable releases">
+								Metadata only
+							</span>
+						) : null}
+					</div>
 				) : null}
 			</div>
 		</li>
 	)
 }
 
-function PackageDetails(
-	props: BrowseProps & Readonly<{ pkg: MarketPackageSummary; onClose(): void }>,
-) {
+function PackageName({ name }: Readonly<{ name: string }>) {
+	const slash = name.indexOf('/')
+	if (slash < 0) return name
+	return (
+		<>
+			<span className="pm-scope">{name.slice(0, slash + 1)}</span>
+			{name.slice(slash + 1)}
+		</>
+	)
+}
+
+type PackageDetailsProps = BrowseProps &
+	Pick<MarketplaceProps, 'packageStatus' | 'packageAction'> &
+	Readonly<{
+		pkg: MarketPackageSummary
+		onClose(): void
+		canFilterOwner(author: NonNullable<MarketPackageSummary['author']>): boolean
+		onFilterOwner(author: NonNullable<MarketPackageSummary['author']>): void
+	}>
+
+function PackageDetails(props: PackageDetailsProps) {
 	return (
 		<props.data.Package identity={{ registry: props.pkg.registry, name: props.pkg.name }}>
 			{(query) => <PackageOverview {...props} query={query} />}
@@ -388,72 +464,127 @@ function PackageDetails(
 function PackageOverview({
 	data,
 	pkg,
-	busy,
-	onPrepare,
+	packageAction,
+	releaseAction,
+	packageStatus,
+	versionNote,
 	onClose,
+	canFilterOwner,
+	onFilterOwner,
 	query,
-}: BrowseProps &
-	Readonly<{
-		pkg: MarketPackageSummary
-		onClose(): void
-		query: MarketplaceRead<MarketPackageDetail>
-	}>) {
+}: PackageDetailsProps & Readonly<{ query: MarketplaceRead<MarketPackageDetail> }>) {
 	const detail = query.data?.ok ? query.data.value : undefined
-	const author = (detail ?? pkg).author
+	const summary = detail ?? pkg
+	const { author } = summary
 	const [tab, setTab] = useState('overview')
 	const identity = { registry: pkg.registry, name: pkg.name }
+	const region = useRef<HTMLElement>(null)
+	useLayoutEffect(() => {
+		const element = region.current
+		if (!element) return undefined
+		function returnOnEscape(event: KeyboardEvent) {
+			if (
+				event.key !== 'Escape' ||
+				event.defaultPrevented ||
+				event.isComposing ||
+				(event.target instanceof Element &&
+					event.target.closest(
+						'input, select, textarea, [contenteditable="true"], [role="combobox"]',
+					))
+			)
+				return
+			event.preventDefault()
+			event.stopPropagation()
+			onClose()
+		}
+		element.addEventListener('keydown', returnOnEscape)
+		return () => element.removeEventListener('keydown', returnOnEscape)
+	}, [onClose])
 	return (
-		<div className="pm-stack" aria-label="Package details">
-			<div>
-				<button type="button" className="pm-button pm-quiet pm-back" onClick={onClose}>
-					<svg
-						width="16"
-						height="16"
-						viewBox="0 0 20 20"
-						fill="none"
-						stroke="currentColor"
-						aria-hidden="true"
+		<section ref={region} className="pm-details" aria-label="Package details">
+			<div className="pm-detail-navigation">
+				<nav className="pm-return" aria-label="Package navigation">
+					<button
+						type="button"
+						className="pm-button pm-quiet pm-back"
+						aria-keyshortcuts="Escape"
+						onClick={onClose}
 					>
-						<path d="m9 4-6 6 6 6M3 10h14" />
-					</svg>
-					Back to packages
-				</button>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 20 20"
+							fill="none"
+							stroke="currentColor"
+							aria-hidden="true"
+						>
+							<path d="m9 4-6 6 6 6M3 10h14" />
+						</svg>
+						Back to packages
+					</button>
+					<kbd aria-hidden="true">Esc</kbd>
+				</nav>
+				<TabBar
+					value={tab}
+					onChange={setTab}
+					label="Package information"
+					tabs={['Overview', 'Versions']}
+				/>
 			</div>
 			<header className="pm-detail-header">
-				<div className="pm-inline">
-					<h2>{pkg.name}</h2>
-					{(detail ?? pkg).official ? <span className="pm-badge pm-official">Official</span> : null}
-				</div>
-				{(detail ?? pkg).description ? (
-					<p className="pm-detail-description">{(detail ?? pkg).description}</p>
-				) : null}
-				<div className="pm-detail-facts">
-					{author ? <AuthorFact author={author} /> : null}
-					<p className="pm-source">
-						<span>Registry</span>
-						<span>{pkg.registry}</span>
-					</p>
-					<RepositoryLink pkg={detail ?? pkg} />
-				</div>
-				<div className="pm-tags">
-					{(detail ?? pkg).category ? (
-						<span className="pm-chip pm-category">{(detail ?? pkg).category}</span>
-					) : null}
-					{(detail ?? pkg).tags.map((tag) => (
-						<span key={tag} className="pm-chip">
-							#{tag}
+				<div className="pm-detail-title">
+					<h2>
+						<PackageName name={pkg.name} />
+					</h2>
+					{summary.latest ? (
+						<span className="pm-latest" title={'Registry latest: ' + summary.latest}>
+							<span>latest</span> <code>{summary.latest}</code>
 						</span>
-					))}
+					) : null}
+					{summary.official ? <span className="pm-badge pm-official">Official</span> : null}
+					{packageStatus?.(summary)}
+					{packageAction?.(summary)}
+				</div>
+				{summary.description ? (
+					<p className="pm-detail-description">{summary.description}</p>
+				) : null}
+				<div className="pm-detail-byline">
+					<div className="pm-attribution">
+						<span className="pm-registry" title={pkg.registry}>
+							<span className="pm-sr-only">Registry </span>
+							{registryLabel(pkg.registry)}
+						</span>
+						{author ? (
+							<button
+								type="button"
+								className="pm-text-action pm-author pm-owner-link"
+								aria-label={'Show packages from repository owner ' + author.name}
+								title={'Show packages from repository owner ' + author.name}
+								disabled={!canFilterOwner(author)}
+								onClick={() => onFilterOwner(author)}
+							>
+								<AuthorAvatar url={author.avatarUrl} />
+								{author.name}
+							</button>
+						) : (
+							<span className="pm-owner-unknown">Repository owner unavailable</span>
+						)}
+						<RepositoryLink pkg={summary} />
+					</div>
+					<div className="pm-tags">
+						{summary.category ? (
+							<span className="pm-chip pm-category">{categoryLabel(summary.category)}</span>
+						) : null}
+						{summary.tags.map((tag) => (
+							<span key={tag} className="pm-chip">
+								#{tag}
+							</span>
+						))}
+					</div>
 				</div>
 			</header>
-			<TabBar
-				value={tab}
-				onChange={setTab}
-				label="Package information"
-				tabs={['Overview', 'Versions']}
-			/>
 			{tab === 'overview' ? (
-				<div className="pm-stack">
+				<>
 					<ReadStatus
 						query={query}
 						title="Package details unavailable"
@@ -461,53 +592,44 @@ function PackageOverview({
 						retryLabel="Retry package"
 					/>
 					{detail ? (
-						<>
-							<div className="pm-overview-facts">
-								{detail.metadataVersion ? (
-									<Fact label="Metadata version">{detail.metadataVersion}</Fact>
+						<div className="pm-overview">
+							<aside className="pm-package-meta" aria-label="Package metadata">
+								<h3>Package metadata</h3>
+								<dl className="pm-facts">
+									{detail.metadataVersion ? (
+										<Fact label="Metadata version">
+											<code>{detail.metadataVersion}</code>
+										</Fact>
+									) : null}
+									{detail.license ? <Fact label="License">{detail.license}</Fact> : null}
+									<Fact label="Checked releases">{detail.indexedVersions}</Fact>
+								</dl>
+								{detail.indexedVersions === 0 ? (
+									<p className="pm-coverage">No checked releases are available from this market.</p>
 								) : null}
-								{detail.license ? <Fact label="License">{detail.license}</Fact> : null}
 								<NpmxLink
 									registry={detail.registry}
 									name={detail.name}
 									version={detail.metadataVersion}
 								/>
-							</div>
-							{detail.indexedVersions === 0 ? (
-								<p className="pm-note">No releases are available to install from this market.</p>
-							) : null}
+							</aside>
 							<section className="pm-document">
 								<h3>Registry README</h3>
 								<Readme value={detail.readme} />
 							</section>
-						</>
+						</div>
 					) : null}
-				</div>
+				</>
 			) : (
 				<ReleaseVersions
 					data={data}
 					identity={identity}
 					latest={detail ? detail.latest : pkg.latest}
-					busy={busy}
-					onPrepare={onPrepare}
+					releaseAction={releaseAction}
+					versionNote={versionNote}
 				/>
 			)}
-		</div>
-	)
-}
-
-function AuthorFact({ author }: Readonly<{ author: NonNullable<MarketPackageSummary['author']> }>) {
-	return (
-		<Fact
-			label={
-				author.kind === 'github' ? 'Declared GitHub repository owner' : 'Author / organization'
-			}
-		>
-			<span className="pm-author">
-				<AuthorAvatar url={author.avatarUrl} />
-				{author.name}
-			</span>
-		</Fact>
+		</section>
 	)
 }
 
@@ -515,89 +637,143 @@ function ReleaseVersions({
 	data,
 	identity,
 	latest,
-	busy,
-	onPrepare,
+	releaseAction,
+	versionNote,
 }: BrowseProps & Readonly<{ identity: MarketPackageIdentity; latest: string | null }>) {
-	const [cursors, setCursors] = useState<string[]>([])
 	const [version, setVersion] = useState('')
+	return (
+		<div className="pm-versions" aria-label="Available package versions">
+			<p className="pm-small pm-muted">
+				Only releases checked by this market are listed.{' '}
+				{latest ? 'Registry latest: ' + latest + '.' : 'The registry has no latest release.'}
+			</p>
+			<MarketVersionPicker
+				data={data}
+				identity={identity}
+				latest={latest}
+				versionNote={versionNote}
+				label="Package version"
+				value={version}
+				onChange={setVersion}
+				onPageChange={() => setVersion('')}
+			/>
+			{version ? (
+				<ReleaseDetails
+					key={version}
+					data={data}
+					selection={{ ...identity, version }}
+					releaseAction={releaseAction}
+					onClose={() => setVersion('')}
+				/>
+			) : null}
+		</div>
+	)
+}
+
+/** Both the browsing detail and the host's selection form read the same indexed version pages. */
+export function MarketVersionPicker({
+	data,
+	identity,
+	latest,
+	versionNote,
+	label,
+	name,
+	value,
+	onChange,
+	onPageChange,
+	disabled,
+}: Pick<MarketplaceProps, 'data' | 'versionNote'> &
+	Readonly<{
+		identity: MarketPackageIdentity
+		latest: string | null
+		label: string
+		/** A named field contributes its exact version to the enclosing installation form. */
+		name?: string
+		/** null prefers the registry latest only when it is present on this checked page. */
+		value: string | null
+		onChange(version: string): void
+		onPageChange?(): void
+		disabled?: boolean
+	}>) {
+	const [cursors, setCursors] = useState<string[]>([])
 	const cursor = cursors.at(-1)
 	const id = useId()
-
-	const renderVersions = (query: MarketplaceRead<MarketReleasePage>) => {
-		const page = query.data?.ok ? query.data.value : undefined
-		return (
-			<div className="pm-stack" aria-label="Available package versions">
-				<p className="pm-muted">
-					Only releases checked by this market are listed.{' '}
-					{latest ? 'Registry latest: ' + latest + '.' : 'The registry has no latest release.'}
-				</p>
-				<ReadStatus
-					query={query}
-					title="Versions unavailable"
-					loadingLabel="Loading package versions"
-					retryLabel="Retry versions"
-				/>
-				{page?.releases.length === 0 ? (
-					<p className="pm-note">
-						{cursors.length === 0
-							? 'No releases are available to install from this market.'
-							: 'No indexed versions on this page.'}
-					</p>
-				) : null}
-				{page?.releases.length ? (
-					<div className="pm-field pm-version-field">
-						<label htmlFor={id}>Package version</label>
-						<select
-							id={id}
-							value={version}
-							disabled={query.isFetching || Boolean(errorOf(query))}
-							onChange={(event) => setVersion(event.currentTarget.value)}
-						>
-							<option value="">Select a version</option>
-							{page.releases.map((release) => (
-								<option key={release.version} value={release.version}>
-									{release.version === latest ? release.version + ' (latest)' : release.version}
-								</option>
-							))}
-						</select>
-					</div>
-				) : null}
-				{page && (cursors.length > 0 || page.nextCursor) ? (
-					<Pagination
-						page={cursors.length + 1}
-						busy={query.isFetching}
-						previous={cursors.length > 0}
-						next={Boolean(page.nextCursor)}
-						suffix=" versions"
-						onPrevious={() => {
-							setCursors((current) => current.slice(0, -1))
-							setVersion('')
-						}}
-						onNext={() => {
-							if (page.nextCursor) setCursors((current) => [...current, page.nextCursor!])
-							setVersion('')
-						}}
-					/>
-				) : null}
-				{version ? (
-					<ReleaseDetails
-						key={version}
-						data={data}
-						selection={{ ...identity, version }}
-						busy={busy}
-						onPrepare={onPrepare}
-						onClose={() => setVersion('')}
-					/>
-				) : null}
-			</div>
-		)
-	}
 	return (
 		<data.Releases
 			identity={identity}
 			query={{ registry: identity.registry, limit: 20, ...(cursor ? { cursor } : {}) }}
 		>
-			{renderVersions}
+			{(read) => {
+				const page = read.data?.ok ? read.data.value : undefined
+				const versions = page?.releases.map((item) => item.version) ?? []
+				const preferred = latest && versions.includes(latest) ? latest : ''
+				const selected = value ?? preferred
+				// A version explicitly chosen on another page stays in the editable selection.
+				if (value && !versions.includes(value)) versions.unshift(value)
+				const changePage = (next: string[]) => {
+					if (value === null && selected) onChange(selected)
+					onPageChange?.()
+					setCursors(next)
+				}
+				return (
+					<div className="pm-version-picker">
+						<ReadStatus
+							query={read}
+							title="Versions unavailable"
+							loadingLabel="Loading package versions"
+							retryLabel="Retry versions"
+						/>
+						{page && page.releases.length === 0 ? (
+							<p className="pm-note">
+								{cursor
+									? 'No indexed versions on this page.'
+									: 'No checked releases are available from this market.'}
+							</p>
+						) : null}
+						{page && versions.length > 0 ? (
+							<div className="pm-field pm-version-field">
+								<label htmlFor={id} className={name ? 'pm-sr-only' : undefined}>
+									{label}
+								</label>
+								<select
+									id={id}
+									name={name}
+									required={Boolean(name)}
+									value={selected}
+									disabled={disabled || read.isFetching || Boolean(errorOf(read))}
+									onChange={(event) => onChange(event.currentTarget.value)}
+								>
+									<option value="">Select a version</option>
+									{versions.map((version) => {
+										const notes = [
+											version === latest ? 'registry latest' : null,
+											versionNote?.({ ...identity, version }),
+										].filter(Boolean)
+										return (
+											<option key={version} value={version}>
+												{notes.length > 0 ? version + ' (' + notes.join(', ') + ')' : version}
+											</option>
+										)
+									})}
+								</select>
+							</div>
+						) : null}
+						{page && (cursor || page.nextCursor) ? (
+							<Pagination
+								page={cursors.length + 1}
+								busy={read.isFetching || Boolean(disabled)}
+								previous={Boolean(cursor)}
+								next={Boolean(page.nextCursor)}
+								suffix=" versions"
+								onPrevious={() => changePage(cursors.slice(0, -1))}
+								onNext={() => {
+									if (page.nextCursor) changePage([...cursors, page.nextCursor])
+								}}
+							/>
+						) : null}
+					</div>
+				)
+			}}
 		</data.Releases>
 	)
 }
@@ -614,8 +790,7 @@ function ReleaseDetails(
 
 function ReleaseOverview({
 	selection,
-	busy,
-	onPrepare,
+	releaseAction,
 	onClose,
 	query,
 }: BrowseProps &
@@ -627,14 +802,17 @@ function ReleaseOverview({
 	const release = query.data?.ok ? query.data.value : undefined
 	const [tab, setTab] = useState('readme')
 	return (
-		<section className="pm-release pm-stack" aria-label="Release details">
+		<section className="pm-release" aria-label="Release details">
 			<div className="pm-between">
 				<h3>
 					{selection.name}@{selection.version}
 				</h3>
-				<button type="button" className="pm-button pm-quiet" onClick={onClose}>
-					Close details
-				</button>
+				<div className="pm-inline">
+					{release && !query.isFetching && !errorOf(query) ? releaseAction?.(release) : null}
+					<button type="button" className="pm-button pm-quiet" onClick={onClose}>
+						Close details
+					</button>
+				</div>
 			</div>
 			<ReadStatus
 				query={query}
@@ -645,8 +823,12 @@ function ReleaseOverview({
 			{release ? (
 				<>
 					<div className="pm-overview-facts">
-						<Fact label="Registry">{release.registry}</Fact>
-						{release.license ? <Fact label="License">{release.license}</Fact> : null}
+						<dl className="pm-facts">
+							<Fact label="Registry">
+								<code>{release.registry}</code>
+							</Fact>
+							{release.license ? <Fact label="License">{release.license}</Fact> : null}
+						</dl>
 						<NpmxLink registry={release.registry} name={release.name} version={release.version} />
 					</div>
 					{release.provenance.status === 'verified' ? (
@@ -676,8 +858,8 @@ function ReleaseOverview({
 						tabs={['README', 'Dependencies', 'Integrity']}
 					/>
 					{tab === 'readme' ? (
-						<section className="pm-document">
-							<p className="pm-small pm-muted">README from the checked package archive.</p>
+						<section className="pm-document" aria-label="Release README">
+							<p className="pm-document-source">README from the checked package archive.</p>
 							<Readme value={release.readme} />
 						</section>
 					) : tab === 'dependencies' ? (
@@ -692,21 +874,6 @@ function ReleaseOverview({
 							</p>
 						</div>
 					)}
-					{onPrepare ? (
-						<div className="pm-install">
-							<p className="pm-small pm-muted">
-								Review this exact release before installing it in your application.
-							</p>
-							<button
-								type="button"
-								className="pm-button pm-primary"
-								disabled={busy || Boolean(errorOf(query))}
-								onClick={() => onPrepare(selection)}
-							>
-								Review installation
-							</button>
-						</div>
-					) : null}
 				</>
 			) : null}
 		</section>
@@ -719,10 +886,17 @@ function RepositoryLink({
 	pkg: Pick<MarketPackageSummary, 'repository' | 'repositoryStars' | 'repositoryObservedAt'>
 }>) {
 	if (!pkg.repository) return null
+	const githubName = /^https:\/\/github\.com\/([^/?#]+\/[^/?#]+)/i.exec(pkg.repository)?.[1]
 	return (
 		<div className="pm-repository">
-			<a href={pkg.repository} target="_blank" rel="noopener noreferrer">
-				Repository
+			<a
+				className="pm-truncate"
+				href={pkg.repository}
+				title={pkg.repository}
+				target="_blank"
+				rel="noopener noreferrer"
+			>
+				{githubName ?? 'Repository'}
 			</a>
 			{pkg.repositoryStars !== null && pkg.repositoryObservedAt !== null ? (
 				<span
@@ -784,8 +958,8 @@ function Dependencies({ release }: Readonly<{ release: MarketRelease }>) {
 function Fact({ label, children }: Readonly<{ label: string; children: ReactNode }>) {
 	return (
 		<div className="pm-fact">
-			<span className="pm-small pm-muted">{label}</span>
-			<span>{children}</span>
+			<dt>{label}</dt>
+			<dd>{children}</dd>
 		</div>
 	)
 }

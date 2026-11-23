@@ -9,15 +9,16 @@ import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { RpcTarget } from 'capnweb'
 import { requirePluginSource } from '@pluxel/host/sources'
-import type {
-	PackageManagerApi,
-	PackageManagerSnapshot,
-	PackageMutationResult,
-	PackagePreparationResult,
-	MarketInstallRequest,
-	MarketCatalogFilters,
-	MarketPackageQuery,
-	MarketReleaseQuery,
+import {
+	packageMutationLimit,
+	type PackageManagerApi,
+	type PackageManagerSnapshot,
+	type PackageMutationResult,
+	type PackagePreparationResult,
+	type MarketInstallRequest,
+	type MarketCatalogFilters,
+	type MarketPackageQuery,
+	type MarketReleaseQuery,
 } from './contracts.ts'
 import { loadPnpmEngine } from './pnpm-engine.ts'
 import { ManagedPackageStore } from './store.ts'
@@ -96,7 +97,7 @@ export type PackageManagerPluginConfig = v.InferOutput<typeof PackageManagerConf
 const mutationInput = obj({
 	specs: Type.Array(Type.String({ minLength: 1, maxLength: 512 }), {
 		minItems: 1,
-		maxItems: 100,
+		maxItems: packageMutationLimit,
 	}),
 })
 
@@ -199,12 +200,16 @@ export class PackageManagerPlugin extends BasePlugin {
 		return this.requireStore().marketReleases(marketId, name, query)
 	}
 
-	prepareMarketInstall(request: MarketInstallRequest): Promise<PackagePreparationResult> {
-		return this.requireStore().prepareMarketInstall(request)
+	/** Prepares one dependency graph for the exact releases selected across configured markets.
+	 * Confirm the returned plan ID to publish its entries. */
+	prepareMarketInstall(
+		requests: readonly MarketInstallRequest[],
+	): Promise<PackagePreparationResult> {
+		return this.requireStore().prepareMarketInstall(requests)
 	}
 
-	remove(names: readonly string[]): Promise<PackageMutationResult> {
-		return this.requireStore().remove(names)
+	remove(names: readonly string[], expectedRevision?: number): Promise<PackageMutationResult> {
+		return this.requireStore().remove(names, expectedRevision)
 	}
 
 	private requireStore(): ManagedPackageStore {
@@ -280,14 +285,19 @@ class PackageManagerTarget extends RpcTarget implements PackageManagerApi {
 		return result
 	}
 
-	async prepareMarketInstallDto(request: MarketInstallRequest) {
-		const result = await this.store.prepareMarketInstall(request)
+	async prepareMarketInstallDto(requests: readonly MarketInstallRequest[]) {
+		const result = await this.store.prepareMarketInstall(requests)
 		assertWorkbenchDto(result)
 		return result
 	}
 
-	async removeDto(names: readonly string[]): Promise<PackageMutationResult> {
-		const result = await this.store.remove(names)
+	async removeDto(
+		names: readonly string[],
+		expectedRevision: number,
+	): Promise<PackageMutationResult> {
+		if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)
+			throw new TypeError('Package removal requires the reviewed installation revision')
+		const result = await this.store.remove(names, expectedRevision)
 		assertWorkbenchDto(result)
 		return result
 	}

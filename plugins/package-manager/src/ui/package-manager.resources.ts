@@ -1,3 +1,4 @@
+import { readPackageUsage } from './package-usage.ts'
 import type { WorkbenchRendererScope } from '@pluxel/workbench/react'
 import type { PackageManagerWorkbench } from '../workbench.ts'
 import type {
@@ -9,7 +10,7 @@ import type {
 
 export type PrepareInstallInput =
 	| Readonly<{ kind: 'direct'; specs: readonly string[] }>
-	| (Readonly<{ kind: 'market' }> & MarketInstallRequest)
+	| Readonly<{ kind: 'market'; requests: readonly MarketInstallRequest[] }>
 
 export function createPackageManagerResources(
 	scope: WorkbenchRendererScope<typeof PackageManagerWorkbench.manager>,
@@ -19,22 +20,22 @@ export function createPackageManagerResources(
 		queryFn: () => api.snapshotDto(),
 	}))
 
+	const packageUsageQuery = scope.query(({ host }) => ({
+		queryKey: ['package-manager', 'usage'] as const,
+		queryFn: () => readPackageUsage(host),
+	}))
+
 	const prepareInstallMutation = scope.mutation(({ api }) => ({
 		mutationFn: (input: PrepareInstallInput) =>
 			input.kind === 'direct'
 				? api.prepareInstallDto(input.specs)
-				: api.prepareMarketInstallDto({
-						marketId: input.marketId,
-						registry: input.registry,
-						name: input.name,
-						version: input.version,
-					}),
+				: api.prepareMarketInstallDto(input.requests),
 	}))
 
 	const confirmInstallMutation = scope.mutation(({ api }) => ({
 		mutationFn: (planId: string) => api.confirmInstallDto(planId),
 		workbench: {
-			invalidates: [packageManagerSnapshotQuery],
+			invalidates: [packageManagerSnapshotQuery, packageUsageQuery],
 		},
 	}))
 
@@ -84,14 +85,19 @@ export function createPackageManagerResources(
 	)
 
 	const removePackagesMutation = scope.mutation(({ api }) => ({
-		mutationFn: (names: readonly string[]) => api.removeDto(names),
+		mutationFn: ({
+			names,
+			expectedRevision,
+		}: Readonly<{ names: readonly string[]; expectedRevision: number }>) =>
+			api.removeDto(names, expectedRevision),
 		workbench: {
-			invalidates: [packageManagerSnapshotQuery],
+			invalidates: [packageManagerSnapshotQuery, packageUsageQuery],
 		},
 	}))
 
 	return {
 		packageManagerSnapshotQuery,
+		packageUsageQuery,
 		prepareInstallMutation,
 		confirmInstallMutation,
 		marketPackagesQuery,

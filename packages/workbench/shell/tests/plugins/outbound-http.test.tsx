@@ -129,6 +129,10 @@ it('reconciles activity with the log stream and opens the exact node settings', 
 	const navigation = { navigate: (to: string) => void router.navigate({ to }), openTab: vi.fn() }
 	const link = (label: string) =>
 		[...container.querySelectorAll('a')].find((element) => element.textContent === label)!
+	const tab = (label: string) =>
+		[...container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')].find(
+			(element) => element.textContent === label,
+		)!
 	try {
 		const newerHeaders = { 'accept-language': 'zh-TW' }
 		let current = snapshot(1, { timeoutMs: 5_000 })
@@ -279,7 +283,7 @@ it('reconciles activity with the log stream and opens the exact node settings', 
 		await act(async () => link('出站设置').click())
 		await vi.waitFor(() => expect(timeoutInput()).toBeTruthy())
 		expect(get).toHaveBeenCalledWith(owner)
-		expect(link('出站 HTTP').getAttribute('aria-current')).toBe('page')
+		expect(tab('出站 HTTP').getAttribute('aria-selected')).toBe('true')
 		expect(link('本节点联网记录').getAttribute('href')).toBe(
 			`${basepath}${buildOutboundHttpActivityHref(owner)}`,
 		)
@@ -341,19 +345,26 @@ it('reconciles activity with the log stream and opens the exact node settings', 
 		)
 		await act(async () => link('出站总览').click())
 		await vi.waitFor(() => expect(link('全部节点')).toBeTruthy())
-		await act(async () => link('全部节点').click())
-		await vi.waitFor(() => expect(container.querySelectorAll('tbody tr')).toHaveLength(2))
-		expect(link('宿主默认设置').getAttribute('href')).toBe(
-			`${basepath}${OUTBOUND_HTTP_DEFAULTS_PATH}`,
-		)
-		await act(async () => link('宿主默认设置').click())
+		const overviewTab = tab('联网概览')
+		const defaultsTab = tab('宿主默认设置')
+		const filter = router.state.location.search.plugin
+		await act(async () => defaultsTab.click())
 		await vi.waitFor(() => expect(timeoutInput()).toBeTruthy())
-		expect(container.textContent).toContain('宿主出站默认设置')
+		expect(tab('联网概览')).toBe(overviewTab)
+		expect(tab('宿主默认设置')).toBe(defaultsTab)
+		expect(defaultsTab.getAttribute('aria-selected')).toBe('true')
+		expect(router.state.location.pathname).toBe(OUTBOUND_HTTP_DEFAULTS_PATH)
+		expect(router.state.location.search.plugin).toBe(filter)
 		expect(timeoutInput().placeholder).toBe('继承部署配置')
 
-		await act(async () => link('出站总览').click())
+		await act(async () => overviewTab.click())
+		await vi.waitFor(() => expect(link('全部节点')).toBeTruthy())
+		expect(overviewTab.getAttribute('aria-selected')).toBe('true')
+		expect(router.state.location.search.plugin).toBe(filter)
+		await act(async () => link('全部节点').click())
+		await vi.waitFor(() => expect(container.querySelectorAll('tbody tr')).toHaveLength(2))
 		const refresh = () =>
-			[...container.querySelectorAll('button')].find((button) => button.textContent === '刷新')!
+			container.querySelector<HTMLButtonElement>('button[aria-label="刷新联网概览"]')!
 		await vi.waitFor(() => expect(refresh().disabled).toBe(false))
 		records = 'summary'
 		await act(async () => refresh().click())
@@ -366,11 +377,15 @@ it('reconciles activity with the log stream and opens the exact node settings', 
 		await act(async () => refresh().click())
 		await vi.waitFor(() => expect(container.textContent).toContain('宿主已关闭联网记录'))
 		expect(container.querySelector('table')).toBeNull()
-		expect(link('宿主默认设置')).toBeTruthy()
+		expect(tab('宿主默认设置')).toBe(defaultsTab)
 		managed = false
 		await act(async () => refresh().click())
 		await vi.waitFor(() => expect(container.textContent).toContain('宿主使用平台 Fetch'))
-		expect(link('宿主默认设置')).toBeUndefined()
+		await act(async () => defaultsTab.click())
+		await vi.waitFor(() =>
+			expect(container.textContent).toContain('此宿主的出站传输由部署声明决定。'),
+		)
+		expect(tab('宿主默认设置')).toBe(defaultsTab)
 	} finally {
 		await act(async () => root.unmount())
 		await workspace.dispose()

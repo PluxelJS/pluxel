@@ -4,6 +4,7 @@ import { gfmFromMarkdown } from 'mdast-util-gfm'
 import { gfm } from 'micromark-extension-gfm'
 import type { Definition, Nodes, Table } from 'mdast'
 import type { MarketRelease } from '../market-contracts.ts'
+import { ReadmeCode } from './marketplace-readme-code.tsx'
 
 /** Render registry/archive Markdown as React elements; package HTML is always text. */
 export function Readme({ value }: Readonly<{ value: MarketRelease['readme'] }>) {
@@ -102,11 +103,7 @@ function renderMarkdown(text: string): ReactNode {
 			case 'inlineCode':
 				return <code>{node.value}</code>
 			case 'code':
-				return (
-					<pre>
-						<code>{node.value}</code>
-					</pre>
-				)
+				return <ReadmeCode code={node.value} language={node.lang} />
 			case 'blockquote':
 				return <blockquote>{children(node.children)}</blockquote>
 			case 'list':

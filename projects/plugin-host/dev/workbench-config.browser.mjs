@@ -118,7 +118,7 @@ page.on('response', (response) => {
 const panelOf = async (tab) => page.locator(`[id="${await tab.getAttribute('aria-controls')}"]`)
 const pathInput = (panel) => panel.getByRole('textbox', { name: '出站探测路径', exact: true })
 async function assertPanels(panel) {
-	const dimensions = await panel.locator('.plx-pluginDocument__panel').evaluateAll((nodes) =>
+	const dimensions = await panel.locator('.plx-document-tabs__panel').evaluateAll((nodes) =>
 		nodes.map((node) => ({
 			id: node.id,
 			display: getComputedStyle(node).display,
@@ -346,7 +346,7 @@ try {
 			assert.ok(copied.height > 0 && copied.scrollHeight > copied.height)
 			const containment = await copyScroll.evaluate((node) => {
 				const viewport = node.getBoundingClientRect()
-				const owner = node.closest('.plx-pluginDocument__panel').getBoundingClientRect()
+				const owner = node.closest('.plx-document-tabs__panel').getBoundingClientRect()
 				return { top: viewport.top >= owner.top, bottom: viewport.bottom <= owner.bottom }
 			})
 			assert.deepEqual(containment, { top: true, bottom: true })

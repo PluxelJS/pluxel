@@ -1,9 +1,9 @@
-import { MarketError, object, readJson, type MarketAuthor } from '../protocol'
+import { MarketError, object, readJson, repositoryOwner } from '../protocol'
 
 export type RepositoryObservation = {
 	stars: number
 	observedAt: number
-	author: MarketAuthor
+	avatarUrl: string | null
 }
 
 function avatarUrl(value: unknown): string | null {
@@ -24,30 +24,27 @@ export async function observeRepository(
 	eventSignal?: AbortSignal,
 ): Promise<RepositoryObservation> {
 	eventSignal?.throwIfAborted()
-	const url = new URL(repository)
-	const match = /^\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)$/.exec(url.pathname)
-	if (url.origin !== 'https://github.com' || !match)
+	const owner = repositoryOwner(repository)
+	if (!owner)
 		throw new MarketError(
 			'repository-provider-unsupported',
 			'Repository observations currently support GitHub repositories only',
 			422,
 		)
+	const fullName = repository.slice('https://github.com/'.length)
 	const observedAt = Date.now()
 	const deadline = AbortSignal.timeout(10_000)
 	let response: Response
 	try {
-		response = await fetch(
-			`https://api.github.com/repos/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}`,
-			{
-				headers: {
-					Accept: 'application/vnd.github+json',
-					'User-Agent': 'pluxel-plugin-market',
-					'X-GitHub-Api-Version': '2022-11-28',
-				},
-				redirect: 'manual',
-				signal: eventSignal ? AbortSignal.any([eventSignal, deadline]) : deadline,
+		response = await fetch(`https://api.github.com/repos/${fullName}`, {
+			headers: {
+				Accept: 'application/vnd.github+json',
+				'User-Agent': 'pluxel-plugin-market',
+				'X-GitHub-Api-Version': '2022-11-28',
 			},
-		)
+			redirect: 'manual',
+			signal: eventSignal ? AbortSignal.any([eventSignal, deadline]) : deadline,
+		})
 	} catch {
 		throw new MarketError(
 			'repository-unavailable',
@@ -69,17 +66,13 @@ export async function observeRepository(
 	if (
 		!object(value) ||
 		typeof value.full_name !== 'string' ||
-		value.full_name.toLowerCase() !== `${match[1]}/${match[2]}`.toLowerCase() ||
+		value.full_name.toLowerCase() !== fullName.toLowerCase() ||
 		typeof value.stargazers_count !== 'number' ||
 		!Number.isSafeInteger(value.stargazers_count) ||
 		value.stargazers_count < 0 ||
 		!object(value.owner) ||
-		typeof value.owner.id !== 'number' ||
-		!Number.isSafeInteger(value.owner.id) ||
-		value.owner.id < 1 ||
 		typeof value.owner.login !== 'string' ||
-		!/^[a-z0-9][a-z0-9-]{0,38}$/i.test(value.owner.login) ||
-		value.owner.login.toLowerCase() !== match[1].toLowerCase()
+		value.owner.login.toLowerCase() !== owner.toLowerCase()
 	)
 		throw new MarketError(
 			'invalid-repository-response',
@@ -89,11 +82,6 @@ export async function observeRepository(
 	return {
 		stars: value.stargazers_count,
 		observedAt,
-		author: {
-			id: `github:${value.owner.id}`,
-			name: `@${value.owner.login}`,
-			kind: 'github',
-			avatarUrl: avatarUrl(value.owner.avatar_url),
-		},
+		avatarUrl: avatarUrl(value.owner.avatar_url),
 	}
 }

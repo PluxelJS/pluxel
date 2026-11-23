@@ -1,17 +1,14 @@
-import {
-	PackageMarketClient,
-	type MarketplaceData,
-	type MarketplaceRead,
-	type MarketReadResult,
-} from '@pluxel/plugin-package-manager/marketplace'
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react'
+import { PackageMarketClient } from '../market.ts'
+import type { MarketReadResult } from '../market-contracts.ts'
+import type { MarketplaceData, MarketplaceRead } from './marketplace.tsx'
 
 const marketId = 'public'
 type Read<T> = (client: PackageMarketClient) => Promise<MarketReadResult<T>>
 type State<T> = Omit<MarketplaceRead<T>, 'refetch'> & { read: Read<T> }
 type Owner<T> = { read: Read<T>; fetch(): Promise<void> }
 
-// The page owns only HTTP reads. Search, selection and pagination belong to Marketplace.
+/** Anonymous HTTP reads for a single public market or mirror. Keep the returned data stable. */
 export function createMarketplaceData(url: string): MarketplaceData {
 	function Packages({ query, children }: ComponentProps<MarketplaceData['Packages']>) {
 		const read = useCallback(

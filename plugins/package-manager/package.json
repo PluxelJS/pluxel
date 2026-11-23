@@ -57,6 +57,8 @@
 		"mdast-util-from-markdown": "catalog:prod",
 		"mdast-util-gfm": "catalog:prod",
 		"micromark-extension-gfm": "catalog:prod",
+		"semver": "catalog:prod",
+		"shiki": "catalog:frontend",
 		"valibot": "catalog:validation",
 		"valibot-form": "workspace:^",
 		"yaml": "catalog:prod"
@@ -75,6 +77,7 @@
 		"@types/mdast": "catalog:types",
 		"@types/react": "catalog:types",
 		"@types/react-dom": "catalog:types",
+		"@types/semver": "catalog:types",
 		"capnweb": "catalog:prod",
 		"jsdom": "catalog:dev",
 		"react": "catalog:frontend",

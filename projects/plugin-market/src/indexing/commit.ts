@@ -3,7 +3,7 @@ import { getRelease } from '../catalog/queries'
 import { retainedRepositoryObservation, type Observation } from '../catalog/write'
 import type { Database } from '../db/d1'
 import { audits, notifications, packages, releases } from '../db/schema'
-import { MarketError, type Release } from '../protocol'
+import { MarketError, repositoryOwner, type Release } from '../protocol'
 import { activeLease, type Notification } from './notifications'
 
 export async function commitRelease(
@@ -13,6 +13,7 @@ export async function commitRelease(
 	task?: Notification,
 ) {
 	const now = Date.now()
+	const owner = repositoryOwner(observation.repository)
 	if (
 		task &&
 		(task.registry !== release.registry ||
@@ -57,8 +58,8 @@ export async function commitRelease(
 						repository: sql<string | null>`${observation.repository}`.as('repository'),
 						repositoryStars: sql<null>`null`.as('repository_stars'),
 						repositoryObservedAt: sql<null>`null`.as('repository_observed_at'),
-						repositoryAuthorId: sql<null>`null`.as('repository_author_id'),
-						curatedAuthorId: sql<null>`null`.as('curated_author_id'),
+						repositoryOwner: sql<string | null>`${owner}`.as('repository_owner'),
+						repositoryAvatarUrl: sql<null>`null`.as('repository_avatar_url'),
 						metadataVersion: sql<string | null>`${observation.metadataVersion}`.as(
 							'metadata_version',
 						),
@@ -86,6 +87,7 @@ export async function commitRelease(
 				set: {
 					description: observation.description,
 					repository: observation.repository,
+					repositoryOwner: owner,
 					metadataVersion: observation.metadataVersion,
 					readme: observation.readme,
 					license: observation.license,

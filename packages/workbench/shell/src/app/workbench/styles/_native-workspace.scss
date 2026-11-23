@@ -361,15 +361,60 @@
 	min-width: 0;
 	height: 100%;
 }
-/* Remote Mantine CSS can arrive later. Scope the panel sizing above its core rules;
-   Mantine's inline display:none still hides inactive panels. */
-.plx-pluginDocument .plx-pluginDocument__panel {
+.plx-document-tabs {
+	container: plx-document-tabs / size;
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+}
+.plx-document-tabs__header {
+	flex: 0 0 auto;
+	padding-inline: var(--plx-page-padding);
+}
+.plx-document-tabs__heading {
+	padding-block: var(--mantine-spacing-sm);
+}
+.plx-document-tabs__title {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.plx-document-tabs .plx-document-tabs__list {
+	flex-wrap: nowrap;
+	overflow-x: auto;
+}
+.plx-document-tabs__list .mantine-Tabs-tab {
+	flex-shrink: 0;
+	white-space: nowrap;
+}
+.plx-document-tabs__list .mantine-Tabs-tab[data-active] {
+	background: var(--plx-selected-bg);
+}
+.plx-document-tabs__list .mantine-Tabs-tab:not([data-active]):hover {
+	background: var(--plx-hover-bg);
+}
+.plx-document-tabs__list .mantine-Tabs-tab:focus-visible {
+	outline-offset: -2px;
+}
+/* Keep the committed section's scroll inside its panel. Mantine hides inactive panels inline. */
+.plx-document-tabs > .plx-document-tabs__panel {
 	display: flex;
 	flex-direction: column;
 	flex: 1;
 	min-height: 0;
 	min-width: 0;
 	overflow: auto;
+	padding: var(--plx-page-padding);
+}
+@container plx-document-tabs (max-height: 360px) {
+	.plx-document-tabs__heading {
+		padding-block: var(--mantine-spacing-xs);
+	}
+	.plx-document-tabs > .plx-document-tabs__panel {
+		padding-block: var(--mantine-spacing-xs);
+	}
 }
 .plx-documentOutline {
 	min-height: 0;
@@ -494,6 +539,7 @@
 	color: var(--mantine-color-dimmed);
 	font: inherit;
 	font-size: var(--mantine-font-size-xs);
+	text-decoration: none;
 	cursor: pointer;
 }
 .plx-activity[data-mode='labels'] .plx-activity__item {

@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm'
 import {
 	foreignKey,
 	index,
@@ -42,14 +43,6 @@ export const hostedTags = sqliteTable(
 	],
 )
 
-export const authors = sqliteTable('market_authors', {
-	id: text('id').primaryKey(),
-	name: text('name').notNull(),
-	kind: text('kind', { enum: ['github', 'market'] }).notNull(),
-	avatarUrl: text('avatar_url'),
-	observedAt: integer('observed_at').notNull(),
-})
-
 export const packages = sqliteTable(
 	'packages',
 	{
@@ -59,8 +52,8 @@ export const packages = sqliteTable(
 		repository: text('repository'),
 		repositoryStars: integer('repository_stars'),
 		repositoryObservedAt: integer('repository_observed_at'),
-		repositoryAuthorId: text('repository_author_id').references(() => authors.id),
-		curatedAuthorId: text('curated_author_id').references(() => authors.id),
+		repositoryOwner: text('repository_owner'),
+		repositoryAvatarUrl: text('repository_avatar_url'),
 		metadataVersion: text('metadata_version'),
 		readme: text('readme', { mode: 'json' }).$type<{ text: string; truncated: boolean } | null>(),
 		license: text('license'),
@@ -77,6 +70,7 @@ export const packages = sqliteTable(
 		primaryKey({ columns: [table.registry, table.name] }),
 		index('package_browse').on(table.hidden, table.name, table.registry),
 		index('package_category').on(table.category, table.official),
+		index('package_repository_owner').on(sql`lower(${table.repositoryOwner})`),
 	],
 )
 

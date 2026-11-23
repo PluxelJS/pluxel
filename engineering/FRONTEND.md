@@ -146,6 +146,8 @@ ActivityRail 独立于可收起工具区，展示 `navigationItems.ts` 的内置
 
 ### 文档内编辑和滚动
 
+`DocumentTabs` 通过当前文档的 Router 接纳分区切换。出站 HTTP 和认证与安全由父路由持有标签栏，子路由渲染面板内容。只有选中的面板挂载内容，离开时释放该面板拥有的编辑器和订阅。
+
 配置编辑器归详情文档。`FormToc` / `ContentOutline` 读取本实例 anchors/headings，目录可用性取决于实际 anchors，滚动容器受所属文档尺寸约束；配置目录在编辑器内按需展开。提交、baseline 和晚到结果见[配置实现](../packages/workbench/shell/src/app/plugins/config/README.md)，视觉状态见[视觉规则](../packages/workbench/shell/color-design.md)。
 
 ## React state correctness

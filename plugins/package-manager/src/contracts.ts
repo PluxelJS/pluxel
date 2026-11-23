@@ -29,10 +29,14 @@ export type {
 	MarketInstallRequest,
 } from './market-contracts.ts'
 
+export const packageMutationLimit = 100
+
 export type ManagedPackage = Readonly<{
 	name: string
 	requested: string
 	installedVersion: string | null
+	/** Registry of the market release checked for this materialization, if known. */
+	marketRegistry?: string
 	/** Published source entry filename, or `null` while the package is not materialized/published. */
 	entryFile: string | null
 }>
@@ -85,7 +89,11 @@ export type PackageInstallPlan = Readonly<{
 		version: string
 		integrity: string
 		previousVersion: string | null
+		/** Previously recorded source when reviewing a selected market release. */
+		previousMarketRegistry?: string
 		changed: boolean
+		/** Selected from this market and checked against pnpm's registry, exact version and integrity. */
+		market?: Readonly<{ marketId: string; registry: string }>
 	}>[]
 	sourceUpdates: 'live' | 'next-start' | null
 	dependenciesWithBuildScripts: readonly string[]
@@ -127,6 +135,10 @@ export interface PackageManagerApi extends RpcTarget {
 		name: string,
 		query?: MarketReleaseQuery,
 	): Promise<MarketReadResult<MarketReleasePage>>
-	prepareMarketInstallDto(request: MarketInstallRequest): Promise<PackagePreparationResult>
-	removeDto(names: readonly string[]): Promise<PackageMutationResult>
+	/** One preview for all selected releases, with a single exact version per package name. */
+	prepareMarketInstallDto(
+		requests: readonly MarketInstallRequest[],
+	): Promise<PackagePreparationResult>
+	/** Withdraw the reviewed entries only if their installation revision is still current. */
+	removeDto(names: readonly string[], expectedRevision: number): Promise<PackageMutationResult>
 }

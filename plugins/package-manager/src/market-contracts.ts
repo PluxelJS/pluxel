@@ -17,9 +17,10 @@ export type MarketPackageQuery = MarketCatalogFilters &
 		limit?: number
 	}>
 export type MarketAuthor = Readonly<{
+	/** Canonical repository namespace, e.g. github:owner/pluxeljs. */
 	id: string
 	name: string
-	kind: 'github' | 'market'
+	kind: 'github'
 	avatarUrl: string | null
 }>
 export type MarketFacetValue = Readonly<{ value: string; count: number }>
@@ -43,7 +44,7 @@ export type MarketPackageSummary = Readonly<{
 	/** Last observed source-repository stars; null means no observation is available. */
 	repositoryStars: number | null
 	repositoryObservedAt: number | null
-	/** Market credit, or the observed owner of the package's declared GitHub repository. */
+	/** Owner of the declared GitHub repository. Release provenance describes publishing identity. */
 	author: MarketAuthor | null
 	indexedVersions: number
 	observedAt: number

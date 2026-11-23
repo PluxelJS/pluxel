@@ -6,7 +6,7 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { drizzle, type AsyncRemoteCallback } from 'drizzle-orm/sqlite-proxy'
 import { readCatalog } from './http'
 import { marketResponse } from '../http'
-import { MarketError, readJson } from '../protocol'
+import { MarketError, readJson, repositoryOwner } from '../protocol'
 import { decodeCatalogSnapshot, snapshotByteLimit, type CatalogSnapshot } from './snapshot'
 
 const applicationId = 0x504c4d52 // PLMR
@@ -65,19 +65,15 @@ function existingMirror(file: string) {
 }
 
 function replaceCatalog(database: DatabaseSync, snapshot: CatalogSnapshot) {
-	database.exec('DELETE FROM releases; DELETE FROM packages; DELETE FROM market_authors;')
-	const author = database.prepare(`
-		INSERT INTO market_authors (id, name, kind, avatar_url, observed_at)
-		VALUES ($id, $name, $kind, $avatarUrl, 0)
-	`)
+	database.exec('DELETE FROM releases; DELETE FROM packages;')
 	const pkg = database.prepare(`
 		INSERT INTO packages (
 			registry, name, description, repository, repository_stars, repository_observed_at,
-			repository_author_id, curated_author_id, metadata_version, readme, license,
+			repository_owner, repository_avatar_url, metadata_version, readme, license,
 			dist_tags, observed_at, official, category, tags
 		) VALUES (
 			$registry, $name, $description, $repository, $repositoryStars, $repositoryObservedAt,
-			$repositoryAuthorId, $curatedAuthorId, $metadataVersion, $readme, $license,
+			$repositoryOwner, $repositoryAvatarUrl, $metadataVersion, $readme, $license,
 			$distTags, $observedAt, $official, $category, $tags
 		)
 	`)
@@ -90,12 +86,10 @@ function replaceCatalog(database: DatabaseSync, snapshot: CatalogSnapshot) {
 			$peerDependencies, $pluginPackages, $readme, $license
 		)
 	`)
-	for (const entry of snapshot.authors) author.run(entry)
-	for (const { authorId, ...entry } of snapshot.packages) {
+	for (const entry of snapshot.packages) {
 		pkg.run({
 			...entry,
-			repositoryAuthorId: authorId?.startsWith('github:') ? authorId : null,
-			curatedAuthorId: authorId?.startsWith('market:') ? authorId : null,
+			repositoryOwner: repositoryOwner(entry.repository),
 			readme: entry.readme === null ? null : JSON.stringify(entry.readme),
 			distTags: JSON.stringify(entry.distTags),
 			official: Number(entry.official),

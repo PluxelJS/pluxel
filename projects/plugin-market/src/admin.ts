@@ -20,7 +20,6 @@ import {
 import {
 	coordinate,
 	MarketError,
-	marketAuthorId,
 	object,
 	packageIdentity,
 	taxonomySlug,
@@ -32,19 +31,6 @@ import {
 import { fetchObservation, fetchRelease } from './registry/npm'
 import type { PackageReview } from './registry/review'
 import { sourceFor, type RegistrySource } from './registry/sources'
-
-function validAuthor(value: unknown) {
-	return (
-		object(value) &&
-		Object.keys(value).length === 2 &&
-		marketAuthorId(value.id) &&
-		typeof value.name === 'string' &&
-		value.name.length > 0 &&
-		value.name.length <= 120 &&
-		value.name === value.name.trim() &&
-		!/\p{Cc}/u.test(value.name)
-	)
-}
 
 export class MarketAdmin extends RpcTarget {
 	#db: Database
@@ -154,15 +140,7 @@ export class MarketAdmin extends RpcTarget {
 			!object(input) ||
 			Object.keys(input).some(
 				(key) =>
-					![
-						'registry',
-						'name',
-						'expectedRevision',
-						'official',
-						'category',
-						'tags',
-						'author',
-					].includes(key),
+					!['registry', 'name', 'expectedRevision', 'official', 'category', 'tags'].includes(key),
 			) ||
 			!Number.isSafeInteger(input.expectedRevision) ||
 			input.expectedRevision < 1 ||
@@ -171,8 +149,7 @@ export class MarketAdmin extends RpcTarget {
 			!Array.isArray(input.tags) ||
 			input.tags.length > 20 ||
 			input.tags.some((tag) => !taxonomySlug(tag)) ||
-			new Set(input.tags).size !== input.tags.length ||
-			(input.author !== undefined && input.author !== null && !validAuthor(input.author))
+			new Set(input.tags).size !== input.tags.length
 		)
 			return { status: 'invalid' as const }
 		const selected = packageIdentity({ registry: input.registry, name: input.name })
@@ -184,7 +161,7 @@ export class MarketAdmin extends RpcTarget {
 		)
 	}
 
-	/** Explicitly observe an author's repository; read paths never call GitHub. */
+	/** Refresh optional GitHub stars and avatar for this exact catalog entry. */
 	async refreshRepository(input: PackageIdentity) {
 		const selected = packageIdentity(input)
 		sourceFor(this.#sources, selected.registry)

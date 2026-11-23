@@ -12,21 +12,23 @@ import {
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { parse as parseYaml } from 'yaml'
-import type {
-	ManagedPackage,
-	PackageManagerSnapshot,
-	PackageMutationFailure,
-	PackageMutationResult,
-	PackageInstallPlan,
-	PackagePreparationResult,
-	PackageMarket,
-	MarketInstallRequest,
-	MarketCatalogFilters,
-	MarketPackageQuery,
-	MarketRelease,
-	MarketReleaseQuery,
+import { safeParse } from 'valibot'
+import {
+	packageMutationLimit,
+	type ManagedPackage,
+	type PackageManagerSnapshot,
+	type PackageMutationFailure,
+	type PackageMutationResult,
+	type PackageInstallPlan,
+	type PackagePreparationResult,
+	type PackageMarket,
+	type MarketInstallRequest,
+	type MarketCatalogFilters,
+	type MarketPackageQuery,
+	type MarketRelease,
+	type MarketReleaseQuery,
 } from './contracts.ts'
-import { PackageMarketClient } from './market.ts'
+import { marketInstallRequestSchema, PackageMarketClient } from './market.ts'
 import type {
 	InstallOptions,
 	PackageManifest,
@@ -58,10 +60,12 @@ type PackageRequest = Readonly<{
 	name: string
 	wanted: string
 }>
+type CheckedMarketRelease = MarketInstallRequest & Pick<MarketRelease, 'integrity'>
 
 type PublishedPackage = Readonly<{
 	name: string
 	requested: string
+	marketRegistry?: string
 	fingerprint: string
 	bytes: string
 	packageRoot: string
@@ -80,8 +84,9 @@ type PreparedInstallation = Readonly<{
 }>
 type PendingInstallation = PreparedInstallation & Readonly<{ plan: PackageInstallPlan }>
 
-const MAX_MUTATION_INPUTS = 100
 const MAX_PACKAGE_SPEC_LENGTH = 512
+// Exact release responses may each include a checked README.
+const MAX_CONCURRENT_RELEASE_READS = 8
 
 export class ManagedPackageStore {
 	readonly rootDir: string
@@ -225,25 +230,102 @@ export class ManagedPackageStore {
 
 	prepareInstall(specs: readonly string[]): Promise<PackagePreparationResult> {
 		const inputs = normalizeMutationInputs(specs)
-		return this.serialize(() => this.prepare(inputs))
+		return this.serialize(async () => {
+			if (inputs.tooLarge)
+				return { ok: false, failed: mutationBatchTooLarge(inputs.overflowInput).failed }
+			const failed = [...inputs.failed]
+			const requests = new Map<string, PackageRequest>()
+			for (const input of inputs.inputs) {
+				try {
+					const request = this.parseRequest(input)
+					const previous = requests.get(request.name)
+					if (previous && previous.wanted !== request.wanted)
+						throw new Error(`Conflicting specs for package ${request.name}`)
+					requests.set(request.name, request)
+				} catch (error) {
+					failed.push(failure(input, 'INVALID_SPEC', error))
+				}
+			}
+			if (failed.length > 0) return { ok: false, failed }
+			return this.prepare([...requests.values()])
+		})
 	}
 
-	async prepareMarketInstall(request: MarketInstallRequest): Promise<PackagePreparationResult> {
+	async prepareMarketInstall(
+		requests: readonly MarketInstallRequest[],
+	): Promise<PackagePreparationResult> {
 		this.assertOpen()
-		if (!request || typeof request !== 'object' || typeof request.registry !== 'string')
+		if (!Array.isArray(requests) || requests.length === 0 || requests.length > packageMutationLimit)
 			return {
 				ok: false,
 				failed: [
-					failure('', 'INVALID_SPEC', new Error('Select a market registry and package release')),
+					failure(
+						'',
+						'INVALID_SPEC',
+						new Error(`Select between 1 and ${packageMutationLimit} market releases`),
+					),
 				],
 			}
-		const { marketId, registry, name, version } = request
-		const release = await this.market.release(marketId, name, version, registry)
-		if (release.ok === false)
-			return { ok: false, failed: [failure('', 'MARKET_FAILED', new Error(release.error.message))] }
-		return this.serialize(() =>
-			this.prepare(normalizeMutationInputs([`${name}@${version}`]), release.value),
-		)
+		// Capture each coordinate before admission; the caller can still mutate its array and objects.
+		const selections = new Map<string, MarketInstallRequest>()
+		const failed: PackageMutationFailure[] = []
+		for (const [index, request] of requests.entries()) {
+			const parsed = safeParse(marketInstallRequestSchema, request)
+			if (!parsed.success)
+				failed.push(
+					failure(
+						`<item ${index + 1}>`,
+						'INVALID_SPEC',
+						new Error('Select a market, canonical registry, package name and exact version'),
+					),
+				)
+			else if (selections.has(parsed.output.name))
+				failed.push(
+					failure(
+						parsed.output.name,
+						'INVALID_SPEC',
+						new Error('Select one release per package name'),
+					),
+				)
+			else selections.set(parsed.output.name, parsed.output)
+		}
+		if (failed.length > 0) return { ok: false, failed }
+		return this.serialize(() => this.prepareSelectedReleases([...selections.values()]))
+	}
+
+	private async prepareSelectedReleases(
+		selections: readonly MarketInstallRequest[],
+	): Promise<PackagePreparationResult> {
+		const checked = new Map<string, CheckedMarketRelease>()
+		for (let start = 0; start < selections.length; start += MAX_CONCURRENT_RELEASE_READS) {
+			const batch = selections.slice(start, start + MAX_CONCURRENT_RELEASE_READS)
+			const reads = await Promise.all(
+				batch.map(({ marketId, name, version, registry }) =>
+					this.market.release(marketId, name, version, registry),
+				),
+			)
+			const failed: PackageMutationFailure[] = []
+			for (const [index, read] of reads.entries()) {
+				const request = batch[index]!
+				if (read.ok === true)
+					checked.set(request.name, { ...request, integrity: read.value.integrity })
+				else
+					failed.push(
+						failure(
+							`${request.name}@${request.version}`,
+							'MARKET_FAILED',
+							new Error(read.error.message),
+						),
+					)
+			}
+			if (failed.length > 0) return { ok: false, failed }
+		}
+		const requests = selections.map(({ name, version }) => ({
+			name,
+			wanted: version,
+			input: `${name}@${version}`,
+		}))
+		return this.prepare(requests, checked)
 	}
 
 	/** Confirms the same private revision; no re-resolution, downloads or build scripts occur here. */
@@ -310,33 +392,19 @@ export class ManagedPackageStore {
 	}
 
 	private async prepare(
-		normalized: NormalizedMutationInputs,
-		expected?: MarketRelease,
+		requests: readonly PackageRequest[],
+		marketReleases?: ReadonlyMap<string, CheckedMarketRelease>,
 	): Promise<PackagePreparationResult> {
-		if (normalized.tooLarge)
-			return { ok: false, failed: mutationBatchTooLarge(normalized.overflowInput).failed }
-		const failed = [...normalized.failed]
-		const requests = new Map<string, PackageRequest>()
-		for (const input of normalized.inputs) {
-			try {
-				const request = this.parseRequest(input)
-				if (requests.has(request.name) && requests.get(request.name)!.wanted !== request.wanted)
-					throw new Error(`Conflicting specs for package ${request.name}`)
-				requests.set(request.name, request)
-			} catch (error) {
-				failed.push(failure(input, 'INVALID_SPEC', error))
-			}
-		}
-		if (failed.length > 0) return { ok: false, failed }
 		await this.discardPending()
 		const next = cloneManifest(await this.readManifest())
-		for (const request of requests.values()) next.dependencies[request.name] = request.wanted
+		for (const request of requests) next.dependencies[request.name] = request.wanted
 		let prepared: PreparedInstallation | undefined
 		try {
-			prepared = await this.acquireInstallation(next, expected)
+			prepared = await this.acquireInstallation(next, marketReleases)
 			const lock = parseYaml(await readFile(resolve(prepared.directory, 'pnpm-lock.yaml'), 'utf8'))
 			const previous = await this.readSnapshot()
 			const packages: PackageInstallPlan['packages'][number][] = []
+			const pinnedPackages: PublishedPackage[] = []
 			for (const pkg of prepared.installation.packages) {
 				const resolution = resolvedPackage(lock, pkg.name)
 				const packageJson = JSON.parse(
@@ -351,23 +419,42 @@ export class ManagedPackageStore {
 						`Cannot verify the prepared release of ${pkg.name}`,
 						undefined,
 					)
+				const expected = marketReleases?.get(pkg.name)
 				if (
-					expected?.name === pkg.name &&
+					expected &&
 					(expected.version !== resolution.version || expected.integrity !== resolution.integrity)
 				)
 					throw new PublicMutationError(
-						'The registry release differs from the selected market integrity; publication was rejected',
+						'The registry release differs from the selected market version or integrity',
 						undefined,
+						`${expected.name}@${expected.version}`,
 					)
 				const old = this.installation?.packages.find((item) => item.name === pkg.name)
+				// A reused immutable package carries its checked source. Only this checked
+				// request may attribute a new materialization or change that source.
+				pinnedPackages.push(
+					Object.freeze({
+						...pkg,
+						requested: resolution.version,
+						...(expected && { marketRegistry: expected.registry }),
+					}),
+				)
 				packages.push(
 					Object.freeze({
 						name: pkg.name,
 						requested: pkg.requested,
 						...resolution,
+						...(expected && {
+							market: Object.freeze({ marketId: expected.marketId, registry: expected.registry }),
+							...(old?.marketRegistry && { previousMarketRegistry: old.marketRegistry }),
+						}),
 						previousVersion:
 							previous.packages.find((item) => item.name === pkg.name)?.installedVersion ?? null,
-						changed: !old || old.fingerprint !== pkg.fingerprint || old.bytes !== pkg.bytes,
+						changed:
+							!old ||
+							old.fingerprint !== pkg.fingerprint ||
+							old.bytes !== pkg.bytes ||
+							(expected !== undefined && old.marketRegistry !== expected.registry),
 					}),
 				)
 			}
@@ -375,7 +462,7 @@ export class ManagedPackageStore {
 				id: crypto.randomUUID(),
 				baseRevision: this.revision,
 				expiresAt: Date.now() + 600_000,
-				requested: Object.freeze([...requests.keys()]),
+				requested: Object.freeze(requests.map(({ name }) => name)),
 				packages: Object.freeze(packages),
 				sourceUpdates: this.options.sourceUpdates ?? null,
 				dependenciesWithBuildScripts: prepared.dependenciesWithBuildScripts,
@@ -383,14 +470,7 @@ export class ManagedPackageStore {
 			// The selected exact versions become the next managed selection. Original selectors remain in the preview.
 			const installation: PublishedInstallation = Object.freeze({
 				...prepared.installation,
-				packages: Object.freeze(
-					prepared.installation.packages.map((pkg) =>
-						Object.freeze({
-							...pkg,
-							requested: packages.find((item) => item.name === pkg.name)!.version,
-						}),
-					),
-				),
+				packages: Object.freeze(pinnedPackages),
 			})
 			this.pending = { ...prepared, installation, plan }
 			return { ok: true, plan }
@@ -398,9 +478,10 @@ export class ManagedPackageStore {
 			if (prepared) await rm(prepared.directory, { recursive: true, force: true })
 			return {
 				ok: false,
-				failed: [...requests.values()].map((request) =>
-					failure(request.input, 'INSTALL_FAILED', error),
-				),
+				failed:
+					error instanceof PublicMutationError && error.input
+						? [failure(error.input, 'INSTALL_FAILED', error)]
+						: requests.map((request) => failure(request.input, 'INSTALL_FAILED', error)),
 			}
 		}
 	}
@@ -416,9 +497,9 @@ export class ManagedPackageStore {
 		return this.serialize(() => this.applyInstall(inputs))
 	}
 
-	remove(names: readonly string[]): Promise<PackageMutationResult> {
+	remove(names: readonly string[], expectedRevision?: number): Promise<PackageMutationResult> {
 		const inputs = normalizeMutationInputs(names)
-		return this.serialize(() => this.applyRemove(inputs))
+		return this.serialize(() => this.applyRemove(inputs, expectedRevision))
 	}
 
 	private async applyInstall(normalized: NormalizedMutationInputs): Promise<PackageMutationResult> {
@@ -480,7 +561,21 @@ export class ManagedPackageStore {
 		}
 	}
 
-	private async applyRemove(normalized: NormalizedMutationInputs): Promise<PackageMutationResult> {
+	private async applyRemove(
+		normalized: NormalizedMutationInputs,
+		expectedRevision?: number,
+	): Promise<PackageMutationResult> {
+		if (expectedRevision !== undefined && expectedRevision !== this.revision)
+			return mutationResult(
+				[],
+				[
+					failure(
+						'',
+						'REMOVE_FAILED',
+						new Error('The installation changed. Refresh packages and review removal again.'),
+					),
+				],
+			)
 		const manifest = await this.readManifest()
 		const next = cloneManifest(manifest)
 		const removed: string[] = []
@@ -572,7 +667,7 @@ export class ManagedPackageStore {
 
 	private async acquireInstallation(
 		next: ManagedManifest,
-		expected?: MarketRelease,
+		marketReleases?: ReadonlyMap<string, CheckedMarketRelease>,
 	): Promise<PreparedInstallation> {
 		if (!this.writer) throw new Error('Package store must be initialized before mutation')
 		const directory = resolve(this.rootDir, 'revisions', crypto.randomUUID())
@@ -587,13 +682,14 @@ export class ManagedPackageStore {
 			}
 			let result: Awaited<ReturnType<PnpmEngine['install']>>
 			const options = this.installOptions(next, directory)
-			if (expected) {
+			for (const expected of marketReleases?.values() ?? []) {
 				const scope = expected.name.startsWith('@') ? expected.name.split('/')[0]! : undefined
 				const registry = (scope && options.registries?.[scope]) || options.registries?.default
 				if (registry?.replace(/\/$/, '') !== expected.registry)
 					throw new PublicMutationError(
 						'Market installation requires pnpm configuration to select the same registry as the market release',
 						undefined,
+						`${expected.name}@${expected.version}`,
 					)
 			}
 			try {
@@ -691,6 +787,8 @@ export class ManagedPackageStore {
 				!isPackageName(pkg.name) ||
 				typeof pkg.requested !== 'string' ||
 				!isRegistrySelector(pkg.requested) ||
+				(pkg.marketRegistry !== undefined &&
+					!safeParse(marketInstallRequestSchema.entries.registry, pkg.marketRegistry).success) ||
 				!/^[a-f0-9]{64}$/.test(pkg.fingerprint) ||
 				!/^[a-f0-9]{64}$/.test(pkg.bytes) ||
 				typeof pkg.packageRoot !== 'string' ||
@@ -840,16 +938,13 @@ export class ManagedPackageStore {
 	}
 
 	private async readManagedPackage(name: string, requested: string): Promise<ManagedPackage> {
+		const pkg = this.installation?.packages.find((item) => item.name === name)
 		let installedVersion: string | null = null
 		let entryFile: string | null = null
 		try {
 			const manifest = JSON.parse(
 				await readFile(
-					resolve(
-						this.installation?.packages.find((pkg) => pkg.name === name)?.packageRoot ??
-							resolve(this.rootDir, '__unpublished__'),
-						'package.json',
-					),
+					resolve(pkg?.packageRoot ?? resolve(this.rootDir, '__unpublished__'), 'package.json'),
 					'utf8',
 				),
 			) as { version?: unknown }
@@ -866,6 +961,7 @@ export class ManagedPackageStore {
 			requested,
 			installedVersion,
 			entryFile,
+			...(pkg?.marketRegistry && { marketRegistry: pkg.marketRegistry }),
 		})
 	}
 
@@ -993,13 +1089,13 @@ function normalizeMutationInputs(values: unknown): NormalizedMutationInputs {
 			overflowInput: '',
 		}
 	}
-	if (values.length > MAX_MUTATION_INPUTS) {
+	if (values.length > packageMutationLimit) {
 		return {
 			inputs: [],
 			failed: [],
 			tooLarge: true,
 			overflowInput:
-				typeof values[MAX_MUTATION_INPUTS] === 'string' ? values[MAX_MUTATION_INPUTS] : '',
+				typeof values[packageMutationLimit] === 'string' ? values[packageMutationLimit] : '',
 		}
 	}
 
@@ -1069,14 +1165,18 @@ function mutationBatchTooLarge(overflowInput: string): PackageMutationResult {
 			failure(
 				overflowInput,
 				'INVALID_SPEC',
-				new Error(`A package mutation accepts at most ${MAX_MUTATION_INPUTS} unique inputs`),
+				new Error(`A package mutation accepts at most ${packageMutationLimit} unique inputs`),
 			),
 		],
 	)
 }
 
 class PublicMutationError extends Error {
-	constructor(message: string, cause: unknown) {
+	constructor(
+		message: string,
+		cause: unknown,
+		readonly input?: string,
+	) {
 		super(message, { cause })
 		this.name = 'PublicMutationError'
 	}

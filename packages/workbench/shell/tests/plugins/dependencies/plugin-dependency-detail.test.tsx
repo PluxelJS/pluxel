@@ -23,6 +23,23 @@ const dependent = node('DependentPlugin')
 const inactiveDependent = node('InactiveDependent')
 
 describe('plugin dependency detail', () => {
+	it('uses one empty state and keeps the provider controls available when no relations exist', () => {
+		const graph = { nodes: [{ status: status(owner), effective: true }], edges: [] }
+		const detail = selectPluginDependencyDetail(buildPluginDependencyGraphProjection(graph), owner)
+		const markup = renderToStaticMarkup(
+			<MantineProvider>
+				<PluginDependencyDetailContent
+					detail={detail}
+					LinkComponent={() => null}
+					providedCapability={<button type="button">选择默认实现</button>}
+				/>
+			</MantineProvider>,
+		)
+		expect(markup).toContain('无依赖关系')
+		expect(markup).toContain('选择默认实现')
+		expect(markup).not.toMatch(/必须依赖|可选集成|被依赖/)
+	})
+
 	it('renders compact current-plugin relations and keeps canonical identity out of visible labels', () => {
 		const graph = Object.freeze({
 			nodes: Object.freeze([

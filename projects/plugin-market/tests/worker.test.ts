@@ -31,7 +31,6 @@ import {
 } from '../src/protocol'
 import {
 	audits,
-	authors,
 	hostedReleases,
 	hostedTags,
 	notifications,
@@ -311,7 +310,6 @@ describe('plugin market on workerd and D1', () => {
 			db.delete(releases),
 			db.delete(notifications),
 			db.delete(packages),
-			db.delete(authors),
 		])
 		fixtures.clear()
 		requests.length = 0
@@ -1046,7 +1044,12 @@ describe('plugin market on workerd and D1', () => {
 		const publicItem = await fixture('@pluxel/plugin-example')
 		const privateItem = await fixture(publicItem.name, {
 			registry: privateRegistry,
-			manifest: { description: 'Private replacement', official: true },
+			manifest: {
+				description: 'Private replacement',
+				official: true,
+				author: 'unverified',
+				repository: 'https://github.com/PrivateOwner/plugin',
+			},
 		})
 		const publicCoordinate = { ...selected, name: publicItem.name }
 		const privateCoordinate = { ...publicCoordinate, registry: privateRegistry }
@@ -1084,6 +1087,13 @@ describe('plugin market on workerd and D1', () => {
 		expect(new Set(both.packages.map((item) => item.registry))).toEqual(
 			new Set([registry, privateRegistry]),
 		)
+		const privateOwner = '/v1/packages?author=github%3Aowner%2Fprivateowner'
+		expect(await getJson(privateOwner)).toMatchObject({ packages: [] })
+		expect(await getJson(privateOwner, { Authorization: `Bearer ${token}` })).toMatchObject({
+			packages: [
+				{ name: publicItem.name, registry: privateRegistry, author: { name: '@PrivateOwner' } },
+			],
+		})
 		const first = await notify(publicCoordinate)
 		const publicReceipt = (await first.json()) as Receipt
 		const submitPrivate = (authorization?: string) =>
@@ -1136,6 +1146,7 @@ describe('plugin market on workerd and D1', () => {
 				official: true,
 				category: 'forged',
 				tags: ['forged'],
+				author: 'Someone else',
 			},
 		})
 		const identity = { registry, name: '@pluxel/plugin-example' }
@@ -1181,7 +1192,15 @@ describe('plugin market on workerd and D1', () => {
 				{ value: 'http', count: 1 },
 				{ value: 'network', count: 1 },
 			],
-			authors: [],
+			authors: [
+				{
+					id: 'github:owner/unverified',
+					name: '@unverified',
+					kind: 'github',
+					avatarUrl: null,
+					count: 1,
+				},
+			],
 		})
 		{
 			using stale = admin()
@@ -1260,6 +1279,8 @@ describe('plugin market on workerd and D1', () => {
 			const source = entry.registry ?? registry
 			const { metadata } = await fixture(name, { registry: source })
 			metadata.description = entry.description ?? 'Service transport'
+			metadata.repository = `https://github.com/${entry.author}/project`
+			metadata.author = 'Unrelated registry text'
 			expect(await callAdmin((access) => access.observe({ registry: source, name }))).toMatchObject(
 				{ status: 'observed' },
 			)
@@ -1272,7 +1293,6 @@ describe('plugin market on workerd and D1', () => {
 						official: false,
 						category: entry.category,
 						tags: entry.tags,
-						author: { id: `market:${entry.author}`, name: entry.author },
 					}),
 				),
 			).toMatchObject({ status: 'updated' })
@@ -1291,27 +1311,29 @@ describe('plugin market on workerd and D1', () => {
 			['category', 'tools'],
 			['tag', 'http'],
 			['tag', 'telemetry'],
-			['author', 'market:alice'],
-			['author', 'market:bob'],
+			['author', 'github:owner/alice'],
+			['author', 'github:owner/bob'],
 		])
 		const first = (await getJson(`/v1/packages?${params}&limit=1`)) as PackagePage
 		expect(first.packages).toMatchObject([
-			{ name: '@browse/alpha', author: { id: 'market:alice' } },
+			{ name: '@browse/alpha', author: { id: 'github:owner/alice' } },
 		])
 		expect(first.nextCursor).toBeTruthy()
 		const reordered = new URLSearchParams([...params].toReversed())
-		reordered.append('author', 'market:bob')
+		reordered.append('author', 'github:owner/bob')
 		const second = (await getJson(
 			`/v1/packages?${reordered}&limit=1&cursor=${first.nextCursor}`,
 		)) as PackagePage
-		expect(second.packages).toMatchObject([{ name: '@browse/beta', author: { id: 'market:bob' } }])
+		expect(second.packages).toMatchObject([
+			{ name: '@browse/beta', author: { id: 'github:owner/bob' } },
+		])
 		expect(second.nextCursor).toBeNull()
 		const headers = { Authorization: `Bearer ${token}` }
 		await expect(
 			get(`/v1/packages?${params}&limit=1&cursor=${first.nextCursor}`, headers),
 		).resolves.toMatchObject({ status: 400 })
 		const different = new URLSearchParams(params)
-		different.append('author', 'market:carol')
+		different.append('author', 'github:owner/carol')
 		await expect(
 			get(`/v1/packages?${different}&limit=1&cursor=${first.nextCursor}`),
 		).resolves.toMatchObject({ status: 400 })
@@ -1330,21 +1352,21 @@ describe('plugin market on workerd and D1', () => {
 				{ value: 'telemetry', count: 2 },
 			],
 			authors: ['alice', 'bob', 'carol'].map((name) => ({
-				id: `market:${name}`,
-				name,
-				kind: 'market',
+				id: `github:owner/${name}`,
+				name: '@' + name,
+				kind: 'github',
 				avatarUrl: null,
 				count: 1,
 			})),
 		})
 		const authenticated = (await getJson(`/v1/facets?${params}`, headers)) as CatalogFacets
 		expect(authenticated.authors.map(({ id }) => id)).toEqual([
-			'market:alice',
-			'market:bob',
-			'market:carol',
-			'market:private',
+			'github:owner/alice',
+			'github:owner/bob',
+			'github:owner/carol',
+			'github:owner/private',
 		])
-		params.append('author', 'market:private')
+		params.append('author', 'github:owner/private')
 		const bothSources = (await getJson(`/v1/packages?${params}`, headers)) as PackagePage
 		expect(bothSources.packages.map(({ name, registry: source }) => [name, source])).toEqual([
 			['@browse/alpha', privateRegistry],
@@ -1456,7 +1478,12 @@ describe('plugin market on workerd and D1', () => {
 					indexedVersions: 0,
 					repository: 'https://github.com/unverified/claim',
 					repositoryStars: null,
-					author: null,
+					author: {
+						id: 'github:owner/unverified',
+						name: '@unverified',
+						kind: 'github',
+						avatarUrl: null,
+					},
 				},
 			],
 		})
@@ -1508,7 +1535,7 @@ describe('plugin market on workerd and D1', () => {
 		}
 		const listing = (await getJson('/v1/packages')) as PackagePage
 		const observedAuthor = {
-			id: 'github:128',
+			id: 'github:owner/unverified',
 			name: '@unverified',
 			kind: 'github',
 			avatarUrl: 'https://avatars.githubusercontent.com/u/128?v=4',
@@ -1521,7 +1548,7 @@ describe('plugin market on workerd and D1', () => {
 		expect(await getJson(`/v1/packages/${encodeURIComponent(selected.name)}`)).toMatchObject({
 			author: observedAuthor,
 		})
-		expect(await getJson('/v1/facets?author=github%3A128')).toMatchObject({
+		expect(await getJson('/v1/facets?author=github%3Aowner%2Funverified')).toMatchObject({
 			total: 1,
 			authors: [{ ...observedAuthor, count: 1 }],
 		})
@@ -1549,77 +1576,84 @@ describe('plugin market on workerd and D1', () => {
 		expect(requests).toHaveLength(count)
 	})
 
-	it('keeps a shared author ID across GitHub renames and commits manual attribution with curation', async () => {
+	it('groups by declared repository namespace independently of npm author, curation and GitHub availability', async () => {
 		const old = await fixture('@example/previous')
-		old.metadata.repository = 'https://github.com/unverified/claim'
-		const renamed = await fixture('@example/current')
-		renamed.metadata.repository = 'https://github.com/renamed/claim'
+		const other = await fixture('@example/current')
+		old.metadata.repository = 'https://github.com/Unverified/claim'
+		other.metadata.repository = 'https://github.com/unverified/another'
+		old.metadata.author = { name: 'Impersonated organization' }
+		other.metadata.author = 'Registry-local user'
 		const previous = { registry, name: old.name }
-		const current = { registry, name: renamed.name }
+		const current = { registry, name: other.name }
 		await callAdmin((access) => access.observe(previous))
+		await callAdmin((access) => access.observe(current))
+		const filter = '?author=github%3Aowner%2Funverified'
+		expect(
+			((await getJson('/v1/packages' + filter)) as PackagePage).packages.map((pkg) => pkg.name),
+		).toEqual([other.name, old.name])
+		github.status = 403
+		expect(await callAdmin((access) => access.refreshRepository(current))).toMatchObject({
+			status: 'failed',
+		})
+		expect(await getJson('/v1/facets' + filter)).toMatchObject({
+			total: 2,
+			authors: [{ id: 'github:owner/unverified', count: 2, avatarUrl: null }],
+		})
+		github.status = 200
 		expect(await callAdmin((access) => access.refreshRepository(previous))).toMatchObject({
 			status: 'updated',
 		})
-		await callAdmin((access) => access.observe(current))
+		expect(await getJson('/v1/facets' + filter)).toMatchObject({
+			authors: [
+				{ id: 'github:owner/unverified', count: 2, avatarUrl: github.body.owner.avatar_url },
+			],
+		})
+
+		const curation = {
+			...previous,
+			official: true,
+			category: 'tools',
+			tags: ['example'],
+			expectedRevision: 1,
+		}
+		const manual = { ...curation, author: { id: 'market:team', name: 'Someone else' } }
+		expect(await callAdmin((access) => access.setMetadata(manual))).toEqual({ status: 'invalid' })
+		expect(await callAdmin((access) => access.setMetadata(curation))).toMatchObject({
+			status: 'updated',
+		})
+		expect(await callAdmin((access) => access.setMetadata(curation))).toEqual({
+			status: 'conflict',
+			currentRevision: 2,
+		})
+		old.metadata.repository = 'https://github.com/Renamed/claim'
+		await callAdmin((access) => access.observe(previous))
+		const path = '/v1/packages/' + encodeURIComponent(old.name)
+		expect(await getJson(path)).toMatchObject({
+			official: true,
+			author: { id: 'github:owner/renamed', name: '@Renamed', avatarUrl: null },
+			repositoryStars: null,
+			repositoryObservedAt: null,
+		})
 		github.body.full_name = 'renamed/claim'
 		github.body.owner.login = 'renamed'
 		github.body.owner.avatar_url = 'https://tracker.example/avatar'
-		expect(await callAdmin((access) => access.refreshRepository(current))).toMatchObject({
+		expect(await callAdmin((access) => access.refreshRepository(previous))).toMatchObject({
 			status: 'updated',
 		})
-		const githubAuthor = { id: 'github:128', name: '@renamed', kind: 'github', avatarUrl: null }
-		const result = (await getJson('/v1/packages?author=github%3A128')) as PackagePage
-		expect(result.packages.map(({ author }) => author)).toEqual([githubAuthor, githubAuthor])
-		expect(await getJson('/v1/facets')).toMatchObject({ authors: [{ ...githubAuthor, count: 2 }] })
-		const manual = { id: 'market:local-team', name: 'Local Team' }
-		const curation = { ...previous, official: true, category: 'tools', tags: ['example'] }
-		expect(
-			await callAdmin((access) =>
-				access.setMetadata({ ...curation, expectedRevision: 1, author: manual }),
-			),
-		).toMatchObject({ status: 'updated' })
-		expect(
-			await callAdmin((access) =>
-				access.setMetadata({
-					...curation,
-					expectedRevision: 1,
-					author: { ...manual, name: 'Stale write' },
-				}),
-			),
-		).toEqual({ status: 'conflict', currentRevision: 2 })
-		expect(
-			await callAdmin((access) => access.setMetadata({ ...curation, expectedRevision: 2 })),
-		).toMatchObject({
-			status: 'updated',
+		expect(await getJson(path)).toMatchObject({
+			repositoryStars: 42,
+			author: { id: 'github:owner/renamed', avatarUrl: null },
 		})
-		old.metadata.repository = 'https://example.com/moved'
-		expect(await callAdmin((access) => access.observe(previous))).toMatchObject({
-			status: 'observed',
-		})
-		const detailPath = `/v1/packages/${encodeURIComponent(previous.name)}`
-		expect(await getJson(detailPath)).toMatchObject({
-			author: { ...manual, kind: 'market', avatarUrl: null },
+		old.metadata.repository = 'https://git.example/Unverified/claim'
+		await callAdmin((access) => access.observe(previous))
+		expect(await getJson(path)).toMatchObject({
+			author: null,
 			repositoryStars: null,
 			repositoryObservedAt: null,
 		})
 		expect(await getJson('/v1/facets')).toMatchObject({
-			authors: [
-				{ ...githubAuthor, count: 1 },
-				{ ...manual, kind: 'market', count: 1 },
-			],
+			authors: [{ id: 'github:owner/unverified', count: 1, avatarUrl: null }],
 		})
-		expect(
-			await callAdmin((access) =>
-				access.setMetadata({ ...curation, expectedRevision: 3, author: null }),
-			),
-		).toMatchObject({ status: 'updated' })
-		const changes = await callAdmin((access) => access.recentChanges(previous))
-		expect(changes.filter(({ action }) => action === 'metadata')).toMatchObject([
-			{ revision: 4, changes: { author: null } },
-			{ revision: 3 },
-			{ revision: 2, changes: { author: manual } },
-		])
-		expect(await getJson(detailPath)).toMatchObject({ author: null })
 	})
 
 	it('serves a public mirror from committed SQLite data after the Worker goes offline', async () => {
@@ -1640,17 +1674,17 @@ describe('plugin market on workerd and D1', () => {
 			official: true,
 			category: 'tools',
 			tags: ['initial'],
-			author: { id: 'market:mirror', name: 'Mirror Team' },
 		}
 		await callAdmin((access) => access.setMetadata({ ...curation, expectedRevision: 1 }))
 		const snapshot = await get('/v1/snapshot', { Authorization: `Bearer ${token}` })
 		expect(snapshot.status).toBe(200)
 		expect(await snapshot.json()).toMatchObject({
-			version: 1,
+			version: 2,
 			registries: [registry],
-			packages: [{ name: visible.name, registry }],
+			packages: [
+				{ name: visible.name, registry, repository: 'https://github.com/unverified/claim' },
+			],
 			releases: [{ name: visible.name, registry, integrity: visible.integrity }],
-			authors: [{ ...curation.author, kind: 'market' }],
 		})
 		const condition = { 'If-None-Match': snapshot.headers.get('ETag')! }
 		const cachedSnapshot = await get('/v1/snapshot', condition)
@@ -1701,7 +1735,7 @@ describe('plugin market on workerd and D1', () => {
 			const hiddenDetail = `/v1/packages/${encodeURIComponent(hidden.name)}`
 			const release = `${detail}/releases/${visible.version}`
 			for (const path of [
-				'/v1/packages?query=mirror',
+				'/v1/packages?query=mirror&author=github%3Aowner%2Funverified',
 				'/v1/facets',
 				detail,
 				`${detail}/releases`,
