@@ -19,7 +19,7 @@ export default defineConfig({
 				cache: false,
 			},
 			'check-types': {
-				command: 'tsc --noEmit',
+				command: 'tsc --noEmit && tsc --project scripts/fixtures',
 				dependsOn: dependencies,
 			},
 			'check-smoke': {

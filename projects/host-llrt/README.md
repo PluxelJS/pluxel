@@ -21,6 +21,8 @@ vp run @pluxel-example/host-llrt#check-smoke
 
 三个 VM 各有自己的 generation 和 TinyBase 会话计数，每轮读数都是 1、2。每个 VM 发出的四个 HTTP 请求由同一个 Rust loopback 端点接收。共享探针同时检查构造器注入、配置、`ctx.fetch`、`ctx.wretch`、Vault 只读绑定、会话文件、事件、作用域清理和插件日志的 LogTape 归属。每轮退出时 JS 依次关闭 SDK 作用域与 Host，Rust 排空 VM 后才处理下一项操作。[共享探针](../host-targets/plugins/src/probe.ts)
 
+框架回归还在独立 VM 里用内存文档运行同一组探针，验证读取部署绑定、保存 TinyBase 和文件请求返回 `ENOTSUP`。应用接入使用上面的 `@pluxel/host/embedded` 示例。[内部验收用例](scripts/fixtures/session.ts)
+
 ## 单独发布并安装插件
 
 在本项目目录运行以下命令。Host 和插件各自构建到独立目录，因此可以先运行已发布的 Host，再构建插件。

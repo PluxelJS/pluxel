@@ -5,6 +5,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
+import { build as bundle } from 'esbuild'
 
 const exec = promisify(execFile)
 const deployment = await mkdtemp(join(tmpdir(), 'pluxel-llrt-'))
@@ -28,6 +29,20 @@ try {
 	assert.ok(executable, 'Cargo must emit the Rust host executable')
 	const binary = join(deployment, basename(executable))
 	await cp(executable, binary)
+	// Verify the internal memory-document facilities in a fresh VM without the ZenFS bootstrap.
+	const session = join(deployment, 'session')
+	await bundle({
+		entryPoints: ['scripts/fixtures/session.ts'],
+		outfile: join(session, 'bootstrap.mjs'),
+		bundle: true,
+		format: 'esm',
+		platform: 'browser',
+		target: 'es2022',
+		external: ['node:*'],
+	})
+	const sessionBoot = await exec(binary, [session], { cwd: deployment })
+	const sessionProbe = JSON.parse(sessionBoot.stdout)
+	assert.deepEqual([sessionProbe.first.visits, sessionProbe.second.visits], [1, 2])
 	await cp('build/runtime', runtime, { recursive: true })
 	const run = async (...actions) => {
 		const { stdout } = await exec(binary, [runtime, ...actions], { cwd: deployment })
@@ -78,7 +93,9 @@ try {
 	assert.equal(recovered.ticket, unavailable)
 	await mkdir(selected)
 	await assert.rejects(run(), (error) => error.stderr.includes('regular ESM file'))
-	console.log(JSON.stringify({ boots, reopened: reopened.map((boot) => boot.ticket) }))
+	console.log(
+		JSON.stringify({ session: sessionProbe, boots, reopened: reopened.map((boot) => boot.ticket) }),
+	)
 } finally {
 	await rm(deployment, { recursive: true, force: true })
 }
