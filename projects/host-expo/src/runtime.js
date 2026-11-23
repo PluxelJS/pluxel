@@ -1,6 +1,6 @@
 import { getRandomValues, randomUUID } from 'expo-crypto'
 
-// The browser Host and ZenFS read these methods during module initialization.
+// The embedded Host and ZenFS read these methods during module initialization.
 globalThis.crypto ??= {}
 globalThis.crypto.getRandomValues ??= getRandomValues
 globalThis.crypto.randomUUID ??= randomUUID

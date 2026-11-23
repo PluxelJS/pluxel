@@ -27,13 +27,13 @@
 			"@pluxel/source": "./src/bindings.ts",
 			"default": "./dist/bindings.mjs"
 		},
-		"./browser": {
-			"@pluxel/source": "./src/browser.ts",
-			"default": "./dist/browser.mjs"
-		},
 		"./cloudflare": {
 			"@pluxel/source": "./src/cloudflare.ts",
 			"default": "./dist/cloudflare.mjs"
+		},
+		"./embedded": {
+			"@pluxel/source": "./src/embedded.ts",
+			"default": "./dist/embedded.mjs"
 		},
 		"./environment": {
 			"@pluxel/source": "./src/environment.ts",
@@ -94,8 +94,8 @@
 			".": "./dist/index.mjs",
 			"./application": "./dist/application.mjs",
 			"./bindings": "./dist/bindings.mjs",
-			"./browser": "./dist/browser.mjs",
 			"./cloudflare": "./dist/cloudflare.mjs",
+			"./embedded": "./dist/embedded.mjs",
 			"./environment": "./dist/environment.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/agent-types": "./dist/internal/agent-types.mjs",

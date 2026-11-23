@@ -1,4 +1,4 @@
-import { createHost } from '@pluxel/host/browser'
+import { createHost } from '@pluxel/host/embedded'
 import { Provider } from './provider'
 import { Consumer } from './consumer'
 import { trace } from './trace'

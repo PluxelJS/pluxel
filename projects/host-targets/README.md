@@ -48,7 +48,7 @@ import {
 } from '@pluxel-example/host-targets-plugins/probe'
 import { createScriptScope } from '@pluxel/agent-sdk/host'
 import { defineHostApplication } from '@pluxel/host/application'
-import { startHost } from '@pluxel/host/browser'
+import { startHost } from '@pluxel/host/embedded'
 
 const sourceUrl = new URL('/probe.json', location.href).href
 const application = defineHostApplication(() => ({

@@ -4,7 +4,7 @@ import {
 	defineHostService,
 	installScopeService,
 } from '@pluxel/host/application'
-import { startHost } from '@pluxel/host/browser'
+import { startHost } from '@pluxel/host/embedded'
 import {
 	inspectHost,
 	probeEnvironment,

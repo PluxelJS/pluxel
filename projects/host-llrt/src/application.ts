@@ -7,7 +7,7 @@ import { createScriptScope, ScriptError } from '@pluxel/agent-sdk/host'
 import { formatPluginNodeReference, parsePluginNodeReference } from '@pluxel/core'
 import { readPluginLogIdentity } from '@pluxel/core/logger'
 import { defineHostService, installScopeService, type HostService } from '@pluxel/host/application'
-import { startHost } from '@pluxel/host/browser'
+import { startHost } from '@pluxel/host/embedded'
 
 const ticketAddress = parsePluginNodeReference('package:@pluxel-example/host-llrt::TicketDesk')
 const runtime = crypto.randomUUID()

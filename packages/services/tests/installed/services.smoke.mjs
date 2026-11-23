@@ -725,7 +725,7 @@ console.log('ISOLATED_TINYBASE_NATIVE_BROWSER_OK')
 
 const fsTypeConsumer = `
 import * as nativeFs from 'node:fs'
-import {createHost} from '@pluxel/host/browser'
+import {createHost} from '@pluxel/host/embedded'
 import type { LogTapeConfig, RuntimeLogging } from '@pluxel/core/logging'
 import {InMemory,Passthrough,type FsPromises,type FsConfig} from '@pluxel/core/fs'
 import {requireFs} from '@pluxel/core/internal'

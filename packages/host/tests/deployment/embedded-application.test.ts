@@ -1,7 +1,7 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { expect, it, vi } from 'vitest'
 import { startHost } from '../../src/index'
-import { startHost as startBrowserHost } from '../../src/browser'
+import { startHost as startEmbeddedHost } from '../../src/embedded'
 import { createWorkerHost } from '../../src/cloudflare'
 import { defineHostApplication } from '../../src/application'
 
@@ -58,7 +58,7 @@ it('keeps the published catalog identifiable when its synchronous observer throw
 @Plugin()
 class Feature extends BasePlugin {}
 
-it.each([startHost, startBrowserHost])(
+it.each([startHost, startEmbeddedHost])(
 	'evaluates env, plugins, services and hooks once per fresh embedded root',
 	async (start) => {
 		const hooks: string[] = []
@@ -165,7 +165,8 @@ it('shares cold failure, wakes waiters and retries on the next event', async () 
 	)
 	const both = Promise.allSettled([worker.run({ ctx }, () => {}), worker.run({ ctx }, () => {})])
 	gate.resolve()
-	expect((await both).map((result) => result.status)).toEqual(['rejected', 'rejected'])
+	const results = await both
+	expect(results.map((result) => result.status)).toEqual(['rejected', 'rejected'])
 	await worker.run({ ctx }, () => {})
 	expect(calls).toBe(2)
 })
@@ -197,12 +198,13 @@ it('publishes cold edits, blocks admission during warm edits, and reopens after 
 	expect(callback).not.toHaveBeenCalled()
 	finish.resolve()
 	await first
-	expect((await update)?.catalogRevision).toBeGreaterThan(1)
+	const report = await update
+	expect(report?.catalogRevision).toBeGreaterThan(1)
 	expect(await next).toBe(2)
 	expect(select).toHaveBeenCalledExactlyOnceWith({ env: { FEATURE: '1' } })
 	await expect(
 		worker.updateCatalog(() => [undefined as never], { onGraphCommitted: published }),
-	).rejects.toThrow()
+	).rejects.toThrow(/constructor/)
 	await worker.run({ ctx, env: { FEATURE: '1' } }, () => {})
 	expect(start).toHaveBeenCalledOnce()
 })

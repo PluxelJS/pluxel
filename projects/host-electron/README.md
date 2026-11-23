@@ -1,6 +1,6 @@
 # Electron 主进程宿主
 
-Electron 主进程启动 Pluxel Node Host，窗口展示共用插件的验收回执，以及桌面插件通过 `ctx.service(DesktopApp)` 读取的应用名称和版本。Electron `app` 由主进程持有。渲染器只显示回执，保留 BrowserWindow 默认的沙箱和上下文隔离。 [应用入口](index.js) · [桌面插件](src/index.ts)
+Electron 主进程从 `@pluxel/host` 根入口启动 Pluxel Node Host，窗口展示共用插件的验收回执，以及桌面插件通过 `ctx.service(DesktopApp)` 读取的应用名称和版本。Electron `app` 由主进程持有。渲染器只显示回执，保留 BrowserWindow 默认的沙箱和上下文隔离。 [应用入口](index.js) · [桌面插件](src/index.ts)
 
 ## 启动
 

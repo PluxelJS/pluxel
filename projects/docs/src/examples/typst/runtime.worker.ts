@@ -1,5 +1,5 @@
 import { defineHostApplication } from '@pluxel/host/application'
-import { startHost, type PluginHost } from '@pluxel/host/browser'
+import { startHost, type PluginHost } from '@pluxel/host/embedded'
 import { TypstPlugin } from '@pluxel/plugin-typst/wasm'
 import compilerWasmUrl from '@myriaddreamin/typst-ts-web-compiler/wasm?url&no-inline'
 import rendererWasmUrl from '@myriaddreamin/typst-ts-renderer/wasm?url&no-inline'

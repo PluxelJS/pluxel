@@ -39,6 +39,6 @@ python3 scripts/check-android.py
 
 ## 开发与复制
 
-共享插件可在开发机的 Node/Vite 宿主中用 HMR 联调。Expo UI 用 `vp run start` 和 Metro 调试。发布应用使用本地 bundle，外部插件只在新 JS runtime 启动时加载。每次挂载时，应用启动 Host、借用 SDK 并读取回执，在显示结果前关闭作用域与 Host。共享检查使用进程内 Fetch 传输、会话文件、TinyBase 和只读部署凭据。示例的安装文件单独保存在设备的应用目录。[共享验收](../host-targets/plugins/src/probe.ts) · [宿主开发与发布](../../docs/host/runtime-portability.md)
+共享插件可在开发机的 Node/Vite 宿主中用 HMR 联调。Expo UI 用 `vp run start` 和 Metro 调试。发布应用使用本地 bundle，外部插件只在新 JS runtime 启动时加载。每次挂载时，应用启动 Host、借用 SDK 并读取回执，在显示结果前关闭作用域与 Host。共享检查使用进程内 Fetch 传输和只读部署凭据。插件通过 `ctx.fs()` 写入、读回并删除临时文件，通过 `ctx.tinybase.open()` 连续两次访问同一个 Store。默认 ZenFS 挂载在内存中，每次创建新 Host 时计数从 1 开始。Expo FileSystem 另外把插件安装文件写入设备应用私有目录，供下次启动使用。[共享验收](../host-targets/plugins/src/probe.ts) · [宿主开发与发布](../../docs/host/runtime-portability.md)
 
 复制本目录及点文件。源码联调时调整 `package.json` 的 `link:` 与 Metro 的 `watchFolders`；使用安装包时换成同一构建的框架包和共享插件 tarball，并移除指向原 checkout 的 watchFolders。[Metro 配置](metro.config.cjs) · [打包共享插件](../host-targets/README.md#在其他宿主验收内建能力)

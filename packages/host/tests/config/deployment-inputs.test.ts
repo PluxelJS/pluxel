@@ -13,7 +13,7 @@ import {
 	resolveHostApplication,
 	startHost,
 } from '../../src/index'
-import { startHost as startBrowserHost } from '../../src/browser'
+import { startHost as startEmbeddedHost } from '../../src/embedded'
 import { defineHostApplication as definePortableApplication } from '../../src/application'
 import { createResolvedHost } from '../../src/host'
 import { configProvenance } from '../../src/config-records'
@@ -59,7 +59,7 @@ const portableApplication = definePortableApplication(() => ({
 	],
 }))
 
-it.each([startHost, startBrowserHost])(
+it.each([startHost, startEmbeddedHost])(
 	'starts a portable application with owner-scoped environment inputs',
 	async (start) => {
 		const owner = Configured.nodeAddress()
@@ -111,7 +111,7 @@ it('rejects unavailable, invalid or conflicting deployment credentials before po
 		expect(String(error)).not.toContain(marker)
 	}
 	await expect(
-		startBrowserHost(portableApplication, {
+		startEmbeddedHost(portableApplication, {
 			env: { EAST_CREDENTIALS: '{"token":"east","expires":12}' },
 			vaultBindings: [
 				{ owner: Configured.nodeAddress('east'), key: 'credentials', value: marker, source: 'env' },
@@ -119,7 +119,7 @@ it('rejects unavailable, invalid or conflicting deployment credentials before po
 		}),
 	).rejects.toThrow('Duplicate Vault deployment binding')
 	await expect(
-		startBrowserHost(() => ({
+		startEmbeddedHost(() => ({
 			plugins: [
 				{
 					plugin: Configured,

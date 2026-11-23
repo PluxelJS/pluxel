@@ -1,4 +1,4 @@
-import { createHost } from '@pluxel/host/browser'
+import { createHost } from '@pluxel/host/embedded'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { __setPluginDefinition, PLUGIN_LOWERING_ABI_VERSION } from '@pluxel/core/toolchain'
 import { requireFs, requireHostDocuments } from '@pluxel/core/internal'

@@ -1,4 +1,4 @@
-import { startHost } from '@pluxel/host/browser'
+import { startHost } from '@pluxel/host/embedded'
 import { demoApplication, demoInputs, assertDemoUpdate, runDemo } from './demo'
 import * as plugins from '@pluxel-example/host-targets-plugins'
 import type { DemoResult, DemoUpdate } from './protocol'

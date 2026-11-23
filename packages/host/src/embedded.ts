@@ -17,7 +17,7 @@ export type HostOptions = Omit<EmbeddedHostOptions, 'coreConfig'> &
 			}>
 	}>
 
-/** Prepare a browser or Web Worker Host with ZenFS and the browser Fetch transport. */
+/** Prepare an application-owned Host with ZenFS and the host environment’s Fetch transport. */
 export function createHost(options: HostOptions): Promise<PluginHost> {
 	return createHostFromOptions(options, snapshotZenFsCoreFacilitiesConfig)
 }

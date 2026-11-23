@@ -43,7 +43,7 @@ import {
 	installRootService,
 	installScopeService,
 } from '@pluxel/host/application'
-import { startHost } from '@pluxel/host/browser'
+import { startHost } from '@pluxel/host/embedded'
 import { createWorkerHost } from '@pluxel/host/cloudflare'
 
 const shared = definePortableApplication(({ env }) => ({

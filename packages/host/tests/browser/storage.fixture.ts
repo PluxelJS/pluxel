@@ -2,7 +2,7 @@ import { BasePlugin, Plugin } from '@pluxel/core'
 import { requireTinyBaseHost } from '@pluxel/core/internal'
 import { writeFileAtomic } from '@pluxel/core/fs'
 import { IndexedDB } from '@pluxel/core/fs/browser'
-import { createHost, type HostOptions, type PluginHost } from '@pluxel/host/browser'
+import { createHost, type HostOptions, type PluginHost } from '@pluxel/host/embedded'
 import * as v from 'valibot'
 
 let running: Awaited<ReturnType<Owner['openStorage']>>

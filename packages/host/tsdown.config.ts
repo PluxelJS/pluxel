@@ -11,7 +11,7 @@ export default defineConfig({
 		'internal/agent/node': './src/agent/node.ts',
 		application: './src/application.ts',
 		bindings: './src/bindings.ts',
-		browser: './src/browser.ts',
+		embedded: './src/embedded.ts',
 		cloudflare: './src/cloudflare.ts',
 		environment: './src/environment.ts',
 		sources: './src/sources.ts',
