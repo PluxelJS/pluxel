@@ -3,7 +3,78 @@ title: 跨平台宿主契约
 description: 接入一个 JavaScript 宿主时，按插件实际使用的能力准备运行环境，并用同一份发布插件验收。
 ---
 
-Node、浏览器 Worker 和 Cloudflare Workers 可以运行同一份已编译的 Pluxel 插件。插件通过 `ctx` 使用网络、日志、文件、状态和凭据。插件图和生命周期由 Pluxel 管理，具体操作能否成功取决于宿主。例如，Cloudflare 上的插件可以用 `ctx.vault` 读取部署凭据，也可以用 TinyBase 在请求之间保存状态，但这个状态只活到当前根结束。
+Node、浏览器、Cloudflare Workers、LLRT 和 React Native 可以运行同一份已编译的 Pluxel 插件。应用声明选择插件与服务，平台启动文件选择 Host 入口。插件通过 `ctx` 使用宿主提供的能力。
+
+## 五个平台的启动代码
+
+下面五个入口都加载同一个 `application.ts`。可以先用空目录验证启动，再把已编译的插件放入 `plugins`。应用需要部署变量时，Node 和嵌入式入口在启动时传入 `{ env }`，Cloudflare 在每次事件中传入选定的绑定值。 [声明插件与绑定](./configuration.md#独立轻量-host)
+
+```ts
+// application.ts
+import { defineHostApplication } from '@pluxel/host/application'
+
+export default defineHostApplication(() => ({ plugins: [] }))
+```
+
+**Node / Electron 主进程。** 两者都从包根导入 `startHost`。下面打印一次状态就释放 Host。Electron 窗口需要持续调用插件时，在 `app.whenReady()` 后启动，并让 Host 的作用域覆盖窗口的使用期。 [Node 入口](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-targets/src/node-main.ts) · [Electron 主进程](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-electron/index.js)
+
+```ts
+import { startHost } from '@pluxel/host'
+import application from './application'
+
+await using host = await startHost(application)
+console.log(await host.status())
+```
+
+**浏览器 Dedicated Worker。** 在 Worker 模块里启动，把结果通过消息发回页面。下面的 Worker 只查询一次。长期处理消息的 Worker 可以保留一个 Host，在收到关闭消息时等待 `host.close()`。 [完整消息处理](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-targets/src/browser.worker.ts)
+
+```ts
+import { startHost } from '@pluxel/host/embedded'
+import application from './application'
+
+await using host = await startHost(application)
+self.postMessage(host.catalog().entries.map(({ address }) => address.exportName))
+```
+
+**Cloudflare Workers。** 模块持有一个驱动。首次请求在有效事件里启动根，后续请求可复用它。每次 `run` 都有自己的 SDK 作用域。 [请求入口](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-targets/src/cloudflare/entry.ts)
+
+```ts
+import { createWorkerHost } from '@pluxel/host/cloudflare'
+import application from './application'
+
+const worker = createWorkerHost(application)
+export default {
+	fetch(request, env, ctx) {
+		return worker.run({ ctx, env: { AUDIT: env.AUDIT }, signal: request.signal }, async (sdk) =>
+			Response.json(await sdk.plugins.list()),
+		)
+	},
+} satisfies ExportedHandler<{ AUDIT?: string }>
+```
+
+**Rust / LLRT。** Rust 在 VM 中加载 JS 入口，调用其导出的 `run` 并等待 Promise。这里用字符串把结果交还给 Rust，作用域结束时 Host 已关闭；Rust 此后可以释放 VM。 [JS 入口](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-llrt/src/application.ts) · [Rust 调用方](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-llrt/native/src/main.rs)
+
+```ts
+import { startHost } from '@pluxel/host/embedded'
+import application from './application'
+
+export async function run() {
+	await using host = await startHost(application)
+	return JSON.stringify(host.catalog().entries.map(({ address }) => address.exportName))
+}
+```
+
+**React Native / Expo。** Hermes 里的启动代码可以直接返回 JS 值给界面。下面的函数完成一次目录查询，适合由界面事件调用。示例应用在安装或移除插件后用 Expo 的 `reloadAppAsync()` 重载 JS，下次启动再读取已安装的制品。 [Hermes 入口](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-expo/src/run.ts) · [安装后重载](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-expo/App.tsx)
+
+```ts
+import { startHost } from '@pluxel/host/embedded'
+import application from './application'
+
+export async function readPluginNames() {
+	await using host = await startHost(application)
+	return host.catalog().entries.map(({ address }) => address.exportName)
+}
+```
 
 ## 开发与交付
 

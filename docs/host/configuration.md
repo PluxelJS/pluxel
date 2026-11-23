@@ -492,7 +492,7 @@ database({
 
 ## 独立轻量 Host
 
-Node、页面、浏览器 Worker 和 Cloudflare 均可导入同一份应用声明。部署变量是显式传入的字符串记录，省略时为空。下面的应用固定插件清单，用部署开关决定是否自动启动审计插件，以及是否安装它需要的服务。
+Node、浏览器、Cloudflare、LLRT 和 React Native 均可导入同一份应用声明。部署变量是显式传入的字符串记录，省略时为空。下面的应用固定插件清单，用部署开关决定是否自动启动审计插件，以及是否安装它需要的服务。各平台如何启动这份声明，见[五个平台的启动代码](./runtime-portability.md#五个平台的启动代码)。
 
 ```ts
 import { defineHostApplication } from '@pluxel/host/application'
@@ -507,11 +507,16 @@ export default defineHostApplication(({ env }) => {
 })
 ```
 
-```ts
+```ts twoslash
+// @filename: application.ts
+export default () => ({ plugins: [] })
+// @filename: main.ts
+// ---cut---
 import { startHost } from '@pluxel/host'
 import application from './application'
 
 await using host = await startHost(application, { env: { AUDIT: process.env.AUDIT } })
+console.log(await host.status())
 ```
 
 Electron 主进程同样从 `@pluxel/host` 导入 `startHost`。浏览器、LLRT 和 React Native 从 `@pluxel/host/embedded` 导入它。两个入口都返回已验收的 Host，作用域结束时释放。Cloudflare 由下面的事件入口管理同一生命周期。三个入口都会执行工厂声明的 `prepare`、`acceptStartup`、`launch`。默认验收要求所有预期运行的节点就绪，失败会关闭根并抛出带 report 和 status 的 `HostApplicationStartupError`。

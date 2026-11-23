@@ -34,6 +34,7 @@ it('accepts registered ambient inputs and keeps build/cache output outside the s
 		'plugins/render/typst/native/.build/source/packages/compiler/src/global.d.ts': 'export {}\n',
 		'projects/embedded-launcher/native/vendor/llrt/llrt_core/src/modules/js/llrt.d.ts':
 			'export {}\n',
+		'projects/host-llrt/native/vendor/llrt/llrt_core/src/modules/js/llrt.d.ts': 'export {}\n',
 		'packages/example/dist/index.d.ts': 'export declare const value = 1\n',
 		'packages/example/dist/index.d.ts.map': '{}',
 		'packages/example/.pluxel/types/index.d.mts': 'export {}\n',
@@ -49,6 +50,7 @@ it('rejects unregistered source declarations and leaked declaration maps in ever
 		'projects/example/src/index.d.cts',
 		'plugins/render/typst/src/.build/generated.d.ts',
 		'projects/example/src/vendor/generated.d.ts',
+		'projects/host-llrt/src/generated.d.ts',
 		'packages/example/index.d.ts.map',
 		'plugins/example/src/index.d.mts.map',
 		'projects/docs/src/styles.d.ts.map',

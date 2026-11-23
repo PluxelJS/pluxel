@@ -8,6 +8,7 @@ const ignoredDirectories = new Set(['.git', '.pluxel', '.vercel', 'dist', 'node_
 const nativeDependencyTrees = new Set([
 	'plugins/render/typst/native/.build',
 	'projects/embedded-launcher/native/vendor',
+	'projects/host-llrt/native/vendor',
 ])
 const declarationPattern = /\.d\.[cm]?ts$/
 const declarationMapPattern = /\.d\.[cm]?ts\.map$/
