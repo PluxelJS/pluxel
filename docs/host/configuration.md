@@ -179,7 +179,7 @@ export default defineConfig({
 })
 ```
 
-开发模式下，Vite 会处理插件的装饰器编译与依赖关系提取，并支持通过命令行控制台调试插件状态。
+开发机上的 Vite 调用 Pluxel 编译器提取插件声明与依赖，Host 把定义交给 Core 构建运行图。可以通过命令行控制台调试 Node Host 中的插件状态。
 
 ---
 
@@ -214,6 +214,8 @@ Vite 观察匹配的 TypeScript 和预编译 ESM 入口。Node 原生启动和 m
 <span id="vite-生产"></span>
 
 ## Vite 生产
+
+此入口适用于需要在线消费插件来源的托管 Node 服务。嵌入式应用与 Worker 按目标交付已编译插件。 [跨平台开发与交付](./runtime-portability.md#开发与交付)
 
 在生产环境中，使用 Node 原生生产启动器加载构建产物：
 
@@ -259,7 +261,7 @@ process.once('SIGINT', shutdown)
 
 ## 绑定部署环境与 JSON 文件
 
-把 `envBinding(inputs)` 和 `fileBinding(inputs)` 写在要配置的节点下。配置 binding 引用插件 `configs.use()` 使用的同一个 Valibot schema。
+将绑定写在目标插件或 fork 下。普通配置引用插件 `configs.use()` 使用的同一个 Valibot schema。下面的托管 Node 应用从 JSON 文件取配置，再用部署环境里的 `WORKER_ENDPOINT` 覆盖对应字段。
 
 ```ts no-twoslash
 import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
@@ -281,16 +283,43 @@ export default defineHostApplication(() => ({
 }))
 ```
 
-Host 相对应用根目录读 JSON 文件，从 `startup.env` 取显式映射的变量。节点的代码配置先与文件合并，再合并环境输入，最后按节点的 mode 选择保存输入。数组整项替换。
+托管 Node 加载器相对应用根目录读取 `fileBindings`。三个平台的直接启动入口都支持 `envBindings`，共享应用从 `@pluxel/host/bindings` 导入 `envBinding`。Node 和浏览器将部署变量传给 `startHost` 的 `env`，Cloudflare 则在事件中传给 `worker.run`。
+
+普通配置依次合并代码输入、托管 Node 读取的文件输入和显式映射的环境输入。未提供某个环境变量时保留此前的配置，数组整项替换。合并结果再按节点模式与保存值组合。 [配置优先级](#保存配置和运行策略)
 
 <span id="可选管理页面与服务配套插件"></span>
 <span id="部署凭据"></span>
 
 ### 部署凭据与 Vault 绑定
 
-敏感凭证由 Core 内建的 `ctx.vault` 访问，Host 通过 `coreConfig.vault` 选择后端。默认加密后端借用 `coreConfig.zenfs` 的文件系统，首次数据操作按需初始化新库；只使用 `envBindings` / `fileBindings` 提供的只读记录时，可设置 `coreConfig.vault: { backend: 'bindings' }`，不打开加密存储或生成密钥。
+邮件插件导出 `MailVault`（例如 `v.object({ token: v.string() })`），应用将它的 `token` 记录映射到部署变量 `MAIL_API_TOKEN`。
 
-应用工厂通过 `deployIdentity: startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY` 显式传入部署私钥。能力存在不表示存储已经解锁或记录存在，具体状态由操作报告。绑定 Schema、命名空间、读写和错误处理见 [Vault 凭据指南](../plugin-development/vault.md)。
+```ts
+import { defineHostApplication } from '@pluxel/host/application'
+import { envBinding } from '@pluxel/host/bindings'
+import { MailPlugin, MailVault } from './mail'
+
+export default defineHostApplication(() => ({
+	coreConfig: { vault: { backend: 'bindings' } },
+	plugins: [
+		{
+			plugin: MailPlugin,
+			autoStart: true,
+			envBindings: [
+				envBinding({ vault: { schema: MailVault, mapping: { token: 'MAIL_API_TOKEN' } } }),
+			],
+		},
+	],
+}))
+```
+
+交付 modules 应用时，将插件类放在工厂导入的独立模块中。同文件导出插件类和默认工厂可能使 control 声明生成器无法解析推导出的 schema 类型。
+
+服务端部署提供实际的 `MAIL_API_TOKEN`。直接启动 Node Host 时将它放进 `startHost(application, { env })` 的 `env`。Cloudflare 把它配置为 Secret，再在事件处理函数中将 `{ MAIL_API_TOKEN: env.MAIL_API_TOKEN }` 传给 `worker.run` 的 `env`。插件用 `await this.ctx.vault.kv().get('token')` 读取记录。浏览器只能接收可以交付给终端用户的值。 [Worker 事件入口](#cloudflare-worker-host) · [Cloudflare Secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
+
+每条 Vault 记录映射的所有变量都必须提供。Host 在创建根时检查所有声明，包括尚未启用自动启动的插件和 fork。缺失来源会抛出 `InputBindingError`，错误码为 `MISSING_INPUT`。解码或 schema 校验失败时，错误码为 `INVALID_INPUT`。从 `@pluxel/host/bindings` 导入该错误类型即可区分这两种情况。
+
+只需读取部署记录时，使用示例中的 `bindings` 后端。插件需要自行写入并跨重启保存凭据时，Node 或浏览器宿主应选择加密后端和持久挂载。 [Vault 后端与部署输入](../plugin-development/vault.md#host-后端与部署输入)
 
 ---
 
@@ -377,7 +406,7 @@ export const zenfs = {
 
 `declared-first` 采用代码并从保存值补缺。`saved-first` 采用保存值并从代码补缺。`declared-only` 只采用代码。节点配置按叶路径合并，缺失值由 schema 处理。节点的 `policyMode` 同时作用于自动启动、fork 可用性和其作为 consumer 的覆盖。
 
-`config.document` 和 `policy.document` 分别设置文件接线。默认借用 Core FS，保留期取决于 ZenFS mount。`false` 关闭该域 IO，仍可维护会话输入。`{ readOnly: true }` 允许读取并拒绝本实例的管理写入。嵌入应用可用同步 `{ storage: (root) => HostDocumentStorage }` 借用已有存储。缺失文档保留为缺失，坏文档报错并保留文件。
+`config.document` 和 `policy.document` 分别选择配置和策略的文档存储。Node 与浏览器默认通过 Core FS 读写，数据寿命取决于 ZenFS 挂载。Cloudflare 默认使用当前根的内存文档。`false` 关闭该域 IO，仍可维护会话输入。`{ readOnly: true }` 允许读取并拒绝本实例的管理写入。嵌入应用可用同步 `{ storage: (root) => HostDocumentStorage }` 借用已有存储。缺失文档保留为缺失，坏文档报错并保留文件。
 
 配置查询返回保存原值、有效输入、来源及校验结果。Workbench 和脚本使用 `patch({ set?, remove? })` 修改保存值，用 `reset` 恢复继承。`expectedManagedRevision` 在写入前检查版本。`persistence` 表示保存阶段，`application` 表示运行采用阶段。保存成功而监听器缺失或失败时返回 `saved-not-applied`。
 
@@ -402,7 +431,7 @@ export const zenfs = {
 
 ## 日志配置（Host Logging）
 
-填写 `coreConfig.logtape: {}` 开启默认控制台和有界日志缓存。`{ options }` 可调整管理选项。原生 LogTape Config 或同步 root factory 提供完整输出配置，可和管理选项一起写成 `{ input, options }`。省略该字段时插件仍使用 `ctx.logger`，配置后 `root.logging` 提供日志策略、缓存、状态和 flush。
+Node 和浏览器宿主填写 `coreConfig.logtape: {}` 开启默认控制台和有界日志缓存。Cloudflare 入口由应用直接配置 LogTape 的输出端。`{ options }` 可调整管理选项。原生 LogTape Config 或同步 root factory 提供完整输出配置，可和管理选项一起写成 `{ input, options }`。省略该字段时插件仍使用 `ctx.logger`，配置后 `root.logging` 提供日志策略、缓存、状态和 flush。
 
 ```ts
 import type { CoreFacilitiesConfig } from '@pluxel/core'
@@ -463,16 +492,16 @@ database({
 
 ## 独立轻量 Host
 
-Node、页面、浏览器 Worker 和 Cloudflare 均可导入同一份应用声明。部署变量是显式传入的字符串记录，省略时为空。下面的开关同时决定一个插件和它需要的服务是否进入本次装配。
+Node、页面、浏览器 Worker 和 Cloudflare 均可导入同一份应用声明。部署变量是显式传入的字符串记录，省略时为空。下面的应用固定插件清单，用部署开关决定是否自动启动审计插件，以及是否安装它需要的服务。
 
 ```ts
 import { defineHostApplication } from '@pluxel/host/application'
 import { AuditPlugin, auditService } from './audit'
 
-export const application = defineHostApplication(({ env }) => {
+export default defineHostApplication(({ env }) => {
 	const audit = env.AUDIT === '1'
 	return {
-		plugins: audit ? [{ plugin: AuditPlugin, autoStart: true }] : [],
+		plugins: [{ plugin: AuditPlugin, autoStart: audit }],
 		services: audit ? [auditService] : [],
 	}
 })
@@ -480,18 +509,18 @@ export const application = defineHostApplication(({ env }) => {
 
 ```ts
 import { startHost } from '@pluxel/host'
-import { application } from './application'
+import application from './application'
 
 await using host = await startHost(application, { env: { AUDIT: process.env.AUDIT } })
 ```
 
 浏览器从 `@pluxel/host/browser` 导入 `startHost`。两个入口都返回已验收的 Host，作用域结束时释放。Cloudflare 由下面的事件入口管理同一生命周期。三个入口都会执行工厂声明的 `prepare`、`acceptStartup`、`launch`。默认验收要求所有预期运行的节点就绪，失败会关闭根并抛出带 report 和 status 的 `HostApplicationStartupError`。
 
-三端共用插件图、运行意图、生命周期、状态读取和进程内 Script SDK。开发控制台的 CLI 连接由托管 Node 的 Vite runner 提供。浏览器 Worker 和 Cloudflare 示例通过各自的事件入口借用 SDK。Workbench 会话、鉴权和远程传输需要由相应宿主接入。 [Vite 开发控制台](../development/dev-console.md) · [Worker 示例](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/projects/host-targets/README.md)
+三端共用插件图、运行意图、生命周期、状态读取和进程内 Script SDK。开发控制台的 CLI 连接由托管 Node 的 Vite runner 提供。浏览器 Worker 和 Cloudflare 示例通过各自的事件入口借用 SDK。Workbench 会话、鉴权和远程传输需要由相应宿主接入。 [Vite 开发控制台](../development/dev-console.md) · [Worker 示例](https://github.com/PluxelJS/pluxel/blob/0f0d2441fdc8ac67cca5bad41b833d5781788799/projects/host-targets/README.md)
 
-Node 的 standalone 产物在构建时收集固定插件闭包。要让同一份应用也能交付成 standalone，可固定 `plugins: [{ plugin: AuditPlugin, autoStart: env.AUDIT === '1' }]`，服务仍可按环境选择。直接启动或原生模块加载时，条件也可以决定插件是否出现在 catalog 中。
+standalone 和 modules 构建都要在源码中解析显式声明的 `plugins` 和 `pluginNodes`。上例的数组在构建时就能确定，`autoStart` 和服务选择可在运行时求值。modules 还可用 `sources` 在启动时发现已编译的插件。 [动态来源](#动态来源)
 
-Node 和浏览器每次显式调用 `startHost` 都创建并验收一个根。Cloudflare 模块持有一个驱动，由它为同一 isolate 的多次事件复用根。工厂用冻结的 `env` 决定插件、服务与策略；每个根的资源通过 service 或应用的 `prepare` 打开，经 effects 注册释放。`coreConfig` 可以从工厂返回，也可以由启动方提供一次。`vaultBindings` 的寿命与根一致。需要在插件启动前接入诊断时，可以使用应用的 `prepare({ host })`。Node 与浏览器的底层装配工具还可调用 `createHost(options)` 单独准备根，再执行 `host.start()`。 [三端共用的应用](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/projects/host-targets/src/demo-plugins.ts)
+Node 和浏览器每次显式调用 `startHost` 都创建并验收一个根。Cloudflare 模块持有一个驱动，由它为同一 isolate 的多次事件复用根。工厂用冻结的 `env` 决定插件、服务与策略；每个根的资源通过 service 或应用的 `prepare` 打开，经 effects 注册释放。`coreConfig` 可以从工厂返回，也可以由启动方提供一次。节点的 `envBindings` 在创建该根时解析。启动方另有已解析的部署记录可通过 `vaultBindings` 传入，记录随根固定；同一 owner、namespace 和 key 有多个来源时启动失败。需要在插件启动前接入诊断时，可以使用应用的 `prepare({ host })`。Node 与浏览器的底层装配工具还可调用 `createHost(options)` 单独准备根，再执行 `host.start()`。 [三端共用的应用](https://github.com/PluxelJS/pluxel/blob/0f0d2441fdc8ac67cca5bad41b833d5781788799/projects/host-targets/src/demo-plugins.ts)
 
 ---
 
@@ -499,7 +528,7 @@ Node 和浏览器每次显式调用 `startHost` 都创建并验收一个根。Cl
 
 ## 浏览器 Host
 
-`@pluxel/host/browser` 的 `startHost(application, inputs?)` 可以在页面或 Dedicated Module Worker 中启动常驻 Host。此入口使用浏览器 Fetch。文件存储默认使用 InMemory，需要重开恢复时通过 `inputs.coreConfig.zenfs` 挂载 IndexedDB。Worker 可在 Vite 的 `import.meta.hot.accept()` 中将新的构造器集合交给 `host.updateCatalog()`，保留根服务和存储。读取替换结果时检查 reconciliation 与已提交的 lifecycle report。构造器派生的调用地址随对应代码一起切换。 [浏览器 Worker 示例](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/projects/host-targets/src/browser.worker.ts)
+`@pluxel/host/browser` 的 `startHost(application, inputs?)` 可以在页面或 Dedicated Module Worker 中启动常驻 Host。此入口使用浏览器 Fetch。文件存储默认使用 InMemory，需要重开恢复时通过 `inputs.coreConfig.zenfs` 挂载 IndexedDB。开发时，Worker 可在 Vite 的 `import.meta.hot.accept()` 中将新的构造器集合交给 `host.updateCatalog()`，保留根服务和存储。读取替换结果时检查 reconciliation 与已提交的 lifecycle report。构造器派生的调用地址随对应代码一起切换。 [浏览器 Worker 示例](https://github.com/PluxelJS/pluxel/blob/0f0d2441fdc8ac67cca5bad41b833d5781788799/projects/host-targets/src/browser.worker.ts)
 
 ## Cloudflare Worker Host
 
@@ -520,19 +549,21 @@ export default {
 } satisfies ExportedHandler<MarketBindings>
 ```
 
-`run` 的 `env` 只传影响装配的部署变量。驱动按键和值比较快照，顺序不影响复用。变量变化时，新事件等待新根通过启动验收，此前接纳的事件继续使用原根，最后一个事件结束后释放原根。新配置启动失败会返回错误，下一次调用可以重试。请求参数和用户身份属于业务调用。D1、R2、请求体等原生资源直接传给本次借用的插件方法。Cloudflare 更新 bindings 时可能继续使用原 isolate。 [Market 的部署投影](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/projects/plugin-market/src/bindings.ts) · [Cloudflare bindings 更新语义](https://developers.cloudflare.com/workers/runtime-apis/bindings/#making-changes-to-bindings)
+`run` 的 `env` 只传影响装配的部署变量，包括节点声明映射的 Secret。驱动按键和值比较快照，顺序不影响复用。变量变化时，新事件等待新根通过启动验收，此前接纳的事件继续使用原根，最后一个事件结束后释放原根。新配置启动失败会返回错误，下一次调用可以重试。请求参数和用户身份属于业务调用。D1、R2、请求体等原生资源直接传给本次借用的插件方法。Cloudflare 更新 bindings 时可能继续使用原 isolate。 [Market 的部署投影](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/projects/plugin-market/src/bindings.ts) · [Cloudflare bindings 更新语义](https://developers.cloudflare.com/workers/runtime-apis/bindings/#making-changes-to-bindings)
 
 `ctx` 提供原生 `waitUntil`，维持首次启动和事件收尾的执行时间。当平台触发传入的 `request.signal` 时，驱动取消本次等待并通知 SDK 作用域，业务方法可将同一信号传给出站 I/O。共享启动和其他请求独立结算。并发冷启动依赖 `handle_cross_request_promise_resolution`，在 2024-10-14 起的 compatibility date 默认开启。HTTP 断连后仍受平台的 `waitUntil` 时限约束。 [Promise 上下文](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#handle-cross-request-promise-resolution-correctly) · [执行上下文](https://developers.cloudflare.com/workers/runtime-apis/context/#waituntil) · [入站取消信号](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#enable-requestsignal-for-incoming-requests)
 
 JSON 和可直接转交的原生响应在回调结束时释放作用域。如果响应流在后续 `pull` 中还要调用插件，在事件参数中加 `responseBody: 'scope'` 并传入 `request.signal`。作用域会保持到流读完、出错或取消。 [流与并发回归](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/packages/host/tests/cloudflare/runtime.test.ts)
 
-插件实现的 Vite 接受边界调用 `worker.updateCatalog(({ env }) => selectPlugins(env), { onGraphCommitted })`。选择函数收到当前已验收根的部署变量，在提交回调中同步发布新的插件引用。驱动等待已接纳的事件和依赖插件的响应体结算，将更新应用到同一个 Host，再放行新事件。首次请求之前接到更新时只发布引用，首次启动读取更新后的声明。服务或应用装配变化走入口重载，开发入口用 `await closeOnHotReload(import.meta.hot, worker)` 在模块替换时排空旧根。`updateCatalog` 和 `close` 均由事件回调之外的所有者调用。 [Market 热更新](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/projects/plugin-market/src/application.ts) · [三端可运行示例](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/projects/host-targets/README.md)
+本地开发时，插件实现的 Vite 接受边界调用 `worker.updateCatalog(({ env }) => selectPlugins(env), { onGraphCommitted })`。选择函数收到当前已验收根的部署变量，在提交回调中同步发布新的插件引用。驱动等待已接纳的事件和依赖插件的响应体结算，将更新应用到同一个 Host，再放行新事件。首次请求之前接到更新时只发布引用，首次启动读取更新后的声明。服务或应用装配变化走入口重载，开发入口用 `await closeOnHotReload(import.meta.hot, worker)` 在模块替换时排空旧根。`updateCatalog` 和 `close` 均由事件回调之外的所有者调用。 [Market 热更新](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/projects/plugin-market/src/application.ts) · [三端可运行示例](https://github.com/PluxelJS/pluxel/blob/0f0d2441fdc8ac67cca5bad41b833d5781788799/projects/host-targets/README.md)
 
-配置、策略和 TinyBase 的默认内存文档在同一个根上跨请求保留。根的生命周期以 isolate 为上限，平台回收 isolate 时没有可靠的关闭回调。需要跨 isolate 保存的业务数据写入持久 binding。Worker 使用平台 Fetch、部署 Vault 和应用配置的 LogTape 输出。常驻服务的传输函数应在调用时取得可用的 binding。Worker 入口拒绝托管 LogTape、ZenFS 和 Node 代理配置。插件调用 `ctx.fs()` 会得到 `ENOTSUP`。 [三端传输示例](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/projects/host-targets/src/cloudflare/entry.ts)
+配置、策略和 TinyBase 的默认内存文档在同一个根上跨请求保留。根的生命周期以 isolate 为上限，平台回收 isolate 时没有可靠的关闭回调。需要跨 isolate 保存的业务数据写入持久 binding。Worker 使用平台 Fetch、部署 Vault 和应用配置的 LogTape 输出。常驻服务的传输函数应在调用时取得可用的 binding。Worker 入口拒绝托管 LogTape、ZenFS 和 Node 代理配置。插件调用 `ctx.fs()` 会得到 `ENOTSUP`。 [三端传输示例](https://github.com/PluxelJS/pluxel/blob/0f0d2441fdc8ac67cca5bad41b833d5781788799/projects/host-targets/src/cloudflare/entry.ts)
 
-### 跨平台固定插件集
+### 跨平台装配与更新
 
-用相同的已构建插件包和固定 `plugins` 声明装配三个宿主。完整依赖闭包须可在目标运行时求值，每个宿主须具备插件用到的服务和 Context 能力。构建时通过包的发布入口验证实际 ESM，并在各目标运行一次真实业务调用。 [插件包构建](../development/plugin-package.md) · [三端验收](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/projects/host-targets/README.md#构建与验收)
+开发时可用 Node + Vite 编译和热更共享插件。发布后的装配方式由宿主决定。浏览器和 Cloudflare 随版本部署，LLRT、React Native 可由应用安装独立 JS 文件，再重建执行环境。各平台入口、Web API 与验收方法见[跨平台宿主契约](./runtime-portability.md)。
+
+用相同的已构建插件包和固定 `plugins` 声明装配三个宿主。完整依赖闭包须可在目标运行时求值，每个宿主须具备插件用到的服务和 Context 能力。构建时通过包的发布入口验证实际 ESM，并在各目标运行一次真实业务调用。 [插件包构建](../development/plugin-package.md) · [三端验收](https://github.com/PluxelJS/pluxel/blob/0f0d2441fdc8ac67cca5bad41b833d5781788799/projects/host-targets/README.md#构建与验收)
 
 ---
 

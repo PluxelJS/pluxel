@@ -65,7 +65,7 @@ Host-vite 与 Management 委托同一 Host 用例。共享 report 投影将 Slot
 
 节点条目提供输入与 mode。`config.document` 和 `policy.document` 各接受 `false` 或 `{ readOnly?, storage? }`。`false` 关闭该域 IO 和订阅，`readOnly` 拒绝本实例管理写入。输入优先级单独选择。
 
-storage 是同步 `(root: RootContext) => HostDocumentStorage`，在唯一 root 创建后、IO 前各求值一次。factory 只接线，不执行 IO、不访问尚未准备的 Plugin/config，也不返回 Promise。`HostDocumentStorage` 的目录、原子 put、订阅和借用关闭边界由 [FS](FS.md#host-文档与关闭) 维护；默认借用 `services/host/<namespace>/<key>`，应用只需在 coreConfig.zenfs 选择一次 backend。
+storage 是同步 `(root: RootContext) => HostDocumentStorage`，在唯一 root 创建后、IO 前各求值一次。factory 只接线，不执行 IO、不访问尚未准备的 Plugin/config，也不返回 Promise。`HostDocumentStorage` 的目录、原子 put、订阅和借用关闭边界由 [FS](FS.md#host-文档与关闭) 维护；Node 与浏览器默认通过 ZenFS 读写 `services/host/<namespace>/<key>`，Cloudflare 默认在根内内存中保存文档。
 
 `HostConfigStore` 继承 CoreConfigService，但分别持有 declaration/saved input 和已校验 output；`HostStateStore` 持有 policy input、effective value、revision。config 仅接受 SuperJSON v4，state 仅接受 v8。缺失文档不写入声明或默认种子；明确 mutation 才保存稀疏原始记录。内容摘要去重，发布等待保存确认，坏格式保留原文件。
 
@@ -88,7 +88,7 @@ vp exec node packages/host/scripts/migrate-policy-v7.mjs --policy author.json --
 
 `envBinding(inputs)` 和 `fileBinding(inputs)` 显式选取 config/Vault 输入。Host 从条目所在节点取得 canonical owner。config schema 与 `configs.use()` 的 metadata 为同一个对象，helper 从 schema input 推导 mapping/key。Vault 根 schema 定义 KV key 到记录的 shape。
 
-Host 从不可变 startup.env 解析 env，JSON 文件路径相对 startup.root。来源 metadata 只含路径、kind/name、readonly，不含值。声明按 `节点.config → fileBindings.config → envBindings.config` 合成，后者覆盖同路径。
+Node 的应用加载器、直接启动入口、浏览器与 Cloudflare 均从根的不可变 `startup.env` 解析节点映射。托管 Node 向同一解析器提供相对 `startup.root` 的文件读取，缺少这个入口的宿主在启动时拒绝文件映射。来源 metadata 只含路径、kind/name、readonly，不含值。声明按 `节点.config → fileBindings.config → envBindings.config` 合成，后者覆盖同路径。
 
 每个 node mode 按 `节点.configMode → config.mode → inputMode → declared-first` 选择：
 

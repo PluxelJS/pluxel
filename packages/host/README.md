@@ -23,4 +23,4 @@ export default defineHostApplication(() => ({ plugins: [{ plugin: MyPlugin, auto
 
 Node 与浏览器的底层 `createHost()` 接受已求值的 plugins。先 `start()`，退出时等待幂等 `close()`。借用的 storage backend 由提供方关闭。 [Host 的生命周期](../../docs/host/configuration.md#独立轻量-host)
 
-`runHostApplication(entry, { startup, sharedPackages })` 接收预编译入口路径，在共享绑定内求值默认工厂与固定 imports，再一次扫描来源，不创建 watcher。全新 Node launcher 必须在业务闭包首次求值前调用；Node hook 无法证明此前任意缓存依赖的完整绑定。Core/Host 与显式 `sharedPackages` 先检查版本再绑定同一安装，制品通过实际 loaded owner 校验。`@pluxel/host-vite` 在开发或生产持续更新同一应用合同。来源 producer 的回执仅确认发布，实际 consumption 为 `next-start` 或 `live`。内部约束见 [HOST](../../engineering/HOST.md)。
+`runHostApplication(entry, { startup, sharedPackages })` 接收预编译入口路径，在共享绑定内求值默认工厂与固定 imports，再一次扫描来源，不创建 watcher。全新 Node launcher 必须在业务闭包首次求值前调用；Node hook 无法证明此前任意缓存依赖的完整绑定。Core/Host 与显式 `sharedPackages` 先检查版本再绑定同一安装，制品通过实际 loaded owner 校验。开发或需要在线消费来源的 Node 服务可显式接入 `@pluxel/host-vite`。Worker 部署与嵌入式引擎更新见[跨平台宿主契约](../../docs/host/runtime-portability.md#开发与交付)。来源 producer 的回执仅确认发布，实际 consumption 为 `next-start` 或 `live`。内部约束见 [HOST](../../engineering/HOST.md)。

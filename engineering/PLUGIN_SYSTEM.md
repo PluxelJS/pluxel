@@ -2,6 +2,8 @@
 
 本页解释一份 Plugin 声明如何成为运行能力。跨领域规则见 [工程不变量](DESIGN_PRINCIPLES.md)，具体修改任务只在 [工程导航](README.md) 分流。插件作者从[用户指南](../docs/getting-started/index.md)开始。
 
+编译器从源码提取依赖声明，Core 根据已加载的插件定义构建运行图。Vite 的模块图负责开发期源码失效与重新求值。设备或 Worker 的新 JS 执行环境可以直接用已编译定义启动；插件文件何时安装、采用哪个版本、何时销毁引擎，都由应用所有者决定。 [跨平台契约](../docs/host/runtime-portability.md#开发与交付)
+
 ## 唯一执行路径
 
 ```text

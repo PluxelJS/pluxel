@@ -5,7 +5,7 @@ description: 连接插件市场，或直接通过受控 pnpm 环境安装与更�
 
 > `@pluxel/plugin-package-manager` 目前主要供 Pluxel 工作区内使用。完整包状态见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/plugin-package-manager` 允许宿主在独立的受管目录中通过 pnpm 安装、更新和卸载第三方 npm 插件。插件包被下载并解压后，包管理器会为每个插件生成标准的 `.mjs` 入口包装文件，由宿主的动态目录来源（Directory Source）加载。
+`@pluxel/plugin-package-manager` 在 Node 宿主中用 pnpm 与原生绑定安装、更新和卸载 npm 插件，再发布标准的 `.mjs` 入口。Node 原生加载器可在下次启动时扫描目录，托管 Vite 可在线接纳变更。LLRT 和 React Native 示例在开发机解析依赖，在设备上安装已经编译好的 JS，再重载运行时。 [跨平台开发与交付](../host/runtime-portability.md#开发与交付)
 
 ## 宿主装配
 

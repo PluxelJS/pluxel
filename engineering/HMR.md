@@ -2,6 +2,8 @@
 
 HMR 以 definition replacement 切换模块、Core generation、effects 和制品。首次源码求值失败保留 watcher 恢复；Host 创建、服务/应用 prepare 的致命失败则清理资源并拒绝 configureServer，CLI 不发布 ready。运行中的更新按下述提交边界结算。
 
+下文描述运行 Vite 的开发环境和显式采用 Vite 的托管 Node 服务。发布到浏览器、Cloudflare、LLRT 或 React Native 时，更新边界分别是应用版本、Worker 部署或嵌入引擎的重载。对应平台和验收入口见[跨平台宿主契约](../docs/host/runtime-portability.md#开发与交付)。
+
 ## 开发批次调度
 
 每个 Vite 实例有唯一调度器，默认 auto，最多执行一批。后续事件按 canonical path 合入 pending；超过 4096 个不同文件折为 full rescan，仍经正常来源/候选验证。

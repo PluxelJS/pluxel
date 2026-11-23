@@ -4,6 +4,8 @@ Host 拥有服务安装、应用启动、catalog、运行意图和资源关闭�
 
 `defineHostApplication(factory)` 返回工厂本身，由驱动在启动时求值。Node 应用可用 `servicesPreset()` 和 `vitePreset()` 组合运行时服务及开发附件，使用 `@pluxel/rolldown` 的 `pluxel()` 构建交付。
 
+嵌入式应用拥有 JS 引擎和插件文件，Host 拥有一次启动的 catalog、服务与根。宿主先排空并关闭根，再释放引擎；下一次冷启动从已安装制品重建 catalog。示例同时验收内建能力和通过服务借用的原生能力。 [示例索引](../projects/README.md#cross-platform-host-examples)
+
 ## 应用工厂与运行寿命
 
 `@pluxel/host/application` 提供三端共享的 `defineHostApplication(({ env }) => …)` 和服务安装函数。每个根用冻结的部署变量选择插件和服务，完成 catalog、fork 和服务依赖校验。`@pluxel/host` 的 Node 入口导出同一个函数对象，工厂参数推断为 `HostStartupContext`，可直接读取启动路径、模式和部署信息。Node 托管加载器另外解析动态来源、文件与环境绑定。Node 与浏览器的 `startHost(application, inputs?)` 返回已验收的根，调用方持有并关闭它。三端共用准备、启动验收和发布钩子。默认验收只在失败时投影完整状态，自定义 `acceptStartup` 始终收到完整快照。 [应用工厂](../packages/host/src/application.ts) · [直接启动](../packages/host/src/embedded-application.ts) · [启动判定](../packages/host/src/application-start.ts)
@@ -98,7 +100,7 @@ Host 的 `bench/status.bench.mjs` 比较 overview/find 与精确投影；Service
 | Node artifacts、Workers              | `packages/services/src/node/`、`workers/`；[Artifact Build](ARTIFACT_BUILD.md)                                                  |
 | Management/Workbench                 | [Workbench](WORKBENCH.md)、[管理接入](../docs/host/management.md)                                                               |
 
-Host 文档默认借用 Core FS，`config.document` 与 `policy.document` 分别选择 IO、写权限和同步 root storage factory。config v4、state v8 只保存稀疏原始输入；缺失文档不写种子，坏格式保留原文件并拒绝准备。关闭先取消观察、排空本域任务，再由 Core 关闭 backend，见 [Config](CONFIG.md#存储与创建边界)。
+Host 文档默认借用 Core 提供的存储，Node 和浏览器使用 ZenFS，Cloudflare 使用根内会话文档。`config.document` 与 `policy.document` 分别选择 IO、写权限和同步 root storage factory。config v4、state v8 只保存稀疏原始输入；缺失文档不写种子，坏格式保留原文件并拒绝准备。关闭先取消观察、排空本域任务，再由 Core 关闭 backend，见 [Config](CONFIG.md#存储与创建边界)。
 
 Worker caller result 与底层 execution settlement 分开；`settlement: 'execution'` 等到线程可复用或退出再发布结果，供调用方清理文件等资源。
 
@@ -114,7 +116,7 @@ Node srvx/Vite 接线已有覆盖；Bun、Deno、Worker adapter、published Elys
 
 ## Vault 记录与宿主输入
 
-Vault 是 Core 固定能力，Plugin 通过 `ctx.vault` 取得 owner 存储视图；KV 是结构化记录，blobs 保留文件语义。`coreConfig.vault` 选择默认加密 backend 或只读 bindings backend。加密后端按需借用 Core FS，bindings 后端不准备密钥或磁盘。Host 在 Plugin admission 前通过 Core 内部边界安装已校验的 owner/key/value/source；凭据契约和存储实现归 Core，部署 Schema、环境与 JSON 文件解析归 Host，Core 不引用 Host 类型。
+Vault 是 Core 固定能力，Plugin 通过 `ctx.vault` 取得 owner 存储视图；KV 是结构化记录，blobs 保留文件语义。`coreConfig.vault` 选择默认加密 backend 或只读 bindings backend。加密后端按需借用 Core FS，bindings 后端不准备密钥或磁盘。Host 在 Plugin admission 前通过 Core 内部边界安装已校验的 owner/key/value/source；凭据契约和存储实现归 Core，部署 Schema 与 env 解码由三个 Host 的应用启动入口共用。托管 Node 负责相对部署根解析 JSON 文件。Worker 以入口显式传入的部署变量投影选择根，从同一份 env 快照解析绑定；替换成功后旧事件仍使用原根。见[部署输入与启动](../docs/host/configuration.md#绑定部署环境与-json-文件)。
 
 创建 Host、读取凭据能力、创建 KV/blob 句柄或管理 describe 不生成密钥；首次数据操作按需初始化新加密库，也可由管理员显式 unlock 初始化。已有库缺少匹配密钥或解密失败时保留错误，不阻止未使用凭据的 Host 启动。能力存在不代表密钥已配置、存储已解锁或记录存在，具体操作报告实际状态；管理面通过 `requireVaultHost(root).admin` 借用根管理接口，所有后端准备、观察和最终释放仍归 Core。
 

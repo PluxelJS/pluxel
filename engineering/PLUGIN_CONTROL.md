@@ -70,6 +70,8 @@ instance 在 committed read 中验证 descriptor、当前实现和 generation，
 
 同步调用保持同步，native Promise 保留原对象、用旁路 reaction 跟踪；异常 species 抛原错误。自定义 thenable、流、迭代器、嵌套资源保留业务协议。同步 self 映回 view，异步/嵌套值不递归改写；重定义、删除、冻结和替换 view 原型不受支持。
 
+SDK 加载时检查 `Promise.prototype.then` 对普通对象是否抛错。在标准实现中，这个方法也能识别来自其他 realm 的 Promise。若实现接受普通对象（例如示例所用的 Hermes），SDK 只跟踪当前 realm 的 Promise 实例及其子类。插件同步返回数组时会立即释放借用，脚本作用域可以正常关闭。
+
 scope/generation 等待已接纳工作。为避免 provider 与 coordinator 互等，活跃业务调用期间拒绝 coordinator 操作，已有排队 Host 工作时拒绝新业务调用，报 `borrowed_generation_conflict`；日志仍可用。先 await 业务方法再修改配置/生命周期。Context/原生资源的释放和业务 Result 继续由原作者协议负责。
 
 ## 同步与脚本输入

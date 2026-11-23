@@ -10,6 +10,8 @@ Core 固定提供 `ctx.tinybase`，托管 Plugin Store 的恢复、writer、快�
 
 应用通过 `coreConfig.tinybase.maxSnapshotBytes` 设定快照上限。Node 与浏览器沿用 `coreConfig.zenfs` 选择的 FS 后端，首次异步操作等待 FS 准备，目标目录只读时 `open()` 拒绝写入。Cloudflare Worker Host 使用当前 root 的内存文档。跨 Host 恢复取决于所选后端。 [Host 文件系统](FS.md#host-文档与关闭)
 
+TinyBase 在装配时从文档适配器读取快照目录 `services/tinybase/nodes` 的 `documentRetention`。`open({ durable: true })` 在创建、占用或复用 Store 前检查这项声明，仅接纳 `declared-durable`。`session` 与 `unknown` 以 `DURABILITY_UNAVAILABLE` 拒绝。持久性由宿主对挂载的跨重开保留声明提供，`flush()` 仍以所选后端确认当前快照写入为准。
+
 ## 原生实例与恢复
 
 `open()` 创建 Store，`open(store)` 保留传入实例和类型。并发/重复 open 共用恢复任务，同 generation 换实例报 OPEN_CONFLICT。实例须全新、未绑定其他 Host/generation，无 listener、Persister、Synchronizer 或未完成 transaction，且不能是 MergeableStore。Core 以 listener 统计检查可见资源，dormant persister 仍靠 caller 遵守约定。
@@ -52,7 +54,7 @@ identity 为 `{ kind: 'plugin', node: PluginNodeAddress }`，content 为原生 [
 
 maxSnapshotBytes 默认每份完整 envelope UTF-8 8 MiB，要求正安全整数，包含键、身份和 Content。文件位于 `services/tinybase/nodes/<canonical node SHA-256>.json`，表/行名、displayName、包版本、安装路径不参与路径。
 
-保存沿 FS 原子替换；停止、卸载、fork 删除保留快照。共享 backend 的完整写入可能互相覆盖，跨实例锁/CAS/合并业务使用数据库。
+文件后端通过同目录替换保存，Cloudflare 的默认内存文档由当前根持有。停止插件、卸载或删除 fork 时，已提交的快照保留在所选后端。共享 backend 的完整写入可能互相覆盖，跨实例锁/CAS/合并业务使用数据库。
 
 ## 外部文件变化
 

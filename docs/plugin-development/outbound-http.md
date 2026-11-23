@@ -41,7 +41,7 @@ async download(url: URL, signal?: AbortSignal): Promise<ArrayBuffer> {
 }
 ```
 
-两种入口共用宿主选择的传输。插件停止或替换后，缓存的客户端失效，排队中的请求会取消，传输中的请求收到取消信号。受管模式接收绝对 HTTP(S) URL。启用 origin 限制时，字符串或 URL 请求省略 `redirect` 会采用 `error`。已有的 `Request` 也可通过 `init.redirect` 明确选择 `error` 或 `manual`。每次手动请求下一跳都要重新通过策略。 [宿主出站配置](../host/configuration.md#受管出站-http)
+两种入口共用宿主选择的传输。插件停止或替换后，缓存的客户端失效，排队中的请求会取消，传输中的请求收到取消信号。受管模式接收绝对 HTTP(S) URL。启用 origin 限制时，字符串或 URL 请求省略 `redirect` 会采用 `error`。已有的 `Request` 也可通过 `init.redirect` 明确选择 `error` 或 `manual`。每次手动请求下一跳都要重新通过策略。若宿主配置 `managed: false`，两个客户端仍传递生命周期取消信号，目标限制、请求头和并发控制交由终端传输处理。内建代理配置仅由 Node 入口支持。 [宿主出站配置](../host/configuration.md#受管出站-http)
 
 ## 在测试中替换传输
 

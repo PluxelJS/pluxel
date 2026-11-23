@@ -1,6 +1,6 @@
 # @pluxel/host-vite
 
-在 Vite 中执行 Pluxel 应用；开发支持控制台，生产持续更新预编译来源。
+在 Node 上开发 Pluxel 应用并提供 HMR 和控制台。需要持续消费预编译来源的托管 Node 服务可显式选择生产入口 `/run`。面向 Worker 或嵌入式引擎时，把编译好的插件交给对应宿主。 [开发与交付](../../docs/host/runtime-portability.md#开发与交付)
 
 ```ts
 import { host } from '@pluxel/host-vite'

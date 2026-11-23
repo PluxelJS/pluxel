@@ -6,6 +6,8 @@
 
 同次编译生成 control/ 声明、闭包和配置源码。modules metadata 与 standalone bootstrap 分别绑定所属材料，运行端不安装源码编译器；规则见 [Plugin Control](PLUGIN_CONTROL.md)。
 
+本页的 standalone 和 modules 用于 Node 应用交付。其他平台可复用同一份已编译插件，由各自的打包器生成 Worker、LLRT 模块或 Hermes 可求值的制品。宿主须把共享 Core 绑定到同一实例；独立插件的安装、重启和回执由对应应用验收。 [跨平台开发与交付](../docs/host/runtime-portability.md#开发与交付)
+
 ## 交付选择与 modules
 
 pluxel({ delivery }) 默认 standalone；modules 保留真实包边界和目录来源。delivery 与 headless/workbench variant 独立，创建插件时校验并复制选项，后续修改原对象不影响异步构建。managedDatabaseDrivers/residualDependencies 只用于 standalone；生产启动由应用 launch 选择。
@@ -34,15 +36,17 @@ HTTP 真正进入闭包才配置 Elysia：从 Services HTTP 的 manifest 读取 
 
 ### 环境绑定与无求值投影
 
-模板解析器沿 `plugins`、`pluginNodes` 和每项的 `forks` 取得节点身份，读取节点的直接 `envBindings` 数组。每项使用 Host `envBinding({ config?, vault? })`，由它所在的默认节点或 fork 决定地址。地址预置项可用结构化地址字面量或直接的控制引用 `Plugin.address()`，绑定随实际实现接纳核验。config 与 vault 各自提供 schema 和 mapping，mapping 是环境名字符串或对象字面量树。Vault 以完整 record 为单位，每条 record 可映射一个 JSON 变量或多个字段。
+模板解析器沿 `plugins`、`pluginNodes` 和每项的 `forks` 取得节点身份，读取节点的直接 `envBindings` 数组。共享工厂从 `@pluxel/host/bindings` 导入 `envBinding`，Node 根入口也导出同一函数。每项绑定由它所在的默认节点或 fork 决定地址。地址预置项可用结构化地址字面量或直接的控制引用 `Plugin.address()`，绑定随实际实现接纳核验。config 与 vault 各自提供 schema 和 mapping，mapping 是环境名字符串或对象字面量树。Vault 以完整 record 为单位，每条 record 可映射一个 JSON 变量或多个字段。构建时复用 Core 的 Vault 键与 namespace 校验，按声明的 schema 检查映射路径。需要执行用户验证函数的规则在启动时检查。
 
-`.env.example` 仅输出名称、input type 和 schema 描述。节点声明、fork 表和 mapping 使用可静态读取的结构，无法确定的表达式和非 portable 环境名会报告源码位置。环境变量、文件和凭据由 Host 启动时读取、解码和校验。优先级与注入规则见 [Config](CONFIG.md)。
+两个应用构建格式始终在发行根目录生成 `.env.example`，内含标准 Host 变量的注释示例。存在插件映射时追加变量名、输入类型和 schema 描述，插件变量的占位值留空。节点声明、fork 表和 mapping 使用可静态读取的结构，无法确定的表达式和非 portable 环境名会报告源码位置。环境变量、文件和凭据由 Host 启动时读取、解码和校验。优先级与注入规则见 [Config](CONFIG.md)。
 
 projector 复用 config source resolver，将显式 schema 还原成封闭 Valibot DSL，再调用 valibot-form 的 raw-input projector。它不执行工厂、模块副作用、validation/transform/default getter；不能安全还原/推导 transport 则失败。
 
 共享 exact-source parse 缓存以 id/language/完整 bytes 为键，最多 256 个 AST；原始与 lowered source 可各自命中，错误 recovery AST 不缓存。pass 各自维护 semantics，不能修改共享 AST，也不复用其他版本或第三方 parser 的结果。
 
-非空 binding 在 finalization 前写 root `.env.example`：按 UTF-8 bytes 排序去重，稳定聚合 fan-out 描述，placeholder 保持注释，编码 UTF-8+LF。该路径保留为 generated asset，已有 assembly input 冲突则失败；文件随普通 inventory 交付，不生成/加载 `.env`。
+发布收尾前写入模板，插件变量按 UTF-8 字节排序去重，同一变量的多个用途合并为注释。文件编码为 UTF-8，换行使用 LF。该路径保留为 generated asset，已有 assembly input 冲突则失败；文件随普通 inventory 交付，不生成/加载 `.env`。
+
+使用 `envBinding` 的 modules 应用若在默认工厂所在文件同时导出 Plugin 类，TypeScript 推导的工厂声明可能包含 `import("valibot-form").Schema`，随后的 control 声明生成会报告 `Cannot resolve emitted declaration import`。将 Plugin 放入独立模块并由工厂导入，可继续交付同一绑定。声明依赖解析见 [control 生成器](../packages/rolldown/src/control/generate.ts)。
 
 ### Bundle 闭包与 residual packages
 
