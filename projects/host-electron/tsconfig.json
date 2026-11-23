@@ -1,0 +1,16 @@
+{
+	"compilerOptions": {
+		"target": "ES2024",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"experimentalDecorators": true,
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"allowJs": true,
+		"checkJs": true,
+		"lib": ["ES2024", "ESNext.Disposable", "DOM"],
+		"types": ["node"]
+	},
+	"include": ["src", "*.config.ts", "index.js", "receipt.js"]
+}

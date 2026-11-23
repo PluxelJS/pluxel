@@ -1,15 +1,21 @@
-import { envBinding, fileBinding } from '../../src/bindings'
+import { envBinding, fileBinding, InputBindingError } from '../../src/bindings'
 import { parsePluginNodeAddress } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { BasePlugin, Plugin } from '@pluxel/core/internal/test'
 import * as v from 'valibot'
 import { expect, it } from 'vitest'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { defineHostApplication, resolveHostApplication } from '../../src/index'
+import {
+	createHost,
+	defineHostApplication,
+	resolveHostApplication,
+	startHost,
+} from '../../src/index'
+import { startHost as startBrowserHost } from '../../src/browser'
+import { defineHostApplication as definePortableApplication } from '../../src/application'
 import { createResolvedHost } from '../../src/host'
-import { createHost } from '../../src/index'
 import { configProvenance } from '../../src/config-records'
 import { resolveInputBindings } from '../../src/input-bindings'
 
@@ -29,6 +35,142 @@ const startup = { root: process.cwd(), mode: 'test' as const, bindings: {}, env:
 const binding = envBinding({
 	config: { schema: Config, mapping: { enabled: 'APP_ENABLED', limit: 'APP_LIMIT' } },
 })
+
+const portableApplication = definePortableApplication(() => ({
+	coreConfig: { vault: { backend: 'bindings' } },
+	plugins: [
+		{
+			plugin: Configured,
+			autoStart: true,
+			config: { limit: 2 },
+			envBindings: [binding],
+			forks: {
+				east: {
+					autoStart: true,
+					envBindings: [
+						envBinding({
+							config: { schema: Config, mapping: { limit: 'EAST_LIMIT' } },
+							vault: { schema: Credentials, mapping: { credentials: 'EAST_CREDENTIALS' } },
+						}),
+					],
+				},
+			},
+		},
+	],
+}))
+
+it.each([startHost, startBrowserHost])(
+	'starts a portable application with owner-scoped environment inputs',
+	async (start) => {
+		const owner = Configured.nodeAddress()
+		const fork = Configured.nodeAddress('east')
+		await using host = await start(portableApplication, {
+			env: {
+				APP_ENABLED: 'true',
+				EAST_LIMIT: '7',
+				EAST_CREDENTIALS: '{"token":"east","expires":12}',
+			},
+			vaultBindings: [
+				{ owner, key: 'credentials', value: { token: 'default', expires: 9 }, source: 'file' },
+			],
+		})
+		for (const [node, config, field, variable, token, source] of [
+			[owner, { enabled: true, limit: 2 }, 'enabled', 'APP_ENABLED', 'default', 'file'],
+			[fork, { enabled: false, limit: 7 }, 'limit', 'EAST_LIMIT', 'east', 'env'],
+		] as const) {
+			const result = await host.config.get(node)
+			expect(result).toMatchObject({ ok: true, application: 'applied', config })
+			if (result.ok === false) throw new Error(result.message)
+			expect(result.sources).toContainEqual({
+				owner: node,
+				path: [field],
+				kind: 'env',
+				name: variable,
+				readonly: false,
+			})
+			const instance = requirePluginService(host.ctx).getInstance(node)
+			if (!(instance instanceof Configured)) throw new Error('Expected an admitted Configured node')
+			await expect(instance.credentials()).resolves.toMatchObject({
+				writable: false,
+				source,
+				value: { token },
+			})
+		}
+	},
+)
+
+it('rejects unavailable, invalid or conflicting deployment credentials before portable startup', async () => {
+	const marker = 'private-invalid-value'
+	for (const [env, code] of [
+		[{}, 'MISSING_INPUT'],
+		[{ EAST_CREDENTIALS: JSON.stringify({ token: marker, expires: marker }) }, 'INVALID_INPUT'],
+	] as const) {
+		const error = await startHost(portableApplication, { env }).catch((reason: unknown) => reason)
+		expect(error).toBeInstanceOf(InputBindingError)
+		expect(error).toMatchObject({ code })
+		expect(String(error)).not.toContain(marker)
+	}
+	await expect(
+		startBrowserHost(portableApplication, {
+			env: { EAST_CREDENTIALS: '{"token":"east","expires":12}' },
+			vaultBindings: [
+				{ owner: Configured.nodeAddress('east'), key: 'credentials', value: marker, source: 'env' },
+			],
+		}),
+	).rejects.toThrow('Duplicate Vault deployment binding')
+	await expect(
+		startBrowserHost(() => ({
+			plugins: [
+				{
+					plugin: Configured,
+					// @ts-expect-error Portable startup has no JSON file reader.
+					fileBindings: [fileBinding({ config: { schema: Config, path: 'config.json' } })],
+				},
+			],
+		})),
+	).rejects.toThrow('fileBindings require the Node application loader')
+})
+
+it.each([
+	{ namespace: 'private\nspace', key: 'account' },
+	{ namespace: 'valid', key: 'private\nkey' },
+])(
+	'rejects malformed Vault declaration names before reading any deployment values',
+	async ({ namespace, key }) => {
+		const owner = Configured.nodeAddress()
+		let reads = 0
+		const env = Object.defineProperty({}, 'TOKEN', {
+			get() {
+				reads++
+				return 'private-value'
+			},
+		})
+		await expect(
+			resolveInputBindings(
+				{
+					plugins: [Configured],
+					fileBindings: [{ plugin: owner, config: { schema: Config, path: 'config.json' } }],
+					envBindings: [
+						{
+							plugin: owner,
+							vault: {
+								namespace,
+								schema: v.record(v.string(), v.string()),
+								mapping: { [key]: 'TOKEN' },
+							},
+						},
+					],
+				},
+				env,
+				async () => {
+					reads++
+					return '{}'
+				},
+			),
+		).rejects.toMatchObject({ code: 'INVALID_BINDING' })
+		expect(reads).toBe(0)
+	},
+)
 
 it('captures binding paths, namespaces and mappings before the first file read', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-binding-snapshot-'))
@@ -55,7 +197,8 @@ it('captures binding paths, namespaces and mappings before the first file read',
 		}
 		const resolving = resolveInputBindings(
 			{ plugins: [Configured], fileBindings: [file], envBindings: [env] },
-			{ ...startup, root, env: { LIMIT: '7', TOKEN: 'env-token', EXPIRY: '12' } },
+			{ LIMIT: '7', TOKEN: 'env-token', EXPIRY: '12' },
+			(path) => readFile(join(root, path), 'utf8'),
 		)
 		file.config.path = 'missing-config.json'
 		file.vault.paths.credentials = 'missing-secret.json'
@@ -103,6 +246,7 @@ it('decodes explicit config inputs as overlays without ambient PLUXEL_CONFIG or 
 	expect(String(error)).not.toContain('private-invalid-value')
 	const absent = await resolveHostApplication(application, startup)
 	expect(configProvenance(absent.config!).sources).toEqual([])
+	expect(configProvenance(absent.config!).bindings).toMatchObject([{ owner, schema: Config }])
 })
 
 it('passes resolved environment values and source provenance into Host', async () => {

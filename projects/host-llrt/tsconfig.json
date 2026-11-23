@@ -1,0 +1,13 @@
+{
+	"compilerOptions": {
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"target": "ES2022",
+		"strict": true,
+		"skipLibCheck": true,
+		"noEmit": true,
+		"experimentalDecorators": true,
+		"lib": ["ES2024", "ESNext.Disposable", "DOM", "DOM.Iterable"]
+	},
+	"include": ["src"]
+}

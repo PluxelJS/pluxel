@@ -114,6 +114,60 @@ it('evaluates the effective origin and redirect mode before handing off to Fetch
 	expect(requests).toHaveLength(3)
 })
 
+it('follows the caller signal selected by RequestInit and the owning generation', async () => {
+	const requests: Request[] = []
+	await using host = await createTestHost({
+		coreConfig: {
+			http: {
+				fetch: async (input) => {
+					requests.push(input as Request)
+					return new Response(null, { status: 204 })
+				},
+			},
+		},
+	})
+	const node = OutboundClient.nodeAddress()
+	const plugin = await host.start(node)
+	const { fetch } = plugin.client()
+	const url = 'https://service.test/'
+	const inherited = AbortSignal.abort(new Error('original request cancelled'))
+	const original = new Request(url, { signal: inherited })
+	await expect(fetch(original, { signal: undefined })).rejects.toBe(inherited.reason)
+	await fetch(original, { signal: null })
+
+	const replacement = new AbortController()
+	const reads: string[] = []
+	const init = Object.freeze({
+		get signal() {
+			expect(this).toBe(init)
+			reads.push('signal')
+			return replacement.signal
+		},
+		get redirect() {
+			reads.push('redirect')
+			return 'error' as const
+		},
+	})
+	const baseline = new Request(original, init)
+	expect(baseline.redirect).toBe('error')
+	const nativeReads = reads.splice(0)
+	await fetch(original, init)
+	expect(reads).toEqual(nativeReads)
+	replacement.abort(new Error('replacement cancelled'))
+	expect(requests[1]!.signal.reason).toBe(replacement.signal.reason)
+
+	{
+		// An unbound request may expose no signal in an embedded Fetch implementation.
+		using _unbound = vi
+			.spyOn(Request.prototype, 'signal', 'get')
+			.mockReturnValueOnce(undefined as never)
+		await fetch(url, { signal: undefined })
+	}
+	await host.stop(node)
+	expect(requests[0]!.signal.reason).toMatchObject({ message: 'Plugin owner stopped' })
+	expect(requests[2]!.signal.reason).toMatchObject({ message: 'Plugin owner stopped' })
+})
+
 it.each(['off', 'summary'] as const)('keeps rules applied with %s records', async (records) => {
 	await using host = await createTestHost({
 		coreConfig: {

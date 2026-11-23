@@ -92,7 +92,7 @@ export function snapshotWorkerCoreFacilitiesConfig(
 ): PreparedCoreFacilities {
 	assertCoreConfigObject(input, '[core] Worker Host facilities', workerFacilityFields)
 	const vault = snapshotVaultConfig(input.vault)
-	if (vault.backend === 'encrypted' || vault.deployIdentity !== undefined)
+	if (vault.backend === 'encrypted' || vault.deployIdentity !== undefined || vault.durable)
 		throw new TypeError('[core.vault] Worker Host supports only deployment bindings')
 	return prepareFacilities(input, {
 		createStorage: createMemoryStorage,

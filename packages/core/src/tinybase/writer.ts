@@ -1,6 +1,7 @@
 import type { Context, PluginContext } from '../context/Context'
+import { assertCoreConfigObject } from '../context/core-config-object'
 import { enterOwnerInvocation } from '../internal/owner-invocations'
-import type { HostDocumentStorage } from '../storage/documents'
+import type { CoreStorage, HostDocumentStorage } from '../storage/documents'
 import {
 	createStore,
 	type Content,
@@ -12,11 +13,17 @@ import type { OptionalSchemas, Store as SchemaStore } from 'tinybase/with-schema
 import { decodeSnapshot, encodeSnapshot, sameContent } from './codec'
 import { TinyBaseError } from './error'
 import { observeFile } from '../fs/observe'
-import type { TinyBaseIdentity, TinyBaseService, TinyBaseStatus } from './types'
+import type {
+	TinyBaseIdentity,
+	TinyBaseService,
+	TinyBaseStatus,
+	TinyBaseSuppliedStore,
+} from './types'
 
 type Snapshot = { revision: number; content: Content; text: string }
 // Retired instances remain marked: a stale generation's Store must never become another writer.
 const storeOwners = new WeakMap<object, object>()
+const openFields = new Set(['durable', 'store'])
 
 export class StoreWriter implements TinyBaseService {
 	readonly identity: TinyBaseIdentity
@@ -46,6 +53,7 @@ export class StoreWriter implements TinyBaseService {
 	constructor(
 		readonly ctx: PluginContext,
 		private readonly documents: HostDocumentStorage,
+		private readonly retention: ReturnType<CoreStorage['documents']['documentRetention']>,
 		private readonly file: string,
 		private readonly maxBytes: number,
 		private readonly fileBacked: boolean,
@@ -57,14 +65,25 @@ export class StoreWriter implements TinyBaseService {
 		ctx.effects.defer(() => this.close(), { tag: 'TinyBaseStore', phase: 'final' })
 	}
 
-	open(): Promise<Store>
-	open<TStore extends Store>(store: TStore): Promise<TStore>
+	open(options?: Readonly<{ durable: true; store?: undefined }>): Promise<Store>
+	open<TStore extends Store>(input: TinyBaseSuppliedStore<TStore>): Promise<TStore>
 	open<TSchemas extends OptionalSchemas>(
-		store: SchemaStore<TSchemas>,
+		input: TinyBaseSuppliedStore<SchemaStore<TSchemas>>,
 	): Promise<SchemaStore<TSchemas>>
 	open(input?: unknown): Promise<unknown> {
 		return this.run(async (signal) => {
 			this.assertUsable()
+			if (input && typeof input === 'object' && 'durable' in input && !('getContent' in input)) {
+				assertCoreConfigObject(input, '[core.tinybase] open options', openFields)
+				if (!Object.hasOwn(input, 'durable') || input.durable !== true)
+					throw new TypeError('[core.tinybase] open options require durable: true')
+				if (this.retention !== 'declared-durable')
+					throw this.error(
+						'DURABILITY_UNAVAILABLE',
+						`Opening this Store requires durable backing. Snapshot directory retention is ${this.retention}.`,
+					)
+				input = Object.hasOwn(input, 'store') ? Reflect.get(input, 'store') : undefined
+			}
 			if (this.opening) {
 				if (input !== undefined && input !== this.store)
 					throw this.error(

@@ -2,6 +2,16 @@ import type { PluginNodeAddress } from '@pluxel/core'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import type { Schema } from 'valibot-form'
 
+export class InputBindingError extends Error {
+	constructor(
+		readonly code: 'INVALID_BINDING' | 'MISSING_INPUT' | 'INVALID_INPUT' | 'FILE_READ_FAILED',
+		message: string,
+	) {
+		super(message)
+		this.name = 'InputBindingError'
+	}
+}
+
 /** Mapping leaves are explicit environment variable names, never values or defaults. */
 export type InputMapping<T = unknown> =
 	| string

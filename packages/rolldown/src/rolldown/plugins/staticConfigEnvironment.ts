@@ -4,6 +4,7 @@ import {
 	pluginDefinitionIndexKey,
 	type PluginDefinitionAddress,
 } from '@pluxel/core'
+import { validateVaultKey } from '@pluxel/core/internal'
 import { projectRawInput, type RawInputProjection } from 'valibot-form'
 import {
 	collectConfigSchemaModule,
@@ -148,6 +149,7 @@ export async function parseStaticRuntimeDeclaration(
 				for (const targetKey of kind === 'vault'
 					? [...new Set(leaves.map((leaf) => leaf.path[0]!))]
 					: []) {
+					checkVaultKey(targetKey, `${label}.vault.mapping record key`, file, mapping, error)
 					const identity = JSON.stringify([ownerKey, forkId ?? null, namespace ?? '', targetKey])
 					registerBindingTarget(seenTargets, identity, pluginName, file, error)
 				}
@@ -449,19 +451,37 @@ export function readBindingNamespace(
 			? directObjectProperties(vault, 'vault binding', id, error).get('namespace')?.value
 			: undefined
 	const namespace = namespaceNode ? readLiteralString(namespaceNode) : undefined
-	if (
-		namespaceNode &&
-		(namespace === undefined || namespace.length === 0 || namespace.includes('\0'))
-	)
-		error(`[static-application] ${id} ${label} namespace must be a nonempty literal string`, {
-			code: namespace === undefined ? 'unsupported_expression' : 'invalid_declaration',
-			node: namespaceNode,
-		})
+	if (namespaceNode) {
+		if (namespace === undefined)
+			error(`[static-application] ${id} ${label} namespace must be a literal string`, {
+				code: 'unsupported_expression',
+				node: namespaceNode,
+			})
+		checkVaultKey(namespace, `${label}.vault.namespace`, id, namespaceNode, error)
+	}
 	if (!bindingFields.has('config') && !bindingFields.has('vault'))
 		error(`[static-application] ${id} ${label} must select config or vault`, {
 			code: 'invalid_declaration',
 		})
 	return namespace
+}
+
+function checkVaultKey(
+	key: string,
+	label: string,
+	file: string,
+	node: AstNode,
+	error: DeclarationError,
+) {
+	try {
+		validateVaultKey(key)
+	} catch {
+		error(`[static-application] ${file} ${label} must be a valid Vault key`, {
+			code: 'invalid_declaration',
+			node,
+			file,
+		})
+	}
 }
 
 export function readBindingDescriptor(
@@ -510,12 +530,12 @@ export function readApplicationBinding(
 	if (
 		!binding ||
 		!helperImport ||
-		helperImport.source !== '@pluxel/host' ||
+		!['@pluxel/host/bindings', '@pluxel/host'].includes(helperImport.source) ||
 		helperImport.imported !== helper ||
 		helperImport.namespace
 	)
 		error(
-			`[static-application] ${id} ${label} must call ${helper} imported from @pluxel/host directly`,
+			`[static-application] ${id} ${label} must call ${helper} imported directly from @pluxel/host/bindings or @pluxel/host`,
 			{ code: 'unsupported_expression', node: binding, file: id },
 		)
 	const args = directCallArguments(binding, helper, id, error)
@@ -627,15 +647,29 @@ function staticVaultRecordSchema(
 		}
 		break
 	}
-	const schema =
-		current.type === 'record'
-			? current.value
-			: (current.entries as Record<string, unknown> | undefined)?.[key]
-	if (!schema)
-		error(
-			`[static-application] ${id} Vault binding key ${key} is not declared by the Vault binding schema`,
+	if (current.type === 'record') {
+		const keySchema = current.key as Record<string, unknown> | undefined
+		if (keySchema?.kind !== 'schema')
+			error(`[static-application] ${id} Vault record requires a key schema`)
+		// Only closed key sets can be disproved without evaluating a user validator or fallback.
+		if (
+			'fallback' in keySchema ||
+			keySchema.pipe ||
+			!['literal', 'picklist', 'enum'].includes(String(keySchema.type))
 		)
-	return schema
+			return current.value
+		const projection = projectRawInput(keySchema as never)
+		if (!projection.ok || !projection.choices || projection.choices.includes(key))
+			return current.value
+	} else if (
+		current.entries &&
+		typeof current.entries === 'object' &&
+		Object.hasOwn(current.entries, key)
+	)
+		return (current.entries as Record<string, unknown>)[key]
+	return error(
+		`[static-application] ${id} Vault binding key ${key} is not declared by the Vault binding schema`,
+	)
 }
 
 function bindingNames(node: AstNode | undefined, names = new Set<string>()): Set<string> {

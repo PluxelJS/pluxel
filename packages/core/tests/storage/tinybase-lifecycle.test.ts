@@ -5,9 +5,10 @@ import { dirname, join } from 'node:path'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { enterOwnerInvocation } from '@pluxel/core/host'
 import { createMergeableStore, createStore, type Store } from 'tinybase'
+import { createStore as createSchemaStore } from 'tinybase/with-schemas'
 import { createCustomPersister } from 'tinybase/persisters'
 import { createQueries } from 'tinybase/queries'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { InMemory, Passthrough } from '../../src/fs'
 import { pluginNodePhysicalKey } from '../../src/internal/plugin-address'
 import { createCoreTestHost, getCoreTestHostContext } from '../../src/internal-test'
@@ -75,6 +76,75 @@ describe('TinyBase native Store admission and generation lifetime', () => {
 			await owner.state.flush()
 		},
 	)
+
+	it.each(['session', 'unknown'] as const)(
+		'rejects durable open on %s backing before acquiring a Store and on subsequent calls',
+		async (retention) => {
+			await using disk = await createDiskFixture()
+			await using host = createCoreTestHost({
+				zenfs:
+					retention === 'session'
+						? undefined
+						: { mounts: { '/': { backend: Passthrough, fs: nativeFs, prefix: disk.path } } },
+			})
+			const { state } = await host.add(HandleOwner.nodeAddress())
+			const error = {
+				code: 'DURABILITY_UNAVAILABLE',
+				message: expect.stringContaining(retention),
+				identity: { kind: 'plugin', node: HandleOwner.nodeAddress() },
+			}
+			await expect(state.open({ durable: true })).rejects.toMatchObject(error)
+			expect(createStore).not.toHaveBeenCalled()
+			expect(requireTinyBaseHost(getCoreTestHostContext(host)).status()).toEqual([])
+			await expect(stat(join(disk.path, 'services/tinybase/nodes'))).rejects.toMatchObject({
+				code: 'ENOENT',
+			})
+
+			const supplied = createStore()
+			await expect(state.open({ durable: true, store: supplied })).rejects.toMatchObject(error)
+			const opening = state.open(supplied)
+			await expect(state.open({ durable: true })).rejects.toMatchObject(error)
+			expect(await opening).toBe(supplied)
+			await expect(state.open({ durable: true, store: supplied })).rejects.toMatchObject(error)
+			expect(await state.open()).toBe(supplied)
+		},
+	)
+
+	it('rejects malformed durability options before selecting the default Store', async () => {
+		await using host = createCoreTestHost()
+		const { state } = await host.add(HandleOwner.nodeAddress())
+		for (const options of [{ durable: 'yes' }, { durable: true, typo: true }])
+			await expect(state.open(options as never)).rejects.toThrow(TypeError)
+		expect(createStore).not.toHaveBeenCalled()
+		expect(requireTinyBaseHost(getCoreTestHostContext(host)).status()).toEqual([])
+	})
+
+	it('reopens flushed data on the declared durable snapshot mount and retains the native schema', async () => {
+		await using disk = await createDiskFixture()
+		const directory = '/services/tinybase/nodes'
+		const zenfs = {
+			mounts: {
+				'/': InMemory,
+				[directory]: { backend: Passthrough, fs: nativeFs, prefix: disk.path },
+			},
+			durableMounts: [directory],
+		}
+		{
+			await using host = createCoreTestHost({ zenfs })
+			const { state } = await host.add(HandleOwner.nodeAddress())
+			const supplied = createSchemaStore().setValuesSchema({ visits: { type: 'number' } })
+			const store = await state.open({ durable: true, store: supplied })
+			expectTypeOf(store).toEqualTypeOf<typeof supplied>()
+			expect(store).toBe(supplied)
+			expect(await state.open({ durable: true })).toBe(supplied)
+			store.setValue('visits', 5)
+			await state.flush()
+		}
+		await using reopened = createCoreTestHost({ zenfs })
+		const { state } = await reopened.add(HandleOwner.nodeAddress())
+		const store = await state.open({ durable: true })
+		expect(store.getValue('visits')).toBe(5)
+	})
 
 	it.each(['listener', 'queries', 'persister', 'transaction', 'mergeable'] as const)(
 		'rejects an already attached %s before claiming the Store or restoring data',

@@ -1,0 +1,16 @@
+diff --git a/dist/readable.js b/dist/readable.js
+--- a/dist/readable.js
++++ b/dist/readable.js
+@@ -1290,7 +1290,11 @@
+         s.end();
+ }
+ /** %AsyncIteratorPrototype%, so the iterators handed out inherit the same helpers Node's do. */
+-const AsyncIteratorPrototype = Object.getPrototypeOf(Object.getPrototypeOf(async function* () { }).prototype);
++const asyncGeneratorPrototype = Object.getPrototypeOf(async function* () { }).prototype;
++// Transpiled async generators can lack a shared prototype. The iterator below implements its own protocol.
++const AsyncIteratorPrototype = asyncGeneratorPrototype
++    ? Object.getPrototypeOf(asyncGeneratorPrototype)
++    : (globalThis.AsyncIterator?.prototype ?? Object.prototype);
+ function streamToAsyncIterator(stream, options) {
+     if (typeof stream.read !== 'function')
+         stream = Readable.wrap(stream, { objectMode: true });

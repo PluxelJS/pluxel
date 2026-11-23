@@ -83,7 +83,10 @@ const browser = process.env.PLAYWRIGHT_WS_ENDPOINT
 	: await chromium.launch({ headless: true })
 
 try {
-	await using release = await mkdtempDisposable(resolve(root, '../.host-targets-release-'))
+	// Match the example's directory depth so its config can import the repository tasks.
+	const temporary = resolve(root, '../../.tmp')
+	await mkdir(temporary, { recursive: true })
+	await using release = await mkdtempDisposable(join(temporary, 'host-targets-release-'))
 	const archive = join(release.path, 'plugins.tgz')
 	await run('vp', ['pm', 'pack', '--out', archive], { cwd: join(root, 'plugins') })
 	await run('tar', ['-xzf', archive, '-C', release.path])
@@ -91,12 +94,20 @@ try {
 	const packagedFiles = await readdir(packagedPlugins)
 	assert.ok(!packagedFiles.includes('src'))
 	await prepareAppFixture(release.path, packagedPlugins)
-	await run('vp', ['build'], { cwd: release.path })
+	await run('vp', ['build'], {
+		cwd: release.path,
+		env: { ...process.env, VITE_HOST_PROBE: 'fixture-binding' },
+	})
 	await run('vp', ['build', '--mode', 'node'], { cwd: release.path })
 
-	const { stdout } = await run(process.execPath, ['dist/node/node-main.js'], { cwd: release.path })
+	const { stdout } = await run(process.execPath, ['dist/node/node-main.js'], {
+		cwd: release.path,
+		env: { ...process.env, HOST_PROBE: 'fixture-binding' },
+	})
 	const nodeArtifact = JSON.parse(stdout)
 	assert.equal(nodeArtifact.host, 'node')
+	assert.equal(nodeArtifact.visits, 3)
+	assert.equal(nodeArtifact.source, 'Node Fetch transport')
 	assert.equal(nodeArtifact.message, 'Hello, Pluxel!')
 	assert.equal(nodeArtifact.plugin, 'package:@pluxel-example/host-targets-plugins::Consumer')
 
@@ -109,6 +120,7 @@ try {
 			const edge = await waitForResult(page, 'cloudflare', nodeArtifact.message)
 			assert.equal(web.source, 'Browser Fetch')
 			assert.equal(edge.source, 'workerd Service Binding')
+			assert.ok(web.visits >= 3 && edge.visits >= 3, 'Each released Host ran the shared probe')
 			assert.equal(web.plugin, nodeArtifact.plugin)
 			assert.equal(edge.plugin, nodeArtifact.plugin)
 		} finally {
@@ -121,7 +133,7 @@ try {
 	}
 
 	// The development update edits only a disposable source tree.
-	await using fixture = await mkdtempDisposable(resolve(root, '../.host-targets-smoke-'))
+	await using fixture = await mkdtempDisposable(join(temporary, 'host-targets-smoke-'))
 	const plugins = join(fixture.path, 'plugins')
 	await cp(join(root, 'plugins'), plugins, {
 		recursive: true,

@@ -2,13 +2,16 @@ import type { PluginNodeAddress } from '../plugins/runtime/identity'
 import type { Store } from 'tinybase'
 import type { OptionalSchemas, Store as SchemaStore } from 'tinybase/with-schemas'
 
+export type TinyBaseSuppliedStore<TStore> = TStore | Readonly<{ durable: true; store: TStore }>
+
 /** A Plugin generation's single native Store. Parts and dependency views share this handle. */
 export interface TinyBaseService {
-	/** Restore before use. A supplied Store must be fresh, ordinary and have no listeners or open transaction. */
-	open(): Promise<Store>
-	open<TStore extends Store>(store: TStore): Promise<TStore>
+	/** Restore before use. durable: true requires backing declared to retain snapshots across Host reopen. */
+	open(options?: Readonly<{ durable: true; store?: undefined }>): Promise<Store>
+	/** A supplied Store must be fresh, ordinary and have no listeners or open transaction. */
+	open<TStore extends Store>(input: TinyBaseSuppliedStore<TStore>): Promise<TStore>
 	open<TSchemas extends OptionalSchemas>(
-		store: SchemaStore<TSchemas>,
+		input: TinyBaseSuppliedStore<SchemaStore<TSchemas>>,
 	): Promise<SchemaStore<TSchemas>>
 	/** Wait for the last complete transaction at this call. Native mutations alone do not confirm persistence. */
 	flush(): Promise<void>

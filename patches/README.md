@@ -5,7 +5,7 @@
 
 ## ZenFS 准入
 
-固定 `@zenfs/core@2.8.3` 与 `@zenfs/dom@1.2.14`，对应本目录的两个补丁。
+固定 `@zenfs/core@2.8.3`、`@zenfs/dom@1.2.14` 和 `@zenfs/streams@1.0.2`，每个包的修改见同名补丁。
 当前装配和资源边界见 [Host 文件系统](../engineering/FS.md)，公开用法见
 [插件文件存储](../docs/plugin-development/fs.md)。
 
@@ -14,6 +14,7 @@
 - Passthrough 完成合法短读、短写，区分 buffer offset 与 file position，处理空覆盖截断，保留独占创建权限和失败原因。
 - StoreFS 的 Map undo 保存首次修改前的完整字节，隔离可变 buffer，提交成功后更新路径索引。原生事务转交 commit/abort，不叠加模拟回滚；损坏 inode 明确失败，非空存储缺少根记录时不重建目录，保留原数据。同步初始化无法枚举 keys 时返回 EAGAIN。
 - IndexedDB 以原生 `complete` 为提交屏障，事务局部 cache 在完成后发布；abort、请求错误及同步异常保留 errno/cause。初始化失败和部分获取失败关闭连接。
+- Streams 在支持原生异步生成器时保留其迭代器原型。Metro 为 Hermes 转译异步生成器后，Streams 使用可用的 `AsyncIterator.prototype` 或普通对象原型，自身提供 `next`、`return` 和异步迭代协议。
 - `SharedConfig.readOnly` 复用 Readonly 操作实现；打开、空写、截断、元数据和已打开句柄执行同一只读边界。缺失的只读 IndexedDB profile 返回 ENOENT，不创建数据库。
 - `BoundContext.dispose()` / `Symbol.asyncDispose` 释放自有句柄与 context 引用；`umountAsync()` 等待 cache flush 并释放挂载与 cache，StoreFS/IndexedDB `close()` 释放自有后端。这些操作各自幂等，context 与卸载不接管借用 backend。
 
@@ -21,9 +22,9 @@
 
 ## 发布分发
 
-根 `patchedDependencies` 不会传递给独立安装者。Services 因而内联这份修复后的原生实现、运行时闭包和声明；`/fs` 与 `/fs/browser` 导出的 backend 和内部准备路径使用同一模块实例，不依赖消费仓库配置 patches，也不接受另行安装的未修复 backend 对象。
+Core 内联修复后的实现、运行时依赖和声明。独立安装者可以直接使用 `/fs` 与 `/fs/browser` 导出的 backend，内部准备路径引用同一模块实例。
 
-来源、固定版本、上游源码、许可证和构建方法由 [Services 发布来源记录](../packages/services/third-party/README.md)维护。构建将这份记录、原始 manifest/notices 和两个补丁复制到 `dist/third-party`；升级或移除补丁时同步复核闭包。没有新增 fork 包或后端协议。
+构建把来源记录、原始 manifest、许可证和补丁复制到 `dist/third-party`。升级或移除补丁时，按记录复核打包的依赖和版本。[Core 发布来源记录](../packages/core/third-party/README.md)
 
 ## 回归入口
 

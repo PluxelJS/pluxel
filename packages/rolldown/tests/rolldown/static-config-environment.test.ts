@@ -98,16 +98,18 @@ describe('static config environment declaration lowering', () => {
 	it('resolves default and fork transport targets and scopes namespaces to Vault', async () => {
 		const facts = await parseFixture(
 			`
-			import { defineHostApplication, envBinding } from '@pluxel/host'
+			import { defineHostApplication } from '@pluxel/host/application'
+			import { envBinding as bind } from '@pluxel/host/bindings'
 			import { AlphaPlugin, AlphaConfig, AlphaVault } from './plugins'
 			export default defineHostApplication(() => ({
 				plugins: [{
 					plugin: AlphaPlugin,
 					envBindings: [
-						envBinding({config: {schema: AlphaConfig, mapping: {endpoint: 'DEFAULT_ENDPOINT'}}}),
+						bind({config: {schema: AlphaConfig, mapping: {endpoint: 'DEFAULT_ENDPOINT'}}}),
+						bind({vault: {namespace: 'account', schema: AlphaVault, mapping: {token: 'DEFAULT_TOKEN'}}}),
 					],
 					forks: {
-						east: {envBindings: [envBinding({
+						east: {envBindings: [bind({
 							config: {schema: AlphaConfig, mapping: {endpoint: 'EAST_ENDPOINT'}},
 							vault: {namespace: 'account', schema: AlphaVault, mapping: {token: 'EAST_TOKEN'}},
 						})]},
@@ -119,10 +121,11 @@ describe('static config environment declaration lowering', () => {
 		)
 		expect(facts.targets).toMatchObject([
 			{ kind: 'config', environmentName: 'DEFAULT_ENDPOINT' },
+			{ kind: 'vault', namespace: 'account', environmentName: 'DEFAULT_TOKEN' },
 			{ kind: 'config', forkId: 'east', environmentName: 'EAST_ENDPOINT' },
 			{ kind: 'vault', forkId: 'east', namespace: 'account', environmentName: 'EAST_TOKEN' },
 		])
-		expect(facts.targets[1]).not.toHaveProperty('namespace')
+		expect(facts.targets[2]).not.toHaveProperty('namespace')
 	})
 
 	it('accepts the public Host consumer fixture as a static application entry', async () => {
@@ -329,8 +332,38 @@ describe('static config environment declaration lowering', () => {
 			"[envBinding({vault:{schema:AlphaVault,mapping:{missing:'APP_TOKEN'}}})]",
 			'is not declared by the Vault binding schema',
 		],
+		[
+			"[envBinding({vault:{namespace:'constructor',schema:AlphaVault,mapping:{token:'APP_TOKEN'}}})]",
+			'vault.namespace must be a valid Vault key',
+		],
+		[
+			"[envBinding({vault:{schema:AlphaVault,mapping:{'to\\nken':'APP_TOKEN'}}})]",
+			'vault.mapping record key must be a valid Vault key',
+		],
+		[
+			`[
+				envBinding({vault:{namespace:'account',schema:AlphaVault,mapping:{token:'FIRST'}}}),
+				envBinding({vault:{namespace:'account',schema:AlphaVault,mapping:{token:'SECOND'}}}),
+			]`,
+			'duplicate environment target for Plugin AlphaPlugin',
+		],
 	])('rejects malformed explicit bindings: %s', async (bindings, message) => {
 		await expect(parseFixture(staticEntry({ bindings }))).rejects.toThrow(message)
+	})
+
+	it('checks statically closed Vault record keys while retaining runtime fallbacks', async () => {
+		const entry = (schema: string) =>
+			staticEntry({
+				extra: `import * as v from 'valibot'; const VaultSchema = v.record(${schema}, v.string())`,
+				bindings: "[envBinding({vault:{schema:VaultSchema,mapping:{other:'APP_TOKEN'}}})]",
+			})
+		await expect(parseFixture(entry("v.picklist(['first', 'second'])"))).rejects.toThrow(
+			'Vault binding key other is not declared',
+		)
+		const fallback = await parseFixture(
+			entry("v.fallback(v.literal('first'), () => { throw new Error('must not execute') })"),
+		)
+		expect(fallback.targets).toMatchObject([{ environmentName: 'APP_TOKEN', path: ['other'] }])
 	})
 
 	it('rejects factory-local helpers that shadow the imported binding authority', async () => {
@@ -342,7 +375,9 @@ describe('static config environment declaration lowering', () => {
 				envBinding({config:{schema:AlphaConfig,mapping:{endpoint:'APP_ENDPOINT'}}})
 			]}]}))
 		`),
-		).rejects.toThrow('must call envBinding imported from @pluxel/host directly')
+		).rejects.toThrow(
+			'must call envBinding imported directly from @pluxel/host/bindings or @pluxel/host',
+		)
 	})
 
 	it('preserves module schema identity when a factory shadows the schema import', async () => {
@@ -473,12 +508,12 @@ describe('static config environment declaration lowering', () => {
 				extra: `const declaration = envBinding({ config: { schema: AlphaConfig, mapping: 'APP_CONFIG' } })`,
 				bindings: '[declaration]',
 			}),
-			message: 'must call envBinding imported from @pluxel/host directly',
+			message: 'must call envBinding imported directly from @pluxel/host/bindings or @pluxel/host',
 		},
 		{
 			name: 'spread element',
 			code: staticEntry({ bindings: '[...[]]' }),
-			message: 'must call envBinding imported from @pluxel/host directly',
+			message: 'must call envBinding imported directly from @pluxel/host/bindings or @pluxel/host',
 		},
 		{
 			name: 'indirect mapping',

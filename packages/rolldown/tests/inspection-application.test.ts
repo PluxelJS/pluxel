@@ -3,7 +3,8 @@ import { renderPluginDescriptors } from '@pluxel/core/internal/control-manifest'
 import { describe, expect, it } from 'vitest'
 import { inspectApplicationInputs } from '../src/inspect/application'
 
-const prefix = `import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
+const prefix = `import { defineHostApplication } from '@pluxel/host/application'
+import { envBinding, fileBinding } from '@pluxel/host/bindings'
 import { P, Q, Schema } from './plugins.ts'
 throw new Error('entry must never execute')
 `

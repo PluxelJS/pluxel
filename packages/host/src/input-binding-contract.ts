@@ -1,3 +1,4 @@
+import { InputBindingError } from './bindings'
 import {
 	pluginDefinitionAddressEqual,
 	parsePluginNodeAddress,
@@ -10,16 +11,6 @@ import { projectRawInput, type Schema } from 'valibot-form'
 import type { ResolvedHostOptions } from './node-declarations'
 import { configProvenance, type ConfigBindingProof } from './config-records'
 const checkedBindings = new WeakSet<ConfigBindingProof>()
-
-export class InputBindingError extends Error {
-	constructor(
-		readonly code: 'INVALID_BINDING' | 'MISSING_INPUT' | 'INVALID_INPUT' | 'FILE_READ_FAILED',
-		message: string,
-	) {
-		super(message)
-		this.name = 'InputBindingError'
-	}
-}
 
 export type InputSchema = StandardSchemaV1 & { readonly kind: 'schema'; readonly type: string }
 
@@ -81,7 +72,7 @@ export async function validateInputBindingCandidates(
 	options: Pick<ResolvedHostOptions, 'config'>,
 ): Promise<void> {
 	const declaredBindings = configProvenance(options.config).bindings
-	if (!declaredBindings.length) return
+	if (declaredBindings.length === 0) return
 	for (const plugin of plugins) {
 		const bindings = declaredBindings.filter((binding) =>
 			pluginDefinitionAddressEqual(plugin.nodeAddress().definition, binding.owner.definition),

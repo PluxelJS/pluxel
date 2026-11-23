@@ -170,6 +170,7 @@ describe('Core Context integration', () => {
 		{ zenfs: {} },
 		{ logtape: {} },
 		{ vault: { backend: 'encrypted' } },
+		{ vault: { durable: true } },
 		{ vault: { backend: 'bindings', deployIdentity: '' } },
 		{ http: { proxyUrl: null } },
 		{ http: { allowProxyChanges: false } },

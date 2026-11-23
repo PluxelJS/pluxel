@@ -58,6 +58,8 @@ it('reuses the isolate Host and isolates concurrent event IO, cancellation and r
 	const queued = Promise.withResolvers<void>()
 	const firstFetchStarted = Promise.withResolvers<void>()
 	const releaseFirstFetch = Promise.withResolvers<void>()
+	const vaultRead = Promise.withResolvers<void>()
+	const releaseVault = Promise.withResolvers<void>()
 	let preparations = 0
 	const barriers: Record<string, () => void | Promise<void>> = {
 		'/prepare'() {
@@ -73,6 +75,10 @@ it('reuses the isolate Host and isolates concurrent event IO, cancellation and r
 		},
 		'/updating': updating.resolve,
 		'/queued': queued.resolve,
+		'/hold-vault'() {
+			vaultRead.resolve()
+			return releaseVault.promise
+		},
 	}
 	const echo = (name: string) => ({
 		type: 'fetcher' as const,
@@ -91,7 +97,12 @@ it('reuses the isolate Host and isolates concurrent event IO, cancellation and r
 					compatibilityDate: '2026-11-03',
 					compatibilityFlags: ['enable_request_signal', 'no_nodejs_compat', 'no_nodejs_compat_v2'],
 					manifest: { mainModule: entry.fileName, modules },
-					env: { LEFT: echo('left'), RIGHT: echo('right') },
+					env: {
+						LEFT: echo('left'),
+						RIGHT: echo('right'),
+						HOST_PROBE: { type: 'text', value: 'fixture-current' },
+						NEXT_PROBE: { type: 'text', value: 'fixture-next' },
+					},
 				},
 				dev: {
 					unsafeDirectSockets: [{ host: '127.0.0.1', port: 0, proxy: false }],
@@ -135,7 +146,8 @@ it('reuses the isolate Host and isolates concurrent event IO, cancellation and r
 		// The second handler has entered the driver while the first is still awaiting startup IO.
 		await Promise.race([secondAdmitted.promise, second])
 		cancelStart.resolve()
-		expect((await first).status).toBe(499)
+		const cancelled = await first
+		expect(cancelled.status).toBe(499)
 		release.resolve()
 		const survivor = await second
 		expect(survivor).toMatchObject({
@@ -147,12 +159,12 @@ it('reuses the isolate Host and isolates concurrent event IO, cancellation and r
 		await Promise.race([firstFetchStarted.promise, firstWarm])
 		const waiting = fetchReply('third', 'right')
 		// Observe admission from a third event so the queued request has no test IO keeping it alive.
-		await Promise.race([
-			expect
+		const waitForAdmission = async () => {
+			await expect
 				.poll(() => fetch(new URL('/admission', origin)).then((response) => response.json()))
-				.toBe(true),
-			waiting,
-		])
+				.toBe(true)
+		}
+		await Promise.race([waitForAdmission(), waiting])
 		expect(received.some(({ path }) => path === '/third')).toBe(false)
 		releaseFirstFetch.resolve()
 		const [a, b] = await Promise.all([firstWarm, waiting])
@@ -178,8 +190,8 @@ it('reuses the isolate Host and isolates concurrent event IO, cancellation and r
 		const pending = await fetch(new URL('/stream-abort', origin), { signal: abort.signal })
 		const reader = pending.body!.getReader()
 		try {
-			const first = await reader.read()
-			expect(new TextDecoder().decode(first.value)).toMatch(/^ready: /)
+			const chunk = await reader.read()
+			expect(new TextDecoder().decode(chunk.value)).toMatch(/^ready: /)
 			const sibling = fetch(new URL('/stream-complete', origin))
 			abort.abort()
 			const completed = await sibling
@@ -216,14 +228,38 @@ it('reuses the isolate Host and isolates concurrent event IO, cancellation and r
 			generation: survivor.generation,
 			revision: 1,
 		})
+		const holding = fetchReply('vault-hold')
+		await Promise.race([vaultRead.promise, holding])
+		const rejected = await worker.dispatchFetch('http://worker.test/vault-missing')
+		expect(rejected.status).toBe(422)
+		expect(await rejected.json()).toEqual({ code: 'MISSING_INPUT' })
+		const retained = await fetchReply('vault-current')
+		expect(retained).toEqual({
+			value: 'fixture-current',
+			source: 'env',
+			writable: false,
+			generation: survivor.generation,
+		})
+		const next = await fetchReply('vault-next')
+		expect(next).toEqual({
+			value: 'fixture-next',
+			source: 'env',
+			writable: false,
+			generation: expect.any(String),
+		})
+		expect(next.generation).not.toBe(retained.generation)
+		releaseVault.resolve()
+		await expect(holding).resolves.toEqual({ before: retained, after: retained })
+		await expect(fetchReply('vault-next')).resolves.toEqual(next)
 		await expect(
 			fetch(new URL('/close', origin)).then((response) => response.json()),
-		).resolves.toEqual({ stops: 1 })
+		).resolves.toEqual({ stops: 2 })
 	} finally {
 		release.resolve()
 		releaseStream.resolve()
 		cancelStart.resolve()
 		releaseFirstFetch.resolve()
+		releaseVault.resolve()
 		await worker.dispose()
 	}
 }, 30_000)

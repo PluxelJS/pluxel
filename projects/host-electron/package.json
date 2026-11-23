@@ -1,0 +1,59 @@
+{
+	"name": "@pluxel-example/host-electron",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./package.json": "./package.json",
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
+		}
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./package.json": "./package.json",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
+		}
+	},
+	"scripts": {
+		"build": "vp run compile",
+		"start": "electron .",
+		"test:smoke": "electron . --smoke",
+		"typecheck": "vp run check-types"
+	},
+	"dependencies": {
+		"@pluxel-example/host-targets-plugins": "workspace:*",
+		"@pluxel/agent-sdk": "workspace:*",
+		"@pluxel/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@types/node": "catalog:types",
+		"electron": "catalog:dev",
+		"typescript": "catalog:dev",
+		"vite-plus": "catalog:build"
+	},
+	"peerDependencies": {
+		"@pluxel/host": "workspace:^"
+	},
+	"pluxel": {
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"workbenchArtifacts": true,
+		"control": "./dist/control/manifest.json"
+	},
+	"productName": "Pluxel Host"
+}

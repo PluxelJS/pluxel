@@ -417,17 +417,32 @@ class ManagedOutboundHttpRuntime {
 	): Promise<Response> {
 		if (typeof input === 'string') input = new URL(input)
 		const original = input instanceof Request ? input : undefined
-		const redirect = init?.redirect ?? original?.redirect
-		// workerd supports manual and follow. Apply the error contract below the transport.
-		const request = new Request(
-			input,
-			init?.redirect === 'error' ? requestInitWith(init, 'redirect', 'manual') : init,
-		)
+		let initSignal: RequestInit['signal']
+		let initRedirect: RequestInit['redirect']
+		// Let Request read the caller's dictionary in its native order with the original receiver.
+		const options =
+			init &&
+			new Proxy<RequestInit>(
+				{},
+				{
+					get(_target, key) {
+						if (key === 'signal') return (initSignal = init.signal)
+						if (key === 'redirect') {
+							initRedirect = init.redirect
+							// workerd supports manual and follow. Enforce error at the transport boundary.
+							return initRedirect === 'error' ? 'manual' : initRedirect
+						}
+						return Reflect.get(init, key)
+					},
+				},
+			)
+		const request = new Request(input, options)
+		const redirect = initRedirect ?? original?.redirect
 		const url = new URL(request.url)
 		if (url.protocol !== 'http:' && url.protocol !== 'https:')
 			throw new TypeError('[core.http] requests require an absolute HTTP(S) URL')
-		const signal =
-			original || init !== undefined ? AbortSignal.any([lifetime, request.signal]) : lifetime
+		const callerSignal = initSignal === undefined ? original?.signal : initSignal
+		const signal = callerSignal == null ? lifetime : AbortSignal.any([lifetime, callerSignal])
 		const startedAt = this.logs ? performance.now() : undefined
 		const { key } = caller
 		try {

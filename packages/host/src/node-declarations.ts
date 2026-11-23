@@ -49,7 +49,7 @@ export type HostPluginNodeOptions = Readonly<{
 	>[]
 }>
 
-type PortableNodeOptions = Omit<HostPluginNodeOptions, 'envBindings' | 'fileBindings'> &
+type UnboundNodeOptions = Omit<HostPluginNodeOptions, 'envBindings' | 'fileBindings'> &
 	Readonly<{ envBindings?: never; fileBindings?: never }>
 type HostPluginForkOptions<Node> = Omit<Node, 'autoStart' | 'dependencyOverrides'> &
 	(
@@ -75,7 +75,7 @@ export type HostDeclarations<Node = HostPluginNodeOptions> = Readonly<{
 	config?: HostConfigOptions
 }>
 
-export type HostOptions = HostDeclarations<PortableNodeOptions> &
+export type HostOptions = HostDeclarations<UnboundNodeOptions> &
 	Readonly<{
 		/** Complete already-resolved read-only Vault records. Application factories declare node bindings. */
 		vaultBindings?: readonly VaultBindingRecord[]

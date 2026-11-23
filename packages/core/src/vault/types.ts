@@ -1,11 +1,21 @@
 import type { PluginNodeAddress } from '../plugins/runtime/identity'
 
 export type VaultServiceConfig = {
-	/** Lazily initialized encrypted persistent KV by default; bindings installs read-only records without storage or keys. */
-	backend?: 'encrypted' | 'bindings'
 	/** Explicit age private identity supplied by the application startup factory. */
 	deployIdentity?: string
-}
+} & (
+	| {
+			/** Default backend. Opens the encrypted Vault on first use. */
+			backend?: 'encrypted'
+			/** Require every mount backing services/vault to declare persistence across reopening. */
+			durable?: boolean
+	  }
+	| {
+			/** Read-only deployment records held by the current root. */
+			backend?: 'bindings'
+			durable?: false
+	  }
+)
 
 export type VaultNamespaceOptions = {
 	namespace?: string

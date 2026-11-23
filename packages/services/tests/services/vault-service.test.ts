@@ -212,9 +212,34 @@ describe('Vault structured records', () => {
 		}
 	})
 
+	it('checks Vault mount persistence before creating keys or saving a secret', async () => {
+		const backend = await diskConfig()
+		await using host = await setup(
+			{
+				...backend,
+				mounts: { ...backend.mounts, '/services/vault/global/blobs': InMemory },
+			},
+			{ durable: true },
+		)
+		const vault = requireVaultHost(host.ctx)
+		await expect(vault.forOwner(host.ctx).kv().set('token', 'secret')).rejects.toMatchObject({
+			code: 'ENOTSUP',
+		})
+		expect(nativeFs.existsSync(vaultPath(backend, 'security/identity.json'))).toBe(false)
+		expect(nativeFs.existsSync(vaultPath(backend, 'global/keys.age'))).toBe(false)
+		expect(nativeFs.existsSync(vaultPath(backend, 'global/state.enc'))).toBe(false)
+	})
+
+	it('rejects a durability requirement for read-only deployment bindings at Host creation', async () => {
+		// @ts-expect-error Untyped applications must receive the same rejection as typed declarations.
+		await expect(setup(undefined, { backend: 'bindings', durable: true })).rejects.toThrow(
+			'durable storage requires the encrypted backend',
+		)
+	})
+
 	it('commits immutable snapshots before returning and preserves revision tombstones across restart', async () => {
 		const backend = await diskConfig()
-		const host = await setup(backend)
+		const host = await setup(backend, { durable: true })
 		try {
 			const kv = requireVaultHost(host.ctx).forOwner(host.ctx).kv()
 			const input = { token: 'secret', nested: { enabled: true } }
@@ -240,7 +265,7 @@ describe('Vault structured records', () => {
 		} finally {
 			await host.close()
 		}
-		const reopened = await setup(backend)
+		const reopened = await setup(backend, { durable: true })
 		try {
 			expect(
 				await requireVaultHost(reopened.ctx).forOwner(reopened.ctx).kv().get('account'),

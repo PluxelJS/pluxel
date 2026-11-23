@@ -307,6 +307,7 @@ it('ships the patched filesystem to independent Node and browser consumers with 
 			'README.md',
 			'patches/@zenfs__core@2.8.3.patch',
 			'patches/@zenfs__dom@1.2.14.patch',
+			'patches/@zenfs__streams@1.0.2.patch',
 			'@zenfs/core/LICENSE.md',
 			'@zenfs/dom/LICENSE.md',
 			'buffer/LICENSE',
@@ -894,11 +895,26 @@ try {
  assert.deepEqual(first.ctx.service(Commands).list(), [])
  assert.equal(loads.some(url => ${UNSELECTED_BACKEND_LOAD_PATTERN}.test(url)), false, 'unselected log sinks, Management and Workbench backends must stay unloaded')
  assert.equal(loads.some(url => /age-encryption/.test(url)), false, 'host creation and owner credential access must leave encryption unloaded')
+ {
+  await using bindings = await createHost({
+   plugins: [{ plugin: Credentials }],
+   coreConfig: { vault: { backend: 'bindings' } },
+   vaultBindings: [{ owner: Credentials.nodeAddress(), key: 'token', value: 'deployed', source: 'env' }],
+  })
+  await bindings.startNode(Credentials.nodeAddress())
+  const view = ownedVaults.get(bindings.ctx)
+  const record = await view.kv().get('token')
+  assert.deepEqual([record.value, record.source, record.writable], ['deployed', 'env', false])
+  await assert.rejects(view.kv().set('token', 'changed'), { code: 'READ_ONLY' })
+  await assert.rejects(view.blobs().open('blob').readBytes(), { code: 'READ_ONLY' })
+  await view.flush()
+ }
+ assert.equal(loads.some(url => /age-encryption/.test(url)), false, 'reading and closing deployment bindings must leave age unloaded')
  await owned.kv().set('token', 'private')
  assert.equal((await isolated.kv().get('token')).exists, false)
  assert.equal((await owned.kv().get('token')).value, 'private')
  await assert.rejects(owned.kv().set('invalid', undefined), error => error instanceof VaultError && error.code === 'INVALID_FORMAT')
- assert.equal(loads.some(url => /age-encryption/.test(url)), true, 'first credential operation loads encryption')
+ assert.equal(loads.some(url => /age-encryption/.test(url)), true, 'opening encrypted storage loads age')
  assert.equal(loads.some(url => /(?:@pluxel\\/runtime|\\/pg\\/|pglite)/.test(url)), false)
 } finally {
  const close = first.close()

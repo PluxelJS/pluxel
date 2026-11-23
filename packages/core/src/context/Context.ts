@@ -32,7 +32,7 @@ export interface RootContext extends Context, BaseRootContext<RootContext> {
 /** Context owned by one running Plugin generation and shared by its Parts. */
 export interface PluginContext extends Context {
 	readonly pluginInfo: PluginNodeInfo
-	/** Borrow the owning Plugin node's data directory. */
+	/** Borrow the owning Plugin node's data directory. Rejects with ENOTSUP on a Host without files. */
 	readonly fs: (requirement?: FsRequirement) => Promise<FsPromises>
 	/** One native Store bridge per Plugin generation, shared with its Parts. */
 	readonly tinybase: TinyBaseService

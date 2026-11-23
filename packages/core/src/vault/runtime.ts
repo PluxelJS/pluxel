@@ -66,7 +66,10 @@ export class VaultRuntime {
 			const storage =
 				this.config.backend === 'bindings'
 					? undefined
-					: await this.filesystem().directory('services/vault', { writable: true })
+					: await this.filesystem().directory('services/vault', {
+							writable: true,
+							durable: this.config.durable,
+						})
 			const vault = VaultService.create(this.root, this.config, storage)
 			this.root.effects.defer(
 				async () => {

@@ -11,6 +11,11 @@ export class RequestProvider extends BasePlugin {
 		await this.ctx.tinybase.open()
 	}
 
+	async deploymentProbe() {
+		const { value, source, writable } = await this.ctx.vault.kv().get<string>('probe')
+		return { value, source, writable, generation: this.generation }
+	}
+
 	async load(id: string, signal: AbortSignal) {
 		const response = await this.ctx.fetch(`https://backend.test/${encodeURIComponent(id)}`, {
 			signal,

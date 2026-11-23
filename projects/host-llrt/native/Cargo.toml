@@ -1,0 +1,18 @@
+[package]
+name = "pluxel-host-llrt"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+llrt_core = { path = "vendor/llrt/llrt_core", features = ["no-sdk", "uncompressed"] }
+tokio = { version = "1", features = ["rt", "macros", "net", "time", "sync"] }
+sha2 = "0.11"
+tempfile = "3"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+
+[profile.dev]
+debug = 0
+incremental = false

@@ -1,4 +1,4 @@
-import { pluginNodeIndexKey, type PluginConstructor } from '@pluxel/core'
+import type { PluginConstructor } from '@pluxel/core'
 import { snapshotCoreFacilitiesConfig } from '@pluxel/core/host'
 import {
 	recordLoadedApplicationPlugins,
@@ -6,22 +6,10 @@ import {
 	readLoadedApplicationControl,
 	loadLoadedApplicationServiceControls,
 } from './loaded-modules'
-import {
-	configLeafPaths,
-	configPathContains,
-	configPathsOverlap,
-	isConfigObject,
-} from './config-paths'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { readFile, realpath } from 'node:fs/promises'
 import { installedPackageFacts } from './shared-packages'
-import {
-	mergeRecord,
-	snapshotHostConfigRecords,
-	attachConfigProvenance,
-	type ConfigDeclarationSource,
-} from './config-records'
-import { resolveInputBindings } from './input-bindings'
+import { resolveApplicationBindings } from './input-bindings'
 import { createNativeSourceLoader } from './native-source-loader'
 import { discoverPluginSources } from './source-discovery'
 import { installPluginSources, snapshotPluginSource } from './source-contract'
@@ -160,62 +148,10 @@ async function evaluateHostApplication(
 		)
 	recordLoadedApplicationPlugins(factory, resolved.plugins)
 	const { prepare, acceptStartup, launch } = application
-	if (bindings.envBindings.length === 0 && bindings.fileBindings.length === 0)
-		return Object.freeze({ ...resolved, startup, sources, prepare, acceptStartup, launch })
-	const inputs = await resolveInputBindings({ ...bindings, plugins: resolved.plugins }, startup)
-	const records = new Map(
-		resolved.config.records.map((item) => [pluginNodeIndexKey(item.owner), item]),
+	const bound = await resolveApplicationBindings(resolved, bindings, startup.env, (path) =>
+		readFile(resolve(startup.root, path), 'utf8'),
 	)
-	const fileSources = new Map<string, ConfigDeclarationSource[]>()
-	for (const source of inputs.declarationSources) {
-		const key = pluginNodeIndexKey(source.owner)
-		const current = fileSources.get(key)
-		if (current) current.push(source)
-		else fileSources.set(key, [source])
-	}
-	const declarationsByNode = new Map<string, ConfigDeclarationSource[]>()
-	const layers = [
-		...inputs.records.map((entry) => ({
-			entry,
-			sources: fileSources.get(pluginNodeIndexKey(entry.owner)) ?? [],
-		})),
-		...inputs.overlays.map((entry) => ({
-			entry,
-			sources: entry.sources.map((source) => ({ owner: entry.owner, ...source })),
-		})),
-	]
-	for (const { entry, sources: layerSources } of layers) {
-		const key = pluginNodeIndexKey(entry.owner)
-		const previous = records.get(key)
-		const config = mergeRecord(previous?.config, entry.config)
-		const declared = declarationsByNode.get(key) ?? []
-		for (const path of configLeafPaths(entry.config)) {
-			let selected: unknown = config
-			for (const segment of path) selected = (selected as Record<string, unknown>)[segment]
-			if (isConfigObject(selected) && Object.keys(selected).length > 0) continue
-			for (let index = declared.length - 1; index >= 0; index--)
-				if (configPathsOverlap(declared[index]!.path, path)) declared.splice(index, 1)
-			const source = layerSources.find((fact) => configPathContains(fact.path, path))
-			if (source) declared.push({ ...source, path: Object.freeze(path) })
-		}
-		records.set(key, { owner: entry.owner, mode: previous?.mode, config })
-		declarationsByNode.set(key, declared)
-	}
-	const config = snapshotHostConfigRecords({ ...resolved.config, records: [...records.values()] })
-	attachConfigProvenance(config, {
-		sources: Object.freeze([...declarationsByNode.values()].flat()),
-		bindings: inputs.bindings,
-	})
-	return Object.freeze({
-		...resolved,
-		startup,
-		sources,
-		prepare,
-		acceptStartup,
-		launch,
-		vaultBindings: inputs.vaultBindings,
-		config,
-	})
+	return Object.freeze({ ...bound, startup, sources, prepare, acceptStartup, launch })
 }
 /**
  * Start from a fresh Node launcher before importing the application or its business dependency graph.

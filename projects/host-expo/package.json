@@ -1,0 +1,68 @@
+{
+	"name": "@pluxel-example/host-expo",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.js"
+		},
+		"./package.json": "./package.json",
+		"./control": {
+			"types": "./dist/control/index.d.mts",
+			"import": "./dist/control/index.mjs",
+			"default": "./dist/control/index.mjs"
+		}
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.js",
+			"./package.json": "./package.json",
+			"./control": {
+				"types": "./dist/control/index.d.mts",
+				"import": "./dist/control/index.mjs",
+				"default": "./dist/control/index.mjs"
+			}
+		}
+	},
+	"scripts": {
+		"build:plugin": "pluxel build && node scripts/package-plugin.mjs",
+		"start": "expo start --go",
+		"build:android": "vp run prebuild:android && cd android && ./gradlew :app:assembleRelease",
+		"typecheck": "tsc --noEmit",
+		"build:bundle": "expo export --platform android --output-dir .expo/export",
+		"prebuild:android": "expo prebuild --platform android --no-install"
+	},
+	"dependencies": {
+		"@pluxel-example/host-targets-plugins": "link:../host-targets/plugins",
+		"@pluxel/agent-sdk": "link:../../packages/agent-sdk",
+		"@pluxel/core": "link:../../packages/core",
+		"expo": "~58.0.26",
+		"expo-crypto": "~58.0.8",
+		"expo-file-system": "~58.0.14",
+		"expo-localization": "~58.0.5",
+		"react": "19.3.0",
+		"react-native": "0.88.1"
+	},
+	"devDependencies": {
+		"@babel/plugin-transform-explicit-resource-management": "^7.29.15",
+		"@pluxel/cli": "link:../../packages/cli",
+		"@pluxel/host": "link:../../packages/host",
+		"@pluxel/rolldown": "link:../../packages/rolldown",
+		"@types/react": "~19.3.0",
+		"babel-preset-expo": "~58.0.26",
+		"esbuild": "0.28.2",
+		"typescript": "~6.0.3"
+	},
+	"peerDependencies": {
+		"@pluxel/host": "^1.1.0"
+	},
+	"packageManager": "pnpm@11.28.10",
+	"pluxel": {
+		"artifactRoot": "dist",
+		"nodeArtifacts": true,
+		"workbenchArtifacts": true,
+		"control": "./dist/control/manifest.json"
+	}
+}

@@ -13,6 +13,7 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 	private readonly published = new WeakSet<Context>()
 	private readonly writers = new Map<string, StoreWriter>()
 	private readonly nodeBacking: HostDocumentStorage
+	private readonly retention: ReturnType<CoreStorage['documents']['documentRetention']>
 	private readonly fileBacked: boolean
 	private closed = false
 
@@ -23,6 +24,7 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 	) {
 		const directory = 'services/tinybase/nodes'
 		const backing = storage.documents.documents(directory, maxBytes)
+		this.retention = storage.documents.documentRetention(directory)
 		const files = storage.files
 		this.fileBacked = files !== undefined
 		this.nodeBacking = files
@@ -60,6 +62,7 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 			writer = new StoreWriter(
 				ctx as PluginContext,
 				this.nodeBacking,
+				this.retention,
 				`${pluginNodePhysicalKey(node)}.json`,
 				this.maxBytes,
 				this.fileBacked,

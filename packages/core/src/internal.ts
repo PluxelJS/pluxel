@@ -128,5 +128,6 @@ export {
 export { recordSecurityEvent, listSecurityEvents, type SecurityEvent } from './internal/security'
 
 export { snapshotVaultBindings } from './vault/bindings'
+export { validateKey as validateVaultKey } from './vault/paths'
 
 export { snapshotVaultConfig } from './vault/options'

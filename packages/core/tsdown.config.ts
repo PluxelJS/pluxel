@@ -85,7 +85,11 @@ export default defineConfig({
 	copy: ({ outDir }) => [
 		{ from: 'third-party/README.md', to: join(outDir, 'third-party') },
 		{
-			from: ['../../patches/@zenfs__core@2.8.3.patch', '../../patches/@zenfs__dom@1.2.14.patch'],
+			from: [
+				'../../patches/@zenfs__core@2.8.3.patch',
+				'../../patches/@zenfs__dom@1.2.14.patch',
+				'../../patches/@zenfs__streams@1.0.2.patch',
+			],
 			to: join(outDir, 'third-party/patches'),
 		},
 		...bundledSources.map(([name, root, notices]) => ({

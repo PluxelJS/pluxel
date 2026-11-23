@@ -1,6 +1,17 @@
 import type { Context } from '@pluxel/core'
 import { enterOwnerInvocation } from '@pluxel/core/internal'
 
+// A conforming Promise intrinsic can also recognize promises from another realm.
+// Some embedded implementations accept an ordinary object and never run the reactions.
+const checksPromiseReceiver = (() => {
+	try {
+		Promise.prototype.then.call({})
+		return false
+	} catch {
+		return true
+	}
+})()
+
 /** Per-run member admission; native values returned by business APIs keep their own lifecycle. */
 export function createBorrowedValueView(
 	raw: object,
@@ -36,8 +47,12 @@ export function createBorrowedValueView(
 				release()
 				return view
 			}
-			if (value !== null && (typeof value === 'object' || typeof value === 'function')) {
-				// Use the intrinsic brand check; never read a business object's `then`.
+			if (
+				value !== null &&
+				(typeof value === 'object' || typeof value === 'function') &&
+				(checksPromiseReceiver || value instanceof Promise)
+			) {
+				// Never read a business object's `then`.
 				// A base Promise side chain keeps custom Promise subclasses out of SDK internals.
 				let resolveTracked!: () => void
 				let rejectTracked!: (error: unknown) => void

@@ -1,5 +1,5 @@
 /// <reference types="node" preserve="true" />
-/** Runtime data backends and native file contracts; Plugin data access is always available through ctx.fs(). */
+/** ZenFS backends and file contracts for Hosts that provide Plugin directories. */
 export { InMemory, Passthrough } from '@zenfs/core'
 export type {
 	Backend,

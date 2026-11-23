@@ -1,9 +1,12 @@
 import { defineHostApplication } from '@pluxel/host/application'
+import { envBinding, InputBindingError } from '@pluxel/host/bindings'
 import { createWorkerHost } from '@pluxel/host/cloudflare'
+import * as v from 'valibot'
 import { RequestConsumer } from './consumer'
 import { ExtraProvider, RequestProvider } from './provider'
 
-type Env = Record<'LEFT' | 'RIGHT', { fetch(request: Request): Promise<Response> }>
+type Env = Record<'LEFT' | 'RIGHT', { fetch(request: Request): Promise<Response> }> &
+	Record<'HOST_PROBE' | 'NEXT_PROBE', string>
 type WorkerContext = { waitUntil(promise: Promise<unknown>): void }
 
 const settled: Record<string, { calls: number; cancelled: boolean }> = {}
@@ -12,11 +15,22 @@ let revision = 0
 let thirdFetchStarted = false
 
 async function barrier(path: string) {
-	await (await fetch('https://coordination.test/' + path)).text()
+	const response = await fetch('https://coordination.test/' + path)
+	await response.text()
 }
 
 const application = defineHostApplication(() => ({
-	plugins: [{ plugin: RequestProvider }, { plugin: RequestConsumer, autoStart: true }],
+	plugins: [
+		{
+			plugin: RequestProvider,
+			envBindings: [
+				envBinding({
+					vault: { schema: v.object({ probe: v.string() }), mapping: { probe: 'HOST_PROBE' } },
+				}),
+			],
+		},
+		{ plugin: RequestConsumer, autoStart: true },
+	],
 	services: [
 		{
 			name: 'startup barrier',
@@ -41,11 +55,16 @@ const application = defineHostApplication(() => ({
 const worker = createWorkerHost(application)
 
 function load(request: Request, env: Env, ctx: WorkerContext, id: string) {
+	// Select fixed test deployment inputs without copying native event bindings into a root.
+	const deployment = {
+		HOST_PROBE:
+			id === 'vault-next' ? env.NEXT_PROBE : id === 'vault-missing' ? undefined : env.HOST_PROBE,
+	}
 	if (id === 'boot-abort') {
 		const controller = new AbortController()
 		ctx.waitUntil(barrier('cancel-start').then(() => controller.abort()))
 		return worker
-			.run({ signal: controller.signal, ctx }, () => {
+			.run({ env: deployment, signal: controller.signal, ctx }, () => {
 				throw new Error('Cancelled cold callback was admitted')
 			})
 			.catch((error: unknown) => {
@@ -53,7 +72,14 @@ function load(request: Request, env: Env, ctx: WorkerContext, id: string) {
 				return new Response(null, { status: 499 })
 			})
 	}
-	const reply = worker.run({ signal: request.signal, ctx }, async (sdk) => {
+	const reply = worker.run({ env: deployment, signal: request.signal, ctx }, async (sdk) => {
+		if (id.startsWith('vault-')) {
+			const { instance } = await sdk.plugin(RequestProvider.nodeAddress()).instance()
+			const before = await instance.deploymentProbe()
+			if (id !== 'vault-hold') return Response.json(before)
+			await barrier('hold-vault')
+			return Response.json({ before, after: await instance.deploymentProbe() })
+		}
 		const admittedRevision = revision
 		const { instance } = await sdk.plugin(RequestConsumer.nodeAddress()).instance()
 		if (id === 'cancelled') return Response.json(await instance.checkCancelledFetch(id))
@@ -67,13 +93,20 @@ function load(request: Request, env: Env, ctx: WorkerContext, id: string) {
 			nodeGlobals: typeof process !== 'undefined' || typeof Buffer !== 'undefined',
 		})
 	})
+	if (id === 'vault-missing')
+		return reply.catch((error: unknown) => {
+			if (error instanceof InputBindingError && error.code === 'MISSING_INPUT')
+				return Response.json({ code: error.code }, { status: 422 })
+			throw error
+		})
 	if (id === 'second') ctx.waitUntil(barrier('admitted'))
 	if (id === 'after-update') ctx.waitUntil(barrier('queued'))
 	return reply
 }
 
-function stream(request: Request, ctx: WorkerContext, id: string) {
-	return worker.run({ signal: request.signal, ctx, responseBody: 'scope' }, async (sdk) => {
+function stream(request: Request, bindings: Env, ctx: WorkerContext, id: string) {
+	const env = { HOST_PROBE: bindings.HOST_PROBE }
+	return worker.run({ env, signal: request.signal, ctx, responseBody: 'scope' }, async (sdk) => {
 		let cancelled = false
 		sdk.ctx.effects.defer(() => {
 			settled[id] = { calls: (settled[id]?.calls ?? 0) + 1, cancelled }
@@ -133,7 +166,7 @@ export default {
 			await worker.close()
 			return Response.json({ stops })
 		}
-		if (id.startsWith('stream-')) return stream(request, ctx, id)
+		if (id.startsWith('stream-')) return stream(request, env, ctx, id)
 		return load(request, env, ctx, id)
 	},
 }

@@ -3,6 +3,7 @@ import { startHostApplication } from './application-start'
 import type { ApplicationEnvironment, PortableApplication } from './application'
 import { assertDataObject } from './config-records'
 import { createResolvedHost, type HostOptions } from './host'
+import { resolveApplicationBindings } from './input-bindings'
 import {
 	assertApplicationShape,
 	snapshotHostDeclarations,
@@ -24,7 +25,7 @@ export function captureEnv(input?: Env, previous?: Env): Env {
 	if (Object.prototype.toString.call(input) !== '[object Object]')
 		throw new TypeError('[host] env must be a record of strings')
 	const keys = Reflect.ownKeys(input)
-	if (!keys.length) return emptyEnv
+	if (keys.length === 0) return emptyEnv
 	let match = previous && Object.keys(previous).length === keys.length ? previous : undefined
 	for (const key of keys) {
 		const property = Object.getOwnPropertyDescriptor(input, key)!
@@ -66,16 +67,19 @@ export async function startApplicationRoot(
 	const declaration = await application(startup)
 	assertApplicationShape(declaration, 'embedded')
 	const { options, bindings } = snapshotHostDeclarations(declaration)
-	if (bindings.envBindings.length || bindings.fileBindings.length)
-		throw new TypeError('[host] envBindings and fileBindings require the Node application loader')
 	if (runtime.coreConfig !== undefined && declaration.coreConfig !== undefined)
 		throw new TypeError('[host] Supply coreConfig once, in the application or its inputs')
 	const { prepare, acceptStartup, launch } = declaration
-	const host = await createResolvedHost({
-		...options,
-		coreConfig: runtime.coreConfig ?? facilities(declaration.coreConfig),
-		vaultBindings: runtime.vaultBindings,
-	})
+	const resolved = await resolveApplicationBindings(
+		{
+			...options,
+			coreConfig: runtime.coreConfig ?? facilities(declaration.coreConfig),
+			vaultBindings: runtime.vaultBindings,
+		},
+		bindings,
+		env,
+	)
+	const host = await createResolvedHost(resolved)
 	await startHostApplication({ prepare, acceptStartup, launch, startup }, host)
 	return host
 }

@@ -4,6 +4,8 @@ import { formatPluginNodeReference, type PluginInstanceNodeAddress } from '@plux
 import type { PluginHost, PluginApplyReport } from '@pluxel/host'
 import type { DemoHost, DemoResult } from './protocol'
 
+export { demoApplication, demoInputs } from './demo-plugins'
+
 type ConsumerAddress =
 	| PluginInstanceNodeAddress<Consumer>
 	| ReturnType<typeof import('@pluxel-example/host-targets-plugins/control').Consumer.nodeAddress>
@@ -26,7 +28,7 @@ export async function readDemo(
 export function assertDemoUpdate(report: PluginApplyReport | undefined) {
 	if (!report) return
 	const issues = report.reconciliation
-	if (issues.length) throw new Error(issues.map((issue) => issue.message).join('\n'))
+	if (issues.length > 0) throw new Error(issues.map((issue) => issue.message).join('\n'))
 	if (report.core.status === 'committed' && !report.core.summary.lifecycleReport.ok)
 		throw new Error(
 			report.core.summary.lifecycleReport.issues.map((issue) => issue.message).join('\n'),

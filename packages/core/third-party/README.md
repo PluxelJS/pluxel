@@ -3,8 +3,8 @@
 Core bundles the patched ZenFS runtime and declarations, together with the dependencies below.
 The public `/fs` and `/fs/browser` backend values belong to this copy; independent installations
 need no ZenFS dependency or pnpm patch configuration. Original notices and package metadata are
-included in the matching directories. Core changes to ZenFS are dated 2026-10-30 and recorded
-in the two accompanying `patches/` files; the other dependencies are unmodified.
+included in the matching directories. The accompanying `patches/` directory records the
+2026-10-30 changes to ZenFS Core and DOM and the 2026-11-23 change to Streams for transpiled async generators.
 
 | Package          | Version | License           | Published source                                                                  | Upstream source commit                                                                                  |
 | ---------------- | ------- | ----------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |

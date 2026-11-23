@@ -1,6 +1,5 @@
 import { validateKey, namespaceFrom, blobPath } from './paths'
 import { cloneJson, freezeJson } from './value'
-import { Decrypter, Encrypter, generateIdentity, identityToRecipient } from 'age-encryption'
 import { type Context as PluxelContext } from '../context/Context'
 import { join } from 'pathe'
 import { writeFileAtomic } from '../fs/atomic'
@@ -490,6 +489,7 @@ async function ensureIdentity(
 	if (identity) return identity
 
 	if (!createIfMissing) return undefined
+	const { generateIdentity } = await import('age-encryption')
 	const nextIdentity = await generateIdentity()
 	try {
 		await updateSecurityIdentity(store, (current) => ({
@@ -518,7 +518,10 @@ async function resolveManagedRecipients(
 ): Promise<string[]> {
 	const recipients: string[] = []
 	const identity = await ensureIdentity(store, options.createHostIdentity === true)
-	if (identity) recipients.push(await identityToRecipient(identity))
+	if (identity) {
+		const { identityToRecipient } = await import('age-encryption')
+		recipients.push(await identityToRecipient(identity))
+	}
 	const deployRecipients =
 		deployRecipientsOverride !== undefined
 			? normalizeRecipients(deployRecipientsOverride)
@@ -547,6 +550,7 @@ async function encryptDek(
 	deployRecipientsOverride?: string[],
 	options: { createHostIdentity?: boolean } = {},
 ): Promise<Uint8Array> {
+	const { Encrypter } = await import('age-encryption')
 	const encrypter = new Encrypter()
 	const recipients = await resolveManagedRecipients(
 		store,
@@ -572,6 +576,7 @@ async function decryptDek(
 	ciphertext: Uint8Array,
 	options: { includeDeployIdentity?: boolean } = {},
 ): Promise<Uint8Array> {
+	const { Decrypter } = await import('age-encryption')
 	const decrypter = new Decrypter()
 	const identities = await resolveManagedIdentities(store, runtime, options)
 	if (identities.length === 0) {
@@ -710,6 +715,7 @@ async function createMountKey(
 }
 
 async function createDeployKeyPair(): Promise<VaultKeyPair> {
+	const { generateIdentity, identityToRecipient } = await import('age-encryption')
 	const envName = DEFAULT_DEPLOY_IDENTITY_ENV
 	const privateKey = await generateIdentity()
 	return {
@@ -1584,6 +1590,7 @@ export class VaultService {
 				try {
 					const identity = await ensureIdentity(store, true)
 					if (!identity) throw new VaultError('MISSING_IDENTITY', 'Missing local age identity.')
+					const { identityToRecipient } = await import('age-encryption')
 					clearStatusError(store, runtime, entry)
 					return await identityToRecipient(identity)
 				} catch (error) {

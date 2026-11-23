@@ -115,10 +115,9 @@ export type { RuntimeUpdateSnapshot } from './execution'
 export {
 	envBinding,
 	fileBinding,
+	InputBindingError,
 	type HostEnvironmentBinding,
 	type HostFileBinding,
 	type InputMapping,
 	type VaultInputMapping,
 } from './bindings'
-
-export { InputBindingError } from './input-bindings'

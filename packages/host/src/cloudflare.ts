@@ -18,7 +18,7 @@ export type WorkerHostOptions = Readonly<{
 		Readonly<{
 			zenfs?: never
 			logtape?: never
-			vault?: Readonly<{ backend?: 'bindings'; deployIdentity?: never }>
+			vault?: Readonly<{ backend?: 'bindings'; deployIdentity?: never; durable?: false }>
 			http?: CoreFacilitiesConfig['http'] &
 				Readonly<{ proxyUrl?: never; allowProxyChanges?: never }>
 		}>
@@ -75,7 +75,7 @@ function untilAbort<T>(task: Promise<T>, signal?: AbortSignal): Promise<T> {
 		task.then(
 			(value) => {
 				signal.removeEventListener('abort', abort)
-				resolve(value)
+				return resolve(value)
 			},
 			(error) => {
 				signal.removeEventListener('abort', abort)
@@ -109,13 +109,13 @@ export function createWorkerHost(
 	}
 	function retire(root: Resident, ctx: EventContext) {
 		root.retired = true
-		if (!root.events.size) ctx.waitUntil(destroy(root))
+		if (root.events.size === 0) ctx.waitUntil(destroy(root))
 	}
 	function deploymentEnv(input: Env | undefined) {
 		const env = captureEnv(input, pending?.env ?? current?.env)
 		return pending && env !== pending.env && current ? captureEnv(env, current.env) : env
 	}
-	function select(env: Env, ctx: EventContext) {
+	function selectRoot(env: Env, ctx: EventContext) {
 		if (pending?.env === env) return pending
 		if (current?.env === env) return current
 		const root: Resident = {
@@ -133,12 +133,14 @@ export function createWorkerHost(
 		// Keep cold startup owned by its originating event even if that client disconnects.
 		ctx.waitUntil(
 			root.ready.then(
-				(host) => {
+				(host): undefined => {
 					root.host = host
-					if (pending !== root) return
-					if (current) retire(current, ctx)
-					current = root
-					pending = undefined
+					if (pending === root) {
+						if (current) retire(current, ctx)
+						current = root
+						pending = undefined
+					}
+					return undefined
 				},
 				() => {
 					if (pending === root) pending = undefined
@@ -192,19 +194,19 @@ export function createWorkerHost(
 		}
 		if (shutdown) throw new Error('[host] WorkerHost is closed')
 		signal?.throwIfAborted()
-		const root = select(env, ctx)
+		const root = selectRoot(env, ctx)
 		const completion = Promise.withResolvers<void>()
 		// A completion belongs to the event doing the I/O. workerd follows those promises across
 		// contexts when a catalog update or shutdown drains several simultaneous requests.
 		root.events.add(completion.promise)
 		let scope: ReturnType<typeof createScriptScope> | undefined
 		let retained = false
-		async function close() {
+		async function releaseEvent() {
 			try {
 				await using _lease = {
 					async [Symbol.asyncDispose]() {
 						root.events.delete(completion.promise)
-						if (root.retired && !root.events.size) await destroy(root)
+						if (root.retired && root.events.size === 0) await destroy(root)
 					},
 				}
 				await scope?.dispose()
@@ -214,7 +216,7 @@ export function createWorkerHost(
 		}
 		await using _event = {
 			async [Symbol.asyncDispose]() {
-				if (!retained) await close()
+				if (!retained) await releaseEvent()
 			},
 		}
 		ctx.waitUntil(completion.promise)
@@ -229,7 +231,7 @@ export function createWorkerHost(
 			result,
 			result.body,
 			{ ctx, signal: event.signal, responseBody },
-			{ close, abort: scope.abort },
+			{ close: releaseEvent, abort: scope.abort },
 		)
 		retained = true
 		return response
@@ -246,7 +248,7 @@ export function createWorkerHost(
 			)
 			current = pending = undefined
 			const failures = results.flatMap((r) => (r.status === 'rejected' ? [r.reason] : []))
-			if (failures.length) throw new AggregateError(failures, '[host] Worker shutdown failed')
+			if (failures.length > 0) throw new AggregateError(failures, '[host] Worker shutdown failed')
 		}))
 	}
 
@@ -259,7 +261,7 @@ export function createWorkerHost(
 					'[host] Worker catalog updates require select and onGraphCommitted callbacks',
 				)
 			return exclusive(async () => {
-				await Promise.all([...roots].flatMap((root) => [...root.events]))
+				await Promise.all(Array.from(roots, (root) => Promise.all(root.events)))
 				// Aborting the last cold waiter leaves its boot alive under waitUntil.
 				if (pending) await pending.ready.catch(() => {})
 				if (current) {

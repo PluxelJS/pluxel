@@ -1,8 +1,6 @@
 import { startHost } from '@pluxel/host/browser'
-import { assertDemoUpdate, runDemo } from './demo'
+import { demoApplication, demoInputs, assertDemoUpdate, runDemo } from './demo'
 import * as plugins from '@pluxel-example/host-targets-plugins'
-import { demoApplication } from './demo-plugins'
-import { demoConfig } from './demo-config'
 import type { DemoResult, DemoUpdate } from './protocol'
 
 export type BrowserCommand = 'read' | 'close'
@@ -13,11 +11,9 @@ export type BrowserReply =
 
 const worker = globalThis as unknown as DedicatedWorkerGlobalScope
 const source = new URL('/greeting.json', worker.location.href).href
-const env = { GREETING_SOURCE: source }
-const host = await startHost(demoApplication(plugins), {
-	env,
-	coreConfig: demoConfig(source).coreConfig,
-})
+const inputs = demoInputs({ GREETING_SOURCE: source, HOST_PROBE: import.meta.env.VITE_HOST_PROBE })
+const { env } = inputs
+const ready = startHost(demoApplication(plugins, 'browser'), inputs)
 let consumerAddress = plugins.Consumer.nodeAddress()
 let settled = Promise.resolve()
 if (import.meta.hot) {
@@ -25,9 +21,13 @@ if (import.meta.hot) {
 		settled = settled
 			.then(async () => {
 				if (!next) throw new Error('Worker plugin module failed to evaluate. See the Vite log.')
-				const application = demoApplication({ Provider: next.Provider, Consumer: next.Consumer })
-				const selected = application({ env }).plugins
+				const application = demoApplication(
+					{ Provider: next.Provider, Consumer: next.Consumer },
+					'browser',
+				)
+				const { plugins: selected } = await application({ env })
 				const address = next.Consumer.nodeAddress()
+				const host = await ready
 				const report = await host.updateCatalog(
 					selected.map(({ plugin }) => plugin),
 					{
@@ -37,10 +37,10 @@ if (import.meta.hot) {
 					},
 				)
 				assertDemoUpdate(report)
-				worker.postMessage({ host: 'browser' } satisfies DemoUpdate)
+				return worker.postMessage({ host: 'browser' } satisfies DemoUpdate, [])
 			})
 			.catch((error) => {
-				worker.postMessage({ host: 'browser', error: String(error) } satisfies DemoUpdate)
+				worker.postMessage({ host: 'browser', error: String(error) } satisfies DemoUpdate, [])
 			})
 		return settled
 	})
@@ -52,6 +52,7 @@ worker.addEventListener('message', ({ data, ports }: MessageEvent<BrowserCommand
 	void (async () => {
 		try {
 			await settled
+			const host = await ready
 			if (data === 'close') {
 				await host.close()
 				reply.postMessage({ kind: 'closed' } satisfies BrowserReply, [])
@@ -66,3 +67,6 @@ worker.addEventListener('message', ({ data, ports }: MessageEvent<BrowserCommand
 		}
 	})()
 })
+
+// A module Worker can receive its first message while startup is pending.
+await ready
