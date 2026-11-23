@@ -1,5 +1,6 @@
 export type PackageMarket = Readonly<{ id: string; url: string }>
 
+export const publicRegistry = 'https://registry.npmjs.org'
 export const marketFilterLimit = 20
 
 /** Any selected value within a dimension can match. All active dimensions must match. */
@@ -62,6 +63,8 @@ export type MarketPackageDetail = MarketPackageSummary &
 	Readonly<{
 		distTags: Readonly<Record<string, string>>
 		metadataVersion: string | null
+		/** Dependency declarations from the checked archive matching metadataVersion, when available. */
+		checkedRequirements?: Pick<MarketRelease, 'version' | 'peerDependencies' | 'pluginPackages'>
 		/** Package-level README reported by the registry, not checked archive contents. */
 		readme: Readonly<{ text: string; truncated: boolean }> | null
 		license: string | null
@@ -93,7 +96,12 @@ export type MarketReadResult<T> =
 	| Readonly<{
 			ok: false
 			error: Readonly<{
-				code: 'UNKNOWN_MARKET' | 'INVALID_QUERY' | 'MARKET_UNAVAILABLE' | 'INVALID_RESPONSE'
+				code:
+					| 'UNKNOWN_MARKET'
+					| 'INVALID_QUERY'
+					| 'NOT_INDEXED'
+					| 'MARKET_UNAVAILABLE'
+					| 'INVALID_RESPONSE'
 				message: string
 			}>
 	  }>

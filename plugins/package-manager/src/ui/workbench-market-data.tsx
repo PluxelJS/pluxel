@@ -1,3 +1,4 @@
+import type { DocumentReader } from './package-document-explorer.tsx'
 import { createContext, useContext, type ComponentProps } from 'react'
 import type { createPackageManagerResources } from './package-manager.resources.ts'
 import type { MarketplaceData } from './marketplace.tsx'
@@ -46,4 +47,17 @@ export function createWorkbenchMarketplaceData(queries: MarketQueries): Marketpl
 		return children(queries.marketReleaseQuery.useQuery({ marketId, ...identity }))
 	}
 	return { Packages, Facets, Package, Releases, Release }
+}
+
+export function createLocalDocumentReaders({
+	localPackageQuery,
+}: Pick<ReturnType<typeof createPackageManagerResources>, 'localPackageQuery'>) {
+	function bind(source: 'application' | 'managed') {
+		function LocalReader({ path, children }: ComponentProps<DocumentReader>) {
+			const result = localPackageQuery.useQuery({ source, path: path.map((step) => step.name) })
+			return children(result)
+		}
+		return LocalReader
+	}
+	return { managed: bind('managed'), application: bind('application') }
 }

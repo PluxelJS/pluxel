@@ -1,4 +1,6 @@
-import { useId, useLayoutEffect, useMemo, useState } from 'react'
+import { PublicPackageLookup } from './npm-package-document.tsx'
+import { marketplaceStyles } from './marketplace.styles.ts'
+import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { WorkbenchHostFacade } from '@pluxel/workbench/react'
 import { versionRelation } from './package-version.ts'
 import {
@@ -53,6 +55,11 @@ export function WorkbenchMarketplace({
 	)
 	const document = host.document
 	const id = useId()
+	const selectionForm = useRef<HTMLFormElement>(null)
+	function viewSelection() {
+		selectionForm.current?.scrollIntoView?.({ block: 'start' })
+		selectionForm.current?.focus({ preventScroll: true })
+	}
 	useLayoutEffect(() => {
 		if (!document || !openPackage) return undefined
 		document.setTitle({ title: openPackage.name, meta: title })
@@ -94,7 +101,14 @@ export function WorkbenchMarketplace({
 		)
 	}
 
-	if (!market) return <p>No market is configured for this application.</p>
+	if (!market)
+		return (
+			<section className="plx-marketplace" data-color-scheme={host.colorScheme}>
+				<style>{marketplaceStyles}</style>
+				<p className="pm-muted">No market is configured for this application.</p>
+				<PublicPackageLookup />
+			</section>
+		)
 	return (
 		<div className="plx-marketplace" data-color-scheme={host.colorScheme}>
 			<div className="pm-stack">
@@ -118,7 +132,7 @@ export function WorkbenchMarketplace({
 					</div>
 				) : null}
 				<MarketInstallSelection
-					hidden={Boolean(openPackage) && items.length === 0}
+					formRef={selectionForm}
 					items={items}
 					data={data}
 					busy={busy}
@@ -133,10 +147,11 @@ export function WorkbenchMarketplace({
 						colorScheme={host.colorScheme}
 						onPackageChange={setOpenPackage}
 						versionNote={versionNote}
-						packageAction={(pkg) => {
+						packageAction={(pkg, surface) => {
 							const existing = selectedByName.get(pkg.name)
 							const selected =
 								existing?.marketId === market.id && existing.registry === pkg.registry
+							const showChoice = surface === 'card' || selected || pkg.indexedVersions > 0
 							const reason =
 								selectionBlock(pkg) ??
 								(!selected && !pkg.indexedVersions
@@ -144,22 +159,33 @@ export function WorkbenchMarketplace({
 									: undefined)
 							const label = 'Select ' + pkg.name + ' for installation'
 							return (
-								<label className="pm-market-choice" title={reason}>
-									<input
-										className="pm-package-select"
-										type="checkbox"
-										checked={selected}
-										aria-label={label}
-										title={reason ?? label}
-										disabled={busy || Boolean(reason)}
-										onChange={() =>
-											selected
-												? onChange(items.filter((item) => item.name !== pkg.name))
-												: add(pkg, pkg.latest, null)
-										}
-									/>
-									<span>Select for installation</span>
-								</label>
+								<>
+									{showChoice && (
+										<label className="pm-market-choice" title={reason}>
+											<input
+												className="pm-package-select"
+												type="checkbox"
+												checked={selected}
+												aria-label={label}
+												title={reason ?? label}
+												disabled={busy || Boolean(reason)}
+												onChange={() =>
+													selected
+														? onChange(items.filter((item) => item.name !== pkg.name))
+														: add(pkg, pkg.latest, null)
+												}
+											/>
+											<span>
+												{selected ? 'Selected for installation' : 'Select for installation'}
+											</span>
+										</label>
+									)}
+									{surface === 'detail' && items.length > 0 ? (
+										<button type="button" className="pm-button pm-link" onClick={viewSelection}>
+											View selection ({items.length})
+										</button>
+									) : null}
+								</>
 							)
 						}}
 						releaseAction={(release) => {

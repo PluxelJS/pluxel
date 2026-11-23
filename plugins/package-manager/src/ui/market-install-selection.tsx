@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type Ref } from 'react'
 import type { MarketInstallRequest, MarketPackageIdentity } from '../market-contracts.ts'
 import { MarketVersionPicker, type MarketplaceData, type MarketplaceProps } from './marketplace.tsx'
 import { MarketContext } from './workbench-market-data.tsx'
@@ -11,7 +11,7 @@ export type MarketSelectionItem = MarketPackageIdentity &
 	}>
 
 export function MarketInstallSelection({
-	hidden,
+	formRef,
 	items,
 	data,
 	busy,
@@ -19,7 +19,7 @@ export function MarketInstallSelection({
 	onPrepare,
 	versionNote,
 }: Readonly<{
-	hidden: boolean
+	formRef: Ref<HTMLFormElement>
 	items: readonly MarketSelectionItem[]
 	data: MarketplaceData
 	busy: boolean
@@ -47,24 +47,16 @@ export function MarketInstallSelection({
 		<form
 			className="pm-install-selection"
 			aria-label="Installation selection"
-			hidden={hidden}
+			ref={formRef}
+			tabIndex={-1}
+			hidden={items.length === 0}
 			onSubmit={submit}
 		>
 			<style>{selectionStyles}</style>
 			<div className="pm-between">
-				<div>
-					<h3>
-						{items.length > 0
-							? items.length + (items.length === 1 ? ' package selected' : ' packages selected')
-							: 'Install from market'}
-					</h3>
-					{items.length === 0 ? (
-						<p className="pm-small pm-muted">
-							Select packages to choose their versions. Packages marked “Metadata only” have no
-							checked releases.
-						</p>
-					) : null}
-				</div>
+				<h3>
+					{items.length} {items.length === 1 ? 'package selected' : 'packages selected'}
+				</h3>
 				<button
 					className="pm-button pm-primary"
 					type="submit"
@@ -91,7 +83,6 @@ export function MarketInstallSelection({
 									versionNote={versionNote}
 									value={item.version}
 									name={item.name}
-									label={'Version for ' + item.name}
 									disabled={busy}
 									onChange={(version) => {
 										setError('')
@@ -135,6 +126,9 @@ const selectionStyles = `
 .plx-marketplace .pm-package-heading .pm-market-choice > span { display: none; }
 .plx-marketplace .pm-package-select { flex: none; width: 18px; height: 18px; min-height: 0; margin: 0; padding: 0; accent-color: var(--pm-accent); cursor: inherit; }
 .plx-marketplace label.pm-market-choice:has(:disabled) { cursor: default; }
+.plx-marketplace .pm-detail-actions .pm-market-choice { min-height: 30px; padding: 3px 9px; gap: 7px; border: 1px solid var(--pm-border); border-radius: 6px; color: var(--pm-ink); font-weight: 550; }
+.plx-marketplace .pm-detail-actions .pm-market-choice:hover:has(:enabled), .plx-marketplace .pm-detail-actions .pm-market-choice:has(:checked) { border-color: var(--pm-accent); background: var(--pm-accent-soft); color: var(--pm-accent); }
+.plx-marketplace .pm-detail-actions .pm-package-select { width: 15px; height: 15px; }
 .plx-marketplace .pm-package-card:has(.pm-package-select:checked) { border-color: var(--pm-accent); background: var(--pm-accent-soft); }
 .plx-marketplace .pm-install-selection { padding: 12px 14px; border: 1px solid var(--pm-border); border-radius: 8px; background: var(--pm-surface); }
 .plx-marketplace .pm-install-selection h3 { font-size: 14px; }

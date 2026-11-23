@@ -76,7 +76,11 @@ const runtime = new Miniflare({
 					REGISTRIES: {
 						type: 'text',
 						value: JSON.stringify([
-							{ registry: 'https://registry.npmjs.org', access: 'public' },
+							{
+								registry: 'https://registry.npmjs.org',
+								access: 'public',
+								mirror: process.env.MARKET_NPM_MIRROR,
+							},
 							{
 								registry,
 								access: 'admin',

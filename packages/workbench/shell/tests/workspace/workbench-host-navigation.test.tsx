@@ -24,7 +24,11 @@ import {
 	type WorkbenchNavigationContextValue,
 } from '../../src/app/workbench/context'
 import type { RuntimeClientBootstrap } from '../../src/runtime'
-import { buildPluginLogsHref, buildWorkbenchHref } from '../../src/workbench/paths'
+import {
+	buildPluginDetailHref,
+	buildPluginLogsHref,
+	buildWorkbenchHref,
+} from '../../src/workbench/paths'
 import { prepareNativeWorkbenchDom } from '../fixtures/native-workbench'
 
 const fixture = vi.hoisted(() => ({
@@ -392,6 +396,30 @@ describe('Plugin host navigation through the authenticated native App', () => {
 		})
 		expect(workspace.workbench.getDocument(target.id)!.title).toBe('East account')
 		expect(container.querySelector('.flexlayout__tab_button[title="Bot account"]')).not.toBeNull()
+	})
+
+	it('opens the built-in details for another Plugin node under the shell basepath', async () => {
+		const { workspace, host, prefix, sourceHref } = await mount('/__pluxel/workbench')
+		const plugin = {
+			definition: {
+				entry: { kind: 'package-root', packageName: '@pluxel/plugin-auth' },
+				exportName: 'AuthPlugin',
+			},
+			variant: 'fork',
+			forkId: 'west',
+		} as const
+		const navigation = host.facade.navigation!
+		expect(() => {
+			// @ts-expect-error A Plugin detail and an owner-relative route are different destinations.
+			navigation.openDocument({ plugin, path: '/accounts/east', title: 'Ambiguous' })
+		}).toThrow('either plugin or path')
+		await act(async () => navigation.openDocument({ plugin, title: 'Authentication' }))
+		const href = prefix + buildPluginDetailHref(plugin)
+		await vi.waitFor(() => expect(location.pathname).toBe(href))
+		expect(workspace.workbench.getDocuments().map((document) => document.href)).toEqual([
+			sourceHref,
+			href,
+		])
 	})
 
 	it('keeps the published SDK canonical-path input boundary without mutating existing query or hash on a rejected request', async () => {

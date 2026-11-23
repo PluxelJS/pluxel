@@ -2,6 +2,7 @@ import { readPackageUsage } from './package-usage.ts'
 import type { WorkbenchRendererScope } from '@pluxel/workbench/react'
 import type { PackageManagerWorkbench } from '../workbench.ts'
 import type {
+	LocalPackageLocation,
 	MarketCatalogFilters,
 	MarketInstallRequest,
 	MarketPackageQuery,
@@ -25,6 +26,24 @@ export function createPackageManagerResources(
 		queryFn: () => readPackageUsage(host),
 	}))
 
+	const registry = {
+		search: scope.queryFamily(
+			({ api }, { query, includeAll }: { query: string; includeAll: boolean }) => ({
+				queryKey: ['package-manager', 'registry-search', query, includeAll] as const,
+				queryFn: () => api.searchRegistryDto(query, includeAll),
+				staleTime: 30_000,
+			}),
+		),
+		inspect: scope.queryFamily(({ api }, spec: string) => ({
+			queryKey: ['package-manager', 'registry-inspect', spec] as const,
+			queryFn: () => api.inspectRegistryDto(spec),
+			staleTime: 30_000,
+		})),
+	}
+	const localPackageQuery = scope.queryFamily(({ api }, location: LocalPackageLocation) => ({
+		queryKey: ['package-manager', 'local-package', location.source, location.path] as const,
+		queryFn: () => api.localPackageDto(location),
+	}))
 	const prepareInstallMutation = scope.mutation(({ api }) => ({
 		mutationFn: (input: PrepareInstallInput) =>
 			input.kind === 'direct'
@@ -35,7 +54,7 @@ export function createPackageManagerResources(
 	const confirmInstallMutation = scope.mutation(({ api }) => ({
 		mutationFn: (planId: string) => api.confirmInstallDto(planId),
 		workbench: {
-			invalidates: [packageManagerSnapshotQuery, packageUsageQuery],
+			invalidates: [packageManagerSnapshotQuery, packageUsageQuery, localPackageQuery.all()],
 		},
 	}))
 
@@ -91,11 +110,13 @@ export function createPackageManagerResources(
 		}: Readonly<{ names: readonly string[]; expectedRevision: number }>) =>
 			api.removeDto(names, expectedRevision),
 		workbench: {
-			invalidates: [packageManagerSnapshotQuery, packageUsageQuery],
+			invalidates: [packageManagerSnapshotQuery, packageUsageQuery, localPackageQuery.all()],
 		},
 	}))
 
 	return {
+		registry,
+		localPackageQuery,
 		usePackageManager() {
 			return {
 				snapshotQuery: packageManagerSnapshotQuery.useQuery(),

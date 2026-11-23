@@ -65,9 +65,14 @@ const data: MarketplaceData = {
 		return children(
 			read({
 				...pkg,
-				distTags: { latest: '1.0.0' },
+				distTags: { latest: '1.0.0', next: '2.0.0-beta.1' },
 				metadataVersion: '1.0.0',
-				readme: { text: 'Registry README', truncated: false },
+				checkedRequirements: {
+					version: release.version,
+					peerDependencies: { '@pluxel/core': '^1', 'http-plugin': '^2', 'log-plugin': '^3' },
+					pluginPackages: { 'http-plugin': 'required' as const, 'log-plugin': 'optional' as const },
+				},
+				readme: { text: '## Usage\n\n## **Usage**', truncated: false },
 				license: 'MIT',
 				coverage: 'indexed-only' as const,
 			}),
@@ -152,11 +157,11 @@ async function openRelease() {
 	await click(pkg.name)
 	expect(container.querySelector<HTMLElement>('.pm-catalog')?.hidden).toBe(true)
 	await click('Versions')
-	const select = container.querySelector('select')!
-	await act(() => {
-		select.value = '1.0.0'
-		select.dispatchEvent(new Event('change', { bubbles: true }))
-	})
+	const row = container.querySelector<HTMLButtonElement>('.pm-release-row')!
+	expect(row.textContent).toContain('1.0.0')
+	expect(row.textContent).toContain('latest')
+	expect(row.querySelector('time')?.dateTime).toBeTruthy()
+	await act(() => row.click())
 }
 
 it('renders through its public browser entry without a Provider or install capability', async () => {
@@ -175,13 +180,15 @@ it('renders through its public browser entry without a Provider or install capab
 	expect(card?.textContent).toContain('Repository owner unavailable')
 	expect(container.querySelector('aside[aria-label="Catalog filters"]')).not.toBeNull()
 	await openRelease()
-	expect(container.querySelector('option[value="1.0.0"]')?.textContent).toBe(
-		'1.0.0 (registry latest)',
-	)
 	expect(
-		container.querySelector('.pm-detail-header [aria-label="0 repository stars"]'),
+		container.querySelector('.pm-release-row[aria-expanded="true"] .pm-badge')?.textContent,
+	).toBe('latest')
+	expect(
+		container.querySelector('aside[aria-label="Plugin details"] [aria-label="0 repository stars"]'),
 	).not.toBeNull()
-	expect(container.querySelector('.pm-detail-header')?.textContent).toContain('#integration')
+	expect(container.querySelector('aside[aria-label="Plugin details"]')?.textContent).toContain(
+		'#integration',
+	)
 	expect(container.querySelector('img')).toBeNull()
 	expect(container.querySelector('.pm-readme')!.textContent).toBe('<img src=x onerror=alert(1)>')
 	expect(
@@ -189,6 +196,131 @@ it('renders through its public browser entry without a Provider or install capab
 			(item) => item.textContent === 'Choose this release',
 		),
 	).toBe(false)
+})
+
+it('shows exact plugin requirements and navigates duplicate README headings within this package', async () => {
+	await act(() => root.render(createElement(Marketplace, { data })))
+	await click(pkg.name)
+	const sidebar = container.querySelector('aside[aria-label="Plugin details"]')!
+	const requirements = sidebar.querySelector('[aria-label="Plugin requirements"]')!
+	expect(requirements.querySelector('h3')?.textContent).toContain(release.version)
+	expect(requirements.textContent).toContain('Pluxel core^1')
+	expect(requirements.textContent).toContain('http-plugin^2required')
+	expect(requirements.textContent).toContain('log-plugin^3optional')
+	expect(sidebar.querySelector('details')?.textContent).toContain('next2.0.0-beta.1')
+	const links = sidebar.querySelectorAll<HTMLButtonElement>('nav button')
+	const targets = Array.from(links, (link) =>
+		document.getElementById(link.getAttribute('aria-controls')!)!,
+	)
+	expect(targets).toEqual([...container.querySelectorAll('.pm-readme h2')])
+	expect(targets).toHaveLength(2)
+	targets[1]!.scrollIntoView = vi.fn()
+	await act(() => links[1]!.click())
+	expect(document.activeElement).toBe(targets[1])
+	expect(targets[1]!.scrollIntoView).toHaveBeenCalledOnce()
+	await click('Versions')
+	expect(sidebar.querySelector('[aria-label="Plugin requirements"], nav')).toBeNull()
+})
+
+it('opens same-registry dependency details and returns to the exact release and focused link', async () => {
+	const onPackageChange = vi.fn()
+	const host: MarketplaceData = {
+		...data,
+		Package(props) {
+			if (props.identity.name === pkg.name) return createElement(data.Package, props)
+			if (props.identity.name === 'missing-plugin')
+				return props.children({
+					data: { ok: false, error: { code: 'NOT_INDEXED', message: 'Not indexed' } },
+					isFetching: false,
+					refetch: async () => {},
+				})
+			return props.children(
+				read({
+					...pkg,
+					...props.identity,
+					distTags: {},
+					metadataVersion: null,
+					coverage: 'indexed-only',
+					readme: null,
+					license: null,
+				}),
+			)
+		},
+		Release({ children }) {
+			return children(
+				read({
+					...release,
+					peerDependencies: { 'http-plugin': '^2', 'missing-plugin': '^1', react: '^19' },
+					pluginPackages: { 'http-plugin': 'required', 'missing-plugin': 'optional' },
+				}),
+			)
+		},
+	}
+	await act(() => root.render(createElement(Marketplace, { data: host, onPackageChange })))
+	await openRelease()
+	await click('Dependencies')
+	const link = container.querySelector<HTMLButtonElement>('.pm-dependencies button')!
+	expect(link.textContent).toBe('http-plugin')
+	expect(container.querySelectorAll('.pm-dependencies button')).toHaveLength(3)
+	await act(() => link.click())
+	expect(onPackageChange).toHaveBeenLastCalledWith({ name: 'http-plugin', registry: pkg.registry })
+	const active = () => container.querySelector('.pm-detail-anchor:not([hidden])')!
+	expect(active().querySelector('h2')?.textContent).toBe('http-plugin')
+	const versionsButton = [...active().querySelectorAll('button')].find(
+		(el) => el.textContent === 'Versions',
+	)!
+	await act(() => versionsButton.click())
+	expect(active().querySelector('.pm-version-note')?.textContent).toBe('Outside ^2')
+	await click('Back to ' + pkg.name)
+	expect(document.activeElement).toBe(link)
+	expect(active().querySelector('.pm-dependencies')).not.toBeNull()
+	await click('missing-plugin')
+	expect(active().textContent).toContain('Not indexed')
+	expect(active().textContent).toContain('Search all sources')
+	expect(active().querySelector('.pm-release-row')).toBeNull()
+	const fetchNpm = vi.fn(async (url: string) => {
+		const name = decodeURIComponent(new URL(url).pathname.slice(1))
+		const versions = name === 'missing-plugin' ? ['1.1.0', '2.0.0'] : ['3.1.0', '4.0.0']
+		return new Response(
+			JSON.stringify({
+				name,
+				'dist-tags': { latest: versions[1] },
+				readme: '# Docs for ' + name,
+				versions: Object.fromEntries(
+					versions.map((version) => [
+						version,
+						{ name, version, dependencies: name === 'missing-plugin' ? { codec: '^3' } : {} },
+					]),
+				),
+			}),
+		)
+	})
+	vi.stubGlobal('fetch', fetchNpm)
+	expect(fetchNpm).not.toHaveBeenCalled()
+	await click('Look up missing-plugin on public npm')
+	expect(active().textContent).toContain('Docs for missing-plugin')
+	expect(active().textContent).toContain('1.1.0')
+	expect(fetchNpm).toHaveBeenCalledWith(
+		'https://registry.npmjs.org/missing-plugin',
+		expect.objectContaining({ credentials: 'omit' }),
+	)
+	const deps = [...active().querySelectorAll('button')].find(
+		(el) => el.textContent === 'Dependencies',
+	)!
+	await act(() => deps.click())
+	await click('codec')
+	expect(active().textContent).toContain('Docs for codec')
+	expect(active().textContent).toContain('3.1.0')
+	await click('Back to missing-plugin')
+	expect(active().querySelector('[data-package-dependency="codec"]')).toBe(document.activeElement)
+	await click('Back to market details')
+	await click('Back to ' + pkg.name)
+	await click('missing-plugin')
+	await click('Search all sources')
+	expect(
+		container.querySelector<HTMLInputElement>('input[placeholder="Search packages"]')!.value,
+	).toBe('missing-plugin')
+	expect(container.querySelector<HTMLElement>('.pm-catalog')!.hidden).toBe(false)
 })
 
 it('renders readable Markdown while preventing package HTML and unsafe or relative navigation', async () => {
@@ -212,7 +344,7 @@ it('renders readable Markdown while preventing package HTML and unsafe or relati
 	expect(readme.textContent).toContain('<script>alert(1)</script>')
 	expect(readme.textContent).toContain('relative root protocol')
 	expect(readme.textContent).toContain('run data')
-	expect(container.textContent).toContain('This README was truncated by the market.')
+	expect(container.textContent).toContain('Showing the first part of this README.')
 })
 
 it('composes host actions with the checked release currently displayed', async () => {

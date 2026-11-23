@@ -4,6 +4,8 @@ import { githubPublishers, type GitHubPublisher } from './github-publisher'
 export type RegistrySource = {
 	registry: string
 	access: 'public' | 'admin'
+	/** Read transport for the public npm catalog. The registry owns release identity. */
+	mirror?: string
 	/** Optional upstream read credential, supplied by deployment secrets only. */
 	token?: string
 	/** Separate capability for notification submission and private receipt lookup. */
@@ -43,6 +45,7 @@ export function registrySources(raw?: string): RegistrySource[] {
 				(key) =>
 					![
 						'registry',
+						'mirror',
 						'access',
 						'token',
 						'notificationToken',
@@ -55,10 +58,22 @@ export function registrySources(raw?: string): RegistrySource[] {
 				'Each source needs registry and access (public/admin). Only private sources can set notificationIndexing: unsigned.',
 			)
 		const base = registryBase(value.registry)
+		let mirror: string | undefined
+		if (value.mirror !== undefined) {
+			if (
+				typeof value.mirror !== 'string' ||
+				base !== registry ||
+				value.access !== 'public' ||
+				value.token !== undefined
+			)
+				throw new Error('mirror requires a public npm source without upstream credentials')
+			mirror = registryBase(value.mirror)
+		}
 		if (seen.has(base)) throw new Error('REGISTRIES contains a duplicate registry')
 		seen.add(base)
 		return {
 			registry: base,
+			mirror,
 			access: value.access,
 			token: value.token as string | undefined,
 			notificationToken: value.notificationToken as string | undefined,

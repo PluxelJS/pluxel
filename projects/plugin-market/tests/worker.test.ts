@@ -20,6 +20,8 @@ import {
 import { packTar, type TarEntry } from 'modern-tar'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { buildMarketWorker, workerModule } from '../dev/build-worker'
+import { fetchObservation, fetchRelease } from '../src/registry/npm'
+import { registrySources } from '../src/registry/sources'
 import type { MarketAdmin } from '../src/admin'
 import { connect } from '../src/db/d1'
 import {
@@ -773,6 +775,63 @@ describe('plugin market on workerd and D1', () => {
 		expect(requests.every((url) => url === `${githubIssuer}/.well-known/jwks`)).toBe(true)
 	})
 
+	it('uses the npm mirror for observations and archives while admitting canonical npm bytes and identity', async () => {
+		const mirror = 'https://registry.npmmirror.com'
+		const [source] = registrySources(JSON.stringify([{ registry, mirror, access: 'public' }]))
+		const item = await fixture()
+		const path = '/' + encodeURIComponent(item.name)
+		const cdn = 'https://cdn.npmmirror.com/packages/example/1.0.0/plugin.tgz'
+		const visited: string[] = []
+		let location = cdn
+		let corrupt = false
+		source!.fetch = async (request) => {
+			visited.push(request.url)
+			expect(request.headers.has('Authorization')).toBe(false)
+			if (request.url === mirror + path)
+				return Response.json({
+					name: item.name,
+					'dist-tags': item.tags,
+					versions: { [item.version]: item.metadata },
+				})
+			if (request.url === registry + path + '/' + item.version) return Response.json(item.metadata)
+			if (request.url === mirror + path + '/-/' + item.version + '.tgz')
+				return Response.redirect(location, 302)
+			if (request.url === cdn)
+				return new Response(corrupt ? 'other bytes' : new Uint8Array(item.bytes))
+			if (request.url === mirror + '/-/package' + path + '/dist-tags')
+				return Response.json(item.tags)
+			throw new Error('unexpected mirror transport')
+		}
+		const inspect = () => fetchRelease(selected, source!, { review() {} })
+		expect(await fetchObservation(selected, source!)).toMatchObject({
+			metadataVersion: item.version,
+		})
+		expect(await inspect()).toMatchObject({
+			release: {
+				registry,
+				integrity: item.integrity,
+				tarball: (item.metadata.dist as { tarball: string }).tarball,
+			},
+		})
+		expect(visited).toEqual([
+			mirror + path,
+			registry + path + '/' + item.version,
+			mirror + path + '/-/' + item.version + '.tgz',
+			cdn,
+			mirror + '/-/package' + path + '/dist-tags',
+		])
+		corrupt = true
+		await expect(inspect()).rejects.toMatchObject({ code: 'integrity-mismatch' })
+		location = 'https://untrusted.example/package.tgz'
+		await expect(inspect()).rejects.toMatchObject({ code: 'npm-redirect' })
+		expect(visited).not.toContain(location)
+		for (const config of [
+			{ registry: privateRegistry, access: 'admin', mirror },
+			{ registry, access: 'public', token: 'private', mirror },
+		])
+			expect(() => registrySources(JSON.stringify([config]))).toThrow(/mirror/)
+	})
+
 	it('never downgrades a present proof, follows redirects, or fetches arbitrary tarball origins', async () => {
 		const item = await fixture()
 		const dist = item.metadata.dist as Record<string, unknown>
@@ -1488,6 +1547,7 @@ describe('plugin market on workerd and D1', () => {
 			],
 		})
 		const detail = await getJson(`/v1/packages/${encodeURIComponent(item.name)}`)
+		expect(detail).not.toHaveProperty('checkedRequirements')
 		expect(detail).toMatchObject({
 			metadataVersion: '1.0.0',
 			readme: { text: '# Registry README\nRead before choosing a version.', truncated: false },
@@ -1506,6 +1566,37 @@ describe('plugin market on workerd and D1', () => {
 		}
 		expect(await db.select().from(releases)).toEqual([])
 		expect(await db.select().from(notifications)).toEqual([])
+	})
+
+	it('projects requirements only from the checked archive at the observed package coordinate', async () => {
+		const checked = await fixture(selected.name, {
+			manifest: {
+				peerDependencies: { '@pluxel/core': '^1', '@example/metrics': '^2' },
+				peerDependenciesMeta: { '@example/metrics': { optional: true } },
+				pluxel: { pluginPackages: { '@example/metrics': 'optional' } },
+			},
+		})
+		const next = await fixture(selected.name, { version: '2.0.0' })
+		checked.tags.latest = next.version
+		await callAdmin((access) => access.refresh(selected))
+		const path = '/v1/packages/' + encodeURIComponent(selected.name)
+		expect(await getJson(path)).toMatchObject({
+			latest: next.version,
+			metadataVersion: selected.version,
+			checkedRequirements: {
+				version: selected.version,
+				peerDependencies: { '@pluxel/core': '^1', '@example/metrics': '^2' },
+				pluginPackages: { '@example/metrics': 'optional' },
+			},
+		})
+		await fixture(selected.name, { registry: privateRegistry, version: next.version })
+		await callAdmin((access) =>
+			access.refresh({ ...selected, registry: privateRegistry, version: next.version }),
+		)
+		await callAdmin((access) => access.observe({ registry, name: selected.name }))
+		const observed = await getJson(path)
+		expect(observed).toMatchObject({ metadataVersion: next.version, indexedVersions: 1 })
+		expect(observed).not.toHaveProperty('checkedRequirements')
 	})
 
 	it('stores real repository observations and packaged README previews without conflating provenance or unknown stars', async () => {

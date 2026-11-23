@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import type {
+	resolveDependency,
 	InstallOptions,
 	InstallResult,
 	PackageManifest,
@@ -8,6 +9,7 @@ import type {
 } from '@pnpm/napi'
 
 export type PnpmEngine = Readonly<{
+	resolveDependency: typeof resolveDependency
 	engineVersion(): string
 	install(
 		options: InstallOptions,
@@ -26,12 +28,14 @@ export async function loadPnpmEngine(): Promise<PnpmEngine> {
 	if (
 		typeof loaded.engineVersion !== 'function' ||
 		typeof loaded.install !== 'function' ||
+		typeof loaded.resolveDependency !== 'function' ||
 		typeof loaded.parseBareSpecifier !== 'function' ||
 		typeof loaded.readConfig !== 'function'
 	) {
 		throw new TypeError('@pnpm/napi does not expose the required pacquet engine API')
 	}
 	cached = Object.freeze({
+		resolveDependency: (wanted, options) => loaded.resolveDependency(wanted, options),
 		engineVersion: () => loaded.engineVersion(),
 		parseBareSpecifier: (spec, alias) => loaded.parseBareSpecifier(spec, alias),
 		readConfig(options) {

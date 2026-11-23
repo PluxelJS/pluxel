@@ -162,6 +162,8 @@ function RevisionNotice({ revision }: { revision: number }) {
 }
 ```
 
+在 Shell 中，`host.navigation.openDocument({ path, title })` 打开当前插件声明的页面。要打开应用目录中某个节点的内置插件详情，直接传入该节点的地址，例如 `host.navigation?.openDocument({ plugin: node.address, title: node.label.text })`。地址保留包入口、导出和 fork 身份。
+
 ---
 
 <span id="依赖与构建"></span>

@@ -27,6 +27,10 @@ export const PackageManagerWorkbench = workbench.define(import.meta.url, {
 })
 
 export type {
+	RegistryCandidate,
+	RegistrySearch,
+	RegistryInspection,
+	LocalPackageLocation,
 	ManagedPackage,
 	PackageManagerApi,
 	PackageManagerSnapshot,
@@ -47,3 +51,4 @@ export type {
 	PackageMutationFailure,
 	PackageMutationResult,
 } from './contracts.ts'
+export type { PackageDocument, LocalPackageDependency } from './package-document.ts'

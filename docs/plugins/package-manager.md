@@ -66,6 +66,7 @@ export default defineHostApplication(async (startup) => {
 | `allowBuilds`              | `string[]` (`[]`)                    | 允许执行构建/原生编译脚本的包名白名单                              |
 | `minimumReleaseAgeMinutes` | `number` (`1440`)                    | 拒绝安装发布时间少于指定分钟数的包（默认 24 小时，防范供应链投毒） |
 | `markets`                  | `Array<{ id, url }>` (`[]`)          | 远程插件市场连接端点列表                                           |
+| `npmMirrors`               | `string[]`（默认包含 npmmirror）     | 安装公共 npm 的已检查发行时，允许 pnpm 使用的镜像地址              |
 
 在包管理器节点的 `envBindings` 中加入：
 
@@ -94,25 +95,39 @@ envBinding({
 }
 ```
 
-- 连接 URL 为市场后端的基础接口地址（不含 `/v1`）。
-- 连接可指向 Worker 主站或只读目录镜像。镜像保留发行的来源和摘要，插件及依赖仍通过 pnpm 配置选择的 registry 获取。 [镜像部署](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md#只读镜像)
-- 未配置市场时，仍支持通过直接输入 npm package spec（如 `@acme/example-plugin@^2.0.0`）进行安装。
-- 市场卡片显示包名、简介、仓库所有者、分类、来源、标签和 registry 最新版本。点击卡片查看详情，点击 `@PluxelJS` 等所有者筛选其仓库下的包，仓库链接可直接打开项目。详情中也可以按所有者回到结果，或按 `Esc` 返回之前的筛选、分页和焦点。
-- **Overview** 展示 registry 提供的 README、许可证和已检查的版本数。**Versions** 可以阅读某个已检查版本随包发布的 README。带有 `ts`、`sh`、`json` 等语言标记的代码块会随页面主题高亮，长行可在代码块内横向滚动。
-- 宽面板的筛选栏在结果左侧，窄面板点 **Filters** 展开。仓库所有者、分类、标签和来源支持多选，同一组取并集，各组同时生效。官方状态可选全部、官方或社区。可单独移除已选条件，也可点 **Clear filters** 清空筛选。
-- 所有者来自包声明的 GitHub 仓库路径，公开 npm 和私有 registry 都使用这一规则。其他地址仍可打开，所有者显示为未知。跨 registry 同名包分别占一张卡片，详情、版本和安装都使用卡片上标明的来源。发行的发布证明可在版本详情中查看。
-- Workbench 只在 registry 与已核验的安装来源一致时标记已安装版本、提示更新。其他来源的同名包会指出名称冲突。旧记录或直接安装缺少来源证据时显示本地版本和 **source unknown**。在新的市场预览中可核对来源变更，确认后才更新记录。
+URL 使用主站或只读目录镜像的基础地址，省略 `/v1`。要从 npmmirror 下载包，在应用的 `.npmrc` 中设置 `registry=https://registry.npmmirror.com/`。市场里仍按 **npm** 筛选；自建公共 npm 镜像可加入 `npmMirrors`，独立发布包的私有 registry 可登记为单独来源。scope 的专属 registry 优先。[市场来源配置](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md#本地运行与来源配置) · [只读目录镜像](https://github.com/PluxelJS/pluxel/blob/main/projects/plugin-market/README.md#只读镜像)
+
+### 浏览市场和版本
+
+在 **Marketplace** 按包名搜索，也可按仓库所有者、类别、标签和来源筛选。窄屏点 **Filters** 展开。每组可多选，各组条件同时生效。点击所有者可筛出其仓库下的包，点卡片进入详情；按 `Esc` 返回原来的筛选、分页和焦点。
+
+- **Overview** 显示 registry README 和包资料。包名与标签栏滚动时吸顶。宽屏侧栏可跳到 README 章节，窄屏可展开 **Plugin details**。若该元数据版本已有检查记录，**Requirements** 会列出 Core 范围、必需和可选插件。
+- **Versions** 列出已检查的发行。展开版本可读归档内的 README、依赖、摘要和发布证明。点依赖可查看同一来源的包及其版本是否满足上级范围。缺少收录记录时，可点 **Search all sources** 查找其他来源。
+- **Metadata only** 表示目前仅有包资料。遇到跨 registry 的同名包，请核对卡片上的来源。Workbench 依据已核验的安装来源标记更新；直接安装或旧记录缺少来源证据时显示 **source unknown**。
 
 ### 在 Workbench 一起安装多个精确版本
 
-1. 打开 **Marketplace**，勾选所需包的卡片。在上方清单中分别选择精确版本。registry 的 `latest` 出现在当前已检查的版本页时会被预选。可以翻页选择旧版或预发行版，也可以打开 **Versions** 阅读某次发行的依赖、来源证明和摘要，再用 **Add to selection** 加入清单。
-2. 继续搜索、翻页或切换市场。清单保留已选项和明确选择的版本。一批最多安装 100 个不同包名，每个包名对应一个市场、registry 和版本。更换同名包的来源时，先从清单移除原来的选择。
-3. 点 **Review selection**。包管理器逐一读取所选发行并核对应用的 npm 来源，再用一次 pnpm 安装准备整个依赖图。在预览中核对新增、升级、降级和依赖变化，展开 **Sources and integrity** 可以查看每个选中包的市场、registry 和完整性摘要。准备失败会指出出错项，已发布的包保持原状态。
-4. 点 **Confirm installation** 发布这份预览的插件入口。页面报告实际已发布的包和失败项。**Installed** 显示受管版本和宿主报告的插件状态。宿主可以即时接纳入口，也可能在下次启动时接纳。
+1. 勾选包卡片并选择精确版本，也可以在 **Versions** 中点 **Add to selection**。清单会随搜索、翻页和切换市场保留。每个包名选一个来源，单次最多 100 个包。
+2. 点 **Review selection**。预览列出新增、升级、降级、依赖变化，以及每个自动加入的必需插件由谁引入。可选插件可手动加入。遇到范围冲突或需要换源时，返回清单显式选择版本及来源，再次审阅。
+3. 在 **Sources and integrity** 核对来源和摘要，点 **Confirm installation** 发布已审阅的入口。回执逐包列出结果；**Installed** 显示受管版本和宿主报告的运行状态。
 
-**Metadata only** 表示市场尚未检查该包的可安装发行。仍可打开卡片浏览。要直接从应用配置的 npm registry 安装，在 **Direct install** 输入 `@scope/plugin@1.2.3`，多包可分行填写，然后预览并确认。
+### 查找市场以外的插件
 
-在 **Installed** 可按包名或插件名搜索，用 **Running only** 查看宿主报告正在运行的插件。宿主装配的包也会显示，只有受包管理器管理的包可以在这里卸载。勾选受管包后点 **Review removal**，核对版本、宿主报告及生效时机，再确认移除。受管选择发生变化时需要重新审阅。撤回入口失败时，页面保留 **Retry removal** 以便重试。
+在 **Find plugins** 输入关键词，或直接检查包名、版本和标签。搜索使用应用的 pnpm registry，默认优先查找 Pluxel 相关包。可输入 scope 缩小范围，或勾选 **Search all registry packages** 扩大到普通 npm 结果。这个入口在未配置市场时也可使用。
+
+点 **Check package** 查看精确版本、Core peer 范围、宿主版本和根入口。兼容的候选可点 **Review installation**；多包可在 **Review multiple package names** 中分行填写。包管理器在实际文件上复核当前宿主兼容性和根 JavaScript 导出；声明了 `pluxel.control` 的包还须提供根插件定义。普通传递依赖由 pnpm 安装。
+
+### 管理和卸载
+
+安装回执的 **Manage installed packages** 会打开 **Installed**。可以按包名、插件名、版本搜索，或用 **Running only** 查看正在运行的节点。受管包支持单包 **Uninstall**，也可勾选多个包后点 **Review removal**。筛选保留勾选项，并提示有多少项已隐藏。应用随附的包由应用自己的依赖配置管理。
+
+核对包名、版本、运行状态及生效时机后确认移除。如果受管选择在审阅后改变，需要重新审阅；选择已移除但入口尚未撤回时，点 **Retry removal** 重试。
+
+### 在同一查看器阅读本地包和公共 npm 包
+
+在 **Installed** 点包名查看实际安装版本、许可证和 README，点 **Dependencies** 沿普通、可选或 peer 依赖打开当前包使用的副本。缺少 README 或可选依赖时，查看器会标明原因。点插件节点名则打开对应节点的运行状态。
+
+在市场搜索框输入完整包名，未找到时点 **Look up … on public npm** 可匿名阅读其 registry README。打开未收录的依赖时也可以这样查询，查看器会沿用上一级声明的版本范围。公共 npm 查看器只提供阅读；要安装请使用 **Find plugins**。
 
 ### 独立 React 市场组件
 

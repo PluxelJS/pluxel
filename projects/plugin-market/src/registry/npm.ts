@@ -4,7 +4,7 @@ import {
 	exactVersion,
 	object,
 	readBytes,
-	readJson,
+	parseJsonBytes,
 	type Coordinate,
 	type PackageIdentity,
 	type Release,
@@ -23,7 +23,14 @@ export const provenanceUnavailable = () =>
 		422,
 	)
 
-async function npmResponse(url: string, source: RegistrySource, signal: AbortSignal) {
+type MirrorRead = 'metadata' | 'archive'
+
+async function npmResponse(
+	url: string,
+	source: RegistrySource,
+	signal: AbortSignal,
+	mirrorRead?: MirrorRead,
+) {
 	let parsed: URL
 	try {
 		parsed = new URL(url)
@@ -46,15 +53,37 @@ async function npmResponse(url: string, source: RegistrySource, signal: AbortSig
 	}
 	let response: Response
 	try {
-		const request = new Request(parsed.href, {
+		const mirror = mirrorRead && source.mirror
+		const target = mirror ? mirror + parsed.href.slice(source.registry.length) : parsed.href
+		const request = new Request(target, {
 			redirect: 'manual',
 			signal,
 			headers: {
 				Accept: 'application/json',
-				...(source.token ? { Authorization: `Bearer ${source.token}` } : {}),
+				...(!mirror && source.token ? { Authorization: `Bearer ${source.token}` } : {}),
 			},
 		})
-		response = await (source.fetch ?? fetch)(request)
+		const transport = source.fetch ?? fetch
+		response = await transport(request)
+		// npmmirror serves archives through one public CDN hop. Metadata and private registries keep their redirect policy.
+		if (
+			mirrorRead === 'archive' &&
+			mirror === 'https://registry.npmmirror.com' &&
+			[301, 302, 303, 307, 308].includes(response.status)
+		) {
+			const location = URL.parse(response.headers.get('location') ?? '')
+			if (
+				location?.origin === 'https://cdn.npmmirror.com' &&
+				location.pathname.startsWith('/packages/') &&
+				!location.username &&
+				!location.password &&
+				!location.search &&
+				!location.hash
+			) {
+				await response.body?.cancel()
+				response = await transport(new Request(location, { redirect: 'manual', signal }))
+			}
+		}
 	} catch {
 		throw new MarketError('npm-unavailable', 'The npm request failed or timed out', 502, true)
 	}
@@ -72,8 +101,14 @@ async function npmResponse(url: string, source: RegistrySource, signal: AbortSig
 	return response
 }
 
-async function npmBytes(url: string, source: RegistrySource, signal: AbortSignal, limit: number) {
-	const response = await npmResponse(url, source, signal)
+async function npmBytes(
+	url: string,
+	source: RegistrySource,
+	signal: AbortSignal,
+	limit: number,
+	mirrorRead?: MirrorRead,
+) {
+	const response = await npmResponse(url, source, signal, mirrorRead)
 	try {
 		return await readBytes(response.body, limit)
 	} catch (error) {
@@ -92,9 +127,10 @@ async function npmJson(
 	source: RegistrySource,
 	signal: AbortSignal,
 	limit: number,
+	mirrorRead?: MirrorRead,
 ): Promise<unknown> {
-	const bytes = await npmBytes(url, source, signal, limit)
-	return readJson(new Response(bytes).body, limit)
+	const bytes = await npmBytes(url, source, signal, limit, mirrorRead)
+	return parseJsonBytes(bytes)
 }
 
 /** Observe browsing metadata without accepting a release for installation. */
@@ -111,6 +147,7 @@ export async function fetchObservation(
 		source,
 		eventSignal ? AbortSignal.any([eventSignal, deadline]) : deadline,
 		2 * 1024 * 1024,
+		'metadata',
 	)
 	if (
 		!object(value) ||
@@ -227,7 +264,7 @@ async function inspectRelease(
 			422,
 		)
 	}
-	const bytes = await npmBytes(tarball, source, signal, tarballBytes)
+	const bytes = await npmBytes(tarball, source, signal, tarballBytes, 'archive')
 	if ((await archiveIntegrity(bytes)) !== integrity)
 		throw new MarketError(
 			'integrity-mismatch',
@@ -240,6 +277,7 @@ async function inspectRelease(
 		source,
 		signal,
 		16 * 1024,
+		'metadata',
 	)
 	if (
 		!object(tags) ||

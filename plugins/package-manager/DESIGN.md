@@ -1,55 +1,25 @@
-# Package Manager 插件设计
+# Package Manager 安装与恢复
 
-## 所有权与消费
+`PackageManagerPlugin` 在 Node 宿主中解析 npm 包并发布 ESM 入口。`PackageManagerConfig` 定义部署策略；持久化的 `published-installation.json` 记录当前选中的安装。Host 只消费发布的入口，Workbench、Commands 和本地插件方法共用同一个 store。目录来源、兼容性检查、级联安装和查看器见[插件市场设计](../../engineering/PLUGIN_MARKET.md)。
 
-`PackageManagerConfig` 是导出的部署 schema，与 Plugin 的 `configs.use()` 共用；Host config/env/file 优先级只拥有部署策略。
-持久化安装清单和发布 revision 属于业务状态，不反向覆盖配置。公共 `snapshot/install/remove` 与 Commands 在无 Workbench 时完整可用；
-Workbench target 仅投影同一 store，不是配置或安装操作的唯一入口。registry/auth/proxy 保留 pnpm 原生输入契约，不另建普通 secret 配置。
+## 准备与确认
 
-`/market` 和 `/packages` 两个 Direct View 复用同一包管理页面，分别默认打开市场和已安装标签。两者通过同一 `PackageManagerApi` factory 绑定同一 Store，每个打开项独立拥有 RPC root 和 renderer query resources。资源定义由一个工厂按 descriptor 建立，不能跨 open 共享查询缓存。市场浏览的 `./marketplace` 导出仅依赖 React、无导入的 market DTO 和公共 HTTP client，不引入 Mantine、Workbench 或 CapnWeb；Workbench adapter 与公开 UI 不在同一导出依赖图。
+`prepareInstall` 和 `prepareMarketInstall` 用 pnpm 物化完整依赖图。每个 store 最多保留一份内存预览，有效期为十分钟。预览绑定候选目录、基础 revision、精确版本、SRI 和文件摘要。确认时重新核对候选字节并提交，跳过再次下载和运行构建脚本。停止插件、替换候选或提交其他安装变更都会使旧预览失效。
 
-共享 React 目录拥有搜索、筛选、分页、包详情和版本页。返回目录时恢复原页、滚动位置与焦点。`MarketplaceData` 的稳定读取组件投影当前查询。公开网页和文档使用匿名 HTTP adapter；Workbench 使用每个打开项的 queryFamily。`packageAction`、`packageStatus`、`releaseAction` 和 `versionNote` 允许 Workbench 组合宿主操作与状态。公开目录只传 data 即可完整浏览。
-
-Workbench 文档持有待安装清单，卡片、已检查的发行详情与清单版本选择器编辑同一份草稿。包名在清单中唯一，来源保留 marketId 和 registry。提交从每个具名版本字段取精确值，只对已选包读取版本列表。编辑清单撤回页面的旧预览，后端仍负责所有完整性检查。更新提示要求能读取该 registry 的精确 latest 发行。已装版本来自包管理器的已发布入口；宿主使用状态由授权 Management catalog 的声明包名、节点与生命周期投影，同名关系不提供运行字节的版本证明。卸载审阅记录受管选择 revision，提交时在 store 写队列内检查 revision。
-
-Plugin 拥有 pnpm acquisition、配置、安装记录、单写者 lock、commands 和可选 Direct View。Host 只消费普通 ESM wrapper；不读取安装私有状态。init 在任何 native/文件/UI 副作用前用 requirePluginSource 校验 rootDir/entries，返回 next-start/live 事实。Native 下次新进程启动扫描；Vite 独立报告目录事务与 lifecycle。
+pnpm 负责 registry、凭据、代理和下载。默认忽略构建脚本、允许列表为空，最短发布时间为 24 小时。启用脚本时需显式列出可运行脚本的包名，准备阶段就可能执行这些脚本。受管请求支持 npm 包名及版本、范围或 dist-tag。[公开配置和调用方式](../../docs/plugins/package-manager.md)
 
 ## 不可变安装与发布
 
-市场和直接安装由同一个 Plugin 拥有。market client 只访问部署方在 `markets` 中配置的 base URL，页面提交连接 ID。Worker 主站和只读镜像提供同一套公开目录接口。公共 HTTP 读取有 timeout、响应大小和 DTO 校验边界，重定向会失败。目录读取失败时，直接安装仍由 pnpm 提供。 [部署方式](../../projects/plugin-market/README.md#只读镜像)
+每次安装在私有的 `revisions/<uuid>` 下写入 manifest、lockfile、node_modules 链接和内部入口。pnpm 全局虚拟存储位于 `slots/`，通过复制导入包字节。包图指纹包含 pnpm v9 锁文件中的 resolution、peer、optional 和可达依赖，另对实际文件计算摘要。图和字节都未改变的包复用原物理目录和内部入口，保证不同顶层插件借用同一个依赖实例。无法验证依赖图、已复用目录的字节或路径发生变化时，发布失败。[安装实现](src/store.ts)
 
-交互安装先 `prepareInstall` / `prepareMarketInstall`，再 `confirmInstall`。准备使用相同 pnpm engine 完整物化私有 revision，保留 registry/auth/proxy 语义，不另建 npm resolver。每 store 只保留一个内存候选，10 分钟有效；候选 ID、selection revision、固定版本、SRI 和图/字节绑定。确认重新核对文件再提交，不执行第二次 acquisition。停止、替换候选或其他安装 mutation 使旧预览失效；候选不是跨进程持久任务。
+保存新的安装记录后，store 逐项原子替换 `entries/` 下的公开入口。I/O 可能在两项之间失败，回执按实际文件报告 `succeeded` 和 `failed`。快照只为与当前记录一致的包返回 `entryFile`。卸载后仍待撤回的入口由目录内容推导为 `pendingRemovals`；重试这些入口只需撤回文件。旧 revision、slot、资源和制品保留到离线维护，以便已有进程完成工作。
 
-市场包身份为 registry + name。卡片、详情和侧栏使用同一个仓库所有者 ID，客户端核对所有者与声明的仓库地址。同名包的详情、版本、选择和安装均以 registry 区分。列表省略来源时搜索全部可读 registry，精确包与发行查询省略来源时选择公共 npm。受保护来源由市场访问控制决定是否可读。 [市场 HTTP 契约](../../projects/plugin-market/README.md#http-契约)
+## 写者与生命周期
 
-包概览与可安装发行是不同事实：`marketPackage` 允许只观察过元数据的包显示 registry README、许可和声明仓库，`indexedVersions: 0` 不产生安装入口。Workbench 先读概览，打开版本页才查询已校验发行；发行 README 来自已校验 archive。来源 stars 仅消费带观测时间的实际缓存，声明仓库和官方标记不赋予 provenance verified 状态。
+初始化先用 `requirePluginSource` 核对部署的来源目录。store 通过原子创建 `.writer` 获得跨进程写权限；已有写者时返回 `PACKAGE_STORE_WRITER_CONFLICT`。启动会核对安装记录、路径边界、内部入口、slot 字节和公开入口。异常退出留下的锁由操作者离线核实并清除。原生引擎调用前还会核对调度环境中的首个非空 workspace-dir 与实际安装目录，避免写入调用方的工作区。
 
-两处 README 复用 browser-safe mdast/GFM 到 React 的渲染器。包内 HTML 和图片替代文字以文本呈现，导航只允许 HTTP(S)/mailto 绝对链接。代码围栏先显示原文，遇到支持的语言后按需加载本地 Shiki 语法与两套主题，以 React 文本节点显示 token。表格和长代码行在各自的容器内横向滚动。
-
-`prepareMarketInstall` 接收 1–100 项选择。后端读取每项精确发行，为整个图生成一份预览，逐一核对 pnpm registry、lockfile SRI 和实际 package.json name/version；市场 tarball URL 不进入 acquisition。pnpm 的 scoped registry 优先于 default，来源不一致在 acquisition 之前拒绝；相同来源复用原生认证和代理配置。确认后的顶层选择固定为精确版本，原请求范围保留在预览。准备允许显式策略授权的构建脚本，故不承诺只读。当前预览覆盖受管包图变化，不冒充完整 Host Plugin/fork 生命周期预检。
-
-每次 mutation 将完整 manifest 交给一次 pnpm install，私有 revisions/<uuid> 保存 manifest/lockfile/node_modules 链接和 inner entries。global virtual store 位于 root/slots，copy 导入包字节；相同 resolution、peer context 和依赖图复用同一物理 slot，A/B 不会因安装批次得到两份共同 P。
-
-pnpm v9 graph fingerprint 包含 resolution、peer、optional 和可达依赖；实际 slot 闭包字节再做摘要。图与字节未变时必须保留同一物理路径与旧 inner entry，改变了就拒绝。图变化的包使用新 inner entry。未知图不做保守全量重发，明确拒绝。
-
-published-installation.json 是当前安装选择的唯一 authority；准备失败保持原记录。保存新记录后逐项原子交换公开 entries/<encoded-name>.mjs，撤回 stale wrapper。不是 batch atomic：IO 失败后按实际 wrapper 比对给出部分成功回执；snapshot 的 entryFile 只有与当前 authority 一致时存在；pendingRemovals 从 entries 中已离开选择的残留入口推导，UI 提供显式撤回重试，不另存恢复清单。下一 mutation 可以重试发布；显式 remove 也接受已从安装选择移除但仍残留公开 wrapper 的包，仅重试撤回时不重新执行 pnpm。混合新卸载与撤回重试按所有涉及条目的实际文件给出回执。initialize 不修复错误合同。
-
-卸载只移除公开 wrapper。旧 revisions、slots、资源和制品一直保留到明确离线维护；close 撤回 mutation/publication 并等待已接纳 native install 真实结算，随后释放 writer。不存在启动迁移或自动 GC。
-
-## 写者与恢复
-
-原生引擎调用前校验首个非空 pnpm/npm workspace-dir 环境覆盖与显式 dir 一致；冲突直接拒绝，不允许调度环境把私有 revision 安装指向 Host 工作区，也不全局修改进程环境。原生集成测试在独立 worker 中清除调度覆盖，另用子进程与临时旁工作区回归四种拼写、空值与优先级、匹配目录及旁工作区字节不变。
-
-目录内 mkdir .writer 原子获得跨进程单写者 ownership；EEXIST 返回 PACKAGE_STORE_WRITER_CONFLICT，其余 IO 错误保持原生错误。异常退出的遗留 lock 只能由操作者离线核对并删除。启动验证 index、物理 containment、inner entries、slot bytes 和公开 wrapper；旧布局与不一致内容明确失败，不静默迁移或重新发布。
-
-## 能力与回执
-
-package.install/remove commands、Plugin 方法和每次打开的 owner-bound Workbench target 复用同一 store。初始化、mutation 和 snapshot 共用串行队列，snapshot 不混合两次提交的事实；关闭同步撤销 admission，等待已开始初始化/安装和同一次 writer 释放，缓存句柄也不能继续读取。调用时捕获输入数组，排队期间调用方修改原数组不改变操作目标。关闭 Workbench 不影响安装。停止 Plugin 撤回 commands/View、abort target 和安装 admission；持久文件不因 generation cleanup 删除。
-
-succeeded 表示 wrapper 已发布，failed 保留 INVALID_SPEC/INSTALL_FAILED/REMOVE_FAILED。Vite catalog、native next-start 与 auto-start/session intent 分别描述宿主接纳及运行状态。snapshot 可返回安装时核验过的市场 registry，缺少证据的安装省略该字段。pnpm 的本机配置、凭据、代理与原生事件留在宿主，native acquisition 错误使用经过挑选的领域消息。
-
-默认忽略 scripts、空 allowBuilds 和 24 小时 minimum release age。放宽 scripts 必须同时显式配置非空 exact allow-list。只接纳 canonical registry package name 与版本/range/dist-tag；alias/path/URL/Git 属于其他 producer。
+初始化、安装变更与快照共用串行队列。调用时捕获请求，卸载时在写队列里核对审阅的 revision。每个 Workbench 文档拥有自己的查询和 RPC 资源，关闭文档后已接纳的安装继续执行。插件关闭时拒绝新操作，等待已接纳的原生安装和写锁释放。发布成功表示入口已就绪，Vite 的即时接纳、原生宿主的下次启动和插件运行状态分别由 Host 报告。
 
 ## 验证入口
 
-store.test 验证发布失败/取消/未知图与未变条目；immutable-installation.test 使用真实 registry tarballs、pnpm global slots、原生 fresh process 和固定 PackageManagerPlugin 的生产 Vite，覆盖 A/B/P 身份、wrapper/运行代/Node 制品精度、普通 ESM 更新、HTTP/WebSocket、工厂失败恢复、跨进程写者与关闭。pnpm-engine 的 local registry 用原生新进程验证发布与消费分离；隔离 plugin tests 只证明业务边界。
+[Store 测试](tests/store.test.ts)覆盖图变化、预览失效和部分发布恢复。[不可变安装测试](tests/immutable-installation.test.ts)用真实 registry 归档、pnpm slot 和生产 Vite 检查共享实例、入口更新和制品。[原生引擎测试](tests/pnpm-engine.test.ts)验证新进程对发布和撤回的接纳；[环境隔离测试](tests/workspace-environment.test.ts)验证 workspace-dir 覆盖的优先级及隔离。

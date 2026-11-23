@@ -41,7 +41,7 @@ import { useOptionalWorkbenchDocument } from '../app/workbench/document'
 import { useOptionalWorkspaceSession } from '../app/workbench/workspaceContext'
 import { Actions } from 'flexlayout-react'
 import { useRouter } from '@tanstack/react-router'
-import { WorkbenchRendererError } from '@pluxel/workbench/react'
+import { WorkbenchRendererError, type WorkbenchDocumentInput } from '@pluxel/workbench/react'
 import { notifyAndRecord } from '../app/notifications/notifyBridge'
 import { WorkbenchErrorBoundary } from './ErrorBoundary'
 import {
@@ -49,7 +49,7 @@ import {
 	type WorkbenchResolvedRoute,
 	type WorkbenchTargetId,
 } from './client'
-import { normalizeWorkbenchPath, parseWorkbenchHref } from './paths'
+import { buildPluginDetailHref, normalizeWorkbenchPath, parseWorkbenchHref } from './paths'
 import { getWorkbenchDirectoryHref, resolveWorkbenchDirectoryRoute } from './route-directory'
 import { toWorkbenchError } from './errors'
 
@@ -316,10 +316,16 @@ function ReadyFederatedWorkbenchEntryView({
 									.catch((cause: unknown) => workspace?.report(cause))
 							else navigation.navigate(href)
 						},
-						openDocument(input: { path: string; title: string; meta?: string }) {
-							const path = resolveShellPath(input.path, 'openDocument')
+						openDocument(input: WorkbenchDocumentInput) {
+							const path = input.plugin
+								? buildPluginDetailHref(input.plugin)
+								: getWorkbenchDirectoryHref(
+										directory,
+										entry.target.node,
+										resolveShellPath(input.path, 'openDocument'),
+									)
 							navigation.openTab({
-								path: getWorkbenchDirectoryHref(directory, entry.target.node, path),
+								path,
 								title: input.title,
 								...(input.meta === undefined ? {} : { meta: input.meta }),
 							})

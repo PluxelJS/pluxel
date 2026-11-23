@@ -2,7 +2,10 @@ import type { PluginStatusSnapshot } from '@pluxel/services/management/client'
 import type { WorkbenchHostFacade } from '@pluxel/workbench/react'
 
 type PackagePlugin = Readonly<
-	Pick<PluginStatusSnapshot, 'route' | 'lifecycleState' | 'availability' | 'activationReason'> & {
+	Pick<
+		PluginStatusSnapshot,
+		'address' | 'route' | 'lifecycleState' | 'availability' | 'activationReason'
+	> & {
 		label: string
 	}
 >
@@ -26,7 +29,14 @@ export async function readPackageUsage({
 	} of catalog.plugins) {
 		const { entry } = address.definition
 		if (entry.kind === 'source-entry') continue
-		const plugin = { label: label.text, route, lifecycleState, availability, activationReason }
+		const plugin = {
+			label: label.text,
+			address,
+			route,
+			lifecycleState,
+			availability,
+			activationReason,
+		}
 		const group = packages.get(entry.packageName)
 		if (group) group.push(plugin)
 		else packages.set(entry.packageName, [plugin])

@@ -126,7 +126,7 @@ describe('PackageMarketClient', () => {
 			fetch.mockResolvedValueOnce(new Response(null, { status: 404 }))
 			expect(await client.release('community', release.name, '2.0.0')).toMatchObject({
 				ok: false,
-				error: { code: 'MARKET_UNAVAILABLE', message: expect.stringContaining('not indexed') },
+				error: { code: 'NOT_INDEXED', message: expect.stringContaining('not indexed') },
 			})
 		} finally {
 			client.close()
@@ -287,6 +287,11 @@ describe('PackageMarketClient', () => {
 				{ registry: release.registry },
 				{ name: '@example/other' },
 				{ repositoryStars: -1 },
+				{ checkedRequirements: { version: '1.0.0', peerDependencies: {}, pluginPackages: {} } },
+				{
+					indexedVersions: 1,
+					checkedRequirements: { version: '2.0.0', peerDependencies: {}, pluginPackages: {} },
+				},
 			]) {
 				fetch.mockResolvedValueOnce(Response.json({ ...detail, ...different }))
 				expect(await client.package('community', detail.name, source)).toMatchObject({

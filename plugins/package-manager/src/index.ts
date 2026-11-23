@@ -12,6 +12,7 @@ import { requirePluginSource } from '@pluxel/host/sources'
 import {
 	packageMutationLimit,
 	type PackageManagerApi,
+	type LocalPackageLocation,
 	type PackageManagerSnapshot,
 	type PackageMutationResult,
 	type PackagePreparationResult,
@@ -21,6 +22,7 @@ import {
 	type MarketReleaseQuery,
 } from './contracts.ts'
 import { loadPnpmEngine } from './pnpm-engine.ts'
+import { defaultNpmMirrors, registrySchema } from './market.ts'
 import { ManagedPackageStore } from './store.ts'
 import { PackageManagerWorkbench } from './workbench.ts'
 
@@ -60,6 +62,14 @@ export const PackageManagerConfig = v.object({
 		f.formMeta({
 			title: 'Plugin markets',
 			description: 'Optional HTTP package catalogs. Direct installation works without a market.',
+		}),
+	),
+	npmMirrors: v.pipe(
+		v.optional(v.array(registrySchema), () => [...defaultNpmMirrors]),
+		f.formMeta({
+			title: 'Public npm mirrors',
+			description:
+				'Accept these pnpm registry URLs for checked public npm releases. Configure the active download registry in pnpm.',
 		}),
 	),
 	rootDir: v.pipe(
@@ -118,6 +128,7 @@ export class PackageManagerPlugin extends BasePlugin {
 			allowBuilds: this.config.allowBuilds,
 			minimumReleaseAgeMinutes: this.config.minimumReleaseAgeMinutes,
 			markets: this.config.markets,
+			npmMirrors: this.config.npmMirrors,
 			sourceUpdates: source.updates,
 			signal,
 		})
@@ -230,6 +241,24 @@ function toCommandMutation(result: PackageMutationResult) {
 class PackageManagerTarget extends RpcTarget implements PackageManagerApi {
 	constructor(private readonly store: ManagedPackageStore) {
 		super()
+	}
+
+	async searchRegistryDto(query: string, includeAll: boolean) {
+		const result = await this.store.searchRegistry(query, includeAll)
+		assertWorkbenchDto(result)
+		return result
+	}
+
+	async inspectRegistryDto(spec: string) {
+		const result = await this.store.inspectRegistry(spec)
+		assertWorkbenchDto(result)
+		return result
+	}
+
+	async localPackageDto(location: LocalPackageLocation) {
+		const result = await this.store.localPackage(location)
+		assertWorkbenchDto(result)
+		return result
 	}
 
 	async snapshotDto(): Promise<PackageManagerSnapshot> {

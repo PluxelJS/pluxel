@@ -25,7 +25,12 @@ async function fixtureRoot(): Promise<string> {
 	return root
 }
 
-function createEngine() {
+function createEngine(
+	pluginFields: Record<string, unknown> = {
+		peerDependencies: { '@pluxel/core': '*' },
+		exports: './index.mjs',
+	},
+) {
 	const install = vi.fn(async (options: InstallOptions): Promise<InstallResult> => {
 		const manifest = options.projects[0]!.manifest
 		const nodeModules = resolve(options.dir, 'node_modules')
@@ -43,8 +48,13 @@ function createEngine() {
 			await mkdir(directory, { recursive: true })
 			await writeFile(
 				resolve(directory, 'package.json'),
-				JSON.stringify({ name, version: requested.replace(/^[^0-9]*/, '') || '1.0.0' }),
+				JSON.stringify({
+					...pluginFields,
+					name,
+					version: requested.replace(/^[^0-9]*/, '') || '1.0.0',
+				}),
 			)
+			await writeFile(resolve(directory, 'index.mjs'), 'export default 1')
 		}
 		const dependencies = Object.fromEntries(
 			Object.entries(manifest.dependencies ?? {}).map(([name, specifier]) => [
@@ -81,6 +91,9 @@ function createEngine() {
 		return null
 	}
 	const engine: PnpmEngine = {
+		resolveDependency: vi.fn(async () => {
+			throw new Error('Unexpected metadata lookup')
+		}),
 		engineVersion: () => 'test-engine',
 		install,
 		parseBareSpecifier,
@@ -353,6 +366,89 @@ describe('ManagedPackageStore', () => {
 					{ name: 'beta', installedVersion: beta.version, entryFile: expect.any(String) },
 				],
 			})
+		} finally {
+			await store.close()
+		}
+	})
+
+	it('reviews cascading checked plugins through an npm mirror, including ranges, cycles and compatible alternatives', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine, install } = createEngine()
+		const config = engine.readConfig({ dir: rootDir })
+		vi.spyOn(engine, 'readConfig').mockReturnValue({
+			...config,
+			registries: [{ name: 'default', url: 'https://registry.npmmirror.com/' }],
+		})
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+			markets: [{ id: 'community', url: 'https://market.example' }],
+		})
+		await store.initialize()
+		const registry = 'https://registry.npmjs.org'
+		const root = { marketId: 'community', registry, name: 'root', version: '1.0.0' }
+		const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+			const url = new URL(String(input))
+			expect(url.searchParams.get('registry')).toBe(registry)
+			const [, , , name, , version] = url.pathname.split('/')
+			if (!version) {
+				const list = name === 'codec' ? ['2.0.0', '1.10.0', '1.2.0'] : ['1.0.0']
+				return Response.json({
+					releases: list.map((candidate) => checkedRelease({ ...root, name, version: candidate })),
+					coverage: 'indexed-only',
+					nextCursor: null,
+				})
+			}
+			const result = checkedRelease({ ...root, name, version })
+			if (name === 'root')
+				return Response.json({
+					...result,
+					pluginPackages: { codec: 'required', logger: 'optional', bridge: 'required' },
+					peerDependencies: { codec: '>=1', logger: '^3', bridge: '^1', 'plain-peer': '*' },
+				})
+			if (name === 'bridge')
+				return Response.json({
+					...result,
+					pluginPackages: { codec: 'required', root: 'required' },
+					peerDependencies: { codec: '^1', root: '^1' },
+				})
+			return Response.json(result)
+		})
+		try {
+			const preview = await store.prepareMarketInstall([root])
+			if (preview.ok === false) throw new Error(preview.failed[0]?.message)
+			expect(preview.plan.packages.map((pkg) => pkg.name).sort()).toEqual([
+				'bridge',
+				'codec',
+				'root',
+			])
+			expect(preview.plan.packages.find((pkg) => pkg.name === 'codec')).toMatchObject({
+				version: '1.10.0',
+				market: { registry },
+				requiredBy: [
+					{ name: 'root', range: '>=1' },
+					{ name: 'bridge', range: '^1' },
+				],
+			})
+			expect(await readdir(store.entriesDir)).toEqual([])
+			expect(install.mock.calls[0]![0].registries?.default).toBe('https://registry.npmmirror.com/')
+			expect(await store.confirmInstall(preview.plan.id)).toMatchObject({ ok: true })
+			const confirmed = await store.snapshot()
+			expect(confirmed.packages).toHaveLength(3)
+			expect(fetch.mock.calls.map(([url]) => String(url)).join(' ')).not.toMatch(
+				/logger|plain-peer/,
+			)
+			const conflict = await store.prepareMarketInstall([
+				root,
+				{ ...root, name: 'codec', version: '2.0.0' },
+			])
+			expect(conflict).toMatchObject({
+				ok: false,
+				failed: [{ input: 'codec', message: expect.stringContaining('bridge') }],
+			})
+			expect(install).toHaveBeenCalledTimes(1)
 		} finally {
 			await store.close()
 		}
@@ -1082,3 +1178,47 @@ describe('ManagedPackageStore', () => {
 		).toThrow(/requires at least one exact allowBuilds/)
 	})
 })
+
+it.each([
+	[{}, '@pluxel/core'],
+	[
+		{ peerDependencies: { '@pluxel/core': '*' }, exports: './missing.mjs' },
+		'Missing published package file',
+	],
+	[
+		{
+			peerDependencies: { '@pluxel/core': '*' },
+			exports: './index.mjs',
+			pluxel: { control: './package.json' },
+		},
+		'no plugin at this package root',
+	],
+] as const)(
+	'rejects incompatible installed bytes in review and immediate installation',
+	async (fields, reason) => {
+		const rootDir = await fixtureRoot()
+		const { engine } = createEngine(fields)
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+		})
+		await store.initialize()
+		try {
+			for (const result of [
+				await store.prepareInstall(['ordinary@1.0.0']),
+				await store.install(['ordinary@1.0.0']),
+			]) {
+				expect(result).toMatchObject({
+					ok: false,
+					failed: [{ message: expect.stringContaining(reason) }],
+				})
+				expect(await store.snapshot()).toMatchObject({ revision: 0, packages: [] })
+				expect(await readdir(store.entriesDir)).toEqual([])
+			}
+		} finally {
+			await store.close()
+		}
+	},
+)

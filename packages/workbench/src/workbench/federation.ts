@@ -6,6 +6,7 @@ import {
 	type ModuleFederationRuntimePlugin,
 } from '@module-federation/runtime'
 import * as BridgeReact from '@module-federation/bridge-react/v19'
+import { parsePluginNodeAddress } from '@pluxel/core'
 import {
 	WORKBENCH_FEDERATION_RUNTIME_VERSION,
 	WORKBENCH_FEDERATION_SHARED_MODULES,
@@ -42,6 +43,7 @@ import {
 import type {
 	WorkbenchBridgePayload,
 	WorkbenchConfirmInput,
+	WorkbenchDocumentInput,
 	WorkbenchDocumentTitle,
 	WorkbenchHostFacade,
 	WorkbenchNavigation,
@@ -123,11 +125,15 @@ export class WorkbenchViewHostHandle implements Disposable {
 						this.#assertActive()
 						input.navigation!.navigate(readRelativePath(path))
 					},
-					openDocument: (value: { path: string; title: string; meta?: string }) => {
+					openDocument: (value: WorkbenchDocumentInput) => {
 						this.#assertActive()
+						if ('plugin' in value && 'path' in value)
+							throw new TypeError('[workbench/federation] document requires either plugin or path')
 						input.navigation!.openDocument(
 							Object.freeze({
-								path: readRelativePath(value.path),
+								...('plugin' in value
+									? { plugin: parsePluginNodeAddress(value.plugin) }
+									: { path: readRelativePath(value.path) }),
 								title: readRequiredText(value.title, 'document title', 256),
 								...(value.meta === undefined
 									? {}

@@ -732,12 +732,15 @@ try {
 			await expect(
 				pane.getByRole('heading', { name: 'Plugin packages', exact: true }),
 			).toBeVisible()
+			await expect(pane.getByRole('tab', { name: 'Installed', exact: true })).toBeVisible()
 			await expect(
-				pane.getByRole('tab', { name: `Installed (${before.packages.length})`, exact: true }),
-			).toBeVisible()
-			await expect(pane.locator('tbody tr')).toHaveCount(before.packages.length)
-			await pane.getByRole('tab', { name: 'Direct install', exact: true }).click()
-			const input = pane.getByRole('textbox', { name: 'npm packages', exact: true })
+				pane.locator('section[aria-label="Managed packages"] li[aria-label]'),
+			).toHaveCount(before.packages.length)
+			await pane.getByRole('tab', { name: 'Find plugins', exact: true }).click()
+			const input = pane.getByRole('searchbox', {
+				name: 'Find plugins in your npm registry',
+				exact: true,
+			})
 			await expect(input).toBeEnabled()
 			const packageInputA = await input.elementHandle()
 			const draftA = '@pluxel/browser-draft-a@0.0.0'
@@ -754,9 +757,9 @@ try {
 			await rename(duplicate, copyTitle)
 			await expect(tab(copyTitle)).toBeVisible()
 			const copyPane = page.getByRole('tabpanel', { name: copyTitle, exact: true })
-			await copyPane.getByRole('tab', { name: 'Direct install', exact: true }).click()
-			const copyInput = copyPane.getByRole('textbox', {
-				name: 'npm packages',
+			await copyPane.getByRole('tab', { name: 'Find plugins', exact: true }).click()
+			const copyInput = copyPane.getByRole('searchbox', {
+				name: 'Find plugins in your npm registry',
 				exact: true,
 			})
 			await expect(copyInput).toBeEnabled()

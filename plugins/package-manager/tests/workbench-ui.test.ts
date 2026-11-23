@@ -33,6 +33,8 @@ const state = vi.hoisted(() => {
 		reset: vi.fn(),
 	})
 	return {
+		registrySearch: query(),
+		registryInspection: query(),
 		snapshot: query(),
 		usage: query(),
 		packages: query(),
@@ -54,6 +56,10 @@ const state = vi.hoisted(() => {
 
 function mockResources() {
 	return {
+		registry: {
+			search: { useQuery: () => state.registrySearch },
+			inspect: { useQuery: () => state.registryInspection },
+		},
 		usePackageManager: () => ({
 			snapshotQuery: state.snapshot,
 			usageQuery: state.usage,
@@ -134,6 +140,8 @@ beforeEach(() => {
 		vi.fn(() => ({ matches: false, addEventListener() {}, removeEventListener() {} })),
 	)
 	for (const query of [
+		state.registrySearch,
+		state.registryInspection,
 		state.snapshot,
 		state.usage,
 		state.packages,
@@ -218,14 +226,12 @@ async function setInput(element: HTMLTextAreaElement | HTMLInputElement, value: 
 	})
 }
 async function selectVersion(version: string) {
-	const label = [...container.querySelectorAll('label')].find(
-		(item) => item.textContent === 'Package version',
-	)!
-	const select = document.getElementById(label.htmlFor) as HTMLSelectElement
-	await act(() => {
-		select.value = version
-		select.dispatchEvent(new Event('change', { bubbles: true }))
-	})
+	const row = [...container.querySelectorAll<HTMLButtonElement>('.pm-release-row')].find(
+		(item) => item.querySelector('code')?.textContent === version,
+	)
+	expect(row?.getAttribute('aria-expanded')).toBe('false')
+	await act(() => row!.click())
+	expect(row?.getAttribute('aria-expanded')).toBe('true')
 }
 function packageSummary(overrides: Partial<MarketPackageSummary> = {}): MarketPackageSummary {
 	return {
@@ -307,10 +313,10 @@ it('keeps direct installation available without a market and confirms the review
 	expect(container.textContent).toContain('Plugin packages')
 	expect(container.textContent).not.toContain('Marketplace')
 	expect(state.packagesInput).not.toHaveBeenCalled()
-	await click('Direct install')
+	await click('Find plugins')
 	const draft = container.querySelector('textarea')!
 	await setInput(draft, 'alpha@latest')
-	await click('Review installation')
+	await click('Review package list')
 	expect(state.preparation.mutate).toHaveBeenCalledWith({ kind: 'direct', specs: ['alpha@latest'] })
 	expect(state.confirmation.mutateAsync).not.toHaveBeenCalled()
 	Object.assign(state.preparation, { status: 'success', data: { ok: true, plan: preparedPlan() } })
@@ -359,8 +365,8 @@ it('loads markets only when opened and keeps a market failure separate from dire
 	expect(state.packagesInput).not.toHaveBeenCalled()
 	await click('Marketplace')
 	expect(container.textContent).toContain('Market request failed.')
-	await click('Direct install')
-	expect(button('Review installation').disabled).toBe(false)
+	await click('Find plugins')
+	expect(button('Review package list').disabled).toBe(false)
 	expect(container.querySelector('textarea')).not.toBeNull()
 })
 
@@ -398,9 +404,9 @@ it('exposes installed packages and direct installation in Market with a metadata
 		names: ['managed-example'],
 		expectedRevision: 0,
 	})
-	await click('Direct install')
+	await click('Find plugins')
 	await setInput(container.querySelector('textarea')!, 'alpha@1.2.3')
-	await click('Review installation')
+	await click('Review package list')
 	expect(state.preparation.mutate).toHaveBeenCalledWith({ kind: 'direct', specs: ['alpha@1.2.3'] })
 	expect(state.confirmation.mutateAsync).not.toHaveBeenCalled()
 })
@@ -453,7 +459,9 @@ it('reviews the exact selected release and keeps declared repository links separ
 		'Storage',
 	)
 	await click('alpha')
-	expect(container.querySelector('.pm-detail-header')?.textContent).toContain('#cache')
+	expect(container.querySelector('aside[aria-label="Plugin details"]')?.textContent).toContain(
+		'#cache',
+	)
 	await click('Versions')
 	await selectVersion('2.0.0')
 	expect(state.releaseInput).toHaveBeenLastCalledWith({
@@ -470,7 +478,9 @@ it('reviews the exact selected release and keeps declared repository links separ
 	expect(container.textContent).toContain('^1.0.0')
 	expect(container.textContent).toContain('optional plugin')
 	expect(
-		container.querySelector('.pm-detail-header a[href="https://github.com/unverified/claim"]'),
+		container.querySelector(
+			'aside[aria-label="Plugin details"] a[href="https://github.com/unverified/claim"]',
+		),
 	).not.toBeNull()
 	expect(container.textContent).not.toContain('Source verified')
 	state.release.data = {
@@ -489,6 +499,8 @@ it('reviews the exact selected release and keeps declared repository links separ
 	expect(container.textContent).toContain('Source verified')
 	expect(container.querySelector('a[href="https://github.com/example/alpha"]')).not.toBeNull()
 	await click('Add to selection')
+	await click('View selection (1)')
+	expect(document.activeElement?.getAttribute('aria-label')).toBe('Installation selection')
 	expect(state.preparation.mutate).not.toHaveBeenCalled()
 	await click('Review selection')
 	expect(state.preparation.mutate).toHaveBeenCalledWith({
@@ -644,8 +656,8 @@ it('allows choosing an indexed version when latest has not been indexed, without
 		name: 'alpha',
 		query: { registry: 'https://registry.npmjs.org', limit: 20 },
 	})
-	expect(container.textContent).toContain('Registry latest: 3.0.0')
-	expect(container.textContent).not.toContain('2.0.0 (registry latest)')
+	expect(container.querySelector('.pm-detail-header .pm-latest code')?.textContent).toBe('3.0.0')
+	expect(container.querySelector('.pm-release-row .pm-badge')).toBeNull()
 	await selectVersion('2.0.0')
 	expect(state.releaseInput).toHaveBeenLastCalledWith({
 		marketId: 'community',
@@ -770,8 +782,14 @@ it('browses metadata-only official packages with observed repository stars and a
 		'Metadata only',
 	)
 	await click(pkg.name)
+	const header = container.querySelector('[aria-label="Package details"] header')!
+	expect(header.querySelector('h2')?.textContent).toBe(pkg.name)
+	expect(header.textContent).toContain('No checked releases')
+	expect(header.querySelector('input[type="checkbox"]')).toBeNull()
 	expect(
-		container.querySelector('.pm-detail-header [aria-label="127 repository stars"]'),
+		container.querySelector(
+			'aside[aria-label="Plugin details"] [aria-label="127 repository stars"]',
+		),
 	).not.toBeNull()
 	expect(state.packageInput).toHaveBeenLastCalledWith({
 		marketId: 'community',
@@ -782,7 +800,7 @@ it('browses metadata-only official packages with observed repository stars and a
 	expect(container.textContent).toContain('Registry README')
 	expect(container.textContent).toContain('<script>alert(1)</script>')
 	expect(container.querySelector('script')).toBeNull()
-	expect(container.textContent).toContain('This README was truncated by the market.')
+	expect(container.textContent).toContain('Showing the first part of this README.')
 	expect(container.textContent).toContain('No checked releases are available from this market.')
 	expect(
 		container.querySelector('a[href="https://npmx.dev/package/@pluxel/wretch/v/1.0.0"]'),
@@ -1041,9 +1059,18 @@ it('reflects the managed snapshot and reviews a checked exact update in the dedi
 		meta: 'Plugin marketplace',
 	})
 	await click('Versions')
-	expect(container.textContent).toContain('1.0.0 (installed here)')
-	expect(container.textContent).toContain('2.0.0 (registry latest, newer than installed)')
-	expect(container.textContent).toContain('3.0.0-beta.1 (newer than installed)')
+	const rows = [...container.querySelectorAll('.pm-release-row')].map((row) => ({
+		version: row.querySelector('code')!.textContent,
+		latest: row.querySelector('.pm-badge')?.textContent,
+		note: row.querySelector('.pm-version-note')?.textContent,
+	}))
+	expect(rows).toEqual(
+		expect.arrayContaining([
+			{ version: '1.0.0', latest: undefined, note: 'installed here' },
+			{ version: '2.0.0', latest: 'latest', note: 'newer than installed' },
+			{ version: '3.0.0-beta.1', latest: undefined, note: 'newer than installed' },
+		]),
+	)
 	await selectVersion('2.0.0')
 	await click('Add to selection')
 	expect(state.preparation.mutate).not.toHaveBeenCalled()
@@ -1157,4 +1184,37 @@ it('keeps multi-package choices across browsing and submits one checked version 
 	)
 	expect(container.textContent).toContain('1 package selected')
 	expect(state.preparation.reset).toHaveBeenCalled()
+})
+
+it('checks registry results and only offers an exact compatible release for review', async () => {
+	await render()
+	await click('Find plugins')
+	const input = container.querySelector<HTMLInputElement>('input[type=search]')!
+	await setInput(input, 'orders tooling')
+	state.registrySearch.data = {
+		registry: 'https://registry.example',
+		packages: [{ name: 'orders', version: '2.1.0', description: 'Orders' }],
+	}
+	await click('Search registry')
+	const hit = container.querySelector<HTMLButtonElement>('[aria-label="Check orders@2.1.0"]')!
+	state.registryInspection.data = {
+		registry: 'https://registry.example',
+		name: 'orders',
+		version: '2.1.0',
+		description: null,
+		check: { ok: false, reason: 'Missing core peer' },
+	}
+	await act(() => hit.click())
+	const region = () => container.querySelector('[aria-label="Plugin compatibility"]')!
+	expect(region().textContent).toContain('Missing core peer')
+	expect(region().querySelector('button')).toBeNull()
+	expect(state.preparation.mutate).not.toHaveBeenCalled()
+	state.registryInspection.data = {
+		...(state.registryInspection.data as object),
+		check: { ok: true, coreRange: '^1', coreVersion: '1.1.0', entry: './index.mjs' },
+	}
+	await render()
+	await click('Review installation')
+	expect(state.preparation.mutate).toHaveBeenCalledWith({ kind: 'direct', specs: ['orders@2.1.0'] })
+	expect(state.confirmation.mutateAsync).not.toHaveBeenCalled()
 })

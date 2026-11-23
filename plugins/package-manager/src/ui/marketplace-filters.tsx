@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type RefObject } from 'react'
-import { marketFilterLimit, type MarketCatalogFacets } from '../market-contracts.ts'
+import { marketFilterLimit, publicRegistry, type MarketCatalogFacets } from '../market-contracts.ts'
 import type { MarketplaceRead } from './marketplace.tsx'
 
 export const catalogFacets = ['authors', 'categories', 'tags', 'registries'] as const
@@ -22,7 +22,7 @@ const labels: Record<CatalogFacet, string> = {
 }
 
 export function registryLabel(value: string) {
-	return value === 'https://registry.npmjs.org' ? 'npm' : value.replace(/^https:\/\//, '')
+	return value === publicRegistry ? 'npm' : value.replace(/^https:\/\//, '')
 }
 
 export function categoryLabel(value: string) {
@@ -169,6 +169,8 @@ export function CatalogFilters({
 	selection,
 	official,
 	query,
+	search,
+	onSearch,
 	searchInput,
 	onQuery,
 	onToggle,
@@ -179,6 +181,8 @@ export function CatalogFilters({
 	selection: CatalogSelection
 	official?: boolean
 	query: string
+	search: string
+	onSearch(value: string): void
 	searchInput: RefObject<HTMLInputElement | null>
 	onQuery(query: string): void
 	onToggle(facet: CatalogFacet, choice: Choice): void
@@ -186,7 +190,6 @@ export function CatalogFilters({
 	onClear(): void
 }>) {
 	const id = useId()
-	const [search, setSearch] = useState(query)
 	const [compactOpen, setCompactOpen] = useState(false)
 	const [showAll, setShowAll] = useState(false)
 	const trigger = useRef<HTMLButtonElement>(null)
@@ -253,7 +256,7 @@ export function CatalogFilters({
 						placeholder="Search packages"
 						maxLength={100}
 						value={search}
-						onChange={(event) => setSearch(event.currentTarget.value)}
+						onChange={(event) => onSearch(event.currentTarget.value)}
 					/>
 					{search ? (
 						<button
@@ -261,7 +264,7 @@ export function CatalogFilters({
 							className="pm-clear-search"
 							aria-label="Clear search"
 							onClick={() => {
-								setSearch('')
+								onSearch('')
 								onQuery('')
 								searchInput.current?.focus()
 							}}

@@ -1,6 +1,6 @@
-# 插件分发与市场设计
+# 插件分发与市场提案
 
-Cloudflare Worker + D1 是市场唯一写入端，负责上游观测、发行收录、运营编辑和通知。公开目录通过整版快照同步到独立部署的只读镜像。主站和镜像共用目录读取契约，Package Manager 继续通过 pnpm 获取和核验发行。
+现行的目录、镜像、查看器与安装契约见[插件市场设计](../../PLUGIN_MARKET.md)。本提案记录仍待决定的分发问题和验收条件。
 
 市场部署和同步见 [Worker 项目](../../../projects/plugin-market/README.md)与[只读镜像](../../../projects/plugin-market/README.md#只读镜像)。安装用法见 [Package Manager](../../../docs/plugins/package-manager.md)，本地构建发布见 [PNPR 体验指南](../../../docs/development/plugin-market.md)。
 

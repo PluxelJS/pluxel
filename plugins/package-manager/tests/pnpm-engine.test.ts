@@ -32,7 +32,7 @@ describe('@pnpm/napi adapter', () => {
 describe.runIf(process.env.PLUXEL_PNPM_NATIVE_INTEGRATION === '1')(
 	'native registry integration',
 	() => {
-		it('installs, publishes, and removes a real registry package', async () => {
+		it('rejects an ordinary npm library before publishing a managed entry', async () => {
 			const rootDir = await mkdtemp(resolve(tmpdir(), 'pluxel-pnpm-native-'))
 			roots.push(rootDir)
 			const store = new ManagedPackageStore(await loadPnpmEngine(), {
@@ -44,20 +44,15 @@ describe.runIf(process.env.PLUXEL_PNPM_NATIVE_INTEGRATION === '1')(
 			await store.initialize()
 
 			const installed = await store.install(['is-number@7.0.0'])
-			expect(installed).toEqual({ ok: true, succeeded: ['is-number'], failed: [] })
+			expect(installed).toMatchObject({
+				ok: false,
+				succeeded: [],
+				failed: [{ message: expect.stringContaining('@pluxel/core') }],
+			})
 			const snapshot = await store.snapshot()
-			expect(snapshot.packages).toEqual([
-				expect.objectContaining({
-					name: 'is-number',
-					installedVersion: '7.0.0',
-					entryFile: expect.stringMatching(/\.mjs$/),
-				}),
-			])
-			expect(await readdir(snapshot.entriesDir)).toHaveLength(1)
-
-			const removed = await store.remove(['is-number'])
-			expect(removed).toEqual({ ok: true, succeeded: ['is-number'], failed: [] })
+			expect(snapshot.packages).toEqual([])
 			expect(await readdir(snapshot.entriesDir)).toEqual([])
+			await store.close()
 		}, 60_000)
 	},
 )
@@ -76,7 +71,13 @@ it('consumes published installs and withdrawals only in a fresh native process',
 		await mkdir(resolve(directory, 'package'), { recursive: true })
 		await writeFile(
 			resolve(directory, 'package/package.json'),
-			JSON.stringify({ name, version: '1.0.0', type: 'module', exports: './index.mjs' }),
+			JSON.stringify({
+				name,
+				version: '1.0.0',
+				peerDependencies: { '@pluxel/core': '*' },
+				type: 'module',
+				exports: './index.mjs',
+			}),
 		)
 		await writeFile(
 			resolve(directory, 'package/index.mjs'),

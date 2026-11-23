@@ -1,3 +1,4 @@
+import type { PackageDocument } from './package-document.ts'
 import type { RpcTarget } from 'capnweb'
 import type {
 	PackageMarket,
@@ -31,6 +32,10 @@ export type {
 
 export const packageMutationLimit = 100
 
+export type LocalPackageLocation = Readonly<{
+	source: 'managed' | 'application'
+	path: readonly string[]
+}>
 export type ManagedPackage = Readonly<{
 	name: string
 	requested: string
@@ -91,6 +96,8 @@ export type PackageInstallPlan = Readonly<{
 		previousVersion: string | null
 		/** Previously recorded source when reviewing a selected market release. */
 		previousMarketRegistry?: string
+		/** Parents that brought this additional required plugin into the plan. */
+		requiredBy?: readonly Readonly<{ name: string; range: string }>[]
 		changed: boolean
 		/** Selected from this market and checked against pnpm's registry, exact version and integrity. */
 		market?: Readonly<{ marketId: string; registry: string }>
@@ -103,8 +110,26 @@ export type PackagePreparationResult =
 	| Readonly<{ ok: true; plan: PackageInstallPlan }>
 	| Readonly<{ ok: false; failed: readonly PackageMutationFailure[] }>
 
+export type RegistryCandidate = Readonly<{
+	name: string
+	version: string
+	description: string | null
+}>
+export type RegistrySearch = Readonly<{ registry: string; packages: readonly RegistryCandidate[] }>
+export type RegistryInspection = RegistryCandidate &
+	Readonly<{
+		registry: string
+		check:
+			| { ok: true; coreRange: string; coreVersion: string; entry: string }
+			| { ok: false; reason: string }
+	}>
+
 export interface PackageManagerApi extends RpcTarget {
-	/** Queued with mutations; rejects after the owner starts closing. */
+	/** Keyword discovery in the registry selected by the application’s pnpm configuration. */
+	searchRegistryDto(query: string, includeAll: boolean): Promise<RegistrySearch>
+	/** Read the selected version’s registry manifest without materializing its dependencies. */
+	inspectRegistryDto(spec: string): Promise<RegistryInspection>
+	localPackageDto(location: LocalPackageLocation): Promise<PackageDocument | null>
 	snapshotDto(): Promise<PackageManagerSnapshot>
 	installDto(specs: readonly string[]): Promise<PackageMutationResult>
 	prepareInstallDto(specs: readonly string[]): Promise<PackagePreparationResult>

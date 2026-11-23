@@ -13,9 +13,13 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { parse as parseYaml } from 'yaml'
 import { safeParse } from 'valibot'
+import { isPackageName } from './package-document.ts'
+import { publicRegistry } from './market-contracts.ts'
 import {
 	packageMutationLimit,
+	type LocalPackageLocation,
 	type ManagedPackage,
+	type RegistryInspection,
 	type PackageManagerSnapshot,
 	type PackageMutationFailure,
 	type PackageMutationResult,
@@ -28,7 +32,16 @@ import {
 	type MarketRelease,
 	type MarketReleaseQuery,
 } from './contracts.ts'
-import { marketInstallRequestSchema, PackageMarketClient } from './market.ts'
+import { defaultNpmMirrors, marketInstallRequestSchema, PackageMarketClient } from './market.ts'
+import { valid } from 'semver'
+import {
+	configuredRegistry,
+	inspectPluginManifest,
+	checkInstalledPlugin,
+	searchRegistry,
+} from './registry-discovery.ts'
+import { readLocalPackage } from './local-package.ts'
+import { resolvePluginDependencies, type CheckedPlugin } from './market-dependencies.ts'
 import type {
 	InstallOptions,
 	PackageManifest,
@@ -43,6 +56,7 @@ type StoreOptions = Readonly<{
 	allowBuilds: readonly string[]
 	minimumReleaseAgeMinutes: number
 	markets?: readonly PackageMarket[]
+	npmMirrors?: readonly string[]
 	sourceUpdates?: 'live' | 'next-start'
 	/** Revokes publication; native installation still drains before close resolves. */
 	signal?: AbortSignal
@@ -60,7 +74,8 @@ type PackageRequest = Readonly<{
 	name: string
 	wanted: string
 }>
-type CheckedMarketRelease = MarketInstallRequest & Pick<MarketRelease, 'integrity'>
+type CheckedMarketRelease = MarketInstallRequest &
+	Pick<MarketRelease, 'integrity'> & { requiredBy?: readonly { name: string; range: string }[] }
 
 type PublishedPackage = Readonly<{
 	name: string
@@ -93,6 +108,7 @@ export class ManagedPackageStore {
 	readonly entriesDir: string
 	private revision = 0
 	private installation?: PublishedInstallation
+	private readonly browsing = new AbortController()
 	private writer = false
 	private closed = false
 	private closing?: Promise<void>
@@ -203,6 +219,63 @@ export class ManagedPackageStore {
 		})
 	}
 
+	searchRegistry(query: string, includeAll: boolean) {
+		this.assertOpen()
+		const signal = this.options.signal
+			? AbortSignal.any([this.options.signal, this.browsing.signal])
+			: this.browsing.signal
+		return searchRegistry(this.engine.readConfig({ dir: this.rootDir }), query, includeAll, signal)
+	}
+
+	async inspectRegistry(spec: string): Promise<RegistryInspection> {
+		this.assertOpen()
+		if (typeof spec !== 'string') throw new TypeError('Enter a registry package name.')
+		const request = this.parseRequest(spec)
+		const config = this.engine.readConfig({ dir: this.rootDir })
+		const registry = configuredRegistry(config, request.name)
+		const options = this.installOptions(
+			normalizeManifest({ dependencies: {} }),
+			this.rootDir,
+			config,
+		)
+		const resolution = await this.engine
+			.resolveDependency(
+				{ alias: request.name, bareSpecifier: request.wanted },
+				{ ...options, fullMetadata: true },
+			)
+			.catch(() => {
+				throw new Error(
+					'Could not resolve ' +
+						request.input +
+						' from ' +
+						registry.url +
+						'. Check its name, version and registry access.',
+				)
+			})
+		this.assertOpen()
+		const manifest = resolution.manifest
+		if (
+			!manifest ||
+			manifest.name !== request.name ||
+			typeof manifest.version !== 'string' ||
+			!valid(manifest.version)
+		)
+			throw new Error('Registry returned no matching version for ' + request.input)
+		return {
+			name: request.name,
+			version: manifest.version,
+			registry: registry.url,
+			description:
+				typeof manifest.description === 'string' ? manifest.description.slice(0, 500) : null,
+			check: inspectPluginManifest(manifest),
+		}
+	}
+
+	localPackage(location: LocalPackageLocation) {
+		this.assertOpen()
+		return readLocalPackage(location, process.cwd(), this.installation?.packages ?? [])
+	}
+
 	marketPackages(marketId: string, query?: MarketPackageQuery) {
 		this.assertOpen()
 		return this.market.packages(marketId, query)
@@ -296,7 +369,7 @@ export class ManagedPackageStore {
 	private async prepareSelectedReleases(
 		selections: readonly MarketInstallRequest[],
 	): Promise<PackagePreparationResult> {
-		const checked = new Map<string, CheckedMarketRelease>()
+		const checked = new Map<string, CheckedPlugin>()
 		for (let start = 0; start < selections.length; start += MAX_CONCURRENT_RELEASE_READS) {
 			const batch = selections.slice(start, start + MAX_CONCURRENT_RELEASE_READS)
 			const reads = await Promise.all(
@@ -308,7 +381,12 @@ export class ManagedPackageStore {
 			for (const [index, read] of reads.entries()) {
 				const request = batch[index]!
 				if (read.ok === true)
-					checked.set(request.name, { ...request, integrity: read.value.integrity })
+					checked.set(request.name, {
+						...request,
+						integrity: read.value.integrity,
+						pluginPackages: read.value.pluginPackages,
+						peerDependencies: read.value.peerDependencies,
+					})
 				else
 					failed.push(
 						failure(
@@ -320,12 +398,34 @@ export class ManagedPackageStore {
 			}
 			if (failed.length > 0) return { ok: false, failed }
 		}
-		const requests = selections.map(({ name, version }) => ({
+		const resolved = new Map<string, CheckedMarketRelease>(checked)
+		if (
+			[...checked.values()].some((pkg) => Object.values(pkg.pluginPackages).includes('required'))
+		) {
+			const installed = await this.readSnapshot()
+			try {
+				const graph = await resolvePluginDependencies(checked, this.market, installed.packages)
+				if (graph.ok === false)
+					return { ok: false, failed: [failure(graph.name, 'MARKET_FAILED', graph.message)] }
+				for (const [name, release] of graph.selected) {
+					if (checked.has(name)) continue
+					const requiredBy = graph.requirements
+						.get(name)!
+						.map(({ parent, range }) => ({ name: parent.name, range }))
+					resolved.set(name, { ...release, requiredBy })
+				}
+			} catch (error) {
+				this.assertOpen()
+				this.options.signal?.throwIfAborted()
+				return { ok: false, failed: [failure('', 'MARKET_FAILED', error)] }
+			}
+		}
+		const requests = [...resolved.values()].map(({ name, version }) => ({
 			name,
 			wanted: version,
 			input: `${name}@${version}`,
 		}))
-		return this.prepare(requests, checked)
+		return this.prepare(requests, resolved)
 	}
 
 	/** Confirms the same private revision; no re-resolution, downloads or build scripts occur here. */
@@ -400,7 +500,11 @@ export class ManagedPackageStore {
 		for (const request of requests) next.dependencies[request.name] = request.wanted
 		let prepared: PreparedInstallation | undefined
 		try {
-			prepared = await this.acquireInstallation(next, marketReleases)
+			prepared = await this.acquireInstallation(
+				next,
+				requests.map((r) => r.name),
+				marketReleases,
+			)
 			const lock = parseYaml(await readFile(resolve(prepared.directory, 'pnpm-lock.yaml'), 'utf8'))
 			const previous = await this.readSnapshot()
 			const packages: PackageInstallPlan['packages'][number][] = []
@@ -447,6 +551,7 @@ export class ManagedPackageStore {
 						...(expected && {
 							market: Object.freeze({ marketId: expected.marketId, registry: expected.registry }),
 							...(old?.marketRegistry && { previousMarketRegistry: old.marketRegistry }),
+							...(expected.requiredBy && { requiredBy: expected.requiredBy }),
 						}),
 						previousVersion:
 							previous.packages.find((item) => item.name === pkg.name)?.installedVersion ?? null,
@@ -531,20 +636,17 @@ export class ManagedPackageStore {
 				failed.push(failure(input, 'INVALID_SPEC', error))
 			}
 		}
-		const valid = [...requests.values()]
-		if (valid.length === 0) return mutationResult([], failed)
+		const requested = [...requests.keys()]
+		if (requested.length === 0) return mutationResult([], failed)
 
 		try {
-			await this.installManifest(next)
-			return mutationResult(
-				valid.map((request) => request.name),
-				failed,
-			)
+			await this.installManifest(next, [], requested)
+			return mutationResult(requested, failed)
 		} catch (error) {
 			if (error instanceof EntryPublicationError) {
 				const pending = new Set(error.unpublished)
 				return mutationResult(
-					valid.filter((request) => !pending.has(request.name)).map((request) => request.name),
+					requested.filter((name) => !pending.has(name)),
 					[
 						...failed,
 						...error.unpublished.map((name) =>
@@ -556,7 +658,12 @@ export class ManagedPackageStore {
 			}
 			return mutationResult(
 				[],
-				[...failed, ...valid.map((request) => failure(request.input, 'INSTALL_FAILED', error))],
+				[
+					...failed,
+					...[...requests.values()].map((request) =>
+						failure(request.input, 'INSTALL_FAILED', error),
+					),
+				],
 			)
 		}
 	}
@@ -641,6 +748,7 @@ export class ManagedPackageStore {
 	close(): Promise<void> {
 		this.closed = true
 		this.market.close()
+		this.browsing.abort()
 		return (this.closing ??= this.queue
 			.then(() => this.discardPending())
 			.finally(() => this.releaseWriter()))
@@ -654,9 +762,10 @@ export class ManagedPackageStore {
 	private async installManifest(
 		next: ManagedManifest,
 		withdrawn: readonly string[] = [],
+		requested: readonly string[] = [],
 	): Promise<void> {
 		await this.discardPending()
-		const prepared = await this.acquireInstallation(next)
+		const prepared = await this.acquireInstallation(next, requested)
 		try {
 			await this.commitInstallation(prepared, withdrawn)
 		} finally {
@@ -667,6 +776,7 @@ export class ManagedPackageStore {
 
 	private async acquireInstallation(
 		next: ManagedManifest,
+		requested: readonly string[],
 		marketReleases?: ReadonlyMap<string, CheckedMarketRelease>,
 	): Promise<PreparedInstallation> {
 		if (!this.writer) throw new Error('Package store must be initialized before mutation')
@@ -685,7 +795,12 @@ export class ManagedPackageStore {
 			for (const expected of marketReleases?.values() ?? []) {
 				const scope = expected.name.startsWith('@') ? expected.name.split('/')[0]! : undefined
 				const registry = (scope && options.registries?.[scope]) || options.registries?.default
-				if (registry?.replace(/\/$/, '') !== expected.registry)
+				const base = registry?.replace(/\/$/, '')
+				const matchesMirror =
+					expected.registry === publicRegistry &&
+					base !== undefined &&
+					this.options.npmMirrors?.includes(base)
+				if (base !== expected.registry && !matchesMirror)
 					throw new PublicMutationError(
 						'Market installation requires pnpm configuration to select the same registry as the market release',
 						undefined,
@@ -701,6 +816,17 @@ export class ManagedPackageStore {
 				)
 			}
 			this.assertOpen()
+			for (const name of requested) {
+				try {
+					await checkInstalledPlugin(await realpath(resolve(directory, 'node_modules', name)), name)
+				} catch (error) {
+					throw new PublicMutationError(
+						name + ': ' + (error instanceof Error ? error.message : String(error)),
+						error,
+						name,
+					)
+				}
+			}
 			const packages = await this.prepareInstallation(next, directory)
 			const installation: PublishedInstallation = Object.freeze({
 				version: 1,
@@ -879,8 +1005,11 @@ export class ManagedPackageStore {
 		return `export * from ${specifier}\nimport * as pluginModule from ${specifier}\nexport default pluginModule.default\n`
 	}
 
-	private installOptions(manifest: ManagedManifest, directory: string): InstallOptions {
-		const config = this.engine.readConfig({ dir: this.rootDir })
+	private installOptions(
+		manifest: ManagedManifest,
+		directory: string,
+		config = this.engine.readConfig({ dir: this.rootDir }),
+	): InstallOptions {
 		const registries = Object.fromEntries(config.registries.map((item) => [item.name, item.url]))
 		const networkConfig = networkOptions(config)
 		return {
@@ -1027,7 +1156,8 @@ function normalizeStoreOptions(input: StoreOptions): StoreOptions {
 	if (!input.ignoreScripts && allowBuilds.length === 0) {
 		throw new TypeError('ignoreScripts=false requires at least one exact allowBuilds package name')
 	}
-	return Object.freeze({ ...input, rootDir, allowBuilds: Object.freeze(allowBuilds) })
+	const npmMirrors = Object.freeze([...(input.npmMirrors ?? defaultNpmMirrors)])
+	return Object.freeze({ ...input, rootDir, npmMirrors, allowBuilds: Object.freeze(allowBuilds) })
 }
 
 function cloneManifest(input: ManagedManifest): ManagedManifest {
@@ -1047,13 +1177,6 @@ function cleanDependencies(input: PackageManifest['dependencies']): Record<strin
 
 function parsedPackageName(parsed: ParsedBareSpecifier | null): string | undefined {
 	return parsed?.name?.trim() || parsed?.alias?.trim() || undefined
-}
-
-function isPackageName(value: string): boolean {
-	return (
-		value.length <= 214 &&
-		/^(?:@[a-z0-9][a-z0-9._~-]*\/[a-z0-9][a-z0-9._~-]*|[a-z0-9][a-z0-9._~-]*)$/.test(value)
-	)
 }
 
 function isRegistrySelector(value: string): boolean {

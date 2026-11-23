@@ -19,10 +19,13 @@ import {
 	packageMutationLimit,
 	type ManagedPackage,
 	type PackageManagerSnapshot,
+	type LocalPackageLocation,
 } from '../contracts.ts'
 import type { PackageUsage } from './package-usage.ts'
 
 type Props = Readonly<{
+	initialQuery?: string
+	onInspect(location: LocalPackageLocation, button: HTMLButtonElement): void
 	snapshot: PackageManagerSnapshot
 	usage: readonly PackageUsage[] | null | undefined
 	usageError: unknown
@@ -34,17 +37,20 @@ type Props = Readonly<{
 type RemovalSelection = Readonly<{ packages: readonly ManagedPackage[]; revision: number }>
 
 export function InstalledPackages({
+	initialQuery = '',
 	snapshot,
 	usage,
 	usageError,
 	busy,
 	navigation,
+	onInspect,
 	onRemove,
 }: Props) {
-	const [query, setQuery] = useState('')
+	const [query, setQuery] = useState(initialQuery)
 	const [runningOnly, setRunningOnly] = useState(false)
 	const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
 	const [review, setReview] = useState<RemovalSelection>()
+	const returnFocus = useRef<HTMLButtonElement>(null)
 	const reviewButton = useRef<HTMLButtonElement>(null)
 	const usageByName = useMemo(() => new Map(usage?.map((pkg) => [pkg.name, pkg])), [usage])
 	const managed = snapshot.packages
@@ -52,17 +58,20 @@ export function InstalledPackages({
 	const currentSelection = managed.filter((pkg) => selected.has(pkg.name))
 	const hasUsage = usage != null && usageError == null
 	const needle = query.trim().toLowerCase()
-	const matches = (name: string) => {
+	const matches = (name: string, version?: string | null) => {
 		const plugins = hasUsage ? usageByName.get(name)?.plugins : undefined
 		return (
 			(!runningOnly ||
 				!hasUsage ||
 				plugins?.some((plugin) => plugin.lifecycleState === 'running')) &&
 			(name.toLowerCase().includes(needle) ||
+				version?.toLowerCase().includes(needle) ||
 				plugins?.some((plugin) => plugin.label.toLowerCase().includes(needle)))
 		)
 	}
-	const visibleManaged = managed.filter((pkg) => matches(pkg.name))
+	const visibleManaged = managed.filter((pkg) => matches(pkg.name, pkg.installedVersion))
+	const hiddenSelected =
+		currentSelection.length - visibleManaged.filter((pkg) => selected.has(pkg.name)).length
 	const visibleApplication = hasUsage
 		? usage.filter((pkg) => !managedNames.has(pkg.name) && matches(pkg.name))
 		: []
@@ -85,7 +94,7 @@ export function InstalledPackages({
 					busy={busy}
 					onCancel={() => {
 						setReview(undefined)
-						requestAnimationFrame(() => reviewButton.current?.focus())
+						requestAnimationFrame(() => (returnFocus.current ?? reviewButton.current)?.focus())
 					}}
 					onConfirm={() => {
 						setReview(undefined)
@@ -102,7 +111,7 @@ export function InstalledPackages({
 					<TextInput
 						type="search"
 						aria-label="Search installed packages"
-						placeholder="Search packages or plugins"
+						placeholder="Search package, plugin or installed version"
 						leftSection={<IconSearch size={15} />}
 						value={query}
 						onChange={(event) => setQuery(event.currentTarget.value)}
@@ -120,13 +129,24 @@ export function InstalledPackages({
 			<section aria-label="Managed packages">
 				<Stack gap="xs">
 					<Group justify="space-between">
-						<Title order={4}>Managed packages</Title>
+						<Title order={4}>Managed packages ({visibleManaged.length})</Title>
 						{managed.length > 0 ? (
 							<Group gap="xs">
 								{currentSelection.length > 0 ? (
-									<Text size="xs" c="dimmed" role="status">
-										{currentSelection.length} selected
-									</Text>
+									<>
+										<Text size="sm" role="status">
+											{currentSelection.length} selected
+											{hiddenSelected > 0 ? ` · ${hiddenSelected} hidden by filters` : ''}
+										</Text>
+										<Button
+											size="xs"
+											variant="subtle"
+											disabled={busy || Boolean(review)}
+											onClick={() => setSelected(new Set())}
+										>
+											Clear selection
+										</Button>
+									</>
 								) : null}
 								<Button
 									ref={reviewButton}
@@ -135,9 +155,10 @@ export function InstalledPackages({
 									color="red"
 									leftSection={<IconTrash size={14} />}
 									disabled={busy || Boolean(review) || currentSelection.length === 0}
-									onClick={() =>
+									onClick={(event) => {
+										returnFocus.current = event.currentTarget
 										setReview({ packages: currentSelection, revision: snapshot.revision })
-									}
+									}}
 								>
 									Review removal
 								</Button>
@@ -161,17 +182,42 @@ export function InstalledPackages({
 												}
 												onChange={() => toggle(pkg.name)}
 											/>
-											<Text size="sm" fw={600} style={{ overflowWrap: 'anywhere' }}>
+											<Anchor
+												component="button"
+												type="button"
+												ta="left"
+												size="sm"
+												fw={600}
+												style={{ overflowWrap: 'anywhere' }}
+												onClick={(event) =>
+													onInspect({ source: 'managed', path: [pkg.name] }, event.currentTarget)
+												}
+											>
 												{pkg.name}
-											</Text>
+											</Anchor>
 										</Group>
-										<Text size="xs" c="dimmed">
+										<Text size="sm">
 											{pkg.installedVersion ?? 'Not downloaded'} ·{' '}
 											{pkg.entryFile ? 'Source published' : 'Not published'}
 											{pkg.requested !== pkg.installedVersion
 												? ` · Requested ${pkg.requested}`
 												: ''}
 										</Text>
+										<Group>
+											<Button
+												size="compact-xs"
+												variant="subtle"
+												color="red"
+												aria-label={'Uninstall ' + pkg.name}
+												disabled={busy || Boolean(review)}
+												onClick={(event) => {
+													returnFocus.current = event.currentTarget
+													setReview({ packages: [pkg], revision: snapshot.revision })
+												}}
+											>
+												Uninstall
+											</Button>
+										</Group>
 										{pkg.marketRegistry ? (
 											<Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
 												Checked registry: {pkg.marketRegistry}
@@ -193,7 +239,9 @@ export function InstalledPackages({
 			</section>
 			<section aria-label="Application packages">
 				<Stack gap="xs">
-					<Title order={4}>Application packages</Title>
+					<Title order={4}>
+						Application packages{hasUsage ? ` (${visibleApplication.length})` : ''}
+					</Title>
 					{usageError != null ? (
 						<Alert color="yellow" title="Application plugin status unavailable">
 							{usageError instanceof Error ? usageError.message : String(usageError)}
@@ -211,9 +259,19 @@ export function InstalledPackages({
 							{visibleApplication.map((pkg) => (
 								<Paper component="li" aria-label={pkg.name} key={pkg.name} withBorder p="sm">
 									<Stack gap={5}>
-										<Text size="sm" fw={600} style={{ overflowWrap: 'anywhere' }}>
+										<Anchor
+											component="button"
+											type="button"
+											ta="left"
+											size="sm"
+											fw={600}
+											style={{ overflowWrap: 'anywhere' }}
+											onClick={(event) =>
+												onInspect({ source: 'application', path: [pkg.name] }, event.currentTarget)
+											}
+										>
 											{pkg.name}
-										</Text>
+										</Anchor>
 										<PluginNodes usage={pkg} navigation={navigation} />
 									</Stack>
 								</Paper>
@@ -267,9 +325,7 @@ function PluginNodes({
 					size="xs"
 					ta="left"
 					style={{ overflowWrap: 'anywhere' }}
-					onClick={() =>
-						navigation.openDocument({ path: `/plugins/${plugin.route}`, title: plugin.label })
-					}
+					onClick={() => navigation.openDocument({ plugin: plugin.address, title: plugin.label })}
 				>
 					{plugin.label}
 				</Anchor>
@@ -341,6 +397,7 @@ function RemovalReview({
 										{pkg.name}
 										{pkg.installedVersion ? `@${pkg.installedVersion}` : ''}
 									</Text>
+
 									{pkg.marketRegistry ? (
 										<Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
 											{pkg.marketRegistry}

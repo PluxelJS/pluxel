@@ -1,5 +1,6 @@
 import type { WorkbenchManagementOperations } from './management.ts'
 import { createContext, useContext, type ReactNode } from 'react'
+import type { PluginNodeAddress } from '@pluxel/core'
 import type { WorkbenchDeclarationIdentity } from '@pluxel/core/federation'
 import type { RpcStub, RpcTarget } from 'capnweb'
 import type { WorkbenchOpenedClientValue, WorkbenchOpenedViewHandle } from './client.ts'
@@ -45,11 +46,12 @@ export type WorkbenchConfirmInput = Readonly<{
 	tone?: 'default' | 'danger'
 }>
 
-export type WorkbenchDocumentInput = Readonly<{
-	path: string
-	title: string
-	meta?: string
-}>
+/** Open a route owned by this View's Plugin, or the built-in detail page of an exact Plugin node. */
+export type WorkbenchDocumentInput = WorkbenchDocumentTitle &
+	(
+		| Readonly<{ path: string; plugin?: never }>
+		| Readonly<{ plugin: PluginNodeAddress; path?: never }>
+	)
 
 export type WorkbenchNavigation = Readonly<{
 	navigate(path: string): void

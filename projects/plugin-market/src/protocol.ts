@@ -276,7 +276,10 @@ export async function readJson(
 	body: ReadableStream<Uint8Array> | null,
 	limit: number,
 ): Promise<unknown> {
-	const bytes = await readBytes(body, limit)
+	return parseJsonBytes(await readBytes(body, limit))
+}
+
+export function parseJsonBytes(bytes: Uint8Array): unknown {
 	try {
 		return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown
 	} catch {

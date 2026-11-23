@@ -155,6 +155,7 @@ it('pnpm shares immutable dependency slots across private installations', async 
 				resolve(directory, 'package/package.json'),
 				JSON.stringify({
 					...pkg,
+					peerDependencies: { '@pluxel/core': '*' },
 					type: 'module',
 					exports: './index.mjs',
 					pluxel: { artifactRoot: '.', nodeArtifacts: true },

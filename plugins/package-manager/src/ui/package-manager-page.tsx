@@ -17,12 +17,20 @@ import { WorkbenchMantineProvider } from '@pluxel/workbench/mantine'
 import type { WorkbenchHostFacade } from '@pluxel/workbench/react'
 import { IconDownload, IconRefresh } from '@tabler/icons-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { PackageInstallPlan, PackageMutationResult } from '../contracts.ts'
+import type {
+	LocalPackageLocation,
+	PackageInstallPlan,
+	PackageMutationResult,
+} from '../contracts.ts'
 import type {
 	createPackageManagerResources,
 	PrepareInstallInput,
 } from './package-manager.resources.ts'
 import { versionRelation } from './package-version.ts'
+import { PackageDocumentExplorer, type DocumentReader } from './package-document-explorer.tsx'
+import { packageThemeStyles } from './package-theme.ts'
+import { marketplaceStyles } from './marketplace.styles.ts'
+import type { createRegistryDiscovery } from './registry-discovery.tsx'
 import { InstalledPackages } from './installed-packages.tsx'
 import type { MarketSelectionItem } from './market-install-selection.tsx'
 import { WorkbenchMarketplace } from './marketplace-workbench.tsx'
@@ -48,17 +56,24 @@ function parseSpecs(value: string): string[] {
 export function PackageManagerPage({
 	host,
 	state: { snapshotQuery, usageQuery, preparation, confirmation, removal },
+	RegistryDiscovery,
 	marketData,
+	localReaders,
 	title,
 	initialTab,
 }: Readonly<{
 	host: WorkbenchHostFacade
 	state: ReturnType<PackageManagerResources['usePackageManager']>
+	RegistryDiscovery: ReturnType<typeof createRegistryDiscovery>
 	marketData: MarketplaceData
+	localReaders: Record<LocalPackageLocation['source'], DocumentReader>
 	title: string
 	initialTab: 'market' | 'installed'
 }>) {
+	const [inspected, setInspected] = useState<LocalPackageLocation>()
+	const openedFrom = useRef<HTMLButtonElement>(null)
 	const snapshot = snapshotQuery.data
+	const [managedQuery, setManagedQuery] = useState('')
 	const [specs, setSpecs] = useState('')
 	const [marketSelection, setMarketSelection] = useState<readonly MarketSelectionItem[]>([])
 	const [marketOpened, setMarketOpened] = useState(initialTab === 'market')
@@ -72,6 +87,11 @@ export function PackageManagerPage({
 	const plan = preparation.data?.ok ? preparation.data.plan : undefined
 	const confirmAttempted = confirmation.status !== 'idle'
 
+	const manage = (name: string) => {
+		setInspected(undefined)
+		setManagedQuery(name)
+		setTab('installed')
+	}
 	const prepare = (input: PrepareInstallInput) => {
 		confirmation.reset()
 		preparation.mutate(input)
@@ -104,7 +124,13 @@ export function PackageManagerPage({
 
 	return (
 		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
-			<Stack gap="md" p="lg">
+			<Stack
+				gap="md"
+				p="lg"
+				className="plx-package-ui plx-package-manager"
+				data-color-scheme={host.colorScheme}
+			>
+				<style>{packageThemeStyles}</style>
 				<Group justify="space-between" align="flex-start">
 					<Title order={3}>{title}</Title>
 					<Button
@@ -157,6 +183,11 @@ export function PackageManagerPage({
 					<MutationReceipt
 						result={confirmation.data}
 						action="install"
+						onManage={() =>
+							manage(
+								confirmation.data?.succeeded.length === 1 ? confirmation.data.succeeded[0]! : '',
+							)
+						}
 						sourceUpdates={snapshot?.sourceUpdates ?? null}
 					/>
 				) : null}
@@ -223,48 +254,59 @@ export function PackageManagerPage({
 					<Tabs.List aria-label="Package management">
 						{hasMarketTab ? <Tabs.Tab value="market">Marketplace</Tabs.Tab> : null}
 						<Tabs.Tab value="installed">Installed</Tabs.Tab>
-						<Tabs.Tab value="direct">Direct install</Tabs.Tab>
+						<Tabs.Tab value="direct">Find plugins</Tabs.Tab>
 					</Tabs.List>
 					<Tabs.Panel value="direct" pt="md">
-						<form
-							onSubmit={(event) => {
-								event.preventDefault()
-								const requested = parseSpecs(specs)
-								if (requested.length === 0) {
-									setInputError('Enter at least one npm package specifier.')
-									return
-								}
-								setInputError(undefined)
-								prepare({ kind: 'direct', specs: requested })
-							}}
-						>
-							<Stack gap="sm">
-								<Textarea
-									label="npm packages"
-									description="One package per line, for example @scope/plugin@latest. Review exact versions before applying."
-									minRows={3}
-									value={specs}
-									error={inputError}
-									disabled={busy}
-									onChange={(event) => setSpecs(event.currentTarget.value)}
-								/>
-								<Group>
-									<Button
-										type="submit"
-										leftSection={<IconDownload size={16} />}
-										loading={preparation.isPending}
-										disabled={busy}
-									>
-										Review installation
-									</Button>
-									{snapshot?.markets.length === 0 ? (
-										<Text size="sm" c="dimmed">
-											No market configured. Install directly from npm.
-										</Text>
-									) : null}
-								</Group>
-							</Stack>
-						</form>
+						<Stack gap="lg">
+							<RegistryDiscovery
+								managed={snapshot?.packages ?? []}
+								busy={busy}
+								onReview={(spec) => prepare({ kind: 'direct', specs: [spec] })}
+								onManage={manage}
+							/>
+							<details>
+								<summary>Review multiple package names</summary>
+								<form
+									onSubmit={(event) => {
+										event.preventDefault()
+										const requested = parseSpecs(specs)
+										if (requested.length === 0) {
+											setInputError('Enter at least one npm package specifier.')
+											return
+										}
+										setInputError(undefined)
+										prepare({ kind: 'direct', specs: requested })
+									}}
+								>
+									<Stack gap="sm">
+										<Textarea
+											label="npm packages"
+											description="One package per line, for example @scope/plugin@latest. Review exact versions before applying."
+											minRows={3}
+											value={specs}
+											error={inputError}
+											disabled={busy}
+											onChange={(event) => setSpecs(event.currentTarget.value)}
+										/>
+										<Group>
+											<Button
+												type="submit"
+												leftSection={<IconDownload size={16} />}
+												loading={preparation.isPending}
+												disabled={busy}
+											>
+												Review package list
+											</Button>
+											{snapshot?.markets.length === 0 ? (
+												<Text size="sm" c="dimmed">
+													Packages are checked against the application registry.
+												</Text>
+											) : null}
+										</Group>
+									</Stack>
+								</form>
+							</details>
+						</Stack>
 					</Tabs.Panel>
 					{hasMarketTab ? (
 						<Tabs.Panel value="market" pt="md" keepMounted={marketOpened}>
@@ -295,14 +337,47 @@ export function PackageManagerPage({
 							</Group>
 						) : null}
 						{snapshot ? (
-							<InstalledPackages
-								snapshot={snapshot}
-								usage={usageQuery.data}
-								usageError={usageQuery.status === 'error' ? usageQuery.error : undefined}
-								busy={busy}
-								navigation={host.navigation}
-								onRemove={(names, expectedRevision) => removal.mutate({ names, expectedRevision })}
-							/>
+							<>
+								{inspected && (
+									<div className="plx-marketplace" data-color-scheme={host.colorScheme}>
+										<style>{marketplaceStyles}</style>
+										<PackageDocumentExplorer
+											name={inspected.path[0]!}
+											source={
+												inspected.source === 'managed'
+													? 'Managed installation'
+													: 'Application installation'
+											}
+											backLabel="Back to installed packages"
+											reader={localReaders[inspected.source]}
+											onClose={() => {
+												setInspected(undefined)
+												requestAnimationFrame(() =>
+													openedFrom.current?.focus({ preventScroll: false }),
+												)
+											}}
+										/>
+									</div>
+								)}
+								<div hidden={Boolean(inspected)}>
+									<InstalledPackages
+										key={managedQuery}
+										initialQuery={managedQuery}
+										onInspect={(loc, button) => {
+											openedFrom.current = button
+											setInspected(loc)
+										}}
+										snapshot={snapshot}
+										usage={usageQuery.data}
+										usageError={usageQuery.status === 'error' ? usageQuery.error : undefined}
+										busy={busy}
+										navigation={host.navigation}
+										onRemove={(names, expectedRevision) =>
+											removal.mutate({ names, expectedRevision })
+										}
+									/>
+								</div>
+							</>
 						) : null}
 					</Tabs.Panel>
 				</Tabs>
@@ -401,6 +476,11 @@ function InstallationReview({
 							<Text size="sm" fw={600} style={{ overflowWrap: 'anywhere' }}>
 								{pkg.name}
 							</Text>
+							{pkg.requiredBy?.map(({ name, range }) => (
+								<Text key={name} size="sm">
+									Required by {name} ({range})
+								</Text>
+							))}
 							<Group gap="xs" mt={2}>
 								<Text size="sm">
 									{pkg.previousVersion && pkg.previousVersion !== pkg.version
@@ -473,12 +553,14 @@ function InstallationReview({
 }
 
 function MutationReceipt({
+	onManage,
 	result,
 	action,
 	sourceUpdates,
 }: Readonly<{
 	result: PackageMutationResult
 	action: 'install' | 'remove'
+	onManage?(): void
 	sourceUpdates: PackageInstallPlan['sourceUpdates']
 }>) {
 	return (
@@ -499,6 +581,13 @@ function MutationReceipt({
 						{activationMessage(sourceUpdates)}
 					</Text>
 				) : null}
+				{onManage && result.succeeded.length > 0 && (
+					<Group>
+						<Button variant="default" size="xs" onClick={onManage}>
+							Manage installed packages
+						</Button>
+					</Group>
+				)}
 				{result.failed.map((failure, index) => (
 					<Text key={`${failure.input}:${index}`} size="sm">
 						{failure.input}: {failure.message}

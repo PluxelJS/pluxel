@@ -57,8 +57,10 @@
 		"mdast-util-from-markdown": "catalog:prod",
 		"mdast-util-gfm": "catalog:prod",
 		"micromark-extension-gfm": "catalog:prod",
+		"resolve-pkg-maps": "catalog:prod",
 		"semver": "catalog:prod",
 		"shiki": "catalog:frontend",
+		"undici": "catalog:prod",
 		"valibot": "catalog:validation",
 		"valibot-form": "workspace:^",
 		"yaml": "catalog:prod"

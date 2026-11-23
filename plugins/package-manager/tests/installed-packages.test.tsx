@@ -8,6 +8,13 @@ import { InstalledPackages } from '../src/ui/installed-packages.tsx'
 import { readPackageUsage } from '../src/ui/package-usage.ts'
 
 const hostPlugin = {
+	address: {
+		definition: {
+			entry: { kind: 'package-root', packageName: 'renderer' },
+			exportName: 'Renderer',
+		},
+		variant: 'default',
+	},
 	label: { text: 'Renderer' },
 	route: 'pkg/renderer/Renderer',
 	lifecycleState: 'running',
@@ -77,6 +84,7 @@ function button(name: string) {
 it('reviews only selected managed versions, rejects stale review, and opens native status for app plugins', async () => {
 	const plugin = { ...hostPlugin, label: 'Renderer' }
 	const props: ComponentProps<typeof InstalledPackages> = {
+		onInspect: vi.fn(),
 		snapshot: {
 			revision: 4,
 			engine: 'pnpm',
@@ -111,14 +119,53 @@ it('reviews only selected managed versions, rejects stale review, and opens nati
 		)
 	}
 	await render()
+	for (const [name, source] of [
+		['alpha', 'managed'],
+		['host-renderer', 'application'],
+	] as const) {
+		const trigger = button(name)
+		await act(() => trigger.click())
+		expect(props.onInspect).toHaveBeenCalledWith({ source, path: [name] }, trigger)
+	}
 	const host = element.querySelector('section[aria-label="Application packages"]')!
 	expect(host.textContent).toContain('Running')
 	expect(host.querySelector('input[type="checkbox"]')).toBeNull()
+	expect(host.querySelector('button[aria-label^="Uninstall "]')).toBeNull()
+	const uninstall = element.querySelector<HTMLButtonElement>('[aria-label="Uninstall beta"]')!
+	await act(() => uninstall.click())
+	const single = element.querySelector('[aria-label="Removal review"]')!
+	expect(single.textContent).toContain('beta@1.0.1')
+	expect(single.textContent).not.toContain('alpha@1.0.1')
+	expect(props.onRemove).not.toHaveBeenCalled()
+	await act(() => button('Cancel').click())
+	await act(() => uninstall.click())
+	await act(() => button('Confirm removal').click())
+	expect(props.onRemove).toHaveBeenCalledWith(['beta'], 4)
+	vi.mocked(props.onRemove).mockClear()
+
 	await act(() => button('Renderer').click())
 	expect(props.navigation?.openDocument).toHaveBeenCalledWith({
-		path: '/plugins/' + plugin.route,
+		plugin: plugin.address,
 		title: 'Renderer',
 	})
+	const search = element.querySelector<HTMLInputElement>('input[type="search"]')!
+	async function filter(value: string) {
+		await act(() => {
+			Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, value)
+			search.dispatchEvent(new Event('input', { bubbles: true }))
+		})
+	}
+	await filter('1.0.1')
+	expect(element.querySelectorAll('section[aria-label="Managed packages"] li')).toHaveLength(2)
+	expect(host.querySelector('li')).toBeNull()
+	await act(() => element.querySelector<HTMLInputElement>('[aria-label="Select alpha"]')!.click())
+	await filter('beta')
+	expect(element.querySelector('[role="status"]')?.textContent).toBe(
+		'1 selected · 1 hidden by filters',
+	)
+	await act(() => button('Clear selection').click())
+	expect(button('Review removal').disabled).toBe(true)
+	await filter('')
 	for (const name of ['alpha', 'beta'])
 		await act(() =>
 			element.querySelector<HTMLInputElement>(`input[aria-label="Select ${name}"]`)!.click(),

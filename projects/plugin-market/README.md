@@ -2,7 +2,7 @@
 
 参考市场运行在 Cloudflare Worker 中。同一 isolate 内，相同部署配置的 HTTP 请求和 Cron 任务复用一个 Host 和 `MarketPlugin` 实例。每次调用把当前事件的 D1、R2、管理令牌和自建 registry 读令牌传给插件。D1 持久化目录和回执，公开网页和 Package Manager 可以读取主站或独立部署的只读镜像。[应用声明](src/application.ts) · [事件入口](src/worker.ts)
 
-同一市场可配置公共 npm 与私有 PNPR。包身份是 `registry + name`，发行身份再加精确 `version`。PNPR 代理公共 npm 时也保留实际读取的来源。搜索直接查询所在服务的 SQLite 数据。
+市场的包身份、镜像、依赖和安装路径见[插件市场设计](../../engineering/PLUGIN_MARKET.md)。
 
 ## 源码导航
 
@@ -24,7 +24,11 @@
 
 ```json
 [
-	{ "registry": "https://registry.npmjs.org", "access": "public" },
+	{
+		"registry": "https://registry.npmjs.org",
+		"access": "public",
+		"mirror": "https://registry.npmmirror.com"
+	},
 	{
 		"registry": "https://packages.example.com/npm",
 		"access": "admin",
@@ -34,6 +38,8 @@
 	}
 ]
 ```
+
+公共 npm 的可选 `mirror` 指定包浏览元数据、dist-tags 与归档下载的上游。搜索查询本地已收录的目录，来源筛选和包坐标继续使用 `https://registry.npmjs.org`。收录精确发行时，Worker 从 npm 读取该版本的完整性摘要和 attestations 声明，再核对镜像归档的 SHA-512。npmmirror 的归档允许跳转一次到 `https://cdn.npmmirror.com/packages/`。独立发布包的 registry 使用单独的来源条目。本地 `dev:sandbox` 自动生成来源配置，可通过 `MARKET_NPM_MIRROR=https://registry.npmmirror.com` 指定其中的 npm 镜像。
 
 这是部署配置，不接受通知发送者添加网络目标。registry 使用 HTTPS，本机 loopback 另允许 HTTP；支持路径前缀，坐标不带末尾 `/`、凭据、query 或 fragment。上游 token 只发送到对应 origin 与路径前缀，不跟随重定向。配置凭据不进入公开 DTO。
 
@@ -149,13 +155,15 @@ node mirror.mjs serve ./catalog.sqlite
 | `GET /v1`                                                  | `protocolVersion: 1`、可读来源及能力，不返回凭据                                      |
 | `GET /v1/packages`                                         | `{ packages, nextCursor }`，按名称、来源排序                                          |
 | `GET /v1/facets`                                           | `{ total, registries, categories, tags, authors }`，计数基于分页前的可见目录          |
-| `GET /v1/packages/:name?registry=`                         | 摘要、dist-tags、元数据 README/license/version、已收录数量及 coverage                 |
+| `GET /v1/packages/:name?registry=`                         | 包摘要、dist-tags、README/license/version、收录范围与对应版本的已检查依赖             |
 | `GET /v1/packages/:name/releases?registry=&cursor=&limit=` | 已检查发行分页摘要，按版本字符串排序，不代表 semver 新旧                              |
 | `GET /v1/packages/:name/releases/:version?registry=`       | 精确来源、tarball、integrity、依赖、制品 README/license 及 provenance                 |
 | `GET /v1/snapshot`                                         | 主站的公开目录快照，`version: 2`，含公开来源、可见包、仓库地址、可选头像和已检查发行  |
 | `POST /v1/notifications`                                   | `{ registry, name, version }`；持久接收后 `202` 与 `Location`，终态重复提交返回 `200` |
 | `GET /v1/notifications/:id`                                | 回执状态；查询成功与收录成功分别表达                                                  |
 | `POST /admin`                                              | Bearer 认证的原生 Cap’n Web HTTP batch                                                |
+
+包详情的可选 `checkedRequirements` 含 `version`、`peerDependencies` 和 `pluginPackages`，来自同一 registry、包名和 `metadataVersion` 的已检查制品。没有匹配发行时省略该字段。
 
 目录列表和筛选选项都接收 `query`、`official`，以及可重复的 `registry`、`category`、`tag`、`author`。每组最多 20 个值，组内任意命中、组间同时命中。结果总数应用全部条件，单组选项计数应用搜索和其他组条件。隐藏包与当前请求无权读取的来源都排除在统计和结果外。仅包列表接收 `cursor` 和 `limit`。
 

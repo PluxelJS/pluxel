@@ -46,7 +46,7 @@ Federated renderer 每次 Bridge mount 独立持有 owner/cache。公开 resourc
 
 Remote 通过 facade 使用 appearance、feedback、受限 relative navigation、document 状态和显式借用的 unary Management。Navigation/document 不适用时为 null；dirty/title registration 随 per-open handle 撤销。
 
-Navigation 校验规范路径，不接受 query/hash。目标 frame 从完整 committed directory 和 canonical URL 决定，`openDocument()` 不能强制覆盖为 shell。标题与 `meta` 写入原生 Model 的 `name` / `helpText`，检查 Action 回执。View 首次覆盖时借用当前原生值供撤销，不能将打开前的旧标题写回已变更的页面。
+Navigation 校验规范路径，不接受 query/hash。`openDocument({ path, title })` 从当前 owner 的 committed directory 和 canonical URL 解析目标 frame。`openDocument({ plugin, title })` 由 Shell 用节点地址构造内置插件详情路径。标题与 `meta` 写入原生 Model 的 `name` / `helpText`，检查 Action 回执。View 首次覆盖时借用当前原生值供撤销，不能将打开前的旧标题写回已变更的页面。
 
 ## 原生工作区与文档路由
 

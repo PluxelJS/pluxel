@@ -24,7 +24,7 @@ for (const [names, load] of [
 	for (const name of names) languages.set(name, load)
 }
 
-const themes = { light: 'github-light-default', dark: 'github-dark-default' }
+const themes = { light: 'github-light-high-contrast', dark: 'github-dark-high-contrast' }
 let engine: Promise<HighlighterCore> | undefined
 
 // The catalog and plain code do not load the tokenizer, either theme or any grammar.
@@ -32,8 +32,8 @@ function getHighlighter() {
 	engine ??= Promise.all([
 		import('shiki/core'),
 		import('shiki/engine/javascript'),
-		import('shiki/themes/github-light-default.mjs'),
-		import('shiki/themes/github-dark-default.mjs'),
+		import('shiki/themes/github-light-high-contrast.mjs'),
+		import('shiki/themes/github-dark-high-contrast.mjs'),
 	])
 		.then(([{ createHighlighterCore }, { createJavaScriptRegexEngine }, light, dark]) =>
 			createHighlighterCore({

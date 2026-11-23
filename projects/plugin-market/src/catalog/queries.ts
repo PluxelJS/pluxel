@@ -270,8 +270,17 @@ export async function facets(
 
 export async function getPackage(db: CatalogDatabase, input: PackageIdentity) {
 	const row = await db
-		.select({ ...packageDetailFields, ...summaryFields })
+		.select({
+			...packageDetailFields,
+			...summaryFields,
+			checkedRequirements: {
+				version: releases.version,
+				peerDependencies: releases.peerDependencies,
+				pluginPackages: releases.pluginPackages,
+			},
+		})
 		.from(packages)
+		.leftJoin(releases, and(releasePackage, eq(releases.version, packages.metadataVersion)))
 		.where(
 			and(
 				eq(packages.registry, input.registry),
@@ -280,7 +289,9 @@ export async function getPackage(db: CatalogDatabase, input: PackageIdentity) {
 			),
 		)
 		.get()
-	return row ? withRepositoryAuthor(row) : undefined
+	if (!row) return undefined
+	const { checkedRequirements, ...pkg } = row
+	return { ...withRepositoryAuthor(pkg), ...(checkedRequirements && { checkedRequirements }) }
 }
 
 export async function getRelease(

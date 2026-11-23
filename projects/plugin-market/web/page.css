@@ -1,7 +1,5 @@
 :root {
-	font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-	color: #18212f;
-	background: #f8fafc;
+	color-scheme: light dark;
 	font-synthesis: none;
 	text-rendering: optimizeLegibility;
 }
@@ -11,9 +9,9 @@ body {
 }
 
 .market-page {
-	max-width: 1440px;
-	margin: 0 auto;
-	padding: 24px clamp(16px, 4vw, 48px) 48px;
+	min-height: 100dvh;
+	box-sizing: border-box;
+	padding: 24px max(clamp(16px, 4vw, 48px), calc((100vw - 1440px) / 2)) 48px;
 }
 
 .market-page-header {
@@ -22,11 +20,11 @@ body {
 	gap: 16px;
 	padding-bottom: 24px;
 	font-size: 14px;
-	color: #64748b;
+	color: var(--pm-muted);
 }
 
 .market-page-brand {
-	color: #18212f;
+	color: var(--pm-ink);
 	font-size: 22px;
 	font-weight: 750;
 	letter-spacing: -0.04em;
