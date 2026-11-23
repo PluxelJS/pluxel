@@ -62,6 +62,27 @@ describe('Core-owned filesystem', () => {
 		for (const { value: timer } of timers.mock.results) expect(cleared).toHaveBeenCalledWith(timer)
 	})
 
+	it('shares a poll per document and releases key subscriptions independently', async () => {
+		await using host = createCoreTestHost()
+		const documents = requireFs(getCoreTestHostContext(host)).documents('services/tinybase/nodes')
+		await documents.put('first', '1')
+		await documents.put('second', '2')
+		const timers = vi.spyOn(globalThis, 'setInterval')
+		const cleared = vi.spyOn(globalThis, 'clearInterval')
+		const first = documents.subscribe!(() => {}, { key: 'first' })
+		expect(timers).toHaveBeenCalledTimes(1)
+		const namespace = documents.subscribe!(() => {})
+		expect(timers).toHaveBeenCalledTimes(2)
+		const second = documents.subscribe!(() => {}, { key: 'second' })
+		expect(timers).toHaveBeenCalledTimes(2)
+		namespace()
+		expect(cleared).not.toHaveBeenCalled()
+		first()
+		expect(cleared).toHaveBeenCalledExactlyOnceWith(timers.mock.results[0]!.value)
+		second()
+		expect(cleared).toHaveBeenCalledTimes(2)
+	})
+
 	it('rejects new document adapters while draining an admitted commit before filesystem closure', async () => {
 		await using disk = await createDiskFixture()
 		const prefix = disk.path

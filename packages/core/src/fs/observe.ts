@@ -2,12 +2,11 @@ type FileContent = string | Uint8Array | undefined
 
 /** Observe bytes through the selected backend, including writes outside this process.
  * No replication or conflict resolution. Closing waits for the current read/application.
- * Returning false defers a change while the consumer has an unfinished local transaction.
  */
 export function observeFile<T extends FileContent>(
 	read: () => Promise<T>,
 	initial: T,
-	onChange: (content: T) => void | boolean | Promise<void | boolean>,
+	onChange: (content: T) => void | Promise<void>,
 	onError: (error: unknown) => void,
 ): () => Promise<void> {
 	let previous = initial
@@ -30,10 +29,9 @@ export function observeFile<T extends FileContent>(
 				return
 			}
 			if (closed || (!recovering && sameFileContent(content, previous))) return
-			const before = previous
 			previous = content
 			try {
-				if ((await onChange(content)) === false) previous = before
+				await onChange(content)
 			} catch (error) {
 				if (!closed) onError(error)
 			}

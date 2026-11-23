@@ -1,7 +1,7 @@
 import { pluginNodeIndexKey, type PluginNodeAddress } from '../plugins/runtime/identity'
 import type { Context, PluginContext, RootContext } from '../context/Context'
 import type { CorePluginLifecycleHooks } from '../plugins/runtime/plugin-service/HostLifecycle'
-import type { CoreStorage, HostDocumentStorage } from '../storage/documents'
+import type { CoreStorage, CoreDocumentStorage } from '../storage/documents'
 import { pluginNodePhysicalKey } from '../internal/plugin-address'
 import { TinyBaseError } from './error'
 import { StoreWriter, runOperation } from './writer'
@@ -12,9 +12,8 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 	private readonly owners = new WeakMap<Context, StoreWriter>()
 	private readonly published = new WeakSet<Context>()
 	private readonly writers = new Map<string, StoreWriter>()
-	private readonly nodeBacking: HostDocumentStorage
+	private readonly nodeBacking: CoreDocumentStorage
 	private readonly retention: ReturnType<CoreStorage['documents']['documentRetention']>
-	private readonly fileBacked: boolean
 	private closed = false
 
 	constructor(
@@ -23,21 +22,8 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 		private readonly maxBytes: number,
 	) {
 		const directory = 'services/tinybase/nodes'
-		const backing = storage.documents.documents(directory, maxBytes)
+		this.nodeBacking = storage.documents.documents(directory, maxBytes)
 		this.retention = storage.documents.documentRetention(directory)
-		const files = storage.files
-		this.fileBacked = files !== undefined
-		this.nodeBacking = files
-			? {
-					put: (file, text) => backing.put(file, text),
-					stat: (file) => backing.stat(file),
-					getText: async (file) => {
-						// open() is a writable capability even for an existing snapshot.
-						await files.directory(directory, { writable: true })
-						return backing.getText(file)
-					},
-				}
-			: backing
 		this.lifecycle = {
 			prepareCommit: ({ started }) => {
 				for (const ctx of started) this.owners.get(ctx)?.preparePublication()
@@ -65,7 +51,6 @@ export class TinyBaseRuntime implements TinyBaseHostService {
 				this.retention,
 				`${pluginNodePhysicalKey(node)}.json`,
 				this.maxBytes,
-				this.fileBacked,
 				() => {
 					this.assertOpen()
 					const current = this.writers.get(key)

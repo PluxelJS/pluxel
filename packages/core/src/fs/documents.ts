@@ -2,16 +2,22 @@ import { withErrno } from 'kerium'
 import {
 	assertDocumentBudget,
 	assertDocumentKey,
-	type HostDocumentStorage,
+	type CoreDocumentStorage,
 } from '../storage/documents'
 import { writeFileAtomic } from './atomic'
 import { observeFile } from './observe'
 import type { FsPromises, FsRequirement } from './service'
 
+type Subscription = {
+	listener: () => void
+	key?: string
+	onError?: (error: unknown) => void
+}
+
 /** Ordinary files: domains own decoding and confirmed state; this owner drains accepted IO. */
-export class FsDocuments implements HostDocumentStorage {
+export class FsDocuments implements CoreDocumentStorage {
 	private readonly accessed = new Map<string, string | undefined>()
-	private readonly listeners = new Set<() => void>()
+	private readonly listeners = new Set<Subscription>()
 	private readonly observers = new Map<string, () => Promise<void>>()
 	private readonly pending = new Set<Promise<unknown>>()
 	private tail: Promise<void> = Promise.resolve()
@@ -22,6 +28,11 @@ export class FsDocuments implements HostDocumentStorage {
 		readonly maxBytes: number,
 		private readonly reportError: (error: unknown, key: string) => void,
 	) {}
+
+	async requireWritable(): Promise<void> {
+		this.assertOpen()
+		await this.directory({ writable: true })
+	}
 
 	getText(key: string): Promise<string | undefined> {
 		this.assertKey(key)
@@ -64,14 +75,29 @@ export class FsDocuments implements HostDocumentStorage {
 		)
 	}
 
-	subscribe(listener: () => void): () => void {
+	subscribe(listener: () => void, options?: Pick<Subscription, 'key' | 'onError'>): () => void {
 		this.assertOpen()
-		this.listeners.add(listener)
-		for (const key of this.accessed.keys()) this.observe(key)
+		const key = options?.key
+		if (key !== undefined) assertDocumentKey(key)
+		const subscription = { listener, key, onError: options?.onError }
+		this.listeners.add(subscription)
+		if (key !== undefined) this.observe(key)
+		else for (const accessed of this.accessed.keys()) this.observe(accessed)
 		return () => {
-			this.listeners.delete(listener)
-			if (this.listeners.size === 0) this.stopObserving()
+			this.listeners.delete(subscription)
+			for (const [observed, stop] of this.observers) {
+				if ((key === undefined || key === observed) && !this.hasListener(observed)) {
+					this.observers.delete(observed)
+					this.track(stop())
+				}
+			}
 		}
+	}
+
+	private hasListener(key: string): boolean {
+		for (const subscription of this.listeners)
+			if (subscription.key === undefined || subscription.key === key) return true
+		return false
 	}
 
 	async close(): Promise<void> {
@@ -102,7 +128,7 @@ export class FsDocuments implements HostDocumentStorage {
 	}
 
 	private observe(key: string): void {
-		if (this.closed || this.listeners.size === 0 || this.observers.has(key)) return
+		if (this.closed || this.observers.has(key) || !this.hasListener(key)) return
 		this.observers.set(
 			key,
 			observeFile(
@@ -110,15 +136,28 @@ export class FsDocuments implements HostDocumentStorage {
 				this.accessed.get(key),
 				(text) => {
 					this.accessed.set(key, text)
-					for (const listener of this.listeners) {
+					for (const subscription of this.listeners) {
+						if (subscription.key !== undefined && subscription.key !== key) continue
 						try {
-							listener()
+							subscription.listener()
 						} catch (error) {
 							this.reportError(error, key)
 						}
 					}
 				},
-				(error) => this.reportError(error, key),
+				(error) => {
+					let handled = false
+					for (const subscription of this.listeners) {
+						if (subscription.key !== key || !subscription.onError) continue
+						handled = true
+						try {
+							subscription.onError(error)
+						} catch (listenerError) {
+							this.reportError(listenerError, key)
+						}
+					}
+					if (!handled) this.reportError(error, key)
+				},
 			),
 		)
 	}

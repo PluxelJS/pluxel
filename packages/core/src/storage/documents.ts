@@ -16,10 +16,22 @@ export interface HostDocumentStorage {
 	subscribe?(listener: () => void): () => void
 }
 
+/** Core can acquire a writable document namespace before opening a mutable Store. */
+export interface CoreDocumentStorage extends HostDocumentStorage {
+	requireWritable?(): Promise<void>
+	/** A Core consumer may observe one key. Notify on external changes and after observation
+	 * recovers, including when the recovered bytes match the last successful read.
+	 */
+	subscribe?(
+		listener: () => void,
+		options?: Readonly<{ key: string; onError?: (error: unknown) => void }>,
+	): () => void
+}
+
 /** Root-owned documents and the file capability, when the Host supplies one. */
 export type CoreStorage = Readonly<{
 	documents: Readonly<{
-		documents(directory: string, maxBytes?: number): HostDocumentStorage
+		documents(directory: string, maxBytes?: number): CoreDocumentStorage
 		documentRetention(directory: string): 'session' | 'declared-durable' | 'unknown'
 	}>
 	files?: FsService

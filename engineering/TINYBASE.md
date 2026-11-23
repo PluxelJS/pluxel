@@ -56,11 +56,11 @@ maxSnapshotBytes 默认每份完整 envelope UTF-8 8 MiB，要求正安全整数
 
 文件后端通过同目录替换保存，Cloudflare 的默认内存文档由当前根持有。停止插件、卸载或删除 fork 时，已提交的快照保留在所选后端。共享 backend 的完整写入可能互相覆盖，跨实例锁/CAS/合并业务使用数据库。
 
-## 外部文件变化
+## 外部快照变化
 
-fs/observe 定期读取快照，经身份、格式、预算及 native schema 保真校验后替换 Store，让原生 Queries/listener 观察变化。加载期间不启动 autosave 或回写外部快照，本地 transaction/save 仍按本实例 queue 结算。
+提供变更通知的文档后端按快照 key 通知 writer。ZenFS 通过定期读取发现外部变化，会话内存后端省略观察。writer 在本地事务和保存完成后重读最新内容，校验身份、格式、预算与 native schema，再将变更应用到同一个 Store。原生 Queries/listener 可观察这次更新。外部快照本身无需回写，业务监听器产生的新修改按本地写入保存。
 
-读取/校验失败保留有效 Store 并报告，后续不同有效内容可恢复。删除接纳为空 Content，同样要求 schema 保真，不恢复调用方初值或后台重建文件。stop 先撤销观察并等待在途读取，再释放 owner/FS。观察和并发边界见 [FS](FS.md#共享文件与观察)。
+订阅安装失败反映在 writer 状态中，已启动的插件仍可保存。变更通知后的重读遇到临时 I/O 错误时，writer 保留有效 Store 并重试读取；内容校验失败时保留错误，待后续有效快照到达后恢复。删除接纳为空 Content，同样要求 schema 保真，不恢复调用方初值或后台重建文件。stop 先撤销观察并等待在途读取，再释放 owner/FS。观察和并发边界见 [FS](FS.md#共享文件与观察)。
 
 ## Host 文档边界
 

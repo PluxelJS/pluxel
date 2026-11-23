@@ -51,7 +51,7 @@ export interface CoreFacilitiesConfig {
 	events?: EventsServiceConfig
 	/** Native ZenFS mounts shared by Plugin files and state. Omitted means an isolated InMemory root. */
 	zenfs?: FsConfig
-	/** Snapshot policy; the backend is selected once through zenfs. */
+	/** Snapshot policy for the document storage provided by this Host. */
 	tinybase?: TinyBaseOptions
 	/** Credential backend and explicit deployment identity. Defaults to lazy encrypted storage. */
 	vault?: VaultServiceConfig

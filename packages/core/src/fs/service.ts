@@ -1,5 +1,5 @@
 import type { RootContext } from '../context/Context'
-import { MAX_DOCUMENT_BYTES, type HostDocumentStorage } from '../storage/documents'
+import { MAX_DOCUMENT_BYTES, type CoreDocumentStorage } from '../storage/documents'
 import { InMemory, type BoundContext } from '@zenfs/core'
 import { withErrno } from 'kerium'
 import { FsDocuments } from './documents'
@@ -67,7 +67,7 @@ export class FsService {
 	}
 
 	/** Pure, borrowed Host document adapter; its first async operation prepares the same backend. */
-	documents(path: string, maxBytes = MAX_DOCUMENT_BYTES): HostDocumentStorage {
+	documents(path: string, maxBytes = MAX_DOCUMENT_BYTES): CoreDocumentStorage {
 		validateDirectory(path)
 		this.assertOpen()
 		if (this.disposal) throw withErrno('EBADF', 'Host filesystem is closed')
