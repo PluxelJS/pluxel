@@ -5,7 +5,7 @@ description: 复用 Typst 生成无状态 SVG，或用多文件会话生成同�
 
 `@pluxel/plugin-typst` 可以从 Typst 源码生成 SVG，也可以在编译会话中反复编译多文件工程，并从同一次排版生成矢量预览、PDF 和页面 PNG。
 
-[外部应用 API 速览](typst-quickstart.md)
+[外部应用 API 速览](./typst-quickstart.md)
 
 ## 核心运行环境
 

@@ -3,7 +3,7 @@ title: Typst API 速览
 description: 外部应用如何接入 Typst 编译、预览、富文本和 Agent 源码编辑。
 ---
 
-`@pluxel/plugin-typst` 当前是 workspace 私有包。外部项目可接入 Pluxel 源码，或使用为目标平台构建的制品。原生编译入口需要带 `native/compiler.node` 的完整构建。 [跨仓库源码接入](../../development/source-workspaces.md) · [原生构建](../../../plugins/render/typst/native/README.md)
+`@pluxel/plugin-typst` 当前是 workspace 私有包。外部项目可接入 Pluxel 源码，或使用为目标平台构建的制品。原生编译入口需要带 `native/compiler.node` 的完整构建。 [跨仓库源码接入](../../development/source-workspaces.md) · [原生构建](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/plugins/render/typst/native/README.md)
 
 | 外部应用能做什么                           | 使用的 API                                                                                                             |
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
@@ -16,7 +16,7 @@ description: 外部应用如何接入 Typst 编译、预览、富文本和 Agent
 
 ## Node 端编译报表
 
-Host 注册 `FontsPlugin`、`TypstPlugin` 和下面的消费插件，并安装 `nodeModules()`。需要 `renderSvg()` 时再安装 `workers()`。`servicesPreset()` 已包含这两项服务。 [宿主装配](typst.md#核心运行环境)
+Host 注册 `FontsPlugin`、`TypstPlugin` 和下面的消费插件，并安装 `nodeModules()`。需要 `renderSvg()` 时再安装 `workers()`。`servicesPreset()` 已包含这两项服务。 [宿主装配](./typst.md#核心运行环境)
 
 把下面内容存为模板目录下的 `main.typ`。表单和业务校验由应用负责，模板直接读取 JSON。
 
@@ -56,7 +56,7 @@ export class ReportsPlugin extends BasePlugin {
 }
 ```
 
-要做实时预览，让同一文档复用一个 session。每次 `update()` 传完整文件表。编译失败时，上一次成功修订的产物仍可读取。原生编译应使用受信任的模板和源码。 [会话契约](typst.md#多文件编译会话与-pdf-导出)
+要做实时预览，让同一文档复用一个 session。每次 `update()` 传完整文件表。编译失败时，上一次成功修订的产物仍可读取。原生编译应使用受信任的模板和源码。 [会话契约](./typst.md#多文件编译会话与-pdf-导出)
 
 只要一张公式图时，在消费插件内直接调用 `await this.typst.renderSvg('#set page(width: auto, height: auto)\n$sum_(i=1)^n i$')`，得到 SVG 字节。
 
@@ -77,7 +77,7 @@ if (!result.ok) throw new Error('源码事务未接纳', { cause: result.issues 
 const filesToSave = result.value.files
 ```
 
-应用持久化 `filesToSave`。在浏览器中，用 `createTypstSourceProject({ files, parserWasm })` 打开同一文件表，再挂载 `<TypstSourceEditor project={project} path="main.typ" />`。编辑器支持表格、公式、题注和引用。需要与预览双向定位时，用同一源修订的映射连接编辑位置和排版坐标。 [浏览器编辑与导航](typst-editor.md)
+应用持久化 `filesToSave`。在浏览器中，用 `createTypstSourceProject({ files, parserWasm })` 打开同一文件表，再挂载 `<TypstSourceEditor project={project} path="main.typ" />`。编辑器支持表格、公式、题注和引用。需要与预览双向定位时，用同一源修订的映射连接编辑位置和排版坐标。 [浏览器编辑与导航](./typst-editor.md)
 
 ## 固定模板里的章节编辑
 
@@ -92,4 +92,4 @@ if (!printed.ok) throw new Error('章节编辑未通过校验', { cause: printed
 const chapterSource = printed.value.source
 ```
 
-宿主保存 `chapterSource`，决定可编辑章节、发布的资源和预览导航。如果用户只需填表，直接保存业务 JSON，再用上面的会话重排即可。 [分章项目书与审批表示例](../../../plugins/render/typst/tests/consumer/README.md)
+宿主保存 `chapterSource`，决定可编辑章节、发布的资源和预览导航。如果用户只需填表，直接保存业务 JSON，再用上面的会话重排即可。 [分章项目书与审批表示例](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/plugins/render/typst/tests/consumer/README.md)

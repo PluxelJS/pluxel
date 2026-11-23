@@ -3,7 +3,7 @@ title: Typst 源码编辑
 description: 人与 Agent 共同编辑普通 Typst 文件，按需组合 Tiptap、章节事务与预览。
 ---
 
-普通 `.typ` 文件保存正文，Tiptap 提供可选的结构化视图。完整工程可以保留原有脚本、模板调用和未触及的源码。分章应用可以对可编辑正文采用可往返的 Typst 子集，让富文本、源码视图和 Agent 共享接纳规则。两种用法都可直接使用原生编译会话。 [Typst 编译用法](typst.md)
+普通 `.typ` 文件保存正文，Tiptap 提供可选的结构化视图。完整工程可以保留原有脚本、模板调用和未触及的源码。分章应用可以对可编辑正文采用可往返的 Typst 子集，让富文本、源码视图和 Agent 共享接纳规则。两种用法都可直接使用原生编译会话。 [Typst 编译用法](./typst.md)
 
 需要编辑模板、导入或跨文件移动内容时，使用完整源码工程。需要编辑固定模板中的独立章节时，使用正文转换和章节编辑器。只填写业务数据时，宿主可以把模板设为只读，通过表单编辑普通 JSON，并用同一份数据重新排版。
 
@@ -123,7 +123,7 @@ React 页面把解析成功后的 `value.document` 作为 `TypstDocumentEditor` 
 
 正文转换、无 DOM 编辑器与 React 编辑器共用同一套节点、属性和标记。`parseTypstDocument` 在嵌套链接的内层源码范围报告 `UNSUPPORTED_SYNTAX`，包括 Typst 自动识别的裸 URL。外层链接若要显示 URL 文字，可以写成 `#link("https://outer.example")[#text("https://inner.example")]`。
 
-宿主可按需开放本章原生源码。人或 Agent 读取获准章节的 `.typ` 和基线修订，提交修改后走相同的生成与接纳路径。宿主核对章节权限、修订、引用目标与素材，再提交生成的 `.typ`。可公开素材直接使用原文件。需要保护原件时，宿主提供获准的发布版，并用同一批输入产生预览和原生 PDF。PDF 保留编译器生成的文本、矢量内容和链接。 [分章项目书示例](../../../plugins/render/typst/tests/consumer/README.md) · [编译与 PDF 导出](typst.md)
+宿主可按需开放本章原生源码。人或 Agent 读取获准章节的 `.typ` 和基线修订，提交修改后走相同的生成与接纳路径。宿主核对章节权限、修订、引用目标与素材，再提交生成的 `.typ`。可公开素材直接使用原文件。需要保护原件时，宿主提供获准的发布版，并用同一批输入产生预览和原生 PDF。PDF 保留编译器生成的文本、矢量内容和链接。 [分章项目书示例](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/plugins/render/typst/tests/consumer/README.md) · [编译与 PDF 导出](./typst.md)
 
 ## Agent 源码事务与增量补丁
 
