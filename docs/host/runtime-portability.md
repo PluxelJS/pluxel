@@ -19,7 +19,7 @@ export default defineHostApplication(({ env }) => ({
 }))
 ```
 
-**Node / Electron 主进程。** 两者都从包根导入 `startHost`。下面打印一次状态就释放 Host。Electron 窗口需要持续调用插件时，在 `app.whenReady()` 后启动，并让 Host 的作用域覆盖窗口的使用期。 [Node 入口](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-targets/src/node-main.ts) · [Electron 主进程](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-electron/index.js)
+**Node / Electron 主进程。** 两者都从包根导入 `startHost`。下面打印一次状态就释放 Host。Electron 窗口需要持续调用插件时，在 `app.whenReady()` 后启动，并让 Host 的作用域覆盖窗口的使用期。 [Node 入口](https://github.com/PluxelJS/pluxel/blob/83f514bf922cd740fc1f4383e749dc447e09f37a/projects/host-targets/src/node-main.ts) · [Electron 主进程](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-electron/index.js)
 
 ```ts
 import { startHost } from '@pluxel/host'
@@ -29,7 +29,7 @@ await using host = await startHost(application, { env: { APP_NAME: process.env.A
 console.log(await host.status())
 ```
 
-**浏览器 Dedicated Worker。** 在 Worker 模块里启动，把结果通过消息发回页面。下面的 Worker 只查询一次。长期处理消息的 Worker 可以保留一个 Host，在收到关闭消息时等待 `host.close()`。 [完整消息处理](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-targets/src/browser.worker.ts)
+**浏览器 Dedicated Worker。** 在 Worker 模块里启动，把结果通过消息发回页面。下面的 Worker 只查询一次。长期处理消息的 Worker 可以保留一个 Host，在收到关闭消息时等待 `host.close()`。 [完整消息处理](https://github.com/PluxelJS/pluxel/blob/83f514bf922cd740fc1f4383e749dc447e09f37a/projects/host-targets/src/browser.worker.ts)
 
 ```ts
 import { startHost } from '@pluxel/host/embedded'
@@ -39,7 +39,7 @@ await using host = await startHost(application)
 self.postMessage(host.catalog().entries.map(({ address }) => address.exportName))
 ```
 
-**Cloudflare Workers。** 模块持有一个驱动。首次请求在有效事件里启动根，后续请求可复用它。每次 `run` 都有自己的 SDK 作用域。 [请求入口](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-targets/src/cloudflare/entry.ts)
+**Cloudflare Workers。** 模块持有一个驱动。首次请求在有效事件里启动根，后续请求可复用它。每次 `run` 都有自己的 SDK 作用域。 [请求入口](https://github.com/PluxelJS/pluxel/blob/83f514bf922cd740fc1f4383e749dc447e09f37a/projects/host-targets/src/cloudflare/entry.ts)
 
 ```ts
 import { createWorkerHost } from '@pluxel/host/cloudflare'

@@ -525,7 +525,7 @@ Electron 主进程同样从 `@pluxel/host` 导入 `startHost`。浏览器、LLRT
 
 standalone 和 modules 构建都要在源码中解析显式声明的 `plugins` 和 `pluginNodes`。上例的数组在构建时就能确定，`autoStart` 和服务选择可在运行时求值。modules 还可用 `sources` 在启动时发现已编译的插件。 [动态来源](#动态来源)
 
-Node 和嵌入式宿主每次显式调用 `startHost` 都创建并验收一个根。Cloudflare 模块持有一个驱动，由它为同一 isolate 的多次事件复用根。工厂用冻结的 `env` 决定插件、服务与策略；每个根的资源通过 service 或应用的 `prepare` 打开，经 effects 注册释放。应用工厂返回完整的 `coreConfig`，其中可组合共享策略和本平台的存储、网络或日志实现。直接启动时的第二个参数只接收 `env` 和已解析的 `vaultBindings`。节点的 `envBindings` 在创建该根时解析。启动方另有已解析的部署记录可通过 `vaultBindings` 传入，记录随根固定；同一 owner、namespace 和 key 有多个来源时启动失败。需要在插件启动前接入诊断时，可以使用应用的 `prepare({ host })`。Node 与嵌入式宿主的底层装配工具还可调用 `createHost(options)` 单独准备根，再执行 `host.start()`。 [三端共用的应用](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-targets/src/demo-plugins.ts)
+Node 和嵌入式宿主每次显式调用 `startHost` 都创建并验收一个根。Cloudflare 模块持有一个驱动，由它为同一 isolate 的多次事件复用根。工厂用冻结的 `env` 决定插件、服务与策略；每个根的资源通过 service 或应用的 `prepare` 打开，经 effects 注册释放。应用工厂返回完整的 `coreConfig`，其中可组合共享策略和本平台的存储、网络或日志实现。直接启动时的第二个参数只接收 `env` 和已解析的 `vaultBindings`。节点的 `envBindings` 在创建该根时解析。启动方另有已解析的部署记录可通过 `vaultBindings` 传入，记录随根固定；同一 owner、namespace 和 key 有多个来源时启动失败。需要在插件启动前接入诊断时，可以使用应用的 `prepare({ host })`。Node 与嵌入式宿主的底层装配工具还可调用 `createHost(options)` 单独准备根，再执行 `host.start()`。 [三端共用的应用](https://github.com/PluxelJS/pluxel/blob/83f514bf922cd740fc1f4383e749dc447e09f37a/projects/host-targets/src/demo-plugins.ts)
 
 ---
 
@@ -533,7 +533,7 @@ Node 和嵌入式宿主每次显式调用 `startHost` 都创建并验收一个�
 
 ## 嵌入式 Host
 
-`@pluxel/host/embedded` 的 `startHost(application, inputs?)` 由应用启动一个独立的根，使用宿主提供的 Fetch 和 ZenFS。页面、Dedicated Worker、LLRT 和 React Native 均可使用。默认文件和 TinyBase 快照保存在内存中。需要重开恢复时，可通过 `coreConfig.zenfs` 挂载持久后端，例如浏览器中的 IndexedDB。开发时，Worker 可在 Vite 的 `import.meta.hot.accept()` 中将新的构造器集合交给 `host.updateCatalog()`，保留根服务和存储。读取替换结果时检查 reconciliation 与已提交的 lifecycle report。构造器派生的调用地址随对应代码一起切换。 [浏览器 Worker 示例](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-targets/src/browser.worker.ts)
+`@pluxel/host/embedded` 的 `startHost(application, inputs?)` 由应用启动一个独立的根，使用宿主提供的 Fetch 和 ZenFS。页面、Dedicated Worker、LLRT 和 React Native 均可使用。默认文件和 TinyBase 快照保存在内存中。需要重开恢复时，可通过 `coreConfig.zenfs` 挂载持久后端，例如浏览器中的 IndexedDB。开发时，Worker 可在 Vite 的 `import.meta.hot.accept()` 中将新的构造器集合交给 `host.updateCatalog()`，保留根服务和存储。读取替换结果时检查 reconciliation 与已提交的 lifecycle report。构造器派生的调用地址随对应代码一起切换。 [浏览器 Worker 示例](https://github.com/PluxelJS/pluxel/blob/83f514bf922cd740fc1f4383e749dc447e09f37a/projects/host-targets/src/browser.worker.ts)
 
 ## Cloudflare Worker Host
 
@@ -562,7 +562,7 @@ JSON 和可直接转交的原生响应在回调结束时释放作用域。如果
 
 本地开发时，插件实现的 Vite 接受边界调用 `worker.updateCatalog(({ env }) => selectPlugins(env), { onGraphCommitted })`。选择函数收到当前已验收根的部署变量，在提交回调中同步发布新的插件引用。驱动等待已接纳的事件和依赖插件的响应体结算，将更新应用到同一个 Host，再放行新事件。首次请求之前接到更新时只发布引用，首次启动读取更新后的声明。服务或应用装配变化走入口重载，开发入口用 `await closeOnHotReload(import.meta.hot, worker)` 在模块替换时排空旧根。`updateCatalog` 和 `close` 均由事件回调之外的所有者调用。 [Market 热更新](https://github.com/PluxelJS/pluxel/blob/5acd5b22dbe62cf96b50421fa37f95f507d5ce02/projects/plugin-market/src/application.ts) · [三端可运行示例](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-targets/README.md)
 
-配置、策略和 TinyBase 的默认内存文档在同一个根上跨请求保留。根的生命周期以 isolate 为上限，平台回收 isolate 时没有可靠的关闭回调。需要跨 isolate 保存的业务数据写入持久 binding。Worker 使用平台 Fetch、部署 Vault 和应用配置的 LogTape 输出。常驻服务的传输函数应在调用时取得可用的 binding。Worker 入口拒绝托管 LogTape、ZenFS 和 Node 代理配置。插件调用 `ctx.fs()` 会得到 `ENOTSUP`。 [三端传输示例](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-targets/src/cloudflare/entry.ts)
+配置、策略和 TinyBase 的默认内存文档在同一个根上跨请求保留。根的生命周期以 isolate 为上限，平台回收 isolate 时没有可靠的关闭回调。需要跨 isolate 保存的业务数据写入持久 binding。Worker 使用平台 Fetch、部署 Vault 和应用配置的 LogTape 输出。常驻服务的传输函数应在调用时取得可用的 binding。Worker 入口拒绝托管 LogTape、ZenFS 和 Node 代理配置。插件调用 `ctx.fs()` 会得到 `ENOTSUP`。 [三端传输示例](https://github.com/PluxelJS/pluxel/blob/83f514bf922cd740fc1f4383e749dc447e09f37a/projects/host-targets/src/cloudflare/entry.ts)
 
 ### 跨平台装配与更新
 
