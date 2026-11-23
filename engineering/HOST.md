@@ -8,7 +8,7 @@ Host 拥有服务安装、应用启动、catalog、运行意图和资源关闭�
 
 ## 应用工厂与运行寿命
 
-`@pluxel/host/application` 提供三端共享的 `defineHostApplication(({ env }) => …)` 和服务安装函数。每个根用冻结的部署变量选择插件和服务，完成 catalog、fork 和服务依赖校验。`@pluxel/host` 的 Node 入口导出同一个函数对象，工厂参数推断为 `HostStartupContext`，可直接读取启动路径、模式和部署信息。Node 托管加载器另外解析动态来源、文件与环境绑定。Node 与浏览器的 `startHost(application, inputs?)` 返回已验收的根，调用方持有并关闭它。三端共用准备、启动验收和发布钩子。默认验收只在失败时投影完整状态，自定义 `acceptStartup` 始终收到完整快照。 [应用工厂](../packages/host/src/application.ts) · [直接启动](../packages/host/src/embedded-application.ts) · [启动判定](../packages/host/src/application-start.ts)
+`@pluxel/host/application` 提供三端共享的 `defineHostApplication(({ env }) => …)` 和服务安装函数。每个根用冻结的部署变量选择插件和服务，完成 catalog、fork 和服务依赖校验。`@pluxel/host` 的 Node 入口导出同一个函数对象，工厂参数推断为 `HostStartupContext`，可直接读取启动路径、模式和部署信息。Node 托管加载器另外解析动态来源、文件与环境绑定。Node 与嵌入式入口的 `startHost(application, inputs?)` 返回已验收的根，调用方持有并关闭它。三端共用准备、启动验收和发布钩子。默认验收只在失败时投影完整状态，自定义 `acceptStartup` 始终收到完整快照。 [应用工厂](../packages/host/src/application.ts) · [直接启动](../packages/host/src/embedded-application.ts) · [启动判定](../packages/host/src/application-start.ts)
 
 Cloudflare 在模块作用域创建 `createWorkerHost(application)`。首个事件进入 `worker.run({ env, ctx }, callback)` 时启动根，当前事件通过 `ctx.waitUntil` 持有冷启动任务。相同部署变量的并发事件等待同一次启动，后续事件复用已启动的根、服务和插件。部署变量按字符串键值比较。新快照启动成功后接替原根，已接纳的旧事件结算后再关闭原根。新快照启动失败会使等待它的事件失败，下次同配置事件可以重试。平台回收 isolate 后由下一实例重新启动。 [Worker 驱动](../packages/host/src/cloudflare.ts) · [workerd 回归](../packages/host/tests/cloudflare/runtime.test.ts)
 
@@ -32,7 +32,7 @@ service access 区分 `all`、真实 Plugin/Part `owner` 和真实 `root`。`ctx
 
 部署清单决定 Node 制品 owner：standalone 使用应用固定目录；modules 保留已加载模块 owner，Node 服务按各 owner inventory 读取，不能用应用目录覆盖外部 worker。详见[官方默认组合](../docs/host/services.md#官方服务预设servicespreset)。
 
-Node 与浏览器入口共享 ZenFS 装配，Node 入口额外接入 Undici 代理工厂。Cloudflare 使用根所有的会话文档和只读 Vault bindings。文档、TinyBase 会话数据和 logger 根标识在同一根的各次调用间保留。请求日志可显式用 `ctx.logger.with({ requestId })` 关联到单次事件。所选 Plugin 和 Services 的依赖闭包由应用构建验证。 [浏览器 Host](../docs/host/configuration.md#浏览器-host) · [Worker 设施](../packages/core/src/context/core-facilities.ts)
+Node 与嵌入式入口共享 ZenFS 装配，Node 入口额外接入 Undici 代理工厂。Cloudflare 使用根所有的会话文档和只读 Vault bindings。文档、TinyBase 会话数据和 logger 根标识在同一根的各次调用间保留。请求日志可显式用 `ctx.logger.with({ requestId })` 关联到单次事件。所选 Plugin 和 Services 的依赖闭包由应用构建验证。 [嵌入式 Host](../docs/host/configuration.md#嵌入式-host) · [Worker 设施](../packages/core/src/context/core-facilities.ts)
 
 ## 应用、开发和部署
 
@@ -100,7 +100,7 @@ Host 的 `bench/status.bench.mjs` 比较 overview/find 与精确投影；Service
 | Node artifacts、Workers              | `packages/services/src/node/`、`workers/`；[Artifact Build](ARTIFACT_BUILD.md)                                                  |
 | Management/Workbench                 | [Workbench](WORKBENCH.md)、[管理接入](../docs/host/management.md)                                                               |
 
-Host 文档默认借用 Core 提供的存储，Node 和浏览器使用 ZenFS，Cloudflare 使用根内会话文档。`config.document` 与 `policy.document` 分别选择 IO、写权限和同步 root storage factory。config v4、state v8 只保存稀疏原始输入；缺失文档不写种子，坏格式保留原文件并拒绝准备。关闭先取消观察、排空本域任务，再由 Core 关闭 backend，见 [Config](CONFIG.md#存储与创建边界)。
+Host 文档默认借用 Core 提供的存储，Node 和嵌入式入口使用 ZenFS，Cloudflare 使用根内会话文档。`config.document` 与 `policy.document` 分别选择 IO、写权限和同步 root storage factory。config v4、state v8 只保存稀疏原始输入；缺失文档不写种子，坏格式保留原文件并拒绝准备。关闭先取消观察、排空本域任务，再由 Core 关闭 backend，见 [Config](CONFIG.md#存储与创建边界)。
 
 Worker caller result 与底层 execution settlement 分开；`settlement: 'execution'` 等到线程可复用或退出再发布结果，供调用方清理文件等资源。
 

@@ -38,7 +38,7 @@ Pluxel 的 standalone 和 modules 应用构建会从源码读取节点、fork �
 | 阶段                       | 宿主要准备什么                                                                                                                                                                                                                                                                         |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 加载框架                   | 制品使用的 ECMAScript 特性，包括 Proxy、Reflect、Promise、AggregateError 和稳定的 `Symbol.dispose`、`Symbol.asyncDispose`。准备 UTF-8 `TextEncoder` 和安全的 `crypto.randomUUID()`。事件库在加载时绑定 `console.info`、`warn`、`error`，缺少 `debug` 或 `trace` 时回退到 `console.log` |
-| 直接启动 Node 或浏览器入口 | ZenFS 在模块加载时使用 `TextDecoder`、`performance.now()` 和支持 `en-US` 的 `Intl.NumberFormat`。默认 Host 创建文件目录时还会用到 `URL` 和 `structuredClone`                                                                                                                           |
+| 直接启动 Node 或嵌入式入口 | ZenFS 在模块加载时使用 `TextDecoder`、`performance.now()` 和支持 `en-US` 的 `Intl.NumberFormat`。默认 Host 创建文件目录时还会用到 `URL` 和 `structuredClone`                                                                                                                           |
 | 启动插件、借用和关闭       | 准备定时器、`AbortController` 和 `AbortSignal`。SDK 调用插件方法时用 `AbortSignal.any()` 合并调用者和插件的取消信号。Cloudflare 驱动接纳事件时使用 `Promise.withResolvers()`。嵌入式宿主须驱动 Promise 任务队列，在引擎允许的线程上结算 I/O，并在释放引擎前等待 Host 关闭              |
 
 ### 内建能力的运行条件
@@ -48,7 +48,7 @@ Pluxel 的 standalone 和 modules 应用构建会从源码读取节点、fork �
 | `ctx.events`、`ctx.effects`、插件配置 | 框架负责根内事件分发、作用域清理和 schema 校验。释放订阅者后再次发事件，应只通知仍订阅的插件                                                                                                                                                                                                                                                |
 | `ctx.fetch`、`ctx.wretch`             | 提供 URL、Headers、Request、Response、符合 Fetch 语义的传输、DOMException，以及 `AbortSignal.any()` 和信号实例的 `throwIfAborted()`。当前 Wretch 即使发送 GET 也需要全局 `FormData`。受管请求达到并发上限时使用 `Promise.withResolvers()`，记录耗时使用 `performance.now()`。两种客户端都应能消费响应体，并在插件停止或调用者取消时中止请求 |
 | 限制出站 origin                       | 受管终端必须遵守 Request 的 headers、signal 和 `redirect: 'manual'`。测试指向另一 origin 的 302，确认第二个端点没有收到请求。应用可用 `coreConfig.http.fetch` 接入符合要求的传输                                                                                                                                                            |
-| `ctx.logger`                          | 由应用选择 LogTape 的输出端和日志级别，发送一条插件日志并在实际输出端核对来源。Node 和浏览器可用 `coreConfig.logtape` 开启 `root.logging`。同一份 LogTape 运行时同时只允许一个根托管其配置                                                                                                                                                  |
+| `ctx.logger`                          | 由应用选择 LogTape 的输出端和日志级别，发送一条插件日志并在实际输出端核对来源。Node 和嵌入式宿主可用 `coreConfig.logtape` 开启 `root.logging`。同一份 LogTape 运行时同时只允许一个根托管其配置                                                                                                                                              |
 | `ctx.tinybase`、`ctx.fs()`            | 快照需要根内文档存储、UTF-8 编码和 `queueMicrotask`。文件操作还需要支持所用方法的 ZenFS 后端。若要求跨重启恢复，须在目标介质上写入，关闭、重开 Host 后读回                                                                                                                                                                                  |
 | `ctx.vault`                           | 选 `{ backend: 'bindings' }` 可直接读取宿主注入的只读记录。加密后端还需要可写文件、UTF-8 编解码、`crypto.getRandomValues()`、WebCrypto AES-GCM 的 `importKey`、`encrypt`、`decrypt` 和 age 的运行依赖。即使读取的是只读绑定，加密后端也要先打开加密库。验收时用实际后端测试读取、拒绝覆盖绑定记录及所需的加密写入                           |
 
@@ -56,11 +56,11 @@ Pluxel 的 standalone 和 modules 应用构建会从源码读取节点、fork �
 
 ## 三个现有入口
 
-| 入口                                 | 根的寿命                                                               | 文件、TinyBase 和 Vault                                                                      |
-| ------------------------------------ | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Node `@pluxel/host`                  | `startHost` 创建根，应用等待 `host.close()` 释放。网络可配置 Node 代理 | 直接启动默认使用内存文件系统，应用可挂载本地目录。Vault 默认按需打开加密后端，也可选只读绑定 |
-| 浏览器 `@pluxel/host/browser`        | 页面或 Dedicated Worker 持有根。网络遵循浏览器的跨域策略               | 默认使用内存文件系统，可挂载 IndexedDB。Vault 的后端选择与 Node 相同                         |
-| Cloudflare `@pluxel/host/cloudflare` | 同一 isolate 内按部署变量复用根，每个事件有自己的 SDK 与取消信号       | `ctx.fs()` 报 `ENOTSUP`。TinyBase 使用根内会话存储。Vault 读取部署绑定，写入报 `READ_ONLY`   |
+| 入口                                 | 根的寿命                                                                       | 文件、TinyBase 和 Vault                                                                      |
+| ------------------------------------ | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Node `@pluxel/host`                  | `startHost` 创建根，应用等待 `host.close()` 释放。网络可配置 Node 代理         | 直接启动默认使用内存文件系统，应用可挂载本地目录。Vault 默认按需打开加密后端，也可选只读绑定 |
+| 嵌入式 `@pluxel/host/embedded`       | 页面、Dedicated Worker 或嵌入引擎的应用持有并关闭根。网络遵循宿主 Fetch 的语义 | 文件和 TinyBase 快照默认使用内存，可配置 ZenFS 挂载。Vault 的后端选择与 Node 相同            |
+| Cloudflare `@pluxel/host/cloudflare` | 同一 isolate 内按部署变量复用根，每个事件有自己的 SDK 与取消信号               | `ctx.fs()` 报 `ENOTSUP`。TinyBase 使用根内会话存储。Vault 读取部署绑定，写入报 `READ_ONLY`   |
 
 需要持久性的操作应在首次使用时明确声明。
 
@@ -72,11 +72,11 @@ Cloudflare 的出站 I/O 应在有效事件内执行。如果返回的响应流�
 
 ## 桌面、移动与嵌入式宿主
 
-嵌入式常驻应用如果能满足 Web API 和 ZenFS 依赖，可先复用 `@pluxel/host/browser` 的 `startHost(application, inputs)`。该入口也支持没有 DOM 的 Worker。应用所有者保存返回的 Host，停止接收原生调用后等待 `host.close()`，再释放引擎。应用工厂与插件图可直接沿用。 [启动与验收](./configuration.md#浏览器-host)
+满足 Web API 和 ZenFS 依赖的宿主可直接使用 `@pluxel/host/embedded` 的 `startHost(application, inputs)`。该入口也支持没有 DOM 的 Worker。应用所有者保存返回的 Host，停止接收原生调用后等待 `host.close()`，再释放引擎。应用工厂与插件图可直接沿用。 [启动与验收](./configuration.md#嵌入式-host)
 
-- **QuickJS / LLRT** 可从框架仓内的 `projects/host-llrt` 开始。Rust 可执行程序链接 LLRT v0.9.0-beta，在同一进程中驱动本地 HTTP 和 QuickJS 任务队列。每次冷启动都创建新 VM，从应用目录装配插件。共享插件验收会话文件、TinyBase、部署绑定和日志输出，独立安装的 TicketDesk 调用 Rust 并读写加密 Vault。ES2022 ESM 引导模块先安装 FormatJS 的 `getCanonicalLocales`、`Locale`、`PluralRules`、`NumberFormat` 及英文语言数据，再加载宿主。该版 LLRT 从现有 signal 创建 Request 后，取消原 controller 会触发监听器，但 `request.signal.aborted` 仍可能为 `false`。需要控制取消时，可直接传 `ctx.fetch(url, { signal })`。 [Rust 宿主与安装示例](https://github.com/PluxelJS/pluxel/blob/0f0d2441fdc8ac67cca5bad41b833d5781788799/projects/host-llrt/README.md)
-- **Electron** 可从 `projects/host-electron` 开始。主进程使用 Node Host，在服务中提供原生 `app` 的名称与版本。插件通过 `ctx.service(...)` 借用，渲染器在启用沙箱的窗口中显示回执。 [Electron 主进程示例](https://github.com/PluxelJS/pluxel/blob/0f0d2441fdc8ac67cca5bad41b833d5781788799/projects/host-electron/README.md)
-- **React Native / Expo** 可从 `projects/host-expo` 开始。Android 应用通过系统文件选择器安装独立构建的插件，启动时在 Hermes 中求值并通过 SDK 调用。插件通过宿主服务读取原生语言设置。引导模块补齐安全随机数、UUID 和资源释放 Symbol。示例的 HTTP 回执使用注入的测试传输；设备网络的在途取消、响应流和跨 origin 重定向需另行验收。iOS 也需用实际发行方式验证。 [Android 安装与重载示例](https://github.com/PluxelJS/pluxel/blob/0f0d2441fdc8ac67cca5bad41b833d5781788799/projects/host-expo/README.md) · [Expo 运行时重载](https://docs.expo.dev/versions/latest/sdk/expo/#reloadappasyncreason) · [RN 网络行为](https://reactnative.dev/docs/network)
+- **QuickJS / LLRT** 可从框架仓内的 `projects/host-llrt` 开始。Rust 可执行程序链接 LLRT v0.9.0-beta，在同一进程中驱动本地 HTTP 和 QuickJS 任务队列。每次冷启动都创建新 VM，从应用目录装配插件。共享插件验收会话文件、TinyBase、部署绑定和日志输出，独立安装的 TicketDesk 调用 Rust 并读写加密 Vault。ES2022 ESM 引导模块先安装 FormatJS 的 `getCanonicalLocales`、`Locale`、`PluralRules`、`NumberFormat` 及英文语言数据，再加载宿主。该版 LLRT 从现有 signal 创建 Request 后，取消原 controller 会触发监听器，但 `request.signal.aborted` 仍可能为 `false`。需要控制取消时，可直接传 `ctx.fetch(url, { signal })`。 [Rust 宿主与安装示例](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-llrt/README.md)
+- **Electron** 可从 `projects/host-electron` 开始。主进程从 `@pluxel/host` 根入口启动 Node Host，在服务中提供原生 `app` 的名称与版本。插件通过 `ctx.service(...)` 借用，渲染器在启用沙箱的窗口中显示回执。 [Electron 主进程示例](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-electron/README.md)
+- **React Native / Expo** 可从 `projects/host-expo` 开始。Android 应用通过系统文件选择器安装独立构建的插件，启动时在 Hermes 中求值并通过 SDK 调用。插件通过宿主服务读取原生语言设置。`ctx.fs()` 可读写文件，`ctx.tinybase.open()` 可读写 Store。示例的这两类数据随根关闭而释放。安装包则由 Expo FileSystem 写入应用私有目录，重载后仍可读取。要让插件文件与 TinyBase 快照也跨重启保存，应用需提供连接设备持久存储的 ZenFS 后端，挂载到覆盖两者数据目录的位置。`durableMounts` 用于声明该后端实际提供的持久性。引导模块补齐安全随机数、UUID 和资源释放 Symbol。示例的 HTTP 回执使用注入的测试传输；设备网络的在途取消、响应流和跨 origin 重定向需另行验收。iOS 也需用实际发行方式验证。 [Android 安装与重载示例](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-expo/README.md) · [Expo 运行时重载](https://docs.expo.dev/versions/latest/sdk/expo/#reloadappasyncreason) · [RN 网络行为](https://reactnative.dev/docs/network)
 - **JVM** 待嵌入宿主验收。以 GraalJS 为例，JVM 应用需提供模块来源、定时器、异步 I/O 和 Web API，并安排同一 Context 的进入与关闭顺序。验收应覆盖并发调用、取消，以及关闭后到达的原生回调。 [GraalJS 模块装载](https://github.com/oracle/graaljs/blob/master/docs/user/Modules.md) · [线程模型](https://github.com/oracle/graaljs/blob/master/docs/user/Multithreading.md)
 
 ## 如何验收一个宿主
@@ -88,7 +88,7 @@ vp run @pluxel-example/host-targets#check-smoke
 vp run @pluxel/core#check-zenfs-browser
 ```
 
-移植到新宿主时，可复制与目标引擎最接近的示例。它们都从测试包 `@pluxel-example/host-targets-plugins/probe` 导入 `probePlugins` 和 `inspectHost`，检查相同的构造器注入、配置、网络、存储、事件和清理行为。每个宿主单独注册自己的服务和平台插件。三端示例给出了共享插件的打包命令、公开测试输入和预期回执。 [三端验收与共享探针](https://github.com/PluxelJS/pluxel/blob/0f0d2441fdc8ac67cca5bad41b833d5781788799/projects/host-targets/README.md)
+移植到新宿主时，可复制与目标引擎最接近的示例。它们都从测试包 `@pluxel-example/host-targets-plugins/probe` 导入 `probePlugins` 和 `inspectHost`，检查相同的构造器注入、配置、网络、存储、事件和清理行为。每个宿主单独注册自己的服务和平台插件。三端示例给出了共享插件的打包命令、公开测试输入和预期回执。 [三端验收与共享探针](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-targets/README.md)
 
 验证可安装插件时，先在缺少插件 B 的情况下构建应用，保留同一可执行文件或 APK。单独构建 B，经应用的正常安装入口写入，重载 JS 后通过 SDK 调用 B 的方法。离线重开必须还能调用；卸载、再次重载后 B 应消失，内建插件仍能工作。记录原生进程、JS 运行时和插件方法的回执，可以分别确认应用是否被重启、是否真的换了引擎，以及新代码是否进入插件图。在框架仓库根目录运行 `vp run @pluxel-example/host-llrt#check-smoke` 可验收 Rust 宿主。移动端先在 `projects/host-expo` 构建 Android release，再从该目录运行 `python3 scripts/check-android.py`，脚本通过设备 UI 选择独立插件。
 

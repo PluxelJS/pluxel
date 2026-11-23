@@ -3,7 +3,7 @@ title: 文件系统存储（FS）
 description: 通过 ctx.fs() 访问专属文件目录，使用标准的 Promise 文件操作与原子化写入。
 ---
 
-需要保存二进制媒体、导出文档等文件时，插件通过 `ctx.fs()` 借用所属节点的目录。支持文件的 Host 返回绑定到该目录的 ZenFS `fs.promises` 句柄。Node 和浏览器入口默认挂载内存，应用可按部署环境挂载本地磁盘或 IndexedDB。文件操作的支持范围由所选后端决定。 [选择文件后端](../host/configuration.md#选择文件后端)
+需要保存二进制媒体、导出文档等文件时，插件通过 `ctx.fs()` 借用所属节点的目录。支持文件的 Host 返回绑定到该目录的 ZenFS `fs.promises` 句柄。Node 和嵌入式入口默认挂载内存，应用可按部署环境挂载本地磁盘或 IndexedDB。文件操作的支持范围由所选后端决定。 [选择文件后端](../host/configuration.md#选择文件后端)
 
 需要跨 Host 重开保留文件时，调用 `ctx.fs({ durable: true, writable: true })`。Host 检查覆盖插件目录的挂载及其子挂载。缺少持久性声明时收到 `ENOTSUP`，挂载只读且要求可写时收到 `EROFS`。Cloudflare Worker Host 没有插件文件后端，普通 `ctx.fs()` 也会以 `ENOTSUP` 拒绝。能接受单个根寿命的结构化数据可保存到 TinyBase。 [跨平台宿主契约](../host/runtime-portability.md)
 

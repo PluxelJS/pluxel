@@ -6,7 +6,7 @@ Node、浏览器和 Cloudflare 共用的应用声明、根与事件作用域、�
 
 需要多个请求在 isolate 回收后继续访问同一逻辑 Host 时，可评估让一个 SQLite Durable Object 持有该 Host 的根文档。路由按业务身份选择对象，每次调用仍传入自己的 Request、binding 和取消信号。验证应覆盖两个写入者读取同一 revision 后提交、写入失败、对象回收重开，以及 TinyBase `flush()` 已确认的数据能否恢复。 [Host 文档存储](../FS.md#host-文档与关闭) · [TinyBase](../TINYBASE.md) · [Durable Object 生命周期](https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/)
 
-浏览器需要同类恢复能力的应用可用 IndexedDB 挂载。向多个标签页开放同一可写数据集前，需要以实际存储后端验证并发写入者、配额耗尽与重开后的确认版本。 [浏览器 Host](../../docs/host/configuration.md#浏览器-host)
+浏览器需要同类恢复能力的应用可用 IndexedDB 挂载。向多个标签页开放同一可写数据集前，需要以实际存储后端验证并发写入者、配额耗尽与重开后的确认版本。 [嵌入式 Host](../../docs/host/configuration.md#嵌入式-host)
 
 ## 平台服务与承载
 
