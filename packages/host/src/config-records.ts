@@ -53,12 +53,11 @@ export function attachConfigProvenance(options: object, facts: ConfigProvenance)
 
 export function snapshotHostConfig(
 	input: HostConfigOptions = {},
-	inputMode?: HostInputMode,
 	nodes: readonly HostConfigRecordInput[] = [],
 ): ResolvedHostConfigOptions {
 	assertDataObject(input, 'config', ['mode', 'document'])
 	return snapshotHostConfigRecords({
-		mode: parseHostInputMode(input.mode === undefined ? inputMode : input.mode, 'config.mode'),
+		mode: parseHostInputMode(input.mode, 'config.mode'),
 		document: snapshotHostDocument(input.document, 'config.document'),
 		records: nodes,
 	})

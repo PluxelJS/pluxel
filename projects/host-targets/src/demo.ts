@@ -4,7 +4,7 @@ import { formatPluginNodeReference, type PluginInstanceNodeAddress } from '@plux
 import type { PluginHost, PluginApplyReport } from '@pluxel/host'
 import type { DemoHost, DemoResult } from './protocol'
 
-export { demoApplication, demoInputs } from './demo-plugins'
+export { demoApplication } from './demo-plugins'
 
 type ConsumerAddress =
 	| PluginInstanceNodeAddress<Consumer>

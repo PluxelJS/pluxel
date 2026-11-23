@@ -3,7 +3,7 @@ import type { HostOptions, HostService } from '@pluxel/host'
 /** Isolated service composition; no listener or live development application is created. */
 export type ServiceTestHostOptions = Pick<
 	HostOptions,
-	'name' | 'coreConfig' | 'policy' | 'config' | 'pluginNodes' | 'inputMode' | 'vaultBindings'
+	'name' | 'coreConfig' | 'policy' | 'config' | 'pluginNodes' | 'vaultBindings'
 > &
 	Readonly<{
 		/** Complete service list. Omitted installs HTTP, commands, Node artifacts and workers. */

@@ -13,9 +13,8 @@ import {
 type Env = ApplicationEnvironment['env']
 const emptyEnv: Env = Object.freeze(Object.create(null))
 
-export type HostInputs<F> = Readonly<{
+export type HostInputs = Readonly<{
 	env?: Env
-	coreConfig?: F
 	vaultBindings?: HostOptions['vaultBindings']
 }>
 
@@ -43,38 +42,22 @@ export function captureEnv(input?: Env, previous?: Env): Env {
 	return match ?? Object.freeze(Object.assign(Object.create(null), input))
 }
 
-export function captureFacilities(
-	input: HostInputs<HostOptions['coreConfig']>,
-	facilities: SnapshotCoreFacilities,
-): {
-	coreConfig?: ReturnType<SnapshotCoreFacilities>
-	vaultBindings?: HostOptions['vaultBindings']
-} {
-	return {
-		coreConfig: input.coreConfig === undefined ? undefined : facilities(input.coreConfig),
-		vaultBindings:
-			input.vaultBindings === undefined ? undefined : snapshotVaultBindings(input.vaultBindings),
-	}
-}
-
 export async function startApplicationRoot(
 	application: PortableApplication,
 	facilities: SnapshotCoreFacilities,
 	env: Env,
-	runtime: ReturnType<typeof captureFacilities>,
+	vaultBindings: HostInputs['vaultBindings'],
 ) {
 	const startup = Object.freeze({ env })
 	const declaration = await application(startup)
 	assertApplicationShape(declaration, 'embedded')
 	const { options, bindings } = snapshotHostDeclarations(declaration)
-	if (runtime.coreConfig !== undefined && declaration.coreConfig !== undefined)
-		throw new TypeError('[host] Supply coreConfig once, in the application or its inputs')
 	const { prepare, acceptStartup, launch } = declaration
 	const resolved = await resolveApplicationBindings(
 		{
 			...options,
-			coreConfig: runtime.coreConfig ?? facilities(declaration.coreConfig),
-			vaultBindings: runtime.vaultBindings,
+			coreConfig: facilities(declaration.coreConfig),
+			vaultBindings,
 		},
 		bindings,
 		env,
@@ -87,14 +70,14 @@ export async function startApplicationRoot(
 export async function startEmbeddedApplication(
 	application: PortableApplication,
 	facilities: SnapshotCoreFacilities,
-	input: HostInputs<HostOptions['coreConfig']> = {},
+	input: HostInputs = {},
 ) {
 	if (typeof application !== 'function') throw new TypeError('[host] Application must be a factory')
-	assertDataObject(input, 'startHost inputs', ['env', 'coreConfig', 'vaultBindings'])
+	assertDataObject(input, 'startHost inputs', ['env', 'vaultBindings'])
 	return startApplicationRoot(
 		application,
 		facilities,
 		captureEnv(input.env),
-		captureFacilities(input, facilities),
+		input.vaultBindings === undefined ? undefined : snapshotVaultBindings(input.vaultBindings),
 	)
 }

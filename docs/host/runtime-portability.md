@@ -7,13 +7,16 @@ Node、浏览器、Cloudflare Workers、LLRT 和 React Native 可以运行同一
 
 ## 五个平台的启动代码
 
-下面五个入口都加载同一个 `application.ts`。可以先用空目录验证启动，再把已编译的插件放入 `plugins`。应用需要部署变量时，Node 和嵌入式入口在启动时传入 `{ env }`，Cloudflare 在每次事件中传入选定的绑定值。 [声明插件与绑定](./configuration.md#独立轻量-host)
+下面五个入口都加载同一个 `application.ts`。这里用部署变量命名 Host，`plugins` 可填入已编译的插件。平台所需的 Fetch、存储和日志实现由工厂通过 `coreConfig` 统一声明。应用需要部署变量时，Node 和嵌入式入口在启动时传入 `{ env }`，Cloudflare 在每次事件中传入选定的绑定值。 [声明插件与绑定](./configuration.md#独立轻量-host)
 
 ```ts
 // application.ts
 import { defineHostApplication } from '@pluxel/host/application'
 
-export default defineHostApplication(() => ({ plugins: [] }))
+export default defineHostApplication(({ env }) => ({
+	name: env.APP_NAME ?? 'notes',
+	plugins: [],
+}))
 ```
 
 **Node / Electron 主进程。** 两者都从包根导入 `startHost`。下面打印一次状态就释放 Host。Electron 窗口需要持续调用插件时，在 `app.whenReady()` 后启动，并让 Host 的作用域覆盖窗口的使用期。 [Node 入口](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-targets/src/node-main.ts) · [Electron 主进程](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-electron/index.js)
@@ -22,7 +25,7 @@ export default defineHostApplication(() => ({ plugins: [] }))
 import { startHost } from '@pluxel/host'
 import application from './application'
 
-await using host = await startHost(application)
+await using host = await startHost(application, { env: { APP_NAME: process.env.APP_NAME } })
 console.log(await host.status())
 ```
 
@@ -45,11 +48,12 @@ import application from './application'
 const worker = createWorkerHost(application)
 export default {
 	fetch(request, env, ctx) {
-		return worker.run({ ctx, env: { AUDIT: env.AUDIT }, signal: request.signal }, async (sdk) =>
-			Response.json(await sdk.plugins.list()),
+		return worker.run(
+			{ ctx, env: { APP_NAME: env.APP_NAME }, signal: request.signal },
+			async (sdk) => Response.json(await sdk.plugins.list()),
 		)
 	},
-} satisfies ExportedHandler<{ AUDIT?: string }>
+} satisfies ExportedHandler<{ APP_NAME?: string }>
 ```
 
 **Rust / LLRT。** Rust 在 VM 中加载 JS 入口，调用其导出的 `run` 并等待 Promise。这里用字符串把结果交还给 Rust，作用域结束时 Host 已关闭；Rust 此后可以释放 VM。 [JS 入口](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-llrt/src/application.ts) · [Rust 调用方](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-llrt/native/src/main.rs)
@@ -58,23 +62,27 @@ export default {
 import { startHost } from '@pluxel/host/embedded'
 import application from './application'
 
-export async function run() {
-	await using host = await startHost(application)
+export async function run(appName: string) {
+	await using host = await startHost(application, { env: { APP_NAME: appName } })
 	return JSON.stringify(host.catalog().entries.map(({ address }) => address.exportName))
 }
 ```
 
-**React Native / Expo。** Hermes 里的启动代码可以直接返回 JS 值给界面。下面的函数完成一次目录查询，适合由界面事件调用。示例应用在安装或移除插件后用 Expo 的 `reloadAppAsync()` 重载 JS，下次启动再读取已安装的制品。 [Hermes 入口](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-expo/src/run.ts) · [安装后重载](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-expo/App.tsx)
+**React Native / Expo。** Hermes 里的启动代码可以直接返回 JS 值给界面。下面的函数在调用作用域中读取一页插件。组件可在卸载时取消这次操作。常驻应用可以复用一个 Host，每次调用创建独立作用域。示例应用在安装或移除插件后用 Expo 的 `reloadAppAsync()` 重载 JS，下次启动再读取已安装的制品。 [Hermes 入口](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-expo/src/run.ts) · [安装后重载](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-expo/App.tsx)
 
 ```ts
+import { createScriptScope } from '@pluxel/agent-sdk/host'
 import { startHost } from '@pluxel/host/embedded'
 import application from './application'
 
-export async function readPluginNames() {
-	await using host = await startHost(application)
-	return host.catalog().entries.map(({ address }) => address.exportName)
+export async function listPlugins(appName: string, signal: AbortSignal) {
+	await using host = await startHost(application, { env: { APP_NAME: appName } })
+	await using scope = createScriptScope({ ctx: host.ctx, signal })
+	return await scope.sdk.plugins.list()
 }
 ```
+
+`startHost` 完成启动验收后才返回 Host，调用方负责关闭。取消信号属于这次 SDK 调用，或 Cloudflare 的当前事件。启动本身没有 `signal` 参数。
 
 ## 开发与交付
 

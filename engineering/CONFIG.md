@@ -90,7 +90,7 @@ vp exec node packages/host/scripts/migrate-policy-v7.mjs --policy author.json --
 
 Node 的应用加载器、直接启动入口、浏览器与 Cloudflare 均从根的不可变 `startup.env` 解析节点映射。托管 Node 向同一解析器提供相对 `startup.root` 的文件读取，缺少这个入口的宿主在启动时拒绝文件映射。来源 metadata 只含路径、kind/name、readonly，不含值。声明按 `节点.config → fileBindings.config → envBindings.config` 合成，后者覆盖同路径。
 
-每个 node mode 按 `节点.configMode → config.mode → inputMode → declared-first` 选择：
+每个 node mode 按 `节点.configMode → config.mode → declared-first` 选择：
 
 | mode           | 选择规则               |
 | -------------- | ---------------------- |
@@ -104,7 +104,7 @@ fork 省略代码 `config` 时以默认节点的代码数据为起点，显式�
 
 `patch/validate({ set?, remove? })` 先按 string[] 路径删除 saved fields，再递归合并 set，最后校验一次。`reset(owner)` 删除保存记录，带 paths 时只删指定嵌套字段，`[]` 只读。reset 恢复继承；路径非空、有界、安全、互不重叠，array 不允许按 index 删除。Core mutation 不能绕过 Host 事务。
 
-Host 按节点选择自动启动与 fork 可用性，按 consumer 和 requirement 选择 provider override。保存输入分别用 `false` 或 `null` 表达禁用或清除。原始 `patch` 按键写入，`reset` 删除目标，批量撤销可同时写入先前记录并删除原先缺失的键。有效策略再投影为协调器所需的启动根、可用 fork 和依赖覆盖，并核验 fork 引用。应用的 provider defaults 整项选择，execution 独立选择各字段。节点级 `policyMode` 优先于 `policy.modes[field]`、`policy.mode` 和 `inputMode`。原始策略编辑可以保存被遮盖值。要求实际生效的命令在副作用前报告 `policy_shadowed`。已保存但待切换的执行参数以 `requires-host-recreation` 报告。
+Host 按节点选择自动启动与 fork 可用性，按 consumer 和 requirement 选择 provider override。保存输入分别用 `false` 或 `null` 表达禁用或清除。原始 `patch` 按键写入，`reset` 删除目标，批量撤销可同时写入先前记录并删除原先缺失的键。有效策略再投影为协调器所需的启动根、可用 fork 和依赖覆盖，并核验 fork 引用。应用的 provider defaults 整项选择，execution 独立选择各字段。节点级 `policyMode` 优先于 `policy.modes[field]` 和 `policy.mode`。原始策略编辑可以保存被遮盖值。要求实际生效的命令在副作用前报告 `policy_shadowed`。已保存但待切换的执行参数以 `requires-host-recreation` 报告。
 
 Host 在 Plugin admission 前通过 Core 的内部注入边界安装已校验的 Vault 部署记录。动态 candidate 接纳前验证 config metadata 和已声明路径，失败保留 catalog。Vault 根 schema 是 Host 固定部署输入，只在首次解析校验；Plugin replacement 不重跑 transform。更改 Vault schema/来源需重建 Host，私有 KV 业务校验仍归 Plugin。命名子空间使用 vault.namespace。
 

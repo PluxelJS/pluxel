@@ -221,12 +221,11 @@ it('persists independent choices and restores missing records in one revision', 
 		}),
 	)
 	const options = {
-		inputMode: 'saved-first',
 		plugins: [
 			{ plugin: Managed, autoStart: false, policyMode: 'declared-only' },
 			{ plugin: Delayed },
 		],
-		policy: { document: { storage: () => storage } },
+		policy: { mode: 'saved-first', document: { storage: () => storage } },
 	} as const
 	{
 		await using host = await createHost(options)

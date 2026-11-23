@@ -1,7 +1,8 @@
 import { WorkerEntrypoint, exports as workerExports } from 'cloudflare:workers'
+import type { OutboundFetch } from '@pluxel/core'
 import { createWorkerHost } from '@pluxel/host/cloudflare'
 import { closeOnHotReload } from '@pluxel/host-vite/hmr'
-import { demoApplication, demoInputs, assertDemoUpdate, readDemo } from '../demo'
+import { demoApplication, assertDemoUpdate, readDemo } from '../demo'
 import * as plugins from '@pluxel-example/host-targets-plugins'
 import { demoUpdateEvent, type DemoUpdate } from '../protocol'
 
@@ -20,14 +21,13 @@ export class GreetingSource extends WorkerEntrypoint {
 }
 
 const endpoint = 'https://greetings.example.invalid/'
-const { coreConfig } = demoInputs({ GREETING_SOURCE: endpoint }, (input, init) =>
-	workerExports.GreetingSource.fetch(input, init),
-)
+const fetchGreeting: OutboundFetch = (input, init) =>
+	workerExports.GreetingSource.fetch(input, init)
 let current = {
-	application: demoApplication(plugins, 'cloudflare'),
+	application: demoApplication(plugins, 'cloudflare', fetchGreeting),
 	consumerAddress: plugins.Consumer.nodeAddress(),
 }
-const worker = createWorkerHost((startup) => current.application(startup), { coreConfig })
+const worker = createWorkerHost((startup) => current.application(startup))
 
 if (import.meta.hot) {
 	const hot = import.meta.hot
@@ -39,6 +39,7 @@ if (import.meta.hot) {
 				application: demoApplication(
 					{ Provider: next.Provider, Consumer: next.Consumer },
 					'cloudflare',
+					fetchGreeting,
 				),
 				consumerAddress: next.Consumer.nodeAddress(),
 			}

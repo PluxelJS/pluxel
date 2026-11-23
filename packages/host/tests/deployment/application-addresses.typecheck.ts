@@ -59,6 +59,14 @@ void worker.run(
 )
 // @ts-expect-error Resource handles belong to the event callback.
 void startHost(shared, { bindings: { id: 1 } })
+// @ts-expect-error Core facilities belong to the application declaration.
+void startHost(shared, { coreConfig: {} })
+// @ts-expect-error Worker creation only accepts resolved deployment bindings.
+void createWorkerHost(shared, { coreConfig: {} })
+// @ts-expect-error The operation scope owns cancellation.
+void startHost(shared, { signal: AbortSignal.abort() })
+// @ts-expect-error Saved configuration and policy have independent precedence.
+definePortableApplication(() => ({ inputMode: 'saved-first' }))
 // @ts-expect-error Deployment inputs only admit strings or undefined.
 void worker.run({ ctx, env: { DATABASE: { read() {} } } }, () => 1)
 // @ts-expect-error Worker event admission requires the native event context.

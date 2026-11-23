@@ -10,32 +10,23 @@ const expectedSource = {
 	cloudflare: 'workerd Service Binding',
 }
 
-export function demoInputs(
-	env: Readonly<{ GREETING_SOURCE: string; HOST_PROBE?: string }>,
-	fetch?: OutboundFetch,
-) {
-	return {
-		env,
-		coreConfig: {
-			...demoConfig(env.GREETING_SOURCE, fetch).coreConfig,
-			vault: { backend: 'bindings' as const },
-		},
-	}
-}
-
 export function demoApplication(
 	{
 		Provider,
 		Consumer,
 	}: Pick<typeof import('@pluxel-example/host-targets-plugins'), 'Provider' | 'Consumer'>,
 	target: DemoHost,
+	fetch?: OutboundFetch,
 ) {
 	return defineHostApplication(async ({ env }) => {
 		const source = env.GREETING_SOURCE
 		if (!source) throw new Error('GREETING_SOURCE is required')
+		const { provider, consumer, coreConfig: network } = demoConfig(source, fetch)
+		const coreConfig = { ...network, vault: { backend: 'bindings' as const } }
 		if (import.meta.env.PROD && env.HOST_PROBE !== undefined) {
 			const probe = await import('@pluxel-example/host-targets-plugins/probe')
 			return {
+				coreConfig,
 				plugins: probe.probePlugins(source, { Provider, Consumer }),
 				async launch({ host }) {
 					await using scope = createScriptScope({ ctx: host.ctx })
@@ -47,8 +38,8 @@ export function demoApplication(
 				},
 			}
 		}
-		const { provider, consumer } = demoConfig(source)
 		return {
+			coreConfig,
 			plugins: [
 				{ plugin: Provider, ...provider },
 				{ plugin: Consumer, ...consumer },

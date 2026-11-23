@@ -1,5 +1,5 @@
 import { startHost } from '@pluxel/host/embedded'
-import { demoApplication, demoInputs, assertDemoUpdate, runDemo } from './demo'
+import { demoApplication, assertDemoUpdate, runDemo } from './demo'
 import * as plugins from '@pluxel-example/host-targets-plugins'
 import type { DemoResult, DemoUpdate } from './protocol'
 
@@ -11,9 +11,8 @@ export type BrowserReply =
 
 const worker = globalThis as unknown as DedicatedWorkerGlobalScope
 const source = new URL('/greeting.json', worker.location.href).href
-const inputs = demoInputs({ GREETING_SOURCE: source, HOST_PROBE: import.meta.env.VITE_HOST_PROBE })
-const { env } = inputs
-const ready = startHost(demoApplication(plugins, 'browser'), inputs)
+const env = { GREETING_SOURCE: source, HOST_PROBE: import.meta.env.VITE_HOST_PROBE }
+const ready = startHost(demoApplication(plugins, 'browser'), { env })
 let consumerAddress = plugins.Consumer.nodeAddress()
 let settled = Promise.resolve()
 if (import.meta.hot) {

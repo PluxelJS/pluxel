@@ -108,14 +108,14 @@ export default defineHostApplication(async (startup) => {
 
 ### 核心属性说明
 
-| 字段                            | 职责                                                                |
-| ------------------------------- | ------------------------------------------------------------------- |
-| `plugins`                       | 固定构造器及其默认节点和 fork 声明                                  |
-| `sources`                       | 发现并接纳动态实现                                                  |
-| `pluginNodes`                   | 通过定义地址预置动态节点的配置与策略                                |
-| `coreConfig`                    | Core 的 `logtape`、`zenfs`、`tinybase`、`vault`、`http` 与 `events` |
-| `services`                      | 额外服务，由官方预设或单项安装器提供                                |
-| `inputMode`、`config`、`policy` | 输入优先级、文档接线与应用级运行策略                                |
+| 字段               | 职责                                                                |
+| ------------------ | ------------------------------------------------------------------- |
+| `plugins`          | 固定构造器及其默认节点和 fork 声明                                  |
+| `sources`          | 发现并接纳动态实现                                                  |
+| `pluginNodes`      | 通过定义地址预置动态节点的配置与策略                                |
+| `coreConfig`       | Core 的 `logtape`、`zenfs`、`tinybase`、`vault`、`http` 与 `events` |
+| `services`         | 额外服务，由官方预设或单项安装器提供                                |
+| `config`、`policy` | 输入优先级、文档接线与应用级运行策略                                |
 
 `name` 命名应用及根实例。`prepare` 在节点启动前执行，`acceptStartup` 判定启动结果，`launch` 在结果获接受后发布应用。
 
@@ -396,13 +396,13 @@ export const zenfs = {
 
 ## 保存配置和运行策略
 
-应用可以用一个 `inputMode` 设置共同优先级。各域采用最先指定的设置。
+`config.mode` 决定插件业务配置采用代码还是保存值，`policy.mode` 决定运行策略。两者分别默认为 `declared-first`。已有应用若曾统一设置优先级，迁移时把原值分别填入这两个字段。
 
-| 输入         | 从高到低的优先级                                                              |
-| ------------ | ----------------------------------------------------------------------------- |
-| 节点业务配置 | `configMode → config.mode → inputMode → declared-first`                       |
-| 节点策略     | `policyMode → policy.modes[field] → policy.mode → inputMode → declared-first` |
-| 应用级策略   | `policy.modes[field] → policy.mode → inputMode → declared-first`              |
+| 输入         | 从高到低的优先级                                                  |
+| ------------ | ----------------------------------------------------------------- |
+| 节点业务配置 | `configMode → config.mode → declared-first`                       |
+| 节点策略     | `policyMode → policy.modes[field] → policy.mode → declared-first` |
+| 应用级策略   | `policy.modes[field] → policy.mode → declared-first`              |
 
 `declared-first` 采用代码并从保存值补缺。`saved-first` 采用保存值并从代码补缺。`declared-only` 只采用代码。节点配置按叶路径合并，缺失值由 schema 处理。节点的 `policyMode` 同时作用于自动启动、fork 可用性和其作为 consumer 的覆盖。
 
@@ -525,7 +525,7 @@ Electron 主进程同样从 `@pluxel/host` 导入 `startHost`。浏览器、LLRT
 
 standalone 和 modules 构建都要在源码中解析显式声明的 `plugins` 和 `pluginNodes`。上例的数组在构建时就能确定，`autoStart` 和服务选择可在运行时求值。modules 还可用 `sources` 在启动时发现已编译的插件。 [动态来源](#动态来源)
 
-Node 和嵌入式宿主每次显式调用 `startHost` 都创建并验收一个根。Cloudflare 模块持有一个驱动，由它为同一 isolate 的多次事件复用根。工厂用冻结的 `env` 决定插件、服务与策略；每个根的资源通过 service 或应用的 `prepare` 打开，经 effects 注册释放。`coreConfig` 可以从工厂返回，也可以由启动方提供一次。节点的 `envBindings` 在创建该根时解析。启动方另有已解析的部署记录可通过 `vaultBindings` 传入，记录随根固定；同一 owner、namespace 和 key 有多个来源时启动失败。需要在插件启动前接入诊断时，可以使用应用的 `prepare({ host })`。Node 与嵌入式宿主的底层装配工具还可调用 `createHost(options)` 单独准备根，再执行 `host.start()`。 [三端共用的应用](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-targets/src/demo-plugins.ts)
+Node 和嵌入式宿主每次显式调用 `startHost` 都创建并验收一个根。Cloudflare 模块持有一个驱动，由它为同一 isolate 的多次事件复用根。工厂用冻结的 `env` 决定插件、服务与策略；每个根的资源通过 service 或应用的 `prepare` 打开，经 effects 注册释放。应用工厂返回完整的 `coreConfig`，其中可组合共享策略和本平台的存储、网络或日志实现。直接启动时的第二个参数只接收 `env` 和已解析的 `vaultBindings`。节点的 `envBindings` 在创建该根时解析。启动方另有已解析的部署记录可通过 `vaultBindings` 传入，记录随根固定；同一 owner、namespace 和 key 有多个来源时启动失败。需要在插件启动前接入诊断时，可以使用应用的 `prepare({ host })`。Node 与嵌入式宿主的底层装配工具还可调用 `createHost(options)` 单独准备根，再执行 `host.start()`。 [三端共用的应用](https://github.com/PluxelJS/pluxel/blob/2f1869fc1eaf63de11deeee7d3737498ed701e02/projects/host-targets/src/demo-plugins.ts)
 
 ---
 

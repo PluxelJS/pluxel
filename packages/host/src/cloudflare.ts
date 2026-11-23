@@ -1,28 +1,26 @@
 import { assertDataObject } from './config-records'
 import type { ApplicationEnvironment, PortableApplication } from './application'
-import { captureEnv, captureFacilities, startApplicationRoot } from './embedded-application'
+import { captureEnv, startApplicationRoot, type HostInputs } from './embedded-application'
 import type { CoreFacilitiesConfig, PluginConstructor } from '@pluxel/core'
-import { snapshotWorkerCoreFacilitiesConfig } from '@pluxel/core/internal'
+import { snapshotVaultBindings, snapshotWorkerCoreFacilitiesConfig } from '@pluxel/core/internal'
 import { createScriptScope } from './agent/sdk'
 import type { PluginApplyReport } from './coordinator'
 import type { ScriptSdk } from './agent/sdk-types'
-import type { HostOptions, PluginHost } from './host'
+import type { PluginHost } from './host'
 
 export type { PluginHost } from './host'
 export { defineHostService, type HostService, type HostServiceDependencies } from './services'
 export { HostApplicationStartupError } from './application-start'
 
-export type WorkerHostOptions = Readonly<{
-	vaultBindings?: HostOptions['vaultBindings']
-	coreConfig?: Omit<CoreFacilitiesConfig, 'zenfs' | 'logtape' | 'vault' | 'http'> &
-		Readonly<{
-			zenfs?: never
-			logtape?: never
-			vault?: Readonly<{ backend?: 'bindings'; deployIdentity?: never; durable?: false }>
-			http?: CoreFacilitiesConfig['http'] &
-				Readonly<{ proxyUrl?: never; allowProxyChanges?: never }>
-		}>
-}>
+export type WorkerHostOptions = Pick<HostInputs, 'vaultBindings'>
+
+type WorkerCoreConfig = Omit<CoreFacilitiesConfig, 'zenfs' | 'logtape' | 'vault' | 'http'> &
+	Readonly<{
+		zenfs?: never
+		logtape?: never
+		vault?: Readonly<{ backend?: 'bindings'; deployIdentity?: never; durable?: false }>
+		http?: CoreFacilitiesConfig['http'] & Readonly<{ proxyUrl?: never; allowProxyChanges?: never }>
+	}>
 
 type Env = ApplicationEnvironment['env']
 type EventContext = { waitUntil(promise: Promise<unknown>): void }
@@ -87,12 +85,13 @@ function untilAbort<T>(task: Promise<T>, signal?: AbortSignal): Promise<T> {
 
 /** Create once in module scope. The first event starts the application inside a live I/O context. */
 export function createWorkerHost(
-	application: PortableApplication<WorkerHostOptions['coreConfig']>,
+	application: PortableApplication<WorkerCoreConfig>,
 	options: WorkerHostOptions = {},
 ): WorkerHost {
 	if (typeof application !== 'function') throw new TypeError('[host] Application must be a factory')
-	assertDataObject(options, 'createWorkerHost options', ['coreConfig', 'vaultBindings'])
-	const facilities = captureFacilities(options, snapshotWorkerCoreFacilitiesConfig)
+	assertDataObject(options, 'createWorkerHost options', ['vaultBindings'])
+	const vaultBindings =
+		options.vaultBindings === undefined ? undefined : snapshotVaultBindings(options.vaultBindings)
 	const roots = new Set<Resident>()
 	let current: Resident | undefined
 	let pending: Resident | undefined
@@ -123,7 +122,7 @@ export function createWorkerHost(
 			events: new Set(),
 			retired: false,
 			ready: Promise.resolve().then(() =>
-				startApplicationRoot(application, snapshotWorkerCoreFacilitiesConfig, env, facilities),
+				startApplicationRoot(application, snapshotWorkerCoreFacilitiesConfig, env, vaultBindings),
 			),
 		}
 		const previous = pending

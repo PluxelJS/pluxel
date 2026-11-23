@@ -21,7 +21,6 @@ export async function createServiceTestApplication(
 				'policy',
 				'config',
 				'pluginNodes',
-				'inputMode',
 				'vaultBindings',
 				'services',
 				'management',
@@ -108,7 +107,6 @@ export async function createServiceTestApplication(
 		policy: options.policy,
 		config: options.config,
 		pluginNodes: options.pluginNodes,
-		inputMode: options.inputMode,
 		vaultBindings: options.vaultBindings,
 	})
 }

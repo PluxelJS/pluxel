@@ -70,7 +70,6 @@ export type HostDeclarations<Node = HostPluginNodeOptions> = Readonly<{
 	pluginNodes?: readonly HostPluginNodesDeclaration<Node>[]
 	services?: readonly HostService[]
 	coreConfig?: CoreFacilitiesConfig
-	inputMode?: HostInputMode
 	policy?: HostPolicyOptions
 	config?: HostConfigOptions
 }>
@@ -101,7 +100,6 @@ export const HOST_DECLARATION_FIELDS = [
 	'pluginNodes',
 	'services',
 	'coreConfig',
-	'inputMode',
 	'policy',
 	'config',
 ] as const
@@ -148,8 +146,6 @@ export function snapshotHostDeclarations(input: HostDeclarations): {
 	const nodeStartTimeoutMs = new Map<string, number>()
 	const envBindings: OwnedInputBindings['envBindings'][number][] = []
 	const fileBindings: OwnedInputBindings['fileBindings'][number][] = []
-	const inputMode =
-		input.inputMode === undefined ? undefined : parseHostInputMode(input.inputMode, 'inputMode')
 
 	const addNode = (
 		owner: PluginNodeAddress,
@@ -268,10 +264,9 @@ export function snapshotHostDeclarations(input: HostDeclarations): {
 			declaredNodes: Object.freeze(declaredNodes),
 			services:
 				input.services === undefined ? undefined : snapshotPolicyArray(input.services, 'services'),
-			config: snapshotHostConfig(input.config, inputMode, records),
+			config: snapshotHostConfig(input.config, records),
 			policy: snapshotHostPolicy(
 				input.policy,
-				inputMode,
 				{ autoStart, forks, dependencyOverrides },
 				nodeModes,
 			),

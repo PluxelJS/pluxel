@@ -21,7 +21,8 @@ export default defineHostApplication(async (startup) => {
 	await nativeFs.promises.mkdir(prefix, { recursive: true })
 	return {
 		name: 'pluxel-example',
-		inputMode: 'saved-first',
+		config: { mode: 'saved-first' },
+		policy: { mode: 'saved-first' },
 		plugins: [
 			{ plugin: AuditPlugin, autoStart: true },
 			{

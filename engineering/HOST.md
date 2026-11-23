@@ -8,7 +8,7 @@ Host 拥有服务安装、应用启动、catalog、运行意图和资源关闭�
 
 ## 应用工厂与运行寿命
 
-`@pluxel/host/application` 提供三端共享的 `defineHostApplication(({ env }) => …)` 和服务安装函数。每个根用冻结的部署变量选择插件和服务，完成 catalog、fork 和服务依赖校验。`@pluxel/host` 的 Node 入口导出同一个函数对象，工厂参数推断为 `HostStartupContext`，可直接读取启动路径、模式和部署信息。Node 托管加载器另外解析动态来源、文件与环境绑定。Node 与嵌入式入口的 `startHost(application, inputs?)` 返回已验收的根，调用方持有并关闭它。三端共用准备、启动验收和发布钩子。默认验收只在失败时投影完整状态，自定义 `acceptStartup` 始终收到完整快照。 [应用工厂](../packages/host/src/application.ts) · [直接启动](../packages/host/src/embedded-application.ts) · [启动判定](../packages/host/src/application-start.ts)
+`@pluxel/host/application` 提供三端共享的 `defineHostApplication(({ env }) => …)` 和服务安装函数。工厂为每个根返回插件、服务与完整的 `coreConfig`。直接启动的输入是部署变量与已解析的 Vault 记录。每个根用冻结的部署变量选择插件和服务，完成 catalog、fork 和服务依赖校验。`@pluxel/host` 的 Node 入口导出同一个函数对象，工厂参数推断为 `HostStartupContext`，可直接读取启动路径、模式和部署信息。Node 托管加载器另外解析动态来源、文件与环境绑定。Node 与嵌入式入口的 `startHost(application, inputs?)` 返回已验收的根，调用方持有并关闭它。三端共用准备、启动验收和发布钩子。默认验收只在失败时投影完整状态，自定义 `acceptStartup` 始终收到完整快照。 [应用工厂](../packages/host/src/application.ts) · [直接启动](../packages/host/src/embedded-application.ts) · [启动判定](../packages/host/src/application-start.ts)
 
 Cloudflare 在模块作用域创建 `createWorkerHost(application)`。首个事件进入 `worker.run({ env, ctx }, callback)` 时启动根，当前事件通过 `ctx.waitUntil` 持有冷启动任务。相同部署变量的并发事件等待同一次启动，后续事件复用已启动的根、服务和插件。部署变量按字符串键值比较。新快照启动成功后接替原根，已接纳的旧事件结算后再关闭原根。新快照启动失败会使等待它的事件失败，下次同配置事件可以重试。平台回收 isolate 后由下一实例重新启动。 [Worker 驱动](../packages/host/src/cloudflare.ts) · [workerd 回归](../packages/host/tests/cloudflare/runtime.test.ts)
 

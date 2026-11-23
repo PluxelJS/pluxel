@@ -21,7 +21,7 @@ export default defineHostApplication(async (startup) => {
 
 	return {
 		name: 'queue-app',
-		inputMode: 'saved-first',
+		config: { mode: 'saved-first' },
 		plugins: [
 			{
 				plugin: QueuePlugin,
@@ -53,6 +53,7 @@ export default defineHostApplication(async (startup) => {
 			vault: { deployIdentity: startup.env.PLUXEL_VAULT_DEPLOY_IDENTITY },
 		},
 		policy: {
+			mode: 'saved-first',
 			execution: { startTimeoutMs: 30_000 },
 		},
 		services: await servicesPreset(startup, {
@@ -70,7 +71,6 @@ export default defineHostApplication(async (startup) => {
 | `pluginNodes` | 按定义地址为由其他来源提供的实现预置节点声明             |
 | `coreConfig`  | 配置 Core 内建设施                                       |
 | `services`    | 安装额外服务                                             |
-| `inputMode`   | 为配置和策略提供共同的来源优先级                         |
 | `config`      | 设置节点配置的默认优先级和文档接线                       |
 | `policy`      | 设置策略优先级、文档接线、执行参数和应用级 provider 选择 |
 
@@ -128,13 +128,13 @@ Vite 开发时可加载经过语义处理的 TypeScript 入口和预编译 ESM�
 
 ## 输入优先级与策略
 
-应用可以只写一次 `inputMode`。各域依下表从左到右选取首个已指定的 mode。
+配置和策略分别设置默认优先级。各域依下表从左到右选取首个已指定的 mode。
 
-| 输入         | 优先级从高到低                                                                     |
-| ------------ | ---------------------------------------------------------------------------------- |
-| 节点业务配置 | `节点.configMode → config.mode → inputMode → declared-first`                       |
-| 节点策略     | `节点.policyMode → policy.modes[field] → policy.mode → inputMode → declared-first` |
-| 应用级策略   | `policy.modes[field] → policy.mode → inputMode → declared-first`                   |
+| 输入         | 优先级从高到低                                                         |
+| ------------ | ---------------------------------------------------------------------- |
+| 节点业务配置 | `节点.configMode → config.mode → declared-first`                       |
+| 节点策略     | `节点.policyMode → policy.modes[field] → policy.mode → declared-first` |
+| 应用级策略   | `policy.modes[field] → policy.mode → declared-first`                   |
 
 节点级 `policyMode` 用于该节点的 `autoStart` 和 fork 可用性，也用于其作为 consumer 的 `dependencyOverrides`。应用的 `providerDefaults` 和 `execution` 使用应用级优先级。`policy.modes` 按实际策略字段取 mode，例如 `autoStart` 或 Host 默认的 `startTimeoutMs`。这些优先级由代码配置，文档的 `readOnly` 和管理权限另行决定写入是否允许。
 

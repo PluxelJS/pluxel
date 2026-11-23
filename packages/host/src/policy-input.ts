@@ -39,7 +39,6 @@ export type ResolvedHostPolicy = Readonly<{
 
 export function snapshotHostPolicy(
 	input: HostPolicyOptions = {},
-	inputMode?: HostInputMode,
 	choices: Pick<HostPolicyInput, 'autoStart' | 'forks' | 'dependencyOverrides'> = {},
 	nodeModes: readonly HostNodePolicyMode[] = [],
 ): ResolvedHostPolicy {
@@ -51,7 +50,7 @@ export function snapshotHostPolicy(
 	const { mode, modes = {}, document, execution = {}, providerDefaults } = input
 	assertPolicyRecord(modes, HOST_POLICY_FIELDS, 'policy.modes')
 	assertPolicyRecord(execution, HOST_EXECUTION_POLICY_FIELDS, 'policy.execution')
-	const fallback = mode === undefined ? inputMode : parseHostInputMode(mode, 'policy.mode')
+	const fallback = parseHostInputMode(mode, 'policy.mode')
 	return Object.freeze({
 		declared: canonicalHostPolicyInput({ ...choices, ...execution, providerDefaults }),
 		mode: Object.freeze(

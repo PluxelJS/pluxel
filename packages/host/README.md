@@ -21,7 +21,7 @@ export default defineHostApplication(() => ({ plugins: [{ plugin: MyPlugin, auto
 | `/sources`               | `PluginSource`、producer 检查 `requirePluginSource()` 和 consumption policy                                  |
 | `/internal/protocol`     | 框架共享的无 IO 执行和更新协议                                                                               |
 
-从旧版本升级时，把 `@pluxel/host/browser` 的导入路径改为 `@pluxel/host/embedded`。`startHost` 和 `createHost` 的调用方式相同。
+从旧版本升级时，把 `@pluxel/host/browser` 的导入路径改为 `@pluxel/host/embedded`。把启动参数中的 `coreConfig` 移入应用工厂的返回值。旧的顶层 `inputMode` 分别迁移到 `config.mode` 和 `policy.mode`。
 
 Node 与嵌入式入口的底层 `createHost()` 接受已求值的 plugins。先 `start()`，退出时等待幂等 `close()`。借用的 storage backend 由提供方关闭。 [Host 的生命周期](../../docs/host/configuration.md#独立轻量-host)
 

@@ -52,7 +52,7 @@ it('validates authored declarations as portable input without reading accessors'
 	const read = vi.fn(() => ({ node: owner, autoStart: true }))
 	const accessor = Object.defineProperty([], '0', { enumerable: true, get: read })
 	expect(() => canonicalHostPolicyInput({ autoStart: accessor })).toThrow(/accessors/)
-	expect(() => snapshotHostConfig({}, undefined, accessor)).toThrow(/data elements/)
+	expect(() => snapshotHostConfig({}, accessor)).toThrow(/data elements/)
 	expect(read).not.toHaveBeenCalled()
 	expect(() =>
 		canonicalHostPolicyInput({
@@ -73,9 +73,7 @@ it('validates authored declarations as portable input without reading accessors'
 		expect(() => snapshotHostPolicy(policy as never)).toThrow(/policy/)
 	}
 	for (const value of [undefined, Infinity, new Date(), Array(1)]) {
-		expect(() => snapshotHostConfig({}, undefined, [{ owner, config: { value } }])).toThrow(
-			/portable|dense/,
-		)
+		expect(() => snapshotHostConfig({}, [{ owner, config: { value } }])).toThrow(/portable|dense/)
 	}
 })
 
@@ -92,11 +90,9 @@ it('stores identity-only policy addresses and rejects copied implementation evid
 it('preserves configuration mode entries and merges saved values without merging array items', () => {
 	const owner = Tenant.nodeAddress()
 	const mode = { owner, mode: 'saved-first' as const }
-	expect(snapshotHostConfig({}, undefined, [mode]).records).toMatchObject([mode])
-	expect(() => snapshotHostConfig({}, undefined, [mode, { owner, config: {} }])).toThrow(
-		'duplicates',
-	)
-	expect(() => snapshotHostConfig({}, undefined, [{ owner }])).toThrow('requires mode or config')
+	expect(snapshotHostConfig({}, [mode]).records).toMatchObject([mode])
+	expect(() => snapshotHostConfig({}, [mode, { owner, config: {} }])).toThrow('duplicates')
+	expect(() => snapshotHostConfig({}, [{ owner }])).toThrow('requires mode or config')
 	expect(
 		mergeRecord(
 			{

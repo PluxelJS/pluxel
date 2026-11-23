@@ -25,7 +25,7 @@ export function createHost(options: HostOptions): Promise<PluginHost> {
 /** Start and accept an isolated root from reusable declarations. The caller owns its lifetime. */
 export function startHost(
 	application: PortableApplication<HostOptions['coreConfig']>,
-	input?: HostInputs<HostOptions['coreConfig']>,
+	input?: HostInputs,
 ): Promise<PluginHost> {
 	return startEmbeddedApplication(application, snapshotZenFsCoreFacilitiesConfig, input)
 }

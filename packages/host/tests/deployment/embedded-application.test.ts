@@ -96,6 +96,15 @@ it.each([startHost, startEmbeddedHost])(
 	},
 )
 
+it('rejects misplaced facilities before evaluating an application or admitting an event', async () => {
+	const application = vi.fn(() => ({}))
+	const inputs = { coreConfig: {} } as never
+	for (const start of [startHost, startEmbeddedHost])
+		await expect(start(application, inputs)).rejects.toThrow('unsupported "coreConfig"')
+	expect(() => createWorkerHost(application, inputs)).toThrow('unsupported "coreConfig"')
+	expect(application).not.toHaveBeenCalled()
+})
+
 it('publishes a changed deployment after acceptance and drains only the previous root', async () => {
 	const started: string[] = []
 	const stopped: string[] = []
