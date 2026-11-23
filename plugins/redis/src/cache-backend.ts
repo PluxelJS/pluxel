@@ -55,7 +55,7 @@ export const RedisCacheBackendConfig = v.object({
 export type RedisCacheBackendPluginConfig = v.InferOutput<typeof RedisCacheBackendConfig>
 
 /** CacheBackend adapter shipped with @pluxel/redis. */
-@Plugin(CacheBackend)
+@Plugin(CacheBackend, { displayName: 'Redis Cache Backend' })
 export class RedisCacheBackendPlugin extends CacheBackend {
 	private readonly config = this.configs.use(RedisCacheBackendConfig)
 	private connectionHandle?: RedisConnection

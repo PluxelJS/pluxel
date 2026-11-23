@@ -256,7 +256,7 @@ type S3OwnerState = {
 }
 
 /** Official bounded S3 bucket catalog with local and remote backends. */
-@Plugin(S3)
+@Plugin(S3, { displayName: 'S3 Storage' })
 export class S3Plugin extends S3 {
 	private readonly config = this.configs.use(S3Config)
 	private ids: readonly string[] = Object.freeze([])
