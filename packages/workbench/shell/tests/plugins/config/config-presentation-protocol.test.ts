@@ -341,3 +341,58 @@ it('explains effective env sources on nested fields while preserving editable si
 		),
 	).toEqual({ set: { nested: { free: 'edit' } }, remove: [['nested', 'free']] })
 })
+
+it('keeps the field description punctuation when appending config hints', () => {
+	const [field] = applyConfigSources(
+		adaptConfigPresentationFields([
+			{
+				...baseField('limit'),
+				kind: 'number',
+				placeholder: '例如 100',
+				meta: { label: 'Limit', description: '上限。' },
+			},
+		]),
+		[],
+		[],
+		{},
+		{ limit: 500 },
+	)
+	expect(field).toMatchObject({
+		placeholder: '例如 100',
+		meta: { description: '上限。目标配置：500' },
+	})
+})
+
+it('shows defaults in empty input controls while keeping explicit input and other target hints', () => {
+	const theme = {
+		...baseField('theme'),
+		kind: 'picklist',
+		control: 'select',
+		options: ['nord', 'sand'],
+		labels: { nord: 'Nord', sand: 'Sand' },
+	} as const
+	const [limit, color, radio, path, saved, password] = applyConfigSources(
+		adaptConfigPresentationFields([
+			{ ...baseField('limit'), kind: 'number', meta: { label: 'Limit', description: '上限。' } },
+			theme,
+			{ ...theme, name: 'radio', path: 'radio', control: 'radio' },
+			baseField('path'),
+			{ ...baseField('saved'), kind: 'number' },
+			{ ...baseField('password'), kind: 'string', control: 'password' },
+		]),
+		[],
+		[],
+		{ saved: 3 },
+		{ limit: 0, theme: 'nord', radio: 'nord', path: '/health', saved: 3, password: 'example' },
+	)
+	expect(limit).toMatchObject({ placeholder: '0', meta: { description: '上限。' } })
+	expect(color).toMatchObject({ placeholder: 'Nord' })
+	expect(color?.meta.description).toBeUndefined()
+	expect(radio).not.toHaveProperty('placeholder')
+	expect(radio?.meta.description).toBe('目标配置："nord"')
+	expect(path).toMatchObject({ placeholder: '/health' })
+	expect(saved).not.toHaveProperty('placeholder')
+	expect(saved?.meta.description).toBe('当前有效输入：3。目标配置：3')
+	expect(password).not.toHaveProperty('placeholder')
+	expect(password?.meta.description).toBeUndefined()
+})
