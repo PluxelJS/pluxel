@@ -223,13 +223,13 @@ export function createWorkerHost(
 		signal?.throwIfAborted()
 		scope = createScriptScope({ ctx: host.ctx, signal })
 		const result = await callback(scope.sdk)
-		if (event.responseBody !== 'scope') return result
+		if (responseBody !== 'scope') return result
 		if (!(result instanceof Response)) throw new TypeError('[host] Expected a streaming Response')
 		if (!result.body) return result
 		const response = retainResponseBody(
 			result,
 			result.body,
-			{ ctx, signal: event.signal, responseBody },
+			{ ctx, signal },
 			{ close: releaseEvent, abort: scope.abort },
 		)
 		retained = true
@@ -279,7 +279,7 @@ export function createWorkerHost(
 function retainResponseBody(
 	response: Response,
 	body: ReadableStream<Uint8Array>,
-	{ signal, ctx }: StreamingEventOptions,
+	{ signal, ctx }: Pick<StreamingEventOptions, 'signal' | 'ctx'>,
 	lifetime: { close(): Promise<void>; abort(reason?: unknown): void },
 ): Response {
 	const reader = body.getReader()

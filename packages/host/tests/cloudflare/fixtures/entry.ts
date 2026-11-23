@@ -106,7 +106,8 @@ function load(request: Request, env: Env, ctx: WorkerContext, id: string) {
 
 function stream(request: Request, bindings: Env, ctx: WorkerContext, id: string) {
 	const env = { HOST_PROBE: bindings.HOST_PROBE }
-	return worker.run({ env, signal: request.signal, ctx, responseBody: 'scope' }, async (sdk) => {
+	const event = { env, signal: request.signal, ctx, responseBody: 'scope' as const }
+	const response = worker.run(event, async (sdk) => {
 		let cancelled = false
 		sdk.ctx.effects.defer(() => {
 			settled[id] = { calls: (settled[id]?.calls ?? 0) + 1, cancelled }
@@ -142,6 +143,11 @@ function stream(request: Request, bindings: Env, ctx: WorkerContext, id: string)
 			{ headers: { 'Content-Type': 'text/plain' } },
 		)
 	})
+	if (id === 'stream-complete') {
+		// Reusing the options after admission must preserve this stream's lease and original signal.
+		Object.assign(event, { responseBody: undefined, signal: AbortSignal.abort() })
+	}
+	return response
 }
 
 export default {
