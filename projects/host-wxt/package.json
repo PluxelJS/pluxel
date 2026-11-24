@@ -1,0 +1,45 @@
+{
+	"name": "@pluxel-example/host-wxt",
+	"version": "0.1.0",
+	"private": true,
+	"description": "清理网页链接中的追踪参数，按需保留页内锚点。",
+	"type": "module",
+	"exports": {
+		"./cleaner": "./src/cleaner.ts",
+		"./fragment": "./src/fragment.ts",
+		"./tracking": "./src/tracking.ts"
+	},
+	"scripts": {
+		"dev": "vp run prepare-dev && wxt",
+		"build": "vp run compile",
+		"typecheck": "vp run check-types",
+		"test:smoke": "vp run check-smoke",
+		"zip": "vp run prepare-dev && wxt zip",
+		"test": "vp run check-tests",
+		"postinstall": "wxt prepare"
+	},
+	"dependencies": {
+		"@mantine/core": "catalog:frontend",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/host": "workspace:*",
+		"@tanstack/react-form": "catalog:frontend",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend",
+		"valibot": "catalog:validation",
+		"valibot-form": "workspace:*"
+	},
+	"devDependencies": {
+		"@pluxel/host-vite": "workspace:*",
+		"@types/node": "catalog:types",
+		"@types/react": "catalog:types",
+		"@types/react-dom": "catalog:types",
+		"@wxt-dev/auto-icons": "catalog:build",
+		"@wxt-dev/module-react": "catalog:build",
+		"playwright": "catalog:dev",
+		"typescript": "catalog:dev",
+		"vite": "catalog:build",
+		"vite-plus": "catalog:build",
+		"vitest": "catalog:test",
+		"wxt": "catalog:build"
+	}
+}

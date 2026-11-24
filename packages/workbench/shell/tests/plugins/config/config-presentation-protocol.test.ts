@@ -10,9 +10,9 @@ import {
 } from '@pluxel/services/management/internal'
 import {
 	adaptConfigPresentationFields,
-	buildEditableConfigPatch,
 	applyConfigSources,
 } from '../../../src/app/plugins/config/presentationAdapter'
+import { buildEditableConfigPatch } from 'valibot-form/web'
 
 const baseField = (path: string): ConfigPresentationFieldV1 => ({
 	kind: 'string',

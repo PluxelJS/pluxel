@@ -171,6 +171,8 @@ production /run 在全部 config hooks 后验证 `middlewareMode`、browser HMR�
 
 `@pluxel/host-vite/modules` 提供 `pluginModules({ root, environments })`，在选定的 Vite 环境内分别编译插件及配置声明。Dedicated Module Worker 自己接受插件模块更新，串行执行 `host.updateCatalog(plugins, { onGraphCommitted })`。提交回调同步切换预先取得的构造器地址，之后检查生命周期回执并通知页面。页面的消息端口继续连到同一个 Worker。这个边界覆盖插件模块及其依赖；Host 装配或 Worker 入口的改变交给 Vite 的常规重载。Node 开发适配器也在同一提交点激活新的执行资源。 [三端回归](../projects/host-targets/scripts/smoke.mjs)
 
+Chromium MV3 扩展的弹窗页也能使用 client environment。WXT 提供开发服务器，页面接纳静态插件目录的更新，并在同一 embedded Host 提交构造器。浏览器回归保持扩展页打开，验证业务输出变化、无关插件 generation 保留以及错误更新后的恢复。 [WXT 示例与验收](../projects/host-wxt/README.md)
+
 Cloudflare 的 Vite 接纳回调将候选构造器交给 `worker.updateCatalog(({ env }) => selectPlugins(env), { onGraphCommitted })`。选择函数使用当前已验收根的部署变量。驱动串行处理更新，在途事件和借用插件的响应流结算后，才提交到常驻 Host 的 catalog。等待更新的新事件在提交结束后进入。提交回调同步发布对应地址，使后续请求借用已接纳的 generation。服务、根文档与无关的插件继续存活。首次冷启动之前的更新仅发布构造器引用，启动时由应用工厂按当次 env 选择并校验 catalog。接纳方检查完整更新回执中的 reconciliation 与生命周期结果。 [Cloudflare 接纳示例](../projects/host-targets/src/cloudflare/entry.ts) · [Market 应用](../projects/plugin-market/src/application.ts)
 
 workerd 的排空依赖必须指向每个在途事件自己创建、自己结算的完成 Promise。控制事件等待这些 Promise，平台才能追踪各个生产者的 I/O。若控制事件自己创建一个只能由别的事件唤醒的 Promise，即使交给 `waitUntil`，workerd 也可能将该事件判定为挂起并中止。 [Worker 驱动](../packages/host/src/cloudflare.ts) · [原生并发与流回归](../packages/host/tests/cloudflare/runtime.test.ts) · [跨请求 Promise 兼容规则](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#handle-cross-request-promise-resolution-correctly)

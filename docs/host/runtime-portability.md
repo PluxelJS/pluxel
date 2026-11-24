@@ -92,9 +92,12 @@ export async function listPlugins(appName: string, signal: AbortSignal) {
 | ----------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Node / Electron 主进程  | Node Vite Host 可以在同一根替换插件 generation。Electron 示例用真实主进程验收桌面服务                  | 固定插件随应用发布。需要独立安装包时，Node modules 加载器可在下次启动扫描来源；需要在线消费来源的 Node 服务可显式采用 Vite 生产配置 |
 | 浏览器 Dedicated Worker | Vite 在 Worker 内提交新 catalog，页面保持连接                                                          | 页面随应用版本选择新的 Worker 入口，创建新 Worker 后将请求交给它                                                                    |
+| Chromium 扩展（MV3）    | WXT 弹窗在同一 embedded Host 替换插件；修改 manifest 会重载扩展                                        | 选项页从插件声明生成配置表单，`browser.storage.local` 保存启停意图与 Host 配置文档，已打开的页面同步采用                            |
 | Cloudflare Workers      | Node 上的 Vite 驱动本地 workerd，在有效事件里调用插件                                                  | 部署含插件的新 Worker 版本，平台按部署策略向对应版本的 isolate 派发事件                                                             |
 | Rust / LLRT             | 共享插件用 Node + Vite 联调，Rust 服务及模块加载用真实 LLRT 验收                                       | Rust 把独立编译的 JS 安装到应用私有目录，关闭 Host 并释放 VM。新 VM 读取已安装文件，Rust 进程可以继续运行                           |
 | React Native / Expo     | 共享插件用 Node + Vite 联调，原生界面用 Metro 和 Fast Refresh 联调；设备上的 Hermes 对独立插件 JS 求值 | 应用把选中的独立 JS 制品保存到私有目录。重载主 JS 运行时后，React 根重新挂载，Host 按已安装文件启动。操作系统进程可继续运行         |
+
+在框架仓库根运行 `vp run @pluxel-example/host-wxt#dev` 可启动 WXT 示例。在 Chromium 扩展管理页加载 `projects/host-wxt/.output/chrome-mv3-dev`，点击工具栏的「净链」可清理当前链接。用右键菜单打开独立清理页后，可在编辑器中修改规则并观察同一 Host 的更新。 [扩展入口与开发步骤](https://github.com/PluxelJS/pluxel/blob/main/projects/host-wxt/README.md)
 
 停止一个插件只释放该实例持有的资源。在嵌入式示例中，安装和卸载改变**下次启动要加载的代码**。已运行的 JS 继续使用当前插件集，直至宿主关闭这次执行环境。构建机负责解析依赖并生成制品。两个示例都接收开发者信任的本地文件，摘要校验写入的字节，插件在宿主的 JS 权限下执行。 [Worker 部署语义](https://developers.cloudflare.com/workers/versions-and-deployments/) · [React Native Fast Refresh](https://reactnative.dev/docs/fast-refresh)
 

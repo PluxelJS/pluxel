@@ -1,0 +1,21 @@
+body {
+	margin: 0;
+	background: var(--mantine-color-body);
+}
+.options {
+	margin: clamp(1rem, 6vh, 4rem) auto;
+	padding: 0 1rem;
+	max-width: 42rem;
+}
+.options h1 {
+	font-size: 1.55rem;
+}
+.options h2 {
+	font-size: 1.1rem;
+}
+.config-fields {
+	min-width: 0;
+	margin: 0;
+	border: 0;
+	padding: 0;
+}

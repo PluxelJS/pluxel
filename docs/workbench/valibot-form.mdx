@@ -160,3 +160,7 @@ export class ExamplePlugin extends BasePlugin {
 - **`f.numberMeta({ step, min, max })`**：数值控件，设置步长调节器。
 - **`f.picklistMeta({ control, labels })`**：枚举选项，支持切换为分段选择器（`segmented`）或下拉选择框（`select`）。
 - **`f.arrayMeta({ layout, addLabel })`**：数组列表，提供列表展开与新增项文案提示。
+
+## 在浏览器扩展中使用 AutoForm
+
+WXT 选项页可直接使用 `valibot-form/web` 的 `AutoForm`。扩展从本页 embedded Host 读取规则的 Valibot 声明，通过 `extractFormFields` 生成字段。保存时，`buildEditableConfigPatch` 比较表单草稿与已保存的原始输入，扩展将差异和开始编辑时的版本提交给 `host.config.patch`。Host 负责校验并通知运行中的规则。 [WXT 规则设置](https://github.com/PluxelJS/pluxel/tree/main/projects/host-wxt)

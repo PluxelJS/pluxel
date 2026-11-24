@@ -12,11 +12,12 @@ currently evolve with this framework workspace.
 
 ## Cross-platform host examples
 
-The examples run the same compiled `Provider`, `Consumer` and `HostCapabilities` plugins. The application owns the Host and installs any native service. The platform plugin borrows that service with `ctx.service(...)`. [Shared plugin source](host-targets/plugins/src/index.ts) · [Shared checks](host-targets/plugins/src/probe.ts)
+The Node, Worker, LLRT, Electron and Expo examples run the same compiled `Provider`, `Consumer` and `HostCapabilities` plugins. The application owns the Host and installs any native service. The platform plugin borrows that service with `ctx.service(...)`. [Shared plugin source](host-targets/plugins/src/index.ts) · [Shared checks](host-targets/plugins/src/probe.ts)
 
 | Project                                                | What runs there                                                                   | Platform-specific check                                                                             |
 | ------------------------------------------------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | [Node, browser and Cloudflare](host-targets/README.md) | One plugin tarball in Node, a Chromium Dedicated Worker and workerd               | Exercise each transport, check Worker storage limits and reload the plugin graph during development |
+| [WXT browser extension](host-wxt/README.md)            | WXT manages MV3 entrypoints, with Pluxel DI in each link cleaner page             | Exercise activeTab, settings sync and offline filters, then hot-replace a running rule              |
 | [LLRT](host-llrt/README.md)                            | A Rust executable embeds QuickJS via LLRT and drives its event loop               | Install a separately built JS plugin, call Rust and reload fresh VMs in the same process            |
 | [Electron](host-electron/README.md)                    | The Electron main process runs the Node Host and displays its receipt in a window | Read the native application name and version through a desktop service                              |
 | [Expo / React Native](host-expo/README.md)             | A React Native app runs the embedded Host in Hermes                               | Install a separate JS file in an Android release, reload Hermes and read Expo language tags         |

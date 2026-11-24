@@ -1,0 +1,142 @@
+:root {
+	color-scheme: light dark;
+	font:
+		15px/1.55 'Source Sans 3',
+		system-ui,
+		sans-serif;
+	--ink: #183e34;
+	--muted: #57685d;
+	--line: #c6d0bf;
+	--paper: #fafbf5;
+	--surface: #fff;
+	--tint: #edf3e6;
+	--action: #225a46;
+	color: var(--ink);
+	background: var(--paper);
+	accent-color: var(--action);
+}
+@media (prefers-color-scheme: dark) {
+	:root {
+		--ink: #e6f1de;
+		--muted: #aec0b2;
+		--line: #496052;
+		--paper: #17241e;
+		--surface: #1c2c25;
+		--tint: #24372a;
+		--action: #b6daa5;
+	}
+}
+* {
+	box-sizing: border-box;
+}
+body {
+	margin: 0;
+}
+main {
+	margin: auto;
+	padding: 22px;
+}
+.popup {
+	width: min(100vw, 420px);
+	min-width: 350px;
+}
+header,
+footer,
+.row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+header {
+	margin-bottom: 22px;
+}
+h1 {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 0;
+	font-size: 24px;
+	letter-spacing: 0.04em;
+}
+button {
+	cursor: pointer;
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	padding: 6px 12px;
+	font: inherit;
+	font-size: 13px;
+}
+button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+.quiet {
+	color: var(--ink);
+	background: var(--surface);
+}
+.primary {
+	color: var(--paper);
+	background: var(--action);
+	border-color: var(--action);
+	font-weight: 650;
+	white-space: nowrap;
+}
+.text-button {
+	padding: 0;
+	border: 0;
+	color: var(--action);
+	background: transparent;
+	text-decoration: underline;
+}
+label {
+	font-weight: 650;
+}
+textarea,
+output {
+	display: block;
+	width: 100%;
+	margin-top: 8px;
+	font:
+		14px/1.55 ui-monospace,
+		monospace;
+	overflow-wrap: anywhere;
+}
+textarea {
+	min-height: 4.6em;
+	resize: vertical;
+	padding: 9px 12px;
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	background: var(--surface);
+	color: var(--ink);
+}
+.preview {
+	background: var(--tint);
+	padding: 12px 14px;
+	margin-top: 16px;
+	border-radius: 8px;
+}
+output {
+	min-height: 1.55em;
+}
+#changes,
+#status {
+	color: var(--muted);
+}
+#changes,
+#status {
+	margin: 0;
+	font-size: 13px;
+	white-space: pre-line;
+}
+#changes:not(:empty) {
+	margin-top: 8px;
+}
+footer {
+	margin-top: 16px;
+}
+:focus-visible {
+	outline: 2px solid var(--action);
+	outline-offset: 3px;
+}

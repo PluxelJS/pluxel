@@ -7,6 +7,8 @@ The package is split into a lightweight core entry and optional UI adapters:
 - `valibot-form`: metadata factories, schema metadata reading, and field planning.
 - `valibot-form/web`: React form rendering for Mantine-based web apps.
 
+Web editors can call `buildEditableConfigPatch(fields, draft, saved)` to compare raw inputs. Apply the returned `remove` paths before merging `set` so replacing a record or union clears keys from its previous shape. `editableConfigPaths(fields)` lists paths for a scoped reset.
+
 Use the default entry for startup configuration, plugin configuration, CLI prompts, config-file editors, and any environment where you only need to describe or inspect a Valibot schema.
 
 ```ts
