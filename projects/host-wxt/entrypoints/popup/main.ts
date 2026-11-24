@@ -1,5 +1,12 @@
 import { browser } from 'wxt/browser'
-import { applyPreferences, catalogUpdates, cleanLink, close } from '../../src/application'
+import {
+	applyPreferences,
+	catalogUpdates,
+	cleanLink,
+	close,
+	readRuleStates,
+	withHost,
+} from '../../src/application'
 import { watchPreferences } from '../../src/preferences'
 import { watchConfig } from '../../src/config-storage'
 import '../../assets/style.css'
@@ -32,10 +39,11 @@ async function preview() {
 	}
 }
 
-async function syncPreferences() {
+async function syncPreferences(switchChanged = false) {
 	try {
-		await applyPreferences()
-		preferenceIssue = ''
+		if (switchChanged) await applyPreferences()
+		const states = await withHost(readRuleStates)
+		preferenceIssue = states.flatMap((rule) => (rule.failure ? [rule.failure] : [])).join('\n')
 	} catch (error) {
 		preferenceIssue = String(error)
 	}
@@ -43,10 +51,10 @@ async function syncPreferences() {
 }
 
 const unwatchConfig = watchConfig(() => void syncPreferences())
-const unwatch = watchPreferences(() => void syncPreferences())
+const unwatch = watchPreferences(() => void syncPreferences(true))
 catalogUpdates.addEventListener('updated', (event) => {
 	updateIssue = event instanceof CustomEvent ? event.detail : ''
-	void preview()
+	void syncPreferences()
 })
 window.addEventListener(
 	'pagehide',
@@ -102,7 +110,7 @@ async function loadSource() {
 }
 
 void loadSource()
-	.then(syncPreferences)
+	.then(() => syncPreferences())
 	.catch((error) => {
 		status.textContent = String(error)
 	})

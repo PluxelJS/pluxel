@@ -5,7 +5,7 @@ import { rules as initialRules } from './catalog'
 import { LinkCleaner } from './cleaner'
 import { createConfigStorage } from './config-storage'
 import { readPreferences } from './preferences'
-import { ruleKeys } from './rules'
+import { ruleKeys, type RuleKey } from './rules'
 
 function checkReport(report: PluginApplyReport) {
 	const messages = report.reconciliation.map((issue) => issue.message)
@@ -33,7 +33,18 @@ const start = () =>
 			],
 			plugins: ruleKeys.map((key) => ({ plugin: rules[key], autoStart: choices[key] })),
 			config: { document: { storage: createConfigStorage } },
-			policy: { mode: 'saved-first', document: false },
+			policy: { document: false },
+			// Keep individual switches available so a user can repair a rule that failed on startup.
+			acceptStartup: ({ report, status }) =>
+				report.catalogRevision > 0 &&
+				report.reconciliation.length === 0 &&
+				status.statuses.every(
+					(rule) =>
+						rule.desiredState === 'stopped' ||
+						rule.lifecycleState === 'running' ||
+						(rule.issues.length > 0 &&
+							rule.issues.every(({ code }) => code === 'start-failed' || code === 'config-failed')),
+				),
 		}
 	})
 let pageHost: PluginHost | undefined
@@ -68,19 +79,36 @@ export const cleanLink = (link: string) =>
 		}
 	})
 
+// The saved switch, Host intent and actual generation can differ after a failed transition.
+const commandFailures = new Map<RuleKey, string>()
+export async function readRuleStates(host: PluginHost) {
+	const choices = await readPreferences()
+	const { statuses } = await host.status()
+	return ruleKeys.map((key) => {
+		const node = rules[key].nodeAddress()
+		const status = statuses.find((item) => pluginNodeAddressEqual(item.address, node))
+		if (!status) throw new Error(`未找到清理插件：${key}`)
+		const enabled = choices[key]
+		const failure =
+			enabled !== (status.lifecycleState === 'running')
+				? commandFailures.get(key) ||
+					status.issues.map((issue) => issue.message).join('\n') ||
+					'当前状态与保存的开关不同。'
+				: undefined
+		return { key, node, enabled, status, failure }
+	})
+}
+
 export const applyPreferences = () =>
 	withHost(async (host) => {
-		const choices = await readPreferences()
-		const { statuses } = await host.status()
-		for (const key of ruleKeys) {
-			const address = rules[key].nodeAddress()
-			const current = statuses.find((node) => pluginNodeAddressEqual(node.address, address))
-			if (!current) throw new Error(`未找到清理插件：${key}`)
-			const enabled = choices[key]
-			if (enabled !== current.autoStart) checkReport(await host.setAutoStart(address, enabled))
-			// The user's switch controls both the next startup and the current session.
-			if (enabled !== (current.lifecycleState === 'running'))
-				checkReport(enabled ? await host.startNode(address) : await host.stopNode(address))
+		for (const { key, node, enabled, status } of await readRuleStates(host)) {
+			if (enabled === (status.desiredState === 'running')) continue
+			try {
+				checkReport(enabled ? await host.startNode(node) : await host.stopNode(node))
+				commandFailures.delete(key)
+			} catch (error) {
+				commandFailures.set(key, error instanceof Error ? error.message : String(error))
+			}
 		}
 	})
 

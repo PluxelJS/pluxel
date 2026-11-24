@@ -1,5 +1,4 @@
 import { browser } from 'wxt/browser'
-import { storage } from 'wxt/utils/storage'
 import { ruleKeys, ruleDefaults, type RuleKey } from './rules'
 
 export async function readPreferences(): Promise<Record<RuleKey, boolean>> {
@@ -14,16 +13,17 @@ export async function readPreferences(): Promise<Record<RuleKey, boolean>> {
 }
 
 export function setPreference(key: RuleKey, enabled: boolean) {
-	return storage.setItem(`local:${key}`, enabled)
+	return browser.storage.local.set({ [key]: enabled })
 }
 
 export function resetPreferences() {
-	return storage.removeItems(ruleKeys.map((key) => `local:${key}` as const))
+	return browser.storage.local.remove(ruleKeys)
 }
 
 export function watchPreferences(refresh: () => void) {
-	const remove = ruleKeys.map((key) => storage.watch(`local:${key}`, refresh))
-	return () => {
-		for (const unwatch of remove) unwatch()
+	const changed = (changes: Record<string, unknown>) => {
+		if (ruleKeys.some((key) => Object.hasOwn(changes, key))) refresh()
 	}
+	browser.storage.local.onChanged.addListener(changed)
+	return () => browser.storage.local.onChanged.removeListener(changed)
 }

@@ -24,7 +24,7 @@ const endpoint = 'https://greetings.example.invalid/'
 const fetchGreeting: OutboundFetch = (input, init) =>
 	workerExports.GreetingSource.fetch(input, init)
 let current = {
-	application: demoApplication(plugins, 'cloudflare', fetchGreeting),
+	application: demoApplication(plugins, fetchGreeting),
 	consumerAddress: plugins.Consumer.nodeAddress(),
 }
 const worker = createWorkerHost((startup) => current.application(startup))
@@ -38,7 +38,6 @@ if (import.meta.hot) {
 			const candidate = {
 				application: demoApplication(
 					{ Provider: next.Provider, Consumer: next.Consumer },
-					'cloudflare',
 					fetchGreeting,
 				),
 				consumerAddress: next.Consumer.nodeAddress(),
@@ -74,7 +73,7 @@ export default {
 			return new Response('Use POST', { status: 405, headers: { allow: 'POST' } })
 		}
 
-		const env = { GREETING_SOURCE: endpoint, HOST_PROBE: bindings.HOST_PROBE }
+		const env = { GREETING_SOURCE: endpoint, GREETING_NAME: bindings.GREETING_NAME }
 		return worker.run({ env, signal: request.signal, ctx }, async (sdk) =>
 			Response.json(
 				await readDemo(sdk, {
@@ -85,4 +84,4 @@ export default {
 			),
 		)
 	},
-} satisfies ExportedHandler<{ HOST_PROBE?: string }>
+} satisfies ExportedHandler<{ GREETING_NAME?: string }>

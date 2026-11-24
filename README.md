@@ -59,11 +59,11 @@ export class BillingPlugin extends BasePlugin {
 ## 文档导航
 
 - [快速开始](./docs/getting-started/index.md)：几分钟内创建并运行一个完整的示例应用。
-- [跨平台宿主示例](./projects/README.md#cross-platform-host-examples)：共享插件覆盖 Node、浏览器、Cloudflare、LLRT、Electron 与 React Native，包含安装独立插件后重载 JS 的示例。
+- [启停和配置内置插件](./docs/host/fixed-plugins.md)：运行浏览器扩展「净链」，给随应用发布的规则接入设置页。
 - [Pluxel Lab](https://github.com/PluxelJS/lab)：独立维护桌面启动器、报表编辑器等有业务场景的应用实验。
 - [为什么是 Pluxel](./docs/why-pluxel.md)：了解 Pluxel 的架构选型与 Cordis 的设计传承。
 - [插件开发指南](./docs/plugin-development/index.md)：依赖模型、事件系统、日志输出、配置与隔离测试。
-- [宿主配置](./docs/host/configuration.md)：应用入口定义、环境变量绑定、存储挂载与生产打包。
+- [宿主配置](./docs/host/configuration.md)：应用入口、环境变量、存储与生产打包。各平台的接线与示例见[跨平台宿主契约](./docs/host/runtime-portability.md)。
 - [Workbench 工作台](./docs/workbench/index.md)：为插件配置可视化管理界面与业务视图。
 - [开发工具链](./docs/development/workspace-toolchain.md)：Vite+ 安装、执行与任务、Git hooks 与 Pitchfork 服务管理。
 - [包索引矩阵](./docs/reference/package-matrix.md)：查看所有官方包的导入入口与公开状态。

@@ -1,5 +1,5 @@
 {
 	"title": "宿主配置与扩展",
-	"pages": ["configuration", "runtime-portability", "services", "management"],
+	"pages": ["fixed-plugins", "configuration", "runtime-portability", "services", "management"],
 	"icon": "Server"
 }

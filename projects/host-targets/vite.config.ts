@@ -27,6 +27,7 @@ export default defineConfig(({ command, isPreview, mode }) => {
 						command: 'vp build',
 						dependsOn: ['prepare-dev'],
 						cache: {
+							env: ['VITE_GREETING_NAME'],
 							output: ['dist/client/**', 'dist/cloudflare/**', '.wrangler/deploy/config.json'],
 						},
 					},

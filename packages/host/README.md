@@ -9,7 +9,7 @@ import { MyPlugin } from './plugin.js'
 export default defineHostApplication(() => ({ plugins: [{ plugin: MyPlugin, autoStart: true }] }))
 ```
 
-每个插件条目设置其节点的配置、启动意图与 fork。绑定、动态来源和部署示例由[Host 配置](../../docs/host/configuration.md)维护。
+用 `startNode`、`stopNode` 控制本次运行，用 `host.config` 读取和修改节点配置。 [内置插件启停示例](../../docs/host/fixed-plugins.md) · [Host 配置](../../docs/host/configuration.md)
 
 | 入口                     | 用途                                                                                                         |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------ |

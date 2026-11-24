@@ -2,12 +2,10 @@ import type { HostDocumentStorage } from '@pluxel/host/embedded'
 import { browser } from 'wxt/browser'
 
 const prefix = 'pluxel.config/'
+const configChanges = new EventTarget()
 export function watchConfig(listener: () => void) {
-	const changed = (changes: Record<string, unknown>) => {
-		if (Object.keys(changes).some((key) => key.startsWith(prefix))) listener()
-	}
-	browser.storage.local.onChanged.addListener(changed)
-	return () => browser.storage.local.onChanged.removeListener(changed)
+	configChanges.addEventListener('change', listener)
+	return () => configChanges.removeEventListener('change', listener)
 }
 
 // Each Host owns its read baseline. An editor must never overwrite another page's newer document.
@@ -39,6 +37,15 @@ export function createConfigStorage(): HostDocumentStorage {
 		async stat(file) {
 			return (await read(prefix + file)) === undefined ? undefined : {}
 		},
-		subscribe: watchConfig,
+		subscribe(reload) {
+			const changed = (changes: Record<string, unknown>) => {
+				if (!Object.keys(changes).some((key) => key.startsWith(prefix))) return
+				// Host enqueues adoption first. The page's status read waits for that transaction.
+				reload()
+				configChanges.dispatchEvent(new Event('change'))
+			}
+			browser.storage.local.onChanged.addListener(changed)
+			return () => browser.storage.local.onChanged.removeListener(changed)
+		},
 	}
 }

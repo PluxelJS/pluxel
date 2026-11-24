@@ -1,15 +1,14 @@
-import { pluginDefinitionIndexKey, pluginNodeAddressEqual } from '@pluxel/core'
+import { pluginDefinitionIndexKey } from '@pluxel/core'
 import type { HostConfigMutation, HostPluginConfigResult } from '@pluxel/host/embedded'
 import { extractFormFields, type Schema } from 'valibot-form'
-import { applyPreferences, withHost } from '../../src/application'
-import { ruleKeys, type RuleKey } from '../../src/rules'
+import { readRuleStates, withHost } from '../../src/application'
+import type { RuleKey } from '../../src/rules'
 
-function accepted(result: HostPluginConfigResult) {
-	if (result.ok) return result
+function configError(result: Extract<HostPluginConfigResult, { ok: false }>) {
 	if (result.code === 'revision_conflict')
-		throw new Error('配置版本已变化，请载入最新配置后再编辑。')
+		return new Error('配置版本已变化，请载入最新配置后再编辑。')
 	if (result.code === 'validation_failed') {
-		throw new Error(
+		return new Error(
 			Object.values(result.errors)
 				.flatMap((fields) =>
 					Object.values(fields).flatMap((issues) => issues.map((issue) => issue.message)),
@@ -17,7 +16,7 @@ function accepted(result: HostPluginConfigResult) {
 				.join('\n'),
 		)
 	}
-	throw new Error(result.message)
+	return new Error(result.message)
 }
 
 function isValibotSchema(schema: unknown): schema is Schema {
@@ -27,30 +26,28 @@ function isValibotSchema(schema: unknown): schema is Schema {
 }
 
 export async function readRules() {
-	await applyPreferences()
-	return withHost(async (host, rules) => {
-		const { statuses } = await host.status()
+	return withHost(async (host) => {
+		const states = await readRuleStates(host)
 		const entries = host.catalog().byDefinition
 		return Promise.all(
-			ruleKeys.map(async (key) => {
-				const node = rules[key].nodeAddress()
-				const status = statuses.find((item) => pluginNodeAddressEqual(item.address, node))!
+			states.map(async ({ key, node, status, enabled, failure }) => {
 				const { declaration } = entries.get(pluginDefinitionIndexKey(node.definition))!.candidate
 
-				if (!declaration.config) return { key, status, form: null }
-				const schema = declaration.config.schema
-				if (!isValibotSchema(schema))
-					throw new Error(`${status.displayName} 未提供可展示的 Valibot 对象配置`)
-				const snapshot = accepted(await host.config.get(node))
-				return {
-					key,
-					status,
-					form: {
+				let form = null
+				if (declaration.config) {
+					const schema = declaration.config.schema
+					if (!isValibotSchema(schema))
+						throw new Error(`${status.displayName} 未提供可展示的 Valibot 对象配置`)
+					const snapshot = await host.config.get(node)
+					if (!snapshot.ok && snapshot.code !== 'validation_failed') throw configError(snapshot)
+					form = {
 						fields: extractFormFields(schema),
 						saved: snapshot.managedInput ?? {},
 						revision: snapshot.managedRevision,
-					},
+						error: snapshot.ok ? '' : configError(snapshot).message,
+					}
 				}
+				return { key, enabled, failure, status, form }
 			}),
 		)
 	})
@@ -63,10 +60,10 @@ export function writeRuleConfig(key: RuleKey, revision: string, change?: HostCon
 	return withHost(async (host, rules) => {
 		const node = rules[key].nodeAddress()
 		const options = { expectedManagedRevision: revision }
-		return accepted(
-			change
-				? await host.config.patch(node, change, options)
-				: await host.config.reset(node, undefined, options),
-		)
+		const result = change
+			? await host.config.patch(node, change, options)
+			: await host.config.reset(node, undefined, options)
+		if (!result.ok) throw configError(result)
+		return result
 	})
 }

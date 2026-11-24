@@ -11,8 +11,8 @@ export type BrowserReply =
 
 const worker = globalThis as unknown as DedicatedWorkerGlobalScope
 const source = new URL('/greeting.json', worker.location.href).href
-const env = { GREETING_SOURCE: source, HOST_PROBE: import.meta.env.VITE_HOST_PROBE }
-const ready = startHost(demoApplication(plugins, 'browser'), { env })
+const env = { GREETING_SOURCE: source, GREETING_NAME: import.meta.env.VITE_GREETING_NAME }
+const ready = startHost(demoApplication(plugins), { env })
 let consumerAddress = plugins.Consumer.nodeAddress()
 let settled = Promise.resolve()
 if (import.meta.hot) {
@@ -20,10 +20,7 @@ if (import.meta.hot) {
 		settled = settled
 			.then(async () => {
 				if (!next) throw new Error('Worker plugin module failed to evaluate. See the Vite log.')
-				const application = demoApplication(
-					{ Provider: next.Provider, Consumer: next.Consumer },
-					'browser',
-				)
+				const application = demoApplication({ Provider: next.Provider, Consumer: next.Consumer })
 				const { plugins: selected } = await application({ env })
 				const address = next.Consumer.nodeAddress()
 				const host = await ready

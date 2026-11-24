@@ -1,7 +1,10 @@
 import type { ScriptSdk } from '@pluxel/agent-sdk/host'
 import type { PortableApplication } from '@pluxel/host/application'
 import { envBinding } from '@pluxel/host/bindings'
-import { Consumer, HostCapabilities, ProbeVault, Provider } from './index'
+import { Consumer, Provider } from './index'
+import { HostCapabilities, ProbeVault } from './capabilities'
+
+export { HostCapabilities }
 
 /** Public test data delivered by the deployment, including in a mobile or browser bundle. */
 export const probeEnvironment = { HOST_PROBE: 'fixture-binding' } as const
@@ -9,11 +12,10 @@ export const probeEnvironment = { HOST_PROBE: 'fixture-binding' } as const
 /** The Provider receives configuration and is started through the Consumer's constructor edge. */
 export function probePlugins(
 	sourceUrl: string,
-	plugins = { Provider, Consumer },
 ): NonNullable<Awaited<ReturnType<PortableApplication>>['plugins']> {
 	return [
-		{ plugin: plugins.Provider, config: { source: sourceUrl } },
-		{ plugin: plugins.Consumer, autoStart: true },
+		{ plugin: Provider, config: { source: sourceUrl } },
+		{ plugin: Consumer, autoStart: true },
 		{
 			plugin: HostCapabilities,
 			autoStart: true,
@@ -43,7 +45,7 @@ export async function inspectHost(
 		sessionFiles: options.sessionFiles ?? 'read-write',
 		durableFiles: 'ENOTSUP',
 		durableState: 'DURABILITY_UNAVAILABLE',
-		owner: 'package:@pluxel-example/host-targets-plugins::HostCapabilities',
+		owner: 'package:@pluxel-example/host-targets-plugins/probe::HostCapabilities',
 		eventDeliveries: 1,
 		effectCleanups: 1,
 	}

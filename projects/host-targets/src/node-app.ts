@@ -6,12 +6,12 @@ import { demoConfig, nodeFetch, nodeSource } from './demo-config'
 const consumerAddress = Consumer.nodeAddress()
 
 export default defineHostApplication((startup) => {
-	const { provider, consumer, coreConfig } = demoConfig(nodeSource, nodeFetch)
+	const { config, coreConfig } = demoConfig(nodeSource, startup.env.GREETING_NAME, nodeFetch)
 	return {
 		sources: [{ file: './plugins/src/index.ts' }],
 		pluginNodes: [
-			{ definition: Provider.address(), ...provider },
-			{ definition: Consumer.address(), ...consumer },
+			{ definition: Provider.address(), config },
+			{ definition: Consumer.address(), autoStart: true },
 		],
 		coreConfig,
 		prepare({ host }) {

@@ -13,6 +13,16 @@ body {
 .options h2 {
 	font-size: 1.1rem;
 }
+.preview-result {
+	font-size: var(--mantine-font-size-sm);
+}
+.preview-result label {
+	font-weight: 500;
+}
+.preview-result output {
+	display: block;
+	overflow-wrap: anywhere;
+}
 .config-fields {
 	min-width: 0;
 	margin: 0;

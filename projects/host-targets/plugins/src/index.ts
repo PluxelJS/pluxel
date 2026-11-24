@@ -1,8 +1,6 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
 import * as v from 'valibot'
 
-export { HostCapabilities, ProbeVault } from './capabilities'
-
 const ProviderConfig = v.object({
 	source: v.pipe(v.string(), v.url()),
 	name: v.optional(v.string(), 'Pluxel'),

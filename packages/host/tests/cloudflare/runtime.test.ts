@@ -228,6 +228,11 @@ it('reuses the isolate Host and isolates concurrent event IO, cancellation and r
 			generation: survivor.generation,
 			revision: 1,
 		})
+		await expect(fetchReply('storage-limits')).resolves.toEqual({
+			file: 'ENOTSUP',
+			durableStore: 'DURABILITY_UNAVAILABLE',
+			vaultWrite: 'READ_ONLY',
+		})
 		const holding = fetchReply('vault-hold')
 		await Promise.race([vaultRead.promise, holding])
 		const rejected = await worker.dispatchFetch('http://worker.test/vault-missing')

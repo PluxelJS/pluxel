@@ -1,5 +1,6 @@
 import {
 	BasePlugin,
+	EvtChannel,
 	formatPluginNodeReference,
 	Plugin,
 	TinyBaseError,
@@ -7,12 +8,6 @@ import {
 } from '@pluxel/core'
 import { VaultError } from '@pluxel/core/vault'
 import * as v from 'valibot'
-
-declare module '@pluxel/core' {
-	interface Events {
-		'host-targets:probe': [string]
-	}
-}
 
 const sourcePayload = v.object({ source: v.string() })
 export const ProbeVault = v.object({ probe: v.string() })
@@ -79,7 +74,8 @@ export class HostCapabilities extends BasePlugin {
 		this.ctx.logger.with({ operation: 'host-probe' }).info('Checking host capabilities')
 		let eventDeliveries = 0
 		let effectCleanups = 0
-		const unsubscribe = this.ctx.events.on('host-targets:probe', (value) => {
+		const channel = new EvtChannel<[string]>(this.ctx)
+		const unsubscribe = channel.on((value) => {
 			if (value === owner) eventDeliveries++
 		})
 		const guard = this.ctx.effects.defer(() => {
@@ -87,11 +83,11 @@ export class HostCapabilities extends BasePlugin {
 			effectCleanups++
 		})
 		try {
-			this.ctx.events.emit('host-targets:probe', owner)
+			channel.emit(owner)
 		} finally {
 			await guard.dispose()
 		}
-		this.ctx.events.emit('host-targets:probe', owner)
+		channel.emit(owner)
 
 		return {
 			fetchSource,

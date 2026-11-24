@@ -21,15 +21,15 @@ async function edit(file, code) {
 	await rename(file + '.next', file)
 }
 
-async function expectLink(page, expected) {
+async function expectLink(page, expected, selector = '#result') {
 	try {
 		await page.waitForFunction(
-			(link) => document.querySelector('#result')?.value === link,
-			expected,
+			(check) => document.querySelector(check.selector)?.value === check.expected,
+			{ selector, expected },
 		)
 	} catch (cause) {
 		throw new Error(
-			`Expected ${expected}. Popup displays: ${await page.locator('body').innerText()}`,
+			`Expected ${expected}. Page displays: ${await page.locator('body').innerText()}`,
 			{ cause },
 		)
 	}
@@ -111,12 +111,17 @@ try {
 		page.getByRole('button', { name: '规则设置' }).click(),
 	])
 	await settings.waitForURL(`chrome-extension://${id}/${manifest.options_ui.page}`)
+	const testLink = settings.getByRole('textbox', { name: '测试链接' })
+	await expectLink(settings, 'https://example.org/guide?ref=mail#setup', '#preview-result')
+	await testLink.fill(input)
+	await expectLink(settings, clean, '#preview-result')
 	const trackingForm = settings.getByRole('region', { name: '移除 UTM 追踪参数' })
 	const extra = trackingForm.getByRole('textbox')
 	const save = trackingForm.getByRole('button', { name: '保存配置' })
 	await extra.fill('tag ref')
 	await save.click()
 	await trackingForm.getByRole('status').filter({ hasText: '请用逗号分隔' }).waitFor()
+	await expectLink(settings, clean, '#preview-result')
 	await expectLink(page, clean)
 	const secondEditor = await context.newPage()
 	await secondEditor.goto(settings.url())
@@ -124,6 +129,8 @@ try {
 	await secondForm.getByRole('textbox').fill('ref')
 	await extra.fill('tag')
 	await save.click()
+	await trackingForm.getByRole('status').filter({ hasText: '已保存并应用' }).waitFor()
+	await expectLink(settings, clean.replace('&tag=a&tag=b', ''), '#preview-result')
 	await expectLink(page, clean.replace('&tag=a&tag=b', ''))
 	await expectLink(other, clean.replace('&tag=a&tag=b', ''))
 	await secondForm.getByRole('button', { name: '载入最新配置' }).waitFor()
@@ -138,18 +145,30 @@ try {
 	assert.equal(await secondForm.getByRole('textbox').inputValue(), 'tag')
 	await secondEditor.close()
 	await settings.reload()
-	await settings.waitForFunction(() => document.querySelector('input[type=text]')?.value === 'tag')
+	await extra.waitFor()
+	assert.equal(await extra.inputValue(), 'tag')
 	await trackingForm.getByRole('button', { name: '恢复插件默认配置' }).click()
 	await expectLink(page, clean)
 	await settings.getByRole('switch', { name: '移除 UTM 追踪参数', disabled: false }).press('Space')
 	await expectLink(page, input)
 	await expectLink(other, input)
 	await other.close()
+	await testLink.fill('example.org')
+	await settings.getByText('请输入完整的 HTTP 或 HTTPS 链接。').waitFor()
+	await expectLink(settings, '', '#preview-result')
 	await extra.fill('tag')
 	await save.click()
 	await trackingForm.getByRole('status').filter({ hasText: '启用时采用' }).waitFor()
 	await expectLink(page, input)
+	// A fresh Host reads the disabled choice and retains edits made while the rule was stopped.
+	await settings.reload()
+	await extra.waitFor()
+	assert.equal(await extra.inputValue(), 'tag')
+	assert.equal(await settings.getByRole('switch', { name: '移除 UTM 追踪参数' }).isChecked(), false)
+	await testLink.fill(input)
+	await expectLink(settings, input, '#preview-result')
 	await settings.getByRole('switch', { name: '移除 UTM 追踪参数', disabled: false }).press('Space')
+	await expectLink(settings, clean.replace('&tag=a&tag=b', ''), '#preview-result')
 	await expectLink(page, clean.replace('&tag=a&tag=b', ''))
 	await trackingForm.getByRole('button', { name: '恢复插件默认配置' }).click()
 	await expectLink(page, clean)
@@ -219,9 +238,33 @@ try {
 	// An unrelated generation stamps its own identity onto each result in this fixture.
 	const fragment = join(fixture.path, 'src/fragment.ts')
 	const fragmentCode = await readFile(fragment, 'utf8')
+	const tracking = join(fixture.path, 'src/tracking.ts')
+	const trackingCode = await readFile(tracking, 'utf8')
+	await writeFile(
+		tracking,
+		trackingCode.replace(
+			'({ desired }) => apply(desired.extraParameters)',
+			`async ({ desired }) => {
+				if (globalThis.configGate) {
+				globalThis.adopting = true
+					await globalThis.configGate.promise
+					delete globalThis.configGate
+			}
+			apply(desired.extraParameters)
+		}`,
+		),
+	)
 	await writeFile(
 		fragment,
 		fragmentCode
+			.replace(
+				'this.removeHashRoutes = this.config.removeHashRoutes',
+				`if (localStorage.getItem('fail-start')) {
+					globalThis.failedStarts = (globalThis.failedStarts ?? 0) + 1
+					throw new Error('Fragment start failed')
+				}
+			this.removeHashRoutes = this.config.removeHashRoutes`,
+			)
 			.replace(
 				'private clean(',
 				'private readonly generation = crypto.randomUUID()\n\tprivate clean(',
@@ -245,11 +288,47 @@ try {
 		const opened = await page.evaluate(() => performance.timeOrigin)
 		const devSettings = await context.newPage()
 		await devSettings.goto(`chrome-extension://${devId}/options.html`)
-		await devSettings.getByRole('switch', { name: '移除页内锚点', disabled: false }).press('Space')
+		const fragmentSwitch = devSettings.getByRole('switch', {
+			name: '移除页内锚点',
+			disabled: false,
+		})
+		await devSettings.evaluate(() => localStorage.setItem('fail-start', '1'))
+		await fragmentSwitch.press('Space')
+		await devSettings.getByRole('alert').filter({ hasText: '规则尚未运行' }).waitFor()
+		await expectLink(devSettings, '', '#preview-result')
+		assert.equal(await fragmentSwitch.isChecked(), true)
+		const devTracking = devSettings.getByRole('region', { name: '移除 UTM 追踪参数' })
+		await devTracking.getByRole('textbox').fill('ref')
+		await devTracking.getByRole('button', { name: '保存配置' }).click()
+		await devTracking.getByRole('status').filter({ hasText: '已保存并应用' }).waitFor()
+		assert.equal(await devSettings.evaluate(() => globalThis.failedStarts), 1)
+		const coldSettings = await context.newPage()
+		await coldSettings.goto(devSettings.url())
+		await coldSettings.getByRole('alert').filter({ hasText: '规则尚未运行' }).waitFor()
+		await expectLink(coldSettings, '', '#preview-result')
+		const coldSwitch = coldSettings.getByRole('switch', { name: '移除页内锚点', disabled: false })
+		await coldSwitch.press('Space')
+		await expectLink(page, clean)
+		await coldSettings.reload()
+		await expectLink(coldSettings, 'https://example.org/guide#setup', '#preview-result')
+		assert.equal(await coldSwitch.isChecked(), false)
+		await coldSettings.close()
+		await devSettings.evaluate(() => localStorage.removeItem('fail-start'))
+		// Another page's preview must refresh after the rule has adopted its saved configuration.
+		await page.evaluate(() => {
+			globalThis.configGate = Promise.withResolvers()
+		})
+		await devTracking.getByRole('textbox').fill('tag')
+		await devTracking.getByRole('button', { name: '保存配置' }).click()
+		await page.waitForFunction(() => globalThis.adopting)
+		await page.evaluate(() => globalThis.configGate.resolve())
+		await expectLink(page, clean.replace('&tag=a&tag=b', ''))
+		await devTracking.getByRole('button', { name: '恢复插件默认配置' }).click()
+		await expectLink(page, clean)
+		await fragmentSwitch.press('Space')
 		const settingsOpened = await devSettings.evaluate(() => performance.timeOrigin)
 		await page.waitForFunction(() => /#[a-f\d-]{36}$/.test(document.querySelector('#result').value))
 		const stamped = await page.locator('#result').textContent()
-		const tracking = join(fixture.path, 'src/tracking.ts')
 		const original = await readFile(tracking, 'utf8')
 		const edited = original
 			.replace('/^utm_/i', '/^(utm_|tag$)/i')

@@ -34,11 +34,11 @@ import { OrdersPlugin } from '@app/orders'
 export default defineHostApplication(() => ({
   plugins: [{ plugin: OrdersPlugin, autoStart: true }],
 }))`,
-		description:
-			'插件清单在应用构建时静态打包，开发时支持实时热更新。在节点上设置 autoStart，声明应用启动时主动运行的插件。',
+		description: '在 plugins 中声明随应用发布的插件。用 autoStart 选择主动启动的节点。',
+		href: '/docs/host/fixed-plugins',
 		icon: ServerCog,
 		meta: 'Fixed catalog',
-		title: '固定插件目录',
+		title: '随应用发布插件',
 	},
 	{
 		code: `import { defineHostApplication } from '@pluxel/host'
@@ -48,6 +48,7 @@ export default defineHostApplication(() => ({
 }))`,
 		description:
 			'开发期间可在指定目录新增、更新或移除插件文件，宿主会自动发现变动并按运行策略加载。',
+		href: '/docs/host/configuration#动态来源',
 		icon: CloudCog,
 		meta: 'Mutable sources',
 		title: '增加动态来源',
@@ -164,7 +165,7 @@ export default function HomePage() {
 						{hosts.map((host) => {
 							const Icon = host.icon
 							return (
-								<Link key={host.title} href="/docs/host/configuration" className="pluxel-doc-card">
+								<Link key={host.title} href={host.href} className="pluxel-doc-card">
 									<Icon aria-hidden="true" />
 									<span className="pluxel-card-meta">{host.meta}</span>
 									<h3>{host.title}</h3>

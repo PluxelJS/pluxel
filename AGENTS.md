@@ -11,7 +11,7 @@
 | 工作区工具、提交检查、开发服务                   | [工作区工具链](docs/development/workspace-toolchain.md)；检查涉及的 mise.toml、vite.config.ts、hk.pkl、pitchfork.toml 与已有服务                    |
 | 插件业务、配置、日志                             | [插件开发](docs/plugin-development/index.md)选择目标主题                                                                                            |
 | 插件发现、声明与源码位置                         | [Agent SDK](docs/development/agent-sdk.md)；普通函数从 `@pluxel/agent-sdk/source` 查询，进程内 Host 操作从 `/host` 选择，外部 Node 调用用 `/client` |
-| 应用装配、部署、服务扩展                         | [Host 配置](docs/host/configuration.md)对应章节，扩展见 host/services，移植宿主见[跨平台宿主契约](docs/host/runtime-portability.md)                 |
+| 应用装配、部署、服务扩展                         | [内置插件](docs/host/fixed-plugins.md)、[装配](docs/host/configuration.md)、[移植](docs/host/runtime-portability.md)；扩展见 host/services          |
 | Workbench 导航、布局或视觉                       | [交互设计](engineering/WORKBENCH_DESIGN.md)、[Frontend](engineering/FRONTEND.md)                                                                    |
 | 文档编写与组织                                   | [文档职责](engineering/DOCUMENTATION.md)                                                                                                            |
 | 框架、Context、生命周期、工具链或包边界          | [工程原则](engineering/DESIGN_PRINCIPLES.md)、[系统边界](engineering/PLUGIN_SYSTEM.md)，再从[工程索引](engineering/README.md)选领域                 |

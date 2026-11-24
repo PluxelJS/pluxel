@@ -129,4 +129,4 @@ vp run verify
 - [插件依赖拓扑](../plugin-development/model.md)：如何在构造函数中注入其他插件，或声明可选依赖。
 - [结构化日志最佳实践](../plugin-development/logging.md)：使用上下文日志记录关键指标与调试信息。
 - [插件拆分与 Part 机制](../plugin-development/parts.md)：使用 `PluginPart` 将庞大插件的内部状态模块化拆分。
-- [接入宿主应用](../host/configuration.md)：将写好的插件打包并注册进完整的宿主应用中。
+- 让用户启停随应用发布的插件、修改参数并保存选择。[启停和配置内置插件](../host/fixed-plugins.md)

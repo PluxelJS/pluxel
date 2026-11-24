@@ -126,7 +126,7 @@ export function ConfigEditor({
 			</fieldset>
 			<SyncDraft incoming={model} baseline={baseline} adopt={adopt} />
 			<Text size="sm" role="status">
-				{message}
+				{message || model.error}
 			</Text>
 		</AutoForm>
 	)

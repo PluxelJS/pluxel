@@ -12,9 +12,9 @@
 - 生产 listener 与 `publicDir` 由应用 `launch` 显式选择；启动意图通过判定后才执行，关闭统一使用 Host。Vite 自己持有 listener，不执行应用 `acceptStartup` 或 `launch`。
 - 浏览器 React/Vite 代码位于 `host/web/`；Node catalog、配置和路由策略位于 `host/`；共享中立逻辑位于 `packages/`。
 - 源码查询从 `@pluxel/agent-sdk/source` 导入普通函数，运行 `vp exec node dev/inspect.mjs`。本应用使用 `application: { root: 'host', entry: 'src/app.ts' }`；用法见 `vp exec pluxel docs development/inspection.md`。进程内 Host 操作入口为 `@pluxel/agent-sdk/host`，外部 Node 程序通过 `/client` 发现、执行和查询原 receipt。
-- 修改 `plugins/`、公共契约、Host 配置或 lint / fmt 规则前，按开发指南确认对应契约。应用装配见 `vp exec pluxel docs host/configuration.md`，移植宿主或核对内建能力见 `vp exec pluxel docs host/runtime-portability.md`。
+- 内置插件的启停与配置见 `vp exec pluxel docs host/fixed-plugins.md`。应用装配见 `vp exec pluxel docs host/configuration.md`，移植宿主见 `vp exec pluxel docs host/runtime-portability.md`。修改插件、公共契约或检查规则前按开发指南核对。
 
-插件范式按需读 `docs/pluxel/plugin-development/`；Host 装配读 `docs/pluxel/host/configuration.md` 的对应章节。已知目标直接定位，不把目录当作通读清单。
+插件范式按需读 `docs/pluxel/plugin-development/` 的对应章节。
 
 ## 工作区工具与服务
 

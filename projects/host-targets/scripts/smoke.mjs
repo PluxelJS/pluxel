@@ -18,23 +18,26 @@ import { createServer, preview } from 'vite'
 const run = promisify(execFile)
 const root = resolve(import.meta.dirname, '..')
 const targetAddress = (httpServer) => `http://127.0.0.1:${httpServer.address().port}`
-const readResult = async (page, host) =>
-	JSON.parse(await page.locator(`[data-host="${host}"]`).textContent())
-
-async function waitForResult(page, host, message) {
+async function waitForResult(page, host, message, visits) {
 	const target = page.locator(`[data-host="${host}"]`)
 	try {
-		await page.waitForFunction(
-			({ expectedHost, expectedMessage }) => {
+		await using match = await page.waitForFunction(
+			({ expectedHost, expectedMessage, expectedVisits }) => {
 				const output = document.querySelector(`[data-host="${expectedHost}"]`)?.textContent
 				try {
-					return JSON.parse(output).message === expectedMessage
+					const result = JSON.parse(output)
+					return (
+						result.message === expectedMessage &&
+						(expectedVisits === undefined || result.visits === expectedVisits) &&
+						result
+					)
 				} catch {
 					return false
 				}
 			},
-			{ expectedHost: host, expectedMessage: message },
+			{ expectedHost: host, expectedMessage: message, expectedVisits: visits },
 		)
+		return await match.jsonValue()
 	} catch (error) {
 		const output = await target.allTextContents()
 		throw new Error(
@@ -44,7 +47,6 @@ async function waitForResult(page, host, message) {
 			},
 		)
 	}
-	return await readResult(page, host)
 }
 
 async function prepareAppFixture(directory, plugins) {
@@ -78,10 +80,7 @@ async function editPlugin(file, source) {
 
 process.env.CLOUDFLARE_CF_FETCH_ENABLED ??= 'false'
 
-const browser = process.env.PLAYWRIGHT_WS_ENDPOINT
-	? await chromium.connect(process.env.PLAYWRIGHT_WS_ENDPOINT)
-	: await chromium.launch({ headless: true })
-
+let browser
 try {
 	// Match the example's directory depth so its config can import the repository tasks.
 	const temporary = resolve(root, '../../.tmp')
@@ -94,42 +93,50 @@ try {
 	const packagedFiles = await readdir(packagedPlugins)
 	assert.ok(!packagedFiles.includes('src'))
 	await prepareAppFixture(release.path, packagedPlugins)
+	await writeFile(join(release.path, '.dev.vars'), 'GREETING_NAME=Kai\n')
 	await run('vp', ['build'], {
 		cwd: release.path,
-		env: { ...process.env, VITE_HOST_PROBE: 'fixture-binding' },
+		env: { ...process.env, VITE_GREETING_NAME: 'Mei' },
 	})
 	await run('vp', ['build', '--mode', 'node'], { cwd: release.path })
 
 	const { stdout } = await run(process.execPath, ['dist/node/node-main.js'], {
 		cwd: release.path,
-		env: { ...process.env, HOST_PROBE: 'fixture-binding' },
+		env: { ...process.env, GREETING_NAME: 'Ada' },
 	})
 	const nodeArtifact = JSON.parse(stdout)
 	assert.equal(nodeArtifact.host, 'node')
-	assert.equal(nodeArtifact.visits, 3)
+	assert.equal(nodeArtifact.visits, 1)
 	assert.equal(nodeArtifact.source, 'Node Fetch transport')
-	assert.equal(nodeArtifact.message, 'Hello, Pluxel!')
+	assert.equal(nodeArtifact.message, 'Hello, Ada!')
 	assert.equal(nodeArtifact.plugin, 'package:@pluxel-example/host-targets-plugins::Consumer')
 
 	const built = await preview({ root: release.path, preview: { host: '127.0.0.1', port: 0 } })
 	try {
+		browser = process.env.PLAYWRIGHT_WS_ENDPOINT
+			? await chromium.connect(process.env.PLAYWRIGHT_WS_ENDPOINT, { exposeNetwork: '<loopback>' })
+			: await chromium.launch({ headless: true })
 		const page = await browser.newPage()
 		try {
 			await page.goto(targetAddress(built.httpServer))
-			const web = await waitForResult(page, 'browser', nodeArtifact.message)
-			const edge = await waitForResult(page, 'cloudflare', nodeArtifact.message)
+			const web = await waitForResult(page, 'browser', 'Hello, Mei!', 1)
+			const edge = await waitForResult(page, 'cloudflare', 'Hello, Kai!', 1)
 			assert.equal(web.source, 'Browser Fetch')
 			assert.equal(edge.source, 'workerd Service Binding')
-			assert.ok(web.visits >= 3 && edge.visits >= 3, 'Each released Host ran the shared probe')
 			assert.equal(web.plugin, nodeArtifact.plugin)
 			assert.equal(edge.plugin, nodeArtifact.plugin)
+			await page.getByRole('button', { name: 'Run plugins' }).click()
+			const [nextWeb, nextEdge] = await Promise.all([
+				waitForResult(page, 'browser', web.message, 2),
+				waitForResult(page, 'cloudflare', edge.message, 2),
+			])
+			assert.equal(nextWeb.generation, web.generation)
+			assert.equal(nextEdge.generation, edge.generation)
 		} finally {
 			await page.close()
 		}
 	} finally {
-		await new Promise((done, fail) =>
-			built.httpServer.close((error) => (error ? fail(error) : done())),
-		)
+		await built.close()
 	}
 
 	// The development update edits only a disposable source tree.
@@ -152,9 +159,9 @@ try {
 		try {
 			const address = targetAddress(dev.httpServer)
 			await page.goto(address)
-			const before = await waitForResult(page, 'node', nodeArtifact.message)
-			const web = await waitForResult(page, 'browser', nodeArtifact.message)
-			const edge = await waitForResult(page, 'cloudflare', nodeArtifact.message)
+			const before = await waitForResult(page, 'node', 'Hello, Pluxel!')
+			const web = await waitForResult(page, 'browser', before.message)
+			const edge = await waitForResult(page, 'cloudflare', before.message)
 			assert.equal(web.plugin, before.plugin)
 			assert.equal(edge.plugin, before.plugin)
 			assert.ok(edge.visits >= 1)
@@ -237,8 +244,8 @@ try {
 			const configFile = join(fixture.path, 'src/demo-plugins.ts')
 			const config = await readFile(configFile, 'utf8')
 			const configured = config.replace(
-				'{ plugin: Provider, ...provider }',
-				"{ plugin: Provider, config: { ...provider.config, name: 'App reload' } }",
+				'{ plugin: Provider, config }',
+				"{ plugin: Provider, config: { ...config, name: 'App reload' } }",
 			)
 			assert.notEqual(configured, config)
 			await editPlugin(configFile, configured)
@@ -264,7 +271,7 @@ try {
 		await dev.close()
 	}
 } finally {
-	await browser.close()
+	await browser?.close()
 }
 
 console.log('Node, browser module worker and workerd builds and Vite updates passed.')

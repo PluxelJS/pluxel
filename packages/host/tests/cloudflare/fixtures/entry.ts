@@ -73,6 +73,10 @@ function load(request: Request, env: Env, ctx: WorkerContext, id: string) {
 			})
 	}
 	const reply = worker.run({ env: deployment, signal: request.signal, ctx }, async (sdk) => {
+		if (id === 'storage-limits') {
+			const { instance } = await sdk.plugin(RequestProvider.nodeAddress()).instance()
+			return Response.json(await instance.storageLimits())
+		}
 		if (id.startsWith('vault-')) {
 			const { instance } = await sdk.plugin(RequestProvider.nodeAddress()).instance()
 			const before = await instance.deploymentProbe()
