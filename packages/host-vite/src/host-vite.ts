@@ -174,7 +174,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 		catalog: HostViteCatalog,
 		candidateControls: HostPluginControls,
 	): Promise<PluginHost> => {
-		const instance = await createResolvedHost(declaration)
+		const instance = await createResolvedHost(declaration, entry)
 		try {
 			installHostServiceControls(instance.ctx, candidateControls)
 			await loadNativeHostServiceControls(instance.ctx, server.config.root)

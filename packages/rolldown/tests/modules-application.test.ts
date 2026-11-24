@@ -194,10 +194,15 @@ it('records verified Workbench transport in modules deployments and omits it fro
 			name: '@fixture/modules-workbench-peer',
 			type: 'module',
 			exports: { '.': './src/owner.ts' },
+			dependencies: { capnweb: 'catalog:transport' },
 			peerDependencies: { capnweb: '0.12.0' },
 			devDependencies: { capnweb: '0.12.0' },
 		}
 		await writeFile(resolve(root, 'package.json'), JSON.stringify(manifest))
+		await writeFile(
+			resolve(root, 'pnpm-workspace.yaml'),
+			'catalogs:\n  transport:\n    capnweb: 0.12.0\n',
+		)
 		await writeFile(
 			resolve(root, 'tsconfig.json'),
 			JSON.stringify({
@@ -251,6 +256,7 @@ export class Owner extends BasePlugin {
 		await build('workbench')
 		const deployed = JSON.parse(await readFile(resolve(root, 'dist/package.json'), 'utf8'))
 		expect(deployed.pluxel.workbenchCapnweb).toBe('0.12.0')
+		expect(deployed.dependencies.capnweb).toBe('0.12.0')
 		expect(deployed.devDependencies).toBeUndefined()
 		expect(JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'))).toEqual(manifest)
 		await writeFile(

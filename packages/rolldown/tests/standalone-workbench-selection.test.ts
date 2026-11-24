@@ -54,6 +54,7 @@ async function linkDependencies(root: string): Promise<void> {
 			name: '@example/standalone-workbench-selection',
 			type: 'module',
 			exports: { '.': './owners.ts' },
+			dependencies: { capnweb: '0.12.0' },
 			peerDependencies: { capnweb: '0.12.0' },
 		}),
 	)

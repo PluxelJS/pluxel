@@ -142,7 +142,10 @@ export async function createHostFromOptions(
 }
 
 /** @internal Prepare the already captured declaration and its selected catalog. */
-export async function createResolvedHost(options: ResolvedHostOptions): Promise<PluginHost> {
+export async function createResolvedHost(
+	options: ResolvedHostOptions,
+	applicationEntry?: string,
+): Promise<PluginHost> {
 	const fixed = [...options.plugins]
 	assertDeclaredForks(catalog(1, fixed), options.declaredNodes)
 	const services = planHostServices(options.services ?? [])
@@ -181,7 +184,7 @@ export async function createResolvedHost(options: ResolvedHostOptions): Promise<
 		await prepareCoreContext(ctx)
 		installPluginHostCoordinator(ctx, { state })
 		if (options.vaultBindings?.length) requireVaultHost(ctx).installBindings(options.vaultBindings)
-		await prepareHostServices(ctx, services, fixed)
+		await prepareHostServices(ctx, services, fixed, applicationEntry)
 		const store = requireConfigService(ctx) as HostConfigStore
 		await store.observe(() =>
 			reloadSavedConfig(ctx, () => {

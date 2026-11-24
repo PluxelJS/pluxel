@@ -10,7 +10,7 @@
 | [Agent 执行与控制](AGENT_WORKFLOW.md)                   | Node/Vite、共享控制与材料同步已有实现；待交付正式 Cloudflare 后端、远程 Vite、离线 validator、持久任务与材料清理 |
 | [Agent 工作流对照研究](AGENT_WORKFLOW_EVALUATION.md)    | 固定模型与相同任务下，验证文件查阅、错误恢复、任务结果及 token 消耗的变化；尚未开展                              |
 | [表单适配器与远程校验](schema-form/README.md)           | 自有控件消费者、独立的源码投影入口和通用失焦校验的采用条件                                                       |
-| [严格契约的剩余缺口](STRICT_CONTRACT_REVIEW.md)         | 显式修复工具、应用级 capnweb 所有权检查和部分解析失败分类                                                        |
+| [严格契约的剩余缺口](STRICT_CONTRACT_REVIEW.md)         | 显式修复工具和部分解析失败分类                                                                                   |
 | [插件分发与市场](plugin-distribution/README.md)         | Worker/D1、网页、管理与安装确认已有实现；待完成 provenance 自动收录、新 manifest、消费者认证与恢复闭环           |
 | [是否删除 Plugin fork](REMOVE_PLUGIN_FORKS.md)          | Redis/S3 已改为领域目录；Core/Host 删除 fork 尚未采纳，需确认独立 graph node 调用方及数据迁移                    |
 | [Elysia 外部承载](NATIVE_ELYSIA_APPLICATION.md)         | Node/Vite HTTP、stream、WebSocket 已有实现；matcher 冲突、peer 准入与外部 lifecycle 仍有缺口                     |

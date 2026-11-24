@@ -113,9 +113,18 @@ class Page extends RpcTarget {released=false;value(){return 42}isReleased(){retu
 		join(root, 'node_modules/capnweb'),
 		'dir',
 	)
+	await mkdir(join(root, 'host'))
 	await write(
-		'app.ts',
-		`import { defineHostApplication } from '@pluxel/host';import { Viewer } from './plugin';import { workbenchService } from '@pluxel/workbench/service';import { workbenchHttp } from '@pluxel/workbench/http';import { elysia } from '@pluxel/services/elysia';
+		'host/package.json',
+		JSON.stringify({
+			name: 'fixture-host',
+			type: 'module',
+			dependencies: { capnweb: capnwebPackage.version },
+		}),
+	)
+	await write(
+		'host/app.ts',
+		`import { defineHostApplication } from '@pluxel/host';import { Viewer } from '../plugin';import { workbenchService } from '@pluxel/workbench/service';import { workbenchHttp } from '@pluxel/workbench/http';import { elysia } from '@pluxel/services/elysia';
 export default defineHostApplication(({bindings}) => ({plugins:[{plugin:Viewer,autoStart:true}],coreConfig:{logtape:{input:{
  sinks:{capture:bindings.captureLog},
  loggers:[{category:['pluxel','runtime'],sinks:['capture'],lowestLevel:'error'},{category:['logtape','meta'],lowestLevel:null}]
@@ -128,7 +137,7 @@ export default defineHostApplication(({bindings}) => ({plugins:[{plugin:Viewer,a
 		server: { port: 0, host: '127.0.0.1' },
 		plugins: [
 			vitePreset({
-				entry: 'app.ts',
+				entry: 'host/app.ts',
 				bindings: { captureLog: (record) => diagnostics.push(record) },
 			}),
 			workbenchArtifacts({ cacheDir: join(root, '.pluxel/artifacts') }),

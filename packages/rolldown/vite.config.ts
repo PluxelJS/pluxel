@@ -26,6 +26,7 @@ export default defineConfig({
 						'packages/workbench/package.json',
 						'packages/host/package.json',
 						'packages/host/src/shared-runtime.ts',
+						'packages/host/src/native-import.ts',
 						'packages/workbench/src/workbench/shared-transport.ts',
 						'packages/workbench/src/workbench/definition.ts',
 						'!packages/rolldown/dist/**',

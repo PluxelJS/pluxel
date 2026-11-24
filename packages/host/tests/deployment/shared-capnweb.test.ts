@@ -1,14 +1,78 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
 import { hostPackage } from '../support/workspace'
+import { assertWorkbenchApplicationRuntime } from '../../src/shared-runtime'
 
 const loader = new URL('src/native-source-loader.ts', hostPackage).href
 const core = fileURLToPath(new URL('../core/', hostPackage))
 const tsx = new URL('../rolldown/node_modules/tsx/dist/loader.mjs', hostPackage).href
+
+it('checks the physical application entry owner even when the workspace provides a resolvable capnweb', () => {
+	const root = mkdtempSync(join(tmpdir(), 'pluxel-application-capnweb-'))
+	const member = join(root, 'apps/member')
+	const entry = join(member, 'app.mjs')
+	const manifest = join(member, 'package.json')
+	try {
+		mkdirSync(member, { recursive: true })
+		mkdirSync(join(root, 'node_modules/@pluxel'), { recursive: true })
+		symlinkSync(fileURLToPath(hostPackage), join(root, 'node_modules/@pluxel/host'))
+		const supported = JSON.parse(
+			readFileSync(new URL('node_modules/capnweb/package.json', hostPackage), 'utf8'),
+		).version
+		symlinkSync(
+			fileURLToPath(new URL('node_modules/capnweb/', hostPackage)),
+			join(root, 'node_modules/capnweb'),
+		)
+		writeFileSync(
+			join(root, 'package.json'),
+			JSON.stringify({ dependencies: { capnweb: supported } }),
+		)
+		writeFileSync(entry, '')
+		const alias = join(root, 'link.mjs')
+		symlinkSync(entry, alias)
+		for (const declaration of [undefined, '^' + supported, '0.0.1']) {
+			writeFileSync(
+				manifest,
+				JSON.stringify({ name: 'member', dependencies: { capnweb: declaration } }),
+			)
+			expect(() => assertWorkbenchApplicationRuntime(alias)).toThrow(manifest)
+			expect(() => assertWorkbenchApplicationRuntime(alias)).toThrow(
+				`dependencies.capnweb ${declaration ?? '<missing>'}`,
+			)
+		}
+		writeFileSync(
+			manifest,
+			JSON.stringify({ name: 'member', dependencies: { capnweb: supported } }),
+		)
+		expect(assertWorkbenchApplicationRuntime(alias)).toBe(supported)
+		const shadow = join(member, 'node_modules/capnweb')
+		mkdirSync(shadow, { recursive: true })
+		writeFileSync(
+			join(shadow, 'package.json'),
+			JSON.stringify({ name: 'capnweb', version: '0.0.1', exports: './index.mjs' }),
+		)
+		writeFileSync(join(shadow, 'index.mjs'), '')
+		expect(() => assertWorkbenchApplicationRuntime(entry)).toThrow('resolved 0.0.1')
+		const otherHost = join(member, 'node_modules/@pluxel/host')
+		mkdirSync(otherHost, { recursive: true })
+		const otherHostManifest = join(otherHost, 'package.json')
+		writeFileSync(
+			otherHostManifest,
+			JSON.stringify({ name: '@pluxel/host', exports: { './package.json': './package.json' } }),
+		)
+		writeFileSync(manifest, JSON.stringify({ name: 'member', dependencies: { capnweb: '0.0.1' } }))
+		expect(() => assertWorkbenchApplicationRuntime(entry)).toThrow(
+			`Host capnweb supports ${supported}`,
+		)
+		expect(assertWorkbenchApplicationRuntime(entry, otherHostManifest)).toBe('0.0.1')
+	} finally {
+		rmSync(root, { recursive: true, force: true })
+	}
+})
 
 function fixture(installedVersion: string, markerVersion = '0.12.0') {
 	const root = mkdtempSync(join(tmpdir(), 'pluxel-source-capnweb-'))

@@ -1,5 +1,6 @@
 import { readNativeWorkbenchArtifacts } from './services/workbench/loaded-artifacts'
 import { defineHostService, type HostService } from '@pluxel/host'
+import { assertWorkbenchApplicationRuntime } from '@pluxel/host/internal/shared-runtime'
 import { installOwnerViewService, installRootService } from '@pluxel/core/host'
 import type { Context } from '@pluxel/core'
 import { isPluginPartContext, resolveContextService } from '@pluxel/core/internal'
@@ -46,7 +47,8 @@ export function createWorkbenchService(
 					}),
 			}),
 		],
-		async prepare({ ctx, plugins }) {
+		async prepare({ ctx, plugins, applicationEntry }) {
+			if (applicationEntry !== undefined) assertWorkbenchApplicationRuntime(applicationEntry)
 			const backend = resolveContextService(ctx, WorkbenchHost)
 			await backend.prepare()
 			for (const candidate of await readNativeWorkbenchArtifacts(plugins)) {

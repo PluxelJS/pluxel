@@ -69,7 +69,7 @@ Host internal `PluginRecentUpdateTracker` 保存 route 的进程内历史，Host
 
 每 ViteDevServer 的 pluxel environment 只有一个 ModuleRunner/evaluated namespace，应用、fixed/source anchors、脚本和普通 ESM 都从这里求值。默认 SSR/ssrLoadModule 保持独立配置、缓存和寿命，不接 Host conditions/singleton/collector。
 
-Core/Host 是通用 singleton；`serviceSingletons` 另外固定 Services/Workbench，并在验证消费者精确 peer/dev/安装版本后，将 capnweb 接 Host、tinybase 原生子路径接 Core copy。纯 externalize 不能合并物理副本；私有 RPC/Store 保持自己的解析。共享校验归 Host internal/shared-runtime，应用直接 owner 的剩余问题见[严格契约提案](proposals/STRICT_CONTRACT_REVIEW.md#host-共享运行时的应用所有权)。public/internal/workspace path 按 import 条件命中同 ESM；Context 仅在 host 直接安装时 bridge。
+Core/Host 是通用 singleton；`serviceSingletons` 另外固定 Services/Workbench，并在验证消费者精确 peer/dev/安装版本后，将 capnweb 接 Host、tinybase 原生子路径接 Core copy。纯 externalize 不能合并物理副本；私有 RPC/Store 保持自己的解析。共享校验归 Host internal/shared-runtime，Workbench 启动时还要核对[应用入口所属包的直接依赖](WORKBENCH.md#definition-与-publication)。public/internal/workspace path 按 import 条件命中同 ESM；Context 仅在 host 直接安装时 bridge。
 
 物理分类顺序为 singleton→CJS/native 交 Node→workspace ESM 交 Vite。bare、alias、/@fs 同用 classifier，Vite 拥有解析，Host 不另设 resolver 或可配置 bridge policy。factory 返回前装配 fetchModule，Vite 先解析再分类；只登记 canonical 物理身份，保持公开 runnable 工厂/方法边界，不替换 server.close 或私有 transport。pluxel 工厂名由 Host 独占。
 

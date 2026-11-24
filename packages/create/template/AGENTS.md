@@ -11,6 +11,7 @@
 - `host/src/app.ts` 是开发与生产共用的应用声明。standalone 和 modules 构建要求显式插件清单可静态解析，工厂可根据 `startup.env` 设置 `autoStart` 和选择服务。Node 入口另提供部署路径与启动 bindings。可选 `sources` 扩展固定 catalog。默认 modules 构建与原生 `start.mjs` 只在启动接纳预编译来源；开发 Vite 持续更新。生产 Vite 使用独立 `vite.runtime.config.ts` 与 `start-vite.mjs`，加载同一 compiled factory。
 - 生产 listener 与 `publicDir` 由应用 `launch` 显式选择；启动意图通过判定后才执行，关闭统一使用 Host。Vite 自己持有 listener，不执行应用 `acceptStartup` 或 `launch`。
 - 浏览器 React/Vite 代码位于 `host/web/`；Node catalog、配置和路由策略位于 `host/`；共享中立逻辑位于 `packages/`。
+- Workbench 使用的精确 `capnweb` 版本由 `host/package.json` 的直接依赖和 backend catalog 声明。
 - 源码查询从 `@pluxel/agent-sdk/source` 导入普通函数，运行 `vp exec node dev/inspect.mjs`。本应用使用 `application: { root: 'host', entry: 'src/app.ts' }`；用法见 `vp exec pluxel docs development/inspection.md`。进程内 Host 操作入口为 `@pluxel/agent-sdk/host`，外部 Node 程序通过 `/client` 发现、执行和查询原 receipt。
 - 内置插件的启停与配置见 `vp exec pluxel docs host/fixed-plugins.md`。应用装配见 `vp exec pluxel docs host/configuration.md`，移植宿主见 `vp exec pluxel docs host/runtime-portability.md`。修改插件、公共契约或检查规则前按开发指南核对。
 

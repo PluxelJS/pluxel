@@ -233,7 +233,7 @@ export async function runHostApplication(
 						},
 					})
 		}
-		host = await createResolvedHost({ ...resolved, plugins })
+		host = await createResolvedHost({ ...resolved, plugins }, applicationEntry)
 		await loadLoadedApplicationServiceControls(application, host.ctx, resolved.startup.root)
 		setHostCatalogProvenance(host.ctx, facts)
 		installPluginSources(host.ctx, {

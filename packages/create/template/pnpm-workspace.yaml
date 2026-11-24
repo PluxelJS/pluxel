@@ -9,6 +9,7 @@ allowBuilds:
 
 catalogs:
   backend:
+    capnweb: 0.12.0
     '@sinclair/typebox': ^0.34.52
     exact-mirror: ^1.2.6
     elysia: 2.0.0-rc.0

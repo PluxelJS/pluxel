@@ -10,14 +10,6 @@
 
 验收应覆盖只读预览、确定性修复、编辑冲突和部分写入失败，并证明不迁移 Host 或私有 RPC、不覆盖其他作者改动。先取得实际重复维护样本，再决定是否增加命令。
 
-## Host 共享运行时的应用所有权
-
-[当前准入](../../packages/host/src/shared-runtime.ts)与 [Vite 接线](../../packages/host-vite/src/singletons.ts)校验能力消费者的 peer、实际安装和框架运行时 owner；[serviceSingletons()](../../packages/services/src/vite.ts)尚不接收应用入口，也没有对任意最终 Host 应用的 capnweb 直接依赖声明做统一检查。
-
-待决定如何从真实应用入口确定 package owner，以及哪些启动方式必须经过该检查。Vite root、workspace root 与应用包可能不同，不能将目录相同当作所有权依据。
-
-验收至少覆盖应用位于成员包、Vite root 与应用包不同、依赖仅由父目录可解析、直接声明缺失或版本错误，并保留私有 RPC 的独立解析。具体范围应与[第三方版本边界](../../docs/plugin-development/contracts.md#第三方库的版本边界)统一。
-
 ## 解析失败的可分类依据
 
 OXC 当前无稳定错误种类时，缺少物理 package 证据的 alias/tsconfig 失败仍可能与普通未命中混淆。现有行为与诊断限制见[工具链](../TOOLCHAIN.md)。若取得稳定的上游错误类型或可重复的本地反例，再决定是否细化 resolver 分类；验收保留 importer、specifier、conditions 与 cause，不按错误文案正则猜测。

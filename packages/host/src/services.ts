@@ -45,6 +45,8 @@ export interface HostService<
 			ctx: RootContext
 			/** Complete initial definitions, already admitted before service resource acquisition. */
 			plugins: readonly PluginConstructor[]
+			/** Absolute application module path when a Node or Vite loader owns the entry. */
+			applicationEntry?: string
 			dependencies: DependencyValues<TDependencies>
 			effects: EffectsScope
 		}>,
@@ -147,6 +149,7 @@ export async function prepareHostServices(
 	ctx: RootContext,
 	services: readonly HostService[],
 	plugins: readonly PluginConstructor[],
+	applicationEntry?: string,
 ): Promise<void> {
 	if (nodeMetadataServices.has(ctx))
 		throw new Error('[host] services are already prepared for this root')
@@ -162,7 +165,13 @@ export async function prepareHostServices(
 		for (const [name, definition] of Object.entries(service.requires ?? {}))
 			dependencies[name] = resolveContextService(ctx, definition)
 		const effects = ctx.effects.scope({ tag: service.name })
-		await service.prepare?.({ ctx, effects, plugins, dependencies: Object.freeze(dependencies) })
+		await service.prepare?.({
+			ctx,
+			effects,
+			plugins,
+			...(applicationEntry !== undefined ? { applicationEntry } : {}),
+			dependencies: Object.freeze(dependencies),
+		})
 	}
 }
 

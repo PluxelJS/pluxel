@@ -125,6 +125,8 @@ export function counters(): HostService {
 
 将 `counters()` 加入应用 `services` 后，插件通过 `this.ctx.service(Counters).increment('requests')` 使用已安装服务。Host 在接纳插件前执行 `prepare`，关闭或准备失败时释放登记到 `effects` 的资源。安装器工厂保持同步惰性；异步连接与 IO 放在 `prepare` 中，取得资源后立即登记释放。
 
+通过文件运行应用的 Node 和 Vite Host 会在 `prepare` 参数中提供 `applicationEntry`。服务可以用实际入口定位应用包；直接以工厂或构造器建立的 Host 没有此字段。
+
 HostService 的 `name` 用于诊断，`provides` 声明固定安装集合，`requires` 用直接导入的服务声明表达准备顺序：
 
 ```ts

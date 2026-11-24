@@ -26,7 +26,16 @@ it('bridges an installed target through a relocated Workbench application and di
 		}
 		await put(
 			'package.json',
-			JSON.stringify({ name: 'workbench-deployment-probe', type: 'module' }),
+			JSON.stringify({
+				name: 'workbench-deployment-probe',
+				type: 'module',
+				dependencies: { capnweb: '0.12.0' },
+			}),
+		)
+		await symlink(
+			fileURLToPath(new URL('../../host/node_modules/capnweb/', import.meta.url)),
+			join(root, 'node_modules/capnweb'),
+			'dir',
 		)
 		await put(
 			'mutable/node_modules/installed-target/package.json',
@@ -122,6 +131,19 @@ try {
 				],
 				{ timeout: 30000, maxBuffer: 4 * 1024 * 1024 },
 			)
+		const applicationManifestFile = join(deployed, 'package.json')
+		const deployedManifest = JSON.parse(await readFile(applicationManifestFile, 'utf8'))
+		for (const version of [undefined, '0.13.0']) {
+			await writeFile(
+				applicationManifestFile,
+				JSON.stringify({
+					...deployedManifest,
+					dependencies: { ...deployedManifest.dependencies, capnweb: version },
+				}),
+			)
+			await expect(run()).rejects.toThrow(`dependencies.capnweb ${version ?? '<missing>'}`)
+		}
+		await writeFile(applicationManifestFile, JSON.stringify(deployedManifest))
 		const compatible = await run()
 		expect(compatible.stdout).toContain('WORKBENCH_TARGET_SHARED')
 		await put(

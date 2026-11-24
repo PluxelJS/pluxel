@@ -27,6 +27,8 @@ Plugin 在 `init()` 中最多 publish 一次，bindings 精确覆盖需要绑定
 
 View/Attachment 的 `RpcTarget` 必须与 Host 使用同一 `capnweb` identity。准入先验证版本，再绑定 Host 选择的安装：
 
+最终应用的直接依赖归实际入口所属包。Node 托管与 Vite 开发、生产入口将应用路径传入 service prepare；已选 Workbench 核对物理入口最近的 package.json、`dependencies.capnweb` 的精确版本和从该包解析的实际安装。支持版本来自当前执行的 Host。Standalone 和 modules 的 Workbench 制品在构建时使用目标 Host 核对源码入口，modules 清单携带已验证的精确版本。Headless 制品跳过该检查。直接传入工厂、构造器或内嵌 bundle 的 Host 由调用方负责装配，其包边界需在应用自己的构建流程验收。
+
 | 阶段                  | 检查与接线                                                                                    |
 | --------------------- | --------------------------------------------------------------------------------------------- |
 | Plugin package build  | 语义分析确认 publication 后，检查 exact peer/dev 和实际安装版，生成 `pluxel.workbenchCapnweb` |

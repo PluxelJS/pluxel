@@ -126,6 +126,19 @@ it('pnpm shares immutable dependency slots across private installations', async 
 	})
 	try {
 		await mkdir(resolve(root, 'node_modules/@pluxel'), { recursive: true })
+		const capnweb = resolve(workspace, 'packages/host/node_modules/capnweb')
+		const { version: capnwebVersion } = JSON.parse(
+			await readFile(resolve(capnweb, 'package.json'), 'utf8'),
+		)
+		await writeFile(
+			resolve(root, 'package.json'),
+			JSON.stringify({
+				name: 'immutable-installation-host',
+				type: 'module',
+				dependencies: { capnweb: capnwebVersion },
+			}),
+		)
+		await symlink(capnweb, resolve(root, 'node_modules/capnweb'))
 		await symlink(
 			resolve(workspace, 'plugins/package-manager'),
 			resolve(root, 'node_modules/@pluxel/plugin-package-manager'),

@@ -73,6 +73,7 @@ Use `pitchfork status app`, `pitchfork logs app`, `pitchfork restart app` and
 `pitchfork stop app` to inspect and manage the service. Vite owns source hot reload;
 Pitchfork owns process lifetime. Set `PLUXEL_WORKBENCH=false` in `pitchfork.local.toml`
 under `[daemons.app.env]` and restart `app` to disable Workbench locally.
+The application package in `host/package.json` declares the exact Workbench `capnweb` runtime through the backend catalog.
 The `app` and `local` profiles are alternative ways to run the same application and share its default data directory. Profiles separate console routing, not data. Run `pitchfork stop app` before `vp run dev:local` when using the same data; for concurrent processes, explicitly set a distinct `PLUXEL_DATA_ROOT` for each.
 
 For foreground debugging with console access, use `vp run dev:local`. The supplied `local` profile runs `vp run @example/host#dev:server` and the CLI binds the foreground process automatically. Use `vp exec pluxel dev status --profile local` and `vp exec pluxel dev run <script> --profile local` for that instance; Ctrl+C stops it.

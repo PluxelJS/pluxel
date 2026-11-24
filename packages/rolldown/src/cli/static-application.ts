@@ -1,4 +1,5 @@
 import { applicationCatalogHash } from './application-hash'
+import { assertWorkbenchApplicationRuntime } from '@pluxel/host/internal/shared-runtime'
 import { pluginDefinitionIndexKey } from '@pluxel/core'
 import type { ConfigSourceSymbol } from '../rolldown/plugins/configSourcePlugin'
 import type { PluginSemanticsCollector } from '../rolldown/plugins/pluginSemanticsPlugin'
@@ -551,6 +552,12 @@ function staticApplicationEntryPlugin(options: {
 }): Plugin {
 	return {
 		name: 'pluxel-static-application-entry',
+		async buildStart() {
+			if (options.variant !== 'workbench') return
+			const host = await this.resolve('@pluxel/host/package.json', options.entry)
+			if (!host || host.external) this.error('[static-application] Cannot resolve the bundled Host')
+			assertWorkbenchApplicationRuntime(options.entry, host.id)
+		},
 		resolveId(id) {
 			if (id === STATIC_APPLICATION_BOOTSTRAP_ID) {
 				return RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID

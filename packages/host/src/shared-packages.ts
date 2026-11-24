@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
-import { createRequire, registerHooks } from 'node:module'
 import { dirname, isAbsolute, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { satisfies } from 'semver'
+export { resolveNativeImport } from './native-import'
 
 const hostDirectory = dirname(fileURLToPath(import.meta.url))
 const requiredPackages = ['@pluxel/core', '@pluxel/host'] as const
@@ -35,23 +35,6 @@ export function importPackageName(specifier: string): string {
 	return specifier.startsWith('@')
 		? specifier.split('/').slice(0, 2).join('/')
 		: specifier.split('/')[0]!
-}
-
-/** Node's own exports resolver, forced to ESM conditions, also supports import-only entries. */
-export function resolveNativeImport(root: string, specifier: string): string {
-	const parentURL = pathToFileURL(join(root, '__pluxel_resolve__.mjs')).href
-	const hook = registerHooks({
-		resolve(source, context, next) {
-			return source === specifier && context.parentURL === parentURL
-				? next(source, { ...context, conditions: ['node', 'import', 'default'] })
-				: next(source, context)
-		},
-	})
-	try {
-		return realpathSync(createRequire(parentURL).resolve(specifier))
-	} finally {
-		hook.deregister()
-	}
 }
 
 type InstalledPackageManifest = Readonly<{

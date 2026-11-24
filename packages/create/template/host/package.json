@@ -19,6 +19,7 @@
 		"@pluxel/services": "catalog:pluxel",
 		"@pluxel/workbench": "catalog:pluxel",
 		"@sinclair/typebox": "catalog:backend",
+		"capnweb": "catalog:backend",
 		"elysia": "catalog:backend",
 		"exact-mirror": "catalog:backend",
 		"react": "catalog:frontend",
