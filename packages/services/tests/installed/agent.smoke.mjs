@@ -168,7 +168,7 @@ async function main() {
 		await writeFile(join(author, 'app.ts'), application)
 		await writeFile(
 			join(author, 'build.mjs'),
-			`import {build} from 'vite-plus/pack';import {pluxel} from '@pluxel/rolldown';await build({cwd:process.cwd(),entry:'app.ts',outDir:'dist',config:false,dts:false,minify:true,sourcemap:false,outputOptions:{codeSplitting:false},plugins:[pluxel({delivery:'standalone',variant:'headless',managedDatabaseDrivers:[],lint:false})]});`,
+			`import {build} from 'vite-plus/pack';import {pluxel} from '@pluxel/rolldown';await build({cwd:process.cwd(),entry:'app.ts',outDir:'dist',config:false,dts:false,minify:true,sourcemap:false,outputOptions:{codeSplitting:false},plugins:[pluxel({delivery:'standalone',variant:'headless',lint:false})]});`,
 		)
 		await run(process.execPath, ['build.mjs'], author)
 		await cp(join(author, 'dist'), receiver, { recursive: true })

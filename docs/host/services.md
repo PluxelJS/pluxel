@@ -32,7 +32,7 @@ export default defineHostApplication(async (startup) => ({
 - **管理能力**：认证、运行状态、管理命令与管理 HTTP 入口；
 - **Workbench 管理后台**：提供位于 `/__pluxel/workbench` 的可视化插件管理与调试页面。
 
-Database 由应用[单独安装并选择驱动](./configuration.md#数据库服务后端选择)，不包含在预设中。
+Pg 由应用[单独安装并选择驱动](./configuration.md#数据库服务后端选择)，不包含在预设中。
 
 ### 服务选项
 

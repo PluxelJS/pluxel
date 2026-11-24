@@ -1,17 +1,13 @@
 import { pluxel, type PluxelApplicationBuildOptions } from '@pluxel/rolldown'
 
 pluxel({ delivery: 'modules', variant: 'headless' })
-pluxel({ managedDatabaseDrivers: [] })
-pluxel({ delivery: 'standalone', managedDatabaseDrivers: ['pglite', 'postgres'] })
-
-const drivers: readonly ('pglite' | 'postgres')[] = ['postgres']
-const options = { managedDatabaseDrivers: drivers } satisfies PluxelApplicationBuildOptions
+const options = {
+	residualDependencies: { packages: ['native-driver'] },
+} satisfies PluxelApplicationBuildOptions
 pluxel(options)
 
-// @ts-expect-error Native module delivery does not select bundled managed drivers.
-pluxel({ delivery: 'modules', managedDatabaseDrivers: [] })
-// @ts-expect-error Application-private drivers belong in residualDependencies.
-pluxel({ managedDatabaseDrivers: ['libsql'] })
+// @ts-expect-error The application selects its Pg driver through its service imports.
+pluxel({ managedDatabaseDrivers: [] })
 
 const moduleResiduals = { delivery: 'modules', residualDependencies: ['native-driver'] } as const
 // @ts-expect-error Modules keep external packages, without frozen residual copying.

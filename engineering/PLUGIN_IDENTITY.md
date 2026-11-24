@@ -140,7 +140,7 @@ buildPluginNodeLabels/formatPluginNodeStandaloneLabel 是 catalog/日志共用�
 | Management  | family 分类/排序                 | variants/target；preference revision            |
 | 入站 HTTP   | —                                | 最终 route contribution；application generation |
 | Artifact    | declaration/source/build input   | node binding；publication/fingerprint           |
-| Database    | schema/migration                 | node owner；schema/role/instance                |
+| Pg          | schema/migration                 | node owner；schema/role/instance                |
 | Vault       | —                                | node 默认 namespace；命名 namespace/blob        |
 | Cache/Rates | —                                | caller namespace；key/TTL                       |
 | 出站 HTTP   | —                                | 完整节点设置和活动摘要，客户端绑定运行代        |
@@ -160,7 +160,7 @@ Management 分类按 definition family，新 fork 继承，variants 不拆组。
 | Logger policy         | v3                                                          | structured node              |
 | Management groups     | v1                                                          | structured definition        |
 | Workbench workspace   | [原生 Worksplit snapshot](FRONTEND.md#原生工作区与文档路由) | 当前版本 Plugin route/target |
-| Database registry     | node reference                                              | exact reference              |
+| Pg registry           | node reference                                              | exact reference              |
 | Vault                 | 完整 canonical SHA-256                                      | exact node bytes             |
 | TinyBase snapshot     | pluxel.tinybase / formatVersion 1                           | exact node envelope          |
 | 出站 HTTP 策略        | Host 文档 v1                                                | 宿主默认与完整节点地址       |

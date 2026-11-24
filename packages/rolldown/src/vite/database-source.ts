@@ -1,17 +1,15 @@
 import { readFile } from 'node:fs/promises'
-import { resolve } from 'pathe'
+import { relative, resolve } from 'pathe'
 import type { Plugin } from 'vite'
 import {
 	findDatabasePackageRoot,
 	loadDatabaseArtifactForSource,
 	type DatabaseBuildArtifact,
 } from '../database/artifact.ts'
-import { extractDatabaseDeclarations } from '../database/declaration.ts'
+import { extractDatabaseDeclarations, mayDeclareDatabase } from '../database/declaration.ts'
 import { generateResetDatabaseArtifact } from '../database/reset-artifact.ts'
 import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils.ts'
 import { normalizeViteId } from '../rolldown/plugins/viteNormalizeId.ts'
-
-const DATABASE_CODE_HINT = /\bdefineDatabase\s*\(/
 
 export function databaseSourceVitePlugin(options: { root?: string } = {}): Plugin {
 	const root = resolve(options.root ?? process.cwd())
@@ -23,13 +21,15 @@ export function databaseSourceVitePlugin(options: { root?: string } = {}): Plugi
 			packages.clear()
 		},
 		async transform(code, rawId) {
-			if (!DATABASE_CODE_HINT.test(code)) return null
+			if (!mayDeclareDatabase(code)) return null
 			const id = normalizeViteId(rawId)
+			if (!/\.[cm]?[jt]sx?$/.test(id) || /\.d\.[cm]?ts$/.test(id)) return null
+			const packageRoot = findDatabasePackageRoot(id, root)
+			if (packageRoot && relative(packageRoot, id).startsWith('dist/')) return null
 			const ast = parseStandaloneWithLang(code, id)
 			if (!ast) this.error(`[database] failed to parse database declaration module: ${id}`)
 			const declarations = extractDatabaseDeclarations(ast, code, id)
 			if (declarations.length === 0) return null
-			const packageRoot = findDatabasePackageRoot(id, root)
 			if (!packageRoot) this.error(`[database] cannot locate package.json for ${id}`)
 			let existing = packages.get(packageRoot)
 			while (existing && existing !== id) {
@@ -89,7 +89,7 @@ async function declaresDatabase(id: string): Promise<boolean> {
 			return false
 		throw error
 	}
-	if (!DATABASE_CODE_HINT.test(code)) return false
+	if (!mayDeclareDatabase(code)) return false
 	const ast = parseStandaloneWithLang(code, id)
 	if (!ast) throw new Error(`[database] failed to parse database declaration module: ${id}`)
 	return extractDatabaseDeclarations(ast, code, id).length > 0

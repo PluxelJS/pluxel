@@ -13,32 +13,10 @@
 		"!**/*.map"
 	],
 	"type": "module",
-	"imports": {
-		"#pluxel/database-driver/pglite": {
-			"@pluxel/source": "./src/database/adapters/pglite.ts",
-			"default": "./dist/internal/database/pglite.mjs"
-		},
-		"#pluxel/database-driver/postgres": {
-			"@pluxel/source": "./src/database/adapters/postgres.ts",
-			"default": "./dist/internal/database/postgres.mjs"
-		}
-	},
 	"exports": {
 		"./commands": {
 			"@pluxel/source": "./src/commands.ts",
 			"default": "./dist/commands.mjs"
-		},
-		"./database": {
-			"@pluxel/source": "./src/database.ts",
-			"default": "./dist/database.mjs"
-		},
-		"./database/pglite": {
-			"@pluxel/source": "./src/database/pglite.ts",
-			"default": "./dist/database/pglite.mjs"
-		},
-		"./database/postgres": {
-			"@pluxel/source": "./src/database/postgres.ts",
-			"default": "./dist/database/postgres.mjs"
 		},
 		"./elysia": {
 			"@pluxel/source": "./src/elysia.ts",
@@ -120,6 +98,18 @@
 			"@pluxel/source": "./src/development/node.ts",
 			"default": "./dist/node/vite.mjs"
 		},
+		"./pg": {
+			"@pluxel/source": "./src/pg.ts",
+			"default": "./dist/pg.mjs"
+		},
+		"./pg/pglite": {
+			"@pluxel/source": "./src/database/pglite.ts",
+			"default": "./dist/pg/pglite.mjs"
+		},
+		"./pg/postgres": {
+			"@pluxel/source": "./src/database/postgres.ts",
+			"default": "./dist/pg/postgres.mjs"
+		},
 		"./plugins": {
 			"@pluxel/hmr": "./src/plugins.ts",
 			"default": "./dist/plugins.mjs"
@@ -148,15 +138,8 @@
 		}
 	},
 	"publishConfig": {
-		"imports": {
-			"#pluxel/database-driver/pglite": "./dist/internal/database/pglite.mjs",
-			"#pluxel/database-driver/postgres": "./dist/internal/database/postgres.mjs"
-		},
 		"exports": {
 			"./commands": "./dist/commands.mjs",
-			"./database": "./dist/database.mjs",
-			"./database/pglite": "./dist/database/pglite.mjs",
-			"./database/postgres": "./dist/database/postgres.mjs",
 			"./elysia": "./dist/elysia.mjs",
 			"./elysia/node": "./dist/elysia/node.mjs",
 			"./elysia/vite": "./dist/elysia/vite.mjs",
@@ -177,6 +160,9 @@
 			"./management/session": "./dist/management/session.mjs",
 			"./node": "./dist/node.mjs",
 			"./node/vite": "./dist/node/vite.mjs",
+			"./pg": "./dist/pg.mjs",
+			"./pg/pglite": "./dist/pg/pglite.mjs",
+			"./pg/postgres": "./dist/pg/postgres.mjs",
 			"./plugins": "./dist/plugins.mjs",
 			"./preset": "./dist/preset.mjs",
 			"./sources": "./dist/sources.mjs",

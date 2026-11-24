@@ -35,7 +35,6 @@ export default defineConfig({
 	plugins: [
 		pluxel({
 			variant: 'headless',
-			managedDatabaseDrivers: [],
 			residualDependencies: {
 				packages: ['@libsql/client'],
 			},
@@ -44,8 +43,7 @@ export default defineConfig({
 })
 ```
 
-- `managedDatabaseDrivers: []`：显式切断未使用的托管数据库驱动（如默认的 pglite 或 postgres），避免无用依赖进入最终打包产物。
-- `residualDependencies.packages`：确保通过原生 binding 加载的依赖及其辅助二进制库被完整追踪并拷贝至交付目录。
+standalone 构建从应用可达的导入追踪驱动。`@pluxel/services/pg/pglite` 带入 PGlite 及其 WASM 文件，`@pluxel/services/pg/postgres` 带入 `pg`。应用如果导入两个安装器，再根据运行时环境选择，交付目录会包含两个驱动。上例的 `residualDependencies.packages` 用于显式追踪其他需要随应用交付的原生包。
 
 ## CLI 工具核心命令
 

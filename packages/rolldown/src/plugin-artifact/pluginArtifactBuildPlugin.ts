@@ -14,7 +14,7 @@ import {
 	loadDatabaseArtifactForSource,
 	type DatabaseBuildArtifact,
 } from '../database/artifact.ts'
-import { extractDatabaseDeclarations } from '../database/declaration.ts'
+import { extractDatabaseDeclarations, mayDeclareDatabase } from '../database/declaration.ts'
 import { generateResetDatabaseArtifact } from '../database/reset-artifact.ts'
 import { resolveWithOxc } from '../resolver/oxc.ts'
 import { collectImportSpecifiers } from '../rolldown/plugins/importCollector.ts'
@@ -37,7 +37,6 @@ const PRODUCTION_ARTIFACT_CACHE_KEEP = 3
 /** Internal per-module facts emitted only for declarations lowered in this compilation. */
 export const NODE_MODULE_SOURCE_ARTIFACT_KEYS = 'pluxel:source-node-artifact-keys'
 const CODE_HINT = /\b(?:defineNodeModule\s*\(|defineWorkerTask\b)/
-const DATABASE_CODE_HINT = /\bdefineDatabase\s*\(/
 const NODE_MODULE_IMPORTS = new Map([
 	['@pluxel/services/node', 'defineNodeModule'],
 	['@pluxel/services/workers', 'defineWorkerTask'],
@@ -72,11 +71,13 @@ type NodeModuleDeclaration = Readonly<{
 	insertOffset: number
 }>
 
-type DatabasePackageArtifact = Readonly<{
+type DatabasePackage = Readonly<{
 	sourceFile: string
-	migrationsDir: string
-	artifact: DatabaseBuildArtifact
-	cleanup?: () => Promise<void>
+	loaded: Promise<{
+		migrationsDir: string
+		artifact: DatabaseBuildArtifact
+		cleanup?: () => Promise<void>
+	}>
 }>
 
 export type PluginArtifactBuildPluginOptions = {
@@ -123,7 +124,7 @@ export function pluginArtifactBuildPlugin(
 ): ViteCompatPlugin {
 	const root = resolve(options.root ?? process.cwd())
 	const nodeDeclarations = new Map<string, NodeModuleDeclaration>()
-	const databasePackages = new Map<string, DatabasePackageArtifact>()
+	const databasePackages = new Map<string, DatabasePackage>()
 	const includePatterns = normalizePatterns(options.include, [
 		'**/*.ts',
 		'**/*.tsx',
@@ -156,7 +157,7 @@ export function pluginArtifactBuildPlugin(
 				id: { include: includePatterns, exclude: excludePatterns },
 			},
 			async handler(code, rawId) {
-				if (!CODE_HINT.test(code) && !DATABASE_CODE_HINT.test(code)) {
+				if (!CODE_HINT.test(code) && !mayDeclareDatabase(code)) {
 					return { meta: { [NODE_MODULE_SOURCE_ARTIFACT_KEYS]: [] } }
 				}
 				const id = normalizeViteId(rawId)
@@ -169,30 +170,23 @@ export function pluginArtifactBuildPlugin(
 					const declaration = databaseDeclarations[0]!
 					const packageRoot = findDatabasePackageRoot(id, root)
 					if (!packageRoot) this.error(`[database] cannot locate package.json for ${id}`)
-					let loaded = databasePackages.get(packageRoot)
-					if (loaded && loaded.sourceFile !== id) {
+					let owner = databasePackages.get(packageRoot)
+					if (owner && owner.sourceFile !== id) {
 						this.error(
-							`[database] package ${packageRoot} declares databases in both ${loaded.sourceFile} and ${id}`,
+							`[database] package ${packageRoot} declares databases in both ${owner.sourceFile} and ${id}`,
 						)
 					}
-					if (!loaded) {
-						if (declaration.evolution === 'reset-on-schema-change') {
-							const generated = await generateResetDatabaseArtifact({
-								root: packageRoot,
-								schema: id,
-							})
-							loaded = {
-								sourceFile: id,
-								migrationsDir: generated.migrationsDir,
-								artifact: generated.artifact,
-								cleanup: generated.cleanup,
-							}
-						} else {
-							const checked = await loadDatabaseArtifactForSource(id, root)
-							loaded = { sourceFile: id, ...checked }
+					if (!owner) {
+						owner = {
+							sourceFile: id,
+							loaded:
+								declaration.evolution === 'reset-on-schema-change'
+									? generateResetDatabaseArtifact({ root: packageRoot, schema: id })
+									: loadDatabaseArtifactForSource(id, root),
 						}
-						databasePackages.set(packageRoot, loaded)
+						databasePackages.set(packageRoot, owner)
 					}
+					const loaded = await owner.loaded
 					if (loaded.artifact.evolution !== declaration.evolution) {
 						this.error(
 							`[database] ${id} declares evolution "${declaration.evolution}" but its artifact uses "${loaded.artifact.evolution}"`,
@@ -220,7 +214,7 @@ export function pluginArtifactBuildPlugin(
 						offset: item.insertOffset,
 					})),
 					...databaseDeclarations.map((item) => ({
-						value: injectedArgument(code, item.insertOffset, databaseArtifact!),
+						value: `, ${databaseArtifact!}`,
 						offset: item.insertOffset,
 					})),
 				].sort((a, b) => b.offset - a.offset)
@@ -267,6 +261,7 @@ export function pluginArtifactBuildPlugin(
 						),
 					)
 				: []
+			const database = await databasePackages.get(root)?.loaded
 			await Promise.all([
 				...producerCompilations
 					.toSorted((left, right) => left.plan.producer.localeCompare(right.plan.producer))
@@ -274,9 +269,7 @@ export function pluginArtifactBuildPlugin(
 				...selectedNodeDeclarations
 					.sort((a, b) => a.artifactKey.localeCompare(b.artifactKey))
 					.map((declaration) => buildProductionNodeModule(root, declaration, options)),
-				...(databasePackages.get(root)
-					? [copyDatabaseMigrations(databasePackages.get(root)!.migrationsDir, root, options)]
-					: []),
+				...(database ? [copyDatabaseMigrations(database.migrationsDir, root, options)] : []),
 			])
 			const artifactRoot = resolve(root, options.buildDir ?? 'dist', 'artifacts/node')
 			await mkdir(artifactRoot, { recursive: true })
@@ -585,10 +578,15 @@ async function copyDatabaseMigrations(
 }
 
 async function cleanupGeneratedDatabaseArtifacts(
-	packages: ReadonlyMap<string, DatabasePackageArtifact>,
+	packages: ReadonlyMap<string, DatabasePackage>,
 ): Promise<void> {
 	await Promise.all(
-		[...packages.values()].map((artifact) => artifact.cleanup?.() ?? Promise.resolve()),
+		[...packages.values()].map(({ loaded }) =>
+			loaded.then(
+				(artifact) => artifact.cleanup?.(),
+				(): undefined => undefined,
+			),
+		),
 	)
 }
 

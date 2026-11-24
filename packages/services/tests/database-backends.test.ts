@@ -1,6 +1,9 @@
 import { PGlite, type Extension, types } from '@electric-sql/pglite'
-import { pglite } from '@pluxel/services/database/pglite'
-import { postgres } from '@pluxel/services/database/postgres'
+import { pglite } from '@pluxel/services/pg/pglite'
+import { postgres } from '@pluxel/services/pg/postgres'
+import { defineDatabase } from '../src/database/definition'
+import { createPgliteDatabaseAdapter } from '../src/database/adapters/pglite'
+import { createPostgresDatabaseAdapter } from '../src/database/adapters/postgres'
 import { sql } from 'drizzle-orm'
 import { Pool, type PoolConfig } from 'pg'
 import { describe, expect, it, vi } from 'vitest'
@@ -27,7 +30,7 @@ describe('native database backends', () => {
 			maxLifetimeSeconds: 90,
 			allowExitOnIdle: true,
 		}
-		const adapter = await postgres(config)(vi.fn())
+		const adapter = await createPostgresDatabaseAdapter(config, vi.fn())
 		const pool = Reflect.get(adapter.db, '$client') as Pool
 		try {
 			expect(pool).toBeInstanceOf(Pool)
@@ -45,7 +48,7 @@ describe('native database backends', () => {
 	})
 
 	it('retains native pg defaults when the application uses PG environment configuration', async () => {
-		const adapter = await postgres()(vi.fn())
+		const adapter = await createPostgresDatabaseAdapter({}, vi.fn())
 		try {
 			const pool = Reflect.get(adapter.db, '$client') as Pool
 			expect(adapter.concurrency).toBe(pool.options.max)
@@ -62,8 +65,8 @@ describe('native database backends', () => {
 		pool.on('error', applicationError)
 		const firstError = vi.fn()
 		const secondError = vi.fn()
-		const first = await postgres(pool)(firstError)
-		const second = await postgres(pool)(secondError)
+		const first = await createPostgresDatabaseAdapter(pool, firstError)
+		const second = await createPostgresDatabaseAdapter(pool, secondError)
 		try {
 			expect(Reflect.get(first.db, '$client')).toBe(pool)
 			expect(first.concurrency).toBe(2)
@@ -90,7 +93,7 @@ describe('native database backends', () => {
 		const pool = new NativePool({ max: 2 })
 		try {
 			expect(pool).not.toBeInstanceOf(Pool)
-			const adapter = await postgres(pool)(vi.fn())
+			const adapter = await createPostgresDatabaseAdapter(pool, vi.fn())
 			expect(Reflect.get(adapter.db, '$client')).toBe(pool)
 			expect(adapter.concurrency).toBe(2)
 			await adapter.close()
@@ -106,12 +109,12 @@ describe('native database backends', () => {
 			namespaceObj: { native: true },
 			close: extensionClose,
 		}))
-		const backend = pglite({
+		const config = {
 			extensions: { schema: { name: 'native-options', setup } },
 			parsers: { [types.INT4]: (value: string) => Number(value) + 1 },
-		})
+		}
 		expect(setup).not.toHaveBeenCalled()
-		const adapter = await backend(vi.fn())
+		const adapter = await createPgliteDatabaseAdapter(config)
 		const client = Reflect.get(adapter.db, '$client') as PGlite
 		try {
 			expect(adapter.concurrency).toBe(1)
@@ -130,7 +133,7 @@ describe('native database backends', () => {
 	it('borrows a native PGlite instance without closing it', async () => {
 		const client = await PGlite.create()
 		try {
-			const adapter = await pglite(client)(vi.fn())
+			const adapter = await createPgliteDatabaseAdapter(client)
 			expect(Reflect.get(adapter.db, '$client')).toBe(client)
 			await adapter.close()
 			expect(client.closed).toBe(false)
@@ -150,5 +153,15 @@ describe('native database backends', () => {
 		(max) => {
 			expect(() => postgres({ max })).toThrow('pg max must be a positive integer')
 		},
+	)
+})
+
+it('validates extension declarations before opening the service', () => {
+	expect(() =>
+		// @ts-expect-error JavaScript callers may provide a scalar instead of an array.
+		defineDatabase({ schema: {}, requirements: { extensions: 'pgcrypto' } }),
+	).toThrow('requirements.extensions must be an array')
+	expect(() => defineDatabase({ schema: {}, requirements: { extensions: ['pg crypto'] } })).toThrow(
+		'invalid PostgreSQL extension name',
 	)
 })

@@ -57,7 +57,7 @@ Host internal `PluginRecentUpdateTracker` 保存 route 的进程内历史，Host
 
 已提交图与失败候选恢复依赖分开。Vite 解析记录 importer/specifier，失败后观察已解析新文件、缺失候选、相关 manifest；忽略安装目录和 root 外缺文件用仅限候选的补充 watcher。扫描根合并 containment，精确路径过滤保持；提交后释放补充观察。
 
-动态 entry 在 import 前加入恢复集合。已有 active Host 时，语法修复只失效受影响模块。首次求值失败后的重试重新求值已观察的模块，确保此前已求值的其他入口也重新生成随失败候选回滚的语义事实。关闭停止接纳并排空错误回调。Database replacement 的 active instance/lineage 规则由 [Database](DATABASE.md#schema-evolution)拥有。
+动态 entry 在 import 前加入恢复集合。已有 active Host 时，语法修复只失效受影响模块。首次求值失败后的重试重新求值已观察的模块，确保此前已求值的其他入口也重新生成随失败候选回滚的语义事实。关闭停止接纳并排空错误回调。Pg replacement 的 active instance/lineage 规则由 [Pg](DATABASE.md#schema-evolution)拥有。
 
 ## Workbench candidate inputs
 

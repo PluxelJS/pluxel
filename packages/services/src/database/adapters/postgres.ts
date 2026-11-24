@@ -13,7 +13,7 @@ export async function createPostgresDatabaseAdapter(
 	try {
 		const concurrency = pool.options.max
 		if (!Number.isInteger(concurrency) || concurrency <= 0)
-			throw new TypeError('[pluxel/database] pg max must be a positive integer')
+			throw new TypeError('[pluxel/pg] pg max must be a positive integer')
 		detachErrorHandler = attachPostgresPoolErrorHandler(pool, onPoolError)
 		return {
 			driver: 'postgres',

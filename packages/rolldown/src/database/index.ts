@@ -12,7 +12,7 @@ import {
 	type DatabaseEvolutionArtifact,
 	type DatabaseMigrationManifest,
 } from './artifact.ts'
-import { extractDatabaseDeclarations } from './declaration.ts'
+import { extractDatabaseDeclarations, mayDeclareDatabase } from './declaration.ts'
 import { runDrizzleKit } from './drizzle-kit.ts'
 
 export type DatabaseToolOptions = Readonly<{
@@ -154,9 +154,10 @@ async function discoverDatabaseSchema(root: string): Promise<string> {
 			}
 			if (!/\.[cm]?[jt]sx?$/.test(entry.name) || entry.name.endsWith('.d.ts')) continue
 			const source = await readFile(path, 'utf8')
-			if (source.includes('@pluxel/services/database') && /\bdefineDatabase\s*\(/.test(source)) {
-				candidates.push(path)
-			}
+			if (!mayDeclareDatabase(source)) continue
+			const ast = parseStandaloneWithLang(source, path)
+			if (!ast) throw new Error(`[database] failed to parse database declaration module: ${path}`)
+			if (extractDatabaseDeclarations(ast, source, path).length > 0) candidates.push(path)
 		}
 	}
 	if (candidates.length !== 1) {

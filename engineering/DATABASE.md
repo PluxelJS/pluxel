@@ -1,12 +1,12 @@
 # 数据库：owner handle 与数据换代
 
-`@pluxel/services/database` 为 Plugin 提供 owner 隔离的 PostgreSQL 数据库能力，查询使用原生 Drizzle。应用显式安装；`servicesPreset()` 不包含它。配置、偏好和有界状态使用 [TinyBase](TINYBASE.md)。公开调用见[数据库指南](../docs/plugin-development/database.md)。
+`@pluxel/services/pg` 为 Plugin 提供 owner 隔离的 PostgreSQL 数据库能力，查询使用原生 Drizzle。应用显式安装；`servicesPreset()` 不包含它。配置、偏好和有界状态使用 [TinyBase](TINYBASE.md)。公开调用见[数据库指南](../docs/plugin-development/database.md)。
 
 ## Author boundary
 
 Plugin 用 `pgTable()` 定义 schema，再用 `defineDatabase({ schema })` 声明 evolution policy 和 migration。definition 不携带 owner；每个 Plugin 最多使用一个 definition。
 
-`init()` 中的 `ctx.service(Database).use(definition)` 绑定当前 Context owner、准备 migration，返回仅含 `read(callback)` 与 `transaction(callback)` 的 handle。共享 definition 只共享结构。作者不取得 driver、pool、长期 session、physical schema 或独立 commit API。
+`init()` 中的 `ctx.service(Pg).use(definition)` 绑定当前 Context owner、准备 migration，返回仅含 `read(callback)` 与 `transaction(callback)` 的 handle。共享 definition 只共享结构。作者不取得 driver、pool、长期 session、physical schema 或独立 commit API。
 
 每个 owner 的 immutable database instance 拥有独立 physical schema 和 NOLOGIN role，registry 只标记一个 active instance。handle 固定绑定取得时的 instance；每次 operation 在 transaction 内确认它仍 active，并设置 role、`search_path` 和 statement/lock/idle timeout。`read()` 同时设置 read-only。这些限制防止误接线；Plugin 仍与 Host 同进程。
 
@@ -14,9 +14,9 @@ Plugin 用 `pgTable()` 定义 schema，再用 `defineDatabase({ schema })` 声�
 
 ## Backend ownership
 
-`database({ backend })` 接收 lazy adapter factory。开发和测试使用 `@pluxel/services/database/pglite`，部署使用 `/database/postgres`；通用入口不加载 driver，两个工厂互不引用，Services 只声明 optional peers。未安装能力时，`ctx.service(Database)` 抛出标准缺失错误。
+应用从 `@pluxel/services/pg/pglite` 或 `@pluxel/services/pg/postgres` 导入安装器，直接放进 Host 的 `services`。两者都提供同一个 owner 服务 `Pg`，同时安装会触发 Host 的 `DUPLICATE_SERVICE`。插件入口 `@pluxel/services/pg` 只声明服务和 schema API。两个安装器各自按需加载自己的驱动，Services 将两个原生驱动声明为 optional peer。
 
-内置工厂保留原生 `pg.PoolConfig | Pool`、`PGliteOptions | PGlite`。配置创建的资源归 Host，传入实例仅借用；adapter 关闭会移除自己安装的 PostgreSQL error listener，保留借用实例和其他 listener。借用资源须存活到所有 Host 排空，期间保持 pool 并发上限不变。自定义 `DatabaseBackend` / `DatabaseAdapter` 沿用同一 owner、migration 和 drain 流程，由 factory 明确 adapter 的关闭语义。
+`postgres()` 接受原生 `pg.PoolConfig | Pool`，`pglite()` 接受 `PGliteOptions | PGlite`。配置创建的资源归 Host，传入实例仅借用。adapter 关闭时移除自己安装的 PostgreSQL error listener。借用资源须存活到所有 Host 排空，期间保持 pool 并发上限不变。
 
 没有 Plugin 调用 `use()` 时，不初始化 driver、migration 或 outbox。PGlite 为 root-scoped 单实例，可使用 `memory://`；持久目录支持正常关闭后的开发重启。PostgreSQL 使用有界共享 pool，scheduler 并发读取实际 `pool.options.max`，PGlite 固定为 1。原生参数示例见 [Host 配置](../docs/host/configuration.md#选择-native-postgresql-或-pglite)。
 
@@ -55,9 +55,11 @@ scheduler 按 owner 公平轮询，限制每 owner pending 数和排队时间。
 
 acquire 与缓存 handle 的 read/transaction 都进入 Core root/owner invocation lease；Host 排空操作后才关闭 adapter。
 
+并发的首次 acquisition 共用 driver 和元数据初始化。初始化失败会把错误交回调用方，下一次显式 `use()` 重新执行失败阶段。已经打开的 adapter 继续由 Host 持有。
+
 ## Host composition 与实现归属
 
-`@pluxel/services/database` 拥有 definition、Database 服务声明、owner handle、scheduler、migration/outbox coordinator；`database({ backend })` 安装 owner 服务。应用负责选择并安装 driver。schema artifact 编译归 Rolldown，见 [Toolchain](TOOLCHAIN.md#database-migrations)。
+`@pluxel/services/pg` 拥有 definition、`Pg` 服务声明和 owner handle。Services 内部协调调度、迁移和 outbox。应用通过所选驱动的入口安装服务。schema artifact 编译归 Rolldown，见 [Toolchain](TOOLCHAIN.md#database-migrations)。
 
 ## 实现与验证
 

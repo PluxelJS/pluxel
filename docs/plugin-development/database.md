@@ -3,9 +3,7 @@ title: 关系型数据库与数据管理
 description: 使用 Drizzle ORM 定义插件专属数据表，支持托管数据库隔离与迁移演进。
 ---
 
-当插件需要复杂的 SQL 查询、唯一性约束、外键或关系型事务时，可使用 `@pluxel/services/database` 提供的数据库扩展服务。Pluxel 统一基于 PostgreSQL 方言与 [Drizzle ORM](https://orm.drizzle.team/) 组织表结构，由宿主决定底层运行于正式的 PostgreSQL 还是轻量的内存/嵌入式 PGlite。
-
-Host 须[安装 `database({ backend })` 并选择驱动](../host/configuration.md#数据库服务后端选择)；`servicesPreset()` 不包含 Database。
+插件通过 `ctx.service(Pg)` 取得按插件隔离的 PostgreSQL 数据库。表、查询和事务使用原生 Drizzle，Host 负责打开连接、应用迁移和关闭资源。应用在 `services` 中选择 `pglite()` 或 `postgres()`。[Host 装配示例](../host/configuration.md#数据库服务后端选择)
 
 ## 两种数据管理模式
 
@@ -25,7 +23,7 @@ Host 须[安装 `database({ backend })` 并选择驱动](../host/configuration.m
 ```ts twoslash
 // @filename: database.ts
 import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
-import { defineDatabase, Database } from '@pluxel/services/database'
+import { defineDatabase } from '@pluxel/services/pg'
 
 export const notes = pgTable(
 	'notes',
@@ -42,7 +40,7 @@ export const NotesDatabase = defineDatabase({
 })
 
 // @filename: NotesPlugin.ts
-import { Database, type PluginDatabaseHandle } from '@pluxel/services/database'
+import { Pg, type PluginDatabaseHandle } from '@pluxel/services/pg'
 import { BasePlugin, Plugin } from '@pluxel/core'
 import { notes, NotesDatabase } from './database.ts'
 
@@ -51,8 +49,7 @@ export class NotesPlugin extends BasePlugin {
 	private database!: PluginDatabaseHandle<typeof NotesDatabase>
 
 	protected override async init() {
-		// 获取已就绪的数据库句柄
-		this.database = await this.ctx.service(Database).use(NotesDatabase)
+		this.database = await this.ctx.service(Pg).use(NotesDatabase)
 	}
 
 	listNotes() {
@@ -67,6 +64,8 @@ export class NotesPlugin extends BasePlugin {
 	}
 }
 ```
+
+同一插件实例可以多次 `use(NotesDatabase)`，成功后取得同一份句柄。首次连接或初始化失败时，`use()` 会拒绝。修复后可以在同一 Host 再次调用，也可以重新启动该插件。
 
 ### 2. 读写与事务规范
 

@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import type { UserConfig } from 'vite-plus/pack'
 import { pluxel } from '@pluxel/rolldown'
+import { createDiskFixture } from '@pluxel/test/fixtures'
 
 describe('tsdown application plugin', () => {
 	it('preserves ordinary plugin order and native output preferences while installing the freezer once', async () => {
@@ -56,50 +57,46 @@ describe('tsdown application plugin', () => {
 		)
 	})
 
-	it('captures managed driver selection through the public application plugin', async () => {
-		const drivers: ('pglite' | 'postgres')[] = []
-		const plugin = pluxel({ variant: 'headless', managedDatabaseDrivers: drivers, lint: false })
-		drivers.push('pglite')
-		const result = (await plugin.tsdownConfig!(
-			{ entry: './app.ts', plugins: [plugin] },
-			{},
-		)) as UserConfig
-		const [generated] = (await result.plugins) as Array<
-			Array<{
-				name: string
-				resolveId?: (
-					this: object,
-					id: string,
-					importer: string,
-					options: object,
-				) => Promise<unknown>
-			}>
-		>
-		const externals = generated!.find((entry) => entry?.name === 'pluxel:nf3-externals')!
-		for (const driver of ['pglite', 'postgres']) {
-			await expect(
-				externals.resolveId!.call({}, `#pluxel/database-driver/${driver}`, '/app/app.ts', {}),
-			).resolves.toBe(`\0pluxel:omitted-managed-database:${driver}`)
-		}
-	})
-
-	it('rejects invalid managed driver selections and modules-only misuse before building', () => {
-		for (const managedDatabaseDrivers of [null, 'pglite']) {
-			expect(() => Reflect.apply(pluxel, undefined, [{ managedDatabaseDrivers }])).toThrow(
-				'managedDatabaseDrivers must be an array',
-			)
-		}
-		expect(() =>
-			Reflect.apply(pluxel, undefined, [{ managedDatabaseDrivers: ['sqlite'] }]),
-		).toThrow('managedDatabaseDrivers[0] must be "pglite" or "postgres"')
-		const moduleSelections: Array<readonly string[] | undefined> = [[], undefined]
-		for (const managedDatabaseDrivers of moduleSelections) {
-			expect(() =>
-				Reflect.apply(pluxel, undefined, [{ delivery: 'modules', managedDatabaseDrivers }]),
-			).toThrow('modules includes standalone-only managedDatabaseDrivers')
-		}
+	it('rejects a separate database driver selection at build time', () => {
+		expect(() => Reflect.apply(pluxel, undefined, [{ managedDatabaseDrivers: [] }])).toThrow(
+			'unsupported managedDatabaseDrivers',
+		)
 	})
 })
+
+it.each([
+	['pglite', '@electric-sql/pglite', 'pg'],
+	['postgres', 'pg', '@electric-sql/pglite'],
+])(
+	'standalone traces only the native driver imported by %s()',
+	async (installer, selected, other) => {
+		await using fixture = await createDiskFixture({
+			'package.json': JSON.stringify({ name: 'pg-service-delivery', type: 'module' }),
+			'app.ts': `import { defineHostApplication } from '@pluxel/host'
+import { ${installer} } from '@pluxel/services/pg/${installer}'
+export default defineHostApplication(() => ({ services: [${installer}()] }))`,
+			'build.mjs': `import { build } from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))}
+import { pluxel } from '@pluxel/rolldown'
+await build({ entry: 'app.ts', plugins: [pluxel({ variant: 'headless', lint: false })], config: false })`,
+		})
+		const scope = join(fixture.path, 'node_modules/@pluxel')
+		await mkdir(scope, { recursive: true })
+		for (const name of ['core', 'host', 'services', 'rolldown']) {
+			await symlink(
+				fileURLToPath(new URL(`../../${name}/`, import.meta.url)),
+				join(scope, name),
+				'dir',
+			)
+		}
+		await promisify(execFile)(process.execPath, ['build.mjs'], { cwd: fixture.path })
+		const deployment = JSON.parse(
+			await readFile(join(fixture.path, 'dist/pluxel-deployment.json'), 'utf8'),
+		)
+		expect(deployment.residualDependencies.packages).toContain(selected)
+		expect(deployment.residualDependencies.packages).not.toContain(other)
+	},
+	60_000,
+)
 
 it('freezes a Host-only application without evaluating its async factory and runs fresh configuration outside the workspace', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-host-application-'))
@@ -293,7 +290,7 @@ export default defineHostApplication(() => ({
 			`
 import { build } from ${JSON.stringify(import.meta.resolve('vite-plus/pack'))};
 import { pluxel } from ${JSON.stringify(new URL('../src/application.ts', import.meta.url).href)};
-await build({cwd:${JSON.stringify(root)},entry:'app.ts',plugins:[pluxel({variant:'headless',managedDatabaseDrivers:[],lint:false})],config:false});`,
+await build({cwd:${JSON.stringify(root)},entry:'app.ts',plugins:[pluxel({variant:'headless',lint:false})],config:false});`,
 		)
 		await promisify(execFile)(process.execPath, ['--import', import.meta.resolve('tsx'), script], {
 			timeout: 30000,

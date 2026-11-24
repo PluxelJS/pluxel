@@ -28,7 +28,7 @@ Core 直接装配时立即绑定执行配置；Host 的内部延迟绑定保持 
 
 service access 区分 `all`、真实 Plugin/Part `owner` 和真实 `root`。`ctx.service(Service)` 保留 missing/access/construction 错误。`ctx.root` 是受信任代码可持有的真实根引用；内部 graph/config/storage authority 留在 framework 入口，Core 固定能力通过 Context 属性提供，见 [Core](CORE.md#context-service-kernel)。
 
-`servicesPreset(startup, options)` 是唯一官方应用组合，安装 HTTP、Commands、Node artifacts、Workers、Management、管理命令及可选 Workbench。`workbench: false` 保留管理能力；定制宿主与隔离测试直接组合单项安装器。Core 的 `coreConfig.logtape`、`coreConfig.zenfs` 和 `coreConfig.vault` 分别选择日志、文件与凭据配置。Database 单独安装，见 [Database](DATABASE.md)。未选择的服务不创建 backend、watcher、compiler、route 或状态。
+`servicesPreset(startup, options)` 是唯一官方应用组合，安装 HTTP、Commands、Node artifacts、Workers、Management、管理命令及可选 Workbench。`workbench: false` 保留管理能力；定制宿主与隔离测试直接组合单项安装器。Core 的 `coreConfig.logtape`、`coreConfig.zenfs` 和 `coreConfig.vault` 分别选择日志、文件与凭据配置。Pg 单独安装，见 [Pg](DATABASE.md)。未选择的服务不创建 backend、watcher、compiler、route 或状态。
 
 部署清单决定 Node 制品 owner：standalone 使用应用固定目录；modules 保留已加载模块 owner，Node 服务按各 owner inventory 读取，不能用应用目录覆盖外部 worker。详见[官方默认组合](../docs/host/services.md#官方服务预设servicespreset)。
 

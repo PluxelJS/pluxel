@@ -9,64 +9,11 @@ import { createStaticApplicationConfig as application } from '../src/cli/static-
 vi.mock('nf3', () => ({ traceNodeModules: vi.fn() }))
 
 describe('application', () => {
-	it('lowers disabled managed database drivers to explicit absent modules', async () => {
-		vi.mocked(traceNodeModules).mockClear()
-		const config = application({
-			cwd: '/tmp/pluxel-static-private-database',
-			entry: './src/pluxel.static.ts',
-			variant: 'headless',
-			managedDatabaseDrivers: [],
-			lint: false,
-		})
-		const plugin = (
-			config.plugins as Array<{
-				name?: string
-				resolveId?: unknown
-				load?: unknown
-				writeBundle?: unknown
-			}>
-		).find((candidate) => candidate?.name === 'pluxel:nf3-externals')
-		const resolveId = plugin?.resolveId as
-			| ((
-					this: { resolve: ReturnType<typeof vi.fn> },
-					id: string,
-					importer: string,
-					options: object,
-			  ) => Promise<unknown>)
-			| undefined
-		const load = plugin?.load as ((id: string) => string | null) | undefined
-		const writeBundle = (
-			plugin?.writeBundle as { handler?: (this: object) => Promise<void> } | undefined
-		)?.handler
-		const resolve = vi.fn()
-
-		for (const [driver, entry, exportName] of [
-			['pglite', '#pluxel/database-driver/pglite', 'createPgliteDatabaseAdapter'],
-			['postgres', '#pluxel/database-driver/postgres', 'createPostgresDatabaseAdapter'],
-		] as const) {
-			const resolved = await resolveId?.call(
-				{ resolve },
-				entry,
-				'/tmp/pluxel-static-private-database/src/app.ts',
-				{},
-			)
-			expect(resolved).toBe(`\0pluxel:omitted-managed-database:${driver}`)
-			const source = load?.(String(resolved))
-			expect(source).toContain(`export async function ${exportName}()`)
-			expect(source).toContain(`managed database driver \\"${driver}\\" is not included`)
-		}
-		await writeBundle?.call({})
-
-		expect(resolve).not.toHaveBeenCalled()
-		expect(traceNodeModules).not.toHaveBeenCalled()
-	})
-
-	it('still traces application-private driver imports when managed drivers are omitted', async () => {
+	it.each(['pg', '@electric-sql/pglite'])('traces the imported driver %s', async (driver) => {
 		vi.mocked(traceNodeModules).mockClear()
 		const config = application({
 			cwd: '/tmp/pluxel-static-private-postgres',
 			entry: './src/pluxel.static.ts',
-			managedDatabaseDrivers: [],
 			lint: false,
 		})
 		const plugin = (
@@ -87,12 +34,12 @@ describe('application', () => {
 		const writeBundle = (
 			plugin?.writeBundle as { handler?: (this: object) => Promise<void> } | undefined
 		)?.handler
-		const entry = '/tmp/node_modules/pg/esm/index.mjs'
+		const entry = `/tmp/node_modules/${driver}/index.mjs`
 		const resolve = vi.fn(async () => ({ id: entry }))
 
 		await expect(
-			resolveId?.call({ resolve }, 'pg', '/tmp/pluxel-static-private-postgres/src/app.ts', {}),
-		).resolves.toMatchObject({ id: 'pg', external: true })
+			resolveId?.call({ resolve }, driver, '/tmp/pluxel-static-private-postgres/src/app.ts', {}),
+		).resolves.toMatchObject({ id: driver, external: true })
 		await writeBundle?.call({})
 
 		expect(traceNodeModules).toHaveBeenCalledWith(

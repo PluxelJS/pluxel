@@ -39,7 +39,7 @@ OXC 对未安装包/相对文件返回正常未命中；已发现物理包时，
 
 `pluxel database generate` 对当前包唯一 defineDatabase schema 调 Drizzle Kit，生成 PostgreSQL SQL/meta 与带 immutable lineage 的 checksum manifest。check 验证 history、manifest rewrite，并在临时副本重新 generate 检测 schema drift。migrations 默认仅追加；显式放弃旧 lineage 使用 rebase --lineage，在 staging 验证后原子替换整个 drizzle 目录。
 
-共享 compiler 识别从 `@pluxel/services/database` 导入的 module-level defineDatabase。evolution 在 direct object 中用 literal；默认 migrations 读取最近包的 drizzle artifact。reset-on-schema-change 不使用 checked-in history，拒绝 generate/check/rebase；compiler 在 .pluxel staging 从空历史生成 baseline，以去除随机 identity 的规范 Drizzle snapshot 计算稳定 lineage，随后移除部署不需的 meta。
+共享 compiler 识别从 `@pluxel/services/pg` 导入的 module-level defineDatabase。evolution 在 direct object 中用 literal；默认 migrations 读取最近包的 drizzle artifact。reset-on-schema-change 不使用 checked-in history，拒绝 generate/check/rebase；compiler 在 .pluxel staging 从空历史生成 baseline，以去除随机 identity 的规范 Drizzle snapshot 计算稳定 lineage，随后移除部署不需的 meta。
 
 两种策略都向 server output 注入 artifact，独立包发布 SQL/manifest 到 dist/database/migrations。Vite server 使用相同规则，transform 注入后立即清理 reset staging；schema HMR 得到新 lineage。browser graph 不运行生成器、不包含 schema/Drizzle/SQL。
 

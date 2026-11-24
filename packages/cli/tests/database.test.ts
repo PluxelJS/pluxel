@@ -20,10 +20,12 @@ type MigrationManifest = {
 }
 
 it('generates, checks, and rebases managed SQL through the public CLI and toolchain', async () => {
-	const schema = (extra = '') => `import { defineDatabase } from '@pluxel/services/database'
+	const schema = (
+		extra = '',
+	) => `import { defineDatabase as defineSchema } from '@pluxel/services/pg'
 import { pgTable, text } from 'drizzle-orm/pg-core'
 export const items = pgTable('items', { id: text('id').primaryKey()${extra} })
-export const database = defineDatabase({ schema: { items } })
+export const database = defineSchema({ schema: { items } })
 `
 	await using fixture = await createDiskFixture({
 		'package.json': JSON.stringify({
@@ -38,6 +40,7 @@ export const database = defineDatabase({ schema: { items } })
 		}),
 		'node_modules/@pluxel/cli/bin/pluxel.mjs': await readFile(bin, 'utf8'),
 		'src/database.ts': schema(),
+		'src/example.ts': `export const example = "import { defineDatabase } from '@pluxel/services/pg'; defineDatabase({ schema: {} })"`,
 	})
 	const packages = resolve(fixture.path, 'node_modules/@pluxel')
 	await mkdir(packages, { recursive: true })

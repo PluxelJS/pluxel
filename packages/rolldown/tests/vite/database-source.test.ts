@@ -6,8 +6,8 @@ import { createServer } from 'vite'
 import { expect, it } from 'vitest'
 import { databaseSourceVitePlugin } from '../../src/vite/database-source.ts'
 
-const declaration = `import { defineDatabase } from '@pluxel/services/database'
-export const database = defineDatabase({ schema: {} })
+const declaration = `import { defineDatabase as defineSchema } from '@pluxel/services/pg'
+export const database = defineSchema({ schema: {} }, /* trailing comma */)
 `
 const sql = 'CREATE TABLE items (id text PRIMARY KEY);'
 
@@ -17,9 +17,9 @@ async function sourceFixture(files: Record<string, string>) {
 		'node_modules/@pluxel/services/package.json': JSON.stringify({
 			name: '@pluxel/services',
 			type: 'module',
-			exports: { './database': './database.js' },
+			exports: { './pg': './pg.js' },
 		}),
-		'node_modules/@pluxel/services/database.js': 'export const defineDatabase = (input) => input',
+		'node_modules/@pluxel/services/pg.js': 'export const defineDatabase = (input) => input',
 		'drizzle/0000_initial.sql': sql,
 		'drizzle/pluxel-migrations.json': JSON.stringify({
 			version: 2,
@@ -45,6 +45,20 @@ async function sourceServer(root: string) {
 		plugins: [databaseSourceVitePlugin({ root })],
 	})
 }
+
+it('uses a published plugin with an embedded migration artifact as delivered', async () => {
+	await using fixture = await sourceFixture({
+		'dist/index.mjs': `import { defineDatabase as defineSchema } from '@pluxel/services/pg'
+export const database = defineSchema({ schema: {} }, { lineage: 'published', migrations: [] })`,
+	})
+	const server = await sourceServer(fixture.path)
+	try {
+		const built = await server.transformRequest('/dist/index.mjs')
+		expect(built?.code).toContain('published')
+	} finally {
+		await server.close()
+	}
+})
 
 it('rejects concurrent declarations from two modules in one package', async () => {
 	await using fixture = await sourceFixture({ 'src/a.ts': declaration, 'src/b.ts': declaration })

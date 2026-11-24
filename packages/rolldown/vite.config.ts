@@ -20,7 +20,7 @@ export default defineConfig({
 			},
 			compile: {
 				command: 'vp pack',
-				dependsOn: ['@pluxel/core#compile', 'valibot-form#compile'],
+				dependsOn: ['@pluxel/host#compile', 'valibot-form#compile'],
 				cache: {
 					input: [
 						'packages/workbench/package.json',

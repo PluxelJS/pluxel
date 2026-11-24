@@ -12,7 +12,7 @@ it('loads checked database migration facts through the official Vite preset', as
 		'package.json': JSON.stringify({ name: 'database-source-fixture', type: 'module' }),
 		'app.ts':
 			"import { defineHostApplication } from '@pluxel/host'; export default defineHostApplication(() => ({ plugins: [] }))",
-		'database.ts': `import { defineDatabase } from '@pluxel/services/database'
+		'database.ts': `import { defineDatabase } from '@pluxel/services/pg'
 export const database = defineDatabase({ schema: {} })`,
 		'drizzle/0000_initial.sql': sql,
 		'drizzle/pluxel-migrations.json': JSON.stringify({
@@ -24,9 +24,9 @@ export const database = defineDatabase({ schema: {} })`,
 			name: '@pluxel/services',
 			version: '1.0.0',
 			type: 'module',
-			exports: { './database': './database.js' },
+			exports: { './pg': './pg.js' },
 		}),
-		'node_modules/@pluxel/services/database.js':
+		'node_modules/@pluxel/services/pg.js':
 			'export const defineDatabase = (_input, artifact) => artifact',
 	})
 	const server = await createServer({

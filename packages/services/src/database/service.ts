@@ -11,7 +11,6 @@ import { pinOwnerContext } from '../internal/owner-view'
 const SYSTEM_SCHEMA = 'pluxel_system'
 
 export type DatabaseBackend = (onError: (error: Error) => void) => Promise<DatabaseAdapter>
-export type DatabaseServiceHostOptions = Readonly<{ backend: DatabaseBackend }>
 
 type AnyDatabase = PgDatabase<PgQueryResultHKT, any>
 
@@ -52,7 +51,7 @@ class FairScheduler {
 		}
 		if (queue.length >= this.pendingLimit) {
 			return Promise.reject(
-				new Error(`[pluxel/database] pending operation limit exceeded for plugin "${owner}"`),
+				new Error(`[pluxel/pg] pending operation limit exceeded for plugin "${owner}"`),
 			)
 		}
 		let resolveItem!: QueueItem<T>['resolve']
@@ -64,9 +63,7 @@ class FairScheduler {
 		let item!: QueueItem<T>
 		const timer = setTimeout(() => {
 			if (!this.remove(item)) return
-			rejectItem(
-				new Error(`[pluxel/database] operation timed out while queued for plugin "${owner}"`),
-			)
+			rejectItem(new Error(`[pluxel/pg] operation timed out while queued for plugin "${owner}"`))
 		}, this.timeoutMs)
 		item = {
 			owner,
@@ -173,7 +170,7 @@ class DatabaseCoordinator {
 
 	constructor(
 		private readonly root: CoreContext,
-		private readonly options: DatabaseServiceHostOptions,
+		private readonly backend: DatabaseBackend,
 	) {
 		root.effects.defer(() => this.dispose(), { tag: 'DatabaseCoordinator' })
 	}
@@ -183,7 +180,7 @@ class DatabaseCoordinator {
 		definition: Definition,
 	): Promise<PluginDatabaseHandle<Definition>> {
 		const address = owner.pluginInfo?.nodeAddress
-		if (!address) throw new Error('[pluxel/database] database use requires a plugin Context')
+		if (!address) throw new Error('[pluxel/pg] database use requires a plugin Context')
 		const artifact = readDatabaseDefinition(definition)
 		const ownerId = formatPluginNodeReference(address)
 		const instance = await this.prepare(ownerId, definition, artifact)
@@ -198,11 +195,11 @@ class DatabaseCoordinator {
 		callback: (database: AnyDatabase) => T | Promise<T>,
 	): Promise<T> {
 		if (this.disposed) {
-			return Promise.reject(new Error('[pluxel/database] database coordinator is stopped'))
+			return Promise.reject(new Error('[pluxel/pg] database coordinator is stopped'))
 		}
 		const scheduler = this.schedulerValue
 		if (!scheduler) {
-			return Promise.reject(new Error('[pluxel/database] database scheduler is not ready'))
+			return Promise.reject(new Error('[pluxel/pg] database scheduler is not ready'))
 		}
 		return scheduler.run(ownerId, token, async () => {
 			const adapter = await this.adapter()
@@ -213,7 +210,7 @@ class DatabaseCoordinator {
 					await lockDatabaseOwner(tx, ownerId, 'shared')
 					await assertActiveInstance(tx, instance)
 				} else if (this.activeInstances.get(ownerId)?.instanceId !== instance.instanceId) {
-					throw new Error('[pluxel/database] database handle instance has been replaced')
+					throw new Error('[pluxel/pg] database handle instance has been replaced')
 				}
 				await tx.execute(sql.raw(`SET LOCAL ROLE ${quoteIdent(instance.ownerRole)}`))
 				await configureOperationContext(tx, instance, readonly ? undefined : randomUUID())
@@ -257,8 +254,8 @@ class DatabaseCoordinator {
 		if (tables.length > 0 && artifact.migrations.length === 0) {
 			throw new Error(
 				artifact.evolution === 'reset-on-schema-change'
-					? '[pluxel/database] reset database baseline is missing; build the plugin with the Pluxel toolchain'
-					: '[pluxel/database] database migration artifact is missing; run `pluxel database generate` and build the plugin with the Pluxel toolchain',
+					? '[pluxel/pg] reset database baseline is missing; build the plugin with the Pluxel toolchain'
+					: '[pluxel/pg] database migration artifact is missing; run `pluxel database generate` and build the plugin with the Pluxel toolchain',
 			)
 		}
 		validateMigrationArtifact(artifact)
@@ -437,7 +434,10 @@ class DatabaseCoordinator {
 	}
 
 	private ensureSystem(): Promise<void> {
-		this.systemReady ??= this.initializeSystem()
+		this.systemReady ??= this.initializeSystem().catch((error) => {
+			this.systemReady = undefined
+			throw error
+		})
 		return this.systemReady
 	}
 
@@ -554,8 +554,11 @@ class DatabaseCoordinator {
 	}
 
 	private adapter(): Promise<DatabaseAdapter> {
-		this.adapterTask ??= this.options.backend((error) => {
+		this.adapterTask ??= this.backend((error) => {
 			this.root.logger.error('database PostgreSQL pool connection failed', { error })
+		}).catch((error) => {
+			this.adapterTask = undefined
+			throw error
 		})
 		return this.adapterTask
 	}
@@ -616,10 +619,10 @@ class OwnerDatabaseHandle<
 		callback: (database: AnyDatabase) => Result | Promise<Result>,
 	): Promise<Result> {
 		if (!this.active) {
-			return Promise.reject(new Error('[pluxel/database] database handle owner has stopped'))
+			return Promise.reject(new Error('[pluxel/pg] database handle owner has stopped'))
 		}
 		if (typeof callback !== 'function') {
-			return Promise.reject(new TypeError('[pluxel/database] operation requires a callback'))
+			return Promise.reject(new TypeError('[pluxel/pg] operation requires a callback'))
 		}
 		return runDatabaseOperation(this.owner, () =>
 			this.coordinator.operation(
@@ -639,7 +642,7 @@ class OwnerDatabaseHandle<
 	}
 
 	private assertActive(): void {
-		if (!this.active) throw new Error('[pluxel/database] database handle owner has stopped')
+		if (!this.active) throw new Error('[pluxel/pg] database handle owner has stopped')
 	}
 }
 
@@ -651,7 +654,7 @@ export class DatabaseService {
 
 	constructor(
 		public readonly ctx: CoreContext,
-		private readonly options: DatabaseServiceHostOptions,
+		private readonly backend: DatabaseBackend,
 	) {
 		pinOwnerContext(this, ctx)
 	}
@@ -661,9 +664,9 @@ export class DatabaseService {
 	): Promise<PluginDatabaseHandle<Definition>> {
 		return runDatabaseOperation(this.ctx, async () => {
 			if (this.definition && this.definition !== definition)
-				throw new Error('[pluxel/database] each plugin may use only one database definition')
+				throw new Error('[pluxel/pg] each plugin may use only one database definition')
 			this.definition = definition
-			this.handleTask ??= coordinatorFor(this.ctx, this.options)
+			this.handleTask ??= coordinatorFor(this.ctx, this.backend)
 				.acquire(this.ctx, definition)
 				.catch((error) => {
 					this.definition = undefined
@@ -675,14 +678,11 @@ export class DatabaseService {
 	}
 }
 
-function coordinatorFor(
-	ctx: CoreContext,
-	options: DatabaseServiceHostOptions,
-): DatabaseCoordinator {
+function coordinatorFor(ctx: CoreContext, backend: DatabaseBackend): DatabaseCoordinator {
 	const root = ctx.root
 	let coordinator = coordinators.get(root)
 	if (!coordinator) {
-		coordinator = new DatabaseCoordinator(root, options)
+		coordinator = new DatabaseCoordinator(root, backend)
 		coordinators.set(root, coordinator)
 	}
 	return coordinator
@@ -695,7 +695,7 @@ export function subscribeDatabaseHandle(
 	listener: () => void,
 ): () => void {
 	if (!(handle instanceof OwnerDatabaseHandle)) {
-		throw new TypeError('[pluxel/database] subscription requires a Pluxel database handle')
+		throw new TypeError('[pluxel/pg] subscription requires a Pluxel database handle')
 	}
 	const names = new Set(tables.map(readTableName))
 	return handle.subscribe(names, listener)
@@ -707,7 +707,7 @@ function schemaTableNames(definition: DatabaseDefinition): string[] {
 		if (!is(value, PgTable)) continue
 		const table = value as PgTable
 		if ((table as any)[Symbol.for('drizzle:Schema')]) {
-			throw new Error('[pluxel/database] pgSchema() tables are not allowed')
+			throw new Error('[pluxel/pg] pgSchema() tables are not allowed')
 		}
 		names.push(getTableName(table))
 	}
@@ -716,7 +716,7 @@ function schemaTableNames(definition: DatabaseDefinition): string[] {
 
 function readTableName(value: unknown): string {
 	if (!is(value, PgTable))
-		throw new TypeError('[pluxel/database] dependsOn requires Drizzle pgTable values')
+		throw new TypeError('[pluxel/pg] dependsOn requires Drizzle pgTable values')
 	return getTableName(value as PgTable)
 }
 
@@ -765,9 +765,6 @@ async function ensureOwnerRole(db: AnyDatabase, ownerRole: string): Promise<void
 
 async function ensureExtensions(db: AnyDatabase, definition: DatabaseDefinition): Promise<void> {
 	for (const extension of definition.requirements.extensions ?? []) {
-		if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(extension)) {
-			throw new Error(`[pluxel/database] invalid PostgreSQL extension name "${extension}"`)
-		}
 		await db.execute(sql.raw(`CREATE EXTENSION IF NOT EXISTS ${quoteIdent(extension)}`))
 	}
 }
@@ -799,7 +796,7 @@ function validateMigrationArtifact(artifact: DatabaseArtifact): void {
 		const checksum = createHash('sha256').update(migration.sql).digest('hex')
 		if (checksum !== migration.checksum) {
 			throw new Error(
-				`[pluxel/database] migration artifact checksum is invalid: ${artifact.lineage}/${migration.id}`,
+				`[pluxel/pg] migration artifact checksum is invalid: ${artifact.lineage}/${migration.id}`,
 			)
 		}
 	}
@@ -855,7 +852,7 @@ async function assertActiveInstance(
 		),
 	)
 	if (resultRows(result).length === 0) {
-		throw new Error('[pluxel/database] database handle instance has been replaced')
+		throw new Error('[pluxel/pg] database handle instance has been replaced')
 	}
 }
 
@@ -907,12 +904,12 @@ function assertMigrationHistory(
 		const expected = artifact.migrations[index]
 		if (!expected || expected.id !== id) {
 			throw new Error(
-				`[pluxel/database] migration history is not an immutable prefix of lineage "${artifact.lineage}": ${id}`,
+				`[pluxel/pg] migration history is not an immutable prefix of lineage "${artifact.lineage}": ${id}`,
 			)
 		}
 		if (expected.checksum !== checksum) {
 			throw new Error(
-				`[pluxel/database] migration checksum changed: ${instance.ownerId}/${artifact.lineage}/${id}`,
+				`[pluxel/pg] migration checksum changed: ${instance.ownerId}/${artifact.lineage}/${id}`,
 			)
 		}
 	}

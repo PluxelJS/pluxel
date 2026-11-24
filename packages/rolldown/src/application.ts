@@ -2,22 +2,17 @@ import { createModulesApplicationConfig } from './cli/modules-application'
 import type { TsdownPlugin, TsdownPluginOption, UserConfig } from 'vite-plus/pack'
 import {
 	createStaticApplicationConfig,
-	resolveManagedDatabaseDrivers,
 	resolveResidualDependencies,
 	type StaticApplicationBuildOptions,
 } from './cli/static-application'
 
 export type PluxelApplicationBuildOptions =
-	| (Pick<
-			StaticApplicationBuildOptions,
-			'variant' | 'managedDatabaseDrivers' | 'residualDependencies' | 'lint'
-	  > &
+	| (Pick<StaticApplicationBuildOptions, 'variant' | 'residualDependencies' | 'lint'> &
 			Readonly<{ delivery?: 'standalone' }>)
 	| Readonly<{
 			delivery: 'modules'
 			variant?: 'headless' | 'workbench'
 			lint?: boolean
-			managedDatabaseDrivers?: never
 			residualDependencies?: never
 	  }>
 
@@ -30,11 +25,7 @@ export function pluxel(options: PluxelApplicationBuildOptions = {}): TsdownPlugi
 	)
 		throw new TypeError('[pluxel:application] delivery must be standalone or modules')
 	for (const key of Object.keys(options))
-		if (
-			!['delivery', 'variant', 'managedDatabaseDrivers', 'residualDependencies', 'lint'].includes(
-				key,
-			)
-		)
+		if (!['delivery', 'variant', 'residualDependencies', 'lint'].includes(key))
 			throw new TypeError(`[pluxel:application] unsupported ${key}`)
 	if (
 		options.variant !== undefined &&
@@ -44,29 +35,18 @@ export function pluxel(options: PluxelApplicationBuildOptions = {}): TsdownPlugi
 		throw new TypeError('[pluxel:application] variant must be headless or workbench')
 	if (options.lint !== undefined && typeof options.lint !== 'boolean')
 		throw new TypeError('[pluxel:application] lint must be a boolean')
-	if (options.delivery === 'modules')
-		for (const key of ['managedDatabaseDrivers', 'residualDependencies'])
-			if (Object.hasOwn(options, key))
-				throw new TypeError(`[pluxel:application] modules includes standalone-only ${key}`)
+	if (options.delivery === 'modules' && Object.hasOwn(options, 'residualDependencies'))
+		throw new TypeError(
+			'[pluxel:application] modules includes standalone-only residualDependencies',
+		)
 	options =
-		options.delivery === 'modules'
+		options.delivery === 'modules' || options.residualDependencies === undefined
 			? Object.freeze({ ...options })
 			: Object.freeze({
 					...options,
-					...(options.managedDatabaseDrivers === undefined
-						? {}
-						: {
-								managedDatabaseDrivers: Object.freeze(
-									resolveManagedDatabaseDrivers(options.managedDatabaseDrivers),
-								),
-							}),
-					...(options.residualDependencies === undefined
-						? {}
-						: {
-								residualDependencies: Object.freeze(
-									resolveResidualDependencies(options.residualDependencies),
-								),
-							}),
+					residualDependencies: Object.freeze(
+						resolveResidualDependencies(options.residualDependencies),
+					),
 				})
 	const plugin: TsdownPlugin = {
 		name: 'pluxel:application',

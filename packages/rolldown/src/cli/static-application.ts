@@ -38,8 +38,6 @@ export type StaticApplicationBuildOptions = {
 	outDir?: string
 	variant?: 'headless' | 'workbench'
 	target?: 'node'
-	/** Managed database drivers carried by this deployment. @default ['pglite', 'postgres'] */
-	managedDatabaseDrivers?: readonly StaticApplicationManagedDatabaseDriver[]
 	residualDependencies?: StaticApplicationResidualDependencies
 	minify?: boolean
 	sourcemap?: boolean
@@ -47,8 +45,6 @@ export type StaticApplicationBuildOptions = {
 	sourcemapExcludeSources?: boolean
 	lint?: boolean
 }
-
-export type StaticApplicationManagedDatabaseDriver = 'pglite' | 'postgres'
 
 export type StaticApplicationResidualDependencies = {
 	packages?: readonly string[]
@@ -75,21 +71,9 @@ type TracedPackages = Parameters<
 >[0]
 type TracedPackageVersion = TracedPackages[string]['versions'][string]
 
-const ManagedDatabasePackages = {
-	pglite: '@electric-sql/pglite',
-	postgres: 'pg',
-} as const satisfies Record<StaticApplicationManagedDatabaseDriver, string>
-const ManagedDatabaseEntries = {
-	pglite: '#pluxel/database-driver/pglite',
-	postgres: '#pluxel/database-driver/postgres',
-} as const satisfies Record<StaticApplicationManagedDatabaseDriver, string>
-const ManagedDatabaseDrivers = Object.freeze(
-	Object.keys(ManagedDatabasePackages) as StaticApplicationManagedDatabaseDriver[],
-)
-const RuntimeResidualPackages = Object.freeze(Object.values(ManagedDatabasePackages))
+const RuntimeResidualPackages = ['pg', '@electric-sql/pglite'] as const
 const RuntimeFullTracePackages = ['tslib', '@electric-sql/pglite'] as const
 const BundledFrameworkPackages = ['@pluxel/core', '@pluxel/host'] as const
-const OMITTED_MANAGED_DATABASE_PREFIX = '\0pluxel:omitted-managed-database:'
 const STATIC_APPLICATION_BOOTSTRAP_ID = 'pluxel:static-application-bootstrap'
 const RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID = `\0${STATIC_APPLICATION_BOOTSTRAP_ID}`
 
@@ -103,11 +87,7 @@ export function createStaticApplicationConfig(
 	const target = String(options.target ?? 'node')
 	if (target !== 'node')
 		throw new Error('[static-application] only the node target is currently supported')
-	const managedDatabaseDrivers = resolveManagedDatabaseDrivers(options.managedDatabaseDrivers)
 	const residualDependencies = resolveResidualDependencies(options.residualDependencies)
-	const omittedManagedDatabaseDrivers = ManagedDatabaseDrivers.filter(
-		(driver) => !managedDatabaseDrivers.includes(driver),
-	)
 	const state: StaticApplicationBuildState = {
 		environmentExample: renderStaticApplicationEnvironmentExample(),
 		environmentExampleOwned: false,
@@ -208,7 +188,6 @@ export function createStaticApplicationConfig(
 				],
 				declaredPackages: residualDependencies.packages,
 				declaredFullTracePackages: residualDependencies.fullTrace,
-				omittedManagedDatabaseDrivers,
 				conditions: ['node', 'import', 'default'],
 				fullTraceInclude: [
 					...FullTracePackages,
@@ -259,16 +238,12 @@ function nf3ExternalsPlugin(options: {
 	include: readonly string[]
 	declaredPackages: readonly string[]
 	declaredFullTracePackages: readonly string[]
-	omittedManagedDatabaseDrivers: readonly StaticApplicationManagedDatabaseDriver[]
 	conditions: string[]
 	fullTraceInclude: string[]
 	artifactNativeResiduals: ReadonlyMap<string, ReadonlySet<string>>
 	onTracedPackages(packages: TracedPackages): void
 }): Plugin {
 	const include = new Set(options.include)
-	const omittedManagedDatabaseEntries = new Map<string, StaticApplicationManagedDatabaseDriver>(
-		options.omittedManagedDatabaseDrivers.map((driver) => [ManagedDatabaseEntries[driver], driver]),
-	)
 	const tracedPaths = new Set<string>()
 	const declaredWorkspacePackages = new Map<string, DeclaredWorkspacePackage>()
 	return {
@@ -305,8 +280,6 @@ function nf3ExternalsPlugin(options: {
 			}
 		},
 		async resolveId(id, importer, resolveOptions) {
-			const omittedDriver = omittedManagedDatabaseEntries.get(id)
-			if (omittedDriver) return `${OMITTED_MANAGED_DATABASE_PREFIX}${omittedDriver}`
 			const packageName = readPackageName(id)
 			if (!packageName || !include.has(packageName)) return null
 			const resolved = await this.resolve(id, importer, resolveOptions)
@@ -317,19 +290,6 @@ function nf3ExternalsPlugin(options: {
 				external: true,
 				id,
 			}
-		},
-		load(id) {
-			if (!id.startsWith(OMITTED_MANAGED_DATABASE_PREFIX)) return null
-			const driver = id.slice(
-				OMITTED_MANAGED_DATABASE_PREFIX.length,
-			) as StaticApplicationManagedDatabaseDriver
-			const exportName =
-				driver === 'pglite' ? 'createPgliteDatabaseAdapter' : 'createPostgresDatabaseAdapter'
-			return [
-				`export async function ${exportName}() {`,
-				`  throw new Error(${JSON.stringify(`[static-application] managed database driver "${driver}" is not included in this deployment`)})`,
-				'}',
-			].join('\n')
 		},
 		writeBundle: {
 			order: 'post',
@@ -496,26 +456,6 @@ export function resolveResidualDependencies(
 		packages: [...new Set([...packages, ...fullTrace])],
 		fullTrace,
 	}
-}
-
-export function resolveManagedDatabaseDrivers(
-	value: readonly StaticApplicationManagedDatabaseDriver[] | undefined,
-): StaticApplicationManagedDatabaseDriver[] {
-	if (value === undefined) return [...ManagedDatabaseDrivers]
-	if (!Array.isArray(value)) {
-		throw new TypeError('[static-application] managedDatabaseDrivers must be an array')
-	}
-	const requested = new Set(
-		value.map((driver, index) => {
-			if (!ManagedDatabaseDrivers.includes(driver)) {
-				throw new TypeError(
-					`[static-application] managedDatabaseDrivers[${index}] must be "pglite" or "postgres"`,
-				)
-			}
-			return driver
-		}),
-	)
-	return ManagedDatabaseDrivers.filter((driver) => requested.has(driver))
 }
 
 function readResidualPackageList(value: readonly string[] | undefined, field: string): string[] {

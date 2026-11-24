@@ -18,9 +18,9 @@ the application through the public `pluxel()` entry. Its generated package
 manifest declares ordinary version ranges; only the test's pnpm overrides point
 to local tarballs. The application dependencies are Core, Host, Services,
 Elysia, its TypeBox/exact-mirror/openapi-types peers, Valibot, and `@libsql/client`.
-Commands, Workbench, and managed Database are not installed as services.
+Commands, Workbench, and managed Pg are not installed as services.
 
-Standalone selects `managedDatabaseDrivers: []` and traces `@libsql/client` as an
+Standalone traces `@libsql/client` as an
 application dependency. Modules keeps normal package imports and uses the
 `elysiaSharedPackages` metadata in `start.mjs`; no service code is imported before
 the native loader has established shared identities.

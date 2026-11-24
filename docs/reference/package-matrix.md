@@ -40,7 +40,7 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 - **`@pluxel/services`**：
   - `@pluxel/services/elysia`：HTTP 路由与服务装配；
-  - `@pluxel/services/database`：基于 Drizzle 的数据库服务；
+  - `@pluxel/services/pg`：使用原生 Drizzle 的 PostgreSQL 服务；
   - `@pluxel/services/management`：管理端点与客户端会话；
   - `@pluxel/services/preset`：常用基础服务的一站式集成预设。
 - **脚本执行**：`@pluxel/agent-sdk/host` 提供 Node/Vite 共用的 Script SDK、Context 与实例借用，`@pluxel/host-vite` 负责 Vite 项目装载，`@pluxel/rolldown/scripts` 提供作者侧编译；见[自动化脚本](../development/scripts.md)。

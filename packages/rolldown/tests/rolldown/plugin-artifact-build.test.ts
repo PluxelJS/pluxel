@@ -170,8 +170,15 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 		const checksum = createHash('sha256').update(migration).digest('hex')
 		await using fixture = await createFixture({
 			'package.json': JSON.stringify({ name: 'database-fixture', type: 'module' }),
+			'node_modules/@pluxel/services/package.json': JSON.stringify({
+				name: '@pluxel/services',
+				type: 'module',
+				exports: { './pg': './pg.js' },
+			}),
+			'node_modules/@pluxel/services/pg.js':
+				'export const defineDatabase = (definition, artifact) => ({ definition, artifact })',
 			'src/index.ts':
-				"import { defineDatabase } from '@pluxel/services/database'\nexport const database = defineDatabase({ schema: {} })\n",
+				"import * as pg from '@pluxel/services/pg'\nexport const database = pg.defineDatabase(({ schema: {} }), /* trailing comma */)\n",
 			'drizzle/0000_initial.sql': `${migration}\n`,
 			'drizzle/pluxel-migrations.json': JSON.stringify({
 				version: 2,
@@ -181,7 +188,7 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 		})
 		const bundle = await rolldown({
 			input: `${fixture.path}/src/index.ts`,
-			external: ['@pluxel/services/database'],
+			external: ['@pluxel/services/pg'],
 			plugins: [pluginArtifactBuildPlugin({ root: fixture.path, buildDir: 'dist' })],
 		})
 		await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
@@ -191,9 +198,39 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 		expect(server).toContain('main')
 		expect(server).toContain(checksum)
 		expect(server).toContain(migration)
+		const built = await import(pathToFileURL(join(fixture.path, 'dist/index.js')).href)
+		expect(built.database).toMatchObject({
+			definition: { schema: {} },
+			artifact: { lineage: 'main', migrations: [{ checksum }] },
+		})
 		await expect(
 			readFile(`${fixture.path}/dist/database/migrations/0000_initial.sql`, 'utf8'),
 		).resolves.toBe(`${migration}\n`)
+	})
+
+	it('rejects parallel database declarations from the same package', async () => {
+		const declaration =
+			"import { defineDatabase } from '@pluxel/services/pg'\nexport const db = defineDatabase({ schema: {} })"
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: 'duplicate-db', type: 'module' }),
+			'first.ts': declaration,
+			'second.ts': declaration,
+			'drizzle/pluxel-migrations.json': JSON.stringify({
+				version: 2,
+				lineage: 'main',
+				migrations: [],
+			}),
+		})
+		const bundle = await rolldown({
+			input: [join(fixture.path, 'first.ts'), join(fixture.path, 'second.ts')],
+			external: ['@pluxel/services/pg'],
+			plugins: [pluginArtifactBuildPlugin({ root: fixture.path })],
+		})
+		try {
+			await expect(bundle.generate({ format: 'esm' })).rejects.toThrow('declares databases in both')
+		} finally {
+			await bundle.close()
+		}
 	})
 
 	it('builds reset-on-schema-change without a checked-in migration directory', async () => {
@@ -216,12 +253,12 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 			JSON.stringify({
 				name: '@pluxel/services',
 				type: 'module',
-				exports: { './database': './database.js' },
+				exports: { './pg': './pg.js' },
 			}),
 			'utf8',
 		)
 		await writeFile(
-			join(root, 'node_modules/@pluxel/services/database.js'),
+			join(root, 'node_modules/@pluxel/services/pg.js'),
 			'export const defineDatabase = (input) => input\n',
 			'utf8',
 		)
@@ -229,7 +266,7 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 			join(root, 'src/index.ts'),
 			[
 				"import { pgTable, text } from 'drizzle-orm/pg-core'",
-				"import { defineDatabase } from '@pluxel/services/database'",
+				"import { defineDatabase } from '@pluxel/services/pg'",
 				"export const items = pgTable('items', { id: text('id').primaryKey() })",
 				"export const database = defineDatabase({ schema: { items }, evolution: 'reset-on-schema-change' })",
 			].join('\n'),
@@ -239,7 +276,7 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 		try {
 			const bundle = await rolldown({
 				input: join(root, 'src/index.ts'),
-				external: ['@pluxel/services/database', 'drizzle-orm/pg-core'],
+				external: ['@pluxel/services/pg', 'drizzle-orm/pg-core'],
 				plugins: [pluginArtifactBuildPlugin({ root, buildDir: 'dist' })],
 			})
 			await bundle.write({ dir: join(root, 'dist'), format: 'esm' })
@@ -277,12 +314,12 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 			JSON.stringify({
 				name: '@pluxel/services',
 				type: 'module',
-				exports: { './database': './database.js' },
+				exports: { './pg': './pg.js' },
 			}),
 			'utf8',
 		)
 		await writeFile(
-			join(root, 'node_modules/@pluxel/services/database.js'),
+			join(root, 'node_modules/@pluxel/services/pg.js'),
 			'export const defineDatabase = (input) => input\n',
 			'utf8',
 		)
@@ -290,7 +327,7 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 			join(root, 'src/index.ts'),
 			[
 				"import { pgTable, text } from 'drizzle-orm/pg-core'",
-				"import { defineDatabase } from '@pluxel/services/database'",
+				"import { defineDatabase } from '@pluxel/services/pg'",
 				"export const items = pgTable('items', { id: text('id').primaryKey() })",
 				"export const database = defineDatabase({ schema: { items }, evolution: 'reset-on-schema-change' })",
 			].join('\n'),
@@ -300,7 +337,7 @@ export const items = pgTable('items', { id: text('id').primaryKey() })`,
 		try {
 			const bundle = await rolldown({
 				input: join(root, 'src/index.ts'),
-				external: ['@pluxel/services/database', 'drizzle-orm/pg-core'],
+				external: ['@pluxel/services/pg', 'drizzle-orm/pg-core'],
 				plugins: [databaseSourceVitePlugin({ root })],
 			})
 			await bundle.write({ dir: join(root, 'dist'), format: 'esm' })

@@ -18,6 +18,6 @@ export function readDatabaseDefinition(definition: DatabaseDefinition): Database
 	const artifact = (definition as unknown as Record<symbol, DatabaseArtifact> | undefined)?.[
 		databaseDefinitionMarker
 	]
-	if (!artifact) throw new TypeError('[pluxel/database] invalid database definition')
+	if (!artifact) throw new TypeError('[pluxel/pg] invalid database definition')
 	return artifact
 }

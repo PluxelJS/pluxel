@@ -7,7 +7,11 @@ import {
 	walkAst,
 } from '../rolldown/plugins/pluginUtils.ts'
 
-const DATABASE_IMPORT_SOURCE = '@pluxel/services/database'
+const DATABASE_IMPORT_SOURCE = '@pluxel/services/pg'
+
+export function mayDeclareDatabase(code: string): boolean {
+	return code.includes(DATABASE_IMPORT_SOURCE) && code.includes('defineDatabase')
+}
 
 export type DatabaseDeclaration = Readonly<{
 	insertOffset: number
@@ -45,11 +49,21 @@ export function extractDatabaseDeclarations(
 				`[database] evolution must be the literal "migrations" or "reset-on-schema-change" in ${id}`,
 			)
 		}
-		const offset = Number(node.end) - 1
-		if (!Number.isInteger(offset) || offset < 0) {
+		const end = Number(node.end) - 1
+		if (!Number.isInteger(end) || end < 0) {
 			throw new Error(`[database] cannot locate defineDatabase() call in ${id}`)
 		}
-		declarations.push({ insertOffset: offset, evolution })
+		// Rolldown omits grouping parentheses from the argument range. The only comma
+		// outside comments between the argument and closing parenthesis is a trailing one.
+		const argumentEnd = Number(input!.end)
+		const suffix = code.slice(argumentEnd, end)
+		const trailingComma = Array.from(
+			suffix.matchAll(/\/\*[\s\S]*?\*\/|\/\/[^\r\n\u2028\u2029]*|,/gu),
+		).find((match) => match[0] === ',')
+		declarations.push({
+			insertOffset: trailingComma ? argumentEnd + trailingComma.index : end,
+			evolution,
+		})
 	})
 	if (declarations.length > 1) {
 		throw new Error(`[database] a plugin package may declare only one database in ${id}`)
@@ -62,12 +76,17 @@ function collectDatabaseImports(ast: Program): Set<string> {
 	for (const statement of ast.body) {
 		if (
 			statement.type !== 'ImportDeclaration' ||
+			statement.importKind === 'type' ||
 			statement.source.value !== DATABASE_IMPORT_SOURCE
 		) {
 			continue
 		}
 		for (const specifier of statement.specifiers) {
-			if (specifier.type !== 'ImportSpecifier') continue
+			if (specifier.type === 'ImportNamespaceSpecifier') {
+				names.add(`${specifier.local.name}.defineDatabase`)
+				continue
+			}
+			if (specifier.type !== 'ImportSpecifier' || specifier.importKind === 'type') continue
 			const imported =
 				specifier.imported.type === 'Identifier'
 					? specifier.imported.name

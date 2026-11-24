@@ -10,7 +10,7 @@
 
 ## 交付选择与 modules
 
-pluxel({ delivery }) 默认 standalone；modules 保留真实包边界和目录来源。delivery 与 headless/workbench variant 独立，创建插件时校验并复制选项，后续修改原对象不影响异步构建。managedDatabaseDrivers/residualDependencies 只用于 standalone；生产启动由应用 launch 选择。
+pluxel({ delivery }) 默认 standalone；modules 保留真实包边界和目录来源。delivery 与 headless/workbench variant 独立，创建插件时校验并复制选项，后续修改原对象不影响异步构建。residualDependencies 只用于 standalone；生产启动由应用 launch 选择。
 
 modules 复用共享 pipeline，不执行工厂。相对模块和 `package.json`#imports 指向的本地模块参与编译，外部 #imports/bare import 保持真实 package boundary，public source export 输出对应 ESM entry。app.mjs 默认导出应用工厂并保留 product/named exports，启动显式调用 `runHostApplication`。自定义 entryFileNames 需保持 .mjs；exports/server entry 来自真实 chunk。共享解析器读取应用的节点声明和绑定以生成环境模板，启动时以工厂计算的 `sources` 发现 Node ESM 入口。
 
@@ -52,7 +52,7 @@ projector 复用 config source resolver，将显式 schema 还原成封闭 Valib
 
 Node freezer 用 nf3 追踪 native/non-bundleable 或无法安全内联的 CJS/ESM package，复制到发行目录 node_modules。pg 保留真实 Node package boundary，以保持 pg-pool 构造器语义。当前只交付 Node application。
 
-`managedDatabaseDrivers` 默认 PGlite+pg，可收窄部署 driver。未选 driver lower 为 absent module，避免无用分支进入闭包；启动配置选择未交付 driver 时在真实加载处失败。`sourcemapExcludeSources` 可省重复 `sourcesContent`，保留 stack mapping 的 path/name/mapping；完整源码归档由发行政策决定。
+托管 Pg 的两个安装器各自引用对应驱动。standalone 随可达 import 追踪原生 pg 包或 PGlite 包及其 WASM 文件。`sourcemapExcludeSources` 可省重复 `sourcesContent`，保留 stack mapping 的 path/name/mapping；完整源码归档由发行政策决定。
 
 createRequire/native loader/运行期资源可在 `residualDependencies.packages` 显式声明；不能静态发现的动态资源用 fullTrace（隐含 packages）。从 application root 预解析，找不到即构建失败。显式追踪的独立 @pluxel 原生库可保留包布局；Core/Host 必须内联，直接 residual 或 trace 闭包带入副本均拒绝。实际闭包写入 deployment。
 

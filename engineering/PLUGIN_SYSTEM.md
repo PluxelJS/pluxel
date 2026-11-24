@@ -20,7 +20,7 @@ Plugin / PluginPart 源码声明
 | Context              | 同步、严格惰性、固定 shape 的 capability kernel                      | 不管理 IO 或 Plugin lifecycle                     |
 | Core                 | identity、DI graph、generation、effects、配置事实与固定 Context 能力 | 宿主选择来源、领域保存与进程策略                  |
 | Host                 | 服务准备/关闭、catalog、运行意图、配置持久策略、协调事务             | 使用 Core 唯一的 graph/lifecycle                  |
-| Services             | 显式安装入站 HTTP、Commands、Database、Management 等能力             | 每项能力拥有自己的资源与 owner view               |
+| Services             | 显式安装入站 HTTP、Commands、Pg、Management 等能力                   | 每项能力拥有自己的资源与 owner view               |
 | Host-vite / Rolldown | Vite 执行与更新、语义编译、源码查询与发行制品                        | native 不加载编译工具；生产 Vite 显式持有执行工具 |
 | Workbench            | publication、layout、opened targets、Shell/renderer                  | 投影业务能力，不持有业务状态或业务依赖            |
 
@@ -67,7 +67,7 @@ Constructor dependency facade 固定 provider generation 和 caller Context。Pa
 
 ## 服务、来源与宿主策略
 
-Node 的 `servicesPreset()` 组合入站 HTTP、Commands、NodeModules、Workers、Management、管理命令及可选 Workbench。`workbench: false` 保留管理能力，定制宿主和隔离测试直接组合单项安装器。Database 由应用单独选择。安装顺序与 root/service/generation 资源边界见 [HOST](HOST.md)。
+Node 的 `servicesPreset()` 组合入站 HTTP、Commands、NodeModules、Workers、Management、管理命令及可选 Workbench。`workbench: false` 保留管理能力，定制宿主和隔离测试直接组合单项安装器。Pg 由应用单独选择。安装顺序与 root/service/generation 资源边界见 [HOST](HOST.md)。
 
 固定 imports 与动态来源共用应用声明、catalog 和运行意图。动态来源只发布/删除普通 ESM entry；Package Manager 是显式安装的普通 Plugin，自己拥有 acquisition、registry、安装状态和 UI。生产来源加载与开发 HMR 各有边界，不能从“支持动态来源”推断“支持生产热替换”。
 

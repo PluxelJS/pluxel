@@ -22,7 +22,7 @@ configs.use(ObjectSchema) / owned PluginPart declarations
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ZenFS             | `coreConfig.zenfs` 快照原生 mount 声明，Core 拥有创建的 backend、隔离 mount table，传入 FileSystem 只借用；[FS](FS.md)                                                  |
 | LogTape           | `coreConfig.logtape` 接收原生 Config/同步 root factory，Core 拥有安装、身份、policy、排空；[Logging](LOGGING.md)                                                        |
-| PostgreSQL/PGlite | 原生 driver 配置或借用实例，Database 拥有 owner schema、migration 和 scheduler；[Database](DATABASE.md)                                                                 |
+| PostgreSQL/PGlite | 原生 driver 配置或借用实例，Pg 拥有 owner schema、migration 和 scheduler；[Pg](DATABASE.md)                                                                             |
 | OpenTelemetry     | `Otel` 接收原生 providers，`OtelPlugin` 提供可保存预设，generation 拥有交付 providers 的 flush/shutdown；[OTel](../docs/plugins/otel.md)                                |
 | Playwright        | 原生连接 hook 保留 connect/connectOverCDP 参数，Plugin 拥有连接、caller 拥有 BrowserContext、部署者拥有浏览器进程；[Browser](../docs/plugins/browser.md)                |
 | srvx/Elysia       | `listenElysia()` 保留 TCP/TLS、middleware、plugin 和 error options，Host 拥有 dispatch/关闭；[接线](../docs/host/configuration.md#独立-http-host)                       |

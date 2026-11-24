@@ -53,7 +53,7 @@ Pluxel 坚持尊重底层优秀生态的原生 API。在宿主配置中，你可
 - **无界面应用**：使用同一个预设，设置 `workbench: false`，保留管理能力。
 - **定制宿主与隔离测试**：直接组合 `elysia()`、`commands()` 等单项安装器，见 [Host 服务组合](./services.md)。
 
-Vault 是 Core 内建能力，通过 `coreConfig.vault` 配置；Database 继续单独选择后端并安装。
+Vault 是 Core 内建能力，通过 `coreConfig.vault` 配置。应用需要托管 PostgreSQL 时单独安装 `Pg`。
 
 ---
 
@@ -461,27 +461,29 @@ export const coreConfig = {
 
 ## 数据库服务后端选择
 
-在挂载关系型数据库服务时，宿主可在本地嵌入式轻量引擎与生产外部数据库之间平滑切换：
+应用在 `services` 中安装一个 `Pg` 服务。使用嵌入式 PGlite 时，安装 `@electric-sql/pglite` 并传入原生选项。省略选项会创建内存数据库。
 
 ```ts
-import { database } from '@pluxel/services/database'
-import { pglite } from '@pluxel/services/database/pglite'
-import { postgres } from '@pluxel/services/database/postgres'
+import { defineHostApplication } from '@pluxel/host'
+import { pglite } from '@pluxel/services/pg/pglite'
 
-// 本地开发或测试：使用嵌入式 PGlite
-database({
-	backend: pglite({ dataDir: './data/pglite' }),
-})
-
-// 生产部署：连接外部 PostgreSQL 数据库
-database({
-	backend: postgres({
-		connectionString: process.env.DATABASE_URL,
-	}),
-})
+export default defineHostApplication(() => ({
+	services: [pglite({ dataDir: './data/pglite' })],
+}))
 ```
 
-无论选择哪种后端，插件内部编写的 Drizzle Schema 与查询语句均保持完全一致。
+连接 PostgreSQL 时，安装 `pg` 并选择它的入口。`postgres()` 使用 node-postgres 的环境变量和连接池默认值，也可以传入 `PoolConfig`。
+
+```ts
+import { defineHostApplication } from '@pluxel/host'
+import { postgres } from '@pluxel/services/pg/postgres'
+
+export default defineHostApplication(({ env }) => ({
+	services: [postgres({ connectionString: env.DATABASE_URL })],
+}))
+```
+
+两个入口都在插件首次 `use()` 时打开连接。传入配置时由 Host 在排空操作后关闭资源。传入已有 `PGlite` 或 `pg.Pool` 实例时，由调用方在 Host 关闭后释放它。插件使用同一份 [Drizzle 表定义和查询](../plugin-development/database.md)。
 
 <span id="application-private-database"></span>
 
