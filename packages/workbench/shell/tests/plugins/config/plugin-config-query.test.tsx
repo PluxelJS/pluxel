@@ -68,7 +68,7 @@ describe('plugin config queries', () => {
 		await act(async () => {
 			await vi.waitFor(() =>
 				expect(latest?.data).toMatchObject({
-					fields: [],
+					sections: [],
 					snapshot: null,
 				}),
 			)

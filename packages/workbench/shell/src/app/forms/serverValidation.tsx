@@ -5,6 +5,7 @@ import { useAutoFormCtx } from 'valibot-form/web'
 
 type Issue = Readonly<{ message: string; path: readonly (string | number)[] }>
 type FormFields = { fieldInfo: Partial<Record<string, { instance: unknown }>> }
+type FieldErrors = Record<string, Array<{ message: string }>>
 
 export function mountedFieldNames(form: FormFields): ReadonlySet<string> {
 	return new Set(
@@ -18,21 +19,11 @@ export function mapServerValidationIssues(
 	fieldNames: ReadonlySet<string>,
 ) {
 	const form: string[] = []
-	const fields: Record<string, Array<{ message: string }>> = Object.create(null)
+	const fields: FieldErrors = Object.create(null)
 	for (const issue of issues) {
-		const name = issue.path
-			.map((segment, index) =>
-				typeof segment === 'number' ? `[${segment}]` : `${index ? '.' : ''}${segment}`,
-			)
-			.join('')
-		const parsed = makePathArray(name)
-		if (
-			!name ||
-			parsed.length !== issue.path.length ||
-			parsed.some((segment, index) => segment !== issue.path[index]) ||
-			!fieldNames.has(name)
-		) {
-			form.push(issue.message)
+		const name = mountedName(issue.path, fieldNames)
+		if (name === undefined) {
+			form.push(issueSummary(issue))
 			continue
 		}
 		;(fields[name] ??= []).push({ message: issue.message })
@@ -42,24 +33,67 @@ export function mapServerValidationIssues(
 
 export function mapConfigValidationErrors(
 	errors: ConfigValidationErrors,
-	fieldNames: ReadonlySet<string>,
-	sectionPath: readonly string[],
+	sections: readonly { key: string; path: readonly string[]; mounted?: ReadonlySet<string> }[],
 ) {
-	const issues = Object.values(errors)
-		.flatMap((group) => Object.values(group).flat())
-		.map((issue) => {
-			const belongs = sectionPath.every((segment, index) => issue.path[index] === segment)
-			return {
-				message: issue.message,
-				// Config transport stringifies indices. Numeric object keys are not independently bound.
-				path: belongs
-					? issue.path
-							.slice(sectionPath.length)
-							.map((segment) => (/^(0|[1-9]\d*)$/.test(segment) ? Number(segment) : segment))
-					: [],
-			}
-		})
-	return mapServerValidationIssues(issues, fieldNames)
+	const issues = Object.values(errors).flatMap((group) => Object.values(group).flat())
+	const summary: string[] = []
+	const fieldsBySection = new Map<string, FieldErrors>()
+	for (const issue of issues) {
+		const owner = sections.reduce<(typeof sections)[number] | undefined>(
+			(current, section) =>
+				(!current || section.path.length > current.path.length) &&
+				section.path.every((segment, index) => issue.path[index] === segment)
+					? section
+					: current,
+			undefined,
+		)
+		const field = owner?.mounted && mountedName(issue.path.slice(owner.path.length), owner.mounted)
+		if (!owner || field === undefined) {
+			summary.push(issueSummary(issue))
+			continue
+		}
+		let fields = fieldsBySection.get(owner.key)
+		if (!fields) {
+			fields = Object.create(null) as FieldErrors
+			fieldsBySection.set(owner.key, fields)
+		}
+		;(fields[field] ??= []).push({ message: issue.message })
+	}
+	return { fieldsBySection, summary }
+}
+
+function mountedName(path: Issue['path'], names: ReadonlySet<string>): string | undefined {
+	const name = path
+		.map((part, index) => (typeof part === 'number' ? `[${part}]` : `${index ? '.' : ''}${part}`))
+		.join('')
+	if (!name || !names.has(name)) return undefined
+	const parsed = makePathArray(name)
+	return parsed.length === path.length && parsed.every((part, index) => part === path[index])
+		? name
+		: undefined
+}
+
+function issueSummary({ path, message }: Issue): string {
+	const label = path.reduce<string>(
+		(prefix, part) =>
+			typeof part === 'string' && /^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u.test(part)
+				? `${prefix}.${part}`
+				: `${prefix}[${JSON.stringify(part)}]`,
+		'$',
+	)
+	return `${label} · ${message}`
+}
+
+export function ValidationSummary({ messages }: { messages: readonly string[] }) {
+	return messages.length > 0 ? (
+		<Alert color="red" title="提交内容有误" variant="light">
+			{messages.map((message, index) => (
+				<Text key={index} size="sm">
+					{message}
+				</Text>
+			))}
+		</Alert>
+	) : null
 }
 
 export function ServerValidationSummary() {
@@ -74,15 +108,7 @@ export function ServerValidationSummary() {
 						: Array.isArray(error)
 							? error.filter((message): message is string => typeof message === 'string')
 							: []
-				return messages.length > 0 ? (
-					<Alert color="red" title="提交内容有误" variant="light">
-						{messages.map((message, index) => (
-							<Text key={index} size="sm">
-								{message}
-							</Text>
-						))}
-					</Alert>
-				) : null
+				return <ValidationSummary messages={messages} />
 			}}
 		</form.Subscribe>
 	)

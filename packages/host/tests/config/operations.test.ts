@@ -1,6 +1,8 @@
 import { BasePlugin, Plugin, parsePluginNodeAddress } from '@pluxel/core'
 import { SuperJSON } from 'superjson'
 import * as v from 'valibot'
+import { extractFormFields, formMeta } from 'valibot-form'
+import { buildEditableConfigPatch, editableConfigPaths } from 'valibot-form/web'
 import { beforeEach, expect, it } from 'vitest'
 import { createHost } from '../../src/index'
 import { createDocumentStorage } from '../support/document-storage'
@@ -92,6 +94,13 @@ it('validates before saving, then applies only the winning edit to its addressed
 		persistence: { status: 'confirmed' },
 	})
 	expect(stale).toMatchObject({ ok: false, code: 'revision_conflict', state: 'unchanged' })
+	const beforePreflight = [...normalizations]
+	await expect(host.config.validate(east, change, expected)).resolves.toMatchObject({
+		ok: false,
+		code: 'revision_conflict',
+		state: 'unchanged',
+	})
+	expect(normalizations).toEqual(beforePreflight)
 	expect(adopted).toEqual(
 		new Map([
 			['east', 'East board'],
@@ -292,6 +301,206 @@ it('replaces a configuration branch in one save and restores its default on rese
 		managedInput: null,
 		config: { destination: { kind: 'file', path: 'reports.json' } },
 	})
+})
+
+const choiceSchema = v.union([
+	v.object({
+		label: v.string(),
+		token: v.pipe(v.optional(v.string()), formMeta({ hidden: true })),
+	}),
+	v.object({ target: v.string() }),
+])
+const sparseSchema = v.object({
+	opts: v.optional(
+		v.nullable(
+			v.object({
+				tag: v.optional(v.string()),
+				'a.b': v.optional(v.string()),
+				a: v.optional(v.object({ b: v.string() })),
+			}),
+		),
+		{ tag: 'fallback' },
+	),
+	rows: v.optional(v.array(v.object({ name: v.string(), opaque: v.unknown() })), []),
+	protected: v.pipe(v.optional(v.string()), formMeta({ hidden: true })),
+	sibling: v.optional(v.boolean(), true),
+	choice: v.optional(choiceSchema),
+	choices: v.optional(v.array(choiceSchema)),
+	labels: v.optional(v.record(v.string(), v.string())),
+	priorities: v.optional(v.array(v.number())),
+})
+
+@Plugin()
+class SparseBoard extends BasePlugin {
+	readonly config = this.configs.use(sparseSchema)
+}
+
+it('round-trips sparse editor patches and scoped inheritance through Host readback', async () => {
+	const owner = SparseBoard.nodeAddress()
+	const fields = extractFormFields(sparseSchema)
+	const optsFields = fields.filter(({ name }) => name === 'opts')
+	const preserved = {
+		protected: 'saved',
+		rows: [{ name: 'one', opaque: { count: 4 }, future: 'keep' }],
+	}
+	const sibling = { ...preserved, sibling: false }
+	await using host = await createHost({
+		plugins: [{ plugin: SparseBoard }],
+		config: { document: false },
+		policy: { document: false },
+	})
+	await expect(host.config.patch(owner, { set: sibling })).resolves.toMatchObject({ ok: true })
+	async function read(managedInput: Record<string, unknown>, options: unknown) {
+		const result = await host.config.get(owner)
+		if (result.ok === false) throw new Error(result.message)
+		expect(result.config).toMatchObject({ opts: options, sibling: false })
+		expect(result.managedInput).toEqual(managedInput)
+		expect(result.effectiveInput).toEqual(managedInput)
+		return result.managedInput!
+	}
+	async function save(
+		input: Record<string, unknown>,
+		expected: Record<string, unknown>,
+		opts: unknown,
+	) {
+		const current = await host.config.get(owner)
+		if (current.ok === false) throw new Error(current.message)
+		const patch = buildEditableConfigPatch(fields, input, current.managedInput!)
+		await expect(
+			host.config.patch(owner, patch, {
+				expectedManagedRevision: current.managedRevision,
+			}),
+		).resolves.toMatchObject({ ok: true })
+		await read(expected, opts)
+		return patch
+	}
+	await read(sibling, { tag: 'fallback' })
+	expect(await save({ ...sibling, opts: {} }, { ...sibling, opts: {} }, {})).toEqual({
+		set: { opts: {} },
+	})
+	await save(
+		{ ...sibling, opts: null, rows: [], protected: 'discarded' },
+		{ ...sibling, opts: null },
+		null,
+	)
+	const nullInput = await read({ ...sibling, opts: null }, null)
+	const nullRemoval = buildEditableConfigPatch(optsFields, {}, nullInput)
+	expect(nullRemoval).toEqual({ remove: [['opts']] })
+	await expect(host.config.patch(owner, nullRemoval)).resolves.toMatchObject({ ok: true })
+	await read(sibling, { tag: 'fallback' })
+	await save({ ...sibling, opts: null }, { ...sibling, opts: null }, null)
+	await expect(
+		host.config.reset(
+			owner,
+			editableConfigPaths(optsFields, await read({ ...sibling, opts: null }, null)),
+		),
+	).resolves.toMatchObject({ ok: true })
+	await read(sibling, { tag: 'fallback' })
+	await save({ ...sibling, opts: null }, { ...sibling, opts: null }, null)
+	expect(
+		await save(
+			{ ...sibling, opts: { tag: 'x' } },
+			{ ...sibling, opts: { tag: 'x' } },
+			{ tag: 'x' },
+		),
+	).toEqual({ set: { opts: { tag: 'x' } } })
+	expect(await save({ ...sibling, opts: {} }, { ...sibling, opts: {} }, {})).toEqual({
+		remove: [['opts', 'tag']],
+		set: { opts: {} },
+	})
+	await expect(
+		host.config.reset(
+			owner,
+			editableConfigPaths(
+				fields.filter(({ name }) => name !== 'sibling'),
+				await read({ ...sibling, opts: {} }, {}),
+			),
+		),
+	).resolves.toMatchObject({ ok: true })
+	await read(sibling, { tag: 'fallback' })
+	await save(
+		{ ...sibling, opts: { 'a.b': 'literal', a: { b: 'nested' } } },
+		{ ...sibling, opts: { 'a.b': 'literal', a: { b: 'nested' } } },
+		{ 'a.b': 'literal', a: { b: 'nested' } },
+	)
+	const literalEdit = { 'a.b': 'edited', a: { b: 'nested' } }
+	expect(
+		await save({ ...sibling, opts: literalEdit }, { ...sibling, opts: literalEdit }, literalEdit),
+	).toEqual({ set: { opts: { 'a.b': 'edited' } } })
+	const paths = editableConfigPaths(
+		fields.filter(({ name }) => name !== 'sibling'),
+		await read({ ...sibling, opts: literalEdit }, literalEdit),
+	)
+	expect(paths).toEqual([
+		['opts', 'a.b'],
+		['opts', 'a', 'b'],
+	])
+	await expect(host.config.reset(owner, paths)).resolves.toMatchObject({ ok: true })
+	await read(sibling, { tag: 'fallback' })
+})
+
+it('preserves protected values in untagged object unions during saves and scoped restores', async () => {
+	await using host = await createHost({
+		plugins: [{ plugin: SparseBoard }],
+		config: { document: false },
+		policy: { document: false },
+	})
+	const owner = SparseBoard.nodeAddress()
+	const fields = extractFormFields(sparseSchema)
+	const protectedValues = {
+		choice: { label: 'one', token: 'keep' },
+		choices: [{ target: 'two', future: 'keep' }],
+	}
+	const before = await host.config.patch(owner, { set: { ...protectedValues, sibling: false } })
+	if (before.ok === false) throw new Error(before.message)
+	const patch = buildEditableConfigPatch(
+		fields,
+		{ choices: [], sibling: true },
+		before.managedInput!,
+	)
+	expect(patch).toEqual({ set: { sibling: true } })
+	const saved = await host.config.patch(owner, patch, {
+		expectedManagedRevision: before.managedRevision,
+	})
+	if (saved.ok === false) throw new Error(saved.message)
+	expect(await host.config.get(owner)).toMatchObject({
+		ok: true,
+		managedInput: { ...protectedValues, sibling: true },
+	})
+	const paths = editableConfigPaths(fields, saved.managedInput!)
+	expect(paths).toEqual([['sibling']])
+	await expect(
+		host.config.reset(owner, paths, { expectedManagedRevision: saved.managedRevision }),
+	).resolves.toMatchObject({ ok: true })
+	const readback = await host.config.get(owner)
+	if (readback.ok === false) throw new Error(readback.message)
+	expect(readback.managedInput).toEqual(protectedValues)
+})
+
+it('treats array order as a saved change and record key order as presentation', async () => {
+	await using host = await createHost({
+		plugins: [{ plugin: SparseBoard }],
+		config: { document: false },
+		policy: { document: false },
+	})
+	const owner = SparseBoard.nodeAddress()
+	const fields = extractFormFields(sparseSchema)
+	const labels = { first: 'a', second: 'b' }
+	const priorities = [1, 2]
+	const before = await host.config.patch(owner, { set: { labels, priorities } })
+	if (before.ok === false) throw new Error(before.message)
+	const reordered = { labels: { second: 'b', first: 'a' }, priorities }
+	expect(buildEditableConfigPatch(fields, reordered, before.managedInput!)).toEqual({})
+	const patch = buildEditableConfigPatch(
+		fields,
+		{ ...reordered, priorities: [2, 1] },
+		before.managedInput!,
+	)
+	expect(patch).toEqual({ set: { priorities: [2, 1] } })
+	await expect(host.config.patch(owner, patch)).resolves.toMatchObject({ ok: true })
+	const readback = await host.config.get(owner)
+	if (readback.ok === false) throw new Error(readback.message)
+	expect(readback.managedInput).toEqual({ labels, priorities: [2, 1] })
 })
 
 it('settles a save already writing to storage and cancels the edit still waiting behind it', async () => {

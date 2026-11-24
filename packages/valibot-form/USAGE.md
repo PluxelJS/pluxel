@@ -116,7 +116,9 @@ v.pipe(
 )
 ```
 
-多选推荐方案（用 array 包裹）：
+数值 `1` 和字符串 `'1'` 是两个独立选项。`disabled` 按原始类型匹配。需要给这两个值使用不同文案时，用 `entries` 分别提供 `value` 与 `label`。
+
+多选使用数组包裹选项。
 
 ```ts
 v.pipe(
@@ -153,7 +155,7 @@ v.pipe(
 )
 ```
 
-`layout: 'picker'` 仅在数组项为 `picklist` 时生效。
+`layout: 'picker'` 使用一个多选控件，每种选项可选一次。数组的 `maxLength` 和选项控件的 `max` 共同限制可选数量。逐行添加、删除与排序按钮的设置用于 list 和 grid 布局。
 
 ## Record 字段 (recordMeta)
 
@@ -170,7 +172,7 @@ v.pipe(
 )
 ```
 
-Record 会根据 value schema 渲染对应控件。
+Record 会根据 value schema 渲染对应控件。移动行调整当前表单的显示顺序。需要保存顺序时使用数组。
 
 ## Object 字段 (objectMeta)
 
@@ -198,7 +200,6 @@ v.pipe(
 	]),
 	f.formMeta({ title: '连接类型' }),
 	f.unionMeta({
-		discriminator: 'type',
 		control: 'segmented',
 		labels: { http: 'HTTP', ws: 'WebSocket' },
 	}),
@@ -210,8 +211,10 @@ v.pipe(
 - `control`: select / segmented / radio / switch
 - `labels` / `descriptions`: 自定义分支文案
 - `expose`: auto / always / never（是否显式渲染 discriminator 字段）
-- `preserve`: 是否保留分支值
+- `preserve` 控制切回原分支时是否恢复本地草稿。刷新相同的字段描述或移动数组行会保留该草稿，reset 会清除它。提交包含公共字段、判别值和当前分支。
 - `compact`: 是否去掉 Card 边框
+
+`v.variant(key, options)` 按声明的 `key` 选择分支，数值与字符串判别值分别匹配。普通 `v.union` 可以通过互斥的原始输入形状识别分支。例如 `false | { path?: string }` 会显示当前保存的布尔值或对象，选择布尔分支会写回 `false`。对象分支使用相同的键和类型时，显式使用 `v.variant` 能使选择有据可依。
 
 ## 布局规则
 

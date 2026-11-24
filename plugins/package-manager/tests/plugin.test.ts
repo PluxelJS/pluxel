@@ -4,12 +4,14 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { BasePlugin, Plugin, parsePluginNodeAddress, defineServiceRef } from '@pluxel/core'
-import { defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
+import { createHost, defineHostApplication, envBinding, resolveHostApplication } from '@pluxel/host'
 import { commands } from '@pluxel/services/commands'
 
 import { createResolvedHost, installPluginSources } from '@pluxel/host/internal'
 import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { afterEach, describe, expect, it } from 'vitest'
+import { extractFormFields } from 'valibot-form'
+import { buildEditableConfigPatch } from 'valibot-form/web'
 import { PackageManagerConfig, PackageManagerPlugin } from '../src/index.ts'
 
 const WorkbenchRef = defineServiceRef<Workbench>()
@@ -51,6 +53,60 @@ afterEach(async () => {
 })
 
 describe('PackageManagerPlugin', () => {
+	it('round-trips a shadowed false and restores ignoreScripts inheritance', async () => {
+		const owner = PackageManagerPlugin.nodeAddress()
+		const fields = extractFormFields(PackageManagerConfig)
+		const independent = { minimumReleaseAgeMinutes: 90 }
+		await using host = await createHost({
+			plugins: [{ plugin: PackageManagerPlugin, config: { ignoreScripts: true } }],
+			config: { mode: 'declared-first', document: false },
+			policy: { document: false },
+		})
+		await expect(host.config.patch(owner, { set: independent })).resolves.toMatchObject({
+			ok: true,
+		})
+
+		async function verify(managed: Record<string, unknown>, shadowed: boolean) {
+			const result = await host.config.get(owner)
+			if (result.ok === false) throw new Error(result.message)
+			expect(result.managedInput).toEqual(managed)
+			expect(result.effectiveInput).toEqual({ ...independent, ignoreScripts: true })
+			expect(result.config).toMatchObject({ ...independent, ignoreScripts: true })
+			expect(result.shadowedPaths).toEqual(shadowed ? [['ignoreScripts']] : [])
+			expect(result.sources).toContainEqual(
+				expect.objectContaining({
+					kind: 'declaration',
+					path: ['ignoreScripts'],
+				}),
+			)
+			return result
+		}
+		const before = await verify(independent, false)
+		const off = buildEditableConfigPatch(
+			fields,
+			{ ...independent, ignoreScripts: false },
+			before.managedInput!,
+		)
+		expect(off).toEqual({ set: { ignoreScripts: false } })
+		await expect(
+			host.config.patch(owner, off, {
+				expectedManagedRevision: before.managedRevision,
+			}),
+		).resolves.toMatchObject({ ok: true })
+		const saved = await verify({ ...independent, ignoreScripts: false }, true)
+		const inherit = buildEditableConfigPatch(
+			fields,
+			{ ...independent, ignoreScripts: undefined },
+			saved.managedInput!,
+		)
+		expect(inherit).toEqual({ remove: [['ignoreScripts']] })
+		await expect(
+			host.config.patch(owner, inherit, {
+				expectedManagedRevision: saved.managedRevision,
+			}),
+		).resolves.toMatchObject({ ok: true })
+		await verify(independent, false)
+	})
 	it('accepts env-bound deployment configuration without Workbench or installation-state overrides', async () => {
 		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-package-manager-headless-'))
 		roots.push(root)

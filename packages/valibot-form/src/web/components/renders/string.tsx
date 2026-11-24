@@ -1,17 +1,16 @@
 import { TextInput, Textarea } from '@mantine/core'
-import type { StringFieldNode } from '../../../core/fields'
 import { FieldChrome } from '../chrome/FieldChrome'
 import { cleanProps } from '../../utils/propHelpers'
 import {
 	normalizeErrorMessages,
-	type RendererProps,
+	type ScalarRendererProps,
 	toInputString,
 	triggerFormEvents,
 } from './types'
 
-export function StringField(props: RendererProps) {
+export function StringField(props: ScalarRendererProps<'string'>) {
 	const { node, errors, inputProps, value } = props
-	const info = node as StringFieldNode
+	const info = node
 	const { control, placeholder, minLength, maxLength, rows = 3 } = info
 	const isCode = control === 'code'
 	const baseErrors = normalizeErrorMessages(errors)
@@ -24,6 +23,7 @@ export function StringField(props: RendererProps) {
 					onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) =>
 						triggerFormEvents(inputProps, event.target.value),
 					onBlur: inputProps.onBlur,
+					onKeyDown: inputProps.onKeyDown,
 					name: inputProps.name,
 					id: inputProps.id,
 					error: inputProps['aria-invalid'],
@@ -53,6 +53,7 @@ export function StringField(props: RendererProps) {
 					onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
 						triggerFormEvents(inputProps, event.target.value),
 					onBlur: inputProps.onBlur,
+					onKeyDown: inputProps.onKeyDown,
 					name: inputProps.name,
 					id: inputProps.id,
 					error: inputProps['aria-invalid'],
@@ -84,6 +85,7 @@ export function StringField(props: RendererProps) {
 				badge: node.meta.badge,
 				errors: baseErrors,
 				errorId: inputProps.errorId,
+				descriptionId: inputProps.descriptionId,
 				hideLabel: node.meta.hideLabel,
 				hideRequired: node.meta.hideRequired,
 			})}

@@ -1,4 +1,10 @@
 import type { Schema } from './schema'
+import {
+	collectRawValidationActions,
+	isSchema,
+	pipeRoot,
+	type SchemaRecord,
+} from './schemaStructure'
 import { readStandardSchemaMetadata } from './schemaMetadata'
 
 /** The only string transports a host needs in order to produce Valibot raw input. */
@@ -69,20 +75,6 @@ export interface RawInputProjectionFailure {
 
 export type RawInputProjectionResult = RawInputProjection | RawInputProjectionFailure
 
-type SchemaRecord = Schema & {
-	readonly kind: 'schema'
-	readonly type: string
-	readonly pipe?: readonly unknown[]
-	readonly wrapped?: Schema
-	readonly entries?: Readonly<Record<string, Schema>>
-	readonly item?: Schema
-	readonly items?: readonly Schema[]
-	readonly rest?: Schema
-	readonly value?: Schema
-	readonly literal?: unknown
-	readonly options?: readonly Schema[] | readonly unknown[]
-}
-
 type MutableRawInputRange = {
 	-readonly [TKey in keyof RawInputRange]: RawInputRange[TKey]
 }
@@ -115,14 +107,14 @@ type PortableShape =
 
 type ShapeResult =
 	| { readonly ok: true; readonly shape: PortableShape }
-	| { readonly ok: false; readonly schemaType: string; readonly reason: string }
+	| { readonly ok: false; readonly schema: SchemaRecord; readonly reason: string }
 
 type PathResult =
 	| { readonly ok: true; readonly schemas: readonly Schema[] }
 	| {
 			readonly ok: false
 			readonly kind: 'path_not_found' | 'ambiguous_path'
-			readonly schemaType: string
+			readonly schema: SchemaRecord
 			readonly reason: string
 	  }
 
@@ -174,24 +166,6 @@ const PORTABLE_FORMATS: Readonly<Record<string, string>> = {
 	uuid: 'UUID',
 }
 
-function isSchema(value: unknown): value is SchemaRecord {
-	return (
-		Boolean(value) && typeof value === 'object' && (value as { kind?: string }).kind === 'schema'
-	)
-}
-
-function pipeRoot(schema: Schema): SchemaRecord {
-	let current = schema as SchemaRecord
-	const seen = new Set<Schema>()
-	while (current.pipe && !seen.has(current)) {
-		seen.add(current)
-		const first = current.pipe[0]
-		if (!isSchema(first) || first === current) break
-		current = first
-	}
-	return current
-}
-
 function unwrapForPath(schema: Schema): SchemaRecord {
 	let current = pipeRoot(schema)
 	const seen = new Set<Schema>()
@@ -232,7 +206,7 @@ function resolvePath(schema: Schema, path: readonly string[], offset = 0): PathR
 		return {
 			ok: false,
 			kind: 'path_not_found',
-			schemaType: current.type,
+			schema: current,
 			reason: `Raw input path segment ${JSON.stringify(segment)} does not exist on ${current.type}.`,
 		}
 	}
@@ -247,14 +221,14 @@ function resolvePath(schema: Schema, path: readonly string[], offset = 0): PathR
 			return {
 				ok: false,
 				kind: 'ambiguous_path',
-				schemaType: current.type,
+				schema: current,
 				reason: `Raw input path segment ${JSON.stringify(segment)} is declared by multiple intersection options.`,
 			}
 		}
 		return {
 			ok: false,
 			kind: 'path_not_found',
-			schemaType: current.type,
+			schema: current,
 			reason: `Raw input path segment ${JSON.stringify(segment)} does not exist on the intersection.`,
 		}
 	}
@@ -268,7 +242,7 @@ function resolvePath(schema: Schema, path: readonly string[], offset = 0): PathR
 			return {
 				ok: false,
 				kind: 'ambiguous_path',
-				schemaType: current.type,
+				schema: current,
 				reason: `Raw input path segment ${JSON.stringify(segment)} is not present in every ${current.type} option.`,
 			}
 		}
@@ -281,51 +255,9 @@ function resolvePath(schema: Schema, path: readonly string[], offset = 0): PathR
 	return {
 		ok: false,
 		kind: 'path_not_found',
-		schemaType: current.type,
+		schema: current,
 		reason: `Raw input path cannot continue through ${current.type}.`,
 	}
-}
-
-type RawValidationActions = {
-	readonly actions: Array<Record<string, unknown>>
-	readonly transformed: boolean
-}
-
-function collectRawValidationActions(
-	schema: Schema,
-	bucket: Array<Record<string, unknown>> = [],
-	seen: Set<unknown> = new Set(),
-): RawValidationActions {
-	if (seen.has(schema)) return { actions: bucket, transformed: false }
-	seen.add(schema)
-	const current = schema as SchemaRecord
-
-	if (current.pipe) {
-		const first = current.pipe[0]
-		if (isSchema(first)) {
-			const nested = collectRawValidationActions(first, bucket, seen)
-			if (nested.transformed) return nested
-		}
-		for (let index = 1; index < current.pipe.length; index++) {
-			const item = current.pipe[index]
-			if (!item || typeof item !== 'object') continue
-			const action = item as Record<string, unknown>
-			if (action.kind === 'transformation') {
-				return { actions: bucket, transformed: true }
-			}
-			if (action.kind === 'validation') bucket.push(action)
-			else if (isSchema(action)) {
-				const nested = collectRawValidationActions(action, bucket, seen)
-				if (nested.transformed) return nested
-			}
-		}
-		return { actions: bucket, transformed: false }
-	}
-
-	if (current.wrapped && isSchema(current.wrapped)) {
-		return collectRawValidationActions(current.wrapped, bucket, seen)
-	}
-	return { actions: bucket, transformed: false }
 }
 
 function finiteNumber(value: unknown): value is number {
@@ -412,7 +344,7 @@ function withoutNull(shape: PortableShape): PortableShape | undefined {
 function unsupported(schema: SchemaRecord, detail?: string): ShapeResult {
 	return {
 		ok: false,
-		schemaType: schema.type,
+		schema,
 		reason: detail ?? `Raw input transport cannot be derived from schema type ${schema.type}.`,
 	}
 }
@@ -745,11 +677,14 @@ function freezeProjection(projection: RawInputProjection): RawInputProjection {
  * read from their first schema, so transforms never change the derived transport.
  * Optional/default wrappers are inspected structurally; their default getters,
  * validation callbacks, transform operations, and lazy schema getters are never
- * called. Unsupported or non-unique shapes return a stable failure result.
+ * called. When a schema determines a failure, onFailureSchema receives that
+ * node synchronously once. Successful projections and invalid roots skip the
+ * callback. The result only contains portable data.
  */
 export function projectRawInput(
 	schema: Schema,
 	path: readonly string[] = [],
+	options?: { readonly onFailureSchema?: (schema: Schema) => void },
 ): RawInputProjectionResult {
 	const snapshotPath = [...path]
 	if (!isSchema(schema)) {
@@ -764,12 +699,13 @@ export function projectRawInput(
 
 	const target = resolvePath(schema, snapshotPath)
 	if (target.ok === false) {
+		options?.onFailureSchema?.(target.schema)
 		return Object.freeze({
 			ok: false,
 			kind: target.kind,
 			path: Object.freeze(snapshotPath),
 			reason: target.reason,
-			schemaType: target.schemaType,
+			schemaType: target.schema.type,
 		})
 	}
 
@@ -782,12 +718,13 @@ export function projectRawInput(
 			!entry.result.ok,
 	)
 	if (failed) {
+		options?.onFailureSchema?.(failed.result.schema)
 		return Object.freeze({
 			ok: false,
 			kind: 'unsupported_schema',
 			path: Object.freeze(snapshotPath),
 			reason: failed.result.reason,
-			schemaType: failed.result.schemaType,
+			schemaType: failed.result.schema.type,
 		})
 	}
 

@@ -5,7 +5,14 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
 import { extractFormFields, type FieldNode } from '../core/fields'
-import { unionMeta } from '../core'
+import { arrayMeta, formMeta, numberMeta, parseFormFields, picklistMeta, unionMeta } from '../core'
+import {
+	buildEditableConfigPatch,
+	editableConfigPaths,
+	type ScalarRendererProps,
+	type ScalarRenderers,
+	webRenderers,
+} from '../web'
 import { AutoForm, useAutoFormCtx } from '../web/components/AutoForm'
 import { FieldRenderer } from '../web/components/internal/FieldRenderer'
 
@@ -60,9 +67,10 @@ afterEach(async () => {
 
 async function mount(
 	defaultValues: Record<string, unknown>,
-	fields?: FieldNode[],
+	fields?: readonly FieldNode[],
 	onSubmit?: (formApi: AnyFormApi) => void,
 	onChange?: () => void,
+	renderers?: ScalarRenderers,
 ) {
 	const schema = v.object({
 		database: v.object({ host: v.string(), user: v.string() }),
@@ -74,6 +82,7 @@ async function mount(
 			<MantineProvider>
 				<AutoForm
 					fields={fields ?? extractFormFields(schema)}
+					renderers={renderers}
 					formOpts={{
 						defaultValues,
 						listeners: { onChange },
@@ -389,17 +398,32 @@ it('initializes the selected discriminator when editing an initially empty union
 it.each(['readOnly', 'disabled', 'hidden'] as const)(
 	'respects %s metadata on same-path union branch controls',
 	async (flag) => {
-		const fields = extractFormFields(v.object({ setting: v.union([v.string(), v.number()]) }))
+		const fields = extractFormFields(
+			v.object({
+				setting: v.union([v.pipe(v.string(), formMeta({ [flag]: true })), v.number()]),
+			}),
+		)
 		const union = fields[0]!
 		expect(union.kind).toBe('union')
 		if (union.kind !== 'union') throw new Error('Expected union plan')
 		const branch = union.branches[0]!.fields[0]!
 		expect(branch.replaceValue).toBe(true)
-		branch.node = { ...branch.node, meta: { ...branch.node.meta, [flag]: true } }
-		const submitted = await mount({ setting: 'original' }, fields)
+		const submitted = await mount({ setting: 'original' }, fields, undefined, undefined, {
+			string: (props) => (
+				<>
+					<webRenderers.string {...props} />
+					<button type="button" onClick={() => props.inputProps.onChange?.('changed')}>
+						Change from renderer
+					</button>
+				</>
+			),
+		})
 		const control = container.querySelector<HTMLInputElement>('input[name="setting"]')
 		expect(flag === 'hidden' ? control === null : control?.[flag]).toBe(true)
-		if (flag !== 'hidden') await edit('setting', 'attempted')
+		if (flag !== 'hidden') {
+			await edit('setting', 'attempted')
+			await clickButton('Change from renderer')
+		}
 		await clickButton('Save')
 		expect(submitted).toHaveBeenCalledWith({ setting: 'original' })
 	},
@@ -425,18 +449,15 @@ it('initializes union selection for deep fields and native array edits while ret
 				v.object({
 					type: v.literal('local'),
 					details: v.object({ host: v.string() }),
-					servers: v.array(v.object({ host: v.string() })),
+					servers: v.pipe(
+						v.array(v.object({ host: v.string() })),
+						arrayMeta({ addLabel: 'Add server', defaultItem: { host: 'new' } }),
+					),
 				}),
 				v.object({ type: v.literal('remote'), url: v.string() }),
 			]),
 		}),
 	)
-	const union = fields[0]!
-	if (union.kind !== 'union') throw new Error('Expected union')
-	const servers = union.branches[0]!.fields.find((field) => field.key === 'servers')!.node
-	if (servers.kind !== 'array') throw new Error('Expected array')
-	servers.addLabel = 'Add server'
-	servers.defaultItem = { host: 'new' }
 	await mount({ connection: {} }, fields)
 	expect(ctx.form.state.isDirty).toBe(false)
 	await edit('connection.details.host', 'nested')
@@ -557,13 +578,16 @@ it('invalidates only the atomic ancestor server issue when editing a literal rec
 it.each([false, true])(
 	'associates picker array errors with its focusable input (create=%s)',
 	async (create) => {
-		const fields = extractFormFields(v.object({ tags: v.array(v.picklist(['alpha', 'beta'])) }))
-		const node = fields[0]!
-		if (node.kind !== 'array' || node.item?.kind !== 'picklist')
-			throw new Error('Expected picker array')
-		node.layout = 'picker'
-		node.item.searchable = true
-		node.item.create = create
+		const fields = extractFormFields(
+			v.object({
+				tags: v.pipe(
+					v.array(
+						v.pipe(v.picklist(['alpha', 'beta']), picklistMeta({ searchable: true, create })),
+					),
+					arrayMeta({ layout: 'picker' }),
+				),
+			}),
+		)
 		await mount({ tags: ['alpha'] }, fields)
 		await act(async () =>
 			ctx.form.setErrorMap({ onServer: { fields: { tags: 'Tags rejected' } } } as never),
@@ -579,14 +603,85 @@ it.each([false, true])(
 	},
 )
 
+it('keeps numeric and text picklist choices distinct through selection and reset', async () => {
+	const fields = extractFormFields(
+		v.object({
+			level: v.pipe(
+				v.picklist([1, '1', '"1"']),
+				picklistMeta({
+					disabled: ['1'],
+					entries: [
+						{ value: 1, label: 'Number' },
+						{ value: '1', label: 'Text' },
+					],
+				}),
+			),
+		}),
+	)
+	await mount({ level: '1' }, fields)
+	const control = container.querySelector<HTMLInputElement>('input:not([type="hidden"])')!
+	expect(control.value).toBe('Text')
+	await act(async () => control.click())
+	const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+	expect(options).toHaveLength(3)
+	expect(
+		options.find((option) => option.textContent === 'Text')?.hasAttribute('data-combobox-disabled'),
+	).toBe(true)
+	await act(async () => options.find((option) => option.textContent === 'Number')!.click())
+	expect(ctx.form.state.values.level).toBe(1)
+	await clickButton('Reset')
+	expect(ctx.form.state.values.level).toBe('1')
+	expect(control.value).toBe('Text')
+})
+
+it.each([false, true])(
+	'keeps numeric/text twins in a picker array while adding another choice (create=%s)',
+	async (create) => {
+		const fields = extractFormFields(
+			v.object({
+				levels: v.pipe(
+					v.array(v.pipe(v.picklist([1, '1', 'next']), picklistMeta({ create }))),
+					v.maxLength(3),
+					arrayMeta({ layout: 'picker' }),
+				),
+			}),
+		)
+		await mount({ levels: [1, '1'] }, fields)
+		const control = container.querySelector<HTMLInputElement>('input:not([type="hidden"])')!
+		await act(async () => {
+			control.focus()
+			control.click()
+		})
+		const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+			(item) => item.textContent === 'next',
+		)
+		expect(option).toBeDefined()
+		if (create) {
+			await editElement(control, 'custom')
+			await act(async () => {
+				control.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+			})
+		} else {
+			await act(async () => option!.click())
+		}
+		expect(ctx.form.state.values.levels).toEqual([1, '1', create ? 'custom' : 'next'])
+	},
+)
+
 it('renders select option descriptions and accepts a real dropdown selection', async () => {
-	const fields = extractFormFields(v.object({ role: v.picklist(['reader', 'writer']) }))
-	const node = fields[0]!
-	if (node.kind !== 'picklist') throw new Error('Expected picklist')
-	node.entries = [
-		{ value: 'reader', label: 'Reader', description: 'Read access' },
-		{ value: 'writer', label: 'Writer', description: 'Write access' },
-	]
+	const fields = extractFormFields(
+		v.object({
+			role: v.pipe(
+				v.picklist(['reader', 'writer']),
+				picklistMeta({
+					entries: [
+						{ value: 'reader', label: 'Reader', description: 'Read access' },
+						{ value: 'writer', label: 'Writer', description: 'Write access' },
+					],
+				}),
+			),
+		}),
+	)
 	await mount({ role: 'reader' }, fields)
 	const control = container.querySelector<HTMLInputElement>('input:not([type="hidden"])')!
 	await act(async () => control.click())
@@ -677,15 +772,21 @@ it.each([false, true])(
 
 it('preserves array operations for same-path union replacements', async () => {
 	const fields = extractFormFields(
-		v.object({ setting: v.union([v.array(v.object({ host: v.string() })), v.string()]) }),
+		v.object({
+			setting: v.union([
+				v.pipe(
+					v.array(v.object({ host: v.string() })),
+					arrayMeta({ addLabel: 'Add row', defaultItem: { host: 'new' } }),
+				),
+				v.string(),
+			]),
+		}),
 	)
 	const union = fields[0]!
 	if (union.kind !== 'union') throw new Error('Expected union')
 	const branch = union.branches[0]!.fields[0]!
 	expect(branch.replaceValue).toBe(true)
 	if (branch.node.kind !== 'array') throw new Error('Expected array')
-	branch.node.addLabel = 'Add row'
-	branch.node.defaultItem = { host: 'new' }
 	const submitted = await mount({ setting: [{ host: 'first' }, { host: 'second' }] }, fields)
 	await clickButton('Add row')
 	await clickButton('上移', 2)
@@ -699,13 +800,19 @@ it('preserves array operations for same-path union replacements', async () => {
 
 it('preserves structural array edits under literal record keys', async () => {
 	const fields = extractFormFields(
-		v.object({ labels: v.record(v.string(), v.array(v.object({ host: v.string() }))) }),
+		v.object({
+			labels: v.record(
+				v.string(),
+				v.pipe(
+					v.array(v.object({ host: v.string() })),
+					arrayMeta({ addLabel: 'Add literal row', defaultItem: { host: 'new' } }),
+				),
+			),
+		}),
 	)
 	const record = fields[0]!
 	if (record.kind !== 'record' || record.value?.kind !== 'array')
 		throw new Error('Expected record array')
-	record.value.addLabel = 'Add literal row'
-	record.value.defaultItem = { host: 'new' }
 	const initial = { labels: { 'x.y': [{ host: 'first' }, { host: 'second' }] } }
 	const submitted = await mount(initial, fields)
 	await clickButton('Add literal row')
@@ -776,4 +883,260 @@ it('returns submission rejection to imperative callers', async () => {
 	await act(async () => {
 		await expect(ctx.submit()).rejects.toBe(failure)
 	})
+})
+
+it('uses an instance number renderer for confirmed and pending port rows', async () => {
+	const schema = v.object({ ports: v.array(v.pipe(v.number(), v.integer())) })
+	const defaultValues = { ports: [3000, 4000] }
+	function PortControl(props: ScalarRendererProps<'number'>) {
+		return (
+			<div data-port-path={JSON.stringify(props.path)} data-integer={String(props.node.integer)}>
+				<webRenderers.number {...props} />
+			</div>
+		)
+	}
+	const submitted = await mount(defaultValues, extractFormFields(schema), undefined, undefined, {
+		number: PortControl,
+	})
+	const pending = () => container.querySelector<HTMLInputElement>('[data-port-path="[]"] input')!
+	expect(
+		container.querySelector('[data-port-path=\'["ports",0]\']')?.getAttribute('data-integer'),
+	).toBe('true')
+	await editElement(pending(), '8080')
+	expect(ctx.form.state.values).toEqual(defaultValues)
+	await act(async () =>
+		pending().dispatchEvent(
+			new KeyboardEvent('keydown', {
+				key: 'Enter',
+				bubbles: true,
+				cancelable: true,
+			}),
+		),
+	)
+	expect(input('ports[2]').value).toBe('8080')
+	await clickButton('上移', 2)
+	expect(input('ports[1]').value).toBe('8080')
+	await act(async () =>
+		ctx.form.setErrorMap({ onServer: { fields: { 'ports[1]': 'Port in use' } } } as never),
+	)
+	expect(input('ports[1]').getAttribute('aria-invalid')).toBe('true')
+	expect(input('ports[0]').getAttribute('aria-invalid')).not.toBe('true')
+	expect(input('ports[2]').getAttribute('aria-invalid')).not.toBe('true')
+	await clickButton('删除', 1)
+	expect(container.textContent).not.toContain('Port in use')
+	await editElement(pending(), '9090')
+	await clickButton('Save')
+	expect(submitted).toHaveBeenCalledWith(defaultValues)
+	await clickButton('Reset')
+	expect(pending().value).toBe('0')
+	expect(ctx.form.state.values).toEqual(defaultValues)
+})
+
+it('honors the declared variant key and submits only the active strict branch', async () => {
+	const schema = v.strictObject({
+		destination: v.pipe(
+			v.variant('mode', [
+				v.strictObject({
+					mode: v.literal(1),
+					path: v.string(),
+					fixed: v.optional(v.literal(true)),
+				}),
+				v.strictObject({
+					mode: v.literal('1'),
+					topic: v.string(),
+					fixed: v.optional(v.literal(false)),
+				}),
+			]),
+			unionMeta({ control: 'radio', preserve: true }),
+		),
+	})
+	const initial = { destination: { mode: 1, path: 'reports.json' } }
+	const submitted = await mount(initial, extractFormFields(schema))
+	const select = (index: number) =>
+		act(async () =>
+			container.querySelectorAll<HTMLInputElement>('input[type="radio"]')[index]!.click(),
+		)
+	await select(1)
+	await edit('destination.topic', 'alerts')
+	await clickButton('Save')
+	const queue = { destination: { mode: '1', topic: 'alerts' } }
+	expect(submitted).toHaveBeenLastCalledWith(queue)
+	expect(v.parse(schema, submitted.mock.lastCall![0])).toEqual(queue)
+	await select(0)
+	expect(input('destination.path').value).toBe('reports.json')
+	expect(ctx.form.state.values).toEqual(initial)
+	await clickButton('Reset')
+	await select(1)
+	expect(input('destination.topic').value).toBe('')
+})
+
+it('leaves a union unchanged when switching would discard protected values or require a read-only value', async () => {
+	const branches = v.pipe(
+		v.variant('mode', [
+			v.strictObject({
+				mode: v.literal('local'),
+				file: v.string(),
+				token: v.pipe(v.optional(v.string()), formMeta({ hidden: true })),
+			}),
+			v.strictObject({ mode: v.literal('remote'), url: v.string(), fixed: v.literal(true) }),
+		]),
+		unionMeta({ control: 'radio' }),
+	)
+	const fields = extractFormFields(v.object({ destination: branches }))
+	const saved = { destination: { mode: 'local', file: 'data', token: 'keep' } }
+	await mount(saved, fields)
+	const switchAway = () =>
+		act(async () => container.querySelectorAll<HTMLInputElement>('input[type="radio"]')[1]!.click())
+	await switchAway()
+	expect(container.textContent).toContain('当前选项包含受保护的值')
+	expect(ctx.form.state.values).toEqual(saved)
+	const withoutToken = { destination: { mode: 'local', file: 'data' } }
+	await act(async () => ctx.reset(withoutToken))
+	await switchAway()
+	expect(container.textContent).toContain('目标选项缺少必填的只读值')
+	expect(ctx.form.state.values).toEqual(withoutToken)
+})
+
+it('selects, saves and restores both inputs of an optional false-or-object union', async () => {
+	const schema = v.object({
+		prometheus: v.optional(
+			v.union([v.literal(false), v.object({ path: v.optional(v.string(), '/metrics') })]),
+			false,
+		),
+	})
+	const initial = { prometheus: { path: '/saved' } }
+	const submitted = await mount(initial, parseFormFields(extractFormFields(schema)))
+	const select = async (index: number) => {
+		const control = container.querySelector<HTMLInputElement>('input[placeholder="选择类型"]')!
+		await act(async () => control.click())
+		const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')][index]!
+		await act(async () => option.click())
+	}
+	expect(input('prometheus.path').value).toBe('/saved')
+	await edit('prometheus.path', '/draft')
+	await select(0)
+	await clickButton('Save')
+	expect(submitted).toHaveBeenLastCalledWith({ prometheus: false })
+	expect(v.parse(schema, submitted.mock.lastCall![0])).toEqual({ prometheus: false })
+	await select(1)
+	expect(input('prometheus.path').value).toBe('/draft')
+	await act(async () => ctx.reset({ prometheus: false }))
+	await select(1)
+	expect(input('prometheus.path').value).toBe('')
+	await act(async () => ctx.reset({}))
+	expect(ctx.form.state.values).toEqual({})
+	await select(0)
+	expect(ctx.form.state.values).toEqual({ prometheus: false })
+})
+
+it('preserves inactive branch drafts across equivalent field projections until reset', async () => {
+	const schema = v.object({
+		destination: v.pipe(
+			v.variant('kind', [
+				v.strictObject({ kind: v.literal('file'), path: v.string() }),
+				v.strictObject({ kind: v.literal('queue'), topic: v.string() }),
+			]),
+			unionMeta({ control: 'radio', preserve: true }),
+		),
+	})
+	const fields = extractFormFields(schema)
+	const initial = { destination: { kind: 'file', path: 'saved' } }
+	const select = (index: number) =>
+		act(async () =>
+			container.querySelectorAll<HTMLInputElement>('input[type="radio"]')[index]!.click(),
+		)
+	await mount(initial, fields)
+	await edit('destination.path', 'file draft')
+	await select(1)
+	await edit('destination.topic', 'queue draft')
+	await mount(initial, parseFormFields(fields))
+	expect(input('destination.topic').value).toBe('queue draft')
+	await select(0)
+	expect(input('destination.path').value).toBe('file draft')
+	await clickButton('Reset')
+	expect(input('destination.path').value).toBe('saved')
+	await select(1)
+	expect(input('destination.topic').value).toBe('')
+})
+
+it('limits atomic union and array writes to represented branches with editable saved values', () => {
+	const member = v.union([
+		v.literal(false),
+		v.object({
+			path: v.string(),
+			token: v.pipe(v.optional(v.string()), formMeta({ hidden: true })),
+		}),
+	])
+	const fields = extractFormFields(
+		v.object({ entry: member, rows: v.array(member), title: v.string() }),
+	)
+	for (const protectedValue of [
+		{ path: '/m', token: 'keep' },
+		{ path: '/m', unknown: 'keep' },
+	]) {
+		const saved = { entry: protectedValue, rows: [false, protectedValue], title: 'before' }
+		expect(
+			buildEditableConfigPatch(fields, { entry: false, rows: [], title: 'after' }, saved),
+		).toEqual({ set: { title: 'after' } })
+		expect(editableConfigPaths(fields, saved)).toEqual([['title']])
+	}
+	const editable = { entry: false, rows: [false, { path: '/m' }] }
+	expect(buildEditableConfigPatch(fields, { entry: { path: '/new' }, rows: [] }, editable)).toEqual(
+		{ set: { entry: { path: '/new' }, rows: [] } },
+	)
+})
+
+it('moves an inactive union draft with its array row', async () => {
+	const item = v.pipe(
+		v.variant('type', [
+			v.object({ type: v.literal('file'), path: v.string() }),
+			v.object({ type: v.literal('queue'), topic: v.string() }),
+		]),
+		unionMeta({ control: 'radio' }),
+	)
+	await mount(
+		{
+			rows: [
+				{ type: 'file', path: 'first' },
+				{ type: 'file', path: 'second' },
+			],
+		},
+		extractFormFields(v.object({ rows: v.array(item) })),
+	)
+	const select = (index: number) =>
+		act(async () =>
+			container.querySelectorAll<HTMLInputElement>('input[type="radio"]')[index]!.click(),
+		)
+	await edit('rows[0].path', 'first draft')
+	await select(1)
+	await edit('rows[0].topic', 'queue draft')
+	await clickButton('下移', 0)
+	expect(input('rows[1].topic').value).toBe('queue draft')
+	await select(2)
+	expect(input('rows[1].path').value).toBe('first draft')
+	expect(input('rows[0].path').value).toBe('second')
+})
+
+it('preserves null collection seeds and uses only raw numeric input constraints', async () => {
+	const format = { style: 'unit', unit: 'liter', minimumFractionDigits: 2 } as const
+	const schema = v.object({
+		ports: v.pipe(v.array(v.nullable(v.number())), arrayMeta({ defaultItem: null })),
+		multiplier: v.pipe(
+			v.number(),
+			v.transform((n) => n * 10),
+			v.minValue(10),
+			numberMeta({ format }),
+		),
+	})
+	const submitted = await mount({ ports: [] }, extractFormFields(schema))
+	await clickButton('添加')
+	await edit('multiplier', '1')
+	await act(async () =>
+		input('multiplier').dispatchEvent(new FocusEvent('focusout', { bubbles: true })),
+	)
+	expect(input('multiplier').value).toBe('1')
+	expect(container.textContent).toContain(new Intl.NumberFormat(undefined, format).format(1))
+	await clickButton('Save')
+	expect(submitted).toHaveBeenCalledWith({ multiplier: 1, ports: [null] })
+	expect(v.parse(schema, submitted.mock.lastCall![0])).toEqual({ multiplier: 10, ports: [null] })
 })

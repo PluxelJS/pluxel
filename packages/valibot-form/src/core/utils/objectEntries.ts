@@ -1,66 +1,39 @@
 import type { Schema } from '../schema'
-import { isDevelopmentEnvironment } from './environment'
+import { isSchema, pipeRoot } from '../schemaStructure'
 
 export interface ObjectEntry {
-	name: string
-	schema: Schema
+	readonly name: string
+	readonly schema: Schema
+	readonly duplicate?: true
 }
 
-function isSchema(value: unknown): value is Schema {
-	return (
-		Boolean(value) && typeof value === 'object' && (value as { kind?: string }).kind === 'schema'
-	)
-}
-
-function collectFromObject(schema: Schema, bucket: Map<string, Schema>): boolean {
-	const entries = (schema as { entries?: Record<string, Schema> }).entries
-	if (!entries) return false
-	for (const [name, child] of Object.entries(entries)) {
-		if (!isSchema(child)) continue
-		if (bucket.has(name) && isDevelopmentEnvironment()) {
-			console.warn(
-				`[valibot-form] Intersection contains duplicate key "${name}". The latter definition will override the former.`,
-			)
+function collect(
+	schema: Schema,
+	bucket: Map<string, ObjectEntry>,
+	ancestors: Set<Schema>,
+): boolean {
+	if (!isSchema(schema) || ancestors.has(schema)) return false
+	const current = pipeRoot(schema)
+	if (current.type === 'object' || current.type === 'strict_object') {
+		if (!current.entries) return false
+		for (const [name, child] of Object.entries(current.entries)) {
+			if (!isSchema(child)) return false
+			const previous = bucket.get(name)
+			bucket.set(name, previous ? { ...previous, duplicate: true } : { name, schema: child })
 		}
-		bucket.set(name, child)
+		return true
 	}
-	return true
-}
-
-function collectFromIntersect(schema: Schema, bucket: Map<string, Schema>): boolean {
-	const options = (schema as { options?: Schema[] }).options
-	if (!options) return false
-	for (const option of options) {
-		if (!isSchema(option)) return false
-		if (option.type === 'object') {
-			if (!collectFromObject(option, bucket)) return false
-			continue
-		}
-		if (option.type === 'intersect') {
-			if (!collectFromIntersect(option, bucket)) return false
-			continue
-		}
-		return false
+	if (current.type !== 'intersect' || !current.options) return false
+	ancestors.add(schema)
+	try {
+		return current.options.every((option) => isSchema(option) && collect(option, bucket, ancestors))
+	} finally {
+		ancestors.delete(schema)
 	}
-	return true
 }
 
-/**
- * Collects object-like entries (plain object or nested intersections of objects).
- *
- * Returns undefined when the schema cannot be treated as an object.
- */
+/** Collect explicit entries from an object, strict object, or intersection of those schemas. */
 export function collectObjectEntries(schema: Schema): ObjectEntry[] | undefined {
-	if (!isSchema(schema)) return undefined
-	const bucket = new Map<string, Schema>()
-
-	if (schema.type === 'object') {
-		if (!collectFromObject(schema, bucket)) return undefined
-	} else if (schema.type === 'intersect') {
-		if (!collectFromIntersect(schema, bucket)) return undefined
-	} else {
-		return undefined
-	}
-
-	return Array.from(bucket.entries()).map(([name, child]) => ({ name, schema: child }))
+	const bucket = new Map<string, ObjectEntry>()
+	return collect(schema, bucket, new Set()) ? Array.from(bucket.values()) : undefined
 }

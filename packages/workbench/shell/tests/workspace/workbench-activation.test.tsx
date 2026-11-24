@@ -227,6 +227,7 @@ function contentWithStatus() {
 							depth: 0,
 							meta: { label: 'Status' },
 							required: true,
+							nullable: false,
 							control: 'text',
 						},
 					},

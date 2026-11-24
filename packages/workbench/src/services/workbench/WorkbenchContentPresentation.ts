@@ -1,10 +1,6 @@
 import type { WorkbenchContentPlan } from '@pluxel/core/internal'
-import {
-	containsUnsupportedFormField,
-	projectDataPresentationField,
-	projectFormPresentationFields,
-	assertFormPresentationRoot,
-} from '@pluxel/services/management/internal'
+import { extractField, extractFormFields, type FieldNode } from 'valibot-form'
+import { parseWorkbenchContentPresentation } from '../../workbench/client-validation.ts'
 import {
 	readWorkbenchContentSlot,
 	type WorkbenchContentActionResult,
@@ -24,10 +20,7 @@ export type WorkbenchContentActionHandler = (
 export type WorkbenchContentContract = Readonly<{
 	presentation: WorkbenchContentPresentation
 	data: ReadonlyMap<string, WorkbenchContentSchema>
-	actions: ReadonlyMap<
-		string,
-		Readonly<{ schema?: WorkbenchContentSchema; presentation: WorkbenchContentActionPresentation }>
-	>
+	actions: ReadonlyMap<string, Readonly<{ schema?: WorkbenchContentSchema }>>
 }>
 
 export type WorkbenchContentRuntimeBinding = Readonly<{
@@ -48,15 +41,13 @@ export function prepareWorkbenchContentContract(
 	}
 
 	const data = new Map<string, WorkbenchContentSchema>()
-	const actions = new Map<
-		string,
-		Readonly<{ schema?: WorkbenchContentSchema; presentation: WorkbenchContentActionPresentation }>
-	>()
-	const presentation = plan.slots.map((slot) => {
+	const actions = new Map<string, Readonly<{ schema?: WorkbenchContentSchema }>>()
+	const slots = plan.slots.map((slot) => {
 		const declaration = readWorkbenchContentSlot(declarations[slot.key]!)
 		if (slot.kind === 'data') {
 			if (declaration.kind !== 'data') mismatch(slot.key)
-			const field = projectDataPresentationField(declaration.schema, slot.key, slot.display)
+			assertDisplaySchema(declaration.schema, `Content data ${slot.key}`, new Set())
+			const field = extractField(declaration.schema, { fieldName: slot.key, path: slot.key })
 			data.set(slot.key, declaration.schema)
 			return Object.freeze({
 				kind: 'data' as const,
@@ -86,13 +77,16 @@ export function prepareWorkbenchContentContract(
 			})
 		} else {
 			if (declaration.input === undefined) mismatch(slot.key)
-			assertFormPresentationRoot(declaration.input, `Content action ${slot.key} input`)
-			const fields = projectFormPresentationFields(
-				declaration.input,
-				`Content action ${slot.key} input`,
-			)
-			if (containsUnsupportedFormField(fields)) {
-				throw new TypeError(`[workbench] Content action ${slot.key} has unsupported form fields`)
+			let fields: readonly FieldNode[]
+			try {
+				fields = extractFormFields(declaration.input)
+			} catch (error) {
+				if (error instanceof TypeError) {
+					throw new TypeError(`[workbench] Content action ${slot.key}: ${error.message}`, {
+						cause: error,
+					})
+				}
+				throw error
 			}
 			actionPresentation = Object.freeze({
 				kind: 'action' as const,
@@ -105,16 +99,13 @@ export function prepareWorkbenchContentContract(
 		}
 		actions.set(
 			slot.key,
-			Object.freeze({
-				...(declaration.input === undefined ? {} : { schema: declaration.input }),
-				presentation: actionPresentation,
-			}),
+			Object.freeze(declaration.input === undefined ? {} : { schema: declaration.input }),
 		)
 		return actionPresentation
 	})
 
 	return Object.freeze({
-		presentation: Object.freeze({ slots: Object.freeze(presentation) }),
+		presentation: parseWorkbenchContentPresentation({ slots }, plan),
 		data,
 		actions,
 	})
@@ -169,6 +160,78 @@ export function validateWorkbenchContentBinding(
 			: { subscribe: subscribe as (changed: () => void) => Disposable }),
 		...(actions === undefined ? {} : { actions }),
 	})
+}
+
+function assertDisplaySchema(schema: unknown, label: string, seen: Set<object>): void {
+	if (!schema || typeof schema !== 'object' || (schema as { kind?: unknown }).kind !== 'schema') {
+		throw new TypeError(`${label} must be a Valibot schema`)
+	}
+	if (seen.has(schema)) throw new TypeError(`${label} must not contain a recursive schema`)
+	seen.add(schema)
+	try {
+		const record = schema as unknown as Record<string, unknown>
+		if (record.default !== undefined || record.fallback !== undefined || record.type === 'lazy') {
+			throw new TypeError(`${label} must not use defaults or lazy schemas`)
+		}
+		if (Array.isArray(record.pipe)) {
+			let checkedRoot = false
+			for (const item of record.pipe) {
+				if (!item || typeof item !== 'object') continue
+				const { kind } = item as { kind?: unknown }
+				if (kind === 'transformation') {
+					throw new TypeError(`${label} must not transform display values`)
+				}
+				if (kind === 'schema' && item !== schema) {
+					assertDisplaySchema(item, label, seen)
+					if (item === record.pipe[0]) checkedRoot = true
+				}
+			}
+			if (checkedRoot) return
+		}
+		if (record.type === 'nullable' || record.type === 'readonly') {
+			assertDisplaySchema(record.wrapped, label, seen)
+			return
+		}
+		if (
+			record.type === 'optional' ||
+			record.type === 'undefinedable' ||
+			record.type === 'nullish' ||
+			record.type === 'undefined'
+		) {
+			throw new TypeError(`${label} must always produce a portable value`)
+		}
+		if (record.type === 'object' || record.type === 'strict_object') {
+			if (!record.entries || typeof record.entries !== 'object' || Array.isArray(record.entries)) {
+				throw new TypeError(`${label} has an invalid object schema`)
+			}
+			for (const [key, child] of Object.entries(record.entries)) {
+				assertDisplaySchema(child, `${label}.${key}`, seen)
+			}
+			return
+		}
+		if (record.type === 'array') {
+			assertDisplaySchema(record.item, `${label}[]`, seen)
+			return
+		}
+		if (record.type === 'record') {
+			const key = record.key as { type?: unknown } | undefined
+			if (key?.type !== 'string') throw new TypeError(`${label} record keys must be strings`)
+			assertDisplaySchema(key, `${label} key`, seen)
+			assertDisplaySchema(record.value, `${label}.*`, seen)
+			return
+		}
+		if (
+			record.type !== 'string' &&
+			record.type !== 'number' &&
+			record.type !== 'boolean' &&
+			record.type !== 'picklist' &&
+			record.type !== 'literal'
+		) {
+			throw new TypeError(`${label} uses unsupported display schema type ${String(record.type)}`)
+		}
+	} finally {
+		seen.delete(schema)
+	}
 }
 
 function mismatch(key: string): never {

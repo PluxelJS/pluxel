@@ -87,7 +87,7 @@ import {
 	clonePluginRecentUpdateSnapshot,
 } from '@pluxel/host/internal/protocol'
 import {
-	parseConfigPresentationPlanV2,
+	parseConfigPresentationPlanV3,
 	parseRuntimePortableData,
 	validateRuntimePortableData,
 	RuntimeProtocolValidationError,
@@ -623,7 +623,7 @@ export function parseConfigPresentationResult(input: unknown): ConfigPresentatio
 		shape(value, ['ok', 'plan'], [], 'config presentation result')
 		return Object.freeze({
 			ok: true,
-			plan: parseConfigPresentationPlanV2(value.plan),
+			plan: parseConfigPresentationPlanV3(value.plan),
 		})
 	}
 	if (value.ok !== false) fail('config presentation result.ok must be boolean')
@@ -1627,35 +1627,30 @@ function configFailure(value: Record<string, unknown>): ConfigResult {
 
 function configValidationErrors(input: unknown, label: string): ConfigValidationErrors {
 	const fields = object(input, label)
-	const output: Record<
-		string,
-		Readonly<Record<string, readonly Readonly<{ message: string; path: readonly string[] }>[]>>
-	> = {}
+	const output: Record<string, ConfigValidationErrors[string]> = {}
 	for (const [fieldName, sectionsInput] of Object.entries(fields)) {
 		const sectionLabel = `${label}.${fieldName}`
 		const sections = object(sectionsInput, sectionLabel)
-		const sectionOutput: Record<string, { message: string; path: string[] }[]> = {}
+		const sectionOutput: Record<string, ConfigValidationErrors[string][string]> = {}
 		for (const [sectionName, errorsInput] of Object.entries(sections)) {
 			const errorsLabel = `${sectionLabel}.${sectionName}`
-			defineRecordField(
-				sectionOutput,
-				sectionName,
-				Object.freeze(
-					array(errorsInput, errorsLabel).map((errorInput, index) => {
-						const errorLabel = `${errorsLabel}[${index}]`
-						const error = object(errorInput, errorLabel)
-						shape(error, ['message', 'path'], [], errorLabel)
-						return Object.freeze({
-							message: text(error.message, `${errorLabel}.message`),
-							path: Object.freeze(
-								array(error.path, `${errorLabel}.path`).map((segment, pathIndex) =>
-									text(segment, `${errorLabel}.path[${pathIndex}]`),
-								),
-							) as string[],
-						})
-					}),
-				) as { message: string; path: string[] }[],
-			)
+			const issues = array(errorsInput, errorsLabel).map((errorInput, index) => {
+				const errorLabel = `${errorsLabel}[${index}]`
+				const error = object(errorInput, errorLabel)
+				shape(error, ['message', 'path'], [], errorLabel)
+				const pathLabel = `${errorLabel}.path`
+				return Object.freeze({
+					message: text(error.message, `${errorLabel}.message`),
+					path: Object.freeze(
+						array(error.path, pathLabel).map((step, stepIndex) => {
+							if (typeof step === 'string') return step
+							if (typeof step === 'number' && Number.isFinite(step)) return step
+							fail(`${pathLabel}[${stepIndex}] must be a string or finite number`)
+						}),
+					),
+				})
+			})
+			defineRecordField(sectionOutput, sectionName, Object.freeze(issues))
 		}
 		defineRecordField(output, fieldName, Object.freeze(sectionOutput))
 	}

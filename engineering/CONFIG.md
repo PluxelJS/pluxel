@@ -102,7 +102,7 @@ fork 省略代码 `config` 时以默认节点的代码数据为起点，显式�
 
 原始来源先通过可移植数据树校验；普通对象递归合并，array/tuple 整项替换。只有最终 effective input 执行完整 schema。被遮盖值仅验证结构，在取消遮盖或 definition 改变时重新验证。env/file 不建立管理写锁，mode、权限、文档 readOnly 独立。来源证明保存在内部 WeakMap，与 shadowedPaths 在同一协调查询投影。
 
-`patch/validate({ set?, remove? })` 先按 string[] 路径删除 saved fields，再递归合并 set，最后校验一次。`reset(owner)` 删除保存记录，带 paths 时只删指定嵌套字段，`[]` 只读。reset 恢复继承；路径非空、有界、安全、互不重叠，array 不允许按 index 删除。Core mutation 不能绕过 Host 事务。
+`patch/validate({ set?, remove? })` 先按字符串属性路径删除 saved fields，再递归合并 set，最后校验一次。删除末尾子项会清理空祖先，需显式保存空对象时在同一 patch 的 `set` 写回 `{}`。`reset(owner)` 删除保存记录，带 paths 时只删指定嵌套字段，`[]` 只读。reset 恢复继承。路径非空、有界、安全、互不重叠，数组按整项写入。Core mutation 不能绕过 Host 事务。
 
 Host 按节点选择自动启动与 fork 可用性，按 consumer 和 requirement 选择 provider override。保存输入分别用 `false` 或 `null` 表达禁用或清除。原始 `patch` 按键写入，`reset` 删除目标，批量撤销可同时写入先前记录并删除原先缺失的键。有效策略再投影为协调器所需的启动根、可用 fork 和依赖覆盖，并核验 fork 引用。应用的 provider defaults 整项选择，execution 独立选择各字段。节点级 `policyMode` 优先于 `policy.modes[field]` 和 `policy.mode`。原始策略编辑可以保存被遮盖值。要求实际生效的命令在副作用前报告 `policy_shadowed`。已保存但待切换的执行参数以 `requires-host-recreation` 报告。
 
@@ -121,6 +121,8 @@ Host 准备后订阅 config 文档并补读一次，追平准备期间写入。�
 ## 保存与应用
 
 patch/reset/field mutation 与 fork/catalog mutation 共用 coordinator exclusive queue。expectedManagedRevision 在任何副作用前比较本领域原始保存版本；只改被遮盖值推进 managedRevision，不推进 desired/applied revision 或通知 listener。
+
+显式 `config.validate` 可带 `expectedManagedRevision`。Host 在同一队列中、构造候选和运行 schema 前检查版本，冲突返回 `revision_conflict`。预检结果描述候选配置，编辑器从保存回执或权威回读更新基线。
 
 固定顺序为：
 
@@ -157,16 +159,18 @@ Core revision cache 按 owner 索引；Host 按节点索引代码声明，完整
 
 normalized output 只能是无环 plain object/array 和 JSON primitives；Core clone/freeze，拒绝 Date/Map/Set、class、function、symbol、accessor 等隐藏行为或 identity。
 
-Management 将 declaration 编译为 version 2 presentation plan：path 和可移植 field nodes。无法表达的 node 显示为 read-only unsupported；浏览器不执行 schema，plan 不复制 defaults 或为展示重跑 transform。General/Part sections 共用一个 node 保存与验证。
+Management 从 owner 和每个 Part occurrence 的原声明生成 version 3 presentation plan，其中 `sections` 包含 `path`、`fieldName` 和 `fields`。通用字段读取由 `valibot-form` 的 `parseFormFields` 执行。无法表达的 node 带只读原因。General/Part sections 独立编辑并共用一次节点保存与验证。校验路径保留数字数组下标，Shell 以最长 occurrence 前缀定位分区。
 
-Valibot schema 拥有 kind、requiredness、choices、format、range。`formMeta()` 添加 title/description 及 section/layout/help/placeholder/control variant，展示偏好不改变 validation。
+Core 的 `configs.use()` 接受 Standard Schema。Workbench 读取 Valibot 的对象属性、原始类型、字面量和 transform 之前的输入约束，Host 用作者的原声明执行默认值、业务谓词和转换。`formMeta()` 补充标题、说明、分组和控件偏好。工具链定位配置使用处与离线解释部署绑定的职责见[工具链](TOOLCHAIN.md)。
+
+配置页以稀疏的 `managedInput` 为基线。布尔属性区分缺键、`false` 和 `true`，有效值与来源由 Host 独立返回。写入和恢复继承共用同一可写范围。集合或分支包含隐藏、只读或未呈现的保存值时，整项替换会丢失这些数据，编辑器保留原值。Record 的键顺序属于本地展示，数组顺序参与保存。[配置表单所有权](../packages/workbench/shell/src/app/plugins/config/README.md)
 
 ## 实现入口
 
 - `packages/core/src/services/config/`：output、revision、validation cache。
 - `packages/core/src/plugins/composition/{PluginConfigs,ConfigUpdate}.ts`、`plugins/runtime/plugin-service/ConfigUpdate.ts`：声明与 generation listener。
 - `packages/host/src/{config-store,config-records,config-paths,input-mode,persistence,input-bindings,config}.ts`：原始输入、事务、来源和保存。
-- `packages/valibot-form/src/core/rawInput.ts`：可移植原始输入检查。
+- `packages/valibot-form/src/core/{fields,fieldData,rawInput}.ts` 负责字段提取、字段读取和原始输入投影。
 - `packages/rolldown/src/rolldown/plugins/{configSourcePlugin,staticConfigEnvironment}.ts`、`src/cli/static-config-environment-output.ts`：metadata 与 binding 编译。
 
 ## 验证

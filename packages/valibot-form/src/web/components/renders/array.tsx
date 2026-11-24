@@ -3,14 +3,11 @@ import {
 	Button,
 	Card,
 	Group,
-	NumberInput,
 	Table,
 	SimpleGrid,
 	Stack,
-	Switch,
 	Text,
 	Textarea,
-	TextInput,
 } from '@mantine/core'
 import {
 	IconArrowDown,
@@ -36,7 +33,6 @@ import { DEFAULT_TEXTS, GRID_COLUMN_THRESHOLD } from '../../../core/constants'
 import type {
 	ArrayFieldNode,
 	FieldNode,
-	NumberFieldNode,
 	PicklistFieldNode,
 	StringFieldNode,
 } from '../../../core/fields'
@@ -44,13 +40,13 @@ import { FieldChrome } from '../chrome/FieldChrome'
 import { useFieldRenderer } from '../internal/fieldRendererContext'
 import { cleanProps } from '../../utils/propHelpers'
 import { PicklistControl } from './controls/PicklistControl'
+import { PendingScalar } from './controls/PendingScalar'
 import {
 	joinErrorMessages,
 	normalizeErrorMessages,
 	type FieldError,
 	type RendererProps,
 	type TriggerOptions,
-	toInputString,
 	triggerFormBlur,
 	triggerFormEvents,
 } from './types'
@@ -177,7 +173,7 @@ function createArrayItemKey(nextId: number) {
 }
 
 type ArrayFieldPicklistProps = {
-	node: RendererProps['node']
+	node: ArrayFieldNode
 	inputProps: RendererProps['inputProps']
 	items: unknown[]
 	itemNode: PicklistFieldNode
@@ -211,20 +207,9 @@ function ArrayFieldPicklist(props: ArrayFieldPicklistProps) {
 				aria-invalid={inputProps['aria-invalid']}
 				aria-describedby={inputProps['aria-describedby']}
 				ariaLabel={node.meta.label}
-				meta={{
-					options: itemNode.options,
-					entries: itemNode.entries,
-					labels: itemNode.labels,
-					disabled: itemNode.disabled,
-					placeholder: itemNode.placeholder,
-					searchable: itemNode.searchable,
-					clearable: itemNode.clearable ?? true,
-					max: itemNode.max,
-					create: itemNode.create ?? false,
-					control: itemNode.control ?? 'select',
-					multiple: true,
-					emptyLabel: itemNode.emptyLabel,
-				}}
+				node={itemNode}
+				multiple
+				maxValues={node.max}
 				value={items}
 				onChange={(next) => {
 					if (Array.isArray(next)) updateItems(next)
@@ -258,7 +243,7 @@ export function ArrayField(props: RendererProps) {
 		return (
 			<ArrayFieldPicklist
 				inputProps={inputProps}
-				node={node}
+				node={info}
 				items={items}
 				itemNode={itemNode as PicklistFieldNode}
 				baseErrors={baseErrors}
@@ -325,7 +310,7 @@ function ArrayFieldMain(
 	const handleAdd = () => {
 		if (!canAdd) return
 		itemKeysRef.current = [...itemKeys, createArrayItemKey(itemKeyIdRef.current++)]
-		props.arrayActions.push(cloneValue(info.defaultItem ?? defaultItemForNode(itemNode)))
+		props.arrayActions.push(cloneValue(itemTemplate))
 		handleBlur()
 	}
 	const handleRemove = (index: number) => {
@@ -366,9 +351,7 @@ function ArrayFieldMain(
 	}, [items])
 
 	const compactKind = itemNode?.kind ?? inferredPrimitiveKind
-	const numberMeta = itemNode?.kind === 'number' ? (itemNode as NumberFieldNode) : null
 	const stringMeta = itemNode?.kind === 'string' ? (itemNode as StringFieldNode) : null
-	const picklistMeta = itemNode?.kind === 'picklist' ? (itemNode as PicklistFieldNode) : null
 	const isLongText = stringMeta?.control === 'textarea' || stringMeta?.control === 'code'
 	const isCompactList =
 		layout === 'list' &&
@@ -379,35 +362,30 @@ function ArrayFieldMain(
 		!(compactKind === 'string' && isLongText)
 	const inlineAddEnabled = isCompactList && canAdd && !isLocked
 	const [draftValue, setDraftValue] = useState<unknown>()
-	const draftFocusRef = useRef<HTMLInputElement | null>(null)
-	const draftPicklistRef = useRef<HTMLDivElement | null>(null)
+	const itemTemplate =
+		info.defaultItem === undefined ? defaultItemForNode(itemNode) : info.defaultItem
 
 	useEffect(() => {
 		setDraftValue(undefined)
 	}, [compactKind])
 
-	useEffect(() => {
-		if (!inlineAddEnabled) return
-		setDraftValue((prev: unknown) => {
-			if (prev !== undefined) return prev
-			const template = info.defaultItem ?? defaultItemForNode(itemNode)
-			return cloneValue(template)
-		})
-	}, [inlineAddEnabled, compactKind, info.defaultItem, itemNode])
-
-	useEffect(() => {
-		if (!inlineAddEnabled) return
-		requestAnimationFrame(() => {
-			if (draftFocusRef.current) {
-				draftFocusRef.current.focus({ preventScroll: true })
-				return
-			}
-			const picklistInput = draftPicklistRef.current?.querySelector('input')
-			picklistInput?.focus({ preventScroll: true })
-		})
-	}, [inlineAddEnabled, items.length])
-
 	const nestedItemNode = useMemo(() => (itemNode ? tweakNestedNode(itemNode) : null), [itemNode])
+	const fallbackScalar = (kind: 'boolean' | 'number' | 'string', index: number): FieldNode => {
+		const base = {
+			path: node.path,
+			depth: node.depth + 1,
+			required: false,
+			nullable: false,
+			meta: {
+				label: `${itemLabel} #${index + 1}`,
+				hideLabel: true,
+				hideRequired: true,
+			},
+		}
+		if (kind === 'number') return { ...base, kind }
+		if (kind === 'boolean') return { ...base, kind, control: 'switch' }
+		return { ...base, kind, control: 'text' }
+	}
 	const renderControl = (
 		index: number,
 		current: unknown,
@@ -415,19 +393,7 @@ function ArrayFieldMain(
 	): ControlRenderResult => {
 		const inferred =
 			typeof current === 'number' ? 'number' : typeof current === 'boolean' ? 'boolean' : 'string'
-		const childNode: FieldNode =
-			nestedItemNode ??
-			({
-				...node,
-				kind: inferred,
-				control: inferred === 'boolean' ? 'switch' : 'text',
-				meta: {
-					...node.meta,
-					label: `${itemLabel} #${index + 1}`,
-					hideLabel: true,
-					hideRequired: true,
-				},
-			} as FieldNode)
+		const childNode = nestedItemNode ?? fallbackScalar(inferred, index)
 		const json = !itemNode && current !== null && typeof current === 'object'
 		return {
 			inline: childNode.kind === 'boolean' && !options.compact,
@@ -522,13 +488,7 @@ function ArrayFieldMain(
 	)
 
 	const handleInlineAdd = () => {
-		const template = info.defaultItem ?? defaultItemForNode(itemNode)
-		const valueToAdd =
-			draftValue === undefined ||
-			draftValue === null ||
-			(typeof draftValue === 'number' && Number.isNaN(draftValue))
-				? template
-				: draftValue
+		const valueToAdd = draftValue === undefined ? itemTemplate : draftValue
 		if (!canAdd) return
 		itemKeysRef.current = [...itemKeys, createArrayItemKey(itemKeyIdRef.current++)]
 		props.arrayActions.push(cloneValue(valueToAdd))
@@ -544,83 +504,13 @@ function ArrayFieldMain(
 				</Text>
 			</td>
 			<td>
-				{compactKind === 'number' ? (
-					<NumberInput
-						value={
-							typeof draftValue === 'number'
-								? draftValue
-								: draftValue == null
-									? ''
-									: Number(draftValue)
-						}
-						onChange={(val) => {
-							const parsed = val === '' || val === undefined ? undefined : Number(val)
-							const safe = Number.isNaN(parsed) ? undefined : parsed
-							setDraftValue(safe)
-						}}
-						ref={draftFocusRef}
-						onKeyDown={(event) => {
-							if (event.key === 'Enter') {
-								event.preventDefault()
-								handleInlineAdd()
-							}
-						}}
-						onBlur={handleBlur}
-						placeholder={numberMeta?.placeholder}
-						min={numberMeta?.min}
-						max={numberMeta?.max}
-						step={numberMeta?.step ?? (numberMeta?.integer ? 1 : undefined)}
-						disabled={isLocked}
-					/>
-				) : compactKind === 'boolean' ? (
-					<Switch
-						checked={Boolean(draftValue)}
-						onChange={(event) => setDraftValue(event.currentTarget.checked)}
-						onBlur={handleBlur}
-						disabled={isLocked}
-					/>
-				) : compactKind === 'picklist' ? (
-					<div ref={draftPicklistRef}>
-						<PicklistControl
-							meta={{
-								options: picklistMeta?.options,
-								entries: picklistMeta?.entries,
-								labels: picklistMeta?.labels,
-								disabled: picklistMeta?.disabled,
-								placeholder: picklistMeta?.placeholder,
-								searchable: picklistMeta?.searchable,
-								clearable: true,
-								max: picklistMeta?.max,
-								create: picklistMeta?.create,
-								control: picklistMeta?.control ?? 'select',
-								multiple: false,
-								emptyLabel: picklistMeta?.emptyLabel,
-							}}
-							value={draftValue}
-							onChange={(next) => setDraftValue(next)}
-							onBlur={handleBlur}
-							disabled={isLocked}
-						/>
-					</div>
-				) : (
-					<TextInput
-						value={toInputString(draftValue)}
-						onChange={(event) => setDraftValue(event.currentTarget.value)}
-						ref={draftFocusRef}
-						onKeyDown={(event) => {
-							if (event.key === 'Enter') {
-								event.preventDefault()
-								handleInlineAdd()
-							}
-						}}
-						onBlur={handleBlur}
-						placeholder={stringMeta?.placeholder}
-						minLength={stringMeta?.minLength}
-						maxLength={stringMeta?.maxLength}
-						disabled={isLocked}
-						readOnly={inputProps.readOnly ?? false}
-					/>
-				)}
+				<PendingScalar
+					node={nestedItemNode ?? fallbackScalar(inferredPrimitiveKind ?? 'string', items.length)}
+					value={draftValue === undefined ? itemTemplate : draftValue}
+					onChange={setDraftValue}
+					onConfirm={handleInlineAdd}
+					focusKey={items.length}
+				/>
 			</td>
 			<td style={{ width: 120 }}>
 				<Group gap="xs" justify="flex-end">

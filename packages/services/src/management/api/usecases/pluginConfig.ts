@@ -10,7 +10,7 @@ import {
 } from '@pluxel/host/internal'
 import { type HostConfigMutation } from '@pluxel/host'
 import { type ConfigPresentationResult, type ConfigResult } from '../../web/protocol'
-import { compileConfigPresentationPlanV2 } from '../presenters/configPresentation'
+import { compileConfigPresentationPlanV3 } from '../presenters/configPresentation'
 import { parseConfigFieldPathSegments } from '../../web/validation'
 
 export async function pluginConfigGet(
@@ -82,26 +82,16 @@ export async function pluginConfigPresentation(
 		}
 	}
 	const config = lookup.config
-	const declarations = [
-		...(config.owner ? [{ path: Object.freeze([] as string[]), declaration: config.owner }] : []),
-		...config.parts.flatMap((part) =>
-			part.declaration ? [{ path: part.path, declaration: part.declaration }] : [],
-		),
-	]
-	const sections = declarations.map(({ path, declaration }) =>
-		Object.freeze({
-			path: Object.freeze([...path]),
-			fieldName: declaration.fieldName,
-			schema: declaration.schema,
-		}),
-	)
 	return {
 		ok: true,
-		plan: compileConfigPresentationPlanV2({
-			fieldName: config.fieldName,
-			schema: config.schema,
-			sections,
-		}),
+		plan: compileConfigPresentationPlanV3([
+			...(config.owner
+				? [{ path: [], fieldName: config.owner.fieldName, schema: config.owner.schema }]
+				: []),
+			...config.parts.flatMap(({ path, declaration }) =>
+				declaration ? [{ path, fieldName: declaration.fieldName, schema: declaration.schema }] : [],
+			),
+		]),
 	}
 }
 

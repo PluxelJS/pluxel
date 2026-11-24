@@ -14,9 +14,11 @@
 
 ## 提交与并发
 
-当前 section 使用原生 `form.handleSubmit`；保存全部从 dirty sections 构造一个原子 patch。两条路径都通过 `useConfigSave`。Portable plan 不带可执行客户端 schema，完整验证仍由 runtime 决定，字段校验失败必须保留输入。
+当前 section 使用原生 `form.handleSubmit`，保存全部从 dirty sections 构造一个原子 patch。待保存状态取决于可写值与保存基线的差异。字段改回原值、撤销尚未提交的布尔覆盖或仅调整 record 显示顺序，可以直接关闭文档。存在写入时两条保存路径都通过 `useConfigSave`。完整验证由 runtime 执行，字段校验失败保留输入。
 
-仅 editable projection 进入 patch，未渲染的子项保留已保存值。响应只有在 form instance 与 draft 仍匹配提交快照时才能 reset 表单。保存全部的 validation errors 要求全部参与快照仍然有效，因为验证可能依赖原本 clean 的 section。同步 admission guard 阻止 React 尚未渲染 pending 时，两个 DOM submit 同时发起写入。
+分区直接消费 Management 的 V3 `sections`。控件、patch 和恢复继承使用同一字段写入范围及该分区的保存基线。响应只有在 form instance 与 draft 仍匹配提交快照时才能 reset 表单。保存全部的 validation errors 要求全部参与快照仍然有效，因为验证可能依赖原本 clean 的 section。同步 admission guard 阻止 React 尚未渲染 pending 时，两个 DOM submit 同时发起写入。
+
+Host 返回的 issue 保留类型化路径。最长 occurrence 前缀确定分区，精确匹配且参与提交的挂载字段接收错误。其余 issue 在文档摘要按绝对路径出现一次。
 
 调用方不能把按钮 disabled 当作唯一并发保护，也不能以新服务端 snapshot 无条件覆盖本地 dirty draft。失败、晚到结果和 owner 切换必须由其提交快照判定。
 

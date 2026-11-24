@@ -149,6 +149,16 @@ it('previews and saves input through Management, while an older editor keeps its
 		appliedRevision: before.appliedRevision,
 	})
 	if (saved.ok === false) throw new Error(saved.message)
+	expect(await client.config.validate(dispatcher, { set: { endpoint: 99 } }, revision)).toEqual({
+		...conflict,
+		message: 'Managed config changed; refresh before editing.',
+		managedRevision: saved.managedRevision,
+	})
+	expect(await client.config.validate(dispatcher, { set: { endpoint: 99 } })).toMatchObject({
+		ok: false,
+		code: 'validation_failed',
+		managedRevision: saved.managedRevision,
+	})
 	expect(await client.config.reset(dispatcher, undefined, revision)).toMatchObject(conflict)
 	expect(await client.config.get(dispatcher)).toMatchObject({ managedInput: patch.set })
 	expect(

@@ -75,7 +75,7 @@ Same-origin single-use ticket POST 写入 HttpOnly cookie，MF 静态资源通�
 
 Markdown 构建为有界、immutable portable AST，浏览器再次验证后以 React semantic elements 渲染。每个 slot 恰好出现一次；unknown/missing/duplicate/nested slot、attributes、inline action 和不安全语法均拒绝。Shell 不执行 Markdown parser、raw HTML 或 Plugin JS。
 
-Publication 将真实 Valibot schema 投影为 portable presentation，并核对 artifact/declaration/binding。Data schema 使用 transform-free display validation；action input 使用 object/object-intersection form schema。服务端先检查 budget，再 authoritative parse，随后调用 handler；schema、closure、handler 和 secret 留在服务端。
+Publication 从 Valibot schema 提取共用 `FieldNode`，并核对 artifact、声明和绑定。Action 从空对象起稿，发布时检查控件能否构造必填字段，按 slot 与字段路径报告不可填写的值。分支选择器可以提供同路径的字面量。必填数组行里的只读属性需要由 `defaultItem` 提供匹配的值，可省略的属性可交给服务端默认值。客户端检查消息预算和 pinned slot，再用 `parseFormFields` 读取字段。提交由服务端先检查 budget，再用原 schema 解析，成功后调用 handler。Data schema 使用无 transform 的展示校验。Schema、closure、handler 和 secret 留在服务端。
 
 `load()` 的 detached readonly snapshot 经再次验证后投影为 portable value；action 取得 parse 后 fresh mutable `InferOutput`。确认框只防误触，授权仍由 handler 根据 principal 和当前业务状态判断。
 

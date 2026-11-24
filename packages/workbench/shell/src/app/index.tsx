@@ -8,7 +8,6 @@ import {
 	type RuntimeClientBootstrap,
 	RuntimeManagementClientProvider,
 } from '../runtime'
-import './bootstrap'
 import '../styles/index.scss'
 import { ProductProvider } from './product'
 import { createAppRouter, readWorkbenchUiBasePath } from './router'

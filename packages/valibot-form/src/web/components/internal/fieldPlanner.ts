@@ -81,7 +81,7 @@ function buildSections(fields: PlannedField[]): SectionPlan[] {
 		}))
 }
 
-export function planFieldSections(fields: FieldNode[]): FieldPlanResult {
+export function planFieldSections(fields: readonly FieldNode[]): FieldPlanResult {
 	const hiddenFields: PlannedField[] = []
 	const visibleFields: PlannedField[] = []
 	for (const node of fields) {

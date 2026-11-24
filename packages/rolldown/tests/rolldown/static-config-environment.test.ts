@@ -2,6 +2,8 @@ import { dirname, resolve } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { createFixture } from 'fs-fixture'
+import * as v from 'valibot'
+import { formMeta, projectRawInput } from 'valibot-form'
 import { describe, expect, it } from 'vitest'
 import { createConfigSchemaSourceResolver } from '../../src/rolldown/plugins/configSourcePlugin'
 import { parseStaticRuntimeDeclaration } from '../../src/rolldown/plugins/staticConfigEnvironment'
@@ -23,7 +25,11 @@ import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 	`
 }
 
-async function parseFixture(code: string, requireStaticPlugins = false) {
+async function parseFixture(
+	code: string,
+	requireStaticPlugins = false,
+	files: Record<string, string> = {},
+) {
 	await using fixture = await createFixture({
 		'schemas.ts': `
 			import * as v from 'valibot'
@@ -58,6 +64,7 @@ async function parseFixture(code: string, requireStaticPlugins = false) {
 			export const BillingReference = { address() { throw new Error('Address references must not execute') } }
 		`,
 		'entry.ts': code,
+		...files,
 	})
 	const id = fixture.getPath('entry.ts')
 	const ast = parseStandaloneWithLang(code, id)
@@ -317,6 +324,163 @@ describe('static config environment declaration lowering', () => {
 		expect(facts.targets[0]).toMatchObject({ environmentName: 'APP_NAME', path: ['name'] })
 	})
 
+	it('projects the selected path before transforms without evaluating callbacks or sibling schemas', async () => {
+		const code = staticEntry({
+			extra: `
+				import * as vb from 'valibot'
+				import { formMeta as present } from 'valibot-form'
+				const fail = () => { throw new Error('callback must not run') }
+				const settings = {
+					...readDynamicEntries(),
+					port: vb.optional(vb.pipe(
+						vb.pipe(vb.number(), vb.integer(), vb.minValue(1), vb.check(fail)),
+						vb.transform(fail),
+						vb.minValue(50),
+						present({ description: 'Input port.', hint: readDynamicHint() }),
+					), fail),
+					other: vb.pipe(vb.string(), vb.check(fail)),
+					lazy: vb.lazy(fail),
+					opaque: createSiblingSchema(),
+				}
+				const StaticConfig = vb.strictObject(settings)
+			`,
+			bindings: "[envBinding({config:{schema:StaticConfig,mapping:{port:'APP_PORT'}}})]",
+		})
+		let callbacks = 0
+		const fail = (): never => {
+			callbacks += 1
+			throw new Error('callback must not run')
+		}
+		const runtime = v.strictObject({
+			port: v.optional(
+				v.pipe(
+					v.pipe(v.number(), v.integer(), v.minValue(1), v.check(fail)),
+					v.transform((_port): number => fail()),
+					v.minValue(50),
+					formMeta({ description: 'Input port.' }),
+				),
+				fail,
+			),
+			other: v.pipe(v.string(), v.check(fail)),
+			lazy: v.lazy(fail),
+		})
+		const facts = await parseFixture(code)
+		expect(facts.targets[0].projection).toEqual(projectRawInput(runtime, ['port']))
+		expect(facts.environmentExample).toContain(
+			'# Input port.\n# Input: number (finite integer, >= 1)\n# APP_PORT=',
+		)
+		expect(projectRawInput(runtime, ['lazy'])).toMatchObject({
+			ok: false,
+			kind: 'unsupported_schema',
+			schemaType: 'lazy',
+		})
+		await expect(
+			parseFixture(code.replace("{port:'APP_PORT'}", "{lazy:'APP_LAZY'}")),
+		).rejects.toThrow(/APP_LAZY.*\[unsupported_schema\].*schema type lazy/)
+		expect(callbacks).toBe(0)
+	})
+
+	it('distinguishes a missing literal path from an ambiguous intersection path', async () => {
+		const code = (key: string) =>
+			staticEntry({
+				extra: `
+				import * as v from 'valibot'
+				const Combined = v.intersect([
+					v.object({ duplicated: v.number(), port: v.number() }),
+					v.object({ duplicated: v.string(), name: v.string() }),
+				])
+			`,
+				bindings: `[envBinding({config:{schema:Combined,mapping:{${key}:'APP_VALUE'}}})]`,
+			})
+		await expect(parseFixture(code('duplicated'))).rejects.toThrow(
+			/path \["duplicated"\] \[ambiguous_path\].*multiple intersection options/,
+		)
+		await expect(parseFixture(code('missing'))).rejects.toThrow(
+			/path \["missing"\] \[path_not_found\].*does not exist on the intersection/,
+		)
+		const facts = await parseFixture(code('port'))
+		expect(facts.targets[0].projection.transport).toBe('number')
+	})
+
+	it.each([
+		'entries.port = v.string()',
+		'Object.assign(entries, {port: v.string()})',
+		'const alias = entries; configure(alias)',
+		'const alias = entries; alias.port = v.string()',
+		'({chosen: entries.port} = overrides)',
+		'configure(flag ? entries : defaults)',
+		'function install() { configure(entries) }; install()',
+		'function install(v) { v.object(entries) }; install(customFactories)',
+	])('rejects a write or escape of the selected entry at its use: %s', async (write) => {
+		const code = staticEntry({
+			extra: `import * as v from 'valibot'
+			const entries = {port: v.number(), other: v.number()};
+			${write}
+			const Settings = v.object(entries)`,
+			bindings: "[envBinding({config:{schema:Settings,mapping:{port:'APP_PORT'}}})]",
+		})
+		await expect(parseFixture(code)).rejects.toThrow(
+			/APP_PORT.*entry\.ts.*this use may change schema property "port"/,
+		)
+	})
+
+	it('preserves known factory reads, untouched properties and independent lexical scopes', async () => {
+		const code = staticEntry({
+			extra: `import * as v from 'valibot'
+			const entries = {port: v.number(), other: v.number()}
+			const alias = entries
+			alias.other = v.string()
+			function install(entries) { configure(entries) }
+			declare function useUnrelatedEntries(entries: unknown): void
+			const make = v.strictObject
+			const First = make(entries)
+			const Settings = make(alias)`,
+			bindings: "[envBinding({config:{schema:Settings,mapping:{port:'APP_PORT'}}})]",
+		})
+		const facts = await parseFixture(code)
+		expect(facts.targets[0].projection).toEqual(
+			projectRawInput(v.strictObject({ port: v.number(), other: v.string() }), ['port']),
+		)
+	})
+
+	it('checks the use of imported entries in the consumer scope and locates the write there', async () => {
+		const code = staticEntry({
+			extra: "import { Settings } from './fields'",
+			bindings: "[envBinding({config:{schema:Settings,mapping:{port:'APP_PORT'}}})]",
+		})
+		const declarations = 'export const entries = {port:v.number()};'
+		const wrap = (write: string) => ({
+			'entries.ts': `import * as v from 'valibot'; ${declarations}`,
+			'fields.ts': `import * as v from 'valibot'; import * as source from './entries';\n${write}\nexport const Settings = v.strictObject(source.entries)`,
+		})
+		const baseline = await parseFixture(code, false, wrap(''))
+		expect(baseline.targets[0].projection.transport).toBe('number')
+		await expect(
+			parseFixture(code, false, wrap('const alias = source.entries; override(alias)')),
+		).rejects.toThrow(/fields\.ts:2:31 .*this use may change schema property "port"/)
+	})
+
+	it('uses ESM binding identity across star exports, including the known package namespaces', async () => {
+		const code = staticEntry({
+			extra: "import { Settings } from './barrel'",
+			bindings: "[envBinding({config:{schema:Settings,mapping:{port:'APP_PORT'}}})]",
+		})
+		const files = {
+			'base.ts':
+				"import * as v from 'valibot'; export const Settings = v.object({ port: v.number() })",
+			'first.ts': "export { Settings } from './base'",
+			'second.ts': "import { Settings } from './base'; export { Settings }",
+			'barrel.ts':
+				"export * from 'valibot'; export * from 'valibot-form'; export * from './first'; export * from './second'",
+		}
+		const facts = await parseFixture(code, false, files)
+		expect(facts.targets[0].projection.transport).toBe('number')
+		const alias = "import { Settings as base } from './base'; export const Settings = base"
+		await expect(
+			parseFixture(code, false, { ...files, 'first.ts': alias, 'second.ts': alias }),
+		).rejects.toThrow(/cannot resolve schema expression Settings/)
+	})
+
 	it.each([
 		["[{plugin: AlphaPlugin, config:{endpoint:'APP_ENDPOINT'}}]", 'must call envBinding'],
 		["[envBinding({config:{mapping:{endpoint:'APP_ENDPOINT'}}})]", 'requires schema and mapping'],
@@ -358,12 +522,17 @@ describe('static config environment declaration lowering', () => {
 				bindings: "[envBinding({vault:{schema:VaultSchema,mapping:{other:'APP_TOKEN'}}})]",
 			})
 		await expect(parseFixture(entry("v.picklist(['first', 'second'])"))).rejects.toThrow(
-			'Vault binding key other is not declared',
+			/\[path_not_found\].*Vault binding key "other" is not declared/,
 		)
-		const fallback = await parseFixture(
-			entry("v.fallback(v.literal('first'), () => { throw new Error('must not execute') })"),
-		)
-		expect(fallback.targets).toMatchObject([{ environmentName: 'APP_TOKEN', path: ['other'] }])
+		for (const runtimeKey of [
+			"v.fallback(v.literal('first'), computeFallback)",
+			"v.pipe(v.literal('first'), v.check(checkKey))",
+		]) {
+			const facts = await parseFixture(entry(runtimeKey))
+			expect(facts.targets).toMatchObject([
+				{ environmentName: 'APP_TOKEN', path: ['other'], projection: { transport: 'string' } },
+			])
+		}
 	})
 
 	it('rejects factory-local helpers that shadow the imported binding authority', async () => {
@@ -635,7 +804,7 @@ import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 					throw new Error(message)
 				},
 			}),
-		).rejects.toThrow('only direct Valibot and valibot-form factory calls are allowed')
+		).rejects.toThrow('cannot resolve makeSchema to a Valibot or valibot-form factory import')
 	})
 
 	it('allows only an explicit inert Valibot factory set', async () => {
@@ -677,6 +846,6 @@ import { defineHostApplication, envBinding, fileBinding } from '@pluxel/host'
 					throw new Error(message)
 				},
 			}),
-		).rejects.toThrow('Valibot method v.getDescription is not an allowed inert schema factory')
+		).rejects.toThrow('valibot.getDescription is not an allowed inert schema factory')
 	})
 })

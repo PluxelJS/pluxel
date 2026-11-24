@@ -1,2 +1,13 @@
 export * from './components'
-export { buildEditableConfigPatch, editableConfigPaths } from './configPatch'
+export { webRenderers } from './components/internal/FieldRenderer'
+export type {
+	FieldError,
+	InputProps,
+	ScalarRendererProps,
+	ScalarRenderers,
+} from './components/renders/types'
+export {
+	buildEditableConfigPatch,
+	editableConfigPaths,
+	prepareEditableConfigFields,
+} from './configPatch'

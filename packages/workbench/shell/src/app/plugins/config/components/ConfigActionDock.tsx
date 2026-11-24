@@ -16,6 +16,7 @@ export function ConfigActionDock({
 	hasMultipleSections,
 	savingScope,
 	canSaveAll,
+	canRestoreInheritance,
 	sectionOptions,
 	onActiveKeyChange,
 	onSubmitCurrent,
@@ -30,6 +31,7 @@ export function ConfigActionDock({
 	hasMultipleSections: boolean
 	savingScope?: 'current' | 'all'
 	canSaveAll: boolean
+	canRestoreInheritance: boolean
 	sectionOptions: Array<{ value: string; label: string }>
 	onActiveKeyChange: (key: string) => void
 	onSubmitCurrent: () => void
@@ -108,7 +110,7 @@ export function ConfigActionDock({
 					variant="subtle"
 					leftSection={<IconRestore size={14} />}
 					onClick={onRestoreInheritance}
-					disabled={activeState.submitting || saving}
+					disabled={!canRestoreInheritance || activeState.submitting || saving}
 				>
 					恢复继承
 				</Button>

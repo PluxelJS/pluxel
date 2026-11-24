@@ -38,12 +38,12 @@ export class WorkerPlugin extends BasePlugin {
 
 1. **类顶层字段声明**：`this.configs.use()` 必须声明为插件类（或 `PluginPart` 类）的普通类属性。请勿将其放置在构造函数体内、类方法中或外部辅助函数中。
 2. **使用 TypeScript 属性**：使用常规的 `private`、`protected` 或 `readonly` 关键字，不要使用 JavaScript 原生私有字段（`#config`）。
-3. **顶层必须为 Object**：传入的 Schema 顶层必须解析为一个普通对象结构（`v.object(...)`）。
+3. **顶层输入与输出是普通对象**：定义具名的 `v.object(...)` 或 `v.strictObject(...)`，再传给 `this.configs.use()`。Core 接受符合对象输入和输出约定的 Standard Schema。Workbench 能展开 Valibot 的对象、严格对象及这些对象的交集。
 4. **深层冻结只读**：`this.configs.use()` 返回的是深度冻结的只读快照。如果业务需要对配置内的数据进行就地排序或增删，请先进行浅拷贝（例如 `[...this.config.items]`）。
 
 ## 增强表单展示（valibot-form）
 
-如果需要在 Workbench 管理后台中呈现清晰的表单标题、输入提示或步长控制，可以配合使用 `@pluxel/valibot-form`：
+使用 `valibot-form` 为 Workbench 字段添加标题、输入提示和步长控制。
 
 ```ts twoslash
 // @filename: config.ts
@@ -76,7 +76,7 @@ export class WorkerPlugin extends BasePlugin {
 }
 ```
 
-这些表单元数据只增强界面的编辑体验，不会增加运行时的额外开销。
+表单从 transform 前的声明提取输入约束。Host 用原 schema 校验提交后的有效输入，再执行转换。用 `v.optional` 允许缺键，用 `v.nullable` 允许显式 `null`，用 `v.nullish` 同时允许两者。控件与元数据见 [Workbench 表单用法](../workbench/valibot-form.mdx)。
 
 ## 让运行中的 Plugin 接收配置更新
 
@@ -158,6 +158,10 @@ class SearchPlugin extends BasePlugin {
 
 - `Ctrl/⌘ + S`：保存当前分区所做的修改；
 - `Ctrl/⌘ + Shift + S`：一次性保存当前插件所有分区的改动。
+
+表单编辑 Host 已保存的原始输入。布尔属性可选择「继承」「开」「关」，可空字段可显式保存 `null`。声明优先时，被遮盖的保存值仍可编辑，字段说明会显示当前生效的来源和值。「撤销」还原本地草稿，「恢复继承」删除当前分区可写的已保存值。Host 校验合成后的有效输入，校验失败时保留草稿。
+
+将字段改回保存值即可关闭文档。若删除整行、切换分支或恢复分区会连带删除隐藏或无法展示的保存值，编辑器会保护该项。Record 行可以在本地调整显示顺序，需要持久化顺序时请用数组。
 
 ## 敏感信息说明
 

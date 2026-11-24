@@ -6,10 +6,8 @@ import type {
 } from '@pluxel/core/federation'
 import type { WorkbenchContentPlan } from '@pluxel/core/internal'
 import type { RpcTarget } from 'capnweb'
-import type {
-	ConfigPresentationFieldV1,
-	RuntimeJsonObject,
-} from '@pluxel/services/management/protocol'
+import type { RuntimeJsonObject } from '@pluxel/services/management/protocol'
+import type { FieldNode } from 'valibot-form'
 import type { WorkbenchPlacement } from './definition.ts'
 
 export type WorkbenchFederatedViewRef = Readonly<{
@@ -129,7 +127,7 @@ export type WorkbenchContentDataPresentation = Readonly<{
 	kind: 'data'
 	key: string
 	display: 'inline' | 'block'
-	field: ConfigPresentationFieldV1
+	field: FieldNode
 }>
 
 export type WorkbenchContentActionPresentation = Readonly<{
@@ -142,7 +140,7 @@ export type WorkbenchContentActionPresentation = Readonly<{
 		| Readonly<{ input: 'none'; fields?: never }>
 		| Readonly<{
 				input: 'dialog' | 'embedded'
-				fields: readonly ConfigPresentationFieldV1[]
+				fields: readonly FieldNode[]
 		  }>
 	)
 

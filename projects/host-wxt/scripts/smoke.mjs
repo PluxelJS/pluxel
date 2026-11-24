@@ -147,6 +147,10 @@ try {
 	await settings.reload()
 	await extra.waitFor()
 	assert.equal(await extra.inputValue(), 'tag')
+	await extra.fill('tag,ref')
+	assert.equal(await save.isEnabled(), true)
+	await extra.fill('tag')
+	assert.equal(await save.isEnabled(), false)
 	await trackingForm.getByRole('button', { name: '恢复插件默认配置' }).click()
 	await expectLink(page, clean)
 	await settings.getByRole('switch', { name: '移除 UTM 追踪参数', disabled: false }).press('Space')
@@ -185,6 +189,27 @@ try {
 		.press('Space')
 	await fragmentForm.getByRole('button', { name: '保存配置' }).click()
 	await expectLink(page, 'https://example.org/app')
+	await settings.reload()
+	const removeHashRoutes = fragmentForm.getByRole('switch', { name: '同时移除哈希路由' })
+	await removeHashRoutes.waitFor()
+	assert.equal(await removeHashRoutes.isChecked(), true)
+	await removeHashRoutes.press('Space')
+	await fragmentForm.getByRole('button', { name: '保存配置' }).click()
+	await expectLink(page, routerLink)
+	await settings.reload()
+	await removeHashRoutes.waitFor()
+	assert.equal(await removeHashRoutes.isChecked(), false)
+	assert.equal(
+		await settings.evaluate(async () => {
+			const key = 'pluxel.config/config.json'
+			const stored = await chrome.storage.local.get(key)
+			const raw = stored[key]
+			return JSON.parse(raw).json.plugins.find(({ config }) => 'removeHashRoutes' in config)?.config
+				.removeHashRoutes
+		}),
+		false,
+		'the options page persisted an explicit false',
+	)
 	await fragmentForm.getByRole('button', { name: '恢复插件默认配置' }).click()
 	await expectLink(page, routerLink)
 	await page.reload()

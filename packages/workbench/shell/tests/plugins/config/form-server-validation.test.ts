@@ -34,26 +34,53 @@ describe('server validation routing', () => {
 				paths.map((path, index) => ({ path, message: `Issue ${index}` })),
 				new Set(['profile.host', 'servers[0].host']),
 			),
-		).toEqual({ fields: {}, form: paths.map((_, index) => `Issue ${index}`) })
+		).toEqual({
+			fields: {},
+			form: [
+				'$.hidden · Issue 0',
+				'$.inactive.value · Issue 1',
+				'$["profile.host"] · Issue 2',
+				'$.servers["0"].host · Issue 3',
+				'$.profile[""].host · Issue 4',
+			],
+		})
 	})
 
-	it('relativizes config section errors and restores stringified array indices', () => {
+	it('assigns each config issue to its longest occurrence prefix, with one absolute fallback', () => {
 		expect(
 			mapConfigValidationErrors(
 				{
 					_root: {
 						cache: [
-							{ path: ['cache', 'servers', '0', 'host'], message: 'Invalid host' },
+							{ path: ['cache', 'servers', 0, 'host'], message: 'Invalid host' },
+							{ path: ['cache', 'servers'], message: 'Duplicate connection IDs' },
+							{ path: ['cache', 'servers', '0', 'host'], message: 'Literal key' },
 							{ path: ['other', 'host'], message: 'Other section failed' },
+							{ path: [], message: 'Configuration failed' },
 						],
 					},
 				},
-				new Set(['servers[0].host']),
-				['cache'],
+				[
+					{ key: 'root', path: [], mounted: new Set(['cache.servers[0].host', 'other.host']) },
+					{ key: 'cache', path: ['cache'], mounted: new Set(['servers[0].host', 'servers']) },
+					{ key: 'other', path: ['other'] },
+				],
 			),
 		).toEqual({
-			fields: { 'servers[0].host': [{ message: 'Invalid host' }] },
-			form: ['Other section failed'],
+			fieldsBySection: new Map([
+				[
+					'cache',
+					{
+						'servers[0].host': [{ message: 'Invalid host' }],
+						servers: [{ message: 'Duplicate connection IDs' }],
+					},
+				],
+			]),
+			summary: [
+				'$.cache.servers["0"].host · Literal key',
+				'$.other.host · Other section failed',
+				'$ · Configuration failed',
+			],
 		})
 	})
 })

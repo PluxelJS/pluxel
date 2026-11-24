@@ -11,10 +11,13 @@ import { createServiceInternalTestHost } from '@pluxel/services/internal/test'
 import { NodeElysiaApplicationCarrier } from '../../../packages/services/src/elysia/node'
 import { RUNTIME_SESSION_PATH, type RuntimeSessionRoot } from '@pluxel/services/management/session'
 import { RUNTIME_MANAGEMENT_PROTOCOL_MAJOR } from '@pluxel/services/management/protocol'
+import { createRuntimeManagementClient } from '@pluxel/services/management/client'
 import NodeWebSocket from 'crossws/websocket'
+import { extractFormFields } from 'valibot-form'
+import { prepareEditableConfigFields } from 'valibot-form/web'
 import { describe, expect, it } from 'vitest'
 import { CredentialStore } from '../src/credentials.ts'
-import { AuthPlugin } from '../src/index.ts'
+import { AuthConfig, AuthPlugin } from '../src/index.ts'
 import { hashPassword } from '../src/password.ts'
 
 const ORIGIN = 'https://runtime.test:3000'
@@ -84,6 +87,32 @@ describe('official authentication vNext Runtime integration', () => {
 			} finally {
 				disposeRpcValue(management)
 			}
+
+			const client = createRuntimeManagementClient(ready.management)
+			const presentation = await withRuntimeSessionTimeout(
+				client.config.presentation(AuthPlugin.nodeAddress()),
+				'Auth config presentation',
+			)
+			expect(presentation).toEqual({
+				ok: true,
+				plan: {
+					version: 3,
+					sections: [{ path: [], fieldName: 'config', fields: extractFormFields(AuthConfig) }],
+				},
+			})
+			if (presentation.ok === false) throw new Error(presentation.message)
+			const [mode] = prepareEditableConfigFields(presentation.plan.sections[0]!.fields, {})
+			expect(mode).toMatchObject({
+				kind: 'union',
+				name: 'mode',
+				discriminator: 'type',
+				branches: [
+					{ discriminatorValue: 'password' },
+					{ discriminatorValue: 'password-totp' },
+					{ discriminatorValue: 'oidc' },
+				],
+			})
+			expect(mode?.meta.readOnly).toBeUndefined()
 
 			// The accepted operation may lose its reply when it withdraws its own authentication
 			// authority, but it must drain the provider without waiting on the session's lease.

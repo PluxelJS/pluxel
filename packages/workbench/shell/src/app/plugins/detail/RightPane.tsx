@@ -139,7 +139,7 @@ function ConfigContent({
 				<Text c="dimmed">加载配置中…</Text>
 			</Center>
 		)
-	if (!config.data || !config.data.snapshot || config.data.fields.length === 0)
+	if (!config.data?.snapshot || config.data.sections.every(({ fields }) => fields.length === 0))
 		return (
 			<EmptyState
 				icon={<IconSettingsOff size={28} />}
@@ -152,7 +152,6 @@ function ConfigContent({
 		<ConfigForm
 			owner={owner}
 			displayName={displayName}
-			fields={config.data.fields}
 			snapshot={config.data.snapshot}
 			sections={config.data.sections}
 			active={active}

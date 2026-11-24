@@ -35,7 +35,7 @@ export type {
 } from '@pluxel/host/internal/agent/runtime'
 export {
 	parseConfigFieldPathSegments,
-	parseConfigPresentationPlanV2,
+	parseConfigPresentationPlanV3,
 	parseRuntimeMeta,
 	parseRuntimePortableData,
 	RuntimeProtocolValidationError,

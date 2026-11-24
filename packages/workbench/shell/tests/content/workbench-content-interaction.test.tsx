@@ -7,7 +7,16 @@ import type {
 	WorkbenchContentPresentation,
 	WorkbenchOpenedContentHandle,
 } from '@pluxel/workbench/client'
-import type { ConfigPresentationFieldV1 } from '@pluxel/services/management/client'
+import type { FieldNode } from 'valibot-form'
+import { workbench } from '@pluxel/workbench'
+import {
+	WorkbenchContentTarget,
+	attachWorkbenchContentTarget,
+	prepareWorkbenchContentContract,
+} from '@pluxel/workbench/internal'
+import type { ContextLogger } from '@pluxel/core'
+import { parseWorkbenchContentPlan } from '@pluxel/core/internal'
+import * as v from 'valibot'
 import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -285,6 +294,45 @@ describe('interactive Workbench Content', () => {
 		expect(fixture.container.textContent).not.toContain('Name is required')
 	})
 
+	it('submits an empty-start action through its published fields and server schema', async () => {
+		const defaultMode = vi.fn(() => 'fixed' as const)
+		const save = workbench.action({
+			label: 'Save',
+			form: 'embedded',
+			input: v.strictObject({
+				name: v.pipe(v.string(), v.minLength(1)),
+				mode: v.optional(v.literal('fixed'), defaultMode),
+			}),
+		})
+		const actionPlan = parseWorkbenchContentPlan({
+			version: 1,
+			kind: 'workbench-content',
+			document: { version: 1, blocks: [{ type: 'slot', key: 'save' }] },
+			slots: [{ kind: 'action', key: 'save', display: 'block', label: 'Save', input: 'embedded' }],
+		})
+		const contract = prepareWorkbenchContentContract({ save }, actionPlan)
+		const handler = vi.fn()
+		using server = new WorkbenchContentTarget(contract, {
+			error: vi.fn(),
+		} as unknown as ContextLogger)
+		attachWorkbenchContentTarget(server, { actions: new Map([['save', handler]]) })
+		const run = vi.fn((key: string, input?: unknown) => server.runDto(key, input))
+		const fromPublication: WorkbenchContentPresentation = {
+			slots: presentation.slots.map((slot) =>
+				slot.key === 'save' ? contract.presentation.slots[0]! : slot,
+			),
+		}
+		const fixture = await renderInteractive({ run }, {}, false, fromPublication)
+		const input = fixture.container.querySelector<HTMLInputElement>('input[name="name"]')!
+		expect(input.value).toBe('')
+		expect(defaultMode).not.toHaveBeenCalled()
+		await change(input, 'Ada')
+		await click(button(fixture.container, 'Save'))
+		expect(run).toHaveBeenCalledExactlyOnceWith('save', { name: 'Ada' })
+		expect(defaultMode).toHaveBeenCalledOnce()
+		expect(handler).toHaveBeenCalledExactlyOnceWith({ name: 'Ada', mode: 'fixed' })
+	})
+
 	it('shows nested server errors beside their inputs and keeps unmounted issues visible', async () => {
 		const run = vi
 			.fn()
@@ -314,12 +362,11 @@ describe('interactive Workbench Content', () => {
 		await change(input, 'invalid')
 		await click(button(fixture.container, 'Save'))
 		expect(run).toHaveBeenNthCalledWith(1, 'save', { profile: { host: 'invalid' } })
-		expect(input.closest('.mantine-Stack-root')?.textContent).toContain('Invalid nested host')
 		expect(input.getAttribute('aria-invalid')).toBe('true')
 		const errorId = input.getAttribute('aria-describedby')!
 		expect(document.getElementById(errorId)?.textContent).toContain('Invalid nested host')
-		expect(fixture.container.textContent).toContain('Invalid nested host')
-		expect(fixture.container.textContent).toContain('Unavailable field rejected')
+		expect(fixture.container.textContent?.match(/Invalid nested host/g)).toHaveLength(1)
+		expect(fixture.container.textContent).toContain('$.removed · Unavailable field rejected')
 		await change(input, 'valid.example')
 		expect(fixture.container.textContent).not.toContain('Invalid nested host')
 		expect(fixture.container.textContent).not.toContain('Unavailable field rejected')
@@ -409,16 +456,17 @@ function field(
 				name: string
 				label?: string
 				depth?: number
-				fields: readonly ConfigPresentationFieldV1[]
+				fields: readonly FieldNode[]
 		  },
-): ConfigPresentationFieldV1 {
+): FieldNode {
 	return {
 		...input,
 		path: input.name ?? '$',
 		depth: input.depth ?? 0,
 		meta: { label: input.label ?? titleCase(input.name ?? 'value') },
 		required: false,
-	} as ConfigPresentationFieldV1
+		nullable: false,
+	} as FieldNode
 }
 
 function titleCase(value: string) {

@@ -124,7 +124,11 @@ export type HostPluginConfigResult<
 export interface HostPluginConfig {
 	status(): HostConfigState
 	get(owner: PluginNodeAddress): Promise<HostPluginConfigResult>
-	validate(owner: PluginNodeAddress, change: HostConfigMutation): Promise<HostPluginConfigResult>
+	validate(
+		owner: PluginNodeAddress,
+		change: HostConfigMutation,
+		options?: HostOperationOptions,
+	): Promise<HostPluginConfigResult>
 	patch(
 		owner: PluginNodeAddress,
 		change: HostConfigMutation,
@@ -328,6 +332,11 @@ export async function pluginConfigValidate(
 		'plugin-config-read',
 		async (session) => {
 			const store = requireConfigService(ctx) as HostConfigStore
+			const conflict = configRevisionConflict(
+				store.managedRevision,
+				options?.expectedManagedRevision,
+			)
+			if (conflict) return conflict
 			const lookup = configLookup(
 				coordinator.catalogSnapshot(),
 				session.runtimeStateSnapshot(),
@@ -430,17 +439,11 @@ async function mutatePluginConfig(
 		reason,
 		async (session) => {
 			const store = requireConfigService(ctx) as HostConfigStore
-			if (
-				options?.expectedManagedRevision !== undefined &&
-				options.expectedManagedRevision !== store.managedRevision
+			const conflict = configRevisionConflict(
+				store.managedRevision,
+				options?.expectedManagedRevision,
 			)
-				return {
-					ok: false,
-					code: 'revision_conflict',
-					state: 'unchanged',
-					message: 'Managed config changed; refresh before editing.',
-					managedRevision: store.managedRevision,
-				}
+			if (conflict) return conflict
 			const lookup = configLookup(
 				coordinator.catalogSnapshot(),
 				session.runtimeStateSnapshot(),
@@ -504,6 +507,20 @@ async function mutatePluginConfig(
 		},
 		options,
 	)
+}
+
+function configRevisionConflict(
+	managedRevision: string,
+	expected: string | undefined,
+): Extract<HostPluginConfigResultErr, { code: 'revision_conflict' }> | undefined {
+	if (expected === undefined || expected === managedRevision) return undefined
+	return {
+		ok: false,
+		code: 'revision_conflict',
+		state: 'unchanged',
+		message: 'Managed config changed; refresh before editing.',
+		managedRevision,
+	}
 }
 
 /** External documents are validated completely before publishing any raw input or output. */

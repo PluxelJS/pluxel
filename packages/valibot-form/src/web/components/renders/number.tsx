@@ -1,16 +1,19 @@
-import { NumberInput } from '@mantine/core'
-import type { NumberFieldNode } from '../../../core/fields'
+import { NumberInput, Text } from '@mantine/core'
 import { FieldChrome } from '../chrome/FieldChrome'
 import { cleanProps } from '../../utils/propHelpers'
-import { normalizeErrorMessages, type RendererProps, triggerFormEvents } from './types'
+import { normalizeErrorMessages, type ScalarRendererProps, triggerFormEvents } from './types'
 
-export function NumberField(props: RendererProps) {
+export function NumberField(props: ScalarRendererProps<'number'>) {
 	const { node, errors, inputProps, value } = props
-	const info = node as NumberFieldNode
+	const info = node
 	const baseErrors = normalizeErrorMessages(errors)
 	const parsed =
 		typeof value === 'number' ? value : value == null || value === '' ? '' : Number(value)
 	const currentValue = Number.isNaN(parsed) ? '' : parsed
+	const formatted =
+		info.format && typeof value === 'number' && Number.isFinite(value)
+			? new Intl.NumberFormat(undefined, info.format).format(value)
+			: undefined
 
 	return (
 		<FieldChrome
@@ -23,6 +26,7 @@ export function NumberField(props: RendererProps) {
 				badge: node.meta.badge,
 				errors: baseErrors,
 				errorId: inputProps.errorId,
+				descriptionId: inputProps.descriptionId,
 				hideLabel: node.meta.hideLabel,
 				hideRequired: node.meta.hideRequired,
 			})}
@@ -36,6 +40,7 @@ export function NumberField(props: RendererProps) {
 						triggerFormEvents(inputProps, safe)
 					},
 					onBlur: inputProps.onBlur,
+					onKeyDown: inputProps.onKeyDown,
 					name: inputProps.name,
 					id: inputProps.id,
 					error: inputProps['aria-invalid'],
@@ -48,12 +53,18 @@ export function NumberField(props: RendererProps) {
 					placeholder: info.placeholder,
 					min: info.min,
 					max: info.max,
+					allowDecimal: info.integer === true ? false : undefined,
 					step: info.step ?? (info.integer ? 1 : undefined),
 					disabled: inputProps.disabled,
 					readOnly: inputProps.readOnly,
 					'aria-label': node.meta.label,
 				})}
 			/>
+			{formatted !== undefined ? (
+				<Text size="xs" c="dimmed">
+					{formatted}
+				</Text>
+			) : null}
 		</FieldChrome>
 	)
 }

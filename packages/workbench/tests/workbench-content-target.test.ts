@@ -19,6 +19,7 @@ const dataField = Object.freeze({
 	depth: 0,
 	meta: Object.freeze({ label: 'Status' }),
 	required: true,
+	nullable: false,
 	fields: Object.freeze([
 		Object.freeze({
 			kind: 'number' as const,
@@ -27,6 +28,7 @@ const dataField = Object.freeze({
 			depth: 1,
 			meta: Object.freeze({ label: 'Count' }),
 			required: true,
+			nullable: false,
 		}),
 	]),
 })

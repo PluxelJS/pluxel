@@ -5,23 +5,32 @@ import {
 	type PluginDefinitionAddress,
 } from '@pluxel/core'
 import { validateVaultKey } from '@pluxel/core/internal'
-import { projectRawInput, type RawInputProjection } from 'valibot-form'
+import type { RawInputProjectionFailureKind } from 'valibot-form'
 import {
 	collectConfigSchemaModule,
 	type ConfigSchemaSourceResolver,
 	type ConfigSourceSymbol,
 } from './configSourcePlugin.ts'
+import {
+	astChildren,
+	bindingNames,
+	blockBindings,
+	factoryBindings,
+	isFunctionOrClass,
+} from './configSourceScope.ts'
 import { type AstNode, readIdentifier, readLiteralString } from './pluginUtils.ts'
 import {
 	renderStaticConfigEnvironmentExample,
 	type StaticConfigEnvironmentTarget,
 } from './staticConfigEnvironmentExample.ts'
-import { restoreStaticConfigSchema } from './staticConfigEnvironmentSchema.ts'
+import { projectStaticConfigInput } from './staticConfigEnvironmentSchema.ts'
 
-type DeclarationError = (
+type DeclarationErrorCode = 'invalid_declaration' | 'unsupported_expression' | 'unresolved_symbol'
+
+type DeclarationError<Code = DeclarationErrorCode> = (
 	message: string,
 	detail?: {
-		code: 'invalid_declaration' | 'unsupported_expression' | 'unresolved_symbol'
+		code: Code
 		node?: AstNode
 		file?: string
 	},
@@ -54,14 +63,14 @@ export type StaticRuntimeDeclarationParserOptions = {
 	code: string
 	id: string
 	sourceResolver: ConfigSchemaSourceResolver
-	error: DeclarationError
+	error: DeclarationError<DeclarationErrorCode | RawInputProjectionFailureKind>
 }
 
 /**
  * Parses the canonical static entry without importing or evaluating it.
  *
  * Both standalone and modules emit environment templates from the same node declarations.
- * Schema projection uses a closed, inert subset of the resolved Valibot schema source.
+ * Schema projection follows each mapping to its original Valibot input declaration.
  */
 export async function parseStaticRuntimeDeclaration(
 	options: StaticRuntimeDeclarationParserOptions,
@@ -135,8 +144,6 @@ export async function parseStaticRuntimeDeclaration(
 					error(`[static-application] ${file} vault mapping must declare record keys directly`)
 				const leaves = parseDirectMapping(mapping, [], `${label}.${kind}.mapping`, file, error)
 				const schemaName = readIdentifier(schemaExpression) ?? `${pluginName}.${kind}`
-				const schemaSource = await sourceResolver.renderResolved(module, schemaExpression)
-				const schema = restoreStaticConfigSchema(schemaSource, { id: file, schemaName, error })
 				if (kind === 'config')
 					registerConfigBindingPaths(
 						configPaths,
@@ -154,16 +161,18 @@ export async function parseStaticRuntimeDeclaration(
 					registerBindingTarget(seenTargets, identity, pluginName, file, error)
 				}
 				for (const leaf of leaves) {
-					const inputSchema =
-						kind === 'vault' ? staticVaultRecordSchema(schema, leaf.path[0]!, file, error) : schema
-					const projection = projectRawInput(
-						inputSchema as never,
-						kind === 'vault' ? leaf.path.slice(1) : leaf.path,
+					const projection = await projectStaticConfigInput(
+						sourceResolver,
+						{ module, node: schemaExpression },
+						{ path: leaf.path, vault: kind === 'vault' },
 					)
-					if (projection.ok === false)
-						error(
-							`[static-application] ${file} cannot bind ${leaf.environmentName} to ${pluginName} schema ${schemaName} path ${formatPath(leaf.path)}: ${projection.reason}`,
+					if (projection.ok === false) {
+						const { origin } = projection
+						return error(
+							`[static-application] ${sourceRange(module, leaf.node)} ${label}.${kind}.mapping cannot bind ${leaf.environmentName} to ${pluginName} schema ${schemaName} path ${JSON.stringify(leaf.path)} [${projection.kind}] at ${sourceRange(origin.module, origin.node)}: ${projection.reason}`,
+							{ code: projection.kind, node: origin.node, file: origin.module.id },
 						)
+					}
 					targets.push(
 						Object.freeze({
 							environmentName: leaf.environmentName,
@@ -173,7 +182,7 @@ export async function parseStaticRuntimeDeclaration(
 							kind,
 							...(kind === 'vault' && namespace ? { namespace } : {}),
 							path: leaf.path,
-							projection: projection as RawInputProjection,
+							projection,
 						}),
 					)
 				}
@@ -627,116 +636,10 @@ export function readApplicationDeclaration(options: {
 	return { module, factory, fields }
 }
 
-function staticVaultRecordSchema(
-	value: unknown,
-	key: string,
-	id: string,
-	error: DeclarationError,
-): unknown {
-	let current = value as Record<string, unknown>
-	const seen = new Set<unknown>()
-	while (current && !seen.has(current)) {
-		seen.add(current)
-		if (Array.isArray(current.pipe) && current.pipe[0] !== current) {
-			current = current.pipe[0] as Record<string, unknown>
-			continue
-		}
-		if (current.wrapped) {
-			current = current.wrapped as Record<string, unknown>
-			continue
-		}
-		break
-	}
-	if (current.type === 'record') {
-		const keySchema = current.key as Record<string, unknown> | undefined
-		if (keySchema?.kind !== 'schema')
-			error(`[static-application] ${id} Vault record requires a key schema`)
-		// Only closed key sets can be disproved without evaluating a user validator or fallback.
-		if (
-			'fallback' in keySchema ||
-			keySchema.pipe ||
-			!['literal', 'picklist', 'enum'].includes(String(keySchema.type))
-		)
-			return current.value
-		const projection = projectRawInput(keySchema as never)
-		if (!projection.ok || !projection.choices || projection.choices.includes(key))
-			return current.value
-	} else if (
-		current.entries &&
-		typeof current.entries === 'object' &&
-		Object.hasOwn(current.entries, key)
-	)
-		return (current.entries as Record<string, unknown>)[key]
-	return error(
-		`[static-application] ${id} Vault binding key ${key} is not declared by the Vault binding schema`,
-	)
-}
-
-function bindingNames(node: AstNode | undefined, names = new Set<string>()): Set<string> {
-	if (!node) return names
-	const name = readIdentifier(node)
-	if (name) names.add(name)
-	else if (node.type === 'AssignmentPattern') bindingNames(node.left as AstNode, names)
-	else if (node.type === 'RestElement') bindingNames(node.argument as AstNode, names)
-	else if (node.type === 'ArrayPattern')
-		arrayOf(node.elements).forEach((item) => bindingNames(item as AstNode, names))
-	else if (node.type === 'ObjectPattern')
-		arrayOf(node.properties).forEach((raw) => {
-			const property = raw as AstNode
-			bindingNames(
-				(property.type === 'RestElement' ? property.argument : property.value) as AstNode,
-				names,
-			)
-		})
-	return names
-}
-
-function blockBindings(block: AstNode): Set<string> {
-	const names = new Set<string>()
-	for (const raw of arrayOf(block.body)) {
-		const statement = raw as AstNode
-		if (statement.type === 'VariableDeclaration')
-			for (const declaration of arrayOf(statement.declarations))
-				bindingNames((declaration as AstNode).id as AstNode, names)
-		else if (statement.type === 'FunctionDeclaration' || statement.type === 'ClassDeclaration')
-			bindingNames(statement.id as AstNode, names)
-	}
-	return names
-}
-
-function factoryBindings(factory: AstNode): Set<string> {
-	const names = blockBindings(factory.body as AstNode)
-	bindingNames(factory.id as AstNode, names)
-	arrayOf(factory.params).forEach((param) => bindingNames(param as AstNode, names))
-	const visit = (node: AstNode): void => {
-		if (isFunctionOrClass(node)) return
-		// var belongs to the function even when declared inside a catch, loop or nested block.
-		if (node.type === 'VariableDeclaration' && node.kind === 'var')
-			for (const raw of arrayOf(node.declarations))
-				bindingNames((raw as AstNode).id as AstNode, names)
-		for (const child of astChildren(node)) visit(child)
-	}
-	visit(factory.body as AstNode)
-	return names
-}
-
-function isFunctionOrClass(node: AstNode): boolean {
-	return [
-		'ArrowFunctionExpression',
-		'FunctionExpression',
-		'FunctionDeclaration',
-		'ClassExpression',
-		'ClassDeclaration',
-	].includes(String(node.type))
-}
-
-function astChildren(node: AstNode): AstNode[] {
-	return Object.values(node).flatMap((value) => {
-		const values = Array.isArray(value) ? value : [value]
-		return values.filter((item): item is AstNode =>
-			Boolean(item && typeof item === 'object' && 'type' in item),
-		)
-	})
+function sourceRange(module: SchemaModule, node: AstNode): string {
+	if (typeof node.start !== 'number' || typeof node.end !== 'number') return module.id
+	const lines = module.code.slice(0, node.start).split('\n')
+	return `${module.id}:${lines.length}:${lines.at(-1)!.length + 1} (${node.start}..${node.end})`
 }
 
 /** Reject obvious violations of the immutable catalog contract; this is not effect analysis. */

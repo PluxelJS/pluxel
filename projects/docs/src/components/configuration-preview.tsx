@@ -17,7 +17,7 @@ function JsonValue({ value }: { value: unknown }) {
 }
 
 function ValueInspector() {
-	const { form } = useAutoFormCtx<any>()
+	const { form } = useAutoFormCtx<v.InferInput<typeof configurationSchema>>()
 
 	return (
 		<form.Subscribe selector={(state) => state.values}>

@@ -1,4 +1,5 @@
 import { createAtom, shallow, useSelector } from '@tanstack/react-store'
+import type { ConfigPatch } from '@pluxel/services/management/client'
 import { useState } from 'react'
 import type { useAutoFormCtx } from 'valibot-form/web'
 
@@ -11,7 +12,8 @@ export type ConfigFormState = {
 export type ConfigSectionForm = {
 	form: ReturnType<typeof useAutoFormCtx>['form']
 	baseline: Record<string, unknown>
-	reset: (values?: Record<string, unknown>) => void
+	changes: { get(): ConfigPatch }
+	reset: () => void
 	acceptSaved: (values: Record<string, unknown>, submitted: Record<string, unknown>) => void
 }
 
@@ -21,6 +23,7 @@ export function useConfigForms() {
 	const formStates = useSelector(registry.states)
 	return {
 		forms: registry.forms,
+		states: registry.states,
 		registerForm: registry.registerForm,
 		formStates,
 	}
@@ -31,8 +34,10 @@ function createConfigForms() {
 	const states = createAtom<Record<string, ConfigFormState>>(
 		() =>
 			Object.fromEntries(
-				Object.entries(forms.get()).map(([key, { form }]) => {
-					const { isDirty: dirty, canSubmit, isSubmitting: submitting } = form.store.get()
+				Object.entries(forms.get()).map(([key, { form, changes }]) => {
+					const { canSubmit, isSubmitting: submitting } = form.store.get()
+					const patch = changes.get()
+					const dirty = Boolean(patch.set || patch.remove?.length)
 					return [key, { dirty, canSubmit, submitting }]
 				}),
 			),

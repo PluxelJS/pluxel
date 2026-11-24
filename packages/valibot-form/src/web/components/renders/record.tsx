@@ -3,9 +3,7 @@ import {
 	Button,
 	Card,
 	Group,
-	NumberInput,
 	Stack,
-	Switch,
 	Table,
 	Text,
 	Textarea,
@@ -15,22 +13,15 @@ import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from '@tabler/icons-r
 import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { FormResetVersion } from '../internal/formContext'
 import { DEFAULT_TEXTS } from '../../../core/constants'
-import type {
-	FieldNode,
-	NumberFieldNode,
-	PicklistFieldNode,
-	RecordFieldNode,
-	StringFieldNode,
-} from '../../../core/fields'
+import type { FieldNode, PicklistFieldNode, RecordFieldNode } from '../../../core/fields'
 import { FieldChrome } from '../chrome/FieldChrome'
 import { useFieldRenderer } from '../internal/fieldRendererContext'
 import { cleanProps } from '../../utils/propHelpers'
-import { PicklistControl } from './controls/PicklistControl'
+import { PendingScalar } from './controls/PendingScalar'
 import {
 	joinErrorMessages,
 	normalizeErrorMessages,
 	type RendererProps,
-	toInputString,
 	triggerFormBlur,
 	triggerFormEvents,
 } from './types'
@@ -155,8 +146,6 @@ function RecordFieldEditor(props: RendererProps) {
 	const valuePlaceholder = info.valueMeta?.placeholder
 	const valueNode = info.value ?? null
 	const valueKind = valueNode?.kind ?? inferredValueKind
-	const valueNumberMeta = valueNode?.kind === 'number' ? (valueNode as NumberFieldNode) : null
-	const valueStringMeta = valueNode?.kind === 'string' ? (valueNode as StringFieldNode) : null
 	const valuePicklistMeta = valueNode?.kind === 'picklist' ? (valueNode as PicklistFieldNode) : null
 	const inlineAddEnabled =
 		layout === 'table' &&
@@ -189,13 +178,9 @@ function RecordFieldEditor(props: RendererProps) {
 	const baseErrors = normalizeErrorMessages(errors)
 	const [jsonErrors, setJsonErrors] = useState<Record<string, string | undefined>>({})
 
-	const commitRows = (nextRows: RecordRow[], nextValues = recordValue) => {
+	const commitRows = (nextRows: RecordRow[], nextValues: Record<string, unknown>) => {
 		setRows(nextRows)
-		triggerFormEvents(
-			inputProps,
-			Object.fromEntries(nextRows.map((row) => [row.key, nextValues[row.key]])),
-			{ blur: true },
-		)
+		triggerFormEvents(inputProps, nextValues, { blur: true })
 	}
 
 	const handleBlur = () => triggerFormBlur(inputProps)
@@ -205,15 +190,6 @@ function RecordFieldEditor(props: RendererProps) {
 	const draftKeyError =
 		draftKeyTrimmed.length === 0 ? null : existingKeySet.has(draftKeyTrimmed) ? 'Key 已存在' : null
 	const draftKeyValid = draftKeyTrimmed.length > 0 && !draftKeyError
-
-	useEffect(() => {
-		if (!inlineAddEnabled || draftValue !== undefined) return
-		const next =
-			valueNode != null
-				? resolveDefaultValueForNode(valueNode)
-				: resolveDefaultValueForKind(valueKind, valuePicklistMeta)
-		setDraftValue(next)
-	}, [inlineAddEnabled, draftValue, valueKind, valueNode, valuePicklistMeta])
 
 	const resolveDraftValue = () => {
 		if (draftValue !== undefined) return draftValue
@@ -236,14 +212,26 @@ function RecordFieldEditor(props: RendererProps) {
 		if (!current || isLocked || nextKey === current.key) return
 		if (existingKeySet.has(nextKey)) return
 		const next = rows.map((row, idx) => (idx === index ? { ...row, key: nextKey } : row))
-		commitRows(next, { ...recordValue, [nextKey]: recordValue[current.key] })
+		commitRows(
+			next,
+			Object.fromEntries(
+				Object.entries(recordValue).map(([key, entry]) => [
+					key === current.key ? nextKey : key,
+					entry,
+				]),
+			),
+		)
 	}
 
 	const handleRemove = (index: number) => {
 		if (!canRemove || isLocked) return
 		if (rows.length <= minItems) return
-		const next = rows.filter((_, idx) => idx !== index)
-		commitRows(next)
+		const nextValues = { ...recordValue }
+		delete nextValues[rows[index]!.key]
+		commitRows(
+			rows.filter((_, idx) => idx !== index),
+			nextValues,
+		)
 	}
 
 	const handleMove = (index: number, direction: number) => {
@@ -253,7 +241,8 @@ function RecordFieldEditor(props: RendererProps) {
 		const next = [...rows]
 		const [removed] = next.splice(index, 1)
 		next.splice(target, 0, removed)
-		commitRows(next)
+		// Record keys have no persisted order. Moving a row only changes this editor.
+		setRows(next)
 	}
 
 	const handleAdd = () => {
@@ -282,6 +271,7 @@ function RecordFieldEditor(props: RendererProps) {
 					path: '',
 					depth: node.depth + 1,
 					required: false,
+					nullable: false,
 					meta: { label: valueLabel },
 					...(kind === 'string' ? { control: 'text' as const } : {}),
 					...(kind === 'boolean' ? { control: 'switch' as const } : {}),
@@ -316,6 +306,7 @@ function RecordFieldEditor(props: RendererProps) {
 				path: '',
 				depth: node.depth + 1,
 				required: false,
+				nullable: false,
 				meta: { label: valueLabel },
 				reason: 'JSON',
 				readOnly: true,
@@ -372,6 +363,7 @@ function RecordFieldEditor(props: RendererProps) {
 						onClick={() => handleMove(idx, -1)}
 						disabled={idx === 0 || isLocked}
 						aria-label="上移"
+						title="在当前表单中上移"
 						type="button"
 					>
 						<IconArrowUp size={16} />
@@ -381,6 +373,7 @@ function RecordFieldEditor(props: RendererProps) {
 						onClick={() => handleMove(idx, 1)}
 						disabled={idx === rows.length - 1 || isLocked}
 						aria-label="下移"
+						title="在当前表单中下移"
 						type="button"
 					>
 						<IconArrowDown size={16} />
@@ -455,92 +448,12 @@ function RecordFieldEditor(props: RendererProps) {
 				</Stack>
 			</td>
 			<td style={valueWidth ? { width: valueWidth } : undefined}>
-				{(() => {
-					if (valueKind === 'number') {
-						return (
-							<NumberInput
-								value={
-									typeof draftValue === 'number'
-										? draftValue
-										: draftValue == null
-											? ''
-											: Number(draftValue)
-								}
-								onChange={(val) => {
-									const parsed = val === '' || val === undefined ? undefined : Number(val)
-									const safe = Number.isNaN(parsed) ? undefined : parsed
-									setDraftValue(safe)
-								}}
-								onKeyDown={(event) => {
-									if (event.key === 'Enter') {
-										event.preventDefault()
-										handleInlineAdd()
-									}
-								}}
-								onBlur={handleBlur}
-								placeholder={valuePlaceholder ?? valueNumberMeta?.placeholder}
-								min={valueNumberMeta?.min}
-								max={valueNumberMeta?.max}
-								step={valueNumberMeta?.step ?? (valueNumberMeta?.integer ? 1 : undefined)}
-								disabled={isLocked}
-							/>
-						)
-					}
-					if (valueKind === 'boolean') {
-						return (
-							<Switch
-								checked={Boolean(draftValue)}
-								onChange={(event) => setDraftValue(event.currentTarget.checked)}
-								onBlur={handleBlur}
-								disabled={isLocked}
-							/>
-						)
-					}
-					if (valueKind === 'picklist') {
-						return (
-							<div>
-								<PicklistControl
-									meta={{
-										options: valuePicklistMeta?.options,
-										entries: valuePicklistMeta?.entries,
-										labels: valuePicklistMeta?.labels,
-										disabled: valuePicklistMeta?.disabled,
-										placeholder: valuePicklistMeta?.placeholder ?? valuePlaceholder,
-										searchable: valuePicklistMeta?.searchable,
-										clearable: true,
-										max: valuePicklistMeta?.max,
-										create: valuePicklistMeta?.create,
-										control: valuePicklistMeta?.control ?? 'select',
-										multiple: false,
-										emptyLabel: valuePicklistMeta?.emptyLabel,
-									}}
-									value={draftValue}
-									onChange={(next) => setDraftValue(next)}
-									onBlur={handleBlur}
-									disabled={isLocked}
-								/>
-							</div>
-						)
-					}
-					return (
-						<TextInput
-							value={toInputString(draftValue)}
-							onChange={(event) => setDraftValue(event.currentTarget.value)}
-							onKeyDown={(event) => {
-								if (event.key === 'Enter') {
-									event.preventDefault()
-									handleInlineAdd()
-								}
-							}}
-							onBlur={handleBlur}
-							placeholder={valuePlaceholder ?? valueStringMeta?.placeholder ?? 'Value'}
-							minLength={valueStringMeta?.minLength}
-							maxLength={valueStringMeta?.maxLength}
-							disabled={isLocked}
-							readOnly={inputProps.readOnly ?? false}
-						/>
-					)
-				})()}
+				<PendingScalar
+					node={nestedValueNodes.get(valueKind ?? 'string')!}
+					value={resolveDraftValue()}
+					onChange={setDraftValue}
+					onConfirm={handleInlineAdd}
+				/>
 			</td>
 			<td style={{ width: 120 }}>
 				<Group gap="xs" justify="flex-end">

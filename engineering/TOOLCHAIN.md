@@ -12,11 +12,15 @@ Rolldown 拥有 Plugin 源码分析、lowering ABI、静态查询和插件包构
 
 - `pluginSemanticsPlugin.ts`：`analyzeSemanticModule` 生成 definition、direct dependency、Part/mount 和源码范围，`lowerModule` 生成注入代码。
 - `configSourcePlugin.ts`：`extractConfigDeclarationFacts` 校验声明并确定 field/schema 范围，构建再 render/normalize。
-- `staticConfigEnvironment.ts`：解析 application factory、shadowing、字段、binding helper 和 mapping，构建再还原 schema/投影 transport。
+- `staticConfigEnvironment.ts` 解析 application factory、shadowing、binding helper 和 mapping。构建以原始表达式及引用出处解析目标路径，再用 `projectRawInput` 投影 transport。
 
 有 application 的查询在单次调用中固定 root/entry/sourceSpaces。package target 按该 entry 的上下文解析；source target 按正式 package、最具体 source root、native realpath/containment 选择。无 application 时 workspace 包优先。同 canonical definition 的物理来源冲突使查询失败；离线 resolver 不运行 Vite/custom hooks，定向 source-entry 查询也不扩张 plugins/file 的 workspace 发现范围。
 
 inputs 返回 Plugin 的 env/file bindings 和应用配置表达式位置，不读取部署值或执行工厂。可静态确认的 fork 记录 forkId，其他关系保留诊断及源码位置。configPath 表达 input mapping，root 是 []，Part 按 occurrence path 展开；dependency aggregate 与 inputs 属于整个 Plugin，partPath 仅筛选 parts/config/dependency origins。未知关系保留 gap，schema 符号也不能替代 Host 的运行时同对象检查。
+
+离线 config/Vault 投影沿原始表达式追踪 Valibot 工厂、真实重导出和目标字段。能覆盖目标的动态 spread、字段赋值和传给未知函数的可变对象，均在无法证明输入形状的位置报告。生成器复用 `projectRawInput` 的输入类型和失败分类，并把诊断关联到声明的源码位置和 binding 使用处。静态读取的文件进入 watch，修改依赖会更新 `.env.example`。可证明的封闭 Vault record 键在构建期核对，带业务 check 或 fallback 的键由 Host 验证。Control SDK 从原声明取得 input/output 类型。
+
+供离线部署使用的 schema 在构造后应保持不变。解析器检查所追踪模块中针对字段表及别名的操作，其他模块运行时对已构造 schema 的改写超出了构建时可观察的范围。
 
 同次查询共享已读文件和总预算，返回前复核成功读取内容。revision 标记观察内容与显式解析选择；它不是 Host revision，也不覆盖原子文件系统状态或全部负向候选。分页 cursor 绑定查询/结果。预算、取消、source_changed 穿过 resolver 恢复路径，以查询级失败结束。当前 sections 为 parts/config/dependencies/checks/inputs，Vault 用法、RPC 类型展开和运行时影响分析另有边界。
 

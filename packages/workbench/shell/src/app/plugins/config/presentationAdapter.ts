@@ -1,6 +1,5 @@
 import type { FieldNode } from 'valibot-form'
 import type { HostConfigSource } from '@pluxel/host'
-export { adaptConfigPresentationFields } from '../../workbench/presentationAdapter'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === 'object' && !Array.isArray(value)

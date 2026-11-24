@@ -1,6 +1,6 @@
 import { parseWorkbenchContentPlan, type WorkbenchContentPlan } from '@pluxel/core/internal'
 import { workbench } from '@pluxel/workbench'
-import { stringMeta } from 'valibot-form'
+import { arrayMeta, formMeta, picklistMeta, stringMeta } from 'valibot-form'
 import * as v from 'valibot'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -31,7 +31,7 @@ describe('Workbench Content presentation boundary', () => {
 		const slots = {
 			submit: workbench.action({
 				label: 'Submit',
-				input: v.object({ createdAt: v.date() }),
+				input: v.object({ detail: v.optional(v.object({ createdAt: v.date() })) }),
 			}),
 		}
 		const artifact = plan([
@@ -45,8 +45,126 @@ describe('Workbench Content presentation boundary', () => {
 		])
 
 		expect(() => prepareWorkbenchContentContract(slots, artifact)).toThrow(
-			'unsupported form fields',
+			'Content action slot submit has an unsupported form field at detail.createdAt',
 		)
+	})
+
+	it.each([
+		[v.strictObject({ mode: v.literal('fixed') }), 'mode'],
+		[
+			v.strictObject({
+				nested: v.object({ token: v.pipe(v.string(), formMeta({ hidden: true })) }),
+			}),
+			'nested.token',
+		],
+		[v.strictObject({ '0': v.string() }), '0'],
+		[
+			v.strictObject({
+				items: v.pipe(v.array(v.string()), v.minLength(1), arrayMeta({ addable: false })),
+			}),
+			'items',
+		],
+		[
+			v.strictObject({
+				role: v.pipe(
+					v.picklist(['reader', 'editor']),
+					picklistMeta({ disabled: ['reader'], entries: [{ value: 'editor', disabled: true }] }),
+				),
+			}),
+			'role',
+		],
+		[v.strictObject({ role: v.picklist([]) }), 'role'],
+		[
+			v.object({
+				levels: v.pipe(
+					v.array(v.picklist([1, '1'])),
+					v.minLength(3),
+					arrayMeta({ layout: 'picker' }),
+				),
+			}),
+			'levels',
+		],
+	] as const)('rejects required fields without a value source', (input, path) => {
+		const slots = { submit: workbench.action({ label: 'Submit', input }) }
+		const artifact = plan([
+			{ kind: 'action', key: 'submit', display: 'block', label: 'Submit', input: 'dialog' },
+		])
+		expect(() => prepareWorkbenchContentContract(slots, artifact)).toThrow(
+			`Content action slot submit cannot fill required field at ${path} from an empty draft`,
+		)
+	})
+
+	it('accepts selectable discriminators and optional protected inputs without evaluating defaults', () => {
+		const defaultMode = vi.fn(() => 'fixed' as const)
+		const input = v.strictObject({
+			destination: v.variant('kind', [
+				v.strictObject({ kind: v.literal('file'), path: v.string() }),
+				v.strictObject({ kind: v.literal('queue'), topic: v.string() }),
+			]),
+			mode: v.optional(v.literal('fixed'), defaultMode),
+			empty: v.strictObject({}),
+			tags: v.pipe(v.array(v.string()), arrayMeta({ addable: false })),
+			role: v.pipe(
+				v.picklist(['reader']),
+				picklistMeta({ disabled: ['reader'], entries: [{ value: 'reader', disabled: false }] }),
+			),
+		})
+		const slots = { submit: workbench.action({ label: 'Submit', input }) }
+		const artifact = plan([
+			{ kind: 'action', key: 'submit', display: 'block', label: 'Submit', input: 'dialog' },
+		])
+		const contract = prepareWorkbenchContentContract(slots, artifact)
+		expect(contract.presentation.slots[0]).toMatchObject({
+			fields: [
+				{ kind: 'union', name: 'destination', discriminator: 'kind' },
+				{ name: 'mode', required: false, meta: { readOnly: true } },
+				{ kind: 'object', name: 'empty', fields: [] },
+				{ kind: 'array', name: 'tags', addable: false },
+				{ kind: 'picklist', name: 'role', options: ['reader'] },
+			],
+		})
+		expect(defaultMode).not.toHaveBeenCalled()
+	})
+
+	it('checks the raw literal in a required row seed before publishing the action', () => {
+		const mode = v.literal('fixed')
+		const artifact = plan([
+			{ kind: 'action', key: 'submit', display: 'block', label: 'Submit', input: 'dialog' },
+		])
+		const publish = (value: string) => {
+			const input = v.object({
+				rows: v.pipe(
+					v.array(v.strictObject({ mode, title: v.string() })),
+					v.minLength(1),
+					arrayMeta({ defaultItem: { mode: value, title: '' } }),
+				),
+			})
+			return prepareWorkbenchContentContract(
+				{ submit: workbench.action({ label: 'Submit', input }) },
+				artifact,
+			)
+		}
+		expect(() => publish('other')).toThrow(
+			/slot submit cannot fill required field at rows\[\]\.mode/,
+		)
+		expect(publish('fixed').presentation.slots).toHaveLength(1)
+	})
+
+	it('can publish a selector-supplied literal and a picklist with one enabled typed twin', () => {
+		const input = v.object({
+			metrics: v.union([v.literal(false), v.object({ path: v.string() })]),
+			level: v.pipe(v.picklist([1, '1']), picklistMeta({ disabled: ['1'] })),
+			levels: v.pipe(
+				v.array(v.picklist([1, '1'])),
+				v.minLength(2),
+				arrayMeta({ layout: 'picker', addable: false }),
+			),
+		})
+		const slots = { submit: workbench.action({ label: 'Submit', input }) }
+		const artifact = plan([
+			{ kind: 'action', key: 'submit', display: 'block', label: 'Submit', input: 'dialog' },
+		])
+		expect(prepareWorkbenchContentContract(slots, artifact).presentation.slots).toHaveLength(1)
 	})
 
 	it.each([
@@ -64,6 +182,17 @@ describe('Workbench Content presentation boundary', () => {
 			'password',
 			v.pipe(v.string(), stringMeta({ control: 'password' })),
 			'must not display a password value',
+		],
+		[
+			'transformed record key',
+			v.record(
+				v.pipe(
+					v.string(),
+					v.transform((key) => key.toLowerCase()),
+				),
+				v.string(),
+			),
+			'must not transform display values',
 		],
 	] as const)('rejects a %s data schema before publication', (_name, schema, message) => {
 		const slots = {

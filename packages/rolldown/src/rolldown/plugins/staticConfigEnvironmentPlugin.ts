@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { isAbsolute, resolve } from 'node:path'
 import type { Plugin } from 'rolldown'
 import { createConfigSchemaSourceResolver } from './configSourcePlugin.ts'
 import {
@@ -22,6 +22,7 @@ export function staticConfigEnvironmentDeclarationPlugin(
 	return {
 		name: 'pluxel-static-application-declaration',
 		async buildStart() {
+			this.addWatchFile(entry)
 			const code = await readFile(entry, 'utf8').catch((cause: unknown) => {
 				this.error(
 					`[static-application] failed to read entry ${entry}: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -34,7 +35,10 @@ export function staticConfigEnvironmentDeclarationPlugin(
 				ast,
 				code,
 				id: entry,
-				sourceResolver: createConfigSchemaSourceResolver(this),
+				sourceResolver: createConfigSchemaSourceResolver(this, (file) => {
+					if (isAbsolute(file)) this.addWatchFile(file)
+					return readFile(file, 'utf8')
+				}),
 				error: (message, detail) =>
 					this.error(
 						typeof detail?.node?.start === 'number'

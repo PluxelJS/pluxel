@@ -11,6 +11,7 @@ export interface FieldChromeProps {
 	badge?: string | { label: string; color?: string }
 	errors?: string[]
 	errorId?: string
+	descriptionId?: string
 	children: ReactNode
 	hideLabel?: boolean
 	hideRequired?: boolean
@@ -41,6 +42,7 @@ export function FieldChrome({
 	badge,
 	errors,
 	errorId,
+	descriptionId,
 	children,
 	hideLabel,
 	hideRequired,
@@ -77,7 +79,7 @@ export function FieldChrome({
 		<Stack gap="xs" style={{ width: '100%' }}>
 			{labelContent}
 			{description ? (
-				<Text size="sm" c="dimmed">
+				<Text id={descriptionId} size="sm" c="dimmed">
 					{description}
 				</Text>
 			) : null}

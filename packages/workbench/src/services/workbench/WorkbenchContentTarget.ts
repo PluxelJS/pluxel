@@ -357,7 +357,7 @@ function sanitizeIssue(issue: {
 	for (const item of issue.path?.slice(0, MAX_VALIDATION_PATH) ?? []) {
 		const raw = item && typeof item === 'object' ? item.key : item
 		if (typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0) path.push(raw)
-		else if (typeof raw === 'string' && raw) path.push(raw.slice(0, 128))
+		else if (typeof raw === 'string') path.push(raw.slice(0, 128))
 		else if (typeof raw === 'symbol') path.push((raw.description ?? raw.toString()).slice(0, 128))
 	}
 	return Object.freeze({

@@ -411,10 +411,14 @@ function createPreparedHost(
 				assertOpen()
 				return pluginConfigGet(ctx, owner)
 			},
-			async validate(owner: PluginNodeAddress, patch: Parameters<HostPluginConfig['patch']>[1]) {
+			async validate(
+				owner: PluginNodeAddress,
+				patch: Parameters<HostPluginConfig['validate']>[1],
+				mutation?: HostOperationOptions,
+			) {
 				await startHost()
 				assertOpen()
-				return pluginConfigValidate(ctx, owner, patch)
+				return pluginConfigValidate(ctx, owner, patch, mutation)
 			},
 			async patch(
 				owner: PluginNodeAddress,

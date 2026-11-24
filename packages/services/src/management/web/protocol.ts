@@ -16,6 +16,7 @@ import type {
 	OutboundHttpSettings,
 	OutboundHttpSnapshot,
 } from '@pluxel/core/host'
+import type { FieldNode } from 'valibot-form'
 import { type HostApplicationMeta } from '../product-contract'
 import { type PluxelPlatformSnapshot } from '../platform'
 import {
@@ -39,7 +40,7 @@ export type {
 	OutboundHttpSnapshot,
 }
 
-export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 16 as const
+export const RUNTIME_MANAGEMENT_PROTOCOL_MAJOR = 17 as const
 export const RUNTIME_MANAGEMENT_CAPABILITIES = Object.freeze([
 	'plugin-catalog',
 	'plugins.status',
@@ -165,12 +166,10 @@ export type ConfigFieldMutation = Readonly<{
 	fieldPath: string
 	value: unknown
 }>
-export type ConfigValidationErrors = Readonly<
-	Record<
-		string,
-		Readonly<Record<string, readonly Readonly<{ message: string; path: readonly string[] }>[]>>
-	>
->
+export type ConfigValidationErrors = Extract<
+	ConfigResultErr,
+	{ code: 'validation_failed' }
+>['errors']
 
 export type PluginReconciliationIssue =
 	| Readonly<{
@@ -241,176 +240,18 @@ export type RuntimeJsonValue =
 	| { readonly [key: string]: RuntimeJsonValue }
 export type RuntimeJsonObject = Readonly<{ [key: string]: RuntimeJsonValue }>
 
-export type ConfigPresentationFieldMetaV1 = Readonly<{
-	label: string
-	description?: string
-	help?: string
-	hint?: string
-	badge?: string | Readonly<{ label: string; color?: string }>
-	section?: Readonly<{
-		id: string
-		title?: string
-		description?: string
-		order?: number
-		columns?: number
-	}>
-	layout?: Readonly<{
-		full?: boolean
-		span?: number
-		align?: 'start' | 'center' | 'end'
-	}>
-	hideLabel?: boolean
-	hideRequired?: boolean
-	disabled?: boolean
-	readOnly?: boolean
-	hidden?: boolean
-}>
-
-type ConfigPresentationFieldBaseV1 = Readonly<{
-	name?: string
-	path: string
-	depth: number
-	meta: ConfigPresentationFieldMetaV1
-	required: boolean
-}>
-
-export type ConfigPresentationBranchFieldV1 = Readonly<{
-	key: string
-	node: ConfigPresentationFieldV1
-	replaceValue?: boolean
-}>
-
-export type ConfigPresentationFieldV1 =
-	| (ConfigPresentationFieldBaseV1 &
-			Readonly<{
-				kind: 'string'
-				control: 'text' | 'textarea' | 'password' | 'code'
-				placeholder?: string
-				rows?: number
-				minLength?: number
-				maxLength?: number
-				format?: string
-			}>)
-	| (ConfigPresentationFieldBaseV1 &
-			Readonly<{
-				kind: 'number'
-				min?: number
-				max?: number
-				step?: number
-				integer?: boolean
-				placeholder?: string
-			}>)
-	| (ConfigPresentationFieldBaseV1 & Readonly<{ kind: 'boolean'; control: 'switch' }>)
-	| (ConfigPresentationFieldBaseV1 &
-			Readonly<{
-				kind: 'picklist'
-				control: 'select' | 'segmented' | 'radio'
-				options?: readonly (string | number)[]
-				entries?: readonly Readonly<{
-					value: string | number
-					label?: string
-					description?: string
-					group?: string
-					disabled?: boolean
-					accentColor?: string
-				}>[]
-				labels?: Readonly<Record<string, string>>
-				disabled?: readonly (string | number)[]
-				placeholder?: string
-				searchable?: boolean
-				clearable?: boolean
-				max?: number
-				create?: boolean
-				emptyLabel?: string
-			}>)
-	| (ConfigPresentationFieldBaseV1 &
-			Readonly<{
-				kind: 'array'
-				item?: ConfigPresentationFieldV1 | null
-				layout?: 'list' | 'grid' | 'picker'
-				columns?: number
-				disableAutoGrid?: boolean
-				min?: number
-				max?: number
-				addable?: boolean
-				removable?: boolean
-				reorderable?: boolean
-				itemLabel?: string
-				addLabel?: string
-				emptyHint?: string
-				defaultItem?: RuntimeJsonValue
-			}>)
-	| (ConfigPresentationFieldBaseV1 &
-			Readonly<{
-				kind: 'record'
-				value?: ConfigPresentationFieldV1 | null
-				layout?: 'table' | 'list'
-				min?: number
-				max?: number
-				addable?: boolean
-				removable?: boolean
-				reorderable?: boolean
-				editableKey?: boolean
-				key?: Readonly<{ label?: string; placeholder?: string; width?: number | string }>
-				valueMeta?: Readonly<{
-					label?: string
-					placeholder?: string
-					width?: number | string
-				}>
-				addLabel?: string
-				emptyHint?: string
-			}>)
-	| (ConfigPresentationFieldBaseV1 &
-			Readonly<{
-				kind: 'object'
-				fields: readonly ConfigPresentationFieldV1[]
-				variant?: 'card' | 'stack'
-				columns?: number
-				gap?: number | string
-				collapsible?: boolean
-				collapsed?: boolean
-			}>)
-	| (ConfigPresentationFieldBaseV1 &
-			Readonly<{
-				kind: 'union'
-				branches: readonly Readonly<{
-					key: string
-					discriminatorValue?: string | number | boolean | null
-					fields: readonly ConfigPresentationBranchFieldV1[]
-				}>[]
-				sharedFields: readonly ConfigPresentationBranchFieldV1[]
-				discriminator?: string
-				discriminatorField?: ConfigPresentationBranchFieldV1
-				control: 'select' | 'segmented' | 'radio' | 'switch'
-				labels?: Readonly<Record<string, string>>
-				descriptions?: Readonly<Record<string, string>>
-				placeholder?: string
-				searchable?: boolean
-				expose?: 'auto' | 'always' | 'never'
-				preserve?: boolean
-				compact?: boolean
-			}>)
-	| (ConfigPresentationFieldBaseV1 &
-			Readonly<{
-				kind: 'unsupported'
-				readOnly: true
-				reason: string
-			}>)
-
-export type ConfigPresentationPlanV2 = Readonly<{
-	version: 2
-	fieldName: string
-	fields: readonly ConfigPresentationFieldV1[]
+export type ConfigPresentationPlanV3 = Readonly<{
+	version: 3
 	sections: readonly Readonly<{
 		path: readonly string[]
 		fieldName: string
-		fields: readonly ConfigPresentationFieldV1[]
+		fields: readonly FieldNode[]
 	}>[]
 }>
 
 export type ConfigPresentationResultOk = Readonly<{
 	ok: true
-	plan: ConfigPresentationPlanV2
+	plan: ConfigPresentationPlanV3
 }>
 
 export type ConfigPresentationResultErr = Readonly<{

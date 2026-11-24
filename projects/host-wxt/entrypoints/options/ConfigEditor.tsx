@@ -1,43 +1,71 @@
 import type { HostConfigMutation } from '@pluxel/host/embedded'
 import { Button, Group, Text } from '@mantine/core'
+import { useSelector } from '@tanstack/react-form'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
 	AutoForm,
 	buildEditableConfigPatch,
+	prepareEditableConfigFields,
 	useAutoFormCtx,
 	type AutoFormOptions,
 } from 'valibot-form/web'
 import type { RuleKey } from '../../src/rules'
 import { writeRuleConfig, type RuleForm } from './management'
 
-function SyncDraft({
+function ConfigActions({
 	incoming,
 	baseline,
 	adopt,
+	busy,
+	restore,
 }: {
 	incoming: RuleForm
 	baseline: RuleForm
 	adopt: (next: RuleForm) => void
+	busy: boolean
+	restore: (acknowledge: (raw: Record<string, unknown>) => void) => void
 }) {
 	const { form, reset } = useAutoFormCtx()
+	const dirty = useSelector(form.store, (state) => {
+		if (!state.isDirty) return false
+		const patch = buildEditableConfigPatch(incoming.fields, state.values, baseline.saved)
+		return Boolean(patch.set || patch.remove?.length)
+	})
+	const submitting = useSelector(form.store, (state) => state.isSubmitting)
 	const observed = useRef(incoming.revision)
 	function reload() {
 		adopt(incoming)
 		reset({ ...incoming.saved })
 	}
 	useEffect(() => {
-		if (observed.current === incoming.revision) return
+		if (observed.current === incoming.revision || busy || dirty) return
 		observed.current = incoming.revision
-		if (incoming.revision !== baseline.revision && !form.state.isDirty) {
+		if (incoming.revision !== baseline.revision) {
 			adopt(incoming)
 			reset({ ...incoming.saved })
 		}
-	}, [incoming, baseline.revision, form, reset, adopt])
-	return incoming.revision !== baseline.revision ? (
-		<Button type="button" size="xs" variant="light" onClick={reload}>
-			载入最新配置
-		</Button>
-	) : null
+	}, [incoming, baseline.revision, busy, dirty, reset, adopt])
+	return (
+		<Group mt="sm">
+			<Button size="xs" type="submit" disabled={!dirty || submitting}>
+				保存配置
+			</Button>
+			<Button
+				size="xs"
+				variant="subtle"
+				type="button"
+				disabled={submitting}
+				onClick={() => restore(reset)}
+			>
+				恢复插件默认配置
+			</Button>
+			{incoming.revision !== baseline.revision && observed.current !== incoming.revision ? (
+				<Button type="button" size="xs" variant="light" onClick={reload}>
+					载入最新配置
+				</Button>
+			) : null}
+		</Group>
+	)
 }
 
 export function ConfigEditor({
@@ -50,6 +78,10 @@ export function ConfigEditor({
 	refresh: () => Promise<void>
 }) {
 	const [baseline, setBaseline] = useState(model)
+	const fields = useMemo(
+		() => prepareEditableConfigFields(model.fields, baseline.saved),
+		[model.fields, baseline.saved],
+	)
 	const [message, setMessage] = useState('')
 	const [busy, setBusy] = useState(false)
 	const writing = useRef(false)
@@ -93,38 +125,29 @@ export function ConfigEditor({
 			({
 				defaultValues: baseline.saved,
 				canSubmitWhenInvalid: true,
-				onSubmit: ({ value, formApi }) =>
-					commit(buildEditableConfigPatch(model.fields, value, baseline.saved), (raw) => {
+				onSubmit: ({ value, formApi }) => {
+					const patch = buildEditableConfigPatch(model.fields, value, baseline.saved)
+					if (!patch.set && !patch.remove?.length) return
+					return commit(patch, (raw) => {
 						if (formApi.state.values === value) formApi.reset(raw)
-					}),
+					})
+				},
 			}) satisfies AutoFormOptions<Record<string, unknown>>,
 		[model.fields, baseline.saved, commit],
 	)
 
 	return (
-		<AutoForm fields={model.fields} formOpts={options}>
+		<AutoForm fields={fields} formOpts={options}>
 			<fieldset disabled={busy} className="config-fields">
 				<AutoForm.Fields />
-				<AutoForm.Actions>
-					{({ dirty, submitting, reset }) => (
-						<Group mt="sm">
-							<Button size="xs" type="submit" disabled={!dirty || submitting}>
-								保存配置
-							</Button>
-							<Button
-								size="xs"
-								variant="subtle"
-								type="button"
-								disabled={submitting}
-								onClick={() => void commit(undefined, reset)}
-							>
-								恢复插件默认配置
-							</Button>
-						</Group>
-					)}
-				</AutoForm.Actions>
+				<ConfigActions
+					incoming={model}
+					baseline={baseline}
+					adopt={adopt}
+					busy={busy}
+					restore={(acknowledge) => void commit(undefined, acknowledge)}
+				/>
 			</fieldset>
-			<SyncDraft incoming={model} baseline={baseline} adopt={adopt} />
 			<Text size="sm" role="status">
 				{message || model.error}
 			</Text>
