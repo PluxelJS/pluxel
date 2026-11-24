@@ -125,7 +125,7 @@ export const workbench = Object.freeze({
 		'node_modules/@pluxel/workbench/index.d.ts': `
 export declare class Workbench {
 	static readonly access: 'owner'
-	publish(definition: unknown, bindings?: unknown): void
+	publish<Definition>(definition: Definition, bindings?: unknown): { link(key: keyof Definition, params?: Record<string, string>): unknown }
 }
 declare const apiType: unique symbol
 declare const consumerApiType: unique symbol
@@ -670,16 +670,20 @@ class SemanticPlugin {
 		expect(reused?.sources).toEqual([])
 	})
 
-	it('builds both typed exposures into one relocatable producer for the owner', async () => {
+	it('builds relocated type assets for mixed renderer imports without executing server code', async () => {
 		await using fixture = await createFixture(fixtureFiles())
 		await writeFile(
 			resolve(fixture.path, 'src/settings.tsx'),
 			`import { createWorkbenchRenderer } from '@pluxel/workbench/react'
-import { SemanticWorkbench } from './plugin.ts'
-const settings = createWorkbenchRenderer(SemanticWorkbench.settings)
+import { type SettingsChange as Change, SemanticWorkbench as Editor, type SettingsApi } from './plugin.ts'
+export type EditorChange = Change
+const settings = createWorkbenchRenderer(Editor.settings)
 export default settings.render(function Settings() {
 	const { api } = settings.useWorkbench()
-	api.snapshot()
+	const state: ReturnType<SettingsApi['snapshot']> = api.snapshot()
+	const edit: Change = { enabled: state.enabled }
+	// @ts-expect-error Change must retain the author's exact property type
+	const invalid: Change = { enabled: 'yes' }
 	// @ts-expect-error the browser projection must retain the exact View API
 	api.select('not-a-settings-method')
 	return null
@@ -690,7 +694,8 @@ export default settings.render(function Settings() {
 		await writeFile(
 			resolve(fixture.path, 'src/picker.tsx'),
 			`import { createWorkbenchRenderer } from '@pluxel/workbench/react'
-import { SemanticWorkbench } from './plugin.ts'
+import { SemanticWorkbench, type SettingsChange } from './plugin.ts'
+export type PickerChange = SettingsChange
 const picker = createWorkbenchRenderer(SemanticWorkbench.picker)
 export default picker.render(function Picker() {
 	const { provider, consumer } = picker.useWorkbench()
@@ -729,6 +734,9 @@ import { defineServiceRef } from '@pluxel/core'
 import { workbench } from '@pluxel/workbench'
 import type { PickerApi, PickerConsumerApi, SettingsApi } from './protocol-index.ts'
 import type { Workbench } from '@pluxel/workbench'
+export type { SettingsApi } from './protocol-index.ts'
+export interface SettingsChange { enabled: boolean }
+if (typeof window !== 'undefined') throw new Error('MIXED_IMPORT_SERVER_CODE_ONLY')
 const WorkbenchRef = defineServiceRef<Workbench>()
 
 const renderer = './settings.tsx'
@@ -779,6 +787,12 @@ class SemanticPlugin {
 		})
 		const artifactEntries = await readdir(outDir, { recursive: true })
 		const artifactFiles = artifactEntries.map(String)
+		const browserCode = await Promise.all(
+			artifactFiles
+				.filter((file) => /\.(m?js|map)$/.test(file) && !file.endsWith('.d.ts.map'))
+				.map((file) => readFile(resolve(outDir, file), 'utf-8')),
+		)
+		expect(browserCode.join('\n')).not.toContain('MIXED_IMPORT_SERVER_CODE_ONLY')
 		const declarations = await Promise.all(
 			artifactFiles
 				.filter((file) => file.endsWith('.d.ts'))
@@ -792,6 +806,14 @@ class SemanticPlugin {
 		)
 		expect(settingsDeclaration).toBeTypeOf('string')
 		const settingsDeclarationPath = resolve(outDir, settingsDeclaration!)
+		const rendererDeclaration = artifactFiles.find((file) =>
+			file.endsWith('/settings.renderer.d.ts'),
+		)
+		expect(rendererDeclaration).toBeTypeOf('string')
+		const rendererDeclarationPath = resolve(outDir, rendererDeclaration!)
+		const rendererTypes = await readFile(rendererDeclarationPath, 'utf-8')
+		expect(rendererTypes).toContain('SettingsChange as Change')
+		expect(rendererTypes).toContain('EditorChange = Change')
 		await rm(resolve(fixture.path, 'src'), { recursive: true, force: true })
 		try {
 			execFileSync(
@@ -811,6 +833,7 @@ class SemanticPlugin {
 					'--lib',
 					'ES2024,DOM,DOM.Iterable,ESNext.Disposable',
 					settingsDeclarationPath,
+					rendererDeclarationPath,
 				],
 				{ cwd: fixture.path, stdio: 'pipe' },
 			)
@@ -1074,6 +1097,17 @@ class SemanticPlugin {
 
 	it.each([
 		{
+			name: 'an extra runtime value beside inline types and the bound definition',
+			settings: `
+import { createWorkbenchRenderer } from '@pluxel/workbench/react'
+import { type Shape, MixedWorkbench as Definition, serverOnly } from './mixed'
+const scope = createWorkbenchRenderer(Definition.settings)
+export default scope.render(() => serverOnly)
+`,
+			helper: undefined,
+			expectedError: /only MixedWorkbench as a runtime value.*settings\.tsx/,
+		},
+		{
 			name: 'a dynamic definition import',
 			settings: `
 export default async function Settings() {
@@ -1140,6 +1174,8 @@ export const second = MixedWorkbench.settings
 			await using fixture = await createFixture(files)
 			const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
+export type Shape = { title: string }
+export const serverOnly: Shape = { title: 'Server-only state' }
 export const MixedWorkbench = workbench.define(import.meta.url, {
 	guide: workbench.content({
 		document: './guide.md',
@@ -1231,7 +1267,7 @@ class SemanticPlugin {
 		expect(validation).toMatchObject({ valid: true })
 	}, 60_000)
 
-	it('does not create a producer for an attachment-only consumer', async () => {
+	it('places an Attachment through its public re-exports without creating another producer', async () => {
 		const files = fixtureFiles()
 		files['src/provider.ts'] = `
 import { workbench } from '@pluxel/workbench'
@@ -1239,13 +1275,17 @@ export const ProviderWorkbench = workbench.define(import.meta.url, {
 	picker: workbench.attachment({ renderer: './picker.tsx' }),
 })
 `
-		files['src/provider-index.ts'] = `export * from './provider.ts'\n`
+		files['src/provider-public.ts'] =
+			"export { ProviderWorkbench as FontTools } from './provider.ts'"
+		files['src/provider-barrel.ts'] = "export * from './provider-public.ts'"
+		files['src/provider-index.ts'] =
+			"import { FontTools } from './provider-barrel.ts'; export { FontTools }"
 		await using fixture = await createFixture(files)
 		const code = `
 import { Workbench, workbench } from '@pluxel/workbench'
-import { ProviderWorkbench } from './provider-index.ts'
+import { FontTools } from './provider-index.ts'
 export const SemanticWorkbench = workbench.define(import.meta.url, {
-	fonts: ProviderWorkbench.picker.place({ kind: 'tab', label: 'Fonts' }),
+	fonts: FontTools.picker.place({ kind: 'tab', label: 'Fonts' }),
 })
 class SemanticPlugin {
 	init() {
@@ -1542,7 +1582,8 @@ export const SemanticWorkbench = workbench.define(import.meta.url, {
 @Plugin()
 export class SemanticPlugin extends BasePlugin {
 	protected override init() {
-		this.ctx.service(WorkbenchRef)?.publish(SemanticWorkbench, { settings: () => ({}) })
+		const publication = this.ctx.service(WorkbenchRef)?.publish(SemanticWorkbench, { settings: () => ({}) })
+		publication?.link('settings')
 	}
 }
 `

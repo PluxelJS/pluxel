@@ -5,7 +5,7 @@ import { Fragment, useSyncExternalStore } from 'react'
 import { appsPage, builtinPages } from './navigationItems'
 import { useWorkspaceSession } from './workspaceContext'
 import { useWorkbenchTargetSnapshot } from '../../workbench/runtime'
-import { resolveSidebarShortcut, sidebarShortcutId } from './sidebarShortcuts'
+import { resolveWorkbenchEntryLink, sidebarShortcutId } from '../../workbench/entry-link'
 import { WorkbenchEntryIcon } from './WorkbenchEntryIcon'
 import { RouterLinkAdapter } from '../router/RouterLinkAdapter'
 
@@ -28,7 +28,7 @@ export function ActivityRail({ onShowPlugins }: { onShowPlugins: () => void }) {
 	useWorkbenchState(session.workbench, (state) => state.revision)
 	const shortcuts = session.sidebarShortcuts().map((shortcut) => ({
 		shortcut,
-		resolved: resolveSidebarShortcut(shortcut, snapshot.layout, snapshot.directory),
+		resolved: resolveWorkbenchEntryLink(shortcut, snapshot),
 	}))
 	const shortcutActive = shortcuts.some(
 		({ resolved }) => resolved.href !== undefined && active?.href === `${base}${resolved.href}`,

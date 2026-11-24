@@ -1,5 +1,5 @@
 import { useRuntimeManagementClient } from '../runtime'
-import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
+import { formatPluginNodeReference, pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type { RpcStub } from 'capnweb'
 import type { ContentHandle } from '@worksplit/react'
 import {
@@ -52,6 +52,7 @@ import {
 import { buildPluginDetailHref, normalizeWorkbenchPath, parseWorkbenchHref } from './paths'
 import { getWorkbenchDirectoryHref, resolveWorkbenchDirectoryRoute } from './route-directory'
 import { toWorkbenchError } from './errors'
+import { resolveWorkbenchEntryLink } from './entry-link'
 
 export type WorkbenchBrowserHost = Readonly<{
 	locale: string
@@ -266,7 +267,7 @@ function ReadyFederatedWorkbenchEntryView({
 	content: suppliedContent,
 }: Omit<WorkbenchEntryViewProps, 'entry'> & { entry: WorkbenchReadyFederatedLayoutEntry }) {
 	const management = useRuntimeManagementClient()
-	const { session, locale, colorScheme, notify, confirm } = useWorkbenchRuntime()
+	const { session, runtime, locale, colorScheme, notify, confirm } = useWorkbenchRuntime()
 	const navigation = useOptionalWorkspaceNavigation()
 	const directory = useWorkbenchRouteDirectory()
 	const workspace = useOptionalWorkspaceSession()
@@ -317,13 +318,26 @@ function ReadyFederatedWorkbenchEntryView({
 							else navigation.navigate(href)
 						},
 						openDocument(input: WorkbenchDocumentInput) {
-							const path = input.plugin
-								? buildPluginDetailHref(input.plugin)
-								: getWorkbenchDirectoryHref(
-										directory,
-										entry.target.node,
-										resolveShellPath(input.path, 'openDocument'),
+							let path: string
+							if (input.entry) {
+								const resolved = resolveWorkbenchEntryLink(
+									input.entry,
+									runtime.getSnapshot(null),
+									'canonical',
+								)
+								if (resolved.href === undefined)
+									throw new Error(
+										`[workbench/shell] ${formatPluginNodeReference(input.entry.target)} · ${input.entry.entryKey}: ${resolved.unavailable}`,
 									)
+								path = resolved.href
+							} else
+								path = input.plugin
+									? buildPluginDetailHref(input.plugin)
+									: getWorkbenchDirectoryHref(
+											directory,
+											entry.target.node,
+											resolveShellPath(input.path, 'openDocument'),
+										)
 							navigation.openTab({
 								path,
 								title: input.title,
@@ -332,7 +346,7 @@ function ReadyFederatedWorkbenchEntryView({
 						},
 					}
 				: undefined,
-		[directory, entry.target.node, frame, navigation, resolveShellPath, router, workspace],
+		[directory, entry.target.node, frame, navigation, resolveShellPath, router, runtime, workspace],
 	)
 	const activationInput = useMemo(
 		() => ({

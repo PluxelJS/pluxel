@@ -8,11 +8,12 @@ Rolldown 拥有 Plugin 源码分析、lowering ABI、静态查询和插件包构
 
 源码发现沿显式 source-spaces 中的静态 import 图查定义，动态来源保留 gaps。结果注明 current-disk/query-process/runtimeMatch: unverified；Host 的 committed catalog 和生成控制材料各由运行面维护。
 
-构建与查询共用三个分析所有者，查询直接读分析结果，不通过执行 lowering 获取信息：
+构建与查询共用以下分析入口：
 
 - `pluginSemanticsPlugin.ts`：`analyzeSemanticModule` 生成 definition、direct dependency、Part/mount 和源码范围，`lowerModule` 生成注入代码。
 - `configSourcePlugin.ts`：`extractConfigDeclarationFacts` 校验声明并确定 field/schema 范围，构建再 render/normalize。
 - `staticConfigEnvironment.ts` 解析 application factory、shadowing、binding helper 和 mapping。构建以原始表达式及引用出处解析目标路径，再用 `projectRawInput` 投影 transport。
+- Workbench 源码查询沿当前插件的 `publish` 追踪定义与条目。查询结果属于作者源码，实际被绑定的节点由 Workbench 在消费方发布时校验。见[查询 Workbench 入口](../docs/development/inspection.md#workbench-entries)。
 
 有 application 的查询在单次调用中固定 root/entry/sourceSpaces。package target 按该 entry 的上下文解析；source target 按正式 package、最具体 source root、native realpath/containment 选择。无 application 时 workspace 包优先。同 canonical definition 的物理来源冲突使查询失败；离线 resolver 不运行 Vite/custom hooks，定向 source-entry 查询也不扩张 plugins/file 的 workspace 发现范围。
 
@@ -22,7 +23,7 @@ inputs 返回 Plugin 的 env/file bindings 和应用配置表达式位置，不�
 
 供离线部署使用的 schema 在构造后应保持不变。解析器检查所追踪模块中针对字段表及别名的操作，其他模块运行时对已构造 schema 的改写超出了构建时可观察的范围。
 
-同次查询共享已读文件和总预算，返回前复核成功读取内容。revision 标记观察内容与显式解析选择；它不是 Host revision，也不覆盖原子文件系统状态或全部负向候选。分页 cursor 绑定查询/结果。预算、取消、source_changed 穿过 resolver 恢复路径，以查询级失败结束。当前 sections 为 parts/config/dependencies/checks/inputs，Vault 用法、RPC 类型展开和运行时影响分析另有边界。
+同次查询共享已读文件和总预算，返回前复核成功读取内容。revision 标记观察内容与显式解析选择；它不是 Host revision，也不覆盖原子文件系统状态或全部负向候选。分页 cursor 绑定查询/结果。预算、取消、source_changed 穿过 resolver 恢复路径，以查询级失败结束。可选 sections 见[源码查询](../docs/development/inspection.md#结构与依赖)，Vault 用法、RPC 类型展开和运行时影响分析另有边界。
 
 验证需要同源码/同解析上下文的构建与查询一致，另保留已知独立预期；覆盖多 entry、实际 package、symlink/source-space、动态 gap、重复 Part 和无求值。构建后的入口还须在普通 Node 中查真实源码，确认位置可用于下一步修改。
 

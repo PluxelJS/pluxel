@@ -61,6 +61,7 @@ const SECTIONS = new Set<InspectionPluginSection>([
 	'dependencies',
 	'checks',
 	'inputs',
+	'workbench',
 ])
 const MAX_FILES = 4096
 const MAX_SOURCE_BYTES = 32 * 1024 * 1024
@@ -251,6 +252,17 @@ export async function inspectPlugin<
 				...expanded.gaps,
 				...configs.diagnostics,
 			])
+		}
+		if (include.includes('workbench')) {
+			const { inspectPluginWorkbench } = await import('./workbench.ts')
+			sections.workbench = await inspectPluginWorkbench({
+				owner: definition,
+				pkg,
+				read: (file) => snapshot.read(file),
+				resolve: snapshot.resolve,
+				location: (file, start, end) => snapshot.location(file, start, end),
+				signal: options.signal,
+			})
 		}
 		if (include.includes('checks'))
 			sections.checks = pkg

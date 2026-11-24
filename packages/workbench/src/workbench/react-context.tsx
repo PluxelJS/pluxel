@@ -4,6 +4,7 @@ import type { PluginNodeAddress } from '@pluxel/core'
 import type { WorkbenchDeclarationIdentity } from '@pluxel/core/federation'
 import type { RpcStub, RpcTarget } from 'capnweb'
 import type { WorkbenchOpenedClientValue, WorkbenchOpenedViewHandle } from './client.ts'
+import type { WorkbenchEntryLink } from './client-protocol.ts'
 import {
 	readWorkbenchDescriptor,
 	type WorkbenchDescriptorApi,
@@ -44,11 +45,12 @@ export type WorkbenchConfirmInput = Readonly<{
 	tone?: 'default' | 'danger'
 }>
 
-/** Open a route owned by this View's Plugin, or the built-in detail page of an exact Plugin node. */
+/** Open this View's route, an exact Plugin node's detail page, or a published entry on that node. */
 export type WorkbenchDocumentInput = WorkbenchDocumentTitle &
 	(
-		| Readonly<{ path: string; plugin?: never }>
-		| Readonly<{ plugin: PluginNodeAddress; path?: never }>
+		| Readonly<{ path: string; plugin?: never; entry?: never }>
+		| Readonly<{ plugin: PluginNodeAddress; path?: never; entry?: never }>
+		| Readonly<{ entry: WorkbenchEntryLink; path?: never; plugin?: never }>
 	)
 
 export type WorkbenchNavigation = Readonly<{

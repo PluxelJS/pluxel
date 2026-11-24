@@ -1933,7 +1933,7 @@ importers:
         specifier: catalog:validation
         version: 1.5.0(typescript@7.0.2)
       valibot-form:
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../valibot-form
       vite:
         specifier: npm:@voidzero-dev/vite-plus-core@1.4.0

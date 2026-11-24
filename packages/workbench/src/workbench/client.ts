@@ -25,7 +25,7 @@ import type {
 } from './client-protocol.ts'
 import { parseWorkbenchContentPresentation } from './client-validation.ts'
 import { readWorkbenchShortcuts } from './shortcuts.ts'
-export { readWorkbenchShortcuts } from './shortcuts.ts'
+export { readWorkbenchEntryLink, readWorkbenchShortcuts } from './shortcuts.ts'
 import { parseWorkbenchPlacement, type WorkbenchPlacement } from './definition.ts'
 import {
 	createWorkbenchOpenedContentHandle,
@@ -606,7 +606,7 @@ export type {
 	WorkbenchReadyFederatedLayoutEntry,
 	WorkbenchUnavailableFederatedLayoutEntry,
 	WorkbenchLayout,
-	WorkbenchShortcut,
+	WorkbenchEntryLink,
 	WorkbenchLayoutEntry,
 	WorkbenchLayoutInput,
 	WorkbenchLayoutTarget,

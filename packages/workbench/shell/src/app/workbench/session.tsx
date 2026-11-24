@@ -5,8 +5,9 @@ import {
 } from '@pluxel/core'
 import {
 	readWorkbenchShortcuts,
+	readWorkbenchEntryLink,
 	type WorkbenchLayoutEntry,
-	type WorkbenchShortcut,
+	type WorkbenchEntryLink,
 } from '@pluxel/workbench/client'
 import {
 	panelIdentity,
@@ -37,7 +38,7 @@ import { PluginTool } from './PluginTools'
 import { PluginNavigation } from './PluginNavigation'
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { WorkspaceSnapshotStorage, WorkspaceRestoreError, workspaceStorageKey } from './snapshot'
-import { sidebarShortcutId } from './sidebarShortcuts'
+import { sidebarShortcutId } from '../../workbench/entry-link'
 
 export const navigationTab = {
 	type: 'tab' as const,
@@ -180,7 +181,7 @@ const panelLayoutPolicy = {
 
 export function defaultWorkspaceLayout(
 	compact = window.innerWidth <= 680,
-	shortcuts: readonly WorkbenchShortcut[] = [],
+	shortcuts: readonly WorkbenchEntryLink[] = [],
 ): IJsonModel {
 	return {
 		global: {
@@ -257,14 +258,14 @@ export class WorkspaceSession {
 	private disposing?: Promise<void>
 	private synchronizingPanels?: Promise<void>
 	private panelsPending = false
-	private readonly initialShortcuts: readonly WorkbenchShortcut[]
+	private readonly initialShortcuts: readonly WorkbenchEntryLink[]
 
 	constructor(
 		options: {
 			basepath?: string
 			snapshot?: unknown
 			storage?: WorkspaceSnapshotStorage
-			initialShortcuts?: readonly WorkbenchShortcut[]
+			initialShortcuts?: readonly WorkbenchEntryLink[]
 		} = {},
 	) {
 		this.initialShortcuts = readWorkbenchShortcuts(
@@ -455,29 +456,29 @@ export class WorkspaceSession {
 	navigationMode(): 'icons' | 'labels' {
 		return this.navigationConfig().navigationMode === 'labels' ? 'labels' : 'icons'
 	}
-	sidebarShortcuts(): readonly WorkbenchShortcut[] {
+	sidebarShortcuts(): readonly WorkbenchEntryLink[] {
 		return (
-			(this.navigationConfig().shortcuts as readonly WorkbenchShortcut[] | undefined) ??
+			(this.navigationConfig().shortcuts as readonly WorkbenchEntryLink[] | undefined) ??
 			this.initialShortcuts
 		)
 	}
-	isSidebarShortcut(shortcut: WorkbenchShortcut): boolean {
+	isSidebarShortcut(shortcut: WorkbenchEntryLink): boolean {
 		return this.sidebarShortcuts().some(
 			(saved) =>
 				saved.entryKey === shortcut.entryKey &&
 				pluginNodeAddressEqual(saved.target, shortcut.target),
 		)
 	}
-	async setSidebarShortcut(shortcut: WorkbenchShortcut, pinned: boolean): Promise<void> {
-		const [validated] = readWorkbenchShortcuts([shortcut])
+	async setSidebarShortcut(shortcut: WorkbenchEntryLink, pinned: boolean): Promise<void> {
+		const validated = readWorkbenchEntryLink(shortcut)
 		const current = this.sidebarShortcuts()
-		const matches = (saved: WorkbenchShortcut) =>
-			saved.entryKey === validated!.entryKey &&
-			pluginNodeAddressEqual(saved.target, validated!.target)
+		const matches = (saved: WorkbenchEntryLink) =>
+			saved.entryKey === validated.entryKey &&
+			pluginNodeAddressEqual(saved.target, validated.target)
 		const shortcuts = pinned
 			? current.some(matches)
-				? current.map((saved) => (matches(saved) ? validated! : saved))
-				: [...current, validated!]
+				? current.map((saved) => (matches(saved) ? validated : saved))
+				: [...current, validated]
 			: current.filter((saved) => !matches(saved))
 		await this.saveSidebarShortcuts(shortcuts)
 	}
@@ -490,7 +491,7 @@ export class WorkspaceSession {
 		shortcuts.splice(to, 0, moved!)
 		await this.saveSidebarShortcuts(shortcuts)
 	}
-	private async saveSidebarShortcuts(shortcuts: readonly WorkbenchShortcut[]): Promise<void> {
+	private async saveSidebarShortcuts(shortcuts: readonly WorkbenchEntryLink[]): Promise<void> {
 		const result = await this.workbench.dispatch(
 			Actions.updateNodeAttributes('border_left', {
 				config: { ...this.navigationConfig(), shortcuts },

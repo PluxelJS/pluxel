@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import { pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
+import { formatPluginNodeRoute, pluginNodeIndexKey, type PluginNodeAddress } from '@pluxel/core'
 import type {
 	WorkbenchLayout,
 	WorkbenchLayoutEntry,
@@ -61,7 +61,12 @@ vi.mock('../../src/app/plugins/pluginOverview', () => ({
 		hasSnapshot: true,
 		overview: {
 			status: {
-				statuses: fixture.nodes.map((address) => ({ address, lifecycleState: 'running' })),
+				statuses: fixture.nodes.map((address) => ({
+					address,
+					route: formatPluginNodeRoute(address),
+					label: address.definition.exportName,
+					lifecycleState: 'running',
+				})),
 			},
 		},
 	}),
@@ -143,8 +148,8 @@ beforeEach(() => {
 		policy: { get: vi.fn(), validate: vi.fn(), patch: vi.fn(), reset: vi.fn() },
 		config: {
 			status: vi.fn(async () => ({ readonly: false })),
-			presentation: vi.fn(),
-			get: vi.fn(),
+			presentation: vi.fn(async () => ({ ok: false, code: 'presentation_not_found' })),
+			get: vi.fn(async () => ({ ok: false, code: 'config_not_found' })),
 			patch: vi.fn(),
 			patchField: vi.fn(),
 			validate: vi.fn(),
@@ -208,8 +213,13 @@ afterEach(async () => {
 	vi.unstubAllGlobals()
 })
 
-async function mount(basepath: string, conflict = false) {
-	const entries: WorkbenchLayoutEntry[] = [manager, account, preview]
+async function mount(
+	basepath: string,
+	conflict = false,
+	extraEntries: WorkbenchLayoutEntry[] = [],
+) {
+	const entries: WorkbenchLayoutEntry[] = [manager, account, preview, ...extraEntries]
+	fixture.nodes.push(...extraEntries.map(({ target }) => target.node))
 	if (conflict) {
 		const other: PluginNodeAddress = { definition: owner.definition, variant: 'default' }
 		fixture.nodes.push(other)
@@ -224,7 +234,11 @@ async function mount(basepath: string, conflict = false) {
 		layoutDto: vi.fn(async ({ target }): Promise<WorkbenchLayout> => ({
 			profile: 1,
 			revision: 1,
-			target: target ? manager.target : null,
+			target: target
+				? (entries.find(
+						(entry) => pluginNodeIndexKey(entry.target.node) === pluginNodeIndexKey(target),
+					)?.target ?? null)
+				: null,
 			entries: target
 				? entries.filter(
 						(entry) => pluginNodeIndexKey(entry.target.node) === pluginNodeIndexKey(target),
@@ -244,9 +258,9 @@ async function mount(basepath: string, conflict = false) {
 							[Symbol.dispose] = vi.fn()
 						})(),
 						params:
-							entry === manager
+							entry === manager || input.location === undefined
 								? {}
-								: { id: decodeURIComponent(input.location!.split('/').at(-1)!) },
+								: { id: decodeURIComponent(input.location.split('/').at(-1)!) },
 						federatedViewRef: entry.federatedViewRef,
 					},
 					[Symbol.dispose]: vi.fn(),
@@ -274,7 +288,7 @@ async function mount(basepath: string, conflict = false) {
 	await vi.waitFor(() =>
 		expect(container.querySelector('[aria-label="manager draft"]')).not.toBeNull(),
 	)
-	return { container, root, workspace, prefix, sourceHref, host: fixture.hosts.at(-1)! }
+	return { container, root, workspace, prefix, sourceHref, host: fixture.hosts.at(-1)!, session }
 }
 
 describe('Plugin host navigation through the authenticated native App', () => {
@@ -412,7 +426,7 @@ describe('Plugin host navigation through the authenticated native App', () => {
 		expect(() => {
 			// @ts-expect-error A Plugin detail and an owner-relative route are different destinations.
 			navigation.openDocument({ plugin, path: '/accounts/east', title: 'Ambiguous' })
-		}).toThrow('either plugin or path')
+		}).toThrow('exactly one of entry, plugin or path')
 		await act(async () => navigation.openDocument({ plugin, title: 'Authentication' }))
 		const href = prefix + buildPluginDetailHref(plugin)
 		await vi.waitFor(() => expect(location.pathname).toBe(href))
@@ -420,6 +434,98 @@ describe('Plugin host navigation through the authenticated native App', () => {
 			sourceHref,
 			href,
 		])
+	})
+
+	it('opens the exact fork and route entry in its own canonical document, keeping query and fragment', async () => {
+		const west = { ...owner, variant: 'fork', forkId: 'west' } as const
+		const { workspace, host, prefix, session, sourceHref } = await mount(
+			'/__pluxel/workbench',
+			false,
+			[{ ...account, target: { node: west, displayName: 'West' }, renderer: west }],
+		)
+		const link = {
+			target: west,
+			entryKey: 'account',
+			location: '/accounts/%3Aid?mode=edit#details',
+		}
+		await act(async () =>
+			host.facade.navigation!.openDocument({ entry: link, title: 'West account' }),
+		)
+		const href = prefix + buildWorkbenchHref(west, '/accounts/%3Aid') + '?mode=edit#details'
+		await vi.waitFor(() =>
+			expect(session.openEntry).toHaveBeenCalledWith(
+				expect.objectContaining({
+					target: west,
+					descriptor: account.descriptor,
+					location: '/accounts/%3Aid',
+				}),
+			),
+		)
+		expect(location.pathname + location.search + location.hash).toBe(href)
+		expect(workspace.workbench.getDocuments().map((document) => document.href)).toEqual([
+			sourceHref,
+			href,
+		])
+	})
+
+	it('opens a published tab on the linked fork with its own RPC root', async () => {
+		const west = { ...owner, variant: 'fork', forkId: 'west' } as const
+		const { workspace, host, session, container } = await mount('/', false, [
+			{
+				...account,
+				target: { node: west, displayName: 'West' },
+				renderer: west,
+				placement: { kind: 'tab', label: 'West account', order: 0 },
+			},
+		])
+		await act(async () =>
+			host.facade.navigation!.openDocument({
+				entry: { target: west, entryKey: 'account' },
+				title: 'West tab',
+			}),
+		)
+		await vi.waitFor(() =>
+			expect(container.querySelector('[aria-label="account draft"]')).not.toBeNull(),
+		)
+		expect(workspace.workbench.getActiveDocument()!.href).toBe(
+			buildPluginDetailHref(west) + '?entry=account',
+		)
+		expect(session.openEntry).toHaveBeenCalledWith(
+			expect.objectContaining({ target: west, descriptor: account.descriptor }),
+		)
+	})
+
+	it('reports stale, unavailable and mixed entry links before creating a document', async () => {
+		const west = { ...owner, variant: 'fork', forkId: 'west' } as const
+		const { federatedViewRef: _ref, ...publication } = account
+		const { workspace, host, sourceHref } = await mount('/', false, [
+			{
+				...publication,
+				target: { node: west, displayName: 'West' },
+				renderer: west,
+				federatedViewUnavailable: { reason: 'building' },
+			},
+		])
+		const entry = { target: owner, entryKey: 'withdrawn' }
+		const navigation = host.facade.navigation!
+		expect(() => navigation.openDocument({ entry, title: 'Withdrawn' })).toThrow('withdrawn')
+		expect(() =>
+			navigation.openDocument({
+				entry: { target: west, entryKey: 'account', location: '/accounts/alice' },
+				title: 'Building',
+			}),
+		).toThrow('界面正在构建')
+		expect(() => {
+			// @ts-expect-error An exact entry and a plugin detail are separate destinations.
+			navigation.openDocument({ entry, plugin: owner, title: 'Ambiguous' })
+		}).toThrow('exactly one of entry, plugin or path')
+		expect(() =>
+			navigation.openDocument({
+				entry: { ...entry, location: '//other.test/path' },
+				title: 'Invalid',
+			}),
+		).toThrow('entry link location must be a concrete local path')
+		expect(workspace.workbench.getDocuments().map(({ href }) => href)).toEqual([sourceHref])
 	})
 
 	it('keeps the published SDK canonical-path input boundary without mutating existing query or hash on a rejected request', async () => {

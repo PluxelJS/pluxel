@@ -13,10 +13,10 @@ import { IconArrowUpRight, IconChevronRight, IconSearch } from '@tabler/icons-re
 import { useWorkbenchState } from '@worksplit/react'
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { formatPluginNodeRoute } from '@pluxel/core'
-import { readWorkbenchShortcuts, type WorkbenchShortcut } from '@pluxel/workbench/client'
+import { readWorkbenchEntryLink, type WorkbenchEntryLink } from '@pluxel/workbench/client'
 import { buildPluginDetailHref } from '../../workbench/paths'
 import { getWorkbenchDirectoryHref } from '../../workbench/route-directory'
-import { matchWorkbenchRoute } from '../../workbench/routes'
+import { resolveWorkbenchEntryLink } from '../../workbench/entry-link'
 import { useWorkbenchTargetSnapshot } from '../../workbench/runtime'
 import { usePluginOverview } from '../plugins/pluginOverview'
 import { pluginAttention } from '../plugins/pluginOverviewModel'
@@ -184,7 +184,7 @@ function NavigationContent({
 	}
 	const togglePin = (entry: PageEntry) => {
 		if (!session) return
-		const shortcut: WorkbenchShortcut = {
+		const shortcut: WorkbenchEntryLink = {
 			target: entry.target.node,
 			entryKey: entry.descriptor.key,
 		}
@@ -284,29 +284,16 @@ function NavigationContent({
 	const selectedRoute = snapshot.directory.routes.find(
 		(candidate) => candidate.entry === routeEntry,
 	)
-	let concreteLocation: URL | undefined
-	if (
-		selectedRoute &&
-		routePath.startsWith('/') &&
-		!routePath.startsWith('//') &&
-		routePath !== selectedRoute.compiled.path
-	) {
+	let concretePage: { link: WorkbenchEntryLink; href: string } | undefined
+	if (selectedRoute) {
 		try {
-			readWorkbenchShortcuts([
-				{
-					target: selectedRoute.entry.target.node,
-					entryKey: selectedRoute.entry.descriptor.key,
-					location: routePath,
-				},
-			])
-			const candidate = new URL(routePath, 'https://workbench.invalid')
-			const params = matchWorkbenchRoute(selectedRoute.compiled, candidate.pathname)
-			if (
-				candidate.origin === 'https://workbench.invalid' &&
-				params &&
-				Object.entries(params).every(([name, value]) => value !== `:${name}`)
-			)
-				concreteLocation = candidate
+			const link = readWorkbenchEntryLink({
+				target: selectedRoute.entry.target.node,
+				entryKey: selectedRoute.entry.descriptor.key,
+				location: routePath,
+			})
+			const { href } = resolveWorkbenchEntryLink(link, snapshot)
+			if (href !== undefined) concretePage = { link, href }
 		} catch {
 			/* Keep malformed paths visibly unavailable for both open and pin. */
 		}
@@ -570,31 +557,17 @@ ${status}${attention?.message ? ` · ${attention.message}` : ''}`}
 						data-autofocus
 					/>
 					<Button
-						disabled={!concreteLocation}
+						disabled={!concretePage}
 						onClick={() => {
-							if (!routeEntry || routeEntry.placement.kind !== 'route' || !concreteLocation) return
+							if (!concretePage) return
 							if (routeAction === 'pin' && session) {
 								void session
-									.setSidebarShortcut(
-										{
-											target: routeEntry.target.node,
-											entryKey: routeEntry.descriptor.key,
-											location:
-												concreteLocation.pathname + concreteLocation.search + concreteLocation.hash,
-										},
-										true,
-									)
+									.setSidebarShortcut(concretePage.link, true)
 									.then(() => setRouteEntry(undefined))
 									.catch((error: unknown) => session.report(error))
 								return
 							}
-							const href = getWorkbenchDirectoryHref(
-								snapshot.directory,
-								routeEntry.target.node,
-								concreteLocation.pathname,
-								routeEntry.placement.frame,
-							)
-							open(href + concreteLocation.search + concreteLocation.hash)
+							open(concretePage.href)
 							setRouteEntry(undefined)
 						}}
 					>

@@ -27,6 +27,8 @@ Workbench 是 Pluxel 内置的可视化管理工作台。它为开发者和运�
 
 位置独立于内容。使用 `{ kind: 'tab', label }` 添加插件选项卡，使用 `{ kind: 'route', path, title }` 声明可导航的页面，使用 `{ kind: 'panel', region, label }` 添加左侧、右侧或底部面板。路由需要在应用导航中展示时提供 `navigation: { label }`。 [上下文面板](./panels.md)
 
+如果一个中心页面要列出其他插件管理的对象，来源插件可以随业务数据提供 `WorkbenchEntryLink`，让用户从列表或详情进入该插件自己的编辑器。 [向中心插件注册来源](./composition.md#向中心插件注册来源)
+
 ## 发布一个 Markdown 入口
 
 插件在 `init()` 中通过可选的 Workbench 服务发布整份定义。以下例子只需在定义旁放置一份 `overview.md`。

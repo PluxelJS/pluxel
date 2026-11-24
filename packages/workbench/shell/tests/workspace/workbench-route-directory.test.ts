@@ -88,6 +88,12 @@ describe('Workbench route directory', () => {
 		expect(directory.conflicts).toEqual([])
 		expect(resolveWorkbenchDirectoryRoute(directory, '/accounts/new')?.entry).toBe(exact)
 		expect(resolveWorkbenchDirectoryRoute(directory, '/accounts/42')?.entry).toBe(parameter)
+		for (const segment of [':id', '%E0%A4', 'a%2Fb', 'x'.repeat(513)]) {
+			expect(resolveWorkbenchDirectoryRoute(directory, '/accounts/' + segment)).toBeUndefined()
+		}
+		expect(resolveWorkbenchDirectoryRoute(directory, '/accounts/%3Aid')?.params).toEqual({
+			id: ':id',
+		})
 	})
 
 	it('treats fork instances of one definition as separate URL owners', () => {
@@ -113,6 +119,7 @@ describe('Workbench route directory', () => {
 		'/plugins/:id',
 		'/plugin-graph',
 		'/security/audit',
+		'/outbound-http/defaults',
 		'/workbench/test',
 		'/workbench-standalone/test',
 		'/:section/:id',

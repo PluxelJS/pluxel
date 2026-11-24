@@ -923,6 +923,29 @@ try {
 			await page.screenshot({ path: resolve(artifacts, 'dirty-view-reopened.png') })
 		},
 	)
+	await check(
+		'a source editor opens independently of the center’s unsaved bot instructions',
+		async () => {
+			await page.goto(origin + basepath + '/bot-lab/discord/support')
+			const instructions = page.getByRole('textbox', { name: '机器人指令', exact: true })
+			const center = await nativeTabOf(instructions)
+			const original = await instructions.inputValue()
+			const draft = original + '（编辑中）'
+			await instructions.fill(draft)
+			await page.getByRole('button', { name: '打开来源编辑器' }).click()
+			const channel = page.getByRole('textbox', { name: '通知频道 ID' })
+			await expect(channel).toBeEnabled()
+			await expect(page).toHaveURL(/\/workbench\/.+\/discord\/bots\/support$/)
+			await channel.fill('#general')
+			await page.getByRole('button', { name: '保存频道' }).click()
+			await expect(page.getByText(/请输入.*频道 ID/)).toBeVisible()
+			await expect(channel).toHaveValue('#general')
+			await page.getByRole('button', { name: '放弃修改并重新读取' }).click()
+			await center.click()
+			await expect(instructions).toHaveValue(draft)
+			await instructions.fill(original)
+		},
+	)
 	await check('newer document navigation supersedes a slow real MF activation', async () => {
 		await showApps()
 		const pendingTab = await duplicateDocument(tab('应用'))

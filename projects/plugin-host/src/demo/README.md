@@ -6,7 +6,7 @@
 - `PluginOptionalIntegrationDemo`：module-level `definePluginRef<T>()`、init-time `plugins.use(ref, setup)` 与 owner cleanup。
 - `PluginEventsDemo`：producer-owned `EvtChannel`，consumer 通过 constructor required dependency 订阅。
 - `PluginWithUI`：direct View API、Plugin-owned observer、tab、route 与 MF2 React Bridge。
-- `PluginContributionFontDemo`：provider-owned Attachment + consumer-owned selection，演示 manager 被依赖插件放置和消费。
+- `PluginContributionFontDemo` 用一个 Attachment 提供字体目录，选择写入当前消费节点的实例字段。[双消费方测试](./PluginContributionFontDemo.test.ts)验证两个报表 fork 读同一份目录，修改其中一个的字体后另一个仍保留原值。
 - `PluginHttpRoutesDemo`：常驻业务 HTTP；不为文档额外制造 Workbench 抽象。
 - `PluginOutboundHttpDemo`：内建 Wretch、原生重试与 404 业务分支，以及独立 HTTP 路由的 DTO 投影。
 - `PluginHttpWorkerDemo`：typed task + root shared worker pool + HMR/static artifact。

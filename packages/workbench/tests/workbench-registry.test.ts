@@ -1,5 +1,5 @@
 import { type Workbench, workbench } from '@pluxel/workbench'
-import { parsePluginNodeAddress, defineServiceRef } from '@pluxel/core'
+import { parsePluginNodeAddress, defineServiceRef, formatPluginNodeReference } from '@pluxel/core'
 import { requirePluginService } from '@pluxel/core/internal'
 import { workbenchFederationExpose, workbenchFederationProducerName } from '@pluxel/core/federation'
 import { RpcTarget, type RpcStub } from 'capnweb'
@@ -229,7 +229,7 @@ class SelectionTarget extends RpcTarget implements SelectionApi {
 
 let attachmentConsumerNode: unknown
 
-@Plugin({ displayName: 'Provider' })
+@Plugin({ displayName: 'Provider', forkable: true })
 class ProviderPlugin extends BasePlugin {
 	protected override init() {
 		this.ctx.service(WorkbenchRef)?.publish(ProviderWorkbench, {
@@ -238,6 +238,13 @@ class ProviderPlugin extends BasePlugin {
 				return new CatalogTarget(consumer.node.definition.exportName)
 			},
 		})
+	}
+}
+
+@Plugin({ forkable: true })
+class AttachmentBindingConsumer extends BasePlugin {
+	constructor(readonly provider: ProviderPlugin) {
+		super()
 	}
 }
 
@@ -256,6 +263,45 @@ class PanelPlugin extends BasePlugin {
 }
 
 describe('Workbench publication', () => {
+	it('identifies the consumer binding, expected Attachment and actual provider fork on rejection', async () => {
+		await using host = await createServiceInternalTestHarness({ workbench: true })
+		host.add([ProviderPlugin, AttachmentBindingConsumer])
+		const selected = host.fork(ProviderPlugin, 'selected')
+		const consumer = host.fork(AttachmentBindingConsumer, 'reports')
+		host.override(consumer, ProviderPlugin, selected)
+		host.start(ProviderPlugin)
+		host.start(consumer)
+		await host.commit()
+
+		const owner = host.require(consumer)
+		const service = owner.ctx.service(WorkbenchRef)!
+		const other = workbench.define('https://user:secret@example.test/reports.ts?token=private', {
+			picker: workbench.attachment<CatalogApi, SelectionApi>({ renderer }),
+			missing: workbench.attachment<CatalogApi, SelectionApi>({ renderer }),
+		})
+		const publish = (attachment: typeof ProviderWorkbench.picker, provider: BasePlugin) =>
+			service.publish(
+				workbench.define(import.meta.url, {
+					fonts: attachment.place({ kind: 'tab', label: 'Fonts' }),
+				}),
+				{ fonts: { provider, consumer: () => new SelectionTarget() } },
+			)
+
+		const binding = `${formatPluginNodeReference(consumer)} bindings.fonts.provider`
+		const selectedNode = formatPluginNodeReference(selected)
+		const actual = formatPluginNodeReference(ProviderPlugin.nodeAddress())
+		expect(() => publish(other.picker, host.require(ProviderPlugin))).toThrow(
+			`${binding} must be a direct required dependency (expected Attachment "picker" from https://example.test/reports.ts (renderer ${renderer}), bound ${actual})`,
+		)
+		expect(() => publish(other.missing, owner.provider)).toThrow(
+			`${binding} expected Attachment "missing" from https://example.test/reports.ts (renderer ${renderer}), but ${selectedNode} did not publish that entry`,
+		)
+		expect(() => publish(other.picker, owner.provider)).toThrow(
+			`${binding} expected Attachment "picker" from https://example.test/reports.ts (renderer ${renderer}), but ${selectedNode} published a different declaration: Attachment "picker" from`,
+		)
+		publish(ProviderWorkbench.picker, owner.provider)
+	})
+
 	it('opens owner-scoped panel Views, Content and Attachments without route locations', async () => {
 		await using host = await createServiceInternalTestHarness({ workbench: true })
 		host.add([ProviderPlugin, PanelPlugin, LocalPlugin])

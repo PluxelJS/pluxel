@@ -189,7 +189,7 @@ export const workbench = Object.freeze({
 		'node_modules/@pluxel/workbench/index.d.ts': `
 export declare class Workbench {
 	static readonly access: 'owner'
-	publish(definition: unknown, bindings?: unknown): void
+	publish<Definition>(definition: Definition, bindings?: unknown): { link(key: keyof Definition, params?: Record<string, string>): unknown }
 }
 export declare const workbench: {
 	view<Api>(value: Record<string, unknown>): unknown

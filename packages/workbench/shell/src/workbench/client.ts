@@ -5,7 +5,7 @@ import {
 	type WorkbenchLayout,
 	type WorkbenchSessionApi,
 } from '@pluxel/workbench/client'
-import { matchWorkbenchRoute } from './routes'
+import { matchWorkbenchRoute } from '../../../src/workbench/routes'
 import { normalizeWorkbenchPath } from './paths'
 import { toWorkbenchError } from './errors'
 import {

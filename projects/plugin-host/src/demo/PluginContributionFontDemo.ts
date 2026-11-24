@@ -27,7 +27,7 @@ export class PluginContributionFontManager extends BasePlugin {
 	}
 }
 
-@Plugin()
+@Plugin({ forkable: true })
 export class PluginContributionFontConsumer extends BasePlugin {
 	readonly config = this.configs.use(ConsumerAppearanceConfig)
 	private fontSetRef: FontRef | null = null

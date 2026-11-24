@@ -5,7 +5,7 @@ import {
 	compileWorkbenchRoute,
 	workbenchRoutesOverlap,
 	type CompiledWorkbenchRoute,
-} from './routes'
+} from '../../../src/workbench/routes'
 
 const EMPTY_DIRECTORY = createWorkbenchRouteDirectory([])
 

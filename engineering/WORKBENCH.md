@@ -21,6 +21,10 @@ Definition 是 flat、frozen、固定键集合。Canonical Plugin definition add
 
 Plugin 在 `init()` 中最多 publish 一次，bindings 精确覆盖需要绑定的 entries，纯 Markdown 无 binding。Part 由 owning Plugin 聚合。Context 决定 owner，publication 纳入 generation effects，在 owner committed/running 后才可见。
 
+跨插件放置时，registry 用消费方直接必需依赖的实际节点核对 Attachment 的发布和 renderer 来源。绑定失败时，诊断指出消费方节点和入口、期望的 Attachment 声明以及可识别的实际 provider 节点。编写绑定前，可从[源码查询](../docs/development/inspection.md#workbench-entries)定位入口和导出。
+
+`publish()` 返回属于本次 publication 的句柄。`publication.link(key, params?)` 按已发布定义中的入口生成可序列化的 `WorkbenchEntryLink`，节点身份来自发布 Context。生成链接不打开条目，也不分配 RPC root。撤回后句柄失效。已发出的地址可以随业务数据传递，实际打开仍按当前目录、principal 和 revision 走 `openEntry`。来源注册、业务校验与草稿归领域插件。 [向中心插件注册来源](../docs/workbench/composition.md#向中心插件注册来源)
+
 声明与编译器共用 placement 校验。面板声明为 `{ kind: 'panel', region, label, icon?, order? }`，region 限定为 left/right/bottom。它沿用 publication/openEntry，以 target node、entry key 和当前 layout revision 接纳；Panel 不进入 route directory。
 
 每次 View/Attachment open 创建 fresh roots，interactive Content 使用框架创建的 per-open root。Factory 取得已认证 principal、服务端重新匹配的 frozen params 和 lifetime signal；领域 observer、任务与缓存随 signal/disposer 释放。Factory 不取得 raw request、consumer Context 或 service locator。Attachment provider 只取得 exact consumer node address，可选 consumer root 保持自己的 owner、授权与 cleanup。

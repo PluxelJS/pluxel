@@ -1,5 +1,10 @@
 import { RpcTarget, type RpcStub } from 'capnweb'
-import { workbench, type PluginWorkbench, type WorkbenchBindings } from './definition.ts'
+import {
+	workbench,
+	type PluginWorkbench,
+	type WorkbenchBindings,
+	type WorkbenchPublication,
+} from './definition.ts'
 import { createWorkbenchRenderer, type WorkbenchHookValue } from './react.tsx'
 import type { BasePlugin } from '@pluxel/core'
 import * as v from 'valibot'
@@ -95,7 +100,7 @@ declare const provider: BasePlugin
 declare const pluginWorkbench: PluginWorkbench
 const detachedHistory = { entries: [{ labels: ['ready'] }] } as const
 
-pluginWorkbench.publish(ContentWorkbench)
+pluginWorkbench.publish(ContentWorkbench).link('guide')
 pluginWorkbench.publish(MixedWorkbench, { local: () => new LocalTarget() })
 pluginWorkbench.publish(InteractiveContentWorkbench, {
 	status: ({ signal }) => {
@@ -151,6 +156,17 @@ const validBindings = {
 		consumer: () => new ConsumerTarget(),
 	},
 } satisfies WorkbenchBindings<typeof ConsumerWorkbench>
+
+const published = pluginWorkbench.publish(ConsumerWorkbench, validBindings)
+published.link('local')
+published.link('picker')
+// @ts-expect-error A handle only knows its own definition's keys.
+published.link('guide')
+// @ts-expect-error Route parameter values must be strings.
+published.link('local', { id: 3 })
+declare const providerPublication: WorkbenchPublication<typeof ProviderWorkbench>
+// @ts-expect-error A provider's unplaced Attachment is not a document.
+providerPublication.link('settings')
 
 type LocalStub = RpcStub<LocalApi>
 declare const localStub: LocalStub

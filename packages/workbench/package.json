@@ -127,7 +127,7 @@
 		"@tanstack/query-core": "catalog:frontend",
 		"pathe": "catalog:node",
 		"valibot": "catalog:validation",
-		"valibot-form": "workspace:*"
+		"valibot-form": "workspace:^"
 	},
 	"devDependencies": {
 		"@dagrejs/dagre": "catalog:prod",

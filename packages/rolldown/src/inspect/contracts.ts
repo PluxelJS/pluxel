@@ -1,4 +1,5 @@
 import type { PluginDefinitionAddress } from '@pluxel/core'
+import type { WorkbenchPlacement } from '@pluxel/workbench/internal/transport'
 
 export type InspectionErrorCode =
 	| 'invalid_input'
@@ -132,7 +133,28 @@ export type InspectionInputs = Readonly<{
 	bindings: readonly InspectionConfigBinding[]
 }>
 
+export type InspectionWorkbenchEntry = Readonly<{
+	key: string
+	/** Workbench builder or .place() call that created the published entry. */
+	declaration: InspectionSourceLocation
+}> &
+	(
+		| Readonly<{ kind: 'view' | 'content' | 'attachment-placement'; placement: WorkbenchPlacement }>
+		| Readonly<{ kind: 'attachment'; consumerApi: 'none' | 'required' | 'unknown' }>
+	)
+
+export interface InspectionWorkbenchPublication {
+	readonly exportName: string
+	/** The final workbench.define(...) expression, including application-local definitions. */
+	readonly declaration: InspectionSourceLocation
+	/** Verified named value exports of this definition through the owning package's source entries. */
+	readonly imports: readonly Readonly<{ module: string; exportName: string }>[]
+	readonly entries: readonly InspectionWorkbenchEntry[]
+}
+
 export interface InspectionSectionData {
+	/** The owning Plugin's publication, independent of a selected Part subtree. */
+	workbench: Readonly<{ publication: InspectionWorkbenchPublication | null }>
 	inputs: InspectionInputs
 	parts: Readonly<{ occurrences: readonly InspectionPart[] }>
 	config: Readonly<{ declarations: readonly InspectionConfigDeclaration[] }>

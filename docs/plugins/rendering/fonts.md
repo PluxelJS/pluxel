@@ -10,9 +10,9 @@ description: 发现、注册和管理服务端字体，并为 Canvas、ECharts �
 ## 何时直接注入 FontsPlugin
 
 - 插件自身打包了 `.ttf`、`.otf`、`.woff` 或 `.woff2` 静态字体文件，需要在服务端渲染前完成注册。
-- 业务代码需要动态查询可用字体族（Font Families）或当前的全局默认字体。
+- 业务代码需要查询可用字体族（Font Families）或所绑定 Fonts 节点的默认字体。
 - 编写自定义渲染插件，需要感知字体变化信号（`revision`）以刷新文本测量缓存。
-- 在插件的 Workbench 控制台中嵌入预设的字体选择器。
+- 在插件的 Workbench 标签页、路由或面板修改所绑定 Fonts 节点的默认字体偏好。
 
 若仅是使用 Canvas、ECharts 或 Takumi 进行普通渲染，通常直接依赖对应的渲染插件即可，无需单独注入 `FontsPlugin`。
 
@@ -72,7 +72,7 @@ export class ReportsPlugin extends BasePlugin {
 // 获取当前所有可用字体族的快照
 const families = this.fonts.families
 
-// 获取当前解析后的全局默认字体
+// 获取所绑定 Fonts 节点解析后的默认字体
 const current = this.fonts.defaultFont
 
 // 字体版本修订号（注册变化时递增，可用于测量缓存失效）
@@ -133,9 +133,11 @@ envBinding({
 | `maxFontBytes`      | `16 MiB`  | 单个字体文件最大字节限制                 |
 | `maxTotalFontBytes` | `256 MiB` | 动态注册字体的总内存占用上限             |
 
-## 在 Workbench 中嵌入字体选择器
+## 在工作台修改字体节点的默认偏好
 
-`FontsPlugin` 提供了开箱即用的控制台挂件（Attachment），可直接嵌入业务插件的详情页中：
+`FontsWorkbench.selection` 提供字体目录和选择器。选择值通过 `provider.setPreferredFamily()` 保存到所绑定的 Fonts 节点，所有使用该节点的插件共享同一份默认偏好。有效的宿主配置 `defaultFamily` 优先决定最终采用的字体。
+
+下面的报表插件在自己的详情页放置“默认字体”标签。构造函数注入的 `this.fonts` 指定实际保存偏好的节点。
 
 ```ts no-twoslash
 import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
@@ -146,7 +148,7 @@ import { workbench, type Workbench } from '@pluxel/workbench'
 const WorkbenchRef = defineServiceRef<Workbench>()
 
 export const ReportsWorkbench = workbench.define(import.meta.url, {
-	fonts: FontsWorkbench.selection.place({ kind: 'tab', label: 'Fonts' }),
+	fonts: FontsWorkbench.selection.place({ kind: 'tab', label: '默认字体' }),
 })
 
 @Plugin()
@@ -162,6 +164,8 @@ export class ReportsPlugin extends BasePlugin {
 	}
 }
 ```
+
+如果一份报表的选择只能影响该报表，可以用双向 Attachment 让消费方提供读写报表字体的 RPC target。两端的绑定和写入示例见[由消费方保存选择](../../workbench/composition.md#由消费方保存选择)。
 
 ## 错误处理与业务 Result 封装
 

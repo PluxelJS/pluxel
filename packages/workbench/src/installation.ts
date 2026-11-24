@@ -36,13 +36,13 @@ export function createWorkbenchService(
 						publish<const Definition extends AnyWorkbenchDefinition>(
 							definition: Definition,
 							...bindings: WorkbenchPublishBindings<Definition>
-						): void {
+						) {
 							if (isPluginPartContext(owner)) {
 								throw new Error(
 									'[workbench] PluginPart cannot publish Workbench entries; aggregate them in the owning Plugin definition.',
 								)
 							}
-							backend.publish(owner, definition, ...bindings)
+							return backend.publish(owner, definition, ...bindings)
 						},
 					}),
 			}),

@@ -16,7 +16,7 @@ import {
 } from '@dnd-kit/sortable'
 import { ActionIcon, Button, Group, Stack, Text, Title } from '@mantine/core'
 import { formatPluginNodeRoute } from '@pluxel/core'
-import type { WorkbenchShortcut } from '@pluxel/workbench/client'
+import type { WorkbenchEntryLink } from '@pluxel/workbench/client'
 import { IconGripVertical } from '@tabler/icons-react'
 import { useWorkbenchState } from '@worksplit/react'
 import { useWorkbenchTargetSnapshot } from '../../workbench/runtime'
@@ -24,21 +24,21 @@ import { usePluginOverview } from '../plugins/pluginOverview'
 import { useWorkbenchNavigation } from './context'
 import { PluginConfigurationButton } from './PluginConfigurationButton'
 import { SidebarPinButton } from './SidebarPinButton'
-import { resolveSidebarShortcut, sidebarShortcutId } from './sidebarShortcuts'
+import { resolveWorkbenchEntryLink, sidebarShortcutId } from '../../workbench/entry-link'
 import { useWorkspaceSession } from './workspaceContext'
 import { WorkbenchEntryIcon } from './WorkbenchEntryIcon'
 
 type ShortcutRow = {
 	id: string
-	shortcut: WorkbenchShortcut
-	resolved: ReturnType<typeof resolveSidebarShortcut>
+	shortcut: WorkbenchEntryLink
+	resolved: ReturnType<typeof resolveWorkbenchEntryLink>
 	pluginLabel?: string
 }
 
 export function PinnedApplications() {
 	const session = useWorkspaceSession()
 	const shortcuts = useWorkbenchState(session.workbench, () => session.sidebarShortcuts())
-	const { layout, directory } = useWorkbenchTargetSnapshot(null)
+	const snapshot = useWorkbenchTargetSnapshot(null)
 	const { overview } = usePluginOverview()
 	const pluginLabels = new Map(overview?.status.statuses.map(({ route, label }) => [route, label]))
 	const sensors = useSensors(
@@ -48,7 +48,7 @@ export function PinnedApplications() {
 	const rows = shortcuts.map((shortcut) => ({
 		id: sidebarShortcutId(shortcut),
 		shortcut,
-		resolved: resolveSidebarShortcut(shortcut, layout, directory),
+		resolved: resolveWorkbenchEntryLink(shortcut, snapshot),
 		pluginLabel: pluginLabels.get(formatPluginNodeRoute(shortcut.target)),
 	}))
 	const rowIds = rows.map(({ id }) => id)

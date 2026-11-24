@@ -417,6 +417,68 @@ export function collectConfigSchemaModule(
 	}
 }
 
+const symbolKey = (symbol: ConfigSourceSymbol): string => `${symbol.moduleId}\0${symbol.local}`
+
+/** Value identity through ordinary imports, aliases and star exports. The caller owns module IO. */
+export function createSourceSymbolResolver(
+	resolveModule: (source: string, importer: string) => Promise<ConfigSchemaModule | undefined>,
+) {
+	const resolveExportSymbol = async (
+		module: ConfigSchemaModule,
+		name: string,
+		seen: Set<string>,
+	): Promise<ConfigSourceSymbol | null | undefined> => {
+		const key = `${module.id}#symbol-export:${name}`
+		if (seen.has(key)) return undefined
+		seen.add(key)
+		try {
+			const target = module.exports.get(name)
+			if (target) {
+				if (target.kind === 'local') return await resolveLocalSymbol(module, target.local, seen)
+				if (target.kind === 'namespace') return undefined
+				const next = await resolveModule(target.source, module.id)
+				return next ? await resolveExportSymbol(next, target.imported, seen) : undefined
+			}
+			if (name === 'default') return undefined
+			let found: ConfigSourceSymbol | undefined
+			for (const source of module.exportAll) {
+				const next = await resolveModule(source, module.id)
+				const candidate = next ? await resolveExportSymbol(next, name, seen) : undefined
+				if (candidate === null) return null
+				if (!candidate) continue
+				if (found && symbolKey(found) !== symbolKey(candidate)) return null
+				found = candidate
+			}
+			return found
+		} finally {
+			seen.delete(key)
+		}
+	}
+
+	const resolveLocalSymbol = async (
+		module: ConfigSchemaModule,
+		name: string,
+		seen: Set<string>,
+	): Promise<ConfigSourceSymbol | null | undefined> => {
+		const binding = module.imports.get(name)
+		if (binding) {
+			if (binding.namespace) return undefined
+			const target = await resolveModule(binding.source, module.id)
+			return target ? resolveExportSymbol(target, binding.imported, seen) : undefined
+		}
+		return module.locals.has(name) ? { moduleId: module.id, local: name } : undefined
+	}
+
+	return {
+		async local(module: ConfigSchemaModule, name: string) {
+			return (await resolveLocalSymbol(module, name, new Set())) ?? undefined
+		},
+		async exported(module: ConfigSchemaModule, name: string) {
+			return (await resolveExportSymbol(module, name, new Set())) ?? undefined
+		},
+	}
+}
+
 export function createConfigSchemaSourceResolver(
 	context: Pick<TransformPluginContext, 'resolve'>,
 	readSource: (id: string) => Promise<string> = (id) => readFile(id, 'utf8'),
@@ -449,51 +511,7 @@ export function createConfigSchemaSourceResolver(
 		return resolved?.id ? loadModule(resolved.id) : undefined
 	}
 
-	const symbolKey = (symbol: ConfigSourceSymbol): string => `${symbol.moduleId}\0${symbol.local}`
-
-	const resolveExportSymbol = async (
-		module: ConfigSchemaModule,
-		name: string,
-		seen: Set<string>,
-	): Promise<ConfigSourceSymbol | undefined> => {
-		const key = `${module.id}#symbol-export:${name}`
-		if (seen.has(key)) return undefined
-		seen.add(key)
-		try {
-			const target = module.exports.get(name)
-			if (target) {
-				if (target.kind === 'local') return resolveLocalSymbol(module, target.local, seen)
-				if (target.kind === 'namespace') return undefined
-				const next = await resolveModule(target.source, module.id)
-				return next ? resolveExportSymbol(next, target.imported, seen) : undefined
-			}
-			let found: ConfigSourceSymbol | undefined
-			for (const source of module.exportAll) {
-				const next = await resolveModule(source, module.id)
-				const candidate = next ? await resolveExportSymbol(next, name, seen) : undefined
-				if (!candidate) continue
-				if (found && symbolKey(found) !== symbolKey(candidate)) return undefined
-				found = candidate
-			}
-			return found
-		} finally {
-			seen.delete(key)
-		}
-	}
-
-	const resolveLocalSymbol = async (
-		module: ConfigSchemaModule,
-		name: string,
-		seen: Set<string>,
-	): Promise<ConfigSourceSymbol | undefined> => {
-		const binding = module.imports.get(name)
-		if (binding) {
-			if (binding.namespace) return undefined
-			const target = await resolveModule(binding.source, module.id)
-			return target ? resolveExportSymbol(target, binding.imported, seen) : undefined
-		}
-		return module.locals.has(name) ? { moduleId: module.id, local: name } : undefined
-	}
+	const symbols = createSourceSymbolResolver(resolveModule)
 
 	// A deployable factory must trace back to a package import. Keep the original module
 	// and expression for all other values so projection can read only the selected path.
@@ -765,7 +783,7 @@ export function createConfigSchemaSourceResolver(
 		async resolveSymbol(module, expression) {
 			if (expression.type !== 'Identifier') return undefined
 			const name = readIdentifier(expression)
-			return name ? resolveLocalSymbol(module, name, new Set()) : undefined
+			return name ? symbols.local(module, name) : undefined
 		},
 		async resolveArray(module, expression) {
 			const resolved = await resolveValueExpression(module, expression, new Set())

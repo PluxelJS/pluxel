@@ -10,11 +10,11 @@ import type {
 	BotIdentity,
 	BotMutationResult,
 	BotObserver,
-	BotSourceId,
+	BotSourceRegistration,
 	BotWorkspaceApi,
 	BotWorkspaceSnapshot,
+	StoredBot,
 } from './BotWorkspace.contracts'
-import type { BotSourceRegistration, StoredBot } from './BotStore'
 
 const WorkbenchRef = defineServiceRef<Workbench>()
 type Source = {
@@ -24,7 +24,21 @@ type Source = {
 	lastKnown: readonly StoredBot[]
 	revisions: Map<string, number>
 }
-const sourceIds = new Set(['telegram', 'discord', 'wecom'])
+function isBotIdentifier(value: unknown): value is string {
+	return typeof value === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(value)
+}
+
+function readBots(store: BotSourceRegistration['store']): readonly StoredBot[] {
+	const ids = new Set<string>()
+	return store
+		.list()
+		.map(({ id, name, account, group, running, messages, unread, instructions }) => {
+			if (!isBotIdentifier(id)) throw new Error(`Invalid bot ID: ${id}`)
+			if (ids.has(id)) throw new Error(`Duplicate bot ID: ${id}`)
+			ids.add(id)
+			return Object.freeze({ id, name, account, group, running, messages, unread, instructions })
+		})
+}
 const failure = (
 	code: Extract<BotMutationResult, { ok: false }>['code'],
 	message: string,
@@ -32,7 +46,7 @@ const failure = (
 
 @Plugin({ displayName: '机器人工作区 · 多来源聚合' })
 export class BotWorkspacePlugin extends BasePlugin {
-	private readonly sources = new Map<BotSourceId, Source>()
+	private readonly sources = new Map<string, Source>()
 	private readonly listeners = new Set<(revision: number) => void>()
 	private readonly events: BotEvent[] = []
 	private revision = 0
@@ -65,14 +79,14 @@ export class BotWorkspacePlugin extends BasePlugin {
 
 	/** One live registration per source. The source owns release; all mutations are synchronous. */
 	registerSource(registration: BotSourceRegistration): () => void {
-		if (!sourceIds.has(registration.id)) throw new Error('Unknown bot source')
+		if (!isBotIdentifier(registration.id)) throw new Error('Invalid bot source ID')
 		if (this.sources.get(registration.id)?.active)
 			throw new Error(`Source already registered: ${registration.id}`)
 		const source: Source = {
 			label: registration.label,
 			capability: registration.capability,
 			active: registration,
-			lastKnown: registration.store.list(),
+			lastKnown: readBots(registration.store),
 			revisions: new Map(),
 		}
 		this.sources.set(registration.id, source)
@@ -82,7 +96,6 @@ export class BotWorkspacePlugin extends BasePlugin {
 			if (released) return
 			released = true
 			if (this.sources.get(registration.id) !== source) return
-			source.lastKnown = registration.store.list()
 			delete source.active
 			this.record(registration.id, '', '来源已停止；保留最后已知数据')
 		}
@@ -116,14 +129,8 @@ export class BotWorkspacePlugin extends BasePlugin {
 	}
 
 	identity(source: unknown, id: unknown): BotIdentity {
-		if (
-			typeof source !== 'string' ||
-			!sourceIds.has(source) ||
-			typeof id !== 'string' ||
-			!/^[a-z][a-z0-9-]{0,63}$/.test(id)
-		)
-			throw new Error('Invalid bot identity')
-		return Object.freeze({ source: source as BotSourceId, id })
+		if (!isBotIdentifier(source) || !isBotIdentifier(id)) throw new Error('Invalid bot identity')
+		return Object.freeze({ source, id })
 	}
 
 	detail(identity: BotIdentity): BotDetail {
@@ -136,6 +143,7 @@ export class BotWorkspacePlugin extends BasePlugin {
 			available: !!source.active,
 			revision: source.revisions.get(identity.id)!,
 			capability: source.capability,
+			...(source.active?.editor && { editor: source.active.editor(bot) }),
 			events: this.events
 				.filter(
 					(event) =>
@@ -176,7 +184,7 @@ export class BotWorkspacePlugin extends BasePlugin {
 				? { instructions: value.instructions as string }
 				: { running: value.running as boolean },
 		)
-		source.lastKnown = source.active.store.list()
+		source.lastKnown = readBots(source.active.store)
 		this.record(
 			identity.source,
 			identity.id,
@@ -198,7 +206,7 @@ export class BotWorkspacePlugin extends BasePlugin {
 		}
 	}
 
-	private record(source: BotSourceId, bot: string, message: string): void {
+	private record(source: string, bot: string, message: string): void {
 		this.revision++
 		const state = this.sources.get(source)!
 		for (const item of state.lastKnown)

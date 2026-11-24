@@ -162,7 +162,7 @@ function RevisionNotice({ revision }: { revision: number }) {
 }
 ```
 
-在 Shell 中，`host.navigation.openDocument({ path, title })` 打开当前插件声明的页面。要打开应用目录中某个节点的内置插件详情，直接传入该节点的地址，例如 `host.navigation?.openDocument({ plugin: node.address, title: node.label.text })`。地址保留包入口、导出和 fork 身份。
+在 Shell 中，`host.navigation.openDocument({ path, title })` 打开当前插件的路由，`openDocument({ plugin, title })` 打开指定节点的内置插件详情。从业务 API 拿到另一个插件提供的 `WorkbenchEntryLink` 时，用 `openDocument({ entry, title })` 打开对应文档，Shell 核对发布节点、入口和具体位置。入口已撤回或位置失效时，调用会抛错，页面可在按钮旁显示原因。导航不可用时 `host.navigation` 为 `null`。 [向中心插件注册来源](./composition.md#向中心插件注册来源)
 
 ---
 
@@ -171,4 +171,4 @@ function RevisionNotice({ revision }: { revision: number }) {
 ## 依赖与构建
 
 - Shell 与插件共享固定版本的 React、ReactDOM、Mantine、React Bridge 和 Workbench 浏览器入口。页面通过 `scope.query` 和 `scope.mutation` 使用 Workbench 内部的 TanStack Query 缓存。插件自行引入的其他前端库由 producer 打包。
-- Renderer 中绑定 scope 的模块直接导入自己的 definition。构建工具将该值引用投影为当前条目的浏览器 descriptor。其他模块按需导入 scope、资源或 TypeScript 类型。
+- Renderer 中绑定 scope 的模块直接导入自己的 definition。同一句 import 可以用 `type` 引入 RPC 接口或表单类型。构建时 definition 值只包含当前条目的浏览器 descriptor，类型仍指向作者声明。其他模块按需导入 scope、资源或类型。

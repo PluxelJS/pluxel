@@ -9,7 +9,7 @@ import type {
 	WorkbenchPublishBindings,
 	WorkbenchPrincipal,
 } from '../workbench/definition.ts'
-import type { WorkbenchSessionApi, WorkbenchShortcut } from '../workbench/client-protocol.ts'
+import type { WorkbenchSessionApi, WorkbenchEntryLink } from '../workbench/client-protocol.ts'
 import {
 	WorkbenchArtifactService,
 	type WorkbenchArtifactLookup,
@@ -87,8 +87,8 @@ export class WorkbenchBackend {
 		owner: Context,
 		definition: Definition,
 		...bindings: WorkbenchPublishBindings<Definition>
-	): void {
-		this.registry.publish(owner, definition, ...bindings)
+	) {
+		return this.registry.publish(owner, definition, ...bindings)
 	}
 
 	createSession(
@@ -139,7 +139,7 @@ export type WorkbenchInstallOptions = Readonly<{
 	product?: ProductDescriptor | null
 	artifacts?: Readonly<{ root?: string }>
 	/** Used once when the browser workspace has no sidebar preference. Users may remove every shortcut. */
-	initialShortcuts?: readonly WorkbenchShortcut[]
+	initialShortcuts?: readonly WorkbenchEntryLink[]
 }>
 
 function parsePrincipal(input: WorkbenchPrincipal): WorkbenchPrincipal {

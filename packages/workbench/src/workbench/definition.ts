@@ -1,6 +1,7 @@
 import type { BasePlugin, PluginNodeAddress } from '@pluxel/core'
 import type { GenericSchema, GenericSchemaAsync, InferOutput } from 'valibot'
 import type { RpcTarget } from 'capnweb'
+import type { WorkbenchEntryLink } from './client-protocol.ts'
 
 const definitions = new WeakMap<object, WorkbenchDefinitionMetadata>()
 const descriptors = new WeakMap<object, 'unbound' | WorkbenchDescriptorMetadata>()
@@ -341,11 +342,30 @@ export type WorkbenchPublishBindings<Definition extends AnyWorkbenchDefinition> 
 		? readonly []
 		: readonly [bindings: WorkbenchBindings<Definition>]
 
+type WorkbenchLinkKey<Definition extends AnyWorkbenchDefinition> = {
+	[Key in keyof Definition & string]: Definition[Key] extends { readonly kind: 'attachment' }
+		? never
+		: Key
+}[keyof Definition & string]
+
+/** A handle to one Plugin generation's published definition. */
+export interface WorkbenchPublication<Definition extends AnyWorkbenchDefinition> {
+	/**
+	 * Link to a tab or route on this node. For a parameterized route, supply
+	 * the original string for each named segment. Tabs and static routes keep
+	 * the entry key so links can follow changes to the declared path.
+	 */
+	link(
+		key: WorkbenchLinkKey<Definition>,
+		params?: Readonly<Record<string, string>>,
+	): WorkbenchEntryLink
+}
+
 export interface PluginWorkbench {
 	publish<const Definition extends AnyWorkbenchDefinition>(
 		definition: Definition,
 		...bindings: WorkbenchPublishBindings<Definition>
-	): void
+	): WorkbenchPublication<Definition>
 }
 
 type WorkbenchEntryDeclaration =

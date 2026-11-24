@@ -76,6 +76,18 @@ function Bot() {
 			setError(cause instanceof Error ? cause.message : String(cause))
 		}
 	}
+	const openEditor = () => {
+		if (!value?.editor || !host.navigation) return
+		try {
+			host.navigation.openDocument({
+				entry: value.editor,
+				title: `${value.name} · ${value.source} 编辑器`,
+			})
+			setError(undefined)
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : String(cause))
+		}
+	}
 	return (
 		<WorkbenchMantineProvider colorScheme={host.colorScheme}>
 			<Stack p="lg" gap="sm">
@@ -168,6 +180,16 @@ function Bot() {
 									<Text size="xs" c="dimmed">
 										{value.capability}
 									</Text>
+									{value.editor && (
+										<Button
+											size="xs"
+											variant="light"
+											disabled={!host.navigation}
+											onClick={openEditor}
+										>
+											打开来源编辑器
+										</Button>
+									)}
 								</Stack>
 							</Card>
 							<Card withBorder padding="sm">

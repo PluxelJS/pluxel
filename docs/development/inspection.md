@@ -1,6 +1,6 @@
 ---
 title: 查询插件源码
-description: 通过 @pluxel/agent-sdk/source 的普通函数发现插件、定位声明、Part、Schema、依赖和应用输入。
+description: 通过 @pluxel/agent-sdk/source 发现插件，定位声明、Workbench 入口、Part、Schema、依赖和应用输入。
 ---
 
 `@pluxel/agent-sdk/source` 提供普通异步函数。安装依赖后，用 Node 即可查询磁盘源码；查询不启动 Host、不加载项目模块、不执行应用工厂或 Schema。运行中的应用操作按执行位置选择 [Host SDK 或外部客户端](./agent-sdk.md)。
@@ -81,6 +81,7 @@ for (const item of found.data.value.items) {
 - `parts`：occurrence 路径、Part 声明与挂载位置。
 - `config`：Plugin/Part 配置字段、Schema 使用与定义位置。
 - `dependencies`：required/optional definition、provider 关系和声明来源。
+- `workbench`：插件发布的 Workbench 定义、可证实的导入路径、条目与源码位置。见[查询 Workbench 入口](#workbench-entries)。
 - `inputs`：目标插件默认节点的 `config` 表达式、各节点的 env/file 绑定和 `forkId` 源码位置。查询仅定位声明，部署值由 Host 读取。
 - `checks`：所属 package 声明的 scripts；查询不会执行命令。
 
@@ -100,6 +101,39 @@ for (const required of dependencies.value.requires) {
 抽象 token 与具体 Plugin 使用同样的 definition 查询。`partPath: ['delivery', 'retry']` 缩小 parts、config 和 dependency origins；依赖全集与 inputs 仍描述整个 Plugin。
 
 Section 的 `complete` 表示请求范围内分析完整；`partial` 保留可用值和 `gaps`；`unavailable` 保留 `reason`。未知表达式不会被解释成空列表。
+
+<span id="workbench-entries"></span>
+
+## 查询 Workbench 入口
+
+给插件添加字体标签前，可以在能解析 Fonts 作者源码的项目里查询它的 Attachment。
+
+```js
+import { inspectPlugin } from '@pluxel/agent-sdk/source'
+
+const report = await inspectPlugin('package:@pluxel/plugin-fonts::FontsPlugin', {
+	root: process.cwd(),
+	include: ['workbench'],
+})
+const section = report.data.sections.workbench
+if (section.status === 'unavailable') throw new Error(section.reason.message)
+if (section.status === 'partial') console.warn(section.gaps)
+const publication = section.value.publication
+if (publication) {
+	console.log(publication.imports)
+	for (const entry of publication.entries) {
+		if (entry.kind === 'attachment') console.log(entry.key, entry.consumerApi, entry.declaration)
+	}
+}
+```
+
+消费插件按 `imports` 中的 `module` 和 `exportName` 导入定义。包入口用 `export { Tools as EditorUI }` 公开定义时，消费方就用 `EditorUI` 调用 `.place()`，`declaration` 仍指向原始声明。
+
+Fonts 的公开导入是 `{ FontsWorkbench }`，来自 `@pluxel/plugin-fonts/workbench`。`selection` 的 `consumerApi` 为 `'none'`，放置时只绑定 `provider`。值为 `'required'` 的 Attachment 还要求消费方提供 RPC 工厂。遇到 `'unknown'` 时，根据 `gaps` 和声明位置核对类型。要判断一次写入影响哪个插件或对象，请读该条目的接口说明和实际方法。[跨插件组合](../workbench/composition.md)
+
+View、Content 和已放置的 Attachment 返回解析后的 `placement`。例如来源插件的路由为 `{ kind: 'route', path: '/discord/bots/:bot', … }`，对应 `publication.link('editor', { bot: id })`。传递链接的中心只需读取来源业务 API 的结果。 [向中心插件注册来源](../workbench/composition.md#向中心插件注册来源)
+
+完整结果中的 `publication: null` 表示没有发现该插件的 Workbench 发布。应用内部的定义也可通过源码地址查询，公开导入列表可以为空，此时用 `declaration` 定位源码。运行中的 provider 节点由消费方的依赖绑定决定。
 
 ## 结果与失败
 

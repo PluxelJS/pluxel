@@ -24,6 +24,7 @@ description: 开发、修改或排查 Pluxel 应用与插件；选择源码查�
 | 插件状态、偏好或有界结构化记录          | `plugin-development/tinybase.md`；使用原生 Store，Host 托管恢复与保存；部署配置继续使用 `configs.use()`                                                            |
 | 插件文件、后端或文档保存                | `plugin-development/fs.md`；Host 后端与 config/state 接线读 `host/configuration.md` 对应章节，保留原生 errno 和完整提交                                            |
 | 查声明、配置绑定与源码位置              | `development/agent-sdk.md` 与 `development/inspection.md`；`/source` 的 inspectPlugin/listPlugins/inspectFile/inspectProject 是普通函数，显式指定 root/application |
+| 复用插件 UI 或向中心注册来源            | 见 `workbench/composition.md`。发现 Attachment 用 `inspectPlugin` 的 `workbench` section 查导入和声明，见 `development/inspection.md`。                            |
 | 验证插件依赖、配置或生命周期            | `plugin-development/testing.md`；使用真实 lowering 的 `@pluxel/test`，显式安装所需服务并释放 test host；普通函数用普通测试                                         |
 | 部署应用的自动化脚本                    | `development/scripts.md`；普通 `Script`、`/client` 函数或 CLI 编译上传、原 receipt 查询与取消；目标必须显式授权脚本执行                                            |
 | 取得插件类型、配置源码与业务实例        | `development/plugin-control.md`；`./control`、材料同步、`sdk.plugin(Provider.nodeAddress())`、配置、实例及 JSDoc；外部类型依赖使用匹配版本                         |

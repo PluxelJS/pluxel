@@ -7,7 +7,7 @@ import type {
 	WorkbenchLayout,
 	WorkbenchOpenEntryInput,
 	WorkbenchSessionApi,
-	WorkbenchShortcut,
+	WorkbenchEntryLink,
 } from '../../workbench/client-protocol.ts'
 import { assertWorkbenchDto } from '../../workbench/portable-value.ts'
 import { OpenedEntryLease, WorkbenchRegistry } from './WorkbenchRegistry.ts'
@@ -24,7 +24,7 @@ export class WorkbenchSessionTarget extends RpcTarget implements WorkbenchSessio
 		private readonly registry: WorkbenchRegistry,
 		private readonly principal: WorkbenchPrincipal,
 		private readonly onDispose: () => void,
-		private readonly initialShortcuts: readonly WorkbenchShortcut[] = [],
+		private readonly initialShortcuts: readonly WorkbenchEntryLink[] = [],
 	) {
 		super()
 	}

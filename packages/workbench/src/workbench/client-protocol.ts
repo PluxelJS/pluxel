@@ -73,8 +73,8 @@ export type WorkbenchContentLayoutEntry = Readonly<{
 
 export type WorkbenchLayoutEntry = WorkbenchFederatedLayoutEntry | WorkbenchContentLayoutEntry
 
-/** A user-owned sidebar shortcut to one declared entry, including a concrete parameter route. */
-export type WorkbenchShortcut = Readonly<{
+/** A portable address for a declared tab or route on an exact Plugin node. A parameter route needs a concrete location. */
+export type WorkbenchEntryLink = Readonly<{
 	target: PluginNodeAddress
 	entryKey: string
 	location?: string
@@ -85,7 +85,7 @@ export type WorkbenchLayout = Readonly<{
 	revision: number
 	target: WorkbenchLayoutTarget | null
 	entries: readonly WorkbenchLayoutEntry[]
-	initialShortcuts?: readonly WorkbenchShortcut[]
+	initialShortcuts?: readonly WorkbenchEntryLink[]
 }>
 
 export type WorkbenchLayoutInput = Readonly<{

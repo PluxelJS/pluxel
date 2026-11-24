@@ -5,7 +5,7 @@ import type {
 	WorkbenchContentLayoutEntry,
 	WorkbenchLayout,
 	WorkbenchLayoutEntry,
-	WorkbenchShortcut,
+	WorkbenchEntryLink,
 } from '@pluxel/workbench/client'
 import { Workbench } from '@worksplit/react'
 import { act } from 'react'
@@ -15,7 +15,7 @@ import { WorkspaceSession } from '../../src/app/workbench/session'
 import { ActivityRail } from '../../src/app/workbench/ActivityRail'
 import { PinnedApplications } from '../../src/app/workbench/PinnedApplications'
 import { WorkspaceNavigation } from '../../src/app/workbench/WorkspaceNavigation'
-import { resolveSidebarShortcut, sidebarShortcutId } from '../../src/app/workbench/sidebarShortcuts'
+import { resolveWorkbenchEntryLink, sidebarShortcutId } from '../../src/workbench/entry-link'
 import {
 	WorkspacePersistence,
 	WorkspaceRestoreError,
@@ -27,8 +27,7 @@ import {
 	compileWorkbenchSnapshot,
 	type WorkbenchTargetSnapshot,
 } from '../../src/workbench/client-snapshot'
-import { buildWorkbenchHref } from '../../src/workbench/paths'
-import { createWorkbenchRouteDirectory } from '../../src/workbench/route-directory'
+import { buildPluginDetailHref, buildWorkbenchHref } from '../../src/workbench/paths'
 
 const source = vi.hoisted(() => ({ snapshot: undefined as WorkbenchTargetSnapshot | undefined }))
 vi.mock('../../src/workbench/runtime', async (importOriginal) => ({
@@ -64,13 +63,13 @@ const east: PluginNodeAddress = {
 	forkId: 'east',
 }
 const west: PluginNodeAddress = { ...east, forkId: 'west' }
-const market: WorkbenchShortcut = { target: marketNode, entryKey: 'market' }
-const eastAccount: WorkbenchShortcut = {
+const market: WorkbenchEntryLink = { target: marketNode, entryKey: 'market' }
+const eastAccount: WorkbenchEntryLink = {
 	target: east,
 	entryKey: 'account',
 	location: '/accounts/alice',
 }
-const westAccount: WorkbenchShortcut = { ...eastAccount, target: west }
+const westAccount: WorkbenchEntryLink = { ...eastAccount, target: west }
 const sessions = new Set<WorkspaceSession>()
 const roots = new Set<Root>()
 
@@ -93,8 +92,8 @@ function layout(entries: readonly WorkbenchLayoutEntry[]): WorkbenchLayout {
 	return { profile: 1, revision: 1, target: null, entries }
 }
 
-function resolve(shortcut: WorkbenchShortcut, entries: readonly WorkbenchLayoutEntry[]) {
-	return resolveSidebarShortcut(shortcut, layout(entries), createWorkbenchRouteDirectory(entries))
+function resolve(shortcut: WorkbenchEntryLink, entries: readonly WorkbenchLayoutEntry[]) {
+	return resolveWorkbenchEntryLink(shortcut, compileWorkbenchSnapshot(null, layout(entries)))
 }
 
 beforeEach(() => {
@@ -117,7 +116,7 @@ afterEach(async () => {
 	vi.useRealTimers()
 })
 
-async function mount(initialShortcuts: readonly WorkbenchShortcut[] = [market]) {
+async function mount(initialShortcuts: readonly WorkbenchEntryLink[] = [market]) {
 	const session = new WorkspaceSession({ basepath: '/', initialShortcuts })
 	sessions.add(session)
 	const { root } = await renderWorkspace(
@@ -344,5 +343,54 @@ describe('sidebar shortcut resolution against current committed publications', (
 			buildWorkbenchHref(east, '/accounts/alice'),
 		)
 		expect(resolve(eastAccount, [entry]).href).toBe('/accounts/alice')
+	})
+
+	it('resolves a tab against its fork and rejects a saved route location if that key is now a tab', () => {
+		const tab = publication(east, 'account', { kind: 'tab', label: 'Account', order: 0 })
+		expect(resolve({ target: east, entryKey: 'account' }, [tab]).href).toBe(
+			buildPluginDetailHref(east) + '?entry=account',
+		)
+		expect(resolve(eastAccount, [tab])).toMatchObject({ unavailable: '标签页不接受页面路径' })
+		expect(resolve({ target: west, entryKey: 'account' }, [tab]).href).toBeUndefined()
+		const panel = publication(east, 'account', {
+			kind: 'panel',
+			region: 'right',
+			label: 'Account',
+			order: 0,
+		})
+		expect(resolve({ target: east, entryKey: 'account' }, [panel]).href).toBeUndefined()
+	})
+
+	it('refuses an entry link shadowed by a more specific route on the same owner', () => {
+		const parameter = publication(east, 'account', {
+			kind: 'route',
+			path: '/accounts/:id',
+			title: 'Account',
+			frame: 'shell',
+			order: 0,
+		})
+		const exact = publication(east, 'admin', {
+			kind: 'route',
+			path: '/accounts/admin',
+			title: 'Admin',
+			frame: 'shell',
+			order: 0,
+		})
+		const snapshot = compileWorkbenchSnapshot(null, layout([parameter, exact]))
+		for (const address of ['preferred', 'canonical'] as const) {
+			expect(
+				resolveWorkbenchEntryLink(
+					{ ...eastAccount, location: '/accounts/admin' },
+					snapshot,
+					address,
+				).href,
+			).toBeUndefined()
+		}
+		expect(resolveWorkbenchEntryLink(eastAccount, snapshot, 'canonical').href).toBe(
+			buildWorkbenchHref(east, '/accounts/alice'),
+		)
+		expect(resolve({ ...eastAccount, location: '/accounts/%3Aid' }, [parameter]).href).toBe(
+			'/accounts/%3Aid',
+		)
 	})
 })

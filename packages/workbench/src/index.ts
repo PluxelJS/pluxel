@@ -9,9 +9,12 @@ export type {
 	WorkbenchDefinition,
 	WorkbenchDefinedEntry,
 	WorkbenchIcon,
-	WorkbenchPrincipal,
+	WorkbenchPlacement,
 	WorkbenchPlacementInput,
+	WorkbenchPrincipal,
+	WorkbenchPublication,
 	WorkbenchView,
 } from './workbench/definition.ts'
 
+export type { WorkbenchEntryLink } from './workbench/client-protocol.ts'
 export { Workbench } from './token'

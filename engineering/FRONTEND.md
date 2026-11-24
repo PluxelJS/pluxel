@@ -46,7 +46,7 @@ Federated renderer 每次 Bridge mount 独立持有 owner/cache。公开 resourc
 
 Remote 通过 facade 使用 appearance、feedback、受限 relative navigation、document 状态和显式借用的 unary Management。Navigation/document 不适用时为 null；dirty/title registration 随 per-open handle 撤销。
 
-Navigation 校验规范路径，不接受 query/hash。`openDocument({ path, title })` 从当前 owner 的 committed directory 和 canonical URL 解析目标 frame。`openDocument({ plugin, title })` 由 Shell 用节点地址构造内置插件详情路径。标题与 `meta` 写入原生 Model 的 `name` / `helpText`，检查 Action 回执。View 首次覆盖时借用当前原生值供撤销，不能将打开前的旧标题写回已变更的页面。
+传给 `navigate` 或 `openDocument({ path, title })` 的本插件路径必须是无 query/hash 的规范路径。`openDocument({ path, title })` 从当前 owner 的 committed directory 和 canonical URL 解析目标 frame。`openDocument({ plugin, title })` 由 Shell 用节点地址构造内置插件详情路径。`openDocument({ entry, title })` 和侧栏固定项共用 entry link 解析，按当前全局 layout 核对节点、入口键、可用性及具体 location。跨插件路由文档保存带 owner 的 canonical URL。标题与 `meta` 写入原生 Model 的 `name` / `helpText`，检查 Action 回执。View 首次覆盖时借用当前原生值供撤销，不能将打开前的旧标题写回已变更的页面。
 
 ## 原生工作区与文档路由
 
@@ -101,6 +101,8 @@ Remote 使用 CSS Flex/Grid、Mantine 和容器响应式布局，独立页面通
 ### 导航和目录
 
 ActivityRail 独立于可收起工具区，展示 `navigationItems.ts` 的内置入口与用户固定的 publication 页面。`border_left.config.shortcuts` 是唯一偏好存储，`initialShortcuts` 仅在缺失时初始化，`[]` 保持为空。名称、图标、frame 和可用性从当前 layout 解析，失效 target/entry 保留移除入口。
+
+点击插件传来的 entry link 时，`workbench/entry-link.ts` 核对链接中的入口键。文档恢复沿用保存的 URL 与当前路由表；同一节点若在新版本把同一路径分配给另一入口，恢复时显示新路由。
 
 `/apps` 展示 tab 与显式 navigation 的业务 route。目录从共享 Plugin Overview 读取已提交的插件组和组内顺序，按 canonical owner 匹配 publication，组内继续显示 publication 分类。固定列读取自己的侧栏顺序。全局查找额外包含其他 route。`/plugins` 使用唯一 `PluginNavigation` / `PluginCatalog`，保持分组、DnD、多选和管理持久化。中央索引只提示选择。`/apps` 本身不登记插件 owner。目录高亮比较 canonical plugin route，业务页同时比较 owner 和 exact entry key。
 
