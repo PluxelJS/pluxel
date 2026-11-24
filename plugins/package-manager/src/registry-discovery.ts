@@ -4,7 +4,8 @@ import { relative, resolve, isAbsolute, sep } from 'node:path'
 import { resolveExports, type PathConditions } from 'resolve-pkg-maps'
 import { satisfies, valid, validRange } from 'semver'
 import { EnvHttpProxyAgent, request } from 'undici'
-import { manifestAt, textFile } from './local-package.ts'
+import { readPackageSourceDefinitions, type PluginSourceDefinition } from '@pluxel/host/sources'
+import { manifestAt } from './local-package.ts'
 import { isPackageName, record } from './package-document.ts'
 import type { ResolvedConfig } from './pnpm-engine.ts'
 import type { RegistryCandidate, RegistryInspection } from './contracts.ts'
@@ -162,42 +163,23 @@ export function inspectPluginManifest(
 	return { ok: true, coreRange: peer, coreVersion, entry }
 }
 
-export async function checkInstalledPlugin(root: string, name: string) {
+/** Read the concrete definitions declared for the entry the managed wrapper imports. */
+export async function checkInstalledPlugin(
+	root: string,
+	name: string,
+): Promise<readonly PluginSourceDefinition[] | undefined> {
 	const manifest = await manifestAt(root)
 	if (manifest.name !== name) throw new Error('Installed package name differs from ' + name + '.')
 	const check = inspectPluginManifest(manifest)
 	if (check.ok === false) throw new Error(check.reason)
-	async function publishedFile(path: string) {
-		const actual = await realpath(resolve(root, path)).catch((): null => null)
-		const rel = actual && relative(root, actual)
-		if (!actual || !rel || rel.split(sep)[0] === '..' || isAbsolute(rel))
-			throw new Error('Missing published package file: ' + path)
-		const file = await stat(actual)
-		if (!file.isFile()) throw new Error('Missing published package file: ' + path)
-		return actual
-	}
-	await publishedFile(check.entry)
-	const control = record(manifest.pluxel) ? manifest.pluxel.control : undefined
-	if (control !== undefined) {
-		if (!relativeFile(control)) throw new Error('Invalid pluxel.control manifest path.')
-		const file = await publishedFile(control)
-		const contents = await textFile(file, 4 * 1024 * 1024)
-		if (contents.truncated) throw new Error('Plugin control manifest exceeds 4 MiB.')
-		const facts: unknown = JSON.parse(contents.text)
-		const rootPlugin =
-			record(facts) &&
-			Array.isArray(facts.definitions) &&
-			facts.definitions.some(
-				(d: unknown) =>
-					record(d) &&
-					record(d.definition) &&
-					record(d.definition.entry) &&
-					d.definition.entry.kind === 'package-root' &&
-					d.definition.entry.packageName === name &&
-					typeof d.definition.exportName === 'string' &&
-					d.definition.exportName.length > 0,
-			)
-		if (!rootPlugin)
-			throw new Error('The published control manifest declares no plugin at this package root.')
-	}
+	const actual = await realpath(resolve(root, check.entry)).catch((): null => null)
+	const rel = actual && relative(root, actual)
+	if (!actual || !rel || rel.split(sep)[0] === '..' || isAbsolute(rel))
+		throw new Error('Missing published package file: ' + check.entry)
+	const file = await stat(actual)
+	if (!file.isFile()) throw new Error('Missing published package file: ' + check.entry)
+	const definitions = await readPackageSourceDefinitions(root, manifest)
+	if (definitions?.length === 0)
+		throw new Error('The published control manifest declares no plugin at this package root.')
+	return definitions
 }

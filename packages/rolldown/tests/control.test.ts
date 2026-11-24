@@ -12,7 +12,12 @@ import { pluginDefinitionIndexKey } from '@pluxel/core'
 import { generatePluginControl } from '../src/control/generate-plugin'
 import { openControl } from '../src/control/inspection'
 import { createPluginControlPlugin } from '../src/control/plugin'
-import { parseControlCatalog, verifyPluginControlMaterial } from '../src/control/manifest'
+import {
+	parseControlCatalog,
+	parsePluginControlDependencies,
+	parsePluginControlManifest,
+	verifyPluginControlMaterial,
+} from '../src/control/manifest'
 import { createPluginSemanticsPlugin } from '../src/rolldown/plugins/pluginSemanticsPlugin'
 import { configSourcePlugin } from '../src/rolldown/plugins/configSourcePlugin'
 
@@ -1124,6 +1129,102 @@ void [same,self,inherited,exact,text,number,input,output,forged,missing]
 		const control = await import(pathToFileURL(resolve(directory, 'dist/control/index.mjs')).href)
 		expect(control.Counter.address()).toEqual(definition)
 		expect(Object.isFrozen(control.Counter.address().entry)).toBe(true)
+	}, 30_000)
+
+	it('records every concrete package-root re-export separately from subpath-only plugins', async () => {
+		const directory = await fixture()
+		const packageName = '@fixture/orders'
+		const packageJsonPath = resolve(directory, 'package.json')
+		await writeFile(
+			packageJsonPath,
+			JSON.stringify({
+				name: packageName,
+				type: 'module',
+				exports: { '.': './root.ts', './tools': './tools.ts' },
+			}),
+		)
+		await writeFile(
+			resolve(directory, 'root.ts'),
+			"export * from './orders.ts'\nexport { Tracking as Shipment } from './tracking.ts'\n",
+		)
+		for (const [file, name] of [
+			['tracking', 'Tracking'],
+			['tools', 'Tools'],
+		]) {
+			await writeFile(
+				resolve(directory, file + '.ts'),
+				`import { BasePlugin, Plugin } from '@pluxel/core'
+@Plugin() export class ${name} extends BasePlugin {}`,
+			)
+		}
+		await writeFile(
+			resolve(directory, 'parts.ts'),
+			`
+			import { PluginPart, definePluginRef } from '@pluxel/core'
+			import { Tools } from './tools.ts'
+			import type { Tracking } from './tracking.ts'
+			const OptionalTracking = definePluginRef<Tracking>()
+			class Nested extends PluginPart {
+				constructor(readonly tools: Tools) { super() }
+				override init() { this.plugins.use(OptionalTracking, () => {}) }
+			}
+			export class Part extends PluginPart { readonly child = this.parts.use(Nested) }
+		`,
+		)
+		await writeFile(
+			resolve(directory, 'orders.ts'),
+			`
+			import { BasePlugin, Plugin, definePluginRef } from '@pluxel/core'
+			import { Part } from './parts.ts'
+			import type { Tools } from './tools.ts'
+			const OptionalTools = definePluginRef<Tools>()
+			export abstract class OrdersBackend extends BasePlugin {}
+			@Plugin(OrdersBackend, { forkable: true }) export class Orders extends OrdersBackend {
+				readonly first = this.parts.use(Part)
+				readonly second = this.parts.use(Part)
+				override init() { this.plugins.use(OptionalTools, () => {}) }
+			}
+		`,
+		)
+		const semantics = createPluginSemanticsPlugin({ root: directory, packageJsonPath })
+		await pack({
+			config: false,
+			cwd: directory,
+			entry: ['root.ts', 'tools.ts'],
+			report: false,
+			logLevel: 'silent',
+			dts: false,
+			external: [/^@pluxel\//],
+			plugins: [
+				semantics.plugin as TsdownPlugin,
+				createPluginControlPlugin({ root: directory, semantics }),
+			],
+		})
+		const manifest = parsePluginControlManifest(
+			JSON.parse(await readFile(resolve(directory, 'dist/control/manifest.json'), 'utf8')),
+		)
+		const rootEntry = { kind: 'package-root', packageName }
+		expect(manifest.definitions.map((item) => item.definition)).toEqual([
+			{ entry: rootEntry, exportName: 'Orders' },
+			{ entry: rootEntry, exportName: 'Shipment' },
+			{ entry: { kind: 'package-subpath', packageName, subpath: './tools' }, exportName: 'Tools' },
+		])
+		const [orders, tracking, tools] = manifest.definitions.map((item) => item.definition)
+		const dependencies = parsePluginControlDependencies(
+			await readFile(resolve(directory, 'dist/control/dependencies.json'), 'utf8'),
+			manifest,
+		)
+		expect(dependencies.get(pluginDefinitionIndexKey(orders!))).toEqual({
+			requires: [tools],
+			optional: [tracking],
+			provides: { entry: rootEntry, exportName: 'OrdersBackend' },
+			forkable: true,
+		})
+		expect(dependencies.get(pluginDefinitionIndexKey(tracking!))).toEqual({
+			requires: [],
+			optional: [],
+			forkable: false,
+		})
 	}, 30_000)
 
 	it('normalizes bigint class literals without losing their value in the instance contract', async () => {

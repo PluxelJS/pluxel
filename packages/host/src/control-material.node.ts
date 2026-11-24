@@ -1,5 +1,5 @@
-import { readFileSync, realpathSync, statSync } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { readFileSync, statSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import {
@@ -19,19 +19,13 @@ import {
 	setServiceControlMaterial,
 	type ServiceControlMaterial,
 } from './service-control'
+import { parsePluginControlManifest, verifyPluginControlMaterialSync } from './control-manifest'
 import {
-	isControlFilePath,
-	parsePluginControlManifest,
-	verifyPluginControlMaterialSync,
-} from './control-manifest'
-
-function contained(root: string, file: string): string {
-	const path = realpathSync(file)
-	const local = relative(root, path).replaceAll('\\', '/')
-	if (local === '..' || local.startsWith('../') || isAbsolute(local))
-		throw new TypeError('Plugin control material escapes its actual package owner')
-	return path
-}
+	containedControlFile,
+	controlManifestFile,
+	controlManifestLimit,
+	controlText,
+} from './package-source-definitions.node.ts'
 
 /** Called once when a constructor's actual loaded-module ownership is first recorded. */
 export function readLoadedPluginControl(
@@ -82,26 +76,21 @@ function readControlAt(
 
 /** Read and fully verify one explicit physical control material owner. */
 function readControlMaterialAt(ownerRoot: string, declared: unknown): ServiceControlMaterial {
-	if (
-		typeof declared !== 'string' ||
-		!declared.startsWith('./') ||
-		!isControlFilePath(declared.slice(2))
-	)
-		throw new TypeError('Package pluxel.control must name a relative control manifest')
-	const root = realpathSync(ownerRoot)
-	const manifestFile = contained(root, resolve(root, declared))
-	if (statSync(manifestFile).size > 4 * 1024 * 1024)
+	const manifestFile = controlManifestFile(ownerRoot, declared)
+	const stat = statSync(manifestFile)
+	if (!stat.isFile() || stat.size > controlManifestLimit)
 		throw new TypeError('Plugin control manifest exceeds its byte budget')
-	const manifestText = readFileSync(manifestFile, 'utf8')
+	const manifestText = controlText.decode(readFileSync(manifestFile))
 	const manifest = parsePluginControlManifest(JSON.parse(manifestText))
 	const directory = dirname(manifestFile)
 	const files: Record<string, string> = Object.create(null)
 	files['manifest.json'] = manifestText
 	for (const file of manifest.files) {
-		const path = contained(directory, resolve(directory, file.path))
-		if (statSync(path).size !== file.size)
+		const path = containedControlFile(directory, resolve(directory, file.path))
+		const fileStat = statSync(path)
+		if (!fileStat.isFile() || fileStat.size !== file.size)
 			throw new TypeError(`Plugin control file size mismatch: ${file.path}`)
-		files[file.path] = readFileSync(path, 'utf8')
+		files[file.path] = controlText.decode(readFileSync(path))
 	}
 	verifyPluginControlMaterialSync(manifest, files, (content) =>
 		createHash('sha256').update(content).digest('hex'),

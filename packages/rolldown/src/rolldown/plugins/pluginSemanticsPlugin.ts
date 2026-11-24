@@ -153,6 +153,7 @@ type ArtifactGenerationState = {
 	status: 'active' | 'committed' | 'rolled-back'
 	definitionsByModule: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>
 	serviceDefinitionsByModule: Map<string, readonly ServiceSemanticDefinition[]>
+	dependencyNodesByModule: Map<string, readonly DependencyInventoryNode[]>
 	builtDefinitionsByModule: Map<string, ReadonlyMap<string, BuiltPluginDefinition>>
 	sourceContents: Map<string, string>
 	/** Ambient versions captured with the candidate view when the generation began. */
@@ -177,7 +178,11 @@ export type PluginSemanticsCollector = {
 	snapshot(): Map<string, PluginDependencyMode>
 	definitions(): readonly PluginSemanticDefinition[]
 	/** Concrete source declarations and bytes from the same semantic generation. */
-	sourceDefinitions(): readonly (PluginSemanticDefinition & Readonly<{ moduleId: string }>)[]
+	sourceDefinitions(): readonly (PluginSemanticDefinition &
+		Readonly<{
+			moduleId: string
+			dependencies?: serviceControlContracts.PluginControlDependencies
+		}>)[]
 	/** Public service declarations selected by the Host's fixed installation plan. */
 	serviceDefinitions(): readonly ServiceSemanticDefinition[]
 	sourceContents(): ReadonlyMap<string, string>
@@ -286,7 +291,8 @@ type DependencyInventoryNode = Readonly<{
 	readonly kind: 'plugin' | 'part'
 	readonly requires: readonly PluginDefinitionAddress[]
 	readonly optional: readonly PluginDefinitionAddress[]
-	readonly parts: readonly string[]
+	readonly parts: readonly (string | undefined)[]
+	readonly forkable?: boolean
 }>
 
 const AUTHORING_PACKAGES = new Set(['@pluxel/core', '@pluxel/core/internal/test'])
@@ -321,7 +327,7 @@ export function createPluginSemanticsPlugin(
 	const sourceContents = new Map<string, string>()
 	const artifactModuleVersions = new Map<string, number>()
 	const artifactGenerationContext = new AsyncLocalStorage<ArtifactGenerationState>()
-	const dependencyInventory = new Map<string, DependencyInventoryNode>()
+	const dependencyNodesByModule = new Map<string, readonly DependencyInventoryNode[]>()
 	const requiredImports = new Map<string, Set<string>>()
 	const packageOwnerCache = new Map<string, Promise<string | undefined>>()
 	const inferredPackagePlans = new Map<string, Promise<PackagePlan | undefined>>()
@@ -336,26 +342,31 @@ export function createPluginSemanticsPlugin(
 			definitions: Map<string, ReadonlyMap<string, PluginSemanticDefinition>>,
 			builtDefinitions: Map<string, ReadonlyMap<string, BuiltPluginDefinition>>,
 		) => void,
+		dependencyNodes?: readonly DependencyInventoryNode[],
 	): void => {
+		const key = semanticModuleKey(moduleId)
 		const generation = artifactGenerationContext.getStore()
 		if (generation) {
 			// Async work may outlive settlement. It must never fall through into the ambient facts or
 			// a later generation merely because its original generation has already closed.
 			if (generation !== activeArtifactGeneration || generation.status !== 'active') return
 			mutation(generation.definitionsByModule, generation.builtDefinitionsByModule)
-			const key = semanticModuleKey(moduleId)
 			generation.touchedModules.add(key)
-			return
+		} else {
+			mutation(definitionsByModule, builtDefinitionsByModule)
+			artifactModuleVersions.set(key, (artifactModuleVersions.get(key) ?? 0) + 1)
 		}
-
-		mutation(definitionsByModule, builtDefinitionsByModule)
-		const key = semanticModuleKey(moduleId)
-		artifactModuleVersions.set(key, (artifactModuleVersions.get(key) ?? 0) + 1)
+		if (dependencyNodes) {
+			const modules = generation?.dependencyNodesByModule ?? dependencyNodesByModule
+			if (dependencyNodes.length === 0) modules.delete(key)
+			else modules.set(key, dependencyNodes)
+		}
 	}
 
 	const currentArtifactFacts = (): Readonly<{
 		definitionsByModule: ReadonlyMap<string, ReadonlyMap<string, PluginSemanticDefinition>>
 		serviceDefinitionsByModule: Map<string, readonly ServiceSemanticDefinition[]>
+		dependencyNodesByModule: ReadonlyMap<string, readonly DependencyInventoryNode[]>
 		builtDefinitionsByModule: ReadonlyMap<string, ReadonlyMap<string, BuiltPluginDefinition>>
 		sourceContents: Map<string, string>
 	}> => {
@@ -365,9 +376,18 @@ export function createPluginSemanticsPlugin(
 			: {
 					definitionsByModule,
 					serviceDefinitionsByModule,
+					dependencyNodesByModule,
 					builtDefinitionsByModule,
 					sourceContents,
 				}
+	}
+
+	const dependencyInventory = () => {
+		const inventory = new Map<string, DependencyInventoryNode>()
+		for (const nodes of currentArtifactFacts().dependencyNodesByModule.values()) {
+			for (const node of nodes) inventory.set(node.key, node)
+		}
+		return inventory
 	}
 
 	const currentWorkbench = (): WorkbenchSemanticLowering => {
@@ -386,8 +406,11 @@ export function createPluginSemanticsPlugin(
 		} else currentWorkbench().remove(id)
 		currentArtifactFacts().sourceContents.delete(semanticModuleKey(id))
 		currentArtifactFacts().serviceDefinitionsByModule.delete(semanticModuleKey(id))
-		mutateArtifactModuleFacts(id, (definitions, builtDefinitions) =>
-			clearArtifactModuleFacts(definitions, builtDefinitions, id),
+		mutateArtifactModuleFacts(
+			id,
+			(definitions, builtDefinitions) =>
+				clearArtifactModuleFacts(definitions, builtDefinitions, id),
+			[],
 		)
 	}
 
@@ -406,7 +429,7 @@ export function createPluginSemanticsPlugin(
 			builtDefinitionsByModule.clear()
 			sourceContents.clear()
 			artifactModuleVersions.clear()
-			dependencyInventory.clear()
+			dependencyNodesByModule.clear()
 			requiredImports.clear()
 			packageOwnerCache.clear()
 			inferredPackagePlans.clear()
@@ -488,13 +511,16 @@ export function createPluginSemanticsPlugin(
 					const builtDefinitions = extractPreloweredDefinitions(ast)
 					if (builtDefinitions.size > 0) {
 						update.remove()
-						mutateArtifactModuleFacts(id, (definitions, currentBuiltDefinitions) =>
-							replaceBuiltModuleDefinitions(
-								definitions,
-								currentBuiltDefinitions,
-								id,
-								builtDefinitions,
-							),
+						mutateArtifactModuleFacts(
+							id,
+							(definitions, currentBuiltDefinitions) =>
+								replaceBuiltModuleDefinitions(
+									definitions,
+									currentBuiltDefinitions,
+									id,
+									builtDefinitions,
+								),
+							[],
 						)
 						return null
 					}
@@ -560,11 +586,11 @@ export function createPluginSemanticsPlugin(
 					},
 				})
 				if (!accepted) return result.code === code ? null : { code: result.code, map: result.map }
-				for (const node of result.dependencyInventory) {
-					dependencyInventory.set(node.key, node)
-				}
-				mutateArtifactModuleFacts(id, (definitions, builtDefinitions) =>
-					replaceSourceModuleDefinitions(definitions, builtDefinitions, id, result.definitions),
+				mutateArtifactModuleFacts(
+					id,
+					(definitions, builtDefinitions) =>
+						replaceSourceModuleDefinitions(definitions, builtDefinitions, id, result.definitions),
+					result.dependencyInventory,
 				)
 				if (result.requiredSources.size > 0) {
 					requiredImports.set(id, result.requiredSources)
@@ -595,12 +621,23 @@ export function createPluginSemanticsPlugin(
 	return {
 		plugin,
 		snapshot: () =>
-			collectReachablePackageDependencies(dependencyInventory, packagePlan?.packageName),
+			collectReachablePackageDependencies(dependencyInventory(), packagePlan?.packageName),
 		definitions: () => collectedSemanticDefinitions(currentArtifactFacts().definitionsByModule),
-		sourceDefinitions: () =>
-			[...currentArtifactFacts().definitionsByModule].flatMap(([moduleId, definitions]) =>
-				[...definitions.values()].map((definition) => Object.assign({}, definition, { moduleId })),
-			),
+		sourceDefinitions: () => {
+			const inventory = packagePlan ? dependencyInventory() : undefined
+			return [...currentArtifactFacts().definitionsByModule].flatMap(([moduleId, definitions]) =>
+				[...definitions.values()].map((definition) => {
+					const source = Object.assign({}, definition, { moduleId })
+					if (!inventory || definition.kind !== 'plugin') return source
+					const dependencies = packageDefinitionDependencies(
+						inventory,
+						originKey(moduleId, definition.className),
+						definition.provides,
+					)
+					return Object.assign(source, { dependencies })
+				}),
+			)
+		},
 		serviceDefinitions: () => {
 			const definitions = new Map<string, ServiceSemanticDefinition>()
 			for (const sources of currentArtifactFacts().serviceDefinitionsByModule.values())
@@ -651,6 +688,7 @@ export function createPluginSemanticsPlugin(
 				status: 'active',
 				definitionsByModule: new Map(definitionsByModule),
 				serviceDefinitionsByModule: new Map(serviceDefinitionsByModule),
+				dependencyNodesByModule: new Map(dependencyNodesByModule),
 				builtDefinitionsByModule: new Map(builtDefinitionsByModule),
 				sourceContents: new Map(sourceContents),
 				baseVersions: new Map(artifactModuleVersions),
@@ -686,6 +724,9 @@ export function createPluginSemanticsPlugin(
 					const services = generation.serviceDefinitionsByModule.get(moduleKey)
 					if (services === undefined) serviceDefinitionsByModule.delete(moduleKey)
 					else serviceDefinitionsByModule.set(moduleKey, services)
+					const nodes = generation.dependencyNodesByModule.get(moduleKey)
+					if (nodes === undefined) dependencyNodesByModule.delete(moduleKey)
+					else dependencyNodesByModule.set(moduleKey, nodes)
 					if (source === undefined) sourceContents.delete(moduleKey)
 					else sourceContents.set(moduleKey, source)
 					artifactModuleVersions.set(moduleKey, baseVersion + 1)
@@ -1235,7 +1276,6 @@ async function analyzeSemanticModule(options: SemanticModuleOptions) {
 		}
 		const occurrences = partOccurrences(raw, analysis, id, options.error)
 		const targets = await resolvePartTargets(occurrences, analysis, id, options)
-		const partTargets = targets.filter((target): target is string => target !== undefined)
 		const owner = {
 			key: originKey(id, raw.name),
 			moduleId: id,
@@ -1283,7 +1323,7 @@ async function analyzeSemanticModule(options: SemanticModuleOptions) {
 				kind: 'part',
 				requires,
 				optional,
-				parts: partTargets,
+				parts: targets,
 			})
 		}
 		if (!raw.marked && !raw.abstract) continue
@@ -1296,7 +1336,7 @@ async function analyzeSemanticModule(options: SemanticModuleOptions) {
 			}
 			continue
 		}
-		if (raw.marked) validateMarker(raw, id, analysis, options.error)
+		const forkable = raw.marked ? validateMarker(raw, id, analysis, options.error) : undefined
 		const requires = raw.marked
 			? await constructorRequirements(raw, analysis, id, options, requiredSources)
 			: []
@@ -1320,7 +1360,8 @@ async function analyzeSemanticModule(options: SemanticModuleOptions) {
 				kind: 'plugin',
 				requires,
 				optional,
-				parts: partTargets,
+				parts: targets,
+				forkable,
 			})
 		}
 	}
@@ -1443,6 +1484,41 @@ async function lowerModule(options: SemanticModuleOptions) {
 	}
 }
 
+function packageDefinitionDependencies(
+	inventory: ReadonlyMap<string, DependencyInventoryNode>,
+	key: string,
+	provides: PluginDefinitionAddress | undefined,
+): serviceControlContracts.PluginControlDependencies | undefined {
+	const root = inventory.get(key)
+	if (!root) return undefined
+	const requires = new Map<string, PluginDefinitionAddress>()
+	const optional = new Map<string, PluginDefinitionAddress>()
+	const visited = new Set<string>()
+	const active = new Set<string>()
+	function visit(owner: string | undefined): boolean {
+		if (!owner || active.has(owner)) return false
+		if (visited.has(owner)) return true
+		const node = inventory.get(owner)
+		if (!node) return false
+		active.add(owner)
+		for (const address of node.requires) requires.set(pluginDefinitionIndexKey(address), address)
+		for (const address of node.optional) optional.set(pluginDefinitionIndexKey(address), address)
+		if (!node.parts.every(visit)) return false
+		active.delete(owner)
+		visited.add(owner)
+		return true
+	}
+	if (!visit(key)) return undefined
+	for (const required of requires.keys()) optional.delete(required)
+	return {
+		// Core visits the owner's constructor first, then Part occurrences depth-first.
+		requires: [...requires.values()],
+		optional: [...optional.values()],
+		...(provides && { provides }),
+		...(root.forkable !== undefined && { forkable: root.forkable }),
+	}
+}
+
 function collectReachablePackageDependencies(
 	inventory: ReadonlyMap<string, DependencyInventoryNode>,
 	ownerPackage: string | undefined,
@@ -1464,7 +1540,7 @@ function collectReachablePackageDependencies(
 		if (!node) return
 		for (const address of node.optional) record(address, 'optional')
 		for (const address of node.requires) record(address, 'required')
-		for (const part of node.parts) visit(part)
+		for (const part of node.parts) if (part !== undefined) visit(part)
 	}
 	for (const node of inventory.values()) {
 		if (node.kind === 'plugin') visit(node.key)
@@ -1878,9 +1954,9 @@ function validateMarker(
 	id: string,
 	analysis: ModuleAnalysis,
 	error: (message: string) => never,
-): void {
+): boolean | undefined {
 	const expression = raw.marker?.expression as AstNode | undefined
-	if (!expression || expression.type !== 'CallExpression') return
+	if (!expression || expression.type !== 'CallExpression') return undefined
 	const args = arrayOf(expression.arguments)
 	let optionsNode: AstNode | undefined
 	if (args.length === 1) {
@@ -1897,10 +1973,17 @@ function validateMarker(
 	} else if (args.length > 2) {
 		error(`[pluxel:plugin-marker] ${id} ${raw.name} has too many @Plugin arguments`)
 	}
-	if (!optionsNode) return
+	if (!optionsNode) {
+		if (args.length === 0) return false
+		const first = readIdentifier(args[0])
+		return first && (analysis.imports.has(first) || analysis.classes.get(first)?.abstract)
+			? false
+			: undefined
+	}
 	if (optionsNode.type !== 'ObjectExpression') {
 		error(`[pluxel:plugin-marker] ${id} ${raw.name} options must be an object literal`)
 	}
+	let forkable = false
 	for (const rawProperty of arrayOf(optionsNode.properties)) {
 		const property = rawProperty as AstNode
 		if (property.type !== 'Property' || property.computed === true) {
@@ -1926,6 +2009,7 @@ function validateMarker(
 			continue
 		}
 		if (key === 'forkable') {
+			forkable = true
 			if (literalBoolean(property.value) !== true) {
 				error(`[pluxel:plugin-marker] ${id} ${raw.name} forkable must be the literal true`)
 			}
@@ -1935,7 +2019,7 @@ function validateMarker(
 			`[pluxel:plugin-marker] ${id} ${raw.name} unsupported @Plugin option ${JSON.stringify(key)}`,
 		)
 	}
-	void analysis
+	return forkable
 }
 
 async function resolveTypeAddress(

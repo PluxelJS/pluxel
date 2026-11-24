@@ -1,9 +1,58 @@
 import { expect, it } from 'vitest'
 import {
 	parseControlCatalog,
+	parsePluginControlDependencies,
+	parsePluginControlDependencyFacts,
 	renderControlCatalog,
 	type PluginControlManifest,
 } from '../../src/internal/control-manifest'
+import { pluginDefinitionIndexKey } from '../../src/plugins/runtime/identity'
+
+it('binds complete dependency declarations to the listed definitions and preserves unavailable facts', () => {
+	const entry = { kind: 'package-root', packageName: 'orders' } as const
+	const order = { entry, exportName: 'Order' }
+	const audit = { entry, exportName: 'Audit' }
+	const other = { entry, exportName: 'Receipt' }
+	const manifest = {
+		definitions: [order, audit].map<PluginControlManifest['definitions'][number]>((definition) => ({
+			definition,
+			module: 'index.mjs',
+			exportName: definition.exportName,
+			contracts: { config: null, instance: 'digest' },
+			source: 'root.ts',
+		})),
+	} satisfies Pick<PluginControlManifest, 'definitions'>
+	const row = { definition: order, requires: [other], optional: [audit] }
+	const parse = (definitions: readonly unknown[]) =>
+		parsePluginControlDependencies(JSON.stringify({ format: 1, definitions }), manifest)
+	expect(parse([row]).get(pluginDefinitionIndexKey(order))).toEqual({
+		requires: [other],
+		optional: [audit],
+	})
+	expect(parse([row]).has(pluginDefinitionIndexKey(audit))).toBe(false)
+	expect(
+		parsePluginControlDependencyFacts({ requires: [audit, other], optional: [] }).requires,
+	).toEqual([audit, other])
+	const sparse: unknown[] = []
+	sparse.length = 1
+	const invalidFacts: Record<string, unknown>[] = [
+		{ requires: sparse, optional: [] },
+		{ requires: [], optional: [], provides: undefined },
+		{ requires: [], optional: [], forkable: undefined },
+		{ requires: [], optional: [], definition: order },
+	]
+	for (const invalid of invalidFacts)
+		expect(() => parsePluginControlDependencyFacts(invalid)).toThrow(/Plugin/)
+	for (const invalid of [
+		[row, row],
+		[{ ...row, definition: other }],
+		[{ ...row, optional: [other] }],
+		[{ ...row, requires: {} }],
+		[{ ...row, forkable: 'true' }],
+		[{ ...row, provides: {} }],
+	])
+		expect(() => parse(invalid)).toThrow(/Plugin/i)
+})
 
 it('preserves searchable row order, distinguishes old member indexes, and binds canonical identities', () => {
 	const definitions = ['first', 'second'].map<PluginControlManifest['definitions'][number]>(

@@ -251,7 +251,10 @@ describe('plugin semantic lowering', () => {
 		const builtModule = new URL('./plugins.test.ts', import.meta.url).pathname
 		const source = `
 			import { BasePlugin, Plugin } from '@pluxel/core'
-			@Plugin() export class TransactionPlugin extends BasePlugin {}
+			import {Provider} from '@fixture/provider'
+			@Plugin() export class TransactionPlugin extends BasePlugin {
+				constructor(readonly provider: Provider) { super() }
+			}
 		`
 		await transformWithExistingCollector(collector, source, sourceModule)
 		const definition = collector.definitions()[0]!.definition
@@ -267,10 +270,13 @@ describe('plugin semantic lowering', () => {
 			await transformWithExistingCollector(collector, 'export const ordinary = true', builtModule)
 			expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('unreported')
 			expect(collector.classifyDefinitionArtifact(definition, [builtModule])).toBe('unreported')
+			expect(collector.snapshot().size).toBe(0)
 		})
+		expect(collector.snapshot().get('@fixture/provider')).toBe('required')
 		expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('source-module')
 		expect(collector.classifyDefinitionArtifact(definition, [builtModule])).toBe('built-module')
 		rolledBack.rollback()
+		expect(collector.snapshot().get('@fixture/provider')).toBe('required')
 		expect(collector.classifyDefinitionArtifact(definition, [sourceModule])).toBe('source-module')
 		expect(collector.classifyDefinitionArtifact(definition, [builtModule])).toBe('built-module')
 
@@ -960,8 +966,14 @@ ${declaration}`
 			'src/index.ts': `
 				import { BasePlugin, Plugin } from '@pluxel/core'
 				import { UsedPart } from './parts'
+				import { ExternalPart } from '@acme/parts'
+				import { ZProvider } from '@acme/used'
 				@Plugin() export class OrdersPlugin extends BasePlugin {
+					constructor(readonly lastAlphabetically: ZProvider) { super() }
 					readonly used = this.parts.use(UsedPart)
+				}
+				@Plugin() export class ExternalPartsPlugin extends BasePlugin {
+					readonly external = this.parts.use(ExternalPart)
 				}
 			`,
 			'src/parts.ts': `
@@ -989,12 +1001,25 @@ ${declaration}`
 		})
 		const build = await rolldown({
 			input: fixture.getPath('src/index.ts'),
-			external: ['@pluxel/core', '@acme/used', '@acme/unused'],
+			external: ['@pluxel/core', '@acme/used', '@acme/unused', '@acme/parts'],
 			plugins: [collector.plugin],
 		})
 		await build.generate({ format: 'esm' })
 
 		expect(collector.snapshot()).toEqual(new Map([['@acme/used', 'required']]))
+		const sources = collector.sourceDefinitions()
+		expect(sources.find((item) => item.className === 'OrdersPlugin')?.dependencies).toEqual({
+			requires: [
+				{ entry: { kind: 'package-root', packageName: '@acme/used' }, exportName: 'ZProvider' },
+				{ entry: { kind: 'package-root', packageName: '@acme/used' }, exportName: 'UsedProvider' },
+			],
+			optional: [],
+			forkable: false,
+		})
+		expect(sources.find((item) => item.className === 'ExternalPartsPlugin')).toMatchObject({
+			className: 'ExternalPartsPlugin',
+			dependencies: undefined,
+		})
 	})
 
 	it.each([

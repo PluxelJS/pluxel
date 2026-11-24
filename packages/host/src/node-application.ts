@@ -213,17 +213,17 @@ export async function runHostApplication(
 				},
 			]),
 		)
+		const sourceFiles = new Map<PluginConstructor, string[]>()
 		for (const path of paths) {
 			const definitions = await loader.load(path)
-			for (const plugin of definitions)
+			for (const plugin of definitions) {
+				const files = sourceFiles.get(plugin)
+				if (files) files.push(path)
+				else sourceFiles.set(plugin, [path])
 				if (!seen.has(plugin)) {
 					seen.add(plugin)
 					plugins.push(plugin)
-				}
-			for (const plugin of definitions)
-				if (!facts.has(plugin))
 					facts.set(plugin, {
-						moduleId: path,
 						control: readLoadedPluginModule(plugin)?.control,
 						execution: {
 							kind: 'native',
@@ -232,7 +232,11 @@ export async function runHostApplication(
 							update: { kind: 'next-start' },
 						},
 					})
+				}
+			}
 		}
+		for (const [plugin, files] of sourceFiles)
+			facts.set(plugin, { ...facts.get(plugin), sourceFiles: files })
 		host = await createResolvedHost({ ...resolved, plugins }, applicationEntry)
 		await loadLoadedApplicationServiceControls(application, host.ctx, resolved.startup.root)
 		setHostCatalogProvenance(host.ctx, facts)

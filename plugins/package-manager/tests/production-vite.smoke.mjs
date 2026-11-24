@@ -13,14 +13,14 @@ import { requirePluginSource } from '../../../packages/host/dist/sources.mjs'
 const root = process.argv[2]
 const port = process.env.PLUXEL_HOST_PORT
 const url = `http://127.0.0.1:${port}`
-const address = (name, exportName) => ({
+const defaultNode = (name, exportName) => ({
 	definition: { entry: { kind: 'package-root', packageName: name }, exportName },
 	variant: 'default',
 })
-const a = address('fixture-a', 'A'),
-	b = address('fixture-b', 'B'),
-	p = address('fixture-p', 'P'),
-	manager = address('@pluxel/plugin-package-manager', 'PackageManagerPlugin')
+const a = defaultNode('fixture-a', 'A'),
+	b = defaultNode('fixture-b', 'B'),
+	p = defaultNode('fixture-p', 'P'),
+	manager = defaultNode('@pluxel/plugin-package-manager', 'PackageManagerPlugin')
 let session
 let initial
 let beforeProvider
@@ -123,7 +123,78 @@ try {
 				process.send({ result })
 				continue
 			}
-			if (command === 'a2') {
+			if (command === 'review-a2') {
+				const host = globalThis.__productionHost
+				const installer = current(manager)
+				assert.equal(current(a).previousProvider.version, '1.0.0')
+				const prepare = async () => {
+					const result = await installer.prepareInstall(['fixture-a@2.0.0'])
+					assert.ok(result.ok, JSON.stringify(result))
+					const impact = result.plan.hostImpact.find((pkg) => pkg.name === 'fixture-a')
+					assert.equal(impact.definitionsKnown, true)
+					const removed = impact.definitions.find(
+						({ address }) => address.exportName === 'PreviousProvider',
+					)
+					assert.equal(removed.change, 'remove')
+					assert.deepEqual(
+						removed.nodes.find(({ address }) => address.variant === 'default').requiredConsumers,
+						[a],
+					)
+					assert.equal(
+						impact.definitions.find(({ address }) => address.exportName === 'A').change,
+						'replace',
+					)
+					assert.equal(
+						impact.definitions.find(({ address }) => address.exportName === 'P').change,
+						'unverified',
+					)
+					assert.deepEqual(result.plan.dependencyReview, {
+						status: 'projected',
+						liveRejections: [],
+						unprovided: [],
+						introduced: [],
+						resolved: [],
+						bindings: [
+							{
+								consumer: a,
+								requirement: removed.address,
+								previous: { definition: removed.address, variant: 'default' },
+								selected: null,
+							},
+						],
+					})
+					assert.deepEqual(
+						impact.definitions.find(({ address }) => address.exportName === 'A').dependencies
+							.requires,
+						[p.definition],
+					)
+					return { id: result.plan.id, removed }
+				}
+				const first = await prepare()
+				const fork = { definition: first.removed.address, variant: 'fork', forkId: 'review' }
+				const created = await host.forks.ensure(fork)
+				assert.ok(created.ok)
+				const stale = await installer.confirmInstall(first.id)
+				assert.equal(stale.ok, false)
+				assert.equal(stale.failed[0].code, 'INVALID_PLAN')
+				const snapshot = await installer.snapshot()
+				assert.equal(
+					snapshot.packages.find(({ name }) => name === 'fixture-a').installedVersion,
+					'1.0.0',
+				)
+				const next = await prepare()
+				assert.ok(
+					next.removed.nodes.some(
+						({ address }) => address.variant === 'fork' && address.forkId === 'review',
+					),
+				)
+				const removedFork = await host.forks.remove(fork)
+				assert.ok(removedFork.ok)
+				const final = await prepare()
+				mutationStarted = performance.now()
+				const confirmed = await installer.confirmInstall(final.id)
+				assert.ok(confirmed.ok)
+			} else if (command === 'a2') {
 				await until(() => current(a)?.version === '2.0.0' && current(a)?.workerValue === '2.0.0')
 				assert.equal(globalThis.__productionHost, initial.host)
 				assert.equal(current(b), initial.b)

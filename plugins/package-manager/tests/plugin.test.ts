@@ -222,5 +222,17 @@ describe('PackageManagerPlugin', () => {
 			status: 'error',
 			error: { code: 'INPUT_VALIDATION', issues: expect.any(Array) },
 		})
+		await expect(
+			host.commands.execute('package.confirm', { planId: 'expired-plan' }),
+		).resolves.toMatchObject({
+			status: 'ok',
+			value: {
+				ok: false,
+				succeeded: [],
+				failed: [{ code: 'INVALID_PLAN' }],
+				published: [],
+				withdrawn: [],
+			},
+		})
 	})
 })

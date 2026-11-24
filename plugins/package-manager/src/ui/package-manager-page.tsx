@@ -19,7 +19,9 @@ import { IconDownload, IconRefresh } from '@tabler/icons-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type {
 	LocalPackageLocation,
+	PackageInstallConfirmation,
 	PackageInstallPlan,
+	PackageMutationFailure,
 	PackageMutationResult,
 } from '../contracts.ts'
 import type {
@@ -32,6 +34,7 @@ import { packageThemeStyles } from './package-theme.ts'
 import { marketplaceStyles } from './marketplace.styles.ts'
 import type { createRegistryDiscovery } from './registry-discovery.tsx'
 import { InstalledPackages } from './installed-packages.tsx'
+import { InstallHostImpact } from './install-host-impact.tsx'
 import type { MarketSelectionItem } from './market-install-selection.tsx'
 import { WorkbenchMarketplace } from './marketplace-workbench.tsx'
 import type { MarketplaceData } from './marketplace.tsx'
@@ -40,6 +43,10 @@ type PackageManagerResources = ReturnType<typeof createPackageManagerResources>
 
 function messageOf(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
+}
+
+function failureMessage({ input, message }: PackageMutationFailure): string {
+	return input ? `${input}: ${message}` : message
 }
 
 function parseSpecs(value: string): string[] {
@@ -158,9 +165,7 @@ export function PackageManagerPage({
 						title="Could not prepare installation"
 						style={{ whiteSpace: 'pre-wrap' }}
 					>
-						{preparation.data.failed
-							.map((failure) => `${failure.input}: ${failure.message}`)
-							.join('\n')}
+						{preparation.data.failed.map(failureMessage).join('\n')}
 					</Alert>
 				) : null}
 				{preparation.isPending ? (
@@ -495,6 +500,10 @@ function InstallationReview({
 						</Paper>
 					))}
 				</Box>
+				{plan.pendingRemovals.length > 0 && (
+					<Text size="sm">Withdraw remaining entries for {plan.pendingRemovals.join(', ')}.</Text>
+				)}
+				<InstallHostImpact impact={plan.hostImpact} review={plan.dependencyReview} />
 				<details>
 					<summary>Sources and integrity</summary>
 					<Stack gap="xs" mt="xs">
@@ -558,28 +567,38 @@ function MutationReceipt({
 	action,
 	sourceUpdates,
 }: Readonly<{
-	result: PackageMutationResult
-	action: 'install' | 'remove'
 	onManage?(): void
 	sourceUpdates: PackageInstallPlan['sourceUpdates']
-}>) {
+}> &
+	(
+		| { action: 'install'; result: PackageInstallConfirmation }
+		| { action: 'remove'; result: PackageMutationResult }
+	)) {
+	const published = action === 'install' ? result.published : []
+	const withdrawn = action === 'install' ? result.withdrawn : result.succeeded
 	return (
 		<Alert
 			color={result.ok ? 'teal' : 'yellow'}
 			title={
 				result.ok
 					? action === 'install'
-						? 'Package sources published'
+						? 'Installation confirmed'
 						: 'Package sources removed'
 					: 'Package operation needs attention'
 			}
 		>
 			<Stack gap="xs">
-				{result.succeeded.length > 0 ? (
+				{action === 'install' && result.succeeded.length > 0 && (
+					<Text size="sm">Completed requests: {result.succeeded.join(', ')}</Text>
+				)}
+				{published.length > 0 && <Text size="sm">Published: {published.join(', ')}</Text>}
+				{withdrawn.length > 0 && (
 					<Text size="sm">
-						{action === 'install' ? 'Published' : 'Removed'}: {result.succeeded.join(', ')}.{' '}
-						{activationMessage(sourceUpdates)}
+						{action === 'install' ? 'Withdrawn' : 'Removed'}: {withdrawn.join(', ')}
 					</Text>
+				)}
+				{published.length > 0 || withdrawn.length > 0 ? (
+					<Text size="sm">{activationMessage(sourceUpdates)}</Text>
 				) : null}
 				{onManage && result.succeeded.length > 0 && (
 					<Group>
@@ -590,7 +609,7 @@ function MutationReceipt({
 				)}
 				{result.failed.map((failure, index) => (
 					<Text key={`${failure.input}:${index}`} size="sm">
-						{failure.input}: {failure.message}
+						{failureMessage(failure)}
 					</Text>
 				))}
 			</Stack>

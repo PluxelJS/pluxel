@@ -16,6 +16,7 @@ export function setHostCatalogProvenance(
 					plugin,
 					Object.freeze({
 						...value,
+						...(value.sourceFiles ? { sourceFiles: Object.freeze([...value.sourceFiles]) } : {}),
 						...(value.execution
 							? { execution: clonePluginExecutionSnapshot(value.execution) }
 							: {}),

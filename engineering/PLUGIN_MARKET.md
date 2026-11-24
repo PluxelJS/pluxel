@@ -38,7 +38,7 @@
 
 **从应用 registry 查找。** **Find plugins** 支持关键词和精确包名、版本或标签。关键词用于发现候选；pnpm resolver 读取所选版本的清单，检查其 `@pluxel/core` peer 是否兼容当前宿主、包根能否导出 JavaScript。预览和程序化安装都会复核本次请求包的实际文件；包若声明 `pluxel.control`，控制清单还须包含这个包的根插件定义。普通传递依赖由 pnpm 解析。未声明控制清单的包只能得到基础兼容性检查，实际加载结果以 Host 报告为准。[Registry 搜索与检查](../plugins/package-manager/src/registry-discovery.ts)
 
-两条交互路径均生成一份固定版本的安装预览。市场安装额外核对 pnpm 选择的 registry、精确版本与市场记录的 SHA-512。确认时发布已审阅的文件；发布失败按包返回实际结果。Workbench 依据受管版本和已核验的 registry 显示安装状态与更新提示，来源未知的同名包单独标明。安装回执可进入管理页，单包或批量卸载都先审阅包名、版本及宿主使用情况，再按已审阅的 revision 撤回入口。[安装记录与恢复](../plugins/package-manager/DESIGN.md)
+两条交互路径共用固定版本的安装预览，展示制品声明的根导出与依赖、Host 报告的当前直接消费者，以及整批变更对所选 provider 和阻塞项的预测。市场安装额外核对 pnpm 选择的 registry、精确版本与市场记录的 SHA-512。确认时复核预览依据，再发布已审阅的入口。发布失败按包返回实际结果。Workbench 依据受管版本和已核验的 registry 显示安装状态与更新提示，来源未知的同名包单独标明。安装回执可进入管理页，单包或批量卸载都先审阅包名、版本及宿主使用情况，再按已审阅的 revision 撤回入口。[安装记录与恢复](../plugins/package-manager/DESIGN.md)
 
 ## 验证入口
 

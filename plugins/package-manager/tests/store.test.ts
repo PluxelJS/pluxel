@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import type { InstallOptions, InstallResult, ParsedBareSpecifier } from '@pnpm/napi'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PnpmEngine } from '../src/pnpm-engine.ts'
+import { PluginSourceBusyError, type PluginSourceImpact } from '@pluxel/host/sources'
 import {
 	packageMutationLimit,
 	type MarketInstallRequest,
@@ -141,6 +142,115 @@ function checkedRelease({ name, version, registry }: MarketInstallRequest): Mark
 }
 
 describe('ManagedPackageStore', () => {
+	it('rejects an application-owned package on both entry points and a busy Host before confirmation', async () => {
+		const rootDir = await fixtureRoot()
+		const readHostImpact = vi.fn<() => PluginSourceImpact>().mockReturnValue({
+			catalogRevision: 1,
+			policyRevision: 0,
+			definitions: [
+				{
+					packageName: 'alpha',
+					origin: 'fixed',
+					nodes: [],
+					address: {
+						entry: { kind: 'package-root', packageName: 'alpha' },
+						exportName: 'Provider',
+					},
+				},
+			],
+		})
+		const store = new ManagedPackageStore(createEngine().engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+			readHostImpact,
+		})
+		await store.initialize()
+		try {
+			for (const result of [
+				await store.prepareInstall(['alpha@1.0.0']),
+				await store.install(['alpha@1.0.0']),
+			])
+				expect(result).toMatchObject({
+					ok: false,
+					failed: [
+						{
+							code: 'SOURCE_CONFLICT',
+							message: expect.stringContaining('package:alpha::Provider'),
+						},
+					],
+				})
+			readHostImpact.mockReturnValue({ catalogRevision: 2, policyRevision: 0, definitions: [] })
+			const prepared = await store.prepareInstall(['alpha@1.0.0'])
+			if (!prepared.ok)
+				throw new Error('Expected review for the package without a control manifest')
+			expect(prepared.plan.hostImpact).toEqual([
+				{ name: 'alpha', definitionsKnown: false, definitions: [] },
+			])
+			readHostImpact.mockImplementationOnce(() => {
+				throw new PluginSourceBusyError()
+			})
+			expect(await store.confirmInstall(prepared.plan.id)).toMatchObject({
+				ok: false,
+				failed: [{ code: 'HOST_GRAPH_BUSY' }],
+			})
+			expect(await store.snapshot()).toMatchObject({ revision: 0, packages: [] })
+			expect(await readdir(store.entriesDir)).toEqual([])
+			expect(await readdir(resolve(rootDir, 'revisions'))).toEqual([])
+		} finally {
+			await store.close()
+		}
+	})
+
+	it('requires another review before repairing an entry that changed outside the reviewed publication', async () => {
+		const rootDir = await fixtureRoot()
+		const store = new ManagedPackageStore(createEngine().engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+		})
+		await store.initialize()
+		try {
+			expect(await store.install(['alpha@1.0.0', 'beta@1.0.0'])).toMatchObject({ ok: true })
+			const old = await store.snapshot()
+			const betaEntry = resolve(
+				store.entriesDir,
+				old.packages.find(({ name }) => name === 'beta')!.entryFile!,
+			)
+			const prepared = await store.prepareInstall(['alpha@2.0.0'])
+			if (!prepared.ok) throw new Error('Expected alpha upgrade')
+			await rm(betaEntry)
+			expect(await store.confirmInstall(prepared.plan.id)).toMatchObject({
+				ok: false,
+				failed: [{ code: 'INVALID_PLAN', message: expect.stringContaining('beta') }],
+			})
+			expect(await store.snapshot()).toMatchObject({
+				revision: old.revision,
+				packages: [
+					{ name: 'alpha', installedVersion: '1.0.0' },
+					{ name: 'beta', entryFile: null },
+				],
+			})
+			const repair = await store.prepareInstall(['alpha@2.0.0'])
+			if (!repair.ok) throw new Error('Expected reviewed repair')
+			expect(repair.plan.packages).toMatchObject([
+				{ name: 'alpha', changed: true },
+				{ name: 'beta', changed: true },
+			])
+			expect(await store.confirmInstall(repair.plan.id)).toMatchObject({
+				ok: true,
+				succeeded: ['alpha'],
+				published: ['alpha', 'beta'],
+				withdrawn: [],
+			})
+			await expect(stat(betaEntry)).resolves.toBeDefined()
+		} finally {
+			await store.close()
+		}
+	})
+
 	it('prepares a fixed private installation and confirms its same bytes without repeating acquisition', async () => {
 		const rootDir = await fixtureRoot()
 		const { engine, install } = createEngine()
@@ -169,6 +279,8 @@ describe('ManagedPackageStore', () => {
 				ok: true,
 				succeeded: ['alpha'],
 				failed: [],
+				published: ['alpha'],
+				withdrawn: [],
 			})
 			expect(install).toHaveBeenCalledTimes(1)
 			expect(await store.snapshot()).toMatchObject({
@@ -185,6 +297,8 @@ describe('ManagedPackageStore', () => {
 			expect(await store.confirmInstall(result.plan.id)).toMatchObject({
 				ok: false,
 				failed: [{ code: 'INVALID_PLAN' }],
+				published: [],
+				withdrawn: [],
 			})
 		} finally {
 			await store.close()
@@ -272,6 +386,8 @@ describe('ManagedPackageStore', () => {
 			ok: false,
 			succeeded: [],
 			failed: [{ code: 'INSTALL_FAILED' }],
+			published: [],
+			withdrawn: [],
 		})
 		expect(await readdir(store.entriesDir)).toEqual([])
 		expect(await readdir(resolve(rootDir, 'revisions'))).toEqual([])
@@ -353,6 +469,8 @@ describe('ManagedPackageStore', () => {
 				ok: true,
 				succeeded: ['alpha', 'beta'],
 				failed: [],
+				published: ['alpha', 'beta'],
+				withdrawn: [],
 			})
 			expect(await store.confirmInstall(selected.plan.id)).toMatchObject({
 				ok: false,
@@ -677,6 +795,8 @@ describe('ManagedPackageStore', () => {
 				ok: false,
 				succeeded: ['alpha'],
 				failed: [{ input: 'beta', code: 'INSTALL_FAILED' }],
+				published: ['alpha'],
+				withdrawn: [],
 			})
 			const snapshot = await store.snapshot()
 			expect(snapshot).toMatchObject({
@@ -722,6 +842,65 @@ describe('ManagedPackageStore', () => {
 			])
 			await rm(blocked, { recursive: true })
 			expect(await store.install(['beta@1.0.0'])).toMatchObject({ ok: true })
+		} finally {
+			await store.close()
+		}
+	})
+
+	it('reports the requested package and the reviewed withdrawal separately through failure and retry', async () => {
+		const rootDir = await fixtureRoot()
+		const { engine } = createEngine()
+		const store = new ManagedPackageStore(engine, {
+			rootDir,
+			ignoreScripts: true,
+			allowBuilds: [],
+			minimumReleaseAgeMinutes: 0,
+			readHostImpact: () => ({ catalogRevision: 1, policyRevision: 1, definitions: [] }),
+		})
+		await store.initialize()
+		try {
+			const betaEntry = resolve(
+				store.entriesDir,
+				Buffer.from('beta').toString('base64url') + '.mjs',
+			)
+			expect(await store.install(['beta@1.0.0'])).toMatchObject({ ok: true })
+			const original = await readFile(betaEntry)
+			await rm(betaEntry)
+			await mkdir(betaEntry)
+			expect(await store.remove(['beta'])).toMatchObject({
+				ok: false,
+				failed: [{ input: 'beta', code: 'REMOVE_FAILED' }],
+			})
+			expect(await store.snapshot()).toMatchObject({ packages: [], pendingRemovals: ['beta'] })
+
+			const prepared = await store.prepareInstall(['alpha@1.0.0'])
+			if (prepared.ok === false) throw new Error(prepared.failed[0]?.message)
+			expect(prepared.plan.hostImpact?.map(({ name }) => name).sort()).toEqual(['alpha', 'beta'])
+			expect(await store.confirmInstall(prepared.plan.id)).toMatchObject({
+				ok: false,
+				succeeded: ['alpha'],
+				failed: [{ input: 'beta', code: 'INSTALL_FAILED' }],
+				published: ['alpha'],
+				withdrawn: [],
+			})
+			expect(await store.snapshot()).toMatchObject({
+				packages: [{ name: 'alpha', entryFile: expect.any(String) }],
+				pendingRemovals: ['beta'],
+			})
+			await rm(betaEntry, { recursive: true })
+			await writeFile(betaEntry, original)
+			const retry = await store.prepareInstall(['alpha@1.0.0'])
+			if (retry.ok === false) throw new Error(retry.failed[0]?.message)
+			expect(retry.plan.pendingRemovals).toEqual(['beta'])
+			expect(await store.confirmInstall(retry.plan.id)).toEqual({
+				ok: true,
+				succeeded: ['alpha'],
+				failed: [],
+				published: [],
+				withdrawn: ['beta'],
+			})
+			await expect(stat(betaEntry)).rejects.toMatchObject({ code: 'ENOENT' })
+			expect(await store.snapshot()).toMatchObject({ pendingRemovals: [] })
 		} finally {
 			await store.close()
 		}
@@ -1191,7 +1370,7 @@ it.each([
 			exports: './index.mjs',
 			pluxel: { control: './package.json' },
 		},
-		'no plugin at this package root',
+		'Control manifest contains unexpected or missing fields',
 	],
 ] as const)(
 	'rejects incompatible installed bytes in review and immediate installation',

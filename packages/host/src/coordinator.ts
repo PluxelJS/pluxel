@@ -193,6 +193,7 @@ export interface HostPluginGraphExclusiveSession<TSummary = unknown> {
 /** Fixed process-local facts captured after all earlier graph transactions have settled. */
 export type HostPluginGraphCommittedView = Readonly<{
 	catalog: PluginCatalogSnapshot
+	definitionRoles: PluginDefinitionRoleHistory
 	declaredNodes?: ReadonlyMap<string, PluginNodeAddress>
 	runtimeState: HostStateVersionedSnapshot
 	reconciliation: readonly PluginReconciliationIssue[]
@@ -242,6 +243,7 @@ export class PluginHostCoordinator<TSummary = unknown> {
 	private sessionIntents: ReadonlyMap<string, HostPluginSessionEntry> = new Map()
 	private desiredControl: ReadonlyMap<string, HostPluginDesiredControl> = new Map()
 	private tail: Promise<void> = Promise.resolve()
+	private pendingMutations = 0
 	private disposed = false
 
 	constructor(
@@ -392,6 +394,13 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		return execute
 	}
 
+	/** A borrowed generation must never wait behind a mutation which may be draining it. */
+	readCommittedIfIdle<T>(read: (view: HostPluginGraphCommittedView) => T): T | undefined {
+		if (this.disposed) throw new Error('[host:reconciliation] coordinator is disposed')
+		if (this.pendingMutations > 0) return undefined
+		return this.readCurrentView(read)
+	}
+
 	private readCurrentView<T>(read: (view: HostPluginGraphCommittedView) => T): T {
 		const coreAdjacency = this.core.readCommittedDependencyAdjacency()
 		const runningNodes = Object.freeze(
@@ -400,6 +409,7 @@ export class PluginHostCoordinator<TSummary = unknown> {
 		const value = read(
 			Object.freeze({
 				catalog: this.catalog,
+				definitionRoles: this.definitionRoles,
 				declaredNodes: this.runtimeState.declaredNodes,
 				runtimeState: this.runtimeState.versionedSnapshot(),
 				reconciliation: this.reconciliation,
@@ -427,7 +437,7 @@ export class PluginHostCoordinator<TSummary = unknown> {
 			return Promise.reject(new Error('[host:reconciliation] coordinator is disposed'))
 		}
 		const signal = options?.signal
-		const execute = this.tail.then(async () => {
+		return this.enqueueMutation(async () => {
 			await this.runtimeState.ready
 			signal?.throwIfAborted()
 			const session: HostPluginGraphExclusiveSession<TSummary> = Object.freeze({
@@ -466,11 +476,6 @@ export class PluginHostCoordinator<TSummary = unknown> {
 			})
 			return run(session)
 		})
-		this.tail = execute.then(
-			(): void => undefined,
-			(): void => undefined,
-		)
-		return execute
 	}
 
 	dispose(): Promise<void> {
@@ -486,15 +491,20 @@ export class PluginHostCoordinator<TSummary = unknown> {
 			return Promise.reject(new Error('[host:reconciliation] coordinator is disposed'))
 		}
 		const signal = options?.signal
-		const run = this.tail.then(() => {
+		return this.enqueueMutation(() => {
 			signal?.throwIfAborted()
 			return this.applyUpdate(update)
 		})
-		this.tail = run.then(
-			(): void => undefined,
-			(): void => undefined,
-		)
-		return run
+	}
+
+	private enqueueMutation<T>(run: () => Promise<T>): Promise<T> {
+		this.pendingMutations++
+		const operation = this.tail.then(run)
+		const settled = () => {
+			this.pendingMutations--
+		}
+		this.tail = operation.then(settled, settled)
+		return operation
 	}
 
 	private currentReport(): PluginApplyReport<TSummary> {
@@ -531,7 +541,10 @@ export class PluginHostCoordinator<TSummary = unknown> {
 			// Prepare the complete role-history replacement before persistence, Core prepare, and PONR.
 			// Failed proposals never poison the host-lifetime tombstones.
 			const preparedDefinitionRoles = update.catalog
-				? extendPluginDefinitionRoleHistory(this.definitionRoles, proposedCatalog)
+				? extendPluginDefinitionRoleHistory(
+						this.definitionRoles,
+						proposedCatalog.declarations.values(),
+					)
 				: this.definitionRoles
 			const pinnedState = this.runtimeState.versionedSnapshot()
 			if (update.statePatch && update.policyInput !== undefined)

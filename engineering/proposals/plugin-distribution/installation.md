@@ -1,6 +1,6 @@
 # Host 安装预检与结果跟踪
 
-状态：pnpm 获取、不可变安装与 prepare/confirm 已实现；本页保留 Host 影响、持久结果及制品清理的设计。上级：[提案总览](README.md)。
+状态：pnpm 获取、不可变安装、根定义与消费者审阅、候选依赖与 Host 策略投影、提交前复核已实现。本页保留服务与能力预检、持久结果及制品清理的设计。上级：[提案总览](README.md)。
 
 来源核对和必需插件的版本解析见[插件市场设计](../../PLUGIN_MARKET.md)。候选失效、部分发布和离线维护见[包管理器安装与恢复](../../../plugins/package-manager/DESIGN.md)。调用方式见 [Package Manager 用法](../../../docs/plugins/package-manager.md)。
 
@@ -12,7 +12,7 @@
 
 ## 插件依赖与普通 npm 依赖
 
-现有获取引擎已经选择 pnpm，来源、认证和普通依赖求解继续沿用它的原生行为。新的预检应从[静态 manifest](package-format.md)取得 Plugin 引用，再向实际 Host 核对 provider、共享模块与能力。
+现有获取引擎已经选择 pnpm，来源、认证和普通依赖求解继续沿用它的原生行为。编译器随控制材料提供候选的静态 Plugin 引用，Host 以当前策略预检整批 provider 变化。后续的[发布格式](package-format.md)还需表达共享模块与能力。
 
 required Plugin、optional integration、宿主共享服务和普通实现依赖分别处理。安装服务的 npm 包不代表服务已装配；optional provider 不因市场存在就自动安装或启用。预检不能自行扩大固定 Context。
 
@@ -26,15 +26,9 @@ required Plugin、optional integration、宿主共享服务和普通实现依赖
 
 ## 安装与升级的预检
 
-当前预览绑定安装选择 revision、私有候选及精确字节，展示受管包图变化。尚缺 Host 的全包影响与提交前状态核对：
+当前根导出预测、来源冲突、节点和直接消费者审阅及过期计划拒绝见[安装与恢复](../../../plugins/package-manager/DESIGN.md#准备与确认)。
 
-- 来源冲突、共享 provider 版本、缺少能力与无法满足的 peer。
-- 替换或移除的 Plugin definition、对应节点，以及 Host/Core 判断需要处理的依赖。
-- 安装选择、启用意图与实际接纳分别会怎样变化，是否需要新进程。
-
-安装器读取声明和 Host/Core 的实际状态，不复制运行图。需要确定 Host 对外提供的最小预检接口及状态版本，确认时由各所有者核对前提；并发升级或配置变化使计划失效时，返回冲突并重新准备。
-
-验收要覆盖一个含多个 Plugin 的包、被移除的导出、required/optional provider 和应用固定 import。准备之后改变 Host 状态，旧计划应被拒绝，不能默默扩大确认范围。
+已校验的候选根定义可以参与同批 Host 策略预检，覆盖 required/optional 声明、必需 provider 的重新绑定及传递阻塞。早期制品和归属不明的重导出会报告预测缺口。剩余工作是将共享 provider 版本和宿主能力要求与目标装配比对，覆盖缺少服务和版本不兼容，并将预测与实际接纳报告对照。
 
 ## 运行与结果所有权
 

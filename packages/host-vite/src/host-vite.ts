@@ -422,6 +422,7 @@ export function host(options: HostViteOptions): PluginOption[] {
 							plugin,
 							{
 								execution,
+								sourceFiles: sourceCandidate!.sourceFilesByPlugin.get(plugin),
 								control: nextControls.metadata.get(pluginDefinitionIndexKey(definition)),
 							},
 						]

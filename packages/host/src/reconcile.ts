@@ -10,7 +10,7 @@ import {
 } from '@pluxel/core'
 import type { ConcretePluginDefinitionCandidate } from '@pluxel/core/internal'
 import type { HostStateSnapshot } from './policy'
-import { pluginCatalogEntry, type PluginCatalogEntry, type PluginCatalogSnapshot } from './catalog'
+import type { PluginCatalogSnapshot } from './catalog'
 
 export type PluginReconciliationIssue =
 	| Readonly<{
@@ -162,6 +162,45 @@ export function reconcilePluginGraph(input: {
 	applied?: AppliedPluginGraphSnapshot
 }): ReconciliationPlan {
 	const applied = input.applied ?? emptyAppliedPluginGraphSnapshot()
+	const selection = selectPluginGraph({
+		declarations: input.catalog.declarations,
+		runtimeState: input.runtimeState,
+		sessionIntents: input.sessionIntents,
+	})
+	const nodes = new Map<string, AppliedNode>()
+	for (const [key, { address }] of selection.nodes) {
+		const candidate = input.catalog.byDefinition.get(
+			pluginDefinitionIndexKey(address.definition),
+		)!.candidate
+		nodes.set(key, Object.freeze({ address, candidate }))
+	}
+	const nextApplied: AppliedPluginGraphSnapshot = Object.freeze({
+		nodes,
+		providerDefaults: selection.providerDefaults,
+		dependencyOverrides: selection.dependencyOverrides,
+	})
+	return Object.freeze({
+		catalogRevision: input.catalog.revision,
+		runtimeStateRevision: input.runtimeStateRevision,
+		coreOperations: Object.freeze(diffAppliedGraph(applied, nextApplied)),
+		blocked: selection.blocked,
+		desiredControl: selection.desiredControl,
+		applied: nextApplied,
+	})
+}
+
+export type PolicyDeclaration = Pick<
+	ConcretePluginDefinitionCandidate['declaration'],
+	'address' | 'requires' | 'optional' | 'provides'
+> &
+	Readonly<{ forkable?: boolean }>
+type Declarations = ReadonlyMap<string, PolicyDeclaration>
+/** Evaluate desired policy on declarations before attaching any executable implementation. */
+export function selectPluginGraph(input: {
+	declarations: Declarations
+	runtimeState: HostStateSnapshot
+	sessionIntents?: ReadonlyMap<string, HostPluginSessionEntry>
+}) {
 	const issues: PluginReconciliationIssue[] = []
 	const issueKeys = new Set<string>()
 	const blocked = new Set<string>()
@@ -183,7 +222,13 @@ export function reconcilePluginGraph(input: {
 		activationReasons.set(key, 'session')
 	}
 	const durableForks = durableForkIndex(input.runtimeState)
-	const candidates = candidateNodes(input.catalog, input.runtimeState, issues, issueKeys, blocked)
+	const candidates = candidateNodes(
+		input.declarations,
+		input.runtimeState,
+		issues,
+		issueKeys,
+		blocked,
+	)
 
 	for (const [key, address] of desired) {
 		if (candidates.has(key)) continue
@@ -196,7 +241,7 @@ export function reconcilePluginGraph(input: {
 	}
 
 	const providerDefaults = resolveProviderDefaults({
-		catalog: input.catalog,
+		catalog: input.declarations,
 		state: input.runtimeState,
 		durableForks,
 		issues,
@@ -218,7 +263,7 @@ export function reconcilePluginGraph(input: {
 			if (consumerDesired) blocked.add(consumerKey)
 			continue
 		}
-		if (!hasRequirement(consumer.entry, override.requirementAddress)) {
+		if (!hasRequirement(consumer.declaration, override.requirementAddress)) {
 			addIssue(issues, issueKeys, {
 				kind: 'requirement_removed',
 				binding: 'dependency-override',
@@ -231,7 +276,7 @@ export function reconcilePluginGraph(input: {
 			continue
 		}
 		const providerIssue = validateProvider({
-			catalog: input.catalog,
+			catalog: input.declarations,
 			durableForks,
 			binding: 'dependency-override',
 			consumer: override.consumerAddress,
@@ -258,7 +303,7 @@ export function reconcilePluginGraph(input: {
 	}
 
 	expandRequiredProviders({
-		catalog: input.catalog,
+		catalog: input.declarations,
 		candidates,
 		desired,
 		activationReasons,
@@ -272,10 +317,10 @@ export function reconcilePluginGraph(input: {
 		issueKeys,
 	})
 
-	const desiredNodes = new Map<string, AppliedNode>()
+	const desiredNodes = new Map<string, CandidateNode>()
 	for (const [key, node] of candidates) {
 		if (!desired.has(key) || blocked.has(key)) continue
-		desiredNodes.set(key, Object.freeze({ address: node.address, candidate: node.entry.candidate }))
+		desiredNodes.set(key, node)
 	}
 
 	const desiredProviderDefaults = new Map<
@@ -300,12 +345,6 @@ export function reconcilePluginGraph(input: {
 		}
 	}
 
-	const nextApplied: AppliedPluginGraphSnapshot = Object.freeze({
-		nodes: desiredNodes,
-		providerDefaults: desiredProviderDefaults,
-		dependencyOverrides: desiredOverrides,
-	})
-	const operations = diffAppliedGraph(applied, nextApplied)
 	const desiredControl = new Map<string, HostPluginDesiredControl>()
 	for (const [key, address] of desired) {
 		const activationReason = activationReasons.get(key)
@@ -313,12 +352,11 @@ export function reconcilePluginGraph(input: {
 		desiredControl.set(key, Object.freeze({ address, activationReason }))
 	}
 	return Object.freeze({
-		catalogRevision: input.catalog.revision,
-		runtimeStateRevision: input.runtimeStateRevision,
-		coreOperations: Object.freeze(operations),
+		nodes: desiredNodes,
+		providerDefaults: desiredProviderDefaults,
+		dependencyOverrides: desiredOverrides,
 		blocked: Object.freeze(sortIssues(issues)),
 		desiredControl,
-		applied: nextApplied,
 	})
 }
 
@@ -337,50 +375,38 @@ export function catalogTransitionRejections(input: {
 		const previous = input.previous.byDefinition.get(entry.indexKey)
 		if (!previous || previous.candidate !== entry.candidate) changed.add(entry.indexKey)
 	}
-	const removed = new Set(
-		input.previous.entries
-			.filter((entry) => !input.next.byDefinition.has(entry.indexKey))
-			.map((entry) => entry.indexKey),
-	)
+	return livePolicyRejections(changed, input.plan.blocked)
+}
+
+/** Policy failures that retain the committed catalog when the given definitions change live. */
+export function livePolicyRejections(
+	changed: ReadonlySet<string>,
+	issues: readonly PluginReconciliationIssue[],
+): readonly PluginReconciliationIssue[] {
 	return Object.freeze(
-		input.plan.blocked.filter((issue) => {
-			if (issue.kind === 'requirement_removed') {
-				return changed.has(pluginDefinitionIndexKey(issue.consumer.definition))
+		issues.filter((issue) => {
+			switch (issue.kind) {
+				case 'consumer_unavailable':
+				case 'missing_required_provider':
+				case 'requirement_removed':
+					return changed.has(pluginDefinitionIndexKey(issue.consumer.definition))
+				case 'fork_not_allowed':
+					return changed.has(pluginDefinitionIndexKey(issue.node.definition))
+				default:
+					return (
+						changed.has(pluginDefinitionIndexKey(issue.provider.definition)) ||
+						('consumer' in issue &&
+							issue.consumer !== undefined &&
+							changed.has(pluginDefinitionIndexKey(issue.consumer.definition)))
+					)
 			}
-			if (
-				issue.kind === 'provider_unavailable' ||
-				issue.kind === 'provider_incompatible' ||
-				issue.kind === 'fork_default_forbidden' ||
-				issue.kind === 'provider_default_requires_abstract' ||
-				issue.kind === 'explicit_binding_invalid'
-			) {
-				const providerKey = pluginDefinitionIndexKey(issue.provider.definition)
-				const consumerKey =
-					'consumer' in issue && issue.consumer
-						? pluginDefinitionIndexKey(issue.consumer.definition)
-						: undefined
-				return changed.has(providerKey) || (consumerKey !== undefined && changed.has(consumerKey))
-			}
-			if (issue.kind === 'fork_not_allowed') {
-				return changed.has(pluginDefinitionIndexKey(issue.node.definition))
-			}
-			if (issue.kind === 'missing_required_provider') {
-				return changed.has(pluginDefinitionIndexKey(issue.consumer.definition))
-			}
-			if (issue.kind === 'consumer_unavailable') {
-				const key = pluginDefinitionIndexKey(issue.consumer.definition)
-				// Removing a consumer is valid. An override/provider target removal is represented
-				// by one of the binding-specific issues above.
-				return changed.has(key) && !removed.has(key)
-			}
-			return false
 		}),
 	)
 }
 
 type CandidateNode = Readonly<{
 	address: PluginNodeAddress
-	entry: PluginCatalogEntry
+	declaration: PolicyDeclaration
 }>
 
 type ResolvedOverride = Readonly<{
@@ -396,7 +422,7 @@ type RequiredProviderEdge = Readonly<{
 }>
 
 function expandRequiredProviders(input: {
-	catalog: PluginCatalogSnapshot
+	catalog: Declarations
 	candidates: ReadonlyMap<string, CandidateNode>
 	desired: Map<string, PluginNodeAddress>
 	activationReasons: Map<string, PluginActivationReason>
@@ -426,10 +452,10 @@ function expandRequiredProviders(input: {
 		}
 		const node = input.candidates.get(consumerKey)
 		if (!node) continue
-		for (const requirement of node.entry.candidate.declaration.requires) {
+		for (const requirement of node.declaration.requires) {
 			const explicit = input.validOverrides.get(overrideKey(node.address, requirement))?.provider
 			const requirementKey = pluginDefinitionIndexKey(requirement)
-			if (!explicit && !pluginCatalogEntry(input.catalog, requirement)) {
+			if (!explicit && !input.catalog.get(requirementKey)) {
 				const invalidDefault = input.invalidProviderDefaults.get(requirementKey)
 				if (invalidDefault) {
 					if (invalidDefault.kind === 'provider_unavailable') {
@@ -503,22 +529,22 @@ function blockMissingProvider(
 }
 
 function candidateNodes(
-	catalog: PluginCatalogSnapshot,
+	catalog: Declarations,
 	state: HostStateSnapshot,
 	issues: PluginReconciliationIssue[],
 	issueKeys: Set<string>,
 	blocked: Set<string>,
 ): Map<string, CandidateNode> {
 	const nodes = new Map<string, CandidateNode>()
-	for (const entry of catalog.entries) {
-		const address: PluginNodeAddress = { definition: entry.address, variant: 'default' }
-		nodes.set(pluginNodeIndexKey(address), Object.freeze({ address, entry }))
+	for (const declaration of catalog.values()) {
+		const address: PluginNodeAddress = { definition: declaration.address, variant: 'default' }
+		nodes.set(pluginNodeIndexKey(address), Object.freeze({ address, declaration }))
 	}
 	for (const address of state.forks) {
-		const entry = pluginCatalogEntry(catalog, address.definition)
+		const declaration = catalog.get(pluginDefinitionIndexKey(address.definition))
 		const key = pluginNodeIndexKey(address)
-		if (!entry) continue
-		if (!entry.candidate.declaration.forkable) {
+		if (!declaration) continue
+		if (!declaration.forkable) {
 			addIssue(issues, issueKeys, {
 				kind: 'fork_not_allowed',
 				node: address,
@@ -527,13 +553,13 @@ function candidateNodes(
 			blocked.add(key)
 			continue
 		}
-		nodes.set(key, Object.freeze({ address, entry }))
+		nodes.set(key, Object.freeze({ address, declaration }))
 	}
 	return nodes
 }
 
 function resolveProviderDefaults(input: {
-	catalog: PluginCatalogSnapshot
+	catalog: Declarations
 	state: HostStateSnapshot
 	durableForks: ReadonlySet<string>
 	issues: PluginReconciliationIssue[]
@@ -574,10 +600,10 @@ function resolveProviderDefaults(input: {
 		string,
 		Array<{ token: PluginDefinitionAddress; provider: PluginNodeAddress }>
 	>()
-	for (const entry of input.catalog.entries) {
-		const token = entry.candidate.declaration.provides
+	for (const declaration of input.catalog.values()) {
+		const token = declaration.provides
 		if (!token) continue
-		const provider: PluginNodeAddress = { definition: entry.address, variant: 'default' }
+		const provider: PluginNodeAddress = { definition: declaration.address, variant: 'default' }
 		const key = pluginDefinitionIndexKey(token)
 		const list = candidates.get(key) ?? []
 		list.push({ token, provider })
@@ -597,7 +623,7 @@ function resolveProviderDefaults(input: {
 }
 
 function validateProvider(input: {
-	catalog: PluginCatalogSnapshot
+	catalog: Declarations
 	durableForks: ReadonlySet<string>
 	binding: 'provider-default' | 'dependency-override'
 	consumer?: PluginNodeAddress
@@ -612,9 +638,9 @@ function validateProvider(input: {
 			message: 'A fork cannot be selected as a global provider default',
 		}
 	}
-	const entry = pluginCatalogEntry(input.catalog, input.provider.definition)
+	const declaration = input.catalog.get(pluginDefinitionIndexKey(input.provider.definition))
 	if (
-		!entry ||
+		!declaration ||
 		(input.provider.variant === 'fork' &&
 			!input.durableForks.has(pluginNodeIndexKey(input.provider)))
 	) {
@@ -624,13 +650,13 @@ function validateProvider(input: {
 			'Provider is not available in the route catalog',
 		)
 	}
-	if (input.provider.variant === 'fork' && !entry.candidate.declaration.forkable) {
+	if (input.provider.variant === 'fork' && !declaration.forkable) {
 		return bindingIssue('explicit_binding_invalid', input, 'Explicit provider fork is not allowed')
 	}
 	if (
 		input.binding === 'provider-default' &&
-		(!entry.candidate.declaration.provides ||
-			!pluginDefinitionAddressEqual(entry.candidate.declaration.provides, input.requirement))
+		(!declaration.provides ||
+			!pluginDefinitionAddressEqual(declaration.provides, input.requirement))
 	) {
 		return {
 			kind: 'provider_default_requires_abstract',
@@ -639,7 +665,7 @@ function validateProvider(input: {
 			message: 'Global provider default must publish the requested abstract token',
 		}
 	}
-	if (!providerCompatible(entry, input.requirement)) {
+	if (!providerCompatible(declaration, input.requirement)) {
 		return bindingIssue(
 			'provider_incompatible',
 			input,
@@ -670,33 +696,54 @@ function bindingIssue(
 }
 
 function providerCompatible(
-	entry: PluginCatalogEntry,
+	declaration: PolicyDeclaration,
 	requirement: PluginDefinitionAddress,
 ): boolean {
 	return (
-		pluginDefinitionAddressEqual(entry.address, requirement) ||
-		(!!entry.candidate.declaration.provides &&
-			pluginDefinitionAddressEqual(entry.candidate.declaration.provides, requirement))
+		pluginDefinitionAddressEqual(declaration.address, requirement) ||
+		(!!declaration.provides && pluginDefinitionAddressEqual(declaration.provides, requirement))
 	)
 }
 
-function hasRequirement(entry: PluginCatalogEntry, requirement: PluginDefinitionAddress): boolean {
-	return entry.candidate.declaration.requires.some((address) =>
-		pluginDefinitionAddressEqual(address, requirement),
-	)
+function hasRequirement(
+	declaration: PolicyDeclaration,
+	requirement: PluginDefinitionAddress,
+): boolean {
+	return declaration.requires.some((address) => pluginDefinitionAddressEqual(address, requirement))
 }
 
 function resolveImplicitProvider(
 	requirement: PluginDefinitionAddress,
-	catalog: PluginCatalogSnapshot,
+	catalog: Declarations,
 	providerDefaults: ReadonlyMap<
 		string,
 		Readonly<{ token: PluginDefinitionAddress; provider: PluginNodeAddress }>
 	>,
 ): PluginNodeAddress | undefined {
-	const concrete = pluginCatalogEntry(catalog, requirement)
+	const concrete = catalog.get(pluginDefinitionIndexKey(requirement))
 	if (concrete) return { definition: concrete.address, variant: 'default' }
 	return providerDefaults.get(pluginDefinitionIndexKey(requirement))?.provider
+}
+
+/** Required bindings for materializable nodes, using the same override and implicit selection as reconciliation. */
+export function selectedRequiredBindings(
+	catalog: Declarations,
+	graph: Pick<AppliedPluginGraphSnapshot, 'dependencyOverrides' | 'providerDefaults'> & {
+		nodes: ReadonlyMap<string, { address: PluginNodeAddress }>
+	},
+) {
+	const bindings = new Map<string, ResolvedOverride>()
+	for (const { address: consumer } of graph.nodes.values()) {
+		const declaration = catalog.get(pluginDefinitionIndexKey(consumer.definition))!
+		for (const requirement of declaration.requires) {
+			const key = overrideKey(consumer, requirement)
+			const provider =
+				graph.dependencyOverrides.get(key)?.provider ??
+				resolveImplicitProvider(requirement, catalog, graph.providerDefaults)
+			if (provider) bindings.set(key, { consumer, requirement, provider })
+		}
+	}
+	return bindings
 }
 
 function durableForkIndex(state: HostStateSnapshot): Set<string> {

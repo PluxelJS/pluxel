@@ -211,6 +211,10 @@ export default defineHostApplication((startup) => {
 
 Vite 观察匹配的 TypeScript 和预编译 ESM 入口。Node 原生启动和 modules 交付在启动时发现预编译 `.js` 和 `.mjs`。standalone 构建采用固定清单，`sources` 可以省略或填写 `[]`。
 
+受管来源的发布者可以从 `@pluxel/host/sources` 调用 `readPluginSourceImpact(ctx, [{ name, file }])`。传入包名和即将发布或撤回的入口的绝对物理路径，即可读取当前提供该定义的来源类别、各节点运行状态及直接消费者。审阅后应在提交发布前再次读取；若抛出 `PluginSourceBusyError`，等待 Host 事务结算并重新审阅。需要预检待发布的声明时，每个入口还可携带 `action: 'publish'` 及已核实的根定义，撤回用 `action: 'withdraw'`。返回的 `dependencyReview` 针对整批，包含按当前策略推算的绑定和问题变化，或无法得出该预测的原因。Package Manager 的公开预览用法见[管理插件包](../plugins/package-manager.md#在-workbench-一起安装多个精确版本)。
+
+Node 包来源可从同一入口调用 `await readPackageSourceDefinitions(packageRoot, packageManifest)`，传入实际包目录和其中已解析的 `package.json`，获得清单列出的自有根定义及可核实的依赖。包未声明 `pluxel.control` 时返回 `undefined`，清单没有本包根定义时返回空数组，声明的材料损坏则抛错。
+
 <span id="vite-生产"></span>
 
 ## Vite 生产

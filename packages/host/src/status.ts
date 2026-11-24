@@ -411,7 +411,7 @@ export function hostPluginStatusesFromView(
 
 /** @internal Enumerates node identity and labels without projecting runtime state. */
 export function hostPluginCatalogEntriesFromView(
-	view: HostPluginStatusProjectionView,
+	view: HostPluginControlProjectionView,
 	query: Readonly<{ definition?: PluginDefinitionAddress; packageName?: string }> = {},
 ): HostPluginCatalogEntry[] {
 	const state = view.state

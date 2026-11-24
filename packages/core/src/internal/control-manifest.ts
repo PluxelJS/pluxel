@@ -26,6 +26,75 @@ export type PluginControlManifest = Readonly<{
 	files: readonly Readonly<{ path: string; size: number; sha256: string }>[]
 }>
 
+/** Aggregate Plugin and nested Part requirements from the package compiler. */
+export type PluginControlDependencies = Readonly<{
+	requires: readonly PluginDefinitionAddress[]
+	optional: readonly PluginDefinitionAddress[]
+	provides?: PluginDefinitionAddress
+	forkable?: boolean
+}>
+
+/** Validate a single publisher's declaration using the same contract as package control material. */
+export function parsePluginControlDependencyFacts(value: unknown): PluginControlDependencies {
+	if (!value || typeof value !== 'object')
+		throw new TypeError('Invalid Plugin dependency declaration')
+	const fields = ['requires', 'optional']
+	for (const field of ['provides', 'forkable']) if (Object.hasOwn(value, field)) fields.push(field)
+	const row = record(value, fields, 'Plugin dependency declaration')
+	const seen = new Set<string>()
+	const addresses = (items: unknown) => {
+		if (!Array.isArray(items)) throw new TypeError('Plugin dependency addresses must be an array')
+		return Object.freeze(
+			Array.from(items, (item) => {
+				const address = parsePluginDefinitionAddress(item)
+				const target = pluginDefinitionIndexKey(address)
+				if (seen.has(target)) throw new TypeError('Duplicate Plugin dependency address')
+				seen.add(target)
+				return address
+			}),
+		)
+	}
+	if (Object.hasOwn(row, 'forkable') && typeof row.forkable !== 'boolean')
+		throw new TypeError('Invalid Plugin forkability')
+	return Object.freeze({
+		requires: addresses(row.requires),
+		optional: addresses(row.optional),
+		...(Object.hasOwn(row, 'provides') && { provides: parsePluginDefinitionAddress(row.provides) }),
+		...(typeof row.forkable === 'boolean' && { forkable: row.forkable }),
+	})
+}
+
+/** Read only explicitly reported definitions. A missing row means the compiler could not prove the whole Part tree. */
+export function parsePluginControlDependencies(
+	text: string,
+	manifest: Pick<PluginControlManifest, 'definitions'>,
+): ReadonlyMap<string, PluginControlDependencies> {
+	const input = record(
+		JSON.parse(text),
+		['format', 'definitions'],
+		'Plugin dependency declarations',
+	)
+	if (
+		input.format !== 1 ||
+		!Array.isArray(input.definitions) ||
+		input.definitions.length > manifest.definitions.length
+	)
+		throw new TypeError('Invalid Plugin dependency declarations')
+	const known = new Set(
+		manifest.definitions.map((item) => pluginDefinitionIndexKey(item.definition)),
+	)
+	const declarations = new Map<string, PluginControlDependencies>()
+	for (const raw of input.definitions) {
+		if (!raw || typeof raw !== 'object')
+			throw new TypeError('Invalid Plugin dependency declaration')
+		const { definition, ...facts } = raw
+		const key = pluginDefinitionIndexKey(parsePluginDefinitionAddress(definition))
+		if (!known.delete(key)) throw new TypeError('Unknown or repeated Plugin dependency declaration')
+		declarations.set(key, parsePluginControlDependencyFacts(facts))
+	}
+	return declarations
+}
+
 type ControlCatalogSummary = Readonly<{
 	reference: string
 	exportName: string
@@ -419,6 +488,8 @@ export function verifyPluginControlMaterialSync(
 	if (files['manifest.json'] !== `${encodeControlData(manifest)}\n`)
 		throw new TypeError('Control manifest file mismatch')
 	if (Object.hasOwn(files, 'catalog.json')) parseControlCatalog(files['catalog.json']!, manifest)
+	if (Object.hasOwn(files, 'dependencies.json'))
+		parsePluginControlDependencies(files['dependencies.json']!, manifest)
 	const modules = new Map<string, PluginControlManifest['definitions'][number][]>()
 	for (const entry of manifest.definitions) {
 		const definitions = modules.get(entry.module) ?? []

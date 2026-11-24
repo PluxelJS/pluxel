@@ -2,12 +2,14 @@
 
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { parsePluginDefinitionReference, parsePluginNodeReference } from '@pluxel/core'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type {
 	MarketPackageSummary,
 	MarketPackageDetail,
 	MarketRelease,
 	MarketReadResult,
+	PackageInstallConfirmation,
 	PackageInstallPlan,
 	PackageManagerSnapshot,
 } from '../src/contracts.ts'
@@ -43,7 +45,16 @@ const state = vi.hoisted(() => {
 		release: query(),
 		releases: query(),
 		preparation: mutation(),
-		confirmation: mutation(),
+		confirmation: {
+			...mutation(),
+			mutateAsync: vi.fn(async (): Promise<PackageInstallConfirmation> => ({
+				ok: true,
+				succeeded: [],
+				failed: [],
+				published: [],
+				withdrawn: [],
+			})),
+		},
 		removal: mutation(),
 		packagesInput: vi.fn(),
 		facetsInput: vi.fn(),
@@ -267,6 +278,9 @@ function preparedPlan(): PackageInstallPlan {
 		baseRevision: 0,
 		expiresAt: Date.now() + 600_000,
 		requested: ['alpha@latest'],
+		hostImpact: [],
+		dependencyReview: null,
+		pendingRemovals: [],
 		packages: [
 			{
 				name: 'alpha',
@@ -281,6 +295,94 @@ function preparedPlan(): PackageInstallPlan {
 		dependenciesWithBuildScripts: [],
 	}
 }
+
+it('shows reviewed export changes, fork state and the consumers of a removed provider', async () => {
+	const plan = preparedPlan()
+	const provider = 'package:alpha::Provider'
+	const required = 'package:checkout::Cart#fork=eu'
+	const optional = 'package:reports::Reporting'
+	const hostImpact: PackageInstallPlan['hostImpact'] = [
+		{
+			name: 'alpha',
+			definitionsKnown: true,
+			definitions: [
+				{
+					address: parsePluginDefinitionReference(provider),
+					change: 'remove',
+					nodes: [
+						{
+							address: parsePluginNodeReference(provider + '#fork=west'),
+							running: true,
+							requiredConsumers: [parsePluginNodeReference(required)],
+							optionalConsumers: [parsePluginNodeReference(optional)],
+						},
+					],
+				},
+				{
+					address: parsePluginDefinitionReference('package:alpha::Orders'),
+					change: 'add',
+					nodes: [],
+				},
+				{
+					address: parsePluginDefinitionReference('package:external::Shared'),
+					change: 'unverified',
+					nodes: [],
+				},
+			],
+		},
+	]
+	state.preparation.data = {
+		ok: true,
+		plan: {
+			...plan,
+			hostImpact,
+			dependencyReview: {
+				status: 'projected',
+				liveRejections: [],
+				unprovided: [],
+				introduced: [],
+				resolved: [],
+				bindings: [
+					{
+						consumer: parsePluginNodeReference(required),
+						requirement: parsePluginDefinitionReference(provider),
+						previous: parsePluginNodeReference(provider),
+						selected: null,
+					},
+				],
+			},
+		},
+	}
+	await render()
+	const rows = container.querySelectorAll('[aria-label="Host impact"] li')
+	expect(container.textContent).toContain(
+		required + ' requires ' + provider + ': ' + provider + ' → unbound',
+	)
+	expect(rows).toHaveLength(3)
+	expect(rows[0]?.textContent).toContain(`Remove ${provider}`)
+	expect(rows[0]?.textContent).toContain('Fork west · Running')
+	expect(rows[0]?.textContent).toContain(`Required by ${required}`)
+	expect(rows[0]?.textContent).toContain(`Used optionally by ${optional}`)
+	expect(rows[1]?.textContent).toContain('Add package:alpha::Orders')
+	expect(rows[2]?.textContent).toContain('Unverified change for package:external::Shared')
+	expect(button('Confirm installation').disabled).toBe(false)
+})
+
+it('identifies a missing candidate export list and an unavailable Host in the review', async () => {
+	const plan = preparedPlan()
+	state.preparation.data = {
+		ok: true,
+		plan: { ...plan, hostImpact: [{ name: 'alpha', definitionsKnown: false, definitions: [] }] },
+	}
+	await render()
+	const impact = () => container.querySelector('[aria-label="Host impact"]')!.textContent
+	expect(impact()).toContain('alpha')
+	expect(impact()).toContain('export changes are unknown')
+	expect(button('Confirm installation').disabled).toBe(false)
+	state.preparation.data = { ok: true, plan: { ...plan, hostImpact: null } }
+	await render()
+	expect(impact()).toContain('Host was unavailable')
+})
 
 it('explains a registry switch and a first source verification even when both versions stay the same', async () => {
 	const plan = preparedPlan()
@@ -331,14 +433,46 @@ it('keeps direct installation available without a market and confirms the review
 		data: {
 			ok: false,
 			succeeded: [],
-			failed: [{ input: 'alpha', code: 'INVALID_PLAN', message: 'Prepare a new review.' }],
+			failed: [{ input: '', code: 'INVALID_PLAN', message: 'Host changed. Prepare a new review.' }],
+			published: [],
+			withdrawn: [],
 		},
 	})
 	await render()
 	expect(container.querySelector('textarea')!.value).toBe('beta@latest')
-	expect(container.textContent).toContain('Prepare a new review.')
+	expect(container.querySelector('[role="alert"] p')?.textContent).toBe(
+		'Host changed. Prepare a new review.',
+	)
 	expect(button('Confirm installation').disabled).toBe(true)
 	expect(container.textContent).not.toContain('Plugin running')
+})
+
+it('distinguishes completed requests from published and withdrawn entries in confirmation receipts', async () => {
+	state.confirmation.status = 'success'
+	state.confirmation.data = {
+		ok: false,
+		succeeded: ['alpha'],
+		failed: [{ input: 'beta', code: 'INSTALL_FAILED', message: 'Withdrawal failed.' }],
+		published: ['alpha'],
+		withdrawn: [],
+	} satisfies PackageInstallConfirmation
+	await render()
+	const receipt = () => container.querySelector('[role="alert"]')!.textContent
+	expect(receipt()).toContain('Completed requests: alpha')
+	expect(receipt()).toContain('Published: alpha')
+	expect(receipt()).toContain('beta: Withdrawal failed.')
+	expect(receipt()).not.toContain('Withdrawn:')
+	state.confirmation.data = {
+		ok: true,
+		succeeded: ['alpha'],
+		failed: [],
+		published: [],
+		withdrawn: ['beta'],
+	} satisfies PackageInstallConfirmation
+	await render()
+	expect(receipt()).toContain('Completed requests: alpha')
+	expect(receipt()).toContain('Withdrawn: beta')
+	expect(receipt()).not.toContain('Published:')
 })
 
 it('preserves explicit withdrawal retries and waits for the authoritative snapshot after a mutation', async () => {
@@ -1105,6 +1239,8 @@ it('reflects the managed snapshot and reviews a checked exact update in the dedi
 		ok: false,
 		succeeded: [],
 		failed: [{ input: 'alpha', code: 'INVALID_PLAN', message: 'Prepare a new review.' }],
+		published: [],
+		withdrawn: [],
 	}
 	await act(() => root.render(createElement(MarketplaceWorkbench)))
 	expect(container.textContent).toContain('Prepare a new review.')

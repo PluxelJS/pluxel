@@ -11,6 +11,8 @@ import {
 } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
+import type { PluginSourceImpact, PluginSourcePublication } from '@pluxel/host/sources'
+import { installHostImpact, PackageSourceConflict } from './install-impact.ts'
 import { parse as parseYaml } from 'yaml'
 import { safeParse } from 'valibot'
 import { isPackageName } from './package-document.ts'
@@ -23,6 +25,7 @@ import {
 	type PackageManagerSnapshot,
 	type PackageMutationFailure,
 	type PackageMutationResult,
+	type PackageInstallConfirmation,
 	type PackageInstallPlan,
 	type PackagePreparationResult,
 	type PackageMarket,
@@ -58,6 +61,7 @@ type StoreOptions = Readonly<{
 	markets?: readonly PackageMarket[]
 	npmMirrors?: readonly string[]
 	sourceUpdates?: 'live' | 'next-start'
+	readHostImpact?: (sources: readonly PluginSourcePublication[]) => PluginSourceImpact
 	/** Revokes publication; native installation still drains before close resolves. */
 	signal?: AbortSignal
 }>
@@ -94,10 +98,12 @@ type PublishedInstallation = Readonly<{
 
 type PreparedInstallation = Readonly<{
 	installation: PublishedInstallation
+	sources: readonly PluginSourcePublication[]
 	directory: string
 	dependenciesWithBuildScripts: readonly string[]
 }>
-type PendingInstallation = PreparedInstallation & Readonly<{ plan: PackageInstallPlan }>
+type PendingInstallation = PreparedInstallation &
+	Readonly<{ plan: PackageInstallPlan; reviewedHost?: string }>
 
 const MAX_PACKAGE_SPEC_LENGTH = 512
 // Exact release responses may each include a checked README.
@@ -108,6 +114,7 @@ export class ManagedPackageStore {
 	readonly entriesDir: string
 	private revision = 0
 	private installation?: PublishedInstallation
+	private physicalEntriesDir!: string
 	private readonly browsing = new AbortController()
 	private writer = false
 	private closed = false
@@ -155,6 +162,7 @@ export class ManagedPackageStore {
 				JSON.stringify({ pid: process.pid }),
 			)
 			await mkdir(this.entriesDir, { recursive: true })
+			this.physicalEntriesDir = await realpath(this.entriesDir)
 			this.installation = await this.readInstallation()
 			if (!this.installation) {
 				try {
@@ -190,11 +198,10 @@ export class ManagedPackageStore {
 	}
 
 	private async readSnapshot(): Promise<PackageManagerSnapshot> {
-		const manifest = await this.readManifest()
+		const selected = this.installation?.packages ?? []
+		const expected = this.publishedEntries(selected)
 		const packages = await Promise.all(
-			Object.entries(manifest.dependencies).map(async ([name, requested]) =>
-				this.readManagedPackage(name, requested),
-			),
+			selected.map((pkg) => this.readManagedPackage(pkg, expected)),
 		)
 		const pendingRemovals: string[] = []
 		for (const file of await readdir(this.entriesDir)) {
@@ -202,7 +209,7 @@ export class ManagedPackageStore {
 			const name = Buffer.from(file.slice(0, -4), 'base64url').toString('utf8')
 			if (!isPackageName(name) || this.entryFile(name) !== file)
 				throw new Error('Managed entries contain an invalid package filename; repair offline')
-			if (!Object.hasOwn(manifest.dependencies, name)) pendingRemovals.push(name)
+			if (!expected.has(file)) pendingRemovals.push(name)
 		}
 		return Object.freeze({
 			revision: this.revision,
@@ -429,7 +436,7 @@ export class ManagedPackageStore {
 	}
 
 	/** Confirms the same private revision; no re-resolution, downloads or build scripts occur here. */
-	confirmInstall(planId: string): Promise<PackageMutationResult> {
+	confirmInstall(planId: string): Promise<PackageInstallConfirmation> {
 		return this.serialize(async () => {
 			const pending = this.pending
 			if (
@@ -439,7 +446,7 @@ export class ManagedPackageStore {
 				pending.plan.expiresAt <= Date.now()
 			) {
 				if (pending?.plan.id === planId) await this.discardPending()
-				return mutationResult(
+				return confirmationResult(
 					[],
 					[
 						failure(
@@ -468,19 +475,40 @@ export class ManagedPackageStore {
 							undefined,
 						)
 				}
-				await this.commitInstallation(pending)
-				return mutationResult(names, [])
+				const reviewedNames = pending.sources.map(({ name }) => name)
+				const needed = this.changedEntries(pending.installation.packages, await this.readSnapshot())
+				for (const name of needed)
+					if (!reviewedNames.includes(name))
+						throw new InvalidInstallPlan(
+							`The published entry for ${name} changed after review; prepare the installation again`,
+						)
+				await this.commitInstallation(pending, {
+					reviewedNames,
+					beforeSave: () => {
+						if (pending.plan.expiresAt <= Date.now())
+							throw new InvalidInstallPlan('Installation preview expired; prepare it again')
+						if (
+							pending.reviewedHost !== undefined &&
+							pending.reviewedHost !== JSON.stringify(this.options.readHostImpact!(pending.sources))
+						)
+							throw new InvalidInstallPlan(
+								'Host state changed after review; prepare the installation again',
+							)
+					},
+				})
+				return confirmationResult(names, [], pending.sources)
 			} catch (error) {
 				if (error instanceof EntryPublicationError) {
 					const unpublished = new Set(error.unpublished)
-					return mutationResult(
+					return confirmationResult(
 						names.filter((name) => !unpublished.has(name)),
 						error.unpublished.length > 0
 							? error.unpublished.map((name) => failure(name, 'INSTALL_FAILED', error))
 							: [failure('', 'INSTALL_FAILED', error)],
+						pending.sources.filter(({ name }) => !unpublished.has(name)),
 					)
 				}
-				return mutationResult(
+				return confirmationResult(
 					[],
 					names.map((name) => failure(name, 'INSTALL_FAILED', error)),
 				)
@@ -500,13 +528,14 @@ export class ManagedPackageStore {
 		for (const request of requests) next.dependencies[request.name] = request.wanted
 		let prepared: PreparedInstallation | undefined
 		try {
+			const previous = await this.readSnapshot()
 			prepared = await this.acquireInstallation(
 				next,
 				requests.map((r) => r.name),
 				marketReleases,
+				previous,
 			)
 			const lock = parseYaml(await readFile(resolve(prepared.directory, 'pnpm-lock.yaml'), 'utf8'))
-			const previous = await this.readSnapshot()
 			const packages: PackageInstallPlan['packages'][number][] = []
 			const pinnedPackages: PublishedPackage[] = []
 			for (const pkg of prepared.installation.packages) {
@@ -534,6 +563,7 @@ export class ManagedPackageStore {
 						`${expected.name}@${expected.version}`,
 					)
 				const old = this.installation?.packages.find((item) => item.name === pkg.name)
+				const lastPublished = previous.packages.find((item) => item.name === pkg.name)
 				// A reused immutable package carries its checked source. Only this checked
 				// request may attribute a new materialization or change that source.
 				pinnedPackages.push(
@@ -553,18 +583,30 @@ export class ManagedPackageStore {
 							...(old?.marketRegistry && { previousMarketRegistry: old.marketRegistry }),
 							...(expected.requiredBy && { requiredBy: expected.requiredBy }),
 						}),
-						previousVersion:
-							previous.packages.find((item) => item.name === pkg.name)?.installedVersion ?? null,
+						previousVersion: lastPublished?.installedVersion ?? null,
 						changed:
 							!old ||
+							lastPublished?.entryFile === null ||
 							old.fingerprint !== pkg.fingerprint ||
 							old.bytes !== pkg.bytes ||
 							(expected !== undefined && old.marketRegistry !== expected.registry),
 					}),
 				)
 			}
+			const reviewedHost =
+				prepared.sources.length > 0 ? this.options.readHostImpact?.(prepared.sources) : undefined
+			const hostImpact = reviewedHost
+				? installHostImpact(prepared.sources, reviewedHost)
+				: this.options.readHostImpact
+					? Object.freeze([])
+					: null
 			const plan: PackageInstallPlan = Object.freeze({
 				id: crypto.randomUUID(),
+				hostImpact,
+				dependencyReview: reviewedHost?.dependencyReview ?? null,
+				pendingRemovals: Object.freeze(
+					prepared.sources.filter(({ action }) => action === 'withdraw').map(({ name }) => name),
+				),
 				baseRevision: this.revision,
 				expiresAt: Date.now() + 600_000,
 				requested: Object.freeze(requests.map(({ name }) => name)),
@@ -577,14 +619,16 @@ export class ManagedPackageStore {
 				...prepared.installation,
 				packages: Object.freeze(pinnedPackages),
 			})
-			this.pending = { ...prepared, installation, plan }
+			// Local Plugin callers receive the preview by reference. Keep its comparison evidence private.
+			this.pending = { ...prepared, installation, plan, reviewedHost: JSON.stringify(reviewedHost) }
 			return { ok: true, plan }
 		} catch (error) {
 			if (prepared) await rm(prepared.directory, { recursive: true, force: true })
 			return {
 				ok: false,
 				failed:
-					error instanceof PublicMutationError && error.input
+					(error instanceof PublicMutationError || error instanceof PackageSourceConflict) &&
+					error.input
 						? [failure(error.input, 'INSTALL_FAILED', error)]
 						: requests.map((request) => failure(request.input, 'INSTALL_FAILED', error)),
 			}
@@ -765,9 +809,17 @@ export class ManagedPackageStore {
 		requested: readonly string[] = [],
 	): Promise<void> {
 		await this.discardPending()
-		const prepared = await this.acquireInstallation(next, requested)
+		const previous = requested.length > 0 ? await this.readSnapshot() : undefined
+		const prepared = await this.acquireInstallation(next, requested, undefined, previous)
 		try {
-			await this.commitInstallation(prepared, withdrawn)
+			await this.commitInstallation(prepared, {
+				withdrawn,
+				reviewedNames: previous && prepared.sources.map(({ name }) => name),
+				beforeSave: () => {
+					if (prepared.sources.length > 0 && this.options.readHostImpact)
+						installHostImpact(prepared.sources, this.options.readHostImpact(prepared.sources))
+				},
+			})
 		} finally {
 			if (this.installation !== prepared.installation)
 				await rm(prepared.directory, { recursive: true, force: true })
@@ -778,6 +830,7 @@ export class ManagedPackageStore {
 		next: ManagedManifest,
 		requested: readonly string[],
 		marketReleases?: ReadonlyMap<string, CheckedMarketRelease>,
+		previous?: PackageManagerSnapshot,
 	): Promise<PreparedInstallation> {
 		if (!this.writer) throw new Error('Package store must be initialized before mutation')
 		const directory = resolve(this.rootDir, 'revisions', crypto.randomUUID())
@@ -816,18 +869,36 @@ export class ManagedPackageStore {
 				)
 			}
 			this.assertOpen()
-			for (const name of requested) {
+			const packages = await this.prepareInstallation(next, directory)
+			const changed = previous && this.changedEntries(packages, previous)
+			const sources: PluginSourcePublication[] = []
+			for (const pkg of packages) {
+				const publish = changed?.delete(pkg.name)
+				if (!publish && !requested.includes(pkg.name)) continue
 				try {
-					await checkInstalledPlugin(await realpath(resolve(directory, 'node_modules', name)), name)
+					const definitions = await checkInstalledPlugin(pkg.packageRoot, pkg.name)
+					if (publish)
+						sources.push({
+							action: 'publish',
+							name: pkg.name,
+							file: resolve(this.physicalEntriesDir, this.entryFile(pkg.name)),
+							definitions,
+						})
 				} catch (error) {
 					throw new PublicMutationError(
-						name + ': ' + (error instanceof Error ? error.message : String(error)),
+						pkg.name + ': ' + (error instanceof Error ? error.message : String(error)),
 						error,
-						name,
+						pkg.name,
 					)
 				}
 			}
-			const packages = await this.prepareInstallation(next, directory)
+			for (const name of changed ?? []) {
+				sources.push({
+					action: 'withdraw',
+					name,
+					file: resolve(this.physicalEntriesDir, this.entryFile(name)),
+				})
+			}
 			const installation: PublishedInstallation = Object.freeze({
 				version: 1,
 				directory: relative(this.rootDir, directory),
@@ -835,6 +906,7 @@ export class ManagedPackageStore {
 			})
 			return Object.freeze({
 				installation,
+				sources,
 				directory,
 				dependenciesWithBuildScripts: Object.freeze([...(result.depsRequiringBuild ?? [])].sort()),
 			})
@@ -844,32 +916,66 @@ export class ManagedPackageStore {
 		}
 	}
 
+	/** Wrapper targets are immutable. The snapshot also accounts for partially published prior operations. */
+	private changedEntries(
+		packages: readonly PublishedPackage[],
+		previous: PackageManagerSnapshot,
+	): Set<string> {
+		const changed = new Set(previous.pendingRemovals)
+		const oldTargets = new Map(
+			this.installation?.packages.map(({ name, target }) => [name, target]),
+		)
+		const published = new Set(
+			previous.packages.filter(({ entryFile }) => entryFile !== null).map(({ name }) => name),
+		)
+		for (const pkg of packages)
+			if (oldTargets.get(pkg.name) !== pkg.target || !published.has(pkg.name)) changed.add(pkg.name)
+		return changed
+	}
+
 	private async commitInstallation(
 		prepared: PreparedInstallation,
-		withdrawn: readonly string[] = [],
+		options: {
+			withdrawn?: readonly string[]
+			reviewedNames?: readonly string[]
+			beforeSave: () => void
+		},
 	): Promise<void> {
 		const previous = this.installation?.packages ?? []
 		// Persist the complete selection before individually atomic source wrappers.
 		await atomicWrite(
 			resolve(this.rootDir, 'published-installation.json'),
 			JSON.stringify(prepared.installation) + '\n',
-			() => this.assertOpen(),
+			() => {
+				this.assertOpen()
+				options.beforeSave()
+			},
 		)
 		this.installation = prepared.installation
 		this.dependenciesWithBuildScripts = prepared.dependenciesWithBuildScripts
 		this.revision += 1
-		await this.publishInstallationEntries([...withdrawn, ...previous.map((pkg) => pkg.name)])
+		await this.publishInstallationEntries(
+			[...(options.withdrawn ?? []), ...previous.map((pkg) => pkg.name)],
+			options.reviewedNames,
+		)
 	}
 
-	private async publishInstallationEntries(previousNames: readonly string[]): Promise<void> {
+	private async publishInstallationEntries(
+		previousNames: readonly string[],
+		reviewedNames?: readonly string[],
+	): Promise<void> {
 		if (!this.writer) throw new Error('Package store must be initialized before mutation')
 		const packages = this.installation?.packages ?? []
 		try {
-			await this.publishEntries(this.publishedEntries(packages))
+			await this.publishEntries(
+				this.publishedEntries(packages),
+				reviewedNames && new Set(reviewedNames.map((name) => this.entryFile(name))),
+			)
 		} catch (cause) {
 			const unpublished: string[] = []
 			const expected = this.publishedEntries(packages)
-			for (const name of new Set([...previousNames, ...packages.map((pkg) => pkg.name)])) {
+			for (const name of reviewedNames ??
+				new Set([...previousNames, ...packages.map((pkg) => pkg.name)])) {
 				try {
 					const file = this.entryFile(name)
 					const actual = await readFile(resolve(this.entriesDir, file), 'utf8')
@@ -1066,37 +1172,40 @@ export class ManagedPackageStore {
 		)
 	}
 
-	private async readManagedPackage(name: string, requested: string): Promise<ManagedPackage> {
-		const pkg = this.installation?.packages.find((item) => item.name === name)
+	private async readManagedPackage(
+		pkg: PublishedPackage,
+		expected: ReadonlyMap<string, string>,
+	): Promise<ManagedPackage> {
+		const { name, requested } = pkg
 		let installedVersion: string | null = null
 		let entryFile: string | null = null
 		try {
 			const manifest = JSON.parse(
-				await readFile(
-					resolve(pkg?.packageRoot ?? resolve(this.rootDir, '__unpublished__'), 'package.json'),
-					'utf8',
-				),
+				await readFile(resolve(pkg.packageRoot, 'package.json'), 'utf8'),
 			) as { version?: unknown }
 			if (typeof manifest.version === 'string') installedVersion = manifest.version
 		} catch {}
 		const expectedEntry = this.entryFile(name)
 		try {
 			const published = await readFile(resolve(this.entriesDir, expectedEntry), 'utf8')
-			if (published === this.publishedEntries(this.installation?.packages ?? []).get(expectedEntry))
-				entryFile = expectedEntry
+			if (published === expected.get(expectedEntry)) entryFile = expectedEntry
 		} catch {}
 		return Object.freeze({
 			name,
 			requested,
 			installedVersion,
 			entryFile,
-			...(pkg?.marketRegistry && { marketRegistry: pkg.marketRegistry }),
+			...(pkg.marketRegistry && { marketRegistry: pkg.marketRegistry }),
 		})
 	}
 
-	private async publishEntries(expected: ReadonlyMap<string, string>): Promise<void> {
+	private async publishEntries(
+		expected: ReadonlyMap<string, string>,
+		reviewedFiles?: ReadonlySet<string>,
+	): Promise<void> {
 		await mkdir(this.entriesDir, { recursive: true })
 		for (const [file, content] of expected) {
+			if (reviewedFiles && !reviewedFiles.has(file)) continue
 			this.assertOpen()
 			const path = resolve(this.entriesDir, file)
 			try {
@@ -1106,7 +1215,7 @@ export class ManagedPackageStore {
 			}
 			await atomicWrite(path, content, () => this.assertOpen())
 		}
-		for (const file of await readdir(this.entriesDir)) {
+		for (const file of reviewedFiles ?? (await readdir(this.entriesDir))) {
 			if (!file.endsWith('.mjs') || expected.has(file)) continue
 			this.assertOpen()
 			await rm(resolve(this.entriesDir, file), { force: true })
@@ -1252,7 +1361,14 @@ function failure(
 ): PackageMutationFailure {
 	return Object.freeze({
 		input,
-		code,
+		code:
+			error instanceof InvalidInstallPlan
+				? 'INVALID_PLAN'
+				: error instanceof PackageSourceConflict
+					? 'SOURCE_CONFLICT'
+					: readErrorCode(error) === 'HOST_GRAPH_BUSY'
+						? 'HOST_GRAPH_BUSY'
+						: code,
 		message:
 			error instanceof PublicMutationError
 				? error.message
@@ -1281,6 +1397,24 @@ function mutationResult(
 	})
 }
 
+function confirmationResult(
+	succeeded: readonly string[],
+	failed: readonly PackageMutationFailure[],
+	completedEntries: readonly PluginSourcePublication[] = [],
+): PackageInstallConfirmation {
+	const published: string[] = []
+	const withdrawn: string[] = []
+	for (const { action, name } of completedEntries) {
+		if (action === 'publish') published.push(name)
+		else withdrawn.push(name)
+	}
+	return Object.freeze({
+		...mutationResult(succeeded, failed),
+		published: Object.freeze(published),
+		withdrawn: Object.freeze(withdrawn),
+	})
+}
+
 function mutationBatchTooLarge(overflowInput: string): PackageMutationResult {
 	return mutationResult(
 		[],
@@ -1293,6 +1427,8 @@ function mutationBatchTooLarge(overflowInput: string): PackageMutationResult {
 		],
 	)
 }
+
+class InvalidInstallPlan extends Error {}
 
 class PublicMutationError extends Error {
 	constructor(

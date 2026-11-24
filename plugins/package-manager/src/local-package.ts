@@ -18,7 +18,7 @@ function missing(error: unknown) {
 	return record(error) && (error.code === 'ENOENT' || error.code === 'ENOTDIR')
 }
 
-export async function textFile(path: string, limit: number) {
+async function textFile(path: string, limit: number) {
 	const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
 	try {
 		const stat = await file.stat()

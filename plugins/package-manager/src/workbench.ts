@@ -36,6 +36,8 @@ export type {
 	PackageManagerSnapshot,
 	PackageMarket,
 	PackageInstallPlan,
+	PackageInstallConfirmation,
+	PackageHostImpact,
 	PackagePreparationResult,
 	MarketCatalogFilters,
 	MarketCatalogFacets,

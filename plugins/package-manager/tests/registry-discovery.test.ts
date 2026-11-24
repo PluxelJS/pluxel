@@ -5,6 +5,9 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import { expect, it } from 'vitest'
+import type { PluginDefinitionAddress } from '@pluxel/core'
+import { controlSha256, encodeControlData } from '@pluxel/core/internal/control-manifest'
+import { packageControlFiles } from './fixtures/package-control.ts'
 import {
 	checkInstalledPlugin,
 	configuredRegistry,
@@ -81,41 +84,67 @@ it('searches a configured scope on the server and returns only public candidate 
 	}
 })
 
-it('verifies a declared root plugin from published files without executing the root module', async () => {
+it('reads every declared managed root definition from the installed bytes without evaluating modules', async () => {
 	const root = await mkdtemp(join(tmpdir(), 'pluxel-discovery-'))
 	try {
+		const manifest = {
+			name: 'orders',
+			peerDependencies: { '@pluxel/core': '*' },
+			exports: { '.': './entry.mjs', './tools': './tools.mjs' },
+		}
+		await writeFile(join(root, 'package.json'), JSON.stringify(manifest))
+		await writeFile(join(root, 'entry.mjs'), "throw new Error('Plugin must not run during checks')")
+		await expect(checkInstalledPlugin(root, 'orders')).resolves.toBeUndefined()
 		await writeFile(
 			join(root, 'package.json'),
-			JSON.stringify({
-				name: 'orders',
-				peerDependencies: { '@pluxel/core': '*' },
-				exports: { '.': './entry.mjs' },
-				pluxel: { control: './control.json' },
-			}),
+			JSON.stringify({ ...manifest, pluxel: { control: './manifest.json' } }),
 		)
-		await writeFile(join(root, 'entry.mjs'), "throw new Error('Plugin must not run during checks')")
-		async function writeControl(kind: 'package-root' | 'package-subpath') {
-			await writeFile(
-				join(root, 'control.json'),
-				JSON.stringify({
-					definitions: [
-						{
-							definition: {
-								entry: {
-									kind,
-									packageName: 'orders',
-									...(kind === 'package-subpath' && { subpath: './tools' }),
-								},
-								exportName: 'OrdersPlugin',
-							},
-						},
-					],
-				}),
-			)
+		const entry = { kind: 'package-root', packageName: 'orders' } as const
+		const roots = [
+			{ entry, exportName: 'Orders' },
+			{ entry, exportName: 'Tracking' },
+		]
+		const tools: PluginDefinitionAddress = {
+			entry: { kind: 'package-subpath', packageName: 'orders', subpath: './tools' },
+			exportName: 'Tools',
 		}
-		await writeControl('package-root')
-		await expect(checkInstalledPlugin(root, 'orders')).resolves.toBeUndefined()
-		await writeControl('package-subpath')
+		const files = await packageControlFiles([...roots, tools])
+		for (const [name, content] of Object.entries(files)) await writeFile(join(root, name), content)
+		await expect(checkInstalledPlugin(root, 'orders')).resolves.toEqual(
+			roots.map((address) => ({ address })),
+		)
+		const facts = { requires: [tools], optional: [], forkable: true } as const
+		const withDependencies = await packageControlFiles([...roots, tools], { Orders: facts })
+		for (const [name, content] of Object.entries(withDependencies))
+			await writeFile(join(root, name), content)
+		await expect(checkInstalledPlugin(root, 'orders')).resolves.toEqual([
+			{ address: roots[0], dependencies: facts },
+			{ address: roots[1] },
+		])
+		await writeFile(join(root, 'dependencies.json'), '{}')
+		await expect(checkInstalledPlugin(root, 'orders')).rejects.toThrow(
+			'differ from the control manifest',
+		)
+
+		// Even a publisher-supplied digest of the actual bytes cannot make malformed UTF-8 a declaration.
+		const corrupt = Buffer.from(withDependencies['dependencies.json']!)
+		corrupt[corrupt.indexOf('Tools')] = 0xff
+		const { snapshot: _snapshot, ...unsigned } = JSON.parse(withDependencies['manifest.json']!)
+		const depFile = unsigned.files.find(
+			(item: { path: string }) => item.path === 'dependencies.json',
+		)
+		depFile.sha256 = await controlSha256(corrupt)
+		const snapshot = 'sha256:' + (await controlSha256(encodeControlData(unsigned)))
+		await writeFile(join(root, 'manifest.json'), encodeControlData({ ...unsigned, snapshot }))
+		await writeFile(join(root, 'dependencies.json'), corrupt)
+		await expect(checkInstalledPlugin(root, 'orders')).rejects.toThrow(/utf-8/i)
+
+		const altered = JSON.parse(files['manifest.json']!)
+		altered.definitions.shift()
+		await writeFile(join(root, 'manifest.json'), JSON.stringify(altered))
+		await expect(checkInstalledPlugin(root, 'orders')).rejects.toThrow('snapshot mismatch')
+		const toolsOnly = await packageControlFiles([tools])
+		await writeFile(join(root, 'manifest.json'), toolsOnly['manifest.json']!)
 		await expect(checkInstalledPlugin(root, 'orders')).rejects.toThrow(
 			'no plugin at this package root',
 		)

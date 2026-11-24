@@ -29,14 +29,16 @@ it('admits one native snapshot and leaves later publications for a fresh process
 	await using workspace = await createWorkspace('production-source')
 	const { root } = workspace
 	await writeFile(join(root, 'initial.mjs'), builtModule('initial'))
+	await writeFile(join(root, 'reexport.mjs'), "export {Dynamic} from './initial.mjs'")
 	await writeFile(
 		join(root, 'app.mjs'),
-		`export default () => ({name:'production-source',sources:[{directory:'.',include:['initial.mjs','added.mjs','after-close.mjs']}],pluginNodes:${JSON.stringify(['initial', 'added'].map((name) => ({ definition: address(name).definition, autoStart: true })))},acceptStartup:({status})=>status.statuses.some(node=>node.address.definition.entry.packageName==='@fixture/initial'&&node.lifecycleState==='running')})`,
+		`export default () => ({name:'production-source',sources:[{directory:'.',include:['initial.mjs','reexport.mjs','added.mjs','after-close.mjs']}],pluginNodes:${JSON.stringify(['initial', 'added'].map((name) => ({ definition: address(name).definition, autoStart: true })))},acceptStartup:({status})=>status.statuses.some(node=>node.address.definition.entry.packageName==='@fixture/initial'&&node.lifecycleState==='running')})`,
 	)
 	const result = await runNodeModule(`
 import assert from 'node:assert/strict';
 import {writeFile,rm} from 'node:fs/promises';
 const {runHostApplication}=await import(${JSON.stringify(new URL('dist/index.mjs', hostPackage).href)});
+const {readPluginSourceImpact}=await import(${JSON.stringify(new URL('dist/sources.mjs', hostPackage).href)});
 const {requirePluginService}=await import('@pluxel/core/internal');
 const root=${JSON.stringify(root)};
 const runtime=await runHostApplication('app.mjs',{startup:{root,mode:'production',env:{},bindings:{}}});
@@ -44,6 +46,8 @@ const initial=${JSON.stringify(address('initial'))},added=${JSON.stringify(addre
 const service=requirePluginService(runtime.ctx);
 try{
  assert.equal(service.isRunning(initial),true);
+ const impact=readPluginSourceImpact(runtime.ctx,[{name:'@fixture/initial',file:root+'/initial.mjs'},{name:'@fixture/reexport',file:root+'/reexport.mjs'}]);
+ assert.deepEqual(impact.definitions.map(({address,packageName,origin,nodes})=>[packageName,address,origin,nodes]),['@fixture/initial','@fixture/reexport'].map(name=>[name,initial.definition,'shared',[{address:initial,running:true,requiredConsumers:[],optionalConsumers:[]}]]));
  await writeFile(root+'/added.mjs',${JSON.stringify(builtModule('added'))});
  assert.equal(service.isRunning(added),false);
  assert.equal(runtime.catalog().entries.length,1);

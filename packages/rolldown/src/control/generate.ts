@@ -34,6 +34,7 @@ import type { ConfigDeclarationFact } from '../rolldown/plugins/configSourcePlug
 import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils.ts'
 import type {
 	ControlCatalogEntry,
+	PluginControlDependencies,
 	PluginControlManifest,
 } from '@pluxel/core/internal/control-manifest'
 import { publicInstanceMembers, readDocumentation } from './public-members'
@@ -55,6 +56,7 @@ export type PluginControlSource = Readonly<{
 	moduleId: string
 	className: string
 	definition: PluginDefinitionAddress
+	dependencies?: PluginControlDependencies
 }>
 export type ServiceControlSource = PluginControlSource &
 	Readonly<{ access: 'all' | 'root' | 'owner' }>
@@ -123,10 +125,11 @@ export async function generateControl(options: {
 	} = options.contracts
 	const root = realpathSync(resolve(options.root))
 	const definitions = [
-		...options.definitions.map(({ moduleId, className, definition }) => ({
+		...options.definitions.map(({ moduleId, className, definition, dependencies }) => ({
 			moduleId,
 			className,
 			definition,
+			dependencies,
 			kind: 'plugin' as const,
 		})),
 		...(options.services ?? []).map(({ moduleId, className, definition, access }) => ({
@@ -718,6 +721,14 @@ export async function generateControl(options: {
 			materials['index.d.mts'] = declarations.join('\n')
 			if (configurationSources.length > 0) materials['config.d.mts'] = configurationSources.join('')
 			materials['catalog.json'] = renderControlCatalog(catalog)
+			const dependencyDeclarations = definitions.flatMap((item) =>
+				item.kind === 'plugin' && item.dependencies
+					? [{ definition: item.definition, ...item.dependencies }]
+					: [],
+			)
+			if (dependencyDeclarations.length > 0)
+				materials['dependencies.json'] =
+					encodeControlData({ format: 1, definitions: dependencyDeclarations }) + '\n'
 			materials['index.mjs'] = renderPluginDescriptors(
 				manifestDefinitions.map((entry) => ({
 					exportName: entry.exportName,

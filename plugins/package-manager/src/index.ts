@@ -8,12 +8,13 @@ import { BasePlugin, Plugin, defineServiceRef } from '@pluxel/core'
 import * as f from 'valibot-form'
 import * as v from 'valibot'
 import { RpcTarget } from 'capnweb'
-import { requirePluginSource } from '@pluxel/host/sources'
+import { readPluginSourceImpact, requirePluginSource } from '@pluxel/host/sources'
 import {
 	packageMutationLimit,
 	type PackageManagerApi,
 	type LocalPackageLocation,
 	type PackageManagerSnapshot,
+	type PackageInstallConfirmation,
 	type PackageMutationResult,
 	type PackagePreparationResult,
 	type MarketInstallRequest,
@@ -130,6 +131,7 @@ export class PackageManagerPlugin extends BasePlugin {
 			markets: this.config.markets,
 			npmMirrors: this.config.npmMirrors,
 			sourceUpdates: source.updates,
+			readHostImpact: (packages) => readPluginSourceImpact(this.ctx, packages),
 			signal,
 		})
 		this.ctx.effects.defer(() => store.close())
@@ -143,7 +145,7 @@ export class PackageManagerPlugin extends BasePlugin {
 			defineCommand({
 				name: 'package.prepare',
 				description:
-					'Download and prepare plugin packages for review without publishing source entries.',
+					'Review exact plugin packages, affected Host nodes and their direct consumers before publishing.',
 				input: mutationInput,
 				execute: async ({ specs }) => Result.ok(await store.prepareInstall(specs)),
 			}),
@@ -151,10 +153,9 @@ export class PackageManagerPlugin extends BasePlugin {
 		this.ctx.service(Commands).register(
 			defineCommand({
 				name: 'package.confirm',
-				description: 'Publish a prepared installation; does not activate Plugin instances.',
+				description: 'Recheck the reviewed Host state and publish the prepared source entries.',
 				input: obj({ planId: Type.String({ minLength: 1, maxLength: 64 }) }),
-				execute: async ({ planId }) =>
-					Result.ok(toCommandMutation(await store.confirmInstall(planId))),
+				execute: async ({ planId }) => Result.ok(await store.confirmInstall(planId)),
 			}),
 		)
 		this.ctx.service(Commands).register(
@@ -192,7 +193,7 @@ export class PackageManagerPlugin extends BasePlugin {
 		return this.requireStore().prepareInstall(specs)
 	}
 
-	confirmInstall(planId: string): Promise<PackageMutationResult> {
+	confirmInstall(planId: string): Promise<PackageInstallConfirmation> {
 		return this.requireStore().confirmInstall(planId)
 	}
 
@@ -337,10 +338,12 @@ export type {
 	ManagedPackage,
 	PackageManagerApi,
 	PackageManagerSnapshot,
+	PackageInstallConfirmation,
 	PackageMutationFailure,
 	PackageMutationResult,
 	PackageMarket,
 	PackageInstallPlan,
+	PackageHostImpact,
 	PackagePreparationResult,
 	MarketInstallRequest,
 	MarketCatalogFilters,

@@ -1,4 +1,9 @@
 import type { PackageDocument } from './package-document.ts'
+import type {
+	PluginSourceDefinition,
+	PluginSourceImpact,
+	PluginSourceDependencyReview,
+} from '@pluxel/host/sources'
 import type { RpcTarget } from 'capnweb'
 import type {
 	PackageMarket,
@@ -48,7 +53,14 @@ export type ManagedPackage = Readonly<{
 
 export type PackageMutationFailure = Readonly<{
 	input: string
-	code: 'INVALID_SPEC' | 'INSTALL_FAILED' | 'REMOVE_FAILED' | 'INVALID_PLAN' | 'MARKET_FAILED'
+	code:
+		| 'INVALID_SPEC'
+		| 'INSTALL_FAILED'
+		| 'REMOVE_FAILED'
+		| 'INVALID_PLAN'
+		| 'MARKET_FAILED'
+		| 'SOURCE_CONFLICT'
+		| 'HOST_GRAPH_BUSY'
 	message: string
 }>
 
@@ -63,6 +75,13 @@ export type PackageMutationResult =
 			succeeded: readonly string[]
 			failed: readonly [PackageMutationFailure, ...PackageMutationFailure[]]
 	  }>
+
+/** `succeeded` lists successful requests. Entry lists include every reviewed source that reached its target state. */
+export type PackageInstallConfirmation = PackageMutationResult &
+	Readonly<{
+		published: readonly string[]
+		withdrawn: readonly string[]
+	}>
 
 /** Detached installation/publication state after preceding admitted operations settle. */
 export type PackageManagerSnapshot = Readonly<{
@@ -81,9 +100,26 @@ export type PackageManagerSnapshot = Readonly<{
 	allowBuilds: readonly string[]
 }>
 
+/** Predicted changes to package-root definitions, with current direct consumers from the Host. */
+export type PackageHostImpact = Readonly<{
+	name: string
+	definitionsKnown: boolean
+	definitions: readonly (PluginSourceDefinition &
+		Readonly<{
+			change: 'add' | 'replace' | 'remove' | 'unverified'
+			nodes: PluginSourceImpact['definitions'][number]['nodes']
+		}>)[]
+}>
+
 /** A detached preview of one materialized installation. Preparing again replaces the previous plan. */
 export type PackageInstallPlan = Readonly<{
 	id: string
+	/** Changed source entries only. Null when the store runs independently of a Host. */
+	hostImpact: readonly PackageHostImpact[] | null
+	/** Predicted policy changes for the full batch under current intents. */
+	dependencyReview: PluginSourceDependencyReview | null
+	/** Previously removed packages whose remaining wrappers will be withdrawn during confirmation. */
+	pendingRemovals: readonly string[]
 	baseRevision: number
 	expiresAt: number
 	requested: readonly string[]
@@ -133,7 +169,7 @@ export interface PackageManagerApi extends RpcTarget {
 	snapshotDto(): Promise<PackageManagerSnapshot>
 	installDto(specs: readonly string[]): Promise<PackageMutationResult>
 	prepareInstallDto(specs: readonly string[]): Promise<PackagePreparationResult>
-	confirmInstallDto(planId: string): Promise<PackageMutationResult>
+	confirmInstallDto(planId: string): Promise<PackageInstallConfirmation>
 	marketPackagesDto(
 		marketId: string,
 		query?: MarketPackageQuery,

@@ -1,6 +1,6 @@
 # 插件包发布格式
 
-状态：新的独立 Plugin manifest 尚未实现。上级：[提案总览](README.md)。现有依赖 metadata、打包与发布流程由[插件包构建](../../../docs/development/plugin-package.md)和 [Releasing](../../RELEASING.md)维护；本页设计后续静态格式。市场底座已经实现，不再作为这项格式设计的前置待办。
+状态：新的独立 Plugin manifest 尚未实现。当前标准编译器已在 `pluxel.control` 的文件清单中发布逐定义依赖声明，字段与安装预检的消费方式见[安装设计](../../../plugins/package-manager/DESIGN.md#准备与确认)。上级：[提案总览](README.md)。现有依赖 metadata、打包与发布流程由[插件包构建](../../../docs/development/plugin-package.md)和 [Releasing](../../RELEASING.md)维护；本页设计后续静态格式。市场底座已经实现，不再作为这项格式设计的前置待办。
 
 ## 发布单位与命名
 

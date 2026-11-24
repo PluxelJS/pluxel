@@ -115,8 +115,8 @@ function snapshotPluginControl(control: PluginControlMetadata): PluginControlMet
 }
 
 export type PluginCatalogProvenance = Readonly<{
-	/** Route-owned module identity. It never enters Core identity or graph state. */
-	moduleId?: string
+	/** Physical discovery entries exporting this implementation, including re-exports of a shared or fixed constructor. */
+	sourceFiles?: readonly string[]
 	/** Immutable execution fact projected to management clients without physical module identity. */
 	execution?: PluginExecutionSnapshot
 	/** Route-owned artifact/build input. Core must never receive this value. */
@@ -136,6 +136,8 @@ export type PluginCatalogSnapshot = Readonly<{
 	revision: number
 	entries: readonly PluginCatalogEntry[]
 	byDefinition: ReadonlyMap<string, PluginCatalogEntry>
+	/** Canonical catalog order, reused across policy changes and publication reviews. */
+	declarations: ReadonlyMap<string, ConcretePluginDefinitionCandidate['declaration']>
 }>
 
 export type PluginDefinitionRole = 'concrete' | 'abstract'
@@ -193,6 +195,9 @@ export function createPluginCatalogSnapshot(
 			candidate: input.candidate,
 			provenance: Object.freeze({
 				...provenance,
+				...(provenance?.sourceFiles
+					? { sourceFiles: Object.freeze([...provenance.sourceFiles]) }
+					: {}),
 				...(provenance?.control === undefined
 					? {}
 					: { control: snapshotPluginControl(provenance.control) }),
@@ -225,6 +230,9 @@ export function createPluginCatalogSnapshot(
 		revision,
 		entries: Object.freeze(entries),
 		byDefinition,
+		declarations: new Map(
+			entries.map(({ indexKey, candidate }) => [indexKey, candidate.declaration]),
+		),
 	})
 }
 
@@ -248,19 +256,20 @@ export function pluginCatalogEntry(
  */
 export function extendPluginDefinitionRoleHistory(
 	committed: PluginDefinitionRoleHistory,
-	catalog: PluginCatalogSnapshot,
+	declarations: Iterable<
+		Pick<ConcretePluginDefinitionCandidate['declaration'], 'address' | 'provides' | 'optional'>
+	>,
 ): PluginDefinitionRoleHistory {
 	const next = new Map(committed)
-	for (const entry of catalog.entries) {
-		assertRole(next, entry.address, 'concrete')
-		const provides = entry.candidate.declaration.provides
-		if (provides) assertRole(next, provides, 'abstract')
+	const optionals: PluginDefinitionAddress[] = []
+	for (const declaration of declarations) {
+		assertRole(next, declaration.address, 'concrete')
+		if (declaration.provides) assertRole(next, declaration.provides, 'abstract')
+		for (const optional of declaration.optional) optionals.push(optional)
 	}
-	for (const entry of catalog.entries) {
-		for (const optional of entry.candidate.declaration.optional) {
-			if (next.get(pluginDefinitionIndexKey(optional))?.role !== 'abstract') continue
+	for (const optional of optionals) {
+		if (next.get(pluginDefinitionIndexKey(optional))?.role === 'abstract')
 			throw optionalAbstractForbidden(optional)
-		}
 	}
 	return next
 }

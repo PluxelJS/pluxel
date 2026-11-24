@@ -65,6 +65,7 @@ describe('PluginHostCoordinator committed reads', () => {
 			statePatch: hostStatePatch({ type: 'set-auto-start', node: provider, autoStart: true }),
 			mode: 'cold-boot',
 		})
+		expect(coordinator.readCommittedIfIdle(() => 'available')).toBeUndefined()
 		await persistenceEntered.promise
 
 		const callback = vi.fn((view) => ({
@@ -80,6 +81,7 @@ describe('PluginHostCoordinator committed reads', () => {
 		releasePersistence.resolve()
 		await graphPublished.promise
 		expect(callback).not.toHaveBeenCalled()
+		expect(coordinator.readCommittedIfIdle(() => 'available')).toBeUndefined()
 
 		releaseLifecycle.resolve()
 		await expect(update).resolves.toMatchObject({
@@ -94,6 +96,7 @@ describe('PluginHostCoordinator committed reads', () => {
 			running: [pluginNodeIndexKey(provider)],
 		})
 		expect(callback).toHaveBeenCalledTimes(1)
+		expect(coordinator.readCommittedIfIdle(() => 'available')).toBe('available')
 
 		await expect(
 			coordinator.readCommitted(async () => Promise.resolve('not synchronous')),

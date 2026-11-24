@@ -21,6 +21,7 @@ import { promisify } from 'node:util'
 import { expect, it, onTestFinished } from 'vitest'
 import { ManagedPackageStore } from '../src/store.ts'
 import { loadPnpmEngine } from '../src/pnpm-engine.ts'
+import { packageControlFiles } from './fixtures/package-control.ts'
 
 it('pnpm shares immutable dependency slots across private installations', async () => {
 	// This is a production consumer: the package's own build is a prerequisite, just like
@@ -164,6 +165,20 @@ it('pnpm shares immutable dependency slots across private installations', async 
 		for (const pkg of packages) {
 			const directory = resolve(root, `${pkg.name}-${pkg.version}`)
 			await mkdir(resolve(directory, 'package'), { recursive: true })
+			if (pkg.name === 'fixture-a') {
+				const address = (packageName: string, exportName: string) => ({
+					entry: { kind: 'package-root' as const, packageName },
+					exportName,
+				})
+				const previous = pkg.version === '1.0.0' ? [address(pkg.name, 'PreviousProvider')] : []
+				const files = await packageControlFiles([address(pkg.name, 'A'), ...previous], {
+					A: { requires: [address('fixture-p', 'P'), ...previous], optional: [], forkable: false },
+					PreviousProvider: { requires: [], optional: [], forkable: true },
+				})
+				await mkdir(resolve(directory, 'package/control'))
+				for (const [file, bytes] of Object.entries(files))
+					await writeFile(resolve(directory, 'package/control', file), bytes)
+			}
 			await writeFile(
 				resolve(directory, 'package/package.json'),
 				JSON.stringify({
@@ -171,7 +186,11 @@ it('pnpm shares immutable dependency slots across private installations', async 
 					peerDependencies: { '@pluxel/core': '*' },
 					type: 'module',
 					exports: './index.mjs',
-					pluxel: { artifactRoot: '.', nodeArtifacts: true },
+					pluxel: {
+						artifactRoot: '.',
+						nodeArtifacts: true,
+						...(pkg.name === 'fixture-a' && { control: './control/manifest.json' }),
+					},
 				}),
 			)
 			await writeFile(
@@ -438,7 +457,7 @@ export const resource = () => import('node:fs/promises').then(fs => fs.readFile(
 			const oldInnerB = await inner('fixture-b')
 			const beforeB = await stat(entry('fixture-b'))
 			const bytesB = await readFile(entry('fixture-b'), 'utf8')
-			expect(await publish('install', ['fixture-a@2.0.0'])).toMatchObject({ ok: true })
+			await stage('review-a2')
 			expect(await readFile(entry('fixture-b'), 'utf8')).toBe(bytesB)
 			expect(await stat(entry('fixture-b'))).toMatchObject({
 				ino: beforeB.ino,
@@ -513,12 +532,26 @@ function compiledPlugin(name: string, version: string, dependsOnP: boolean): str
 	const exportName = name === 'fixture-p' ? 'P' : name === 'fixture-a' ? 'A' : 'B'
 	const definition = { entry: { kind: 'package-root', packageName: name }, exportName }
 	const provider = { entry: { kind: 'package-root', packageName: 'fixture-p' }, exportName: 'P' }
+	const previousProvider =
+		name === 'fixture-a' && version === '1.0.0'
+			? { entry: definition.entry, exportName: 'PreviousProvider' }
+			: undefined
+	const required = [
+		...(dependsOnP ? [provider] : []),
+		...(previousProvider ? [previousProvider] : []),
+	]
+	const constructor = previousProvider
+		? 'constructor(provider, previousProvider){super();this.provider=provider;this.previousProvider=previousProvider}'
+		: dependsOnP
+			? 'constructor(provider){super();this.provider=provider}'
+			: ''
 	return `import {BasePlugin,Plugin} from '@pluxel/core'; import {__setPluginDefinition} from '@pluxel/core/toolchain';
  ${name === 'fixture-p' ? '' : `${dependsOnP ? "import {P} from 'fixture-p'; export {P};" : ''} ${name === 'fixture-a' ? "import {value as plain} from 'fixture-plain';" : "const plain = 'unrelated-b';"} import {ElysiaApp} from '@pluxel/services/elysia'; import {websocket} from 'elysia/websocket'; import {Workers,defineWorkerTask} from '@pluxel/services/workers'; const task=defineWorkerTask(import.meta.url,'./removed-source.ts','node-aaaaaaaaaaaaaaaa');`}
+ ${previousProvider ? `export class PreviousProvider extends BasePlugin { version='1.0.0' }; Plugin({forkable:true})(PreviousProvider); __setPluginDefinition(PreviousProvider,{abiVersion:2,kind:'plugin',definition:${JSON.stringify(previousProvider)}});` : ''}
  class ${exportName} extends BasePlugin {
  version='${version}';
  late(){ return late() }
  resource(){ return resource() }
- ${name === 'fixture-p' ? '' : `${dependsOnP ? 'constructor(provider){super();this.provider=provider};' : ''} plain=plain; async init(){ this.workerValue=await this.ctx.service(Workers).run(task,null); this.ctx.service(ElysiaApp).use(websocket()).get('/${exportName.toLowerCase()}',()=>this.version).ws('/${exportName.toLowerCase()}/socket',{open:socket=>socket.send(this.version)}) }`}
- }; Plugin()(${exportName}); __setPluginDefinition(${exportName},{abiVersion:2,kind:'plugin',definition:${JSON.stringify(definition)},constructorRequires:${JSON.stringify(dependsOnP ? [provider] : [])}}); export {${exportName}};`
+ ${name === 'fixture-p' ? '' : `${constructor} plain=plain; async init(){ this.workerValue=await this.ctx.service(Workers).run(task,null); this.ctx.service(ElysiaApp).use(websocket()).get('/${exportName.toLowerCase()}',()=>this.version).ws('/${exportName.toLowerCase()}/socket',{open:socket=>socket.send(this.version)}) }`}
+ }; Plugin()(${exportName}); __setPluginDefinition(${exportName},{abiVersion:2,kind:'plugin',definition:${JSON.stringify(definition)},constructorRequires:${JSON.stringify(required)}}); export {${exportName}};`
 }
